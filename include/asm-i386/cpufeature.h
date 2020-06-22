@@ -64,6 +64,8 @@
 #define X86_FEATURE_CYRIX_ARR	(3*32+ 2) /* Cyrix ARRs (= MTRRs) */
 #define X86_FEATURE_CENTAUR_MCR	(3*32+ 3) /* Centaur MCRs (= MTRRs) */
 
+#define cpu_has(c, bit)            test_bit(bit, (c)->x86_capability)
+
 #endif /* __ASM_I386_CPUFEATURE_H */
 
 /* 

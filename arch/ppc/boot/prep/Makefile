@@ -1,4 +1,3 @@
-# BK Id: SCCS/s.Makefile 1.30 01/26/02 12:27:41 trini
 #
 # arch/ppc/boot/Makefile
 #
@@ -19,13 +18,14 @@ USE_STANDARD_AS_RULE		:= true
 
 TFTPIMAGE			= /tftpboot/zImage.prep
 ifeq ($(CONFIG_SMP),y)
-TFTPIMAGE			= $(TFTPBOOT).smp
+TFTPIMAGE			:= $(TFTPIMAGE).smp
 endif
 
 LD_ARGS				= -T ../ld.script -Ttext 0x00800000 -Bstatic
 obj-y				:= head.o ../simple/legacy.o misc.o of1275.o \
 					../common/util.o ../common/string.o \
-					../common/misc-common.o
+					../common/misc-common.o \
+					../common/serial_stub.o
 OBJCOPY_ARGS			= -O elf32-powerpc
 LIBS 				= ../lib/zlib.a
 

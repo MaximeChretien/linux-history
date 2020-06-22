@@ -1974,8 +1974,10 @@ out:
 	 * bloody create() on broken symlinks. Furrfu...
 	 */
 	name = __getname();
-	if (!name)
+	if (!name) {
+		path_release(nd);
 		return -ENOMEM;
+	}
 	strcpy(name, nd->last.name);
 	nd->last.name = name;
 	return 0;

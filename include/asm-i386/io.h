@@ -187,9 +187,9 @@ extern void bt_iounmap(void *addr, unsigned long size);
 #define __raw_writew writew
 #define __raw_writel writel
 
-#define memset_io(a,b,c)	memset(__io_virt(a),(b),(c))
-#define memcpy_fromio(a,b,c)	memcpy((a),__io_virt(b),(c))
-#define memcpy_toio(a,b,c)	memcpy(__io_virt(a),(b),(c))
+#define memset_io(a,b,c)	__memset(__io_virt(a),(b),(c))
+#define memcpy_fromio(a,b,c)	__memcpy((a),__io_virt(b),(c))
+#define memcpy_toio(a,b,c)	__memcpy(__io_virt(a),(b),(c))
 
 /*
  * ISA space is 'always mapped' on a typical x86 system, no need to

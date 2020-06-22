@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  *  linux/arch/ppc/kernel/setup.c
  *
  *  Copyright (C) 1995  Linus Torvalds
@@ -269,11 +266,3 @@ platform_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	ppc_md.ppc_kbd_sysrq_xlate	= NULL;
 }
 
-/* Mainly for ksyms.
-*/
-int
-request_irq(unsigned int irq, void (*handler)(int, void *, struct pt_regs *),
-		       unsigned long flag, const char *naem, void *dev)
-{
-	panic("request IRQ\n");
-}

@@ -3,7 +3,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2000-2001 Silicon Graphics, Inc.
+ * Copyright (C) 2000-2002 Silicon Graphics, Inc.  All Rights Reserved.
  */
 #ifndef _ASM_IA64_SN_SNCONFIG_H
 #define _ASM_IA64_SN_SNCONFIG_H

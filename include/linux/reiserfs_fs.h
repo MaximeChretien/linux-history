@@ -1558,7 +1558,9 @@ extern wait_queue_head_t reiserfs_commit_thread_wait ;
 #define JOURNAL_BUFFER(j,n) ((j)->j_ap_blocks[((j)->j_start + (n)) % JOURNAL_BLOCK_COUNT])
 
 void reiserfs_commit_for_inode(struct inode *) ;
+void reiserfs_commit_for_tail(struct inode *) ;
 void reiserfs_update_inode_transaction(struct inode *) ;
+void reiserfs_update_tail_transaction(struct inode *) ;
 void reiserfs_wait_on_write_block(struct super_block *s) ;
 void reiserfs_block_writes(struct reiserfs_transaction_handle *th) ;
 void reiserfs_allow_writes(struct super_block *s) ;
@@ -1748,11 +1750,12 @@ void make_le_item_head (struct item_head * ih, const struct cpu_key * key,
 struct inode * reiserfs_iget (struct super_block * s, 
 			      const struct cpu_key * key);
 
-
-struct inode * reiserfs_new_inode (struct reiserfs_transaction_handle *th, 
-				   struct inode * dir, int mode, 
-				   const char * symname, int item_len,
-				   struct dentry *dentry, struct inode *inode, int * err);
+int reiserfs_new_inode (struct reiserfs_transaction_handle *th,
+                               struct inode * dir, int mode,
+                               const char * symname,
+                               int i_size,
+                               struct dentry *dentry,
+                               struct inode *inode);
 int reiserfs_sync_inode (struct reiserfs_transaction_handle *th, struct inode * inode);
 void reiserfs_update_sd (struct reiserfs_transaction_handle *th, struct inode * inode);
 

@@ -24,7 +24,7 @@ obj-y	 += mem.o tty_io.o n_tty.o tty_ioctl.o raw.o pty.o misc.o random.o
 export-objs     :=	busmouse.o console.o keyboard.o sysrq.o \
 			misc.o pty.o random.o selection.o serial.o \
 			sonypi.o tty_io.o tty_ioctl.o generic_serial.o \
-			au1000_gpio.o hp_psaux.o nvram.o
+			au1000_gpio.o hp_psaux.o nvram.o scx200.o
 
 mod-subdirs	:=	joystick ftape drm drm-4.0 pcmcia
 
@@ -64,6 +64,20 @@ ifeq ($(ARCH),m68k)
       endif
    endif
    SERIAL   =
+endif
+
+ifeq ($(ARCH),parisc)
+   ifdef CONFIG_GSC_PS2
+      KEYBD   = hp_psaux.o hp_keyb.o
+   else
+      KEYBD   =
+   endif
+   ifdef CONFIG_SERIAL_MUX
+      CONSOLE += mux.o
+   endif
+   ifdef CONFIG_PDC_CONSOLE
+      CONSOLE += pdc_console.o
+   endif
 endif
 
 ifdef CONFIG_Q40
@@ -204,6 +218,7 @@ subdir-$(CONFIG_INPUT) += joystick
 obj-$(CONFIG_ATIXL_BUSMOUSE) += atixlmouse.o
 obj-$(CONFIG_LOGIBUSMOUSE) += logibusmouse.o
 obj-$(CONFIG_PRINTER) += lp.o
+obj-$(CONFIG_TIPAR) += tipar.o
 
 ifeq ($(CONFIG_INPUT),y)
 obj-y += joystick/js.o
@@ -222,6 +237,7 @@ obj-$(CONFIG_ADBMOUSE) += adbmouse.o
 obj-$(CONFIG_PC110_PAD) += pc110pad.o
 obj-$(CONFIG_MK712_MOUSE) += mk712.o
 obj-$(CONFIG_RTC) += rtc.o
+obj-$(CONFIG_GEN_RTC) += genrtc.o
 obj-$(CONFIG_EFI_RTC) += efirtc.o
 ifeq ($(CONFIG_PPC),)
   obj-$(CONFIG_NVRAM) += nvram.o
@@ -254,6 +270,7 @@ obj-$(CONFIG_PPDEV) += ppdev.o
 obj-$(CONFIG_DZ) += dz.o
 obj-$(CONFIG_NWBUTTON) += nwbutton.o
 obj-$(CONFIG_NWFLASH) += nwflash.o
+obj-$(CONFIG_SCx200_GPIO) += scx200_gpio.o scx200.o
 
 # Only one watchdog can succeed. We probe the hardware watchdog
 # drivers first, then the softdog driver.  This means if your hardware
@@ -277,9 +294,10 @@ obj-$(CONFIG_MACHZ_WDT) += machzwd.o
 obj-$(CONFIG_SH_WDT) += shwdt.o
 obj-$(CONFIG_EUROTECH_WDT) += eurotechwdt.o
 obj-$(CONFIG_ALIM7101_WDT) += alim7101_wdt.o
-#obj-$(CONFIG_ALIM1535_WDT) += alim1535d_wdt.o
+obj-$(CONFIG_ALIM1535_WDT) += alim1535d_wdt.o
 obj-$(CONFIG_INDYDOG) += indydog.o
 obj-$(CONFIG_SC1200_WDT) += sc1200wdt.o
+obj-$(CONFIG_SCx200_WDT) += scx200_wdt.o
 obj-$(CONFIG_WAFER_WDT) += wafer5823wdt.o
 obj-$(CONFIG_SOFT_WATCHDOG) += softdog.o
 obj-$(CONFIG_AMD7XX_TCO) += amd7xx_tco.o
@@ -287,6 +305,11 @@ obj-$(CONFIG_AMD7XX_TCO) += amd7xx_tco.o
 subdir-$(CONFIG_MWAVE) += mwave
 ifeq ($(CONFIG_MWAVE),y)
   obj-y += mwave/mwave.o
+endif
+
+subdir-$(CONFIG_IPMI_HANDLER) += ipmi
+ifeq ($(CONFIG_IPMI_HANDLER),y)
+  obj-y += ipmi/ipmi.o
 endif
 
 include $(TOPDIR)/Rules.make

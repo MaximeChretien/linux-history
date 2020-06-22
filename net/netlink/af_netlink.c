@@ -562,6 +562,14 @@ void netlink_set_err(struct sock *ssk, u32 pid, u32 group, int code)
 	read_unlock(&nl_table_lock);
 }
 
+static inline void netlink_rcv_wake(struct sock *sk)
+{
+	if (skb_queue_len(&sk->receive_queue) == 0)
+		clear_bit(0, &sk->protinfo.af_netlink->state);
+	if (!test_bit(0, &sk->protinfo.af_netlink->state))
+		wake_up_interruptible(&sk->protinfo.af_netlink->wait);
+}
+
 static int netlink_sendmsg(struct socket *sock, struct msghdr *msg, int len,
 			   struct scm_cookie *scm)
 {
@@ -675,12 +683,7 @@ static int netlink_recvmsg(struct socket *sock, struct msghdr *msg, int len,
 		netlink_dump(sk);
 
 out:
-	if (skb_queue_len(&sk->receive_queue) <= sk->rcvbuf/2) {
-		if (skb_queue_len(&sk->receive_queue) == 0)
-			clear_bit(0, &sk->protinfo.af_netlink->state);
-		if (!test_bit(0, &sk->protinfo.af_netlink->state))
-			wake_up_interruptible(&sk->protinfo.af_netlink->wait);
-	}
+	netlink_rcv_wake(sk);
 	return err ? : copied;
 }
 
@@ -688,13 +691,7 @@ void netlink_data_ready(struct sock *sk, int len)
 {
 	if (sk->protinfo.af_netlink->data_ready)
 		sk->protinfo.af_netlink->data_ready(sk, len);
-
-	if (skb_queue_len(&sk->receive_queue) <= sk->rcvbuf/2) {
-		if (skb_queue_len(&sk->receive_queue) == 0)
-			clear_bit(0, &sk->protinfo.af_netlink->state);
-		if (!test_bit(0, &sk->protinfo.af_netlink->state))
-			wake_up_interruptible(&sk->protinfo.af_netlink->wait);
-	}
+	netlink_rcv_wake(sk);
 }
 
 /*

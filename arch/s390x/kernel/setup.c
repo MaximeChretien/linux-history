@@ -56,6 +56,8 @@ int cpus_initialized = 0;
 unsigned long cpu_initialized = 0;
 volatile int __cpu_logical_map[NR_CPUS]; /* logical cpu to cpu address */
 
+void* *pfix_table=NULL;
+
 /*
  * Setup options
  */
@@ -317,6 +319,10 @@ void __init setup_arch(char **cmdline_p)
 	printk((MACHINE_IS_VM) ?
 	       "We are running under VM (64 bit mode)\n" :
 	       "We are running native (64 bit mode)\n");
+	if (MACHINE_IS_VM)
+		printk((MACHINE_HAS_PFIX) ?
+		       "This machine has PFIX support\n" :
+		       "This machine has no PFIX support\n");
 
         ROOT_DEV = to_kdev_t(0x0100);
         memory_start = (unsigned long) &_end;    /* fixit if use $CODELO etc*/

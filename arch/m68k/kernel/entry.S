@@ -240,13 +240,10 @@ SYMBOL_NAME_LABEL(ret_from_interrupt)
 2:
 	RESTORE_ALL
 1:
-#if 1
-	bfextu  %sp@(PT_SR){#5,#3},%d0	| Check for nested interrupt.
-#if MAX_NOINT_IPL > 0
-	cmpiw	#MAX_NOINT_IPL,%d0
-#endif
-	jhi	2b
-#endif
+	moveq	#(~ALLOWINT>>8)&0xff,%d0
+	andb	%sp@(PT_SR),%d0
+	jne	2b
+
 	/* check if we need to do software interrupts */
 	tstl	SYMBOL_NAME(irq_stat)	| softirq_pending ?
 	jeq	SYMBOL_NAME(ret_from_exception)

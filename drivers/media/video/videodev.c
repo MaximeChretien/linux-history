@@ -186,14 +186,21 @@ unlock_out:
 static int video_release(struct inode *inode, struct file *file)
 {
 	struct video_device *vfl;
+	struct module *owner;
+
+	vfl = video_devdata(file);
+	owner = vfl->owner;
+	if (vfl->close)
+		vfl->close(vfl);
 
 	down(&videodev_lock);
+	/* ->close() might have called video_device_unregister()
+           in case of a hot unplug, thus we have to get vfl again */
 	vfl = video_devdata(file);
-	if(vfl->close)
-		vfl->close(vfl);
-	vfl->users--;
-	if(vfl->owner)
-		__MOD_DEC_USE_COUNT(vfl->owner);
+	if (NULL != vfl)
+		vfl->users--;
+	if (owner)
+		__MOD_DEC_USE_COUNT(owner);
 	up(&videodev_lock);
 	return 0;
 }

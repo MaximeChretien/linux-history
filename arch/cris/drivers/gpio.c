@@ -1,4 +1,4 @@
-/* $Id: gpio.c,v 1.17 2002/06/17 15:53:01 johana Exp $
+/* $Id: gpio.c,v 1.21 2002/12/02 08:11:41 starvik Exp $
  *
  * Etrax general port I/O device
  *
@@ -9,6 +9,29 @@
  *             Johan Adolfsson  (read/set directions, write, port G)
  *
  * $Log: gpio.c,v $
+ * Revision 1.21  2002/12/02 08:11:41  starvik
+ * Merge of Linux 2.4.20
+ *
+ * Revision 1.20  2002/10/16 21:16:24  johana
+ * Added support for PA high level interrupt.
+ * That gives 2ms response time with iodtest for high levels and 2-12 ms
+ * response time on low levels if the check is not made in
+ * process.c:cpu_idle() as well.
+ *
+ * Revision 1.19  2002/10/14 18:27:33  johana
+ * Implemented alarm handling so select() now works.
+ * Latency is around 6-9 ms with a etrax_gpio_wake_up_check() in
+ * cpu_idle().
+ * Otherwise I get 15-18 ms (same as doing the poll in userspace -
+ * but less overhead).
+ * TODO? Perhaps we should add the check in IMMEDIATE_BH (or whatever it
+ * is in 2.4) as well?
+ * TODO? Perhaps call request_irq()/free_irq() only when needed?
+ * Increased version to 2.5
+ *
+ * Revision 1.18  2002/10/11 15:02:00  johana
+ * Mask inverted 8 bit value in setget_input().
+ *
  * Revision 1.17  2002/06/17 15:53:01  johana
  * Added IO_READ_INBITS, IO_READ_OUTBITS, IO_SETGET_INPUT and IO_SETGET_OUTPUT
  * that take a pointer as argument and thus can handle 32 bit ports (G)
@@ -95,11 +118,19 @@
 #include <asm/svinto.h>
 #include <asm/io.h>
 #include <asm/system.h>
+#include <asm/irq.h>
 
 #define GPIO_MAJOR 120  /* experimental MAJOR number */
 
 #define D(x)
 
+#if 0
+static int dp_cnt;
+#define DP(x) do { dp_cnt++; if (dp_cnt % 1000 == 0) x; }while(0)
+#else
+#define DP(x)
+#endif
+	
 static char gpio_name[] = "etrax gpio";
 
 #if 0
@@ -136,6 +167,8 @@ struct gpio_private {
 /* linked list of alarms to check for */
 
 static struct gpio_private *alarmlist = 0;
+
+static int gpio_some_alarms = 0; /* Set if someone uses alarm */
 
 /* Port A and B use 8 bit access, but Port G is 32 bit */
 #define NUM_PORTS (GPIO_MINOR_B+1)
@@ -197,20 +230,80 @@ static unsigned long dir_g_shadow; /* 1=output */
 
 
 static unsigned int 
-gpio_poll(struct file *filp,
-	  struct poll_table_struct *wait)
+gpio_poll(struct file *file,
+	  poll_table *wait)
 {
-	/* TODO poll on alarms! */
-#if 0
-	if (!ANYTHING_WANTED) {
-		D(printk("gpio_select sleeping task\n"));
-		select_wait(&gpio_wq, table);
+	unsigned int mask = 0;
+	struct gpio_private *priv = (struct gpio_private *)file->private_data;
+	unsigned long data;
+	poll_wait(file, &priv->alarm_wq, wait);
+	if (priv->minor == GPIO_MINOR_A) {
+		unsigned long tmp;
+		data = *R_PORT_PA_DATA;
+		/* PA has support for high level interrupt -
+		 * lets activate for those low and with highalarm set
+		 */
+		tmp = ~data & priv->highalarm & 0xFF;
+		*R_IRQ_MASK1_SET = (tmp << R_IRQ_MASK1_SET__pa0__BITNR);
+	} else if (priv->minor == GPIO_MINOR_B)
+		data = *R_PORT_PB_DATA;
+	else if (priv->minor == GPIO_MINOR_G)
+		data = *R_PORT_G_DATA;
+	else
 		return 0;
+	
+	if ((data & priv->highalarm) ||
+	    (~data & priv->lowalarm)) {
+		mask = POLLIN|POLLRDNORM;
 	}
-	D(printk("gpio_select ready\n"));
-#endif
-	return 1;
+	
+	DP(printk("gpio_poll ready: mask 0x%08X\n", mask));
+	return mask;
 }
+
+void etrax_gpio_wake_up_check(void)
+{
+	struct gpio_private *priv = alarmlist;
+	unsigned long data = 0;
+	while (priv) {
+		if (USE_PORTS(priv)) {
+			data = *priv->port;
+		} else if (priv->minor == GPIO_MINOR_G) {
+			data = *R_PORT_G_DATA;
+		}
+		if ((data & priv->highalarm) ||
+		    (~data & priv->lowalarm)) {
+			DP(printk("etrax_gpio_wake_up_check %i\n",priv->minor));
+			wake_up_interruptible(&priv->alarm_wq);
+		}
+		priv = priv->next;
+	}
+}
+
+static void 
+gpio_poll_timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+{
+	if (gpio_some_alarms) {
+		etrax_gpio_wake_up_check();
+	}
+}
+
+static void 
+gpio_pa_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+{
+	unsigned long tmp;
+	/* Find what PA interrupts are active */
+	tmp = (*R_IRQ_READ1 >> R_IRQ_READ1__pa0__BITNR) & 0xFF;
+	/* Clear them.. */
+	/* NOTE: Maybe we need to be more careful here if some other
+	 * driver uses PA interrupt as well?
+	 */
+	*R_IRQ_MASK1_CLR = (tmp << R_IRQ_MASK1_CLR__pa0__BITNR);
+	if (gpio_some_alarms) {
+		etrax_gpio_wake_up_check();
+	}
+}
+
 
 static ssize_t gpio_write(struct file * file, const char * buf, size_t count,
                           loff_t *off)
@@ -322,7 +415,7 @@ gpio_release(struct inode *inode, struct file *filp)
 {
 	struct gpio_private *p = alarmlist;
 	struct gpio_private *todel = (struct gpio_private *)filp->private_data;
-
+	
 	/* unlink from alarmlist and free the private structure */
 
 	if (p == todel) {
@@ -334,7 +427,17 @@ gpio_release(struct inode *inode, struct file *filp)
 	}
 
 	kfree(todel);
-
+	/* Check if there are still any alarms set */
+	p = alarmlist;
+	while (p) {
+		if (p->highalarm | p->lowalarm) {
+			gpio_some_alarms = 1;
+			return 0;
+		}
+		p = p->next;
+	}
+	gpio_some_alarms = 0;
+		
 	return 0;
 }
 
@@ -353,7 +456,7 @@ unsigned long inline setget_input(struct gpio_private *priv, unsigned long arg)
 		*priv->dir = *priv->dir_shadow &= 
 		~((unsigned char)arg & priv->changeable_dir);
 		restore_flags(flags);
-		return ~(*priv->dir_shadow);
+		return ~(*priv->dir_shadow) & 0xFF; /* Only 8 bits */
 	} else if (priv->minor == GPIO_MINOR_G) {
 		/* We must fiddle with R_GEN_CONFIG to change dir */
 		if (((arg & dir_g_in_bits) != arg) && 
@@ -491,10 +594,12 @@ gpio_ioctl(struct inode *inode, struct file *file,
 	case IO_HIGHALARM:
 		// set alarm when bits with 1 in arg go high
 		priv->highalarm |= arg;
+		gpio_some_alarms = 1;
 		break;
 	case IO_LOWALARM:
 		// set alarm when bits with 1 in arg go low
 		priv->lowalarm |= arg;
+		gpio_some_alarms = 1;
 		break;
 	case IO_CLRALARM:
 		// clear alarm for bits with 1 in arg
@@ -760,8 +865,21 @@ gpio_init(void)
 
 #endif
 	gpio_init_port_g();
-	printk("ETRAX 100LX GPIO driver v2.4, (c) 2001, 2002 Axis Communications AB\n");
-
+	printk("ETRAX 100LX GPIO driver v2.5, (c) 2001, 2002 Axis Communications AB\n");
+	/* We call etrax_gpio_wake_up_check() from timer interrupt and
+	 * from cpu_idle() in kernel/process.c
+	 * The check in cpu_idle() reduces latency from ~15 ms to ~6 ms
+	 * in some tests.
+	 */  
+	if (request_irq(TIMER0_IRQ_NBR, gpio_poll_timer_interrupt,
+			SA_SHIRQ | SA_INTERRUPT,"gpio poll", NULL)) {
+		printk("err: timer0 irq for gpio\n");
+	}
+	if (request_irq(PA_IRQ_NBR, gpio_pa_interrupt,
+			SA_SHIRQ | SA_INTERRUPT,"gpio PA", NULL)) {
+		printk("err: PA irq for gpio\n");
+	}
+	
 	return res;
 }
 

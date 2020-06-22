@@ -292,7 +292,7 @@ int IO_APIC_get_PCI_irq_vector(int bus, int slot, int pin)
 
 	Dprintk("querying PCI -> IRQ mapping bus:%d, slot:%d, pin:%d.\n",
 		bus, slot, pin);
-	if (mp_bus_id_to_pci_bus[bus] == -1) {
+	if ((mp_bus_id_to_pci_bus==NULL) || (mp_bus_id_to_pci_bus[bus] == -1)) {
 		printk(KERN_WARNING "PCI BIOS passed nonexistent PCI bus %d!\n", bus);
 		return -1;
 	}
@@ -739,8 +739,9 @@ void __init setup_ExtINT_IRQ0_pin(unsigned int pin, int vector)
 
 void __init UNEXPECTED_IO_APIC(void)
 {
-	printk(KERN_WARNING " WARNING: unexpected IO-APIC, please mail\n");
-	printk(KERN_WARNING "          to linux-smp@vger.kernel.org\n");
+	printk(KERN_WARNING 
+		"An unexpected IO-APIC was found. If this kernel release is less than\n"
+		"three months old please report this to linux-smp@vger.kernel.org\n");
 }
 
 void __init print_IO_APIC(void)
@@ -775,7 +776,9 @@ void __init print_IO_APIC(void)
 	printk(KERN_DEBUG "IO APIC #%d......\n", mp_ioapics[apic].mpc_apicid);
 	printk(KERN_DEBUG ".... register #00: %08X\n", *(int *)&reg_00);
 	printk(KERN_DEBUG ".......    : physical APIC id: %02X\n", reg_00.ID);
-	if (reg_00.__reserved_1 || reg_00.__reserved_2)
+	printk(KERN_DEBUG ".......    : Delivery Type: %X\n", reg_00.delivery_type);
+	printk(KERN_DEBUG ".......    : LTS          : %X\n", reg_00.LTS);
+	if (reg_00.__reserved_0 || reg_00.__reserved_1 || reg_00.__reserved_2)
 		UNEXPECTED_IO_APIC();
 
 	printk(KERN_DEBUG ".... register #01: %08X\n", *(int *)&reg_01);
@@ -793,6 +796,8 @@ void __init print_IO_APIC(void)
 	printk(KERN_DEBUG ".......     : PRQ implemented: %X\n", reg_01.PRQ);
 	printk(KERN_DEBUG ".......     : IO APIC version: %04X\n", reg_01.version);
 	if (	(reg_01.version != 0x01) && /* 82489DX IO-APICs */
+		(reg_01.version != 0x02) && /* VIA */
+		(reg_01.version != 0x03) && /* later VIA */
 		(reg_01.version != 0x10) && /* oldest IO-APICs */
 		(reg_01.version != 0x11) && /* Pentium/Pro IO-APICs */
 		(reg_01.version != 0x13) && /* Xeon IO-APICs */
@@ -1067,7 +1072,7 @@ static void __init setup_ioapic_ids_from_mpc (void)
 		
 		old_id = mp_ioapics[apic].mpc_apicid;
 
-		if (mp_ioapics[apic].mpc_apicid >= 0xf) {
+		if (mp_ioapics[apic].mpc_apicid >= apic_broadcast_id) {
 			printk(KERN_ERR "BIOS bug, IO-APIC#%d ID is %d in the MPC table!...\n",
 				apic, mp_ioapics[apic].mpc_apicid);
 			printk(KERN_ERR "... fixing up to %d. (tell your hw vendor)\n",
@@ -1079,14 +1084,16 @@ static void __init setup_ioapic_ids_from_mpc (void)
 		 * Sanity check, is the ID really free? Every APIC in a
 		 * system must have a unique ID or we get lots of nice
 		 * 'stuck on smp_invalidate_needed IPI wait' messages.
+		 * I/O APIC IDs no longer have any meaning for xAPICs and SAPICs.
 		 */
-		if (phys_id_present_map & (1 << mp_ioapics[apic].mpc_apicid)) {
+		if ((clustered_apic_mode != CLUSTERED_APIC_XAPIC) &&
+		    (phys_id_present_map & (1 << mp_ioapics[apic].mpc_apicid))) {
 			printk(KERN_ERR "BIOS bug, IO-APIC#%d ID %d is already used!...\n",
 				apic, mp_ioapics[apic].mpc_apicid);
 			for (i = 0; i < 0xf; i++)
 				if (!(phys_id_present_map & (1 << i)))
 					break;
-			if (i >= 0xf)
+			if (i >= apic_broadcast_id)
 				panic("Max APIC ID exceeded!\n");
 			printk(KERN_ERR "... fixing up to %d. (tell your hw vendor)\n",
 				i);

@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  * Support for PCI bridges found on Power Macintoshes.
  * At present the "bandit" and "chaos" bridges are supported.
  * Fortunately you access configuration space in the same

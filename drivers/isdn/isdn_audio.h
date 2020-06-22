@@ -20,6 +20,7 @@ typedef struct adpcm_state {
 
 typedef struct dtmf_state {
 	char last;
+	char llast;
 	int idx;
 	int buf[DTMF_NPOINTS];
 } dtmf_state;

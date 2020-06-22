@@ -24,7 +24,7 @@ CROSS32_COMPILE =
 #CROSS32_COMPILE = /usr/local/ppc/bin/powerpc-linux-
 
 BOOTCC = $(CROSS32_COMPILE)gcc
-BOOTCFLAGS = $(HOSTCFLAGS) -I$(HPATH)
+BOOTCFLAGS = $(HOSTCFLAGS) -fno-builtin -I$(HPATH)
 BOOTLD = $(CROSS32_COMPILE)ld
 BOOTAS = $(CROSS32_COMPILE)as
 BOOTAFLAGS = -D__ASSEMBLY__ $(HOSTCFLAGS) -I$(HPATH)
@@ -40,7 +40,6 @@ CFLAGS	= $(CPPFLAGS) -O -fno-builtin -DSTDC_HEADERS
 LD_ARGS = -Ttext 0x00400000 -e _start
 
 OBJS = crt0.o string.o prom.o zImage.o zlib.o imagesize.o
-#LIBS = $(TOPDIR)/lib/lib.a
 LIBS =
 
 ifeq ($(CONFIG_SMP),y)
@@ -91,7 +90,9 @@ addnote: addnote.c
 
 imagesize.c: $(TOPDIR)/vmlinux
 	ls -l $(TOPDIR)/vmlinux | awk '{printf "/* generated -- do not edit! */\nunsigned long vmlinux_filesize = %d;\n", $$5}' > imagesize.c
-	$(CROSS_COMPILE)nm -n $(TOPDIR)/vmlinux | tail -1 | awk '{printf "unsigned long vmlinux_memsize = 0x%s;\n", substr($$1,8)}' >> imagesize.c
+	$(CROSS_COMPILE)nm -n $(TOPDIR)/vmlinux | awk '{i=$$1}END{printf "unsigned long vmlinux_memsize = 0x%s;\n", substr(i,8)}' >> imagesize.c
+
+zImage.o: $(TOPDIR)/vmlinux
 
 vmlinux .config System.map: % : $(TOPDIR)/%
 	gzip -cvf9 $(TOPDIR)/$@ > kernel-$@.gz

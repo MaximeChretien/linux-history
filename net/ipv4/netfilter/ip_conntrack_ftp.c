@@ -32,7 +32,7 @@ MODULE_PARM(loose, "i");
 
 static int try_rfc959(const char *, size_t, u_int32_t [], char);
 static int try_eprt(const char *, size_t, u_int32_t [], char);
-static int try_espv_response(const char *, size_t, u_int32_t [], char);
+static int try_epsv_response(const char *, size_t, u_int32_t [], char);
 
 static struct ftp_search {
 	enum ip_conntrack_dir dir;
@@ -65,7 +65,7 @@ static struct ftp_search {
 		IP_CT_DIR_REPLY,
 		"229 ", sizeof("229 ") - 1, '(', ')',
 		IP_CT_FTP_EPSV,
-		try_espv_response,
+		try_epsv_response,
 	},
 };
 
@@ -157,7 +157,7 @@ static int try_eprt(const char *data, size_t dlen, u_int32_t array[6],
 }
 
 /* Returns 0, or length of numbers: |||6446| */
-static int try_espv_response(const char *data, size_t dlen, u_int32_t array[6],
+static int try_epsv_response(const char *data, size_t dlen, u_int32_t array[6],
 			     char term)
 {
 	char delim;
@@ -200,9 +200,9 @@ static int find_pattern(const char *data, size_t dlen,
 
 		DEBUGP("ftp: string mismatch\n");
 		for (i = 0; i < plen; i++) {
-			DEBUGFTP("ftp:char %u `%c'(%u) vs `%c'(%u)\n",
-				 i, data[i], data[i],
-				 pattern[i], pattern[i]);
+			DEBUGP("ftp:char %u `%c'(%u) vs `%c'(%u)\n",
+				i, data[i], data[i],
+				pattern[i], pattern[i]);
 		}
 #endif
 		return 0;
@@ -436,9 +436,7 @@ static int __init init(void)
 	return 0;
 }
 
-#ifdef CONFIG_IP_NF_NAT_NEEDED
 EXPORT_SYMBOL(ip_ftp_lock);
-#endif
 
 MODULE_LICENSE("GPL");
 module_init(init);

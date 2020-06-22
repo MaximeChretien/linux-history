@@ -998,9 +998,16 @@ static inline int usb_make_path (struct usb_device *dev, char *buf, size_t size)
 #define PIPE_DEVEP_MASK		0x0007ff00
 
 /* The D0/D1 toggle bits */
-#define usb_gettoggle(dev, ep, out) (((dev)->toggle[out] >> ep) & 1)
-#define	usb_dotoggle(dev, ep, out)  ((dev)->toggle[out] ^= (1 << ep))
-#define usb_settoggle(dev, ep, out, bit) ((dev)->toggle[out] = ((dev)->toggle[out] & ~(1 << ep)) | ((bit) << ep))
+#define usb_gettoggle(dev, ep, out) (((dev)->toggle[out] >> (ep)) & 1)
+#define	usb_dotoggle(dev, ep, out)  ((dev)->toggle[out] ^= (1 << (ep)))
+static inline void usb_settoggle(struct usb_device *dev,
+				 unsigned int ep, 
+				 unsigned int out,
+				 int bit)
+{
+	dev->toggle[out] &= ~(1 << ep);
+	dev->toggle[out] |= bit << ep;
+}
 
 /* Endpoint halt control/status */
 #define usb_endpoint_out(ep_dir)	(((ep_dir >> 7) & 1) ^ 1)

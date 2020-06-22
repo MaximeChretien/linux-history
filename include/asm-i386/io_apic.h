@@ -22,9 +22,12 @@
  * The structure of the IO-APIC:
  */
 struct IO_APIC_reg_00 {
-	__u32	__reserved_2	: 24,
+	__u32	__reserved_2	: 14,
+		LTS		:  1,
+		delivery_type	:  1,
+		__reserved_1	:  8,
 		ID		:  4,
-		__reserved_1	:  4;
+		__reserved_0	:  4;
 } __attribute__ ((packed));
 
 struct IO_APIC_reg_01 {
@@ -97,7 +100,7 @@ extern struct mpc_config_ioapic mp_ioapics[MAX_IO_APICS];
 extern int mp_irq_entries;
 
 /* MP IRQ source entries */
-extern struct mpc_config_intsrc mp_irqs[MAX_IRQ_SOURCES];
+extern struct mpc_config_intsrc *mp_irqs;
 
 /* non-0 if default (table-less) MP configuration */
 extern int mpc_default_type;

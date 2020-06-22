@@ -22,8 +22,7 @@
 #endif
 
 
-struct atm_dev *atm_devs = NULL;
-static struct atm_dev *last_dev = NULL;
+LIST_HEAD(atm_devs);
 struct atm_vcc *nodev_vccs = NULL;
 extern spinlock_t atm_dev_lock;
 
@@ -38,32 +37,28 @@ static struct atm_dev *alloc_atm_dev(const char *type)
 	dev->type = type;
 	dev->signal = ATM_PHY_SIG_UNKNOWN;
 	dev->link_rate = ATM_OC3_PCR;
-	dev->next = NULL;
+	list_add_tail(&dev->dev_list, &atm_devs);
 
-	dev->prev = last_dev;
-
-	if (atm_devs) last_dev->next = dev;
-	else atm_devs = dev;
-	last_dev = dev;
 	return dev;
 }
 
 
 static void free_atm_dev(struct atm_dev *dev)
 {
-	if (dev->prev) dev->prev->next = dev->next;
-	else atm_devs = dev->next;
-	if (dev->next) dev->next->prev = dev->prev;
-	else last_dev = dev->prev;
+	list_del(&dev->dev_list);
 	kfree(dev);
 }
 
 struct atm_dev *atm_find_dev(int number)
 {
 	struct atm_dev *dev;
+	struct list_head *p;
 
-	for (dev = atm_devs; dev; dev = dev->next)
-		if (dev->ops && dev->number == number) return dev;
+	list_for_each(p, &atm_devs) {
+		dev = list_entry(p, struct atm_dev, dev_list);
+		if (dev->ops && dev->number == number)
+			return dev;
+	}
 	return NULL;
 }
 

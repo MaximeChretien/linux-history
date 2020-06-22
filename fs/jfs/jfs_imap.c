@@ -136,7 +136,7 @@ int diMount(struct inode *ipimap)
 	/* allocate the in-memory inode map control structure. */
 	imap = (struct inomap *) kmalloc(sizeof(struct inomap), GFP_KERNEL);
 	if (imap == NULL) {
-		jERROR(1, ("diMount: kmalloc returned NULL!\n"));
+		jfs_err("diMount: kmalloc returned NULL!");
 		return (ENOMEM);
 	}
 
@@ -252,7 +252,7 @@ int diSync(struct inode *ipimap)
 			  IMAPBLKNO << JFS_SBI(ipimap->i_sb)->l2nbperpage,
 			  PSIZE, 0);
 	if (mp == NULL) {
-		jERROR(1,("diSync: get_metapage failed!\n"));
+		jfs_err("diSync: get_metapage failed!");
 		return EIO;
 	}
 
@@ -337,7 +337,7 @@ int diRead(struct inode *ip)
 	uint pageno;
 	int rel_inode;
 
-	jFYI(1, ("diRead: ino = %ld\n", ip->i_ino));
+	jfs_info("diRead: ino = %ld", ip->i_ino);
 
 	ipimap = sbi->ipimap;
 	JFS_IP(ip)->ipimap = ipimap;
@@ -351,7 +351,7 @@ int diRead(struct inode *ip)
 	rc = diIAGRead(imap, iagno, &mp);
 	IREAD_UNLOCK(ipimap);
 	if (rc) {
-		jERROR(1, ("diRead: diIAGRead returned %d\n", rc));
+		jfs_err("diRead: diIAGRead returned %d", rc);
 		return (rc);
 	}
 
@@ -398,7 +398,7 @@ int diRead(struct inode *ip)
 	/* read the page of disk inode */
 	mp = read_metapage(ipimap, pageno << sbi->l2nbperpage, PSIZE, 1);
 	if (mp == 0) {
-		jERROR(1, ("diRead: read_metapage failed\n"));
+		jfs_err("diRead: read_metapage failed");
 		return EIO;
 	}
 
@@ -407,7 +407,7 @@ int diRead(struct inode *ip)
 	dp += rel_inode;
 
 	if (ip->i_ino != le32_to_cpu(dp->di_number)) {
-		jERROR(1, ("diRead: i_ino != di_number\n"));
+		jfs_err("diRead: i_ino != di_number");
 		updateSuper(ip->i_sb, FM_DIRTY);
 		rc = EIO;
 	} else if (le32_to_cpu(dp->di_nlink) == 0)
@@ -459,8 +459,7 @@ struct inode *diReadSpecial(struct super_block *sb, ino_t inum, int secondary)
 
 	ip = new_inode(sb);
 	if (ip == NULL) {
-		jERROR(1,
-		       ("diReadSpecial: new_inode returned NULL!\n"));
+		jfs_err("diReadSpecial: new_inode returned NULL!");
 		return ip;
 	}
 
@@ -486,9 +485,6 @@ struct inode *diReadSpecial(struct super_block *sb, ino_t inum, int secondary)
 	address += inum >> 3;	/* 8 inodes per 4K page */
 
 	/* read the page of fixed disk inode (AIT) in raw mode */
-	jEVENT(0,
-	       ("Reading aggregate inode %d from block %d\n", (uint) inum,
-		address));
 	mp = read_metapage(ip, address << sbi->l2nbperpage, PSIZE, 1);
 	if (mp == NULL) {
 		ip->i_sb = NULL;
@@ -559,13 +555,10 @@ void diWriteSpecial(struct inode *ip, int secondary)
 	address += inum >> 3;	/* 8 inodes per 4K page */
 
 	/* read the page of fixed disk inode (AIT) in raw mode */
-	jEVENT(0,
-	       ("Reading aggregate inode %d from block %d\n", (uint) inum,
-		address));
 	mp = read_metapage(ip, address << sbi->l2nbperpage, PSIZE, 1);
 	if (mp == NULL) {
-		jERROR(1,
-		       ("diWriteSpecial: failed to read aggregate inode extent!\n"));
+		jfs_err("diWriteSpecial: failed to read aggregate inode "
+			"extent!");
 		return;
 	}
 
@@ -592,7 +585,7 @@ void diWriteSpecial(struct inode *ip, int secondary)
 void diFreeSpecial(struct inode *ip)
 {
 	if (ip == NULL) {
-		jERROR(1, ("diFreeSpecial called with NULL ip!\n"));
+		jfs_err("diFreeSpecial called with NULL ip!");
 		return;
 	}
 	fsync_inode_data_buffers(ip);
@@ -799,7 +792,7 @@ int diWrite(tid_t tid, struct inode *ip)
 			       lv->length << L2DTSLOTSIZE);
 		}
 	} else {
-		jERROR(1, ("diWrite: UFO tlock\n"));
+		jfs_err("diWrite: UFO tlock");
 	}
 
       inlineData:
@@ -931,8 +924,8 @@ int diFree(struct inode *ip)
 	 */
 	//assert(iagno < imap->im_nextiag);
 	if (iagno >= imap->im_nextiag) {
-		jERROR(1, ("diFree: inum = %d, iagno = %d, nextiag = %d\n",
-			   (uint) inum, iagno, imap->im_nextiag));
+		jfs_err("diFree: inum = %d, iagno = %d, nextiag = %d",
+			(uint) inum, iagno, imap->im_nextiag);
 		dump_mem("imap", imap, 32);
 		updateSuper(ip->i_sb, FM_DIRTY);
 		return EIO;
@@ -979,7 +972,7 @@ int diFree(struct inode *ip)
 	bitmap = le32_to_cpu(iagp->wmap[extno]) & ~mask;
 
 	if (imap->im_agctl[agno].numfree > imap->im_agctl[agno].numinos) {
-		jERROR(1,("diFree: numfree > numinos\n"));
+		jfs_err("diFree: numfree > numinos");
 		release_metapage(mp);
 		IREAD_UNLOCK(ipimap);
 		AG_UNLOCK(imap, agno);
@@ -1175,7 +1168,7 @@ int diFree(struct inode *ip)
 	 * invalidate any page of the inode extent freed from buffer cache;
 	 */
 	freepxd = iagp->inoext[extno];
-	invalidate_pxd_metapages(ip->i_sb->s_bdev->bd_inode, freepxd);
+	invalidate_pxd_metapages(ip, freepxd);
 
 	/*
 	 *      update iag list(s) (careful update step 2)
@@ -1689,7 +1682,7 @@ diAllocAG(struct inomap * imap, int agno, boolean_t dir, struct inode *ip)
 	numinos = imap->im_agctl[agno].numinos;
 
 	if (numfree > numinos) {
-		jERROR(1,("diAllocAG: numfree > numinos\n"));
+		jfs_err("diAllocAG: numfree > numinos");
 		updateSuper(ip->i_sb, FM_DIRTY);
 		return EIO;
 	}
@@ -1840,9 +1833,8 @@ static int diAllocIno(struct inomap * imap, int agno, struct inode *ip)
 	 */
 	//assert(iagp->nfreeinos);
 	if (!iagp->nfreeinos) {
-		jERROR(1,
-		       ("diAllocIno: nfreeinos = 0, but iag on freelist\n"));
-		jERROR(1, ("  agno = %d, iagno = %d\n", agno, iagno));
+		jfs_err("diAllocIno: nfreeinos = 0, but iag on freelist");
+		jfs_err("  agno = %d, iagno = %d", agno, iagno);
 		dump_mem("iag", iagp, 64);
 		updateSuper(ip->i_sb, FM_DIRTY);
 		return EIO;
@@ -2769,18 +2761,14 @@ diUpdatePMap(struct inode *ipimap,
 		 * the inode will be freed from working map at the release
 		 * of last reference release;
 		 */
-//              assert(le32_to_cpu(iagp->wmap[extno]) & mask);
 		if (!(le32_to_cpu(iagp->wmap[extno]) & mask)) {
-			jERROR(1,
-			       ("diUpdatePMap: inode %ld not marked as allocated in wmap!\n",
-				inum));
+			jfs_err("diUpdatePMap: inode %ld not marked as "
+				"allocated in wmap!", inum);
 			updateSuper(ipimap->i_sb, FM_DIRTY);
 		}
-//              assert(le32_to_cpu(iagp->pmap[extno]) & mask);
 		if (!(le32_to_cpu(iagp->pmap[extno]) & mask)) {
-			jERROR(1,
-			       ("diUpdatePMap: inode %ld not marked as allocated in pmap!\n",
-				inum));
+			jfs_err("diUpdatePMap: inode %ld not marked as "
+				"allocated in pmap!", inum);
 			updateSuper(ipimap->i_sb, FM_DIRTY);
 		}
 		/* update the bitmap for the extent of the freed inode */
@@ -2857,9 +2845,9 @@ int diExtendFS(struct inode *ipimap, struct inode *ipbmap)
 	int numinos, xnuminos = 0, xnumfree = 0;
 	s64 agstart;
 
-	jEVENT(0, ("diExtendFS: nextiag:%d numinos:%d numfree:%d\n",
+	jfs_info("diExtendFS: nextiag:%d numinos:%d numfree:%d",
 		   imap->im_nextiag, atomic_read(&imap->im_numinos),
-		   atomic_read(&imap->im_numfree)));
+		   atomic_read(&imap->im_numfree));
 
 	/*
 	 *      reconstruct imap 
@@ -2984,7 +2972,6 @@ static void duplicateIXtree(struct super_block *sb, s64 blkno,
 	struct buffer_head *bh;
 	struct inode *ip;
 	tid_t tid;
-	int rc;
 
 	/* if AIT2 ipmap2 is bad, do not try to update it */
 	if (JFS_SBI(sb)->mntflag & JFS_BAD_SAIT)	/* s_flag */
@@ -2992,7 +2979,7 @@ static void duplicateIXtree(struct super_block *sb, s64 blkno,
 	ip = diReadSpecial(sb, FILESYSTEM_I, 1);
 	if (ip == NULL) {
 		JFS_SBI(sb)->mntflag |= JFS_BAD_SAIT;
-		if ((rc = readSuper(sb, &bh)))
+		if (readSuper(sb, &bh))
 			return;
 		j_sb = (struct jfs_superblock *)bh->b_data;
 		j_sb->s_flag |= JFS_BAD_SAIT;
@@ -3007,7 +2994,7 @@ static void duplicateIXtree(struct super_block *sb, s64 blkno,
 	/* start transaction */
 	tid = txBegin(sb, COMMIT_FORCE);
 	/* update the inode map addressing structure to point to it */
-	if ((rc = xtInsert(tid, ip, 0, blkno, xlen, xaddr, 0))) {
+	if (xtInsert(tid, ip, 0, blkno, xlen, xaddr, 0)) {
 		JFS_SBI(sb)->mntflag |= JFS_BAD_SAIT;
 		txAbort(tid, 1);
 		goto cleanup;
@@ -3016,7 +3003,7 @@ static void duplicateIXtree(struct super_block *sb, s64 blkno,
 	/* update the inode map's inode to reflect the extension */
 	ip->i_size += PSIZE;
 	ip->i_blocks += LBLK2PBLK(sb, xlen);
-	rc = txCommit(tid, 1, &ip, COMMIT_FORCE);
+	txCommit(tid, 1, &ip, COMMIT_FORCE);
       cleanup:
 	txEnd(tid);
 	diFreeSpecial(ip);

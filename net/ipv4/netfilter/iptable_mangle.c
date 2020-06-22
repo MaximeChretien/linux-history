@@ -170,7 +170,7 @@ ipt_local_hook(unsigned int hook,
 static struct nf_hook_ops ipt_ops[]
 = { { { NULL, NULL }, ipt_route_hook, PF_INET, NF_IP_PRE_ROUTING, 
 	NF_IP_PRI_MANGLE },
-    { { NULL, NULL }, ipt_local_hook, PF_INET, NF_IP_LOCAL_IN,
+    { { NULL, NULL }, ipt_route_hook, PF_INET, NF_IP_LOCAL_IN,
 	NF_IP_PRI_MANGLE },
     { { NULL, NULL }, ipt_route_hook, PF_INET, NF_IP_FORWARD,
 	NF_IP_PRI_MANGLE },

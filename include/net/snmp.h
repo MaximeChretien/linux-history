@@ -268,5 +268,8 @@ struct linux_mib
 #define SNMP_INC_STATS(mib, field) ((mib)[2*smp_processor_id()+!in_softirq()].field++)
 #define SNMP_INC_STATS_BH(mib, field) ((mib)[2*smp_processor_id()].field++)
 #define SNMP_INC_STATS_USER(mib, field) ((mib)[2*smp_processor_id()+1].field++)
- 	
+#define SNMP_ADD_STATS_BH(mib, field, addend)	\
+	((mib)[2*smp_processor_id()].field += addend)
+#define SNMP_ADD_STATS_USER(mib, field, addend)	\
+	((mib)[2*smp_processor_id()+1].field += addend)
 #endif

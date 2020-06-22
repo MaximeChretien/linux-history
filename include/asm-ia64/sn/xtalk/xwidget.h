@@ -4,8 +4,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 1992 - 1997, 2000-2001 Silicon Graphics, Inc.
- * Copyright (C) 2000 by Colin Ngam
+ * Copyright (C) 1992-1997,2000-2002 Silicon Graphics, Inc. All Rights Reserved.
  */
 #ifndef __ASM_SN_XTALK_XWIDGET_H__
 #define __ASM_SN_XTALK_XWIDGET_H__
@@ -58,6 +57,7 @@
 #define XWIDGET_MFG_NUM(widgetid) (((widgetid) & WIDGET_MFG_NUM) >> WIDGET_MFG_NUM_SHFT)
 #define XWIDGET_PART_REV_NUM(widgetid) ((XWIDGET_PART_NUM(widgetid) << 4) | \
 					XWIDGET_REV_NUM(widgetid))
+#define XWIDGET_PART_REV_NUM_REV(partrev) (partrev & 0xf)
 
 /* WIDGET_STATUS */
 #define WIDGET_LLP_REC_CNT		0xff000000

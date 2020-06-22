@@ -64,6 +64,7 @@ struct capi_ncci {
 	__u32 ncci;
 	__u32 winsize;
 	int   nmsg;
+        spinlock_t lock;
 	struct msgidqueue *msgidqueue;
 	struct msgidqueue *msgidlast;
 	struct msgidqueue *msgidfree;
@@ -640,6 +641,7 @@ static void notify_handler(void *dummy)
 static inline void mq_init(struct capi_ncci * np)
 {
 	int i;
+        np->lock = SPIN_LOCK_UNLOCKED;
 	np->msgidqueue = 0;
 	np->msgidlast = 0;
 	np->nmsg = 0;
@@ -654,8 +656,11 @@ static inline void mq_init(struct capi_ncci * np)
 static inline int mq_enqueue(struct capi_ncci * np, __u16 msgid)
 {
 	struct msgidqueue *mq;
-	if ((mq = np->msgidfree) == 0)
+	spin_lock_bh(&np->lock);
+	if ((mq = np->msgidfree) == 0) {
+	        spin_unlock_bh(&np->lock);
 		return 0;
+	}
 	np->msgidfree = mq->next;
 	mq->msgid = msgid;
 	mq->next = 0;
@@ -665,12 +670,14 @@ static inline int mq_enqueue(struct capi_ncci * np, __u16 msgid)
 	if (!np->msgidqueue)
 		np->msgidqueue = mq;
 	np->nmsg++;
+	spin_unlock_bh(&np->lock);
 	return 1;
 }
 
 static inline int mq_dequeue(struct capi_ncci * np, __u16 msgid)
 {
 	struct msgidqueue **pp;
+	spin_lock_bh(&np->lock);
 	for (pp = &np->msgidqueue; *pp; pp = &(*pp)->next) {
 		if ((*pp)->msgid == msgid) {
 			struct msgidqueue *mq = *pp;
@@ -680,9 +687,11 @@ static inline int mq_dequeue(struct capi_ncci * np, __u16 msgid)
 			mq->next = np->msgidfree;
 			np->msgidfree = mq;
 			np->nmsg--;
+	                spin_unlock_bh(&np->lock);
 			return 1;
 		}
 	}
+	spin_unlock_bh(&np->lock);
 	return 0;
 }
 

@@ -242,6 +242,7 @@ enum {
 	DV1394_GET_STATUS,
 };
 
+#include "ieee1394-ioctl.h"
 
 
 enum pal_or_ntsc {

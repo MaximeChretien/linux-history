@@ -1,8 +1,3 @@
-/*
- * BK Id: %F% %I% %G% %U% %#%
- */
-
-
 /* Minimal serial functions needed to send messages out the serial
  * port on SMC1.
  */
@@ -315,9 +310,4 @@ serial_tstc(void *ignored)
 #endif
 
 	return(!(rbdf->cbd_sc & BD_SC_EMPTY));
-}
-
-void
-serial_close(unsigned long com_port)
-{
 }

@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  *  linux/include/asm-ppc/keyboard.h
  *
  *  Created 3 Nov 1996 by Geert Uytterhoeven

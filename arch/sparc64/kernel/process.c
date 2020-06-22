@@ -39,6 +39,7 @@
 #include <asm/pstate.h>
 #include <asm/elf.h>
 #include <asm/fpumacro.h>
+#include <asm/head.h>
 
 /* #define VERBOSE_SHOWREGS */
 
@@ -362,8 +363,8 @@ void show_regs(struct pt_regs *regs)
 	    regs->u_regs[14] >= (long)current - PAGE_SIZE &&
 	    regs->u_regs[14] < (long)current + 6 * PAGE_SIZE) {
 		printk ("*********parent**********\n");
-		__show_regs((struct pt_regs *)(regs->u_regs[14] + STACK_BIAS + REGWIN_SZ));
-		idump_from_user(((struct pt_regs *)(regs->u_regs[14] + STACK_BIAS + REGWIN_SZ))->tpc);
+		__show_regs((struct pt_regs *)(regs->u_regs[14] + PTREGS_OFF));
+		idump_from_user(((struct pt_regs *)(regs->u_regs[14] + PTREGS_OFF))->tpc);
 		printk ("*********endpar**********\n");
 	}
 #endif
@@ -538,11 +539,11 @@ void synchronize_user_stack(void)
 
 	flush_user_windows();
 	if ((window = t->w_saved) != 0) {
-		int winsize = REGWIN_SZ;
+		int winsize = sizeof(struct reg_window);
 		int bias = 0;
 
 		if (t->flags & SPARC_FLAG_32BIT)
-			winsize = REGWIN32_SZ;
+			winsize = sizeof(struct reg_window32);
 		else
 			bias = STACK_BIAS;
 
@@ -563,11 +564,11 @@ void fault_in_user_windows(void)
 {
 	struct thread_struct *t = &current->thread;
 	unsigned long window;
-	int winsize = REGWIN_SZ;
+	int winsize = sizeof(struct reg_window);
 	int bias = 0;
 
 	if (t->flags & SPARC_FLAG_32BIT)
-		winsize = REGWIN32_SZ;
+		winsize = sizeof(struct reg_window32);
 	else
 		bias = STACK_BIAS;
 
@@ -610,11 +611,11 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long sp,
 #endif
 
 	/* Calculate offset to stack_frame & pt_regs */
-	child_trap_frame = ((char *)p) + (THREAD_SIZE - (TRACEREG_SZ+REGWIN_SZ));
-	memcpy(child_trap_frame, (((struct reg_window *)regs)-1), (TRACEREG_SZ+REGWIN_SZ));
+	child_trap_frame = ((char *)p) + (THREAD_SIZE - (TRACEREG_SZ+STACKFRAME_SZ));
+	memcpy(child_trap_frame, (((struct sparc_stackf *)regs)-1), (TRACEREG_SZ+STACKFRAME_SZ));
 	t->ksp = ((unsigned long) child_trap_frame) - STACK_BIAS;
 	t->flags |= SPARC_FLAG_NEWCHILD;
-	t->kregs = (struct pt_regs *)(child_trap_frame+sizeof(struct reg_window));
+	t->kregs = (struct pt_regs *)(child_trap_frame+sizeof(struct sparc_stackf));
 	t->cwp = (regs->tstate + 1) & TSTATE_CWP;
 	t->fpsaved[0] = 0;
 
@@ -634,7 +635,7 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long sp,
 		flush_register_windows();
 		memcpy((void *)(t->ksp + STACK_BIAS),
 		       (void *)(regs->u_regs[UREG_FP] + STACK_BIAS),
-		       sizeof(struct reg_window));
+		       sizeof(struct sparc_stackf));
 		t->kregs->u_regs[UREG_G6] = (unsigned long) p;
 	} else {
 		if (t->flags & SPARC_FLAG_32BIT) {
@@ -673,7 +674,7 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long sp,
  * a system call from a "real" process, but the process memory space will
  * not be free'd until both the parent and the child have exited.
  */
-pid_t kernel_thread(int (*fn)(void *), void * arg, unsigned long flags)
+pid_t arch_kernel_thread(int (*fn)(void *), void * arg, unsigned long flags)
 {
 	long retval;
 

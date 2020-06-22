@@ -6,10 +6,11 @@
 #include <linux/module.h>
 #include <linux/skbuff.h>
 #include <linux/ip.h>
+#include <linux/udp.h>
+#include <linux/icmp.h>
 #include <net/icmp.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-struct in_device;
 #include <net/route.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_ipv4/ipt_REJECT.h>
@@ -42,6 +43,7 @@ static void send_reset(struct sk_buff *oldskb, int local)
 	u_int16_t tmp_port;
 	u_int32_t tmp_addr;
 	int needs_ack;
+	int hh_len;
 
 	/* IP header checks: fragment, too short. */
 	if (oldskb->nh.iph->frag_off & htons(IP_OFFSET)
@@ -61,12 +63,28 @@ static void send_reset(struct sk_buff *oldskb, int local)
 			 csum_partial((char *)otcph, otcplen, 0)) != 0)
 		return;
 
+	/* Routing: if not headed for us, route won't like source */
+	if (ip_route_output(&rt, oldskb->nh.iph->saddr,
+			    local ? oldskb->nh.iph->daddr : 0,
+			    RT_TOS(oldskb->nh.iph->tos), 0) != 0)
+		return;
+
+	hh_len = (rt->u.dst.dev->hard_header_len + 15)&~15;
+
+
 	/* Copy skb (even if skb is about to be dropped, we can't just
            clone it because there may be other things, such as tcpdump,
-           interested in it) */
-	nskb = skb_copy(oldskb, GFP_ATOMIC);
-	if (!nskb)
+           interested in it). We also need to expand headroom in case
+	   hh_len of incoming interface < hh_len of outgoing interface */
+	nskb = skb_copy_expand(oldskb, hh_len, skb_tailroom(oldskb),
+			       GFP_ATOMIC);
+	if (!nskb) {
+		dst_release(&rt->u.dst);
 		return;
+	}
+
+	dst_release(nskb->dst);
+	nskb->dst = &rt->u.dst;
 
 	/* This packet will not be the same as the other: clear nf fields */
 	nf_conntrack_put(nskb->nfct);
@@ -130,16 +148,6 @@ static void send_reset(struct sk_buff *oldskb, int local)
 	nskb->nh.iph->check = ip_fast_csum((unsigned char *)nskb->nh.iph, 
 					   nskb->nh.iph->ihl);
 
-	/* Routing: if not headed for us, route won't like source */
-	if (ip_route_output(&rt, nskb->nh.iph->daddr,
-			    local ? nskb->nh.iph->saddr : 0,
-			    RT_TOS(nskb->nh.iph->tos) | RTO_CONN,
-			    0) != 0)
-		goto free_nskb;
-
-	dst_release(nskb->dst);
-	nskb->dst = &rt->u.dst;
-
 	/* "Never happens" */
 	if (nskb->len > nskb->dst->pmtu)
 		goto free_nskb;
@@ -157,6 +165,7 @@ static void send_reset(struct sk_buff *oldskb, int local)
 static void send_unreach(struct sk_buff *skb_in, int code)
 {
 	struct iphdr *iph;
+	struct udphdr *udph;
 	struct icmphdr *icmph;
 	struct sk_buff *nskb;
 	u32 saddr;
@@ -186,6 +195,19 @@ static void send_unreach(struct sk_buff *skb_in, int code)
 	if (iph->frag_off&htons(IP_OFFSET))
 		return;
 
+	/* if UDP checksum is set, verify it's correct */
+	if (iph->protocol == IPPROTO_UDP
+	    && skb_in->tail-(u8*)iph >= sizeof(struct udphdr)) {
+		int datalen = skb_in->len - (iph->ihl<<2);
+		udph = (struct udphdr *)((char *)iph + (iph->ihl<<2));
+		if (udph->check
+		    && csum_tcpudp_magic(iph->saddr, iph->daddr,
+		                         datalen, IPPROTO_UDP,
+		                         csum_partial((char *)udph, datalen,
+		                                      0)) != 0)
+			return;
+	}
+		    
 	/* If we send an ICMP error to an ICMP error a mess would result.. */
 	if (iph->protocol == IPPROTO_ICMP
 	    && skb_in->tail-(u8*)iph >= sizeof(struct icmphdr)) {

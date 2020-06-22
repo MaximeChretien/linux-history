@@ -29,9 +29,6 @@ ibmphp-objs		:=	ibmphp_core.o	\
 
 ifdef CONFIG_HOTPLUG_PCI_ACPI
   EXTRA_CFLAGS	+= -D_LINUX -I$(CURDIR)/../acpi
-  ifdef CONFIG_ACPI_DEBUG
-    EXTRA_CFLAGS += -DACPI_DEBUG -Wno-unused
-  endif
 endif
 
 acpiphp_objs		:=	acpiphp_core.o	\

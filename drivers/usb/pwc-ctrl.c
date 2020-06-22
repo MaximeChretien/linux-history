@@ -256,8 +256,10 @@ static inline int set_video_mode_Nala(struct pwc_device *pdev, int size, int fra
 
 	memcpy(buf, pEntry->mode, 3);	
 	ret = send_video_command(pdev->udev, pdev->vendpoint, buf, 3);
-	if (ret < 0)
+	if (ret < 0) {
+		Debug("Failed to send video command... %d\n", ret);
 		return ret;
+	}
 	if (pEntry->compressed && pdev->decompressor != NULL)
 		pdev->decompressor->init(pdev->release, buf, pdev->decompress_data);
 		
@@ -444,8 +446,8 @@ int pwc_set_video_mode(struct pwc_device *pdev, int width, int height, int frame
 			Info("Video mode %s@%d fps is only supported with the decompressor module (pwcx).\n", size2name[size], frames);
 		else {
 			Err("Failed to set video mode %s@%d fps; return code = %d\n", size2name[size], frames, ret);
-			return ret;
 		}
+		return ret;
 	}
 	pdev->view.x = width;
 	pdev->view.y = height;
@@ -997,7 +999,7 @@ static inline int pwc_read_red_gain(struct pwc_device *pdev)
 		&buf, 1, HZ / 2);
 
 	if (ret < 0)
-	    return ret;
+		return ret;
 	
 	return (buf << 8);
 }
@@ -1103,12 +1105,7 @@ int pwc_set_leds(struct pwc_device *pdev, int on_value, int off_value)
 	buf[0] = on_value;
 	buf[1] = off_value;
 
-	return usb_control_msg(pdev->udev, usb_sndctrlpipe(pdev->udev, 0),
-		SET_STATUS_CTL,
-		USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
-		LED_FORMATTER,
-		pdev->vcinterface,
-		&buf, 2, HZ / 2);
+	return SendControlMsg(SET_STATUS_CTL, LED_FORMATTER, 2);
 }
 
 int pwc_get_leds(struct pwc_device *pdev, int *on_value, int *off_value)
@@ -1122,13 +1119,7 @@ int pwc_get_leds(struct pwc_device *pdev, int *on_value, int *off_value)
 		return 0;
 	}
 
-	ret = usb_control_msg(pdev->udev, usb_rcvctrlpipe(pdev->udev, 0),
-   	        GET_STATUS_CTL,
-		USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
-		LED_FORMATTER,
-		pdev->vcinterface,
-		&buf, 2, HZ / 2);
-
+	ret = RecvControlMsg(GET_STATUS_CTL, LED_FORMATTER, 2);
 	if (ret < 0)
 		return ret;
 	*on_value = buf[0] * 100;
@@ -1252,7 +1243,7 @@ static inline int pwc_get_flicker(struct pwc_device *pdev)
 	int ret;
 	unsigned char buf;
 	
-	ret = RecvControlMsg(SET_LUM_CTL, FLICKERLESS_MODE_FORMATTER, 1);
+	ret = RecvControlMsg(GET_LUM_CTL, FLICKERLESS_MODE_FORMATTER, 1);
 	if (ret < 0)
 		return ret;
 	return buf;
@@ -1276,10 +1267,9 @@ static inline int pwc_get_dynamic_noise(struct pwc_device *pdev)
 	int ret;
 	unsigned char buf;
 	
-	ret = RecvControlMsg(SET_LUM_CTL, DYNAMIC_NOISE_CONTROL_FORMATTER, 1);
+	ret = RecvControlMsg(GET_LUM_CTL, DYNAMIC_NOISE_CONTROL_FORMATTER, 1);
 	if (ret < 0)
 		return ret;
-Debug("pwc_get_dynamic_noise = %d\n", buf);
 	return buf;
 }
 
@@ -1595,6 +1585,16 @@ int pwc_ioctl(struct pwc_device *pdev, unsigned int cmd, void *arg)
 		break;
 	}
 	
+	case VIDIOCPWCGREALSIZE:
+	{
+		struct pwc_imagesize size;
+		
+		size.width = pdev->image.x;
+		size.height = pdev->image.y;
+		if (copy_to_user(arg, &size, sizeof(size)))
+			ret = -EFAULT;
+		break;
+	}	
 
 	default:
 		ret = -ENOIOCTLCMD;

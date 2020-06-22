@@ -111,7 +111,9 @@ if [ "$CONFIG_ATARI" = "y" ]; then
    bool 'Support for ST-RAM as swap space' CONFIG_STRAM_SWAP
    bool 'ST-RAM statistics in /proc' CONFIG_STRAM_PROC
 fi
-if [ "$CONFIG_AMIGA" = "y" -o "$CONFIG_ATARI" = "y" -o "$CONFIG_Q40" = "y" ]; then
+if [ "$CONFIG_AMIGA" = "y" -o "$CONFIG_APOLLO" = "y" -o \
+     "$CONFIG_ATARI" = "y" -o "$CONFIG_MAC" = "y" -o \
+     "$CONFIG_Q40" = "y" ]; then
    bool 'Use power LED as a heartbeat' CONFIG_HEARTBEAT
 else
   if [ "$CONFIG_HP300" = "y" ]; then
@@ -502,7 +504,7 @@ if [ "$CONFIG_ATARI_MFPSER" = "y" -o "$CONFIG_ATARI_SCC" = "y" -o \
      "$CONFIG_SUN3X_ZS" = "y" -o "$CONFIG_SERIAL" = "y" -o \
      "$CONFIG_MVME147_SCC" -o "$CONFIG_SERIAL167" = "y" -o \
      "$CONFIG_MVME162_SCC" -o "$CONFIG_BVME6000_SCC" = "y" -o \
-     "$CONFIG_DN_SERIAL" -o ]; then
+     "$CONFIG_DN_SERIAL" ]; then
    bool 'Support for serial port console' CONFIG_SERIAL_CONSOLE
 fi
 bool 'Support for user serial device modules' CONFIG_USERIAL
@@ -517,8 +519,11 @@ else
    if [ "$CONFIG_SUN3" = "y" ]; then
       define_bool CONFIG_GEN_RTC y
    else
-      bool 'Generic /dev/rtc emulation' CONFIG_GEN_RTC
+      tristate 'Generic /dev/rtc emulation' CONFIG_GEN_RTC      
    fi
+fi
+if [ "$CONFIG_GEN_RTC" != "n" ]; then
+   bool '   Extended RTC operation' CONFIG_GEN_RTC_X
 fi
 bool 'Unix98 PTY support' CONFIG_UNIX98_PTYS
 if [ "$CONFIG_UNIX98_PTYS" = "y" ]; then

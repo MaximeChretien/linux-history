@@ -30,6 +30,7 @@ extern unsigned long machine_flags;
 #define MACHINE_IS_P390  (machine_flags & 4)
 #define MACHINE_HAS_CSP  (machine_flags & 8)
 #define MACHINE_HAS_MVPG (machine_flags & 16)
+#define MACHINE_HAS_PFIX (machine_flags & 128)
 
 #define MACHINE_HAS_HWC  (!MACHINE_IS_P390)
 

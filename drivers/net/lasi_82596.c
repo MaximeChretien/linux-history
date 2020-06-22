@@ -97,7 +97,7 @@
 #include <asm/cache.h>
 
 static char version[] __devinitdata =
-	"82596.c $Revision: 1.29 $\n";
+	"82596.c $Revision: 1.30 $\n";
 
 /* DEBUG flags
  */
@@ -1084,12 +1084,20 @@ static int i596_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	struct i596_private *lp = (struct i596_private *) dev->priv;
 	struct tx_cmd *tx_cmd;
 	struct i596_tbd *tbd;
-	short length = ETH_ZLEN < skb->len ? skb->len : ETH_ZLEN;
+	short length = skb->len;
 	dev->trans_start = jiffies;
 
 	DEB(DEB_STARTTX,printk("%s: i596_start_xmit(%x,%p) called\n", dev->name,
 				skb->len, skb->data));
 
+	if(length < ETH_ZLEN)
+	{
+		skb = skb_padto(skb, ETH_ZLEN);
+		if(skb == NULL)
+			return 0;
+		length = ETH_ZLEN;
+	}
+	
 	netif_stop_queue(dev);
 
 	tx_cmd = lp->tx_cmds + lp->next_tx_cmd;
@@ -1412,8 +1420,7 @@ static int i596_close(struct net_device *dev)
 	DEB(DEB_INIT,printk("%s: Shutting down ethercard, status was %4.4x.\n",
 		       dev->name, lp->scb.status));
 
-	save_flags(flags);
-	cli();
+	spin_lock_irqsave(&lp->lock, flags);
 
 	wait_cmd(dev,lp,100,"close1 timed out");
 	lp->scb.command = CUC_ABORT | RX_ABORT;
@@ -1422,7 +1429,7 @@ static int i596_close(struct net_device *dev)
 	CA(dev);
 
 	wait_cmd(dev,lp,100,"close2 timed out");
-	restore_flags(flags);
+	spin_unlock_irqrestore(&lp->lock, flags);
 	DEB(DEB_STRUCT,i596_display_data(dev));
 	i596_cleanup_cmd(dev,lp);
 

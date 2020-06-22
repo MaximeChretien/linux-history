@@ -25,21 +25,13 @@
 #include <asm/sn/intr.h>
 #include <asm/sn/xtalk/xtalkaddrs.h>
 #include <asm/sn/klconfig.h>
+#include <asm/sn/sn2/shub_mmr.h>
 #include <asm/sn/sn_cpuid.h>
-
-extern void hub_device_desc_update(device_desc_t, ilvl_t, cpuid_t);
 
 /* ARGSUSED */
 void
 hub_intr_init(devfs_handle_t hubv)
 {
-	extern void sn_cpei_handler(int, void *, struct pt_regs *);
-	extern void sn_init_cpei_timer(void);
-
-	if (request_irq(SGI_SHUB_ERROR_VECTOR, sn_cpei_handler, 0, "SN hub error", NULL) ) {
-		printk("hub_intr_init: Couldn't register SGI_SHUB_ERROR_VECTOR = %x\n",SGI_SHUB_ERROR_VECTOR);
-	}
-	sn_init_cpei_timer();
 }
 
 xwidgetnum_t
@@ -82,11 +74,9 @@ do_hub_intr_alloc(devfs_handle_t dev,
 	cnode = cpuid_to_cnodeid(cpu);
 
 	if (slice) {
-		xtalk_addr = SH_II_INT1 | GLOBAL_MMR_SPACE |
-			((unsigned long)nasid << 36) | (1UL << 47);
+		xtalk_addr = SH_II_INT1 | ((unsigned long)nasid << 36) | (1UL << 47);
 	} else {
-		xtalk_addr = SH_II_INT0 | GLOBAL_MMR_SPACE |
-			((unsigned long)nasid << 36) | (1UL << 47);
+		xtalk_addr = SH_II_INT0 | ((unsigned long)nasid << 36) | (1UL << 47);
 	}
 
 	intr_hdl = snia_kmem_alloc_node(sizeof(struct hub_intr_s), KM_NOSLEEP, cnode);
@@ -107,7 +97,6 @@ do_hub_intr_alloc(devfs_handle_t dev,
 	intr_hdl->i_bit = vector;
 	intr_hdl->i_flags |= HUB_INTR_IS_ALLOCED;
 
-	hub_device_desc_update(dev_desc, intr_swlevel, cpu);
 	return(intr_hdl);
 }
 
@@ -150,6 +139,8 @@ hub_intr_free(hub_intr_t intr_hdl)
 
 int
 hub_intr_connect(hub_intr_t intr_hdl,
+		intr_func_t intr_func,          /* xtalk intr handler */
+		void *intr_arg,                 /* arg to intr handler */
 		xtalk_intr_setfunc_t setfunc,
 		void *setfunc_arg)
 {
@@ -160,7 +151,6 @@ hub_intr_connect(hub_intr_t intr_hdl,
 	ASSERT(intr_hdl->i_flags & HUB_INTR_IS_ALLOCED);
 
 	rv = intr_connect_level(cpu, vector, intr_hdl->i_swlevel, NULL);
-
 	if (rv < 0) {
 		return rv;
 	}

@@ -39,8 +39,25 @@
 
 #define PFX "IOC: "
 
+/*
+** This option allows cards capable of 64bit DMA to bypass the IOMMU.  If
+** not defined, all DMA will be 32bit and go through the TLB.
+*/
 #define ALLOW_IOV_BYPASS
+
+/*
+** If a device prefetches beyond the end of a valid pdir entry, it will cause
+** a hard failure, ie. MCA.  Version 3.0 and later of the zx1 LBA should
+** disconnect on 4k boundaries and prevent such issues.  If the device is
+** particularly agressive, this option will keep the entire pdir valid such
+** that prefetching will hit a valid address.  This could severely impact
+** error containment, and is therefore off by default.  The page that is
+** used for spill-over is poisoned, so that should help debugging somewhat.
+*/
+#undef FULL_VALID_PDIR
+
 #define ENABLE_MARK_CLEAN
+
 /*
 ** The number of debug flags is a clue - this code is fragile.
 */
@@ -51,6 +68,10 @@
 #undef ASSERT_PDIR_SANITY
 #undef DEBUG_LARGE_SG_ENTRIES
 #undef DEBUG_BYPASS
+
+#if defined(FULL_VALID_PDIR) && defined(ASSERT_PDIR_SANITY)
+#error FULL_VALID_PDIR and ASSERT_PDIR_SANITY are mutually exclusive
+#endif
 
 #define SBA_INLINE	__inline__
 /* #define SBA_INLINE */
@@ -196,9 +217,12 @@ struct ioc {
 static struct ioc *ioc_list;
 static int reserve_sba_gart = 1;
 
-#define sba_sg_iova(sg) (sg->address)
-#define sba_sg_len(sg) (sg->length)
-#define sba_sg_buffer(sg) (sg->orig_address)
+#define sba_sg_address(sg)	(sg->address ? sg->address : \
+				       page_address((sg)->page) + (sg)->offset)
+
+#ifdef FULL_VALID_PDIR
+static void* prefetch_spill_page;
+#endif
 
 #define GET_IOC(dev)	((struct ioc *) PCI_CONTROLLER(dev)->iommu)
 
@@ -338,10 +362,8 @@ sba_dump_sg( struct ioc *ioc, struct scatterlist *startsg, int nents)
 {
 	while (nents-- > 0) {
 		printk(" %d : %08lx/%05x %p\n",
-				nents,
-				(unsigned long) sba_sg_iova(startsg),
-				sba_sg_len(startsg),
-				sba_sg_buffer(startsg));
+				nents, startsg->dma_address,
+				startsg->dma_length, sba_sg_address(startsg));
 		startsg++;
 	}
 }
@@ -352,7 +374,7 @@ sba_check_sg( struct ioc *ioc, struct scatterlist *startsg, int nents)
 	int the_nents = nents;
 
 	while (the_nents-- > 0) {
-		if (sba_sg_buffer(the_sg) == 0x0UL)
+		if (sba_sg_address(the_sg) == 0x0UL)
 			sba_dump_sg(NULL, startsg, nents);
 		the_sg++;
 	}
@@ -626,7 +648,7 @@ mark_clean (void *addr, size_t size)
 	pg_addr = PAGE_ALIGN((unsigned long) addr);
 	end = (unsigned long) addr + size;
 	while (pg_addr + PAGE_SIZE <= end) {
-		struct page *page = virt_to_page(pg_addr);
+		struct page *page = virt_to_page((void *)pg_addr);
 		set_bit(PG_arch_1, &page->flags);
 		pg_addr += PAGE_SIZE;
 	}
@@ -673,6 +695,7 @@ sba_mark_invalid(struct ioc *ioc, dma_addr_t iova, size_t byte_cnt)
 
 		iovp |= IOVP_SHIFT;     /* set "size" field for PCOM */
 
+#ifndef FULL_VALID_PDIR
 		/*
 		** clear I/O PDIR entry "valid" bit
 		** Do NOT clear the rest - save it for debugging.
@@ -680,6 +703,14 @@ sba_mark_invalid(struct ioc *ioc, dma_addr_t iova, size_t byte_cnt)
 		** been enabled.
 		*/
 		ioc->pdir_base[off] &= ~(0x80000000000000FFULL);
+#else
+		/*
+  		** If we want to maintain the PDIR as valid, put in
+		** the spill page so devices prefetching won't
+		** cause a hard fail.
+		*/
+		ioc->pdir_base[off] = (0x80000000000000FFULL | (u64)prefetch_spill_page);
+#endif
 	} else {
 		u32 t = get_order(byte_cnt) + PAGE_SHIFT;
 
@@ -689,14 +720,18 @@ sba_mark_invalid(struct ioc *ioc, dma_addr_t iova, size_t byte_cnt)
 		do {
 			/* verify this pdir entry is enabled */
 			ASSERT(ioc->pdir_base[off]  >> 63);
+#ifndef FULL_VALID_PDIR
 			/* clear I/O Pdir entry "valid" bit first */
 			ioc->pdir_base[off] &= ~(0x80000000000000FFULL);
+#else
+			ioc->pdir_base[off] = (0x80000000000000FFULL | (u64)prefetch_spill_page);
+#endif
 			off++;
 			byte_cnt -= IOVP_SIZE;
 		} while (byte_cnt > 0);
 	}
 
-	WRITE_REG(iovp, ioc->ioc_hpa+IOC_PCOM);
+	WRITE_REG(iovp | ioc->ibase, ioc->ioc_hpa+IOC_PCOM);
 }
 
 /**
@@ -991,32 +1026,28 @@ sba_fill_pdir(
 
 	dma_sg--;
 	while (nents-- > 0) {
-		int     cnt = sba_sg_len(startsg);
-		sba_sg_len(startsg) = 0;
+		int     cnt = startsg->dma_length;
+		startsg->dma_length = 0;
 
 #ifdef DEBUG_LARGE_SG_ENTRIES
 		if (dump_run_sg)
 			printk(" %2d : %08lx/%05x %p\n",
-				nents,
-				(unsigned long) sba_sg_iova(startsg), cnt,
-				sba_sg_buffer(startsg)
-		);
+				nents, startsg->dma_address, cnt,
+				sba_sg_address(startsg));
 #else
 		DBG_RUN_SG(" %d : %08lx/%05x %p\n",
-				nents,
-				(unsigned long) sba_sg_iova(startsg), cnt,
-				sba_sg_buffer(startsg)
-		);
+				nents, startsg->dma_address, cnt,
+				sba_sg_address(startsg));
 #endif
 		/*
 		** Look for the start of a new DMA stream
 		*/
-		if ((u64)sba_sg_iova(startsg) & PIDE_FLAG) {
-			u32 pide = (u64)sba_sg_iova(startsg) & ~PIDE_FLAG;
+		if (startsg->dma_address & PIDE_FLAG) {
+			u32 pide = startsg->dma_address & ~PIDE_FLAG;
 			dma_offset = (unsigned long) pide & ~IOVP_MASK;
-			sba_sg_iova(startsg) = 0;
+			startsg->dma_address = 0;
 			dma_sg++;
-			sba_sg_iova(dma_sg) = (char *)(pide | ioc->ibase);
+			dma_sg->dma_address = pide | ioc->ibase;
 			pdirp = &(ioc->pdir_base[pide >> IOVP_SHIFT]);
 			n_mappings++;
 		}
@@ -1025,13 +1056,13 @@ sba_fill_pdir(
 		** Look for a VCONTIG chunk
 		*/
 		if (cnt) {
-			unsigned long vaddr = (unsigned long) sba_sg_buffer(startsg);
+			unsigned long vaddr = (unsigned long) sba_sg_address(startsg);
 			ASSERT(pdirp);
 
 			/* Since multiple Vcontig blocks could make up
 			** one DMA stream, *add* cnt to dma_len.
 			*/
-			sba_sg_len(dma_sg) += cnt;
+			dma_sg->dma_length += cnt;
 			cnt += dma_offset;
 			dma_offset=0;	/* only want offset on first chunk */
 			cnt = ROUNDUP(cnt, IOVP_SIZE);
@@ -1091,20 +1122,18 @@ sba_coalesce_chunks( struct ioc *ioc,
 	int n_mappings = 0;
 
 	while (nents > 0) {
-		unsigned long vaddr = (unsigned long) (startsg->address); 
+		unsigned long vaddr = (unsigned long) sba_sg_address(startsg); 
 
 		/*
 		** Prepare for first/next DMA stream
 		*/
 		dma_sg = vcontig_sg = startsg;
-		dma_len = vcontig_len = vcontig_end = sba_sg_len(startsg);
+		dma_len = vcontig_len = vcontig_end = startsg->length;
 		vcontig_end +=  vaddr;
 		dma_offset = vaddr & ~IOVP_MASK;
 
 		/* PARANOID: clear entries */
-		sba_sg_buffer(startsg) = sba_sg_iova(startsg);
-		sba_sg_iova(startsg) = 0;
-		sba_sg_len(startsg) = 0;
+		startsg->dma_address = startsg->dma_length = 0;
 
 		/*
 		** This loop terminates one iteration "early" since
@@ -1114,6 +1143,9 @@ sba_coalesce_chunks( struct ioc *ioc,
 			unsigned long vaddr;	/* tmp */
 
 			startsg++;
+
+			/* PARANOID */
+			startsg->dma_address = startsg->dma_length = 0;
 
 			/* catch brokenness in SCSI layer */
 			ASSERT(startsg->length <= DMA_CHUNK_SIZE);
@@ -1131,15 +1163,12 @@ sba_coalesce_chunks( struct ioc *ioc,
 			**
 			** append the next transaction?
 			*/
-			vaddr = (unsigned long) sba_sg_iova(startsg);
+			vaddr = (unsigned long) sba_sg_address(startsg);
 			if  (vcontig_end == vaddr)
 			{
-				vcontig_len += sba_sg_len(startsg);
-				vcontig_end += sba_sg_len(startsg);
-				dma_len     += sba_sg_len(startsg);
-				sba_sg_buffer(startsg) = (char *)vaddr;
-				sba_sg_iova(startsg) = 0;
-				sba_sg_len(startsg) = 0;
+				vcontig_len += startsg->length;
+				vcontig_end += startsg->length;
+				dma_len     += startsg->length;
 				continue;
 			}
 
@@ -1158,10 +1187,10 @@ sba_coalesce_chunks( struct ioc *ioc,
 			** must start on page boundaries and dove tail
 			** with it's predecessor.
 			*/
-			sba_sg_len(vcontig_sg) = vcontig_len;
+			vcontig_sg->dma_length = vcontig_len;
 
 			vcontig_sg = startsg;
-			vcontig_len = sba_sg_len(startsg);
+			vcontig_len = startsg->length;
 
 			/*
 			** 3) do the entries end/start on page boundaries?
@@ -1171,8 +1200,6 @@ sba_coalesce_chunks( struct ioc *ioc,
 			{
 				vcontig_end = vcontig_len + vaddr;
 				dma_len += vcontig_len;
-				sba_sg_buffer(startsg) = (char *)vaddr;
-				sba_sg_iova(startsg) = 0;
 				continue;
 			} else {
 				break;
@@ -1184,10 +1211,10 @@ sba_coalesce_chunks( struct ioc *ioc,
 		** Terminate last VCONTIG block.
 		** Allocate space for DMA stream.
 		*/
-		sba_sg_len(vcontig_sg) = vcontig_len;
+		vcontig_sg->dma_length = vcontig_len;
 		dma_len = (dma_len + dma_offset + ~IOVP_MASK) & IOVP_MASK;
 		ASSERT(dma_len <= DMA_CHUNK_SIZE);
-		sba_sg_iova(dma_sg) = (char *) (PIDE_FLAG 
+		dma_sg->dma_address = (dma_addr_t) (PIDE_FLAG 
 			| (sba_alloc_range(ioc, dma_len) << IOVP_SHIFT)
 			| dma_offset);
 		n_mappings++;
@@ -1223,8 +1250,8 @@ int sba_map_sg(struct pci_dev *dev, struct scatterlist *sglist, int nents,
 #ifdef ALLOW_IOV_BYPASS
 	if (dev->dma_mask >= ioc->dma_mask) {
 		for (sg = sglist ; filled < nents ; filled++, sg++){
-			sba_sg_buffer(sg) = sba_sg_iova(sg);
-			sba_sg_iova(sg) = (char *)virt_to_phys(sba_sg_buffer(sg));
+			sg->dma_length = sg->length;
+			sg->dma_address = virt_to_phys(sba_sg_address(sg));
 		}
 #ifdef CONFIG_PROC_FS
 		spin_lock_irqsave(&ioc->res_lock, flags);
@@ -1236,10 +1263,10 @@ int sba_map_sg(struct pci_dev *dev, struct scatterlist *sglist, int nents,
 #endif
 	/* Fast path single entry scatterlists. */
 	if (nents == 1) {
-		sba_sg_buffer(sglist) = sba_sg_iova(sglist);
-		sba_sg_iova(sglist) = (char *)sba_map_single(dev,
-						sba_sg_buffer(sglist),
-						sba_sg_len(sglist), direction);
+		sglist->dma_length = sglist->length;
+		sglist->dma_address = sba_map_single(dev,
+		                                     sba_sg_address(sglist),
+		                                     sglist->length, direction);
 #ifdef CONFIG_PROC_FS
 		/*
 		** Should probably do some stats counting, but trying to
@@ -1318,7 +1345,7 @@ void sba_unmap_sg(struct pci_dev *dev, struct scatterlist *sglist, int nents,
 #endif
 
 	DBG_RUN_SG("%s() START %d entries,  %p,%x\n",
-		__FUNCTION__, nents, sba_sg_buffer(sglist), sglist->length);
+		__FUNCTION__, nents, sba_sg_address(sglist), sglist->length);
 
 	ioc = GET_IOC(dev);
 	ASSERT(ioc);
@@ -1333,10 +1360,10 @@ void sba_unmap_sg(struct pci_dev *dev, struct scatterlist *sglist, int nents,
 	spin_unlock_irqrestore(&ioc->res_lock, flags);
 #endif
 
-	while (sba_sg_len(sglist) && nents--) {
+	while (nents && sglist->dma_length) {
 
-		sba_unmap_single(dev, (dma_addr_t)sba_sg_iova(sglist),
-		                 sba_sg_len(sglist), direction);
+		sba_unmap_single(dev, sglist->dma_address,
+		                 sglist->dma_length, direction);
 #ifdef CONFIG_PROC_FS
 		/*
 		** This leaves inconsistent data in the stats, but we can't
@@ -1344,9 +1371,10 @@ void sba_unmap_sg(struct pci_dev *dev, struct scatterlist *sglist, int nents,
 		** were coalesced to a single entry.  The stats are fun,
 		** but speed is more important.
 		*/
-		ioc->usg_pages += (((u64)sba_sg_iova(sglist) & ~IOVP_MASK) + sba_sg_len(sglist) + IOVP_SIZE - 1) >> PAGE_SHIFT;
+		ioc->usg_pages += ((sglist->dma_address & ~IOVP_MASK) + sglist->dma_length + IOVP_SIZE - 1) >> PAGE_SHIFT;
 #endif
-		++sglist;
+		sglist++;
+		nents--;
 	}
 
 	DBG_RUN_SG("%s() DONE (nents %d)\n", __FUNCTION__,  nents);
@@ -1357,12 +1385,6 @@ void sba_unmap_sg(struct pci_dev *dev, struct scatterlist *sglist, int nents,
 	spin_unlock_irqrestore(&ioc->res_lock, flags);
 #endif
 
-}
-
-unsigned long
-sba_dma_address (struct scatterlist *sg)
-{
-	return ((unsigned long)sba_sg_iova(sg));
 }
 
 int
@@ -1384,6 +1406,9 @@ ioc_iova_init(struct ioc *ioc)
 	int iov_order, tcnfg;
 	int agp_found = 0;
 	struct pci_dev *device;
+#ifdef FULL_VALID_PDIR
+	unsigned long index;
+#endif
 
 	/*
 	** Firmware programs the base and size of a "safe IOVA space"
@@ -1481,7 +1506,7 @@ ioc_iova_init(struct ioc *ioc)
 	** Clear I/O TLB of any possible entries.
 	** (Yes. This is a bit paranoid...but so what)
 	*/
-	WRITE_REG(0 | 31, ioc->ioc_hpa + IOC_PCOM);
+	WRITE_REG(ioc->ibase | (iov_order+PAGE_SHIFT), ioc->ioc_hpa + IOC_PCOM);
 
 	/*
 	** If an AGP device is present, only use half of the IOV space
@@ -1499,6 +1524,34 @@ ioc_iova_init(struct ioc *ioc)
 		ioc->pdir_size /= 2;
 		((u64 *)ioc->pdir_base)[PDIR_INDEX(ioc->iov_size/2)] = ZX1_SBA_IOMMU_COOKIE;
 	}
+#ifdef FULL_VALID_PDIR
+	/*
+  	** Check to see if the spill page has been allocated, we don't need more than
+	** one across multiple SBAs.
+	*/
+	if (!prefetch_spill_page) {
+		char *spill_poison = "SBAIOMMU POISON";
+		int poison_size = 16;
+		void *poison_addr;
+									
+		prefetch_spill_page = (void *)__get_free_pages(GFP_KERNEL, get_order(IOVP_SIZE));
+		if (!prefetch_spill_page)
+			panic(PFX "Couldn't allocate PDIR spill page\n");
+
+		poison_addr = prefetch_spill_page;
+		for (; (u64)poison_addr < (u64)prefetch_spill_page + IOVP_SIZE ; poison_addr += poison_size)
+			(void)memcpy(poison_addr,spill_poison,poison_size);
+
+		prefetch_spill_page = (void *)virt_to_phys(prefetch_spill_page);
+
+		DBG_INIT("%s() prefetch spill addr: %p\n", __FUNCTION__, prefetch_spill_page);
+	}
+	/*
+  	** Set all the PDIR entries valid w/ the spill page as the target
+	*/
+	for (index = 0 ; index < (ioc->pdir_size / sizeof(u64)) ; index++)
+		((u64 *)ioc->pdir_base)[index] = (0x80000000000000FFULL | (u64)prefetch_spill_page);
+#endif
 }
 
 static void __init
@@ -1524,6 +1577,11 @@ ioc_resource_init(struct ioc *ioc)
 	/* Mark first bit busy - ie no IOVA 0 */
 	ioc->res_map[0] = 0x1;
 	ioc->pdir_base[0] = 0x8000000000000000ULL | ZX1_SBA_IOMMU_COOKIE;
+#endif
+#ifdef FULL_VALID_PDIR
+	/* Mark the last resource used so we don't prefetch beyond IOVA space */
+	ioc->res_map[ioc->res_size - 1] |= 0x80UL; /* res_map is chars */
+	ioc->pdir_base[(ioc->pdir_size / sizeof(u64)) - 1] = (0x80000000000000FFULL | (u64)prefetch_spill_page);
 #endif
 
 	DBG_INIT("%s() res_map %x %p\n", __FUNCTION__,
@@ -1608,15 +1666,23 @@ ioc_init(u64 hpa, void *handle)
 				(info->init)(ioc);
 		}
 	}
-	if (!ioc->name)
-		ioc->name = "Unknown";
+
+	if (!ioc->name) {
+		ioc->name = kmalloc(24, GFP_KERNEL);
+		if (ioc->name)
+			sprintf(ioc->name, "Unknown (%04x:%04x)",
+				ioc->func_id & 0xFFFF,
+				(ioc->func_id >> 16) & 0xFFFF);
+		else
+			ioc->name = "Unknown";
+	}
 
 	ioc_iova_init(ioc);
 	ioc_resource_init(ioc);
 	ioc_sac_init(ioc);
 
 	printk(KERN_INFO PFX
-		"Found %s IOC %d.%d HPA 0x%lx IOVA space %dMb at 0x%lx\n",
+		"%s %d.%d HPA 0x%lx IOVA space %dMb at 0x%lx\n",
 		ioc->name, (ioc->rev >> 4) & 0xF, ioc->rev & 0xF,
 		hpa, ioc->iov_size >> 20, ioc->ibase);
 
@@ -1861,7 +1927,6 @@ EXPORT_SYMBOL(sba_map_single);
 EXPORT_SYMBOL(sba_unmap_single);
 EXPORT_SYMBOL(sba_map_sg);
 EXPORT_SYMBOL(sba_unmap_sg);
-EXPORT_SYMBOL(sba_dma_address);
 EXPORT_SYMBOL(sba_dma_supported);
 EXPORT_SYMBOL(sba_alloc_consistent);
 EXPORT_SYMBOL(sba_free_consistent);

@@ -582,6 +582,7 @@
 	6003  CS 4614/22/24 [CrystalClear SoundFusion Audio Accelerator]
 		1013 4280  Crystal SoundFusion PCI Audio Accelerator
 		1681 0050  Hercules Game Theater XP
+		1681 a011  Hercules Fortissimo III 7.1
 	6004  CS 4614/22/24 [CrystalClear SoundFusion Audio Accelerator]
 	6005  Crystal CS4281 PCI Audio
 		1013 4281  Crystal CS4281 PCI Audio
@@ -1118,6 +1119,7 @@
 	0735  735 Host
 	0740  740 Host
 	0745  745 Host
+	0746  746 Host
 	0900  SiS900 10/100 Ethernet
 		1039 0900  SiS900 10/100 Ethernet Adapter
 	0961  SiS961 [MuTIOL Media IO]
@@ -2205,7 +2207,7 @@
 	1001  FDC 37C922
 	a011  83C170QF
 	b106  SMC34C90
-10b9  Acer Laboratories Inc. [ALi]
+10b9  ALi Corporation. [ALi]
 	0111  C-Media CMI8738/C3DX Audio Device (OEM)
 		10b9 0111  C-Media CMI8738/C3DX Audio Device (OEM)
 	1435  M1435
@@ -2227,6 +2229,7 @@
 	1541  M1541
 		10b9 1541  ALI M1541 Aladdin V/V+ AGP System Controller
 	1543  M1543
+	1563  M1563 South Bridge supporting HT Technology
 	1621  M1621
 	1631  ALI M1631 PCI North Bridge Aladdin Pro III
 	1632  M1632M Northbridge+Trident
@@ -2235,7 +2238,9 @@
 	1646  M1646 Northbridge+Trident
 	1647  M1647 Northbridge [MAGiK 1 / MobileMAGiK 1]
 	1651  M1651/M1651T Northbridge [Aladdin-Pro 5/5M,Aladdin-Pro 5T/5TM]
-	1671  M1671 Northbridge [Aladdin-P4]
+	1671  M1671 Super P4 Northbridge [AGP4X,PCI, and SDR/DDR]
+	1681  M1681 P4 Northbridge [AGP8X,HT, and SDR/DDR]
+	1687  M1687 K8 Northbridge [AGP8X and HT]
 	3141  M3141
 	3143  M3143
 	3145  M3145
@@ -2256,6 +2261,7 @@
 	5239  USB 2.0 Controller
 	5243  M1541 PCI to AGP Controller
 	5247  PCI to AGP Controller
+	5249  HTT to PCI Bridge
 	5251  M5251 P1394 OHCI 1.0 Controller
 	5253  M5253 P1394 OHCI 1.1 Controller
 	5261  M5261 Ethernet Controller
@@ -2617,6 +2623,7 @@
 10fc  I-O Data Device, Inc.
 # What's in the cardbus end of a Sony ACR-A01 card, comes with newer Vaio CD-RW drives
 	0003  Cardbus IDE Controller
+	0005  Cardbus SCSI CBSC II
 10fd  Soyo Computer, Inc
 10fe  Fast Multimedia AG
 10ff  NCube
@@ -2678,6 +2685,7 @@
 	0505  VT82C505
 	0561  VT82C561
 	0571  VT82C586B PIPC Bus Master IDE
+		1458 5002 GA-7VAX Mainboard
 	0576  VT82C576 3V [Apollo Master]
 	0585  VT82C585VP [Apollo VP1/VPX]
 	0586  VT82C586/A/B PCI-to-ISA [Apollo VP]
@@ -2726,6 +2734,7 @@
 		1462 3091  MS-6309 Onboard Audio
 		15dd 7609  Onboard Audio
 	3059  VT8233 AC97 Audio Controller
+		1458 a002  GA-7VAX Onboard Audio (Realtek ALC650) 
 	3065  VT6102 [Rhine-II]
 		1186 1400  DFE-530TX rev A
 		1186 1401  DFE-530TX rev B
@@ -2739,6 +2748,7 @@
 	3102  VT8662 Host Bridge
 	3103  VT8615 Host Bridge
 	3104  USB 2.0
+		1458 5004  GA-7VAX Mainboard
 	3109  VT8233C PCI to ISA Bridge
 	3112  VT8361 [KLE133] Host Bridge
 	3128  VT8753 [P4X266 AGP]
@@ -2747,6 +2757,9 @@
 	3148  P4M266 Host Bridge
 	3156  P/KN266 Host Bridge
 	3177  VT8233A ISA Bridge
+		1458 5001 GA-7VAX Mainboard
+	3189  VT8377 [KT400 AGP] Host Bridge
+		1458 5000 GA-7VAX Mainboard
 	5030  VT82C596 ACPI [Apollo PRO]
 	6100  VT85C100A [Rhine II]
 	8231  VT8231 [PCI-to-ISA Bridge]
@@ -2767,6 +2780,7 @@
 	b102  VT8362 AGP Bridge
 	b103  VT8615 AGP Bridge
 	b112  VT8361 [KLE133] AGP Bridge
+	b168  VT8235 PCI Bridge
 1107  Stratus Computers
 	0576  VIA VT82C570MV [Apollo] (Wrong vendor ID!)
 1108  Proteon, Inc.
@@ -3027,9 +3041,15 @@
 1144  Cincinnati Milacron
 	0001  Noservo controller
 1145  Workbit Corporation
+	f007  NinjaSCSI-32 KME
+	8007  NinjaSCSI-32 Workbit
+	f010  NinjaSCSI-32 Workbit
+	f012  NinjaSCSI-32 Logitec
+	f013  NinjaSCSI-32 Logitec
+	f015  NinjaSCSI-32 Melco
 1146  Force Computers
 1147  Interface Corp
-1148  Syskonnect (Schneider & Koch)
+1148  SysKonnect
 	4000  FDDI Adapter
 		0e11 b03b  Netelligent 100 FDDI DAS Fibre SC
 		0e11 b03c  Netelligent 100 FDDI SAS Fibre SC
@@ -3047,15 +3067,25 @@
 		1148 5843  FDDI SK-5843 (SK-NET FDDI-LP64)
 		1148 5844  FDDI SK-5844 (SK-NET FDDI-LP64 DAS)
 	4200  Token Ring adapter
-	4300  Gigabit Ethernet
-		1148 9821  SK-9821 (1000Base-T single link)
-		1148 9822  SK-9822 (1000Base-T dual link)
-		1148 9841  SK-9841 (1000Base-LX single link)
-		1148 9842  SK-9842 (1000Base-LX dual link)
-		1148 9843  SK-9843 (1000Base-SX single link)
-		1148 9844  SK-9844 (1000Base-SX dual link)
-		1148 9861  SK-9861 (1000Base-SX VF45 single link)
-		1148 9862  SK-9862 (1000Base-SX VF45 dual link)
+	4300  SK-98xx Gigabit Ethernet Server Adapter
+		1148 9821  SK-9821 Gigabit Ethernet 1000Base-T Server Adapter
+		1148 9822  SK-9822 Gigabit Ethernet 1000Base-T Dual Port Server Adapter
+		1148 9841  SK-9841 Gigabit Ethernet 1000Base-LX Server Adapter
+		1148 9842  SK-9842 Gigabit Ethernet 1000Base-LX Dual Port Server Adapter
+		1148 9843  SK-9843 Gigabit Ethernet 1000Base-SX Server Adapter
+		1148 9844  SK-9844 Gigabit Ethernet 1000Base-SX Dual Port Server Adapter
+		1148 9861  SK-9861 Gigabit Ethernet 1000Base-SX Server Adapter
+		1148 9862  SK-9862 Gigabit Ethernet 1000Base-SX Dual Port Server Adapter
+		1148 9871  SK-9871 Gigabit Ethernet 1000Base-ZX Server Adapter
+		1148 9872  SK-9872 Gigabit Ethernet 1000Base-ZX Dual Port Server Adapter
+	4320  SK-98xx Gigabit Ethernet Server Adapter
+		1148 9521  SK-9521 10/100/1000Base-T Adapter
+		1148 5021  SK-9821 V2.0 Gigabit Ethernet 10/100/1000Base-T Adapter
+		1148 5041  SK-9841 V2.0 Gigabit Ethernet 1000Base-LX Adapter
+		1148 5043  SK-9843 V2.0 Gigabit Ethernet 1000Base-SX Adapter
+		1148 5051  SK-9851 V2.0 Gigabit Ethernet 1000Base-SX Adapter
+		1148 5061  SK-9861 V2.0 Gigabit Ethernet 1000Base-SX Adapter
+		1148 5071  SK-9871 V2.0 Gigabit Ethernet 1000Base-ZX Adapter
 	4400  Gigabit Ethernet
 1149  Win System Corporation
 114a  VMIC
@@ -5063,6 +5093,9 @@
 	164d  NetXtreme BCM5702FE Gigabit Ethernet
 	16a6  NetXtreme BCM5702X Gigabit Ethernet
 	16a7  NetXtreme BCM5703X Gigabit Ethernet
+	16a8  NetXtreme BCM5704S Gigabit Ethernet
+	16c6  NetXtreme BCM5702A3 Gigabit Ethernet
+	16c7  NetXtreme BCM5703A3 Gigabit Ethernet
 	4212  BCM v.90 56k modem
 	5820  BCM5820 Crypto Accelerator
 	5821  BCM5821 Crypto Accelerator
@@ -5222,7 +5255,9 @@
 14f9  AG COMMUNICATIONS
 14fa  WANDEL & GOCHERMANN
 14fb  TRANSAS MARINE (UK) Ltd
-14fc  QUADRICS Supercomputers World
+14fc  Quadrics Ltd
+	0000  QsNet Cluster Interconnect
+	0001  QsNetII Cluster Interconnect
 14fd  JAPAN Computer Industry Inc
 14fe  ARCHTEK TELECOM Corp
 14ff  TWINHEAD INTERNATIONAL Corp
@@ -5512,6 +5547,7 @@
 15e8  National Datacomm Corp
 	0130  Wireless PCI Card
 15e9  Pacific Digital Corp
+	1841  ADMA-100 DiscStaQ ATA Controller
 15ea  Tokyo Denshi Sekei K.K.
 15eb  Drsearch GmbH
 15ec  Beckhoff GmbH

@@ -209,33 +209,42 @@ static void intr_callback( struct urb *urb )
 {
 	ether_dev_t *ether_dev = urb->context;
 	struct net_device *net;
-	__u8	*d;
+	struct usb_ctrlrequest *event;
+#define bNotification	bRequest
 
 	if ( !ether_dev )
 		return;
-	dbg("got intr callback");
+	net = ether_dev->net;
 	switch ( urb->status ) {
 		case USB_ST_NOERROR:
 			break;
 		case USB_ST_URB_KILLED:
-			return;
 		default:
-			dbg("intr status %d", urb->status);
+			dbg("%s intr status %d", net->name, urb->status);
+			return;
 	}
 
-	d = urb->transfer_buffer;
-	dbg("d: %x", d[0]);
-	net = ether_dev->net;
-	if ( d[0] & 0xfc ) {
-		ether_dev->stats.tx_errors++;
-		if ( d[0] & TX_UNDERRUN )
-			ether_dev->stats.tx_fifo_errors++;
-		if ( d[0] & (EXCESSIVE_COL | JABBER_TIMEOUT) )
-			ether_dev->stats.tx_aborted_errors++;
-		if ( d[0] & LATE_COL )
-			ether_dev->stats.tx_window_errors++;
-		if ( d[0] & (NO_CARRIER | LOSS_CARRIER) )
-			netif_carrier_off(net);
+	event = urb->transfer_buffer;
+	if (event->bRequestType != 0xA1)
+		dbg ("%s unknown event type %x", net->name,
+			event->bRequestType);
+	else switch (event->bNotification) {
+	case 0x00:		// NETWORK CONNECTION
+		dbg ("%s network %s", net->name,
+			event->wValue ? "connect" : "disconnect");
+		if (event->wValue)
+			netif_carrier_on (net);
+		else
+			netif_carrier_off (net);
+		break;
+	case 0x2A:		// CONNECTION SPEED CHANGE
+		dbg ("%s speed change", net->name);
+		/* ignoring eight bytes of data */
+		break;
+	case 0x01:		// RESPONSE AVAILABLE (none requested)
+	default:		// else undefined for CDC Ether
+		err ("%s illegal notification %02x", net->name,
+			event->bNotification);
 	}
 }
 
@@ -306,21 +315,7 @@ static void CDCEther_tx_timeout( struct net_device *net )
 static int CDCEther_start_xmit( struct sk_buff *skb, struct net_device *net )
 {
 	ether_dev_t	*ether_dev = net->priv;
-	int 	count;
 	int 	res;
-
-	// If we are told to transmit an ethernet frame that fits EXACTLY 
-	// into an integer number of USB packets, we force it to send one 
-	// more byte so the device will get a runt USB packet signalling the 
-	// end of the ethernet frame
-	if ( (skb->len) ^ (ether_dev->data_ep_out_size) ) {
-		// It was not an exact multiple
-		// no need to add anything extra
-		count = skb->len;
-	} else {
-		// Add one to make it NOT an exact multiple
-		count = skb->len + 1;
-	}
 
 	// Tell the kernel, "No more frames 'til we are done
 	// with this one.'
@@ -336,8 +331,11 @@ static int CDCEther_start_xmit( struct sk_buff *skb, struct net_device *net )
 			write_bulk_callback, ether_dev );
 
 	// Tell the URB how much it will be transporting today
-	ether_dev->tx_urb.transfer_buffer_length = count;
-	
+	ether_dev->tx_urb.transfer_buffer_length = skb->len;
+
+	/* Deal with the Zero Length packet problem, I hope */
+	ether_dev->tx_urb.transfer_flags |= USB_ZERO_PACKET;
+
 	// Send the URB on its merry way.
 	if ((res = usb_submit_urb(&ether_dev->tx_urb)))  {
 		// Hmm...  It didn't go. Tell someone...
@@ -401,10 +399,13 @@ static int CDCEther_open(struct net_device *net)
 			ether_dev->usb,
 			usb_rcvintpipe(ether_dev->usb, ether_dev->comm_ep_in),
 			ether_dev->intr_buff,
-			8, /* Transfer buffer length */
+			sizeof ether_dev->intr_buff,
 			intr_callback,
 			ether_dev,
-			ether_dev->intr_interval);
+			(ether_dev->usb->speed == USB_SPEED_HIGH)
+				? ( 1 << ether_dev->intr_interval)
+				: ether_dev->intr_interval
+			);
 		if ( (res = usb_submit_urb(&ether_dev->intr_urb)) ) {
 			warn("%s failed intr_urb %d", __FUNCTION__, res );
 		}
@@ -562,7 +563,7 @@ static void CDCEther_set_multicast( struct net_device *net )
 			MODE_FLAG_DIRECTED |
 			MODE_FLAG_BROADCAST |
 			MODE_FLAG_MULTICAST;
-		buff = kmalloc(6 * net->mc_count, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
+		buff = kmalloc(6 * net->mc_count, GFP_ATOMIC);
 		for (i = 0, mclist = net->mc_list;
 			mclist && i < net->mc_count;
 			i++, mclist = mclist->next) {

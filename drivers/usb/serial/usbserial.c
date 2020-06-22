@@ -1188,8 +1188,10 @@ static void * usb_serial_probe(struct usb_device *dev, unsigned int ifnum,
 	     (dev->descriptor.idProduct == ATEN_PRODUCT_ID))) {
 		if (ifnum == 1) {
 			/* check out the endpoints of the other interface*/
-			interface = &dev->actconfig->interface[ifnum ^ 1];
-			iface_desc = &interface->altsetting[0];
+			struct usb_interface *other_iface;
+
+			other_iface = &dev->actconfig->interface[ifnum ^ 1];
+			iface_desc = &other_iface->altsetting[0];
 			for (i = 0; i < iface_desc->bNumEndpoints; ++i) {
 				endpoint = &iface_desc->endpoint[i];
 				if ((endpoint->bEndpointAddress & 0x80) &&

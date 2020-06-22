@@ -7,7 +7,7 @@
  *  Pentium III FXSR, SSE support
  *	Gareth Hughes <gareth@valinux.com>, May 2000
  *
- *  $Id: traps.c,v 1.51 2002/09/12 12:57:46 ak Exp $
+ *  $Id: traps.c,v 1.62 2003/03/14 16:06:35 ak Exp $
  */
 
 /*
@@ -71,6 +71,12 @@ asmlinkage void machine_check(void);
 asmlinkage void spurious_interrupt_bug(void);
 asmlinkage void call_debug(void);
 
+static inline void conditional_sti(struct pt_regs *regs)
+{
+	if (regs->eflags & X86_EFLAGS_IF)
+		__sti();
+}
+
 extern char iret_address[];
 
 struct notifier_block *die_chain;
@@ -95,7 +101,7 @@ int printk_address(unsigned long address)
 	} 
 	if (!strcmp(modname, "kernel"))
 		modname = delim = ""; 		
-        return printk("[%016lx%s%s%s%s%+ld]",
+        return printk("[<%016lx>]{%s%s%s%s%+ld}",
 		      address,delim,modname,delim,symname,address-symstart); 
 } 
 #else
@@ -143,7 +149,7 @@ static inline int kernel_text_address(unsigned long addr)
 
 #endif
 
-static inline unsigned long *in_exception_stack(int cpu, unsigned long stack) 
+unsigned long *in_exception_stack(int cpu, unsigned long stack) 
 { 
 	int k;
 	for (k = 0; k < N_EXCEPTION_STACKS; k++) {
@@ -159,13 +165,12 @@ void show_trace(unsigned long *stack)
 {
 	unsigned long addr;
 	unsigned long *irqstack, *irqstack_end, *estack_end;
-	/* FIXME: should read the cpuid from the APIC; to still work with bogus %gs */
-	const int cpu = smp_processor_id();
+	const int cpu = safe_smp_processor_id();
 	int i;
 
 	printk("\nCall Trace: ");
 
-	i = 1;
+	i = 12;
 	estack_end = in_exception_stack(cpu, (unsigned long)stack); 
 	if (estack_end) { 
 		while (stack < estack_end) { 
@@ -243,7 +248,7 @@ void show_stack(unsigned long * rsp)
 {
 	unsigned long *stack;
 	int i;
-	const int cpu = smp_processor_id();
+	const int cpu = safe_smp_processor_id();
 	unsigned long *irqstack_end = (unsigned long *) (cpu_pda[cpu].irqstackptr);
 	unsigned long *irqstack = (unsigned long *) (cpu_pda[cpu].irqstackptr - IRQSTACKSIZE);    
 
@@ -271,22 +276,12 @@ void show_stack(unsigned long * rsp)
 	show_trace((unsigned long *)rsp);
 }
 
-void dump_stack(void)
-{
-	show_stack(0);
-} 
-
 void show_registers(struct pt_regs *regs)
 {
 	int i;
 	int in_kernel = 1;
 	unsigned long rsp;
-#ifdef CONFIG_SMP
-	/* For SMP should get the APIC id here, just to protect against corrupted GS */ 
-	const int cpu = smp_processor_id(); 
-#else
-	const int cpu = 0;
-#endif	
+	const int cpu = safe_smp_processor_id(); 
 	struct task_struct *cur = cpu_pda[cpu].pcurrent; 
 
 	rsp = (unsigned long) (&regs->rsp);
@@ -350,13 +345,12 @@ int die_owner = -1;
 void die(const char * str, struct pt_regs * regs, long err)
 {
 	int cpu;
-	struct die_args args = { regs, str, err };
 	console_verbose();
-	notifier_call_chain(&die_chain,  DIE_DIE, &args); 
 	bust_spinlocks(1);
 	handle_BUG(regs);		
 	printk(KERN_EMERG "%s: %04lx\n", str, err & 0xffff);
-	cpu = smp_processor_id(); 
+ 	notify_die(DIE_OOPS, (char *)str, regs, err, 255, SIGSEGV);
+	cpu = safe_smp_processor_id(); 
 	/* racy, but better than risking deadlock. */ 
 	__cli();
 	if (!spin_trylock(&die_lock)) { 
@@ -369,7 +363,6 @@ void die(const char * str, struct pt_regs * regs, long err)
 	show_registers(regs);
 	bust_spinlocks(0);
 	spin_unlock_irq(&die_lock);
-	notify_die(DIE_OOPS, (char *)str, regs, err);
 	do_exit(SIGSEGV);
 }
 
@@ -391,10 +384,12 @@ static inline unsigned long get_cr2(void)
 static void do_trap(int trapnr, int signr, char *str, 
 		    struct pt_regs * regs, long error_code, siginfo_t *info)
 {
+	conditional_sti(regs);
+
 #if defined(CONFIG_CHECKING) && defined(CONFIG_LOCAL_APIC)
 	{ 
 		unsigned long gs; 
-		struct x8664_pda *pda = cpu_pda + hard_smp_processor_id(); 
+		struct x8664_pda *pda = cpu_pda + safe_smp_processor_id(); 
 		rdmsrl(MSR_GS_BASE, gs); 
 		if (gs != (unsigned long)pda) { 
 			wrmsrl(MSR_GS_BASE, pda); 
@@ -407,7 +402,7 @@ static void do_trap(int trapnr, int signr, char *str,
 		struct task_struct *tsk = current;
 		tsk->thread.error_code = error_code;
 		tsk->thread.trap_no = trapnr;
-		if (exception_trace)
+		if (exception_trace && trapnr != 3)
 			printk("%s[%d] trap %s rip:%lx rsp:%lx error:%lx\n",
 			       tsk->comm, tsk->pid, str,
 			       regs->rip,regs->rsp,error_code); 
@@ -424,11 +419,6 @@ static void do_trap(int trapnr, int signr, char *str,
 		unsigned long fixup = search_exception_table(regs->rip);
 		if (fixup) {
 			extern int exception_trace; 
-			if (0 && exception_trace)
-	       printk(KERN_ERR
-	             "%s: fixed kernel exception at %lx err:%ld\n",
-	             current->comm, regs->rip, error_code);
-		
 			regs->rip = fixup;
 		} else	
 			die(str, regs, error_code);
@@ -439,6 +429,8 @@ static void do_trap(int trapnr, int signr, char *str,
 #define DO_ERROR(trapnr, signr, str, name) \
 asmlinkage void do_##name(struct pt_regs * regs, long error_code) \
 { \
+	if (notify_die(DIE_TRAP, str, regs, error_code, trapnr, signr) == NOTIFY_BAD) \
+		return; \
 	do_trap(trapnr, signr, str, regs, error_code, NULL); \
 }
 
@@ -450,10 +442,13 @@ asmlinkage void do_##name(struct pt_regs * regs, long error_code) \
 	info.si_errno = 0; \
 	info.si_code = sicode; \
 	info.si_addr = (void *)siaddr; \
+	if (notify_die(DIE_TRAP, str, regs, error_code, trapnr, signr)==NOTIFY_BAD) \
+		return; \
 	do_trap(trapnr, signr, str, regs, error_code, &info); \
 }
 
 DO_ERROR_INFO( 0, SIGFPE,  "divide error", divide_error, FPE_INTDIV, regs->rip)
+DO_ERROR( 3, SIGTRAP, "int3", int3); 
 DO_ERROR( 4, SIGSEGV, "overflow", overflow)
 DO_ERROR( 5, SIGSEGV, "bounds", bounds)
 DO_ERROR_INFO( 6, SIGILL,  "invalid operand", invalid_op, ILL_ILLOPN, regs->rip)
@@ -466,25 +461,25 @@ DO_ERROR(12, SIGBUS,  "stack segment", stack_segment)
 DO_ERROR_INFO(17, SIGBUS, "alignment check", alignment_check, BUS_ADRALN, get_cr2())
 DO_ERROR(18, SIGSEGV, "reserved", reserved)
 
-asmlinkage void do_int3(struct pt_regs * regs, long error_code)
-{
-	if (notify_die(DIE_INT3, "int3", regs, error_code) == NOTIFY_BAD)
-		return;
-	do_trap(3, SIGTRAP, "int3", regs, error_code, NULL);
-}
-
 extern void dump_pagetable(unsigned long);
 
 asmlinkage void do_general_protection(struct pt_regs * regs, long error_code)
 {
+	conditional_sti(regs);
+
 #ifdef CONFIG_CHECKING
 	{ 
 		unsigned long gs; 
-		struct x8664_pda *pda = cpu_pda + stack_smp_processor_id(); 
+		struct x8664_pda *pda = cpu_pda + safe_smp_processor_id(); 
 		rdmsrl(MSR_GS_BASE, gs); 
 		if (gs != (unsigned long)pda) { 
 			wrmsrl(MSR_GS_BASE, pda); 
+			/* Avoid wakeup in printk in case this was triggered
+			   by the segment reloads in __switch_to. Otherwise
+			   the wake_up could deadlock on scheduler locks. */
+			oops_in_progress++;
 			printk("general protection handler: wrong gs %lx expected %p\n", gs, pda);
+			oops_in_progress--; 
 		}
 	}
 #endif
@@ -505,15 +500,11 @@ asmlinkage void do_general_protection(struct pt_regs * regs, long error_code)
 		unsigned long fixup;
 		fixup = search_exception_table(regs->rip);
 		if (fixup) {
-			extern int exception_trace; 
-			if (exception_trace)
-				printk(KERN_ERR
-			       "%s: fixed kernel exception at %lx err:%ld\n",
-				       current->comm, regs->rip, error_code);
-
 			regs->rip = fixup;
 			return;
 		}
+		notify_die(DIE_GPF, "general protection fault", regs, error_code,
+			   13, SIGSEGV); 
 		die("general protection fault", regs, error_code);
 	}
 }
@@ -552,7 +543,7 @@ asmlinkage void do_nmi(struct pt_regs * regs)
 {
 	unsigned char reason = inb(0x61);
 
-	++nmi_count(smp_processor_id());
+	++nmi_count(safe_smp_processor_id());
 	
 	if (!(reason & 0xc0)) {
 #if CONFIG_X86_LOCAL_APIC
@@ -561,16 +552,14 @@ asmlinkage void do_nmi(struct pt_regs * regs)
 		 * so it must be the NMI watchdog.
 		 */
 		if (nmi_watchdog) {
-			nmi_watchdog_tick(regs);
+			nmi_watchdog_tick(regs, reason);
 			return;
 		}
 #endif
-		if (notify_die(DIE_NMI, "nmi", regs, reason) == NOTIFY_BAD)
-			return;
 		unknown_nmi_error(reason, regs);
 		return;
 	}
-	if (notify_die(DIE_NMI, "nmi", regs, reason) == NOTIFY_BAD)
+	if (notify_die(DIE_NMI, "nmi", regs, reason, 2, SIGINT) == NOTIFY_BAD)
 		return; 
 	if (reason & 0x80)
 		mem_parity_error(reason, regs);
@@ -593,10 +582,15 @@ asmlinkage void do_debug(struct pt_regs * regs, long error_code)
 	struct task_struct *tsk = current;
 	siginfo_t info;
 
+	asm("movq %%db6,%0" : "=r" (condition));
+
+	conditional_sti(regs);
+
 #ifdef CONFIG_CHECKING
 	{ 
+		/* XXX: interaction with debugger - could destroy gs */
 		unsigned long gs; 
-		struct x8664_pda *pda = cpu_pda + stack_smp_processor_id(); 
+		struct x8664_pda *pda = cpu_pda + safe_smp_processor_id(); 
 		rdmsrl(MSR_GS_BASE, gs); 
 		if (gs != (unsigned long)pda) { 
 			wrmsrl(MSR_GS_BASE, pda); 
@@ -604,16 +598,6 @@ asmlinkage void do_debug(struct pt_regs * regs, long error_code)
 		}
 	}
 #endif
-
-	asm("movq %%db6,%0" : "=r" (condition));
-
-	if (notify_die(DIE_DEBUG, "debug", regs, error_code) == NOTIFY_BAD)
-		return; 
-
-	/* If the user set TF, it's simplest to clear it right away. */
-	/* AK: dubious check, likely wrong */
-	if ((regs->cs & 3) == 0 && (regs->eflags & TF_MASK))
-		goto clear_TF;
 
 	/* Mask out spurious debug traps due to lazy DR7 setting */
 	if (condition & (DR_TRAP0|DR_TRAP1|DR_TRAP2|DR_TRAP3)) {
@@ -647,14 +631,19 @@ asmlinkage void do_debug(struct pt_regs * regs, long error_code)
 	info.si_signo = SIGTRAP;
 	info.si_errno = 0;
 	info.si_code = TRAP_BRKPT;
-	info.si_addr = ((regs->cs & 3) == 0) ? (void *)tsk->thread.rip : 
-	                                        (void *)regs->rip;
+	if ((regs->cs & 3) == 0) 
+		goto clear_dr7; 
+
+	info.si_addr = (void *)regs->rip;
 	force_sig_info(SIGTRAP, &info, tsk);	
 clear_dr7:
-	asm("movq %0,%%db7"::"r"(0UL));
+	asm volatile("movq %0,%%db7"::"r"(0UL));
+	notify_die(DIE_DEBUG, "debug", regs, error_code, 1, SIGTRAP);
 	return;
 
 clear_TF:
+	/* XXX: could cause spurious errors */
+	if (notify_die(DIE_DEBUG, "debug2", regs, error_code, 1, SIGTRAP) != NOTIFY_BAD)
 	regs->eflags &= ~TF_MASK;
 	return;
 }
@@ -721,6 +710,7 @@ void math_error(void *rip)
 
 asmlinkage void do_coprocessor_error(struct pt_regs * regs, long error_code)
 {
+	conditional_sti(regs);
 	math_error((void *)regs->rip);
 }
 
@@ -780,6 +770,7 @@ static inline void simd_math_error(void *rip)
 asmlinkage void do_simd_coprocessor_error(struct pt_regs * regs,
 					  long error_code)
 {
+	conditional_sti(regs);
 	simd_math_error((void *)regs->rip);
 }
 
@@ -800,7 +791,7 @@ asmlinkage void math_state_restore(void)
 	clts();			/* Allow maths ops (or we recurse) */
 
 	if (!me->used_math)
-		init_fpu();        
+		init_fpu(me);
 	restore_fpu_checking(&me->thread.i387.fxsave);
 	me->flags |= PF_USEDFPU;	/* So we fxsave on switch_to() */
 }
@@ -812,7 +803,7 @@ asmlinkage void math_emulate(void)
 
 void do_call_debug(struct pt_regs *regs) 
 { 
-	notify_die(DIE_CALL, "debug call", regs, 0); 
+	notify_die(DIE_CALL, "debug call", regs, 0, 255, SIGINT); 
 } 
 
 #ifndef CONFIG_MCE
@@ -849,10 +840,6 @@ void __init trap_init(void)
 	set_intr_gate(IA32_SYSCALL_VECTOR, ia32_syscall);
 #endif
 
-	set_intr_gate(KDB_VECTOR, call_debug);
-       
-	notify_die(DIE_TRAPINIT, "traps initialized", 0, 0); 
-	
 	/*
 	 * Should be a barrier for any external CPU state.
 	 */

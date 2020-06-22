@@ -89,7 +89,7 @@ static volatile unsigned long cpu_callin_map;
 struct smp_boot_data smp_boot_data __initdata;
 
 /* Set when the idlers are all forked */
-volatile int smp_threads_ready;
+int smp_threads_ready;
 
 unsigned long ap_wakeup_vector = -1; /* External Int use to wakeup APs */
 
@@ -321,7 +321,7 @@ smp_callin (void)
 	extern void ia64_init_itm(void);
 
 #ifdef CONFIG_PERFMON
-	extern void perfmon_init_percpu(void);
+	extern void pfm_init_percpu(void);
 #endif
 
 	cpuid = smp_processor_id();
@@ -356,7 +356,7 @@ smp_callin (void)
 #endif
 
 #ifdef CONFIG_PERFMON
-	perfmon_init_percpu();
+	pfm_init_percpu();
 #endif
 
 	local_irq_enable();

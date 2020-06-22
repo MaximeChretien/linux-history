@@ -140,6 +140,22 @@ struct request_queue
 	wait_queue_head_t	wait_for_requests[2];
 };
 
+#define blk_queue_plugged(q)	(q)->plugged
+#define blk_fs_request(rq)	((rq)->cmd == READ || (rq)->cmd == WRITE)
+#define blk_queue_empty(q)	list_empty(&(q)->queue_head)
+
+extern inline int rq_data_dir(struct request *rq)
+{
+	if (rq->cmd == READ)
+		return READ;
+	else if (rq->cmd == WRITE)
+		return WRITE;
+	else {
+		BUG();
+		return -1; /* ahem */
+	}
+}
+
 extern unsigned long blk_max_low_pfn, blk_max_pfn;
 
 #define BLK_BOUNCE_HIGH		(blk_max_low_pfn << PAGE_SHIFT)

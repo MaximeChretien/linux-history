@@ -9,6 +9,8 @@
 
 O_TARGET := mm.o
 
+export-objs := init.o
+
 obj-y	 := init.o fault.o tlb.o extable.o
 
 include $(TOPDIR)/Rules.make

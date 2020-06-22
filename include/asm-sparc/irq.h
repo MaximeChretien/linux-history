@@ -19,7 +19,7 @@
 BTFIXUPDEF_CALL(char *, __irq_itoa, unsigned int)
 #define __irq_itoa(irq) BTFIXUP_CALL(__irq_itoa)(irq)
 
-#define NR_IRQS    15
+#define NR_IRQS    16
 
 /* Dave Redman (djhr@tadpole.co.uk)
  * changed these to function pointers.. it saves cycles and will allow
@@ -45,7 +45,7 @@ BTFIXUPDEF_CALL(void, load_profile_irq, int, unsigned int)
 #define clear_profile_irq(cpu) BTFIXUP_CALL(clear_profile_irq)(cpu)
 #define load_profile_irq(cpu,limit) BTFIXUP_CALL(load_profile_irq)(cpu,limit)
 
-extern void (*init_timers)(void (*lvl10_irq)(int, void *, struct pt_regs *));
+extern void (*sparc_init_timers)(void (*lvl10_irq)(int, void *, struct pt_regs *));
 extern void claim_ticker14(void (*irq_handler)(int, void *, struct pt_regs *),
 			   int irq,
 			   unsigned int timeout);

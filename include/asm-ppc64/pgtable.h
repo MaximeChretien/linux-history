@@ -100,9 +100,9 @@
 /* preserving _PAGE_SECONDARY | _PAGE_GROUP_IX */
 #define _PAGE_CHG_MASK	(PAGE_MASK | _PAGE_ACCESSED | _PAGE_DIRTY | _PAGE_HPTEFLAGS)
 
-#define _PAGE_BASE	_PAGE_PRESENT | _PAGE_ACCESSED | _PAGE_COHERENT
+#define _PAGE_BASE	(_PAGE_PRESENT | _PAGE_ACCESSED | _PAGE_COHERENT)
 
-#define _PAGE_WRENABLE	_PAGE_RW | _PAGE_DIRTY 
+#define _PAGE_WRENABLE	(_PAGE_RW | _PAGE_DIRTY)
 
 /* __pgprot defined in asm-ppc64/page.h */
 #define PAGE_NONE	__pgprot(_PAGE_PRESENT | _PAGE_ACCESSED)
@@ -415,7 +415,11 @@ extern void build_valid_hpte(unsigned long vsid, unsigned long ea,
  */
 #define kern_addr_valid(addr)	(1)
 
-#define io_remap_page_range remap_page_range 
+#ifdef CONFIG_PPC_ISERIES
+#define io_remap_page_range remap_page_range
+#else
+extern int io_remap_page_range(unsigned long from, unsigned long to, unsigned long size, pgprot_t prot);
+#endif
 
 /*
  * No page table caches to initialise

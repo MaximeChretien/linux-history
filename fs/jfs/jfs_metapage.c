@@ -276,8 +276,7 @@ struct metapage *__get_metapage(struct inode *inode, unsigned long lblock,
 	unsigned long page_index;
 	unsigned long page_offset;
 
-	jFYI(1, ("__get_metapage: inode = 0x%p, lblock = 0x%lx\n",
-		 inode, lblock));
+	jfs_info("__get_metapage: inode = 0x%p, lblock = 0x%lx", inode, lblock);
 
 	if (absolute)
 		mapping = inode->i_sb->s_bdev->bd_inode->i_mapping;
@@ -298,7 +297,7 @@ struct metapage *__get_metapage(struct inode *inode, unsigned long lblock,
 			clear_bit(META_discard, &mp->flag);
 		}
 		mp->count++;
-		jFYI(1, ("__get_metapage: found 0x%p, in hash\n", mp));
+		jfs_info("__get_metapage: found 0x%p, in hash", mp);
 		assert(mp->logical_size == size);
 		lock_metapage(mp);
 		spin_unlock(&meta_lock);
@@ -310,7 +309,7 @@ struct metapage *__get_metapage(struct inode *inode, unsigned long lblock,
 		    l2bsize;
 		if ((page_offset + size) > PAGE_CACHE_SIZE) {
 			spin_unlock(&meta_lock);
-			jERROR(1, ("MetaData crosses page boundary!!\n"));
+			jfs_err("MetaData crosses page boundary!!");
 			return NULL;
 		}
 		
@@ -352,41 +351,36 @@ struct metapage *__get_metapage(struct inode *inode, unsigned long lblock,
 		mp->page = 0;
 		mp->logical_size = size;
 		add_to_hash(mp, hash_ptr);
-		if (!absolute)
-			list_add(&mp->inode_list, &JFS_IP(inode)->mp_list);
 		spin_unlock(&meta_lock);
 
 		if (new) {
-			jFYI(1,
-			     ("__get_metapage: Calling grab_cache_page\n"));
+			jfs_info("__get_metapage: Calling grab_cache_page");
 			mp->page = grab_cache_page(mapping, page_index);
 			if (!mp->page) {
-				jERROR(1, ("grab_cache_page failed!\n"));
+				jfs_err("grab_cache_page failed!");
 				goto freeit;
-			} else
+			} else {
 				INCREMENT(mpStat.pagealloc);
+				UnlockPage(mp->page);
+			}
 		} else {
-			jFYI(1,
-			     ("__get_metapage: Calling read_cache_page\n"));
+			jfs_info("__get_metapage: Calling read_cache_page");
 			mp->page = read_cache_page(mapping, lblock,
 				    (filler_t *)mapping->a_ops->readpage, NULL);
 			if (IS_ERR(mp->page)) {
-				jERROR(1, ("read_cache_page failed!\n"));
+				jfs_err("read_cache_page failed!");
 				goto freeit;
 			} else
 				INCREMENT(mpStat.pagealloc);
-			lock_page(mp->page);
 		}
 		mp->data = kmap(mp->page) + page_offset;
 	}
-	jFYI(1, ("__get_metapage: returning = 0x%p\n", mp));
+	jfs_info("__get_metapage: returning = 0x%p", mp);
 	return mp;
 
 freeit:
 	spin_lock(&meta_lock);
 	remove_from_hash(mp, hash_ptr);
-	if (!absolute)
-		list_del(&mp->inode_list);
 	__free_metapage(mp);
 	spin_unlock(&meta_lock);
 	return NULL;
@@ -416,7 +410,7 @@ static void __write_metapage(struct metapage * mp)
 	unsigned long page_offset;
 	int rc;
 
-	jFYI(1, ("__write_metapage: mp = 0x%p\n", mp));
+	jfs_info("__write_metapage: mp = 0x%p", mp);
 
 	if (test_bit(META_discard, &mp->flag)) {
 		/*
@@ -430,12 +424,14 @@ static void __write_metapage(struct metapage * mp)
 	page_offset =
 	    (mp->index - (page_index << l2BlocksPerPage)) << l2bsize;
 
+	lock_page(mp->page);
 	rc = mp->mapping->a_ops->prepare_write(NULL, mp->page, page_offset,
 					       page_offset +
 					       mp->logical_size);
 	if (rc) {
-		jERROR(1, ("prepare_write return %d!\n", rc));
+		jfs_err("prepare_write return %d!", rc);
 		ClearPageUptodate(mp->page);
+		UnlockPage(mp->page);
 		kunmap(mp->page);
 		clear_bit(META_dirty, &mp->flag);
 		return;
@@ -444,12 +440,13 @@ static void __write_metapage(struct metapage * mp)
 					      page_offset +
 					      mp->logical_size);
 	if (rc) {
-		jERROR(1, ("commit_write returned %d\n", rc));
+		jfs_err("commit_write returned %d", rc);
 	}
 
+	UnlockPage(mp->page);
 	clear_bit(META_dirty, &mp->flag);
 
-	jFYI(1, ("__write_metapage done\n"));
+	jfs_info("__write_metapage done");
 }
 
 static inline void sync_metapage(struct metapage *mp)
@@ -473,9 +470,7 @@ void release_metapage(struct metapage * mp)
 {
 	struct jfs_log *log;
 
-	jFYI(1,
-	     ("release_metapage: mp = 0x%p, flag = 0x%lx\n", mp,
-	      mp->flag));
+	jfs_info("release_metapage: mp = 0x%p, flag = 0x%lx", mp, mp->flag);
 
 	spin_lock(&meta_lock);
 	if (test_bit(META_forced, &mp->flag)) {
@@ -491,8 +486,6 @@ void release_metapage(struct metapage * mp)
 		spin_unlock(&meta_lock);
 	} else {
 		remove_from_hash(mp, meta_hash(mp->mapping, mp->index));
-		if (!test_bit(META_absolute, &mp->flag))
-			list_del(&mp->inode_list);
 		spin_unlock(&meta_lock);
 
 		if (mp->page) {
@@ -500,7 +493,6 @@ void release_metapage(struct metapage * mp)
 			mp->data = 0;
 			if (test_bit(META_dirty, &mp->flag))
 				__write_metapage(mp);
-			UnlockPage(mp->page);
 			if (test_bit(META_sync, &mp->flag)) {
 				sync_metapage(mp);
 				clear_bit(META_sync, &mp->flag);
@@ -509,7 +501,7 @@ void release_metapage(struct metapage * mp)
 			if (test_bit(META_discard, &mp->flag)) {
 				lock_page(mp->page);
 				block_flushpage(mp->page, 0);
-				unlock_page(mp->page);
+				UnlockPage(mp->page);
 			}
 
 			page_cache_release(mp->page);
@@ -532,7 +524,6 @@ void release_metapage(struct metapage * mp)
 
 		free_metapage(mp);
 	}
-	jFYI(1, ("release_metapage: done\n"));
 }
 
 void __invalidate_metapages(struct inode *ip, s64 addr, int len)
@@ -540,7 +531,8 @@ void __invalidate_metapages(struct inode *ip, s64 addr, int len)
 	struct metapage **hash_ptr;
 	unsigned long lblock;
 	int l2BlocksPerPage = PAGE_CACHE_SHIFT - ip->i_blkbits;
-	struct address_space *mapping = ip->i_mapping;
+	/* All callers are interested in block device's mapping */
+	struct address_space *mapping = ip->i_sb->s_bdev->bd_inode->i_mapping;
 	struct metapage *mp;
 	struct page *page;
 
@@ -556,10 +548,9 @@ void __invalidate_metapages(struct inode *ip, s64 addr, int len)
 		if (mp) {
 			set_bit(META_discard, &mp->flag);
 			spin_unlock(&meta_lock);
-			/*
-			 * If in the metapage cache, we've got the page locked
-			 */
+			lock_page(mp->page);
 			block_flushpage(mp->page, 0);
+			UnlockPage(mp->page);
 		} else {
 			spin_unlock(&meta_lock);
 			page = find_lock_page(mapping, lblock>>l2BlocksPerPage);
@@ -569,27 +560,6 @@ void __invalidate_metapages(struct inode *ip, s64 addr, int len)
 			}
 		}
 	}
-}
-
-void invalidate_inode_metapages(struct inode *inode)
-{
-	struct list_head *ptr;
-	struct metapage *mp;
-
-	spin_lock(&meta_lock);
-	list_for_each(ptr, &JFS_IP(inode)->mp_list) {
-		mp = list_entry(ptr, struct metapage, inode_list);
-		clear_bit(META_dirty, &mp->flag);
-		set_bit(META_discard, &mp->flag);
-		kunmap(mp->page);
-		UnlockPage(mp->page);
-		page_cache_release(mp->page);
-		INCREMENT(mpStat.pagefree);
-		mp->data = 0;
-		mp->page = 0;
-	}
-	spin_unlock(&meta_lock);
-	truncate_inode_pages(inode->i_mapping, 0);
 }
 
 #ifdef CONFIG_JFS_STATISTICS

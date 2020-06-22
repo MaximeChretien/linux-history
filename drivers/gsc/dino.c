@@ -436,7 +436,7 @@ ilr_again:
 	if (mask) {
 		if (--ilr_loop > 0)
 			goto ilr_again;
-		printk("Dino %lx: stuck interrupt %d\n", dino_dev->hba.base_addr, mask);
+		printk("Dino %lx: IRQ base %d, stuck IRQ lines? 0x%x\n", dino_dev->hba.base_addr, dino_dev->dino_region->data.irqbase, mask);
 	}
 }
 

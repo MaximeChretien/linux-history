@@ -29,8 +29,7 @@
 #ifndef MAC_NCR5380_H
 #define MAC_NCR5380_H
 
-#define MACSCSI_PUBLIC_RELEASE 1
-
+#define MACSCSI_PUBLIC_RELEASE 2
 
 #ifndef ASM
 int macscsi_abort (Scsi_Cmnd *);
@@ -65,6 +64,8 @@ int macscsi_proc_info (char *buffer, char **start, off_t offset,
 #include <scsi/scsicam.h>
 
 #define MAC_NCR5380 {						\
+proc_name:		"Mac5380",					\
+proc_info:		macscsi_proc_info,                              \
 name:			"Macintosh NCR5380 SCSI",			\
 detect:			macscsi_detect,					\
 release:		macscsi_release,	/* Release */		\
@@ -95,6 +96,9 @@ use_clustering:		DISABLE_CLUSTERING				\
 #define NCR5380_read(reg) macscsi_read(_instance, reg)
 #define NCR5380_write(reg, value) macscsi_write(_instance, reg, value)
 
+#define NCR5380_pread 	macscsi_pread
+#define NCR5380_pwrite 	macscsi_pwrite
+	
 #define NCR5380_intr macscsi_intr
 #define NCR5380_queue_command macscsi_queue_command
 #define NCR5380_abort macscsi_abort

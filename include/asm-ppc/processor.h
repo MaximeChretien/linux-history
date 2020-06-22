@@ -1,6 +1,3 @@
-/*
- * BK Id: %F% %I% %G% %U% %#%
- */
 #ifdef __KERNEL__
 #ifndef __ASM_PPC_PROCESSOR_H
 #define __ASM_PPC_PROCESSOR_H
@@ -12,6 +9,7 @@
 #define current_text_addr() ({ __label__ _l; _l: &&_l;})
 
 #include <linux/config.h>
+#include <linux/stringify.h>
 
 #include <asm/ptrace.h>
 #include <asm/types.h>
@@ -452,7 +450,8 @@
 #define	ICMP	SPRN_ICMP	/* Instruction TLB Compare Register */
 #define	IMISS	SPRN_IMISS	/* Instruction TLB Miss Register */
 #define	IMMR	SPRN_IMMR      	/* PPC 860/821 Internal Memory Map Register */
-#define	L2CR	SPRN_L2CR    	/* PPC 750 L2 control register */
+#define	L2CR	SPRN_L2CR    	/* Classic PPC L2 cache control register */
+#define	L3CR	SPRN_L3CR	/* PPC 745x L3 cache control register */
 #define	LR	SPRN_LR
 #define	PVR	SPRN_PVR	/* Processor Version */
 #define	RPA	SPRN_RPA	/* Required Physical Address Register */
@@ -565,22 +564,19 @@ n:
 
 /* Macros for setting and retrieving special purpose registers */
 
-#define stringify(s)	tostring(s)
-#define tostring(s)	#s
-
 #define mfdcr(rn)	({unsigned int rval; \
-			asm volatile("mfdcr %0," stringify(rn) \
+			asm volatile("mfdcr %0," __stringify(rn) \
 				     : "=r" (rval)); rval;})
-#define mtdcr(rn, v)	asm volatile("mtdcr " stringify(rn) ",%0" : : "r" (v))
+#define mtdcr(rn, v)	asm volatile("mtdcr " __stringify(rn) ",%0" : : "r" (v))
 
 #define mfmsr()		({unsigned int rval; \
 			asm volatile("mfmsr %0" : "=r" (rval)); rval;})
 #define mtmsr(v)	asm volatile("mtmsr %0" : : "r" (v))
 
 #define mfspr(rn)	({unsigned int rval; \
-			asm volatile("mfspr %0," stringify(rn) \
+			asm volatile("mfspr %0," __stringify(rn) \
 				     : "=r" (rval)); rval;})
-#define mtspr(rn, v)	asm volatile("mtspr " stringify(rn) ",%0" : : "r" (v))
+#define mtspr(rn, v)	asm volatile("mtspr " __stringify(rn) ",%0" : : "r" (v))
 
 /* Segment Registers */
 
@@ -626,7 +622,7 @@ void release_thread(struct task_struct *);
 /*
  * Create a new kernel thread.
  */
-extern long kernel_thread(int (*fn)(void *), void *arg, unsigned long flags);
+extern long arch_kernel_thread(int (*fn)(void *), void *arg, unsigned long flags);
 
 /*
  * Bus types
@@ -659,10 +655,10 @@ typedef struct {
 
 struct thread_struct {
 	unsigned long	ksp;		/* Kernel stack pointer */
-	unsigned long	wchan;		/* Event task is sleeping on */
 	struct pt_regs	*regs;		/* Pointer to saved register state */
 	mm_segment_t	fs;		/* for get_fs() validation */
 	void		*pgdir;		/* root of page-table tree */
+	int		fpexc_mode;	/* floating-point exception mode */
 	signed long     last_syscall;
 	double		fpr[32];	/* Complete floating point set */
 	unsigned long	fpscr_pad;	/* fpr ... fpscr must be contiguous */
@@ -677,13 +673,10 @@ struct thread_struct {
 #define INIT_SP		(sizeof(init_stack) + (unsigned long) &init_stack)
 
 #define INIT_THREAD  { \
-	INIT_SP, /* ksp */ \
-	0, /* wchan */ \
-	0, /* regs */ \
-	KERNEL_DS, /*fs*/ \
-	swapper_pg_dir, /* pgdir */ \
-	0, /* last_syscall */ \
-	{0}, 0, 0 \
+	.ksp = INIT_SP, \
+	.fs = KERNEL_DS, \
+	.pgdir = swapper_pg_dir, \
+	.fpexc_mode = MSR_FE0 | MSR_FE1, \
 }
 
 /*
@@ -701,6 +694,13 @@ unsigned long get_wchan(struct task_struct *p);
 
 #define KSTK_EIP(tsk)  ((tsk)->thread.regs? (tsk)->thread.regs->nip: 0)
 #define KSTK_ESP(tsk)  ((tsk)->thread.regs? (tsk)->thread.regs->gpr[1]: 0)
+
+/* Get/set floating-point exception mode */
+#define GET_FPEXC_CTL(tsk, adr)	get_fpexc_mode((tsk), (adr))
+#define SET_FPEXC_CTL(tsk, val)	set_fpexc_mode((tsk), (val))
+
+extern int get_fpexc_mode(struct task_struct *tsk, unsigned long adr);
+extern int set_fpexc_mode(struct task_struct *tsk, unsigned int val);
 
 /*
  * NOTE! The task struct and the stack go together

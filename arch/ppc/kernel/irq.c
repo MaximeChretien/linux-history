@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  *  arch/ppc/kernel/irq.c
  *
  *  Derived from arch/i386/kernel/irq.c
@@ -176,15 +173,6 @@ setup_irq(unsigned int irq, struct irqaction * new)
 	register_irq_proc(irq);
 	return 0;
 }
-
-#if (defined(CONFIG_8xx) || defined(CONFIG_8260))
-/* Name change so we can catch standard drivers that potentially mess up
- * the internal interrupt controller on 8xx and 8260.  Just bear with me,
- * I don't like this either and I am searching a better solution.  For
- * now, this is what I need. -- Dan
- */
-#define request_irq	request_8xxirq
-#endif
 
 void free_irq(unsigned int irq, void* dev_id)
 {
@@ -528,27 +516,21 @@ int do_IRQ(struct pt_regs *regs)
 	int irq, first = 1;
         hardirq_enter( cpu );
 
-	for (;;) {
-		/*
-		 * Every arch is required to implement ppc_md.get_irq.
-		 * This function will either return an irq number or -1 to
-		 * indicate there are no more pending.  But the first time
-		 * through the loop this means there wasn't and IRQ pending.
-		 * The value -2 is for buggy hardware and means that this IRQ
-		 * has already been handled. -- Tom
-		 */
-		irq = ppc_md.get_irq( regs );
-
-		if (irq >= 0)
-			ppc_irq_dispatch_handler( regs, irq );
-		else {
-			if (irq != -2 && first)
-				/* That's not SMP safe ... but who cares ? */
-				ppc_spurious_interrupts++;
-			break;
-		}
+	/*
+	 * Every platform is required to implement ppc_md.get_irq.
+	 * This function will either return an irq number or -1 to
+	 * indicate there are no more pending.  But the first time
+	 * through the loop this means there wasn't an IRQ pending.
+	 * The value -2 is for buggy hardware and means that this IRQ
+	 * has already been handled. -- Tom
+	 */
+	while ((irq = ppc_md.get_irq(regs)) >= 0) {
+		ppc_irq_dispatch_handler(regs, irq);
 		first = 0;
 	}
+	if (irq != -2 && first)
+		/* That's not SMP safe ... but who cares ? */
+		ppc_spurious_interrupts++;
         hardirq_exit( cpu );
 
 	if (softirq_pending(cpu))

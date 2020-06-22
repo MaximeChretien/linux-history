@@ -3,6 +3,9 @@
  *	       Hans-Peter Nilsson (hp@axis.com)
  *
  * $Log: uaccess.h,v $
+ * Revision 1.9  2002/11/20 18:20:17  hp
+ * Make all static inline functions extern inline.
+ *
  * Revision 1.8  2001/10/29 13:01:48  bjornw
  * Removed unused variable tmp2 in strnlen_user
  *
@@ -146,25 +149,6 @@ extern unsigned long search_exception_table(unsigned long);
   __get_user_nocheck((x),(ptr),sizeof(*(ptr)))
 #define __put_user(x,ptr) \
   __put_user_nocheck((__typeof__(*(ptr)))(x),(ptr),sizeof(*(ptr)))
-
-/*
- * The "xxx_ret" versions return constant specified in third argument, if
- * something bad happens. These macros can be optimized for the
- * case of just returning from the function xxx_ret is used.
- */
-
-#define put_user_ret(x,ptr,ret) \
-	do { if (put_user(x,ptr)) return ret; } while (0)
-
-#define get_user_ret(x,ptr,ret) \
-	do { if (get_user(x,ptr)) return ret; } while (0)
-
-#define __put_user_ret(x,ptr,ret) \
-	do { if (__put_user(x,ptr)) return ret; } while (0)
-
-#define __get_user_ret(x,ptr,ret) \
-	do { if (__get_user(x,ptr)) return ret; } while (0)
-
 
 extern long __put_user_bad(void);
 
@@ -321,7 +305,7 @@ extern unsigned long __do_clear_user(void *to, unsigned long n);
  * (without the null byte)
  */
 
-static inline long         
+extern inline long         
 __do_strncpy_from_user(char *dst, const char *src, long count)
 {
 	long res;
@@ -381,7 +365,7 @@ __do_strncpy_from_user(char *dst, const char *src, long count)
 	return res;
 }
 
-static inline unsigned long
+extern inline unsigned long
 __generic_copy_to_user(void *to, const void *from, unsigned long n)
 {
 	if (access_ok(VERIFY_WRITE, to, n))
@@ -389,7 +373,7 @@ __generic_copy_to_user(void *to, const void *from, unsigned long n)
 	return n;
 }
 
-static inline unsigned long
+extern inline unsigned long
 __generic_copy_from_user(void *to, const void *from, unsigned long n)
 {
 	if (access_ok(VERIFY_READ, from, n))
@@ -397,7 +381,7 @@ __generic_copy_from_user(void *to, const void *from, unsigned long n)
 	return n;
 }
 
-static inline unsigned long
+extern inline unsigned long
 __generic_clear_user(void *to, unsigned long n)
 {
 	if (access_ok(VERIFY_WRITE, to, n))
@@ -405,13 +389,13 @@ __generic_clear_user(void *to, unsigned long n)
 	return n;
 }
 
-static inline long
+extern inline long
 __strncpy_from_user(char *dst, const char *src, long count)
 {
 	return __do_strncpy_from_user(dst, src, count);
 }
 
-static inline long
+extern inline long
 strncpy_from_user(char *dst, const char *src, long count)
 {
 	long res = -EFAULT;
@@ -871,7 +855,7 @@ strncpy_from_user(char *dst, const char *src, long count)
 /* Note that if these expand awfully if made into switch constructs, so
    don't do that.  */
 
-static inline unsigned long
+extern inline unsigned long
 __constant_copy_from_user(void *to, const void *from, unsigned long n)
 {
 	unsigned long ret = 0;
@@ -921,7 +905,7 @@ __constant_copy_from_user(void *to, const void *from, unsigned long n)
 
 /* Ditto, don't make a switch out of this.  */
 
-static inline unsigned long
+extern inline unsigned long
 __constant_copy_to_user(void *to, const void *from, unsigned long n)
 {
 	unsigned long ret = 0;
@@ -971,7 +955,7 @@ __constant_copy_to_user(void *to, const void *from, unsigned long n)
 
 /* No switch, please.  */
 
-static inline unsigned long
+extern inline unsigned long
 __constant_clear_user(void *to, unsigned long n)
 {
 	unsigned long ret = 0;
@@ -1017,28 +1001,23 @@ __constant_clear_user(void *to, unsigned long n)
  __constant_copy_to_user(to, from, n) :		\
  __generic_copy_to_user(to, from, n))
 
-#define copy_to_user_ret(to,from,n,retval) \
-	do { if (copy_to_user(to,from,n)) return retval; } while (0)
-#define copy_from_user_ret(to,from,n,retval) \
-	do { if (copy_from_user(to,from,n)) return retval; } while (0)
-
 /* We let the __ versions of copy_from/to_user inline, because they're often
  * used in fast paths and have only a small space overhead.
  */
 
-static inline unsigned long
+extern inline unsigned long
 __generic_copy_from_user_nocheck(void *to, const void *from, unsigned long n)
 {
 	return __copy_user_zeroing(to,from,n);
 }
 
-static inline unsigned long
+extern inline unsigned long
 __generic_copy_to_user_nocheck(void *to, const void *from, unsigned long n)
 {
 	return __copy_user(to,from,n);
 }
 
-static inline unsigned long
+extern inline unsigned long
 __generic_clear_user_nocheck(void *to, unsigned long n)
 {
 	return __do_clear_user(to,n);
@@ -1057,7 +1036,7 @@ __generic_clear_user_nocheck(void *to, unsigned long n)
  * or 0 for error.  Return a value greater than N if too long.
  */
 
-static inline long
+extern inline long
 strnlen_user(const char *s, long n)
 {
 	long res, tmp1;

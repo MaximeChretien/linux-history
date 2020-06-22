@@ -29,7 +29,7 @@
     Reformatted, fixing spelling etc as I went
     Removed IRQ 0-15 assumption
 
-    Jeff Garzik <jgarzik@mandrakesoft.com> :
+    Jeff Garzik <jgarzik@pobox.com> :
     Updated to use new PCI driver API.
     Resource usage cleanups.
     Report driver version to user.
@@ -48,6 +48,10 @@
     Use time_after for jiffies calculation.  Added ethtool
     support.  Updated PCI resource allocation.  Do not
     forget to unmap PCI mapped skbs.
+    
+    Alan Cox <alan@redhat.com>
+    Added new PCI identifiers provided by Clear Zhang at ALi 
+    for their 1563 ethernet device.
 
     TODO
 
@@ -1977,6 +1981,7 @@ static struct pci_device_id dmfe_pci_tbl[] __devinitdata = {
 	{ 0x1282, 0x9102, PCI_ANY_ID, PCI_ANY_ID, 0, 0, PCI_DM9102_ID },
 	{ 0x1282, 0x9100, PCI_ANY_ID, PCI_ANY_ID, 0, 0, PCI_DM9100_ID },
 	{ 0x1282, 0x9009, PCI_ANY_ID, PCI_ANY_ID, 0, 0, PCI_DM9009_ID },
+	{ 0x10B9, 0x5261, PCI_ANY_ID, PCI_ANY_ID, 0, 0, PCI_DM9102_ID },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, dmfe_pci_tbl);

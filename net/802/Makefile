@@ -9,7 +9,7 @@
 
 O_TARGET := 802.o
 
-export-objs = llc_macinit.o p8022.o psnap.o
+export-objs = llc_macinit.o p8022.o psnap.o fc.o
 
 obj-y	= p8023.o
 

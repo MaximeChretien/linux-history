@@ -95,7 +95,8 @@
 #define FB_ACCEL_SIS_GLAMOUR    36	/* SiS 300/630/540              */
 #define FB_ACCEL_3DLABS_PERMEDIA3 37	/* 3Dlabs Permedia 3		*/
 #define FB_ACCEL_ATI_RADEON	38	/* ATI Radeon family		*/
-
+#define FB_ACCEL_SIS_GLAMOUR_2  40	/* SiS 315, 650, 740		*/
+#define FB_ACCEL_SIS_XABRE	41	/* SiS 330 ("Xabre")		*/
 
 #define FB_ACCEL_NEOMAGIC_NM2070 90	/* NeoMagic NM2070              */
 #define FB_ACCEL_NEOMAGIC_NM2090 91	/* NeoMagic NM2090              */

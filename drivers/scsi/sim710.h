@@ -14,7 +14,6 @@ int sim710_abort(Scsi_Cmnd * SCpnt);
 int sim710_bus_reset(Scsi_Cmnd * SCpnt);
 int sim710_dev_reset(Scsi_Cmnd * SCpnt);
 int sim710_host_reset(Scsi_Cmnd * SCpnt);
-int sim710_biosparam(Disk *, kdev_t, int*);
 #ifdef MODULE
 int sim710_release(struct Scsi_Host *);
 #else

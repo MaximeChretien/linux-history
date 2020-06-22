@@ -982,7 +982,7 @@ dgrs_download(struct net_device *dev0)
 {
 	DGRS_PRIV	*priv0 = (DGRS_PRIV *) dev0->priv;
 	int		is;
-	int		i;
+	unsigned long	i;
 
 	static int	iv2is[16] = {
 				0, 0, 0, ES4H_IS_INT3,
@@ -1141,10 +1141,10 @@ int __init
 dgrs_probe1(struct net_device *dev)
 {
 	DGRS_PRIV	*priv = (DGRS_PRIV *) dev->priv;
-	int		i;
+	unsigned long	i;
 	int		rc;
 
-	printk("%s: Digi RightSwitch io=%lx mem=%lx irq=%d plx=%lx dma=%lx\n",
+	printk(KERN_INFO "%s: Digi RightSwitch io=%lx mem=%lx irq=%d plx=%lx dma=%lx\n",
 		dev->name, dev->base_addr, dev->mem_start, dev->irq,
 		priv->plxreg, priv->plxdma);
 
@@ -1158,7 +1158,7 @@ dgrs_probe1(struct net_device *dev)
 	/*
 	 * Get ether address of board
 	 */
-	printk("%s: Ethernet address", dev->name);
+	printk(KERN_INFO "%s: Ethernet address", dev->name);
 	memcpy(dev->dev_addr, priv->port->ethaddr, 6);
 	for (i = 0; i < 6; ++i)
 		printk("%c%2.2x", i ? ':' : ' ', dev->dev_addr[i]);

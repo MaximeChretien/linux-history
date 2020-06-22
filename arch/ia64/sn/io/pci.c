@@ -230,7 +230,7 @@ static struct pci_ops snia64_pci_ops = {
 void __init
 sn_pci_find_bios(void)
 {
-	extern struct pci_ops pci_conf;
+	extern struct pci_ops *pci_root_ops;
 	/*
 	 * Go initialize our IO Infrastructure ..
 	 */
@@ -239,7 +239,7 @@ sn_pci_find_bios(void)
 	sgi_master_io_infr_init();
 
 	/* sn_io_infrastructure_init(); */
-	pci_conf = snia64_pci_ops;
+	pci_root_ops = &snia64_pci_ops;
 }
 
 void
@@ -276,15 +276,9 @@ pci_fixup_ioc3(struct pci_dev *d)
                 d->resource[i].flags = 0UL;
         }
 
-	/*
-	 * Hardcode Device 4 register(IOC3 is in Slot 4) to set the 
-	 * DEV_DIRECT bit.  This will not work if IOC3 is not on Slot 
-	 * 4.
-	 */
-	DBG("pci_fixup_ioc3: FIXME .. need to take NASID into account when setting IOC3 devreg 0x%x\n", *(volatile u32 *)0xc0000a000f000220);
-
- 	*(volatile u32 *)0xc0000a000f000220 |= 0x90000; 
-
+#ifdef CONFIG_IA64_SGI_SN1
+	*(volatile u32 *)0xc0000a000f000220 |= 0x90000;
+#endif
         d->subsystem_vendor = 0;
         d->subsystem_device = 0;
 

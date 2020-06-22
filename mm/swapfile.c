@@ -915,6 +915,11 @@ asmlinkage long sys_swapon(const char * specialfile, int swap_flags)
 		struct block_device_operations *bdops;
 		devfs_handle_t de;
 
+		if (is_mounted(dev)) {
+			error = -EBUSY;
+			goto bad_swap_2;
+		}
+
 		p->swap_device = dev;
 		set_blocksize(dev, PAGE_SIZE);
 		
@@ -1170,47 +1175,6 @@ out:
 
 bad_file:
 	printk(KERN_ERR "swap_dup: %s%08lx\n", Bad_file, entry.val);
-	goto out;
-}
-
-/*
- * Page lock needs to be held in all cases to prevent races with
- * swap file deletion.
- */
-int swap_count(struct page *page)
-{
-	struct swap_info_struct * p;
-	unsigned long offset, type;
-	swp_entry_t entry;
-	int retval = 0;
-
-	entry.val = page->index;
-	if (!entry.val)
-		goto bad_entry;
-	type = SWP_TYPE(entry);
-	if (type >= nr_swapfiles)
-		goto bad_file;
-	p = type + swap_info;
-	offset = SWP_OFFSET(entry);
-	if (offset >= p->max)
-		goto bad_offset;
-	if (!p->swap_map[offset])
-		goto bad_unused;
-	retval = p->swap_map[offset];
-out:
-	return retval;
-
-bad_entry:
-	printk(KERN_ERR "swap_count: null entry!\n");
-	goto out;
-bad_file:
-	printk(KERN_ERR "swap_count: %s%08lx\n", Bad_file, entry.val);
-	goto out;
-bad_offset:
-	printk(KERN_ERR "swap_count: %s%08lx\n", Bad_offset, entry.val);
-	goto out;
-bad_unused:
-	printk(KERN_ERR "swap_count: %s%08lx\n", Unused_offset, entry.val);
 	goto out;
 }
 

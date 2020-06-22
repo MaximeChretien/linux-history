@@ -38,6 +38,7 @@ if [ "$CONFIG_PPC_ISERIES" = "y" ]; then
 else
 bool 'MsChunks Physical to Absolute address translation support' CONFIG_MSCHUNKS
 tristate 'Firmware flash interface' CONFIG_RTAS_FLASH
+tristate 'Scanlog Dump interface' CONFIG_SCANLOG
 fi
 
 
@@ -227,6 +228,8 @@ endmenu
 source drivers/media/Config.in
 source drivers/usb/Config.in
 fi
+
+source lib/Config.in
 
 mainmenu_option next_comment
 comment 'Kernel hacking'

@@ -1,32 +1,23 @@
 /******************************************************************************
  *
  * Name:	skqueue.c
- * Project:	PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.14 $
- * Date:	$Date: 1998/10/15 15:11:35 $
+ * Project:	GEnesis, PCI Gigabit Ethernet Adapter
+ * Version:	$Revision: 1.18 $
+ * Date:	$Date: 2002/05/07 14:11:11 $
  * Purpose:	Management of an event queue.
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1989-1998 SysKonnect,
+ *	(C)Copyright 1998,1999 SysKonnect,
  *	a business unit of Schneider & Koch & Co. Datensysteme GmbH.
- *	All Rights Reserved
  *
- *	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF SYSKONNECT
- *	The copyright notice above does not evidence any
- *	actual or intended publication of such source code.
+ *	This program is free software; you can redistribute it and/or modify
+ *	it under the terms of the GNU General Public License as published by
+ *	the Free Software Foundation; either version 2 of the License, or
+ *	(at your option) any later version.
  *
- *	This Module contains Proprietary Information of SysKonnect
- *	and should be treated as Confidential.
- *
- *	The information in this file is provided for the exclusive use of
- *	the licensees of SysKonnect.
- *	Such users have the right to use, modify, and incorporate this code
- *	into products for purposes authorized by the license agreement
- *	provided they include this notice and the associated copyright notice
- *	with any such product.
  *	The information in this file is provided "AS IS" without warranty.
  *
  ******************************************************************************/
@@ -36,6 +27,18 @@
  * History:
  *
  *	$Log: skqueue.c,v $
+ *	Revision 1.18  2002/05/07 14:11:11  rwahl
+ *	Fixed Watcom Precompiler error.
+ *	
+ *	Revision 1.17  2002/03/25 10:06:41  mkunz
+ *	SkIgnoreEvent deleted
+ *	
+ *	Revision 1.16  2002/03/15 10:51:59  mkunz
+ *	Added event classes for link aggregation
+ *	
+ *	Revision 1.15  1999/11/22 13:36:29  cgoos
+ *	Changed license header to GPL.
+ *	
  *	Revision 1.14  1998/10/15 15:11:35  gklug
  *	fix: ID_sccs to SysKonnectFileId
  *	
@@ -88,7 +91,7 @@
 	Event queue and dispatcher
 */
 static const char SysKonnectFileId[] =
-	"$Header: /usr56/projects/ge/schedule/skqueue.c,v 1.14 1998/10/15 15:11:35 gklug Exp $" ;
+	"$Header: /usr56/projects/ge/schedule/skqueue.c,v 1.18 2002/05/07 14:11:11 rwahl Exp $" ;
 
 #include "h/skdrv1st.h"		/* Driver Specific Definitions */
 #include "h/skqueue.h"		/* Queue Definitions */
@@ -168,9 +171,7 @@ SK_IOC	Ioc)	/* Io context */
 	while (pEv != pAC->Event.EvPut) {
 		PRINTF("dispatch Class %d Event %d\n",pEv->Class,pEv->Event) ;
 		switch(Class = pEv->Class) {
-		case SKGE_DRV :		/* Driver Event */
-			Rtv = SkDrvEvent(pAC,Ioc,pEv->Event,pEv->Para);
-			break ;
+#ifndef SK_USE_LAC_EV        
 		case SKGE_RLMT :	/* RLMT Event */
 			Rtv = SkRlmtEvent(pAC,Ioc,pEv->Event,pEv->Para);
 			break ;
@@ -180,9 +181,33 @@ SK_IOC	Ioc)	/* Io context */
 		case SKGE_PNMI :
 			Rtv = SkPnmiEvent(pAC,Ioc,pEv->Event,pEv->Para);
 			break ;
+#endif /* SK_USE_LAC_EV */
+		case SKGE_DRV :		/* Driver Event */
+			Rtv = SkDrvEvent(pAC,Ioc,pEv->Event,pEv->Para);
+			break ;
+#ifndef SK_USE_SW_TIMER        
 		case SKGE_HWAC :
 			Rtv = SkGeSirqEvent(pAC,Ioc,pEv->Event,pEv->Para);
 			break ;
+#else /* !SK_USE_SW_TIMER */
+        case SKGE_SWT : 
+			Rtv = SkSwtEvent(pAC,Ioc,pEv->Event,pEv->Para);
+			break ;
+#endif /* !SK_USE_SW_TIMER */
+#ifdef SK_USE_LAC_EV        
+		case SKGE_LACP :
+			Rtv = SkLacpEvent(pAC,Ioc,pEv->Event,pEv->Para);
+			break ;
+		case SKGE_RSF :
+			Rtv = SkRsfEvent(pAC,Ioc,pEv->Event,pEv->Para);
+			break ;
+		case SKGE_MARKER :
+			Rtv = SkMarkerEvent(pAC,Ioc,pEv->Event,pEv->Para);
+			break ;
+		case SKGE_FD :
+			Rtv = SkFdEvent(pAC,Ioc,pEv->Event,pEv->Para);
+			break ;
+#endif /* SK_USE_LAC_EV */
 #ifdef	SK_USE_CSUM
 		case SKGE_CSUM :
 			Rtv = SkCsEvent(pAC,Ioc,pEv->Event,pEv->Para);

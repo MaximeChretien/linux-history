@@ -30,14 +30,12 @@ MOD_DESTDIR = $(shell cd .. && $(CONFIG_SHELL) $(TOPDIR)/scripts/pathdown.sh)
 
 include $(TOPDIR)/Rules.make
 
-aic7xxx.o: $(obj-aic7xxx)
+aic7xxx_core.o: aic7xxx_seq.h
+$(obj-aic7xxx): aic7xxx_reg.h
+aic7xxx.o: aic7xxx_seq.h aic7xxx_reg.h $(obj-aic7xxx)
 	$(LD) $(LD_RFLAG) -r -o $@ $(obj-aic7xxx)
 
 ifeq ($(CONFIG_AIC7XXX_BUILD_FIRMWARE),y)
-aic7xxx_core.o: aic7xxx_seq.h
-
-$(obj-aic7xxx): aic7xxx_reg.h
-
 aic7xxx_seq.h aic7xxx_reg.h: aic7xxx.seq aic7xxx.reg aicasm/aicasm
 	aicasm/aicasm -I. -r aic7xxx_reg.h -o aic7xxx_seq.h aic7xxx.seq
 endif

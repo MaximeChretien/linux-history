@@ -50,6 +50,7 @@
 #include <linux/icmpv6.h>
 #include <linux/sysctl.h>
 #include <linux/dnotify.h>
+#include <linux/netfilter_ipv4/ip_tables.h>
 
 #include <asm/types.h>
 #include <asm/ipc.h>
@@ -781,7 +782,7 @@ asmlinkage int sys32_ipc (u32 call, int first, int second, int third, u32 ptr, u
 			err = do_sys32_semctl (first, second, third, (void *)AA(ptr));
 			goto out;
 		default:
-			err = -EINVAL;
+			err = -ENOSYS;
 			goto out;
 		};
 	if (call <= MSGCTL) 
@@ -800,7 +801,7 @@ asmlinkage int sys32_ipc (u32 call, int first, int second, int third, u32 ptr, u
 			err = do_sys32_msgctl (first, second, (void *)AA(ptr));
 			goto out;
 		default:
-			err = -EINVAL;
+			err = -ENOSYS;
 			goto out;
 		}
 	if (call <= SHMCTL) 
@@ -819,11 +820,11 @@ asmlinkage int sys32_ipc (u32 call, int first, int second, int third, u32 ptr, u
 			err = do_sys32_shmctl (first, second, (void *)AA(ptr));
 			goto out;
 		default:
-			err = -EINVAL;
+			err = -ENOSYS;
 			goto out;
 		}
 
-	err = -EINVAL;
+	err = -ENOSYS;
 
 out:
 	return err;
@@ -1150,7 +1151,7 @@ out_nofree:
 	/* VERIFY_WRITE actually means a read, as we write to user space */
 	if ((retval + (type == VERIFY_WRITE)) > 0)
 		dnotify_parent(file->f_dentry,
-			(type == VERIFY_WRITE) ? DN_MODIFY : DN_ACCESS);
+			(type == VERIFY_WRITE) ? DN_ACCESS : DN_MODIFY);
 
 	return retval;
 }
@@ -2618,10 +2619,28 @@ static void cmsg32_recvmsg_fixup(struct msghdr *kmsg, unsigned long orig_cmsg_up
 		__get_user(kcmsg32->cmsg_type, &ucmsg->cmsg_type);
 
 		clen64 = kcmsg32->cmsg_len;
-		copy_from_user(CMSG32_DATA(kcmsg32), CMSG_DATA(ucmsg),
-			       clen64 - CMSG_ALIGN(sizeof(*ucmsg)));
-		clen32 = ((clen64 - CMSG_ALIGN(sizeof(*ucmsg))) +
-			  CMSG32_ALIGN(sizeof(struct cmsghdr32)));
+		if (kcmsg32->cmsg_level == SOL_SOCKET &&
+			kcmsg32->cmsg_type == SO_TIMESTAMP) {
+			struct timeval tv;
+			struct timeval32 *tv32;
+
+			if (clen64 != CMSG_LEN(sizeof(struct timeval))) {
+				kfree(workbuf);
+				goto fail;
+			}
+
+			copy_from_user(&tv, CMSG_DATA(ucmsg), sizeof(tv));
+			tv32 = (struct timeval32 *)CMSG32_DATA(kcmsg32);
+			tv32->tv_sec = tv.tv_sec;
+			tv32->tv_usec = tv.tv_usec;
+			clen32 = sizeof(*tv32) +
+				  CMSG32_ALIGN(sizeof(struct cmsghdr32));
+		} else {
+			copy_from_user(CMSG32_DATA(kcmsg32), CMSG_DATA(ucmsg),
+				       clen64 - CMSG_ALIGN(sizeof(*ucmsg)));
+			clen32 = ((clen64 - CMSG_ALIGN(sizeof(*ucmsg))) +
+				  CMSG32_ALIGN(sizeof(struct cmsghdr32)));
+		}
 		kcmsg32->cmsg_len = clen32;
 
 		ucmsg = (struct cmsghdr *) (((char *)ucmsg) + CMSG_ALIGN(clen64));
@@ -2777,6 +2796,78 @@ out:
 extern asmlinkage int sys_setsockopt(int fd, int level, int optname,
 				     char *optval, int optlen);
 
+static int do_netfilter_replace(int fd, int level, int optname,
+				char *optval, int optlen)
+{
+	struct ipt_replace32 {
+		char name[IPT_TABLE_MAXNAMELEN];
+		__u32 valid_hooks;
+		__u32 num_entries;
+		__u32 size;
+		__u32 hook_entry[NF_IP_NUMHOOKS];
+		__u32 underflow[NF_IP_NUMHOOKS];
+		__u32 num_counters;
+		__u32 counters;
+		struct ipt_entry entries[0];
+	} *repl32 = (struct ipt_replace32 *)optval;
+	struct ipt_replace *krepl;
+	struct ipt_counters *counters32;
+	__u32 origsize;
+	unsigned int kreplsize, kcountersize;
+	mm_segment_t old_fs;
+	int ret;
+
+	if (optlen < sizeof(repl32))
+		return -EINVAL;
+
+	if (copy_from_user(&origsize,
+			&repl32->size,
+			sizeof(origsize)))
+		return -EFAULT;
+
+	kreplsize = sizeof(*krepl) + origsize;
+	kcountersize = krepl->num_counters * sizeof(struct ipt_counters);
+
+	/* Hack: Causes ipchains to give correct error msg --RR */
+	if (optlen != kreplsize)
+		return -ENOPROTOOPT;
+
+	krepl = (struct ipt_replace *)kmalloc(kreplsize, GFP_KERNEL);
+	if (krepl == NULL)
+		return -ENOMEM;
+
+	if (copy_from_user(krepl, optval, kreplsize)) {
+		kfree(krepl);
+		return -EFAULT;
+	}
+
+	counters32 = (struct ipt_counters *)AA(
+		((struct ipt_replace32 *)krepl)->counters);
+
+	kcountersize = krepl->num_counters * sizeof(struct ipt_counters);
+	krepl->counters = (struct ipt_counters *)kmalloc(
+					kcountersize, GFP_KERNEL);
+	if (krepl->counters == NULL) {
+		kfree(krepl);
+		return -ENOMEM;
+	}
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+	ret = sys_setsockopt(fd, level, optname,
+			     (char *)krepl, kreplsize);
+	set_fs(old_fs);
+
+	if (ret == 0 &&
+		copy_to_user(counters32, krepl->counters, kcountersize))
+			ret = -EFAULT;
+
+	kfree(krepl->counters);
+	kfree(krepl);
+
+	return ret;
+}
+
 static int do_set_attach_filter(int fd, int level, int optname,
 				char *optval, int optlen)
 {
@@ -2870,6 +2961,9 @@ static int do_set_sock_timeout(int fd, int level, int optname, char *optval, int
 asmlinkage int sys32_setsockopt(int fd, int level, int optname,
 				char *optval, int optlen)
 {
+	if (optname == IPT_SO_SET_REPLACE)
+		return do_netfilter_replace(fd, level, optname,
+					    optval, optlen);
 	if (optname == SO_ATTACH_FILTER)
 		return do_set_attach_filter(fd, level, optname,
 					    optval, optlen);

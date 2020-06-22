@@ -64,6 +64,9 @@ enum fixed_addresses {
 #ifndef CONFIG_X86_F00F_WORKS_OK
 	FIX_F00F,
 #endif
+#ifdef CONFIG_X86_SUMMIT
+	FIX_CYCLONE_TIMER, /*cyclone timer register*/
+#endif 
 #ifdef CONFIG_HIGHMEM
 	FIX_KMAP_BEGIN,	/* reserved pte's for temporary kernel mappings */
 	FIX_KMAP_END = FIX_KMAP_BEGIN+(KM_TYPE_NR*NR_CPUS)-1,

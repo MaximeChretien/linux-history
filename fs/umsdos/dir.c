@@ -654,6 +654,9 @@ char * umsdos_d_path(struct dentry *dentry, char * buffer, int len)
 	path = __d_path(dentry, current->fs->rootmnt, dentry->d_sb->s_root, current->fs->rootmnt, buffer, len); /* FIXME: current->fs->rootmnt */
 	spin_unlock(&dcache_lock);
 
+	if (IS_ERR(path))
+		return path;
+
 	if (*path == '/')
 		path++; /* skip leading '/' */
 

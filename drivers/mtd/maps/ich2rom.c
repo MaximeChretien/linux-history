@@ -2,7 +2,7 @@
  * ich2rom.c
  *
  * Normal mappings of chips in physical memory
- * $Id: ich2rom.c,v 1.1 2002/01/10 22:59:13 eric Exp $
+ * $Id: ich2rom.c,v 1.2 2002/10/18 22:45:48 eric Exp $
  */
 
 #include <linux/module.h>
@@ -261,6 +261,9 @@ static void __devexit ich2rom_remove_one (struct pci_dev *pdev)
 static struct pci_device_id ich2rom_pci_tbl[] __devinitdata = {
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801BA_0, 
 	  PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801CA_0, 
+	  PCI_ANY_ID, PCI_ANY_ID, },
+	{ 0, },
 };
 
 MODULE_DEVICE_TABLE(pci, ich2rom_pci_tbl);
@@ -278,7 +281,14 @@ static struct pci_dev *mydev;
 int __init init_ich2rom(void)
 {
 	struct pci_dev *pdev;
-	pdev = pci_find_device(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801BA_0, 0);
+	struct pci_device_id *id;
+	pdev = 0;
+	for(id = ich2rom_pci_tbl; id->vendor; id++) {
+		pdev = pci_find_device(id->vendor, id->device, 0);
+		if (pdev) {
+			break;
+		}
+	}
 	if (pdev) {
 		mydev = pdev;
 		return ich2rom_init_one(pdev, &ich2rom_pci_tbl[0]);

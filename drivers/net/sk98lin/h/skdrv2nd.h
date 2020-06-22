@@ -2,8 +2,8 @@
  *
  * Name:	skdrv2nd.h
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.12.2.1 $
- * Date:	$Date: 2001/03/12 16:50:59 $
+ * Version:	$Revision: 1.12.2.2 $
+ * Date:	$Date: 2001/09/05 12:14:50 $
  * Purpose:	Second header file for driver and all other modules
  *
  ******************************************************************************/
@@ -27,6 +27,9 @@
  * History:
  *
  *	$Log: skdrv2nd.h,v $
+ *	Revision 1.12.2.2  2001/09/05 12:14:50  mlindner
+ *	add: New hardware revision int
+ *	
  *	Revision 1.12.2.1  2001/03/12 16:50:59  mlindner
  *	chg: kernel 2.4 adaption
  *	
@@ -202,7 +205,7 @@ struct s_RxD {
 	SK_U32		VDataLow;	/* Receive buffer Addr, low dword */
 	SK_U32		VDataHigh;	/* Receive buffer Addr, high dword */
 	SK_U32		FrameStat;	/* Receive Frame Status word */
-	SK_U32		TimeStamp;	/* Time stamp from XMAX */
+	SK_U32		TimeStamp;	/* Time stamp from XMAC */
 	SK_U32		TcpSums;	/* TCP Sum 2 / TCP Sum 1 */
 	SK_U32		TcpSumStarts;	/* TCP Sum Start 2 / TCP Sum Start 1 */
 	RXD		*pNextRxd;	/* Pointer to next Rxd */
@@ -218,7 +221,8 @@ struct s_TxD {
 	SK_U32		VDataHigh;	/* Transmit Buffer Addr, high dword */
 	SK_U32		FrameStat;	/* Transmit Frame Status Word */
 	SK_U32		TcpSumOfs;	/* Reserved / TCP Sum Offset */
-	SK_U32		TcpSumStWr;	/* TCP Sum Start / TCP Sum Write */
+	SK_U16		TcpSumSt;	/* TCP Sum Start */
+	SK_U16		TcpSumWr;	/* TCP Sum Write */
 	SK_U32		TcpReserved;	/* not used */
 	TXD		*pNextTxd;	/* Pointer to next Txd */
 	struct sk_buff	*pMBuf;		/* Pointer to Linux' socket buffer */
@@ -445,11 +449,11 @@ struct s_AC  {
 	int		BoardLevel;	/* level of active hw init (0-2) */
 	char		DeviceStr[80];	/* adapter string from vpd */
 	SK_U32		AllocFlag;	/* flag allocation of resources */
-	struct pci_dev	PciDev;		/* for access to pci config space */
+	struct pci_dev	*PciDev;	/* for access to pci config space */
 	SK_U32		PciDevId;	/* pci device id */
-	struct net_device	*dev[2];		/* pointer to device struct */
+	struct SK_NET_DEVICE	*dev[2];	/* pointer to device struct */
 	char		Name[30];	/* driver name */
-	struct net_device	*Next;		/* link all devices (for clearing) */
+	struct SK_NET_DEVICE	*Next;		/* link all devices (for clearing) */
 	int		RxBufSize;	/* length of receive buffers */
         struct net_device_stats stats;	/* linux 'netstat -i' statistics */
 	int		Index;		/* internal board index number */
@@ -465,12 +469,12 @@ struct s_AC  {
 					/*  addresses for this board */
 					/*  (may be more than HW can)*/
 
+	int		HWRevision;	/* Hardware revision */
 	int		ActivePort;	/* the active XMAC port */
 	int		MaxPorts;		/* number of activated ports */
 	int		TxDescrPerRing;	/* # of descriptors per tx ring */
 	int		RxDescrPerRing;	/* # of descriptors per rx ring */
 
-	
 	caddr_t		pDescrMem;	/* Pointer to the descriptor area */
 	dma_addr_t	pDescrMemDMA;	/* PCI DMA address of area */
 
@@ -483,6 +487,11 @@ struct s_AC  {
 	SK_U32		CsOfs;		/* for checksum calculation */
 
 	SK_BOOL		CheckQueue;	/* check event queue soon */
+
+	/* Only for tests */
+	int		PortUp;
+	int		PortDown;
+
 };
 
 

@@ -26,7 +26,7 @@
 #include <asm/gsc.h>
 #include <asm/hardware.h>
 #include <asm/led.h>
-
+#include <asm/pdc.h>
 #include "busdevice.h"
 
 
@@ -77,7 +77,10 @@ lasi_init_irq(struct busdevice *this_lasi)
 
 	/* Resets */
 	/* gsc_writel(0xFFFFFFFF, lasi_base+0x2000);*/	/* Parallel */
-	gsc_writel(0xFFFFFFFF, lasi_base+0x4004);	/* Audio */
+
+	if(pdc_add_valid(lasi_base+0x4004) == PDC_OK)
+		gsc_writel(0xFFFFFFFF, lasi_base+0x4004);	/* Audio */
+
 	/* gsc_writel(0xFFFFFFFF, lasi_base+0x5000);*/	/* Serial */ 
 	/* gsc_writel(0xFFFFFFFF, lasi_base+0x6000);*/	/* SCSI */
 	gsc_writel(0xFFFFFFFF, lasi_base+0x7000);	/* LAN */

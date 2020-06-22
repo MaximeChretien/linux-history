@@ -32,9 +32,13 @@
 #define __PPC_ASM_PMAC_FEATURE_H
 
 /*
- * Known Mac motherboard models
+ * Known OldWorld Mac motherboard models
  * 
  * Please, report any error here to benh@kernel.crashing.org, thanks !
+ * 
+ * Note that I don't fully maintain this list for Core99 & MacRISC2
+ * and I'm considering removing all NewWorld entries from it and
+ * entirely rely on the model string.
  */
 
 /* PowerSurge are the first generation of PCI Pmacs. This include
@@ -85,8 +89,9 @@
 #define PMAC_TYPE_QUICKSILVER		0x45	/* QuickSilver G4s */
 #define PMAC_TYPE_PISMO			0x46	/* Pismo PowerBook */
 #define PMAC_TYPE_TITANIUM		0x47	/* Titanium PowerBook */
-#define PMAC_TYPE_TITANIUM2		0x48	/* Titanium II PowerBook */
-#define PMAC_TYPE_TITANIUM3		0x49	/* Titanium III PowerBook (with L3) */
+#define PMAC_TYPE_TITANIUM2		0x48	/* Titanium II PowerBook (no L3, M6) */
+#define PMAC_TYPE_TITANIUM3		0x49	/* Titanium III PowerBook (with L3 & M7) */
+#define PMAC_TYPE_TITANIUM4		0x50	/* Titanium IV PowerBook (with L3 & M9) */
 #define PMAC_TYPE_EMAC			0x50	/* eMac */
 #define PMAC_TYPE_UNKNOWN_CORE99	0x5f
 
@@ -101,6 +106,10 @@
 #define PMAC_TYPE_FLAT_PANEL_IMAC	0x102	/* Flat panel iMac */
 #define PMAC_TYPE_UNKNOWN_PANGEA	0x10f
 
+/* MacRISC2 machines based on the Intrepid chipset
+ */
+#define PMAC_TYPE_UNKNOWN_INTREPID	0x11f	/* Generic */
+
 /*
  * Motherboard flags
  */
@@ -108,6 +117,7 @@
 #define PMAC_MB_CAN_SLEEP		0x00000001
 #define PMAC_MB_HAS_FW_POWER		0x00000002
 #define PMAC_MB_OLD_CORE99		0x00000004
+#define PMAC_MB_MOBILE			0x00000008
 
 /*
  * Feature calls supported on pmac

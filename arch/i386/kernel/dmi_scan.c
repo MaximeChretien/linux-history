@@ -11,6 +11,8 @@
 #include <asm/system.h>
 #include <linux/bootmem.h>
 
+#include "pci-i386.h"
+
 unsigned long dmi_broken;
 int is_sony_vaio_laptop;
 
@@ -99,14 +101,6 @@ static int __init dmi_iterate(void (*decode)(struct dmi_header *))
 	u8 buf[15];
 	u32 fp=0xF0000;
 
-#ifdef CONFIG_SIMNOW
-	/*
- 	 *	Skip on x86/64 with simnow. Will eventually go away
- 	 *	If you see this ifdef in 2.6pre mail me !
- 	 */
-	return -1;
-#endif
- 	
 	while( fp < 0xFFFFF)
 	{
 		isa_memcpy_fromio(buf, fp, 15);
@@ -421,6 +415,8 @@ static __init int swab_apm_power_in_minutes(struct dmi_blacklist *d)
  */
  
 extern int skip_ioapic_setup;
+extern int broken_440gx_bios;
+extern unsigned int pci_probe;
 static __init int broken_pirq(struct dmi_blacklist *d)
 {
 	printk(KERN_INFO " *** Possibly defective BIOS detected (irqtable)\n");
@@ -431,27 +427,11 @@ static __init int broken_pirq(struct dmi_blacklist *d)
 #ifdef CONFIG_X86_IO_APIC
 	skip_ioapic_setup = 0;
 #endif
-	return 0;
-}
-
-/*
- * ASUS K7V-RM has broken ACPI table defining sleep modes
- */
-
-static __init int broken_acpi_Sx(struct dmi_blacklist *d)
-{
-	printk(KERN_WARNING "Detected ASUS mainboard with broken ACPI sleep table\n");
-	dmi_broken |= BROKEN_ACPI_Sx;
-	return 0;
-}
-
-/*
- * Toshiba keyboard likes to repeat keys when they are not repeated.
- */
-
-static __init int broken_toshiba_keyboard(struct dmi_blacklist *d)
-{
-	printk(KERN_WARNING "Toshiba with broken keyboard detected. If your keyboard sometimes generates 3 keypresses instead of one, contact pavel@ucw.cz\n");
+#ifdef CONFIG_PCI
+	broken_440gx_bios = 1;
+	pci_probe |= PCI_BIOS_IRQ_SCAN;
+#endif
+	
 	return 0;
 }
 
@@ -595,6 +575,11 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 			MATCH(DMI_BIOS_VERSION, "MV85010A.86A.0016.P07.0201251536"),
 			NO_MATCH, NO_MATCH,
 			} },
+	{ apm_is_horked, "Intel D810EMO", { /* APM crashes */
+			MATCH(DMI_BIOS_VENDOR, "Intel Corp."),
+			MATCH(DMI_BIOS_VERSION, "MO81010A.86A.0008.P04.0004170800"),
+			NO_MATCH, NO_MATCH,
+			} },
 	{ apm_is_horked, "Dell XPS-Z", { /* APM crashes */
 			MATCH(DMI_BIOS_VENDOR, "Intel Corp."),
 			MATCH(DMI_BIOS_VERSION, "A11"),
@@ -694,6 +679,18 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 			MATCH(DMI_BIOS_VERSION, "R0204P1"),
 			MATCH(DMI_BIOS_DATE, "09/12/00"), NO_MATCH
 			} },
+			
+	{ swab_apm_power_in_minutes, "Sony VAIO", {	/* Handle problems with APM on Sony Vaio PCG-Z600RE */
+			MATCH(DMI_BIOS_VENDOR, "Phoenix Technologies LTD"),
+			MATCH(DMI_BIOS_VERSION, "R0116Z1"),
+			NO_MATCH, NO_MATCH
+			} },
+	
+	{ swab_apm_power_in_minutes, "Sony VAIO", {	/* Handle problems with APM on Sony Vaio PCG-Z600RE */
+			MATCH(DMI_BIOS_VENDOR, "Phoenix Technologies LTD"),
+			MATCH(DMI_BIOS_VERSION, "RK116Z1"),
+			NO_MATCH, NO_MATCH
+			} },
 
 	/* Machines which have problems handling enabled local APICs */
 
@@ -760,16 +757,6 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 			NO_MATCH, NO_MATCH, NO_MATCH
 			} },
 			
-	{ broken_acpi_Sx, "ASUS K7V-RM", {		/* Bad ACPI Sx table */
-			MATCH(DMI_BIOS_VERSION,"ASUS K7V-RM ACPI BIOS Revision 1003A"),
-			MATCH(DMI_BOARD_NAME, "<K7V-RM>"),
-			NO_MATCH, NO_MATCH
-			} },
-			
-	{ broken_toshiba_keyboard, "Toshiba Satellite 4030cdt", { /* Keyboard generates spurious repeats */
-			MATCH(DMI_PRODUCT_NAME, "S4030CDT/4.3"),
-			NO_MATCH, NO_MATCH, NO_MATCH
-			} },
 	{ init_ints_after_s1, "Toshiba Satellite 4030cdt", { /* Reinitialization of 8259 is needed after S1 resume */
 			MATCH(DMI_PRODUCT_NAME, "S4030CDT/4.3"),
 			NO_MATCH, NO_MATCH, NO_MATCH

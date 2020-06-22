@@ -625,7 +625,7 @@ pdc_drv_init(void)
 #else
 	pdc_drv_driver.name = "ttyB";
 #endif
-	pdc_drv_driver.major = PDCCONS_MAJOR;
+	pdc_drv_driver.major = MUX_MAJOR;
 	pdc_drv_driver.minor_start = 0;
 	pdc_drv_driver.num = NR_PORTS;
 	pdc_drv_driver.type = TTY_DRIVER_TYPE_SERIAL;

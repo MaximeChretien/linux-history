@@ -208,6 +208,7 @@
 #define VGAINIT1_MASK			0x1fffff
 #define VIDCFG_VIDPROC_ENABLE		BIT(0)
 #define VIDCFG_CURS_X11			BIT(1)
+#define VIDCFG_INTERLACE		BIT(3)
 #define VIDCFG_HALF_MODE		BIT(4)
 #define VIDCFG_DESK_ENABLE		BIT(7)
 #define VIDCFG_CLUT_BYPASS		BIT(10)
@@ -238,6 +239,7 @@
 #define TDFXF_VSYNC_ACT_LOW	0x08
 #define TDFXF_LINE_DOUBLE	0x10
 #define TDFXF_VIDEO_ENABLE	0x20
+#define TDFXF_INTERLACE		0x40
 
 #define TDFXF_HSYNC_MASK	0x03
 #define TDFXF_VSYNC_MASK	0x0c
@@ -1321,10 +1323,17 @@ static void tdfxfb_set_par(struct tdfxfb_par* par,
   hbs = hd;
   hbe = ht;
 
-  vd  = par->vdispend - 1;
-  vs  = par->vsyncsta - 1;
-  ve  = par->vsyncend - 1;
-  vt  = par->vtotal   - 2;
+  if (par->video & TDFXF_LINE_DOUBLE) {
+    vd = (par->vdispend << 1) - 1;
+    vs = (par->vsyncsta << 1) - 1;
+    ve = (par->vsyncend << 1) - 1;
+    vt = (par->vtotal   << 1) - 2;
+  } else {
+    vd = par->vdispend - 1;
+    vs = par->vsyncsta - 1;
+    ve = par->vsyncend - 1;
+    vt = par->vtotal   - 2;
+  }
   vbs = vd;
   vbe = vt;
   
@@ -1429,9 +1438,6 @@ static void tdfxfb_set_par(struct tdfxfb_par* par,
     VGAINIT0_EXTSHIFTOUT;
   reg.vgainit1 = tdfx_inl(VGAINIT1) & 0x1fffff;
 
-  fb_info.cursor.enable=reg.vidcfg | VIDCFG_HWCURSOR_ENABLE;
-  fb_info.cursor.disable=reg.vidcfg;
-   
   reg.stride    = par->width*cpp;
   reg.cursloc   = 0;
    
@@ -1450,9 +1456,20 @@ static void tdfxfb_set_par(struct tdfxfb_par* par,
   reg.gfxpll = do_calc_pll(..., &fout);
 #endif
 
-  reg.screensize = par->width | (par->height << 12);
-  reg.vidcfg &= ~VIDCFG_HALF_MODE;
+  if (par->video & TDFXF_LINE_DOUBLE) {
+    reg.screensize = par->width | (par->height << 13);
+    reg.vidcfg |= VIDCFG_HALF_MODE;
+    reg.crt[0x09] |= 0x80;
+  } else {
+    reg.screensize = par->width | (par->height << 12);
+    reg.vidcfg &= ~VIDCFG_HALF_MODE;
+  }
+  if (par->video & TDFXF_INTERLACE)
+    reg.vidcfg |= VIDCFG_INTERLACE;
 
+  fb_info.cursor.enable=reg.vidcfg | VIDCFG_HWCURSOR_ENABLE;
+  fb_info.cursor.disable=reg.vidcfg;
+   
   reg.miscinit0 = tdfx_inl(MISCINIT0);
 
 #if defined(__BIG_ENDIAN)
@@ -1496,11 +1513,6 @@ static int tdfxfb_decode_var(const struct fb_var_screeninfo* var,
     return -EINVAL;
   }
 
-  if((var->vmode & FB_VMODE_MASK) == FB_VMODE_INTERLACED) {
-    DPRINTK("interlace not supported\n");
-    return -EINVAL;
-  }
-
   if(var->xoffset) {
     DPRINTK("xoffset not supported\n");
     return -EINVAL;
@@ -1516,9 +1528,10 @@ static int tdfxfb_decode_var(const struct fb_var_screeninfo* var,
     return -EINVAL;
   }
 
-  /* fixme: does Voodoo3 support interlace? Banshee doesn't */
-  if((var->vmode & FB_VMODE_MASK) == FB_VMODE_INTERLACED) {
-    DPRINTK("interlace not supported\n");
+  /* Banshee doesn't support interlace, but Voodoo4 and probably Voodoo3 do. */
+  if(((var->vmode & FB_VMODE_MASK) == FB_VMODE_INTERLACED)
+     && (i->dev == PCI_DEVICE_ID_3DFX_BANSHEE)) {
+    DPRINTK("interlace not supported on Banshee\n");
     return -EINVAL;
   }
 
@@ -1578,6 +1591,8 @@ static int tdfxfb_decode_var(const struct fb_var_screeninfo* var,
       par->video |= TDFXF_VSYNC_ACT_LOW;
     if((var->vmode & FB_VMODE_MASK) == FB_VMODE_DOUBLE)
       par->video |= TDFXF_LINE_DOUBLE;
+    else if((var->vmode & FB_VMODE_MASK) == FB_VMODE_INTERLACED)
+      par->video |= TDFXF_INTERLACE;
     if(var->activate == FB_ACTIVATE_NOW)
       par->video |= TDFXF_VIDEO_ENABLE;
   }
@@ -1639,6 +1654,8 @@ static int tdfxfb_encode_var(struct fb_var_screeninfo* var,
     v.sync |= FB_SYNC_VERT_HIGH_ACT;
   if(par->video & TDFXF_LINE_DOUBLE)
     v.vmode = FB_VMODE_DOUBLE;
+  else if(par->video & TDFXF_INTERLACE)
+    v.vmode = FB_VMODE_INTERLACED;
   *var = v;
   return 0;
 }
@@ -1672,7 +1689,7 @@ static int tdfxfb_encode_fix(struct fb_fix_screeninfo*  fix,
   fix->line_length = par->lpitch;
   fix->visual      = (par->bpp == 8) 
                      ? FB_VISUAL_PSEUDOCOLOR
-                     : FB_VISUAL_DIRECTCOLOR;
+                     : FB_VISUAL_TRUECOLOR;
 
   fix->xpanstep    = 0; 
   fix->ypanstep    = nopan ? 0 : 1;
@@ -2386,7 +2403,9 @@ static void tdfxfb_createcursor(struct display *p)
 static void tdfxfb_hwcursor_init(void)
 {
    unsigned int start;
-   start = (fb_info.bufbase_size-1024) & PAGE_MASK;
+   start = (fb_info.bufbase_size-1024) & (PAGE_MASK << 1);
+   	/* even page boundary - on Voodoo4 4500 bottom 48 lines
+	 * contained trash when just page boundary was used... */
    fb_info.bufbase_size=start; 
    fb_info.cursor.cursorimage=fb_info.bufbase_size;
    printk("tdfxfb: reserving 1024 bytes for the hwcursor at %p\n",

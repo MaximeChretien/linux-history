@@ -1,4 +1,4 @@
-/* $Id: dram_init.S,v 1.12 2002/08/09 11:37:37 orjanf Exp $
+/* $Id: dram_init.S,v 1.13 2002/10/30 07:42:28 starvik Exp $
  * 
  * DRAM/SDRAM initialization - alter with care
  * This file is intended to be included from other assembler files
@@ -11,6 +11,9 @@
  * Authors:  Mikael Starvik (starvik@axis.com)	
  * 
  * $Log: dram_init.S,v $
+ * Revision 1.13  2002/10/30 07:42:28  starvik
+ * Always read SDRAM command sequence from flash
+ *
  * Revision 1.12  2002/08/09 11:37:37  orjanf
  * Added double initialization work-around for Samsung SDRAMs.
  *
@@ -143,7 +146,9 @@ _set_timing:
 	
 	; Issue initialization command sequence
 	move.d   _sdram_commands_start, $r2
+	and.d    0x00ffffff, $r2 ; Make sure commands are read from flash
 	move.d   _sdram_commands_end,  $r3
+	and.d    0x00ffffff, $r2
 1:	clear.d  $r4
 	move.b   [$r2+], $r4
 	lslq     9, $r4	; Command starts at bit 9

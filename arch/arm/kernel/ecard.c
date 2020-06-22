@@ -420,7 +420,7 @@ static int ecard_reboot(struct notifier_block *me, unsigned long val, void *v)
 }
 
 static struct notifier_block ecard_reboot_notifier = {
-	notifier_call:	ecard_reboot,
+	.notifier_call	= ecard_reboot,
 };
 
 

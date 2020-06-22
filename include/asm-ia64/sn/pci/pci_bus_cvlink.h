@@ -41,6 +41,8 @@
 #define IS_PCI32G(dev)	((dev)->dma_mask >= 0xffffffff)
 #define IS_PCI32L(dev)	((dev)->dma_mask < 0xffffffff)
 
+#define IS_PIC_DEVICE(dev) ((struct sn_device_sysdata *)dev->sysdata)->isPIC
+
 #define PCIDEV_VERTEX(pci_dev) \
 	(((struct sn_device_sysdata *)((pci_dev)->sysdata))->vhdl)
 
@@ -54,6 +56,7 @@ struct sn_widget_sysdata {
 struct sn_device_sysdata {
         devfs_handle_t  vhdl;
 	int		isa64;
+	int		isPIC;
 	volatile unsigned int *dma_buf_sync;
 	volatile unsigned int *xbow_buf_sync;
 };

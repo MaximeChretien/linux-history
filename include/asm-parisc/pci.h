@@ -81,6 +81,11 @@ struct pci_hba_data {
 #define PCI_BUS_ADDR(hba,a)	((a) - hba->lmmio_space_offset)
 #define PCI_HOST_ADDR(hba,a)	((a) + hba->lmmio_space_offset)
 
+/* The PCI address space equals the physical memory address space.
+   The networking and block device layers use this boolean for bounce buffer
+   decisions.  */
+#define PCI_DMA_BUS_IS_PHYS  1
+
 /*
 ** KLUGE: linux/pci.h include asm/pci.h BEFORE declaring struct pci_bus
 ** (This eliminates some of the warnings).
@@ -273,7 +278,7 @@ int ccio_request_resource(const struct parisc_device *dev,
 int ccio_allocate_resource(const struct parisc_device *dev,
 		struct resource *res, unsigned long size,
 		unsigned long min, unsigned long max, unsigned long align,
-		void (*alignf)(void *, struct resource *, unsigned long),
+		void (*alignf)(void *, struct resource *, unsigned long, unsigned long),
 		void *alignf_data);
 #else /* !CONFIG_IOMMU_CCIO */
 #define ccio_get_iommu(dev) NULL

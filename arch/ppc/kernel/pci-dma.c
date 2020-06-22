@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.pci-dma.c 1.5 05/17/01 18:14:21 cort
- */
-/*
  * Copyright (C) 2000   Ani Joshi <ajoshi@unixbox.com>
  *
  *

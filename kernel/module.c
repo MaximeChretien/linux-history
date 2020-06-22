@@ -303,7 +303,7 @@ sys_create_module(const char *name_user, size_t size)
 		error = namelen;
 		goto err0;
 	}
-	if (size < sizeof(struct module)+namelen) {
+	if (size < sizeof(struct module)+namelen+1) {
 		error = -EINVAL;
 		goto err1;
 	}
@@ -482,10 +482,10 @@ sys_init_module(const char *name_user, struct module *mod_user)
 		error = n_namelen;
 		goto err2;
 	}
-	if (namelen != n_namelen || strcmp(n_name, mod_tmp.name) != 0) {
+	if (namelen != n_namelen || strcmp(n_name, name_tmp) != 0) {
 		printk(KERN_ERR "init_module: changed module name to "
 				"`%s' from `%s'\n",
-		       n_name, mod_tmp.name);
+		       n_name, name_tmp);
 		goto err3;
 	}
 

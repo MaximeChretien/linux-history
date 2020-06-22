@@ -171,9 +171,11 @@ struct ipv6_pinfo {
 	__u8			mc_loop:1,
 	                        recverr:1,
 	                        sndflow:1,
-	                        pmtudisc:2;
+	                        pmtudisc:2,
+				ipv6only:1;
 
 	struct ipv6_mc_socklist	*ipv6_mc_list;
+	struct ipv6_ac_socklist	*ipv6_ac_list;
 	struct ipv6_fl_socklist *ipv6_fl_list;
 	__u32			dst_cookie;
 
@@ -188,6 +190,12 @@ struct raw6_opt {
 	struct icmp6_filter	filter;
 };
 
+#define __ipv6_only_sock(sk)	((sk)->net_pinfo.af_inet6.ipv6only)
+#define ipv6_only_sock(sk)	((sk)->family == PF_INET6 && \
+				 (sk)->net_pinfo.af_inet6.ipv6only)
+#else
+#define __ipv6_only_sock(sk)	0
+#define ipv6_only_sock(sk)	0
 #endif /* IPV6 */
 
 #if defined(CONFIG_INET) || defined(CONFIG_INET_MODULE)
@@ -416,6 +424,9 @@ struct tcp_opt {
 	unsigned int		keepalive_time;	  /* time before keep alive takes place */
 	unsigned int		keepalive_intvl;  /* time interval between keep alive probes */
 	int			linger2;
+
+	int                     frto_counter; /* Number of new acks after RTO */
+	__u32                   frto_highmark; /* snd_nxt when RTO occurred */
 
 	unsigned long last_synq_overflow; 
 };
@@ -892,27 +903,41 @@ extern void sklist_destroy_socket(struct sock **list, struct sock *sk);
 
 /**
  *	sk_filter - run a packet through a socket filter
+ *	@sk: sock associated with &sk_buff
  *	@skb: buffer to filter
- *	@filter: filter to apply
+ *	@needlock: set to 1 if the sock is not locked by caller.
  *
  * Run the filter code and then cut skb->data to correct size returned by
  * sk_run_filter. If pkt_len is 0 we toss packet. If skb->len is smaller
  * than pkt_len we keep whole skb->data. This is the socket level
  * wrapper to sk_run_filter. It returns 0 if the packet should
- * be accepted or 1 if the packet should be tossed.
+ * be accepted or -EPERM if the packet should be tossed.
  */
- 
-static inline int sk_filter(struct sk_buff *skb, struct sk_filter *filter)
+
+static inline int sk_filter(struct sock *sk, struct sk_buff *skb, int needlock)
 {
-	int pkt_len;
+	int err = 0;
 
-        pkt_len = sk_run_filter(skb, filter->insns, filter->len);
-        if(!pkt_len)
-                return 1;	/* Toss Packet */
-        else
-                skb_trim(skb, pkt_len);
+	if (sk->filter) {
+		struct sk_filter *filter;
+		
+		if (needlock)
+			bh_lock_sock(sk);
+		
+		filter = sk->filter;
+		if (filter) {
+			int pkt_len = sk_run_filter(skb, filter->insns,
+						    filter->len);
+			if (!pkt_len)
+				err = -EPERM;
+			else
+				skb_trim(skb, pkt_len);
+		}
 
-	return 0;
+		if (needlock)
+			bh_unlock_sock(sk);
+	}
+	return err;
 }
 
 /**
@@ -937,6 +962,13 @@ static inline void sk_filter_charge(struct sock *sk, struct sk_filter *fp)
 {
 	atomic_inc(&fp->refcnt);
 	atomic_add(sk_filter_len(fp), &sk->omem_alloc);
+}
+
+#else
+
+static inline int sk_filter(struct sock *sk, struct sk_buff *skb, int needlock)
+{
+	return 0;
 }
 
 #endif /* CONFIG_FILTER */
@@ -1145,36 +1177,31 @@ static inline void skb_set_owner_r(struct sk_buff *skb, struct sock *sk)
 
 static inline int sock_queue_rcv_skb(struct sock *sk, struct sk_buff *skb)
 {
+	int err = 0;
+
 	/* Cast skb->rcvbuf to unsigned... It's pointless, but reduces
 	   number of warnings when compiling with -W --ANK
 	 */
-	if (atomic_read(&sk->rmem_alloc) + skb->truesize >= (unsigned)sk->rcvbuf)
-                return -ENOMEM;
-
-#ifdef CONFIG_FILTER
-	if (sk->filter) {
-		int err = 0;
-		struct sk_filter *filter;
-
-		/* It would be deadlock, if sock_queue_rcv_skb is used
-		   with socket lock! We assume that users of this
-		   function are lock free.
-		 */
-		bh_lock_sock(sk);
-		if ((filter = sk->filter) != NULL && sk_filter(skb, filter))
-			err = -EPERM;
-		bh_unlock_sock(sk);
-		if (err)
-			return err;	/* Toss packet */
+	if (atomic_read(&sk->rmem_alloc) + skb->truesize >= (unsigned)sk->rcvbuf) {
+		err = -ENOMEM;
+		goto out;
 	}
-#endif /* CONFIG_FILTER */
+
+	/* It would be deadlock, if sock_queue_rcv_skb is used
+	   with socket lock! We assume that users of this
+	   function are lock free.
+	*/
+	err = sk_filter(sk, skb, 1);
+	if (err)
+		goto out;
 
 	skb->dev = NULL;
 	skb_set_owner_r(skb, sk);
 	skb_queue_tail(&sk->receive_queue, skb);
 	if (!sk->dead)
 		sk->data_ready(sk,skb->len);
-	return 0;
+out:
+	return err;
 }
 
 static inline int sock_queue_err_skb(struct sock *sk, struct sk_buff *skb)

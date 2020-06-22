@@ -202,7 +202,7 @@ void do_settimeofday(struct timeval *tv)
 }
 
 static struct irqaction timer_irq = {
-	name: "timer",
+	.name	= "timer",
 };
 
 /*

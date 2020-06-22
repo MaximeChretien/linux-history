@@ -1247,7 +1247,7 @@ int lento_symlink(const char *oldname, const char *newname,
                 goto exit_lock;
         }
         error = presto_do_symlink(fset, nd.dentry,
-                                  dentry, oldname, info);
+                                  dentry, from, info);
         path_release(&nd);
         EXIT;
  exit_lock:

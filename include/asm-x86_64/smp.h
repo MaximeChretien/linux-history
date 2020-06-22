@@ -85,8 +85,13 @@ extern void smp_store_cpu_info(int id);		/* Store per CPU info (like the initial
 extern __inline int hard_smp_processor_id(void)
 {
 	/* we don't want to mark this access volatile - bad code generation */
-	return GET_APIC_ID(*(unsigned long *)(APIC_BASE+APIC_ID));
+	return GET_APIC_ID(*(unsigned *)(APIC_BASE+APIC_ID));
 }
+
+extern int apic_disabled;
+extern int slow_smp_processor_id(void);
+#define safe_smp_processor_id() \
+	(!apic_disabled ? hard_smp_processor_id() : slow_smp_processor_id())
 
 #endif /* !ASSEMBLY */
 
@@ -112,5 +117,6 @@ extern __inline int hard_smp_processor_id(void)
 
 #ifndef CONFIG_SMP
 #define stack_smp_processor_id() 0
+#define safe_smp_processor_id() 0
 #endif
 #endif

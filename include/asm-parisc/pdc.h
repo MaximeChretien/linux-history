@@ -476,7 +476,7 @@ extern int pdc_type;
 #define PDC_TYPE_SYSTEM_MAP	 1 /* 32-bit, but supports PDC_SYSTEM_MAP */
 #define PDC_TYPE_SNAKE		 2 /* Doesn't support SYSTEM_MAP */
 
-#define is_pdc_pat()    (pdc_type == PDC_TYPE_PAT)
+#define is_pdc_pat()	(pdc_type == PDC_TYPE_PAT)
 
 struct pdc_chassis_info {       /* for PDC_CHASSIS_INFO */
 	unsigned long actcnt;   /* actual number of bytes returned */
@@ -817,10 +817,13 @@ struct pz_device {
 
 /* IODC ENTRY_IO() */
 #define ENTRY_IO_BOOTIN		0
+#define ENTRY_IO_BOOTOUT	1
 #define ENTRY_IO_CIN		2
 #define ENTRY_IO_COUT		3
 #define ENTRY_IO_CLOSE		4
 #define ENTRY_IO_GETMSG		9
+#define ENTRY_IO_BBLOCK_IN	16
+#define ENTRY_IO_BBLOCK_OUT	17
 
 /* IODC ENTRY_SPA() */
 
@@ -912,6 +915,7 @@ void setup_pdc(void);		/* in inventory.c */
 
 int pdc_add_valid(unsigned long address);
 int pdc_chassis_info(struct pdc_chassis_info *chassis_info, void *led_info, unsigned long len);
+int pdc_chassis_disp(unsigned long disp);
 int pdc_coproc_cfg(struct pdc_coproc_cfg *pdc_coproc_info);
 int pdc_iodc_read(unsigned long *actcnt, unsigned long hpa, unsigned int index,
 		  void *iodc_data, unsigned int iodc_data_size);
@@ -958,6 +962,8 @@ int pdc_sti_call(unsigned long func, unsigned long flags,
                  unsigned long glob_cfg);
 
 #ifdef __LP64__
+int pdc_pat_chassis_send_log(unsigned long status, unsigned long data);
+
 int pdc_pat_cell_get_number(struct pdc_pat_cell_num *cell_info);
 int pdc_pat_cell_module(unsigned long *actcnt, unsigned long ploc, unsigned long mod,
 			unsigned long view_type, void *mem_addr);

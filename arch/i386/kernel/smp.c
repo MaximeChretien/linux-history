@@ -214,7 +214,10 @@ static inline void send_IPI_mask_sequence(int mask, int vector)
 			/*
 			 * prepare target chip field
 			 */
-			cfg = __prepare_ICR2(cpu_to_logical_apicid(query_cpu));
+			if(clustered_apic_mode == CLUSTERED_APIC_XAPIC)
+				cfg = __prepare_ICR2(cpu_to_physical_apicid(query_cpu));
+			else
+				cfg = __prepare_ICR2(cpu_to_logical_apicid(query_cpu));
 			apic_write_around(APIC_ICR2, cfg);
 		
 			/*

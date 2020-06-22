@@ -1,4 +1,4 @@
-/* $Id: ide.c,v 1.24 2002/04/22 11:47:21 johana Exp $
+/* $Id: ide.c,v 1.26 2002/09/17 12:16:59 bjornw Exp $
  *
  * Etrax specific IDE functions, like init and PIO-mode setting etc.
  * Almost the entire ide.c is used for the rest of the Etrax ATA driver.
@@ -8,6 +8,12 @@
  *             Mikael Starvik     (pio setup stuff)
  *
  * $Log: ide.c,v $
+ * Revision 1.26  2002/09/17 12:16:59  bjornw
+ * Removed unnecessary cli/sti pair
+ *
+ * Revision 1.25  2002/08/19 08:07:19  matsfg
+ * Added IN_WORD.
+ *
  * Revision 1.24  2002/04/22 11:47:21  johana
  * Fix according to 2.4.19-pre7. time_after/time_before and
  * missing end of comment.
@@ -180,9 +186,14 @@ OUT_BYTE(unsigned char data, ide_ioreg_t reg) {
 			    IO_MASK(R_ATA_STATUS_DATA, tr_rdy)))
 		timeleft--;
 }
-
 unsigned char 
 IN_BYTE(ide_ioreg_t reg) {
+        /* data was in the lower 16 bits in the status reg */
+        return (unsigned char)(IN_WORD(reg));
+}
+
+unsigned short 
+IN_WORD(ide_ioreg_t reg) {
 	int status;
 	int timeleft;
 
@@ -226,7 +237,7 @@ IN_BYTE(ide_ioreg_t reg) {
 
 	LOWDB(printk("inb: 0x%x from reg 0x%x\n", status & 0xff, reg));
 
-	return (unsigned char)status; /* data was in the lower 16 bits in the status reg */
+        return (unsigned short)status;
 }
 
 /* PIO timing (in R_ATA_CONFIG)
@@ -303,9 +314,6 @@ static void tune_e100_ide(ide_drive_t *drive, byte pio)
 	pio = 4;
 	/* pio = ide_get_best_pio_mode(drive, pio, 4, NULL); */
 	
-	save_flags(flags);
-	cli();
-
 	/* set pio mode! */
   	 
 	switch(pio) {
@@ -350,7 +358,6 @@ static void tune_e100_ide(ide_drive_t *drive, byte pio)
 					  IO_FIELD( R_ATA_CONFIG, pio_hold,   ATA_PIO4_HOLD ) );
 			break;
 	}
-	restore_flags(flags);
 }
 
 void __init 
@@ -816,13 +823,13 @@ static ide_startstop_t etrax_dma_intr (ide_drive_t *drive)
 			rq = HWGROUP(drive)->rq;
 			for (i = rq->nr_sectors; i > 0;) {
 				i -= rq->current_nr_sectors;
-				ide_end_request(1, HWGROUP(drive));
+				DRIVER(drive)->end_request(drive, 1);
 			}
 			return ide_stopped;
 		}
 		printk("%s: bad DMA status\n", drive->name);
 	}
-	return ide_error(drive, "dma_intr", stat);
+	return DRIVER(drive)->error(drive, "dma_intr", stat);
 }
 
 /*

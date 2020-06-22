@@ -161,11 +161,12 @@ chrp_setup_arch(void)
 
 	fwnmi_init();
 
+#ifndef CONFIG_PPC_ISERIES
 	/* Find and initialize PCI host bridges */
 	/* iSeries needs to be done much later. */
- 	#ifndef CONFIG_PPC_ISERIES
-		find_and_init_phbs();
- 	#endif
+	eeh_init();
+	find_and_init_phbs();
+#endif
 
 	/* Find the Open PIC if present */
 	root = find_path_device("/");
@@ -256,7 +257,7 @@ chrp_init(unsigned long r3, unsigned long r4, unsigned long r5,
 #endif /* CONFIG_BLK_DEV_INITRD */
 #endif
 
-	ppc_md.ppc_machine = naca->platform;
+	ppc_md.ppc_machine = systemcfg->platform;
 
 	ppc_md.setup_arch     = chrp_setup_arch;
 	ppc_md.setup_residual = NULL;

@@ -51,6 +51,8 @@ struct cpuinfo_x86 {
 				    call  */
 	int	x86_clflush_size;
 	int	x86_tlbsize;	/* number of 4K pages in DTLB/ITLB combined(in pages)*/
+        __u8    x86_virt_bits, x86_phys_bits;
+        __u32   x86_power; 
 	unsigned long loops_per_jiffy;
 } ____cacheline_aligned;
 
@@ -256,7 +258,7 @@ static inline void clear_in_cr4 (unsigned long mask)
 /* This decides where the kernel will search for a free chunk of vm
  * space during mmap's.
  */
-#define TASK_UNMAPPED_32 0x40000000
+#define TASK_UNMAPPED_32 0xa0000000
 #define TASK_UNMAPPED_64 (TASK_SIZE/3) 
 #define TASK_UNMAPPED_BASE	\
 	((current->thread.flags & THREAD_IA32) ? TASK_UNMAPPED_32 : TASK_UNMAPPED_64)  
@@ -302,7 +304,7 @@ struct tss_struct {
 	u16 reserved5;
 	u16 io_map_base;
 	u32 io_bitmap[IO_BITMAP_SIZE];
-} __attribute__((packed));
+} __attribute__((packed)) ____cacheline_aligned;
 
 struct thread_struct {
 	unsigned long	rsp0;
@@ -335,10 +337,13 @@ struct thread_struct {
 #define NMI_STACK 3 
 #define N_EXCEPTION_STACKS 3  /* hw limit: 7 */
 #define EXCEPTION_STKSZ 1024
+#define EXCEPTION_STK_ORDER 0
+
+extern void load_gs_index(unsigned);
 
 #define start_thread(regs,new_rip,new_rsp) do { \
-	__asm__("movl %0,%%fs; movl %0,%%es; movl %0,%%ds": :"r" (0));		 \
-	wrmsrl(MSR_KERNEL_GS_BASE, 0);						 \
+	asm volatile("movl %0,%%fs; movl %0,%%es; movl %0,%%ds": :"r" (0));	 \
+	load_gs_index(0);							\
 	(regs)->rip = (new_rip);						 \
 	(regs)->rsp = (new_rsp);						 \
 	write_pda(oldrsp, (new_rsp));						 \
@@ -393,14 +398,21 @@ extern inline void rep_nop(void)
 	__asm__ __volatile__("rep;nop");
 }
 
+/* Avoid speculative execution by the CPU */
+extern inline void sync_core(void)
+{ 
+	int tmp;
+	asm volatile("cpuid" : "=a" (tmp) : "0" (1) : "ebx","ecx","edx","memory");
+} 
+
 #define cpu_has_fpu 1
 
 #define ARCH_HAS_PREFETCH
 #define ARCH_HAS_PREFETCHW
 #define ARCH_HAS_SPINLOCK_PREFETCH
 
-#define prefetch(x) __builtin_prefetch((x),0)
-#define prefetchw(x) __builtin_prefetch((x),1)
+#define prefetch(x) __builtin_prefetch((x),0,1)
+#define prefetchw(x) __builtin_prefetch((x),1,1)
 #define spin_lock_prefetch(x)  prefetchw(x)
 #define cpu_relax()   rep_nop()
 

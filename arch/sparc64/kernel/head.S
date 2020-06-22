@@ -551,7 +551,7 @@ tlb_fixup_done:
 	wr	%g0, ASI_P, %asi
 	mov	1, %g5
 	sllx	%g5, THREAD_SHIFT, %g5
-	sub	%g5, (REGWIN_SZ + STACK_BIAS), %g5
+	sub	%g5, (STACKFRAME_SZ + STACK_BIAS), %g5
 	add	%g6, %g5, %sp
 	mov	0, %fp
 
@@ -673,7 +673,9 @@ set_worklist:
 #endif
 
 	/* Kill PROM timer */
-	wr	%g0, 0, %tick_cmpr
+	sethi	%hi(0x80000000), %g1
+	sllx	%g1, 32, %g1
+	wr	%g1, 0, %tick_cmpr
 
 	BRANCH_IF_ANY_CHEETAH(g1,g5,1f)
 

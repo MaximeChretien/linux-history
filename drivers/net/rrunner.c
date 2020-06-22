@@ -1216,7 +1216,6 @@ static int rr_open(struct net_device *dev)
 
 	rrpriv->info = kmalloc(sizeof(struct rr_info), GFP_KERNEL);
 	if (!rrpriv->info){
-		rrpriv->rx_ctrl = NULL;
 		ecode = -ENOMEM;
 		goto error;
 	}

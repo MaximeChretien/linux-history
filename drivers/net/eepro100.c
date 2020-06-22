@@ -17,7 +17,7 @@
 	1998 Apr - 2000 Feb  Andrey V. Savochkin <saw@saw.sw.com.sg>
 		Serious fixes for multicast filter list setting, TX timeout routine;
 		RX ring refilling logic;  other stuff
-	2000 Feb  Jeff Garzik <jgarzik@mandrakesoft.com>
+	2000 Feb  Jeff Garzik <jgarzik@pobox.com>
 		Convert to new PCI driver interface
 	2000 Mar 24  Dragan Stancevic <visitor@valinux.com>
 		Disabled FC and ER, to avoid lockups when when we get FCP interrupts.
@@ -41,8 +41,8 @@ static int rxfifo = 8;		/* Rx FIFO threshold, default 32 bytes. */
 static int txdmacount = 128;
 static int rxdmacount /* = 0 */;
 
-#if defined(__ia64__) || defined(__alpha__) || defined(__sparc__) || defined(__mips__) || \
-	defined(__arm__)
+#if defined(__ia64__) || defined(__alpha__) || defined(__sparc__) || \
+	defined(__mips__) || defined(__arm__) || defined(__hppa__)
   /* align rx buffers to 2 bytes so that IP header is aligned */
 # define rx_align(skb)		skb_reserve((skb), 2)
 # define RxFD_ALIGNMENT		__attribute__ ((aligned (2), packed))
@@ -119,6 +119,11 @@ static int options[] = {-1, -1, -1, -1, -1, -1, -1, -1};
 #include <linux/skbuff.h>
 #include <linux/ethtool.h>
 #include <linux/mii.h>
+
+/* enable PIO instead of MMIO, if CONFIG_EEPRO100_PIO is selected */
+#ifdef CONFIG_EEPRO100_PIO
+#define USE_IO 1
+#endif
 
 static int debug = -1;
 #define DEBUG_DEFAULT		(NETIF_MSG_DRV		| \
@@ -837,6 +842,7 @@ static int __devinit speedo_found1(struct pci_dev *pdev,
 	sp->lstats = (struct speedo_stats *)(sp->tx_ring + TX_RING_SIZE);
 	sp->lstats_dma = TX_RING_ELEM_DMA(sp, TX_RING_SIZE);
 	init_timer(&sp->timer); /* used in ioctl() */
+	spin_lock_init(&sp->lock);
 
 	sp->mii_if.full_duplex = option >= 0 && (option & 0x10) ? 1 : 0;
 	if (card_idx >= 0) {
@@ -988,7 +994,6 @@ speedo_open(struct net_device *dev)
 	sp->dirty_tx = 0;
 	sp->last_cmd = 0;
 	sp->tx_full = 0;
-	spin_lock_init(&sp->lock);
 	sp->in_interrupt = 0;
 
 	/* .. we can safely take handler calls during init. */
@@ -2387,6 +2392,7 @@ static struct pci_device_id eepro100_pci_tbl[] __devinitdata = {
 	{ PCI_VENDOR_ID_INTEL, 0x103C, PCI_ANY_ID, PCI_ANY_ID, },
 	{ PCI_VENDOR_ID_INTEL, 0x103D, PCI_ANY_ID, PCI_ANY_ID, },
 	{ PCI_VENDOR_ID_INTEL, 0x103E, PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, 0x1059, PCI_ANY_ID, PCI_ANY_ID, },
 	{ PCI_VENDOR_ID_INTEL, 0x1227, PCI_ANY_ID, PCI_ANY_ID, },
 	{ PCI_VENDOR_ID_INTEL, 0x1228, PCI_ANY_ID, PCI_ANY_ID, },
 	{ PCI_VENDOR_ID_INTEL, 0x2449, PCI_ANY_ID, PCI_ANY_ID, },

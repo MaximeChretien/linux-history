@@ -467,6 +467,7 @@ sti_init_glob_cfg(struct sti_struct *sti,
 	return 0;
 }
 
+#ifdef CONFIG_FB
 struct sti_cooked_font * __init
 sti_select_fbfont( struct sti_cooked_rom *cooked_rom, char *fbfont_name )
 {
@@ -523,6 +524,13 @@ sti_select_fbfont( struct sti_cooked_rom *cooked_rom, char *fbfont_name )
 
 	return cooked_font;
 }
+#else
+struct sti_cooked_font * __init
+sti_select_fbfont(struct sti_cooked_rom *cooked_rom, char *fbfont_name)
+{
+	return NULL;
+}
+#endif
 
 struct sti_cooked_font * __init
 sti_select_font(struct sti_cooked_rom *rom,

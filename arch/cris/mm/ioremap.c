@@ -13,7 +13,7 @@
 #include <asm/io.h>
 #include <asm/pgalloc.h>
 
-static inline void remap_area_pte(pte_t * pte, unsigned long address, unsigned long size,
+extern inline void remap_area_pte(pte_t * pte, unsigned long address, unsigned long size,
 	unsigned long phys_addr, unsigned long flags)
 {
 	unsigned long end;

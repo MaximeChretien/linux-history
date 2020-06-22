@@ -24,7 +24,7 @@
 #include <asm/pdc.h>		/* for PDC_PSW defines */
 
 
-	.level 2.0
+	.level 2.0w
 
 	.section	.initcall.init
 	.align		4

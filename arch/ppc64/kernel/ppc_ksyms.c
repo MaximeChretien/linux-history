@@ -106,6 +106,7 @@ EXPORT_SYMBOL(pci_io_base);
 EXPORT_SYMBOL(pci_dram_offset);
 
 EXPORT_SYMBOL(find_next_zero_bit);
+EXPORT_SYMBOL(find_next_zero_le_bit);
 
 EXPORT_SYMBOL(strcpy);
 EXPORT_SYMBOL(strncpy);
@@ -124,6 +125,7 @@ EXPORT_SYMBOL(strncmp);
 EXPORT_SYMBOL(__down_interruptible);
 EXPORT_SYMBOL(__up);
 EXPORT_SYMBOL(naca);
+EXPORT_SYMBOL(systemcfg);
 EXPORT_SYMBOL(__down);
 
 /* EXPORT_SYMBOL(csum_partial); already in net/netsyms.c */
@@ -252,6 +254,8 @@ EXPORT_SYMBOL(rtas_proc_dir);
 EXPORT_SYMBOL(rtas_firmware_flash_list);
 EXPORT_SYMBOL(rtas_token);
 EXPORT_SYMBOL(rtas_call);
+EXPORT_SYMBOL(rtas_data_buf);
+EXPORT_SYMBOL(rtas_data_buf_lock);
 #endif
 
 #ifndef CONFIG_PPC_ISERIES
@@ -268,10 +272,6 @@ EXPORT_SYMBOL_NOVERS(memscan);
 EXPORT_SYMBOL_NOVERS(memcmp);
 
 EXPORT_SYMBOL(abs);
-
-#ifdef CONFIG_VT
-EXPORT_SYMBOL(screen_info);
-#endif
 
 EXPORT_SYMBOL(timer_interrupt);
 EXPORT_SYMBOL(irq_desc);

@@ -719,18 +719,17 @@ static int raid1_make_request (mddev_t *mddev, int rw,
 	return (0);
 }
 
-static int raid1_status (char *page, mddev_t *mddev)
+static void raid1_status(struct seq_file *seq, mddev_t *mddev)
 {
 	raid1_conf_t *conf = mddev_to_conf(mddev);
-	int sz = 0, i;
+	int i;
 	
-	sz += sprintf (page+sz, " [%d/%d] [", conf->raid_disks,
+	seq_printf(seq, " [%d/%d] [", conf->raid_disks,
 						 conf->working_disks);
 	for (i = 0; i < conf->raid_disks; i++)
-		sz += sprintf (page+sz, "%s",
+		seq_printf(seq, "%s",
 			conf->mirrors[i].operational ? "U" : "_");
-	sz += sprintf (page+sz, "]");
-	return sz;
+	seq_printf(seq, "]");
 }
 
 #define LAST_DISK KERN_ALERT \

@@ -70,6 +70,7 @@ obj-$(CONFIG_OAKNET) += oaknet.o 8390.o
 obj-$(CONFIG_DGRS) += dgrs.o
 obj-$(CONFIG_RCPCI) += rcpci.o
 obj-$(CONFIG_VORTEX) += 3c59x.o mii.o
+obj-$(CONFIG_TYPHOON) += typhoon.o
 obj-$(CONFIG_NE2K_PCI) += ne2k-pci.o 8390.o
 obj-$(CONFIG_PCNET32) += pcnet32.o mii.o
 obj-$(CONFIG_EEPRO100) += eepro100.o mii.o
@@ -100,7 +101,7 @@ ifeq ($(CONFIG_SKFP),y)
 endif
 
 obj-$(CONFIG_VIA_RHINE) += via-rhine.o mii.o
-obj-$(CONFIG_ADAPTEC_STARFIRE) += starfire.o
+obj-$(CONFIG_ADAPTEC_STARFIRE) += starfire.o mii.o
 
 #
 # end link order section
@@ -114,12 +115,12 @@ obj-$(CONFIG_AIRONET4500_CS)	+= aironet4500_proc.o
 
 obj-$(CONFIG_WINBOND_840) += winbond-840.o mii.o
 obj-$(CONFIG_SUNDANCE) += sundance.o mii.o
-obj-$(CONFIG_HAMACHI) += hamachi.o
+obj-$(CONFIG_HAMACHI) += hamachi.o mii.o
 obj-$(CONFIG_NET) += Space.o setup.o net_init.o loopback.o
 obj-$(CONFIG_SEEQ8005) += seeq8005.o
 obj-$(CONFIG_ETHERTAP) += ethertap.o
 obj-$(CONFIG_NET_SB1000) += sb1000.o
-obj-$(CONFIG_MAC8390) += daynaport.o 8390.o
+obj-$(CONFIG_MAC8390) += mac8390.o 8390.o
 obj-$(CONFIG_APNE) += apne.o 8390.o
 obj-$(CONFIG_PCMCIA_PCNET) += 8390.o
 obj-$(CONFIG_SHAPER) += shaper.o
@@ -220,11 +221,18 @@ obj-$(CONFIG_A2065) += a2065.o
 obj-$(CONFIG_HYDRA) += hydra.o 8390.o
 obj-$(CONFIG_ARIADNE) += ariadne.o
 obj-$(CONFIG_CS89x0) += cs89x0.o
+obj-$(CONFIG_ARM_CIRRUS) += cirrus.o
 obj-$(CONFIG_MACSONIC) += macsonic.o
 obj-$(CONFIG_MACMACE) += macmace.o
 obj-$(CONFIG_MAC89x0) += mac89x0.o
 obj-$(CONFIG_TUN) += tun.o
+obj-$(CONFIG_ETHER00) +=ether00.o
 obj-$(CONFIG_DL2K) += dl2k.o
+obj-$(CONFIG_R8169) += r8169.o
+obj-$(CONFIG_AMD8111_ETH) += amd8111e.o
+
+# non-drivers/net drivers who want mii lib
+obj-$(CONFIG_PCMCIA_SMC91C92) += mii.o
 
 ifeq ($(CONFIG_ARCH_ACORN),y)
 mod-subdirs	+= ../acorn/net

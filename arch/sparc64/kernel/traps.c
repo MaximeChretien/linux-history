@@ -1542,6 +1542,9 @@ void show_trace_raw(struct task_struct *tsk, unsigned long ksp)
 	struct reg_window *rw;
 	int count = 0;
 
+	if (tsk == current)
+		flushw_all();
+
 	fp = ksp + STACK_BIAS;
 	do {
 		/* Bogus frame pointer? */
@@ -1560,6 +1563,15 @@ void show_trace_task(struct task_struct *tsk)
 {
 	if (tsk)
 		show_trace_raw(tsk, tsk->thread.ksp);
+}
+
+void dump_stack(void)
+{
+	unsigned long ksp;
+
+	__asm__ __volatile__("mov	%%fp, %0"
+			     : "=r" (ksp));
+	show_trace_raw(current, ksp);
 }
 
 void die_if_kernel(char *str, struct pt_regs *regs)

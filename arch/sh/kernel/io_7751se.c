@@ -97,7 +97,7 @@ shifted_port(unsigned long port)
 #define CHECK_SH7751_PCIIO(port) \
   ((port >= PCIBIOS_MIN_IO) && (port < (PCIBIOS_MIN_IO + SH7751_PCI_IO_SIZE)))
 #else
-#define CHECK_SH_7751_PCIIO(port) (0)
+#define CHECK_SH7751_PCIIO(port) (0)
 #endif
 
 /*

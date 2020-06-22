@@ -226,22 +226,33 @@ xprt_sendmsg(struct rpc_xprt *xprt, struct rpc_rqst *req)
 	/* Dont repeat bytes */
 	skip = req->rq_bytes_sent;
 	slen = xdr->len - skip;
-	niov = xdr_kmap(niv, xdr, skip);
-
-	msg.msg_flags   = MSG_DONTWAIT|MSG_NOSIGNAL;
-	msg.msg_iov	= niv;
-	msg.msg_iovlen	= niov;
-	msg.msg_name	= (struct sockaddr *) &xprt->addr;
-	msg.msg_namelen = sizeof(xprt->addr);
-	msg.msg_control = NULL;
-	msg.msg_controllen = 0;
-
 	oldfs = get_fs(); set_fs(get_ds());
-	clear_bit(SOCK_ASYNC_NOSPACE, &sock->flags);
-	result = sock_sendmsg(sock, &msg, slen);
-	set_fs(oldfs);
+	do {
+		unsigned int slen_part, n;
 
-	xdr_kunmap(xdr, skip);
+		niov = xdr_kmap(niv, xdr, skip);
+
+		msg.msg_flags   = MSG_DONTWAIT|MSG_NOSIGNAL;
+		msg.msg_iov	= niv;
+		msg.msg_iovlen	= niov;
+		msg.msg_name	= (struct sockaddr *) &xprt->addr;
+		msg.msg_namelen = sizeof(xprt->addr);
+		msg.msg_control = NULL;
+		msg.msg_controllen = 0;
+
+		slen_part = 0;
+		for (n = 0; n < niov; n++)
+			slen_part += niv[n].iov_len;
+
+		clear_bit(SOCK_ASYNC_NOSPACE, &sock->flags);
+		result = sock_sendmsg(sock, &msg, slen_part);
+
+		xdr_kunmap(xdr, skip, niov);
+
+		skip += slen_part;
+		slen -= slen_part;
+	} while (result >= 0 && slen);
+	set_fs(oldfs);
 
 	dprintk("RPC:      xprt_sendmsg(%d) = %d\n", slen, result);
 
@@ -1239,26 +1250,41 @@ out_nofree:
 }
 
 /*
+ * Allocate a 'unique' XID
+ */
+static u32
+xprt_alloc_xid(void)
+{
+	static spinlock_t xid_lock = SPIN_LOCK_UNLOCKED;
+	static int need_init = 1;
+	static u32 xid;
+	u32 ret;
+
+	spin_lock(&xid_lock);
+	if (unlikely(need_init)) {
+		xid = CURRENT_TIME << 12;
+		need_init = 0;
+	}
+	ret = xid++;
+	spin_unlock(&xid_lock);
+	return ret;
+}
+
+/*
  * Initialize RPC request
  */
 static void
 xprt_request_init(struct rpc_task *task, struct rpc_xprt *xprt)
 {
 	struct rpc_rqst	*req = task->tk_rqstp;
-	static u32	xid = 0;
 
-	if (!xid)
-		xid = CURRENT_TIME << 12;
-
-	dprintk("RPC: %4d reserved req %p xid %08x\n", task->tk_pid, req, xid);
-	task->tk_status = 0;
 	req->rq_timeout = xprt->timeout;
 	req->rq_task	= task;
 	req->rq_xprt    = xprt;
-	req->rq_xid     = xid++;
-	if (!xid)
-		xid++;
+	req->rq_xid     = xprt_alloc_xid();
 	INIT_LIST_HEAD(&req->rq_list);
+	dprintk("RPC: %4d reserved req %p xid %08x\n", task->tk_pid,
+			req, req->rq_xid);
 }
 
 /*
@@ -1416,6 +1442,8 @@ xprt_bind_socket(struct rpc_xprt *xprt, struct socket *sock)
 		sk->no_check = UDP_CSUM_NORCV;
 		xprt_set_connected(xprt);
 	} else {
+		struct tcp_opt *tp = &(sk->tp_pinfo.af_tcp);
+		tp->nonagle = 1;	/* disable Nagle's algorithm */
 		sk->data_ready = tcp_data_ready;
 		sk->state_change = tcp_state_change;
 		xprt_clear_connected(xprt);

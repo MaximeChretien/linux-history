@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.fcc_enet.c 1.7 05/17/01 18:14:20 cort
- */
-/*
  * Fast Ethernet Controller (FCC) driver for Motorola MPC8260.
  * Copyright (c) 2000 MontaVista Software, Inc.   Dan Malek (dmalek@jlc.net)
  *
@@ -1442,8 +1439,8 @@ init_fcc_startup(fcc_info_t *fip, struct net_device *dev)
 
 	/* Install our interrupt handler.
 	*/
-	if (request_8xxirq(fip->fc_interrupt, fcc_enet_interrupt, 0,
-							"fenet", dev) < 0)
+	if (request_irq(fip->fc_interrupt, fcc_enet_interrupt, 0, "fenet",
+				dev) < 0)
 		printk("Can't get FCC IRQ %d\n", fip->fc_interrupt);
 
 	/* Set GFMR to enable Ethernet operating mode.

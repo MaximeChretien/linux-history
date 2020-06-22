@@ -48,6 +48,8 @@
 #include <linux/blk.h>
 #include <linux/smp_lock.h>
 #include <linux/completion.h>
+#include <linux/spinlock.h>
+#include <asm/atomic.h>
 #include "scsi.h"
 #include "hosts.h"
 
@@ -147,6 +149,8 @@ struct us_data {
 	int			host_number;	 /* to find us		*/
 	int			host_no;	 /* allocated by scsi	*/
 	Scsi_Cmnd		*srb;		 /* current srb		*/
+	atomic_t                abortcnt;        /* must complete(&notify) */
+	
 
 	/* thread information */
 	Scsi_Cmnd		*queue_srb;	 /* the single queue slot */
@@ -167,13 +171,14 @@ struct us_data {
 	struct semaphore	current_urb_sem; /* to protect irq_urb	 */
 	struct urb		*current_urb;	 /* non-int USB requests */
 	struct completion	current_done;	 /* the done flag        */
+	unsigned int		tag;		 /* tag for bulk CBW/CSW */
 
 	/* the semaphore for sleeping the control thread */
 	struct semaphore	sema;		 /* to sleep thread on   */
 
 	/* mutual exclusion structures */
 	struct completion	notify;		 /* thread begin/end	    */
-	struct semaphore	queue_exclusion; /* to protect data structs */
+	spinlock_t		queue_exclusion; /* to protect data structs */
 	struct us_unusual_dev   *unusual_dev;	 /* If unusual device       */
 	void			*extra;		 /* Any extra data          */
 	extra_data_destructor	extra_destructor;/* extra data destructor   */

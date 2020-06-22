@@ -155,13 +155,13 @@ void init_cpu_timer(void)
 {
 	unsigned long cr0;
 
+	S390_lowcore.jiffy_timer = (__u64) jiffies * CLK_TICKS_PER_JIFFY;
+	S390_lowcore.jiffy_timer += init_timer_cc + CLK_TICKS_PER_JIFFY;
+	asm volatile ("SCKC %0" : : "m" (S390_lowcore.jiffy_timer));
         /* allow clock comparator timer interrupt */
         asm volatile ("STCTG 0,0,%0" : "=m" (cr0) : : "memory");
         cr0 |= 0x800;
         asm volatile ("LCTLG 0,0,%0" : : "m" (cr0) : "memory");
-	S390_lowcore.jiffy_timer = (__u64) jiffies * CLK_TICKS_PER_JIFFY;
-	S390_lowcore.jiffy_timer += init_timer_cc + CLK_TICKS_PER_JIFFY;
-	asm volatile ("SCKC %0" : : "m" (S390_lowcore.jiffy_timer));
 }
 
 /*

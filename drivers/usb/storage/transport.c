@@ -388,6 +388,7 @@ int usb_stor_control_msg(struct us_data *us, unsigned int pipe,
 	us->current_urb->actual_length = 0;
 	us->current_urb->error_count = 0;
 	us->current_urb->transfer_flags = USB_ASYNC_UNLINK;
+	us->current_urb->status = 0;
 
 	/* submit the URB */
 	status = usb_submit_urb(us->current_urb);
@@ -405,6 +406,8 @@ int usb_stor_control_msg(struct us_data *us, unsigned int pipe,
 
 	/* return the actual length of the data transferred if no error*/
 	status = us->current_urb->status;
+	if (status == -ENOENT)
+		status = -ECONNRESET;
 	if (status >= 0)
 		status = us->current_urb->actual_length;
 
@@ -434,6 +437,7 @@ int usb_stor_bulk_msg(struct us_data *us, void *data, int pipe,
 	us->current_urb->actual_length = 0;
 	us->current_urb->error_count = 0;
 	us->current_urb->transfer_flags = USB_ASYNC_UNLINK;
+	us->current_urb->status = 0;
 
 	/* submit the URB */
 	status = usb_submit_urb(us->current_urb);
@@ -447,6 +451,8 @@ int usb_stor_bulk_msg(struct us_data *us, void *data, int pipe,
 	up(&(us->current_urb_sem));
 	wait_for_completion(&us->current_done);
 	down(&(us->current_urb_sem));
+	if (us->current_urb->status == -ENOENT)
+		us->current_urb->status = -ECONNRESET;
 
 	/* return the actual length of the data transferred */
 	*act_len = us->current_urb->actual_length;
@@ -520,7 +526,7 @@ int usb_stor_transfer_partial(struct us_data *us, char *buf, int length)
 	}
 
 	/* did we abort this command? */
-	if (result == -ENOENT) {
+	if (result == -ECONNRESET) {
 		US_DEBUGP("usb_stor_transfer_partial(): transfer aborted\n");
 		return US_BULK_TRANSFER_ABORTED;
 	}
@@ -630,6 +636,10 @@ void usb_stor_invoke_transport(Scsi_Cmnd *srb, struct us_data *us)
 	if (result == USB_STOR_TRANSPORT_ABORTED) {
 		US_DEBUGP("-- transport indicates command was aborted\n");
 		srb->result = DID_ABORT << 16;
+
+		/* Bulk-only aborts require a device reset */
+		if (us->protocol == US_PR_BULK)
+			us->transport_reset(us);
 		return;
 	}
 
@@ -700,20 +710,26 @@ void usb_stor_invoke_transport(Scsi_Cmnd *srb, struct us_data *us)
 		unsigned short old_sg;
 		unsigned old_request_bufflen;
 		unsigned char old_sc_data_direction;
+		unsigned char old_cmd_len;
 		unsigned char old_cmnd[MAX_COMMAND_SIZE];
 
 		US_DEBUGP("Issuing auto-REQUEST_SENSE\n");
 
 		/* save the old command */
 		memcpy(old_cmnd, srb->cmnd, MAX_COMMAND_SIZE);
+		old_cmd_len = srb->cmd_len;
 
 		/* set the command and the LUN */
+		memset(srb->cmnd, 0, MAX_COMMAND_SIZE);
 		srb->cmnd[0] = REQUEST_SENSE;
 		srb->cmnd[1] = old_cmnd[1] & 0xE0;
-		srb->cmnd[2] = 0;
-		srb->cmnd[3] = 0;
 		srb->cmnd[4] = 18;
-		srb->cmnd[5] = 0;
+
+		/* FIXME: we must do the protocol translation here */
+		if (us->subclass == US_SC_RBC || us->subclass == US_SC_SCSI)
+			srb->cmd_len = 6;
+		else
+			srb->cmd_len = 12;
 
 		/* set the transfer direction */
 		old_sc_data_direction = srb->sc_data_direction;
@@ -739,6 +755,7 @@ void usb_stor_invoke_transport(Scsi_Cmnd *srb, struct us_data *us)
 		srb->request_bufflen = old_request_bufflen;
 		srb->use_sg = old_sg;
 		srb->sc_data_direction = old_sc_data_direction;
+		srb->cmd_len = old_cmd_len;
 		memcpy(srb->cmnd, old_cmnd, MAX_COMMAND_SIZE);
 
 		if (temp_result == USB_STOR_TRANSPORT_ABORTED) {
@@ -820,7 +837,7 @@ void usb_stor_CBI_irq(struct urb *urb)
 	}
 
 	/* is the device removed? */
-	if (urb->status == -ENOENT) {
+	if (urb->status == -ENODEV) {
 		US_DEBUGP("-- device has been removed\n");
 		return;
 	}
@@ -876,7 +893,7 @@ int usb_stor_CBI_transport(Scsi_Cmnd *srb, struct us_data *us)
 	}
 
 	/* if the command was aborted, indicate that */
-	if (result == -ENOENT)
+	if (result == -ECONNRESET)
 		return USB_STOR_TRANSPORT_ABORTED;
 
 	/* STALL must be cleared when it is detected */
@@ -886,7 +903,7 @@ int usb_stor_CBI_transport(Scsi_Cmnd *srb, struct us_data *us)
 			usb_sndctrlpipe(us->pusb_dev, 0));
 
 		/* if the command was aborted, indicate that */
-		if (result == -ENOENT)
+		if (result == -ECONNRESET)
 			return USB_STOR_TRANSPORT_ABORTED;
 		return USB_STOR_TRANSPORT_FAILED;
 	}
@@ -989,7 +1006,7 @@ int usb_stor_CB_transport(Scsi_Cmnd *srb, struct us_data *us)
 	US_DEBUGP("Call to usb_stor_control_msg() returned %d\n", result);
 	if (result < 0) {
 		/* if the command was aborted, indicate that */
-		if (result == -ENOENT)
+		if (result == -ECONNRESET)
 			return USB_STOR_TRANSPORT_ABORTED;
 
 		/* a stall is a fatal condition from the device */
@@ -999,7 +1016,7 @@ int usb_stor_CB_transport(Scsi_Cmnd *srb, struct us_data *us)
 				usb_sndctrlpipe(us->pusb_dev, 0));
 
 			/* if the command was aborted, indicate that */
-			if (result == -ENOENT)
+			if (result == -ECONNRESET)
 				return USB_STOR_TRANSPORT_ABORTED;
 			return USB_STOR_TRANSPORT_FAILED;
 		}
@@ -1054,7 +1071,7 @@ int usb_stor_Bulk_max_lun(struct us_data *us)
 				 US_BULK_GET_MAX_LUN, 
 				 USB_DIR_IN | USB_TYPE_CLASS | 
 				 USB_RECIP_INTERFACE,
-				 0, us->ifnum, data, sizeof(data), HZ);
+				 0, us->ifnum, data, sizeof(*data), HZ);
 
 	US_DEBUGP("GetMaxLUN command result is %d, data is %d\n", 
 		  result, *data);
@@ -1106,7 +1123,7 @@ int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 	bcb->Signature = cpu_to_le32(US_BULK_CB_SIGN);
 	bcb->DataTransferLength = cpu_to_le32(usb_stor_transfer_length(srb));
 	bcb->Flags = srb->sc_data_direction == SCSI_DATA_READ ? 1 << 7 : 0;
-	bcb->Tag = srb->serial_number;
+	bcb->Tag = ++(us->tag);
 	bcb->Lun = srb->cmnd[1] >> 5;
 	if (us->flags & US_FL_SCM_MULT_TARG)
 		bcb->Lun |= srb->target << 4;
@@ -1129,7 +1146,7 @@ int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 	US_DEBUGP("Bulk command transfer result=%d\n", result);
 
 	/* if the command was aborted, indicate that */
-	if (result == -ENOENT) {
+	if (result == -ECONNRESET) {
 		ret = USB_STOR_TRANSPORT_ABORTED;
 		goto out;
 	}
@@ -1140,7 +1157,7 @@ int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 		result = usb_stor_clear_halt(us, pipe);
 
 		/* if the command was aborted, indicate that */
-		if (result == -ENOENT) {
+		if (result == -ECONNRESET) {
 			ret = USB_STOR_TRANSPORT_ABORTED;
 			goto out;
 		}
@@ -1180,7 +1197,7 @@ int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 				   &partial);
 
 	/* if the command was aborted, indicate that */
-	if (result == -ENOENT) {
+	if (result == -ECONNRESET) {
 		ret = USB_STOR_TRANSPORT_ABORTED;
 		goto out;
 	}
@@ -1191,7 +1208,7 @@ int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 		result = usb_stor_clear_halt(us, pipe);
 
 		/* if the command was aborted, indicate that */
-		if (result == -ENOENT) {
+		if (result == -ECONNRESET) {
 			ret = USB_STOR_TRANSPORT_ABORTED;
 			goto out;
 		}
@@ -1202,7 +1219,7 @@ int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 					   US_BULK_CS_WRAP_LEN, &partial);
 
 		/* if the command was aborted, indicate that */
-		if (result == -ENOENT) {
+		if (result == -ECONNRESET) {
 			ret = USB_STOR_TRANSPORT_ABORTED;
 			goto out;
 		}
@@ -1213,7 +1230,7 @@ int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 			result = usb_stor_clear_halt(us, pipe);
 
 			/* if the command was aborted, indicate that */
-			if (result == -ENOENT) {
+			if (result == -ECONNRESET) {
 				ret = USB_STOR_TRANSPORT_ABORTED;
 			} else {
 				ret = USB_STOR_TRANSPORT_ERROR;

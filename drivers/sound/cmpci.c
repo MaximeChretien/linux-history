@@ -82,6 +82,7 @@
  *	- speaker mixer support 
  *	Mon Aug 13 2001
  *	- optimizations and cleanups
+ *    03/01/2003 - open_mode fixes from Georg Acher <acher@in.tum.de>
  *
  */
 /*****************************************************************************/
@@ -587,7 +588,8 @@ static void trans_ac3(struct cm_state *s, void *dest, const char *source, int si
 	unsigned short *src = (unsigned short *)source;
 
 	do {
-		data = (unsigned long) *src++;
+		__get_user(data, src);
+		src++;
 		data <<= 12;			// ok for 16-bit data
 		if (s->spdif_counter == 2 || s->spdif_counter == 3)
 			data |= 0x40000000;	// indicate AC-3 raw data
@@ -1598,9 +1600,9 @@ static ssize_t cm_write(struct file *file, const char *buffer, size_t count, lof
 			return -ENXIO;
 		if (!s->dma_adc.ready && (ret = prog_dmabuf(s, 1)))
 			return ret;
-		if (!access_ok(VERIFY_READ, buffer, count))
-			return -EFAULT;
 	}
+	if (!access_ok(VERIFY_READ, buffer, count))
+		return -EFAULT;
 	ret = 0;
 
 	while (count > 0) {
@@ -2266,7 +2268,7 @@ static int cm_release(struct inode *inode, struct file *file)
 		stop_adc(s);
 		dealloc_dmabuf(&s->dma_adc);
 	}
-	s->open_mode &= (~file->f_mode) & (FMODE_READ|FMODE_WRITE);
+	s->open_mode &= ~(file->f_mode & (FMODE_READ|FMODE_WRITE));
 	up(&s->open_sem);
 	wake_up(&s->open_wait);
 	unlock_kernel();
@@ -2535,7 +2537,7 @@ static int cm_midi_release(struct inode *inode, struct file *file)
 		set_current_state(TASK_RUNNING);
 	}
 	down(&s->open_sem);
-	s->open_mode &= (~(file->f_mode << FMODE_MIDI_SHIFT)) & (FMODE_MIDI_READ|FMODE_MIDI_WRITE);
+	s->open_mode &= ~((file->f_mode << FMODE_MIDI_SHIFT) & (FMODE_MIDI_READ|FMODE_MIDI_WRITE));
 	spin_lock_irqsave(&s->lock, flags);
 	if (!(s->open_mode & (FMODE_MIDI_READ | FMODE_MIDI_WRITE))) {
 		del_timer(&s->midi.timer);		

@@ -52,12 +52,12 @@ _GLOBAL(DoSyscall)
 	andc	r11,r11,r10
 	std	r11,_CCR(r1)
 #ifdef SHOW_SYSCALLS
-#ifdef SHOW_SYSCALLS_TASK
+# ifdef SHOW_SYSCALLS_TASK
 	LOADBASE(r31,show_syscalls_task)
 	ld	r31,show_syscalls_task@l(r31)
 	cmp	0,r13,r31
 	bne	1f
-#endif
+# endif /* SHOW_SYSCALLS_TASK */
 	LOADADDR(r3,7f)
 	ld	r4,GPR0(r1)
 	ld	r5,GPR3(r1)
@@ -115,16 +115,16 @@ _GLOBAL(DoSyscall)
 _GLOBAL(ret_from_syscall_1)
 20:	std	r3,RESULT(r1)	/* Save result */
 #ifdef SHOW_SYSCALLS
-#ifdef SHOW_SYSCALLS_TASK
+# ifdef SHOW_SYSCALLS_TASK
 	cmp	0,r13,r31
 	bne	91f
-#endif
+# endif /* SHOW_SYSCALLS_TASK */
 	mr	r4,r3
 	LOADADDR(r3,79f)
 	bl	.printk
 	ld	r3,RESULT(r1)
 91:
-#endif
+#endif /* SHOW_SYSCALLS */
 	li	r10,-_LAST_ERRNO
 	cmpl	0,r3,r10
 	blt	30f
@@ -177,7 +177,6 @@ _GLOBAL(ret_from_syscall_1)
 	blrl			/* Call handler */
 _GLOBAL(ret_from_syscall_2)
 58:	std	r3,RESULT(r1)	/* Save result */	
-	std	r3,GPR0(r1)	/* temporary gross hack to make strace work */
 	li	r10,-_LAST_ERRNO
 	cmpl	0,r3,r10
 	blt	60f

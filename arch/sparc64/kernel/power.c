@@ -12,14 +12,13 @@
 #include <linux/delay.h>
 
 #include <asm/ebus.h>
+#include <asm/auxio.h>
 
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 
 #ifdef CONFIG_PCI
 static unsigned long power_reg = 0UL;
-#define POWER_SYSTEM_OFF (1 << 0)
-#define POWER_COURTESY_OFF (1 << 1)
 
 static DECLARE_WAIT_QUEUE_HEAD(powerd_wait);
 static int button_pressed;
@@ -48,7 +47,7 @@ void machine_power_off(void)
 			 * same effect, so until I figure out
 			 * what the difference is...
 			 */
-			writel(POWER_COURTESY_OFF | POWER_SYSTEM_OFF, power_reg);
+			writel(AUXIO_PCIO_CPWR_OFF | AUXIO_PCIO_SPWR_OFF, power_reg);
 		} else
 #endif /* CONFIG_PCI */
 			if (poweroff_method != NULL) {
@@ -85,6 +84,16 @@ again:
 	return 0;
 }
 
+static int __init has_button_interrupt(struct linux_ebus_device *edev)
+{
+	if (edev->irqs[0] == PCI_IRQ_NONE)
+		return 0;
+	if (!prom_node_has_property(edev->prom_node, "button"))
+		return 0;
+
+	return 1;
+}
+
 void __init power_init(void)
 {
 	struct linux_ebus *ebus;
@@ -107,7 +116,7 @@ found:
 	power_reg = (unsigned long)ioremap(edev->resource[0].start, 0x4);
 	printk("power: Control reg at %016lx ... ", power_reg);
 	poweroff_method = machine_halt; /* able to use the standard poweroff */
-	if (edev->irqs[0] != PCI_IRQ_NONE) {
+	if (has_button_interrupt(edev)) {
 		if (kernel_thread(powerd, 0, CLONE_FS) < 0) {
 			printk("Failed to start power daemon.\n");
 			return;

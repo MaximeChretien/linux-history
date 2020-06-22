@@ -43,6 +43,7 @@ typedef u64	nic_t;
 #define INVALID_NASID		((nasid_t)-1)
 #define INVALID_CNODEID		((cnodeid_t)-1)
 #define INVALID_PNODEID		((pnodeid_t)-1)
+#define INVALID_SLAB            (slabid_t)-1
 #define INVALID_MODULE		((moduleid_t)-1)
 #define	INVALID_PARTID		((partid_t)-1)
 

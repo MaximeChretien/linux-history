@@ -64,6 +64,7 @@
 #define ST_DEC_CUSCO		 36	/* CUSCO systype	*/
 #define ST_DEC_EIGER		 37	/* Eiger systype	*/
 #define ST_DEC_TITAN		 38	/* Titan systype	*/
+#define ST_DEC_MARVEL		 39	/* Marvel systype	*/
 
 /* UNOFFICIAL!!! */
 #define ST_UNOFFICIAL_BIAS	100
@@ -109,6 +110,9 @@ struct percpu_struct {
 	unsigned long ipc_buffer[21];
 	unsigned long palcode_avail[16];
 	unsigned long compatibility;
+	unsigned long console_data_log_pa;
+	unsigned long console_data_log_length;
+	unsigned long bcache_info;
 };
 
 struct procdesc_struct {

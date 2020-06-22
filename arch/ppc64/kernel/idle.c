@@ -34,36 +34,28 @@
 #include <asm/iSeries/HvCall.h>
 #include <asm/iSeries/ItLpQueue.h>
 
-unsigned long maxYieldTime = 0;
-unsigned long minYieldTime = 0xffffffffffffffffUL;
-
 #ifdef CONFIG_PPC_ISERIES
 static void yield_shared_processor(void)
 {
 	struct paca_struct *lpaca = get_paca();
 	unsigned long tb;
-	unsigned long yieldTime;
 
 	HvCall_setEnabledInterrupts( HvCall_MaskIPI |
 				     HvCall_MaskLpEvent |
 				     HvCall_MaskLpProd |
 				     HvCall_MaskTimeout );
 
-	tb = get_tb();
-	/* Compute future tb value when yield should expire */
-	HvCall_yieldProcessor( HvCall_YieldTimed, tb+tb_ticks_per_jiffy );
-
-	yieldTime = get_tb() - tb;
-	if ( yieldTime > maxYieldTime )
-		maxYieldTime = yieldTime;
-
-	if ( yieldTime < minYieldTime )
-		minYieldTime = yieldTime;
-	
-	/* The decrementer stops during the yield.  Force a fake decrementer
-	 * here and let the timer_interrupt code sort out the actual time.
-	 */
-	lpaca->xLpPaca.xIntDword.xFields.xDecrInt = 1;
+	if ( ! ItLpQueue_isLpIntPending( paca->lpQueuePtr ) ) {
+	  tb = get_tb();
+	  /* Compute future tb value when yield should expire */
+	  HvCall_yieldProcessor( HvCall_YieldTimed, tb+tb_ticks_per_jiffy );
+	  
+	  /* The decrementer stops during the yield.  Force a fake decrementer
+	   * here and let the timer_interrupt code sort out the actual time.
+	   */
+	  lpaca->xLpPaca.xIntDword.xFields.xDecrInt = 1;
+	}
+	  
 	process_iSeries_events();
 }
 #endif /* CONFIG_PPC_ISERIES */

@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.highmem.h 1.10 06/28/01 15:50:17 paulus
- */
-/*
  * highmem.h: virtual kernel memory mappings for high memory
  *
  * PowerPC version, stolen from the i386 version.
@@ -52,16 +49,19 @@ extern void kmap_init(void) __init;
 
 #define KMAP_FIX_BEGIN	(0xfe400000UL)
 
-extern void *kmap_high(struct page *page);
+extern void *kmap_high(struct page *page, int nonblock);
 extern void kunmap_high(struct page *page);
 
-static inline void *kmap(struct page *page)
+#define kmap(page)		__kmap(page, 0)
+#define kmap_nonblock(page)	__kmap(page, 1)
+
+static inline void *__kmap(struct page *page, int nonblock)
 {
 	if (in_interrupt())
 		BUG();
 	if (page < highmem_start_page)
 		return page_address(page);
-	return kmap_high(page);
+	return kmap_high(page, nonblock);
 }
 
 static inline void kunmap(struct page *page)

@@ -590,7 +590,7 @@ iosapic_override_isa_irq (unsigned int isa_irq, unsigned int gsi,
 		      gsi_base, addr);
 
 	DBG("ISA: IRQ %u -> GSI 0x%x(%s,%s) -> CPU 0x%04x vector %d\n",
-	    isa_irq, global_vector,
+	    isa_irq, gsi,
 	    polarity ? "high" : "low", edge_triggered ? "edge" : "level",
 	    dest, vector);
 
@@ -661,7 +661,7 @@ pci_pin_to_vector (int segment, int bus, int slot, int pci_pin)
 		register_intr(gsi, vector, IOSAPIC_LOWEST_PRIORITY,
 			      0, 0, gsi_base, addr);
 
-		DBG("PCI: (%02x:%02x:%02x:%02x INT%c) -> GSI 0x%x -> vector %d\n",
+		DBG("PCI: (%02x:%02x:%02x INT%c) -> GSI 0x%x -> vector %d\n",
 		    segment, bus, slot, 'A' + pci_pin, gsi, vector);
 	}
 

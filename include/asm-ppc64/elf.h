@@ -43,6 +43,8 @@ typedef elf_greg_t32 elf_gregset_t32[ELF_NGREG];
 typedef double elf_fpreg_t;
 typedef elf_fpreg_t elf_fpregset_t[ELF_NFPREG];
 
+#ifdef __KERNEL__
+
 /*
  * This is used to ensure we don't load something for the wrong architecture.
  */
@@ -87,15 +89,13 @@ elf_core_copy_regs(elf_gregset_t dstRegs, struct pt_regs* srcRegs)
 #define ELF_PLATFORM	(NULL)
 
 
-#define ELF_PLAT_INIT(_r, load_addr)	do { \
+#define ELF_PLAT_INIT(_r)	do { \
 	memset(_r->gpr, 0, sizeof(_r->gpr)); \
 	_r->ctr = _r->link = _r->xer = _r->ccr = 0; \
-	_r->gpr[2] = load_addr; \
 } while (0)
 
 
 
-#ifdef __KERNEL__
 #define SET_PERSONALITY(ex, ibcs2)				\
 do {	if ((ex).e_ident[EI_CLASS] == ELFCLASS32)		\
 		current->thread.flags |= PPC_FLAG_32BIT;	\
@@ -106,7 +106,6 @@ do {	if ((ex).e_ident[EI_CLASS] == ELFCLASS32)		\
 	else if (current->personality != PER_LINUX32)		\
 		set_personality(PER_LINUX);			\
 } while (0)
-#endif
 
 /*
  * We need to put in some extra aux table entries to tell glibc what
@@ -146,4 +145,5 @@ do {									\
 	NEW_AUX_ENT(1, AT_IGNOREPPC, AT_IGNOREPPC);			\
  } while (0)
 
+#endif /* __KERNEL__ */
 #endif /* __PPC64_ELF_H */

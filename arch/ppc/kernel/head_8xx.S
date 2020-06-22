@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  *  arch/ppc/kernel/except_8xx.S
  *
  *  PowerPC version 
@@ -82,6 +79,12 @@ _start:
 
 	.globl	__start
 __start:
+	/* To accomodate some SMP systems that overwrite the first few
+	 * locations before cpu 0 starts, the bootloader starts us at 0xc.
+	 */
+	nop
+	nop
+	nop
 	mr	r31,r3			/* save parameters */
 	mr	r30,r4
 	mr	r29,r5

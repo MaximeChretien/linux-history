@@ -2,7 +2,7 @@
  * tg3.h: Definitions for Broadcom Tigon3 ethernet driver.
  *
  * Copyright (C) 2001, 2002 David S. Miller (davem@redhat.com)
- * Copyright (C) 2001 Jeff Garzik (jgarzik@mandrakesoft.com)
+ * Copyright (C) 2001 Jeff Garzik (jgarzik@pobox.com)
  */
 
 #ifndef _T3_H
@@ -25,9 +25,6 @@
 
 #define RX_STD_MAX_SIZE			1536
 #define RX_JUMBO_MAX_SIZE		0xdeadbeef /* XXX */
-#if TG3_MINI_RING_WORKS
-#define RX_MINI_MAX_SIZE		256
-#endif
 
 /* First 256 bytes are a mirror of PCI config space. */
 #define TG3PCI_VENDOR			0x00000000
@@ -116,6 +113,8 @@
 #define  CHIPREV_ID_5703_A2		 0x1002
 #define  CHIPREV_ID_5703_A3		 0x1003
 #define  CHIPREV_ID_5704_A0		 0x2000
+#define  CHIPREV_ID_5704_A1		 0x2001
+#define  CHIPREV_ID_5704_A2		 0x2002
 #define  GET_ASIC_REV(CHIP_REV_ID)	((CHIP_REV_ID) >> 12)
 #define   ASIC_REV_5700			 0x07
 #define   ASIC_REV_5701			 0x00
@@ -457,6 +456,7 @@
 #define  RCV_RULE_DISABLE_MASK		 0x7fffffff
 #define MAC_RCV_RULE_CFG		0x00000500
 #define  RCV_RULE_CFG_DEFAULT_CLASS	0x00000008
+#define MAC_LOW_WMARK_MAX_RX_FRAME	0x00000504
 /* 0x504 --> 0x590 unused */
 #define MAC_SERDES_CFG			0x00000590
 #define MAC_SERDES_STAT			0x00000594
@@ -1139,6 +1139,7 @@
 #define  GRC_MISC_CFG_BOARD_ID_5703S	0x00002000
 #define  GRC_MISC_CFG_BOARD_ID_5704	0x00000000
 #define  GRC_MISC_CFG_BOARD_ID_5704CIOBE 0x00004000
+#define  GRC_MISC_CFG_BOARD_ID_5704_A2	0x00008000
 #define  GRC_MISC_CFG_BOARD_ID_AC91002A1 0x00018000
 #define GRC_LOCAL_CTRL			0x00006808
 #define  GRC_LCLCTRL_INT_ACTIVE		0x00000001
@@ -1301,9 +1302,7 @@
 #define NIC_SRAM_MAC_ADDR_HIGH_MBOX	0x00000c14
 #define NIC_SRAM_MAC_ADDR_LOW_MBOX	0x00000c18
 
-#if TG3_MINI_RING_WORKS
 #define NIC_SRAM_RX_MINI_BUFFER_DESC	0x00001000
-#endif
 
 #define NIC_SRAM_DMA_DESC_POOL_BASE	0x00002000
 #define  NIC_SRAM_DMA_DESC_POOL_SIZE	 0x00002000
@@ -1453,9 +1452,7 @@ struct tg3_rx_buffer_desc {
 #define RXD_FLAGS_SHIFT	0
 
 #define RXD_FLAG_END			0x0004
-#if TG3_MINI_RING_WORKS
 #define RXD_FLAG_MINI			0x0800
-#endif
 #define RXD_FLAG_JUMBO			0x0020
 #define RXD_FLAG_VLAN			0x0040
 #define RXD_FLAG_ERROR			0x0400
@@ -1490,9 +1487,7 @@ struct tg3_rx_buffer_desc {
 #define RXD_OPAQUE_INDEX_SHIFT		0
 #define RXD_OPAQUE_RING_STD		0x00010000
 #define RXD_OPAQUE_RING_JUMBO		0x00020000
-#if TG3_MINI_RING_WORKS
 #define RXD_OPAQUE_RING_MINI		0x00040000
-#endif
 #define RXD_OPAQUE_RING_MASK		0x00070000
 };
 
@@ -1728,6 +1723,8 @@ struct tg3_bufmgr_config {
 };
 
 struct tg3 {
+	/* begin "general, frequently-used members" cacheline section */
+
 	/* SMP locking strategy:
 	 *
 	 * lock: Held during all operations except TX packet
@@ -1741,18 +1738,51 @@ struct tg3 {
 	 * necessary for acquisition of 'tx_lock'.
 	 */
 	spinlock_t			lock;
-	spinlock_t			tx_lock;
+	spinlock_t			indirect_lock;
 
+	unsigned long			regs;
+	struct net_device		*dev;
+	struct pci_dev			*pdev;
+
+	struct tg3_hw_status		*hw_status;
+	dma_addr_t			status_mapping;
+
+	u32				msg_enable;
+
+	/* begin "tx thread" cacheline section */
 	u32				tx_prod;
 	u32				tx_cons;
+	u32				tx_pending;
+
+	spinlock_t			tx_lock;
+
+	/* TX descs are only used if TG3_FLAG_HOST_TXDS is set. */
+	struct tg3_tx_buffer_desc	*tx_ring;
+	struct tx_ring_info		*tx_buffers;
+	dma_addr_t			tx_desc_mapping;
+
+	/* begin "rx thread" cacheline section */
 	u32				rx_rcb_ptr;
 	u32				rx_std_ptr;
 	u32				rx_jumbo_ptr;
-#if TG3_MINI_RING_WORKS
-	u32				rx_mini_ptr;
+	u32				rx_pending;
+	u32				rx_jumbo_pending;
+#if TG3_VLAN_TAG_USED
+	struct vlan_group		*vlgrp;
 #endif
-	spinlock_t			indirect_lock;
 
+	struct tg3_rx_buffer_desc	*rx_std;
+	struct ring_info		*rx_std_buffers;
+	dma_addr_t			rx_std_mapping;
+
+	struct tg3_rx_buffer_desc	*rx_jumbo;
+	struct ring_info		*rx_jumbo_buffers;
+	dma_addr_t			rx_jumbo_mapping;
+
+	struct tg3_rx_buffer_desc	*rx_rcb;
+	dma_addr_t			rx_rcb_mapping;
+
+	/* begin "everything else" cacheline(s) section */
 	struct net_device_stats		net_stats;
 	struct net_device_stats		net_stats_prev;
 	unsigned long			phy_crc_errors;
@@ -1765,6 +1795,7 @@ struct tg3 {
 #define TG3_FLAG_USE_LINKCHG_REG	0x00000008
 #define TG3_FLAG_USE_MI_INTERRUPT	0x00000010
 #define TG3_FLAG_ENABLE_ASF		0x00000020
+#define TG3_FLAG_5701_REG_WRITE_BUG	0x00000040
 #define TG3_FLAG_POLL_SERDES		0x00000080
 #define TG3_FLAG_MBOX_WRITE_REORDER	0x00000100
 #define TG3_FLAG_PCIX_TARGET_HWBUG	0x00000200
@@ -1790,8 +1821,8 @@ struct tg3 {
 #define TG3_FLAG_GOT_SERDES_FLOWCTL	0x20000000
 #define TG3_FLAG_SPLIT_MODE		0x40000000
 #define TG3_FLAG_INIT_COMPLETE		0x80000000
-
-	u32				msg_enable;
+	u32				tg3_flags2;
+#define TG3_FLG2_RESTART_TIMER		0x00000001
 
 	u32				split_mode_max_reqs;
 #define SPLIT_MODE_5704_MAX_REQ		3
@@ -1805,13 +1836,6 @@ struct tg3 {
 
 	struct tg3_link_config		link_config;
 	struct tg3_bufmgr_config	bufmgr_config;
-
-	u32				rx_pending;
-#if TG3_MINI_RING_WORKS
-	u32				rx_mini_pending;
-#endif
-	u32				rx_jumbo_pending;
-	u32				tx_pending;
 
 	/* cache h/w values, often passed straight to h/w */
 	u32				rx_mode;
@@ -1865,38 +1889,9 @@ struct tg3 {
 	 (X) == PHY_ID_BCM5703 || (X) == PHY_ID_BCM5704 || \
 	 (X) == PHY_ID_BCM8002 || (X) == PHY_ID_SERDES)
 
-	unsigned long			regs;
-	struct pci_dev			*pdev;
-	struct net_device		*dev;
-#if TG3_VLAN_TAG_USED
-	struct vlan_group		*vlgrp;
-#endif
-
-	struct tg3_rx_buffer_desc	*rx_std;
-	struct ring_info		*rx_std_buffers;
-	dma_addr_t			rx_std_mapping;
-#if TG3_MINI_RING_WORKS
-	struct tg3_rx_buffer_desc	*rx_mini;
-	struct ring_info		*rx_mini_buffers;
-	dma_addr_t			rx_mini_mapping;
-#endif
-	struct tg3_rx_buffer_desc	*rx_jumbo;
-	struct ring_info		*rx_jumbo_buffers;
-	dma_addr_t			rx_jumbo_mapping;
-
-	struct tg3_rx_buffer_desc	*rx_rcb;
-	dma_addr_t			rx_rcb_mapping;
-
-	/* TX descs are only used if TG3_FLAG_HOST_TXDS is set. */
-	struct tg3_tx_buffer_desc	*tx_ring;
-	struct tx_ring_info		*tx_buffers;
-	dma_addr_t			tx_desc_mapping;
-
-	struct tg3_hw_status		*hw_status;
-	dma_addr_t			status_mapping;
-
 	struct tg3_hw_stats		*hw_stats;
 	dma_addr_t			stats_mapping;
+	struct tq_struct		reset_task;
 };
 
 #endif /* !(_T3_H) */

@@ -138,10 +138,11 @@ static void mtdblock_request(RQFUNC_ARG)
       }
 
       if (current_request->sector << 9 > mtd->size ||
-	  (current_request->sector + current_request->nr_sectors) << 9 > mtd->size)
+	  (current_request->sector + current_request->current_nr_sectors) << 9 > mtd->size)
       {
 	 printk("mtd: Attempt to read past end of device!\n");
-	 printk("size: %x, sector: %lx, nr_sectors %lx\n", mtd->size, current_request->sector, current_request->nr_sectors);
+	 printk("size: %x, sector: %lx, nr_sectors %lx\n", mtd->size, 
+		current_request->sector, current_request->current_nr_sectors);
 	 end_request(0);
 	 continue;
       }
@@ -162,7 +163,7 @@ static void mtdblock_request(RQFUNC_ARG)
 
 	 case READ:
 	 if (MTD_READ(mtd,current_request->sector<<9, 
-		      current_request->nr_sectors << 9, 
+		      current_request->current_nr_sectors << 9, 
 		      &retlen, current_request->buffer) == 0)
 	    res = 1;
 	 else
@@ -172,7 +173,7 @@ static void mtdblock_request(RQFUNC_ARG)
 	 case WRITE:
 
 	 /* printk("mtdblock_request WRITE sector=%d(%d)\n",current_request->sector,
-		current_request->nr_sectors);
+		current_request->current_nr_sectors);
 	 */
 
 	 // Read only device
@@ -184,7 +185,7 @@ static void mtdblock_request(RQFUNC_ARG)
 
 	 // Do the write
 	 if (MTD_WRITE(mtd,current_request->sector<<9, 
-		       current_request->nr_sectors << 9, 
+		       current_request->current_nr_sectors << 9, 
 		       &retlen, current_request->buffer) == 0)
 	    res = 1;
 	 else
@@ -287,7 +288,7 @@ int __init init_mtdblock(void)
 static void __exit cleanup_mtdblock(void)
 {
 	unregister_blkdev(MAJOR_NR,DEVICE_NAME);
-	blksize_size[MAJOR_NR] = NULL;
+	blk_size[MAJOR_NR] = NULL;
 	blk_cleanup_queue(BLK_DEFAULT_QUEUE(MAJOR_NR));
 }
 

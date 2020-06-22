@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.entry.S 1.26 01/25/02 15:15:24 benh
- */
-/*
  *  PowerPC version 
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
  *  Rewritten by Cort Dougan (cort@fsmlabs.com) for PReP
@@ -166,7 +163,6 @@ ret_from_syscall_1:
 	.globl	ret_from_syscall_2
 ret_from_syscall_2:
 	stw	r3,RESULT(r1)	/* Save result */	
-	stw	r3,GPR0(r1)	/* temporary gross hack to make strace work */
 	li	r10,-_LAST_ERRNO
 	cmpl	0,r3,r10
 	blt	60f
@@ -314,6 +310,7 @@ restore:
 	SYNC			/* Some chip revs have problems here... */
 	mtmsr	r0		/* Update machine state */
 
+	PPC405_ERR77(0,r1)
 	stwcx.	r0,0,r1		/* to clear the reservation */
 
 	/* if returning to user mode, set new sprg2 and save kernel SP */
@@ -377,6 +374,7 @@ END_FTR_SECTION_IFSET(CPU_FTR_ALTIVEC)
 	lwz	r4,GPR4(r1)
 	lwz	r1,GPR1(r1)
 	SYNC
+	PPC405_ERR77_SYNC
 	RFI
 
 

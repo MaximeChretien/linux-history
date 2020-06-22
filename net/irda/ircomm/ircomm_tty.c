@@ -512,6 +512,9 @@ static void ircomm_tty_close(struct tty_struct *tty, struct file *filp)
 	if (!tty)
 		return;
 
+	ASSERT(self != NULL, return;);
+	ASSERT(self->magic == IRCOMM_TTY_MAGIC, return;);
+
 	save_flags(flags); 
 	cli();
 
@@ -522,9 +525,6 @@ static void ircomm_tty_close(struct tty_struct *tty, struct file *filp)
 		IRDA_DEBUG(0, "%s(), returning 1\n", __FUNCTION__);
 		return;
 	}
-
-	ASSERT(self != NULL, return;);
-	ASSERT(self->magic == IRCOMM_TTY_MAGIC, return;);
 
 	if ((tty->count == 1) && (self->open_count != 1)) {
 		/*

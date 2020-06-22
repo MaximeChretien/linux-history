@@ -279,7 +279,7 @@ static void alloc586(struct net_device *dev)
 
 int __init sun3_82586_probe(struct net_device *dev)
 {
-	unsigned long ioaddr, iopte;
+ 	unsigned long ioaddr;
 	static int found = 0;
 	
 	/* check that this machine has an onboard 82586 */
@@ -296,22 +296,8 @@ int __init sun3_82586_probe(struct net_device *dev)
 	if(found)
 		return -ENODEV;
 	
-	for(ioaddr = 0xfe00000; ioaddr < (0xfe00000 +
-	    SUN3_PMEG_SIZE); ioaddr += SUN3_PTE_SIZE) {
-
-		iopte = sun3_get_pte(ioaddr);
-		if(!(iopte & SUN3_PAGE_TYPE_IO)) /* this an io page? */
-			continue;
-
-		if(((iopte & SUN3_PAGE_PGNUM_MASK) << PAGE_SHIFT) ==
-		   IE_OBIO) {
-			found = 1;
-			break;
-		}
-	}
-	
-	if(!found)
-		return 0;
+	ioaddr = (unsigned long)ioremap(IE_OBIO, PAGE_SIZE);
+	found = 1;
 	
 	SET_MODULE_OWNER(dev);
 
@@ -1024,8 +1010,13 @@ static int sun3_82586_send_packet(struct sk_buff *skb, struct net_device *dev)
 	else
 #endif
 	{
+		len = skb->len;
+		if(len < ETH_ZLEN)
+		{
+			memset((char *)p->xmit_cbuffs[p->xmit_count], 0, ETH_ZLEN);
+			len = ETH_ZLEN;
+		}
 		memcpy((char *)p->xmit_cbuffs[p->xmit_count],(char *)(skb->data),skb->len);
-		len = (ETH_ZLEN < skb->len) ? skb->len : ETH_ZLEN;
 
 #if (NUM_XMIT_BUFFS == 1)
 #	ifdef NO_NOPCOMMANDS

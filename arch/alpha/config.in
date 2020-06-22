@@ -42,6 +42,7 @@ choice 'Alpha system type' \
 	 Eiger			CONFIG_ALPHA_EIGER		\
 	 Jensen			CONFIG_ALPHA_JENSEN		\
 	 LX164			CONFIG_ALPHA_LX164		\
+	 Marvel			CONFIG_ALPHA_MARVEL		\
 	 Miata			CONFIG_ALPHA_MIATA		\
 	 Mikasa			CONFIG_ALPHA_MIKASA		\
 	 Nautilus		CONFIG_ALPHA_NAUTILUS		\
@@ -181,6 +182,12 @@ then
 	define_bool CONFIG_ALPHA_EV6 y
 	define_bool CONFIG_ALPHA_EV67 y
 fi
+if [ "$CONFIG_ALPHA_MARVEL" = "y" ]
+then
+	define_bool CONFIG_ALPHA_EV6 y
+	define_bool CONFIG_ALPHA_EV67 y
+	define_bool CONFIG_ALPHA_EV7 y
+fi
 if [ "$CONFIG_ALPHA_RAWHIDE" = "y" ]
 then
 	define_bool CONFIG_ALPHA_EV5 y
@@ -208,7 +215,8 @@ if [ "$CONFIG_ALPHA_JENSEN" = "y" -o "$CONFIG_ALPHA_MIKASA" = "y" \
 	-o "$CONFIG_ALPHA_SABLE" = "y" -o "$CONFIG_ALPHA_NORITAKE" = "y" \
 	-o "$CONFIG_ALPHA_DP264" = "y" -o "$CONFIG_ALPHA_RAWHIDE" = "y" \
 	-o "$CONFIG_ALPHA_EIGER" = "y" -o "$CONFIG_ALPHA_WILDFIRE" = "y" \
-	-o "$CONFIG_ALPHA_TITAN" = "y" -o "$CONFIG_ALPHA_SHARK" = "y" ]
+	-o "$CONFIG_ALPHA_TITAN" = "y" -o "$CONFIG_ALPHA_SHARK" = "y" \
+	-o "$CONFIG_ALPHA_MARVEL" = "y" ]
 then
 	define_bool CONFIG_ALPHA_SRM y
 fi
@@ -221,6 +229,8 @@ if [ "$CONFIG_ALPHA_CABRIOLET" = "y" -o "$CONFIG_ALPHA_AVANTI" = "y" \
 then
   bool 'Use SRM as bootloader' CONFIG_ALPHA_SRM
 fi
+
+bool 'Verbose Machine Checks' CONFIG_VERBOSE_MCHECK
 
 if [ "$CONFIG_ALPHA_ALCOR" = "y" -o "$CONFIG_ALPHA_MIKASA" = "y" \
 	-o "$CONFIG_ALPHA_SABLE" = "y" -o "$CONFIG_ALPHA_NORITAKE" = "y" \
@@ -240,13 +250,17 @@ fi
 if [ "$CONFIG_ALPHA_SABLE" = "y" -o "$CONFIG_ALPHA_RAWHIDE" = "y" \
 	-o "$CONFIG_ALPHA_DP264" = "y" -o "$CONFIG_ALPHA_WILDFIRE" = "y" \
 	-o "$CONFIG_ALPHA_TITAN" = "y" -o "$CONFIG_ALPHA_GENERIC" = "y" \
-	-o "$CONFIG_ALPHA_SHARK" = "y" ]
+	-o "$CONFIG_ALPHA_SHARK" = "y" -o "$CONFIG_ALPHA_MARVEL" = "y" ]
 then
 	bool 'Symmetric multi-processing support' CONFIG_SMP
 fi
 
 if [ "$CONFIG_SMP" = "y" ]; then
    define_bool CONFIG_HAVE_DEC_LOCK y
+fi
+
+if [ "$CONFIG_ALPHA_GENERIC" = "y" -o "$CONFIG_ALPHA_SRM" = "y" ]; then
+	define_bool CONFIG_EARLY_PRINTK y
 fi
 
 if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
@@ -311,6 +325,7 @@ comment 'ATA/IDE/MFM/RLL support'
 tristate 'ATA/IDE/MFM/RLL support' CONFIG_IDE
 
 if [ "$CONFIG_IDE" != "n" ]; then
+  int '  Maximum IDE interfaces' MAX_HWIFS 4
   source drivers/ide/Config.in
 else
   define_bool CONFIG_BLK_DEV_IDE_MODES n
@@ -330,6 +345,7 @@ endmenu
 
 if [ "$CONFIG_PCI" = "y" ]; then
   source drivers/message/fusion/Config.in
+  source drivers/ieee1394/Config.in
 fi
 
 if [ "$CONFIG_NET" = "y" ]; then
@@ -366,6 +382,10 @@ if [ "$CONFIG_CD_NO_IDESCSI" != "n" ]; then
 fi
 endmenu
 
+#
+# input before char - char/joystick depends on it. As does USB.
+#
+source drivers/input/Config.in
 source drivers/char/Config.in
 
 #source drivers/misc/Config.in
@@ -401,7 +421,6 @@ fi
 endmenu
 
 source drivers/usb/Config.in
-source drivers/input/Config.in
 
 source net/bluetooth/Config.in
 

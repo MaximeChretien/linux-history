@@ -234,7 +234,7 @@ spwin_user_stack_is_bolixed:
 spnwin_patch3:	and	%twin_tmp, 0xff, %twin_tmp	! patched on 7win Sparcs
 		st	%twin_tmp, [%curptr + AOFF_task_thread + AOFF_thread_uwinmask]
 
-#define STACK_OFFSET	(TASK_UNION_SIZE - TRACEREG_SZ - REGWIN_SZ)
+#define STACK_OFFSET (TASK_UNION_SIZE - TRACEREG_SZ - STACKFRAME_SZ)
 
 	sethi	%hi(STACK_OFFSET), %sp
 	or	%sp, %lo(STACK_OFFSET), %sp

@@ -23,6 +23,7 @@
 #define PIRQ_VERSION 0x0100
 
 int broken_hp_bios_irq9;
+int broken_440gx_bios;
 
 static struct irq_routing_table *pirq_table;
 
@@ -681,7 +682,10 @@ static int pcibios_lookup_irq(struct pci_dev *dev, int assign)
 void __init pcibios_irq_init(void)
 {
 	DBG("PCI: IRQ init\n");
-	pirq_table = pirq_find_routing_table();
+	if (broken_440gx_bios)
+ 		pirq_table = NULL;	
+ 	else
+		pirq_table = pirq_find_routing_table();
 #ifdef CONFIG_PCI_BIOS
 	if (!pirq_table && (pci_probe & PCI_BIOS_IRQ_SCAN))
 		pirq_table = pcibios_get_irq_routing_table();
@@ -779,9 +783,16 @@ void pcibios_penalize_isa_irq(int irq)
 void pcibios_enable_irq(struct pci_dev *dev)
 {
 	u8 pin;
+	extern int interrupt_line_quirk;
+	
 	pci_read_config_byte(dev, PCI_INTERRUPT_PIN, &pin);
 	if (pin && !pcibios_lookup_irq(dev, 1) && !dev->irq) {
 		char *msg;
+
+		/* With IDE legacy devices the IRQ lookup failure is not a problem.. */
+		if (dev->class >> 8 == PCI_CLASS_STORAGE_IDE && !(dev->class & 0x5))
+			return;
+
 		if (io_apic_assign_pci_irqs)
 			msg = " Probably buggy MP table.";
 		else if (pci_probe & PCI_BIOS_IRQ_SCAN)
@@ -791,4 +802,9 @@ void pcibios_enable_irq(struct pci_dev *dev)
 		printk(KERN_WARNING "PCI: No IRQ known for interrupt pin %c of device %s.%s\n",
 		       'A' + pin - 1, dev->slot_name, msg);
 	}
+	/* VIA bridges use interrupt line for apic/pci steering across
+	   the V-Link */
+	else if (interrupt_line_quirk)
+		pci_write_config_byte(dev, PCI_INTERRUPT_LINE, dev->irq);
+		
 }

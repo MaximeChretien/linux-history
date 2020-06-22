@@ -2,8 +2,8 @@
  *
  * Name:	skcsum.c
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.8 $
- * Date:	$Date: 2001/02/06 11:15:36 $
+ * Version:	$Revision: 1.10 $
+ * Date:	$Date: 2002/04/11 10:02:04 $
  * Purpose:	Store/verify Internet checksum in send/receive packets.
  *
  ******************************************************************************/
@@ -26,6 +26,15 @@
  * History:
  *
  *	$Log: skcsum.c,v $
+ *	Revision 1.10  2002/04/11 10:02:04  rwahl
+ *	Fix in SkCsGetSendInfo():
+ *	- function did not return ProtocolFlags in every case.
+ *	- pseudo header csum calculated wrong for big endian.
+ *	
+ *	Revision 1.9  2001/06/13 07:42:08  gklug
+ *	fix: NetNumber was wrong in CLEAR_STAT event
+ *	add: check for good NetNumber in Clear STAT
+ *	
  *	Revision 1.8  2001/02/06 11:15:36  rassmann
  *	Supporting two nets on dual-port adapters.
  *	
@@ -65,7 +74,7 @@
 
 #ifndef lint
 static const char SysKonnectFileId[] = "@(#)"
-	"$Id: skcsum.c,v 1.8 2001/02/06 11:15:36 rassmann Exp $"
+	"$Id: skcsum.c,v 1.10 2002/04/11 10:02:04 rwahl Exp $"
 	" (C) SysKonnect.";
 #endif	/* !lint */
 
@@ -195,7 +204,7 @@ static const char SysKonnectFileId[] = "@(#)"
  *	zero.)
  *
  * Note:
- *	There is a bug in the ASIC whic may lead to wrong checksums.
+ *	There is a bug in the ASIC which may lead to wrong checksums.
  *
  * Arguments:
  *	pAc - A pointer to the adapter context struct.
@@ -411,9 +420,9 @@ int					NetNumber)		/* Net number */
 			SKCS_OFS_IP_DESTINATION_ADDRESS + 0) +
 		(unsigned long) *(SK_U16 *) SKCS_IDX(pIpHeader,
 			SKCS_OFS_IP_DESTINATION_ADDRESS + 2) +
-		(unsigned long) (NextLevelProtocol << 8) +
+		(unsigned long) SKCS_HTON16(NextLevelProtocol) +
 		(unsigned long) SKCS_HTON16(IpDataLength);
-
+	
 	/* Add-in any carries. */
 
 	SKCS_OC_ADD(PseudoHeaderChecksum, PseudoHeaderChecksum, 0);
@@ -422,6 +431,7 @@ int					NetNumber)		/* Net number */
 
 	SKCS_OC_ADD(pPacketInfo->PseudoHeaderChecksum, PseudoHeaderChecksum, 0);
 
+	pPacketInfo->ProtocolFlags = ProtocolFlags;
 	NextLevelProtoStats->TxOkCts++;	/* Success. */
 }	/* SkCsGetSendInfo */
 
@@ -889,11 +899,13 @@ SK_EVPARA	Param)	/* Event dependent parameter. */
 	 */
 	case SK_CSUM_EVENT_CLEAR_PROTO_STATS:
 
-		ProtoIndex = (int)Param.Para32[0];
-		NetNumber = (int)Param.Para32[1];
+		ProtoIndex = (int)Param.Para32[1];
+		NetNumber = (int)Param.Para32[0];
 		if (ProtoIndex < 0) {	/* Clear for all protocols. */
-			memset(&pAc->Csum.ProtoStats[NetNumber][0], 0,
-				sizeof(pAc->Csum.ProtoStats[NetNumber]));
+			if (NetNumber >= 0) {
+				memset(&pAc->Csum.ProtoStats[NetNumber][0], 0,
+					sizeof(pAc->Csum.ProtoStats[NetNumber]));
+			}
 		}
 		else {					/* Clear for individual protocol. */
 			memset(&pAc->Csum.ProtoStats[NetNumber][ProtoIndex], 0,

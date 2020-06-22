@@ -871,6 +871,14 @@ static int radeonfb_pci_register (struct pci_dev *pdev,
 	/* mem size is bits [28:0], mask off the rest */
 	rinfo->video_ram = tmp & CONFIG_MEMSIZE_MASK;
 
+	/* According to XFree86 4.2.0, some production M6's return 0
+	   for 8MB. */
+	if (rinfo->video_ram == 0 &&
+	    (pdev->device == PCI_DEVICE_ID_RADEON_LY ||
+	     pdev->device == PCI_DEVICE_ID_RADEON_LZ)) {
+	    rinfo->video_ram = 8192 * 1024;
+	  }
+
 	/* ram type */
 	tmp = INREG(MEM_SDRAM_MODE_REG);
 	switch ((MEM_CFG_TYPE & tmp) >> 30) {
@@ -2778,7 +2786,7 @@ static int radeon_set_backlight_enable(int on, int level, void *data)
 	lvds_gen_cntl |= (LVDS_BL_MOD_EN | LVDS_BLON);
 	if (on && (level > BACKLIGHT_OFF)) {
 		lvds_gen_cntl |= LVDS_DIGON;
-		if (!lvds_gen_cntl & LVDS_ON) {
+		if ((lvds_gen_cntl & LVDS_ON) == 0) {
 			lvds_gen_cntl &= ~LVDS_BLON;
 			OUTREG(LVDS_GEN_CNTL, lvds_gen_cntl);
 			(void)INREG(LVDS_GEN_CNTL);

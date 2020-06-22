@@ -170,7 +170,7 @@ int raw_ioctl(struct inode *inode,
 {
 	int minor = minor(inode->i_rdev), err; 
 	struct block_device *b; 
-	if (minor < 1 && minor > 255)
+	if (minor < 1 || minor > 255)
 		return -ENODEV;
 
 	b = raw_devices[minor].binding;

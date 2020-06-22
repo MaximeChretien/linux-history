@@ -84,17 +84,30 @@ void do_page_fault(struct pt_regs *regs, unsigned long address,
 
 #if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
 	if (debugger_fault_handler && (regs->trap == 0x300 ||
-				regs->trap == 0x380)) {
+				       regs->trap == 0x380)) {
 		debugger_fault_handler(regs);
 		return;
 	}
+#endif /* CONFIG_XMON || CONFIG_KGDB */
 
+	/* On an SLB miss we can only check for a valid exception entry */
+	if (regs->trap == 0x380) {
+		bad_page_fault(regs, address);
+		return;
+	}
+
+#if defined(CONFIG_XMON) || defined(CONFIG_KGDB) || defined(CONFIG_KDB)
 	if (error_code & 0x00400000) {
 		/* DABR match */
+#if defined(CONFIG_KDB)
+	    if (kdb(KDB_REASON_BREAK,regs->trap,regs))
+			return;
+#else
 		if (debugger_dabr_match(regs))
 			return;
+#endif
 	}
-#endif /* CONFIG_XMON || CONFIG_KGDB */
+#endif /* CONFIG_XMON || CONFIG_KGDB || CONFIG_KDB */
 
 	if (in_interrupt() || mm == NULL) {
 		bad_page_fault(regs, address);
@@ -136,6 +149,7 @@ good_area:
 			goto bad_area;
 	}
 
+ survive:
 	/*
 	 * If for any reason at all we couldn't handle the fault,
 	 * make sure we exit gracefully rather than endlessly redo
@@ -189,6 +203,11 @@ bad_area:
  */
 out_of_memory:
 	up_read(&mm->mmap_sem);
+	if (current->pid == 1) {
+		yield();
+		down_read(&mm->mmap_sem);
+		goto survive;
+	}
 	printk("VM: killing process %s\n", current->comm);
 	if (user_mode(regs))
 		do_exit(SIGKILL);

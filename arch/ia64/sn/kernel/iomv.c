@@ -7,15 +7,7 @@
  */
 
 #include <asm/io.h>
-
-#if 1	/* ##jh */
-#ifdef CONFIG_IA64_SGI_SN1
-#define mmiob sn1_mmiob
-#else
-#define mmiob sn2_mmiob
-#endif
-extern void mmiob(void);
-#endif /* ##jh */
+#include <linux/module.h>
 
 extern void * sn_io_addr(unsigned long port); /* defined in sn[12]/iomv.c */
 
@@ -83,7 +75,6 @@ sn_outb (unsigned char val, unsigned long port)
 	volatile unsigned char *addr = sn_io_addr(port);
 
 	*addr = val;
-	mmiob();
 }
 
 /**
@@ -99,7 +90,6 @@ sn_outw (unsigned short val, unsigned long port)
 	volatile unsigned short *addr = sn_io_addr(port);
 
 	*addr = val;
-	mmiob();
 }
 
 /**
@@ -115,5 +105,11 @@ sn_outl (unsigned int val, unsigned long port)
 	volatile unsigned int *addr = sn_io_addr(port);
 
 	*addr = val;
-	mmiob();
 }
+
+EXPORT_SYMBOL(sn_inb);
+EXPORT_SYMBOL(sn_inw);
+EXPORT_SYMBOL(sn_inl);
+EXPORT_SYMBOL(sn_outb);
+EXPORT_SYMBOL(sn_outw);
+EXPORT_SYMBOL(sn_outl);

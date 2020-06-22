@@ -154,6 +154,11 @@ source drivers/block/Config.in
 
 source drivers/md/Config.in
 
+source drivers/pcmcia/Config.in
+if [ "$CONFIG_PCMCIA" != "n" ]; then
+   define_bool CONFIG_VIRTUAL_BUS y
+fi
+
 if [ "$CONFIG_NET" = "y" ]; then
   source net/Config.in
 fi

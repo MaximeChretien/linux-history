@@ -547,6 +547,50 @@ struct net_device *dev_getbyhwaddr(unsigned short type, char *ha)
 }
 
 /**
+ *	dev_get_by_flags - find any device with given flags
+ *	@if_flags: IFF_* values
+ *	@mask: bitmask of bits in if_flags to check
+ *
+ *	Search for any interface with the given flags. Returns NULL if a device
+ *	is not found or a pointer to the device. The device returned has 
+ *	had a reference added and the pointer is safe until the user calls
+ *	dev_put to indicate they have finished with it.
+ */
+
+struct net_device * dev_get_by_flags(unsigned short if_flags, unsigned short mask)
+{
+	struct net_device *dev;
+
+	read_lock(&dev_base_lock);
+	dev = __dev_get_by_flags(if_flags, mask);
+	if (dev)
+		dev_hold(dev);
+	read_unlock(&dev_base_lock);
+	return dev;
+}
+
+/**
+ *	__dev_get_by_flags - find any device with given flags
+ *	@if_flags: IFF_* values
+ *	@mask: bitmask of bits in if_flags to check
+ *
+ *	Search for any interface with the given flags. Returns NULL if a device
+ *	is not found or a pointer to the device. The caller must hold either
+ *	the RTNL semaphore or @dev_base_lock.
+ */
+
+struct net_device *__dev_get_by_flags(unsigned short if_flags, unsigned short mask)
+{
+	struct net_device *dev;
+
+	for (dev = dev_base; dev != NULL; dev = dev->next) {
+		if (((dev->flags ^ if_flags) & mask) == 0)
+			return dev;
+	}
+	return NULL;
+}
+
+/**
  *	dev_alloc_name - allocate a name for a device
  *	@dev: device 
  *	@name: name format string
@@ -2155,7 +2199,8 @@ static int dev_ifsioc(struct ifreq *ifr, unsigned int cmd)
 			    cmd == SIOCETHTOOL ||
 			    cmd == SIOCGMIIPHY ||
 			    cmd == SIOCGMIIREG ||
-			    cmd == SIOCSMIIREG) {
+			    cmd == SIOCSMIIREG ||
+			    cmd == SIOCWANDEV) {
 				if (dev->do_ioctl) {
 					if (!netif_device_present(dev))
 						return -ENODEV;
@@ -2321,8 +2366,9 @@ int dev_ioctl(unsigned int cmd, void *arg)
 		 */	
 		 
 		default:
-			if (cmd >= SIOCDEVPRIVATE &&
-			    cmd <= SIOCDEVPRIVATE + 15) {
+			if (cmd == SIOCWANDEV ||
+			    (cmd >= SIOCDEVPRIVATE &&
+			     cmd <= SIOCDEVPRIVATE + 15)) {
 				dev_load(ifr.ifr_name);
 				dev_probe_lock();
 				rtnl_lock();
@@ -2446,6 +2492,17 @@ int register_netdevice(struct net_device *dev)
 			return -EEXIST;
 		}
 	}
+	
+	/* Fix illegal SG+CSUM combinations. */
+	if ((dev->features & NETIF_F_SG) &&
+	    !(dev->features & (NETIF_F_IP_CSUM |
+			       NETIF_F_NO_CSUM |
+			       NETIF_F_HW_CSUM))) {
+		printk("%s: Dropping NETIF_F_SG since no checksum feature.\n",
+		       dev->name);
+		dev->features &= ~NETIF_F_SG;
+	}
+
 	/*
 	 *	nil rebuild_header routine,
 	 *	that should be never called and used as just bug trap.

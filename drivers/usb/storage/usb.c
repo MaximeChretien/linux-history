@@ -343,6 +343,7 @@ static int usb_stor_control_thread(void * __us)
 	set_current_state(TASK_INTERRUPTIBLE);
 
 	for(;;) {
+		unsigned long flags;
 		US_DEBUGP("*** thread sleeping.\n");
 		if(down_interruptible(&us->sema))
 			break;
@@ -350,7 +351,7 @@ static int usb_stor_control_thread(void * __us)
 		US_DEBUGP("*** thread awakened.\n");
 
 		/* lock access to the queue element */
-		down(&(us->queue_exclusion));
+		spin_lock_irqsave(&(us->queue_exclusion), flags);
 
 		/* take the command off the queue */
 		action = us->action;
@@ -358,7 +359,7 @@ static int usb_stor_control_thread(void * __us)
 		us->srb = us->queue_srb;
 
 		/* release the queue lock as fast as possible */
-		up(&(us->queue_exclusion));
+		spin_unlock_irqrestore(&(us->queue_exclusion), flags);
 
 		switch (action) {
 		case US_ACT_COMMAND:
@@ -469,7 +470,8 @@ static int usb_stor_control_thread(void * __us)
 					   us->srb->result);
 				set_current_state(TASK_INTERRUPTIBLE);
 				us->srb->scsi_done(us->srb);
-			} else {
+			};
+			if (atomic_read(&us->abortcnt) != 0) {			
 				US_DEBUGP("scsi command aborted\n");
 				set_current_state(TASK_INTERRUPTIBLE);
 				complete(&(us->notify));
@@ -773,7 +775,7 @@ static void * storage_probe(struct usb_device *dev, unsigned int ifnum,
 		/* Initialize the mutexes only when the struct is new */
 		init_completion(&(ss->notify));
 		init_MUTEX_LOCKED(&(ss->ip_waitq));
-		init_MUTEX(&(ss->queue_exclusion));
+		spin_lock_init(&(ss->queue_exclusion));
 		init_MUTEX(&(ss->irq_urb_sem));
 		init_MUTEX(&(ss->current_urb_sem));
 		init_MUTEX(&(ss->dev_semaphore));

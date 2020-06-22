@@ -24,7 +24,7 @@
 	ba,pt	%xcc, etrap;				\
 109:	 or	%g7, %lo(109b), %g7;			\
 	call	routine;				\
-	 add	%sp, STACK_BIAS + REGWIN_SZ, %o0;	\
+	 add	%sp, PTREGS_OFF, %o0;			\
 	ba,pt	%xcc, rtrap;				\
 	 clr	%l6;					\
 	nop;
@@ -34,7 +34,7 @@
 	ba,pt	%xcc, etrap;				\
 109:	 or	%g7, %lo(109b), %g7;			\
 	call	routine;				\
-	 add	%sp, STACK_BIAS + REGWIN_SZ, %o0;	\
+	 add	%sp, PTREGS_OFF, %o0;			\
 	ba,pt	%xcc, rtrap;				\
 	 clr	%l6;
 
@@ -43,7 +43,7 @@
 	ba,pt	%xcc, do_fptrap;			\
 109:	 or	%g7, %lo(109b), %g7;			\
 	call	routine;				\
-	 add	%sp, STACK_BIAS + REGWIN_SZ, %o0;	\
+	 add	%sp, PTREGS_OFF, %o0;			\
 	ba,pt	%xcc, rtrap;				\
 	 clr	%l6;					\
 	nop;
@@ -63,7 +63,7 @@
 	ba,pt	%xcc, etraptl1;				\
 109:	 or	%g7, %lo(109b), %g7;			\
 	call	routine;				\
-	 add	%sp, STACK_BIAS + REGWIN_SZ, %o0;	\
+	 add	%sp, PTREGS_OFF, %o0;			\
 	ba,pt	%xcc, rtrap;				\
 	 clr	%l6;					\
 	nop;
@@ -72,7 +72,7 @@
 	sethi	%hi(109f), %g7;				\
 	ba,pt	%xcc, etrap;				\
 109:	 or	%g7, %lo(109b), %g7;			\
-	add	%sp, STACK_BIAS + REGWIN_SZ, %o0;	\
+	add	%sp, PTREGS_OFF, %o0;			\
 	call	routine;				\
 	 mov	arg, %o1;				\
 	ba,pt	%xcc, rtrap;				\
@@ -82,7 +82,7 @@
 	sethi	%hi(109f), %g7;				\
 	ba,pt	%xcc, etraptl1;				\
 109:	 or	%g7, %lo(109b), %g7;			\
-	add	%sp, STACK_BIAS + REGWIN_SZ, %o0;	\
+	add	%sp, PTREGS_OFF, %o0;			\
 	call	routine;				\
 	 mov	arg, %o1;				\
 	ba,pt	%xcc, rtrap;				\
@@ -139,7 +139,7 @@
 	 rd	%pc, %g7;				\
 	mov	level, %o0;				\
 	call	routine;				\
-	 add	%sp, STACK_BIAS + REGWIN_SZ, %o1;	\
+	 add	%sp, PTREGS_OFF, %o1;			\
 	ba,a,pt	%xcc, rtrap_clr_l6;
 	
 #define TICK_SMP_IRQ					\
@@ -149,7 +149,7 @@
 	b,pt	%xcc, etrap_irq;			\
 109:	 or	%g7, %lo(109b), %g7;			\
 	call	smp_percpu_timer_interrupt;		\
-	 add	%sp, STACK_BIAS + REGWIN_SZ, %o0;	\
+	 add	%sp, PTREGS_OFF, %o0;			\
 	ba,a,pt	%xcc, rtrap_clr_l6;
 
 #define TRAP_IVEC TRAP_NOSAVE(do_ivec)
@@ -162,11 +162,11 @@
 	ba,pt	%xcc, etrap;						\
 	 rd	%pc, %g7;						\
 	flushw;								\
-	ldx	[%sp + STACK_BIAS + REGWIN_SZ + PT_V9_TNPC], %l1;	\
+	ldx	[%sp + PTREGS_OFF + PT_V9_TNPC], %l1;			\
 	add	%l1, 4, %l2;						\
-	stx	%l1, [%sp + STACK_BIAS + REGWIN_SZ + PT_V9_TPC];	\
+	stx	%l1, [%sp + PTREGS_OFF + PT_V9_TPC];			\
 	ba,pt	%xcc, rtrap_clr_l6;					\
-	 stx	%l2, [%sp + STACK_BIAS + REGWIN_SZ + PT_V9_TNPC];
+	 stx	%l2, [%sp + PTREGS_OFF + PT_V9_TNPC];
 	        
 /* Before touching these macros, you owe it to yourself to go and
  * see how arch/sparc64/kernel/winfixup.S works... -DaveM

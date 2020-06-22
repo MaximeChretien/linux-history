@@ -95,6 +95,7 @@ if [ "$CONFIG_HOTPLUG" = "y" ] ; then
    source drivers/hotplug/Config.in
 else
    define_bool CONFIG_PCMCIA n
+   define_bool CONFIG_HOTPLUG_PCI n
 fi
 
 bool 'System V IPC' CONFIG_SYSVIPC
@@ -199,9 +200,8 @@ endmenu
 source drivers/input/Config.in
 source drivers/char/Config.in
 
-source net/bluetooth/Config.in
 
-source drivers/misc/Config.in
+#source drivers/misc/Config.in
 
 source drivers/media/Config.in
 
@@ -230,6 +230,8 @@ endmenu
 
 source drivers/usb/Config.in
 
+source net/bluetooth/Config.in
+
 mainmenu_option next_comment
 comment 'Kernel hacking'
 
@@ -241,7 +243,10 @@ if [ "$CONFIG_DEBUG_KERNEL" != "n" ]; then
    bool '  Spinlock debugging' CONFIG_DEBUG_SPINLOCK
    bool '  Additional run-time checks' CONFIG_CHECKING
    bool '  Debug __init statements' CONFIG_INIT_DEBUG
+   bool '  IOMMU debugging' CONFIG_IOMMU_DEBUG
    bool '  IOMMU leak tracing' CONFIG_IOMMU_LEAK
    bool '  Probalistic stack overflow check' CONFIG_DEBUG_STACKOVERFLOW
 fi
 endmenu
+
+source lib/Config.in

@@ -33,7 +33,6 @@
 #include <linux/sched.h>
 #include <linux/init.h>
 #include <linux/mm.h>
-#include <linux/slab.h>
 #include <asm/uaccess.h>
 #include <linux/proc_fs.h>
 
@@ -730,14 +729,21 @@ fail:
  * need to set up all of the mapping information to tell the journaling
  * system where the journal blocks are.
  *
- * journal_init_dev creates a journal which maps a fixed contiguous
- * range of blocks on an arbitrary block device.
- *
- * journal_init_inode creates a journal which maps an on-disk inode as
- * the journal.  The inode must exist already, must support bmap() and
- * must have all data blocks preallocated.
  */
 
+ /**
+  *  journal_t * journal_init_dev() - creates an initialises a journal structure
+  *  @kdev: Block device on which to create the journal
+  *  @fs_dev: Device which hold journalled filesystem for this journal.
+  *  @start: Block nr Start of journal.
+  *  @len:  Lenght of the journal in blocks.
+  *  @blocksize: blocksize of journalling device
+  *  @returns: a newly created journal_t *
+  *  
+  *  journal_init_dev creates a journal which maps a fixed contiguous
+  *  range of blocks on an arbitrary block device.
+  * 
+  */
 journal_t * journal_init_dev(kdev_t dev, kdev_t fs_dev,
 			int start, int len, int blocksize)
 {
@@ -760,7 +766,15 @@ journal_t * journal_init_dev(kdev_t dev, kdev_t fs_dev,
 
 	return journal;
 }
-
+ 
+/** 
+ *  journal_t * journal_init_inode () - creates a journal which maps to a inode.
+ *  @inode: An inode to create the journal in
+ *  
+ * journal_init_inode creates a journal which maps an on-disk inode as
+ * the journal.  The inode must exist already, must support bmap() and
+ * must have all data blocks preallocated.
+ */
 journal_t * journal_init_inode (struct inode *inode)
 {
 	struct buffer_head *bh;
@@ -850,12 +864,15 @@ static int journal_reset (journal_t *journal)
 	return 0;
 }
 
-/*
+/** 
+ * int journal_create() - Initialise the new journal file
+ * @journal: Journal to create. This structure must have been initialised
+ * 
  * Given a journal_t structure which tells us which disk blocks we can
  * use, create a new journal superblock and initialise all of the
- * journal fields from scratch.  */
-
-int journal_create (journal_t *journal)
+ * journal fields from scratch.  
+ **/
+int journal_create(journal_t *journal)
 {
 	unsigned long blocknr;
 	struct buffer_head *bh;
@@ -916,11 +933,14 @@ int journal_create (journal_t *journal)
 	return journal_reset(journal);
 }
 
-/*
+/** 
+ * void journal_update_superblock() - Update journal sb on disk.
+ * @journal: The journal to update.
+ * @wait: Set to '0' if you don't want to wait for IO completion.
+ *
  * Update a journal's dynamic superblock fields and write it to disk,
  * optionally waiting for the IO to complete.
-*/
-
+ */
 void journal_update_superblock(journal_t *journal, int wait)
 {
 	journal_superblock_t *sb = journal->j_superblock;
@@ -1036,12 +1056,14 @@ static int load_superblock(journal_t *journal)
 }
 
 
-/*
+/**
+ * int journal_load() - Read journal from disk.
+ * @journal: Journal to act on.
+ * 
  * Given a journal_t structure which tells us which disk blocks contain
  * a journal, read the journal from disk to initialise the in-memory
  * structures.
  */
-
 int journal_load(journal_t *journal)
 {
 	int err;
@@ -1086,11 +1108,13 @@ recovery_error:
 	return -EIO;
 }
 
-/*
+/**
+ * void journal_destroy() - Release a journal_t structure.
+ * @journal: Journal to act on.
+* 
  * Release a journal_t structure once it is no longer in use by the
  * journaled object.
  */
-
 void journal_destroy (journal_t *journal)
 {
 	/* Wait for the commit thread to wake up and die. */
@@ -1128,8 +1152,12 @@ void journal_destroy (journal_t *journal)
 }
 
 
-/* Published API: Check whether the journal uses all of a given set of
- * features.  Return true (non-zero) if it does. */
+/**
+ *int journal_check_used_features () - Check if features specified are used.
+ * 
+ * Check whether the journal uses all of a given set of
+ * features.  Return true (non-zero) if it does. 
+ **/
 
 int journal_check_used_features (journal_t *journal, unsigned long compat,
 				 unsigned long ro, unsigned long incompat)
@@ -1151,7 +1179,10 @@ int journal_check_used_features (journal_t *journal, unsigned long compat,
 	return 0;
 }
 
-/* Published API: Check whether the journaling code supports the use of
+/**
+ * int journal_check_available_features() - Check feature set in journalling layer
+ * 
+ * Check whether the journaling code supports the use of
  * all of a given set of features on this journal.  Return true
  * (non-zero) if it can. */
 
@@ -1180,8 +1211,13 @@ int journal_check_available_features (journal_t *journal, unsigned long compat,
 	return 0;
 }
 
-/* Published API: Mark a given journal feature as present on the
- * superblock.  Returns true if the requested features could be set. */
+/**
+ * int journal_set_features () - Mark a given journal feature in the superblock
+ *
+ * Mark a given journal feature as present on the
+ * superblock.  Returns true if the requested features could be set. 
+ *
+ */
 
 int journal_set_features (journal_t *journal, unsigned long compat,
 			  unsigned long ro, unsigned long incompat)
@@ -1207,12 +1243,12 @@ int journal_set_features (journal_t *journal, unsigned long compat,
 }
 
 
-/*
- * Published API:
+/**
+ * int journal_update_format () - Update on-disk journal structure.
+ *
  * Given an initialised but unloaded journal struct, poke about in the
  * on-disk structure to update it to the most recent supported version.
  */
-
 int journal_update_format (journal_t *journal)
 {
 	journal_superblock_t *sb;
@@ -1262,7 +1298,10 @@ static int journal_convert_superblock_v1(journal_t *journal,
 }
 
 
-/*
+/**
+ * int journal_flush () - Flush journal
+ * @journal: Journal to act on.
+ * 
  * Flush all data for a given journal to disk and empty the journal.
  * Filesystems can use this when remounting readonly to ensure that
  * recovery does not need to happen on remount.
@@ -1316,12 +1355,16 @@ int journal_flush (journal_t *journal)
 	return err;
 }
 
-/*
+/**
+ * int journal_wipe() - Wipe journal contents
+ * @journal: Journal to act on.
+ * @write: flag (see below)
+ * 
  * Wipe out all of the contents of a journal, safely.  This will produce
  * a warning if the journal contains any valid recovery information.
  * Must be called between journal_init_*() and journal_load().
  *
- * If (write) is non-zero, then we wipe out the journal on disk; otherwise
+ * If 'write' is non-zero, then we wipe out the journal on disk; otherwise
  * we merely suppress recovery.
  */
 
@@ -1370,43 +1413,11 @@ const char * journal_dev_name(journal_t *journal)
 }
 
 /*
- * journal_abort: perform a complete, immediate shutdown of the ENTIRE
- * journal (not of a single transaction).  This operation cannot be
- * undone without closing and reopening the journal.
+ * Journal abort has very specific semantics, which we describe
+ * for journal abort. 
  *
- * The journal_abort function is intended to support higher level error
- * recovery mechanisms such as the ext2/ext3 remount-readonly error
- * mode.
- *
- * Journal abort has very specific semantics.  Any existing dirty,
- * unjournaled buffers in the main filesystem will still be written to
- * disk by bdflush, but the journaling mechanism will be suspended
- * immediately and no further transaction commits will be honoured.
- *
- * Any dirty, journaled buffers will be written back to disk without
- * hitting the journal.  Atomicity cannot be guaranteed on an aborted
- * filesystem, but we _do_ attempt to leave as much data as possible
- * behind for fsck to use for cleanup.
- *
- * Any attempt to get a new transaction handle on a journal which is in
- * ABORT state will just result in an -EROFS error return.  A
- * journal_stop on an existing handle will return -EIO if we have
- * entered abort state during the update.
- *
- * Recursive transactions are not disturbed by journal abort until the
- * final journal_stop, which will receive the -EIO error.
- *
- * Finally, the journal_abort call allows the caller to supply an errno
- * which will be recored (if possible) in the journal superblock.  This
- * allows a client to record failure conditions in the middle of a
- * transaction without having to complete the transaction to record the
- * failure to disk.  ext3_error, for example, now uses this
- * functionality.
- *
- * Errors which originate from within the journaling layer will NOT
- * supply an errno; a null errno implies that absolutely no further
- * writes are done to the journal (unless there are any already in
- * progress).
+ * Two internal function, which provide abort to te jbd layer
+ * itself are here.
  */
 
 /* Quick version for internal journal use (doesn't lock the journal).
@@ -1444,7 +1455,52 @@ void __journal_abort_soft (journal_t *journal, int errno)
 		journal_update_superblock(journal, 1);
 }
 
-/* Full version for external use */
+/**
+ * void journal_abort () - Shutdown the journal immediately.
+ * @journal: the journal to shutdown.
+ * @errno:   an error number to record in the journal indicating
+ *           the reason for the shutdown.
+ *
+ * Perform a complete, immediate shutdown of the ENTIRE
+ * journal (not of a single transaction).  This operation cannot be
+ * undone without closing and reopening the journal.
+ *           
+ * The journal_abort function is intended to support higher level error
+ * recovery mechanisms such as the ext2/ext3 remount-readonly error
+ * mode.
+ *
+ * Journal abort has very specific semantics.  Any existing dirty,
+ * unjournaled buffers in the main filesystem will still be written to
+ * disk by bdflush, but the journaling mechanism will be suspended
+ * immediately and no further transaction commits will be honoured.
+ *
+ * Any dirty, journaled buffers will be written back to disk without
+ * hitting the journal.  Atomicity cannot be guaranteed on an aborted
+ * filesystem, but we _do_ attempt to leave as much data as possible
+ * behind for fsck to use for cleanup.
+ *
+ * Any attempt to get a new transaction handle on a journal which is in
+ * ABORT state will just result in an -EROFS error return.  A
+ * journal_stop on an existing handle will return -EIO if we have
+ * entered abort state during the update.
+ *
+ * Recursive transactions are not disturbed by journal abort until the
+ * final journal_stop, which will receive the -EIO error.
+ *
+ * Finally, the journal_abort call allows the caller to supply an errno
+ * which will be recorded (if possible) in the journal superblock.  This
+ * allows a client to record failure conditions in the middle of a
+ * transaction without having to complete the transaction to record the
+ * failure to disk.  ext3_error, for example, now uses this
+ * functionality.
+ *
+ * Errors which originate from within the journaling layer will NOT
+ * supply an errno; a null errno implies that absolutely no further
+ * writes are done to the journal (unless there are any already in
+ * progress).
+ * 
+ */
+
 void journal_abort (journal_t *journal, int errno)
 {
 	lock_journal(journal);
@@ -1452,6 +1508,17 @@ void journal_abort (journal_t *journal, int errno)
 	unlock_journal(journal);
 }
 
+/** 
+ * int journal_errno () - returns the journal's error state.
+ * @journal: journal to examine.
+ *
+ * This is the errno numbet set with journal_abort(), the last
+ * time the journal was mounted - if the journal was stopped
+ * without calling abort this will be 0.
+ *
+ * If the journal has been aborted on this mount time -EROFS will
+ * be returned.
+ */
 int journal_errno (journal_t *journal)
 {
 	int err;
@@ -1465,6 +1532,14 @@ int journal_errno (journal_t *journal)
 	return err;
 }
 
+
+
+/** 
+ * int journal_clear_err () - clears the journal's error state
+ *
+ * An error must be cleared or Acked to take a FS out of readonly
+ * mode.
+ */
 int journal_clear_err (journal_t *journal)
 {
 	int err = 0;
@@ -1478,6 +1553,13 @@ int journal_clear_err (journal_t *journal)
 	return err;
 }
 
+
+/** 
+ * void journal_ack_err() - Ack journal err.
+ *
+ * An error must be cleared or Acked to take a FS out of readonly
+ * mode.
+ */
 void journal_ack_err (journal_t *journal)
 {
 	lock_journal(journal);
@@ -1578,7 +1660,7 @@ void * __jbd_kmalloc (char *where, size_t size, int flags, int retry)
 		 * messages. */
 		jbd_debug(1, "ENOMEM in %s, retrying.\n", where);
 
-		if (time_after(jiffies, last_warning + 5*HZ)) {
+		if (time_after(jiffies, last_warning + 120*HZ)) {
 			printk(KERN_NOTICE
 			       "ENOMEM in %s, retrying.\n", where);
 			last_warning = jiffies;
@@ -1664,8 +1746,8 @@ static void journal_free_journal_head(struct journal_head *jh)
  *
  * Whenever a buffer has an attached journal_head, its ->b_state:BH_JBD bit
  * is set.  This bit is tested in core kernel code where we need to take
- * JBD-specific actions.  Testing the zeroness of ->b_private is not reliable
- * there.
+ * JBD-specific actions.  Testing the zeroness of ->b_journal_head is not
+ * reliable there.
  *
  * When a buffer has its BH_JBD bit set, its ->b_count is elevated by one.
  *

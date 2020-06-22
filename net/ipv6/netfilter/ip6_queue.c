@@ -305,8 +305,9 @@ ipq_enqueue_packet(struct sk_buff *skb, struct nf_info *info, void *data)
 	write_lock_bh(&queue_lock);
 	
 	if (!peer_pid)
-		goto err_out_unlock;
+		goto err_out_free_nskb; 
 
+ 	/* netlink_unicast will either free the nskb or attach it to a socket */ 
 	status = netlink_unicast(ipqnl, nskb, peer_pid, MSG_DONTWAIT);
 	if (status < 0)
 		goto err_out_unlock;
@@ -318,51 +319,15 @@ ipq_enqueue_packet(struct sk_buff *skb, struct nf_info *info, void *data)
 	write_unlock_bh(&queue_lock);
 	return status;
 	
+err_out_free_nskb:
+	kfree_skb(nskb); 
+	
 err_out_unlock:
 	write_unlock_bh(&queue_lock);
 
 err_out_free:
 	kfree(entry);
 	return status;
-}
-
-/*
- * Taken from net/ipv6/ip6_output.c
- *
- * We should use the one there, but is defined static
- * so we put this just here and let the things as
- * they are now.
- *
- * If that one is modified, this one should be modified too.
- */
-static int
-route6_me_harder(struct sk_buff *skb)
-{
-	struct ipv6hdr *iph = skb->nh.ipv6h;
-	struct dst_entry *dst;
-	struct flowi fl;
-
-	fl.proto = iph->nexthdr;
-	fl.fl6_dst = &iph->daddr;
-	fl.fl6_src = &iph->saddr;
-	fl.oif = skb->sk ? skb->sk->bound_dev_if : 0;
-	fl.fl6_flowlabel = 0;
-	fl.uli_u.ports.dport = 0;
-	fl.uli_u.ports.sport = 0;
-
-	dst = ip6_route_output(skb->sk, &fl);
-
-	if (dst->error) {
-		if (net_ratelimit())
-			printk(KERN_DEBUG "route6_me_harder: No more route.\n");
-		return -EINVAL;
-	}
-
-	/* Drop old route. */
-	dst_release(skb->dst);
-
-	skb->dst = dst;
-	return 0;
 }
 
 static int
@@ -410,7 +375,7 @@ ipq_mangle_ipv6(ipq_verdict_msg_t *v, struct ipq_queue_entry *e)
 		struct ipv6hdr *iph = e->skb->nh.ipv6h;
 		if (ipv6_addr_cmp(&iph->daddr, &e->rt_info.daddr) ||
 		    ipv6_addr_cmp(&iph->saddr, &e->rt_info.saddr))
-			return route6_me_harder(e->skb);
+			return ip6_route_me_harder(e->skb);
 	}
 	return 0;
 }

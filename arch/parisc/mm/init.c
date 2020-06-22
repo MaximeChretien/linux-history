@@ -21,6 +21,7 @@
 
 #include <asm/pgalloc.h>
 #include <asm/tlb.h>
+#include <asm/pdc_chassis.h>
 
 mmu_gather_t mmu_gathers[NR_CPUS];
 
@@ -409,6 +410,9 @@ void free_initmem(void)
 	}
 
 	printk("%luk freed\n", (unsigned long)(&__init_end - &__init_begin) >> 10);
+
+	/* set up a new led state on systems shipped LED State panel */
+	pdc_chassis_send_status(PDC_CHASSIS_DIRECT_BCOMPLETE);
 }
 
 /*
@@ -574,13 +578,8 @@ static void __init map_pages(unsigned long start_vaddr, unsigned long start_padd
 			for (tmp2 = start_pte; tmp2 < PTRS_PER_PTE; tmp2++,pg_table++) {
 				pte_t pte;
 
-#if !defined(CONFIG_KWDB) && !defined(CONFIG_STI_CONSOLE)
+#if !defined(CONFIG_STI_CONSOLE)
 #warning STI console should explicitly allocate executable pages but does not
-/* KWDB needs to write kernel text when setting break points.
-**
-** The right thing to do seems like KWDB modify only the pte which
-** has a break point on it...otherwise we might mask worse bugs.
-*/
 				/*
 				 * Map the fault vector writable so we can
 				 * write the HPMC checksum.

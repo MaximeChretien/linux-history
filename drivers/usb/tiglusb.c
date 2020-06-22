@@ -14,17 +14,11 @@
  * and the website at:  http://lpg.ticalc.org/prj_usb/
  * for more info.
  *
- * History :
- *  16/07/2002 : v1.04 -- Julien BLACHE <jb@jblache.org>
- *    + removed useless usblp_cleanup()
- *    + removed {un,}lock_kernel() as suggested on lkml
- *    + inlined clear_pipes() (used once)
- *    + inlined clear_device() (small, used twice)
- *    + removed tiglusb_find_struct() (used once, simple code)
- *    + replaced down() with down_interruptible() wherever possible
- *    + fixed double unregistering wrt devfs, causing devfs
- *      to force an oops when the device is deconnected
- *    + removed unused fields from struct tiglusb_t
+ *   1.0x, Romain & Julien: initial submit.
+ *   1.03, Greg Kroah: modifications.
+ *   1.04, Julien: clean-up & fixes; Romain: 2.4 backport.
+ *   1.05, Randy Dunlap: bug fix with the timeout parameter (divide-by-zero).
+ *   1.06, Romain: synched with 2.5, version/firmware changed (confusing).
  */
 
 #include <linux/module.h>
@@ -44,7 +38,7 @@
 /*
  * Version Information
  */
-#define DRIVER_VERSION "1.04"
+#define DRIVER_VERSION "1.06"
 #define DRIVER_AUTHOR  "Romain Lievin <roms@lpg.ticalc.org> & Julien Blache <jb@jblache.org>"
 #define DRIVER_DESC    "TI-GRAPH LINK USB (aka SilverLink) driver"
 #define DRIVER_LICENSE "GPL"
@@ -185,7 +179,7 @@ tiglusb_read (struct file *filp, char *buf, size_t count, loff_t * f_pos)
 
 	pipe = usb_rcvbulkpipe (s->dev, 1);
 	result = usb_bulk_msg (s->dev, pipe, buffer, bytes_to_read,
-			       &bytes_read, HZ / (timeout / 10));
+			       &bytes_read, HZ * 10 / timeout);
 	if (result == -ETIMEDOUT) {	/* NAK */
 		ret = result;
 		if (!bytes_read) {
@@ -242,7 +236,7 @@ tiglusb_write (struct file *filp, const char *buf, size_t count, loff_t * f_pos)
 
 	pipe = usb_sndbulkpipe (s->dev, 2);
 	result = usb_bulk_msg (s->dev, pipe, buffer, bytes_to_write,
-			       &bytes_written, HZ / (timeout / 10));
+			       &bytes_written, HZ * 10 / timeout);
 
 	if (result == -ETIMEDOUT) {	/* NAK */
 		warn ("tiglusb_write, NAK received.");
@@ -315,6 +309,7 @@ tiglusb_ioctl (struct inode *inode, struct file *filp,
 /* ----- kernel module registering ------------------------------------ */
 
 static struct file_operations tiglusb_fops = {
+	.owner =        THIS_MODULE,
 	.llseek =	no_llseek,
 	.read =		tiglusb_read,
 	.write =	tiglusb_write,
@@ -385,7 +380,7 @@ tiglusb_probe (struct usb_device *dev, unsigned int ifnum,
 			    &tiglusb_fops, NULL);
 
 	/* Display firmware version */
-	info ("link cable version %i.%02x",
+	info ("firmware revision %i.%02x",
 		dev->descriptor.bcdDevice >> 8,
 		dev->descriptor.bcdDevice & 0xff);
 
@@ -424,6 +419,7 @@ static struct usb_device_id tiglusb_ids[] = {
 MODULE_DEVICE_TABLE (usb, tiglusb_ids);
 
 static struct usb_driver tiglusb_driver = {
+	.owner =        THIS_MODULE,
 	.name =		"tiglusb",
 	.probe =	tiglusb_probe,
 	.disconnect =	tiglusb_disconnect,
@@ -446,6 +442,8 @@ tiglusb_setup (char *str)
 	if (ints[0] > 0) {
 		timeout = ints[1];
 	}
+	if (!timeout)
+		timeout = TIMAXTIME;
 
 	return 1;
 }
@@ -468,9 +466,11 @@ tiglusb_init (void)
 		init_waitqueue_head (&s->wait);
 		init_waitqueue_head (&s->remove_ok);
 	}
+	if (timeout <= 0)
+               timeout = TIMAXTIME;
 
 	/* register device */
-	if (devfs_register_chrdev (TIUSB_MAJOR, "tiglusb", &tiglusb_fops)) {
+	if (register_chrdev (TIUSB_MAJOR, "tiglusb", &tiglusb_fops)) {
 		err ("unable to get major %d", TIUSB_MAJOR);
 		return -EIO;
 	}
@@ -481,11 +481,17 @@ tiglusb_init (void)
 	/* register USB module */
 	result = usb_register (&tiglusb_driver);
 	if (result < 0) {
-		devfs_unregister_chrdev (TIUSB_MAJOR, "tiglusb");
+		unregister_chrdev (TIUSB_MAJOR, "tiglusb");
 		return -1;
 	}
 
-	info (DRIVER_DESC ", " DRIVER_VERSION);
+	info (DRIVER_DESC ", version " DRIVER_VERSION);
+
+       if (timeout <= 0)
+               timeout = TIMAXTIME;
+
+	if (!timeout)
+		timeout = TIMAXTIME;
 
 	return 0;
 }
@@ -495,7 +501,7 @@ tiglusb_cleanup (void)
 {
 	usb_deregister (&tiglusb_driver);
 	devfs_unregister (devfs_handle);
-	devfs_unregister_chrdev (TIUSB_MAJOR, "tiglusb");
+	unregister_chrdev (TIUSB_MAJOR, "tiglusb");
 }
 
 /* --------------------------------------------------------------------- */
@@ -509,6 +515,6 @@ MODULE_DESCRIPTION (DRIVER_DESC);
 MODULE_LICENSE (DRIVER_LICENSE);
 
 MODULE_PARM (timeout, "i");
-MODULE_PARM_DESC (timeout, "Timeout (default=1.5 seconds)");
+MODULE_PARM_DESC (timeout, "Timeout in tenths of seconds (default=1.5 seconds)");
 
 /* --------------------------------------------------------------------- */

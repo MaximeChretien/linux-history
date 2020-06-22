@@ -133,6 +133,7 @@ if [ "$CONFIG_SOUND_OSS" = "y" -o "$CONFIG_SOUND_OSS" = "m" ]; then
 
    if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
       dep_tristate '    AD1816(A) based cards (EXPERIMENTAL)' CONFIG_SOUND_AD1816 $CONFIG_SOUND_OSS
+      dep_tristate '    AD1889 based cards (AD1819 codec) (EXPERIMENTAL)' CONFIG_SOUND_AD1889 $CONFIG_SOUND_OSS
    fi
    dep_tristate '    Aztech Sound Galaxy (non-PnP) cards' CONFIG_SOUND_SGALAXY $CONFIG_SOUND_OSS
    dep_tristate '    Adlib Cards' CONFIG_SOUND_ADLIB $CONFIG_SOUND_OSS
@@ -174,6 +175,7 @@ if [ "$CONFIG_SOUND_OSS" = "y" -o "$CONFIG_SOUND_OSS" = "m" ]; then
 
    dep_tristate '    100% Sound Blaster compatibles (SB16/32/64, ESS, Jazz16) support' CONFIG_SOUND_SB $CONFIG_SOUND_OSS
    dep_tristate '    AWE32 synth' CONFIG_SOUND_AWE32_SYNTH $CONFIG_SOUND_OSS
+   dep_tristate '    XpressAudio Sound Blaster emulation' CONFIG_SOUND_KAHLUA $CONFIG_SOUND_SB $CONFIG_SOUND_OSS
    dep_tristate '    Full support for Turtle Beach WaveFront (Tropez Plus, Tropez, Maui) synth/soundcards' CONFIG_SOUND_WAVEFRONT $CONFIG_SOUND_OSS m
    dep_tristate '    Limited support for Turtle Beach Wave Front (Maui, Tropez) synthesizers' CONFIG_SOUND_MAUI $CONFIG_SOUND_OSS
    if [ "$CONFIG_SOUND_MAUI" = "y" ]; then

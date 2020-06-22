@@ -70,4 +70,5 @@ EXPORT_SYMBOL(__udelay);
 EXPORT_SYMBOL(kernel_thread);
 EXPORT_SYMBOL(console_mode);
 EXPORT_SYMBOL(console_device);
+EXPORT_SYMBOL(pfix_table);
 EXPORT_SYMBOL_NOVERS(do_call_softirq);

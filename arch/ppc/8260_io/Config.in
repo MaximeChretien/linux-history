@@ -23,7 +23,4 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
     bool 'Ethernet on FCC3' CONFIG_FCC3_ENET
   fi
 fi
-
-comment 'Generic MPC8260 Options'
-bool 'Disable data cache' CONFIG_DCACHE_DISABLE
 endmenu

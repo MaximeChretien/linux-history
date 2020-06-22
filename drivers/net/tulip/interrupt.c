@@ -1,7 +1,7 @@
 /*
 	drivers/net/tulip/interrupt.c
 
-	Maintained by Jeff Garzik <jgarzik@mandrakesoft.com>
+	Maintained by Jeff Garzik <jgarzik@pobox.com>
 	Copyright 2000,2001  The Linux Kernel Team
 	Written/copyright 1994-2001 by Donald Becker.
 
@@ -263,7 +263,7 @@ throttle:
            This would turn on IM for devices that is not contributing
            to backlog congestion with unnecessary latency.
 
-           We monitor the the device RX-ring and have:
+           We monitor the device RX-ring and have:
 
            HW Interrupt Mitigation either ON or OFF.
 

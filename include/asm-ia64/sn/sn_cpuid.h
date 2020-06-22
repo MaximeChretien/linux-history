@@ -121,13 +121,19 @@
 #endif
 
 /*
- * NOTE: id & eid refer to Intels definitions of the LID register
- *	(id = NASID, eid = slice)
+ * NOTE: id & eid refer to Intel's definitions of the LID register
+ * 
  * NOTE: on non-MP systems, only cpuid 0 exists
  */
-#define id_eid_to_cpu_physical_id(id,eid)       (((id)<<8) | (eid))
-#define id_eid_to_cpuid(id,eid)         	(cpu_logical_id(id_eid_to_cpu_physical_id((id),(eid))))
+#define id_eid_to_cpu_physical_id(id,eid)	 	(((id)<<8) | (eid))
 
+#define nasid_slice_to_cpuid(nasid,slice)		(cpu_logical_id(nasid_slice_to_cpu_physical_id((nasid),(slice))))
+
+#ifdef CONFIG_IA64_SGI_SN1
+#define nasid_slice_to_cpu_physical_id(nasid, slice)	(((nasid)<<8) | (slice))
+#else
+#define nasid_slice_to_cpu_physical_id(nasid, slice)	(((slice)<<12) | (nasid))
+#endif
 
 /*
  * The following table/struct  is used for managing PTC coherency domains.
@@ -196,7 +202,8 @@ extern sn_sapicid_info_t	sn_sapicid_info[];	/* indexed by cpuid */
 /*
  * cnode_slice_to_cpuid - convert a codeid & slice to a cpuid
  */
-#define cnode_slice_to_cpuid(cnodeid,slice) (id_eid_to_cpuid(cnodeid_to_nasid(cnodeid),(slice)))
+
+#define cnode_slice_to_cpuid(cnodeid,slice) (nasid_slice_to_cpuid(cnodeid_to_nasid(cnodeid),(slice)))
  
 
 /*

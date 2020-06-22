@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.start.c 1.10 07/25/01 18:13:07 trini
- */
-/*
  * Copyright (C) Paul Mackerras 1997.
  *
  * This program is free software; you can redistribute it and/or

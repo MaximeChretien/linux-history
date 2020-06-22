@@ -1318,7 +1318,9 @@ static s32 adpt_i2o_reset_hba(adpt_hba* pHba)
 	while(*status == 0){
 		if(time_after(jiffies,timeout)){
 			printk(KERN_WARNING"%s: IOP Reset Timeout\n",pHba->name);
-			kfree(status);
+			/* We loose 4 bytes of "status" here, but we cannot
+			   free these because controller may awake and corrupt
+			   those bytes at any time */
 			return -ETIMEDOUT;
 		}
 		rmb();
@@ -1336,6 +1338,9 @@ static s32 adpt_i2o_reset_hba(adpt_hba* pHba)
 			}
 			if(time_after(jiffies,timeout)){
 				printk(KERN_ERR "%s:Timeout waiting for IOP Reset.\n",pHba->name);
+			/* We loose 4 bytes of "status" here, but we cannot
+			   free these because controller may awake and corrupt
+			   those bytes at any time */
 				return -ETIMEDOUT;
 			}
 		} while (m == EMPTY_QUEUE);
@@ -1498,7 +1503,7 @@ static int adpt_i2o_parse_lct(adpt_hba* pHba)
 							pDev->next_lun; pDev = pDev->next_lun){
 					}
 					pDev->next_lun = kmalloc(sizeof(struct adpt_device),GFP_KERNEL);
-					if(pDev == NULL) {
+					if(pDev->next_lun == NULL) {
 						return -ENOMEM;
 					}
 					memset(pDev->next_lun,0,sizeof(struct adpt_device));
@@ -2560,7 +2565,7 @@ static int adpt_i2o_activate_hba(adpt_hba* pHba)
 
 	if(pHba->initialized ) {
 		if (adpt_i2o_status_get(pHba) < 0) {
-			if((rcode = adpt_i2o_reset_hba(pHba) != 0)){
+			if((rcode = adpt_i2o_reset_hba(pHba)) != 0){
 				printk(KERN_WARNING"%s: Could NOT reset.\n", pHba->name);
 				return rcode;
 			}
@@ -2586,7 +2591,7 @@ static int adpt_i2o_activate_hba(adpt_hba* pHba)
 			}
 		}
 	} else {
-		if((rcode = adpt_i2o_reset_hba(pHba) != 0)){
+		if((rcode = adpt_i2o_reset_hba(pHba)) != 0){
 			printk(KERN_WARNING"%s: Could NOT reset.\n", pHba->name);
 			return rcode;
 		}

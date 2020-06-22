@@ -351,7 +351,7 @@ mark_clean (void *addr, size_t size)
 	pg_addr = PAGE_ALIGN((unsigned long) addr);
 	end = (unsigned long) addr + size;
 	while (pg_addr + PAGE_SIZE <= end) {
-		struct page *page = virt_to_page(pg_addr);
+		struct page *page = virt_to_page((void *)pg_addr);
 		set_bit(PG_arch_1, &page->flags);
 		pg_addr += PAGE_SIZE;
 	}
@@ -417,23 +417,23 @@ swiotlb_sync_single (struct pci_dev *hwdev, dma_addr_t pci_addr, size_t size, in
 int
 swiotlb_map_sg (struct pci_dev *hwdev, struct scatterlist *sg, int nelems, int direction)
 {
-	void *addr;
 	int i;
 
 	if (direction == PCI_DMA_NONE)
 		BUG();
 
 	for (i = 0; i < nelems; i++, sg++) {
-		sg->orig_address = SG_ENT_VIRT_ADDRESS(sg);
-		if ((SG_ENT_PHYS_ADDRESS(sg) & ~hwdev->dma_mask) != 0) {
-			addr = map_single(hwdev, sg->orig_address, sg->length, direction);
-			if (sg->address)
-				sg->address = addr;
-			else {
-				sg->page = virt_to_page(addr);
-				sg->offset = (u64) addr & ~PAGE_MASK;
-			}
-		}
+		void * virt_address = SG_ENT_VIRT_ADDRESS(sg);
+		unsigned long phys_address = virt_to_phys(virt_address);
+
+		sg->dma_length = sg->length;
+		if (phys_address & ~hwdev->dma_mask)
+			sg->dma_address = virt_to_phys(map_single(hwdev,
+			                                          virt_address,
+			                                          sg->length,
+			                                          direction));
+		else
+			sg->dma_address = phys_address;
 	}
 	return nelems;
 }
@@ -451,14 +451,9 @@ swiotlb_unmap_sg (struct pci_dev *hwdev, struct scatterlist *sg, int nelems, int
 		BUG();
 
 	for (i = 0; i < nelems; i++, sg++)
-		if (sg->orig_address != SG_ENT_VIRT_ADDRESS(sg)) {
-			unmap_single(hwdev, SG_ENT_VIRT_ADDRESS(sg), sg->length, direction);
-			if (sg->address)
-				sg->address = sg->orig_address;
-			else {
-				sg->page = virt_to_page(sg->orig_address);
-				sg->offset = (u64) sg->orig_address & ~PAGE_MASK;
-			}
+		if (sg->dma_address != virt_to_phys(SG_ENT_VIRT_ADDRESS(sg))) {
+			unmap_single(hwdev, phys_to_virt(sg->dma_address),
+			             sg->dma_length, direction);
 		} else if (direction == PCI_DMA_FROMDEVICE)
 			mark_clean(SG_ENT_VIRT_ADDRESS(sg), sg->length);
 }
@@ -479,14 +474,9 @@ swiotlb_sync_sg (struct pci_dev *hwdev, struct scatterlist *sg, int nelems, int 
 		BUG();
 
 	for (i = 0; i < nelems; i++, sg++)
-		if (sg->orig_address != SG_ENT_VIRT_ADDRESS(sg))
-			sync_single(hwdev, SG_ENT_VIRT_ADDRESS(sg), sg->length, direction);
-}
-
-unsigned long
-swiotlb_dma_address (struct scatterlist *sg)
-{
-	return SG_ENT_PHYS_ADDRESS(sg);
+		if (sg->dma_address != virt_to_phys(SG_ENT_VIRT_ADDRESS(sg)))
+			sync_single(hwdev, phys_to_virt(sg->dma_address),
+			            sg->dma_length, direction);
 }
 
 /*
@@ -507,7 +497,6 @@ EXPORT_SYMBOL(swiotlb_map_sg);
 EXPORT_SYMBOL(swiotlb_unmap_sg);
 EXPORT_SYMBOL(swiotlb_sync_single);
 EXPORT_SYMBOL(swiotlb_sync_sg);
-EXPORT_SYMBOL(swiotlb_dma_address);
 EXPORT_SYMBOL(swiotlb_alloc_consistent);
 EXPORT_SYMBOL(swiotlb_free_consistent);
 EXPORT_SYMBOL(swiotlb_pci_dma_supported);

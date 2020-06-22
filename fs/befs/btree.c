@@ -26,7 +26,9 @@
 #include <linux/slab.h>
 #include <linux/mm.h>
 
-#include "befs_fs.h"
+#include "befs.h"
+#include "btree.h"
+#include "datastream.h"
 #include "endian.h"
 
 /*

@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: nodelist.h,v 1.46.2.3 2002/10/11 09:04:44 dwmw2 Exp $
+ * $Id: nodelist.h,v 1.46.2.4 2003/02/24 21:49:33 dwmw2 Exp $
  *
  */
 
@@ -249,7 +249,7 @@ int jffs2_get_inode_nodes(struct jffs2_sb_info *c, ino_t ino, struct jffs2_inode
 			  struct jffs2_tmp_dnode_info **tnp, struct jffs2_full_dirent **fdp,
 			  __u32 *highest_version, __u32 *latest_mctime,
 			  __u32 *mctime_ver);
-struct jffs2_inode_cache *jffs2_get_ino_cache(struct jffs2_sb_info *c, int ino);
+struct jffs2_inode_cache *jffs2_get_ino_cache(struct jffs2_sb_info *c, uint32_t ino);
 void jffs2_add_ino_cache (struct jffs2_sb_info *c, struct jffs2_inode_cache *new);
 void jffs2_del_ino_cache(struct jffs2_sb_info *c, struct jffs2_inode_cache *old);
 void jffs2_free_ino_caches(struct jffs2_sb_info *c);

@@ -426,6 +426,7 @@ struct input_event {
  */
 
 #define MSC_SERIAL		0x00
+#define MSC_PULSELED		0x01
 #define MSC_MAX			0x07
 
 /*

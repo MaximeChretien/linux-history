@@ -224,7 +224,7 @@ void smp_init_iSeries(void)
 	ppc_md.smp_kick_cpu     = smp_iSeries_kick_cpu;
 	ppc_md.smp_setup_cpu    = smp_iSeries_setup_cpu;
 
-	naca->processorCount	= smp_iSeries_numProcs();
+	systemcfg->processorCount	= smp_iSeries_numProcs();
 }
 
 
@@ -255,10 +255,10 @@ smp_openpic_message_pass(int target, int msg, unsigned long data, int wait)
 static int
 smp_chrp_probe(void)
 {
-	if (naca->processorCount > 1)
+	if (systemcfg->processorCount > 1)
 		openpic_request_IPIs();
 
-	return naca->processorCount;
+	return systemcfg->processorCount;
 }
 
 static void
@@ -299,11 +299,11 @@ smp_chrp_setup_cpu(int cpu_nr)
 	static atomic_t ready = ATOMIC_INIT(1);
 	static volatile int frozen = 0;
 
-	if (naca->platform == PLATFORM_PSERIES_LPAR) {
+	if (systemcfg->platform == PLATFORM_PSERIES_LPAR) {
 		/* timebases already synced under the hypervisor. */
 		paca[cpu_nr].next_jiffy_update_tb = tb_last_stamp = get_tb();
 		if (cpu_nr == 0) {
-			naca->tb_orig_stamp = tb_last_stamp;
+			systemcfg->tb_orig_stamp = tb_last_stamp;
 			/* Should update naca->stamp_xsec.
 			 * For now we leave it which means the time can be some
 			 * number of msecs off until someone does a settimeofday()
@@ -330,7 +330,7 @@ smp_chrp_setup_cpu(int cpu_nr)
 			mb();
 			frozen = 0;
 			tb_last_stamp = get_tb();
-			naca->tb_orig_stamp = tb_last_stamp;
+			systemcfg->tb_orig_stamp = tb_last_stamp;
 			smp_tb_synchronized = 1;
 		} else {
 			atomic_inc(&ready);
@@ -371,7 +371,7 @@ smp_xics_message_pass(int target, int msg, unsigned long data, int wait)
 static int
 smp_xics_probe(void)
 {
-	return naca->processorCount;
+	return systemcfg->processorCount;
 }
 
 /* This is called very early */
@@ -621,7 +621,7 @@ void __init smp_boot_cpus(void)
 		if(i != 0) {
 		        /*
 			 * Processor 0's segment table is statically 
-			 * initialized to real address 0x5000.  The
+			 * initialized to real address STAB0_PHYS_ADDR.  The
 			 * Other processor's tables are created and
 			 * initialized here.
 			 */

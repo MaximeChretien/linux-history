@@ -87,7 +87,7 @@ MODULE_DEVICE_TABLE (usb, skel_table);
 
 
 /* Get a minor range for your devices from the usb maintainer */
-#define USB_SKEL_MINOR_BASE	200	
+#define USB_SKEL_MINOR_BASE	192	
 
 /* we can have up to this number of device plugged in at once */
 #define MAX_DEVICES		16

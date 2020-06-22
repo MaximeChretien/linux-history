@@ -21,11 +21,11 @@
 #include <asm/uaccess.h>
 
 /* Version Information */
-#define DRIVER_VERSION "v0.4.1 (2002/07/22)"
+#define DRIVER_VERSION "v0.4.3 (2002/12/31)"
 #define DRIVER_AUTHOR "Petko Manolov <petkan@users.sourceforge.net>"
 #define DRIVER_DESC "rtl8150 based usb-ethernet driver"
 
-#define	IRD			0x0120
+#define	IDR			0x0120
 #define	MAR			0x0126
 #define	CR			0x012e
 #define	TCR			0x012f
@@ -44,6 +44,8 @@
 #define	ANAR			0x0144
 #define	ANLP			0x0146
 #define	AER			0x0148
+
+#define	IDR_EEPROM		0x1202
 
 #define	PHY_READ		0
 #define	PHY_WRITE		0x20
@@ -70,6 +72,8 @@
 
 #define PRODUCT_ID_RTL8150		0x8150
 #define	PRODUCT_ID_LUAKTX		0x0012
+
+#undef EEPROM_WRITE
 
 /* table of devices that work with this driver */
 static struct usb_device_id rtl8150_table[] = {
@@ -225,8 +229,49 @@ static inline void set_ethernet_addr(rtl8150_t * dev)
 {
 	u8 node_id[6];
 
-	get_registers(dev, IRD, sizeof(node_id), node_id);
+	get_registers(dev, IDR, sizeof(node_id), node_id);
 	memcpy(dev->netdev->dev_addr, node_id, sizeof(node_id));
+}
+
+static int rtl8150_set_mac_address(struct net_device *netdev, void *p)
+{
+	struct sockaddr *addr = p;
+	rtl8150_t *dev;
+	int i;
+
+	if (netif_running(netdev))
+		return -EBUSY;
+	dev = netdev->priv;
+	if (dev == NULL) {
+		return -ENODEV;
+	}
+	memcpy(netdev->dev_addr, addr->sa_data, netdev->addr_len);
+	dbg("%s: Setting MAC address to ", netdev->name);
+	for (i = 0; i < 5; i++)
+		printk("%02X:", netdev->dev_addr[i]);
+	dbg("%02X\n", netdev->dev_addr[i]);
+	/* Set the IDR registers. */
+	set_registers(dev, IDR, sizeof(netdev->dev_addr), netdev->dev_addr);
+#ifdef EEPROM_WRITE
+	{
+	u8 cr;
+	/* Get the CR contents. */
+	get_registers(dev, CR, 1, &cr);
+	/* Set the WEPROM bit (eeprom write enable). */
+	cr |= 0x20;
+	set_registers(dev, CR, 1, &cr);
+	/* Write the MAC address into eeprom. Eeprom writes must be word-sized,
+	   so we need to split them up. */
+	for (i = 0; i * 2 < netdev->addr_len; i++) {
+		set_registers(dev, IDR_EEPROM + (i * 2), 2, 
+		              netdev->dev_addr + (i * 2));
+	}
+	/* Clear the WEPROM bit (preventing accidental eeprom writes). */
+	cr &= 0xdf;
+	set_registers(dev, CR, 1, &cr);
+	}
+#endif	
+	return 0;
 }
 
 static int rtl8150_reset(rtl8150_t * dev)
@@ -309,7 +354,7 @@ static void read_bulk_callback(struct urb *urb)
 	case -ENOENT:
 		return;
 	case -ETIMEDOUT:
-		warn("reset needed may be?..");
+		warn("need a device reset?..");
 		goto goon;
 	default:
 		warn("Rx status %d", urb->status);
@@ -452,7 +497,7 @@ static int rtl8150_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	count = (count & 0x3f) ? count : count + 1;
 	memcpy(dev->tx_buff, skb->data, skb->len);
 	FILL_BULK_URB(dev->tx_urb, dev->udev, usb_sndbulkpipe(dev->udev, 2),
-		      dev->tx_buff, RTL8150_MAX_MTU, write_bulk_callback, dev);
+		      dev->tx_buff, count, write_bulk_callback, dev);
 	dev->tx_urb->transfer_buffer_length = count;
 
 	if ((res = usb_submit_urb(dev->tx_urb))) {
@@ -480,6 +525,9 @@ static int rtl8150_open(struct net_device *netdev)
 	}
 
 	down(&dev->sem);
+
+	set_registers(dev, IDR, 6, netdev->dev_addr);
+	
 	FILL_BULK_URB(dev->rx_urb, dev->udev, usb_rcvbulkpipe(dev->udev, 1),
 		      dev->rx_buff, RTL8150_MAX_MTU, read_bulk_callback, dev);
 	if ((res = usb_submit_urb(dev->rx_urb)))
@@ -666,6 +714,7 @@ static void *rtl8150_probe(struct usb_device *udev, unsigned int ifnum,
 	netdev->tx_timeout = rtl8150_tx_timeout;
 	netdev->hard_start_xmit = rtl8150_start_xmit;
 	netdev->set_multicast_list = rtl8150_set_multicast;
+	netdev->set_mac_address = rtl8150_set_mac_address;
 	netdev->get_stats = rtl8150_netdev_stats;
 	netdev->mtu = RTL8150_MTU;
 	dev->intr_interval = 100;	/* 100ms */

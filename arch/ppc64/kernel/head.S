@@ -49,8 +49,9 @@
  * 0x0100 - 0x2fff : pSeries Interrupt prologs
  * 0x3000 - 0x3fff : Interrupt support
  * 0x4000 - 0x4fff : NACA
- * 0x5000 - 0x5fff : Initial segment table
+ * 0x5000 - 0x5fff : SystemCfg
  * 0x6000          : iSeries and common interrupt prologs
+ * 0x9000 - 0x9fff : Initial segment table
  */
 
 /*
@@ -80,6 +81,12 @@
 _stext:
 _STATIC(__start)
 	b .__start_initialization_pSeries
+	.long  0x0
+
+	. = 0x8
+	.globl	__zero
+__zero:
+	.llong	0
 
 	/* At offset 0x20, there is a pointer to iSeries LPAR data.
 	 * This is required by the hypervisor */
@@ -373,21 +380,14 @@ __start_naca:
 	.llong 0x0
 	.llong paca
 
-	/*
-	 * Space for the initial segment table
-	 * For LPAR, the hypervisor must fill in at least one entry
-	 * before we get control (with relocate on)
-	 */
 	. = 0x5000
 	.globl __end_naca
-	.globl __start_stab
+	.globl __start_systemcfg
 __end_naca:
-__start_stab:
-
-
+__start_systemcfg:
 	. = 0x6000
-	.globl __end_stab
-__end_stab:
+	.globl __end_systemcfg
+__end_systemcfg:
 
 	/*
 	 * The iSeries LPAR map is at this fixed address
@@ -400,7 +400,7 @@ __end_stab:
 
 	.llong	1		/* # ESIDs to be mapped by hypervisor         */
 	.llong	1		/* # memory ranges to be mapped by hypervisor */
-	.llong	5		/* Page # of segment table within load area   */
+	.llong	STAB0_PAGE	/* Page # of segment table within load area   */
 	.llong	0		/* Reserved */
 	.llong  0		/* Reserved */
 	.llong  0		/* Reserved */
@@ -526,6 +526,20 @@ SystemReset_FWNMI:
 	.globl MachineCheck_FWNMI
 MachineCheck_FWNMI:
 	EXCEPTION_PROLOG_PSERIES(0x200, MachineCheck_common)
+
+	/*
+	 * Space for the initial segment table
+	 * For LPAR, the hypervisor must fill in at least one entry
+	 * before we get control (with relocate on)
+	 */
+	. = STAB0_PHYS_ADDR
+	.globl __start_stab
+__start_stab:
+
+	. = (STAB0_PHYS_ADDR + PAGE_SIZE)
+	.globl __end_stab
+__end_stab:
+
 
 /*** Common interrupt handlers ***/
 
@@ -801,6 +815,7 @@ PerformanceMonitor_common:
 	b	fast_exception_return
 	
 _GLOBAL(PerformanceMonitorException)
+	sync
 	mfspr	r7,SPRG3
 	lbz	r8,PACAPROFMODE(r7)
 	cmpi	0,r8,PMC_STATE_PROFILE_KERN
@@ -809,6 +824,8 @@ _GLOBAL(PerformanceMonitorException)
 	beq 	6f
 	cmpi	0,r8,PMC_STATE_TRACE_USER
 	beq 	9f
+	cmpi	0,r8,PMC_STATE_TIMESLICE
+	beq 	10f
 	blr
 
 	/* PMC Profile Kernel */
@@ -879,6 +896,13 @@ _GLOBAL(PerformanceMonitorException)
 	addi	r10,r13,THREAD+THREAD_PMC1
 	addi	r7,r13,THREAD+THREAD_PMCC1
 #endif
+	b	7f
+
+	/* PMC Timeslice */
+10:	addi	r10,r7,PACAPMC1
+	addi	r7,r7,PACAPMCC1
+	b	7f
+
 	/* Accumulate counter values for kernel traces */
 7:	ld	r9,0(r7)
 	mfspr   r8,PMC1	
@@ -914,27 +938,27 @@ _GLOBAL(PerformanceMonitorException)
 	std	r9,56(r7)
 
 	/* Reset all counters for kernel traces */
-	lwz	r9,0(r10)
+	ld	r9,0(r10)
 	mtspr	PMC1,r9
-	lwz	r9,4(r10)
+	ld	r9,8(r10)
 	mtspr	PMC2,r9
-	lwz	r9,8(r10)
+	ld	r9,16(r10)
 	mtspr	PMC3,r9
-	lwz	r9,12(r10)
+	ld	r9,24(r10)
 	mtspr	PMC4,r9
-	lwz	r9,16(r10)
+	ld	r9,32(r10)
 	mtspr	PMC5,r9
-	lwz	r9,20(r10)
+	ld	r9,40(r10)
 	mtspr	PMC6,r9
-	lwz	r9,24(r10)
+	ld	r9,48(r10)
 	mtspr	PMC7,r9
-	lwz	r9,28(r10)
+	ld	r9,56(r10)
 	mtspr	PMC8,r9
-	lwz	r9,32(r10)
+	ld	r9,64(r10)
 	mtspr	MMCR0,r9
-	lwz	r9,36(r10)
+	ld	r9,72(r10)
 	mtspr	MMCR1,r9
-	lwz	r9,40(r10)
+	ld	r9,80(r10)
 	mtspr	MMCRA,r9
 	blr
 
@@ -1015,6 +1039,13 @@ _GLOBAL(do_stab_bolted)
 	li	r3,0
 #ifdef CONFIG_XMON
 	bl	.xmon
+#endif
+#ifdef CONFIG_KDB
+	/*	    kdb(KDB_REASON_FAULT,regs->trap,regs); */
+	li      r3,1   /* reason_call, regs considered invalid*/
+	li      r4,0x200  /* trap */
+	li      r5,0      /* pointers to regs.*/
+	bl	.kdb
 #endif
 1:	b	1b
 2:
@@ -1363,14 +1394,19 @@ _GLOBAL(__start_initialization_iSeries)
 	addi	r2,r2,0x4000
 	addi	r2,r2,0x4000
 
+	LOADADDR(r9,systemcfg)
+	SET_REG_TO_CONST(r4, KERNELBASE+0x5000)
+	std	r4,0(r9)		/* set the systemcfg pointer */
+
 	LOADADDR(r9,naca)
-	SET_REG_TO_CONST(r4, KERNELBASE)
-	addi	r4,r4,0x4000
+	SET_REG_TO_CONST(r4, KERNELBASE+0x4000)
 	std	r4,0(r9)		/* set the naca pointer */
 
+#if 1 /* DRENG:PPPBBB:TIA This looks like dead code to me -Peter */
 	/* Get the pointer to the segment table */
 	ld	r6,PACA(r4)             /* Get the base paca pointer       */
 	ld	r4,PACASTABVIRT(r6)
+#endif
 
 	bl      .iSeries_fixup_klimit
 
@@ -1398,13 +1434,18 @@ _GLOBAL(__start_initialization_pSeries)
 	/* Relocate the TOC from a virt addr to a real addr */
 	sub	r2,r2,r3
 
+	/* setup the systemcfg pointer which is needed by prom_init       */
+	LOADADDR(r9,systemcfg)
+	sub	r9,r9,r3                /* addr of the variable systemcfg */
+	SET_REG_TO_CONST(r4, KERNELBASE+0x5000)
+	sub	r4,r4,r3
+	std	r4,0(r9)		/* set the value of systemcfg     */
+
 	/* setup the naca pointer which is needed by prom_init            */
 	LOADADDR(r9,naca)
 	sub	r9,r9,r3                /* addr of the variable naca      */
-
-	SET_REG_TO_CONST(r4, KERNELBASE)
+	SET_REG_TO_CONST(r4, KERNELBASE+0x4000)
 	sub	r4,r4,r3
-	addi	r4,r4,0x4000
 	std	r4,0(r9)		/* set the value of naca          */
 
 	/* DRENG / PPPBBB Fix the following comment!!! -Peter */
@@ -1526,11 +1567,13 @@ _STATIC(copy_and_flush)
 copy_to_here:
 
 /*
+ * load_up_fpu(unused, unused, tsk)
  * Disable FP for the task which had the FPU previously,
  * and save its floating-point registers in its thread_struct.
  * Enables the FPU for use in the kernel on return.
  * On SMP we know the fpu is free, since we give it up every
- * switch.  -- Cort
+ * switch (ie, no lazy save of the FP registers).
+ * On entry: r13 == 'current' && last_task_used_math != 'current'
  */
 _STATIC(load_up_fpu)
 	mfmsr	r5                      /* grab the current MSR */
@@ -1548,26 +1591,30 @@ _STATIC(load_up_fpu)
 	ld	r4,last_task_used_math@l(r3)
 	cmpi	0,r4,0
 	beq	1f
-	addi	r4,r4,THREAD	       /* want THREAD of last_task_used_math */
+	/* Save FP state to last_task_used_math's THREAD struct */
+	addi	r4,r4,THREAD
 	SAVE_32FPRS(0, r4)
 	mffs	fr0
-	stfd	fr0,THREAD_FPSCR-4(r4)
+	stfd	fr0,THREAD_FPSCR(r4)
+	/* Disable FP for last_task_used_math */
 	ld	r5,PT_REGS(r4)
 	ld	r4,_MSR-STACK_FRAME_OVERHEAD(r5)
 	li	r20,MSR_FP|MSR_FE0|MSR_FE1
-	andc	r4,r4,r20		/* disable FP for previous task */
+	andc	r4,r4,r20
 	std	r4,_MSR-STACK_FRAME_OVERHEAD(r5)
 1:
 #endif /* CONFIG_SMP */
 	/* enable use of FP after return */
-	ori	r23,r23,MSR_FP|MSR_FE0|MSR_FE1
-	addi	r5,r13,THREAD		/* Get THREAD */
-	lfd	fr0,THREAD_FPSCR-4(r5)
+	addi	r5,r13,THREAD
+	ld	r4,THREAD_FPEXC_MODE(r5)
+	ori	r23,r23,MSR_FP
+	or	r23,r23,r4
+	lfd	fr0,THREAD_FPSCR(r5)
 	mtfsf	0xff,fr0
 	REST_32FPRS(0, r5)
 #ifndef CONFIG_SMP
-	subi	r4,r5,THREAD		/* Back to 'current' */
-	std	r4,last_task_used_math@l(r3)
+	/* Update last_task_used_math to 'current' */
+	std	r13,last_task_used_math@l(r3)
 #endif /* CONFIG_SMP */
 	/* restore registers and return */
 	b	fast_exception_return
@@ -1606,7 +1653,12 @@ _GLOBAL(giveup_fpu)
 	cmpi	0,r5,0
 	SAVE_32FPRS(0, r3)
 	mffs	fr0
-	stfd	fr0,THREAD_FPSCR-4(r3)
+	stfd	fr0,THREAD_FPSCR(r3)
+#if 0 /* PPPBBB: enable code below if we run with FE0/1 = 0,0 as default */
+	clrrdi	r4,r13,60		/* r4 <- 0xC000000000000000 */
+	lfd	fr0,__zero@l(r4)
+	mtfsf	0xff,fr0
+#endif
 	beq	1f
 	ld	r4,_MSR-STACK_FRAME_OVERHEAD(r5)
 	li	r3,MSR_FP|MSR_FE0|MSR_FE1
@@ -1677,8 +1729,8 @@ _GLOBAL(__secondary_start)
 	sc				/* HvCall_setASR */
 #else
 	/* set the ASR */
-	addi	r3,0,0x4000     /* r3 = ptr to naca */
-	lhz   	r3,PLATFORM(r3) /* r3 = platform flags */
+	li	r3,0x5000	/* r3 = ptr to systemcfg  */
+	lwz   	r3,PLATFORM(r3) /* r3 = platform flags */
 	cmpldi 	r3,PLATFORM_PSERIES_LPAR
 	bne   	98f
 	mfspr	r3,PVR
@@ -1753,6 +1805,12 @@ _STATIC(start_here_pSeries)
 	bl	.reloc_offset
 	mr	r26,r3
 
+	/* setup the systemcfg pointer which is needed by *tab_initialize  */
+	LOADADDR(r6,systemcfg)
+	sub	r6,r6,r26                /* addr of the variable systemcfg */
+	li	r27,0x5000
+	std	r27,0(r6)	 	 /* set the value of systemcfg     */
+
 	/* setup the naca pointer which is needed by *tab_initialize       */
 	LOADADDR(r6,naca)
 	sub	r6,r6,r26                /* addr of the variable naca      */
@@ -1819,8 +1877,8 @@ _STATIC(start_here_pSeries)
 	ori	r4,r3,1			/* turn on valid bit                */
 
 	/* set the ASR */
-	addi	r3,0,0x4000     /* r3 = ptr to naca */
-	lhz   	r3,PLATFORM(r3) /* r3 = platform flags */
+	li	r3,0x5000	/* r3 = ptr to systemcfg */
+	lwz   	r3,PLATFORM(r3) /* r3 = platform flags */
 	cmpldi 	r3,PLATFORM_PSERIES_LPAR
 	bne   	98f
 	mfspr	r3,PVR
@@ -1840,8 +1898,8 @@ _STATIC(start_here_pSeries)
 	bl	.stab_initialize
 	bl	.htab_initialize
 
-	addi  r3,0,0x4000     /* r3 = ptr to naca */
-	lhz   r3,PLATFORM(r3) /* r3 = platform flags */
+	li	r3,0x5000	/* r3 = ptr to systemcfg */
+	lwz	r3,PLATFORM(r3) /* r3 = platform flags */
 	cmpldi r3,PLATFORM_PSERIES
 	bne    98f
 	LOADADDR(r6,_SDR1)		/* Only if NOT LPAR */
@@ -1891,11 +1949,14 @@ _STATIC(start_here_common)
 	addi    r2,r2,0x4000
 	addi    r2,r2,0x4000
 
+	/* setup the systemcfg pointer                                       */
+	LOADADDR(r9,systemcfg)
+	SET_REG_TO_CONST(r8, KERNELBASE+0x5000)
+	std	r8,0(r9)
+
 	/* setup the naca pointer                                         */
 	LOADADDR(r9,naca)
-
-	SET_REG_TO_CONST(r8, KERNELBASE)
-	addi	r8,r8,0x4000
+	SET_REG_TO_CONST(r8, KERNELBASE+0x4000)
 	std	r8,0(r9)		/* set the value of the naca ptr  */
 
 	LOADADDR(r4,naca)               /* Get naca ptr address           */
@@ -2046,7 +2107,7 @@ bolted_dir:
 hardware_int_paca0:
 	.space	8*4096
 
-/* 1 page segment table per cpu (max 48, cpu0 allocated at 0x5000) */
+/* 1 page segment table per cpu (max 48, cpu0 allocated at STAB0_PHYS_ADDR) */
 	.globl	stab_array
 stab_array:
         .space	4096 * (48 - 1)

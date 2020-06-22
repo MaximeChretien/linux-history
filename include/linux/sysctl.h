@@ -124,6 +124,7 @@ enum
 	KERN_CORE_USES_PID=52,		/* int: use core or core.%pid */
 	KERN_TAINTED=53,	/* int: various kernel tainted flags */
 	KERN_CADPID=54,		/* int: PID of the process to notify on CAD */
+ 	KERN_CORE_PATTERN=56,	/* string: pattern for core-files */
 };
 
 
@@ -292,7 +293,10 @@ enum
 	NET_IPV4_NONLOCAL_BIND=88,
 	NET_IPV4_ICMP_RATELIMIT=89,
 	NET_IPV4_ICMP_RATEMASK=90,
-	NET_TCP_TW_REUSE=91
+	NET_TCP_TW_REUSE=91,
+	NET_TCP_FRTO=92,
+	NET_TCP_LOW_LATENCY=93,
+	NET_IPV4_IPFRAG_SECRET_INTERVAL=94,
 };
 
 enum {
@@ -312,7 +316,8 @@ enum {
 	NET_IPV4_ROUTE_GC_ELASTICITY=14,
 	NET_IPV4_ROUTE_MTU_EXPIRES=15,
 	NET_IPV4_ROUTE_MIN_PMTU=16,
-	NET_IPV4_ROUTE_MIN_ADVMSS=17
+	NET_IPV4_ROUTE_MIN_ADVMSS=17,
+	NET_IPV4_ROUTE_SECRET_INTERVAL=18,
 };
 
 enum
@@ -345,7 +350,9 @@ enum
 enum {
 	NET_IPV6_CONF=16,
 	NET_IPV6_NEIGH=17,
-	NET_IPV6_ROUTE=18
+	NET_IPV6_ROUTE=18,
+	NET_IPV6_ICMP=19,
+	NET_IPV6_BINDV6ONLY=20
 };
 
 enum {
@@ -371,6 +378,11 @@ enum {
 	NET_IPV6_RTR_SOLICITS=8,
 	NET_IPV6_RTR_SOLICIT_INTERVAL=9,
 	NET_IPV6_RTR_SOLICIT_DELAY=10
+};
+
+/* /proc/sys/net/ipv6/icmp */
+enum {
+	NET_IPV6_ICMP_RATELIMIT=1
 };
 
 /* /proc/sys/net/<protocol>/neigh/<dev> */

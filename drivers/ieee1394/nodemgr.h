@@ -53,6 +53,7 @@
 #define CONFIG_ROM_MODEL_ID			0x17
 #define CONFIG_ROM_NODE_CAPABILITES		0x0C
 #define CONFIG_ROM_UNIT_DIRECTORY		0xd1
+#define CONFIG_ROM_LOGICAL_UNIT_DIRECTORY	0xd4
 #define CONFIG_ROM_SPECIFIER_ID			0x12 
 #define CONFIG_ROM_UNIT_SW_VERSION		0x13
 #define CONFIG_ROM_DESCRIPTOR_LEAF		0x81
@@ -97,8 +98,11 @@ struct unit_directory {
 	struct node_entry *ne;  /* The node which this directory belongs to */
 	octlet_t address;	/* Address of the unit directory on the node */
 	u8 flags;		/* Indicates which entries were read */
+
 	quadlet_t vendor_id;
 	const char *vendor_name;
+	const char *vendor_oui;
+
 	int vendor_name_size;
 	quadlet_t model_id;
 	const char *model_name;
@@ -114,14 +118,22 @@ struct unit_directory {
 
 	/* For linking directories belonging to a node */
 	struct list_head node_list;
+		
+	/* for tracking unit versus logical unit */
+	struct unit_directory *parent;
 
-	int count;		/* Number of quadlets */
+	int length;		/* Number of quadlets */
+
+	/* XXX Must be last in the struct! */
 	quadlet_t quadlets[0];
 };
 
 struct node_entry {
 	struct list_head list;
 	u64 guid;			/* GUID of this node */
+	u32 guid_vendor_id;		/* Top 24bits of guid */
+	const char *guid_vendor_oui;	/* OUI name of guid vendor id */
+
 	struct hpsb_host *host;		/* Host this node is attached to */
 	nodeid_t nodeid;		/* NodeID */
 	struct bus_options busopt;	/* Bus Options */
@@ -129,10 +141,14 @@ struct node_entry {
 
 	/* The following is read from the config rom */
 	u32 vendor_id;
-	u32 capabilities;	
+	const char *vendor_name;
+	const char *vendor_oui;
+
+	u32 capabilities;
+	struct hpsb_tlabel_pool *tpool;
 	struct list_head unit_directories;
 
-	const char *vendor_name;
+	/* XXX Must be last in the struct! */
 	quadlet_t quadlets[0];
 };
 
@@ -150,7 +166,7 @@ struct node_entry *hpsb_guid_get_entry(u64 guid);
 
 /* Same as above, but use the nodeid to get an node entry. This is not
  * fool-proof by itself, since the nodeid can change.  */
-struct node_entry *hpsb_nodeid_get_entry(nodeid_t nodeid);
+struct node_entry *hpsb_nodeid_get_entry(struct hpsb_host *host, nodeid_t nodeid);
 
 /*
  * If the entry refers to a local host, this function will return the pointer
@@ -180,7 +196,7 @@ int hpsb_node_lock(struct node_entry *ne, u64 addr,
 		   int extcode, quadlet_t *data, quadlet_t arg);
 
 
-void init_ieee1394_nodemgr(int disable_hotplug);
+void init_ieee1394_nodemgr(void);
 void cleanup_ieee1394_nodemgr(void);
 
 #endif /* _IEEE1394_NODEMGR_H */

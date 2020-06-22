@@ -22,6 +22,7 @@
 #include "jfs_imap.h"
 #include "jfs_lock.h"
 #include "jfs_metapage.h"
+#include "jfs_superblock.h"
 #include "jfs_debug.h"
 
 /*
@@ -314,7 +315,7 @@ int dbSync(struct inode *ipbmap)
 			   BMAPBLKNO << JFS_SBI(ipbmap->i_sb)->l2nbperpage,
 			   PSIZE, 0);
 	if (mp == NULL) {
-		jERROR(1,("dbSync: read_metapage failed!\n"));
+		jfs_err("dbSync: read_metapage failed!");
 		return (EIO);
 	}
 	/* copy the in-memory version of the bmap to the on-disk version */
@@ -381,7 +382,22 @@ int dbFree(struct inode *ip, s64 blkno, s64 nblocks)
 	IREAD_LOCK(ipbmap);
 
 	/* block to be freed better be within the mapsize. */
-	assert(blkno + nblocks <= bmp->db_mapsize);
+	if (unlikely(blkno + nblocks > bmp->db_mapsize)) {
+		/*
+		 * Trying to catch a bug here
+		 */
+		printk(KERN_ERR
+		       "JFS: dbFree asked to free block larger than mapsize\n");
+		printk(KERN_ERR
+		       "blkno = 0x%Lx, nblocks = 0x%Lx, mapsize = 0x%Lx\n",
+		       blkno, nblocks, bmp->db_mapsize);
+		printk(KERN_ERR "ino = %ld, cflag = %lx\n", ip->i_ino,
+		       JFS_IP(ip)->cflag);
+		dump_stack();
+		/* Make sure fsck fixes things back up */
+		updateSuper(ip->i_sb, FM_DIRTY);
+		return -EIO;	/* Nobody checks the return code */
+	}
 
 	/*
 	 * free the blocks a dmap at a time.
@@ -1444,10 +1460,10 @@ dbAllocAG(struct bmap * bmp, int agno, s64 nblocks, int l2nb, s64 * results)
 		/* assert(!(rc == ENOSPC && bmp->db_agfree[agno] == bmp->db_agsize)); */
 		if ((rc == ENOSPC) &&
 		    (bmp->db_agfree[agno] == bmp->db_agsize)) {
-			jERROR(1,
-			       ("dbAllocAG: removed assert, but still need to debug here\nblkno = 0x%Lx, nblocks = 0x%Lx\n",
+			jfs_err("dbAllocAG: removed assert, but still need to "
+				"debug here\nblkno = 0x%Lx, nblocks = 0x%Lx",
 				(unsigned long long) blkno,
-				(unsigned long long) nblocks));
+				(unsigned long long) nblocks);
 		}
 		return (rc);
 	}
@@ -1829,8 +1845,7 @@ dbAllocCtl(struct bmap * bmp, s64 nblocks, int l2nb, s64 blkno, s64 * results)
 			 * to indicate that we have leaked blocks.
 			 */
 			fsDirty();	/* !!! */
-			jERROR(1,
-			       ("dbAllocCtl: I/O Error: Block Leakage.\n"));
+			jfs_err("dbAllocCtl: I/O Error: Block Leakage.");
 			continue;
 		}
 		dp = (struct dmap *) mp->data;
@@ -1843,7 +1858,7 @@ dbAllocCtl(struct bmap * bmp, s64 nblocks, int l2nb, s64 blkno, s64 * results)
 			 */
 			release_metapage(mp);
 			fsDirty();	/* !!! */
-			jERROR(1, ("dbAllocCtl: Block Leakage.\n"));
+			jfs_err("dbAllocCtl: Block Leakage.");
 			continue;
 		}
 
@@ -3276,9 +3291,8 @@ int dbExtendFS(struct inode *ipbmap, s64 blkno,	s64 nblocks)
 
 	newsize = blkno + nblocks;
 
-	jEVENT(0, ("dbExtendFS: blkno:%Ld nblocks:%Ld newsize:%Ld\n",
-		   (long long) blkno, (long long) nblocks,
-		   (long long) newsize));
+	jfs_info("dbExtendFS: blkno:%Ld nblocks:%Ld newsize:%Ld",
+		 (long long) blkno, (long long) nblocks, (long long) newsize);
 
 	/*
 	 *      initialize bmap control page.

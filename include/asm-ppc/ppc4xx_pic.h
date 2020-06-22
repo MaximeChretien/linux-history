@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.ppc4xx_pic.h 1.8 06/15/01 13:56:56 paulus
- */
-/*
  *
  *    Copyright (c) 1999 Grant Erickson <grant@lcse.umn.edu>
  *

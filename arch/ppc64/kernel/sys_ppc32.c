@@ -69,17 +69,6 @@
 extern unsigned long wall_jiffies;
 #define USEC_PER_SEC (1000000)
 
-/* 
- * These are the flags in the MSR that the user is allowed to change
- * by modifying the saved value of the MSR on the stack.  SE and BE
- * should not be in this list since gdb may want to change these.  I.e,
- * you should be able to step out of a signal handler to see what
- * instruction executes next after the signal handler completes.
- * Alternately, if you stepped into a signal handler, you should be
- * able to continue 'til the next breakpoint from within the signal
- * handler, even if the handler returns.
- */
-#define MSR_USERCHANGE	(MSR_FE0 | MSR_FE1)
 
 extern asmlinkage long sys_utime(char * filename, struct utimbuf * times);
 
@@ -135,10 +124,10 @@ static long do_readv_writev32(int type, struct file *file,
 	 */
 	if (!count)
 		return 0;
-	if(verify_area(VERIFY_READ, vector, sizeof(struct iovec32)*count))
-		return -EFAULT;
 	if (count > UIO_MAXIOV)
 		return -EINVAL;
+	if(verify_area(VERIFY_READ, vector, sizeof(struct iovec32)*count))
+		return -EFAULT;
 	if (count > UIO_FASTIOV) {
 		iov = kmalloc(count*sizeof(struct iovec), GFP_KERNEL);
 		if (!iov)
@@ -546,7 +535,6 @@ struct old_linux_dirent32 {
 	u32		d_ino;
 	u32		d_offset;
 	unsigned short	d_namlen;
-  /* unsigned char	d_type; */
 	char		d_name[1];
 };
 
@@ -639,7 +627,6 @@ filldir(void * __buf, const char * name, int namlen, off_t offset, ino_t ino,
 	buf->previous = dirent;
 	put_user(ino, &dirent->d_ino);
 	put_user(reclen, &dirent->d_reclen);
-	/* put_user(d_type, &dirent->d_type); */
 	copy_to_user(dirent->d_name, name, namlen);
 	put_user(0, dirent->d_name + namlen);
 	((char *) dirent) += reclen;
@@ -837,7 +824,7 @@ asmlinkage long sys32_select(int n, u32 *inp, u32 *outp, u32 *exp, u32 tvp_x)
 		put_user(usec, &tvp->tv_usec);
 	}
 
-  if (ret < 0)
+	if (ret < 0)
 		goto out;
 	if (!ret) {
 		ret = -ERESTARTNOHAND;
@@ -2448,8 +2435,10 @@ asmlinkage long sys32_times(struct tms32 *tbuf)
 struct msgbuf32 { s32 mtype; char mtext[1]; };
 
 struct semid_ds32 {
-	struct ipc_perm sem_perm;
+	struct ipc_perm32 sem_perm;
+	unsigned int _pad0;
 	__kernel_time_t32 sem_otime;
+	unsigned int _pad1;
 	__kernel_time_t32 sem_ctime;
 	u32 sem_base;
 	u32 sem_pending;
@@ -2459,7 +2448,7 @@ struct semid_ds32 {
 };
 
 struct semid64_ds32 {
-	struct ipc64_perm sem_perm;
+	struct ipc64_perm32 sem_perm;
 	unsigned int __unused1;
 	__kernel_time_t32 sem_otime;
 	unsigned int __unused2;
@@ -2471,7 +2460,7 @@ struct semid64_ds32 {
 
 struct msqid_ds32
 {
-	struct ipc_perm msg_perm;
+	struct ipc_perm32 msg_perm;
 	u32 msg_first;
 	u32 msg_last;
 	__kernel_time_t32 msg_stime;
@@ -2487,7 +2476,7 @@ struct msqid_ds32
 };
 
 struct msqid64_ds32 {
-	struct ipc64_perm msg_perm;
+	struct ipc64_perm32 msg_perm;
 	unsigned int __unused1;
 	__kernel_time_t32 msg_stime;
 	unsigned int __unused2;
@@ -2504,7 +2493,7 @@ struct msqid64_ds32 {
 };
 
 struct shmid_ds32 {
-	struct ipc_perm shm_perm;
+	struct ipc_perm32 shm_perm;
 	int shm_segsz;
 	__kernel_time_t32 shm_atime;
 	__kernel_time_t32 shm_dtime;
@@ -2518,7 +2507,7 @@ struct shmid_ds32 {
 };
 
 struct shmid64_ds32 {
-	struct ipc64_perm shm_perm;
+	struct ipc64_perm32 shm_perm;
 	unsigned int __unused1;
 	__kernel_time_t32 shm_atime;
 	unsigned int __unused2;
@@ -2584,7 +2573,7 @@ static long do_sys32_semctl(int first, int second, int third, void *uptr)
 			err = sys_semctl(first, second, third, fourth);
 			set_fs(old_fs);
 			err2 = copy_to_user(&usp->sem_perm, &s64.sem_perm,
-					    sizeof(struct ipc64_perm));
+					    sizeof(struct ipc64_perm32));
 			err2 |= __put_user(s64.sem_otime, &usp->sem_otime);
 			err2 |= __put_user(s64.sem_ctime, &usp->sem_ctime);
 			err2 |= __put_user(s64.sem_nsems, &usp->sem_nsems);
@@ -2601,7 +2590,7 @@ static long do_sys32_semctl(int first, int second, int third, void *uptr)
 			err = sys_semctl(first, second, third, fourth);
 			set_fs(old_fs);
 			err2 = copy_to_user(&usp->sem_perm, &s.sem_perm,
-					    sizeof(struct ipc_perm));
+					    sizeof(struct ipc_perm32));
 			err2 |= __put_user(s.sem_otime, &usp->sem_otime);
 			err2 |= __put_user(s.sem_ctime, &usp->sem_ctime);
 			err2 |= __put_user(s.sem_nsems, &usp->sem_nsems);
@@ -2652,10 +2641,14 @@ static long do_sys32_semctl(int first, int second, int third, void *uptr)
 			set_fs(old_fs);
 		}
 		break;
+	default:
+		err = -EINVAL;
 	}
 out:
 	return err;
 }
+
+#define MAXBUF (64*1024)
 
 static int 
 do_sys32_msgsnd(int first, int second, int third, void *uptr)
@@ -2665,14 +2658,14 @@ do_sys32_msgsnd(int first, int second, int third, void *uptr)
 	mm_segment_t old_fs;
 	int err;
 
-	if (second < 0)
+	if (second < 0 || (second >= MAXBUF-sizeof(struct msgbuf)))
 		return -EINVAL;
 
-	p = kmalloc(second + sizeof(struct msgbuf) + 4, GFP_USER);
+	p = kmalloc(second + sizeof(struct msgbuf), GFP_USER);
 	if (!p)
 		return -ENOMEM;
 	err = get_user(p->mtype, &up->mtype);
-	err |= __copy_from_user(p->mtext, &up->mtext, second);
+	err |= copy_from_user(p->mtext, &up->mtext, second);
 	if (err) {
 		err = -EFAULT;
 		goto out;
@@ -2695,35 +2688,35 @@ do_sys32_msgrcv(int first, int second, int msgtyp, int third,
 	mm_segment_t old_fs;
 	int err;
 
-	if (second < 0)
+	if (second < 0 || (second >= MAXBUF-sizeof(struct msgbuf)))
 		return -EINVAL;
 
 	if (!version) {
-		struct ipc_kludge *uipck = (struct ipc_kludge *)uptr;
-		struct ipc_kludge ipck;
+		struct ipc_kludge_32 *uipck = (struct ipc_kludge_32 *)uptr;
+		struct ipc_kludge_32 ipck;
 
 		err = -EINVAL;
 		if (!uptr)
 			goto out;
 		err = -EFAULT;
-		if (copy_from_user(&ipck, uipck, sizeof(struct ipc_kludge)))
+		if (copy_from_user(&ipck, uipck, sizeof(struct ipc_kludge_32)))
 			goto out;
 		uptr = (void *)A(ipck.msgp);
 		msgtyp = ipck.msgtyp;
 	}
 	err = -ENOMEM;
-	p = kmalloc(second + sizeof (struct msgbuf) + 4, GFP_USER);
+	p = kmalloc(second + sizeof (struct msgbuf), GFP_USER);
 	if (!p)
 		goto out;
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
-	err = sys_msgrcv(first, p, second + 4, msgtyp, third);
+	err = sys_msgrcv(first, p, second, msgtyp, third);
 	set_fs(old_fs);
 	if (err < 0)
 		goto free_then_out;
 	up = (struct msgbuf32 *)uptr;
 	if (put_user(p->mtype, &up->mtype) ||
-	    __copy_to_user(&up->mtext, p->mtext, err))
+	    copy_to_user(&up->mtext, p->mtext, err))
 		err = -EFAULT;
 free_then_out:
 	kfree(p);
@@ -2751,7 +2744,7 @@ do_sys32_msgctl(int first, int second, void *uptr)
 			struct msqid64_ds32 *up = (struct msqid64_ds32 *)uptr;
 
 			err2 = copy_from_user(&m64.msg_perm, &up->msg_perm,
-					      sizeof(struct ipc64_perm));
+					      sizeof(struct ipc64_perm32));
 			err2 |= __get_user(m64.msg_qbytes, &up->msg_qbytes);
 			if (err2) {
 				err = -EFAULT;
@@ -2767,7 +2760,7 @@ do_sys32_msgctl(int first, int second, void *uptr)
 			struct msqid_ds32 *up = (struct msqid_ds32 *)uptr;
 
 			err2 = copy_from_user(&m.msg_perm, &up->msg_perm,
-					      sizeof(struct ipc_perm));
+					      sizeof(struct ipc_perm32));
 			err2 |= __get_user(m.msg_qbytes, &up->msg_qbytes);
 			if (err2) {
 				err = -EFAULT;
@@ -2793,7 +2786,7 @@ do_sys32_msgctl(int first, int second, void *uptr)
 			set_fs(old_fs);
 
 			err2 = copy_to_user(&up->msg_perm, &m64.msg_perm,
-					    sizeof(struct ipc64_perm));
+					    sizeof(struct ipc64_perm32));
  			err2 |= __put_user(m64.msg_stime, &up->msg_stime);
 			err2 |= __put_user(m64.msg_rtime, &up->msg_rtime);
 			err2 |= __put_user(m64.msg_ctime, &up->msg_ctime);
@@ -2814,7 +2807,7 @@ do_sys32_msgctl(int first, int second, void *uptr)
 			set_fs(old_fs);
 
 			err2 = copy_to_user(&up->msg_perm, &m.msg_perm,
-					    sizeof(struct ipc_perm));
+					    sizeof(struct ipc_perm32));
  			err2 |= __put_user(m.msg_stime, &up->msg_stime);
 			err2 |= __put_user(m.msg_rtime, &up->msg_rtime);
 			err2 |= __put_user(m.msg_ctime, &up->msg_ctime);
@@ -2850,7 +2843,7 @@ do_sys32_shmat(int first, int second, int third, int version, void *uptr)
 static int
 do_sys32_shmctl(int first, int second, void *uptr)
 {
-	int err = -EFAULT, err2;
+	int err = -EINVAL, err2;
 	mm_segment_t old_fs;
 
 	switch (second & (~IPC_64)) {
@@ -2908,7 +2901,7 @@ do_sys32_shmctl(int first, int second, void *uptr)
 				break;
 
 			err2 = copy_to_user(&up->shm_perm, &s64.shm_perm,
-					    sizeof(struct ipc64_perm));
+					    sizeof(struct ipc64_perm32));
 			err2 |= __put_user(s64.shm_atime, &up->shm_atime);
 			err2 |= __put_user(s64.shm_dtime, &up->shm_dtime);
 			err2 |= __put_user(s64.shm_ctime, &up->shm_ctime);
@@ -2930,7 +2923,7 @@ do_sys32_shmctl(int first, int second, void *uptr)
 				break;
 
 			err2 = copy_to_user(&up->shm_perm, &s.shm_perm,
-					    sizeof(struct ipc_perm));
+					    sizeof(struct ipc_perm32));
 			err2 |= __put_user (s.shm_atime, &up->shm_atime);
 			err2 |= __put_user (s.shm_dtime, &up->shm_dtime);
 			err2 |= __put_user (s.shm_ctime, &up->shm_ctime);
@@ -4241,32 +4234,6 @@ asmlinkage long sys32_getsid(u32 pid)
 }
 
 
-extern asmlinkage long sys_ioperm(unsigned long from, unsigned long num, int on);
-
-/* Note: it is necessary to treat on as an unsigned int,
- * with the corresponding cast to a signed int to insure that the 
- * proper conversion (sign extension) between the register representation of a signed int (msr in 32-bit mode)
- * and the register representation of a signed int (msr in 64-bit mode) is performed.
- */
-asmlinkage long sys32_ioperm(unsigned long from, unsigned long num, u32 on)
-{
-	return sys_ioperm(from, num, (int)on);
-}
-
-
-extern asmlinkage int sys_iopl(int a1, int a2, int a3, int a4);
-
-/* Note: it is necessary to treat a1, a2, a3, and a4 as unsigned ints,
- * with the corresponding cast to a signed int to insure that the 
- * proper conversion (sign extension) between the register representation of a signed int (msr in 32-bit mode)
- * and the register representation of a signed int (msr in 64-bit mode) is performed.
- */
-asmlinkage int sys32_iopl(u32 a1, u32 a2, u32 a3, u32 a4)
-{
-	return sys_iopl((int)a1, (int)a2, (int)a3, (int)a4);
-}
-
-
 extern asmlinkage long sys_kill(int pid, int sig);
 
 /* Note: it is necessary to treat pid and sig as unsigned ints,
@@ -4306,19 +4273,6 @@ asmlinkage long sys32_mlockall(u32 flags)
 }
 
 
-extern asmlinkage int sys_modify_ldt(int a1, int a2, int a3, int a4);
-
-/* Note: it is necessary to treat a1, a2, a3, and a4 as unsigned ints,
- * with the corresponding cast to a signed int to insure that the 
- * proper conversion (sign extension) between the register representation of a signed int (msr in 32-bit mode)
- * and the register representation of a signed int (msr in 64-bit mode) is performed.
- */
-asmlinkage int sys32_modify_ldt(u32 a1, u32 a2, u32 a3, u32 a4)
-{
-	return sys_modify_ldt((int)a1, (int)a2, (int)a3, (int)a4);
-}
-
-
 extern asmlinkage long sys_msync(unsigned long start, size_t len, int flags);
 
 /* Note: it is necessary to treat flags as an unsigned int,
@@ -4344,19 +4298,36 @@ asmlinkage long sys32_nice(u32 increment)
 	return sys_nice((int)increment);
 }
 
-
-extern asmlinkage long sys_open(const char * filename, int flags, int mode);
-
-/* Note: it is necessary to treat flags and mode as unsigned ints,
- * with the corresponding cast to a signed int to insure that the 
- * proper conversion (sign extension) between the register representation of a signed int (msr in 32-bit mode)
- * and the register representation of a signed int (msr in 64-bit mode) is performed.
+/*
+ * This is just a version for 32-bit applications which does
+ * not force O_LARGEFILE on.
  */
-asmlinkage long sys32_open(const char * filename, int flags, int mode)
+long sys32_open(const char * filename, int flags, int mode)
 {
-	return sys_open(filename, (int)flags, (int)mode);
-}
+	char * tmp;
+	int fd, error;
 
+	tmp = getname(filename);
+	fd = PTR_ERR(tmp);
+	if (!IS_ERR(tmp)) {
+		fd = get_unused_fd();
+		if (fd >= 0) {
+			struct file * f = filp_open(tmp, flags, mode);
+			error = PTR_ERR(f);
+			if (IS_ERR(f))
+				goto out_error;
+			fd_install(fd, f);
+		}
+out:
+		putname(tmp);
+	}
+	return fd;
+
+out_error:
+	put_unused_fd(fd);
+	fd = error;
+	goto out;
+}
 
 extern asmlinkage long sys_readlink(const char * path, char * buf, int bufsiz);
 
@@ -4604,23 +4575,6 @@ asmlinkage int sys32_vfork(u32 p1, u32 p2, u32 p3, u32 p4, u32 p5, u32 p6, struc
 	return sys_vfork((int)p1, (int)p2, (int)p3, (int)p4, (int)p5, (int)p6, regs);
 }
 
-
-extern asmlinkage int sys_vm86(int a1, int a2, int a3, int a4);
-
-/* Note: it is necessary to treat a1, a2, a3, and a4 as unsigned ints,
- * with the corresponding cast to a signed int to insure that the 
- * proper conversion (sign extension) between the register representation of a signed int (msr in 32-bit mode)
- * and the register representation of a signed int (msr in 64-bit mode) is performed.
- */
-asmlinkage int sys32_vm86(u32 a1, u32 a2, u32 a3, u32 a4)
-{
-	return sys_vm86((int)a1, (int)a2, (int)a3, (int)a4);
-}
-
-
-
-
-
 extern asmlinkage ssize_t sys_pread(unsigned int fd, char * buf,
 				    size_t count, loff_t pos);
 
@@ -4641,6 +4595,12 @@ asmlinkage ssize_t32 sys32_pwrite(unsigned int fd, char *ubuf,
 	return sys_pwrite(fd, ubuf, count, ((loff_t)AA(poshi) << 32) | AA(poslo));
 }
 
+extern ssize_t sys_readahead(int fd, loff_t offset, size_t count);
+
+ssize_t32 sys32_readahead(int fd, u32 r4, u32 offhi, u32 offlo, u32 count)
+{
+        return sys_readahead(fd, ((loff_t)offhi << 32) | offlo, AA(count));
+}
 
 extern asmlinkage long sys_truncate(const char * path, unsigned long length);
 extern asmlinkage long sys_ftruncate(unsigned int fd, unsigned long length);
@@ -4736,4 +4696,16 @@ asmlinkage long sys32_time(__kernel_time_t32* tloc)
 	}
 
 	return secs;
+}
+
+extern unsigned long sys_mmap(unsigned long addr, size_t len,
+			      unsigned long prot, unsigned long flags,
+			      unsigned long fd, off_t offset);
+
+unsigned long sys32_mmap2(unsigned long addr, size_t len,
+			  unsigned long prot, unsigned long flags,
+			  unsigned long fd, unsigned long pgoff)
+{
+	/* This should remain 12 even if PAGE_SIZE changes */
+	return sys_mmap(addr, len, prot, flags, fd, pgoff << 12);
 }

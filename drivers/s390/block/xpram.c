@@ -171,7 +171,7 @@ static int hardsect = XPRAM_HARDSECT;
 int xpram_devs, xpram_rahead;
 int xpram_blksize, xpram_hardsect;
 int xpram_mem_avail = 0;
-unsigned long xpram_sizes[XPRAM_MAX_DEVS];
+unsigned int xpram_sizes[XPRAM_MAX_DEVS];
 
 
 MODULE_PARM(devs,"i");
@@ -184,7 +184,9 @@ MODULE_PARM_DESC(sizes, "list of device (partition) sizes " \
 		 "All devices with size 0 equally partition the "
 		 "remaining space on the expanded strorage not "
 		 "claimed by explicit sizes\n");
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,12))
+MODULE_LICENSE ("GPL");
+#endif
 
 
 /* The following items are obtained through kmalloc() in init_module() */

@@ -97,6 +97,8 @@ static int verify_iovec32(struct msghdr *kern_msg, struct iovec *kern_iov,
 		kern_msg->msg_name = NULL;
 
 	if(kern_msg->msg_iovlen > UIO_FASTIOV) {
+		if (kern_msg->msg_iovlen > (2*PAGE_SIZE)/ sizeof(struct iovec))
+			return -EINVAL; 
 		kern_iov = kmalloc(kern_msg->msg_iovlen * sizeof(struct iovec),
 				   GFP_KERNEL);
 		if(!kern_iov)
@@ -139,6 +141,8 @@ static int cmsghdr_from_user32_to_kern(struct msghdr *kmsg,
 			return -EINVAL;
 		if((unsigned long)(((char *)ucmsg - (char *)kmsg->msg_control)
 				   + ucmlen) > kmsg->msg_controllen)
+			return -EINVAL;
+		if (kmsg->msg_controllen > 65536) 
 			return -EINVAL;
 
 		tmp = ((ucmlen - CMSG32_ALIGN(sizeof(*ucmsg))) +
@@ -362,7 +366,7 @@ fail:
 	kmsg->msg_control = (void *) orig_cmsg_uptr;
 }
 
-asmlinkage int sys32_sendmsg(int fd, struct msghdr32 *user_msg, unsigned user_flags)
+asmlinkage long sys32_sendmsg(int fd, struct msghdr32 *user_msg, unsigned user_flags)
 {
 	struct socket *sock;
 	char address[MAX_SOCK_ADDR];
@@ -407,7 +411,7 @@ out:
 	return err;
 }
 
-asmlinkage int sys32_recvmsg(int fd, struct msghdr32 *user_msg, unsigned int user_flags)
+asmlinkage long sys32_recvmsg(int fd, struct msghdr32 *user_msg, unsigned int user_flags)
 {
 	struct iovec iovstack[UIO_FASTIOV];
 	struct msghdr kern_msg;
@@ -499,7 +503,6 @@ static int do_set_attach_filter(int fd, int level, int optname,
 		__u32 filter;
 	} *fprog32 = (struct sock_fprog32 *)optval;
 	struct sock_fprog kfprog;
-	struct sock_filter *kfilter;
 	unsigned int fsize;
 	mm_segment_t old_fs;
 	__u32 uptr;
@@ -510,26 +513,15 @@ static int do_set_attach_filter(int fd, int level, int optname,
 		return -EFAULT;
 
 	kfprog.filter = (struct sock_filter *)A(uptr);
-	fsize = kfprog.len * sizeof(struct sock_filter);
 
-	kfilter = (struct sock_filter *)kmalloc(fsize, GFP_KERNEL);
-	if (kfilter == NULL)
-		return -ENOMEM;
-
-	if (copy_from_user(kfilter, kfprog.filter, fsize)) {
-		kfree(kfilter);
+	if (verify_area(VERIFY_WRITE, kfprog.filter, kfprog.len*sizeof(struct sock_filter)))
 		return -EFAULT;
-	}
-
-	kfprog.filter = kfilter;
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 	ret = sys_setsockopt(fd, level, optname,
 			     (char *)&kfprog, sizeof(kfprog));
 	set_fs(old_fs);
-
-	kfree(kfilter);
 
 	return ret;
 }
@@ -561,7 +553,7 @@ static int do_set_icmpv6_filter(int fd, int level, int optname,
 	return ret;
 }
 
-asmlinkage int sys32_setsockopt(int fd, int level, int optname,
+asmlinkage long sys32_setsockopt(int fd, int level, int optname,
 				char *optval, int optlen)
 {
 	if (optname == SO_ATTACH_FILTER)
@@ -664,7 +656,7 @@ asmlinkage long sys32_socketcall(int call, u32 *args)
 			ret = sys_shutdown(a0,a1);
 			break;
 		case SYS_SETSOCKOPT:
-			ret = sys_setsockopt(a0, a1, a[2], (char *)A(a[3]),
+			ret = sys32_setsockopt(a0, a1, a[2], (char *)A(a[3]),
 					      a[4]);
 			break;
 		case SYS_GETSOCKOPT:

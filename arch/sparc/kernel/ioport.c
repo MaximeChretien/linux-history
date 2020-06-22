@@ -221,19 +221,7 @@ _sparc_ioremap(struct resource *res, u32 bus, u32 pa, int sz)
 		pa += PAGE_SIZE;
 	}
 
-	/*
-	 * XXX Playing with implementation details here.
-	 * On sparc64 Ebus has resources with precise boundaries.
-	 * We share drivers with sparc64. Too clever drivers use
-	 * start of a resource instead of a base address.
-	 *
-	 * XXX-2 This may be not valid anymore, clean when
-	 * interface to sbus_ioremap() is resolved.
-	 */
-	res->start += offset;
-	res->end = res->start + sz - 1;		/* not strictly necessary.. */
-
-	return (void *) res->start;
+	return (void *) (res->start + offset);
 }
 
 /*
@@ -244,7 +232,7 @@ static void _sparc_free_io(struct resource *res)
 	unsigned long plen;
 
 	plen = res->end - res->start + 1;
-	plen = (plen + PAGE_SIZE-1) & PAGE_MASK;
+	if ((plen & (PAGE_SIZE-1)) != 0) BUG();
 	while (plen != 0) {
 		plen -= PAGE_SIZE;
 		(*_sparc_unmapioaddr)(res->start + plen);
@@ -515,7 +503,7 @@ void *pci_alloc_consistent(struct pci_dev *pdev, size_t len, dma_addr_t *pba)
 	mmu_inval_dma_area(va, len_total);
 
 #if 1
-/* P3 */ printk("pci_alloc_consistent: kva %lx uncva %lx phys %lx size %x\n",
+/* P3 */ printk("pci_alloc_consistent: kva %lx uncva %lx phys %lx size %lx\n",
   (long)va, (long)res->start, (long)virt_to_phys(va), len_total);
 #endif
 	{

@@ -2,8 +2,8 @@
  *
  * Name:	skdrv1st.h
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.9.2.1 $
- * Date:	$Date: 2001/03/12 16:50:59 $
+ * Version:	$Revision: 1.9.2.2 $
+ * Date:	$Date: 2001/12/07 12:06:42 $
  * Purpose:	First header file for driver and all other modules
  *
  ******************************************************************************/
@@ -27,6 +27,9 @@
  * History:
  *
  *	$Log: skdrv1st.h,v $
+ *	Revision 1.9.2.2  2001/12/07 12:06:42  mlindner
+ *	Fix: malloc -> slab changes
+ *	
  *	Revision 1.9.2.1  2001/03/12 16:50:59  mlindner
  *	chg: kernel 2.4 adaption
  *	
@@ -84,6 +87,10 @@
 #ifndef __INC_SKDRV1ST_H
 #define __INC_SKDRV1ST_H
 
+/* Check kernel version */
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE > 0x020300)
+#endif
 
 typedef struct s_AC	SK_AC;
 
@@ -116,7 +123,6 @@ typedef struct s_AC	SK_AC;
 #include <linux/slab.h>
 #include <linux/interrupt.h>
 #include <linux/pci.h>
-#include <linux/crc32.h>
 #include <asm/byteorder.h>
 #include <asm/bitops.h>
 #include <asm/io.h>
@@ -140,6 +146,8 @@ typedef struct s_AC	SK_AC;
 #define SK_BIG_ENDIAN
 #endif
 
+#define SK_NET_DEVICE	net_device
+
 
 /* we use gethrtime(), return unit: nanoseconds */
 #define SK_TICKS_PER_SEC	HZ
@@ -161,17 +169,17 @@ typedef struct s_DrvRlmtMbuf SK_MBUF;
 #define SK_MEMCPY(dest,src,size)	memcpy(dest,src,size)
 #define SK_MEMCMP(s1,s2,size)		memcmp(s1,s2,size)
 #define SK_MEMSET(dest,val,size)	memset(dest,val,size)
-#define SK_STRLEN(pStr)			strlen((char*)pStr)
-#define SK_STRNCPY(pDest,pSrc,size)	strncpy((char*)pDest,(char*)pSrc,size)
-#define SK_STRCMP(pStr1,pStr2)		strcmp((char*)pStr1,(char*)pStr2)
+#define SK_STRLEN(pStr)			strlen((char*)(pStr))
+#define SK_STRNCPY(pDest,pSrc,size)	strncpy((char*)(pDest),(char*)(pSrc),size)
+#define SK_STRCMP(pStr1,pStr2)		strcmp((char*)(pStr1),(char*)(pStr2))
 
 /* macros to access the adapter */
-#define SK_OUT8(b,a,v)		writeb(v, (b+a))	
-#define SK_OUT16(b,a,v)		writew(v, (b+a))	
-#define SK_OUT32(b,a,v)		writel(v, (b+a))	
-#define SK_IN8(b,a,pv)		(*(pv) = readb(b+a))
-#define SK_IN16(b,a,pv)		(*(pv) = readw(b+a))
-#define SK_IN32(b,a,pv)		(*(pv) = readl(b+a))
+#define SK_OUT8(b,a,v)		writeb((v), ((b)+(a)))	
+#define SK_OUT16(b,a,v)		writew((v), ((b)+(a)))	
+#define SK_OUT32(b,a,v)		writel((v), ((b)+(a)))	
+#define SK_IN8(b,a,pv)		(*(pv) = readb((b)+(a)))
+#define SK_IN16(b,a,pv)		(*(pv) = readw((b)+(a)))
+#define SK_IN32(b,a,pv)		(*(pv) = readl((b)+(a)))
 
 #define int8_t		char
 #define int16_t		short
@@ -222,11 +230,11 @@ extern void SkDbgPrintf(const char *format,...);
 #define SK_DBGCAT_DRV_INT_SRC		0x04000000
 #define SK_DBGCAT_DRV_EVENT		0x08000000
 
-#endif /* DEBUG */
+#endif
 
 #define SK_ERR_LOG		SkErrorLog
 
 extern void SkErrorLog(SK_AC*, int, int, char*);
 
-#endif /* __INC_SKDRV1ST_H */
+#endif
 

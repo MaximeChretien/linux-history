@@ -2051,9 +2051,9 @@ awe_ioctl(int dev, unsigned int cmd, caddr_t arg)
 			awe_info.nr_voices = awe_max_voices;
 		else
 			awe_info.nr_voices = AWE_MAX_CHANNELS;
-		memcpy((char*)arg, &awe_info, sizeof(awe_info));
+		if(copy_to_user(arg, &awe_info, sizeof(awe_info)))
+			return -EFAULT;
 		return 0;
-		break;
 
 	case SNDCTL_SEQ_RESETSAMPLES:
 		awe_reset(dev);

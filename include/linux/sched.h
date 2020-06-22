@@ -94,23 +94,13 @@ extern int last_pid;
 
 #define __set_task_state(tsk, state_value)		\
 	do { (tsk)->state = (state_value); } while (0)
-#ifdef CONFIG_SMP
 #define set_task_state(tsk, state_value)		\
 	set_mb((tsk)->state, (state_value))
-#else
-#define set_task_state(tsk, state_value)		\
-	__set_task_state((tsk), (state_value))
-#endif
 
 #define __set_current_state(state_value)			\
 	do { current->state = (state_value); } while (0)
-#ifdef CONFIG_SMP
 #define set_current_state(state_value)		\
 	set_mb(current->state, (state_value))
-#else
-#define set_current_state(state_value)		\
-	__set_current_state(state_value)
-#endif
 
 /*
  * Scheduling policies
@@ -162,6 +152,12 @@ extern int schedule_task(struct tq_struct *task);
 extern void flush_scheduled_tasks(void);
 extern int start_context_thread(void);
 extern int current_is_keventd(void);
+
+#if CONFIG_SMP
+extern void set_cpus_allowed(struct task_struct *p, unsigned long new_mask);
+#else
+# define set_cpus_allowed(p, new_mask) do { } while (0)
+#endif
 
 /*
  * The default fd array needs to be at least BITS_PER_LONG,
@@ -339,6 +335,7 @@ struct task_struct {
 	/* ??? */
 	unsigned long personality;
 	int did_exec:1;
+	unsigned task_dumpable:1;
 	pid_t pid;
 	pid_t pgrp;
 	pid_t tty_old_pgrp;
@@ -448,6 +445,8 @@ struct task_struct {
 #define PT_TRACESYSGOOD	0x00000008
 #define PT_PTRACE_CAP	0x00000010	/* ptracer can follow suid-exec */
 
+#define is_dumpable(tsk)    ((tsk)->task_dumpable && (tsk)->mm && (tsk)->mm->dumpable)
+
 /*
  * Limit the stack by to some sane default: root can always
  * increase this limit if needed..  8MB seems reasonable.
@@ -482,8 +481,8 @@ extern struct exec_domain	default_exec_domain;
     policy:		SCHED_OTHER,					\
     mm:			NULL,						\
     active_mm:		&init_mm,					\
-    cpus_runnable:	-1,						\
-    cpus_allowed:	-1,						\
+    cpus_runnable:	~0UL,						\
+    cpus_allowed:	~0UL,						\
     run_list:		LIST_HEAD_INIT(tsk.run_list),			\
     next_task:		&tsk,						\
     prev_task:		&tsk,						\
@@ -802,6 +801,8 @@ extern int do_fork(unsigned long, unsigned long, struct pt_regs *, unsigned long
 extern void FASTCALL(add_wait_queue(wait_queue_head_t *q, wait_queue_t * wait));
 extern void FASTCALL(add_wait_queue_exclusive(wait_queue_head_t *q, wait_queue_t * wait));
 extern void FASTCALL(remove_wait_queue(wait_queue_head_t *q, wait_queue_t * wait));
+
+extern long kernel_thread(int (*fn)(void *), void * arg, unsigned long flags);
 
 #define __wait_event(wq, condition) 					\
 do {									\

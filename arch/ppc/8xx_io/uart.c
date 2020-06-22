@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.uart.c 1.23 12/29/01 14:50:03 trini
- */
-/*
  *  UART driver for MPC860 CPM SCC or SMC
  *  Copyright (c) 1997 Dan Malek (dmalek@jlc.net)
  *
@@ -44,15 +41,13 @@
 #include <asm/8xx_immap.h>
 #include <asm/mpc8xx.h>
 #include <asm/commproc.h>
+#include <asm/irq.h>
+#include <asm/kgdb.h>
 #ifdef CONFIG_MAGIC_SYSRQ
 #include <linux/sysrq.h>
 #endif
 
-#ifdef CONFIG_KGDB
-extern void breakpoint(void);
-extern void set_debug_traps(void);
-extern int  kgdb_output_string (const char* s, unsigned int count);
-#endif
+extern int kgdb_output_string (const char* s, unsigned int count);
 
 #ifdef CONFIG_SERIAL_CONSOLE
 #include <linux/console.h>
@@ -134,6 +129,18 @@ static unsigned long break_pressed; /* break, really ... */
 #define smc_scc_num	hub6
 #define NUM_IS_SCC	((int)0x00010000)
 #define PORT_NUM(P)	((P) & 0x0000ffff)
+#define PORT_IS_SCC(P)	((P) & NUM_IS_SCC)
+
+/* The serial port to use for KGDB. */
+#ifdef CONFIG_KGDB_TTYS1
+#define KGDB_SER_IDX	1	/* SCC1/SMC1 */
+#elif CONFIG_KGDB_TTYS2
+#define KGDB_SER_IDX	2	/* SCC2/SMC2 */
+#elif CONFIG_KGDB_TTYS3
+#define KGDB_SER_IDX	3	/* SCC4/SMC4 (future?) */
+#else				/* Unset, or ttyS0, use SCC1/SMC1 */
+#define KGDB_SER_IDX	0
+#endif
 
 /* Processors other than the 860 only get SMCs configured by default.
  * Either they don't have SCCs or they are allocated somewhere else.
@@ -277,7 +284,7 @@ static void rs_8xx_stop(struct tty_struct *tty)
 	
 	save_flags(flags); cli();
 	idx = PORT_NUM(info->state->smc_scc_num);
-	if (info->state->smc_scc_num & NUM_IS_SCC) {
+	if (PORT_IS_SCC(info->state->smc_scc_num)) {
 		sccp = &cpmp->cp_scc[idx];
 		sccp->scc_sccm &= ~UART_SCCM_TX;
 	}
@@ -301,7 +308,7 @@ static void rs_8xx_start(struct tty_struct *tty)
 	
 	idx = PORT_NUM(info->state->smc_scc_num);
 	save_flags(flags); cli();
-	if (info->state->smc_scc_num & NUM_IS_SCC) {
+	if (PORT_IS_SCC(info->state->smc_scc_num)) {
 		sccp = &cpmp->cp_scc[idx];
 		sccp->scc_sccm |= UART_SCCM_TX;
 	}
@@ -389,6 +396,14 @@ static _INLINE_ void receive_chars(ser_info_t *info, struct pt_regs *regs)
 		i = bdp->cbd_datlen;
 		cp = (unsigned char *)__va(bdp->cbd_bufaddr);
 		status = bdp->cbd_sc;
+
+#ifdef CONFIG_KGDB
+		if (info->state->smc_scc_num == KGDB_SER_IDX) {
+			if (*cp == 0x03 || *cp == '$')
+				breakpoint();
+			return;
+		}
+#endif
 
 		/* Check to see if there is room in the tty buffer for
 		 * the characters in our BD buffer.  If not, we exit
@@ -615,7 +630,7 @@ static _INLINE_ void check_modem_status(struct async_struct *info)
 /*
  * This is the serial driver's interrupt routine for a single port
  */
-static void rs_8xx_interrupt(void *dev_id, struct pt_regs *regs)
+static void rs_8xx_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 {
 	u_char	events;
 	int	idx;
@@ -626,7 +641,7 @@ static void rs_8xx_interrupt(void *dev_id, struct pt_regs *regs)
 	info = (ser_info_t *)dev_id;
 
 	idx = PORT_NUM(info->state->smc_scc_num);
-	if (info->state->smc_scc_num & NUM_IS_SCC) {
+	if (PORT_IS_SCC(info->state->smc_scc_num)) {
 		sccp = &cpmp->cp_scc[idx];
 		events = sccp->scc_scce;
 		if (events & SMCM_BRKE)
@@ -772,7 +787,7 @@ static int startup(ser_info_t *info)
 	change_speed(info);
 	
 	idx = PORT_NUM(info->state->smc_scc_num);
-	if (info->state->smc_scc_num & NUM_IS_SCC) {
+	if (PORT_IS_SCC(info->state->smc_scc_num)) {
 		sccp = &cpmp->cp_scc[idx];
 		scup = (scc_uart_t *)&cpmp->cp_dparam[state->port];
 		scup->scc_genscc.scc_mrblr = RX_BUF_SIZE;
@@ -836,7 +851,7 @@ static void shutdown(ser_info_t * info)
 	save_flags(flags); cli(); /* Disable interrupts */
 
 	idx = PORT_NUM(state->smc_scc_num);
-	if (state->smc_scc_num & NUM_IS_SCC) {
+	if (PORT_IS_SCC(state->smc_scc_num)) {
 		sccp = &cpmp->cp_scc[idx];
 		sccp->scc_gsmrl &= ~(SCC_GSMRL_ENR | SCC_GSMRL_ENT);
 #ifdef CONFIG_SERIAL_CONSOLE
@@ -991,7 +1006,7 @@ static void change_speed(ser_info_t *info)
 	 */
 	bits++;
 	idx = PORT_NUM(state->smc_scc_num);
-	if (state->smc_scc_num & NUM_IS_SCC) {
+	if (PORT_IS_SCC(state->smc_scc_num)) {
 		sccp = &cpmp->cp_scc[idx];
 		new_mode = (sbits << 12) | scval;
 		prev_mode = sccp->scc_pmsr;
@@ -1059,7 +1074,7 @@ static int rs_8xx_write(struct tty_struct * tty, int from_user,
 	ser_info_t *info = (ser_info_t *)tty->driver_data;
 	volatile cbd_t *bdp;
 
-#ifdef CONFIG_KGDB
+#ifdef CONFIG_KGDB_CONSOLE
         /* Try to let stub handle output. Returns true if it did. */ 
         if (kgdb_output_string(buf, count))
             return ret;
@@ -1390,7 +1405,7 @@ static void begin_break(ser_info_t *info)
 	cp = cpmp;
 
 	idx = PORT_NUM(info->state->smc_scc_num);
-	if (info->state->smc_scc_num & NUM_IS_SCC)
+	if (PORT_IS_SCC(info->state->smc_scc_num))
 		chan = scc_chan_map[idx];
 	else
 		chan = smc_chan_map[idx];
@@ -1407,7 +1422,7 @@ static void end_break(ser_info_t *info)
 	cp = cpmp;
 
 	idx = PORT_NUM(info->state->smc_scc_num);
-	if (info->state->smc_scc_num & NUM_IS_SCC)
+	if (PORT_IS_SCC(info->state->smc_scc_num))
 		chan = scc_chan_map[idx];
 	else
 		chan = smc_chan_map[idx];
@@ -1712,7 +1727,7 @@ static void rs_8xx_close(struct tty_struct *tty, struct file * filp)
 	info->read_status_mask &= ~BD_SC_EMPTY;
 	if (info->flags & ASYNC_INITIALIZED) {
 		idx = PORT_NUM(info->state->smc_scc_num);
-		if (info->state->smc_scc_num & NUM_IS_SCC) {
+		if (PORT_IS_SCC(info->state->smc_scc_num)) {
 			sccp = &cpmp->cp_scc[idx];
 			sccp->scc_sccm &= ~UART_SCCM_RX;
 			sccp->scc_gsmrl &= ~SCC_GSMRL_ENR;
@@ -1903,7 +1918,7 @@ static int block_til_ready(struct tty_struct *tty, struct file * filp,
 	 */
 	if ((filp->f_flags & O_NONBLOCK) ||
 	    (tty->flags & (1 << TTY_IO_ERROR)) ||
-	    !(info->state->smc_scc_num & NUM_IS_SCC)) {
+	    !(PORT_IS_SCC(info->state->smc_scc_num))) {
 		if (info->flags & ASYNC_CALLOUT_ACTIVE)
 			return -EBUSY;
 		info->flags |= ASYNC_NORMAL_ACTIVE;
@@ -2081,7 +2096,7 @@ static int inline line_info(char *buf, struct serial_state *state)
 
 	ret = sprintf(buf, "%d: uart:%s port:%X irq:%d",
 		      state->line,
-		      (state->smc_scc_num & NUM_IS_SCC) ? "SCC" : "SMC",
+		      (PORT_IS_SCC(state->smc_scc_num)) ? "SCC" : "SMC",
 		      (unsigned int)(state->port), state->irq);
 
 	if (!state->port || (state->type == PORT_UNKNOWN)) {
@@ -2302,7 +2317,7 @@ static void my_console_write(int idx, const char *s,
 static void serial_console_write(struct console *c, const char *s,
 				unsigned count)
 {
-#ifdef CONFIG_KGDB
+#ifdef CONFIG_KGDB_CONSOLE
 	/* Try to let stub handle output. Returns true if it did. */ 
 	if (kgdb_output_string(s, count))
 		return;
@@ -2319,14 +2334,7 @@ xmon_8xx_write(const char *s, unsigned count)
 }
 #endif
 
-#ifdef CONFIG_KGDB
-void
-putDebugChar(char ch)
-{
-	my_console_write(0, &ch, 1);
-}
-#endif
-
+#if defined(CONFIG_KGDB) || defined(CONFIG_XMON)
 /*
  * Receive character from the serial port.  This only works well
  * before the port is initialized for real use.
@@ -2399,6 +2407,7 @@ static int my_console_wait_key(int idx, int xmon, char *obuf)
 
 	return((int)c);
 }
+#endif /* CONFIG_KGDB || CONFIG_XMON */
 
 #ifdef CONFIG_XMON
 int
@@ -2418,7 +2427,13 @@ xmon_8xx_read_char(void)
 static char kgdb_buf[RX_BUF_SIZE], *kgdp;
 static int kgdb_chars;
 
-unsigned char
+void
+putDebugChar(char ch)
+{
+	my_console_write(0, &ch, 1);
+}
+
+char
 getDebugChar(void)
 {
 	if (kgdb_chars <= 0) {
@@ -2430,9 +2445,18 @@ getDebugChar(void)
 	return(*kgdp++);
 }
 
-void kgdb_interruptible(int state)
+void kgdb_interruptible(int yes)
 {
+	volatile smc_t	*smcp;
+
+	smcp = &cpmp->cp_smc[KGDB_SER_IDX];
+
+	if (yes == 1)
+		smcp->smc_smcm |= SMCM_RX;
+	else
+		smcp->smc_smcm &= ~SMCM_RX;
 }
+
 void kgdb_map_scc(void)
 {
 	struct		serial_state *ser;
@@ -2459,7 +2483,7 @@ void kgdb_map_scc(void)
 	/* Allocate space for an input FIFO, plus a few bytes for output.
 	 * Allocate bytes to maintain word alignment.
 	 */
-	mem_addr = (uint)(&cpmp->cp_dpmem[0x1000]);
+	mem_addr = (uint)(&cpmp->cp_dpmem[0xa00]);
 
 	/* Set the physical address of the host memory buffers in
 	 * the buffer descriptors.
@@ -2489,7 +2513,7 @@ long __init console_8xx_init(long kmem_start, long kmem_end)
 	return kmem_start;
 }
 
-#endif
+#endif /* CONFIG_SERIAL_CONSOLE */
 
 /* Index in baud rate table of the default console baud rate.
 */
@@ -2646,7 +2670,7 @@ int __init rs_8xx_init(void)
 		state->icount.overrun = state->icount.brk = 0;
 		printk(KERN_INFO "ttyS%02d at 0x%04x is a %s\n",
 		       i, (unsigned int)(state->port),
-		       (state->smc_scc_num & NUM_IS_SCC) ? "SCC" : "SMC");
+		       PORT_IS_SCC(state->smc_scc_num) ? "SCC" : "SMC");
 #ifdef CONFIG_SERIAL_CONSOLE
 		/* If we just printed the message on the console port, and
 		 * we are about to initialize it for general use, we have
@@ -2698,7 +2722,7 @@ int __init rs_8xx_init(void)
 			bdp->cbd_sc = BD_SC_WRAP | BD_SC_EMPTY | BD_SC_INTRPT;
 
 			idx = PORT_NUM(info->state->smc_scc_num);
-			if (info->state->smc_scc_num & NUM_IS_SCC) {
+			if (PORT_IS_SCC(info->state->smc_scc_num)) {
 				scp = &cp->cp_scc[idx];
 				sup = (scc_uart_t *)&cp->cp_dparam[state->port];
 				sup->scc_genscc.scc_rbase = dp_addr;
@@ -2731,7 +2755,7 @@ int __init rs_8xx_init(void)
 			bdp->cbd_bufaddr = __pa(mem_addr);
 			bdp->cbd_sc = (BD_SC_WRAP | BD_SC_INTRPT);
 
-			if (info->state->smc_scc_num & NUM_IS_SCC) {
+			if (PORT_IS_SCC(info->state->smc_scc_num)) {
 				sup->scc_genscc.scc_tbase = dp_addr;
 
 				/* Set up the uart parameters in the
@@ -2874,7 +2898,8 @@ int __init rs_8xx_init(void)
 
 			/* Install interrupt handler.
 			*/
-			cpm_install_handler(state->irq, rs_8xx_interrupt, info);
+			if ((request_irq(CPM_IRQ_OFFSET + state->irq, rs_8xx_interrupt, 0, cpm_int_name[state->irq], info)) != 0)
+				panic("Could not allocate UART IRQ!");
 
 			/* Set up the baud rate generator.
 			*/
@@ -2919,7 +2944,7 @@ static int __init serial_console_setup(struct console *co, char *options)
 	cp = cpmp;	/* Get pointer to Communication Processor */
 
 	idx = PORT_NUM(ser->smc_scc_num);
-	if (ser->smc_scc_num & NUM_IS_SCC) {
+	if (PORT_IS_SCC(ser->smc_scc_num)) {
 		scp = &cp->cp_scc[idx];
 		sup = (scc_uart_t *)&cp->cp_dparam[ser->port];
 	}
@@ -2957,7 +2982,7 @@ static int __init serial_console_setup(struct console *co, char *options)
 
 	/* Set up the uart parameters in the parameter ram.
 	*/
-	if (ser->smc_scc_num & NUM_IS_SCC) {
+	if (PORT_IS_SCC(ser->smc_scc_num)) {
 
 		sup->scc_genscc.scc_rbase = dp_addr;
 		sup->scc_genscc.scc_tbase = dp_addr + sizeof(cbd_t);

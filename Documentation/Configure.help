@@ -246,13 +246,21 @@ CONFIG_X86_TSC_DISABLE
 
   If unsure, say N.
 
-Multiquad support for NUMA systems
-CONFIG_MULTIQUAD
+Multiquad support for NUMAQ systems
+CONFIG_X86_NUMAQ
   This option is used for getting Linux to run on a (IBM/Sequent) NUMA 
   multiquad box. This changes the way that processors are bootstrapped,
   and uses Clustered Logical APIC addressing mode instead of Flat Logical.
   You will need a new lynxer.elf file to flash your firmware with - send
   email to Martin.Bligh@us.ibm.com
+
+Support for IBM Summit (EXA) systems
+CONFIG_X86_SUMMIT
+  This option is needed for IBM systems that use the Summit/EXA chipset.
+  (EXA: Extendable Xseries Architecture)In particular, it is needed for 
+  the x440 (even for the 4-CPU model).
+
+  If you don't have this computer, you may safely say N.
 
 IO-APIC support on uniprocessors
 CONFIG_X86_UP_IOAPIC
@@ -1033,7 +1041,7 @@ CONFIG_BLK_DEV_ADMA
 
 Pacific Digital A-DMA support (EXPERIMENTAL)
 CONFIG_BLK_DEV_PDC_ADMA
-  Please read the comments at the top of <file:drivers/ide/ide-pci.c>.
+  Please read the comments at the top of <file:drivers/ide/setup-pci.c>.
 
 3ware Hardware ATA-RAID support
 CONFIG_BLK_DEV_3W_XXXX_RAID
@@ -1063,13 +1071,13 @@ CONFIG_BLK_DEV_AEC62XX
   The ATP860 is an UltraDMA 66 chipset base.
   The ATP860M(acintosh) version is an UltraDMA 66 chipset base.
 
-  Please read the comments at the top of <file:drivers/ide/aec62xx.c>.
+  Please read the comments at the top of <file:drivers/ide/pci/aec62xx.c>.
   If you say Y here, then say Y to "Use DMA by default when available"
   as well.
 
 AEC62XX Tuning support
 CONFIG_AEC62XX_TUNING
-  Please read the comments at the top of <file:drivers/ide/aec62xx.c>.
+  Please read the comments at the top of <file:drivers/ide/pci/aec62xx.c>.
   If unsure, say N.
 
 ALI M15x3 chipset support
@@ -1080,7 +1088,7 @@ CONFIG_BLK_DEV_ALI15X3
 
   If you say Y here, you also need to say Y to "Use DMA by default
   when available", above.  Please read the comments at the top of
-  <file:drivers/ide/alim15x3.c>.
+  <file:drivers/ide/pci/alim15x3.c>.
 
   If unsure, say N.
 
@@ -1097,14 +1105,16 @@ CONFIG_WDC_ALI15X3
 
   SAY N!
 
-AMD Viper (7401/7409/7411) chipset support
+AMD and nVidia IDE support
 CONFIG_BLK_DEV_AMD74XX
-  This driver ensures (U)DMA support for the AMD756/760 Viper
-  chipsets.
+  This driver adds explicit support for AMD-7xx and AMD-8111 chips
+  and also for the nVidia nForce chip.  This allows the kernel to
+  change PIO, DMA and UDMA speeds and to configure the chip to
+  optimum performance.
 
   If you say Y here, you also need to say Y to "Use DMA by default
   when available", above.
-  Please read the comments at the top of <file:drivers/ide/amd74xx.c>.
+  Please read the comments at the top of <file:drivers/ide/pci/amd74xx.c>.
 
   If unsure, say N.
 
@@ -1114,10 +1124,10 @@ CONFIG_AMD74XX_OVERRIDE
   This effect can be also invoked by calling "idex=ata66"
   If unsure, say N.
 
-CMD64X and CMD680 chipset support
+CMD64X/CMD680 chipset support
 CONFIG_BLK_DEV_CMD64X
   Say Y here if you have an IDE controller which uses any of these
-  chipsets: CMD643, CMD646, CMD648, CMD649 or CMD680.
+  chipsets: CMD643, CMD646 and CMD648.
 
 CY82C693 chipset support
 CONFIG_BLK_DEV_CY82C693
@@ -1148,16 +1158,18 @@ CONFIG_BLK_DEV_HPT34X
 HPT34X AUTODMA support (WIP)
 CONFIG_HPT34X_AUTODMA
   This is a dangerous thing to attempt currently! Please read the
-  comments at the top of <file:drivers/ide/hpt34x.c>.  If you say Y
+  comments at the top of <file:drivers/ide/pci/hpt34x.c>.  If you say Y
   here, then say Y to "Use DMA by default when available" as well.
 
   If unsure, say N.
 
-HPT366/368/370 chipset support
+HPT36X/37X chipset support
 CONFIG_BLK_DEV_HPT366
   HPT366 is an Ultra DMA chipset for ATA-66.
   HPT368 is an Ultra DMA chipset for ATA-66 RAID Based.
   HPT370 is an Ultra DMA chipset for ATA-100.
+  HPT372 is an Ultra DMA chipset for ATA-133.
+  HPT374 is an Ultra DMA chipset for ATA-133.
 
   This driver adds up to 4 more EIDE devices sharing a single
   interrupt.
@@ -1179,12 +1191,12 @@ CONFIG_BLK_DEV_NS87415
   This driver adds detection and support for the NS87415 chip
   (used in SPARC64, among others).
 
-  Please read the comments at the top of <file:drivers/ide/ns87415.c>.
+  Please read the comments at the top of <file:drivers/ide/pci/ns87415.c>.
 
 OPTi 82C621 chipset enhanced support (EXPERIMENTAL)
 CONFIG_BLK_DEV_OPTI621
   This is a driver for the OPTi 82C621 EIDE controller.
-  Please read the comments at the top of <file:drivers/ide/opti621.c>.
+  Please read the comments at the top of <file:drivers/ide/pci/opti621.c>.
 
 ServerWorks OSB4/CSB5 chipset support
 CONFIG_BLK_DEV_SVWKS
@@ -1198,7 +1210,7 @@ CONFIG_BLK_DEV_PIIX
   PIO 0-4 mode settings, this allows dynamic tuning of the chipset
   via the standard end-user tool 'hdparm'.
 
-  Please read the comments at the top of <file:drivers/ide/piix.c>.
+  Please read the comments at the top of <file:drivers/ide/pci/piix.c>.
 
   If you say Y here, you should also say Y to "PIIXn Tuning support",
   below.
@@ -1218,7 +1230,7 @@ CONFIG_PIIX_TUNING
   If unsure, say N.
 
 PROMISE PDC20246/PDC20262/PDC20265/PDC20267/PDC20268 support
-CONFIG_BLK_DEV_PDC202XX
+CONFIG_BLK_DEV_PDC202XX_OLD
   Promise Ultra33 or PDC20246
   Promise Ultra66 or PDC20262
   Promise Ultra100 or PDC20265/PDC20267/PDC20268
@@ -1236,7 +1248,7 @@ CONFIG_BLK_DEV_PDC202XX
   available" as well.
 
   Please read the comments at the top of
-  <file:drivers/ide/pdc202xx.c>.
+  <file:drivers/ide/pci/pdc202xx_old.c>.
 
   If unsure, say N.
 
@@ -1251,7 +1263,7 @@ CONFIG_PDC202XX_BURST
   when the PDC20265 BIOS has been disabled (for faster boot up).
 
   Please read the comments at the top of
-  <file:drivers/ide/pdc202xx.c>.
+  <file:drivers/ide/pci/pdc202xx_old.c>.
 
   If unsure, say N.
 
@@ -1274,7 +1286,12 @@ CONFIG_BLK_DEV_SIS5513
   If you say Y here, you need to say Y to "Use DMA by default when
   available" as well.
 
-  Please read the comments at the top of <file:drivers/ide/sis5513.c>.
+  Please read the comments at the top of <file:drivers/ide/pci/sis5513.c>.
+
+Silicon Image chipset support
+CONFIG_BLK_DEV_SIIMAGE
+  This driver provides (U)DMA support for the SII3112 SATA controllers and
+  for the CMD/SI680 UDMA/DMA ATA controller.
 
 SLC90E66 chipset support
 CONFIG_BLK_DEV_SLC90E66
@@ -1288,7 +1305,7 @@ CONFIG_BLK_DEV_SLC90E66
   available" as well.
 
   Please read the comments at the top of
-  <file:drivers/ide/slc90e66.c>.
+  <file:drivers/ide/pci/slc90e66.c>.
 
 Winbond SL82c105 support
 CONFIG_BLK_DEV_SL82C105
@@ -1301,7 +1318,7 @@ CONFIG_BLK_DEV_TRM290
   This driver adds support for bus master DMA transfers
   using the Tekram TRM290 PCI IDE chip. Volunteers are
   needed for further tweaking and development.
-  Please read the comments at the top of <file:drivers/ide/trm290.c>.
+  Please read the comments at the top of <file:drivers/ide/pci/trm290.c>.
 
 VIA82CXXX chipset support
 CONFIG_BLK_DEV_VIA82CXXX
@@ -1313,7 +1330,7 @@ CONFIG_BLK_DEV_VIA82CXXX
   system" support.
 
   Please read the comments at the top of
-  <file:drivers/ide/via82cxxx.c>.
+  <file:drivers/ide/pci/via82cxxx.c>.
 
   If you say Y here, then say Y to "Use DMA by default when available"
   as well.
@@ -1353,7 +1370,7 @@ CONFIG_BLK_DEV_ALI14XX
   boot parameter.  It enables support for the secondary IDE interface
   of the ALI M1439/1443/1445/1487/1489 chipsets, and permits faster
   I/O speeds to be set as well.  See the files
-  <file:Documentation/ide.txt> and <file:drivers/ide/ali14xx.c> for
+  <file:Documentation/ide.txt> and <file:drivers/ide/legacy/ali14xx.c> for
   more info.
 
 DTC-2278 support
@@ -1362,7 +1379,7 @@ CONFIG_BLK_DEV_DTC2278
   boot parameter. It enables support for the secondary IDE interface
   of the DTC-2278 card, and permits faster I/O speeds to be set as
   well. See the <file:Documentation/ide.txt> and
-  <file:drivers/ide/dtc2278.c> files for more info.
+  <file:drivers/ide/legacy/dtc2278.c> files for more info.
 
 Holtek HT6560B support
 CONFIG_BLK_DEV_HT6560B
@@ -1370,7 +1387,7 @@ CONFIG_BLK_DEV_HT6560B
   boot parameter. It enables support for the secondary IDE interface
   of the Holtek card, and permits faster I/O speeds to be set as well.
   See the <file:Documentation/ide.txt> and
-  <file:drivers/ide/ht6560b.c> files for more info.
+  <file:drivers/ide/legacy/ht6560b.c> files for more info.
 
 PROMISE DC4030 support (EXPERIMENTAL)
 CONFIG_BLK_DEV_PDC4030
@@ -1380,14 +1397,14 @@ CONFIG_BLK_DEV_PDC4030
   attached to the secondary interface.  CD-ROM and TAPE devices are
   not supported yet.  This driver is enabled at runtime using the
   "ide0=dc4030" kernel boot parameter.  See the
-  <file:Documentation/ide.txt> and <file:drivers/ide/pdc4030.c> files
+  <file:Documentation/ide.txt> and <file:drivers/ide/legacy/pdc4030.c> files
   for more info.
 
 QDI QD65XX support
 CONFIG_BLK_DEV_QD65XX
   This driver is enabled at runtime using the "ide0=qd65xx" kernel
   boot parameter.  It permits faster I/O speeds to be set.  See the
-  <file:Documentation/ide.txt> and <file:drivers/ide/qd65xx.c> for
+  <file:Documentation/ide.txt> and <file:drivers/ide/legacy/qd65xx.c> for
   more info.
 
 UMC 8672 support
@@ -1396,7 +1413,7 @@ CONFIG_BLK_DEV_UMC8672
   boot parameter. It enables support for the secondary IDE interface
   of the UMC-8672, and permits faster I/O speeds to be set as well.
   See the files <file:Documentation/ide.txt> and
-  <file:drivers/ide/umc8672.c> for more info.
+  <file:drivers/ide/legacy/umc8672.c> for more info.
 
 Amiga Gayle IDE interface support
 CONFIG_BLK_DEV_GAYLE
@@ -2508,6 +2525,19 @@ CONFIG_IP_NF_CONNTRACK
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
 
+Amanda protocol support
+CONFIG_IP_NF_AMANDA
+  If you are running the Amanda backup package (http://www.amanda.org/)
+  on this machine or machines that will be MASQUERADED through this
+  machine, then you may want to enable this feature.  This allows the
+  connection tracking and natting code to allow the sub-channels that
+  Amanda requires for communication of the backup data, messages and
+  index.
+
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  If unsure, say `N'.
+
+
 IRC Send/Chat protocol support
 CONFIG_IP_NF_IRC
   There is a commonly-used extension to IRC called
@@ -2521,6 +2551,16 @@ CONFIG_IP_NF_IRC
 
   If you want to compile it as a module, say 'M' here and read
   Documentation/modules.txt.  If unsure, say 'N'.
+
+TFTP protocol support
+CONFIG_IP_NF_TFTP
+  TFTP connection tracking helper, this is required depending
+  on how restrictive your ruleset is.
+  If you are using a tftp client behind -j SNAT or -j MASQUERADING
+  you will need this.
+
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  If unsure, say `Y'.
 
 FTP protocol support
 CONFIG_IP_NF_FTP
@@ -3543,6 +3583,13 @@ CONFIG_AGP_AMD
   You should say Y here if you use XFree86 3.3.6 or 4.x and want to
   use GLX or DRI.  If unsure, say N.
 
+CONFIG_AGP_AMD_8151
+  This option gives you AGP support for the GLX component of
+  XFree86 on AMD K8 with an AGP 8151 chipset.
+
+  You should say Y here if you use XFree86 3.3.6 or 4.x and want to
+  use GLX or DRI.  If unsure, say N.
+
 Generic SiS support
 CONFIG_AGP_SIS
   This option gives you AGP support for the GLX component of the "soon
@@ -4155,6 +4202,7 @@ CONFIG_M386
    - "Winchip-2" for IDT Winchip 2.
    - "Winchip-2A" for IDT Winchips with 3dNow! capabilities.
    - "CyrixIII" for VIA Cyrix III or VIA C3.
+   - "VIA C3-2 for VIA C3-2 "Nehemiah" (model 9 and above).
 
   If you don't know what to do, choose "386".
 
@@ -4175,6 +4223,13 @@ Pentium Classic
 CONFIG_M586TSC
   Select this for a Pentium Classic processor with the RDTSC (Read
   Time Stamp Counter) instruction for benchmarking.
+
+VIA C3-2 (Nehemiah)
+CONFIG_MVIAC3_2
+  Select this for a VIA C3 "Nehemiah". Selecting this enables usage of SSE
+  and tells gcc to treat the CPU as a 686.
+
+  Note, this kernel will not boot on older (pre model 9) C3s.
 
 32-bit PDC
 CONFIG_PDC_NARROW
@@ -4416,7 +4471,7 @@ CONFIG_FB_TRIDENT
 
   The driver is also available as a module ( = code which can be
   inserted and removed from the running kernel whenever you want). The
-  module will be called rivafb.o. If you want to compile it as a
+  module will be called tridentfb.o. If you want to compile it as a
   module, say M here and read <file:Documentation/modules.txt>.
 
 ATI Mach64 display support
@@ -4563,14 +4618,11 @@ CONFIG_FB_STI
   BIOS routines contained in a ROM chip in HP PA-RISC based machines.
   Enabling this option will implement the linux framebuffer device and
   an fbcon color text console using calls to the STI BIOS routines.
-  The HP framebuffer device is usually planar, uses a strange memory
+  The HP framebuffer device is sometimes planar, using a strange memory
   layout, and changing the plane mask to create colored pixels
-  requires a call to the STI routines, so do not expect /dev/fb to
-  actually be useful.  However, it is the best we have as far as
-  graphics on the HP chipsets due to lack of hardware level
-  documentation for the various on-board HP chipsets used in these
-  systems.  It is sufficient for basic text console functions,
-  including fonts.
+  can require a call to the STI routines, so /dev/fb may not actually 
+  be useful.  However, on some systems packed pixel formats are supported.  
+  It is sufficient for basic text console functions, including fonts.
 
   You should probably enable this option, unless you are having
   trouble getting video when booting the kernel (make sure it isn't
@@ -7907,6 +7959,17 @@ CONFIG_SCSI_NCR53C8XX_PQS_PDS
 
   The common answer here is N, but answering Y is safe.
 
+Workbit NinjaSCSI-32Bi/UDE support
+CONFIG_SCSI_NSP32
+  This is support for the Workbit NinjaSCSI-32Bi/UDE PCI/Cardbus
+  SCSI host adapter. Please read the SCSI-HOWTO, available from
+  <http://www.linuxdoc.org/docs.html#howto>.
+
+  If you want to compile this as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want),
+  say M here and read <file:Documentation/modules.txt>.  The module
+  will be called nsp32.o.
+
 IBMMCA SCSI support
 CONFIG_SCSI_IBMMCA
   This is support for the IBM SCSI adapter found in many of the PS/2
@@ -9621,6 +9684,26 @@ CONFIG_FARSYNC
   should add "alias syncX farsync" to /etc/modules.conf for each
   interface, where X is 0, 1, 2, ...
 
+CONFIG_HDLC_DEBUG_PKT
+  This option is for developers only - do NOT use on production
+  systems.
+
+CONFIG_HDLC_DEBUG_HARD_HEADER
+  This option is for developers only - do NOT use on production
+  systems.
+
+CONFIG_HDLC_DEBUG_ECN
+  This option is for developers only - do NOT use on production
+  systems.
+
+CONFIG_HDLC_DEBUG_RINGS
+  If you answer Y here you will be able to get a diagnostic dump of
+  port's TX and RX packet rings, using "sethdlc hdlcX private"
+  command. It does not affect normal operations.
+
+  If unsure, say Y here.
+
+
 Frame Relay (DLCI) support
 CONFIG_DLCI
   This is support for the frame relay protocol; frame relay is a fast
@@ -10816,6 +10899,15 @@ CONFIG_YELLOWFIN
   say M here and read <file:Documentation/modules.txt>.  This is
   recommended.  The module will be called yellowfin.o.
 
+Realtek 8169 Gigabit Ethernet support
+CONFIG_R8169
+  Say Y here if you have a Realtek 8169 PCI Gigabit Ethernet adapter.
+
+  If you want to compile this driver as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want),
+  say M here and read <file:Documentation/modules.txt>.  This is
+  recommended.  The module will be called r8169.o.
+
 General Instruments Surfboard 1000
 CONFIG_NET_SB1000
   This is a driver for the General Instrument (also known as
@@ -10875,31 +10967,41 @@ CONFIG_ACENIC_OMIT_TIGON_I
 
   The safe and default value for this is N.
 
-SysKonnect SK-98xx support
+SysKonnect SK-98xx and SK-95xx Gigabit Ethernet Adapter family support
 CONFIG_SK98LIN
-  Say Y here if you have a SysKonnect SK-98xx Gigabit Ethernet Server
-  Adapter. The following adapters are supported by this driver:
-  - SK-9841 (single link 1000Base-LX)
-  - SK-9842 (dual link   1000Base-LX)
-  - SK-9843 (single link 1000Base-SX)
-  - SK-9844 (dual link   1000Base-SX)
-  - SK-9821 (single link 1000Base-T)
-  - SK-9822 (dual link   1000Base-T)
-  - SK-9861 (single link Volition connector)
-  - SK-9862 (dual link   Volition connector)
-  The driver also supports the following adapters from Allied Telesyn:
-  - AT2970...
+  Say Y here if you have a SysKonnect SK-98xx or SK-95xx Gigabit 
+  Ethernet Server Adapter. The following adapters are supported by 
+  this driver:
+  - SK-9521 10/100/1000Base-T Adapter
+  - SK-9821 Gigabit Ethernet 1000Base-T Server Adapter
+  - SK-9822 Gigabit Ethernet 1000Base-T Dual Port Server Adapter
+  - SK-9841 Gigabit Ethernet 1000Base-LX Server Adapter
+  - SK-9842 Gigabit Ethernet 1000Base-LX Dual Port Server Adapter
+  - SK-9843 Gigabit Ethernet 1000Base-SX Server Adapter
+  - SK-9844 Gigabit Ethernet 1000Base-SX Dual Port Server Adapter
+  - SK-9861 Gigabit Ethernet 1000Base-SX Server Adapter
+  - SK-9862 Gigabit Ethernet 1000Base-SX Dual Port Server Adapter
+  - SK-9871 Gigabit Ethernet 1000Base-ZX Server Adapter
+  - SK-9872 Gigabit Ethernet 1000Base-ZX Dual Port Server Adapter
+  - SK-9821 V2.0 Gigabit Ethernet 10/100/1000Base-T Adapter
+  - SK-9841 V2.0 Gigabit Ethernet 1000Base-LX Adapter
+  - SK-9843 V2.0 Gigabit Ethernet 1000Base-SX Adapter
+  - SK-9851 V2.0 Gigabit Ethernet 1000Base-SX Adapter
+  - SK-9861 V2.0 Gigabit Ethernet 1000Base-SX Adapter
+  - SK-9871 V2.0 Gigabit Ethernet 1000Base-ZX Adapter
 
-  The dual link adapters support a link-failover feature.  Read
-  <file:Documentation/networking/sk98lin.txt> for information about
+  The adapters support Jumbo Frames.
+  The dual link adapters support link-failover and dual port features.
+  The V2.0 adapters support the scatter-gather functionality with
+  sendfile(). Read Documentation/networking/sk98lin.txt for information about
   optional driver parameters.
   Questions concerning this driver may be addressed to:
     linux@syskonnect.de
 
   If you want to compile this driver as a module ( = code which can be
   inserted in and removed from the running kernel whenever you want),
-  say M here and read <file:Documentation/modules.txt>.  This is
-  recommended.  The module will be called sk98lin.o.
+  say M here and read Documentation/modules.txt. This is recommended.
+  The module will be called sk98lin.o.
 
 Sun GEM support
 CONFIG_SUNGEM
@@ -11038,6 +11140,7 @@ CONFIG_E1000
      82544       PRO/1000 XF Server Adapter           A50484-xxx
      82544       PRO/1000 T Desktop Adapter           A62947-xxx
      82540       PRO/1000 MT Desktop Adapter          A78408-xxx
+     82541       PRO/1000 MT Desktop Adapter          C91016-xxx
      82545       PRO/1000 MT Server Adapter           A92165-xxx
      82546       PRO/1000 MT Dual Port Server Adapter A92111-xxx
      82545       PRO/1000 MF Server Adapter           A91622-xxx
@@ -11226,6 +11329,24 @@ CONFIG_VORTEX
   inserted in and removed from the running kernel whenever you want),
   say M here and read <file:Documentation/modules.txt>.  The module
   will be called 3c59x.o.
+
+3cr990 series "Typhoon" support
+CONFIG_TYPHOON
+  This option enables driver support for the 3cr990 series of cards:
+
+  3C990-TX, 3CR990-TX-95, 3CR990-TX-97, 3CR990-FX-95, 3CR990-FX-97,
+  3CR990SVR, 3CR990SVR95, 3CR990SVR97, 3CR990-FX-95 Server,
+  3CR990-FX-97 Server, 3C990B-TX-M, 3C990BSVR
+
+  If you have a network (Ethernet) card of this type, say Y and read
+  the Ethernet-HOWTO, available from
+  <http://www.linuxdoc.org/docs.html#howto>.
+
+  This driver is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called typhoon.o.  If you want to compile it as a
+  module, say M here and read <file:Documentation/modules.txt> as well
+  as <file:Documentation/networking/net-modules.txt>.
 
 Other ISA cards
 CONFIG_NET_ISA
@@ -11644,6 +11765,18 @@ CONFIG_PCNET32
   module, say M here and read <file:Documentation/modules.txt> as well
   as <file:Documentation/networking/net-modules.txt>.
 
+AMD 8111 (new PCI lance) support
+CONFIG_AMD8111_ETH
+  If you have an AMD 8111-based PCI lance ethernet card,
+  answer Y here and read the Ethernet-HOWTO, available from
+  <http://www.tldp.org/docs.html#howto>.
+
+  This driver is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called amd8111e.o.  If you want to compile it as a
+  module, say M here and read <file:Documentation/modules.txt> as well
+  as <file:Documentation/networking/net-modules.txt>.
+
 Ansel Communications EISA 3200 support
 CONFIG_AC3200
   If you have a network (Ethernet) card of this type, say Y and read
@@ -11770,6 +11903,13 @@ CONFIG_EEPRO100
   The module will be called eepro100.o.  If you want to compile it as
   a module, say M here and read <file:Documentation/modules.txt> as
   well as <file:Documentation/networking/net-modules.txt>.
+
+Use PIO instead of MMIO
+CONFIG_EEPRO100_PIO
+  This instructs the driver to use programmed I/O ports (PIO) instead
+  of PCI shared memory (MMIO).  This can possibly solve some problems
+  in case your mainboard has memory consistency issues.  If unsure,
+  say N.
 
 Enable Power Management
 CONFIG_EEPRO100_PM
@@ -13764,6 +13904,21 @@ CONFIG_USB_WACOM
   The module will be called wacom.o.  If you want to compile it as a
   module, say M here and read <file:Documentation/modules.txt>.
 
+Griffin Technology PowerMate support
+CONFIG_USB_POWERMATE
+  Say Y here if you want to use the Griffin Technology, Inc. USB
+  PowerMate device. This device is an aluminum dial which can
+  measure clockwise and anticlockwise rotation. The dial also
+  acts as a pushbutton. The base contains an LED which can be
+  instructed to pulse or to switch to a particular intensity.
+
+  You can download userspace tools from http://sowerbutts.com/powermate/
+
+  This driver is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called powermate.o. If you want to compile it as a
+  module, say M here and read <file:Documentation/modules.txt>.
+
 Aiptek 6000U/8000U tablet support
 CONFIG_USB_AIPTEK
   Say Y here if you want to use the USB version of the Aiptek 6000U/8000U
@@ -13858,8 +14013,8 @@ CONFIG_INPUT_EVDEV
 USB Scanner support
 CONFIG_USB_SCANNER
   Say Y here if you want to connect a USB scanner to your computer's
-  USB port. Please read <file:Documentation/usb/scanner.txt> and
-  <file:Documentation/usb/scanner-hp-sane.txt> for more information.
+  USB port. Please read <file:Documentation/usb/scanner.txt> for more
+  information.
 
   This code is also available as a module ( = code which can be
   inserted in and removed from the running kernel whenever you want).
@@ -13955,10 +14110,10 @@ CONFIG_USB_SERIAL_VISOR
   The module will be called visor.o. If you want to compile it as a
   module, say M here and read <file:Documentation/modules.txt>.
 
-USB Compaq iPAQ Driver
+USB PocketPC PDA Driver
 CONFIG_USB_SERIAL_IPAQ
-  Say Y here if you want to connect to your Compaq iPAQ, HP Jornada 548/568
-  or Casio EM500 running Windows CE 3.0 or PocketPC 2002 using a USB
+  Say Y here if you want to connect to your Compaq iPAQ, HP Jornada,
+  or any other PDA running Windows CE 3.0 or PocketPC 2002 using a USB
   cradle/cable. For information on using the driver,
   read <file:Documentation/usb/usb-serial.txt>.
 
@@ -14145,6 +14300,17 @@ CONFIG_USB_SERIAL_PL2303
   The module will be called pl2303.o.  If you want to compile it as
   a module, say M here and read <file:Documentation/modules.txt>.
 
+USB KOBIL chipcard reader
+CONFIG_USB_SERIAL_KOBIL_SCT
+  Say Y here if you want to use one of the following KOBIL USB chipcard 
+  readers: TWIN, KAAN Standard Plus, SecOVID Reader Plus, B1 PRO, KAAN PRO
+
+  Note that you need a current CT-API.
+  This code is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called kobil_sct.o. If you want to compile it as
+  a module, say M here and read <file:Documentation/modules.txt>.
+
 USB REINER SCT cyberJack pinpad/e-com chipcard reader
 CONFIG_USB_SERIAL_CYBERJACK
   Say Y here if you want to use a cyberJack pinpad/e-com USB chipcard
@@ -14234,6 +14400,21 @@ CONFIG_USB_IBMCAM
   camera has several configuration options which can be specified when
   you load the module.  Read <file:Documentation/usb/ibmcam.txt> to
   learn more.
+
+CONFIG_USB_KONICAWC
+  Say Y here if you want support for webcams based on a Konica
+  chipset. This is known to work with the Intel YC76 webcam.
+
+  This driver uses the Video For Linux API.  You must enable
+  (Y or M in config) Video For Linux (under Character Devices)
+  to use this driver.  Information on this API and pointers to
+  "v4l" programs may be found on the WWW at
+  <http://roadrunner.swansea.uk.linux.org/v4l.shtml>.
+
+  This code is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called konicawc.o. If you want to compile it as
+  a module, say M here and read <file:Documentation/modules.txt>.
 
 USB OV511 Camera support
 CONFIG_USB_OV511
@@ -14361,7 +14542,7 @@ CONFIG_USB_PEGASUS
   If in doubt then look at linux/drivers/usb/pegasus.h for the complete
   list of supported devices.
   If your particular adapter is not in the list and you are _sure_ it
-  is Pegasus or Pegasus-II based then send me (pmanolov@users.sourceforge.net)
+  is Pegasus or Pegasus-II based then send me (petkan@users.sourceforge.net)
   vendor and device IDs.
   
   This code is also available as a module ( = code which can be
@@ -14620,7 +14801,7 @@ CONFIG_USB_RIO500
   The module will be called rio500.o. If you want to compile it as
   a module, say M here and read <file:Documenatation/modules.txt>.
 
-USB Auerswald ISDN device support
+Auerswald device support
 CONFIG_USB_AUERSWALD
   Say Y here if you want to connect an Auerswald USB ISDN Device
   to your computer's USB port.
@@ -14630,8 +14811,18 @@ CONFIG_USB_AUERSWALD
   The module will be called auerswald.o. If you want to compile it as
   a module, say M here and read <file:Documenatation/modules.txt>
 
+USB Auerswald ISDN modem support
+CONFIG_USB_AUERISDN
+  Say Y here if you want to enable the ISDN modem option
+  of your Auerswald ISDN devices. 
+
+  This code is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called auerswald.o. If you want to compile it as
+  a module, say M here and read <file:Documenatation/modules.txt>
+
 CONFIG_USB_TIGL
-  If you own a Texas Instruments graphing calculator and use a 
+  If you own a Texas Instruments graphing calculator and use a
   TI-GRAPH LINK USB cable (aka SilverLink), then you might be 
   interested in this driver.
 
@@ -14644,6 +14835,28 @@ CONFIG_USB_TIGL
   module, say M here and read Documentation/modules.txt.
 
   If you don't know what the SilverLink cable is or what a Texas
+  Instruments graphing calculator is, then you probably don't need this
+  driver.
+
+  If unsure, say N.
+
+Texas Instruments parallel link cable support
+CONFIG_TIPAR
+  If you own a Texas Instruments graphing calculator and use a
+  parallel link cable, then you might be interested in this driver.
+
+  If you enable this driver, you will be able to communicate with
+  your calculator through a set of device nodes under /dev. The
+  main advantage of this driver is that you don't have to be root
+  to use this precise link cable (depending on the permissions on
+  the device nodes, though).
+
+  This code is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called tipar.o. If you want to compile it as a
+  module, say M here and read <file:Documentation/modules.txt>
+
+  If you don't know what a parallel link cable is or what a Texas
   Instruments graphing calculator is, then you probably don't need this
   driver.
 
@@ -14949,8 +15162,7 @@ USB Bluetooth support
 CONFIG_USB_BLUETOOTH
   Say Y here if you want to connect a USB Bluetooth device to your
   computer's USB port. You will need the Bluetooth stack (available
-  at <http://developer.axis.com/software/index.shtml>) to fully use
-  the device.
+  at <http://developer.axis.com/software>) to fully use the device.
 
   This code is also available as a module ( = code which can be
   inserted in and removed from the running kernel whenever you want).
@@ -18959,6 +19171,34 @@ CONFIG_RTC
   The module is called rtc.o. If you want to compile it as a module,
   say M here and read <file:Documentation/modules.txt>.
 
+Generic Real Time Clock Support
+CONFIG_GEN_RTC
+  If you say Y here and create a character special file /dev/rtc with
+  major number 10 and minor number 135 using mknod ("man mknod"), you
+  will get access to the real time clock (or hardware clock) built
+  into your computer.
+
+  In 2.4 and later kernels this is the only way to set and get rtc
+  time on m68k systems so it is highly recommended.
+
+  It reports status information via the file /proc/driver/rtc and its 
+  behaviour is set by various ioctls on /dev/rtc. If you enable the
+  "extended RTC operation" below it will also provide an emulation
+  for RTC_UIE which is required by some programs and may improve
+  precision in some cases.
+
+  This driver is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module is called genrtc.o. If you want to compile it as a module,
+  say M here and read <file:Documentation/modules.txt>. To load the
+  module automatically add 'alias char-major-10-135 genrtc' to your
+  /etc/modules.conf
+
+Extended RTC operation
+CONFIG_GEN_RTC_X
+  Provides an emulation for RTC_UIE which is required by some programs 
+  and may improve precision of the generic RTC support in some cases.
+
 Tadpole ANA H8 Support
 CONFIG_H8
   The Hitachi H8/337 is a microcontroller used to deal with the power
@@ -19052,10 +19292,11 @@ CONFIG_INPUT_CS461X
   The module will be called cs461x.o.  If you want to compile it as a
   module, say M here and read <file:Documentation/modules.txt>.
 
-Aureal Vortex and Trident 4DWave gameports
+Aureal Vortex, Trident 4DWave, and ALi 5451 gameports
 CONFIG_INPUT_PCIGAME
   Say Y here if you have a Trident 4DWave DX/NX or Aureal Vortex 1/2
-  card. For more information on how to use the driver please read
+  card or an ALi 5451 chip on your motherboard. For more information
+  on how to use the driver please read
   <file:Documentation/input/joystick.txt>.
 
   This driver is also available as a module ( = code which can be
@@ -21278,6 +21519,8 @@ CONFIG_BLUEZ
                HCI Device drivers (interface to the hardware)
                L2CAP Module (L2CAP protocol)
                SCO Module (SCO links)
+               RFCOMM Module (RFCOMM protocol)
+               BNEP Module (BNEP protocol)
 
   Say Y here to enable Linux Bluetooth support and to build BlueZ Core
   layer.
@@ -21306,6 +21549,19 @@ CONFIG_BLUEZ_SCO
   Say Y here to compile SCO support into the kernel or say M to
   compile it as module (sco.o).
 
+RFCOMM protocol support
+CONFIG_BLUEZ_RFCOMM
+  RFCOMM provides connection oriented stream transport. RFCOMM
+  support is required for Dialup Networking, OBEX and other Bluetooth
+  applications.
+
+  Say Y here to compile RFCOMM support into the kernel or say M to
+  compile it as module (rfcomm.o).
+
+RFCOMM TTY emulation support
+CONFIG_BLUEZ_RFCOMM_TTY
+  This option enables TTY emulation support for RFCOMM channels.
+
 BNEP protocol support
 CONFIG_BLUEZ_BNEP
   BNEP (Bluetooth Network Encapsulation Protocol) is Ethernet
@@ -21318,6 +21574,14 @@ CONFIG_BLUEZ_BNEP
 
   Say Y here to compile BNEP support into the kernel or say M to
   compile it as module (bnep.o).
+
+BNEP multicast filter support
+CONFIG_BLUEZ_BNEP_MC_FILTER
+  This option enables the multicast filter support for BNEP.
+
+BNEP protocol filter support
+CONFIG_BLUEZ_BNEP_PROTO_FILTER
+  This option enables the protocol filter support for BNEP.
 
 HCI UART driver
 CONFIG_BLUEZ_HCIUART
@@ -21333,10 +21597,25 @@ CONFIG_BLUEZ_HCIUART
 HCI UART (H4) protocol support 
 CONFIG_BLUEZ_HCIUART_H4
   UART (H4) is serial protocol for communication between Bluetooth 
-  device and host. This protocol is required for most UART based 
-  Bluetooth device (including PCMCIA and CF). 
+  device and host. This protocol is required for most Bluetooth devices 
+  with UART interface, including PCMCIA and CF cards. 
 
   Say Y here to compile support for HCI UART (H4) protocol.
+
+HCI BCSP protocol support 
+CONFIG_BLUEZ_HCIUART_BCSP
+  BCSP (BlueCore Serial Protocol) is serial protocol for communication 
+  between Bluetooth device and host. This protocol is required for non
+  USB Bluetooth devices based on CSR BlueCore chip, including PCMCIA and 
+  CF cards.
+
+  Say Y here to compile support for HCI BCSP protocol.
+
+HCI BCSP transmit CRC with every BCSP packet
+CONFIG_BLUEZ_HCIUART_BCSP_TXCRC
+  If you say Y here, a 16-bit CRC checksum will be transmitted along with
+  every BCSP (BlueCore Serial Protocol) packet sent to the Bluetooth chip.
+  This increases reliability, but slightly reduces efficiency.
 
 HCI USB driver
 CONFIG_BLUEZ_HCIUSB
@@ -21347,12 +21626,21 @@ CONFIG_BLUEZ_HCIUSB
   Say Y here to compile support for Bluetooth USB devices into the
   kernel or say M to compile it as module (hci_usb.o).
 
+HCI USB SCO (voice) support
+CONFIG_BLUEZ_USB_SCO
+  This option enables the SCO support in the HCI USB driver. You need this
+  to transmit voice data with your Bluetooth USB device. And your device
+  must also support sending SCO data over the HCI layer, because some of
+  them sends the SCO data to an internal PCM adapter.
+ 
+  Say Y here to compile support for HCI SCO data.
+ 
 HCI USB zero packet support
 CONFIG_BLUEZ_USB_ZERO_PACKET
-  Support for USB zero packets.
   This option is provided only as a work around for buggy Bluetooth USB 
-  devices. Do _not_ enable it unless you know for sure that your device 
+  devices. Do NOT enable it unless you know for sure that your device 
   requires zero packets.
+ 
   Most people should say N here.
 
 HCI VHCI Virtual HCI device driver
@@ -21398,6 +21686,20 @@ CONFIG_BLUEZ_HCIBLUECARD
 
   Say Y here to compile support for HCI BlueCard devices into the
   kernel or say M to compile it as module (bluecard_cs.o).
+
+HCI UART (PC Card) device driver
+CONFIG_BLUEZ_HCIBTUART
+  Bluetooth HCI UART (PC Card) driver.
+  This driver provides support for Bluetooth PCMCIA devices with
+  an UART interface:
+     Xircom CreditCard Bluetooth Adapter
+     Xircom RealPort2 Bluetooth Adapter
+     Sphinx PICO Card
+     H-Soft blue+Card
+     Cyber-blue Compact Flash Card
+
+  Say Y here to compile support for HCI UART devices into the
+  kernel or say M to compile it as module (btuart_cs.o).
 
 # The following options are for Linux when running on the Hitachi
 # SuperH family of RISC microprocessors.
@@ -21884,8 +22186,8 @@ CONFIG_HYDRA
 Sun3 NCR5380 SCSI
 CONFIG_SUN3_SCSI
   This option will enable support for the OBIO (onboard io) NCR5380
-  SCSI controller found in the Sun 3/50 and 3/60.  Note that this
-  driver does not provide support for VME SCSI boards.
+  SCSI controller found in the Sun 3/50 and 3/60, as well as for
+  "Sun3" type VME scsi controllers also based on the NCR5380.
   General Linux information on the Sun 3 series (now discontinued)
   is at <http://www.angelfire.com/ca2/tech68k/sun3.html>.
 
@@ -22610,7 +22912,10 @@ CONFIG_MAC_ADBKEYCODES
   sysctl and with the "keyboard_sends_linux_keycodes=" kernel
   argument.
 
-  If unsure, say Y here.
+  This option is now deprecated and will be removed in a future
+  kernel release.
+  
+  If unsure, say N here.
 
 I2C/SPI Microcode Patch
 CONFIG_UCODE_PATCH
@@ -22887,6 +23192,23 @@ CONFIG_RADIO_SF16FMI
   inserted in and removed from the running kernel whenever you want),
   say M here and read <file:Documentation/modules.txt>.  The module
   will be called radio-sf16fmi.o.
+
+SF16FMR2 Radio
+CONFIG_RADIO_SF16FMR2
+  Choose Y here if you have one of these FM radio cards.  If you
+  compile the driver into the kernel and your card is not PnP one, you
+  have to add "sf16fmr2=<io>" to the kernel command line (I/O address is
+  0x284 or 0x384, default 0x384).
+
+  In order to control your radio card, you will need to use programs
+  that are compatible with the Video For Linux API.  Information on
+  this API and pointers to "v4l" programs may be found on the WWW at
+  <http://roadrunner.swansea.uk.linux.org/v4l.shtml>.
+
+  If you want to compile this driver as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want),
+  say M here and read <file:Documentation/modules.txt>.  The module
+  will be called radio-sf16fmr2.o.
 
 Typhoon Radio (a.k.a. EcoRadio)
 CONFIG_RADIO_TYPHOON
@@ -24413,13 +24735,24 @@ CONFIG_NS83820
   say M here and read <file:Documentation/modules.txt>.  The module
   will be called ns83820.o.
 
+Toshiba Type-O IR Port device driver (old driver)
+CONFIG_TOSHIBA_OLD
+  Say Y here if you want to build support for the Toshiba Type-O IR
+  chipset.  This chipset is used by the Toshiba Libretto 100CT, and
+  many more laptops. This driver is obsolete, will no more be
+  maintained and will be removed in favor of the new driver.
+  If you want to compile it as a module, say M here and read
+  <file:Documentation/modules.txt>.
+  The module will be called toshoboe.o.
+
 Toshiba Type-O IR Port device driver
 CONFIG_TOSHIBA_FIR
   Say Y here if you want to build support for the Toshiba Type-O IR
-  chipset.  This chipset is used by the Toshiba Libretto 100CT, and
-  many more laptops.  If you want to compile it as a module, say M
-  here and read <file:Documentation/modules.txt>.  The module will be
-  called toshoboe.o.
+  and Donau oboe chipsets. These chipsets are used by the Toshiba
+  Libretto 100/110CT, Tecra 8100, Portege 7020 and many more laptops.
+  If you want to compile it as a module, say M here and read
+  <file:Documentation/modules.txt>.
+  The module will be called donauboe.o.
 
 SMC IrCC
 CONFIG_SMC_IRCC_FIR
@@ -25438,16 +25771,6 @@ CONFIG_IA64_HP_ZX1
   for the zx1 IOMMU and makes root bus bridges appear in PCI config space
   (required for zx1 agpgart support).
 
-CONFIG_IA64_SGI_SN_SIM
-  Build a kernel that runs on both the SGI simulator AND on hardware.
-  There is a very slight performance penalty on hardware for including this
-  option.
-
-CONFIG_IA64_SGI_SN_DEBUG
-  This enables addition debug code that helps isolate
-  platform/kernel bugs. There is a small but measurable performance
-  degradation when this option is enabled.
-
 # Choice: pagesize
 Kernel page size
 CONFIG_IA64_PAGE_SIZE_4KB
@@ -26181,7 +26504,7 @@ CONFIG_IEEE1394_CMP
   If you want to compile this as a module ( = code which can be
   inserted in and removed from the running kernel whenever you want),
   say M here and read Documentation/modules.txt.  The module
-  will be called amdtp.o.
+  will be called cmp.o.
 
 OHCI-DV I/O support
 CONFIG_IEEE1394_DV1394
@@ -26241,6 +26564,90 @@ CONFIG_TULIP_MWI
   This is experimental code, not yet tested on many boards.
 
   If unsure, say N.
+
+NatSemi SCx200 support
+CONFIG_SCx200
+  This provides basic support for the National Semiconductor SCx200
+  processor.  Right now this is just a driver for the GPIO pins.
+
+  If you don't know what to do here, say N.
+
+  This support is also available as a module.  If compiled as a
+  module, it will be called scx200.o.
+
+NatSemi SCx200 Watchdog
+CONFIG_SCx200_WDT
+  Enable the built-in watchdog timer support on the National 
+  Semiconductor SCx200 processors.
+
+  If compiled as a module, it will be called scx200_watchdog.o.
+
+Flash device mapped with DOCCS on NatSemi SCx200
+CONFIG_MTD_SCx200_DOCFLASH
+  Enable support for a flash chip mapped using the DOCCS signal on a
+  National Semiconductor SCx200 processor.
+
+  If you don't know what to do here, say N.
+
+  If compiled as a module, it will be called scx200_docflash.o.
+
+NatSemi SCx200 I2C using GPIO pins
+CONFIG_SCx200_GPIO
+  Enable the use of two GPIO pins of a SCx200 processor as an I2C bus.
+
+  If you don't know what to do here, say N.
+
+  If compiled as a module, it will be called scx200_i2c.o.
+
+GPIO pin used for SCL
+CONFIG_SCx200_I2C_SCL
+  Enter the GPIO pin number used for the SCL signal.  This value can
+  also be specified with a module parameter.
+
+GPIO pin used for SDA
+CONFIG_SCx200_I2C_SDA
+  Enter the GPIO pin number used for the SSA signal.  This value can
+  also be specified with a module parameter.
+
+NatSemi SCx200 ACCESS.bus
+CONFIG_SCx200_ACB
+  Enable the use of the ACCESS.bus controllers of a SCx200 processor.
+
+  If you don't know what to do here, say N.
+
+  If compiled as a module, it will be called scx200_acb.o.
+
+IPMI top-level message handler
+CONFIG_IPMI_HANDLER
+  This enables the central IPMI message handler, required for IPMI
+  to work.  Note that you must have this enabled to do any other IPMI
+  things.
+
+  IPMI is a standard for managing sensors (temperature,
+  voltage, etc.) in a system.
+
+  See Documentation/IPMI.txt for more details on the driver.
+
+  If unsure, say N.
+
+Generate a panic event to all BMCs on a panic
+CONFIG_IPMI_PANIC_EVENT
+  When a panic occurs, this will cause the IPMI message handler to
+  generate an IPMI event describing the panic to each interface
+  registered with the message handler.
+
+Device interface for IPMI
+CONFIG_IPMI_DEVICE_INTERFACE
+  This provides an IOCTL interface to the IPMI message handler so
+  userland processes may use IPMI.  It supports poll() and select().
+
+IPMI KCS handler
+CONFIG_IPMI_KCS
+  Provides a driver for a KCS-style interface to a BMC.
+
+IPMI Watchdog Timer
+CONFIG_IPMI_WATCHDOG
+  This enables the IPMI watchdog timer.
 
 #
 # A couple of things I keep forgetting:

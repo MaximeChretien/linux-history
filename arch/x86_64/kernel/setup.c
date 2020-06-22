@@ -76,8 +76,6 @@ unsigned char aux_device_present;
 extern int root_mountflags;
 extern char _text, _etext, _edata, _end;
 
-static int disable_x86_fxsr __initdata = 0;
-
 char command_line[COMMAND_LINE_SIZE];
 char saved_command_line[COMMAND_LINE_SIZE];
 
@@ -328,18 +326,6 @@ void __init setup_arch(char **cmdline_p)
 	num_mappedpages = end_pfn;
 }
 
-#ifndef CONFIG_X86_TSC
-static int tsc_disable __initdata = 0;
-
-static int __init tsc_setup(char *str)
-{
-	tsc_disable = 1;
-	return 1;
-}
-
-__setup("notsc", tsc_setup);
-#endif
-
 static int __init get_model_name(struct cpuinfo_x86 *c)
 {
 	unsigned int *v;
@@ -362,7 +348,6 @@ static void __init display_cacheinfo(struct cpuinfo_x86 *c)
 
 	n = cpuid_eax(0x80000000);
 
-
 	if (n >= 0x80000005) {
 		if (n >= 0x80000006) 
 			cpuid(0x80000006, &eax_2, &ebx_2, &ecx_2, &dummy); 
@@ -376,15 +361,16 @@ static void __init display_cacheinfo(struct cpuinfo_x86 *c)
 			printk(KERN_INFO "CPU: L2 Cache: %dK (%d bytes/line/%d way)\n",
 			       ecx_2>>16, ecx_2&0xFF, (ecx_2>>12)&0xf);
 			c->x86_cache_size = ecx_2 >> 16;
-		}		
-		printk(KERN_INFO "CPU: DTLB L1 %d 4K %d 2MB L2: %d 4K %d 2MB\n",
-		       (ebx>>16)&0xff, (eax>>16)&0xff, 
-		       (ebx_2>>16)&0xfff, (eax_2>>16)&0xfff);
-		printk(KERN_INFO "CPU: ITLB L1 %d 4K %d 2MB L2: %d 4K %d 2MB\n",
-		       ebx&0xff, (eax)&0xff, 
-		       (ebx_2)&0xfff, (eax_2)&0xfff);		
 		c->x86_tlbsize = ((ebx>>16)&0xff) + ((ebx_2>>16)&0xfff) + 
 			(ebx&0xff) + ((ebx_2)&0xfff);
+	}
+		if (n >= 0x80000007)
+			cpuid(0x80000007, &dummy, &dummy, &dummy, &c->x86_power); 
+		if (n >= 0x80000008) {
+			cpuid(0x80000008, &eax, &dummy, &dummy, &dummy); 
+			c->x86_virt_bits = (eax >> 8) & 0xff;
+			c->x86_phys_bits = eax & 0xff;
+		}
 	}
 }
 
@@ -427,15 +413,6 @@ struct cpu_model_info {
 	char *model_names[16];
 };
 
-int __init x86_fxsr_setup(char * s)
-{
-	disable_x86_fxsr = 1;
-	return 1;
-}
-__setup("nofxsr", x86_fxsr_setup);
-
-
-
 /*
  * This does the hard work of actually picking apart the CPU stuff...
  */
@@ -468,11 +445,11 @@ void __init identify_cpu(struct cpuinfo_x86 *c)
 		cpuid(0x00000001, &tfms, &misc, &junk,
 		      &c->x86_capability[0]);
 		c->x86 = (tfms >> 8) & 15;
-		if (c->x86 == 0xf)
-			c->x86 += (tfms >> 20) & 0xff;
 		c->x86_model = (tfms >> 4) & 15;
-		if (c->x86_model == 0xf)
+		if (c->x86 == 0xf) { /* extended */
+			c->x86 += (tfms >> 20) & 0xff;
 			c->x86_model += ((tfms >> 16) & 0xF) << 4; 
+		}
 		c->x86_mask = tfms & 15;
 		if (c->x86_capability[0] & (1<<19)) 
 			c->x86_clflush_size = ((misc >> 8) & 0xff) * 8;
@@ -524,18 +501,6 @@ void __init identify_cpu(struct cpuinfo_x86 *c)
 	 * The vendor-specific functions might have changed features.  Now
 	 * we do "generic changes."
 	 */
-
-	/* TSC disabled? */
-#ifndef CONFIG_X86_TSC
-	if ( tsc_disable )
-		clear_bit(X86_FEATURE_TSC, &c->x86_capability);
-#endif
-
-	/* FXSR disabled? */
-	if (disable_x86_fxsr) {
-		clear_bit(X86_FEATURE_FXSR, &c->x86_capability);
-		clear_bit(X86_FEATURE_XMM, &c->x86_capability);
-	}
 
 	/*
 	 * On SMP, boot_cpu_data holds the common feature set between
@@ -606,6 +571,12 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 	};
+	static char *x86_power_flags[] = { 
+		"ts",	/* temperature sensor */
+		"fid",  /* frequency id control */
+		"vid",  /* voltage id control */
+		"ttp",  /* thermal trip */
+	};
 
 #ifdef CONFIG_SMP
 	if (!(cpu_online_map & (1<<(c-cpu_data))))
@@ -659,7 +630,22 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 		seq_printf(m, "TLB size\t: %d 4K pages\n", c->x86_tlbsize);
 	seq_printf(m, "clflush size\t: %d\n", c->x86_clflush_size);
 
-	seq_printf(m, "\n"); 
+	seq_printf(m, "address sizes\t: %u bits physical, %u bits virtual\n", 
+		   c->x86_phys_bits, c->x86_virt_bits);
+
+	seq_printf(m, "power management:");
+	{
+		int i;
+		for (i = 0; i < 32; i++) 
+			if (c->x86_power & (1 << i)) {
+				if (i < ARRAY_SIZE(x86_power_flags))
+					seq_printf(m, " %s", x86_power_flags[i]);
+				else
+					seq_printf(m, " [%d]", i);
+			}
+	}
+
+	seq_printf(m, "\n\n"); 
 	return 0;
 }
 

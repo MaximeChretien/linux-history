@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  * include/asm-ppc/serial.h
  */
 
@@ -13,6 +10,8 @@
 
 #if defined(CONFIG_GEMINI)
 #include <platforms/gemini_serial.h>
+#elif defined(CONFIG_LOPEC)
+#include <platforms/lopec_serial.h>
 #elif defined(CONFIG_SPRUCE)
 #include <platforms/spruce.h>
 #elif defined(CONFIG_4xx)

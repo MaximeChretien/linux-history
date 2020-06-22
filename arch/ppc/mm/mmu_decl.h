@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  * Declarations of procedures and variables shared between files
  * in arch/ppc/mm/.
  * 
@@ -34,18 +31,13 @@ extern void setbat(int index, unsigned long virt, unsigned long phys,
 extern void reserve_phys_mem(unsigned long start, unsigned long size);
 
 extern int __map_without_bats;
-extern void *end_of_DRAM;
 extern unsigned long ioremap_base;
 extern unsigned long ioremap_bot;
 extern unsigned int rtas_data, rtas_size;
 
 extern unsigned long total_memory;
 extern unsigned long total_lowmem;
-extern unsigned long ram_phys_base;
 extern int mem_init_done;
-
-extern PTE *Hash, *Hash_end;
-extern unsigned long Hash_size, Hash_mask;
 
 /* ...and now those things that may be slightly different between processor
  * architectures.  -- Dan

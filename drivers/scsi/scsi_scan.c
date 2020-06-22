@@ -162,10 +162,10 @@ static struct dev_info device_list[] =
 	{"DELL", "PV530F",    "*", BLIST_SPARSELUN | BLIST_LARGELUN}, // Dell PV 530F
 	{"EMC", "SYMMETRIX", "*", BLIST_SPARSELUN | BLIST_LARGELUN | BLIST_FORCELUN},
 	{"HP", "A6189A", "*", BLIST_SPARSELUN |  BLIST_LARGELUN}, // HP VA7400, by Alar Aun
-	{"HP", "OPEN-", "*", BLIST_SPARSELUN | BLIST_LARGELUN},			/* HP XP Arrays */
+	{"HP", "OPEN-", "*", BLIST_SPARSELUN | BLIST_LARGELUN},	/* HP XP Arrays */
 	{"CMD", "CRA-7280", "*", BLIST_SPARSELUN | BLIST_LARGELUN},   // CMD RAID Controller
 	{"CNSI", "G7324", "*", BLIST_SPARSELUN | BLIST_LARGELUN},     // Chaparral G7324 RAID
-	{"CNSi", "G8324", "*", BLIST_SPARSELUN},     // Chaparral G8324 RAID
+	{"CNSi", "G8324", "*", BLIST_SPARSELUN | BLIST_LARGELUN},     // Chaparral G8324 RAID
 	{"Zzyzx", "RocketStor 500S", "*", BLIST_SPARSELUN},
 	{"Zzyzx", "RocketStor 2000", "*", BLIST_SPARSELUN},
 	{"SONY", "TSL",       "*", BLIST_FORCELUN},  // DDS3 & DDS4 autoloaders
@@ -173,7 +173,7 @@ static struct dev_info device_list[] =
 	{"HP", "NetRAID-4M", "*", BLIST_FORCELUN},
 	{"ADAPTEC", "AACRAID", "*", BLIST_FORCELUN},
 	{"ADAPTEC", "Adaptec 5400S", "*", BLIST_FORCELUN},
-	{"COMPAQ", "MSA1000", "*", BLIST_FORCELUN},
+	{"COMPAQ", "MSA1000", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
 	{"HP", "C1557A", "*", BLIST_FORCELUN},
 	{"IBM", "AuSaV1S2", "*", BLIST_FORCELUN},
 	{"FSC", "CentricStor", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
@@ -182,6 +182,18 @@ static struct dev_info device_list[] =
 	{"HITACHI", "DF500", "*", BLIST_SPARSELUN},
 	{"HITACHI", "DF600", "*", BLIST_SPARSELUN},
 	{"IBM", "ProFibre 4000R", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
+	{"HITACHI", "OPEN-", "*", BLIST_SPARSELUN},		/* HITACHI XP Arrays */
+	{"WINSYS","FLASHDISK G6", "*", BLIST_SPARSELUN},
+	{"DotHill","SANnet RAID X300", "*", BLIST_SPARSELUN},	
+	{"SUN", "T300", "*", BLIST_SPARSELUN},
+	{"SUN", "T4", "*", BLIST_SPARSELUN},
+	{"SGI", "RAID3", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
+	{"SGI", "RAID5", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
+	{"SGI", "TP9100", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
+	{"SGI", "TP9300", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
+	{"SGI", "TP9400", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
+	{"SGI", "TP9500", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
+	{"MYLEX", "DACARMRB", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
 
 	/*
 	 * Must be at end of list...

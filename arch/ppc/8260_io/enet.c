@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.enet.c 1.9 09/14/01 18:01:16 trini
- */
-/*
  * Ethernet driver for Motorola MPC8260.
  * Copyright (c) 1999 Dan Malek (dmalek@jlc.net)
  * Copyright (c) 2000 MontaVista Software Inc. (source@mvista.com)
@@ -810,7 +807,7 @@ int __init scc_enet_init(void)
 
 	/* Install our interrupt handler.
 	*/
-	request_8xxirq(SIU_INT_ENET, scc_enet_interrupt, 0, "enet", dev);
+	request_irq(SIU_INT_ENET, scc_enet_interrupt, 0, "enet", dev);
 
 	/* Set GSMR_H to enable all normal operating modes.
 	 * Set GSMR_L to enable Ethernet to MC68160.

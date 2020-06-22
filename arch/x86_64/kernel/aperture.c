@@ -8,7 +8,7 @@
  * the bootmem allocator can allocate 32+MB. 
  * 
  * Copyright 2002 Andi Kleen, SuSE Labs.
- * $Id: aperture.c,v 1.2 2002/09/19 19:25:32 ak Exp $
+ * $Id: aperture.c,v 1.4 2002/11/28 06:05:58 ak Exp $
  */
 #include <linux/config.h>
 #include <linux/kernel.h>
@@ -47,10 +47,9 @@ static u32 __init allocate_aperture(void)
 	aper_size = (32 * 1024 * 1024) << fallback_aper_order; 
 
 	/* 
-         * Aperture has to be naturally aligned it seems. This means an
-	 * 2GB aperture won't have much changes to succeed in the lower 4GB of 
-	 * memory. Unfortunately we cannot move it up because that would make
-	 * the IOMMU useless.
+         * Aperture has to be naturally aligned. This means an 2GB aperture won't 
+         * have much chances to find a place in the lower 4GB of memory. Unfortunately 
+         * we cannot move it up because that would make the IOMMU useless.
 	 */
 	p = __alloc_bootmem_node(nd0, aper_size, aper_size, 0); 
 	if (!p || __pa(p)+aper_size > 0xffffffff) {
@@ -105,7 +104,8 @@ void __init iommu_hole_init(void)
 	if (!fix && !fallback_aper_force) 
 		return; 
 
-	printk("Your BIOS is broken and doesn't leave a aperture memory hole\n");
+	printk("Your BIOS doesn't leave a aperture memory hole\n");
+	printk("Please enable the IOMMU option in the BIOS setup\n"); 
 	aper_alloc = allocate_aperture(); 
 	if (!aper_alloc) 
 		return; 

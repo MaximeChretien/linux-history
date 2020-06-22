@@ -200,6 +200,7 @@
 #define __NR_putpmsg		188	/* some people actually want streams */
 #define __NR_vfork		189
 #define __NR_ugetrlimit		190	/* SuS compliant getrlimit */
+#define __NR_readahead		191
 #define __NR_mmap2		192
 #define __NR_truncate64		193
 #define __NR_ftruncate64	194
@@ -216,7 +217,6 @@
 #define __NR_madvise		205
 #define __NR_mincore		206
 #define __NR_gettid		207
-#if 0 /* Reserved syscalls */
 #define __NR_tkill		208
 #define __NR_setxattr		209
 #define __NR_lsetxattr		210
@@ -231,7 +231,19 @@
 #define __NR_lremovexattr	219
 #define __NR_fremovexattr	220
 #define __NR_futex		221
-#endif
+#define __NR_sched_setaffinity	222     
+#define __NR_sched_getaffinity	223
+#define __NR_security		224
+#define __NR_tuxcall		225
+#define __NR_sendfile64		226
+#define __NR_io_setup		227
+#define __NR_io_destroy		228
+#define __NR_io_getevents	229
+#define __NR_io_submit		230
+#define __NR_io_cancel		231
+#define __NR_alloc_hugepages	232
+#define __NR_free_hugepages	233
+#define __NR_exit_group		234
 
 #define __NR(n)	#n
 

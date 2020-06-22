@@ -257,7 +257,8 @@ no_context:
 	}
 
 	parisc_terminate("Bad Address (null pointer deref?)", regs, code, address);
-
+	/* NOT REACHED! */
+	
   out_of_memory:
 	up_read(&mm->mmap_sem);
 	printk(KERN_CRIT "VM: killing process %s\n", current->comm);

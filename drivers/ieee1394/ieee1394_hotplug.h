@@ -9,6 +9,14 @@
 #define IEEE1394_MATCH_SPECIFIER_ID	0x0004
 #define IEEE1394_MATCH_VERSION		0x0008
 
+/*
+ * Unit spec id and sw version entry for some protocols
+ */
+#define AVC_UNIT_SPEC_ID_ENTRY					0x0000A02D
+#define AVC_SW_VERSION_ENTRY					0x00010001
+#define CAMERA_UNIT_SPEC_ID_ENTRY				0x0000A02D
+#define CAMERA_SW_VERSION_ENTRY					0x00000100
+
 struct ieee1394_device_id {
 	u32 match_flags;
 	u32 vendor_id;
@@ -69,8 +77,6 @@ struct hpsb_protocol_driver {
 int hpsb_register_protocol(struct hpsb_protocol_driver *driver);
 void hpsb_unregister_protocol(struct hpsb_protocol_driver *driver);
 
-int hpsb_claim_unit_directory(struct unit_directory *ud,
-			      struct hpsb_protocol_driver *driver);
 void hpsb_release_unit_directory(struct unit_directory *ud);
 
 #endif /* _IEEE1394_HOTPLUG_H */

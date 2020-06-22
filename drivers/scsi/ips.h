@@ -1,11 +1,12 @@
 /*****************************************************************************/
-/* ips.h -- driver for the IBM ServeRAID controller                          */
+/* ips.h -- driver for the Adaptec / IBM ServeRAID controller                */
 /*                                                                           */
 /* Written By: Keith Mitchell, IBM Corporation                               */
 /*             Jack Hammer, Adaptec, Inc.                                    */
 /*             David Jeffery, Adaptec, Inc.                                  */
 /*                                                                           */
 /* Copyright (C) 1999 IBM Corporation                                        */
+/* Copyright (C) 2003 Adaptec, Inc.                                          */ 
 /*                                                                           */
 /* This program is free software; you can redistribute it and/or modify      */
 /* it under the terms of the GNU General Public License as published by      */
@@ -42,7 +43,7 @@
 /* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 /*                                                                           */
 /* Bugs/Comments/Suggestions should be mailed to:                            */
-/*      ipslinux@adaptec.com     	                                         */
+/*      ipslinux@adaptec.com                                                 */
 /*                                                                           */
 /*****************************************************************************/
 
@@ -60,7 +61,6 @@
    extern int ips_queue(Scsi_Cmnd *, void (*) (Scsi_Cmnd *));
    extern int ips_biosparam(Disk *, kdev_t, int *);
    extern const char * ips_info(struct Scsi_Host *);
-   extern void do_ips(int, void *, struct pt_regs *);
 
    /*
     * Some handy macros
@@ -78,40 +78,18 @@
                                          (ha->revision_id >= IPS_REVID_CLARINETP1) && \
                                          (ha->revision_id <= IPS_REVID_CLARINETP3)) ? 1 : 0)
    #define IPS_IS_MORPHEUS(ha)         (ha->device_id == IPS_DEVICEID_MORPHEUS)
+   #define IPS_IS_MARCO(ha)            (ha->device_id == IPS_DEVICEID_MARCO)
    #define IPS_USE_I2O_DELIVER(ha)     ((IPS_IS_MORPHEUS(ha) || \
                                          (IPS_IS_TROMBONE(ha) && \
                                           (ips_force_i2o))) ? 1 : 0)
-   #define IPS_USE_I2O_STATUS(ha)      (IPS_IS_MORPHEUS(ha))
    #define IPS_USE_MEMIO(ha)           ((IPS_IS_MORPHEUS(ha) || \
                                          ((IPS_IS_TROMBONE(ha) || IPS_IS_CLARINET(ha)) && \
                                           (ips_force_memio))) ? 1 : 0)
 
-   #ifndef VIRT_TO_BUS
-      #define VIRT_TO_BUS(x)           (uint32_t) virt_to_bus((void *) x)
-   #endif
-
    #ifndef MDELAY
       #define MDELAY mdelay
    #endif
-
-   #ifndef verify_area_20
-      #define verify_area_20(t,a,sz)   (0) /* success */
-   #endif
-
-   #ifndef DECLARE_MUTEX_LOCKED
-      #define DECLARE_MUTEX_LOCKED(sem) struct semaphore sem = MUTEX_LOCKED;
-   #endif
    
-   /*
-    * Lock macros
-    */
-   #define IPS_SCB_LOCK(cpu_flags)      spin_lock_irqsave(&ha->scb_lock, cpu_flags)
-   #define IPS_SCB_UNLOCK(cpu_flags)    spin_unlock_irqrestore(&ha->scb_lock, cpu_flags)
-   #define IPS_QUEUE_LOCK(queue)        spin_lock_irqsave(&(queue)->lock, (queue)->cpu_flags)
-   #define IPS_QUEUE_UNLOCK(queue)      spin_unlock_irqrestore(&(queue)->lock, (queue)->cpu_flags)
-   #define IPS_HA_LOCK(cpu_flags)       spin_lock_irqsave(&ha->ips_lock, cpu_flags)
-   #define IPS_HA_UNLOCK(cpu_flags)     spin_unlock_irqrestore(&ha->ips_lock, cpu_flags)
-
    /*
     * Adapter address map equates
     */
@@ -171,7 +149,7 @@
    #define IPS_CMD_DCDB                 0x04
    #define IPS_CMD_DCDB_SG              0x84
    #define IPS_CMD_EXTENDED_DCDB 	    0x95
-	#define IPS_CMD_EXTENDED_DCDB_SG		 0x96
+   #define IPS_CMD_EXTENDED_DCDB_SG	    0x96
    #define IPS_CMD_CONFIG_SYNC          0x58
    #define IPS_CMD_ERROR_TABLE          0x17
    #define IPS_CMD_DOWNLOAD             0x20
@@ -185,6 +163,7 @@
    #define IPS_CSL                      0xFF
    #define IPS_POCL                     0x30
    #define IPS_NORM_STATE               0x00
+   #define IPS_MAX_ADAPTER_TYPES        3
    #define IPS_MAX_ADAPTERS             16
    #define IPS_MAX_IOCTL                1
    #define IPS_MAX_IOCTL_QUEUE          8
@@ -207,15 +186,19 @@
    #define IPS_INTR_IORL                1
    #define IPS_FFDC                     99
    #define IPS_ADAPTER_ID               0xF
-   #define IPS_VENDORID                 0x1014
+   #define IPS_VENDORID_IBM             0x1014
+   #define IPS_VENDORID_ADAPTEC         0x9005
    #define IPS_DEVICEID_COPPERHEAD      0x002E
    #define IPS_DEVICEID_MORPHEUS        0x01BD
+   #define IPS_DEVICEID_MARCO           0x0250
    #define IPS_SUBDEVICEID_4M           0x01BE
    #define IPS_SUBDEVICEID_4L           0x01BF
    #define IPS_SUBDEVICEID_4MX          0x0208
    #define IPS_SUBDEVICEID_4LX          0x020E
    #define IPS_SUBDEVICEID_5I2          0x0259
    #define IPS_SUBDEVICEID_5I1          0x0258
+   #define IPS_SUBDEVICEID_6M           0x0279
+   #define IPS_SUBDEVICEID_6I           0x028C
    #define IPS_IOCTL_SIZE               8192
    #define IPS_STATUS_SIZE              4
    #define IPS_STATUS_Q_SIZE            (IPS_MAX_CMDS+1) * IPS_STATUS_SIZE
@@ -298,6 +281,8 @@
    #define IPS_ADTYPE_SERVERAID4LX      0x0B
    #define IPS_ADTYPE_SERVERAID5I2      0x0C
    #define IPS_ADTYPE_SERVERAID5I1      0x0D
+   #define IPS_ADTYPE_SERVERAID6M       0x0E
+   #define IPS_ADTYPE_SERVERAID6I       0x0F
 
    /*
     * Adapter Command/Status Packet Definitions
@@ -369,27 +354,8 @@
    #define IPS_SCSI_MP3_AllocateSurface 0x08
 
    /*
-    * Configuration Structure Flags
-    */
-   #define IPS_CFG_USEROPT_UPDATECOUNT(cfg)   (((cfg)->UserOpt & 0xffff000) >> 16)
-   #define IPS_CFG_USEROPT_CONCURSTART(cfg)   (((cfg)->UserOpt & 0xf000) >> 12)
-   #define IPS_CFG_USEROPT_STARTUPDELAY(cfg)  (((cfg)->UserOpt & 0xf00) >> 8)
-   #define IPS_CFG_USEROPT_REARRANGE(cfg)     ((cfg)->UserOpt & 0x80)
-   #define IPS_CFG_USEROPT_CDBOOT(cfg)        ((cfg)->UserOpt & 0x40)
-   #define IPS_CFG_USEROPT_CLUSTER(cfg)       ((cfg)->UserOpt & 0x20)
-
-   /*
-    * Host adapter Flags (bit numbers)
-    */
-   #define IPS_IN_INTR                  0
-   #define IPS_IN_ABORT                 1
-   #define IPS_IN_RESET                 2
-
-   /*
     * SCB Flags
     */
-   #define IPS_SCB_ACTIVE               0x00001
-   #define IPS_SCB_WAITING              0x00002
    #define IPS_SCB_MAP_SG               0x00008
    #define IPS_SCB_MAP_SINGLE           0X00010
 
@@ -400,7 +366,6 @@
    #define IPS_COPPIOCCMD              (('C'<<8) | 66)
    #define IPS_NUMCTRLS                (('C'<<8) | 68)
    #define IPS_CTRLINFO                (('C'<<8) | 69)
-   #define IPS_FLASHBIOS               (('C'<<8) | 70)
 
    /* flashing defines */
    #define IPS_FW_IMAGE                0x00
@@ -455,7 +420,7 @@
     use_clustering : ENABLE_CLUSTERING,   \
     use_new_eh_code : 1                   \
 }
-#else
+#elif LINUX_VERSION_CODE < LinuxVersionCode(2,5,0)
  #define IPS {                            \
     next : NULL,                          \
     module : NULL,                        \
@@ -484,10 +449,39 @@
     use_clustering : ENABLE_CLUSTERING,   \
     use_new_eh_code : 1                   \
 }
+#else
+ #define IPS {                            \
+    next : NULL,                          \
+    module : NULL,                        \
+    proc_info : NULL,                     \
+    name : NULL,                          \
+    detect : ips_detect,                  \
+    release : ips_release,                \
+    info : ips_info,                      \
+    command : NULL,                       \
+    queuecommand : ips_queue,             \
+    eh_strategy_handler : NULL,           \
+    eh_abort_handler : ips_eh_abort,      \
+    eh_device_reset_handler : NULL,       \
+    eh_bus_reset_handler : NULL,          \
+    eh_host_reset_handler : ips_eh_reset, \
+    abort : NULL,                         \
+    reset : NULL,                         \
+    slave_attach : NULL,                  \
+    bios_param : ips_biosparam,           \
+    can_queue : 0,                        \
+    this_id: -1,                          \
+    sg_tablesize : IPS_MAX_SG,            \
+    cmd_per_lun: 16,                      \
+    present : 0,                          \
+    unchecked_isa_dma : 0,                \
+    use_clustering : ENABLE_CLUSTERING,   \
+    highmem_io : 1                        \
+}
 #endif
 
 /*
- * IBM PCI Raid Command Formats
+ * Raid Command Formats
  */
 typedef struct {
    uint8_t  op_code;
@@ -765,7 +759,7 @@ typedef struct {
    uint16_t usConfigUpdateCount;
    uint8_t  ucBlkFlag;
    uint8_t  reserved;
-   uint16_t usAddrDeadDisk[IPS_MAX_CHANNELS * IPS_MAX_TARGETS];
+   uint16_t usAddrDeadDisk[IPS_MAX_CHANNELS * (IPS_MAX_TARGETS + 1)];
 } IPS_ENQ, *PIPS_ENQ;
 
 typedef struct {
@@ -841,7 +835,8 @@ typedef struct {
    uint8_t   ReservedForOS2[8];
    uint8_t   bios_high[4];                 /* Adapter's Flashed BIOS Version   */
    uint8_t   bios_low[4];
-   uint8_t   Filler[76];
+   uint8_t   adapter_order[16];            /* BIOS Telling us the Sort Order   */
+   uint8_t   Filler[60];
 } IPS_NVRAM_P5, *PIPS_NVRAM_P5;
 
 /*--------------------------------------------------------------------------*/
@@ -1007,19 +1002,6 @@ typedef struct {
    int   option_value;
 } IPS_OPTION;
 
-typedef struct {
-   void             *userbuffer;
-   uint32_t          usersize;
-   void             *kernbuffer;
-   uint32_t          kernsize;
-   void             *ha;
-   void             *SC;
-   void             *pt;
-   struct semaphore *sem;
-   uint32_t          offset;
-   uint32_t          retcode;
-} IPS_FLASH_DATA;
-
 /*
  * Status Info
  */
@@ -1036,8 +1018,6 @@ typedef struct ips_scb_queue {
    struct ips_scb *head;
    struct ips_scb *tail;
    int             count;
-   unsigned long   cpu_flags;
-   spinlock_t      lock;
 } ips_scb_queue_t;
 
 /*
@@ -1047,13 +1027,10 @@ typedef struct ips_wait_queue {
    Scsi_Cmnd      *head;
    Scsi_Cmnd      *tail;
    int             count;
-   unsigned long   cpu_flags;
-   spinlock_t      lock;
 } ips_wait_queue_t;
 
 typedef struct ips_copp_wait_item {
    Scsi_Cmnd                 *scsi_cmd;
-   struct semaphore          *sem;
    struct ips_copp_wait_item *next;
 } ips_copp_wait_item_t;
 
@@ -1061,8 +1038,6 @@ typedef struct ips_copp_queue {
    struct ips_copp_wait_item *head;
    struct ips_copp_wait_item *tail;
    int                        count;
-   unsigned long              cpu_flags;
-   spinlock_t                 lock;
 } ips_copp_queue_t;
 
 /* forward decl for host structure */
@@ -1111,7 +1086,6 @@ typedef struct ips_ha {
    char              *ioctl_data;         /* IOCTL data area            */
    uint32_t           ioctl_datasize;     /* IOCTL data size            */
    uint32_t           cmd_in_progress;    /* Current command in progress*/
-   unsigned long      flags;              /* HA flags                   */
    uint8_t            waitflag;           /* are we waiting for cmd     */
    uint8_t            active;
    int                ioctl_reset;        /* IOCTL Requested Reset Flag */
@@ -1122,7 +1096,6 @@ typedef struct ips_ha {
    uint8_t            slot_num;           /* PCI Slot Number            */
    uint16_t           subdevice_id;       /* Subsystem device ID        */
    uint8_t            ioctl_order;        /* Number of pages in ioctl   */
-   uint8_t            reserved2;          /* Empty                      */
    uint8_t            bios_version[8];    /* BIOS Revision              */
    uint32_t           mem_addr;           /* Memory mapped address      */
    uint32_t           io_len;             /* Size of IO Address         */
@@ -1131,14 +1104,10 @@ typedef struct ips_ha {
    char              *ioremap_ptr;        /* ioremapped memory pointer  */
    ips_hw_func_t      func;               /* hw function pointers       */
    struct pci_dev    *pcidev;             /* PCI device handle          */
-   spinlock_t         scb_lock;
-   spinlock_t         copp_lock;
-   spinlock_t         ips_lock;
-   struct semaphore   ioctl_sem;          /* Semaphore for new IOCTL's  */
-   struct semaphore   flash_ioctl_sem;    /* Semaphore for Flashing     */
    char              *flash_data;         /* Save Area for flash data   */
-   u8                 flash_order;        /* Save Area for flash size order  */
-   u32                flash_datasize;   /* Save Area for flash data size */
+   u8                 flash_order;        /* Save Area for flash size order */
+   u32                flash_datasize;     /* Save Area for flash data size */
+   uint8_t            requires_esl;       /* Requires an EraseStripeLock */
 } ips_ha_t;
 
 typedef void (*ips_scb_callback) (ips_ha_t *, struct ips_scb *);
@@ -1168,7 +1137,6 @@ typedef struct ips_scb {
    Scsi_Cmnd        *scsi_cmd;
    struct ips_scb   *q_next;
    ips_scb_callback  callback;
-   struct semaphore *sem;
    uint32_t          sg_busaddr;
    int               sg_count;
 } ips_scb_t;
@@ -1224,44 +1192,46 @@ typedef struct {
 *
 *************************************************************************/
 
-#define IPS_VER_MAJOR 5
-#define IPS_VER_MAJOR_STRING "5"
-#define IPS_VER_MINOR 10
-#define IPS_VER_MINOR_STRING "10"
-#define IPS_VER_BUILD 21
-#define IPS_VER_BUILD_STRING "21"
-#define IPS_VER_STRING "5.10.21"
-#define IPS_LEGALCOPYRIGHT_STRING "(C) Copyright IBM Corp. 1994, 2002. All Rights Reserved."
+#define IPS_VER_MAJOR 6
+#define IPS_VER_MAJOR_STRING "6"
+#define IPS_VER_MINOR 00
+#define IPS_VER_MINOR_STRING "00"
+#define IPS_VER_BUILD 26
+#define IPS_VER_BUILD_STRING "26"
+#define IPS_VER_STRING "6.00.26"
+#define IPS_LEGALCOPYRIGHT_STRING "(C) Copyright IBM Corp. 1994, 2003. All Rights Reserved."
 #define IPS_ADAPTECCOPYRIGHT_STRING "(c) Copyright Adaptec, Inc. 2002 to present. All Rights Reserved."
-#define IPS_NT_LEGALCOPYRIGHT_STRING "(C) Copyright IBM Corp. 1994, 2002."
+#define IPS_NT_LEGALCOPYRIGHT_STRING "(C) Copyright IBM Corp. 1994, 2003."
 
 /* Version numbers for various adapters */
 #define IPS_VER_SERVERAID1 "2.25.01"
 #define IPS_VER_SERVERAID2 "2.88.13"
 #define IPS_VER_NAVAJO "2.88.13"
-#define IPS_VER_SERVERAID3 "5.10.21"
-#define IPS_VER_SERVERAID4H "5.10.21"
-#define IPS_VER_SERVERAID4MLx "5.10.21"
-#define IPS_VER_SARASOTA "5.10.21"
+#define IPS_VER_SERVERAID3 "6.00.26"
+#define IPS_VER_SERVERAID4H "6.00.26"
+#define IPS_VER_SERVERAID4MLx "6.00.26"
+#define IPS_VER_SARASOTA "6.00.26"
+#define IPS_VER_MARCO "6.00.26"
 
 /* Compatability IDs for various adapters */
 #define IPS_COMPAT_UNKNOWN ""
-#define IPS_COMPAT_CURRENT "SA510"
+#define IPS_COMPAT_CURRENT "MR600"
 #define IPS_COMPAT_SERVERAID1 "2.25.01"
 #define IPS_COMPAT_SERVERAID2 "2.88.13"
 #define IPS_COMPAT_NAVAJO  "2.88.13"
 #define IPS_COMPAT_KIOWA "2.88.13"
-#define IPS_COMPAT_SERVERAID3H  "SA510"
-#define IPS_COMPAT_SERVERAID3L  "SA510"
-#define IPS_COMPAT_SERVERAID4H  "SA510"
-#define IPS_COMPAT_SERVERAID4M  "SA510"
-#define IPS_COMPAT_SERVERAID4L  "SA510"
-#define IPS_COMPAT_SERVERAID4Mx "SA510"
-#define IPS_COMPAT_SERVERAID4Lx "SA510"
-#define IPS_COMPAT_SARASOTA     "SA510"
-#define IPS_COMPAT_BIOS "SA510"
+#define IPS_COMPAT_SERVERAID3H  "MR600"
+#define IPS_COMPAT_SERVERAID3L  "MR600"
+#define IPS_COMPAT_SERVERAID4H  "MR600"
+#define IPS_COMPAT_SERVERAID4M  "MR600"
+#define IPS_COMPAT_SERVERAID4L  "MR600"
+#define IPS_COMPAT_SERVERAID4Mx "MR600"
+#define IPS_COMPAT_SERVERAID4Lx "MR600"
+#define IPS_COMPAT_SARASOTA     "MR600"
+#define IPS_COMPAT_MARCO        "MR600"
+#define IPS_COMPAT_BIOS "MR600"
 
-#define IPS_COMPAT_MAX_ADAPTER_TYPE 14
+#define IPS_COMPAT_MAX_ADAPTER_TYPE 15
 #define IPS_COMPAT_ID_LENGTH 8
 
 #define IPS_DEFINE_COMPAT_TABLE(tablename) \
@@ -1278,8 +1248,9 @@ typedef struct {
       IPS_COMPAT_SERVERAID4L, \
       IPS_COMPAT_SERVERAID4Mx, \
       IPS_COMPAT_SERVERAID4Lx, \
-      IPS_COMPAT_SARASOTA, \
-      IPS_COMPAT_SARASOTA \
+      IPS_COMPAT_SARASOTA,         /* one-channel variety of SARASOTA */  \
+      IPS_COMPAT_SARASOTA,         /* two-channel variety of SARASOTA */  \
+      IPS_COMPAT_MARCO \
    }
 
 

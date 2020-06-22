@@ -472,6 +472,8 @@ struct amd7930_hw {
 #define BC_FLG_FTI_RUN	13
 #define BC_FLG_LL_OK	14
 #define BC_FLG_LL_CONN	15
+#define BC_FLG_FTI_FTS	16
+#define BC_FLG_FRH_WAIT	17
 
 #define L1_MODE_NULL	0
 #define L1_MODE_TRANS	1

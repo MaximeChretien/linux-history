@@ -51,8 +51,6 @@ else
 	 64KB			CONFIG_IA64_PAGE_SIZE_64KB" 16KB
 fi
 
-bool 'Virtually mapped mem_map?' CONFIG_VIRTUAL_MEM_MAP n
-
 if [ "$CONFIG_ITANIUM" = "y" ]; then
 	define_bool CONFIG_IA64_BRL_EMU y
 	bool '  Enable Itanium B-step specific code' CONFIG_ITANIUM_BSTEP_SPECIFIC
@@ -65,10 +63,6 @@ fi
 
 if [ "$CONFIG_MCKINLEY" = "y" ]; then
 	define_int CONFIG_IA64_L1_CACHE_SHIFT 7
-	bool '  Enable McKinley A-step specific code' CONFIG_MCKINLEY_ASTEP_SPECIFIC
-	if [ "$CONFIG_MCKINLEY_ASTEP_SPECIFIC" = "y" ]; then
-	  bool '   Enable McKinley A0/A1-step specific code' CONFIG_MCKINLEY_A0_SPECIFIC
-	fi
 fi
 
 if [ "$CONFIG_IA64_GENERIC" = "y" -o "$CONFIG_IA64_DIG" = "y" -o "$CONFIG_IA64_HP_ZX1" = "y" ]; then
@@ -185,6 +179,9 @@ if [ "$CONFIG_IA64_HP_SIM" = "n" ]; then
     bool 'Network device support' CONFIG_NETDEVICES
     if [ "$CONFIG_NETDEVICES" = "y" ]; then
       source drivers/net/Config.in
+      if [ "$CONFIG_ATM" = "y" ]; then
+         source drivers/atm/Config.in
+      fi
     fi
     endmenu
   fi
@@ -256,10 +253,10 @@ if [ "$CONFIG_IA64_HP_SIM" != "n" -o "$CONFIG_IA64_GENERIC" != "n" ]; then
   mainmenu_option next_comment
   comment 'Simulated drivers'
 
-  bool 'Simulated Ethernet ' CONFIG_SIMETH
-  bool 'Simulated serial driver support' CONFIG_SIM_SERIAL
+  bool 'Simulated Ethernet ' CONFIG_HP_SIMETH
+  bool 'Simulated serial driver support' CONFIG_HP_SIMSERIAL
   if [ "$CONFIG_SCSI" != "n" ]; then
-    bool 'Simulated SCSI disk' CONFIG_SCSI_SIM
+    bool 'Simulated SCSI disk' CONFIG_HP_SIMSCSI
   fi
   endmenu
 fi

@@ -1,5 +1,5 @@
 /*
- *  linux/arch/ppc/kernel/traps.c
+ *  linux/arch/ppc64/kernel/traps.c
  *
  *  Copyright (C) 1995-1996  Gary Thomas (gdt@linuxppc.org)
  *
@@ -81,7 +81,7 @@ void (*debugger)(struct pt_regs *regs) = kdb;
 int (*debugger_bpt)(struct pt_regs *regs);
 int (*debugger_sstep)(struct pt_regs *regs);
 int (*debugger_iabr_match)(struct pt_regs *regs);
-int (*debugger_dabr_match)(struct pt_regs *regs);
+int (*debugger_dabr_match)(struct pt_regs *regs) = kdb;
 /* - only defined during (xmon) mread */
 void (*debugger_fault_handler)(struct pt_regs *regs);
 #endif /* kdb */
@@ -94,8 +94,8 @@ void set_local_DABR(void *valp);
  * Trap & Exception support
  */
 
-void
-_exception(int signr, struct pt_regs *regs)
+static void
+_exception(int signr, siginfo_t *info, struct pt_regs *regs)
 {
 	if (!user_mode(regs))
 	{
@@ -104,7 +104,8 @@ _exception(int signr, struct pt_regs *regs)
 		debugger(regs);
 #endif
 #if defined(CONFIG_KDB)
-		kdb(KDB_REASON_OOPS, 0, (kdb_eframe_t) regs);
+		if (kdb(KDB_REASON_BREAK, 0, (kdb_eframe_t) regs))
+		    return;
 #endif
 		print_backtrace((unsigned long *)regs->gpr[1]);
 		panic("Exception in kernel pc %lx signal %d",regs->nip,signr);
@@ -115,7 +116,7 @@ _exception(int signr, struct pt_regs *regs)
 			debugger(regs);
 #endif
 	}
-	force_sig(signr, current);
+	force_sig_info(signr, info, current);
 }
 
 /* Get the error information for errors coming through the
@@ -155,35 +156,47 @@ void
 SystemResetException(struct pt_regs *regs)
 {
 	char *msg = "System Reset in kernel mode.\n";
-	udbg_printf(msg); printk(msg);
+	printk(msg);
 	if (fwnmi_active) {
 		unsigned long *r3 = __va(regs->gpr[3]); /* for FWNMI debug */
-		struct rtas_error_log *errlog;
-
-		msg = "FWNMI is active with save area at %016lx\n";
-		udbg_printf(msg, r3); printk(msg, r3);
-		errlog = FWNMI_get_errinfo(regs);
+		printk("FWNMI is active with save area at %p\n", r3);
+		FWNMI_release_errinfo();
 	}
 #if defined(CONFIG_XMON)
 	xmon(regs);
 	udbg_printf("leaving xmon...\n");
 #endif
 #if defined(CONFIG_KDB)
-	kdb(KDB_REASON_ENTER, regs->trap, (kdb_eframe_t) regs);
-	udbg_printf("leaving kdb...\n");
+	{
+		int cpu = smp_processor_id();
+		static int reset_cpu = -1;
+		static spinlock_t reset_lock = SPIN_LOCK_UNLOCKED;
+
+		/* Give kdb some help serializing the reset */
+		spin_lock(&reset_lock);
+		if (reset_cpu == -1) {
+			reset_cpu = cpu;
+			spin_unlock(&reset_lock);
+			kdb(KDB_REASON_ENTER, regs->trap, (kdb_eframe_t) regs);
+			reset_cpu = -1;
+		} else {
+			spin_unlock(&reset_lock);
+			/* Let kdb catch this cpu with an IPI.
+			 * Ideally we need a way to enter kdb w/o it becoming
+			 * confused so we can precisely capture reset state.
+			 */
+			return;
+		}
+	}
 #endif
-
-/*
-allow system to resume after reset.
-	for(;;);
-*/
-
 }
 
 
 void
 MachineCheckException(struct pt_regs *regs)
 {
+	siginfo_t info;
+
 	if (fwnmi_active) {
 		struct rtas_error_log *errhdr = FWNMI_get_errinfo(regs);
 		if (errhdr) {
@@ -191,17 +204,13 @@ MachineCheckException(struct pt_regs *regs)
 		}
 		FWNMI_release_errinfo();
 	}
-	if ( !user_mode(regs) )
-	{
+
+	if ( !user_mode(regs) ) {
 #if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
 		if (debugger_fault_handler) {
 			debugger_fault_handler(regs);
 			return;
 		}
-#endif
-#ifdef CONFIG_KDB
-		if (kdb(KDB_REASON_FAULT, 0, regs))
-			return;
 #endif
 		printk("Machine check in kernel mode.\n");
 		printk("Caused by (from SRR1=%lx): ", regs->msr);
@@ -216,7 +225,17 @@ MachineCheckException(struct pt_regs *regs)
 		print_backtrace((unsigned long *)regs->gpr[1]);
 		panic("machine check");
 	}
-	_exception(SIGSEGV, regs);	
+	
+	/*
+	 * XXX we should check RI bit on exception exit and kill the
+	 * task if it was cleared
+	 */
+	info.si_signo = SIGBUS;
+	info.si_errno = 0;
+	info.si_code = BUS_ADRERR;
+	info.si_addr = (void *)regs->nip;
+	_exception(SIGSEGV, &info, regs);
+
 }
 
 void
@@ -242,33 +261,98 @@ SMIException(struct pt_regs *regs)
 void
 UnknownException(struct pt_regs *regs)
 {
+	siginfo_t info;
+
 	printk("Bad trap at PC: %lx, SR: %lx, vector=%lx\n",
 	       regs->nip, regs->msr, regs->trap);
-	_exception(SIGTRAP, regs);	
+
+	info.si_signo = SIGTRAP;
+	info.si_errno = 0;
+	info.si_code = 0;
+	info.si_addr = 0;
+	_exception(SIGTRAP, &info, regs);	
 }
 
 void
 InstructionBreakpointException(struct pt_regs *regs)
 {
+	siginfo_t info;
+	
 #if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
 	if (debugger_iabr_match(regs))
 		return;
 #endif
 #ifdef CONFIG_KDB
 	if (kdb(KDB_REASON_BREAK, 0, regs))
-		return ;
+		return;
 #endif
-	_exception(SIGTRAP, regs);
+
+	info.si_signo = SIGTRAP;
+	info.si_errno = 0;
+	info.si_code = TRAP_BRKPT;
+	info.si_addr = (void *)regs->nip;
+	_exception(SIGTRAP, &info, regs);
+}
+
+static void
+parse_fpe(siginfo_t *info, struct pt_regs *regs)
+{
+	unsigned long fpscr;
+
+	if (regs->msr & MSR_FP)
+		giveup_fpu(current);
+
+	fpscr = current->thread.fpscr;
+
+	/* Invalid operation */
+	if ((fpscr & FPSCR_VE) && (fpscr & FPSCR_VX))
+		info->si_code = FPE_FLTINV;
+
+	/* Overflow */
+	else if ((fpscr & FPSCR_OE) && (fpscr & FPSCR_OX))
+		info->si_code = FPE_FLTOVF;
+
+	/* Underflow */
+	else if ((fpscr & FPSCR_UE) && (fpscr & FPSCR_UX))
+		info->si_code = FPE_FLTUND;
+
+	/* Divide by zero */
+	else if ((fpscr & FPSCR_ZE) && (fpscr & FPSCR_ZX))
+		info->si_code = FPE_FLTDIV;
+
+	/* Inexact result */
+	else if ((fpscr & FPSCR_XE) && (fpscr & FPSCR_XX))
+		info->si_code = FPE_FLTRES;
+
+	else
+		info->si_code = 0;
+
+	info->si_signo = SIGFPE;
+	info->si_errno = 0;
+	info->si_addr = (void *)regs->nip;
+	_exception(SIGFPE, info, regs);
 }
 
 void
 ProgramCheckException(struct pt_regs *regs)
 {
+	siginfo_t info;
+
 	if (regs->msr & 0x100000) {
 		/* IEEE FP exception */
-		_exception(SIGFPE, regs);
+
+		parse_fpe(&info, regs);
+	} else if (regs->msr & 0x40000) {
+		/* Privileged instruction */
+
+		info.si_signo = SIGILL;
+		info.si_errno = 0;
+		info.si_code = ILL_PRVOPC;
+		info.si_addr = (void *)regs->nip;
+		_exception(SIGILL, &info, regs);
 	} else if (regs->msr & 0x20000) {
 		/* trap exception */
+
 #if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
 		if (debugger_bpt(regs))
 			return;
@@ -277,16 +361,29 @@ ProgramCheckException(struct pt_regs *regs)
 		if (kdb(KDB_REASON_BREAK, 0, regs))
 			return;
 #endif
-		_exception(SIGTRAP, regs);
+		info.si_signo = SIGTRAP;
+		info.si_errno = 0;
+		info.si_code = TRAP_BRKPT;
+		info.si_addr = (void *)regs->nip;
+		_exception(SIGTRAP, &info, regs);
 	} else {
-		_exception(SIGILL, regs);
+		/* Illegal instruction */
+
+		info.si_signo = SIGILL;
+		info.si_errno = 0;
+		info.si_code = ILL_ILLTRP;
+		info.si_addr = (void *)regs->nip;
+		_exception(SIGILL, &info, regs);
 	}
 }
 
 void
 SingleStepException(struct pt_regs *regs)
 {
+	siginfo_t info;
+
 	regs->msr &= ~MSR_SE;  /* Turn off 'trace' bit */
+
 #if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
 	if (debugger_sstep(regs))
 		return;
@@ -295,13 +392,19 @@ SingleStepException(struct pt_regs *regs)
 	if (kdb(KDB_REASON_DEBUG, 0, regs))
 		return;
 #endif
-	_exception(SIGTRAP, regs);	
+
+	info.si_signo = SIGTRAP;
+	info.si_errno = 0;
+	info.si_code = TRAP_TRACE;
+	info.si_addr = (void *)regs->nip;
+	_exception(SIGTRAP, &info, regs);	
 }
 
 void
 AlignmentException(struct pt_regs *regs)
 {
 	int fixed;
+	siginfo_t info;
 
 	fixed = fix_alignment(regs);
 	if (fixed == 1) {
@@ -311,15 +414,28 @@ AlignmentException(struct pt_regs *regs)
 		regs->nip += 4;	/* skip over emulated instruction */
 		return;
 	}
+	
+	/* Operand address was bad */
 	if (fixed == -EFAULT) {
-		/* fixed == -EFAULT means the operand address was bad */
-		if (user_mode(regs))
-			force_sig(SIGSEGV, current);
-		else
+		if (user_mode(regs)) {
+			info.si_signo = SIGSEGV;
+			info.si_errno = 0;
+			info.si_code = SEGV_MAPERR;
+			info.si_addr = (void *)regs->dar;
+			force_sig_info(SIGSEGV, &info, current);
+		} else {
+			/* Search exception table */
 			bad_page_fault(regs, regs->dar);
+		}
+
 		return;
 	}
-	_exception(SIGBUS, regs);	
+
+	info.si_signo = SIGBUS;
+	info.si_errno = 0;
+	info.si_code = BUS_ADRALN;
+	info.si_addr = (void *)regs->nip;
+	_exception(SIGBUS, &info, regs);
 }
 
 void __init trap_init(void)

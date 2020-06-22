@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  * Common time routines among all ppc machines.
  *
  * Written by Cort Dougan (cort@cs.nmt.edu) to merge
@@ -186,7 +183,7 @@ int timer_interrupt(struct pt_regs * regs)
 		 * We should have an rtc call that only sets the minutes and
 		 * seconds like on Intel to avoid problems with non UTC clocks.
 		 */
-		if ( (time_status & STA_UNSYNC) == 0 &&
+		if ( ppc_md.set_rtc_time && (time_status & STA_UNSYNC) == 0 &&
 		     xtime.tv_sec - last_rtc_update >= 659 &&
 		     abs(xtime.tv_usec - (1000000-1000000/HZ)) < 500000/HZ &&
 		     jiffies - wall_jiffies == 1) {
@@ -197,8 +194,6 @@ int timer_interrupt(struct pt_regs * regs)
 				last_rtc_update += 60;
 		}
 		write_unlock(&xtime_lock);
-		
-
 	}
 	if (!disarm_decr[cpu])
 		set_dec(next_dec);
@@ -295,13 +290,11 @@ void do_settimeofday(struct timeval *tv)
 	write_unlock_irqrestore(&xtime_lock, flags);
 }
 
-
+/* This function is only called on the boot processor */
 void __init time_init(void)
 {
 	time_t sec, old_sec;
 	unsigned old_stamp, stamp, elapsed;
-	/* This function is only called on the boot processor */
-	unsigned long flags;
 
         if (ppc_md.time_init != NULL)
                 time_offset = ppc_md.time_init();
@@ -318,31 +311,32 @@ void __init time_init(void)
 	/* Now that the decrementer is calibrated, it can be used in case the 
 	 * clock is stuck, but the fact that we have to handle the 601
 	 * makes things more complex. Repeatedly read the RTC until the
-	 * next second boundary to try to achieve some precision...
+	 * next second boundary to try to achieve some precision.  If there
+	 * is no RTC, we still need to set tb_last_stamp and
+	 * last_jiffy_stamp(cpu 0) to the current stamp.
 	 */
+	stamp = get_native_tbl();
 	if (ppc_md.get_rtc_time) {
-		stamp = get_native_tbl();
 		sec = ppc_md.get_rtc_time();
 		elapsed = 0;
 		do {
 			old_stamp = stamp; 
 			old_sec = sec;
 			stamp = get_native_tbl();
-			if (__USE_RTC() && stamp < old_stamp) old_stamp -= 1000000000;
+			if (__USE_RTC() && stamp < old_stamp)
+				old_stamp -= 1000000000;
 			elapsed += stamp - old_stamp;
 			sec = ppc_md.get_rtc_time();
 		} while ( sec == old_sec && elapsed < 2*HZ*tb_ticks_per_jiffy);
-		if (sec==old_sec) {
+		if (sec == old_sec)
 			printk("Warning: real time clock seems stuck!\n");
-		}
-		write_lock_irqsave(&xtime_lock, flags);
 		xtime.tv_sec = sec;
-		last_jiffy_stamp(0) = tb_last_stamp = stamp;
 		xtime.tv_usec = 0;
 		/* No update now, we just read the time from the RTC ! */
 		last_rtc_update = xtime.tv_sec;
-		write_unlock_irqrestore(&xtime_lock, flags);
 	}
+
+	last_jiffy_stamp(0) = tb_last_stamp = stamp;
 
 	/* Not exact, but the timer interrupt takes care of this */
 	set_dec(tb_ticks_per_jiffy);

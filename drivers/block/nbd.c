@@ -26,6 +26,8 @@
  *   reduce number of partial TCP segments sent. <steve@chygwyn.com>
  * 01-12-6 Fix deadlock condition by making queue locks independant of
  *   the transmit lock. <steve@chygwyn.com>
+ * 02-10-11 Allow hung xmit to be aborted via SIGKILL & various fixes.
+ *   <Paul.Clements@SteelEye.com> <James.Bottomley@SteelEye.com>
  *
  * possible FIXME: make set_sock / set_blksize / set_size / do_it one syscall
  * why not: would need verify_area and friends, would share yet another 
@@ -101,9 +103,12 @@ static int nbd_xmit(int send, struct socket *sock, char *buf, int size, int msg_
 	oldfs = get_fs();
 	set_fs(get_ds());
 
+	/* Allow interception of SIGKILL only
+	 * Don't allow other signals to interrupt the transmission */
 	spin_lock_irqsave(&current->sigmask_lock, flags);
 	oldset = current->blocked;
 	sigfillset(&current->blocked);
+	sigdelsetmask(&current->blocked, sigmask(SIGKILL));
 	recalc_sigpending(current);
 	spin_unlock_irqrestore(&current->sigmask_lock, flags);
 
@@ -125,6 +130,17 @@ static int nbd_xmit(int send, struct socket *sock, char *buf, int size, int msg_
 			result = sock_sendmsg(sock, &msg, size);
 		else
 			result = sock_recvmsg(sock, &msg, size, 0);
+
+		if (signal_pending(current)) {
+			siginfo_t info;
+			spin_lock_irqsave(&current->sigmask_lock, flags);
+			printk(KERN_WARNING "NBD (pid %d: %s) got signal %d\n",
+				current->pid, current->comm, 
+				dequeue_signal(&current->blocked, &info));
+			spin_unlock_irqrestore(&current->sigmask_lock, flags);
+			result = -EINTR;
+			break;
+		}
 
 		if (result <= 0) {
 #ifdef PARANOIA
@@ -150,7 +166,7 @@ static int nbd_xmit(int send, struct socket *sock, char *buf, int size, int msg_
 
 void nbd_send_req(struct nbd_device *lo, struct request *req)
 {
-	int result;
+	int result = -1;
 	struct nbd_request request;
 	unsigned long size = req->nr_sectors << 9;
 	struct socket *sock = lo->sock;
@@ -163,6 +179,10 @@ void nbd_send_req(struct nbd_device *lo, struct request *req)
 	memcpy(request.handle, &req, sizeof(req));
 
 	down(&lo->tx_lock);
+
+	if (!sock || !lo->sock) {
+		FAIL("Attempted sendmsg to closed socket\n");
+	}
 
 	result = nbd_xmit(1, sock, (char *) &request, sizeof(request), req->cmd == WRITE ? MSG_MORE : 0);
 	if (result <= 0)
@@ -345,10 +365,28 @@ static void do_nbd_request(request_queue_t * q)
 		spin_unlock_irq(&io_request_lock);
 
 		spin_lock(&lo->queue_lock);
+		if (!lo->file) {
+			spin_unlock(&lo->queue_lock);
+			printk(KERN_ERR "nbd: failed between accept and semaphore, file lost\n");
+			req->errors++;
+			nbd_end_request(req);
+			spin_lock_irq(&io_request_lock);
+			continue;
+		}
+
 		list_add_tail(&req->queue, &lo->queue_head);
 		spin_unlock(&lo->queue_lock);
 
 		nbd_send_req(lo, req);
+		if (req->errors) {
+			printk(KERN_ERR "nbd: nbd_send_req failed\n");
+			spin_lock(&lo->queue_lock);
+			list_del(&req->queue);
+			spin_unlock(&lo->queue_lock);
+			nbd_end_request(req);
+			spin_lock_irq(&io_request_lock);
+			continue;
+		}
 
 		spin_lock_irq(&io_request_lock);
 		continue;
@@ -397,12 +435,14 @@ static int nbd_ioctl(struct inode *inode, struct file *file,
 			printk(KERN_ERR "nbd: Some requests are in progress -> can not turn off.\n");
 			return -EBUSY;
 		}
-		spin_unlock(&lo->queue_lock);
 		file = lo->file;
-		if (!file)
+		if (!file) {
+			spin_unlock(&lo->queue_lock);
 			return -EINVAL;
+		}
 		lo->file = NULL;
 		lo->sock = NULL;
+		spin_unlock(&lo->queue_lock);
 		fput(file);
 		return 0;
 	case NBD_SET_SOCK:
@@ -443,6 +483,26 @@ static int nbd_ioctl(struct inode *inode, struct file *file,
 		if (!lo->file)
 			return -EINVAL;
 		nbd_do_it(lo);
+		/* on return tidy up in case we have a signal */
+		/* Forcibly shutdown the socket causing all listeners
+		 * to error
+		 *
+		 * FIXME: This code is duplicated from sys_shutdown, but
+		 * there should be a more generic interface rather than
+		 * calling socket ops directly here */
+		down(&lo->tx_lock);
+		printk(KERN_WARNING "nbd: shutting down socket\n");
+		lo->sock->ops->shutdown(lo->sock, SEND_SHUTDOWN|RCV_SHUTDOWN);
+		lo->sock = NULL;
+		up(&lo->tx_lock);
+		spin_lock(&lo->queue_lock);
+		file = lo->file;
+		lo->file = NULL;
+		spin_unlock(&lo->queue_lock);
+		nbd_clear_que(lo);
+		printk(KERN_WARNING "nbd: queue cleared\n");
+		if (file)
+			fput(file);
 		return lo->harderror;
 	case NBD_CLEAR_QUE:
 		nbd_clear_que(lo);
@@ -523,7 +583,7 @@ static int __init nbd_init(void)
 		init_MUTEX(&nbd_dev[i].tx_lock);
 		nbd_blksizes[i] = 1024;
 		nbd_blksize_bits[i] = 10;
-		nbd_bytesizes[i] = 0x7ffffc00; /* 2GB */
+		nbd_bytesizes[i] = ((u64)0x7ffffc00) << 10; /* 2TB */
 		nbd_sizes[i] = nbd_bytesizes[i] >> BLOCK_SIZE_BITS;
 		register_disk(NULL, MKDEV(MAJOR_NR,i), 1, &nbd_fops,
 				nbd_bytesizes[i]>>9);

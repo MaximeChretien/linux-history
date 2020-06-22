@@ -3,7 +3,7 @@
 /*
  *      es1371.c  --  Creative Ensoniq ES1371.
  *
- *      Copyright (C) 1998-2001  Thomas Sailer (t.sailer@alumni.ethz.ch)
+ *      Copyright (C) 1998-2001, 2003  Thomas Sailer (t.sailer@alumni.ethz.ch)
  *
  *      This program is free software; you can redistribute it and/or modify
  *      it under the terms of the GNU General Public License as published by
@@ -110,6 +110,7 @@
  *    31.01.2001   0.30  Register/Unregister gameport
  *                       Fix SETTRIGGER non OSS API conformity
  *    14.07.2001   0.31  Add list of laptops needing amplifier control
+ *    03.01.2003   0.32  open_mode fixes from Georg Acher <acher@in.tum.de>
  */
 
 /*****************************************************************************/
@@ -1995,7 +1996,7 @@ static int es1371_release(struct inode *inode, struct file *file)
 		stop_adc(s);
 		dealloc_dmabuf(s, &s->dma_adc);
 	}
-	s->open_mode &= (~file->f_mode) & (FMODE_READ|FMODE_WRITE);
+	s->open_mode &= ~(file->f_mode & (FMODE_READ|FMODE_WRITE));
 	up(&s->open_sem);
 	wake_up(&s->open_wait);
 	unlock_kernel();
@@ -2670,7 +2671,7 @@ static int es1371_midi_release(struct inode *inode, struct file *file)
 		set_current_state(TASK_RUNNING);
 	}
 	down(&s->open_sem);
-	s->open_mode &= (~(file->f_mode << FMODE_MIDI_SHIFT)) & (FMODE_MIDI_READ|FMODE_MIDI_WRITE);
+	s->open_mode &= ~((file->f_mode << FMODE_MIDI_SHIFT) & (FMODE_MIDI_READ|FMODE_MIDI_WRITE));
 	spin_lock_irqsave(&s->lock, flags);
 	if (!(s->open_mode & (FMODE_MIDI_READ | FMODE_MIDI_WRITE))) {
 		s->ctrl &= ~CTRL_UART_EN;
@@ -2851,13 +2852,13 @@ static int __devinit es1371_probe(struct pci_dev *pcidev, const struct pci_devic
 	printk(KERN_INFO PFX "found es1371 rev %d at io %#lx irq %u\n"
 	       KERN_INFO PFX "features: joystick 0x%x\n", s->rev, s->io, s->irq, joystick[devindex]);
 	/* register devices */
-	if ((res=(s->dev_audio = register_sound_dsp(&es1371_audio_fops,-1))<0))
+	if ((res=(s->dev_audio = register_sound_dsp(&es1371_audio_fops,-1)))<0)
 		goto err_dev1;
 	if ((res=(s->codec.dev_mixer = register_sound_mixer(&es1371_mixer_fops, -1)) < 0))
 		goto err_dev2;
-	if ((res=(s->dev_dac = register_sound_dsp(&es1371_dac_fops, -1)) < 0))
+	if ((res=(s->dev_dac = register_sound_dsp(&es1371_dac_fops, -1))) < 0)
 		goto err_dev3;
-	if ((res=(s->dev_midi = register_sound_midi(&es1371_midi_fops, -1))<0 ))
+	if ((res=(s->dev_midi = register_sound_midi(&es1371_midi_fops, -1)))<0 )
 		goto err_dev4;
 #ifdef ES1371_DEBUG
 	/* intialize the debug proc device */
@@ -2982,6 +2983,11 @@ static int __devinit es1371_probe(struct pci_dev *pcidev, const struct pci_devic
  err_gp:
 	if (s->gameport.io)
 		release_region(s->gameport.io, JOY_EXTENT);
+#ifdef ES1371_DEBUG
+	if (s->ps)
+		remove_proc_entry("es1371", NULL);
+#endif
+	unregister_sound_midi(s->dev_midi);
  err_dev4:
 	unregister_sound_dsp(s->dev_dac);
  err_dev3:
@@ -3046,7 +3052,7 @@ static int __init init_es1371(void)
 {
 	if (!pci_present())   /* No PCI bus in this machine! */
 		return -ENODEV;
-	printk(KERN_INFO PFX "version v0.30 time " __TIME__ " " __DATE__ "\n");
+	printk(KERN_INFO PFX "version v0.32 time " __TIME__ " " __DATE__ "\n");
 	return pci_module_init(&es1371_driver);
 }
 

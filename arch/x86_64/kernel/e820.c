@@ -1,7 +1,7 @@
 /* 
  * Handle the memory map.
  * The functions here do the job until bootmem takes over.
- * $Id: e820.c,v 1.4 2002/09/19 19:25:32 ak Exp $
+ * $Id: e820.c,v 1.6 2002/10/15 09:35:16 ak Exp $
  */
 #include <linux/config.h>
 #include <linux/kernel.h>
@@ -122,27 +122,51 @@ void __init e820_bootmem_free(pg_data_t *pgdat, unsigned long start,unsigned lon
 }
 
 /*
+ * end_pfn only includes RAM, while end_pfn_map includes all e820 entries.
+ * The direct mapping extends to end_pfn_map, so that we can directly access
+ * ACPI and other tables without having to play with fixmaps.
+ */ 
+unsigned long end_pfn_map; 
+
+/* 
+ * Last pfn which the user wants to use.
+ */
+unsigned long end_user_pfn = MAXMEM>>PAGE_SHIFT;  
+
+/*
  * Find the highest page frame number we have available
  */
+
 void __init e820_end_of_ram(void)
 {
 	int i;
 	end_pfn = 0;
+	
 	for (i = 0; i < e820.nr_map; i++) {
 		struct e820entry *ei = &e820.map[i]; 
 		unsigned long start, end;
 
-		/* count all types of areas for now to map ACPI easily */
 		start = round_up(ei->addr, PAGE_SIZE); 
 		end = round_down(ei->addr + ei->size, PAGE_SIZE); 
 		if (start >= end)
 			continue;
+		if (ei->type == E820_RAM) { 
 		if (end > end_pfn<<PAGE_SHIFT)
 			end_pfn = end>>PAGE_SHIFT;
+		} else { 
+			if (end > end_pfn_map<<PAGE_SHIFT) 
+				end_pfn_map = end>>PAGE_SHIFT;
+		} 
 	}
 
-	if (end_pfn > MAXMEM >> PAGE_SHIFT)
-		end_pfn = MAXMEM >> PAGE_SHIFT;
+	if (end_pfn > end_pfn_map) 
+		end_pfn_map = end_pfn;
+	if (end_pfn_map > MAXMEM>>PAGE_SHIFT)
+		end_pfn_map = MAXMEM>>PAGE_SHIFT;
+	if (end_pfn > end_user_pfn)
+		end_pfn = end_user_pfn;
+	if (end_pfn > end_pfn_map) 
+		end_pfn = end_pfn_map; 
 }
 
 /* 
@@ -481,7 +505,6 @@ void __init parse_mem_cmdline (char ** cmdline_p)
 {
 	char c = ' ', *to = command_line, *from = COMMAND_LINE;
 	int len = 0;
-	int usermem = 0;
 
 	/* Save unparsed command line copy for /proc/cmdline */
 	memcpy(saved_command_line, COMMAND_LINE, COMMAND_LINE_SIZE);
@@ -492,44 +515,23 @@ void __init parse_mem_cmdline (char ** cmdline_p)
 			goto next;
 
 		/*
-		 * "mem=XXX[kKmM]" defines a memory region from HIGH_MEM
-		 * to <mem>, overriding the bios size.
-		 * "mem=XXX[KkmM]@XXX[KkmM]" defines a memory region from
-		 * <start> to <start>+<mem>, overriding the bios size.
+		 * mem=XXX[kKmM] limits kernel memory to XXX+1MB
+		 *
+		 * It would be more logical to count from 0 instead of from
+		 * HIGH_MEMORY, but we keep that for now for i386 compatibility. -AK
 		 */
 		if (!memcmp(from, "mem=", 4)) {
-			if (to != command_line)
-				to--;
-			else if (!memcmp(from+4, "exactmap", 8)) {
-				from += 8+4;
-				e820.nr_map = 0;
-				usermem = 1;
-			} else {
-				/* If the user specifies memory size, we
-				 * blow away any automatically generated
-				 * size
-				 */
-				unsigned long long start_at, mem_size;
- 
-				if (usermem == 0) {
-					/* first time in: zap the whitelist
-					 * and reinitialize it with the
-					 * standard low-memory region.
+			/* 
+			 * No support for custom mapping like i386.
+			 * The reason is that we need to read the e820 map
+			 * anyways to handle the ACPI mappings in the 
+			 * direct map.
+			 * Also on x86-64 there should be always a good e820
+			 * map. This is only an upper limit, you cannot force
+			 * usage of memory not in e820.
 					 */
-					e820.nr_map = 0;
-					usermem = 1;
-					add_memory_region(0, LOWMEMSIZE(), E820_RAM);
-				}
-				mem_size = memparse(from+4, &from);
-				if (*from == '@')
-					start_at = memparse(from+1, &from);
-				else {
-					start_at = HIGH_MEMORY;
-					mem_size -= HIGH_MEMORY;
-					usermem=0;
-				}
-				add_memory_region(start_at, mem_size, E820_RAM);
-			}
+			end_user_pfn = memparse(from+4, &from) + HIGH_MEMORY;
+			end_user_pfn >>= PAGE_SHIFT;
 		}
 #ifdef CONFIG_GART_IOMMU 
 		else if (!memcmp(from,"iommu=",6)) { 
@@ -547,8 +549,4 @@ void __init parse_mem_cmdline (char ** cmdline_p)
 	}
 	*to = '\0';
 	*cmdline_p = command_line;
-	if (usermem) {
-		printk(KERN_INFO "user-defined physical RAM map:\n");
-		e820_print_map("user");
-	}
 }

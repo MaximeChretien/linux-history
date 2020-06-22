@@ -226,10 +226,11 @@ struct priv
 	volatile struct iscp_struct	*iscp;	/* volatile is important */
 	volatile struct scb_struct	*scb;	/* volatile is important */
 	volatile struct tbd_struct	*xmit_buffs[NUM_XMIT_BUFFS];
-	volatile struct transmit_cmd_struct *xmit_cmds[NUM_XMIT_BUFFS];
 #if (NUM_XMIT_BUFFS == 1)
+	volatile struct transmit_cmd_struct *xmit_cmds[2];
 	volatile struct nop_cmd_struct *nop_cmds[2];
 #else
+	volatile struct transmit_cmd_struct *xmit_cmds[NUM_XMIT_BUFFS];
 	volatile struct nop_cmd_struct *nop_cmds[NUM_XMIT_BUFFS];
 #endif
 	volatile int		nop_point,num_recv_buffs;
@@ -1162,7 +1163,12 @@ static int ni52_send_packet(struct sk_buff *skb, struct net_device *dev)
 #endif
 	{
 		memcpy((char *)p->xmit_cbuffs[p->xmit_count],(char *)(skb->data),skb->len);
-		len = (ETH_ZLEN < skb->len) ? skb->len : ETH_ZLEN;
+		len = skb->len;
+		if(len < ETH_ZLEN)
+		{
+			len = ETH_ZLEN;
+			memset((char *)p->xmit_cbuffs[p->xmit_count]+skb->len, 0, len - skb->len);
+		}
 
 #if (NUM_XMIT_BUFFS == 1)
 #	ifdef NO_NOPCOMMANDS

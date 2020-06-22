@@ -261,6 +261,16 @@ void __init init_bsp_APIC(void)
 	apic_write_around(APIC_LVT1, value);
 }
 
+static unsigned long calculate_ldr(unsigned long old)
+{
+	unsigned long id;
+	if(clustered_apic_mode == CLUSTERED_APIC_XAPIC)
+		id = physical_to_logical_apicid(hard_smp_processor_id());
+	else
+		id = 1UL << smp_processor_id();
+	return (old & ~APIC_LDR_MASK)|SET_APIC_LOGICAL_ID(id);
+}
+
 void __init setup_local_APIC (void)
 {
 	unsigned long value, ver, maxlvt;
@@ -298,15 +308,16 @@ void __init setup_local_APIC (void)
 		 * for us. Otherwise put the APIC into clustered or flat
 		 * delivery mode. Must be "all ones" explicitly for 82489DX.
 		 */
-		apic_write_around(APIC_DFR, APIC_DFR_FLAT);
+		if(clustered_apic_mode == CLUSTERED_APIC_XAPIC)
+			apic_write_around(APIC_DFR, APIC_DFR_CLUSTER);
+		else
+			apic_write_around(APIC_DFR, APIC_DFR_FLAT);
 
 		/*
 		 * Set up the logical destination ID.
 		 */
 		value = apic_read(APIC_LDR);
-		value &= ~APIC_LDR_MASK;
-		value |= (1<<(smp_processor_id()+24));
-		apic_write_around(APIC_LDR, value);
+		apic_write_around(APIC_LDR, calculate_ldr(value));
 	}
 
 	/*
@@ -600,6 +611,8 @@ static int __init detect_init_APIC (void)
 	case X86_VENDOR_AMD:
 		if (boot_cpu_data.x86 == 6 && boot_cpu_data.x86_model > 1)
 			break;
+		if (boot_cpu_data.x86 == 15 && cpu_has_apic)
+			break;
 		goto no_apic;
 	case X86_VENDOR_INTEL:
 		if (boot_cpu_data.x86 == 6 ||
@@ -636,7 +649,6 @@ static int __init detect_init_APIC (void)
 	}
 	set_bit(X86_FEATURE_APIC, &boot_cpu_data.x86_capability);
 	mp_lapic_addr = APIC_DEFAULT_PHYS_BASE;
-	boot_cpu_physical_apicid = 0;
 	if (nmi_watchdog != NMI_NONE)
 		nmi_watchdog = NMI_LOCAL_APIC;
 
@@ -1156,8 +1168,7 @@ int __init APIC_init_uniprocessor (void)
 
 	connect_bsp_APIC();
 
-	phys_cpu_present_map = 1;
-	apic_write_around(APIC_ID, boot_cpu_physical_apicid);
+	phys_cpu_present_map = 1 << boot_cpu_physical_apicid;
 
 	apic_pm_init2();
 

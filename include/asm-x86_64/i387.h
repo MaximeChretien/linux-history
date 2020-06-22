@@ -17,8 +17,8 @@
 #include <asm/sigcontext.h>
 #include <asm/user.h>
 
-extern void init_fpu(void);
-int save_i387( struct _fpstate *buf);
+extern void init_fpu(struct task_struct *child);
+extern int save_i387(struct _fpstate *buf);
 
 /*
  * FPU lazy state save handling...
@@ -110,7 +110,7 @@ static inline void kernel_fpu_begin(void)
 {
 	struct task_struct *tsk = current;
 	if (tsk->flags & PF_USEDFPU) {
-		asm volatile("fxsave %0 ; fnclex"
+		asm volatile("rex64 ; fxsave %0 ; fnclex"
 			      : "=m" (tsk->thread.i387.fxsave));
 		tsk->flags &= ~PF_USEDFPU;
 		return;
@@ -133,19 +133,5 @@ static inline int restore_i387(struct _fpstate *buf)
 {
 	return restore_fpu_checking((struct i387_fxsave_struct *)buf);
 }
-
-
-static inline void empty_fpu(struct task_struct *child)
-{
-	if (!child->used_math) {
-		/* Simulate an empty FPU. */
-		memset(&child->thread.i387.fxsave,0,sizeof(struct i387_fxsave_struct));
-		child->thread.i387.fxsave.cwd = 0x037f; 
-		child->thread.i387.fxsave.swd = 0;
-		child->thread.i387.fxsave.twd = 0; 
-		child->thread.i387.fxsave.mxcsr = 0x1f80;
-	}
-	child->used_math = 1; 
-}		
 
 #endif /* __ASM_X86_64_I387_H */

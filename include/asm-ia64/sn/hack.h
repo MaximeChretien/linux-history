@@ -1,10 +1,9 @@
 /*
- *
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2000-2001 Silicon Graphics, Inc. All rights reserved.
+ * Copyright (C) 2000-2002 Silicon Graphics, Inc. All rights reserved.
  */
 
 
@@ -21,9 +20,6 @@
 typedef int cred_t;	/* This is for compilation reasons */
 struct cred { int x; };
 
-
-#define mrlock(_s, _t, _u)
-#define mrunlock(_s)
 
 /*
  * Hardware Graph routines that are currently stubbed!

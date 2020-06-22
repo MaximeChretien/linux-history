@@ -35,7 +35,7 @@
 #include "sa1111.h"
 
 struct resource sa1111_resource = {
-	name:	"SA1111",
+	.name	= "SA1111",
 };
 
 EXPORT_SYMBOL(sa1111_resource);

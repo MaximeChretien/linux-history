@@ -55,7 +55,7 @@ __handle_user_windows:
 		mov			%l5, %o2
 		mov			%l6, %o3
 
-		add			%sp, STACK_BIAS + REGWIN_SZ, %o1
+		add			%sp, PTREGS_OFF, %o1
 		call			do_signal
 		 wrpr			%g0, RTRAP_PSTATE, %pstate
 		wrpr			%g0, RTRAP_PSTATE_IRQOFF, %pstate
@@ -94,7 +94,7 @@ __handle_perfctrs:
 		clr			%o0
 		mov			%l5, %o2
 		mov			%l6, %o3
-		add			%sp, STACK_BIAS + REGWIN_SZ, %o1
+		add			%sp, PTREGS_OFF, %o1
 
 		call			do_signal
 		 wrpr			%g0, RTRAP_PSTATE, %pstate
@@ -122,7 +122,7 @@ __handle_signal:
 		clr			%o0
 		mov			%l5, %o2
 		mov			%l6, %o3
-		add			%sp, STACK_BIAS + REGWIN_SZ, %o1
+		add			%sp, PTREGS_OFF, %o1
 		call			do_signal
 		 wrpr			%g0, RTRAP_PSTATE, %pstate
 		wrpr			%g0, RTRAP_PSTATE_IRQOFF, %pstate
@@ -174,6 +174,7 @@ rtrap_xcall:
 		 * sched+signal checks with IRQs disabled.
 		 */
 to_user:	wrpr			%g0, RTRAP_PSTATE_IRQOFF, %pstate
+		wrpr			0, %pil
 __handle_preemption_continue:
 		ldx			[%g6 + AOFF_task_need_resched], %l0
 		brnz,pn			%l0, __handle_preemption

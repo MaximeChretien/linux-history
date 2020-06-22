@@ -58,17 +58,17 @@
 
 #include "bnep.h"
 
-#ifndef CONFIG_BNEP_DEBUG
+#ifndef CONFIG_BLUEZ_BNEP_DEBUG
 #undef  BT_DBG
 #define BT_DBG(D...)
 #endif
 
-#define VERSION "1.0"
+#define VERSION "1.1"
 
 static LIST_HEAD(bnep_session_list);
 static DECLARE_RWSEM(bnep_session_sem);
 
-static struct bnep_session *__bnep_get_session(__u8 *dst)
+static struct bnep_session *__bnep_get_session(u8 *dst)
 {
 	struct bnep_session *s;
 	struct list_head *p;
@@ -104,7 +104,7 @@ static int bnep_send(struct bnep_session *s, void *data, size_t len)
 	return sock->ops->sendmsg(sock, &s->msg, len, NULL);
 }
 
-static int bnep_send_rsp(struct bnep_session *s, __u8 ctrl, __u16 resp)
+static int bnep_send_rsp(struct bnep_session *s, u8 ctrl, u16 resp)
 {
 	struct bnep_control_rsp rsp;
 	rsp.type = BNEP_CONTROL;
@@ -113,23 +113,22 @@ static int bnep_send_rsp(struct bnep_session *s, __u8 ctrl, __u16 resp)
 	return bnep_send(s, &rsp, sizeof(rsp));
 }
 
-static int bnep_ctrl_set_netfilter(struct bnep_session *s, struct sk_buff *skb)
+static int bnep_ctrl_set_netfilter(struct bnep_session *s, u16 *data, int len)
 {
-	__u16 *data;
 	int n;
-	
-	data = (void *) skb->data;
-	if (!skb_pull(skb, 2))
-		return -EILSEQ;
-	n = ntohs(get_unaligned(data));
 
-	data = (void *) skb->data;
-	if (!skb_pull(skb, n))
+	if (len < 2)
+		return -EILSEQ;
+	
+	n = ntohs(get_unaligned(data));
+	data++; len -= 2;
+
+	if (len < n)
 		return -EILSEQ;
 
 	BT_DBG("filter len %d", n);
 
-#ifdef CONFIG_BNEP_PROTO_FILTER
+#ifdef CONFIG_BLUEZ_BNEP_PROTO_FILTER
 	n /= 4;
 	if (n <= BNEP_MAX_PROTO_FILTERS) {
 		struct bnep_proto_filter *f = s->proto_filter;
@@ -155,23 +154,22 @@ static int bnep_ctrl_set_netfilter(struct bnep_session *s, struct sk_buff *skb)
 	return 0;
 }
 
-static int bnep_ctrl_set_mcfilter(struct bnep_session *s, struct sk_buff *skb)
+static int bnep_ctrl_set_mcfilter(struct bnep_session *s, u8 *data, int len)
 {
-	u8 *data;
 	int n;
-	
-	data = (void *) skb->data;
-	if (!skb_pull(skb, 2))
-		return -EILSEQ;
-	n = ntohs(get_unaligned((u16 *) data));
 
-	data = (void *) skb->data;
-	if (!skb_pull(skb, n))
+	if (len < 2)
+		return -EILSEQ;
+	
+	n = ntohs(get_unaligned((u16 *) data)); 
+	data += 2; len -= 2;
+
+	if (len < n)
 		return -EILSEQ;
 
 	BT_DBG("filter len %d", n);
 
-#ifdef CONFIG_BNEP_MC_FILTER
+#ifdef CONFIG_BLUEZ_BNEP_MC_FILTER
 	n /= (ETH_ALEN * 2);
 
 	if (n > 0) {
@@ -210,11 +208,12 @@ static int bnep_ctrl_set_mcfilter(struct bnep_session *s, struct sk_buff *skb)
 	return 0;
 }
 
-static int bnep_rx_control(struct bnep_session *s, struct sk_buff *skb)
+static int bnep_rx_control(struct bnep_session *s, void *data, int len)
 {
+	u8  cmd = *(u8 *)data;
 	int err = 0;
-	__u8 cmd = *(__u8 *) skb->data;
-	skb_pull(skb, 1);
+
+	data++; len--;
 	
 	switch (cmd) {
 	case BNEP_CMD_NOT_UNDERSTOOD:
@@ -226,15 +225,15 @@ static int bnep_rx_control(struct bnep_session *s, struct sk_buff *skb)
 		break;
 		
 	case BNEP_FILTER_NET_TYPE_SET:
-		err = bnep_ctrl_set_netfilter(s, skb);
+		err = bnep_ctrl_set_netfilter(s, data, len);
 		break;
 
 	case BNEP_FILTER_MULTI_ADDR_SET:
-		err = bnep_ctrl_set_mcfilter(s, skb);
+		err = bnep_ctrl_set_mcfilter(s, data, len);
 		break;
 
 	default: {
-			__u8 pkt[3];
+			u8 pkt[3];
 			pkt[0] = BNEP_CONTROL;
 			pkt[1] = BNEP_CMD_NOT_UNDERSTOOD;
 			pkt[2] = cmd;
@@ -262,13 +261,16 @@ static int bnep_rx_extension(struct bnep_session *s, struct sk_buff *skb)
 		
 		switch (h->type & BNEP_TYPE_MASK) {
 		case BNEP_EXT_CONTROL:
-			err = bnep_rx_control(s, skb);
+			bnep_rx_control(s, skb->data, skb->len);
 			break;
 
 		default:
-			/* Unknown extension */
-			if (!skb_pull(skb, h->len))
-				err = -EILSEQ;
+			/* Unknown extension, skip it. */
+			break;
+		}
+	
+		if (!skb_pull(skb, h->len)) {
+			err = -EILSEQ;
 			break;
 		}
 	} while (!err && (h->type & BNEP_EXT_HEADER));
@@ -276,7 +278,7 @@ static int bnep_rx_extension(struct bnep_session *s, struct sk_buff *skb)
 	return err;
 }
 
-static __u8 __bnep_rx_hlen[] = {
+static u8 __bnep_rx_hlen[] = {
 	ETH_HLEN,     /* BNEP_GENERAL */
 	0,            /* BNEP_CONTROL */
 	2,            /* BNEP_COMPRESSED */
@@ -289,18 +291,18 @@ static inline int bnep_rx_frame(struct bnep_session *s, struct sk_buff *skb)
 {
 	struct net_device *dev = &s->dev;
 	struct sk_buff *nskb;
-	__u8 type;
+	u8 type;
 
 	dev->last_rx = jiffies;
 	s->stats.rx_bytes += skb->len;
 
-	type = *(__u8 *) skb->data; skb_pull(skb, 1);
+	type = *(u8 *) skb->data; skb_pull(skb, 1);
 
 	if ((type & BNEP_TYPE_MASK) > BNEP_RX_TYPES)
 		goto badframe;
 	
 	if ((type & BNEP_TYPE_MASK) == BNEP_CONTROL) {
-		bnep_rx_control(s, skb);
+		bnep_rx_control(s, skb->data, skb->len);
 		kfree_skb(skb);
 		return 0;
 	}
@@ -311,7 +313,7 @@ static inline int bnep_rx_frame(struct bnep_session *s, struct sk_buff *skb)
 	if (!skb_pull(skb, __bnep_rx_hlen[type & BNEP_TYPE_MASK]))
 		goto badframe;
 
-	s->eh.h_proto = get_unaligned((__u16 *) (skb->data - 2));
+	s->eh.h_proto = get_unaligned((u16 *) (skb->data - 2));
 
 	if (type & BNEP_EXT_HEADER) {
 		if (bnep_rx_extension(s, skb) < 0)
@@ -322,7 +324,7 @@ static inline int bnep_rx_frame(struct bnep_session *s, struct sk_buff *skb)
 	if (ntohs(s->eh.h_proto) == 0x8100) {
 		if (!skb_pull(skb, 4))
 			goto badframe;
-		s->eh.h_proto = get_unaligned((__u16 *) (skb->data - 2));
+		s->eh.h_proto = get_unaligned((u16 *) (skb->data - 2));
 	}
 	
 	/* We have to alloc new skb and copy data here :(. Because original skb
@@ -344,7 +346,7 @@ static inline int bnep_rx_frame(struct bnep_session *s, struct sk_buff *skb)
 	case BNEP_COMPRESSED_SRC_ONLY:
 		memcpy(__skb_put(nskb, ETH_ALEN), s->eh.h_dest, ETH_ALEN);
 		memcpy(__skb_put(nskb, ETH_ALEN), skb->mac.raw, ETH_ALEN);
-		put_unaligned(s->eh.h_proto, (__u16 *) __skb_put(nskb, 2));
+		put_unaligned(s->eh.h_proto, (u16 *) __skb_put(nskb, 2));
 		break;
 
 	case BNEP_COMPRESSED_DST_ONLY:
@@ -354,7 +356,7 @@ static inline int bnep_rx_frame(struct bnep_session *s, struct sk_buff *skb)
 
 	case BNEP_GENERAL:
 		memcpy(__skb_put(nskb, ETH_ALEN * 2), skb->mac.raw, ETH_ALEN * 2);
-		put_unaligned(s->eh.h_proto, (__u16 *) __skb_put(nskb, 2));
+		put_unaligned(s->eh.h_proto, (u16 *) __skb_put(nskb, 2));
 		break;
 	}
 
@@ -374,7 +376,7 @@ badframe:
 	return 0;
 }
 
-static __u8 __bnep_tx_types[] = {
+static u8 __bnep_tx_types[] = {
 	BNEP_GENERAL,
 	BNEP_COMPRESSED_SRC_ONLY,
 	BNEP_COMPRESSED_DST_ONLY,
@@ -387,7 +389,7 @@ static inline int bnep_tx_frame(struct bnep_session *s, struct sk_buff *skb)
 	struct socket *sock = s->sock;
 	struct iovec iv[3];
 	int len = 0, il = 0;
-	__u8 type = 0;
+	u8 type = 0;
 
 	BT_DBG("skb %p dev %p type %d", skb, skb->dev, skb->pkt_type);
 
@@ -503,11 +505,11 @@ static int bnep_session(void *arg)
 	return 0;
 }
 
-int bnep_add_connection(struct bnep_conadd_req *req, struct socket *sock)
+int bnep_add_connection(struct bnep_connadd_req *req, struct socket *sock)
 {
 	struct net_device *dev;
 	struct bnep_session *s, *ss;
-	__u8 dst[ETH_ALEN], src[ETH_ALEN];
+	u8 dst[ETH_ALEN], src[ETH_ALEN];
 	int err;
 
 	BT_DBG("");
@@ -535,6 +537,8 @@ int bnep_add_connection(struct bnep_conadd_req *req, struct socket *sock)
 	else
 		strcpy(dev->name, "bnep%d");
 
+	memset(dev->broadcast, 0xff, ETH_ALEN);
+
 	/* This is rx header therefor addresses are swaped.
 	 * ie eh.h_dest is our local address. */
 	memcpy(s->eh.h_dest,   &src, ETH_ALEN);
@@ -546,12 +550,12 @@ int bnep_add_connection(struct bnep_conadd_req *req, struct socket *sock)
 	
 	s->msg.msg_flags = MSG_NOSIGNAL;
 
-#ifdef CONFIG_BNEP_MC_FILTER
+#ifdef CONFIG_BLUEZ_BNEP_MC_FILTER
 	/* Set default mc filter */
 	set_bit(bnep_mc_hash(dev->broadcast), &s->mc_filter);
 #endif
 	
-#ifdef CONFIG_BNEP_PROTO_FILTER
+#ifdef CONFIG_BLUEZ_BNEP_PROTO_FILTER
 	/* Set default protocol filter */
 
 	/* (IPv4, ARP)  */
@@ -592,7 +596,7 @@ failed:
 	return err;
 }
 
-int bnep_del_connection(struct bnep_condel_req *req)
+int bnep_del_connection(struct bnep_conndel_req *req)
 {
 	struct bnep_session *s;
 	int  err = 0;
@@ -617,7 +621,7 @@ int bnep_del_connection(struct bnep_condel_req *req)
 	return err;
 }
 
-static void __bnep_copy_ci(struct bnep_coninfo *ci, struct bnep_session *s)
+static void __bnep_copy_ci(struct bnep_conninfo *ci, struct bnep_session *s)
 {
 	memcpy(ci->dst, s->eh.h_source, ETH_ALEN);
 	strcpy(ci->device, s->dev.name);
@@ -626,7 +630,7 @@ static void __bnep_copy_ci(struct bnep_coninfo *ci, struct bnep_session *s)
 	ci->role  = s->role;
 }
 
-int bnep_get_conlist(struct bnep_conlist_req *req)
+int bnep_get_connlist(struct bnep_connlist_req *req)
 {
 	struct list_head *p;
 	int err = 0, n = 0;
@@ -635,7 +639,7 @@ int bnep_get_conlist(struct bnep_conlist_req *req)
 
 	list_for_each(p, &bnep_session_list) {
 		struct bnep_session *s;
-		struct bnep_coninfo ci;
+		struct bnep_conninfo ci;
 
 		s = list_entry(p, struct bnep_session, list);
 
@@ -657,7 +661,7 @@ int bnep_get_conlist(struct bnep_conlist_req *req)
 	return err;
 }
 
-int bnep_get_coninfo(struct bnep_coninfo *ci)
+int bnep_get_conninfo(struct bnep_conninfo *ci)
 {
 	struct bnep_session *s;
 	int err = 0;
@@ -676,17 +680,14 @@ int bnep_get_coninfo(struct bnep_coninfo *ci)
 
 static int __init bnep_init_module(void)
 {
-	BT_INFO("BNEP: BNEP2 ver %s\n"
-		"BNEP: Copyright (C) 2002 Inventel\n"
-		"BNEP: Written 2001,2002 by\n"
-		"BNEP: \tClement Moreau <clement.moreau@inventel.fr> "
-			"David Libault <david.libault@inventel.fr>\n"
-		"BNEP: Copyright (C) 2002 Maxim Krasnyanskiy <maxk@qualcomm.com>",
-			VERSION);
-
+	bnep_crc32_init();
 	bnep_sock_init();
 
-	bnep_crc32_init();
+	BT_INFO("BlueZ BNEP ver %s", VERSION);
+	BT_INFO("Copyright (C) 2001,2002 Inventel Systemes");
+	BT_INFO("Written 2001,2002 by Clement Moreau <clement.moreau@inventel.fr>");
+	BT_INFO("Written 2001,2002 by David Libault <david.libault@inventel.fr>");
+	BT_INFO("Copyright (C) 2002 Maxim Krasnyanskiy <maxk@qualcomm.com>");
 
 	return 0;
 }
@@ -694,13 +695,12 @@ static int __init bnep_init_module(void)
 static void __exit bnep_cleanup_module(void)
 {
 	bnep_sock_cleanup();
-
 	bnep_crc32_cleanup();
 }
 
 module_init(bnep_init_module);
 module_exit(bnep_cleanup_module);
 
-MODULE_DESCRIPTION("BNEP2 ver " VERSION);
-MODULE_AUTHOR("David Libault <david.libault@inventel.fr> Maxim Krasnyanskiy <maxk@qualcomm.com>");
+MODULE_DESCRIPTION("BlueZ BNEP ver " VERSION);
+MODULE_AUTHOR("David Libault <david.libault@inventel.fr>, Maxim Krasnyanskiy <maxk@qualcomm.com>");
 MODULE_LICENSE("GPL");

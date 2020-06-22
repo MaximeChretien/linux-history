@@ -49,7 +49,7 @@
  *  (mailto:sjralston1@netscape.net)
  *  (mailto:Pam.Delaney@lsil.com)
  *
- *  $Id: mptbase.c,v 1.121 2002/07/23 18:56:59 pdelaney Exp $
+ *  $Id: mptbase.c,v 1.126 2002/12/16 15:28:45 pdelaney Exp $
  */
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
@@ -208,6 +208,7 @@ static int	GetIoUnitPage2(MPT_ADAPTER *ioc);
 static int	mpt_GetScsiPortSettings(MPT_ADAPTER *ioc, int portnum);
 static int	mpt_readScsiDevicePageHeaders(MPT_ADAPTER *ioc, int portnum);
 static int	mpt_findImVolumes(MPT_ADAPTER *ioc);
+static void 	mpt_read_ioc_pg_1(MPT_ADAPTER *ioc);
 static void	mpt_timer_expired(unsigned long data);
 static int	SendEventNotification(MPT_ADAPTER *ioc, u8 EvSwitch);
 static int	SendEventAck(MPT_ADAPTER *ioc, EventNotificationReply_t *evnp);
@@ -1156,7 +1157,7 @@ mpt_pci_scan(void)
 	dprintk((KERN_INFO MYNAM ": Checking for MPT adapters...\n"));
 
 	/*
-	 *  NOTE: The 929, 929X and 1030 will appear as 2 separate PCI devices,
+	 *  NOTE: The 929, 929X, 1030 and 1035 will appear as 2 separate PCI devices,
 	 *  one for each channel.
 	 */
 	pci_for_each_dev(pdev) {
@@ -1170,18 +1171,14 @@ mpt_pci_scan(void)
 		    (pdev->device != MPI_MANUFACTPAGE_DEVICEID_FC929X) &&
 		    (pdev->device != MPI_MANUFACTPAGE_DEVICEID_FC919X) &&
 		    (pdev->device != MPI_MANUFACTPAGE_DEVID_53C1030) &&
-#if 0
-		    /* FIXME! C103x family */
-		    (pdev->device != MPI_MANUFACTPAGE_DEVID_53C1030_ZC) &&
-		    (pdev->device != MPI_MANUFACTPAGE_DEVID_53C1035) &&
-#endif
+		    (pdev->device != MPI_MANUFACTPAGE_DEVID_1030_53C1035) &&
 		    1) {
 			dprintk((KERN_INFO MYNAM ": Skipping LSI device=%04xh\n", pdev->device));
 			continue;
 		}
 
 		/* GRRRRR
-		 * dual function devices (929, 929X, 1030) may be presented in Func 1,0 order,
+		 * dual function devices (929, 929X, 1030, 1035) may be presented in Func 1,0 order,
 		 * but we'd really really rather have them in Func 0,1 order.
 		 * Do some kind of look ahead here...
 		 */
@@ -1416,23 +1413,52 @@ mpt_adapter_install(struct pci_dev *pdev)
 	else if (pdev->device == MPI_MANUFACTPAGE_DEVICEID_FC929X) {
 		ioc->chip_type = FC929X;
 		ioc->prod_name = "LSIFC929X";
+		{
+			/* 929X Chip Fix. Set Split transactions level
+			 * for PCIX. Set bits 5 - 6 to zero, turn on bit 4.
+			 */
+			u16 pcixcmd = 0;
+			pci_read_config_word(pdev, 0x6a, &pcixcmd);
+			pcixcmd &= 0xFF9F;
+			pcixcmd |= 0x0010;
+			pci_write_config_word(pdev, 0x6a, pcixcmd);
+		}
 	}
 	else if (pdev->device == MPI_MANUFACTPAGE_DEVICEID_FC919X) {
 		ioc->chip_type = FC919X;
 		ioc->prod_name = "LSIFC919X";
+		{
+			/* 919X Chip Fix. Set Split transactions level
+			 * for PCIX. Set bits 5 - 6 to zero, turn on bit 4.
+			 */
+			u16 pcixcmd = 0;
+			pci_read_config_word(pdev, 0x6a, &pcixcmd);
+			pcixcmd &= 0xFF9F;
+			pcixcmd |= 0x0010;
+			pci_write_config_word(pdev, 0x6a, pcixcmd);
+		}
 	}
 	else if (pdev->device == MPI_MANUFACTPAGE_DEVID_53C1030) {
 		ioc->chip_type = C1030;
 		ioc->prod_name = "LSI53C1030";
 		{
+			u8 revision;
+
 			/* 1030 Chip Fix. Disable Split transactions
-			 * for PCIX. Set bits 4 - 6 to zero.
+			 * for PCIX. Set bits 4 - 6 to zero if Rev < C0( = 8)
 			 */
-			u16 pcixcmd = 0;
-			pci_read_config_word(pdev, 0x6a, &pcixcmd);
-			pcixcmd &= 0xFF8F;
-			pci_write_config_word(pdev, 0x6a, pcixcmd);
+			pci_read_config_byte(pdev, PCI_CLASS_REVISION, &revision);
+			if (revision < 0x08) {
+				u16 pcixcmd = 0;
+				pci_read_config_word(pdev, 0x6a, &pcixcmd);
+				pcixcmd &= 0xFF8F;
+				pci_write_config_word(pdev, 0x6a, pcixcmd);
+			}
 		}
+	}
+	else if (pdev->device == MPI_MANUFACTPAGE_DEVID_1030_53C1035) {
+		ioc->chip_type = C1035;
+		ioc->prod_name = "LSI53C1035";
 	}
 
 	sprintf(ioc->name, "ioc%d", ioc->id);
@@ -1444,6 +1470,12 @@ mpt_adapter_install(struct pci_dev *pdev)
 	CHIPREG_WRITE32(&ioc->chip->IntMask, 0xFFFFFFFF);
 	ioc->active = 0;
 	CHIPREG_WRITE32(&ioc->chip->IntStatus, 0);
+
+	/* tack onto tail of our MPT adapter list */
+	Q_ADD_TAIL(&MptAdapters, ioc, MPT_ADAPTER);
+
+	/* Set lookup ptr. */
+	mpt_adapters[ioc->id] = ioc;
 
 	ioc->pci_irq = -1;
 	if (pdev->irq) {
@@ -1457,6 +1489,8 @@ mpt_adapter_install(struct pci_dev *pdev)
 			printk(MYIOC_s_ERR_FMT "Unable to allocate interrupt %s!\n",
 					ioc->name, __irq_itoa(pdev->irq));
 #endif
+			Q_DEL_ITEM(ioc);
+			mpt_adapters[ioc->id] = NULL;
 			iounmap(mem);
 			kfree(ioc);
 			return -EBUSY;
@@ -1473,16 +1507,11 @@ mpt_adapter_install(struct pci_dev *pdev)
 #endif
 	}
 
-	/* tack onto tail of our MPT adapter list */
-	Q_ADD_TAIL(&MptAdapters, ioc, MPT_ADAPTER);
-
-	/* Set lookup ptr. */
-	mpt_adapters[ioc->id] = ioc;
-
 	/* NEW!  20010220 -sralston
-	 * Check for "bound ports" (929, 929X, 1030) to reduce redundant resets.
+	 * Check for "bound ports" (929, 929X, 1030, 1035) to reduce redundant resets.
 	 */
-	if ((ioc->chip_type == FC929) || (ioc->chip_type == C1030) || (ioc->chip_type == FC929X))
+	if ((ioc->chip_type == FC929) || (ioc->chip_type == C1030) 
+			|| (ioc->chip_type == C1035) || (ioc->chip_type == FC929X))
 		mpt_detect_bound_ports(ioc, pdev);
 
 	if ((r = mpt_do_ioc_recovery(ioc, MPT_HOSTEVENT_IOC_BRINGUP, CAN_SLEEP)) != 0) {
@@ -1612,6 +1641,9 @@ mpt_do_ioc_recovery(MPT_ADAPTER *ioc, u32 reason, int sleepFlag)
 				printk(KERN_WARNING MYNAM ": firmware upload failure!\n");
 			/* Handle the alt IOC too */
 			if ((alt_ioc_ready) && (ioc->alt_ioc->upload_fw)){
+				ddlprintk((MYIOC_s_INFO_FMT
+					"Alt-ioc firmware upload required!\n", 
+					ioc->name));
 				r = mpt_do_upload(ioc->alt_ioc, sleepFlag);
 				if (r != 0)
 					printk(KERN_WARNING MYNAM ": firmware upload failure!\n");
@@ -1688,6 +1720,10 @@ mpt_do_ioc_recovery(MPT_ADAPTER *ioc, u32 reason, int sleepFlag)
 			 */
 			if (ioc->facts.MsgVersion >= 0x0102)
 				mpt_findImVolumes(ioc);
+
+			/* Check, and possibly reset, the coalescing value
+			 */
+			mpt_read_ioc_pg_1(ioc);
 		}
 
 		GetIoUnitPage2(ioc);
@@ -1726,7 +1762,7 @@ mpt_do_ioc_recovery(MPT_ADAPTER *ioc, u32 reason, int sleepFlag)
 /*
  *	mpt_detect_bound_ports - Search for PCI bus/dev_function
  *	which matches PCI bus/dev_function (+/-1) for newly discovered 929,
- *	929X or 1030.
+ *	929X, 1030 or 1035.
  *	@ioc: Pointer to MPT adapter structure
  *	@pdev: Pointer to (struct pci_dev) structure
  *
@@ -1782,23 +1818,22 @@ mpt_adapter_disable(MPT_ADAPTER *this, int freeup)
 	if (this != NULL) {
 		int sz;
 		u32 state;
+		int ret;
 
 		/* Disable the FW */
 		state = mpt_GetIocState(this, 1);
 		if (state == MPI_IOC_STATE_OPERATIONAL) {
-			if (SendIocReset(this, MPI_FUNCTION_IOC_MESSAGE_UNIT_RESET, NO_SLEEP) != 0)
-				(void) KickStart(this, 1, NO_SLEEP);
+			SendIocReset(this, MPI_FUNCTION_IOC_MESSAGE_UNIT_RESET, NO_SLEEP);
 		}
 
 		if (this->cached_fw != NULL) {
 			ddlprintk((KERN_INFO MYNAM ": Pushing FW onto adapter\n"));
 
-			if ((state = mpt_downloadboot(this, NO_SLEEP)) < 0) {
+			if ((ret = mpt_downloadboot(this, NO_SLEEP)) < 0) {
 				printk(KERN_WARNING MYNAM 
-					": firmware downloadboot failure (%d)!\n", state);
+					": firmware downloadboot failure (%d)!\n", ret);
 			}
 		}
-
 
 		/* Disable adapter interrupts! */
 		CHIPREG_WRITE32(&this->chip->IntMask, 0xFFFFFFFF);
@@ -1894,6 +1929,11 @@ mpt_adapter_dispose(MPT_ADAPTER *this)
 		int sz_first, sz_last;
 
 		sz_first = this->alloc_total;
+
+		if (this->alt_ioc != NULL) {
+			this->alt_ioc->alt_ioc = NULL;
+			this->alt_ioc = NULL;
+		}
 
 		mpt_adapter_disable(this, 1);
 
@@ -2006,8 +2046,19 @@ MakeIocReady(MPT_ADAPTER *ioc, int force, int sleepFlag)
 	}
 
 	/* Is it already READY? */
-	if (!statefault && (ioc_state & MPI_IOC_STATE_MASK) == MPI_IOC_STATE_READY)
-		return 0;
+	if (!statefault && (ioc_state & MPI_IOC_STATE_MASK) == MPI_IOC_STATE_READY) {
+		if ((int)ioc->chip_type <= (int)FC929)
+			return 0;
+		else {
+			/* Workaround from broken 1030 FW.
+			 * Force a diagnostic reset if fails.
+			 */
+			if ((r = SendIocReset(ioc, MPI_FUNCTION_IOC_MESSAGE_UNIT_RESET, sleepFlag)) == 0)
+				return 0;
+			else
+				statefault = 4;
+		}
+	} 
 
 	/*
 	 *	Check to see if IOC is in FAULT state.
@@ -2260,9 +2311,6 @@ GetIocFacts(MPT_ADAPTER *ioc, int sleepFlag, int reason)
 			ioc->reply_sz = ioc->req_sz;
 			ioc->reply_depth = MIN(MPT_DEFAULT_REPLY_DEPTH, facts->ReplyQueueDepth);
 
-			/* 1030 - should we use a smaller DEFAULT_REPLY_DEPTH?
-			 * FIX
-			 */
 			dprintk((MYIOC_s_INFO_FMT "reply_sz=%3d, reply_depth=%4d\n",
 				ioc->name, ioc->reply_sz, ioc->reply_depth));
 			dprintk((MYIOC_s_INFO_FMT "req_sz  =%3d, req_depth  =%4d\n",
@@ -2860,6 +2908,7 @@ mpt_downloadboot(MPT_ADAPTER *ioc, int sleepFlag)
 	 */
 	diag0val = CHIPREG_READ32(&ioc->chip->Diagnostic);
 	while ((diag0val & MPI_DIAG_DRWE) == 0) {
+		CHIPREG_WRITE32(&ioc->chip->WriteSequence, 0xFF);
 		CHIPREG_WRITE32(&ioc->chip->WriteSequence, MPI_WRSEQ_1ST_KEY_VALUE);
 		CHIPREG_WRITE32(&ioc->chip->WriteSequence, MPI_WRSEQ_2ND_KEY_VALUE);
 		CHIPREG_WRITE32(&ioc->chip->WriteSequence, MPI_WRSEQ_3RD_KEY_VALUE);
@@ -3095,6 +3144,18 @@ KickStart(MPT_ADAPTER *ioc, int force, int sleepFlag)
 	int cnt = 0;
 
 	dprintk((KERN_WARNING MYNAM ": KickStarting %s!\n", ioc->name));
+	if ((int)ioc->chip_type > (int)FC929) {
+		/* Always issue a Msg Unit Reset first. This will clear some
+		 * SCSI bus hang conditions.
+		 */
+		SendIocReset(ioc, MPI_FUNCTION_IOC_MESSAGE_UNIT_RESET, sleepFlag);
+
+		if (sleepFlag == CAN_SLEEP) {
+			schedule_timeout(HZ);
+		} else {
+			mdelay (1000);
+		}
+	}
 
 	hard_reset_done = mpt_diag_reset(ioc, force, sleepFlag);
 	if (hard_reset_done < 0)
@@ -3173,6 +3234,7 @@ mpt_diag_reset(MPT_ADAPTER *ioc, int ignore, int sleepFlag)
 			/* Write magic sequence to WriteSequence register
 			 * Loop until in diagnostic mode
 			 */
+			CHIPREG_WRITE32(&ioc->chip->WriteSequence, 0xFF);
 			CHIPREG_WRITE32(&ioc->chip->WriteSequence, MPI_WRSEQ_1ST_KEY_VALUE);
 			CHIPREG_WRITE32(&ioc->chip->WriteSequence, MPI_WRSEQ_2ND_KEY_VALUE);
 			CHIPREG_WRITE32(&ioc->chip->WriteSequence, MPI_WRSEQ_3RD_KEY_VALUE);
@@ -3208,7 +3270,7 @@ mpt_diag_reset(MPT_ADAPTER *ioc, int ignore, int sleepFlag)
 				ioc->name, diag0val, diag1val));
 #endif
 		/* Write the PreventIocBoot bit */
-		if (ioc->facts.Flags & MPI_IOCFACTS_FLAGS_FW_DOWNLOAD_BOOT) {
+		if ((ioc->cached_fw) || (ioc->alt_ioc && ioc->alt_ioc->cached_fw)) {
 			diag0val |= MPI_DIAG_PREVENT_IOC_BOOT;
 			CHIPREG_WRITE32(&ioc->chip->Diagnostic, diag0val);
 		}
@@ -3254,7 +3316,7 @@ mpt_diag_reset(MPT_ADAPTER *ioc, int ignore, int sleepFlag)
 			/* FIXME?  Examine results here? */
 		}
 
-		if (ioc->facts.Flags & MPI_IOCFACTS_FLAGS_FW_DOWNLOAD_BOOT) {
+		if ((ioc->cached_fw) || (ioc->alt_ioc && ioc->alt_ioc->cached_fw)) {
 			/* If the DownloadBoot operation fails, the
 			 * IOC will be left unusable. This is a fatal error
 			 * case.  _diag_reset will return < 0
@@ -4410,17 +4472,13 @@ static int
 mpt_findImVolumes(MPT_ADAPTER *ioc)
 {
 	IOCPage2_t		*pIoc2 = NULL;
-	IOCPage3_t		*pIoc3 = NULL;
 	ConfigPageIoc2RaidVol_t	*pIocRv = NULL;
-	u8			*mem;
 	dma_addr_t		 ioc2_dma;
-	dma_addr_t		 ioc3_dma;
 	CONFIGPARMS		 cfg;
 	ConfigPageHeader_t	 header;
 	int			 jj;
 	int			 rc = 0;
 	int			 iocpage2sz;
-	int			 iocpage3sz = 0;
 	u8			 nVols, nPhys;
 	u8			 vid, vbus, vioc;
 
@@ -4487,44 +4545,7 @@ mpt_findImVolumes(MPT_ADAPTER *ioc)
 		/* No physical disks. Done.
 		 */
 	} else {
-		/* There is at least one physical disk.
-		 * Read and save IOC Page 3
-		 */
-		header.PageVersion = 0;
-		header.PageLength = 0;
-		header.PageNumber = 3;
-		header.PageType = MPI_CONFIG_PAGETYPE_IOC;
-		cfg.hdr = &header;
-		cfg.physAddr = -1;
-		cfg.pageAddr = 0;
-		cfg.action = MPI_CONFIG_ACTION_PAGE_HEADER;
-		cfg.dir = 0;
-		cfg.timeout = 0;
-		if (mpt_config(ioc, &cfg) != 0)
-			goto done_and_free;
-
-		if (header.PageLength == 0)
-			goto done_and_free;
-
-		/* Read Header good, alloc memory
-		 */
-		iocpage3sz = header.PageLength * 4;
-		pIoc3 = pci_alloc_consistent(ioc->pcidev, iocpage3sz, &ioc3_dma);
-		if (!pIoc3)
-			goto done_and_free;
-
-		/* Read the Page and save the data
-		 * into malloc'd memory.
-		 */
-		cfg.physAddr = ioc3_dma;
-		cfg.action = MPI_CONFIG_ACTION_PAGE_READ_CURRENT;
-		if (mpt_config(ioc, &cfg) == 0) {
-			mem = kmalloc(iocpage3sz, GFP_ATOMIC);
-			if (mem) {
-				memcpy(mem, (u8 *)pIoc3, iocpage3sz);
-				ioc->spi_data.pIocPg3 = (IOCPage3_t *) mem;
-			}
-		}
+		mpt_read_ioc_pg_3(ioc);
 	}
 
 done_and_free:
@@ -4533,14 +4554,159 @@ done_and_free:
 		pIoc2 = NULL;
 	}
 
+	return rc;
+}
+
+int
+mpt_read_ioc_pg_3(MPT_ADAPTER *ioc)
+{
+	IOCPage3_t		*pIoc3 = NULL;
+	u8			*mem;
+	CONFIGPARMS		 cfg;
+	ConfigPageHeader_t	 header;
+	dma_addr_t		 ioc3_dma;
+	int			 iocpage3sz = 0;
+
+	/* Free the old page
+	 */
+	if (ioc->spi_data.pIocPg3) {
+		kfree(ioc->spi_data.pIocPg3);
+		ioc->spi_data.pIocPg3 = NULL;
+	}
+
+	/* There is at least one physical disk.
+	 * Read and save IOC Page 3
+	 */
+	header.PageVersion = 0;
+	header.PageLength = 0;
+	header.PageNumber = 3;
+	header.PageType = MPI_CONFIG_PAGETYPE_IOC;
+	cfg.hdr = &header;
+	cfg.physAddr = -1;
+	cfg.pageAddr = 0;
+	cfg.action = MPI_CONFIG_ACTION_PAGE_HEADER;
+	cfg.dir = 0;
+	cfg.timeout = 0;
+	if (mpt_config(ioc, &cfg) != 0)
+		return 0;
+
+	if (header.PageLength == 0)
+		return 0;
+
+	/* Read Header good, alloc memory
+	 */
+	iocpage3sz = header.PageLength * 4;
+	pIoc3 = pci_alloc_consistent(ioc->pcidev, iocpage3sz, &ioc3_dma);
+	if (!pIoc3)
+		return 0;
+
+	/* Read the Page and save the data
+	 * into malloc'd memory.
+	 */
+	cfg.physAddr = ioc3_dma;
+	cfg.action = MPI_CONFIG_ACTION_PAGE_READ_CURRENT;
+	if (mpt_config(ioc, &cfg) == 0) {
+		mem = kmalloc(iocpage3sz, GFP_ATOMIC);
+		if (mem) {
+			memcpy(mem, (u8 *)pIoc3, iocpage3sz);
+			ioc->spi_data.pIocPg3 = (IOCPage3_t *) mem;
+		}
+	}
+
 	if (pIoc3) {
 		pci_free_consistent(ioc->pcidev, iocpage3sz, pIoc3, ioc3_dma);
 		pIoc3 = NULL;
 	}
 
-	return rc;
+	return 0;
 }
 
+static void
+mpt_read_ioc_pg_1(MPT_ADAPTER *ioc)
+{
+	IOCPage1_t		*pIoc1 = NULL;
+	CONFIGPARMS		 cfg;
+	ConfigPageHeader_t	 header;
+	dma_addr_t		 ioc1_dma;
+	int			 iocpage1sz = 0;
+	u32			 tmp;
+
+	/* Check the Coalescing Timeout in IOC Page 1
+	 */
+	header.PageVersion = 0;
+	header.PageLength = 0;
+	header.PageNumber = 1;
+	header.PageType = MPI_CONFIG_PAGETYPE_IOC;
+	cfg.hdr = &header;
+	cfg.physAddr = -1;
+	cfg.pageAddr = 0;
+	cfg.action = MPI_CONFIG_ACTION_PAGE_HEADER;
+	cfg.dir = 0;
+	cfg.timeout = 0;
+	if (mpt_config(ioc, &cfg) != 0)
+		return;
+
+	if (header.PageLength == 0)
+		return;
+
+	/* Read Header good, alloc memory
+	 */
+	iocpage1sz = header.PageLength * 4;
+	pIoc1 = pci_alloc_consistent(ioc->pcidev, iocpage1sz, &ioc1_dma);
+	if (!pIoc1)
+		return;
+
+	/* Read the Page and check coalescing timeout
+	 */
+	cfg.physAddr = ioc1_dma;
+	cfg.action = MPI_CONFIG_ACTION_PAGE_READ_CURRENT;
+	if (mpt_config(ioc, &cfg) == 0) {
+		
+		tmp = le32_to_cpu(pIoc1->Flags) & MPI_IOCPAGE1_REPLY_COALESCING;
+		if (tmp == MPI_IOCPAGE1_REPLY_COALESCING) {
+			tmp = le32_to_cpu(pIoc1->CoalescingTimeout);
+
+			dprintk((MYIOC_s_INFO_FMT "Coalescing Enabled Timeout = %d\n",
+					ioc->name, tmp));
+
+			if (tmp > MPT_COALESCING_TIMEOUT) {
+				pIoc1->CoalescingTimeout = cpu_to_le32(MPT_COALESCING_TIMEOUT);
+
+				/* Write NVRAM and current
+				 */
+				cfg.dir = 1;
+				cfg.action = MPI_CONFIG_ACTION_PAGE_WRITE_CURRENT;
+				if (mpt_config(ioc, &cfg) == 0) {
+					dprintk((MYIOC_s_INFO_FMT "Reset Current Coalescing Timeout to = %d\n",
+							ioc->name, MPT_COALESCING_TIMEOUT));
+
+					cfg.action = MPI_CONFIG_ACTION_PAGE_WRITE_NVRAM;
+					if (mpt_config(ioc, &cfg) == 0) {
+						dprintk((MYIOC_s_INFO_FMT "Reset NVRAM Coalescing Timeout to = %d\n",
+								ioc->name, MPT_COALESCING_TIMEOUT));
+					} else {
+						dprintk((MYIOC_s_INFO_FMT "Reset NVRAM Coalescing Timeout Failed\n",
+									ioc->name));
+					}
+
+				} else {
+					dprintk((MYIOC_s_WARN_FMT "Reset of Current Coalescing Timeout Failed!\n",
+								ioc->name));
+				}
+			}
+
+		} else {
+			dprintk((MYIOC_s_WARN_FMT "Coalescing Disabled\n", ioc->name));
+		}
+	}
+
+	if (pIoc1) {
+		pci_free_consistent(ioc->pcidev, iocpage1sz, pIoc1, ioc1_dma);
+		pIoc1 = NULL;
+	}
+
+	return;
+}
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
@@ -5042,8 +5208,7 @@ procmpt_version_read(char *buf, char **start, off_t offset, int request, int *eo
 			 */
 			if (isense_idx == ii)
 				len += sprintf(buf+len, "  Fusion MPT isense driver\n");
-		} else
-			break;
+		}
 	}
 
 	MPT_PROC_READ_RETURN(buf,start,offset,request,eof,len);
@@ -5265,6 +5430,9 @@ mpt_HardResetHandler(MPT_ADAPTER *ioc, int sleepFlag)
 		printk(KERN_WARNING MYNAM ": WARNING - (%d) Cannot recover %s\n",
 			rc, ioc->name);
 	}
+	ioc->reload_fw = 0;
+	if (ioc->alt_ioc)
+		ioc->alt_ioc->reload_fw = 0;
 
 	spin_lock_irqsave(&ioc->diagLock, flags);
 	ioc->diagPending = 0;
@@ -5603,8 +5771,46 @@ mpt_fc_log_info(MPT_ADAPTER *ioc, u32 log_info)
 static void
 mpt_sp_log_info(MPT_ADAPTER *ioc, u32 log_info)
 {
-	/* FIXME! */
-	printk(MYIOC_s_INFO_FMT "LogInfo(0x%08x)\n", ioc->name, log_info);
+	u32 info = log_info & 0x00FF0000;
+	char *desc = "unknown";
+
+	switch (info) {
+	case 0x00010000:
+		desc = "bug! MID not found";
+		if (ioc->reload_fw == 0)
+			ioc->reload_fw++;
+		break;
+
+	case 0x00020000:
+		desc = "Parity Error";
+		break;
+
+	case 0x00030000:
+		desc = "ASYNC Outbound Overrun";
+		break;
+
+	case 0x00040000:
+		desc = "SYNC Offset Error";
+		break;
+
+	case 0x00050000:
+		desc = "BM Change";
+		break;
+
+	case 0x00060000:
+		desc = "Msg In Overflow";
+		break;
+
+	case 0x00070000:
+		desc = "DMA Error";
+		break;
+
+	case 0x00080000:
+		desc = "Outbound DMA Overrun";
+		break;
+	}
+
+	printk(MYIOC_s_INFO_FMT "LogInfo(0x%08x): F/W: %s\n", ioc->name, log_info, desc);
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
@@ -5679,6 +5885,7 @@ EXPORT_SYMBOL(mpt_lan_index);
 EXPORT_SYMBOL(mpt_stm_index);
 EXPORT_SYMBOL(mpt_HardResetHandler);
 EXPORT_SYMBOL(mpt_config);
+EXPORT_SYMBOL(mpt_read_ioc_pg_3);
 EXPORT_SYMBOL(mpt_alloc_fw_memory);
 EXPORT_SYMBOL(mpt_free_fw_memory);
 
@@ -5748,6 +5955,7 @@ static void
 fusion_exit(void)
 {
 	MPT_ADAPTER *this;
+	struct pci_dev *pdev = NULL;
 
 	dprintk((KERN_INFO MYNAM ": fusion_exit() called!\n"));
 
@@ -5760,6 +5968,20 @@ fusion_exit(void)
 
 	while (! Q_IS_EMPTY(&MptAdapters)) {
 		this = MptAdapters.head;
+
+		/* Disable interrupts! */
+		CHIPREG_WRITE32(&this->chip->IntMask, 0xFFFFFFFF);
+
+		this->active = 0;
+
+		pdev = (struct pci_dev *)this->pcidev;
+		mptscsih_sync_irq(pdev->irq);
+
+		/* Clear any lingering interrupt */
+		CHIPREG_WRITE32(&this->chip->IntStatus, 0);
+
+		CHIPREG_READ32(&this->chip->IntStatus);
+
 		Q_DEL_ITEM(this);
 		mpt_adapter_dispose(this);
 	}

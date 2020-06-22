@@ -742,9 +742,15 @@ void pcibios_penalize_isa_irq(int irq)
 void pcibios_enable_irq(struct pci_dev *dev)
 {
 		u8 pin;
+	extern int interrupt_line_quirk;
+
 		pci_read_config_byte(dev, PCI_INTERRUPT_PIN, &pin);
 	if (pin && !pcibios_lookup_irq(dev, 1) && !dev->irq) {
 			char *msg;
+		/* With IDE legacy devices the IRQ lookup failure is not a problem.. */
+		if (dev->class >> 8 == PCI_CLASS_STORAGE_IDE && !(dev->class & 0x5))
+			return;
+
 			if (io_apic_assign_pci_irqs)
 				msg = " Probably buggy MP table.";
 			else if (pci_probe & PCI_BIOS_IRQ_SCAN)
@@ -754,4 +760,8 @@ void pcibios_enable_irq(struct pci_dev *dev)
 			printk(KERN_WARNING "PCI: No IRQ known for interrupt pin %c of device %s.%s\n",
 			       'A' + pin - 1, dev->slot_name, msg);
 	}
+	/* VIA bridges use interrupt line for apic/pci steering across
+	   the V-Link */
+	else if (interrupt_line_quirk)
+		pci_write_config_byte(dev, PCI_INTERRUPT_LINE, dev->irq);
 }

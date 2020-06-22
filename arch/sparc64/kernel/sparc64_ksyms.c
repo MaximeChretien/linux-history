@@ -51,6 +51,7 @@
 #include <asm/isa.h>
 #endif
 #include <asm/a.out.h>
+#include <asm/timer.h>
 
 struct poll {
 	int fd;
@@ -60,7 +61,6 @@ struct poll {
 
 extern unsigned prom_cpu_nodes[64];
 extern void die_if_kernel(char *str, struct pt_regs *regs);
-extern pid_t kernel_thread(int (*fn)(void *), void * arg, unsigned long flags);
 void _sigpause_common (unsigned int set, struct pt_regs *);
 extern void *__bzero(void *, size_t);
 extern void *__bzero_noasi(void *, size_t);
@@ -195,12 +195,14 @@ EXPORT_SYMBOL(tlb_type);
 EXPORT_SYMBOL(get_fb_unmapped_area);
 EXPORT_SYMBOL(flush_icache_range);
 EXPORT_SYMBOL(flush_dcache_page);
+EXPORT_SYMBOL(__flush_dcache_range);
 
 EXPORT_SYMBOL(mostek_lock);
 EXPORT_SYMBOL(mstk48t02_regs);
 EXPORT_SYMBOL(request_fast_irq);
 #if CONFIG_SUN_AUXIO
-EXPORT_SYMBOL(auxio_register);
+EXPORT_SYMBOL(auxio_set_led);
+EXPORT_SYMBOL(auxio_set_lte);
 #endif
 #if CONFIG_SBUS
 EXPORT_SYMBOL(sbus_root);
@@ -367,3 +369,5 @@ EXPORT_SYMBOL(batten_down_hatches);
 #ifdef CONFIG_DEBUG_BUGVERBOSE
 EXPORT_SYMBOL(do_BUG);
 #endif
+
+EXPORT_SYMBOL(tick_ops);

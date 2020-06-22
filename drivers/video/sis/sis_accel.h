@@ -485,6 +485,9 @@ int     CmdQueLen;
       CmdQueLen--;
 
 int  sisfb_initaccel(void);
+void sisfb_syncaccel(void);
+
+extern struct video_info ivideo;
 
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(2,5,33)
 void fbcon_sis_bmove(struct display *p, int srcy, int srcx, int dsty,
@@ -499,10 +502,8 @@ void fbcon_sis_clear32(struct vc_data *conp, struct display *p, int srcy,
 #endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,34)
 extern int sisfb_accel;
-void fbcon_sis_fillrect(struct fb_info *info, struct fb_fillrect *rect);
-void fbcon_sis_copyarea(struct fb_info *info, struct fb_copyarea *area);
-extern void cfb_fillrect(struct fb_info *info, struct fb_fillrect *rect);
-extern void cfb_copyarea(struct fb_info *info, struct fb_copyarea *area);
+void fbcon_sis_fillrect(struct fb_info *info, const struct fb_fillrect *rect);
+void fbcon_sis_copyarea(struct fb_info *info, const struct fb_copyarea *area);
 #endif
 
 #endif

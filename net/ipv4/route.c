@@ -85,6 +85,7 @@
 #include <linux/mroute.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/random.h>
+#include <linux/jhash.h>
 #include <net/protocol.h>
 #include <net/ip.h>
 #include <net/route.h>
@@ -117,13 +118,14 @@ int ip_rt_gc_elasticity		= 8;
 int ip_rt_mtu_expires		= 10 * 60 * HZ;
 int ip_rt_min_pmtu		= 512 + 20 + 20;
 int ip_rt_min_advmss		= 256;
-
+int ip_rt_secret_interval	= 10 * 60 * HZ;
 static unsigned long rt_deadline;
 
 #define RTprint(a...)	printk(KERN_DEBUG a)
 
 static struct timer_list rt_flush_timer;
 static struct timer_list rt_periodic_timer;
+static struct timer_list rt_secret_timer;
 
 /*
  *	Interface to generic destination cache.
@@ -194,19 +196,17 @@ struct rt_hash_bucket {
 static struct rt_hash_bucket 	*rt_hash_table;
 static unsigned			rt_hash_mask;
 static int			rt_hash_log;
+static unsigned int		rt_hash_rnd;
 
 struct rt_cache_stat rt_cache_stat[NR_CPUS];
 
 static int rt_intern_hash(unsigned hash, struct rtable *rth,
 				struct rtable **res);
 
-static __inline__ unsigned rt_hash_code(u32 daddr, u32 saddr, u8 tos)
+static unsigned int rt_hash_code(u32 daddr, u32 saddr, u8 tos)
 {
-	unsigned hash = ((daddr & 0xF0F0F0F0) >> 4) |
-			((daddr & 0x0F0F0F0F) << 4);
-	hash ^= saddr ^ tos;
-	hash ^= (hash >> 16);
-	return (hash ^ (hash >> 8)) & rt_hash_mask;
+	return (jhash_3words(daddr, saddr, (u32) tos, rt_hash_rnd)
+		& rt_hash_mask);
 }
 
 static int rt_cache_get_info(char *buffer, char **start, off_t offset,
@@ -421,6 +421,8 @@ static void SMP_TIMER_NAME(rt_run_flush)(unsigned long dummy)
 
 	rt_deadline = 0;
 
+	get_random_bytes(&rt_hash_rnd, 4);
+
 	for (i = rt_hash_mask; i >= 0; i--) {
 		write_lock_bh(&rt_hash_table[i].lock);
 		rth = rt_hash_table[i].chain;
@@ -477,6 +479,14 @@ void rt_cache_flush(int delay)
 
 	mod_timer(&rt_flush_timer, now+delay);
 	spin_unlock_bh(&rt_flush_lock);
+}
+
+static void rt_secret_rebuild(unsigned long dummy)
+{
+	unsigned long now = jiffies;
+
+	rt_cache_flush(0);
+	mod_timer(&rt_secret_timer, now + ip_rt_secret_interval);
 }
 
 /*
@@ -825,7 +835,7 @@ void ip_rt_redirect(u32 old_gw, u32 daddr, u32 new_gw,
 				    rth->u.dst.dev != dev)
 					break;
 
-				dst_clone(&rth->u.dst);
+				dst_hold(&rth->u.dst);
 				read_unlock(&rt_hash_table[hash].lock);
 
 				rt = dst_alloc(&ipv4_dst_ops);
@@ -2156,7 +2166,7 @@ int inet_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr* nlh, void *arg)
 		struct net_device *dev = __dev_get_by_index(iif);
 		err = -ENODEV;
 		if (!dev)
-			goto out;
+			goto out_free;
 		skb->protocol	= htons(ETH_P_IP);
 		skb->dev	= dev;
 		local_bh_disable();
@@ -2171,10 +2181,8 @@ int inet_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr* nlh, void *arg)
 			memcpy(&oif, RTA_DATA(rta[RTA_OIF - 1]), sizeof(int));
 		err = ip_route_output(&rt, dst, src, rtm->rtm_tos, oif);
 	}
-	if (err) {
-		kfree_skb(skb);
-		goto out;
-	}
+	if (err)
+		goto out_free;
 
 	skb->dst = &rt->u.dst;
 	if (rtm->rtm_flags & RTM_F_NOTIFY)
@@ -2185,16 +2193,20 @@ int inet_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr* nlh, void *arg)
 	err = rt_fill_info(skb, NETLINK_CB(in_skb).pid, nlh->nlmsg_seq,
 				RTM_NEWROUTE, 0);
 	if (!err)
-		goto out;
+		goto out_free;
 	if (err < 0) {
 		err = -EMSGSIZE;
-		goto out;
+		goto out_free;
 	}
 
 	err = netlink_unicast(rtnl, skb, NETLINK_CB(in_skb).pid, MSG_DONTWAIT);
 	if (err > 0)
 		err = 0;
 out:	return err;
+
+out_free:
+	kfree_skb(skb);
+	goto out;
 }
 
 int ip_rt_dump(struct sk_buff *skb,  struct netlink_callback *cb)
@@ -2412,6 +2424,15 @@ ctl_table ipv4_route_table[] = {
 		mode:		0644,
 		proc_handler:	&proc_dointvec,
 	},
+	{
+		ctl_name:	NET_IPV4_ROUTE_SECRET_INTERVAL,
+		procname:	"secret_interval",
+		data:		&ip_rt_secret_interval,
+		maxlen:		sizeof(int),
+		mode:		0644,
+		proc_handler:	&proc_dointvec_jiffies,
+		strategy:	&sysctl_jiffies,
+	},
 	 { 0 }
 };
 #endif
@@ -2442,15 +2463,25 @@ static int ip_rt_acct_read(char *buffer, char **start, off_t offset,
 		*eof = 1;
 	}
 
-	/* Copy first cpu. */
-	*start = buffer;
-	memcpy(buffer, IP_RT_ACCT_CPU(0), length);
+	offset /= sizeof(u32);
 
-	/* Add the other cpus in, one int at a time */
-	for (i = 1; i < smp_num_cpus; i++) {
-		unsigned int j;
-		for (j = 0; j < length/4; j++)
-			((u32*)buffer)[j] += ((u32*)IP_RT_ACCT_CPU(i))[j];
+	if (length > 0) {
+		u32 *src = ((u32 *) IP_RT_ACCT_CPU(0)) + offset;
+		u32 *dst = (u32 *) buffer;
+
+		/* Copy first cpu. */
+		*start = buffer;
+		memcpy(dst, src, length);
+
+		/* Add the other cpus in, one int at a time */
+		for (i = 1; i < smp_num_cpus; i++) {
+			unsigned int j;
+
+			src = ((u32 *) IP_RT_ACCT_CPU(i)) + offset;
+
+			for (j = 0; j < length/4; j++)
+				dst[j] += src[j];
+		}
 	}
 	return length;
 }
@@ -2459,6 +2490,9 @@ static int ip_rt_acct_read(char *buffer, char **start, off_t offset,
 void __init ip_rt_init(void)
 {
 	int i, order, goal;
+
+	rt_hash_rnd = (int) ((num_physpages ^ (num_physpages>>8)) ^
+			     (jiffies ^ (jiffies >> 7)));
 
 #ifdef CONFIG_NET_CLS_ROUTE
 	for (order = 0;
@@ -2516,6 +2550,7 @@ void __init ip_rt_init(void)
 
 	rt_flush_timer.function = rt_run_flush;
 	rt_periodic_timer.function = rt_check_expire;
+	rt_secret_timer.function = rt_secret_rebuild;
 
 	/* All the timers, started at system startup tend
 	   to synchronize. Perturb it a bit.
@@ -2523,6 +2558,10 @@ void __init ip_rt_init(void)
 	rt_periodic_timer.expires = jiffies + net_random() % ip_rt_gc_interval +
 					ip_rt_gc_interval;
 	add_timer(&rt_periodic_timer);
+
+	rt_secret_timer.expires = jiffies + net_random() % ip_rt_secret_interval +
+		ip_rt_secret_interval;
+	add_timer(&rt_secret_timer);
 
 	proc_net_create ("rt_cache", 0, rt_cache_get_info);
 	proc_net_create ("rt_cache_stat", 0, rt_cache_stat_get_info);

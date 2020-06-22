@@ -31,6 +31,10 @@
 #include <asm/pgalloc.h>
 #include <asm/timex.h>
 
+int apic_disabled;
+
+extern spinlock_t i8253_lock;
+
 /* Using APIC to generate smp_local_timer_interrupt? */
 int using_apic_timer = 0;
 
@@ -373,10 +377,10 @@ void __init setup_local_APIC (void)
 	value = apic_read(APIC_LVT0) & APIC_LVT_MASKED;
 	if (!smp_processor_id() && (pic_mode || !value)) {
 		value = APIC_DM_EXTINT;
-		printk("enabled ExtINT on CPU#%d\n", smp_processor_id());
+		Dprintk("enabled ExtINT on CPU#%d\n", smp_processor_id());
 	} else {
 		value = APIC_DM_EXTINT | APIC_LVT_MASKED;
-		printk("masked ExtINT on CPU#%d\n", smp_processor_id());
+		Dprintk("masked ExtINT on CPU#%d\n", smp_processor_id());
 	}
 	apic_write_around(APIC_LVT0, value);
 
@@ -396,7 +400,7 @@ void __init setup_local_APIC (void)
 		if (maxlvt > 3)			/* Due to the Pentium erratum 3AP. */
 			apic_write(APIC_ESR, 0);
 		value = apic_read(APIC_ESR);
-		printk("ESR value before enabling vector: %08x\n", value);
+		Dprintk("ESR value before enabling vector: %08x\n", value);
 
 		value = ERROR_APIC_VECTOR;	/* enables sending errors */
 		apic_write_around(APIC_LVTERR, value);
@@ -406,7 +410,7 @@ void __init setup_local_APIC (void)
 		if (maxlvt > 3)
 			apic_write(APIC_ESR, 0);
 		value = apic_read(APIC_ESR);
-		printk("ESR value after enabling vector: %08x\n", value);
+		Dprintk("ESR value after enabling vector: %08x\n", value);
 	} else {
 		if (esr_disable)
 			/*
@@ -415,9 +419,9 @@ void __init setup_local_APIC (void)
 			 * ESR disabled - we can't do anything useful with the
 			 * errors anyway - mbligh
 			 */
-			printk("Leaving ESR disabled.\n");
+			Dprintk("Leaving ESR disabled.\n");
 		else
-			printk("No ESR for 82489DX.\n");
+			Dprintk("No ESR for 82489DX.\n");
 	}
 
 	if (nmi_watchdog == NMI_LOCAL_APIC)
@@ -766,12 +770,13 @@ void setup_APIC_timer(void * data)
 	 * Wait for timer IRQ slice:
 	 */
 
-	if (hpet.address) {
+	if (hpet_address) {
 		int trigger = hpet_readl(HPET_T0_CMP);
 		while (hpet_readl(HPET_COUNTER) >= trigger);
 		while (hpet_readl(HPET_COUNTER) <  trigger);
 	} else {
 		int c1, c2;
+		spin_lock(&i8253_lock);
 		outb_p(0x00, 0x43);
 		c2 = inb_p(0x40);
 		c2 |= inb_p(0x40) << 8;
@@ -781,6 +786,7 @@ void setup_APIC_timer(void * data)
 			c2 = inb_p(0x40);
 			c2 |= inb_p(0x40) << 8;
 		} while (c2 - c1 < 300);
+		spin_unlock(&i8253_lock);
 	}
 
 	__setup_APIC_LVTT(clocks);
@@ -1018,6 +1024,7 @@ asmlinkage void smp_spurious_interrupt(void)
 		printk(KERN_INFO "spurious APIC interrupt on CPU#%d, %ld skipped.\n",
 		       smp_processor_id(), skipped);
 		last_warning = jiffies;
+		skipped = 0;
 	} else {
 		skipped++;
 	}
@@ -1058,8 +1065,10 @@ asmlinkage void smp_error_interrupt(void)
  */
 int __init APIC_init_uniprocessor (void)
 {
-	if (!smp_found_config && !cpu_has_apic)
+	if (!smp_found_config && !cpu_has_apic) { 
+		apic_disabled = 1;
 		return -1;
+	} 
 
 	/*
 	 * Complain if the BIOS pretends there is one.
@@ -1067,6 +1076,7 @@ int __init APIC_init_uniprocessor (void)
 	if (!cpu_has_apic && APIC_INTEGRATED(apic_version[boot_cpu_id])) {
 		printk(KERN_ERR "BIOS bug, local APIC #%d not detected!...\n",
 			boot_cpu_id);
+		apic_disabled = 1;
 		return -1;
 	}
 
@@ -1084,9 +1094,10 @@ int __init APIC_init_uniprocessor (void)
 	if (nmi_watchdog == NMI_LOCAL_APIC)
 		check_nmi_watchdog();
 #ifdef CONFIG_X86_IO_APIC
-	if (smp_found_config)
-		if (!skip_ioapic_setup && nr_ioapics)
+	if (smp_found_config && !skip_ioapic_setup && nr_ioapics)
 			setup_IO_APIC();
+	else
+		nr_ioapics = 0;
 #endif
 	setup_APIC_clocks();
 

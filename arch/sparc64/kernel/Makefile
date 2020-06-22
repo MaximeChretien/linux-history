@@ -54,9 +54,12 @@ check_asm: dummy
 	fi
 	@echo "/* Automatically generated. Do not edit. */" > asm_offsets.h
 	@echo "#ifndef __ASM_OFFSETS_H__" >> asm_offsets.h
-	@echo -e "#define __ASM_OFFSETS_H__\n" >> asm_offsets.h
-	@echo -e "#include <linux/config.h>\n" >> asm_offsets.h
-	@echo -e "#ifndef CONFIG_SMP\n" >> asm_offsets.h
+	@echo "#define __ASM_OFFSETS_H__" >> asm_offsets.h
+	@echo >> asm_offsets.h
+	@echo "#include <linux/config.h>" >> asm_offsets.h
+	@echo >> asm_offsets.h
+	@echo "#ifndef CONFIG_SMP" >> asm_offsets.h
+	@echo >> asm_offsets.h
 	@echo "#include <linux/config.h>" > tmp.c
 	@echo "#undef CONFIG_SMP" >> tmp.c
 	@echo "#include <linux/sched.h>" >> tmp.c
@@ -86,8 +89,10 @@ check_asm: dummy
 	$(HOSTCC) -o check_asm check_asm.c
 	./check_asm >> asm_offsets.h
 	@rm -f check_asm check_asm.c
-	@echo -e "\n#else /* CONFIG_SMP */\n" >> asm_offsets.h
-	@echo -e "#ifndef CONFIG_DEBUG_SPINLOCK\n" >>asm_offsets.h
+	@echo >> asm_offsets.h
+	@echo "#else /* CONFIG_SMP */" >> asm_offsets.h
+	@echo "#ifndef CONFIG_DEBUG_SPINLOCK" >>asm_offsets.h
+	@echo >> asm_offsets.h
 	@echo "#include <linux/config.h>" > tmp.c
 	@echo "#undef CONFIG_SMP" >> tmp.c
 	@echo "#define CONFIG_SMP 1" >> tmp.c
@@ -119,7 +124,9 @@ check_asm: dummy
 	$(HOSTCC) -o check_asm check_asm.c
 	./check_asm >> asm_offsets.h
 	@rm -f check_asm check_asm.c
-	@echo -e "\n#else /* CONFIG_DEBUG_SPINLOCK */\n" >> asm_offsets.h
+	@echo >> asm_offsets.h
+	@echo "#else /* CONFIG_DEBUG_SPINLOCK */" >> asm_offsets.h
+	@echo >> asm_offsets.h
 	@echo "#include <linux/sched.h>" > tmp.c
 	$(CPP) $(CPPFLAGS) -P -DCONFIG_DEBUG_SPINLOCK tmp.c -o tmp.i
 	@echo "/* Automatically generated. Do not edit. */" > check_asm_data.c
@@ -148,8 +155,10 @@ check_asm: dummy
 	$(HOSTCC) -o check_asm check_asm.c
 	./check_asm >> asm_offsets.h
 	@rm -f check_asm check_asm.c
-	@echo -e "#endif /* CONFIG_DEBUG_SPINLOCK */\n" >> asm_offsets.h
-	@echo -e "#endif /* CONFIG_SMP */\n" >> asm_offsets.h
+	@echo "#endif /* CONFIG_DEBUG_SPINLOCK */" >> asm_offsets.h
+	@echo >> asm_offsets.h
+	@echo "#endif /* CONFIG_SMP */" >> asm_offsets.h
+	@echo >> asm_offsets.h
 	@echo "#endif /* __ASM_OFFSETS_H__ */" >> asm_offsets.h
 	@if test -r $(HPATH)/asm/asm_offsets.h; then \
 	  if cmp -s asm_offsets.h $(HPATH)/asm/asm_offsets.h; then \

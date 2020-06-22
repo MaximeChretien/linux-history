@@ -56,10 +56,13 @@ sn_io_addr(unsigned long port)
  * a chipset register to ensure ordering.
  *
  * On SN2, we wait for the PIO_WRITE_STATUS SHub register to clear.
+ * See PV 871084 for details about the WAR about zero value.
+ *
  */
 void
 sn2_mmiob (void)
 {
-	while ( !((volatile unsigned long) (*pda.pio_write_status_addr)) & 0x8000000000000000)
-		udelay(5);
+	while ((((volatile unsigned long) (*pda.pio_write_status_addr)) & SH_PIO_WRITE_STATUS_0_PENDING_WRITE_COUNT_MASK) != 
+				SH_PIO_WRITE_STATUS_0_PENDING_WRITE_COUNT_MASK)
+		udelay(1);
 }

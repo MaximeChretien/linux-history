@@ -240,7 +240,7 @@ static void acm_read_bulk(struct urb *urb)
 	if (urb->status)
 		dbg("nonzero read bulk status received: %d", urb->status);
 
-	if (!urb->status & !acm->throttle)  {
+	if (!urb->status && !acm->throttle)  {
 		for (i = 0; i < urb->actual_length && !acm->throttle; i++) {
 			/* if we insert more than TTY_FLIPBUF_SIZE characters,
 			 * we drop them. */
@@ -649,7 +649,9 @@ static void acm_disconnect(struct usb_device *dev, void *ptr)
  */
 
 static struct usb_device_id acm_ids[] = {
+	{ USB_DEVICE(0x22B8, 0x1005) },		/* Motorola TimePort 280 */
 	{ USB_DEVICE_INFO(USB_CLASS_COMM, 0, 0) },
+	{ USB_DEVICE_INFO(USB_CLASS_COMM, 2, 0) },
 	{ }
 };
 

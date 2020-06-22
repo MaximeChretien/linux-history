@@ -30,7 +30,7 @@
 #define M_RD_IOCTL_CMD_NEW		0x81
 #define M_RD_DRIVER_IOCTL_INTERFACE	0x82
 
-#define MEGARAID_VERSION "v1.18 (Release Date: Thu Oct 11 15:02:53 EDT 2001)\n"
+#define MEGARAID_VERSION "v1.18f (Release Date: Tue Dec 10 09:54:39 EST 2002)\n"
 
 #define MEGARAID_IOCTL_VERSION 	114
 
@@ -73,6 +73,7 @@
 #define MEGA_MBOXCMD_LWRITE64		0xA8
 #define MEGA_MBOXCMD_PASSTHRU		0x03
 #define MEGA_MBOXCMD_EXTPASSTHRU	0xE3
+#define MEGA_MBOXCMD_PASSTHRU64		0xC3
 #define MEGA_MBOXCMD_ADAPTERINQ		0x05
 
 
@@ -121,6 +122,10 @@
 #define ENABLE_INTR(base)	WRITE_PORT(base,I_TOGGLE_PORT,ENABLE_INTR_BYTE)
 #define DISABLE_INTR(base)	WRITE_PORT(base,I_TOGGLE_PORT,DISABLE_INTR_BYTE)
 
+#ifndef PCI_VENDOR_ID_LSI_LOGIC
+#define PCI_VENDOR_ID_LSI_LOGIC		0x1000
+#endif
+
 /* Define AMI's PCI codes */
 #ifndef PCI_VENDOR_ID_AMI
 #define PCI_VENDOR_ID_AMI		0x101E
@@ -137,6 +142,15 @@
 #ifndef PCI_DEVICE_ID_AMI_MEGARAID3
 #define PCI_DEVICE_ID_AMI_MEGARAID3	0x1960
 #endif
+
+#define PCI_VENDOR_ID_DISCOVERY		0x1028
+#define PCI_DEVICE_ID_DISCOVERY		0x000E
+
+#define PCI_VENDOR_ID_PERC4_DI_YSTONE	0x1028
+#define PCI_DEVICE_ID_PERC4_DI_YSTONE	0x000F
+
+#define PCI_VENDOR_ID_PERC4_QC_VERDE	0x1000
+#define PCI_DEVICE_ID_PERC4_QC_VERDE	0x0407
 
 /* Special Adapter Commands */
 #define FW_FIRE_WRITE   	0x2C
@@ -172,6 +186,7 @@
 #define PCI_CONF_AMISIG64		0xa4
 
 /* Sub-System Vendor ID sorted on alphabetical order*/
+#define LSI_SUBSYS_ID                  0x1000
 #define	AMI_SUBSYS_ID			0x101E
 #define DELL_SUBSYS_ID			0x1028
 #define	HP_SUBSYS_ID			0x103C
@@ -704,12 +719,15 @@ struct _mega_scb {
 #define INTR_ENB	0	/* do not disable interrupt while manipulating */
 #define INTR_DIS	1	/* disable interrupt while manipulating */
 
+#define NVIRT_CHAN		4	/* # of virtual channels to represent 60 logical
+							drives */
+
 /* Per-controller data */
 typedef struct _mega_host_config {
 	u8 numldrv;
 	u32 flag;
 
-#if BITS_PER_LONG==64
+#ifdef __LP64__
 	u64 base;
 #else
 	u32 base;
@@ -769,8 +787,12 @@ typedef struct _mega_host_config {
 	struct proc_dir_entry *controller_proc_dir_entry;
 	struct proc_dir_entry *proc_read, *proc_stat, *proc_status, *proc_mbox;
 	int		support_ext_cdb;
-	int		boot_ldrv_enabled;
-	int		boot_ldrv;
+
+	u8		boot_ldrv_enabled;	/* boot from logical drive */
+	u8		boot_ldrv;			/* boot logical drive */
+	u8		boot_pdrv_enabled;	/* boot from physical drive */
+	u8		boot_pdrv_ch;		/* boot physical drive channel */
+	u8		boot_pdrv_tgt;		/* boot physical drive target */
 
 	int		support_random_del;	/* Do we support random deletion of logdrvs */
 	int		read_ldidmap;	/* set after logical drive deltion. The logical
@@ -782,6 +804,9 @@ typedef struct _mega_host_config {
 	mega_scb	*int_qh;	/* commands are queued in the internal queue */
 	mega_scb	*int_qt;	/* while the hba is quiescent */
 	int			int_qlen;
+	char		logdrv_chan[MAX_CHANNEL+NVIRT_CHAN]; /* logical drive are on
+														 what channels. */
+	int			mega_ch_class;
 } mega_host_config;
 
 typedef struct _driver_info {
@@ -916,8 +941,8 @@ struct private_bios_data {
 							 * Others values are invalid
 							 */
 	u8		unused:4;		/* bits 4-7 are unused */
-	u8		boot_ldrv;		/*
-							 * logical drive set as boot drive
+	u8		boot_drv;		/*
+							 * logical/physical drive set as boot drive
 							 * 0..7 - for 8LD cards
 							 * 0..39 - for 40LD cards
 							 */
@@ -925,9 +950,6 @@ struct private_bios_data {
 	u16		cksum;			/* 0-(sum of first 13 bytes of this structure) */
 };
 #pragma pack()
-
-#define NVIRT_CHAN		4	/* # of virtual channels to represent 60 logical
-							drives */
 
 /*
  * Command for random deletion of logical drives
@@ -994,13 +1016,13 @@ static void mega_swap_hosts (struct Scsi_Host *, struct Scsi_Host *);
 static void mega_create_proc_entry (int index, struct proc_dir_entry *);
 static int mega_support_ext_cdb(mega_host_config *);
 static mega_passthru* mega_prepare_passthru(mega_host_config *, mega_scb *,
-		Scsi_Cmnd *);
+		Scsi_Cmnd *, int, int);
 static mega_ext_passthru* mega_prepare_extpassthru(mega_host_config *,
-		mega_scb *, Scsi_Cmnd *);
+		mega_scb *, Scsi_Cmnd *, int, int);
 static void mega_enum_raid_scsi(mega_host_config *);
 static int mega_partsize(Disk *, kdev_t, int *);
-static void mega_get_boot_ldrv(mega_host_config *);
-static int mega_get_lun(mega_host_config *, Scsi_Cmnd *);
+static void mega_get_boot_drv(mega_host_config *);
+static int mega_get_ldrv_num(mega_host_config *, Scsi_Cmnd *, int);
 static int mega_support_random_del(mega_host_config *);
 static int mega_del_logdrv(mega_host_config *, int);
 static int mega_do_del_logdrv(mega_host_config *, int);

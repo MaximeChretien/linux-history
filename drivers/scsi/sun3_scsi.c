@@ -1,7 +1,7 @@
 /*
  * Sun3 SCSI stuff by Erik Verbruggen (erik@bigmama.xtdnet.nl)
  *
- * Sun3 DMA routines added by Sam Creasey (sammy@oh.verio.com)
+ * Sun3 DMA routines added by Sam Creasey (sammy@sammy.net)
  *
  * Adapted from mac_scsinew.c:
  */
@@ -192,8 +192,7 @@ static struct Scsi_Host *default_instance;
  
 int sun3scsi_detect(Scsi_Host_Template * tpnt)
 {
-	unsigned long ioaddr, iopte;
-	int count = 0;
+	unsigned long ioaddr;
 	static int called = 0;
 	struct Scsi_Host *instance;
 
@@ -227,28 +226,9 @@ int sun3scsi_detect(Scsi_Host_Template * tpnt)
 		tpnt->this_id = 7;
 	}
 
-	/* Taken from Sammy's lance driver: */
-        /* IOBASE_SUN3_SCSI can be found within the IO pmeg with some effort */
-        for(ioaddr = 0xfe00000; ioaddr < (0xfe00000 + SUN3_PMEG_SIZE);
-            ioaddr += SUN3_PTE_SIZE) {
-
-                iopte = sun3_get_pte(ioaddr);
-                if(!(iopte & SUN3_PAGE_TYPE_IO)) /* this an io page? */
-                        continue;
-
-                if(((iopte & SUN3_PAGE_PGNUM_MASK) << PAGE_SHIFT) ==
-                   IOBASE_SUN3_SCSI) {
-                        count = 1;
-                        break;
-                }
-        }
-
-	if(!count) {
-		printk("No Sun3 NCR5380 found!\n");
-		return 0;
-	}
-
+	ioaddr = (unsigned long)ioremap(IOBASE_SUN3_SCSI, PAGE_SIZE);
 	sun3_scsi_regp = (unsigned char *)ioaddr;
+
 	dregs = (struct sun3_dma_regs *)(((unsigned char *)ioaddr) + 8);
 
 	if((udc_regs = dvma_malloc(sizeof(struct sun3_udc_regs)))
@@ -322,13 +302,17 @@ int sun3scsi_detect(Scsi_Host_Template * tpnt)
 	return 1;
 }
 
+#ifdef MODULE
 int sun3scsi_release (struct Scsi_Host *shpnt)
 {
 	if (shpnt->irq != IRQ_NONE)
 		free_irq (shpnt->irq, NULL);
 
+	iounmap((void *)sun3_scsi_regp);
+
 	return 0;
 }
+#endif
 
 #ifdef RESET_BOOT
 /*
@@ -535,6 +519,14 @@ static inline unsigned long sun3scsi_dma_xfer_len(unsigned long wanted, Scsi_Cmn
  		return wanted;
 	else
 		return 0;
+}
+
+static inline int sun3scsi_dma_start(unsigned long count, unsigned char *data)
+{
+
+    sun3_udc_write(UDC_CHN_START, UDC_CSR);
+    
+    return 0;
 }
 
 /* clean up after our dma is done */

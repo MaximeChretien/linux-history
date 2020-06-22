@@ -707,7 +707,7 @@ static void nsp_pio_read(Scsi_Cmnd *SCpnt, nsp_hw_data *data)
 		ocount			 += res;
 		//DEBUG(0, " ptr=0x%p this_residual=0x%x ocount=0x%x\n", SCpnt->SCp.ptr, SCpnt->SCp.this_residual, ocount);
 
-		/* go to next scatter list if availavle */
+		/* go to next scatter list if available */
 		if (SCpnt->SCp.this_residual	== 0 &&
 		    SCpnt->SCp.buffers_residual != 0 ) {
 			//DEBUG(0, " scatterlist next timeout=%d\n", time_out);
@@ -780,7 +780,7 @@ static void nsp_pio_write(Scsi_Cmnd *SCpnt, nsp_hw_data *data)
 		SCpnt->SCp.this_residual -= res;
 		ocount			 += res;
 
-		/* go to next scatter list if availavle */
+		/* go to next scatter list if available */
 		if (SCpnt->SCp.this_residual	== 0 &&
 		    SCpnt->SCp.buffers_residual != 0 ) {
 			//DEBUG(0, " scatterlist next\n");

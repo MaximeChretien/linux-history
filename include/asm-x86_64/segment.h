@@ -9,7 +9,6 @@
 /* 
  * we cannot use the same code segment descriptor for user and kernel
  * even not in the long flat model, because of different DPL /kkeil 
- * The segment offset needs to contain a RPL. Grr. -AK
  * GDT layout to get 64bit syscall right (sysret hardcodes gdt offsets) 
  */
 

@@ -35,7 +35,7 @@ obj-$(CONFIG_VIDEO_DEV) += videodev.o
 
 obj-$(CONFIG_BUS_I2C) += i2c-old.o
 obj-$(CONFIG_VIDEO_BT848) += bttv.o msp3400.o tvaudio.o \
-	tda7432.o tda9875.o tuner.o
+	tda7432.o tda9875.o tda9887.o tuner.o
 obj-$(CONFIG_SOUND_TVMIXER) += tvmixer.o
 
 obj-$(CONFIG_VIDEO_ZR36120) += zoran.o

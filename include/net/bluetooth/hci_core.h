@@ -281,8 +281,12 @@ static inline void hci_conn_hold(struct hci_conn *conn)
 
 static inline void hci_conn_put(struct hci_conn *conn)
 {
-	if (atomic_dec_and_test(&conn->refcnt) && conn->out)
-		hci_conn_set_timer(conn, HCI_DISCONN_TIMEOUT);
+	if (atomic_dec_and_test(&conn->refcnt)) {
+		if (conn->type == SCO_LINK)
+			hci_conn_set_timer(conn, HZ / 100);
+		else if (conn->out)
+			hci_conn_set_timer(conn, HCI_DISCONN_TIMEOUT);
+	}
 }
 
 /* ----- HCI Devices ----- */
@@ -302,6 +306,8 @@ struct hci_dev *hci_dev_get(int index);
 struct hci_dev *hci_get_route(bdaddr_t *src, bdaddr_t *dst);
 int hci_register_dev(struct hci_dev *hdev);
 int hci_unregister_dev(struct hci_dev *hdev);
+int hci_suspend_dev(struct hci_dev *hdev);
+int hci_resume_dev(struct hci_dev *hdev);
 int hci_dev_open(__u16 dev);
 int hci_dev_close(__u16 dev);
 int hci_dev_reset(__u16 dev);
@@ -429,7 +435,6 @@ int hci_unregister_notifier(struct notifier_block *nb);
 int hci_send_cmd(struct hci_dev *hdev, __u16 ogf, __u16 ocf, __u32 plen, void *param);
 int hci_send_acl(struct hci_conn *conn, struct sk_buff *skb, __u16 flags);
 int hci_send_sco(struct hci_conn *conn, struct sk_buff *skb);
-int hci_send_raw(struct sk_buff *skb);
 
 void *hci_sent_cmd_data(struct hci_dev *hdev, __u16 ogf, __u16 ocf);
 
@@ -447,14 +452,13 @@ struct hci_pinfo {
 };
 
 /* HCI security filter */
-#define HCI_SFLT_MAX_OGF 4
+#define HCI_SFLT_MAX_OGF  5
 
 struct hci_sec_filter {
 	__u32 type_mask;
 	__u32 event_mask[2];
 	__u32 ocf_mask[HCI_SFLT_MAX_OGF + 1][4];
 };
-
 
 /* ----- HCI requests ----- */
 #define HCI_REQ_DONE	  0

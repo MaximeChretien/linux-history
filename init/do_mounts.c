@@ -164,7 +164,6 @@ static struct dev_name_struct {
 	{ "dasdg", (DASD_MAJOR << MINORBITS) + (6 << 2) },
 	{ "dasdh", (DASD_MAJOR << MINORBITS) + (7 << 2) },
 #endif
-#if defined(CONFIG_BLK_CPQ_DA) || defined(CONFIG_BLK_CPQ_DA_MODULE)
 	{ "ida/c0d0p",0x4800 },
 	{ "ida/c0d1p",0x4810 },
 	{ "ida/c0d2p",0x4820 },
@@ -188,8 +187,6 @@ static struct dev_name_struct {
 	{ "ida/c5d0p",0x4D00 },
 	{ "ida/c6d0p",0x4E00 },
 	{ "ida/c7d0p",0x4F00 }, 
-#endif
-#if defined(CONFIG_BLK_CPQ_CISS_DA) || defined(CONFIG_BLK_CPQ_CISS_DA_MODULE)
 	{ "cciss/c0d0p",0x6800 },
 	{ "cciss/c0d1p",0x6810 },
 	{ "cciss/c0d2p",0x6820 },
@@ -213,7 +210,6 @@ static struct dev_name_struct {
 	{ "cciss/c5d0p",0x6D00 },
 	{ "cciss/c6d0p",0x6E00 },
 	{ "cciss/c7d0p",0x6F00 },
-#endif
 	{ "ataraid/d0p",0x7200 },
 	{ "ataraid/d1p",0x7210 },
 	{ "ataraid/d2p",0x7220 },
@@ -230,6 +226,24 @@ static struct dev_name_struct {
 	{ "ataraid/d13p",0x72D0 },
 	{ "ataraid/d14p",0x72E0 },
 	{ "ataraid/d15p",0x72F0 },
+        { "rd/c0d0p",0x3000 },
+        { "rd/c0d0p1",0x3001 },
+        { "rd/c0d0p2",0x3002 },
+        { "rd/c0d0p3",0x3003 },
+        { "rd/c0d0p4",0x3004 },
+        { "rd/c0d0p5",0x3005 },
+        { "rd/c0d0p6",0x3006 },
+        { "rd/c0d0p7",0x3007 },
+        { "rd/c0d0p8",0x3008 },
+        { "rd/c0d1p",0x3008 },
+        { "rd/c0d1p1",0x3009 },
+        { "rd/c0d1p2",0x300a },
+        { "rd/c0d1p3",0x300b },
+        { "rd/c0d1p4",0x300c },
+        { "rd/c0d1p5",0x300d },
+        { "rd/c0d1p6",0x300e },
+        { "rd/c0d1p7",0x300f },
+        { "rd/c0d1p8",0x3010 },
 	{ "nftla", 0x5d00 },
 	{ "nftlb", 0x5d10 },
 	{ "nftlc", 0x5d20 },
@@ -239,6 +253,7 @@ static struct dev_name_struct {
 	{ "ftlc", 0x2c10 },
 	{ "ftld", 0x2c18 },
 	{ "mtdblock", 0x1f00 },
+	{ "nb", 0x2b00 },
 	{ NULL, 0 }
 };
 
@@ -593,7 +608,7 @@ static int __init rd_load_image(char *from)
 		rd_blocks >>= 1;
 
 	if (nblocks > rd_blocks) {
-		printk("RAMDISK: image too big! (%d/%d blocks)\n",
+		printk("RAMDISK: image too big! (%d/%lu blocks)\n",
 		       nblocks, rd_blocks);
 		goto done;
 	}
@@ -620,11 +635,11 @@ static int __init rd_load_image(char *from)
 		goto done;
 	}
 
-	printk(KERN_NOTICE "RAMDISK: Loading %d blocks [%d disk%s] into ram disk... ", 
+	printk(KERN_NOTICE "RAMDISK: Loading %d blocks [%ld disk%s] into ram disk... ", 
 		nblocks, ((nblocks-1)/devblocks)+1, nblocks>devblocks ? "s" : "");
 	for (i=0; i < nblocks; i++) {
 		if (i && (i % devblocks == 0)) {
-			printk("done disk #%d.\n", i/devblocks);
+			printk("done disk #%ld.\n", i/devblocks);
 			rotate = 0;
 			if (close(in_fd)) {
 				printk("Error closing the disk.\n");
@@ -636,7 +651,7 @@ static int __init rd_load_image(char *from)
 				printk("Error opening disk.\n");
 				goto noclose_input;
 			}
-			printk("Loading disk #%d... ", i/devblocks+1);
+			printk("Loading disk #%ld... ", i/devblocks+1);
 		}
 		read(in_fd, buf, BLOCK_SIZE);
 		write(out_fd, buf, BLOCK_SIZE);
@@ -813,6 +828,8 @@ static void __init handle_initrd(void)
 	sys_fchdir(root_fd);
 	sys_chroot(".");
 	sys_umount("/old/dev", 0);
+	close(old_fd);
+	close(root_fd);
 
 	if (real_root_dev == ram0) {
 		sys_chdir("/old");

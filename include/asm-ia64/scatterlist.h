@@ -9,12 +9,13 @@
 struct scatterlist {
 	/* This will disappear in 2.5.x: */
 	char *address;		/* location data is to be transferred to, NULL for highmem page */
-	char *orig_address;	/* for use by swiotlb */
 
 	/* These two are only valid if ADDRESS member of this struct is NULL.  */
 	struct page *page;
 	unsigned int offset;
 	unsigned int length;	/* buffer length */
+	dma_addr_t dma_address;
+	unsigned int dma_length;
 };
 
 #define ISA_DMA_THRESHOLD	(~0UL)

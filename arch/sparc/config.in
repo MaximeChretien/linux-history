@@ -264,7 +264,15 @@ endmenu
 mainmenu_option next_comment
 comment 'Kernel hacking'
 
-bool 'Magic SysRq key' CONFIG_MAGIC_SYSRQ
+bool 'Kernel debugging' CONFIG_DEBUG_KERNEL
+if [ "$CONFIG_DEBUG_KERNEL" != "n" ]; then
+   bool '  Debug high memory support' CONFIG_DEBUG_HIGHMEM
+   bool '  Debug memory allocations' CONFIG_DEBUG_SLAB
+   bool '  Memory mapped I/O debugging' CONFIG_DEBUG_IOVIRT
+   bool '  Magic SysRq key' CONFIG_MAGIC_SYSRQ
+   bool '  Spinlock debugging' CONFIG_DEBUG_SPINLOCK
+fi
+
 endmenu
 
 source lib/Config.in

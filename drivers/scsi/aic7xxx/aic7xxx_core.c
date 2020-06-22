@@ -3821,7 +3821,7 @@ ahc_reset(struct ahc_softc *ahc)
 	}
 	sxfrctl1_a = ahc_inb(ahc, SXFRCTL1);
 
-	ahc_outb(ahc, HCNTRL, CHIPRST | ahc->pause);
+	ahc_outb_reset(ahc, HCNTRL, CHIPRST | ahc->pause);
 
 	/*
 	 * Ensure that the reset has finished.  We delay 1000us

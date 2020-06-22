@@ -222,6 +222,8 @@ struct ac97_codec {
 	int dev_mixer; 
 	int type;
 
+	int modem:1;
+
 	struct ac97_ops *codec_ops;
 
 	/* controller specific lower leverl ac97 accessing routines */
@@ -236,6 +238,9 @@ struct ac97_codec {
 	int supported_mixers;
 	int stereo_mixers;
 	int record_sources;
+
+	/* Property flags */
+	int flags;
 
 	int bit_resolution;
 
@@ -265,6 +270,8 @@ struct ac97_ops
 	int (*amplifier)(struct ac97_codec *codec, int on);
 	/* Digital mode control */
 	int (*digital)(struct ac97_codec *codec, int format);
+#define AC97_DELUDED_MODEM	1	/* Audio codec reports its a modem */
+#define AC97_NO_PCM_VOLUME	2	/* Volume control is missing 	   */
 };
 
 extern int ac97_read_proc (char *page_out, char **start, off_t off,

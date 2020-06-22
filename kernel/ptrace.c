@@ -21,6 +21,7 @@
  */
 int ptrace_check_attach(struct task_struct *child, int kill)
 {
+
 	if (!(child->ptrace & PT_PTRACED))
 		return -ESRCH;
 
@@ -70,7 +71,7 @@ int ptrace_attach(struct task_struct *task)
  	    (current->gid != task->gid)) && !capable(CAP_SYS_PTRACE))
 		goto bad;
 	rmb();
-	if (!task->mm->dumpable && !capable(CAP_SYS_PTRACE))
+	if (!is_dumpable(task) && !capable(CAP_SYS_PTRACE))
 		goto bad;
 	/* the same process cannot be attached many times */
 	if (task->ptrace & PT_PTRACED)

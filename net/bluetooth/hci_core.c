@@ -717,7 +717,7 @@ int hci_get_dev_list(unsigned long arg)
 	if (!dev_num)
 		return -EINVAL;
 	
-	size = dev_num * sizeof(struct hci_dev_req) + sizeof(__u16);
+	size = dev_num * sizeof(*dr) + sizeof(*dl);
 
 	if (verify_area(VERIFY_WRITE, (void *) arg, size))
 		return -EFAULT;
@@ -738,7 +738,7 @@ int hci_get_dev_list(unsigned long arg)
 	read_unlock_bh(&hdev_list_lock);
 
 	dl->dev_num = n;
-	size = n * sizeof(struct hci_dev_req) + sizeof(__u16);
+	size = n * sizeof(*dr) + sizeof(*dl);
 
 	copy_to_user((void *) arg, dl, size);
 	kfree(dl);
@@ -864,6 +864,22 @@ int hci_unregister_dev(struct hci_dev *hdev)
 	return 0;
 }
 
+/* Suspend HCI device */
+int hci_suspend_dev(struct hci_dev *hdev)
+{
+	hci_notify(hdev, HCI_DEV_SUSPEND);
+	hci_run_hotplug(hdev->name, "suspend");
+	return 0;
+}
+
+/* Resume HCI device */
+int hci_resume_dev(struct hci_dev *hdev)
+{
+	hci_notify(hdev, HCI_DEV_RESUME);
+	hci_run_hotplug(hdev->name, "resume");
+	return 0;
+}       
+
 /* Receive frame from HCI drivers */
 int hci_recv_frame(struct sk_buff *skb)
 {
@@ -957,40 +973,6 @@ static int hci_send_frame(struct sk_buff *skb)
 	skb_orphan(skb);
 
 	return hdev->send(skb);
-}
-
-/* Send raw HCI frame */
-int hci_send_raw(struct sk_buff *skb)
-{
-	struct hci_dev *hdev = (struct hci_dev *) skb->dev;
-
-	if (!hdev) {
-		kfree_skb(skb);
-		return -ENODEV;
-	}
-
-	BT_DBG("%s type %d len %d", hdev->name, skb->pkt_type, skb->len);
-
-	if (!test_bit(HCI_RAW, &hdev->flags)) {
-		/* Queue frame according it's type */
-		switch (skb->pkt_type) {
-		case HCI_COMMAND_PKT:
-			skb_queue_tail(&hdev->cmd_q, skb);
-			hci_sched_cmd(hdev);
-			return 0;
-
-		case HCI_ACLDATA_PKT:
-		case HCI_SCODATA_PKT:
-			/* FIXME:
-		 	 * Check header here and queue to apropriate connection.
-		 	 */
-			break;
-		}
-	}
-
-	skb_queue_tail(&hdev->raw_q, skb);
-	hci_sched_tx(hdev);
-	return 0;
 }
 
 /* Send HCI command */

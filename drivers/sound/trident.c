@@ -223,7 +223,7 @@
 #define TRIDENT_STATE_MAGIC	0x63657373 /* "cess" */
 
 #define TRIDENT_DMA_MASK	0x3fffffff /* DMA buffer mask for pci_alloc_consist */
-#define ALI_DMA_MASK		0xffffffff /* ALI Tridents lack the 30-bit limitation */
+#define ALI_DMA_MASK		0x7fffffff /* ALI Tridents have 31-bit DMA. Wow. */
 
 #define NR_HW_CH		32
 
@@ -3060,7 +3060,7 @@ static void ali_ac97_set(struct trident_card *card, int secondary, u8 reg, u16 v
         ncount = 10;
 	while(1) {
 		wcontrol = inw(TRID_REG(card, ALI_AC97_WRITE));
-		if(!wcontrol & 0x8000)
+		if(!(wcontrol & 0x8000))
 			break;
 		if(ncount <= 0)
 			break;
@@ -3368,15 +3368,17 @@ static int ali_close_multi_channels(void)
         pci_dev = pci_find_device(PCI_VENDOR_ID_AL,PCI_DEVICE_ID_AL_M1533, pci_dev);
         if (pci_dev == NULL)
                 return -1;
-	temp = 0x80;
-	pci_write_config_byte(pci_dev, 0x59, ~temp);
+	pci_read_config_byte(pci_dev, 0x59, &temp);
+	temp &= ~0x80;
+	pci_write_config_byte(pci_dev, 0x59, temp);
 	
 	pci_dev = pci_find_device(PCI_VENDOR_ID_AL, PCI_DEVICE_ID_AL_M7101, pci_dev);
 	if (pci_dev == NULL)
                 return -1;
 
-	temp = 0x20;
-	pci_write_config_byte(pci_dev, 0xB8, ~temp);
+	pci_read_config_byte(pci_dev, 0xB8, &temp);
+	temp &= ~0x20;
+	pci_write_config_byte(pci_dev, 0xB8, temp);
 
 	return 0;
 }
@@ -3390,13 +3392,15 @@ static int ali_setup_multi_channels(struct trident_card *card, int chan_nums)
 	pci_dev = pci_find_device(PCI_VENDOR_ID_AL, PCI_DEVICE_ID_AL_M1533, pci_dev);
 	if (pci_dev == NULL)
                 return -1;
-	temp = 0x80;
+	pci_read_config_byte(pci_dev, 0x59, &temp);
+	temp |= 0x80;
 	pci_write_config_byte(pci_dev, 0x59, temp);
 	
 	pci_dev = pci_find_device(PCI_VENDOR_ID_AL, PCI_DEVICE_ID_AL_M7101, pci_dev);
  	if (pci_dev == NULL)
                 return -1;
-	temp = 0x20;
+	pci_read_config_byte(pci_dev, (int)0xB8, &temp);
+	temp |= 0x20;
 	pci_write_config_byte(pci_dev, (int)0xB8,(u8) temp);
 	if (chan_nums == 6) {
 		dwValue = inl(TRID_REG(card, ALI_SCTRL)) | 0x000f0000;
@@ -3936,8 +3940,9 @@ static int ali_reset_5451(struct trident_card *card)
 		wReg = ali_ac97_get(card, 0, AC97_POWER_CONTROL);
 		if((wReg & 0x000f) == 0x000f)
 			return 0;
-		udelay(500);
+		udelay(5000);
 	}
+	/* This is non fatal if you have a non PM capable codec.. */
 	return 0;
 }
 

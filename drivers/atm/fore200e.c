@@ -1135,7 +1135,7 @@ fore200e_push_rpd(struct fore200e* fore200e, struct rpd* rpd)
 	return;
     } 
 
-    skb->stamp = vcc->timestamp = xtime;
+    skb->stamp = xtime;
     
 #ifdef FORE200E_52BYTE_AAL0_SDU
     if (cell_header) {

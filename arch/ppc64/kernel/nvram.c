@@ -99,11 +99,11 @@ static int nvram_ioctl(struct inode *inode, struct file *file,
 }
 
 struct file_operations nvram_fops = {
-	owner:		THIS_MODULE,
-	llseek:		nvram_llseek,
-	read:		read_nvram,
-	write:		write_nvram,
-	ioctl:		nvram_ioctl,
+	.owner =	THIS_MODULE,
+	.llseek =	nvram_llseek,
+	.read =		read_nvram,
+	.write =	write_nvram,
+	.ioctl =	nvram_ioctl,
 };
 
 static struct miscdevice nvram_dev = {
@@ -126,8 +126,7 @@ int __init nvram_init(void)
 	nvram_store = rtas_token("nvram-store");
 	printk(KERN_INFO "PPC64 nvram contains %d bytes\n", rtas_nvram_size);
 
-	misc_register(&nvram_dev);
-	return 0;
+	return misc_register(&nvram_dev);
 }
 
 void __exit nvram_cleanup(void)

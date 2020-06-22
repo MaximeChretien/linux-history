@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.time.h 1.17 10/23/01 08:09:35 trini
- */
-/*
  * Common time prototypes and such for all ppc machines.
  *
  * Written by Cort Dougan (cort@fsmlabs.com) to merge

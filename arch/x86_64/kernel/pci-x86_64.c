@@ -136,8 +136,7 @@ pcibios_update_resource(struct pci_dev *dev, struct resource *root,
  * which might have be mirrored at 0x0100-0x03ff..
  */
 void
-pcibios_align_resource(void *data, struct resource *res, unsigned long size,
-		       unsigned long align)
+pcibios_align_resource(void *data, struct resource *res, unsigned long size, unsigned long align)
 {
 	if (res->flags & IORESOURCE_IO) {
 		unsigned long start = res->start;
@@ -313,9 +312,9 @@ int pcibios_enable_resources(struct pci_dev *dev, int mask)
 	pci_read_config_word(dev, PCI_COMMAND, &cmd);
 	old_cmd = cmd;
 	for(idx=0; idx<6; idx++) {
+		r = &dev->resource[idx];
 		if (!(mask & (1<<idx)))
 			continue;
-		r = &dev->resource[idx];
 		if (!r->start && r->end) {
 			printk(KERN_ERR "PCI: Device %s not available because of resource collisions\n", dev->slot_name);
 			return -EINVAL;

@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  * This file contains the routines setting up the linux page tables.
  *  -- paulus
  * 
@@ -32,10 +29,9 @@
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
 #include <asm/io.h>
+#include <asm/machdep.h>
 
 #include "mmu_decl.h"
-
-unsigned long ram_phys_base;
 
 unsigned long ioremap_base;
 unsigned long ioremap_bot;
@@ -71,7 +67,6 @@ void setbat(int index, unsigned long virt, unsigned long phys,
 #define p_mapped_by_bats(x)	(0UL)
 #endif /* HAVE_BATS */
 
-#ifndef CONFIG_PPC_ISERIES
 void *
 ioremap(unsigned long addr, unsigned long size)
 {
@@ -171,7 +166,6 @@ void iounmap(void *addr)
 	if (addr > high_memory && (unsigned long) addr < ioremap_bot)
 		vfree((void *) (PAGE_MASK & (unsigned long) addr));
 }
-#endif /* CONFIG_PPC_ISERIES */
 
 int
 map_page(unsigned long va, unsigned long pa, int flags)
@@ -203,7 +197,7 @@ adjust_total_lowmem(void)
 #ifdef HAVE_BATS
 	unsigned long bat_max = 0x10000000;
 	unsigned long align;
-	unsigned long ram = total_lowmem;
+	unsigned long ram;
 	int is601 = 0;
 	
 	/* 601s have smaller BATs */
@@ -212,10 +206,20 @@ adjust_total_lowmem(void)
 		is601 = 1;
 	}
 
+	/* adjust BAT block size to max_low_mem */
+	if (max_low_mem < bat_max)
+		bat_max = max_low_mem;
+
+	/* adjust lowmem size to max_low_mem */
+	if (max_low_mem < total_lowmem)
+		ram = max_low_mem;
+	else
+		ram = total_lowmem;
+
 	/* Make sure we don't map a block larger than the
 	   smallest alignment of the physical address. */
-	/* alignment of ram_phys_base */
-	align = ~(ram_phys_base-1) & ram_phys_base;
+	/* alignment of PPC_MEMSTART */
+	align = ~(PPC_MEMSTART-1) & PPC_MEMSTART;
 	/* set BAT block size to MIN(max_size, align) */
 	if (align && align < bat_max)
 		bat_max = align;
@@ -232,8 +236,9 @@ adjust_total_lowmem(void)
 		ram -= __bat3;
 	}
 
-	printk(KERN_INFO "Memory BAT mapping: BAT2=%ldMb, BAT3=%ldMb, residual: %ldMb\n",
-		__bat2 >> 20, __bat3 >> 20, ram >> 20);
+	printk(KERN_INFO "Memory BAT mapping: BAT2=%ldMb, BAT3=%ldMb,"
+			" residual: %ldMb\n", __bat2 >> 20, __bat3 >> 20,
+			(total_lowmem - (__bat2 - __bat3)) >> 20);
 
 	/* On SMP, we limit the lowmem to the area mapped with BATs.
 	 * We also assume nobody will do SMP with 601s
@@ -247,8 +252,9 @@ adjust_total_lowmem(void)
 	if (total_lowmem > max_low_mem) {
 		total_lowmem = max_low_mem;
 #ifndef CONFIG_HIGHMEM
-		printk(KERN_INFO "Warning, memory limited to %ld Mb, use CONFIG_HIGHMEM"
-			" to reach %ld Mb\n", max_low_mem >> 20, total_lowmem >> 20);
+		printk(KERN_INFO "Warning, memory limited to %ld Mb, use "
+				"CONFIG_HIGHMEM to reach %ld Mb\n",
+				max_low_mem >> 20, total_memory >> 20);
 		total_memory = total_lowmem;
 #endif /* CONFIG_HIGHMEM */
 	}
@@ -267,7 +273,7 @@ void __init mapin_ram(void)
 #endif /* HAVE_BATS */
 
 	v = KERNELBASE;
-	p = ram_phys_base;
+	p = PPC_MEMSTART;
 	for (s = 0; s < total_lowmem; s += PAGE_SIZE) {
 		/* On the MPC8xx, we want the page shared so we
 		 * don't get ASID compares on kernel space.
@@ -290,6 +296,8 @@ void __init mapin_ram(void)
 		v += PAGE_SIZE;
 		p += PAGE_SIZE;
 	}
+	if (ppc_md.progress)
+		ppc_md.progress("MMU:mapin_ram done", 0x401);
 }
 
 /* is x a power of 2? */

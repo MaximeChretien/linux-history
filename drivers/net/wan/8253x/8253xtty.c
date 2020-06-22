@@ -2131,7 +2131,7 @@ static int sab8253x_open(struct tty_struct *tty, struct file * filp)
 	/* Check whether or not the port is open in SYNC mode */
 	if(port->open_type == OPEN_SYNC_NET)
 	{
-		if(port->dev && netif_carrier_ok(port->dev));
+		if(port->dev && netif_carrier_ok(port->dev))
 		{
 			port->tty= NULL;	/* Don't bother with open counting here
 						   but make sure the tty field is NULL*/

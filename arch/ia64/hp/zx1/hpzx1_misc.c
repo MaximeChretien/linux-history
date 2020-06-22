@@ -17,8 +17,6 @@
 #include <asm/dma.h>
 #include <asm/iosapic.h>
 
-extern acpi_status acpi_evaluate_integer (acpi_handle, acpi_string, acpi_object_list *, unsigned long *);
-
 #define PFX "hpzx1: "
 
 static int hpzx1_devices;
@@ -252,40 +250,8 @@ hpzx1_acpi_dev_init(void)
 	 * HWP0003: AGP LBA device
 	 */
 	acpi_get_devices("HWP0001", hpzx1_sba_probe, "HWP0001", NULL);
-#ifdef CONFIG_IA64_HP_PROTO
-	if (hpzx1_devices) {
-#endif
 	acpi_get_devices("HWP0002", hpzx1_lba_probe, "HWP0002 PCI LBA", NULL);
 	acpi_get_devices("HWP0003", hpzx1_lba_probe, "HWP0003 AGP LBA", NULL);
-
-#ifdef CONFIG_IA64_HP_PROTO
-	}
-
-#define ZX1_FUNC_ID_VALUE    (PCI_DEVICE_ID_HP_ZX1_SBA << 16) | PCI_VENDOR_ID_HP
-	/*
-	 * Early protos don't have bridges in the ACPI namespace, so
-	 * if we didn't find anything, add the things we know are
-	 * there.
-	 */
-	if (hpzx1_devices == 0) {
-		u64 hpa, csr_base;
-
-		csr_base = 0xfed00000UL;
-		hpa = (u64) ioremap(csr_base, 0x2000);
-		if (__raw_readl(hpa) == ZX1_FUNC_ID_VALUE) {
-			hpzx1_fake_pci_dev("HWP0001 SBA", 0, csr_base, 0x1000);
-			hpzx1_fake_pci_dev("HWP0001 IOC", 0, csr_base + 0x1000,
-					    0x1000);
-
-			csr_base = 0xfed24000UL;
-			iounmap(hpa);
-			hpa = (u64) ioremap(csr_base, 0x1000);
-			hpzx1_fake_pci_dev("HWP0003 AGP LBA", 0x40, csr_base,
-					    0x1000);
-		}
-		iounmap(hpa);
-	}
-#endif
 }
 
 extern void sba_init(void);

@@ -620,6 +620,13 @@ fh_verify(struct svc_rqst *rqstp, struct svc_fh *fhp, int type, int access)
 			switch (fh->fh_fileid_type) {
 			case 0:
 				dentry = dget(exp->ex_dentry);
+				/* need to revalidate the inode */
+				inode = dentry->d_inode;
+				if (inode->i_op && inode->i_op->revalidate)
+					if (inode->i_op->revalidate(dentry)) {
+						dput(dentry);
+						dentry = ERR_PTR(-ESTALE);
+					}
 				break;
 			default:
 				dentry = find_fh_dentry(exp->ex_dentry->d_inode->i_sb,
@@ -671,11 +678,16 @@ fh_verify(struct svc_rqst *rqstp, struct svc_fh *fhp, int type, int access)
 
 	/* Type can be negative to e.g. exclude directories from linking */
 	if (type > 0 && (inode->i_mode & S_IFMT) != type) {
-		error = (type == S_IFDIR)? nfserr_notdir : nfserr_isdir;
+		if (type == S_IFDIR)
+			error = nfserr_notdir;
+		else if ((inode->i_mode & S_IFMT) == S_IFDIR)
+			error = nfserr_isdir;
+		else
+			error = nfserr_inval;
 		goto out;
 	}
 	if (type < 0 && (inode->i_mode & S_IFMT) == -type) {
-		error = (type == -S_IFDIR)? nfserr_notdir : nfserr_isdir;
+		error = (type == -S_IFDIR)? nfserr_isdir : nfserr_notdir;
 		goto out;
 	}
 

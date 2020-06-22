@@ -171,6 +171,7 @@ struct mdk_rdev_s
 	struct block_device *bdev;	/* block device handle */
 
 	mdp_super_t *sb;
+	struct page *sb_page;
 	unsigned long sb_offset;
 
 	int alias_device;		/* device alias to the same disk */
@@ -223,7 +224,7 @@ struct mdk_personality_s
 	int (*make_request)(mddev_t *mddev, int rw, struct buffer_head * bh);
 	int (*run)(mddev_t *mddev);
 	int (*stop)(mddev_t *mddev);
-	int (*status)(char *page, mddev_t *mddev);
+	void (*status)(struct seq_file *seq, mddev_t *mddev);
 	int (*error_handler)(mddev_t *mddev, kdev_t dev);
 
 /*

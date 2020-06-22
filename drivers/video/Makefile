@@ -102,6 +102,11 @@ ifeq ($(CONFIG_FB_MATROX),y)
 obj-y				  += matrox/matrox.o
 endif
 
+subdir-$(CONFIG_FB_INTEL)	  += intel
+ifeq ($(CONFIG_FB_INTEL),y)
+obj-y				  += intel/intelfb.o
+endif
+
 subdir-$(CONFIG_FB_RIVA)	  += riva
 ifeq ($(CONFIG_FB_RIVA),y)
 obj-y				  += riva/rivafb.o

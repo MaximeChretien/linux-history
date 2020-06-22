@@ -293,7 +293,7 @@ struct tty_struct {
 	unsigned char lnext:1, erasing:1, raw:1, real_raw:1, icanon:1;
 	unsigned char closing:1;
 	unsigned short minimum_to_wake;
-	unsigned overrun_time;
+	unsigned long overrun_time;
 	int num_overrun;
 	unsigned long process_char_map[256/(8*sizeof(unsigned long))];
 	char *read_buf;
@@ -341,7 +341,6 @@ struct tty_struct {
 extern void tty_write_flush(struct tty_struct *);
 
 extern struct termios tty_std_termios;
-extern struct tty_struct * redirect;
 extern struct tty_ldisc ldiscs[];
 extern int fg_console, last_console, want_console;
 

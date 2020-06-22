@@ -79,6 +79,20 @@ static inline void __down_read(struct rw_semaphore *sem)
 		rwsem_down_read_failed(sem);
 }
 
+static inline int __down_read_trylock(struct rw_semaphore *sem)
+{
+	int tmp;
+
+	while ((tmp = sem->count) >= 0) {
+		if (tmp == cmpxchg(&sem->count, tmp,
+				   tmp + RWSEM_ACTIVE_READ_BIAS)) {
+			smp_wmb();
+			return 1;
+		}
+	}
+	return 0;
+}
+
 /*
  * lock for writing
  */
@@ -92,6 +106,16 @@ static inline void __down_write(struct rw_semaphore *sem)
 		smp_wmb();
 	else
 		rwsem_down_write_failed(sem);
+}
+
+static inline int __down_write_trylock(struct rw_semaphore *sem)
+{
+	int tmp;
+
+	tmp = cmpxchg(&sem->count, RWSEM_UNLOCKED_VALUE,
+		      RWSEM_ACTIVE_WRITE_BIAS);
+	smp_wmb();
+	return tmp == RWSEM_UNLOCKED_VALUE;
 }
 
 /*

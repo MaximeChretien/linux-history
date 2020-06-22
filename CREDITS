@@ -733,7 +733,7 @@ D: Linux/IA-64
 D: Dell PowerEdge server, SCSI layer, misc drivers, and other patches
 S: Dell Computer Corporation
 S: One Dell Way
-S: Round Rock, TX  78681
+S: Round Rock, TX  78682
 S: USA
 
 N: Eddie C. Dost
@@ -1008,7 +1008,7 @@ S: Mountain View, California 94040
 S: USA
 
 N: Jeff Garzik
-E: jgarzik@mandrakesoft.com
+E: jgarzik@pobox.com
 
 N: Jacques Gelinas
 E: jacques@solucorp.qc.ca
@@ -1064,6 +1064,11 @@ D: Author of RTC driver & several net drivers, Ethernet & BootPrompt Howto.
 D: Made support for modules, ramdisk, generic-serial, etc. optional.
 D: Transformed old user space bdflush into 1st kernel thread - kflushd.
 D: Many other patches, documentation files, mini kernels, utilities, ...
+
+N: Masanori GOTO
+E: gotom@debian.or.jp
+D: Workbit NinjaSCSI-32Bi/UDE driver
+S: Japan
 
 N: John E. Gotts
 E: jgotts@linuxsavvy.com
@@ -1169,6 +1174,10 @@ S: 25360 Georgia Tech Station
 S: Atlanta, Georgia 30332
 S: USA
 
+N: Brad Hards
+E: bradh@frogmouth.net
+D: Various USB bits, other minor patches
+
 N: Angelo Haritsis
 E: ah@computer.org
 D: kernel patches (serial, watchdog)
@@ -1231,16 +1240,18 @@ S: Germany
 
 N: Christoph Hellwig
 E: hch@infradead.org
-D: misc driver & makefile hacking
+E: hch@sgi.com
+D: all kinds of driver, filesystem & core kernel hacking
 D: freevxfs driver
 D: sysvfs maintainer
-S: Triftstraße 26
-S: 38644 Goslar
+D: chief codingstyle nitpicker
+S: Auweg 38
+S: 85748 Garching
 S: Germany
 
 N: Richard Henderson
 E: rth@twiddle.net
-E: rth@cygnus.com
+E: rth@redhat.com
 D: Alpha hacker, kernel and userland
 S: 1668 California St.
 S: Mountain View, California 94041
@@ -1488,7 +1499,7 @@ S: Herts, WD6 4PJ
 S: United Kingdom
 
 N: Ani Joshi
-E: ajoshi@shell.unixbox.com
+E: ajoshi@kernel.crashing.org
 D: fbdev hacking
 
 N: Bernhard Kaindl
@@ -1888,7 +1899,8 @@ N: Pavel Machek
 E: pavel@ucw.cz
 E: pavel@suse.cz
 D: Softcursor for vga, hypertech cdrom support, vcsa bugfix, nbd
-D: sun4/330 port, capabilities for elf, speedup for rm on ext2, USB
+D: sun4/330 port, capabilities for elf, speedup for rm on ext2, USB,
+D: x86-64 port, software suspend
 S: Volkova 1131
 S: 198 00 Praha 9
 S: Czech Republic
@@ -1919,6 +1931,11 @@ S: Canada B3J 3C8
 N: Kai Mäkisara
 E: Kai.Makisara@metla.fi
 D: SCSI Tape Driver
+
+N: Dan Malek
+E: dan@mvista.com
+D: PowerPC 8xx, 4xx work.
+S: USA
 
 N: Asit Mallick
 E: asit.k.mallick@intel.com
@@ -2210,11 +2227,12 @@ S: Derbyshire DE4 3RL
 S: United Kingdom
 
 N: Ian S. Nelson
-E: ian.nelson@echostar.com
+E: nelsonis@earthlink.net
 D: Minor mmap and ide hacks
 S: 1370 Atlantis Ave.
 S: Lafayette CO, 80026
 S: USA
+P: 1024D/DD478240 4073 9AF8 027F 278D CBBB  DA3C 9905 0415 DD47 8240
 
 N: Russell Nelson
 E: nelson@crynwr.com
@@ -2224,6 +2242,15 @@ D: Author of cs89x0, maintainer of kernel changelog through 1.3.3
 D: Wrote many packet drivers, from which some Ethernet drivers are derived.
 S: 521 Pleasant Valley Road
 S: Potsdam, New York 13676
+S: USA
+
+N: Dave Neuer
+E: dneuer@innovation-charter.com
+E: mr_fred_smoothie@yahoo.com
+D: Helped implement support for Compaq's H31xx series iPAQs
+D: Other mostly minor tweaks & bugfixes
+S: 325 E. Main St., Suite 3
+S: Carnegie, PA 15105
 S: USA
 
 N: Michael Neuffer
@@ -2397,17 +2424,23 @@ E: ken@halcyon.com
 D: CDROM driver "sonycd535" (Sony CDU-535/531)
 
 N: Stelian Pop
-E: stelian.pop@fr.alcove.com
+E: stelian@popies.net
 P: 1024D/EDBB6147 7B36 0E07 04BC 11DC A7A0  D3F7 7185 9E7A EDBB 6147
 D: sonypi, meye drivers, mct_u232 usb serial hacks
-S: Alcôve
-S: 153, bd. Anatole France 
-S: 93200 Saint Denis
-S: France
+S: Paris, France
 
 N: Frederic Potter 
 E: fpotter@cirpack.com
 D: Some PCI kernel support
+
+N: Matt Porter
+E: porter@cox.net
+E: mporter@mvista.com
+D: Motorola PowerPC PReP support
+D: cPCI PowerPC support
+D: Embedded PowerPC 440/6xx/7xx/74xx support
+S: Chandler, Arizona 85249
+S: USA
 
 N: Rui Prior
 E: rprior@inescn.pt
@@ -2519,6 +2552,12 @@ D: International kernel patch project
 S: Kasarmikatu 11 A4
 S: 70110 Kuopio
 S: Finland
+
+N: Tom Rini
+E: trini@kernel.crashing.org
+D: Lots of PowerPC cleanups, minor matroxfb work
+S: Tucson, Arizona
+S: USA
 
 N: William E. Roadcap
 E: roadcapw@cfw.com
@@ -3281,6 +3320,12 @@ D: RTLinux (RealTime Linux)
 S: POB 1822 
 S: Socorro NM, 87801
 S: USA
+
+N: Hiroshi YOKOTA
+E: yokota@netlab.is.tsukuba.ac.jp
+D: Workbit NinjaSCSI-3/32Bi PCMCIA driver
+D: Workbit NinjaSCSI-32Bi/UDE driver
+S: Japan
 
 N: Eric Youngdale
 E: eric@andante.org

@@ -745,10 +745,10 @@ void hp_sdc_kicker (unsigned long data) {
 
 static struct parisc_device_id hp_sdc_tbl[] = {
 	{
-		hw_type:	HPHW_FIO, 
-		hversion_rev:	HVERSION_REV_ANY_ID,
-		hversion:	HVERSION_ANY_ID,
-		sversion:	0x73, 
+		.hw_type =	HPHW_FIO, 
+		.hversion_rev =	HVERSION_REV_ANY_ID,
+		.hversion =	HVERSION_ANY_ID,
+		.sversion =	0x73, 
 	 },
 	{ 0, }
 };
@@ -758,9 +758,9 @@ MODULE_DEVICE_TABLE(parisc, hp_sdc_tbl);
 static int __init hp_sdc_init(struct parisc_device *d);
 
 static struct parisc_driver hp_sdc_driver = {
-	name:		"HP SDC",
-	id_table:	hp_sdc_tbl,
-	probe:		hp_sdc_init,
+	.name =		"HP SDC",
+	.id_table =	hp_sdc_tbl,
+	.probe =	hp_sdc_init,
 };
 
 static int __init hp_sdc_init(struct parisc_device *d)

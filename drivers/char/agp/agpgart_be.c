@@ -209,7 +209,6 @@ void agp_free_memory(agp_memory * curr)
 	}
 	if (curr->page_count != 0) {
 		for (i = 0; i < curr->page_count; i++) {
-			curr->memory[i] &= ~(0x00000fff);
 			agp_bridge.agp_destroy_page((unsigned long)
 					 phys_to_virt(curr->memory[i]));
 		}
@@ -262,10 +261,7 @@ agp_memory *agp_allocate_memory(size_t page_count, u32 type)
 			agp_free_memory(new);
 			return NULL;
 		}
-		new->memory[i] =
-		    agp_bridge.mask_memory(
-				   virt_to_phys((void *) new->memory[i]),
-						  type);
+		new->memory[i] = virt_to_phys((void *) new->memory[i]);
 		new->page_count++;
 	}
 
@@ -311,9 +307,6 @@ static int agp_return_size(void)
 
 int agp_copy_info(agp_kern_info * info)
 {
-	unsigned long page_mask = 0;
-	int i;
-
 	memset(info, 0, sizeof(agp_kern_info));
 	if (agp_bridge.type == NOT_SUPPORTED) {
 		info->chipset = agp_bridge.type;
@@ -329,11 +322,7 @@ int agp_copy_info(agp_kern_info * info)
 	info->max_memory = agp_bridge.max_memory_agp;
 	info->current_memory = atomic_read(&agp_bridge.current_memory_agp);
 	info->cant_use_aperture = agp_bridge.cant_use_aperture;
-
-	for(i = 0; i < agp_bridge.num_of_masks; i++)
-		page_mask |= agp_bridge.mask_memory(page_mask, i);
-
-	info->page_mask = ~page_mask;
+	info->page_mask = ~0UL;
 	return 0;
 }
 
@@ -731,7 +720,8 @@ static int agp_generic_insert_memory(agp_memory * mem,
 		mem->is_flushed = TRUE;
 	}
 	for (i = 0, j = pg_start; i < mem->page_count; i++, j++) {
-		agp_bridge.gatt_table[j] = mem->memory[i];
+		agp_bridge.gatt_table[j] =
+			agp_bridge.mask_memory(mem->memory[i], mem->type);
 	}
 
 	agp_bridge.tlb_flush(mem);
@@ -976,7 +966,8 @@ insert:
    	CACHE_FLUSH();
 	for (i = 0, j = pg_start; i < mem->page_count; i++, j++) {
 		OUTREG32(intel_i810_private.registers,
-			 I810_PTE_BASE + (j * 4), mem->memory[i]);
+			 I810_PTE_BASE + (j * 4),
+			 agp_bridge.mask_memory(mem->memory[i], mem->type));
 	}
 	CACHE_FLUSH();
 
@@ -1042,10 +1033,7 @@ static agp_memory *intel_i810_alloc_by_type(size_t pg_count, int type)
 			agp_free_memory(new);
 			return NULL;
 		}
-		new->memory[0] =
-		    agp_bridge.mask_memory(
-				   virt_to_phys((void *) new->memory[0]),
-						  type);
+		new->memory[0] = virt_to_phys((void *) new->memory[0]);
 		new->page_count = 1;
 	   	new->num_scratch_pages = 1;
 	   	new->type = AGP_PHYS_MEMORY;
@@ -1079,7 +1067,6 @@ static int __init intel_i810_setup(struct pci_dev *i810_dev)
 	intel_i810_private.i810_dev = i810_dev;
 
 	agp_bridge.masks = intel_i810_masks;
-	agp_bridge.num_of_masks = 2;
 	agp_bridge.aperture_sizes = (void *) intel_i810_sizes;
 	agp_bridge.size_type = FIXED_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 2;
@@ -1282,7 +1269,8 @@ static int intel_i830_insert_entries(agp_memory *mem,off_t pg_start,int type)
 	CACHE_FLUSH();
 
 	for (i = 0, j = pg_start; i < mem->page_count; i++, j++)
-		OUTREG32(intel_i830_private.registers,I810_PTE_BASE + (j * 4),mem->memory[i]);
+		OUTREG32(intel_i830_private.registers,I810_PTE_BASE + (j * 4),
+			 agp_bridge.mask_memory(mem->memory[i], mem->type));
 
 	CACHE_FLUSH();
 
@@ -1343,7 +1331,7 @@ static agp_memory *intel_i830_alloc_by_type(size_t pg_count,int type)
 			return(NULL);
 		}
 
-		nw->memory[0] = agp_bridge.mask_memory(virt_to_phys((void *) nw->memory[0]),type);
+		nw->memory[0] = virt_to_phys((void *) nw->memory[0]);
 		nw->page_count = 1;
 		nw->num_scratch_pages = 1;
 		nw->type = AGP_PHYS_MEMORY;
@@ -1359,7 +1347,6 @@ static int __init intel_i830_setup(struct pci_dev *i830_dev)
 	intel_i830_private.i830_dev = i830_dev;
 
 	agp_bridge.masks = intel_i810_masks;
-	agp_bridge.num_of_masks = 3;
 	agp_bridge.aperture_sizes = (void *) intel_i830_sizes;
 	agp_bridge.size_type = FIXED_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 2;
@@ -1841,7 +1828,6 @@ static aper_size_info_8 intel_830mp_sizes[4] =
 static int __init intel_generic_setup (struct pci_dev *pdev)
 {
 	agp_bridge.masks = intel_generic_masks;
-	agp_bridge.num_of_masks = 1;
 	agp_bridge.aperture_sizes = (void *) intel_generic_sizes;
 	agp_bridge.size_type = U16_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 7;
@@ -1874,7 +1860,6 @@ static int __init intel_generic_setup (struct pci_dev *pdev)
 static int __init intel_815_setup (struct pci_dev *pdev)
 {
 	agp_bridge.masks = intel_generic_masks;
-	agp_bridge.num_of_masks = 1;
 	agp_bridge.aperture_sizes = (void *) intel_815_sizes;
 	agp_bridge.size_type = U8_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 2;
@@ -1907,7 +1892,6 @@ static int __init intel_815_setup (struct pci_dev *pdev)
 static int __init intel_820_setup (struct pci_dev *pdev)
 {
        agp_bridge.masks = intel_generic_masks;
-       agp_bridge.num_of_masks = 1;
        agp_bridge.aperture_sizes = (void *) intel_8xx_sizes;
        agp_bridge.size_type = U8_APER_SIZE;
        agp_bridge.num_aperture_sizes = 7;
@@ -1940,7 +1924,6 @@ static int __init intel_820_setup (struct pci_dev *pdev)
 static int __init intel_830mp_setup (struct pci_dev *pdev)
 {
        agp_bridge.masks = intel_generic_masks;
-       agp_bridge.num_of_masks = 1;
        agp_bridge.aperture_sizes = (void *) intel_830mp_sizes;
        agp_bridge.size_type = U8_APER_SIZE;
        agp_bridge.num_aperture_sizes = 4;
@@ -1972,7 +1955,6 @@ static int __init intel_830mp_setup (struct pci_dev *pdev)
 static int __init intel_840_setup (struct pci_dev *pdev)
 {
 	agp_bridge.masks = intel_generic_masks;
-	agp_bridge.num_of_masks = 1;
 	agp_bridge.aperture_sizes = (void *) intel_8xx_sizes;
 	agp_bridge.size_type = U8_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 7;
@@ -2005,7 +1987,6 @@ static int __init intel_840_setup (struct pci_dev *pdev)
 static int __init intel_845_setup (struct pci_dev *pdev)
 {
 	agp_bridge.masks = intel_generic_masks;
-	agp_bridge.num_of_masks = 1;
 	agp_bridge.aperture_sizes = (void *) intel_8xx_sizes;
 	agp_bridge.size_type = U8_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 7;
@@ -2038,7 +2019,6 @@ static int __init intel_845_setup (struct pci_dev *pdev)
 static int __init intel_850_setup (struct pci_dev *pdev)
 {
 	agp_bridge.masks = intel_generic_masks;
-	agp_bridge.num_of_masks = 1;
 	agp_bridge.aperture_sizes = (void *) intel_8xx_sizes;
 	agp_bridge.size_type = U8_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 7;
@@ -2071,7 +2051,6 @@ static int __init intel_850_setup (struct pci_dev *pdev)
 static int __init intel_860_setup (struct pci_dev *pdev)
 {
 	agp_bridge.masks = intel_generic_masks;
-	agp_bridge.num_of_masks = 1;
 	agp_bridge.aperture_sizes = (void *) intel_8xx_sizes;
 	agp_bridge.size_type = U8_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 7;
@@ -2191,7 +2170,6 @@ static gatt_mask via_generic_masks[] =
 static int __init via_generic_setup (struct pci_dev *pdev)
 {
 	agp_bridge.masks = via_generic_masks;
-	agp_bridge.num_of_masks = 1;
 	agp_bridge.aperture_sizes = (void *) via_generic_sizes;
 	agp_bridge.size_type = U8_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 7;
@@ -2305,7 +2283,6 @@ static gatt_mask sis_generic_masks[] =
 static int __init sis_generic_setup (struct pci_dev *pdev)
 {
 	agp_bridge.masks = sis_generic_masks;
-	agp_bridge.num_of_masks = 1;
 	agp_bridge.aperture_sizes = (void *) sis_generic_sizes;
 	agp_bridge.size_type = U8_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 7;
@@ -2643,7 +2620,8 @@ static int amd_insert_memory(agp_memory * mem,
 	for (i = 0, j = pg_start; i < mem->page_count; i++, j++) {
 		addr = (j * PAGE_SIZE) + agp_bridge.gart_bus_addr;
 		cur_gatt = GET_GATT(addr);
-		cur_gatt[GET_GATT_OFF(addr)] = mem->memory[i];
+		cur_gatt[GET_GATT_OFF(addr)] =
+			agp_bridge.mask_memory(mem->memory[i], mem->type);
 	}
 	agp_bridge.tlb_flush(mem);
 	return 0;
@@ -2689,7 +2667,6 @@ static gatt_mask amd_irongate_masks[] =
 static int __init amd_irongate_setup (struct pci_dev *pdev)
 {
 	agp_bridge.masks = amd_irongate_masks;
-	agp_bridge.num_of_masks = 1;
 	agp_bridge.aperture_sizes = (void *) amd_irongate_sizes;
 	agp_bridge.size_type = LVL2_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 7;
@@ -2790,7 +2767,7 @@ static int x86_64_insert_memory(agp_memory * mem, off_t pg_start, int type)
 	}
 
 	for (i = 0, j = pg_start; i < mem->page_count; i++, j++) {
-		addr = mem->memory[i];
+		addr = agp_bridge.mask_memory(mem->memory[i], mem->type);
 
 		tmp = addr;
 		BUG_ON(tmp & 0xffffff0000000ffc);
@@ -3155,7 +3132,6 @@ static void agp_x86_64_agp_enable(u32 mode)
 static int __init amd_8151_setup (struct pci_dev *pdev)
 {
 	agp_bridge.masks = amd_8151_masks;
-	agp_bridge.num_of_masks = 1;
 	agp_bridge.aperture_sizes = (void *) amd_8151_sizes;
 	agp_bridge.size_type = U32_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 7;
@@ -3393,7 +3369,6 @@ static aper_size_info_32 ali_generic_sizes[7] =
 static int __init ali_generic_setup (struct pci_dev *pdev)
 {
 	agp_bridge.masks = ali_generic_masks;
-	agp_bridge.num_of_masks = 1;
 	agp_bridge.aperture_sizes = (void *) ali_generic_sizes;
 	agp_bridge.size_type = U32_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 7;
@@ -3807,7 +3782,8 @@ static int serverworks_insert_memory(agp_memory * mem,
 	for (i = 0, j = pg_start; i < mem->page_count; i++, j++) {
 		addr = (j * PAGE_SIZE) + agp_bridge.gart_bus_addr;
 		cur_gatt = SVRWRKS_GET_GATT(addr);
-		cur_gatt[GET_GATT_OFF(addr)] = mem->memory[i];
+		cur_gatt[GET_GATT_OFF(addr)] =
+			agp_bridge.mask_memory(mem->memory[i], mem->type);
 	}
 	agp_bridge.tlb_flush(mem);
 	return 0;
@@ -3964,7 +3940,6 @@ static int __init serverworks_setup (struct pci_dev *pdev)
 	serverworks_private.svrwrks_dev = pdev;
 
 	agp_bridge.masks = serverworks_masks;
-	agp_bridge.num_of_masks = 1;
 	agp_bridge.aperture_sizes = (void *) serverworks_sizes;
 	agp_bridge.size_type = LVL2_APER_SIZE;
 	agp_bridge.num_aperture_sizes = 7;
@@ -4362,7 +4337,6 @@ static unsigned long hp_zx1_unmask_memory(unsigned long addr)
 static int __init hp_zx1_setup (struct pci_dev *pdev)
 {
 	agp_bridge.masks = hp_zx1_masks;
-	agp_bridge.num_of_masks = 1;
 	agp_bridge.dev_private_data = NULL;
 	agp_bridge.size_type = FIXED_APER_SIZE;
 	agp_bridge.needs_scratch_page = FALSE;
@@ -4485,12 +4459,6 @@ static struct {
 		"AMD",
 		"761",
 		amd_irongate_setup },
-	{ PCI_DEVICE_ID_AMD_762_0,
-		PCI_VENDOR_ID_AMD,
-		AMD_762,
-		"AMD",
-		"760MP",
-		amd_irongate_setup },
 	{ 0,
 		PCI_VENDOR_ID_AMD,
 		AMD_GENERIC,
@@ -4556,7 +4524,7 @@ static struct {
 		 INTEL_I845_G,
 		 "Intel",
 		 "i845G",
-		 intel_830mp_setup },
+		 intel_845_setup },
 	{ PCI_DEVICE_ID_INTEL_840_0,
 		PCI_VENDOR_ID_INTEL,
 		INTEL_I840,
@@ -4713,6 +4681,18 @@ static struct {
 		VIA_APOLLO_KT133,
 		"Via",
 		"Apollo Pro KT266",
+		via_generic_setup },
+        { PCI_DEVICE_ID_VIA_8377_0,
+		PCI_VENDOR_ID_VIA,
+		VIA_APOLLO_KT400,
+		"Via",
+		"Apollo Pro KT400",
+		via_generic_setup },
+	{ PCI_DEVICE_ID_VIA_P4X333,
+		PCI_VENDOR_ID_VIA,
+		VIA_APOLLO_P4X400,
+		"Via",
+		"Apollo P4X400",
 		via_generic_setup },
 	{ 0,
 		PCI_VENDOR_ID_VIA,
@@ -5077,17 +5057,17 @@ static int __init agp_backend_initialize(void)
 	}
 
 	if (agp_bridge.needs_scratch_page == TRUE) {
-		agp_bridge.scratch_page = agp_bridge.agp_alloc_page();
+		unsigned long addr;
+		addr = agp_bridge.agp_alloc_page();
 
-		if (agp_bridge.scratch_page == 0) {
+		if (addr == 0) {
 			printk(KERN_ERR PFX "unable to get memory for "
 			       "scratch page.\n");
 			return -ENOMEM;
 		}
+		agp_bridge.scratch_page_real = virt_to_phys((void *) addr);
 		agp_bridge.scratch_page =
-		    virt_to_phys((void *) agp_bridge.scratch_page);
-		agp_bridge.scratch_page =
-		    agp_bridge.mask_memory(agp_bridge.scratch_page, 0);
+		    agp_bridge.mask_memory(agp_bridge.scratch_page_real, 0);
 	}
 
 	size_value = agp_bridge.fetch_size();
@@ -5129,9 +5109,8 @@ static int __init agp_backend_initialize(void)
 
 err_out:
 	if (agp_bridge.needs_scratch_page == TRUE) {
-		agp_bridge.scratch_page &= ~(0x00000fff);
 		agp_bridge.agp_destroy_page((unsigned long)
-				 phys_to_virt(agp_bridge.scratch_page));
+				 phys_to_virt(agp_bridge.scratch_page_real));
 	}
 	if (got_gatt)
 		agp_bridge.free_gatt_table();
@@ -5149,9 +5128,8 @@ static void agp_backend_cleanup(void)
 	vfree(agp_bridge.key_list);
 
 	if (agp_bridge.needs_scratch_page == TRUE) {
-		agp_bridge.scratch_page &= ~(0x00000fff);
 		agp_bridge.agp_destroy_page((unsigned long)
-				 phys_to_virt(agp_bridge.scratch_page));
+				 phys_to_virt(agp_bridge.scratch_page_real));
 	}
 }
 

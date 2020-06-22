@@ -1,4 +1,4 @@
-/*    $Id: unaligned.c,v 1.9 2001/10/04 03:31:08 tausq Exp $
+/*    $Id: unaligned.c,v 1.10 2002/09/22 02:21:05 tausq Exp $
  *
  *    Unaligned memory access handler
  *
@@ -108,7 +108,7 @@
 #define OPCODE_STW_L    OPCODE4(0x1A)
 #define OPCODE_STW_L2   OPCODE4(0x1B)
 
-
+int unaligned_enabled = 1;
 
 void die_if_kernel (char *str, struct pt_regs *regs, long err);
 
@@ -281,6 +281,9 @@ void handle_unaligned(struct pt_regs *regs)
 		}
 	}
 
+	if (!unaligned_enabled)
+		goto force_sigbus;
+
 	/* TODO: make this cleaner... */
 	switch (regs->iir & OPCODE1_MASK)
 	{
@@ -368,7 +371,7 @@ void handle_unaligned(struct pt_regs *regs)
 	{
 		printk(KERN_CRIT "Unaligned handler failed, ret = %d\n", ret);
 		die_if_kernel("Unaligned data reference", regs, 28);
-
+force_sigbus:
 		/* couldn't handle it ... */
 		si.si_signo = SIGBUS;
 		si.si_errno = 0;
@@ -432,3 +435,4 @@ check_unaligned(struct pt_regs *regs)
 
 	return (int)(regs->ior & align_mask);
 }
+

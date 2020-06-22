@@ -152,7 +152,7 @@ void dump_thread(struct pt_regs *regs, struct user *dump)
 /*
  * Create a kernel thread
  */
-int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags)
+int arch_kernel_thread(int (*fn)(void *), void * arg, unsigned long flags)
 {
 	long retval;
 

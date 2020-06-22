@@ -674,20 +674,20 @@ static int hp_sdc_rtc_ioctl(struct inode *inode, struct file *file,
 }
 
 static struct file_operations hp_sdc_rtc_fops = {
-        owner:          THIS_MODULE,
-        llseek:         hp_sdc_rtc_llseek,
-        read:           hp_sdc_rtc_read,
-        poll:           hp_sdc_rtc_poll,
-        ioctl:          hp_sdc_rtc_ioctl,
-        open:           hp_sdc_rtc_open,
-        release:        hp_sdc_rtc_release,
-        fasync:         hp_sdc_rtc_fasync,
+        .owner =	THIS_MODULE,
+        .llseek =	hp_sdc_rtc_llseek,
+        .read =		hp_sdc_rtc_read,
+        .poll =		hp_sdc_rtc_poll,
+        .ioctl =	hp_sdc_rtc_ioctl,
+        .open =		hp_sdc_rtc_open,
+        .release =	hp_sdc_rtc_release,
+        .fasync =	hp_sdc_rtc_fasync,
 };
 
 static struct miscdevice hp_sdc_rtc_dev = {
-        minor:		RTC_MINOR,
-        name:		"rtc",
-        fops:		&hp_sdc_rtc_fops
+        .minor =	RTC_MINOR,
+        .name =		"rtc",
+        .fops =		&hp_sdc_rtc_fops
 };
 
 static int __init hp_sdc_rtc_init(void)

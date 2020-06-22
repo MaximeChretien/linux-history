@@ -1,3 +1,6 @@
+#ifndef __ASM_SMPLOCK_H
+#define __ASM_SMPLOCK_H
+
 /*
  * <asm/smplock.h>
  *
@@ -74,3 +77,5 @@ static __inline__ void unlock_kernel(void)
 		 "=m" (current->lock_depth));
 #endif
 }
+
+#endif /* __ASM_SMPLOCK_H */

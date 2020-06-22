@@ -7005,7 +7005,7 @@ static void ncr_soft_reset(ncb_p np)
 			INW (nc_sist);
 		}
 		else if (istat & DIP) {
-			if (INB (nc_dstat) & ABRT);
+			if (INB (nc_dstat) & ABRT)
 				break;
 		}
 		UDELAY(5);

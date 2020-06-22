@@ -21,7 +21,7 @@
    This is access code for flashes using ARM's flash partitioning 
    standards.
 
-   $Id: afs.c,v 1.7 2001/11/01 20:04:54 rmk Exp $
+   $Id: afs.c,v 1.8 2002/05/04 08:49:09 rmk Exp $
 
 ======================================================================*/
 
@@ -169,6 +169,7 @@ int parse_afs_partitions(struct mtd_info *mtd, struct mtd_partition **pparts)
 	if (!parts)
 		return -ENOMEM;
 
+	memset(parts, 0, sz);
 	str = (char *)(parts + idx);
 
 	/*

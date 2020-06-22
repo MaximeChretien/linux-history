@@ -3,6 +3,9 @@
  *
  * Written by Martin K. Petersen <mkp@mkp.net>
  * Copyright (C) 2002 Hewlett-Packard Company
+ * Portions Copyright (C) 2003 Martin K. Petersen
+ *
+ * Latest version: http://mkp.net/forte/
  *
  * Based upon the ALSA FM801 driver by Jaroslav Kysela and OSS drivers
  * by Thomas Sailer, Alan Cox, Zach Brown, and Jeff Garzik.  Thanks
@@ -24,15 +27,6 @@
  *
  */
  
-/*
- * TODO:
- *	MMIO
- *	Multichannelize
- *	Multichipify
- *	MPU401
- *	M^Gameport
- */
-
 #include <linux/config.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -53,9 +47,10 @@
 
 #include <asm/uaccess.h>
 #include <asm/hardirq.h>
+#include <asm/io.h>
 
 #define DRIVER_NAME	"forte"
-#define DRIVER_VERSION 	"$Id: forte.c,v 1.55 2002/10/02 00:01:42 mkp Exp $"
+#define DRIVER_VERSION 	"$Id: forte.c,v 1.63 2003/03/01 05:32:42 mkp Exp $"
 #define PFX 		DRIVER_NAME ": "
 
 #undef M_DEBUG
@@ -76,10 +71,11 @@
 #define FORTE_MIN_FRAG_SIZE     256
 #define FORTE_MAX_FRAG_SIZE     PAGE_SIZE
 #define FORTE_DEF_FRAG_SIZE     256
-#define FORTE_MIN_FRAGMENTS     16
+#define FORTE_MIN_FRAGMENTS     2
 #define FORTE_MAX_FRAGMENTS     256
-#define FORTE_DEF_FRAGMENTS     16
-#define FORTE_MIN_BUF           16386
+#define FORTE_DEF_FRAGMENTS     2
+#define FORTE_MIN_BUF_MSECS     500
+#define FORTE_MAX_BUF_MSECS     1000
 
 /* PCI BARs */
 #define FORTE_PCM_VOL           0x00    /* PCM Output Volume */
@@ -168,6 +164,7 @@ struct forte_channel {
 
 	unsigned int		frag_sz; 	/* Current fragment size */
 	unsigned int		frag_num; 	/* Current # of fragments */
+	unsigned int		frag_msecs;     /* Milliseconds per frag */
 	unsigned int		buf_sz;		/* Current buffer size */
 
 	unsigned int		hwptr;		/* Tail */
@@ -175,14 +172,13 @@ struct forte_channel {
 	unsigned int		filled_frags; 	/* Fragments currently full */
 	unsigned int		next_buf;	/* Index of next buffer */
 
-	unsigned int		blocked;	/* Blocked on I/O */
-	unsigned int		drain;		/* Drain queued buffers */
 	unsigned int		active;		/* Channel currently in use */
 	unsigned int		mapped;		/* mmap */
 
 	unsigned int		buf_pages;	/* Real size of buffer */
 	unsigned int		nr_irqs;	/* Number of interrupts */
 	unsigned int		bytes;		/* Total bytes */
+	unsigned int		residue;	/* Partial fragment */
 };
 
 
@@ -404,12 +400,11 @@ forte_channel_reset (struct forte_channel *channel)
 	channel->next_buf = 1;
 	channel->swptr = 0;
 	channel->filled_frags = 0;
-	channel->blocked = 0;
-	channel->drain = 0;
 	channel->active = 0;
 	channel->bytes = 0;
 	channel->nr_irqs = 0;
 	channel->mapped = 0;
+	channel->residue = 0;
 }
 
 
@@ -423,12 +418,11 @@ forte_channel_reset (struct forte_channel *channel)
 static void inline
 forte_channel_start (struct forte_channel *channel)
 {
-	if (!channel || !channel->iobase) 
+	if (!channel || !channel->iobase || channel->active) 
 		return;
 
-	DPRINTK ("%s: channel = %s\n", __FUNCTION__, channel->name);
-
-	channel->ctrl &= ~(FORTE_PAUSE | FORTE_BUF1_LAST | FORTE_BUF2_LAST);
+	channel->ctrl &= ~(FORTE_PAUSE | FORTE_BUF1_LAST | FORTE_BUF2_LAST
+			   | FORTE_IMMED_STOP);
 	channel->ctrl |= FORTE_START;
 	channel->active = 1;
 	outw (channel->ctrl, channel->iobase + FORTE_PLY_CTRL);
@@ -448,9 +442,29 @@ forte_channel_stop (struct forte_channel *channel)
 	if (!channel || !channel->iobase) 
 		return;
 
-	DPRINTK ("%s: channel = %s\n", __FUNCTION__, channel->name);
+	channel->ctrl &= ~(FORTE_START | FORTE_PAUSE);	
+	channel->ctrl |= FORTE_IMMED_STOP;
 
-	channel->ctrl &= ~FORTE_START;
+	channel->active = 0;
+	outw (channel->ctrl, channel->iobase + FORTE_PLY_CTRL);
+}
+
+
+/** 
+ * forte_channel_pause:
+ * @channel: 	Channel to pause
+ *
+ * Locking:	Must be called with lock held.
+ */
+
+static void inline
+forte_channel_pause (struct forte_channel *channel)
+{
+	if (!channel || !channel->iobase) 
+		return;
+
+	channel->ctrl |= FORTE_PAUSE;
+
 	channel->active = 0;
 	outw (channel->ctrl, channel->iobase + FORTE_PLY_CTRL);
 }
@@ -584,38 +598,61 @@ forte_channel_stereo (struct forte_channel *channel, unsigned int stereo)
  * @channel:	Channel whose buffer to set up
  *
  * Locking:	Must be called with lock held.
- *
- * FIXME:	Buffer scaling dependent on rate/channels/bits
  */
 
 static void
 forte_channel_buffer (struct forte_channel *channel, int sz, int num)
 {
+	unsigned int msecs, shift;
+
 	/* Go away, I'm busy */
 	if (channel->filled_frags || channel->bytes)
 		return;
 
-	channel->frag_sz = sz;
-	channel->frag_num = num;
+	/* Fragment size must be a power of 2 */
+	shift = 0; sz++;
+	while (sz >>= 1)
+		shift++;
+	channel->frag_sz = 1 << shift;
 
+	/* Round fragment size to something reasonable */
 	if (channel->frag_sz < FORTE_MIN_FRAG_SIZE)
 		channel->frag_sz = FORTE_MIN_FRAG_SIZE;
 
 	if (channel->frag_sz > FORTE_MAX_FRAG_SIZE)
 		channel->frag_sz = FORTE_MAX_FRAG_SIZE;
 
+	/* Find fragment length in milliseconds */
+	msecs = channel->frag_sz /
+		(channel->format == AFMT_S16_LE ? 2 : 1) /
+		(channel->stereo ? 2 : 1) /
+		(channel->rate / 1000);
+
+	channel->frag_msecs = msecs;
+
+	/* Pick a suitable number of fragments */
+	if (msecs * num < FORTE_MIN_BUF_MSECS)
+	     num = FORTE_MIN_BUF_MSECS / msecs;
+
+	if (msecs * num > FORTE_MAX_BUF_MSECS)
+	     num = FORTE_MAX_BUF_MSECS / msecs;
+
+	/* Fragment number must be a power of 2 */
+	shift = 0;	
+	while (num >>= 1)
+		shift++;
+	channel->frag_num = 1 << (shift + 1);
+
+	/* Round fragment number to something reasonable */
 	if (channel->frag_num < FORTE_MIN_FRAGMENTS)
 		channel->frag_num = FORTE_MIN_FRAGMENTS;
 
 	if (channel->frag_num > FORTE_MAX_FRAGMENTS)
 		channel->frag_num = FORTE_MAX_FRAGMENTS;
 
-	if (channel->frag_sz * channel->frag_num < FORTE_MIN_BUF)
-		channel->frag_num = FORTE_MIN_BUF / channel->frag_sz;
-
 	channel->buf_sz = channel->frag_sz * channel->frag_num;
 
-	DPRINTK ("%s: %s frag_sz = %d, frag_num = %d, buf_sz = %d\n", 
+	DPRINTK ("%s: %s frag_sz = %d, frag_num = %d, buf_sz = %d\n",
 		 __FUNCTION__, channel->name, channel->frag_sz, 
 		 channel->frag_num, channel->buf_sz);
 }
@@ -637,6 +674,7 @@ forte_channel_prep (struct forte_channel *channel)
 	if (channel->buf)
 		return;
 
+	forte_channel_buffer (channel, channel->frag_sz, channel->frag_num);
 	channel->buf_pages = channel->buf_sz >> PAGE_SHIFT;
 
 	if (channel->buf_sz % PAGE_SIZE)
@@ -688,8 +726,7 @@ forte_channel_drain (struct forte_channel *channel)
 	DECLARE_WAITQUEUE (wait, current);
 	unsigned long flags;
 
-	if (!channel->active)
-		return 0;
+	DPRINTK ("%s\n", __FUNCTION__);
 
 	if (channel->mapped) {
 		spin_lock_irqsave (&forte->lock, flags);
@@ -698,24 +735,26 @@ forte_channel_drain (struct forte_channel *channel)
 		return 0;
 	}
 
-	channel->drain = 1;
+	spin_lock_irqsave (&forte->lock, flags);
 	add_wait_queue (&channel->wait, &wait);
 
 	for (;;) {
-		spin_lock_irqsave (&forte->lock, flags);
-
-		if (channel->active == 0 || channel->filled_frags < 1)
+		if (channel->active == 0 || channel->filled_frags == 1)
 			break;
 
 		spin_unlock_irqrestore (&forte->lock, flags);
+
 		__set_current_state (TASK_INTERRUPTIBLE);
 		schedule();
+
+		spin_lock_irqsave (&forte->lock, flags);
 	}
 
-	channel->drain = 0;
-	spin_unlock_irqrestore (&forte->lock, flags);
+	forte_channel_stop (channel);
+	forte_channel_reset (channel);
 	set_current_state (TASK_RUNNING);
 	remove_wait_queue (&channel->wait, &wait);
+	spin_unlock_irqrestore (&forte->lock, flags);
 
 	return 0;
 }
@@ -765,8 +804,8 @@ forte_channel_init (struct forte_chip *chip, struct forte_channel *channel)
 	forte_channel_stereo (channel, 1);
 	forte_channel_format (channel, AFMT_S16_LE);
 	forte_channel_rate (channel, 48000);
-	forte_channel_buffer (channel, FORTE_DEF_FRAG_SIZE, 
-			      FORTE_DEF_FRAGMENTS);
+	channel->frag_sz = FORTE_DEF_FRAG_SIZE;
+	channel->frag_num = FORTE_DEF_FRAGMENTS;
 
 	chip->trigger = 0;
 	spin_unlock_irq (&chip->lock);
@@ -967,12 +1006,8 @@ forte_dsp_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 	case SNDCTL_DSP_SYNC:
 		DPRINTK ("%s: SYNC\n", __FUNCTION__);
 
-		if (wr) {
+		if (wr)
 			ret = forte_channel_drain (&chip->play);
-			spin_lock_irq (&chip->lock);
-			forte_channel_reset (&chip->play);
-			spin_unlock_irq (&chip->lock);
-		}
 
 		return 0;
 
@@ -981,7 +1016,10 @@ forte_dsp_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 
 		if (wr) {
 			spin_lock_irq (&chip->lock);
-			forte_channel_reset (&chip->play);
+
+			if (chip->play.filled_frags)
+				forte_channel_start (&chip->play);
+
 			spin_unlock_irq (&chip->lock);
 		}
 
@@ -1059,7 +1097,7 @@ forte_dsp_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
         case SNDCTL_DSP_GETOSPACE:
 		if (!wr)
 			return -EINVAL;
-
+		
 		spin_lock_irq (&chip->lock);
 
 		abi.fragstotal = chip->play.frag_num;
@@ -1072,7 +1110,12 @@ forte_dsp_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 		else {
 			abi.fragments = chip->play.frag_num - 
 				chip->play.filled_frags;
-			abi.bytes = abi.fragments * abi.fragsize;
+
+			if (chip->play.residue)
+				abi.fragments--;
+
+			abi.bytes = abi.fragments * abi.fragsize +
+				chip->play.residue;
 		}
 
 		spin_unlock_irq (&chip->lock);
@@ -1099,20 +1142,23 @@ forte_dsp_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 		return copy_to_user ((void *) arg, &cinfo, sizeof (cinfo));
 
 	case SNDCTL_DSP_GETODELAY:
-		if (!chip->play.active)
-			return 0;
-
 		if (!wr)
 			return -EINVAL;
 
 		spin_lock_irq (&chip->lock);
 
-		if (chip->play.mapped) {
+		if (!chip->play.active) {
+			ival = 0;
+		}
+		else if (chip->play.mapped) {
 			count = inw (chip->play.iobase + FORTE_PLY_COUNT) + 1;
 			ival = chip->play.frag_sz - count;
 		}
 		else {
 			ival = chip->play.filled_frags * chip->play.frag_sz;
+
+			if (chip->play.residue)
+				ival += chip->play.frag_sz - chip->play.residue;
 		}
 
 		spin_unlock_irq (&chip->lock);
@@ -1170,12 +1216,17 @@ forte_dsp_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 		return put_user (chip->play.rate, (int *) arg);
 
 	case SOUND_PCM_READ_CHANNELS:
-		DPRINTK ("%s: PCM_READ_CHANNELS\n", __FUNCTION__);		
+		DPRINTK ("%s: PCM_READ_CHANNELS\n", __FUNCTION__);
 		return put_user (chip->play.stereo, (int *) arg);
 
 	case SOUND_PCM_READ_BITS:
 		DPRINTK ("%s: PCM_READ_BITS\n", __FUNCTION__);		
 		return put_user (chip->play.format, (int *) arg);
+
+	case SNDCTL_DSP_NONBLOCK:
+		DPRINTK ("%s: DSP_NONBLOCK\n", __FUNCTION__);		
+                file->f_flags |= O_NONBLOCK;
+		return 0;
 
 	default:
 		DPRINTK ("Unsupported ioctl: %x (%p)\n", cmd, (void *) arg);
@@ -1195,14 +1246,22 @@ forte_dsp_open (struct inode *inode, struct file *file)
 {
 	struct forte_chip *chip = forte; /* FIXME: HACK FROM HELL! */
 
-	if (down_interruptible (&chip->open_sem)) {
-		DPRINTK ("%s: returning -ERESTARTSYS\n", __FUNCTION__);
-		return -ERESTARTSYS;
+	if (file->f_flags & O_NONBLOCK) {
+		if (down_trylock (&chip->open_sem)) {
+			DPRINTK ("%s: returning -EAGAIN\n", __FUNCTION__);
+			return -EAGAIN;
+		}
+	}
+	else {
+		if (down_interruptible (&chip->open_sem)) {
+			DPRINTK ("%s: returning -ERESTARTSYS\n", __FUNCTION__);
+			return -ERESTARTSYS;
+		}
 	}
 
 	file->private_data = forte;
 
-	DPRINTK ("%s: chip @ %p\n", __FUNCTION__, file->private_data);
+	DPRINTK ("%s: dsp opened by %d\n", __FUNCTION__, current->pid);
 
 	if (file->f_mode & FMODE_WRITE)
 		forte_channel_init (forte, &forte->play);
@@ -1231,9 +1290,7 @@ forte_dsp_release (struct inode *inode, struct file *file)
 
 		spin_lock_irq (&chip->lock);
 
-		chip->play.ctrl |= FORTE_IMMED_STOP;
-		forte_channel_stop (&chip->play);
-		forte_channel_free (chip, &chip->play);
+ 		forte_channel_free (chip, &chip->play);
 
 		spin_unlock_irq (&chip->lock);
         }
@@ -1244,7 +1301,6 @@ forte_dsp_release (struct inode *inode, struct file *file)
 
 		spin_lock_irq (&chip->lock);
 
-		chip->play.ctrl |= FORTE_IMMED_STOP;
 		forte_channel_stop (&chip->rec);
 		forte_channel_free (chip, &chip->rec);
 
@@ -1260,7 +1316,6 @@ forte_dsp_release (struct inode *inode, struct file *file)
 /**
  * forte_dsp_poll:
  *
- * FIXME:	Racy
  */
 
 static unsigned int 
@@ -1278,8 +1333,12 @@ forte_dsp_poll (struct file *file, struct poll_table_struct *wait)
 		if (channel->active)
 			poll_wait (file, &channel->wait, wait);
 
-		if (channel->filled_frags)
+		spin_lock_irq (&chip->lock);
+
+		if (channel->frag_num - channel->filled_frags > 0)
 			mask |= POLLOUT | POLLWRNORM;
+
+		spin_unlock_irq (&chip->lock);
 	}
 
 	if (file->f_mode & FMODE_READ) {
@@ -1288,8 +1347,12 @@ forte_dsp_poll (struct file *file, struct poll_table_struct *wait)
 		if (channel->active)
 			poll_wait (file, &channel->wait, wait);
 
+		spin_lock_irq (&chip->lock);
+
 		if (channel->filled_frags > 0)
 			mask |= POLLIN | POLLRDNORM;
+
+		spin_unlock_irq (&chip->lock);
 	}
 
 	return mask;
@@ -1405,61 +1468,63 @@ forte_dsp_write (struct file *file, const char *buffer, size_t bytes,
 		if (channel->frag_num - channel->filled_frags == 0) {
 			DECLARE_WAITQUEUE (wait, current);
 
-			/* For trigger mode operation, get out */
-			if (chip->trigger) {
+			/* For trigger or non-blocking operation, get out */
+			if (chip->trigger || file->f_flags & O_NONBLOCK) {
 				spin_unlock_irqrestore (&chip->lock, flags);
 				return -EAGAIN;
 			}
 
 			/* Otherwise wait for buffers */
-			channel->blocked = 1;
 			add_wait_queue (&channel->wait, &wait);
 
 			for (;;) {
-				if (channel->active == 0)
-					break;
-
-				if (channel->frag_num - channel->filled_frags)
-					break;
-
 				spin_unlock_irqrestore (&chip->lock, flags);
 
 				set_current_state (TASK_INTERRUPTIBLE);
-				schedule();				
+				schedule();
 
 				spin_lock_irqsave (&chip->lock, flags);
+
+				if (channel->frag_num - channel->filled_frags)
+					break;
 			}
 
-			set_current_state (TASK_RUNNING);
 			remove_wait_queue (&channel->wait, &wait);
-			channel->blocked = 0;
+			set_current_state (TASK_RUNNING);
+
+			if (signal_pending (current)) {
+				spin_unlock_irqrestore (&chip->lock, flags);
+				return -ERESTARTSYS;
+			}
 		}
 
-		if (i > channel->frag_sz)
+		if (channel->residue)
+			sz = channel->residue;
+		else if (i > channel->frag_sz)
 			sz = channel->frag_sz;
 		else
 			sz = i;
 
 		spin_unlock_irqrestore (&chip->lock, flags);
 
-		/* Clear the fragment so we don't get noise when copying
-		 * smaller buffers
-		 */
-		memset ((void *) channel->buf + channel->swptr, 0x0, sz);
-
-		if (copy_from_user ((void *) channel->buf + channel->swptr, 
-				    buffer, sz)) {
+		if (copy_from_user ((void *) channel->buf + channel->swptr, buffer, sz))
 			return -EFAULT;
-		}
 
 		spin_lock_irqsave (&chip->lock, flags);
 
 		/* Advance software pointer */
 		buffer += sz;
-		channel->filled_frags++;
-		channel->swptr += channel->frag_sz;
+		channel->swptr += sz;
 		channel->swptr %= channel->buf_sz;
 		i -= sz;
+
+		/* Only bump filled_frags if a full fragment has been written */
+		if (channel->swptr % channel->frag_sz == 0) {
+			channel->filled_frags++;
+			channel->residue = 0;
+		}
+		else
+			channel->residue = channel->frag_sz - sz;
 
 		/* If playback isn't active, start it */
 		if (channel->active == 0 && chip->trigger == 0)
@@ -1521,7 +1586,6 @@ forte_dsp_read (struct file *file, char *buffer, size_t bytes,
 				return -EAGAIN;
 			}
 
-			channel->blocked = 1;
 			add_wait_queue (&channel->wait, &wait);
 
 			for (;;) {
@@ -1541,7 +1605,6 @@ forte_dsp_read (struct file *file, char *buffer, size_t bytes,
 
 			set_current_state (TASK_RUNNING);
 			remove_wait_queue (&channel->wait, &wait);
-			channel->blocked = 0;
 		}
 
 		if (i > channel->frag_sz)
@@ -1560,7 +1623,8 @@ forte_dsp_read (struct file *file, char *buffer, size_t bytes,
 
 		/* Advance software pointer */
 		buffer += sz;
-		channel->filled_frags--;
+		if (channel->filled_frags > 0)
+			channel->filled_frags--;
 		channel->swptr += channel->frag_sz;
 		channel->swptr %= channel->buf_sz;
 		i -= sz;
@@ -1607,23 +1671,16 @@ forte_interrupt (int irq, void *dev_id, struct pt_regs *regs)
 	
 	if (status & FORTE_IRQ_PLAYBACK) {
 		channel = &chip->play;
+
 		spin_lock (&chip->lock);
 
-		/* Declare a fragment done */
-		channel->filled_frags--;
-
-		/* Get # of completed bytes */
-		count = inw (channel->iobase + FORTE_PLY_COUNT) + 1;
-		channel->bytes += count;
-
-		if (count == 0) {
-			DPRINTK ("%s: last, filled_frags = %d\n", __FUNCTION__,
-				 channel->filled_frags);
-			channel->filled_frags = 0;
-			forte_channel_stop (channel);
+		if (channel->frag_sz == 0)
 			goto pack;
-		}
 
+		/* Declare a fragment done */
+		if (channel->filled_frags > 0)
+			channel->filled_frags--;
+		channel->bytes += channel->frag_sz;
 		channel->nr_irqs++;
 		
 		/* Flip-flop between buffer I and II */
@@ -1639,17 +1696,18 @@ forte_interrupt (int irq, void *dev_id, struct pt_regs *regs)
 		      channel->iobase + FORTE_PLY_BUF1 :
 		      channel->iobase + FORTE_PLY_BUF2);
 
-		/* If the currently playing fragment is last, schedule stop */
-		if (channel->filled_frags == 1)
-			forte_channel_stop (channel);
+		/* If the currently playing fragment is last, schedule pause */
+		if (channel->filled_frags == 1) 
+			forte_channel_pause (channel);
+
 	pack:
 		/* Acknowledge interrupt */
                 outw (FORTE_IRQ_PLAYBACK, chip->iobase + FORTE_IRQ_STATUS);
 
-		spin_unlock (&chip->lock);
+		if (waitqueue_active (&channel->wait)) 
+			wake_up_all (&channel->wait);
 
-		if (channel->blocked || channel->drain)
-			wake_up_interruptible (&channel->wait);
+		spin_unlock (&chip->lock);
 	}
 
 	if (status & FORTE_IRQ_CAPTURE) {
@@ -1668,7 +1726,7 @@ forte_interrupt (int irq, void *dev_id, struct pt_regs *regs)
 			channel->filled_frags = 0;
 			goto rack;
 		}
-		
+
 		/* Buffer I or buffer II BAR */
                 outl (channel->buf_handle + channel->hwptr, 
 		      channel->next_buf == 0 ?
@@ -1691,7 +1749,7 @@ forte_interrupt (int irq, void *dev_id, struct pt_regs *regs)
 
 		spin_unlock (&chip->lock);
 
-		if (channel->blocked)
+		if (waitqueue_active (&channel->wait))
 			wake_up_all (&channel->wait);		
 	}
 
@@ -1710,7 +1768,7 @@ forte_proc_read (char *page, char **start, off_t off, int count,
 	int i = 0, p_rate, p_chan, r_rate;
 	unsigned short p_reg, r_reg;
 
-	i += sprintf (page, "ForteMedia FM801 OSS Lite driver\n%s\n\n", 
+	i += sprintf (page, "ForteMedia FM801 OSS Lite driver\n%s\n \n", 
 		      DRIVER_VERSION);
 
 	if (!forte->iobase)
@@ -1745,7 +1803,14 @@ forte_proc_read (char *page, char **start, off_t off, int count,
 		      "Rate       : %-5d     %-5d\n"
 		      "Channels   : %-5d     -\n"
 		      "16-bit     : %-3s       %-3s\n"
-		      "Stereo     : %-3s       %-3s\n",
+		      "Stereo     : %-3s       %-3s\n"
+		      " \n"
+		      "Buffer Sz  : %-6d    %-6d\n"
+		      "Frag Sz    : %-6d    %-6d\n"
+		      "Frag Num   : %-6d    %-6d\n"
+		      "Frag msecs : %-6d    %-6d\n"
+		      "Used Frags : %-6d    %-6d\n"
+		      "Mapped     : %-3s       %-3s\n",
 		      p_reg & 1<<0  ? "yes" : "no",
 		      r_reg & 1<<0  ? "yes" : "no",
 		      p_reg & 1<<1  ? "yes" : "no",
@@ -1763,7 +1828,15 @@ forte_proc_read (char *page, char **start, off_t off, int count,
 		      p_reg & 1<<14 ? "yes" : "no",
 		      r_reg & 1<<14 ? "yes" : "no",
 		      p_reg & 1<<15 ? "yes" : "no",
-		      r_reg & 1<<15 ? "yes" : "no");
+		      r_reg & 1<<15 ? "yes" : "no",
+		      forte->play.buf_sz,       forte->rec.buf_sz,
+		      forte->play.frag_sz,      forte->rec.frag_sz,
+		      forte->play.frag_num,     forte->rec.frag_num,
+		      forte->play.frag_msecs,   forte->rec.frag_msecs,
+		      forte->play.filled_frags, forte->rec.filled_frags,
+		      forte->play.mapped ? "yes" : "no",
+		      forte->rec.mapped ? "yes" : "no"
+		);
 
 	return i;
 }

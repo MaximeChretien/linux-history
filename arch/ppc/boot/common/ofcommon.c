@@ -1,6 +1,4 @@
 /*
- * BK Id: SCCS/s.ofcommon.c 1.2 01/11/02 10:46:07 trini
- *
  * Copyright (C) Paul Mackerras 1997.
  *
  * This program is free software; you can redistribute it and/or

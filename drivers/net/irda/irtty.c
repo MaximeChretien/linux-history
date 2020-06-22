@@ -966,9 +966,14 @@ static int irtty_net_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 
 	IRDA_DEBUG(3, "%s(), %s, (cmd=0x%X)\n", __FUNCTION__, dev->name, cmd);
 	
-	/* Disable interrupts & save flags */
-	save_flags(flags);
-	cli();
+	/* Locking :
+	 * irda_device_dongle_init() can't be locked.
+	 * irda_task_execute() doesn't need to be locked (but
+	 * irtty_change_speed() should protect itself).
+	 * As this driver doesn't have spinlock protection, keep
+	 * old fashion locking :-(
+	 * Jean II
+	 */
 	
 	switch (cmd) {
 	case SIOCSBANDWIDTH: /* Set bandwidth */
@@ -994,14 +999,17 @@ static int irtty_net_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 		dongle->write       = irtty_raw_write;
 		dongle->set_dtr_rts = irtty_set_dtr_rts;
 		
-		self->dongle = dongle;
-
-		/* Now initialize the dongle!  */
+		/* Now initialize the dongle!
+		 * Safe to do unlocked : self->dongle is still NULL. */ 
 		dongle->issue->open(dongle, &self->qos);
 		
 		/* Reset dongle */
 		irda_task_execute(dongle, dongle->issue->reset, NULL, NULL, 
 				  NULL);	
+
+		/* Make dongle available to driver only now to avoid
+		 * race conditions - Jean II */
+		self->dongle = dongle;
 		break;
 	case SIOCSMEDIABUSY: /* Set media busy */
 		if (!capable(CAP_NET_ADMIN))
@@ -1015,20 +1023,26 @@ static int irtty_net_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 	case SIOCSDTRRTS:
 		if (!capable(CAP_NET_ADMIN))
 			ret = -EPERM;
-		else
+		else {
+			save_flags(flags);
+			cli();
 			irtty_set_dtr_rts(dev, irq->ifr_dtr, irq->ifr_rts);
+			restore_flags(flags);
+		}
 		break;
 	case SIOCSMODE:
 		if (!capable(CAP_NET_ADMIN))
 			ret = -EPERM;
-		else
+		else {
+			save_flags(flags);
+			cli();
 			irtty_set_mode(dev, irq->ifr_mode);
+			restore_flags(flags);
+		}
 		break;
 	default:
 		ret = -EOPNOTSUPP;
 	}
-	
-	restore_flags(flags);
 	
 	return ret;
 }

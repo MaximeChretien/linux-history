@@ -25,6 +25,10 @@
  *
  * Version history:
  * 
+ * 2003_04_03 al borchers
+ *  - fixed a bug (that shows up with dosemu) where the tty struct is
+ *    used in a callback after it has been freed
+ *
  * 2.3 2002_03_08 greg kroah-hartman
  *	- fixed bug when multiple devices were attached at the same time.
  *
@@ -515,7 +519,7 @@ static void update_edgeport_E2PROM (struct edgeport_serial *edge_serial)
 		case EDGE_DOWNLOAD_FILE_I930:
 			BootMajorVersion	= BootCodeImageVersion_GEN1.MajorVersion;
 			BootMinorVersion	= BootCodeImageVersion_GEN1.MinorVersion;
-			BootBuildNumber		= BootCodeImageVersion_GEN1.BuildNumber;
+			BootBuildNumber		= cpu_to_le16(BootCodeImageVersion_GEN1.BuildNumber);
 			BootImage		= &BootCodeImage_GEN1[0];
 			BootSize		= sizeof( BootCodeImage_GEN1 );
 			break;
@@ -523,7 +527,7 @@ static void update_edgeport_E2PROM (struct edgeport_serial *edge_serial)
 		case EDGE_DOWNLOAD_FILE_80251:
 			BootMajorVersion	= BootCodeImageVersion_GEN2.MajorVersion;
 			BootMinorVersion	= BootCodeImageVersion_GEN2.MinorVersion;
-			BootBuildNumber		= BootCodeImageVersion_GEN2.BuildNumber;
+			BootBuildNumber		= cpu_to_le16(BootCodeImageVersion_GEN2.BuildNumber);
 			BootImage		= &BootCodeImage_GEN2[0];
 			BootSize		= sizeof( BootCodeImage_GEN2 );
 			break;
@@ -535,26 +539,26 @@ static void update_edgeport_E2PROM (struct edgeport_serial *edge_serial)
 	// Check Boot Image Version
 	BootCurVer = (edge_serial->boot_descriptor.MajorVersion << 24) +
 		     (edge_serial->boot_descriptor.MinorVersion << 16) +
-		      edge_serial->boot_descriptor.BuildNumber;
+		      le16_to_cpu(edge_serial->boot_descriptor.BuildNumber);
 
 	BootNewVer = (BootMajorVersion << 24) +
 		     (BootMinorVersion << 16) +
-		      BootBuildNumber;
+		      le16_to_cpu(BootBuildNumber);
 
 	dbg("Current Boot Image version %d.%d.%d",
 	    edge_serial->boot_descriptor.MajorVersion,
 	    edge_serial->boot_descriptor.MinorVersion,
-	    edge_serial->boot_descriptor.BuildNumber);
+	    le16_to_cpu(edge_serial->boot_descriptor.BuildNumber));
 
 
 	if (BootNewVer > BootCurVer) {
 		dbg("**Update Boot Image from %d.%d.%d to %d.%d.%d",
 		    edge_serial->boot_descriptor.MajorVersion,
 		    edge_serial->boot_descriptor.MinorVersion,
-		    edge_serial->boot_descriptor.BuildNumber,
+		    le16_to_cpu(edge_serial->boot_descriptor.BuildNumber),
 		    BootMajorVersion,
 		    BootMinorVersion,
-		    BootBuildNumber);
+		    le16_to_cpu(BootBuildNumber));
 
 
 		dbg("Downloading new Boot Image");
@@ -563,12 +567,12 @@ static void update_edgeport_E2PROM (struct edgeport_serial *edge_serial)
 
 		for (;;) {
 			record = (struct edge_firmware_image_record *)firmware;
-			response = rom_write (edge_serial->serial, record->ExtAddr, record->Addr, record->Len, &record->Data[0]);
+			response = rom_write (edge_serial->serial, le16_to_cpu(record->ExtAddr), le16_to_cpu(record->Addr), le16_to_cpu(record->Len), &record->Data[0]);
 			if (response < 0) {
-				err("sram_write failed (%x, %x, %d)", record->ExtAddr, record->Addr, record->Len);
+				err("rom_write failed (%x, %x, %d)", le16_to_cpu(record->ExtAddr), le16_to_cpu(record->Addr), le16_to_cpu(record->Len));
 				break;
 			}
-			firmware += sizeof (struct edge_firmware_image_record) + record->Len;
+			firmware += sizeof (struct edge_firmware_image_record) + le16_to_cpu(record->Len);
 			if (firmware >= &BootImage[BootSize]) {
 				break;
 			}
@@ -671,12 +675,12 @@ static void get_product_info(struct edgeport_serial *edge_serial)
 	if (edge_serial->serial->dev->descriptor.idProduct & ION_DEVICE_ID_GENERATION_2) {
 		product_info->FirmwareMajorVersion	= OperationalCodeImageVersion_GEN2.MajorVersion;
 		product_info->FirmwareMinorVersion	= OperationalCodeImageVersion_GEN2.MinorVersion;
-		product_info->FirmwareBuildNumber	= OperationalCodeImageVersion_GEN2.BuildNumber;
+		product_info->FirmwareBuildNumber	= cpu_to_le16(OperationalCodeImageVersion_GEN2.BuildNumber);
 		product_info->iDownloadFile		= EDGE_DOWNLOAD_FILE_80251;
 	} else {
 		product_info->FirmwareMajorVersion	= OperationalCodeImageVersion_GEN1.MajorVersion;
 		product_info->FirmwareMinorVersion	= OperationalCodeImageVersion_GEN1.MinorVersion;
-		product_info->FirmwareBuildNumber	= OperationalCodeImageVersion_GEN1.BuildNumber;
+		product_info->FirmwareBuildNumber	= cpu_to_le16(OperationalCodeImageVersion_GEN1.BuildNumber);
 		product_info->iDownloadFile		= EDGE_DOWNLOAD_FILE_I930;
 	}
 
@@ -722,10 +726,10 @@ static void get_product_info(struct edgeport_serial *edge_serial)
 	dbg("  BoardRev              %x", product_info->BoardRev);
 	dbg("  BootMajorVersion      %d.%d.%d", product_info->BootMajorVersion,
 	    product_info->BootMinorVersion,
-	    product_info->BootBuildNumber);
+	    le16_to_cpu(product_info->BootBuildNumber));
 	dbg("  FirmwareMajorVersion  %d.%d.%d", product_info->FirmwareMajorVersion,
 	    product_info->FirmwareMinorVersion,
-	    product_info->FirmwareBuildNumber);
+	    le16_to_cpu(product_info->FirmwareBuildNumber));
 	dbg("  ManufactureDescDate   %d/%d/%d", product_info->ManufactureDescDate[0],
 	    product_info->ManufactureDescDate[1],
 	    product_info->ManufactureDescDate[2]+1900);
@@ -895,7 +899,7 @@ static void edge_bulk_out_data_callback (struct urb *urb)
 
 	tty = edge_port->port->tty;
 
-	if (tty) {
+	if (tty && edge_port->open) {
 		/* let the tty driver wakeup if it has a special write_wakeup function */
 		if ((tty->flags & (1 << TTY_DO_WRITE_WAKEUP)) && tty->ldisc.write_wakeup) {
 			(tty->ldisc.write_wakeup)(tty);
@@ -952,7 +956,7 @@ static void edge_bulk_out_cmd_callback (struct urb *urb)
 	tty = edge_port->port->tty;
 
 	/* tell the tty driver that something has changed */
-	if (tty)
+	if (tty && edge_port->open)
 		wake_up_interruptible(&tty->write_wait);
 
 	/* we have completed the command */
@@ -1790,10 +1794,10 @@ static int get_modem_info(struct edgeport_port *edge_port, unsigned int *value)
 
 	result = ((mcr & MCR_DTR)	? TIOCM_DTR: 0)	  /* 0x002 */
 		  | ((mcr & MCR_RTS)	? TIOCM_RTS: 0)   /* 0x004 */
-		  | ((msr & MSR_CTS)	? TIOCM_CTS: 0)   /* 0x020 */
-		  | ((msr & MSR_CD)	? TIOCM_CAR: 0)   /* 0x040 */
-		  | ((msr & MSR_RI)	? TIOCM_RI:  0)   /* 0x080 */
-		  | ((msr & MSR_DSR)	? TIOCM_DSR: 0);  /* 0x100 */
+		  | ((msr & EDGEPORT_MSR_CTS)	? TIOCM_CTS: 0)   /* 0x020 */
+		  | ((msr & EDGEPORT_MSR_CD)	? TIOCM_CAR: 0)   /* 0x040 */
+		  | ((msr & EDGEPORT_MSR_RI)	? TIOCM_RI:  0)   /* 0x080 */
+		  | ((msr & EDGEPORT_MSR_DSR)	? TIOCM_DSR: 0);  /* 0x100 */
 
 
 	dbg("%s -- %x", __FUNCTION__, result);
@@ -2219,20 +2223,20 @@ static void handle_new_msr(struct edgeport_port *edge_port, __u8 newMsr)
 
 	dbg("%s %02x", __FUNCTION__, newMsr);
 
-	if (newMsr & (MSR_DELTA_CTS | MSR_DELTA_DSR | MSR_DELTA_RI | MSR_DELTA_CD)) {
+	if (newMsr & (EDGEPORT_MSR_DELTA_CTS | EDGEPORT_MSR_DELTA_DSR | EDGEPORT_MSR_DELTA_RI | EDGEPORT_MSR_DELTA_CD)) {
 		icount = &edge_port->icount;
 
 		/* update input line counters */
-		if (newMsr & MSR_DELTA_CTS) {
+		if (newMsr & EDGEPORT_MSR_DELTA_CTS) {
 			icount->cts++;
 		}
-		if (newMsr & MSR_DELTA_DSR) {
+		if (newMsr & EDGEPORT_MSR_DELTA_DSR) {
 			icount->dsr++;
 		}
-		if (newMsr & MSR_DELTA_CD) {
+		if (newMsr & EDGEPORT_MSR_DELTA_CD) {
 			icount->dcd++;
 		}
-		if (newMsr & MSR_DELTA_RI) {
+		if (newMsr & EDGEPORT_MSR_DELTA_RI) {
 			icount->rng++;
 		}
 		wake_up_interruptible(&edge_port->delta_msr_wait);
@@ -2305,7 +2309,7 @@ static int sram_write (struct usb_serial *serial, __u16 extAddr, __u16 addr, __u
 	__u16 current_length;
 	unsigned char *transfer_buffer;
 
-//	dbg("%s - %x, %x, %d", __FUNCTION__, extAddr, addr, length);
+	dbg("%s - %x, %x, %d", __FUNCTION__, extAddr, addr, length);
 
 	transfer_buffer =  kmalloc (64, GFP_KERNEL);
 	if (!transfer_buffer) {
@@ -2793,12 +2797,13 @@ static void change_port_settings (struct edgeport_port *edge_port, struct termio
  *	Turns a string from Unicode into ASCII.
  *	Doesn't do a good job with any characters that are outside the normal
  *	ASCII range, but it's only for debugging...
+ *	NOTE: expects the unicode in LE format
  ****************************************************************************/
 static void unicode_to_ascii (char *string, short *unicode, int unicode_size)
 {
 	int i;
 	for (i = 0; i < unicode_size; ++i) {
-		string[i] = (char)(unicode[i]);
+		string[i] = (char)(le16_to_cpu(unicode[i]));
 	}
 	string[unicode_size] = 0x00;
 }
@@ -2862,11 +2867,11 @@ static void get_boot_desc (struct edgeport_serial *edge_serial)
 		err("error in getting boot descriptor");
 	} else {
 		dbg("**Boot Descriptor:");
-		dbg("  BootCodeLength: %d", edge_serial->boot_descriptor.BootCodeLength);
+		dbg("  BootCodeLength: %d", le16_to_cpu(edge_serial->boot_descriptor.BootCodeLength));
 		dbg("  MajorVersion:   %d", edge_serial->boot_descriptor.MajorVersion);
 		dbg("  MinorVersion:   %d", edge_serial->boot_descriptor.MinorVersion);
-		dbg("  BuildNumber:    %d", edge_serial->boot_descriptor.BuildNumber);
-		dbg("  Capabilities:   0x%x", edge_serial->boot_descriptor.Capabilities);
+		dbg("  BuildNumber:    %d", le16_to_cpu(edge_serial->boot_descriptor.BuildNumber));
+		dbg("  Capabilities:   0x%x", le16_to_cpu(edge_serial->boot_descriptor.Capabilities));
 		dbg("  UConfig0:       %d", edge_serial->boot_descriptor.UConfig0);
 		dbg("  UConfig1:       %d", edge_serial->boot_descriptor.UConfig1);
 	}
@@ -2918,12 +2923,12 @@ static void load_application_firmware (struct edgeport_serial *edge_serial)
 
 	for (;;) {
 		record = (struct edge_firmware_image_record *)firmware;
-		response = sram_write (edge_serial->serial, record->ExtAddr, record->Addr, record->Len, &record->Data[0]);
+		response = sram_write (edge_serial->serial, le16_to_cpu(record->ExtAddr), le16_to_cpu(record->Addr), le16_to_cpu(record->Len), &record->Data[0]);
 		if (response < 0) {
-			err("sram_write failed (%x, %x, %d)", record->ExtAddr, record->Addr, record->Len);
+			err("sram_write failed (%x, %x, %d)", le16_to_cpu(record->ExtAddr), le16_to_cpu(record->Addr), record->Len);
 			break;
 		}
-		firmware += sizeof (struct edge_firmware_image_record) + record->Len;
+		firmware += sizeof (struct edge_firmware_image_record) + le16_to_cpu(record->Len);
 		if (firmware >= &FirmwareImage[ImageSize]) {
 			break;
 		}

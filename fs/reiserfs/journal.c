@@ -1401,6 +1401,10 @@ static int journal_transaction_is_valid(struct super_block *p_s_sb, struct buffe
 		     *newest_mount_id) ;
       return -1 ;
     }
+    if ( le32_to_cpu(desc->j_len) > JOURNAL_TRANS_MAX ) {
+      reiserfs_warning("journal-2018: Bad transaction length %d encountered, ignoring transaction\n", le32_to_cpu(desc->j_len));
+      return -1 ;
+    }
     offset = d_bh->b_blocknr - reiserfs_get_journal_block(p_s_sb) ;
 
     /* ok, we have a journal description block, lets see if the transaction was valid */
@@ -1416,11 +1420,12 @@ static int journal_transaction_is_valid(struct super_block *p_s_sb, struct buffe
 		     le32_to_cpu(commit->j_trans_id), 
 		     le32_to_cpu(commit->j_len));
       brelse(c_bh) ;
-      if (oldest_invalid_trans_id)
-        *oldest_invalid_trans_id = le32_to_cpu(desc->j_trans_id) ;
+      if (oldest_invalid_trans_id) {
+	*oldest_invalid_trans_id = le32_to_cpu(desc->j_trans_id) ;
 	reiserfs_debug(p_s_sb, REISERFS_DEBUG_CODE, "journal-1004: "
 	               "transaction_is_valid setting oldest invalid trans_id "
 		       "to %d\n", le32_to_cpu(desc->j_trans_id)) ;
+	}
       return -1; 
     }
     brelse(c_bh) ;
@@ -1517,9 +1522,14 @@ static int journal_read_transaction(struct super_block *p_s_sb, unsigned long cu
     } else {
       real_blocks[i] = sb_getblk(p_s_sb, le32_to_cpu(commit->j_realblock[i - JOURNAL_TRANS_HALF])) ;
     }
+    if ( real_blocks[i]->b_blocknr > SB_BLOCK_COUNT(p_s_sb) ) {
+      reiserfs_warning("journal-1207: REPLAY FAILURE fsck required! Block to replay is outside of filesystem\n");
+      goto abort_replay;
+    }
     if (real_blocks[i]->b_blocknr >= reiserfs_get_journal_block(p_s_sb) &&
         real_blocks[i]->b_blocknr < (reiserfs_get_journal_block(p_s_sb)+JOURNAL_BLOCK_COUNT)) {
       reiserfs_warning("journal-1204: REPLAY FAILURE fsck required! Trying to replay onto a log block\n") ;
+abort_replay:
       brelse_array(log_blocks, i) ;
       brelse_array(real_blocks, i) ;
       brelse(c_bh) ;
@@ -1627,11 +1637,9 @@ struct buffer_head * reiserfs_breada (kdev_t dev, int block, int bufsize,
 }
 static int journal_read(struct super_block *p_s_sb) {
   struct reiserfs_journal_desc *desc ;
-  unsigned long last_flush_trans_id = 0 ;
   unsigned long oldest_trans_id = 0;
   unsigned long oldest_invalid_trans_id = 0 ;
   time_t start ;
-  unsigned long last_flush_start = 0;
   unsigned long oldest_start = 0;
   unsigned long cur_dblock = 0 ;
   unsigned long newest_mount_id = 9 ;
@@ -1661,13 +1669,14 @@ static int journal_read(struct super_block *p_s_sb) {
   if (le32_to_cpu(jh->j_first_unflushed_offset) >= 0 && 
       le32_to_cpu(jh->j_first_unflushed_offset) < JOURNAL_BLOCK_COUNT &&
       le32_to_cpu(jh->j_last_flush_trans_id) > 0) {
-    last_flush_start = reiserfs_get_journal_block(p_s_sb) + 
+    oldest_start = reiserfs_get_journal_block(p_s_sb) + 
                        le32_to_cpu(jh->j_first_unflushed_offset) ;
-    last_flush_trans_id = le32_to_cpu(jh->j_last_flush_trans_id) ;
+    oldest_trans_id = le32_to_cpu(jh->j_last_flush_trans_id) + 1;
+    newest_mount_id = le32_to_cpu(jh->j_mount_id);
     reiserfs_debug(p_s_sb, REISERFS_DEBUG_CODE, "journal-1153: found in "
                    "header: first_unflushed_offset %d, last_flushed_trans_id "
 		   "%lu\n", le32_to_cpu(jh->j_first_unflushed_offset), 
-		   last_flush_trans_id) ;
+		   le32_to_cpu(jh->j_last_flush_trans_id)) ;
     valid_journal_header = 1 ;
 
     /* now, we try to read the first unflushed offset.  If it is not valid, 
@@ -1680,6 +1689,7 @@ static int journal_read(struct super_block *p_s_sb) {
       continue_replay = 0 ;
     }
     brelse(d_bh) ;
+    goto start_log_replay;
   }
 
   if (continue_replay && is_read_only(p_s_sb->s_dev)) {
@@ -1722,17 +1732,13 @@ static int journal_read(struct super_block *p_s_sb) {
 	              "newest_mount_id to %d\n", le32_to_cpu(desc->j_mount_id));
       }
       cur_dblock += le32_to_cpu(desc->j_len) + 2 ;
-    } 
-    else {
+    } else {
       cur_dblock++ ;
     }
     brelse(d_bh) ;
   }
-  /* step three, starting at the oldest transaction, replay */
-  if (last_flush_start > 0) {
-    oldest_start = last_flush_start ;
-    oldest_trans_id = last_flush_trans_id + 1 ;
-  } 
+
+start_log_replay:
   cur_dblock = oldest_start ;
   if (oldest_trans_id)  {
     reiserfs_debug(p_s_sb, REISERFS_DEBUG_CODE, "journal-1206: Starting replay "
@@ -1937,7 +1943,7 @@ int journal_init(struct super_block *p_s_sb) {
   memset(journal_writers, 0, sizeof(char *) * 512) ; /* debug code */
 
   INIT_LIST_HEAD(&SB_JOURNAL(p_s_sb)->j_bitmap_nodes) ;
-  INIT_LIST_HEAD(&(SB_JOURNAL(p_s_sb)->j_dummy_inode.i_dirty_buffers)) ;
+  INIT_LIST_HEAD(&SB_JOURNAL(p_s_sb)->j_dirty_buffers) ;
   reiserfs_allocate_list_bitmaps(p_s_sb, SB_JOURNAL(p_s_sb)->j_list_bitmap, 
                                  SB_BMAP_NR(p_s_sb)) ;
   allocate_bitmap_nodes(p_s_sb) ;
@@ -2649,32 +2655,52 @@ void reiserfs_update_inode_transaction(struct inode *inode) {
   inode->u.reiserfs_i.i_trans_id = SB_JOURNAL(inode->i_sb)->j_trans_id ;
 }
 
-static int reiserfs_inode_in_this_transaction(struct inode *inode) {
-  if (inode->u.reiserfs_i.i_trans_id == SB_JOURNAL(inode->i_sb)->j_trans_id || 
-      inode->u.reiserfs_i.i_trans_id == 0) {
-    return 1; 
-  } 
-  return 0 ;
+void reiserfs_update_tail_transaction(struct inode *inode) {
+  
+  inode->u.reiserfs_i.i_tail_trans_index = SB_JOURNAL_LIST_INDEX(inode->i_sb);
+
+  inode->u.reiserfs_i.i_tail_trans_id = SB_JOURNAL(inode->i_sb)->j_trans_id ;
 }
 
+static void __commit_trans_index(struct inode *inode, unsigned long id,
+                                 unsigned long index) 
+{
+    struct reiserfs_journal_list *jl ;
+    struct reiserfs_transaction_handle th ;
+    struct super_block *sb = inode->i_sb ;
+
+    jl = SB_JOURNAL_LIST(sb) + index;
+
+    /* is it from the current transaction, or from an unknown transaction? */
+    if (id == SB_JOURNAL(sb)->j_trans_id) {
+	journal_join(&th, sb, 1) ;
+	journal_end_sync(&th, sb, 1) ;
+    } else if (jl->j_trans_id == id) {
+	flush_commit_list(sb, jl, 1) ;
+    }
+    /* if the transaction id does not match, this list is long since flushed
+    ** and we don't have to do anything here
+    */
+}
+void reiserfs_commit_for_tail(struct inode *inode) {
+    unsigned long id = inode->u.reiserfs_i.i_tail_trans_id;
+    unsigned long index = inode->u.reiserfs_i.i_tail_trans_index;
+
+    /* for tails, if this info is unset there's nothing to commit */
+    if (id && index)
+	__commit_trans_index(inode, id, index);
+}
 void reiserfs_commit_for_inode(struct inode *inode) {
-  struct reiserfs_journal_list *jl ;
-  struct reiserfs_transaction_handle th ;
-  struct super_block *sb = inode->i_sb ;
+    unsigned long id = inode->u.reiserfs_i.i_trans_id;
+    unsigned long index = inode->u.reiserfs_i.i_trans_index;
 
-  jl = SB_JOURNAL_LIST(sb) + inode->u.reiserfs_i.i_trans_index ;
+    /* for the whole inode, assume unset id or index means it was
+     * changed in the current transaction.  More conservative
+     */
+    if (!id || !index)
+	reiserfs_update_inode_transaction(inode) ;
 
-  /* is it from the current transaction, or from an unknown transaction? */
-  if (reiserfs_inode_in_this_transaction(inode)) {
-    journal_join(&th, sb, 1) ;
-    reiserfs_update_inode_transaction(inode) ;
-    journal_end_sync(&th, sb, 1) ;
-  } else if (jl->j_trans_id == inode->u.reiserfs_i.i_trans_id) {
-    flush_commit_list(sb, jl, 1) ;
-  }
-  /* if the transaction id does not match, this list is long since flushed
-  ** and we don't have to do anything here
-  */
+    __commit_trans_index(inode, id, index);
 }
 
 void reiserfs_restore_prepared_buffer(struct super_block *p_s_sb, 
@@ -2933,7 +2959,7 @@ printk("journal-2020: do_journal_end: BAD desc->j_len is ZERO\n") ;
   SB_JOURNAL_LIST_INDEX(p_s_sb) = jindex ;
 
   /* write any buffers that must hit disk before this commit is done */
-  fsync_inode_buffers(&(SB_JOURNAL(p_s_sb)->j_dummy_inode)) ;
+  fsync_buffers_list(&(SB_JOURNAL(p_s_sb)->j_dirty_buffers)) ;
 
   /* honor the flush and async wishes from the caller */
   if (flush) {

@@ -25,6 +25,7 @@
  *
  * Authors:
  *    Gareth Hughes <gareth@valinux.com>
+ *    Keith Whitwell <keith@tungstengraphics.com>
  */
 
 #ifndef __RADEON_H__

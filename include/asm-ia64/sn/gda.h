@@ -6,7 +6,7 @@
  *
  * Derived from IRIX <sys/SN/gda.h>.
  *
- * Copyright (C) 1992 - 1997, 2000-2001 Silicon Graphics, Inc. All rights reserved.
+ * Copyright (C) 1992-1997,2000-2002 Silicon Graphics, Inc. All rights reserved.
  *
  * gda.h -- Contains the data structure for the global data area,
  * 	The GDA contains information communicated between the

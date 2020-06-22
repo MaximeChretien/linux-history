@@ -1109,7 +1109,7 @@ sys_call_table:
 	data8 sys_mlock
 	data8 sys_mlockall
 	data8 sys_mprotect			// 1155
-	data8 sys_mremap
+	data8 ia64_mremap
 	data8 sys_msync
 	data8 sys_munlock
 	data8 sys_munlockall
@@ -1170,18 +1170,18 @@ sys_call_table:
 	data8 sys_getdents64
 	data8 sys_getunwind			// 1215
 	data8 sys_readahead
-	data8 ia64_ni_syscall
-	data8 ia64_ni_syscall
-	data8 ia64_ni_syscall
-	data8 ia64_ni_syscall			// 1220
-	data8 ia64_ni_syscall
-	data8 ia64_ni_syscall
-	data8 ia64_ni_syscall
-	data8 ia64_ni_syscall
-	data8 ia64_ni_syscall			// 1225
-	data8 ia64_ni_syscall
-	data8 ia64_ni_syscall
-	data8 ia64_ni_syscall
+	data8 sys_setxattr
+	data8 sys_lsetxattr
+	data8 sys_fsetxattr
+	data8 sys_getxattr			// 1220
+	data8 sys_lgetxattr
+	data8 sys_fgetxattr
+	data8 sys_listxattr
+	data8 sys_llistxattr
+	data8 sys_flistxattr			// 1225
+	data8 sys_removexattr
+	data8 sys_lremovexattr
+	data8 sys_fremovexattr
 	data8 sys_tkill
 	data8 ia64_ni_syscall			// 1230
 	data8 ia64_ni_syscall

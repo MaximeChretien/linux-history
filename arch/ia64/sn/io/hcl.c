@@ -6,7 +6,7 @@
  *
  *  hcl - SGI's Hardware Graph compatibility layer.
  *
- * Copyright (C) 1992 - 1997, 2000-2001 Silicon Graphics, Inc. All rights reserved.
+ * Copyright (C) 1992-1997,2000-2002 Silicon Graphics, Inc. All rights reserved.
  */
 
 #include <linux/types.h>
@@ -155,7 +155,7 @@ int __init init_hcl(void)
 	/*
 	 * Create the hwgraph_root on devfs.
 	 */
-	rv = hwgraph_path_add(NULL, "hw", &hwgraph_root);
+	rv = hwgraph_path_add(NULL, EDGE_LBL_HW, &hwgraph_root);
 	if (rv)
 		printk ("WARNING: init_hcl: Failed to create hwgraph_root. Error = %d.\n", rv);
 
@@ -183,9 +183,9 @@ int __init init_hcl(void)
 	/*
 	 * Create the directory that links Linux bus numbers to our Xwidget.
 	 */
-	rv = hwgraph_path_add(hwgraph_root, "linux/busnum", &linux_busnum);
+	rv = hwgraph_path_add(hwgraph_root, EDGE_LBL_LINUX_BUS, &linux_busnum);
 	if (linux_busnum == NULL) {
-		panic("HCL: Unable to create hw/linux/busnum\n");
+		panic("HCL: Unable to create %s\n", EDGE_LBL_LINUX_BUS);
 		return(0);
 	}
 

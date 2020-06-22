@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.uart.c 1.13 12/29/01 14:50:03 trini
- */
-/*
  *  UART driver for MPC8260 CPM SCC or SMC
  *  Copyright (c) 1999 Dan Malek (dmalek@jlc.net)
  *  Copyright (c) 2000 MontaVista Software, Inc. (source@mvista.com)
@@ -2594,7 +2591,8 @@ int __init rs_8xx_init(void)
 
 			/* Install interrupt handler.
 			*/
-			request_8xxirq(state->irq, rs_8xx_interrupt, 0, "uart", info);
+			request_irq(state->irq, rs_8xx_interrupt, 0, "uart",
+					info);
 
 			/* Set up the baud rate generator.
 			*/

@@ -95,9 +95,13 @@ static inline void remove_page_from_inode_queue(struct page * page)
 {
 	struct address_space * mapping = page->mapping;
 
-	mapping->nrpages--;
+	if (mapping->a_ops->removepage)
+		mapping->a_ops->removepage(page);
+	
 	list_del(&page->list);
 	page->mapping = NULL;
+	wmb();
+	mapping->nrpages--;
 }
 
 static inline void remove_page_from_hash_queue(struct page * page)
@@ -1569,7 +1573,7 @@ static ssize_t generic_file_direct_IO(int rw, struct file * filp, char * buf, si
 	chunk_size = KIO_MAX_ATOMIC_IO << 10;
 
 	retval = -EINVAL;
-	if ((offset & blocksize_mask) || (count & blocksize_mask))
+	if ((offset & blocksize_mask) || (count & blocksize_mask) || ((unsigned long) buf & blocksize_mask))
 		goto out_free;
 	if (!mapping->a_ops->direct_IO)
 		goto out_free;
@@ -1740,7 +1744,7 @@ static int file_send_actor(read_descriptor_t * desc, struct page *page, unsigned
 	return written;
 }
 
-asmlinkage ssize_t sys_sendfile(int out_fd, int in_fd, off_t *offset, size_t count)
+static ssize_t common_sendfile(int out_fd, int in_fd, loff_t *offset, size_t count)
 {
 	ssize_t retval;
 	struct file * in_file, * out_file;
@@ -1785,27 +1789,19 @@ asmlinkage ssize_t sys_sendfile(int out_fd, int in_fd, off_t *offset, size_t cou
 	retval = 0;
 	if (count) {
 		read_descriptor_t desc;
-		loff_t pos = 0, *ppos;
-
-		retval = -EFAULT;
-		ppos = &in_file->f_pos;
-		if (offset) {
-			if (get_user(pos, offset))
-				goto fput_out;
-			ppos = &pos;
-		}
+		
+		if (!offset)
+			offset = &in_file->f_pos;
 
 		desc.written = 0;
 		desc.count = count;
 		desc.buf = (char *) out_file;
 		desc.error = 0;
-		do_generic_file_read(in_file, ppos, &desc, file_send_actor);
+		do_generic_file_read(in_file, offset, &desc, file_send_actor);
 
 		retval = desc.written;
 		if (!retval)
 			retval = desc.error;
-		if (offset)
-			put_user(pos, offset);
 	}
 
 fput_out:
@@ -1814,6 +1810,38 @@ fput_in:
 	fput(in_file);
 out:
 	return retval;
+}
+
+asmlinkage ssize_t sys_sendfile(int out_fd, int in_fd, off_t *offset, size_t count)
+{
+	loff_t pos, *ppos = NULL;
+	ssize_t ret;
+	if (offset) {
+		off_t off;
+		if (unlikely(get_user(off, offset)))
+			return -EFAULT;
+		pos = off;
+		ppos = &pos;
+	}
+	ret = common_sendfile(out_fd, in_fd, ppos, count);
+	if (offset)
+		put_user((off_t)pos, offset);
+	return ret;
+}
+
+asmlinkage ssize_t sys_sendfile64(int out_fd, int in_fd, loff_t *offset, size_t count)
+{
+	loff_t pos, *ppos = NULL;
+	ssize_t ret;
+	if (offset) {
+		if (unlikely(copy_from_user(&pos, offset, sizeof(loff_t))))
+			return -EFAULT;
+		ppos = &pos;
+	}
+	ret = common_sendfile(out_fd, in_fd, ppos, count);
+	if (offset)
+		put_user(pos, offset);
+	return ret;
 }
 
 static ssize_t do_readahead(struct file *file, unsigned long index, unsigned long nr)
@@ -2940,7 +2968,7 @@ generic_file_write(struct file *file,const char *buf,size_t count, loff_t *ppos)
 	struct page	*page, *cached_page;
 	ssize_t		written;
 	long		status = 0;
-	int		err;
+	ssize_t		err;
 	unsigned	bytes;
 
 	if ((ssize_t) count < 0)

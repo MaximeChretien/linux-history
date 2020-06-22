@@ -1,6 +1,3 @@
-/*
- * BK Id: %F% %I% %G% %U% %#%
- */
 #ifdef __KERNEL__
 #ifndef _PPC_MACHDEP_H
 #define _PPC_MACHDEP_H
@@ -48,6 +45,7 @@ struct machdep_calls {
 	unsigned long	(*find_end_of_memory)(void);
 	void		(*setup_io_mappings)(void);
 
+	void		(*early_serial_map)(void);
   	void		(*progress)(char *, unsigned short);
 
 	unsigned char 	(*nvram_read_val)(int addr);
@@ -105,6 +103,9 @@ struct machdep_calls {
 	 * lines, chip power control, etc...).
 	 */
 	int (*feature_call)(unsigned int feature, ...);
+
+	/* Hook for board-specific info passed by the bootloader */
+	void (*board_info)(void *bdinfo, int bdinfo_size);
 
 #ifdef CONFIG_SMP
 	/* functions for dealing with other cpus */

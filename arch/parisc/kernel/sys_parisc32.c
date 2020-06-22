@@ -2759,20 +2759,9 @@ asmlinkage long sys32_ftruncate64(unsigned int fd, unsigned int high, unsigned i
 
 asmlinkage long sys32_fcntl64(unsigned int fd, unsigned int cmd, unsigned long arg)
 {
-	switch (cmd) {
-		case F_GETLK64:
-			cmd = F_GETLK;
-			break;
-		case F_SETLK64:
-			cmd = F_SETLK;
-			break;
-		case F_SETLKW64:
-			cmd = F_SETLKW;
-			break;
-		default:
-			break;
-	}
-	return sys_fcntl(fd, cmd, arg);
+	if (cmd >= F_GETLK64 && cmd <= F_SETLKW64)
+		return sys_fcntl(fd, cmd + F_GETLK - F_GETLK64, arg);
+	return sys32_fcntl(fd, cmd, arg);
 }
 
 asmlinkage int sys32_pread(int fd, void *buf, size_t count, unsigned int high, unsigned int low)

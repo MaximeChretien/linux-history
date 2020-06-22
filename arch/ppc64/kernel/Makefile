@@ -42,6 +42,8 @@ endif
 
 obj-$(CONFIG_RTAS_FLASH) += rtas_flash.o
 
+obj-$(CONFIG_SCANLOG) += scanlog.o
+
 obj-$(CONFIG_KGDB) += ppc-stub.o
 
 obj-$(CONFIG_SMP) += smp.o

@@ -109,13 +109,11 @@ static __inline__ char *__irq_itoa(unsigned int irq)
 	return buff;
 }
 
-#define NR_IRQS    15
+#define NR_IRQS    16
 
 extern void disable_irq(unsigned int);
 #define disable_irq_nosync disable_irq
 extern void enable_irq(unsigned int);
-extern void init_timers(void (*lvl10_irq)(int, void *, struct pt_regs *),
-			unsigned long *);
 extern unsigned int build_irq(int pil, int inofixup, unsigned long iclr, unsigned long imap);
 extern unsigned int sbus_build_irq(void *sbus, unsigned int ino);
 extern unsigned int psycho_build_irq(void *psycho, int imap_off, int ino, int need_dma_sync);

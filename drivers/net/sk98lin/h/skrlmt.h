@@ -2,8 +2,8 @@
  *
  * Name:	skrlmt.h
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.32 $
- * Date:	$Date: 2001/02/14 14:06:31 $
+ * Version:	$Revision: 1.33 $
+ * Date:	$Date: 2001/07/03 12:16:48 $
  * Purpose:	Header file for Redundant Link ManagemenT.
  *
  ******************************************************************************/
@@ -26,6 +26,9 @@
  * History:
  *
  *	$Log: skrlmt.h,v $
+ *	Revision 1.33  2001/07/03 12:16:48  mkunz
+ *	New Flag ChgBcPrio (Change priority of last broadcast received)
+ *	
  *	Revision 1.32  2001/02/14 14:06:31  rassmann
  *	Editorial changes.
  *	
@@ -468,6 +471,7 @@ struct s_RlmtNet {
 
 	/* For PNMI */
 
+	SK_U32			ChgBcPrio;			/* Change Priority of last broadcast received */
 	SK_U32			RlmtMode;			/* Check ... */
 	SK_U32			ActivePort;			/* Active port. */
 	SK_U32			Preference;		/* 0xFFFFFFFF: Automatic. */

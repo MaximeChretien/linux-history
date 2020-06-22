@@ -2,8 +2,8 @@
 #define _ASM_IA64_BITOPS_H
 
 /*
- * Copyright (C) 1998-2001 Hewlett-Packard Co
- * Copyright (C) 1998-2001 David Mosberger-Tang <davidm@hpl.hp.com>
+ * Copyright (C) 1998-2003 Hewlett-Packard Co
+ *	David Mosberger-Tang <davidm@hpl.hp.com>
  */
 
 #include <asm/system.h>
@@ -289,7 +289,7 @@ ffz (unsigned long x)
 static inline unsigned long
 ia64_fls (unsigned long x)
 {
-	double d = x;
+	long double d = x;
 	long exp;
 
 	__asm__ ("getf.exp %0=%1" : "=r"(exp) : "f"(d));

@@ -73,6 +73,14 @@ if [ "$CONFIG_SERIAL_NONSTANDARD" = "y" ]; then
      tristate '    Stallion EasyIO or EC8/32 support' CONFIG_STALLION
      tristate '    Stallion EC8/64, ONboard, Brumby support' CONFIG_ISTALLION
    fi
+   if [ "$CONFIG_PARISC" = "y" ]; then
+     if [ "$CONFIG_PDC_CONSOLE" != "y" ]; then
+       bool '  Serial MUX support' CONFIG_SERIAL_MUX CONFIG_SERIAL_NONSTANDARD
+     fi
+     if [ "$CONFIG_SERIAL_MUX" != "y" ]; then
+       bool '  PDC software console support' CONFIG_PDC_CONSOLE CONFIG_SERIAL_NONSTANDARD
+     fi
+   fi
    if [ "$CONFIG_MIPS" = "y" ]; then
      bool '  TX3912/PR31700 serial port support' CONFIG_SERIAL_TX3912
      dep_bool '     Console on TX3912/PR31700 serial port' CONFIG_SERIAL_TX3912_CONSOLE $CONFIG_SERIAL_TX3912
@@ -147,6 +155,7 @@ if [ "$CONFIG_PARPORT" != "n" ]; then
       bool '  Support for console on line printer' CONFIG_LP_CONSOLE
    fi
    dep_tristate 'Support for user-space parallel port device drivers' CONFIG_PPDEV $CONFIG_PARPORT
+   dep_tristate 'Texas Instruments parallel link cable support' CONFIG_TIPAR $CONFIG_PARPORT
 fi
 
 if [ "$CONFIG_PPC64" ] ; then 
@@ -190,6 +199,12 @@ if [ "$CONFIG_QIC02_TAPE" != "n" ]; then
    fi
 fi
 
+tristate 'IPMI top-level message handler' CONFIG_IPMI_HANDLER
+dep_mbool '  Generate a panic event to all BMCs on a panic' CONFIG_IPMI_PANIC_EVENT $CONFIG_IPMI_HANDLER
+dep_tristate '  Device interface for IPMI' CONFIG_IPMI_DEVICE_INTERFACE $CONFIG_IPMI_HANDLER
+dep_tristate '  IPMI KCS handler' CONFIG_IPMI_KCS $CONFIG_IPMI_HANDLER
+dep_tristate '  IPMI Watchdog Timer' CONFIG_IPMI_WATCHDOG $CONFIG_IPMI_HANDLER
+
 mainmenu_option next_comment
 comment 'Watchdog Cards'
 bool 'Watchdog Timer Support'	CONFIG_WATCHDOG
@@ -197,6 +212,7 @@ if [ "$CONFIG_WATCHDOG" != "n" ]; then
    bool '  Disable watchdog shutdown on close' CONFIG_WATCHDOG_NOWAYOUT
    tristate '  Acquire SBC Watchdog Timer' CONFIG_ACQUIRE_WDT
    tristate '  Advantech SBC Watchdog Timer' CONFIG_ADVANTECH_WDT
+   tristate '  ALi M7101 PMU on ALi 1535D+ Watchdog Timer' CONFIG_ALIM1535_WDT
    tristate '  ALi M7101 PMU Watchdog Timer' CONFIG_ALIM7101_WDT
    tristate '  AMD "Elan" SC520 Watchdog Timer' CONFIG_SC520_WDT
    tristate '  Berkshire Products PC Watchdog' CONFIG_PCWATCHDOG
@@ -216,6 +232,7 @@ if [ "$CONFIG_WATCHDOG" != "n" ]; then
    tristate '  Mixcom Watchdog' CONFIG_MIXCOMWD 
    tristate '  SBC-60XX Watchdog Timer' CONFIG_60XX_WDT
    dep_tristate '  SC1200 Watchdog Timer (EXPERIMENTAL)' CONFIG_SC1200_WDT $CONFIG_EXPERIMENTAL
+   tristate '  NatSemi SCx200 Watchdog' CONFIG_SCx200_WDT
    tristate '  Software Watchdog' CONFIG_SOFT_WATCHDOG
    tristate '  W83877F (EMACS) Watchdog Timer' CONFIG_W83877F_WDT
    tristate '  WDT Watchdog timer' CONFIG_WDT
@@ -239,9 +256,10 @@ if [ "$CONFIG_ARCH_NETWINDER" = "y" ]; then
    fi
    tristate 'NetWinder flash support' CONFIG_NWFLASH
 fi
+dep_tristate 'NatSemi SCx200 GPIO Support' CONFIG_SCx200_GPIO $CONFIG_SCx200
 
 if [ "$CONFIG_X86" = "y" -o "$CONFIG_X86_64" = "y" ]; then
-   dep_tristate 'AMD 768 Random Number Generator support' CONFIG_AMD_RNG $CONFIG_PCI
+   dep_tristate 'AMD 768/8111 Random Number Generator support' CONFIG_AMD_RNG $CONFIG_PCI
 fi
 if [ "$CONFIG_X86" = "y" -o "$CONFIG_IA64" = "y" ]; then
    dep_tristate 'Intel i8x0 Random Number Generator support' CONFIG_INTEL_RNG $CONFIG_PCI

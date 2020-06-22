@@ -1,7 +1,3 @@
-/*
- * BK Id: SCCS/s.ppc8260_pic.c 1.5 05/17/01 18:14:21 cort
- */
-
 #include <linux/stddef.h>
 #include <linux/init.h>
 #include <linux/sched.h>
@@ -112,7 +108,7 @@ struct hw_interrupt_type ppc8260_pic = {
 	0
 };
 
-
+/* Return an interrupt vector or -1 if no interrupt is pending. */
 int
 m8260_get_irq(struct pt_regs *regs)
 {
@@ -124,11 +120,9 @@ m8260_get_irq(struct pt_regs *regs)
         bits = immr->im_intctl.ic_sivec;
         irq = bits >> 26;
 
-	if (irq == 0)
-		return(-1);
-#if 0
-        irq += ppc8260_pic.irq_offset;
-#endif
+	if (irq == 0)	/* 0 --> no irq is pending */
+		irq = -1;
+
 	return irq;
 }
 

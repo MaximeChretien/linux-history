@@ -1,6 +1,8 @@
 #ifndef _X86_64_PAGE_H
 #define _X86_64_PAGE_H
 
+#include <linux/stringify.h>
+
 /* PAGE_SHIFT determines the page size */
 #define PAGE_SHIFT	12
 #ifdef __ASSEMBLY__
@@ -23,6 +25,8 @@
 
 /* Changing the next two defines should be enough to increase the kernel stack */
 /* We still hope 8K is enough, but ... */
+/* Currently it is actually ~6k. This would change when task_struct moves into
+   an own slab. */
 #define THREAD_ORDER    1
 #define THREAD_SIZE    (2*PAGE_SIZE)
 
@@ -45,7 +49,7 @@ typedef struct { unsigned long pte; } pte_t;
 typedef struct { unsigned long pmd; } pmd_t;
 typedef struct { unsigned long pgd; } pgd_t;
 typedef struct { unsigned long pml4; } pml4_t;
-#define PTE_MASK	PAGE_MASK
+#define PTE_MASK	PHYSICAL_PAGE_MASK
 
 typedef struct { unsigned long pgprot; } pgprot_t;
 
@@ -74,8 +78,6 @@ typedef struct { unsigned long pgprot; } pgprot_t;
 #ifndef __ASSEMBLY__
 
 #include <linux/config.h>
-#include <linux/stringify.h>
-
 
 /*
  * Tell the user there is some problem.  The exception handler decodes this frame.

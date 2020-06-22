@@ -108,7 +108,7 @@
 #endif
 #endif
 
-#if defined(__alpha__) || defined(__m68k__)
+#if defined(__alpha__) || defined(__mc68000__)
 #define READx_WORKS
 #define MEMCPYTOIO_WORKS
 #else
@@ -124,7 +124,7 @@
 #endif
 #endif
 
-#if defined(__m68k__)
+#if defined(__mc68000__)
 #define MAP_BUSTOVIRT
 #else
 #define MAP_IOREMAP
@@ -291,6 +291,8 @@ static inline void mga_iounmap(vaddr_t va) {
 
 struct my_timming {
 	unsigned int pixclock;
+	int mnp;
+	unsigned int crtc;
 	unsigned int HDisplay;
 	unsigned int HSyncStart;
 	unsigned int HSyncEnd;
@@ -367,6 +369,10 @@ struct mavenregs {
 	u_int16_t hcorr;
 };
 
+struct matrox_crtc2 {
+	u_int32_t ctl, hparam, hsync, vparam, vsync, preload, datactl;
+};
+
 struct matrox_hw_state {
 	u_int32_t	MXoptionReg;
 	unsigned char	DACclk[6];
@@ -384,10 +390,7 @@ struct matrox_hw_state {
 	/* TVOut only */
 	struct mavenregs	maven;
 
-	/* CRTC2 only */
-	/* u_int32_t	TBD */
-
-	unsigned int	vidclk;
+	struct matrox_crtc2	crtc2;
 };
 
 struct matrox_accel_data {
@@ -398,15 +401,27 @@ struct matrox_accel_data {
 	u_int32_t	m_opmode;
 };
 
+struct matroxfb_queryctrl;
+struct matroxfb_control;
+
 struct matrox_altout {
+	struct module	*owner;
+	const char	*name;
 	int		(*compute)(void* altout_dev, struct my_timming* input);
 	int		(*program)(void* altout_dev);
 	int		(*start)(void* altout_dev);
-	void		(*incuse)(void* altout_dev);
-	void		(*decuse)(void* altout_dev);
-	int		(*setmode)(void* altout_dev, u_int32_t mode);
-	int		(*getmode)(void* altout_dev, u_int32_t* mode);
+	int		(*verifymode)(void* altout_dev, u_int32_t mode);
+	int		(*getqueryctrl)(void* altout_dev,
+					struct matroxfb_queryctrl* ctrl);
+	int		(*getctrl)(void* altout_dev, 
+				   struct matroxfb_control* ctrl);
+	int		(*setctrl)(void* altout_dev, 
+				   struct matroxfb_control* ctrl);
 };
+
+#define MATROXFB_SRC_NONE	0
+#define MATROXFB_SRC_CRTC1	1
+#define MATROXFB_SRC_CRTC2	2
 
 enum mga_chip { MGA_2064, MGA_2164, MGA_1064, MGA_1164, MGA_G100, MGA_G200, MGA_G400, MGA_G450, MGA_G550 };
 
@@ -424,9 +439,9 @@ struct matrox_bios {
 
 struct matrox_switch;
 struct matroxfb_driver;
+struct matroxfb_dh_fb_info;
 
 struct matrox_fb_info {
-	/* fb_info must be first */
 	struct fb_info		fbcon;
 
 	struct list_head	next_fb;
@@ -442,21 +457,19 @@ struct matrox_fb_info {
 	struct pci_dev*		pcidev;
 
 	struct {
-		u_int32_t	all;
-		u_int32_t	ph;
-		u_int32_t	sh;
-			      } output;
-	struct matrox_altout*	primout;
-	struct {
-	struct fb_info*		info;
 	struct rw_semaphore	lock;
-			      } crtc2;
 	struct {
-	struct matrox_altout*	output;
-	void*			device;
-	struct rw_semaphore	lock;
+		int brightness, contrast, saturation, hue, gamma;
+		int testout, deflicker;
+				} tvo_params;
 			      } altout;
-
+#define MATROXFB_MAX_OUTPUTS		3
+	struct {
+	unsigned int		src;
+	struct matrox_altout*	output;
+	void*			data;
+	unsigned int		mode;
+			      } outputs[MATROXFB_MAX_OUTPUTS];
 #define MATROXFB_MAX_FB_DRIVERS		5
 	struct matroxfb_driver* (drivers[MATROXFB_MAX_FB_DRIVERS]);
 	void*			(drivers_data[MATROXFB_MAX_FB_DRIVERS]);
@@ -545,6 +558,8 @@ struct matrox_fb_info {
 		int		memtype;
 		int		g450dac;
 		int		dfp_type;
+		int		panellink;	/* G400 DFP possible (not G450/G550) */
+		int		dualhead;
 		unsigned int	fbResource;
 			      } devflags;
 	struct display_switch	dispsw;
@@ -560,6 +575,16 @@ struct matrox_fb_info {
 		struct timer_list timer;
 			      } cursor;
 	struct matrox_bios	bios;
+	struct {
+		unsigned int	pixclock;
+		int		mnp;
+			      } crtc1;
+	struct {
+		unsigned int 	pixclock;
+		int		mnp;
+	struct matroxfb_dh_fb_info*	info;
+	struct rw_semaphore	lock;
+			      } crtc2;
 	struct {
 		struct matrox_pll_limits	pixel;
 		struct matrox_pll_limits	system;
@@ -625,7 +650,7 @@ struct matrox_fb_info {
 #define PMINFO   PMINFO2 ,
 
 static inline struct matrox_fb_info* mxinfo(const struct display* p) {
-	return (struct matrox_fb_info*)p->fb_info;
+	return list_entry(p->fb_info, struct matrox_fb_info, fbcon);
 }
 
 #define PMXINFO(p)	   mxinfo(p),

@@ -15,7 +15,7 @@ struct ia64_machine_vector ia64_mv;
  * into a memory map index.
  */
 unsigned long
-map_nr_dense (unsigned long addr)
+map_nr_dense (void *addr)
 {
 	return MAP_NR_DENSE(addr);
 }

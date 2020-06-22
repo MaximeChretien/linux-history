@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.mk_defs.c 1.11 08/19/01 22:43:23 paulus
- */
-/*
  * This program is used to generate definitions needed by
  * assembly language modules.
  *
@@ -52,6 +49,7 @@ main(void)
 	DEFINE(TASK_FLAGS, offsetof(struct task_struct, flags));
 	DEFINE(TASK_PTRACE, offsetof(struct task_struct, ptrace));
 	DEFINE(NEED_RESCHED, offsetof(struct task_struct, need_resched));
+	DEFINE(THREAD_FPEXC_MODE, offsetof(struct thread_struct, fpexc_mode));
 	DEFINE(THREAD_FPR0, offsetof(struct thread_struct, fpr[0]));
 	DEFINE(THREAD_FPSCR, offsetof(struct thread_struct, fpscr));
 #ifdef CONFIG_ALTIVEC

@@ -461,11 +461,8 @@ svc_write_space(struct sock *sk)
 		svc_sock_enqueue(svsk);
 	}
 
-	if (sk->sleep && waitqueue_active(sk->sleep)) {
-		printk(KERN_WARNING "RPC svc_write_space: some sleeping on %p\n",
-		       svsk);
+	if (sk->sleep && waitqueue_active(sk->sleep))
 		wake_up_interruptible(sk->sleep);
-	}
 }
 
 /*

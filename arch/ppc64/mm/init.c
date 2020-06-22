@@ -82,11 +82,6 @@ extern char _start[], _end[];
 extern char _stext[], etext[];
 extern struct task_struct *current_set[NR_CPUS];
 
-void mm_init_ppc64(void);
-
-unsigned long *pmac_find_end_of_memory(void);
-extern unsigned long *find_end_of_memory(void);
-
 extern pgd_t ioremap_dir[];
 pgd_t * ioremap_pgd = (pgd_t *)&ioremap_dir;
 
@@ -171,12 +166,10 @@ ioremap(unsigned long addr, unsigned long size)
 #ifdef CONFIG_PPC_ISERIES
 	return (void*)addr;
 #else
-	if(mem_init_done && (addr >> 60UL)) {
-		if (IS_EEH_TOKEN_DISABLED(addr))
-			return IO_TOKEN_TO_ADDR(addr);
-		return (void*)addr; /* already mapped address or EEH token. */
-	}
-	return __ioremap(addr, size, _PAGE_NO_CACHE);
+	void *ret = __ioremap(addr, size, _PAGE_NO_CACHE);
+	if(mem_init_done)
+		return eeh_ioremap(addr, ret);	/* may remap the addr */
+	return ret;
 #endif
 }
 
@@ -272,6 +265,14 @@ static void map_io_page(unsigned long ea, unsigned long pa, int flags)
 	}
 }
 
+#ifndef CONFIG_PPC_ISERIES
+int
+io_remap_page_range(unsigned long from, unsigned long to, unsigned long size, pgprot_t prot)
+{
+	return remap_page_range(from, eeh_token_to_phys(to), size, prot);
+}
+#endif
+
 void
 local_flush_tlb_all(void)
 {
@@ -284,6 +285,8 @@ local_flush_tlb_all(void)
 void
 local_flush_tlb_mm(struct mm_struct *mm)
 {
+	spin_lock(&mm->page_table_lock);
+
 	if ( mm->map_count ) {
 		struct vm_area_struct *mp;
 		for ( mp = mm->mmap; mp != NULL; mp = mp->vm_next )
@@ -294,6 +297,8 @@ local_flush_tlb_mm(struct mm_struct *mm)
 		 * when an address space (represented by an mm_struct)
 		 * is being destroyed. */
 		local_flush_tlb_range( mm, USER_START, USER_END );
+
+	spin_unlock(&mm->page_table_lock);
 }
 
 /*
@@ -446,12 +451,12 @@ void __init mm_init_ppc64(void)
 	 * The range of contexts [FIRST_USER_CONTEXT, NUM_USER_CONTEXT)
 	 * are stored on a stack/queue for easy allocation and deallocation.
 	 */
-        mmu_context_queue.lock = SPIN_LOCK_UNLOCKED;
-        mmu_context_queue.head = 0;
-        mmu_context_queue.tail = NUM_USER_CONTEXT-1;
-        mmu_context_queue.size = NUM_USER_CONTEXT;
+	mmu_context_queue.lock = SPIN_LOCK_UNLOCKED;
+	mmu_context_queue.head = 0;
+	mmu_context_queue.tail = NUM_USER_CONTEXT-1;
+	mmu_context_queue.size = NUM_USER_CONTEXT;
 	for(index=0; index < NUM_USER_CONTEXT ;index++) {
-                mmu_context_queue.elements[index] = index+FIRST_USER_CONTEXT;
+		mmu_context_queue.elements[index] = index+FIRST_USER_CONTEXT;
 	}
 
 	/* Setup guard pages for the Paca's */
@@ -491,7 +496,7 @@ void __init do_init_bootmem(void)
 
 	PPCDBG(PPCDBG_MMINIT, "\tstart               = 0x%lx\n", start);
 	PPCDBG(PPCDBG_MMINIT, "\tbootmap_pages       = 0x%lx\n", bootmap_pages);
-	PPCDBG(PPCDBG_MMINIT, "\tphysicalMemorySize  = 0x%lx\n", naca->physicalMemorySize);
+	PPCDBG(PPCDBG_MMINIT, "\tphysicalMemorySize  = 0x%lx\n", systemcfg->physicalMemorySize);
 
 	boot_mapsize = init_bootmem(start >> PAGE_SHIFT, total_pages);
 	PPCDBG(PPCDBG_MMINIT, "\tboot_mapsize        = 0x%lx\n", boot_mapsize);
@@ -585,7 +590,7 @@ void __init mem_init(void)
 			datapages++;
 	}
 
-        printk("Memory: %luk available (%dk kernel code, %dk data, %dk init) [%08lx,%08lx]\n",
+	printk("Memory: %luk available (%dk kernel code, %dk data, %dk init) [%08lx,%08lx]\n",
 	       (unsigned long)nr_free_pages()<< (PAGE_SHIFT-10),
 	       codepages<< (PAGE_SHIFT-10), datapages<< (PAGE_SHIFT-10),
 	       initpages<< (PAGE_SHIFT-10),
@@ -622,6 +627,7 @@ void flush_icache_page(struct vm_area_struct *vma, struct page *page)
 void clear_user_page(void *page, unsigned long vaddr)
 {
 	clear_page(page);
+	__flush_dcache_icache(page);
 }
 
 void copy_user_page(void *vto, void *vfrom, unsigned long vaddr)

@@ -1,4 +1,4 @@
-#ident "$Id: msr.c,v 1.7 2002/02/14 10:20:47 ak Exp $"
+#ident "$Id: msr.c,v 1.8 2003/01/10 15:17:43 ak Exp $"
 /* ----------------------------------------------------------------------- *
  *   
  *   Copyright 2000 H. Peter Anvin - All Rights Reserved
@@ -55,7 +55,7 @@ static inline int wrmsr_eio(u32 reg, u32 eax, u32 edx)
 	       "	jmp 2b\n"
 	       ".previous\n"
 	       ".section __ex_table,\"a\"\n"
-	       "	.align 4\n"
+	       "	.align 8\n"
 	       "	.quad 1b,3b\n"
 	       ".previous"
 	       : "=&bDS" (err)
@@ -76,7 +76,7 @@ static inline int rdmsr_eio(u32 reg, u32 *eax, u32 *edx)
 	       "	jmp 2b\n"
 	       ".previous\n"
 	       ".section __ex_table,\"a\"\n"
-	       "	.align 4\n"
+	       "	.align 8\n"
 	       "	.quad 1b,3b\n"
 	       ".previous"
 	       : "=&bDS" (err), "=a" (*eax), "=d" (*edx)

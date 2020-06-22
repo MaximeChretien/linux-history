@@ -931,7 +931,7 @@ static int w9966_v4l_ioctl(struct video_device *vdev, unsigned int cmd, void *ar
 		if(copy_from_user(&vtune, arg, sizeof(vtune)) != 0)
 			return -EFAULT;
 
-		if(vtune.tuner != 0);
+		if(vtune.tuner != 0)
 			return -EINVAL;
 
 		strcpy(vtune.name, "no tuner");

@@ -609,8 +609,6 @@ ccio_dma_supported(struct pci_dev *dev, u64 mask)
 		return 0;
 	}
 
-	dev->dma_mask = mask;   /* save it */
-
 	/* only support 32-bit devices (ie PCI/GSC) */
 	return (int)(mask == 0xffffffffUL);
 }
@@ -1441,7 +1439,7 @@ ccio_init_resource(struct resource *res, char *name, unsigned long ioaddr)
 	result = request_resource(&iomem_resource, res);
 	if (result < 0) {
 		printk(KERN_ERR 
-		       "%s: failed to claim CCIO bus address space (%p,%p)\n", 
+		       "%s: failed to claim CCIO bus address space (%lx,%lx)\n", 
 		       __FILE__, res->start, res->end);
 	}
 }
@@ -1486,7 +1484,7 @@ static struct resource *ccio_get_resource(struct ioc* ioc,
 int ccio_allocate_resource(const struct parisc_device *dev,
 		struct resource *res, unsigned long size,
 		unsigned long min, unsigned long max, unsigned long align,
-		void (*alignf)(void *, struct resource *, unsigned long),
+		void (*alignf)(void *, struct resource *, unsigned long, unsigned long),
 		void *alignf_data)
 {
 	struct ioc *ioc = ccio_get_iommu(dev);

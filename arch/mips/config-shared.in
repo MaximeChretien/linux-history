@@ -479,7 +479,7 @@ fi
 if [ "$CONFIG_CPU_SB1" = "y" ]; then
    choice 'SB1 Pass' \
 	 "Pass1   CONFIG_CPU_SB1_PASS_1  \
-	  Pass2   CONFIG_CPU_SB1_PASS_2
+	  Pass2   CONFIG_CPU_SB1_PASS_2  \
 	  Pass2.2 CONFIG_CPU_SB1_PASS_2_2" Pass1
    if [ "$CONFIG_CPU_SB1_PASS_1" = "y" ]; then
       define_bool CONFIG_SB1_PASS_1_WORKAROUNDS y

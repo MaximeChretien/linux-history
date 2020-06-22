@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.walnut.h 1.10 09/14/01 17:37:56 trini
- */
-/*
  *
  *    Copyright (c) 1999 Grant Erickson <grant@lcse.umn.edu>
  *

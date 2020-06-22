@@ -121,8 +121,10 @@ struct ircomm_cb *ircomm_open(notify_t *notify, __u8 service_type, int line)
 	} else
 		ret = ircomm_open_tsap(self);
 
-	if (ret < 0)
+	if (ret < 0) {
+		kfree(self);
 		return NULL;
+	}
 
 	self->service_type = service_type;
 	self->line = line;
@@ -498,7 +500,7 @@ int ircomm_proc_read(char *buf, char **start, off_t offset, int len)
 
 	self = (struct ircomm_cb *) hashbin_get_first(ircomm);
 	while (self != NULL) {
-		ASSERT(self->magic == IRCOMM_MAGIC, return len;);
+		ASSERT(self->magic == IRCOMM_MAGIC, break;);
 
 		if(self->line < 0x10)
 			len += sprintf(buf+len, "ircomm%d", self->line);

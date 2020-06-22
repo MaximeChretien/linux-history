@@ -1011,7 +1011,7 @@ sun4c_continue_boot:
 
 		/* I want a kernel stack NOW! */
 		set	C_LABEL(init_task_union), %g1
-		set	(TASK_UNION_SIZE - REGWIN_SZ), %g2
+		set	(TASK_UNION_SIZE - STACKFRAME_SZ), %g2
 		add	%g1, %g2, %sp
 		mov	0, %fp			/* And for good luck */
 

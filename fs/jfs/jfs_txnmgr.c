@@ -69,6 +69,7 @@ static struct {
 	wait_queue_head_t freelockwait;	/* eventlist of free tlock */
 	wait_queue_head_t lowlockwait;	/* eventlist of ample tlocks */
 	int tlocksInUse;	/* Number of tlocks in use */
+	int TlocksLow;		/* Indicates low number of available tlocks */
 	spinlock_t LazyLock;	/* synchronize sync_queue & unlock_queue */
 /*	struct tblock *sync_queue; * Transactions waiting for data sync */
 	struct tblock *unlock_queue;	/* Txns waiting to be released */
@@ -78,6 +79,20 @@ static struct {
 					   that couldn't be sync'ed */
 } TxAnchor;
 
+#ifdef CONFIG_JFS_STATISTICS
+struct {
+	uint txBegin;
+	uint txBegin_barrier;
+	uint txBegin_lockslow;
+	uint txBegin_freetid;
+	uint txBeginAnon;
+	uint txBeginAnon_barrier;
+	uint txBeginAnon_lockslow;
+	uint txLockAlloc;
+	uint txLockAlloc_freelock;
+} TxStat;
+#endif
+
 static int nTxBlock = 512;	/* number of transaction blocks */
 struct tblock *TxBlock;	        /* transaction block table */
 
@@ -85,7 +100,6 @@ static int nTxLock = 4096;	/* number of transaction locks */
 static int TxLockLWM = 4096*.4;	/* Low water mark for number of txLocks used */
 static int TxLockHWM = 4096*.8;	/* High water mark for number of txLocks used */
 struct tlock *TxLock;           /* transaction lock table */
-static int TlocksLow = 0;	/* Indicates low number of available tlocks */
 
 
 /*
@@ -142,7 +156,7 @@ struct {
 /*
  * external references
  */
-extern int lmGroupCommit(struct jfs_log * log, struct tblock * tblk);
+extern int lmGroupCommit(struct jfs_log *, struct tblock *);
 extern void lmSync(struct jfs_log *);
 extern int jfs_commit_inode(struct inode *, int);
 extern int jfs_stop_threads;
@@ -189,13 +203,18 @@ static lid_t txLockAlloc(void)
 {
 	lid_t lid;
 
+	INCREMENT(TxStat.txLockAlloc);
+	if (!TxAnchor.freelock) {
+		INCREMENT(TxStat.txLockAlloc_freelock);
+	}
+
 	while (!(lid = TxAnchor.freelock))
 		TXN_SLEEP(&TxAnchor.freelockwait);
 	TxAnchor.freelock = TxLock[lid].next;
 	HIGHWATERMARK(stattx.maxlid, lid);
-	if ((++TxAnchor.tlocksInUse > TxLockHWM) && (TlocksLow == 0)) {
-		jEVENT(0,("txLockAlloc TlocksLow\n"));
-		TlocksLow = 1;
+	if ((++TxAnchor.tlocksInUse > TxLockHWM) && (TxAnchor.TlocksLow == 0)) {
+		jfs_info("txLockAlloc TlocksLow");
+		TxAnchor.TlocksLow = 1;
 		wake_up(&jfs_sync_thread_wait);
 	}
 
@@ -207,9 +226,9 @@ static void txLockFree(lid_t lid)
 	TxLock[lid].next = TxAnchor.freelock;
 	TxAnchor.freelock = lid;
 	TxAnchor.tlocksInUse--;
-	if (TlocksLow && (TxAnchor.tlocksInUse < TxLockLWM)) {
-		jEVENT(0,("txLockFree TlocksLow no more\n"));
-		TlocksLow = 0;
+	if (TxAnchor.TlocksLow && (TxAnchor.tlocksInUse < TxLockLWM)) {
+		jfs_info("txLockFree TlocksLow no more");
+		TxAnchor.TlocksLow = 0;
 		TXN_WAKEUP(&TxAnchor.lowlockwait);
 	}
 	TXN_WAKEUP(&TxAnchor.freelockwait);
@@ -316,10 +335,12 @@ tid_t txBegin(struct super_block *sb, int flag)
 	struct tblock *tblk;
 	struct jfs_log *log;
 
-	jFYI(1, ("txBegin: flag = 0x%x\n", flag));
+	jfs_info("txBegin: flag = 0x%x", flag);
 	log = JFS_SBI(sb)->log;
 
 	TXN_LOCK();
+
+	INCREMENT(TxStat.txBegin);
 
       retry:
 	if (!(flag & COMMIT_FORCE)) {
@@ -328,6 +349,7 @@ tid_t txBegin(struct super_block *sb, int flag)
 		 */
 		if (test_bit(log_SYNCBARRIER, &log->flag) ||
 		    test_bit(log_QUIESCE, &log->flag)) {
+			INCREMENT(TxStat.txBegin_barrier);
 			TXN_SLEEP(&log->syncwait);
 			goto retry;
 		}
@@ -338,7 +360,8 @@ tid_t txBegin(struct super_block *sb, int flag)
 		 * unless COMMIT_FORCE or COMMIT_INODE (which may ultimately
 		 * free tlocks)
 		 */
-		if (TlocksLow) {
+		if (TxAnchor.TlocksLow) {
+			INCREMENT(TxStat.txBegin_lockslow);
 			TXN_SLEEP(&TxAnchor.lowlockwait);
 			goto retry;
 		}
@@ -348,16 +371,18 @@ tid_t txBegin(struct super_block *sb, int flag)
 	 * allocate transaction id/block
 	 */
 	if ((t = TxAnchor.freetid) == 0) {
-		jFYI(1, ("txBegin: waiting for free tid\n"));
+		jfs_info("txBegin: waiting for free tid");
+		INCREMENT(TxStat.txBegin_freetid);
 		TXN_SLEEP(&TxAnchor.freewait);
 		goto retry;
 	}
 
 	tblk = tid_to_tblock(t);
 
-	if ((tblk->next == 0) && (current != jfsCommitTask)) {
-		/* Save one tblk for jfsCommit thread */
-		jFYI(1, ("txBegin: waiting for free tid\n"));
+	if ((tblk->next == 0) && !(flag & COMMIT_FORCE)) {
+		/* Don't let a non-forced transaction take the last tblk */
+		jfs_info("txBegin: waiting for free tid");
+		INCREMENT(TxStat.txBegin_freetid);
 		TXN_SLEEP(&TxAnchor.freewait);
 		goto retry;
 	}
@@ -387,7 +412,7 @@ tid_t txBegin(struct super_block *sb, int flag)
 
 	TXN_UNLOCK();
 
-	jFYI(1, ("txBegin: returning tid = %d\n", t));
+	jfs_info("txBegin: returning tid = %d", t);
 
 	return t;
 }
@@ -411,6 +436,7 @@ void txBeginAnon(struct super_block *sb)
 	log = JFS_SBI(sb)->log;
 
 	TXN_LOCK();
+	INCREMENT(TxStat.txBeginAnon);
 
       retry:
 	/*
@@ -418,6 +444,7 @@ void txBeginAnon(struct super_block *sb)
 	 */
 	if (test_bit(log_SYNCBARRIER, &log->flag) ||
 	    test_bit(log_QUIESCE, &log->flag)) {
+		INCREMENT(TxStat.txBeginAnon_barrier);
 		TXN_SLEEP(&log->syncwait);
 		goto retry;
 	}
@@ -425,7 +452,8 @@ void txBeginAnon(struct super_block *sb)
 	/*
 	 * Don't begin transaction if we're getting starved for tlocks
 	 */
-	if (TlocksLow) {
+	if (TxAnchor.TlocksLow) {
+		INCREMENT(TxStat.txBeginAnon_lockslow);
 		TXN_SLEEP(&TxAnchor.lowlockwait);
 		goto retry;
 	}
@@ -447,7 +475,7 @@ void txEnd(tid_t tid)
 	struct tblock *tblk = tid_to_tblock(tid);
 	struct jfs_log *log;
 
-	jFYI(1, ("txEnd: tid = %d\n", tid));
+	jfs_info("txEnd: tid = %d", tid);
 	TXN_LOCK();
 
 	/*
@@ -467,9 +495,7 @@ void txEnd(tid_t tid)
 	 * routine.
 	 */
 	if (tblk->flag & tblkGC_LAZY) {
-		jFYI(1,
-		     ("txEnd called w/lazy tid: %d, tblk = 0x%p\n",
-		      tid, tblk));
+		jfs_info("txEnd called w/lazy tid: %d, tblk = 0x%p", tid, tblk);
 		TXN_UNLOCK();
 
 		spin_lock_irq(&log->gclock);	// LOGGC_LOCK
@@ -478,7 +504,7 @@ void txEnd(tid_t tid)
 		return;
 	}
 
-	jFYI(1, ("txEnd: tid: %d, tblk = 0x%p\n", tid, tblk));
+	jfs_info("txEnd: tid: %d, tblk = 0x%p", tid, tblk);
 
 	assert(tblk->next == 0);
 
@@ -491,22 +517,24 @@ void txEnd(tid_t tid)
 	/*
 	 * mark the tblock not active
 	 */
-	--log->active;
+	if (--log->active == 0) {
+		clear_bit(log_FLUSH, &log->flag);
 
-	/*
-	 * synchronize with logsync barrier
-	 */
-	if (test_bit(log_SYNCBARRIER, &log->flag) && log->active == 0) {
-		/* forward log syncpt */
-		/* lmSync(log); */
+		/*
+		 * synchronize with logsync barrier
+		 */
+		if (test_bit(log_SYNCBARRIER, &log->flag)) {
+			/* forward log syncpt */
+			/* lmSync(log); */
 
-		jFYI(1, ("     log barrier off: 0x%x\n", log->lsn));
+			jfs_info("log barrier off: 0x%x", log->lsn);
 
-		/* enable new transactions start */
-		clear_bit(log_SYNCBARRIER, &log->flag);
+			/* enable new transactions start */
+			clear_bit(log_SYNCBARRIER, &log->flag);
 
-		/* wakeup all waitors for logsync barrier */
-		TXN_WAKEUP(&log->syncwait);
+			/* wakeup all waitors for logsync barrier */
+			TXN_WAKEUP(&log->syncwait);
+		}
 	}
 
 	/*
@@ -515,7 +543,6 @@ void txEnd(tid_t tid)
 	TXN_WAKEUP(&TxAnchor.freewait);
 
 	TXN_UNLOCK();
-	jFYI(1, ("txEnd: exitting\n"));
 }
 
 
@@ -562,8 +589,7 @@ struct tlock *txLock(tid_t tid, struct inode *ip, struct metapage * mp,
 	if (lid == 0)
 		goto allocateLock;
 
-	jFYI(1, ("txLock: tid:%d ip:0x%p mp:0x%p lid:%d\n",
-		 tid, ip, mp, lid));
+	jfs_info("txLock: tid:%d ip:0x%p mp:0x%p lid:%d", tid, ip, mp, lid);
 
 	/* is page locked by the requester transaction ? */
 	tlck = lid_to_tlock(lid);
@@ -649,9 +675,8 @@ struct tlock *txLock(tid_t tid, struct inode *ip, struct metapage * mp,
 		mark_metapage_dirty(mp);
 		atomic_inc(&mp->nohomeok);
 
-		jFYI(1,
-		     ("locking mp = 0x%p, nohomeok = %d tid = %d tlck = 0x%p\n",
-		      mp, atomic_read(&mp->nohomeok), tid, tlck));
+		jfs_info("locking mp = 0x%p, nohomeok = %d tid = %d tlck = 0x%p",
+			 mp, atomic_read(&mp->nohomeok), tid, tlck);
 
 		/* if anonymous transaction, and buffer is on the group
 		 * commit synclist, mark inode to show this.  This will
@@ -747,7 +772,7 @@ struct tlock *txLock(tid_t tid, struct inode *ip, struct metapage * mp,
 		break;
 
 	default:
-		jERROR(1, ("UFO tlock:0x%p\n", tlck));
+		jfs_err("UFO tlock:0x%p", tlck);
 	}
 
 	/*
@@ -767,7 +792,7 @@ struct tlock *txLock(tid_t tid, struct inode *ip, struct metapage * mp,
 	/* Only locks on ipimap or ipaimap should reach here */
 	/* assert(jfs_ip->fileset == AGGREGATE_I); */
 	if (jfs_ip->fileset != AGGREGATE_I) {
-		jERROR(1, ("txLock: trying to lock locked page!\n"));
+		jfs_err("txLock: trying to lock locked page!");
 		dump_mem("ip", ip, sizeof(struct inode));
 		dump_mem("mp", mp, sizeof(struct metapage));
 		dump_mem("Locker's tblk", tid_to_tblock(tid),
@@ -778,10 +803,10 @@ struct tlock *txLock(tid_t tid, struct inode *ip, struct metapage * mp,
 	INCREMENT(stattx.waitlock);	/* statistics */
 	release_metapage(mp);
 
-	jEVENT(0, ("txLock: in waitLock, tid = %d, xtid = %d, lid = %d\n",
-		   tid, xtid, lid));
+	jfs_info("txLock: in waitLock, tid = %d, xtid = %d, lid = %d",
+		 tid, xtid, lid);
 	TXN_SLEEP_DROP_LOCK(&tid_to_tblock(xtid)->waitor);
-	jEVENT(0, ("txLock: awakened     tid = %d, lid = %d\n", tid, lid));
+	jfs_info("txLock: awakened     tid = %d, lid = %d", tid, lid);
 
 	return NULL;
 }
@@ -842,7 +867,7 @@ static void txUnlock(struct tblock * tblk)
 	struct jfs_log *log;
 	int difft, diffp;
 
-	jFYI(1, ("txUnlock: tblk = 0x%p\n", tblk));
+	jfs_info("txUnlock: tblk = 0x%p", tblk);
 	log = JFS_SBI(tblk->sb)->log;
 
 	/*
@@ -852,7 +877,7 @@ static void txUnlock(struct tblock * tblk)
 		tlck = lid_to_tlock(lid);
 		next = tlck->next;
 
-		jFYI(1, ("unlocking lid = %d, tlck = 0x%p\n", lid, tlck));
+		jfs_info("unlocking lid = %d, tlck = 0x%p", lid, tlck);
 
 		/* unbind page from tlock */
 		if ((mp = tlck->mp) != NULL &&
@@ -1086,7 +1111,7 @@ int txCommit(tid_t tid,		/* transaction identifier */
 	ino_t top;
 	struct super_block *sb;
 
-	jFYI(1, ("txCommit, tid = %d, flag = %d\n", tid, flag));
+	jfs_info("txCommit, tid = %d, flag = %d", tid, flag);
 	/* is read-only file system ? */
 	if (isReadOnly(iplist[0])) {
 		rc = EROFS;
@@ -1152,16 +1177,8 @@ int txCommit(tid_t tid,		/* transaction identifier */
 		ip = cd.iplist[k];
 		jfs_ip = JFS_IP(ip);
 
-		/*
-		 * BUGBUG - Should we call filemap_fdatasync here instead
-		 * of fsync_inode_data?
-		 * If we do, we have a deadlock condition since we may end
-		 * up recursively calling jfs_get_block with the IWRITELOCK
-		 * held.  We may be able to do away with IWRITELOCK while
-		 * committing transactions and use i_sem instead.
-		 */
-		if ((!S_ISDIR(ip->i_mode))
-		    && (tblk->flag & COMMIT_DELETE) == 0)
+		if (test_and_clear_cflag(COMMIT_Syncdata, ip) &&
+		    ((tblk->flag && COMMIT_DELETE) == 0))
 			fsync_inode_data_buffers(ip);
 
 		/*
@@ -1203,8 +1220,21 @@ int txCommit(tid_t tid,		/* transaction identifier */
 	 * Ensure that inode isn't reused before
 	 * lazy commit thread finishes processing
 	 */
-	if (tblk->xflag & (COMMIT_CREATE | COMMIT_DELETE))
+	if (tblk->xflag & (COMMIT_CREATE | COMMIT_DELETE)) {
 		atomic_inc(&tblk->ip->i_count);
+		/*
+		 * Avoid a rare deadlock
+		 *
+		 * If the inode is locked, we may be blocked in
+		 * jfs_commit_inode.  If so, we don't want the
+		 * lazy_commit thread doing the last iput() on the inode
+		 * since that may block on the locked inode.  Instead,
+		 * commit the transaction synchronously, so the last iput
+		 * will be done by the calling thread (or later)
+		 */
+		if (tblk->ip->i_state & I_LOCK)
+			tblk->xflag &= ~COMMIT_LAZY;
+	}
 
 	ASSERT((!(tblk->xflag & COMMIT_DELETE)) ||
 	       ((tblk->ip->i_nlink == 0) &&
@@ -1272,7 +1302,7 @@ int txCommit(tid_t tid,		/* transaction identifier */
 		rc = rc1;
 
       TheEnd:
-	jFYI(1, ("txCommit: tid = %d, returning %d\n", tid, rc));
+	jfs_info("txCommit: tid = %d, returning %d", tid, rc);
 	return rc;
 }
 
@@ -1336,7 +1366,7 @@ static int txLog(struct jfs_log * log, struct tblock * tblk, struct commit * cd)
 			break;
 
 		default:
-			jERROR(1, ("UFO tlock:0x%p\n", tlck));
+			jfs_err("UFO tlock:0x%p", tlck);
 		}
 		if (tlck->mp)
 			release_metapage(tlck->mp);
@@ -1422,9 +1452,8 @@ int diLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 
 		/* mark page as homeward bound */
 		tlck->flag |= tlckWRITEPAGE;
-	} else {
-		jERROR(2, ("diLog: UFO type tlck:0x%p\n", tlck));
-	}
+	} else
+		jfs_err("diLog: UFO type tlck:0x%p", tlck);
 #ifdef  _JFS_WIP
 	/*
 	 *      alloc/free external EA extent
@@ -1473,10 +1502,6 @@ int dataLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 {
 	struct metapage *mp;
 	pxd_t *pxd;
-	int rc;
-	s64 xaddr;
-	int xflag;
-	s32 xlen;
 
 	mp = tlck->mp;
 
@@ -1501,13 +1526,7 @@ int dataLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 		return 0;
 	}
 
-	rc = xtLookup(tlck->ip, mp->index, 1, &xflag, &xaddr, &xlen, 1);
-	if (rc || (xlen == 0)) {
-		jERROR(1, ("dataLog: can't find physical address\n"));
-		return 0;
-	}
-
-	PXDaddress(pxd, xaddr);
+	PXDaddress(pxd, mp->index);
 	PXDlength(pxd, mp->logical_size >> tblk->sb->s_blocksize_bits);
 
 	lrd->backchain = cpu_to_le32(lmLog(log, tblk, lrd, tlck));
@@ -1527,12 +1546,10 @@ int dataLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 void dtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 	   struct tlock * tlck)
 {
-	struct inode *ip;
 	struct metapage *mp;
 	struct pxd_lock *pxdlock;
 	pxd_t *pxd;
 
-	ip = tlck->ip;
 	mp = tlck->mp;
 
 	/* initialize as REDOPAGE/NOREDOPAGE record format */
@@ -1724,9 +1741,8 @@ void xtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 			xadlock->xdlist = &p->xad[lwm];
 			tblk->xflag &= ~COMMIT_LAZY;
 		}
-		jFYI(1,
-		     ("xtLog: alloc ip:0x%p mp:0x%p tlck:0x%p lwm:%d count:%d\n",
-		      tlck->ip, mp, tlck, lwm, xadlock->count));
+		jfs_info("xtLog: alloc ip:0x%p mp:0x%p tlck:0x%p lwm:%d "
+			 "count:%d", tlck->ip, mp, tlck, lwm, xadlock->count);
 
 		maplock->index = 1;
 
@@ -1813,22 +1829,13 @@ void xtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 		} else {
 			/*
 			 * xdlist will point to into inode's xtree, ensure
-			 * that transaction is not committed lazily unless
-			 * we're deleting the inode (unlink).  In that case
-			 * we have special logic for the inode to be
-			 * unlocked by the lazy commit thread.
+			 * that transaction is not committed lazily.
 			 */
 			xadlock->xdlist = &p->xad[XTENTRYSTART];
-			if ((tblk->xflag & COMMIT_LAZY) &&
-			    (tblk->xflag & COMMIT_DELETE) &&
-			    (tblk->ip == ip))
-				set_cflag(COMMIT_Holdlock, ip);
-			else
-				tblk->xflag &= ~COMMIT_LAZY;
+			tblk->xflag &= ~COMMIT_LAZY;
 		}
-		jFYI(1,
-		     ("xtLog: free ip:0x%p mp:0x%p count:%d lwm:2\n",
-		      tlck->ip, mp, xadlock->count));
+		jfs_info("xtLog: free ip:0x%p mp:0x%p count:%d lwm:2",
+			 tlck->ip, mp, xadlock->count);
 
 		maplock->index = 1;
 
@@ -1956,9 +1963,9 @@ void xtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 			xadlock->count = next - lwm;
 			xadlock->xdlist = &p->xad[lwm];
 
-			jFYI(1,
-			     ("xtLog: alloc ip:0x%p mp:0x%p count:%d lwm:%d next:%d\n",
-			      tlck->ip, mp, xadlock->count, lwm, next));
+			jfs_info("xtLog: alloc ip:0x%p mp:0x%p count:%d "
+				 "lwm:%d next:%d",
+				 tlck->ip, mp, xadlock->count, lwm, next);
 			maplock->index++;
 			xadlock++;
 		}
@@ -1980,9 +1987,8 @@ void xtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 			pxdlock->count = 1;
 			pxdlock->pxd = tpxd;
 
-			jFYI(1,
-			     ("xtLog: truncate ip:0x%p mp:0x%p count:%d hwm:%d\n",
-			      ip, mp, pxdlock->count, hwm));
+			jfs_info("xtLog: truncate ip:0x%p mp:0x%p count:%d "
+				 "hwm:%d", ip, mp, pxdlock->count, hwm);
 			maplock->index++;
 			xadlock++;
 		}
@@ -2000,9 +2006,9 @@ void xtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 			xadlock->count = hwm - next + 1;
 			xadlock->xdlist = &p->xad[next];
 
-			jFYI(1,
-			     ("xtLog: free ip:0x%p mp:0x%p count:%d next:%d hwm:%d\n",
-			      tlck->ip, mp, xadlock->count, next, hwm));
+			jfs_info("xtLog: free ip:0x%p mp:0x%p count:%d "
+				 "next:%d hwm:%d",
+				 tlck->ip, mp, xadlock->count, next, hwm);
 			maplock->index++;
 		}
 
@@ -2089,9 +2095,9 @@ void mapLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 			lrd->log.updatemap.pxd = pxdlock->pxd;
 			lrd->backchain =
 			    cpu_to_le32(lmLog(log, tblk, lrd, NULL));
-			jFYI(1, ("mapLog: xaddr:0x%lx xlen:0x%x\n",
+			jfs_info("mapLog: xaddr:0x%lx xlen:0x%x",
 				 (ulong) addressPXD(&pxdlock->pxd),
-				 lengthPXD(&pxdlock->pxd)));
+				 lengthPXD(&pxdlock->pxd));
 		}
 
 		/* update bmap */
@@ -2197,9 +2203,21 @@ void txForce(struct tblock * tblk)
 				tlck->flag &= ~tlckWRITEPAGE;
 
 				/* do not release page to freelist */
+
+				/*
+				 * The "right" thing to do here is to
+				 * synchronously write the metadata.
+				 * With the current implementation this
+				 * is hard since write_metapage requires
+				 * us to kunmap & remap the page.  If we
+				 * have tlocks pointing into the metadata
+				 * pages, we don't want to do this.  I think
+				 * we can get by with synchronously writing
+				 * the pages when they are released.
+				 */
 				assert(atomic_read(&mp->nohomeok));
-				hold_metapage(mp, 0);
-				write_metapage(mp);
+				set_bit(META_dirty, &mp->flag);
+				set_bit(META_sync, &mp->flag);
 			}
 		}
 	}
@@ -2344,10 +2362,6 @@ static void txUpdateMap(struct tblock * tblk)
 		ip = tblk->ip;
 		diUpdatePMap(ipimap, ip->i_ino, TRUE, tblk);
 		ipimap->i_state |= I_DIRTY;
-		if (test_and_clear_cflag(COMMIT_Holdlock, ip)) {
-			if (tblk->flag & tblkGC_LAZY)
-				IWRITE_UNLOCK(ip);
-		}
 		iput(ip);
 	}
 }
@@ -2399,9 +2413,8 @@ static void txAllocPMap(struct inode *ip, struct maplock * maplock,
 				dbUpdatePMap(ipbmap, FALSE, xaddr,
 					     (s64) xlen, tblk);
 				xad->flag &= ~(XAD_NEW | XAD_EXTENDED);
-				jFYI(1,
-				     ("allocPMap: xaddr:0x%lx xlen:%d\n",
-				      (ulong) xaddr, xlen));
+				jfs_info("allocPMap: xaddr:0x%lx xlen:%d",
+					 (ulong) xaddr, xlen);
 			}
 		}
 	} else if (maplock->flag & mlckALLOCPXD) {
@@ -2409,9 +2422,7 @@ static void txAllocPMap(struct inode *ip, struct maplock * maplock,
 		xaddr = addressPXD(&pxdlock->pxd);
 		xlen = lengthPXD(&pxdlock->pxd);
 		dbUpdatePMap(ipbmap, FALSE, xaddr, (s64) xlen, tblk);
-		jFYI(1,
-		     ("allocPMap: xaddr:0x%lx xlen:%d\n", (ulong) xaddr,
-		      xlen));
+		jfs_info("allocPMap: xaddr:0x%lx xlen:%d", (ulong) xaddr, xlen);
 	} else {		/* (maplock->flag & mlckALLOCPXDLIST) */
 
 		pxdlistlock = (struct xdlistlock *) maplock;
@@ -2421,9 +2432,8 @@ static void txAllocPMap(struct inode *ip, struct maplock * maplock,
 			xlen = lengthPXD(pxd);
 			dbUpdatePMap(ipbmap, FALSE, xaddr, (s64) xlen,
 				     tblk);
-			jFYI(1,
-			     ("allocPMap: xaddr:0x%lx xlen:%d\n",
-			      (ulong) xaddr, xlen));
+			jfs_info("allocPMap: xaddr:0x%lx xlen:%d",
+				 (ulong) xaddr, xlen);
 		}
 	}
 }
@@ -2449,9 +2459,8 @@ void txFreeMap(struct inode *ip,
 	pxd_t *pxd;
 	int n;
 
-	jFYI(1,
-	     ("txFreeMap: tblk:0x%p maplock:0x%p maptype:0x%x\n",
-	      tblk, maplock, maptype));
+	jfs_info("txFreeMap: tblk:0x%p maplock:0x%p maptype:0x%x",
+		 tblk, maplock, maptype);
 
 	/*
 	 * free from persistent map;
@@ -2466,9 +2475,9 @@ void txFreeMap(struct inode *ip,
 					xlen = lengthXAD(xad);
 					dbUpdatePMap(ipbmap, TRUE, xaddr,
 						     (s64) xlen, tblk);
-					jFYI(1,
-					     ("freePMap: xaddr:0x%lx xlen:%d\n",
-					      (ulong) xaddr, xlen));
+					jfs_info("freePMap: xaddr:0x%lx "
+						 "xlen:%d",
+						 (ulong) xaddr, xlen);
 				}
 			}
 		} else if (maplock->flag & mlckFREEPXD) {
@@ -2477,9 +2486,8 @@ void txFreeMap(struct inode *ip,
 			xlen = lengthPXD(&pxdlock->pxd);
 			dbUpdatePMap(ipbmap, TRUE, xaddr, (s64) xlen,
 				     tblk);
-			jFYI(1,
-			     ("freePMap: xaddr:0x%lx xlen:%d\n",
-			      (ulong) xaddr, xlen));
+			jfs_info("freePMap: xaddr:0x%lx xlen:%d",
+				 (ulong) xaddr, xlen);
 		} else {	/* (maplock->flag & mlckALLOCPXDLIST) */
 
 			pxdlistlock = (struct xdlistlock *) maplock;
@@ -2489,9 +2497,8 @@ void txFreeMap(struct inode *ip,
 				xlen = lengthPXD(pxd);
 				dbUpdatePMap(ipbmap, TRUE, xaddr,
 					     (s64) xlen, tblk);
-				jFYI(1,
-				     ("freePMap: xaddr:0x%lx xlen:%d\n",
-				      (ulong) xaddr, xlen));
+				jfs_info("freePMap: xaddr:0x%lx xlen:%d",
+					 (ulong) xaddr, xlen);
 			}
 		}
 	}
@@ -2508,18 +2515,16 @@ void txFreeMap(struct inode *ip,
 				xlen = lengthXAD(xad);
 				dbFree(ip, xaddr, (s64) xlen);
 				xad->flag = 0;
-				jFYI(1,
-				     ("freeWMap: xaddr:0x%lx xlen:%d\n",
-				      (ulong) xaddr, xlen));
+				jfs_info("freeWMap: xaddr:0x%lx xlen:%d",
+					 (ulong) xaddr, xlen);
 			}
 		} else if (maplock->flag & mlckFREEPXD) {
 			pxdlock = (struct pxd_lock *) maplock;
 			xaddr = addressPXD(&pxdlock->pxd);
 			xlen = lengthPXD(&pxdlock->pxd);
 			dbFree(ip, xaddr, (s64) xlen);
-			jFYI(1,
-			     ("freeWMap: xaddr:0x%lx xlen:%d\n",
-			      (ulong) xaddr, xlen));
+			jfs_info("freeWMap: xaddr:0x%lx xlen:%d",
+				 (ulong) xaddr, xlen);
 		} else {	/* (maplock->flag & mlckFREEPXDLIST) */
 
 			pxdlistlock = (struct xdlistlock *) maplock;
@@ -2528,9 +2533,8 @@ void txFreeMap(struct inode *ip,
 				xaddr = addressPXD(pxd);
 				xlen = lengthPXD(pxd);
 				dbFree(ip, xaddr, (s64) xlen);
-				jFYI(1,
-				     ("freeWMap: xaddr:0x%lx xlen:%d\n",
-				      (ulong) xaddr, xlen));
+				jfs_info("freeWMap: xaddr:0x%lx xlen:%d",
+					 (ulong) xaddr, xlen);
 			}
 		}
 	}
@@ -2595,7 +2599,7 @@ void txAbort(tid_t tid, int dirty)
 	struct metapage *mp;
 	struct tblock *tblk = tid_to_tblock(tid);
 
-	jEVENT(1, ("txAbort: tid:%d dirty:0x%x\n", tid, dirty));
+	jfs_warn("txAbort: tid:%d dirty:0x%x", tid, dirty);
 
 	/*
 	 * free tlocks of the transaction
@@ -2658,7 +2662,7 @@ void txAbortCommit(struct commit * cd, int exval)
 	struct metapage *mp;
 
 	assert(exval == EIO || exval == ENOMEM);
-	jEVENT(1, ("txAbortCommit: cd:0x%p\n", cd));
+	jfs_warn("txAbortCommit: cd:0x%p", cd);
 
 	/*
 	 * free tlocks of the transaction
@@ -2713,11 +2717,11 @@ void txLazyCommit(struct tblock * tblk)
 	       ((tblk->flag & tblkGC_UNLOCKED) == 0)) {
 		/* We must have gotten ahead of the user thread
 		 */
-		jFYI(1, ("txLazyCommit: tblk 0x%p not unlocked\n", tblk));
+		jfs_info("txLazyCommit: tblk 0x%p not unlocked", tblk);
 		schedule();
 	}
 
-	jFYI(1, ("txLazyCommit: processing tblk 0x%p\n", tblk));
+	jfs_info("txLazyCommit: processing tblk 0x%p", tblk);
 
 	txUpdateMap(tblk);
 
@@ -2727,11 +2731,10 @@ void txLazyCommit(struct tblock * tblk)
 
 	tblk->flag |= tblkGC_COMMITTED;
 
-	if ((tblk->flag & tblkGC_READY) || (tblk->flag & tblkGC_LAZY))
+	if (tblk->flag & tblkGC_READY)
 		log->gcrtc--;
 
-	if (tblk->flag & tblkGC_READY)
-		wake_up(&tblk->gcwait);	// LOGGC_WAKEUP
+	wake_up_all(&tblk->gcwait);	// LOGGC_WAKEUP
 
 	/*
 	 * Can't release log->gclock until we've tested tblk->flag
@@ -2744,7 +2747,7 @@ void txLazyCommit(struct tblock * tblk)
 	} else
 		spin_unlock_irq(&log->gclock);	// LOGGC_UNLOCK
 
-	jFYI(1, ("txLazyCommit: done: tblk = 0x%p\n", tblk));
+	jfs_info("txLazyCommit: done: tblk = 0x%p", tblk);
 }
 
 /*
@@ -2826,9 +2829,9 @@ restart:
 	} while (!jfs_stop_threads);
 
 	if (TxAnchor.unlock_queue)
-		jERROR(1, ("jfs_lazycommit being killed with pending transactions!\n"));
+		jfs_err("jfs_lazycommit being killed w/pending transactions!");
 	else
-		jFYI(1, ("jfs_lazycommit being killed\n"));
+		jfs_info("jfs_lazycommit being killed\n");
 	complete(&jfsIOwait);
 	return 0;
 }
@@ -2888,7 +2891,6 @@ void txQuiesce(struct super_block *sb)
 	struct inode *ip;
 	struct jfs_inode_info *jfs_ip;
 	struct jfs_log *log = JFS_SBI(sb)->log;
-	int rc;
 	tid_t tid;
 
 	set_bit(log_QUIESCE, &log->flag);
@@ -2908,7 +2910,7 @@ restart:
 		TXN_UNLOCK();
 		tid = txBegin(ip->i_sb, COMMIT_INODE | COMMIT_FORCE);
 		down(&jfs_ip->commit_sem);
-		rc = txCommit(tid, 1, &ip, 0);
+		txCommit(tid, 1, &ip, 0);
 		txEnd(tid);
 		up(&jfs_ip->commit_sem);
 		/*
@@ -2929,6 +2931,11 @@ restart:
 		goto restart;
 	}
 	TXN_UNLOCK();
+
+	/*
+	 * We may need to kick off the group commit
+	 */
+	jfs_flush_journal(log, 0);
 }
 
 /*
@@ -2979,7 +2986,7 @@ int jfs_sync(void *arg)
 		 * write each inode on the anonymous inode list
 		 */
 		TXN_LOCK();
-		while (TlocksLow && !list_empty(&TxAnchor.anon_list)) {
+		while (TxAnchor.TlocksLow && !list_empty(&TxAnchor.anon_list)) {
 			jfs_ip = list_entry(TxAnchor.anon_list.next,
 					    struct jfs_inode_info,
 					    anon_inode_list);
@@ -2995,8 +3002,7 @@ int jfs_sync(void *arg)
 				 * when it is committed
 				 */
 				TXN_UNLOCK();
-				tid = txBegin(ip->i_sb,
-					      COMMIT_INODE | COMMIT_FORCE);
+				tid = txBegin(ip->i_sb, COMMIT_INODE);
 				rc = txCommit(tid, 1, &ip, 0);
 				txEnd(tid);
 				up(&jfs_ip->commit_sem);
@@ -3034,7 +3040,7 @@ int jfs_sync(void *arg)
 		remove_wait_queue(&jfs_sync_thread_wait, &wq);
 	} while (!jfs_stop_threads);
 
-	jFYI(1, ("jfs_sync being killed\n"));
+	jfs_info("jfs_sync being killed");
 	complete(&jfsIOwait);
 	return 0;
 }
@@ -3065,6 +3071,7 @@ int jfs_txanchor_read(char *buffer, char **start, off_t offset, int length,
 		       "freelockwait = %s\n"
 		       "lowlockwait = %s\n"
 		       "tlocksInUse = %d\n"
+		       "TlocksLow = %d\n"
 		       "unlock_queue = 0x%p\n"
 		       "unlock_tail = 0x%p\n",
 		       TxAnchor.freetid,
@@ -3073,8 +3080,54 @@ int jfs_txanchor_read(char *buffer, char **start, off_t offset, int length,
 		       freelockwait,
 		       lowlockwait,
 		       TxAnchor.tlocksInUse,
+		       TxAnchor.TlocksLow,
 		       TxAnchor.unlock_queue,
 		       TxAnchor.unlock_tail);
+
+	begin = offset;
+	*start = buffer + begin;
+	len -= begin;
+
+	if (len > length)
+		len = length;
+	else
+		*eof = 1;
+
+	if (len < 0)
+		len = 0;
+
+	return len;
+}
+#endif
+
+#if defined(CONFIG_PROC_FS) && defined(CONFIG_JFS_STATISTICS)
+int jfs_txstats_read(char *buffer, char **start, off_t offset, int length,
+		     int *eof, void *data)
+{
+	int len = 0;
+	off_t begin;
+
+	len += sprintf(buffer,
+		       "JFS TxStats\n"
+		       "===========\n"
+		       "calls to txBegin = %d\n"
+		       "txBegin blocked by sync barrier = %d\n"
+		       "txBegin blocked by tlocks low = %d\n"
+		       "txBegin blocked by no free tid = %d\n"
+		       "calls to txBeginAnon = %d\n"
+		       "txBeginAnon blocked by sync barrier = %d\n"
+		       "txBeginAnon blocked by tlocks low = %d\n"
+		       "calls to txLockAlloc = %d\n"
+		       "tLockAlloc blocked by no free lock = %d\n",
+		       TxStat.txBegin,
+		       TxStat.txBegin_barrier,
+		       TxStat.txBegin_lockslow,
+		       TxStat.txBegin_freetid,
+		       TxStat.txBeginAnon,
+		       TxStat.txBeginAnon_barrier,
+		       TxStat.txBeginAnon_lockslow,
+		       TxStat.txLockAlloc,
+		       TxStat.txLockAlloc_freelock);
 
 	begin = offset;
 	*start = buffer + begin;

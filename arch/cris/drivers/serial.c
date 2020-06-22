@@ -1,4 +1,4 @@
-/* $Id: serial.c,v 1.37 2002/08/13 13:02:37 bjornw Exp $
+/* $Id: serial.c,v 1.44 2002/11/21 04:28:06 hp Exp $
  *
  * Serial port driver for the ETRAX 100LX chip
  *
@@ -7,6 +7,42 @@
  *      Many, many authors. Based once upon a time on serial.c for 16x50.
  *
  * $Log: serial.c,v $
+ * Revision 1.44  2002/11/21 04:28:06  hp
+ * Change static inline to extern inline where otherwise outlined with gcc-3.2
+ *
+ * Revision 1.43  2002/11/15 12:02:25  pkj
+ * Make sure we have a tty in flush_to_flip_buffer() before we
+ * try to use it...
+ *
+ * Revision 1.42  2002/11/05 09:08:47  johana
+ * Better implementation of rs_stop() and rs_start() that uses the XOFF
+ * register to start/stop transmission.
+ * change_speed() also initilises XOFF register correctly so that
+ * auto_xoff is enabled when IXON flag is set by user.
+ * This gives fast XOFF response times.
+ *
+ * Revision 1.41  2002/11/04 18:40:57  johana
+ * Implemented rs_stop() and rs_start().
+ * Simple tests using hwtestserial indicates that this should be enough
+ * to make it work.
+ *
+ * Revision 1.40  2002/10/14 05:33:18  starvik
+ * RS-485 uses fast timers even if SERIAL_FAST_TIMER is disabled
+ *
+ * Revision 1.39  2002/09/30 21:00:57  johana
+ * Support for CONFIG_ETRAX_SERx_DTR_RI_DSR_CD_MIXED where the status and
+ * control pins can be mixed between PA and PB.
+ * If no serial port uses MIXED old solution is used
+ * (saves a few bytes and cycles).
+ * control_pins struct uses masks instead of bit numbers.
+ * Corrected dummy values and polarity in line_info() so
+ * /proc/tty/driver/serial is now correct.
+ * (the E100_xxx_GET() macros is really active low - perhaps not obvious)
+ *
+ * Revision 1.38  2002/08/23 11:01:36  starvik
+ * Check that serial port is enabled in all interrupt handlers to avoid
+ * restarts of DMA channels not assigned to serial ports
+ *
  * Revision 1.37  2002/08/13 13:02:37  bjornw
  * Removed some warnings because of unused code
  *
@@ -321,7 +357,7 @@
  *
  */
 
-static char *serial_version = "$Revision: 1.37 $";
+static char *serial_version = "$Revision: 1.44 $";
 
 #include <linux/config.h>
 #include <linux/version.h>
@@ -429,7 +465,7 @@ static void change_speed(struct e100_serial *info);
 static void rs_wait_until_sent(struct tty_struct *tty, int timeout);
 static int rs_write(struct tty_struct * tty, int from_user,
                     const unsigned char *buf, int count);
-static inline int raw_write(struct tty_struct * tty, int from_user,
+extern inline int raw_write(struct tty_struct * tty, int from_user,
                             const unsigned char *buf, int count);
 #ifdef CONFIG_ETRAX_RS485
 static int e100_write_rs485(struct tty_struct * tty, int from_user,
@@ -585,87 +621,214 @@ static struct fast_timer fast_timers_rs485[NR_PORTS];
 static int rs485_pa_bit = CONFIG_ETRAX_RS485_ON_PA_BIT;
 #endif
 #endif
-  
 
-/* For now we assume that all bits are on the same port for each serial port */
+/* Info and macros needed for each ports extra control/status signals. */
+#define E100_STRUCT_PORT(line, pinname) \
+ ((CONFIG_ETRAX_SER##line##_##pinname##_ON_PA_BIT >= 0)? \
+		(R_PORT_PA_DATA): ( \
+ (CONFIG_ETRAX_SER##line##_##pinname##_ON_PB_BIT >= 0)? \
+		(R_PORT_PB_DATA):&dummy_ser[##line##]))
 
-/* Dummy shadow variables */
-#if !defined(CONFIG_ETRAX_SER0_DTR_RI_DSR_CD_ON_PB)
-static unsigned char dummy_ser0 = 0x00;
-static unsigned char dummy_dir_ser0 = 0x00;
+#define E100_STRUCT_SHADOW(line, pinname) \
+ ((CONFIG_ETRAX_SER##line##_##pinname##_ON_PA_BIT >= 0)? \
+		(&port_pa_data_shadow): ( \
+ (CONFIG_ETRAX_SER##line##_##pinname##_ON_PB_BIT >= 0)? \
+		(&port_pb_data_shadow):&dummy_ser[line]))
+#define E100_STRUCT_MASK(line, pinname) \
+ ((CONFIG_ETRAX_SER##line##_##pinname##_ON_PA_BIT >= 0)? \
+		(1<<CONFIG_ETRAX_SER##line##_##pinname##_ON_PA_BIT): ( \
+ (CONFIG_ETRAX_SER##line##_##pinname##_ON_PB_BIT >= 0)? \
+		(1<<CONFIG_ETRAX_SER##line##_##pinname##_ON_PB_BIT):DUMMY_##pinname##_MASK))
+
+#define DUMMY_DTR_MASK 1
+#define DUMMY_RI_MASK  2
+#define DUMMY_DSR_MASK 4
+#define DUMMY_CD_MASK  8
+static unsigned char dummy_ser[NR_PORTS] = {0xFF, 0xFF, 0xFF,0xFF};
+
+#if defined(CONFIG_ETRAX_SER0_DTR_RI_DSR_CD_MIXED) || \
+    defined(CONFIG_ETRAX_SER1_DTR_RI_DSR_CD_MIXED) || \
+    defined(CONFIG_ETRAX_SER2_DTR_RI_DSR_CD_MIXED) || \
+    defined(CONFIG_ETRAX_SER3_DTR_RI_DSR_CD_MIXED)
+#define CONFIG_ETRAX_SERX_DTR_RI_DSR_CD_MIXED
 #endif
-#if !defined(CONFIG_ETRAX_SER1_DTR_RI_DSR_CD_ON_PB)
-static unsigned char dummy_ser1 = 0x00;
-static unsigned char dummy_dir_ser1 = 0x00;
-#endif
-#if !defined(CONFIG_ETRAX_SER2_DTR_RI_DSR_CD_ON_PA)
-static unsigned char dummy_ser2 = 0x00;
-static unsigned char dummy_dir_ser2 = 0x00;
-#endif
 
-static unsigned char dummy_ser3 = 0x00;
-static unsigned char dummy_dir_ser3 = 0x00;
+#ifdef CONFIG_ETRAX_SERX_DTR_RI_DSR_CD_MIXED
+/* The pins can be mixed on PA and PB */
+#define CONTROL_PINS_PORT_NOT_USED(line) \
+  &dummy_ser[line], &dummy_ser[line], \
+  &dummy_ser[line], &dummy_ser[line], \
+  &dummy_ser[line], &dummy_ser[line], \
+  &dummy_ser[line], &dummy_ser[line], \
+  DUMMY_DTR_MASK, DUMMY_RI_MASK, DUMMY_DSR_MASK, DUMMY_CD_MASK
+    
 
-/* Info needed for each ports extra control/status signals.
-   We only supports that all pins uses same register for each port */
 struct control_pins
 {
-	volatile unsigned char *port;
-	volatile unsigned char *shadow;
-	volatile unsigned char *dir_shadow;
+	volatile unsigned char *dtr_port;
+	unsigned char          *dtr_shadow;
+	volatile unsigned char *ri_port;
+	unsigned char          *ri_shadow;
+	volatile unsigned char *dsr_port;
+	unsigned char          *dsr_shadow;
+	volatile unsigned char *cd_port;
+	unsigned char          *cd_shadow;
 
-	unsigned char dtr_bit;
-	unsigned char ri_bit;
-	unsigned char dsr_bit;
-	unsigned char cd_bit;
+	unsigned char dtr_mask;
+	unsigned char ri_mask;
+	unsigned char dsr_mask;
+	unsigned char cd_mask;
 };
 
 static const struct control_pins e100_modem_pins[NR_PORTS] = 
 {
 	/* Ser 0 */
 	{
-#if defined(CONFIG_ETRAX_SER0_DTR_RI_DSR_CD_ON_PB)
-		R_PORT_PB_DATA, &port_pb_data_shadow, &port_pb_dir_shadow,
-		CONFIG_ETRAX_SER0_DTR_ON_PB_BIT,
-		CONFIG_ETRAX_SER0_RI_ON_PB_BIT,
-		CONFIG_ETRAX_SER0_DSR_ON_PB_BIT,
-		CONFIG_ETRAX_SER0_CD_ON_PB_BIT
+#ifdef CONFIG_ETRAX_SERIAL_PORT0
+	E100_STRUCT_PORT(0,DTR), E100_STRUCT_SHADOW(0,DTR),
+	E100_STRUCT_PORT(0,RI),  E100_STRUCT_SHADOW(0,RI),
+	E100_STRUCT_PORT(0,DSR), E100_STRUCT_SHADOW(0,DSR),
+	E100_STRUCT_PORT(0,CD),  E100_STRUCT_SHADOW(0,CD),
+	E100_STRUCT_MASK(0,DTR),
+	E100_STRUCT_MASK(0,RI),
+	E100_STRUCT_MASK(0,DSR),
+	E100_STRUCT_MASK(0,CD)
 #else
-		&dummy_ser0, &dummy_ser0, &dummy_dir_ser0, 0, 1, 2, 3
-#endif
+	CONTROL_PINS_PORT_NOT_USED(0)
+#endif	
 	},
 
 	/* Ser 1 */
 	{
-#if defined(CONFIG_ETRAX_SER1_DTR_RI_DSR_CD_ON_PB)
-		R_PORT_PB_DATA, &port_pb_data_shadow, &port_pb_dir_shadow,
-		CONFIG_ETRAX_SER1_DTR_ON_PB_BIT,
-		CONFIG_ETRAX_SER1_RI_ON_PB_BIT,
-		CONFIG_ETRAX_SER1_DSR_ON_PB_BIT,
-		CONFIG_ETRAX_SER1_CD_ON_PB_BIT
+#ifdef CONFIG_ETRAX_SERIAL_PORT1	  
+	E100_STRUCT_PORT(1,DTR), E100_STRUCT_SHADOW(1,DTR),
+	E100_STRUCT_PORT(1,RI),  E100_STRUCT_SHADOW(1,RI),
+	E100_STRUCT_PORT(1,DSR), E100_STRUCT_SHADOW(1,DSR),
+	E100_STRUCT_PORT(1,CD),  E100_STRUCT_SHADOW(1,CD),
+	E100_STRUCT_MASK(1,DTR),
+	E100_STRUCT_MASK(1,RI),
+	E100_STRUCT_MASK(1,DSR),
+	E100_STRUCT_MASK(1,CD)
 #else
-		&dummy_ser1, &dummy_ser1, &dummy_dir_ser1, 0, 1, 2, 3
-#endif
+	CONTROL_PINS_PORT_NOT_USED(1)
+#endif		
 	},
 
 	/* Ser 2 */
 	{
-#if defined(CONFIG_ETRAX_SER2_DTR_RI_DSR_CD_ON_PA)
-		R_PORT_PA_DATA, &port_pa_data_shadow, &port_pa_dir_shadow,
-		CONFIG_ETRAX_SER2_DTR_ON_PA_BIT,
-		CONFIG_ETRAX_SER2_RI_ON_PA_BIT,
-		CONFIG_ETRAX_SER2_DSR_ON_PA_BIT,
-		CONFIG_ETRAX_SER2_CD_ON_PA_BIT
+#ifdef CONFIG_ETRAX_SERIAL_PORT2	  
+	E100_STRUCT_PORT(2,DTR), E100_STRUCT_SHADOW(2,DTR),
+	E100_STRUCT_PORT(2,RI),  E100_STRUCT_SHADOW(2,RI),
+	E100_STRUCT_PORT(2,DSR), E100_STRUCT_SHADOW(2,DSR),
+	E100_STRUCT_PORT(2,CD),  E100_STRUCT_SHADOW(2,CD),
+	E100_STRUCT_MASK(2,DTR),
+	E100_STRUCT_MASK(2,RI),
+	E100_STRUCT_MASK(2,DSR),
+	E100_STRUCT_MASK(2,CD)
 #else
-		&dummy_ser2, &dummy_ser2, &dummy_dir_ser2, 0, 1, 2, 3
-#endif
+	CONTROL_PINS_PORT_NOT_USED(2)
+#endif		
 	},
 
 	/* Ser 3 */
 	{
-		&dummy_ser3, &dummy_ser3, &dummy_dir_ser3, 0, 1, 2, 3
+#ifdef CONFIG_ETRAX_SERIAL_PORT3	  
+	E100_STRUCT_PORT(3,DTR), E100_STRUCT_SHADOW(3,DTR),
+	E100_STRUCT_PORT(3,RI),  E100_STRUCT_SHADOW(3,RI),
+	E100_STRUCT_PORT(3,DSR), E100_STRUCT_SHADOW(3,DSR),
+	E100_STRUCT_PORT(3,CD),  E100_STRUCT_SHADOW(3,CD),
+	E100_STRUCT_MASK(3,DTR),
+	E100_STRUCT_MASK(3,RI),
+	E100_STRUCT_MASK(3,DSR),
+	E100_STRUCT_MASK(3,CD)
+#else
+	CONTROL_PINS_PORT_NOT_USED(3)
+#endif		
 	}
 };
+#else  /* CONFIG_ETRAX_SERX_DTR_RI_DSR_CD_MIXED */
+
+/* All pins are on either PA or PB for each serial port */
+#define CONTROL_PINS_PORT_NOT_USED(line) \
+  &dummy_ser[line], &dummy_ser[line], \
+  DUMMY_DTR_MASK, DUMMY_RI_MASK, DUMMY_DSR_MASK, DUMMY_CD_MASK
+    
+
+struct control_pins
+{
+	volatile unsigned char *port;
+	unsigned char          *shadow;
+
+	unsigned char dtr_mask;
+	unsigned char ri_mask;
+	unsigned char dsr_mask;
+	unsigned char cd_mask;
+};
+
+#define dtr_port port
+#define dtr_shadow shadow
+#define ri_port port
+#define ri_shadow shadow
+#define dsr_port port
+#define dsr_shadow shadow
+#define cd_port port
+#define cd_shadow shadow
+
+static const struct control_pins e100_modem_pins[NR_PORTS] = 
+{
+	/* Ser 0 */
+	{
+#ifdef CONFIG_ETRAX_SERIAL_PORT0
+	E100_STRUCT_PORT(0,DTR), E100_STRUCT_SHADOW(0,DTR),
+	E100_STRUCT_MASK(0,DTR),
+	E100_STRUCT_MASK(0,RI),
+	E100_STRUCT_MASK(0,DSR),
+	E100_STRUCT_MASK(0,CD)
+#else
+	CONTROL_PINS_PORT_NOT_USED(0)
+#endif	
+	},
+
+	/* Ser 1 */
+	{
+#ifdef CONFIG_ETRAX_SERIAL_PORT1	  
+	E100_STRUCT_PORT(1,DTR), E100_STRUCT_SHADOW(1,DTR),
+	E100_STRUCT_MASK(1,DTR),
+	E100_STRUCT_MASK(1,RI),
+	E100_STRUCT_MASK(1,DSR),
+	E100_STRUCT_MASK(1,CD)
+#else
+	CONTROL_PINS_PORT_NOT_USED(1)
+#endif		
+	},
+
+	/* Ser 2 */
+	{
+#ifdef CONFIG_ETRAX_SERIAL_PORT2	  
+	E100_STRUCT_PORT(2,DTR), E100_STRUCT_SHADOW(2,DTR),
+	E100_STRUCT_MASK(2,DTR),
+	E100_STRUCT_MASK(2,RI),
+	E100_STRUCT_MASK(2,DSR),
+	E100_STRUCT_MASK(2,CD)
+#else
+	CONTROL_PINS_PORT_NOT_USED(2)
+#endif		
+	},
+
+	/* Ser 3 */
+	{
+#ifdef CONFIG_ETRAX_SERIAL_PORT3	  
+	E100_STRUCT_PORT(3,DTR), E100_STRUCT_SHADOW(3,DTR),
+	E100_STRUCT_MASK(3,DTR),
+	E100_STRUCT_MASK(3,RI),
+	E100_STRUCT_MASK(3,DSR),
+	E100_STRUCT_MASK(3,CD)
+#else
+	CONTROL_PINS_PORT_NOT_USED(3)
+#endif		
+	}
+};
+#endif /* !CONFIG_ETRAX_SERX_DTR_RI_DSR_CD_MIXED */
 
 #if defined(CONFIG_ETRAX_RS485) && defined(CONFIG_ETRAX_RS485_ON_PA)
 unsigned char rs485_pa_port = CONFIG_ETRAX_RS485_ON_PA_BIT;
@@ -690,19 +853,15 @@ unsigned char rs485_pa_port = CONFIG_ETRAX_RS485_ON_PA_BIT;
 
 /* These are typically PA or PB and 0 means 0V, 1 means 3.3V */
 /* Is an output */
-#define E100_DTR_GET(info) ((*e100_modem_pins[(info)->line].shadow) & (1 << e100_modem_pins[(info)->line].dtr_bit))
+#define E100_DTR_GET(info) ((*e100_modem_pins[(info)->line].dtr_shadow) & e100_modem_pins[(info)->line].dtr_mask)
 
 /* Normally inputs */
-#define E100_RI_GET(info) ((*e100_modem_pins[(info)->line].port) & (1 << e100_modem_pins[(info)->line].ri_bit))
-#define E100_CD_GET(info) ((*e100_modem_pins[(info)->line].port) & (1 << e100_modem_pins[(info)->line].cd_bit))
+#define E100_RI_GET(info) ((*e100_modem_pins[(info)->line].ri_port) & e100_modem_pins[(info)->line].ri_mask)
+#define E100_CD_GET(info) ((*e100_modem_pins[(info)->line].cd_port) & e100_modem_pins[(info)->line].cd_mask)
 
 /* Input */
-#define E100_DSR_GET(info) ((*e100_modem_pins[(info)->line].port) & (1 << e100_modem_pins[(info)->line].dsr_bit))
+#define E100_DSR_GET(info) ((*e100_modem_pins[(info)->line].dsr_port) & e100_modem_pins[(info)->line].dsr_mask)
 
-
-#ifndef MIN
-#define MIN(a,b)	((a) < (b) ? (a) : (b))
-#endif
 
 /*
  * tmp_buf is used as a temporary buffer by serial_write.  We need to
@@ -837,16 +996,17 @@ cflag_to_etrax_baud(unsigned int cflag)
  * any general port.
  */
 
+
 static inline void 
 e100_dtr(struct e100_serial *info, int set)
 {
 #ifndef CONFIG_SVINTO_SIM
-	unsigned char mask = (1 << e100_modem_pins[info->line].dtr_bit);
+	unsigned char mask = e100_modem_pins[info->line].dtr_mask;
 
 #ifdef SERIAL_DEBUG_IO  
 	printk("ser%i dtr %i mask: 0x%02X\n", info->line, set, mask);
 	printk("ser%i shadow before 0x%02X get: %i\n", 
-	       info->line, *e100_modem_pins[info->line].shadow,
+	       info->line, *e100_modem_pins[info->line].dtr_shadow,
 	       E100_DTR_GET(info));
 #endif
 	/* DTR is active low */
@@ -855,20 +1015,15 @@ e100_dtr(struct e100_serial *info, int set)
 
 		save_flags(flags);
 		cli();
-		*e100_modem_pins[info->line].shadow &= ~mask;
-		*e100_modem_pins[info->line].shadow |= (set ? 0 : mask); 
-		*e100_modem_pins[info->line].port = *e100_modem_pins[info->line].shadow;
+		*e100_modem_pins[info->line].dtr_shadow &= ~mask;
+		*e100_modem_pins[info->line].dtr_shadow |= (set ? 0 : mask); 
+		*e100_modem_pins[info->line].dtr_port = *e100_modem_pins[info->line].dtr_shadow;
 		restore_flags(flags);
 	}
 	
-#if 0
-	REG_SHADOW_SET(e100_modem_pins[info->line].port,
-		       *e100_modem_pins[info->line].shadow,
-		       e100_modem_pins[info->line].dtr_bit, !set);
-#endif
 #ifdef SERIAL_DEBUG_IO
 	printk("ser%i shadow after 0x%02X get: %i\n", 
-	       info->line, *e100_modem_pins[info->line].shadow, 
+	       info->line, *e100_modem_pins[info->line].dtr_shadow, 
 	       E100_DTR_GET(info));
 #endif
 #endif
@@ -890,6 +1045,7 @@ e100_rts(struct e100_serial *info, int set)
 #endif
 }
 
+
 /* If this behaves as a modem, RI and CD is an output */
 static inline void 
 e100_ri_out(struct e100_serial *info, int set)
@@ -897,14 +1053,14 @@ e100_ri_out(struct e100_serial *info, int set)
 #ifndef CONFIG_SVINTO_SIM
 	/* RI is active low */
 	{
-		unsigned char mask = (1 << e100_modem_pins[info->line].ri_bit);
+		unsigned char mask = e100_modem_pins[info->line].ri_mask;
 		unsigned long flags;
 
 		save_flags(flags);
 		cli();
-		*e100_modem_pins[info->line].shadow &= ~mask;
-		*e100_modem_pins[info->line].shadow |= (set ? 0 : mask); 
-		*e100_modem_pins[info->line].port = *e100_modem_pins[info->line].shadow;
+		*e100_modem_pins[info->line].ri_shadow &= ~mask;
+		*e100_modem_pins[info->line].ri_shadow |= (set ? 0 : mask); 
+		*e100_modem_pins[info->line].ri_port = *e100_modem_pins[info->line].ri_shadow;
 		restore_flags(flags);
 	}
 #endif
@@ -915,14 +1071,14 @@ e100_cd_out(struct e100_serial *info, int set)
 #ifndef CONFIG_SVINTO_SIM
 	/* CD is active low */
 	{
-		unsigned char mask = (1 << e100_modem_pins[info->line].cd_bit);
+		unsigned char mask = e100_modem_pins[info->line].cd_mask;
 		unsigned long flags;
 
 		save_flags(flags);
 		cli();
-		*e100_modem_pins[info->line].shadow &= ~mask;
-		*e100_modem_pins[info->line].shadow |= (set ? 0 : mask); 
-		*e100_modem_pins[info->line].port = *e100_modem_pins[info->line].shadow;
+		*e100_modem_pins[info->line].cd_shadow &= ~mask;
+		*e100_modem_pins[info->line].cd_shadow |= (set ? 0 : mask); 
+		*e100_modem_pins[info->line].cd_port = *e100_modem_pins[info->line].cd_shadow;
 		restore_flags(flags);
 	}
 #endif
@@ -1078,23 +1234,49 @@ static void rs485_toggle_rts_timer_function(unsigned long data)
  * rs_stop() and rs_start()
  *
  * This routines are called before setting or resetting tty->stopped.
- * They enable or disable transmitter interrupts, as necessary.
+ * They enable or disable transmitter using the XOFF registers, as necessary.
  * ------------------------------------------------------------
- */
-
-/* FIXME - when are these used and what is the purpose ? 
- * In rs_stop we probably just can block the transmit DMA ready irq
- * and in rs_start we re-enable it (and then the old one will come).
  */
 
 static void 
 rs_stop(struct tty_struct *tty)
 {
+	struct e100_serial *info = (struct e100_serial *)tty->driver_data;
+	if (info) {
+		unsigned long flags;
+		unsigned long xoff;
+		
+		save_flags(flags); cli();
+		xoff = IO_FIELD(R_SERIAL0_XOFF, xoff_char, STOP_CHAR(info->tty));
+		xoff |= IO_STATE(R_SERIAL0_XOFF, tx_stop, stop);
+		if (tty->termios->c_iflag & IXON ) {
+			xoff |= IO_STATE(R_SERIAL0_XOFF, auto_xoff, enable);
+		}
+	
+		*((unsigned long *)&info->port[REG_XOFF]) = xoff;
+		restore_flags(flags);
+	}
 }
 
 static void 
 rs_start(struct tty_struct *tty)
 {
+	struct e100_serial *info = (struct e100_serial *)tty->driver_data;
+	if (info) {
+		unsigned long flags;
+		unsigned long xoff;
+
+		save_flags(flags); cli();
+		xoff = IO_FIELD(R_SERIAL0_XOFF, xoff_char, STOP_CHAR(tty));
+		xoff |= IO_STATE(R_SERIAL0_XOFF, tx_stop, enable);
+		if (tty->termios->c_iflag & IXON ) {
+			xoff |= IO_STATE(R_SERIAL0_XOFF, auto_xoff, enable);
+		}
+	
+		*((unsigned long *)&info->port[REG_XOFF]) = xoff;
+		
+		restore_flags(flags);
+	}
 }
 
 /*
@@ -1341,7 +1523,7 @@ add_char_and_flag(struct e100_serial *info, unsigned char data, unsigned char fl
 	return 1;
 }
 
-static _INLINE_ unsigned int
+extern _INLINE_ unsigned int
 handle_descr_data(struct e100_serial *info, struct etrax_dma_descr *descr, unsigned int recvl)
 {
 	struct etrax_recv_buffer *buffer = phys_to_virt(descr->buf) - sizeof *buffer;
@@ -1567,7 +1749,7 @@ tr_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 	
 	for (i = 0; i < NR_PORTS; i++) {
 		info = rs_table + i;
-		if (!info->uses_dma) 
+		if (!info->enabled || !info->uses_dma) 
 			continue; 
 		/* check for dma_descr (don't need to check for dma_eop in output dma for serial */
 		if (ireg & info->irq) {  
@@ -1613,7 +1795,7 @@ rec_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 	
 	for (i = 0; i < NR_PORTS; i++) {
 		info = rs_table + i;
-		if (!info->uses_dma) 
+		if (!info->enabled || !info->uses_dma) 
 			continue; 
 		/* check for both dma_eop and dma_descr for the input dma channel */
 		if (ireg & ((info->irq << 2) | (info->irq << 3))) {
@@ -1671,10 +1853,10 @@ force_eop_if_needed(struct e100_serial *info)
 	return 1;
 }
 
-static _INLINE_ void
+extern _INLINE_ void
 flush_to_flip_buffer(struct e100_serial *info)
 {
-	struct tty_struct *tty = info->tty;
+	struct tty_struct *tty;
 	struct etrax_recv_buffer *buffer;
 	unsigned int length;
 	unsigned long flags;
@@ -1684,6 +1866,11 @@ flush_to_flip_buffer(struct e100_serial *info)
 
 	save_flags(flags);
 	cli();
+
+	if (!(tty = info->tty)) {
+		restore_flags(flags);
+		return;
+	}
 
 	length = tty->flip.count;
 
@@ -1773,7 +1960,7 @@ timeout_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 	
 	for (i = 0; i < NR_PORTS; i++) {
 		info = rs_table + i;
-		if (info->uses_dma) 
+		if (info->enabled && info->uses_dma) 
 			check_flush_timeout(info);
 	}
 } /* timeout_interrupt */
@@ -1880,7 +2067,7 @@ TODO: The break will be delayed until an F or V character is received.
 
 */
 
-static void _INLINE_ handle_ser_interrupt(struct e100_serial *info)
+extern void _INLINE_ handle_ser_interrupt(struct e100_serial *info)
 {
 	unsigned char rstat = info->port[REG_STATUS];
 
@@ -2247,6 +2434,7 @@ static void
 change_speed(struct e100_serial *info)
 {
 	unsigned int cflag;
+	unsigned long xoff;
 
 	/* first some safety checks */
 	
@@ -2316,7 +2504,13 @@ change_speed(struct e100_serial *info)
 	
 	info->port[REG_TR_CTRL] = info->tx_ctrl;
 	info->port[REG_REC_CTRL] = info->rx_ctrl;
-	*((unsigned long *)&info->port[REG_XOFF]) = 0;
+	xoff = IO_FIELD(R_SERIAL0_XOFF, xoff_char, STOP_CHAR(info->tty));
+	xoff |= IO_STATE(R_SERIAL0_XOFF, tx_stop, enable);
+	if (info->tty->termios->c_iflag & IXON ) {
+		xoff |= IO_STATE(R_SERIAL0_XOFF, auto_xoff, enable);
+	}
+	
+	*((unsigned long *)&info->port[REG_XOFF]) = xoff;
 #endif /* !CONFIG_SVINTO_SIM */
 
 	update_char_time(info);
@@ -2349,7 +2543,7 @@ rs_flush_chars(struct tty_struct *tty)
 	restore_flags(flags);
 }
 
-static inline int 
+extern inline int 
 raw_write(struct tty_struct * tty, int from_user,
 	  const unsigned char *buf, int count)
 {
@@ -2497,7 +2691,7 @@ rs_write(struct tty_struct * tty, int from_user,
 
 		/* Sleep until all sent */
 		tty_wait_until_sent(tty, 0);
-#ifdef CONFIG_ETRAX_SERIAL_FAST_TIMER
+#ifdef CONFIG_ETRAX_FAST_TIMER
 		/* Now sleep a little more so that shift register is empty */
 		schedule_usleep(info->char_time_usec * 2);
 #endif
@@ -2805,14 +2999,15 @@ get_modem_info(struct e100_serial * info, unsigned int *value)
 	       E100_DSR_GET(info),
 	       E100_CTS_GET(info));
 #endif
+
 	result =  
 		(!E100_RTS_GET(info) ? TIOCM_RTS : 0)
 		| (!E100_DTR_GET(info) ? TIOCM_DTR : 0)
-		| (!E100_CD_GET(info) ? TIOCM_CAR : 0)
 		| (!E100_RI_GET(info) ? TIOCM_RNG : 0)
 		| (!E100_DSR_GET(info) ? TIOCM_DSR : 0)
+		| (!E100_CD_GET(info) ? TIOCM_CAR : 0)
 		| (!E100_CTS_GET(info) ? TIOCM_CTS : 0);
-	
+
 #ifdef SERIAL_DEBUG_IO 
 	printk("e100ser: modem state: %i 0x%08X\n", result, result);
 	{
@@ -3488,7 +3683,7 @@ rs_open(struct tty_struct *tty, struct file * filp)
  * /proc fs routines....
  */
 
-static inline int line_info(char *buf, struct e100_serial *info)
+extern inline int line_info(char *buf, struct e100_serial *info)
 {
 	char	stat_buf[30];
 	int	ret;
@@ -3503,17 +3698,17 @@ static inline int line_info(char *buf, struct e100_serial *info)
 
 	stat_buf[0] = 0;
 	stat_buf[1] = 0;
-	if (E100_RTS_GET(info))
+	if (!E100_RTS_GET(info))
 		strcat(stat_buf, "|RTS");
-	if (E100_CTS_GET(info))
+	if (!E100_CTS_GET(info))
 		strcat(stat_buf, "|CTS");
-	if (E100_DTR_GET(info))
+	if (!E100_DTR_GET(info))
 		strcat(stat_buf, "|DTR");
-	if (E100_DSR_GET(info))
+	if (!E100_DSR_GET(info))
 		strcat(stat_buf, "|DSR");
-	if (E100_CD_GET(info))
+	if (!E100_CD_GET(info))
 		strcat(stat_buf, "|CD");
-	if (E100_RI_GET(info))
+	if (!E100_RI_GET(info))
 		strcat(stat_buf, "|RI");
 
 	ret += sprintf(buf+ret, " baud:%d", info->baud);

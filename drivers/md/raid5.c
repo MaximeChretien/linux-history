@@ -1681,23 +1681,23 @@ static void printall (raid5_conf_t *conf)
 }
 #endif
 
-static int raid5_status (char *page, mddev_t *mddev)
+static void raid5_status (struct seq_file *seq, mddev_t *mddev)
 {
 	raid5_conf_t *conf = (raid5_conf_t *) mddev->private;
 	mdp_super_t *sb = mddev->sb;
-	int sz = 0, i;
+	int i;
 
-	sz += sprintf (page+sz, " level %d, %dk chunk, algorithm %d", sb->level, sb->chunk_size >> 10, sb->layout);
-	sz += sprintf (page+sz, " [%d/%d] [", conf->raid_disks, conf->working_disks);
+	seq_printf (seq, " level %d, %dk chunk, algorithm %d", sb->level, sb->chunk_size >> 10, sb->layout);
+	seq_printf (seq, " [%d/%d] [", conf->raid_disks, conf->working_disks);
 	for (i = 0; i < conf->raid_disks; i++)
-		sz += sprintf (page+sz, "%s", conf->disks[i].operational ? "U" : "_");
-	sz += sprintf (page+sz, "]");
+		seq_printf (seq, "%s", conf->disks[i].operational ? "U" : "_");
+	seq_printf (seq, "]");
 #if RAID5_DEBUG
 #define D(x) \
-	sz += sprintf (page+sz, "<"#x":%d>", atomic_read(&conf->x))
+	seq_printf (seq, "<"#x":%d>", atomic_read(&conf->x))
 	printall(conf);
 #endif
-	return sz;
+
 }
 
 static void print_raid5_conf (raid5_conf_t *conf)

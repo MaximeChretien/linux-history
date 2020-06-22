@@ -21,7 +21,7 @@
 /*
  * Maximum blocksize supported by daemon currently at 8K
  */
-#define NFSSVC_MAXBLKSIZE	8192
+#define NFSSVC_MAXBLKSIZE	(8*1024)
 
 #ifdef __KERNEL__
 

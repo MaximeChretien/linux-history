@@ -125,11 +125,17 @@ struct device_node {
 	int	n_intrs;
 	struct	interrupt_info *intrs;
 	char	*full_name;
+
+	/* PCI stuff probably doesn't belong here */
 	int	busno;			/* for pci devices */
 	int	devfn;			/* for pci devices */
+#define DN_STATUS_BIST_FAILED (1<<0)
+	int	status;			/* Current device status (non-zero is bad) */
+	int	eeh_mode;		/* See eeh.h for possible EEH_MODEs */
+	int	eeh_config_addr;
 	struct  pci_controller *phb;	/* for pci devices */
 	struct	TceTable *tce_table;	/* for phb's or bridges */
-#define DN_STATUS_BIST_FAILED (1<<0)
+
 	struct	property *properties;
 	struct	device_node *parent;
 	struct	device_node *child;
@@ -170,6 +176,7 @@ struct prom_t {
 };
 
 extern struct prom_t prom;
+extern char *of_stdout_device;
 
 /* Prototypes */
 extern void abort(void);
@@ -194,5 +201,6 @@ extern void print_properties(struct device_node *node);
 extern int prom_n_addr_cells(struct device_node* np);
 extern int prom_n_size_cells(struct device_node* np);
 extern void prom_get_irq_senses(unsigned char *senses, int off, int max);
+extern void prom_add_property(struct device_node* np, struct property* prop);
 
 #endif /* _PPC64_PROM_H */

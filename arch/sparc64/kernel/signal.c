@@ -219,7 +219,7 @@ asmlinkage void sparc64_get_context(struct pt_regs *regs)
 	err |= __put_user(regs->u_regs[UREG_G4], &((*grp)[MC_G4]));
 	err |= __put_user(regs->u_regs[UREG_G5], &((*grp)[MC_G5]));
 	err |= __put_user(regs->u_regs[UREG_G6], &((*grp)[MC_G6]));
-	err |= __put_user(regs->u_regs[UREG_G6], &((*grp)[MC_G7]));
+	err |= __put_user(regs->u_regs[UREG_G7], &((*grp)[MC_G7]));
 	err |= __put_user(regs->u_regs[UREG_I0], &((*grp)[MC_O0]));
 	err |= __put_user(regs->u_regs[UREG_I1], &((*grp)[MC_O1]));
 	err |= __put_user(regs->u_regs[UREG_I2], &((*grp)[MC_O2]));
@@ -438,8 +438,8 @@ void do_rt_sigreturn(struct pt_regs *regs)
 	err |= copy_from_user(regs->u_regs, sf->regs.u_regs, sizeof(regs->u_regs));
 
 	/* User can only change condition codes in %tstate. */
-	regs->tstate &= ~(TSTATE_ICC);
-	regs->tstate |= (tstate & TSTATE_ICC);
+	regs->tstate &= ~(TSTATE_ICC | TSTATE_XCC);
+	regs->tstate |= (tstate & (TSTATE_ICC | TSTATE_XCC));
 
 	err |= __get_user(fpu_save, &sf->fpu_save);
 	if (fpu_save)
@@ -783,7 +783,7 @@ asmlinkage int do_signal(sigset_t *oldset, struct pt_regs * regs,
 			if (current->pid == 1)
 				continue;
 			switch (signr) {
-			case SIGCONT: case SIGCHLD: case SIGWINCH:
+			case SIGCONT: case SIGCHLD: case SIGWINCH: case SIGURG:
 				continue;
 
 			case SIGTSTP: case SIGTTIN: case SIGTTOU:

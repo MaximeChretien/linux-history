@@ -36,12 +36,14 @@ choice 'Processor family' \
 	 Pentium-4				CONFIG_MPENTIUM4 \
 	 K6/K6-II/K6-III			CONFIG_MK6 \
 	 Athlon/Duron/K7			CONFIG_MK7 \
+	 Opteron/Athlon64/Hammer/K8		CONFIG_MK8 \
 	 Elan					CONFIG_MELAN \
 	 Crusoe					CONFIG_MCRUSOE \
 	 Winchip-C6				CONFIG_MWINCHIPC6 \
 	 Winchip-2				CONFIG_MWINCHIP2 \
 	 Winchip-2A/Winchip-3			CONFIG_MWINCHIP3D \
-	 CyrixIII/VIA-C3/VIA-C5			CONFIG_MCYRIXIII" Pentium-Pro
+	 CyrixIII/VIA-C3			CONFIG_MCYRIXIII \
+	 VIA-C3-2				CONFIG_MVIAC3_2" Pentium-Pro
 #
 # Define implied options from the CPU selection here
 #
@@ -99,7 +101,7 @@ if [ "$CONFIG_M686" = "y" ]; then
    define_int  CONFIG_X86_L1_CACHE_SHIFT 5
    define_bool CONFIG_X86_HAS_TSC y
    define_bool CONFIG_X86_GOOD_APIC y
-   define_bool CONFIG_X86_PGE y
+   bool 'PGE extensions (not for Cyrix/Transmeta)' CONFIG_X86_PGE
    define_bool CONFIG_X86_USE_PPRO_CHECKSUM y
    define_bool CONFIG_X86_PPRO_FENCE y
    define_bool CONFIG_X86_F00F_WORKS_OK y
@@ -126,6 +128,11 @@ if [ "$CONFIG_MK6" = "y" ]; then
    define_bool CONFIG_X86_HAS_TSC y
    define_bool CONFIG_X86_USE_PPRO_CHECKSUM y
 fi
+if [ "$CONFIG_MK8" = "y" ]; then
+   # for now. may later want to add SSE support and optimized
+   # functions
+   define_bool CONFIG_MK7 y
+fi
 if [ "$CONFIG_MK7" = "y" ]; then
    define_int  CONFIG_X86_L1_CACHE_SHIFT 6
    define_bool CONFIG_X86_HAS_TSC y
@@ -147,6 +154,14 @@ if [ "$CONFIG_MCYRIXIII" = "y" ]; then
    define_bool CONFIG_X86_ALIGNMENT_16 y
    define_bool CONFIG_X86_USE_3DNOW y
    define_bool CONFIG_X86_USE_PPRO_CHECKSUM y
+   define_bool CONFIG_X86_F00F_WORKS_OK y
+fi
+if [ "$CONFIG_MVIAC3_2" = "y" ]; then
+   define_int  CONFIG_X86_L1_CACHE_SHIFT 5
+   define_bool CONFIG_X86_HAS_TSC y
+   define_bool CONFIG_X86_ALIGNMENT_16 y
+   define_bool CONFIG_X86_USE_PPRO_CHECKSUM y
+   define_bool CONFIG_X86_F00F_WORKS_OK y
 fi
 if [ "$CONFIG_MCRUSOE" = "y" ]; then
    define_int  CONFIG_X86_L1_CACHE_SHIFT 5
@@ -216,12 +231,26 @@ if [ "$CONFIG_SMP" != "y" ]; then
       define_bool CONFIG_X86_IO_APIC y
    fi
 else
-   bool 'Multiquad NUMA system' CONFIG_MULTIQUAD
+   bool 'Multi-node NUMA system support' CONFIG_X86_NUMA
+   if [ "$CONFIG_X86_NUMA" = "y" ]; then
+      #Platform Choices
+      bool ' Multiquad (IBM/Sequent) NUMAQ support' CONFIG_X86_NUMAQ
+      if [ "$CONFIG_X86_NUMAQ" = "y" ]; then
+         define_bool CONFIG_X86_CLUSTERED_APIC y
+         define_bool CONFIG_MULTIQUAD y
+      fi
+      bool ' IBM x440 (Summit/EXA) support' CONFIG_X86_SUMMIT
+      if [ "$CONFIG_X86_SUMMIT" = "y" ]; then
+         define_bool CONFIG_X86_CLUSTERED_APIC y
+      fi
+   fi
 fi
 
-bool 'Unsynced TSC support' CONFIG_X86_TSC_DISABLE
-if [ "$CONFIG_X86_TSC_DISABLE" != "y" -a "$CONFIG_X86_HAS_TSC" = "y" ]; then
-   define_bool CONFIG_X86_TSC y
+if [ "$CONFIG_X86_NUMA" != "y" ]; then
+   bool 'Unsynced TSC support' CONFIG_X86_TSC_DISABLE
+   if [ "$CONFIG_X86_TSC_DISABLE" != "y" -a "$CONFIG_X86_HAS_TSC" = "y" ]; then
+      define_bool CONFIG_X86_TSC y
+   fi
 fi
 
 if [ "$CONFIG_SMP" = "y" -a "$CONFIG_X86_CMPXCHG" = "y" ]; then

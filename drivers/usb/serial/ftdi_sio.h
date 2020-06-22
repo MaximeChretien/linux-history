@@ -14,7 +14,7 @@
  * of the protocol required to talk to the device and ongoing assistence
  * during development.
  *
- * Bill Ryder - bryder@sgi.com of Silicon Graphics, Inc.- wrote the 
+ * Bill Ryder - bryder@sgi.com formerly of Silicon Graphics, Inc.- wrote the 
  * FTDI_SIO implementation.
  *
  */
@@ -25,6 +25,28 @@
 #define FTDI_NF_RIC_VID	0x0DCD	/* Vendor Id */
 #define FTDI_NF_RIC_PID	0x0001	/* Product Id */
 
+
+/* www.crystalfontz.com devices - thanx for providing free devices for evaluation ! */
+/* they use the ftdi chipset for the USB interface and the vendor id is the same */
+#define FTDI_XF_634_PID  0xFC09	/* Four line device */
+#define FTDI_XF_632_PID  0xFC08	/* Two line device */
+
+
+/*
+ * The following are the values for the Matrix Orbital LCD displays,
+ * which are the FT232BM ( similar to the 8U232AM )
+ */
+#define FTDI_MTXORB_VID                FTDI_VID        /* Matrix Orbital Product Id */
+#define FTDI_MTXORB_0_PID      0xFA00  /* Matrix Orbital Product Id */
+#define FTDI_MTXORB_1_PID      0xFA01  /* Matrix Orbital Product Id */
+#define FTDI_MTXORB_2_PID      0xFA02  /* Matrix Orbital Product Id */
+#define FTDI_MTXORB_3_PID      0xFA03  /* Matrix Orbital Product Id */
+#define FTDI_MTXORB_4_PID      0xFA04  /* Matrix Orbital Product Id */
+#define FTDI_MTXORB_5_PID      0xFA05  /* Matrix Orbital Product Id */
+#define FTDI_MTXORB_6_PID      0xFA06  /* Matrix Orbital Product Id */
+
+
+/* Commands */
 #define FTDI_SIO_RESET 		0 /* Reset the port */
 #define FTDI_SIO_MODEM_CTRL 	1 /* Set the modem control register */
 #define FTDI_SIO_SET_FLOW_CTRL	2 /* Set flow control register */
@@ -102,14 +124,37 @@
  *   automagically re-encode the resulting value to take fractions into consideration.
  * As all values are integers, some bit twiddling is in order:
  *   BaudDivisor = (BaseClock / 16 / BaudRate) |
- *   (((BaseClock / 2 / BaudRate) & 2) ? 0x8000 : 0) | // 0.25
- *   (((BaseClock / 2 / BaudRate) & 4) ? 0x4000 : 0) | // 0.5
- *   (((BaseClock / 2 / BaudRate) & 0x7) == 1 ? 0xc000) // 0.125 - this line due to funny encoding only
+ *   (((BaseClock / 2 / BaudRate) & 4) ? 0x4000    // 0.5
+ *    : ((BaseClock / 2 / BaudRate) & 2) ? 0x8000  // 0.25
+ *    : ((BaseClock / 2 / BaudRate) & 1) ? 0xc000  // 0.125
+ *    : 0)
+ *
+ * For the FT232BM, a 17th divisor bit was introduced to encode the multiples
+ * of 0.125 missing from the FT8U232AM.  Bits 16 to 14 are coded as follows
+ * (the first four codes are the same as for the FT8U232AM, where bit 16 is
+ * always 0):
+ *   000 - add .000 to divisor
+ *   001 - add .500 to divisor
+ *   010 - add .250 to divisor
+ *   011 - add .125 to divisor
+ *   100 - add .375 to divisor
+ *   101 - add .625 to divisor
+ *   110 - add .750 to divisor
+ *   111 - add .875 to divisor
+ * Bits 15 to 0 of the 17-bit divisor are placed in the urb value.  Bit 16 is 
+ * placed in bit 0 of the urb index.
+ *
+ * Note that there are a couple of special cases to support the highest baud
+ * rates.  If the calculated divisor value is 1, this needs to be replaced with
+ * 0.  Additionally for the FT232BM, if the calculated divisor value is 0x4001
+ * (1.5), this needs to be replaced with 0x0001 (1) (but this divisor value is
+ * not supported by the FT8U232AM).
  */
 
 typedef enum {
 	SIO = 1,
 	FT8U232AM = 2,
+	FT232BM = 3,
 } ftdi_chip_type_t;
 
 typedef enum {
@@ -125,17 +170,9 @@ typedef enum {
  ftdi_sio_b115200 = 9
 } FTDI_SIO_baudrate_t ;
 
-#define FTDI_SIO_BASE_BAUD_TO_DIVISOR(base, baud) ( \
-((base/2/baud) >> 3) | \
-(((base/2/baud) & 2) ? 0x8000 : 0) | \
-(((base/2/baud) & 4) ? 0x4000 : 0) | \
-((((base/2/baud) & 0x7) == 1) ? 0xc000 : 0) )
-
-#define FTDI_SIO_BAUD_TO_DIVISOR(baud) FTDI_SIO_BASE_BAUD_TO_DIVISOR(48000000, baud)
-
 /*
- * The ftdi_8U232AM_xxMHz_byyy constans have been removed. Their values can
- * be calculated as follows: FTDI_SIO_BAUD_TO_DIVISOR(xx000000, yyy)
+ * The ftdi_8U232AM_xxMHz_byyy constants have been removed. The encoded divisor values
+ * are calculated internally.
  */
 
 #define FTDI_SIO_SET_DATA_REQUEST FTDI_SIO_SET_DATA

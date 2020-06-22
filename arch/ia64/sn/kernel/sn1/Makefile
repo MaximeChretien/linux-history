@@ -1,5 +1,5 @@
 #
-# ia64/platform/sn/sn1/Makefile
+# arch/ia64/sn/kernel/sn1/Makefile
 #
 # Copyright (C) 1999,2001-2002 Silicon Graphics, Inc. All rights reserved.
 #
@@ -40,12 +40,8 @@ EXTRA_CFLAGS    := -DLITTLE_ENDIAN
 .S.o:
 	$(CC) $(AFLAGS) $(AFLAGS_KERNEL) -c -o $*.o $<
 
-all: sn1.a
-
-O_TARGET        = sn1.a
+O_TARGET        = sn1.o
 
 obj-y          = cache.o error.o iomv.o synergy.o sn1_smp.o
-
-clean::
 
 include $(TOPDIR)/Rules.make

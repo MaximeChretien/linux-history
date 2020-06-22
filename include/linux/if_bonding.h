@@ -37,9 +37,10 @@
 
 #define BOND_CHECK_MII_STATUS	(SIOCGMIIPHY)
 
-#define BOND_MODE_ROUNDROBIN    0
-#define BOND_MODE_ACTIVEBACKUP  1
-#define BOND_MODE_XOR           2 
+#define BOND_MODE_ROUNDROBIN	0
+#define BOND_MODE_ACTIVEBACKUP	1
+#define BOND_MODE_XOR		2
+#define BOND_MODE_BROADCAST	3
 
 /* each slave's link has 4 states */
 #define BOND_LINK_UP    0           /* link is up and running */
@@ -52,6 +53,15 @@
 #define BOND_STATE_BACKUP       1   /* link is backup */
 
 #define BOND_DEFAULT_MAX_BONDS  1   /* Default maximum number of devices to support */
+
+#define BOND_MULTICAST_DISABLED 0
+#define BOND_MULTICAST_ACTIVE   1
+#define BOND_MULTICAST_ALL      2
+
+struct bond_parm_tbl {
+	char *modename;
+	int mode;
+};
 
 typedef struct ifbond {
 	__s32 bond_mode;
@@ -74,6 +84,7 @@ typedef struct slave {
 	struct slave *prev;
 	struct net_device *dev;
 	short  delay;
+	unsigned long jiffies;	
 	char   link;    /* one of BOND_LINK_XXXX */
 	char   state;   /* one of BOND_STATE_XXXX */
 	unsigned short original_flags;
@@ -93,6 +104,8 @@ typedef struct bonding {
 	slave_t *next;
 	slave_t *prev;
 	slave_t *current_slave;
+	slave_t *primary_slave;
+	slave_t *current_arp_slave;
 	__s32 slave_cnt;
 	rwlock_t lock;
 	rwlock_t ptrlock;

@@ -131,9 +131,8 @@ struct paca_struct {
  * CACHE_LINE_19 - 20 Profile Data
  *=====================================================================================
  */
-	u32 pmc[12];                    /* Default pmc value		*/	
+	u64 pmc[12];                    /* Default pmc value		*/	
 	u64 pmcc[8];                    /* Cumulative pmc counts        */
-	u64 rsvd5a[2];
 
 	u32 prof_multiplier;		/*					 */
 	u32 prof_shift;			/* iSeries shift for profile bucket size */
@@ -144,7 +143,7 @@ struct paca_struct {
 	u8  prof_mode;                  /* */
 	u8  rsvv5b[3];
 	u64 prof_counter;		/*					 */
-	u8  rsvd5c[128-8*6];
+	u8  rsvd5c[256-8*26];
 
 /*=====================================================================================
  * CACHE_LINE_20-30

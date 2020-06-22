@@ -105,8 +105,10 @@ int direct2indirect (struct reiserfs_transaction_handle *th, struct inode * inod
 	/* we only send the unbh pointer if the buffer is not up to date.
 	** this avoids overwriting good data from writepage() with old data
 	** from the disk or buffer cache
+	** Special case: unbh->b_page will be NULL if we are coming through
+	** DIRECT_IO handler here.
 	*/
-	if (buffer_uptodate(unbh) || Page_Uptodate(unbh->b_page)) {
+	if ( !unbh->b_page || buffer_uptodate(unbh) || Page_Uptodate(unbh->b_page)) {
 	    up_to_date_bh = NULL ;
 	} else {
 	    up_to_date_bh = unbh ;
@@ -131,6 +133,7 @@ int direct2indirect (struct reiserfs_transaction_handle *th, struct inode * inod
 
     inode->u.reiserfs_i.i_first_direct_byte = U32_MAX;
 
+    reiserfs_update_tail_transaction(inode);
     return 0;
 }
 

@@ -188,7 +188,7 @@ static void iommu_get_scsi_sgl_pflush(struct scatterlist *sg, int sz, struct sbu
 {
 	unsigned long page, oldpage = 0;
 
-	while(sz >= 0) {
+	while(sz != 0) {
 		sz--;
 		page = ((unsigned long) sg[sz].address) & PAGE_MASK;
 		if (oldpage == page)

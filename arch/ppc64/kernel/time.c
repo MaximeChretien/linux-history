@@ -212,9 +212,9 @@ static void iSeries_tb_recal(void)
 				tb_ticks_per_jiffy = new_tb_ticks_per_jiffy;
 				tb_ticks_per_sec   = new_tb_ticks_per_sec;
 				div128_by_32( XSEC_PER_SEC, 0, tb_ticks_per_sec, &divres );
-				naca->tb_ticks_per_sec = tb_ticks_per_sec;
+				systemcfg->tb_ticks_per_sec = tb_ticks_per_sec;
 				tb_to_xs = divres.result_low;
-				naca->tb_to_xs = tb_to_xs;
+				systemcfg->tb_to_xs = tb_to_xs;
 			}
 			else {
 				printk( "Titan recalibrate: FAILED (difference > 4 percent)\n"
@@ -257,6 +257,8 @@ int timer_interrupt(struct pt_regs * regs)
 
 	if ((!user_mode(regs)) && (prof_buffer))
 		ppc_do_profile(instruction_pointer(regs));
+
+	pmc_timeslice_tick(); /* Hack this in for now */
 
 	lpaca->xLpPaca.xIntDword.xFields.xDecrInt = 0;
 
@@ -306,9 +308,9 @@ void do_gettimeofday(struct timeval *tv)
 	unsigned long temp_tb_to_xs, temp_stamp_xsec;
 	unsigned long tb_count_1, tb_count_2;
 	unsigned long always_zero;
-	struct naca_struct *gtdp;
+	struct systemcfg *gtdp;
 	
-	gtdp = (struct naca_struct *)0xC000000000004000;
+	gtdp = systemcfg;
 	/* 
 	 * The following loop guarantees that we see a consistent view of the
 	 * tb_to_xs and stamp_xsec variables.  These two variables can change
@@ -412,23 +414,23 @@ void do_settimeofday(struct timeval *tv)
 	time_maxerror = NTP_PHASE_LIMIT;
 	time_esterror = NTP_PHASE_LIMIT;
 
-	delta_xsec = mulhdu( (tb_last_stamp-naca->tb_orig_stamp), naca->tb_to_xs );
+	delta_xsec = mulhdu( (tb_last_stamp-systemcfg->tb_orig_stamp), systemcfg->tb_to_xs );
 	new_xsec = (new_usec * XSEC_PER_SEC) / USEC_PER_SEC;
 	new_xsec += new_sec * XSEC_PER_SEC;
 	if ( new_xsec > delta_xsec ) {
-		naca->stamp_xsec = new_xsec - delta_xsec;
+		systemcfg->stamp_xsec = new_xsec - delta_xsec;
 	}
 	else {
 		/* This is only for the case where the user is setting the time
 		 * way back to a time such that the boot time would have been
 		 * before 1970 ... eg. we booted ten days ago, and we are
 		 * setting the time to Jan 5, 1970 */
-		naca->stamp_xsec = new_xsec;
-		naca->tb_orig_stamp = tb_last_stamp;
+		systemcfg->stamp_xsec = new_xsec;
+		systemcfg->tb_orig_stamp = tb_last_stamp;
 	}
 
-	naca->tz_minuteswest = sys_tz.tz_minuteswest;
-	naca->tz_dsttime = sys_tz.tz_dsttime;
+	systemcfg->tz_minuteswest = sys_tz.tz_minuteswest;
+	systemcfg->tz_dsttime = sys_tz.tz_dsttime;
 
 	write_unlock_irqrestore(&xtime_lock, flags);
 }
@@ -498,11 +500,11 @@ void __init time_init(void)
 	xtime.tv_sec = mktime(tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
 			      tm.tm_hour, tm.tm_min, tm.tm_sec);
 	tb_last_stamp = get_tb();
-	naca->tb_orig_stamp = tb_last_stamp;
-	naca->tb_update_count = 0;
-	naca->tb_ticks_per_sec = tb_ticks_per_sec;
-	naca->stamp_xsec = xtime.tv_sec * XSEC_PER_SEC;
-	naca->tb_to_xs = tb_to_xs;
+	systemcfg->tb_orig_stamp = tb_last_stamp;
+	systemcfg->tb_update_count = 0;
+	systemcfg->tb_ticks_per_sec = tb_ticks_per_sec;
+	systemcfg->stamp_xsec = xtime.tv_sec * XSEC_PER_SEC;
+	systemcfg->tb_to_xs = tb_to_xs;
 
 	xtime_sync_interval = tb_ticks_per_sec - (tb_ticks_per_sec/8);
 	next_xtime_sync_tb = tb_last_stamp + xtime_sync_interval;
@@ -614,14 +616,14 @@ void ppc_adjtimex(void)
 	 * tb_to_xs) and so guarantees that the current time remains the same
 	 *
 	 */ 
-	tb_ticks = get_tb() - naca->tb_orig_stamp;
+	tb_ticks = get_tb() - systemcfg->tb_orig_stamp;
 	div128_by_32( 1024*1024, 0, new_tb_ticks_per_sec, &divres );
 	new_tb_to_xs = divres.result_low;
 	new_xsec = mulhdu( tb_ticks, new_tb_to_xs );
 
 	write_lock_irqsave( &xtime_lock, flags );
-	old_xsec = mulhdu( tb_ticks, naca->tb_to_xs );
-	new_stamp_xsec = naca->stamp_xsec + old_xsec - new_xsec;
+	old_xsec = mulhdu( tb_ticks, systemcfg->tb_to_xs );
+	new_stamp_xsec = systemcfg->stamp_xsec + old_xsec - new_xsec;
 
 	/*
 	 * tb_update_count is used to allow the problem state gettimeofday code
@@ -632,12 +634,12 @@ void ppc_adjtimex(void)
 	 * tb_to_xs and stamp_xsec values are consistent.  If not, then it
 	 * loops back and reads them again until this criteria is met.
 	 */
-	++(naca->tb_update_count);
+	++(systemcfg->tb_update_count);
 	wmb();
-	naca->tb_to_xs = new_tb_to_xs;
-	naca->stamp_xsec = new_stamp_xsec;
+	systemcfg->tb_to_xs = new_tb_to_xs;
+	systemcfg->stamp_xsec = new_stamp_xsec;
 	wmb();
-	++(naca->tb_update_count);
+	++(systemcfg->tb_update_count);
 
 	write_unlock_irqrestore( &xtime_lock, flags );
 

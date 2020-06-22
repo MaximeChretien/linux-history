@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  * String handling functions for PowerPC.
  *
  * Copyright (C) 1996 Paul Mackerras.
@@ -445,23 +442,23 @@ __copy_tofrom_user:
 
 #if !defined(CONFIG_8xx)
 	/* Here we decide how far ahead to prefetch the source */
-#if MAX_L1_COPY_PREFETCH > 1
+#if MAX_COPY_PREFETCH > 1
 	/* Heuristically, for large transfers we prefetch
-	   MAX_L1_COPY_PREFETCH cachelines ahead.  For small transfers
+	   MAX_COPY_PREFETCH cachelines ahead.  For small transfers
 	   we prefetch 1 cacheline ahead. */
-	cmpwi	r0,MAX_L1_COPY_PREFETCH
+	cmpwi	r0,MAX_COPY_PREFETCH
 	li	r7,1
 	li	r3,4
 	ble	111f
-	li	r7,MAX_L1_COPY_PREFETCH
+	li	r7,MAX_COPY_PREFETCH
 111:	mtctr	r7
 112:	dcbt	r3,r4
 	addi	r3,r3,CACHELINE_BYTES
 	bdnz	112b
-#else /* MAX_L1_COPY_PREFETCH == 1 */
+#else /* MAX_COPY_PREFETCH == 1 */
 	li	r3,CACHELINE_BYTES + 4
 	dcbt	r11,r4
-#endif /* MAX_L1_COPY_PREFETCH */
+#endif /* MAX_COPY_PREFETCH */
 #endif /* CONFIG_8xx */
 
 	mtctr	r0
@@ -517,18 +514,18 @@ __copy_tofrom_user:
 	blr
 
 /* read fault, initial single-byte copy */
-100:	li	r4,0
+100:	li	r9,0
 	b	90f
 /* write fault, initial single-byte copy */
-101:	li	r4,1
+101:	li	r9,1
 90:	subf	r5,r8,r5
 	li	r3,0
 	b	99f
 /* read fault, initial word copy */
-102:	li	r4,0
+102:	li	r9,0
 	b	91f
 /* write fault, initial word copy */
-103:	li	r4,1
+103:	li	r9,1
 91:	li	r3,2
 	b	99f
 
@@ -552,38 +549,47 @@ __copy_tofrom_user:
 #endif
 
 /* read fault in cacheline loop */
-104:	li	r4,0
+104:	li	r9,0
 	b	92f
 /* fault on dcbz (effectively a write fault) */
 /* or write fault in cacheline loop */
-105:	li	r4,1
+105:	li	r9,1
 92:	li	r3,LG_CACHELINE_BYTES
 	b	99f
 /* read fault in final word loop */
-108:	li	r4,0
+108:	li	r9,0
 	b	93f
 /* write fault in final word loop */
-109:	li	r4,1
+109:	li	r9,1
 93:	andi.	r5,r5,3
 	li	r3,2
 	b	99f
 /* read fault in final byte loop */
-110:	li	r4,0
+110:	li	r9,0
 	b	94f
 /* write fault in final byte loop */
-111:	li	r4,1
+111:	li	r9,1
 94:	li	r5,0
 	li	r3,0
 /*
  * At this stage the number of bytes not copied is
- * r5 + (ctr << r3), and r4 is 0 for read or 1 for write.
+ * r5 + (ctr << r3), and r9 is 0 for read or 1 for write.
  */
 99:	mfctr	r0
 	slw	r3,r0,r3
-	add	r3,r3,r5
-	cmpwi	0,r4,0
+	add.	r3,r3,r5
+	beq	120f			/* shouldn't happen */
+	cmpwi	0,r9,0
 	bne	120f
-/* for read fault, clear out the destination: r3 bytes starting at 4(r6) */
+/* for a read fault, first try to continue the copy one byte at a time */
+	mtctr	r3
+130:	lbz	r0,4(r4)
+131:	stb	r0,4(r6)
+	addi	r4,r4,1
+	addi	r6,r6,1
+	bdnz	130b
+/* then clear out the destination: r3 bytes starting at 4(r6) */
+132:	mfctr	r3
 	srwi.	r0,r3,2
 	li	r9,0
 	mtctr	r0
@@ -604,6 +610,8 @@ __copy_tofrom_user:
 	.long	31b,109b
 	.long	40b,110b
 	.long	41b,111b
+	.long	130b,132b
+	.long	131b,120b
 	.long	112b,120b
 	.long	114b,120b
 	.text

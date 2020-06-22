@@ -1187,7 +1187,7 @@ copy_dac_from_user(struct vrc5477_ac97_state *s,
 #endif
 
 		count -= copyCount;
-		totalCopyCount =+ copyCount;
+		totalCopyCount += copyCount;
 		avail -= copyFragCount;
 		totalCopyFragCount += copyFragCount;
 

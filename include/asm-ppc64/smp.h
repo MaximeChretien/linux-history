@@ -19,6 +19,7 @@
 
 #include <linux/config.h>
 #include <linux/kernel.h>
+#include <linux/threads.h>	/* for NR_CPUS */
 
 #ifdef CONFIG_SMP
 

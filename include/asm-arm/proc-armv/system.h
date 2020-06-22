@@ -141,6 +141,8 @@ extern unsigned long cr_alignment;	/* defined in entry-armv.S */
 	: "r" (x)						\
 	: "memory")
 
+#define __save_and_sti(x)	({__save_flags(x);__sti();})
+
 #if defined(CONFIG_CPU_SA1100) || defined(CONFIG_CPU_SA110)
 /*
  * On the StrongARM, "swp" is terminally broken since it bypasses the

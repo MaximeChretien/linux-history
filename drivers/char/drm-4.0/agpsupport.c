@@ -275,6 +275,9 @@ drm_agp_head_t *drm_agp_init(void)
 			break;
 		case VIA_APOLLO_KT133:	head->chipset = "VIA Apollo KT133"; 
 			break;
+		case VIA_APOLLO_KT400:  head->chipset = "VIA Apollo KT400";
+			break;
+		case VIA_APOLLO_P4X400:	head->chipset = "VIA Apollo P4X400";
 #endif
 
 		case VIA_APOLLO_PRO: 	head->chipset = "VIA Apollo Pro";

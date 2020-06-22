@@ -8,9 +8,7 @@ bool '  V4L information in proc filesystem' CONFIG_VIDEO_PROC_FS
 dep_tristate '  I2C on parallel port' CONFIG_I2C_PARPORT $CONFIG_PARPORT $CONFIG_I2C
 
 comment 'Video Adapters'
-if [ "$CONFIG_I2C_ALGOBIT" = "y" -o "$CONFIG_I2C_ALGOBIT" = "m" ]; then
-   dep_tristate '  BT848 Video For Linux' CONFIG_VIDEO_BT848 $CONFIG_VIDEO_DEV $CONFIG_PCI $CONFIG_I2C_ALGOBIT
-fi
+dep_tristate '  BT848 Video For Linux' CONFIG_VIDEO_BT848 $CONFIG_VIDEO_DEV $CONFIG_PCI $CONFIG_I2C_ALGOBIT $CONFIG_SOUND
 dep_tristate '  Mediavision Pro Movie Studio Video For Linux' CONFIG_VIDEO_PMS $CONFIG_VIDEO_DEV
 if [ "$CONFIG_ALL_PPC" = "y" ]; then
    dep_tristate '  PlanB Video-In on PowerMac' CONFIG_VIDEO_PLANB $CONFIG_VIDEO_DEV
@@ -49,7 +47,7 @@ dep_tristate '  Miro DC10(+) support' CONFIG_VIDEO_ZORAN_DC10 $CONFIG_VIDEO_ZORA
 dep_tristate '  Linux Media Labs LML33 support' CONFIG_VIDEO_ZORAN_LML33 $CONFIG_VIDEO_ZORAN $CONFIG_VIDEO_DEV $CONFIG_PCI $CONFIG_I2C
 dep_tristate '  Zoran ZR36120/36125 Video For Linux' CONFIG_VIDEO_ZR36120 $CONFIG_VIDEO_DEV $CONFIG_PCI $CONFIG_I2C
 if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
-  dep_tristate '  Sony Vaio Picturebook Motion Eye Video For Linux' CONFIG_VIDEO_MEYE $CONFIG_VIDEO_DEV $CONFIG_PCI $CONFIG_SONYPI
+  dep_tristate '  Sony Vaio Picturebook Motion Eye Video For Linux (EXPERIMENTAL)' CONFIG_VIDEO_MEYE $CONFIG_VIDEO_DEV $CONFIG_PCI $CONFIG_SONYPI
 fi
 
 endmenu

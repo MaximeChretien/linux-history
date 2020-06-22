@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  *  This file contains the power_save function for 6xx & 7xxx CPUs
  *  rewritten in assembler
  *
@@ -107,13 +104,23 @@ END_FTR_SECTION_IFSET(CPU_FTR_CAN_NAP)
 	andis.	r0,r3,HID0_NAP@h
 	beq	2f
 BEGIN_FTR_SECTION
-	/* Disable L2 prefetch on some 745x */
+	/* Disable L2 prefetch on some 745x and try to ensure
+	 * L2 prefetch engines are idle. As explained by errata
+	 * text, we can't be sure they are, we just hope very hard
+	 * that well be enough (sic !). At least I noticed Apple
+	 * doesn't even bother doing the dcbf's here...
+	 */
 	mfspr	r4,SPRN_MSSCR0
 	rlwinm	r4,r4,0,0,29
 	sync
 	mtspr	SPRN_MSSCR0,r4
 	sync
 	isync
+	lis	r4,KERNELBASE@h
+	dcbf	0,r4
+	dcbf	0,r4
+	dcbf	0,r4
+	dcbf	0,r4
 END_FTR_SECTION_IFSET(CPU_FTR_NAP_DISABLE_L2_PR)
 #ifdef DEBUG
 	lis	r6,nap_enter_count@ha
@@ -142,7 +149,9 @@ BEGIN_FTR_SECTION
 END_FTR_SECTION_IFSET(CPU_FTR_CAN_DOZE)
 	andc	r4,r4,r5
 	or	r4,r4,r3
-	oris	r4,r4,HID0_DPM@h	/* that should be done once for all ... */
+BEGIN_FTR_SECTION
+	oris	r4,r4,HID0_DPM@h	/* that should be done once for all  */
+END_FTR_SECTION_IFCLR(CPU_FTR_NO_DPM)
 	mtspr	SPRN_HID0,r4
 BEGIN_FTR_SECTION
 	DSSALL

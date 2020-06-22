@@ -729,7 +729,7 @@ int i2c_detect(struct i2c_adapter *adapter,
 			     ||
 			     ((address_data->
 			       ignore_range[i] ==
-			       SENSORS_ANY_I2C_BUS) & !is_isa))
+			       SENSORS_ANY_I2C_BUS) && !is_isa))
 			    && (addr >= address_data->ignore_range[i + 1])
 			    && (addr <= address_data->ignore_range[i + 2])) {
 #ifdef DEBUG
@@ -818,7 +818,7 @@ int i2c_detect(struct i2c_adapter *adapter,
 		     i += 2) {
 			if (((adapter_id == address_data->probe[i]) ||
 			     ((address_data->
-			       probe[i] == SENSORS_ANY_I2C_BUS) & !is_isa))
+			       probe[i] == SENSORS_ANY_I2C_BUS) && !is_isa))
 			    && (addr == address_data->probe[i + 1])) {
 #ifdef DEBUG
 				printk
@@ -835,7 +835,7 @@ int i2c_detect(struct i2c_adapter *adapter,
 			    ((adapter_id == address_data->probe_range[i])
 			     ||
 			     ((address_data->probe_range[i] ==
-			       SENSORS_ANY_I2C_BUS) & !is_isa))
+			       SENSORS_ANY_I2C_BUS) && !is_isa))
 			    && (addr >= address_data->probe_range[i + 1])
 			    && (addr <= address_data->probe_range[i + 2])) {
 				found = 1;

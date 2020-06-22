@@ -198,13 +198,9 @@ ia64_phys_addr_valid (unsigned long addr)
 
 #define VMALLOC_START		(0xa000000000000000 + 3*PAGE_SIZE)
 #define VMALLOC_VMADDR(x)	((unsigned long)(x))
-#ifdef CONFIG_VIRTUAL_MEM_MAP
-# define VMALLOC_END_INIT        (0xa000000000000000 + (1UL << (4*PAGE_SHIFT - 9))) 
-# define VMALLOC_END             vmalloc_end
-  extern unsigned long vmalloc_end;
-#else
-# define VMALLOC_END		(0xa000000000000000 + (1UL << (4*PAGE_SHIFT - 9)))
-#endif
+#define VMALLOC_END_INIT        (0xa000000000000000 + (1UL << (4*PAGE_SHIFT - 9))) 
+#define VMALLOC_END             vmalloc_end
+extern unsigned long vmalloc_end;
 
 /*
  * Conversion functions: convert a page and protection to a page entry,
@@ -284,11 +280,7 @@ ia64_phys_addr_valid (unsigned long addr)
  * works bypasses the caches, but does allow for consecutive writes to
  * be combined into single (but larger) write transactions.
  */
-#ifdef CONFIG_MCKINLEY_A0_SPECIFIC
-# define pgprot_writecombine(prot)	prot
-#else
-# define pgprot_writecombine(prot)	__pgprot((pgprot_val(prot) & ~_PAGE_MA_MASK) | _PAGE_MA_WC)
-#endif
+#define pgprot_writecombine(prot)	__pgprot((pgprot_val(prot) & ~_PAGE_MA_MASK) | _PAGE_MA_WC)
 
 /*
  * Return the region index for virtual address ADDRESS.
@@ -448,8 +440,6 @@ extern unsigned long empty_zero_page[PAGE_SIZE/sizeof(unsigned long)];
  */
 #define pgtable_cache_init()	do { } while (0)
 
-#ifdef CONFIG_VIRTUAL_MEM_MAP
-
 /* arch mem_map init routines are needed due to holes in a virtual mem_map */
 #define HAVE_ARCH_MEMMAP_INIT
 
@@ -459,8 +449,6 @@ typedef unsigned long memmap_init_callback_t(struct page *start,
 extern unsigned long arch_memmap_init (memmap_init_callback_t *callback,
 	struct page *start, struct page *end, int zone,
 	unsigned long start_paddr, int highmem);
-
-#endif /* CONFIG_VIRTUAL_MEM_MAP */
 
 # endif /* !__ASSEMBLY__ */
 

@@ -473,8 +473,6 @@
 #define	  IOCR_SPC	0x00000001
 
 
-/* Processor Version Register */
-
 /* Processor Version Register (PVR) field extraction */
 
 #define	PVR_VER(pvr)  (((pvr) >>  16) & 0xFFFF)	/* Version field */
@@ -588,11 +586,6 @@ GLUE(GLUE(.LT,NAME),_procname_end):
 #define RUNLATCH	0x0001
 #define RUN_FLAG	0x0002
 
-/* Macros for adjusting thread priority (hardware multi-threading) */
-#define HMT_low()	asm volatile("or 1,1,1")
-#define HMT_medium()	asm volatile("or 2,2,2")
-#define HMT_high()	asm volatile("or 3,3,3")
-
 /* Size of an exception stack frame contained in the paca. */
 #define EXC_FRAME_SIZE 64
 
@@ -609,7 +602,7 @@ void release_thread(struct task_struct *);
 /*
  * Create a new kernel thread.
  */
-extern long kernel_thread(int (*fn)(void *), void *arg, unsigned long flags);
+extern long arch_kernel_thread(int (*fn)(void *), void *arg, unsigned long flags);
 
 /*
  * Bus types
@@ -625,7 +618,8 @@ extern struct task_struct *last_task_used_math;
 
 #ifdef __KERNEL__
 /* 64-bit user address space is 41-bits (2TBs user VM) */
-#define TASK_SIZE_USER64 (0x0000020000000000UL)
+/* Subtract PGDIR_SIZE to work around a bug in free_pgtables */ 
+#define TASK_SIZE_USER64 (0x0000020000000000UL - PGDIR_SIZE)
 
 /* 
  * 32-bit user address space is 4GB - 1 page 
@@ -659,8 +653,10 @@ struct thread_struct {
 	signed long     last_syscall;
 	unsigned long	flags;
 	double		fpr[32];	/* Complete floating point set */
-	unsigned long	fpscr_pad;	/* fpr ... fpscr must be contiguous */
-	unsigned long	fpscr;		/* Floating point status */
+	unsigned long	fpscr;		/* Floating point status (plus pad) */
+	unsigned long	fpexc_mode;	/* Floating-point exception mode */
+	unsigned long	saved_msr;	/* Save MSR across signal handlers */
+	unsigned long	saved_softe;	/* Ditto for Soft Enable/Disable */
 };
 
 #define PPC_FLAG_32BIT		0x01
@@ -675,7 +671,9 @@ struct thread_struct {
 	swapper_pg_dir, /* pgdir */ \
 	0, /* last_syscall */ \
 	PPC_FLAG_RUN_LIGHT, /* flags */ \
-	{0}, 0, 0 \
+	{0}, /* fprs */ \
+	0, /* fpscr */ \
+	MSR_FE0|MSR_FE1, /* fpexc_mode */ \
 }
 
 /*
@@ -704,6 +702,24 @@ unsigned long get_wchan(struct task_struct *p);
 
 #define KSTK_EIP(tsk)  ((tsk)->thread.regs? (tsk)->thread.regs->nip: 0)
 #define KSTK_ESP(tsk)  ((tsk)->thread.regs? (tsk)->thread.regs->gpr[1]: 0)
+
+/* Get/set floating-point exception mode */
+#define GET_FPEXC_CTL(tsk, adr)	get_fpexc_mode((tsk), (adr))
+#define SET_FPEXC_CTL(tsk, val)	set_fpexc_mode((tsk), (val))
+
+extern int get_fpexc_mode(struct task_struct *tsk, unsigned long adr);
+extern int set_fpexc_mode(struct task_struct *tsk, unsigned int val);
+
+static inline unsigned int __unpack_fe01(unsigned long msr_bits)
+{
+	return ((msr_bits & MSR_FE0) >> 10) | ((msr_bits & MSR_FE1) >> 8);
+}
+
+static inline unsigned long __pack_fe01(unsigned int fpmode)
+{
+	return ((fpmode << 10) & MSR_FE0) | ((fpmode << 8) & MSR_FE1);
+}
+
 
 /*
  * NOTE! The task struct and the stack go together

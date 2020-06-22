@@ -212,10 +212,11 @@ struct priv {
 	volatile struct iscp_struct *iscp;	/* volatile is important */
 	volatile struct scb_struct *scb;	/* volatile is important */
 	volatile struct tbd_struct *xmit_buffs[NUM_XMIT_BUFFS];
-	volatile struct transmit_cmd_struct *xmit_cmds[NUM_XMIT_BUFFS];
 #if (NUM_XMIT_BUFFS == 1)
+	volatile struct transmit_cmd_struct *xmit_cmds[2];
 	volatile struct nop_cmd_struct *nop_cmds[2];
 #else
+	volatile struct transmit_cmd_struct *xmit_cmds[NUM_XMIT_BUFFS];
 	volatile struct nop_cmd_struct *nop_cmds[NUM_XMIT_BUFFS];
 #endif
 	volatile int nop_point, num_recv_buffs;
@@ -1121,8 +1122,11 @@ static int elmc_send_packet(struct sk_buff *skb, struct net_device *dev)
 
 	netif_stop_queue(dev);
 
-	memcpy((char *) p->xmit_cbuffs[p->xmit_count], (char *) (skb->data), skb->len);
 	len = (ETH_ZLEN < skb->len) ? skb->len : ETH_ZLEN;
+	
+	if(len != skb->len)
+		memset((char *) p->xmit_cbuffs[p->xmit_count], 0, ETH_ZLEN);
+	memcpy((char *) p->xmit_cbuffs[p->xmit_count], (char *) (skb->data), skb->len);
 
 #if (NUM_XMIT_BUFFS == 1)
 #ifdef NO_NOPCOMMANDS

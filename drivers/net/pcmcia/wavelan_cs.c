@@ -707,7 +707,7 @@ void wl_cell_expiry(unsigned long data)
   
   while(wavepoint!=NULL)
     {
-      if(wavepoint->last_seen < jiffies-CELL_TIMEOUT)
+      if(time_after(jiffies, wavepoint->last_seen + CELL_TIMEOUT))
 	{
 #ifdef WAVELAN_ROAMING_DEBUG
 	  printk(KERN_DEBUG "WaveLAN: Bye bye %.4X\n",wavepoint->nwid);
@@ -1890,7 +1890,8 @@ wl_his_gather(device *	dev,
 }
 #endif	/* HISTOGRAM */
 
-static int netdev_ethtool_ioctl(struct net_device *dev, void *useraddr)
+static inline int
+wl_netdev_ethtool_ioctl(struct net_device *dev, void *useraddr)
 {
 	u32 ethcmd;
 		
@@ -1933,7 +1934,7 @@ wavelan_ioctl(struct net_device *	dev,	/* Device on wich the ioctl apply */
 #endif
 
   if (cmd == SIOCETHTOOL)
-    return netdev_ethtool_ioctl(dev, (void *) rq->ifr_data);
+    return wl_netdev_ethtool_ioctl(dev, (void *) rq->ifr_data);
 
   /* Disable interrupts & save flags */
   wv_splhi(lp, &flags);

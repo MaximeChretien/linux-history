@@ -61,6 +61,4 @@
 #define TO_SLICE(subn, local)	(((subn) << SUBNODE_SHFT) | \
 				 ((local) << LOCALCPU_SHFT))
 
-typedef u64 mmr_t;
-
 #endif /* _ASM_IA64_SN_SN2_ARCH_H */

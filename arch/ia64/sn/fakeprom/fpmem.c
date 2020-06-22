@@ -54,10 +54,10 @@ sn_config_t	*sn_config ;
 #define PROMRESERVED_SIZE	(1*MB)
 
 #ifdef CONFIG_IA64_SGI_SN1
-#define PHYS_ADDRESS(_n, _x)		(((long)_n<<33L) | (long)_x)
+#define PHYS_ADDRESS(_n, _x)		(((long)_n<<33) | (long)_x)
 #define MD_BANK_SHFT 30
 #else
-#define PHYS_ADDRESS(_n, _x)		(((long)_n<<38L) | (long)_x | 0x3000000000UL)
+#define PHYS_ADDRESS(_n, _x)		(((long)_n<<38) | (long)_x | 0x3000000000UL)
 #define MD_BANK_SHFT 34
 #endif
 
@@ -94,7 +94,7 @@ GetMemBankInfo(int index)
 int
 IsCpuPresent(int cnode, int cpu)
 {
-	return  sn_memmap[cnode].cpuconfig & (1<<cpu);
+	return  sn_memmap[cnode].cpuconfig & (1UL<<cpu);
 }
 
 
@@ -205,7 +205,17 @@ build_efi_memmap(void *md, int mdsize)
 				 */
 				numbytes = numbytes * 31 / 32;
 #endif
-				numbytes -= 1000;
+				/*
+				 * Only emulate the memory prom grabs
+				 * if we have lots of memory, to allow
+				 * us to simulate smaller memory configs than
+				 * we can actually run on h/w.  Otherwise,
+				 * linux throws away a whole "granule".
+				 */
+				if (cnode == 0 && bank == 0 &&
+				    numbytes > 128*1024*1024) {
+					numbytes -= 1000;
+				}
 
                                 /*
                                  * Check for the node 0 hole. Since banks cant

@@ -50,12 +50,14 @@ static LIST_HEAD(slot_list);
 	#define MY_NAME	THIS_MODULE->name
 #endif
 
+static int debug;
+int acpiphp_debug;
+
 /* local variables */
-static int debug = 1;			/* XXX set to 0 after debug */
 static int num_slots;
 
-#define DRIVER_VERSION	"0.3"
-#define DRIVER_AUTHOR	"Greg Kroah-Hartman <gregkh@us.ibm.com>"
+#define DRIVER_VERSION	"0.4"
+#define DRIVER_AUTHOR	"Greg Kroah-Hartman <gregkh@us.ibm.com>, Takayoshi Kochi <t-kouchi@cq.jp.nec.com>"
 #define DRIVER_DESC	"ACPI Hot Plug PCI Controller Driver"
 
 MODULE_AUTHOR(DRIVER_AUTHOR);
@@ -72,17 +74,21 @@ static int get_power_status	(struct hotplug_slot *slot, u8 *value);
 static int get_attention_status	(struct hotplug_slot *slot, u8 *value);
 static int get_latch_status	(struct hotplug_slot *slot, u8 *value);
 static int get_adapter_status	(struct hotplug_slot *slot, u8 *value);
+static int get_max_bus_speed	(struct hotplug_slot *hotplug_slot, enum pci_bus_speed *value);
+static int get_cur_bus_speed	(struct hotplug_slot *hotplug_slot, enum pci_bus_speed *value);
 
 static struct hotplug_slot_ops acpi_hotplug_slot_ops = {
-	owner:			THIS_MODULE,
-	enable_slot:		enable_slot,
-	disable_slot:		disable_slot,
-	set_attention_status:	set_attention_status,
-	hardware_test:		hardware_test,
-	get_power_status:	get_power_status,
-	get_attention_status:	get_attention_status,
-	get_latch_status:	get_latch_status,
-	get_adapter_status:	get_adapter_status,
+	.owner			= THIS_MODULE,
+	.enable_slot		= enable_slot,
+	.disable_slot		= disable_slot,
+	.set_attention_status	= set_attention_status,
+	.hardware_test		= hardware_test,
+	.get_power_status	= get_power_status,
+	.get_attention_status	= get_attention_status,
+	.get_latch_status	= get_latch_status,
+	.get_adapter_status	= get_adapter_status,
+	.get_max_bus_speed	= get_max_bus_speed,
+	.get_cur_bus_speed	= get_cur_bus_speed,
 };
 
 
@@ -90,15 +96,15 @@ static struct hotplug_slot_ops acpi_hotplug_slot_ops = {
 static inline int slot_paranoia_check (struct slot *slot, const char *function)
 {
 	if (!slot) {
-		dbg("%s - slot == NULL", function);
+		dbg("%s - slot == NULL\n", function);
 		return -1;
 	}
 	if (slot->magic != SLOT_MAGIC) {
-		dbg("%s - bad magic number for slot", function);
+		dbg("%s - bad magic number for slot\n", function);
 		return -1;
 	}
 	if (!slot->hotplug_slot) {
-		dbg("%s - slot->hotplug_slot == NULL!", function);
+		dbg("%s - slot->hotplug_slot == NULL!\n", function);
 		return -1;
 	}
 	return 0;
@@ -106,16 +112,16 @@ static inline int slot_paranoia_check (struct slot *slot, const char *function)
 
 
 static inline struct slot *get_slot (struct hotplug_slot *hotplug_slot, const char *function)
-{ 
+{
 	struct slot *slot;
 
 	if (!hotplug_slot) {
-		dbg("%s - hotplug_slot == NULL", function);
+		dbg("%s - hotplug_slot == NULL\n", function);
 		return NULL;
 	}
 
 	slot = (struct slot *)hotplug_slot->private;
-	if (slot_paranoia_check (slot, function))
+	if (slot_paranoia_check(slot, function))
                 return NULL;
 	return slot;
 }
@@ -130,16 +136,16 @@ static inline struct slot *get_slot (struct hotplug_slot *hotplug_slot, const ch
  */
 static int enable_slot (struct hotplug_slot *hotplug_slot)
 {
-	struct slot *slot = get_slot (hotplug_slot, __FUNCTION__);
+	struct slot *slot = get_slot(hotplug_slot, __FUNCTION__);
 	int retval = 0;
-	
+
 	if (slot == NULL)
 		return -ENODEV;
 
-	dbg ("%s - physical_slot = %s", __FUNCTION__, hotplug_slot->name);
+	dbg("%s - physical_slot = %s\n", __FUNCTION__, hotplug_slot->name);
 
 	/* enable the specified slot */
-	retval = acpiphp_enable_slot (slot->acpi_slot);
+	retval = acpiphp_enable_slot(slot->acpi_slot);
 
 	return retval;
 }
@@ -154,16 +160,16 @@ static int enable_slot (struct hotplug_slot *hotplug_slot)
  */
 static int disable_slot (struct hotplug_slot *hotplug_slot)
 {
-	struct slot *slot = get_slot (hotplug_slot, __FUNCTION__);
+	struct slot *slot = get_slot(hotplug_slot, __FUNCTION__);
 	int retval = 0;
 
 	if (slot == NULL)
 		return -ENODEV;
-	
-	dbg ("%s - physical_slot = %s", __FUNCTION__, hotplug_slot->name);
+
+	dbg("%s - physical_slot = %s\n", __FUNCTION__, hotplug_slot->name);
 
 	/* disable the specified slot */
-	retval = acpiphp_disable_slot (slot->acpi_slot);
+	retval = acpiphp_disable_slot(slot->acpi_slot);
 
 	return retval;
 }
@@ -180,8 +186,8 @@ static int disable_slot (struct hotplug_slot *hotplug_slot)
 static int set_attention_status (struct hotplug_slot *hotplug_slot, u8 status)
 {
 	int retval = 0;
-	
-	dbg ("%s - physical_slot = %s", __FUNCTION__, hotplug_slot->name);
+
+	dbg("%s - physical_slot = %s\n", __FUNCTION__, hotplug_slot->name);
 
 	switch (status) {
 		case 0:
@@ -208,15 +214,15 @@ static int set_attention_status (struct hotplug_slot *hotplug_slot, u8 status)
  */
 static int hardware_test (struct hotplug_slot *hotplug_slot, u32 value)
 {
-	struct slot *slot = get_slot (hotplug_slot, __FUNCTION__);
+	struct slot *slot = get_slot(hotplug_slot, __FUNCTION__);
 	int retval = 0;
-	
+
 	if (slot == NULL)
 		return -ENODEV;
-	
-	dbg ("%s - physical_slot = %s", __FUNCTION__, hotplug_slot->name);
 
-	err ("No hardware tests are defined for this driver");
+	dbg("%s - physical_slot = %s\n", __FUNCTION__, hotplug_slot->name);
+
+	err("No hardware tests are defined for this driver\n");
 	retval = -ENODEV;
 
 	return retval;
@@ -234,15 +240,15 @@ static int hardware_test (struct hotplug_slot *hotplug_slot, u32 value)
  */
 static int get_power_status (struct hotplug_slot *hotplug_slot, u8 *value)
 {
-	struct slot *slot = get_slot (hotplug_slot, __FUNCTION__);
+	struct slot *slot = get_slot(hotplug_slot, __FUNCTION__);
 	int retval = 0;
-	
+
 	if (slot == NULL)
 		return -ENODEV;
-	
-	dbg("%s - physical_slot = %s", __FUNCTION__, hotplug_slot->name);
 
-	*value = acpiphp_get_power_status (slot->acpi_slot);
+	dbg("%s - physical_slot = %s\n", __FUNCTION__, hotplug_slot->name);
+
+	*value = acpiphp_get_power_status(slot->acpi_slot);
 
 	return retval;
 }
@@ -258,8 +264,8 @@ static int get_power_status (struct hotplug_slot *hotplug_slot, u8 *value)
 static int get_attention_status (struct hotplug_slot *hotplug_slot, u8 *value)
 {
 	int retval = 0;
-	
-	dbg("%s - physical_slot = %s", __FUNCTION__, hotplug_slot->name);
+
+	dbg("%s - physical_slot = %s\n", __FUNCTION__, hotplug_slot->name);
 
 	*value = hotplug_slot->info->attention_status;
 
@@ -278,15 +284,15 @@ static int get_attention_status (struct hotplug_slot *hotplug_slot, u8 *value)
  */
 static int get_latch_status (struct hotplug_slot *hotplug_slot, u8 *value)
 {
-	struct slot *slot = get_slot (hotplug_slot, __FUNCTION__);
+	struct slot *slot = get_slot(hotplug_slot, __FUNCTION__);
 	int retval = 0;
-	
+
 	if (slot == NULL)
 		return -ENODEV;
-	
-	dbg("%s - physical_slot = %s", __FUNCTION__, hotplug_slot->name);
 
-	*value = acpiphp_get_latch_status (slot->acpi_slot);
+	dbg("%s - physical_slot = %s\n", __FUNCTION__, hotplug_slot->name);
+
+	*value = acpiphp_get_latch_status(slot->acpi_slot);
 
 	return retval;
 }
@@ -303,17 +309,45 @@ static int get_latch_status (struct hotplug_slot *hotplug_slot, u8 *value)
  */
 static int get_adapter_status (struct hotplug_slot *hotplug_slot, u8 *value)
 {
-	struct slot *slot = get_slot (hotplug_slot, __FUNCTION__);
+	struct slot *slot = get_slot(hotplug_slot, __FUNCTION__);
 	int retval = 0;
-	
+
 	if (slot == NULL)
 		return -ENODEV;
-	
-	dbg("%s - physical_slot = %s", __FUNCTION__, hotplug_slot->name);
 
-	*value = acpiphp_get_adapter_status (slot->acpi_slot);
+	dbg("%s - physical_slot = %s\n", __FUNCTION__, hotplug_slot->name);
+
+	*value = acpiphp_get_adapter_status(slot->acpi_slot);
 
 	return retval;
+}
+
+
+/* return dummy value because ACPI doesn't provide any method... */
+static int get_max_bus_speed (struct hotplug_slot *hotplug_slot, enum pci_bus_speed *value)
+{
+	struct slot *slot = get_slot(hotplug_slot, __FUNCTION__);
+
+	if (slot == NULL)
+		return -ENODEV;
+
+	*value = PCI_SPEED_UNKNOWN;
+
+	return 0;
+}
+
+
+/* return dummy value because ACPI doesn't provide any method... */
+static int get_cur_bus_speed (struct hotplug_slot *hotplug_slot, enum pci_bus_speed *value)
+{
+	struct slot *slot = get_slot(hotplug_slot, __FUNCTION__);
+
+	if (slot == NULL)
+		return -ENODEV;
+
+	*value = PCI_SPEED_UNKNOWN;
+
+	return 0;
 }
 
 
@@ -335,13 +369,6 @@ static int init_acpi (void)
 }
 
 
-static void exit_acpi (void)
-{
-	/* deallocate internal data structures etc. */
-	acpiphp_glue_exit();
-}
-
-
 /**
  * make_slot_name - make a slot name that appears in pcihpfs
  * @slot: slot to name
@@ -349,7 +376,10 @@ static void exit_acpi (void)
  */
 static void make_slot_name (struct slot *slot)
 {
-	snprintf (slot->hotplug_slot->name, SLOT_NAME_SIZE, "ACPI%x", slot->acpi_slot->sun);
+	snprintf(slot->hotplug_slot->name, SLOT_NAME_SIZE, "ACPI%d-%02x:%02x",
+		 slot->acpi_slot->sun,
+		 slot->acpi_slot->bridge->bus,
+		 slot->acpi_slot->device);
 }
 
 /**
@@ -363,31 +393,31 @@ static int init_slots (void)
 	int i;
 
 	for (i = 0; i < num_slots; ++i) {
-		slot = kmalloc (sizeof (struct slot), GFP_KERNEL);
+		slot = kmalloc(sizeof(struct slot), GFP_KERNEL);
 		if (!slot)
 			return -ENOMEM;
 		memset(slot, 0, sizeof(struct slot));
 
-		slot->hotplug_slot = kmalloc (sizeof (struct hotplug_slot), GFP_KERNEL);
+		slot->hotplug_slot = kmalloc(sizeof(struct hotplug_slot), GFP_KERNEL);
 		if (!slot->hotplug_slot) {
-			kfree (slot);
+			kfree(slot);
 			return -ENOMEM;
 		}
-		memset(slot->hotplug_slot, 0, sizeof (struct hotplug_slot));
+		memset(slot->hotplug_slot, 0, sizeof(struct hotplug_slot));
 
-		slot->hotplug_slot->info = kmalloc (sizeof (struct hotplug_slot_info), GFP_KERNEL);
+		slot->hotplug_slot->info = kmalloc(sizeof(struct hotplug_slot_info), GFP_KERNEL);
 		if (!slot->hotplug_slot->info) {
-			kfree (slot->hotplug_slot);
-			kfree (slot);
+			kfree(slot->hotplug_slot);
+			kfree(slot);
 			return -ENOMEM;
 		}
-		memset(slot->hotplug_slot->info, 0, sizeof (struct hotplug_slot_info));
+		memset(slot->hotplug_slot->info, 0, sizeof(struct hotplug_slot_info));
 
-		slot->hotplug_slot->name = kmalloc (SLOT_NAME_SIZE, GFP_KERNEL);
+		slot->hotplug_slot->name = kmalloc(SLOT_NAME_SIZE, GFP_KERNEL);
 		if (!slot->hotplug_slot->name) {
-			kfree (slot->hotplug_slot->info);
-			kfree (slot->hotplug_slot);
-			kfree (slot);
+			kfree(slot->hotplug_slot->info);
+			kfree(slot->hotplug_slot);
+			kfree(slot);
 			return -ENOMEM;
 		}
 
@@ -397,26 +427,27 @@ static int init_slots (void)
 		slot->hotplug_slot->private = slot;
 		slot->hotplug_slot->ops = &acpi_hotplug_slot_ops;
 
-		slot->acpi_slot = get_slot_from_id (i);
+		slot->acpi_slot = get_slot_from_id(i);
 		slot->hotplug_slot->info->power_status = acpiphp_get_power_status(slot->acpi_slot);
 		slot->hotplug_slot->info->attention_status = acpiphp_get_attention_status(slot->acpi_slot);
 		slot->hotplug_slot->info->latch_status = acpiphp_get_latch_status(slot->acpi_slot);
 		slot->hotplug_slot->info->adapter_status = acpiphp_get_adapter_status(slot->acpi_slot);
 
-		make_slot_name (slot);
+		make_slot_name(slot);
 
-		retval = pci_hp_register (slot->hotplug_slot);
+		retval = pci_hp_register(slot->hotplug_slot);
 		if (retval) {
-			err ("pci_hp_register failed with error %d", retval);
-			kfree (slot->hotplug_slot->info);
-			kfree (slot->hotplug_slot->name);
-			kfree (slot->hotplug_slot);
-			kfree (slot);
+			err("pci_hp_register failed with error %d\n", retval);
+			kfree(slot->hotplug_slot->info);
+			kfree(slot->hotplug_slot->name);
+			kfree(slot->hotplug_slot);
+			kfree(slot);
 			return retval;
 		}
 
 		/* add slot to our internal list */
-		list_add (&slot->slot_list, &slot_list);
+		list_add(&slot->slot_list, &slot_list);
+		info("Slot [%s] registered\n", slot->hotplug_slot->name);
 	}
 
 	return retval;
@@ -425,17 +456,17 @@ static int init_slots (void)
 
 static void cleanup_slots (void)
 {
-	struct list_head *tmp;
+	struct list_head *tmp, *n;
 	struct slot *slot;
 
-	list_for_each (tmp, &slot_list) {
-		slot = list_entry (tmp, struct slot, slot_list);
-		list_del (&slot->slot_list);
-		pci_hp_deregister (slot->hotplug_slot);
-		kfree (slot->hotplug_slot->info);
-		kfree (slot->hotplug_slot->name);
-		kfree (slot->hotplug_slot);
-		kfree (slot);
+	list_for_each_safe (tmp, n, &slot_list) {
+		slot = list_entry(tmp, struct slot, slot_list);
+		list_del(&slot->slot_list);
+		pci_hp_deregister(slot->hotplug_slot);
+		kfree(slot->hotplug_slot->info);
+		kfree(slot->hotplug_slot->name);
+		kfree(slot->hotplug_slot);
+		kfree(slot);
 	}
 
 	return;
@@ -446,6 +477,10 @@ static int __init acpiphp_init(void)
 {
 	int retval;
 
+	info(DRIVER_DESC " version: " DRIVER_VERSION "\n");
+
+	acpiphp_debug = debug;
+
 	/* read all the ACPI info from the system */
 	retval = init_acpi();
 	if (retval)
@@ -455,7 +490,6 @@ static int __init acpiphp_init(void)
 	if (retval)
 		return retval;
 
-	info (DRIVER_DESC " version: " DRIVER_VERSION);
 	return 0;
 }
 
@@ -463,7 +497,8 @@ static int __init acpiphp_init(void)
 static void __exit acpiphp_exit(void)
 {
 	cleanup_slots();
-	exit_acpi();
+	/* deallocate internal data structures etc. */
+	acpiphp_glue_exit();
 }
 
 module_init(acpiphp_init);

@@ -6,7 +6,7 @@
  * Instead the northbridge registers are read directly. 
  * 
  * Copyright 2002 Andi Kleen, SuSE Labs.
- * $Id: k8topology.c,v 1.3 2002/09/12 12:51:39 ak Exp $
+ * $Id: k8topology.c,v 1.7 2003/04/02 21:36:22 ak Exp $
  */
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -23,7 +23,7 @@
 int memnode_shift;
 u8  memnodemap[NODEMAPSIZE];
 
-static int find_northbridge(void)
+static __init int find_northbridge(void)
 {
 	int num; 
 
@@ -53,7 +53,7 @@ struct node {
 #define for_all_nodes(n) \
 	for (n=0; n<MAXNODE;n++) if (nodes[n].start!=nodes[n].end)
 
-static int compute_hash_shift(struct node *nodes, int numnodes, u64 maxmem)
+static __init int compute_hash_shift(struct node *nodes, int numnodes, u64 maxmem)
 {
 	int i; 
 	int shift = 24;
@@ -66,7 +66,8 @@ static int compute_hash_shift(struct node *nodes, int numnodes, u64 maxmem)
 			for (addr = nodes[i].start; 
 			     addr < nodes[i].end; 
 			     addr += (1UL << shift)) {
-				if (memnodemap[addr >> shift] != 0xff) { 
+				if (memnodemap[addr >> shift] != 0xff && 
+				    memnodemap[addr >> shift] != i) { 
 					printk("node %d shift %d addr %Lx conflict %d\n", 
 					       i, shift, addr, memnodemap[addr>>shift]);
 					goto next; 
@@ -127,13 +128,12 @@ int __init k8_scan_nodes(unsigned long start, unsigned long end)
 
 		limit >>= 16; 
 		limit <<= 24; 
+		limit |= (1<<24)-1;
 
 		if (limit > end_pfn << PAGE_SHIFT) 
 			limit = end_pfn << PAGE_SHIFT; 
-		if (limit <= base) { 
-			printk(KERN_INFO "Node %d beyond memory map\n", nodeid);
+		if (limit <= base)
 			continue; 
-		} 
 			
 		base >>= 16;
 		base <<= 24; 

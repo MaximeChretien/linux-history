@@ -12,11 +12,14 @@
 #include "ppc32-types.h"
 #include "zlib.h"
 #include <linux/elf.h>
+#include <linux/version.h>
 #include <asm/processor.h>
 #include <asm/page.h>
 #include <asm/bootinfo.h>
 
 void memmove(void *dst, void *im, int len);
+void *memcpy(void *dest, const void *src, size_t n);
+size_t strlen(const char *s);
 
 extern void *finddevice(const char *);
 extern int getprop(void *, const char *, void *, int);
@@ -88,6 +91,8 @@ start(unsigned long a1, unsigned long a2, void *promptr)
 	kernel_entry_t kernel_entry;
 	Elf64_Ehdr *elf64;
 	Elf64_Phdr *elf64ph;
+	/* tell userland tools about uname -r */
+	unsigned char this_uts[] = "Linux version " UTS_RELEASE;
 
 	prom = (int (*)(void *)) promptr;
 	chosen_handle = finddevice("/chosen");
@@ -100,6 +105,7 @@ start(unsigned long a1, unsigned long a2, void *promptr)
 		exit();
 
 	printf("zImage starting: loaded at 0x%x\n\r", (unsigned)&_start);
+	printf("%s\n\r", this_uts);
 
 #if 0
 	sysmap.size = (unsigned long)(_sysmap_end - _sysmap_start);

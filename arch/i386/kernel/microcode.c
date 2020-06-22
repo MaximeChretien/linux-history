@@ -55,7 +55,7 @@
  *		Tigran Aivazian <tigran@veritas.com>,
  *		Serialize updates as required on HT processors due to speculative
  *		nature of implementation.
- *	1.11	22 Mar 2001 Tigran Aivazian <tigran@veritas.com>
+ *	1.11	22 Mar 2002 Tigran Aivazian <tigran@veritas.com>
  *		Fix the panic when writing zero-length microcode chunk.
  */
 

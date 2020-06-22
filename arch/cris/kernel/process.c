@@ -1,4 +1,4 @@
-/* $Id: process.c,v 1.22 2001/11/13 09:40:43 orjanf Exp $
+/* $Id: process.c,v 1.23 2002/10/14 18:29:27 johana Exp $
  * 
  *  linux/arch/cris/kernel/process.c
  *
@@ -8,6 +8,10 @@
  *  Authors:   Bjorn Wesen (bjornw@axis.com)
  *
  *  $Log: process.c,v $
+ *  Revision 1.23  2002/10/14 18:29:27  johana
+ *  Call etrax_gpio_wake_up_check() from cpu_idle() to reduce gpio latency
+ *  from ~15 ms to ~6 ms.
+ *
  *  Revision 1.22  2001/11/13 09:40:43  orjanf
  *  Added dump_fpu (needed for core dumps).
  *
@@ -121,11 +125,18 @@ void enable_hlt(void)
 {
 	hlt_counter--;
 }
- 
+#ifdef CONFIG_ETRAX_GPIO
+void etrax_gpio_wake_up_check(void); /* drivers/gpio.c */
+#endif
+
 int cpu_idle(void *unused)
 {
 	while(1) {
 		current->counter = -100;
+#ifdef CONFIG_ETRAX_GPIO
+		/* This can reduce latency from 15 ms to 6 ms */
+		etrax_gpio_wake_up_check(); /* drivers/gpio.c */
+#endif
 		schedule();
 	}
 }

@@ -53,10 +53,13 @@ struct flash_block_list_header rtas_firmware_flash_list = {0, 0};
  */
 
 struct rtas_t rtas = { 
-	lock: SPIN_LOCK_UNLOCKED
+	.lock = SPIN_LOCK_UNLOCKED
 };
 
 extern unsigned long reloc_offset(void);
+
+spinlock_t rtas_data_buf_lock = SPIN_LOCK_UNLOCKED;
+char rtas_data_buf[RTAS_DATA_BUF_SIZE];
 
 void
 phys_call_rtas(int token, int nargs, int nret, ...)

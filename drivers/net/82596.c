@@ -649,7 +649,7 @@ static int init_i596_mem(struct net_device *dev)
 
 	/* change the scp address */
 
-	MPU_PORT(dev, PORT_ALTSCP, (void *)virt_to_bus(&lp->scp));
+	MPU_PORT(dev, PORT_ALTSCP, (void *)virt_to_bus((void *)&lp->scp));
 
 #elif defined(ENABLE_APRICOT)
 
@@ -680,8 +680,8 @@ static int init_i596_mem(struct net_device *dev)
 		lp->scp.sysbus = 0x00440000;
 #endif
 
-	lp->scp.iscp = WSWAPiscp(virt_to_bus(&(lp->iscp)));
-	lp->iscp.scb = WSWAPscb(virt_to_bus(&(lp->scb)));
+	lp->scp.iscp = WSWAPiscp(virt_to_bus((void *)&lp->iscp));
+	lp->iscp.scb = WSWAPscb(virt_to_bus((void *)&lp->scb));
 	lp->iscp.stat = ISCP_BUSY;
 	lp->cmd_backlog = 0;
 
@@ -1066,12 +1066,19 @@ static int i596_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	struct i596_private *lp = (struct i596_private *) dev->priv;
 	struct tx_cmd *tx_cmd;
 	struct i596_tbd *tbd;
-	short length = ETH_ZLEN < skb->len ? skb->len : ETH_ZLEN;
+	short length = skb->len;
 	dev->trans_start = jiffies;
 
 	DEB(DEB_STARTTX,printk(KERN_DEBUG "%s: i596_start_xmit(%x,%x) called\n", dev->name,
 				skb->len, (unsigned int)skb->data));
 
+	if(skb->len < ETH_ZLEN)
+	{
+		skb = skb_padto(skb, ETH_ZLEN);
+		if(skb == NULL)
+			return 0;
+		length = ETH_ZLEN;
+	}
 	netif_stop_queue(dev);
 
 	tx_cmd = lp->tx_cmds + lp->next_tx_cmd;

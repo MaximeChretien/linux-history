@@ -1,6 +1,3 @@
-/*
- * BK Id: SCCS/s.pci.h 1.16 10/15/01 22:51:33 paulus
- */
 #ifndef __PPC_PCI_H
 #define __PPC_PCI_H
 #ifdef __KERNEL__

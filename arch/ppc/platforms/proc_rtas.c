@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.proc_rtas.c 1.5 05/17/01 18:14:22 cort
- */
-/*
  *   arch/ppc/kernel/proc_rtas.c
  *   Copyright (C) 2000 Tilmann Bitterberg
  *   (tilmann@bitterberg.de)

@@ -57,6 +57,10 @@ EXPORT_SYMBOL_NOVERS(__up);
 #include <asm/page.h>
 EXPORT_SYMBOL(clear_page);
 
+#include <asm/pgtable.h>
+EXPORT_SYMBOL(vmalloc_end);
+EXPORT_SYMBOL(ia64_page_valid);
+
 #include <asm/processor.h>
 # ifndef CONFIG_NUMA
 EXPORT_SYMBOL(_cpu_data);
@@ -100,7 +104,7 @@ EXPORT_SYMBOL(__global_restore_flags);
 
 #else /* !CONFIG_SMP */
 
-EXPORT_SYMBOL(__flush_tlb_all);
+EXPORT_SYMBOL(local_flush_tlb_all);
 
 #endif /* !CONFIG_SMP */
 
@@ -141,6 +145,8 @@ EXPORT_SYMBOL(ia64_pal_call_phys_stacked);
 EXPORT_SYMBOL(ia64_pal_call_phys_static);
 EXPORT_SYMBOL(ia64_pal_call_stacked);
 EXPORT_SYMBOL(ia64_pal_call_static);
+EXPORT_SYMBOL(ia64_load_scratch_fpregs);
+EXPORT_SYMBOL(ia64_save_scratch_fpregs);
 
 extern struct efi efi;
 EXPORT_SYMBOL(efi);
@@ -154,4 +160,8 @@ EXPORT_SYMBOL(efi_dir);
 EXPORT_SYMBOL(ia64_mv);
 #endif
 EXPORT_SYMBOL(machvec_noop);
-
+#ifdef CONFIG_PERFMON
+#include <asm/perfmon.h>
+EXPORT_SYMBOL(pfm_install_alternate_syswide_subsystem);
+EXPORT_SYMBOL(pfm_remove_alternate_syswide_subsystem);
+#endif

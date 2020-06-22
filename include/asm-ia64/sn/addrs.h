@@ -1,13 +1,10 @@
-
 /*
- *
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (c) 1992-1999,2001 Silicon Graphics, Inc.  All rights reserved.
+ * Copyright (c) 1992-1999,2001-2002 Silicon Graphics, Inc. All rights reserved.
  */
-
 
 #ifndef _ASM_IA64_SN_ADDRS_H
 #define _ASM_IA64_SN_ADDRS_H
@@ -58,14 +55,14 @@
 #define NODE_OFFSET(_n)		(UINT64_CAST (_n) << NODE_SIZE_BITS)
 #endif
 
-#define NODE_CAC_BASE(_n)	(CAC_BASE   + NODE_OFFSET(_n))
+#define NODE_CAC_BASE(_n)	(CAC_BASE  + NODE_OFFSET(_n))
 #define NODE_HSPEC_BASE(_n)	(HSPEC_BASE + NODE_OFFSET(_n))
 #define NODE_IO_BASE(_n)	(IO_BASE    + NODE_OFFSET(_n))
 #define NODE_MSPEC_BASE(_n)	(MSPEC_BASE + NODE_OFFSET(_n))
 #define NODE_UNCAC_BASE(_n)	(UNCAC_BASE + NODE_OFFSET(_n))
 
 #define TO_NODE(_n, _x)		(NODE_OFFSET(_n)     | ((_x)		   ))
-#define TO_NODE_CAC(_n, _x)	(NODE_CAC_BASE(_n)   | ((_x) & TO_PHYS_MASK))
+#define TO_NODE_CAC(_n, _x)	(NODE_CAC_BASE(_n) | ((_x) & TO_PHYS_MASK))
 #define TO_NODE_UNCAC(_n, _x)	(NODE_UNCAC_BASE(_n) | ((_x) & TO_PHYS_MASK))
 #define TO_NODE_MSPEC(_n, _x)	(NODE_MSPEC_BASE(_n) | ((_x) & TO_PHYS_MASK))
 #define TO_NODE_HSPEC(_n, _x)	(NODE_HSPEC_BASE(_n) | ((_x) & TO_PHYS_MASK))
@@ -227,8 +224,8 @@
 
 #ifndef __ASSEMBLY__
 
-#define HUB_L(_a)			*(_a)
-#define	HUB_S(_a, _d)			*(_a) = (_d)
+#define HUB_L(_a)			(*((volatile typeof(*_a) *)_a))
+#define	HUB_S(_a, _d)			(*((volatile typeof(*_a) *)_a) = (_d))
 
 #define LOCAL_HUB_L(_r)			HUB_L(LOCAL_HUB_ADDR(_r))
 #define LOCAL_HUB_S(_r, _d)		HUB_S(LOCAL_HUB_ADDR(_r), (_d))
@@ -326,7 +323,7 @@
 #define GDA_SIZE(nasid)		KLD_GDA(nasid)->size
 
 #define NODE_OFFSET_TO_K0(_nasid, _off)					\
-	(PAGE_OFFSET | NODE_OFFSET(_nasid) | (_off))
+	(CACHEABLE_MEM_SPACE | NODE_OFFSET(_nasid) | (_off))
 
 #endif /* __ASSEMBLY__ */
 

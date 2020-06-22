@@ -18,9 +18,6 @@
 	#if 1
 		#define SISFBACCEL	/* Include 2D acceleration */
 	#endif
-	#if 1
-		#define SISFB_PAN	/* Include Y-Panning code */
-	#endif
 #else
 /*	#define SIS300*/
 	#define SIS315H

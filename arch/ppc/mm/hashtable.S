@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  *  arch/ppc/kernel/hashtable.S
  *
  *  $Id: hashtable.S,v 1.6 1999/10/08 01:56:15 paulus Exp $
@@ -27,7 +24,6 @@
  */
 
 #include <linux/config.h>
-#include <asm/ppc_asm.h>
 #include <asm/processor.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
@@ -333,25 +329,6 @@ _GLOBAL(create_hpte)
 	andc	r8,r5,r8		/* PP = user? (rw&dirty? 2: 3): 0 */
 #ifdef CONFIG_SMP
 	ori	r8,r8,_PAGE_COHERENT	/* set M (coherence required) */
-#endif
-
-#ifdef CONFIG_POWER4
-	/*
-	 * XXX hack hack hack - translate 32-bit "physical" addresses
-	 * in the linux page tables to 42-bit real addresses in such
-	 * a fashion that we can get at the I/O we need to access.
-	 *	-- paulus
-	 */
-	cmpwi	r8,0
-	rlwinm	r0,r8,16,16,30
-	bge	57f
-	cmplwi	r0,0xfe00
-	li	r0,0x3fd
-	bne	56f
-	li	r0,0x3ff
-56:	sldi	r0,r0,32
-	or	r8,r8,r0
-57:
 #endif
 
 	/* Construct the high word of the PPC-style PTE (r5) */

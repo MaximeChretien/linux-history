@@ -18,6 +18,7 @@ obj-$(CONFIG_ETRAX_USB_HOST)            += usb-host.o
 obj-$(CONFIG_ETRAX_SYNCHRONOUS_SERIAL)  += sync_serial.o
 obj-$(CONFIG_ETRAX_PARPORT)             += parport.o
 obj-$(CONFIG_ETRAX_DS1302)              += ds1302.o
+obj-$(CONFIG_ETRAX_PCF8563)		+= pcf8563.o
 
 
 obj-$(CONFIG_ETRAX_ETHERNET_LPSLAVE)    += lpslave/lpslavedrivers.o

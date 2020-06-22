@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.ohare.h 1.8 12/01/01 20:09:11 benh
- */
-/*
  * ohare.h: definitions for using the "O'Hare" I/O controller chip.
  *
  * Copyright (C) 1997 Paul Mackerras.

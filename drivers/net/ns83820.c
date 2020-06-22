@@ -499,9 +499,9 @@ static inline void build_rx_desc(struct ns83820 *dev, u32 *desc, dma_addr_t link
 {
 	desc_addr_set(desc + DESC_LINK, link);
 	desc_addr_set(desc + DESC_BUFPTR, buf);
-	desc[DESC_EXTSTS] = extsts;
+	desc[DESC_EXTSTS] = cpu_to_le32(extsts);
 	mb();
-	desc[DESC_CMDSTS] = cmdsts;
+	desc[DESC_CMDSTS] = cpu_to_le32(cmdsts);
 }
 
 #define nr_rx_empty(dev) ((NR_RX_DESC-2 + dev->rx_info.next_rx - dev->rx_info.next_empty) % NR_RX_DESC)
@@ -1214,7 +1214,7 @@ static int ns83820_ethtool_ioctl (struct ns83820 *dev, void *useraddr)
 
 static int ns83820_ioctl(struct net_device *_dev, struct ifreq *rq, int cmd)
 {
-	struct ns83820 *dev = _dev->priv;
+	struct ns83820 *dev = (struct ns83820 *)_dev;
 
 	switch(cmd) {
 	case SIOCETHTOOL:
@@ -1788,6 +1788,7 @@ static int __devinit ns83820_init_one(struct pci_dev *pci_dev, const struct pci_
 	dev->ee.cache = &dev->MEAR_cache;
 	dev->ee.lock = &dev->misc_lock;
 	dev->net_dev.owner = THIS_MODULE;
+	dev->net_dev.priv = dev;
 
 	PREPARE_TQUEUE(&dev->tq_refill, queue_refill, dev);
 	tasklet_init(&dev->rx_tasklet, rx_action, (unsigned long)dev);

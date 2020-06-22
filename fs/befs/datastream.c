@@ -15,7 +15,9 @@
 #include <linux/string.h>
 #include <linux/slab.h>
 
-#include "befs_fs.h"
+#include "befs.h"
+#include "datastream.h"
+#include "io.h"
 #include "endian.h"
 
 const befs_inode_addr BAD_IADDR = { 0, 0, 0 };
@@ -466,8 +468,7 @@ befs_find_brun_dblindirect(struct super_block *sb,
 	}
 
 	dbl_indir_block = befs_bread(sb,
-				     iaddr2blockno(sb,
-						   &data->double_indirect) +
+				     iaddr2blockno(sb, &data->double_indirect) +
 				     dbl_which_block);
 	if (dbl_indir_block == NULL) {
 		befs_error(sb, "befs_read_brun_dblindirect() couldn't read the "

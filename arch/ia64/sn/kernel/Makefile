@@ -1,4 +1,4 @@
-# arch/ia64/sn/Makefile
+# arch/ia64/sn/kernel/Makefile
 #
 # Copyright (C) 1999,2001-2002 Silicon Graphics, Inc.  All Rights Reserved.
 #
@@ -40,9 +40,7 @@ EXTRA_CFLAGS    := -DLITTLE_ENDIAN
 
 O_TARGET        = sn.o
 
-ifeq ($(CONFIG_MODULES),y)
-export-objs = sn_ksyms.o
-endif
+export-objs = sn_ksyms.o iomv.o
 
 subdir-$(CONFIG_IA64_SGI_SN1)	= sn1
 subdir-$(CONFIG_IA64_SGI_SN2)	= sn2
@@ -51,12 +49,12 @@ obj-y		= probe.o setup.o sn_asm.o sv.o bte.o iomv.o
 obj-$(CONFIG_IA64_SGI_SN1)      += irq.o mca.o
 obj-$(CONFIG_IA64_SGI_SN2)      += irq.o mca.o
 
-obj-$(CONFIG_IA64_SGI_SN1)      += sn1/sn1.a  
-obj-$(CONFIG_IA64_SGI_SN2)      += sn2/sn2.a  
+obj-$(CONFIG_IA64_SGI_SN1)      += sn1/sn1.o  
+obj-$(CONFIG_IA64_SGI_SN2)      += sn2/sn2.o  
 
 obj-$(CONFIG_IA64_SGI_AUTOTEST) += llsc4.o misctest.o
 obj-$(CONFIG_IA64_GENERIC)      += machvec.o
 obj-$(CONFIG_MODULES)           += sn_ksyms.o
-
+obj-$(CONFIG_IA64_SGI_SN_BRT)	+= bte_regr_test.o
 
 include $(TOPDIR)/Rules.make

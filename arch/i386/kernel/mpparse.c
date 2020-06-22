@@ -36,18 +36,20 @@ int smp_found_config;
  * MP-table.
  */
 int apic_version [MAX_APICS];
-int mp_bus_id_to_type [MAX_MP_BUSSES];
-int mp_bus_id_to_node [MAX_MP_BUSSES];
-int mp_bus_id_to_local [MAX_MP_BUSSES];
 int quad_local_to_mp_bus_id [NR_CPUS/4][4];
-int mp_bus_id_to_pci_bus [MAX_MP_BUSSES] = { [0 ... MAX_MP_BUSSES-1] = -1 };
 int mp_current_pci_id;
+int *mp_bus_id_to_type;
+int *mp_bus_id_to_node;
+int *mp_bus_id_to_local;
+int *mp_bus_id_to_pci_bus;
+int max_mp_busses;
+int max_irq_sources;
 
 /* I/O APIC entries */
 struct mpc_config_ioapic mp_ioapics[MAX_IO_APICS];
 
 /* # of MP IRQ source entries */
-struct mpc_config_intsrc mp_irqs[MAX_IRQ_SOURCES];
+struct mpc_config_intsrc *mp_irqs;
 
 /* MP IRQ source entries */
 int mp_irq_entries;
@@ -65,8 +67,14 @@ static unsigned int num_processors;
 
 /* Bitmask of physically existing CPUs */
 unsigned long phys_cpu_present_map;
+unsigned long logical_cpu_present_map;
 
+#ifdef CONFIG_X86_CLUSTERED_APIC
 unsigned char esr_disable = 0;
+unsigned char clustered_apic_mode = CLUSTERED_APIC_NONE;
+unsigned int apic_broadcast_id = APIC_BROADCAST_ID_APIC;
+#endif
+unsigned char raw_phys_apicid[NR_CPUS] = { [0 ... NR_CPUS-1] = BAD_APICID };
 
 /*
  * Intel MP BIOS table parsing routines:
@@ -117,6 +125,8 @@ static char __init *mpc_family(int family,int model)
 
 		case 0x0F:
 			if (model == 0x00)
+				return("Pentium 4(tm)");
+			if (model == 0x01)
 				return("Pentium 4(tm)");
 			if (model == 0x02)
 				return("Pentium 4(tm) XEON(tm)");
@@ -226,16 +236,14 @@ void __init MP_processor_info (struct mpc_config_processor *m)
 	if (m->mpc_apicid > MAX_APICS) {
 		printk("Processor #%d INVALID. (Max ID: %d).\n",
 			m->mpc_apicid, MAX_APICS);
-			--num_processors;
+		--num_processors;
 		return;
 	}
 	ver = m->mpc_apicver;
 
-	if (clustered_apic_mode == CLUSTERED_APIC_NUMAQ) {
-		phys_cpu_present_map |= (logical_apicid&0xf) << (4*quad);
-	} else {
-		phys_cpu_present_map |= 1 << m->mpc_apicid;
-	}
+	logical_cpu_present_map |= 1 << (num_processors-1);
+ 	phys_cpu_present_map |= apicid_to_phys_cpu_present(m->mpc_apicid);
+ 
 	/*
 	 * Validate version
 	 */
@@ -244,6 +252,7 @@ void __init MP_processor_info (struct mpc_config_processor *m)
 		ver = 0x10;
 	}
 	apic_version[m->mpc_apicid] = ver;
+	raw_phys_apicid[num_processors - 1] = m->mpc_apicid;
 }
 
 static void __init MP_bus_info (struct mpc_config_bus *m)
@@ -308,7 +317,7 @@ static void __init MP_intsrc_info (struct mpc_config_intsrc *m)
 			m->mpc_irqtype, m->mpc_irqflag & 3,
 			(m->mpc_irqflag >> 2) & 3, m->mpc_srcbus,
 			m->mpc_srcbusirq, m->mpc_dstapic, m->mpc_dstirq);
-	if (++mp_irq_entries == MAX_IRQ_SOURCES)
+	if (++mp_irq_entries == max_irq_sources)
 		panic("Max # of irq sources exceeded!!\n");
 }
 
@@ -398,9 +407,12 @@ static void __init smp_read_mpc_oem(struct mp_config_oemtable *oemtable, \
 
 static int __init smp_read_mpc(struct mp_config_table *mpc)
 {
-	char str[16];
+	char oem[16], prod[14];
 	int count=sizeof(*mpc);
 	unsigned char *mpt=((unsigned char *)mpc)+count;
+	int num_bus = 0;
+	int num_irq = 0;
+	unsigned char *bus_data;
 
 	if (memcmp(mpc->mpc_signature,MPC_SIGNATURE,4)) {
 		panic("SMP mptable: bad signature [%c%c%c%c]!\n",
@@ -423,14 +435,16 @@ static int __init smp_read_mpc(struct mp_config_table *mpc)
 		printk(KERN_ERR "SMP mptable: null local APIC address!\n");
 		return 0;
 	}
-	memcpy(str,mpc->mpc_oem,8);
-	str[8]=0;
-	printk("OEM ID: %s ",str);
+	memcpy(oem,mpc->mpc_oem,8);
+	oem[8]=0;
+	printk("OEM ID: %s ",oem);
 
-	memcpy(str,mpc->mpc_productid,12);
-	str[12]=0;
-	printk("Product ID: %s ",str);
+	memcpy(prod,mpc->mpc_productid,12);
+	prod[12]=0;
+	printk("Product ID: %s ",prod);
 
+	detect_clustered_apic(oem, prod);
+	
 	printk("APIC at: 0x%lX\n",mpc->mpc_lapic);
 
 	/* save the local APIC address, it might be non-default,
@@ -446,9 +460,70 @@ static int __init smp_read_mpc(struct mp_config_table *mpc)
 		mpc_record = 0;
 	}
 
+	/* Pre-scan to determine the number of bus and 
+	 * interrupts records we have
+	 */
+	while (count < mpc->mpc_length) {
+		switch (*mpt) {
+			case MP_PROCESSOR:
+				mpt += sizeof(struct mpc_config_processor);
+				count += sizeof(struct mpc_config_processor);
+				break;
+			case MP_BUS:
+				++num_bus;
+				mpt += sizeof(struct mpc_config_bus);
+				count += sizeof(struct mpc_config_bus);
+				break;
+			case MP_INTSRC:
+				++num_irq;
+				mpt += sizeof(struct mpc_config_intsrc);
+				count += sizeof(struct mpc_config_intsrc);
+				break;
+			case MP_IOAPIC:
+				mpt += sizeof(struct mpc_config_ioapic);
+				count += sizeof(struct mpc_config_ioapic);
+				break;
+			case MP_LINTSRC:
+				mpt += sizeof(struct mpc_config_lintsrc);
+				count += sizeof(struct mpc_config_lintsrc);
+				break;
+			default:
+				count = mpc->mpc_length;
+				break;
+		}
+	}
+	/* 
+	 * Paranoia: Allocate one extra of both the number of busses and number
+	 * of irqs, and make sure that we have at least 4 interrupts per PCI
+	 * slot.  But some machines do not report very many busses, so we need
+	 * to fall back on the older defaults.
+	 */
+	++num_bus;
+	max_mp_busses = max(num_bus, MAX_MP_BUSSES);
+	if (num_irq < (4 * max_mp_busses))
+		num_irq = 4 * num_bus;	/* 4 intr/PCI slot */
+	++num_irq;
+	max_irq_sources = max(num_irq, MAX_IRQ_SOURCES);
+	
+	count = (max_mp_busses * sizeof(int)) * 4;
+	count += (max_irq_sources * sizeof(struct mpc_config_intsrc));
+	bus_data = alloc_bootmem(count);
+	if (!bus_data) {
+		printk(KERN_ERR "SMP mptable: out of memory!\n");
+		return 0;
+	}
+	mp_bus_id_to_type = (int *)&bus_data[0];
+	mp_bus_id_to_node = (int *)&bus_data[(max_mp_busses * sizeof(int))];
+	mp_bus_id_to_local = (int *)&bus_data[(max_mp_busses * sizeof(int)) * 2];
+	mp_bus_id_to_pci_bus = (int *)&bus_data[(max_mp_busses * sizeof(int)) * 3];
+	mp_irqs = (struct mpc_config_intsrc *)&bus_data[(max_mp_busses * sizeof(int)) * 4];
+	memset(mp_bus_id_to_pci_bus, -1, max_mp_busses);
+
 	/*
 	 *	Now process the configuration blocks.
 	 */
+	count = sizeof(*mpc);
+	mpt = ((unsigned char *)mpc)+count;
 	while (count < mpc->mpc_length) {
 		switch(*mpt) {
 			case MP_PROCESSOR:
@@ -510,8 +585,18 @@ static int __init smp_read_mpc(struct mp_config_table *mpc)
 	}
 
 	if (clustered_apic_mode){
-		esr_disable = 1;
+		phys_cpu_present_map = logical_cpu_present_map;
 	}
+
+
+	printk("Enabling APIC mode: ");
+	if(clustered_apic_mode == CLUSTERED_APIC_NUMAQ)
+		printk("Clustered Logical.	");
+	else if(clustered_apic_mode == CLUSTERED_APIC_XAPIC)
+		printk("Physical.	");
+	else
+		printk("Flat.	");
+	printk("Using %d I/O APICs\n",nr_ioapics);
 
 	if (!num_processors)
 		printk(KERN_ERR "SMP mptable: no processors registered!\n");
@@ -808,18 +893,16 @@ void __init find_intel_smp (void)
 	 * there is a real-mode segmented pointer pointing to the
 	 * 4K EBDA area at 0x40E, calculate and scan it here.
 	 *
-	 * NOTE! There are Linux loaders that will corrupt the EBDA
+	 * NOTE! There were Linux loaders that will corrupt the EBDA
 	 * area, and as such this kind of SMP config may be less
 	 * trustworthy, simply because the SMP table may have been
-	 * stomped on during early boot. These loaders are buggy and
-	 * should be fixed.
+	 * stomped on during early boot.  Thankfully the bootloaders
+	 * now honour the EBDA.
 	 */
 
 	address = *(unsigned short *)phys_to_virt(0x40E);
 	address <<= 4;
 	smp_scan_config(address, 0x1000);
-	if (smp_found_config)
-		printk(KERN_WARNING "WARNING: MP table in the EBDA can be UNSAFE, contact linux-smp@vger.kernel.org if you experience SMP problems!\n");
 }
 
 #else

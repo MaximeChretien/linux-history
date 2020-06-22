@@ -21,7 +21,6 @@
  *	o	Return an optlen of the truncated length if need be
  */
 
-#define __NO_VERSION__
 #include <linux/module.h>
 #include <linux/config.h>
 #include <linux/errno.h>
@@ -157,7 +156,8 @@ int ipv6_setsockopt(struct sock *sk, int level, int optname, char *optval,
 				break;
 			}
 
-			if (!(ipv6_addr_type(&np->daddr) & IPV6_ADDR_MAPPED)) {
+			if (ipv6_only_sock(sk) ||
+			    !(ipv6_addr_type(&np->daddr) & IPV6_ADDR_MAPPED)) {
 				retv = -EADDRNOTAVAIL;
 				break;
 			}
@@ -202,6 +202,13 @@ int ipv6_setsockopt(struct sock *sk, int level, int optname, char *optval,
 			break;
 		}
 		goto e_inval;
+
+	case IPV6_V6ONLY:
+		if (sk->num)
+			goto e_inval;
+		np->ipv6only = valbool;
+		retv = 0;
+		break;
 
 	case IPV6_PKTINFO:
 		np->rxopt.bits.rxinfo = valbool;
@@ -351,6 +358,24 @@ done:
 			retv = ipv6_sock_mc_drop(sk, mreq.ipv6mr_ifindex, &mreq.ipv6mr_multiaddr);
 		break;
 	}
+	case IPV6_JOIN_ANYCAST:
+	case IPV6_LEAVE_ANYCAST:
+	{
+		struct ipv6_mreq mreq;
+
+		if (optlen != sizeof(struct ipv6_mreq))
+			goto e_inval;
+
+		retv = -EFAULT;
+		if (copy_from_user(&mreq, optval, sizeof(struct ipv6_mreq)))
+			break;
+
+		if (optname == IPV6_JOIN_ANYCAST)
+			retv = ipv6_sock_ac_join(sk, mreq.ipv6mr_ifindex, &mreq.ipv6mr_acaddr);
+		else
+			retv = ipv6_sock_ac_drop(sk, mreq.ipv6mr_ifindex, &mreq.ipv6mr_acaddr);
+		break;
+	}
 	case IPV6_ROUTER_ALERT:
 		retv = ip6_ra_control(sk, val, NULL);
 		break;
@@ -465,6 +490,10 @@ int ipv6_getsockopt(struct sock *sk, int level, int optname, char *optval,
 			return -ENOTCONN;
 		break;
 	}
+
+	case IPV6_V6ONLY:
+		val = np->ipv6only;
+		break;
 
 	case IPV6_PKTINFO:
 		val = np->rxopt.bits.rxinfo;

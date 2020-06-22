@@ -635,6 +635,7 @@ ahc_delay(long usec)
 
 static __inline uint8_t ahc_inb(struct ahc_softc * ahc, long port);
 static __inline void ahc_outb(struct ahc_softc * ahc, long port, uint8_t val);
+static __inline void ahc_outb_reset(struct ahc_softc * ahc, long port, uint8_t val);
 static __inline void ahc_outsb(struct ahc_softc * ahc, long port,
 			       uint8_t *, int count);
 static __inline void ahc_insb(struct ahc_softc * ahc, long port,
@@ -660,6 +661,22 @@ ahc_inb(struct ahc_softc * ahc, long port)
 
 static __inline void
 ahc_outb(struct ahc_softc * ahc, long port, uint8_t val)
+{
+#ifdef MMAPIO
+	if (ahc->tag == BUS_SPACE_MEMIO) {
+		writeb(val, ahc->bsh.maddr + port);
+		readb(ahc->bsh.maddr + HCNTRL); /* flush PCI posting */
+	} else {
+		outb(val, ahc->bsh.ioport + port);
+	}
+#else
+	outb(val, ahc->bsh.ioport + port);
+#endif
+	mb();
+}
+
+static __inline void
+ahc_outb_reset(struct ahc_softc * ahc, long port, uint8_t val)
 {
 #ifdef MMAPIO
 	if (ahc->tag == BUS_SPACE_MEMIO) {

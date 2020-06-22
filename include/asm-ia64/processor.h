@@ -167,16 +167,15 @@ struct cpuinfo_ia64 {
 	__u32 ptce_count[2];
 	__u32 ptce_stride[2];
 	struct task_struct *ksoftirqd;	/* kernel softirq daemon for this CPU */
+# ifdef CONFIG_PERFMON
+	unsigned long pfm_syst_info;
+# endif
 #ifdef CONFIG_SMP
 	int processor;
 	__u64 loops_per_jiffy;
 	__u64 ipi_count;
 	__u64 prof_counter;
 	__u64 prof_multiplier;
-# ifdef CONFIG_PERFMON
-	__u32 pfm_syst_wide;
-	__u32 pfm_dcr_pp;
-# endif
 	union {
 		/*
 		 *  This is written to by *other* CPUs,
@@ -373,7 +372,7 @@ struct task_struct;
  * do_basic_setup() and the timing is such that free_initmem() has
  * been called already.
  */
-extern int kernel_thread (int (*fn)(void *), void *arg, unsigned long flags);
+extern int arch_kernel_thread (int (*fn)(void *), void *arg, unsigned long flags);
 
 /* Copy and release all segment info associated with a VM */
 #define copy_segments(tsk, mm)			do { } while (0)

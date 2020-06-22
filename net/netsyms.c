@@ -93,6 +93,7 @@ extern int sysctl_max_syn_backlog;
 /* Skbuff symbols. */
 EXPORT_SYMBOL(skb_over_panic);
 EXPORT_SYMBOL(skb_under_panic);
+EXPORT_SYMBOL(skb_pad);
 
 /* Socket layer registration */
 EXPORT_SYMBOL(sock_register);
@@ -294,6 +295,9 @@ EXPORT_SYMBOL(register_inet6addr_notifier);
 EXPORT_SYMBOL(unregister_inet6addr_notifier);
 #include <net/ip6_route.h>
 EXPORT_SYMBOL(ip6_route_output);
+#ifdef CONFIG_NETFILTER
+EXPORT_SYMBOL(ip6_route_me_harder);
+#endif
 #endif
 #if defined (CONFIG_IPV6_MODULE) || defined (CONFIG_KHTTPD) || defined (CONFIG_KHTTPD_MODULE)
 /* inet functions common to v4 and v6 */
@@ -389,6 +393,7 @@ EXPORT_SYMBOL(sysctl_tcp_wmem);
 EXPORT_SYMBOL(sysctl_tcp_ecn);
 EXPORT_SYMBOL(tcp_cwnd_application_limited);
 EXPORT_SYMBOL(tcp_sendpage);
+EXPORT_SYMBOL(sysctl_tcp_low_latency);
 
 EXPORT_SYMBOL(tcp_write_xmit);
 
@@ -475,6 +480,8 @@ EXPORT_SYMBOL(register_netdevice);
 EXPORT_SYMBOL(unregister_netdevice);
 EXPORT_SYMBOL(netdev_state_change);
 EXPORT_SYMBOL(dev_new_index);
+EXPORT_SYMBOL(dev_get_by_flags);
+EXPORT_SYMBOL(__dev_get_by_flags);
 EXPORT_SYMBOL(dev_get_by_index);
 EXPORT_SYMBOL(__dev_get_by_index);
 EXPORT_SYMBOL(dev_get_by_name);

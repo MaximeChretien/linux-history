@@ -403,10 +403,12 @@ unsigned long do_mmap_pgoff(struct file * file, unsigned long addr, unsigned lon
 	if (file && (!file->f_op || !file->f_op->mmap))
 		return -ENODEV;
 
-	if ((len = PAGE_ALIGN(len)) == 0)
+	if (!len)
 		return addr;
 
-	if (len > TASK_SIZE)
+	len = PAGE_ALIGN(len);
+
+	if (len > TASK_SIZE || len == 0)
 		return -EINVAL;
 
 	/* offset overflow? */
@@ -900,6 +902,8 @@ static void free_pgtables(struct mm_struct * mm, struct vm_area_struct *prev,
 		break;
 	}
 no_mmaps:
+	if (last < first)
+		return;
 	/*
 	 * If the PGD bits are not consecutive in the virtual address, the
 	 * old method of shifting the VA >> by PGDIR_SHIFT doesn't work.

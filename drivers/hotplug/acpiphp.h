@@ -97,17 +97,17 @@ acpi_evaluate_integer (
 
 #define dbg(format, arg...)					\
 	do {							\
-		if (debug)					\
-			printk (KERN_DEBUG "%s: " format "\n",	\
+		if (acpiphp_debug)				\
+			printk(KERN_DEBUG "%s: " format,	\
 				MY_NAME , ## arg); 		\
 	} while (0)
-#define err(format, arg...) printk (KERN_ERR "%s: " format "\n", MY_NAME , ## arg)
-#define info(format, arg...) printk (KERN_INFO "%s: " format "\n", MY_NAME , ## arg)
-#define warn(format, arg...) printk (KERN_WARNING "%s: " format "\n", MY_NAME , ## arg)
+#define err(format, arg...) printk(KERN_ERR "%s: " format, MY_NAME , ## arg)
+#define info(format, arg...) printk(KERN_INFO "%s: " format, MY_NAME , ## arg)
+#define warn(format, arg...) printk(KERN_WARNING "%s: " format, MY_NAME , ## arg)
 
 #define SLOT_MAGIC	0x67267322
 /* name size which is used for entries in pcihpfs */
-#define SLOT_NAME_SIZE	16		/* ACPIxxxx */
+#define SLOT_NAME_SIZE	32		/* ACPI{_SUN}-{BUS}:{DEV} */
 
 struct acpiphp_bridge;
 struct acpiphp_slot;
@@ -122,8 +122,6 @@ struct slot {
 	struct hotplug_slot	*hotplug_slot;
 	struct list_head	slot_list;
 
-	/* if there are multiple corresponding ACPI slot objects,
-	   this points to one of them */
 	struct acpiphp_slot	*acpi_slot;
 };
 
@@ -175,8 +173,6 @@ struct acpiphp_bridge {
 	/* PCI-to-PCI bridge device */
 	struct pci_dev *pci_dev;
 
-	struct pci_ops *pci_ops;
-
 	/* ACPI 2.0 _HPP parameters */
 	struct hpp_param hpp;
 
@@ -200,7 +196,6 @@ struct acpiphp_slot {
 	struct acpiphp_bridge *bridge;	/* parent */
 	struct list_head funcs;		/* one slot may have different
 					   objects (i.e. for each function) */
-	struct acpiphp_func *func;	/* functions */
 	struct semaphore crit_sect;
 
 	u32		id;		/* slot id (serial #) for hotplug core */
@@ -213,7 +208,7 @@ struct acpiphp_slot {
 
 
 /**
- * struct acpiphp_func - PCI slot information
+ * struct acpiphp_func - PCI function information
  *
  * PCI function information for each object in ACPI namespace
  * typically 8 objects per slot (i.e. for each PCI function)
@@ -318,5 +313,8 @@ extern void acpiphp_move_resource (struct pci_resource **from, struct pci_resour
 extern void acpiphp_free_resource (struct pci_resource **res);
 extern void acpiphp_dump_resource (struct acpiphp_bridge *bridge); /* debug */
 extern void acpiphp_dump_func_resource (struct acpiphp_func *func); /* debug */
+
+/* variables */
+extern int acpiphp_debug;
 
 #endif /* _ACPIPHP_H */

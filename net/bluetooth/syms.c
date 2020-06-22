@@ -44,6 +44,9 @@
 /* HCI Core */
 EXPORT_SYMBOL(hci_register_dev);
 EXPORT_SYMBOL(hci_unregister_dev);
+EXPORT_SYMBOL(hci_suspend_dev);
+EXPORT_SYMBOL(hci_resume_dev);
+
 EXPORT_SYMBOL(hci_register_proto);
 EXPORT_SYMBOL(hci_unregister_proto);
 
@@ -56,7 +59,7 @@ EXPORT_SYMBOL(hci_conn_encrypt);
 EXPORT_SYMBOL(hci_recv_frame);
 EXPORT_SYMBOL(hci_send_acl);
 EXPORT_SYMBOL(hci_send_sco);
-EXPORT_SYMBOL(hci_send_raw);
+EXPORT_SYMBOL(hci_send_cmd);
 EXPORT_SYMBOL(hci_si_event);
 
 /* BlueZ lib */

@@ -269,6 +269,10 @@ extern int  nfs_pagein_list(struct list_head *, int);
 extern int  nfs_scan_lru_read(struct nfs_server *, struct list_head *);
 extern int  nfs_scan_lru_read_timeout(struct nfs_server *, struct list_head *);
 
+#define NFS_SetPageSync(page)		set_bit(PG_fs_1, &(page)->flags)
+#define NFS_ClearPageSync(page)		clear_bit(PG_fs_1, &(page)->flags)
+#define NFS_TestClearPageSync(page)	test_and_clear_bit(PG_fs_1, &(page)->flags)
+
 /*
  * linux/fs/mount_clnt.c
  * (Used only by nfsroot module)

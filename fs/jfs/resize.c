@@ -29,6 +29,8 @@
 #include "jfs_txnmgr.h"
 #include "jfs_debug.h"
 
+extern s64 jfs_get_volume_size(struct super_block *);
+
 #define BITSPERPAGE     (PSIZE << 3)
 #define L2MEGABYTE      20
 #define MEGABYTE        (1 << L2MEGABYTE)
@@ -97,7 +99,7 @@ int jfs_extendfs(struct super_block *sb, s64 newLVSize, int newLogSize)
 		goto out;
 	}
 
-	VolumeSize = sb->s_bdev->bd_inode->i_size >> sb->s_blocksize_bits;
+	VolumeSize = jfs_get_volume_size(sb);
 	if (VolumeSize) {
 		if (newLVSize > VolumeSize) {
 			printk(KERN_WARNING "jfs_extendfs: invalid size\n");
@@ -512,7 +514,7 @@ int jfs_extendfs(struct super_block *sb, s64 newLVSize, int newLogSize)
 		mark_buffer_dirty(bh);
 		ll_rw_block(WRITE, 1, &bh2);
 		wait_on_buffer(bh2);
-		brelse(bh);
+		brelse(bh2);
 	}
 
 	/* write primary superblock */

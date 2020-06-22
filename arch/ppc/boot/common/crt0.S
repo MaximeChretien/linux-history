@@ -1,6 +1,3 @@
-/*
- * BK Id: SCCS/s.crt0.S 1.14 01/11/02 10:46:07 trini
- */
 /*    Copyright (c) 1997 Paul Mackerras <paulus@cs.anu.edu.au>
  *      Initial Power Macintosh COFF version.
  *    Copyright (c) 1999 Grant Erickson <grant@lcse.umn.edu>

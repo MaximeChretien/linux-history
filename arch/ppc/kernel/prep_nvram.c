@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  *  arch/ppc/platforms/prep_nvram.c
  *
  *  Copyright (C) 1998  Corey Minyard

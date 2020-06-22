@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.smp.c 1.40 03/28/02 16:54:23 hozer
- */
-/*
  * Smp support for ppc.
  *
  * Written by Cort Dougan (cort@cs.nmt.edu) borrowing a great
@@ -65,6 +62,9 @@ volatile unsigned long __initdata tb_offset = 0;
 int start_secondary(void *);
 extern int cpu_idle(void *unused);
 void smp_call_function_interrupt(void);
+
+/* Low level assembly function used to backup CPU 0 state */
+extern void __save_cpu_setup(void);
 
 /* Since OpenPIC has only 4 IPIs, we use slightly different message numbers.
  * 
@@ -330,6 +330,9 @@ void __init smp_boot_cpus(void)
 	/* Probe arch for CPUs */
 	cpu_nr = smp_ops->probe();
 
+	/* Backup CPU 0 state */
+	__save_cpu_setup();
+	
 	/*
 	 * only check for cpus we know exist.  We keep the callin map
 	 * with cpus at the bottom -- Cort
@@ -371,7 +374,7 @@ void __init smp_boot_cpus(void)
 		 * use this value that I found through experimentation.
 		 * -- Cort
 		 */
-		for ( c = 1000; c && !cpu_callin_map[i] ; c-- )
+		for ( c = 10000; c && !cpu_callin_map[i] ; c-- )
 			udelay(100);
 		
 		if ( cpu_callin_map[i] )
@@ -505,19 +508,11 @@ void __init smp_callin(void)
 	int cpu = current->processor;
 	
         smp_store_cpu_info(cpu);
-	set_dec(tb_ticks_per_jiffy);
-	cpu_callin_map[cpu] = 1;
-
 	smp_ops->setup_cpu(cpu);
-
-	/*
-	 * This cpu is now "online".  Only set them online
-	 * before they enter the loop below since write access
-	 * to the below variable is _not_ guaranteed to be
-	 * atomic.
-	 *   -- Cort <cort@fsmlabs.com>
-	 */
-	cpu_online_map |= 1UL << smp_processor_id();
+	set_dec(tb_ticks_per_jiffy);
+	cpu_online_map |= 1UL << cpu;
+	mb();
+	cpu_callin_map[cpu] = 1;
 	
 	while(!smp_commenced)
 		barrier();

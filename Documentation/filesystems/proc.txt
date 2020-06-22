@@ -952,15 +952,14 @@ They are listed in table 2-2.
 Table 2-2: Parameters in /proc/sys/vm/bdflush 
 ..............................................................................
  Value      Meaning                                                            
- nfract     Percentage of buffer cache dirty to  activate bdflush              
+ nfract     Percentage of buffer cache dirty to activate bdflush              
  ndirty     Maximum number of dirty blocks to  write out per wake-cycle        
- nrefill    Number of clean buffers to try to obtain  each time we call refill 
- nref_dirt  buffer threshold for activating bdflush when trying to refill
-            buffers. 
  dummy      Unused                                                             
+ dummy      Unused                                                             
+ interval   jiffies delay between kupdate flushes
  age_buffer Time for normal buffer to age before we flush it                   
- age_super  Time for superblock to age before we flush it                      
- dummy      Unused                                                             
+ nfract_sync Percentage of buffer cache dirty to activate bdflush synchronously
+ nfract_stop_bdflush Percetange of buffer cache dirty to stop bdflush
  dummy      Unused                                                             
 ..............................................................................
 
@@ -974,6 +973,12 @@ Setting this  to  a  higher value means that Linux can delay disk writes for a
 long time, but it also means that it will have to do a lot of I/O at once when
 memory becomes short. A lower value will spread out disk I/O more evenly.
 
+interval
+--------
+
+The interval between two kupdate runs. The value is expressed in
+jiffies (clockticks),  the  number of jiffies per second is 100.
+
 ndirty
 ------
 
@@ -981,29 +986,18 @@ Ndirty gives the maximum number of dirty buffers that bdflush can write to the
 disk at  one  time.  A high value will mean delayed, bursty I/O, while a small
 value can lead to memory shortage when bdflush isn't woken up often enough.
 
-nrefill
--------
+age_buffer
+----------
 
-This is  the  number  of  buffers  that  bdflush  will add to the list of free
-buffers when  refill_freelist()  is  called.  It is necessary to allocate free
-buffers beforehand,  since  the  buffers  are  often  different sizes than the
-memory pages  and some bookkeeping needs to be done beforehand. The higher the
-number, the  more  memory  will be wasted and the less often refill_freelist()
-will need to run.
-
-nref_dirt
----------
-
-When refill_freelist() comes across more than nref_dirt dirty buffers, it will
-wake up bdflush.
-
-age_buffer and age_super
-------------------------
-
-Finally, the age_buffer and age_super parameters govern the maximum time Linux
+Finally, the age_buffer parameter govern the maximum time Linux
 waits before  writing  out  a  dirty buffer to disk. The value is expressed in
-jiffies (clockticks),  the  number of jiffies per second is 100. Age_buffer is
-the maximum age for data blocks, while age_super is for filesystems meta data.
+jiffies (clockticks),  the  number of jiffies per second is 100.
+
+nfract_sync
+-----------
+
+nfract_stop_bdflush
+-------------------
 
 buffermem
 ---------
@@ -1582,10 +1576,14 @@ routing issues.
 error_burst and error_cost
 --------------------------
 
-These parameters  are used to limit the warning messages written to the kernel
-log from  the  routing  code.  The  higher the error_cost factor is, the fewer
-messages will  be written. Error_burst controls when messages will be dropped.
-The default settings limit warning messages to one every five seconds.
+These  parameters  are used to limit how many ICMP destination unreachable to 
+send  from  the  host  in question. ICMP destination unreachable messages are 
+sent  when  we can not reach the next hop, while trying to transmit a packet. 
+It  will also print some error messages to kernel logs if someone is ignoring 
+our   ICMP  redirects.  The  higher  the  error_cost  factor  is,  the  fewer 
+destination  unreachable  and error messages will be let through. Error_burst 
+controls  when  destination  unreachable  messages and error messages will be
+dropped. The default settings limit warning messages to five every second.
 
 flush
 -----

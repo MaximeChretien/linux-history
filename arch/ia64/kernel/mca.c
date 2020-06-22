@@ -42,6 +42,9 @@
 #include <linux/smp_lock.h>
 #include <linux/bootmem.h>
 #include <linux/acpi.h>
+#include <linux/timer.h>
+#include <linux/module.h>
+#include <linux/kernel.h>
 
 #include <asm/machvec.h>
 #include <asm/page.h>
@@ -69,10 +72,10 @@ u64				ia64_mca_stackframe[32];
 u64				ia64_mca_bspstore[1024];
 u64				ia64_init_stack[INIT_TASK_SIZE] __attribute__((aligned(16)));
 u64				ia64_mca_sal_data_area[1356];
-u64				ia64_mca_min_state_save_info;
 u64				ia64_tlb_functional;
 u64				ia64_os_mca_recovery_successful;
-
+/* TODO: need to assign min-state structure to UC memory */
+u64				ia64_mca_min_state_save_info[MIN_STATE_AREA_SIZE] __attribute__((aligned(512)));
 static void			ia64_mca_wakeup_ipi_wait(void);
 static void			ia64_mca_wakeup(int cpu);
 static void			ia64_mca_wakeup_all(void);
@@ -105,6 +108,11 @@ static struct irqaction mca_cpe_irqaction = {
 	name:       "cpe_hndlr"
 };
 
+#define MAX_CPE_POLL_INTERVAL (15*60*HZ) /* 15 minutes */
+#define MIN_CPE_POLL_INTERVAL (2*60*HZ)  /* 2 minutes */
+
+static struct timer_list cpe_poll_timer;
+
 /*
  *  ia64_mca_log_sal_error_record
  *
@@ -116,7 +124,7 @@ static struct irqaction mca_cpe_irqaction = {
  *  Outputs :   platform error status
  */
 int
-ia64_mca_log_sal_error_record(int sal_info_type)
+ia64_mca_log_sal_error_record(int sal_info_type, int called_from_init)
 {
 	int platform_err = 0;
 
@@ -131,7 +139,10 @@ ia64_mca_log_sal_error_record(int sal_info_type)
 	 */
 
 	platform_err = ia64_log_print(sal_info_type, (prfunc_t)printk);
-	ia64_sal_clear_state_info(sal_info_type);
+	/* temporary: only clear SAL logs on hardware-corrected errors
+		or if we're logging an error after an MCA-initiated reboot */
+	if ((sal_info_type > 1) || (called_from_init))
+		ia64_sal_clear_state_info(sal_info_type);
 
 	return platform_err;
 }
@@ -152,7 +163,7 @@ ia64_mca_cpe_int_handler (int cpe_irq, void *arg, struct pt_regs *ptregs)
 	IA64_MCA_DEBUG("ia64_mca_cpe_int_handler: received interrupt. vector = %#x\n", cpe_irq);
 
 	/* Get the CMC error record and log it */
-	ia64_mca_log_sal_error_record(SAL_INFO_TYPE_CPE);
+	ia64_mca_log_sal_error_record(SAL_INFO_TYPE_CPE, 0);
 }
 
 /*
@@ -205,7 +216,7 @@ ia64_mca_check_errors (void)
 	/*
 	 *  If there is an MCA error record pending, get it and log it.
 	 */
-	ia64_mca_log_sal_error_record(SAL_INFO_TYPE_MCA);
+	ia64_mca_log_sal_error_record(SAL_INFO_TYPE_MCA, 1);
 }
 
 /*
@@ -257,15 +268,23 @@ int ia64_pmss_dump_bank0=0;  /* dump bank 0 ? */
  *
  */
 void
-ia64_process_min_state_save (pal_min_state_area_t *pmss, struct pt_regs *ptregs)
+ia64_process_min_state_save (pal_min_state_area_t *pmss)
 {
-	int i, max=57;
-	u64 *tpmss_ptr=(u64 *)pmss;
+	int i, max = MIN_STATE_AREA_SIZE;
+	u64 *tpmss_ptr = (u64 *)pmss;
+	u64 *return_min_state_ptr = ia64_mca_min_state_save_info;
 
 	/* dump out the min_state_area information */
 
 	for (i=0;i<max;i++) {
 
+		/* copy min-state register info for eventual return to PAL */
+		*return_min_state_ptr++ = *tpmss_ptr;
+
+#if 1
+		tpmss_ptr++;  /* skip to next entry */
+#else
+		/* the printing part */
 		if(!ia64_pmss_dump_bank0) {
 			if(strncmp("B0",min_state_labels[i],2)==0) {
 				tpmss_ptr++;  /* skip to next entry */
@@ -278,6 +297,7 @@ ia64_process_min_state_save (pal_min_state_area_t *pmss, struct pt_regs *ptregs)
 		if (((i+1)%3)==0 || ((!strcmp("GR16",min_state_labels[i]))
 				     && !ia64_pmss_dump_bank0))
 			printk("\n");
+#endif
 	}
 }
 
@@ -510,8 +530,7 @@ ia64_mca_init(void)
 					setup_irq(irq, &mca_cpe_irqaction);
 				}
 			ia64_mca_register_cpev(cpev);
-		} else
-			printk("ia64_mca_init: Failed to get routed CPEI vector from ACPI.\n");
+		}
 	}
 
 	/* Initialize the areas set aside by the OS to buffer the
@@ -523,19 +542,17 @@ ia64_mca_init(void)
 	ia64_log_init(SAL_INFO_TYPE_CMC);
 	ia64_log_init(SAL_INFO_TYPE_CPE);
 
-	/* Zero the min state save info */
-	ia64_mca_min_state_save_info = 0;
-
 #if defined(MCA_TEST)
 	mca_test();
 #endif /* #if defined(MCA_TEST) */
 
 	printk("Mca related initialization done\n");
 
-#if 0   // Too early in initialization -- error log is lost
+	/* commented out because this is done elsewhere */
+#if 0
 	/* Do post-failure MCA error logging */
 	ia64_mca_check_errors();
-#endif  // Too early in initialization -- error log is lost
+#endif
 }
 
 /*
@@ -701,8 +718,8 @@ ia64_return_to_sal_check(void)
 	ia64_os_to_sal_handoff_state.imots_context = IA64_MCA_SAME_CONTEXT;
 
 	/* Register pointer to new min state values */
-	/* NOTE: need to do something with this during recovery phase */
-	ia64_os_to_sal_handoff_state.imots_new_min_state = &ia64_mca_min_state_save_info;
+	ia64_os_to_sal_handoff_state.imots_new_min_state =
+		(pal_min_state_area_t *)ia64_mca_min_state_save_info;
 }
 
 /*
@@ -727,7 +744,7 @@ ia64_mca_ucmc_handler(void)
 	int platform_err = 0;
 
 	/* Get the MCA error record and log it */
-	platform_err = ia64_mca_log_sal_error_record(SAL_INFO_TYPE_MCA);
+	platform_err = ia64_mca_log_sal_error_record(SAL_INFO_TYPE_MCA, 0);
 
 	/*
 	 *  Do Platform-specific mca error handling if required.
@@ -767,7 +784,7 @@ ia64_mca_cmc_int_handler(int cmc_irq, void *arg, struct pt_regs *ptregs)
 		       cmc_irq, smp_processor_id());
 
 	/* Get the CMC error record and log it */
-	ia64_mca_log_sal_error_record(SAL_INFO_TYPE_CMC);
+	ia64_mca_log_sal_error_record(SAL_INFO_TYPE_CMC, 0);
 }
 
 /*
@@ -801,6 +818,62 @@ static ia64_state_log_t ia64_state_log[IA64_MAX_LOG_TYPES];
     ia64_state_log[it].isl_index = 1 - ia64_state_log[it].isl_index
 #define IA64_LOG_NEXT_BUFFER(it)   (void *)((ia64_state_log[it].isl_log[IA64_LOG_NEXT_INDEX(it)]))
 #define IA64_LOG_CURR_BUFFER(it)   (void *)((ia64_state_log[it].isl_log[IA64_LOG_CURR_INDEX(it)]))
+
+/*
+ *  ia64_mca_cpe_poll
+ *
+ *	Poll for Corrected Platform Errors (CPEs), dynamically adjust
+ *	polling interval based on occurance of an event.
+ *
+ * Inputs   :   dummy(unused)
+ * Outputs  :   None
+ *
+ */
+static void
+ia64_mca_cpe_poll (unsigned long dummy)
+{
+	int start_index;
+	static int poll_time = MAX_CPE_POLL_INTERVAL;
+
+	start_index = IA64_LOG_CURR_INDEX(SAL_INFO_TYPE_CPE);
+
+	/* Call the interrupt handler */
+	ia64_mca_cpe_int_handler(0, NULL, NULL);
+
+	/*
+	 * If a log was recorded, increase our polling frequency,
+	 * otherwise, backoff.
+	 */
+	if (start_index != IA64_LOG_CURR_INDEX(SAL_INFO_TYPE_CPE)) {
+		poll_time = max(MIN_CPE_POLL_INTERVAL, poll_time/2);
+	} else {
+		poll_time = min(MAX_CPE_POLL_INTERVAL, poll_time * 2);
+	}
+	mod_timer(&cpe_poll_timer, jiffies + poll_time);
+}
+
+/*
+ * ia64_mca_late_init
+ *
+ *	Opportunity to setup things that require initialization later
+ *	than ia64_mca_init.  Setup a timer to poll for CPEs if the
+ *	platform doesn't support an interrupt driven mechanism.
+ *
+ *  Inputs  :   None
+ *  Outputs :   Status
+ */
+static int __init
+ia64_mca_late_init(void)
+{
+	if (acpi_request_vector(ACPI_INTERRUPT_CPEI) < 0) {
+		init_timer(&cpe_poll_timer);
+		cpe_poll_timer.function = ia64_mca_cpe_poll;
+		ia64_mca_cpe_poll(0);
+	}
+	return 0;
+}
+
+module_init(ia64_mca_late_init);
 
 /*
  * C portion of the OS INIT handler
@@ -837,8 +910,7 @@ ia64_init_handler (struct pt_regs *regs)
 	plog_ptr=(ia64_err_rec_t *)IA64_LOG_CURR_BUFFER(SAL_INFO_TYPE_INIT);
 	proc_ptr = &plog_ptr->proc_err;
 
-	ia64_process_min_state_save(&proc_ptr->processor_static_info.min_state_area,
-				    regs);
+	ia64_process_min_state_save(&proc_ptr->processor_static_info.min_state_area);
 
 	/* Clear the INIT SAL logs now that they have been saved in the OS buffer */
 	ia64_sal_clear_state_info(SAL_INFO_TYPE_INIT);
@@ -962,7 +1034,6 @@ ia64_log_get(int sal_info_type, prfunc_t prfunc)
 		return total_len;
 	} else {
 		IA64_LOG_UNLOCK(sal_info_type);
-		prfunc("ia64_log_get: No SAL error record available for type %d\n", sal_info_type);
 		return 0;
 	}
 }
@@ -1004,28 +1075,13 @@ ia64_log_prt_oem_data (int header_len, int sect_len, u8 *p_data, prfunc_t prfunc
 void
 ia64_log_rec_header_print (sal_log_record_header_t *lh, prfunc_t prfunc)
 {
-	char str_buf[32];
-
-	sprintf(str_buf, "%2d.%02d",
-		(lh->revision.major >> 4) * 10 + (lh->revision.major & 0xf),
-		(lh->revision.minor >> 4) * 10 + (lh->revision.minor & 0xf));
-	prfunc("+Err Record ID: %d    SAL Rev: %s\n", lh->id, str_buf);
-	sprintf(str_buf, "%02d/%02d/%04d/ %02d:%02d:%02d",
-		(lh->timestamp.slh_month >> 4) * 10 +
-		(lh->timestamp.slh_month & 0xf),
-		(lh->timestamp.slh_day >> 4) * 10 +
-		(lh->timestamp.slh_day & 0xf),
-		(lh->timestamp.slh_century >> 4) * 1000 +
-		(lh->timestamp.slh_century & 0xf) * 100 +
-		(lh->timestamp.slh_year >> 4) * 10 +
-		(lh->timestamp.slh_year & 0xf),
-		(lh->timestamp.slh_hour >> 4) * 10 +
-		(lh->timestamp.slh_hour & 0xf),
-		(lh->timestamp.slh_minute >> 4) * 10 +
-		(lh->timestamp.slh_minute & 0xf),
-		(lh->timestamp.slh_second >> 4) * 10 +
-		(lh->timestamp.slh_second & 0xf));
-	prfunc("+Time: %s    Severity %d\n", str_buf, lh->severity);
+	prfunc("+Err Record ID: %d    SAL Rev: %2x.%02x\n", lh->id,
+		lh->revision.major, lh->revision.minor);
+	prfunc("+Time: %02x/%02x/%02x%02x %02d:%02d:%02d    Severity %d\n",
+		lh->timestamp.slh_month, lh->timestamp.slh_day,
+		lh->timestamp.slh_century, lh->timestamp.slh_year,
+		lh->timestamp.slh_hour, lh->timestamp.slh_minute,
+		lh->timestamp.slh_second, lh->severity);
 }
 
 /*
@@ -1683,6 +1739,9 @@ ia64_log_proc_dev_err_info_print (sal_log_processor_info_t  *slpi,
 	/* Print processor static info if any */
 	if (slpi->valid.psi_static_struct) {
 		spsi = (sal_processor_static_info_t *)p_data;
+
+		/* copy interrupted context PAL min-state info */
+		ia64_process_min_state_save(&spsi->min_state_area);
 
 		/* Print branch register contents if valid */
 		if (spsi->valid.br)

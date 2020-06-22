@@ -2231,6 +2231,7 @@ int i2o_init_outbound_q(struct i2o_controller *c)
 		return -ETIMEDOUT;
 	}
 
+	kfree(status);
 	return 0;
 }
 

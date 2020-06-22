@@ -3,6 +3,7 @@
  *
  *	(c) 1995 Alan Cox, Building #3 <alan@redhat.com>
  *	(c) 1998-99, 2000 Ingo Molnar <mingo@redhat.com>
+ *	(c) 2002,2003 Andi Kleen, SuSE Labs.
  *
  *	This code is released under the GNU General Public License version 2 or
  *	later.
@@ -114,8 +115,6 @@ struct tlb_state cpu_tlbstate[NR_CPUS] __cacheline_aligned = {[0 ... NR_CPUS-1] 
 static inline unsigned int __prepare_ICR (unsigned int shortcut, int vector)
 {
 	unsigned int icr =  APIC_DM_FIXED | shortcut | vector | APIC_DEST_LOGICAL;
-	if (vector == KDB_VECTOR) 
-		icr = (icr & (~APIC_VECTOR_MASK)) | APIC_DM_NMI; 		
 	return icr;
 }
 
@@ -411,11 +410,6 @@ void flush_tlb_all(void)
 	do_flush_tlb_all_local();
 }
 
-void smp_kdb_stop(void)
-{
-	send_IPI_allbutself(KDB_VECTOR);
-} 
-
 /*
  * this function sends a 'reschedule' IPI to another CPU.
  * it goes straight through and wastes no time serializing
@@ -552,4 +546,26 @@ asmlinkage void smp_call_function_interrupt(void)
 		atomic_inc(&call_data->finished);
 	}
 }
+
+/* Slow. Should be only used for debugging. */
+int slow_smp_processor_id(void)
+{ 
+	int stack_location;
+	unsigned long sp = (unsigned long)&stack_location; 
+	int offset = 0, cpu;
+
+	for (offset = 0; (cpu_online_map >> offset); offset = cpu + 1) { 
+		cpu = ffz(~(cpu_online_map >> offset));
+
+		if (sp >= (u64)cpu_pda[cpu].irqstackptr - IRQSTACKSIZE && 
+		    sp <= (u64)cpu_pda[cpu].irqstackptr)
+			return cpu;
+
+		unsigned long estack = init_tss[cpu].ist[0] - EXCEPTION_STKSZ;
+		if (sp >= estack && sp <= estack+(1<<(PAGE_SHIFT+EXCEPTION_STK_ORDER)))
+			return cpu;			
+	}
+
+	return stack_smp_processor_id();
+} 
 

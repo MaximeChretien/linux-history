@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   
-  Copyright(c) 1999 - 2002 Intel Corporation. All rights reserved.
+  Copyright(c) 1999 - 2003 Intel Corporation. All rights reserved.
   
   This program is free software; you can redistribute it and/or modify it 
   under the terms of the GNU General Public License as published by the Free 
@@ -56,8 +56,9 @@
 
 #include <linux/if.h>
 #include <asm/uaccess.h>
-#include <linux/proc_fs.h>
 #include <linux/ip.h>
+#include <linux/if_vlan.h>
+#include <linux/mii.h>
 
 #define E100_REGS_LEN 1
 /*
@@ -268,6 +269,7 @@ struct driver_stats {
 #define SCB_CUC_NOOP            0
 #define SCB_CUC_START           BIT_4	/* CU Start */
 #define SCB_CUC_RESUME          BIT_5	/* CU Resume */
+#define SCB_CUC_UNKNOWN         BIT_7	/* CU unknown command */
 /* Changed for 82558 enhancements */
 #define SCB_CUC_STATIC_RESUME   (BIT_5 | BIT_7)	/* 82558/9 Static Resume */
 #define SCB_CUC_DUMP_ADDR       BIT_6	/* CU Dump Counters Address */
@@ -301,6 +303,9 @@ struct driver_stats {
 
 /* EEPROM bit definitions */
 /*- EEPROM control register bits */
+#define EEPROM_FLAG_ASF  0x8000
+#define EEPROM_FLAG_GCL  0x4000
+
 #define EN_TRNF          0x10	/* Enable turnoff */
 #define EEDO             0x08	/* EEPROM data out */
 #define EEDI             0x04	/* EEPROM data in (set for writing data) */
@@ -319,6 +324,8 @@ struct driver_stats {
 #define EEPROM_COMPATIBILITY_WORD       3
 #define EEPROM_PWA_NO                   8
 #define EEPROM_ID_WORD			0x0A
+#define EEPROM_CONFIG_ASF		0x0D
+#define EEPROM_SMBUS_ADDR		0x90
 
 #define EEPROM_SUM                      0xbaba
 
@@ -358,7 +365,7 @@ struct driver_stats {
 #define CB_STATUS_MASK          BIT_12_15	/* CB Status Mask (4-bits) */
 #define CB_STATUS_COMPLETE      BIT_15	/* CB Complete Bit */
 #define CB_STATUS_OK            BIT_13	/* CB OK Bit */
-#define CB_STATUS_UNDERRUN      BIT_12	/* CB A Bit */
+#define CB_STATUS_VLAN          BIT_12 /* CB Valn detected Bit */
 #define CB_STATUS_FAIL          BIT_11	/* CB Fail (F) Bit */
 
 /*misc command bits */
@@ -706,8 +713,6 @@ typedef enum _non_tx_cmd_state_t {
 #define IPCB_INSERTVLAN_ENABLE 		BIT_1
 #define IPCB_IP_ACTIVATION_DEFAULT      IPCB_HARDWAREPARSING_ENABLE
 
-#define FOLD_CSUM(_XSUM)  ((((_XSUM << 16) | (_XSUM >> 16)) + _XSUM) >> 16)
-
 /* Transmit Buffer Descriptor (TBD)*/
 typedef struct _tbd_t {
 	u32 tbd_buf_addr;	/* Physical Transmit Buffer Address */
@@ -853,6 +858,7 @@ struct ethtool_lpbk_data{
 };
 
 struct e100_private {
+	struct vlan_group *vlgrp;
 	u32 flags;		/* board management flags */
 	u32 tx_per_underrun;	/* number of good tx frames per underrun */
 	unsigned int tx_count;	/* count of tx frames, so we can request an interrupt */
@@ -888,7 +894,6 @@ struct e100_private {
 	struct driver_stats drv_stats;
 
 	u8 rev_id;		/* adapter PCI revision ID */
-	unsigned long device_type;	/* device type from e100_vendor.h */
 
 	unsigned int phy_addr;	/* address of PHY component */
 	unsigned int PhyId;	/* ID of PHY component */
@@ -925,23 +930,6 @@ struct e100_private {
 
 	struct cfg_params params;	/* adapter's command line parameters */
 
-	struct proc_dir_entry *proc_parent;
-
-	rwlock_t isolate_lock;
-	int driver_isolated;
-	char *id_string;
-	char *cable_status;
-	char *mdix_status;
-
-	/* Variables for HWI */
-	int saved_open_circut;
-	int saved_short_circut;
-	int saved_distance;
-	int saved_i;
-	int saved_same;
-	unsigned char hwi_started;
-	struct timer_list hwi_timer;	/* hwi timer id */
-
 	u32 speed_duplex_caps;	/* adapter's speed/duplex capabilities */
 
 	/* WOL params for ethtool */
@@ -955,6 +943,10 @@ struct e100_private {
 	u32 pci_state[16];
 #endif
 	char ifname[IFNAMSIZ];
+#ifdef E100_CU_DEBUG	
+	u8 last_cmd;
+	u8 last_sub_cmd;
+#endif	
 };
 
 #define E100_AUTONEG        0
@@ -966,7 +958,7 @@ struct e100_private {
 /********* function prototypes *************/
 extern void e100_isolate_driver(struct e100_private *bdp);
 extern void e100_sw_reset(struct e100_private *bdp, u32 reset_cmd);
-extern void e100_start_cu(struct e100_private *bdp, tcb_t *tcb);
+extern u8 e100_start_cu(struct e100_private *bdp, tcb_t *tcb);
 extern void e100_free_non_tx_cmd(struct e100_private *bdp,
 				 nxmit_cb_entry_t *non_tx_cmd);
 extern nxmit_cb_entry_t *e100_alloc_non_tx_cmd(struct e100_private *bdp);
@@ -977,10 +969,11 @@ extern unsigned char e100_selftest(struct e100_private *bdp, u32 *st_timeout,
 extern unsigned char e100_get_link_state(struct e100_private *bdp);
 extern unsigned char e100_wait_scb(struct e100_private *bdp);
 
-extern void e100_deisolate_driver(struct e100_private *bdp,
-				  u8 recover, u8 full_reset);
-extern unsigned char e100_hw_reset_recover(struct e100_private *bdp,
-					   u32 reset_cmd);
+extern void e100_deisolate_driver(struct e100_private *bdp, u8 full_reset);
+extern unsigned char e100_configure_device(struct e100_private *bdp);
+#ifdef E100_CU_DEBUG
+extern unsigned char e100_cu_unknown_state(struct e100_private *bdp);
+#endif
 
 #define ROM_TEST_FAIL		0x01
 #define REGISTER_TEST_FAIL	0x02

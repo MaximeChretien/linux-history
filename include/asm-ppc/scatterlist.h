@@ -1,6 +1,3 @@
-/*
- * BK Id: SCCS/s.scatterlist.h 1.9 10/15/01 22:51:33 paulus
- */
 #ifdef __KERNEL__
 #ifndef _PPC_SCATTERLIST_H
 #define _PPC_SCATTERLIST_H

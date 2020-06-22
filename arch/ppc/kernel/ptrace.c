@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.ptrace.c 1.14 01/17/02 23:05:50 paulus
- */
-/*
  *  linux/arch/ppc/kernel/ptrace.c
  *
  *  PowerPC version

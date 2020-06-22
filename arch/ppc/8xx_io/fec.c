@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  * Fast Ethernet Controller (FEC) driver for Motorola MPC8xx.
  * Copyright (c) 1997 Dan Malek (dmalek@jlc.net)
  *
@@ -1365,11 +1362,7 @@ mii_discover_phy(uint mii_reg, struct net_device *dev, uint data)
 /* This interrupt occurs when the PHY detects a link change.
 */
 static void
-#ifdef CONFIG_RPXCLASSIC
-mii_link_interrupt(void *dev_id)
-#else
 mii_link_interrupt(int irq, void * dev_id, struct pt_regs * regs)
-#endif
 {
 #ifdef	CONFIG_USE_MDIO
 	struct	net_device *dev = dev_id;
@@ -1815,7 +1808,7 @@ int __init fec_enet_init(void)
 	bdp->cbd_sc |= BD_SC_WRAP;
 
 	/* Install our interrupt handler. */
-	if (request_8xxirq(FEC_INTERRUPT, fec_enet_interrupt, 0, "fec", dev) != 0)
+	if (request_irq(FEC_INTERRUPT, fec_enet_interrupt, 0, "fec", dev) != 0)
 		panic("Could not allocate FEC IRQ!");
 
 #ifdef CONFIG_RPXCLASSIC
@@ -1825,7 +1818,9 @@ int __init fec_enet_init(void)
 	immap->im_ioport.iop_pcdir &= ~0x0001;
 	immap->im_ioport.iop_pcso  &= ~0x0001;
 	immap->im_ioport.iop_pcint |=  0x0001;
-	cpm_install_handler(CPMVEC_PIO_PC15, mii_link_interrupt, dev);
+	if (request_irq(CPM_IRQ_OFFSET + CPMVEC_PIO_PC15, mii_link_interrupt,
+			0, cpm_int_name[CPMVEC_PIO_PC15], dev) != 0)
+		panic("Could not allocate Port C FEC IRQ!");
 
 	/* Make LEDS reflect Link status.
 	*/
@@ -1836,7 +1831,7 @@ int __init fec_enet_init(void)
 	((immap_t *)IMAP_ADDR)->im_siu_conf.sc_siel |=
 		(0x80000000 >> PHY_INTERRUPT);
 
-	if (request_8xxirq(PHY_INTERRUPT, mii_link_interrupt, 0, "mii", dev) != 0)
+	if (request_irq(PHY_INTERRUPT, mii_link_interrupt, 0, "mii", dev) != 0)
 		panic("Could not allocate MII IRQ!");
 #endif
 
@@ -1906,9 +1901,9 @@ int __init fec_enet_init(void)
 	fep->phy_id_done = 0;
 	fep->phy_addr = 0;
 	mii_queue(dev, mk_mii_read(MII_REG_PHYIR1), mii_discover_phy, 0);
-#endif	/* CONFIG_USE_MDIO */
 
 	fep->old_status = 0;
+#endif	/* CONFIG_USE_MDIO */
 
 	return 0;
 }

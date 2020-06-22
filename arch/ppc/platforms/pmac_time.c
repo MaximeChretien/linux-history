@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  * Support for periodic interrupts (100 per second) and for getting
  * the current time from the RTC on Power Macintoshes.
  *
@@ -206,7 +203,7 @@ via_calibrate_decr(void)
 	printk(KERN_INFO "via_calibrate_decr: ticks per jiffy = %u (%u ticks)\n",
 	       tb_ticks_per_jiffy, dstart - dend);
 
-	iounmap(via);
+	iounmap((void *)via);
 	
 	return 1;
 }

@@ -142,7 +142,7 @@ static struct base {
 
 #define NO_BASES (sizeof (bases) / sizeof (struct base))
 
-static const struct signature {
+static struct signature {
 	const char *string;
 	int offset;
 } signatures[] __initdata = {

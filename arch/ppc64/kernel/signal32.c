@@ -71,34 +71,41 @@ struct timespec32 {
 };
 
 struct sigregs32 {
-    /***********************************************************************/
-    /* the gp_regs array is 32 bit representation of the pt_regs structure */
-    /*  that was stored on the kernle stack during the system call that    */
-    /*  was interrupted for the signal.                                    */
-    /*                                                                     */
-    /* Note that the entire pt_regs regs structure will fit in the gp_regs */
-    /*   structure because the ELF_NREG value is 48 for PPC and the pt_regs*/
-    /*   structure contains 44 registers                                   */
-    /*                                                                     */ 
-    /***********************************************************************/ 
+	/*
+	 * the gp_regs array is 32 bit representation of the pt_regs
+	 * structure that was stored on the kernle stack during the
+	 * system call that was interrupted for the signal.
+	 *
+	 * Note that the entire pt_regs regs structure will fit in
+	 * the gp_regs structure because the ELF_NREG value is 48 for
+	 * PPC and the pt_regs structure contains 44 registers
+	 */
 	elf_gregset_t32	gp_regs;
 	double		fp_regs[ELF_NFPREG];
 	unsigned int	tramp[2];
-	/* Programs using the rs6000/xcoff abi can save up to 19 gp regs
-	   and 18 fp regs below sp before decrementing it. */
+	/*
+	 * Programs using the rs6000/xcoff abi can save up to 19 gp
+	 * regs and 18 fp regs below sp before decrementing it.
+	 */
 	int		abigap[56];
 };
 
 
 struct rt_sigframe_32 {
-	/* Unused space at start of frame to allow for storing of stack pointers */
+	/*
+	 * Unused space at start of frame to allow for storing of
+	 * stack pointers
+	 */
 	unsigned long _unused;
-	/* This is a 32 bit pointer in user address space 
+	/*
+	 * This is a 32 bit pointer in user address space 
 	 *     it is a pointer to the siginfo stucture in the rt stack frame 
 	 */
 	u32 pinfo;
-	/* This is a 32 bit pointer in user address space */
-	/*     it is a pointer to the user context in the rt stack frame  */
+	/*
+	 * This is a 32 bit pointer in user address space
+	 * it is a pointer to the user context in the rt stack frame
+	 */
 	u32 puc;
 	struct siginfo32  info;
 	struct ucontext32 uc;
@@ -138,12 +145,9 @@ asmlinkage long sys32_sigaction(int sig, struct old_sigaction32 *act, struct old
 	PPCDBG(PPCDBG_SYS32, "sys32_sigaction - entered - pid=%ld current=%lx comm=%s\n", current->pid, current, current->comm);
 
 	if (sig < 0)
-	{
 		sig = -sig;
-	}
 
-	if (act)
-	{
+	if (act) {
 		old_sigset_t32 mask;
 
 		ret = get_user((long)new_ka.sa.sa_handler, &act->sa_handler);
@@ -214,15 +218,18 @@ asmlinkage long sys32_sigprocmask(u32 how, old_sigset_t32 *set, old_sigset_t32 *
 	
 	PPCDBG(PPCDBG_SYS32, "sys32_sigprocmask - entered - pid=%ld current=%lx comm=%s\n", current->pid, current, current->comm);
 	
-	if (set && get_user (s, set)) return -EFAULT;
+	if (set && get_user(s, set))
+		return -EFAULT;
 	set_fs (KERNEL_DS);
 	ret = sys_sigprocmask((int)how, set ? &s : NULL, oset ? &s : NULL);
 	set_fs (old_fs);
-	if (ret) return ret;
-	if (oset && put_user (s, oset)) return -EFAULT;
 	
 	PPCDBG(PPCDBG_SYS32, "sys32_sigprocmask - exited - pid=%ld current=%lx comm=%s\n", current->pid, current, current->comm);
 
+	if (ret)
+		return ret;
+	if (oset && put_user (s, oset))
+		return -EFAULT;
 	return 0;
 }
 
@@ -247,21 +254,24 @@ long sys32_sigreturn(unsigned long r3, unsigned long r4, unsigned long r5,
 		     unsigned long r6, unsigned long r7, unsigned long r8,
 		     struct pt_regs *regs)
 {
-	struct sigcontext32_struct *sc, sigctx;
+	struct sigcontext32 *sc, sigctx;
 	struct sigregs32 *sr;
 	int ret;
 	elf_gregset_t32 saved_regs;  /* an array of ELF_NGREG unsigned ints (32 bits) */
 	sigset_t set;
 	unsigned int prevsp;
+	int i;
 
 	PPCDBG(PPCDBG_SIGNAL, "sys32_sigreturn - entered - pid=%ld current=%lx comm=%s \n", current->pid, current, current->comm);
 
-	sc = (struct sigcontext32_struct *)(regs->gpr[1] + __SIGNAL_FRAMESIZE32);
+	sc = (struct sigcontext32 *)(regs->gpr[1] + __SIGNAL_FRAMESIZE32);
 	if (copy_from_user(&sigctx, sc, sizeof(sigctx)))
 		goto badframe;
 
-	/* Note that PPC32 puts the upper 32 bits of the sigmask in the  */
-	/*   unused part of the signal stackframe                        */
+	/*
+	 * Note that PPC32 puts the upper 32 bits of the sigmask in the
+	 * unused part of the signal stackframe
+	 */
 	set.sig[0] = sigctx.oldmask + ((long)(sigctx._unused[3])<< 32);
 	sigdelsetmask(&set, ~_BLOCKABLE);
 	spin_lock_irq(&current->sigmask_lock);
@@ -272,77 +282,50 @@ long sys32_sigreturn(unsigned long r3, unsigned long r4, unsigned long r5,
 	sc++;			/* Look at next sigcontext */
 	/* If the next sigcontext is actually the sigregs (frame)  */
 	/*   - then no more sigcontexts on the user stack          */  
-	if (sc == (struct sigcontext32_struct*)(u64)sigctx.regs)
+	if (sc == (struct sigcontext32*)(u64)sigctx.regs)
 	{
 		/* Last stacked signal - restore registers */
 		sr = (struct sigregs32*)(u64)sigctx.regs;
 		if (regs->msr & MSR_FP )
 			giveup_fpu(current);
-		/* copy the 32 bit register values off the user stack */
-		/*   into the 32 bit register area                    */
+		/* 
+		 * Copy the 32 bit register values off the user stack
+		 * into the 32 bit register area
+		 */
 		if (copy_from_user(saved_regs, &sr->gp_regs,sizeof(sr->gp_regs)))
 			goto badframe;
-		/**********************************************************************/
-		/* The saved reg structure in the frame is an elf_grepset_t32, it is  */
-		/*   a 32 bit register save of the registers in the pt_regs structure */
-		/*   that was stored on the kernel stack during the system call       */
-		/*   when the system call was interrupted for the signal. Only 32 bits*/
-		/*   are saved because the sigcontext contains a pointer to the regs  */
-		/*   and the sig context address is passed as a pointer to the signal */
-		/*   handler.                                                         */
-		/*                                                                    */
-		/* The entries in the elf_grepset have the same index as the elements */
-		/*   in the pt_regs structure.                                        */
-		/*                                                                    */
-		/**********************************************************************/
-
+		/*
+		 * The saved reg structure in the frame is an elf_grepset_t32,
+		 * it is a 32 bit register save of the registers in the
+		 * pt_regs structure that was stored on the kernel stack
+		 * during the system call when the system call was interrupted
+		 * for the signal. Only 32 bits are saved because the
+		 * sigcontext contains a pointer to the regs and the sig
+		 * context address is passed as a pointer to the signal
+		 * handler.  
+		 *
+		 * The entries in the elf_grepset have the same index as the
+		 * elements in the pt_regs structure.
+		 */
 		saved_regs[PT_MSR] = (regs->msr & ~MSR_USERCHANGE)
 			| (saved_regs[PT_MSR] & MSR_USERCHANGE);
-		regs->gpr[0] = (u64)(saved_regs[0]) & 0xFFFFFFFF;
-		regs->gpr[1] = (u64)(saved_regs[1]) & 0xFFFFFFFF;
-		/**********************************************************************/
-		/* Register 2 is the kernel toc - should be reset on any calls into   */
-		/*  the kernel                                                        */
-		/**********************************************************************/
-		regs->gpr[2] = (u64)(saved_regs[2]) & 0xFFFFFFFF;
-
-		regs->gpr[3] = (u64)(saved_regs[3]) & 0xFFFFFFFF;
-		regs->gpr[4] = (u64)(saved_regs[4]) & 0xFFFFFFFF;
-		regs->gpr[5] = (u64)(saved_regs[5]) & 0xFFFFFFFF;
-		regs->gpr[6] = (u64)(saved_regs[6]) & 0xFFFFFFFF;
-		regs->gpr[7] = (u64)(saved_regs[7]) & 0xFFFFFFFF;
-		regs->gpr[8] = (u64)(saved_regs[8]) & 0xFFFFFFFF;
-		regs->gpr[9] = (u64)(saved_regs[9]) & 0xFFFFFFFF;
-		regs->gpr[10] = (u64)(saved_regs[10]) & 0xFFFFFFFF;
-		regs->gpr[11] = (u64)(saved_regs[11]) & 0xFFFFFFFF;
-		regs->gpr[12] = (u64)(saved_regs[12]) & 0xFFFFFFFF;
-		regs->gpr[13] = (u64)(saved_regs[13]) & 0xFFFFFFFF;
-		regs->gpr[14] = (u64)(saved_regs[14]) & 0xFFFFFFFF;
-		regs->gpr[15] = (u64)(saved_regs[15]) & 0xFFFFFFFF;
-		regs->gpr[16] = (u64)(saved_regs[16]) & 0xFFFFFFFF;
-		regs->gpr[17] = (u64)(saved_regs[17]) & 0xFFFFFFFF;
-		regs->gpr[18] = (u64)(saved_regs[18]) & 0xFFFFFFFF;
-		regs->gpr[19] = (u64)(saved_regs[19]) & 0xFFFFFFFF;
-		regs->gpr[20] = (u64)(saved_regs[20]) & 0xFFFFFFFF;
-		regs->gpr[21] = (u64)(saved_regs[21]) & 0xFFFFFFFF;
-		regs->gpr[22] = (u64)(saved_regs[22]) & 0xFFFFFFFF;
-		regs->gpr[23] = (u64)(saved_regs[23]) & 0xFFFFFFFF;
-		regs->gpr[24] = (u64)(saved_regs[24]) & 0xFFFFFFFF;
-		regs->gpr[25] = (u64)(saved_regs[25]) & 0xFFFFFFFF;
-		regs->gpr[26] = (u64)(saved_regs[26]) & 0xFFFFFFFF;
-		regs->gpr[27] = (u64)(saved_regs[27]) & 0xFFFFFFFF;
-		regs->gpr[28] = (u64)(saved_regs[28]) & 0xFFFFFFFF;
-		regs->gpr[29] = (u64)(saved_regs[29]) & 0xFFFFFFFF;
-		regs->gpr[30] = (u64)(saved_regs[30]) & 0xFFFFFFFF;
-		regs->gpr[31] = (u64)(saved_regs[31]) & 0xFFFFFFFF;
-		/****************************************************/
-		/*  restore the non gpr registers                   */
-		/****************************************************/
-		regs->msr = (u64)(saved_regs[PT_MSR]) & 0xFFFFFFFF;
-		/* Insure that the interrupt mode is 64 bit, during 32 bit execution.
-		 * (This is necessary because we only saved lower 32 bits of msr.)
+		/*
+		 * Register 2 is the kernel toc - should be reset on
+		 * any calls into the kernel 
 		 */
-		regs->msr = regs->msr | MSR_ISF;  /* When this thread is interrupted it should run in 64 bit mode. */
+		for (i = 0; i < 32; i++)
+			regs->gpr[i] = (u64)(saved_regs[i]) & 0xFFFFFFFF;
+
+		/*
+		 *  restore the non gpr registers 
+		 */
+		regs->msr = (u64)(saved_regs[PT_MSR]) & 0xFFFFFFFF;
+		/*
+		 * Insure that the interrupt mode is 64 bit, during 32 bit
+		 * execution. (This is necessary because we only saved
+		 * lower 32 bits of msr.)
+		 */
+		regs->msr = regs->msr | MSR_ISF;
 
 		regs->nip = (u64)(saved_regs[PT_NIP]) & 0xFFFFFFFF;
 		regs->orig_gpr3 = (u64)(saved_regs[PT_ORIG_R3]) & 0xFFFFFFFF; 
@@ -378,6 +361,7 @@ long sys32_sigreturn(unsigned long r3, unsigned long r4, unsigned long r5,
 		if (get_user(prevsp, &sr->gp_regs[PT_R1])
 		    || put_user(prevsp, (unsigned int*) regs->gpr[1]))
 			goto badframe;
+		current->thread.fpscr = 0;
 	}
   
 	PPCDBG(PPCDBG_SIGNAL, "sys32_sigreturn - normal exit returning %ld - pid=%ld current=%lx comm=%s \n", ret, current->pid, current, current->comm);
@@ -395,97 +379,51 @@ static void
 setup_frame32(struct pt_regs *regs, struct sigregs32 *frame,
             unsigned int newsp)
 {
-	struct sigcontext32_struct *sc = (struct sigcontext32_struct *)(u64)newsp;
+	struct sigcontext32 *sc = (struct sigcontext32 *)(u64)newsp;
+	int i;
 
 	if (verify_area(VERIFY_WRITE, frame, sizeof(*frame)))
 		goto badframe;
 	if (regs->msr & MSR_FP)
 		giveup_fpu(current);
 
-	/***************************************************************/
-	/*                                                             */ 
-	/* Copy the register contents for the pt_regs structure on the */
-	/*   kernel stack to the elf_gregset_t32 structure on the user */
-	/*   stack. This is a copy of 64 bit register values to 32 bit */
-	/*   register values. The high order 32 bits of the 64 bit     */
-	/*   registers are not needed since a 32 bit application is    */
-	/*   running and the saved registers are the contents of the   */
-	/*   user registers at the time of a system call.              */
-	/*                                                             */
-	/* The values saved on the user stack will be restored into    */
-	/*  the registers during the signal return processing          */
-	/*                                                             */
-	/* Note the +1 is needed in order to get the lower 32 bits     */
-	/*  of 64 bit register                                         */
-	/***************************************************************/
-	if (__copy_to_user(&frame->gp_regs[0], (u32*)(&regs->gpr[0])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[1], (u32*)(&regs->gpr[1])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[2], (u32*)(&regs->gpr[2])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[3], (u32*)(&regs->gpr[3])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[4], (u32*)(&regs->gpr[4])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[5], (u32*)(&regs->gpr[5])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[6], (u32*)(&regs->gpr[6])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[7], (u32*)(&regs->gpr[7])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[8], (u32*)(&regs->gpr[8])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[9], (u32*)(&regs->gpr[9])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[10], (u32*)(&regs->gpr[10])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[11], (u32*)(&regs->gpr[11])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[12], (u32*)(&regs->gpr[12])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[13], (u32*)(&regs->gpr[13])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[14], (u32*)(&regs->gpr[14])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[15], (u32*)(&regs->gpr[15])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[16], (u32*)(&regs->gpr[16])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[17], (u32*)(&regs->gpr[17])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[18], (u32*)(&regs->gpr[18])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[19], (u32*)(&regs->gpr[19])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[20], (u32*)(&regs->gpr[20])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[21], (u32*)(&regs->gpr[21])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[22], (u32*)(&regs->gpr[22])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[23], (u32*)(&regs->gpr[23])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[24], (u32*)(&regs->gpr[24])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[25], (u32*)(&regs->gpr[25])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[26], (u32*)(&regs->gpr[26])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[27], (u32*)(&regs->gpr[27])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[28], (u32*)(&regs->gpr[28])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[29], (u32*)(&regs->gpr[29])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[30], (u32*)(&regs->gpr[30])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[31], (u32*)(&regs->gpr[31])+1, sizeof(u32))) 
-		goto badframe;
+	/*
+	 * Copy the register contents for the pt_regs structure on the
+	 *   kernel stack to the elf_gregset_t32 structure on the user
+	 *   stack. This is a copy of 64 bit register values to 32 bit
+	 *   register values. The high order 32 bits of the 64 bit
+	 *   registers are not needed since a 32 bit application is
+	 *   running and the saved registers are the contents of the
+	 *   user registers at the time of a system call.
+	 * 
+	 * The values saved on the user stack will be restored into
+	 *  the registers during the signal return processing
+	 *
+	 * Note the +1 is needed in order to get the lower 32 bits
+	 * of 64 bit register
+	 */
+	for (i = 0; i < sizeof(struct pt_regs32)/sizeof(u32); i++) {
+		if (__copy_to_user(&frame->gp_regs[i], (u32*)(&regs->gpr[i])+1, sizeof(u32)))
+			goto badframe;
+	}
 
-  /*****************************************************************************/
-  /* Copy the non gpr registers to the user stack                              */
-  /*****************************************************************************/
-
-	if (__copy_to_user(&frame->gp_regs[PT_NIP], (u32*)(&regs->gpr[PT_NIP])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[PT_MSR], (u32*)(&regs->gpr[PT_MSR])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[PT_ORIG_R3], (u32*)(&regs->gpr[PT_ORIG_R3])+1,
-			      sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[PT_CTR], (u32*)(&regs->gpr[PT_CTR])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[PT_LNK], (u32*)(&regs->gpr[PT_LNK])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[PT_XER], (u32*)(&regs->gpr[PT_XER])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[PT_CCR], (u32*)(&regs->gpr[PT_CCR])+1, sizeof(u32))
-# if 0
-	    || __copy_to_user(&frame->gp_regs[PT_MQ], (u32*)(&regs->gpr[PT_MQ])+1, sizeof(u32))
-#endif
-	    || __copy_to_user(&frame->gp_regs[PT_RESULT], (u32*)(&regs->gpr[PT_RESULT])+1,
-			      sizeof(u32)))
-		goto badframe;
-
-
-	/*****************************************************************************/
-	/* Now copy the floating point registers onto the user stack                 */
-	/*                                                                           */
-	/* Also set up so on the completion of the signal handler, the sys_sigreturn */
-	/*   will get control to reset the stack                                     */
-	/*****************************************************************************/
+	/*
+	 * Now copy the floating point registers onto the user stack 
+	 *
+	 * Also set up so on the completion of the signal handler, the
+	 * sys_sigreturn will get control to reset the stack
+	 */
 	if (__copy_to_user(&frame->fp_regs, current->thread.fpr,
 			   ELF_NFPREG * sizeof(double))
-	    || __put_user(0x38000000U + __NR_sigreturn, &frame->tramp[0])    /* li r0, __NR_sigreturn */
-	    || __put_user(0x44000002U, &frame->tramp[1]))   /* sc */
+	    /* li r0, __NR_sigreturn */
+	    || __put_user(0x38000000U + __NR_sigreturn, &frame->tramp[0])
+	    /* sc */
+	    || __put_user(0x44000002U, &frame->tramp[1]))
 		goto badframe;
 
 	flush_icache_range((unsigned long) &frame->tramp[0],
 			   (unsigned long) &frame->tramp[2]);
+	current->thread.fpscr = 0;      /* turn off all fp exceptions */
 
 	newsp -= __SIGNAL_FRAMESIZE32;
 	if (put_user(regs->gpr[1], (u32*)(u64)newsp)
@@ -494,12 +432,12 @@ setup_frame32(struct pt_regs *regs, struct sigregs32 *frame,
 		goto badframe;
 
 	regs->gpr[1] = newsp & 0xFFFFFFFF;
-	/**************************************************************/
-	/* first parameter to the signal handler is the signal number */
-	/*  - the value is in gpr3                                    */  
-	/* second parameter to the signal handler is the sigcontext   */
-	/*   - set the value into gpr4                                */ 
-	/**************************************************************/
+	/*
+	 * first parameter to the signal handler is the signal number
+	 *  - the value is in gpr3
+	 * second parameter to the signal handler is the sigcontext
+	 *   - set the value into gpr4
+	 */
 	regs->gpr[4] = (unsigned long) sc;
 	regs->link = (unsigned long) frame->tramp;
 	return;
@@ -514,40 +452,40 @@ setup_frame32(struct pt_regs *regs, struct sigregs32 *frame,
 }
 
 
-/****************************************************************************/
-/*  Start of RT signal support                                              */
-/*                                                                          */
-/*     sigset_t is 64 bits for rt signals                                   */
-/*                                                                          */
-/*  System Calls                                                            */
-/*       sigaction                sys32_rt_sigaction                        */
-/*       sigpending               sys32_rt_sigpending                       */
-/*       sigprocmask              sys32_rt_sigprocmask                      */
-/*       sigreturn                sys32_rt_sigreturn                        */
-/*       sigtimedwait             sys32_rt_sigtimedwait                     */
-/*       sigqueueinfo             sys32_rt_sigqueueinfo                     */
-/*       sigsuspend               sys32_rt_sigsuspend                       */ 
-/*                                                                          */
-/*  Other routines                                                          */
-/*        setup_rt_frame32                                                  */
-/*        siginfo64to32                                                     */
-/*        siginfo32to64                                                     */
-/*                                                                          */
-/*                                                                          */
-/****************************************************************************/
+/*
+ *  Start of RT signal support
+ *
+ *     sigset_t is 64 bits for rt signals
+ *
+ *  System Calls
+ *       sigaction                sys32_rt_sigaction
+ *       sigpending               sys32_rt_sigpending
+ *       sigprocmask              sys32_rt_sigprocmask
+ *       sigreturn                sys32_rt_sigreturn
+ *       sigtimedwait             sys32_rt_sigtimedwait
+ *       sigqueueinfo             sys32_rt_sigqueueinfo
+ *       sigsuspend               sys32_rt_sigsuspend
+ *
+ *  Other routines
+ *        setup_rt_frame32
+ *        copy_siginfo_to_user32
+ *        siginfo32to64
+ */
 
 
-// This code executes after the rt signal handler in 32 bit mode has completed and 
-//  returned  
+/*
+ * This code executes after the rt signal handler in 32 bit mode has
+ * completed and returned  
+ */
 long sys32_rt_sigreturn(unsigned long r3, unsigned long r4, unsigned long r5,
 			unsigned long r6, unsigned long r7, unsigned long r8,
 			struct pt_regs * regs)
 {
 	struct rt_sigframe_32 *rt_stack_frame;
-	struct sigcontext32_struct sigctx;
+	struct sigcontext32 sigctx;
 	struct sigregs32 *signalregs;
  
-	int ret;
+	int i, ret;
 	elf_gregset_t32 saved_regs;   /* an array of 32 bit register values */
 	sigset_t signal_set; 
 	stack_t stack;
@@ -560,12 +498,11 @@ long sys32_rt_sigreturn(unsigned long r3, unsigned long r4, unsigned long r5,
 	if (copy_from_user(&sigctx, &rt_stack_frame->uc.uc_mcontext,sizeof(sigctx))
 	    || copy_from_user(&signal_set, &rt_stack_frame->uc.uc_sigmask,sizeof(signal_set))
 	    || copy_from_user(&stack,&rt_stack_frame->uc.uc_stack,sizeof(stack)))
-	{
 		/* unable to copy from user storage */
 		goto badframe;
-	}
 
-	/* Unblock the signal that was processed 
+	/*
+	 * Unblock the signal that was processed 
 	 *   After a signal handler runs - 
 	 *     if the signal is blockable - the signal will be unblocked  
 	 *       ( sigkill and sigstop are not blockable)
@@ -582,76 +519,39 @@ long sys32_rt_sigreturn(unsigned long r3, unsigned long r4, unsigned long r5,
 	 */
 	rt_stack_frame ++;
 
-	if (rt_stack_frame == (struct rt_sigframe_32 *)(u64)(sigctx.regs))
-	{
+	if (rt_stack_frame == (struct rt_sigframe_32 *)(u64)(sigctx.regs)) {
 		signalregs = (struct sigregs32 *) (u64)sigctx.regs;
 		/* If currently owning the floating point - give them up */
 		if (regs->msr & MSR_FP)
-		{
 			giveup_fpu(current);
-		}
-		if (copy_from_user(saved_regs,&signalregs->gp_regs,sizeof(signalregs->gp_regs))) 
-		{
-			goto badframe;
-		}
-		/**********************************************************************/
-		/* The saved reg structure in the frame is an elf_grepset_t32, it is  */
-		/*   a 32 bit register save of the registers in the pt_regs structure */
-		/*   that was stored on the kernel stack during the system call       */
-		/*   when the system call was interrupted for the signal. Only 32 bits*/
-		/*   are saved because the sigcontext contains a pointer to the regs  */
-		/*   and the sig context address is passed as a pointer to the signal */
-		/*   handler.                                                         */
-		/*                                                                    */
-		/* The entries in the elf_grepset have the same index as the elements */
-		/*   in the pt_regs structure.                                        */
-		/*                                                                    */
-		/**********************************************************************/
 
+		if (copy_from_user(saved_regs,&signalregs->gp_regs,sizeof(signalregs->gp_regs))) 
+			goto badframe;
+
+		/*
+		 * The saved reg structure in the frame is an elf_grepset_t32,
+		 * it is a 32 bit register save of the registers in the
+		 * pt_regs structure that was stored on the kernel stack
+		 * during the system call when the system call was interrupted
+		 * for the signal. Only 32 bits are saved because the
+		 * sigcontext contains a pointer to the regs and the sig
+		 * context address is passed as a pointer to the signal handler
+		 *
+		 * The entries in the elf_grepset have the same index as
+		 * the elements in the pt_regs structure.
+		 */
 		saved_regs[PT_MSR] = (regs->msr & ~MSR_USERCHANGE)
 			| (saved_regs[PT_MSR] & MSR_USERCHANGE);
-		regs->gpr[0] = (u64)(saved_regs[0]) & 0xFFFFFFFF;
-		regs->gpr[1] = (u64)(saved_regs[1]) & 0xFFFFFFFF;
-		/**********************************************************************/
-		/* Register 2 is the kernel toc - should be reset on any calls into   */
-		/*  the kernel                                                        */
-		/**********************************************************************/
-		regs->gpr[2] = (u64)(saved_regs[2]) & 0xFFFFFFFF;
- 
-		regs->gpr[3] = (u64)(saved_regs[3]) & 0xFFFFFFFF;
-		regs->gpr[4] = (u64)(saved_regs[4]) & 0xFFFFFFFF;
-		regs->gpr[5] = (u64)(saved_regs[5]) & 0xFFFFFFFF;
-		regs->gpr[6] = (u64)(saved_regs[6]) & 0xFFFFFFFF;
-		regs->gpr[7] = (u64)(saved_regs[7]) & 0xFFFFFFFF;
-		regs->gpr[8] = (u64)(saved_regs[8]) & 0xFFFFFFFF;
-		regs->gpr[9] = (u64)(saved_regs[9]) & 0xFFFFFFFF;
-		regs->gpr[10] = (u64)(saved_regs[10]) & 0xFFFFFFFF;
-		regs->gpr[11] = (u64)(saved_regs[11]) & 0xFFFFFFFF;
-		regs->gpr[12] = (u64)(saved_regs[12]) & 0xFFFFFFFF;
-		regs->gpr[13] = (u64)(saved_regs[13]) & 0xFFFFFFFF;
-		regs->gpr[14] = (u64)(saved_regs[14]) & 0xFFFFFFFF;
-		regs->gpr[15] = (u64)(saved_regs[15]) & 0xFFFFFFFF;
-		regs->gpr[16] = (u64)(saved_regs[16]) & 0xFFFFFFFF;
-		regs->gpr[17] = (u64)(saved_regs[17]) & 0xFFFFFFFF;
-		regs->gpr[18] = (u64)(saved_regs[18]) & 0xFFFFFFFF;
-		regs->gpr[19] = (u64)(saved_regs[19]) & 0xFFFFFFFF;
-		regs->gpr[20] = (u64)(saved_regs[20]) & 0xFFFFFFFF;
-		regs->gpr[21] = (u64)(saved_regs[21]) & 0xFFFFFFFF;
-		regs->gpr[22] = (u64)(saved_regs[22]) & 0xFFFFFFFF;
-		regs->gpr[23] = (u64)(saved_regs[23]) & 0xFFFFFFFF;
-		regs->gpr[24] = (u64)(saved_regs[24]) & 0xFFFFFFFF;
-		regs->gpr[25] = (u64)(saved_regs[25]) & 0xFFFFFFFF;
-		regs->gpr[26] = (u64)(saved_regs[26]) & 0xFFFFFFFF;
-		regs->gpr[27] = (u64)(saved_regs[27]) & 0xFFFFFFFF;
-		regs->gpr[28] = (u64)(saved_regs[28]) & 0xFFFFFFFF;
-		regs->gpr[29] = (u64)(saved_regs[29]) & 0xFFFFFFFF;
-		regs->gpr[30] = (u64)(saved_regs[30]) & 0xFFFFFFFF;
-		regs->gpr[31] = (u64)(saved_regs[31]) & 0xFFFFFFFF;
-		/****************************************************/
-		/*  restore the non gpr registers                   */
-		/****************************************************/
+		/*
+		 * Register 2 is the kernel toc - should be reset on any
+		 * calls into the kernel
+		 */
+		for (i = 0; i < 32; i++)
+			regs->gpr[i] = (u64)(saved_regs[i]) & 0xFFFFFFFF;
+		/*
+		 * restore the non gpr registers
+		 */
 		regs->msr = (u64)(saved_regs[PT_MSR]) & 0xFFFFFFFF;
-
 		regs->nip = (u64)(saved_regs[PT_NIP]) & 0xFFFFFFFF;
 		regs->orig_gpr3 = (u64)(saved_regs[PT_ORIG_R3]) & 0xFFFFFFFF; 
 		regs->ctr = (u64)(saved_regs[PT_CTR]) & 0xFFFFFFFF; 
@@ -659,14 +559,18 @@ long sys32_rt_sigreturn(unsigned long r3, unsigned long r4, unsigned long r5,
 		regs->xer = (u64)(saved_regs[PT_XER]) & 0xFFFFFFFF; 
 		regs->ccr = (u64)(saved_regs[PT_CCR]) & 0xFFFFFFFF;
 		/* regs->softe is left unchanged (like MSR.EE) */
-		/******************************************************/
-		/* the DAR and the DSISR are only relevant during a   */
-		/*   data or instruction storage interrupt. The value */
-		/*   will be set to zero.                             */
-		/******************************************************/
+		/*
+		 * the DAR and the DSISR are only relevant during a
+		 *   data or instruction storage interrupt. The value
+		 *   will be set to zero.
+		 */
 		regs->dar = 0; 
 		regs->dsisr = 0;
 		regs->result = (u64)(saved_regs[PT_RESULT]) & 0xFFFFFFFF;
+
+		if (copy_from_user(current->thread.fpr, &signalregs->fp_regs, sizeof(signalregs->fp_regs))) 
+			goto badframe;
+
 		ret = regs->result;
 	}
 	else  /* more signals to go  */
@@ -696,6 +600,7 @@ long sys32_rt_sigreturn(unsigned long r3, unsigned long r4, unsigned long r5,
 		{
 			goto badframe;
 		}
+		current->thread.fpscr = 0;
 
 	}
 
@@ -772,10 +677,12 @@ asmlinkage long sys32_rt_sigaction(int sig, const struct sigaction32 *act, struc
 extern asmlinkage long sys_rt_sigprocmask(int how, sigset_t *set, sigset_t *oset,
 					  size_t sigsetsize);
 
-/* Note: it is necessary to treat how as an unsigned int, 
- * with the corresponding cast to a signed int to insure that the 
- * proper conversion (sign extension) between the register representation of a signed int (msr in 32-bit mode)
- * and the register representation of a signed int (msr in 64-bit mode) is performed.
+/*
+ * Note: it is necessary to treat how as an unsigned int, with the
+ * corresponding cast to a signed int to insure that the proper
+ * conversion (sign extension) between the register representation
+ * of a signed int (msr in 32-bit mode) and the register representation
+ * of a signed int (msr in 64-bit mode) is performed.
  */
 asmlinkage long sys32_rt_sigprocmask(u32 how, sigset32_t *set, sigset32_t *oset, size_t sigsetsize)
 {
@@ -802,7 +709,8 @@ asmlinkage long sys32_rt_sigprocmask(u32 how, sigset32_t *set, sigset32_t *oset,
 	ret = sys_rt_sigprocmask((int)how, set ? &s : NULL, oset ? &s : NULL,
 				 sigsetsize); 
 	set_fs (old_fs);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 	if (oset) {
 		switch (_NSIG_WORDS) {
 		case 4: s32.sig[7] = (s.sig[3] >> 32); s32.sig[6] = s.sig[3];
@@ -853,7 +761,7 @@ siginfo64to32(siginfo_t32 *d, siginfo_t *s)
 	memset (d, 0, sizeof(siginfo_t32));
 	d->si_signo = s->si_signo;
 	d->si_errno = s->si_errno;
-	d->si_code = s->si_code;
+	d->si_code = s->si_code & 0xffff;
 	if (s->si_signo >= SIGRTMIN) {
 		d->si_pid = s->si_pid;
 		d->si_uid = s->si_uid;
@@ -871,7 +779,7 @@ siginfo64to32(siginfo_t32 *d, siginfo_t *s)
 	case SIGBUS:
 	case SIGFPE:
 	case SIGILL:
-		d->si_addr = (long)(s->si_addr);
+		d->si_addr = (unsigned int)(s->si_addr);
         break;
 	case SIGPOLL:
 		d->si_band = s->si_band;
@@ -917,12 +825,10 @@ sys32_rt_sigtimedwait(sigset32_t *uthese, siginfo_t32 *uinfo,
 	}
 	set_fs (KERNEL_DS);
 	if (uts) 
-	{
 		ret = sys_rt_sigtimedwait(&s, &info, &t, sigsetsize);
-	} else {
-		ret = sys_rt_sigtimedwait(&s, &info, (struct timespec *)uts, sigsetsize);
-	}
-	
+	else
+		ret = sys_rt_sigtimedwait(&s, &info, (struct timespec *)uts,
+				sigsetsize);
 	set_fs (old_fs);
 	if (ret >= 0 && uinfo) {
 		if (copy_to_user (uinfo, siginfo64to32(&info32, &info),
@@ -974,10 +880,12 @@ siginfo32to64(siginfo_t *d, siginfo_t32 *s)
 
 extern asmlinkage long sys_rt_sigqueueinfo(int pid, int sig, siginfo_t *uinfo);
 
-/* Note: it is necessary to treat pid and sig as unsigned ints,
- * with the corresponding cast to a signed int to insure that the 
- * proper conversion (sign extension) between the register representation of a signed int (msr in 32-bit mode)
- * and the register representation of a signed int (msr in 64-bit mode) is performed.
+/*
+ * Note: it is necessary to treat pid and sig as unsigned ints, with the
+ * corresponding cast to a signed int to insure that the proper conversion
+ * (sign extension) between the register representation of a signed int
+ * (msr in 32-bit mode) and the register representation of a signed int
+ * (msr in 64-bit mode) is performed.
  */
 asmlinkage long sys32_rt_sigqueueinfo(u32 pid, u32 sig, siginfo_t32 *uinfo)
 {
@@ -1012,9 +920,11 @@ int sys32_rt_sigsuspend(sigset32_t* unewset, size_t sigsetsize, int p3, int p4, 
 	if (copy_from_user(&s32, unewset, sizeof(s32)))
 		return -EFAULT;
 
-	/* Swap the 2 words of the 64-bit sigset_t (they are stored in the "wrong" endian in 32-bit user storage). */
-	switch (_NSIG_WORDS) 
-	{
+	/*
+	 * Swap the 2 words of the 64-bit sigset_t (they are stored
+	 * in the "wrong" endian in 32-bit user storage).
+	 */
+	switch (_NSIG_WORDS) {
 		case 4: newset.sig[3] = s32.sig[6] | (((long)s32.sig[7]) << 32);
 		case 3: newset.sig[2] = s32.sig[4] | (((long)s32.sig[5]) << 32);
 		case 2: newset.sig[1] = s32.sig[2] | (((long)s32.sig[3]) << 32);
@@ -1029,20 +939,24 @@ int sys32_rt_sigsuspend(sigset32_t* unewset, size_t sigsetsize, int p3, int p4, 
 	recalc_sigpending(current);
 	spin_unlock_irq(&current->sigmask_lock);
 
-	regs->gpr[3] = -EINTR;
+	regs->result = -EINTR;
+	regs->gpr[3] = EINTR;
+	regs->ccr |= 0x10000000;
 	while (1) {
 		current->state = TASK_INTERRUPTIBLE;
 		schedule();
 		if (do_signal(&saveset, regs))
+			/*
+			 * If a signal handler needs to be called,
+			 * do_signal() has set R3 to the signal number (the
+			 * first argument of the signal handler), so don't
+			 * overwrite that with EINTR !
+			 * In the other cases, do_signal() doesn't touch 
+			 * R3, so it's still set to -EINTR (see above).
+			 */
 			return regs->gpr[3];
 	}
 }
-
-
-
-
-
-
 
 
 /*
@@ -1054,87 +968,40 @@ setup_rt_frame32(struct pt_regs *regs, struct sigregs32 *frame,
 {
 	unsigned int copyreg4,copyreg5;
 	struct rt_sigframe_32 * rt_sf = (struct rt_sigframe_32 *) (u64)newsp;
-
+	int i;
   
 	if (verify_area(VERIFY_WRITE, frame, sizeof(*frame)))
 		goto badframe;
 	if (regs->msr & MSR_FP)
 		giveup_fpu(current);
-	/***************************************************************/
-	/*                                                             */ 
-	/* Copy the register contents for the pt_regs structure on the */
-	/*   kernel stack to the elf_gregset_t32 structure on the user */
-	/*   stack. This is a copy of 64 bit register values to 32 bit */
-	/*   register values. The high order 32 bits of the 64 bit     */
-	/*   registers are not needed since a 32 bit application is    */
-	/*   running and the saved registers are the contents of the   */
-	/*   user registers at the time of a system call.              */
-	/*                                                             */
-	/* The values saved on the user stack will be restored into    */
-	/*  the registers during the signal return processing          */
-	/*                                                             */
-	/* Note the +1 is needed in order to get the lower 32 bits     */
-	/*  of 64 bit register                                         */
-	/***************************************************************/
-	if (__copy_to_user(&frame->gp_regs[0], (u32*)(&regs->gpr[0])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[1], (u32*)(&regs->gpr[1])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[2], (u32*)(&regs->gpr[2])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[3], (u32*)(&regs->gpr[3])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[4], (u32*)(&regs->gpr[4])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[5], (u32*)(&regs->gpr[5])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[6], (u32*)(&regs->gpr[6])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[7], (u32*)(&regs->gpr[7])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[8], (u32*)(&regs->gpr[8])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[9], (u32*)(&regs->gpr[9])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[10], (u32*)(&regs->gpr[10])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[11], (u32*)(&regs->gpr[11])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[12], (u32*)(&regs->gpr[12])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[13], (u32*)(&regs->gpr[13])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[14], (u32*)(&regs->gpr[14])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[15], (u32*)(&regs->gpr[15])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[16], (u32*)(&regs->gpr[16])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[17], (u32*)(&regs->gpr[17])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[18], (u32*)(&regs->gpr[18])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[19], (u32*)(&regs->gpr[19])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[20], (u32*)(&regs->gpr[20])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[21], (u32*)(&regs->gpr[21])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[22], (u32*)(&regs->gpr[22])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[23], (u32*)(&regs->gpr[23])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[24], (u32*)(&regs->gpr[24])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[25], (u32*)(&regs->gpr[25])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[26], (u32*)(&regs->gpr[26])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[27], (u32*)(&regs->gpr[27])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[28], (u32*)(&regs->gpr[28])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[29], (u32*)(&regs->gpr[29])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[30], (u32*)(&regs->gpr[30])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[31], (u32*)(&regs->gpr[31])+1, sizeof(u32))) 
-		goto badframe;
 
-	/*****************************************************************************/
-	/* Copy the non gpr registers to the user stack                              */
-	/*****************************************************************************/
-
-	if (__copy_to_user(&frame->gp_regs[PT_NIP], (u32*)(&regs->gpr[PT_NIP])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[PT_MSR], (u32*)(&regs->gpr[PT_MSR])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[PT_ORIG_R3], (u32*)(&regs->gpr[PT_ORIG_R3])+1,
-			      sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[PT_CTR], (u32*)(&regs->gpr[PT_CTR])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[PT_LNK], (u32*)(&regs->gpr[PT_LNK])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[PT_XER], (u32*)(&regs->gpr[PT_XER])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[PT_CCR], (u32*)(&regs->gpr[PT_CCR])+1, sizeof(u32))
-	    || __copy_to_user(&frame->gp_regs[PT_RESULT], (u32*)(&regs->gpr[PT_RESULT])+1,
-			      sizeof(u32)))
-		goto badframe;
+	/*
+	 * Copy the register contents for the pt_regs structure on the
+	 *   kernel stack to the elf_gregset_t32 structure on the user
+	 *   stack. This is a copy of 64 bit register values to 32 bit
+	 *   register values. The high order 32 bits of the 64 bit
+	 *   registers are not needed since a 32 bit application is
+	 *   running and the saved registers are the contents of the
+	 *   user registers at the time of a system call.
+	 *
+	 * The values saved on the user stack will be restored into
+	 *  the registers during the signal return processing.
+	 *
+	 * Note the +1 is needed in order to get the lower 32 bits
+	 * of 64 bit register
+	 */
+	for (i = 0; i < sizeof(struct pt_regs32)/sizeof(u32); i++) {
+		if (__copy_to_user(&frame->gp_regs[i], (u32*)(&regs->gpr[i])+1, sizeof(u32)))
+			goto badframe;
+	}
 
 
-	/*****************************************************************************/
-	/* Now copy the floating point registers onto the user stack                 */
-	/*                                                                           */
-	/* Also set up so on the completion of the signal handler, the sys_sigreturn */
-	/*   will get control to reset the stack                                     */
-	/*****************************************************************************/
-
-
+	/*
+	 * Now copy the floating point registers onto the user stack
+	 *
+	 * Also set up so on the completion of the signal handler, the
+	 * sys_sigreturn will get control to reset the stack
+	 */
 	if (__copy_to_user(&frame->fp_regs, current->thread.fpr,
 			   ELF_NFPREG * sizeof(double))
 	    || __put_user(0x38000000U + __NR_rt_sigreturn, &frame->tramp[0])    /* li r0, __NR_rt_sigreturn */
@@ -1143,10 +1010,11 @@ setup_rt_frame32(struct pt_regs *regs, struct sigregs32 *frame,
 
 	flush_icache_range((unsigned long) &frame->tramp[0],
 			   (unsigned long) &frame->tramp[2]);
-
+	current->thread.fpscr = 0;	/* turn off all fp exceptions */
   
-	/* Retrieve rt_sigframe from stack and
-	   set up registers for signal handler
+	/*
+	 * Retrieve rt_sigframe from stack and
+	 * set up registers for signal handler
 	*/
 	newsp -= __SIGNAL_FRAMESIZE32;
       
@@ -1160,16 +1028,11 @@ setup_rt_frame32(struct pt_regs *regs, struct sigregs32 *frame,
 
 	regs->gpr[4] = copyreg4;
 	regs->gpr[5] = copyreg5;
-
-   
 	regs->gpr[1] = newsp;
 	regs->gpr[6] = (unsigned long) rt_sf;
-
-
 	regs->link = (unsigned long) frame->tramp;
 
 	return;
-
 
  badframe:
 	udbg_printf("setup_frame32 - badframe in setup_frame, regs=%p frame=%p newsp=%lx\n", regs, frame, newsp);  PPCDBG_ENTER_DEBUGGER();
@@ -1189,7 +1052,7 @@ handle_signal32(unsigned long sig, struct k_sigaction *ka,
 	      siginfo_t *info, sigset_t *oldset, struct pt_regs * regs,
 	      unsigned int *newspp, unsigned int frame)
 {
-	struct sigcontext32_struct *sc;
+	struct sigcontext32 *sc;
 	struct rt_sigframe_32 *rt_stack_frame;
 	siginfo_t32 siginfo32bit;
 
@@ -1231,14 +1094,15 @@ handle_signal32(unsigned long sig, struct k_sigaction *ka,
 			goto badframe; 
 		}
 	} else {
-		/* Put another sigcontext on the stack */
+		/* Put a sigcontext on the stack */
 		*newspp -= sizeof(*sc);
-		sc = (struct sigcontext32_struct *)(u64)*newspp;
+		sc = (struct sigcontext32 *)(u64)*newspp;
 		if (verify_area(VERIFY_WRITE, sc, sizeof(*sc)))
 			goto badframe;
-
-		/* Note the upper 32 bits of the signal mask are stored in the */
-		/*   unused part of the signal stack frame                     */  
+		/*
+		 * Note the upper 32 bits of the signal mask are stored
+		 * in the unused part of the signal stack frame
+		 */
 		if (__put_user((u32)(u64)ka->sa.sa_handler, &sc->handler)
 		    || __put_user(oldset->sig[0], &sc->oldmask)
 		    || __put_user((oldset->sig[0] >> 32), &sc->_unused[3])
@@ -1270,15 +1134,12 @@ badframe:
 }
 
 
-/****************************************************************************/
-/*  Start Alternate signal stack support                                    */
-/*                                                                          */
-/*                                                                          */
-/*                                                                          */
-/*  System Calls                                                            */
-/*       sigaltatck               sys32_sigaltstack                         */
-/*                                                                          */
-/****************************************************************************/
+/*
+ *  Start Alternate signal stack support
+ *
+ *  System Calls
+ *       sigaltatck               sys32_sigaltstack
+ */
 
 
 asmlinkage int sys32_sigaltstack(u32 newstack, u32 oldstack, int p3, int p4, int p6,
@@ -1289,8 +1150,10 @@ asmlinkage int sys32_sigaltstack(u32 newstack, u32 oldstack, int p3, int p4, int
 	mm_segment_t old_fs;
 	unsigned long sp;
 
-	/* set sp to the user stack on entry to the system call                  */
-	/*   the system call router sets R9 to the saved registers               */
+	/*
+	 * set sp to the user stack on entry to the system call
+	 * the system call router sets R9 to the saved registers
+	 */
 	sp = regs->gpr[1];
 
 	/*  Put new stack info in local 64 bit stack struct                      */ 
@@ -1314,15 +1177,14 @@ asmlinkage int sys32_sigaltstack(u32 newstack, u32 oldstack, int p3, int p4, int
 
 
 
-/****************************************************************************/
-/*  Start of do_signal32 routine                                            */
-/*                                                                          */
-/*   This routine gets control when a pemding signal needs to be processed  */
-/*     in the 32 bit target thread -                                        */
-/*                                                                          */
-/*   It handles both rt and non-rt signals                                  */
-/*                                                                          */
-/****************************************************************************/
+/*
+ *  Start of do_signal32 routine
+ *
+ *   This routine gets control when a pending signal needs to be processed
+ *     in the 32 bit target thread -
+ *
+ *   It handles both rt and non-rt signals
+ */
 
 /*
  * Note that 'init' is a special process: it doesn't get signals it doesn't
@@ -1445,9 +1307,8 @@ int do_signal32(sigset_t *oldset, struct pt_regs *regs)
 
 		if ( (ka->sa.sa_flags & SA_ONSTACK)
 		     && (! on_sig_stack(regs->gpr[1])))
-		{
 			newsp = (current->sas_ss_sp + current->sas_ss_size);
-		} else
+		else
 			newsp = regs->gpr[1];
 		newsp = frame = newsp - sizeof(struct sigregs32);
 
@@ -1466,15 +1327,12 @@ int do_signal32(sigset_t *oldset, struct pt_regs *regs)
 	}
 
 	if (newsp == frame)
-	{
 		return 0;		/* no signals delivered */
-	}
-	// Invoke correct stack setup routine 
+
+	/* Invoke correct stack setup routine */
 	if (ka->sa.sa_flags & SA_SIGINFO) 
 		setup_rt_frame32(regs, (struct sigregs32*)(u64)frame, newsp);
 	else
 		setup_frame32(regs, (struct sigregs32*)(u64)frame, newsp);
-
 	return 1;
-
 }

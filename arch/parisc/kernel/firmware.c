@@ -1,4 +1,4 @@
-/* arch/parisc/kernel/pdc.c  - safe pdc access routines
+/* arch/parisc/kernel/firmware.c  - safe pdc access routines
  *
  * Copyright 1999 SuSE GmbH Nuernberg (Philipp Rumpf, prumpf@tux.org)
  * portions Copyright 1999 The Puffin Group, (Alex deVries, David Kennedy)
@@ -174,6 +174,45 @@ int __init pdc_chassis_info(struct pdc_chassis_info *chassis_info, void *led_inf
         spin_unlock_irq(&pdc_lock);
 
         return retval;
+}
+
+/**
+ * pdc_pat_chassis_send_log - Sends a PDC PAT CHASSIS log message.
+ * @retval: -1 on error, 0 on success. Other value are PDC errors
+ *
+ * Must be correctly formatted or expect system crash
+ */
+#ifdef __LP64__
+int pdc_pat_chassis_send_log(unsigned long state, unsigned long data)
+{
+	if (!is_pdc_pat())
+		return -1;
+		
+	int retval = 0;
+	
+	spin_lock_irq(&pdc_lock);
+	retval = mem_pdc_call(PDC_PAT_CHASSIS_LOG, PDC_PAT_CHASSIS_WRITE_LOG, __pa(&state), __pa(&data));
+	spin_unlock_irq(&pdc_lock);
+	
+	return retval;
+}
+#endif
+
+/**
+ * pdc_chassis_disp - Updates display
+ * @retval: -1 on error, 0 on success
+ *
+ * Works on old PDC only (E class, others?)
+ */
+int pdc_chassis_disp(unsigned long disp)
+{
+	int retval = 0;
+
+	spin_lock_irq(&pdc_lock);
+	retval = mem_pdc_call(PDC_CHASSIS, PDC_CHASSIS_DISP, disp);
+	spin_unlock_irq(&pdc_lock);
+
+	return retval;
 }
 
 /**
@@ -507,11 +546,10 @@ int pdc_get_initiator( struct hardware_path *hwpath, unsigned char *scsi_id,
 
 /* BCJ-XXXX series boxes. E.G. "9000/785/C3000" */
 #define IS_SPROCKETS() (strlen(boot_cpu_data.pdc.sys_model_name) == 14 && \
-	strncmp(boot_cpu_data.pdc.sys_model_name, "9000/785", 9) == 0)
+	strncmp(boot_cpu_data.pdc.sys_model_name, "9000/785", 8) == 0)
 
 	retval = mem_pdc_call(PDC_INITIATOR, PDC_GET_INITIATOR, 
 			      __pa(pdc_result), __pa(hwpath));
-
 
 	if (retval >= PDC_OK) {
 		*scsi_id = (unsigned char) pdc_result[0];
@@ -534,10 +572,12 @@ int pdc_get_initiator( struct hardware_path *hwpath, unsigned char *scsi_id,
 		** pdc_result[3]	PDC suggested SCSI rate
 		*/
 
+		/*
+		** XXX REVISIT: Doesn't look like PAT PDC does the same.
+		** Problem is A500 also exports 50-pin SE SCSI port.
+		*/
 		if (IS_SPROCKETS()) {
 			/*
-			** Revisit: PAT PDC do the same thing?
-			** A500 also exports 50-pin SE SCSI.
 			**	0 == 8-bit
 			**	1 == 16-bit
 			*/

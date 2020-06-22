@@ -87,6 +87,7 @@ struct agp_bridge_data {
 	u32 *gatt_table;
 	u32 *gatt_table_real;
 	unsigned long scratch_page;
+	unsigned long scratch_page_real;
 	unsigned long gart_bus_addr;
 	unsigned long gatt_bus_addr;
 	u32 mode;
@@ -99,7 +100,6 @@ struct agp_bridge_data {
 	int needs_scratch_page;
 	int aperture_size_idx;
 	int num_aperture_sizes;
-	int num_of_masks;
 	int capndx;
 	int cant_use_aperture;
 

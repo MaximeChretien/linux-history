@@ -1,4 +1,4 @@
-/* $Id: entry.S,v 1.39 2002/04/24 00:46:45 bjornw Exp $
+/* $Id: entry.S,v 1.40 2002/12/02 08:11:41 starvik Exp $
  *
  *  linux/arch/cris/entry.S
  *
@@ -7,6 +7,9 @@
  *  Authors:	Bjorn Wesen (bjornw@axis.com)
  *
  *  $Log: entry.S,v $
+ *  Revision 1.40  2002/12/02 08:11:41  starvik
+ *  Merge of Linux 2.4.20
+ *
  *  Revision 1.39  2002/04/24 00:46:45  bjornw
  *  Added sys_tkill
  *
@@ -736,12 +739,12 @@ hw_bp_trig_ptr:
  * the grosser the code, at least with the gcc version in cris-dist-1.13.
  */
 
-/* int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags) */
+/* int arch_kernel_thread(int (*fn)(void *), void * arg, unsigned long flags) */
 /*                   r10                r11         r12  */
 
 	.text
-	.global kernel_thread
-kernel_thread:
+	.global arch_kernel_thread
+arch_kernel_thread:
 
 	/* Save ARG for later.  */
 	move.d $r11, $r13
@@ -1016,7 +1019,33 @@ sys_call_table:
         .long SYMBOL_NAME(sys_ni_syscall)       /* Reserved for Security */
         .long SYMBOL_NAME(sys_gettid)
         .long SYMBOL_NAME(sys_readahead)        /* 225 */
-	.long SYMBOL_NAME(sys_tkill)
+	.long SYMBOL_NAME(sys_setxattr)
+	.long SYMBOL_NAME(sys_lsetxattr)
+	.long SYMBOL_NAME(sys_fsetxattr)
+	.long SYMBOL_NAME(sys_getxattr)
+	.long SYMBOL_NAME(sys_lgetxattr)	/* 230 */
+	.long SYMBOL_NAME(sys_fgetxattr)
+	.long SYMBOL_NAME(sys_listxattr)
+	.long SYMBOL_NAME(sys_llistxattr)
+	.long SYMBOL_NAME(sys_flistxattr)
+	.long SYMBOL_NAME(sys_removexattr)	/* 235 */
+	.long SYMBOL_NAME(sys_lremovexattr)
+	.long SYMBOL_NAME(sys_fremovexattr)
+ 	.long SYMBOL_NAME(sys_tkill)
+	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for sendfile64 */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* 240 reserved for futex */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for sched_setaffinity */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for sched_getaffinity */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_set_thread_area */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_get_thread_area */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* 245 sys_io_setup */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_io_destroy */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_io_getevents */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_io_submit */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_io_cancel */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* 250 sys_alloc_hugepages */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_free_hugepages */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_exit_group */
 	
         /*
          * NOTE!! This doesn't have to be exact - we just have

@@ -1,10 +1,13 @@
-/* $Id: fasttimer.c,v 1.4 2002/05/28 17:47:59 johana Exp $
+/* $Id: fasttimer.c,v 1.5 2002/10/15 06:21:39 starvik Exp $
  * linux/arch/cris/kernel/fasttimer.c
  *
  * Fast timers for ETRAX100/ETRAX100LX
  * This may be useful in other OS than Linux so use 2 space indentation...
  *
  * $Log: fasttimer.c,v $
+ * Revision 1.5  2002/10/15 06:21:39  starvik
+ * Added call to init_waitqueue_head
+ *
  * Revision 1.4  2002/05/28 17:47:59  johana
  * Added del_fast_timer()
  *
@@ -551,6 +554,8 @@ void schedule_usleep(unsigned long us)
   struct fast_timer t;
 #ifdef DECLARE_WAITQUEUE
   wait_queue_head_t sleep_wait;
+  init_waitqueue_head(&sleep_wait);
+  {
   DECLARE_WAITQUEUE(wait, current);
 #else
   struct wait_queue *sleep_wait = NULL;
@@ -566,6 +571,9 @@ void schedule_usleep(unsigned long us)
   set_current_state(TASK_RUNNING);
   remove_wait_queue(&sleep_wait, &wait);
   D1(printk("done schedule_usleep(%d)\n", us));
+#ifdef DECLARE_WAITQUEUE
+  }
+#endif  
 }
 
 #ifdef CONFIG_PROC_FS

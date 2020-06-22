@@ -1125,6 +1125,21 @@ static char  prepare_for_delete_or_cut(
 		journal_mark_dirty (th, p_s_sb, p_s_bh);
 		inode->i_blocks -= p_s_sb->s_blocksize / 512;
 		reiserfs_free_block(th, tmp);
+		/* In case of big fragmentation it is possible that each block
+		   freed will cause dirtying of one more bitmap and then we will
+		   quickly overflow our transaction space. This is a
+		   counter-measure against that scenario */
+		if (journal_transaction_should_end(th, th->t_blocks_allocated)) {
+		    int orig_len_alloc = th->t_blocks_allocated ;
+		    pathrelse(p_s_path) ;
+
+		    journal_end(th, p_s_sb, orig_len_alloc) ;
+		    journal_begin(th, p_s_sb, orig_len_alloc) ;
+		    reiserfs_update_inode_transaction(inode) ;
+		    need_research = 1;
+		    break;
+		}
+
 		if ( item_moved (&s_ih, p_s_path) )  {
 			need_research = 1;
 			break ;

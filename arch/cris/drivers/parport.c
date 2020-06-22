@@ -1,4 +1,4 @@
-/* $Id: parport.c,v 1.9 2002/05/15 12:30:24 starvik Exp $
+/* $Id: parport.c,v 1.10 2002/10/03 05:54:24 starvik Exp $
  * 
  * Elinux parallel port driver
  * NOTE!
@@ -56,11 +56,11 @@ static inline int DPRINTK(void *nothing, ...) {return 0;}
 //#define CONFIG_PAR0_INT 1
 //#define CONFIG_PAR1_INT 1
 
-#define SETF(var, reg, field, val) \
-	var = (var & ~IO_MASK(##reg##, field)) | IO_FIELD(##reg##, field, val)
-
-#define SETS(var, reg, field, val) \
-	var = (var & ~IO_MASK(##reg##, field)) | IO_STATE(##reg##, field, val)
+/* Define some macros to access ETRAX 100 registers */
+#define SETF(var, reg, field, val) var = (var & ~IO_MASK_(reg##_, field##_)) | \
+					  IO_FIELD_(reg##_, field##_, val)
+#define SETS(var, reg, field, val) var = (var & ~IO_MASK_(reg##_, field##_)) | \
+					  IO_STATE_(reg##_, field##_, _##val)
 
 struct etrax100par_struct {
 	/* parallell port control */

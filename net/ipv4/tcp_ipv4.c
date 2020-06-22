@@ -45,13 +45,18 @@
  *	Vitaly E. Lavrov	:	Transparent proxy revived after year coma.
  *	Andi Kleen		:	Fix new listen.
  *	Andi Kleen		:	Fix accept error reporting.
+ *	YOSHIFUJI Hideaki @USAGI and:	Support IPV6_V6ONLY socket option, which
+ *	Alexey Kuznetsov		allow both IPv4 and IPv6 sockets to bind
+ *					a single port at the same time.
  */
 
 #include <linux/config.h>
+
 #include <linux/types.h>
 #include <linux/fcntl.h>
 #include <linux/random.h>
 #include <linux/cache.h>
+#include <linux/jhash.h>
 #include <linux/init.h>
 
 #include <net/icmp.h>
@@ -66,6 +71,7 @@
 extern int sysctl_ip_dynaddr;
 extern int sysctl_ip_default_ttl;
 int sysctl_tcp_tw_reuse = 0;
+int sysctl_tcp_low_latency = 0;
 
 /* Check TCP sequence numbers in ICMP packets. */
 #define ICMP_MIN_LENGTH 8
@@ -182,6 +188,7 @@ static inline int tcp_bind_conflict(struct sock *sk, struct tcp_bind_bucket *tb)
 	for( ; sk2 != NULL; sk2 = sk2->bind_next) {
 		if (sk != sk2 &&
 		    sk2->reuse <= 1 &&
+		    !ipv6_only_sock(sk2) &&
 		    sk->bound_dev_if == sk2->bound_dev_if) {
 			if (!sk_reuse	||
 			    !sk2->reuse	||
@@ -418,23 +425,27 @@ static struct sock *__tcp_v4_lookup_listener(struct sock *sk, u32 daddr, unsigne
 	struct sock *result = NULL;
 	int score, hiscore;
 
-	hiscore=0;
+	hiscore=-1;
 	for(; sk; sk = sk->next) {
-		if(sk->num == hnum) {
+		if(sk->num == hnum && !ipv6_only_sock(sk)) {
 			__u32 rcv_saddr = sk->rcv_saddr;
 
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+			score = sk->family == PF_INET ? 1 : 0;
+#else
 			score = 1;
+#endif
 			if(rcv_saddr) {
 				if (rcv_saddr != daddr)
 					continue;
-				score++;
+				score+=2;
 			}
 			if (sk->bound_dev_if) {
 				if (sk->bound_dev_if != dif)
 					continue;
-				score++;
+				score+=2;
 			}
-			if (score == 3)
+			if (score == 5)
 				return sk;
 			if (score > hiscore) {
 				hiscore = score;
@@ -456,6 +467,7 @@ __inline__ struct sock *tcp_v4_lookup_listener(u32 daddr, unsigned short hnum, i
 		if (sk->num == hnum &&
 		    sk->next == NULL &&
 		    (!sk->rcv_saddr || sk->rcv_saddr == daddr) &&
+		    (sk->family == PF_INET || !ipv6_only_sock(sk)) &&
 		    !sk->bound_dev_if)
 			goto sherry_cache;
 		sk = __tcp_v4_lookup_listener(sk, daddr, hnum, dif);
@@ -857,12 +869,9 @@ static __inline__ int tcp_v4_iif(struct sk_buff *skb)
 	return ((struct rtable*)skb->dst)->rt_iif;
 }
 
-static __inline__ unsigned tcp_v4_synq_hash(u32 raddr, u16 rport)
+static __inline__ u32 tcp_v4_synq_hash(u32 raddr, u16 rport, u32 rnd)
 {
-	unsigned h = raddr ^ rport;
-	h ^= h>>16;
-	h ^= h>>8;
-	return h&(TCP_SYNQ_HSIZE-1);
+	return (jhash_2words(raddr, (u32) rport, rnd) & (TCP_SYNQ_HSIZE - 1));
 }
 
 static struct open_request *tcp_v4_search_req(struct tcp_opt *tp, 
@@ -873,7 +882,7 @@ static struct open_request *tcp_v4_search_req(struct tcp_opt *tp,
 	struct tcp_listen_opt *lopt = tp->listen_opt;
 	struct open_request *req, **prev;  
 
-	for (prev = &lopt->syn_table[tcp_v4_synq_hash(raddr, rport)];
+	for (prev = &lopt->syn_table[tcp_v4_synq_hash(raddr, rport, lopt->hash_rnd)];
 	     (req = *prev) != NULL;
 	     prev = &req->dl_next) {
 		if (req->rmt_port == rport &&
@@ -893,7 +902,7 @@ static void tcp_v4_synq_add(struct sock *sk, struct open_request *req)
 {
 	struct tcp_opt *tp = &sk->tp_pinfo.af_tcp;
 	struct tcp_listen_opt *lopt = tp->listen_opt;
-	unsigned h = tcp_v4_synq_hash(req->af.v4_req.rmt_addr, req->rmt_port);
+	u32 h = tcp_v4_synq_hash(req->af.v4_req.rmt_addr, req->rmt_port, lopt->hash_rnd);
 
 	req->expires = jiffies + TCP_TIMEOUT_INIT;
 	req->retrans = 0;
@@ -1652,12 +1661,6 @@ static int tcp_v4_checksum_init(struct sk_buff *skb)
  */
 int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 {
-#ifdef CONFIG_FILTER
-	struct sk_filter *filter = sk->filter;
-	if (filter && sk_filter(skb, filter))
-		goto discard;
-#endif /* CONFIG_FILTER */
-
   	IP_INC_STATS_BH(IpInDelivers);
 
 	if (sk->state == TCP_ESTABLISHED) { /* Fast path */
@@ -1760,6 +1763,9 @@ process:
 
 	if (sk->state == TCP_TIME_WAIT)
 		goto do_time_wait;
+
+	if (sk_filter(sk, skb, 0))
+		goto discard_and_relse;
 
 	skb->dev = NULL;
 

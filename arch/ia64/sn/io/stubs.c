@@ -28,8 +28,8 @@
 
 int pcibr_prefetch_enable_rev, pcibr_wg_enable_rev;
 int default_intr_pri;
-int force_fire_and_forget;
-int ignore_conveyor_override;
+int force_fire_and_forget = 1;
+int ignore_conveyor_override = 0;
 
 devfs_handle_t dummy_vrtx;	/* Needed for cpuid_to_vertex() in hack.h */
 
@@ -52,36 +52,6 @@ is_sys_critical_vertex(devfs_handle_t x)
 	FIXME("is_sys_critical_vertex : returns 0");
 	return(0);
 }
-
-char *
-nic_bridge_vertex_info(devfs_handle_t v, nic_data_t mcr)
-{
-	FIXME("nic_bridge_vertex_info : returns NULL");
-	return((char *)0);
-}
-
-void *
-snia_kmem_alloc_node(register size_t size, register int flags, cnodeid_t node)
-{
-        /* Allocates on node 'node' */
-	FIXME("snia_kmem_alloc_node : use kmalloc");
-	return(kmalloc(size, GFP_KERNEL));
-}
-
-void *
-snia_kmem_zalloc_node(register size_t size, register int flags, cnodeid_t node)
-{
-	FIXME("snia_kmem_zalloc_node : use kmalloc");
-	return(kmalloc(size, GFP_KERNEL));
-}
-
-void
-snia_kmem_free(void *where, int size)
-{
-	FIXME("snia_kmem_free : use kfree");
-	return(kfree(where));
-}
-
 
 void *
 snia_kmem_zone_alloc(register zone_t *zone, int flags)
@@ -115,13 +85,6 @@ compare_and_swap_ptr(void **location, void *old_ptr, void *new_ptr)
 		return(0);
 }
 
-void *
-swap_ptr(void **loc, void *new)
-{
-	FIXME("swap_ptr : returns null");
-	return((void *)0);
-}
-
 /* For ml/SN/SN1/slots.c */
 /* ARGSUSED */
 slotid_t get_widget_slotnum(int xbow, int widget)
@@ -153,10 +116,8 @@ nic_vmc_check(devfs_handle_t vhdl, char *nicinfo)
 char *
 nic_vertex_info_get(devfs_handle_t v)
 {
-
 	FIXME("nic_vertex_info_get\n");
 	return(NULL);
-
 }
 
 int

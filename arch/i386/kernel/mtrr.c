@@ -492,6 +492,14 @@ static int have_wrcomb (void)
 		return 0;
 		}
 	}
+	/* Intel 450NX errata # 23. Non ascending cachline evictions to
+	   write combining memory may resulting in data corruption */
+	dev = pci_find_device(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82451NX, NULL);
+	if(dev)
+	{
+		printk(KERN_INFO "mtrr: Intel 450NX MMC detected. Write-combining disabled.\n");
+		return 0;
+	}		
 
     switch ( mtrr_if )
     {
@@ -2143,7 +2151,7 @@ static int __init mtrr_setup(void)
 		   query the width (in bits) of the physical
 		   addressable memory on the Hammer family.
 		 */
-		if (boot_cpu_data.x86 == 7 && (cpuid_eax(0x80000000) >= 0x80000008)) {
+		if (boot_cpu_data.x86 == 15 && (cpuid_eax(0x80000000) >= 0x80000008)) {
 			u32	phys_addr;
 			phys_addr = cpuid_eax(0x80000008) & 0xff ;
 			size_or_mask = ~((1 << (phys_addr - PAGE_SHIFT)) - 1);

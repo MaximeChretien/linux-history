@@ -282,9 +282,9 @@ static int __init acpi_parse_hpet(struct acpi_table_header *header, unsigned lon
 		return -1;
 	}
 
-	hpet.address = hpet_tbl->addr.addrl | ((long) hpet_tbl->addr.addrh << 32);
+	hpet_address = hpet_tbl->addr.addrl | ((long) hpet_tbl->addr.addrh << 32);
 
-	printk(KERN_INFO "acpi: HPET id: %#x base: %#lx\n", hpet_tbl->id, hpet.address);
+	printk(KERN_INFO "acpi: HPET id: %#x base: %#lx\n", hpet_tbl->id, hpet_address);
 
 	return 0;
 }

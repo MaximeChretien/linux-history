@@ -1025,7 +1025,8 @@ void fib_node_get_info(int type, int dead, struct fib_info *fi, u32 prefix, u32 
 		len = sprintf(buffer, "%s\t%08X\t%08X\t%04X\t%d\t%u\t%d\t%08X\t%d\t%u\t%u",
 			      fi->fib_dev ? fi->fib_dev->name : "*", prefix,
 			      fi->fib_nh->nh_gw, flags, 0, 0, fi->fib_priority,
-			      mask, fi->fib_advmss+40, fi->fib_window, fi->fib_rtt>>3);
+			      mask, (fi->fib_advmss ? fi->fib_advmss+40 : 0),
+			      fi->fib_window, fi->fib_rtt>>3);
 	} else {
 		len = sprintf(buffer, "*\t%08X\t%08X\t%04X\t%d\t%u\t%d\t%08X\t%d\t%u\t%u",
 			      prefix, 0,

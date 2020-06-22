@@ -132,7 +132,7 @@ static int jumpshot_send_control(struct us_data  *us,
 
 	if (result < 0) {
 		/* if the command was aborted, indicate that */
-		if (result == -ENOENT)
+		if (result == -ECONNRESET)
 			return USB_STOR_TRANSPORT_ABORTED;
 
 		/* a stall is a fatal condition from the device */
@@ -181,8 +181,8 @@ static int jumpshot_raw_bulk(int direction,
 			return US_BULK_TRANSFER_FAILED;
 		}
 
-		// -ENOENT -- we canceled this transfer
-		if (result == -ENOENT) {
+		// -ECONNRESET -- we canceled this transfer
+		if (result == -ECONNRESET) {
 			US_DEBUGP("jumpshot_raw_bulk:  transfer aborted\n");
 			return US_BULK_TRANSFER_ABORTED;
 		}

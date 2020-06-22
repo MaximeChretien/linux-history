@@ -1,5 +1,5 @@
 #
-# Makefile for BNEP protocol
+# Makefile for the Linux Bluetooth BNEP layer
 #
 
 O_TARGET := bnep.o

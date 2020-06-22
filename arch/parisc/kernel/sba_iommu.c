@@ -812,10 +812,8 @@ sba_dma_supported( struct pci_dev *dev, u64 mask)
 		return(0);
 	}
 
-	dev->dma_mask = mask;	/* save it */
-
 	/* only support 32-bit PCI devices - no DAC support (yet) */
-	return((int) (mask == 0xffffffff));
+	return((int) (mask == 0xffffffffUL));
 }
 
 

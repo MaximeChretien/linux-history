@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.pmac_backlight.c 1.10 12/01/01 20:09:06 benh
- */
-/*
  * Miscellaneous procedures for dealing with the PowerMac hardware.
  * Contains support for the backlight.
  * 

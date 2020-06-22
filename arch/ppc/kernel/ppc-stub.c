@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.ppc-stub.c 1.6 05/17/01 18:14:21 cort
- */
-/*
  * ppc-stub.c:  KGDB support for the Linux kernel.
  *
  * adapted from arch/sparc/kernel/sparc-stub.c for the PowerPC
@@ -137,6 +134,9 @@ static const char hexchars[]="0123456789abcdef";
 /* struct tt_entry kgdb_savettable[256]; */
 /* typedef void (*trapfunc_t)(void); */
 
+static void kgdb_fault_handler(struct pt_regs *regs);
+static void handle_exception (struct pt_regs *regs);
+
 #if 0
 /* Install an exception handler for kgdb */
 static void exceptionHandler(int tnum, unsigned int *tfunc)
@@ -185,7 +185,7 @@ hex(unsigned char ch)
  * return 0.
  */
 static unsigned char *
-mem2hex(char *mem, char *buf, int count)
+mem2hex(const char *mem, char *buf, int count)
 {
 	unsigned char ch;
 
@@ -347,18 +347,6 @@ static void kgdb_flush_cache_all(void)
 	flush_instruction_cache();
 }
 
-static inline int get_msr(void)
-{
-	int msr;
-	asm volatile("mfmsr %0" : "=r" (msr):);
-	return msr;
-}
-
-static inline void set_msr(int msr)
-{
-	asm volatile("mtmsr %0" : : "r" (msr));
-}
-
 /* Set up exception handlers for tracing and breakpoints
  * [could be called kgdb_init()]
  */
@@ -498,8 +486,8 @@ handle_exception (struct pt_regs *regs)
 
 	kgdb_interruptible(0);
 	lock_kernel();
-	msr = get_msr();
-	set_msr(msr & ~MSR_EE);	/* disable interrupts */
+	msr = mfmsr();
+	mtmsr(msr & ~MSR_EE);	/* disable interrupts */
 
 	if (regs->nip == (unsigned long)breakinst) {
 		/* Skip over breakpoint trap insn */
@@ -526,7 +514,7 @@ handle_exception (struct pt_regs *regs)
 	*ptr++ = hexchars[SP_REGNUM >> 4];
 	*ptr++ = hexchars[SP_REGNUM & 0xf];
 	*ptr++ = ':';
-	ptr = mem2hex(((char *)&regs) + SP_REGNUM*4, ptr, 4);
+	ptr = mem2hex(((char *)regs) + SP_REGNUM*4, ptr, 4);
 	*ptr++ = ';';
 #endif
 
@@ -685,7 +673,7 @@ handle_exception (struct pt_regs *regs)
  * some location may have changed something that is in the instruction cache.
  */
 			kgdb_flush_cache_all();
-			set_msr(msr);
+			mtmsr(msr);
 			kgdb_interruptible(1);
 			unlock_kernel();
 			kgdb_active = 0;
@@ -694,9 +682,6 @@ handle_exception (struct pt_regs *regs)
 		case 's':
 			kgdb_flush_cache_all();
 			regs->msr |= MSR_SE;
-#if 0
-			set_msr(msr | MSR_SE);
-#endif
 			unlock_kernel();
 			kgdb_active = 0;
 			return;
@@ -727,13 +712,15 @@ breakpoint(void)
 		return;
 	}
 
-	asm("	.globl breakinst
-	     breakinst: .long 0x7d821008
-            ");
+	asm("	.globl breakinst	\n\
+	     breakinst: .long 0x7d821008");
 }
 
-/* Output string in GDB O-packet format if GDB has connected. If nothing
-   output, returns 0 (caller must then handle output). */
+#ifdef CONFIG_KGDB_CONSOLE 
+/* 
+ * Output string in GDB O-packet format if GDB has connected. If nothing
+ * output, returns 0 (caller must then handle output) 
+ */
 int
 kgdb_output_string (const char* s, unsigned int count)
 {
@@ -750,15 +737,5 @@ kgdb_output_string (const char* s, unsigned int count)
 	putpacket(buffer);
 
         return 1;
- }
-
-#ifndef CONFIG_8xx
-
-/* I don't know why other platforms don't need this.  The function for
- * the 8xx is found in arch/ppc/8xx_io/uart.c.  -- Dan
- */
-void
-kgdb_map_scc(void)
-{
 }
 #endif

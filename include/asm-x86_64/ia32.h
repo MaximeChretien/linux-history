@@ -234,12 +234,6 @@ struct iovec32 {
 	int iov_len; 
 };
 
-
-#ifdef __KERNEL__
-struct iovec *get_iovec32(struct iovec32 *iov32, struct iovec *iov_buf, u32 count, int type);
-#endif
-
-
 #endif /* !CONFIG_IA32_SUPPORT */
  
 #endif 

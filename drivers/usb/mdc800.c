@@ -726,7 +726,7 @@ static ssize_t mdc800_device_read (struct file *file, char *buf, size_t len, lof
 		else
 		{
 			/* memcpy Bytes */
-			memcpy (ptr, &mdc800->out [mdc800->out_ptr], sts);
+			copy_to_user(ptr, &mdc800->out [mdc800->out_ptr], sts);
 			ptr+=sts;
 			left-=sts;
 			mdc800->out_ptr+=sts;
@@ -763,14 +763,21 @@ static ssize_t mdc800_device_write (struct file *file, const char *buf, size_t l
 
 	while (i<len)
 	{
+		unsigned char c;
 		if (signal_pending (current)) 
 		{
 			up (&mdc800->io_lock);
 			return -EINTR;
 		}
+		
+		if(get_user(c, buf+i))
+		{
+			up(&mdc800->io_lock);
+			return -EFAULT;
+		}
 
 		/* check for command start */
-		if (buf [i] == (char) 0x55)
+		if (c == 0x55)
 		{
 			mdc800->in_count=0;
 			mdc800->out_count=0;
@@ -781,12 +788,11 @@ static ssize_t mdc800_device_write (struct file *file, const char *buf, size_t l
 		/* save command byte */
 		if (mdc800->in_count < 8)
 		{
-			mdc800->in[mdc800->in_count]=buf[i];
+			mdc800->in[mdc800->in_count] = c;
 			mdc800->in_count++;
 		}
 		else
 		{
-			err ("Command is to long !\n");
 			up (&mdc800->io_lock);
 			return -EIO;
 		}
@@ -861,8 +867,8 @@ static ssize_t mdc800_device_write (struct file *file, const char *buf, size_t l
 							return -EIO;
 						}
 
-						/* Write dummy data, (this is ugly but part of the USB Protokoll */
-						/* if you use endpoint 1 as bulk and not as irq */
+						/* Write dummy data, (this is ugly but part of the USB Protocol */
+						/* if you use endpoint 1 as bulk and not as irq) */
 						memcpy (mdc800->out, mdc800->camera_response,8);
 
 						/* This is the interpreted answer */

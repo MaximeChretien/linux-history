@@ -2,7 +2,6 @@
 #ifndef _IEEE1394_CORE_H
 #define _IEEE1394_CORE_H
 
-#include <linux/tqueue.h>
 #include <linux/slab.h>
 #include <linux/devfs_fs_kernel.h>
 #include <linux/proc_fs.h>
@@ -69,7 +68,10 @@ struct hpsb_packet {
         /* Very core internal, don't care. */
         struct semaphore state_change;
 
-	struct list_head complete_tq;
+	/* Function (and possible data to pass to it) to call when this
+	 * packet is completed.  */
+	void (*complete_routine)(void *);
+	void *complete_data;
 
         /* Store jiffies for implementing bus timeouts. */
         unsigned long sendtime;
@@ -77,8 +79,9 @@ struct hpsb_packet {
         quadlet_t embedded_header[5];
 };
 
-/* add a new task for when a packet completes */
-void hpsb_add_packet_complete_task(struct hpsb_packet *packet, struct tq_struct *tq);
+/* Set a task for when a packet completes */
+void hpsb_set_packet_complete_task(struct hpsb_packet *packet,
+		void (*routine)(void *), void *data);
 
 static inline struct hpsb_packet *driver_packet(struct list_head *l)
 {
@@ -104,6 +107,11 @@ static inline unsigned int get_hpsb_generation(struct hpsb_host *host)
 {
         return atomic_read(&host->generation);
 }
+
+/*
+ * Send a PHY configuration packet.
+ */
+int hpsb_send_phy_config(struct hpsb_host *host, int rootid, int gapcnt);
 
 /*
  * Queue packet for transmitting, return 0 for failure.
@@ -195,7 +203,7 @@ void hpsb_packet_received(struct hpsb_host *host, quadlet_t *data, size_t size,
 /* return the index (within a minor number block) of a file */
 static inline unsigned char ieee1394_file_to_instance(struct file *file)
 {
-	unsigned char minor = minor(file->f_dentry->d_inode->i_rdev);
+	unsigned char minor = MINOR(file->f_dentry->d_inode->i_rdev);
 	
 	/* return lower 4 bits */
 	return minor & 0xF;

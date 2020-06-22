@@ -2016,7 +2016,7 @@ int init_module(void)
 	retval=misc_register(&isiloader_device);
 	if (retval<0) {
 		printk(KERN_ERR "ISICOM: Unable to register firmware loader driver.\n");
-		return -EIO;
+		return retval;
 	}
 	
 	if (!isicom_init()) {

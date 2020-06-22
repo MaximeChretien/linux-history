@@ -26,7 +26,7 @@
 
 unsigned long get_ns_in_jiffie(void);
 
-static inline unsigned long get_us_in_jiffie_highres(void)
+extern inline unsigned long get_us_in_jiffie_highres(void)
 {
 	return get_ns_in_jiffie()/1000;
 }
@@ -37,7 +37,7 @@ static inline unsigned long get_us_in_jiffie_highres(void)
 
 typedef unsigned int cycles_t;
 
-static inline cycles_t get_cycles(void)
+extern inline cycles_t get_cycles(void)
 {
         return 0;
 }

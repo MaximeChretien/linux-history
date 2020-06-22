@@ -71,6 +71,9 @@
  *  CacheSize bug workaround updates for AMD, Intel & VIA Cyrix.
  *  Dave Jones <davej@suse.de>, September, October 2001.
  *
+ *  Provisions for empty E820 memory regions (reported by certain BIOSes).
+ *  Alex Achenbach <xela@slit.de>, December 2002.
+ *
  */
 
 /*
@@ -501,7 +504,7 @@ static int __init sanitize_e820_map(struct e820entry * biosmap, char * pnr_map)
 	int chgidx, still_changing;
 	int overlap_entries;
 	int new_bios_entry;
-	int old_nr, new_nr;
+	int old_nr, new_nr, chg_nr;
 	int i;
 
 	/*
@@ -555,20 +558,24 @@ static int __init sanitize_e820_map(struct e820entry * biosmap, char * pnr_map)
 	for (i=0; i < 2*old_nr; i++)
 		change_point[i] = &change_point_list[i];
 
-	/* record all known change-points (starting and ending addresses) */
+	/* record all known change-points (starting and ending addresses),
+	   omitting those that are for empty memory regions */
 	chgidx = 0;
 	for (i=0; i < old_nr; i++)	{
-		change_point[chgidx]->addr = biosmap[i].addr;
-		change_point[chgidx++]->pbios = &biosmap[i];
-		change_point[chgidx]->addr = biosmap[i].addr + biosmap[i].size;
-		change_point[chgidx++]->pbios = &biosmap[i];
+		if (biosmap[i].size != 0) {
+			change_point[chgidx]->addr = biosmap[i].addr;
+			change_point[chgidx++]->pbios = &biosmap[i];
+			change_point[chgidx]->addr = biosmap[i].addr + biosmap[i].size;
+			change_point[chgidx++]->pbios = &biosmap[i];
+		}
 	}
+	chg_nr = chgidx;    	/* true number of change-points */
 
 	/* sort change-point list by memory addresses (low -> high) */
 	still_changing = 1;
 	while (still_changing)	{
 		still_changing = 0;
-		for (i=1; i < 2*old_nr; i++)  {
+		for (i=1; i < chg_nr; i++)  {
 			/* if <current_addr> > <last_addr>, swap */
 			/* or, if current=<start_addr> & last=<end_addr>, swap */
 			if ((change_point[i]->addr < change_point[i-1]->addr) ||
@@ -591,7 +598,7 @@ static int __init sanitize_e820_map(struct e820entry * biosmap, char * pnr_map)
 	last_type = 0;		 /* start with undefined memory type */
 	last_addr = 0;		 /* start with 0 as last starting address */
 	/* loop through change-points, determining affect on the new bios map */
-	for (chgidx=0; chgidx < 2*old_nr; chgidx++)
+	for (chgidx=0; chgidx < chg_nr; chgidx++)
 	{
 		/* keep track of all overlapping bios entries */
 		if (change_point[chgidx]->addr == change_point[chgidx]->pbios->addr)
@@ -1259,19 +1266,19 @@ static void __init display_cacheinfo(struct cpuinfo_x86 *c)
 			l2size = 256;
 	}
 
-	/* Intel PIII Tualatin. This comes in two flavours.
-	 * One has 256kb of cache, the other 512. We have no way
-	 * to determine which, so we use a boottime override
-	 * for the 512kb model, and assume 256 otherwise.
-	 */
-	if ((c->x86_vendor == X86_VENDOR_INTEL) && (c->x86 == 6) &&
-		(c->x86_model == 11) && (l2size == 0))
-		l2size = 256;
+	if (c->x86_vendor == X86_VENDOR_CENTAUR) {
+		/* VIA C3 CPUs (670-68F) need further shifting. */
+		if ((c->x86 == 6) &&
+		    ((c->x86_model == 7) || (c->x86_model == 8))) {
+			l2size >>= 8;
+		}
 
-	/* VIA C3 CPUs (670-68F) need further shifting. */
-	if (c->x86_vendor == X86_VENDOR_CENTAUR && (c->x86 == 6) &&
-		((c->x86_model == 7) || (c->x86_model == 8))) {
-		l2size = l2size >> 8;
+		/* VIA also screwed up Nehemiah stepping 1, and made
+		   it return '65KB' instead of '64KB'
+		   - Note, it seems this may only be in engineering samples. */
+		if ((c->x86==6) && (c->x86_model==9) &&
+		    (c->x86_mask==1) && (l2size==65))
+			l2size -= 1;
 	}
 
 	/* Allow user to override all this if necessary. */
@@ -1421,7 +1428,7 @@ static int __init init_amd(struct cpuinfo_x86 *c)
 			 * If the BIOS didn't enable it already, enable it
 			 * here.
 			 */
-			if (c->x86_model == 6 || c->x86_model == 7) {
+			if (c->x86_model >= 6 && c->x86_model <= 10) {
 				if (!test_bit(X86_FEATURE_XMM,
 					      &c->x86_capability)) {
 					printk(KERN_INFO
@@ -1433,8 +1440,20 @@ static int __init init_amd(struct cpuinfo_x86 *c)
                                                 &c->x86_capability);
 				}
 			}
-			break;
 
+			/* It's been determined by AMD that Athlons since model 8 stepping 1
+			 * are more robust with CLK_CTL set to 200xxxxx instead of 600xxxxx
+			 * As per AMD technical note 27212 0.2
+			 */
+			if ((c->x86_model == 8 && c->x86_mask>=1) || (c->x86_model > 8)) {
+				rdmsr(MSR_K7_CLK_CTL, l, h);
+				if ((l & 0xfff00000) != 0x20000000) {
+					printk ("CPU: CLK_CTL MSR was %x. Reprogramming to %x\n", l,
+						((l & 0x000fffff)|0x20000000));
+					wrmsr(MSR_K7_CLK_CTL, (l & 0x000fffff)|0x20000000, h);
+				}
+			}
+			break;
 	}
 
 	display_cacheinfo(c);
@@ -1478,11 +1497,9 @@ static void __init do_cyrix_devid(unsigned char *dir0, unsigned char *dir1)
 }
 
 /*
- * Cx86_dir0_msb is a HACK needed by check_cx686_cpuid/slop in bugs.h in
- * order to identify the Cyrix CPU model after we're out of setup.c
- *
- * Actually since bugs.h doesn't even reference this perhaps someone should
- * fix the documentation ???
+ * Cx86_dir0_msb is a HACK needed by check_cx686_cpuid/slop in
+ * order to identify the Cyrix CPU model after we're out of the
+ * initial setup.
  */
 static unsigned char Cx86_dir0_msb __initdata = 0;
 
@@ -2076,6 +2093,10 @@ static void __init init_centaur(struct cpuinfo_x86 *c)
 					set_bit(X86_FEATURE_CX8, &c->x86_capability);
 					set_bit(X86_FEATURE_3DNOW, &c->x86_capability);
 
+					/* fall through */
+
+				case 9: /* Nehemiah */
+				default:
 					get_model_name(c);
 					display_cacheinfo(c);
 					break;
@@ -2183,6 +2204,7 @@ extern void trap_init_f00f_bug(void);
 #define LVL_1_DATA      2
 #define LVL_2           3
 #define LVL_3           4
+#define LVL_TRACE       5
 
 struct _cache_table
 {
@@ -2202,6 +2224,9 @@ static struct _cache_table cache_table[] __initdata =
 	{ 0x23, LVL_3,      1024 },
 	{ 0x25, LVL_3,      2048 },
 	{ 0x29, LVL_3,      4096 },
+	{ 0x39, LVL_2,      128 },
+	{ 0x3b, LVL_2,      128 },
+	{ 0x3C, LVL_2,      256 },
 	{ 0x41, LVL_2,      128 },
 	{ 0x42, LVL_2,      256 },
 	{ 0x43, LVL_2,      512 },
@@ -2210,11 +2235,15 @@ static struct _cache_table cache_table[] __initdata =
 	{ 0x66, LVL_1_DATA, 8 },
 	{ 0x67, LVL_1_DATA, 16 },
 	{ 0x68, LVL_1_DATA, 32 },
+	{ 0x70, LVL_TRACE,  12 },
+	{ 0x71, LVL_TRACE,  16 },
+	{ 0x72, LVL_TRACE,  32 },
 	{ 0x79, LVL_2,      128 },
 	{ 0x7A, LVL_2,      256 },
 	{ 0x7B, LVL_2,      512 },
 	{ 0x7C, LVL_2,      1024 },
 	{ 0x82, LVL_2,      256 },
+	{ 0x83, LVL_2,      512 },
 	{ 0x84, LVL_2,      1024 },
 	{ 0x85, LVL_2,      2048 },
 	{ 0x00, 0, 0}
@@ -2222,7 +2251,7 @@ static struct _cache_table cache_table[] __initdata =
 
 static void __init init_intel(struct cpuinfo_x86 *c)
 {
-	unsigned int l1i = 0, l1d = 0, l2 = 0, l3 = 0; /* Cache sizes */
+	unsigned int trace = 0, l1i = 0, l1d = 0, l2 = 0, l3 = 0; /* Cache sizes */
 	char *p = NULL;
 #ifndef CONFIG_X86_F00F_WORKS_OK
 	static int f00f_workaround_enabled = 0;
@@ -2282,8 +2311,10 @@ static void __init init_intel(struct cpuinfo_x86 *c)
 						case LVL_3:
 							l3 += cache_table[k].size;
 							break;
+						case LVL_TRACE:
+							trace += cache_table[k].size;
+							break;
 						}
-
 						break;
 					}
 
@@ -2291,9 +2322,25 @@ static void __init init_intel(struct cpuinfo_x86 *c)
 				}
 			}
 		}
-		if ( l1i || l1d )
-			printk(KERN_INFO "CPU: L1 I cache: %dK, L1 D cache: %dK\n",
-			       l1i, l1d);
+
+		/* Intel PIII Tualatin. This comes in two flavours.
+		 * One has 256kb of cache, the other 512. We have no way
+		 * to determine which, so we use a boottime override
+		 * for the 512kb model, and assume 256 otherwise.
+		 */
+		if ((c->x86 == 6) && (c->x86_model == 11) && (l2 == 0))
+			l2 = 256;
+		/* Allow user to override all this if necessary. */
+		if (cachesize_override != -1)
+			l2 = cachesize_override;
+
+		if ( trace )
+			printk (KERN_INFO "CPU: Trace cache: %dK uops", trace);
+		else if ( l1i )
+			printk (KERN_INFO "CPU: L1 I cache: %dK", l1i);
+		if ( l1d )
+			printk(", L1 D cache: %dK\n", l1d);
+
 		if ( l2 )
 			printk(KERN_INFO "CPU: L2 cache: %dK\n", l2);
 		if ( l3 )
@@ -2412,6 +2459,8 @@ void __init get_cpu_vendor(struct cpuinfo_x86 *c)
 	else if (!strcmp(v, "GenuineTMx86") ||
 		 !strcmp(v, "TransmetaCPU"))
 		c->x86_vendor = X86_VENDOR_TRANSMETA;
+	else if (!strcmp(v, "SiS SiS SiS "))
+		c->x86_vendor = X86_VENDOR_SIS;
 	else
 		c->x86_vendor = X86_VENDOR_UNKNOWN;
 }
@@ -2463,6 +2512,9 @@ static struct cpu_model_info cpu_models[] __initdata = {
 	{ X86_VENDOR_RISE,	5,
 	  { "iDragon", NULL, "iDragon", NULL, NULL, NULL, NULL,
 	    NULL, "iDragon II", "iDragon II", NULL, NULL, NULL, NULL, NULL, NULL }},
+	{ X86_VENDOR_SIS,	5,
+	  { NULL, NULL, NULL, NULL, "SiS55x", NULL, NULL,
+	    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL }},
 };
 
 /* Look up CPU names by table lookup. */

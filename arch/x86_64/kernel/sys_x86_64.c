@@ -65,23 +65,34 @@ out:
 	return error;
 }
 
+
 unsigned long arch_get_unmapped_area(struct file *filp, unsigned long addr, unsigned long len, unsigned long pgoff, unsigned long flags)
 {
 	struct vm_area_struct *vma;
 	unsigned long end = TASK_SIZE;
 
-	if (current->thread.flags & THREAD_IA32)
-		flags |= MAP_32BIT; 
-	if (flags & MAP_32BIT)
-		end = 0xffffffff-1;
+	if (current->thread.flags & THREAD_IA32) {
+		if (!addr) 
+			addr = TASK_UNMAPPED_32;
+		end = 0xffff0000;
+	} else if (flags & MAP_32BIT) { 
+		/* This is usually used needed to map code in small
+		   model: it needs to be in the first 31bit. Limit it
+		   to that.  This means we need to move the unmapped
+		   base down for this case.  This may give conflicts
+		   with the heap, but we assume that malloc falls back
+		   to mmap. Give it 1GB of playground for now. -AK */ 
+		if (!addr) 
+			addr = 0x40000000; 
+		end = 0x80000000;		
+	} else { 
+		if (!addr) 
+			addr = TASK_UNMAPPED_64; 
+		end = TASK_SIZE; 
+		}
+
 	if (len > end)
 		return -ENOMEM;
-	if (!addr) { 
-		addr = TASK_UNMAPPED_64;
-		if (flags & MAP_32BIT) {
-			addr = TASK_UNMAPPED_32;
-		}
-	} 
 	addr = PAGE_ALIGN(addr);
 
 	for (vma = find_vma(current->mm, addr); ; vma = vma->vm_next) {

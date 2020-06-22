@@ -127,4 +127,6 @@ static inline unsigned long __xchg(unsigned long x, volatile void *ptr, int size
 	  : "memory");					\
 	} while (0)
 
+#define __save_and_sti(x)	({__save_flags(x);__sti();})
+
 #endif

@@ -668,7 +668,7 @@ void __init attach_sscape(struct address_info *hw_config)
 			break;
 		}
 	}
-	if (hw_config->irq > 15 || (regs[4] = irq_bits == 0xff))
+	if (hw_config->irq > 15 || ((regs[4] = irq_bits) == 0xff))
 	{
 		printk(KERN_ERR "Invalid IRQ%d\n", hw_config->irq);
 		return;

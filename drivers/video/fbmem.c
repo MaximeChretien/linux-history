@@ -130,6 +130,8 @@ extern void maxinefb_init(void);
 extern int tx3912fb_init(void);
 extern int radeonfb_init(void);
 extern int radeonfb_setup(char*);
+extern int intelfb_init(void);
+extern int intelfb_setup(char*);
 extern int e1355fb_init(void);
 extern int e1355fb_setup(char*);
 extern int au1100fb_init(void);
@@ -198,6 +200,9 @@ static struct {
 #endif
 #ifdef CONFIG_FB_RADEON
 	{ "radeon", radeonfb_init, radeonfb_setup },
+#endif
+#ifdef CONFIG_FB_INTEL
+	{ "intelfb", intelfb_init, intelfb_setup },
 #endif
 #ifdef CONFIG_FB_CONTROL
 	{ "controlfb", control_init, control_setup },
@@ -647,6 +652,8 @@ fb_mmap(struct file *file, struct vm_area_struct * vma)
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 #elif defined(__sh__)
 	pgprot_val(vma->vm_page_prot) &= ~_PAGE_CACHABLE;
+#elif defined(__hppa__)
+	pgprot_val(vma->vm_page_prot) |= _PAGE_NO_CACHE; 
 #elif defined(__ia64__)
 	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
 #elif defined(__hppa__)

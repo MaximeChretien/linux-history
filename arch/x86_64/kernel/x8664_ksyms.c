@@ -220,3 +220,6 @@ EXPORT_SYMBOL(memnodemap);
 EXPORT_SYMBOL(plat_node_data);
 EXPORT_SYMBOL(fake_node);
 #endif
+
+extern void int_ret_from_sys_call(void);
+EXPORT_SYMBOL(int_ret_from_sys_call); 

@@ -161,6 +161,10 @@ cpu_idle (void *unused)
 void
 ia64_save_extra (struct task_struct *task)
 {
+#ifdef CONFIG_PERFMON
+	unsigned long info;
+#endif
+
 	if ((task->thread.flags & IA64_THREAD_DBG_VALID) != 0)
 		ia64_save_debug_regs(&task->thread.dbr[0]);
 
@@ -168,10 +172,9 @@ ia64_save_extra (struct task_struct *task)
 	if ((task->thread.flags & IA64_THREAD_PM_VALID) != 0)
 		pfm_save_regs(task);
 
-# ifdef CONFIG_SMP
-	if (local_cpu_data->pfm_syst_wide)
-		pfm_syst_wide_update_task(task, 0);
-# endif
+	info = local_cpu_data->pfm_syst_info;
+	if (info & PFM_CPUINFO_SYST_WIDE)
+		pfm_syst_wide_update_task(task, info, 0);
 #endif
 
 #ifdef CONFIG_IA32_SUPPORT
@@ -183,6 +186,10 @@ ia64_save_extra (struct task_struct *task)
 void
 ia64_load_extra (struct task_struct *task)
 {
+#ifdef CONFIG_PERFMON
+	unsigned long info;
+#endif
+
 	if ((task->thread.flags & IA64_THREAD_DBG_VALID) != 0)
 		ia64_load_debug_regs(&task->thread.dbr[0]);
 
@@ -190,10 +197,9 @@ ia64_load_extra (struct task_struct *task)
 	if ((task->thread.flags & IA64_THREAD_PM_VALID) != 0)
 		pfm_load_regs(task);
 
-# ifdef CONFIG_SMP
-	if (local_cpu_data->pfm_syst_wide)
-		pfm_syst_wide_update_task(task, 1);
-# endif
+	info = local_cpu_data->pfm_syst_info;
+	if (info & PFM_CPUINFO_SYST_WIDE)
+		pfm_syst_wide_update_task(task, info, 1);
 #endif
 
 #ifdef CONFIG_IA32_SUPPORT
@@ -224,7 +230,7 @@ ia64_load_extra (struct task_struct *task)
  *	|                     | <-- sp (lowest addr)
  *	+---------------------+
  *
- * Note: if we get called through kernel_thread() then the memory
+ * Note: if we get called through arch_kernel_thread() then the memory
  * above "(highest addr)" is valid kernel stack memory that needs to
  * be copied as well.
  *
@@ -479,7 +485,7 @@ ia64_set_personality (struct elf64_hdr *elf_ex, int ibcs2_interpreter)
 }
 
 pid_t
-kernel_thread (int (*fn)(void *), void *arg, unsigned long flags)
+arch_kernel_thread (int (*fn)(void *), void *arg, unsigned long flags)
 {
 	struct task_struct *parent = current;
 	int result, tid;

@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.coffmain.c 1.15 01/11/02 10:46:07 trini
- */
-/*
  * Copyright (C) Paul Mackerras 1997.
  *
  * This program is free software; you can redistribute it and/or

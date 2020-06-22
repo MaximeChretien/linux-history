@@ -1,8 +1,5 @@
 /*
- * BK Id: SCCS/s.init.c 1.43 03/12/02 12:13:51 paulus
- */
-/*
- *  PowerPC version 
+ *  PowerPC version
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
  *
  *  Modifications by Paul Mackerras (PowerMac) (paulus@cs.anu.edu.au)
@@ -51,9 +48,11 @@
 
 mmu_gather_t mmu_gathers[NR_CPUS];
 
-void *end_of_DRAM;
 unsigned long total_memory;
 unsigned long total_lowmem;
+
+unsigned long ppc_memstart;
+unsigned long ppc_memoffset = PAGE_OFFSET;
 
 int mem_init_done;
 int init_bootmem_done;
@@ -181,13 +180,13 @@ void show_mem(void)
 				iscur = 1;
 				printk("current");
 			}
-			
+
 			if ( p == last_task_used_math )
 			{
 				if ( iscur )
 					printk(",");
 				printk("last math");
-			}			
+			}
 #endif /* CONFIG_SMP */
 			printk("\n");
 		}
@@ -312,8 +311,7 @@ void __init MMU_init(void)
 	if (__max_memory && total_memory > __max_memory)
 		total_memory = __max_memory;
 	total_lowmem = total_memory;
-	adjust_total_lowmem();	
-	end_of_DRAM = __va(total_lowmem);
+	adjust_total_lowmem();
 	set_phys_avail(total_lowmem);
 
 	/* Initialize the MMU hardware */
@@ -396,8 +394,11 @@ void __init do_init_bootmem(void)
 	}
 	start = PAGE_ALIGN(start);
 
-	boot_mapsize = init_bootmem(start >> PAGE_SHIFT,
-				    total_lowmem >> PAGE_SHIFT);
+	min_low_pfn = start >> PAGE_SHIFT;
+	max_low_pfn = (PPC_MEMSTART + total_lowmem) >> PAGE_SHIFT;
+	boot_mapsize = init_bootmem_node(&contig_page_data, min_low_pfn,
+					 PPC_MEMSTART >> PAGE_SHIFT,
+					 max_low_pfn);
 
 	/* remove the bootmem bitmap from the available memory */
 	mem_pieces_remove(&phys_avail, start, boot_mapsize, 1);
@@ -450,12 +451,10 @@ void __init mem_init(void)
 
 	highmem_mapnr = total_lowmem >> PAGE_SHIFT;
 	highmem_start_page = mem_map + highmem_mapnr;
-	max_mapnr = total_memory >> PAGE_SHIFT;
-#else
-	max_mapnr = max_low_pfn;
 #endif /* CONFIG_HIGHMEM */
+	max_mapnr = total_memory >> PAGE_SHIFT;
 
-	high_memory = (void *) __va(max_low_pfn * PAGE_SIZE);
+	high_memory = (void *) __va(PPC_MEMSTART + total_lowmem);
 	num_physpages = max_mapnr;	/* RAM is assumed contiguous */
 
 	totalram_pages += free_all_bootmem();
@@ -485,7 +484,7 @@ void __init mem_init(void)
 		     addr += PAGE_SIZE)
 			SetPageReserved(virt_to_page(addr));
 
-	for (addr = PAGE_OFFSET; addr < (unsigned long)end_of_DRAM;
+	for (addr = PAGE_OFFSET; addr < (unsigned long)high_memory;
 	     addr += PAGE_SIZE) {
 		if (!PageReserved(virt_to_page(addr)))
 			continue;
@@ -544,7 +543,7 @@ set_phys_avail(unsigned long total_memory)
 	 * physical memory.
 	 */
 
-	phys_avail.regions[0].address = 0;
+	phys_avail.regions[0].address = PPC_MEMSTART;
 	phys_avail.regions[0].size = total_memory;
 	phys_avail.n_regions = 1;
 

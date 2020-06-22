@@ -291,6 +291,9 @@ typedef struct	SHT
      */
     unsigned emulated:1;
 
+    /*
+     * True for drivers that can do I/O from highmem
+     */
     unsigned highmem_io:1;
 
     /*

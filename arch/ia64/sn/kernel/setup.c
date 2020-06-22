@@ -47,14 +47,14 @@
 #include <linux/bootmem.h>
 #include <linux/mmzone.h>
 #include <linux/interrupt.h>
+#include <linux/acpi.h>
+#include <linux/compiler.h>
+#include <linux/sched.h>
 
 #include <asm/io.h>
 #include <asm/sal.h>
 #include <asm/machvec.h>
 #include <asm/system.h>
-#ifdef CONFIG_IA64_MCA
-#include <asm/acpi-ext.h>
-#endif
 #include <asm/processor.h>
 #include <asm/sn/sgi.h>
 #include <asm/sn/io.h>
@@ -68,15 +68,21 @@
 #include <asm/sn/leds.h>
 #include <asm/sn/bte.h>
 #include <asm/sn/clksupport.h>
+#include <asm/sn/sn_sal.h>
 
 #ifdef CONFIG_IA64_SGI_SN2
 #include <asm/sn/sn2/shub.h>
 #endif
 
-extern void bte_init_node (nodepda_t *, cnodeid_t, char **);
+extern void bte_init_node (nodepda_t *, cnodeid_t);
 extern void bte_init_cpu (void);
 
-long sn_rtc_cycles_per_second;   
+unsigned long sn_rtc_cycles_per_second;   
+unsigned long sn_rtc_usec_per_cyc;
+
+partid_t sn_partid = -1;
+char sn_system_serial_number_string[128];
+u64 sn_partition_serial_number;
 
 /*
  * This is the address of the RRegs in the HSpace of the global
@@ -137,7 +143,7 @@ char drive_info[4*16];
  * virt_to_page() (asm-ia64/page.h), among other things.
  */
 unsigned long
-sn_map_nr (unsigned long addr)
+sn_map_nr (void *addr)
 {
 	return MAP_NR_DISCONTIG(addr);
 }
@@ -149,10 +155,43 @@ sn_map_nr (unsigned long addr)
  * for bringup, it's only called if %BRINGUP and %CONFIG_IA64_EARLY_PRINTK
  * are turned on.  See start_kernel() in init/main.c.
  */
-#if defined(CONFIG_IA64_EARLY_PRINTK) && defined(CONFIG_IA64_SGI_SN)
+#if defined(CONFIG_IA64_EARLY_PRINTK)
+
 void __init
 early_sn_setup(void)
 {
+	void ia64_sal_handler_init (void *entry_point, void *gpval);
+	efi_system_table_t			*efi_systab;
+	efi_config_table_t 			*config_tables;
+	struct ia64_sal_systab			*sal_systab;
+	struct ia64_sal_desc_entry_point	*ep;
+	char					*p;
+	int					i;
+
+	/*
+	 * Parse enough of the SAL tables to locate the SAL entry point. Since, console
+	 * IO on SN2 is done via SAL calls, early_printk wont work without this.
+	 *
+	 * This code duplicates some of the ACPI table parsing that is in efi.c & sal.c.
+	 * Any changes to those file may have to be made hereas well.
+	 */
+	efi_systab = (efi_system_table_t*)__va(ia64_boot_param->efi_systab);
+	config_tables = __va(efi_systab->tables);
+	for (i = 0; i < efi_systab->nr_tables; i++) {
+		if (efi_guidcmp(config_tables[i].guid, SAL_SYSTEM_TABLE_GUID) == 0) {
+			sal_systab = __va(config_tables[i].table);
+			p = (char*)(sal_systab+1);
+			for (i = 0; i < sal_systab->entry_count; i++) {
+				if (*p == SAL_DESC_ENTRY_POINT) {
+					ep = (struct ia64_sal_desc_entry_point *) p;
+					ia64_sal_handler_init(__va(ep->sal_proc), __va(ep->gp));
+					break;
+				}
+				p += SAL_DESC_SIZE(*p);
+			}
+		}
+	}
+
 	if ( IS_RUNNING_ON_SIMULATOR() ) {
 #if defined(CONFIG_IA64_SGI_SN1)
 		master_node_bedrock_address = (u64)REMOTE_HSPEC_ADDR(get_nasid(), 0);
@@ -162,18 +201,10 @@ early_sn_setup(void)
 		printk(KERN_DEBUG "early_sn_setup: setting master_node_bedrock_address to 0x%lx\n", master_node_bedrock_address);
 	}
 }
-#endif /* CONFIG_IA64_EARLY_PRINTK && CONFIG_IA64_SGI_SN */
+#endif /* CONFIG_IA64_SGI_SN1 */
 
-#ifdef NOT_YET_CONFIG_IA64_MCA
-extern void ia64_mca_cpe_int_handler (int cpe_irq, void *arg, struct pt_regs *ptregs);
-static struct irqaction mca_cpe_irqaction = { 
-	handler:    ia64_mca_cpe_int_handler,
-	flags:      SA_INTERRUPT,
-	name:       "cpe_hndlr"
-};
-#endif
 #ifdef CONFIG_IA64_MCA
-extern int platform_irq_list[];
+extern int platform_intr_list[];
 #endif
 
 extern nasid_t master_nasid;
@@ -191,22 +222,56 @@ sn_setup(char **cmdline_p)
 {
 	long status, ticks_per_sec, drift;
 	int i;
+	int major = sn_sal_rev_major(), minor = sn_sal_rev_minor();
+
+	printk("SGI SAL version %x.%02x\n", major, minor);
+
+	/*
+	 * Confirm the SAL we're running on is recent enough...
+	 */
+	if ((major < SN_SAL_MIN_MAJOR) || (major == SN_SAL_MIN_MAJOR &&
+					   minor < SN_SAL_MIN_MINOR)) {
+		printk(KERN_ERR "This kernel needs SGI SAL version >= "
+		       "%x.%02x\n", SN_SAL_MIN_MAJOR, SN_SAL_MIN_MINOR);
+		panic("PROM version too old\n");
+	}
+
+#ifdef CONFIG_IA64_SGI_SN2
+	{
+		extern void io_sh_swapper(int, int);
+		io_sh_swapper(get_nasid(), 0);
+	}
+#endif
 
 	master_nasid = get_nasid();
 	(void)get_console_nasid();
+#ifndef CONFIG_IA64_SGI_SN1
+	{
+		extern nasid_t get_master_baseio_nasid(void);
+		(void)get_master_baseio_nasid();
+	}
+#endif
 
 	status = ia64_sal_freq_base(SAL_FREQ_BASE_REALTIME_CLOCK, &ticks_per_sec, &drift);
-	if (status != 0 || ticks_per_sec < 100000)
-		printk(KERN_WARNING "unable to determine platform RTC clock frequency\n");
+	if (status != 0 || ticks_per_sec < 100000) {
+		printk(KERN_WARNING "unable to determine platform RTC clock frequency, guessing.\n");
+		/* PROM gives wrong value for clock freq. so guess */
+		sn_rtc_cycles_per_second = 1000000000000UL/30000UL;
+	}
 	else
 		sn_rtc_cycles_per_second = ticks_per_sec;
+
+#ifdef CONFIG_IA64_SGI_SN1
+	/* PROM has wrong value on SN1 */
+	sn_rtc_cycles_per_second = 990177;
+#endif
+	sn_rtc_usec_per_cyc = ((1000000UL<<IA64_USEC_PER_CYC_SHIFT)
+			       + sn_rtc_cycles_per_second/2) / sn_rtc_cycles_per_second;
 		
 	for (i=0;i<NR_CPUS;i++)
 		_sn_irq_desc[i] = _irq_desc;
 
-#ifdef CONFIG_IA64_MCA
-	platform_irq_list[ACPI20_ENTRY_PIS_CPEI] = IA64_PCE_VECTOR;
-#endif
+	platform_intr_list[ACPI_INTERRUPT_CPEI] = IA64_PCE_VECTOR;
 
 
 	if ( IS_RUNNING_ON_SIMULATOR() )
@@ -296,7 +361,7 @@ sn_init_pdas(char **cmdline_p)
 	 */
 	for (cnode = 0; cnode < numnodes; cnode++) {
 		init_platform_nodepda(nodepdaindr[cnode], cnode);
-		bte_init_node (nodepdaindr[cnode], cnode, cmdline_p);
+		bte_init_node (nodepdaindr[cnode], cnode);
 	}
 }
 
@@ -331,9 +396,16 @@ sn_cpu_init(void)
 	cnode = nasid_to_cnodeid(nasid);
 	slice = cpu_physical_id_to_slice(cpuphyid);
 
+	printk("CPU %d: nasid %d, slice %d, cnode %d\n",
+			smp_processor_id(), nasid, slice, cnode);
+
+	memset(&pda, 0, sizeof(pda));
 	pda.p_nodepda = nodepdaindr[cnode];
-	pda.led_address = (long*) (LED0 + (slice<<LED_CPU_SHIFT));
-	pda.led_state = 0;
+	pda.led_address = (typeof(pda.led_address)) (LED0 + (slice<<LED_CPU_SHIFT));
+#ifdef LED_WAR
+	pda.led_address = (typeof(pda.led_address)) (LED0 + (slice<<(LED_CPU_SHIFT-1))); /* temp til L1 firmware fixed */
+#endif
+	pda.led_state = LED_ALWAYS_SET;
 	pda.hb_count = HZ/2;
 	pda.hb_state = 0;
 	pda.idle_flag = 0;
@@ -359,9 +431,35 @@ sn_cpu_init(void)
 		irqpdaindr[cpuid] = alloc_bootmem_node(NODE_DATA(cpuid_to_cnodeid(cpuid)),sizeof(irqpda_t));
 	else
 		irqpdaindr[cpuid] = page_address(alloc_pages_node(local_cnodeid(), GFP_KERNEL, get_order(sizeof(irqpda_t))));
+
 	memset(irqpdaindr[cpuid], 0, sizeof(irqpda_t));
 	pda.p_irqpda = irqpdaindr[cpuid];
-	pda.pio_write_status_addr = (volatile unsigned long *)LOCAL_MMR_ADDR((slice < 2 ? SH_PIO_WRITE_STATUS_0 : SH_PIO_WRITE_STATUS_1 ) );
+
+	pda.pio_write_status_addr = (volatile unsigned long *)
+			LOCAL_MMR_ADDR((slice < 2 ? SH_PIO_WRITE_STATUS_0 : SH_PIO_WRITE_STATUS_1 ) );
+	pda.mem_write_status_addr = (volatile u64 *)
+			LOCAL_MMR_ADDR((slice < 2 ? SH_MEMORY_WRITE_STATUS_0 : SH_MEMORY_WRITE_STATUS_1 ) );
+
+	if (nodepda->node_first_cpu == cpuid) {
+		int	buddy_nasid;
+		buddy_nasid = cnodeid_to_nasid(local_cnodeid() == numnodes-1 ? 0 : local_cnodeid()+ 1);
+		pda.pio_shub_war_cam_addr = (volatile unsigned long*)GLOBAL_MMR_ADDR(nasid, SH_PI_CAM_CONTROL);
+	}
+
+#ifdef BRINGUP2
+	/*
+	 * Zero out the counters used for counting MCAs
+	 *   ZZZZZ temp
+	 */
+	{
+		long	*p;
+		p = (long*)LOCAL_MMR_ADDR(SH_XN_IILB_LB_CMP_ENABLE0);
+		*p = 0;
+		p = (long*)LOCAL_MMR_ADDR(SH_XN_IILB_LB_CMP_ENABLE1);
+		*p = 0;
+	}
+
+#endif
 #endif
 
 #ifdef CONFIG_IA64_SGI_SN1
@@ -401,7 +499,6 @@ cnodeid_to_cpuid(int cnode) {
 	return cpu;
 }
 
-#if 0 /* ##jh */
 /**
  * get_cycles - return a non-decreasing timestamp
  *
@@ -412,4 +509,186 @@ get_cycles (void)
 {
 	return GET_RTC_COUNTER();
 }
+
+/**
+ * gettimeoffset - number of usecs elapsed since &xtime was last updated
+ *
+ * This function is used by do_gettimeofday() to determine the number
+ * of usecs that have elapsed since the last update to &xtime.  On SN
+ * this is accomplished using the RTC built in to each Hub chip; each
+ * is guaranteed to be synchronized by the PROM, so a local read will
+ * suffice (get_cycles() does this for us).  A snapshot of the RTC value
+ * is taken on every timer interrupt and this function more or less
+ * subtracts that snapshot value from the current value.
+ *
+ * Note that if a lot of processing was done during the last timer
+ * interrupt then &xtime may be some number of jiffies out of date.
+ * This function must account for that.
+ */
+unsigned long
+gettimeoffset(void)
+{
+	unsigned long current_rtc_val, local_last_rtc_val;
+	unsigned long usec;
+
+	local_last_rtc_val = last_rtc_val;
+	current_rtc_val = get_cycles();
+	usec = last_itc_lost_usec;
+
+	/* If the RTC has wrapped around, compensate */
+	if (unlikely(current_rtc_val < local_last_rtc_val)) {
+		printk(KERN_NOTICE "RTC wrapped cpu:%d current:0x%lx last:0x%lx\n",
+				smp_processor_id(), current_rtc_val,
+				local_last_rtc_val);
+		current_rtc_val += RTC_MASK;
+	}
+
+	usec += ((current_rtc_val - local_last_rtc_val)*sn_rtc_usec_per_cyc) >> 
+		IA64_USEC_PER_CYC_SHIFT;
+
+	/*
+	 * usec is the number of microseconds into the current clock interval. Every
+	 * clock tick, xtime is advanced by "tick" microseconds. If "usec"
+	 * is allowed to get larger than "tick", the time value returned by gettimeofday
+	 * will go backward.
+	 */
+	if (usec >= tick)
+		usec = tick-1;
+
+	return usec;
+}
+
+#ifdef II_PRTE_TLB_WAR
+long iiprt_lock[16*64] __cacheline_aligned; /* allow for NASIDs up to 64 */
+#endif
+
+#ifdef BUS_INT_WAR
+
+#include <asm/hw_irq.h>
+#include <asm/sn/pda.h>
+
+void ia64_handle_irq (ia64_vector vector, struct pt_regs *regs);
+
+static spinlock_t irq_lock = SPIN_LOCK_UNLOCKED;
+
+#define IRQCPU(irq)	((irq)>>8)
+
+void
+sn_add_polled_interrupt(int irq, int interval)
+{
+	unsigned long flags, irq_cnt;
+	sn_poll_entry_t	*irq_list;
+
+	irq_list = pdacpu(IRQCPU(irq)).pda_poll_entries;;
+
+	spin_lock_irqsave(&irq_lock, flags);
+	irq_cnt = pdacpu(IRQCPU(irq)).pda_poll_entry_count;
+	irq_list[irq_cnt].irq = irq;
+	irq_list[irq_cnt].interval = interval;
+	irq_list[irq_cnt].tick = interval;
+	pdacpu(IRQCPU(irq)).pda_poll_entry_count++;
+	spin_unlock_irqrestore(&irq_lock, flags);
+
+
+}
+
+void
+sn_delete_polled_interrupt(int irq)
+{
+	unsigned long flags, i, irq_cnt;
+	sn_poll_entry_t	*irq_list;
+
+	irq_list = pdacpu(IRQCPU(irq)).pda_poll_entries;
+
+	spin_lock_irqsave(&irq_lock, flags);
+	irq_cnt = pdacpu(IRQCPU(irq)).pda_poll_entry_count;
+	for (i=0; i<irq_cnt; i++) {
+		if (irq_list[i].irq == irq) {
+			irq_list[i] = irq_list[irq_cnt-1];
+			pdacpu(IRQCPU(irq)).pda_poll_entry_count--;
+			break;
+		}
+	}
+	spin_unlock_irqrestore(&irq_lock, flags);
+}
+
+long sn_int_poll_ticks=50;
+
+void
+sn_irq_poll(int cpu, int reason) 
+{
+	unsigned long flags, i;
+	sn_poll_entry_t	*irq_list;
+
+
+#ifdef CONFIG_SHUB_1_0_SPECIFIC
+	ia64_handle_irq(IA64_IPI_VECTOR, 0);
+#else
+	if (sn_int_poll_ticks == 0)
+		return;
+#endif
+	irq_list = pda.pda_poll_entries;
+
+	for (i=0; i<pda.pda_poll_entry_count; i++, irq_list++) {
+		if (--irq_list->tick <= 0) {
+#ifdef CONFIG_SHUB_1_0_SPECIFIC
+			irq_list->tick = irq_list->interval;
+#else
+			irq_list->tick = sn_int_poll_ticks;
+#endif
+			local_irq_save(flags);
+			ia64_handle_irq(irq_to_vector(irq_list->irq), 0);
+			local_irq_restore(flags);
+		}
+	}
+}	
+
+#define PROCFILENAME	"sn_int_poll_ticks"
+
+static struct proc_dir_entry *proc_op;
+
+
+static int
+read_proc(char *buffer, char **start, off_t off, int count, int *eof, void *data)
+{
+	int len = 0;
+
+	len += sprintf(buffer + len, "Poll hack: interval %ld ticks\n", sn_int_poll_ticks);
+
+	if (len <= off+count) *eof = 1;
+	*start = buffer + off;
+	len   -= off;
+	if (len>count) len = count;
+	if (len<0) len = 0;
+	return len;
+}
+
+static int
+write_proc (struct file *file, const char *userbuf, unsigned long count, void *data)
+{
+       extern long atoi(char *);
+       char        buf[80];
+
+       if (copy_from_user(buf, userbuf, count < sizeof(buf) ? count : sizeof(buf)))
+           return -EFAULT;
+
+       sn_int_poll_ticks = atoi(buf);
+
+       return count;
+}
+
+
+int __init
+sn_poll_init(void)
+{
+	if ((proc_op = create_proc_entry(PROCFILENAME, 0644, NULL)) == NULL) {
+		printk("%s: unable to create proc entry", PROCFILENAME);
+		return -1;
+	}
+	proc_op->read_proc = read_proc;
+	proc_op->write_proc = write_proc;
+	return 0;
+}
+
+module_init(sn_poll_init);
 #endif

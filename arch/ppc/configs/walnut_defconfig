@@ -31,6 +31,7 @@ CONFIG_4xx=y
 # CONFIG_PPC_STD_MMU is not set
 # CONFIG_OAK is not set
 CONFIG_WALNUT=y
+CONFIG_IBM405_ERR77=y
 # CONFIG_ALL_PPC is not set
 # CONFIG_SMP is not set
 # CONFIG_MATH_EMULATION is not set
@@ -59,6 +60,7 @@ CONFIG_KERNEL_ELF=y
 # Parallel port support
 #
 # CONFIG_PARPORT is not set
+CONFIG_GEN_RTC=y
 # CONFIG_CMDLINE_BOOL is not set
 
 #
@@ -215,6 +217,7 @@ CONFIG_NET_ETHERNET=y
 # CONFIG_NS83820 is not set
 # CONFIG_HAMACHI is not set
 # CONFIG_YELLOWFIN is not set
+# CONFIG_R8169 is not set
 # CONFIG_SK98LIN is not set
 # CONFIG_TIGON3 is not set
 # CONFIG_FDDI is not set
@@ -321,11 +324,18 @@ CONFIG_I2C=y
 # Input core support is needed for joysticks
 #
 # CONFIG_QIC02_TAPE is not set
+# CONFIG_IPMI_HANDLER is not set
+# CONFIG_IPMI_PANIC_EVENT is not set
+# CONFIG_IPMI_DEVICE_INTERFACE is not set
+# CONFIG_IPMI_KCS is not set
+# CONFIG_IPMI_WATCHDOG is not set
 
 #
 # Watchdog Cards
 #
 # CONFIG_WATCHDOG is not set
+# CONFIG_SCx200_GPIO is not set
+# CONFIG_AMD_PM768 is not set
 # CONFIG_NVRAM is not set
 # CONFIG_RTC is not set
 # CONFIG_DTLK is not set

@@ -3,7 +3,7 @@
  * Copyright (C) 1995  Linus Torvalds
  * Copyright 2001, 2002 SuSE Labs / Andi Kleen.
  * See setup.c for older changelog.
- * $Id: setup64.c,v 1.15 2002/09/05 15:25:43 ak Exp $
+ * $Id: setup64.c,v 1.19 2003/02/21 19:37:21 ak Exp $
  */ 
 #include <linux/config.h>
 #include <linux/init.h>
@@ -31,18 +31,17 @@ extern void ia32_cstar_target(void);
 struct desc_ptr gdt_descr = { 0 /* filled in */, (unsigned long) gdt_table }; 
 struct desc_ptr idt_descr = { 256 * 16, (unsigned long) idt_table }; 
 
-unsigned long __supported_pte_mask = ~_PAGE_NX; 
+unsigned long __supported_pte_mask = ~0UL; 
 static int do_not_nx = 1; 
 
 char boot_cpu_stack[IRQSTACKSIZE] __cacheline_aligned;
 
-
 static int __init nonx_setup(char *str)
 {
-	if (strstr(str,"off")) { 
+	if (!strncmp(str,"off",3)) { 
 		__supported_pte_mask &= ~_PAGE_NX; 
 		do_not_nx = 1; 
-	} else if (strstr(str, "on")) { 
+	} else if (!strncmp(str, "on",3)) { 
 		do_not_nx = 0; 
 		__supported_pte_mask |= _PAGE_NX; 
 	} 
@@ -108,10 +107,10 @@ void __init cpu_init (void)
 
 	/* CPU 0 is initialised in head64.c */
 	if (nr != 0) {
-		estacks = (char *)__get_free_pages(GFP_ATOMIC, 0); 
+		pda_init(nr);
+		estacks = (char *)__get_free_pages(GFP_ATOMIC, EXCEPTION_STK_ORDER); 
 		if (!estacks)
 			panic("Can't allocate exception stacks for CPU %d\n",nr);
-		pda_init(nr);  
 	} else 
 		estacks = boot_exception_stacks; 
 
@@ -145,12 +144,10 @@ void __init cpu_init (void)
 	wrmsrl(MSR_CSTAR, ia32_cstar_target); 
 #endif
 
-	if (!do_not_nx) { 
 		rdmsrl(MSR_EFER, efer); 
-		if (!(efer & EFER_NX)) { 
+	if (!(efer & EFER_NX) || do_not_nx) { 
 			__supported_pte_mask &= ~_PAGE_NX; 
 		} 
-	}
 
 	t->io_map_base = INVALID_IO_BITMAP_OFFSET;	
 	memset(t->io_bitmap, 0xff, sizeof(t->io_bitmap));

@@ -99,6 +99,12 @@
  *              for abs. Bug report by Andrew Morton <andrewm@uow.edu.au>
  * 2001-06-16:  Bryce Nesbitt <bryce@obviously.com>
  *              Fix SNDCTL_DSP_STEREO API violation
+ * 2002-10-16:  Monty <monty@xiph.org>
+ *              Expand device support from a maximum of 8/16bit,mono/stereo to 
+ *              8/16/24/32bit,N channels.  Add AFMT_?24_?? and AFMT_?32_?? to OSS
+ *              functionality. Tested and used in production with the emagic emi 2|6 
+ *              on PPC and Intel. Also fixed a few logic 'crash and burn' corner 
+ *              cases.
  */
 
 /*
@@ -229,6 +235,11 @@ static DECLARE_WAIT_QUEUE_HEAD(open_wait);
 #define MAXFORMATS        MAX_ALT
 #define DMABUFSHIFT       17  /* 128k worth of DMA buffer */
 #define NRSGBUF           (1U<<(DMABUFSHIFT-PAGE_SHIFT))
+
+#define MAXCHANNELS       32
+#define MAXWIDTH          4
+#define MAXSAMPLEWIDTH    (MAXCHANNELS*MAXWIDTH)
+#define TMPCOPYWIDTH      MAXSAMPLEWIDTH /* max (128,MAXSAMPLEWIDTH) */
 
 /*
  * This influences:
@@ -387,13 +398,62 @@ struct usb_audio_state {
 	unsigned count;  /* usage counter; NOTE: the usb stack is also considered a user */
 };
 
+/* in the event we don't have the extended soundcard.h, we still need
+   to compile successfully.  Supply definitions */
+
+#ifndef AFMT_S24_LE
+#	define AFMT_S24_LE	        0x00000800	
+#endif
+#ifndef AFMT_S24_BE
+#	define AFMT_S24_BE	        0x00001000	
+#endif
+#ifndef AFMT_U24_LE
+#	define AFMT_U24_LE	        0x00002000	
+#endif
+#ifndef AFMT_U24_BE
+#	define AFMT_U24_BE	        0x00004000	
+#endif
+#ifndef AFMT_S32_LE
+#	define AFMT_S32_LE	        0x00008000	
+#endif
+#ifndef AFMT_S32_BE
+#	define AFMT_S32_BE	        0x00010000	
+#endif
+#ifndef AFMT_U32_LE
+#	define AFMT_U32_LE	        0x00020000	
+#endif
+#ifndef AFMT_U32_BE
+#	define AFMT_U32_BE	        0x00040000	
+#endif
+
 /* private audio format extensions */
-#define AFMT_STEREO        0x80000000
-#define AFMT_ISSTEREO(x)   ((x) & AFMT_STEREO)
-#define AFMT_IS16BIT(x)    ((x) & (AFMT_S16_LE|AFMT_S16_BE|AFMT_U16_LE|AFMT_U16_BE))
-#define AFMT_ISUNSIGNED(x) ((x) & (AFMT_U8|AFMT_U16_LE|AFMT_U16_BE))
-#define AFMT_BYTESSHIFT(x) ((AFMT_ISSTEREO(x) ? 1 : 0) + (AFMT_IS16BIT(x) ? 1 : 0))
-#define AFMT_BYTES(x)      (1<<AFMT_BYTESSHFIT(x))
+#define AFMT_STEREO         0x01000000
+#define AFMT_CHMASK         0xff000000
+#define AFMT_8MASK          (AFMT_U8 | AFMT_S8)
+#define AFMT_16MASK         (AFMT_U16_LE | AFMT_S16_LE | AFMT_U16_BE | AFMT_S16_BE)
+#define AFMT_24MASK         (AFMT_U24_LE | AFMT_S24_LE | AFMT_U24_BE | AFMT_S24_BE)
+#define AFMT_32MASK         (AFMT_U32_LE | AFMT_S32_LE | AFMT_U32_BE | AFMT_S32_BE)
+
+#define AFMT_SIGNMASK       (AFMT_S8 | AFMT_S16_LE | AFMT_S16_BE |\
+                                       AFMT_S24_LE | AFMT_S24_BE |\
+                                       AFMT_S32_LE | AFMT_S32_BE)
+
+/* a little odd, but the code counts on byte formats being identified as 'big endian' */
+#define AFMT_ENDIANMASK     (AFMT_S8 | AFMT_U8 |\
+			               AFMT_S16_BE | AFMT_U16_BE |\
+                                       AFMT_S24_BE | AFMT_U24_BE |\
+                                       AFMT_S32_BE | AFMT_U32_BE)
+
+#define AFMT_ISSTEREO(x)    (((x) & 0xff000000) == AFMT_STEREO)
+#define AFMT_CHANNELS(x)    (((unsigned)(x) >> 24) + 1)
+#define AFMT_BYTES(x)       ( (((x)&AFMT_8MASK)!=0)+\
+                              (((x)&AFMT_16MASK)!=0)*2+\
+                              (((x)&AFMT_24MASK)!=0)*3+\
+                              (((x)&AFMT_32MASK)!=0)*4 )
+#define AFMT_SAMPLEBYTES(x) (AFMT_BYTES(x)*AFMT_CHANNELS(x))
+#define AFMT_SIGN(x)        ((x)&AFMT_SIGNMASK)
+#define AFMT_ENDIAN(x)      ((x)&AFMT_ENDIANMASK)
+
 
 /* --------------------------------------------------------------------- */
 
@@ -468,7 +528,7 @@ static int dmabuf_init(struct dmabuf *db)
 	/* initialize some fields */
 	db->rdptr = db->wrptr = db->total_bytes = db->count = db->error = 0;
 	/* calculate required buffer size */
-	bytepersec = db->srate << AFMT_BYTESSHIFT(db->format);
+	bytepersec = db->srate * AFMT_SAMPLEBYTES(db->format);
 	bufs = 1U << DMABUFSHIFT;
 	if (db->ossfragshift) {
 		if ((1000 << db->ossfragshift) < bytepersec)
@@ -497,7 +557,7 @@ static int dmabuf_init(struct dmabuf *db)
 			db->sgbuf[nr] = p;
 			mem_map_reserve(virt_to_page(p));
 		}
-		memset(db->sgbuf[nr], AFMT_ISUNSIGNED(db->format) ? 0x80 : 0, PAGE_SIZE);
+		memset(db->sgbuf[nr], AFMT_SIGN(db->format) ? 0 : 0x80, PAGE_SIZE);
 		if ((nr << PAGE_SHIFT) >= db->dmasize)
 			break;
 	}
@@ -688,147 +748,168 @@ static void usbin_disc(struct usb_audiodev *as)
 	usbin_stop(as);
 }
 
-static void conversion(const void *ibuf, unsigned int ifmt, void *obuf, unsigned int ofmt, void *tmp, unsigned int scnt)
+static inline int iconvert(unsigned char **xx,int jump)
 {
-	unsigned int cnt, i;
-	__s16 *sp, *sp2, s;
-	unsigned char *bp;
-
-	cnt = scnt;
-	if (AFMT_ISSTEREO(ifmt))
-		cnt <<= 1;
-	sp = ((__s16 *)tmp) + cnt;
-	switch (ifmt & ~AFMT_STEREO) {
-	case AFMT_U8:
-		for (bp = ((unsigned char *)ibuf)+cnt, i = 0; i < cnt; i++) {
-			bp--;
-			sp--;
-			*sp = (*bp ^ 0x80) << 8;
-		}
-		break;
+  int value=0;
+  unsigned char *x=*xx;
 			
-	case AFMT_S8:
-		for (bp = ((unsigned char *)ibuf)+cnt, i = 0; i < cnt; i++) {
-			bp--;
-			sp--;
-			*sp = *bp << 8;
-		}
-		break;
-		
-	case AFMT_U16_LE:
-		for (bp = ((unsigned char *)ibuf)+2*cnt, i = 0; i < cnt; i++) {
-			bp -= 2;
-			sp--;
-			*sp = (bp[0] | (bp[1] << 8)) ^ 0x8000;
-		}
-		break;
+  /* conversion fall-through cascade compiles to a jump table */
+  switch(jump){
+  case 0:
+    /* 32 bit BE */
+    value  = x[3];
+  case 1:
+    /* 24 bit BE */
+    value |= x[2] << 8;
+  case 2:
+    /* 16 bit BE */
+    value |= x[1] << 16;
+  case 3:
+    /* 8 bit */
+    value |= x[0] << 24;
+    x+=(4-jump);
+    break;
 
-	case AFMT_U16_BE:
-		for (bp = ((unsigned char *)ibuf)+2*cnt, i = 0; i < cnt; i++) {
-			bp -= 2;
-			sp--;
-			*sp = (bp[1] | (bp[0] << 8)) ^ 0x8000;
-		}
-		break;
+  case 4:
+    /* 32 bit LE */
+    value  = *x++;
+  case 5:
+    /* 24 bit LE */
+    value |= *x++ << 8;
+  case 6:
+    /* 16 bit LE */
+    value |= *x++ << 16;
+    value |= *x++ << 24;
+    break;
+  }
+  *xx=x;
+  return(value);
+}
 
-	case AFMT_S16_LE:
-		for (bp = ((unsigned char *)ibuf)+2*cnt, i = 0; i < cnt; i++) {
-			bp -= 2;
-			sp--;
-			*sp = bp[0] | (bp[1] << 8);
-		}
-		break;
+static inline void oconvert(unsigned char **yy,int jump,int value)
+{
+  unsigned char *y=*yy;
 
-	case AFMT_S16_BE:
-		for (bp = ((unsigned char *)ibuf)+2*cnt, i = 0; i < cnt; i++) {
-			bp -= 2;
-			sp--;
-			*sp = bp[1] | (bp[0] << 8);
+  /* conversion fall-through cascade compiles to a jump table */
+  switch(jump){
+  case 0:
+    /* 32 bit BE */
+    y[3] = value;
+  case 1:
+    /* 24 bit BE */
+    y[2] = value >> 8;
+  case 2:
+    /* 16 bit BE */
+    y[1] = value >> 16;
+  case 3:
+    /* 8 bit */
+    y[0] = value >> 24;
+    y+=(4-jump);
+    break;
+
+  case 4:
+    /* 32 bit LE */
+    *y++ = value;
+  case 5:
+    /* 24 bit LE */
+    *y++ = value >> 8;
+  case 6:
+    /* 16 bit LE */
+    *y++ = value >> 16;
+    *y++ = value >> 24;
+    break;
+  }
+  *yy=y;
+}
+
+/* capable of any-to-any conversion */
+static void conversion(const void *ibuf, unsigned int ifmt, 
+		       void *obuf, unsigned int ofmt, unsigned int scnt)
+{
+
+  /* some conversion is indeed needed */
+  unsigned int i,j;
+  unsigned char *x=(unsigned char *)ibuf;
+  unsigned char *y=(unsigned char *)obuf;
+
+  int ichannels = AFMT_CHANNELS(ifmt);
+  int ochannels = AFMT_CHANNELS(ofmt);
+  int ibytes    = AFMT_BYTES(ifmt);
+  int obytes    = AFMT_BYTES(ofmt);
+  int iendian   = AFMT_ENDIAN(ifmt);
+  int oendian   = AFMT_ENDIAN(ofmt);
+  int isign     = AFMT_SIGN(ifmt)?0:0x80000000UL;
+  int osign     = AFMT_SIGN(ofmt)?0:0x80000000UL;
+  int sign      = (isign==osign?0:0x80000000UL);
+  
+  /* build the byte/endian jump table offsets */
+  int ijump = (iendian ? 4-ibytes : 8-ibytes);
+  int ojump = (oendian ? 4-obytes : 8-obytes);
+  
+  if(ichannels == 2 && ochannels == 1){
+    /* Stereo -> mono is a special case loop; we downmix */
+    for(i=0;i<scnt;i++){
+      int valueL = iconvert(&x,ijump) ^ isign; /* side effect; increments x */
+      int valueR = iconvert(&x,ijump) ^ isign; /* side effect; increments x */
+      int value  = (valueL>>1) + (valueR>>1);
+      oconvert(&y,ojump,value^osign);  /* side effect; increments y */
 		}
-		break;
+    return;
+		}
+  if(ichannels == 1 && ochannels == 2){
+    /* mono->stereo is a special case loop; we replicate */
+    for(i=0;i<scnt;i++){
+      int value = iconvert(&x,ijump) ^ sign; /* side effect; increments x */
+      oconvert(&y,ojump,value);  /* side effect; increments y */
+      oconvert(&y,ojump,value);  /* side effect; increments y */
 	}
-	if (!AFMT_ISSTEREO(ifmt) && AFMT_ISSTEREO(ofmt)) {
-		/* expand from mono to stereo */
-		for (sp = ((__s16 *)tmp)+scnt, sp2 = ((__s16 *)tmp)+2*scnt, i = 0; i < scnt; i++) {
-			sp--;
-			sp2 -= 2;
-			sp2[0] = sp2[1] = sp[0];
+    return;
 		}
-	}
-	if (AFMT_ISSTEREO(ifmt) && !AFMT_ISSTEREO(ofmt)) {
-		/* contract from stereo to mono */
-		for (sp = sp2 = ((__s16 *)tmp), i = 0; i < scnt; i++, sp++, sp2 += 2)
-			sp[0] = (sp2[0] + sp2[1]) >> 1;
-	}
-	cnt = scnt;
-	if (AFMT_ISSTEREO(ofmt))
-		cnt <<= 1;
-	sp = ((__s16 *)tmp);
-	bp = ((unsigned char *)obuf);
-	switch (ofmt & ~AFMT_STEREO) {
-	case AFMT_U8:
-		for (i = 0; i < cnt; i++, sp++, bp++)
-			*bp = (*sp >> 8) ^ 0x80;
-		break;
-
-	case AFMT_S8:
-		for (i = 0; i < cnt; i++, sp++, bp++)
-			*bp = *sp >> 8;
-		break;
-
-	case AFMT_U16_LE:
-		for (i = 0; i < cnt; i++, sp++, bp += 2) {
-			s = *sp;
-			bp[0] = s;
-			bp[1] = (s >> 8) ^ 0x80;
-		}
-		break;
-
-	case AFMT_U16_BE:
-		for (i = 0; i < cnt; i++, sp++, bp += 2) {
-			s = *sp;
-			bp[1] = s;
-			bp[0] = (s >> 8) ^ 0x80;
-		}
-		break;
-
-	case AFMT_S16_LE:
-		for (i = 0; i < cnt; i++, sp++, bp += 2) {
-			s = *sp;
-			bp[0] = s;
-			bp[1] = s >> 8;
-		}
-		break;
-
-	case AFMT_S16_BE:
-		for (i = 0; i < cnt; i++, sp++, bp += 2) {
-			s = *sp;
-			bp[1] = s;
-			bp[0] = s >> 8;
-		}
-		break;
-	}
+  if(ichannels<ochannels){
+    /* zero out extra output channels */
+    for(i=0;i<scnt;i++){
+      for(j=0;j<ichannels;j++){
+	int value = iconvert(&x,ijump) ^ sign; /* side effect; increments x */
+	oconvert(&y,ojump,value);  /* side effect; increments y */
 	
+	}
+      for(;j<ochannels;j++){
+	oconvert(&y,ojump,osign);  /* side effect; increments y */
+	}
+		}
+    return;
+		}
+  if(ichannels>=ochannels){
+    /* discard extra input channels */
+    int xincrement=ibytes*(ichannels-ochannels);
+    for(i=0;i<scnt;i++){
+      for(j=0;j<ichannels;j++){
+	int value = iconvert(&x,ijump) ^ sign; /* side effect; increments x */
+	oconvert(&y,ojump,value);  /* side effect; increments y */
+
+		}
+      x+=xincrement;
+		}
+    return;
+	}
 }
 
 static void usbin_convert(struct usbin *u, unsigned char *buffer, unsigned int samples)
 {
-	union {
-		__s16 s[64];
-		unsigned char b[0];
-	} tmp;
-	unsigned int scnt, maxs, ufmtsh, dfmtsh;
+        unsigned int scnt;
+	unsigned int ufmtb = AFMT_SAMPLEBYTES(u->format);
+	unsigned int dfmtb = AFMT_SAMPLEBYTES(u->dma.format);
+        unsigned char tmp[TMPCOPYWIDTH];
+	unsigned int maxs  = sizeof(tmp)/dfmtb;
 
-	ufmtsh = AFMT_BYTESSHIFT(u->format);
-	dfmtsh = AFMT_BYTESSHIFT(u->dma.format);
-	maxs = (AFMT_ISSTEREO(u->dma.format | u->format)) ? 32 : 64;
 	while (samples > 0) {
 		scnt = samples;
 		if (scnt > maxs)
 			scnt = maxs;
-		conversion(buffer, u->format, tmp.b, u->dma.format, tmp.b, scnt);
-		dmabuf_copyin(&u->dma, tmp.b, scnt << dfmtsh);
-		buffer += scnt << ufmtsh;
+
+	        conversion(buffer, u->format, tmp, u->dma.format, scnt);
+                dmabuf_copyin(&u->dma, tmp, scnt * dfmtb);
+                buffer += scnt * ufmtb;
 		samples -= scnt;
 	}
 }		
@@ -837,7 +918,7 @@ static int usbin_prepare_desc(struct usbin *u, struct urb *urb)
 {
 	unsigned int i, maxsize, offs;
 
-	maxsize = (u->freqmax + 0x3fff) >> (14 - AFMT_BYTESSHIFT(u->format));
+	maxsize = ((u->freqmax + 0x3fff) * AFMT_SAMPLEBYTES(u->format)) >> 14;
 	//printk(KERN_DEBUG "usbin_prepare_desc: maxsize %d freq 0x%x format 0x%x\n", maxsize, u->freqn, u->format);
 	for (i = offs = 0; i < DESCFRAMES; i++, offs += maxsize) {
 		urb->iso_frame_desc[i].length = maxsize;
@@ -852,26 +933,26 @@ static int usbin_prepare_desc(struct usbin *u, struct urb *urb)
  */
 static int usbin_retire_desc(struct usbin *u, struct urb *urb)
 {
-	unsigned int i, ufmtsh, dfmtsh, err = 0, cnt, scnt, dmafree;
+	unsigned int i, ufmtb, dfmtb, err = 0, cnt, scnt, dmafree;
 	unsigned char *cp;
 
-	ufmtsh = AFMT_BYTESSHIFT(u->format);
-	dfmtsh = AFMT_BYTESSHIFT(u->dma.format);
+	ufmtb = AFMT_SAMPLEBYTES(u->format);
+	dfmtb = AFMT_SAMPLEBYTES(u->dma.format);
 	for (i = 0; i < DESCFRAMES; i++) {
 		cp = ((unsigned char *)urb->transfer_buffer) + urb->iso_frame_desc[i].offset;
 		if (urb->iso_frame_desc[i].status) {
 			dprintk((KERN_DEBUG "usbin_retire_desc: frame %u status %d\n", i, urb->iso_frame_desc[i].status));
 			continue;
 		}
-		scnt = urb->iso_frame_desc[i].actual_length >> ufmtsh;
+		scnt = urb->iso_frame_desc[i].actual_length / ufmtb;
 		if (!scnt)
 			continue;
-		cnt = scnt << dfmtsh;
+		cnt = scnt * dfmtb;
 		if (!u->dma.mapped) {
 			dmafree = u->dma.dmasize - u->dma.count;
 			if (cnt > dmafree) {
-				scnt = dmafree >> dfmtsh;
-				cnt = scnt << dfmtsh;
+				scnt = dmafree / dfmtb;
+				cnt = scnt * dfmtb;
 				err++;
 			}
 		}
@@ -1015,7 +1096,7 @@ static int usbin_start(struct usb_audiodev *as)
 		u->freqn = ((u->dma.srate << 11) + 62) / 125; /* this will overflow at approx 2MSPS */
 		u->freqmax = u->freqn + (u->freqn >> 2);
 		u->phase = 0;
-		maxsze = (u->freqmax + 0x3fff) >> (14 - AFMT_BYTESSHIFT(u->format));
+		maxsze = ((u->freqmax + 0x3fff) * AFMT_SAMPLEBYTES(u->format)) >> 14;
 		bufsz = DESCFRAMES * maxsze;
 		if (u->durb[0].urb.transfer_buffer)
 			kfree(u->durb[0].urb.transfer_buffer);
@@ -1166,33 +1247,31 @@ static void usbout_disc(struct usb_audiodev *as)
 
 static void usbout_convert(struct usbout *u, unsigned char *buffer, unsigned int samples)
 {
-	union {
-		__s16 s[64];
-		unsigned char b[0];
-	} tmp;
-	unsigned int scnt, maxs, ufmtsh, dfmtsh;
-
-	ufmtsh = AFMT_BYTESSHIFT(u->format);
-	dfmtsh = AFMT_BYTESSHIFT(u->dma.format);
-	maxs = (AFMT_ISSTEREO(u->dma.format | u->format)) ? 32 : 64;
+        unsigned char tmp[TMPCOPYWIDTH];
+        unsigned int scnt;
+	unsigned int ufmtb = AFMT_SAMPLEBYTES(u->format);
+	unsigned int dfmtb = AFMT_SAMPLEBYTES(u->dma.format);
+	unsigned int maxs  = sizeof(tmp)/dfmtb;
+	
 	while (samples > 0) {
 		scnt = samples;
 		if (scnt > maxs)
 			scnt = maxs;
-		dmabuf_copyout(&u->dma, tmp.b, scnt << dfmtsh);
-		conversion(tmp.b, u->dma.format, buffer, u->format, tmp.b, scnt);
-		buffer += scnt << ufmtsh;
+
+		dmabuf_copyout(&u->dma, tmp, scnt * dfmtb);
+		conversion(tmp, u->dma.format, buffer, u->format, scnt);
+                buffer += scnt * ufmtb;
 		samples -= scnt;
 	}
 }		
 
 static int usbout_prepare_desc(struct usbout *u, struct urb *urb)
 {
-	unsigned int i, ufmtsh, dfmtsh, err = 0, cnt, scnt, offs;
+	unsigned int i, ufmtb, dfmtb, err = 0, cnt, scnt, offs;
 	unsigned char *cp = urb->transfer_buffer;
 
-	ufmtsh = AFMT_BYTESSHIFT(u->format);
-	dfmtsh = AFMT_BYTESSHIFT(u->dma.format);
+	ufmtb = AFMT_SAMPLEBYTES(u->format);
+	dfmtb = AFMT_SAMPLEBYTES(u->dma.format);
 	for (i = offs = 0; i < DESCFRAMES; i++) {
 		urb->iso_frame_desc[i].offset = offs;
 		u->phase = (u->phase & 0x3fff) + u->freqm;
@@ -1201,11 +1280,11 @@ static int usbout_prepare_desc(struct usbout *u, struct urb *urb)
 			urb->iso_frame_desc[i].length = 0;
 			continue;
 		}
-		cnt = scnt << dfmtsh;
+		cnt = scnt * dfmtb;
 		if (!u->dma.mapped) {
 			if (cnt > u->dma.count) {
-				scnt = u->dma.count >> dfmtsh;
-				cnt = scnt << dfmtsh;
+				scnt = u->dma.count / dfmtb;
+				cnt = scnt * dfmtb;
 				err++;
 			}
 			u->dma.count -= cnt;
@@ -1218,7 +1297,7 @@ static int usbout_prepare_desc(struct usbout *u, struct urb *urb)
 			/* we need sampling format conversion */
 			usbout_convert(u, cp, scnt);
 		}
-		cnt = scnt << ufmtsh;
+		cnt = scnt * ufmtb;
 		urb->iso_frame_desc[i].length = cnt;
 		offs += cnt;
 		cp += cnt;
@@ -1380,7 +1459,8 @@ static int usbout_start(struct usb_audiodev *as)
 		u->freqn = u->freqm = ((u->dma.srate << 11) + 62) / 125; /* this will overflow at approx 2MSPS */
 		u->freqmax = u->freqn + (u->freqn >> 2);
 		u->phase = 0;
-		maxsze = (u->freqmax + 0x3fff) >> (14 - AFMT_BYTESSHIFT(u->format));
+		maxsze = ((u->freqmax + 0x3fff) * AFMT_SAMPLEBYTES(u->format)) >>14;
+
 		bufsz = DESCFRAMES * maxsze;
 		if (u->durb[0].urb.transfer_buffer)
 			kfree(u->durb[0].urb.transfer_buffer);
@@ -1473,27 +1553,86 @@ static int usbout_start(struct usb_audiodev *as)
 }
 
 /* --------------------------------------------------------------------- */
+/* allowed conversions (sign, endian, width, channels), and relative
+   weighting penalties against fuzzy match selection.  For the
+   purposes of not confusing users, 'lossy' format translation is
+   disallowed, eg, don't allow a mono 8 bit device to successfully
+   open as 5.1, 24 bit... Never allow a mode that tries to deliver greater
+   than the hard capabilities of the device.
 
-static unsigned int format_goodness(struct audioformat *afp, unsigned int fmt, unsigned int srate)
-{
+   device --=> app
+
+   signed   => unsigned : 1
+   unsigned => signed   : 1
+
+   le       => be       : 1
+   be       => le       : 1
+
+   8        => 16       : not allowed
+   8        => 24       : not allowed
+   8        => 32       : not allowed
+   16       => 24       : not allowed
+   16       => 32       : not allowed
+   24       => 32       : not allowed
+
+   16       => 8        : 4
+   24       => 16       : 4
+   24       => 8        : 5
+   32       => 24       : 4
+   32       => 16       : 5
+   32       => 8        : 5
+
+   mono     => stereo   : not allowed
+   stereo   => mono     : 32 (downmix to L+R/2)
+
+   N        => >N       : not allowed
+   N        => <N       : 32 */
+
+static unsigned int format_goodness(struct audioformat *afp, unsigned int app,
+				    unsigned int srate){
 	unsigned int g = 0;
+	unsigned int sratelo=afp->sratelo;
+	unsigned int sratehi=afp->sratehi;
+	unsigned int dev=afp->format;
 
-	if (srate < afp->sratelo)
-		g += afp->sratelo - srate;
-	if (srate > afp->sratehi)
-		g += srate - afp->sratehi;
-	if (AFMT_ISSTEREO(afp->format) && !AFMT_ISSTEREO(fmt))
-		g += 0x100000;
-	if (!AFMT_ISSTEREO(afp->format) && AFMT_ISSTEREO(fmt))
-		g += 0x400000;
-	if (AFMT_IS16BIT(afp->format) && !AFMT_IS16BIT(fmt))
-		g += 0x100000;
-	if (!AFMT_IS16BIT(afp->format) && AFMT_IS16BIT(fmt))
-		g += 0x400000;
-	return g;
+	if(AFMT_SIGN(dev) && !AFMT_SIGN(app))     g += 1;
+	if(!AFMT_SIGN(dev) && AFMT_SIGN(app))     g += 1;
+	if(AFMT_ENDIAN(dev) && !AFMT_ENDIAN(app)) g += 1;
+	if(!AFMT_ENDIAN(dev) && AFMT_ENDIAN(app)) g += 1;
+
+	switch(AFMT_BYTES(app)+AFMT_BYTES(dev)*10){
+	case 12: return ~0;
+	case 13: return ~0;
+	case 14: return ~0;
+	case 21: g += 4; break;
+	case 23: return ~0;
+	case 24: return ~0;
+	case 31: g += 5; break;
+	case 32: g += 4; break;
+	case 34: return ~0;
+	case 41: g += 6; break;
+	case 42: g += 5; break;
+	case 43: g += 4; break;
+	}
+
+	if(AFMT_CHANNELS(dev) > AFMT_CHANNELS(app)){
+	        g+=32;
+	}else if(AFMT_CHANNELS(dev) < AFMT_CHANNELS(app)){
+	        return ~0;
+	}
+	  
+	g<<=20;
+
+	if (srate < sratelo)
+	        g += sratelo - srate;
+        if (srate > sratehi)
+	        g += srate - sratehi;
+
+	return(g);
 }
 
-static int find_format(struct audioformat *afp, unsigned int nr, unsigned int fmt, unsigned int srate)
+static int find_format(struct audioformat *afp, unsigned int nr, 
+			  unsigned int fmt, unsigned int srate)
 {
 	unsigned int i, g, gb = ~0;
 	int j = -1; /* default to failure */
@@ -1501,8 +1640,7 @@ static int find_format(struct audioformat *afp, unsigned int nr, unsigned int fm
 	/* find "best" format (according to format_goodness) */
 	for (i = 0; i < nr; i++) {
 		g = format_goodness(&afp[i], fmt, srate);
-		if (g >= gb) 
-			continue;
+		if (g >= gb) continue;
 		j = i;
 		gb = g;
 	}
@@ -2116,8 +2254,8 @@ static int drain_out(struct usb_audiodev *as, int nonblock)
 			set_current_state(TASK_RUNNING);
 			return -EBUSY;
 		}
-		tmo = 3 * HZ * count / as->usbout.dma.srate;
-		tmo >>= AFMT_BYTESSHIFT(as->usbout.dma.format);
+		tmo = 3 * HZ * count / (as->usbout.dma.srate * 
+					AFMT_SAMPLEBYTES(as->usbout.dma.format));
 		if (!schedule_timeout(tmo + 1)) {
 			printk(KERN_DEBUG "usbaudio: dma timed out??\n");
 			break;
@@ -2218,7 +2356,7 @@ static ssize_t usb_audio_write(struct file *file, const char *buffer, size_t cou
 		return ret;
 	if (!access_ok(VERIFY_READ, buffer, count))
 		return -EFAULT;
-	start_thr = (as->usbout.dma.srate << AFMT_BYTESSHIFT(as->usbout.dma.format)) / (1000 / (3 * DESCFRAMES));
+	start_thr = (as->usbout.dma.srate * AFMT_SAMPLEBYTES(as->usbout.dma.format)) / (1000 / (3 * DESCFRAMES));
 	add_wait_queue(&as->usbout.dma.wait, &wait);
 	while (count > 0) {
 #if 0
@@ -2410,6 +2548,7 @@ static int usb_audio_ioctl(struct inode *inode, struct file *file, unsigned int 
 		if (get_user(val, (int *)arg))
 			return -EFAULT;
 		val2 = (file->f_mode & FMODE_READ) ? as->usbin.dma.format : as->usbout.dma.format;
+		val2 &= 0x00ffffff;
 		if (val)
 			val2 |= AFMT_STEREO;
 		else
@@ -2423,19 +2562,22 @@ static int usb_audio_ioctl(struct inode *inode, struct file *file, unsigned int 
 			return -EFAULT;
 		if (val != 0) {
 			val2 = (file->f_mode & FMODE_READ) ? as->usbin.dma.format : as->usbout.dma.format;
-			if (val == 1)
-				val2 &= ~AFMT_STEREO;
-			else
-				val2 |= AFMT_STEREO;
+			
+			val2 &= 0x00ffffff;
+			val2 |= (val-1)<<24;
+
 			if (set_format(as, file->f_mode, val2, 0))
 				return -EIO;
 		}
 		val2 = (file->f_mode & FMODE_READ) ? as->usbin.dma.format : as->usbout.dma.format;
-		return put_user(AFMT_ISSTEREO(val2) ? 2 : 1, (int *)arg);
+		return put_user(AFMT_CHANNELS(val2), (int *)arg);
 
 	case SNDCTL_DSP_GETFMTS: /* Returns a mask */
 		return put_user(AFMT_U8 | AFMT_U16_LE | AFMT_U16_BE |
-				AFMT_S8 | AFMT_S16_LE | AFMT_S16_BE, (int *)arg);
+				AFMT_S8 | AFMT_S16_LE | AFMT_S16_BE |
+				AFMT_U24_LE | AFMT_U24_BE | AFMT_S24_LE | AFMT_S24_BE |
+				AFMT_U32_LE | AFMT_U32_BE | AFMT_S32_LE | AFMT_S32_BE,
+				(int *)arg);
 
 	case SNDCTL_DSP_SETFMT: /* Selects ONE fmt*/
 		if (get_user(val, (int *)arg))
@@ -2444,15 +2586,17 @@ static int usb_audio_ioctl(struct inode *inode, struct file *file, unsigned int 
 			if (hweight32(val) != 1)
 				return -EINVAL;
 			if (!(val & (AFMT_U8 | AFMT_U16_LE | AFMT_U16_BE |
-				     AFMT_S8 | AFMT_S16_LE | AFMT_S16_BE)))
+				     AFMT_S8 | AFMT_S16_LE | AFMT_S16_BE |
+				     AFMT_U24_LE | AFMT_U24_BE | AFMT_S24_LE | AFMT_S24_BE |
+				     AFMT_U32_LE | AFMT_U32_BE | AFMT_S32_LE | AFMT_S32_BE)))
 				return -EINVAL;
 			val2 = (file->f_mode & FMODE_READ) ? as->usbin.dma.format : as->usbout.dma.format;
-			val |= val2 & AFMT_STEREO;
+			val |= val2 & AFMT_CHMASK;
 			if (set_format(as, file->f_mode, val, 0))
 				return -EIO;
 		}
 		val2 = (file->f_mode & FMODE_READ) ? as->usbin.dma.format : as->usbout.dma.format;
-		return put_user(val2 & ~AFMT_STEREO, (int *)arg);
+		return put_user(val2 & ~AFMT_CHMASK, (int *)arg);
 
 	case SNDCTL_DSP_POST:
 		return 0;
@@ -2491,7 +2635,24 @@ static int usb_audio_ioctl(struct inode *inode, struct file *file, unsigned int 
 	case SNDCTL_DSP_GETOSPACE:
 		if (!(file->f_mode & FMODE_WRITE))
 			return -EINVAL;
-		if (!(as->usbout.flags & FLG_RUNNING) && (val = prog_dmabuf_out(as)) != 0)
+
+		/*if (!(as->usbout.flags & FLG_RUNNING) && (val = prog_dmabuf_out(as)) != 0)
+
+		The above is potentially disasterous; if the
+		userspace app calls the GETOSPACE ioctl() before a
+		data write on the device (as can happen in a
+		sensible client that's tracking the write buffer
+		low watermark), the kernel driver will never
+		recover from momentary starvation (recall that
+		FLG_RUNNING will be cleared by usbout_completed)
+		because the ioctl will keep resetting the DMA
+		buffer before each write, potentially never
+		allowing us to fill the buffer back to the DMA
+		restart threshhold.
+
+		Can you tell this was actually biting me? :-) */
+
+		if ((!as->usbout.dma.ready) && (val = prog_dmabuf_out(as)) != 0)
 			return val;
 		spin_lock_irqsave(&as->lock, flags);
 		abinfo.fragsize = as->usbout.dma.fragsize;
@@ -2504,7 +2665,9 @@ static int usb_audio_ioctl(struct inode *inode, struct file *file, unsigned int 
 	case SNDCTL_DSP_GETISPACE:
 		if (!(file->f_mode & FMODE_READ))
 			return -EINVAL;
-		if (!(as->usbin.flags & FLG_RUNNING) && (val = prog_dmabuf_in(as)) != 0)
+		
+		/*if (!(as->usbin.flags & FLG_RUNNING) && (val = prog_dmabuf_in(as)) != 0)*/
+		if ((!as->usbin.dma.ready) && (val = prog_dmabuf_in(as)) != 0)
 			return val;
 		spin_lock_irqsave(&as->lock, flags);
 		abinfo.fragsize = as->usbin.dma.fragsize;
@@ -2552,11 +2715,14 @@ static int usb_audio_ioctl(struct inode *inode, struct file *file, unsigned int 
 
        case SNDCTL_DSP_GETBLKSIZE:
 		if (file->f_mode & FMODE_WRITE) {
-			if ((val = prog_dmabuf_out(as)))
+
+		  /* do not clobber devices that are already running! */
+		  if ((!as->usbout.dma.ready) && (val = prog_dmabuf_out(as)) != 0)
 				return val;
 			return put_user(as->usbout.dma.fragsize, (int *)arg);
 		}
-		if ((val = prog_dmabuf_in(as)))
+		/* do not clobber devices that are already running! */
+		if ((!as->usbin.dma.ready) && (val = prog_dmabuf_in(as)) != 0)
 			return val;
 		return put_user(as->usbin.dma.fragsize, (int *)arg);
 
@@ -2604,11 +2770,11 @@ static int usb_audio_ioctl(struct inode *inode, struct file *file, unsigned int 
 
 	case SOUND_PCM_READ_CHANNELS:
 		val2 = (file->f_mode & FMODE_READ) ? as->usbin.dma.format : as->usbout.dma.format;
-		return put_user(AFMT_ISSTEREO(val2) ? 2 : 1, (int *)arg);
+		return put_user(AFMT_CHANNELS(val2), (int *)arg);
 
 	case SOUND_PCM_READ_BITS:
 		val2 = (file->f_mode & FMODE_READ) ? as->usbin.dma.format : as->usbout.dma.format;
-		return put_user(AFMT_IS16BIT(val2) ? 16 : 8, (int *)arg);
+		return put_user(AFMT_BYTES(val2) * 8, (int *)arg);
 
 	case SOUND_PCM_WRITE_FILTER:
 	case SNDCTL_DSP_SETSYNCRO:
@@ -2864,7 +3030,9 @@ static void usb_audio_parsestreaming(struct usb_audio_state *s, unsigned char *b
 				       dev->devnum, asifin, i);
 				continue;
 			}
-			format = (fmt[5] == 2) ? (AFMT_U16_LE | AFMT_U8) : (AFMT_S16_LE | AFMT_S8);
+			format = (fmt[5] == 2) ? 
+			  (AFMT_U32_LE | AFMT_U24_LE | AFMT_U16_LE | AFMT_U8) : 
+			  (AFMT_S32_LE | AFMT_S24_LE | AFMT_S16_LE | AFMT_S8);
 			fmt = find_csinterface_descriptor(buffer, buflen, NULL, FORMAT_TYPE, asifin, i);
 			if (!fmt) {
 				printk(KERN_ERR "usbaudio: device %u interface %u altsetting %u FORMAT_TYPE descriptor not found\n", 
@@ -2876,7 +3044,7 @@ static void usb_audio_parsestreaming(struct usb_audio_state *s, unsigned char *b
 				       dev->devnum, asifin, i);
 				continue;
 			}
-			if (fmt[4] < 1 || fmt[4] > 2 || fmt[5] < 1 || fmt[5] > 2) {
+			if (fmt[4] < 1 || fmt[4] > MAXCHANNELS || fmt[5] < 1 || fmt[5] > 4) {
 				printk(KERN_ERR "usbaudio: device %u interface %u altsetting %u unsupported channels %u framesize %u\n", 
 				       dev->devnum, asifin, i, fmt[4], fmt[5]);
 				continue;
@@ -2889,13 +3057,26 @@ static void usb_audio_parsestreaming(struct usb_audio_state *s, unsigned char *b
 			}
 			if (as->numfmtin >= MAXFORMATS)
 				continue;
+			printk(KERN_ERR "usbaudio: device %u interface %u altsetting %u channels %u framesize %u configured\n", 
+				       dev->devnum, asifin, i, fmt[4], fmt[5]);
 			fp = &as->fmtin[as->numfmtin++];
-			if (fmt[5] == 2)
-				format &= (AFMT_U16_LE | AFMT_S16_LE);
-			else
+			switch (fmt[5]) {
+			case 1:
 				format &= (AFMT_U8 | AFMT_S8);
-			if (fmt[4] == 2)
-				format |= AFMT_STEREO;
+				break;
+			case 2:
+				format &= (AFMT_U16_LE | AFMT_S16_LE);
+				break;
+			case 3:
+				format &= (AFMT_U24_LE | AFMT_S24_LE);
+				break;
+			case 4:
+				format &= (AFMT_U32_LE | AFMT_S32_LE);
+				break;
+			}
+			
+			format |= (fmt[4]-1) << 24;
+
 			fp->format = format;
 			fp->altsetting = i;
 			fp->sratelo = fp->sratehi = fmt[8] | (fmt[9] << 8) | (fmt[10] << 16);
@@ -2944,7 +3125,10 @@ static void usb_audio_parsestreaming(struct usb_audio_state *s, unsigned char *b
 				       dev->devnum, asifout, i);
 				continue;
 			}
-			format = (fmt[5] == 2) ? (AFMT_U16_LE | AFMT_U8) : (AFMT_S16_LE | AFMT_S8);
+			format = (fmt[5] == 2) ? 
+			  (AFMT_U32_LE | AFMT_U24_LE | AFMT_U16_LE | AFMT_U8) : 
+			  (AFMT_S32_LE | AFMT_S24_LE | AFMT_S16_LE | AFMT_S8);
+
 			/* Dallas DS4201 workaround */
 			if (dev->descriptor.idVendor == 0x04fa && dev->descriptor.idProduct == 0x4201)
 				format = (AFMT_S16_LE | AFMT_S8);
@@ -2959,7 +3143,7 @@ static void usb_audio_parsestreaming(struct usb_audio_state *s, unsigned char *b
 				       dev->devnum, asifout, i);
 				continue;
 			}
-			if (fmt[4] < 1 || fmt[4] > 2 || fmt[5] < 1 || fmt[5] > 2) {
+			if (fmt[4] < 1 || fmt[4] > MAXCHANNELS || fmt[5] < 1 || fmt[5] > 4) {
 				printk(KERN_ERR "usbaudio: device %u interface %u altsetting %u unsupported channels %u framesize %u\n", 
 				       dev->devnum, asifout, i, fmt[4], fmt[5]);
 				continue;
@@ -2972,13 +3156,27 @@ static void usb_audio_parsestreaming(struct usb_audio_state *s, unsigned char *b
 			}
 			if (as->numfmtout >= MAXFORMATS)
 				continue;
+			printk(KERN_ERR "usbaudio: device %u interface %u altsetting %u channels %u framesize %u configured\n", 
+			       dev->devnum, asifout, i, fmt[4], fmt[5]);
 			fp = &as->fmtout[as->numfmtout++];
-			if (fmt[5] == 2)
-				format &= (AFMT_U16_LE | AFMT_S16_LE);
-			else
+
+			switch (fmt[5]) {
+			case 1:
 				format &= (AFMT_U8 | AFMT_S8);
-			if (fmt[4] == 2)
-				format |= AFMT_STEREO;
+				break;
+			case 2:
+				format &= (AFMT_U16_LE | AFMT_S16_LE);
+				break;
+			case 3:
+				format &= (AFMT_U24_LE | AFMT_S24_LE);
+				break;
+			case 4:
+				format &= (AFMT_U32_LE | AFMT_S32_LE);
+				break;
+			}
+
+			format |= (fmt[4]-1) << 24;
+
 			fp->format = format;
 			fp->altsetting = i;
 			fp->sratelo = fp->sratehi = fmt[8] | (fmt[9] << 8) | (fmt[10] << 16);

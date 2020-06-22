@@ -1104,9 +1104,8 @@ int ip_fw_ctl(int stage, void *m, int len)
 #endif /* CONFIG_IP_FIREWALL */
 
 #if defined(CONFIG_IP_FIREWALL) || defined(CONFIG_IP_ACCT)
-
 static int ip_chain_procinfo(int stage, char *buffer, char **start,
-			     off_t offset, int length, int reset)
+			     off_t offset, int length)
 {
 	off_t pos=0, begin=0;
 	struct ip_fw *i;
@@ -1177,12 +1176,6 @@ static int ip_chain_procinfo(int stage, char *buffer, char **start,
 			len = last_len;
 			break;
 		}
-		else if(reset)
-		{
-			/* This needs to be done at this specific place! */
-			i->fw_pcnt=0L;
-			i->fw_bcnt=0L;
-		}
 		last_len = len;
 		i=i->fw_next;
 	}
@@ -1196,69 +1189,30 @@ static int ip_chain_procinfo(int stage, char *buffer, char **start,
 #endif
 
 #ifdef CONFIG_IP_ACCT
-
 static int ip_acct_procinfo(char *buffer, char **start, off_t offset,
-			    int length
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,29)
-			    , int reset
-#endif
-	)
+			    int length)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,3,29)
-	/* FIXME: No more `atomic' read and reset.  Wonderful 8-( --RR */
-	int reset = 0;
-#endif
-	return ip_chain_procinfo(IP_FW_ACCT, buffer,start, offset,length,
-				 reset);
+	return ip_chain_procinfo(IP_FW_ACCT, buffer,start, offset,length);
 }
-
 #endif
 
 #ifdef CONFIG_IP_FIREWALL
-
 static int ip_fw_in_procinfo(char *buffer, char **start, off_t offset,
-			      int length
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,29)
-			     , int reset
-#endif
-	)
+			      int length)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,3,29)
-	/* FIXME: No more `atomic' read and reset.  Wonderful 8-( --RR */
-	int reset = 0;
-#endif
-	return ip_chain_procinfo(IP_FW_IN, buffer,start,offset,length,
-				 reset);
+	return ip_chain_procinfo(IP_FW_IN, buffer,start,offset,length);
 }
 
 static int ip_fw_out_procinfo(char *buffer, char **start, off_t offset,
-			      int length
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,29)
-			    , int reset
-#endif
-	)
+			      int length)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,3,29)
-	/* FIXME: No more `atomic' read and reset.  Wonderful 8-( --RR */
-	int reset = 0;
-#endif
-	return ip_chain_procinfo(IP_FW_OUT, buffer,start,offset,length,
-				 reset);
+	return ip_chain_procinfo(IP_FW_OUT, buffer,start,offset,length);
 }
 
 static int ip_fw_fwd_procinfo(char *buffer, char **start, off_t offset,
-			      int length
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,29)
-			    , int reset
-#endif
-	)
+			      int length)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,3,29)
-	/* FIXME: No more `atomic' read and reset.  Wonderful 8-( --RR */
-	int reset = 0;
-#endif
-	return ip_chain_procinfo(IP_FW_FWD, buffer,start,offset,length,
-				 reset);
+	return ip_chain_procinfo(IP_FW_FWD, buffer,start,offset,length);
 }
 #endif
 

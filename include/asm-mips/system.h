@@ -114,6 +114,8 @@ __asm__ __volatile__(							\
 	: /* no inputs */						\
 	: "memory")
 
+#define __save_and_sti(x)	do { __save_flags(x); __sti(); } while(0);
+
 __asm__(".macro\t__restore_flags flags\n\t"
 	".set\tnoreorder\n\t"
 	".set\tnoat\n\t"
@@ -152,6 +154,7 @@ extern void __global_restore_flags(unsigned long);
 #  define save_flags(x) do { x = __global_save_flags(); } while (0)
 #  define restore_flags(x) __global_restore_flags(x)
 #  define save_and_cli(x) do { save_flags(x); cli(); } while(0)
+#  define save_and_sti(x) do { save_flags(x); sti(); } while(0)
 
 #else /* Single processor */
 
@@ -160,11 +163,13 @@ extern void __global_restore_flags(unsigned long);
 #  define save_flags(x) __save_flags(x)
 #  define save_and_cli(x) __save_and_cli(x)
 #  define restore_flags(x) __restore_flags(x)
+#  define save_and_sti(x) __save_and_sti(x)
 
 #endif /* SMP */
 
 /* For spinlocks etc */
 #define local_irq_save(x)	__save_and_cli(x)
+#define local_irq_set(x)	__save_and_sti(x)
 #define local_irq_restore(x)	__restore_flags(x)
 #define local_irq_disable()	__cli()
 #define local_irq_enable()	__sti()

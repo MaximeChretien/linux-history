@@ -1,4 +1,4 @@
-/* $Id: rtc.h,v 1.5 2002/08/14 11:04:10 sebsjo Exp $ */
+/* $Id: rtc.h,v 1.8 2002/11/20 14:27:25 oskarp Exp $ */
 
 #ifndef __RTC_H__
 #define __RTC_H__
@@ -53,17 +53,23 @@
 #  define RTC_MINUTE_ALARM	0x09
 #  define RTC_HOUR_ALARM	0x0a
 #  define RTC_DAY_ALARM		0x0b
-#  define RTC_WEEKDAY_ALARM 0x0c
+#  define RTC_WEEKDAY_ALARM 0x0c	/* Not coded in BCD! */
 
 #endif
 
 #ifdef CONFIG_ETRAX_DS1302
+extern unsigned char ds1302_readreg(int reg);
+extern void ds1302_writereg(int reg, unsigned char val);
+extern int ds1302_init(void);
 #  define CMOS_READ(x) ds1302_readreg(x)
 #  define CMOS_WRITE(val,reg) ds1302_writereg(reg,val)
 #  define RTC_INIT() ds1302_init()
 #elif defined(CONFIG_ETRAX_PCF8563)
-#  define CMOS_READ(x) i2c_readreg(RTC_I2C_READ, x)
-#  define CMOS_WRITE(val,reg) i2c_writereg(RTC_I2C_WRITE,reg,val)
+extern unsigned char pcf8563_readreg(int reg);
+extern void pcf8563_writereg(int reg, unsigned char val);
+extern int pcf8563_init(void);
+#  define CMOS_READ(x) pcf8563_readreg(x)
+#  define CMOS_WRITE(val,reg) pcf8563_writereg(reg,val)
 #  define RTC_INIT() pcf8563_init()
 #else
   /* No RTC configured so we shouldn't try to access any. */
@@ -94,17 +100,10 @@ struct rtc_time {
 };
 
 /* ioctl() calls that are permitted to the /dev/rtc interface. */
-#ifdef CONFIG_ETRAX_DS1302
-#  define DS1302_MAGIC 'p'
-#  define RTC_RD_TIME		_IOR(DS1302_MAGIC, 0x09, struct rtc_time) 	/* Read RTC time. */
-#  define RTC_SET_TIME		_IOW(DS1302_MAGIC, 0x0a, struct rtc_time) 	/* Set RTC time. */
-#  define RTC_SET_CHARGE  	_IOW(DS1302_MAGIC, 0x0b, int) 				/* Set CHARGE mode. */
-#elif defined(CONFIG_ETRAX_PCF8563)
-#  define PCF8563_MAGIC 'T'
-#  define RTC_RD_TIME		_IOR(PCF8563_MAGIC, 0x01, struct rtc_time)	/* Read RTC time. */
-#  define RTC_SET_TIME		_IOW(PCF8563_MAGIC, 0x02, struct rtc_time)	/* Set RTC time. */
-#  define RTC_SET_CHARGE  	_IOW(PCF8563_MAGIC, 0x03, int) 		
-#  define RTC_MAX_IOCTL 3
-#endif
+#define RTC_MAGIC 'p'
+#define RTC_RD_TIME		_IOR(RTC_MAGIC, 0x09, struct rtc_time)	/* Read RTC time. */
+#define RTC_SET_TIME		_IOW(RTC_MAGIC, 0x0a, struct rtc_time)	/* Set RTC time. */
+#define RTC_SET_CHARGE  	_IOW(RTC_MAGIC, 0x0b, int) 		
+#define RTC_MAX_IOCTL 0x0b
 
 #endif /* __RTC_H__ */

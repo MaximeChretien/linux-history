@@ -715,6 +715,9 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct open_request *req,
 		newtp->snd_cwnd = 2;
 		newtp->snd_cwnd_cnt = 0;
 
+		newtp->frto_counter = 0;
+		newtp->frto_highmark = 0;
+
 		newtp->ca_state = TCP_CA_Open;
 		tcp_init_xmit_timers(newsk);
 		skb_queue_head_init(&newtp->out_of_order_queue);
@@ -934,6 +937,12 @@ struct sock *tcp_check_req(struct sock *sk,struct sk_buff *skb,
 	 */
 	if (flg & (TCP_FLAG_RST|TCP_FLAG_SYN))
 		goto embryonic_reset;
+
+	/* ACK sequence verified above, just make sure ACK is
+	 * set.  If ACK not set, just silently drop the packet.
+	 */
+	if (!(flg & TCP_FLAG_ACK))
+		return NULL;
 
 	/* If TCP_DEFER_ACCEPT is set, drop bare ACK. */
 	if (tp->defer_accept && TCP_SKB_CB(skb)->end_seq == req->rcv_isn+1) {

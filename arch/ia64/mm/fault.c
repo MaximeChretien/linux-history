@@ -58,7 +58,6 @@ ia64_do_page_fault (unsigned long address, unsigned long isr, struct pt_regs *re
 	if (in_interrupt() || !mm)
 		goto no_context;
 
-#ifdef CONFIG_VIRTUAL_MEM_MAP
 	/*
 	 * If fault is in region 5 and we are in the kernel, we may already
          * have the mmap_sem (VALID_PAGE macro is called during mmap). There
@@ -67,7 +66,6 @@ ia64_do_page_fault (unsigned long address, unsigned long isr, struct pt_regs *re
   	 */
 	if ((REGION_NUMBER(address) == 5) && !user_mode(regs))
 		goto bad_area_no_up;
-#endif
 
 	down_read(&mm->mmap_sem);
 
@@ -148,9 +146,7 @@ ia64_do_page_fault (unsigned long address, unsigned long isr, struct pt_regs *re
 
   bad_area:
 	up_read(&mm->mmap_sem);
-#ifdef CONFIG_VIRTUAL_MEM_MAP
   bad_area_no_up:
-#endif
 	if ((isr & IA64_ISR_SP)
 	    || ((isr & IA64_ISR_NA) && (isr & IA64_ISR_CODE_MASK) == IA64_ISR_CODE_LFETCH))
 	{

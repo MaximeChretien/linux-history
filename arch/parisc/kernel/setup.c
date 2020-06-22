@@ -41,6 +41,7 @@
 #include <asm/processor.h>
 #include <asm/pdc.h>
 #include <asm/led.h>
+#include <asm/pdc_chassis.h>
 #include <asm/machdep.h>	/* for pa7300lc_init() proto */
 
 #define COMMAND_LINE_SIZE 1024
@@ -283,6 +284,11 @@ void __init parisc_init(void)
 	parisc_init_resources();
 	do_device_inventory();                  /* probe for hardware */
 
+	parisc_pdc_chassis_init();
+
+	/* set up a new led state on systems shipped LED State panel */
+	pdc_chassis_send_status(PDC_CHASSIS_DIRECT_BSTART);
+	
 	processor_init();
 	printk(KERN_INFO "CPU(s): %d x %s at %d.%06d MHz\n",
 			boot_cpu_data.cpu_count,

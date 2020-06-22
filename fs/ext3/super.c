@@ -47,6 +47,8 @@ static void ext3_mark_recovery_complete(struct super_block * sb,
 static void ext3_clear_journal_err(struct super_block * sb,
 				   struct ext3_super_block * es);
 
+static int ext3_sync_fs(struct super_block * sb);
+
 #ifdef CONFIG_JBD_DEBUG
 int journal_no_write[2];
 
@@ -454,6 +456,7 @@ static struct super_operations ext3_sops = {
 	delete_inode:	ext3_delete_inode,	/* BKL not held.  We take it */
 	put_super:	ext3_put_super,		/* BKL held */
 	write_super:	ext3_write_super,	/* BKL held */
+	sync_fs:	ext3_sync_fs,
 	write_super_lockfs: ext3_write_super_lockfs, /* BKL not held. Take it */
 	unlockfs:	ext3_unlockfs,		/* BKL not held.  We take it */
 	statfs:		ext3_statfs,		/* BKL held */
@@ -817,12 +820,6 @@ static void ext3_orphan_cleanup (struct super_block * sb,
 		return;
 	}
 
-	if (s_flags & MS_RDONLY) {
-		printk(KERN_INFO "EXT3-fs: %s: orphan cleanup on readonly fs\n",
-		       bdevname(sb->s_dev));
-		sb->s_flags &= ~MS_RDONLY;
-	}
-
 	if (sb->u.ext3_sb.s_mount_state & EXT3_ERROR_FS) {
 		if (es->s_last_orphan)
 			jbd_debug(1, "Errors on filesystem, "
@@ -830,6 +827,12 @@ static void ext3_orphan_cleanup (struct super_block * sb,
 		es->s_last_orphan = 0;
 		jbd_debug(1, "Skipping orphan recovery on fs with errors.\n");
 		return;
+	}
+
+	if (s_flags & MS_RDONLY) {
+		printk(KERN_INFO "EXT3-fs: %s: orphan cleanup on readonly fs\n",
+		       bdevname(sb->s_dev));
+		sb->s_flags &= ~MS_RDONLY;
 	}
 
 	while (es->s_last_orphan) {
@@ -1577,24 +1580,22 @@ int ext3_force_commit(struct super_block *sb)
  * This implicitly triggers the writebehind on sync().
  */
 
-static int do_sync_supers = 0;
-MODULE_PARM(do_sync_supers, "i");
-MODULE_PARM_DESC(do_sync_supers, "Write superblocks synchronously");
-
 void ext3_write_super (struct super_block * sb)
+{
+	if (down_trylock(&sb->s_lock) == 0)
+		BUG();
+	sb->s_dirt = 0;
+	log_start_commit(EXT3_SB(sb)->s_journal, NULL);
+}
+
+static int ext3_sync_fs(struct super_block *sb)
 {
 	tid_t target;
 	
-	if (down_trylock(&sb->s_lock) == 0)
-		BUG();		/* aviro detector */
 	sb->s_dirt = 0;
 	target = log_start_commit(EXT3_SB(sb)->s_journal, NULL);
-
-	if (do_sync_supers) {
-		unlock_super(sb);
-		log_wait_commit(EXT3_SB(sb)->s_journal, target);
-		lock_super(sb);
-	}
+	log_wait_commit(EXT3_SB(sb)->s_journal, target);
+	return 0;
 }
 
 /*

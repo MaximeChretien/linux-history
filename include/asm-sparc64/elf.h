@@ -109,8 +109,9 @@ do {	unsigned char flags = current->thread.flags;	\
 	if (flags != current->thread.flags) {		\
 		/* flush_thread will update pgd cache */\
 		current->thread.flags |= SPARC_FLAG_ABI_PENDING; \
+	} else {					\
+		current->thread.flags &= ~SPARC_FLAG_ABI_PENDING; \
 	}						\
-							\
 	if (ibcs2)					\
 		set_personality(PER_SVR4);		\
 	else if (current->personality != PER_LINUX32)	\

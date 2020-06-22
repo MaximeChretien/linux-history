@@ -1,5 +1,3 @@
-# BK Id: SCCS/s.Makefile 1.57 09/24/01 07:45:31 trini
-#
 #
 # Makefile for the linux kernel.
 #
@@ -46,6 +44,7 @@ obj-$(CONFIG_PMAC_BACKLIGHT)	+= pmac_backlight.o
 obj-$(CONFIG_PPC_RTAS)		+= error_log.o proc_rtas.o
 obj-$(CONFIG_PREP_RESIDUAL)	+= residual.o
 obj-$(CONFIG_GEMINI)		+= gemini_pci.o gemini_setup.o gemini_prom.o
+obj-$(CONFIG_LOPEC)		+= lopec_setup.o lopec_pci.o
 obj-$(CONFIG_PAL4)		+= pal4_setup.o pal4_pci.o cpc700_pic.o
 obj-$(CONFIG_SPRUCE)		+= spruce_setup.o spruce_pci.o cpc700_pic.o
 

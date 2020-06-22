@@ -26,9 +26,13 @@ bool 'Ethernet (10 or 100Mbit)' CONFIG_NET_ETHERNET
 if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
    if [ "$CONFIG_ARM" = "y" ]; then  
       dep_bool '  ARM EBSA110 AM79C961A support' CONFIG_ARM_AM79C961A $CONFIG_ARCH_EBSA110
+      tristate '  Cirrus Logic CS8900A support' CONFIG_ARM_CIRRUS
       if [ "$CONFIG_ARCH_ACORN" = "y" ]; then
          source drivers/acorn/net/Config.in
       fi
+   fi
+   if [ "$CONFIG_ARCH_CAMELOT" = "y" ]; then
+	tristate ' Altera Ether00 support' CONFIG_ETHER00
    fi
    if [ "$CONFIG_PPC" = "y" ]; then
       dep_tristate '  MACE (Power Mac ethernet) support' CONFIG_MACE $CONFIG_ALL_PPC
@@ -100,6 +104,9 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
       if [ "$CONFIG_PCI" = "y" -o "$CONFIG_EISA" = "y" ]; then
          tristate '    3c590/3c900 series (592/595/597) "Vortex/Boomerang" support' CONFIG_VORTEX
       fi
+      if [ "$CONFIG_PCI" = "y" ]; then
+	 tristate '    3cr990 series "Typhoon" support' CONFIG_TYPHOON
+      fi
    fi
    dep_tristate '  AMD LANCE and PCnet (AT1500 and NE2100) support' CONFIG_LANCE $CONFIG_ISA
    bool '  Western Digital/SMC cards' CONFIG_NET_VENDOR_SMC
@@ -158,6 +165,7 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
    fi
    if [ "$CONFIG_NET_PCI" = "y" ]; then
       dep_tristate '    AMD PCnet32 PCI support' CONFIG_PCNET32 $CONFIG_PCI
+      dep_tristate '    AMD 8111 (new PCI lance) support' CONFIG_AMD8111_ETH $CONFIG_PCI
       dep_tristate '    Adaptec Starfire/DuraLAN support' CONFIG_ADAPTEC_STARFIRE $CONFIG_PCI
       if [ "$CONFIG_ISA" = "y" -o "$CONFIG_EISA" = "y" ]; then
 	 dep_tristate '    Ansel Communications EISA 3200 support (EXPERIMENTAL)' CONFIG_AC3200 $CONFIG_EXPERIMENTAL
@@ -176,6 +184,11 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
       fi
       dep_tristate '    Davicom DM910x/DM980x support' CONFIG_DM9102 $CONFIG_PCI
       dep_tristate '    EtherExpressPro/100 support (eepro100, original Becker driver)' CONFIG_EEPRO100 $CONFIG_PCI
+      if [ "$CONFIG_VISWS" = "y" ]; then
+         define_bool CONFIG_EEPRO100_PIO y
+      else
+         dep_mbool '      Use PIO instead of MMIO' CONFIG_EEPRO100_PIO $CONFIG_EEPRO100
+      fi  
       dep_tristate '    EtherExpressPro/100 support (e100, Alternate Intel driver)' CONFIG_E100 $CONFIG_PCI
       dep_tristate '    Mylex EISA LNE390A/B support (EXPERIMENTAL)' CONFIG_LNE390 $CONFIG_EISA $CONFIG_EXPERIMENTAL
       dep_tristate '    Myson MTD-8xx PCI Ethernet support' CONFIG_FEALNX $CONFIG_PCI
@@ -248,7 +261,8 @@ dep_tristate 'MyriCOM Gigabit Ethernet support' CONFIG_MYRI_SBUS $CONFIG_SBUS
 dep_tristate 'National Semiconductor DP83820 support' CONFIG_NS83820 $CONFIG_PCI
 dep_tristate 'Packet Engines Hamachi GNIC-II support' CONFIG_HAMACHI $CONFIG_PCI
 dep_tristate 'Packet Engines Yellowfin Gigabit-NIC support (EXPERIMENTAL)' CONFIG_YELLOWFIN $CONFIG_PCI $CONFIG_EXPERIMENTAL
-dep_tristate 'SysKonnect SK-98xx support' CONFIG_SK98LIN $CONFIG_PCI
+dep_tristate 'Realtek 8169 Gigabit Ethernet support' CONFIG_R8169 $CONFIG_PCI
+dep_tristate 'SysKonnect SK-98xx and SK-95xx Gigabit Ethernet Adapter family support' CONFIG_SK98LIN $CONFIG_PCI
 dep_tristate 'Broadcom Tigon3 support' CONFIG_TIGON3 $CONFIG_PCI
 
 endmenu

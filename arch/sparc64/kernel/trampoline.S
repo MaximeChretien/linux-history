@@ -85,7 +85,10 @@ spitfire_startup:
 
 startup_continue:
 	wrpr		%g0, 15, %pil
-	wr		%g0, 0, %tick_cmpr
+
+	sethi		%hi(0x80000000), %g2
+	sllx		%g2, 32, %g2
+	wr		%g2, 0, %tick_cmpr
 
 	/* Call OBP by hand to lock KERNBASE into i/d tlbs. */
 	mov		%o0, %l0
@@ -195,7 +198,7 @@ startup_continue:
 
 	mov		1, %g5
 	sllx		%g5, THREAD_SHIFT, %g5
-	sub		%g5, (REGWIN_SZ + STACK_BIAS), %g5
+	sub		%g5, (STACKFRAME_SZ + STACK_BIAS), %g5
 	add		%g6, %g5, %sp
 	mov		0, %fp
 

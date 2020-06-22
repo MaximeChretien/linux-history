@@ -52,6 +52,8 @@
 #include <linux/ac97_codec.h>
 #include <asm/uaccess.h>
 
+#define CODEC_ID_BUFSZ 14
+
 static int ac97_read_mixer(struct ac97_codec *codec, int oss_channel);
 static void ac97_write_mixer(struct ac97_codec *codec, int oss_channel, 
 			     unsigned int left, unsigned int right);
@@ -72,6 +74,8 @@ static int sigmatel_9744_init(struct ac97_codec *codec);
 static int ad1886_init(struct ac97_codec *codec);
 static int eapd_control(struct ac97_codec *codec, int);
 static int crystal_digital_control(struct ac97_codec *codec, int mode);
+static int cmedia_init(struct ac97_codec * codec);
+static int cmedia_digital_control(struct ac97_codec *codec, int mode);
 
 
 /*
@@ -102,12 +106,15 @@ static struct ac97_ops sigmatel_9721_ops = { sigmatel_9721_init, NULL, NULL };
 static struct ac97_ops sigmatel_9744_ops = { sigmatel_9744_init, NULL, NULL };
 static struct ac97_ops crystal_digital_ops = { NULL, eapd_control, crystal_digital_control };
 static struct ac97_ops ad1886_ops = { ad1886_init, eapd_control, NULL };
+static struct ac97_ops cmedia_ops = { NULL, eapd_control, NULL};
+static struct ac97_ops cmedia_digital_ops = { cmedia_init, eapd_control, cmedia_digital_control};
 
 /* sorted by vendor/device id */
 static const struct {
 	u32 id;
 	char *name;
 	struct ac97_ops *ops;
+	int flags;
 } ac97_codec_ids[] = {
 	{0x41445303, "Analog Devices AD1819",	&null_ops},
 	{0x41445340, "Analog Devices AD1881",	&null_ops},
@@ -121,6 +128,9 @@ static const struct {
 	{0x414B4D02, "Asahi Kasei AK4543",	&null_ops},
 	{0x414C4710, "ALC200/200P",		&null_ops},
 	{0x414C4720, "ALC650",			&null_ops},
+	{0x434D4941, "CMedia",			&cmedia_ops,		AC97_NO_PCM_VOLUME },
+	{0x434D4942, "CMedia",			&cmedia_ops,		AC97_NO_PCM_VOLUME },
+	{0x434D4961, "CMedia",			&cmedia_digital_ops,	AC97_NO_PCM_VOLUME },
 	{0x43525900, "Cirrus Logic CS4297",	&default_ops},
 	{0x43525903, "Cirrus Logic CS4297",	&default_ops},
 	{0x43525913, "Cirrus Logic CS4297A rev A", &default_ops},
@@ -131,6 +141,8 @@ static const struct {
 	{0x43525931, "Cirrus Logic CS4299 rev A", &crystal_digital_ops},
 	{0x43525933, "Cirrus Logic CS4299 rev C", &crystal_digital_ops},
 	{0x43525934, "Cirrus Logic CS4299 rev D", &crystal_digital_ops},
+	{0x43585442, "CXT66",			&default_ops,		AC97_DELUDED_MODEM },
+	{0x44543031, "Diamond Technology DT0893", &default_ops},
 	{0x45838308, "ESS Allegro ES1988",	&null_ops},
 	{0x49434511, "ICE1232",			&null_ops}, /* I hope --jk */
 	{0x4e534331, "National Semiconductor LM4549", &null_ops},
@@ -657,7 +669,7 @@ int ac97_read_proc (char *page, char **start, off_t off,
  *	codec_id	-  Turn id1/id2 into a PnP string
  *	@id1: Vendor ID1
  *	@id2: Vendor ID2
- *	@buf: 10 byte buffer
+ *	@buf: CODEC_ID_BUFSZ byte buffer
  *
  *	Fills buf with a zero terminated PnP ident string for the id1/id2
  *	pair. For convenience the return is the passed in buffer pointer.
@@ -665,15 +677,37 @@ int ac97_read_proc (char *page, char **start, off_t off,
  
 static char *codec_id(u16 id1, u16 id2, char *buf)
 {
-	if(id1&0x8080)
-		snprintf(buf, 10, "%0x4X:%0x4X", id1, id2);
-	buf[0] = (id1 >> 8);
-	buf[1] = (id1 & 0xFF);
-	buf[2] = (id2 >> 8);
-	snprintf(buf+3, 7, "%d", id2&0xFF);
+	if(id1&0x8080) {
+		snprintf(buf, CODEC_ID_BUFSZ, "0x%04x:0x%04x", id1, id2);
+	} else {
+		buf[0] = (id1 >> 8);
+		buf[1] = (id1 & 0xFF);
+		buf[2] = (id2 >> 8);
+		snprintf(buf+3, CODEC_ID_BUFSZ - 3, "%d", id2&0xFF);
+	}
 	return buf;
 }
  
+/**
+ *	ac97_check_modem - Check if the Codec is a modem
+ *	@codec: codec to check
+ *
+ *	Return true if the device is an AC97 1.0 or AC97 2.0 modem
+ */
+ 
+static int ac97_check_modem(struct ac97_codec *codec)
+{
+	/* Check for an AC97 1.0 soft modem (ID1) */
+	if(codec->codec_read(codec, AC97_RESET) & 2)
+		return 1;
+	/* Check for an AC97 2.x soft modem */
+	codec->codec_write(codec, AC97_EXTENDED_MODEM_ID, 0L);
+	if(codec->codec_read(codec, AC97_EXTENDED_MODEM_ID) & 1)
+		return 1;
+	return 0;
+}
+
+
 /**
  *	ac97_probe_codec - Initialize and setup AC97-compatible codec
  *	@codec: (in/out) Kernel info for a single AC97 codec
@@ -700,9 +734,9 @@ static char *codec_id(u16 id1, u16 id2, char *buf)
 int ac97_probe_codec(struct ac97_codec *codec)
 {
 	u16 id1, id2;
-	u16 audio, modem;
+	u16 audio;
 	int i;
-	char cidbuf[10];
+	char cidbuf[CODEC_ID_BUFSZ];
 
 	/* probing AC97 codec, AC97 2.0 says that bit 15 of register 0x00 (reset) should 
 	 * be read zero.
@@ -726,11 +760,7 @@ int ac97_probe_codec(struct ac97_codec *codec)
 	}
 
 	/* probe for Modem Codec */
-	codec->codec_write(codec, AC97_EXTENDED_MODEM_ID, 0L);
-	modem = codec->codec_read(codec, AC97_EXTENDED_MODEM_ID) & 1;
-	modem |= (audio&2);
-	audio &= ~2;
-
+	codec->modem = ac97_check_modem(codec);
 	codec->name = NULL;
 	codec->codec_ops = &null_ops;
 
@@ -741,13 +771,19 @@ int ac97_probe_codec(struct ac97_codec *codec)
 			codec->type = ac97_codec_ids[i].id;
 			codec->name = ac97_codec_ids[i].name;
 			codec->codec_ops = ac97_codec_ids[i].ops;
+			codec->flags = ac97_codec_ids[i].flags;
 			break;
 		}
 	}
+	
+	/* A device which thinks its a modem but isnt */
+	if(codec->flags & AC97_DELUDED_MODEM)
+		codec->modem = 0;
+		
 	if (codec->name == NULL)
 		codec->name = "Unknown";
-	printk(KERN_INFO "ac97_codec: AC97 %s codec, id: %s(%s)\n", 
-		modem ? "Modem" : (audio ? "Audio" : ""),
+	printk(KERN_INFO "ac97_codec: AC97 %s codec, id: %s (%s)\n", 
+		codec->modem ? "Modem" : (audio ? "Audio" : ""),
 	       codec_id(id1, id2, cidbuf), codec->name);
 
 	return ac97_init_mixer(codec);
@@ -768,6 +804,9 @@ static int ac97_init_mixer(struct ac97_codec *codec)
 		codec->supported_mixers &= ~(SOUND_MASK_BASS|SOUND_MASK_TREBLE);
 	if (!(cap & 0x10))
 		codec->supported_mixers &= ~SOUND_MASK_ALTPCM;
+
+	if(codec->flags & AC97_NO_PCM_VOLUME)
+		codec->supported_mixers &= ~SOUND_MASK_PCM;
 
 	/* detect bit resolution */
 	codec->codec_write(codec, AC97_MASTER_VOL_STEREO, 0x2020);
@@ -797,6 +836,8 @@ static int ac97_init_mixer(struct ac97_codec *codec)
 		ac97_set_mixer(codec, md->mixer, md->value);
 	}
 
+	if(codec->flags & AC97_NO_PCM_VOLUME)
+		printk(KERN_WARNING "AC97 codec does not have proper volume support.\n");
 	return 1;
 }
 
@@ -869,7 +910,29 @@ static int sigmatel_9744_init(struct ac97_codec * codec)
 	return 0;
 }
 
-
+static int cmedia_init(struct ac97_codec *codec)
+{
+	/* Initialise the CMedia 9739 */
+	/*
+		We could set various options here
+		Register 0x20 bit 0x100 sets mic as center bass
+		Also do multi_channel_ctrl &=~0x3000 |=0x1000
+		
+		For now we set up the GPIO and PC beep 
+	*/
+	
+	u16 v;
+	
+	/* MIC */
+	codec->codec_write(codec, 0x64, 0x3000);
+	v = codec->codec_read(codec, 0x64);
+	v &= ~0x8000;
+	codec->codec_write(codec, 0x64, v);
+	codec->codec_write(codec, 0x70, 0x0100);
+	codec->codec_write(codec, 0x72, 0x0020);
+	return 0;
+}
+	
 static int wolfson_init00(struct ac97_codec * codec)
 {
 	/* This initialization is suspect, but not known to be wrong.
@@ -996,6 +1059,35 @@ static int crystal_digital_control(struct ac97_codec *codec, int mode)
 	codec->codec_write(codec, 0x68, cv);
 	return 0;
 }
+
+/*
+ *	CMedia digital audio control
+ *	Needs more work.
+ */
+ 
+static int cmedia_digital_control(struct ac97_codec *codec, int mode)
+{
+	u16 cv;
+
+	switch(mode)
+	{
+		case 0: cv = 0x0001; break;	/* SPEN off */
+		case 1: cv = 0x0009; break;	/* 48KHz digital */
+		default:
+			return -1;		/* Not supported yet(eg AC3) */
+	}
+	codec->codec_write(codec, 0x2A, 0x05c4);
+	codec->codec_write(codec, 0x6C, cv);
+	
+	/* Switch on mix to surround */
+	cv = codec->codec_read(codec, 0x64);
+	cv &= ~0x0200;
+	if(mode)
+		cv |= 0x0200;
+	codec->codec_write(codec, 0x64, cv);
+	return 0;
+}
+
 
 /* copied from drivers/sound/maestro.c */
 #if 0  /* there has been 1 person on the planet with a pt101 that we

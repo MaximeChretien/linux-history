@@ -3,7 +3,10 @@
 #
 # Author: Tom Rini <trini@mvista.com>
 #
-# Copyright 2001-2002 MontaVista Software Inc.
+# 2001-2002 (c) MontaVista, Software, Inc.  This file is licensed under
+# the terms of the GNU General Public License version 2.  This program
+# is licensed "as is" without any warranty of any kind, whether express
+# or implied.
 #
 # Notes:
 # (1) For machine targets which produce more than one image, define
@@ -13,11 +16,6 @@
 # the machine name you want in the image, and you can optionally set
 # ENTRYPOINT which the image should be loaded at.  The optimal setting
 # for ENTRYPOINT is the link address.
-#
-# This program is free software; you can redistribute  it and/or modify it
-# under  the terms of  the GNU General  Public License as published by the
-# Free Software Foundation;  either version 2 of the  License, or (at your
-# option) any later version.
 
 USE_STANDARD_AS_RULE		:= true
 
@@ -33,19 +31,25 @@ endif
 ifeq ($(CONFIG_GEMINI),y)
 ZIMAGE				:= zImage-SMON
 ZIMAGEINITRD			:= zImage.initrd-SMON
-EXTRA				:= direct.o
 TFTPIMAGE			:= /tftpboot/zImage.gemini
 endif
+ifeq ($(CONFIG_LOPEC),y)
+ZIMAGE				:= zImage-PPLUS
+ZIMAGEINITRD			:= zImage.initrd-PPLUS
+EXTRA				:= ../common/mpc10x_memory.o
+TFTPIMAGE			:= /tftpboot/zImage.pplus
+ZNETBOOT			:= zImage.pplus
+ZNETBOOTRD			:= zImage.initrd.pplus
+endif
+
 ifeq ($(CONFIG_PAL4),y)
 ZIMAGE				:= zImage-PAL4
 ZIMAGEINITRD			:= zImage.initrd-PAL4
-EXTRA				:= direct.o
 TFTPIMAGE			:= /tftpboot/zImage.pal4
 endif
 ifeq ($(CONFIG_SPRUCE),y)
 ZIMAGE				:= zImage-TREE
 ZIMAGEINITRD			:= zImage.initrd-TREE
-EXTRA				:= direct.o
 ENTRYPOINT			:= 0x00800000
 MISC				:= misc-spruce.o
 END				:= spruce
@@ -68,7 +72,8 @@ OBJCOPY_ARGS			:= -O elf32-powerpc
 # head.o and ../common/relocate.o must be at the start.
 obj-y				:= head.o ../common/relocate.o $(EXTRA) \
 				$(MISC) ../common/misc-common.o \
-				../common/string.o ../common/util.o
+				../common/string.o ../common/util.o \
+				../common/serial_stub.o
 obj-$(CONFIG_4xx)		+= embed_config.o
 obj-$(CONFIG_8xx)		+= embed_config.o
 obj-$(CONFIG_8260)		+= embed_config.o
@@ -86,6 +91,7 @@ endif
 LIBS				:= ../lib/zlib.a
 
 # Tools
+MKBUGBOOT			:= ../utils/mkbugboot
 MKPREP				:= ../utils/mkprep
 MKTREE				:= ../utils/mktree
 
@@ -141,6 +147,14 @@ zImage-PAL4: zvmlinux
 
 zImage.initrd-PAL4: zvmlinux.initrd
 	cp zvmlinux.initrd ../images/zImage.initrd.pal4
+
+zImage-PPLUS: zvmlinux $(MKPREP) $(MKBUGBOOT)
+	$(MKPREP) -pbp zvmlinux ../images/zImage.pplus
+	$(MKBUGBOOT) zvmlinux ../images/zImage.bugboot
+
+zImage.initrd-PPLUS: zvmlinux.initrd $(MKPREP) $(MKBUGBOOT)
+	$(MKPREP) -pbp zvmlinux.initrd ../images/zImage.initrd.pplus
+	$(MKBUGBOOT) zvmlinux.initrd ../images/zImage.initrd.bugboot
 
 zImage-SMON: zvmlinux
 	dd if=zvmlinux of=../images/zImage.gemini skip=64 bs=1k

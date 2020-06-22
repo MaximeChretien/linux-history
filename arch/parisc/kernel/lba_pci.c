@@ -735,47 +735,11 @@ lba_fixup_bus(struct pci_bus *bus)
 		bus->resource[0] = &(ldev->hba.io_space);
 		bus->resource[1] = &(ldev->hba.lmmio_space);
 	} else {
-		/* KLUGE ALERT!
-		** PCI-PCI Bridge resource munging.
-		** This hack should go away in the near future.
-		** It's based on the Alpha port.
-		*/
-		int i;
-		u16 cmd;
+		pci_read_bridge_bases(bus);
 
-		for (i = 0; i < 4; i++) {
-			bus->resource[i] =
-				&bus->self->resource[PCI_BRIDGE_RESOURCES+i];
-			bus->resource[i]->name = bus->name;
-		}
-#if 0
-		bus->resource[0]->flags |= pci_bridge_check_io(bus->self);
-#else
-		bus->resource[0]->flags |= IORESOURCE_IO;
-#endif
-		bus->resource[1]->flags |= IORESOURCE_MEM;
-		bus->resource[2]->flags = 0;	/* Don't support prefetchable */
-		bus->resource[3]->flags = 0;	/* not used */
-
-		/* 
-		** If the PPB is enabled (ie already configured) then
-		** just read those values.
-		*/
-		(void) lba_cfg_read16(bus->self, PCI_COMMAND, &cmd);
-		if (cmd & (PCI_COMMAND_MEMORY | PCI_COMMAND_IO)) {
-			pci_read_bridge_bases(bus);
-		} else {
-			/* Not configured.
-			** For now, propogate HBA limits to the bus;
-			**	PCI will adjust them later.
-			*/
-			bus->resource[0]->end = ldev->hba.io_space.end;
-			bus->resource[1]->end = ldev->hba.lmmio_space.end;
-		}
-
-		/* Turn off downstream PF memory address range by default */
-		bus->resource[2]->start = 1024*1024;
-		bus->resource[2]->end = bus->resource[2]->start - 1;
+		/* Turn off downstream PreFetchable Memory range by default */
+		bus->resource[2]->start = 0;
+		bus->resource[2]->end = 0;
 	}
 
 

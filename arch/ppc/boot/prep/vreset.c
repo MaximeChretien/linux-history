@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.vreset.c 1.13 01/11/02 10:46:08 trini
- */
-/*
  * vreset.c
  *
  * Initialize the VGA control registers to 80x25 text mode.

@@ -90,6 +90,7 @@ extern void dump_regs(struct pt_regs *);
 #define save_flags(flags)	__save_flags(flags)
 #define restore_flags(flags)	__restore_flags(flags)
 #define save_and_cli(flags)	__save_and_cli(flags)
+#define save_and_sti(flags)	__save_and_sti(flags)
 
 #else /* CONFIG_SMP */
 
@@ -102,11 +103,15 @@ extern void __global_restore_flags(unsigned long);
 #define save_flags(x) ((x)=__global_save_flags())
 #define restore_flags(x) __global_restore_flags(x)
 
+#define save_and_cli(x) do { save_flags(x); cli(); } while(0);
+#define save_and_sti(x) do { save_flags(x); sti(); } while(0);
+
 #endif /* !CONFIG_SMP */
 
 #define local_irq_disable()		__cli()
 #define local_irq_enable()		__sti()
 #define local_irq_save(flags)		__save_and_cli(flags)
+#define local_irq_set(flags)		__save_and_sti(flags)
 #define local_irq_restore(flags)	__restore_flags(flags)
 
 static __inline__ int __is_processor(unsigned long pv)

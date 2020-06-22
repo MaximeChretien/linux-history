@@ -8607,7 +8607,7 @@ static ssize_t
 cio_ignore_proc_write (struct file *file, const char *user_buf,
 		       size_t user_len, loff_t * offset)
 {
-	char *buffer
+	char *buffer;
 	
 	if(user_len > 65536)
 		user_len = 65536;

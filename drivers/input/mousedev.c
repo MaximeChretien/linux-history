@@ -409,10 +409,13 @@ static struct input_handle *mousedev_connect(struct input_handler *handler, stru
 	int minor = 0;
 
 	if (!test_bit(EV_KEY, dev->evbit) ||
-	   (!test_bit(BTN_LEFT, dev->keybit) && !test_bit(BTN_TOUCH, dev->keybit)))
+	    (!test_bit(BTN_LEFT, dev->keybit) && 
+	     !test_bit(BTN_MIDDLE, dev->keybit) && 
+	     !test_bit(BTN_TOUCH, dev->keybit)))
 		return NULL;
 
 	if ((!test_bit(EV_REL, dev->evbit) || !test_bit(REL_X, dev->relbit)) &&
+	    (!test_bit(EV_REL, dev->evbit) || !test_bit(REL_WHEEL, dev->relbit)) &&
 	    (!test_bit(EV_ABS, dev->evbit) || !test_bit(ABS_X, dev->absbit)))
 		return NULL;
 

@@ -52,6 +52,10 @@
 #include "audiochip.h"
 #include "id.h"
 
+#ifndef VIDEO_AUDIO_BALANCE
+# define VIDEO_AUDIO_BALANCE 32
+#endif
+
 MODULE_AUTHOR("Eric Sandeen <eric_sandeen@bigfoot.com>");
 MODULE_DESCRIPTION("bttv driver for the tda7432 audio processor chip");
 MODULE_LICENSE("GPL");
@@ -68,19 +72,10 @@ static int debug = 0;	 /* insmod parameter */
 /* Address to scan (I2C address of this chip) */
 static unsigned short normal_i2c[] = {
 	I2C_TDA7432 >> 1,
-	I2C_CLIENT_END};
-static unsigned short normal_i2c_range[] = {I2C_CLIENT_END};
-static unsigned short probe[2]        = { I2C_CLIENT_END, I2C_CLIENT_END };
-static unsigned short probe_range[2]  = { I2C_CLIENT_END, I2C_CLIENT_END };
-static unsigned short ignore[2]       = { I2C_CLIENT_END, I2C_CLIENT_END };
-static unsigned short ignore_range[2] = { I2C_CLIENT_END, I2C_CLIENT_END };
-static unsigned short force[2]        = { I2C_CLIENT_END, I2C_CLIENT_END };
-static struct i2c_client_address_data addr_data = {
-	normal_i2c, normal_i2c_range, 
-	probe, probe_range, 
-	ignore, ignore_range, 
-	force
+	I2C_CLIENT_END,
 };
+static unsigned short normal_i2c_range[] = { I2C_CLIENT_END, I2C_CLIENT_END };
+I2C_CLIENT_INSMOD;
 
 /* Structure of address and subaddresses for the tda7432 */
 
@@ -395,10 +390,10 @@ static int tda7432_command(struct i2c_client *client,
 		 * Max (0dB) is 0x20 (829)
 		 * (Mask out bit 7 of vol - it's for the loudness setting)
 		 */
-		if(!maxvol){  /* max +20db */
+		if (!maxvol){  /* max +20db */
 			va->volume = ( 0x6f - (t->volume & 0x7F) ) * 630;
-		} else {     /* max 0db   */
-			va->volume = (int )(( 0x6f - (t->volume & 0x7F) ) * 829.557);
+		} else {       /* max 0db   */
+			va->volume = ( 0x6f - (t->volume & 0x7F) ) * 829;
 		}
 		
 		/* Balance depends on L,R attenuation
@@ -436,11 +431,10 @@ static int tda7432_command(struct i2c_client *client,
 		dprintk("tda7432: VIDEOCSAUDIO\n");
 
 		if(va->flags & VIDEO_AUDIO_VOLUME){
-				
 			if(!maxvol){ /* max +20db */
-				t->volume = 0x6f - ( (va->volume)/630 );
+				t->volume = 0x6f - ((va->volume)/630);
 			} else {    /* max 0db   */
-				t->volume = 0x6f - ((int) (va->volume)/829.557 );
+				t->volume = 0x6f - ((va->volume)/829);
 			}
 		
 		if (loudness)		/* Turn on the loudness bit */
@@ -520,35 +514,28 @@ static int tda7432_command(struct i2c_client *client,
 	return 0;
 }
 
-
 static struct i2c_driver driver = {
-        "i2c tda7432 driver",
-	I2C_DRIVERID_TDA7432,
-        I2C_DF_NOTIFY,
-	tda7432_probe,
-        tda7432_detach,
-        tda7432_command,
+        .name            = "i2c tda7432 driver",
+	.id              = I2C_DRIVERID_TDA7432,
+        .flags           = I2C_DF_NOTIFY,
+	.attach_adapter  = tda7432_probe,
+        .detach_client   = tda7432_detach,
+        .command         = tda7432_command,
 };
 
 static struct i2c_client client_template =
 {
-        "(unset)",		/* name */
-        -1,
-        0,
-        0,
-        NULL,
-        &driver
+        .name   = "tda7432",
+        .id     = -1,
+	.driver = &driver, 
 };
 
 static int tda7432_init(void)
 {
-
-	if ( (loudness < 0) || (loudness > 15) )
-	{
+	if ( (loudness < 0) || (loudness > 15) ) {
 		printk(KERN_ERR "tda7432: loudness parameter must be between 0 and 15\n");
 		return -EINVAL;
 	}
-
 	i2c_add_driver(&driver);
 	return 0;
 }

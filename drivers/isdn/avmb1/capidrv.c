@@ -105,6 +105,7 @@ struct capidrv_contr {
 				int oldstate;
 				/* */
 				__u16 datahandle;
+                                spinlock_t lock;
 				struct ncci_datahandle_queue {
 				    struct ncci_datahandle_queue *next;
 				    __u16                         datahandle;
@@ -422,6 +423,7 @@ static inline capidrv_ncci *new_ncci(capidrv_contr * card,
 	nccip->plcip = plcip;
 	nccip->chan = plcip->chan;
 	nccip->datahandle = 0;
+        nccip->lock = SPIN_LOCK_UNLOCKED;
 
 	nccip->next = plcip->ncci_list;
 	plcip->ncci_list = nccip;
@@ -478,6 +480,7 @@ static int capidrv_add_ack(struct capidrv_ncci *nccip,
 		           __u16 datahandle, int len)
 {
 	struct ncci_datahandle_queue *n, **pp;
+	unsigned long flags;
 
 	n = (struct ncci_datahandle_queue *)
 		kmalloc(sizeof(struct ncci_datahandle_queue), GFP_ATOMIC);
@@ -488,25 +491,31 @@ static int capidrv_add_ack(struct capidrv_ncci *nccip,
 	n->next = 0;
 	n->datahandle = datahandle;
 	n->len = len;
+	spin_lock_irqsave(&nccip->lock, flags);
 	for (pp = &nccip->ackqueue; *pp; pp = &(*pp)->next) ;
 	*pp = n;
+	spin_unlock_irqrestore(&nccip->lock, flags);
 	return 0;
 }
 
 static int capidrv_del_ack(struct capidrv_ncci *nccip, __u16 datahandle)
 {
 	struct ncci_datahandle_queue **pp, *p;
+	unsigned long flags;
 	int len;
 
+	spin_lock_irqsave(&nccip->lock, flags);
 	for (pp = &nccip->ackqueue; *pp; pp = &(*pp)->next) {
  		if ((*pp)->datahandle == datahandle) {
 			p = *pp;
 			len = p->len;
 			*pp = (*pp)->next;
+	                spin_unlock_irqrestore(&nccip->lock, flags);
 		        kfree(p);
 			return len;
 		}
 	}
+        spin_unlock_irqrestore(&nccip->lock, flags);
 	return -1;
 }
 

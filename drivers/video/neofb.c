@@ -2253,7 +2253,7 @@ static int __devinit neofb_probe (struct pci_dev* dev, const struct pci_device_i
   /*
    * Our driver data
    */
-  dev->driver_data = info;
+  pci_set_drvdata(dev, info);
 
   return 0;
 
@@ -2267,7 +2267,7 @@ failed:
 
 static void __devexit neofb_remove (struct pci_dev *dev)
 {
-  struct neofb_info *info = (struct neofb_info *)dev->driver_data;
+  struct neofb_info *info = pci_get_drvdata(dev);
 
   DBG("neofb_remove");
 
@@ -2289,7 +2289,7 @@ static void __devexit neofb_remove (struct pci_dev *dev)
        * Ensure that the driver data is no longer
        * valid.
        */
-      dev->driver_data = NULL;
+      pci_set_drvdata(dev, NULL);
     }
 }
 

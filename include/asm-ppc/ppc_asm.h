@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  * include/asm-ppc/ppc_asm.h
  *
  * Definitions used by various bits of low-level assembly code on PowerPC.
@@ -154,6 +151,14 @@ END_FTR_SECTION_IFCLR(CPU_FTR_601)
 #define MTMSRD(r)	mtmsr	r
 #define CLR_TOP32(r)
 #endif /* CONFIG_PPC64BRIDGE */
+
+#ifdef CONFIG_IBM405_ERR77
+#define PPC405_ERR77(ra,rb)	dcbt	ra, rb;
+#define	PPC405_ERR77_SYNC	sync;
+#else
+#define PPC405_ERR77(ra,rb)
+#define PPC405_ERR77_SYNC
+#endif
 
 /* The boring bits... */
 

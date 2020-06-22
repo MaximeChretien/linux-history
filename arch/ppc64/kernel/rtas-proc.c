@@ -162,26 +162,26 @@ static ssize_t ppc_rtas_tone_volume_read(struct file * file, char * buf,
 		size_t count, loff_t *ppos);
 
 struct file_operations ppc_rtas_poweron_operations = {
-	read:		ppc_rtas_poweron_read,
-	write:		ppc_rtas_poweron_write
+	.read =		ppc_rtas_poweron_read,
+	.write =	ppc_rtas_poweron_write
 };
 struct file_operations ppc_rtas_progress_operations = {
-	read:		ppc_rtas_progress_read,
-	write:		ppc_rtas_progress_write
+	.read =		ppc_rtas_progress_read,
+	.write =	ppc_rtas_progress_write
 };
 
 struct file_operations ppc_rtas_clock_operations = {
-	read:		ppc_rtas_clock_read,
-	write:		ppc_rtas_clock_write
+	.read =		ppc_rtas_clock_read,
+	.write =	ppc_rtas_clock_write
 };
 
 struct file_operations ppc_rtas_tone_freq_operations = {
-	read:		ppc_rtas_tone_freq_read,
-	write:		ppc_rtas_tone_freq_write
+	.read =		ppc_rtas_tone_freq_read,
+	.write =	ppc_rtas_tone_freq_write
 };
 struct file_operations ppc_rtas_tone_volume_operations = {
-	read:		ppc_rtas_tone_volume_read,
-	write:		ppc_rtas_tone_volume_write
+	.read =		ppc_rtas_tone_volume_read,
+	.write =	ppc_rtas_tone_volume_write
 };
 
 int ppc_rtas_find_all_sensors (void);
@@ -200,7 +200,7 @@ void proc_rtas_init(void)
 	struct proc_dir_entry *entry;
 
 	rtas_node = find_devices("rtas");
-	if ((rtas_node == 0) || (naca->platform == PLATFORM_ISERIES_LPAR)) {
+	if ((rtas_node == 0) || (systemcfg->platform == PLATFORM_ISERIES_LPAR)) {
 		return;
 	}
 	

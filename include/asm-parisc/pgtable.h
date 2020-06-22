@@ -281,6 +281,11 @@ extern inline pte_t pte_mkwrite(pte_t pte)	{ pte_val(pte) |= _PAGE_WRITE; return
 	__pte;								\
 })
 
+/* 
+ * Change "struct page" to physical address.
+ */
+#define page_to_phys(page)      PAGE_TO_PA(page)
+
 #ifdef CONFIG_DISCONTIGMEM
 #define PAGE_TO_PA(page) \
 		((((page)-(page)->zone->zone_mem_map) << PAGE_SHIFT) \

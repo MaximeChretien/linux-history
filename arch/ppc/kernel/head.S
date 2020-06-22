@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  *  PowerPC version 
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
  *
@@ -144,7 +141,7 @@ __start:
  * early_init() does the early machine identification and does
  * the necessary low-level setup and clears the BSS
  *  -- Cort <cort@fsmlabs.com>
- */ 
+ */
 	bl	early_init
 
 #ifdef CONFIG_APUS
@@ -155,7 +152,6 @@ __start:
 	bl	fix_mem_constants
 #endif /* CONFIG_APUS */
 
-#ifndef CONFIG_GEMINI
 /* Switch MMU off, clear BATs and flush TLB. At this point, r3 contains
  * the physical address we are running at, returned by early_init()
  */
@@ -163,7 +159,6 @@ __start:
 __after_mmu_off:
 	bl	clear_bats
 	bl	flush_tlbs
-#endif
 
 #ifndef CONFIG_POWER4
 	/* POWER4 doesn't have BATs */
@@ -203,8 +198,7 @@ __after_mmu_off:
  * On CHRP, we are loaded at 0x10000 since OF on CHRP uses
  * the exception vectors at 0 (and therefore this copy
  * overwrites OF's exception vectors with our own).
- * If the MMU is already turned on, we copy stuff to KERNELBASE,
- * otherwise we copy it to 0.
+ * The MMU is off at this point.
  */
 	bl	reloc_offset
 	mr	r26,r3
@@ -794,6 +788,9 @@ BEGIN_FTR_SECTION
 	stw	r22,THREAD_VRSAVE(r23)
 END_FTR_SECTION_IFSET(CPU_FTR_ALTIVEC)
 #endif /* CONFIG_ALTIVEC */
+#ifndef CONFIG_6xx
+2:
+#endif
 	.globl transfer_to_handler_cont
 transfer_to_handler_cont:
 	tovirt(r2,r2)
@@ -816,12 +813,12 @@ transfer_to_handler_cont:
 	mtlr	r23
 	SYNC
 	RFI				/* jump to handler, enable MMU */
+
+#ifdef CONFIG_6xx
 2:
 	/* Out of line case when returning to kernel,
 	 * check return from power_save_6xx
 	 */
-#ifdef CONFIG_6xx
-	
 	mfspr	r24,SPRN_HID0
 	mtcr	r24
 BEGIN_FTR_SECTION
@@ -831,7 +828,6 @@ BEGIN_FTR_SECTION
 	bt-	9,power_save_6xx_restore	/* Check NAP */
 END_FTR_SECTION_IFSET(CPU_FTR_CAN_NAP)
 	b	transfer_to_handler_cont
-
 #endif /* CONFIG_6xx */
 
 /*
@@ -853,11 +849,11 @@ stack_ovf:
 	RFI
 
 /*
- * Disable FP for the task which had the FPU previously,
+ * This task wants to use the FPU now.
+ * On UP, disable FP for the task which had the FPU previously,
  * and save its floating-point registers in its thread_struct.
- * Enables the FPU for use in the kernel on return.
- * On SMP we know the fpu is free, since we give it up every
- * switch.  -- Cort
+ * Load up this task's FP registers from its thread_struct,
+ * enable the FPU for the current task and return to the task.
  */
 load_up_fpu:
 	mfmsr	r5
@@ -874,14 +870,13 @@ load_up_fpu:
  * to another.  Instead we call giveup_fpu in switch_to.
  */
 #ifndef CONFIG_SMP
-	lis	r6,0                    /* get __pa constant */
-	tophys(r6,r6)
+	tophys(r6,0)			/* get __pa constant */
 	addis	r3,r6,last_task_used_math@ha
 	lwz	r4,last_task_used_math@l(r3)
 	cmpi	0,r4,0
 	beq	1f
 	add	r4,r4,r6
-	addi	r4,r4,THREAD	        /* want THREAD of last_task_used_math */
+	addi	r4,r4,THREAD		/* want last_task_used_math->thread */
 	SAVE_32FPRS(0, r4)
 	mffs	fr0
 	stfd	fr0,THREAD_FPSCR-4(r4)
@@ -894,8 +889,10 @@ load_up_fpu:
 1:
 #endif /* CONFIG_SMP */
 	/* enable use of FP after return */
-	ori	r23,r23,MSR_FP|MSR_FE0|MSR_FE1
 	mfspr	r5,SPRG3		/* current task's THREAD (phys) */
+	lwz	r4,THREAD_FPEXC_MODE(r5)
+	ori	r23,r23,MSR_FP		/* enable FP for current */
+	or	r23,r23,r4
 	lfd	fr0,THREAD_FPSCR-4(r5)
 	mtfsf	0xff,fr0
 	REST_32FPRS(0, r5)
@@ -1075,9 +1072,10 @@ giveup_altivec:
 giveup_fpu:
 	mfmsr	r5
 	ori	r5,r5,MSR_FP
-	SYNC
+	SYNC_601
+	ISYNC_601
 	mtmsr	r5			/* enable use of fpu now */
-	SYNC
+	SYNC_601
 	isync
 	cmpi	0,r3,0
 	beqlr-				/* if no previous owner, done */
@@ -1268,6 +1266,8 @@ __secondary_start:
 	MTMSRD(r0)
 	isync
 #endif
+	/* Copy some CPU settings from CPU 0 */
+	bl	__restore_cpu_setup
 
 	lis	r3,-KERNELBASE@h
 	mr	r4,r24
@@ -1314,191 +1314,20 @@ __secondary_start:
 #endif /* CONFIG_SMP */
 
 /*
- * Enable caches and 604-specific features if necessary.
+ * Those generic dummy functions are kept for CPUs not
+ * included in CONFIG_6xx
  */
-_GLOBAL(__setup_cpu_601)
-	blr
-_GLOBAL(__setup_cpu_603)
-	b	setup_common_caches
-_GLOBAL(__setup_cpu_604)
-	mflr	r4
-	bl	setup_common_caches
-	bl	setup_604_hid0
-	mtlr	r4
-	blr
-_GLOBAL(__setup_cpu_750)
-	mflr	r4
-	bl	setup_common_caches
-	bl	setup_750_7400_hid0
-	mtlr	r4
-	blr
-_GLOBAL(__setup_cpu_750cx)
-	mflr	r4
-	bl	setup_common_caches
-	bl	setup_750_7400_hid0
-	bl	setup_750cx
-	mtlr	r4
-	blr
-_GLOBAL(__setup_cpu_750fx)
-	mflr	r4
-	bl	setup_common_caches
-	bl	setup_750_7400_hid0
-	bl	setup_750fx
-	mtlr	r4
-	blr
-_GLOBAL(__setup_cpu_7400)
-	mflr	r4
-	bl	setup_common_caches
-	bl	setup_750_7400_hid0
-	mtlr	r4
-	blr
-_GLOBAL(__setup_cpu_7410)
-	mflr	r4
-	bl	setup_common_caches
-	bl	setup_750_7400_hid0
-	li	r3,0
-	mtspr	SPRN_L2CR2,r3
-	mtlr	r4
-	blr
-_GLOBAL(__setup_cpu_7450)
-	mflr	r4
-	bl	setup_common_caches
-	bl	setup_745x_specifics
-	mtlr	r4
-	blr
-_GLOBAL(__setup_cpu_7455)
-	mflr	r4
-	bl	setup_common_caches
-	bl	setup_745x_specifics
-	mtlr	r4
-	blr
 _GLOBAL(__setup_cpu_power3)
-	blr
-_GLOBAL(__setup_cpu_power4)
 	blr
 _GLOBAL(__setup_cpu_generic)
 	blr
 
-/* Enable caches for 603's, 604, 750 & 7400 */
-setup_common_caches:
-	mfspr	r11,HID0
-	andi.	r0,r11,HID0_DCE
-#ifdef CONFIG_DCACHE_DISABLE
-	ori	r11,r11,HID0_ICE
-#else
-	ori	r11,r11,HID0_ICE|HID0_DCE
-#endif
-	ori	r8,r11,HID0_ICFI
-	bne	1f			/* don't invalidate the D-cache */
-	ori	r8,r8,HID0_DCI		/* unless it wasn't enabled */
-1:	sync
-	mtspr	HID0,r8			/* enable and invalidate caches */
-	sync
-	mtspr	HID0,r11		/* enable caches */
-	sync
-	isync
+#ifndef CONFIG_6xx
+_GLOBAL(__save_cpu_setup)
 	blr
-
-/* 604, 604e, 604ev, ...
- * Enable superscalar execution & branch history table
- */
-setup_604_hid0:
-	mfspr	r11,HID0
-	ori	r11,r11,HID0_SIED|HID0_BHTE
-	ori	r8,r11,HID0_BTCD
-	sync
-	mtspr	HID0,r8		/* flush branch target address cache */
-	sync			/* on 604e/604r */
-	mtspr	HID0,r11
-	sync
-	isync
+_GLOBAL(__restore_cpu_setup)
 	blr
-
-/* 740/750/7400/7410
- * Enable Store Gathering (SGE), Address Brodcast (ABE),
- * Branch History Table (BHTE), Branch Target ICache (BTIC)
- * Dynamic Power Management (DPM), Speculative (SPD)
- * Clear Instruction cache throttling (ICTC)
- */
-setup_750_7400_hid0:
-	mfspr	r11,HID0
-	ori	r11,r11,HID0_SGE | HID0_ABE | HID0_BHTE | HID0_BTIC
-	oris	r11,r11,HID0_DPM@h	/* enable dynamic power mgmt */
-	li	r3,HID0_SPD
-	andc	r11,r11,r3		/* clear SPD: enable speculative */
- 	li	r3,0
- 	mtspr	ICTC,r3			/* Instruction Cache Throttling off */
-	isync
-	mtspr	HID0,r11
-	sync
-	isync
-	blr
-
-/* 750cx specific
- * Looks like we have to disable NAP feature for some PLL settings...
- * (waiting for confirmation)
- */
-setup_750cx:
-	blr
-
-/* 750fx specific
- */
-setup_750fx:
-	blr
-
-/* MPC 745x
- * Enable Store Gathering (SGE), Branch Folding (FOLD)
- * Branch History Table (BHTE), Branch Target ICache (BTIC)
- * Dynamic Power Management (DPM), Speculative (SPD)
- * Ensure our data cache instructions really operate.
- * Timebase has to be running or we wouldn't have made it here,
- * just ensure we don't disable it.
- * Clear Instruction cache throttling (ICTC)
- * Enable L2 HW prefetch
- */
-setup_745x_specifics:
-	/* We check for the presence of an L3 cache setup by
-	 * the firmware. If any, we disable NAP capability as
-	 * it's known to be bogus on rev 2.1 and earlier
-	 */
-	mfspr	r11,SPRN_L3CR
-	andis.	r11,r11,L3CR_L3E@h
-	beq	1f
-	lwz	r6,CPU_SPEC_FEATURES(r5)
-	andi.	r0,r6,CPU_FTR_L3_DISABLE_NAP
-	beq	1f
-	li	r7,CPU_FTR_CAN_NAP
-	andc	r6,r6,r7
-	stw	r6,CPU_SPEC_FEATURES(r5)
-1:	
-	mfspr	r11,HID0
-
-	/* All of the bits we have to set.....
-	 */
-	ori	r11,r11,HID0_SGE | HID0_FOLD | HID0_BHTE | HID0_BTIC | HID0_LRSTK
-	oris	r11,r11,HID0_DPM@h	/* enable dynamic power mgmt */
-
-	/* All of the bits we have to clear....
-	 */
-	li	r3,HID0_SPD | HID0_NOPDST | HID0_NOPTI
-	andc	r11,r11,r3		/* clear SPD: enable speculative */
- 	li	r3,0
-
- 	mtspr	ICTC,r3			/* Instruction Cache Throttling off */
-	isync
-	mtspr	HID0,r11
-	sync
-	isync
-
-	/* Enable L2 HW prefetch
-	 */
-	mfspr	r3,SPRN_MSSCR0
-	ori	r3,r3,3
-	sync
-	mtspr	SPRN_MSSCR0,r3
-	sync
-	isync
-	blr
+#endif /* CONFIG_6xx */
 
 /*
  * Load stuff into the MMU.  Intended to be called with
@@ -1510,7 +1339,7 @@ load_up_mmu:
 	tophys(r6,r6)
 	lwz	r6,_SDR1@l(r6)
 	mtspr	SDR1,r6
-#ifdef CONFIG_PPC64BRIDGE	
+#ifdef CONFIG_PPC64BRIDGE
 	/* clear the ASR so we only use the pseudo-segment registers. */
 	li	r6,0
 	mtasr	r6
@@ -1678,7 +1507,6 @@ END_FTR_SECTION_IFSET(CPU_FTR_ALTIVEC)
  *  -- Cort 
  */
 clear_bats:
-#if !defined(CONFIG_GEMINI)
 	li	r20,0
 	mfspr	r9,PVR
 	rlwinm	r9,r9,16,16,31		/* r9 = 1 for 601, 4 for 604 */
@@ -1702,10 +1530,32 @@ clear_bats:
 	mtspr	IBAT2L,r20
 	mtspr	IBAT3U,r20
 	mtspr	IBAT3L,r20
-#endif /* !defined(CONFIG_GEMINI) */
+BEGIN_FTR_SECTION
+	/* Here's a tweak: at this point, CPU setup have
+	 * not been called yet, so HIGH_BAT_EN may not be
+	 * set in HID0 for the 745x processors. However, it
+	 * seems that doesn't affect our ability to actually
+	 * write to these SPRs.
+	 */
+	mtspr	SPRN_DBAT4U,r20
+	mtspr	SPRN_DBAT4L,r20
+	mtspr	SPRN_DBAT5U,r20
+	mtspr	SPRN_DBAT5L,r20
+	mtspr	SPRN_DBAT6U,r20
+	mtspr	SPRN_DBAT6L,r20
+	mtspr	SPRN_DBAT7U,r20
+	mtspr	SPRN_DBAT7L,r20
+	mtspr	SPRN_IBAT4U,r20
+	mtspr	SPRN_IBAT4L,r20
+	mtspr	SPRN_IBAT5U,r20
+	mtspr	SPRN_IBAT5L,r20
+	mtspr	SPRN_IBAT6U,r20
+	mtspr	SPRN_IBAT6L,r20
+	mtspr	SPRN_IBAT7U,r20
+	mtspr	SPRN_IBAT7L,r20
+END_FTR_SECTION_IFSET(CPU_FTR_HAS_HIGH_BATS)
 	blr
 
-#ifndef CONFIG_GEMINI
 flush_tlbs:
 	lis	r20, 0x40
 1:	addic.	r20, r20, -0x1000
@@ -1724,7 +1574,6 @@ mmu_off:
 	mtspr	SRR1,r3
 	sync
 	RFI
-#endif
 
 #ifndef CONFIG_POWER4	
 /*

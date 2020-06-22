@@ -201,7 +201,7 @@ int get_irq_list(char *buf)
 {
 #ifdef CONFIG_PROC_FS
 	char *p = buf;
-	unsigned int regnr;
+	unsigned int regnr = 0;
 
 	p += sprintf(p, "     ");
 #ifdef CONFIG_SMP

@@ -485,7 +485,7 @@ void release_segments(struct mm_struct *mm)
 /*
  * Create a kernel thread
  */
-int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags)
+int arch_kernel_thread(int (*fn)(void *), void * arg, unsigned long flags)
 {
 	long retval, d0;
 
@@ -508,6 +508,7 @@ int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags)
 		 "r" (arg), "r" (fn),
 		 "b" (flags | CLONE_VM)
 		: "memory");
+
 	return retval;
 }
 
@@ -726,7 +727,7 @@ void __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 			 * is not really acceptable.]
 			 */
 			memcpy(tss->io_bitmap, next->io_bitmap,
-				 IO_BITMAP_SIZE*sizeof(unsigned long));
+				 IO_BITMAP_BYTES);
 			tss->bitmap = IO_BITMAP_OFFSET;
 		} else
 			/*

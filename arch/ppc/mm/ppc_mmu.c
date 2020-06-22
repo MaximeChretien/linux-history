@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  * This file contains the routines for handling the MMU on those
  * PowerPC implementations where the MMU substantially follows the
  * architecture specification.  This includes the 6xx, 7xx, 7xxx,
@@ -91,11 +88,11 @@ void __init bat_mapin_ram(unsigned long bat2, unsigned long bat3)
 	unsigned long tot, done;
 	
 	tot = total_lowmem;
-	setbat(2, KERNELBASE, ram_phys_base, bat2, _PAGE_KERNEL);
+	setbat(2, KERNELBASE, PPC_MEMSTART, bat2, _PAGE_KERNEL);
 	done = (unsigned long)bat_addrs[2].limit - KERNELBASE + 1;
 	if ((done < tot) && !bat_addrs[3].limit && bat3) {
 		tot -= done;
-		setbat(3, KERNELBASE+done, ram_phys_base+done, bat3, 
+		setbat(3, KERNELBASE+done, PPC_MEMSTART+done, bat3, 
 		       _PAGE_KERNEL);
 	}
 }

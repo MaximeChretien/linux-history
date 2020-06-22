@@ -20,7 +20,7 @@
 	Linux Kernel Additions:
 	
  	0.99H+lk0.9 - David S. Miller - softnet, PCI DMA updates
- 	0.99H+lk1.0 - Jeff Garzik <jgarzik@mandrakesoft.com>
+ 	0.99H+lk1.0 - Jeff Garzik <jgarzik@pobox.com>
 		Remove compatibility defines for kernel versions < 2.2.x.
 		Update for new 2.3.x module interface
 	LK1.1.2 (March 19, 2000)
@@ -441,6 +441,7 @@ enum vortex_chips {
 
 	CH_3CCFEM656_1,
 	CH_3C450,
+	CH_3C920,
 };
 
 
@@ -532,6 +533,8 @@ static struct vortex_chip_info {
 									MAX_COLLISION_RESET|HAS_HWCKSM, 128, },
 	{"3c450 HomePNA Tornado",						/* AKPM: from Don's 0.99Q */
 	 PCI_USES_IO|PCI_USES_MASTER, IS_TORNADO|HAS_NWAY|HAS_HWCKSM, 128, },
+	{"3c920 Tornado",
+	 PCI_USES_IO|PCI_USES_MASTER, IS_TORNADO|HAS_NWAY|HAS_HWCKSM, 128, },
 	{0,}, /* 0 terminated list. */
 };
 
@@ -575,6 +578,7 @@ static struct pci_device_id vortex_pci_tbl[] __devinitdata = {
 
 	{ 0x10B7, 0x6564, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3CCFEM656_1 },
 	{ 0x10B7, 0x4500, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3C450 },
+	{ 0x10B7, 0x9201, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3C920 },
 	{0,}						/* 0 terminated list. */
 };
 MODULE_DEVICE_TABLE(pci, vortex_pci_tbl);
@@ -975,7 +979,7 @@ static int __devinit vortex_probe1(struct pci_dev *pdev,
 	int i, step;
 	struct net_device *dev;
 	static int printed_version;
-	int retval, print_info;
+	int retval;
 	struct vortex_chip_info * const vci = &vortex_info_tbl[chip_idx];
 	char *print_name;
 
@@ -1017,10 +1021,7 @@ static int __devinit vortex_probe1(struct pci_dev *pdev,
 			vp->enable_wol = 1;
 	}
 
-	print_info = (vortex_debug > 1);
-	if (print_info)
-		printk (KERN_INFO "See Documentation/networking/vortex.txt\n");
-
+	printk (KERN_INFO "See Documentation/networking/vortex.txt\n");
 	printk(KERN_INFO "%s: 3Com %s %s at 0x%lx. Vers " DRV_VERSION "\n",
 	       print_name,
 	       pdev ? "PCI" : "EISA",
@@ -1146,20 +1147,16 @@ static int __devinit vortex_probe1(struct pci_dev *pdev,
 		printk(" ***INVALID CHECKSUM %4.4x*** ", checksum);
 	for (i = 0; i < 3; i++)
 		((u16 *)dev->dev_addr)[i] = htons(eeprom[i + 10]);
-	if (print_info) {
-		for (i = 0; i < 6; i++)
-			printk("%c%2.2x", i ? ':' : ' ', dev->dev_addr[i]);
-	}
+	for (i = 0; i < 6; i++)
+		printk("%c%2.2x", i ? ':' : ' ', dev->dev_addr[i]);
 	EL3WINDOW(2);
 	for (i = 0; i < 6; i++)
 		outb(dev->dev_addr[i], ioaddr + i);
 
 #ifdef __sparc__
-	if (print_info)
-		printk(", IRQ %s\n", __irq_itoa(dev->irq));
+	printk(", IRQ %s\n", __irq_itoa(dev->irq));
 #else
-	if (print_info)
-		printk(", IRQ %d\n", dev->irq);
+	printk(", IRQ %d\n", dev->irq);
 	/* Tell them about an invalid IRQ. */
 	if (dev->irq <= 0 || dev->irq >= NR_IRQS)
 		printk(KERN_WARNING " *** Warning: IRQ %d is unlikely to work! ***\n",
@@ -1168,12 +1165,9 @@ static int __devinit vortex_probe1(struct pci_dev *pdev,
 
 	EL3WINDOW(4);
 	step = (inb(ioaddr + Wn4_NetDiag) & 0x1e) >> 1;
-	if (print_info) {
-		printk(KERN_INFO "  product code %02x%02x rev %02x.%d date %02d-"
-			"%02d-%02d\n", eeprom[6]&0xff, eeprom[6]>>8, eeprom[0x14],
-			step, (eeprom[4]>>5) & 15, eeprom[4] & 31, eeprom[4]>>9);
-	}
-
+	printk(KERN_INFO "  product code %02x%02x rev %02x.%d date %02d-"
+		"%02d-%02d\n", eeprom[6]&0xff, eeprom[6]>>8, eeprom[0x14],
+		step, (eeprom[4]>>5) & 15, eeprom[4] & 31, eeprom[4]>>9);
 
 	if (pdev && vci->drv_flags & HAS_CB_FNS) {
 		unsigned long fn_st_addr;			/* Cardbus function status space */
@@ -1186,10 +1180,8 @@ static int __devinit vortex_probe1(struct pci_dev *pdev,
 			if (!vp->cb_fn_base)
 				goto free_ring;
 		}
-		if (print_info) {
-			printk(KERN_INFO "%s: CardBus functions mapped %8.8lx->%p\n",
-				print_name, fn_st_addr, vp->cb_fn_base);
-		}
+		printk(KERN_INFO "%s: CardBus functions mapped %8.8lx->%p\n",
+			print_name, fn_st_addr, vp->cb_fn_base);
 		EL3WINDOW(2);
 
 		n = inw(ioaddr + Wn2_ResetOptions) & ~0x4010;
@@ -1207,8 +1199,7 @@ static int __devinit vortex_probe1(struct pci_dev *pdev,
 
 	if (vp->info1 & 0x8000) {
 		vp->full_duplex = 1;
-		if (print_info)
-			printk(KERN_INFO "Full duplex capable\n");
+		printk(KERN_INFO "Full duplex capable\n");
 	}
 
 	{
@@ -1219,17 +1210,16 @@ static int __devinit vortex_probe1(struct pci_dev *pdev,
 		if ((vp->available_media & 0xff) == 0)		/* Broken 3c916 */
 			vp->available_media = 0x40;
 		config = inl(ioaddr + Wn3_Config);
-		if (print_info) {
-			printk(KERN_DEBUG "  Internal config register is %4.4x, "
-				   "transceivers %#x.\n", config, inw(ioaddr + Wn3_Options));
-			printk(KERN_INFO "  %dK %s-wide RAM %s Rx:Tx split, %s%s interface.\n",
-				   8 << RAM_SIZE(config),
-				   RAM_WIDTH(config) ? "word" : "byte",
-				   ram_split[RAM_SPLIT(config)],
-				   AUTOSELECT(config) ? "autoselect/" : "",
-				   XCVR(config) > XCVR_ExtMII ? "<invalid transceiver>" :
-				   media_tbl[XCVR(config)].name);
-		}
+		printk(KERN_DEBUG "  Internal config register is %4.4x, "
+				"transceivers %#x.\n", config,
+				inw(ioaddr + Wn3_Options));
+		printk(KERN_INFO "  %dK %s-wide RAM %s Rx:Tx split, %s%s interface.\n",
+			   8 << RAM_SIZE(config),
+			   RAM_WIDTH(config) ? "word" : "byte",
+			   ram_split[RAM_SPLIT(config)],
+			   AUTOSELECT(config) ? "autoselect/" : "",
+			   XCVR(config) > XCVR_ExtMII ? "<invalid transceiver>" :
+			   media_tbl[XCVR(config)].name);
 		vp->default_media = XCVR(config);
 		if (vp->default_media == XCVR_NWAY)
 			vp->has_nway = 1;
@@ -1266,10 +1256,9 @@ static int __devinit vortex_probe1(struct pci_dev *pdev,
 			mii_status = mdio_read(dev, phyx, 1);
 			if (mii_status  &&  mii_status != 0xffff) {
 				vp->phys[phy_idx++] = phyx;
-				if (print_info) {
-					printk(KERN_INFO "  MII transceiver found at address %d,"
-						" status %4x.\n", phyx, mii_status);
-				}
+				printk(KERN_INFO "  MII transceiver found at "
+					"address %d, status %4x.\n",
+					phyx, mii_status);
 				if ((mii_status & 0x0040) == 0)
 					mii_preamble_required++;
 			}
@@ -1290,10 +1279,9 @@ static int __devinit vortex_probe1(struct pci_dev *pdev,
 
 	if (vp->capabilities & CapBusMaster) {
 		vp->full_bus_master_tx = 1;
-		if (print_info) {
-			printk(KERN_INFO "  Enabling bus-master transmits and %s receives.\n",
+		printk(KERN_INFO "  Enabling bus-master transmits and %s "
+				"receives.\n",
 			(vp->info2 & 1) ? "early" : "whole-frame" );
-		}
 		vp->full_bus_master_rx = (vp->info2 & 1) ? 1 : 2;
 		vp->bus_master = 0;		/* AKPM: vortex only */
 	}
@@ -1312,12 +1300,10 @@ static int __devinit vortex_probe1(struct pci_dev *pdev,
 		dev->hard_start_xmit = vortex_start_xmit;
 	}
 
-	if (print_info) {
-		printk(KERN_INFO "%s: scatter/gather %sabled. h/w checksums %sabled\n",
-				print_name,
-				(dev->features & NETIF_F_SG) ? "en":"dis",
-				(dev->features & NETIF_F_IP_CSUM) ? "en":"dis");
-	}
+	printk(KERN_INFO "%s: scatter/gather %sabled. h/w checksums %sabled\n",
+			print_name,
+			(dev->features & NETIF_F_SG) ? "en":"dis",
+			(dev->features & NETIF_F_IP_CSUM) ? "en":"dis");
 
 	dev->stop = vortex_close;
 	dev->get_stats = vortex_get_stats;
@@ -1659,10 +1645,12 @@ vortex_timer(unsigned long data)
 			if (vortex_debug > 1)
 				printk(KERN_DEBUG "%s: Media %s has link beat, %x.\n",
 					   dev->name, media_tbl[dev->if_port].name, media_status);
-		} else if (vortex_debug > 1) {
+		} else {
 			netif_carrier_off(dev);
-			printk(KERN_DEBUG "%s: Media %s has no link beat, %x.\n",
-				   dev->name, media_tbl[dev->if_port].name, media_status);
+			if (vortex_debug > 1) {
+				printk(KERN_DEBUG "%s: Media %s has no link beat, %x.\n",
+					   dev->name, media_tbl[dev->if_port].name, media_status);
+			}
 		}
 		break;
 	case XCVR_MII: case XCVR_NWAY:

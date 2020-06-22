@@ -754,11 +754,8 @@ static void NCR5380_print_status (struct Scsi_Host *instance)
 static
 char *lprint_Scsi_Cmnd (Scsi_Cmnd *cmd, char *pos, char *buffer, int length);
 
-#ifndef NCR5380_proc_info
-static
-#endif
-int NCR5380_proc_info (char *buffer, char **start, off_t offset,
-		       int length, int hostno, int inout)
+static int NCR5380_proc_info (char *buffer, char **start, off_t offset,
+			      int length, int hostno, int inout)
 {
     char *pos = buffer;
     struct Scsi_Host *instance;
@@ -913,10 +910,7 @@ static void __init NCR5380_init (struct Scsi_Host *instance, int flags)
  */
 
 /* Only make static if a wrapper function is used */
-#ifndef NCR5380_queue_command
-static
-#endif
-int NCR5380_queue_command (Scsi_Cmnd *cmd, void (*done)(Scsi_Cmnd *))
+static int NCR5380_queue_command (Scsi_Cmnd *cmd, void (*done)(Scsi_Cmnd *))
 {
     SETUP_HOSTDATA(cmd->host);
     Scsi_Cmnd *tmp;
@@ -1226,8 +1220,8 @@ static void NCR5380_dma_complete( struct Scsi_Host *instance )
 					    BASR_ACK)) ==
        (BASR_PHASE_MATCH | BASR_ACK)) {
 	    printk("scsi%d: BASR %02x\n", HOSTNO, NCR5380_read(BUS_AND_STATUS_REG));
-	    printk("scsi%d: bus stuck in data phase -- probably a
- single byte overrun!\n", HOSTNO); 
+	    printk("scsi%d: bus stuck in data phase -- probably a single byte "
+		   "overrun!\n", HOSTNO);
 	    printk("not prepared for this error!\n");
 	    printk("please e-mail sammy@sammy.net with a description of how this\n");
 	    printk("error was produced.\n");
@@ -1318,11 +1312,14 @@ static void NCR5380_intr (int irq, void *dev_id, struct pt_regs *regs)
 	    {
 /* MS: Ignore unknown phase mismatch interrupts (caused by EOP interrupt) */
 		if (basr & BASR_PHASE_MATCH)
-		    printk(KERN_NOTICE "scsi%d: unknown interrupt, "
+		   INT_PRINTK("scsi%d: unknown interrupt, "
 			   "BASR 0x%x, MR 0x%x, SR 0x%x\n",
 			   HOSTNO, basr, NCR5380_read(MODE_REG),
 			   NCR5380_read(STATUS_REG));
 		(void) NCR5380_read(RESET_PARITY_INTERRUPT_REG);
+#ifdef SUN3_SCSI_VME
+		dregs->csr |= CSR_DMA_ENABLE;
+#endif
 	    }
 	} /* if !(SELECTION || PARITY) */
     } /* BASR & IRQ */
@@ -1332,6 +1329,9 @@ static void NCR5380_intr (int irq, void *dev_id, struct pt_regs *regs)
 	       "BASR 0x%X, MR 0x%X, SR 0x%x\n", HOSTNO, basr,
 	       NCR5380_read(MODE_REG), NCR5380_read(STATUS_REG));
 	(void) NCR5380_read(RESET_PARITY_INTERRUPT_REG);
+#ifdef SUN3_SCSI_VME
+		dregs->csr |= CSR_DMA_ENABLE;
+#endif
     }
     
     if (!done) {
@@ -1694,7 +1694,9 @@ static int NCR5380_select (struct Scsi_Host *instance, Scsi_Cmnd *cmd, int tag)
 #ifndef SUPPORT_TAGS
     hostdata->busy[cmd->target] |= (1 << cmd->lun);
 #endif    
-
+#ifdef SUN3_SCSI_VME
+    dregs->csr |= CSR_INTR;
+#endif
     initialize_SCp(cmd);
 
 
@@ -1921,19 +1923,18 @@ static int NCR5380_transfer_dma( struct Scsi_Host *instance,
 	 printk("scsi%d: transfer_dma without setup!\n", HOSTNO);
 	 BUG();
     }
-
     hostdata->dma_len = c;
 
     DMA_PRINTK("scsi%d: initializing DMA for %s, %d bytes %s %p\n",
 	       HOSTNO, (p & SR_IO) ? "reading" : "writing",
-	       c, (p & SR_IO) ? "to" : "from", d);
+	       c, (p & SR_IO) ? "to" : "from", *data);
 
     /* netbsd turns off ints here, why not be safe and do it too */
     save_flags(flags);
     cli();
     
     /* send start chain */
-    sun3_udc_write(UDC_CHN_START, UDC_CSR);
+    sun3scsi_dma_start(c, *data);
     
     if (p & SR_IO) {
 	    NCR5380_write(TARGET_COMMAND_REG, 1);
@@ -1948,6 +1949,10 @@ static int NCR5380_transfer_dma( struct Scsi_Host *instance,
 	    NCR5380_write(MODE_REG, (NCR5380_read(MODE_REG) | MR_DMA_MODE | MR_ENABLE_EOP_INTR));
 	    NCR5380_write(START_DMA_SEND_REG, 0);
     }
+
+#ifdef SUN3_SCSI_VME
+    dregs->csr |= CSR_DMA_ENABLE;
+#endif
 
     restore_flags(flags);
 
@@ -1987,6 +1992,10 @@ static void NCR5380_information_transfer (struct Scsi_Host *instance)
     unsigned char phase, tmp, extended_msg[10], old_phase=0xff;
     Scsi_Cmnd *cmd = (Scsi_Cmnd *) hostdata->connected;
 
+#ifdef SUN3_SCSI_VME
+    dregs->csr |= CSR_INTR;
+#endif
+
     while (1) {
 	tmp = NCR5380_read(STATUS_REG);
 	/* We only have a valid SCSI phase when REQ is asserted */
@@ -2019,6 +2028,9 @@ static void NCR5380_information_transfer (struct Scsi_Host *instance)
 				sun3_dma_setup_done = cmd;
 			}
 		}
+#endif
+#ifdef SUN3_SCSI_VME
+		dregs->csr |= CSR_INTR;
 #endif
 	    }
 
@@ -2341,6 +2353,9 @@ static void NCR5380_information_transfer (struct Scsi_Host *instance)
 		    /* Wait for bus free to avoid nasty timeouts */
 		    while ((NCR5380_read(STATUS_REG) & SR_BSY) && !hostdata->connected)
 		    	barrier();
+#ifdef SUN3_SCSI_VME
+		    dregs->csr |= CSR_DMA_ENABLE;
+#endif
 		    return;
 		/* 
 		 * The SCSI data pointer is *IMPLICITLY* saved on a disconnect
@@ -2678,10 +2693,7 @@ static void NCR5380_reselect (struct Scsi_Host *instance)
  * 	 called where the loop started in NCR5380_main().
  */
 
-#ifndef NCR5380_abort
-static
-#endif
-int NCR5380_abort (Scsi_Cmnd *cmd)
+static int NCR5380_abort (Scsi_Cmnd *cmd)
 {
     struct Scsi_Host *instance = cmd->host;
     SETUP_HOSTDATA(instance);
@@ -2875,7 +2887,7 @@ int NCR5380_abort (Scsi_Cmnd *cmd)
  *
  */ 
 
-int NCR5380_reset( Scsi_Cmnd *cmd, unsigned int reset_flags)
+static int NCR5380_reset( Scsi_Cmnd *cmd, unsigned int reset_flags)
 {
     SETUP_HOSTDATA(cmd->host);
     int           i;

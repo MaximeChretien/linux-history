@@ -47,6 +47,15 @@
 
 #define vip	volatile int  *
 
+/* Save CIA configuration data as the console had it set up.  */
+
+struct 
+{
+	unsigned int w_base;
+	unsigned int w_mask;
+	unsigned int t_base;
+} saved_config[4] __attribute((common));
+
 /*
  * Given a bus, device, and function number, compute resulting
  * configuration space address.  It is therefore not safe to have
@@ -370,7 +379,7 @@ cia_pci_tbi_try2(struct pci_controller *hose,
 }
 
 static inline void
-cia_prepare_tbia_workaround(void)
+cia_prepare_tbia_workaround(int window)
 {
 	unsigned long *ppte, pte;
 	long i;
@@ -382,10 +391,10 @@ cia_prepare_tbia_workaround(void)
 	for (i = 0; i < CIA_BROKEN_TBIA_SIZE / sizeof(unsigned long); ++i)
 		ppte[i] = pte;
 
-	*(vip)CIA_IOC_PCI_W1_BASE = CIA_BROKEN_TBIA_BASE | 3;
-	*(vip)CIA_IOC_PCI_W1_MASK = (CIA_BROKEN_TBIA_SIZE*1024 - 1)
-				    & 0xfff00000;
-	*(vip)CIA_IOC_PCI_T1_BASE = virt_to_phys(ppte) >> 2;
+	*(vip)CIA_IOC_PCI_Wn_BASE(window) = CIA_BROKEN_TBIA_BASE | 3;
+	*(vip)CIA_IOC_PCI_Wn_MASK(window)
+	  = (CIA_BROKEN_TBIA_SIZE*1024 - 1) & 0xfff00000;
+	*(vip)CIA_IOC_PCI_Tn_BASE(window) = virt_to_phys(ppte) >> 2;
 }
 
 static void __init
@@ -605,8 +614,7 @@ static void __init
 do_init_arch(int is_pyxis)
 {
 	struct pci_controller *hose;
-	int temp;
-	int cia_rev;
+	int temp, cia_rev, tbia_window;
 
 	cia_rev = *(vip)CIA_IOC_CIA_REV & CIA_REV_MASK;
 	printk("pci: cia revision %d%s\n",
@@ -681,13 +689,31 @@ do_init_arch(int is_pyxis)
 		hose->dense_io_base = CIA_BW_IO - IDENT_ADDR;
 	}
 
+	/* Save CIA configuration data as the console had it set up.  */
+
+	saved_config[0].w_base = *(vip)CIA_IOC_PCI_W0_BASE;
+	saved_config[0].w_mask = *(vip)CIA_IOC_PCI_W0_MASK;
+	saved_config[0].t_base = *(vip)CIA_IOC_PCI_T0_BASE;
+
+	saved_config[1].w_base = *(vip)CIA_IOC_PCI_W1_BASE;
+	saved_config[1].w_mask = *(vip)CIA_IOC_PCI_W1_MASK;
+	saved_config[1].t_base = *(vip)CIA_IOC_PCI_T1_BASE;
+
+	saved_config[2].w_base = *(vip)CIA_IOC_PCI_W2_BASE;
+	saved_config[2].w_mask = *(vip)CIA_IOC_PCI_W2_MASK;
+	saved_config[2].t_base = *(vip)CIA_IOC_PCI_T2_BASE;
+
+	saved_config[3].w_base = *(vip)CIA_IOC_PCI_W3_BASE;
+	saved_config[3].w_mask = *(vip)CIA_IOC_PCI_W3_MASK;
+	saved_config[3].t_base = *(vip)CIA_IOC_PCI_T3_BASE;
+
 	/*
 	 * Set up the PCI to main memory translation windows.
 	 *
-	 * Window 0 is scatter-gather 8MB at 8MB (for isa)
-	 * Window 1 is scatter-gather 1MB at 768MB (for tbia)
+	 * Window 0 is S/G 8MB at 8MB (for isa)
+	 * Window 1 is S/G 1MB at 768MB (for tbia) (unused for CIA rev 1)
 	 * Window 2 is direct access 2GB at 2GB
-	 * Window 3 is DAC access 4GB at 8GB
+	 * Window 3 is DAC access 4GB at 8GB (or S/G for tbia if CIA rev 1)
 	 *
 	 * ??? NetBSD hints that page tables must be aligned to 32K,
 	 * possibly due to a hardware bug.  This is over-aligned
@@ -697,6 +723,7 @@ do_init_arch(int is_pyxis)
 
 	hose->sg_pci = NULL;
 	hose->sg_isa = iommu_arena_new(hose, 0x00800000, 0x00800000, 32768);
+
 	__direct_map_base = 0x80000000;
 	__direct_map_size = 0x80000000;
 
@@ -715,8 +742,20 @@ do_init_arch(int is_pyxis)
 	   are compared against W_DAC.  We can, however, directly map 4GB,
 	   which is better than before.  However, due to assumptions made
 	   elsewhere, we should not claim that we support DAC unless that
-	   4GB covers all of physical memory.  */
-	if (is_pyxis || max_low_pfn > (0x100000000 >> PAGE_SHIFT)) {
+	   4GB covers all of physical memory.
+
+	   On CIA rev 1, apparently W1 and W2 can't be used for SG.
+	   At least, there are reports that it doesn't work for Alcor.
+	   In that case, we have no choice but to use W3 for the TBIA
+	   workaround, which means we can't use DAC at all.  */
+
+	tbia_window = 1;
+	if (is_pyxis) {
+		*(vip)CIA_IOC_PCI_W3_BASE = 0;
+	} else if (cia_rev == 1) {
+		*(vip)CIA_IOC_PCI_W1_BASE = 0;
+		tbia_window = 3;
+	} else if (max_low_pfn > (0x100000000UL >> PAGE_SHIFT)) {
 		*(vip)CIA_IOC_PCI_W3_BASE = 0;
 	} else {
 		*(vip)CIA_IOC_PCI_W3_BASE = 0x00000000 | 1 | 8;
@@ -728,7 +767,7 @@ do_init_arch(int is_pyxis)
 	}
 
 	/* Prepare workaround for apparently broken tbia. */
-	cia_prepare_tbia_workaround();
+	cia_prepare_tbia_workaround(tbia_window);
 }
 
 void __init
@@ -762,6 +801,26 @@ pyxis_init_arch(void)
 	do_init_arch(1);
 }
 
+void
+cia_kill_arch(int mode)
+{
+	*(vip)CIA_IOC_PCI_W0_BASE = saved_config[0].w_base;
+	*(vip)CIA_IOC_PCI_W0_MASK = saved_config[0].w_mask;
+	*(vip)CIA_IOC_PCI_T0_BASE = saved_config[0].t_base;
+
+	*(vip)CIA_IOC_PCI_W1_BASE = saved_config[1].w_base;
+	*(vip)CIA_IOC_PCI_W1_MASK = saved_config[1].w_mask;
+	*(vip)CIA_IOC_PCI_T1_BASE = saved_config[1].t_base;
+
+	*(vip)CIA_IOC_PCI_W2_BASE = saved_config[2].w_base;
+	*(vip)CIA_IOC_PCI_W2_MASK = saved_config[2].w_mask;
+	*(vip)CIA_IOC_PCI_T2_BASE = saved_config[2].t_base;
+
+	*(vip)CIA_IOC_PCI_W3_BASE = saved_config[3].w_base;
+	*(vip)CIA_IOC_PCI_W3_MASK = saved_config[3].w_mask;
+	*(vip)CIA_IOC_PCI_T3_BASE = saved_config[3].t_base;
+}
+
 void __init
 cia_init_pci(void)
 {
@@ -781,6 +840,7 @@ cia_pci_clr_err(void)
 	*(vip)CIA_IOC_CIA_ERR;		/* re-read to force write.  */
 }
 
+#ifdef CONFIG_VERBOSE_MCHECK
 static void
 cia_decode_pci_error(struct el_CIA_sysdata_mcheck *cia, const char *msg)
 {
@@ -1048,13 +1108,13 @@ cia_decode_parity_error(struct el_CIA_sysdata_mcheck *cia)
 	printk(KERN_CRIT "  Command: %s, Parity bit: %d\n", cmd, par);
 	printk(KERN_CRIT "  Address: %#010lx, Mask: %#lx\n", addr, mask);
 }
+#endif
 
 static int
 cia_decode_mchk(unsigned long la_ptr)
 {
 	struct el_common *com;
 	struct el_CIA_sysdata_mcheck *cia;
-	int which;
 
 	com = (void *)la_ptr;
 	cia = (void *)(la_ptr + com->sys_offset);
@@ -1062,8 +1122,8 @@ cia_decode_mchk(unsigned long la_ptr)
 	if ((cia->cia_err & CIA_ERR_VALID) == 0)
 		return 0;
 
-	which = cia->cia_err & 0xfff;
-	switch (ffs(which) - 1) {
+#ifdef CONFIG_VERBOSE_MCHECK
+	switch (ffs(cia->cia_err & 0xfff) - 1) {
 	case 0: /* CIA_ERR_COR_ERR */
 		cia_decode_ecc_error(cia, "Corrected ECC error");
 		break;
@@ -1135,6 +1195,7 @@ cia_decode_mchk(unsigned long la_ptr)
 	if (cia->cia_err & CIA_ERR_LOST_IOA_TIMEOUT)
 		printk(KERN_CRIT "CIA lost machine check: "
 		       "I/O timeout\n");
+#endif
 
 	return 1;
 }

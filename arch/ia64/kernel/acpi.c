@@ -102,8 +102,6 @@ acpi_get_sysname (void)
 	return "sn2";
 # elif defined (CONFIG_IA64_DIG)
 	return "dig";
-# elif defined (CONFIG_IA64_HP_ZX1)
-	return "hpzx1";
 # else
 #	error Unknown platform.  Fix acpi.c.
 # endif
@@ -112,33 +110,7 @@ acpi_get_sysname (void)
 
 #ifdef CONFIG_ACPI
 
-/**
- * acpi_get_crs - Return the current resource settings for a device
- * obj: A handle for this device
- * buf: A buffer to be populated by this call.
- *
- * Pass a valid handle, typically obtained by walking the namespace and a
- * pointer to an allocated buffer, and this function will fill in the buffer
- * with a list of acpi_resource structures.
- */
-acpi_status
-acpi_get_crs (acpi_handle obj, acpi_buffer *buf)
-{
-	acpi_status result;
-	buf->length = 0;
-	buf->pointer = NULL;
-
-	result = acpi_get_current_resources(obj, buf);
-	if (result != AE_BUFFER_OVERFLOW)
-		return result;
-	buf->pointer = kmalloc(buf->length, GFP_KERNEL);
-	if (!buf->pointer)
-		return -ENOMEM;
-
-	return acpi_get_current_resources(obj, buf);
-}
-
-acpi_resource *
+static acpi_resource *
 acpi_get_crs_next (acpi_buffer *buf, int *offset)
 {
 	acpi_resource *res;
@@ -146,12 +118,12 @@ acpi_get_crs_next (acpi_buffer *buf, int *offset)
 	if (*offset >= buf->length)
 		return NULL;
 
-	res = buf->pointer + *offset;
+	res = (acpi_resource *)((char *) buf->pointer + *offset);
 	*offset += res->length;
 	return res;
 }
 
-acpi_resource_data *
+static acpi_resource_data *
 acpi_get_crs_type (acpi_buffer *buf, int *offset, int type)
 {
 	for (;;) {
@@ -161,12 +133,6 @@ acpi_get_crs_type (acpi_buffer *buf, int *offset, int type)
 		if (res->id == type)
 			return &res->data;
 	}
-}
-
-void
-acpi_dispose_crs (acpi_buffer *buf)
-{
-	kfree(buf->pointer);
 }
 
 static void
@@ -210,6 +176,9 @@ acpi_get_crs_addr (acpi_buffer *buf, int type, u64 *base, u64 *length, u64 *tra)
 					return;
 				}
 				break;
+			case ACPI_RSTYPE_END_TAG:
+				return;
+				break;
 		}
 	}
 }
@@ -218,13 +187,14 @@ acpi_status
 acpi_get_addr_space(acpi_handle obj, u8 type, u64 *base, u64 *length, u64 *tra)
 {
 	acpi_status status;
-	acpi_buffer buf;
+	acpi_buffer buf = { .length  = ACPI_ALLOCATE_BUFFER,
+			    .pointer = NULL };
 
 	*base = 0;
 	*length = 0;
 	*tra = 0;
 
-	status = acpi_get_crs(obj, &buf);
+	status = acpi_get_current_resources(obj, &buf);
 	if (ACPI_FAILURE(status)) {
 		printk(KERN_ERR PREFIX "Unable to get _CRS data on object\n");
 		return status;
@@ -232,7 +202,7 @@ acpi_get_addr_space(acpi_handle obj, u8 type, u64 *base, u64 *length, u64 *tra)
 
 	acpi_get_crs_addr(&buf, type, base, length, tra);
 
-	acpi_dispose_crs(&buf);
+	acpi_os_free(buf.pointer);
 
 	return AE_OK;
 }
@@ -254,7 +224,8 @@ acpi_hp_csr_space(acpi_handle obj, u64 *csr_base, u64 *csr_length)
 {
 	int i, offset = 0;
 	acpi_status status;
-	acpi_buffer buf;
+	acpi_buffer buf = { .length  = ACPI_ALLOCATE_BUFFER,
+			    .pointer = NULL };
 	acpi_resource_vendor *res;
 	acpi_hp_vendor_long *hp_res;
 	efi_guid_t vendor_guid;
@@ -262,42 +233,41 @@ acpi_hp_csr_space(acpi_handle obj, u64 *csr_base, u64 *csr_length)
 	*csr_base = 0;
 	*csr_length = 0;
 
-	status = acpi_get_crs(obj, &buf);
+	status = acpi_get_current_resources(obj, &buf);
 	if (ACPI_FAILURE(status)) {
 		printk(KERN_ERR PREFIX "Unable to get _CRS data on object\n");
 		return status;
 	}
 
+	status = AE_NOT_FOUND;
 	res = (acpi_resource_vendor *)acpi_get_crs_type(&buf, &offset, ACPI_RSTYPE_VENDOR);
 	if (!res) {
 		printk(KERN_ERR PREFIX "Failed to find config space for device\n");
-		acpi_dispose_crs(&buf);
-		return AE_NOT_FOUND;
+		goto out;
 	}
 
+	status = AE_TYPE; /* Revisit error? */
 	hp_res = (acpi_hp_vendor_long *)(res->reserved);
 
 	if (res->length != HP_CCSR_LENGTH || hp_res->guid_id != HP_CCSR_TYPE) {
 		printk(KERN_ERR PREFIX "Unknown Vendor data\n");
-		acpi_dispose_crs(&buf);
-		return AE_TYPE; /* Revisit error? */
+		goto out;
 	}
 
 	memcpy(&vendor_guid, hp_res->guid, sizeof(efi_guid_t));
 	if (efi_guidcmp(vendor_guid, HP_CCSR_GUID) != 0) {
 		printk(KERN_ERR PREFIX "Vendor GUID does not match\n");
-		acpi_dispose_crs(&buf);
-		return AE_TYPE; /* Revisit error? */
+		goto out;
 	}
 
-	for (i = 0 ; i < 8 ; i++) {
-		*csr_base |= ((u64)(hp_res->csr_base[i]) << (i * 8));
-		*csr_length |= ((u64)(hp_res->csr_length[i]) << (i * 8));
-	}
+	/* It's probably unaligned, so use memcpy */
+	memcpy(csr_base, hp_res->csr_base, 8);
+	memcpy(csr_length, hp_res->csr_length, 8);
+	status = AE_OK;
 
-	acpi_dispose_crs(&buf);
-
-	return AE_OK;
+ out:
+	acpi_os_free(buf.pointer);
+	return status;
 }
 #endif /* CONFIG_ACPI */
 
@@ -368,6 +338,7 @@ static int __init
 acpi_parse_lsapic (acpi_table_entry_header *header)
 {
 	struct acpi_table_lsapic *lsapic;
+	int phys_id;
 
 	lsapic = (struct acpi_table_lsapic *) header;
 	if (!lsapic)
@@ -375,13 +346,21 @@ acpi_parse_lsapic (acpi_table_entry_header *header)
 
 	acpi_table_print_madt_entry(header);
 
-	printk("CPU %d (0x%04x)", total_cpus, (lsapic->id << 8) | lsapic->eid);
+	phys_id = (lsapic->id << 8) | lsapic->eid;
+
+	if (total_cpus == NR_CPUS) {
+		printk(KERN_ERR PREFIX "Ignoring CPU (0x%04x) (NR_CPUS == %d)\n",
+			phys_id, NR_CPUS);
+		return 0;
+	}
+
+	printk("CPU %d (0x%04x)", total_cpus, phys_id);
 
 	if (lsapic->flags.enabled) {
 		available_cpus++;
 		printk(" enabled");
 #ifdef CONFIG_SMP
-		smp_boot_data.cpu_phys_id[total_cpus] = (lsapic->id << 8) | lsapic->eid;
+		smp_boot_data.cpu_phys_id[total_cpus] = phys_id;
 		if (hard_smp_processor_id() == smp_boot_data.cpu_phys_id[total_cpus])
 			printk(" (BSP)");
 #endif
@@ -464,9 +443,8 @@ acpi_parse_iosapic (acpi_table_entry_header *header)
 
 	if (iosapic_init) {
 #ifndef CONFIG_ITANIUM
-		/* PCAT_COMPAT flag indicates dual-8259 setup */
 		iosapic_init(iosapic->address, iosapic->global_irq_base,
-			     acpi_madt->flags.pcat_compat);
+			     has_8259);
 #else
 		/* Firmware on old Itanium systems is broken */
 		iosapic_init(iosapic->address, iosapic->global_irq_base, 1);
@@ -616,59 +594,6 @@ acpi_parse_fadt (unsigned long phys_addr, unsigned long size)
 }
 
 
-#ifdef CONFIG_SERIAL_ACPI
-
-#include <linux/acpi_serial.h>
-
-static int __init
-acpi_parse_spcr (unsigned long phys_addr, unsigned long size)
-{
-	acpi_ser_t *spcr;
-	u32 gsi, gsi_base;
-	char *iosapic_address;
-
-	if (!phys_addr || !size)
-		return -EINVAL;
-
-	if (!iosapic_register_intr)
-		return -ENODEV;
-
-	/*
-	 * ACPI is able to describe serial ports that live at non-standard
-	 * memory addresses and use non-standard interrupts, either via
-	 * direct SAPIC mappings or via PCI interrupts.  We handle interrupt
-	 * routing for SAPIC-based (non-PCI) devices here.  Interrupt routing
-	 * for PCI devices will be handled when processing the PCI Interrupt
-	 * Routing Table (PRT).
-	 */
-
-	spcr = (acpi_ser_t *) __va(phys_addr);
-	setup_serial_acpi(spcr);
-
-	if (spcr->length < sizeof(acpi_ser_t))
-		/* Table not long enough for full info, thus no interrupt */
-		return -ENODEV;
-
-	if ((spcr->base_addr.space_id != ACPI_SERIAL_PCICONF_SPACE) &&
-	    (spcr->int_type == ACPI_SERIAL_INT_SAPIC)) {
-
-		/* We have a UART in memory space with an SAPIC interrupt */
-
-		gsi = (spcr->global_int[3] << 24) |
-		      (spcr->global_int[2] << 16) |
-		      (spcr->global_int[1] << 8)  |
-		      (spcr->global_int[0]);
-
-		if (!acpi_find_iosapic(gsi, &gsi_base, &iosapic_address))
-			iosapic_register_intr(gsi, 1, 1,
-					      gsi_base, iosapic_address);
-	}
-	return 0;
-}
-
-#endif /*CONFIG_SERIAL_ACPI*/
-
-
 unsigned long __init
 acpi_find_rsdp (void)
 {
@@ -748,10 +673,6 @@ skip_madt:
 	 */
 	if (acpi_table_parse(ACPI_FACP, acpi_parse_fadt) < 1)
 		printk(KERN_ERR PREFIX "Can't find FADT\n");
-
-#ifdef CONFIG_SERIAL_ACPI
-	acpi_table_parse(ACPI_SPCR, acpi_parse_spcr);
-#endif
 
 #ifdef CONFIG_SMP
 	if (available_cpus == 0) {

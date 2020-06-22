@@ -1,4 +1,3 @@
-# BK Id: SCCS/s.Makefile 1.15 01/11/02 10:46:06 trini
 #
 # Makefile for making ELF bootable images for booting on CHRP
 # using Open Firmware.

@@ -1,6 +1,3 @@
-/*
- * BK Id: SCCS/s.uaccess.h 1.10 05/21/02 21:44:32 paulus
- */
 #ifdef __KERNEL__
 #ifndef _PPC_UACCESS_H
 #define _PPC_UACCESS_H
@@ -188,7 +185,7 @@ do {								\
 	  case 1: __get_user_asm(x,ptr,retval,"lbz"); break;	\
 	  case 2: __get_user_asm(x,ptr,retval,"lhz"); break;	\
 	  case 4: __get_user_asm(x,ptr,retval,"lwz"); break;	\
-	  case 8: __get_user_asm2(x, ptr, retval);		\
+	  case 8: __get_user_asm2(x, ptr, retval); break;	\
 	  default: (x) = __get_user_bad();			\
 	}							\
 } while (0)

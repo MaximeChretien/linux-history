@@ -132,7 +132,7 @@ struct fb_info_control {
 };
 
 /* control register access macro */
-#define CNTRL_REG(INFO,REG) (&(((INFO)->control_regs-> ## REG).r))
+#define CNTRL_REG(INFO,REG) (&(((INFO)->control_regs->REG).r))
 
 
 /******************** Prototypes for exported functions ********************/

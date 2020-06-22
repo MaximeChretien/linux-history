@@ -241,6 +241,7 @@ copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
 	}
 	memcpy(&p->thread.fpr, &current->thread.fpr, sizeof(p->thread.fpr));
 	p->thread.fpscr = current->thread.fpscr;
+	p->thread.fpexc_mode = current->thread.fpexc_mode;
 
 	return 0;
 }
@@ -276,6 +277,32 @@ void start_thread(struct pt_regs *regs, unsigned long fdptr, unsigned long sp)
 	if (last_task_used_math == current)
 		last_task_used_math = 0;
 	current->thread.fpscr = 0;
+}
+
+# define PR_FP_EXC_DISABLED     0       /* FP exceptions disabled */
+# define PR_FP_EXC_NONRECOV     1       /* async non-recoverable exc. mode */
+# define PR_FP_EXC_ASYNC        2       /* async recoverable exception mode */
+# define PR_FP_EXC_PRECISE      3       /* precise exception mode */
+
+int set_fpexc_mode(struct task_struct *tsk, unsigned int val)
+{
+	struct pt_regs *regs = tsk->thread.regs;
+
+	if (val > PR_FP_EXC_PRECISE)
+		return -EINVAL;
+	tsk->thread.fpexc_mode = __pack_fe01(val);
+	if (regs != NULL && (regs->msr & MSR_FP) != 0)
+		regs->msr = (regs->msr & ~(MSR_FE0|MSR_FE1))
+			| tsk->thread.fpexc_mode;
+	return 0;
+}
+
+int get_fpexc_mode(struct task_struct *tsk, unsigned long adr)
+{
+	unsigned int val;
+
+	val = __unpack_fe01(tsk->thread.fpexc_mode);
+	return put_user(val, (unsigned int *) adr);
 }
 
 int sys_clone(int p1, int p2, int p3, int p4, int p5, int p6,
@@ -337,13 +364,13 @@ void free_task_struct(struct task_struct * task_ptr)
 
 void initialize_paca_hardware_interrupt_stack(void)
 {
-	extern struct naca_struct *naca;
+	extern struct systemcfg *systemcfg;
 
 	int i;
 	unsigned long stack;
 	unsigned long end_of_stack =0;
 
-	for (i=1; i < naca->processorCount; i++) {
+	for (i=1; i < systemcfg->processorCount; i++) {
 		/* Carve out storage for the hardware interrupt stack */
 		stack = __get_free_pages(GFP_KERNEL, get_order(8*PAGE_SIZE));
 
@@ -366,7 +393,7 @@ void initialize_paca_hardware_interrupt_stack(void)
 	if (__is_processor(PV_POWER4) || __is_processor(PV_POWER4p))
 		return;
 
-	for (i=0; i < naca->processorCount; i++) {
+	for (i=0; i < systemcfg->processorCount; i++) {
 		/* set page at the top of stack to be protected - prevent overflow */
 		end_of_stack = paca[i].xHrdIntStack - (8*PAGE_SIZE - STACK_FRAME_OVERHEAD);
 		ppc_md.hpte_updateboltedpp(PP_RXRX,end_of_stack);
@@ -461,6 +488,10 @@ unsigned long get_wchan(struct task_struct *p)
 			return 0;
 		if (count > 0) {
 			ip = *(unsigned long *)(sp + 16);
+			/*
+			 * XXX we mask the upper 32 bits until procps
+			 * gets fixed.
+			 */
 			if (ip < first_sched || ip >= last_sched)
 				return (ip & 0xFFFFFFFF);
 		}

@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.ppc4xx_serial.h 1.3 05/17/01 18:14:25 cort
- */
-/*
  *    Copyright 2000 MontaVista Software Inc.
  *	PPC405GP modifications
  * 	Author: MontaVista Software, Inc.

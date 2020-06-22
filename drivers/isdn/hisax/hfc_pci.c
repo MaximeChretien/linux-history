@@ -687,6 +687,10 @@ hfcpci_fill_fifo(struct BCState *bcs)
 				debugl1(cs, "hfcpci_fill_fifo_trans %d frame length %d discarded",
 					bcs->channel, bcs->tx_skb->len);
 
+			if (bcs->st->lli.l1writewakeup &&
+                           (PACKET_NOACK != bcs->tx_skb->pkt_type))
+				bcs->st->lli.l1writewakeup(bcs->st, bcs->tx_skb->len);
+
 			dev_kfree_skb_any(bcs->tx_skb);
 			cli();
 			bcs->tx_skb = skb_dequeue(&bcs->squeue);	/* fetch next data */

@@ -9,12 +9,10 @@
  *	   trini@mvista.com
  * Derived from arch/ppc/boot/prep/head.S (Cort Dougan, many others).
  *
- * Copyright 2001 MontaVista Software Inc.
- *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
+ * 2001 (c) MontaVista, Software, Inc.  This file is licensed under
+ * the terms of the GNU General Public License version 2.  This program
+ * is licensed "as is" without any warranty of any kind, whether express
+ * or implied.
  */
 
 #include <linux/config.h>
@@ -191,7 +189,7 @@ start_ldr:
 	mr	r4,r7		/* Program length */
 	mr	r5,r6		/* Checksum */
 	mr	r6,r11		/* Residual data */
-	bl	decompress_kernel
+	bl	load_kernel
 
 	/*
 	 * Make sure the kernel knows we don't have things set  in
@@ -201,10 +199,10 @@ start_ldr:
 	li	r6,0
 
 	/*
-	 * Start at the begining.
+	 * Start at the beginning of real code (the first
+	 * three instructions are 'nop' since we 
+	 * sometimes overwrite them).
 	 */
-	li	r9,0x0000
-	mtlr	r9
-	blr
+	ba	0x000c
 
 	.comm	.stack,4096*2,4

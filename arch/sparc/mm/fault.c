@@ -139,7 +139,7 @@ static void unhandled_fault(unsigned long address, struct task_struct *tsk,
 {
 	if((unsigned long) address < PAGE_SIZE) {
 		printk(KERN_ALERT "Unable to handle kernel NULL "
-		       "pointer dereference");
+		       "pointer dereference\n");
 	} else {
 		printk(KERN_ALERT "Unable to handle kernel paging request "
 		       "at virtual address %08lx\n", address);

@@ -842,10 +842,15 @@ static void rs_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 		if (status & UART_LSR_DR)
 			receive_chars(info, &status, regs);
 		check_modem_status(info);
+#ifdef CONFIG_MELAN
 		if ((status & UART_LSR_THRE) ||
 			/* for buggy ELAN processors */
 			((iir & UART_IIR_ID) == UART_IIR_THRI))
 			transmit_chars(info, 0);
+#else
+		if (status & UART_LSR_THRE)
+			transmit_chars(info, 0);
+#endif
 
 	next:
 		info = info->next_port;

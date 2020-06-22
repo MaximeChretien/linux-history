@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  *  arch/ppc/platforms/setup.c
  *
  *  PowerPC version 
@@ -86,7 +83,6 @@ extern void pmac_read_rtc_time(void);
 extern void pmac_calibrate_decr(void);
 extern void pmac_pcibios_fixup(void);
 extern void pmac_find_bridges(void);
-extern int pmac_ide_check_base(ide_ioreg_t base);
 extern ide_ioreg_t pmac_ide_get_base(int index);
 extern void pmac_ide_init_hwif_ports(hw_regs_t *hw,
 	ide_ioreg_t data_port, ide_ioreg_t ctrl_port, int *irq);
@@ -709,64 +705,6 @@ pmac_halt(void)
 }
 
 
-#if defined(CONFIG_BLK_DEV_IDE) || defined(CONFIG_BLK_DEV_IDE_MODULE)
-/*
- * IDE stuff.
- */
-static int __pmac
-pmac_ide_check_region(ide_ioreg_t from, unsigned int extent)
-{
-#ifdef CONFIG_BLK_DEV_IDE_PMAC
-	if (pmac_ide_check_base(from) >= 0)
-		return 0;
-#endif
-	return check_region(from, extent);
-}
-
-static void __pmac
-pmac_ide_request_region(ide_ioreg_t from,
-			unsigned int extent,
-			const char *name)
-{
-#ifdef CONFIG_BLK_DEV_IDE_PMAC
-	if (pmac_ide_check_base(from) >= 0)
-		return;
-#endif
-	request_region(from, extent, name);
-}
-
-static void __pmac
-pmac_ide_release_region(ide_ioreg_t from,
-			unsigned int extent)
-{
-#ifdef CONFIG_BLK_DEV_IDE_PMAC
-	if (pmac_ide_check_base(from) >= 0)
-		return;
-#endif
-	release_region(from, extent);
-}
-
-#ifndef CONFIG_BLK_DEV_IDE_PMAC
-/*
- * This is only used if we have a PCI IDE controller, not
- * for the IDE controller in the ohare/paddington/heathrow/keylargo.
- */
-static void __pmac
-pmac_ide_pci_init_hwif_ports(hw_regs_t *hw, ide_ioreg_t data_port,
-		ide_ioreg_t ctrl_port, int *irq)
-{
-	ide_ioreg_t reg = data_port;
-	int i;
-
-	for (i = IDE_DATA_OFFSET; i <= IDE_STATUS_OFFSET; i++) {
-		hw->io_ports[i] = reg;
-		reg += 1;
-	}
-	hw->io_ports[IDE_CONTROL_OFFSET] = ctrl_port;
-}
-#endif /* CONFIG_BLK_DEV_IDE_PMAC */
-#endif /* defined(CONFIG_BLK_DEV_IDE) || defined(CONFIG_BLK_DEV_IDE_MODULE) */
-
 /*
  * Read in a property describing some pieces of memory.
  */
@@ -926,14 +864,9 @@ pmac_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	select_adb_keyboard();
 
 #if defined(CONFIG_BLK_DEV_IDE) || defined(CONFIG_BLK_DEV_IDE_MODULE)
-        ppc_ide_md.ide_check_region	= pmac_ide_check_region;
-        ppc_ide_md.ide_request_region	= pmac_ide_request_region;
-        ppc_ide_md.ide_release_region	= pmac_ide_release_region;
 #ifdef CONFIG_BLK_DEV_IDE_PMAC
         ppc_ide_md.ide_init_hwif	= pmac_ide_init_hwif_ports;
         ppc_ide_md.default_io_base	= pmac_ide_get_base;
-#else /* CONFIG_BLK_DEV_IDE_PMAC */
-        ppc_ide_md.ide_init_hwif	= pmac_ide_pci_init_hwif_ports;
 #endif /* CONFIG_BLK_DEV_IDE_PMAC */
 #endif /* defined(CONFIG_BLK_DEV_IDE) || defined(CONFIG_BLK_DEV_IDE_MODULE) */
 

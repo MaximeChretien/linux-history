@@ -517,7 +517,7 @@ give_sigsegv:
  * OK, we're invoking a handler
  */	
 
-static inline void
+extern inline void
 handle_signal(int canrestart, unsigned long sig, struct k_sigaction *ka,
 	      siginfo_t *info, sigset_t *oldset, struct pt_regs * regs)
 {

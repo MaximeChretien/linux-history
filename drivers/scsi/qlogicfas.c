@@ -147,6 +147,8 @@ static int	    qlcfg8 = ( SLOWCABLE << 7 ) | ( QL_ENABLE_PARITY << 4 );
 static int	    qlcfg9 = ( ( XTALFREQ + 4 ) / 5 );
 static int	    qlcfgc = ( FASTCLK << 3 ) | ( FASTSCSI << 4 );
 
+struct	Scsi_Host	*hreg;	/* registered host structure */
+
 /*----------------------------------------------------------------*/
 /* The qlogic card uses two register maps - These macros select which one */
 #define REG0 ( outb( inb( qbase + 0xd ) & 0x7f , qbase + 0xd ), outb( 4 , qbase + 0xd ))
@@ -541,13 +543,24 @@ void	qlogicfas_preset(int port, int irq)
 }
 #endif
 
+int	qlogicfas_release(struct Scsi_Host *hreg)
+{
+	release_region(qbase, 0x10);
+
+	if (qlirq >= 0)
+		free_irq(qlirq, hreg);
+
+	scsi_unregister(hreg);
+
+	return 0;
+}
+
 /*----------------------------------------------------------------*/
 /* look for qlogic card and init if found */
 int __QLINIT qlogicfas_detect(Scsi_Host_Template * host)
 {
 int	i, j;			/* these are only used by IRQ detect */
 int	qltyp;			/* type of chip */
-struct	Scsi_Host	*hreg;	/* registered host structure */
 unsigned long	flags;
 
 host->proc_name =  "qlogicfas";
@@ -620,16 +633,28 @@ host->proc_name =  "qlogicfas";
 	else
 		printk( "Ql: Using preset IRQ %d\n", qlirq );
 
-	if (qlirq >= 0 && !request_irq(qlirq, do_ql_ihandl, 0, "qlogicfas", NULL))
+	if (qlirq >= 0)
 		host->can_queue = 1;
 #endif
 	hreg = scsi_register( host , 0 );	/* no host data */
 	if (!hreg)
 		goto err_release_mem;
+
+#if QL_USE_IRQ
+#ifdef PCMCIA
+	if(request_irq(qlirq, do_ql_ihandl, SA_SHIRQ, "qlogicfas", hreg) < 0)
+#else	
+	if(request_irq(qlirq, do_ql_ihandl, SA_SHIRQ, "qlogicfas", hreg) < 0)
+#endif	
+	{
+		scsi_unregister(host);
+		goto err_release_mem;
+	}
+#endif
 	hreg->io_port = qbase;
 	hreg->n_io_port = 16;
 	hreg->dma_channel = -1;
-	if( qlirq != -1 )
+	if( qlirq >= 0 )
 		hreg->irq = qlirq;
 
 	sprintf(qinfo, "Qlogicfas Driver version 0.46, chip %02X at %03X, IRQ %d, TPdma:%d",
@@ -640,8 +665,8 @@ host->proc_name =  "qlogicfas";
 
  err_release_mem:
 	release_region(qbase, 0x10);
-	if (host->can_queue)
-		free_irq(qlirq, do_ql_ihandl);
+	if (qlirq >= 0)
+		free_irq(qlirq, hreg);
 	return 0;
 
 }

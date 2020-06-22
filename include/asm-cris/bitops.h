@@ -89,7 +89,7 @@ struct __dummy { unsigned long a[100]; };
  * It also implies a memory barrier.
  */
 
-static __inline__ int test_and_set_bit(int nr, void *addr)
+extern __inline__ int test_and_set_bit(int nr, void *addr)
 {
 	unsigned int mask, retval;
 	unsigned long flags;
@@ -120,7 +120,7 @@ static __inline__ int test_and_set_bit(int nr, void *addr)
  * It also implies a memory barrier.
  */
 
-static __inline__ int test_and_clear_bit(int nr, void *addr)
+extern __inline__ int test_and_clear_bit(int nr, void *addr)
 {
 	unsigned int mask, retval;
 	unsigned long flags;
@@ -146,7 +146,7 @@ static __inline__ int test_and_clear_bit(int nr, void *addr)
  * but actually fail.  You must protect multiple accesses with a lock.
  */
 
-static __inline__ int __test_and_clear_bit(int nr, void *addr)
+extern __inline__ int __test_and_clear_bit(int nr, void *addr)
 {
 	unsigned int mask, retval;
 	unsigned int *adr = (unsigned int *)addr;
@@ -166,7 +166,7 @@ static __inline__ int __test_and_clear_bit(int nr, void *addr)
  * It also implies a memory barrier.
  */
 
-static __inline__ int test_and_change_bit(int nr, void *addr)
+extern __inline__ int test_and_change_bit(int nr, void *addr)
 {
 	unsigned int mask, retval;
 	unsigned long flags;
@@ -183,7 +183,7 @@ static __inline__ int test_and_change_bit(int nr, void *addr)
 
 /* WARNING: non atomic and it can be reordered! */
 
-static __inline__ int __test_and_change_bit(int nr, void *addr)
+extern __inline__ int __test_and_change_bit(int nr, void *addr)
 {
 	unsigned int mask, retval;
 	unsigned int *adr = (unsigned int *)addr;
@@ -204,7 +204,7 @@ static __inline__ int __test_and_change_bit(int nr, void *addr)
  * This routine doesn't need to be atomic.
  */
 
-static __inline__ int test_bit(int nr, const void *addr)
+extern __inline__ int test_bit(int nr, const void *addr)
 {
 	unsigned int mask;
 	unsigned int *adr = (unsigned int *)addr;
@@ -225,7 +225,7 @@ static __inline__ int test_bit(int nr, const void *addr)
  * number.  They differ in that the first function also inverts all bits
  * in the input.
  */
-static __inline__ unsigned long cris_swapnwbrlz(unsigned long w)
+extern __inline__ unsigned long cris_swapnwbrlz(unsigned long w)
 {
 	/* Let's just say we return the result in the same register as the
 	   input.  Saying we clobber the input but can return the result
@@ -241,7 +241,7 @@ static __inline__ unsigned long cris_swapnwbrlz(unsigned long w)
 	return res;
 }
 
-static __inline__ unsigned long cris_swapwbrlz(unsigned long w)
+extern __inline__ unsigned long cris_swapwbrlz(unsigned long w)
 {
 	unsigned res;
 	__asm__ ("swapwbr %0 \n\t"
@@ -255,7 +255,7 @@ static __inline__ unsigned long cris_swapwbrlz(unsigned long w)
  * ffz = Find First Zero in word. Undefined if no zero exists,
  * so code should check against ~0UL first..
  */
-static __inline__ unsigned long ffz(unsigned long w)
+extern __inline__ unsigned long ffz(unsigned long w)
 {
 	/* The generic_ffs function is used to avoid the asm when the
 	   argument is a constant.  */
@@ -268,7 +268,7 @@ static __inline__ unsigned long ffz(unsigned long w)
  * Somewhat like ffz but the equivalent of generic_ffs: in contrast to
  * ffz we return the first one-bit *plus one*.
  */
-static __inline__ unsigned long ffs(unsigned long w)
+extern __inline__ unsigned long kernel_ffs(unsigned long w)
 {
 	/* The generic_ffs function is used to avoid the asm when the
 	   argument is a constant.  */
@@ -277,13 +277,20 @@ static __inline__ unsigned long ffs(unsigned long w)
 		: w ? cris_swapwbrlz (w) + 1 : 0;
 }
 
+/*
+ * Since we define it "external", it collides with the built-in
+ * definition, which doesn't have the same semantics.  We don't want to
+ * use -fno-builtin, so just hide the name ffs.
+ */
+#define ffs kernel_ffs
+
 /**
  * find_next_zero_bit - find the first zero bit in a memory region
  * @addr: The address to base the search on
  * @offset: The bitnumber to start searching at
  * @size: The maximum size to search
  */
-static __inline__ int find_next_zero_bit (void * addr, int size, int offset)
+extern __inline__ int find_next_zero_bit (void * addr, int size, int offset)
 {
 	unsigned long *p = ((unsigned long *) addr) + (offset >> 5);
 	unsigned long result = offset & ~31UL;

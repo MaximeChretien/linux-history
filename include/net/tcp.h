@@ -30,6 +30,7 @@
 #include <linux/cache.h>
 #include <net/checksum.h>
 #include <net/sock.h>
+#include <net/snmp.h>
 
 /* This is for all connections with a full identity, no wildcards.
  * New scheme, half the table is for TIME_WAIT, the other half is
@@ -460,6 +461,8 @@ extern int sysctl_tcp_rmem[3];
 extern int sysctl_tcp_app_win;
 extern int sysctl_tcp_adv_win_scale;
 extern int sysctl_tcp_tw_reuse;
+extern int sysctl_tcp_frto;
+extern int sysctl_tcp_low_latency;
 
 extern atomic_t tcp_memory_allocated;
 extern atomic_t tcp_sockets_allocated;
@@ -621,6 +624,8 @@ extern struct tcp_mib tcp_statistics[NR_CPUS*2];
 #define TCP_INC_STATS(field)		SNMP_INC_STATS(tcp_statistics, field)
 #define TCP_INC_STATS_BH(field)		SNMP_INC_STATS_BH(tcp_statistics, field)
 #define TCP_INC_STATS_USER(field) 	SNMP_INC_STATS_USER(tcp_statistics, field)
+#define TCP_ADD_STATS_BH(field, val)	SNMP_ADD_STATS_BH(tcp_statistics, field, val)
+#define TCP_ADD_STATS_USER(field, val)	SNMP_ADD_STATS_USER(tcp_statistics, field, val)
 
 extern void			tcp_put_port(struct sock *sk);
 extern void			__tcp_put_port(struct sock *sk);
@@ -710,6 +715,7 @@ extern struct sock *		tcp_check_req(struct sock *sk,struct sk_buff *skb,
 extern int			tcp_child_process(struct sock *parent,
 						  struct sock *child,
 						  struct sk_buff *skb);
+extern void			tcp_enter_frto(struct sock *sk);
 extern void			tcp_enter_loss(struct sock *sk, int how);
 extern void			tcp_clear_retrans(struct tcp_opt *tp);
 extern void			tcp_update_metrics(struct sock *sk);
@@ -1325,7 +1331,7 @@ static __inline__ int tcp_prequeue(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_opt *tp = &sk->tp_pinfo.af_tcp;
 
-	if (tp->ucopy.task) {
+	if (!sysctl_tcp_low_latency && tp->ucopy.task) {
 		__skb_queue_tail(&tp->ucopy.prequeue, skb);
 		tp->ucopy.memory += skb->truesize;
 		if (tp->ucopy.memory > sk->rcvbuf) {
@@ -1372,6 +1378,9 @@ static __inline__ void tcp_set_state(struct sock *sk, int state)
 		break;
 
 	case TCP_CLOSE:
+		if (oldstate == TCP_CLOSE_WAIT || oldstate == TCP_ESTABLISHED)
+			TCP_INC_STATS(TcpEstabResets);
+
 		sk->prot->unhash(sk);
 		if (sk->prev && !(sk->userlocks&SOCK_BINDPORT_LOCK))
 			tcp_put_port(sk);
@@ -1595,6 +1604,7 @@ struct tcp_listen_opt
 	int			qlen;
 	int			qlen_young;
 	int			clock_hand;
+	u32			hash_rnd;
 	struct open_request	*syn_table[TCP_SYNQ_HSIZE];
 };
 
@@ -1829,5 +1839,27 @@ static inline int tcp_paws_check(struct tcp_opt *tp, int rst)
 }
 
 #define TCP_CHECK_TIMER(sk) do { } while (0)
+
+static inline int tcp_use_frto(const struct sock *sk)
+{
+	const struct tcp_opt *tp = &sk->tp_pinfo.af_tcp;
+	
+	/* F-RTO must be activated in sysctl and there must be some
+	 * unsent new data, and the advertised window should allow
+	 * sending it.
+	 */
+	return (sysctl_tcp_frto && tp->send_head &&
+		!after(TCP_SKB_CB(tp->send_head)->end_seq,
+		       tp->snd_una + tp->snd_wnd));
+}
+
+static inline void tcp_mib_init(void)
+{
+	/* See RFC 2012 */
+	TCP_ADD_STATS_USER(TcpRtoAlgorithm, 1);
+	TCP_ADD_STATS_USER(TcpRtoMin, TCP_RTO_MIN*1000/HZ);
+	TCP_ADD_STATS_USER(TcpRtoMax, TCP_RTO_MAX*1000/HZ);
+	TCP_ADD_STATS_USER(TcpMaxConn, -1);
+}
 
 #endif	/* _TCP_H */

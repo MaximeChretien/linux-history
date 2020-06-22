@@ -1,6 +1,3 @@
-/*
- * BK Id: %F% %I% %G% %U% %#%
- */
 #include <linux/config.h>
 #include <linux/module.h>
 #include <linux/threads.h>
@@ -50,6 +47,7 @@
 #include <asm/time.h>
 #include <asm/cputable.h>
 #include <asm/btext.h>
+#include <asm/div64.h>
 
 #ifdef  CONFIG_8xx
 #include <asm/commproc.h>
@@ -58,7 +56,6 @@
 /* Tell string.h we don't want memcpy etc. as cpp defines */
 #define EXPORT_SYMTAB_STROPS
 
-extern void ppc_generic_ide_fix_driveid(struct hd_driveid *id);
 extern void transfer_to_handler(void);
 extern void syscall_trace(void);
 extern void do_IRQ(struct pt_regs *regs);
@@ -131,6 +128,7 @@ EXPORT_SYMBOL(strnlen);
 EXPORT_SYMBOL(strcmp);
 EXPORT_SYMBOL(strncmp);
 EXPORT_SYMBOL(strcasecmp);
+EXPORT_SYMBOL(__div64_32);
 
 /* EXPORT_SYMBOL(csum_partial); already in net/netsyms.c */
 EXPORT_SYMBOL(csum_partial_copy_generic);
@@ -170,7 +168,6 @@ EXPORT_SYMBOL(mm_ptov);
 #if defined(CONFIG_BLK_DEV_IDE) || defined(CONFIG_BLK_DEV_IDE_MODULE) \
 	|| defined(CONFIG_USB_STORAGE) || defined(CONFIG_USB_STORAGE_MODULE)
 EXPORT_SYMBOL(ppc_ide_md);
-EXPORT_SYMBOL(ppc_generic_ide_fix_driveid);
 #endif
 
 #ifdef CONFIG_PCI
@@ -343,10 +340,14 @@ EXPORT_SYMBOL(debugger_fault_handler);
 
 #ifdef  CONFIG_8xx
 EXPORT_SYMBOL(__res);
-EXPORT_SYMBOL(request_8xxirq);
 EXPORT_SYMBOL(cpm_install_handler);
 EXPORT_SYMBOL(cpm_free_handler);
+EXPORT_SYMBOL(m8xx_cpm_hostalloc);
 #endif /* CONFIG_8xx */
+
+/* Those should really be inline */
+EXPORT_SYMBOL(atomic_clear_mask);
+EXPORT_SYMBOL(atomic_set_mask);
 
 EXPORT_SYMBOL(ret_to_user_hook);
 EXPORT_SYMBOL(next_mmu_context);

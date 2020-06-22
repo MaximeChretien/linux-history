@@ -1,5 +1,5 @@
 /*
- *	linux/arch/i386/kernel/ioport.c
+ *	linux/arch/x86_64/kernel/ioport.c
  *
  * This contains the io-permission bitmap code - written by obz, with changes
  * by Linus.
@@ -19,30 +19,30 @@
 /* Set EXTENT bits starting at BASE in BITMAP to value TURN_ON. */
 static void set_bitmap(unsigned long *bitmap, short base, short extent, int new_value)
 {
-	int mask;
-	unsigned long *bitmap_base = bitmap + (base >> 6);
-	unsigned short low_index = base & 0x3f;
+	unsigned long mask;
+	unsigned long *bitmap_base = bitmap + base / sizeof(long);
+	unsigned low_index = base & (BITS_PER_LONG - 1);
 	int length = low_index + extent;
 
 	if (low_index != 0) {
-		mask = (~0 << low_index);
+		mask = (~0UL << low_index);
 		if (length < 64)
-				mask &= ~(~0 << length);
+			mask &= ~(~0UL << length);
 		if (new_value)
 			*bitmap_base++ |= mask;
 		else
 			*bitmap_base++ &= ~mask;
-		length -= 32;
+		length -= 64;
 	}
 
-	mask = (new_value ? ~0 : 0);
+	mask = (new_value ? ~0UL : 0UL);
 	while (length >= 64) {
 		*bitmap_base++ = mask;
 		length -= 64;
 	}
 
 	if (length > 0) {
-		mask = ~(~0 << length);
+		mask = ~(~0UL << length);
 		if (new_value)
 			*bitmap_base++ |= mask;
 		else
@@ -53,7 +53,7 @@ static void set_bitmap(unsigned long *bitmap, short base, short extent, int new_
 /*
  * this changes the io permissions bitmap in the current task.
  */
-asmlinkage int sys_ioperm(unsigned long from, unsigned long num, int turn_on)
+asmlinkage long sys_ioperm(unsigned long from, unsigned long num, int turn_on)
 {
 	struct thread_struct * t = &current->thread;
 	struct tss_struct * tss = init_tss + smp_processor_id();
@@ -76,14 +76,18 @@ asmlinkage int sys_ioperm(unsigned long from, unsigned long num, int turn_on)
 		/*
 		 * this activates it in the TSS
 		 */
-		tss->io_map_base = IO_BITMAP_OFFSET;
 	}
 
 	/*
 	 * do it in the per-thread copy and in the TSS ...
 	 */
 	set_bitmap((unsigned long *) t->io_bitmap_ptr, from, num, !turn_on);
+	if (tss->io_map_base != IO_BITMAP_OFFSET) { 
+		memcpy(tss->io_bitmap, t->io_bitmap_ptr, sizeof(tss->io_bitmap));
+		tss->io_map_base = IO_BITMAP_OFFSET;
+	} else { 
 	set_bitmap((unsigned long *) tss->io_bitmap, from, num, !turn_on);
+	}
 
 	return 0;
 }

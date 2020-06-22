@@ -1,4 +1,4 @@
-/* $Id: atomic.h,v 1.3 2001/07/25 16:15:19 bjornw Exp $ */
+/* $Id: atomic.h,v 1.4 2002/11/20 18:20:17 hp Exp $ */
 
 #ifndef __ASM_CRIS_ATOMIC__
 #define __ASM_CRIS_ATOMIC__
@@ -27,7 +27,7 @@ typedef struct { int counter; } atomic_t;
 
 /* These should be written in asm but we do it in C for now. */
 
-static __inline__ void atomic_add(int i, volatile atomic_t *v)
+extern __inline__ void atomic_add(int i, volatile atomic_t *v)
 {
 	unsigned long flags;
 	save_flags(flags);
@@ -36,7 +36,7 @@ static __inline__ void atomic_add(int i, volatile atomic_t *v)
 	restore_flags(flags);
 }
 
-static __inline__ void atomic_sub(int i, volatile atomic_t *v)
+extern __inline__ void atomic_sub(int i, volatile atomic_t *v)
 {
 	unsigned long flags;
 	save_flags(flags);
@@ -45,7 +45,7 @@ static __inline__ void atomic_sub(int i, volatile atomic_t *v)
 	restore_flags(flags);
 }
 
-static __inline__ int atomic_add_return(int i, volatile atomic_t *v)
+extern __inline__ int atomic_add_return(int i, volatile atomic_t *v)
 {
 	unsigned long flags;
 	int retval;
@@ -56,7 +56,7 @@ static __inline__ int atomic_add_return(int i, volatile atomic_t *v)
 	return retval;
 }
 
-static __inline__ int atomic_sub_return(int i, volatile atomic_t *v)
+extern __inline__ int atomic_sub_return(int i, volatile atomic_t *v)
 {
 	unsigned long flags;
 	int retval;
@@ -67,7 +67,7 @@ static __inline__ int atomic_sub_return(int i, volatile atomic_t *v)
 	return retval;
 }
 
-static __inline__ int atomic_sub_and_test(int i, volatile atomic_t *v)
+extern __inline__ int atomic_sub_and_test(int i, volatile atomic_t *v)
 {
 	int retval;
 	unsigned long flags;
@@ -78,7 +78,7 @@ static __inline__ int atomic_sub_and_test(int i, volatile atomic_t *v)
 	return retval;
 }
 
-static __inline__ void atomic_inc(volatile atomic_t *v)
+extern __inline__ void atomic_inc(volatile atomic_t *v)
 {
 	unsigned long flags;
 	save_flags(flags);
@@ -87,7 +87,7 @@ static __inline__ void atomic_inc(volatile atomic_t *v)
 	restore_flags(flags);
 }
 
-static __inline__ void atomic_dec(volatile atomic_t *v)
+extern __inline__ void atomic_dec(volatile atomic_t *v)
 {
 	unsigned long flags;
 	save_flags(flags);
@@ -96,7 +96,7 @@ static __inline__ void atomic_dec(volatile atomic_t *v)
 	restore_flags(flags);
 }
 
-static __inline__ int atomic_inc_return(volatile atomic_t *v)
+extern __inline__ int atomic_inc_return(volatile atomic_t *v)
 {
 	unsigned long flags;
 	int retval;
@@ -107,7 +107,7 @@ static __inline__ int atomic_inc_return(volatile atomic_t *v)
 	return retval;
 }
 
-static __inline__ int atomic_dec_return(volatile atomic_t *v)
+extern __inline__ int atomic_dec_return(volatile atomic_t *v)
 {
 	unsigned long flags;
 	int retval;
@@ -117,7 +117,7 @@ static __inline__ int atomic_dec_return(volatile atomic_t *v)
 	restore_flags(flags);
 	return retval;
 }
-static __inline__ int atomic_dec_and_test(volatile atomic_t *v)
+extern __inline__ int atomic_dec_and_test(volatile atomic_t *v)
 {
 	int retval;
 	unsigned long flags;
@@ -128,7 +128,7 @@ static __inline__ int atomic_dec_and_test(volatile atomic_t *v)
 	return retval;
 }
 
-static __inline__ int atomic_inc_and_test(volatile atomic_t *v)
+extern __inline__ int atomic_inc_and_test(volatile atomic_t *v)
 {
 	int retval;
 	unsigned long flags;

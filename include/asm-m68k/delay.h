@@ -16,6 +16,7 @@ extern __inline__ void __delay(unsigned long loops)
 }
 
 extern void __bad_udelay(void);
+extern void __bad_ndelay(void);
 
 /*
  * Use only for very small delays ( < 1 msec).  Should probably use a
@@ -39,9 +40,18 @@ static inline void __udelay(unsigned long usecs)
 	__const_udelay(usecs * 4295);	/* 2**32 / 1000000 */
 }
 
+static inline void __ndelay(unsigned long nsecs)
+{
+	__const_udelay(nsecs * 5);	/* 2**32 / 1000000000 */
+}
+
 #define udelay(n) (__builtin_constant_p(n) ? \
 	((n) > 20000 ? __bad_udelay() : __const_udelay((n) * 4295)) : \
 	__udelay(n))
+
+#define ndelay(n) (__builtin_constant_p(n) ? \
+	((n) > 20000 ? __bad_ndelay() : __const_udelay((n) * 5)) : \
+	__ndelay(n))
 
 extern __inline__ unsigned long muldiv(unsigned long a, unsigned long b, unsigned long c)
 {

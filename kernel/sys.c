@@ -18,6 +18,25 @@
 #include <asm/uaccess.h>
 #include <asm/io.h>
 
+#ifndef SET_UNALIGN_CTL
+# define SET_UNALIGN_CTL(a,b)	(-EINVAL)
+#endif
+#ifndef GET_UNALIGN_CTL
+# define GET_UNALIGN_CTL(a,b)	(-EINVAL)
+#endif
+#ifndef SET_FPEMU_CTL
+# define SET_FPEMU_CTL(a,b)	(-EINVAL)
+#endif
+#ifndef GET_FPEMU_CTL
+# define GET_FPEMU_CTL(a,b)	(-EINVAL)
+#endif
+#ifndef SET_FPEXC_CTL
+# define SET_FPEXC_CTL(a,b)	(-EINVAL)
+#endif
+#ifndef GET_FPEXC_CTL
+# define GET_FPEXC_CTL(a,b)	(-EINVAL)
+#endif
+
 /*
  * this is where the system-wide overflow UID and GID are defined, for
  * architectures that now have 32-bit UID/GID but didn't in the past
@@ -1219,7 +1238,7 @@ asmlinkage long sys_prctl(int option, unsigned long arg2, unsigned long arg3,
 			error = put_user(current->pdeath_signal, (int *)arg2);
 			break;
 		case PR_GET_DUMPABLE:
-			if (current->mm->dumpable)
+			if (is_dumpable(current))
 				error = 1;
 			break;
 		case PR_SET_DUMPABLE:
@@ -1229,36 +1248,24 @@ asmlinkage long sys_prctl(int option, unsigned long arg2, unsigned long arg3,
 			}
 			current->mm->dumpable = arg2;
 			break;
+
 	        case PR_SET_UNALIGN:
-#ifdef SET_UNALIGN_CTL
 			error = SET_UNALIGN_CTL(current, arg2);
-#else
-			error = -EINVAL;
-#endif
 			break;
-
 	        case PR_GET_UNALIGN:
-#ifdef GET_UNALIGN_CTL
 			error = GET_UNALIGN_CTL(current, arg2);
-#else
-			error = -EINVAL;
-#endif
 			break;
-
 	        case PR_SET_FPEMU:
-#ifdef SET_FPEMU_CTL
 			error = SET_FPEMU_CTL(current, arg2);
-#else
-			error = -EINVAL;
-#endif
 			break;
-
 	        case PR_GET_FPEMU:
-#ifdef GET_FPEMU_CTL
 			error = GET_FPEMU_CTL(current, arg2);
-#else
-			error = -EINVAL;
-#endif
+			break;
+		case PR_SET_FPEXC:
+			error = SET_FPEXC_CTL(current, arg2);
+			break;
+		case PR_GET_FPEXC:
+			error = GET_FPEXC_CTL(current, arg2);
 			break;
 
 		case PR_GET_KEEPCAPS:

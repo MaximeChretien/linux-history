@@ -82,7 +82,6 @@ typedef struct {
 
 #define CMD_RWREQ	0x00
 #define CMD_IOCTL_PEND	0x01
-#define CMD_IOCTL_DONE	0x02
 
 typedef struct cmdlist {
 	chdr_t	hdr;
@@ -94,6 +93,7 @@ typedef struct cmdlist {
 	struct cmdlist *prev;
 	struct cmdlist *next;
 	struct request *rq;
+	struct completion *waiting;
 	int type;
 } cmdlist_t;
 	
@@ -317,6 +317,8 @@ typedef struct {
 	__u16	delay;
 	__u8	reserved[510];
 } mp_delay_t;
+
+#define SENSE_SURF_STATUS	0x70
 
 #define PASSTHRU_A	0x91
 typedef struct {

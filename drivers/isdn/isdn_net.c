@@ -2831,6 +2831,7 @@ isdn_net_setcfg(isdn_net_ioctl_cfg * cfg)
 
 			/* If binding is exclusive, try to grab the channel */
 			save_flags(flags);
+			cli();
 			if ((i = isdn_get_free_channel(ISDN_USAGE_NET,
 				lp->l2_proto, lp->l3_proto, drvidx,
 				chidx, lp->msn)) < 0) {

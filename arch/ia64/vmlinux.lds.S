@@ -13,6 +13,8 @@ SECTIONS
   /DISCARD/ : {
 	*(.text.exit)
 	*(.data.exit)
+	*(*.text.exit)
+	*(*.data.exit)
 	*(.exitcall.exit)
 	*(.IA_64.unwind.text.exit)
 	*(.IA_64.unwind_info.text.exit)

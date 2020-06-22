@@ -15,7 +15,7 @@
 #include <asm/sn/pda.h>
 
 #ifdef CONFIG_IA64_SGI_SN1
-#define LED0		0xc0000b00100000c0LL	/* ZZZ fixme */
+#define LED0		0xc0000b00100000c0LL
 #define LED_CPU_SHIFT	3
 #else
 #include <asm/sn/sn2/shub.h>
@@ -25,7 +25,13 @@
 
 #define LED_CPU_HEARTBEAT	0x01
 #define LED_CPU_ACTIVITY	0x02
+#ifdef LED_WAR
+#define LED_ALWAYS_SET		0x64	/* SN2 hw workaround: always set 0x60 */
+#define LED_MASK_AUTOTEST	0x9e
+#else /* LED_WAR */
+#define LED_ALWAYS_SET		0x00
 #define LED_MASK_AUTOTEST	0xfe
+#endif /* LED_WAR */
 
 /*
  * Basic macros for flashing the LEDS on an SGI, SN1.

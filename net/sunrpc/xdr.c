@@ -180,7 +180,7 @@ int xdr_kmap(struct iovec *iov_base, struct xdr_buf *xdr, unsigned int base)
 {
 	struct iovec	*iov = iov_base;
 	struct page	**ppage = xdr->pages;
-	unsigned int	len, pglen = xdr->page_len;
+	unsigned int	len, pglen = xdr->page_len, first_kmap;
 
 	len = xdr->head[0].iov_len;
 	if (base < len) {
@@ -203,9 +203,17 @@ int xdr_kmap(struct iovec *iov_base, struct xdr_buf *xdr, unsigned int base)
 		ppage += base >> PAGE_CACHE_SHIFT;
 		base &= ~PAGE_CACHE_MASK;
 	}
+	first_kmap = 1;
 	do {
 		len = PAGE_CACHE_SIZE;
-		iov->iov_base = kmap(*ppage);
+		if (first_kmap) {
+			first_kmap = 0;
+			iov->iov_base = kmap(*ppage);
+		} else {
+			iov->iov_base = kmap_nonblock(*ppage);
+			if (!iov->iov_base)
+				goto out;
+		}
 		if (base) {
 			iov->iov_base += base;
 			len -= base;
@@ -223,20 +231,23 @@ map_tail:
 		iov->iov_base = (char *)xdr->tail[0].iov_base + base;
 		iov++;
 	}
+ out:
 	return (iov - iov_base);
 }
 
-void xdr_kunmap(struct xdr_buf *xdr, unsigned int base)
+void xdr_kunmap(struct xdr_buf *xdr, unsigned int base, int niov)
 {
 	struct page	**ppage = xdr->pages;
 	unsigned int	pglen = xdr->page_len;
 
 	if (!pglen)
 		return;
-	if (base > xdr->head[0].iov_len)
+	if (base >= xdr->head[0].iov_len)
 		base -= xdr->head[0].iov_len;
-	else
+	else {
+		niov--;
 		base = 0;
+	}
 
 	if (base >= pglen)
 		return;
@@ -250,7 +261,11 @@ void xdr_kunmap(struct xdr_buf *xdr, unsigned int base)
 		 * we bump pglen here, and just subtract PAGE_CACHE_SIZE... */
 		pglen += base & ~PAGE_CACHE_MASK;
 	}
-	for (;;) {
+	/*
+	 * In case we could only do a partial xdr_kmap, all remaining iovecs
+	 * refer to pages. Otherwise we detect the end through pglen.
+	 */
+	for (; niov; niov--) {
 		flush_dcache_page(*ppage);
 		kunmap(*ppage);
 		if (pglen <= PAGE_CACHE_SIZE)
@@ -322,9 +337,22 @@ void
 xdr_shift_buf(struct xdr_buf *xdr, size_t len)
 {
 	struct iovec iov[MAX_IOVEC];
-	unsigned int nr;
+	unsigned int nr, len_part, n, skip;
 
-	nr = xdr_kmap(iov, xdr, 0);
-	xdr_shift_iovec(iov, nr, len);
-	xdr_kunmap(xdr, 0);
+	skip = 0;
+	do {
+
+		nr = xdr_kmap(iov, xdr, skip);
+
+		len_part = 0;
+		for (n = 0; n < nr; n++)
+			len_part += iov[n].iov_len;
+
+		xdr_shift_iovec(iov, nr, len_part);
+
+		xdr_kunmap(xdr, skip, nr);
+
+		skip += len_part;
+		len -= len_part;
+	} while (len);
 }

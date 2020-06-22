@@ -26,7 +26,7 @@
  *  Copyright (c) 2000-2002 LSI Logic Corporation
  *  Originally By: Noah Romer
  *
- *  $Id: mptlan.c,v 1.52 2002/05/06 13:45:07 sshirron Exp $
+ *  $Id: mptlan.c,v 1.53 2002/10/17 20:15:58 pdelaney Exp $
  */
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
@@ -132,7 +132,7 @@ struct mpt_lan_priv {
 	u32 total_received;
 	struct net_device_stats stats;	/* Per device statistics */
 
-	struct tq_struct post_buckets_task;
+	struct mpt_work_struct post_buckets_task;
 	unsigned long post_buckets_active;
 };
 
@@ -876,10 +876,22 @@ mpt_lan_wake_post_buckets_task(struct net_device *dev, int priority)
 	
 	if (test_and_set_bit(0, &priv->post_buckets_active) == 0) {
 		if (priority) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,41)
+			schedule_work(&priv->post_buckets_task);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,40)
+			schedule_task(&priv->post_buckets_task);
+#else
 			queue_task(&priv->post_buckets_task, &tq_immediate);
 			mark_bh(IMMEDIATE_BH);
+#endif
 		} else {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,41)
+			schedule_delayed_work(&priv->post_buckets_task, 1);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,40)
+			schedule_task(&priv->post_buckets_task);
+#else
 			queue_task(&priv->post_buckets_task, &tq_timer);
+#endif
 			dioprintk((KERN_INFO MYNAM ": post_buckets queued on "
 				   "timer.\n"));
 		}
@@ -1365,9 +1377,8 @@ mpt_register_lan_device (MPT_ADAPTER *mpt_dev, int pnum)
 	priv->mpt_dev = mpt_dev;
 	priv->pnum = pnum;
 
-	memset(&priv->post_buckets_task, 0, sizeof(struct tq_struct));
-	priv->post_buckets_task.routine = mpt_lan_post_receive_buckets;
-	priv->post_buckets_task.data = dev;
+	memset(&priv->post_buckets_task, 0, sizeof(struct mpt_work_struct));
+	MPT_INIT_WORK(&priv->post_buckets_task, mpt_lan_post_receive_buckets, dev);
 	priv->post_buckets_active = 0;
 
 	dlprintk((KERN_INFO MYNAM "@%d: bucketlen = %d\n",

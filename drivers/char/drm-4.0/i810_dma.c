@@ -34,6 +34,7 @@
 #include "drmP.h"
 #include "i810_drv.h"
 #include <linux/interrupt.h>	/* For task queue support */
+#include <linux/pagemap.h>
 
 /* in case we don't have a 2.3.99-pre6 kernel or later: */
 #ifndef VM_DONTCOPY
@@ -225,14 +226,9 @@ static int i810_unmap_buffer(drm_buf_t *buf)
 		if(buf_priv->currently_mapped != I810_BUF_MAPPED) 
 			return -EINVAL;
 		down_write(&current->mm->mmap_sem);
-#if LINUX_VERSION_CODE < 0x020399
-        	retcode = do_munmap((unsigned long)buf_priv->virtual, 
-				    (size_t) buf->total);
-#else
-        	retcode = do_munmap(current->mm, 
+        	retcode = do_munmap(current->mm,
 				    (unsigned long)buf_priv->virtual, 
 				    (size_t) buf->total);
-#endif
    		up_write(&current->mm->mmap_sem);
 	}
    	buf_priv->currently_mapped = I810_BUF_UNMAPPED;

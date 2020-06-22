@@ -1,7 +1,9 @@
 /* 
  * Sony Programmable I/O Control Device driver for VAIO
  *
- * Copyright (C) 2001 Stelian Pop <stelian.pop@fr.alcove.com>, Alcôve
+ * Copyright (C) 2001-2003 Stelian Pop <stelian@popies.net>
+ *
+ * Copyright (C) 2001-2002 Alcôve <www.alcove.com>
  *
  * Copyright (C) 2001 Michael Ashley <m.ashley@unsw.edu.au>
  *
@@ -35,10 +37,17 @@
 #ifdef __KERNEL__
 
 #define SONYPI_DRIVER_MAJORVERSION	 1
-#define SONYPI_DRIVER_MINORVERSION	13
+#define SONYPI_DRIVER_MINORVERSION	18
 
+#define SONYPI_DEVICE_MODEL_TYPE1	1
+#define SONYPI_DEVICE_MODEL_TYPE2	2
+
+#include <linux/config.h>
 #include <linux/types.h>
 #include <linux/pci.h>
+#include <linux/input.h>
+#include <linux/pm.h>
+#include <linux/acpi.h>
 #include "linux/sonypi.h"
 
 /* type1 models use those */
@@ -53,6 +62,20 @@
 #define SONYPI_SLOB			0x9c
 #define SONYPI_SHIB			0x9d
 #define SONYPI_TYPE2_REGION_SIZE	0x20
+
+/* battery / brightness addresses */
+#define SONYPI_BAT_FLAGS	0x81
+#define SONYPI_LCD_LIGHT	0x96
+#define SONYPI_BAT1_PCTRM	0xa0
+#define SONYPI_BAT1_LEFT	0xa2
+#define SONYPI_BAT1_MAXRT	0xa4
+#define SONYPI_BAT2_PCTRM	0xa8
+#define SONYPI_BAT2_LEFT	0xaa
+#define SONYPI_BAT2_MAXRT	0xac
+#define SONYPI_BAT1_MAXTK	0xb0
+#define SONYPI_BAT1_FULL	0xb2
+#define SONYPI_BAT2_MAXTK	0xb8
+#define SONYPI_BAT2_FULL	0xba
 
 /* ioports used for brightness and type2 events */
 #define SONYPI_DATA_IOPORT	0x62
@@ -131,23 +154,29 @@ static struct sonypi_irq_list sonypi_type2_irq_list[] = {
 #define SONYPI_CAMERA_REVISION 			8
 #define SONYPI_CAMERA_ROMVERSION 		9
 
-/* key press event data (ioport2) */
-#define SONYPI_TYPE1_JOGGER_EV		0x10
-#define SONYPI_TYPE2_JOGGER_EV		0x08
-#define SONYPI_TYPE1_CAPTURE_EV		0x60
-#define SONYPI_TYPE2_CAPTURE_EV		0x08
-#define SONYPI_TYPE1_FNKEY_EV		0x20
-#define SONYPI_TYPE2_FNKEY_EV		0x08
-#define SONYPI_TYPE1_BLUETOOTH_EV	0x30
-#define SONYPI_TYPE2_BLUETOOTH_EV	0x08
-#define SONYPI_TYPE1_PKEY_EV		0x40
-#define SONYPI_TYPE2_PKEY_EV		0x08
-#define SONYPI_BACK_EV			0x08
-#define SONYPI_LID_EV			0x38
+/* Event masks */
+#define SONYPI_JOGGER_MASK			0x00000001
+#define SONYPI_CAPTURE_MASK			0x00000002
+#define SONYPI_FNKEY_MASK			0x00000004
+#define SONYPI_BLUETOOTH_MASK			0x00000008
+#define SONYPI_PKEY_MASK			0x00000010
+#define SONYPI_BACK_MASK			0x00000020
+#define SONYPI_HELP_MASK			0x00000040
+#define SONYPI_LID_MASK				0x00000080
+#define SONYPI_ZOOM_MASK			0x00000100
+#define SONYPI_THUMBPHRASE_MASK			0x00000200
+#define SONYPI_MEYE_MASK			0x00000400
+#define SONYPI_MEMORYSTICK_MASK			0x00000800
 
 struct sonypi_event {
 	u8	data;
 	u8	event;
+};
+
+/* The set of possible button release events */
+static struct sonypi_event sonypi_releaseev[] = {
+	{ 0x00, SONYPI_EVENT_ANYBUTTON_RELEASED },
+	{ 0, 0 }
 };
 
 /* The set of possible jogger events  */
@@ -156,9 +185,16 @@ static struct sonypi_event sonypi_joggerev[] = {
 	{ 0x01, SONYPI_EVENT_JOGDIAL_DOWN },
 	{ 0x5f, SONYPI_EVENT_JOGDIAL_UP_PRESSED },
 	{ 0x41, SONYPI_EVENT_JOGDIAL_DOWN_PRESSED },
+	{ 0x1e, SONYPI_EVENT_JOGDIAL_FAST_UP },
+	{ 0x02, SONYPI_EVENT_JOGDIAL_FAST_DOWN },
+	{ 0x5e, SONYPI_EVENT_JOGDIAL_FAST_UP_PRESSED },
+	{ 0x42, SONYPI_EVENT_JOGDIAL_FAST_DOWN_PRESSED },
+	{ 0x1d, SONYPI_EVENT_JOGDIAL_VFAST_UP },
+	{ 0x03, SONYPI_EVENT_JOGDIAL_VFAST_DOWN },
+	{ 0x5d, SONYPI_EVENT_JOGDIAL_VFAST_UP_PRESSED },
+	{ 0x43, SONYPI_EVENT_JOGDIAL_VFAST_DOWN_PRESSED },
 	{ 0x40, SONYPI_EVENT_JOGDIAL_PRESSED },
-	{ 0x00, SONYPI_EVENT_JOGDIAL_RELEASED },
-	{ 0x00, 0x00 }
+	{ 0, 0 }
 };
 
 /* The set of possible capture button events */
@@ -166,8 +202,7 @@ static struct sonypi_event sonypi_captureev[] = {
 	{ 0x05, SONYPI_EVENT_CAPTURE_PARTIALPRESSED },
 	{ 0x07, SONYPI_EVENT_CAPTURE_PRESSED },
 	{ 0x01, SONYPI_EVENT_CAPTURE_PARTIALRELEASED },
-	{ 0x00, SONYPI_EVENT_CAPTURE_RELEASED },
-	{ 0x00, 0x00 }
+	{ 0, 0 }
 };
 
 /* The set of possible fnkeys events */
@@ -192,7 +227,8 @@ static struct sonypi_event sonypi_fnkeyev[] = {
 	{ 0x33, SONYPI_EVENT_FNKEY_F },
 	{ 0x34, SONYPI_EVENT_FNKEY_S },
 	{ 0x35, SONYPI_EVENT_FNKEY_B },
-	{ 0x00, 0x00 }
+	{ 0x36, SONYPI_EVENT_FNKEY_ONLY },
+	{ 0, 0 }
 };
 
 /* The set of possible program key events */
@@ -200,7 +236,7 @@ static struct sonypi_event sonypi_pkeyev[] = {
 	{ 0x01, SONYPI_EVENT_PKEY_P1 },
 	{ 0x02, SONYPI_EVENT_PKEY_P2 },
 	{ 0x04, SONYPI_EVENT_PKEY_P3 },
-	{ 0x00, 0x00 }
+	{ 0, 0 }
 };
 
 /* The set of possible bluetooth events */
@@ -208,21 +244,84 @@ static struct sonypi_event sonypi_blueev[] = {
 	{ 0x55, SONYPI_EVENT_BLUETOOTH_PRESSED },
 	{ 0x59, SONYPI_EVENT_BLUETOOTH_ON },
 	{ 0x5a, SONYPI_EVENT_BLUETOOTH_OFF },
-	{ 0x00, 0x00 }
+	{ 0, 0 }
 };
 
 /* The set of possible back button events */
 static struct sonypi_event sonypi_backev[] = {
 	{ 0x20, SONYPI_EVENT_BACK_PRESSED },
-	{ 0x3b, SONYPI_EVENT_HELP_PRESSED },
-	{ 0x00, 0x00 }
+	{ 0, 0 }
 };
+
+/* The set of possible help button events */
+static struct sonypi_event sonypi_helpev[] = {
+	{ 0x3b, SONYPI_EVENT_HELP_PRESSED },
+	{ 0, 0 }
+};
+
 
 /* The set of possible lid events */
 static struct sonypi_event sonypi_lidev[] = {
 	{ 0x51, SONYPI_EVENT_LID_CLOSED },
 	{ 0x50, SONYPI_EVENT_LID_OPENED },
-	{ 0x00, 0x00 }
+	{ 0, 0 }
+};
+
+/* The set of possible zoom events */
+static struct sonypi_event sonypi_zoomev[] = {
+	{ 0x39, SONYPI_EVENT_ZOOM_PRESSED },
+	{ 0, 0 }
+};
+
+/* The set of possible thumbphrase events */
+static struct sonypi_event sonypi_thumbphraseev[] = {
+	{ 0x3a, SONYPI_EVENT_THUMBPHRASE_PRESSED },
+	{ 0, 0 }
+};
+
+/* The set of possible motioneye camera events */
+static struct sonypi_event sonypi_meyeev[] = {
+	{ 0x00, SONYPI_EVENT_MEYE_FACE },
+	{ 0x01, SONYPI_EVENT_MEYE_OPPOSITE },
+	{ 0, 0 }
+};
+
+/* The set of possible memorystick events */
+static struct sonypi_event sonypi_memorystickev[] = {
+	{ 0x53, SONYPI_EVENT_MEMORYSTICK_INSERT },
+	{ 0x54, SONYPI_EVENT_MEMORYSTICK_EJECT },
+	{ 0, 0 }
+};
+
+struct sonypi_eventtypes {
+	int			model;
+	u8			data;
+	unsigned long		mask;
+	struct sonypi_event *	events;
+} sonypi_eventtypes[] = {
+	{ SONYPI_DEVICE_MODEL_TYPE1, 0, 0xffffffff, sonypi_releaseev },
+	{ SONYPI_DEVICE_MODEL_TYPE1, 0x70, SONYPI_MEYE_MASK, sonypi_meyeev },
+	{ SONYPI_DEVICE_MODEL_TYPE1, 0x30, SONYPI_LID_MASK, sonypi_lidev },
+	{ SONYPI_DEVICE_MODEL_TYPE1, 0x60, SONYPI_CAPTURE_MASK, sonypi_captureev },
+	{ SONYPI_DEVICE_MODEL_TYPE1, 0x10, SONYPI_JOGGER_MASK, sonypi_joggerev },
+	{ SONYPI_DEVICE_MODEL_TYPE1, 0x20, SONYPI_FNKEY_MASK, sonypi_fnkeyev },
+	{ SONYPI_DEVICE_MODEL_TYPE1, 0x30, SONYPI_BLUETOOTH_MASK, sonypi_blueev },
+	{ SONYPI_DEVICE_MODEL_TYPE1, 0x40, SONYPI_PKEY_MASK, sonypi_pkeyev },
+
+	{ SONYPI_DEVICE_MODEL_TYPE2, 0, 0xffffffff, sonypi_releaseev },
+	{ SONYPI_DEVICE_MODEL_TYPE2, 0x38, SONYPI_LID_MASK, sonypi_lidev },
+	{ SONYPI_DEVICE_MODEL_TYPE2, 0x08, SONYPI_JOGGER_MASK, sonypi_joggerev },
+	{ SONYPI_DEVICE_MODEL_TYPE2, 0x08, SONYPI_CAPTURE_MASK, sonypi_captureev },
+	{ SONYPI_DEVICE_MODEL_TYPE2, 0x08, SONYPI_FNKEY_MASK, sonypi_fnkeyev },
+	{ SONYPI_DEVICE_MODEL_TYPE2, 0x08, SONYPI_BLUETOOTH_MASK, sonypi_blueev },
+	{ SONYPI_DEVICE_MODEL_TYPE2, 0x08, SONYPI_PKEY_MASK, sonypi_pkeyev },
+	{ SONYPI_DEVICE_MODEL_TYPE2, 0x08, SONYPI_BACK_MASK, sonypi_backev },
+	{ SONYPI_DEVICE_MODEL_TYPE2, 0x08, SONYPI_HELP_MASK, sonypi_helpev },
+	{ SONYPI_DEVICE_MODEL_TYPE2, 0x08, SONYPI_ZOOM_MASK, sonypi_zoomev },
+	{ SONYPI_DEVICE_MODEL_TYPE2, 0x08, SONYPI_THUMBPHRASE_MASK, sonypi_thumbphraseev },
+	{ SONYPI_DEVICE_MODEL_TYPE2, 0x08, SONYPI_MEMORYSTICK_MASK, sonypi_memorystickev },
+
+	{ 0, 0, 0, 0 }
 };
 
 #define SONYPI_BUF_SIZE	128
@@ -236,8 +335,8 @@ struct sonypi_queue {
 	unsigned char buf[SONYPI_BUF_SIZE];
 };
 
-#define SONYPI_DEVICE_MODEL_TYPE1	1
-#define SONYPI_DEVICE_MODEL_TYPE2	2
+/* The name of the Jog Dial for the input device drivers */
+#define SONYPI_INPUTNAME	"Sony VAIO Jog Dial"
 
 struct sonypi_device {
 	struct pci_dev *dev;
@@ -252,15 +351,56 @@ struct sonypi_device {
 	struct sonypi_queue queue;
 	int open_count;
 	int model;
+#if defined(CONFIG_INPUT) || defined(CONFIG_INPUT_MODULE)
+	struct input_dev jog_dev;
+#endif
+#ifdef CONFIG_PM
+	struct pm_dev *pm;
+#endif
 };
 
-#define wait_on_command(quiet, command) { \
-	unsigned int n = 10000; \
+#define ITERATIONS_LONG		10000
+#define ITERATIONS_SHORT	10
+
+#define wait_on_command(quiet, command, iterations) { \
+	unsigned int n = iterations; \
 	while (--n && (command)) \
 		udelay(1); \
 	if (!n && (verbose || !quiet)) \
-		printk(KERN_WARNING "sonypi command failed at " __FILE__ " : %s (line %d)\n", __FUNCTION__, __LINE__); \
+		printk(KERN_WARNING "sonypi command failed at %s : %s (line %d)\n", __FILE__, __FUNCTION__, __LINE__); \
 }
+
+#ifdef CONFIG_ACPI
+#include <linux/acpi.h>
+#if (ACPI_CA_VERSION > 0x20021121)
+#define USE_ACPI
+#endif
+#endif /* CONFIG_ACPI */
+
+#ifndef USE_ACPI
+extern int verbose;
+
+static inline int ec_write(u8 addr, u8 value) {
+	wait_on_command(1, inb_p(SONYPI_CST_IOPORT) & 3, ITERATIONS_LONG);
+	outb_p(0x81, SONYPI_CST_IOPORT);
+	wait_on_command(0, inb_p(SONYPI_CST_IOPORT) & 2, ITERATIONS_LONG);
+	outb_p(addr, SONYPI_DATA_IOPORT);
+	wait_on_command(0, inb_p(SONYPI_CST_IOPORT) & 2, ITERATIONS_LONG);
+	outb_p(value, SONYPI_DATA_IOPORT);
+	wait_on_command(0, inb_p(SONYPI_CST_IOPORT) & 2, ITERATIONS_LONG);
+	return 0;
+}
+
+static inline int ec_read(u8 addr, u8 *value) {
+	wait_on_command(1, inb_p(SONYPI_CST_IOPORT) & 3, ITERATIONS_LONG);
+	outb_p(0x80, SONYPI_CST_IOPORT);
+	wait_on_command(0, inb_p(SONYPI_CST_IOPORT) & 2, ITERATIONS_LONG);
+	outb_p(addr, SONYPI_DATA_IOPORT);
+	wait_on_command(0, inb_p(SONYPI_CST_IOPORT) & 2, ITERATIONS_LONG);
+	*value = inb_p(SONYPI_DATA_IOPORT);
+	return 0;
+}
+#endif /* ! USE_ACPI */
 
 #endif /* __KERNEL__ */
 

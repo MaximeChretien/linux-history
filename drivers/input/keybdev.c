@@ -201,6 +201,7 @@ static struct input_handle *keybdev_connect(struct input_handler *handler, struc
 	input_open_device(handle);
 
 //	printk(KERN_INFO "keybdev.c: Adding keyboard: input%d\n", dev->number);
+	kbd_refresh_leds();
 
 	return handle;
 }
@@ -222,6 +223,7 @@ static int __init keybdev_init(void)
 {
 	input_register_handler(&keybdev_handler);
 	kbd_ledfunc = keybdev_ledfunc;
+	kbd_refresh_leds();
 
 	if (jp_kbd_109) {
 		x86_keycodes[0xb5] = 0x73;	/* backslash, underscore */

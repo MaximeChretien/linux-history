@@ -15,7 +15,7 @@
  *
  * Author: Tobias Anderberg <tobiasa@axis.com>.
  *
- * $Id: pcf8563.c,v 1.1 2002/08/12 13:46:02 starvik Exp $
+ * $Id: pcf8563.c,v 1.4 2002/10/15 09:22:42 tobiasa Exp $
  */
 
 #include <linux/config.h>
@@ -39,7 +39,11 @@
 #define PCF8563_MAJOR 121		/* Local major number. */
 #define DEVICE_NAME "rtc"		/* Name which is registered in /proc/devices. */
 #define PCF8563_NAME "PCF8563"
-#define DRIVER_VERSION "$Rev$"
+#define DRIVER_VERSION "$Revision: 1.4 $"
+
+/* I2C bus slave registers. */
+#define RTC_I2C_READ		0xa3
+#define RTC_I2C_WRITE		0xa2
 
 /* Two simple wrapper macros, saves a few keystrokes. */
 #define rtc_read(x) i2c_readreg(RTC_I2C_READ, x)
@@ -59,11 +63,38 @@ static struct file_operations pcf8563_fops = {
 	release: pcf8563_release,
 };
 
+unsigned char
+pcf8563_readreg(int reg) 
+{
+	unsigned char res = i2c_readreg(RTC_I2C_READ, reg);
+
+	/* The PCF8563 does not return 0 for unimplemented bits */
+	switch(reg)
+	{
+		case RTC_SECONDS:
+		case RTC_MINUTES:
+		     res &= 0x7f;
+		     break;
+		case RTC_HOURS:
+		case RTC_DAY_OF_MONTH:
+		     res &= 0x3f;
+		     break;
+		case RTC_MONTH:
+		     res = (res & 0x1f) - 1;  /* PCF8563 returns month in range 1-12 */
+		     break;
+	}
+	return res;
+}
+
+void
+pcf8563_writereg(int reg, unsigned char val) 
+{
+	i2c_writereg(RTC_I2C_WRITE,reg,val);
+}
+
 void
 get_rtc_time(struct rtc_time *tm)
 {
-	unsigned long flags;
-	
 	tm->tm_sec = rtc_read(RTC_SECONDS);
 	tm->tm_min = rtc_read(RTC_MINUTES);
 	tm->tm_hour = rtc_read(RTC_HOURS);
@@ -74,7 +105,7 @@ get_rtc_time(struct rtc_time *tm)
 	if (tm->tm_sec & 0x80)
 		printk(KERN_WARNING "%s: RTC Low Voltage - date/time is not reliable!\n", PCF8563_NAME);
 
-        tm->tm_year = BCD_TO_BIN(tm->tm_year) + ((tm->tm_mon & 0x80) ? 100 : 0);
+	tm->tm_year = BCD_TO_BIN(tm->tm_year) + ((tm->tm_mon & 0x80) ? 100 : 0);
 	tm->tm_sec &= 0x7f;
 	tm->tm_min &= 0x7f;
 	tm->tm_hour &= 0x3f;
@@ -93,8 +124,6 @@ int __init
 pcf8563_init(void)
 {
 	unsigned char ret;
-        struct rtc_time tm;
-        
 	/*
 	 * First of all we need to reset the chip. This is done by
 	 * clearing control1, control2 and clk freq, clear the 
@@ -134,7 +163,7 @@ pcf8563_init(void)
 		return -1;
 	}
 
-	printk(KERN_INFO "%s Real-Time Driver, %s\n", PCF8563_NAME, DRIVER_VERSION);
+	printk(KERN_INFO "%s Real-Time Clock Driver, %s\n", PCF8563_NAME, DRIVER_VERSION);
         
 	/* Check for low voltage, and warn about it.. */
 	if (rtc_read(RTC_SECONDS) & 0x80)
@@ -163,7 +192,7 @@ int
 pcf8563_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	/* Some sanity checks. */
-	if (_IOC_TYPE(cmd) != PCF8563_MAGIC)
+	if (_IOC_TYPE(cmd) != RTC_MAGIC)
 		return -ENOTTY;
 
 	if (_IOC_NR(cmd) > RTC_MAX_IOCTL)

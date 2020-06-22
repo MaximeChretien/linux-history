@@ -374,15 +374,17 @@ register_irq_proc (unsigned int irq)
 	irq_dir[irq] = proc_mkdir(name, root_irq_dir);
 
 #ifdef CONFIG_SMP
-	/* create /proc/irq/1234/smp_affinity */
-	entry = create_proc_entry("smp_affinity", 0600, irq_dir[irq]);
+	if (irq_desc[irq].handler->set_affinity) {
+		/* create /proc/irq/1234/smp_affinity */
+		entry = create_proc_entry("smp_affinity", 0600, irq_dir[irq]);
 
-	entry->nlink = 1;
-	entry->data = (void *)(long)irq;
-	entry->read_proc = irq_affinity_read_proc;
-	entry->write_proc = irq_affinity_write_proc;
+		entry->nlink = 1;
+		entry->data = (void *)(long)irq;
+		entry->read_proc = irq_affinity_read_proc;
+		entry->write_proc = irq_affinity_write_proc;
 
-	smp_affinity_entry[irq] = entry;
+		smp_affinity_entry[irq] = entry;
+	}
 #endif
 }
 
@@ -410,12 +412,16 @@ init_irq_proc (void)
 #endif
 
 	/*
-	 * Create entries for all existing IRQs.
+	 * Create entries for all existing IRQs. If the number of IRQs
+	 * is greater the 1/4 the total dynamic inode space for /proc,
+	 * don't pollute the inode space
 	 */
-	for (i = 0; i < NR_IRQS; i++) {
-		if (irq_desc[i].handler == &no_irq_type)
-			continue;
-		register_irq_proc(i);
+	if (ACTUAL_NR_IRQS < (PROC_NDYNAMIC / 4)) {
+		for (i = 0; i < ACTUAL_NR_IRQS; i++) {
+			if (irq_desc[i].handler == &no_irq_type)
+				continue;
+			register_irq_proc(i);
+		}
 	}
 }
 
@@ -534,7 +540,7 @@ get_irq_list(char *buf)
 	*p++ = '\n';
 #endif
 
-	for (i = 0; i < NR_IRQS; i++) {
+	for (i = 0; i < ACTUAL_NR_IRQS; i++) {
 		action = irq_desc[i].action;
 		if (!action) 
 			continue;

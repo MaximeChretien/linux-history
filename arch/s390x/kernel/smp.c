@@ -224,10 +224,6 @@ static inline void do_store_status(void)
  */
 void smp_send_stop(void)
 {
-        int i;
-        u32 dummy;
-        unsigned long low_core_addr;
-
         /* write magic number to zero page (absolute 0) */
         get_cpu_lowcore(smp_processor_id())->panic_magic = __PANIC_MAGIC;
 

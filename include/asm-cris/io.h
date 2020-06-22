@@ -3,6 +3,8 @@
 
 #include <asm/page.h>   /* for __va, __pa */
 #include <asm/svinto.h>
+#include <linux/sched.h>
+#include <asm/pgtable.h>
 #include <linux/config.h>
 
 /* Console I/O for simulated etrax100.  Use #ifdef so erroneous
@@ -199,15 +201,17 @@ extern volatile unsigned long *port_csp4_addr;
  * Change virtual addresses to physical addresses and vv.
  */
 
-static inline unsigned long virt_to_phys(volatile void * address)
+extern inline unsigned long virt_to_phys(volatile void * address)
 {
 	return __pa(address);
 }
 
-static inline void * phys_to_virt(unsigned long address)
+extern inline void * phys_to_virt(unsigned long address)
 {
 	return __va(address);
 }
+
+#define page_to_phys(page)	__pa(__page_address(page))
 
 extern void * __ioremap(unsigned long offset, unsigned long size, unsigned long flags);
 
@@ -215,6 +219,8 @@ extern inline void * ioremap (unsigned long offset, unsigned long size)
 {
 	return __ioremap(offset, size, 0);
 }
+
+extern void iounmap(void *addr);
 
 /*
  * IO bus memory addresses are also 1:1 with the physical address

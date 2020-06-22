@@ -116,7 +116,7 @@ gred_enqueue(struct sk_buff *skb, struct Qdisc* sch)
 	}
 
 
-	if ( ((skb->tc_index&0xf) > t->DPs) || !(q=t->tab[skb->tc_index&0xf])) {
+	if ( ((skb->tc_index&0xf) > (t->DPs -1)) || !(q=t->tab[skb->tc_index&0xf])) {
 		printk("GRED: setting to default (%d)\n ",t->def);
 		if (!(q=t->tab[t->def])) {
 			DPRINTK("GRED: setting to default FAILED! dropping!! "
@@ -328,17 +328,19 @@ static int gred_change(struct Qdisc *sch, struct rtattr *opt)
 	struct tc_gred_qopt *ctl;
 	struct tc_gred_sopt *sopt;
 	struct rtattr *tb[TCA_GRED_STAB];
-	struct rtattr *tb2[TCA_GRED_STAB];
+	struct rtattr *tb2[TCA_GRED_DPS];
 	int i;
 
 	if (opt == NULL ||
 		rtattr_parse(tb, TCA_GRED_STAB, RTA_DATA(opt), RTA_PAYLOAD(opt)) )
 			return -EINVAL;
 
-	if (tb[TCA_GRED_PARMS-1] == 0 && tb[TCA_GRED_STAB-1] == 0 &&
-	    tb[TCA_GRED_DPS-1] != 0) {
+	if (tb[TCA_GRED_PARMS-1] == 0 && tb[TCA_GRED_STAB-1] == 0) {
 		rtattr_parse(tb2, TCA_GRED_DPS, RTA_DATA(opt),
 		    RTA_PAYLOAD(opt));
+
+		if (tb2[TCA_GRED_DPS-1] == 0)
+			return -EINVAL;
 
 		sopt = RTA_DATA(tb2[TCA_GRED_DPS-1]);
 		table->DPs=sopt->DPs;   
@@ -471,15 +473,17 @@ static int gred_init(struct Qdisc *sch, struct rtattr *opt)
 	struct gred_sched *table = (struct gred_sched *)sch->data;
 	struct tc_gred_sopt *sopt;
 	struct rtattr *tb[TCA_GRED_STAB];
-	struct rtattr *tb2[TCA_GRED_STAB];
+	struct rtattr *tb2[TCA_GRED_DPS];
 
 	if (opt == NULL ||
 		rtattr_parse(tb, TCA_GRED_STAB, RTA_DATA(opt), RTA_PAYLOAD(opt)) )
 			return -EINVAL;
 
-	if (tb[TCA_GRED_PARMS-1] == 0 && tb[TCA_GRED_STAB-1] == 0 &&
-	    tb[TCA_GRED_DPS-1] != 0) {
+	if (tb[TCA_GRED_PARMS-1] == 0 && tb[TCA_GRED_STAB-1] == 0 ) {
 		rtattr_parse(tb2, TCA_GRED_DPS, RTA_DATA(opt),RTA_PAYLOAD(opt));
+
+		if (tb2[TCA_GRED_DPS-1] == 0)
+			return -EINVAL;
 
 		sopt = RTA_DATA(tb2[TCA_GRED_DPS-1]);
 		table->DPs=sopt->DPs;   

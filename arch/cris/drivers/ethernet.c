@@ -1,4 +1,4 @@
-/* $Id: ethernet.c,v 1.30 2002/05/07 18:50:08 johana Exp $
+/* $Id: ethernet.c,v 1.34 2002/12/13 07:17:44 starvik Exp $
  *
  * e100net.c: A network driver for the ETRAX 100LX network controller.
  *
@@ -7,6 +7,22 @@
  * The outline of this driver comes from skeleton.c.
  *
  * $Log: ethernet.c,v $
+ * Revision 1.34  2002/12/13 07:17:44  starvik
+ * Basic ethtool and MII ioctls
+ * Handle out of memory when allocating new buffers
+ *
+ * Revision 1.33  2002/10/02 20:16:17  hp
+ * SETF, SETS: Use underscored IO_x_ macros rather than incorrect token concatenation
+ *
+ * Revision 1.32  2002/09/16 06:05:58  starvik
+ * Align memory returned by dev_alloc_skb
+ * Moved handling of sent packets to interrupt to avoid reference counting problem
+ *
+ * Revision 1.31  2002/09/10 13:28:23  larsv
+ * Return -EINVAL for unknown ioctls to avoid confusing tools that tests
+ * for supported functionality by issuing special ioctls, i.e. wireless
+ * extensions.
+ *
  * Revision 1.30  2002/05/07 18:50:08  johana
  * Correct spelling in comments.
  *
@@ -152,9 +168,12 @@
 #include <linux/errno.h>
 #include <linux/init.h>
 
+#include <linux/if.h>
+#include <linux/mii.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
+#include <linux/ethtool.h>
 
 #include <asm/svinto.h>     /* DMA and register descriptions */
 #include <asm/io.h>         /* LED_* I/O functions */
@@ -163,6 +182,8 @@
 #include <asm/system.h>
 #include <asm/bitops.h>
 #include <asm/ethernet.h>
+#include <asm/cache.h>
+#include <asm/uaccess.h>
 
 //#define ETHDEBUG
 #define D(x)
@@ -264,10 +285,10 @@ enum duplex
 #define GET_BIT(bit,val)   (((val) >> (bit)) & 0x01)
 
 /* Define some macros to access ETRAX 100 registers */
-#define SETF(var, reg, field, val) var = (var & ~IO_MASK(##reg##, field)) | \
-					  IO_FIELD(##reg##, field, val)
-#define SETS(var, reg, field, val) var = (var & ~IO_MASK(##reg##, field)) | \
-					  IO_STATE(##reg##, field, val)
+#define SETF(var, reg, field, val) var = (var & ~IO_MASK_(reg##_, field##_)) | \
+					  IO_FIELD_(reg##_, field##_, val)
+#define SETS(var, reg, field, val) var = (var & ~IO_MASK_(reg##_, field##_)) | \
+					  IO_STATE_(reg##_, field##_, _##val)
 
 static etrax_eth_descr *myNextRxDesc;  /* Points to the next descriptor to
                                           to be processed */
@@ -304,12 +325,12 @@ static int etrax_ethernet_init(struct net_device *dev);
 static int e100_open(struct net_device *dev);
 static int e100_set_mac_address(struct net_device *dev, void *addr);
 static int e100_send_packet(struct sk_buff *skb, struct net_device *dev);
-static void e100rx_interrupt(int irq, void *dev_id, struct pt_regs *regs);
-static void e100tx_interrupt(int irq, void *dev_id, struct pt_regs *regs);
+static void e100rxtx_interrupt(int irq, void *dev_id, struct pt_regs *regs);
 static void e100nw_interrupt(int irq, void *dev_id, struct pt_regs *regs);
 static void e100_rx(struct net_device *dev);
 static int e100_close(struct net_device *dev);
 static int e100_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd);
+static int e100_ethtool_ioctl(struct net_device* dev, struct ifreq *ifr);
 static void e100_tx_timeout(struct net_device *dev);
 static struct net_device_stats *e100_get_stats(struct net_device *dev);
 static void set_multicast_list(struct net_device *dev);
@@ -324,6 +345,7 @@ static void e100_set_duplex(enum duplex);
 static void e100_negotiate(void);
 
 static unsigned short e100_get_mdio_reg(unsigned char reg_num);
+static void e100_set_mdio_reg(unsigned char reg, unsigned short data);
 static void e100_send_mdio_cmd(unsigned short cmd, int write_cmd);
 static void e100_send_mdio_bit(unsigned char bit);
 static unsigned char e100_receive_mdio_bit(void);
@@ -399,11 +421,14 @@ etrax_ethernet_init(struct net_device *dev)
 	/* Initialise receive descriptors */
 
 	for (i = 0; i < NBR_OF_RX_DESC; i++) {
-		RxDescList[i].skb = dev_alloc_skb(MAX_MEDIA_DATA_SIZE);
+		/* Allocate two extra cachelines to make sure that buffer used by DMA
+		 * does not share cacheline with any other data (to avoid cache bug)
+		 */
+		RxDescList[i].skb = dev_alloc_skb(MAX_MEDIA_DATA_SIZE + 2 * L1_CACHE_BYTES);
 		RxDescList[i].descr.ctrl   = 0;
 		RxDescList[i].descr.sw_len = MAX_MEDIA_DATA_SIZE;
 		RxDescList[i].descr.next   = virt_to_phys(&RxDescList[i + 1]);
-		RxDescList[i].descr.buf    = virt_to_phys(RxDescList[i].skb->data);
+		RxDescList[i].descr.buf    = L1_CACHE_ALIGN(virt_to_phys(RxDescList[i].skb->data));
 		RxDescList[i].descr.status = 0;
 		RxDescList[i].descr.hw_len = 0;
              
@@ -540,14 +565,14 @@ e100_open(struct net_device *dev)
 
 	/* allocate the irq corresponding to the receiving DMA */
 
-	if (request_irq(NETWORK_DMA_RX_IRQ_NBR, e100rx_interrupt, 0,
+	if (request_irq(NETWORK_DMA_RX_IRQ_NBR, e100rxtx_interrupt, 0,
 			cardname, (void *)dev)) {
 		goto grace_exit0;
 	}
 
 	/* allocate the irq corresponding to the transmitting DMA */
 
-	if (request_irq(NETWORK_DMA_TX_IRQ_NBR, e100tx_interrupt, 0,
+	if (request_irq(NETWORK_DMA_TX_IRQ_NBR, e100rxtx_interrupt, 0,
 			cardname, (void *)dev)) {
 		goto grace_exit1;
 	}
@@ -685,9 +710,7 @@ e100_check_speed(unsigned long dummy)
 static void
 e100_negotiate(void)
 {
-	unsigned short cmd;
 	unsigned short data = e100_get_mdio_reg(MDIO_ADVERTISMENT_REG);
-	int bitCounter;
 
 	/* Discard old speed and duplex settings */
 	data &= ~(MDIO_ADVERT_100_HD | MDIO_ADVERT_100_FD | 
@@ -726,29 +749,13 @@ e100_negotiate(void)
 			        MDIO_ADVERT_10_FD | MDIO_ADVERT_10_HD;
 	}
 
-	cmd = (MDIO_START << 14) | (MDIO_WRITE << 12) | (MDIO_PHYS_ADDR << 7) |
-	      (MDIO_ADVERTISMENT_REG<< 2);
-
-	e100_send_mdio_cmd(cmd, 1);
-
-	/* Data... */
-	for (bitCounter=15; bitCounter>=0 ; bitCounter--) {
-		e100_send_mdio_bit(GET_BIT(bitCounter, data));
-	}
+	e100_set_mdio_reg(MDIO_ADVERTISMENT_REG, data);
 
 	/* Renegotiate with link partner */
 	data = e100_get_mdio_reg(MDIO_BASE_CONTROL_REG);
 	data |= MDIO_BC_NEGOTIATE;
 
-	cmd = (MDIO_START << 14) | (MDIO_WRITE << 12) | (MDIO_PHYS_ADDR << 7) |
-	      (MDIO_BASE_CONTROL_REG<< 2);
-
-	e100_send_mdio_cmd(cmd, 1);
-
-	/* Data... */
-	for (bitCounter=15; bitCounter>=0 ; bitCounter--) {
-		e100_send_mdio_bit(GET_BIT(bitCounter, data));
-	}  
+	e100_set_mdio_reg(MDIO_BASE_CONTROL_REG, data);
 }
 
 static void
@@ -813,6 +820,24 @@ e100_get_mdio_reg(unsigned char reg_num)
 	}
 
 	return data;
+}
+
+static void
+e100_set_mdio_reg(unsigned char reg, unsigned short data)
+{
+	int bitCounter;
+	unsigned short cmd;
+
+	cmd = (MDIO_START << 14) | (MDIO_WRITE << 12) | (MDIO_PHYS_ADDR << 7) |
+	      (reg << 2);
+
+	e100_send_mdio_cmd(cmd, 1);
+
+	/* Data... */
+	for (bitCounter=15; bitCounter>=0 ; bitCounter--) {
+		e100_send_mdio_bit(GET_BIT(bitCounter, data));
+	}
+
 }
 
 static void
@@ -958,21 +983,6 @@ e100_send_packet(struct sk_buff *skb, struct net_device *dev)
 		*R_IRQ_MASK2_SET = IO_STATE(R_IRQ_MASK2_SET, dma0_eop, set);
 		netif_stop_queue(dev);
 	}
-	else {
-	  /* Report any packets that have been sent */
-		while (myFirstTxDesc != phys_to_virt(*R_DMA_CH0_FIRST) &&
-		       myFirstTxDesc != myNextTxDesc)
-		{
-			np->stats.tx_bytes += myFirstTxDesc->skb->len;
-			np->stats.tx_packets++;
-
-			/* dma is ready with the transmission of the data in tx_skb, so now
-			   we can release the skb memory */
-			dev_kfree_skb(myFirstTxDesc->skb);
-			myFirstTxDesc->skb = 0;
-			myFirstTxDesc = phys_to_virt(myFirstTxDesc->descr.next);				
-		}
-	}
 
 	spin_unlock_irq(&np->lock);
 
@@ -985,11 +995,13 @@ e100_send_packet(struct sk_buff *skb, struct net_device *dev)
  */
 
 static void
-e100rx_interrupt(int irq, void *dev_id, struct pt_regs * regs)
+e100rxtx_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 {
 	struct net_device *dev = (struct net_device *)dev_id;
+	struct net_local *np = (struct net_local *)dev->priv;
 	unsigned long irqbits = *R_IRQ_MASK2_RD;
  
+	/* Handle received packets */
 	if (irqbits & IO_STATE(R_IRQ_MASK2_RD, dma1_eop, active)) {
 		/* acknowledge the eop interrupt */
 
@@ -1014,44 +1026,26 @@ e100rx_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 			   so we have to loop back and check if so */
 		}
 	}
-}
 
-/* the transmit dma channel interrupt
- *
- * this is supposed to free the skbuff which was pending during transmission,
- * and inform the kernel that we can send one more buffer
- */
+	/* Report any packets that have been sent */
+	while (myFirstTxDesc != phys_to_virt(*R_DMA_CH0_FIRST) &&
+	       myFirstTxDesc != myNextTxDesc)
+	{
+		np->stats.tx_bytes += myFirstTxDesc->skb->len;
+		np->stats.tx_packets++;
 
-static void
-e100tx_interrupt(int irq, void *dev_id, struct pt_regs * regs)
-{
-	struct net_device *dev = (struct net_device *)dev_id;
-	unsigned long irqbits = *R_IRQ_MASK2_RD;
-	struct net_local *np = (struct net_local *)dev->priv;
+		/* dma is ready with the transmission of the data in tx_skb, so now
+		   we can release the skb memory */
+		dev_kfree_skb_irq(myFirstTxDesc->skb);
+		myFirstTxDesc->skb = 0;
+		myFirstTxDesc = phys_to_virt(myFirstTxDesc->descr.next);
+	}
 
-	/* check for a dma0_eop interrupt */
 	if (irqbits & IO_STATE(R_IRQ_MASK2_RD, dma0_eop, active)) {
-		/* Report all sent packets */
-		do {
-			/* acknowledge the eop interrupt */
-			*R_DMA_CH0_CLR_INTR = IO_STATE(R_DMA_CH0_CLR_INTR, clr_eop, do);
-
-			np->stats.tx_bytes += myFirstTxDesc->skb->len;
-			np->stats.tx_packets++;
-
-			/* dma is ready with the transmission of the data in tx_skb, so now
-			   we can release the skb memory */
-			dev_kfree_skb_irq(myFirstTxDesc->skb);
-			myFirstTxDesc->skb = 0;
-
-			if (netif_queue_stopped(dev)) {
-			  	/* Queue is running, disable tx IRQ */
-			  	*R_IRQ_MASK2_CLR = IO_STATE(R_IRQ_MASK2_CLR, dma0_eop, clr);		
-				netif_wake_queue(dev);
-			}
-			myFirstTxDesc = phys_to_virt(myFirstTxDesc->descr.next);
-		} while (myFirstTxDesc != phys_to_virt(*R_DMA_CH0_FIRST) &&
-		         myFirstTxDesc != myNextTxDesc);
+		/* acknowledge the eop interrupt and wake up queue */
+		*R_DMA_CH0_CLR_INTR = IO_STATE(R_DMA_CH0_CLR_INTR, clr_eop, do);
+		*R_IRQ_MASK2_CLR = IO_STATE(R_IRQ_MASK2_CLR, dma0_eop, clr);		
+		netif_wake_queue(dev);
 	}
 }
 
@@ -1140,11 +1134,24 @@ e100_rx(struct net_device *dev)
 		memcpy(skb_data_ptr, phys_to_virt(myNextRxDesc->descr.buf), length);
 	}
 	else {
-		/* Large packet, send directly to upper layers and allocate new memory */		 
+		/* Large packet, send directly to upper layers and allocate new 
+		 * memory (aligned to cache line boundary to avoid bug).
+		 * Before sending the skb to upper layers we must make sure that 
+		 * skb->data points to the aligned start of the packet. 
+		 */
+		int align;  
+		struct sk_buff *new_skb = dev_alloc_skb(MAX_MEDIA_DATA_SIZE + 2 * L1_CACHE_BYTES);
+		if (!new_skb) {
+			np->stats.rx_errors++;
+			printk(KERN_NOTICE "%s: Memory squeeze, dropping packet.\n", dev->name);
+			return;
+		}
 		skb = myNextRxDesc->skb;
-		skb_put(skb, length);
-		myNextRxDesc->skb = dev_alloc_skb(MAX_MEDIA_DATA_SIZE);
-		myNextRxDesc->descr.buf = virt_to_phys(myNextRxDesc->skb->data);
+		align = (int)phys_to_virt(myNextRxDesc->descr.buf) - (int)skb->data;	
+		skb_put(skb, length + align); 
+		skb_pull(skb, align); /* Remove alignment bytes */
+		myNextRxDesc->skb = new_skb;
+		myNextRxDesc->descr.buf = L1_CACHE_ALIGN(virt_to_phys(myNextRxDesc->skb->data));
 	}
 
 	skb->dev = dev;
@@ -1220,8 +1227,22 @@ e100_close(struct net_device *dev)
 static int
 e100_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 {
-	/* Maybe default should return -EINVAL instead? */
+	struct mii_ioctl_data *data = (struct mii_ioctl_data *)&ifr->ifr_data;
+
 	switch (cmd) {
+		case SIOCETHTOOL:
+			return e100_ethtool_ioctl(dev,ifr);
+		case SIOCGMIIPHY: /* Get PHY address */
+			data->phy_id = MDIO_PHYS_ADDR;
+			break;
+		case SIOCGMIIREG: /* Read MII register */
+			data->val_out = e100_get_mdio_reg(data->reg_num);
+			break;
+		case SIOCSMIIREG: /* Write MII register */
+			e100_set_mdio_reg(data->reg_num, data->val_in);
+			break;
+		/* The ioctls below should be considered obsolete but are */
+		/* still present for compatability with old scripts/apps  */	
 		case SET_ETH_SPEED_10:                  /* 10 Mbps */
 			e100_set_speed(10);
 			break;
@@ -1240,10 +1261,90 @@ e100_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 		case SET_ETH_DUPLEX_AUTO:             /* Autonegotiate duplex*/
 			e100_set_duplex(autoneg);
 			break;
-		default: /* Auto neg */
-			e100_set_speed(0);
-			e100_set_duplex(autoneg);
-			break;
+		default:
+			return -EINVAL;
+	}
+	return 0;
+}
+
+static int
+e100_ethtool_ioctl(struct net_device *dev, struct ifreq *ifr)
+{
+	struct ethtool_cmd ecmd;
+
+	if (copy_from_user(&ecmd, ifr->ifr_data, sizeof (ecmd)))
+		return -EFAULT;
+
+	switch (ecmd.cmd) {
+		case ETHTOOL_GSET:
+		{
+			memset((void *) &ecmd, 0, sizeof (ecmd));
+			ecmd.supported = 
+			  SUPPORTED_Autoneg | SUPPORTED_TP | SUPPORTED_MII |
+			  SUPPORTED_10baseT_Half | SUPPORTED_10baseT_Full | 
+			  SUPPORTED_100baseT_Half | SUPPORTED_100baseT_Full;
+			ecmd.port = PORT_TP;
+			ecmd.transceiver = XCVR_EXTERNAL;
+			ecmd.phy_address = MDIO_PHYS_ADDR;
+			ecmd.speed = current_speed;
+			ecmd.duplex = full_duplex ? DUPLEX_FULL : DUPLEX_HALF;
+			ecmd.advertising = ADVERTISED_TP;
+			if (current_duplex == autoneg && current_speed_selection == 0)
+				ecmd.advertising |= ADVERTISED_Autoneg;
+			else {
+				ecmd.advertising |= 
+				  ADVERTISED_10baseT_Half | ADVERTISED_10baseT_Full |
+				  ADVERTISED_100baseT_Half | ADVERTISED_100baseT_Full;
+				if (current_speed_selection == 10)
+					ecmd.advertising &= ~(ADVERTISED_100baseT_Half | ADVERTISED_100baseT_Full);
+				else if (current_speed_selection == 100)
+					ecmd.advertising &= ~(ADVERTISED_10baseT_Half | ADVERTISED_10baseT_Full);
+				if (current_duplex == half)
+					ecmd.advertising &= ~(ADVERTISED_10baseT_Full | ADVERTISED_100baseT_Full);
+				else if (current_duplex == full)
+					ecmd.advertising &= ~(ADVERTISED_10baseT_Half | ADVERTISED_100baseT_Half);
+			}
+			ecmd.autoneg = AUTONEG_ENABLE;
+			if (copy_to_user(ifr->ifr_data, &ecmd, sizeof (ecmd)))
+				return -EFAULT;
+		}
+		break;
+		case ETHTOOL_SSET:
+		{
+			if (!capable(CAP_NET_ADMIN)) {
+				return -EPERM;
+			}
+			if (ecmd.autoneg == AUTONEG_ENABLE) {
+				e100_set_duplex(autoneg);
+				e100_set_speed(0);
+			} else {
+				e100_set_duplex(ecmd.duplex == DUPLEX_HALF ? half : full);
+				e100_set_speed(ecmd.speed == SPEED_10 ? 10: 100);
+			}
+		}
+		break;
+		case ETHTOOL_GDRVINFO:
+		{
+			struct ethtool_drvinfo info;
+			memset((void *) &info, 0, sizeof (info));
+			strncpy(info.driver, "ETRAX 100LX", sizeof(info.driver) - 1);
+			strncpy(info.version, "$Rev$", sizeof(info.version) - 1);
+			strncpy(info.fw_version, "N/A", sizeof(info.fw_version) - 1);
+			strncpy(info.bus_info, "N/A", sizeof(info.bus_info) - 1);
+			info.regdump_len = 0;
+			info.eedump_len = 0;
+			info.testinfo_len = 0;
+			if (copy_to_user(ifr->ifr_data, &info, sizeof (info)))
+				return -EFAULT;
+		}
+		break;
+		case ETHTOOL_NWAY_RST:
+			if (current_duplex == autoneg && current_speed_selection == 0)
+				e100_negotiate();
+		break;
+		default:
+			return -EOPNOTSUPP;
+		break;
 	}
 	return 0;
 }

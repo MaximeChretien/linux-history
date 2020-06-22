@@ -133,7 +133,7 @@ struct stifb_info {
 #endif			
 };
 
-static int stifb_force_bpp[MAX_STI_ROMS] = {0, };
+static int stifb_force_bpp[MAX_STI_ROMS];
 
 /* ------------------- chipset specific functions -------------------------- */
 
@@ -1290,7 +1290,10 @@ stifb_init_fb(struct sti_struct *sti, int force_bpp)
 		fb->id = S9000_ID_A1659A;
 		break;
 	case S9000_ID_A1439A:	/* CRX24/A1439A */
-		bpp = 32;
+		if (force_bpp == 8 || force_bpp == 32)
+		  bpp = force_bpp;
+		else
+		  bpp = 32;
 		break;
 	case S9000_ID_HCRX:	/* Hyperdrive/HCRX */
 		memset(&fb->ngle_rom, 0, sizeof(fb->ngle_rom));

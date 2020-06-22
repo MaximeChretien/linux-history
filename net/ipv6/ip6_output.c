@@ -132,7 +132,7 @@ int ip6_output(struct sk_buff *skb)
 
 
 #ifdef CONFIG_NETFILTER
-static int route6_me_harder(struct sk_buff *skb)
+int ip6_route_me_harder(struct sk_buff *skb)
 {
 	struct ipv6hdr *iph = skb->nh.ipv6h;
 	struct dst_entry *dst;
@@ -150,7 +150,8 @@ static int route6_me_harder(struct sk_buff *skb)
 
 	if (dst->error) {
 		if (net_ratelimit())
-			printk(KERN_DEBUG "route6_me_harder: No more route.\n");
+			printk(KERN_DEBUG "ip6_route_me_harder: No more route.\n");
+		dst_release(dst);
 		return -EINVAL;
 	}
 
@@ -166,7 +167,7 @@ static inline int ip6_maybe_reroute(struct sk_buff *skb)
 {
 #ifdef CONFIG_NETFILTER
 	if (skb->nfcache & NFC_ALTERED){
-		if (route6_me_harder(skb) != 0){
+		if (ip6_route_me_harder(skb) != 0){
 			kfree_skb(skb);
 			return -EINVAL;
 		}
@@ -545,7 +546,7 @@ int ip6_build_xmit(struct sock *sk, inet_getfrag_t getfrag, const void *data,
 		    || (fl->oif && fl->oif != dst->dev->ifindex)) {
 			dst = NULL;
 		} else
-			dst_clone(dst);
+			dst_hold(dst);
 	}
 
 	if (dst == NULL)
@@ -563,7 +564,7 @@ int ip6_build_xmit(struct sock *sk, inet_getfrag_t getfrag, const void *data,
 		if (err) {
 #if IP6_DEBUG >= 2
 			printk(KERN_DEBUG "ip6_build_xmit: "
-			       "no availiable source address\n");
+			       "no available source address\n");
 #endif
 			goto out;
 		}

@@ -99,9 +99,8 @@ typedef enum _SIS_CHIP_TYPE {
     SIS_315,
     SIS_315PRO, /* SiS 325 */
     SIS_550,
-    SIS_640,
-    SIS_740,
     SIS_650,
+    SIS_740,
     SIS_330, 
     MAX_SIS_CHIP
 } SIS_CHIP_TYPE;
@@ -116,12 +115,9 @@ typedef enum _SIS_VB_CHIP_TYPE {
     VB_CHIP_301,
     VB_CHIP_301B,      
     VB_CHIP_301LV,
-    VB_CHIP_301LVX,
     VB_CHIP_302,
     VB_CHIP_302B,
     VB_CHIP_302LV,
-    VB_CHIP_302LVX,
-    VB_CHIP_303,
     VB_CHIP_UNKNOWN, /* other video bridge or no video bridge */
     MAX_VB_CHIP
 } SIS_VB_CHIP_TYPE;
@@ -238,6 +234,10 @@ struct _SIS_HW_DEVICE_INFO
     UCHAR  szVBIOSVer[VBIOS_VER_MAX_LENGTH];
 
     UCHAR  pdc;			/* TW: PanelDelayCompensation */
+    
+#ifdef LINUX_KERNEL
+    BOOLEAN Is301BDH;
+#endif        
 
 #ifdef LINUX_XF86
     PCITAG PciTag;		/* PCI Tag for Linux XF86 */
@@ -276,7 +276,15 @@ struct _SISFB_INFO {
 
 	int    sisfb_tqlen;		/* turbo queue length (in KB) */
 
-	char reserved[249]; 		/* for future use */
+	unsigned int sisfb_pcibus;      /* The card's PCI ID */
+	unsigned int sisfb_pcislot;
+	unsigned int sisfb_pcifunc;
+
+	unsigned char sisfb_lcdpdc;
+	
+	unsigned char sisfb_lcda;
+
+	char reserved[235]; 		/* for future use */
 };
 #endif
 

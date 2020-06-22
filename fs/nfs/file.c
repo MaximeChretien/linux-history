@@ -187,6 +187,7 @@ static int nfs_sync_page(struct page *page)
 	if (!inode)
 		return 0;
 
+	NFS_SetPageSync(page);
 	rpages = NFS_SERVER(inode)->rpages;
 	result = nfs_pagein_inode(inode, index, rpages);
 	if (result < 0)

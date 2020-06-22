@@ -929,7 +929,6 @@ qec_free_devs:
 							     sizeof(struct sunqe_buffers),
 							     qe->buffers,
 							     qe->buffers_dvma);
-				kfree(qe_devs[i]->priv);
 			}
 			kfree(qe_devs[i]);
 		}

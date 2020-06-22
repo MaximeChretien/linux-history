@@ -1,7 +1,7 @@
 /*
- *    Disk Array driver for Compaq SA53xx Controllers, SCSI Tape module
- *    Copyright 2001 Compaq Computer Corporation
- *
+ *    Disk Array driver for HP SA 5xxx and 6xxx Controllers, SCSI Tape module
+ *    Copyright 2001, 2002 Hewlett-Packard Development Company, L.P.
+ *    
  *    This program is free software; you can redistribute it and/or modify
  *    it under the terms of the GNU General Public License as published by
  *    the Free Software Foundation; either version 2 of the License, or
@@ -16,7 +16,7 @@
  *    along with this program; if not, write to the Free Software
  *    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- *    Questions/Comments/Bugfixes to arrays@compaq.com
+ *    Questions/Comments/Bugfixes to Cciss-discuss@lists.sourceforge.net 
  *
  *    Author: Stephen M. Cameron
  */
@@ -233,8 +233,8 @@ scsi_cmd_stack_free(int ctlr)
 		printk( "cciss: %d scsi commands are still outstanding.\n",
 			CMD_STACK_SIZE - stk->top);
 		// BUG();
-		printk("WE HAVE A BUG HERE!!! stk=%p\n",
-			stk);
+		printk("WE HAVE A BUG HERE!!! stk=0x%08x\n",
+			(unsigned int) stk);
 	}
 	size = sizeof(struct cciss_scsi_cmd_stack_elem_t) * CMD_STACK_SIZE;
 
@@ -896,7 +896,7 @@ cciss_scsi_do_simple_cmd(ctlr_info_t *c,
 
 	memset(cp->Request.CDB, 0, sizeof(cp->Request.CDB));
 	memcpy(cp->Request.CDB, cdb, cdblen);
-	cp->Request.Timeout = 1000;		// guarantee completion.
+	cp->Request.Timeout = 0;	// No timeout
 	cp->Request.CDBLen = cdblen;
 	cp->Request.Type.Type = TYPE_CMD;
 	cp->Request.Type.Attribute = ATTR_SIMPLE;
@@ -1414,7 +1414,7 @@ cciss_scsi_queue_command (Scsi_Cmnd *cmd, void (* done)(Scsi_Cmnd *))
 
 	// Fill in the request block...
 
-	cp->Request.Timeout = 1000; // guarantee completion
+	cp->Request.Timeout = 0; // No timeout 
 	memset(cp->Request.CDB, 0, sizeof(cp->Request.CDB));
 	if (cmd->cmd_len > sizeof(cp->Request.CDB)) BUG();
 	cp->Request.CDBLen = cmd->cmd_len;
@@ -1578,14 +1578,14 @@ static void
 cciss_proc_tape_report(int ctlr, unsigned char *buffer, off_t *pos, off_t *len)
 {
 	int size;
-	unsigned long flags;
+	unsigned int flags;
 
 	*pos = *pos -1; *len = *len - 1; // cut off the last trailing newline
 
 	CPQ_TAPE_LOCK(ctlr, flags);
 	size = sprintf(buffer + *len,
-		"       Sequential access devices: %d\n\n",
-			ccissscsi[ctlr].ndevices);
+		"Sequential access devices: %d\n\n",
+		 ccissscsi[ctlr].ndevices);
 	CPQ_TAPE_UNLOCK(ctlr, flags);
 	*pos += size; *len += size;
 }

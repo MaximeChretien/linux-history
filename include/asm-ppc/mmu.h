@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.mmu.h 1.10 06/28/01 15:50:17 paulus
- */
-/*
  * PowerPC memory management structures
  */
 
@@ -42,6 +39,9 @@ typedef struct _PTE {
 	unsigned long  :1;	/* Unused */
 	unsigned long pp:2;	/* Page protection */
 } PTE; 
+
+extern PTE *Hash, *Hash_end;
+extern unsigned long Hash_size, Hash_mask;
 
 /* Values for PP (assumes Ks=0, Kp=1) */
 #define PP_RWXX	0	/* Supervisor read/write, User none */

@@ -759,32 +759,30 @@ intr_restore:
 
 	.import do_softirq,code
 intr_do_softirq:
-	bl      do_softirq,%r2
 #ifdef __LP64__
 	ldo	-16(%r30),%r29		/* Reference param save area */
-#else
-	nop
 #endif
-	b       intr_check_resched
-	nop
+	ldil	L%intr_check_resched, %r2
+	b	do_softirq
+	ldo	R%intr_check_resched(%r2), %r2
 
 	.import schedule,code
 intr_do_resched:
 	/* Only do reschedule if we are returning to user space */
 	LDREG   PT_IASQ0(%r16), %r20
-	CMPIB= 0,%r20,intr_restore /* backward */
+	CMPIB= 0,%r20,intr_check_sig /* backward */
 	nop
 	LDREG   PT_IASQ1(%r16), %r20
-	CMPIB= 0,%r20,intr_restore /* backward */
+	CMPIB= 0,%r20,intr_check_sig /* backward */
 	nop
 
 #ifdef __LP64__
 	ldo	-16(%r30),%r29		/* Reference param save area */
 #endif
 
-	ldil	L%intr_return, %r2
+	ldil	L%intr_check_sig, %r2
 	b	schedule
-	ldo	R%intr_return(%r2), %r2	/* return to intr_return, not here */
+	ldo	R%intr_check_sig(%r2), %r2
 
 
 	.import do_signal,code
@@ -799,15 +797,14 @@ intr_do_signal:
 
 	copy	%r0, %r24			/* unsigned long in_syscall */
 	copy	%r16, %r25			/* struct pt_regs *regs */
-	ssm     PSW_SM_I, %r0
+	copy	%r0, %r26			/* sigset_t *oldset = NULL */
 #ifdef __LP64__
 	ldo	-16(%r30),%r29			/* Reference param save area */
 #endif
-	bl	do_signal,%r2
-	copy	%r0, %r26			/* sigset_t *oldset = NULL */
+	ldil	L%intr_restore, %r2
+	b	do_signal
+	ldo	R%intr_restore(%r2), %r2
 
-	b	intr_restore
-	nop
 
 	/*
 	 * External interrupts.
@@ -852,7 +849,7 @@ intr_extint:
 	ldo	-16(%r30),%r29	/* Reference param save area */
 #endif
 	b	do_cpu_irq_mask
-	ldo	R%intr_return(%r2), %r2	/* return to intr_return, not here */
+	ldo	R%intr_return(%r2), %r2
 
 
 
@@ -925,19 +922,16 @@ skip_save_ior:
 	loadgp
 
 	copy		%r29, %r25	/* arg1 is pt_regs */
-#ifdef CONFIG_KWDB
-	copy		%r29, %r3	/* KWDB - update frame pointer (gr3) */
-#endif
 
 #ifdef __LP64__
 	ldo		-16(%r30),%r29	/* Reference param save area */
 #endif
 
-	ldil		L%intr_return, %r2
+	ldil		L%intr_restore, %r2
 	copy		%r25, %r16	/* save pt_regs */
 
 	b		handle_interruption
-	ldo		R%intr_return(%r2), %r2	/* return to intr_return */
+	ldo		R%intr_restore(%r2), %r2
 
 
 	/*
@@ -1319,9 +1313,9 @@ dtlb_miss_20:
 
 	/* Get rid of prot bits and convert to page addr for idtlbt */
 
-	extrd,s         pte,35,4,t0
+	extrd,s         pte,35,4,t1
 	depdi		0,63,12,pte	/* clear lower 12 bits */
-        addi,=          1,t0,0 
+        addi,=          1,t1,0 
         extrd,u,*tr     pte,56,25,pte 
 	extrd,s		pte,56,25,pte	/* bit 31:8 >> 8  */ 
 	idtlbt          pte,prot
@@ -1389,9 +1383,9 @@ nadtlb_miss_20:
 
 	/* Get rid of prot bits and convert to page addr for idtlbt */
 
-        extrd,s         pte,35,4,t0
+        extrd,s         pte,35,4,t1
         depdi           0,63,12,pte     /* clear lower 12 bits */
-        addi,=          1,t0,0
+        addi,=          1,t1,0
         extrd,u,*tr     pte,56,25,pte
         extrd,s         pte,56,25,pte   /* bit 31:8 >> 8  */
         idtlbt          pte,prot
@@ -1642,9 +1636,9 @@ itlb_miss_common_20:
 
 	/* Get rid of prot bits and convert to page addr for iitlbt */
 
-        extrd,s         pte,35,4,t0 
+        extrd,s         pte,35,4,t1 
         depdi           0,63,12,pte     /* clear lower 12 bits */
-        addi,=          1,t0,0
+        addi,=          1,t1,0
         extrd,u,*tr     pte,56,25,pte 
         extrd,s         pte,56,25,pte   /* bit 31:8 >> 8  */
 	iitlbt          pte,prot
@@ -1860,9 +1854,9 @@ dbit_nolock_20:
 	extrd,u,*= 	pte,_PAGE_GATEWAY_BIT+32,1,r0
 	depdi		0,11,2,prot	/* If Gateway, Set PL2 to 0 */
 
-        extrd,s         pte,35,4,t0 
+        extrd,s         pte,35,4,t1 
         depdi           0,63,12,pte     /* clear lower 12 bits */
-        addi,=          1,t0,0
+        addi,=          1,t1,0
         extrd,u,*tr     pte,56,25,pte 
         extrd,s         pte,56,25,pte   /* bit 31:8 >> 8  */
         idtlbt          pte,prot
@@ -2358,9 +2352,9 @@ pt_regs_ok:
 	STREG	%r2,TASK_PT_IAOQ0(%r1)
 	ldo	4(%r2),%r2
 	STREG	%r2,TASK_PT_IAOQ1(%r1)
-	copy	%r25,%r16
+
 	b	intr_restore
-	nop
+	copy	%r25,%r16
 
 	.import do_softirq,code
 syscall_do_softirq:

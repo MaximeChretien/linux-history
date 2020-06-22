@@ -1,6 +1,3 @@
-/*
- * BK Id: SCCS/s.io.h 1.14 10/16/01 15:58:42 trini
- */
 #ifdef __KERNEL__
 #ifndef _PPC_IO_H
 #define _PPC_IO_H
@@ -80,9 +77,22 @@ extern unsigned long pci_dram_offset;
 
 #ifdef CONFIG_ALL_PPC
 /*
- * We have to handle possible machine checks here on powermacs
- * and potentially some CHRPs -- paulus.
+ * On powermacs, we will get a machine check exception if we
+ * try to read data from a non-existent I/O port.  Because the
+ * machine check is an asynchronous exception, it isn't
+ * well-defined which instruction SRR0 will point to when the
+ * exception occurs.
+ * With the sequence below (twi; isync; nop), we have found that
+ * the machine check occurs on one of the three instructions on
+ * all PPC implementations tested so far.  The twi and isync are
+ * needed on the 601 (in fact twi; sync works too), the isync and
+ * nop are needed on 604[e|r], and any of twi, sync or isync will
+ * work on 603[e], 750, 74x0.
+ * The twi creates an explicit data dependency on the returned
+ * value which seems to be needed to make the 601 wait for the
+ * load to finish.
  */
+
 #define __do_in_asm(name, op)				\
 extern __inline__ unsigned int name(unsigned int port)	\
 {							\
@@ -181,7 +191,6 @@ extern void _outsl_ns(volatile u32 *port, const void *buf, int nl);
 #define memcpy_fromio(a,b,c)   memcpy((a),(void *)(b),(c))
 #define memcpy_toio(a,b,c)	memcpy((void *)(a),(b),(c))
 
-#ifdef __KERNEL__
 /*
  * Map in an area of physical address space, for accessing
  * I/O devices etc.
@@ -195,6 +204,15 @@ extern unsigned long iopa(unsigned long addr);
 extern unsigned long mm_ptov(unsigned long addr) __attribute__ ((const));
 extern void io_block_mapping(unsigned long virt, unsigned long phys,
 			     unsigned int size, int flags);
+
+/*
+ * This makes sure that a value has been returned from a device
+ * before any subsequent loads or stores are performed.
+ */
+extern inline void io_flush(int value)
+{
+	__asm__ __volatile__("twi 0,%0,0; isync" : : "r" (value));
+}
 
 /*
  * The PCI bus is inherently Little-Endian.  The PowerPC is being
@@ -250,10 +268,8 @@ extern inline void * phys_to_virt(unsigned long address)
 /*
  * Change "struct page" to physical address.
  */
-#define page_to_phys(page)	((page - mem_map) << PAGE_SHIFT)
+#define page_to_phys(page)	(((page - mem_map) << PAGE_SHIFT) + PPC_MEMSTART)
 #define page_to_bus(page)	(page_to_phys(page) + PCI_DRAM_OFFSET)
-
-#endif /* __KERNEL__ */
 
 /*
  * Enforce In-order Execution of I/O:
@@ -265,7 +281,7 @@ extern inline void eieio(void)
 	__asm__ __volatile__ ("eieio" : : : "memory");
 }
 
-/* Enforce in-order execution of data I/O. 
+/* Enforce in-order execution of data I/O.
  * No distinction between read/write on PPC; use eieio for all three.
  */
 #define iobarrier_rw() eieio()
@@ -274,12 +290,19 @@ extern inline void eieio(void)
 
 /*
  * 8, 16 and 32 bit, big and little endian I/O operations, with barrier.
+ *
+ * Read operations have additional twi & isync to make sure the read
+ * is actually performed (i.e. the data has come back) before we start
+ * executing any following instructions.
  */
 extern inline int in_8(volatile unsigned char *addr)
 {
 	int ret;
 
-	__asm__ __volatile__("lbz%U1%X1 %0,%1; eieio" : "=r" (ret) : "m" (*addr));
+	__asm__ __volatile__(
+		"lbz%U1%X1 %0,%1;\n"
+		"twi 0,%0,0;\n"
+		"isync" : "=r" (ret) : "m" (*addr));
 	return ret;
 }
 
@@ -292,7 +315,9 @@ extern inline int in_le16(volatile unsigned short *addr)
 {
 	int ret;
 
-	__asm__ __volatile__("lhbrx %0,0,%1; eieio" : "=r" (ret) :
+	__asm__ __volatile__("lhbrx %0,0,%1;\n"
+			     "twi 0,%0,0;\n"
+			     "isync" : "=r" (ret) :
 			      "r" (addr), "m" (*addr));
 	return ret;
 }
@@ -301,7 +326,9 @@ extern inline int in_be16(volatile unsigned short *addr)
 {
 	int ret;
 
-	__asm__ __volatile__("lhz%U1%X1 %0,%1; eieio" : "=r" (ret) : "m" (*addr));
+	__asm__ __volatile__("lhz%U1%X1 %0,%1;\n"
+			     "twi 0,%0,0;\n"
+			     "isync" : "=r" (ret) : "m" (*addr));
 	return ret;
 }
 
@@ -320,7 +347,9 @@ extern inline unsigned in_le32(volatile unsigned *addr)
 {
 	unsigned ret;
 
-	__asm__ __volatile__("lwbrx %0,0,%1; eieio" : "=r" (ret) :
+	__asm__ __volatile__("lwbrx %0,0,%1;\n"
+			     "twi 0,%0,0;\n"
+			     "isync" : "=r" (ret) :
 			     "r" (addr), "m" (*addr));
 	return ret;
 }
@@ -329,7 +358,9 @@ extern inline unsigned in_be32(volatile unsigned *addr)
 {
 	unsigned ret;
 
-	__asm__ __volatile__("lwz%U1%X1 %0,%1; eieio" : "=r" (ret) : "m" (*addr));
+	__asm__ __volatile__("lwz%U1%X1 %0,%1;\n"
+			     "twi 0,%0,0;\n"
+			     "isync" : "=r" (ret) : "m" (*addr));
 	return ret;
 }
 

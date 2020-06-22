@@ -1315,9 +1315,9 @@ dasd_chanq_deq (dasd_chanq_t * q, ccw_req_t * cqr)
 /*
  * DASD_TERM_IO
  *
- * attempts to terminate the the current IO and set it to failed if termination
+ * Attempts to terminate the current IO and set it to failed if termination
  * was successful.
- * returns an appropriate return code
+ * Returns an appropriate return code.
  */
 int
 dasd_term_IO (ccw_req_t * cqr)

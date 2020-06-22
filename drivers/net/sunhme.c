@@ -523,7 +523,7 @@ static void happy_meal_tcvr_write(struct happy_meal *hp,
 	ASD(("happy_meal_tcvr_write: reg=0x%02x value=%04x\n", reg, value));
 
 	/* Welcome to Sun Microsystems, can I take your order please? */
-	if (!hp->happy_flags & HFLAG_FENABLE)
+	if (!(hp->happy_flags & HFLAG_FENABLE))
 		return happy_meal_bb_write(hp, tregs, reg, value);
 
 	/* Would you like fries with that? */
@@ -2701,7 +2701,6 @@ static int __init happy_meal_sbus_init(struct sbus_dev *sdev, int is_qfe)
 	}
 
 	hp = dev->priv;
-	memset(hp, 0, sizeof(*hp));
 
 	hp->happy_dev = sdev;
 

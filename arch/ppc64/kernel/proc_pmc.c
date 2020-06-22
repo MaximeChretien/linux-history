@@ -110,6 +110,9 @@ static ssize_t write_profile(struct file * file, const char * buf,
 static ssize_t read_trace(struct file *file, char *buf, size_t count, loff_t *ppos);
 static ssize_t write_trace(struct file * file, const char * buf,
 			     size_t count, loff_t *ppos);
+static ssize_t read_timeslice(struct file *file, char *buf, size_t count, loff_t *ppos);
+static ssize_t write_timeslice(struct file * file, const char * buf,
+			     size_t count, loff_t *ppos);
 
 static struct file_operations proc_profile_operations = {
 	read:		read_profile,
@@ -119,6 +122,11 @@ static struct file_operations proc_profile_operations = {
 static struct file_operations proc_trace_operations = {
 	read:		read_trace,
 	write:		write_trace,
+};
+
+static struct file_operations proc_timeslice_operations = {
+	read:		read_timeslice,
+	write:		write_timeslice,
 };
 
 extern struct perfmon_base_struct perfmon_base;
@@ -144,7 +152,15 @@ void proc_ppc64_init(void)
 	ent = create_proc_entry("naca", S_IFREG|S_IRUGO, proc_ppc64_root);
 	if ( ent ) {
 		ent->nlink = 1;
-		ent->data = 0;
+		ent->data = naca;
+		ent->size = 4096;
+		ent->proc_fops = &nacamap_fops;
+	}
+	
+	ent = create_proc_entry("systemcfg", S_IFREG|S_IRUGO, proc_ppc64_root);
+	if ( ent ) {
+		ent->nlink = 1;
+		ent->data = systemcfg;
 		ent->size = 4096;
 		ent->proc_fops = &nacamap_fops;
 	}
@@ -152,7 +168,7 @@ void proc_ppc64_init(void)
 	/* /proc/ppc64/paca/XX -- raw paca contents.  Only readable to root */
 	ent = proc_mkdir("paca", proc_ppc64_root);
 	if (ent) {
-		for (i = 0; i < naca->processorCount; i++)
+		for (i = 0; i < systemcfg->processorCount; i++)
 			proc_ppc64_create_paca(i, ent);
 	}
 
@@ -165,14 +181,14 @@ void proc_ppc64_init(void)
 	proc_ppc64_pmc_root = proc_mkdir("pmc", proc_ppc64_root);
 
 	proc_ppc64_pmc_system_root = proc_mkdir("system", proc_ppc64_pmc_root);
-	for (i = 0; i < naca->processorCount; i++) {
+	for (i = 0; i < systemcfg->processorCount; i++) {
 		sprintf(buf, "cpu%ld", i); 
 		proc_ppc64_pmc_cpu_root[i] = proc_mkdir(buf, proc_ppc64_pmc_root);
 	}
 
 
 	/* Create directories for the software counters. */
-	for (i = 0; i < naca->processorCount; i++) {
+	for (i = 0; i < systemcfg->processorCount; i++) {
 		ent = create_proc_entry("stab", S_IRUGO | S_IWUSR, 
 					proc_ppc64_pmc_cpu_root[i]);
 		if (ent) {
@@ -224,8 +240,14 @@ void proc_ppc64_init(void)
 		/* ent->size = (1+prof_len) * sizeof(unsigned int); */
 	}
 
+	ent = create_proc_entry("timeslice", S_IWUSR | S_IRUGO, proc_ppc64_pmc_system_root);
+	if (ent) {
+		ent->nlink = 1;
+		ent->proc_fops = &proc_timeslice_operations;
+	}
+
 	/* Create directories for the hardware counters. */
-	for (i = 0; i < naca->processorCount; i++) {
+	for (i = 0; i < systemcfg->processorCount; i++) {
 		ent = create_proc_entry("hardware", S_IRUGO | S_IWUSR, 
 					proc_ppc64_pmc_cpu_root[i]);
 		if (ent) {
@@ -299,7 +321,7 @@ int proc_ppc64_pmc_find_file(void *data)
 	   (unsigned long) proc_ppc64_pmc_system_root) {
 		return(-1); 
 	} else {
-		for (i = 0; i < naca->processorCount; i++) {
+		for (i = 0; i < systemcfg->processorCount; i++) {
 			if ((unsigned long)data ==
 			   (unsigned long)proc_ppc64_pmc_cpu_root[i]) {
 				return(i); 
@@ -417,20 +439,24 @@ static ssize_t read_profile(struct file *file, char *buf,
 	return read;
 }
 
+static ssize_t write_profile(struct file * file, const char * buf,
+			     size_t count, loff_t *ppos)
+{
+}
+
 static ssize_t read_trace(struct file *file, char *buf,
 			    size_t count, loff_t *ppos)
 {
 	unsigned long p = *ppos;
 	ssize_t read;
 	char * pnt;
-	unsigned int sample_step = 4;
 
 	if (p >= (perfmon_base.trace_length)) return 0;
 	if (count > (perfmon_base.trace_length) - p)
 		count = (perfmon_base.trace_length) - p;
 	read = 0;
 
-	pnt = (char *)(perfmon_base.trace_buffer) + p; //  - sizeof(unsigned int);
+	pnt = (char *)(perfmon_base.trace_buffer) + p;
 	copy_to_user(buf,(void *)pnt,count);
 	read += count;
 	*ppos += read;
@@ -442,8 +468,28 @@ static ssize_t write_trace(struct file * file, const char * buf,
 {
 }
 
-static ssize_t write_profile(struct file * file, const char * buf,
-			     size_t count, loff_t *ppos)
+static ssize_t read_timeslice(struct file *file, char *buf,
+			      size_t count, loff_t *ppos)
+{
+	unsigned long p = *ppos;
+	ssize_t read;
+	char * pnt;
+	unsigned int sample_step = 4;
+
+	if (p >= (perfmon_base.timeslice_length)) return 0;
+	if (count > (perfmon_base.timeslice_length) - p)
+		count = (perfmon_base.timeslice_length) - p;
+	read = 0;
+
+	pnt = (char *)(perfmon_base.timeslice_buffer) + p;
+	copy_to_user(buf,(void *)pnt,count);
+	read += count;
+	*ppos += read;
+	return read;
+}
+
+static ssize_t write_timeslice(struct file * file, const char * buf,
+			       size_t count, loff_t *ppos)
 {
 }
 
@@ -545,7 +591,7 @@ int proc_get_lpevents
 			(unsigned long)xItLpQueue.xLpIntCountByType[i] );
 	}
 	len += sprintf( page+len, "\n  events processed by processor:\n" );
-	for (i=0; i<naca->processorCount; ++i) {
+	for (i=0; i<systemcfg->processorCount; ++i) {
 		len += sprintf( page+len, "    CPU%02d  %10u\n",
 			i, paca[i].lpEvent_count );
 	}
@@ -978,45 +1024,33 @@ static loff_t nacamap_seek( struct file *file, loff_t off, int whence)
 static ssize_t nacamap_read( struct file *file, char *buf, size_t nbytes, loff_t *ppos)
 {
 	unsigned pos = *ppos;
-	unsigned size;
-	char * fromaddr;
 	struct proc_dir_entry *dp;
 
 	dp = file->f_dentry->d_inode->u.generic_ip;
 
-	size = dp->size;
-	if ( pos >= size )
+	if ( pos >= dp->size )
 		return 0;
-	if ( nbytes >= size )
-		nbytes = size;
-	if ( pos + nbytes > size )
-		nbytes = size - pos;
-	fromaddr = (char *)(KERNELBASE + 0x4000 + pos);
+	if ( nbytes >= dp->size )
+		nbytes = dp->size;
+	if ( pos + nbytes > dp->size )
+		nbytes = dp->size - pos;
 
-	copy_to_user( buf, fromaddr, nbytes );
+	copy_to_user( buf, (char *)dp->data + pos, nbytes );
 	*ppos = pos + nbytes;
 	return nbytes;
 }
 
 static int nacamap_mmap( struct file *file, struct vm_area_struct *vma )
 {
-	unsigned long pa;
-	long size;
-	long fsize;
 	struct proc_dir_entry *dp;
 
 	dp = file->f_dentry->d_inode->u.generic_ip;
 
-	pa = 0x4000;
-	fsize = 4096;
-
 	vma->vm_flags |= VM_SHM | VM_LOCKED;
 
-	size = vma->vm_end - vma->vm_start;
-	if ( size != 4096 )
+	if ((vma->vm_end - vma->vm_start) > dp->size)
 		return -EINVAL;
 
-	remap_page_range( vma->vm_start, pa, 4096, vma->vm_page_prot );
+	remap_page_range( vma->vm_start, __pa(dp->data), dp->size, vma->vm_page_prot );
 	return 0;
 }
-

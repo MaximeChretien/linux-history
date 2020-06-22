@@ -3089,11 +3089,11 @@ typedef union ii_ippr_u {
         #define IIO_FIRST_PC_ENTRY 12
  */
 
-#define IIO_ICRB_A(_x)  (IIO_ICRB_0 + (6 * IIO_ICRB_OFFSET * (_x)))
-#define IIO_ICRB_B(_x)  (IIO_ICRB_A(_x) + 1*IIO_ICRB_OFFSET)
-#define IIO_ICRB_C(_x)  (IIO_ICRB_A(_x) + 2*IIO_ICRB_OFFSET)
-#define IIO_ICRB_D(_x)  (IIO_ICRB_A(_x) + 3*IIO_ICRB_OFFSET)
-#define IIO_ICRB_E(_x)  (IIO_ICRB_A(_x) + 4*IIO_ICRB_OFFSET)
+#define IIO_ICRB_A(_x)  ((u64)(IIO_ICRB_0 + (6 * IIO_ICRB_OFFSET * (_x))))
+#define IIO_ICRB_B(_x)  ((u64)((char *)IIO_ICRB_A(_x) + 1*IIO_ICRB_OFFSET))
+#define IIO_ICRB_C(_x)  ((u64)((char *)IIO_ICRB_A(_x) + 2*IIO_ICRB_OFFSET))
+#define IIO_ICRB_D(_x)  ((u64)((char *)IIO_ICRB_A(_x) + 3*IIO_ICRB_OFFSET))
+#define IIO_ICRB_E(_x)  ((u64)((char *)IIO_ICRB_A(_x) + 4*IIO_ICRB_OFFSET))
 
 #define TNUM_TO_WIDGET_DEV(_tnum)	(_tnum & 0x7)
 
@@ -3288,12 +3288,9 @@ typedef union ii_ippr_u {
 #ifndef __ASSEMBLY__
 
 /*
- * Easy access macros for CRBs, all 4 registers (A-D)
+ * Easy access macros for CRBs, all 5 registers (A-E)
  */
 typedef ii_icrb0_a_u_t icrba_t;
-#define a_lnetuce       ii_icrb0_a_fld_s.ia_ln_uce
-#define a_mark          ii_icrb0_a_fld_s.ia_mark
-#define a_xerr          ii_icrb0_a_fld_s.ia_xt_err
 #define a_sidn          ii_icrb0_a_fld_s.ia_sidn
 #define a_tnum          ii_icrb0_a_fld_s.ia_tnum
 #define a_addr          ii_icrb0_a_fld_s.ia_addr
@@ -3302,34 +3299,55 @@ typedef ii_icrb0_a_u_t icrba_t;
 #define a_regvalue	ii_icrb0_a_regval
 
 typedef ii_icrb0_b_u_t icrbb_t;
-#define b_error         ii_icrb0_b_fld_s.ib_error
-#define b_ecode         ii_icrb0_b_fld_s.ib_errcode
-#define b_cohtrans      ii_icrb0_b_fld_s.ib_ct
-#define b_xtsize        ii_icrb0_b_fld_s.ib_size
-#define b_source        ii_icrb0_b_fld_s.ib_source
+#define b_use_old       ii_icrb0_b_fld_s.ib_use_old
 #define b_imsgtype      ii_icrb0_b_fld_s.ib_imsgtype
 #define b_imsg          ii_icrb0_b_fld_s.ib_imsg
 #define b_initiator     ii_icrb0_b_fld_s.ib_init
+#define b_exc           ii_icrb0_b_fld_s.ib_exc
+#define b_ackcnt        ii_icrb0_b_fld_s.ib_ack_cnt
+#define b_resp          ii_icrb0_b_fld_s.ib_resp
+#define b_ack           ii_icrb0_b_fld_s.ib_ack
+#define b_hold          ii_icrb0_b_fld_s.ib_hold
+#define b_wb            ii_icrb0_b_fld_s.ib_wb
+#define b_intvn         ii_icrb0_b_fld_s.ib_intvn
+#define b_stall_ib      ii_icrb0_b_fld_s.ib_stall_ib
+#define b_stall_int     ii_icrb0_b_fld_s.ib_stall__intr
+#define b_stall_bte_0   ii_icrb0_b_fld_s.ib_stall__bte_0
+#define b_stall_bte_1   ii_icrb0_b_fld_s.ib_stall__bte_1
+#define b_error         ii_icrb0_b_fld_s.ib_error
+#define b_ecode         ii_icrb0_b_fld_s.ib_errcode
+#define b_lnetuce       ii_icrb0_b_fld_s.ib_ln_uce
+#define b_mark          ii_icrb0_b_fld_s.ib_mark
+#define b_xerr          ii_icrb0_b_fld_s.ib_xt_err
 #define b_regvalue	ii_icrb0_b_regval
 
 typedef ii_icrb0_c_u_t icrbc_t;
-#define c_btenum        ii_icrb0_c_fld_s.ic_bte_num
-#define c_pricnt        ii_icrb0_c_fld_s.ic_pr_cnt
-#define c_pripsc        ii_icrb0_c_fld_s.ic_pr_psc
-#define c_bteaddr       ii_icrb0_c_fld_s.ic_pa_be /* ic_pa_be fld has 2 names*/
-#define c_benable       ii_icrb0_c_fld_s.ic_pa_be /* ic_pa_be fld has 2 names*/
 #define c_suppl         ii_icrb0_c_fld_s.ic_suppl
 #define c_barrop        ii_icrb0_c_fld_s.ic_bo
 #define c_doresp        ii_icrb0_c_fld_s.ic_resprqd
 #define c_gbr           ii_icrb0_c_fld_s.ic_gbr
+#define c_btenum        ii_icrb0_c_fld_s.ic_bte_num
+#define c_cohtrans      ii_icrb0_c_fld_s.ic_ct
+#define c_xtsize        ii_icrb0_c_fld_s.ic_size
+#define c_source        ii_icrb0_c_fld_s.ic_source
 #define c_regvalue	ii_icrb0_c_regval
 
+
 typedef ii_icrb0_d_u_t icrbd_t;
+#define d_sleep         ii_icrb0_d_fld_s.id_sleep
+#define d_pricnt        ii_icrb0_d_fld_s.id_pr_cnt
+#define d_pripsc        ii_icrb0_d_fld_s.id_pr_psc
 #define d_bteop         ii_icrb0_d_fld_s.id_bte_op
-#define icrbd_ctxtvld   ii_icrb0_d_fld_s.id_cvld
-#define icrbd_toutvld   ii_icrb0_d_fld_s.id_tvld
-#define icrbd_context   ii_icrb0_d_fld_s.id_context
+#define d_bteaddr       ii_icrb0_d_fld_s.id_pa_be /* ic_pa_be fld has 2 names*/
+#define d_benable       ii_icrb0_d_fld_s.id_pa_be /* ic_pa_be fld has 2 names*/
 #define d_regvalue	ii_icrb0_d_regval
+
+typedef ii_icrb0_e_u_t icrbe_t;
+#define icrbe_ctxtvld   ii_icrb0_e_fld_s.ie_cvld
+#define icrbe_toutvld   ii_icrb0_e_fld_s.ie_tvld
+#define icrbe_context   ii_icrb0_e_fld_s.ie_context
+#define icrbe_timeout   ii_icrb0_e_fld_s.ie_timeout
+#define e_regvalue	ii_icrb0_e_regval
 
 #endif /* __ASSEMBLY__ */
 
@@ -3570,8 +3588,9 @@ hub_intr_free(hub_intr_t intr_hdl);
 
 extern int
 hub_intr_connect(       hub_intr_t intr_hdl,    /* xtalk intr resource hndl */
-                        xtalk_intr_setfunc_t setfunc,
-                                                /* func to set intr hw */
+			intr_func_t intr_func,          /* xtalk intr handler */
+			void *intr_arg,                 /* arg to intr handler */
+                        xtalk_intr_setfunc_t setfunc, /* func to set intr hw */
                         void *setfunc_arg);     /* arg to setfunc */
 
 extern void

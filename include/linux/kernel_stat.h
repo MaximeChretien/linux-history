@@ -27,7 +27,7 @@ struct kernel_stat {
 	unsigned int pgpgin, pgpgout;
 	unsigned int pswpin, pswpout;
 #if defined (__hppa__) 
-	unsigned int irqs[NR_IRQ_REGS][IRQ_PER_REGION];
+	unsigned int irqs[NR_CPUS][NR_IRQ_REGS][IRQ_PER_REGION];
 #elif !defined(CONFIG_ARCH_S390)
 	unsigned int irqs[NR_CPUS][NR_IRQS];
 #endif
@@ -44,7 +44,12 @@ extern unsigned long nr_context_switches(void);
  */
 static inline int kstat_irqs (int irq)
 {
-	return kstat.irqs[IRQ_REGION(irq)][IRQ_OFFSET(irq)];
+	int i, sum=0; 
+
+	for (i = 0 ; i < smp_num_cpus ; i++)
+		sum += kstat.irqs[i][IRQ_REGION(irq)][IRQ_OFFSET(irq)];
+ 
+	return sum;
 }
 #elif !defined(CONFIG_ARCH_S390)
 /*

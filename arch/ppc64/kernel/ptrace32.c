@@ -228,9 +228,9 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 			if (child->thread.regs->msr & MSR_FP)
 				giveup_fpu(child);
 		        if (numReg == PT_FPSCR) 
-			        tmp_reg_value = ((unsigned int *)child->thread.fpscr);
+			        tmp_reg_value = ((unsigned long *)child->thread.fpscr);
 		        else 
-			        tmp_reg_value = ((unsigned long int *)child->thread.fpr)[numReg - PT_FPR0];
+			        tmp_reg_value = ((unsigned long *)child->thread.fpr)[numReg - PT_FPR0];
 		} else { /* register within PT_REGS struct */
 		    tmp_reg_value = get_reg(child, numReg);
 		} 
@@ -394,6 +394,74 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 	case PTRACE_DETACH:
 		ret = ptrace_detach(child, data);
 		break;
+
+	case PPC_PTRACE_GETREGS: { /* Get GPRs 0 - 31. */
+		int i;
+		unsigned long *reg = &((unsigned long *)child->thread.regs)[0];
+		unsigned int *tmp = (unsigned int *)addr;
+
+		for (i = 0; i < 32; i++) {
+			ret = put_user(*reg, tmp);
+			if (ret)
+				break;
+			reg++;
+			tmp++;
+		}
+		break;
+	}
+
+	case PPC_PTRACE_SETREGS: { /* Set GPRs 0 - 31. */
+		int i;
+		unsigned long *reg = &((unsigned long *)child->thread.regs)[0];
+		unsigned int *tmp = (unsigned int *)addr;
+
+		for (i = 0; i < 32; i++) {
+			ret = get_user(*reg, tmp);
+			if (ret)
+				break;
+			reg++;
+			tmp++;
+		}
+		break;
+	}
+
+	case PPC_PTRACE_GETFPREGS: { /* Get FPRs 0 - 31. */
+		int i;
+		unsigned long *reg = &((unsigned long *)child->thread.fpr)[0];
+		unsigned int *tmp = (unsigned int *)addr;
+
+		if (child->thread.regs->msr & MSR_FP)
+			giveup_fpu(child);
+
+		for (i = 0; i < 32; i++) {
+			ret = put_user(*reg, tmp);
+			if (ret)
+				break;
+			reg++;
+			tmp++;
+		}
+		break;
+	}
+
+	case PPC_PTRACE_SETFPREGS: { /* Get FPRs 0 - 31. */
+		int i;
+		unsigned long *reg = &((unsigned long *)child->thread.fpr)[0];
+		unsigned int *tmp = (unsigned int *)addr;
+
+		if (child->thread.regs->msr & MSR_FP)
+			giveup_fpu(child);
+
+		for (i = 0; i < 32; i++) {
+			ret = get_user(*reg, tmp);
+			if (ret)
+				break;
+			reg++;
+			tmp++;
+		}
+		break;
+	}
+
+
 
 	default:
 		ret = -EIO;

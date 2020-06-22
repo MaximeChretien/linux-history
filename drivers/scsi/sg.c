@@ -7,7 +7,7 @@
  * Original driver (sg.c):
  *        Copyright (C) 1992 Lawrence Foard
  * Version 2 and 3 extensions to driver:
- *        Copyright (C) 1998 - 2002 Douglas Gilbert
+ *        Copyright (C) 1998 - 2003 Douglas Gilbert
  *
  *  Modified  19-JAN-1998  Richard Gooch <rgooch@atnf.csiro.au>  Devfs support
  *
@@ -19,9 +19,9 @@
  */
 #include <linux/config.h>
 #ifdef CONFIG_PROC_FS
- static char * sg_version_str = "Version: 3.1.24 (20020505)";
+ static char * sg_version_str = "Version: 3.1.25 (20030529)";
 #endif
- static int sg_version_num = 30124; /* 2 digits for each component */
+ static int sg_version_num = 30125; /* 2 digits for each component */
 /*
  *  D. P. Gilbert (dgilbert@interlog.com, dougg@triode.net.au), notes:
  *      - scsi logging is available via SCSI_LOG_TIMEOUT macros. First
@@ -1884,11 +1884,7 @@ static int sg_write_xfer(Sg_request * srp)
 	    res = sg_u_iovec(hp, iovec_count, j, 1, &usglen, &up);
 	    if (res) return res;
 
-	    for (; k < schp->k_use_sg; ++k, ++sclp) {
-		ksglen = (int)sclp->length;
-		p = sclp->address;
-		if (NULL == p)
-		    break;
+	    for ( ; p; ++sclp, ksglen = (int)sclp->length, p = sclp->address) {
 		ok = (SG_USER_MEM != mem_src_arr[k]);
 		if (usglen <= 0)
 		    break;
@@ -1911,6 +1907,9 @@ static int sg_write_xfer(Sg_request * srp)
 		    up += ksglen;
 		    usglen -= ksglen;
 		}
+                ++k;
+                if (k >= schp->k_use_sg)
+                    return 0;
             }
         }
     }
@@ -2040,11 +2039,7 @@ static int sg_read_xfer(Sg_request * srp)
 	    res = sg_u_iovec(hp, iovec_count, j, 0, &usglen, &up);
 	    if (res) return res;
 
-	    for (; k < schp->k_use_sg; ++k, ++sclp) {
-		ksglen = (int)sclp->length;
-		p = sclp->address;
-		if (NULL == p)
-		    break;
+	    for ( ; p; ++sclp, ksglen = (int)sclp->length, p = sclp->address) {
 		ok = (SG_USER_MEM != mem_src_arr[k]);
 		if (usglen <= 0)
 		    break;
@@ -2067,6 +2062,9 @@ static int sg_read_xfer(Sg_request * srp)
 		    up += ksglen;
 		    usglen -= ksglen;
 		}
+                ++k;
+                if (k >= schp->k_use_sg)
+                    return 0;
 	    }
 	}
     }

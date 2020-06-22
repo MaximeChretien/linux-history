@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  *  include/asm-ppc/cputable.h
  *
  *  Copyright (C) 2001 Ben. Herrenschmidt (benh@kernel.crashing.org)
@@ -76,6 +73,8 @@ extern struct cpu_spec		*cur_cpu_spec[];
 #define CPU_FTR_L3_DISABLE_NAP		0x00001000
 #define CPU_FTR_NAP_DISABLE_L2_PR	0x00002000
 #define CPU_FTR_DUAL_PLL_750FX		0x00004000
+#define CPU_FTR_NO_DPM			0x00008000
+#define CPU_FTR_HAS_HIGH_BATS		0x00010000
 
 #ifdef __ASSEMBLY__
 
@@ -96,6 +95,6 @@ extern struct cpu_spec		*cur_cpu_spec[];
 
 #endif /* __ASSEMBLY__ */
 
-#endif /* __ASM_PPC_CPUTABLE_H */
 #endif /* __KERNEL__ */
+#endif /* __ASM_PPC_CPUTABLE_H */
 

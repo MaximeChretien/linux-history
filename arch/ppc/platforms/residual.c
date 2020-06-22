@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.residual.c 1.15 02/05/02 18:08:35 trini
- */
-/*
  * Code to deal with the PReP residual data.
  *
  * Written by: Cort Dougan (cort@cs.nmt.edu)

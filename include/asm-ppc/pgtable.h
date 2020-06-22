@@ -1,6 +1,3 @@
-/*
- * BK Id: %F% %I% %G% %U% %#%
- */
 #ifdef __KERNEL__
 #ifndef _PPC_PGTABLE_H
 #define _PPC_PGTABLE_H
@@ -333,7 +330,7 @@ extern unsigned long empty_zero_page[1024];
 #define	pmd_present(pmd)	((pmd_val(pmd) & PAGE_MASK) != 0)
 #define	pmd_clear(pmdp)		do { pmd_val(*(pmdp)) = 0; } while (0)
 
-#define pte_page(x)		(mem_map+(unsigned long)((pte_val(x) >> PAGE_SHIFT)))
+#define pte_page(x)		(mem_map+(unsigned long)((pte_val(x)-PPC_MEMSTART) >> PAGE_SHIFT))
 
 #ifndef __ASSEMBLY__
 /*
@@ -399,7 +396,7 @@ static inline pte_t mk_pte_phys(unsigned long physpage, pgprot_t pgprot)
 #define mk_pte(page,pgprot) \
 ({									\
 	pte_t pte;							\
-	pte_val(pte) = ((page - mem_map) << PAGE_SHIFT) | pgprot_val(pgprot); \
+	pte_val(pte) = (((page - mem_map) << PAGE_SHIFT) + PPC_MEMSTART) | pgprot_val(pgprot); \
 	pte;							\
 })
 
@@ -423,8 +420,9 @@ static inline unsigned long pte_update(pte_t *p, unsigned long clr,
 	__asm__ __volatile__("\
 1:	lwarx	%0,0,%3\n\
 	andc	%1,%0,%4\n\
-	or	%1,%1,%5\n\
-	stwcx.	%1,0,%3\n\
+	or	%1,%1,%5\n"
+	PPC405_ERR77(0,%3)
+"	stwcx.	%1,0,%3\n\
 	bne-	1b"
 	: "=&r" (old), "=&r" (tmp), "=m" (*p)
 	: "r" (p), "r" (clr), "r" (set), "m" (*p)

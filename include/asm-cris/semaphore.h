@@ -1,4 +1,4 @@
-/* $Id: semaphore.h,v 1.3 2001/05/08 13:54:09 bjornw Exp $ */
+/* $Id: semaphore.h,v 1.5 2002/12/02 08:14:08 starvik Exp $ */
 
 /* On the i386 these are coded in asm, perhaps we should as well. Later.. */
 
@@ -54,12 +54,12 @@ extern inline void sema_init(struct semaphore *sem, int val)
 	*sem = (struct semaphore)__SEMAPHORE_INITIALIZER((*sem),val);
 }
 
-static inline void init_MUTEX (struct semaphore *sem)
+extern inline void init_MUTEX (struct semaphore *sem)
 {
         sema_init(sem, 1);
 }
 
-static inline void init_MUTEX_LOCKED (struct semaphore *sem)
+extern inline void init_MUTEX_LOCKED (struct semaphore *sem)
 {
         sema_init(sem, 0);
 }

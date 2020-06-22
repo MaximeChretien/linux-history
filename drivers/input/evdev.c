@@ -223,6 +223,9 @@ static int evdev_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 	struct input_dev *dev = evdev->handle.dev;
 	int retval;
 
+	if (!evdev->exist)
+		return -ENODEV;
+
 	switch (cmd) {
 
 		case EVIOCGVERSION:

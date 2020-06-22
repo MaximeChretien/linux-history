@@ -40,6 +40,7 @@
 mmu_gather_t mmu_gathers[NR_CPUS];
 
 static unsigned long totalram_pages;
+extern unsigned long memory_size;
 
 pgd_t swapper_pg_dir[PTRS_PER_PGD] __attribute__((__aligned__(PAGE_SIZE)));
 char  empty_zero_page[PAGE_SIZE] __attribute__((__aligned__(PAGE_SIZE)));
@@ -233,6 +234,11 @@ void __init paging_init(void)
                                         continue;
                                 }
                                 set_pte(pt_dir, pte);
+				if (address < memory_size ) /* do not set storage
+							       key outside the storage
+							       or die */
+					set_access_key(pte); /* switch to our
+								access key */
                                 address += PAGE_SIZE;
                         }
                 }

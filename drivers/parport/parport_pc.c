@@ -2533,7 +2533,7 @@ static int __devinit sio_ite_8872_probe (struct pci_dev *pdev, int autoirq,
 	return 0;
 }
 
-/* Via support maintained by Jeff Garzik <jgarzik@mandrakesoft.com> */
+/* Via support maintained by Jeff Garzik <jgarzik@pobox.com> */
 static int __devinit sio_via_686a_probe (struct pci_dev *pdev, int autoirq,
 					 int autodma)
 {
@@ -2766,7 +2766,7 @@ static struct parport_pc_pci {
 	 * and 840 locks up if you write 1 to bit 2! */
 	/* oxsemi_954 */		{ 1, { { 0, -1 }, } },
 	/* oxsemi_840 */		{ 1, { { 0, -1 }, } },
-	/* aks_0100 */			{ 1, { { 0, 1 }, } },
+	/* aks_0100 */			{ 1, { { 0, -1 }, } },
 	/* mobility_pp */		{ 1, { { 0, 1 }, } },
 };
 

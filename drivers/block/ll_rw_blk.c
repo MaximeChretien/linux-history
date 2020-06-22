@@ -394,7 +394,7 @@ int blk_grow_request_list(request_queue_t *q, int nr_requests)
 	unsigned long flags;
 	/* Several broken drivers assume that this function doesn't sleep,
 	 * this causes system hangs during boot.
-	 * As a temporary fix, make the the function non-blocking.
+	 * As a temporary fix, make the function non-blocking.
 	 */
 	spin_lock_irqsave(&io_request_lock, flags);
 	while (q->nr_requests < nr_requests) {
@@ -590,10 +590,10 @@ static struct request *__get_request_wait(request_queue_t *q, int rw)
 	register struct request *rq;
 	DECLARE_WAITQUEUE(wait, current);
 
-	generic_unplug_device(q);
-	add_wait_queue_exclusive(&q->wait_for_requests[rw], &wait);
+	add_wait_queue(&q->wait_for_requests[rw], &wait);
 	do {
 		set_current_state(TASK_UNINTERRUPTIBLE);
+		generic_unplug_device(q);
 		if (q->rq[rw].count == 0)
 			schedule();
 		spin_lock_irq(&io_request_lock);
@@ -829,8 +829,7 @@ void blkdev_release_request(struct request *req)
 	 */
 	if (q) {
 		list_add(&req->queue, &q->rq[rw].free);
-		if (++q->rq[rw].count >= q->batch_requests &&
-				waitqueue_active(&q->wait_for_requests[rw]))
+		if (++q->rq[rw].count >= q->batch_requests)
 			wake_up(&q->wait_for_requests[rw]);
 	}
 }
@@ -1129,7 +1128,7 @@ void generic_make_request (int rw, struct buffer_head * bh)
 
 		if (maxsector < count || maxsector - count < sector) {
 			/* Yecch */
-			bh->b_state &= (1 << BH_Lock) | (1 << BH_Mapped);
+			bh->b_state &= ~(1 << BH_Dirty);
 
 			/* This may well happen - the kernel calls bread()
 			   without checking the size of the device, e.g.,
@@ -1140,7 +1139,6 @@ void generic_make_request (int rw, struct buffer_head * bh)
 			       kdevname(bh->b_rdev), rw,
 			       (sector + count)>>1, minorsize);
 
-			/* Yecch again */
 			bh->b_end_io(bh, 0);
 			return;
 		}
@@ -1376,11 +1374,12 @@ int end_that_request_first (struct request *req, int uptodate, char *name)
 
 void end_that_request_last(struct request *req)
 {
-	if (req->waiting != NULL)
-		complete(req->waiting);
-	req_finished_io(req);
+	struct completion *waiting = req->waiting;
 
+	req_finished_io(req);
 	blkdev_release_request(req);
+	if (waiting)
+		complete(waiting);
 }
 
 int __init blk_dev_init(void)
@@ -1412,12 +1411,6 @@ int __init blk_dev_init(void)
 #endif
 #ifdef CONFIG_ISP16_CDI
 	isp16_init();
-#endif
-#if defined(CONFIG_IDE) && defined(CONFIG_BLK_DEV_IDE)
-	ide_init();		/* this MUST precede hd_init */
-#endif
-#if defined(CONFIG_IDE) && defined(CONFIG_BLK_DEV_HD)
-	hd_init();
 #endif
 #ifdef CONFIG_BLK_DEV_PS2
 	ps2esdi_init();

@@ -25,7 +25,14 @@
  * all SN per-cpu data structures. 
  */
 
-
+#ifdef BUS_INT_WAR
+#define POLL_ENTRIES	50
+typedef struct {
+	int	irq;
+	int	interval;
+	short	tick;
+} sn_poll_entry_t;
+#endif
 
 typedef struct pda_s {
 
@@ -56,8 +63,15 @@ typedef struct pda_s {
 #endif
 	volatile unsigned long *bedrock_rev_id;
 	volatile unsigned long *pio_write_status_addr;
+	volatile unsigned long *pio_shub_war_cam_addr;
+	volatile unsigned long *mem_write_status_addr;
 
-	bteinfo_t *cpubte[BTES_PER_NODE];
+	bteinfo_t *cpu_bte_if[BTES_PER_NODE];	/* cpu interface order */
+
+#ifdef BUS_INT_WAR
+	sn_poll_entry_t	pda_poll_entries[POLL_ENTRIES];
+	int		pda_poll_entry_count;
+#endif
 } pda_t;
 
 
@@ -79,6 +93,8 @@ typedef struct pda_s {
 #define PDAADDR		(PERCPU_ADDR+CPU_DATA_END)
 
 #define pda		(*((pda_t *) PDAADDR))
+
+#define pdacpu(cpu)	(*((pda_t *) ((long)cpu_data(cpu) + CPU_DATA_END)))
 
 
 #endif /* _ASM_IA64_SN_PDA_H */

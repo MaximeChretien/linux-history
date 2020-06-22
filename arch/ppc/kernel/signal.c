@@ -1,7 +1,4 @@
 /*
- * BK Id: %F% %I% %G% %U% %#%
- */
-/*
  *  linux/arch/ppc/kernel/signal.c
  *
  *  PowerPC version 

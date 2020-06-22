@@ -19,5 +19,10 @@ tftpboot.img: piggyback $(TOPDIR)/vmlinux $(ROOT_IMG)
 piggyback: piggyback.c
 	$(HOSTCC) $(HOSTCFLAGS) -o piggyback piggyback.c
 
+image: $(TOPDIR)/vmlinux
+	$(STRIP) -R .comment -R .note $(TOPDIR)/vmlinux -o $@
+
 dep:
 
+clean:
+	rm -f tftpboot.img piggyback image

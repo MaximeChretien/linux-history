@@ -226,12 +226,6 @@ sn_local_vector_to_irq(u8 vector) {
 	return (CPU_VECTOR_TO_IRQ(smp_processor_id(), vector));
 }
 
-int
-sn_valid_irq(u8 irq) {
-
-	return( ((irq & 0xff) < NR_IRQS) && ((irq >> 8) < NR_CPUS) );
-}
-
 void *kmalloc(size_t, int);
 
 void
@@ -240,7 +234,7 @@ sn_irq_init (void)
 	int i;
 	irq_desc_t *base_desc = _irq_desc;
 
-	for (i=IA64_FIRST_DEVICE_VECTOR; i<NR_IRQS; i++) {
+	for (i=IA64_FIRST_DEVICE_VECTOR; i<NR_IVECS; i++) {
 		if (base_desc[i].handler == &no_irq_type) {
 			base_desc[i].handler = &irq_type_sn;
 		}
@@ -254,20 +248,13 @@ sn_init_irq_desc(void) {
 
 	for (i=0; i < NR_CPUS; i++) {
 		p =  page_address(alloc_pages_node(local_cnodeid(), GFP_KERNEL,
-			get_order(sizeof(struct irq_desc) * NR_IRQS) ) );
+			get_order(sizeof(struct irq_desc) * NR_IVECS) ) );
 		ASSERT(p);
-		memcpy(p, base_desc, sizeof(struct irq_desc) * NR_IRQS);
+		memcpy(p, base_desc, sizeof(struct irq_desc) * NR_IVECS);
 		_sn_irq_desc[i] = p;
 	}
 }
 
-
-#if !defined(CONFIG_IA64_SGI_SN)
-void
-sn_pci_fixup(void)
-{
-}
-#endif
 
 int
 bit_pos_to_irq(int bit) {

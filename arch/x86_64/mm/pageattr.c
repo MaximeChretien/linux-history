@@ -48,18 +48,17 @@ static void flush_kernel_map(void * address)
 {
 	struct cpuinfo_x86 *cpu = &cpu_data[smp_processor_id()]; 
 	wmb(); 
-	/* Disabled for now because there seem to be some problems with CLFLUSH */
 	if (0 && test_bit(X86_FEATURE_CLFLSH, &cpu->x86_capability)) { 
 		/* is this worth it? */ 
 		int i;
 		for (i = 0; i < PAGE_SIZE; i += cpu->x86_clflush_size) 
-			asm volatile("clflush %0" :: "m" (__pa(address) + i)); 
+			asm volatile("clflush %0" :: "m" (address + i)); 
 	} else
 		asm volatile("wbinvd":::"memory"); 
 	__flush_tlb_one(address);
 }
 
-/* no more special protections in this 2/4MB area - revert to a
+/* no more special protections in this 2MB area - revert to a
    large page again. */
 static inline void revert_page(struct page *kpte_page, unsigned long address)
 {

@@ -1,5 +1,5 @@
 /*
- * $Id: pmc551.c,v 1.20 2002/03/05 13:47:08 dwmw2 Exp $
+ * $Id: pmc551.c,v 1.22 2003/01/24 13:34:30 dwmw2 Exp $
  *
  * PMC551 PCI Mezzanine Ram Device
  *
@@ -98,8 +98,6 @@
 #include <linux/ioctl.h>
 #include <asm/io.h>
 #include <asm/system.h>
-#include <asm/segment.h>
-#include <stdarg.h>
 #include <linux/pci.h>
 
 #ifndef CONFIG_PCI
@@ -216,7 +214,7 @@ static int pmc551_point (struct mtd_info *mtd, loff_t from, size_t len, size_t *
 }
 
 
-static void pmc551_unpoint (struct mtd_info *mtd, u_char *addr)
+static void pmc551_unpoint (struct mtd_info *mtd, u_char *addr, loff_t from, size_t len)
 {
 #ifdef CONFIG_MTD_PMC551_DEBUG
 	printk(KERN_DEBUG "pmc551_unpoint()\n");

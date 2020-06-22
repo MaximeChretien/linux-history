@@ -31,11 +31,15 @@ extern void __no_lpq_restore_flags(unsigned long);
 #define __save_flags(flags)	((flags) = __no_use_save_flags())
 #define __restore_flags(flags)	__no_use_restore_flags((unsigned long)flags)
 #define __save_and_cli(flags)	({__save_flags(flags);__cli();})
+#define __save_and_sti(flags)	({__save_flags(flags);__sti();})
 
 #else
 
 #define __save_flags(flags)	((flags) = mfmsr())
-#define __restore_flags(flags)	mtmsrd(flags)
+#define __restore_flags(flags) do { \
+	__asm__ __volatile__("": : :"memory"); \
+	mtmsrd(flags); \
+} while(0)
 
 static inline void __cli(void)
 {
@@ -63,6 +67,7 @@ static inline void __do_save_and_cli(unsigned long *flags)
 }
 
 #define __save_and_cli(flags)          __do_save_and_cli(&flags)
+#define __save_and_sti(flags)		({__save_flags(flags);__sti();})
 
 #endif /* CONFIG_PPC_ISERIES */
 

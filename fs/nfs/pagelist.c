@@ -134,9 +134,12 @@ void nfs_clear_request(struct nfs_page *req)
 		req->wb_cred = NULL;
 	}
 	if (req->wb_page) {
+		atomic_dec(&NFS_REQUESTLIST(req->wb_inode)->nr_requests);
+#ifdef NFS_PARANOIA
+		BUG_ON(atomic_read(&NFS_REQUESTLIST(req->wb_inode)->nr_requests) < 0);
+#endif
 		page_cache_release(req->wb_page);
 		req->wb_page = NULL;
-		atomic_dec(&NFS_REQUESTLIST(req->wb_inode)->nr_requests);
 	}
 }
 
@@ -159,14 +162,9 @@ nfs_release_request(struct nfs_page *req)
 	spin_unlock(&nfs_wreq_lock);
 
 #ifdef NFS_PARANOIA
-	if (!list_empty(&req->wb_list))
-		BUG();
-	if (!list_empty(&req->wb_hash))
-		BUG();
-	if (NFS_WBACK_BUSY(req))
-		BUG();
-	if (atomic_read(&NFS_REQUESTLIST(req->wb_inode)->nr_requests) < 0)
-		BUG();
+	BUG_ON(!list_empty(&req->wb_list));
+	BUG_ON(!list_empty(&req->wb_hash));
+	BUG_ON(NFS_WBACK_BUSY(req));
 #endif
 
 	/* Release struct file or cached credential */

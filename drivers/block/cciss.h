@@ -27,13 +27,14 @@ struct access_method {
 };
 typedef struct _drive_info_struct
 {
- 	__u32   LunID;	
-	int 	usage_count;
-	int 	nr_blocks;
-	int	block_size;
-	int 	heads;
-	int	sectors;
-	int 	cylinders;
+ 	__u32   	LunID;	
+	int 		usage_count;
+	unsigned int 	nr_blocks;
+	int		block_size;
+	int 		heads;
+	int		sectors;
+	int 		cylinders;
+	int 		raid_level;
 } drive_info_struct;
 
 struct ctlr_info 
@@ -55,6 +56,7 @@ struct ctlr_info
 	int	commands_outstanding;
 	int 	max_outstanding; /* Debug */ 
 	int	num_luns;
+	int 	highest_lun;
 	int	usage_count;  /* number of opens all all minor devices */
 
 	// information about each logical volume
@@ -85,6 +87,7 @@ struct ctlr_info
 	int              sizes[256];
 	int              blocksizes[256];
 	int              hardsizes[256];
+	int busy_configuring;
 #ifdef CONFIG_CISS_SCSI_TAPE
 	void *scsi_ctlr; /* ptr to structure containing scsi related stuff */
 #endif

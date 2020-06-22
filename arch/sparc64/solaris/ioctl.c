@@ -367,6 +367,7 @@ static inline int solaris_sockmod(unsigned int fd, unsigned int cmd, u32 arg)
 	case 106: /* SI_GETINTRANSIT */
 	case 107: /* SI_TCL_LINK */
 	case 108: /* SI_TCL_UNLINK */
+		;
 	}
 	return TNOTSUPPORT;
 }
@@ -454,6 +455,7 @@ static inline int solaris_timod(unsigned int fd, unsigned int cmd, u32 arg,
 	case 145: /* TI_GETPEERNAME */
 	case 146: /* TI_SETMYNAME */
 	case 147: /* TI_SETPEERNAME */
+		;
 	}
 	return TNOTSUPPORT;
 }

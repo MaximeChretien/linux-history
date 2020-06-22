@@ -73,10 +73,17 @@ long plpar_pte_enter(unsigned long flags,
 static long hpte_remove(unsigned long hpte_group);
 static long rpa_lpar_hpte_remove(unsigned long hpte_group);
 static long iSeries_hpte_remove(unsigned long hpte_group);
+inline unsigned long get_lock_slot(unsigned long vpn);
 
 static spinlock_t pSeries_tlbie_lock = SPIN_LOCK_UNLOCKED;
 static spinlock_t pSeries_lpar_tlbie_lock = SPIN_LOCK_UNLOCKED;
-spinlock_t hash_table_lock __cacheline_aligned_in_smp = SPIN_LOCK_UNLOCKED;
+
+#define LOCK_SPLIT
+#ifdef LOCK_SPLIT
+hash_table_lock_t hash_table_lock[128] __cacheline_aligned_in_smp = { [0 ... 31] = {SPIN_LOCK_UNLOCKED}};
+#else
+hash_table_lock_t hash_table_lock[1] __cacheline_aligned_in_smp = { [0] = {SPIN_LOCK_UNLOCKED}};
+#endif
 
 #define KB (1024)
 #define MB (1024*KB)
@@ -115,7 +122,7 @@ htab_initialize(void)
 {
 	unsigned long table, htab_size_bytes;
 	unsigned long pteg_count;
-	unsigned long mode_rw, mask;
+	unsigned long mode_rw, mask, lock_shift;
 
 #if 0
 	/* Can't really do the call below since it calls the normal RTAS
@@ -141,7 +148,15 @@ htab_initialize(void)
 	htab_data.htab_num_ptegs = pteg_count;
 	htab_data.htab_hash_mask = pteg_count - 1;
 
-	if(naca->platform == PLATFORM_PSERIES) {
+	/* 
+	 * Calculate the number of bits to shift the pteg selector such that we
+	 * use the high order 8 bits to select a page table lock.
+	 */
+	asm ("cntlzd %0,%1" : "=r" (lock_shift) : 
+	     "r" (htab_data.htab_hash_mask));
+	htab_data.htab_lock_shift = (64 - lock_shift) - 8;
+
+	if(systemcfg->platform == PLATFORM_PSERIES) {
 		/* Find storage for the HPT.  Must be contiguous in
 		 * the absolute address space.
 		 */
@@ -167,16 +182,16 @@ htab_initialize(void)
 	mask = pteg_count-1;
 
 	/* XXX we currently map kernel text rw, should fix this */
-	if ((naca->platform & PLATFORM_PSERIES) &&
-	   cpu_has_largepage() && (naca->physicalMemorySize > 256*MB)) {
+	if ((systemcfg->platform & PLATFORM_PSERIES) &&
+	   cpu_has_largepage() && (systemcfg->physicalMemorySize > 256*MB)) {
 		create_pte_mapping((unsigned long)KERNELBASE, 
 				   KERNELBASE + 256*MB, mode_rw, mask, 0);
 		create_pte_mapping((unsigned long)KERNELBASE + 256*MB, 
-				   KERNELBASE + (naca->physicalMemorySize), 
+				   KERNELBASE + (systemcfg->physicalMemorySize), 
 				   mode_rw, mask, 1);
 	} else {
 		create_pte_mapping((unsigned long)KERNELBASE, 
-				   KERNELBASE+(naca->physicalMemorySize), 
+				   KERNELBASE+(systemcfg->physicalMemorySize), 
 				   mode_rw, mask, 0);
 	}
 #if 0
@@ -220,7 +235,7 @@ void make_pte(HPTE *htab, unsigned long va, unsigned long pa,
 	}
 	local_hpte.dw0.dw0.v = 1;
 
-	if (naca->platform == PLATFORM_PSERIES) {
+	if (systemcfg->platform == PLATFORM_PSERIES) {
 		hptep  = htab + ((hash & hash_mask)*HPTES_PER_GROUP);
 
 		for (i = 0; i < 8; ++i, ++hptep) {
@@ -229,7 +244,7 @@ void make_pte(HPTE *htab, unsigned long va, unsigned long pa,
 				return;
 			}
 		}
-	} else if (naca->platform == PLATFORM_PSERIES_LPAR) {
+	} else if (systemcfg->platform == PLATFORM_PSERIES_LPAR) {
 		slot = ((hash & hash_mask)*HPTES_PER_GROUP);
 		
 		/* Set CEC cookie to 0                   */
@@ -242,12 +257,8 @@ void make_pte(HPTE *htab, unsigned long va, unsigned long pa,
 		lpar_rc =  plpar_pte_enter(flags, slot, local_hpte.dw0.dword0,
 					   local_hpte.dw1.dword1, 
 					   &dummy1, &dummy2);
-		if (lpar_rc != H_Success) {
-			ppc64_terminate_msg(0x21, "hpte enter");
-			loop_forever();
-		}
 		return;
-	} else if (naca->platform == PLATFORM_ISERIES_LPAR) {
+	} else if (systemcfg->platform == PLATFORM_ISERIES_LPAR) {
 		slot = HvCallHpt_findValid(&rhpte, vpn);
 		if (slot < 0) {
 			/* Must find space in primary group */
@@ -305,18 +316,19 @@ int __hash_page(unsigned long ea, unsigned long access,
 {
 	unsigned long va, vpn;
 	unsigned long newpp, prpn;
-	unsigned long hpteflags;
+	unsigned long hpteflags, lock_slot;
 	long slot;
 	pte_t old_pte, new_pte;
 
 	/* Search the Linux page table for a match with va */
 	va = (vsid << 28) | (ea & 0x0fffffff);
 	vpn = va >> PAGE_SHIFT;
+	lock_slot = get_lock_slot(vpn); 
 
 	/* Acquire the hash table lock to guarantee that the linux
 	 * pte we fetch will not change
 	 */
-	spin_lock( &hash_table_lock );
+	spin_lock(&hash_table_lock[lock_slot].lock);
 	
 	/* 
 	 * Check the user's access rights to the page.  If access should be
@@ -324,7 +336,7 @@ int __hash_page(unsigned long ea, unsigned long access,
 	 */
 	access |= _PAGE_PRESENT;
 	if (unlikely(access & ~(pte_val(*ptep)))) {
-		spin_unlock( &hash_table_lock );
+		spin_unlock(&hash_table_lock[lock_slot].lock);
 		return 1;
 	}
 
@@ -401,7 +413,7 @@ int __hash_page(unsigned long ea, unsigned long access,
 		*ptep = new_pte;
 	}
 
-	spin_unlock(&hash_table_lock);
+	spin_unlock(&hash_table_lock[lock_slot].lock);
 
 	return 0;
 }
@@ -435,22 +447,21 @@ int hash_page(unsigned long ea, unsigned long access)
 		mm = &init_mm;
 		vsid = get_kernel_vsid(ea);
 		break;
-	case IO_UNMAPPED_REGION_ID:
-		udbg_printf("EEH Error ea = 0x%lx\n", ea);
-		PPCDBG_ENTER_DEBUGGER();
-		panic("EEH Error ea = 0x%lx\n", ea);
-		break;
+	case EEH_REGION_ID:
+		/*
+		 * Should only be hit if there is an access to MMIO space
+		 * which is protected by EEH.
+		 * Send the problem up to do_page_fault 
+		 */
 	case KERNEL_REGION_ID:
 		/*
-		 * As htab_initialize is now, we shouldn't ever get here since
-		 * we're bolting the entire 0xC0... region.
+		 * Should never get here - entire 0xC0... region is bolted.
+		 * Send the problem up to do_page_fault 
 		 */
-		udbg_printf("Little faulted on kernel address 0x%lx\n", ea);
-		PPCDBG_ENTER_DEBUGGER();
-		panic("Little faulted on kernel address 0x%lx\n", ea);
-		break;
 	default:
-		/* Not a valid range, send the problem up to do_page_fault */
+		/* Not a valid range
+		 * Send the problem up to do_page_fault 
+		 */
 		return 1;
 		break;
 	}
@@ -483,7 +494,7 @@ int hash_page(unsigned long ea, unsigned long access)
 
 void flush_hash_page(unsigned long context, unsigned long ea, pte_t *ptep)
 {
-	unsigned long vsid, vpn, va, hash, secondary, slot, flags;
+	unsigned long vsid, vpn, va, hash, secondary, slot, flags, lock_slot;
 	unsigned long large = 0, local = 0;
 	pte_t pte;
 
@@ -497,9 +508,11 @@ void flush_hash_page(unsigned long context, unsigned long ea, pte_t *ptep)
 		vpn = va >> LARGE_PAGE_SHIFT;
 	else
 		vpn = va >> PAGE_SHIFT;
+
+	lock_slot = get_lock_slot(vpn); 
 	hash = hpt_hash(vpn, large);
 
-	spin_lock_irqsave( &hash_table_lock, flags);
+	spin_lock_irqsave(&hash_table_lock[lock_slot].lock, flags);
 
 	pte = __pte(pte_update(ptep, _PAGE_HPTEFLAGS, 0));
 	secondary = (pte_val(pte) & _PAGE_SECONDARY) >> 15;
@@ -511,7 +524,7 @@ void flush_hash_page(unsigned long context, unsigned long ea, pte_t *ptep)
 		ppc_md.hpte_invalidate(slot, secondary, va, large, local);
 	}
 
-	spin_unlock_irqrestore( &hash_table_lock, flags );
+	spin_unlock_irqrestore(&hash_table_lock[lock_slot].lock, flags);
 }
 
 long plpar_pte_enter(unsigned long flags,
@@ -564,6 +577,26 @@ static __inline__ void set_pp_bit(unsigned long pp, HPTE *addr)
         : "=&r" (old), "=m" (*p)
         : "r" (pp), "r" (p), "m" (*p)
         : "cc");
+}
+
+/*
+ * Calculate which hash_table_lock to use, based on the pteg being used.
+ *
+ * Given a VPN, use the high order 8 bits to select one of 2^7 locks.  The
+ * highest order bit is used to indicate primary vs. secondary group.  If the
+ * secondary is selected, complement the lock select bits.  This results in
+ * both the primary and secondary groups being covered under the same lock.
+ */
+inline unsigned long get_lock_slot(unsigned long vpn)
+{
+	unsigned long lock_slot;
+#ifdef LOCK_SPLIT
+	lock_slot = (hpt_hash(vpn,0) >> htab_data.htab_lock_shift) & 0xff;
+	if(lock_slot & 0x80) lock_slot = (~lock_slot) & 0x7f;
+#else
+	lock_slot = 0;
+#endif
+	return(lock_slot);
 }
 
 /*

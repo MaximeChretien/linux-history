@@ -2969,6 +2969,10 @@ static struct {
         	ISAPNP_ANY_ID, ISAPNP_ANY_ID,
 		ISAPNP_VENDOR('Y','M','H'), ISAPNP_FUNCTION(0x0021),
                 1, 0, 0, 1, 1},
+	{"AZT1008",
+		ISAPNP_ANY_ID, ISAPNP_ANY_ID,
+		ISAPNP_VENDOR('A','Z','T'), ISAPNP_FUNCTION(0x0001),
+		1, 0, 0, 1, 1},
 	{0}
 };
 
@@ -2981,6 +2985,8 @@ static struct isapnp_device_id id_table[] __devinitdata = {
 		ISAPNP_VENDOR('C','S','C'), ISAPNP_FUNCTION(0x0100), 0 },
         {       ISAPNP_ANY_ID, ISAPNP_ANY_ID,
 		ISAPNP_VENDOR('Y','M','H'), ISAPNP_FUNCTION(0x0021), 0 },
+	{	ISAPNP_ANY_ID, ISAPNP_ANY_ID,
+		ISAPNP_VENDOR('A','Z','T'), ISAPNP_FUNCTION(0x0001), 0 },
 	{0}
 };
 

@@ -167,6 +167,18 @@ extern int pci_visit_dev	(struct pci_visit *fn,
 				 struct pci_dev_wrapped *wrapped_dev,
 				 struct pci_bus_wrapped *wrapped_parent);
 
+int pci_bus_read_config_byte (struct pci_bus *bus, unsigned int devfn, int where, u8 *val);
+int pci_bus_read_config_word (struct pci_bus *bus, unsigned int devfn, int where, u16 *val);
+int pci_bus_read_config_dword (struct pci_bus *bus, unsigned int devfn, int where, u32 *val);
+int pci_bus_write_config_byte(struct pci_bus *bus, unsigned int devfn, int where, u8 val);
+int pci_bus_write_config_word(struct pci_bus *bus, unsigned int devfn, int where, u16 val);
+int pci_bus_write_config_dword(struct pci_bus *bus, unsigned int devfn, int where, u32 val);
+
+/*
+ * Compatibility functions.  Don't use these, use the
+ * pci_bus_*() functions above.
+ */
+
 extern int pci_read_config_byte_nodev	(struct pci_ops *ops, u8 bus, u8 device,
 					 u8 function, int where, u8 *val);
 extern int pci_read_config_word_nodev	(struct pci_ops *ops, u8 bus, u8 device,

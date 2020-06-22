@@ -637,7 +637,11 @@ int vsscanf(const char * buf, const char * fmt, va_list args)
 		while (isspace(*str))
 			str++;
 
-		if (!*str || !isdigit(*str))
+		if (!*str
+		    || (base == 16 && !isxdigit(*str))
+		    || (base == 10 && !isdigit(*str))
+		    || (base == 8 && (!isdigit(*str) || *str > '7'))
+		    || (base == 0 && !isdigit(*str)))
 			break;
 
 		switch(qualifier) {

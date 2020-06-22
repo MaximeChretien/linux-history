@@ -434,6 +434,12 @@ struct super_block *hfs_read_super(struct super_block *s, void *data,
 		goto bail2;
 	}
 
+	if (mdb->attrib & (HFS_SB_ATTRIB_HLOCK | HFS_SB_ATTRIB_SLOCK)) {
+		if (!silent)
+			hfs_warn("hfs_fs: Filesystem is marked locked, mounting read-only.\n");
+		s->s_flags |= MS_RDONLY;
+	}
+
 	HFS_SB(s)->s_mdb = mdb;
 	if (HFS_ITYPE(mdb->next_id) != 0) {
 		hfs_warn("hfs_fs: too many files.\n");

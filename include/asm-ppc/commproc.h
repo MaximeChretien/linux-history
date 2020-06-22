@@ -1,8 +1,4 @@
 /*
- * BK Id: SCCS/s.commproc.h 1.16 09/27/01 12:41:09 trini
- */
-
-/*
  * MPC8xx Communication Processor Module.
  * Copyright (c) 1997 Dan Malek (dmalek@jlc.net)
  *
@@ -796,5 +792,6 @@ typedef struct iic {
 extern void cpm_install_handler(int vec, 
 		void (*handler)(void *, struct pt_regs *regs), void *dev_id);
 extern void cpm_free_handler(int vec);
+extern const char *cpm_int_name[];
 
 #endif /* __CPM_8XX__ */

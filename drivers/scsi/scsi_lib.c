@@ -695,6 +695,8 @@ void scsi_io_completion(Scsi_Cmnd * SCpnt, int good_sectors,
 		 */
 
 		switch (SCpnt->sense_buffer[2]) {
+		case RECOVERED_ERROR: /* Added, KG, 2003-01-20 */
+			return;
 		case ILLEGAL_REQUEST:
 			if (SCpnt->device->ten && SCSI_RETRY_10(SCpnt->cmnd[0])) {
 				SCpnt->device->ten = 0;

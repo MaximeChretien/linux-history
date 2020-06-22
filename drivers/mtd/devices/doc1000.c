@@ -1,6 +1,6 @@
 /*======================================================================
 
-  $Id: doc1000.c,v 1.16 2001/12/28 22:45:17 dwmw2 Exp $
+  $Id: doc1000.c,v 1.17 2003/01/24 13:33:20 dwmw2 Exp $
 
 ======================================================================*/
 
@@ -20,8 +20,6 @@
 #include <linux/ioctl.h>
 #include <asm/io.h>
 #include <asm/system.h>
-#include <asm/segment.h>
-#include <stdarg.h>
 #include <linux/delay.h>
 #include <linux/init.h>
 

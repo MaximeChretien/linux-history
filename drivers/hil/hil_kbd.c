@@ -431,9 +431,9 @@ static void hil_kbd_connect(struct serio *serio, struct serio_dev *dev)
 
 
 struct serio_dev hil_kbd_serio_dev = {
-	connect:	hil_kbd_connect,
-	disconnect:	hil_kbd_disconnect,
-	interrupt:	hil_kbd_interrupt
+	.connect =	hil_kbd_connect,
+	.disconnect =	hil_kbd_disconnect,
+	.interrupt =	hil_kbd_interrupt
 };
 
 static int __init hil_kbd_init(void)

@@ -168,11 +168,13 @@ nfsd_lookup(struct svc_rqst *rqstp, struct svc_fh *fhp, const char *name,
 			mntput(mnt);
 		}
 	}
-	/*
-	 * Note: we compose the file handle now, but as the
-	 * dentry may be negative, it may need to be updated.
-	 */
-	err = fh_compose(resfh, exp, dentry, fhp);
+
+	if (dentry->d_inode && dentry->d_inode->i_op &&
+	    dentry->d_inode->i_op->revalidate &&
+	    dentry->d_inode->i_op->revalidate(dentry))
+		err = nfserr_noent;
+	else
+		err = fh_compose(resfh, exp, dentry, fhp);
 	if (!err && !dentry->d_inode)
 		err = nfserr_noent;
 out:
@@ -1539,13 +1541,11 @@ nfsd_permission(struct svc_export *exp, struct dentry *dentry, int acc)
 	    inode->i_uid == current->fsuid)
 		return 0;
 
-	acc &= ~ MAY_OWNER_OVERRIDE; /* This bit is no longer needed,
-                                        and gets in the way later */
-
 	err = permission(inode, acc & (MAY_READ|MAY_WRITE|MAY_EXEC));
 
 	/* Allow read access to binaries even when mode 111 */
-	if (err == -EACCES && S_ISREG(inode->i_mode) && acc == MAY_READ)
+	if (err == -EACCES && S_ISREG(inode->i_mode) &&
+	    acc == (MAY_READ | MAY_OWNER_OVERRIDE))
 		err = permission(inode, MAY_EXEC);
 
 	return err? nfserrno(err) : 0;

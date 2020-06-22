@@ -556,7 +556,7 @@ sys_call_table:
         .long  sys_madvise
 	.long  sys_getdents64		 /* 220 */
         .long  sys_fcntl64 
-	.long  sys_ni_syscall
+	.long  sys_readahead
 	.long  sys_ni_syscall
 	.long  sys_ni_syscall		 /* 224 - reserved for setxattr  */
 	.long  sys_ni_syscall            /* 225 - reserved for lsetxattr */
@@ -599,13 +599,14 @@ pgm_check_handler:
         tm      __LC_PGM_INT_CODE+1,0x80 # check whether we got a per exception
         bnz     BASED(pgm_per)           # got per exception -> special case
 	SAVE_ALL __LC_PGM_OLD_PSW,1
+        l       %r3,__LC_PGM_ILC         # load program interruption code
+	la	%r8,0x7f
         l       %r7,BASED(.Ljump_table)
-        lh      %r8,__LC_PGM_INT_CODE
+	nr	%r8,%r3
         sll     %r8,2
 	GET_CURRENT
         l       %r7,0(%r8,%r7)		 # load address of handler routine
         la      %r2,SP_PTREGS(%r15)	 # address of register-save area
-        l       %r3,__LC_PGM_ILC         # load program interruption code
 	la      %r14,BASED(sysc_return)
 	br      %r7			 # branch to interrupt-handler
 

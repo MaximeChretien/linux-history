@@ -12,6 +12,12 @@
 *!                                 don't use PB_I2C if DS1302 uses same bits,
 *!                                 use PB.
 *! $Log: i2c.c,v $
+*! Revision 1.9  2002/10/31 15:32:26  starvik
+*! Update Port B register and shadow even when running with hardware support
+*!   to avoid glitches when reading bits
+*! Never set direction to out in i2c_inbyte
+*! Removed incorrect clock togling at end of i2c_inbyte
+*!
 *! Revision 1.8  2002/08/13 06:31:53  starvik
 *! Made SDA and SCL line configurable
 *! Modified i2c_inbyte to work with PCF8563
@@ -47,7 +53,7 @@
 *! (C) Copyright 1999-2002 Axis Communications AB, LUND, SWEDEN
 *!
 *!***************************************************************************/
-/* $Id: i2c.c,v 1.8 2002/08/13 06:31:53 starvik Exp $ */
+/* $Id: i2c.c,v 1.9 2002/10/31 15:32:26 starvik Exp $ */
 /****************** INCLUDE FILES SECTION ***********************************/
 
 #include <linux/module.h>
@@ -135,16 +141,24 @@ static const char i2c_name[] = "i2c";
 
 /* enable or disable output-enable, to select output or input on the i2c bus */
 
-#define i2c_dir_out() *R_PORT_PB_I2C = (port_pb_i2c_shadow &= ~IO_MASK(R_PORT_PB_I2C, i2c_oe_))
-#define i2c_dir_in() *R_PORT_PB_I2C = (port_pb_i2c_shadow |= IO_MASK(R_PORT_PB_I2C, i2c_oe_))
+#define i2c_dir_out() \
+	*R_PORT_PB_I2C = (port_pb_i2c_shadow &= ~IO_MASK(R_PORT_PB_I2C, i2c_oe_)); \
+	REG_SHADOW_SET(R_PORT_PB_DIR, port_pb_dir_shadow, 0, 1); 
+#define i2c_dir_in() \
+	*R_PORT_PB_I2C = (port_pb_i2c_shadow |= IO_MASK(R_PORT_PB_I2C, i2c_oe_)); \
+	REG_SHADOW_SET(R_PORT_PB_DIR, port_pb_dir_shadow, 0, 0);
 
 /* control the i2c clock and data signals */
 
-#define i2c_clk(x) *R_PORT_PB_I2C = (port_pb_i2c_shadow = (port_pb_i2c_shadow & \
-       ~IO_MASK(R_PORT_PB_I2C, i2c_clk)) | IO_FIELD(R_PORT_PB_I2C, i2c_clk, (x)))
+#define i2c_clk(x) \
+	*R_PORT_PB_I2C = (port_pb_i2c_shadow = (port_pb_i2c_shadow & \
+       ~IO_MASK(R_PORT_PB_I2C, i2c_clk)) | IO_FIELD(R_PORT_PB_I2C, i2c_clk, (x))); \
+       REG_SHADOW_SET(R_PORT_PB_DATA, port_pb_data_shadow, 1, x);
 
-#define i2c_data(x) *R_PORT_PB_I2C = (port_pb_i2c_shadow = (port_pb_i2c_shadow & \
-       ~IO_MASK(R_PORT_PB_I2C, i2c_d)) | IO_FIELD(R_PORT_PB_I2C, i2c_d, (x)))
+#define i2c_data(x) \
+	*R_PORT_PB_I2C = (port_pb_i2c_shadow = (port_pb_i2c_shadow & \
+	   ~IO_MASK(R_PORT_PB_I2C, i2c_d)) | IO_FIELD(R_PORT_PB_I2C, i2c_d, (x))); \
+	REG_SHADOW_SET(R_PORT_PB_DATA, port_pb_data_shadow, 0, x);
 
 /* read a bit from the i2c interface */
 
@@ -221,10 +235,11 @@ i2c_outbyte(unsigned char x)
 	i2c_dir_out();
 
 	for (i = 0; i < 8; i++) {
-		if (x & 0x80)
+		if (x & 0x80) {
 			i2c_data(I2C_DATA_HIGH);
-		else
+		} else {
 			i2c_data(I2C_DATA_LOW);
+		}
 		
 		i2c_delay(CLOCK_LOW_TIME/2);
 		i2c_clk(I2C_CLOCK_HIGH);
@@ -260,7 +275,6 @@ i2c_inbyte(void)
 
 	/* Enable I2C */
 	i2c_enable();
-	i2c_dir_out();
 	i2c_delay(CLOCK_LOW_TIME/2);
 
 	for (i = 1; i < 8; i++) {
@@ -281,12 +295,10 @@ i2c_inbyte(void)
 
 		/* Enable I2C */
 		i2c_enable();
-		i2c_dir_out();
 		i2c_delay(CLOCK_LOW_TIME/2);
 	}
 	i2c_clk(I2C_CLOCK_HIGH);
 	i2c_delay(CLOCK_HIGH_TIME);
-	i2c_clk(I2C_CLOCK_LOW);
 	return aBitByte;
 }
 
@@ -416,7 +428,7 @@ i2c_writereg(unsigned char theSlave, unsigned char theReg,
 {
 	int error, cntr = 3;
 	unsigned long flags;
-		
+
 	do {
 		error = 0;
 		/*

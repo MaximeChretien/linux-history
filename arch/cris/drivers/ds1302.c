@@ -7,6 +7,13 @@
 *! Functions exported: ds1302_readreg, ds1302_writereg, ds1302_init, get_rtc_status
 *!
 *! $Log: ds1302.c,v $
+*! Revision 1.15  2002/10/11 16:14:33  johana
+*! Added CONFIG_ETRAX_DS1302_TRICKLE_CHARGE and initial setting of the
+*! trcklecharge register.
+*!
+*! Revision 1.14  2002/10/10 12:15:38  magnusmn
+*! Added support for having the RST signal on bit g0
+*!
 *! Revision 1.13  2002/05/29 15:16:08  johana
 *! Removed unused variables.
 *!
@@ -88,7 +95,7 @@
 *!
 *! (C) Copyright 1999, 2000, 2001  Axis Communications AB, LUND, SWEDEN
 *!
-*! $Id: ds1302.c,v 1.13 2002/05/29 15:16:08 johana Exp $
+*! $Id: ds1302.c,v 1.15 2002/10/11 16:14:33 johana Exp $
 *!
 *!***************************************************************************/
 
@@ -493,17 +500,25 @@ ds1302_init(void)
 { 
 	if (!ds1302_probe()) {
 #ifdef CONFIG_ETRAX_DS1302_RST_ON_GENERIC_PORT
+#if CONFIG_ETRAX_DS1302_RSTBIT == 27
 		/*
 		 * The only way to set g27 to output is to enable ATA.
 		 *
 		 * Make sure that R_GEN_CONFIG is setup correct.
 		 */
     		genconfig_shadow = ((genconfig_shadow &
-				     ~IO_MASK(R_GEN_CONFIG, ata))
-				   | 
+				     ~IO_MASK(R_GEN_CONFIG, ata)) | 
 				   (IO_STATE(R_GEN_CONFIG, ata, select)));    
     		*R_GEN_CONFIG = genconfig_shadow;
-    		if (!ds1302_probe())
+#elif CONFIG_ETRAX_DS1302_RSTBIT == 0
+		
+		/* Set the direction of this bit to out. */		
+    		genconfig_shadow = ((genconfig_shadow &
+				     ~IO_MASK(R_GEN_CONFIG, g0dir)) | 
+				   (IO_STATE(R_GEN_CONFIG, g0dir, out)));    
+    		*R_GEN_CONFIG = genconfig_shadow;
+#endif
+		if (!ds1302_probe())
       			return -1;
 #else
     		return -1;
@@ -515,5 +530,8 @@ ds1302_init(void)
 		       ds1302_name, RTC_MAJOR_NR);
 		return -1;
 	}
+	/* Initialise trickle charger */
+	ds1302_writereg(RTC_TRICKLECHARGER,
+			RTC_TCR_PATTERN |(CONFIG_ETRAX_DS1302_TRICKLE_CHARGE & 0x0F));
 	return 0;
 }

@@ -7,7 +7,7 @@
 
     Copyright (C) 1996,97,98 Ralph  Metzler (rjkm@thp.uni-koeln.de)
                            & Marcus Metzler (mocm@thp.uni-koeln.de)
-    (c) 1999,2000 Gerd Knorr <kraxel@goldbach.in-berlin.de>
+    (c) 1999-2003 Gerd Knorr <kraxel@bytesex.org>
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -54,7 +54,7 @@ EXPORT_SYMBOL(bttv_i2c_call);
 /*                      gpio ports (IR for example)                        */
 /*                      see bttv.h for comments                            */
 
-int bttv_get_cardinfo(unsigned int card, int *type, int *cardid)
+int bttv_get_cardinfo(unsigned int card, int *type, unsigned *cardid)
 {
 	if (card >= bttv_num) {
 		return -1;
@@ -207,36 +207,16 @@ static void bttv_dec_use(struct i2c_adapter *adap)
 static int attach_inform(struct i2c_client *client)
 {
         struct bttv *btv = (struct bttv*)client->adapter->data;
-	int i;
 
-	for (i = 0; i < I2C_CLIENTS_MAX; i++) {
-		if (btv->i2c_clients[i] == NULL) {
-			btv->i2c_clients[i] = client;
-			break;
-		}
-	}
-	if (btv->tuner_type != -1)
+	if (btv->tuner_type != UNSET)
 		bttv_call_i2c_clients(btv,TUNER_SET_TYPE,&btv->tuner_type);
-        if (bttv_verbose)
-		printk("bttv%d: i2c attach [client=%s,%s]\n",btv->nr,
-		       client->name, (i < I2C_CLIENTS_MAX) ?  "ok" : "failed");
-        return 0;
-}
+	if (btv->pinnacle_id != UNSET)
+		bttv_call_i2c_clients(btv,AUDC_CONFIG_PINNACLE,
+				      &btv->pinnacle_id);
 
-static int detach_inform(struct i2c_client *client)
-{
-        struct bttv *btv = (struct bttv*)client->adapter->data;
-	int i;
-
-	for (i = 0; i < I2C_CLIENTS_MAX; i++) {
-		if (btv->i2c_clients[i] == client) {
-			btv->i2c_clients[i] = NULL;
-			break;
-		}
-	}
-        if (bttv_verbose)
-		printk("bttv%d: i2c detach [client=%s,%s]\n",btv->nr,
-		       client->name, (i < I2C_CLIENTS_MAX) ?  "ok" : "failed");
+        if (bttv_debug)
+		printk("bttv%d: i2c attach [client=%s]\n",
+		       btv->nr,client->name);
         return 0;
 }
 
@@ -245,12 +225,12 @@ void bttv_call_i2c_clients(struct bttv *btv, unsigned int cmd, void *arg)
 	int i;
 	
 	for (i = 0; i < I2C_CLIENTS_MAX; i++) {
-		if (NULL == btv->i2c_clients[i])
+		if (NULL == btv->i2c_adap.clients[i])
 			continue;
-		if (NULL == btv->i2c_clients[i]->driver->command)
+		if (NULL == btv->i2c_adap.clients[i]->driver->command)
 			continue;
-		btv->i2c_clients[i]->driver->command(
-			btv->i2c_clients[i],cmd,arg);
+		btv->i2c_adap.clients[i]->driver->command
+			(btv->i2c_adap.clients[i],cmd,arg);
 	}
 }
 
@@ -262,27 +242,26 @@ void bttv_i2c_call(unsigned int card, unsigned int cmd, void *arg)
 }
 
 static struct i2c_algo_bit_data bttv_i2c_algo_template = {
-	setsda:  bttv_bit_setsda,
-	setscl:  bttv_bit_setscl,
-	getsda:  bttv_bit_getsda,
-	getscl:  bttv_bit_getscl,
-	udelay:  16,
-	mdelay:  10,
-	timeout: 200,
+	.setsda  = bttv_bit_setsda,
+	.setscl  = bttv_bit_setscl,
+	.getsda  = bttv_bit_getsda,
+	.getscl  = bttv_bit_getscl,
+	.udelay  = 16,
+	.mdelay  = 10,
+	.timeout = 200,
 };
 
 static struct i2c_adapter bttv_i2c_adap_template = {
-	name:              "bt848",
-	id:                I2C_HW_B_BT848,
-	inc_use:           bttv_inc_use,
-	dec_use:           bttv_dec_use,
-	client_register:   attach_inform,
-	client_unregister: detach_inform,
+	.inc_use           = bttv_inc_use,
+	.dec_use           = bttv_dec_use,
+	.name              = "bt848",
+	.id                = I2C_HW_B_BT848,
+	.client_register   = attach_inform,
 };
 
 static struct i2c_client bttv_i2c_client_template = {
-        name: "bttv internal use only",
-        id:   -1,
+        .name = "bttv internal use only",
+        .id   = -1,
 };
 
 

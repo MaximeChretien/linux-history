@@ -73,6 +73,17 @@ struct _fpreg_ia32 {
        unsigned short exponent;
 };
 
+struct _fpxreg_ia32 {
+        unsigned short significand[4];
+        unsigned short exponent;
+        unsigned short padding[3];
+};
+
+struct _xmmreg_ia32 {
+        unsigned int element[4];
+};
+
+
 struct _fpstate_ia32 {
        unsigned int    cw,
 		       sw,
@@ -82,7 +93,16 @@ struct _fpstate_ia32 {
 		       dataoff,
 		       datasel;
        struct _fpreg_ia32      _st[8];
-       unsigned int    status;
+       unsigned short  status;
+       unsigned short  magic;          /* 0xffff = regular FPU data only */
+
+       /* FXSR FPU environment */
+       unsigned int         _fxsr_env[6];   /* FXSR FPU env is ignored */
+       unsigned int         mxcsr;
+       unsigned int         reserved;
+       struct _fpxreg_ia32  _fxsr_st[8];    /* FXSR FPU reg data is ignored */
+       struct _xmmreg_ia32  _xmm[8];
+       unsigned int         padding[56];
 };
 
 struct sigcontext_ia32 {
@@ -108,6 +128,44 @@ struct sigcontext_ia32 {
        unsigned int fpstate;		/* really (struct _fpstate_ia32 *) */
        unsigned int oldmask;
        unsigned int cr2;
+};
+
+/* user.h */
+/*
+ * IA32 (Pentium III/4) FXSR, SSE support
+ *
+ * Provide support for the GDB 5.0+ PTRACE_{GET|SET}FPXREGS requests for
+ * interacting with the FXSR-format floating point environment.  Floating
+ * point data can be accessed in the regular format in the usual manner,
+ * and both the standard and SIMD floating point data can be accessed via
+ * the new ptrace requests.  In either case, changes to the FPU environment
+ * will be reflected in the task's state as expected.
+ */
+struct ia32_user_i387_struct {
+	int	cwd;
+	int	swd;
+	int	twd;
+	int	fip;
+	int	fcs;
+	int	foo;
+	int	fos;
+	int	st_space[20];	/* 8*10 bytes for each FP-reg = 80 bytes */
+};
+
+struct ia32_user_fxsr_struct {
+	unsigned short	cwd;
+	unsigned short	swd;
+	unsigned short	twd;
+	unsigned short	fop;
+	int	fip;
+	int	fcs;
+	int	foo;
+	int	fos;
+	int	mxcsr;
+	int	reserved;
+	int	st_space[32];	/* 8*16 bytes for each FP-reg = 128 bytes */
+	int	xmm_space[32];	/* 8*16 bytes for each XMM-reg = 128 bytes */
+	int	padding[56];
 };
 
 /* signal.h */
@@ -443,6 +501,8 @@ typedef elf_fpreg_t elf_fpregset_t[ELF_NFPREG];
 #define IA32_PTRACE_SETREGS	13
 #define IA32_PTRACE_GETFPREGS	14
 #define IA32_PTRACE_SETFPREGS	15
+#define IA32_PTRACE_GETFPXREGS	18
+#define IA32_PTRACE_SETFPXREGS	19
 
 #define ia32_start_thread(regs,new_ip,new_sp) do {				\
 	set_fs(USER_DS);							\
@@ -484,6 +544,18 @@ extern int ia32_exception (struct pt_regs *regs, unsigned long isr);
 extern int ia32_intercept (struct pt_regs *regs, unsigned long isr);
 extern unsigned long ia32_do_mmap (struct file *, unsigned long, unsigned long, int, int, loff_t);
 extern void ia32_load_segment_descriptors (struct task_struct *task);
+
+#define ia32f2ia64f(dst,src) \
+	do { \
+	register double f6 asm ("f6"); \
+	asm volatile ("ldfe f6=[%2];; stf.spill [%1]=f6" : "=f"(f6): "r"(dst), "r"(src) : "memory"); \
+	} while(0)
+
+#define ia64f2ia32f(dst,src) \
+	do { \
+	register double f6 asm ("f6"); \
+	asm volatile ("ldf.fill f6=[%2];; stfe [%1]=f6" : "=f"(f6): "r"(dst),  "r"(src) : "memory"); \
+	} while(0)
 
 #endif /* !CONFIG_IA32_SUPPORT */
 

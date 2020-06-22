@@ -1,6 +1,3 @@
-/*
- * BK Id: SCCS/s.ptrace.h 1.8 01/17/02 23:05:50 paulus
- */
 #ifndef _PPC_PTRACE_H
 #define _PPC_PTRACE_H
 

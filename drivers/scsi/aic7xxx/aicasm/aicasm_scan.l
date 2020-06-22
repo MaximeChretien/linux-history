@@ -38,9 +38,9 @@
  * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGES.
  *
- * $Id: //depot/aic7xxx/aic7xxx/aicasm/aicasm_scan.l#10 $
+ * $Id: //depot/aic7xxx/aic7xxx/aicasm/aicasm_scan.l#11 $
  *
- * $FreeBSD: src/sys/dev/aic7xxx/aicasm/aicasm_scan.l,v 1.13.2.3 2001/07/28 18:46:44 gibbs Exp $
+ * $FreeBSD: src/sys/dev/aic7xxx/aicasm/aicasm_scan.l,v 1.13.2.4 2002/04/29 19:36:36 gibbs Exp $
  */
 
 #include <sys/types.h>

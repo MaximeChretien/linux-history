@@ -269,7 +269,7 @@ typedef volatile struct		/* counters of E1-errors and errored seconds, see rfc24
 				   - Path Code Violations >1, but <320
 				   - not a Severely Errored Second
 				   - no AIS
-				   - not incremented during an Unavailabla Second                       */
+				   - not incremented during an Unavailable Second                       */
       severely_err_secs,	/* Severely Errored Second:
 				   - CRC4: >=832 Path COde Violations || >0 Out Of Frame defects
 				   - noCRC4: >=2048 Line Code Violations

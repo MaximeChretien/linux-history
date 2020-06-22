@@ -297,6 +297,7 @@ typedef struct page {
 #define PG_arch_1		13
 #define PG_reserved		14
 #define PG_launder		15	/* written out by VM pressure.. */
+#define PG_fs_1			16	/* Filesystem specific */
 
 /* Make it prettier to test the above... */
 #define UnlockPage(page)	unlock_page(page)

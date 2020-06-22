@@ -1,4 +1,3 @@
-# BK Id: SCCS/s.Makefile 1.19 01/16/02 11:08:07 trini
 #
 # Makefile for making XCOFF bootable images for booting on PowerMacs
 # using Open Firmware.

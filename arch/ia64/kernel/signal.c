@@ -41,6 +41,16 @@
 
 extern long ia64_do_signal (sigset_t *, struct sigscratch *, long);	/* forward decl */
 
+register double f16 asm ("f16"); register double f17 asm ("f17");
+register double f18 asm ("f18"); register double f19 asm ("f19");
+register double f20 asm ("f20"); register double f21 asm ("f21");
+register double f22 asm ("f22"); register double f23 asm ("f23");
+
+register double f24 asm ("f24"); register double f25 asm ("f25");
+register double f26 asm ("f26"); register double f27 asm ("f27");
+register double f28 asm ("f28"); register double f29 asm ("f29");
+register double f30 asm ("f30"); register double f31 asm ("f31");
+
 long
 ia64_rt_sigsuspend (sigset_t *uset, size_t sigsetsize, struct sigscratch *scr)
 {
@@ -354,6 +364,15 @@ setup_sigcontext (struct sigcontext *sc, sigset_t *mask, struct sigscratch *scr)
 	return err;
 }
 
+/*
+ * Check whether the register-backing store is already on the signal stack.
+ */
+static inline int
+rbs_on_sig_stack (unsigned long bsp)
+{
+	return (bsp - current->sas_ss_sp < current->sas_ss_size);
+}
+
 static long
 setup_frame (int sig, struct k_sigaction *ka, siginfo_t *info, sigset_t *set,
 	     struct sigscratch *scr)
@@ -366,10 +385,16 @@ setup_frame (int sig, struct k_sigaction *ka, siginfo_t *info, sigset_t *set,
 
 	frame = (void *) scr->pt.r12;
 	tramp_addr = GATE_ADDR + (ia64_sigtramp - __start_gate_section);
-	if ((ka->sa.sa_flags & SA_ONSTACK) != 0 && !on_sig_stack((unsigned long) frame)) {
-		new_rbs  = (current->sas_ss_sp + sizeof(long) - 1) & ~(sizeof(long) - 1);
+	if ((ka->sa.sa_flags & SA_ONSTACK) && sas_ss_flags((unsigned long) frame) == 0) {
 		frame = (void *) ((current->sas_ss_sp + current->sas_ss_size)
 				  & ~(STACK_ALIGN - 1));
+  		/*
+		 * We need to check for the register stack being on the signal stack
+		 * separately, because it's switched separately (memory stack is switched
+		 * in the kernel, register stack is switched in the signal trampoline).
+  		 */
+		if (!rbs_on_sig_stack(scr->pt.ar_bspstore))
+			new_rbs  = (current->sas_ss_sp + sizeof(long) - 1) & ~(sizeof(long) - 1);
 	}
 	frame = (void *) frame - ((sizeof(*frame) + STACK_ALIGN - 1) & ~(STACK_ALIGN - 1));
 

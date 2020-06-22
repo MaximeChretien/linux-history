@@ -50,6 +50,7 @@ update_dn_pci_info(struct device_node *dn, void *data)
 	struct pci_controller *phb = (struct pci_controller *)data;
 	u32 *regs;
 	char *device_type = get_property(dn, "device_type", 0);
+	char *status = get_property(dn, "status", 0);
 
 	dn->phb = phb;
 	if (device_type && strcmp(device_type, "pci") == 0 && get_property(dn, "class-code", 0) == 0) {
@@ -65,6 +66,11 @@ update_dn_pci_info(struct device_node *dn, void *data)
 			dn->devfn = (regs[0] >> 8) & 0xff;
 		}
 	}
+	if (status && strcmp(status, "ok") != 0) {
+		char *name = get_property(dn, "name", 0);
+		printk(KERN_ERR "PCI: %04x:%02x.%x %s (%s) has bad status from firmware! (%s)", dn->busno, PCI_SLOT(dn->devfn), PCI_FUNC(dn->devfn), name ? name : "<no name>", device_type ? device_type : "<unknown type>", status);
+		dn->status = 1;
+	}
 	return NULL;
 }
 
@@ -75,9 +81,11 @@ update_dn_pci_info(struct device_node *dn, void *data)
 static void * __init
 write_OF_bars(struct device_node *dn, void *data)
 {
+#ifdef CONFIG_PPC_PSERIES
 	int i;
 	u32 oldbar, newbar, newbartest;
 	u8  config_offset;
+#endif
 	char *name = get_property(dn, "name", 0);
 	char *device_type = get_property(dn, "device_type", 0);
 	char devname[128];

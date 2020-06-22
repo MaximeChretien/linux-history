@@ -85,5 +85,12 @@ extern inline void * phys_to_virt(unsigned long address)
 #define bus_to_virt phys_to_virt
 #endif
 
+/*
+ * Change "struct page" to physical address.
+ */
+
+#define __page_address(page)      (PAGE_OFFSET + (((page) - mem_map) << PAGE_SHIFT))
+#define page_to_phys(page)       virt_to_phys((void *)__page_address(page))
+
 #endif
 #endif

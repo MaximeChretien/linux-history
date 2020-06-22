@@ -1,7 +1,4 @@
 /*
- * BK Id: SCCS/s.traps.c 1.22 10/11/01 10:33:09 paulus
- */
-/*
  *  linux/arch/ppc/kernel/traps.c
  *
  *  Copyright (C) 1995-1996  Gary Thomas (gdt@linuxppc.org)
@@ -38,6 +35,9 @@
 #include <asm/system.h>
 #include <asm/io.h>
 #include <asm/processor.h>
+#ifdef CONFIG_PMAC_BACKLIGHT
+#include <asm/backlight.h>
+#endif
 
 extern int fix_alignment(struct pt_regs *);
 extern void bad_page_fault(struct pt_regs *, unsigned long, int sig);
@@ -66,6 +66,13 @@ int (*debugger_sstep)(struct pt_regs *regs);
 int (*debugger_iabr_match)(struct pt_regs *regs);
 int (*debugger_dabr_match)(struct pt_regs *regs);
 void (*debugger_fault_handler)(struct pt_regs *regs);
+#else
+#define debugger(regs)			do { } while (0)
+#define debugger_bpt(regs)		0
+#define debugger_sstep(regs)		0
+#define debugger_iabr_match(regs)	0
+#define debugger_dabr_match(regs)	0
+#define debugger_fault_handler		((void (*)(struct pt_regs *))0)
 #endif
 #endif
 
@@ -74,15 +81,19 @@ void (*debugger_fault_handler)(struct pt_regs *regs);
  */
 
 
-spinlock_t oops_lock = SPIN_LOCK_UNLOCKED;
+spinlock_t die_lock = SPIN_LOCK_UNLOCKED;
 
 void die(const char * str, struct pt_regs * fp, long err)
 {
 	console_verbose();
-	spin_lock_irq(&oops_lock);
+	spin_lock_irq(&die_lock);
+#ifdef CONFIG_PMAC_BACKLIGHT
+	set_backlight_enable(1);
+	set_backlight_level(BACKLIGHT_MAX);
+#endif
 	printk("Oops: %s, sig: %ld\n", str, err);
 	show_regs(fp);
-	spin_unlock_irq(&oops_lock);
+	spin_unlock_irq(&die_lock);
 	/* do_exit() should take care of panic'ing from an interrupt
 	 * context so we don't handle it here
 	 */
@@ -90,54 +101,37 @@ void die(const char * str, struct pt_regs * fp, long err)
 }
 
 void
-_exception(int signr, struct pt_regs *regs)
+_exception(int signr, struct pt_regs *regs, int code, unsigned long addr)
 {
-	if (!user_mode(regs))
-	{
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
+	siginfo_t info;
+
+	if (!user_mode(regs)) {
 		debugger(regs);
-#endif
 		die("Exception in kernel mode", regs, signr);
 	}
-	force_sig(signr, current);
+	info.si_signo = signr;
+	info.si_errno = 0;
+	info.si_code = code;
+	info.si_addr = (void *) addr;
+	force_sig_info(signr, &info, current);
 }
 
-void
-MachineCheckException(struct pt_regs *regs)
+/*
+ * I/O accesses can cause machine checks on powermacs.
+ * Check if the NIP corresponds to the address of a sync
+ * instruction for which there is an entry in the exception
+ * table.
+ * Note that the 601 only takes a machine check on TEA
+ * (transfer error ack) signal assertion, and does not
+ * set any of the top 16 bits of SRR1.
+ *  -- paulus.
+ */
+static inline int check_io_access(struct pt_regs *regs)
 {
 #ifdef CONFIG_ALL_PPC
 	unsigned long fixup;
-#endif /* CONFIG_ALL_PPC */
 	unsigned long msr = regs->msr;
 
-	if (user_mode(regs)) {
-		_exception(SIGSEGV, regs);	
-		return;
-	}
-
-#if defined(CONFIG_8xx) && defined(CONFIG_PCI)
-	/* the qspan pci read routines can cause machine checks -- Cort */
-	bad_page_fault(regs, regs->dar, SIGBUS);
-	return;
-#endif
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
-	if (debugger_fault_handler) {
-		debugger_fault_handler(regs);
-		return;
-	}
-#endif
-
-#ifdef CONFIG_ALL_PPC
-	/*
-	 * I/O accesses can cause machine checks on powermacs.
-	 * Check if the NIP corresponds to the address of a sync
-	 * instruction for which there is an entry in the exception
-	 * table.
-	 * Note that the 601 only takes a machine check on TEA
-	 * (transfer error ack) signal assertion, and does not
-	 * set of the top 16 bits of SRR1.
-	 *  -- paulus.
-	 */
 	if (((msr & 0xffff0000) == 0 || (msr & (0x80000 | 0x40000)))
 	    && (fixup = search_exception_table(regs->nip)) != 0) {
 		/*
@@ -163,18 +157,72 @@ MachineCheckException(struct pt_regs *regs)
 			       (*nip & 0x100)? "OUT to": "IN from",
 			       regs->gpr[rb] - _IO_BASE, nip);
 			regs->nip = fixup;
-			return;
+			return 1;
 		}
 	}
 #endif /* CONFIG_ALL_PPC */
+	return 0;
+}
+
+#if defined(CONFIG_4xx) || defined(CONFIG_BOOKE)
+/* On 4xx, the reason for the machine check or program exception
+   is in the ESR. */
+#define get_reason(regs)	mfspr(SPRN_ESR);
+#define REASON_FP		0
+#define REASON_ILLEGAL		ESR_PIL
+#define REASON_PRIVILEGED	ESR_PPR
+#define REASON_TRAP		ESR_PTR
+
+#else
+/* On non-4xx, the reason for the machine check or program
+   exception is in the MSR. */
+#define get_reason(regs)	((regs)->msr)
+#define REASON_FP		0x100000
+#define REASON_ILLEGAL		0x80000
+#define REASON_PRIVILEGED	0x40000
+#define REASON_TRAP		0x20000
+#endif
+
+void
+MachineCheckException(struct pt_regs *regs)
+{
+	unsigned long reason = get_reason(regs);
+
+	if (user_mode(regs)) {
+		_exception(SIGBUS, regs, BUS_ADRERR, regs->nip);
+		return;
+	}
+
+#if defined(CONFIG_8xx) && defined(CONFIG_PCI)
+	/* the qspan pci read routines can cause machine checks -- Cort */
+	bad_page_fault(regs, regs->dar, SIGBUS);
+	return;
+#endif
+	if (debugger_fault_handler) {
+		debugger_fault_handler(regs);
+		return;
+	}
+	if (check_io_access(regs))
+		return;
+
+#ifdef CONFIG_4xx
+	if (reason & ESR_IMCP) {
+		printk("Instruction");
+		mtspr(SPRN_ESR, reason & ~ESR_IMCP);
+	} else
+		printk("Data");
+	printk(" machine check in kernel mode.\n");
+
+#else /* CONFIG_4xx */
 	printk("Machine check in kernel mode.\n");
-	printk("Caused by (from SRR1=%lx): ", msr);
-	switch (msr & 0xF0000) {
+	printk("Caused by (from SRR1=%lx): ", reason);
+	switch (reason & 0x601F0000) {
 	case 0x80000:
 		printk("Machine check signal\n");
 		break;
 	case 0:		/* for 601 */
 	case 0x40000:
+	case 0x140000:	/* 7450 MSS error and TEA */
 		printk("Transfer error ack signal\n");
 		break;
 	case 0x20000:
@@ -183,26 +231,32 @@ MachineCheckException(struct pt_regs *regs)
 	case 0x10000:
 		printk("Address parity error signal\n");
 		break;
+	case 0x20000000:
+		printk("L1 Data Cache error\n");
+		break;
+	case 0x40000000:
+		printk("L1 Instruction Cache error\n");
+		break;
+	case 0x00100000:
+		printk("L2 data cache parity error\n");
+		break;
 	default:
 		printk("Unknown values in msr\n");
 	}
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
+#endif /* CONFIG_4xx */
+
 	debugger(regs);
-#endif
 	die("machine check", regs, SIGBUS);
 }
 
 void
 SMIException(struct pt_regs *regs)
 {
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
-	{
-		debugger(regs);
-		return;
-	}
-#endif
+	debugger(regs);
+#if !(defined(CONFIG_XMON) || defined(CONFIG_KGDB))
 	show_regs(regs);
 	panic("System Management Interrupt");
+#endif
 }
 
 void
@@ -210,23 +264,21 @@ UnknownException(struct pt_regs *regs)
 {
 	printk("Bad trap at PC: %lx, SR: %lx, vector=%lx    %s\n",
 	       regs->nip, regs->msr, regs->trap, print_tainted());
-	_exception(SIGTRAP, regs);	
+	_exception(SIGTRAP, regs, 0, 0);
 }
 
 void
 InstructionBreakpoint(struct pt_regs *regs)
 {
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
 	if (debugger_iabr_match(regs))
 		return;
-#endif
-	_exception(SIGTRAP, regs);
+	_exception(SIGTRAP, regs, TRAP_BRKPT, 0);
 }
 
 void
 RunModeException(struct pt_regs *regs)
 {
-	_exception(SIGTRAP, regs);	
+	_exception(SIGTRAP, regs, 0, 0);
 }
 
 /* Illegal instruction emulation support.  Originally written to
@@ -245,16 +297,16 @@ RunModeException(struct pt_regs *regs)
 static int
 emulate_instruction(struct pt_regs *regs)
 {
-	uint    instword;
-	uint    rd;
-	uint    retval;
+	u32 instword;
+	u32 rd;
+	int retval;
 
-	retval = EINVAL;
+	retval = -EINVAL;
 
 	if (!user_mode(regs))
 		return retval;
 
-	if (get_user(instword, (uint *)(regs->nip)))
+	if (get_user(instword, (u32 *)(regs->nip)))
 		return -EFAULT;
 
 	/* Emulate the mfspr rD, PVR.
@@ -263,60 +315,71 @@ emulate_instruction(struct pt_regs *regs)
 		rd = (instword >> 21) & 0x1f;
 		regs->gpr[rd] = mfspr(PVR);
 		retval = 0;
-	}
-	if (retval == 0)
 		regs->nip += 4;
-	return(retval);
+	}
+	return retval;
 }
 
 void
 ProgramCheckException(struct pt_regs *regs)
 {
-#if defined(CONFIG_4xx)
-	unsigned int esr = mfspr(SPRN_ESR);
+	unsigned int reason = get_reason(regs);
+	extern int do_mathemu(struct pt_regs *regs);
 
-	if (esr & ESR_PTR) {
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
-		if (debugger_bpt(regs))
-			return;
-#endif
-		_exception(SIGTRAP, regs);
-	} else {
-		_exception(SIGILL, regs);
-	}
-#else
-	if (regs->msr & 0x100000) {
+#ifdef CONFIG_MATH_EMULATION
+	if ((reason & REASON_ILLEGAL) && do_mathemu(regs) == 0)
+		return;
+#endif /* CONFIG_MATH_EMULATION */
+
+	if (reason & REASON_FP) {
 		/* IEEE FP exception */
-		_exception(SIGFPE, regs);
-	} else if (regs->msr & 0x20000) {
+		int code = 0;
+		u32 fpscr;
+
+		if (regs->msr & MSR_FP)
+			giveup_fpu(current);
+		fpscr = current->thread.fpscr;
+		fpscr &= fpscr << 22;	/* mask summary bits with enables */
+		if (fpscr & FPSCR_VX)
+			code = FPE_FLTINV;
+		else if (fpscr & FPSCR_OX)
+			code = FPE_FLTOVF;
+		else if (fpscr & FPSCR_UX)
+			code = FPE_FLTUND;
+		else if (fpscr & FPSCR_ZX)
+			code = FPE_FLTDIV;
+		else if (fpscr & FPSCR_XX)
+			code = FPE_FLTRES;
+		_exception(SIGFPE, regs, code, regs->nip);
+		return;
+	}
+
+	if (reason & REASON_TRAP) {
 		/* trap exception */
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
 		if (debugger_bpt(regs))
 			return;
-#endif
-		_exception(SIGTRAP, regs);
-	} else {
-		/* Try to emulate it if we should. */
-		int errcode;
-		if ((errcode = emulate_instruction(regs))) {
-			if (errcode == -EFAULT)
-				_exception(SIGBUS, regs);
-			else
-				_exception(SIGILL, regs);
-		}
+		_exception(SIGTRAP, regs, TRAP_BRKPT, 0);
+		return;
 	}
-#endif
+
+	if (reason & REASON_PRIVILEGED) {
+		/* Try to emulate it if we should. */
+		if (emulate_instruction(regs) == 0)
+			return;
+		_exception(SIGILL, regs, ILL_PRVOPC, regs->nip);
+		return;
+	}
+
+	_exception(SIGILL, regs, ILL_ILLOPC, regs->nip);
 }
 
 void
 SingleStepException(struct pt_regs *regs)
 {
 	regs->msr &= ~MSR_SE;  /* Turn off 'trace' bit */
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
 	if (debugger_sstep(regs))
 		return;
-#endif
-	_exception(SIGTRAP, regs);	
+	_exception(SIGTRAP, regs, TRAP_TRACE, 0);
 }
 
 void
@@ -332,12 +395,12 @@ AlignmentException(struct pt_regs *regs)
 	if (fixed == -EFAULT) {
 		/* fixed == -EFAULT means the operand address was bad */
 		if (user_mode(regs))
-			force_sig(SIGSEGV, current);
+			_exception(SIGSEGV, regs, SEGV_ACCERR, regs->dar);
 		else
 			bad_page_fault(regs, regs->dar, SIGSEGV);
 		return;
 	}
-	_exception(SIGBUS, regs);	
+	_exception(SIGBUS, regs, BUS_ADRALN, regs->dar);
 }
 
 void
@@ -345,9 +408,7 @@ StackOverflow(struct pt_regs *regs)
 {
 	printk(KERN_CRIT "Kernel stack overflow in process %p, r1=%lx\n",
 	       current, regs->gpr[1]);
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
 	debugger(regs);
-#endif
 	show_regs(regs);
 	panic("kernel stack overflow");
 }
@@ -365,29 +426,29 @@ void
 SoftwareEmulation(struct pt_regs *regs)
 {
 	extern int do_mathemu(struct pt_regs *);
+	extern int Soft_emulate_8xx(struct pt_regs *);
 	int errcode;
 
 	if (!user_mode(regs)) {
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
 		debugger(regs);
-#endif
 		die("Kernel Mode Software FPU Emulation", regs, SIGFPE);
 	}
 
 #ifdef CONFIG_MATH_EMULATION
-	if ((errcode = do_mathemu(regs))) {
+	errcode = do_mathemu(regs);
 #else
-	if ((errcode = Soft_emulate_8xx(regs))) {
+	errcode = Soft_emulate_8xx(regs);
 #endif
+	if (errcode) {
 		if (errcode > 0)
-			_exception(SIGFPE, regs);
+			_exception(SIGFPE, regs, 0, 0);
 		else if (errcode == -EFAULT)
-			_exception(SIGSEGV, regs);
+			_exception(SIGSEGV, regs, 0, 0);
 		else
-			_exception(SIGILL, regs);
+			_exception(SIGILL, regs, ILL_ILLOPC, regs->nip);
 	}
 }
-#endif
+#endif /* CONFIG_8xx */
 
 #if !defined(CONFIG_TAU_INT)
 void

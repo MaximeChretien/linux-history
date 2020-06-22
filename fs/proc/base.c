@@ -360,12 +360,15 @@ static ssize_t mem_read(struct file * file, char * buf,
 	if (mm)
 		atomic_inc(&mm->mm_users);
 	task_unlock(task);
-	if (!mm)
-		return 0;
+	if (!mm){
+		copied = 0;
+		goto out_free;
+	}
 
 	if (file->private_data != (void*)((long)current->self_exec_id) ) {
 		mmput(mm);
-		return -EIO;
+		copied = -EIO;
+		goto out_free;
 	}
 		
 
@@ -390,6 +393,8 @@ static ssize_t mem_read(struct file * file, char * buf,
 	}
 	*ppos = src;
 	mmput(mm);
+
+out_free:
 	free_page((unsigned long) page);
 	return copied;
 }
@@ -480,6 +485,8 @@ static int do_proc_readlink(struct dentry *dentry, struct vfsmount *mnt,
 		
 	inode = dentry->d_inode;
 	path = d_path(dentry, mnt, tmp, PAGE_SIZE);
+	if (IS_ERR(path))
+		return PTR_ERR(path);
 	len = tmp + PAGE_SIZE - 1 - path;
 
 	if (len < buflen)

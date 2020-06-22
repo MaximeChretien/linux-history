@@ -146,17 +146,7 @@ static unsigned short normal_i2c[] = {
 	I2C_PIC16C54  >> 1,
 	I2C_CLIENT_END };
 static unsigned short normal_i2c_range[2] = { I2C_CLIENT_END, I2C_CLIENT_END };
-static unsigned short probe[2]            = { I2C_CLIENT_END, I2C_CLIENT_END };
-static unsigned short probe_range[2]      = { I2C_CLIENT_END, I2C_CLIENT_END };
-static unsigned short ignore[2]           = { I2C_CLIENT_END, I2C_CLIENT_END };
-static unsigned short ignore_range[2]     = { I2C_CLIENT_END, I2C_CLIENT_END };
-static unsigned short force[2]            = { I2C_CLIENT_END, I2C_CLIENT_END };
-static struct i2c_client_address_data addr_data = {
-	normal_i2c, normal_i2c_range, 
-	probe, probe_range, 
-	ignore, ignore_range, 
-	force
-};
+I2C_CLIENT_INSMOD;
 
 static struct i2c_driver driver;
 static struct i2c_client client_template;
@@ -1088,6 +1078,19 @@ static int tea6300_shift12(int val) { return val >> 12; }
 static int tda8425_shift10(int val) { return (val >> 10) | 0xc0; }
 static int tda8425_shift12(int val) { return (val >> 12) | 0xf0; }
 
+static int tda8425_initialize(struct CHIPSTATE *chip)
+{
+	struct CHIPDESC *desc = chiplist + chip->type;
+	int inputmap[8] = { /* tuner	*/ TDA8425_S1_CH2, /* radio  */ TDA8425_S1_CH1,
+			    /* extern	*/ TDA8425_S1_CH1, /* intern */ TDA8425_S1_OFF,
+			    /* off	*/ TDA8425_S1_OFF, /* on     */ TDA8425_S1_CH2};
+
+	if (chip->c.adapter->id == (I2C_ALGO_BIT | I2C_HW_B_RIVA)) {
+		memcpy (desc->inputmap, inputmap, sizeof (inputmap));
+	}
+	return 0;
+}
+
 static void tda8425_setmode(struct CHIPSTATE *chip, int mode)
 {
 	int s1 = chip->shadow.bytes[TDA8425_S1+1] & 0xe1;
@@ -1156,165 +1159,166 @@ MODULE_PARM(pic16c54,"i");
 
 static struct CHIPDESC chiplist[] = {
 	{
-		name:       "tda9840",
-		id:         I2C_DRIVERID_TDA9840,
-		insmodopt:  &tda9840,
-		addr_lo:    I2C_TDA9840 >> 1,
-		addr_hi:    I2C_TDA9840 >> 1,
-		registers:  5,
+		.name       = "tda9840",
+		.id         = I2C_DRIVERID_TDA9840,
+		.insmodopt  = &tda9840,
+		.addr_lo    = I2C_TDA9840 >> 1,
+		.addr_hi    = I2C_TDA9840 >> 1,
+		.registers  = 5,
 
-		getmode:    tda9840_getmode,
-		setmode:    tda9840_setmode,
-		checkmode:  generic_checkmode,
+		.getmode    = tda9840_getmode,
+		.setmode    = tda9840_setmode,
+		.checkmode  = generic_checkmode,
 
-	        init:       { 2, { TDA9840_TEST, TDA9840_TEST_INT1SN
+	        .init       = { 2, { TDA9840_TEST, TDA9840_TEST_INT1SN
 				/* ,TDA9840_SW, TDA9840_MONO */} }
 	},
 	{
-		name:       "tda9873h",
-		id:         I2C_DRIVERID_TDA9873,
-		checkit:    tda9873_checkit,
-		insmodopt:  &tda9873,
-		addr_lo:    I2C_TDA985x_L >> 1,
-		addr_hi:    I2C_TDA985x_H >> 1,
-		registers:  3,
-		flags:      CHIP_HAS_INPUTSEL,
+		.name       = "tda9873h",
+		.id         = I2C_DRIVERID_TDA9873,
+		.checkit    = tda9873_checkit,
+		.insmodopt  = &tda9873,
+		.addr_lo    = I2C_TDA985x_L >> 1,
+		.addr_hi    = I2C_TDA985x_H >> 1,
+		.registers  = 3,
+		.flags      = CHIP_HAS_INPUTSEL,
 
-		getmode:    tda9873_getmode,
-		setmode:    tda9873_setmode,
-		checkmode:  generic_checkmode,
+		.getmode    = tda9873_getmode,
+		.setmode    = tda9873_setmode,
+		.checkmode  = generic_checkmode,
 
-		init:       { 4, { TDA9873_SW, 0xa4, 0x06, 0x03 } },
-		inputreg:   TDA9873_SW,
-		inputmute:  TDA9873_MUTE | TDA9873_AUTOMUTE,
-		inputmap:   {0xa0, 0xa2, 0xa0, 0xa0, 0xc0},
-		inputmask:  TDA9873_INP_MASK | TDA9873_MUTE | TDA9873_AUTOMUTE
+		.init       = { 4, { TDA9873_SW, 0xa4, 0x06, 0x03 } },
+		.inputreg   = TDA9873_SW,
+		.inputmute  = TDA9873_MUTE | TDA9873_AUTOMUTE,
+		.inputmap   = {0xa0, 0xa2, 0xa0, 0xa0, 0xc0},
+		.inputmask  = TDA9873_INP_MASK|TDA9873_MUTE|TDA9873_AUTOMUTE,
 		
 	},
 	{
-		name:       "tda9874h/a",
-		id:         I2C_DRIVERID_TDA9874,
-		checkit:    tda9874a_checkit,
-		initialize: tda9874a_initialize,
-		insmodopt:  &tda9874a,
-		addr_lo:    I2C_TDA9874 >> 1,
-		addr_hi:    I2C_TDA9874 >> 1,
+		.name       = "tda9874h/a",
+		.id         = I2C_DRIVERID_TDA9874,
+		.checkit    = tda9874a_checkit,
+		.initialize = tda9874a_initialize,
+		.insmodopt  = &tda9874a,
+		.addr_lo    = I2C_TDA9874 >> 1,
+		.addr_hi    = I2C_TDA9874 >> 1,
 
-		getmode:    tda9874a_getmode,
-		setmode:    tda9874a_setmode,
-		checkmode:  generic_checkmode,
+		.getmode    = tda9874a_getmode,
+		.setmode    = tda9874a_setmode,
+		.checkmode  = generic_checkmode,
 	},
 	{
-		name:       "tda9850",
-		id:         I2C_DRIVERID_TDA9850,
-		insmodopt:  &tda9850,
-		addr_lo:    I2C_TDA985x_L >> 1,
-		addr_hi:    I2C_TDA985x_H >> 1,
-		registers:  11,
+		.name       = "tda9850",
+		.id         = I2C_DRIVERID_TDA9850,
+		.insmodopt  = &tda9850,
+		.addr_lo    = I2C_TDA985x_L >> 1,
+		.addr_hi    = I2C_TDA985x_H >> 1,
+		.registers  = 11,
 
-		getmode:    tda985x_getmode,
-		setmode:    tda985x_setmode,
+		.getmode    = tda985x_getmode,
+		.setmode    = tda985x_setmode,
 
-		init:       { 8, { TDA9850_C4, 0x08, 0x08, TDA985x_STEREO, 0x07, 0x10, 0x10, 0x03 } }
+		.init       = { 8, { TDA9850_C4, 0x08, 0x08, TDA985x_STEREO, 0x07, 0x10, 0x10, 0x03 } }
 	},
 	{
-		name:       "tda9855",
-		id:         I2C_DRIVERID_TDA9855,
-		insmodopt:  &tda9855,
-		addr_lo:    I2C_TDA985x_L >> 1,
-		addr_hi:    I2C_TDA985x_H >> 1,
-		registers:  11,
-		flags:      CHIP_HAS_VOLUME | CHIP_HAS_BASSTREBLE,
+		.name       = "tda9855",
+		.id         = I2C_DRIVERID_TDA9855,
+		.insmodopt  = &tda9855,
+		.addr_lo    = I2C_TDA985x_L >> 1,
+		.addr_hi    = I2C_TDA985x_H >> 1,
+		.registers  = 11,
+		.flags      = CHIP_HAS_VOLUME | CHIP_HAS_BASSTREBLE,
 
-		leftreg:    TDA9855_VL,
-		rightreg:   TDA9855_VR,
-		bassreg:    TDA9855_BA,
-		treblereg:  TDA9855_TR,
-		volfunc:    tda9855_volume,
-		bassfunc:   tda9855_bass,
-		treblefunc: tda9855_treble,
+		.leftreg    = TDA9855_VL,
+		.rightreg   = TDA9855_VR,
+		.bassreg    = TDA9855_BA,
+		.treblereg  = TDA9855_TR,
+		.volfunc    = tda9855_volume,
+		.bassfunc   = tda9855_bass,
+		.treblefunc = tda9855_treble,
 
-		getmode:    tda985x_getmode,
-		setmode:    tda985x_setmode,
+		.getmode    = tda985x_getmode,
+		.setmode    = tda985x_setmode,
 
-		init:       { 12, { 0, 0x6f, 0x6f, 0x0e, 0x07<<1, 0x8<<2,
+		.init       = { 12, { 0, 0x6f, 0x6f, 0x0e, 0x07<<1, 0x8<<2,
 				    TDA9855_MUTE | TDA9855_AVL | TDA9855_LOUD | TDA9855_INT,
 				    TDA985x_STEREO | TDA9855_LINEAR | TDA9855_TZCM | TDA9855_VZCM,
 				    0x07, 0x10, 0x10, 0x03 }}
 	},
 	{
-		name:       "tea6300",
-		id:         I2C_DRIVERID_TEA6300,
-		insmodopt:  &tea6300,
-		addr_lo:    I2C_TEA6300 >> 1,
-		addr_hi:    I2C_TEA6300 >> 1,
-		registers:  6,
-		flags:      CHIP_HAS_VOLUME | CHIP_HAS_BASSTREBLE | CHIP_HAS_INPUTSEL,
+		.name       = "tea6300",
+		.id         = I2C_DRIVERID_TEA6300,
+		.insmodopt  = &tea6300,
+		.addr_lo    = I2C_TEA6300 >> 1,
+		.addr_hi    = I2C_TEA6300 >> 1,
+		.registers  = 6,
+		.flags      = CHIP_HAS_VOLUME | CHIP_HAS_BASSTREBLE | CHIP_HAS_INPUTSEL,
 
-		leftreg:    TEA6300_VR,
-		rightreg:   TEA6300_VL,
-		bassreg:    TEA6300_BA,
-		treblereg:  TEA6300_TR,
-		volfunc:    tea6300_shift10,
-		bassfunc:   tea6300_shift12,
-		treblefunc: tea6300_shift12,
+		.leftreg    = TEA6300_VR,
+		.rightreg   = TEA6300_VL,
+		.bassreg    = TEA6300_BA,
+		.treblereg  = TEA6300_TR,
+		.volfunc    = tea6300_shift10,
+		.bassfunc   = tea6300_shift12,
+		.treblefunc = tea6300_shift12,
 
-		inputreg:   TEA6300_S,
-		inputmap:   { TEA6300_S_SA, TEA6300_S_SB, TEA6300_S_SC },
-		inputmute:  TEA6300_S_GMU,
+		.inputreg   = TEA6300_S,
+		.inputmap   = { TEA6300_S_SA, TEA6300_S_SB, TEA6300_S_SC },
+		.inputmute  = TEA6300_S_GMU,
 	},
 	{
-		name:       "tea6420",
-		id:         I2C_DRIVERID_TEA6420,
-		insmodopt:  &tea6420,
-		addr_lo:    I2C_TEA6420 >> 1,
-		addr_hi:    I2C_TEA6420 >> 1,
-		registers:  1,
-		flags:      CHIP_HAS_INPUTSEL,
+		.name       = "tea6420",
+		.id         = I2C_DRIVERID_TEA6420,
+		.insmodopt  = &tea6420,
+		.addr_lo    = I2C_TEA6420 >> 1,
+		.addr_hi    = I2C_TEA6420 >> 1,
+		.registers  = 1,
+		.flags      = CHIP_HAS_INPUTSEL,
 
-		inputreg:   -1,
-		inputmap:   { TEA6420_S_SA, TEA6420_S_SB, TEA6420_S_SC },
-		inputmute:  TEA6300_S_GMU,
+		.inputreg   = -1,
+		.inputmap   = { TEA6420_S_SA, TEA6420_S_SB, TEA6420_S_SC },
+		.inputmute  = TEA6300_S_GMU,
 	},
 	{
-		name:       "tda8425",
-		id:         I2C_DRIVERID_TDA8425,
-		insmodopt:  &tda8425,
-		addr_lo:    I2C_TDA8425 >> 1,
-		addr_hi:    I2C_TDA8425 >> 1,
-		registers:  9,
-		flags:      CHIP_HAS_VOLUME | CHIP_HAS_BASSTREBLE | CHIP_HAS_INPUTSEL,
+		.name       = "tda8425",
+		.id         = I2C_DRIVERID_TDA8425,
+		.insmodopt  = &tda8425,
+		.addr_lo    = I2C_TDA8425 >> 1,
+		.addr_hi    = I2C_TDA8425 >> 1,
+		.registers  = 9,
+		.flags      = CHIP_HAS_VOLUME | CHIP_HAS_BASSTREBLE | CHIP_HAS_INPUTSEL,
 
-		leftreg:    TDA8425_VR,
-		rightreg:   TDA8425_VL,
-		bassreg:    TDA8425_BA,
-		treblereg:  TDA8425_TR,
-		volfunc:    tda8425_shift10,
-		bassfunc:   tda8425_shift12,
-		treblefunc: tda8425_shift12,
+		.leftreg    = TDA8425_VL,
+		.rightreg   = TDA8425_VR,
+		.bassreg    = TDA8425_BA,
+		.treblereg  = TDA8425_TR,
+		.volfunc    = tda8425_shift10,
+		.bassfunc   = tda8425_shift12,
+		.treblefunc = tda8425_shift12,
 
-		inputreg:   TDA8425_S1,
-		inputmap:   { TDA8425_S1_CH1, TDA8425_S1_CH1, TDA8425_S1_CH1 },
-		inputmute:  TDA8425_S1_OFF,
+		.inputreg   = TDA8425_S1,
+		.inputmap   = { TDA8425_S1_CH1, TDA8425_S1_CH1, TDA8425_S1_CH1 },
+		.inputmute  = TDA8425_S1_OFF,
 
-		setmode:    tda8425_setmode,
+		.setmode    = tda8425_setmode,
+		.initialize = tda8425_initialize,
 	},
 	{
-		name:       "pic16c54 (PV951)",
-		id:         I2C_DRIVERID_PIC16C54_PV951,
-		insmodopt:  &pic16c54,
-		addr_lo:    I2C_PIC16C54 >> 1,
-		addr_hi:    I2C_PIC16C54>> 1,
-		registers:  2,
-		flags:      CHIP_HAS_INPUTSEL,
+		.name       = "pic16c54 (PV951)",
+		.id         = I2C_DRIVERID_PIC16C54_PV951,
+		.insmodopt  = &pic16c54,
+		.addr_lo    = I2C_PIC16C54 >> 1,
+		.addr_hi    = I2C_PIC16C54>> 1,
+		.registers  = 2,
+		.flags      = CHIP_HAS_INPUTSEL,
 
-		inputreg:   PIC16C54_REG_MISC,
-		inputmap:   {PIC16C54_MISC_SND_NOTMUTE|PIC16C54_MISC_SWITCH_TUNER,
+		.inputreg   = PIC16C54_REG_MISC,
+		.inputmap   = {PIC16C54_MISC_SND_NOTMUTE|PIC16C54_MISC_SWITCH_TUNER,
 			     PIC16C54_MISC_SND_NOTMUTE|PIC16C54_MISC_SWITCH_LINE,
 			     PIC16C54_MISC_SND_NOTMUTE|PIC16C54_MISC_SWITCH_LINE,
 			     PIC16C54_MISC_SND_MUTE,PIC16C54_MISC_SND_MUTE,
 			     PIC16C54_MISC_SND_NOTMUTE},
-		inputmute:  PIC16C54_MISC_SND_MUTE,
+		.inputmute  = PIC16C54_MISC_SND_MUTE,
 	},
 	{ name: NULL } /* EOF */
 };
@@ -1392,6 +1396,7 @@ static int chip_attach(struct i2c_adapter *adap, int addr,
 		/* start async thread */
 		DECLARE_MUTEX_LOCKED(sem);
 		chip->notify = &sem;
+		init_timer(&chip->wt);
 		chip->wt.function = chip_thread_wake;
 		chip->wt.data     = (unsigned long)chip;
 		init_waitqueue_head(&chip->wq);
@@ -1543,19 +1548,19 @@ static int chip_command(struct i2c_client *client,
 
 
 static struct i2c_driver driver = {
-        name:            "generic i2c audio driver",
-        id:              I2C_DRIVERID_TVAUDIO,
-        flags:           I2C_DF_NOTIFY,
-        attach_adapter:  chip_probe,
-        detach_client:   chip_detach,
-        command:         chip_command,
+        .name            = "generic i2c audio driver",
+        .id              = I2C_DRIVERID_TVAUDIO,
+        .flags           = I2C_DF_NOTIFY,
+        .attach_adapter  = chip_probe,
+        .detach_client   = chip_detach,
+        .command         = chip_command,
 };
 
 static struct i2c_client client_template =
 {
-        name:   "(unset)",
-	flags:  I2C_CLIENT_ALLOW_USE,
-        driver: &driver,
+        .name   = "(unset)",
+	.flags  = I2C_CLIENT_ALLOW_USE,
+        .driver = &driver,
 };
 
 static int audiochip_init_module(void)

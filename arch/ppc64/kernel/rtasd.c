@@ -113,10 +113,10 @@ static unsigned int rtas_log_poll(struct file *file, poll_table * wait)
 }
 
 struct file_operations proc_rtas_log_operations = {
-	read:		rtas_log_read,
-	poll:		rtas_log_poll,
-	open:		rtas_log_open,
-	release:	rtas_log_release,
+	.read =		rtas_log_read,
+	.poll =		rtas_log_poll,
+	.open =		rtas_log_open,
+	.release =	rtas_log_release,
 };
 
 
@@ -623,25 +623,27 @@ static void printk_ext_log_data(int version, char *buf)
 }
 
 #define MAX_LOG_DEBUG 10
+#define MAX_LOG_DEBUG_LEN 900
 /* Print log debug data.  This appears after the location code.
  * We limit the number of debug logs in case the data is somehow corrupt.
  */
 static void printk_log_debug(char *buf)
 {
-	unsigned char *p = (unsigned char *)_ALIGN((unsigned long)buf, 8);
+	unsigned char *p = (unsigned char *)_ALIGN((unsigned long)buf, 4);
 	int len, n, logged;
 
 	logged = 0;
-	while ((logged < MAX_LOG_DEBUG) && (len = ((p[0] << 8) | p[1])) != 2) {
-		/* len includes 2-byte length thus len == 2 is the end */
-		printk("RTAS: Log Debug: ");
-		if (len >= 4)	/* next 2 bytes are an ascii code */
-			printk("%c%c ", p[2], p[3]);
+	while ((logged < MAX_LOG_DEBUG) && (len = ((p[0] << 8) | p[1])) >= 4) {
+		if (len > MAX_LOG_DEBUG_LEN)
+			len = MAX_LOG_DEBUG_LEN;	/* bound it */
+		printk("RTAS: Log Debug: %c%c ", p[2], p[3]);
 		for (n=4; n < len; n++)
 			printk("%02x", p[n]);
 		printk("\n");
-		p += len;
+		p = (unsigned char *)_ALIGN((unsigned long)p+len, 4);
 		logged++;
+		if (len == MAX_LOG_DEBUG_LEN)
+			return;	/* no point continuing */
 	}
 	if (logged == 0)
 		printk("RTAS: no log debug data present\n");

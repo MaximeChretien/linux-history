@@ -1,9 +1,9 @@
-/* $Id: time.c,v 1.14 2002/03/05 13:31:03 johana Exp $
+/* $Id: time.c,v 1.17 2002/11/15 14:49:24 oskarp Exp $
  *
  *  linux/arch/cris/kernel/time.c
  *
  *  Copyright (C) 1991, 1992, 1995  Linus Torvalds
- *  Copyright (C) 1999, 2000, 2001 Axis Communications AB
+ *  Copyright (C) 1999, 2000, 2001, 2002 Axis Communications AB
  *
  * 1994-07-02    Alan Modra
  *	fixed set_rtc_mmss, fixed time.year for >= 2000, new mktime
@@ -25,6 +25,9 @@
  *      resolution within a jiffie as well.
  * 2002-03-05    Johan Adolfsson
  *      Use prescaler in do_slow_gettimeoffset() to get 1 us resolution (40ns)
+ * 2002-09-06    Johan Adolfsson
+ *      Handle lost ticks by checking wall_jiffies, more efficient code 
+ *      by using local vars and not the pointer argument.
  *
  */
 
@@ -61,6 +64,8 @@ static int have_rtc;  /* used to remember if we have an RTC or not */
 extern int setup_etrax_irq(int, struct irqaction *);
 
 #define TICK_SIZE tick
+
+extern unsigned long wall_jiffies;
 
 /* The timers count from their initial value down to 1 
  * The R_TIMER0_DATA counts down when R_TIM_PRESC_STATUS reaches halv
@@ -171,10 +176,8 @@ static unsigned long do_slow_gettimeoffset(void)
 
 	/*
 	 * avoiding timer inconsistencies (they are rare, but they happen)...
-	 * there are three kinds of problems that must be avoided here:
+	 * there are one problem that must be avoided here:
 	 *  1. the timer counter underflows
-	 *  2. we are after the timer interrupt, but the bottom half handler
-	 *     hasn't executed yet.
 	 */
 	if( jiffies_t == jiffies_p ) {
 		if( count > count_p ) {
@@ -198,7 +201,8 @@ static unsigned long do_slow_gettimeoffset(void)
 	return usec_count;
 }
 
-static unsigned long (*do_gettimeoffset)(void) = do_slow_gettimeoffset;
+
+#define do_gettimeoffset() do_slow_gettimeoffset()
 
 /*
  * This version of gettimeofday has near microsecond resolution.
@@ -206,20 +210,33 @@ static unsigned long (*do_gettimeoffset)(void) = do_slow_gettimeoffset;
 void do_gettimeofday(struct timeval *tv)
 {
 	unsigned long flags;
-
+	unsigned long usec, sec;
 	save_flags(flags);
 	cli();
-	*tv = xtime;
-	tv->tv_usec += do_gettimeoffset();
-	restore_flags(flags);
-	while (tv->tv_usec >= 1000000) {
-		tv->tv_usec -= 1000000;
-		tv->tv_sec++;
+	usec = do_gettimeoffset();
+	{
+		unsigned long lost = jiffies - wall_jiffies;
+		if (lost)
+			usec += lost * (1000000 / HZ);
 	}
+	sec = xtime.tv_sec;
+	usec += xtime.tv_usec;
+	restore_flags(flags);
+
+	while (usec >= 1000000) {
+		usec -= 1000000;
+		sec++;
+	}
+
+	tv->tv_sec = sec;
+	tv->tv_usec = usec;
 }
 
 void do_settimeofday(struct timeval *tv)
 {
+	unsigned long flags;
+	signed long new_usec, new_sec;
+	save_flags(flags);  
 	cli();
 	/* This is revolting. We need to set the xtime.tv_usec
 	 * correctly. However, the value in this location is
@@ -227,20 +244,23 @@ void do_settimeofday(struct timeval *tv)
 	 * Discover what correction gettimeofday
 	 * would have done, and then undo it!
 	 */
-	tv->tv_usec -= do_gettimeoffset();
-
-	if (tv->tv_usec < 0) {
-		tv->tv_usec += 1000000;
-		tv->tv_sec--;
+	new_usec = tv->tv_usec;
+	new_usec -= do_gettimeoffset();
+	new_usec -= (jiffies - wall_jiffies) * (1000000 / HZ);
+	new_sec = tv->tv_sec;
+	while (new_usec < 0) {
+		new_usec += 1000000;
+		new_sec--;
 	}
+	xtime.tv_sec = new_sec;
+	xtime.tv_usec = new_usec;
 
-	xtime = *tv;
 	time_adjust = 0;		/* stop active adjtime() */
 	time_status |= STA_UNSYNC;
 	time_state = TIME_ERROR;	/* p. 24, (a) */
 	time_maxerror = NTP_PHASE_LIMIT;
 	time_esterror = NTP_PHASE_LIMIT;
-	sti();
+	restore_flags(flags);
 }
 
 
@@ -479,10 +499,16 @@ static struct irqaction irq2  = { timer_interrupt, SA_SHIRQ | SA_INTERRUPT,
 void __init
 time_init(void)
 {	
-	/* probe for the RTC and read it if it exists */
+	/* Probe for the RTC and read it if it exists 
+	 * Before the RTC can be probed the loops_per_usec variable needs 
+	 * to be initialized to make usleep work. A better value for 
+	 * loops_per_usec is calculated by the kernel later once the 
+	 * clock has started.  
+	 */
+	loops_per_usec = 50;
 
 	if(RTC_INIT() < 0) {
-		/* no RTC, start at 1980 */
+		/* no RTC, start at the Epoch (00:00:00 UTC, January 1, 1970) */
 		xtime.tv_sec = 0;
 		xtime.tv_usec = 0;
 		have_rtc = 0;

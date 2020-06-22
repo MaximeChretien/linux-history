@@ -923,6 +923,14 @@ xircom_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	/* Calculate the next Tx descriptor entry. */
 	entry = tp->cur_tx % TX_RING_SIZE;
 
+	/* Seems to be needed even though the docs disagree */
+	if(skb->len < ETH_ZLEN)
+	{
+		skb = skb_padto(skb, ETH_ZLEN);
+		if(skb == NULL)
+			return 0;
+	}
+	
 	tp->tx_skbuff[entry] = skb;
 #ifdef CARDBUS
 	if (tp->chip_id == X3201_3) {

@@ -121,8 +121,8 @@ static int datafab_raw_bulk(int direction,
 			return US_BULK_TRANSFER_FAILED;
 		}
 
-		// -ENOENT -- we canceled this transfer
-		if (result == -ENOENT) {
+		// -ECONNRESET -- we canceled this transfer
+		if (result == -ECONNRESET) {
 			US_DEBUGP("datafab_raw_bulk:  transfer aborted\n");
 			return US_BULK_TRANSFER_ABORTED;
 		}

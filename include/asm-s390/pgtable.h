@@ -236,10 +236,20 @@ extern inline void set_pte(pte_t *pteptr, pte_t pteval)
 		pte_val(pteval) &= ~_PAGE_MKCLEAN;
                
 		asm volatile ("sske %0,%1" 
-				: : "d" (0), "a" (pte_val(pteval)));
+				: : "d" (STORAGE_ACC_KEY_MASK),
+				"a" (pte_val(pteval)));
 	}
 
 	*pteptr = pteval;
+}
+
+extern inline void set_access_key(pte_t pteval)
+{
+	asm volatile ("    iske 0,%1\n"
+		      "    or   0,%0\n"
+		      "    sske 0,%1\n"
+			: : "d" (STORAGE_ACC_KEY_MASK),
+			"a" (pte_val(pteval)) : "0", "cc");
 }
 
 #define pages_to_mb(x) ((x) >> (20-PAGE_SHIFT))
@@ -333,7 +343,7 @@ extern inline pte_t pte_wrprotect(pte_t pte)
 
 extern inline pte_t pte_mkwrite(pte_t pte) 
 {
-	pte_val(pte) &= ~_PAGE_RO;
+	pte_val(pte) &= ~(_PAGE_RO | _PAGE_ISCLEAN);
 	return pte;
 }
 
@@ -394,7 +404,7 @@ static inline int ptep_test_and_clear_dirty(pte_t *ptep)
 	/* We can't clear the changed bit atomically. For now we
          * clear (!) the page referenced bit. */
 	asm volatile ("sske %0,%1" 
-	              : : "d" (0), "a" (*ptep));
+	              : : "d" (STORAGE_ACC_KEY_MASK), "a" (*ptep));
 	return 1;
 }
 

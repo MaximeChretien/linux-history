@@ -1,5 +1,3 @@
-# BK Id: %F% %I% %G% %U% %#%
-#
 #
 # Makefile for the linux kernel.
 #
@@ -38,13 +36,18 @@ obj-y				:= entry.o traps.o irq.o idle.o time.o misc.o \
 					process.o signal.o ptrace.o align.o \
 					semaphore.o syscalls.o setup.o \
 					cputable.o ppc_htab.o
-obj-$(CONFIG_6xx)		+= l2cr.o
+obj-$(CONFIG_6xx)		+= l2cr.o cpu_setup_6xx.o
 obj-$(CONFIG_MODULES)		+= ppc_ksyms.o
 obj-$(CONFIG_PCI)		+= pci.o 
 obj-$(CONFIG_PCI)		+= pci-dma.o
 obj-$(CONFIG_KGDB)		+= ppc-stub.o
+obj-$(CONFIG_PPCBUG_NVRAM)	+= prep_nvram.o
 obj-$(CONFIG_SMP)		+= smp.o
 obj-$(CONFIG_TAU)		+= temp.o
+ifeq ($(CONFIG_SERIAL)$(CONFIG_GEN550),yy)
+obj-$(CONFIG_KGDB)		+= gen550_kgdb.o gen550_dbg.o
+obj-$(CONFIG_SERIAL_TEXT_DEBUG)	+= gen550_dbg.o
+endif
 obj-$(CONFIG_4xx)		+= ppc4xx_pic.o
 obj-$(CONFIG_8xx)		+= m8xx_setup.o ppc8xx_pic.o
 ifeq ($(CONFIG_8xx),y)
@@ -55,8 +58,10 @@ endif
 endif
 obj-$(CONFIG_MBX)		+= i8259.o
 obj-$(CONFIG_ALL_PPC)		+= prom_init.o prom.o open_pic.o \
-					indirect_pci.o i8259.o prep_nvram.o
+					indirect_pci.o i8259.o
 obj-$(CONFIG_GEMINI)		+= open_pic.o
+obj-$(CONFIG_LOPEC)		+= mpc10x_common.o indirect_pci.o pci_auto.o \
+					open_pic.o i8259.o todc_time.o
 obj-$(CONFIG_PAL4)		+= indirect_pci.o pci_auto.o todc_time.o
 obj-$(CONFIG_SPRUCE)		+= indirect_pci.o pci_auto.o todc_time.o
 obj-$(CONFIG_8260)		+= m8260_setup.o ppc8260_pic.o

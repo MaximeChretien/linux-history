@@ -2,7 +2,7 @@
 
 	8139too.c: A RealTek RTL-8139 Fast Ethernet driver for Linux.
 
-	Maintained by Jeff Garzik <jgarzik@mandrakesoft.com>
+	Maintained by Jeff Garzik <jgarzik@pobox.com>
 	Copyright 2000-2002 Jeff Garzik
 
 	Much code comes from Donald Becker's rtl8139.c driver,
@@ -590,7 +590,7 @@ struct rtl8139_private {
 	unsigned int regs_len;
 };
 
-MODULE_AUTHOR ("Jeff Garzik <jgarzik@mandrakesoft.com>");
+MODULE_AUTHOR ("Jeff Garzik <jgarzik@pobox.com>");
 MODULE_DESCRIPTION ("RealTek RTL-8139 Fast Ethernet driver");
 MODULE_LICENSE("GPL");
 
@@ -969,7 +969,12 @@ static int __devinit rtl8139_init_one (struct pci_dev *pdev,
 	dev->do_ioctl = netdev_ioctl;
 	dev->tx_timeout = rtl8139_tx_timeout;
 	dev->watchdog_timeo = TX_TIMEOUT;
-	dev->features |= NETIF_F_SG|NETIF_F_HW_CSUM;
+
+	/* note: the hardware is not capable of sg/csum/highdma, however
+	 * through the use of skb_copy_and_csum_dev we enable these
+	 * features
+	 */
+	dev->features |= NETIF_F_SG | NETIF_F_HW_CSUM | NETIF_F_HIGHDMA;
 
 	dev->irq = pdev->irq;
 
@@ -1682,6 +1687,8 @@ static int rtl8139_start_xmit (struct sk_buff *skb, struct net_device *dev)
 	entry = tp->cur_tx % NUM_TX_DESC;
 
 	if (likely(len < TX_BUF_SIZE)) {
+		if(len < ETH_ZLEN)
+			memset(tp->tx_buf[entry], 0, ETH_ZLEN);
 		skb_copy_and_csum_dev(skb, tp->tx_buf[entry]);
 		dev_kfree_skb(skb);
 	} else {

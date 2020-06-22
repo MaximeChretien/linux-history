@@ -1,6 +1,6 @@
 /* 
  * Machine check handler.
- * K8 parts Copyright 2002 Andi Kleen, SuSE Labs.
+ * K8 parts Copyright 2002,2003 Andi Kleen, SuSE Labs.
  * Rest from unknown author(s). 
  */
 #include <linux/init.h>
@@ -15,14 +15,23 @@
 #include <linux/pci.h>
 #include <linux/timer.h>
 
-static int mce_disabled __initdata = 1;
+static int mce_disabled __initdata;
+static unsigned long mce_cpus; 
 
 /*
  *	Machine Check Handler For PII/PIII/K7
  */
 
 static int banks;
-static unsigned long ignored_banks, disabled_banks =  (1UL << 4); 
+static unsigned long ignored_banks, disabled_banks;
+
+/* Machine Check on everything dubious. This is a good setting
+   for device driver testing. */
+#define K8_DRIVER_DEBUG ((1<<13)-1)
+/* Report RAM errors and Hyper Transport Problems, but ignore Device
+   aborts and GART errors. */
+#define K8_NORMAL_OP    0xff
+static u32 k8_nb_flags __initdata = K8_NORMAL_OP;
 
 static void generic_machine_check(struct pt_regs * regs, long error_code)
 {
@@ -96,7 +105,7 @@ static void (*machine_check_vector)(struct pt_regs *, long error_code) = unexpec
 
 void do_machine_check(struct pt_regs * regs, long error_code)
 {
-	notify_die(DIE_NMI, "machine check", regs, error_code);
+	notify_die(DIE_NMI, "machine check", regs, error_code, 255, SIGKILL);
 	machine_check_vector(regs, error_code);
 }
 
@@ -116,14 +125,48 @@ static struct pci_dev *find_k8_nb(void)
 	return NULL;
 }
 
+static void check_k8_nb(void)
+{
+	struct pci_dev *nb;
+	nb = find_k8_nb(); 
+	if (nb == NULL)
+		return;
+
+	u32 statuslow, statushigh;
+	pci_read_config_dword(nb, 0x48, &statuslow);
+	pci_read_config_dword(nb, 0x4c, &statushigh);
+	if (!(statushigh & (1<<31)))
+		return;
+	printk(KERN_ERR "Northbridge status %08x%08x\n",
+	       statushigh,statuslow); 
+	if (statuslow & 0x10) 
+		printk(KERN_ERR "GART error %d\n", statuslow & 0xf); 
+	if (statushigh & (1<<31))
+		printk(KERN_ERR "Lost an northbridge error\n"); 
+	if (statushigh & (1<<25))
+		printk(KERN_EMERG "NB status: unrecoverable\n"); 
+	if (statushigh & (1<<26)) { 
+		u32 addrhigh, addrlow; 
+		pci_read_config_dword(nb, 0x54, &addrhigh); 
+		pci_read_config_dword(nb, 0x50, &addrlow); 
+		printk(KERN_ERR "NB error address %08x%08x\n", addrhigh,addrlow); 
+	}
+	if (statushigh & (1<<29))
+		printk(KERN_EMERG "Error uncorrected\n"); 
+	statushigh &= ~(1<<31); 
+	pci_write_config_dword(nb, 0x4c, statushigh); 		
+}
+
 static void k8_machine_check(struct pt_regs * regs, long error_code)
 { 
 	u64 status, nbstatus;
-	struct pci_dev *nb;
 
 	rdmsrl(MSR_IA32_MCG_STATUS, status); 
-	if ((status & (1<<2)) == 0) 
+	if ((status & (1<<2)) == 0) { 
+		if (!regs) 
+			check_k8_nb();
 		return; 
+	}
 	if (status & 1)
 		printk(KERN_EMERG "MCG_STATUS: unrecoverable\n"); 
 
@@ -141,28 +184,7 @@ static void k8_machine_check(struct pt_regs * regs, long error_code)
 	if (nbstatus & (1UL<57))
 		printk(KERN_EMERG "Unrecoverable condition\n"); 
 		
-	nb = find_k8_nb(); 
-	if (nb != NULL) { 
-		u32 statuslow, statushigh;
-		pci_read_config_dword(nb, 0x48, &statuslow);
-		pci_read_config_dword(nb, 0x4c, &statushigh);
-		printk(KERN_EMERG "Northbridge status %08x%08x\n",
-		       statushigh,statuslow); 
-		if (statuslow & 0x10) 
-			printk(KERN_EMERG "GART error %d\n", statuslow & 0xf); 
-		if (statushigh & (1<<31))
-			printk(KERN_EMERG "Lost an northbridge error\n"); 
-		if (statushigh & (1<<25))
-			printk(KERN_EMERG "NB status: unrecoverable\n"); 
-		if (statushigh & (1<<26)) { 
-			u32 addrhigh, addrlow; 
-			pci_read_config_dword(nb, 0x54, &addrhigh); 
-			pci_read_config_dword(nb, 0x50, &addrlow); 
-			printk(KERN_EMERG "NB error address %08x%08x\n", addrhigh,addrlow); 
-		}
-		statushigh &= ~(1<<31); 
-		pci_write_config_dword(nb, 0x4c, statushigh); 		
-	} 
+	check_k8_nb();
 
 	if (nbstatus & (1UL<<58)) { 
 		u64 adr;
@@ -183,33 +205,38 @@ static void k8_machine_check(struct pt_regs * regs, long error_code)
 static struct timer_list mcheck_timer;
 int mcheck_interval = 30*HZ; 
 
+#ifndef CONFIG_SMP 
 static void mcheck_timer_handler(unsigned long data)
 {
 	k8_machine_check(NULL,0);
-	BUG_ON(timer_pending(&mcheck_timer));
 	mcheck_timer.expires = jiffies + mcheck_interval;
 	add_timer(&mcheck_timer);
 }
+#else
 
-#ifdef CONFIG_SMP 
 /* SMP needs a process context trampoline because smp_call_function cannot be 
-   called from interrupt context */
-static void mcheck_timer_dist(void *data)
+   called from interrupt context. */
+
+static void mcheck_timer_other(void *data)
 { 
-	/* preempt disabled on preemptive kernel */	
-	if (!data) 
-		smp_call_function((void (*)(void *))mcheck_timer_handler,(void*)1,0,0);
-	mcheck_timer_handler(0); 	
+	k8_machine_check(NULL, 0); 
 } 
 
-static void mcheck_timer_trampoline(unsigned long data)
+static void mcheck_timer_dist(void *data)
+{ 
+	smp_call_function(mcheck_timer_other,0,0,0);
+	k8_machine_check(NULL, 0); 
+	mcheck_timer.expires = jiffies + mcheck_interval;
+	add_timer(&mcheck_timer);
+} 
+
+static void mcheck_timer_handler(unsigned long data)
 { 
 	static struct tq_struct mcheck_task = { 
 		routine: mcheck_timer_dist
 	}; 
 	schedule_task(&mcheck_task); 
 } 
-#define mcheck_timer_handler mcheck_timer_trampoline
 #endif 
 
 static int nok8 __initdata; 
@@ -235,17 +262,19 @@ static void __init k8_mcheck_init(struct cpuinfo_x86 *c)
 
 	nb = find_k8_nb(); 
 	if (nb != NULL) {
-		u32 reg;
+		u32 reg, reg2;
 		pci_read_config_dword(nb, 0x40, &reg); 
-		pci_write_config_dword(nb, 0x40, reg|(1<<11)|(1<<10)|(1<<9)|(1<<8)); 
-		printk(KERN_INFO "Machine Check Reporting for K8 Northbridge %d enabled\n",
-		       nb->devfn);
+		pci_write_config_dword(nb, 0x40, k8_nb_flags);
+		pci_read_config_dword(nb, 0x44, &reg2);
+		pci_write_config_dword(nb, 0x44, reg2); 
+		printk(KERN_INFO "Machine Check for K8 Northbridge %d enabled (%x,%x)\n",
+		       nb->devfn, reg, reg2);
 		ignored_banks |= (1UL<<4); 
 	} 
 
 	set_in_cr4(X86_CR4_MCE);	   	
 
-	if (mcheck_interval) { 
+	if (mcheck_interval && (smp_processor_id() == 0)) { 
 		init_timer(&mcheck_timer); 
 		mcheck_timer.function = (void (*)(unsigned long))mcheck_timer_handler; 
 		mcheck_timer.expires = jiffies + mcheck_interval; 
@@ -308,6 +337,9 @@ static void __init generic_mcheck_init(struct cpuinfo_x86 *c)
 
 void __init mcheck_init(struct cpuinfo_x86 *c)
 {
+	if (test_and_set_bit(smp_processor_id(), &mce_cpus))
+		return; 
+
 	if(mce_disabled==1)
 		return;
 		
@@ -333,9 +365,10 @@ static int __init mcheck_disable(char *str)
 
 
 /* mce=off disable machine check
-   mcenok8 disable k8 specific features
+   mce=nok8 disable k8 specific features
    mce=disable<NUMBER> disable bank NUMBER
    mce=enable<NUMBER> enable bank number
+   mce=device	Enable device driver test reporting in NB
    mce=NUMBER mcheck timer interval number seconds. 
    Can be also comma separated in a single mce= */
 static int __init mcheck_enable(char *str)
@@ -352,8 +385,8 @@ static int __init mcheck_enable(char *str)
 			disabled_banks |= ~(1<<simple_strtol(p+7,NULL,0));
 		else if (!strcmp(p,"nok8"))
 			nok8 = 1;
-		else
-			return -1;			
+		else if (!strcmp(p,"device"))
+			k8_nb_flags = K8_DRIVER_DEBUG;
 	}
 	return 0;
 }

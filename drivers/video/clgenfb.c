@@ -1,7 +1,7 @@
 /*
  * drivers/video/clgenfb.c - driver for Cirrus Logic chipsets
  *
- * Copyright 1999-2001 Jeff Garzik <jgarzik@mandrakesoft.com>
+ * Copyright 1999-2001 Jeff Garzik <jgarzik@pobox.com>
  *
  * Contributors (thanks, all!)
  *
@@ -14,6 +14,9 @@
  *
  *	Lars Hecking:
  *	Amiga updates and testing.
+ *
+ *	Cliff Matthews <ctm@ardi.com>:
+ *	16bpp fix for CL-GD7548 (uses info from XFree86 4.2.0 source)
  *
  * Original clgenfb author:  Frank Neumann
  *
@@ -403,6 +406,9 @@ struct clgenfb_info {
 
 #ifdef CONFIG_PCI
 	struct pci_dev *pdev;
+#define IS_7548(x) ((x)->pdev->device == PCI_DEVICE_ID_CIRRUS_7548)
+#else
+#define IS_7548(x) (FALSE)
 #endif
 };
 
@@ -970,7 +976,10 @@ static int clgen_decode_var (const struct fb_var_screeninfo *var, void *par,
 
 	DPRINTK ("desired pixclock: %ld kHz\n", freq);
 
-	maxclock = clgen_board_info[fb_info->btype].maxclock;
+	if (IS_7548(fb_info))
+		maxclock = 80100;
+	else
+		maxclock = clgen_board_info[fb_info->btype].maxclock;
 	_par->multiplexing = 0;
 
 	/* If the frequency is greater than we can support, we might be able
@@ -1478,10 +1487,17 @@ static void clgen_set_par (const void *par, struct fb_info_gen *info)
 
 		case BT_ALPINE:
 			DPRINTK (" (for GD543x)\n");
-			if (_par->HorizRes >= 1024)
-				vga_wseq (fb_info->regs, CL_SEQR7, 0xa7);
-			else
-				vga_wseq (fb_info->regs, CL_SEQR7, 0xa3);
+			if (IS_7548(fb_info)) {
+				vga_wseq (fb_info->regs, CL_SEQR7, 
+					  (vga_rseq (fb_info->regs, CL_SEQR7) & 0xE0)
+					  | 0x17);
+				WHDR (fb_info, 0xC1);
+			} else {
+				if (_par->HorizRes >= 1024)
+					vga_wseq (fb_info->regs, CL_SEQR7, 0xa7);
+				else
+					vga_wseq (fb_info->regs, CL_SEQR7, 0xa3);
+			}	
 			clgen_set_mclk (fb_info, _par->mclk, _par->divMCLK);
 			break;
 
@@ -1592,6 +1608,11 @@ static void clgen_set_par (const void *par, struct fb_info_gen *info)
 	else {
 		printk (KERN_ERR "clgen: What's this?? requested color depth == %d.\n",
 			_par->var.bits_per_pixel);
+	}
+
+	if (IS_7548(fb_info)) {
+		vga_wseq (fb_info->regs, CL_SEQR2D, 
+			vga_rseq (fb_info->regs, CL_SEQR2D) | 0xC0);
 	}
 
 	vga_wcrt (fb_info->regs, VGA_CRTC_OFFSET, offset & 0xff);
@@ -2884,7 +2905,7 @@ int __init clgenfb_setup(char *options) {
      *  Modularization
      */
 
-MODULE_AUTHOR("Copyright 1999,2000 Jeff Garzik <jgarzik@mandrakesoft.com>");
+MODULE_AUTHOR("Copyright 1999,2000 Jeff Garzik <jgarzik@pobox.com>");
 MODULE_DESCRIPTION("Accelerated FBDev driver for Cirrus Logic chips");
 MODULE_LICENSE("GPL");
 

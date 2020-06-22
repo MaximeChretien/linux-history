@@ -462,13 +462,8 @@ out:
 
 asmlinkage int osf_swapon(const char *path, int flags, int lowat, int hiwat)
 {
-	int ret;
-
 	/* for now, simply ignore lowat and hiwat... */
-	lock_kernel();
-	ret = sys_swapon(path, flags);
-	unlock_kernel();
-	return ret;
+	return sys_swapon(path, flags);
 }
 
 asmlinkage unsigned long sys_getpagesize(void)
@@ -529,18 +524,13 @@ asmlinkage long osf_shmat(int shmid, void *shmaddr, int shmflg)
 	unsigned long raddr;
 	long err;
 
-	lock_kernel();
 	err = sys_shmat(shmid, shmaddr, shmflg, &raddr);
-	if (err)
-		goto out;
+
 	/*
 	 * This works because all user-level addresses are
 	 * non-negative longs!
 	 */
-	err = raddr;
-out:
-	unlock_kernel();
-	return err;
+	return err ? err : (long)raddr;
 }
 
 

@@ -394,7 +394,7 @@ err_inval:
  * Malformed skbs with wrong lengths of messages are discarded silently.
  */
 
-extern __inline__ int rtnetlink_rcv_skb(struct sk_buff *skb)
+static __inline__ int rtnetlink_rcv_skb(struct sk_buff *skb)
 {
 	int err;
 	struct nlmsghdr * nlh;

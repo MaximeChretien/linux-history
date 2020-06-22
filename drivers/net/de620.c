@@ -316,7 +316,7 @@ de620_read_byte(struct net_device *dev)
 }
 
 static inline void
-de620_write_block(struct net_device *dev, byte *buffer, int count)
+de620_write_block(struct net_device *dev, byte *buffer, int count, int pad)
 {
 #ifndef LOWSPEED
 	byte uflip = NIC_Cmd ^ (DS0 | DS1);
@@ -334,6 +334,9 @@ de620_write_block(struct net_device *dev, byte *buffer, int count)
 	/* No further optimization useful, the limit is in the adapter. */
 	for ( ; count > 0; --count, ++buffer) {
 		de620_put_byte(dev,*buffer);
+	}
+	for ( count = pad ; count > 0; --count, ++buffer) {
+		de620_put_byte(dev, 0);
 	}
 	de620_send_command(dev,W_DUMMY);
 #ifdef COUNT_LOOPS
@@ -576,7 +579,7 @@ static int de620_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		restore_flags(flags);
 		return 1;
 	}
-	de620_write_block(dev, buffer, len);
+	de620_write_block(dev, buffer, skb->len, len-skb->len);
 
 	dev->trans_start = jiffies;
 	if(!(using_txbuf == (TXBF0 | TXBF1)))
@@ -850,12 +853,6 @@ int __init de620_probe(struct net_device *dev)
 		return -ENODEV;
 	}
 
-#if 0 /* Not yet */
-	if (check_region(dev->base_addr, 3)) {
-		printk(", port 0x%x busy\n", dev->base_addr);
-		return -EBUSY;
-	}
-#endif
 	if (!request_region(dev->base_addr, 3, "de620")) {
 		printk(KERN_ERR "io 0x%3lX, which is busy.\n", dev->base_addr);
 		return -EBUSY;

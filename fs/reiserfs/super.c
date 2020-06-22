@@ -5,6 +5,7 @@
 #include <linux/config.h>
 #include <linux/module.h>
 #include <linux/sched.h>
+#include <linux/blkdev.h>
 #include <linux/vmalloc.h>
 #include <asm/uaccess.h>
 #include <linux/reiserfs_fs.h>
@@ -402,8 +403,11 @@ struct super_operations reiserfs_sops =
    mount options that have values rather than being toggles. */
 typedef struct {
     char * value;
-    int bitmask; /* bit which is to be set in mount_options bitmask when this
-                    value is found, 0 is no bits are to be set */
+    int setmask; /* bitmask which is to set on mount_options bitmask when this
+                    value is found, 0 is no bits are to be changed. */
+    int clrmask; /* bitmask which is to clear on mount_options bitmask when this
+		    value is found, 0 is no bits are to be changed. This is
+		    applied BEFORE setmask */
 } arg_desc_t;
 
 
@@ -413,37 +417,42 @@ typedef struct {
     char * option_name;
     int arg_required; /* 0 is argument is not required, not 0 otherwise */
     const arg_desc_t * values; /* list of values accepted by an option */
-    int bitmask;  /* bit which is to be set in mount_options bitmask when this
-		     option is selected, 0 is not bits are to be set */
+    int setmask; /* bitmask which is to set on mount_options bitmask when this
+		    value is found, 0 is no bits are to be changed. */
+    int clrmask; /* bitmask which is to clear on mount_options bitmask when this
+		    value is found, 0 is no bits are to be changed. This is
+		    applied BEFORE setmask */
 } opt_desc_t;
 
 
 /* possible values for "-o hash=" and bits which are to be set in s_mount_opt
    of reiserfs specific part of in-core super block */
-const arg_desc_t hash[] = {
-    {"rupasov", FORCE_RUPASOV_HASH},
-    {"tea", FORCE_TEA_HASH},
-    {"r5", FORCE_R5_HASH},
-    {"detect", FORCE_HASH_DETECT},
-    {NULL, 0}
+static const arg_desc_t hash[] = {
+    {"rupasov", 1<<FORCE_RUPASOV_HASH,(1<<FORCE_TEA_HASH)|(1<<FORCE_R5_HASH)},
+    {"tea", 1<<FORCE_TEA_HASH,(1<<FORCE_RUPASOV_HASH)|(1<<FORCE_R5_HASH)},
+    {"r5", 1<<FORCE_R5_HASH,(1<<FORCE_RUPASOV_HASH)|(1<<FORCE_TEA_HASH)},
+    {"detect", 1<<FORCE_HASH_DETECT, (1<<FORCE_RUPASOV_HASH)|(1<<FORCE_TEA_HASH)|(1<<FORCE_R5_HASH)},
+    {NULL, 0, 0}
 };
 
 
 /* possible values for "-o block-allocator=" and bits which are to be set in
    s_mount_opt of reiserfs specific part of in-core super block */
-const arg_desc_t balloc[] = {
-    {"noborder", REISERFS_NO_BORDER},
-    {"no_unhashed_relocation", REISERFS_NO_UNHASHED_RELOCATION},
-    {"hashed_relocation", REISERFS_HASHED_RELOCATION},
-    {"test4", REISERFS_TEST4},
-    {NULL, 0}
+static const arg_desc_t balloc[] = {
+    {"noborder", 1<<REISERFS_NO_BORDER, 0},
+    {"border", 0, 1<<REISERFS_NO_BORDER},
+    {"no_unhashed_relocation", 1<<REISERFS_NO_UNHASHED_RELOCATION, 0},
+    {"hashed_relocation", 1<<REISERFS_HASHED_RELOCATION, 0},
+    {"test4", 1<<REISERFS_TEST4, 0},
+    {"notest4", 0, 1<<REISERFS_TEST4},
+    {NULL, 0, 0}
 };
 
-const arg_desc_t tails[] = {
-    {"on", REISERFS_LARGETAIL},
-    {"off", -1},
-    {"small", REISERFS_SMALLTAIL},
-    {NULL, 0}
+static const arg_desc_t tails[] = {
+    {"on", 1<<REISERFS_LARGETAIL, 1<<REISERFS_SMALLTAIL},
+    {"off", 0, (1<<REISERFS_LARGETAIL)|(1<<REISERFS_SMALLTAIL)},
+    {"small", 1<<REISERFS_SMALLTAIL, 1<<REISERFS_LARGETAIL},
+    {NULL, 0, 0}
 };
 
 
@@ -480,15 +489,20 @@ static int reiserfs_getopt ( struct super_block * s, char ** cur, opt_desc_t * o
 	/* Ugly special case, probably we should redo options parser so that
 	   it can understand several arguments for some options, also so that
 	   it can fill several bitfields with option values. */
-	reiserfs_parse_alloc_options( s, p + 6);
-	return 0;
+	if ( reiserfs_parse_alloc_options( s, p + 6) ) {
+	    return -1;
+	} else {
+	    return 0;
+	}
     }
 	
     /* for every option in the list */
     for (opt = opts; opt->option_name; opt ++) {
 	if (!strncmp (p, opt->option_name, strlen (opt->option_name))) {
-	    if (bit_flags && opt->bitmask != -1 )
-		set_bit (opt->bitmask, bit_flags);
+	    if (bit_flags) {
+		*bit_flags &= ~opt->clrmask;
+		*bit_flags |= opt->setmask;
+	    }
 	    break;
 	}
     }
@@ -528,7 +542,7 @@ static int reiserfs_getopt ( struct super_block * s, char ** cur, opt_desc_t * o
     }
     
     if (!opt->values) {
-	/* *opt_arg contains pointer to argument */
+	/* *=NULLopt_arg contains pointer to argument */
 	*opt_arg = p;
 	return opt->arg_required;
     }
@@ -536,8 +550,10 @@ static int reiserfs_getopt ( struct super_block * s, char ** cur, opt_desc_t * o
     /* values possible for this option are listed in opt->values */
     for (arg = opt->values; arg->value; arg ++) {
 	if (!strcmp (p, arg->value)) {
-	    if (bit_flags && arg->bitmask != -1 )
-		set_bit (arg->bitmask, bit_flags);
+	    if (bit_flags) {
+		*bit_flags &= ~arg->clrmask;
+		*bit_flags |= arg->setmask;
+	    }
 	    return opt->arg_required;
 	}
     }
@@ -545,7 +561,6 @@ static int reiserfs_getopt ( struct super_block * s, char ** cur, opt_desc_t * o
     printk ("reiserfs_getopt: bad value \"%s\" for option \"%s\"\n", p, opt->option_name);
     return -1;
 }
-
 
 /* returns 0 if something is wrong in option string, 1 - otherwise */
 static int reiserfs_parse_options (struct super_block * s, char * options, /* string given via mount's -o */
@@ -559,18 +574,21 @@ static int reiserfs_parse_options (struct super_block * s, char * options, /* st
     char * arg = NULL;
     char * pos;
     opt_desc_t opts[] = {
-		{"tails", 't', tails, -1},
-		{"notail", 0, 0, -1}, /* Compatibility stuff, so that -o notail for old setups still work */
-		{"conv", 0, 0, REISERFS_CONVERT}, 
-		{"nolog", 0, 0, -1},
-		{"replayonly", 0, 0, REPLAYONLY},
+		{"tails", 't', tails, 0, 0},
+		/* Compatibility stuff, so that -o notail
+		   for old setups still work */
+		{"notail", 0, 0, 0, (1<<REISERFS_LARGETAIL)|(1<<REISERFS_SMALLTAIL)},
+		{"conv", 0, 0, 1<<REISERFS_CONVERT, 0},
+		{"nolog", 0, 0, 0, 0}, /* This is unsupported */
+		{"replayonly", 0, 0, 1<<REPLAYONLY, 0},
 		
-		{"block-allocator", 'a', balloc, -1}, 
-		{"hash", 'h', hash, FORCE_HASH_DETECT},
+		{"block-allocator", 'a', balloc, 0, 0},
+		{"hash", 'h', hash, 1<<FORCE_HASH_DETECT, 0},
 		
-		{"resize", 'r', 0, -1},
-		{"attrs", 0, 0, REISERFS_ATTRS},
-		{NULL, 0, 0, 0}
+		{"resize", 'r', 0, 0, 0},
+		{"attrs", 0, 0, 1<<REISERFS_ATTRS, 0},
+		{"noattrs", 0, 0, 0, 1<<REISERFS_ATTRS},
+		{NULL, 0, 0, 0, 0}
     };
 	
     *blocks = 0;
@@ -578,9 +596,6 @@ static int reiserfs_parse_options (struct super_block * s, char * options, /* st
 	/* use default configuration: create tails, journaling on, no
 	   conversion to newest format */
 	return 1;
-    else
-	/* Drop defaults to zeroes */
-	*mount_options = 0;
     
     for (pos = options; pos; ) {
 	c = reiserfs_getopt (s, &pos, opts, &arg, mount_options);
@@ -634,26 +649,26 @@ static int reiserfs_remount (struct super_block * s, int * mount_flags, char * d
   struct reiserfs_super_block * rs;
   struct reiserfs_transaction_handle th ;
   unsigned long blocks;
-  unsigned long mount_options = 0;
+  unsigned long mount_options = s->u.reiserfs_sb.s_mount_opt;
+  unsigned long safe_mask = 0;
 
   rs = SB_DISK_SUPER_BLOCK (s);
 
   if (!reiserfs_parse_options(s, data, &mount_options, &blocks))
-  	return 0;
+  	return -EINVAL;
 
-#define SET_OPT( opt, bits, super )					\
-    if( ( bits ) & ( 1 << ( opt ) ) )					\
-	    ( super ) -> u.reiserfs_sb.s_mount_opt |= ( 1 << ( opt ) )
+  /* Add options that are safe here */
+  safe_mask |= 1 << REISERFS_SMALLTAIL;
+  safe_mask |= 1 << REISERFS_LARGETAIL;
+  safe_mask |= 1 << REISERFS_NO_BORDER;
+  safe_mask |= 1 << REISERFS_NO_UNHASHED_RELOCATION;
+  safe_mask |= 1 << REISERFS_HASHED_RELOCATION;
+  safe_mask |= 1 << REISERFS_TEST4;
+  safe_mask |= 1 << REISERFS_ATTRS;
 
-  /* set options in the super-block bitmask */
-  SET_OPT( REISERFS_SMALLTAIL, mount_options, s );
-  SET_OPT( REISERFS_LARGETAIL, mount_options, s );
-  SET_OPT( REISERFS_NO_BORDER, mount_options, s );
-  SET_OPT( REISERFS_NO_UNHASHED_RELOCATION, mount_options, s );
-  SET_OPT( REISERFS_HASHED_RELOCATION, mount_options, s );
-  SET_OPT( REISERFS_TEST4, mount_options, s );
-  SET_OPT( REISERFS_ATTRS, mount_options, s );
-#undef SET_OPT
+  /* Update the bitmask, taking care to keep
+   * the bits we're not allowed to change here */
+  s->u.reiserfs_sb.s_mount_opt = (s->u.reiserfs_sb.s_mount_opt & ~safe_mask) | (mount_options & safe_mask);
 
   handle_attrs( s );
 
@@ -865,7 +880,7 @@ static int read_super_block (struct super_block * s, int size, int offset)
     brelse (bh);
 
     if (s->s_blocksize != 4096) {
-	printk("Unsupported reiserfs blocksize: %d on %s, only 4096 bytes "
+	printk("Unsupported reiserfs blocksize: %ld on %s, only 4096 bytes "
 	       "blocksize is supported.\n", s->s_blocksize, kdevname (s->s_dev));
 	return 1;
     }
@@ -941,8 +956,7 @@ static int reread_meta_blocks(struct super_block *s) {
     ll_rw_block(READ, 1, &(SB_AP_BITMAP(s)[i].bh)) ;
     wait_on_buffer(SB_AP_BITMAP(s)[i].bh) ;
     if (!buffer_uptodate(SB_AP_BITMAP(s)[i].bh)) {
-      printk("reread_meta_blocks, error reading bitmap block number %d at
-      %ld\n", i, SB_AP_BITMAP(s)[i].bh->b_blocknr) ;
+      printk("reread_meta_blocks, error reading bitmap block number %d at %ld\n", i, SB_AP_BITMAP(s)[i].bh->b_blocknr) ;
       return 1 ;
     }
   }
@@ -1112,7 +1126,6 @@ static struct super_block * reiserfs_read_super (struct super_block * s, void * 
     struct inode *root_inode;
     kdev_t dev = s->s_dev;
     int j;
-    extern int *blksize_size[];
     struct reiserfs_transaction_handle th ;
     int old_format = 0;
     unsigned long blocks;
@@ -1160,6 +1173,16 @@ static struct super_block * reiserfs_read_super (struct super_block * s, void * 
     }
 
     rs = SB_DISK_SUPER_BLOCK (s);
+
+    /* Let's do basic sanity check to verify that underlying device is not
+       smaller than the filesystem. If the check fails then abort and scream,
+       because bad stuff will happen otherwise. */
+   if ( blk_size[MAJOR(dev)][MINOR(dev)] < sb_block_count(rs)*(sb_blocksize(rs)>>10) ) {
+	printk("Filesystem on %s cannot be mounted because it is bigger than the device\n", kdevname(dev));
+	printk("You may need to run fsck or increase size of your LVM partition\n");
+	printk("Or may be you forgot to reboot after fdisk when it told you to\n");
+	return NULL;
+    }
 
     s->u.reiserfs_sb.s_mount_state = SB_REISERFS_STATE(s);
     s->u.reiserfs_sb.s_mount_state = REISERFS_VALID_FS ;

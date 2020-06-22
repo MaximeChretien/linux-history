@@ -195,7 +195,7 @@ static struct pci_driver pcigame_driver = {
 
 int __init pcigame_init(void)
 {
-	pci_module_init(&pcigame_driver);
+	pci_register_driver(&pcigame_driver);
 	/* Needed by other modules */
 	return 0;
 }

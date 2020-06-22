@@ -232,3 +232,11 @@ extern void $$dyncall(void);
 EXPORT_SYMBOL_NOVERS($$dyncall);
 #endif
 
+#ifdef CONFIG_SMP
+#ifdef CONFIG_DEBUG_SPINLOCK
+#include <asm/spinlock.h>
+EXPORT_SYMBOL(spin_lock);
+EXPORT_SYMBOL(spin_unlock);
+EXPORT_SYMBOL(spin_trylock);
+#endif
+#endif

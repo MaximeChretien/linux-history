@@ -146,10 +146,8 @@ int main(int argc, char **argv)
   /* Process the Sysmap file to determine the true end of the kernel */
 	sysmapPages = sysmapLen / 4096;
 	printf("System map pages to copy = %ld\n", sysmapPages);
-	for (i=0; i<sysmapPages; ++i)
-	{
-		get4k(sysmap, inbuf);
-	}
+	/* read the whole file line by line, expect that it doesnt fail */
+	while ( fgets(inbuf, 4096, sysmap) )  ;
 	/* search for _end in the last page of the system map */
 	ptr_end = strstr(inbuf, " _end");
 	if (!ptr_end)

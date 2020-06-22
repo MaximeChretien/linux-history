@@ -35,6 +35,9 @@
     Cleaned up for 2.3.x because we broke SMP now. 
     		20000208 Alan Cox <alan@redhat.com>
     		
+    Fixed zero fill corner case 
+    		20030104 Alan Cox <alan@redhat.com>
+    		
 */
 
 
@@ -503,8 +506,15 @@ static int el_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	do
 	{
-		int gp_start = 0x800 - (ETH_ZLEN < skb->len ? skb->len : ETH_ZLEN);
+		int len = skb->len;
+		int pad = 0;
+		int gp_start;
 		unsigned char *buf = skb->data;
+		
+		if(len < ETH_ZLEN)
+			pad = ETH_ZLEN - len;
+			
+		gp_start = 0x800 - ( len + pad );
 
 		lp->tx_pkt_start = gp_start;
     		lp->collisions = 0;
@@ -532,7 +542,12 @@ static int el_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		
 		outw(0x00, RX_BUF_CLR);		/* Set rx packet area to 0. */
 		outw(gp_start, GP_LOW);		/* aim - packet will be loaded into buffer start */
-		outsb(DATAPORT,buf,skb->len);	/* load buffer (usual thing each byte increments the pointer) */
+		outsb(DATAPORT,buf,len);	/* load buffer (usual thing each byte increments the pointer) */
+		if(pad)
+		{
+			while(pad--)		/* Zero fill buffer tail */
+				outb(0, DATAPORT);
+		}
 		outw(gp_start, GP_LOW);		/* the board reuses the same register */
 	
 		if(lp->loading != 2)
@@ -1023,7 +1038,7 @@ MODULE_PARM_DESC(irq, "EtherLink IRQ number");
  * init_module:
  *
  * When the driver is loaded as a module this function is called. We fake up
- * a device structure with the base I/O and interrupt set as if it was being
+ * a device structure with the base I/O and interrupt set as if it were being
  * called from Space.c. This minimises the extra code that would otherwise
  * be required.
  *

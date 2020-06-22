@@ -254,6 +254,11 @@ int i2cdev_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 				   sizeof(rdwr_arg)))
 			return -EFAULT;
 
+		/* Put an arbritrary limit on the number of messages that can
+		 * be sent at once */
+		if (rdwr_arg.nmsgs > 42)
+			return -EINVAL;
+		
 		rdwr_pa = (struct i2c_msg *)
 			kmalloc(rdwr_arg.nmsgs * sizeof(struct i2c_msg), 
 			GFP_KERNEL);
@@ -270,6 +275,11 @@ int i2cdev_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 			        res = -EFAULT;
 				break;
 			}
+			/* Limit the size of the message to a sane amount */
+			if (rdwr_pa[i].len > 8192) {
+				res = -EINVAL;
+				break;
+			}
 			rdwr_pa[i].buf = kmalloc(rdwr_pa[i].len, GFP_KERNEL);
 			if(rdwr_pa[i].buf == NULL)
 			{
@@ -280,10 +290,16 @@ int i2cdev_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 				rdwr_arg.msgs[i].buf,
 				rdwr_pa[i].len))
 			{
-			    	kfree(rdwr_pa[i].buf);
 			    	res = -EFAULT;
 				break;
 			}
+		}
+		if (res < 0) {
+			int j;
+			for (j = 0; j < i; ++j)
+				kfree(rdwr_pa[j].buf);
+			kfree(rdwr_pa);
+			return res;
 		}
 		if (!res) 
 		{

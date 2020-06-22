@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: nodelist.c,v 1.30.2.5 2002/08/20 21:02:00 dwmw2 Exp $
+ * $Id: nodelist.c,v 1.30.2.6 2003/02/24 21:49:33 dwmw2 Exp $
  *
  */
 
@@ -266,7 +266,7 @@ int jffs2_get_inode_nodes(struct jffs2_sb_info *c, ino_t ino, struct jffs2_inode
 	return err;
 }
 
-struct jffs2_inode_cache *jffs2_get_ino_cache(struct jffs2_sb_info *c, int ino)
+struct jffs2_inode_cache *jffs2_get_ino_cache(struct jffs2_sb_info *c, uint32_t ino)
 {
 	struct jffs2_inode_cache *ret;
 

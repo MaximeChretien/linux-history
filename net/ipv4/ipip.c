@@ -464,11 +464,13 @@ out:
 #endif
 }
 
-static inline void ipip_ecn_decapsulate(struct iphdr *iph, struct sk_buff *skb)
+static inline void ipip_ecn_decapsulate(struct iphdr *outer_iph, struct sk_buff *skb)
 {
-	if (INET_ECN_is_ce(iph->tos) &&
-	    INET_ECN_is_not_ce(skb->nh.iph->tos))
-		IP_ECN_set_ce(iph);
+	struct iphdr *inner_iph = skb->nh.iph;
+
+	if (INET_ECN_is_ce(outer_iph->tos) &&
+	    INET_ECN_is_not_ce(inner_iph->tos))
+		IP_ECN_set_ce(inner_iph);
 }
 
 int ipip_rcv(struct sk_buff *skb)

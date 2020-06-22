@@ -989,6 +989,8 @@ int kmem_cache_shrink(kmem_cache_t *cachep)
  * cache being allocated each time a module is loaded and unloaded, if the
  * module doesn't have persistent in-kernel storage across loads and unloads.
  *
+ * The cache must be empty before calling this function.
+ *
  * The caller must guarantee that noone will allocate memory from the cache
  * during the kmem_cache_destroy().
  */
@@ -1947,8 +1949,12 @@ static int s_show(struct seq_file *m, void *p)
 	name = cachep->name; 
 	{
 	char tmp; 
+	mm_segment_t	old_fs;
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
 	if (__get_user(tmp, name)) 
 		name = "broken"; 
+	set_fs(old_fs);
 	}       
 
 	seq_printf(m, "%-17s %6lu %6lu %6u %4lu %4lu %4u",
