@@ -362,7 +362,7 @@ static int rtc_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 		 * means "don't care" or "match all". Only the tm_hour,
 		 * tm_min, and tm_sec values are filled in.
 		 */
-
+		memset(&wtime, 0, sizeof(struct rtc_time));
 		get_rtc_alm_time(&wtime);
 		break; 
 	}
@@ -406,6 +406,7 @@ static int rtc_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 	}
 	case RTC_RD_TIME:	/* Read the time/date from RTC	*/
 	{
+		memset(&wtime, 0, sizeof(struct rtc_time));
 		get_rtc_time(&wtime);
 		break;
 	}

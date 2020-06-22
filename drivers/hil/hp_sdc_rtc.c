@@ -561,6 +561,7 @@ static int hp_sdc_rtc_ioctl(struct inode *inode, struct file *file,
         }
         case RTC_ALM_READ:      /* Read the present alarm time */
         {
+		memset(&ttime, 0, sizeof(struct timeval));
 		if (hp_sdc_rtc_read_mt(&ttime)) return -EFAULT;
                 break;
         }
@@ -609,6 +610,7 @@ static int hp_sdc_rtc_ioctl(struct inode *inode, struct file *file,
         }
         case RTC_RD_TIME:       /* Read the time/date from RTC  */
         {
+		memset(&wtime, 0, sizeof(struct rtc_time));
 		if (hp_sdc_rtc_read_bbrtc(&wtime)) return -EFAULT;
                 break;
         }

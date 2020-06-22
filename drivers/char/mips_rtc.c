@@ -82,6 +82,7 @@ rtc_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 
 	switch (cmd) {
 	case RTC_RD_TIME:	/* Read the time/date from RTC  */
+		memset(&rtc_tm, 0, sizeof(struct rtc_time));
 		curr_time = rtc_get_time();
 		to_tm(curr_time, &rtc_tm);
 		rtc_tm.tm_year -= 1900;

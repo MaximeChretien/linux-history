@@ -220,6 +220,7 @@ pcf8563_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned
 		{
 			struct rtc_time tm;
 
+			memset(&tm, 0, sizeof (struct rtc_time));
 			get_rtc_time(&tm);
 
 			if (copy_to_user((struct rtc_time *) arg, &tm, sizeof tm)) {
