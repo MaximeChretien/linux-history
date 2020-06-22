@@ -161,7 +161,7 @@ sctp_xmit_t sctp_packet_transmit_chunk(struct sctp_packet *packet,
 		if (!packet->has_cookie_echo) {
 			error = sctp_packet_transmit(packet);
 			if (error < 0)
-				chunk->skb->sk->sk_err = -error;
+				chunk->skb->sk->err = -error;
 
 			/* If we have an empty packet, then we can NOT ever
 			 * return PMTU_FULL.

@@ -3000,8 +3000,7 @@ int diExtendFS(struct inode *ipimap, struct inode *ipbmap)
 					goto nextiag;
 				}
 				hiagp = (struct iag *) hbp->data;
-				hiagp->inofreeback =
-				    le32_to_cpu(iagp->iagnum);
+				hiagp->inofreeback = iagp->iagnum;
 				iagp->inofreefwd = cpu_to_le32(head);
 				iagp->inofreeback = -1;
 				write_metapage(hbp);
@@ -3075,7 +3074,7 @@ static void duplicateIXtree(struct super_block *sb, s64 blkno,
 		if (readSuper(sb, &bh))
 			return;
 		j_sb = (struct jfs_superblock *)bh->b_data;
-		j_sb->s_flag |= JFS_BAD_SAIT;
+		j_sb->s_flag |= cpu_to_le32(JFS_BAD_SAIT);
 
 		mark_buffer_dirty(bh);
 		ll_rw_block(WRITE, 1, &bh);

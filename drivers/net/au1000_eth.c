@@ -241,7 +241,11 @@ int lsi_80227_init(struct net_device *dev, int phy_addr)
 	mdelay(1);
 
 	/* set up LEDs to correct display */
+#ifdef CONFIG_MIPS_MTX1
+	mdio_write(dev, phy_addr, 17, 0xff80);
+#else
 	mdio_write(dev, phy_addr, 17, 0xffc0);
+#endif
 
 	if (au1000_debug > 4)
 		dump_mii(dev, phy_addr);
@@ -1077,6 +1081,7 @@ setup_hw_rings(struct au1000_private *aup, u32 rx_base, u32 tx_base)
 static struct {
 	int port;
 	u32 base_addr;
+	u32 macen_addr;
 	int irq;
 	struct net_device *dev;
 } iflist[2];
@@ -1095,23 +1100,48 @@ static int __init au1000_init_module(void)
 	struct net_device *dev;
 	int i, found_one = 0;
 
-	iflist[0].irq = AU1000_ETH0_IRQ;
-	iflist[1].irq = AU1000_ETH1_IRQ;
 	switch (c->cputype) {
+#ifdef CONFIG_SOC_AU1000
 	case CPU_AU1000:
 		num_ifs = 2 - ni;
 		iflist[0].base_addr = AU1000_ETH0_BASE;
 		iflist[1].base_addr = AU1000_ETH1_BASE;
+		iflist[0].macen_addr = AU1000_MAC0_ENABLE;
+		iflist[1].macen_addr = AU1000_MAC1_ENABLE;
+		iflist[0].irq = AU1000_MAC0_DMA_INT;
+		iflist[1].irq = AU1000_MAC1_DMA_INT;
 		break;
+#endif
+#ifdef CONFIG_SOC_AU1100
 	case CPU_AU1100:
 		num_ifs = 1 - ni;
-		iflist[0].base_addr = AU1000_ETH0_BASE;
+		iflist[0].base_addr = AU1100_ETH0_BASE;
+		iflist[0].macen_addr = AU1100_MAC0_ENABLE;
+		iflist[0].irq = AU1100_MAC0_DMA_INT;
 		break;
+#endif
+#ifdef CONFIG_SOC_AU1500
 	case CPU_AU1500:
 		num_ifs = 2 - ni;
 		iflist[0].base_addr = AU1500_ETH0_BASE;
 		iflist[1].base_addr = AU1500_ETH1_BASE;
+		iflist[0].macen_addr = AU1500_MAC0_ENABLE;
+		iflist[1].macen_addr = AU1500_MAC1_ENABLE;
+		iflist[0].irq = AU1500_MAC0_DMA_INT;
+		iflist[1].irq = AU1500_MAC1_DMA_INT;
 		break;
+#endif
+#ifdef CONFIG_SOC_AU1550
+	case CPU_AU1550:
+		num_ifs = 2 - ni;
+		iflist[0].base_addr = AU1550_ETH0_BASE;
+		iflist[1].base_addr = AU1550_ETH1_BASE;
+		iflist[0].macen_addr = AU1550_MAC0_ENABLE;
+		iflist[1].macen_addr = AU1550_MAC1_ENABLE;
+		iflist[0].irq = AU1550_MAC0_DMA_INT;
+		iflist[1].irq = AU1550_MAC1_DMA_INT;
+		break;
+#endif
 	default:
 		num_ifs = 0;
 	}
@@ -1173,9 +1203,8 @@ au1000_probe(u32 ioaddr, int irq, int port_num)
 	/* aup->mac is the base address of the MAC's registers */
 	aup->mac = (volatile mac_reg_t *)((unsigned long)ioaddr);
 	/* Setup some variables for quick register address access */
-	switch (ioaddr) {
-	case AU1000_ETH0_BASE:
-	case AU1500_ETH0_BASE:
+	if (ioaddr == iflist[0].base_addr)
+	{
 		/* check env variables first */
 		if (!get_ethernet_addr(ethaddr)) { 
 			memcpy(au1000_mac_addr, ethaddr, sizeof(dev->dev_addr));
@@ -1192,37 +1221,27 @@ au1000_probe(u32 ioaddr, int irq, int port_num)
 						sizeof(dev->dev_addr));
 			}
 		}
-		if (ioaddr == AU1000_ETH0_BASE)
 			aup->enable = (volatile u32 *) 
-				((unsigned long)AU1000_MAC0_ENABLE);
-		else
-			aup->enable = (volatile u32 *) 
-				((unsigned long)AU1500_MAC0_ENABLE);
+				((unsigned long)iflist[0].macen_addr);
 		memcpy(dev->dev_addr, au1000_mac_addr, sizeof(dev->dev_addr));
 		setup_hw_rings(aup, MAC0_RX_DMA_ADDR, MAC0_TX_DMA_ADDR);
 		aup->mac_id = 0;
 		au_macs[0] = aup;
-			break;
-
-	case AU1000_ETH1_BASE:
-	case AU1500_ETH1_BASE:
-		if (ioaddr == AU1000_ETH1_BASE)
-			aup->enable = (volatile u32 *) 
-				((unsigned long)AU1000_MAC1_ENABLE);
+	}
 		else
+	if (ioaddr == iflist[1].base_addr)
+	{
 			aup->enable = (volatile u32 *) 
-				((unsigned long)AU1500_MAC1_ENABLE);
+				((unsigned long)iflist[1].macen_addr);
 		memcpy(dev->dev_addr, au1000_mac_addr, sizeof(dev->dev_addr));
 		dev->dev_addr[4] += 0x10;
 		setup_hw_rings(aup, MAC1_RX_DMA_ADDR, MAC1_TX_DMA_ADDR);
 		aup->mac_id = 1;
 		au_macs[1] = aup;
-			break;
-
-	default:
+	}
+	else
+	{
 		printk(KERN_ERR "%s: bad ioaddr\n", dev->name);
-		break;
-
 	}
 
 	/* bring the device out of reset, otherwise probing the mii
@@ -1370,6 +1389,7 @@ static int au1000_init(struct net_device *dev)
 		control |= MAC_FULL_DUPLEX;
 	}
 	aup->mac->control = control;
+	aup->mac->vlan1_tag = 0x8100; /* activate vlan support */
 	au_sync();
 
 	spin_unlock_irqrestore(&aup->lock, flags);

@@ -57,8 +57,6 @@ obj-m				:= $(O_TARGET)
 
 obj-$(CONFIG_XFS_RT)		+= xfs_rtalloc.o
 obj-$(CONFIG_XFS_POSIX_ACL)	+= xfs_acl.o
-obj-$(CONFIG_XFS_POSIX_CAP)	+= xfs_cap.o
-obj-$(CONFIG_XFS_POSIX_MAC)	+= xfs_mac.o
 
 obj-$(CONFIG_XFS_TRACE)		+= xfs_dir2_trace.o
 

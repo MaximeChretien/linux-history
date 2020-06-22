@@ -1007,7 +1007,11 @@ pcnet32_probe_pci(struct pci_dev *pdev, const struct pci_device_id *ent)
 	return -EBUSY;
     }
 
-    return pcnet32_probe1(ioaddr, 1, pdev);
+    err = pcnet32_probe1(ioaddr, 1, pdev);
+    if (err < 0) {
+	pci_disable_device(pdev);
+    }
+    return err;
 }
 
 
@@ -2241,6 +2245,7 @@ static void __devexit pcnet32_remove_one(struct pci_dev *pdev)
 	release_region(dev->base_addr, PCNET32_TOTAL_SIZE);
 	pci_free_consistent(lp->pci_dev, sizeof(*lp), lp, lp->dma_addr);
 	free_netdev(dev);
+	pci_disable_device(pdev);
 	pci_set_drvdata(pdev, NULL);
     }
 }

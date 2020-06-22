@@ -86,10 +86,13 @@ static inline char * task_name(struct task_struct *p, char * buf)
 {
 	int i;
 	char * name;
+	char tcomm[sizeof(p->comm)];
+
+	get_task_comm(tcomm, p);
 
 	ADDBUF(buf, "Name:\t");
-	name = p->comm;
-	i = sizeof(p->comm);
+	name = tcomm;
+	i = sizeof(tcomm);
 	do {
 		unsigned char c = *name;
 		name++;
@@ -308,6 +311,7 @@ int proc_pid_stat(struct task_struct *task, char * buffer)
 	int res;
 	pid_t ppid;
 	struct mm_struct *mm;
+	char tcomm[sizeof(task->comm)];
 
 	state = *get_task_state(task);
 	vsize = eip = esp = 0;
@@ -333,6 +337,8 @@ int proc_pid_stat(struct task_struct *task, char * buffer)
 		up_read(&mm->mmap_sem);
 	}
 
+	get_task_comm(tcomm, task);
+
 	wchan = get_wchan(task);
 
 	collect_sigign_sigcatch(task, &sigign, &sigcatch);
@@ -350,7 +356,7 @@ int proc_pid_stat(struct task_struct *task, char * buffer)
 %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %lu %lu %ld %lu %lu %lu %lu %lu \
 %lu %lu %lu %lu %lu %lu %lu %lu %d %d\n",
 		task->pid,
-		task->comm,
+		tcomm,
 		state,
 		ppid,
 		task->pgrp,

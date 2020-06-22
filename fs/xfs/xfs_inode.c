@@ -881,6 +881,10 @@ xfs_dic2xflags(
 			flags |= XFS_XFLAG_NODUMP;
 		if (di_flags & XFS_DIFLAG_RTINHERIT)
 			flags |= XFS_XFLAG_RTINHERIT;
+		if (di_flags & XFS_DIFLAG_PROJINHERIT)
+			flags |= XFS_XFLAG_PROJINHERIT;
+		if (di_flags & XFS_DIFLAG_NOSYMLINKS)
+			flags |= XFS_XFLAG_NOSYMLINKS;
 	}
 	return flags;
 }
@@ -1159,7 +1163,8 @@ xfs_ialloc(
 	 * This is because we're setting fields here we need
 	 * to prevent others from looking at until we're done.
 	 */
-	error = xfs_trans_iget(tp->t_mountp, tp, ino, XFS_ILOCK_EXCL, &ip);
+	error = xfs_trans_iget(tp->t_mountp, tp, ino,
+			IGET_CREATE, XFS_ILOCK_EXCL, &ip);
 	if (error != 0) {
 		return error;
 	}
@@ -1257,6 +1262,9 @@ xfs_ialloc(
 			if ((pip->i_d.di_flags & XFS_DIFLAG_SYNC) &&
 			    xfs_inherit_sync)
 				ip->i_d.di_flags |= XFS_DIFLAG_SYNC;
+			if ((pip->i_d.di_flags & XFS_DIFLAG_NOSYMLINKS) &&
+			    xfs_inherit_nosymlinks)
+				ip->i_d.di_flags |= XFS_DIFLAG_NOSYMLINKS;
 		}
 		/* FALLTHROUGH */
 	case S_IFLNK:

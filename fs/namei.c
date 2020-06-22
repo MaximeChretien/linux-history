@@ -326,7 +326,7 @@ static struct dentry * real_lookup(struct dentry * parent, struct qstr * name, i
 }
 
 /*
- * This limits recursive symlink follows to 8, while
+ * This limits recursive symlink follows to 5, while
  * limiting consecutive symlinks to 40.
  *
  * Without that kind of total limit, nasty chains of consecutive

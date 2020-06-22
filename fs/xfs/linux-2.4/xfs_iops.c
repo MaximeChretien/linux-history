@@ -173,8 +173,9 @@ linvfs_mknod(
 				 */
 				teardown.d_inode = ip = LINVFS_GET_IP(vp);
 				teardown.d_name = dentry->d_name;
-				remove_inode_hash(ip);
-				make_bad_inode(ip);
+
+				vn_mark_bad(vp);
+
 				if (S_ISDIR(mode))
 					VOP_RMDIR(dvp, &teardown, NULL, err2);
 				else
@@ -302,7 +303,7 @@ linvfs_symlink(
 {
 	struct inode	*ip;
 	vattr_t		va;
-	vnode_t		*dvp;	/* directory containing name to remove */
+	vnode_t		*dvp;	/* directory containing name of symlink */
 	vnode_t		*cvp;	/* used to lookup symlink to put in dentry */
 	int		error;
 

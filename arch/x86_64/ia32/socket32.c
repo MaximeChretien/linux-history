@@ -136,12 +136,9 @@ static int cmsghdr_from_user32_to_kern(struct msghdr *kmsg,
 			return -EFAULT;
 
 		/* Catch bogons. */
-		if(CMSG32_ALIGN(ucmlen) <
-		   CMSG32_ALIGN(sizeof(struct cmsghdr32)))
+		if (!CMSG32_OK(ucmlen, ucmsg, kmsg))
 			return -EINVAL;
-		if((unsigned long)(((char *)ucmsg - (char *)kmsg->msg_control)
-				   + ucmlen) > kmsg->msg_controllen)
-			return -EINVAL;
+
 		if (kmsg->msg_controllen > 65536) 
 			return -EINVAL;
 

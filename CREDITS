@@ -1447,8 +1447,9 @@ S: D 67659 Kaiserslautern
 S: Germany
 
 N: Mike Jagdis
-E: jaggy@purplet.demon.co.uk
-E: Mike.Jagdis@purplet.demon.co.uk
+E: mjagdis@eris-associates.co.uk
+E: jaggy@jaggycraft.co.uk
+E: Mike.Jagdis@eris-associates.co.uk
 D: iBCS personalities, socket and X interfaces, x.out loader, syscalls...
 D: Purple Distribution maintainer
 D: UK FidoNet support
@@ -1457,7 +1458,7 @@ D: Kernel and device driver hacking
 S: 280 Silverdale Road
 S: Earley
 S: Reading
-S: RG6 2NU
+S: RG6 7NU
 S: United Kingdom
 
 N: Jakub Jelinek

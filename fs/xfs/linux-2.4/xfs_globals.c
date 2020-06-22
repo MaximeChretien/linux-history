@@ -66,6 +66,8 @@ xfs_param_t xfs_params = {
 	.inherit_noatim = {	0,	1,	1	},
 	.xfs_buf_timer	= {	100/2,	100,	30*100	},
 	.xfs_buf_age	= {	1*100,	15*100,	300*100	},
+	.inherit_nosym	= {	0,	0,	1	},
+	.rotorstep	= {	1,	1,	255	},
 };
 
 /*

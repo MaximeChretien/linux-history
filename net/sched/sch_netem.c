@@ -259,12 +259,13 @@ static void netem_watchdog(unsigned long arg)
 {
 	struct Qdisc *sch = (struct Qdisc *)arg;
 	struct netem_sched_data *q = qdisc_priv(sch);
+	struct net_device *dev = sch->dev;
 	struct sk_buff *skb;
 	psched_time_t now;
 
 	pr_debug("netem_watchdog: fired @%lu\n", jiffies);
 
-	spin_lock_bh(&sch->dev->queue_lock);
+	spin_lock_bh(&dev->queue_lock);
 	PSCHED_GET_TIME(now);
 
 	while ((skb = skb_peek(&q->delayed)) != NULL) {
@@ -284,8 +285,11 @@ static void netem_watchdog(unsigned long arg)
 
 		if (q->qdisc->enqueue(skb, q->qdisc))
 			sch->stats.drops++;
+		else
+			sch->q.qlen++;
 	}
-	spin_unlock_bh(&sch->dev->queue_lock);
+	qdisc_run(dev);
+	spin_unlock_bh(&dev->queue_lock);
 }
 
 static void netem_reset(struct Qdisc *sch)
@@ -505,7 +509,7 @@ static int netem_graft(struct Qdisc *sch, unsigned long arg, struct Qdisc *new,
 	sch_tree_lock(sch);
 	*old = xchg(&q->qdisc, new);
 	qdisc_reset(*old);
-	sch->q.qlen = q->delayed.qlen;
+	sch->q.qlen = 0;
 	sch_tree_unlock(sch);
 
 	return 0;

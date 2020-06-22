@@ -410,6 +410,7 @@ fb_read(struct file *file, char *buf, size_t count, loff_t *ppos)
 	struct fb_info *info = registered_fb[fbidx];
 	struct fb_ops *fb = info->fbops;
 	struct fb_fix_screeninfo fix;
+	unsigned int size;
 
 	if (! fb || ! info->disp)
 		return -ENODEV;
@@ -418,10 +419,12 @@ fb_read(struct file *file, char *buf, size_t count, loff_t *ppos)
 		return -EINVAL;
 
 	fb->fb_get_fix(&fix,PROC_CONSOLE(info), info);
-	if (p >= fix.smem_len)
+	size = info->mapped_vram ? info->mapped_vram : fix.smem_len;
+	
+	if (p >= size)
 	    return 0;
-	if (count > fix.smem_len - p)
-		count = fix.smem_len - p;
+	if (count > size - p)
+		count = size - p;
 	if (count) {
 	    char *base_addr;
 
@@ -444,6 +447,7 @@ fb_write(struct file *file, const char *buf, size_t count, loff_t *ppos)
 	struct fb_ops *fb = info->fbops;
 	struct fb_fix_screeninfo fix;
 	int err;
+	unsigned int size;
 
 	if (! fb || ! info->disp)
 		return -ENODEV;
@@ -452,11 +456,13 @@ fb_write(struct file *file, const char *buf, size_t count, loff_t *ppos)
 		return -EINVAL;
 
 	fb->fb_get_fix(&fix, PROC_CONSOLE(info), info);
-	if (p > fix.smem_len)
+	size = info->mapped_vram ? info->mapped_vram : fix.smem_len;
+	
+	if (p > size)
 	    return -ENOSPC;
 	err = 0;
-	if (count > fix.smem_len - p) {
-	    count = fix.smem_len - p;
+	if (count > size - p) {
+	    count = size - p;
 	    err = -ENOSPC;
 	}
 	if (count) {
@@ -619,7 +625,10 @@ fb_mmap(struct file *file, struct vm_area_struct * vma)
 
 	/* frame buffer memory */
 	start = fix.smem_start;
-	len = PAGE_ALIGN((start & ~PAGE_MASK)+fix.smem_len);
+	if (info->mapped_vram)
+		len = PAGE_ALIGN((start & ~PAGE_MASK) + info->mapped_vram);
+	else
+		len = PAGE_ALIGN((start & ~PAGE_MASK) + fix.smem_len);
 	if (off >= len) {
 		/* memory mapped io */
 		off -= len;

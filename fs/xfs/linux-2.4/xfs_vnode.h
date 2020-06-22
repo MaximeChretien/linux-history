@@ -594,6 +594,23 @@ static __inline__ void vn_flagclr(struct vnode *vp, uint flag)
 		(LINVFS_GET_IP(vp)->i_ctime = (__int32_t)(tvp)->tv_sec)
 
 /*
+ * Dealing with bad inodes
+ */
+static inline void vn_mark_bad(struct vnode *vp)
+{
+	struct inode *inode = LINVFS_GET_IP(vp);
+
+	remove_inode_hash(inode);
+	make_bad_inode(inode);
+}
+
+static inline int VN_BAD(struct vnode *vp)
+{
+	return is_bad_inode(LINVFS_GET_IP(vp));
+}
+
+
+/*
  * Some useful predicates.
  */
 #define	VN_MAPPED(vp)	((LINVFS_GET_IP(vp)->i_mapping->i_mmap != NULL) || \

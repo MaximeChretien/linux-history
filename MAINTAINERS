@@ -80,7 +80,7 @@ S:	Maintained
 
 3C505 NETWORK DRIVER
 P:	Philip Blundell
-M:	Philip.Blundell@pobox.com
+M:	philb@gnu.org
 L:	linux-net@vger.kernel.org
 S:	Maintained
 
@@ -579,6 +579,11 @@ W:	http://linux-decnet.sourceforge.net
 L:	linux-decnet-user@lists.sourceforge.net
 S:	Maintained
 
+DEFXX FDDI NETWORK DRIVER
+P:	Maciej W. Rozycki
+M:	macro@linux-mips.org
+S:	Maintained
+
 DELL LAPTOP SMM DRIVER
 P:	Massimo Dal Zotto
 M:	dz@debian.org
@@ -694,7 +699,7 @@ S:	Maintained
 
 ETHEREXPRESS-16 NETWORK DRIVER
 P:	Philip Blundell
-M:	Philip.Blundell@pobox.com
+M:	philb@gnu.org
 L:	linux-net@vger.kernel.org
 S:	Maintained
 
@@ -836,7 +841,7 @@ S:	Maintained
 
 i386 SETUP CODE / CPU ERRATA WORKAROUNDS
 P:	Dave Jones
-M:	davej@suse.de
+M:	davej@redhat.com
 P:	H. Peter Anvin
 M:	hpa@zytor.com
 S:	Maintained
@@ -971,11 +976,12 @@ W:	http://sourceforge.net/projects/e1000/
 S:	Supported
 
 INTERMEZZO FILE SYSTEM
-P:	Chen Yang
-M:	intermezzo-devel@lists.sourceforge.net
+P:	Peter J. Braam
+M:	braam@clusterfs.com
 W:      http://www.inter-mezzo.org/
+W:	http://sourceforge.net/projects/intermezzo/
 L:      intermezzo-discuss@lists.sourceforge.net
-S:      Maintained
+S:	Orphan
 
 IOC3 DRIVER
 P:	Ralf Baechle
@@ -1415,13 +1421,13 @@ S:	Maintained
 
 PARALLEL PORT SUPPORT
 P:	Phil Blundell
-M:	Philip.Blundell@pobox.com
+M:	philb@gnu.org
 P:	Tim Waugh
 M:	tim@cyberelk.net
 P:	David Campbell
 M:	campbell@torque.net
 P:	Andrea Arcangeli
-M:	andrea@e-mind.com
+M:	andrea@suse.de
 L:	linux-parport@torque.net
 W:	http://people.redhat.com/twaugh/parport/
 S:	Maintained
@@ -1493,13 +1499,6 @@ PHILIPS NINO PALM PC
 P:	Steven Hill
 M:	sjhill@realitydiluted.com
 L:	linux-mips@linux-mips.org
-W:	http://www.realitydiluted.com/projects/nino
-S:	Maintained
-
-PHILIPS NINO PALM PC
-P:	Steven Hill
-M:	sjhill@realitydiluted.com
-L:	linux-mips@oss.sgi.com
 W:	http://www.realitydiluted.com/projects/nino
 S:	Maintained
 
@@ -1774,11 +1773,6 @@ P:	Jan-Benedict Glaw
 M:	jbglaw@lug-owl.de
 L:	linux-kernel@vger.kernel.org
 S:	Maintained
-
-STALLION TECHNOLOGIES MULTIPORT SERIAL BOARDS
-M:	support@stallion.oz.au
-W:	http://www.stallion.com
-S:	Supported
 
 STARFIRE/DURALAN NETWORK DRIVER
 P:	Ion Badulescu

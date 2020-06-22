@@ -56,25 +56,6 @@ static struct sctp_ulpevent * sctp_ulpq_order(struct sctp_ulpq *,
 
 /* 1st Level Abstractions */
 
-/* Create a new ULP queue.  */
-struct sctp_ulpq *sctp_ulpq_new(struct sctp_association *asoc, int gfp)
-{
-	struct sctp_ulpq *ulpq;
-
-	ulpq = kmalloc(sizeof(struct sctp_ulpq), gfp);
-	if (!ulpq)
-		goto fail;
-	if (!sctp_ulpq_init(ulpq, asoc))
-		goto fail_init;
-	ulpq->malloced = 1;
-	return ulpq;
-
-fail_init:
-	kfree(ulpq);
-fail:
-	return NULL;
-}
-
 /* Initialize a ULP queue from a block of memory.  */
 struct sctp_ulpq *sctp_ulpq_init(struct sctp_ulpq *ulpq,
 				 struct sctp_association *asoc)
@@ -92,7 +73,7 @@ struct sctp_ulpq *sctp_ulpq_init(struct sctp_ulpq *ulpq,
 
 
 /* Flush the reassembly and ordering queues.  */
-void sctp_ulpq_flush(struct sctp_ulpq *ulpq)
+static void sctp_ulpq_flush(struct sctp_ulpq *ulpq)
 {
 	struct sk_buff *skb;
 	struct sctp_ulpevent *event;
@@ -163,7 +144,7 @@ int sctp_clear_pd(struct sock *sk)
 	sp->pd_mode = 0;
 	if (!skb_queue_empty(&sp->pd_lobby)) {
 		struct list_head *list;
-		sctp_skb_list_tail(&sp->pd_lobby, &sk->sk_receive_queue);
+		sctp_skb_list_tail(&sp->pd_lobby, &sk->receive_queue);
 		list = (struct list_head *)&sctp_sk(sk)->pd_lobby;
 		INIT_LIST_HEAD(list);
 		return 1;
@@ -189,7 +170,7 @@ int sctp_ulpq_tail_event(struct sctp_ulpq *ulpq, struct sctp_ulpevent *event)
 	/* If the socket is just going to throw this away, do not
 	 * even try to deliver it.
 	 */
-	if (sk->dead || (sk->sk_shutdown & RCV_SHUTDOWN))
+	if (sk->dead || (sk->shutdown & RCV_SHUTDOWN))
 		goto out_free;
 
 	/* Check if the user wishes to receive this event.  */
@@ -202,13 +183,13 @@ int sctp_ulpq_tail_event(struct sctp_ulpq *ulpq, struct sctp_ulpevent *event)
 	 */
 
 	if (!sctp_sk(sk)->pd_mode) {
-		queue = &sk->sk_receive_queue;
+		queue = &sk->receive_queue;
 	} else if (ulpq->pd_mode) {
 		if (event->msg_flags & MSG_NOTIFICATION)
 		       	queue = &sctp_sk(sk)->pd_lobby;
 		else {
 			clear_pd = event->msg_flags & MSG_EOR;
-			queue = &sk->sk_receive_queue;
+			queue = &sk->receive_queue;
 		}
 	} else
 		queue = &sctp_sk(sk)->pd_lobby;
@@ -229,8 +210,8 @@ int sctp_ulpq_tail_event(struct sctp_ulpq *ulpq, struct sctp_ulpevent *event)
 	if (clear_pd)
 		sctp_ulpq_clear_pd(ulpq);
 
-	if (queue == &sk->sk_receive_queue)
-		sk->sk_data_ready(sk, 0);
+	if (queue == &sk->receive_queue)
+		sk->data_ready(sk, 0);
 	return 1;
 
 out_free:
@@ -837,7 +818,7 @@ void sctp_ulpq_renege(struct sctp_ulpq *ulpq, struct sctp_chunk *chunk,
 
 	freed = 0;
 
-	if (skb_queue_empty(&asoc->base.sk->sk_receive_queue)) {
+	if (skb_queue_empty(&asoc->base.sk->receive_queue)) {
 		freed = sctp_ulpq_renege_order(ulpq, needed);
 		if (freed < needed) {
 			freed += sctp_ulpq_renege_frags(ulpq, needed - freed);
@@ -876,9 +857,9 @@ void sctp_ulpq_abort_pd(struct sctp_ulpq *ulpq, int gfp)
 					      SCTP_PARTIAL_DELIVERY_ABORTED,
 					      gfp);
 	if (ev)
-		__skb_queue_tail(&sk->sk_receive_queue, sctp_event2skb(ev));
+		__skb_queue_tail(&sk->receive_queue, sctp_event2skb(ev));
 
 	/* If there is data waiting, send it up the socket now. */
 	if (sctp_ulpq_clear_pd(ulpq) || ev)
-		sk->sk_data_ready(sk, 0);
+		sk->data_ready(sk, 0);
 }

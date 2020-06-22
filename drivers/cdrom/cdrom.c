@@ -2598,9 +2598,7 @@ ctl_table cdrom_cdrom_table[] = {
 
 /* Make sure that /proc/sys/dev is there */
 ctl_table cdrom_root_table[] = {
-#ifdef CONFIG_PROC_FS
 	{CTL_DEV, "dev", NULL, 0, 0555, cdrom_cdrom_table},
-#endif /* CONFIG_PROC_FS */
 	{0}
 	};
 static struct ctl_table_header *cdrom_sysctl_header;

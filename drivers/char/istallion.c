@@ -3,7 +3,7 @@
 /*
  *	istallion.c  -- stallion intelligent multiport serial driver.
  *
- *	Copyright (C) 1996-1999  Stallion Technologies (support@stallion.oz.au).
+ *	Copyright (C) 1996-1999  Stallion Technologies
  *	Copyright (C) 1994-1996  Greg Ungerer.
  *
  *	This code is loosely based on the Linux serial driver, written by
@@ -1214,8 +1214,7 @@ static void stli_close(struct tty_struct *tty, struct file *filp)
 	clear_bit(ST_TXBUSY, &portp->state);
 	clear_bit(ST_RXSTOP, &portp->state);
 	set_bit(TTY_IO_ERROR, &tty->flags);
-	if (tty->ldisc.flush_buffer)
-		(tty->ldisc.flush_buffer)(tty);
+	tty_ldisc_flush(tty);
 	set_bit(ST_DOFLUSHRX, &portp->state);
 	stli_flushbuffer(tty);
 
@@ -2477,10 +2476,7 @@ static void stli_flushbuffer(struct tty_struct *tty)
 	}
 	restore_flags(flags);
 
-	wake_up_interruptible(&tty->write_wait);
-	if ((tty->flags & (1 << TTY_DO_WRITE_WAKEUP)) &&
-	    tty->ldisc.write_wakeup)
-		(tty->ldisc.write_wakeup)(tty);
+	tty_wakeup(tty);
 }
 
 /*****************************************************************************/
@@ -2915,6 +2911,7 @@ static inline int stli_hostcmd(stlibrd_t *brdp, stliport_t *portp)
 	asynotify_t		nt;
 	unsigned long		oldsigs;
 	int			rc, donerx;
+	struct tty_ldisc	*ld;
 
 #if DEBUG
 	printk(KERN_DEBUG "stli_hostcmd(brdp=%x,channr=%d)\n",
@@ -3014,10 +3011,15 @@ static inline int stli_hostcmd(stlibrd_t *brdp, stliport_t *portp)
 			clear_bit(ST_TXBUSY, &portp->state);
 		if (nt.data & (DT_TXEMPTY | DT_TXLOW)) {
 			if (tty != (struct tty_struct *) NULL) {
-				if ((tty->flags & (1 << TTY_DO_WRITE_WAKEUP)) &&
-				    tty->ldisc.write_wakeup) {
-					(tty->ldisc.write_wakeup)(tty);
-					EBRDENABLE(brdp);
+				if ((tty->flags & (1 << TTY_DO_WRITE_WAKEUP))) {
+					ld = tty_ldisc_ref(tty);
+					if(ld) {
+						if(ld->write_wakeup) {
+							ld->write_wakeup(tty);
+							EBRDENABLE(brdp);
+						}
+						tty_ldisc_deref(ld);
+					}
 				}
 				wake_up_interruptible(&tty->write_wait);
 			}

@@ -1716,6 +1716,7 @@ void __init sock_init(void)
 	 */
 
 #ifdef CONFIG_NET
+	netlink_proto_init();
 	rtnetlink_init();
 #endif
 #ifdef CONFIG_NETLINK_DEV

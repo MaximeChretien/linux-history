@@ -157,7 +157,7 @@ check_for_demasq(struct sk_buff **pskb)
 	case IPPROTO_UDP:
 		IP_NF_ASSERT(((*pskb)->nh.iph->frag_off & htons(IP_OFFSET)) == 0);
 
-		if (!get_tuple(iph, (*pskb)->len, &tuple, protocol)) {
+		if (!ip_ct_get_tuple(iph, (*pskb)->len, &tuple, protocol)) {
 			if (net_ratelimit())
 				printk("ip_fw_compat_masq: Can't get tuple\n");
 			return NF_ACCEPT;

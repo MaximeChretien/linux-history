@@ -36,9 +36,6 @@
 #include "libata.h"
 
 typedef unsigned int (*ata_xlat_func_t)(struct ata_queued_cmd *qc, u8 *scsicmd);
-static void ata_scsi_simulate(struct ata_port *ap, struct ata_device *dev,
-			      struct scsi_cmnd *cmd,
-			      void (*done)(struct scsi_cmnd *));
 static struct ata_device *
 ata_scsi_find_dev(struct ata_port *ap, struct scsi_device *scsidev);
 
@@ -101,7 +98,7 @@ int ata_scsi_ioctl(struct scsi_device *scsidev, int cmd, void __user *arg)
 		return 0;
 
 	default:
-		rc = -EOPNOTSUPP;
+		rc = -ENOTTY;
 		break;
 	}
 
@@ -160,6 +157,7 @@ struct ata_queued_cmd *ata_scsi_qc_new(struct ata_port *ap,
 /**
  *	ata_to_sense_error - convert ATA error to SCSI error
  *	@qc: Command that we are erroring out
+ *	@drv_stat: value contained in ATA status register
  *
  *	Converts an ATA error into a SCSI error. While we are at it
  *	we decode and dump the ATA error for the user so that they
@@ -373,7 +371,7 @@ static unsigned int ata_scsi_flush_xlat(struct ata_queued_cmd *qc, u8 *scsicmd)
 	tf->protocol = ATA_PROT_NODATA;
 
 	if ((tf->flags & ATA_TFLAG_LBA48) &&
-	    (ata_id_has_flush_ext(qc->dev)))
+	    (ata_id_has_flush_ext(qc->dev->id)))
 		tf->command = ATA_CMD_FLUSH_EXT;
 	else
 		tf->command = ATA_CMD_FLUSH;
@@ -643,7 +641,7 @@ static void ata_scsi_translate(struct ata_port *ap, struct ata_device *dev,
 			ata_sg_init_one(qc, cmd->request_buffer,
 					cmd->request_bufflen);
 
-		qc->pci_dma_dir = scsi_to_pci_dma_dir(cmd->sc_data_direction);
+		qc->dma_dir = cmd->sc_data_direction;
 	}
 
 	qc->complete_fn = ata_scsi_qc_complete;
@@ -700,6 +698,7 @@ static unsigned int ata_scsi_rbuf_get(struct scsi_cmnd *cmd, u8 **buf_out)
 /**
  *	ata_scsi_rbuf_put - Unmap response buffer.
  *	@cmd: SCSI command containing buffer to be unmapped.
+ *	@buf: buffer to unmap
  *
  *	Unmaps response buffer contained within @cmd.
  *
@@ -707,19 +706,19 @@ static unsigned int ata_scsi_rbuf_get(struct scsi_cmnd *cmd, u8 **buf_out)
  *	spin_lock_irqsave(host_set lock)
  */
 
-static inline void ata_scsi_rbuf_put(struct scsi_cmnd *cmd)
+static inline void ata_scsi_rbuf_put(struct scsi_cmnd *cmd, u8 *buf)
 {
 	if (cmd->use_sg) {
 		struct scatterlist *sg;
 
 		sg = (struct scatterlist *) cmd->request_buffer;
-		kunmap_atomic(sg->page, KM_USER0);
+		kunmap_atomic(buf - sg->offset, KM_USER0);
 	}
 }
 
 /**
  *	ata_scsi_rbuf_fill - wrapper for SCSI command simulators
- *	@args: Port / device / SCSI command of interest.
+ *	@args: device IDENTIFY data / SCSI command of interest.
  *	@actor: Callback hook for desired SCSI command simulator
  *
  *	Takes care of the hard work of simulating a SCSI command...
@@ -743,7 +742,7 @@ void ata_scsi_rbuf_fill(struct ata_scsi_args *args,
 	buflen = ata_scsi_rbuf_get(cmd, &rbuf);
 	memset(rbuf, 0, buflen);
 	rc = actor(args, rbuf, buflen);
-	ata_scsi_rbuf_put(cmd);
+	ata_scsi_rbuf_put(cmd, rbuf);
 
 	if (rc)
 		ata_bad_cdb(cmd, args->done);
@@ -755,7 +754,7 @@ void ata_scsi_rbuf_fill(struct ata_scsi_args *args,
 
 /**
  *	ata_scsiop_inq_std - Simulate INQUIRY command
- *	@args: Port / device / SCSI command of interest.
+ *	@args: device IDENTIFY data / SCSI command of interest.
  *	@rbuf: Response buffer, to which simulated SCSI cmd output is sent.
  *	@buflen: Response buffer length.
  *
@@ -769,8 +768,6 @@ void ata_scsi_rbuf_fill(struct ata_scsi_args *args,
 unsigned int ata_scsiop_inq_std(struct ata_scsi_args *args, u8 *rbuf,
 			       unsigned int buflen)
 {
-	struct ata_device *dev = args->dev;
-
 	u8 hdr[] = {
 		TYPE_DISK,
 		0,
@@ -780,7 +777,7 @@ unsigned int ata_scsiop_inq_std(struct ata_scsi_args *args, u8 *rbuf,
 	};
 
 	/* set scsi removeable (RMB) bit per ata bit */
-	if (ata_id_removeable(dev))
+	if (ata_id_removeable(args->id))
 		hdr[1] |= (1 << 7);
 
 	VPRINTK("ENTER\n");
@@ -789,8 +786,8 @@ unsigned int ata_scsiop_inq_std(struct ata_scsi_args *args, u8 *rbuf,
 
 	if (buflen > 35) {
 		memcpy(&rbuf[8], "ATA     ", 8);
-		ata_dev_id_string(dev, &rbuf[16], ATA_ID_PROD_OFS, 16);
-		ata_dev_id_string(dev, &rbuf[32], ATA_ID_FW_REV_OFS, 4);
+		ata_dev_id_string(args->id, &rbuf[16], ATA_ID_PROD_OFS, 16);
+		ata_dev_id_string(args->id, &rbuf[32], ATA_ID_FW_REV_OFS, 4);
 		if (rbuf[32] == 0 || rbuf[32] == ' ')
 			memcpy(&rbuf[32], "n/a ", 4);
 	}
@@ -814,7 +811,7 @@ unsigned int ata_scsiop_inq_std(struct ata_scsi_args *args, u8 *rbuf,
 
 /**
  *	ata_scsiop_inq_00 - Simulate INQUIRY EVPD page 0, list of pages
- *	@args: Port / device / SCSI command of interest.
+ *	@args: device IDENTIFY data / SCSI command of interest.
  *	@rbuf: Response buffer, to which simulated SCSI cmd output is sent.
  *	@buflen: Response buffer length.
  *
@@ -842,7 +839,7 @@ unsigned int ata_scsiop_inq_00(struct ata_scsi_args *args, u8 *rbuf,
 
 /**
  *	ata_scsiop_inq_80 - Simulate INQUIRY EVPD page 80, device serial number
- *	@args: Port / device / SCSI command of interest.
+ *	@args: device IDENTIFY data / SCSI command of interest.
  *	@rbuf: Response buffer, to which simulated SCSI cmd output is sent.
  *	@buflen: Response buffer length.
  *
@@ -863,8 +860,8 @@ unsigned int ata_scsiop_inq_80(struct ata_scsi_args *args, u8 *rbuf,
 	};
 	memcpy(rbuf, hdr, sizeof(hdr));
 
-	if (buflen > (ATA_SERNO_LEN + 4))
-		ata_dev_id_string(args->dev, (unsigned char *) &rbuf[4],
+	if (buflen > (ATA_SERNO_LEN + 4 - 1))
+		ata_dev_id_string(args->id, (unsigned char *) &rbuf[4],
 				  ATA_ID_SERNO_OFS, ATA_SERNO_LEN);
 
 	return 0;
@@ -874,7 +871,7 @@ static const char *inq_83_str = "Linux ATA-SCSI simulator";
 
 /**
  *	ata_scsiop_inq_83 - Simulate INQUIRY EVPD page 83, device identity
- *	@args: Port / device / SCSI command of interest.
+ *	@args: device IDENTIFY data / SCSI command of interest.
  *	@rbuf: Response buffer, to which simulated SCSI cmd output is sent.
  *	@buflen: Response buffer length.
  *
@@ -892,7 +889,7 @@ unsigned int ata_scsiop_inq_83(struct ata_scsi_args *args, u8 *rbuf,
 	rbuf[3] = 4 + strlen(inq_83_str);	/* page len */
 
 	/* our one and only identification descriptor (vendor-specific) */
-	if (buflen > (strlen(inq_83_str) + 4 + 4)) {
+	if (buflen > (strlen(inq_83_str) + 4 + 4 - 1)) {
 		rbuf[4 + 0] = 2;	/* code set: ASCII */
 		rbuf[4 + 3] = strlen(inq_83_str);
 		memcpy(rbuf + 4 + 4, inq_83_str, strlen(inq_83_str));
@@ -903,7 +900,7 @@ unsigned int ata_scsiop_inq_83(struct ata_scsi_args *args, u8 *rbuf,
 
 /**
  *	ata_scsiop_noop -
- *	@args: Port / device / SCSI command of interest.
+ *	@args: device IDENTIFY data / SCSI command of interest.
  *	@rbuf: Response buffer, to which simulated SCSI cmd output is sent.
  *	@buflen: Response buffer length.
  *
@@ -951,7 +948,7 @@ static void ata_msense_push(u8 **ptr_io, const u8 *last,
 
 /**
  *	ata_msense_caching - Simulate MODE SENSE caching info page
- *	@dev: Device associated with this MODE SENSE command
+ *	@id: device IDENTIFY data
  *	@ptr_io: (input/output) Location to store more output data
  *	@last: End of output data buffer
  *
@@ -963,7 +960,7 @@ static void ata_msense_push(u8 **ptr_io, const u8 *last,
  *	None.
  */
 
-static unsigned int ata_msense_caching(struct ata_device *dev, u8 **ptr_io,
+static unsigned int ata_msense_caching(u16 *id, u8 **ptr_io,
 				       const u8 *last)
 {
 	u8 page[] = {
@@ -973,9 +970,9 @@ static unsigned int ata_msense_caching(struct ata_device *dev, u8 **ptr_io,
 		0, 0, 0, 0, 0, 0, 0, 0		/* 8 zeroes */
 	};
 
-	if (ata_id_wcache_enabled(dev))
+	if (ata_id_wcache_enabled(id))
 		page[2] |= (1 << 2);	/* write cache enable */
-	if (!ata_id_rahead_enabled(dev))
+	if (!ata_id_rahead_enabled(id))
 		page[12] |= (1 << 5);	/* disable read ahead */
 
 	ata_msense_push(ptr_io, last, page, sizeof(page));
@@ -1029,7 +1026,7 @@ static unsigned int ata_msense_rw_recovery(u8 **ptr_io, const u8 *last)
 
 /**
  *	ata_scsiop_mode_sense - Simulate MODE SENSE 6, 10 commands
- *	@args: Port / device / SCSI command of interest.
+ *	@args: device IDENTIFY data / SCSI command of interest.
  *	@rbuf: Response buffer, to which simulated SCSI cmd output is sent.
  *	@buflen: Response buffer length.
  *
@@ -1043,7 +1040,6 @@ unsigned int ata_scsiop_mode_sense(struct ata_scsi_args *args, u8 *rbuf,
 				  unsigned int buflen)
 {
 	u8 *scsicmd = args->cmd->cmnd, *p, *last;
-	struct ata_device *dev = args->dev;
 	unsigned int page_control, six_byte, output_len;
 
 	VPRINTK("ENTER\n");
@@ -1071,7 +1067,7 @@ unsigned int ata_scsiop_mode_sense(struct ata_scsi_args *args, u8 *rbuf,
 		break;
 
 	case 0x08:		/* caching */
-		output_len += ata_msense_caching(dev, &p, last);
+		output_len += ata_msense_caching(args->id, &p, last);
 		break;
 
 	case 0x0a: {		/* control mode */
@@ -1081,7 +1077,7 @@ unsigned int ata_scsiop_mode_sense(struct ata_scsi_args *args, u8 *rbuf,
 
 	case 0x3f:		/* all pages */
 		output_len += ata_msense_rw_recovery(&p, last);
-		output_len += ata_msense_caching(dev, &p, last);
+		output_len += ata_msense_caching(args->id, &p, last);
 		output_len += ata_msense_ctl_mode(&p, last);
 		break;
 
@@ -1103,7 +1099,7 @@ unsigned int ata_scsiop_mode_sense(struct ata_scsi_args *args, u8 *rbuf,
 
 /**
  *	ata_scsiop_read_cap - Simulate READ CAPACITY[ 16] commands
- *	@args: Port / device / SCSI command of interest.
+ *	@args: device IDENTIFY data / SCSI command of interest.
  *	@rbuf: Response buffer, to which simulated SCSI cmd output is sent.
  *	@buflen: Response buffer length.
  *
@@ -1116,11 +1112,15 @@ unsigned int ata_scsiop_mode_sense(struct ata_scsi_args *args, u8 *rbuf,
 unsigned int ata_scsiop_read_cap(struct ata_scsi_args *args, u8 *rbuf,
 			        unsigned int buflen)
 {
-	u64 n_sectors = args->dev->n_sectors;
+	u64 n_sectors;
 	u32 tmp;
 
 	VPRINTK("ENTER\n");
 
+	if (ata_id_has_lba48(args->id))
+		n_sectors = ata_id_u64(args->id, 100);
+	else
+		n_sectors = ata_id_u32(args->id, 60);
 	n_sectors--;		/* ATA TotalUserSectors - 1 */
 
 	tmp = n_sectors;	/* note: truncates, if lba48 */
@@ -1158,7 +1158,7 @@ unsigned int ata_scsiop_read_cap(struct ata_scsi_args *args, u8 *rbuf,
 
 /**
  *	ata_scsiop_report_luns - Simulate REPORT LUNS command
- *	@args: Port / device / SCSI command of interest.
+ *	@args: device IDENTIFY data / SCSI command of interest.
  *	@rbuf: Response buffer, to which simulated SCSI cmd output is sent.
  *	@buflen: Response buffer length.
  *
@@ -1210,9 +1210,15 @@ static int atapi_qc_complete(struct ata_queued_cmd *qc, u8 drv_stat)
 {
 	struct scsi_cmnd *cmd = qc->scsicmd;
 
-	if (unlikely(drv_stat & (ATA_ERR | ATA_BUSY | ATA_DRQ)))
+	if (unlikely(drv_stat & (ATA_ERR | ATA_BUSY | ATA_DRQ))) {
+		DPRINTK("request check condition\n");
+
 		cmd->result = SAM_STAT_CHECK_CONDITION;
-	else {
+
+		qc->scsidone(cmd);
+
+		return 1;
+	} else {
 		u8 *scsicmd = cmd->cmnd;
 
 		if (scsicmd[0] == INQUIRY) {
@@ -1222,7 +1228,7 @@ static int atapi_qc_complete(struct ata_queued_cmd *qc, u8 drv_stat)
 			buflen = ata_scsi_rbuf_get(cmd, &buf);
 			buf[2] = 0x5;
 			buf[3] = (buf[3] & 0xf0) | 2;
-			ata_scsi_rbuf_put(cmd);
+			ata_scsi_rbuf_put(cmd, buf);
 		}
 		cmd->result = SAM_STAT_GOOD;
 	}
@@ -1249,6 +1255,11 @@ static unsigned int atapi_xlat(struct ata_queued_cmd *qc, u8 *scsicmd)
 	struct ata_device *dev = qc->dev;
 	int using_pio = (dev->flags & ATA_DFLAG_PIO);
 	int nodata = (cmd->sc_data_direction == SCSI_DATA_NONE);
+
+	if (!using_pio)
+		/* Check whether ATAPI DMA is safe */
+		if (ata_check_atapi_dma(qc))
+			using_pio = 1;
 
 	memcpy(&qc->cdb, scsicmd, qc->ap->cdb_len);
 
@@ -1284,13 +1295,15 @@ static unsigned int atapi_xlat(struct ata_queued_cmd *qc, u8 *scsicmd)
 #endif
 	}
 
+	qc->nbytes = cmd->bufflen;
+
 	return 0;
 }
 
 /**
  *	ata_scsi_find_dev - lookup ata_device from scsi_cmnd
  *	@ap: ATA port to which the device is attached
- *	@cmd: SCSI command to be sent to the device
+ *	@scsidev: SCSI device from which we derive the ATA device
  *
  *	Given various information provided in struct scsi_cmnd,
  *	map that onto an ATA bus, and using that mapping
@@ -1439,7 +1452,7 @@ int ata_scsi_queuecmd(struct scsi_cmnd *cmd, void (*done)(struct scsi_cmnd *))
 		if (xlat_func)
 			ata_scsi_translate(ap, dev, cmd, done, xlat_func);
 		else
-			ata_scsi_simulate(ap, dev, cmd, done);
+			ata_scsi_simulate(dev->id, cmd, done);
 	} else
 		ata_scsi_translate(ap, dev, cmd, done, atapi_xlat);
 
@@ -1451,8 +1464,7 @@ out_unlock:
 
 /**
  *	ata_scsi_simulate - simulate SCSI command on ATA device
- *	@ap: Port to which ATA device is attached.
- *	@dev: Target device for CDB.
+ *	@id: current IDENTIFY data for target device.
  *	@cmd: SCSI command being sent to device.
  *	@done: SCSI command completion function.
  *
@@ -1463,15 +1475,14 @@ out_unlock:
  *	spin_lock_irqsave(host_set lock)
  */
 
-static void ata_scsi_simulate(struct ata_port *ap, struct ata_device *dev,
-			      struct scsi_cmnd *cmd,
-			      void (*done)(struct scsi_cmnd *))
+void ata_scsi_simulate(u16 *id,
+		      struct scsi_cmnd *cmd,
+		      void (*done)(struct scsi_cmnd *))
 {
 	struct ata_scsi_args args;
 	u8 *scsicmd = cmd->cmnd;
 
-	args.ap = ap;
-	args.dev = dev;
+	args.id = id;
 	args.cmd = cmd;
 	args.done = done;
 

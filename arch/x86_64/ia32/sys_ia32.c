@@ -2214,7 +2214,7 @@ static int nargs(u32 src, char **dst)
 			dst[cnt] = (char *)(u64)val; 
 		cnt++;
 		src += 4;
-		if (cnt >= (MAX_ARG_PAGES*PAGE_SIZE)/sizeof(void*))
+		if (cnt >= (MAX_ARG_PAGES * PAGE_SIZE) / sizeof(char *))
 			return -E2BIG; 
 	} while(val); 
 	if (dst)

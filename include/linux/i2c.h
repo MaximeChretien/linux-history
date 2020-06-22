@@ -47,11 +47,9 @@ struct i2c_msg;
 
 /* --- General options ------------------------------------------------	*/
 
-#define I2C_ALGO_MAX	4		/* control memory consumption	*/
-#define I2C_ADAP_MAX	16
+#define I2C_ADAP_MAX	16		/* control memory consumption	*/
 #define I2C_DRIVER_MAX	16
 #define I2C_CLIENT_MAX	32
-#define I2C_DUMMY_MAX 4
 
 struct i2c_algorithm;
 struct i2c_adapter;

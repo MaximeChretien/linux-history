@@ -516,13 +516,13 @@ STATIC void
 xfs_submit_page(
 	struct page		*page,
 	struct buffer_head	*bh_arr[],
-	int			cnt)
+	int			bh_count)
 {
 	struct buffer_head	*bh;
 	int			i;
 
-	if (cnt) {
-		for (i = 0; i < cnt; i++) {
+	if (bh_count) {
+		for (i = 0; i < bh_count; i++) {
 			bh = bh_arr[i];
 			set_buffer_async_io(bh);
 			if (buffer_unwritten(bh))
@@ -531,12 +531,13 @@ xfs_submit_page(
 			clear_buffer_dirty(bh);
 		}
 
-		for (i = 0; i < cnt; i++) {
+		for (i = 0; i < bh_count; i++) {
 			refile_buffer(bh_arr[i]);
 			submit_bh(WRITE, bh_arr[i]);
 		}
-	} else
+	} else {
 		unlock_page(page);
+	}
 }
 
 /*
@@ -570,11 +571,13 @@ xfs_convert_page(
 	bh = head = page_buffers(page);
 	do {
 		offset = i << bbits;
+		if (offset >= end)
+			break;
 		if (!(PageUptodate(page) || buffer_uptodate(bh)))
 			continue;
 		if (buffer_mapped(bh) && all_bh &&
 		    !buffer_unwritten(bh) && !buffer_delay(bh)) {
-			if (startio && (offset < end)) {
+			if (startio) {
 				lock_buffer(bh);
 				bh_arr[index++] = bh;
 			}
@@ -602,7 +605,7 @@ xfs_convert_page(
 				ASSERT(private);
 			}
 		}
-		if (startio && (offset < end)) {
+		if (startio) {
 			bh_arr[index++] = bh;
 		} else {
 			unlock_buffer(bh);

@@ -651,6 +651,7 @@ int izo_upc_upcall(int minor, int *size, struct izo_upcall_hdr *, int async);
 int izo_repstatus(struct presto_file_set *fset, __u64 client_kmlsize, 
                   struct izo_rcvd_rec *lr_client, struct izo_rcvd_rec *lr_server);
 int izo_rep_cache_init(struct presto_file_set *);
+void izo_rep_cache_clean(struct presto_file_set *fset);
 loff_t izo_rcvd_get(struct izo_rcvd_rec *, struct presto_file_set *, char *uuid);
 loff_t izo_rcvd_write(struct presto_file_set *, struct izo_rcvd_rec *);
 loff_t izo_rcvd_upd_remote(struct presto_file_set *fset, char * uuid,  __u64 remote_recno,
@@ -708,10 +709,17 @@ static inline int dentry_name_cmp(struct dentry *dentry, char *name)
 static inline char *strdup(char *str)
 {
         char *tmp;
-        tmp = kmalloc(strlen(str) + 1, GFP_KERNEL);
-        if (tmp)
-                memcpy(tmp, str, strlen(str) + 1);
-               
+		long int s;
+
+		s=strlen(str) + 1;
+        tmp = kmalloc(s, GFP_KERNEL);
+        if (tmp){
+				  memcpy(tmp, str, s);
+				  presto_kmem_inc(tmp, s);
+		}
+        CDEBUG(D_MALLOC, "kmalloced: %ld at %p (tot %ld).\n",
+               s, tmp, presto_kmemory);
+				  
         return tmp;
 }
 

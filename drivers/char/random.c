@@ -1771,7 +1771,7 @@ static int change_poolsize(int poolsize)
 static int proc_do_poolsize(ctl_table *table, int write, struct file *filp,
 			    void *buffer, size_t *lenp)
 {
-	int	ret;
+	unsigned int	ret;
 
 	sysctl_poolsize = random_state->poolinfo.POOLBYTES;
 

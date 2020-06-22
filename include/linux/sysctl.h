@@ -154,9 +154,10 @@ enum
 	VM_PAGEBUF=17,		/* struct: Control pagebuf parameters */
 	VM_GFP_DEBUG=18,        /* debug GFP failures */
 	VM_CACHE_SCAN_RATIO=19, /* part of the inactive cache list to scan */
-	VM_MAPPED_RATIO=20,     /* amount of unfreeable pages that triggers swapout */
+	VM_MAPPED_RATIO=20,	/* amount of unfreeable pages that triggers swapout */
 	VM_LAPTOP_MODE=21,	/* kernel in laptop flush mode */
 	VM_BLOCK_DUMP=22,	/* dump fs activity to log */
+	VM_ANON_LRU=23,		/* immediatly insert anon pages in the vm page lru */
 };
 
 
@@ -627,7 +628,7 @@ enum
 	FS_LEASES=13,	/* int: leases enabled */
 	FS_DIR_NOTIFY=14,	/* int: directory notification enabled */
 	FS_LEASE_TIME=15,	/* int: maximum time to wait for a lease break */
-	FS_DQSTATS=16,	/* dir: disc quota usage statistics */
+	FS_DQSTATS=16,	/* dir: disc quota usage statistics and settings */
 	FS_XFS=17,	/* struct: control xfs parameters */
 };
 
@@ -641,6 +642,7 @@ enum {
 	FS_DQ_ALLOCATED = 6,
 	FS_DQ_FREE = 7,
 	FS_DQ_SYNCS = 8,
+	FS_DQ_WARNINGS = 9,
 };
 
 /* CTL_DEBUG names: */

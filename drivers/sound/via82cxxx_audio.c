@@ -63,11 +63,6 @@
         }
 #endif
 
-#if defined(CONFIG_PROC_FS) && \
-    defined(CONFIG_SOUND_VIA82CXXX_PROCFS)
-#define VIA_PROC_FS 1
-#endif
-
 #define VIA_SUPPORT_MMAP 1 /* buggy, for now... */
 
 #define MAX_CARDS	1
@@ -367,7 +362,7 @@ static void via_chan_clear (struct via_info *card, struct via_channel *chan);
 static void via_chan_pcm_fmt (struct via_channel *chan, int reset);
 static void via_chan_buffer_free (struct via_info *card, struct via_channel *chan);
 
-#ifdef VIA_PROC_FS
+#ifdef CONFIG_PROC_FS
 static int via_init_proc (void);
 static void via_cleanup_proc (void);
 static int via_card_init_proc (struct via_info *card);
@@ -3655,7 +3650,7 @@ EXPORT_NO_SYMBOLS;
 
 
 
-#ifdef VIA_PROC_FS
+#ifdef CONFIG_PROC_FS
 
 /****************************************************************
  *
@@ -3831,4 +3826,4 @@ static void via_card_cleanup_proc (struct via_info *card)
 	DPRINTK ("EXIT\n");
 }
 
-#endif /* VIA_PROC_FS */
+#endif /* CONFIG_PROC_FS */

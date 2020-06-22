@@ -52,6 +52,7 @@ int acpi_disabled;
 EXPORT_SYMBOL(acpi_disabled);
 
 int swiotlb;
+EXPORT_SYMBOL(swiotlb);
 
 extern	int phys_proc_id[NR_CPUS];
 

@@ -211,7 +211,7 @@ E1000_PARAM(InterruptThrottleRate, "Interrupt Throttling Rate");
 #define MAX_TXABSDELAY            0xFFFF
 #define MIN_TXABSDELAY                 0
 
-#define DEFAULT_ITR                 8000 
+#define DEFAULT_ITR                 8000
 #define MAX_ITR                   100000
 #define MIN_ITR                      100
 
@@ -447,9 +447,6 @@ e1000_check_options(struct e1000_adapter *adapter)
 
 			adapter->itr = InterruptThrottleRate[bd];
 			switch(adapter->itr) {
-			case -1:
-				adapter->itr = 1;
-				break;
 			case 0:
 				DPRINTK(PROBE, INFO, "%s turned off\n", 
 					opt.name);
@@ -458,6 +455,7 @@ e1000_check_options(struct e1000_adapter *adapter)
 				DPRINTK(PROBE, INFO, "%s set to dynamic mode\n", 
 					opt.name);
 				break;
+			case -1:
 			default:
 				e1000_validate_option(&adapter->itr, &opt, 
 					adapter);

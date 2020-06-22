@@ -111,6 +111,8 @@ nargs (unsigned int arg, char **ap)
 			*ap++ = (char *) A(addr);
 		arg += sizeof(unsigned int);
 		n++;
+		if (n >= (MAX_ARG_PAGES * PAGE_SIZE) / sizeof(char *))
+			return -E2BIG;
 	} while (addr);
 	return n - 1;
 }
@@ -1367,6 +1369,11 @@ struct cmsghdr32 {
 #define __CMSG32_FIRSTHDR(ctl,len) \
 	((len) >= sizeof(struct cmsghdr32) ? (struct cmsghdr32 *)(ctl) : (struct cmsghdr32 *)NULL)
 #define CMSG32_FIRSTHDR(msg)	__CMSG32_FIRSTHDR((msg)->msg_control, (msg)->msg_controllen)
+#define CMSG32_OK(ucmlen, ucmsg, mhdr) \
+	((ucmlen) >= sizeof(struct cmsghdr32) && \
+	 (ucmlen) <= (unsigned long) \
+	 ((mhdr)->msg_controllen - \
+	  ((char *)(ucmsg) - (char *)(mhdr)->msg_control)))
 
 static inline struct cmsghdr32 *
 __cmsg32_nxthdr (void *ctl, __kernel_size_t size, struct cmsghdr32 *cmsg, int cmsg_len)
@@ -1427,10 +1434,7 @@ get_cmsghdr32 (struct msghdr *kmsg, unsigned char *stackbuf, struct sock *sk, si
 			return -EFAULT;
 
 		/* Catch bogons. */
-		if (CMSG32_ALIGN(ucmlen) < CMSG32_ALIGN(sizeof(struct cmsghdr32)))
-			return -EINVAL;
-		if ((unsigned long)(((char *)ucmsg - (char *)kmsg->msg_control) + ucmlen)
-		    > kmsg->msg_controllen)
+		if (!CMSG32_OK(ucmlen, ucmsg, kmsg))
 			return -EINVAL;
 
 		tmp = ((ucmlen - CMSG32_ALIGN(sizeof(*ucmsg))) +

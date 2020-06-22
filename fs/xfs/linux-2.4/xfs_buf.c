@@ -626,7 +626,7 @@ _pagebuf_free_bh(
  *	which may imply that this call will block until those buffers
  *	are unlocked.  No I/O is implied by this call.
  */
-STATIC xfs_buf_t *
+xfs_buf_t *
 _pagebuf_find(				/* find buffer for block	*/
 	xfs_buftarg_t		*target,/* target for block		*/
 	loff_t			ioff,	/* starting offset of range	*/
@@ -719,39 +719,14 @@ found:
 	return (pb);
 }
 
-
 /*
- *	pagebuf_find
+ *	xfs_buf_get_flags assembles a buffer covering the specified range.
  *
- *	pagebuf_find returns a buffer matching the specified range of
- *	data for the specified target, if any of the relevant blocks
- *	are in memory.  The buffer may have unallocated holes, if
- *	some, but not all, of the blocks are in memory.  Even where
- *	pages are present in the buffer, not all of every page may be
- *	valid.
+ *	Storage in memory for all portions of the buffer will be allocated,
+ *	although backing storage may not be.
  */
 xfs_buf_t *
-pagebuf_find(				/* find buffer for block	*/
-					/* if the block is in memory	*/
-	xfs_buftarg_t		*target,/* target for block		*/
-	loff_t			ioff,	/* starting offset of range	*/
-	size_t			isize,	/* length of range		*/
-	page_buf_flags_t	flags)	/* PBF_TRYLOCK			*/
-{
-	return _pagebuf_find(target, ioff, isize, flags, NULL);
-}
-
-/*
- *	pagebuf_get
- *
- *	pagebuf_get assembles a buffer covering the specified range.
- *	Some or all of the blocks in the range may be valid.  Storage
- *	in memory for all portions of the buffer will be allocated,
- *	although backing storage may not be.  If PBF_READ is set in
- *	flags, pagebuf_iostart is called also.
- */
-xfs_buf_t *
-pagebuf_get(				/* allocate a buffer		*/
+xfs_buf_get_flags(			/* allocate a buffer		*/
 	xfs_buftarg_t		*target,/* target for buffer		*/
 	loff_t			ioff,	/* starting offset of range	*/
 	size_t			isize,	/* length of range		*/
@@ -781,8 +756,8 @@ pagebuf_get(				/* allocate a buffer		*/
 	if (!(pb->pb_flags & PBF_MAPPED)) {
 		error = _pagebuf_map_pages(pb, flags);
 		if (unlikely(error)) {
-			printk(KERN_WARNING
-			       "pagebuf_get: failed to map pages\n");
+			printk(KERN_WARNING "%s: failed to map pages\n",
+					__FUNCTION__);
 			goto no_buffer;
 		}
 	}
@@ -796,30 +771,50 @@ pagebuf_get(				/* allocate a buffer		*/
 	pb->pb_bn = ioff;
 	pb->pb_count_desired = pb->pb_buffer_length;
 
-	if (flags & PBF_READ) {
+	PB_TRACE(pb, "get", (unsigned long)flags);
+	return pb;
+
+ no_buffer:
+	if (flags & (PBF_LOCK | PBF_TRYLOCK))
+		pagebuf_unlock(pb);
+	pagebuf_rele(pb);
+	return NULL;
+}
+
+xfs_buf_t *
+xfs_buf_read_flags(
+	xfs_buftarg_t		*target,
+	loff_t			ioff,
+	size_t			isize,
+	page_buf_flags_t	flags)
+{
+	xfs_buf_t		*pb;
+
+	flags |= PBF_READ;
+
+	pb = xfs_buf_get_flags(target, ioff, isize, flags);
+	if (pb) {
 		if (PBF_NOT_DONE(pb)) {
-			PB_TRACE(pb, "get_read", (unsigned long)flags);
+			PB_TRACE(pb, "read", (unsigned long)flags);
 			XFS_STATS_INC(pb_get_read);
 			pagebuf_iostart(pb, flags);
 		} else if (flags & PBF_ASYNC) {
-			PB_TRACE(pb, "get_read_async", (unsigned long)flags);
+			PB_TRACE(pb, "read_async", (unsigned long)flags);
 			/*
 			 * Read ahead call which is already satisfied,
 			 * drop the buffer
 			 */
 			goto no_buffer;
 		} else {
-			PB_TRACE(pb, "get_read_done", (unsigned long)flags);
+			PB_TRACE(pb, "read_done", (unsigned long)flags);
 			/* We do not want read in the flags */
 			pb->pb_flags &= ~PBF_READ;
 		}
-	} else {
-		PB_TRACE(pb, "get_write", (unsigned long)flags);
 	}
 
 	return pb;
 
-no_buffer:
+ no_buffer:
 	if (flags & (PBF_LOCK | PBF_TRYLOCK))
 		pagebuf_unlock(pb);
 	pagebuf_rele(pb);
@@ -857,8 +852,8 @@ pagebuf_readahead(
 	size_t			isize,
 	page_buf_flags_t	flags)
 {
-	flags |= (PBF_TRYLOCK|PBF_READ|PBF_ASYNC|PBF_READ_AHEAD);
-	pagebuf_get(target, ioff, isize, flags);
+	flags |= (PBF_TRYLOCK|PBF_ASYNC|PBF_READ_AHEAD);
+	xfs_buf_read_flags(target, ioff, isize, flags);
 }
 
 xfs_buf_t *
@@ -1078,6 +1073,7 @@ pagebuf_cond_lock(			/* lock buffer, if not locked	*/
 	return(locked ? 0 : -EBUSY);
 }
 
+#ifdef DEBUG
 /*
  *	pagebuf_lock_value
  *
@@ -1089,6 +1085,7 @@ pagebuf_lock_value(
 {
 	return(atomic_read(&pb->pb_sema.count));
 }
+#endif
 
 /*
  *	pagebuf_lock
@@ -1434,6 +1431,34 @@ _pagebuf_end_io_partial_pages(
  *	Handling of buftargs.
  */
 
+/*
+ * Wait for any bufs with callbacks that have been submitted but
+ * have not yet returned... walk the hash list for the target.
+ */
+void
+xfs_wait_buftarg(
+	xfs_buftarg_t *target)
+{
+	xfs_buf_t	*pb, *n;
+	pb_hash_t	*h;
+	int		i;
+
+	for (i = 0; i < NHASH; i++) {
+		h = &pbhash[i];
+again:
+		spin_lock(&h->pb_hash_lock);
+		list_for_each_entry_safe(pb, n, &h->pb_hash, pb_hash_list) {
+			if (pb->pb_target == target &&
+					!(pb->pb_flags & PBF_FS_MANAGED)) {
+				spin_unlock(&h->pb_hash_lock);
+				delay(100);
+				goto again;
+			}
+		}
+		spin_unlock(&h->pb_hash_lock);
+	}
+}
+
 void
 xfs_free_buftarg(
 	xfs_buftarg_t		*btp,
@@ -1524,6 +1549,7 @@ xfs_alloc_buftarg(
 	case EVMS_MAJOR:
 		btp->pbr_flags = PBR_ALIGNED_ONLY;
 		break;
+	case LOOP_MAJOR:
 	case LVM_BLK_MAJOR:
 		btp->pbr_flags = PBR_SECTOR_ONLY;
 		break;

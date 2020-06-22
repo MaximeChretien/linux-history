@@ -65,8 +65,16 @@ static void sctp_stub_rfree(struct sk_buff *skb)
  */
 }
 
+/* Initialize an ULP event from an given skb.  */
+SCTP_STATIC void sctp_ulpevent_init(struct sctp_ulpevent *event, int msg_flags)
+{
+	memset(event, 0, sizeof(struct sctp_ulpevent));
+	event->msg_flags = msg_flags;
+}
+
 /* Create a new sctp_ulpevent.  */
-struct sctp_ulpevent *sctp_ulpevent_new(int size, int msg_flags, int gfp)
+SCTP_STATIC struct sctp_ulpevent *sctp_ulpevent_new(int size, int msg_flags,
+						    int gfp)
 {
 	struct sctp_ulpevent *event;
 	struct sk_buff *skb;
@@ -82,13 +90,6 @@ struct sctp_ulpevent *sctp_ulpevent_new(int size, int msg_flags, int gfp)
 
 fail:
 	return NULL;
-}
-
-/* Initialize an ULP event from an given skb.  */
-void sctp_ulpevent_init(struct sctp_ulpevent *event, int msg_flags)
-{
-	memset(event, 0, sizeof(struct sctp_ulpevent));
-	event->msg_flags = msg_flags;
 }
 
 /* Is this a MSG_NOTIFICATION?  */
@@ -322,7 +323,7 @@ struct sctp_ulpevent *sctp_ulpevent_make_peer_addr_change(
 	memcpy(&spc->spc_aaddr, aaddr, sizeof(struct sockaddr_storage));
 
 	/* Map ipv4 address into v4-mapped-on-v6 address.  */
-	sctp_get_pf_specific(asoc->base.sk->sk_family)->addr_v4map(
+	sctp_get_pf_specific(asoc->base.sk->family)->addr_v4map(
 					sctp_sk(asoc->base.sk),
 					(union sctp_addr *)&spc->spc_aaddr);
 

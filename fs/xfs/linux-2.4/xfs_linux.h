@@ -79,6 +79,7 @@
 #include <linux/pagemap.h>
 #include <linux/seq_file.h>
 #include <linux/init.h>
+#include <linux/list.h>
 #include <linux/proc_fs.h>
 
 #include <asm/page.h>
@@ -141,6 +142,8 @@ BUFFER_FNS(Unwritten, unwritten)
 #define xfs_inherit_noatime	xfs_params.inherit_noatim.val
 #define xfs_buf_timer_centisecs	xfs_params.xfs_buf_timer.val
 #define xfs_buf_age_centisecs	xfs_params.xfs_buf_age.val
+#define xfs_inherit_nosymlinks	xfs_params.inherit_nosym.val
+#define xfs_rotorstep		xfs_params.rotorstep.val
 
 #define current_cpu()		smp_processor_id()
 #define current_pid()		(current->pid)

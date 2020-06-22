@@ -55,6 +55,24 @@
 #include <net/sctp/sctp.h>
 #include <net/sctp/sm.h>
 
+static int sctp_cmd_interpreter(sctp_event_t event_type,
+				sctp_subtype_t subtype,
+				sctp_state_t state,
+				struct sctp_endpoint *ep,
+				struct sctp_association *asoc,
+				void *event_arg,
+			 	sctp_disposition_t status,
+				sctp_cmd_seq_t *commands,
+				int gfp);
+static int sctp_side_effects(sctp_event_t event_type, sctp_subtype_t subtype,
+			     sctp_state_t state,
+			     struct sctp_endpoint *ep,
+			     struct sctp_association *asoc,
+			     void *event_arg,
+			     sctp_disposition_t status,
+			     sctp_cmd_seq_t *commands,
+			     int gfp);
+
 /********************************************************************
  * Helper functions
  ********************************************************************/
@@ -134,8 +152,8 @@ static void sctp_do_ecn_cwr_work(struct sctp_association *asoc,
 }
 
 /* Generate SACK if necessary.  We call this at the end of a packet.  */
-int sctp_gen_sack(struct sctp_association *asoc, int force,
-		  sctp_cmd_seq_t *commands)
+static int sctp_gen_sack(struct sctp_association *asoc, int force,
+			 sctp_cmd_seq_t *commands)
 {
 	__u32 ctsn, max_tsn_seen;
 	struct sctp_chunk *sack;
@@ -229,7 +247,7 @@ void sctp_generate_t3_rtx_event(unsigned long peer)
 			   transport, GFP_ATOMIC);
 
 	if (error)
-		asoc->base.sk->sk_err = -error;
+		asoc->base.sk->err = -error;
 
 out_unlock:
 	sctp_bh_unlock_sock(asoc->base.sk);
@@ -269,38 +287,38 @@ static void sctp_generate_timeout_event(struct sctp_association *asoc,
 			   (void *)timeout_type, GFP_ATOMIC);
 
 	if (error)
-		asoc->base.sk->sk_err = -error;
+		asoc->base.sk->err = -error;
 
 out_unlock:
 	sctp_bh_unlock_sock(asoc->base.sk);
 	sctp_association_put(asoc);
 }
 
-void sctp_generate_t1_cookie_event(unsigned long data)
+static void sctp_generate_t1_cookie_event(unsigned long data)
 {
 	struct sctp_association *asoc = (struct sctp_association *) data;
 	sctp_generate_timeout_event(asoc, SCTP_EVENT_TIMEOUT_T1_COOKIE);
 }
 
-void sctp_generate_t1_init_event(unsigned long data)
+static void sctp_generate_t1_init_event(unsigned long data)
 {
 	struct sctp_association *asoc = (struct sctp_association *) data;
 	sctp_generate_timeout_event(asoc, SCTP_EVENT_TIMEOUT_T1_INIT);
 }
 
-void sctp_generate_t2_shutdown_event(unsigned long data)
+static void sctp_generate_t2_shutdown_event(unsigned long data)
 {
 	struct sctp_association *asoc = (struct sctp_association *) data;
 	sctp_generate_timeout_event(asoc, SCTP_EVENT_TIMEOUT_T2_SHUTDOWN);
 }
 
-void sctp_generate_t4_rto_event(unsigned long data)
+static void sctp_generate_t4_rto_event(unsigned long data)
 {
 	struct sctp_association *asoc = (struct sctp_association *) data;
 	sctp_generate_timeout_event(asoc, SCTP_EVENT_TIMEOUT_T4_RTO);
 }
 
-void sctp_generate_t5_shutdown_guard_event(unsigned long data)
+static void sctp_generate_t5_shutdown_guard_event(unsigned long data)
 {
         struct sctp_association *asoc = (struct sctp_association *)data;
         sctp_generate_timeout_event(asoc,
@@ -308,7 +326,7 @@ void sctp_generate_t5_shutdown_guard_event(unsigned long data)
 
 } /* sctp_generate_t5_shutdown_guard_event() */
 
-void sctp_generate_autoclose_event(unsigned long data)
+static void sctp_generate_autoclose_event(unsigned long data)
 {
 	struct sctp_association *asoc = (struct sctp_association *) data;
 	sctp_generate_timeout_event(asoc, SCTP_EVENT_TIMEOUT_AUTOCLOSE);
@@ -345,7 +363,7 @@ void sctp_generate_heartbeat_event(unsigned long data)
 			   transport, GFP_ATOMIC);
 
          if (error)
-		 asoc->base.sk->sk_err = -error;
+		 asoc->base.sk->err = -error;
 
 out_unlock:
 	sctp_bh_unlock_sock(asoc->base.sk);
@@ -353,7 +371,7 @@ out_unlock:
 }
 
 /* Inject a SACK Timeout event into the state machine.  */
-void sctp_generate_sack_event(unsigned long data)
+static void sctp_generate_sack_event(unsigned long data)
 {
 	struct sctp_association *asoc = (struct sctp_association *) data;
 	sctp_generate_timeout_event(asoc, SCTP_EVENT_TIMEOUT_SACK);
@@ -397,7 +415,7 @@ static void sctp_do_8_2_transport_strike(struct sctp_association *asoc,
 	asoc->overall_error_count++;
 
 	if (transport->active &&
-	    (transport->error_count++ >= transport->error_threshold)) {
+	    (transport->error_count++ >= transport->max_retrans)) {
 		SCTP_DEBUG_PRINTK("transport_strike: transport "
 				  "IP:%d.%d.%d.%d failed.\n",
 				  NIPQUAD(transport->ipaddr.v4.sin_addr));
@@ -460,9 +478,9 @@ static void sctp_cmd_assoc_failed(sctp_cmd_seq_t *commands,
 	sctp_add_cmd_sf(commands, SCTP_CMD_NEW_STATE,
 			SCTP_STATE(SCTP_STATE_CLOSED));
 
-	/* Set sk_err to ECONNRESET on a 1-1 style socket. */
+	/* Set sk->err to ECONNRESET on a 1-1 style socket. */
 	if (!sctp_style(asoc->base.sk, UDP))
-		asoc->base.sk->sk_err = ECONNRESET; 
+		asoc->base.sk->err = ECONNRESET; 
 
 	/* SEND_FAILED sent later when cleaning up the association. */
 	asoc->outqueue.error = error;
@@ -648,16 +666,16 @@ static void sctp_cmd_new_state(sctp_cmd_seq_t *cmds,
 	asoc->state = state;
 
 	if (sctp_style(sk, TCP)) {
-		/* Change the sk->sk_state of a TCP-style socket that has 
+		/* Change the sk->state of a TCP-style socket that has 
 		 * sucessfully completed a connect() call.
 		 */
 		if (sctp_state(asoc, ESTABLISHED) && sctp_sstate(sk, CLOSED))
-			sk->sk_state = SCTP_SS_ESTABLISHED;
+			sk->state = SCTP_SS_ESTABLISHED;
 
 		/* Set the RCV_SHUTDOWN flag when a SHUTDOWN is received. */
 		if (sctp_state(asoc, SHUTDOWN_RECEIVED) &&
 		    sctp_sstate(sk, ESTABLISHED))
-			sk->sk_shutdown |= RCV_SHUTDOWN;
+			sk->shutdown |= RCV_SHUTDOWN;
 	}
 
 	if (sctp_state(asoc, ESTABLISHED) ||
@@ -676,7 +694,7 @@ static void sctp_cmd_new_state(sctp_cmd_seq_t *cmds,
 		 * notifications.
 		 */
 		if (!sctp_style(sk, UDP))
-			sk->sk_state_change(sk);
+			sk->state_change(sk);
 	}
 }
 
@@ -691,7 +709,7 @@ static void sctp_cmd_delete_tcb(sctp_cmd_seq_t *cmds,
 	 * can pick it up later.
 	 */ 
 	if (sctp_style(sk, TCP) && sctp_sstate(sk, LISTENING) &&
-	    (!asoc->temp) && (sk->sk_shutdown != SHUTDOWN_MASK))
+	    (!asoc->temp) && (sk->shutdown != SHUTDOWN_MASK))
 		return;
 
 	sctp_unhash_established(asoc);
@@ -857,14 +875,14 @@ int sctp_do_sm(sctp_event_t event_type, sctp_subtype_t subtype,
 /*****************************************************************
  * This the master state function side effect processing function.
  *****************************************************************/
-int sctp_side_effects(sctp_event_t event_type, sctp_subtype_t subtype,
-		      sctp_state_t state,
-		      struct sctp_endpoint *ep,
-		      struct sctp_association *asoc,
-		      void *event_arg,
-		      sctp_disposition_t status,
-		      sctp_cmd_seq_t *commands,
-		      int gfp)
+static int sctp_side_effects(sctp_event_t event_type, sctp_subtype_t subtype,
+			     sctp_state_t state,
+			     struct sctp_endpoint *ep,
+			     struct sctp_association *asoc,
+			     void *event_arg,
+			     sctp_disposition_t status,
+			     sctp_cmd_seq_t *commands,
+			     int gfp)
 {
 	int error;
 
@@ -944,11 +962,15 @@ bail:
  ********************************************************************/
 
 /* This is the side-effect interpreter.  */
-int sctp_cmd_interpreter(sctp_event_t event_type, sctp_subtype_t subtype,
-			 sctp_state_t state, struct sctp_endpoint *ep,
-			 struct sctp_association *asoc, void *event_arg,
-			 sctp_disposition_t status, sctp_cmd_seq_t *commands,
-			 int gfp)
+static int sctp_cmd_interpreter(sctp_event_t event_type,
+				sctp_subtype_t subtype,
+				sctp_state_t state,
+				struct sctp_endpoint *ep,
+				struct sctp_association *asoc,
+				void *event_arg,
+			 	sctp_disposition_t status,
+				sctp_cmd_seq_t *commands,
+				int gfp)
 {
 	int error = 0;
 	int force;

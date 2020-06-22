@@ -122,9 +122,9 @@ hash_conntrack(const struct ip_conntrack_tuple *tuple)
 }
 
 inline int
-get_tuple(const struct iphdr *iph, size_t len,
-	  struct ip_conntrack_tuple *tuple,
-	  struct ip_conntrack_protocol *protocol)
+ip_ct_get_tuple(const struct iphdr *iph, size_t len,
+                struct ip_conntrack_tuple *tuple,
+                struct ip_conntrack_protocol *protocol)
 {
 	int ret;
 
@@ -546,7 +546,7 @@ icmp_error_track(struct sk_buff *skb,
 	innerproto = ip_ct_find_proto(inner->protocol);
 	/* Are they talking about one of our connections? */
 	if (inner->ihl * 4 + 8 > datalen
-	    || !get_tuple(inner, datalen, &origtuple, innerproto)) {
+	    || !ip_ct_get_tuple(inner, datalen, &origtuple, innerproto)) {
 		DEBUGP("icmp_error: ! get_tuple p=%u (%u*4+%u dlen=%u)\n",
 		       inner->protocol, inner->ihl, 8,
 		       datalen);
@@ -757,7 +757,7 @@ resolve_normal_ct(struct sk_buff *skb,
 
 	IP_NF_ASSERT((skb->nh.iph->frag_off & htons(IP_OFFSET)) == 0);
 
-	if (!get_tuple(skb->nh.iph, skb->len, &tuple, proto))
+	if (!ip_ct_get_tuple(skb->nh.iph, skb->len, &tuple, proto))
 		return NULL;
 
 	/* look for tuple match */

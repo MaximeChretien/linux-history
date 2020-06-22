@@ -1149,7 +1149,6 @@ prepare:
 	switch(to_do) {
 	default:
 	case SYM_EH_DO_IGNORE:
-		goto finish;
 		break;
 	case SYM_EH_DO_WAIT:
 #if LINUX_VERSION_CODE > LinuxVersionCode(2,3,0)
@@ -1193,7 +1192,6 @@ prepare:
 		to_do = SYM_EH_DO_IGNORE;
 	}
 
-finish:
 	ep->to_do = to_do;
 	/* Complete the command with locks held as required by the driver */
 	if (to_do == SYM_EH_DO_COMPLETE)
@@ -1469,7 +1467,8 @@ static void sym_exec_user_command (hcb_p np, struct sym_usrcmd *uc)
 					tp->tinfo.goal.offset  = 0;
 					break;
 				}
-				if (uc->data <= 9 && np->minsync_dt) {
+				if (uc->data <= 9 && np->minsync_dt &&
+				    np->scsi_mode == SMODE_LVD) {
 					if (uc->data < np->minsync_dt)
 						uc->data = np->minsync_dt;
 					tp->tinfo.goal.options = PPR_OPT_DT;

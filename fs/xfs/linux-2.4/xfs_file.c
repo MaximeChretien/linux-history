@@ -322,7 +322,7 @@ linvfs_file_mmap(
 	vattr_t		va = { .va_mask = XFS_AT_UPDATIME };
 	int		error;
 
-	if ((vp->v_type == VREG) && (vp->v_vfsp->vfs_flag & VFS_DMI)) {
+	if (vp->v_vfsp->vfs_flag & VFS_DMI) {
 		xfs_mount_t	*mp = XFS_VFSTOM(vp->v_vfsp);
 
 		error = -XFS_SEND_MMAP(mp, vma, 0);
@@ -333,6 +333,8 @@ linvfs_file_mmap(
 	vma->vm_ops = &linvfs_file_vm_ops;
 
 	VOP_SETATTR(vp, &va, XFS_AT_UPDATIME, NULL, error);
+	if (!error)
+		vn_revalidate(vp);	/* update Linux inode flags */
 	return 0;
 }
 
@@ -394,7 +396,7 @@ linvfs_mprotect(
 	vnode_t		*vp = LINVFS_GET_VP(vma->vm_file->f_dentry->d_inode);
 	int		error = 0;
 
-	if ((vp->v_type == VREG) && (vp->v_vfsp->vfs_flag & VFS_DMI)) {
+	if (vp->v_vfsp->vfs_flag & VFS_DMI) {
 		if ((vma->vm_flags & VM_MAYSHARE) &&
 		    (newflags & PROT_WRITE) && !(vma->vm_flags & PROT_WRITE)) {
 			xfs_mount_t	*mp = XFS_VFSTOM(vp->v_vfsp);

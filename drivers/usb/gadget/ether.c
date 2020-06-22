@@ -62,6 +62,7 @@
 
 /*
  * Ethernet gadget driver -- with CDC and non-CDC options
+ * Builds on hardware support for a full duplex link.
  *
  * CDC Ethernet is the standard USB solution for sending Ethernet frames
  * using USB.  Real hardware tends to use the same framing protocol but look
@@ -82,7 +83,7 @@
  */
 
 #define DRIVER_DESC		"Ethernet Gadget"
-#define DRIVER_VERSION		"St Patrick's Day 2004"
+#define DRIVER_VERSION		"Equinox 2004"
 
 static const char shortname [] = "ether";
 static const char driver_desc [] = DRIVER_DESC;
@@ -239,12 +240,24 @@ MODULE_PARM_DESC(host_addr, "Host Ethernet Address");
 #define	DEV_CONFIG_CDC
 #endif
 
+#ifdef CONFIG_USB_GADGET_LH7A40X
+#define DEV_CONFIG_CDC
+#endif
+
 #ifdef CONFIG_USB_GADGET_MQ11XX
 #define	DEV_CONFIG_CDC
 #endif
 
 #ifdef CONFIG_USB_GADGET_OMAP
 #define	DEV_CONFIG_CDC
+#endif
+
+#ifdef CONFIG_USB_GADGET_N9604
+#define	DEV_CONFIG_CDC
+#endif
+
+#ifdef CONFIG_USB_GADGET_PXA27X
+#define DEV_CONFIG_CDC
 #endif
 
 
@@ -355,6 +368,9 @@ module_param (qmult, uint, 0);
  *
  * NOTE:  Controllers like superh_udc should probably be able to use
  * an RNDIS-only configuration.
+ *
+ * FIXME define some higher-powered configurations to make it easier
+ * to recharge batteries ...
  */
 
 #define DEV_CONFIG_VALUE	1	/* cdc or subset */
@@ -378,6 +394,14 @@ device_desc = {
 	.bNumConfigurations =	1,
 };
 
+static struct usb_otg_descriptor
+otg_descriptor = {
+	.bLength =		sizeof otg_descriptor,
+	.bDescriptorType =	USB_DT_OTG,
+
+	.bmAttributes =		USB_OTG_SRP,
+};
+
 static struct usb_config_descriptor
 eth_config = {
 	.bLength =		sizeof eth_config,
@@ -388,11 +412,11 @@ eth_config = {
 	.bConfigurationValue =	DEV_CONFIG_VALUE,
 	.iConfiguration =	STRING_CDC,
 	.bmAttributes =		USB_CONFIG_ATT_ONE | USB_CONFIG_ATT_SELFPOWER,
-	.bMaxPower =		1,
+	.bMaxPower =		50,
 };
 
 #ifdef	CONFIG_USB_ETH_RNDIS
-static const struct usb_config_descriptor 
+static struct usb_config_descriptor 
 rndis_config = {
 	.bLength =              sizeof rndis_config,
 	.bDescriptorType =      USB_DT_CONFIG,
@@ -402,7 +426,7 @@ rndis_config = {
 	.bConfigurationValue =  DEV_RNDIS_CONFIG_VALUE,
 	.iConfiguration =       STRING_RNDIS,
 	.bmAttributes =		USB_CONFIG_ATT_ONE | USB_CONFIG_ATT_SELFPOWER,
-	.bMaxPower =            1,
+	.bMaxPower =            50,
 };
 #endif
 
@@ -688,7 +712,8 @@ fs_sink_desc = {
 	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
 };
 
-static const struct usb_descriptor_header *fs_eth_function [10] = {
+static const struct usb_descriptor_header *fs_eth_function [11] = {
+	(struct usb_descriptor_header *) &otg_descriptor,
 #ifdef DEV_CONFIG_CDC
 	/* "cdc" mode descriptors */
 	(struct usb_descriptor_header *) &control_intf,
@@ -702,24 +727,25 @@ static const struct usb_descriptor_header *fs_eth_function [10] = {
 	(struct usb_descriptor_header *) &data_intf,
 	(struct usb_descriptor_header *) &fs_source_desc,
 	(struct usb_descriptor_header *) &fs_sink_desc,
-	0,
+	NULL,
 #endif /* DEV_CONFIG_CDC */
 };
 
 static inline void __init fs_subset_descriptors(void)
 {
 #ifdef DEV_CONFIG_SUBSET
-	fs_eth_function[0] = (struct usb_descriptor_header *) &subset_data_intf;
-	fs_eth_function[1] = (struct usb_descriptor_header *) &fs_source_desc;
-	fs_eth_function[2] = (struct usb_descriptor_header *) &fs_sink_desc;
-	fs_eth_function[3] = 0;
+	fs_eth_function[1] = (struct usb_descriptor_header *) &subset_data_intf;
+	fs_eth_function[2] = (struct usb_descriptor_header *) &fs_source_desc;
+	fs_eth_function[3] = (struct usb_descriptor_header *) &fs_sink_desc;
+	fs_eth_function[4] = NULL;
 #else
-	fs_eth_function[0] = 0;
+	fs_eth_function[1] = NULL;
 #endif
 }
 
 #ifdef	CONFIG_USB_ETH_RNDIS
 static const struct usb_descriptor_header *fs_rndis_function [] = {
+	(struct usb_descriptor_header *) &otg_descriptor,
 	/* control interface matches ACM, not Ethernet */
 	(struct usb_descriptor_header *) &rndis_control_intf,
 	(struct usb_descriptor_header *) &header_desc,
@@ -731,7 +757,7 @@ static const struct usb_descriptor_header *fs_rndis_function [] = {
 	(struct usb_descriptor_header *) &rndis_data_intf,
 	(struct usb_descriptor_header *) &fs_source_desc,
 	(struct usb_descriptor_header *) &fs_sink_desc,
-	0,
+	NULL,
 };
 #endif
 
@@ -783,7 +809,8 @@ dev_qualifier = {
 	.bNumConfigurations =	1,
 };
 
-static const struct usb_descriptor_header *hs_eth_function [10] = {
+static const struct usb_descriptor_header *hs_eth_function [11] = {
+	(struct usb_descriptor_header *) &otg_descriptor,
 #ifdef DEV_CONFIG_CDC
 	/* "cdc" mode descriptors */
 	(struct usb_descriptor_header *) &control_intf,
@@ -797,24 +824,25 @@ static const struct usb_descriptor_header *hs_eth_function [10] = {
 	(struct usb_descriptor_header *) &data_intf,
 	(struct usb_descriptor_header *) &hs_source_desc,
 	(struct usb_descriptor_header *) &hs_sink_desc,
-	0,
+	NULL,
 #endif /* DEV_CONFIG_CDC */
 };
 
 static inline void __init hs_subset_descriptors(void)
 {
 #ifdef DEV_CONFIG_SUBSET
-	hs_eth_function[0] = (struct usb_descriptor_header *) &subset_data_intf;
-	hs_eth_function[1] = (struct usb_descriptor_header *) &fs_source_desc;
-	hs_eth_function[2] = (struct usb_descriptor_header *) &fs_sink_desc;
-	hs_eth_function[3] = 0;
+	hs_eth_function[1] = (struct usb_descriptor_header *) &subset_data_intf;
+	hs_eth_function[2] = (struct usb_descriptor_header *) &fs_source_desc;
+	hs_eth_function[3] = (struct usb_descriptor_header *) &fs_sink_desc;
+	hs_eth_function[4] = NULL;
 #else
-	hs_eth_function[0] = 0;
+	hs_eth_function[1] = NULL;
 #endif
 }
 
 #ifdef	CONFIG_USB_ETH_RNDIS
 static const struct usb_descriptor_header *hs_rndis_function [] = {
+	(struct usb_descriptor_header *) &otg_descriptor,
 	/* control interface matches ACM, not Ethernet */
 	(struct usb_descriptor_header *) &rndis_control_intf,
 	(struct usb_descriptor_header *) &header_desc,
@@ -826,7 +854,7 @@ static const struct usb_descriptor_header *hs_rndis_function [] = {
 	(struct usb_descriptor_header *) &rndis_data_intf,
 	(struct usb_descriptor_header *) &hs_source_desc,
 	(struct usb_descriptor_header *) &hs_sink_desc,
-	0,
+	NULL,
 };
 #endif
 
@@ -849,7 +877,7 @@ static inline void __init hs_subset_descriptors(void)
 
 /* descriptors that are built on-demand */
 
-static char				manufacturer [40];
+static char				manufacturer [50];
 static char				product_desc [40] = DRIVER_DESC;
 
 #ifdef	DEV_CONFIG_CDC
@@ -857,7 +885,7 @@ static char				product_desc [40] = DRIVER_DESC;
 static char				ethaddr [2 * ETH_ALEN + 1];
 #endif
 
-/* static strings, in iso 8859/1 */
+/* static strings, in UTF-8 */
 static struct usb_string		strings [] = {
 	{ STRING_MANUFACTURER,	manufacturer, },
 	{ STRING_PRODUCT,	product_desc, },
@@ -887,19 +915,21 @@ static struct usb_gadget_strings	stringtab = {
  * complications: class descriptors, and an altsetting.
  */
 static int
-config_buf (enum usb_device_speed speed, u8 *buf, u8 type, unsigned index)
+config_buf (enum usb_device_speed speed,
+	u8 *buf, u8 type,
+	unsigned index, int is_otg)
 {
-	int				len;
+	int					len;
+	const struct usb_config_descriptor	*config;
+	const struct usb_descriptor_header	**function;
 #ifdef CONFIG_USB_GADGET_DUALSPEED
 	int				hs = (speed == USB_SPEED_HIGH);
 
 	if (type == USB_DT_OTHER_SPEED_CONFIG)
 		hs = !hs;
-#define which_config(t)	(hs ? & t ## _config   : & t ## _config)
-#define which_fn(t)	(hs ? & hs_ ## t ## _function : & fs_ ## t ## _function)
+#define which_fn(t)	(hs ? hs_ ## t ## _function : fs_ ## t ## _function)
 #else
-#define	which_config(t)	(& t ## _config)
-#define	which_fn(t)	(& fs_ ## t ## _function)
+#define	which_fn(t)	(fs_ ## t ## _function)
 #endif
 
 	if (index >= device_desc.bNumConfigurations)
@@ -909,15 +939,21 @@ config_buf (enum usb_device_speed speed, u8 *buf, u8 type, unsigned index)
 	/* list the RNDIS config first, to make Microsoft's drivers
 	 * happy. DOCSIS 1.0 needs this too.
 	 */
-	if (device_desc.bNumConfigurations == 2 && index == 0)
-		len = usb_gadget_config_buf (which_config (rndis), buf,
-			USB_BUFSIZ, (const struct usb_descriptor_header **)
-				which_fn (rndis));
-	else
+	if (device_desc.bNumConfigurations == 2 && index == 0) {
+		config = &rndis_config;
+		function = which_fn (rndis);
+	} else
 #endif
-		len = usb_gadget_config_buf (which_config (eth), buf,
-			USB_BUFSIZ, (const struct usb_descriptor_header **)
-				which_fn (eth));
+	{
+		config = &eth_config;
+		function = which_fn (eth);
+	}
+
+	/* for now, don't advertise srp-only devices */
+	if (!is_otg)
+		function++;
+
+	len = usb_gadget_config_buf (config, buf, USB_BUFSIZ, function);
 	if (len < 0)
 		return len;
 	((struct usb_config_descriptor *) buf)->bDescriptorType = type;
@@ -1068,8 +1104,8 @@ set_ether_config (struct eth_dev *dev, int gfp_flags)
 		if (dev->status_ep)
 			(void) usb_ep_disable (dev->status_ep);
 #endif
-		dev->status_ep = 0;
-		dev->status = 0;
+		dev->status_ep = NULL;
+		dev->status = NULL;
 #if defined(DEV_CONFIG_SUBSET) || defined(CONFIG_USB_ETH_RNDIS)
 		if (dev->rndis || !dev->cdc) {
 			if (dev->in_ep)
@@ -1078,10 +1114,10 @@ set_ether_config (struct eth_dev *dev, int gfp_flags)
 				(void) usb_ep_disable (dev->out_ep);
 		}
 #endif
-		dev->in_ep = 0;
-		dev->in = 0;
-		dev->out_ep = 0;
-		dev->out = 0;
+		dev->in_ep = NULL;
+		dev->in = NULL;
+		dev->out_ep = NULL;
+		dev->out = NULL;
 	} else
 
 	/* activate non-CDC configs right away
@@ -1128,7 +1164,7 @@ static void eth_reset_config (struct eth_dev *dev)
 			list_del (&req->list);
 			usb_ep_free_request (dev->in_ep, req);
 		}
-		dev->in_ep = 0;
+		dev->in_ep = NULL;
 	}
 	if (dev->out_ep) {
 		usb_ep_disable (dev->out_ep);
@@ -1138,12 +1174,12 @@ static void eth_reset_config (struct eth_dev *dev)
 			list_del (&req->list);
 			usb_ep_free_request (dev->out_ep, req);
 		}
-		dev->out_ep = 0;
+		dev->out_ep = NULL;
 	}
 
 	if (dev->status_ep) {
 		usb_ep_disable (dev->status_ep);
-		dev->status_ep = 0;
+		dev->status_ep = NULL;
 	}
 	dev->config = 0;
 }
@@ -1187,13 +1223,20 @@ eth_set_config (struct eth_dev *dev, unsigned number, int gfp_flags)
 		result = -EINVAL;
 		/* FALL THROUGH */
 	case 0:
-		return result;
+		break;
 	}
 
-	if (result)
-		eth_reset_config (dev);
-	else {
+	if (result) {
+		if (number)
+			eth_reset_config (dev);
+		usb_gadget_vbus_draw(dev->gadget,
+				dev->gadget->is_otg ? 8 : 100);
+	} else {
 		char *speed;
+		unsigned power;
+
+		power = 2 * eth_config.bMaxPower;
+		usb_gadget_vbus_draw(dev->gadget, power);
 
 		switch (gadget->speed) {
 		case USB_SPEED_FULL:	speed = "full"; break;
@@ -1204,8 +1247,8 @@ eth_set_config (struct eth_dev *dev, unsigned number, int gfp_flags)
 		}
 
 		dev->config = number;
-		INFO (dev, "%s speed config #%d: %s, using %s\n",
-				speed, number, driver_desc,
+		INFO (dev, "%s speed config #%d: %d mA, %s, using %s\n",
+				speed, number, power, driver_desc,
 				dev->rndis
 					? "RNDIS"
 					: (dev->cdc
@@ -1364,8 +1407,9 @@ static void eth_setup_complete (struct usb_ep *ep, struct usb_request *req)
 static void rndis_response_complete (struct usb_ep *ep, struct usb_request *req)
 {
 	if (req->status || req->actual != req->length)
-		DEBUG (dev, "rndis response complete --> %d, %d/%d\n",
-		       req->status, req->actual, req->length);
+		DEBUG ((struct eth_dev *) ep->driver_data,
+			"rndis response complete --> %d, %d/%d\n",
+			req->status, req->actual, req->length);
 
 	/* done sending after CDC_GET_ENCAPSULATED_RESPONSE */
 }
@@ -1404,6 +1448,7 @@ eth_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 	/* descriptors just go into the pre-allocated ep0 buffer,
 	 * while config change events may enable network traffic.
 	 */
+	req->complete = eth_setup_complete;
 	switch (ctrl->bRequest) {
 
 	case USB_REQ_GET_DESCRIPTOR:
@@ -1431,7 +1476,8 @@ eth_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		case USB_DT_CONFIG:
 			value = config_buf (gadget->speed, req->buf,
 					ctrl->wValue >> 8,
-					ctrl->wValue & 0xff);
+					ctrl->wValue & 0xff,
+					gadget->is_otg);
 			if (value >= 0)
 				value = min (ctrl->wLength, (u16) value);
 			break;
@@ -1448,6 +1494,10 @@ eth_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 	case USB_REQ_SET_CONFIGURATION:
 		if (ctrl->bRequestType != 0)
 			break;
+		if (gadget->a_hnp_support)
+			DEBUG (dev, "HNP available\n");
+		else if (gadget->a_alt_hnp_support)
+			DEBUG (dev, "HNP needs a different root port\n");
 		spin_lock (&dev->lock);
 		value = eth_set_config (dev, ctrl->wValue, GFP_ATOMIC);
 		spin_unlock (&dev->lock);
@@ -1520,7 +1570,7 @@ eth_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		/* FIXME this is wrong, as is the assumption that
 		 * all non-PXA hardware talks real CDC ...
 		 */
-		dev_warn (&gadget->dev, "set_interface ignored!\n");
+		WARN(dev, "set_interface ignored!\n");
 #endif /* DEV_CONFIG_CDC */
 
 done_set_intf:
@@ -1614,6 +1664,8 @@ done_set_intf:
 	/* respond with data transfer before status phase? */
 	if (value >= 0) {
 		req->length = value;
+		req->zero = value < ctrl->wLength
+				&& (value % gadget->ep0->maxpacket) == 0;
 		value = usb_ep_queue (gadget->ep0, req, GFP_ATOMIC);
 		if (value < 0) {
 			DEBUG (dev, "ep_queue --> %d\n", value);
@@ -1651,7 +1703,7 @@ eth_disconnect (struct usb_gadget *gadget)
 
 static int eth_change_mtu (struct net_device *net, int new_mtu)
 {
-	struct eth_dev	*dev = (struct eth_dev *) net->priv;
+	struct eth_dev	*dev = netdev_priv(net);
 
 	// FIXME if rndis, don't change while link's live
 
@@ -1666,57 +1718,29 @@ static int eth_change_mtu (struct net_device *net, int new_mtu)
 
 static struct net_device_stats *eth_get_stats (struct net_device *net)
 {
-	return &((struct eth_dev *) net->priv)->stats;
+	return &((struct eth_dev *)netdev_priv(net))->stats;
 }
 
-static int eth_ethtool_ioctl (struct net_device *net, void __user *useraddr)
+static void eth_get_drvinfo(struct net_device *net, struct ethtool_drvinfo *p)
 {
-	struct eth_dev	*dev = (struct eth_dev *) net->priv;
-	u32		cmd;
-
-	if (get_user (cmd, (u32 __user *)useraddr))
-		return -EFAULT;
-	switch (cmd) {
-
-	case ETHTOOL_GDRVINFO: {	/* get driver info */
-		struct ethtool_drvinfo		info;
-
-		memset (&info, 0, sizeof info);
-		info.cmd = ETHTOOL_GDRVINFO;
-		strncpy (info.driver, shortname, sizeof info.driver);
-		strncpy (info.version, DRIVER_VERSION, sizeof info.version);
-		strncpy (info.fw_version, dev->gadget->name,
-			sizeof info.fw_version);
-		strncpy (info.bus_info, dev->gadget->dev.bus_id,
-			sizeof info.bus_info);
-		if (copy_to_user (useraddr, &info, sizeof (info)))
-			return -EFAULT;
-		return 0;
-		}
-
-	case ETHTOOL_GLINK: {		/* get link status */
-		struct ethtool_value	edata = { ETHTOOL_GLINK };
-
-		edata.data = (dev->gadget->speed != USB_SPEED_UNKNOWN);
-		if (copy_to_user (useraddr, &edata, sizeof (edata)))
-			return -EFAULT;
-		return 0;
-		}
-
-	}
-	/* Note that the ethtool user space code requires EOPNOTSUPP */
-	return -EOPNOTSUPP;
+	struct eth_dev	*dev = netdev_priv(net);
+	memset(p, 0, sizeof *p);
+	strncpy(p->driver, shortname, sizeof p->driver);
+	strncpy(p->version, DRIVER_VERSION, sizeof p->version);
+	strncpy(p->fw_version, dev->gadget->name, sizeof p->fw_version);
+	strncpy (p->bus_info, dev->gadget->dev.bus_id, sizeof p->bus_info);
 }
 
-static int eth_ioctl (struct net_device *net, struct ifreq *rq, int cmd)
+static u32 eth_get_link(struct net_device *net)
 {
-	switch (cmd) {
-	case SIOCETHTOOL:
-		return eth_ethtool_ioctl(net, rq->ifr_data);
-	default:
-		return -EOPNOTSUPP;
-	}
+	struct eth_dev	*dev = netdev_priv(net);
+	return dev->gadget->speed != USB_SPEED_UNKNOWN;
 }
+
+static struct ethtool_ops ops = {
+	.get_drvinfo = eth_get_drvinfo,
+	.get_link = eth_get_link
+};
 
 static void defer_kevent (struct eth_dev *dev, int flag)
 {
@@ -1739,9 +1763,10 @@ rx_submit (struct eth_dev *dev, struct usb_request *req, int gfp_flags)
 
 	/* Padding up to RX_EXTRA handles minor disagreements with host.
 	 * Normally we use the USB "terminate on short read" convention;
-	 * so allow up to (N*maxpacket)-1, since that memory is normally
-	 * already allocated.  Major loss of synch means -EOVERFLOW; any
-	 * obviously corrupted packets will automatically be discarded. 
+	 * so allow up to (N*maxpacket), since that memory is normally
+	 * already allocated.  Some hardware doesn't deal well with short
+	 * reads (e.g. DMA must be N*maxpacket), so for now don't trim a
+	 * byte off the end (to force hardware errors on overflow).
 	 *
 	 * RNDIS uses internal framing, and explicitly allows senders to
 	 * pad to end-of-packet.  That's potentially nice for speed,
@@ -1754,10 +1779,6 @@ rx_submit (struct eth_dev *dev, struct usb_request *req, int gfp_flags)
 		size += sizeof (struct rndis_packet_msg_type);
 #endif	
 	size -= size % dev->out_ep->maxpacket;
-#ifdef CONFIG_USB_ETH_RNDIS
-	if (!dev->rndis)
-#endif	
-		size--;
 
 	if ((skb = alloc_skb (size, gfp_flags)) == 0) {
 		DEBUG (dev, "no rx skb\n");
@@ -1815,7 +1836,7 @@ static void rx_complete (struct usb_ep *ep, struct usb_request *req)
 		 * use skb buffers.
 		 */
 		status = netif_rx (skb);
-		skb = 0;
+		skb = NULL;
 		break;
 
 	/* software-driven interface shutdown */
@@ -1849,7 +1870,7 @@ quiesce:
 clean:
 		/* nobody reading rx_reqs, so no dev->lock */
 		list_add (&req->list, &dev->rx_reqs);
-		req = 0;
+		req = NULL;
 	}
 	if (req)
 		rx_submit (dev, req, GFP_ATOMIC);
@@ -1981,10 +2002,10 @@ static void tx_complete (struct usb_ep *ep, struct usb_request *req)
 
 static int eth_start_xmit (struct sk_buff *skb, struct net_device *net)
 {
-	struct eth_dev		*dev = (struct eth_dev *) net->priv;
+	struct eth_dev		*dev = netdev_priv(net);
 	int			length = skb->len;
 	int			retval;
-	struct usb_request	*req = 0;
+	struct usb_request	*req = NULL;
 	unsigned long		flags;
 
 	/* FIXME check dev->cdc_filter to decide whether to send this,
@@ -2082,11 +2103,13 @@ static void rndis_send_media_state (struct eth_dev *dev, int connect)
 	}
 }
 
-static void rndis_control_ack_complete (struct usb_ep *ep, struct usb_request *req)
+static void
+rndis_control_ack_complete (struct usb_ep *ep, struct usb_request *req)
 {
 	if (req->status || req->actual != req->length)
-		DEBUG (dev, "rndis control ack complete --> %d, %d/%d\n",
-		       req->status, req->actual, req->length);
+		DEBUG ((struct eth_dev *) ep->driver_data,
+			"rndis control ack complete --> %d, %d/%d\n",
+			req->status, req->actual, req->length);
 
 	usb_ep_free_buffer(ep, req->buf, req->dma, 8);
 	usb_ep_free_request(ep, req);
@@ -2094,7 +2117,7 @@ static void rndis_control_ack_complete (struct usb_ep *ep, struct usb_request *r
 
 static int rndis_control_ack (struct net_device *net)
 {
-	struct eth_dev          *dev = (struct eth_dev *) net->priv;
+	struct eth_dev          *dev = netdev_priv(net);
 	u32                     length;
 	struct usb_request      *resp;
 	
@@ -2161,7 +2184,7 @@ static void eth_start (struct eth_dev *dev, int gfp_flags)
 
 static int eth_open (struct net_device *net)
 {
-	struct eth_dev		*dev = (struct eth_dev *) net->priv;
+	struct eth_dev		*dev = netdev_priv(net);
 
 	DEBUG (dev, "%s\n", __FUNCTION__);
 	if (netif_carrier_ok (dev->net))
@@ -2171,7 +2194,7 @@ static int eth_open (struct net_device *net)
 
 static int eth_stop (struct net_device *net)
 {
-	struct eth_dev		*dev = (struct eth_dev *) net->priv;
+	struct eth_dev		*dev = netdev_priv(net);
 
 	VDEBUG (dev, "%s\n", __FUNCTION__);
 	netif_stop_queue (net);
@@ -2182,7 +2205,7 @@ static int eth_stop (struct net_device *net)
 		);
 
 	/* ensure there are no more active requests */
-	if (dev->gadget->speed != USB_SPEED_UNKNOWN) {
+	if (dev->config) {
 		usb_ep_disable (dev->in_ep);
 		usb_ep_disable (dev->out_ep);
 		if (netif_carrier_ok (dev->net)) {
@@ -2227,7 +2250,7 @@ eth_unbind (struct usb_gadget *gadget)
 				dev->req->buf, dev->req->dma,
 				USB_BUFSIZ);
 		usb_ep_free_request (gadget->ep0, dev->req);
-		dev->req = 0;
+		dev->req = NULL;
 	}
 
 	unregister_netdev (dev->net);
@@ -2235,7 +2258,7 @@ eth_unbind (struct usb_gadget *gadget)
 
 	/* assuming we used keventd, it must quiesce too */
 	flush_scheduled_work ();
-	set_gadget_data (gadget, 0);
+	set_gadget_data (gadget, NULL);
 }
 
 static u8 __init nibble (unsigned char c)
@@ -2316,12 +2339,19 @@ eth_bind (struct usb_gadget *gadget)
 		device_desc.bcdDevice = __constant_cpu_to_le16 (0x0207);
 	} else if (gadget_is_omap (gadget)) {
 		device_desc.bcdDevice = __constant_cpu_to_le16 (0x0208);
+	} else if (gadget_is_lh7a40x(gadget)) {
+		device_desc.bcdDevice = __constant_cpu_to_le16 (0x0209);
+	} else if (gadget_is_n9604(gadget)) {
+		device_desc.bcdDevice = __constant_cpu_to_le16 (0x0210);
+	} else if (gadget_is_pxa27x(gadget)) {
+		device_desc.bcdDevice = __constant_cpu_to_le16 (0x0211);
 	} else {
 		/* can't assume CDC works.  don't want to default to
 		 * anything less functional on CDC-capable hardware,
 		 * so we fail in this case.
 		 */
-		printk (KERN_ERR "%s: controller '%s' not recognized\n",
+		printk (KERN_ERR "%s: "
+			"controller '%s' not recognized\n",
 			shortname, gadget->name);
 		return -ENODEV;
 	}
@@ -2400,7 +2430,8 @@ autoconf_fail:
 			EP_STATUS_NAME = ep->name;
 			ep->driver_data = ep;	/* claim */
 		} else if (rndis) {
-			printk (KERN_ERR "%s: can't run RNDIS on %s\n",
+			printk (KERN_ERR "%s: "
+				"can't run RNDIS on %s\n",
 				shortname, gadget->name);
 			return -ENODEV;
 		} else if (cdc) {
@@ -2444,10 +2475,20 @@ autoconf_fail:
 	device_desc.bMaxPacketSize0 = gadget->ep0->maxpacket;
 	usb_gadget_set_selfpowered (gadget);
 
+	if (gadget->is_otg) {
+		otg_descriptor.bmAttributes |= USB_OTG_HNP,
+		eth_config.bmAttributes |= USB_CONFIG_ATT_WAKEUP;
+		eth_config.bMaxPower = 4;
+#ifdef	CONFIG_USB_ETH_RNDIS
+		rndis_config.bmAttributes |= USB_CONFIG_ATT_WAKEUP;
+		rndis_config.bMaxPower = 4;
+#endif
+	}
+
  	net = alloc_etherdev (sizeof *dev);
  	if (!net)
 		return status;
-	dev = net->priv;
+	dev = netdev_priv(net);
 	spin_lock_init (&dev->lock);
 	INIT_WORK (&dev->work, eth_work, dev);
 	INIT_LIST_HEAD (&dev->tx_reqs);
@@ -2491,7 +2532,7 @@ autoconf_fail:
 	net->stop = eth_stop;
 	// watchdog_timeo, tx_timeout ...
 	// set_multicast_list
-	net->do_ioctl = eth_ioctl;
+	SET_ETHTOOL_OPS(net, &ops);
 
 	/* preallocate control response and buffer */
 	dev->req = usb_ep_alloc_request (gadget->ep0, GFP_KERNEL);
@@ -2572,7 +2613,7 @@ fail0:
 	return status;
 
 fail1:
-	pr_debug ("%s: register_netdev failed, %d\n", shortname, status);
+	DEBUG (dev, "register_netdev failed, %d\n", status);
 fail:
 	eth_unbind (gadget);
 	return status;

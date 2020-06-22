@@ -86,7 +86,7 @@ struct e1000_adapter;
 
 #include "e1000_hw.h"
 
-#if DBG
+#ifdef DBG
 #define E1000_DBG(args...) printk(KERN_DEBUG "e1000: " args)
 #else
 #define E1000_DBG(args...)
@@ -204,7 +204,7 @@ struct e1000_adapter {
 	spinlock_t stats_lock;
 	atomic_t irq_sem;
 	struct tq_struct tx_timeout_task;
-     	uint8_t fc_autoneg;
+	uint8_t fc_autoneg;
 
 	struct timer_list blink_timer;
 	unsigned long led_status;

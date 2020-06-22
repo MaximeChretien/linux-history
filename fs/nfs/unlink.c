@@ -12,7 +12,6 @@
 #include <linux/sunrpc/sched.h>
 #include <linux/sunrpc/clnt.h>
 #include <linux/nfs_fs.h>
-#include <linux/wait.h>
 
 
 struct nfs_unlinkdata {
@@ -22,9 +21,6 @@ struct nfs_unlinkdata {
 	struct rpc_task	task;
 	struct rpc_cred	*cred;
 	unsigned int	count;
-
-	wait_queue_head_t waitq;
-	int completed;
 };
 
 static struct nfs_unlinkdata	*nfs_deletes;
@@ -130,16 +126,13 @@ nfs_async_unlink_done(struct rpc_task *task)
 	if (nfs_async_handle_jukebox(task))
 		return;
 	if (!dir)
-		goto out;
+		return;
 	dir_i = dir->d_inode;
 	nfs_zap_caches(dir_i);
 	NFS_PROTO(dir_i)->unlink_done(dir, &task->tk_msg);
 	put_rpccred(data->cred);
 	data->cred = NULL;
 	dput(dir);
-out:
-	data->completed = 1;
-	wake_up(&data->waitq);
 }
 
 /**
@@ -182,8 +175,6 @@ nfs_async_unlink(struct dentry *dentry)
 	nfs_deletes = data;
 	data->count = 1;
 
-	init_waitqueue_head(&data->waitq);
-
 	task = &data->task;
 	rpc_init_task(task, clnt, nfs_async_unlink_done , RPC_TASK_ASYNC);
 	task->tk_calldata = data;
@@ -221,10 +212,7 @@ nfs_complete_unlink(struct dentry *dentry)
 	data->count++;
 	nfs_copy_dname(dentry, data);
 	dentry->d_flags &= ~DCACHE_NFSFS_RENAMED;
-	if (data->task.tk_rpcwait == &nfs_delete_queue) {
-		struct rpc_clnt *clnt = data->task.tk_client;
+	if (data->task.tk_rpcwait == &nfs_delete_queue)
 		rpc_wake_up_task(&data->task);
-		nfs_wait_event(clnt, data->waitq, data->completed == 1);
-	}
 	nfs_put_unlinkdata(data);
 }

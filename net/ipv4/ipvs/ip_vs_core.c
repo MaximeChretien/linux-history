@@ -1131,7 +1131,7 @@ static unsigned int ip_vs_in(unsigned int hooknum,
 	/* increase its packet counter and check if it is needed
 	   to be synchronized */
 	atomic_inc(&cp->in_pkts);
-	if (ip_vs_sync_state == IP_VS_STATE_MASTER &&
+	if (ip_vs_sync_state & IP_VS_STATE_MASTER &&
 	    (cp->protocol != IPPROTO_TCP ||
 	     cp->state == IP_VS_S_ESTABLISHED) &&
 	    (atomic_read(&cp->in_pkts) % 50 == sysctl_ip_vs_sync_threshold))

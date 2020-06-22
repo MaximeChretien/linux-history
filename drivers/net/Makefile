@@ -117,6 +117,8 @@ obj-$(CONFIG_ADAPTEC_STARFIRE) += starfire.o mii.o
 
 obj-$(CONFIG_GALILEO_64240_ETH) += gt64240eth.o
 obj-$(CONFIG_MV64340_ETH)	+= mv64340_eth.o
+obj-$(CONFIG_BIG_SUR_FE)	+= big_sur_ge.o
+obj-$(CONFIG_TITAN_GE)		+= titan_mdio.o titan_ge.o
 obj-$(CONFIG_AIRONET4500) 	+= aironet4500_core.o
 obj-$(CONFIG_AIRONET4500_CS) 	+= aironet4500_core.o
 obj-$(CONFIG_AIRONET4500_NONCS)  += aironet4500_card.o

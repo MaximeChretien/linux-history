@@ -1641,7 +1641,7 @@ static long read_tape(Scsi_Tape *STp, long count, Scsi_Request ** aSRpnt)
 							if (STps->drv_block >= 0)
 								STps->drv_block += 1;
 							(STp->buffer)->buffer_bytes = 0;
-							return (-ENOMEM);
+							return (-EIO);
 						}
 						(STp->buffer)->buffer_bytes = bytes - transfer;
 					} else {

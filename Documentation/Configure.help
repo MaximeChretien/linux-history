@@ -617,6 +617,8 @@ CONFIG_BLK_STATS
 
   This is required for the full functionality of sar(8) and interesting
   if you want to do performance tuning, by tweaking the elevator, e.g.
+  On the other hand, it will cause random and mysterious failures for
+  fdisk, mount and other programs reading /proc/partitions.
 
   If unsure, say N.
 
@@ -1316,21 +1318,6 @@ CONFIG_BLK_DEV_PIIX
   via the standard end-user tool 'hdparm'.
 
   Please read the comments at the top of <file:drivers/ide/pci/piix.c>.
-
-  If you say Y here, you should also say Y to "PIIXn Tuning support",
-  below.
-
-  If unsure, say N.
-
-PIIXn Tuning support
-CONFIG_PIIX_TUNING
-  This driver extension adds DMA mode setting and tuning for all PIIX
-  IDE controllers by Intel. Since the BIOS can sometimes improperly
-  set up the device/adapter combination and speed limits, it has
-  become a necessity to back/forward speed devices as needed.
-
-  Case 430HX/440FX PIIX3 need speed limits to reduce UDMA to DMA mode
-  2 if the BIOS can not perform this task at initialization.
 
   If unsure, say N.
 
@@ -2557,9 +2544,9 @@ CONFIG_PCMCIA_FDOMAIN
 
 # Choice: mipstype
 CPU type
-CONFIG_CPU_R3000
+CONFIG_CPU_MIPS32
   Please make sure to pick the right CPU type. Linux/MIPS is not
-  designed to be generic, i.e. Kernels compiled for R3000 CPUs will
+  designed to be generic, i.e. kernels compiled for R3000 CPUs will
   *not* work on R4000 machines and vice versa.  However, since most
   of the supported machines have an R4000 (or similar) CPU, R4x00
   might be a safe bet.  If the resulting kernel does not work,
@@ -2682,6 +2669,19 @@ CONFIG_CPU_HAS_WB
   Say N here for slightly better performance.  You must say Y here for
   machines which require flushing of write buffers in software.  Saying
   Y is the safe option; N may result in kernel malfunction and crashes.
+
+Use 64-bit ELF format for building
+CONFIG_BUILD_ELF64
+  A 64-bit kernel is usually built using the 64-bit ELF binary object
+  format as it's one that allows arbitrary 64-bit constructs.  For
+  kernels that are loaded within the KSEG compatibility segments the
+  32-bit ELF format can optionally be used resulting in a somewhat
+  smaller binary, but this option is not explicitly supported by the
+  toolchain and since binutils 2.14 it does not even work at all.
+
+  Say Y to use the 64-bit format or N to use the 32-bit one.
+
+  If unsure say Y.
 
 Support for large 64-bit configurations
 CONFIG_MIPS_INSANE_LARGE
@@ -3041,19 +3041,6 @@ CONFIG_IP_NF_TARGET_MIRROR
 
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
-
-Local NAT support
-CONFIG_IP_NF_NAT_LOCAL
-  This option enables support for NAT of locally originated connections. 
-  Enable this if you need to use destination NAT on connections
-  originating from local processes on the nat box itself.
-
-  Please note that you will need a recent version (>= 1.2.6a)
-  of the iptables userspace program in order to use this feature.
-  See <http://www.iptables.org/> for download instructions.
-
-  If unsure, say 'N'.
-
 
 Full NAT (Network Address Translation)
 CONFIG_IP_NF_NAT
@@ -5214,10 +5201,17 @@ CONFIG_FB_CT65550
   This is the frame buffer device driver for the Chips & Technologies
   65550 graphics chip in PowerBooks.
 
-TGA frame buffer support
+TGA/SFB+ frame buffer support
 CONFIG_FB_TGA
-  This is the frame buffer device driver for generic TGA graphic
-  cards. Say Y if you have one of those.
+  This is the frame buffer device driver for generic TGA and SFB+
+  graphic cards.  These include DEC ZLXp-E1, E2 and E3 PCI cards,
+  also known as PBXGA-A, B and C, and DEC ZLX-E2 and E3 TURBOchannel
+  cards, also known as PMAGD-B and C.  The DEC ZLX-E1 or PMAGD-A card
+  is currently unsupported.  Due to hardware limitations ZLX-E2 and
+  E3 cards are only supported for DECstation 5000/1xx and Personal
+  DECstation 5000/xx systems.
+
+  Say Y if you have one of those.
 
 VESA VGA graphics console
 CONFIG_FB_VESA
@@ -7739,7 +7733,7 @@ CONFIG_FUSION_CTL
   of MPT adapters via system ioctl calls.  Use of ioctl calls to
   the MPT driver requires that you create and use a misc device
   node ala:
-    mknod /dev/mptctl c 10 240
+    mknod /dev/mptctl c 10 220
 
   One use of this ioctl interface is to perform an upgrade (reflash)
   of the MPT adapter firmware.  Refer to readme file(s) distributed
@@ -9322,6 +9316,11 @@ CONFIG_SCSI_MEGARAID2
 CONFIG_SCSI_SATA
   This driver family supports Serial ATA host controllers
   and devices.
+
+  If unsure, say N.
+
+CONFIG_SCSI_SATA_AHCI
+  This option enables support for AHCI Serial ATA.
 
   If unsure, say N.
 
@@ -12204,65 +12203,16 @@ CONFIG_DL2K
 
 EtherExpress Pro/100 support (e100, Alternate Intel driver)
 CONFIG_E100
-  This driver supports Intel(R) PRO/100 family of adapters, which
-  includes:
-
-     Controller  Adapter Name                       Board IDs
-     ----------  ------------                       ---------
-
-     82558       PRO/100+ PCI Adapter               668081-xxx,
-                                                    689661-xxx
-     82558       PRO/100+ Management Adapter        691334-xxx,
-                                                    701738-xxx,
-                                                    721383-xxx
-     82558       PRO/100+ Dual Port Server Adapter  714303-xxx,
-                                                    711269-xxx,
-                                                    A28276-xxx
-     82558       PRO/100+ PCI Server Adapter        710550-xxx
-     82550       PRO/100 S Server Adapter           752438-xxx
-     82559                                          A56831-xxx,
-                                                    A10563-xxx,
-                                                    A12171-xxx,
-                                                    A12321-xxx,
-                                                    A12320-xxx,
-                                                    A12170-xxx
-                                                    748568-xxx
-                                                    748565-xxx
-     82550       PRO/100 S Desktop Adapter          751767-xxx
-     82559                                          748592-xxx,
-                                                    A12167-xxx,
-                                                    A12318-xxx,
-                                                    A12317-xxx,
-                                                    A12165-xxx,
-                                                    748569-xxx
-     82559       PRO/100+ Server Adapter            729757-xxx
-     82559       PRO/100 S Management Adapter       748566-xxx,
-                                                    748564-xxx
-     82550       PRO/100 S Dual Port Server Adapter A56831-xxx
-     82551       PRO/100 M Desktop Adapter          A80897-xxx
-                 PRO/100 S Advanced Management Adapter
-                                                    747842-xxx,
-                                                    745171-xxx
-     CNR         PRO/100 VE Desktop Adapter         A10386-xxx,
-                                                    A10725-xxx,
-                                                    A23801-xxx,
-                                                    A19716-xxx
-                 PRO/100 VM Desktop Adapter         A14323-xxx,
-                                                    A19725-xxx,
-                                                    A23801-xxx,
-                                                    A22220-xxx,
-                                                    A23796-xxx
-
-
+  This driver supports Intel(R) PRO/100 family of adapters.
   To verify that your adapter is supported, find the board ID number
   on the adapter. Look for a label that has a barcode and a number
-  in the format 123456-001 (six digits hyphen three digits). Match
-  this to the list of numbers above.
+  in the format 123456-001 (six digits hyphen three digits).
 
-  For more information on how to identify your adapter, go to the
-  Adapter & Driver ID Guide at:
+  Use the above information and the Adapter & Driver ID Guide at:
 
-    http://support.intel.com/support/network/adapter/pro100/21397.htm
+  http://support.intel.com/support/network/adapter/pro100/21397.htm
+
+  to identify the adapter.
 
   For the latest Intel PRO/100 network driver for Linux, see:
 
@@ -12280,28 +12230,7 @@ CONFIG_E100
 Intel(R) PRO/1000 Gigabit Ethernet support
 CONFIG_E1000
   This driver supports Intel(R) PRO/1000 gigabit ethernet family of
-  adapters, which includes:
-
-     Controller  Adapter Name                         Board IDs
-     ----------  ------------                         ---------
-     82542       PRO/1000 Gigabit Server Adapter      700262-xxx,
-                                                      717037-xxx
-     82543       PRO/1000 F Server Adapter            738640-xxx,
-                                                      A38888-xxx
-     82543       PRO/1000 T Server Adapter            A19845-xxx,
-                                                      A33948-xxx
-     82544       PRO/1000 XT Server Adapter           A51580-xxx
-     82544       PRO/1000 XF Server Adapter           A50484-xxx
-     82544       PRO/1000 T Desktop Adapter           A62947-xxx
-     82540       PRO/1000 MT Desktop Adapter          A78408-xxx
-     82541       PRO/1000 MT Desktop Adapter          C91016-xxx
-     82545       PRO/1000 MT Server Adapter           A92165-xxx
-     82546       PRO/1000 MT Dual Port Server Adapter A92111-xxx
-     82545       PRO/1000 MF Server Adapter           A91622-xxx
-     82545       PRO/1000 MF Server Adapter(LX)       A91624-xxx
-     82546       PRO/1000 MF Dual Port Server Adapter A91620-xxx 
-
-  For more information on how to identify your adapter, go to the
+  adapters. For more information on how to identify your adapter, go to the
   Adapter & Driver ID Guide at:
 
    <http://support.intel.com/support/network/adapter/pro100/21397.htm>
@@ -13588,10 +13517,11 @@ CONFIG_FDDI
   then also Y to the driver for your FDDI card, below). Most people
   will say N.
 
-Digital DEFEA and DEFPA adapter support
+Digital DEFTA/DEFEA/DEFPA adapter support
 CONFIG_DEFXX
-  This is support for the DIGITAL series of EISA (DEFEA) and PCI
-  (DEFPA) controllers which can connect you to a local FDDI network.
+  This is support for the DIGITAL series of TURBOchannel (DEFTA), EISA
+  (DEFEA) and PCI (DEFPA) controllers which can connect you to a local
+  FDDI network.
 
   If you want to compile the driver as a module ( = code which can be
   inserted in and removed from the running kernel whenever you want),

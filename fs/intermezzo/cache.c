@@ -163,6 +163,9 @@ inline void presto_free_cache(struct presto_cache *cache)
                 cache->cache_sb->s_root->d_fsdata = NULL;
         }
 
+		if (cache->cache_type)
+				PRESTO_FREE(cache->cache_type, strlen(cache->cache_type) + 1 );
+
         PRESTO_FREE(cache, sizeof(struct presto_cache));
 }
 

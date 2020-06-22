@@ -1253,7 +1253,6 @@ static void sg_cmd_done_bh(Scsi_Cmnd * SCpnt)
     SRpnt->sr_request.rq_dev = MKDEV(0, 0);  /* "sg" _disowns_ request blk */
 
     srp->my_cmdp = NULL;
-    srp->done = 1;
     read_unlock(&sg_dev_arr_lock);
 
     SCSI_LOG_TIMEOUT(4, printk("sg...bh: dev=%d, pack_id=%d, res=0x%x\n",
@@ -1316,8 +1315,9 @@ static void sg_cmd_done_bh(Scsi_Cmnd * SCpnt)
     }
     if (sfp && srp) {
 	/* Now wake up any sg_read() that is waiting for this packet. */
-	wake_up_interruptible(&sfp->read_wait);
 	kill_fasync(&sfp->async_qp, SIGPOLL, POLL_IN);
+	srp->done = 1;
+	wake_up_interruptible(&sfp->read_wait);
     }
 }
 

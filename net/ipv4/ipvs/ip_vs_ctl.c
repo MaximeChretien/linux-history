@@ -74,6 +74,7 @@ static int sysctl_ip_vs_amemthresh = 2048;
 static int sysctl_ip_vs_am_droprate = 10;
 int sysctl_ip_vs_cache_bypass = 0;
 int sysctl_ip_vs_expire_nodest_conn = 0;
+int sysctl_ip_vs_expire_quiescent_template = 0;
 int sysctl_ip_vs_sync_threshold = 3;
 int sysctl_ip_vs_nat_icmp_send = 0;
 
@@ -1440,6 +1441,9 @@ static struct ip_vs_sysctl_table ipv4_vs_table = {
 	 {NET_IPV4_VS_NAT_ICMP_SEND, "nat_icmp_send",
 	  &sysctl_ip_vs_nat_icmp_send, sizeof(int), 0644, NULL,
 	  &proc_dointvec},
+	 {NET_IPV4_VS_EXPIRE_QUIESCENT_TEMPLATE, "expire_quiescent_template",
+	  &sysctl_ip_vs_expire_quiescent_template, sizeof(int), 0644, NULL,
+	  &proc_dointvec},
 	 {0}},
 	{{NET_IPV4_VS, "vs", NULL, 0, 0555, ipv4_vs_table.vs_vars},
 	 {0}},
@@ -1727,10 +1731,11 @@ do_ip_vs_set_ctl(struct sock *sk, int cmd, void *user, unsigned int len)
 		ret = ip_vs_set_timeouts(urule);
 		goto out_unlock;
 	} else if (cmd == IP_VS_SO_SET_STARTDAEMON) {
-		ret = start_sync_thread(urule->state, urule->mcast_ifn);
+		ret = start_sync_thread(urule->state, urule->mcast_ifn,
+					urule->syncid);
 		goto out_unlock;
 	} else if (cmd == IP_VS_SO_SET_STOPDAEMON) {
-		ret = stop_sync_thread();
+		ret = stop_sync_thread(urule->state);
 		goto out_unlock;
 	} else if (cmd == IP_VS_SO_SET_ZERO) {
 		/* if no service address is set, zero counters in all */
@@ -2078,7 +2083,10 @@ do_ip_vs_get_ctl(struct sock *sk, int cmd, void *user, int *len)
 			goto out;
 		}
 		u.state = ip_vs_sync_state;
-		strcpy(u.mcast_ifn, ip_vs_mcast_ifn);
+		if (ip_vs_sync_state & IP_VS_STATE_MASTER)
+			strcpy(u.mcast_master_ifn, ip_vs_mcast_master_ifn);
+		if (ip_vs_sync_state & IP_VS_STATE_BACKUP)
+			strcpy(u.mcast_backup_ifn, ip_vs_mcast_backup_ifn);
 		if (copy_to_user(user, &u, sizeof(u)) != 0)
 			ret = -EFAULT;
 	}

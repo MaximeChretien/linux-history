@@ -4255,6 +4255,14 @@ int __init floppy_init(void)
 		max_buffer_sectors = 0;
 	}
 
+	/*
+	 * Small 10 msec delay to let through any interrupt that
+	 * initialization might have triggered, to not
+	 * confuse detection:
+	 */
+	current->state = TASK_UNINTERRUPTIBLE;
+	schedule_timeout(HZ/100 + 1);
+
 	for (i = 0; i < N_FDC; i++) {
 		fdc = i;
 		FDCS->driver_version = FD_DRIVER_VERSION;

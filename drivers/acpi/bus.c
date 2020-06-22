@@ -1850,7 +1850,10 @@ acpi_early_init (void)
 	acpi_status		status = AE_OK;
 	struct acpi_buffer	buffer = {sizeof(acpi_fadt), &acpi_fadt};
 
-	ACPI_FUNCTION_TRACE("acpi_bus_init");
+	ACPI_FUNCTION_TRACE("acpi_early_init");
+
+	if (acpi_disabled)
+		return_VOID;
 
 	status = acpi_initialize_subsystem();
 	if (ACPI_FAILURE(status)) {
@@ -1899,11 +1902,11 @@ acpi_early_init (void)
 		goto error0;
 	}
 
-	return;
+	return_VOID;
 
 error0:
 	disable_acpi();
-	return;
+	return_VOID;
 }
 
 static int __init

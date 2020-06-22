@@ -266,7 +266,7 @@ struct rawfakehdr
  */
   
 static int raw_getfrag(const void *p, char *to, unsigned int offset,
-			unsigned int fraglen)
+		       unsigned int fraglen, struct sk_buff *skb)
 {
 	struct rawfakehdr *rfh = (struct rawfakehdr *) p;
 	return memcpy_fromiovecend(to, rfh->iov, offset, fraglen);
@@ -277,7 +277,7 @@ static int raw_getfrag(const void *p, char *to, unsigned int offset,
  */
  
 static int raw_getrawfrag(const void *p, char *to, unsigned int offset,
-				unsigned int fraglen)
+				unsigned int fraglen, struct sk_buff *skb)
 {
 	struct rawfakehdr *rfh = (struct rawfakehdr *) p;
 

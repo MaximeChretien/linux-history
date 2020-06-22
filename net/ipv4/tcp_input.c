@@ -474,6 +474,8 @@ void tcp_rcv_space_adjust(struct sock *sk)
 		tp->rcvq_space.space = space;
 
 		if (sysctl_tcp_moderate_rcvbuf) {
+			int new_clamp = space;
+
 			/* Receive space grows, normalize in order to
 			 * take into account packet headers and sk_buff
 			 * structure overhead.
@@ -483,10 +485,16 @@ void tcp_rcv_space_adjust(struct sock *sk)
 				space = 1;
 			rcvmem = (tp->advmss + MAX_TCP_HEADER +
 				  16 + sizeof(struct sk_buff));
+			while (tcp_win_from_space(rcvmem) < tp->advmss)
+				rcvmem += 128;
 			space *= rcvmem;
 			space = min(space, sysctl_tcp_rmem[2]);
-			if (space > sk->rcvbuf)
+			if (space > sk->rcvbuf) {
 				sk->rcvbuf = space;
+
+				/* Make the window clamp follow along.  */
+				tp->window_clamp = new_clamp;
+			}
 		}
 	}
 	
@@ -2900,8 +2908,8 @@ void tcp_parse_options(struct sk_buff *skb, struct tcp_opt *tp, int estab)
 							tp->snd_wscale = *(__u8 *)ptr;
 							if(tp->snd_wscale > 14) {
 								if(net_ratelimit())
-									printk("tcp_parse_options: Illegal window "
-									       "scaling value %d >14 received.",
+									printk(KERN_INFO "tcp_parse_options: Illegal window "
+									       "scaling value %d >14 received.\n",
 									       tp->snd_wscale);
 								tp->snd_wscale = 14;
 							}
@@ -3137,7 +3145,7 @@ static void tcp_fin(struct sk_buff *skb, struct sock *sk, struct tcphdr *th)
 			/* Only TCP_LISTEN and TCP_CLOSE are left, in these
 			 * cases we should never reach this piece of code.
 			 */
-			printk("tcp_fin: Impossible, sk->state=%d\n", sk->state);
+			printk(KERN_ERR "tcp_fin: Impossible, sk->state=%d\n", sk->state);
 			break;
 	};
 

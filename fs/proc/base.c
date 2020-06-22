@@ -166,15 +166,16 @@ static int proc_pid_environ(struct task_struct *task, char * buffer)
 	if (mm)
 		atomic_inc(&mm->mm_users);
 	task_unlock(task);
-	if (mm) {
-		unsigned int len = mm->env_end - mm->env_start;
+	if (mm && mm->env_start && mm->env_start < mm->env_end) {
+		unsigned long len = mm->env_end - mm->env_start;
 		if (len > PAGE_SIZE)
 			len = PAGE_SIZE;
 		res = access_process_vm(task, mm->env_start, buffer, len, 0);
-		if (!may_ptrace_attach(task))
+		if (res >= 0 && !may_ptrace_attach(task))
 			res = -ESRCH;
-		mmput(mm);
 	}
+	if (mm)
+		mmput(mm);
 	return res;
 }
 
@@ -187,31 +188,30 @@ static int proc_pid_cmdline(struct task_struct *task, char * buffer)
 	if (mm)
 		atomic_inc(&mm->mm_users);
 	task_unlock(task);
-	if (mm) {
-		int len = mm->arg_end - mm->arg_start;
+	if (mm && mm->arg_start && mm->arg_start < mm->arg_end) {
+		unsigned long len = mm->arg_end - mm->arg_start;
 		if (len > PAGE_SIZE)
 			len = PAGE_SIZE;
 		res = access_process_vm(task, mm->arg_start, buffer, len, 0);
-		// If the nul at the end of args has been overwritten, then
-		// assume application is using setproctitle(3).
-		if ( res > 0 && buffer[res-1] != '\0' )
-		{
-			len = strnlen( buffer, res );
-			if ( len < res )
-			{
-			    res = len;
-			}
-			else
-			{
+		/* If the nul at the end of args has been overwritten, then
+		   assume application is using setproctitle(3). */
+		if (res > 0 && buffer[res - 1] != '\0') {
+			len = strnlen(buffer, res);
+			if (len < res) {
+				res = len;
+			} else
+			if (mm->env_start < mm->env_end && res <= PAGE_SIZE) {
 				len = mm->env_end - mm->env_start;
 				if (len > PAGE_SIZE - res)
 					len = PAGE_SIZE - res;
 				res += access_process_vm(task, mm->env_start, buffer+res, len, 0);
-				res = strnlen( buffer, res );
-			}
+				res = strnlen(buffer, res);
+			} else
+				res = 0;
 		}
-		mmput(mm);
 	}
+	if (mm)
+		mmput(mm);
 	return res;
 }
 

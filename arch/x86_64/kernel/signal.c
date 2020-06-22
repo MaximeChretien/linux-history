@@ -561,7 +561,7 @@ int do_signal(struct pt_regs *regs, sigset_t *oldset)
 	}
 
 	/* Did we come from a system call? */
-	if (regs->orig_rax >= 0) {
+	if ((long)regs->orig_rax >= 0) {
 		/* Restart the system call - no handlers present */
 		if (regs->rax == -ERESTARTNOHAND ||
 		    regs->rax == -ERESTARTSYS ||

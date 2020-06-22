@@ -336,10 +336,11 @@ xfs_read(
 		ret = generic_file_read(file, buf, size, offset);
 	}
 
+	if (ret > 0)
+		XFS_STATS_ADD(xs_read_bytes, ret);
+
 	if (!(ioflags & IO_ISLOCKED))
 		xfs_iunlock(ip, XFS_IOLOCK_SHARED);
-
-	XFS_STATS_ADD(xs_read_bytes, ret);
 
 	if (unlikely(ioflags & IO_INVIS)) {
 		/* generic_file_read updates the atime but we need to

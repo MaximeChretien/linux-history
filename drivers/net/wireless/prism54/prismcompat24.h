@@ -51,6 +51,10 @@
 #define INIT_WORK		INIT_TQUEUE
 #define schedule_work		schedule_task
 
+#ifndef __iomem
+#define __iomem
+#endif
+
 #if !defined(HAVE_NETDEV_PRIV)
 #define netdev_priv(x)		(x)->priv
 #endif

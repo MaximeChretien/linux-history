@@ -52,6 +52,7 @@ ENTRY(ia32_cstar_target)
 ENTRY(ia32_syscall)
 	swapgs	
 	sti
+	movl %eax,%eax	
 	pushq %rax
 	cld
 	SAVE_ARGS

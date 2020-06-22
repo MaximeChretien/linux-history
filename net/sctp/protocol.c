@@ -93,7 +93,7 @@ struct sock *sctp_get_ctl_sock(void)
 }
 
 /* Set up the proc fs entry for the SCTP protocol. */
-__init int sctp_proc_init(void)
+static __init int sctp_proc_init(void)
 {
 	if (!proc_net_sctp) {
 		struct proc_dir_entry *ent;
@@ -122,7 +122,7 @@ out_nomem:
  * Note: Do not make this __exit as it is used in the init error
  * path.
  */
-void sctp_proc_exit(void)
+static void sctp_proc_exit(void)
 {
 	sctp_snmp_proc_exit();
 	sctp_eps_proc_exit();
@@ -428,9 +428,9 @@ static sctp_scope_t sctp_v4_scope(union sctp_addr *addr)
  * addresses. If an association is passed, trys to get a dst entry with a
  * source address that matches an address in the bind address list.
  */
-struct dst_entry *sctp_v4_get_dst(struct sctp_association *asoc,
-				  union sctp_addr *daddr,
-				  union sctp_addr *saddr)
+static struct dst_entry *sctp_v4_get_dst(struct sctp_association *asoc,
+					 union sctp_addr *daddr,
+					 union sctp_addr *saddr)
 {
 	struct rtable *rt;
 	struct rt_key key;
@@ -520,10 +520,10 @@ out:
 /* For v4, the source address is cached in the route entry(dst). So no need
  * to cache it separately and hence this is an empty routine.
  */
-void sctp_v4_get_saddr(struct sctp_association *asoc,
-		       struct dst_entry *dst,
-		       union sctp_addr *daddr,
-		       union sctp_addr *saddr)
+static void sctp_v4_get_saddr(struct sctp_association *asoc,
+			      struct dst_entry *dst,
+			      union sctp_addr *daddr,
+			      union sctp_addr *saddr)
 {
 	struct rtable *rt = (struct rtable *)dst;
 
@@ -547,8 +547,8 @@ static int sctp_v4_is_ce(const struct sk_buff *skb)
 }
 
 /* Create and initialize a new sk for the socket returned by accept(). */
-struct sock *sctp_v4_create_accept_sk(struct sock *sk,
-				      struct sctp_association *asoc)
+static struct sock *sctp_v4_create_accept_sk(struct sock *sk,
+					     struct sctp_association *asoc)
 {
 	struct sock *newsk;
 	struct inet_opt *inet = inet_sk(sk);
@@ -561,18 +561,18 @@ struct sock *sctp_v4_create_accept_sk(struct sock *sk,
 	sock_init_data(NULL, newsk);
 	sk_set_owner(newsk, THIS_MODULE);
 
-	newsk->sk_type = SOCK_STREAM;
+	newsk->type = SOCK_STREAM;
 
-	newsk->sk_prot = sk->sk_prot;
-	newsk->sk_no_check = sk->sk_no_check;
-	newsk->sk_reuse = sk->sk_reuse;
-	newsk->sk_shutdown = sk->sk_shutdown;
+	newsk->prot = sk->prot;
+	newsk->no_check = sk->no_check;
+	newsk->reuse = sk->reuse;
+	newsk->shutdown = sk->shutdown;
 
-	newsk->sk_destruct = inet_sock_destruct;
-	newsk->sk_zapped = 0;
-	newsk->sk_family = PF_INET;
-	newsk->sk_protocol = IPPROTO_SCTP;
-	newsk->sk_backlog_rcv = sk->sk_prot->backlog_rcv;
+	newsk->destruct = inet_sock_destruct;
+	newsk->zapped = 0;
+	newsk->family = PF_INET;
+	newsk->protocol = IPPROTO_SCTP;
+	newsk->backlog_rcv = sk->prot->backlog_rcv;
 
 	newinet = inet_sk(newsk);
 
@@ -597,7 +597,7 @@ struct sock *sctp_v4_create_accept_sk(struct sock *sk,
 	atomic_inc(&inet_sock_nr);
 #endif
 
-	if (newsk->sk_prot->init(newsk)) {
+	if (newsk->prot->init(newsk)) {
 		inet_sock_release(newsk);
 		newsk = NULL;
 	}
@@ -638,7 +638,7 @@ int sctp_inetaddr_event(struct notifier_block *this, unsigned long ev,
  * Initialize the control inode/socket with a control endpoint data
  * structure.  This endpoint is reserved exclusively for the OOTB processing.
  */
-int sctp_ctl_sock_init(void)
+static int sctp_ctl_sock_init(void)
 {
 	int err;
 	sa_family_t family;
@@ -655,7 +655,7 @@ int sctp_ctl_sock_init(void)
 		       "SCTP: Failed to create the SCTP control socket.\n");
 		return err;
 	}
-	sctp_ctl_socket->sk->sk_allocation = GFP_ATOMIC;
+	sctp_ctl_socket->sk->allocation = GFP_ATOMIC;
 	inet_sk(sctp_ctl_socket->sk)->ttl = MAXTTL;
 
 	return 0;
@@ -807,7 +807,7 @@ static inline int sctp_v4_xmit(struct sk_buff *skb,
 	return ip_queue_xmit(skb, ipfragok);
 }
 
-struct sctp_af sctp_ipv4_specific;
+static struct sctp_af sctp_ipv4_specific;
 
 static struct sctp_pf sctp_pf_inet = {
 	.event_msgname = sctp_inet_event_msgname,
@@ -828,7 +828,7 @@ static struct notifier_block sctp_inetaddr_notifier = {
 };
 
 /* Socket operations.  */
-struct proto_ops inet_seqpacket_ops = {
+static struct proto_ops inet_seqpacket_ops = {
 	.family      = PF_INET,
 	.release     = inet_release,       /* Needs to be wrapped... */
 	.bind        = inet_bind,
@@ -877,7 +877,7 @@ static struct inet_protocol sctp_protocol = {
 };
 
 /* IPv4 address related functions.  */
-struct sctp_af sctp_ipv4_specific = {
+static struct sctp_af sctp_ipv4_specific = {
 	.sctp_xmit      = sctp_v4_xmit,
 	.setsockopt     = ip_setsockopt,
 	.getsockopt     = ip_getsockopt,
@@ -948,7 +948,7 @@ static void cleanup_sctp_mibs(void)
 }
 
 /* Initialize the universe into something sensible.  */
-__init int sctp_init(void)
+SCTP_STATIC __init int sctp_init(void)
 {
 	int i;
 	int status = 0;
@@ -1161,7 +1161,7 @@ err_chunk_cachep:
 }
 
 /* Exit handler for the SCTP protocol.  */
-__exit void sctp_exit(void)
+SCTP_STATIC __exit void sctp_exit(void)
 {
 	/* BUG.  This should probably do something useful like clean
 	 * up all the remaining associations and all that memory.

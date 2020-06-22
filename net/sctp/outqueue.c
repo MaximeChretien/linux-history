@@ -200,19 +200,6 @@ static inline int sctp_cacc_skip(struct sctp_transport *primary,
 	return 0;
 }
 
-/* Generate a new outqueue.  */
-struct sctp_outq *sctp_outq_new(struct sctp_association *asoc)
-{
-	struct sctp_outq *q;
-
-	q = t_new(struct sctp_outq, GFP_KERNEL);
-	if (q) {
-		sctp_outq_init(asoc, q);
-		q->malloced = 1;
-	}
-	return q;
-}
-
 /* Initialize an existing sctp_outq.  This does the boring stuff.
  * You still need to define handlers if you really want to DO
  * something with this structure...
@@ -372,7 +359,7 @@ int sctp_outq_tail(struct sctp_outq *q, struct sctp_chunk *chunk)
 /* Insert a chunk into the sorted list based on the TSNs.  The retransmit list
  * and the abandoned list are in ascending order.
  */
-void sctp_insert_list(struct list_head *head, struct list_head *new)
+static void sctp_insert_list(struct list_head *head, struct list_head *new)
 {
 	struct list_head *pos;
 	struct sctp_chunk *nchunk, *lchunk;
@@ -510,7 +497,7 @@ void sctp_retransmit(struct sctp_outq *q, struct sctp_transport *transport,
 	error = sctp_outq_flush(q, /* rtx_timeout */ 1);
 
 	if (error)
-		q->asoc->base.sk->sk_err = -error;
+		q->asoc->base.sk->err = -error;
 }
 
 /*

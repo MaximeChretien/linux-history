@@ -290,6 +290,8 @@ static ctl_table vm_table[] = {
 	 &vm_cache_scan_ratio, sizeof(int), 0644, NULL, &proc_dointvec},
 	{VM_MAPPED_RATIO, "vm_mapped_ratio", 
 	 &vm_mapped_ratio, sizeof(int), 0644, NULL, &proc_dointvec},
+	{VM_ANON_LRU, "vm_anon_lru", 
+	 &vm_anon_lru, sizeof(int), 0644, NULL, &proc_dointvec},
 	{VM_LRU_BALANCE_RATIO, "vm_lru_balance_ratio", 
 	 &vm_lru_balance_ratio, sizeof(int), 0644, NULL, &proc_dointvec},
 	{VM_PASSES, "vm_passes", 
@@ -377,6 +379,9 @@ int do_sysctl(int *name, int nlen, void *oldval, size_t *oldlenp,
 		int old_len;
 		if (!oldlenp || get_user(old_len, oldlenp))
 			return -EFAULT;
+		/* XXX: insufficient for SMP, but should be redundant anyway */
+		if ((ssize_t)old_len < 0)
+			return -EINVAL;
 	}
 	tmp = &root_table_header.ctl_entry;
 	do {

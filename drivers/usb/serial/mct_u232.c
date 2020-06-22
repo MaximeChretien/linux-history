@@ -569,11 +569,7 @@ static void mct_u232_write_bulk_callback (struct urb *urb)
 
 	if (write_blocking) {
 		wake_up_interruptible(&port->write_wait);
-		if ((tty->flags & (1 << TTY_DO_WRITE_WAKEUP)) &&
-		    tty->ldisc.write_wakeup)
-			(tty->ldisc.write_wakeup)(tty);
-		wake_up_interruptible(&tty->write_wait);
-		
+		tty_wakeup(tty);
 	} else {
 		/* from generic_write_bulk_callback */
 		queue_task(&port->tqueue, &tq_immediate);

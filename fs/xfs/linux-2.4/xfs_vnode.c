@@ -186,8 +186,7 @@ vn_get(
 	 * returning NULL here is OK.
 	 */
 	if (inode->i_state & I_NEW) {
-		remove_inode_hash(inode);
-		make_bad_inode(inode);
+		vn_mark_bad(vp);
 		unlock_new_inode(inode);
 		iput(inode);
 		return NULL;

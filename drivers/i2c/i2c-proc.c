@@ -152,7 +152,7 @@ int i2c_register_entry(struct i2c_client *client, const char *prefix,
 	id += 256;
 
 	len = 0;
-	while (ctl_template[len].procname)
+	while (ctl_template[len].ctl_name)
 		len++;
 	len += 7;
 	if (!(new_table = kmalloc(sizeof(ctl_table) * len, GFP_KERNEL))) {
@@ -540,7 +540,7 @@ int i2c_parse_reals(int *nrels, void *buffer, int bufsize,
 		/* Skip everything until we hit whitespace */
 		while (bufsize && 
 		       !((ret=get_user(nextchar, (char *) buffer))) &&
-		       isspace((int) nextchar)) {
+		       !isspace((int) nextchar)) {
 			bufsize--;
 			((char *) buffer)++;
 		}
@@ -762,7 +762,7 @@ int i2c_detect(struct i2c_adapter *adapter,
 #ifdef DEBUG
 					printk
 					    (KERN_DEBUG "i2c-proc.o: found normal isa_range entry for adapter %d, "
-					     "addr %04x", adapter_id, addr);
+					     "addr %04x\n", adapter_id, addr);
 #endif
 					found = 1;
 				}
@@ -776,7 +776,7 @@ int i2c_detect(struct i2c_adapter *adapter,
 #ifdef DEBUG
 					printk
 					    (KERN_DEBUG "i2c-proc.o: found normal i2c entry for adapter %d, "
-					     "addr %02x", adapter_id, addr);
+					     "addr %02x\n", adapter_id, addr);
 #endif
 				}
 			}

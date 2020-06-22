@@ -1326,6 +1326,7 @@ static void port_softint(void *private)
 	struct usb_serial *serial = get_usb_serial (port, __FUNCTION__);
 	struct tty_struct *tty;
 	unsigned long flags;
+	struct tty_ldisc *ld;
 
 	dbg("%s - port %d", __FUNCTION__, port->number);
 	
@@ -1341,9 +1342,15 @@ static void port_softint(void *private)
 	if (!tty)
 		return;
 
-	if ((tty->flags & (1 << TTY_DO_WRITE_WAKEUP)) && tty->ldisc.write_wakeup) {
-		dbg("%s - write wakeup call.", __FUNCTION__);
-		(tty->ldisc.write_wakeup)(tty);
+	if ((tty->flags & (1 << TTY_DO_WRITE_WAKEUP))) {
+		ld = tty_ldisc_ref(tty);
+		if(ld) {
+			if(ld->write_wakeup) {
+				ld->write_wakeup(tty);
+				dbg("%s - write wakeup call.", __FUNCTION__);
+			}
+			tty_ldisc_deref(ld);
+		}
 	}
 
 	wake_up_interruptible(&tty->write_wait);
