@@ -1,16 +1,17 @@
 /******************************************************************************
  *
  * Name:	skaddr.h
- * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.26 $
- * Date:	$Date: 2002/11/15 07:24:42 $
+ * Project:	Gigabit Ethernet Adapters, ADDR-Modul
+ * Version:	$Revision: 1.29 $
+ * Date:	$Date: 2003/05/13 16:57:24 $
  * Purpose:	Header file for Address Management (MC, UC, Prom).
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2001 SysKonnect GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 2002-2003 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -26,6 +27,16 @@
  * History:
  *
  *	$Log: skaddr.h,v $
+ *	Revision 1.29  2003/05/13 16:57:24  mkarl
+ *	Changes for SLIM driver.
+ *	Editorial changes.
+ *	
+ *	Revision 1.28  2003/04/15 09:33:22  tschilli
+ *	Copyright messages changed.
+ *	
+ *	Revision 1.27  2003/04/14 15:55:11  tschilli
+ *	"#error C++ is not yet supported." removed.
+ *	
  *	Revision 1.26  2002/11/15 07:24:42  tschilli
  *	SK_ADDR_EQUAL macro fixed.
  *	
@@ -140,7 +151,6 @@
 #define __INC_SKADDR_H
 
 #ifdef __cplusplus
-#error C++ is not yet supported.
 extern "C" {
 #endif	/* cplusplus */
 
@@ -206,7 +216,7 @@ extern "C" {
 
 /* Macros */
 
-#if 0
+#ifdef OLD_STUFF
 #ifndef SK_ADDR_EQUAL
 /*
  * "&" instead of "&&" allows better optimization on IA-64.
@@ -231,16 +241,18 @@ extern "C" {
 #ifndef SK_ADDR_EQUAL
 #ifndef SK_ADDR_DWORD_COMPARE
 #define SK_ADDR_EQUAL(A1,A2)	( \
-	(((SK_U8 *)(A1))[5] == ((SK_U8 *)(A2))[5]) & \
-	(((SK_U8 *)(A1))[4] == ((SK_U8 *)(A2))[4]) & \
-	(((SK_U8 *)(A1))[3] == ((SK_U8 *)(A2))[3]) & \
-	(((SK_U8 *)(A1))[2] == ((SK_U8 *)(A2))[2]) & \
-	(((SK_U8 *)(A1))[1] == ((SK_U8 *)(A2))[1]) & \
-	(((SK_U8 *)(A1))[0] == ((SK_U8 *)(A2))[0]))
+	(((SK_U8 SK_FAR *)(A1))[5] == ((SK_U8 SK_FAR *)(A2))[5]) & \
+	(((SK_U8 SK_FAR *)(A1))[4] == ((SK_U8 SK_FAR *)(A2))[4]) & \
+	(((SK_U8 SK_FAR *)(A1))[3] == ((SK_U8 SK_FAR *)(A2))[3]) & \
+	(((SK_U8 SK_FAR *)(A1))[2] == ((SK_U8 SK_FAR *)(A2))[2]) & \
+	(((SK_U8 SK_FAR *)(A1))[1] == ((SK_U8 SK_FAR *)(A2))[1]) & \
+	(((SK_U8 SK_FAR *)(A1))[0] == ((SK_U8 SK_FAR *)(A2))[0]))
 #else	/* SK_ADDR_DWORD_COMPARE */
 #define SK_ADDR_EQUAL(A1,A2)	( \
-	(*(SK_U16 *)&(((SK_U8 *)(A1))[4]) == *(SK_U16 *)&(((SK_U8 *)(A2))[4])) && \
-	(*(SK_U32 *)&(((SK_U8 *)(A1))[0]) == *(SK_U32 *)&(((SK_U8 *)(A2))[0])))
+	(*(SK_U16 SK_FAR *)&(((SK_U8 SK_FAR *)(A1))[4]) == \
+	*(SK_U16 SK_FAR *)&(((SK_U8 SK_FAR *)(A2))[4])) && \
+	(*(SK_U32 SK_FAR *)&(((SK_U8 SK_FAR *)(A1))[0]) == \
+	*(SK_U32 SK_FAR *)&(((SK_U8 SK_FAR *)(A2))[0])))
 #endif	/* SK_ADDR_DWORD_COMPARE */
 #endif	/* SK_ADDR_EQUAL */
 
@@ -382,7 +394,7 @@ extern	int	SkAddrOverride(
 	SK_AC		*pAC,
 	SK_IOC		IoC,
 	SK_U32		PortNumber,
-	SK_MAC_ADDR	*pNewAddr,
+	SK_MAC_ADDR	SK_FAR *pNewAddr,
 	int		Flags);
 
 extern	int	SkAddrPromiscuousChange(
@@ -403,11 +415,13 @@ extern	int	SkAddrGmacPromiscuousChange(
 	SK_U32	PortNumber,
 	int	NewPromMode);	
 
+#ifndef SK_SLIM
 extern	int	SkAddrSwap(
 	SK_AC	*pAC,
 	SK_IOC	IoC,
 	SK_U32	FromPortNumber,
 	SK_U32	ToPortNumber);
+#endif
 
 #else	/* defined(SK_KR_PROTO)) */
 

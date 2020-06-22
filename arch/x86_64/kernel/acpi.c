@@ -47,6 +47,8 @@
 
 #define PREFIX			"ACPI: "
 
+int acpi_lapic = 0;
+int acpi_ioapic = 0;
 
 /* --------------------------------------------------------------------------
                               Boot-time Configuration
@@ -114,10 +116,7 @@ __acpi_map_table (
 #endif
 }
 
-
 #ifdef CONFIG_X86_LOCAL_APIC
-
-int acpi_lapic;
 
 static u64 acpi_lapic_addr __initdata = APIC_DEFAULT_PHYS_BASE;
 
@@ -204,9 +203,8 @@ acpi_parse_lapic_nmi (
 
 #endif /*CONFIG_X86_LOCAL_APIC*/
 
-#ifdef CONFIG_X86_IO_APIC
+#if defined(CONFIG_X86_IO_APIC) && defined(CONFIG_ACPI_INTERPRETER)
 
-int acpi_ioapic;
 
 static int __init
 acpi_parse_ioapic (
@@ -268,7 +266,8 @@ acpi_parse_nmi_src (
 	return 0;
 }
 
-#endif /*CONFIG_X86_IO_APIC*/
+#endif /*CONFIG_X86_IO_APIC && CONFIG_ACPI_INTERPRETER*/
+
 
 static int __init
 acpi_parse_hpet (
@@ -290,6 +289,70 @@ acpi_parse_hpet (
 
 	return 0;
 } 
+
+#ifdef CONFIG_ACPI_BUS
+/*
+ * "acpi_pic_sci=level" (current default)
+ * programs the PIC-mode SCI to Level Trigger.
+ * (NO-OP if the BIOS set Level Trigger already)
+ *
+ * If a PIC-mode SCI is not recogznied or gives spurious IRQ7's
+ * it may require Edge Trigger -- use "acpi_pic_sci=edge"
+ * (NO-OP if the BIOS set Edge Trigger already)
+ *
+ * Port 0x4d0-4d1 are ECLR1 and ECLR2, the Edge/Level Control Registers
+ * for the 8259 PIC.  bit[n] = 1 means irq[n] is Level, otherwise Edge.
+ * ECLR1 is IRQ's 0-7 (IRQ 0, 1, 2 must be 0)
+ * ECLR2 is IRQ's 8-15 (IRQ 8, 13 must be 0)
+ */
+
+static __initdata int	acpi_pic_sci_trigger;	/* 0: level, 1: edge */
+
+void __init
+acpi_pic_sci_set_trigger(unsigned int irq)
+{
+	unsigned char mask = 1 << (irq & 7);
+	unsigned int port = 0x4d0 + (irq >> 3);
+	unsigned char val = inb(port);
+
+	
+	printk(PREFIX "IRQ%d SCI:", irq);
+	if (!(val & mask)) {
+		printk(" Edge");
+
+		if (!acpi_pic_sci_trigger) {
+			printk(" set to Level");
+			outb(val | mask, port);
+		}
+	} else {
+		printk(" Level");
+
+		if (acpi_pic_sci_trigger) {
+			printk(" set to Edge");
+			outb(val | mask, port);
+		}
+	}
+	printk(" Trigger.\n");
+}
+
+int __init
+acpi_pic_sci_setup(char *str)
+{
+	while (str && *str) {
+		if (strncmp(str, "level", 5) == 0)
+			acpi_pic_sci_trigger = 0;	/* force level trigger */
+		if (strncmp(str, "edge", 4) == 0)
+			acpi_pic_sci_trigger = 1;	/* force edge trigger */
+		str = strchr(str, ',');
+		if (str)
+			str += strspn(str, ", \t");
+	}
+	return 1;
+}
+
+__setup("acpi_pic_sci=", acpi_pic_sci_setup);
+
+#endif /* CONFIG_ACPI_BUS */
 
 static unsigned long __init
 acpi_scan_rsdp (
@@ -332,9 +395,11 @@ acpi_find_rsdp (void)
 
 int __init
 acpi_boot_init (void)
-	
 {
 	int			result = 0;
+
+	if (acpi_disabled)
+		return(1);
 
 	/*
 	 * The default interrupt routing model is PIC (8259).  This gets
@@ -350,6 +415,16 @@ acpi_boot_init (void)
 		return result;
 
 #ifdef CONFIG_X86_LOCAL_APIC
+
+	/* this check should not need to be here -lenb */
+	/* If "nolocalapic" is specified don't look further */
+	extern int apic_disabled;
+	if (apic_disabled) {
+		printk(KERN_INFO PREFIX "Skipping Local/IO-APIC probe due to \"nolocalapic\"\n");
+		return 0;	
+	}	
+	printk(KERN_INFO PREFIX "Parsing Local APIC info in MADT\n"); 
+	
 
 	/* 
 	 * MADT
@@ -409,12 +484,41 @@ acpi_boot_init (void)
 
 #endif /*CONFIG_X86_LOCAL_APIC*/
 
-#ifdef CONFIG_X86_IO_APIC
+#if defined(CONFIG_X86_IO_APIC) && defined(CONFIG_ACPI_INTERPRETER)
+
+
+	/* 
+	 * if "noapic" boot option, don't look for IO-APICs
+	 */
+	if (ioapic_setup_disabled()) {
+		printk(KERN_INFO PREFIX "Skipping IOAPIC probe "
+			"due to 'noapic' option.\n");
+		return 1;
+	}
 
 	/* 
 	 * I/O APIC 
 	 * --------
 	 */
+
+	/*
+	 * ACPI interpreter is required to complete interrupt setup,
+	 * so if it is off, don't enumerate the io-apics with ACPI.
+	 * If MPS is present, it will handle them,
+	 * otherwise the system will stay in PIC mode
+	 */
+	if (acpi_disabled || acpi_noirq) {
+		return 1;
+	}
+
+	/*
+	 * if "noapic" boot option, don't look for IO-APICs
+	 */
+	if (ioapic_setup_disabled()) {
+		printk(KERN_INFO PREFIX "Skipping IOAPIC probe "
+			"due to 'noapic' option.\n");
+		return 1;
+	}
 
 	result = acpi_table_parse_madt(ACPI_MADT_IOAPIC, acpi_parse_ioapic);
 	if (!result) { 
@@ -445,17 +549,18 @@ acpi_boot_init (void)
 
 	acpi_irq_model = ACPI_IRQ_MODEL_IOAPIC;
 
+	acpi_irq_balance_set(NULL);
+
 	acpi_ioapic = 1;
 
-#endif /*CONFIG_X86_IO_APIC*/
-
-#ifdef CONFIG_X86_LOCAL_APIC
 	if (acpi_lapic && acpi_ioapic)
 		smp_found_config = 1;
-#endif
+
 	result = acpi_table_parse(ACPI_HPET, acpi_parse_hpet);
 	if (result < 0) 
 		printk("ACPI: no HPET table found (%d).\n", result); 
+
+#endif /*CONFIG_X86_IO_APIC && CONFIG_ACPI_INTERPRETER*/
 
 	return 0;
 }

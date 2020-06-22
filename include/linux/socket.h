@@ -1,6 +1,21 @@
 #ifndef _LINUX_SOCKET_H
 #define _LINUX_SOCKET_H
 
+/*
+ * Desired design of maximum size and alignment (see RFC2553)
+ */
+#define _K_SS_MAXSIZE	128	/* Implementation specific max size */
+#define _K_SS_ALIGNSIZE	(__alignof__ (struct sockaddr *))
+				/* Implementation specific desired alignment */
+
+struct __kernel_sockaddr_storage {
+	unsigned short	ss_family;		/* address family */
+	/* Following field(s) are implementation specific */
+	char		__data[_K_SS_MAXSIZE - sizeof(unsigned short)];
+				/* space to achieve desired size, */
+				/* _SS_MAXSIZE value minus size of ss_family */
+} __attribute__ ((aligned(_K_SS_ALIGNSIZE)));	/* force desired alignment */
+
 #if defined(__KERNEL__) || !defined(__GLIBC__) || (__GLIBC__ < 2)
 
 #include <asm/socket.h>			/* arch-dependent defines	*/
@@ -24,20 +39,7 @@ struct linger {
 	int		l_linger;	/* How long to linger for	*/
 };
 
-/*
- * Desired design of maximum size and alignment (see RFC2553)
- */
-#define _SS_MAXSIZE	128	/* Implementation specific max size */
-#define _SS_ALIGNSIZE	(__alignof__ (struct sockaddr *))
-				/* Implementation specific desired alignment */
-
-struct sockaddr_storage {
-	sa_family_t	ss_family;		/* address family */
-	/* Following field(s) are implementation specific */
-	char		__data[_SS_MAXSIZE - sizeof(sa_family_t)];
-				/* space to achieve desired size, */
-				/* _SS_MAXSIZE value minus size of ss_family */
-} __attribute__ ((aligned(_SS_ALIGNSIZE)));	/* force desired alignment */
+#define sockaddr_storage __kernel_sockaddr_storage
 
 /*
  *	As we do 4.4BSD message passing we use a 4.4BSD message passing
@@ -242,6 +244,7 @@ struct ucred {
 #define SOL_UDP		17
 #define SOL_IPV6	41
 #define SOL_ICMPV6	58
+#define SOL_SCTP	132
 #define SOL_RAW		255
 #define SOL_IPX		256
 #define SOL_AX25	257

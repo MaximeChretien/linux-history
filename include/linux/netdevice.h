@@ -41,9 +41,15 @@
 
 struct divert_blk;
 struct vlan_group;
+struct ethtool_ops;
+
+					/* source back-compat hook */
+#define SET_ETHTOOL_OPS(netdev,ops) \
+	( (netdev)->ethtool_ops = (ops) )
 
 #define HAVE_ALLOC_NETDEV		/* feature macro: alloc_xxxdev
 					   functions are available. */
+#define HAVE_FREE_NETDEV
 
 #define NET_XMIT_SUCCESS	0
 #define NET_XMIT_DROP		1	/* skb dropped			*/
@@ -198,7 +204,7 @@ struct hh_cache
 	(HH_DATA_MOD - ((__len) & (HH_DATA_MOD - 1)))
 #define HH_DATA_ALIGN(__len) \
 	(((__len)+(HH_DATA_MOD-1))&~(HH_DATA_MOD - 1))
-	unsigned long	hh_data[HH_DATA_ALIGN(LL_MAX_HEADER)];
+	unsigned long	hh_data[HH_DATA_ALIGN(LL_MAX_HEADER) / sizeof(long)];
 };
 
 /* These flag bits are private to the generic network queueing
@@ -289,6 +295,8 @@ struct net_device
 	/* List of functions to handle Wireless Extensions (instead of ioctl).
 	 * See <net/iw_handler.h> for details. Jean II */
 	struct iw_handler_def *	wireless_handlers;
+
+	struct ethtool_ops *ethtool_ops;
 
 	/*
 	 * This marks the end of the "visible" part of the structure. All
@@ -601,6 +609,7 @@ extern int		netif_rx(struct sk_buff *skb);
 #define HAVE_NETIF_RECEIVE_SKB 1
 extern int		netif_receive_skb(struct sk_buff *skb);
 extern int		dev_ioctl(unsigned int cmd, void *);
+extern int		dev_ethtool(struct ifreq *);
 extern int		dev_change_flags(struct net_device *, unsigned);
 extern void		dev_queue_xmit_nit(struct sk_buff *skb, struct net_device *dev);
 
@@ -789,8 +798,41 @@ static inline void netif_rx_complete(struct net_device *dev)
 	local_irq_save(flags);
 	if (!test_bit(__LINK_STATE_RX_SCHED, &dev->state)) BUG();
 	list_del(&dev->poll_list);
+	smp_mb__before_clear_bit();
 	clear_bit(__LINK_STATE_RX_SCHED, &dev->state);
 	local_irq_restore(flags);
+}
+
+static inline void netif_poll_disable(struct net_device *dev)
+{
+	while (test_and_set_bit(__LINK_STATE_RX_SCHED, &dev->state)) {
+		/* No hurry. */
+		current->state = TASK_INTERRUPTIBLE;
+		schedule_timeout(1);
+	}
+}
+
+static inline void netif_poll_enable(struct net_device *dev)
+{
+	clear_bit(__LINK_STATE_RX_SCHED, &dev->state);
+}
+
+/* same as netif_rx_complete, except that local_irq_save(flags)
+ * has already been issued
+ */
+static inline void __netif_rx_complete(struct net_device *dev)
+{
+	if (!test_bit(__LINK_STATE_RX_SCHED, &dev->state)) BUG();
+	list_del(&dev->poll_list);
+	smp_mb__before_clear_bit();
+	clear_bit(__LINK_STATE_RX_SCHED, &dev->state);
+}
+
+static inline void netif_tx_disable(struct net_device *dev)
+{
+	spin_lock_bh(&dev->xmit_lock);
+	netif_stop_queue(dev);
+	spin_unlock_bh(&dev->xmit_lock);
 }
 
 /* These functions live elsewhere (drivers/net/net_init.c, but related) */
@@ -801,6 +843,8 @@ extern void		tr_setup(struct net_device *dev);
 extern void		fc_setup(struct net_device *dev);
 extern void		fc_freedev(struct net_device *dev);
 /* Support for loadable net-drivers */
+extern struct net_device *alloc_netdev(int sizeof_priv, const char *name,
+				       void (*setup)(struct net_device *));
 extern int		register_netdev(struct net_device *dev);
 extern void		unregister_netdev(struct net_device *dev);
 /* Functions used for multicast support */
@@ -828,6 +872,10 @@ extern int		netdev_fastroute_obstacles;
 extern void		dev_clear_fastroute(struct net_device *dev);
 #endif
 
+static inline void free_netdev(struct net_device *dev)
+{
+	kfree(dev);
+}
 
 #endif /* __KERNEL__ */
 

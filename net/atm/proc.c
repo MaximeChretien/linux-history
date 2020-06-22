@@ -47,7 +47,6 @@
 #if defined(CONFIG_ATM_LANE) || defined(CONFIG_ATM_LANE_MODULE)
 #include "lec.h"
 #include "lec_arpc.h"
-extern struct atm_lane_ops atm_lane_ops; /* in common.c */
 #endif
 
 static ssize_t proc_dev_atm_read(struct file *file,char *buf,size_t count,
@@ -333,9 +332,7 @@ static int atm_devices_info(loff_t pos,char *buf)
 
 static int atm_pvc_info(loff_t pos,char *buf)
 {
-	unsigned long flags;
-	struct atm_dev *dev;
-	struct list_head *p;
+	struct sock *s;
 	struct atm_vcc *vcc;
 	int left, clip_info = 0;
 
@@ -348,27 +345,23 @@ static int atm_pvc_info(loff_t pos,char *buf)
 	if (try_atm_clip_ops())
 		clip_info = 1;
 #endif
-	spin_lock(&atm_dev_lock);
-	list_for_each(p, &atm_devs) {
-		dev = list_entry(p, struct atm_dev, dev_list);
-		spin_lock_irqsave(&dev->lock, flags);
-		for (vcc = dev->vccs; vcc; vcc = vcc->next)
-			if (vcc->sk->family == PF_ATMPVC && vcc->dev && !left--) {
-				pvc_info(vcc,buf,clip_info);
-				spin_unlock_irqrestore(&dev->lock, flags);
-				spin_unlock(&atm_dev_lock);
+	read_lock(&vcc_sklist_lock);
+	for(s = vcc_sklist; s; s = s->next) {
+		vcc = s->protinfo.af_atm;
+		if (vcc->sk->family == PF_ATMPVC && vcc->dev && !left--) {
+			pvc_info(vcc,buf,clip_info);
+			read_unlock(&vcc_sklist_lock);
 #if defined(CONFIG_ATM_CLIP) || defined(CONFIG_ATM_CLIP_MODULE)
-				if (clip_info)
-					__MOD_DEC_USE_COUNT(atm_clip_ops->owner);
+			if (clip_info && atm_clip_ops->owner)
+				__MOD_DEC_USE_COUNT(atm_clip_ops->owner);
 #endif
-				return strlen(buf);
-			}
-		spin_unlock_irqrestore(&dev->lock, flags);
+			return strlen(buf);
+		}
 	}
-	spin_unlock(&atm_dev_lock);
+	read_unlock(&vcc_sklist_lock);
 #if defined(CONFIG_ATM_CLIP) || defined(CONFIG_ATM_CLIP_MODULE)
-	if (clip_info)
-		__MOD_DEC_USE_COUNT(atm_clip_ops->owner);
+	if (clip_info && atm_clip_ops->owner)
+			__MOD_DEC_USE_COUNT(atm_clip_ops->owner);
 #endif
 	return 0;
 }
@@ -376,10 +369,8 @@ static int atm_pvc_info(loff_t pos,char *buf)
 
 static int atm_vc_info(loff_t pos,char *buf)
 {
-	unsigned long flags;
-	struct atm_dev *dev;
-	struct list_head *p;
 	struct atm_vcc *vcc;
+	struct sock *s;
 	int left;
 
 	if (!pos)
@@ -387,20 +378,16 @@ static int atm_vc_info(loff_t pos,char *buf)
 		    "Address"," Itf VPI VCI   Fam Flags Reply Send buffer"
 		    "     Recv buffer\n");
 	left = pos-1;
-	spin_lock(&atm_dev_lock);
-	list_for_each(p, &atm_devs) {
-		dev = list_entry(p, struct atm_dev, dev_list);
-		spin_lock_irqsave(&dev->lock, flags);
-		for (vcc = dev->vccs; vcc; vcc = vcc->next)
-			if (!left--) {
-				vc_info(vcc,buf);
-				spin_unlock_irqrestore(&dev->lock, flags);
-				spin_unlock(&atm_dev_lock);
-				return strlen(buf);
-			}
-		spin_unlock_irqrestore(&dev->lock, flags);
+	read_lock(&vcc_sklist_lock);
+	for(s = vcc_sklist; s; s = s->next) {
+		vcc = s->protinfo.af_atm;
+		if (!left--) {
+			vc_info(vcc,buf);
+			read_unlock(&vcc_sklist_lock);
+			return strlen(buf);
+		}
 	}
-	spin_unlock(&atm_dev_lock);
+	read_unlock(&vcc_sklist_lock);
 
 	return 0;
 }
@@ -408,29 +395,23 @@ static int atm_vc_info(loff_t pos,char *buf)
 
 static int atm_svc_info(loff_t pos,char *buf)
 {
-	unsigned long flags;
-	struct atm_dev *dev;
-	struct list_head *p;
+	struct sock *s;
 	struct atm_vcc *vcc;
 	int left;
 
 	if (!pos)
 		return sprintf(buf,"Itf VPI VCI           State      Remote\n");
 	left = pos-1;
-	spin_lock(&atm_dev_lock);
-	list_for_each(p, &atm_devs) {
-		dev = list_entry(p, struct atm_dev, dev_list);
-		spin_lock_irqsave(&dev->lock, flags);
-		for (vcc = dev->vccs; vcc; vcc = vcc->next)
-			if (vcc->sk->family == PF_ATMSVC && !left--) {
-				svc_info(vcc,buf);
-				spin_unlock_irqrestore(&dev->lock, flags);
-				spin_unlock(&atm_dev_lock);
-				return strlen(buf);
-			}
-		spin_unlock_irqrestore(&dev->lock, flags);
+	read_lock(&vcc_sklist_lock);
+	for(s = vcc_sklist; s; s = s->next) {
+		vcc = s->protinfo.af_atm;
+		if (vcc->sk->family == PF_ATMSVC && !left--) {
+			svc_info(vcc,buf);
+			read_unlock(&vcc_sklist_lock);
+			return strlen(buf);
+		}
 	}
-	spin_unlock(&atm_dev_lock);
+	read_unlock(&vcc_sklist_lock);
 
 	return 0;
 }
@@ -458,7 +439,8 @@ static int atm_arp_info(loff_t pos,char *buf)
 				if (--count) continue;
 				atmarp_info(n->dev,entry,NULL,buf);
 				read_unlock_bh(&clip_tbl_hook->lock);
-				__MOD_DEC_USE_COUNT(atm_clip_ops->owner);
+				if (atm_clip_ops->owner)
+					__MOD_DEC_USE_COUNT(atm_clip_ops->owner);
 				return strlen(buf);
 			}
 			for (vcc = entry->vccs; vcc;
@@ -466,12 +448,14 @@ static int atm_arp_info(loff_t pos,char *buf)
 				if (--count) continue;
 				atmarp_info(n->dev,entry,vcc,buf);
 				read_unlock_bh(&clip_tbl_hook->lock);
-				__MOD_DEC_USE_COUNT(atm_clip_ops->owner);
+				if (atm_clip_ops->owner)
+					__MOD_DEC_USE_COUNT(atm_clip_ops->owner);
 				return strlen(buf);
 			}
 		}
 	read_unlock_bh(&clip_tbl_hook->lock);
-	__MOD_DEC_USE_COUNT(atm_clip_ops->owner);
+	if (atm_clip_ops->owner)
+		__MOD_DEC_USE_COUNT(atm_clip_ops->owner);
 	return 0;
 }
 #endif
@@ -479,57 +463,77 @@ static int atm_arp_info(loff_t pos,char *buf)
 #if defined(CONFIG_ATM_LANE) || defined(CONFIG_ATM_LANE_MODULE)
 static int atm_lec_info(loff_t pos,char *buf)
 {
+	unsigned long flags;
 	struct lec_priv *priv;
 	struct lec_arp_table *entry;
 	int i, count, d, e;
-	struct net_device **dev_lec;
+	struct net_device *dev;
 
 	if (!pos) {
 		return sprintf(buf,"Itf  MAC          ATM destination"
 		    "                          Status            Flags "
 		    "VPI/VCI Recv VPI/VCI\n");
 	}
-	if (atm_lane_ops.get_lecs == NULL)
+	if (!try_atm_lane_ops())
 		return 0; /* the lane module is not there yet */
-	else
-		dev_lec = atm_lane_ops.get_lecs();
 
 	count = pos;
-	for(d=0;d<MAX_LEC_ITF;d++) {
-		if (!dev_lec[d] || !(priv =
-		    (struct lec_priv *) dev_lec[d]->priv)) continue;
-		for(i=0;i<LEC_ARP_TABLE_SIZE;i++) {
-			entry = priv->lec_arp_tables[i];
-			for(;entry;entry=entry->next) {
-				if (--count) continue;
-				e=sprintf(buf,"%s ",
-				    dev_lec[d]->name);
-				lec_info(entry,buf+e);
+	for(d = 0; d < MAX_LEC_ITF; d++) {
+		dev = atm_lane_ops->get_lec(d);
+		if (!dev || !(priv = (struct lec_priv *) dev->priv))
+			continue;
+		spin_lock_irqsave(&priv->lec_arp_lock, flags);
+		for(i = 0; i < LEC_ARP_TABLE_SIZE; i++) {
+			for(entry = priv->lec_arp_tables[i]; entry; entry = entry->next) {
+				if (--count)
+					continue;
+				e = sprintf(buf,"%s ", dev->name);
+				lec_info(entry, buf+e);
+				spin_unlock_irqrestore(&priv->lec_arp_lock, flags);
+				dev_put(dev);
+				if (atm_lane_ops->owner)
+					__MOD_DEC_USE_COUNT(atm_lane_ops->owner);
 				return strlen(buf);
 			}
 		}
-		for(entry=priv->lec_arp_empty_ones; entry;
-		    entry=entry->next) {
-			if (--count) continue;
-			e=sprintf(buf,"%s ",dev_lec[d]->name);
+		for(entry = priv->lec_arp_empty_ones; entry; entry = entry->next) {
+			if (--count)
+				continue;
+			e = sprintf(buf,"%s ", dev->name);
 			lec_info(entry, buf+e);
+			spin_unlock_irqrestore(&priv->lec_arp_lock, flags);
+			dev_put(dev);
+			if (atm_lane_ops->owner)
+				__MOD_DEC_USE_COUNT(atm_lane_ops->owner);
 			return strlen(buf);
 		}
-		for(entry=priv->lec_no_forward; entry;
-		    entry=entry->next) {
-			if (--count) continue;
-			e=sprintf(buf,"%s ",dev_lec[d]->name);
+		for(entry = priv->lec_no_forward; entry; entry=entry->next) {
+			if (--count)
+				continue;
+			e = sprintf(buf,"%s ", dev->name);
 			lec_info(entry, buf+e);
+			spin_unlock_irqrestore(&priv->lec_arp_lock, flags);
+			dev_put(dev);
+			if (atm_lane_ops->owner)
+				__MOD_DEC_USE_COUNT(atm_lane_ops->owner);
 			return strlen(buf);
 		}
-		for(entry=priv->mcast_fwds; entry;
-		    entry=entry->next) {
-			if (--count) continue;
-			e=sprintf(buf,"%s ",dev_lec[d]->name);
+		for(entry = priv->mcast_fwds; entry; entry = entry->next) {
+			if (--count)
+				continue;
+			e = sprintf(buf,"%s ", dev->name);
 			lec_info(entry, buf+e);
+			spin_unlock_irqrestore(&priv->lec_arp_lock, flags);
+			dev_put(dev);
+			if (atm_lane_ops->owner)
+				__MOD_DEC_USE_COUNT(atm_lane_ops->owner);
 			return strlen(buf);
 		}
+		spin_unlock_irqrestore(&priv->lec_arp_lock, flags);
+		dev_put(dev);
 	}
+	if (atm_lane_ops->owner)
+		__MOD_DEC_USE_COUNT(atm_lane_ops->owner);
 	return 0;
 }
 #endif

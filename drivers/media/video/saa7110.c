@@ -392,7 +392,7 @@ int saa7110_command(struct i2c_device *device, unsigned int cmd, void *arg)
 		break;
 
 	 default:
-		DEBUG(printk(KERN_INFO "unknown saa7110_command??(%d)\n",cmd));
+		DEBUG(printk(KERN_INFO "unknown saa7110_command?(%d)\n",cmd));
 		return -EINVAL;
 	}
 	return 0;

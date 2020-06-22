@@ -1196,7 +1196,7 @@ static void init_idedisk_capacity (ide_drive_t  *drive)
 		drive->bios_cyl		= drive->cyl;
 		drive->capacity48	= capacity_2;
 		drive->capacity		= (unsigned long) capacity_2;
-		return;
+		goto check_capacity48;
 	/* Determine capacity, and use LBA if the drive properly supports it */
 	} else if ((id->capability & 2) && lba_capacity_is_ok(id)) {
 		capacity = id->lba_capacity;
@@ -1227,6 +1227,15 @@ static void init_idedisk_capacity (ide_drive_t  *drive)
 		drive->head = 255;
 		drive->sect = 63;
 		drive->cyl = (unsigned long)(drive->capacity48) / (drive->head * drive->sect);
+	}
+
+check_capacity48:
+	/* Limit disk size to 137GB if LBA48 addressing is not supported */
+	if (drive->addressing == 0 && drive->capacity48 > (1ULL)<<28) {
+		printk("%s: cannot use LBA48 - capacity reset "
+			"from %llu to %llu\n",
+			drive->name, drive->capacity48, (1ULL)<<28);
+		drive->capacity48 = (1ULL)<<28;
 	}
 }
 

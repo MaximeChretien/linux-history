@@ -1,3 +1,6 @@
+#define AAC_DRIVER_VERSION		0x01010300
+#define AAC_DRIVER_BUILD_DATE		__DATE__ " " __TIME__
+
 //#define dprintk(x) printk x
 #if (!defined(dprintk))
 # define dprintk(x)
@@ -759,7 +762,7 @@ struct aac_dev
 	 */	
 	dma_addr_t		hw_fib_pa;
 	struct hw_fib		*hw_fib_va;
-	ulong			fib_base_va;
+	struct hw_fib		*aif_base_va;
 	/*
 	 *	Fib Headers
 	 */
@@ -1176,6 +1179,31 @@ struct aac_mount {
 	u32	   	type;           /* should be same as that requested */
 	u32		count;
 	struct aac_mntent mnt[1];
+};
+
+#define CT_READ_NAME 130
+struct aac_get_name {
+	u32		command;
+	u32		type;	// CT_READ_NAME
+	u32		cid;
+	u32		parm1;
+	u32		parm2;
+	u32		parm3;
+	u32		parm4;
+	u32		count;	// sizeof(((struct aac_get_name_resp *)NULL)->data)
+};
+
+#define CT_OK        218
+struct aac_get_name_resp {
+	u32		dummy0;
+	u32		dummy1;
+	u32		status;	// CT_OK
+	u32		parm1;
+	u32		parm2;
+	u32		parm3;
+	u32		parm4;
+	u32		parm5;
+	u8		data[16];
 };
 
 /*

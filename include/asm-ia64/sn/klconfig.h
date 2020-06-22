@@ -346,6 +346,7 @@ typedef struct kl_config_hdr {
 
 #define KLTYPE_WEIRDCPU (KLCLASS_CPU | 0x0)
 #define KLTYPE_SNIA	(KLCLASS_CPU | 0x1)
+#define KLTYPE_TIO	(KLCLASS_CPU | 0x2)
 
 #define KLTYPE_WEIRDIO	(KLCLASS_IOBRICK  | 0x0)
 #define KLTYPE_BASEIO	(KLCLASS_IO  | 0x1) /* IOC3, SuperIO, Bridge, SCSI */
@@ -393,6 +394,7 @@ typedef struct kl_config_hdr {
 #define KLTYPE_PXBRICK		(KLCLASS_IOBRICK | 0x6)
 #define KLTYPE_IXBRICK		(KLCLASS_IOBRICK | 0x7)
 #define KLTYPE_CGBRICK		(KLCLASS_IOBRICK | 0x8)
+#define KLTYPE_OPUSBRICK	(KLCLASS_IOBRICK | 0x9)
 
 
 #define KLTYPE_PBRICK_BRIDGE	KLTYPE_PBRICK
@@ -576,6 +578,13 @@ typedef struct klinfo_s {                  /* Generic info */
 #define KLSTRUCT_PEBRICK	38
 #define KLSTRUCT_GIGE           39
 #define KLSTRUCT_IDE		40
+#define KLSTRUCT_IOC4		41
+#define KLSTRUCT_IOC4UART	42
+#define KLSTRUCT_IOC4_TTY	43
+#define KLSTRUCT_IOC4PCKM	44
+#define KLSTRUCT_IOC4MS		45
+#define KLSTRUCT_IOC4_ATA	46
+#define KLSTRUCT_PCIGFX		47
 
 /*
  * These are the indices of various components within a lboard structure.
@@ -846,6 +855,10 @@ typedef struct klenetdev_s {                          /* ENET device */
 	unsigned long	pad;
 } klenetdev_t ;
 
+typedef struct klpcigfx_s {                          /* PCI GFX */
+        klinfo_t        gfx_info ;
+} klpcigfx_t ;
+
 typedef struct klkbddev_s {                          /* KBD device */
 	klinfo_t 	kbddev_info ;
 	struct keyboard_data *kbddev_cfg ; /* driver fills up this */
@@ -976,7 +989,6 @@ extern int	config_find_nic_hub(nasid_t, nic_t, lboard_t **, klhub_t**);
 extern int	config_find_xbow(nasid_t, lboard_t **, klxbow_t**);
 extern int 	update_klcfg_cpuinfo(nasid_t, int);
 extern void 	board_to_path(lboard_t *brd, char *path);
-extern moduleid_t get_module_id(nasid_t nasid);
 extern void 	nic_name_convert(char *old_name, char *new_name);
 extern int 	module_brds(nasid_t nasid, lboard_t **module_brds, int n);
 extern lboard_t *brd_from_key(uint64_t key);

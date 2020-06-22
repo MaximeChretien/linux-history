@@ -622,6 +622,8 @@ static void __init iSeries_bolt_kernel(unsigned long saddr, unsigned long eaddr)
 		if (hpte.dw0.dw0.v) {
 			/* HPTE exists, so just bolt it */
 			HvCallHpt_setSwBits(slot, 0x10, 0);
+			/* And make sure the pp bits are correct */
+			HvCallHpt_setPp(slot, PP_RWXX);
 		} else {
 			/* No HPTE exists, so create a new bolted one */
 			make_pte(NULL, va, (unsigned long)__v2a(ea), 

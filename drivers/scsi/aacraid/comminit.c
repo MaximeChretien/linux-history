@@ -84,14 +84,14 @@ static int aac_alloc_comm(struct aac_dev *dev, void **commaddr, unsigned long co
 	 *	Adapter Fibs are the first thing allocated so that they
 	 *	start page aligned
 	 */
-	dev->fib_base_va = (ulong)base;
+	dev->aif_base_va = (struct hw_fib *)base;
 
 	/* We submit the physical address for AIF tags to limit to 32 bits */
-	init->AdapterFibsVirtualAddress = cpu_to_le32((u32)phys);
+	init->AdapterFibsVirtualAddress = cpu_to_le32(0);
 	init->AdapterFibsPhysicalAddress = cpu_to_le32((u32)phys);
 	init->AdapterFibsSize = cpu_to_le32(fibsize);
 	init->AdapterFibAlign = cpu_to_le32(sizeof(struct hw_fib));
-	init->HostPhysMemPages = cpu_to_le32(num_physpages);		// number of 4k pages of host physical memory
+	init->HostPhysMemPages = cpu_to_le32((num_physpages << PAGE_SHIFT) / 4096);		// number of 4k pages of host physical memory
 
 	/*
 	 * Increment the base address by the amount already used

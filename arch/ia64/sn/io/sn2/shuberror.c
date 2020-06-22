@@ -14,6 +14,7 @@
 #include <asm/io.h>
 #include <asm/irq.h>
 #include <asm/smp.h>
+#include <asm/delay.h>
 #include <asm/sn/sgi.h>
 #include <asm/sn/io.h>
 #include <asm/sn/iograph.h>
@@ -52,7 +53,6 @@ void
 hub_error_clear(nasid_t nasid)
 {
 	int i;
-	hubreg_t idsr;
 
     /*
      * Make sure spurious write response errors are cleared
@@ -299,7 +299,7 @@ hubiio_crb_free(hubinfo_t hinfo, int crbnum)
 	* Wait till hub indicates it's done.
 	*/
 	while (REMOTE_HUB_L(hinfo->h_nasid, IIO_ICDR) & IIO_ICDR_PND)
-		us_delay(1);
+		udelay(1);
 
 }
 

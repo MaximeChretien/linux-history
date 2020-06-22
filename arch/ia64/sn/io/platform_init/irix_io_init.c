@@ -23,17 +23,55 @@ extern void init_all_devices(void);
 extern void klhwg_add_all_modules(vertex_hdl_t);
 extern void klhwg_add_all_nodes(vertex_hdl_t);
 
+extern int init_hcl(void);
 extern vertex_hdl_t hwgraph_root;
 extern void io_module_init(void);
 extern int pci_bus_to_hcl_cvlink(void);
-extern void mlreset(void);
 
-/* #define DEBUG_IO_INIT 1 */
-#ifdef DEBUG_IO_INIT
-#define DBG(x...) printk(x)
-#else
-#define DBG(x...)
-#endif /* DEBUG_IO_INIT */
+char arg_maxnodes[4];
+char master_baseio_wid;
+nasid_t master_baseio_nasid;
+nasid_t master_nasid = INVALID_NASID;           /* This is the partition master nasid */
+nasid_t console_nasid = (nasid_t)-1;
+
+/*
+ * Return non-zero if the given variable was specified
+ */
+int
+is_specified(char *s)
+{
+	return (strlen(s) != 0);
+}
+
+int
+check_nasid_equiv(nasid_t nasida, nasid_t nasidb)
+{
+	if ((nasida == nasidb) || (nasida == NODEPDA(NASID_TO_COMPACT_NODEID(nasidb))->xbow_peer))
+		return 1;
+	else
+		return 0;
+}
+
+int
+is_master_baseio_nasid_widget(nasid_t test_nasid, xwidgetnum_t test_wid)
+{
+
+	/*
+	 * If the widget numbers are different, we're not the master.
+	 */
+	if (test_wid != (xwidgetnum_t)master_baseio_wid) {
+		return 0;
+	}
+
+	/*
+	 * If the NASIDs are the same or equivalent, we're the master.
+	 */
+	if (check_nasid_equiv(test_nasid, master_baseio_nasid)) {
+		return 1;
+	} else {
+		return 0;
+	}
+}
 
 /*
  * This routine is responsible for the setup of all the IRIX hwgraph style
@@ -46,14 +84,11 @@ extern void mlreset(void);
  */
 
 void
-irix_io_init(void)
+sgi_master_io_infr_init(void)
 {
 	cnodeid_t cnode;
 
-	/*
-	 * This is the Master CPU.  Emulate mlsetup and main.c in Irix.
-	 */
-	mlreset();
+	init_hcl(); /* Sets up the hwgraph compatibility layer */
 
         /*
          * Initialize platform-dependent vertices in the hwgraph:
@@ -78,6 +113,12 @@ irix_io_init(void)
 
 	/* We can do headless hub cnodes here .. */
 
+	/* Initialize ICE for TIO Nodes. */
+	for (cnode = numnodes; cnode < numionodes; cnode++) {
+		extern void per_ice_init(cnodeid_t);
+		per_ice_init(cnode);
+	}
+
 	/*
 	 *
 	 * Our IO Infrastructure drivers are in place .. 
@@ -86,4 +127,12 @@ irix_io_init(void)
 	 */
 	init_all_devices();
 	pci_bus_to_hcl_cvlink();
+
+#ifdef  CONFIG_KDB
+        {
+                extern void kdba_io_init(void);
+                kdba_io_init();
+        }
+#endif
+
 }

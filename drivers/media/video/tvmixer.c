@@ -18,6 +18,7 @@
 
 # include "i2c-compat.h"
 # define strlcpy(dest,src,len) strncpy(dest,src,(len)-1)
+# define iminor(inode) minor(inode->i_rdev)
 
 #define DEV_MAX  4
 
@@ -175,7 +176,7 @@ static int tvmixer_ioctl(struct inode *inode, struct file *file, unsigned int cm
 
 static int tvmixer_open(struct inode *inode, struct file *file)
 {
-        int i, minor = minor(inode->i_rdev);
+        int i, minor = iminor(inode);
         struct TVMIXER *mix = NULL;
 	struct i2c_client *client = NULL;
 
@@ -192,8 +193,10 @@ static int tvmixer_open(struct inode *inode, struct file *file)
 
 	/* lock bttv in memory while the mixer is in use  */
 	file->private_data = mix;
+#ifndef I2C_PEC
 	if (client->adapter->inc_use)
 		client->adapter->inc_use(client->adapter);
+#endif
         return 0;
 }
 
@@ -207,15 +210,25 @@ static int tvmixer_release(struct inode *inode, struct file *file)
 		return -ENODEV;
 	}
 
+#ifndef I2C_PEC
 	if (client->adapter->dec_use)
 		client->adapter->dec_use(client->adapter);
+#endif
 	return 0;
 }
 
 static struct i2c_driver driver = {
+#ifdef I2C_PEC
+	.owner           = THIS_MODULE,
+#endif
 	.name            = "tv card mixer driver",
         .id              = I2C_DRIVERID_TVMIXER,
+#ifdef I2C_DF_DUMMY
 	.flags           = I2C_DF_DUMMY,
+#else
+	.flags           = I2C_DF_NOTIFY,
+        .detach_adapter  = tvmixer_adapters,
+#endif
         .attach_adapter  = tvmixer_adapters,
         .detach_client   = tvmixer_clients,
 };
@@ -247,6 +260,10 @@ static int tvmixer_clients(struct i2c_client *client)
 	struct video_audio va;
 	int i,minor;
 
+#ifdef I2C_ADAP_CLASS_TV_ANALOG
+	if (!(client->adapter->class & I2C_ADAP_CLASS_TV_ANALOG))
+		return -1;
+#else
 	/* TV card ??? */
 	switch (client->adapter->id) {
 	case I2C_ALGO_BIT | I2C_HW_B_BT848:
@@ -257,6 +274,7 @@ static int tvmixer_clients(struct i2c_client *client)
 		/* ignore that one */
 		return -1;
 	}
+#endif
 
 	/* unregister ?? */
 	for (i = 0; i < DEV_MAX; i++) {

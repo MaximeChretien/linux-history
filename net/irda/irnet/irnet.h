@@ -324,27 +324,27 @@
 /* All error messages (will show up in the normal logs) */
 #define DERROR(dbg, args...) \
 	{if(DEBUG_##dbg) \
-		printk(KERN_INFO "irnet: " __FUNCTION__ "(): " args);}
+		printk(KERN_INFO "irnet: %s(): ", __FUNCTION__); printk(args);}
 
 /* Normal debug message (will show up in /var/log/debug) */
 #define DEBUG(dbg, args...) \
 	{if(DEBUG_##dbg) \
-		printk(KERN_DEBUG "irnet: " __FUNCTION__ "(): " args);}
+		printk(KERN_DEBUG "irnet: %s(): ", __FUNCTION__); printk(args);}
 
 /* Entering a function (trace) */
 #define DENTER(dbg, args...) \
 	{if(DEBUG_##dbg) \
-		printk(KERN_DEBUG "irnet: ->" __FUNCTION__ args);}
+	printk(KERN_DEBUG "irnet: ->%s", __FUNCTION__); printk(args);}
 
 /* Entering and exiting a function in one go (trace) */
 #define DPASS(dbg, args...) \
 	{if(DEBUG_##dbg) \
-		printk(KERN_DEBUG "irnet: <>" __FUNCTION__ args);}
+		printk(KERN_DEBUG "irnet: <>%s", __FUNCTION__); printk(args);}
 
 /* Exiting a function (trace) */
 #define DEXIT(dbg, args...) \
 	{if(DEBUG_##dbg) \
-		printk(KERN_DEBUG "irnet: <-" __FUNCTION__ "()" args);}
+		printk(KERN_DEBUG "irnet: <-%s()", __FUNCTION__); printk(args);}
 
 /* Exit a function with debug */
 #define DRETURN(ret, dbg, args...) \

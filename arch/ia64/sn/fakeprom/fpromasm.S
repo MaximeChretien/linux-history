@@ -253,9 +253,10 @@ initx:
 //	Note: should verify that the interrupt we got was really the ap_wakeup
 //	      interrupt but this should not be an issue on medusa
 slave:
-	nop.i		0x8beef				// Medusa - put cpu to sleep til interrupt occurs
 	mov		r8=cr.irr0;;			// Check for interrupt pending.
 	cmp.eq		p6,p0=r8,r0
+	;;
+(p6)	nop.i		0x8beef				// Medusa - put cpu to sleep til interrupt occurs
 (p6)	br.cond.sptk	slave;;
 
 	mov		r8=cr.ivr;;			// Got one. Must read ivr to accept it
@@ -360,6 +361,13 @@ static:	cmp.eq	p6,p7=6,r28		/* PAL_PTCE_INFO */
 	movl	r2=0x10;;			/* retired regs */
 	st8	[r3]=r2
 	;;
+
+1:	cmp.eq	p6,p7=34,r28		/* PAL_VM_PAGE_SIZE */
+(p7)	br.cond.sptk.few 1f
+	movl	r8=0				/* status = 0 */
+	movl	r9=0x015557000			/* insertable page sizes */
+	movl	r10=0x115557000			/* purgeable page sizes */
+	movl	r11=0
 
 1:	cmp.eq	p6,p7=19,r28		/* PAL_RSE_INFO */
 (p7)	br.cond.sptk.few 1f

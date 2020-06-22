@@ -1113,7 +1113,10 @@ static void __init init_hwif_siimage (ide_hwif_t *hwif)
 	hwif->pre_reset = &siimage_pre_reset;
 
 	if(is_sata(hwif))
+	{
 		hwif->busproc   = &siimage_busproc;
+		hwif->sata = 1;
+	}
 
 	if (!hwif->dma_base) {
 		hwif->drives[0].autotune = 1;

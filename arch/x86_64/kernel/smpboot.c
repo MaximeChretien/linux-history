@@ -50,6 +50,7 @@
 #include <asm/kdebug.h>
 #include <asm/timex.h>
 #include <asm/proto.h>
+#include <asm/acpi.h>
 
 /* Setup configured maximum number of CPUs to activate */
 static int max_cpus = -1;
@@ -863,7 +864,7 @@ void __init smp_boot_cpus(void)
 	 * If we couldnt find an SMP configuration at boot time,
 	 * get out of here now!
 	 */
-	if (!smp_found_config) {
+	if (!smp_found_config && !acpi_lapic) {
 		printk(KERN_NOTICE "SMP motherboard not detected.\n");
 		io_apic_irqs = 0;
 		cpu_online_map = phys_cpu_present_map = 1;
@@ -907,10 +908,8 @@ void __init smp_boot_cpus(void)
 	if (!max_cpus) {
 		smp_found_config = 0;
 		printk(KERN_INFO "SMP mode deactivated, forcing use of dummy APIC emulation.\n");
-		io_apic_irqs = 0;
 		cpu_online_map = phys_cpu_present_map = 1;
 		smp_num_cpus = 1;
-		apic_disabled = 1;
 		goto smp_done;
 	}
 
@@ -1011,6 +1010,9 @@ void __init smp_boot_cpus(void)
 	 */
 	if (cpu_has_tsc && cpucount)
 		synchronize_tsc_bp();
+
+	if (nmi_watchdog != 0) 
+		check_nmi_watchdog(); 
 
 smp_done:
 	zap_low_mappings();

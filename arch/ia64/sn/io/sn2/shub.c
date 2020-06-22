@@ -17,6 +17,7 @@
 #include <asm/hw_irq.h>
 #include <asm/system.h>
 #include <asm/sn/sgi.h>
+#include <asm/uaccess.h>
 #include <asm/sn/iograph.h>
 #include <asm/sn/invent.h>
 #include <asm/sn/hcl.h>
@@ -35,44 +36,18 @@
 #include <asm/sn/sn_sal.h>
 #include <asm/sn/sndrv.h>
 
-/*
- * Shub WAR for Xbridge Little Endian problem:
- *	Xbridge has to run in BIG ENDIAN even with Shub.
- */
-
-
-/*
- * io_sh_swapper: Turn on Shub byte swapping.
- *	All data destined to and from Shub to XIO are byte-swapped.
- */
-void
-io_sh_swapper(nasid_t nasid, int onoff)
-{
-    ii_iwc_u_t      ii_iwc;
-
-    ii_iwc.ii_iwc_regval = REMOTE_HUB_L(nasid, IIO_IWC);
-
-    ii_iwc.ii_iwc_fld_s.i_dma_byte_swap = onoff;
-    REMOTE_HUB_S(nasid, IIO_IWC, ii_iwc.ii_iwc_regval);
-    ii_iwc.ii_iwc_regval = REMOTE_HUB_L(nasid, IIO_IWC);
-
-}
-
-/*
- * io_get_sh_swapper: Return current Swap mode.
- *	1 = Swap on, 0 = Swap off.
- */
-int
-io_get_sh_swapper(nasid_t nasid)
-{
-    ii_iwc_u_t      ii_iwc;
-
-    ii_iwc.ii_iwc_regval = REMOTE_HUB_L(nasid, IIO_IWC);
-    return(ii_iwc.ii_iwc_fld_s.i_dma_byte_swap);
-
-}
-
 #define SHUB_NUM_ECF_REGISTERS 8
+
+/*
+ * A backport of the 2.5 scheduler is used by many vendors of 2.4-based
+ * distributions.
+ * We can only guess its presence by the lack of the SCHED_YIELD flag.
+ * If the heuristic doesn't work, change this define by hand.
+ */
+#ifndef SCHED_YIELD
+#define __HAVE_NEW_SCHEDULER    1
+#endif
+
 
 static uint32_t	shub_perf_counts[SHUB_NUM_ECF_REGISTERS];
 
@@ -206,7 +181,7 @@ shubstats_ioctl(struct inode *inode, struct file *file,
 #else
         cnode = (cnodeid_t)file->private_data;
 #endif
-        if (!cnode)
+        if (cnode < 0 || cnode >= numnodes)
                 return -ENODEV;
 
         switch (cmd) {
@@ -316,7 +291,12 @@ linkstatd_thread(void *unused)
 	struct task_struct  *tsk = current;
 
 	daemonize();
+
+#ifdef __HAVE_NEW_SCHEDULER
 	set_user_nice(tsk, 19);
+#else
+	tsk->nice = 19;
+#endif
 	sigfillset(&tsk->blocked);
 	strcpy(tsk->comm, "linkstatd");
 

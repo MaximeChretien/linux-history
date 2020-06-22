@@ -1,4 +1,4 @@
-/* $Id: hcl_util.c,v 1.3 2003/04/24 13:59:39 pfg Exp $
+/* $Id: hcl_util.c,v 1.4 2003/07/31 12:24:27 edwardsg Exp $
  *
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive

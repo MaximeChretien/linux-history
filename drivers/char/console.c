@@ -112,6 +112,8 @@
 
 const struct consw *conswitchp;
 
+static void __console_callback(void);
+
 /* A bitmap for codes <32. A bit of 1 indicates that the code
  * corresponding to that bit number invokes some special action
  * (such as cursor movement) and should not be displayed as a
@@ -242,9 +244,16 @@ static inline void scrolldelta(int lines)
 	schedule_console_callback();
 }
 
+extern int machine_paniced; 
+
 void schedule_console_callback(void)
 {
-	schedule_task(&console_callback_tq);
+	/* Don't care about locking after panic - but I want to switch the console
+	   NOW */ 
+	if (machine_paniced)
+		__console_callback(); 
+	else
+		schedule_task(&console_callback_tq);
 }
 
 static void scrup(int currcons, unsigned int t, unsigned int b, int nr)
@@ -2039,10 +2048,15 @@ out:
  * with other console code and prevention of re-entrancy is
  * ensured with console_sem.
  */
-static void console_callback(void *ignored)
+static void console_callback(void *unused) 
 {
 	acquire_console_sem();
+	__console_callback(); 
+	release_console_sem();	
+} 
 
+static void __console_callback(void)
+{
 	if (want_console >= 0) {
 		if (want_console != fg_console && vc_cons_allocated(want_console)) {
 			hide_cursor(fg_console);
@@ -2064,8 +2078,6 @@ static void console_callback(void *ignored)
 			sw->con_scrolldelta(vc_cons[currcons].d, scrollback_delta);
 		scrollback_delta = 0;
 	}
-
-	release_console_sem();
 }
 
 void set_console(int nr)
@@ -2763,6 +2775,12 @@ void unblank_screen(void)
 static void blank_screen(unsigned long dummy)
 {
 	timer_do_blank_screen(0, 1);
+}
+
+void disable_console_blank(void)
+{
+	del_timer_sync(&console_timer);
+	blankinterval = 0;
 }
 
 void poke_blanked_console(void)

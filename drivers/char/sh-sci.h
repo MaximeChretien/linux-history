@@ -1,4 +1,4 @@
-/* $Id: sh-sci.h,v 1.1.1.1.2.3 2003/07/16 18:46:06 yoshii Exp $
+/* $Id: sh-sci.h,v 1.1.1.1.2.5 2003/09/03 08:37:41 kkojima Exp $
  *
  *  linux/drivers/char/sh-sci.h
  *
@@ -72,6 +72,15 @@
 	0x30 /* TIE=0,RIE=0,TE=1,RE=1 */ : \
 	0x38 /* TIE=0,RIE=0,TE=1,RE=1,REIE=1 */ )
 # define SCI_AND_SCIF
+#elif defined(CONFIG_CPU_SUBTYPE_SH4_202)
+# define SCI_NPORTS 1
+# define SCI_INIT { \
+  { {}, PORT_SCIF, 0xFFE80000, SH4_SCIF_IRQS, sci_init_pins_scif }  \
+}
+# define SCSPTR2 0xFFE80020 /* 16 bit SCIF */
+# define SCIF_ORER 0x0001   /* overrun error bit */
+# define SCSCR_INIT(port) 0x38 /* TIE=0,RIE=0,TE=1,RE=1,REIE=1 */
+# define SCIF_ONLY
 #elif defined(CONFIG_CPU_SUBTYPE_ST40)
 # define SCI_NPORTS 2
 # define SCI_INIT { \
@@ -210,29 +219,6 @@
 /* Generic serial flags */
 #define SCI_RX_THROTTLE		0x0000001
 
-/* generic serial tty */
-#define O_OTHER(tty)    \
-      ((O_OLCUC(tty))  ||\
-      (O_ONLCR(tty))   ||\
-      (O_OCRNL(tty))   ||\
-      (O_ONOCR(tty))   ||\
-      (O_ONLRET(tty))  ||\
-      (O_OFILL(tty))   ||\
-      (O_OFDEL(tty))   ||\
-      (O_NLDLY(tty))   ||\
-      (O_CRDLY(tty))   ||\
-      (O_TABDLY(tty))  ||\
-      (O_BSDLY(tty))   ||\
-      (O_VTDLY(tty))   ||\
-      (O_FFDLY(tty)))
-
-#define I_OTHER(tty)    \
-      ((I_INLCR(tty))  ||\
-      (I_IGNCR(tty))   ||\
-      (I_ICRNL(tty))   ||\
-      (I_IUCLC(tty))   ||\
-      (L_ISIG(tty)))
-
 #define SCI_MAGIC 0xbabeface
 
 /*
@@ -370,7 +356,7 @@ static inline int sci_rxd_in(struct sci_port *port)
 		return ctrl_inb(SCPDR)&0x04 ? 1 : 0; /* IRDA */
 	return 1;
 }
-#elif defined(CONFIG_CPU_SUBTYPE_SH7750) || defined(CONFIG_CPU_SUBTYPE_SH7751)
+#elif defined(CONFIG_CPU_SUBTYPE_SH7750) || defined(CONFIG_CPU_SUBTYPE_SH7751) || defined(CONFIG_CPU_SUBTYPE_SH4_202)
 static inline int sci_rxd_in(struct sci_port *port)
 {
 #ifndef SCIF_ONLY
@@ -446,4 +432,5 @@ static inline int sci_rxd_in(struct sci_port *port)
 #define BPS_38400      SCBRR_VALUE(38400)
 #define BPS_57600      SCBRR_VALUE(57600)
 #define BPS_115200     SCBRR_VALUE(115200)
+#define BPS_230400     SCBRR_VALUE(230400)
 

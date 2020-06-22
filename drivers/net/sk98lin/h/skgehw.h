@@ -1,16 +1,17 @@
 /******************************************************************************
  *
  * Name:	skgehw.h
- * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.48 $
- * Date:	$Date: 2002/12/05 10:25:11 $
+ * Project:	Gigabit Ethernet Adapters, Common Modules
+ * Version:	$Revision: 1.53 $
+ * Date:	$Date: 2003/07/04 12:39:01 $
  * Purpose:	Defines and Macros for the Gigabit Ethernet Adapter Product Family
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect.
+ *	(C)Copyright 2002-2003 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -25,6 +26,27 @@
  *
  * History:
  * $Log: skgehw.h,v $
+ * Revision 1.53  2003/07/04 12:39:01  rschmidt
+ * Added SK_FAR to pointers in XM_IN32() and GM_IN32() macros (for PXE)
+ * Editorial changes
+ *
+ * Revision 1.52  2003/05/13 17:16:36  mkarl
+ * Added SK_FAR for PXE.
+ * Editorial changes.
+ *
+ * Revision 1.51  2003/04/08 16:31:50  rschmidt
+ * Added defines for new Chip IDs (YUKON-Lite, YUKON-LP)
+ * Editorial changes
+ *
+ * Revision 1.50  2003/03/31 07:29:45  mkarl
+ * Corrected Copyright.
+ * Editorial changes.
+ *
+ * Revision 1.49  2003/01/28 09:43:49  rschmidt
+ * Added defines for PCI-Spec. 2.3 IRQ
+ * Added defines for CLK_RUN (YUKON-Lite)
+ * Editorial changes
+ *
  * Revision 1.48  2002/12/05 10:25:11  rschmidt
  * Added defines for Half Duplex Burst Mode On/Off
  * Added defines for Rx GMAC FIFO Flush feature
@@ -334,7 +356,7 @@ extern "C" {
 #define PCI_SUB_ID		0x2e	/* 16 bit	Subsystem ID */
 #define PCI_BASE_ROM	0x30	/* 32 bit	Expansion ROM Base Address */
 #define PCI_CAP_PTR		0x34	/*  8 bit 	Capabilities Ptr */
-	/* Byte 35..3b:	reserved */
+	/* Byte 0x35..0x3b:	reserved */
 #define PCI_IRQ_LINE	0x3c	/*  8 bit	Interrupt Line */
 #define PCI_IRQ_PIN		0x3d	/*  8 bit	Interrupt Pin */
 #define PCI_MIN_GNT		0x3e	/*  8 bit	Min_Gnt */
@@ -354,7 +376,9 @@ extern "C" {
 #define PCI_VPD_NITEM	0x51	/*  8 bit 	Next Item Ptr */
 #define PCI_VPD_ADR_REG	0x52	/* 16 bit 	VPD Address Register */
 #define PCI_VPD_DAT_REG	0x54	/* 32 bit 	VPD Data Register */
-	/* Byte 0x58..0xff:	reserved */
+	/* Byte 0x58..0x59:	reserved */
+#define PCI_SER_LD_CTRL	0x5a	/* 16 bit 	SEEPROM Loader Ctrl (YUKON only) */
+	/* Byte 0x5c..0xff:	reserved */
 
 /*
  * I2C Address (PCI Config)
@@ -362,13 +386,14 @@ extern "C" {
  * Note: The temperature and voltage sensors are relocated on a different
  *	 I2C bus.
  */
-#define I2C_ADDR_VPD	0xA0	/* I2C address for the VPD EEPROM */
+#define I2C_ADDR_VPD	0xa0	/* I2C address for the VPD EEPROM */
 
 /*
  * Define Bits and Values of the registers
  */
 /*	PCI_COMMAND	16 bit	Command */
-								/* Bit 15..10:	reserved */
+								/* Bit 15..11:	reserved */
+#define PCI_INT_DIS		BIT_10S		/* Interrupt INTx# disable (PCI 2.3) */
 #define PCI_FBTEN		BIT_9S		/* Fast Back-To-Back enable */
 #define PCI_SERREN		BIT_8S		/* SERR enable */
 #define PCI_ADSTEP		BIT_7S		/* Address Stepping */
@@ -398,7 +423,8 @@ extern "C" {
 #define PCI_UDF			BIT_6S		/* User Defined Features */
 #define PCI_66MHZCAP	BIT_5S		/* 66 MHz PCI bus clock capable */
 #define PCI_NEWCAP		BIT_4S		/* New cap. list implemented */
-								/* Bit  3.. 0:	reserved */
+#define PCI_INT_STAT	BIT_3S		/* Interrupt INTx# Status (PCI 2.3) */
+								/* Bit  2.. 0:	reserved */
 
 #define PCI_ERRBITS	(PCI_PERR | PCI_SERR | PCI_RMABORT | PCI_RTABORT |\
 			PCI_DATAPERR)
@@ -427,7 +453,7 @@ extern "C" {
 #define PCI_MEM32BIT	(0L<<1)		/* Base addr anywhere in 32 Bit range */
 #define PCI_MEM1M		(1L<<1)		/* Base addr below 1 MegaByte */
 #define PCI_MEM64BIT	(2L<<1)		/* Base addr anywhere in 64 Bit range */
-#define PCI_MEMSPACE	BIT_0		/* Memory Space Indic. */
+#define PCI_MEMSPACE	BIT_0		/* Memory Space Indicator */
 
 /*	PCI_BASE_2ND	32 bit	2nd Base address */
 #define PCI_IOBASE		0xffffff00L	/* Bit 31.. 8:	I/O Base address */
@@ -436,8 +462,8 @@ extern "C" {
 #define PCI_IOSPACE		BIT_0		/* I/O Space Indicator */
 
 /*	PCI_BASE_ROM	32 bit	Expansion ROM Base Address */
-#define PCI_ROMBASE		0xfffe0000L	/* Bit 31..17:	ROM BASE address (1st)*/
-#define PCI_ROMBASZ		(0x1cL<<14)	/* Bit 16..14:	Treat as BASE or SIZE */
+#define PCI_ROMBASE_MSK	0xfffe0000L	/* Bit 31..17:	ROM Base address */
+#define PCI_ROMBASE_SIZ	(0x1cL<<14)	/* Bit 16..14:	Treat as Base or Size */
 #define PCI_ROMSIZE		(0x38L<<11)	/* Bit 13..11:	ROM Size Requirements */
 									/* Bit 10.. 1:	reserved */
 #define PCI_ROMEN		BIT_0		/* Address Decode enable */
@@ -445,15 +471,15 @@ extern "C" {
 /* Device Dependent Region */
 /*	PCI_OUR_REG_1		32 bit	Our Register 1 */
 									/* Bit 31..29:	reserved */
-#define PCI_PHY_COMA	BIT_28		/* Set PHY to Coma Mode */
-#define PCI_EN_CAL		BIT_27		/* Enable  PCI buffer strength calibr. */
-#define PCI_DIS_CAL		BIT_26		/* Disable PCI buffer strength calibr. */
+#define PCI_PHY_COMA	BIT_28		/* Set PHY to Coma Mode (YUKON only) */
+#define PCI_TEST_CAL	BIT_27		/* Test PCI buffer calib. (YUKON only) */
+#define PCI_EN_CAL		BIT_26		/* Enable PCI buffer calib. (YUKON only) */
 #define PCI_VIO			BIT_25		/* PCI I/O Voltage, 0 = 3.3V, 1 = 5V */
-#define PCI_EN_BOOT		BIT_24		/* Enable BOOT via ROM */
+#define PCI_DIS_BOOT	BIT_24		/* Disable BOOT via ROM */
 #define PCI_EN_IO		BIT_23		/* Mapping to I/O space */
-#define PCI_EN_FPROM	BIT_22		/* FLASH mapped to mem? */
-									/*		1 = Map Flash to Mem */
-									/*		0 = Disable addr. dec*/
+#define PCI_EN_FPROM	BIT_22		/* Enable FLASH mapping to memory */
+									/*		1 = Map Flash to memory */
+									/*		0 = Disable addr. dec */
 #define PCI_PAGESIZE	(3L<<20)	/* Bit 21..20:	FLASH Page Size	*/
 #define PCI_PAGE_16		(0L<<20)	/*		16 k pages	*/
 #define PCI_PAGE_32K	(1L<<20)	/*		32 k pages	*/
@@ -496,7 +522,7 @@ extern "C" {
 
 /* Power Management Region */
 /*	PCI_PM_CAP_REG		16 bit	Power Management Capabilities */
-#define PCI_PME_SUP		(0x1f<<11)	/* Bit 15..11:	PM Event Support */
+#define PCI_PME_SUP_MSK	(0x1f<<11)	/* Bit 15..11:	PM Event Support Mask */
 #define PCI_PME_D3C_SUP	BIT_15S		/* PME from D3cold Support (if Vaux) */
 #define PCI_PME_D3H_SUP	BIT_14S		/* PME from D3hot Support */
 #define PCI_PME_D2_SUP	BIT_13S		/* PME from D2 Support */
@@ -525,8 +551,8 @@ extern "C" {
 
 /* VPD Region */
 /*	PCI_VPD_ADR_REG		16 bit	VPD Address Register */
-#define PCI_VPD_FLAG	BIT_15S			/* starts VPD rd/wd cycle*/
-#define PCI_VPD_ADDR	0x3fffL		/* Bit 14.. 0:	VPD address */
+#define PCI_VPD_FLAG	BIT_15S		/* starts VPD rd/wr cycle */
+#define PCI_VPD_ADR_MSK	0x7fffL		/* Bit 14.. 0:	VPD address mask */
 
 /*	Control Register File (Address Map) */
 
@@ -996,7 +1022,10 @@ extern "C" {
 #define RAP_RAP			0x3f	/* Bit 6..0:	0 = block 0,..,6f = block 6f */
 
 /*	B0_CTST		16 bit	Control/Status register */
-								/* Bit 15..11:	reserved */
+								/* Bit 15..14:	reserved */
+#define CS_CLK_RUN_HOT	BIT_13S		/* CLK_RUN hot m. (YUKON-Lite only) */
+#define CS_CLK_RUN_RST	BIT_12S		/* CLK_RUN reset  (YUKON-Lite only) */
+#define CS_CLK_RUN_ENA	BIT_11S		/* CLK_RUN enable (YUKON-Lite only) */
 #define CS_VAUX_AVAIL	BIT_10S		/* VAUX available (YUKON only) */
 #define CS_BUS_CLOCK	BIT_9S		/* Bus Clock 0/1 = 33/66 MHz */
 #define CS_BUS_SLOT_SZ	BIT_8S		/* Slot Size 0/1 = 32/64 bit slot */
@@ -1028,7 +1057,7 @@ extern "C" {
 /*	B0_IMSK		32 bit	Interrupt Mask Register */
 /*	B0_SP_ISRC	32 bit	Special Interrupt Source Reg */
 /*	B2_IRQM_MSK 	32 bit	IRQ Moderation Mask */
-#define IS_ALL_MSK		0xbfffffffL	/* 		All Interrupt bits */
+#define IS_ALL_MSK		0xbfffffffUL	/* All Interrupt bits */
 #define IS_HW_ERR		BIT_31		/* Interrupt HW Error */
 								/* Bit 30:	reserved */
 #define IS_PA_TO_RX1	BIT_29		/* Packet Arb Timeout Rx1 */
@@ -1101,8 +1130,10 @@ extern "C" {
 #define CFG_SNG_MAC		BIT_0S		/* MAC Config: 0=2 MACs / 1=1 MAC*/
 
 /*	B2_CHIP_ID	 8 bit 	Chip Identification Number */
-#define CHIP_ID_GENESIS	0x0a		/* Chip ID for GENESIS */
-#define CHIP_ID_YUKON	0xb0		/* Chip ID for YUKON */
+#define CHIP_ID_GENESIS		0x0a	/* Chip ID for GENESIS */
+#define CHIP_ID_YUKON		0xb0	/* Chip ID for YUKON */
+#define CHIP_ID_YUKON_LITE	0xb1	/* Chip ID for YUKON-Lite (Rev. A1) */
+#define CHIP_ID_YUKON_LP	0xb2	/* Chip ID for YUKON-LP */
 
 /*	B2_FAR		32 bit	Flash-Prom Addr Reg/Cnt */
 #define FAR_ADDR		0x1ffffL	/* Bit 16.. 0:	FPROM Address mask */
@@ -1168,16 +1199,16 @@ extern "C" {
 
 /*	B2_GP_IO	32 bit	General Purpose I/O Register */
 							/* Bit 31..26:	reserved */
-#define GP_DIR_9	BIT_25	/* IO_9 direct, 0=I/1=O */
-#define GP_DIR_8	BIT_24	/* IO_8 direct, 0=I/1=O */
-#define GP_DIR_7	BIT_23	/* IO_7 direct, 0=I/1=O */
-#define GP_DIR_6	BIT_22	/* IO_6 direct, 0=I/1=O */
-#define GP_DIR_5	BIT_21	/* IO_5 direct, 0=I/1=O */
-#define GP_DIR_4	BIT_20	/* IO_4 direct, 0=I/1=O */
-#define GP_DIR_3	BIT_19	/* IO_3 direct, 0=I/1=O */
-#define GP_DIR_2	BIT_18	/* IO_2 direct, 0=I/1=O */
-#define GP_DIR_1	BIT_17	/* IO_1 direct, 0=I/1=O */
-#define GP_DIR_0	BIT_16	/* IO_0 direct, 0=I/1=O */
+#define GP_DIR_9	BIT_25	/* IO_9 direct, 0=In/1=Out */
+#define GP_DIR_8	BIT_24	/* IO_8 direct, 0=In/1=Out */
+#define GP_DIR_7	BIT_23	/* IO_7 direct, 0=In/1=Out */
+#define GP_DIR_6	BIT_22	/* IO_6 direct, 0=In/1=Out */
+#define GP_DIR_5	BIT_21	/* IO_5 direct, 0=In/1=Out */
+#define GP_DIR_4	BIT_20	/* IO_4 direct, 0=In/1=Out */
+#define GP_DIR_3	BIT_19	/* IO_3 direct, 0=In/1=Out */
+#define GP_DIR_2	BIT_18	/* IO_2 direct, 0=In/1=Out */
+#define GP_DIR_1	BIT_17	/* IO_1 direct, 0=In/1=Out */
+#define GP_DIR_0	BIT_16	/* IO_0 direct, 0=In/1=Out */
 						/* Bit 15..10:	reserved */
 #define GP_IO_9		BIT_9	/* IO_9 pin */
 #define GP_IO_8		BIT_8	/* IO_8 pin */
@@ -1327,7 +1358,7 @@ extern "C" {
 /*	TXA_LIM_INI	32 bit	Tx Arb Limit Counter Init Val */
 /*	TXA_LIM_VAL	32 bit	Tx Arb Limit Counter Value */
 								/* Bit 31..24:	reserved */
-#define TXA_MAX_VAL	0x00ffffffL	/* Bit 23.. 0:	Max TXA Timer/Cnt Val */
+#define TXA_MAX_VAL	0x00ffffffUL/* Bit 23.. 0:	Max TXA Timer/Cnt Val */
 
 /*	TXA_CTRL	 8 bit	Tx Arbiter Control Register */
 #define TXA_ENA_FSYNC	BIT_7S	/* Enable  force of sync Tx queue */
@@ -1646,8 +1677,10 @@ extern "C" {
 #define GMF_CLI_TX_PE	BIT_4		/* Clear IRQ Tx Parity Error */
 						/* Bits 3..0: same as for RX_GMF_CTRL_T */
 
-#define GMF_RX_CTRL_DEF		GMF_OPER_ON
+#define GMF_RX_CTRL_DEF		(GMF_OPER_ON | GMF_RX_F_FL_ON)
 #define GMF_TX_CTRL_DEF		GMF_OPER_ON
+
+#define RX_GMF_FL_THR_DEF	0x0a	/* Rx GMAC FIFO Flush Threshold default */
 
 /*	GMAC_TI_ST_CTRL		  8 bit	Time Stamp Timer Ctrl Reg (YUKON only) */
 								/* Bit 7.. 3:	reserved */
@@ -1767,7 +1800,7 @@ extern "C" {
 	WOL_CTL_DIS_LINK_CHG_UNIT |		\
 	WOL_CTL_DIS_PATTERN_UNIT |		\
 	WOL_CTL_DIS_MAGIC_PKT_UNIT)
-	
+
 /*	WOL_MATCH_CTL		 8 bit	WOL Match Control Reg */
 #define WOL_CTL_PATT_ENA(x)				(BIT_0 << (x))
 
@@ -1811,7 +1844,7 @@ typedef	struct s_HwRxd {
 	SK_U32	RxAdrHi;		/* Physical Rx Buffer Address upper dword */
 	SK_U32	RxStat;			/* Receive Frame Status Word */
 	SK_U32	RxTiSt;			/* Receive Time Stamp (from XMAC on GENESIS) */
-#ifndef	SK_USE_REV_DESC	
+#ifndef	SK_USE_REV_DESC
 	SK_U16	RxTcpSum1;		/* TCP Checksum 1 */
 	SK_U16	RxTcpSum2;		/* TCP Checksum 2 */
 	SK_U16	RxTcpSp1;		/* TCP Checksum Calculation Start Position 1 */
@@ -1855,7 +1888,7 @@ typedef	struct s_HwRxd {
 #define BMU_CHECK		(0x55L<<16)	/* Default BMU check */
 #define BMU_TCP_CHECK	(0x56L<<16)	/* Descr with TCP ext */
 #define BMU_UDP_CHECK	(0x57L<<16)	/* Descr with UDP ext (YUKON only) */
-#define BMU_BBC			0xFFFFL	/* Bit 15.. 0:	Buffer Byte Counter */
+#define BMU_BBC			0xffffL	/* Bit 15.. 0:	Buffer Byte Counter */
 
 /*	TxStat		Transmit Frame Status Word */
 /*	RxStat		Receive Frame Status Word */
@@ -1866,20 +1899,9 @@ typedef	struct s_HwRxd {
  *	(see XMR_FS bits)
  */
 
-/* other defines *************************************************************/
-
-/*
- * FlashProm specification
- */
-#define MAX_PAGES	0x20000L	/* Every byte has a single page */
-#define MAX_FADDR	1			/* 1 byte per page */
-#define SKFDDI_PSZ	8			/* address PROM size */
-
 /* macros ********************************************************************/
 
-/*
- * Receive and Transmit Queues
- */
+/* Receive and Transmit Queues */
 #define Q_R1	0x0000		/* Receive Queue 1 */
 #define Q_R2	0x0080		/* Receive Queue 2 */
 #define Q_XS1	0x0200		/* Synchronous Transmit Queue 1 */
@@ -1892,7 +1914,7 @@ typedef	struct s_HwRxd {
  *
  *	Use this macro to access the Receive and Transmit Queue Registers.
  *
- * para:	
+ * para:
  *	Queue	Queue to access.
  *				Values: Q_R1, Q_R2, Q_XS1, Q_XA1, Q_XS2, and Q_XA2
  *	Offs	Queue register offset.
@@ -1907,7 +1929,7 @@ typedef	struct s_HwRxd {
  *
  *	Use this macro to access the RAM Buffer Registers.
  *
- * para:	
+ * para:
  *	Queue	Queue to access.
  *				Values: Q_R1, Q_R2, Q_XS1, Q_XA1, Q_XS2, and Q_XA2
  *	Offs	Queue register offset.
@@ -1918,9 +1940,7 @@ typedef	struct s_HwRxd {
 #define RB_ADDR(Queue, Offs)	(B16_RAM_REGS + (Queue) + (Offs))
 
 
-/*
- * MAC Related Registers
- */
+/* MAC Related Registers */
 #define MAC_1		0	/* belongs to the port near the slot */
 #define MAC_2		1	/* belongs to the port far away from the slot */
 
@@ -1929,7 +1949,7 @@ typedef	struct s_HwRxd {
  *
  *	Use this macro to access a MAC Related Registers inside the ASIC.
  *
- * para:	
+ * para:
  *	Mac		MAC to access.
  *				Values: MAC_1, MAC_2
  *	Offs	MAC register offset.
@@ -1981,9 +2001,9 @@ typedef	struct s_HwRxd {
 
 #define XM_IN32(IoC, Mac, Reg, pVal) {					\
 	SK_IN16((IoC), XMA((Mac), (Reg)),					\
-		(SK_U16 *)&((SK_U16 *)(pVal))[XM_WORD_LO]);		\
+		(SK_U16 SK_FAR*)&((SK_U16 SK_FAR*)(pVal))[XM_WORD_LO]);		\
 	SK_IN16((IoC), XMA((Mac), (Reg+2)),					\
-		(SK_U16 *)&((SK_U16 *)(pVal))[XM_WORD_HI]);		\
+		(SK_U16 SK_FAR*)&((SK_U16 SK_FAR*)(pVal))[XM_WORD_HI]);		\
 }
 
 #define XM_OUT32(IoC, Mac, Reg, Val) {										\
@@ -2009,8 +2029,8 @@ typedef	struct s_HwRxd {
 }
 
 #define XM_OUTADDR(IoC, Mac, Reg, pVal) {				\
-	SK_U8	*pByte;										\
-	pByte = (SK_U8 *)&((SK_U8 *)(pVal))[0];				\
+	SK_U8	SK_FAR *pByte;								\
+	pByte = (SK_U8 SK_FAR *)&((SK_U8 SK_FAR *)(pVal))[0];	\
 	SK_OUT16((IoC), XMA((Mac), (Reg)), (SK_U16)			\
 		(((SK_U16)(pByte[0]) & 0x00ff) |				\
 		(((SK_U16)(pByte[1]) << 8) & 0xff00)));			\
@@ -2024,8 +2044,8 @@ typedef	struct s_HwRxd {
 
 #define XM_INHASH(IoC, Mac, Reg, pVal) {				\
 	SK_U16	Word;										\
-	SK_U8	*pByte;										\
-	pByte = (SK_U8 *)&((SK_U8 *)(pVal))[0];				\
+	SK_U8	SK_FAR *pByte;								\
+	pByte = (SK_U8 SK_FAR *)&((SK_U8 SK_FAR *)(pVal))[0];	\
 	SK_IN16((IoC), XMA((Mac), (Reg)), &Word);			\
 	pByte[0] = (SK_U8)(Word  & 0x00ff);					\
 	pByte[1] = (SK_U8)((Word >> 8) & 0x00ff);			\
@@ -2041,8 +2061,8 @@ typedef	struct s_HwRxd {
 }
 
 #define XM_OUTHASH(IoC, Mac, Reg, pVal) {				\
-	SK_U8	*pByte;										\
-	pByte = (SK_U8 *)&((SK_U8 *)(pVal))[0];				\
+	SK_U8	SK_FAR *pByte;								\
+	pByte = (SK_U8 SK_FAR *)&((SK_U8 SK_FAR *)(pVal))[0];	\
 	SK_OUT16((IoC), XMA((Mac), (Reg)), (SK_U16)			\
 		(((SK_U16)(pByte[0]) & 0x00ff)|					\
 		(((SK_U16)(pByte[1]) << 8) & 0xff00)));			\
@@ -2089,9 +2109,9 @@ typedef	struct s_HwRxd {
 
 #define GM_IN32(IoC, Mac, Reg, pVal) {					\
 	SK_IN16((IoC), GMA((Mac), (Reg)),					\
-		(SK_U16 *)&((SK_U16 *)(pVal))[XM_WORD_LO]);		\
+		(SK_U16 SK_FAR*)&((SK_U16 SK_FAR*)(pVal))[XM_WORD_LO]);		\
 	SK_IN16((IoC), GMA((Mac), (Reg+4)),					\
-		(SK_U16 *)&((SK_U16 *)(pVal))[XM_WORD_HI]);		\
+		(SK_U16 SK_FAR*)&((SK_U16 SK_FAR*)(pVal))[XM_WORD_HI]);		\
 }
 
 #define GM_OUT32(IoC, Mac, Reg, Val) {										\
@@ -2115,8 +2135,8 @@ typedef	struct s_HwRxd {
 }
 
 #define GM_OUTADDR(IoC, Mac, Reg, pVal) {				\
-	SK_U8	*pByte;										\
-	pByte = (SK_U8 *)&((SK_U8 *)(pVal))[0];				\
+	SK_U8	SK_FAR *pByte;								\
+	pByte = (SK_U8 SK_FAR *)&((SK_U8 SK_FAR *)(pVal))[0];	\
 	SK_OUT16((IoC), GMA((Mac), (Reg)), (SK_U16)			\
 		(((SK_U16)(pByte[0]) & 0x00ff) |				\
 		(((SK_U16)(pByte[1]) << 8) & 0xff00)));			\
@@ -2186,7 +2206,7 @@ typedef	struct s_HwRxd {
 #define PHY_ADDR_BCOM	(1<<8)
 #define PHY_ADDR_LONE	(3<<8)
 #define PHY_ADDR_NAT	(0<<8)
-		
+
 /* GPHY address (bits 15..11 of SMI control reg) */
 #define PHY_ADDR_MARV	0
 
@@ -2196,7 +2216,7 @@ typedef	struct s_HwRxd {
  * PHY_READ()		read a 16 bit value from the PHY
  * PHY_WRITE()		write a 16 bit value to the PHY
  *
- * para:	
+ * para:
  * 	IoC		I/O context needed for SK I/O macros
  * 	pPort	Pointer to port struct for PhyAddr
  * 	Mac		XMAC to access		values: MAC_1 or MAC_2
@@ -2268,7 +2288,7 @@ typedef	struct s_HwRxd {
  *
  * para:
  *	Addr	PCI configuration register to access.
- *			Values:	PCI_VENDOR_ID	...	PCI_VPD_ADDR,
+ *			Values:	PCI_VENDOR_ID ... PCI_VPD_ADR_REG,
  *
  * usage	SK_IN16(pAC, PCI_C(PCI_VENDOR_ID), pVal);
  */
@@ -2287,12 +2307,12 @@ typedef	struct s_HwRxd {
  *		#define SK_IN8(pAC, Addr, pVal) ...\
  *			*pVal = (SK_U8)inp(SK_HW_ADDR(pAC->Hw.Iop, Addr)))
  */
-#ifdef	SK_MEM_MAPPED_IO
+#ifdef SK_MEM_MAPPED_IO
 #define SK_HW_ADDR(Base, Addr)	((Base) + (Addr))
-#else	/* SK_MEM_MAPPED_IO */
+#else  /* SK_MEM_MAPPED_IO */
 #define SK_HW_ADDR(Base, Addr)	\
 			((Base) + (((Addr) & 0x7f) | (((Addr) >> 7 > 0) ? 0x80 : 0)))
-#endif	/* SK_MEM_MAPPED_IO */
+#endif /* SK_MEM_MAPPED_IO */
 
 #define SZ_LONG	(sizeof(SK_U32))
 

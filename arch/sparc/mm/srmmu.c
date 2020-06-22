@@ -126,6 +126,9 @@ extern unsigned long fix_kmap_end;
 
 #define SRMMU_NOCACHE_BITMAP_SHIFT (PAGE_SHIFT - 4)
 
+/* The context table is a nocache user with the biggest alignment needs. */
+#define SRMMU_NOCACHE_ALIGN_MAX (sizeof(ctxd_t)*SRMMU_MAX_CONTEXTS)
+
 void *srmmu_nocache_pool;
 void *srmmu_nocache_bitmap;
 int srmmu_nocache_low;
@@ -260,6 +263,7 @@ repeat:
 
 	/* we align on physical address */
 	if (align) {
+		BUG_ON(align > SRMMU_NOCACHE_ALIGN_MAX);
 		va_tmp = (SRMMU_NOCACHE_VADDR + (offset << SRMMU_NOCACHE_BITMAP_SHIFT));
 		phys_tmp = (__nocache_pa(va_tmp) + align - 1) & ~(align - 1);
 		va_tmp = (unsigned long)__nocache_va(phys_tmp);
@@ -367,7 +371,8 @@ void srmmu_nocache_init(void)
 	unsigned long paddr, vaddr;
 	unsigned long pteval;
 
-	srmmu_nocache_pool = __alloc_bootmem(srmmu_nocache_size, PAGE_SIZE, 0UL);
+	srmmu_nocache_pool = __alloc_bootmem(srmmu_nocache_size,
+		SRMMU_NOCACHE_ALIGN_MAX, 0UL);
 	memset(srmmu_nocache_pool, 0, srmmu_nocache_size);
 
 	srmmu_nocache_bitmap = __alloc_bootmem(srmmu_nocache_bitmap_size, SMP_CACHE_BYTES, 0UL);

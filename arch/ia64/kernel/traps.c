@@ -273,7 +273,6 @@ static inline int
 fp_emulate (int fp_fault, void *bundle, long *ipsr, long *fpsr, long *isr, long *pr, long *ifs,
 	    struct pt_regs *regs)
 {
-	struct ia64_fpreg f6_11[6];
 	fp_state_t fp_state;
 	fpswa_ret_t ret;
 
@@ -288,11 +287,8 @@ fp_emulate (int fp_fault, void *bundle, long *ipsr, long *fpsr, long *isr, long 
 	 * pointer to point to these registers.
 	 */
 	fp_state.bitmask_low64 = 0xfc0;  /* bit6..bit11 */
-	f6_11[0] = regs->f6; f6_11[1] = regs->f7;
-	f6_11[2] = regs->f8; f6_11[3] = regs->f9;
-	__asm__ ("stf.spill %0=f10%P0" : "=m"(f6_11[4]));
-	__asm__ ("stf.spill %0=f11%P0" : "=m"(f6_11[5]));
-	fp_state.fp_state_low_volatile = (fp_state_low_volatile_t *) f6_11;
+
+	fp_state.fp_state_low_volatile = (fp_state_low_volatile_t *) &regs->f6;
 	/*
 	 * unsigned long (*EFI_FPSWA) (
 	 *      unsigned long    trap_type,
@@ -308,10 +304,7 @@ fp_emulate (int fp_fault, void *bundle, long *ipsr, long *fpsr, long *isr, long 
 					(unsigned long *) ipsr, (unsigned long *) fpsr,
 					(unsigned long *) isr, (unsigned long *) pr,
 					(unsigned long *) ifs, &fp_state);
-	regs->f6 = f6_11[0]; regs->f7 = f6_11[1];
-	regs->f8 = f6_11[2]; regs->f9 = f6_11[3];
-	__asm__ ("ldf.fill f10=%0%P0" :: "m"(f6_11[4]));
-	__asm__ ("ldf.fill f11=%0%P0" :: "m"(f6_11[5]));
+
 	return ret.status;
 }
 
@@ -335,8 +328,9 @@ handle_fpu_swa (int fp_fault, struct pt_regs *regs, unsigned long isr)
 
 	if (jiffies - last_time > 5*HZ)
 		fpu_swa_count = 0;
-	if ((++fpu_swa_count < 5) && !(current->thread.flags & IA64_THREAD_FPEMU_NOPRINT)) {
+	if ((fpu_swa_count < 4) && !(current->thread.flags & IA64_THREAD_FPEMU_NOPRINT)) {
 		last_time = jiffies;
+		++fpu_swa_count;
 		printk(KERN_WARNING "%s(%d): floating-point assist fault at ip %016lx, isr %016lx\n",
 		       current->comm, current->pid, regs->cr_iip + ia64_psr(regs)->ri, isr);
 	}
@@ -361,6 +355,10 @@ handle_fpu_swa (int fp_fault, struct pt_regs *regs, unsigned long isr)
 			siginfo.si_addr = (void *) (regs->cr_iip + ia64_psr(regs)->ri);
 			if (isr & 0x11) {
 				siginfo.si_code = FPE_FLTINV;
+			} else if (isr & 0x22) {
+				/* denormal operand gets the same si_code as underflow 
+				* see arch/i386/kernel/traps.c:math_error()  */
+				siginfo.si_code = FPE_FLTUND;
 			} else if (isr & 0x44) {
 				siginfo.si_code = FPE_FLTDIV;
 			}

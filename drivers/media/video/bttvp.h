@@ -26,7 +26,7 @@
 #define _BTTVP_H_
 
 #include <linux/version.h>
-#define BTTV_VERSION_CODE KERNEL_VERSION(0,7,107)
+#define BTTV_VERSION_CODE KERNEL_VERSION(0,7,108)
 
 #include <linux/types.h>
 #include <linux/wait.h>
@@ -131,6 +131,7 @@ struct bttv {
         unsigned int tuner_type;
         unsigned int pinnacle_id;
         unsigned int channel;
+	unsigned int svhs;
         
         unsigned int nr;
 	unsigned short id;
@@ -150,6 +151,7 @@ struct bttv {
 	int audio_chip;      /* set to one of the chips supported by bttv.c */
 	int radio;
 	int has_radio;
+	int has_remote;
 
 	/* miro/pinnacle + Aimslab VHX
 	   philips matchbox (tea5757 radio tuner) support */

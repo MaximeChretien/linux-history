@@ -15,10 +15,15 @@
 
 void power_save(void)
 {
-	/* Make sure the CPU has the DOZE feature set. */
+	/*
+	 * Make sure the CPU has the DOZE or NAP feature set.
+	 * We assume that chip-specific initialization code
+	 * has set any other registers necessary (e.g. HID0).
+	 */
 	if (!(cur_cpu_spec[smp_processor_id()]->cpu_features
-				& CPU_FTR_CAN_DOZE))
+	      & (CPU_FTR_CAN_DOZE | CPU_FTR_CAN_NAP)))
 		return;
+
 	/*
 	 * Disable interrupts to prevent a lost wakeup
 	 * when going to sleep.  This is necessary even with

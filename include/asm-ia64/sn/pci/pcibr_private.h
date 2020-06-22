@@ -277,9 +277,9 @@ struct pcibr_intr_wrap_s {
 #define PCIBR_BUS_IO_MAX       0x0FFFFFFF
 #define PCIBR_BUS_IO_PAGE      0x100000
 
-#define PCIBR_BUS_SWIN_BASE    _PAGESZ
+#define PCIBR_BUS_SWIN_BASE    PAGE_SIZE
 #define PCIBR_BUS_SWIN_MAX     0x000FFFFF
-#define PCIBR_BUS_SWIN_PAGE    _PAGESZ
+#define PCIBR_BUS_SWIN_PAGE    PAGE_SIZE
 
 #define PCIBR_BUS_MEM_BASE     0x200000
 #define PCIBR_BUS_MEM_MAX      0x3FFFFFFF
@@ -307,7 +307,7 @@ struct pcibr_intr_wrap_s {
  */
 #define PV854697 (~0)     /* PIC: write 64bit regs as 64bits. permanent */
 #define PV854827 (~0)     /* PIC: fake widget 0xf presence bit. permanent */
-#define PV855271 (~0)     /* PIC: use virt chan iff 64-bit device. permanent */
+#define PV855271 (1 << 1) /* PIC: PIC: use virt chan iff 64-bit device. */
 #define PV855272 (1 << 1) /* PIC: runaway interrupt WAR */
 #define PV856155 (1 << 1) /* PIC: arbitration WAR */
 #define PV856864 (1 << 1) /* PIC: lower timeout to free TNUMs quicker */
@@ -663,8 +663,8 @@ struct pcibr_hints_s {
 /*
  * mem alloc/free macros
  */
-#define NEWAf(ptr,n,f)	(ptr = snia_kmem_zalloc((n)*sizeof (*(ptr)), (f&PCIIO_NOSLEEP)?KM_NOSLEEP:KM_SLEEP))
-#define NEWA(ptr,n)	(ptr = snia_kmem_zalloc((n)*sizeof (*(ptr)), KM_SLEEP))
+#define NEWAf(ptr,n,f)	(ptr = snia_kmem_zalloc((n)*sizeof (*(ptr))))
+#define NEWA(ptr,n)	(ptr = snia_kmem_zalloc((n)*sizeof (*(ptr))))
 #define DELA(ptr,n)	(kfree(ptr))
 
 #define NEWf(ptr,f)	NEWAf(ptr,1,f)

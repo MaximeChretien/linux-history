@@ -1,9 +1,9 @@
 /*
  * Compaq Hot Plug Controller Driver
  *
- * Copyright (c) 1995,2001 Compaq Computer Corporation
- * Copyright (c) 2001 Greg Kroah-Hartman (greg@kroah.com)
- * Copyright (c) 2001 IBM
+ * Copyright (C) 1995,2001 Compaq Computer Corporation
+ * Copyright (C) 2001 Greg Kroah-Hartman (greg@kroah.com)
+ * Copyright (C) 2001 IBM
  *
  * All rights reserved.
  *
@@ -747,7 +747,7 @@ static inline int cpq_get_latch_status (struct controller *ctrl, struct slot *sl
 		return 1;
 
 	hp_slot = slot->device - ctrl->slot_device_offset;
-	dbg(__FUNCTION__": slot->device = %d, ctrl->slot_device_offset = %d \n", slot->device, ctrl->slot_device_offset);
+	dbg("%s: slot->device = %d, ctrl->slot_device_offset = %d \n", __FUNCTION__, slot->device, ctrl->slot_device_offset);
 
 	status = (readl(ctrl->hpc_reg + INT_INPUT_CLEAR) & (0x01L << hp_slot));
 
@@ -785,7 +785,7 @@ static inline int wait_for_ctrl_irq (struct controller *ctrl)
         DECLARE_WAITQUEUE(wait, current);
 	int retval = 0;
 
-	dbg(__FUNCTION__" - start\n");
+	dbg("%s - start\n", __FUNCTION__);
 	add_wait_queue(&ctrl->queue, &wait);
 	set_current_state(TASK_INTERRUPTIBLE);
 	/* Sleep for up to 1 second to wait for the LED to change. */
@@ -795,7 +795,7 @@ static inline int wait_for_ctrl_irq (struct controller *ctrl)
 	if (signal_pending(current))
 		retval =  -EINTR;
 
-	dbg(__FUNCTION__" - end\n");
+	dbg("%s - end\n", __FUNCTION__);
 	return retval;
 }
 

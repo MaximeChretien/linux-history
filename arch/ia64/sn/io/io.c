@@ -86,7 +86,7 @@ hub_pio_init(vertex_hdl_t hubv)
 	}
 	hub_set_piomode(nasid, HUB_PIO_CONVEYOR);
 
-	mutex_spinlock_init(&hubinfo->h_bwlock);
+	spin_lock_init(&hubinfo->h_bwlock);
 /*
  * If this lock can be acquired from interrupts or bh's, add SV_INTS or SV_BHS,
  * respectively, to the flags here.
@@ -123,7 +123,6 @@ hub_piomap_alloc(vertex_hdl_t dev,	/* set up mapping for this device */
 	int bigwin, free_bw_index;
 	nasid_t nasid;
 	volatile hubreg_t junk;
-	unsigned long s;
 	caddr_t kvaddr;
 #ifdef PIOMAP_UNC_ACC_SPACE
 	uint64_t addr;
@@ -171,7 +170,7 @@ hub_piomap_alloc(vertex_hdl_t dev,	/* set up mapping for this device */
 	 */
 tryagain:
 	free_bw_index = -1;
-	s = mutex_spinlock(&hubinfo->h_bwlock);
+	spin_lock(&hubinfo->h_bwlock);
 	for (bigwin=0; bigwin < HUB_NUM_BIG_WINDOW; bigwin++) {
 		bw_piomap = hubinfo_bwin_piomap_get(hubinfo, bigwin);
 
@@ -191,7 +190,7 @@ tryagain:
 		if ( xtalk_addr == bw_piomap->hpio_xtalk_info.xp_xtalk_addr &&
 		     widget == bw_piomap->hpio_xtalk_info.xp_target) {
 			bw_piomap->hpio_holdcnt++;
-			mutex_spinunlock(&hubinfo->h_bwlock, s);
+			spin_unlock(&hubinfo->h_bwlock);
 			return(bw_piomap);
 		}
 	}
@@ -265,7 +264,7 @@ tryagain:
 		bw_piomap->hpio_flags |= HUB_PIOMAP_IS_VALID;
 
 done:
-	mutex_spinunlock(&hubinfo->h_bwlock, s);
+	spin_unlock(&hubinfo->h_bwlock);
 	return(bw_piomap);
 }
 
@@ -285,7 +284,6 @@ hub_piomap_free(hub_piomap_t hub_piomap)
 	vertex_hdl_t hubv;
 	hubinfo_t hubinfo;
 	nasid_t nasid;
-	unsigned long s;
 
 	/* 
 	 * Small windows are permanently mapped to corresponding widgets,
@@ -301,7 +299,7 @@ hub_piomap_free(hub_piomap_t hub_piomap)
 	hubinfo_get(hubv, &hubinfo);
 	nasid = hubinfo->h_nasid;
 
-	s = mutex_spinlock(&hubinfo->h_bwlock);
+	spin_lock(&hubinfo->h_bwlock);
 
 	/*
 	 * If this is the last hold on this mapping, free it.
@@ -319,7 +317,7 @@ hub_piomap_free(hub_piomap_t hub_piomap)
 		(void)sv_signal(&hubinfo->h_bwwait);
 	}
 
-	mutex_spinunlock(&hubinfo->h_bwlock, s);
+	spin_unlock(&hubinfo->h_bwlock);
 }
 
 /*
@@ -440,7 +438,7 @@ void
 hub_dmamap_free(hub_dmamap_t hub_dmamap)
 {
 	hub_dmamap->hdma_flags &= ~HUB_DMAMAP_IS_VALID;
-	kern_free(hub_dmamap);
+	kfree(hub_dmamap);
 }
 
 /*
@@ -461,12 +459,9 @@ hub_dmamap_addr(	hub_dmamap_t dmamap,	/* use these mapping resources */
 	if (dmamap->hdma_flags & HUB_DMAMAP_USED) {
 	    /* If the map is FIXED, re-use is OK. */
 	    if (!(dmamap->hdma_flags & HUB_DMAMAP_IS_FIXED)) {
+		char name[MAXDEVNAME];
 		vhdl = dmamap->hdma_xtalk_info.xd_dev;
-#if defined(SUPPORT_PRINTING_V_FORMAT)
-		printk(KERN_WARNING  "%v: hub_dmamap_addr re-uses dmamap.\n",vhdl);
-#else
-		printk(KERN_WARNING  "%p: hub_dmamap_addr re-uses dmamap.\n", (void *)vhdl);
-#endif
+		printk(KERN_WARNING  "%s: hub_dmamap_addr re-uses dmamap.\n", vertex_to_name(vhdl, name, MAXDEVNAME));
 	    }
 	} else {
 		dmamap->hdma_flags |= HUB_DMAMAP_USED;
@@ -494,12 +489,9 @@ hub_dmamap_list(hub_dmamap_t hub_dmamap,	/* use these mapping resources */
 	if (hub_dmamap->hdma_flags & HUB_DMAMAP_USED) {
 	    /* If the map is FIXED, re-use is OK. */
 	    if (!(hub_dmamap->hdma_flags & HUB_DMAMAP_IS_FIXED)) {
+		char name[MAXDEVNAME];
 		vhdl = hub_dmamap->hdma_xtalk_info.xd_dev;
-#if defined(SUPPORT_PRINTING_V_FORMAT)
-		printk(KERN_WARNING  "%v: hub_dmamap_list re-uses dmamap\n",vhdl);
-#else
-		printk(KERN_WARNING  "%p: hub_dmamap_list re-uses dmamap\n", (void *)vhdl);
-#endif
+		printk(KERN_WARNING  "%s: hub_dmamap_list re-uses dmamap\n", vertex_to_name(vhdl, name, MAXDEVNAME));
 	    }
 	} else {
 		hub_dmamap->hdma_flags |= HUB_DMAMAP_USED;
@@ -523,12 +515,9 @@ hub_dmamap_done(hub_dmamap_t hub_dmamap)	/* done with these mapping resources */
 	} else {
 	    /* If the map is FIXED, re-done is OK. */
 	    if (!(hub_dmamap->hdma_flags & HUB_DMAMAP_IS_FIXED)) {
+		char name[MAXDEVNAME];
 		vhdl = hub_dmamap->hdma_xtalk_info.xd_dev;
-#if defined(SUPPORT_PRINTING_V_FORMAT)
-		printk(KERN_WARNING  "%v: hub_dmamap_done already done with dmamap\n",vhdl);
-#else
-		printk(KERN_WARNING  "%p: hub_dmamap_done already done with dmamap\n", (void *)vhdl);
-#endif
+		printk(KERN_WARNING  "%s: hub_dmamap_done already done with dmamap\n", vertex_to_name(vhdl, name, MAXDEVNAME));
 	    }
 	}
 }
@@ -588,6 +577,18 @@ hub_dmalist_drain(	vertex_hdl_t vhdl,
     /* XXX- flush caches, if cache coherency WAR is needed */
 }
 
+
+int
+hub_dma_enabled(vertex_hdl_t xconn_vhdl)
+{
+	return(0);
+}
+
+int
+hub_error_devenable(vertex_hdl_t xconn_vhdl, int devnum, int error_code)
+{
+	return(0);
+}
 
 
 /* CONFIGURATION MANAGEMENT */
@@ -806,4 +807,81 @@ xtalk_provider_t hub_provider = {
 	(xtalk_provider_startup_f *)	hub_provider_startup,
 	(xtalk_provider_shutdown_f *)	hub_provider_shutdown,
 };
+
+/*
+ * per_ice_init
+ *
+ *      This code is executed once for each Ice chip.
+ */
+void
+per_ice_init(cnodeid_t cnode)
+{
+
+        /* Initialize error interrupts for this ice. */
+	printk("per_ice_init: We need to init ice here ....!\n");
+        /* ice_error_init(cnode); */
+
+}
+/*
+ * per_hub_init
+ *
+ *	This code is executed once for each Hub chip.
+ */
+void
+per_hub_init(cnodeid_t cnode)
+{
+	nasid_t		nasid;
+	nodepda_t	*npdap;
+	ii_icmr_u_t	ii_icmr;
+	ii_ibcr_u_t	ii_ibcr;
+	ii_ilcsr_u_t	ii_ilcsr;
+
+	nasid = COMPACT_TO_NASID_NODEID(cnode);
+
+	ASSERT(nasid != INVALID_NASID);
+	ASSERT(NASID_TO_COMPACT_NODEID(nasid) == cnode);
+
+	npdap = NODEPDA(cnode);
+
+	/* Disable the request and reply errors. */
+	REMOTE_HUB_S(nasid, IIO_IWEIM, 0xC000);
+
+	/*
+	 * Set the total number of CRBs that can be used.
+	 */
+	ii_icmr.ii_icmr_regval= 0x0;
+	ii_icmr.ii_icmr_fld_s.i_c_cnt = 0xf;
+	if (enable_shub_wars_1_1() ) {
+		// Set bit one of ICMR to prevent II from sending interrupt for II bug.
+		ii_icmr.ii_icmr_regval |= 0x1;
+	}
+	REMOTE_HUB_S(nasid, IIO_ICMR, ii_icmr.ii_icmr_regval);
+
+	/*
+	 * Set the number of CRBs that both of the BTEs combined
+	 * can use minus 1.
+	 */
+	ii_ibcr.ii_ibcr_regval= 0x0;
+	ii_ilcsr.ii_ilcsr_regval = REMOTE_HUB_L(nasid, IIO_LLP_CSR);
+	if (ii_ilcsr.ii_ilcsr_fld_s.i_llp_stat & LNK_STAT_WORKING) {
+	    ii_ibcr.ii_ibcr_fld_s.i_count = 0x8;
+	} else {
+	    /*
+	     * if the LLP is down, there is no attached I/O, so
+	    * give BTE all the CRBs.
+	    */
+	    ii_ibcr.ii_ibcr_fld_s.i_count = 0x14;
+	}
+	REMOTE_HUB_S(nasid, IIO_IBCR, ii_ibcr.ii_ibcr_regval);
+
+	/*
+	 * Set CRB timeout to be 10ms.
+	 */
+	REMOTE_HUB_S(nasid, IIO_ICTP, 0xffffff );
+	REMOTE_HUB_S(nasid, IIO_ICTO, 0xff);
+
+	/* Initialize error interrupts for this hub. */
+	hub_error_init(cnode);
+}
+
 

@@ -187,11 +187,17 @@ static struct inode __icmp_inode[NR_CPUS];
 #define icmp_socket (&__icmp_inode[smp_processor_id()].u.socket_i)
 #define icmp_socket_cpu(X) (&__icmp_inode[(X)].u.socket_i)
 
-static void icmp_xmit_lock(void)
+static int icmp_xmit_lock(void)
 {
 	local_bh_disable();
-	if (unlikely(!spin_trylock(&icmp_socket->sk->lock.slock)))
-		BUG();
+	if (unlikely(!spin_trylock(&icmp_socket->sk->lock.slock))) {
+		/* This can happen if the output path signals a
+		 * dst_link_failure() for an outgoing ICMP packet.
+		 */
+		local_bh_enable();
+		return 1;
+	}
+	return 0;
 }
 
 static void icmp_xmit_unlock(void)
@@ -320,7 +326,8 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 	if (ip_options_echo(&icmp_param->replyopts, skb))
 		return;
 
-	icmp_xmit_lock();
+	if (icmp_xmit_lock())
+		return;
 
 	icmp_param->data.icmph.checksum=0;
 	icmp_param->csum=0;
@@ -427,7 +434,8 @@ void icmp_send(struct sk_buff *skb_in, int type, int code, u32 info)
 		}
 	}
 
-	icmp_xmit_lock();
+	if (icmp_xmit_lock())
+		return;
 
 	/*
 	 *	Construct source address and options.

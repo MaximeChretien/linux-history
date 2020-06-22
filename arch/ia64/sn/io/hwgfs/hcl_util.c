@@ -22,7 +22,10 @@
 #include <asm/sn/nodepda.h>
 
 static vertex_hdl_t hwgraph_all_cnodes = GRAPH_VERTEX_NONE;
+static vertex_hdl_t hwgraph_all_cpuids = GRAPH_VERTEX_NONE;
 extern vertex_hdl_t hwgraph_root;
+extern int maxcpus;
+
 
 
 /*
@@ -96,9 +99,6 @@ master_node_get(vertex_hdl_t vhdl)
 	}
 }
 
-static vertex_hdl_t hwgraph_all_cpuids = GRAPH_VERTEX_NONE;
-extern int maxcpus;
-
 void
 mark_cpuvertex_as_cpu(vertex_hdl_t vhdl, cpuid_t cpuid)
 {
@@ -161,6 +161,7 @@ mark_nodevertex_as_node(vertex_hdl_t vhdl, cnodeid_t cnodeid)
 		(void)hwgraph_edge_add( hwgraph_all_cnodes,
 					vhdl,
 					cnodeid_buffer);
+		HWGRAPH_DEBUG((__FILE__, __FUNCTION__, __LINE__, hwgraph_all_cnodes, NULL, "Creating path vhdl1\n"));
 	}
 }
 

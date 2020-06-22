@@ -320,9 +320,9 @@ if [ "$CONFIG_NET" = "y" ]; then
       tristate '  EQL (serial line load balancing) support' CONFIG_EQUALIZER
       if [ "$CONFIG_ZORRO" = "y" ]; then
 	 tristate '  Ariadne support' CONFIG_ARIADNE
-	 tristate '  Ariadne II support' CONFIG_ARIADNE2
 	 tristate '  A2065 support' CONFIG_A2065
 	 tristate '  Hydra support' CONFIG_HYDRA
+	 tristate '  Zorro NS8390-based Ethernet support' CONFIG_ZORRO8390
       fi
       if [ "$CONFIG_AMIGA_PCMCIA" = "y" ]; then
 	 tristate '  PCMCIA NE2000 support' CONFIG_APNE
@@ -513,14 +513,10 @@ if [ "$CONFIG_WATCHDOG" != "n" ]; then
    bool '  Disable watchdog shutdown on close' CONFIG_WATCHDOG_NOWAYOUT
    bool '  Software Watchdog' CONFIG_SOFT_WATCHDOG
 fi
-if [ "$CONFIG_ATARI" = "y" ]; then
-   bool 'Enhanced Real Time Clock Support' CONFIG_RTC
+if [ "$CONFIG_SUN3" = "y" ]; then
+   define_bool CONFIG_GEN_RTC y
 else
-   if [ "$CONFIG_SUN3" = "y" ]; then
-      define_bool CONFIG_GEN_RTC y
-   else
-      tristate 'Generic /dev/rtc emulation' CONFIG_GEN_RTC      
-   fi
+   tristate 'Generic /dev/rtc emulation' CONFIG_GEN_RTC      
 fi
 if [ "$CONFIG_GEN_RTC" != "n" ]; then
    bool '   Extended RTC operation' CONFIG_GEN_RTC_X
@@ -559,6 +555,8 @@ if [ "$CONFIG_DEBUG_KERNEL" != "n" ]; then
    bool '  Debug memory allocations' CONFIG_DEBUG_SLAB
    bool '  Verbose BUG() reporting' CONFIG_DEBUG_BUGVERBOSE
 fi
+
+int 'Kernel messages buffer length shift (0 = default)' CONFIG_LOG_BUF_SHIFT 0
 
 endmenu
 

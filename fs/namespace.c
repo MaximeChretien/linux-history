@@ -110,7 +110,7 @@ static void attach_mnt(struct vfsmount *mnt, struct nameidata *nd)
 	mnt->mnt_parent = mntget(nd->mnt);
 	mnt->mnt_mountpoint = dget(nd->dentry);
 	list_add(&mnt->mnt_hash, mount_hashtable+hash(nd->mnt, nd->dentry));
-	list_add(&mnt->mnt_child, &nd->mnt->mnt_mounts);
+	list_add_tail(&mnt->mnt_child, &nd->mnt->mnt_mounts);
 	nd->dentry->d_mounted++;
 }
 
@@ -763,7 +763,7 @@ int copy_namespace(int flags, struct task_struct *tsk)
 		return -EPERM;
 	}
 
-	new_ns = kmalloc(sizeof(struct namespace *), GFP_KERNEL);
+	new_ns = kmalloc(sizeof(struct namespace), GFP_KERNEL);
 	if (!new_ns)
 		goto out;
 

@@ -42,7 +42,7 @@ static salinfo_entry_t salinfo_entries[]={
 	{ "itc_drift",		IA64_SAL_PLATFORM_FEATURE_ITC_DRIFT, },
 };
 
-#define NR_SALINFO_ENTRIES (sizeof(salinfo_entries)/sizeof(salinfo_entry_t))
+#define NR_SALINFO_ENTRIES ARRAY_SIZE(salinfo_entries)
 
 static char *salinfo_log_name[] = {
 	"mca",
@@ -98,9 +98,6 @@ salinfo_log_wakeup(int type)
 static int
 salinfo_event_open(struct inode *inode, struct file *file)
 {
-	struct proc_dir_entry *entry = (struct proc_dir_entry *) inode->u.generic_ip;
-	struct salinfo_event *event = entry->data;
-
 	if (!suser())
 		return -EPERM;
 	return 0;

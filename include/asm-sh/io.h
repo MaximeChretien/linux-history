@@ -135,6 +135,8 @@
 #  include <asm/io_adx.h>
 # elif defined(CONFIG_SH_SECUREEDGE5410)
 #  include <asm/io_snapgear.h>
+# elif defined(CONFIG_SH_SH4202_MICRODEV)
+#  include <asm/io_microdev.h>
 # elif defined(CONFIG_SH_UNKNOWN)
 #  include <asm/io_unknown.h>
 # else

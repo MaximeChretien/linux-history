@@ -7,17 +7,10 @@
 #include <linux/version.h>
 #include <linux/list.h>
 #include <linux/init.h>
+#include <linux/spinlock.h>
 #include <asm/semaphore.h>
 #include <asm/byteorder.h>
 
-
-#ifndef MIN
-#define MIN(a,b) ((a) < (b) ? (a) : (b))
-#endif
-
-#ifndef MAX
-#define MAX(a,b) ((a) > (b) ? (a) : (b))
-#endif
 
 #ifndef BITS_TO_LONGS	/* < 2.4.21-pre6 */
 #define BITS_TO_LONGS(bits) \
@@ -77,6 +70,12 @@ typedef u16 arm_length_t;
 #define HPSB_NOTICE(fmt, args...) HPSB_PRINT(KERN_NOTICE, fmt , ## args)
 #define HPSB_WARN(fmt, args...) HPSB_PRINT(KERN_WARNING, fmt , ## args)
 #define HPSB_ERR(fmt, args...) HPSB_PRINT(KERN_ERR, fmt , ## args)
+
+#ifdef CONFIG_IEEE1394_VERBOSEDEBUG
+#define HPSB_VERBOSE(fmt, args...) HPSB_PRINT(KERN_DEBUG, fmt , ## args)
+#else
+#define HPSB_VERBOSE(fmt, args...)
+#endif
 
 #define HPSB_PANIC(fmt, args...) panic("ieee1394: " fmt "\n" , ## args)
 

@@ -282,6 +282,21 @@ ffz (unsigned long x)
 	return result;
 }
 
+/**
+ * __ffs - find first bit in word.
+ * @x: The word to search
+ *
+ * Undefined if no bit exists, so code should check against 0 first.
+ */
+static __inline__ unsigned long
+__ffs (unsigned long x)
+{
+	unsigned long result;
+
+	__asm__ ("popcnt %0=%1" : "=r" (result) : "r" ((x - 1) & ~x));
+	return result;
+}
+
 #ifdef __KERNEL__
 
 /*

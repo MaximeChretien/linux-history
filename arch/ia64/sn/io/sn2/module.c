@@ -128,21 +128,26 @@ module_t *module_add_node(geoid_t geoid, cnodeid_t cnodeid)
     int			i;
     char		buffer[16];
     moduleid_t		moduleid;
+    slabid_t		slab_number;
 
     memset(buffer, 0, 16);
     moduleid = geo_module(geoid);
     format_module_id(buffer, moduleid, MODULE_FORMAT_BRIEF);
-    DPRINTF("module_add_node: moduleid=%s node=%d\n", buffer, cnodeid);
+    DPRINTF("module_add_node: moduleid=%s node=%d ", buffer, cnodeid);
 
     if ((m = module_lookup(moduleid)) == 0) {
 	m = kmalloc(sizeof (module_t), GFP_KERNEL);
-	memset(m, 0 , sizeof(module_t));
 	ASSERT_ALWAYS(m);
+	memset(m, 0 , sizeof(module_t));
+
+	for (slab_number = 0; slab_number <= MAX_SLABS; slab_number++) {
+		m->nodes[slab_number] = -1;
+	}
 
 	m->id = moduleid;
 	spin_lock_init(&m->lock);
 
-	mutex_init_locked(&m->thdcnt);
+	init_MUTEX_LOCKED(&m->thdcnt);
 
 	/* Insert in sorted order by module number */
 
@@ -153,16 +158,23 @@ module_t *module_add_node(geoid_t geoid, cnodeid_t cnodeid)
 	nummodules++;
     }
 
-    m->nodes[m->nodecnt] = cnodeid;
-    m->geoid[m->nodecnt] = geoid;
-    m->nodecnt++;
+    /*
+     * Save this information in the correct slab number of the node in the 
+     * module.
+     */
+    slab_number = geo_slab(geoid);
+    DPRINTF("slab number added 0x%x\n", slab_number);
 
-    DPRINTF("module_add_node: module %s now has %d nodes\n", buffer, m->nodecnt);
+    if (m->nodes[slab_number] != -1)
+	panic("module_add_node .. slab previously found\n");
+
+    m->nodes[slab_number] = cnodeid;
+    m->geoid[slab_number] = geoid;
 
     return m;
 }
 
-int module_probe_snum(module_t *m, nasid_t nasid)
+int module_probe_snum(module_t *m, nasid_t host_nasid, nasid_t nasid)
 {
     lboard_t	       *board;
     klmod_serial_num_t *comp;
@@ -172,7 +184,7 @@ int module_probe_snum(module_t *m, nasid_t nasid)
     /*
      * record brick serial number
      */
-    board = find_lboard((lboard_t *) KL_CONFIG_INFO(nasid), KLTYPE_SNIA);
+    board = find_lboard((lboard_t *) KL_CONFIG_INFO(host_nasid), KLTYPE_SNIA);
 
     if (! board || KL_CONFIG_DUPLICATE_BOARD(board))
     {
@@ -244,21 +256,47 @@ io_module_init(void)
 
     nserial = 0;
 
+    /*
+     * First pass just scan for compute node boards KLTYPE_SNIA.
+     * We do not support memoryless compute nodes.
+     */
     for (node = 0; node < numnodes; node++) {
 	nasid = COMPACT_TO_NASID_NODEID(node);
-
 	board = find_lboard((lboard_t *) KL_CONFIG_INFO(nasid), KLTYPE_SNIA);
 	ASSERT(board);
 
-	m = module_add_node(board->brd_geoid, node);
+	HWGRAPH_DEBUG((__FILE__, __FUNCTION__, __LINE__, NULL, NULL, "Found Shub lboard 0x%lx nasid 0x%x cnode 0x%x \n", (unsigned long)board, (int)nasid, (int)node));
 
-	if (! m->snum_valid && module_probe_snum(m, nasid))
+	m = module_add_node(board->brd_geoid, node);
+	if (! m->snum_valid && module_probe_snum(m, nasid, nasid))
 	    nserial++;
     }
 
-    DPRINTF("********found total of %d serial numbers in the system\n",
-	    nserial);
+    /*
+     * Second scan, look for TIO's board hosted by compute nodes.
+     */
+    for (node = numnodes; node < numionodes; node++) {
+	nasid_t		tio_nasid;
+	cnodeid_t	tio_node;
+	char		serial_number[16];
 
-    if (nserial == 0)
-	DPRINTF(KERN_WARNING  "io_module_init: No serial number found.\n");
+        tio_nasid = COMPACT_TO_NASID_NODEID(node);
+        board = find_lboard((lboard_t *) KL_CONFIG_INFO(tio_nasid), KLTYPE_TIO);
+	ASSERT(board);
+	tio_node = NASID_TO_COMPACT_NODEID(tio_nasid);
+
+	HWGRAPH_DEBUG((__FILE__, __FUNCTION__, __LINE__, NULL, NULL, "Found TIO lboard 0x%lx tio nasid %d tio cnode %d\n", (unsigned long)board, (int)tio_nasid, (int)tio_node));
+
+        m = module_add_node(board->brd_geoid, tio_node);
+
+	/*
+	 * Get and initialize the serial number of TIO.
+	 */
+	board_serial_number_get( board, serial_number );
+    	if( serial_number[0] != '\0' ) {
+        	encode_str_serial( serial_number, m->snum.snum_str );
+        	m->snum_valid = 1;
+		nserial++;
+	}
+    }
 }

@@ -7,7 +7,7 @@
  *  Pentium III FXSR, SSE support
  *	Gareth Hughes <gareth@valinux.com>, May 2000
  *
- *  $Id: traps.c,v 1.66 2003/06/09 05:18:21 ak Exp $
+ *  $Id: traps.c,v 1.69 2003/09/21 04:54:09 ak Exp $
  */
 
 /*
@@ -81,7 +81,7 @@ extern char iret_address[];
 
 struct notifier_block *die_chain;
 
-int kstack_depth_to_print = 40;
+int kstack_depth_to_print = 12;
 
 #ifdef CONFIG_KALLSYMS
 #include <linux/kallsyms.h> 
@@ -342,18 +342,25 @@ void handle_BUG(struct pt_regs *regs)
 spinlock_t die_lock = SPIN_LOCK_UNLOCKED;
 int die_owner = -1;
 
-void die(const char * str, struct pt_regs * regs, long err)
+void __die(const char * str, struct pt_regs * regs, long err)
 {
-	unsigned long flags;
+	printk(KERN_EMERG "%s: %04lx\n", str, err & 0xffff);
+ 	notify_die(DIE_OOPS, (char *)str, regs, err, 255, SIGSEGV);
+	show_registers(regs);
+	/* Execute summary in case the oops scrolled away */
+	printk(KERN_EMERG "RIP "); 
+	printk_address(regs->rip); 
+	printk(" RSP <%016lx>\n", regs->rsp); 
+}
+
+void prepare_die(unsigned long *flags)
+{
 	int cpu;
 	console_verbose();
 	bust_spinlocks(1);
-	handle_BUG(regs);		
-	printk(KERN_EMERG "%s: %04lx\n", str, err & 0xffff);
- 	notify_die(DIE_OOPS, (char *)str, regs, err, 255, SIGSEGV);
 	cpu = safe_smp_processor_id(); 
 	/* racy, but better than risking deadlock. */ 
-	__save_flags(flags); 
+	__save_flags(*flags); 
 	__cli();
 	if (!spin_trylock(&die_lock)) { 
 		if (cpu == die_owner) 
@@ -362,9 +369,23 @@ void die(const char * str, struct pt_regs * regs, long err)
 			spin_lock(&die_lock); 
 	}
 	die_owner = cpu; 
-	show_registers(regs);
-	bust_spinlocks(0);
+} 
+
+void exit_die(unsigned long flags)
+{
+	die_owner = -1;
 	spin_unlock_irqrestore(&die_lock, flags);
+	__sti();	/* back scroll should work */
+	bust_spinlocks(0);
+}
+
+void die(const char * str, struct pt_regs * regs, long err)
+{
+	unsigned long flags;
+	prepare_die(&flags);
+	handle_BUG(regs);		
+	__die(str, regs, err);
+	exit_die(flags);
 	do_exit(SIGSEGV);
 }
 

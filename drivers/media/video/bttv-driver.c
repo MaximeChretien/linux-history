@@ -400,13 +400,10 @@ static void bt848_muxsel(struct bttv *btv, unsigned int input)
 #endif
 
 	input %= bttv_tvcards[btv->type].video_inputs;
-	if (input==bttv_tvcards[btv->type].svhs)
-	{
+	if (input == btv->svhs) {
 		btor(BT848_CONTROL_COMP, BT848_E_CONTROL);
 		btor(BT848_CONTROL_COMP, BT848_O_CONTROL);
-	}
-	else
-	{
+	} else {
 		btand(~BT848_CONTROL_COMP, BT848_E_CONTROL);
 		btand(~BT848_CONTROL_COMP, BT848_O_CONTROL);
 	}
@@ -1668,7 +1665,7 @@ static int bttv_ioctl(struct video_device *dev, unsigned int cmd, void *arg)
 			v.type=VIDEO_TYPE_TV;
 			v.tuners=1;
 		} 
-		else if (channel==bttv_tvcards[btv->type].svhs) 
+		else if (channel == btv->svhs) 
 			strcpy(v.name,"S-Video");
 		else if (bttv_tvcards[btv->type].muxsel[v.channel] < 0)
 			strcpy(v.name,"Digital Video");
@@ -2200,7 +2197,7 @@ static int bttv_mmap(struct video_device *dev, const char *adr, unsigned long si
 static struct video_device bttv_template=
 {
 	.owner		= THIS_MODULE,
-	.name		= "UNSET",
+	.name		= "bttv video",
 	.type		= VID_TYPE_TUNER|VID_TYPE_CAPTURE|VID_TYPE_OVERLAY|VID_TYPE_TELETEXT,
 	.hardware	= VID_HARDWARE_BT848,
 	.open		= bttv_open,
@@ -2369,7 +2366,6 @@ static struct video_device vbi_template=
 static int radio_open(struct video_device *dev, int flags)
 {
 	struct bttv *btv = (struct bttv *)(dev-1);
-	unsigned long v;
 
         down(&btv->lock);
 	if (btv->user)
@@ -2377,8 +2373,6 @@ static int radio_open(struct video_device *dev, int flags)
 	btv->user++;
 
 	btv->radio = 1;
-	v = 400*16;
-	bttv_call_i2c_clients(btv,VIDIOCSFREQ,&v);
 	bttv_call_i2c_clients(btv,AUDC_SET_RADIO,&btv->tuner_type);
 	bt848_muxsel(btv,0);
 	up(&btv->lock);
@@ -3153,7 +3147,7 @@ static int __devinit bttv_probe(struct pci_dev *dev, const struct pci_device_id 
 	return result;
 }
 
-static struct pci_device_id bttv_pci_tbl[] __devinitdata = {
+static struct pci_device_id bttv_pci_tbl[] = {
         {PCI_VENDOR_ID_BROOKTREE, PCI_DEVICE_ID_BT848,
          PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},
 	{PCI_VENDOR_ID_BROOKTREE, PCI_DEVICE_ID_BT849,

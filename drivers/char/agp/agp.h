@@ -172,6 +172,12 @@ struct agp_bridge_data {
 #ifndef PCI_DEVICE_ID_VIA_82C694X_0
 #define PCI_DEVICE_ID_VIA_82C694X_0      0x0605
 #endif
+#ifndef PCI_DEVICE_ID_VIA_8380_0
+#define PCI_DEVICE_ID_VIA_8380_0	0x0204
+#endif
+#ifndef PCI_DEVICE_ID_VIA_8385_0
+#define PCI_DEVICE_ID_VIA_8385_0	0x3188
+#endif 
 #ifndef PCI_DEVICE_ID_INTEL_810_0
 #define PCI_DEVICE_ID_INTEL_810_0       0x7120
 #endif
@@ -223,6 +229,12 @@ struct agp_bridge_data {
 #ifndef PCI_DEVICE_ID_INTEL_860_0
 #define PCI_DEVICE_ID_INTEL_860_0     0x2531
 #endif
+#ifndef PCI_DEVICE_ID_INTEL_7205_0
+#define PCI_DEVICE_ID_INTEL_7205_0     0x255d
+#endif
+#ifndef PCI_DEVICE_ID_INTEL_7505_0
+#define PCI_DEVICE_ID_INTEL_7505_0     0x2550
+#endif
 #ifndef PCI_DEVICE_ID_INTEL_810_DC100_0
 #define PCI_DEVICE_ID_INTEL_810_DC100_0 0x7122
 #endif
@@ -249,6 +261,9 @@ struct agp_bridge_data {
 #endif
 #ifndef PCI_DEVICE_ID_INTEL_82443GX_1
 #define PCI_DEVICE_ID_INTEL_82443GX_1   0x71a1
+#endif
+#ifndef PCI_DEVICE_ID_INTEL_460GX
+#define PCI_DEVICE_ID_INTEL_460GX       0x84ea
 #endif
 #ifndef PCI_DEVICE_ID_AMD_IRONGATE_0
 #define PCI_DEVICE_ID_AMD_IRONGATE_0    0x7006
@@ -292,6 +307,30 @@ struct agp_bridge_data {
 #ifndef PCI_DEVICE_ID_AL_M1671_0
 #define PCI_DEVICE_ID_AL_M1671_0	0x1671
 #endif
+#ifndef PCI_VENDOR_ID_ATI
+#define PCI_VENDOR_ID_ATI		0x1002
+#endif
+#ifndef PCI_DEVICE_ID_ATI_RS100
+#define PCI_DEVICE_ID_ATI_RS100		0xcab0
+#endif
+#ifndef PCI_DEVICE_ID_ATI_RS200
+#define PCI_DEVICE_ID_ATI_RS200		0xcab2
+#endif
+#ifndef PCI_DEVICE_ID_ATI_RS250
+#define PCI_DEVICE_ID_ATI_RS250		0xcab3
+#endif
+#ifndef PCI_DEVICE_ID_ATI_RS300_100
+#define PCI_DEVICE_ID_ATI_RS300_100	0x5830
+#endif
+#ifndef PCI_DEVICE_ID_ATI_RS300_133
+#define PCI_DEVICE_ID_ATI_RS300_133	0x5831
+#endif
+#ifndef PCI_DEVICE_ID_ATI_RS300_166
+#define PCI_DEVICE_ID_ATI_RS300_166	0x5832
+#endif
+#ifndef PCI_DEVICE_ID_ATI_RS300_200
+#define PCI_DEVICE_ID_ATI_RS300_200	0x5833
+#endif
 
 /* intel register */
 #define INTEL_APBASE    0x10
@@ -301,6 +340,14 @@ struct agp_bridge_data {
 #define INTEL_NBXCFG    0x50
 #define INTEL_ERRSTS    0x91
 
+/* Intel 460GX Registers */
+#define INTEL_I460_APBASE		0x10
+#define INTEL_I460_BAPBASE		0x98
+#define INTEL_I460_GXBCTL		0xa0
+#define INTEL_I460_AGPSIZ		0xa2
+#define INTEL_I460_ATTBASE		0xfe200000
+#define INTEL_I460_GATT_VALID		(1UL << 24)
+#define INTEL_I460_GATT_COHERENT	(1UL << 25)
 /* Intel 855GM/852GM registers */
 #define I855_GMCH_CTRL             0x52
 #define I855_GMCH_ENABLED          0x4
@@ -365,6 +412,10 @@ struct agp_bridge_data {
 /* intel i860 registers */
 #define INTEL_I860_MCHCFG	0x50
 #define INTEL_I860_ERRSTS	0xc8
+
+/* intel i7505 registers */
+#define INTEL_I7505_MCHCFG	0x50
+#define INTEL_I7505_ERRSTS	0x42
 
 /* intel i810 registers */
 #define I810_GMADDR 0x10
@@ -466,13 +517,37 @@ struct agp_bridge_data {
 #define NVIDIA_3_APBASE     0x50
 #define NVIDIA_3_APLIMIT    0x54
 
-/* HP ZX1 SBA registers */
-#define HP_ZX1_CTRL		0x200
+/* NVIDIA x86-64 registers */
+#define NVIDIA_X86_64_0_APBASE		0x10
+#define NVIDIA_X86_64_1_APBASE1		0x50
+#define NVIDIA_X86_64_1_APLIMIT1	0x54
+#define NVIDIA_X86_64_1_APSIZE		0xa8
+#define NVIDIA_X86_64_1_APBASE2		0xd8
+#define NVIDIA_X86_64_1_APLIMIT2	0xdc
+
+/* HP ZX1 IOC registers */
 #define HP_ZX1_IBASE		0x300
 #define HP_ZX1_IMASK		0x308
 #define HP_ZX1_PCOM		0x310
 #define HP_ZX1_TCNFG		0x318
 #define HP_ZX1_PDIR_BASE	0x320
-#define HP_ZX1_CACHE_FLUSH	0x428
+
+/* HP ZX1 LBA registers */
+#define HP_ZX1_AGP_STATUS	0x64
+#define HP_ZX1_AGP_COMMAND	0x68
+
+/* ATI register */
+#define ATI_APBASE                  0x10
+#define ATI_GART_MMBASE_ADDR        0x14
+#define ATI_RS100_APSIZE            0xac
+#define ATI_RS300_APSIZE            0xf8
+#define ATI_RS100_IG_AGPMODE        0xb0
+#define ATI_RS300_IG_AGPMODE        0xfc
+
+#define ATI_GART_FEATURE_ID         0x00
+#define ATI_GART_BASE               0x04
+#define ATI_GART_CACHE_SZBASE       0x08
+#define ATI_GART_CACHE_CNTRL        0x0c
+#define ATI_GART_CACHE_ENTRY_CNTRL  0x10
 
 #endif				/* _AGP_BACKEND_PRIV_H */

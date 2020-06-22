@@ -109,6 +109,7 @@ struct thread_struct {
 #define SPARC_FLAG_NEWCHILD     0x08    /* task is just-spawned child process	*/
 #define SPARC_FLAG_PERFCTR	0x10    /* task has performance counters active	*/
 #define SPARC_FLAG_ABI_PENDING	0x20    /* change of SPARC_FLAG_32BIT pending	*/
+#define SPARC_FLAG_SYS_SUCCESS	0x40    /* Force successful syscall return.	*/
 
 #define FAULT_CODE_WRITE	0x01	/* Write access, implies D-TLB		*/
 #define FAULT_CODE_DTLB		0x02	/* Miss happened in D-TLB		*/

@@ -11,7 +11,7 @@ EXTRA_CFLAGS    := -DLITTLE_ENDIAN
 
 O_TARGET := snio.o
 
-obj-y				+= hubdev.o ioconfig_bus.o ifconfig_net.o
+obj-y				+= ioconfig_bus.o ifconfig_net.o
 
 obj-$(CONFIG_PCIBA)		+= pciba.o
 

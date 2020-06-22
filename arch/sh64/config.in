@@ -54,6 +54,8 @@ choice 'Page table levels' \
 	"2			CONFIG_SH64_PGTABLE_2_LEVEL \
 	 3			CONFIG_SH64_PGTABLE_3_LEVEL" 2
 
+bool 'Fixup misaligned loads/stores occurring in user mode' CONFIG_SH64_USER_MISALIGNED_FIXUP
+
 # Use 32-bit addressing for now.
 # EMI based.
 # P2 (UNCACHED) required to use identity mapping
@@ -300,6 +302,9 @@ bool 'Magic SysRq key' CONFIG_MAGIC_SYSRQ
 bool 'GDB Stub kernel debug' CONFIG_DEBUG_KERNEL_WITH_GDB_STUB
 bool "Debug: audit page tables on return from syscall/exception/interrupt" CONFIG_SH64_PAGE_TABLE_AUDIT
 dep_bool "Debug: report TLB fill/purge activity through /proc/tlb" CONFIG_SH64_PROC_TLB $CONFIG_PROC_FS
+dep_bool "Debug: report ASIDS through /proc/asids" CONFIG_SH64_PROC_ASIDS $CONFIG_PROC_FS
+
+int 'Kernel messages buffer length shift (0 = default)' CONFIG_LOG_BUF_SHIFT 0
 
 endmenu
 

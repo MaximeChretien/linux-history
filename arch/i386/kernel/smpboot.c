@@ -51,7 +51,7 @@
 static int smp_b_stepping;
 
 /* Setup configured maximum number of CPUs to activate */
-static int max_cpus = -1;
+static int max_cpus = NR_CPUS;
 
 /* Total count of live CPUs */
 int smp_num_cpus = 1;
@@ -1108,15 +1108,19 @@ void __init smp_boot_cpus(void)
 
 	for (bit = 0; bit < NR_CPUS; bit++) {
 		apicid = cpu_present_to_apicid(bit);
+		
+		/* don't try to boot BAD_APICID */
+		if (apicid == BAD_APICID)
+			continue; 
 		/*
 		 * Don't even attempt to start the boot CPU!
 		 */
 		if (apicid == boot_cpu_apicid)
 			continue;
 
-		if (!(phys_cpu_present_map & (1ul << bit)))
+		if (!(phys_cpu_present_map & apicid_to_phys_cpu_present(apicid)))
 			continue;
-		if ((max_cpus >= 0) && (max_cpus <= cpucount+1))
+		if (max_cpus <= cpucount+1)
 			continue;
 
 		do_boot_cpu(apicid);
@@ -1125,7 +1129,8 @@ void __init smp_boot_cpus(void)
 		 * Make sure we unmap all failed CPUs
 		 */
 		if ((boot_apicid_to_cpu(apicid) == -1) &&
-				(phys_cpu_present_map & (1ul << bit)))
+			(phys_cpu_present_map & 
+				apicid_to_phys_cpu_present(apicid)))
 			printk("CPU #%d/0x%02x not responding - cannot use it.\n",
 								bit, apicid);
 	}

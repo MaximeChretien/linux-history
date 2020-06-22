@@ -26,7 +26,6 @@
 
 #include "i82092aa.h"
 #include "i82365.h"
-#include "cirrus.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Red Hat, Inc. - Arjan Van De Ven <arjanv@redhat.com>");
@@ -44,15 +43,8 @@ static struct pci_device_id i82092aa_pci_ids[] = {
 	      subdevice:PCI_ANY_ID,
 	      class: 0, class_mask:0,
 
-	},
-	{
-	      vendor:PCI_VENDOR_ID_CIRRUS,
-	      device:PCI_DEVICE_ID_CIRRUS_6729,
-	      subvendor:PCI_ANY_ID,
-	      subdevice:PCI_ANY_ID,
-	      class: 0, class_mask:0,
-	},
-	{} 
+	 },
+	 {} 
 };
 
 static struct pci_driver i82092aa_pci_drv = {
@@ -98,18 +90,14 @@ struct socket_info {
 	void	*info;		/* to be passed to the handler */
 	
 	struct pci_dev *dev;	/* The PCI device for the socket */
-	
-	int type;		/* Type of socket */
-#define IS_I82092	0x0001
-#define IS_PD6729	0x0002
 };
 
 #define MAX_SOCKETS 4
 static struct socket_info sockets[MAX_SOCKETS];
 static int socket_count;  /* shortcut */
 
-static int membase = -1;
-static int isa_setup;
+int membase = -1;
+int isa_setup;
 
 MODULE_PARM(membase, "i");
 MODULE_PARM(isa_setup, "i");
@@ -119,7 +107,6 @@ static int __init i82092aa_pci_probe(struct pci_dev *dev, const struct pci_devic
 	unsigned char configbyte;
 	struct pci_dev *parent;
 	int i;
-	int type;
 	
 	enter("i82092aa_pci_probe");
 	
@@ -129,18 +116,7 @@ static int __init i82092aa_pci_probe(struct pci_dev *dev, const struct pci_devic
 	/* Since we have no memory BARs some firmware we may not
 	   have had PCI_COMMAND_MEM enabled, yet the device needs
 	   it. */
-
-	// pci_read_config_byte(dev, PCI_COMMAND, &configbyte);
-	if (dev->vendor == PCI_VENDOR_ID_CIRRUS) {
-		type = IS_PD6729;
-		configbyte = 0;	/* always 2 sockets */
-		printk(KERN_INFO "Cirrus PD6729 PCI to PCMCIA Bridge \n");
-	} else {
-		type = IS_I82092;
-		pci_read_config_byte(dev, 0x40, &configbyte);  /* PCI Configuration Control */
-		printk(KERN_INFO "Intel I82092AA PCI to PCMCIA Bridge \n");
-	}
-
+	pci_read_config_byte(dev, PCI_COMMAND, &configbyte);
 	if (!(configbyte | PCI_COMMAND_MEMORY)) {
 		dprintk(KERN_DEBUG "Enabling PCI_COMMAND_MEMORY\n");
 		configbyte |= PCI_COMMAND_MEMORY;
@@ -227,7 +203,6 @@ static int __init i82092aa_pci_probe(struct pci_dev *dev, const struct pci_devic
 		sockets[i].cap.map_size = 0x1000;
 		sockets[i].cap.irq_mask = 0;
 		sockets[i].cap.pci_irq  = dev->irq;
-		sockets[i].type = type;
 
 		/* Trick the resource code into doing the right thing... */
 		sockets[i].cap.cb_dev = dev;
@@ -240,11 +215,10 @@ static int __init i82092aa_pci_probe(struct pci_dev *dev, const struct pci_devic
 		}
 	}
 		
-	if (type == IS_I82092) {
-		/* Now, specifiy that all interrupts are to be done as PCI interrupts */
-		configbyte = 0xFF; /* bitmask, one bit per event, 1 = PCI interrupt, 0 = ISA interrupt */
-		pci_write_config_byte(dev, 0x50, configbyte); /* PCI Interrupt Routing Register */
-	}
+	/* Now, specifiy that all interrupts are to be done as PCI interrupts */
+	configbyte = 0xFF; /* bitmask, one bit per event, 1 = PCI interrupt, 0 = ISA interrupt */
+	pci_write_config_byte(dev, 0x50, configbyte); /* PCI Interrupt Routing Register */
+
 
 	/* Register the interrupt handler */
 	dprintk(KERN_DEBUG "Requesting interrupt %i \n",dev->irq);
@@ -266,7 +240,6 @@ static void __devexit i82092aa_pci_remove(struct pci_dev *dev)
 	enter("i82092aa_pci_remove");
 	
 	free_irq(dev->irq, i82092aa_interrupt);
-	flush_scheduled_tasks();
 
 	leave("i82092aa_pci_remove");
 }
@@ -681,7 +654,6 @@ static int i82092aa_get_socket(unsigned int sock, socket_state_t *state)
 static int i82092aa_set_socket(unsigned int sock, socket_state_t *state) 
 {
 	unsigned char reg;
-	unsigned long flags;
 	
 	enter("i82092aa_set_socket");
 	
@@ -768,25 +740,8 @@ static int i82092aa_set_socket(unsigned int sock, socket_state_t *state)
 	
 	/* now write the value and clear the (probably bogus) pending stuff by doing a dummy read*/
 	
-	spin_lock_irqsave(&port_lock,flags);
-
 	indirect_write(sock,I365_CSCINT,reg);
 	(void)indirect_read(sock,I365_CSC);
-
-	if (sockets[sock].type == IS_PD6729) {
-		/* Configure PD6729 bridge for PCI interrupts */
-		reg |= 0x30;	/* management IRQ: PCI INTA = "irq 3" */
-		indirect_write(sock,I365_CSCINT,reg);
-		(void)indirect_read(sock,I365_CSC);
-
-		reg = indirect_read(sock,I365_INTCTL);
-		reg |= 0x03; /* card IRQ: PCI INTA = "irq 3" */
-		indirect_write(sock,I365_INTCTL,reg);
-
-		indirect_write(sock, PD67_EXT_INDEX, PD67_EXT_CTL_1);
-		indirect_write(sock, PD67_EXT_DATA, PD67_EC1_INV_MGMT_IRQ | PD67_EC1_INV_CARD_IRQ);
-	}
-	spin_unlock_irqrestore(&port_lock,flags);
 
 	leave("i82092aa_set_socket");
 	return 0;
@@ -813,10 +768,9 @@ static int i82092aa_get_io_map(unsigned int sock, struct pccard_io_map *io)
 	io->speed = to_ns(ioctl & I365_IOCTL_WAIT(map)) ? 1 : 0; /* check this out later */
 	io->flags = 0;
 	
-	io->flags |= (ioctl & I365_IOCTL_0WS(map)) ? MAP_0WS : 0;
-	io->flags |= (ioctl & I365_IOCTL_16BIT(map)) ? MAP_16BIT : 0;
-	io->flags |= (ioctl & I365_IOCTL_IOCS16(map)) ? MAP_AUTOSZ : 0;
-
+	if (addr & I365_IOCTL_16BIT(map))
+		io->flags |= MAP_AUTOSZ;
+		
 	leave("i82092aa_get_io_map");
 	return 0;
 }
@@ -834,7 +788,7 @@ static int i82092aa_set_io_map(unsigned sock, struct pccard_io_map *io)
 		leave("i82092aa_set_io_map with invalid map");
 		return -EINVAL;
 	}
-	if (io->start > 0xffff || io->stop > 0xffff || io->stop < io->start){
+	if ((io->start > 0xffff) || (io->stop > 0xffff) || (io->stop < io->start)){
 		leave("i82092aa_set_io_map with invalid io");
 		return -EINVAL;
 	}
@@ -851,10 +805,9 @@ static int i82092aa_set_io_map(unsigned sock, struct pccard_io_map *io)
 	            	
 	ioctl = indirect_read(sock,I365_IOCTL) & ~I365_IOCTL_MASK(map);
 	
-    	if (io->flags & MAP_0WS) ioctl |= I365_IOCTL_0WS(map);
-    	if (io->flags & MAP_16BIT) ioctl |= I365_IOCTL_16BIT(map);
-    	if (io->flags & MAP_AUTOSZ) ioctl |= I365_IOCTL_IOCS16(map);
-
+	if (io->flags & (MAP_16BIT|MAP_AUTOSZ))
+		ioctl |= I365_IOCTL_16BIT(map);
+		
 	indirect_write(sock,I365_IOCTL,ioctl);
 	
 	/* Turn the window back on if needed */
@@ -913,19 +866,11 @@ static int i82092aa_get_mem_map(unsigned sock, struct pccard_mem_map *mem)
 		mem->flags |= MAP_WRPROT;
 	if (i & I365_MEM_REG)
 		mem->flags |= MAP_ATTRIB;
+	mem->card_start = ( (unsigned long)(i & 0x3fff)<12) + mem->sys_start;
+	mem->card_start &=  0x3ffffff;
 	
-	if (sockets[sock].type == IS_PD6729) {
-		/* Take care of high byte */
-		indirect_write(sock,PD67_EXT_INDEX, PD67_MEM_PAGE(map));
-		addr = indirect_read16(sock, PD67_EXT_DATA) << 24;
-		mem->sys_stop += addr; mem->sys_start += addr;
-		mem->card_start = (unsigned long)(i) + mem->sys_start;
-	} else {
-		mem->card_start = ((unsigned long)(i & 0x3fff)<12) + mem->sys_start;
-		mem->card_start &=  0x3ffffff;
-	}
-
 	dprintk("Card %i is from %lx to %lx \n",sock,mem->sys_start,mem->sys_stop);
+	
 	leave("i82092aa_get_mem_map");
 	return 0;
 	
@@ -952,9 +897,7 @@ static int i82092aa_set_mem_map(unsigned sock, struct pccard_mem_map *mem)
 	if (!(mem->flags & MAP_ACTIVE))
 		return 0;
 
-	if (sockets[sock].type == IS_PD6729)  {
-		;	/* PD6729 accepts high byte */	
-	} else if ( (mem->card_start > 0x3ffffff) || (mem->sys_start > mem->sys_stop) ||
+	if ( (mem->card_start > 0x3ffffff) || (mem->sys_start > mem->sys_stop) ||
 	     ((mem->sys_start >> 24) != membase) || ((mem->sys_stop >> 24) != membase) ||
 	     (mem->speed > 1000) ) {
 		leave("i82092aa_set_mem_map: invalid address / speed");
@@ -962,6 +905,7 @@ static int i82092aa_set_mem_map(unsigned sock, struct pccard_mem_map *mem)
 		return -EINVAL;
 	}
 	
+	                 
 	                 
 /* 	printk("set_mem_map: Setting map %i range to %x - %x on socket %i, speed is %i, active = %i \n",map, mem->sys_start,mem->sys_stop,sock,mem->speed,mem->flags & MAP_ACTIVE);  */
 
@@ -993,12 +937,6 @@ static int i82092aa_set_mem_map(unsigned sock, struct pccard_mem_map *mem)
 	
 	indirect_write16(sock,base+I365_W_STOP,i);
 	
-	if (sockets[sock].type == IS_PD6729)  {
-		/* Take care of high byte */
-		indirect_write(sock, PD67_EXT_INDEX, PD67_MEM_PAGE(map));
-		indirect_write16(sock, PD67_EXT_DATA, mem->sys_start >> 24);
-	}
-
 	/* card start */
 	
 	i = (((mem->card_start - mem->sys_start) >> 12) - (membase << 12)) & 0x3fff;
@@ -1011,9 +949,7 @@ static int i82092aa_set_mem_map(unsigned sock, struct pccard_mem_map *mem)
 /*		printk("requesting normal memory for socket %i\n",sock);*/
 	}
 	indirect_write16(sock,base+I365_W_OFF,i);
-	if (sockets[sock].type == IS_I82092) {
-		indirect_write(sock, I365_CPAGE, membase);
-	}
+	indirect_write(sock, I365_CPAGE, membase);
 
 	/* Enable the window if necessary */
 	indirect_setbit(sock, I365_ADDRWIN, I365_ENA_MEM(map));

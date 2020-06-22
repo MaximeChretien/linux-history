@@ -2,15 +2,16 @@
  *
  * Name:	skgepnmi.h
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.59 $
- * Date:	$Date: 2002/12/16 14:03:50 $
+ * Version:	$Revision: 1.61 $
+ * Date:	$Date: 2003/05/23 12:53:52 $
  * Purpose:	Defines for Private Network Management Interface
  *
  ****************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2001 SysKonnect GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 2002-2003 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -26,6 +27,16 @@
  * History:
  *
  *	$Log: skgepnmi.h,v $
+ *	Revision 1.61  2003/05/23 12:53:52  tschilli
+ *	Generic PNMI IOCTL subcommands added.
+ *	Function prototype SkPnmiGenIoctl() added.
+ *	OID_SKGE_BOARDLEVEL added.
+ *	Return value SK_PNMI_ERR_NOT_SUPPORTED added.
+ *	Editorial changes.
+ *	
+ *	Revision 1.60  2003/03/27 11:27:26  tschilli
+ *	Copyright messages changed.
+ *	
  *	Revision 1.59  2002/12/16 14:03:50  tschilli
  *	New defines for VCT added.
  *	
@@ -284,6 +295,7 @@
 #define SK_PNMI_ERR_UNKNOWN_OID		5
 #define SK_PNMI_ERR_UNKNOWN_INST	6
 #define SK_PNMI_ERR_UNKNOWN_NET 	7
+#define SK_PNMI_ERR_NOT_SUPPORTED	10
 
 
 /*
@@ -436,6 +448,8 @@
 #define OID_SKGE_SPEED_MODE				0xFF010171
 #define OID_SKGE_SPEED_STATUS			0xFF010172
 
+#define OID_SKGE_BOARDLEVEL				0xFF010180
+
 #define OID_SKGE_SENSOR_NUMBER			0xFF020100			
 #define OID_SKGE_SENSOR_INDEX			0xFF020101
 #define OID_SKGE_SENSOR_DESCR			0xFF020102
@@ -558,6 +572,11 @@
 #define OID_SKGE_VCT_SET			0xFF020201
 #define OID_SKGE_VCT_STATUS			0xFF020202
 
+#ifdef SK_DIAG_SUPPORT
+/* Defines for driver DIAG mode. */
+#define OID_SKGE_DIAG_MODE			0xFF020204
+#endif /* SK_DIAG_SUPPORT */
+
 
 /* VCT struct to store a backup copy of VCT data after a port reset. */
 typedef struct s_PnmiVct {
@@ -593,6 +612,17 @@ typedef struct s_PnmiVct {
 #define OID_SKGE_TRAP_RLMT_PORT_DOWN	522
 #define OID_SKGE_TRAP_RLMT_PORT_UP		523
 #define OID_SKGE_TRAP_RLMT_SEGMENTATION	524
+
+
+/*
+ * Generic PNMI IOCTL subcommand definitions.
+ */
+#define	SK_GET_SINGLE_VAR		1
+#define	SK_SET_SINGLE_VAR		2
+#define	SK_PRESET_SINGLE_VAR	3
+#define	SK_GET_FULL_MIB			4
+#define	SK_SET_FULL_MIB			5
+#define	SK_PRESET_FULL_MIB		6
 
 
 /*
@@ -1095,20 +1125,22 @@ typedef struct s_PnmiData {
 /*
  * Function prototypes
  */
-extern int SkPnmiInit(SK_AC *pAc, SK_IOC IoC, int level);
-extern int SkPnmiGetVar(SK_AC *pAc, SK_IOC IoC, SK_U32 Id, void* pBuf,
+extern int SkPnmiInit(SK_AC *pAC, SK_IOC IoC, int Level);
+extern int SkPnmiGetVar(SK_AC *pAC, SK_IOC IoC, SK_U32 Id, void* pBuf,
 	unsigned int* pLen, SK_U32 Instance, SK_U32 NetIndex);
-extern int SkPnmiPreSetVar(SK_AC *pAc, SK_IOC IoC, SK_U32 Id,
+extern int SkPnmiPreSetVar(SK_AC *pAC, SK_IOC IoC, SK_U32 Id,
 	void* pBuf, unsigned int *pLen, SK_U32 Instance, SK_U32 NetIndex);
-extern int SkPnmiSetVar(SK_AC *pAc, SK_IOC IoC, SK_U32 Id, void* pBuf,
+extern int SkPnmiSetVar(SK_AC *pAC, SK_IOC IoC, SK_U32 Id, void* pBuf,
 	unsigned int *pLen, SK_U32 Instance, SK_U32 NetIndex);
-extern int SkPnmiGetStruct(SK_AC *pAc, SK_IOC IoC, void* pBuf,
+extern int SkPnmiGetStruct(SK_AC *pAC, SK_IOC IoC, void* pBuf,
 	unsigned int *pLen, SK_U32 NetIndex);
-extern int SkPnmiPreSetStruct(SK_AC *pAc, SK_IOC IoC, void* pBuf,
+extern int SkPnmiPreSetStruct(SK_AC *pAC, SK_IOC IoC, void* pBuf,
 	unsigned int *pLen, SK_U32 NetIndex);
-extern int SkPnmiSetStruct(SK_AC *pAc, SK_IOC IoC, void* pBuf,
+extern int SkPnmiSetStruct(SK_AC *pAC, SK_IOC IoC, void* pBuf,
 	unsigned int *pLen, SK_U32 NetIndex);
-extern int SkPnmiEvent(SK_AC *pAc, SK_IOC IoC, SK_U32 Event,
+extern int SkPnmiEvent(SK_AC *pAC, SK_IOC IoC, SK_U32 Event,
 	SK_EVPARA Param);
+extern int SkPnmiGenIoctl(SK_AC *pAC, SK_IOC IoC, void * pBuf,
+	unsigned int * pLen, SK_U32 NetIndex);
 
 #endif

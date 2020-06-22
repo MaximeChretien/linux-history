@@ -77,6 +77,9 @@ ifeq ($(CONFIG_USB_OHCI),y)
 	obj-y += host/usb-ohci.o
 endif
 
+subdir-$(CONFIG_USB_SL811HS_ALT)	+= host
+subdir-$(CONFIG_USB_SL811HS)	+= host
+
 obj-$(CONFIG_USB_MOUSE)		+= usbmouse.o
 obj-$(CONFIG_USB_HID)		+= hid.o
 obj-$(CONFIG_USB_KBD)		+= usbkbd.o
@@ -100,6 +103,7 @@ obj-$(CONFIG_USB_USS720)	+= uss720.o
 obj-$(CONFIG_USB_DABUSB)	+= dabusb.o
 obj-$(CONFIG_USB_VICAM)		+= vicam.o usbvideo.o
 obj-$(CONFIG_USB_OV511)		+= ov511.o
+obj-$(CONFIG_USB_W9968CF)	+= w9968cf.o
 obj-$(CONFIG_USB_SE401)		+= se401.o
 obj-$(CONFIG_USB_STV680)	+= stv680.o
 obj-$(CONFIG_USB_PEGASUS)	+= pegasus.o

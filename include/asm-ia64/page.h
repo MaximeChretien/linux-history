@@ -30,6 +30,8 @@
 #define PAGE_MASK		(~(PAGE_SIZE - 1))
 #define PAGE_ALIGN(addr)	(((addr) + PAGE_SIZE - 1) & PAGE_MASK)
 
+#define RGN_MAP_LIMIT	((1UL << (4*PAGE_SHIFT - 12)) - PAGE_SIZE)	/* per region addr limit */
+
 #ifdef __ASSEMBLY__
 # define __pa(x)		((x) - PAGE_OFFSET)
 # define __va(x)		((x) + PAGE_OFFSET)
@@ -52,19 +54,8 @@ extern void copy_page (void *to, void *from);
  */
 #define MAP_NR_DENSE(addr)	(((unsigned long) (addr) - PAGE_OFFSET) >> PAGE_SHIFT)
 
-#ifdef CONFIG_IA64_GENERIC
-# include <asm/machvec.h>
-# define virt_to_page(kaddr)	(mem_map + platform_map_nr(kaddr))
-# define page_to_phys(page)	((page - mem_map) << PAGE_SHIFT)
-#elif defined (CONFIG_IA64_SGI_SN1)
-# ifndef CONFIG_DISCONTIGMEM
-#  define virt_to_page(kaddr)	(mem_map + MAP_NR_DENSE(kaddr))
-#  define page_to_phys(page)	XXX fix me
-# endif
-#else
-# define virt_to_page(kaddr)	(mem_map + MAP_NR_DENSE(kaddr))
-# define page_to_phys(page)	((page - mem_map) << PAGE_SHIFT)
-#endif
+#define virt_to_page(kaddr)	(mem_map + MAP_NR_DENSE(kaddr))
+#define page_to_phys(page)	((page - mem_map) << PAGE_SHIFT)
 
 struct page;
 extern int ia64_page_valid (struct page *);

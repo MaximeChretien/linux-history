@@ -27,6 +27,9 @@
 #include <asm/sn/klconfig.h>
 #include <asm/sn/sn2/shub_mmr.h>
 #include <asm/sn/sn_cpuid.h>
+#include <asm/sn/pci/pcibr.h>
+#include <asm/sn/pci/pcibr_private.h>
+#include <asm/sn/pci/bridge.h>
 
 /* ARGSUSED */
 void
@@ -37,11 +40,15 @@ hub_intr_init(vertex_hdl_t hubv)
 xwidgetnum_t
 hub_widget_id(nasid_t nasid)
 {
-        hubii_wcr_t     ii_wcr; /* the control status register */
-        
-        ii_wcr.wcr_reg_value = REMOTE_HUB_L(nasid,IIO_WCR);
-        
-        return ii_wcr.wcr_fields_s.wcr_widget_id;
+
+	if (!(nasid & 1)) {
+        	hubii_wcr_t     ii_wcr; /* the control status register */
+        	ii_wcr.wcr_reg_value = REMOTE_HUB_L(nasid,IIO_WCR);
+        	return ii_wcr.wcr_fields_s.wcr_widget_id;
+	} else {
+		/* ICE does not have widget id. */
+		return(-1);
+	}
 }
 
 static hub_intr_t
@@ -79,7 +86,7 @@ do_hub_intr_alloc(vertex_hdl_t dev,
 		xtalk_addr = SH_II_INT0 | ((unsigned long)nasid << 36) | (1UL << 47);
 	}
 
-	intr_hdl = snia_kmem_alloc_node(sizeof(struct hub_intr_s), KM_NOSLEEP, cnode);
+	intr_hdl = snia_kmem_alloc_node(sizeof(struct hub_intr_s), cnode);
 	ASSERT_ALWAYS(intr_hdl);
 
 	xtalk_info = &intr_hdl->i_xtalk_info;
@@ -188,3 +195,57 @@ hub_intr_disconnect(hub_intr_t intr_hdl)
 	ASSERT(rv == 0);
 	intr_hdl->i_flags &= ~HUB_INTR_IS_CONNECTED;
 }
+
+/* 
+ * Redirect an interrupt to another cpu.
+ */
+
+void
+sn_shub_redirect_intr(pcibr_intr_t intr, unsigned long cpu) {
+	unsigned long bit;
+	int cpuphys, slice;
+	nasid_t nasid;
+	unsigned long xtalk_addr;
+	bridge_t	*bridge = intr->bi_soft->bs_base;
+	picreg_t	int_enable;
+	picreg_t	host_addr;
+	int		irq;
+
+	cpuphys = cpu_physical_id(cpu);
+	slice = cpu_physical_id_to_slice(cpuphys);
+	nasid = cpu_physical_id_to_nasid(cpuphys);
+
+	if (slice) {    
+		xtalk_addr = SH_II_INT1 | ((unsigned long)nasid << 36) | (1UL << 47);
+	} else {
+		xtalk_addr = SH_II_INT0 | ((unsigned long)nasid << 36) | (1UL << 47);
+	}
+
+	for (bit = 0; bit < 8; bit++) {
+		if (intr->bi_ibits & (1 << bit) ) {
+			/* Disable interrupts. */
+			int_enable = bridge->p_int_enable_64;
+			int_enable &= ~bit;
+			bridge->p_int_enable_64 = int_enable;
+			/* Reset Host address (Interrupt destination) */
+			host_addr = bridge->p_int_addr_64[bit];
+			host_addr &= ~((1UL << 48) - 1);
+			host_addr |= xtalk_addr;
+			bridge->p_int_addr_64[bit] = host_addr;
+			/* Enable interrupt */
+			int_enable |= bit;
+			bridge->p_int_enable_64 = int_enable;
+			/* Force an interrupt, just in case. */
+			bridge->b_force_pin[bit].intr = 1;
+		}
+	}
+	irq = intr->bi_irq;
+	if (pdacpu(cpu).sn_first_irq == 0 || pdacpu(cpu).sn_first_irq > irq) {
+		pdacpu(cpu).sn_first_irq = irq;
+	}
+	if (pdacpu(cpu).sn_last_irq < irq) {
+		pdacpu(cpu).sn_last_irq = irq;
+	}
+	intr->bi_cpu = (int)cpu;
+}
+

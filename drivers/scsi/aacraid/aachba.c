@@ -221,9 +221,7 @@ static void get_sd_devname(int disknum, char *buffer);
 static unsigned long aac_build_sg(Scsi_Cmnd* scsicmd, struct sgmap* sgmap);
 static unsigned long aac_build_sg64(Scsi_Cmnd* scsicmd, struct sgmap64* psg);
 static int aac_send_srb_fib(Scsi_Cmnd* scsicmd);
-#ifdef AAC_DETAILED_STATUS_INFO
 static char *aac_get_status_string(u32 status);
-#endif
 
 /*
  *	Non dasd selection is handled entirely in aachba now
@@ -231,8 +229,11 @@ static char *aac_get_status_string(u32 status);
  
 MODULE_PARM(nondasd, "i");
 MODULE_PARM_DESC(nondasd, "Control scanning of hba for nondasd devices. 0=off, 1=on");
+MODULE_PARM(paemode, "i");
+MODULE_PARM_DESC(paemode, "Control whether dma addressing is using PAE. 0=off, 1=on");
 
 static int nondasd = -1;
+static int paemode = -1;
 
 /**
  *	aac_get_containers	-	list containers
@@ -292,6 +293,64 @@ int aac_get_containers(struct aac_dev *dev)
 		if ((index + 1) >= le32_to_cpu(dresp->count))
 			break;
 	}
+	fib_free(fibptr);
+	fsa_dev[instance] = fsa_dev_ptr;
+	return status;
+}
+
+/**
+ *	aac_get_container_name	-	get container name
+ */
+static int aac_get_container_name(struct aac_dev *dev, int cid, char * pid)
+{
+	struct fsa_scsi_hba *fsa_dev_ptr;
+	int status = 0;
+	struct aac_get_name *dinfo;
+	struct aac_get_name_resp *dresp;
+	struct fib * fibptr;
+	unsigned instance;
+
+	fsa_dev_ptr = &(dev->fsa_dev);
+	instance = dev->scsi_host_ptr->unique_id;
+
+	if (!(fibptr = fib_alloc(dev)))
+		return -ENOMEM;
+
+	fib_init(fibptr);
+	dinfo = (struct aac_get_name *) fib_data(fibptr);
+
+	dinfo->command = cpu_to_le32(VM_ContainerConfig);
+	dinfo->type = cpu_to_le32(CT_READ_NAME);
+	dinfo->cid = cpu_to_le32(cid);
+	dinfo->count = cpu_to_le32(sizeof(((struct aac_get_name_resp *)NULL)->data));
+
+	status = fib_send(ContainerCommand,
+			    fibptr,
+			    sizeof (struct aac_get_name),
+			    FsaNormal,
+			    1, 1,
+			    NULL, NULL);
+	if (status < 0 ) {
+		printk(KERN_WARNING "aac_get_container_name: SendFIB failed.\n");
+	} else {
+		dresp = (struct aac_get_name_resp *)fib_data(fibptr);
+
+		status = (le32_to_cpu(dresp->status) != CT_OK)
+		      || (dresp->data[0] == '\0');
+		if (status == 0) {
+			char * sp = dresp->data;
+			char * dp = pid;
+			do {
+				if ((*sp == '\0')
+				 || ((dp - pid) >= sizeof(((struct aac_get_name_resp *)NULL)->data))) {
+					*dp = ' ';
+				} else {
+					*dp = *sp++;
+				}
+			} while (++dp < &pid[sizeof(((struct inquiry_data *)NULL)->inqd_pid)]);
+		}
+	}
+	fib_complete(fibptr);
 	fib_free(fibptr);
 	fsa_dev[instance] = fsa_dev_ptr;
 	return status;
@@ -569,8 +628,10 @@ int aac_get_adapter_info(struct aac_dev* dev)
 	if( (sizeof(dma_addr_t) > 4) && (dev->adapter_info.options & AAC_OPT_SGMAP_HOST64)){
 		dev->pae_support = 1;
 	}
-	/* TODO - dmb temporary until fw can set this bit  */
-	dev->pae_support = (BITS_PER_LONG >= 64);
+
+	if(paemode != -1)
+		dev->pae_support = (paemode != 0);
+
 	if(dev->pae_support != 0) 
 	{
 		printk(KERN_INFO "%s%d: 64 Bit PAE enabled\n", dev->name, dev->id);
@@ -997,7 +1058,6 @@ int aac_scsi_cmd(Scsi_Cmnd * scsicmd)
 		memset(inq_data_ptr, 0, sizeof (struct inquiry_data));
 
 		inq_data_ptr->inqd_ver = 2;	/* claim compliance to SCSI-2 */
-		inq_data_ptr->inqd_dtq = 0x80;	/* set RMB bit to one indicating that the medium is removable */
 		inq_data_ptr->inqd_rdf = 2;	/* A response data format value of two indicates that the data shall be in the format specified in SCSI-2 */
 		inq_data_ptr->inqd_len = 31;
 		/*Format for "pad2" is  RelAdr | WBus32 | WBus16 |  Sync  | Linked |Reserved| CmdQue | SftRe */
@@ -1006,11 +1066,14 @@ int aac_scsi_cmd(Scsi_Cmnd * scsicmd)
 		 *	Set the Vendor, Product, and Revision Level
 		 *	see: <vendor>.c i.e. aac.c
 		 */
-		setinqstr(cardtype, (void *) (inq_data_ptr->inqd_vid), fsa_dev_ptr->type[cid]);
-		if (scsicmd->target == scsicmd->host->this_id)
+		if (scsicmd->target == scsicmd->host->this_id) {
+			setinqstr(cardtype, (void *) (inq_data_ptr->inqd_vid), (sizeof(container_types)/sizeof(char *)));
 			inq_data_ptr->inqd_pdt = INQD_PDT_PROC;	/* Processor device */
-		else
+		} else {
+			setinqstr(cardtype, (void *) (inq_data_ptr->inqd_vid), fsa_dev_ptr->type[cid]);
+			aac_get_container_name(dev, cid, inq_data_ptr->inqd_pid);
 			inq_data_ptr->inqd_pdt = INQD_PDT_DA;	/* Direct/random access device */
+		}
 		scsicmd->result = DID_OK << 16 | COMMAND_COMPLETE << 8 | GOOD;
 		__aac_io_done(scsicmd);
 		return 0;
@@ -1123,7 +1186,7 @@ int aac_scsi_cmd(Scsi_Cmnd * scsicmd)
 				SENKEY_ILLEGAL, SENCODE_INVALID_COMMAND,
 			ASENCODE_INVALID_COMMAND, 0, 0, 0, 0);
 			__aac_io_done(scsicmd);
-			return -1;
+			return 0;
 	}
 }
 
@@ -1425,9 +1488,7 @@ static void aac_srb_callback(void *context, struct fib * fibptr)
 	case SRB_STATUS_FORCE_ABORT:
 	case SRB_STATUS_DOMAIN_VALIDATION_FAIL:
 	default:
-#ifdef AAC_DETAILED_STATUS_INFO
 		printk("aacraid: SRB ERROR(%u) %s scsi cmd 0x%x - scsi status 0x%x\n",le32_to_cpu(srbreply->srb_status&0x3f),aac_get_status_string(le32_to_cpu(srbreply->srb_status)), scsicmd->cmnd[0], le32_to_cpu(srbreply->scsi_status) );
-#endif
 		scsicmd->result = DID_ERROR << 16 | COMMAND_COMPLETE << 8;
 		break;
 	}
@@ -1525,7 +1586,7 @@ static int aac_send_srb_fib(Scsi_Cmnd* scsicmd)
 		/*
 		 *	Build Scatter/Gather list
 		 */
-		fibsize = sizeof (struct aac_srb) + (((srbcmd->sg.count & 0xff) - 1) * sizeof (struct sgentry64));
+		fibsize = sizeof (struct aac_srb) - sizeof (struct sgentry) + ((srbcmd->sg.count & 0xff) * sizeof (struct sgentry64));
 
 		/*
 		 *	Now send the Fib to the adapter
@@ -1686,8 +1747,6 @@ static unsigned long aac_build_sg64(Scsi_Cmnd* scsicmd, struct sgmap64* psg)
 	return byte_count;
 }
 
-#ifdef AAC_DETAILED_STATUS_INFO
-
 struct aac_srb_status_info {
 	u32	status;
 	char	*str;
@@ -1742,4 +1801,3 @@ char *aac_get_status_string(u32 status)
 	return "Bad Status Code";
 }
 
-#endif

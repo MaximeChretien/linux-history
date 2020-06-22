@@ -1,16 +1,17 @@
 /******************************************************************************
  *
  * Name:	skdebug.h
- * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.12 $
- * Date:	$Date: 2002/07/15 15:37:13 $
+ * Project:	Gigabit Ethernet Adapters, Common Modules
+ * Version:	$Revision: 1.14 $
+ * Date:	$Date: 2003/05/13 17:26:00 $
  * Purpose:	SK specific DEBUG support
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect.
+ *	(C)Copyright 2002-2003 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -25,6 +26,12 @@
  *
  * History:
  *	$Log: skdebug.h,v $
+ *	Revision 1.14  2003/05/13 17:26:00  mkarl
+ *	Editorial changes.
+ *	
+ *	Revision 1.13  2003/03/31 07:16:39  mkarl
+ *	Corrected Copyright.
+ *	
  *	Revision 1.12  2002/07/15 15:37:13  rschmidt
  *	Power Management support
  *	Editorial changes

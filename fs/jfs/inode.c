@@ -149,19 +149,23 @@ int jfs_commit_inode(struct inode *inode, int wait)
 	rc = txCommit(tid, 1, &inode, wait ? COMMIT_SYNC : 0);
 	txEnd(tid);
 	up(&JFS_IP(inode)->commit_sem);
-	return -rc;
+	return rc;
 }
 
 void jfs_write_inode(struct inode *inode, int wait)
 {
+	if (test_cflag(COMMIT_Nolink, inode))
+		return;
 	/*
 	 * If COMMIT_DIRTY is not set, the inode isn't really dirty.
 	 * It has been committed since the last change, but was still
-	 * on the dirty inode list
+	 * on the dirty inode list.
 	 */
-	if (test_cflag(COMMIT_Nolink, inode) ||
-	    !test_cflag(COMMIT_Dirty, inode))
+	 if (!test_cflag(COMMIT_Dirty, inode)) {
+		/* Make sure committed changes hit the disk */
+		jfs_flush_journal(JFS_SBI(inode->i_sb)->log, wait);
 		return;
+	 }
 
 	if (jfs_commit_inode(inode, wait)) {
 		jfs_err("jfs_write_inode: jfs_commit_inode failed!");
@@ -303,7 +307,7 @@ static int jfs_get_block(struct inode *ip, long lblock,
 		else
 			IREAD_UNLOCK(ip);
 	}
-	return -rc;
+	return rc;
 }
 
 static int jfs_writepage(struct page *page)

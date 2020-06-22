@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: nodelist.h,v 1.46.2.4 2003/02/24 21:49:33 dwmw2 Exp $
+ * $Id: nodelist.h,v 1.46.2.5 2003/11/02 13:54:20 dwmw2 Exp $
  *
  */
 
@@ -232,13 +232,13 @@ struct jffs2_eraseblock
 
 #define PAD(x) (((x)+3)&~3)
 
-static inline int jffs2_raw_ref_to_inum(struct jffs2_raw_node_ref *raw)
+static inline struct jffs2_inode_cache *jffs2_raw_ref_to_ic(struct jffs2_raw_node_ref *raw)
 {
 	while(raw->next_in_ino) {
 		raw = raw->next_in_ino;
 	}
 
-	return ((struct jffs2_inode_cache *)raw)->ino;
+	return ((struct jffs2_inode_cache *)raw);
 }
 
 /* nodelist.c */

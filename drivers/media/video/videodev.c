@@ -62,6 +62,20 @@ LIST_HEAD(videodev_proc_list);
 
 #endif /* CONFIG_PROC_FS && CONFIG_VIDEO_PROC_FS */
 
+struct video_device *video_device_alloc(void)
+{
+	struct video_device *vfd;
+	vfd = kmalloc(sizeof(*vfd),GFP_KERNEL);
+	if (NULL == vfd)
+		return NULL;
+	memset(vfd,0,sizeof(*vfd));
+	return vfd;
+}
+
+void video_device_release(struct video_device *vfd)
+{
+	kfree(vfd);
+}
 
 /*
  *	Read will do some smarts later on. Buffer pin etc.
@@ -611,6 +625,8 @@ void video_unregister_device(struct video_device *vfd)
 #endif
 
 	devfs_unregister (vfd->devfs_handle);
+	if (vfd->release)
+		vfd->release(vfd);
 	video_device[vfd->minor]=NULL;
 	MOD_DEC_USE_COUNT;
 	up(&videodev_lock);
@@ -661,6 +677,8 @@ static void __exit videodev_exit(void)
 module_init(videodev_init)
 module_exit(videodev_exit)
 
+EXPORT_SYMBOL(video_device_alloc);
+EXPORT_SYMBOL(video_device_release);
 EXPORT_SYMBOL(video_register_device);
 EXPORT_SYMBOL(video_unregister_device);
 EXPORT_SYMBOL(video_devdata);

@@ -1,5 +1,5 @@
 /*
- *   Copyright (c) International Business Machines  Corp., 2000-2003
+ *   Copyright (C) International Business Machines  Corp., 2000-2003
  *
  *   This program is free software;  you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -184,7 +184,7 @@ int jfs_extendfs(struct super_block *sb, s64 newLVSize, int newLogSize)
 
 	/* file system cannot be shrinked */
 	if (newFSSize < bmp->db_mapsize) {
-		rc = EINVAL;
+		rc = -EINVAL;
 		goto out;
 	}
 
@@ -317,8 +317,8 @@ int jfs_extendfs(struct super_block *sb, s64 newLVSize, int newLogSize)
 	t64 = dbMapFileSizeToMapSize(ipbmap);
 	if (mapSize > t64) {
 		printk(KERN_ERR "jfs_extendfs: mapSize (0x%Lx) > t64 (0x%Lx)\n",
-		       (long long)mapSize, (long long)t64);
-		rc = EIO;
+		       (long long) mapSize, (long long) t64);
+		rc = -EIO;
 		goto error_out;
 	}
 	nblocks = min(t64 - mapSize, XSize);
@@ -526,7 +526,7 @@ int jfs_extendfs(struct super_block *sb, s64 newLVSize, int newLogSize)
 	goto resume;
 
       error_out:
-	updateSuper(sb, FM_DIRTY);
+	jfs_error(sb, "jfs_extendfs");
 
       resume:
 	/*

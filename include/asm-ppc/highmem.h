@@ -41,13 +41,13 @@ extern void kmap_init(void) __init;
  * easily, subsequent pte tables have to be allocated in one physical
  * chunk of RAM.
  */
-#define PKMAP_BASE (0xfe000000UL)
-#define LAST_PKMAP 1024
+#define PKMAP_BASE	CONFIG_HIGHMEM_START
+#define LAST_PKMAP	PTRS_PER_PTE
 #define LAST_PKMAP_MASK (LAST_PKMAP-1)
 #define PKMAP_NR(virt)  ((virt-PKMAP_BASE) >> PAGE_SHIFT)
 #define PKMAP_ADDR(nr)  (PKMAP_BASE + ((nr) << PAGE_SHIFT))
 
-#define KMAP_FIX_BEGIN	(0xfe400000UL)
+#define KMAP_FIX_BEGIN	(PKMAP_BASE + 0x00400000UL)
 
 extern void *kmap_high(struct page *page, int nonblock);
 extern void kunmap_high(struct page *page);

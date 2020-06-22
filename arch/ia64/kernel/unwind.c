@@ -1,4 +1,7 @@
 /*
+ * Copyright (C) 2003 Fenghua Yu <fenghua.yu@intel.com>
+ * 	- Change pt_regs_off() to make it less dependant on pt_regs structure.
+ *
  * Copyright (C) 1999-2003 Hewlett-Packard Co
  *	David Mosberger-Tang <davidm@hpl.hp.com>
  */
@@ -209,7 +212,11 @@ static struct {
 #endif
 };
 
-
+#define OFF_CASE(reg, reg_num) 					\
+	case reg:						\
+		off=struct_offset(struct pt_regs, reg_num);	\
+		break;
+
 /* Unwind accessors.  */
 
 /*
@@ -220,16 +227,40 @@ pt_regs_off (unsigned long reg)
 {
 	unsigned long off =0;
 
-	if (reg >= 1 && reg <= 3)
-		off = struct_offset(struct pt_regs, r1) + 8*(reg - 1);
-	else if (reg <= 11)
-		off = struct_offset(struct pt_regs, r8) + 8*(reg - 8);
-	else if (reg <= 15)
-		off = struct_offset(struct pt_regs, r12) + 8*(reg - 12);
-	else if (reg <= 31)
-		off = struct_offset(struct pt_regs, r16) + 8*(reg - 16);
-	else
-		UNW_DPRINT(0, "unwind.%s: bad scratch reg r%lu\n", __FUNCTION__, reg);
+	switch (reg)
+	{
+		OFF_CASE(1,r1)
+		OFF_CASE(2,r2)
+		OFF_CASE(3,r3)
+		OFF_CASE(8,r8)
+		OFF_CASE(9,r9)
+		OFF_CASE(10,r10)
+		OFF_CASE(11,r11)
+		OFF_CASE(12,r12)
+		OFF_CASE(13,r13)
+		OFF_CASE(14,r14)
+		OFF_CASE(15,r15)
+		OFF_CASE(16,r16)
+		OFF_CASE(17,r17)
+		OFF_CASE(18,r18)
+		OFF_CASE(19,r19)
+		OFF_CASE(20,r20)
+		OFF_CASE(21,r21)
+		OFF_CASE(22,r22)
+		OFF_CASE(23,r23)
+		OFF_CASE(24,r24)
+		OFF_CASE(25,r25)
+		OFF_CASE(26,r26)
+		OFF_CASE(27,r27)
+		OFF_CASE(28,r28)
+		OFF_CASE(29,r29)
+		OFF_CASE(30,r30)
+		OFF_CASE(31,r31)
+		default:
+			UNW_DPRINT(0, "unwind.%s: bad scratch reg r%lu\n", __FUNCTION__, reg);
+			break;
+	}
+
 	return off;
 }
 
@@ -416,12 +447,12 @@ unw_access_fr (struct unw_frame_info *info, int regnum, struct ia64_fpreg *val, 
 		if (!addr)
 			addr = &info->sw->f2 + (regnum - 2);
 	} else if (regnum <= 15) {
-		if (regnum <= 9) {
+		if (regnum <= 11) {
 			pt = get_scratch_regs(info);
 			addr = &pt->f6  + (regnum - 6);
 		}
 		else
-			addr = &info->sw->f10 + (regnum - 10);
+			addr = &info->sw->f12 + (regnum - 12);
 	} else if (regnum <= 31) {
 		addr = info->fr_loc[regnum - 16];
 		if (!addr)
@@ -510,6 +541,16 @@ unw_access_ar (struct unw_frame_info *info, int regnum, unsigned long *val, int 
 	      case UNW_AR_CCV:
 		pt = get_scratch_regs(info);
 		addr = &pt->ar_ccv;
+		break;
+
+	      case UNW_AR_CSD:
+		pt = get_scratch_regs(info);
+		addr = &pt->ar_csd;
+		break;
+
+	      case UNW_AR_SSD:
+		pt = get_scratch_regs(info);
+		addr = &pt->ar_ssd;
 		break;
 
 	      default:
@@ -685,7 +726,7 @@ finish_prologue (struct unw_state_record *sr)
 	 * First, resolve implicit register save locations (see Section "11.4.2.3 Rules
 	 * for Using Unwind Descriptors", rule 3):
 	 */
-	for (i = 0; i < (int) sizeof(unw.save_order)/sizeof(unw.save_order[0]); ++i) {
+	for (i = 0; i < (int) ARRAY_SIZE(unw.save_order); ++i) {
 		reg = sr->curr.reg + unw.save_order[i];
 		if (reg->where == UNW_WHERE_GR_SAVE) {
 			reg->where = UNW_WHERE_GR;
@@ -701,7 +742,7 @@ finish_prologue (struct unw_state_record *sr)
 	 */
 	if (sr->imask) {
 		unsigned char kind, mask = 0, *cp = sr->imask;
-		unsigned long t;
+		int t;
 		static const unsigned char limit[3] = {
 			UNW_REG_F31, UNW_REG_R7, UNW_REG_B5
 		};
@@ -1379,7 +1420,7 @@ compile_reg (struct unw_state_record *sr, int i, struct unw_script *script)
 			val = unw.preg_index[UNW_REG_F16 + (rval - 16)];
 		else {
 			opc = UNW_INSN_MOVE_SCRATCH;
-			if (rval <= 9)
+			if (rval <= 11)
 				val = struct_offset(struct pt_regs, f6) + 16*(rval - 6);
 			else
 				UNW_DPRINT(0, "unwind.%s: kernel may not touch f%lu\n",
@@ -1731,8 +1772,7 @@ run_script (struct unw_script *script, struct unw_frame_info *state)
   lazy_init:
 	off = unw.sw_off[val];
 	s[val] = (unsigned long) state->sw + off;
-	if (off >= struct_offset(struct switch_stack, r4)
-	    && off <= struct_offset(struct switch_stack, r7))
+	if (off >= struct_offset(struct switch_stack, r4) && off <= struct_offset(struct switch_stack, r7))
 		/*
 		 * We're initializing a general register: init NaT info, too.  Note that
 		 * the offset is a multiple of 8 which gives us the 3 bits needed for
@@ -1934,7 +1974,7 @@ init_frame_info (struct unw_frame_info *info, struct task_struct *t,
 		   "  pr     0x%lx\n"
 		   "  sw     0x%lx\n"
 		   "  sp     0x%lx\n",
-		   __FUNCTION__, (unsigned long) task, rbslimit, rbstop, stktop, stklimit,
+		   __FUNCTION__, (unsigned long) t, rbslimit, rbstop, stktop, stklimit,
 		   info->pr, (unsigned long) info->sw, info->sp);
 	STAT(unw.stat.api.init_time += ia64_get_itc() - start; local_irq_restore(flags));
 }
@@ -1955,7 +1995,7 @@ unw_init_from_interruption (struct unw_frame_info *info, struct task_struct *t,
 		   "  bsp    0x%lx\n"
 		   "  sof    0x%lx\n"
 		   "  ip     0x%lx\n",
-		   info->bsp, sof, info->ip);
+		   __FUNCTION__, info->bsp, sof, info->ip);
 	find_save_locs(info);
 }
 
@@ -1973,7 +2013,7 @@ unw_init_frame_info (struct unw_frame_info *info, struct task_struct *t, struct 
 		   "  bsp    0x%lx\n"
 		   "  sol    0x%lx\n"
 		   "  ip     0x%lx\n",
-		   info->bsp, sol, info->ip);
+		   __FUNCTION__, info->bsp, sol, info->ip);
 	find_save_locs(info);
 }
 

@@ -63,6 +63,26 @@
 #define X86_FEATURE_CYRIX_ARR	(3*32+ 2) /* Cyrix ARRs (= MTRRs) */
 #define X86_FEATURE_CENTAUR_MCR	(3*32+ 3) /* Centaur MCRs (= MTRRs) */
 
+#define cpu_has(c, bit)                test_bit(bit, (c)->x86_capability)
+#define boot_cpu_has(bit)      test_bit(bit, boot_cpu_data.x86_capability)
+
+#define cpu_has_pge 1
+#define cpu_has_pse 1
+#define cpu_has_pae 1
+#define cpu_has_tsc 1
+#define cpu_has_de 1
+#define cpu_has_vme 1
+#define cpu_has_fxsr 1
+#define cpu_has_xmm 1
+#define cpu_has_apic 		boot_cpu_has(X86_FEATURE_APIC)
+#define cpu_has_ht 0 
+#define cpu_has_mp             boot_cpu_has(X86_FEATURE_MP)
+#define cpu_has_k6_mtrr 0
+#define cpu_has_cyrix_arr 0
+#define cpu_has_centaur_mcr 0
+#define cpu_has_mmx 0
+#define cpu_has_fpu 1
+
 #endif /* __ASM_X8664_CPUFEATURE_H */
 
 /* 

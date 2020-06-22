@@ -13,6 +13,7 @@
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <asm/sn/sgi.h>
+#include <asm/delay.h>
 #include <asm/sn/intr.h>
 #include <asm/sn/sn2/sn_private.h>
 #include <asm/sn/sn2/shubio.h>
@@ -27,6 +28,8 @@
 /* #define DEBUG		1 */
 /* #define XBOW_DEBUG	1 */
 /* #define DEBUG_ERROR	1 */
+
+#define kdebug 0
 
 
 /*
@@ -311,12 +314,12 @@ xbow_attach(vertex_hdl_t conn)
 #endif /* XBRIDGE_REGS_SIM */
     rev = XWIDGET_PART_REV_NUM(id);
 
-    mutex_spinlock_init(&soft->xbow_perf_lock);
+    spin_lock_init(&soft->xbow_perf_lock);
     soft->xbow_perfcnt[0].xp_perf_reg = &xbow->xb_perf_ctr_a;
     soft->xbow_perfcnt[1].xp_perf_reg = &xbow->xb_perf_ctr_b;
 
     /* Initialization for GBR bw allocation */
-    mutex_spinlock_init(&soft->xbow_bw_alloc_lock);
+    spin_lock_init(&soft->xbow_bw_alloc_lock);
 
 #define	XBOW_8_BIT_PORT_BW_MAX		(400 * 1000 * 1000)	/* 400 MB/s */
 #define XBOW_16_BIT_PORT_BW_MAX		(800 * 1000 * 1000)	/* 800 MB/s */
@@ -419,43 +422,6 @@ xbow_attach(vertex_hdl_t conn)
     return 0;				/* attach successful */
 }
 
-/* This contains special-case code for grio. There are plans to make
- * this general sometime in the future, but till then this should
- * be good enough.
- */
-xwidgetnum_t
-xbow_widget_num_get(vertex_hdl_t dev)
-{
-	vertex_hdl_t	tdev;
-	char		devname[MAXDEVNAME];
-	xwidget_info_t	xwidget_info;
-	int		i;
-
-	vertex_to_name(dev, devname, MAXDEVNAME);
-
-	/* If this is a pci controller vertex, traverse up using
-	 * the ".." links to get to the widget.
-	 */
-	if (strstr(devname, EDGE_LBL_PCI) &&
-			strstr(devname, EDGE_LBL_CONTROLLER)) {
-		tdev = dev;
-		for (i=0; i< 2; i++) {
-			if (hwgraph_edge_get(tdev,
-				HWGRAPH_EDGELBL_DOTDOT, &tdev) !=
-					GRAPH_SUCCESS)
-				return XWIDGET_NONE;
-		}
-
-		if ((xwidget_info = xwidget_info_chk(tdev)) != NULL) {
-			return (xwidget_info_id_get(xwidget_info));
-		} else {
-			return XWIDGET_NONE;
-		}
-	}
-
-	return XWIDGET_NONE;
-}
-
 /*
  * xbow_widget_present: See if a device is present
  * on the specified port of this crossbow.
@@ -475,6 +441,10 @@ xbow_widget_present(xbow_t *xbow, int port)
 		/* WAR: port 0xf on PIC is missing present bit */
 		if (XBOW_WAR_ENABLED(PV854827, xbow->xb_wid_id) &&
 					IS_PIC_XBOW(xbow->xb_wid_id) && port==0xf) {
+			return 1;
+		}
+		else if ( IS_PIC_XBOW(xbow->xb_wid_id) && port==0xb ) {
+			/* for opus the present bit doesn't work on port 0xb */
 			return 1;
 		}
 		return xbow->xb_link(port).link_aux_status & XB_AUX_STAT_PRESENT;
@@ -805,7 +775,7 @@ xbow_errintr_handler(int irq, void *arg, struct pt_regs *ep)
 	XEM_ADD_VAR(wid_err_upper);
 	XEM_ADD_VAR(wid_err_lower);
 	XEM_ADD_VAR(wid_err_addr);
-	PRINT_PANIC("XIO Bus Error");
+	panic("XIO Bus Error");
     }
 }
 
@@ -958,8 +928,9 @@ xbow_error_handler(
     if (XBOW_WAR_ENABLED(PV854827, xbow->xb_wid_id) &&
 		IS_PIC_XBOW(xbow->xb_wid_id) && (port==0xf))
 		;
-    else
-    if (!(link_aux_status & XB_AUX_STAT_PRESENT)) {
+    else if (IS_PIC_XBOW(xbow->xb_wid_id) && (port==0xb))
+		;	/* WAR for opus this is missing on 0xb */
+    else if (!(link_aux_status & XB_AUX_STAT_PRESENT)) {
 	/* nobody connected. */
 	if (mode == MODE_DEVPROBE)
 	    return IOERROR_HANDLED;
@@ -1094,14 +1065,13 @@ xbow_update_perf_counters(vertex_hdl_t vhdl)
     xbow_perf_t            *xbow_perf = xbow_soft->xbow_perfcnt;
     xbow_perf_link_t       *xbow_plink = xbow_soft->xbow_perflink;
     xbow_perfcount_t        perf_reg;
-    unsigned long           s;
     int                     link, i;
 
     for (i = 0; i < XBOW_PERF_COUNTERS; i++, xbow_perf++) {
 	if (xbow_perf->xp_mode == XBOW_MONITOR_NONE)
 	    continue;
 
-	s = mutex_spinlock(&xbow_soft->xbow_perf_lock);
+	spin_lock(&xbow_soft->xbow_perf_lock);
 
 	perf_reg.xb_counter_val = *(xbowreg_t *) xbow_perf->xp_perf_reg;
 
@@ -1111,7 +1081,7 @@ xbow_update_perf_counters(vertex_hdl_t vhdl)
 	    ((perf_reg.xb_perf.count - xbow_perf->xp_current) & XBOW_COUNTER_MASK);
 	xbow_perf->xp_current = perf_reg.xb_perf.count;
 
-	mutex_spinunlock(&xbow_soft->xbow_perf_lock, s);
+	spin_unlock(&xbow_soft->xbow_perf_lock);
     }
 }
 
@@ -1132,7 +1102,6 @@ xbow_enable_perf_counter(vertex_hdl_t vhdl, int link, int mode, int counter)
     xbow_linkctrl_t         xbow_link_ctrl;
     xbow_t                 *xbow = xbow_soft->base;
     xbow_perfcount_t        perf_reg;
-    unsigned long           s;
     int                     i;
 
     link -= BASE_XBOW_PORT;
@@ -1145,10 +1114,10 @@ xbow_enable_perf_counter(vertex_hdl_t vhdl, int link, int mode, int counter)
     if ((counter < 0) || (counter >= XBOW_PERF_COUNTERS))
 	return -1;
 
-    s = mutex_spinlock(&xbow_soft->xbow_perf_lock);
+    spin_lock(&xbow_soft->xbow_perf_lock);
 
     if ((xbow_perf + counter)->xp_mode && mode) {
-	mutex_spinunlock(&xbow_soft->xbow_perf_lock, s);
+	spin_unlock(&xbow_soft->xbow_perf_lock);
 	return -1;
     }
     for (i = 0; i < XBOW_PERF_COUNTERS; i++) {
@@ -1156,7 +1125,7 @@ xbow_enable_perf_counter(vertex_hdl_t vhdl, int link, int mode, int counter)
 	    continue;
 	if (((xbow_perf + i)->xp_link == link) &&
 	    ((xbow_perf + i)->xp_mode)) {
-	    mutex_spinunlock(&xbow_soft->xbow_perf_lock, s);
+	    spin_unlock(&xbow_soft->xbow_perf_lock);
 	    return -1;
 	}
     }
@@ -1174,7 +1143,7 @@ xbow_enable_perf_counter(vertex_hdl_t vhdl, int link, int mode, int counter)
     *(xbowreg_t *) xbow_perf->xp_perf_reg = perf_reg.xb_counter_val;
     xbow_perf->xp_current = perf_reg.xb_perf.count;
 
-    mutex_spinunlock(&xbow_soft->xbow_perf_lock, s);
+    spin_unlock(&xbow_soft->xbow_perf_lock);
     return 0;
 }
 
@@ -1262,15 +1231,10 @@ xbow_reset_link(vertex_hdl_t xconn_vhdl)
     xbow_t                 *xbow;
     xbowreg_t               ctrl;
     xbwX_stat_t             stat;
-    unsigned                itick;
+    unsigned                long itick;
     unsigned                dtick;
-    static int              ticks_per_ms = 0;
+    static long             ticks_to_wait = HZ / 1000;
 
-    if (!ticks_per_ms) {
-	itick = get_timestamp();
-	us_delay(1000);
-	ticks_per_ms = get_timestamp() - itick;
-    }
     widget_info = xwidget_info_get(xconn_vhdl);
     port = xwidget_info_id_get(widget_info);
 
@@ -1296,16 +1260,16 @@ xbow_reset_link(vertex_hdl_t xconn_vhdl)
      */
     ctrl = xbow->xb_link(port).link_control;
     xbow->xb_link(port).link_reset = 0;
-    itick = get_timestamp();
+    itick = jiffies;
     while (1) {
 	stat.linkstatus = xbow->xb_link(port).link_status;
 	if (stat.link_alive)
 	    break;
-	dtick = get_timestamp() - itick;
-	if (dtick > ticks_per_ms) {
+	dtick = jiffies - itick;
+	if (dtick > ticks_to_wait) {
 	    return -1;			/* never came out of reset */
 	}
-	DELAY(2);			/* don't beat on link_status */
+	udelay(2);			/* don't beat on link_status */
     }
     xbow->xb_link(port).link_control = ctrl;
     return 0;
@@ -1379,7 +1343,6 @@ xbow_prio_bw_alloc(vertex_hdl_t vhdl,
     xbow_soft_t             soft = xbow_soft_get(vhdl);
     volatile xbowreg_t     *xreg;
     xbowreg_t               mask;
-    unsigned long           s;
     int                     error = 0;
     bandwidth_t             old_bw_BYTES, req_bw_BYTES;
     xbowreg_t               old_xreg;
@@ -1393,7 +1356,7 @@ xbow_prio_bw_alloc(vertex_hdl_t vhdl,
     ASSERT(XBOW_WIDGET_IS_VALID(src_wid));
     ASSERT(XBOW_WIDGET_IS_VALID(dest_wid));
 
-    s = mutex_spinlock(&soft->xbow_bw_alloc_lock);
+    spin_lock(&soft->xbow_bw_alloc_lock);
 
     /* Get pointer to the correct register */
     xreg = XBOW_PRIO_ARBREG_PTR(soft->base, dest_wid, src_wid);
@@ -1444,7 +1407,7 @@ xbow_prio_bw_alloc(vertex_hdl_t vhdl,
 	error = 1;
     }
 
-    mutex_spinunlock(&soft->xbow_bw_alloc_lock, s);
+    spin_unlock(&soft->xbow_bw_alloc_lock);
 
     return (error);
 }

@@ -2231,7 +2231,7 @@ static int cdrom_read_toc(ide_drive_t *drive, struct request_sense *sense)
 	minor = (drive->select.b.unit) << PARTN_BITS;
 	dev = MKDEV(HWIF(drive)->major, minor);
 	stat = cdrom_get_last_written(dev, &toc->capacity);
-	if (stat)
+	if (stat || !toc->capacity)
 		stat = cdrom_read_capacity(drive, &toc->capacity, sense);
 	if (stat)
 		toc->capacity = 0x1fffff;
@@ -3262,7 +3262,7 @@ int ide_cdrom_init(void)
 		}
 		if (ide_register_subdriver(drive, 
 				&ide_cdrom_driver, IDE_SUBDRIVER_VERSION)) {
-			printk("%s: Failed to register the driver with "
+			printk("ide-cd: %s: Failed to register the driver with "
 				"ide.c\n", drive->name);
 			kfree(info);
 			continue;

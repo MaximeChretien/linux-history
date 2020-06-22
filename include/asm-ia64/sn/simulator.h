@@ -16,11 +16,13 @@
 #define IS_RUNNING_ON_SIMULATOR() ({long sn; asm("mov %0=cpuid[%1]" : "=r"(sn) : "r"(2)); sn == SNMAGIC;})
 
 #define SIMULATOR_SLEEP()	asm("nop.i 0x8beef")
+#define SIMULATOR_PAUSE()	asm("nop.i 0x9beef")
 
 #else
 
 #define IS_RUNNING_ON_SIMULATOR()	(0)
 #define SIMULATOR_SLEEP()
+#define SIMULATOR_PAUSE()
 
 #endif
 

@@ -2,15 +2,16 @@
  *
  * Name:	skgepnm2.h
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.34 $
- * Date:	$Date: 2002/12/16 09:05:18 $
+ * Version:	$Revision: 1.36 $
+ * Date:	$Date: 2003/05/23 12:45:13 $
  * Purpose:	Defines for Private Network Management Interface
  *
  ****************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2001 SysKonnect GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 2002-2003 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -26,6 +27,13 @@
  * History:
  *
  *	$Log: skgepnm2.h,v $
+ *	Revision 1.36  2003/05/23 12:45:13  tschilli
+ *	#ifndef SK_PNMI_HUNDREDS_SEC added to SK_PNMI_HUNDREDS_SEC definition
+ *	to allow own time macro defines.
+ *	
+ *	Revision 1.35  2003/03/27 11:27:48  tschilli
+ *	Copyright messages changed.
+ *	
  *	Revision 1.34  2002/12/16 09:05:18  tschilli
  *	Code for VCT handling added.
  *	
@@ -359,11 +367,13 @@ typedef struct s_PnmiStatAddr {
 /*
  * Time macros
  */
+#ifndef SK_PNMI_HUNDREDS_SEC
 #if SK_TICKS_PER_SEC == 100
 #define SK_PNMI_HUNDREDS_SEC(t)	(t)
 #else
 #define SK_PNMI_HUNDREDS_SEC(t)	(((t) * 100) / (SK_TICKS_PER_SEC))
-#endif
+#endif /* !SK_TICKS_PER_SEC */
+#endif /* !SK_PNMI_HUNDREDS_SEC */
 
 /*
  * Macros to work around alignment problems

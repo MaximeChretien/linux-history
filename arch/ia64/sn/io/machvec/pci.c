@@ -130,13 +130,6 @@ static int snia64_write_config_byte (struct pci_dev *dev,
 	if ( dev == (struct pci_dev *)0 ) {
 		return PCIBIOS_DEVICE_NOT_FOUND;
 	}
-	/* 
-	 * if it's an IOC3 then we bail out, we special
-	 * case them with pci_fixup_ioc3
-	 */
-	if (dev->vendor == PCI_VENDOR_ID_SGI && 
-	    dev->device == PCI_DEVICE_ID_SGI_IOC3 )
-		return PCIBIOS_SUCCESSFUL;
 
 	device_vertex = devfn_to_vertex(dev->bus->number, dev->devfn);
 	if (!device_vertex) {
@@ -163,13 +156,6 @@ static int snia64_write_config_word (struct pci_dev *dev,
 	if ( dev == (struct pci_dev *)0 ) {
 		return PCIBIOS_DEVICE_NOT_FOUND;
 	}
-	/* 
-	 * if it's an IOC3 then we bail out, we special
-	 * case them with pci_fixup_ioc3
-	 */
-	if (dev->vendor == PCI_VENDOR_ID_SGI && 
-	    dev->device == PCI_DEVICE_ID_SGI_IOC3)
-		return PCIBIOS_SUCCESSFUL;
 
 	device_vertex = devfn_to_vertex(dev->bus->number, dev->devfn);
 	if (!device_vertex) {
@@ -196,13 +182,6 @@ static int snia64_write_config_dword (struct pci_dev *dev,
 	if ( dev == (struct pci_dev *)0 ) {
 		return PCIBIOS_DEVICE_NOT_FOUND;
 	}
-	/* 
-	 * if it's an IOC3 then we bail out, we special
-	 * case them with pci_fixup_ioc3
-	 */
-	if (dev->vendor == PCI_VENDOR_ID_SGI && 
-	    dev->device == PCI_DEVICE_ID_SGI_IOC3)
-		return PCIBIOS_SUCCESSFUL;
 
 	device_vertex = devfn_to_vertex(dev->bus->number, dev->devfn);
 	if (!device_vertex) {
@@ -241,49 +220,8 @@ sn_pci_find_bios(void)
 	/* sn_io_infrastructure_init(); */
 	pci_root_ops = &snia64_pci_ops;
 }
-
-void
-pci_fixup_ioc3(struct pci_dev *d)
-{
-        int 		i;
-	unsigned int 	size;
-
-        /* IOC3 only decodes 0x20 bytes of the config space, reading
-	 * beyond that is relatively benign but writing beyond that
-	 * (especially the base address registers) will shut down the
-	 * pci bus...so avoid doing so.
-	 * NOTE: this means we can't program the intr_pin into the device,
-	 *       currently we hack this with special code in 
-	 *	 sgi_pci_intr_support()
-	 */
-        DBG("pci_fixup_ioc3: Fixing base addresses for ioc3 device %s\n", d->slot_name);
-
-	/* I happen to know from the spec that the ioc3 needs only 0xfffff 
-	 * The standard pci trick of writing ~0 to the baddr and seeing
-	 * what comes back doesn't work with the ioc3
-	 */
-	size = 0xfffff;
-	d->resource[0].end = (unsigned long) d->resource[0].start + (unsigned long) size;
-
-	/*
-	 * Zero out the resource structure .. because we did not go through 
-	 * the normal PCI Infrastructure Init, garbbage are left in these 
-	 * fileds.
-	 */
-        for (i = 1; i <= PCI_ROM_RESOURCE; i++) {
-                d->resource[i].start = 0UL;
-                d->resource[i].end = 0UL;
-                d->resource[i].flags = 0UL;
-        }
-
-        d->subsystem_vendor = 0;
-        d->subsystem_device = 0;
-
-}
-
 #else
 void sn_pci_find_bios(void) {}
-void pci_fixup_ioc3(struct pci_dev *d) {}
 struct list_head pci_root_buses;
 struct list_head pci_root_buses;
 struct list_head pci_devices;

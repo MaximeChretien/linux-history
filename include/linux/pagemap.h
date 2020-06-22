@@ -45,7 +45,7 @@ extern unsigned int page_hash_bits;
 #define PAGE_HASH_BITS (page_hash_bits)
 #define PAGE_HASH_SIZE (1 << PAGE_HASH_BITS)
 
-extern atomic_t page_cache_size; /* # of pages currently in the hash table */
+extern unsigned long page_cache_size; /* # of pages currently in the hash table */
 extern struct page **page_hash_table;
 
 extern void page_cache_init(unsigned long);

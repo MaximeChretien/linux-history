@@ -100,7 +100,7 @@ void do_page_fault(struct pt_regs *regs, unsigned long address,
 	struct mm_struct *mm = current->mm;
 	siginfo_t info;
 	int code = SEGV_MAPERR;
-#if defined(CONFIG_4xx)
+#if defined(CONFIG_4xx) || defined (CONFIG_BOOKE)
 	int is_write = error_code & ESR_DST;
 #else
 	int is_write = 0;
@@ -115,14 +115,14 @@ void do_page_fault(struct pt_regs *regs, unsigned long address,
 		error_code &= 0x48200000;
 	else
 		is_write = error_code & 0x02000000;
-#endif /* CONFIG_4xx */
+#endif /* CONFIG_4xx || CONFIG_BOOKE */
 
 #if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
 	if (debugger_fault_handler && regs->trap == 0x300) {
 		debugger_fault_handler(regs);
 		return;
 	}
-#if !defined(CONFIG_4xx)
+#ifndef CONFIG_4xx 
 	if (error_code & 0x00400000) {
 		/* DABR match */
 		if (debugger_dabr_match(regs))

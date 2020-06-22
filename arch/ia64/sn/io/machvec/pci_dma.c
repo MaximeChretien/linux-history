@@ -182,7 +182,6 @@ sn_pci_alloc_consistent(struct pci_dev *hwdev, size_t size, dma_addr_t *dma_hand
 	 * attributes or to a different memory region.
 	 */
 	*dma_handle = pciio_dmatrans_addr(vhdl, NULL, phys_addr, size,
-			((IS_PIC_DEVICE(hwdev)) ? 0 : PCIIO_BYTE_STREAM) |
 					  PCIIO_DMA_CMD);
 
         /*
@@ -201,7 +200,6 @@ sn_pci_alloc_consistent(struct pci_dev *hwdev, size_t size, dma_addr_t *dma_hand
 	 */
 	if (!(*dma_handle)) {
 		dma_map = pciio_dmamap_alloc(vhdl, NULL, size,
-				((IS_PIC_DEVICE(hwdev)) ? 0 : PCIIO_BYTE_STREAM) |
 					     PCIIO_DMA_CMD);
 		if (!dma_map) {
 			printk(KERN_ERR "sn_pci_alloc_consistent: Unable to "
@@ -295,10 +293,7 @@ sn_pci_map_sg(struct pci_dev *hwdev, struct scatterlist *sg, int nents, int dire
 		 */
 		if (IS_PCIA64(hwdev)) {
 			sg->dma_address = pciio_dmatrans_addr(vhdl, NULL, phys_addr,
-						       sg->length,
-			       ((IS_PIC_DEVICE(hwdev)) ? 0 : PCIIO_BYTE_STREAM) |
-						       PCIIO_DMA_DATA |
-						       PCIIO_DMA_A64);
+						       sg->length, PCIIO_DMA_DATA | PCIIO_DMA_A64);
 			sg->dma_length = sg->length;
 			continue;
 		}
@@ -308,9 +303,7 @@ sn_pci_map_sg(struct pci_dev *hwdev, struct scatterlist *sg, int nents, int dire
 		 */
 		if (IS_PCI32G(hwdev)) {
 			sg->dma_address = pciio_dmatrans_addr(vhdl, NULL, phys_addr,
-						       sg->length,
-					((IS_PIC_DEVICE(hwdev)) ? 0 : PCIIO_BYTE_STREAM) |
-						       PCIIO_DMA_DATA);
+						       sg->length, PCIIO_DMA_DATA);
 			sg->dma_length = sg->length;
 			/*
 			 * See if we got a direct map entry
@@ -325,9 +318,7 @@ sn_pci_map_sg(struct pci_dev *hwdev, struct scatterlist *sg, int nents, int dire
 		 * It is a 32 bit card and we cannot do direct mapping,
 		 * so we use an ATE.
 		 */
-		dma_map = pciio_dmamap_alloc(vhdl, NULL, sg->length,
-				((IS_PIC_DEVICE(hwdev)) ? 0 : PCIIO_BYTE_STREAM) |
-					     PCIIO_DMA_DATA);
+		dma_map = pciio_dmamap_alloc(vhdl, NULL, sg->length, PCIIO_DMA_DATA);
 		if (!dma_map) {
 			printk(KERN_ERR "sn_pci_map_sg: Unable to allocate "
 			       "anymore 32 bit page map entries.\n");
@@ -440,9 +431,7 @@ sn_pci_map_single(struct pci_dev *hwdev, void *ptr, size_t size, int direction)
 	if (IS_PCIA64(hwdev)) {
 		/* This device supports 64 bit DMA addresses. */
 		dma_addr = pciio_dmatrans_addr(vhdl, NULL, phys_addr, size,
-		       ((IS_PIC_DEVICE(hwdev)) ? 0 : PCIIO_BYTE_STREAM) |
-					       PCIIO_DMA_DATA |
-					       PCIIO_DMA_A64);
+					       PCIIO_DMA_DATA | PCIIO_DMA_A64);
 		return dma_addr;
 	}
 
@@ -454,7 +443,6 @@ sn_pci_map_single(struct pci_dev *hwdev, void *ptr, size_t size, int direction)
 	 */
 	if (IS_PCI32G(hwdev)) {
 		dma_addr = pciio_dmatrans_addr(vhdl, NULL, phys_addr, size,
-			((IS_PIC_DEVICE(hwdev)) ? 0 : PCIIO_BYTE_STREAM) |
 					       PCIIO_DMA_DATA);
 		if (dma_addr)
 			return dma_addr;
@@ -465,9 +453,7 @@ sn_pci_map_single(struct pci_dev *hwdev, void *ptr, size_t size, int direction)
 	 * let's use the PMU instead.
 	 */
 	dma_map = NULL;
-	dma_map = pciio_dmamap_alloc(vhdl, NULL, size, 
-			((IS_PIC_DEVICE(hwdev)) ? 0 : PCIIO_BYTE_STREAM) |
-			PCIIO_DMA_DATA);
+	dma_map = pciio_dmamap_alloc(vhdl, NULL, size, PCIIO_DMA_DATA);
 
 	if (!dma_map) {
 		printk(KERN_ERR "pci_map_single: Unable to allocate anymore "

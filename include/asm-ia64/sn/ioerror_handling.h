@@ -233,10 +233,6 @@ hwgraph_info_get_LBL(v, INFO_LBL_ERROR_SKIP_ENV, (arbitrary_info_t *)&l)
 #define v_error_skip_env_clear(v)		\
 hwgraph_info_remove_LBL(v, INFO_LBL_ERROR_SKIP_ENV, 0)
 
-/* Skip point interfaces */
-extern error_return_code_t	error_skip_point_jump(vertex_hdl_t, boolean_t);
-extern error_return_code_t	error_skip_point_clear(vertex_hdl_t);
-
 /* REFERENCED */
 #if defined(CONFIG_SGI_IO_ERROR_HANDLING)
 
@@ -256,7 +252,7 @@ error_skip_point_mark(vertex_hdl_t  v)
 	 * one.								 
 	 */								 
 	if (v_error_skip_env_get(v, error_env) != GRAPH_SUCCESS) {	 
-		error_env = snia_kmem_zalloc(sizeof(label_t), KM_NOSLEEP);	 
+		error_env = snia_kmem_zalloc(sizeof(label_t));
 		/* Unable to allocate memory for jum buffer. This should 
 		 * be a very rare occurrence.				 
 		 */							 

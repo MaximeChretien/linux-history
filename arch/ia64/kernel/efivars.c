@@ -119,7 +119,7 @@ typedef struct _efivar_entry_t {
 */
 static spinlock_t efivars_lock = SPIN_LOCK_UNLOCKED;
 static LIST_HEAD(efivar_list);
-static struct proc_dir_entry *efi_vars_dir = NULL;
+static struct proc_dir_entry *efi_vars_dir;
 
 #define efivar_entry(n) list_entry(n, efivar_entry_t, list)
 
@@ -138,8 +138,7 @@ utf8_strlen(efi_char16_t *data, unsigned long maxlength)
 static inline unsigned long
 utf8_strsize(efi_char16_t *data, unsigned long maxlength)
 {
-	return utf8_strlen(data, maxlength/sizeof(efi_char16_t)) *
-		sizeof(efi_char16_t);
+	return utf8_strlen(data, maxlength/sizeof(efi_char16_t)) * sizeof(efi_char16_t);
 }
 
 
@@ -169,8 +168,7 @@ efivar_create_proc_entry(unsigned long variable_name_size,
 			 efi_char16_t *variable_name,
 			 efi_guid_t *vendor_guid)
 {
-	int i, short_name_size = variable_name_size /
-		sizeof(efi_char16_t) + 38;
+	int i, short_name_size = variable_name_size / sizeof(efi_char16_t) + 38;
 	char *short_name;
 	efivar_entry_t *new_efivar;
 
@@ -191,7 +189,7 @@ efivar_create_proc_entry(unsigned long variable_name_size,
 
 	/* Convert Unicode to normal chars (assume top bits are 0),
 	   ala UTF-8 */
-	for (i=0; i<variable_name_size / sizeof(efi_char16_t); i++) {
+	for (i=0; i< (int) (variable_name_size / sizeof(efi_char16_t)); i++) {
 		short_name[i] = variable_name[i] & 0xFF;
 	}
 
@@ -290,7 +288,7 @@ efivar_write(struct file *file, const char *buffer,
 	}
 	if (copy_from_user(var_data, buffer, size)) {
 		MOD_DEC_USE_COUNT;
-                kfree(var_data);
+		kfree(var_data);
 		return -EFAULT;
 	}
 
@@ -433,7 +431,7 @@ efivars_init(void)
 	   to do this.
 	*/
 	if (!efi_dir)
-                efi_dir = proc_mkdir("efi", NULL);
+		efi_dir = proc_mkdir("efi", NULL);
 
 	efi_systab_entry = create_proc_entry("systab", S_IRUSR | S_IRGRP, efi_dir);
 	if (efi_systab_entry)

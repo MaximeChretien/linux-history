@@ -969,18 +969,20 @@ vicam_read(struct video_device *dev, char *buf,
 			if (cam->framebuf_read_start + count <=
 			    cam->framebuf_size) {
 				// count does not exceed available bytes
-				copy_to_user(buf,
-					     (cam->framebuf) +
-					     cam->framebuf_read_start, count);
+				if (copy_to_user(buf,
+						 (cam->framebuf) +
+						 cam->framebuf_read_start, count))
+					return -EFAULT;
 				cam->framebuf_read_start += count;
 				return count;
 			} else {
 				count =
 				    cam->framebuf_size -
 				    cam->framebuf_read_start;
-				copy_to_user(buf,
-					     (cam->framebuf) +
-					     cam->framebuf_read_start, count);
+				if (copy_to_user(buf,
+						 (cam->framebuf) +
+						 cam->framebuf_read_start, count))
+					return -EFAULT;
 				cam->framebuf_read_start = cam->framebuf_size;
 				return count;
 			}
@@ -1002,7 +1004,10 @@ vicam_read(struct video_device *dev, char *buf,
 	if (count > cam->framebuf_size)
 		count = cam->framebuf_size;
 
-	copy_to_user(buf, cam->framebuf, count);
+	if (copy_to_user(buf, cam->framebuf, count)) {
+		up(&cam->busy_lock);
+		return -EFAULT;
+	}
 
 	if (count != cam->framebuf_size)
 		cam->framebuf_read_start = count;

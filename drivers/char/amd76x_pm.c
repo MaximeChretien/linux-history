@@ -577,16 +577,18 @@ amd76x_pm_main(void)
 	int found;
 
 	/* Find northbridge */
-	found = pci_module_init(&amd_nb_driver);
-	if (found < 0) {
+	found = pci_register_driver(&amd_nb_driver);
+	if (found <= 0) {
 		printk(KERN_ERR "amd76x_pm: Could not find northbridge\n");
+		pci_unregister_driver(&amd_nb_driver);
 		return 1;
 	}
 
 	/* Find southbridge */
-	found = pci_module_init(&amd_sb_driver);
-	if (found < 0) {
+	found = pci_register_driver(&amd_sb_driver);
+	if (found <= 0) {
 		printk(KERN_ERR "amd76x_pm: Could not find southbridge\n");
+		pci_unregister_driver(&amd_sb_driver);
 		pci_unregister_driver(&amd_nb_driver);
 		return 1;
 	}
@@ -620,6 +622,8 @@ amd76x_pm_main(void)
 #ifndef AMD76X_NTH
 	if (!amd76x_pm_cfg.curr_idle) {
 		printk(KERN_ERR "amd76x_pm: Idle function not changed\n");
+		pci_unregister_driver(&amd_nb_driver);
+		pci_unregister_driver(&amd_sb_driver);
 		return 1;
 	}
 

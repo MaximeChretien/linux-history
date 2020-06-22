@@ -11,15 +11,14 @@ EXTRA_CFLAGS    := -DLITTLE_ENDIAN
 
 O_TARGET := snio.o
 
-export-objs := pciio.o 
-
 obj-y				+= ml_SN_intr.o shub_intr.o shuberror.o shub.o \
 				   bte_error.o pcibr/pcibr.o pic.o geo_op.o \
 				   l1_command.o klconflib.o klgraph.o \
 				   ml_SN_init.o ml_iograph.o module.o pciio.o \
-				   xbow.o xtalk.o shubio.o
+				   xbow.o xtalk.o shubio.o ioc4/ioc4_if.o
+
 obj-$(CONFIG_KDB)		+= kdba_io.o
 
-subdir-y			+= pcibr
+subdir-y			+= pcibr ioc4
 
 include $(TOPDIR)/Rules.make

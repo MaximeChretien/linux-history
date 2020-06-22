@@ -43,3 +43,6 @@ bool '  IP: TCP syncookie support (disabled per default)' CONFIG_SYN_COOKIES
 if [ "$CONFIG_NETFILTER" != "n" ]; then
    source net/ipv4/netfilter/Config.in
 fi
+if [ "$CONFIG_NETFILTER" != "n" ]; then
+   source net/ipv4/ipvs/Config.in
+fi

@@ -8,7 +8,7 @@
  * See Documentation/DMA-mapping.txt for the interface specification.
  * 
  * Copyright 2002 Andi Kleen, SuSE Labs.
- * $Id: pci-gart.c,v 1.27 2003/08/05 18:25:31 ak Exp $
+ * $Id: pci-gart.c,v 1.28 2003/09/19 07:01:58 ak Exp $
  */
 
 #include <linux/config.h>
@@ -588,8 +588,11 @@ __init int iommu_setup(char *opt)
 	    if (!memcmp(p, "memaper", 7)) { 
 		    fallback_aper_force = 1; 
 		    p += 7; 
-		    if (*p == '=' && get_option(&p, &arg))
+		    if (*p == '=') { 
+			    ++p;
+			    if (get_option(&p, &arg))
 			    fallback_aper_order = arg;
+	    } 
 	    } 
 #ifdef CONFIG_IOMMU_LEAK
 	    if (!memcmp(p,"leak", 4)) { 

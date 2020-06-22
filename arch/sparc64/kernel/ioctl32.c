@@ -1920,8 +1920,8 @@ static int cdrom_do_generic_command(unsigned int fd, unsigned int cmd, unsigned 
 	    __cgc_do_ptr((void **) &cgc->sense, &cgc32->sense))
 		return -EFAULT;
 
-	if (get_user(dir, &cgc->data_direction) ||
-	    put_user(dir, &cgc32->data_direction))
+	if (get_user(dir, &cgc32->data_direction) ||
+	    put_user(dir, &cgc->data_direction))
 		return -EFAULT;
 
 	if (copy_in_user(&cgc->quiet, &cgc32->quiet,

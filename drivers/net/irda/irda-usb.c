@@ -339,7 +339,7 @@ static int irda_usb_hard_xmit(struct sk_buff *skb, struct net_device *netdev)
 	int res, mtt;
 	int	err = 1;	/* Failed */
 
-	IRDA_DEBUG(4, __FUNCTION__ "() on %s\n", netdev->name);
+	IRDA_DEBUG(4, "%s() on %s\n",  __FUNCTION__, netdev->name);
 
 	netif_stop_queue(netdev);
 
@@ -542,7 +542,7 @@ static void write_bulk_callback(struct urb *purb)
 		    (self->new_xbofs != self->xbofs)) {
 			/* We haven't changed speed yet (because of
 			 * IUC_SPEED_BUG), so do it now - Jean II */
-			IRDA_DEBUG(1, __FUNCTION__ "(), Changing speed now...\n");
+			IRDA_DEBUG(1, "%s(), Changing speed now...\n", __FUNCTION__);
 			irda_usb_change_speed_xbofs(self);
 		} else {
 			/* New speed and xbof is now commited in hardware */

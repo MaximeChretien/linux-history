@@ -44,9 +44,8 @@ export-objs = sn_ksyms.o
 
 subdir-y			= sn2
 
-obj-y				= probe.o setup.o sv.o bte.o
-obj-y			        += irq.o mca.o idle.o
-obj-y			        += sn2/sn2.o
+obj-y				= bte.o idle.o irq.o mca.o probe.o setup.o \
+				  sn_ivt.o sn2/sn2.o sv.o
 
 obj-$(CONFIG_IA64_GENERIC)      += machvec.o
 obj-$(CONFIG_MODULES)           += sn_ksyms.o

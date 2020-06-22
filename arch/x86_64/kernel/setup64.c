@@ -3,7 +3,7 @@
  * Copyright (C) 1995  Linus Torvalds
  * Copyright 2001, 2002 SuSE Labs / Andi Kleen.
  * See setup.c for older changelog.
- * $Id: setup64.c,v 1.23 2003/05/16 14:22:27 ak Exp $
+ * $Id: setup64.c,v 1.26 2003/10/15 01:32:42 ak Exp $
  */ 
 #include <linux/config.h>
 #include <linux/init.h>
@@ -158,7 +158,6 @@ void syscall_init(void)
 #endif
 }
 
-#define EXCEPTION_STK_ORDER 0 /* >= N_EXCEPTION_STACKS*EXCEPTION_STKSZ */
 char boot_exception_stacks[N_EXCEPTION_STACKS*EXCEPTION_STKSZ];
 
 /*
@@ -177,16 +176,11 @@ void __init cpu_init (void)
 #endif
 	struct tss_struct * t = &init_tss[nr];
 	unsigned long v, efer; 	
-	char *estacks; 
+	unsigned long estack;
 
 	/* CPU 0 is initialised in head64.c */
-	if (nr != 0) {
+	if (nr != 0)
 		pda_init(nr);
-		estacks = (char *)__get_free_pages(GFP_ATOMIC, EXCEPTION_STK_ORDER); 
-		if (!estacks)
-			panic("Can't allocate exception stacks for CPU %d\n",nr);
-	} else 
-		estacks = boot_exception_stacks; 
 
 	if (test_and_set_bit(nr, &cpu_initialized))
 		panic("CPU#%d already initialized!\n", nr);
@@ -228,10 +222,17 @@ void __init cpu_init (void)
 	/*
 	 * set up and load the per-CPU TSS
 	 */
-	estacks += EXCEPTION_STKSZ;
+	estack = (unsigned long)boot_exception_stacks + EXCEPTION_STKSZ;
 	for (v = 0; v < N_EXCEPTION_STACKS; v++) {
-		t->ist[v] = (unsigned long)estacks;
-		estacks += EXCEPTION_STKSZ;
+		if (nr == 0) {
+			t->ist[v] = estack;
+			estack += EXCEPTION_STKSZ;
+		} else {
+			estack = __get_free_pages(GFP_ATOMIC, EXCEPTION_STK_ORDER);
+			if(!estack) 
+				panic("Can't allocate exception stack %lu for CPU %d\n", v, nr);
+			t->ist[v] = estack + EXCEPTION_STKSZ;		
+		}
 	}
 
 	atomic_inc(&init_mm.mm_count);

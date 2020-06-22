@@ -1243,7 +1243,6 @@ static int stv680_ioctl (struct video_device *vdev, unsigned int cmd, void *arg)
 				PDEBUG (2, "STV(e): VIDIOCSPICT failed");
 				return -EFAULT;
 			}
-			copy_from_user (&p, arg, sizeof (p));
 			PDEBUG (2, "STV(i): palette set to %i in VIDIOSPICT", p.palette);
 
 			if (stv680_set_pict (stv680, &p))

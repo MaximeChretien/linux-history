@@ -374,7 +374,7 @@ static struct file_operations mixer_fops =
 	release:	mixer_release,
 };
 
-static void __init mixer_init(void)
+static void mixer_init(void)
 {
 #ifndef MODULE
 	int mixer_unit;
@@ -1211,6 +1211,8 @@ static int sq_ioctl(struct inode *inode, struct file *file, u_int cmd,
 			shared_resources_initialised = 0 ;
 		return result ;
 		break ;
+	case SOUND_PCM_READ_RATE:
+		return IOCTL_OUT(arg, dmasound.soft.speed);
 	case SNDCTL_DSP_SPEED:
 		/* Changing this on the fly will have weird effects on the sound.
 		   Where there are rate conversions implemented in soft form - it
@@ -1337,7 +1339,7 @@ static struct file_operations sq_fops =
 #endif
 };
 
-static int __init sq_init(void)
+static int sq_init(void)
 {
 #ifndef MODULE
 	int sq_unit;
@@ -1554,7 +1556,7 @@ static struct file_operations state_fops = {
 	release:	state_release,
 };
 
-static int __init state_init(void)
+static int state_init(void)
 {
 #ifndef MODULE
 	int state_unit;
@@ -1573,7 +1575,7 @@ static int __init state_init(void)
      *  This function is called by _one_ chipset-specific driver
      */
 
-int __init dmasound_init(void)
+int dmasound_init(void)
 {
 	int res ;
 #ifdef MODULE
@@ -1644,7 +1646,7 @@ void dmasound_deinit(void)
 
 #else /* !MODULE */
 
-static int __init dmasound_setup(char *str)
+static int dmasound_setup(char *str)
 {
 	int ints[6], size;
 
@@ -1660,13 +1662,13 @@ static int __init dmasound_setup(char *str)
 #ifdef HAS_RECORD
         case 5:
                 if ((ints[5] < 0) || (ints[5] > MAX_CATCH_RADIUS))
-                        printk("dmasound_setup: illegal catch radius, using default = %d\n", catchRadius);
+                        printk("dmasound_setup: invalid catch radius, using default = %d\n", catchRadius);
                 else
                         catchRadius = ints[5];
                 /* fall through */
         case 4:
                 if (ints[4] < MIN_BUFFERS)
-                        printk("dmasound_setup: illegal number of read buffers, using default = %d\n",
+                        printk("dmasound_setup: invalid number of read buffers, using default = %d\n",
                                  numReadBufs);
                 else
                         numReadBufs = ints[4];
@@ -1675,21 +1677,21 @@ static int __init dmasound_setup(char *str)
 		if ((size = ints[3]) < 256)  /* check for small buffer specs */
 			size <<= 10 ;
                 if (size < MIN_BUFSIZE || size > MAX_BUFSIZE)
-                        printk("dmasound_setup: illegal read buffer size, using default = %d\n", readBufSize);
+                        printk("dmasound_setup: invalid read buffer size, using default = %d\n", readBufSize);
                 else
                         readBufSize = size;
                 /* fall through */
 #else
 	case 3:
 		if ((ints[3] < 0) || (ints[3] > MAX_CATCH_RADIUS))
-			printk("dmasound_setup: illegal catch radius, using default = %d\n", catchRadius);
+			printk("dmasound_setup: invalid catch radius, using default = %d\n", catchRadius);
 		else
 			catchRadius = ints[3];
 		/* fall through */
 #endif
 	case 2:
 		if (ints[1] < MIN_BUFFERS)
-			printk("dmasound_setup: illegal number of buffers, using default = %d\n", numWriteBufs);
+			printk("dmasound_setup: invalid number of buffers, using default = %d\n", numWriteBufs);
 		else
 			numWriteBufs = ints[1];
 		/* fall through */
@@ -1697,13 +1699,13 @@ static int __init dmasound_setup(char *str)
 		if ((size = ints[2]) < 256) /* check for small buffer specs */
 			size <<= 10 ;
                 if (size < MIN_BUFSIZE || size > MAX_BUFSIZE)
-                        printk("dmasound_setup: illegal write buffer size, using default = %d\n", writeBufSize);
+                        printk("dmasound_setup: invalid write buffer size, using default = %d\n", writeBufSize);
                 else
                         writeBufSize = size;
 	case 0:
 		break;
 	default:
-		printk("dmasound_setup: illegal number of arguments\n");
+		printk("dmasound_setup: invalid number of arguments\n");
 		return 0;
 	}
 	return 1;

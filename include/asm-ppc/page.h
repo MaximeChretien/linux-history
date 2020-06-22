@@ -4,16 +4,33 @@
 /* PAGE_SHIFT determines the page size */
 #define PAGE_SHIFT	12
 #define PAGE_SIZE	(1UL << PAGE_SHIFT)
-#define PAGE_MASK	(~(PAGE_SIZE-1))
+/*
+ * Subtle: this is an int (not an unsigned long) and so it
+ * gets extended to 64 bits the way want (i.e. with 1s).  -- paulus
+ */
+#define PAGE_MASK	(~((1 << PAGE_SHIFT) - 1))
 
 #ifdef __KERNEL__
 #include <linux/config.h>
 
-/* Be sure to change arch/ppc/Makefile to match */
-#define PAGE_OFFSET	0xc0000000
+#define PAGE_OFFSET	CONFIG_KERNEL_START
 #define KERNELBASE	PAGE_OFFSET
 
 #ifndef __ASSEMBLY__
+/*
+ * The basic type of a PTE - 64 bits for those CPUs with > 32 bit
+ * physical addressing.  For now this just the IBM PPC440.
+ */
+#ifdef CONFIG_PTE_64BIT
+typedef unsigned long long pte_basic_t;
+#define PTE_SHIFT	(PAGE_SHIFT - 3)	/* 512 ptes per page */
+#define PTE_FMT		"%16Lx"
+#else
+typedef unsigned long pte_basic_t;
+#define PTE_SHIFT	(PAGE_SHIFT - 2)	/* 1024 ptes per page */
+#define PTE_FMT		"%.8lx"
+#endif
+
 #include <asm/system.h> /* for xmon definition */
 
 #ifdef CONFIG_XMON
@@ -35,7 +52,7 @@
 /*
  * These are used to make use of C type-checking..
  */
-typedef struct { unsigned long pte; } pte_t;
+typedef struct { pte_basic_t pte; } pte_t;
 typedef struct { unsigned long pmd; } pmd_t;
 typedef struct { unsigned long pgd; } pgd_t;
 typedef struct { unsigned long pgprot; } pgprot_t;

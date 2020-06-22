@@ -73,6 +73,7 @@ SECTIONS
   __kallsyms : { *(__kallsyms) }
   __stop___kallsyms = .;
 
+  . = ALIGN(16);
   __start___ftr_fixup = .;
   __ftr_fixup : { *(__ftr_fixup) }
   __stop___ftr_fixup = .;

@@ -93,7 +93,11 @@ static union {
 } fbcon_cmap;
 
 static int             inverse   = 0;
+#ifdef __x86_64__
+static int             mtrr      = 1;
+#else
 static int             mtrr      = 0;
+#endif
 static int	 vram __initdata = 0;	/* needed for vram boot option */
 static int             currcon   = 0;
 

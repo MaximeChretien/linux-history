@@ -865,6 +865,7 @@ struct usb_device {
 	struct usb_device *children[USB_MAXCHILDREN];
 };
 
+extern int usb_ifnum_to_ifpos(struct usb_device *dev, unsigned ifnum);
 extern struct usb_interface *usb_ifnum_to_if(struct usb_device *dev, unsigned ifnum);
 extern struct usb_endpoint_descriptor *usb_epnum_to_ep_desc(struct usb_device *dev, unsigned epnum);
 
@@ -873,6 +874,7 @@ extern void usb_deregister(struct usb_driver *);
 extern void usb_scan_devices(void);
 
 /* used these for multi-interface device registration */
+extern int usb_find_interface_driver_for_ifnum(struct usb_device *dev, unsigned int ifnum);
 extern void usb_driver_claim_interface(struct usb_driver *driver, struct usb_interface *iface, void* priv);
 extern int usb_interface_claimed(struct usb_interface *iface);
 extern void usb_driver_release_interface(struct usb_driver *driver, struct usb_interface *iface);

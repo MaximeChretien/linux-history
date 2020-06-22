@@ -2,16 +2,15 @@
  *
  * Name:	version.h
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.1.2.1 $
- * Date:	$Date: 2001/09/05 13:38:30 $
+ * Version:	$Revision: 1.3 $
+ * Date:	$Date: 2003/08/25 13:34:48 $
  * Purpose:	SK specific Error log support
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2002 SysKonnect,
- *	a business unit of Schneider & Koch & Co. Datensysteme GmbH.
+ *	(C)Copyright 1998-2003 SysKonnect GmbH.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -26,6 +25,21 @@
  *
  * History:
  *	$Log: skversion.h,v $
+ *	Revision 1.3  2003/08/25 13:34:48  mlindner
+ *	Fix: Lint changes
+ *	
+ *	Revision 1.2  2003/08/13 12:01:01  mlindner
+ *	Add: Changes for Lint
+ *	
+ *	Revision 1.1  2003/07/24 09:29:56  rroesler
+ *	Fix: Re-Enter after CVS crash
+ *	
+ *	Revision 1.4  2003/02/25 14:16:40  mlindner
+ *	Fix: Copyright statement
+ *	
+ *	Revision 1.3  2003/02/25 13:30:18  mlindner
+ *	Add: Support for various vendors
+ *	
  *	Revision 1.1.2.1  2001/09/05 13:38:30  mlindner
  *	Removed FILE description
  *	
@@ -37,13 +51,15 @@
  ******************************************************************************/
  
  
+#ifdef	lint
 static const char SysKonnectFileId[] = "@(#) (C) SysKonnect GmbH.";
 static const char SysKonnectBuildNumber[] =
-	"@(#)SK-BUILD: 6.02 PL: 01"; 
+	"@(#)SK-BUILD: 6.18 PL: 01"; 
+#endif	/* !defined(lint) */
 
-#define BOOT_STRING	"sk98lin: Network Device Driver v6.02\n" \
-			"Copyright (C) 2000-2002 SysKonnect GmbH."
+#define BOOT_STRING	"sk98lin: Network Device Driver v6.18\n" \
+			"(C)Copyright 1999-2003 Marvell(R)."
 
-#define VER_STRING	"6.02"
+#define VER_STRING	"6.18"
 
 

@@ -45,15 +45,20 @@ struct sk_buff *atm_alloc_charge(struct atm_vcc *vcc,int pdu_size,
 
 static int check_ci(struct atm_vcc *vcc,short vpi,int vci)
 {
+	struct sock *s;
 	struct atm_vcc *walk;
 
-	for (walk = vcc->dev->vccs; walk; walk = walk->next)
+	for (s = vcc_sklist; s; s = s->next) {
+		walk = s->protinfo.af_atm;
+		if (walk->dev != vcc->dev)
+			continue;
 		if (test_bit(ATM_VF_ADDR,&walk->flags) && walk->vpi == vpi &&
 		    walk->vci == vci && ((walk->qos.txtp.traffic_class !=
 		    ATM_NONE && vcc->qos.txtp.traffic_class != ATM_NONE) ||
 		    (walk->qos.rxtp.traffic_class != ATM_NONE &&
 		    vcc->qos.rxtp.traffic_class != ATM_NONE)))
 			return -EADDRINUSE;
+	}
 		/* allow VCCs with same VPI/VCI iff they don't collide on
 		   TX/RX (but we may refuse such sharing for other reasons,
 		   e.g. if protocol requires to have both channels) */
@@ -63,17 +68,16 @@ static int check_ci(struct atm_vcc *vcc,short vpi,int vci)
 
 int atm_find_ci(struct atm_vcc *vcc,short *vpi,int *vci)
 {
-	unsigned long flags;
 	static short p = 0; /* poor man's per-device cache */
 	static int c = 0;
 	short old_p;
 	int old_c;
 	int err;
 
-	spin_lock_irqsave(&vcc->dev->lock, flags);
+	read_lock(&vcc_sklist_lock);
 	if (*vpi != ATM_VPI_ANY && *vci != ATM_VCI_ANY) {
 		err = check_ci(vcc,*vpi,*vci);
-		spin_unlock_irqrestore(&vcc->dev->lock, flags);
+		read_unlock(&vcc_sklist_lock);
 		return err;
 	}
 	/* last scan may have left values out of bounds for current device */
@@ -88,7 +92,7 @@ int atm_find_ci(struct atm_vcc *vcc,short *vpi,int *vci)
 		if (!check_ci(vcc,p,c)) {
 			*vpi = p;
 			*vci = c;
-			spin_unlock_irqrestore(&vcc->dev->lock, flags);
+			read_unlock(&vcc_sklist_lock);
 			return 0;
 		}
 		if (*vci == ATM_VCI_ANY) {
@@ -103,7 +107,7 @@ int atm_find_ci(struct atm_vcc *vcc,short *vpi,int *vci)
 		}
 	}
 	while (old_p != p || old_c != c);
-	spin_unlock_irqrestore(&vcc->dev->lock, flags);
+	read_unlock(&vcc_sklist_lock);
 	return -EADDRINUSE;
 }
 

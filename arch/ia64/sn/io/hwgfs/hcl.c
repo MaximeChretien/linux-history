@@ -28,16 +28,12 @@
 #include <asm/sn/labelcl.h>
 #include <asm/sn/simulator.h>
 
-#define HCL_NAME "SGI-HWGRAPH COMPATIBILITY DRIVER"
-#define HCL_TEMP_NAME "HCL_TEMP_NAME_USED_FOR_HWGRAPH_VERTEX_CREATE"
-#define HCL_TEMP_NAME_LEN 44 
-#define HCL_VERSION "1.0"
-
 #define vertex_hdl_t hwgfs_handle_t
+
 vertex_hdl_t hwgraph_root;
 vertex_hdl_t linux_busnum;
-
 extern void pci_bus_cvlink_init(void);
+unsigned long hwgraph_debug_mask = 0;
 
 /*
  * Debug flag definition.
@@ -157,7 +153,7 @@ int __init init_hcl(void)
 	 */
 	rv = hwgraph_path_add(NULL, EDGE_LBL_HW, &hwgraph_root);
 	if (rv)
-		printk ("WARNING: init_hcl: Failed to create hwgraph_root. Error = %d.\n", rv);
+		panic("init_hcl: Failed to create hwgraph_root.\n");
 
 	/*
 	 * Create the hcl driver to support inventory entry manipulations.
@@ -234,6 +230,15 @@ static int __init hcl_setup(char *str)
 
 __setup("hcl=", hcl_setup);
 
+
+int
+hwgraph_generate_path(
+        vertex_hdl_t            de,
+        char                    *path,
+        int                     buflen)
+{
+        return (hwgfs_generate_path(de, path, buflen));
+}
 
 /*
  * Set device specific "fast information".
@@ -491,39 +496,6 @@ hwgraph_vertex_destroy(vertex_hdl_t de)
 
 	return(0);
 }
-
-#if 0
-/*
- * hwgraph_edge_add - This routines has changed from the original conext.
- * All it does now is to create a symbolic link from "from" to "to".
- */
-/* ARGSUSED */
-int
-hwgraph_edge_add(vertex_hdl_t from, vertex_hdl_t to, char *name)
-{
-
-	char *path, *link;
-	vertex_hdl_t handle = NULL;
-	int rv, i;
-
-	handle = hwgfs_find_handle(from, name, 0, 0, 0, 1);
-	if (handle) {
-		return(0);
-	}
-
-	path = kmalloc(1024, GFP_KERNEL);
-	memset(path, 0x0, 1024);
-	link = kmalloc(1024, GFP_KERNEL);
-	memset(path, 0x0, 1024);
-	i = hwgfs_generate_path (to, link, 1024);
-	rv = hwgfs_mk_symlink (from, (const char *)name, 
-			       DEVFS_FL_DEFAULT, link,
-			       &handle, NULL);
-	return(0);
-
-
-}
-#endif
 
 int
 hwgraph_edge_add(vertex_hdl_t from, vertex_hdl_t to, char *name)
@@ -916,6 +888,43 @@ hwgraph_vertex_unref(vertex_hdl_t vhdl)
 	return(GRAPH_ILLEGAL_REQUEST);
 }
 
+void
+hwgraph_debug(char *file, char * function, int line, vertex_hdl_t vhdl1, vertex_hdl_t vhdl2, char *format, ...)
+{
+
+	int pos;
+	char *hwpath;
+	va_list ap;
+
+	if ( !hwgraph_debug_mask )
+		return;
+
+	hwpath = kmalloc(MAXDEVNAME, GFP_KERNEL);
+	if (!hwpath)
+		BUG();
+
+	printk("HWGRAPH_DEBUG %s %s %d : ", file, function, line);
+
+	if (vhdl1){
+		memset(hwpath, 0, MAXDEVNAME);
+		pos = hwgfs_generate_path(vhdl1, hwpath, MAXDEVNAME);
+		printk("vhdl1 = %s : ", &hwpath[pos]);
+	}
+
+	if (vhdl2){
+		memset(hwpath, 0, MAXDEVNAME);
+		pos = hwgfs_generate_path(vhdl2, hwpath, MAXDEVNAME);
+		printk("vhdl2 = %s :", &hwpath[pos]);
+	}
+
+	memset(hwpath, 0, MAXDEVNAME);
+        va_start(ap, format);
+        vsnprintf(hwpath, 500, format, ap);
+        va_end(ap);
+	hwpath[MAXDEVNAME -1] = (char)0; /* Just in case. */
+        printk(" %s", hwpath);
+	kfree(hwpath);
+}
 
 EXPORT_SYMBOL(hwgraph_mk_dir);
 EXPORT_SYMBOL(hwgraph_path_add);

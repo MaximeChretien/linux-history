@@ -32,7 +32,6 @@ sn_io_addr(unsigned long port)
 		return( (void *)  (port | __IA64_UNCACHED_OFFSET));
 	} else {
 		/* but the simulator uses them... */
-		unsigned long io_base;
 		unsigned long addr;
  
 		/*
@@ -40,13 +39,9 @@ sn_io_addr(unsigned long port)
  		 * for accessing registers in bedrock local block
  		 * (so we don't do port&0xfff)
  		 */
-		if ((port >= 0x1f0 && port <= 0x1f7) ||
-			port == 0x3f6 || port == 0x3f7) {
-			io_base = (0xc000000fcc000000 | ((unsigned long)get_nasid() << 38));
-			addr = io_base | ((port >> 2) << 12) | (port & 0xfff);
-		} else {
-			addr = __ia64_get_io_port_base() | ((port >> 2) << 2);
-		}
+		addr = 0xc0000087cc000000 | ((port >> 2) << 12);
+		if ((port >= 0x1f0 && port <= 0x1f7) || port == 0x3f6 || port == 0x3f7)
+			addr |= port;
 		return(void *) addr;
 	}
 }

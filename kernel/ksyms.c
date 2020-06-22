@@ -49,6 +49,7 @@
 #include <linux/seq_file.h>
 #include <linux/dnotify.h>
 #include <linux/crc32.h>
+#include <linux/firmware.h>
 #include <asm/checksum.h>
 
 #if defined(CONFIG_PROC_FS)
@@ -143,6 +144,7 @@ EXPORT_SYMBOL(fput);
 EXPORT_SYMBOL(fget);
 EXPORT_SYMBOL(igrab);
 EXPORT_SYMBOL(iunique);
+EXPORT_SYMBOL(ilookup);
 EXPORT_SYMBOL(iget4);
 EXPORT_SYMBOL(iput);
 EXPORT_SYMBOL(inode_init_once);
@@ -513,6 +515,9 @@ EXPORT_SYMBOL(seq_open);
 EXPORT_SYMBOL(seq_release);
 EXPORT_SYMBOL(seq_read);
 EXPORT_SYMBOL(seq_lseek);
+EXPORT_SYMBOL(single_open);
+EXPORT_SYMBOL(single_release);
+EXPORT_SYMBOL(seq_release_private);
 
 /* Program loader interfaces */
 EXPORT_SYMBOL(setup_arg_pages);
@@ -569,6 +574,13 @@ EXPORT_SYMBOL(strsep);
 EXPORT_SYMBOL(crc32_le);
 EXPORT_SYMBOL(crc32_be);
 EXPORT_SYMBOL(bitreverse);
+#endif
+
+#ifdef CONFIG_FW_LOADER
+EXPORT_SYMBOL(release_firmware);
+EXPORT_SYMBOL(request_firmware);
+EXPORT_SYMBOL(request_firmware_nowait);
+EXPORT_SYMBOL(register_firmware);
 #endif
 
 /* software interrupts */

@@ -34,8 +34,9 @@
 
 #include "mga.h"
 #include "drmP.h"
-#include "mga_drv.h"
 #include "drm.h"
+#include "mga_drm.h"
+#include "mga_drv.h"
 
 
 /* ================================================================
@@ -512,7 +513,7 @@ static void mga_dma_dispatch_clear( drm_device_t *dev,
 	int nbox = sarea_priv->nbox;
 	int i;
 	DMA_LOCALS;
-	DRM_DEBUG("%s:\n" , __FUNCTION__);
+	DRM_DEBUG( "\n" );
 
 	BEGIN_DMA( 1 );
 
@@ -606,7 +607,7 @@ static void mga_dma_dispatch_swap( drm_device_t *dev )
 	int nbox = sarea_priv->nbox;
 	int i;
 	DMA_LOCALS;
-	DRM_DEBUG( "%s:\n", __FUNCTION__ );
+	DRM_DEBUG( "\n" );
 
 	sarea_priv->last_frame.head = dev_priv->prim.tail;
 	sarea_priv->last_frame.wrap = dev_priv->prim.last_wrap;
@@ -760,8 +761,7 @@ static void mga_dma_dispatch_iload( drm_device_t *dev, drm_buf_t *buf,
 	u32 srcorg = buf->bus_address | MGA_SRCACC_AGP | MGA_SRCMAP_SYSMEM;
 	u32 y2;
 	DMA_LOCALS;
-	DRM_DEBUG( "%s: buf=%d used=%d\n",
-		   __FUNCTION__, buf->idx, buf->used );
+	DRM_DEBUG( "buf=%d used=%d\n", buf->idx, buf->used );
 
 	y2 = length / 64;
 
@@ -815,7 +815,7 @@ static void mga_dma_dispatch_blit( drm_device_t *dev,
 	int nbox = sarea_priv->nbox;
 	u32 scandir = 0, i;
 	DMA_LOCALS;
-	DRM_DEBUG( "%s:\n", __FUNCTION__ );
+	DRM_DEBUG( "\n" );
 
 	BEGIN_DMA( 4 + nbox );
 

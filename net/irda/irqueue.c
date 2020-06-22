@@ -154,7 +154,7 @@ void hashbin_insert(hashbin_t* hashbin, irda_queue_t* entry, __u32 hashv, char* 
 	unsigned long flags = 0;
 	int bin;
 
-	IRDA_DEBUG( 4, __FUNCTION__"()\n");
+	IRDA_DEBUG( 4,"%s()\n", __FUNCTION__);
 
 	ASSERT( hashbin != NULL, return;);
 	ASSERT( hashbin->magic == HB_MAGIC, return;);
@@ -308,7 +308,7 @@ void* hashbin_remove( hashbin_t* hashbin, __u32 hashv, char* name)
 	unsigned long flags = 0;
 	irda_queue_t* entry;
 
-	IRDA_DEBUG( 4, __FUNCTION__ "()\n");
+	IRDA_DEBUG( 4, "%s()\n", __FUNCTION__);
 
 	ASSERT( hashbin != NULL, return NULL;);
 	ASSERT( hashbin->magic == HB_MAGIC, return NULL;);
@@ -407,7 +407,7 @@ void* hashbin_remove_this( hashbin_t* hashbin, irda_queue_t* entry)
 	int	bin;
 	__u32	hashv;
 
-	IRDA_DEBUG( 4, __FUNCTION__ "()\n");
+	IRDA_DEBUG( 4, "%s()\n", __FUNCTION__);
 
 	ASSERT( hashbin != NULL, return NULL;);
 	ASSERT( hashbin->magic == HB_MAGIC, return NULL;);
@@ -553,7 +553,7 @@ irda_queue_t *hashbin_get_next( hashbin_t *hashbin)
  */
 static void __enqueue_last( irda_queue_t **queue, irda_queue_t* element)
 {
-	IRDA_DEBUG( 4, __FUNCTION__ "()\n");
+	IRDA_DEBUG( 4, "%s()\n", __FUNCTION__);
 
 	/*
 	 * Check if queue is empty.
@@ -596,7 +596,7 @@ inline void enqueue_last( irda_queue_t **queue, irda_queue_t* element)
 void enqueue_first(irda_queue_t **queue, irda_queue_t* element)
 {
 	
-	IRDA_DEBUG( 4, __FUNCTION__ "()\n");
+	IRDA_DEBUG( 4, "%s()\n", __FUNCTION__);
 
 	/*
 	 * Check if queue is empty.

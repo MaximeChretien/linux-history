@@ -1,12 +1,11 @@
 /*
  * Moxa C101 synchronous serial card driver for Linux
  *
- * Copyright (C) 2000-2002 Krzysztof Halasa <khc@pm.waw.pl>
+ * Copyright (C) 2000-2003 Krzysztof Halasa <khc@pm.waw.pl>
  *
  * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * under the terms of version 2 of the GNU General Public License
+ * as published by the Free Software Foundation.
  *
  * For information see http://hq.pm.waw.pl/hdlc/
  *
@@ -31,7 +30,7 @@
 #include "hd64570.h"
 
 
-static const char* version = "Moxa C101 driver version: 1.10";
+static const char* version = "Moxa C101 driver version: 1.14";
 static const char* devname = "C101";
 
 #define C101_PAGE 0x1D00
@@ -41,6 +40,10 @@ static const char* devname = "C101";
 #define C101_MAPPED_RAM_SIZE 0x4000
 
 #define RAM_SIZE (256 * 1024)
+#define TX_RING_BUFFERS 10
+#define RX_RING_BUFFERS ((RAM_SIZE - C101_WINDOW_SIZE) /		\
+			 (sizeof(pkt_desc) + HDLC_MAX_MRU) - TX_RING_BUFFERS)
+
 #define CLOCK_BASE 9830400	/* 9.8304 MHz */
 #define PAGE0_ALWAYS_MAPPED
 
@@ -52,19 +55,19 @@ typedef struct card_s {
 	spinlock_t lock;	/* TX lock */
 	u8 *win0base;		/* ISA window base address */
 	u32 phy_winbase;	/* ISA physical base address */
-	u16 buff_offset;	/* offset of first buffer of first channel */
 	sync_serial_settings settings;
+	int rxpart;		/* partial frame received, next frame invalid*/
 	unsigned short encoding;
 	unsigned short parity;
+	u16 rx_ring_buffers;	/* number of buffers in a ring */
+	u16 tx_ring_buffers;
+	u16 buff_offset;	/* offset of first buffer of first channel */
+	u16 rxin;		/* rx ring buffer 'in' pointer */
+	u16 txin;		/* tx ring buffer 'in' and 'last' pointers */
+	u16 txlast;
 	u8 rxs, txs, tmc;	/* SCA registers */
 	u8 irq;			/* IRQ (3-15) */
-	u8 ring_buffers;	/* number of buffers in a ring */
 	u8 page;
-
-	u8 rxin;		/* rx ring buffer 'in' pointer */
-	u8 txin;		/* tx ring buffer 'in' and 'last' pointers */
-	u8 txlast;
-	u8 rxpart;		/* partial frame received, next frame invalid*/
 
 	struct card_s *next_card;
 }card_t;
@@ -78,7 +81,12 @@ static card_t **new_card = &first_card;
 #define sca_in(reg, card)	   readb((card)->win0base + C101_SCA + (reg))
 #define sca_out(value, reg, card)  writeb(value, (card)->win0base + C101_SCA + (reg))
 #define sca_inw(reg, card)	   readw((card)->win0base + C101_SCA + (reg))
-#define sca_outw(value, reg, card) writew(value, (card)->win0base + C101_SCA + (reg))
+
+/* EDA address register must be set in EDAL, EDAH order - 8 bit ISA bus */
+#define sca_outw(value, reg, card) do { \
+	writeb(value & 0xFF, (card)->win0base + C101_SCA + (reg)); \
+	writeb((value >> 8 ) & 0xFF, (card)->win0base + C101_SCA + (reg+1));\
+} while(0)
 
 #define port_to_card(port)	   (port)
 #define log_node(port)		   (0)
@@ -229,6 +237,8 @@ static int c101_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 
 static void c101_destroy_card(card_t *card)
 {
+	readb(card->win0base + C101_PAGE); /* Resets SCA? */
+
 	if (card->irq)
 		free_irq(card->irq, card);
 
@@ -242,7 +252,7 @@ static void c101_destroy_card(card_t *card)
 
 
 
-static int c101_run(unsigned long irq, unsigned long winbase)
+static int __init c101_run(unsigned long irq, unsigned long winbase)
 {
 	struct net_device *dev;
 	card_t *card;
@@ -285,9 +295,10 @@ static int c101_run(unsigned long irq, unsigned long winbase)
 		return -EBUSY;
 	}
 
-	/* 2 rings required for 1 port */
-	card->ring_buffers = (RAM_SIZE -C101_WINDOW_SIZE) / (2 * HDLC_MAX_MRU);
-	printk(KERN_DEBUG "c101: using %u packets rings\n",card->ring_buffers);
+	card->tx_ring_buffers = TX_RING_BUFFERS;
+	card->rx_ring_buffers = RX_RING_BUFFERS;
+	printk(KERN_DEBUG "c101: using %u TX + %u RX packets rings\n",
+	       card->tx_ring_buffers, card->rx_ring_buffers);
 
 	card->buff_offset = C101_WINDOW_SIZE; /* Bytes 1D00-1FFF reserved */
 
@@ -337,7 +348,7 @@ static int __init c101_init(void)
 		return -ENOSYS;	/* no parameters specified, abort */
 	}
 
-	printk(KERN_INFO "%s (SCA-%s)\n", version, sca_version);
+	printk(KERN_INFO "%s\n", version);
 
 	do {
 		unsigned long irq, ram;
@@ -352,7 +363,7 @@ static int __init c101_init(void)
 			c101_run(irq, ram);
 
 		if (*hw == '\x0')
-			return 0;
+			return first_card ? 0 : -ENOSYS;
 	}while(*hw++ == ':');
 
 	printk(KERN_ERR "c101: invalid hardware parameters\n");
@@ -389,6 +400,6 @@ module_exit(c101_cleanup);
 
 MODULE_AUTHOR("Krzysztof Halasa <khc@pm.waw.pl>");
 MODULE_DESCRIPTION("Moxa C101 serial port driver");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
 MODULE_PARM(hw, "s");		/* hw=irq,ram:irq,... */
 EXPORT_NO_SYMBOLS;

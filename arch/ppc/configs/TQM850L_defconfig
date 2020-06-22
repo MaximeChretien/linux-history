@@ -470,6 +470,17 @@ CONFIG_PARTITION_ADVANCED=y
 # CONFIG_SOUND is not set
 
 #
+# MPC8xx Options
+#
+
+#
+# Generic MPC8xx Options
+#
+CONFIG_8xx_COPYBACK=y
+# CONFIG_8xx_CPU6 is not set
+# CONFIG_UCODE_PATCH is not set
+
+#
 # MPC8xx CPM Options
 #
 CONFIG_SCC_ENET=y

@@ -785,9 +785,8 @@ static void nodemgr_call_policy(char *verb, struct unit_directory *ud)
 	envp[i++] = 0;
 
 	/* NOTE: user mode daemons can call the agents too */
-#ifdef CONFIG_IEEE1394_VERBOSEDEBUG
-	HPSB_DEBUG("NodeMgr: %s %s %016Lx", argv[0], verb, (long long unsigned)ud->ne->guid);
-#endif
+	HPSB_VERBOSE("NodeMgr: %s %s %016Lx", argv[0], verb, (long long unsigned)ud->ne->guid);
+
 	value = call_usermodehelper(argv[0], argv, envp);
 	kfree(buf);
 	kfree(envp);
@@ -800,9 +799,7 @@ static void nodemgr_call_policy(char *verb, struct unit_directory *ud)
 static inline void
 nodemgr_call_policy(char *verb, struct unit_directory *ud)
 {
-#ifdef CONFIG_IEEE1394_VERBOSEDEBUG
-	HPSB_DEBUG("NodeMgr: nodemgr_call_policy(): hotplug not enabled");
-#endif
+	HPSB_VERBOSE("NodeMgr: nodemgr_call_policy(): hotplug not enabled");
 	return;
 } 
 
@@ -992,14 +989,12 @@ static void nodemgr_process_config_rom(struct node_entry *ne,
 	ne->busopt.generation	= (busoptions >> 4) & 0xf;
 	ne->busopt.lnkspd	= busoptions & 0x7;
 
-#ifdef CONFIG_IEEE1394_VERBOSEDEBUG
-	HPSB_DEBUG("NodeMgr: raw=0x%08x irmc=%d cmc=%d isc=%d bmc=%d pmc=%d "
-		   "cyc_clk_acc=%d max_rec=%d gen=%d lspd=%d",
-		   busoptions, ne->busopt.irmc, ne->busopt.cmc,
-		   ne->busopt.isc, ne->busopt.bmc, ne->busopt.pmc,
-		   ne->busopt.cyc_clk_acc, ne->busopt.max_rec,
-		   ne->busopt.generation, ne->busopt.lnkspd);
-#endif
+	HPSB_VERBOSE("NodeMgr: raw=0x%08x irmc=%d cmc=%d isc=%d bmc=%d pmc=%d "
+		     "cyc_clk_acc=%d max_rec=%d gen=%d lspd=%d",
+		     busoptions, ne->busopt.irmc, ne->busopt.cmc,
+		     ne->busopt.isc, ne->busopt.bmc, ne->busopt.pmc,
+		     ne->busopt.cyc_clk_acc, ne->busopt.max_rec,
+		     ne->busopt.generation, ne->busopt.lnkspd);
 
 	/*
 	 * When the config rom changes we disconnect all drivers and
@@ -1058,10 +1053,9 @@ static int read_businfo_block(struct hpsb_host *host, nodeid_t nodeid, unsigned 
 	 * work though, and we are forced to doing quadlet sized
 	 * reads.  */
 
-#ifdef CONFIG_IEEE1394_VERBOSEDEBUG
-	HPSB_INFO("Initiating ConfigROM request for node " NODE_BUS_FMT,
-		  NODE_BUS_ARGS(host, nodeid));
-#endif
+	HPSB_VERBOSE("Initiating ConfigROM request for node " NODE_BUS_FMT,
+		     NODE_BUS_ARGS(host, nodeid));
+
 	/* 
 	 * Must retry a few times if config rom read returns zero (how long?). Will
 	 * not normally occur, but we should do the right thing. For example, with
@@ -1317,8 +1311,10 @@ static int nodemgr_host_thread(void *__hi)
 		 * to make sure things settle down. */
 		for (i = 0; i < 4 ; i++) {
 			set_current_state(TASK_INTERRUPTIBLE);
-			if (schedule_timeout(HZ/16))
+			if (schedule_timeout(HZ/16)) {
+				up(&nodemgr_serialize);
 				goto caught_signal;
+			}
 
 			/* Now get the generation in which the node ID's we collect
 			 * are valid.  During the bus scan we will use this generation
@@ -1348,9 +1344,7 @@ static int nodemgr_host_thread(void *__hi)
 	}
 
 caught_signal:
-#ifdef CONFIG_IEEE1394_VERBOSEDEBUG
-	HPSB_DEBUG ("NodeMgr: Exiting thread");
-#endif
+	HPSB_VERBOSE("NodeMgr: Exiting thread");
 
 	complete_and_exit(&hi->exited, 0);
 }
@@ -1465,9 +1459,7 @@ static void nodemgr_host_reset(struct hpsb_host *host)
 	struct host_info *hi = hpsb_get_hostinfo(&nodemgr_highlevel, host);
 
 	if (hi != NULL) {
-#ifdef CONFIG_IEEE1394_VERBOSEDEBUG
-		HPSB_DEBUG ("NodeMgr: Processing host reset for %s", hi->daemon_name);
-#endif
+		HPSB_VERBOSE("NodeMgr: Processing host reset for %s", hi->daemon_name);
 		up(&hi->reset_sem);
 	} else
 		HPSB_ERR ("NodeMgr: could not process reset of unused host");

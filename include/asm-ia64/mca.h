@@ -89,6 +89,8 @@ typedef struct ia64_mca_sal_to_os_state_s {
 	u64		imsto_sal_check_ra;	/* Return address in SAL_CHECK while going
 						 * back to SAL from OS after MCA handling.
 						 */
+	u64		pal_min_state;		/* from PAL in r17 */
+	u64		proc_state_param;	/* from PAL in r18. See SDV 2:268 11.3.2.1 */
 } ia64_mca_sal_to_os_state_t;
 
 enum {
@@ -132,7 +134,9 @@ extern void ia64_slave_init_handler(void);
 extern void ia64_mca_rendez_int_handler(int,void *,struct pt_regs *);
 extern void ia64_mca_wakeup_int_handler(int,void *,struct pt_regs *);
 extern void ia64_mca_cmc_int_handler(int,void *,struct pt_regs *);
+extern void ia64_mca_cmc_int_caller(int,void *,struct pt_regs *);
 extern void ia64_mca_cpe_int_handler(int,void *,struct pt_regs *);
+extern void ia64_mca_cpe_int_caller(int,void *,struct pt_regs *);
 extern int  ia64_log_print(int,prfunc_t);
 extern void ia64_mca_cmc_vector_setup(void);
 extern int  ia64_mca_check_errors(void);

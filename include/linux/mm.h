@@ -322,9 +322,11 @@ typedef struct page {
 #define TryLockPage(page)	test_and_set_bit(PG_locked, &(page)->flags)
 #define PageChecked(page)	test_bit(PG_checked, &(page)->flags)
 #define SetPageChecked(page)	set_bit(PG_checked, &(page)->flags)
+#define ClearPageChecked(page)	clear_bit(PG_checked, &(page)->flags)
 #define PageLaunder(page)	test_bit(PG_launder, &(page)->flags)
 #define SetPageLaunder(page)	set_bit(PG_launder, &(page)->flags)
 #define ClearPageLaunder(page)	clear_bit(PG_launder, &(page)->flags)
+#define ClearPageArch1(page)	clear_bit(PG_arch_1, &(page)->flags)
 
 /*
  * The zone field is never updated after free_area_init_core()
@@ -535,8 +537,8 @@ static inline int is_page_cache_freeable(struct page * page)
 	return page_count(page) - !!page->buffers == 1;
 }
 
-extern int can_share_swap_page(struct page *);
-extern int remove_exclusive_swap_page(struct page *);
+extern int FASTCALL(can_share_swap_page(struct page *));
+extern int FASTCALL(remove_exclusive_swap_page(struct page *));
 
 extern void __free_pte(pte_t);
 

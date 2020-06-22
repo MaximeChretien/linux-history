@@ -137,6 +137,18 @@ __start:
 	mr	r28,r6
 	mr	r27,r7
 	li	r24,0			/* cpu # */
+
+#ifdef CONFIG_POWER4
+/*
+ * On the PPC970, we have to turn off real-mode cache inhibit
+ * early, before we first turn the MMU off.
+ */
+	mfspr	r0,SPRN_PVR
+	srwi	r0,r0,16
+	cmpwi	r0,0x39
+	beql	ppc970_setup_hid
+#endif
+
 /*
  * early_init() does the early machine identification and does
  * the necessary low-level setup and clears the BSS
@@ -157,11 +169,10 @@ __start:
  */
  	bl	mmu_off
 __after_mmu_off:
-	bl	clear_bats
-	bl	flush_tlbs
 
 #ifndef CONFIG_POWER4
-	/* POWER4 doesn't have BATs */
+	bl	clear_bats
+	bl	flush_tlbs
 	bl	initial_bats
 #if !defined(CONFIG_APUS) && defined(CONFIG_BOOTX_TEXT)
 	bl	setup_disp_bat
@@ -170,15 +181,23 @@ __after_mmu_off:
 /*
  * Load up the SDR1 and segment register values now
  * since we don't have the BATs.
+ * Also make sure we are running in 32-bit mode.
  */
 	bl	reloc_offset
-	addis	r4,r3,_SDR1@ha		/* get the value from _SDR1 */
-	lwz	r4,_SDR1@l(r4)		/* assume hash table below 4GB */
-	mtspr	SDR1,r4
+	addis	r14,r3,_SDR1@ha		/* get the value from _SDR1 */
+	lwz	r14,_SDR1@l(r14)	/* assume hash table below 4GB */
+	mtspr	SDR1,r14
 	slbia
-	lis	r5,0x2000		/* set pseudo-segment reg 12 */
-	ori	r5,r5,0x0ccc
+	lis	r4,0x2000		/* set pseudo-segment reg 12 */
+	ori	r5,r4,0x0ccc
 	mtsr	12,r5
+	ori	r4,r4,0x0888		/* set pseudo-segment reg 8 */
+	mtsr	8,r4			/* (for access to serial port) */
+	mfmsr	r0
+	clrldi	r0,r0,1
+	sync
+	mtmsr	r0
+	isync
 #endif /* CONFIG_POWER4 */
 
 	/*
@@ -707,12 +726,22 @@ DataStoreTLBMiss:
 	mtcrf	0x80,r3
 	rfi
 
+#ifndef CONFIG_ALTIVEC
+#define AltivecAssistException	UnknownException
+#endif
+
 	STD_EXCEPTION(0x1300, Trap_13, InstructionBreakpoint)
 	STD_EXCEPTION(0x1400, SMI, SMIException)
 	STD_EXCEPTION(0x1500, Trap_15, UnknownException)
+#ifdef CONFIG_POWER4
 	STD_EXCEPTION(0x1600, Trap_16, UnknownException)
+	STD_EXCEPTION(0x1700, Trap_17, AltivecAssistException)
+	STD_EXCEPTION(0x1800, Trap_18, TAUException)
+#else /* !CONFIG_POWER4 */
+	STD_EXCEPTION(0x1600, Trap_16, AltivecAssistException)
 	STD_EXCEPTION(0x1700, Trap_17, TAUException)
 	STD_EXCEPTION(0x1800, Trap_18, UnknownException)
+#endif
 	STD_EXCEPTION(0x1900, Trap_19, UnknownException)
 	STD_EXCEPTION(0x1a00, Trap_1a, UnknownException)
 	STD_EXCEPTION(0x1b00, Trap_1b, UnknownException)
@@ -828,6 +857,7 @@ BEGIN_FTR_SECTION
 	bt-	9,power_save_6xx_restore	/* Check NAP */
 END_FTR_SECTION_IFSET(CPU_FTR_CAN_NAP)
 	b	transfer_to_handler_cont
+
 #endif /* CONFIG_6xx */
 
 /*
@@ -983,7 +1013,9 @@ load_up_altivec:
 	/* enable use of AltiVec after return */
 	oris	r23,r23,MSR_VEC@h
 	mfspr	r5,SPRG3		/* current task's THREAD (phys) */
+	li	r4,1
 	li	r20,THREAD_VSCR
+	stw	r4,THREAD_USED_VR(r5)
 	LVX(vr0,r20,r5)
 	MTVSCR(vr0)
 	REST_32VR(0,r20,r5)
@@ -1233,7 +1265,6 @@ __secondary_start_gemini:
         andc    r4,r4,r3
         mtspr   HID0,r4
         sync
-        bl      prom_init
         b       __secondary_start
 #endif /* CONFIG_GEMINI */
 	.globl	__secondary_start_psurge
@@ -1305,6 +1336,7 @@ __secondary_start:
 
 	/* enable MMU and jump to start_secondary */
 	li	r4,MSR_KERNEL
+	FIX_SRR1(r4,r5)
 	lis	r3,start_secondary@h
 	ori	r3,r3,start_secondary@l
 	mtspr	SRR0,r3
@@ -1319,6 +1351,10 @@ __secondary_start:
  */
 _GLOBAL(__setup_cpu_power3)
 	blr
+_GLOBAL(__setup_cpu_power4)
+	blr
+_GLOBAL(__setup_cpu_ppc970)
+	blr
 _GLOBAL(__setup_cpu_generic)
 	blr
 
@@ -1326,7 +1362,14 @@ _GLOBAL(__setup_cpu_generic)
 _GLOBAL(__save_cpu_setup)
 	blr
 _GLOBAL(__restore_cpu_setup)
+#ifdef CONFIG_POWER4
+	/* turn off real-mode cache inhibit on the PPC970 */
+	mfspr	r0,SPRN_PVR
+	srwi	r0,r0,16
+	cmpwi	r0,0x39
+	beq	ppc970_setup_hid
 	blr
+#endif
 #endif /* CONFIG_6xx */
 
 /*
@@ -1334,6 +1377,11 @@ _GLOBAL(__restore_cpu_setup)
  * IR=0 and DR=0.
  */
 load_up_mmu:
+	sync			/* Force all PTE updates to finish */
+	isync
+	tlbia			/* Clear all TLB entries */
+	sync			/* wait for tlbia/tlbie to finish */
+	TLBSYNC			/* ... on all CPUs */
 	/* Load the SDR1 register (hash table base & size) */
 	lis	r6,_SDR1@ha
 	tophys(r6,r6)
@@ -1428,14 +1476,7 @@ start_here:
 	SYNC
 	RFI
 /* Load up the kernel context */
-2:
-	sync			/* Force all PTE updates to finish */
-	isync
-	tlbia			/* Clear all TLB entries */
-	sync			/* wait for tlbia/tlbie to finish */
-	TLBSYNC			/* ... on all CPUs */
-
-	bl	load_up_mmu
+2:	bl	load_up_mmu
 
 #ifdef CONFIG_BDI_SWITCH
 	/* Add helper information for the Abatron bdiGDB debugger.
@@ -1648,6 +1689,40 @@ setup_disp_bat:
 	blr
 
 #endif /* !defined(CONFIG_APUS) && defined(CONFIG_BOOTX_TEXT) */
+
+#else /* CONFIG_POWER4 */
+ppc970_setup_hid:
+	li	r0,0
+	sync
+	mtspr	0x3f4,r0
+	isync
+	sync
+	mtspr	0x3f6,r0
+	isync
+	mfspr	r0,SPRN_HID0
+	li	r11,5			/* clear DOZE and SLEEP */
+	rldimi	r0,r11,52,8		/* and set NAP and DPM */
+	mtspr	SPRN_HID0,r0
+	mfspr	r0,SPRN_HID0
+	mfspr	r0,SPRN_HID0
+	mfspr	r0,SPRN_HID0
+	mfspr	r0,SPRN_HID0
+	mfspr	r0,SPRN_HID0
+	mfspr	r0,SPRN_HID0
+	sync
+	isync
+	mfspr	r0,SPRN_HID1
+	li	r11,0x1200		/* enable i-fetch cacheability */
+	sldi	r11,r11,44		/* and prefetch */
+	or	r0,r0,r11
+	mtspr	SPRN_HID1,r0
+	mtspr	SPRN_HID1,r0
+	isync
+	li	r0,0
+	sync
+	mtspr	0x137,0
+	isync
+	blr
 #endif /* CONFIG_POWER4 */
 
 #ifdef CONFIG_8260

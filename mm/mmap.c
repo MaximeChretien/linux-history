@@ -69,7 +69,7 @@ int vm_enough_memory(long pages)
 	    return 1;
 
 	/* The page cache contains buffer pages these days.. */
-	free = atomic_read(&page_cache_size);
+	free = page_cache_size;
 	free += nr_free_pages();
 	free += nr_swap_pages;
 
@@ -1040,6 +1040,9 @@ unsigned long do_brk(unsigned long addr, unsigned long len)
 	len = PAGE_ALIGN(len);
 	if (!len)
 		return addr;
+
+	if ((addr + len) > TASK_SIZE || (addr + len) < addr)
+		return -EINVAL;
 
 	/*
 	 * mlock MCL_FUTURE?

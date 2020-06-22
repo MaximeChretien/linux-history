@@ -129,20 +129,13 @@ ipv6header_checkentry(const char *tablename,
 	return 1;
 }
 
-static void
-ipv6header_destroy(void *matchinfo,
-		   unsigned int matchinfosize)
-{
-	return;
-}
-
 static struct ip6t_match
 ip6t_ipv6header_match = {
 	{ NULL, NULL },
 	"ipv6header",
 	&ipv6header_match,
 	&ipv6header_checkentry,
-	&ipv6header_destroy,
+	NULL,
 	THIS_MODULE
 };
 

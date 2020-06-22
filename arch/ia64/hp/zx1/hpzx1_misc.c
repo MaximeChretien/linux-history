@@ -210,7 +210,7 @@ hpzx1_lba_probe(acpi_handle obj, u32 depth, void *context, void **ret)
 {
 	u64 csr_base = 0, csr_length = 0;
 	acpi_status status;
-	NATIVE_UINT busnum;
+	acpi_native_uint busnum;
 	char *name = context;
 	char fullname[32];
 

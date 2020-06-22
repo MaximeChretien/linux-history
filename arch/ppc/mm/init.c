@@ -46,6 +46,31 @@
 #include "mem_pieces.h"
 #include "mmu_decl.h"
 
+/*
+ * Just any arbitrary offset to the start of the vmalloc VM area: the
+ * current 64MB value just means that there will be a 64MB "hole" after the
+ * physical memory until the kernel virtual memory starts.  That means that
+ * any out-of-bounds memory accesses will hopefully be caught.
+ * The vmalloc() routines leaves a hole of 4kB between each vmalloced
+ * area for the same reason. ;)
+ *
+ * We no longer map larger than phys RAM with the BATs so we don't have
+ * to worry about the VMALLOC_OFFSET causing problems.  We do have to worry
+ * about clashes between our early calls to ioremap() that start growing down
+ * from ioremap_base being run into the VM area allocations (growing upwards
+ * from VMALLOC_START).  For this reason we have ioremap_bot to check when
+ * we actually run into our mappings setup in the early boot with the VM
+ * system.  This really does become a problem for machines with good amounts
+ * of RAM.  -- Cort
+ */
+#ifdef CONFIG_PIN_TLB
+#define VMALLOC_OFFSET (0x2000000) /* 32M */
+#else
+#define VMALLOC_OFFSET (0x1000000) /* 16M */
+#endif
+
+unsigned long vmalloc_start;
+
 mmu_gather_t mmu_gathers[NR_CPUS];
 
 unsigned long total_memory;
@@ -313,6 +338,7 @@ void __init MMU_init(void)
 	total_lowmem = total_memory;
 	adjust_total_lowmem();
 	set_phys_avail(total_lowmem);
+	vmalloc_start = KERNELBASE + total_lowmem;
 
 	/* Initialize the MMU hardware */
 	if (ppc_md.progress)
@@ -458,6 +484,9 @@ void __init mem_init(void)
 	num_physpages = max_mapnr;	/* RAM is assumed contiguous */
 
 	totalram_pages += free_all_bootmem();
+
+	/* adjust vmalloc_start */
+	vmalloc_start = (vmalloc_start + VMALLOC_OFFSET) & ~(VMALLOC_OFFSET-1);
 
 #ifdef CONFIG_BLK_DEV_INITRD
 	/* if we are booted from BootX with an initial ramdisk,

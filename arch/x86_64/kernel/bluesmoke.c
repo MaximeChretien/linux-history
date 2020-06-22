@@ -186,7 +186,7 @@ static char *highbits[32] = {
 	[0] = "err cpu1",
 };
 
-static void check_k8_nb(void)
+static void check_k8_nb(int header)
 {
 	struct pci_dev *nb;
 	nb = find_k8_nb(); 
@@ -198,6 +198,9 @@ static void check_k8_nb(void)
 	pci_read_config_dword(nb, 0x4c, &statushigh);
 	if (!(statushigh & (1<<31)))
 		return;
+	if (header) 
+		printk(KERN_ERR "CPU %d: Silent Northbridge MCE\n", smp_processor_id());
+
 	printk(KERN_ERR "Northbridge status %08x%08x\n",
 	       statushigh,statuslow); 
 
@@ -257,9 +260,11 @@ static void k8_machine_check(struct pt_regs * regs, long error_code)
 	rdmsrl(MSR_IA32_MCG_STATUS, status); 
 	if ((status & (1<<2)) == 0) { 
 		if (!regs) 
-			check_k8_nb();
+			check_k8_nb(1);
 		return; 
 	}
+	printk(KERN_EMERG "CPU %d: Machine Check Exception: %016Lx\n", smp_processor_id(), status);
+
 	if (status & 1)
 		printk(KERN_EMERG "MCG_STATUS: unrecoverable\n"); 
 
@@ -277,7 +282,7 @@ static void k8_machine_check(struct pt_regs * regs, long error_code)
 	if (nbstatus & (1UL<57))
 		printk(KERN_EMERG "Unrecoverable condition\n"); 
 		
-	check_k8_nb();
+	check_k8_nb(0);
 
 	if (nbstatus & (1UL<<58)) { 
 		u64 adr;
@@ -338,7 +343,6 @@ static void __init k8_mcheck_init(struct cpuinfo_x86 *c)
 {
 	u64 cap;
 	int i;
-	struct pci_dev *nb; 
 
 	if (!test_bit(X86_FEATURE_MCE, &c->x86_capability) || 
 	    !test_bit(X86_FEATURE_MCA, &c->x86_capability))

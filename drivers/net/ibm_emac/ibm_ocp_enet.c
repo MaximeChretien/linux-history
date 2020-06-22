@@ -674,7 +674,7 @@ emac_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	fep->tx_desc[fep->tx_slot].ctrl = ctrl;
 
 	/* Send the packet out. */
-	out_be32(&emacp->em0tmr0, EMAC_TXM0_GNP0);
+	out_be32(&emacp->em0tmr0, EMAC_TMR0_XMIT);
 
 	if (++fep->tx_slot == NUM_TX_BUFF)
 		fep->tx_slot = 0;
@@ -699,10 +699,9 @@ emac_adjust_to_link(struct ocp_enet_private *fep)
 	full_duplex = 0;
 	speed = SPEED_10;
 
-	/* set receive fifo to 4k and tx fifo to 2k */
-	mode_reg = EMAC_M1_RFS_4K | EMAC_M1_TX_FIFO_2K | EMAC_M1_APP |
-	    EMAC_M1_TR0_MULTI;
-       
+	/* set mode register 1 defaults */
+	mode_reg = EMAC_M1_DEFAULT;
+
 	/* Read link mode on PHY */
     	if (fep->phy_mii.def->ops->read_link(&fep->phy_mii) == 0) {
 	        /* If an error occurred, we don't deal with it yet */
@@ -871,26 +870,19 @@ emac_reset_configure(struct ocp_enet_private *fep)
 	if (netif_carrier_ok(fep->ndev))
 	    emac_adjust_to_link(fep);
 
-	/* enable broadcast and individual address */
-	out_be32(&emacp->em0rmr, EMAC_RMR_IAE | EMAC_RMR_BAE);
+	/* enable broadcast/individual address and RX FIFO defaults */
+	out_be32(&emacp->em0rmr, EMAC_RMR_DEFAULT);
 
+	/* set transmit request threshold register */
+	out_be32(&emacp->em0trtr, EMAC_TRTR_DEFAULT);
 
         /* Reconfigure multicast */
         __emac_set_multicast_list(fep->ndev);
 
-	/* set transmit request threshold register */
-	out_be32(&emacp->em0trtr, EMAC_TRTR_256);
-
-
-	/* set receive low/high water mark register */
-#ifdef CONFIG_440
-	/* 440GP has a 64 byte burst length */
-	out_be32(&emacp->em0rwmr, 0x80009000);
-	out_be32(&emacp->em0tmr1, 0xf8640000);
-#else
-	/* 405s have a 16 byte burst length */
-	out_be32(&emacp->em0rwmr, 0x0f002000);
-#endif				/* CONFIG_440 */
+	/* Set receiver/transmitter defaults */
+	out_be32(&emacp->em0rwmr, EMAC_RWMR_DEFAULT);
+	out_be32(&emacp->em0tmr0, EMAC_TMR0_DEFAULT);
+	out_be32(&emacp->em0tmr1, EMAC_TMR1_DEFAULT);
 
 	/* set frame gap */
 	out_be32(&emacp->em0ipgvr, CONFIG_IBM_OCP_ENET_GAP);
@@ -989,7 +981,8 @@ emac_link_timer(unsigned long data)
                  * latency peaks caused by this code
                  */
                 emac_reset_configure(fep);
-                emac_kick(fep);
+		if (fep->opened)
+                	emac_kick(fep);
 	} else {
 	        fep->timer_ticks = 0;
 	        netif_carrier_off(fep->ndev);

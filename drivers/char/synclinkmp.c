@@ -1,5 +1,5 @@
 /*
- * $Id: synclinkmp.c,v 3.17 2002/04/22 16:05:39 paulkf Exp $
+ * $Id: synclinkmp.c,v 3.22 2003/09/05 14:04:26 paulkf Exp $
  *
  * Device driver for Microgate SyncLink Multiport
  * high speed multiprotocol serial adapter.
@@ -504,7 +504,7 @@ MODULE_PARM(maxframe,"1-" __MODULE_STRING(MAX_DEVICES) "i");
 MODULE_PARM(dosyncppp,"1-" __MODULE_STRING(MAX_DEVICES) "i");
 
 static char *driver_name = "SyncLink MultiPort driver";
-static char *driver_version = "$Revision: 3.17 $";
+static char *driver_version = "$Revision: 3.22 $";
 
 static int __devinit synclinkmp_init_one(struct pci_dev *dev,const struct pci_device_id *ent);
 static void __devexit synclinkmp_remove_one(struct pci_dev *dev);
@@ -514,6 +514,10 @@ static struct pci_device_id synclinkmp_pci_tbl[] __devinitdata = {
 	{ 0, }, /* terminate list */
 };
 MODULE_DEVICE_TABLE(pci, synclinkmp_pci_tbl);
+
+#ifdef MODULE_LICENSE
+MODULE_LICENSE("GPL");
+#endif
 
 static struct pci_driver synclinkmp_pci_driver = {
 	name:		"synclinkmp",
@@ -724,6 +728,9 @@ static inline int sanity_check(SLMP_INFO *info,
 		printk(badmagic, kdevname(device), routine);
 		return 1;
 	}
+#else
+	if (!info)
+		return 1;
 #endif
 	return 0;
 }
@@ -748,12 +755,8 @@ static int open(struct tty_struct *tty, struct file *filp)
 	info = synclinkmp_device_list;
 	while(info && info->line != line)
 		info = info->next_device;
-	if ( !info ){
-		printk("%s(%d):%s Can't find specified device on open (line=%d)\n",
-			__FILE__,__LINE__,info->device_name,line);
+	if (sanity_check(info, tty->device, "open"))
 		return -ENODEV;
-	}
-
 	if ( info->init_error ) {
 		printk("%s(%d):%s device is not allocated, init error=%d\n",
 			__FILE__,__LINE__,info->device_name,info->init_error);
@@ -762,8 +765,6 @@ static int open(struct tty_struct *tty, struct file *filp)
 
 	tty->driver_data = info;
 	info->tty = tty;
-	if (sanity_check(info, tty->device, "open"))
-		return -ENODEV;
 
 	if (debug_level >= DEBUG_LEVEL_INFO)
 		printk("%s(%d):%s open(), old ref count = %d\n",
@@ -825,6 +826,8 @@ static int open(struct tty_struct *tty, struct file *filp)
 
 cleanup:
 	if (retval) {
+		if (tty->count == 1)
+			info->tty = 0; /* tty layer will release tty struct */
 		if(MOD_IN_USE)
 			MOD_DEC_USE_COUNT;
 		if(info->count)
@@ -841,14 +844,17 @@ static void close(struct tty_struct *tty, struct file *filp)
 {
 	SLMP_INFO * info = (SLMP_INFO *)tty->driver_data;
 
-	if (!info || sanity_check(info, tty->device, "close"))
+	if (sanity_check(info, tty->device, "close"))
 		return;
 
 	if (debug_level >= DEBUG_LEVEL_INFO)
 		printk("%s(%d):%s close() entry, count=%d\n",
 			 __FILE__,__LINE__, info->device_name, info->count);
 
-	if (!info->count || tty_hung_up_p(filp))
+	if (!info->count)
+		return;
+
+	if (tty_hung_up_p(filp))
 		goto cleanup;
 
 	if ((tty->count == 1) && (info->count != 1)) {
@@ -1203,7 +1209,7 @@ static void wait_until_sent(struct tty_struct *tty, int timeout)
 			schedule_timeout(char_time);
 			if (signal_pending(current))
 				break;
-			if (timeout && ((orig_jiffies + timeout) < jiffies))
+			if (timeout && time_after(jiffies, orig_jiffies + timeout))
 				break;
 		}
 	} else {
@@ -1214,7 +1220,7 @@ static void wait_until_sent(struct tty_struct *tty, int timeout)
 			schedule_timeout(char_time);
 			if (signal_pending(current))
 				break;
-			if (timeout && ((orig_jiffies + timeout) < jiffies))
+			if (timeout && time_after(jiffies, orig_jiffies + timeout))
 				break;
 		}
 	}

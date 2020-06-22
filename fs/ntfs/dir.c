@@ -802,17 +802,17 @@ int ntfs_getdir_unsorted(ntfs_inode *ino, u32 *p_high, u32 *p_low,
 	u8 ibs_bits;
 
 	if (!ino) {
-		ntfs_error(__FUNCTION__ "(): No inode! Returning -EINVAL.\n");
+		ntfs_error("%s(): No inode! Returning -EINVAL.\n",__FUNCTION__);
 		return -EINVAL;
 	}
 	vol = ino->vol;
 	if (!vol) {
-		ntfs_error(__FUNCTION__ "(): Inode 0x%lx has no volume. "
-				"Returning -EINVAL.\n", ino->i_number);
+		ntfs_error("%s(): Inode 0x%lx has no volume. Returning "
+			    "-EINVAL.\n", __FUNCTION__, ino->i_number);
 		return -EINVAL;
 	}
-	ntfs_debug(DEBUG_DIR3, __FUNCTION__ "(): Unsorted 1: Entering for "
-			"inode 0x%lx, p_high = 0x%x, p_low = 0x%x.\n",
+	ntfs_debug(DEBUG_DIR3, "%s(): Unsorted 1: Entering for inode 0x%lx, "
+			"p_high = 0x%x, p_low = 0x%x.\n", __FUNCTION__,
 			ino->i_number, *p_high, *p_low);
 	if (!*p_high) {
 		/* We are still in the index root. */
@@ -827,8 +827,8 @@ int ntfs_getdir_unsorted(ntfs_inode *ino, u32 *p_high, u32 *p_low,
 		ino->u.index.recordsize = ibs = NTFS_GETU32(buf + 0x8);
 		ino->u.index.clusters_per_record = NTFS_GETU32(buf + 0xC);
 		entry = buf + 0x20;
-		ntfs_debug(DEBUG_DIR3, __FUNCTION__ "(): Unsorted 2: In index "
-				"root.\n");
+		ntfs_debug(DEBUG_DIR3, "%s(): Unsorted 2: In index root.\n",
+				__FUNCTION__);
 		ibs_bits = ffs(ibs) - 1;
 		/* Compensate for faked "." and "..". */
 		start = 2;
@@ -850,15 +850,15 @@ int ntfs_getdir_unsorted(ntfs_inode *ino, u32 *p_high, u32 *p_low,
 		if (err || io.size != ibs)
 			goto read_err_ret;
 		if (!ntfs_check_index_record(ino, buf)) {
-			ntfs_error(__FUNCTION__ "(): Index block 0x%x is not "
-					"an index record. Returning "
-					"-ENOTDIR.\n", *p_high - 1);
+			ntfs_error("%s(): Index block 0x%x is not an index "
+					"record. Returning -ENOTDIR.\n",
+					 __FUNCTION__, *p_high - 1);
 			ntfs_free(buf);
 			return -ENOTDIR;
 		}
 		entry = buf + 0x18 + NTFS_GETU16(buf + 0x18);
-		ntfs_debug(DEBUG_DIR3, __FUNCTION__ "(): Unsorted 3: In index "
-				"allocation.\n");
+		ntfs_debug(DEBUG_DIR3, "%s(): Unsorted 3: In index "
+				"allocation.\n", __FUNCTION__);
 		start = 0;
 	}
 	/* Process the entries. */
@@ -867,29 +867,30 @@ int ntfs_getdir_unsorted(ntfs_inode *ino, u32 *p_high, u32 *p_low,
 			entry += NTFS_GETU16(entry + 8)) {
 		if (start < finish) {
 			/* Skip entries that were already processed. */
-			ntfs_debug(DEBUG_DIR3, __FUNCTION__ "(): Unsorted 4: "
-					"Skipping already processed entry "
-					"p_high 0x%x, p_low 0x%x.\n", *p_high,
+			ntfs_debug(DEBUG_DIR3, "%s(): Unsorted 4: Skipping "
+					"already processed entry p_high 0x%x, "
+					"p_low 0x%x.\n", __FUNCTION__, *p_high,
 					start);
 			start++;
 			continue;
 		}
-		ntfs_debug(DEBUG_DIR3, __FUNCTION__ "(): Unsorted 5: "
-				"Processing entry p_high 0x%x, p_low 0x%x.\n",
+		ntfs_debug(DEBUG_DIR3, "%s(): Unsorted 5: Processing entry "
+				"p_high 0x%x, p_low 0x%x.\n", __FUNCTION__,
 				*p_high, *p_low);
 		if ((err = cb(entry, param))) {
 			/* filldir signalled us to stop. */
-			ntfs_debug(DEBUG_DIR3, __FUNCTION__ "(): "
-					"Unsorted 6: cb returned %i, "
-					"returning 0, p_high 0x%x, p_low 0x%x."
-					"\n", *p_high, *p_low);
+			ntfs_debug(DEBUG_DIR3, "%s(): Unsorted 6: cb returned "
+					"%i, returning 0, p_high 0x%x, "
+					"p_low 0x%x.\n", __FUNCTION__, err,
+					*p_high, *p_low);
 			ntfs_free(buf);
 			return 0;
 		}
 		++*p_low;
 	}
-	ntfs_debug(DEBUG_DIR3, __FUNCTION__ "(): Unsorted 7: After processing "
-			"entries, p_high 0x%x, p_low 0x%x.\n", *p_high, *p_low);
+	ntfs_debug(DEBUG_DIR3, "%s(): Unsorted 7: After processing entries, "
+			"p_high 0x%x, p_low 0x%x.\n", __FUNCTION__, *p_high,
+			*p_low);
 	/* We have to locate the next record. */
 	ntfs_free(buf);
 	buf = 0;
@@ -898,15 +899,15 @@ int ntfs_getdir_unsorted(ntfs_inode *ino, u32 *p_high, u32 *p_low,
 	if (!attr) {
 		/* Directory does not have index bitmap and index allocation. */
 		*p_high = 0x7fff;
-		ntfs_debug(DEBUG_DIR3, __FUNCTION__ "(): Unsorted 8: No index "
-				"allocation. Returning 0, p_high 0x7fff, "
-				"p_low 0x0.\n");
+		ntfs_debug(DEBUG_DIR3, "%s(): Unsorted 8: No index allocation. "
+				"Returning 0, p_high 0x7fff, p_low 0x0.\n",
+				__FUNCTION__);
 		return 0;
 	}
 	max_size = attr->size;
 	if (max_size > 0x7fff >> 3) {
-		ntfs_error(__FUNCTION__ "(): Directory too large. Visible "
-				"length is truncated.\n");
+		ntfs_error("%s(): Directory too large. Visible "
+				"length is truncated.\n", __FUNCTION__);
 		max_size = 0x7fff >> 3;
 	}
 	buf = ntfs_malloc(max_size);
@@ -920,26 +921,26 @@ int ntfs_getdir_unsorted(ntfs_inode *ino, u32 *p_high, u32 *p_low,
 	attr = ntfs_find_attr(ino, vol->at_index_allocation, I30);
 	if (!attr) {
 		ntfs_free(buf);
-		ntfs_debug(DEBUG_DIR3, __FUNCTION__ "(): Unsorted 9: Find "
-				"attr failed. Returning -EIO.\n");
+		ntfs_debug(DEBUG_DIR3, "%s(): Unsorted 9: Find attr failed. "
+				"Returning -EIO.\n", __FUNCTION__);
 		return -EIO;
 	}
 	if (attr->resident) {
 		ntfs_free(buf);
-		ntfs_debug(DEBUG_DIR3, __FUNCTION__ "(): Unsorted 9.5: IA is "
-				"resident. Not allowed. Returning EINVAL.\n");
+		ntfs_debug(DEBUG_DIR3, "%s(): Unsorted 9.5: IA is resident. Not"
+				" allowed. Returning EINVAL.\n", __FUNCTION__);
 		return -EINVAL;
 	}
 	/* Loop while going through non-allocated index records. */
 	max_size <<= 3;
 	while (1) {
 		if (++*p_high >= 0x7fff) {
-			ntfs_error(__FUNCTION__ "(): Unsorted 10: Directory "
+			ntfs_error("%s(): Unsorted 10: Directory "
 					"inode 0x%lx overflowed the maximum "
 					"number of index allocation buffers "
 					"the driver can cope with. Pretending "
 					"to be at end of directory.\n",
-					ino->i_number);
+					__FUNCTION__, ino->i_number);
 			goto fake_eod;
 		}
 		if (*p_high > max_size || (s64)*p_high << ibs_bits >
@@ -949,10 +950,9 @@ fake_eod:
 			*p_high = 0x7fff;
 			*p_low = 0;
 			ntfs_free(buf);
-			ntfs_debug(DEBUG_DIR3, __FUNCTION__ "(): Unsorted "
-					"10.5: No more index records. "
-					"Returning 0, p_high 0x7fff, p_low "
-					"0.\n");
+			ntfs_debug(DEBUG_DIR3, "%s(): Unsorted 10.5: No more "
+					"index records. Returning 0, p_high "
+					"0x7fff, p_low 0.\n", __FUNCTION__);
 			return 0;
 		}
 		byte = (ntfs_cluster_t)(*p_high - 1);
@@ -961,16 +961,15 @@ fake_eod:
 		if ((buf[byte] & bit))
 			break;
 	};
-	ntfs_debug(DEBUG_DIR3, __FUNCTION__ "(): Unsorted 11: Done. "
-			"Returning 0, p_high 0x%x, p_low 0x%x.\n", *p_high,
-			*p_low);
+	ntfs_debug(DEBUG_DIR3, "%s(): Unsorted 11: Done. Returning 0, p_high "
+			"0x%x, p_low 0x%x.\n", __FUNCTION__, *p_high, *p_low);
 	ntfs_free(buf);
 	return 0;
 read_err_ret:
 	if (!err)
 		err = -EIO;
-	ntfs_error(__FUNCTION__ "(): Read failed. Returning error code %i.\n",
-			err);
+	ntfs_error("%s(): Read failed. Returning error code %i.\n",
+			__FUNCTION__, err);
 	ntfs_free(buf);
 	return err;
 }

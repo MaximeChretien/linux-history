@@ -68,6 +68,7 @@
 #define EDGE_LBL_HPC			"hpc"
 #define EDGE_LBL_GFX			"gfx"
 #define EDGE_LBL_HUB			"hub"		/* For SN0 */
+#define EDGE_LBL_ICE			"ice"		/* For TIO */
 #define EDGE_LBL_HW			"hw"
 #define EDGE_LBL_SYNERGY		"synergy"	/* For SNIA only */
 #define EDGE_LBL_IBUS			"ibus"		/* For EVEREST */
@@ -75,6 +76,7 @@
 #define EDGE_LBL_IO			"io"
 #define EDGE_LBL_IO4			"io4"		/* For EVEREST */
 #define EDGE_LBL_IOC3			"ioc3"
+#define EDGE_LBL_IOC4			"ioc4"
 #define EDGE_LBL_LUN                    "lun"
 #define EDGE_LBL_LINUX                  "linux"
 #define EDGE_LBL_LINUX_BUS              EDGE_LBL_LINUX "/bus/pci-x"
@@ -93,6 +95,9 @@
 #define EDGE_LBL_PCIX			"pci-x"
 #define EDGE_LBL_PCIX_0			EDGE_LBL_PCIX "/0"
 #define EDGE_LBL_PCIX_1			EDGE_LBL_PCIX "/1"
+#define EDGE_LBL_AGP			"agp"
+#define EDGE_LBL_AGP_0			EDGE_LBL_AGP "/0"
+#define EDGE_LBL_AGP_1			EDGE_LBL_AGP "/1"
 #define EDGE_LBL_PORT			"port"
 #define EDGE_LBL_PROM			"prom"
 #define EDGE_LBL_RACK			"rack"
@@ -112,6 +117,7 @@
 #define	EDGE_LBL_XIO			"xio"
 #define EDGE_LBL_XSWITCH		".xswitch"
 #define EDGE_LBL_XTALK			"xtalk"
+#define EDGE_LBL_CORETALK		"coretalk"
 #define EDGE_LBL_XWIDGET		"xwidget"
 #define EDGE_LBL_ELSC			"elsc"
 #define EDGE_LBL_L1			"L1"
@@ -129,6 +135,7 @@
 #define EDGE_LBL_PBRICK			"Pbrick"
 #define EDGE_LBL_PEBRICK		"PEbrick"
 #define EDGE_LBL_PXBRICK		"PXbrick"
+#define EDGE_LBL_OPUSBRICK		"onboardio"
 #define EDGE_LBL_IXBRICK		"IXbrick"
 #define EDGE_LBL_IBRICK			"Ibrick"
 #define EDGE_LBL_XBRICK			"Xbrick"

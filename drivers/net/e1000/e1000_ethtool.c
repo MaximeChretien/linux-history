@@ -190,6 +190,59 @@ e1000_ethtool_sset(struct e1000_adapter *adapter, struct ethtool_cmd *ecmd)
 	return 0;
 }
 
+static int
+e1000_ethtool_gpause(struct e1000_adapter *adapter,
+                     struct ethtool_pauseparam *epause)
+{
+	struct e1000_hw *hw = &adapter->hw;
+	
+	epause->autoneg = 
+		(adapter->fc_autoneg ? AUTONEG_ENABLE : AUTONEG_DISABLE);
+	
+	if(hw->fc == e1000_fc_rx_pause)
+		epause->rx_pause = 1;
+	else if(hw->fc == e1000_fc_tx_pause)
+		epause->tx_pause = 1;
+	else if(hw->fc == e1000_fc_full) {
+		epause->rx_pause = 1;
+		epause->tx_pause = 1;
+	}
+	
+	return 0;
+}
+
+static int
+e1000_ethtool_spause(struct e1000_adapter *adapter,
+                     struct ethtool_pauseparam *epause)
+{
+	struct e1000_hw *hw = &adapter->hw;
+	
+	adapter->fc_autoneg = epause->autoneg;
+
+	if(epause->rx_pause && epause->tx_pause)
+		hw->fc = e1000_fc_full;
+	else if(epause->rx_pause && !epause->tx_pause)
+		hw->fc = e1000_fc_rx_pause;
+	else if(!epause->rx_pause && epause->tx_pause)
+		hw->fc = e1000_fc_tx_pause;
+	else if(!epause->rx_pause && !epause->tx_pause)
+		hw->fc = e1000_fc_none;
+
+	hw->original_fc = hw->fc;
+
+	if(adapter->fc_autoneg == AUTONEG_ENABLE) {
+		if(netif_running(adapter->netdev)) {
+			e1000_down(adapter);
+			e1000_up(adapter);
+		} else
+			e1000_reset(adapter);
+	}
+	else
+		return e1000_force_mac_fc(hw);
+	
+	return 0;
+}
+
 static void
 e1000_ethtool_gdrvinfo(struct e1000_adapter *adapter,
                        struct ethtool_drvinfo *drvinfo)
@@ -197,7 +250,7 @@ e1000_ethtool_gdrvinfo(struct e1000_adapter *adapter,
 	strncpy(drvinfo->driver,  e1000_driver_name, 32);
 	strncpy(drvinfo->version, e1000_driver_version, 32);
 	strncpy(drvinfo->fw_version, "N/A", 32);
-	strncpy(drvinfo->bus_info, adapter->pdev->slot_name, 32);
+	strncpy(drvinfo->bus_info, pci_name(adapter->pdev), 32);
 	drvinfo->n_stats = E1000_STATS_LEN;
 	drvinfo->testinfo_len = E1000_TEST_LEN;
 #define E1000_REGS_LEN 32
@@ -504,7 +557,7 @@ e1000_eeprom_test(struct e1000_adapter *adapter, uint64_t *data)
 	return *data;
 }
 
-static void
+static irqreturn_t
 e1000_test_intr(int irq,
 		void *data,
 		struct pt_regs *regs)
@@ -514,7 +567,7 @@ e1000_test_intr(int irq,
 
 	adapter->test_icr |= E1000_READ_REG(&adapter->hw, ICR);
 
-	return;
+	return IRQ_HANDLED;
 }
 
 static int
@@ -958,9 +1011,13 @@ e1000_set_phy_loopback(struct e1000_adapter *adapter)
 	case e1000_82544:
 	case e1000_82540:
 	case e1000_82545:
+	case e1000_82545_rev_3:
 	case e1000_82546:
+	case e1000_82546_rev_3:
 	case e1000_82541:
+	case e1000_82541_rev_2:
 	case e1000_82547:
+	case e1000_82547_rev_2:
 		return e1000_integrated_phy_loopback(adapter);
 		break;
 
@@ -983,9 +1040,12 @@ e1000_setup_loopback_test(struct e1000_adapter *adapter)
 {
 	uint32_t rctl;
 
-	if(adapter->hw.media_type == e1000_media_type_fiber) {
+	if(adapter->hw.media_type == e1000_media_type_fiber ||
+	   adapter->hw.media_type == e1000_media_type_internal_serdes) {
 		if(adapter->hw.mac_type == e1000_82545 ||
-		   adapter->hw.mac_type == e1000_82546)
+		   adapter->hw.mac_type == e1000_82546 ||
+		   adapter->hw.mac_type == e1000_82545_rev_3 ||
+		   adapter->hw.mac_type == e1000_82546_rev_3)
 			return e1000_set_phy_loopback(adapter);
 		else {
 			rctl = E1000_READ_REG(&adapter->hw, RCTL);
@@ -1010,9 +1070,12 @@ e1000_loopback_cleanup(struct e1000_adapter *adapter)
 	E1000_WRITE_REG(&adapter->hw, RCTL, rctl);
 
 	if(adapter->hw.media_type == e1000_media_type_copper ||
-	   (adapter->hw.media_type == e1000_media_type_fiber &&
+	   ((adapter->hw.media_type == e1000_media_type_fiber ||
+	     adapter->hw.media_type == e1000_media_type_internal_serdes) &&
 	    (adapter->hw.mac_type == e1000_82545 ||
-	     adapter->hw.mac_type == e1000_82546))) {
+	     adapter->hw.mac_type == e1000_82546 ||
+	     adapter->hw.mac_type == e1000_82545_rev_3 ||
+	     adapter->hw.mac_type == e1000_82546_rev_3))) {
 		adapter->hw.autoneg = TRUE;
 		e1000_read_phy_reg(&adapter->hw, PHY_CTRL, &phy_reg);
 		if(phy_reg & MII_CR_LOOPBACK) {
@@ -1114,7 +1177,7 @@ e1000_ethtool_test(struct e1000_adapter *adapter,
 			e1000_down(adapter);
 		else
 			e1000_reset(adapter);
-		
+
 		if(e1000_reg_test(adapter, &data[0]))
 			eth_test->flags |= ETH_TEST_FL_FAILED;
 
@@ -1162,6 +1225,7 @@ e1000_ethtool_gwol(struct e1000_adapter *adapter, struct ethtool_wolinfo *wol)
 		return;
 
 	case E1000_DEV_ID_82546EB_FIBER:
+	case E1000_DEV_ID_82546GB_FIBER:
 		/* Wake events only supported on port A for dual fiber */
 		if(E1000_READ_REG(hw, STATUS) & E1000_STATUS_FUNC_1) {
 			wol->supported = 0;
@@ -1200,6 +1264,7 @@ e1000_ethtool_swol(struct e1000_adapter *adapter, struct ethtool_wolinfo *wol)
 		return wol->wolopts ? -EOPNOTSUPP : 0;
 
 	case E1000_DEV_ID_82546EB_FIBER:
+	case E1000_DEV_ID_82546GB_FIBER:
 		/* Wake events only supported on port A for dual fiber */
 		if(E1000_READ_REG(hw, STATUS) & E1000_STATUS_FUNC_1)
 			return wol->wolopts ? -EOPNOTSUPP : 0;
@@ -1437,6 +1502,19 @@ err_geeprom_ioctl:
 		addr += offsetof(struct ethtool_eeprom, data);
 		return e1000_ethtool_seeprom(adapter, &eeprom, addr);
 	}
+	case ETHTOOL_GPAUSEPARAM: {
+		struct ethtool_pauseparam epause = {ETHTOOL_GPAUSEPARAM};
+		e1000_ethtool_gpause(adapter, &epause);
+		if(copy_to_user(addr, &epause, sizeof(epause)))
+			return -EFAULT;
+		return 0;
+	}
+	case ETHTOOL_SPAUSEPARAM: {
+		struct ethtool_pauseparam epause;
+		if(copy_from_user(&epause, addr, sizeof(epause)))
+			return -EFAULT;
+		return e1000_ethtool_spause(adapter, &epause);
+	}
 	case ETHTOOL_GSTATS: {
 		struct {
 			struct ethtool_stats eth_stats;
@@ -1475,6 +1553,107 @@ err_geeprom_ioctl:
 			return -EFAULT;
 		return 0;
 	}
+	case ETHTOOL_GRXCSUM: {
+		struct ethtool_value edata = { ETHTOOL_GRXCSUM };
+
+		edata.data = adapter->rx_csum;
+		if (copy_to_user(addr, &edata, sizeof(edata)))
+			return -EFAULT;
+		return 0;
+	}
+	case ETHTOOL_SRXCSUM: {
+		struct ethtool_value edata;
+
+		if (copy_from_user(&edata, addr, sizeof(edata)))
+			return -EFAULT;
+		adapter->rx_csum = edata.data;
+		if(netif_running(netdev)) {
+			e1000_down(adapter);
+			e1000_up(adapter);
+		} else
+			e1000_reset(adapter);
+		return 0;
+	}
+	case ETHTOOL_GTXCSUM: {
+		struct ethtool_value edata = { ETHTOOL_GTXCSUM };
+
+		edata.data =
+			(netdev->features & NETIF_F_HW_CSUM) != 0;
+		if (copy_to_user(addr, &edata, sizeof(edata)))
+			return -EFAULT;
+		return 0;
+	}
+	case ETHTOOL_STXCSUM: {
+		struct ethtool_value edata;
+
+		if (copy_from_user(&edata, addr, sizeof(edata)))
+			return -EFAULT;
+
+		if(adapter->hw.mac_type < e1000_82543) {
+			if (edata.data != 0)
+				return -EINVAL;
+			return 0;
+		}
+
+		if (edata.data)
+			netdev->features |= NETIF_F_HW_CSUM;
+		else
+			netdev->features &= ~NETIF_F_HW_CSUM;
+
+		return 0;
+	}
+	case ETHTOOL_GSG: {
+		struct ethtool_value edata = { ETHTOOL_GSG };
+
+		edata.data =
+			(netdev->features & NETIF_F_SG) != 0;
+		if (copy_to_user(addr, &edata, sizeof(edata)))
+			return -EFAULT;
+		return 0;
+	}
+	case ETHTOOL_SSG: {
+		struct ethtool_value edata;
+
+		if (copy_from_user(&edata, addr, sizeof(edata)))
+			return -EFAULT;
+
+		if (edata.data)
+			netdev->features |= NETIF_F_SG;
+		else
+			netdev->features &= ~NETIF_F_SG;
+
+		return 0;
+	}
+#ifdef NETIF_F_TSO
+	case ETHTOOL_GTSO: {
+		struct ethtool_value edata = { ETHTOOL_GTSO };
+
+		edata.data = (netdev->features & NETIF_F_TSO) != 0;
+		if (copy_to_user(addr, &edata, sizeof(edata)))
+			return -EFAULT;
+		return 0;
+	}
+	case ETHTOOL_STSO: {
+		struct ethtool_value edata;
+
+		if (copy_from_user(&edata, addr, sizeof(edata)))
+			return -EFAULT;
+
+		if ((adapter->hw.mac_type < e1000_82544) ||
+		    (adapter->hw.mac_type == e1000_82547)) {
+			if (edata.data != 0)
+				return -EINVAL;
+			return 0;
+		}
+
+		if (edata.data)
+			netdev->features |= NETIF_F_TSO;
+		else
+			netdev->features &= ~NETIF_F_TSO;
+
+		return 0;
+	}
+#endif
 	default:
 		return -EOPNOTSUPP;
 	}

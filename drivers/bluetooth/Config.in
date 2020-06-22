@@ -8,7 +8,6 @@ comment 'Bluetooth device drivers'
 dep_tristate 'HCI USB driver' CONFIG_BLUEZ_HCIUSB $CONFIG_BLUEZ $CONFIG_USB
 if [ "$CONFIG_BLUEZ_HCIUSB" != "n" ]; then
    bool '  SCO (voice) support'  CONFIG_BLUEZ_USB_SCO
-   bool '  USB zero packet support'  CONFIG_BLUEZ_USB_ZERO_PACKET
 fi
 
 dep_tristate 'HCI UART driver' CONFIG_BLUEZ_HCIUART $CONFIG_BLUEZ

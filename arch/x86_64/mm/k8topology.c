@@ -6,7 +6,7 @@
  * Instead the northbridge registers are read directly. 
  * 
  * Copyright 2002 Andi Kleen, SuSE Labs.
- * $Id: k8topology.c,v 1.7 2003/04/02 21:36:22 ak Exp $
+ * $Id: k8topology.c,v 1.11 2003/09/12 01:55:37 ak Exp $
  */
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -19,6 +19,8 @@
 #include <asm/proto.h>
 #include <asm/e820.h>
 #include <asm/pci-direct.h>
+
+#define Dprintk(x...)
 
 int memnode_shift;
 u8  memnodemap[NODEMAPSIZE];
@@ -110,6 +112,9 @@ int __init k8_scan_nodes(unsigned long start, unsigned long end)
 		limit = read_pci_config(0, nb, 1, 0x44 + i*8);
 
 		nodeid = limit & 3; 
+		if ((base & 3) == 0) { 
+			continue;
+		} 
 		if (!limit) { 
 			printk(KERN_INFO "Skipping node entry %d (base %lx)\n", i,			       base);
 			continue;
@@ -145,7 +150,7 @@ int __init k8_scan_nodes(unsigned long start, unsigned long end)
 		if (limit == base) 
 			continue; 
 		if (limit < base) { 
-			printk(KERN_INFO"Node %d bogus settings %lx-%lx. Ignored.\n",
+			Dprintk(KERN_INFO"Node %d bogus settings %lx-%lx. Ignored.\n",
 			       nodeid, base, limit); 			       
 			continue; 
 		} 

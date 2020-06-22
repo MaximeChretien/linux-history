@@ -1,16 +1,17 @@
 /******************************************************************************
  *
  * Name:	skgedrv.h
- * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.6 $
- * Date:	$Date: 2002/07/15 15:38:01 $
+ * Project:	Gigabit Ethernet Adapters, Common Modules
+ * Version:	$Revision: 1.10 $
+ * Date:	$Date: 2003/07/04 12:25:01 $
  * Purpose:	Interface with the driver
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect.
+ *	(C)Copyright 2002-2003 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -26,6 +27,20 @@
  * History:
  *
  *	$Log: skgedrv.h,v $
+ *	Revision 1.10  2003/07/04 12:25:01  rschmidt
+ *	Added event SK_DRV_DOWNSHIFT_DET for Downshift 4-Pair / 2-Pair
+ *	
+ *	Revision 1.9  2003/05/13 17:24:21  mkarl
+ *	Added events SK_DRV_LINK_UP and SK_DRV_LINK_DOWN for drivers not using
+ *	RLMT (SK_NO_RLMT).
+ *	Editorial changes.
+ *	
+ *	Revision 1.8  2003/03/31 07:18:54  mkarl
+ *	Corrected Copyright.
+ *	
+ *	Revision 1.7  2003/03/18 09:43:47  rroesler
+ *	Added new event for timer
+ *	
  *	Revision 1.6  2002/07/15 15:38:01  rschmidt
  *	Power Management support
  *	Editorial changes
@@ -68,5 +83,10 @@
 #define SK_DRV_PORT_FAIL		 8	/* One port fails */
 #define SK_DRV_SWITCH_INTERN	 9	/* Port switch by the driver itself */
 #define SK_DRV_POWER_DOWN		10	/* Power down mode */
-
-#endif	/* __INC_SKGEDRV_H_ */
+#define SK_DRV_TIMER			11	/* Timer for free use */
+#ifdef SK_NO_RLMT
+#define SK_DRV_LINK_UP  		12	/* Link Up event for driver */
+#define SK_DRV_LINK_DOWN		13	/* Link Down event for driver */
+#endif
+#define SK_DRV_DOWNSHIFT_DET	14	/* Downshift 4-Pair / 2-Pair (YUKON only) */
+#endif /* __INC_SKGEDRV_H_ */

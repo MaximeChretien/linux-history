@@ -77,6 +77,10 @@ static int  keyspan_usa28_calc_baud	(u32 baud_rate, u32 baudclk,
 					 u8 *rate_hi, u8 *rate_low,
 					 u8 *prescaler, int portnum);
 
+static int  keyspan_usa19hs_calc_baud	(u32 baud_rate, u32 baudclk,
+					 u8 *rate_hi, u8 *rate_low,
+					 u8 *prescaler, int portnum);
+
 static int  keyspan_usa28_send_setup	(struct usb_serial *serial,
 					 struct usb_serial_port *port,
 					 int reset_port);
@@ -87,6 +91,9 @@ static int  keyspan_usa49_send_setup	(struct usb_serial *serial,
 					 struct usb_serial_port *port,
 					 int reset_port);
 
+static int  keyspan_usa90_send_setup	(struct usb_serial *serial,
+					 struct usb_serial_port *port,
+					 int reset_port);
 
 /* Struct used for firmware - increased size of data section
    to allow Keyspan's 'C' firmware struct to be used unmodified */
@@ -178,6 +185,7 @@ struct ezusb_hex_record {
 #define	KEYSPAN_USA18X_BAUDCLK			(12000000L)	/* a guess */
 #define	KEYSPAN_USA19_BAUDCLK			(12000000L)
 #define	KEYSPAN_USA19W_BAUDCLK			(24000000L)
+#define	KEYSPAN_USA19HS_BAUDCLK			(14769231L)
 #define	KEYSPAN_USA28_BAUDCLK			(1843200L)
 #define	KEYSPAN_USA28X_BAUDCLK			(12000000L)
 #define	KEYSPAN_USA49W_BAUDCLK			(48000000L)
@@ -210,6 +218,7 @@ struct ezusb_hex_record {
 #define	keyspan_usa18x_product_id		0x0112
 #define	keyspan_usa19_product_id		0x0107
 #define	keyspan_usa19qi_product_id		0x010c
+#define	keyspan_usa19hs_product_id		0x0121
 #define	keyspan_mpr_product_id			0x011c
 #define	keyspan_usa19qw_product_id		0x0119
 #define	keyspan_usa19w_product_id		0x0108
@@ -225,7 +234,7 @@ struct keyspan_device_details {
 	/* product ID value */
 	int	product_id;
 
-	enum	{msg_usa26, msg_usa28, msg_usa49} msg_format;
+	enum	{msg_usa26, msg_usa28, msg_usa49, msg_usa90} msg_format;
 
 		/* Number of physical ports */
 	int	num_ports;
@@ -361,6 +370,22 @@ static const struct keyspan_device_details usa19w_device_details = {
 	baudclk:		KEYSPAN_USA19W_BAUDCLK,
 };
 
+static const struct keyspan_device_details usa19hs_device_details = {
+	product_id:		keyspan_usa19hs_product_id,
+	msg_format:		msg_usa90,
+	num_ports:		1,
+	indat_endp_flip:	0,
+	outdat_endp_flip:	0,
+	indat_endpoints:	{0x81},
+	outdat_endpoints:	{0x01},
+	inack_endpoints:	{-1},
+	outcont_endpoints:	{0x02},
+	instat_endpoint:	0x82,
+	glocont_endpoint:	-1,
+	calculate_baud_rate:	keyspan_usa19hs_calc_baud,
+	baudclk:		KEYSPAN_USA19HS_BAUDCLK,
+};
+
 static const struct keyspan_device_details usa28_device_details = {
 	product_id:		keyspan_usa28_product_id,
 	msg_format:		msg_usa28,
@@ -450,6 +475,7 @@ static const struct keyspan_device_details *keyspan_devices[] = {
 	&mpr_device_details,
 	&usa19qw_device_details,
 	&usa19w_device_details,
+	&usa19hs_device_details,
 	&usa28_device_details,
 	&usa28x_device_details,
 	&usa28xa_device_details,
@@ -477,6 +503,7 @@ static __devinitdata struct usb_device_id keyspan_ids_combined[] = {
 	{ USB_DEVICE(KEYSPAN_VENDOR_ID, keyspan_usa19w_product_id) },
 	{ USB_DEVICE(KEYSPAN_VENDOR_ID, keyspan_usa19qi_product_id) },
 	{ USB_DEVICE(KEYSPAN_VENDOR_ID, keyspan_usa19qw_product_id) },
+	{ USB_DEVICE(KEYSPAN_VENDOR_ID, keyspan_usa19hs_product_id) },
 	{ USB_DEVICE(KEYSPAN_VENDOR_ID, keyspan_mpr_product_id) },
 	{ USB_DEVICE(KEYSPAN_VENDOR_ID, keyspan_usa28_product_id) },
 	{ USB_DEVICE(KEYSPAN_VENDOR_ID, keyspan_usa28x_product_id) },
@@ -512,6 +539,7 @@ static struct usb_device_id keyspan_1port_ids[] = {
 	{ USB_DEVICE(KEYSPAN_VENDOR_ID, keyspan_usa19qi_product_id) },
 	{ USB_DEVICE(KEYSPAN_VENDOR_ID, keyspan_usa19qw_product_id) },
 	{ USB_DEVICE(KEYSPAN_VENDOR_ID, keyspan_usa19w_product_id) },
+	{ USB_DEVICE(KEYSPAN_VENDOR_ID, keyspan_usa19hs_product_id) },
 	{ USB_DEVICE(KEYSPAN_VENDOR_ID, keyspan_mpr_product_id) },
 	{ } /* Terminating entry */
 };
@@ -547,8 +575,8 @@ static struct usb_serial_device_type keyspan_1port_device = {
 	name:			"Keyspan 1 port adapter",
 	id_table:		keyspan_1port_ids,
 	num_interrupt_in:	NUM_DONT_CARE,
-	num_bulk_in:		3,
-	num_bulk_out:		4,
+	num_bulk_in:		NUM_DONT_CARE,
+	num_bulk_out:		NUM_DONT_CARE,
 	num_ports:		1,
 	open:			keyspan_open,
 	close:			keyspan_close,

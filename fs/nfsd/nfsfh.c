@@ -305,6 +305,7 @@ struct dentry *nfsd_findparent(struct dentry *child)
 			if (pdentry) {
 				igrab(tdentry->d_inode);
 				pdentry->d_flags |= DCACHE_NFSD_DISCONNECTED;
+				pdentry->d_op = child->d_op;
 			}
 		}
 		if (pdentry == NULL)

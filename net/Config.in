@@ -29,6 +29,9 @@ if [ "$CONFIG_INET" = "y" ]; then
    if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
       source net/khttpd/Config.in
    fi
+   if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
+      source net/sctp/Config.in
+   fi
 fi
 if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
    tristate 'Asynchronous Transfer Mode (ATM) (EXPERIMENTAL)' CONFIG_ATM

@@ -1238,14 +1238,13 @@ S: Germany
 
 N: Christoph Hellwig
 E: hch@infradead.org
-E: hch@sgi.com
 D: all kinds of driver, filesystem & core kernel hacking
 D: freevxfs driver
 D: sysvfs maintainer
 D: chief codingstyle nitpicker
-S: Auweg 38
-S: 85748 Garching
-S: Germany
+S: Ampferstr. 50 / 4
+S: 6020 Innsbruck
+S: Austria
 
 N: Richard Henderson
 E: rth@twiddle.net
@@ -2208,6 +2207,15 @@ N. Wolfgang Muees
 E: wolfgang@iksw-muees.de
 D: Auerswald USB driver
 
+N: Paul Mundt
+E: lethal@linux-sh.org
+P: 1024D/917167DC 563C FC60 83BB A3EE D816  E60D D4AF AD78 9171 67DC
+D: Linux/SH and Linux/sh64
+D: Occasional MIPS hacker
+D: fbdev hacker
+S: Hamilton, Ontario
+S: Canada
+
 N: Ian A. Murdock
 E: imurdock@gnu.ai.mit.edu
 D: Creator of Debian distribution
@@ -2582,6 +2590,13 @@ D: Lots of PowerPC cleanups, minor matroxfb work
 S: Tucson, Arizona
 S: USA
 
+N: Luca Risolia
+E: luca_ing@libero.it
+D: V4L driver for W996[87]CF JPEG USB Dual Mode Camera Chip
+S: Via Libert√† 41/a
+S: Osio Sotto, 24046, Bergamo
+S: Italy
+
 N: William E. Roadcap
 E: roadcapw@cfw.com
 W: http://www.cfw.com/~roadcapw
@@ -2711,7 +2726,7 @@ E: gt8134b@prism.gatech.edu
 D: Dosemu
 
 N: Duncan Sands
-E: duncan.sands@wanadoo.fr
+E: duncan.sands@free.fr
 W: http://topo.math.u-psud.fr/~sands
 D: Alcatel SpeedTouch USB driver
 S: 69 rue Dunois
@@ -2967,12 +2982,11 @@ S: Santa Clara, California 95051
 S: USA
 
 N: Marcelo W. Tosatti
-E: marcelo@conectiva.com.br
-W: http://bazar.conectiva.com.br/~marcelo/
+E: marcelo.tosatti@cyclades.com
 D: Miscellaneous kernel hacker (mostly VM/MM work)
-S: Conectiva S.A.
-S: R. Tocantins, 89 - Cristo Rei
-S: 80050-430 - Curitiba - Paran·
+D: 2.4 maintainer
+S: Av Cristovao Colombo, 462. Floresta.
+S: Porto Alegre
 S: Brazil
 
 N: Stefan Traby
@@ -3432,4 +3446,4 @@ S: France
 # alphabetically. Leonard used to be very proud of being the 
 # last entry, and he'll get positively pissed if he can't even
 # be second-to-last.  (and this file really _is_ supposed to be
-# in alphabetic order) 
+# in alphabetic order)

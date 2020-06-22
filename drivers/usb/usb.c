@@ -195,6 +195,17 @@ void usb_deregister(struct usb_driver *driver)
 	up (&usb_bus_list_lock);
 }
 
+int usb_ifnum_to_ifpos(struct usb_device *dev, unsigned ifnum)
+{
+	int i;
+
+	for (i = 0; i < dev->actconfig->bNumInterfaces; i++)
+		if (dev->actconfig->interface[i].altsetting[0].bInterfaceNumber == ifnum)
+			return i;
+
+	return -EINVAL;
+}
+
 struct usb_interface *usb_ifnum_to_if(struct usb_device *dev, unsigned ifnum)
 {
 	int i;
@@ -759,6 +770,23 @@ out_err:
 	return -1;
 }
 
+/*
+ * This simply converts the interface _number_ (as in interface.bInterfaceNumber) and
+ * converts it to the interface _position_ (as in dev->actconfig->interface + position)
+ * and calls usb_find_interface_driver().
+ *
+ * Note that the number is the same as the position for all interfaces _except_
+ * devices with interfaces not sequentially numbered (e.g., 0, 2, 3, etc).
+ */
+int usb_find_interface_driver_for_ifnum(struct usb_device *dev, unsigned ifnum)
+{
+	int ifpos = usb_ifnum_to_ifpos(dev, ifnum);
+
+	if (0 > ifpos)
+		return -EINVAL;
+
+	return usb_find_interface_driver(dev, ifpos);
+}
 
 #ifdef	CONFIG_HOTPLUG
 
@@ -2384,6 +2412,7 @@ module_exit(usb_exit);
  * into the kernel, and other device drivers are built as modules,
  * then these symbols need to be exported for the modules to use.
  */
+EXPORT_SYMBOL(usb_ifnum_to_ifpos);
 EXPORT_SYMBOL(usb_ifnum_to_if);
 EXPORT_SYMBOL(usb_epnum_to_ep_desc);
 
@@ -2398,6 +2427,7 @@ EXPORT_SYMBOL(usb_alloc_dev);
 EXPORT_SYMBOL(usb_free_dev);
 EXPORT_SYMBOL(usb_inc_dev_use);
 
+EXPORT_SYMBOL(usb_find_interface_driver_for_ifnum);
 EXPORT_SYMBOL(usb_driver_claim_interface);
 EXPORT_SYMBOL(usb_interface_claimed);
 EXPORT_SYMBOL(usb_driver_release_interface);

@@ -53,9 +53,9 @@
 #include <linux/brlock.h>
 #include <linux/types.h>
 #include <linux/ip.h>
+#include <net/checksum.h>
 #include <net/udp.h>
 #include <asm/uaccess.h>
-#include <asm/checksum.h>
 
 
 

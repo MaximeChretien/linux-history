@@ -367,6 +367,25 @@
  *      Mustek, Pacific Image Electronics, Plustek, and Visioneer scanners.
  *      Fixed names of some other scanners.
  *
+ * 0.4.14  2003-07-15
+ *    - Added vendor/product ids for Avision, Canon, HP, Microtek and Relisys
+ *      scanners.
+ *    - When checking if all minors are used don't read beyond p_scn_table
+ *      (Sergey Vlasov).
+ *    - Kfree the scn structure only after disconnect AND close have occured and
+ *      check for scn->present.  This avoids crashing when someone writes (reads) to 
+ *      the device while it's already disconnected but still open. Patch from
+ *      Sergey Vlasov.
+ *    - Clean up irq urb when not enough memory is available (Sergey Vlasov).
+ *
+ * 0.4.15  2003-10-03
+ *    - Added vendor/product ids for Canon, HP, Microtek, Mustek, Siemens, UMAX, and
+ *      Visioneer scanners.
+ *    - Added test for USB_CLASS_CDC_DATA which is used by some fingerprint scanners
+ *    - Use static declarations for usb_scanner_init/usb_scanner_exit 
+ *      (Daniele Bellucci).
+ *
+ *
  * TODO
  *    - Performance
  *    - Select/poll methods
@@ -410,6 +429,8 @@
  * debug/ioctl/data_dump enable, and other constants.
  */ 
 #include "scanner.h"
+
+static void purge_scanner(struct scn_usb_data *scn);
 
 static void
 irq_scanner(struct urb *urb)
@@ -501,28 +522,20 @@ out_error:
 static int
 close_scanner(struct inode * inode, struct file * file)
 {
-	struct scn_usb_data *scn;
+	struct scn_usb_data *scn = file->private_data;
 
-	kdev_t scn_minor;
-
-	scn_minor = USB_SCN_MINOR (inode);
-
-	dbg("close_scanner: scn_minor:%d", scn_minor);
-
-	if (!p_scn_table[scn_minor]) {
-		err("close_scanner(%d): invalid scn_minor", scn_minor);
-		return -ENODEV;
-	}
-
-	down(&scn_mutex);
-
-	scn = p_scn_table[scn_minor];
 	down(&(scn->sem));
 	scn->isopen = 0;
 
 	file->private_data = NULL;
 
-	up(&scn_mutex);
+	if (!scn->present) {
+		/* The device was unplugged while open - need to clean up */
+		up(&(scn->sem));
+		purge_scanner(scn);
+		return 0;
+	}
+
 	up(&(scn->sem));
 
 	return 0;
@@ -549,6 +562,12 @@ write_scanner(struct file * file, const char * buffer,
 	scn = file->private_data;
 
 	down(&(scn->sem));
+
+	if (!scn->present) {
+		/* The device was unplugged while open */
+		up(&(scn->sem));
+		return -ENODEV;
+	}
 
 	if (!scn->bulk_out_ep) {
 		/* This scanner does not have a bulk-out endpoint */
@@ -643,6 +662,12 @@ read_scanner(struct file * file, char * buffer,
 	scn = file->private_data;
 
 	down(&(scn->sem));
+
+	if (!scn->present) {
+		/* The device was unplugged while open */
+		up(&(scn->sem));
+		return -ENODEV;
+	}
 
 	scn_minor = scn->scn_minor;
 
@@ -750,6 +775,12 @@ ioctl_scanner(struct inode *inode, struct file *file,
 
 	scn = file->private_data;
 	down(&(scn->sem));
+
+	if (!scn->present) {
+		/* The device was unplugged while open */
+		up(&(scn->sem));
+		return -ENODEV;
+	}
 
 	dev = scn->scn_dev;
 
@@ -898,6 +929,7 @@ probe_scanner(struct usb_device *dev, unsigned int ifnum,
 
 	if (interface[0].bInterfaceClass != USB_CLASS_VENDOR_SPEC &&
 	    interface[0].bInterfaceClass != USB_CLASS_PER_INTERFACE &&
+	    interface[0].bInterfaceClass != USB_CLASS_CDC_DATA &&
 	    interface[0].bInterfaceClass != SCN_CLASS_SCANJET) {
 		dbg("probe_scanner: This interface doesn't look like a scanner (class=0x%x).", interface[0].bInterfaceClass);
 		return NULL;
@@ -978,7 +1010,7 @@ probe_scanner(struct usb_device *dev, unsigned int ifnum,
 	}
 
 /* Check to make sure that the last slot isn't already taken */
-	if (p_scn_table[scn_minor]) {
+	if (scn_minor >= SCN_MAX_MNR) {
 		err("probe_scanner: No more minor devices remaining.");
 		up(&scn_mutex);
 		return NULL;
@@ -1018,6 +1050,8 @@ probe_scanner(struct usb_device *dev, unsigned int ifnum,
 /* Ok, now initialize all the relevant values */
 	if (!(scn->obuf = (char *)kmalloc(OBUF_SIZE, GFP_KERNEL))) {
 		err("probe_scanner(%d): Not enough memory for the output buffer.", scn_minor);
+		if (have_intr)
+			usb_unlink_urb(&scn->scn_irq);
 		kfree(scn);
 		up(&scn_mutex);
 		return NULL;
@@ -1026,6 +1060,8 @@ probe_scanner(struct usb_device *dev, unsigned int ifnum,
 
 	if (!(scn->ibuf = (char *)kmalloc(IBUF_SIZE, GFP_KERNEL))) {
 		err("probe_scanner(%d): Not enough memory for the input buffer.", scn_minor);
+		if (have_intr)
+			usb_unlink_urb(&scn->scn_irq);
 		kfree(scn->obuf);
 		kfree(scn);
 		up(&scn_mutex);
@@ -1080,6 +1116,14 @@ probe_scanner(struct usb_device *dev, unsigned int ifnum,
 }
 
 static void
+purge_scanner(struct scn_usb_data *scn)
+{
+	kfree(scn->ibuf);
+	kfree(scn->obuf);
+	kfree(scn);
+}
+
+static void
 disconnect_scanner(struct usb_device *dev, void *ptr)
 {
 	struct scn_usb_data *scn = (struct scn_usb_data *) ptr;
@@ -1094,15 +1138,22 @@ disconnect_scanner(struct usb_device *dev, void *ptr)
         usb_driver_release_interface(&scanner_driver,
                 &scn->scn_dev->actconfig->interface[scn->ifnum]);
 
-	kfree(scn->ibuf);
-	kfree(scn->obuf);
-
 	dbg("disconnect_scanner: De-allocating minor:%d", scn->scn_minor);
 	devfs_unregister(scn->devfs);
 	p_scn_table[scn->scn_minor] = NULL;
+
+	if (scn->isopen) {
+		/* The device is still open - cleanup must be delayed */
+		scn->present = 0;
+		up(&(scn->sem));
+		up(&scn_mutex);
+		return;
+	}
+
 	up (&(scn->sem));
-	kfree (scn);
 	up (&scn_mutex);
+
+	purge_scanner(scn);
 }
 
 static struct
@@ -1117,13 +1168,13 @@ usb_driver scanner_driver = {
 				 we match a user defined vendor/product ID. */
 };
 
-void __exit
+static void __exit
 usb_scanner_exit(void)
 {
 	usb_deregister(&scanner_driver);
 }
 
-int __init
+static int __init
 usb_scanner_init (void)
 {
         if (usb_register(&scanner_driver) < 0)

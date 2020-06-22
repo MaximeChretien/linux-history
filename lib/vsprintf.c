@@ -21,6 +21,7 @@
 #include <linux/kernel.h>
 
 #include <asm/div64.h>
+#include <asm/page.h>
 
 /**
  * simple_strtoul - convert a string to an unsigned long
@@ -341,7 +342,7 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list args)
 
 			case 's':
 				s = va_arg(args, char *);
-				if (!s)
+				if ((unsigned long)s < PAGE_SIZE)
 					s = "<NULL>";
 
 				len = strnlen(s, precision);

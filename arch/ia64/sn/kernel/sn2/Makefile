@@ -44,6 +44,6 @@ O_TARGET        = sn2.o
 export-objs	:= io.o
 
 obj-y		= cache.o io.o ptc_deadlock.o sn2_smp.o sn_proc_fs.o \
-		  prominfo_proc.o timer.o
+		  prominfo_proc.o timer.o timer_interrupt.o
 
 include $(TOPDIR)/Rules.make

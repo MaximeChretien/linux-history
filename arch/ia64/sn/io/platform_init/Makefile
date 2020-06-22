@@ -11,6 +11,6 @@ EXTRA_CFLAGS    := -DLITTLE_ENDIAN
 
 O_TARGET := snio.o
 
-obj-y				+=  sgi_io_init.o irix_io_init.o
+obj-y				+=  irix_io_init.o
 
 include $(TOPDIR)/Rules.make

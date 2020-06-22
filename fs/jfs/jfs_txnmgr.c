@@ -1,6 +1,6 @@
 /*
- *   Copyright (c) International Business Machines Corp., 2000-2002
- *   Portions Copyright (c) Christoph Hellwig, 2001-2002
+ *   Copyright (C) International Business Machines Corp., 2000-2003
+ *   Portions Copyright (C) Christoph Hellwig, 2001-2002
  *
  *   This program is free software;  you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -177,7 +177,7 @@ void inlineLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 	       struct tlock * tlck);
 void mapLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 	    struct tlock * tlck);
-void txAbortCommit(struct commit * cd, int exval);
+static void txAbortCommit(struct commit * cd);
 static void txAllocPMap(struct inode *ip, struct maplock * maplock,
 			struct tblock * tblk);
 void txForce(struct tblock * tblk);
@@ -256,7 +256,7 @@ int txInit(void)
 	size = sizeof(struct tblock) * nTxBlock;
 	TxBlock = (struct tblock *) vmalloc(size);
 	if (TxBlock == NULL)
-		return ENOMEM;
+		return -ENOMEM;
 
 	for (k = 1; k < nTxBlock - 1; k++) {
 		TxBlock[k].next = k + 1;
@@ -282,7 +282,7 @@ int txInit(void)
 	TxLock = (struct tlock *) vmalloc(size);
 	if (TxLock == NULL) {
 		vfree(TxBlock);
-		return ENOMEM;
+		return -ENOMEM;
 	}
 
 	/* initialize tlock table */
@@ -1099,7 +1099,7 @@ int txCommit(tid_t tid,		/* transaction identifier */
 	     struct inode **iplist,	/* list of inode to commit */
 	     int flag)
 {
-	int rc = 0, rc1 = 0;
+	int rc = 0;
 	struct commit cd;
 	struct jfs_log *log;
 	struct tblock *tblk;
@@ -1114,7 +1114,7 @@ int txCommit(tid_t tid,		/* transaction identifier */
 	jfs_info("txCommit, tid = %d, flag = %d", tid, flag);
 	/* is read-only file system ? */
 	if (isReadOnly(iplist[0])) {
-		rc = EROFS;
+		rc = -EROFS;
 		goto TheEnd;
 	}
 
@@ -1297,9 +1297,7 @@ int txCommit(tid_t tid,		/* transaction identifier */
 
       out:
 	if (rc != 0)
-		txAbortCommit(&cd, rc);
-	else
-		rc = rc1;
+		txAbortCommit(&cd);
 
       TheEnd:
 	jfs_info("txCommit: tid = %d, returning %d", tid, rc);
@@ -1424,7 +1422,6 @@ int diLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 		 * page is not itself logged, to prevent pageout of the map
 		 * page before the log;
 		 */
-		assert(tlck->type & tlckFREE);
 
 		/* log LOG_NOREDOINOEXT of the freed inode extent for
 		 * logredo() to start NoRedoPage filters, and to update
@@ -2637,7 +2634,7 @@ void txAbort(tid_t tid, int dirty)
 	 * mark filesystem dirty
 	 */
 	if (dirty)
-		updateSuper(tblk->sb, FM_DIRTY);
+		jfs_error(tblk->sb, "txAbort");
 
 	return;
 }
@@ -2654,14 +2651,13 @@ void txAbort(tid_t tid, int dirty)
  * log age of page-frames in memory for which caller has
  * are reset to 0 (to avoid logwarap).
  */
-void txAbortCommit(struct commit * cd, int exval)
+static void txAbortCommit(struct commit * cd)
 {
 	struct tblock *tblk;
 	tid_t tid;
 	lid_t lid, next;
 	struct metapage *mp;
 
-	assert(exval == EIO || exval == ENOMEM);
 	jfs_warn("txAbortCommit: cd:0x%p", cd);
 
 	/*
@@ -2697,7 +2693,7 @@ void txAbortCommit(struct commit * cd, int exval)
 	/*
 	 * mark filesystem dirty
 	 */
-	updateSuper(cd->sb, FM_DIRTY);
+	jfs_error(cd->sb, "txAbortCommit");
 }
 
 
@@ -2718,7 +2714,7 @@ void txLazyCommit(struct tblock * tblk)
 		/* We must have gotten ahead of the user thread
 		 */
 		jfs_info("txLazyCommit: tblk 0x%p not unlocked", tblk);
-		schedule();
+		yield();
 	}
 
 	jfs_info("txLazyCommit: processing tblk 0x%p", tblk);

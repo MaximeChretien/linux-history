@@ -369,16 +369,10 @@ void acpi_numa_arch_fixup(void);
 
 #else /*!CONFIG_ACPI_BOOT*/
 
-#ifdef	CONFIG_ACPI_HT_ONLY
-int acpi_boot_init (void);
-
-#else /* !CONFIG_ACPI_HT_ONLY */
-
 static inline int acpi_boot_init(void)
 {
 	return 0;
 }
-#endif	/* !CONFIG_ACPI_HT_ONLY */
 
 #endif /*!CONFIG_ACPI_BOOT*/
 

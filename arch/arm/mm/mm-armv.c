@@ -123,6 +123,7 @@ pgd_t *get_pgd_slow(struct mm_struct *mm)
 no_pte:
 	spin_unlock(&mm->page_table_lock);
 	pmd_free(new_pmd);
+	check_pgt_cache();
 	free_pages((unsigned long)new_pgd, 2);
 	return NULL;
 
@@ -157,6 +158,7 @@ void free_pgd_slow(pgd_t *pgd)
 	pmd_clear(pmd);
 	pte_free(pte);
 	pmd_free(pmd);
+	check_pgt_cache();
 free:
 	free_pages((unsigned long) pgd, 2);
 }

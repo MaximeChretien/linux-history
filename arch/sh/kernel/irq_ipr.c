@@ -1,4 +1,4 @@
-/* $Id: irq_ipr.c,v 1.1.1.1.2.1 2003/07/16 18:41:20 yoshii Exp $
+/* $Id: irq_ipr.c,v 1.1.1.1.2.2 2003/10/14 16:46:10 trent Exp $
  *
  * linux/arch/sh/kernel/irq_ipr.c
  *
@@ -273,6 +273,10 @@ void __init init_IRQ(void)
 	}
 #endif
 #endif /* CONFIG_CPU_SUBTYPE_SH7300 || CONFIG_CPU_SUBTYPE_SH7707 || CONFIG_CPU_SUBTYPE_SH7709 */
+
+#ifdef CONFIG_CPU_SUBTYPE_ST40
+	init_IRQ_intc2();
+#endif
 
 	/* Perform the machine specific initialisation */
 	if (sh_mv.mv_init_irq != NULL) {

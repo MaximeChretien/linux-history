@@ -2,16 +2,15 @@
  *
  * Name:	sktypes.h
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.2 $
- * Date:	$Date: 1999/11/22 14:01:58 $
+ * Version:	$Revision: 1.1 $
+ * Date:	$Date: 2003/07/21 07:26:01 $
  * Purpose:	Define data types for Linux
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998,1999 SysKonnect,
- *	a business unit of Schneider & Koch & Co. Datensysteme GmbH.
+ *	(C)Copyright 1998-2003 SysKonnect GmbH.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -27,6 +26,12 @@
  * History:
  *
  *	$Log: sktypes.h,v $
+ *	Revision 1.1  2003/07/21 07:26:01  rroesler
+ *	Fix: Re-Enter after CVS crash
+ *	
+ *	Revision 1.3  2003/02/25 14:16:40  mlindner
+ *	Fix: Copyright statement
+ *	
  *	Revision 1.2  1999/11/22 14:01:58  cgoos
  *	Changed license header to GPL.
  *	Now using Linux' fixed size types instead of standard types.

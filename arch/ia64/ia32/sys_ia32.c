@@ -38,6 +38,7 @@
 #include <linux/smb_mount.h>
 #include <linux/ncp_fs.h>
 #include <linux/quota.h>
+#include <linux/quotacompat.h>
 #include <linux/module.h>
 #include <linux/sunrpc/svc.h>
 #include <linux/nfsd/nfsd.h>
@@ -165,9 +166,9 @@ sys32_execve (char *filename, unsigned int argv, unsigned int envp,
 		current->thread.map_base  = old_map_base;
 		current->thread.task_size = old_task_size;
 		set_fs(USER_DS);	/* establish new task-size as the address-limit */
-	  out:
-		kfree(av);
 	}
+  out:
+	kfree(av);
 	return r;
 }
 
@@ -2147,7 +2148,6 @@ struct ipc_kludge {
 #define SEMOP		 1
 #define SEMGET		 2
 #define SEMCTL		 3
-#define SEMTIMEDOP	 4
 #define MSGSND		11
 #define MSGRCV		12
 #define MSGGET		13
@@ -2579,17 +2579,6 @@ shmctl32 (int first, int second, void *uptr)
 	return err;
 }
 
-static long
-semtimedop32(int semid, struct sembuf *tsems, int nsems,
-	     const struct timespec32 *timeout32)
-{
-	struct timespec t;
-	if (get_user (t.tv_sec, &timeout32->tv_sec) ||
-	    get_user (t.tv_nsec, &timeout32->tv_nsec))
-		return -EFAULT;
-	return sys_semtimedop(semid, tsems, nsems, &t);
-}
-
 asmlinkage long
 sys32_ipc (u32 call, int first, int second, int third, u32 ptr, u32 fifth)
 {
@@ -2601,11 +2590,7 @@ sys32_ipc (u32 call, int first, int second, int third, u32 ptr, u32 fifth)
 	switch (call) {
 	      case SEMOP:
 		/* struct sembuf is the same on 32 and 64bit :)) */
-		return sys_semtimedop(first, (struct sembuf *)AA(ptr), second,
-				      NULL);
-	      case SEMTIMEDOP:
-		return semtimedop32(first, (struct sembuf *)AA(ptr), second, 
-				    (const struct timespec32 *)AA(fifth));
+		return sys_semop(first, (struct sembuf *)AA(ptr), second);
 	      case SEMGET:
 		return sys_semget(first, second, third);
 	      case SEMCTL:
@@ -2903,12 +2888,16 @@ put_fpreg (int regno, struct _fpreg_ia32 *reg, struct pt_regs *ptp, struct switc
 		ia64f2ia32f(f, &ptp->f9);
 		break;
 	      case 2:
+		ia64f2ia32f(f, &ptp->f10);
+		break;
 	      case 3:
+		ia64f2ia32f(f, &ptp->f11);
+		break;
 	      case 4:
 	      case 5:
 	      case 6:
 	      case 7:
-		ia64f2ia32f(f, &swp->f10 + (regno - 2));
+		ia64f2ia32f(f, &swp->f12 + (regno - 4));
 		break;
 	}
 	copy_to_user(reg, f, sizeof(*reg));
@@ -2929,12 +2918,16 @@ get_fpreg (int regno, struct _fpreg_ia32 *reg, struct pt_regs *ptp, struct switc
 		copy_from_user(&ptp->f9, reg, sizeof(*reg));
 		break;
 	      case 2:
+		copy_from_user(&ptp->f10, reg, sizeof(*reg));
+		break;
 	      case 3:
+		copy_from_user(&ptp->f11, reg, sizeof(*reg));
+		break;
 	      case 4:
 	      case 5:
 	      case 6:
 	      case 7:
-		copy_from_user(&swp->f10 + (regno - 2), reg, sizeof(*reg));
+		copy_from_user(&swp->f12 + (regno - 4), reg, sizeof(*reg));
 		break;
 	}
 	return;
@@ -3635,9 +3628,11 @@ sys32_fcntl64 (unsigned int fd, unsigned int cmd, unsigned int arg)
 			return -EFAULT;
 		old_fs = get_fs();
 		set_fs(KERNEL_DS);
-		ret = sys_fcntl(fd, cmd, (unsigned long) &f);
+		ret = sys_fcntl(fd, (cmd == F_GETLK64) ? F_GETLK :
+			((cmd == F_SETLK64) ? F_SETLK : F_SETLKW),
+			(unsigned long) &f);
 		set_fs(old_fs);
-		if (cmd == F_GETLK && ia32_put_flock(&f, arg))
+		if (cmd == F_GETLK64 && ia32_put_flock(&f, arg))
 			return -EFAULT;
 		break;
 

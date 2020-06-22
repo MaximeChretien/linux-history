@@ -1405,8 +1405,13 @@ static int msp_detach(struct i2c_client *client)
 
 static int msp_probe(struct i2c_adapter *adap)
 {
+#ifdef I2C_ADAP_CLASS_TV_ANALOG
+	if (adap->class & I2C_ADAP_CLASS_TV_ANALOG)
+		return i2c_probe(adap, &addr_data, msp_attach);
+#else
 	if (adap->id == (I2C_ALGO_BIT | I2C_HW_B_BT848))
 		return i2c_probe(adap, &addr_data, msp_attach);
+#endif
 	return 0;
 }
 

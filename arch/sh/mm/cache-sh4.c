@@ -32,8 +32,17 @@
 #define CCR_CACHE_ICI	0x0800	/* IC Invalidate */
 #define CCR_CACHE_IIX	0x8000	/* IC Index Enable */
 
-/* Default CCR setup: 8k+16k-byte cache,P1-wb,enable */
-#define CCR_CACHE_VAL	(CCR_CACHE_ICE|CCR_CACHE_CB|CCR_CACHE_OCE)
+
+
+#if defined(CONFIG_SH_CACHE_ASSOC)
+#define CCR_CACHE_EMODE 0x80000000
+/* CCR setup for associative mode: 16k+32k 2-way, P1 copy-back, enable */
+#define CCR_CACHE_VAL	(CCR_CACHE_EMODE|CCR_CACHE_ENABLE|CCR_CACHE_CB)
+#else
+/* Default CCR setup: 8k+16k-byte cache, P1-copy-back, enable */
+#define CCR_CACHE_VAL	(CCR_CACHE_ENABLE|CCR_CACHE_CB)
+#endif
+
 #define CCR_CACHE_INIT	(CCR_CACHE_VAL|CCR_CACHE_OCI|CCR_CACHE_ICI)
 #define CCR_CACHE_ENABLE (CCR_CACHE_OCE|CCR_CACHE_ICE)
 
@@ -43,7 +52,7 @@
 #define CACHE_UPDATED	  2
 #define CACHE_ASSOC	  8
 
-#define CACHE_OC_WAY_SHIFT       13
+#define CACHE_OC_WAY_SHIFT       14
 #define CACHE_IC_WAY_SHIFT       13
 #define CACHE_OC_ENTRY_SHIFT      5
 #define CACHE_IC_ENTRY_SHIFT      5
@@ -53,6 +62,8 @@
 #define CACHE_IC_NUM_ENTRIES	256
 #define CACHE_OC_NUM_ENTRIES	512
 
+#define CACHE_NUM_WAYS 2
+
 static void __init
 detect_cpu_and_cache_system(void)
 {
@@ -60,6 +71,8 @@ detect_cpu_and_cache_system(void)
 	cpu_data->type = CPU_ST40;
 #elif defined(CONFIG_CPU_SUBTYPE_SH7750) || defined(CONFIG_CPU_SUBTYPE_SH7751)
 	cpu_data->type = CPU_SH7750;
+#elif defined(CONFIG_CPU_SUBTYPE_SH4_202)
+	cpu_data->type = CPU_SH4202;
 #else
 #error Unknown SH4 CPU type
 #endif
@@ -80,6 +93,26 @@ void __init cache_init(void)
 		 */
 		unsigned long addr, data;
 
+#if defined(CONFIG_SH_CACHE_ASSOC)
+                unsigned long way;
+
+                for (way = 0; way <= CACHE_NUM_WAYS; ++way) {
+                        unsigned long waybit = way << CACHE_OC_WAY_SHIFT;
+
+		        for (addr = CACHE_OC_ADDRESS_ARRAY + waybit;
+		             addr < (CACHE_OC_ADDRESS_ARRAY + waybit +
+			             (CACHE_OC_NUM_ENTRIES << 
+                                      CACHE_OC_ENTRY_SHIFT));
+		             addr += (1 << CACHE_OC_ENTRY_SHIFT)) {
+
+			        data = ctrl_inl(addr);
+
+			        if ((data & (CACHE_UPDATED|CACHE_VALID))
+			            == (CACHE_UPDATED|CACHE_VALID))
+				        ctrl_outl(data & ~CACHE_UPDATED, addr);
+		        }
+                }
+#else
 		for (addr = CACHE_OC_ADDRESS_ARRAY;
 		     addr < (CACHE_OC_ADDRESS_ARRAY+
 			     (CACHE_OC_NUM_ENTRIES << CACHE_OC_ENTRY_SHIFT));
@@ -89,6 +122,7 @@ void __init cache_init(void)
 			    == (CACHE_UPDATED|CACHE_VALID))
 				ctrl_outl(data & ~CACHE_UPDATED, addr);
 		}
+#endif
 	}
 
 	ctrl_outl(CCR_CACHE_INIT, CCR);
@@ -215,6 +249,12 @@ void flush_cache_sigtramp(unsigned long addr)
 	save_and_cli(flags);
 	jump_to_P2();
 	ctrl_outl(0, index);	/* Clear out Valid-bit */
+
+#if defined(CONFIG_SH_CACHE_ASSOC)
+	/* Must invalidate both ways for associative cache */
+	ctrl_outl(0, index | (1 << CACHE_IC_WAY_SHIFT));
+#endif
+
 	back_to_P1();
 	restore_flags(flags);
 }
@@ -225,7 +265,7 @@ static inline void flush_cache_4096(unsigned long start,
 	unsigned long flags; 
 	extern void __flush_cache_4096(unsigned long addr, unsigned long phys, unsigned long exec_offset);
 
-#if defined(CONFIG_CPU_SUBTYPE_SH7751) || defined(CONFIG_CPU_SUBTYPE_ST40)
+#if defined(CONFIG_CPU_SUBTYPE_SH7751) || defined(CONFIG_CPU_SUBTYPE_ST40) || defined(CONFIG_CPU_SUBTYPE_SH4_202)
 	if (start >= CACHE_OC_ADDRESS_ARRAY) {
 		/*
 		 * SH7751 and ST40 have no restriction to handle cache.
@@ -481,3 +521,118 @@ void copy_user_page(void *to, void *from, unsigned long address)
 		up(&p3map_sem[(address & CACHE_ALIAS)>>12]);
 	}
 }
+
+
+/****************************************************************************/
+
+#if defined(CONFIG_SH_CACHE_ASSOC)
+/*
+ * It is no possible to use the approach implement in clear_page.S when we 
+ * are in 2-way set associative mode as it would only clear half the cache, in 
+ * general. For the moment we simply implement it as a iteration through the 
+ * cache flushing both ways, this in itself is not optimial as the delay latency 
+ * for interupts is probably longer than necessary!
+ *
+ * benedict.gaster.superh.com
+ */
+void __flush_dcache_all(void)
+{
+	unsigned long flags;
+	unsigned long addr;
+        unsigned long way;
+
+	save_and_cli(flags);
+#if !defined(CONFIG_CPU_SUBTYPE_SH7751) || defined(CONFIG_CPU_SUBTYPE_SH4_202)
+	jump_to_P2();
+#endif
+        /* Clear the U and V bits for each line and each way. On SH-4, this
+         * causes write-back if both U and V are set before the address write.
+         */
+	for (way = 0; way <= 1; ++way) {
+	        unsigned long waybit = way << CACHE_OC_WAY_SHIFT;
+
+	        /* Loop all the D-cache */
+                for (addr = CACHE_OC_ADDRESS_ARRAY + waybit;
+	             addr < (CACHE_OC_ADDRESS_ARRAY + waybit
+		             + (CACHE_OC_NUM_ENTRIES << CACHE_OC_ENTRY_SHIFT));
+	             addr += (1 << CACHE_OC_ENTRY_SHIFT)) {
+			ctrl_outl(0, addr);
+                }
+	}
+
+#if !defined(CONFIG_CPU_SUBTYPE_SH7751) || defined(CONFIG_CPU_SUBTYPE_SH4_202)
+	back_to_P1();
+#endif 
+	restore_flags(flags);
+}
+
+void flush_cache_4096_all(unsigned long start)
+{
+  unsigned long phys = PHYSADDR(start);
+
+  /* Loop all the D-cache */
+  flush_cache_4096(CACHE_OC_ADDRESS_ARRAY,          phys);
+}
+#endif
+
+
+
+
+
+
+/****************************************************************************/
+
+#if defined(CONFIG_SH_CACHE_ASSOC)
+/*
+ * It is no possible to use the approach implement in clear_page.S when we 
+ * are in 2-way set associative mode as it would only clear half the cache, in 
+ * general. For the moment we simply implement it as a iteration through the 
+ * cache flushing both ways, this in itself is not optimial as the delay latency 
+ * for interupts is probably longer than necessary!
+ *
+ * benedict.gaster.superh.com
+ */
+void __flush_dcache_all(void)
+{
+	unsigned long flags;
+	unsigned long addr;
+        unsigned long way;
+
+	save_and_cli(flags);
+#if !defined(CONFIG_CPU_SUBTYPE_SH7751) || defined(CONFIG_CPU_SUBTYPE_SH4_202)
+	jump_to_P2();
+#endif
+        /* Clear the U and V bits for each line and each way. On SH-4, this
+         * causes write-back if both U and V are set before the address write.
+         */
+	for (way = 0; way <= 1; ++way) {
+	        unsigned long waybit = way << CACHE_OC_WAY_SHIFT;
+
+	        /* Loop all the D-cache */
+                for (addr = CACHE_OC_ADDRESS_ARRAY + waybit;
+	             addr < (CACHE_OC_ADDRESS_ARRAY + waybit
+		             + (CACHE_OC_NUM_ENTRIES << CACHE_OC_ENTRY_SHIFT));
+	             addr += (1 << CACHE_OC_ENTRY_SHIFT)) {
+			ctrl_outl(0, addr);
+                }
+	}
+
+#if !defined(CONFIG_CPU_SUBTYPE_SH7751) || defined(CONFIG_CPU_SUBTYPE_SH4_202)
+	back_to_P1();
+#endif 
+	restore_flags(flags);
+}
+
+void flush_cache_4096_all(unsigned long start)
+{
+  unsigned long phys = PHYSADDR(start);
+
+  /* Loop all the D-cache */
+  flush_cache_4096(CACHE_OC_ADDRESS_ARRAY,          phys);
+}
+#endif
+
+
+
+
+

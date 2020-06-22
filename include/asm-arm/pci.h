@@ -53,6 +53,8 @@ static inline void pcibios_penalize_isa_irq(int irq)
 	/* We don't do dynamic PCI IRQ allocation */
 }
 
+#define pcibios_scan_all_fns()		0
+
 struct pci_dev;
 
 /* Allocate and map kernel buffer using consistent mode DMA for a device.

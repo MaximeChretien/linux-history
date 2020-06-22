@@ -194,14 +194,9 @@ extern void		pcibr_provider_shutdown(vertex_hdl_t pcibr);
 
 extern int		pcibr_reset(vertex_hdl_t dev);
 
-extern int              pcibr_write_gather_flush(vertex_hdl_t dev);
-
 extern pciio_endian_t	pcibr_endian_set(vertex_hdl_t dev,
 					 pciio_endian_t device_end,
 					 pciio_endian_t desired_end);
-
-extern pciio_priority_t pcibr_priority_set(vertex_hdl_t dev,
-					   pciio_priority_t device_prio);
 
 extern uint64_t		pcibr_config_get(vertex_hdl_t conn,
 					 unsigned reg,

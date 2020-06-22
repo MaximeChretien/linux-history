@@ -89,7 +89,7 @@
 
 /* compatibility */
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,69)
+#ifndef IRQ_HANDLED
 typedef void irqreturn_t;
 #define IRQ_NONE
 #define IRQ_HANDLED
@@ -107,10 +107,6 @@ typedef void irqreturn_t;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,3)
 #define pci_set_drvdata(pci_dev, data)	(pci_dev)->driver_data = (data)
 #define pci_get_drvdata(pci_dev)	(pci_dev)->driver_data
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,44)
-#define pci_pool_create(a, b, c, d, e)	pci_pool_create(a, b, c, d, e, SLAB_KERNEL)
 #endif
 
 #include "he.h"
@@ -327,25 +323,25 @@ he_readl_internal(struct he_dev *he_dev, unsigned addr, unsigned flags)
 		he_writel_rcm(dev, val, 0x00000 | (cid << 3) | 7)
 
 static __inline__ struct atm_vcc*
-he_find_vcc(struct he_dev *he_dev, unsigned cid)
+__find_vcc(struct he_dev *he_dev, unsigned cid)
 {
-	unsigned long flags;
 	struct atm_vcc *vcc;
+	struct sock *s;
 	short vpi;
 	int vci;
 
 	vpi = cid >> he_dev->vcibits;
 	vci = cid & ((1 << he_dev->vcibits) - 1);
 
-	spin_lock_irqsave(&he_dev->atm_dev->lock, flags);
-	for (vcc = he_dev->atm_dev->vccs; vcc; vcc = vcc->next)
-		if (vcc->vci == vci && vcc->vpi == vpi
-			&& vcc->qos.rxtp.traffic_class != ATM_NONE) {
-				spin_unlock_irqrestore(&he_dev->atm_dev->lock, flags);
-				return vcc;
-			}
+	for (s = vcc_sklist; s; s = s->next) {
+		vcc = s->protinfo.af_atm;
+		if (vcc->vci == vci && vcc->vpi == vpi &&
+		    vcc->dev == he_dev->atm_dev &&
+		    vcc->qos.rxtp.traffic_class != ATM_NONE) {
+			return vcc;
+		}
+	}
 
-	spin_unlock_irqrestore(&he_dev->atm_dev->lock, flags);
 	return NULL;
 }
 
@@ -785,7 +781,7 @@ he_init_group(struct he_dev *he_dev, int group)
 	/* small buffer pool */
 #ifdef USE_RBPS_POOL
 	he_dev->rbps_pool = pci_pool_create("rbps", he_dev->pci_dev,
-			CONFIG_RBPS_BUFSIZE, 8, 0);
+			CONFIG_RBPS_BUFSIZE, 8, 0, SLAB_KERNEL);
 	if (he_dev->rbps_pool == NULL) {
 		hprintk("unable to create rbps pages\n");
 		return -ENOMEM;
@@ -849,7 +845,7 @@ he_init_group(struct he_dev *he_dev, int group)
 	/* large buffer pool */
 #ifdef USE_RBPL_POOL
 	he_dev->rbpl_pool = pci_pool_create("rbpl", he_dev->pci_dev,
-			CONFIG_RBPL_BUFSIZE, 8, 0);
+			CONFIG_RBPL_BUFSIZE, 8, 0, SLAB_KERNEL);
 	if (he_dev->rbpl_pool == NULL) {
 		hprintk("unable to create rbpl pool\n");
 		return -ENOMEM;
@@ -1475,7 +1471,7 @@ he_start(struct atm_dev *dev)
 
 #ifdef USE_TPD_POOL
 	he_dev->tpd_pool = pci_pool_create("tpd", he_dev->pci_dev,
-		sizeof(struct he_tpd), TPD_ALIGNMENT, 0);
+		sizeof(struct he_tpd), TPD_ALIGNMENT, 0, SLAB_KERNEL);
 	if (he_dev->tpd_pool == NULL) {
 		hprintk("unable to create tpd pci_pool\n");
 		return -ENOMEM;         
@@ -1781,6 +1777,7 @@ he_service_rbrq(struct he_dev *he_dev, int group)
 	int pdus_assembled = 0;
 	int updated = 0;
 
+	read_lock(&vcc_sklist_lock);
 	while (he_dev->rbrq_head != rbrq_tail) {
 		++updated;
 
@@ -1807,7 +1804,7 @@ he_service_rbrq(struct he_dev *he_dev, int group)
 		cid = RBRQ_CID(he_dev->rbrq_head);
 
 		if (cid != lastcid)
-			vcc = he_find_vcc(he_dev, cid);
+			vcc = __find_vcc(he_dev, cid);
 		lastcid = cid;
 
 		if (vcc == NULL) {
@@ -1946,6 +1943,7 @@ next_rbrq_entry:
 					RBRQ_MASK(++he_dev->rbrq_head));
 
 	}
+	read_unlock(&vcc_sklist_lock);
 
 	if (updated) {
 		if (updated > he_dev->rbrq_peak)
@@ -2870,8 +2868,10 @@ he_ioctl(struct atm_dev *atm_dev, unsigned int cmd, void *arg)
 			if (!capable(CAP_NET_ADMIN))
 				return -EPERM;
 
-			copy_from_user(&reg, (struct he_ioctl_reg *) arg,
-						sizeof(struct he_ioctl_reg));
+			if (copy_from_user(&reg, (struct he_ioctl_reg *) arg,
+						sizeof(struct he_ioctl_reg)))
+				return -EFAULT;
+			
 			spin_lock_irqsave(&he_dev->global_lock, flags);
 			switch (reg.type) {
 				case HE_REGTYPE_PCI:
@@ -2895,8 +2895,9 @@ he_ioctl(struct atm_dev *atm_dev, unsigned int cmd, void *arg)
 			}
 			spin_unlock_irqrestore(&he_dev->global_lock, flags);
 			if (err == 0)
-				copy_to_user((struct he_ioctl_reg *) arg, &reg,
-							sizeof(struct he_ioctl_reg));
+				if (copy_to_user((struct he_ioctl_reg *) arg, &reg,
+							sizeof(struct he_ioctl_reg)))
+					return -EFAULT;
 			break;
 		default:
 #ifdef CONFIG_ATM_HE_USE_SUNI

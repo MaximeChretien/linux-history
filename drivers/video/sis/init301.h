@@ -28,6 +28,9 @@
  * PERFORMANCE OF THIS SOFTWARE.
  *
  * Author: 	Thomas Winischhofer <thomas@winischhofer.net>
+ *
+ * Based on code by Silicon Intergrated Systems 
+ *
  */
 
 #ifndef  _INIT301_
@@ -121,9 +124,9 @@ extern   BOOLEAN  SiS_SearchVBModeID(SiS_Private *SiS_Pr, UCHAR *RomAddr, USHORT
 
 BOOLEAN  SiS_Is301B(SiS_Private *SiS_Pr, USHORT BaseAddr);
 BOOLEAN  SiS_IsNotM650or651(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension, USHORT BaseAddr);
-BOOLEAN  SiS_IsDisableCRT2(SiS_Private *SiS_Pr, USHORT BaseAddr);
 BOOLEAN  SiS_IsVAMode(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension, USHORT BaseAddr);
 BOOLEAN  SiS_IsDualEdge(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension, USHORT BaseAddr);
+BOOLEAN  SiS_IsDualLink(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension, USHORT BaseAddr);
 BOOLEAN  SiS_CRT2IsLCD(SiS_Private *SiS_Pr, USHORT BaseAddr, PSIS_HW_DEVICE_INFO HwDeviceExtension);
 void     SiS_SetDefCRT2ExtRegs(SiS_Private *SiS_Pr, USHORT BaseAddr);
 USHORT   SiS_GetRatePtrCRT2(SiS_Private *SiS_Pr, UCHAR *ROMAddr, USHORT ModeNo,USHORT ModeIdIndex,
@@ -140,7 +143,8 @@ void     SiS_GetCRT2PtrA(SiS_Private *SiS_Pr, UCHAR *ROMAddr,USHORT ModeNo,USHOR
                          USHORT RefreshRateTableIndex,USHORT *CRT2Index,USHORT *ResIndex);
 #endif
 void     SiS_GetCRT2Part2Ptr(SiS_Private *SiS_Pr, UCHAR *ROMAddr,USHORT ModeNo,USHORT ModeIdIndex,
-		             USHORT RefreshRateTableIndex,USHORT *CRT2Index, USHORT *ResIndex);
+		             USHORT RefreshRateTableIndex,USHORT *CRT2Index, USHORT *ResIndex,
+			     PSIS_HW_DEVICE_INFO HwDeviceExtension, USHORT BaseAddr);
 void     SiS_GetCRT2Data301(SiS_Private *SiS_Pr, UCHAR *ROMAddr,USHORT ModeNo,USHORT ModeIdIndex,
                             USHORT RefreshRateTableIndex,PSIS_HW_DEVICE_INFO HwDeviceExtension);
 USHORT   SiS_GetResInfo(SiS_Private *SiS_Pr, UCHAR *ROMAddr,USHORT ModeNo,USHORT ModeIdIndex);
@@ -155,7 +159,8 @@ void     SiS_SetCRT2ModeRegs(SiS_Private *SiS_Pr, USHORT BaseAddr,USHORT ModeNo,
                              PSIS_HW_DEVICE_INFO );
 void     SiS_SetHiVision(SiS_Private *SiS_Pr, USHORT BaseAddr,PSIS_HW_DEVICE_INFO HwDeviceExtension);
 void     SiS_GetLVDSDesData(SiS_Private *SiS_Pr, UCHAR *ROMAddr,USHORT ModeNo,USHORT ModeIdIndex,
-			    USHORT RefreshRateTableIndex,PSIS_HW_DEVICE_INFO HwDeviceExtension);
+			    USHORT RefreshRateTableIndex,PSIS_HW_DEVICE_INFO HwDeviceExtension,
+			    USHORT BaseAddr);
 void     SiS_SetCRT2Offset(SiS_Private *SiS_Pr, UCHAR *ROMAddr,USHORT ModeNo,USHORT ModeIdIndex,
                            USHORT RefreshRateTableIndex,PSIS_HW_DEVICE_INFO HwDeviceExtension);
 USHORT   SiS_GetOffset(SiS_Private *SiS_Pr, UCHAR *ROMAddr,USHORT ModeNo,USHORT ModeIdIndex,
@@ -206,9 +211,10 @@ void     SiS_SetCRT2ECLK(SiS_Private *SiS_Pr, UCHAR *ROMAddr, USHORT ModeNo,USHO
 void     SiS_GetLVDSDesPtr(SiS_Private *SiS_Pr, UCHAR *ROMAddr,USHORT ModeNo,USHORT ModeIdIndex,
                            USHORT RefreshRateTableIndex,USHORT *PanelIndex,USHORT *ResIndex,
 			   PSIS_HW_DEVICE_INFO HwDeviceExtension);
-#ifdef SIS315H			   
+#ifdef SIS315H
 void     SiS_GetLVDSDesPtrA(SiS_Private *SiS_Pr, UCHAR *ROMAddr,USHORT ModeNo,USHORT ModeIdIndex,
-                            USHORT RefreshRateTableIndex,USHORT *PanelIndex,USHORT *ResIndex);
+                            USHORT RefreshRateTableIndex,USHORT *PanelIndex,USHORT *ResIndex,
+			    PSIS_HW_DEVICE_INFO HwDeviceExtension, USHORT BaseAddr);
 #endif			    
 void     SiS_SetTPData(SiS_Private *SiS_Pr);
 void     SiS_SetChrontelGPIO(SiS_Private *SiS_Pr, USHORT myvbinfo);

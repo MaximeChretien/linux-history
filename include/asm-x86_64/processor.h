@@ -17,6 +17,7 @@
 #include <asm/msr.h>
 #include <asm/current.h>
 #include <asm/system.h>
+#include <asm/cpufeature.h>
 
 #define TF_MASK		0x00000100
 #define IF_MASK		0x00000200
@@ -76,16 +77,6 @@ extern struct cpuinfo_x86 cpu_data[];
 #define cpu_data (&boot_cpu_data)
 #define current_cpu_data boot_cpu_data
 #endif
-
-#define cpu_has_pge 1
-#define cpu_has_pse 1
-#define cpu_has_pae 1
-#define cpu_has_tsc 1
-#define cpu_has_de 1
-#define cpu_has_vme 1
-#define cpu_has_fxsr 1
-#define cpu_has_xmm 1
-#define cpu_has_apic (test_bit(X86_FEATURE_APIC, boot_cpu_data.x86_capability))
 
 extern char ignore_irq13;
 
@@ -258,7 +249,9 @@ static inline void clear_in_cr4 (unsigned long mask)
 /* This decides where the kernel will search for a free chunk of vm
  * space during mmap's.
  */
-#define TASK_UNMAPPED_32 0xa0000000
+
+#define IA32_PAGE_OFFSET ((current->personality & ADDR_LIMIT_3GB) ? 0xc0000000 : 0xFFFFe000)
+#define TASK_UNMAPPED_32 (IA32_PAGE_OFFSET / 3) 
 #define TASK_UNMAPPED_64 (TASK_SIZE/3) 
 #define TASK_UNMAPPED_BASE	\
 	((current->thread.flags & THREAD_IA32) ? TASK_UNMAPPED_32 : TASK_UNMAPPED_64)  
@@ -336,7 +329,7 @@ struct thread_struct {
 #define DOUBLEFAULT_STACK 2 
 #define NMI_STACK 3 
 #define N_EXCEPTION_STACKS 3  /* hw limit: 7 */
-#define EXCEPTION_STKSZ 1024
+#define EXCEPTION_STKSZ PAGE_SIZE
 #define EXCEPTION_STK_ORDER 0
 
 extern void load_gs_index(unsigned);
@@ -396,7 +389,7 @@ extern unsigned long get_wchan(struct task_struct *p);
 /* REP NOP (PAUSE) is a good thing to insert into busy-wait loops. */
 extern inline void rep_nop(void)
 {
-	__asm__ __volatile__("rep;nop");
+	__asm__ __volatile__("rep;nop":::"memory");
 }
 
 /* Avoid speculative execution by the CPU */
@@ -405,8 +398,6 @@ extern inline void sync_core(void)
 	int tmp;
 	asm volatile("cpuid" : "=a" (tmp) : "0" (1) : "ebx","ecx","edx","memory");
 } 
-
-#define cpu_has_fpu 1
 
 #define ARCH_HAS_PREFETCH
 #define ARCH_HAS_PREFETCHW

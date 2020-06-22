@@ -5,7 +5,7 @@
  * to set up the kernel's global pointer and jump to the kernel
  * entry point.
  *
- * Copyright (C) 1998-2001 Hewlett-Packard Co
+ * Copyright (C) 1998-2001, 2003 Hewlett-Packard Co
  *	David Mosberger-Tang <davidm@hpl.hp.com>
  *	Stephane Eranian <eranian@hpl.hp.com>
  * Copyright (C) 1999 VA Linux Systems
@@ -15,6 +15,7 @@
  * Copyright (C) 1999 Don Dugger <Don.Dugger@intel.com>
  * Copyright (C) 2002 Fenghua Yu <fenghua.yu@intel.com>
  *   -Optimize __ia64_save_fpu() and __ia64_load_fpu() for Itanium 2.
+ * Copyright (C) 2003 Silicon Graphics, Inc.
  */
 
 #include <linux/config.h>
@@ -65,17 +66,29 @@ start_ap:
 	 * that maps the kernel's text and data:
 	 */
 	rsm psr.i | psr.ic
-	mov r16=((ia64_rid(IA64_REGION_ID_KERNEL, PAGE_OFFSET) << 8) | (IA64_GRANULE_SHIFT << 2))
 	;;
 	srlz.i
+	;;
+	mov r20=((ia64_rid(IA64_REGION_ID_KERNEL, (7<<61)) << 8) | (IA64_GRANULE_SHIFT << 2))
+	movl r21=(7<<61)
+	;;
+	mov rr[r21]=r20
+	;;
+	/*
+	 * Now pin mappings into the TLB for kernel text and data
+	 */
 	mov r18=KERNEL_TR_PAGE_SHIFT<<2
 	movl r17=KERNEL_START
 	;;
-	mov rr[r17]=r16
 	mov cr.itir=r18
 	mov cr.ifa=r17
 	mov r16=IA64_TR_KERNEL
-	movl r18=((1 << KERNEL_TR_PAGE_SHIFT) | PAGE_KERNEL)
+	mov r3=ip
+	movl r18=PAGE_KERNEL
+	;;
+	dep r2=0,r3,0,KERNEL_TR_PAGE_SHIFT
+	;;
+	or r18=r2,r18
 	;;
 	srlz.i
 	;;
@@ -134,28 +147,63 @@ start_ap:
 	movl r3=cpucount
  	;;
 	ld4 r3=[r3]		// r3 <- smp_processor_id()
-	movl r2=init_tasks
-	;;
-	shladd r2=r3,3,r2
-	;;
-	ld8 r2=[r2]
 #else
 	mov r3=0
-	movl r2=init_task_union
-	;;
 #endif
+	;;
 	cmp4.ne isAP,isBP=r3,r0
-	;;			// RAW on r2
-	extr r3=r2,0,61		// r3 == phys addr of task struct
-	mov r16=KERNEL_TR_PAGE_NUM
+
+	/*
+	 * Make task struct pointer in init_tasks an identity mapped pointer.
+	 * The value that is compiled into the array may not be identity mapped.
+	 */
+	movl r18=init_tasks
+	;;
+	shladd r18=r3,3,r18
+	;;
+	ld8 r8=[r18]
+	;;
+	tpa r3=r8		// r3 == phys addr of task struct
+	;;
+	dep r2=-1,r3,61,3	// IMVA of task
+	;;
+	st8 [r18]=r2		// and save it back in init_tasks[thiscpu]
+
+	// load mapping for stack (virtaddr in r2, physaddr in r3)
+	// load dtr[2] only if the va for current (r2) isn't covered by the dtr[0] 
+	shr.u r18=r2,KERNEL_TR_PAGE_SHIFT               /* va of current in units of kernel-pages */
+	movl r17=KERNEL_START>>KERNEL_TR_PAGE_SHIFT     /* va of kernel-start in units of kernel-pages */
+	;;
+	cmp.eq p0,p6=r17,r18
+	rsm psr.ic
+	movl r17=PAGE_KERNEL
+	;;
+	srlz.d
+	dep r18=0,r3,0,12
+	;;
+	or r18=r17,r18
+	;;
+	mov r17=rr[r2]
+	shr.u r16=r3,IA64_GRANULE_SHIFT
+	;;
+	dep r17=0,r17,8,24
+	;;
+	mov cr.itir=r17
+	mov cr.ifa=r2
+
+	mov r19=IA64_TR_CURRENT_STACK
+	;;
+(p6)	itr.d dtr[r19]=r18
+	;;
+	ssm psr.ic
+	srlz.d
 	;;
 
 	// load the "current" pointer (r13) and ar.k6 with the current task
-	mov r13=r2
 	mov IA64_KR(CURRENT)=r3		// Physical address
-
-	// initialize k4 to a safe value (64-128MB is mapped by TR_KERNEL)
 	mov IA64_KR(CURRENT_STACK)=r16
+	mov r13=r2
+
 	/*
 	 * Reserve space at the top of the stack for "struct pt_regs".  Kernel threads
 	 * don't store interesting values in that structure, but the space still needs
@@ -670,14 +718,14 @@ GLOBAL_ENTRY(__ia64_init_fpu)
 END(__ia64_init_fpu)
 
 /*
- * Switch execution mode from virtual to physical or vice versa.
+ * Switch execution mode from virtual to physical
  *
  * Inputs:
  *	r16 = new psr to establish
  *
  * Note: RSE must already be in enforced lazy mode
  */
-GLOBAL_ENTRY(ia64_switch_mode)
+GLOBAL_ENTRY(ia64_switch_mode_phys)
  {
 	alloc r2=ar.pfs,0,0,0,0
 	rsm psr.i | psr.ic		// disable interrupts and interrupt collection
@@ -687,35 +735,86 @@ GLOBAL_ENTRY(ia64_switch_mode)
  {
 	flushrs				// must be first insn in group
 	srlz.i
-	shr.u r19=r15,61		// r19 <- top 3 bits of current IP
  }
 	;;
 	mov cr.ipsr=r16			// set new PSR
-	add r3=1f-ia64_switch_mode,r15
-	xor r15=0x7,r19			// flip the region bits
+	add r3=1f-ia64_switch_mode_phys,r15
 
 	mov r17=ar.bsp
 	mov r14=rp			// get return address into a general register
+	;;
 
-	// switch RSE backing store:
+	// going to physical mode, use tpa to translate virt->phys
+	tpa r17=r17
+	tpa r3=r3
+	tpa sp=sp
+	tpa r14=r14
 	;;
-	dep r17=r15,r17,61,3		// make ar.bsp physical or virtual
+
 	mov r18=ar.rnat			// save ar.rnat
-	;;
 	mov ar.bspstore=r17		// this steps on ar.rnat
-	dep r3=r15,r3,61,3		// make rfi return address physical or virtual
-	;;
 	mov cr.iip=r3
 	mov cr.ifs=r0
-	dep sp=r15,sp,61,3		// make stack pointer physical or virtual
 	;;
 	mov ar.rnat=r18			// restore ar.rnat
-	dep r14=r15,r14,61,3		// make function return address physical or virtual
 	rfi				// must be last insn in group
 	;;
 1:	mov rp=r14
 	br.ret.sptk.many rp
-END(ia64_switch_mode)
+END(ia64_switch_mode_phys)
+
+/*
+ * Switch execution mode from physical to virtual
+ *
+ * Inputs:
+ *	r16 = new psr to establish
+ *
+ * Note: RSE must already be in enforced lazy mode
+ */
+GLOBAL_ENTRY(ia64_switch_mode_virt)
+ {
+	alloc r2=ar.pfs,0,0,0,0
+	rsm psr.i | psr.ic		// disable interrupts and interrupt collection
+	mov r15=ip
+ }
+	;;
+ {
+	flushrs				// must be first insn in group
+	srlz.i
+ }
+	;;
+	mov cr.ipsr=r16			// set new PSR
+	add r3=1f-ia64_switch_mode_virt,r15
+
+	mov r17=ar.bsp
+	mov r14=rp			// get return address into a general register
+	;;
+
+	// going to virtual
+	//   - for code addresses, set upper bits of addr to KERNEL_START
+	//   - for stack addresses, set upper 3 bits to 0xe.... Dont change any of the
+	//     lower bits since we want it to stay identity mapped
+	movl r18=KERNEL_START
+	dep r3=0,r3,KERNEL_TR_PAGE_SHIFT,64-KERNEL_TR_PAGE_SHIFT
+	dep r14=0,r14,KERNEL_TR_PAGE_SHIFT,64-KERNEL_TR_PAGE_SHIFT
+	dep r17=-1,r17,61,3
+	dep sp=-1,sp,61,3
+	;;
+	or r3=r3,r18
+	or r14=r14,r18
+	;;
+
+	mov r18=ar.rnat			// save ar.rnat
+	mov ar.bspstore=r17		// this steps on ar.rnat
+	mov cr.iip=r3
+	mov cr.ifs=r0
+	;;
+	mov ar.rnat=r18			// restore ar.rnat
+	rfi				// must be last insn in group
+	;;
+1:	mov rp=r14
+	br.ret.sptk.many rp
+END(ia64_switch_mode_virt)
 
 #ifdef CONFIG_IA64_BRL_EMU
 
@@ -782,6 +881,9 @@ GLOBAL_ENTRY(ia64_spinlock_contention)
 	;;
 	// delay a little...
 .wait:	sub tmp=tmp,timeout
+#ifdef GAS_HAS_HINT_INSN
+	hint @pause
+#endif
 	or delay=0xf,delay	// make sure delay is non-zero (otherwise we get stuck with 0)
 	;;
 	cmp.lt p15,p0=tmp,r0

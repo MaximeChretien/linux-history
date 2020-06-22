@@ -78,6 +78,7 @@ if [ "$CONFIG_USB" = "y" -o  "$CONFIG_USB" = "m" ]; then
       dep_tristate '  USB Philips Cameras' CONFIG_USB_PWC $CONFIG_USB $CONFIG_VIDEO_DEV
       dep_tristate '  USB SE401 Camera support' CONFIG_USB_SE401 $CONFIG_USB $CONFIG_VIDEO_DEV
       dep_tristate '  USB STV680 (Pencam) Camera support' CONFIG_USB_STV680 $CONFIG_USB $CONFIG_VIDEO_DEV
+      dep_tristate '  USB W996[87]CF Camera support' CONFIG_USB_W9968CF $CONFIG_USB $CONFIG_VIDEO_DEV $CONFIG_I2C
       dep_tristate '  USB 3com HomeConnect (aka vicam) support (EXPERIMENTAL)' CONFIG_USB_VICAM $CONFIG_USB $CONFIG_VIDEO_DEV $CONFIG_EXPERIMENTAL
       dep_tristate '  D-Link USB FM radio support (EXPERIMENTAL)' CONFIG_USB_DSBR $CONFIG_USB $CONFIG_VIDEO_DEV $CONFIG_EXPERIMENTAL
       dep_tristate '  DABUSB driver' CONFIG_USB_DABUSB $CONFIG_USB
@@ -110,4 +111,7 @@ if [ "$CONFIG_USB" = "y" -o  "$CONFIG_USB" = "m" ]; then
       dep_tristate '  Alcatel Speedtouch USB support' CONFIG_USB_SPEEDTOUCH $CONFIG_ATM $CONFIG_USB
    fi
 fi
+
+source drivers/usb/gadget/Config.in
+
 endmenu

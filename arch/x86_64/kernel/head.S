@@ -6,7 +6,7 @@
  *  Copyright (C) 2000 Karsten Keil <kkeil@suse.de>
  *  Copyright (C) 2001,2002 Andi Kleen <ak@suse.de>
  *
- *  $Id: head.S,v 1.56 2003/05/12 14:38:43 ak Exp $
+ *  $Id: head.S,v 1.58 2003/11/02 05:05:31 ak Exp $
  */
 
 
@@ -38,6 +38,9 @@ startup_32:
 	 */
 
 	movl %ebx,%ebp	/* Save trampoline flag */
+	
+	movl $__KERNEL_DS,%eax
+	movl %eax,%ds
 	
 	/* First check if extended functions are implemented */
 	movl	$0x80000000, %eax
@@ -119,24 +122,10 @@ reach_compatibility_mode:
 	movl	$0x100F00, %eax
 	lgdt	(%eax)
 
+second:		
 	movl    $0x100F10, %eax
 	/* Finally jump in 64bit mode */
 	ljmp	*(%eax)
-
-second:
-	/* abuse syscall to get into 64bit mode. this way we don't need
-	   a working low identity mapping just for the short 32bit roundtrip. 
-	   XXX kludge. this should not be needed. */
-	movl  $MSR_STAR,%ecx
-	xorl  %eax,%eax
-	movl  $(__USER32_CS<<16)|__KERNEL_CS,%edx
-	wrmsr
-
-	movl  $MSR_CSTAR,%ecx
-	movl  $0xffffffff,%edx
-	movl  $0x80100100,%eax	# reach_long64 absolute
-	wrmsr
-	syscall
 
 	.code64
 	.org 0x100	
@@ -312,7 +301,8 @@ ENTRY(empty_bad_pmd_table)
 ENTRY(level3_physmem_pgt)
 	.quad	0x0000000000105007		/* -> level2_kernel_pgt (so that __va works even before pagetable_init) */
 
-.org 0xb000
+	.org 0xb000
+#ifdef CONFIG_ACPI_SLEEP
 ENTRY(wakeup_level4_pgt)
         .quad   0x0000000000102007              /* -> level3_ident_pgt */
         .fill   255,8,0
@@ -320,6 +310,7 @@ ENTRY(wakeup_level4_pgt)
         .fill   254,8,0
         /* (2^48-(2*1024*1024*1024))/(2^39) = 511 */
         .quad   0x0000000000103007              /* -> level3_kernel_pgt */
+#endif
 
 .data
 

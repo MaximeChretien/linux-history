@@ -9,7 +9,7 @@
  *  X86-64 port
  *	Andi Kleen.
  * 
- *  $Id: process.c,v 1.70 2003/06/09 05:18:21 ak Exp $
+ *  $Id: process.c,v 1.74 2003/08/13 13:43:16 ak Exp $
  */
 
 /*
@@ -168,7 +168,7 @@ static enum {
 static int reboot_mode = 0; 
 
 /* reboot=b[ios] | t[riple] | k[bd] [, [w]arm | [c]old]
-   bios	  Use the CPU reboto vector for warm reset
+   bios	  Use the CPU reboot vector for warm reset
    warm   Don't set the cold reboot flag
    cold   Set the cold reboto flag
    triple Force a triple fault (init)
@@ -227,7 +227,7 @@ static void reboot_warm(void)
 		      [target] "b" (WARMBOOT_TRAMP));
 }
 
-static inline void kb_wait(void)
+static void kb_wait(void)
 {
 	int i;
 
@@ -252,6 +252,7 @@ static void smp_halt(void)
 
 	/* AP calling this. Just halt */
 	if (cpuid != boot_cpu_id) { 
+		printk("CPU %d SMP halt\n", cpuid); 
 		for (;;)
 			asm("hlt");
 	}

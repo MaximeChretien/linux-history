@@ -1312,7 +1312,7 @@ void reparent_to_init(void)
 	this_task->cap_permitted = CAP_FULL_SET;
 	this_task->keep_capabilities = 0;
 	memcpy(this_task->rlim, init_task.rlim, sizeof(*(this_task->rlim)));
-	this_task->user = INIT_USER;
+	switch_uid(INIT_USER);
 
 	spin_unlock(&runqueue_lock);
 	write_unlock_irq(&tasklist_lock);

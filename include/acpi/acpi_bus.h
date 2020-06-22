@@ -35,6 +35,7 @@
 
 #include <acpi/acpi.h>
 
+extern int			acpi_disabled;
 
 /* TBD: Make dynamic */
 #define ACPI_MAX_HANDLES	10

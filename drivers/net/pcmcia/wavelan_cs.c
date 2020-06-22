@@ -1890,26 +1890,16 @@ wl_his_gather(device *	dev,
 }
 #endif	/* HISTOGRAM */
 
-static inline int
-wl_netdev_ethtool_ioctl(struct net_device *dev, void *useraddr)
+
+static void netdev_get_drvinfo(struct net_device *dev,
+			       struct ethtool_drvinfo *info)
 {
-	u32 ethcmd;
-		
-	if (copy_from_user(&ethcmd, useraddr, sizeof(ethcmd)))
-		return -EFAULT;
-	
-	switch (ethcmd) {
-	case ETHTOOL_GDRVINFO: {
-		struct ethtool_drvinfo info = {ETHTOOL_GDRVINFO};
-		strncpy(info.driver, "wavelan_cs", sizeof(info.driver)-1);
-		if (copy_to_user(useraddr, &info, sizeof(info)))
-			return -EFAULT;
-		return 0;
-	}
-	}
-	
-	return -EOPNOTSUPP;
+	strcpy(info->driver, "wavelan_cs");
 }
+
+static struct ethtool_ops netdev_ethtool_ops = {
+	.get_drvinfo		= netdev_get_drvinfo,
+};
 
 /*------------------------------------------------------------------*/
 /*
@@ -1932,9 +1922,6 @@ wavelan_ioctl(struct net_device *	dev,	/* Device on wich the ioctl apply */
 #ifdef DEBUG_IOCTL_TRACE
   printk(KERN_DEBUG "%s: ->wavelan_ioctl(cmd=0x%X)\n", dev->name, cmd);
 #endif
-
-  if (cmd == SIOCETHTOOL)
-    return wl_netdev_ethtool_ioctl(dev, (void *) rq->ifr_data);
 
   /* Disable interrupts & save flags */
   wv_splhi(lp, &flags);
@@ -4568,6 +4555,7 @@ wavelan_attach(void)
   dev->do_ioctl = wavelan_ioctl;	/* wireless extensions */
   dev->get_wireless_stats = wavelan_get_wireless_stats;
 #endif
+  SET_ETHTOOL_OPS(dev, &netdev_ethtool_ops);
 
   /* Other specific data */
   dev->mtu = WAVELAN_MTU;

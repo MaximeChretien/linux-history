@@ -39,9 +39,9 @@
 #define VB_CHRONTEL             0x02000000
 #define VB_301LV                0x04000000  	
 #define VB_302LV                0x08000000  	
-#define VB_TRUMPION		0x10000000     
-#define VB_VIDEOBRIDGE		(VB_301|VB_301B|VB_302B|VB_301LV|VB_302LV| \
-				 VB_LVDS|VB_CHRONTEL|VB_TRUMPION)
+#define VB_301C			0x10000000     
+#define VB_VIDEOBRIDGE		(VB_301|VB_301B|VB_301C|VB_302B|VB_301LV|VB_302LV| \
+				 VB_LVDS|VB_CHRONTEL)
 #define VB_SISBRIDGE            (VB_301|VB_301B|VB_302B|VB_301LV|VB_302LV)
 #define VB_SINGLE_MODE          0x20000000   	 /* CRT1 or CRT2; determined by VB_DISPTYPE_CRTx */
 #define VB_DISPMODE_SINGLE	VB_SINGLE_MODE 	 
@@ -88,6 +88,7 @@ typedef enum _SIS_CHIP_TYPE {
 	SIS_740,
 	SIS_330,
 	SIS_660,
+	SIS_760,
 	MAX_SIS_CHIP
 } SIS_CHIP_TYPE;
 
@@ -243,7 +244,10 @@ struct _SISFB_INFO {
 	unsigned long sisfb_vbflags;
 	unsigned long sisfb_currentvbflags;
 
-	char reserved[227]; 		/* for future use */
+	int sisfb_scalelcd;
+	unsigned long sisfb_specialtiming;
+
+	char reserved[219]; 		/* for future use */
 };
 
 #ifdef __KERNEL__

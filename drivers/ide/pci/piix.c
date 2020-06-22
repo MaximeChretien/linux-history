@@ -599,6 +599,65 @@ no_dma_set:
 }
 
 /**
+ *	ich3_busproc		-	bus isolation ioctl
+ *	@drive: drive to isolate/restore
+ *	@state: bus state to set
+ *
+ *	Used by the ICH3 to handle bus isolation. We have to do
+ *	a little bit of fixing to keep the hardware happy.
+ */
+ 
+static int ich3_busproc (ide_drive_t * drive, int state)
+{
+	ide_hwif_t *hwif	= HWIF(drive);
+	u32 sig_mode;
+	int shift;
+	int bits;
+	
+	if(hwif->channel == 0)
+		shift = 17;
+	else
+		shift = 19;
+		
+	switch (state) {
+		case BUSSTATE_ON:
+			bits = 0x00;
+			hwif->drives[0].failures = 0;
+			hwif->drives[1].failures = 0;
+			break;
+		case BUSSTATE_OFF:
+			bits = 0x01;
+			break;
+		case BUSSTATE_TRISTATE:
+			bits = 0x10;
+			break;
+		default:
+			return -EINVAL;
+	}
+	
+	if(bits)
+	{
+		int port = hwif->channel == 0 ? 0x40 : 0x42;
+		u16 reg;
+		hwif->drives[0].failures = hwif->drives[0].max_failures + 1;
+		hwif->drives[1].failures = hwif->drives[1].max_failures + 1;
+		/* Turn off IORDY checking to avoid hangs */
+		pci_read_config_word(hwif->pci_dev, port, &reg);
+		reg&=~(1<<5)|(1<<1);
+		pci_write_config_word(hwif->pci_dev, port, reg);
+	}
+	/* Todo: Check locking */
+	pci_read_config_dword(hwif->pci_dev, 0x54, &sig_mode);
+	sig_mode&=~(3<<shift);
+	sig_mode|=(bits<<shift);
+	pci_write_config_dword(hwif->pci_dev, 0x54, sig_mode);
+
+	hwif->bus_state = state;
+	return 0;
+}
+
+
+/**
  *	init_chipset_piix	-	set up the PIIX chipset
  *	@dev: PCI device to set up
  *	@name: Name of the device
@@ -693,6 +752,10 @@ static void __init init_hwif_piix (ide_hwif_t *hwif)
 		case PCI_DEVICE_ID_INTEL_82801AB_1:
 			hwif->ultra_mask = 0x07;
 			break;
+		case PCI_DEVICE_ID_INTEL_82801CA_10:
+		case PCI_DEVICE_ID_INTEL_82801CA_11:
+			hwif->busproc = ich3_busproc;
+			/* fall through */
 		default:
 			pci_read_config_byte(hwif->pci_dev, 0x54, &reg54h);
 			pci_read_config_byte(hwif->pci_dev, 0x55, &reg55h);

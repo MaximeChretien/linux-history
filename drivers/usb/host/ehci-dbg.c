@@ -471,7 +471,7 @@ show_periodic (struct device *dev, char *buf)
 	spin_lock_irqsave (&ehci->lock, flags);
 	for (i = 0; i < ehci->periodic_size; i++) {
 		p = ehci->pshadow [i];
-		if (!p.ptr)
+		if (likely (!p.ptr))
 			continue;
 		tag = Q_NEXT_TYPE (ehci->periodic [i]);
 
@@ -491,7 +491,7 @@ show_periodic (struct device *dev, char *buf)
 						break;
 				}
 				/* show more info the first time around */
-				if (temp == seen_count) {
+				if (temp == seen_count && p.ptr) {
 					u32	scratch = cpu_to_le32p (
 							&p.qh->hw_info1);
 
@@ -509,8 +509,10 @@ show_periodic (struct device *dev, char *buf)
 						seen [seen_count++].qh = p.qh;
 				} else
 					temp = 0;
-				tag = Q_NEXT_TYPE (p.qh->hw_next);
-				p = p.qh->qh_next;
+				if (p.qh) {
+					tag = Q_NEXT_TYPE (p.qh->hw_next);
+					p = p.qh->qh_next;
+				}
 				break;
 			case Q_TYPE_FSTN:
 				temp = snprintf (next, size,

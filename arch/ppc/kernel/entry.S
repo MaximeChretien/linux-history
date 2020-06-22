@@ -258,6 +258,15 @@ END_FTR_SECTION_IFSET(CPU_FTR_ALTIVEC)
 	addi	r1,r1,INT_FRAME_SIZE
 	blr
 
+	.globl	syscall_direct_return
+syscall_direct_return:
+	addi	r1,r3,-STACK_FRAME_OVERHEAD
+	lwz	r10,TASK_PTRACE(r2)
+	andi.	r10,r10,PT_TRACESYS
+	beq+	ret_from_except
+	bl	syscall_trace
+	b	ret_from_except
+
 	.globl	ret_from_fork
 ret_from_fork:
 	bl	schedule_tail

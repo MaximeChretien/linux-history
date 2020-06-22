@@ -189,7 +189,9 @@ static inline int tcp_bind_conflict(struct sock *sk, struct tcp_bind_bucket *tb)
 		if (sk != sk2 &&
 		    sk2->reuse <= 1 &&
 		    !ipv6_only_sock(sk2) &&
-		    sk->bound_dev_if == sk2->bound_dev_if) {
+		    (!sk->bound_dev_if ||
+		     !sk2->bound_dev_if ||
+		     sk->bound_dev_if == sk2->bound_dev_if)) {
 			if (!sk_reuse	||
 			    !sk2->reuse	||
 			    sk2->state == TCP_LISTEN) {

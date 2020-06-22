@@ -59,6 +59,15 @@
 #endif	/* BTE_DEBUG */
 
 
+#ifndef L1_CACHE_MASK
+#define L1_CACHE_MASK		(L1_CACHE_BYTES - 1)
+#endif
+
+#ifndef L1_CACHE_ALIGNED
+#define L1_CACHE_ALIGNED(_p)	(((u64)(_p) & L1_CACHE_MASK) == 0)
+#endif
+
+
 /* BTE status register only supports 16 bits for length field */
 #define BTE_LEN_BITS (16)
 #define BTE_LEN_MASK ((1 << BTE_LEN_BITS) - 1)

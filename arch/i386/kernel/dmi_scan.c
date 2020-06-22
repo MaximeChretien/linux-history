@@ -5,6 +5,7 @@
 #include <linux/init.h>
 #include <linux/apm_bios.h>
 #include <linux/slab.h>
+#include <asm/acpi.h>
 #include <asm/io.h>
 #include <linux/pm.h>
 #include <asm/keyboard.h>
@@ -335,48 +336,11 @@ static __init int apm_likes_to_melt(struct dmi_blacklist *d)
 static int __init local_apic_kills_bios(struct dmi_blacklist *d)
 {
 #ifdef CONFIG_X86_LOCAL_APIC
-	extern int dont_enable_local_apic;
-	if (!dont_enable_local_apic) {
-		dont_enable_local_apic = 1;
+	extern int enable_local_apic;
+	if (enable_local_apic == 0) {
+		enable_local_apic = -1;
 		printk(KERN_WARNING "%s with broken BIOS detected. "
 		       "Refusing to enable the local APIC.\n",
-		       d->ident);
-	}
-#endif
-	return 0;
-}
-
-/*
- * The Microstar 6163-2 (a.k.a Pro) mainboard will hang shortly after
- * resumes, and also at what appears to be asynchronous APM events,
- * if the local APIC is enabled.
- */
-static int __init apm_kills_local_apic(struct dmi_blacklist *d)
-{
-#ifdef CONFIG_X86_LOCAL_APIC
-	extern int dont_enable_local_apic;
-	if (apm_info.bios.version && !dont_enable_local_apic) {
-		dont_enable_local_apic = 1;
-		printk(KERN_WARNING "%s with broken BIOS detected. "
-		       "Refusing to enable the local APIC.\n",
-		       d->ident);
-	}
-#endif
-	return 0;
-}
-
-/*
- * The Intel AL440LX mainboard will hang randomly if the local APIC
- * timer is running and the APM BIOS hasn't been disabled.
- */
-static int __init apm_kills_local_apic_timer(struct dmi_blacklist *d)
-{
-#ifdef CONFIG_X86_LOCAL_APIC
-	extern int dont_use_local_apic_timer;
-	if (apm_info.bios.version && !dont_use_local_apic_timer) {
-		dont_use_local_apic_timer = 1;
-		printk(KERN_WARNING "%s with broken BIOS detected. "
-		       "The local APIC timer will not be used.\n",
 		       d->ident);
 	}
 #endif
@@ -433,37 +397,6 @@ static __init int swab_apm_power_in_minutes(struct dmi_blacklist *d)
 {
 	apm_info.get_power_status_swabinminutes = 1;
 	printk(KERN_WARNING "BIOS strings suggest APM reports battery life in minutes and wrong byte order.\n");
-	return 0;
-}
-
-/*
- * The Intel 440GX hall of shame. 
- *
- * On many (all we have checked) of these boxes the $PIRQ table is wrong.
- * The MP1.4 table is right however and so SMP kernels tend to work. 
- */
- 
-#ifdef CONFIG_PCI
-extern int broken_440gx_bios;
-extern unsigned int pci_probe;
-#endif
-static __init int broken_pirq(struct dmi_blacklist *d)
-{
-	printk(KERN_INFO " *** Possibly defective BIOS detected (irqtable)\n");
-	printk(KERN_INFO " *** Many BIOSes matching this signature have incorrect IRQ routing tables.\n");
-	printk(KERN_INFO " *** If you see IRQ problems, in paticular SCSI resets and hangs at boot\n");
-	printk(KERN_INFO " *** contact your hardware vendor and ask about updates.\n");
-	printk(KERN_INFO " *** Building an SMP kernel may evade the bug some of the time.\n");
-#ifdef CONFIG_X86_IO_APIC
-	{
-		extern int skip_ioapic_setup; 
-		skip_ioapic_setup = 0;
-	}
-#endif
-#ifdef CONFIG_PCI
-	broken_440gx_bios = 1;
-	pci_probe |= PCI_BIOS_IRQ_SCAN;
-#endif
 	return 0;
 }
 
@@ -549,7 +482,7 @@ static __init int print_if_true(struct dmi_blacklist *d)
 
 
 #ifdef	CONFIG_ACPI_BOOT
-extern int acpi_disabled, use_acpi_pci, acpi_force, acpi_ht;
+extern int acpi_disabled, acpi_force, acpi_ht;
 
 static __init __attribute__((unused)) int acpi_disable(struct dmi_blacklist *d) 
 { 
@@ -579,14 +512,16 @@ static __init __attribute__((unused)) int force_acpi_ht(struct dmi_blacklist *d)
 	}
 	return 0;
 } 
+#endif	/* CONFIG_ACPI_BOOT */
 
+#ifdef	CONFIG_ACPI_PCI
 static __init int disable_acpi_pci(struct dmi_blacklist *d) 
 { 
-	printk(KERN_NOTICE "%s detected: force use of pci=noacpi\n", d->ident); 	
-	use_acpi_pci = 0; 
+	printk(KERN_NOTICE "%s detected: force use of pci=noacpi\n", d->ident);
+	acpi_noirq_set();
 	return 0;
 } 
-#endif
+#endif	/* CONFIG_ACPI_PCI */
 
 /*
  *	Process the DMI blacklists
@@ -861,87 +796,17 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 			NO_MATCH, NO_MATCH
 			} },
 
-	{ apm_kills_local_apic, "Microstar 6163", {
-			MATCH(DMI_BOARD_VENDOR, "MICRO-STAR INTERNATIONAL CO., LTD"),
-			MATCH(DMI_BOARD_NAME, "MS-6163"),
-			NO_MATCH, NO_MATCH } },
-
-	{ apm_kills_local_apic_timer, "Intel AL440LX", {
-			MATCH(DMI_BOARD_VENDOR, "Intel Corporation"),
-			MATCH(DMI_BOARD_NAME, "AL440LX"),
-			NO_MATCH, NO_MATCH } },
-
-	/* Problem Intel 440GX bioses */
-
-	{ broken_pirq, "SABR1 Bios", {			/* Bad $PIR */
-			MATCH(DMI_BIOS_VENDOR, "Intel Corporation"),
-			MATCH(DMI_BIOS_VERSION,"SABR1"),
-			NO_MATCH, NO_MATCH
-			} },
-	{ broken_pirq, "l44GX Bios", {        		/* Bad $PIR */
-			MATCH(DMI_BIOS_VENDOR, "Intel Corporation"),
-			MATCH(DMI_BIOS_VERSION,"L440GX0.86B.0066.P07"),
-			NO_MATCH, NO_MATCH
-                        } },
-	{ broken_pirq, "IBM xseries 370", {        		/* Bad $PIR */
-			MATCH(DMI_BIOS_VENDOR, "IBM"),
-			MATCH(DMI_BIOS_VERSION,"MMKT33AUS"),
-			NO_MATCH, NO_MATCH
-                        } },
-	{ broken_pirq, "l44GX Bios", {        		/* Bad $PIR */
-			MATCH(DMI_BIOS_VENDOR, "Intel Corporation"),
-			MATCH(DMI_BIOS_VERSION,"L440GX0.86B.0094.P10"),
-			NO_MATCH, NO_MATCH
-                        } },
-	{ broken_pirq, "l44GX Bios", {        		/* Bad $PIR */
-			MATCH(DMI_BIOS_VENDOR, "Intel Corporation"),
-			MATCH(DMI_BIOS_VERSION,"L440GX0.86B.0115.P12"),
-			NO_MATCH, NO_MATCH
-                        } },
-	{ broken_pirq, "l44GX Bios", {        		/* Bad $PIR */
-			MATCH(DMI_BIOS_VENDOR, "Intel Corporation"),
-			MATCH(DMI_BIOS_VERSION,"L440GX0.86B.0120.P12"),
-			NO_MATCH, NO_MATCH
-                        } },
-	{ broken_pirq, "l44GX Bios", {		/* Bad $PIR */
-			MATCH(DMI_BIOS_VENDOR, "Intel Corporation"),
-			MATCH(DMI_BIOS_VERSION,"L440GX0.86B.0125.P13"),
-			NO_MATCH, NO_MATCH
-			} },
-	{ broken_pirq, "l44GX Bios", {		/* Bad $PIR */
-			MATCH(DMI_BIOS_VENDOR, "Intel Corporation"),
-			MATCH(DMI_BIOS_VERSION,"C440GX0.86B"),
-			NO_MATCH, NO_MATCH
-			} },
-	{ broken_pirq, "l44GX Bios", {		/* Bad $PIR */
-			MATCH(DMI_BIOS_VENDOR, "Intel Corporation"),
-			MATCH(DMI_BIOS_VERSION,"L440GX0.86B.0133.P14"),
-			NO_MATCH, NO_MATCH
-			} },
-	{ broken_pirq, "l44GX Bios", {		/* Bad $PIR */
-			MATCH(DMI_BIOS_VENDOR, "Intel Corporation"),
-			MATCH(DMI_BIOS_VERSION,"L440GX0"),
-			NO_MATCH, NO_MATCH
-			} },
-                        
-	/* Intel in disgiuse - In this case they can't hide and they don't run
-	   too well either... */
-	{ broken_pirq, "Dell PowerEdge 8450", {		/* Bad $PIR */
-			MATCH(DMI_PRODUCT_NAME, "Dell PowerEdge 8450"),
+	{ init_ints_after_s1, "Toshiba Satellite 4030cdt", { /* Reinitialization of 8259 is needed after S1 resume */
+			MATCH(DMI_PRODUCT_NAME, "S4030CDT/4.3"),
 			NO_MATCH, NO_MATCH, NO_MATCH
 			} },
-			
+
 	{ broken_acpi_Sx, "ASUS K7V-RM", {		/* Bad ACPI Sx table */
 			MATCH(DMI_BIOS_VERSION,"ASUS K7V-RM ACPI BIOS Revision 1003A"),
 			MATCH(DMI_BOARD_NAME, "<K7V-RM>"),
 			NO_MATCH, NO_MATCH
 			} },
 			
-	{ init_ints_after_s1, "Toshiba Satellite 4030cdt", { /* Reinitialization of 8259 is needed after S1 resume */
-			MATCH(DMI_PRODUCT_NAME, "S4030CDT/4.3"),
-			NO_MATCH, NO_MATCH, NO_MATCH
-			} },
-
 	{ print_if_true, KERN_WARNING "IBM T23 - BIOS 1.03b+ and controller firmware 1.02+ may be needed for Linux APM.", {
 			MATCH(DMI_SYS_VENDOR, "IBM"),
 			MATCH(DMI_BIOS_VERSION, "1AET38WW (1.01b)"),
@@ -1033,11 +898,6 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 			MATCH(DMI_BOARD_NAME, "CUR-DLS"),
 			NO_MATCH, NO_MATCH }},
 
-	{ force_acpi_ht, "ASUS A7V", {
-			MATCH(DMI_BOARD_VENDOR, "ASUSTeK Computer INC"),
-			MATCH(DMI_BOARD_NAME, "<A7V>"),
-			MATCH(DMI_BIOS_VERSION, "ASUS A7V ACPI BIOS Revision 1011"), NO_MATCH }},
-
 	{ force_acpi_ht, "ABIT i440BX-W83977", {
 			MATCH(DMI_BOARD_VENDOR, "ABIT <http://www.abit.com>"),
 			MATCH(DMI_BOARD_NAME, "i440BX-W83977 (BP6)"),
@@ -1063,6 +923,8 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 			MATCH(DMI_PRODUCT_NAME, "eserver xSeries 440"),
 			NO_MATCH, NO_MATCH }},
 
+#endif	/* CONFIG_ACPI_BOOT */
+#ifdef	CONFIG_ACPI_PCI
 	/*
 	 *	Boxes that need ACPI PCI IRQ routing disabled
 	 */
@@ -1070,8 +932,10 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 	{ disable_acpi_pci, "ASUS A7V", {
 			MATCH(DMI_BOARD_VENDOR, "ASUSTeK Computer INC"),
 			MATCH(DMI_BOARD_NAME, "<A7V>"),
-			MATCH(DMI_BIOS_VERSION, "ASUS A7V ACPI BIOS Revision 1007"), NO_MATCH }},
-#endif	// CONFIG_ACPI_BOOT
+			/* newer BIOS, Revision 1011, does work */
+			MATCH(DMI_BIOS_VERSION, "ASUS A7V ACPI BIOS Revision 1007"),
+			NO_MATCH }},
+#endif	/* CONFIG_ACPI_PCI */
 
 	{ NULL, }
 };
@@ -1105,6 +969,7 @@ static __init void dmi_check_blacklist(void)
 				printk(KERN_NOTICE "ACPI disabled because your bios is from %s and too old\n", s);
 				printk(KERN_NOTICE "You can enable it with acpi=force\n");
 				acpi_disabled = 1; 
+				acpi_ht = 0;
 			} 
 		}
 	}

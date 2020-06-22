@@ -86,7 +86,6 @@ pcibr_init_ext_ate_ram(bridge_t *bridge)
     int                     num_entries, entry;
     int                     i, j;
     bridgereg_t             old_enable, new_enable;
-    int                     s;
 
     /* Probe SSRAM to determine its size. */
     old_enable = bridge->b_int_enable;
@@ -113,12 +112,10 @@ pcibr_init_ext_ate_ram(bridge_t *bridge)
      * The read following the write is required for the Bridge war
      */
 
-    s = splhi();
     bridge->b_wid_control = (bridge->b_wid_control
 			& ~BRIDGE_CTRL_SSRAM_SIZE_MASK)
 			| BRIDGE_CTRL_SSRAM_SIZE(largest_working_size);
     bridge->b_wid_control;		/* inval addr bug war */
-    splx(s);
 
     num_entries = ATE_NUM_ENTRIES(largest_working_size);
 
@@ -382,25 +379,9 @@ ate_write(pcibr_soft_t pcibr_soft,
 	  int ate_count,
 	  bridge_ate_t ate)
 {
-	if (IS_PIC_SOFT(pcibr_soft) ) {
-    		while (ate_count-- > 0) {
-			*ate_ptr++ = ate;
-			ate += IOPGSIZE;
-		}
-	}
-	else {
-		if (io_get_sh_swapper(NASID_GET(ate_ptr))) {
-    			while (ate_count-- > 0) {
-				*ate_ptr++ = __swab64(ate);
-				ate += IOPGSIZE;
-			}
-		}
-		else {
-    			while (ate_count-- > 0) {
-				*ate_ptr++ = ate;
-				ate += IOPGSIZE;
-			}
-		}
+    	while (ate_count-- > 0) {
+		*ate_ptr++ = ate;
+		ate += IOPGSIZE;
 	}
 }
 
@@ -442,19 +423,7 @@ ate_thaw(pcibr_dmamap_t pcibr_dmamap,
     for (slot = pcibr_soft->bs_min_slot; 
 		slot < PCIBR_NUM_SLOTS(pcibr_soft); ++slot) {
 	if ((cmd_reg = cmd_regs[slot]) & PCI_CMD_BUS_MASTER) {
-		if ( IS_PIC_SOFT(pcibr_soft) ) {
-			pcibr_slot_config_set(bridge, slot, PCI_CFG_COMMAND/4, cmd_reg);
-		}
-		else {
-			if (io_get_sh_swapper(NASID_GET(bridge))) {
-				bridge->b_type0_cfg_dev[slot].l[PCI_CFG_COMMAND / 4] = __swab32(cmd_reg);
-			}
-			else {
-//				BUG(); /* Does this really work if called when io_get_sh_swapper = 0? */
-//				bridge->b_type0_cfg_dev[slot].l[PCI_CFG_COMMAND / 4] = cmd_reg;
-				pcibr_slot_config_set(bridge, slot, PCI_CFG_COMMAND/4, cmd_reg);
-			}
-		}
+		pcibr_slot_config_set(bridge, slot, PCI_CFG_COMMAND/4, cmd_reg);
 	}
     }
     pcibr_dmamap->bd_flags |= PCIBR_DMAMAP_BUSY;

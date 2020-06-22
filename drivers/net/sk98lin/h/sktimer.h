@@ -1,17 +1,17 @@
 /******************************************************************************
  *
  * Name:	sktimer.h
- * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.9 $
- * Date:	$Date: 1999/11/22 14:00:29 $
+ * Project:	Gigabit Ethernet Adapters, Schedule-Modul
+ * Version:	$Revision: 1.10 $
+ * Date:	$Date: 2003/05/13 17:56:44 $
  * Purpose:	Defines for the timer functions
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998,1999 SysKonnect,
- *	a business unit of Schneider & Koch & Co. Datensysteme GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 2002-2003 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -27,6 +27,9 @@
  * History:
  *
  *	$Log: sktimer.h,v $
+ *	Revision 1.10  2003/05/13 17:56:44  mkarl
+ *	Editorial changes.
+ *	
  *	Revision 1.9  1999/11/22 14:00:29  cgoos
  *	Changed license header to GPL.
  *	

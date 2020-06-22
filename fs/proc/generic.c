@@ -150,13 +150,14 @@ proc_file_lseek(struct file * file, loff_t offset, int origin)
 			offset += file->f_pos;
 	}
 	retval = -EINVAL;
-	if (offset>=0 && offset<=file->f_dentry->d_inode->i_sb->s_maxbytes) {
+	if (offset>=0 && (unsigned long long)offset<=file->f_dentry->d_inode->i_sb->s_maxbytes) {
 		if (offset != file->f_pos) {
 			file->f_pos = offset;
 			file->f_reada = 0;
 		}
 		retval = offset;
 	}
+	/* RED-PEN user can fake an error here by setting offset to >=-4095 && <0  */
 	return retval;
 }
 

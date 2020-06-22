@@ -13,6 +13,7 @@
 #include <linux/string.h>
 #include <linux/tty.h>
 #include <linux/string.h>
+#include <linux/nmi.h>
 
 #include <asm/semaphore.h>
 #include <asm/processor.h>
@@ -94,6 +95,7 @@ EXPORT_SYMBOL(pci_free_consistent);
 
 EXPORT_SYMBOL(pci_map_sg);
 EXPORT_SYMBOL(pci_unmap_sg);
+EXPORT_SYMBOL(bad_dma_address);
 
 #ifdef CONFIG_PCI
 EXPORT_SYMBOL(pcibios_penalize_isa_irq);
@@ -222,4 +224,8 @@ EXPORT_SYMBOL(fake_node);
 #endif
 
 extern void int_ret_from_sys_call(void);
-EXPORT_SYMBOL(int_ret_from_sys_call); 
+EXPORT_SYMBOL_NOVERS(int_ret_from_sys_call); 
+
+EXPORT_SYMBOL(touch_nmi_watchdog);
+
+EXPORT_SYMBOL(do_fork);

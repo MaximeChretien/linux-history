@@ -259,7 +259,7 @@ int main(int argc, char **argv)
 		death("Could not read hvReleaseData\n", outputVmlinux, argv[4]);
 	}
 	/* Check hvReleaseData sanity */
-	if (memcmp(inbuf, &eyeCatcher, 4) != 0) {
+	if (ntohl(*(u_int32_t *)inbuf) != eyeCatcher) {
 		death("hvReleaseData is invalid\n", outputVmlinux, argv[4]);
 	}
 	/* Get the naca pointer */

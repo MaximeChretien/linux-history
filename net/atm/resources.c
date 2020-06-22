@@ -7,6 +7,7 @@
 #include <linux/ctype.h>
 #include <linux/string.h>
 #include <linux/atmdev.h>
+#include <linux/sonet.h>
 #include <linux/kernel.h> /* for barrier */
 #include <linux/module.h>
 #include <linux/bitops.h>
@@ -15,11 +16,7 @@
 
 #include "common.h"
 #include "resources.h"
-
-
-#ifndef NULL
-#define NULL 0
-#endif
+#include "addr.h"
 
 
 LIST_HEAD(atm_devs);
@@ -88,7 +85,7 @@ struct atm_dev *atm_dev_register(const char *type, const struct atmdev_ops *ops,
 	spin_lock(&atm_dev_lock);
 	if (number != -1) {
 		if ((inuse = __atm_dev_lookup(number))) {
-			atm_dev_release(inuse);
+			atm_dev_put(inuse);
 			spin_unlock(&atm_dev_lock);
 			__free_atm_dev(dev);
 			return NULL;
@@ -97,13 +94,11 @@ struct atm_dev *atm_dev_register(const char *type, const struct atmdev_ops *ops,
 	} else {
 		dev->number = 0;
 		while ((inuse = __atm_dev_lookup(dev->number))) {
-			atm_dev_release(inuse);
+			atm_dev_put(inuse);
 			dev->number++;
 		}
 	}
-	dev->vccs = dev->last = NULL;
-	dev->dev_data = NULL;
-	barrier();
+
 	dev->ops = ops;
 	if (flags) 
 		dev->flags = *flags;
@@ -138,7 +133,8 @@ void atm_dev_deregister(struct atm_dev *dev)
 	unsigned long warning_time;
 
 #ifdef CONFIG_PROC_FS
-	if (dev->ops->proc_read) atm_proc_dev_deregister(dev);
+	if (dev->ops->proc_read)
+		atm_proc_dev_deregister(dev);
 #endif
 	spin_lock(&atm_dev_lock);
 	list_del(&dev->dev_list);
@@ -172,76 +168,234 @@ void shutdown_atm_dev(struct atm_dev *dev)
 }
 
 
-/* Handler for sk->destruct, invoked by sk_free() */
-static void atm_free_sock(struct sock *sk)
+static void copy_aal_stats(struct k_atm_aal_stats *from,
+    struct atm_aal_stats *to)
 {
-	kfree(sk->protinfo.af_atm);
+#define __HANDLE_ITEM(i) to->i = atomic_read(&from->i)
+	__AAL_STAT_ITEMS
+#undef __HANDLE_ITEM
 }
 
-struct sock *alloc_atm_vcc_sk(int family)
-{
-	struct sock *sk;
-	struct atm_vcc *vcc;
 
-	sk = sk_alloc(family, GFP_KERNEL, 1);
-	if (!sk)
-		return NULL;
-	vcc = sk->protinfo.af_atm = kmalloc(sizeof(*vcc), GFP_KERNEL);
-	if (!vcc) {
-		sk_free(sk);
-		return NULL;
+static void subtract_aal_stats(struct k_atm_aal_stats *from,
+    struct atm_aal_stats *to)
+{
+#define __HANDLE_ITEM(i) atomic_sub(to->i, &from->i)
+	__AAL_STAT_ITEMS
+#undef __HANDLE_ITEM
+}
+
+
+static int fetch_stats(struct atm_dev *dev, struct atm_dev_stats *arg, int zero)
+{
+	struct atm_dev_stats tmp;
+	int error = 0;
+
+	copy_aal_stats(&dev->stats.aal0, &tmp.aal0);
+	copy_aal_stats(&dev->stats.aal34, &tmp.aal34);
+	copy_aal_stats(&dev->stats.aal5, &tmp.aal5);
+	if (arg)
+		error = copy_to_user(arg, &tmp, sizeof(tmp));
+	if (zero && !error) {
+		subtract_aal_stats(&dev->stats.aal0, &tmp.aal0);
+		subtract_aal_stats(&dev->stats.aal34, &tmp.aal34);
+		subtract_aal_stats(&dev->stats.aal5, &tmp.aal5);
 	}
-	sock_init_data(NULL, sk);
-	sk->destruct = atm_free_sock;
-	memset(vcc, 0, sizeof(*vcc));
-	vcc->sk = sk;
-
-	return sk;
+	return error ? -EFAULT : 0;
 }
 
 
-static void unlink_vcc(struct atm_vcc *vcc)
+int atm_dev_ioctl(unsigned int cmd, unsigned long arg)
 {
-	unsigned long flags;
-	if (vcc->dev) {
-		spin_lock_irqsave(&vcc->dev->lock, flags);
-		if (vcc->prev)
-			vcc->prev->next = vcc->next;
-		else
-			vcc->dev->vccs = vcc->next;
+	void *buf;
+	int error = 0, len, number, size = 0;
+	struct atm_dev *dev;
 
-		if (vcc->next)
-			vcc->next->prev = vcc->prev;
-		else
-			vcc->dev->last = vcc->prev;
-		spin_unlock_irqrestore(&vcc->dev->lock, flags);
+	if (cmd == ATM_GETNAMES) {
+		int *tmp_buf, *tmp_bufp;
+		struct list_head *p;
+		/*
+		 * ATM_GETNAMES is a special case: it doesn't require a
+		 * device number argument
+		 */
+		if (get_user(buf, &((struct atm_iobuf *) arg)->buffer))
+			return -EFAULT;
+		if (get_user(len, &((struct atm_iobuf *) arg)->length))
+			return -EFAULT;
+		spin_lock(&atm_dev_lock);
+		list_for_each(p, &atm_devs)
+			size += sizeof(int);
+		if (size > len) {
+			spin_unlock(&atm_dev_lock);
+			return -E2BIG;
+		}
+		tmp_buf = tmp_bufp = kmalloc(size, GFP_ATOMIC);
+		if (!tmp_buf) {
+			spin_unlock(&atm_dev_lock);
+			return -ENOMEM;
+		}
+		list_for_each(p, &atm_devs) {
+			dev = list_entry(p, struct atm_dev, dev_list);
+			*tmp_bufp++ = dev->number;
+		}
+		spin_unlock(&atm_dev_lock);
+	        error = (copy_to_user(buf, tmp_buf, size) ||
+				put_user(size, &((struct atm_iobuf *) arg)->length))
+					? -EFAULT : 0;
+		kfree(tmp_buf);
+		return error;
 	}
-}
 
+	if (get_user(buf, &((struct atmif_sioc *) arg)->arg))
+		return -EFAULT;
+	if (get_user(len, &((struct atmif_sioc *) arg)->length))
+		return -EFAULT;
+	if (get_user(number, &((struct atmif_sioc *) arg)->number))
+		return -EFAULT;
 
+	if (!(dev = atm_dev_lookup(number)))
+		return -ENODEV;
+	
+	switch (cmd) {
+		case ATM_GETTYPE:
+			size = strlen(dev->type) + 1;
+			if (copy_to_user(buf, dev->type, size)) {
+				error = -EFAULT;
+				goto done;
+			}
+			break;
+		case ATM_GETESI:
+			size = ESI_LEN;
+			if (copy_to_user(buf, dev->esi, size)) {
+				error = -EFAULT;
+				goto done;
+			}
+			break;
+		case ATM_SETESI:
+			{
+				int i;
 
-void free_atm_vcc_sk(struct sock *sk)
-{
-	unlink_vcc(sk->protinfo.af_atm);
-	sk_free(sk);
-}
+				for (i = 0; i < ESI_LEN; i++)
+					if (dev->esi[i]) {
+						error = -EEXIST;
+						goto done;
+					}
+			}
+			/* fall through */
+		case ATM_SETESIF:
+			{
+				unsigned char esi[ESI_LEN];
 
+				if (!capable(CAP_NET_ADMIN)) {
+					error = -EPERM;
+					goto done;
+				}
+				if (copy_from_user(esi, buf, ESI_LEN)) {
+					error = -EFAULT;
+					goto done;
+				}
+				memcpy(dev->esi, esi, ESI_LEN);
+				error =  ESI_LEN;
+				goto done;
+			}
+		case ATM_GETSTATZ:
+			if (!capable(CAP_NET_ADMIN)) {
+				error = -EPERM;
+				goto done;
+			}
+			/* fall through */
+		case ATM_GETSTAT:
+			size = sizeof(struct atm_dev_stats);
+			error = fetch_stats(dev, buf, cmd == ATM_GETSTATZ);
+			if (error)
+				goto done;
+			break;
+		case ATM_GETCIRANGE:
+			size = sizeof(struct atm_cirange);
+			if (copy_to_user(buf, &dev->ci_range, size)) {
+				error = -EFAULT;
+				goto done;
+			}
+			break;
+		case ATM_GETLINKRATE:
+			size = sizeof(int);
+			if (copy_to_user(buf, &dev->link_rate, size)) {
+				error = -EFAULT;
+				goto done;
+			}
+			break;
+		case ATM_RSTADDR:
+			if (!capable(CAP_NET_ADMIN)) {
+				error = -EPERM;
+				goto done;
+			}
+			atm_reset_addr(dev);
+			break;
+		case ATM_ADDADDR:
+		case ATM_DELADDR:
+			if (!capable(CAP_NET_ADMIN)) {
+				error = -EPERM;
+				goto done;
+			}
+			{
+				struct sockaddr_atmsvc addr;
 
-void bind_vcc(struct atm_vcc *vcc,struct atm_dev *dev)
-{
-	unsigned long flags;
-
-	unlink_vcc(vcc);
-	vcc->dev = dev;
-	if (dev) {
-		spin_lock_irqsave(&dev->lock, flags);
-		vcc->next = NULL;
-		vcc->prev = dev->last;
-		if (dev->vccs) dev->last->next = vcc;
-		else dev->vccs = vcc;
-		dev->last = vcc;
-		spin_unlock_irqrestore(&dev->lock, flags);
+				if (copy_from_user(&addr, buf, sizeof(addr))) {
+					error = -EFAULT;
+					goto done;
+				}
+				if (cmd == ATM_ADDADDR)
+					error = atm_add_addr(dev, &addr);
+				else
+					error = atm_del_addr(dev, &addr);
+				goto done;
+			}
+		case ATM_GETADDR:
+			error = atm_get_addr(dev, buf, len);
+			if (error < 0)
+				goto done;
+			size = error;
+			/* write back size even if it's zero */
+			goto write_size;
+		case ATM_SETLOOP:
+			if (__ATM_LM_XTRMT((int) (long) buf) &&
+			    __ATM_LM_XTLOC((int) (long) buf) >
+			    __ATM_LM_XTRMT((int) (long) buf)) {
+				error = -EINVAL;
+				goto done;
+			}
+			/* fall through */
+		case ATM_SETCIRANGE:
+		case SONET_GETSTATZ:
+		case SONET_SETDIAG:
+		case SONET_CLRDIAG:
+		case SONET_SETFRAMING:
+			if (!capable(CAP_NET_ADMIN)) {
+				error = -EPERM;
+				goto done;
+			}
+			/* fall through */
+		default:
+			if (!dev->ops->ioctl) {
+				error = -EINVAL;
+				goto done;
+			}
+			size = dev->ops->ioctl(dev, cmd, buf);
+			if (size < 0) {
+				error = (size == -ENOIOCTLCMD ? -EINVAL : size);
+				goto done;
+			}
 	}
+	
+	if (size) {
+write_size:
+		error = put_user(size,
+			  &((struct atmif_sioc *) arg)->length)
+			  ? -EFAULT : 0;
+	}
+done:
+	atm_dev_put(dev);
+	return error;
 }
 
 
@@ -249,4 +403,3 @@ EXPORT_SYMBOL(atm_dev_register);
 EXPORT_SYMBOL(atm_dev_deregister);
 EXPORT_SYMBOL(atm_dev_lookup);
 EXPORT_SYMBOL(shutdown_atm_dev);
-EXPORT_SYMBOL(bind_vcc);

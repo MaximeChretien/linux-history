@@ -42,7 +42,7 @@
  * SMP-threaded pagemap-LRU 1999, Andrea Arcangeli <andrea@suse.de>
  */
 
-atomic_t page_cache_size = ATOMIC_INIT(0);
+unsigned long page_cache_size;
 unsigned int page_hash_bits;
 struct page **page_hash_table;
 
@@ -79,7 +79,7 @@ static void add_page_to_hash_queue(struct page * page, struct page **p)
 		next->pprev_hash = &page->next_hash;
 	if (page->buffers)
 		PAGE_BUG(page);
-	atomic_inc(&page_cache_size);
+	inc_nr_cache_pages(page);
 }
 
 static inline void add_page_to_inode_queue(struct address_space *mapping, struct page * page)
@@ -113,7 +113,7 @@ static inline void remove_page_from_hash_queue(struct page * page)
 		next->pprev_hash = pprev;
 	*pprev = next;
 	page->pprev_hash = NULL;
-	atomic_dec(&page_cache_size);
+	dec_nr_cache_pages(page);
 }
 
 /*
@@ -165,6 +165,8 @@ void set_page_dirty(struct page *page)
 
 			if (mapping && mapping->host)
 				mark_inode_dirty_pages(mapping->host);
+			if (block_dump)
+				printk(KERN_DEBUG "%s: dirtied page\n", current->comm);
 		}
 	}
 }
@@ -654,10 +656,19 @@ static inline void __add_to_page_cache(struct page * page,
 	struct address_space *mapping, unsigned long offset,
 	struct page **hash)
 {
-	unsigned long flags;
-
-	flags = page->flags & ~(1 << PG_uptodate | 1 << PG_error | 1 << PG_dirty | 1 << PG_referenced | 1 << PG_arch_1 | 1 << PG_checked);
-	page->flags = flags | (1 << PG_locked);
+	/*
+	 * Yes this is inefficient, however it is needed.  The problem
+	 * is that we could be adding a page to the swap cache while
+	 * another CPU is also modifying page->flags, so the updates
+	 * really do need to be atomic.  -- Rik
+	 */
+	ClearPageUptodate(page);
+	ClearPageError(page);
+	ClearPageDirty(page);
+	ClearPageReferenced(page);
+	ClearPageArch1(page);
+	ClearPageChecked(page);
+	LockPage(page);
 	page_cache_get(page);
 	page->index = offset;
 	add_page_to_inode_queue(mapping, page);
@@ -3007,7 +3018,7 @@ int precheck_file_write(struct file *file, struct inode *inode,
 	}
 
 	/* FIXME: this is for backwards compatibility with 2.4 */
-	if (!S_ISBLK(inode->i_mode) && file->f_flags & O_APPEND)
+	if (!S_ISBLK(inode->i_mode) && (file->f_flags & O_APPEND))
 		*ppos = pos = inode->i_size;
 
 	/*
@@ -3238,7 +3249,7 @@ do_generic_direct_write(struct file *file,const char *buf,size_t count, loff_t *
 	if (err != 0 || count == 0)
 		goto out;
 
-	if (!file->f_flags & O_DIRECT)
+	if (!(file->f_flags & O_DIRECT))
 		BUG();
 
 	remove_suid(inode);
@@ -3259,7 +3270,7 @@ do_generic_direct_write(struct file *file,const char *buf,size_t count, loff_t *
 	 * Sync the fs metadata but not the minor inode changes and
 	 * of course not the data as we did direct DMA for the IO.
 	 */
-	if (written >= 0 && file->f_flags & O_SYNC)
+	if (written >= 0 && (file->f_flags & O_SYNC))
 		status = generic_osync_inode(inode, OSYNC_METADATA);
 
 	err = written ? written : status;

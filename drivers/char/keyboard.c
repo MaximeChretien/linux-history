@@ -198,6 +198,7 @@ void handle_scancode(unsigned char scancode, int down)
 	unsigned char keycode;
 	char up_flag = down ? 0 : 0200;
 	char raw_mode;
+	char have_keycode;
 
 	pm_access(pm_kbd);
 	add_keyboard_randomness(scancode | up_flag);
@@ -214,16 +215,30 @@ void handle_scancode(unsigned char scancode, int down)
 		tty = NULL;
 	}
 	kbd = kbd_table + fg_console;
-	if ((raw_mode = (kbd->kbdmode == VC_RAW))) {
+	/*
+	 *  Convert scancode to keycode
+	 */
+	raw_mode = (kbd->kbdmode == VC_RAW);
+	have_keycode = kbd_translate(scancode, &keycode, raw_mode);
+	if (raw_mode) {
 		/*
 		 *	The following is a workaround for hardware
 		 *	which sometimes send the key release event twice 
 		 */
 		unsigned char next_scancode = scancode|up_flag;
-		if (up_flag && next_scancode==prev_scancode) {
+		if (have_keycode && up_flag && next_scancode==prev_scancode) {
 			/* unexpected 2nd release event */
 		} else {
-			prev_scancode=next_scancode;
+			/* 
+			 * Only save previous scancode if it was a key-up
+			 * and had a single-byte scancode.  
+			 */
+			if (!have_keycode)
+				prev_scancode = 1;
+			else if (!up_flag || prev_scancode == 1)
+				prev_scancode = 0;
+			else
+				prev_scancode = next_scancode;
 			put_queue(next_scancode);
 		}
 		/* we do not return yet, because we want to maintain
@@ -231,10 +246,7 @@ void handle_scancode(unsigned char scancode, int down)
 		   values when finishing RAW mode or when changing VT's */
 	}
 
-	/*
-	 *  Convert scancode to keycode
-	 */
-	if (!kbd_translate(scancode, &keycode, raw_mode))
+	if (!have_keycode)
 		goto out;
 
 	/*

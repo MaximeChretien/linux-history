@@ -764,7 +764,11 @@ static void do_putc(u32 fgx, u32 bgx,
    tdfx_outl(SRCXY,     0);
    tdfx_outl(DSTXY,     xx | (yy << 16));
    tdfx_outl(COMMAND_2D, COMMAND_2D_H2S_BITBLT | (ROP_COPY << 24));
+#ifdef __BIG_ENDIAN
+   tdfx_outl(SRCFORMAT, 0x400000 | BIT(20) );   
+#else
    tdfx_outl(SRCFORMAT, 0x400000);
+#endif
    tdfx_outl(DSTFORMAT, fmt);
    tdfx_outl(DSTSIZE,   fontwidth(p) | (fontheight(p) << 16));
    i=fontheight(p);
@@ -822,7 +826,11 @@ static void do_putcs(u32 fgx, u32 bgx,
    tdfx_outl(COMMAND_3D, COMMAND_3D_NOP);
    tdfx_outl(COLORFORE, fgx);
    tdfx_outl(COLORBACK, bgx);
+#ifdef __BIG_ENDIAN
+   tdfx_outl(SRCFORMAT, 0x400000 | BIT(20) );   
+#else
    tdfx_outl(SRCFORMAT, 0x400000);
+#endif   
    tdfx_outl(DSTFORMAT, fmt);
    tdfx_outl(DSTSIZE, w | (h << 16));
    tdfx_outl(SRCXY,     0);
@@ -1475,6 +1483,7 @@ static void tdfxfb_set_par(struct tdfxfb_par* par,
 #if defined(__BIG_ENDIAN)
   switch (par->bpp) {
     case 8:
+    case 24:
       reg.miscinit0 &= ~(1 << 30);
       reg.miscinit0 &= ~(1 << 31);
       break;
@@ -1482,7 +1491,6 @@ static void tdfxfb_set_par(struct tdfxfb_par* par,
       reg.miscinit0 |= (1 << 30);
       reg.miscinit0 |= (1 << 31);
       break;
-    case 24:
     case 32:
       reg.miscinit0 |= (1 << 30);
       reg.miscinit0 &= ~(1 << 31);
@@ -1635,10 +1643,6 @@ static int tdfxfb_encode_var(struct fb_var_screeninfo* var,
     v.blue.length  = 5;
     break;
   case 24:
-    v.red.offset=16;
-    v.green.offset=8;
-    v.blue.offset=0;
-    v.red.length = v.green.length = v.blue.length = 8;
   case 32:
     v.red.offset   = 16;
     v.green.offset = 8;
@@ -1942,6 +1946,12 @@ static int __devinit tdfxfb_probe(struct pci_dev *pdev,
 			break;
 	}
 	
+        if (pci_enable_device(pdev)) 
+        {
+                printk(KERN_WARNING "fb: Unable to enable %s PCI device.\n", name);
+                return -ENXIO;
+        }
+
 	fb_info.regbase_phys = pci_resource_start(pdev, 0);
 	fb_info.regbase_size = 1 << 24;
 	fb_info.regbase_virt = ioremap_nocache(fb_info.regbase_phys, 1 << 24);
@@ -1970,6 +1980,13 @@ static int __devinit tdfxfb_probe(struct pci_dev *pdev,
 
 	fb_info.iobase = pci_resource_start (pdev, 2);
       
+        if (!fb_info.iobase) {
+	        printk(KERN_WARNING "fb: Can't access %s I/O ports.\n", name);
+		iounmap(fb_info.regbase_virt);
+		iounmap(fb_info.bufbase_virt);
+                return -ENXIO;
+	}
+   
 	printk("fb: %s memory = %ldK\n", name, fb_info.bufbase_size >> 10);
 
 #ifdef CONFIG_MTRR
@@ -2363,10 +2380,25 @@ static void tdfxfb_createcursor(struct display *p)
    unsigned int h,to;
 
    tdfxfb_createcursorshape(p);
-   xline = ~((1 << (32 - fb_info.cursor.w)) - 1);
+   xline = (~0) << (32 - fb_info.cursor.w);
 
 #ifdef __LITTLE_ENDIAN
    xline = swab32(xline);
+#else
+   switch (p->var.bits_per_pixel) {
+      case 8:
+      case 24:
+         xline = swab32(xline);
+         break;
+      case 16:
+         xline = ((xline & 0xff000000 ) >> 16 )
+               | ((xline & 0x00ff0000 ) >> 16 )
+               | ((xline & 0x0000ff00 ) << 16 )
+               | ((xline & 0x000000ff ) << 16 );
+         break;
+      case 32:
+         break;
+   }
 #endif
 
    cursorbase=(u8*)fb_info.bufbase_virt;

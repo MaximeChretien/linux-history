@@ -82,7 +82,7 @@ static struct raparms *		raparm_cache;
  * N.B. After this call _both_ fhp and resfh need an fh_put
  *
  * If the lookup would cross a mountpoint, and the mounted filesystem
- * is exported to the client with NFSEXP_CROSSMNT, then the lookup is
+ * is exported to the client with NFSEXP_NOHIDE, then the lookup is
  * accepted as it stands and the mounted directory is
  * returned. Otherwise the covered directory is returned.
  * NOTE: this mountpoint crossing is not supported properly by all
@@ -116,7 +116,7 @@ nfsd_lookup(struct svc_rqst *rqstp, struct svc_fh *fhp, const char *name,
 			dentry = dget(dparent);
 		else if (dparent != exp->ex_dentry)
 			dentry = dget(dparent->d_parent);
-		else if (!EX_CROSSMNT(exp))
+		else if (!EX_NOHIDE(exp))
 			dentry = dget(dparent); /* .. == . just like at / */
 		else {
 			/* checking mountpoint crossing is very different when stepping up */
@@ -158,7 +158,7 @@ nfsd_lookup(struct svc_rqst *rqstp, struct svc_fh *fhp, const char *name,
 			exp2 = exp_get(rqstp->rq_client,
 				       mounts->d_inode->i_dev,
 				       mounts->d_inode->i_ino);
-			if (exp2 && EX_CROSSMNT(exp2)) {
+			if (exp2 && EX_NOHIDE(exp2)) {
 				/* successfully crossed mount point */
 				exp = exp2;
 				dput(dentry);

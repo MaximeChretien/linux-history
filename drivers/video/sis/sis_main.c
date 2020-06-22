@@ -1,12 +1,14 @@
 /*
- * SiS 300/630/730/540/315/550/650/740/330/660 frame buffer device
- * for Linux kernels 2.4.x and 2.5.x
+ * SiS 300/630/730/540/315/550/650/651/M650/661FX/M661FX/740/741/330
+ * frame buffer driver for Linux kernels 2.4.x and 2.5.x
  *
  * (C) 1999 Silicon Integrated Systems, Inc.
  * (C) 2001-2003 Thomas Winischhofer, Vienna, Austria.
  *
- * Authors:   	SiS (www.sis.com.tw)
- *		Thomas Winischhofer <thomas@winischhofer.net>
+ * Author:   	Thomas Winischhofer <thomas@winischhofer.net>
+ *
+ * Author of code base:
+ *		SiS (www.sis.com.tw)
  *
  * See http://www.winischhofer.net/ for more information and updates
  *
@@ -31,6 +33,9 @@
 #include <linux/ioport.h>
 #include <linux/init.h>
 #include <linux/pci.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
+#include <linux/vmalloc.h>
+#endif
 #include <linux/vt_kern.h>
 #include <linux/capability.h>
 #include <linux/fs.h>
@@ -66,12 +71,6 @@
 #include "vgatypes.h"
 #include "sis_main.h"
 #include "sis.h"
-
-#if 0
-#ifdef LINUXBIOS
-#include "bios.h"
-#endif
-#endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,0)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,69)
@@ -134,7 +133,11 @@ sisfb_query_VGA_config_space(PSIS_HW_DEVICE_INFO psishw_ext,
 
 	if (!init) {
 		init = TRUE;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,74)
 		pci_for_each_dev(pdev) {
+#else
+		while((pdev = pci_find_device(PCI_VENDOR_ID_SI, PCI_ANY_ID, pdev))) {
+#endif
 			DPRINTK("sisfb: Current: 0x%x, target: 0x%x\n",
 			         pdev->device, ivideo.chip_id);
 			if ((pdev->vendor == PCI_VENDOR_ID_SI)
@@ -169,6 +172,7 @@ BOOLEAN sisfb_query_north_bridge_space(PSIS_HW_DEVICE_INFO psishw_ext,
 	if (!init) {
 		init = TRUE;
 		switch (ivideo.chip) {
+#ifdef CONFIG_FB_SIS_300
 		case SIS_540:
 			nbridge_id = PCI_DEVICE_ID_SI_540;
 			break;
@@ -178,6 +182,8 @@ BOOLEAN sisfb_query_north_bridge_space(PSIS_HW_DEVICE_INFO psishw_ext,
 		case SIS_730:
 			nbridge_id = PCI_DEVICE_ID_SI_730;
 			break;
+#endif
+#ifdef CONFIG_FB_SIS_315
 		case SIS_550:
 			nbridge_id = PCI_DEVICE_ID_SI_550;
 			break;
@@ -190,12 +196,20 @@ BOOLEAN sisfb_query_north_bridge_space(PSIS_HW_DEVICE_INFO psishw_ext,
 		case SIS_660:
 			nbridge_id = PCI_DEVICE_ID_SI_660;
 			break;
+		case SIS_760:
+			nbridge_id = PCI_DEVICE_ID_SI_760;
+			break;
+#endif
 		default:
 			nbridge_id = 0;
 			break;
 		}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,74)
 		pci_for_each_dev(pdev) {
+#else
+		while((pdev = pci_find_device(PCI_VENDOR_ID_SI, PCI_ANY_ID, pdev))) {
+#endif
 			DPRINTK("Current: 0x%x, target: 0x%x\n",
 					pdev->device, ivideo.chip_id);
 			if ((pdev->vendor == PCI_VENDOR_ID_SI)
@@ -247,7 +261,7 @@ static BOOLEAN sisfb_verify_rate(struct sisfb_monitor *monitor, int mode_idx, in
 	return TRUE;
 };
 
-static BOOLEAN sisfb_interpret_edid(struct sisfb_monitor *monitor, unsigned char *buffer)
+static BOOLEAN sisfb_interpret_edid(struct sisfb_monitor *monitor, u8 *buffer)
 {
 	int i, j, xres, yres, refresh, index;
 	u32 emodes;
@@ -256,7 +270,7 @@ static BOOLEAN sisfb_interpret_edid(struct sisfb_monitor *monitor, unsigned char
 	   buffer[2] != 0xff || buffer[3] != 0xff ||
 	   buffer[4] != 0xff || buffer[5] != 0xff ||
 	   buffer[6] != 0xff || buffer[7] != 0x00) {
-	   printk(KERN_INFO "sisfb: Bad EDID header\n");
+	   printk(KERN_DEBUG "sisfb: Bad EDID header\n");
 	   return FALSE;
 	}
 
@@ -349,8 +363,8 @@ static BOOLEAN sisfb_interpret_edid(struct sisfb_monitor *monitor, unsigned char
 
 static void sisfb_handle_ddc(struct sisfb_monitor *monitor, int crtno)
 {
-	USHORT        temp, i, realcrtno = crtno;
-   	unsigned char buffer[256];
+	USHORT  temp, i, realcrtno = crtno;
+   	u8      buffer[256];
 
 	monitor->datavalid = FALSE;
 
@@ -448,7 +462,7 @@ static void sisfb_search_mode(char *name, BOOLEAN quiet)
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,0)
-        if (!strcmp(name, sisbios_mode[MODE_INDEX_NONE].name)) {
+        if (!strnicmp(name, sisbios_mode[MODE_INDEX_NONE].name, strlen(name))) {
 	   if(!quiet)
 	      printk(KERN_ERR "sisfb: Mode 'none' not supported anymore. Using default.\n");
 	   sisfb_mode_idx = DEFAULT_MODE;
@@ -486,7 +500,7 @@ static void sisfb_search_mode(char *name, BOOLEAN quiet)
 
 	i = 0; j = 0;
 	while(sisbios_mode[i].mode_no != 0) {
-		if(!strcmp(nameptr, sisbios_mode[i++].name)) {
+		if(!strnicmp(nameptr, sisbios_mode[i++].name, strlen(nameptr))) {
 		   if(sisfb_fstn) {
 		      if(sisbios_mode[i-1].mode_no == 0x50 ||
 		         sisbios_mode[i-1].mode_no == 0x56 ||
@@ -501,11 +515,12 @@ static void sisfb_search_mode(char *name, BOOLEAN quiet)
 		}
 	}
 	if((!j) && !quiet) printk(KERN_ERR "sisfb: Invalid mode '%s'\n", nameptr);
+
 }
 
 static int sisfb_validate_mode(int myindex, unsigned long vbflags)
 {
-   u16 xres, yres;
+   u16 xres, yres, myres;
 
 #ifdef CONFIG_FB_SIS_300
    if(sisvga_engine == SIS_300_VGA) {
@@ -521,6 +536,8 @@ static int sisfb_validate_mode(int myindex, unsigned long vbflags)
        }
    }
 #endif
+
+   myres = sisbios_mode[myindex].yres;
 
    switch (vbflags & VB_DISPTYPE_DISP2) {
      case CRT2_LCD:
@@ -553,23 +570,28 @@ static int sisfb_validate_mode(int myindex, unsigned long vbflags)
 	default:
 	        xres =    0; yres =    0;  break;
 	}
+
 	if(SiS_Pr.SiS_CustomT == CUT_BARCO1366) {
 	   	xres = 1360; yres = 1024;
 	}
-	if(sisbios_mode[myindex].xres > xres) {
+
+	if(SiS_Pr.SiS_CustomT == CUT_PANEL848) {
+	   	xres = 848;  yres =  480;
+	} else {
+	   if(sisbios_mode[myindex].xres > xres) {
 	        return(-1);
-	}
-        if(sisbios_mode[myindex].yres > yres) {
+	   }
+           if(myres > yres) {
 	        return(-1);
+	   }
 	}
+
 	if(vbflags & (VB_LVDS | VB_30xBDH)) {
 	   switch (sisbios_mode[myindex].xres) {
 	   	case 320:
-			if((sisbios_mode[myindex].yres != 200) &&
-	           	   (sisbios_mode[myindex].yres != 240))
+			if((myres != 200) && (myres != 240))
 		          	return(-1);
-			if((sisbios_mode[myindex].yres == 240) ||
-			   (sisbios_mode[myindex].yres == 480)) {
+			if((myres == 240) || (myres == 480)) {
 			   	if(!sisfb_fstn) {
 				   if(sisbios_mode[myindex].mode_no == 0x5a ||
 				      sisbios_mode[myindex].mode_no == 0x5b)
@@ -581,51 +603,62 @@ static int sisfb_validate_mode(int myindex, unsigned long vbflags)
 					return(-1);
 				}
 			}
+			if(SiS_Pr.SiS_CustomT == CUT_PANEL848) return(-1);
 			break;
 		case 400:
-	       		if(sisbios_mode[myindex].yres != 300) return(-1);
+	       		if(myres != 300) return(-1);
+			if(SiS_Pr.SiS_CustomT == CUT_PANEL848) return(-1);
 	       		break;
 	   	case 512:
-	       		if(sisbios_mode[myindex].yres != 384) return(-1);
+	       		if(myres != 384) return(-1);
 			if(sishw_ext.ulCRT2LCDType == LCD_1024x600) return(-1);
+			if(SiS_Pr.SiS_CustomT == CUT_PANEL848) return(-1);
 	       		break;
 	   	case 640:
-		       	if((sisbios_mode[myindex].yres != 400) &&
-	           	   (sisbios_mode[myindex].yres != 480))
+		       	if((myres != 400) && (myres != 480))
 		          	return -1;
+			if(SiS_Pr.SiS_CustomT == CUT_PANEL848) {
+			   if(myres == 400)
+			 	return(-1);
+			}
 	       		break;
 	   	case 800:
-		       	if(sisbios_mode[myindex].yres != 600) return(-1);
+		       	if(myres != 600) return(-1);
+	       		break;
+		case 848:
+		        if(SiS_Pr.SiS_CustomT != CUT_PANEL848) return(-1);
+		       	if(myres != 480) return(-1);
 	       		break;
 	   	case 1024:
-		       	if((sisbios_mode[myindex].yres != 600) &&
-	           	   (sisbios_mode[myindex].yres != 768))
+		       	if((myres != 600) && (myres != 768))
 		          	return(-1);
-			if((sisbios_mode[myindex].yres == 600) &&
+			if((myres == 600) &&
 			   (sishw_ext.ulCRT2LCDType != LCD_1024x600))
 			   	return(-1);
 			break;
 		case 1152:
-			if((sisbios_mode[myindex].yres) != 768) return(-1);
+			if(myres != 768) return(-1);
 			if(sishw_ext.ulCRT2LCDType != LCD_1152x768) return(-1);
 			break;
 	   	case 1280:
-		   	if((sisbios_mode[myindex].yres != 768) &&
-	           	   (sisbios_mode[myindex].yres != 1024))
+		   	if((myres != 768) && (myres != 1024))
 		          	return(-1);
-			if((sisbios_mode[myindex].yres == 768) &&
+			if((myres == 768) &&
 			   (sishw_ext.ulCRT2LCDType != LCD_1280x768))
 			   	return(-1);
+			if(SiS_Pr.SiS_CustomT == CUT_PANEL848) return(-1);
 			break;
 		case 1360:
 			if(SiS_Pr.SiS_CustomT != CUT_BARCO1366) return(-1);
-			if(sisbios_mode[myindex].yres != 1024) return(-1);
+			if(myres != 1024) return(-1);
 			break;
 	   	case 1400:
-		   	if(sisbios_mode[myindex].yres != 1050) return(-1);
+		   	if(myres != 1050) return(-1);
+			if(SiS_Pr.SiS_CustomT == CUT_PANEL848) return(-1);
 			break;
 	   	case 1600:
-		   	if(sisbios_mode[myindex].yres != 1200) return(-1);
+		   	if(myres != 1200) return(-1);
+			if(SiS_Pr.SiS_CustomT == CUT_PANEL848) return(-1);
 			break;
 	   	default:
 		        return(-1);
@@ -633,74 +666,85 @@ static int sisfb_validate_mode(int myindex, unsigned long vbflags)
 	} else {
 	   switch (sisbios_mode[myindex].xres) {
 	   	case 320:
-			if((sisbios_mode[myindex].yres != 200) &&
-	           	   (sisbios_mode[myindex].yres != 240))
+			if((myres != 200) && (myres != 240))
 		          	return -1;
 			break;
 		case 400:
-	       		if(sisbios_mode[myindex].yres != 300) return(-1);
+	       		if(myres != 300) return(-1);
 	       		break;
 	   	case 512:
-	       		if(sisbios_mode[myindex].yres != 384) return(-1);
+	       		if(myres != 384) return(-1);
 	       		break;
 	   	case 640:
-		       	if((sisbios_mode[myindex].yres != 400) &&
-	           	   (sisbios_mode[myindex].yres != 480))
+		       	if((myres != 400) && (myres != 480))
 		          	return(-1);
 	       		break;
 	   	case 800:
-		       	if(sisbios_mode[myindex].yres != 600) return(-1);
+		       	if(myres != 600) return(-1);
 	       		break;
 	   	case 1024:
-		       	if(sisbios_mode[myindex].yres != 768) return(-1);
+		       	if(myres != 768) return(-1);
 			break;
 	   	case 1280:
-		   	if((sisbios_mode[myindex].yres != 960) &&
-			   (sisbios_mode[myindex].yres != 768) &&
-	           	   (sisbios_mode[myindex].yres != 1024))
+		   	if((myres != 960) && (myres != 768) && (myres != 1024))
 		          	return(-1);
-			if((sisbios_mode[myindex].yres == 768) ||
-			   (sisbios_mode[myindex].yres == 960)) {
+			if((myres == 768) || (myres == 960)) {
 			    	if(sishw_ext.ulCRT2LCDType == LCD_1400x1050)
 			   		return(-1);
 			}
-			if(sisbios_mode[myindex].yres == 768) {
+			if(myres == 768) {
 			    	if(sishw_ext.ulCRT2LCDType == LCD_1280x960)
 			   		return(-1);
 			}
 			break;
 	   	case 1400:
-		   	if(sisbios_mode[myindex].yres != 1050) return(-1);
+		   	if(myres != 1050) return(-1);
 			break;
 	   	case 1600:
-		   	if(sisbios_mode[myindex].yres != 1200) return(-1);
+		   	if(myres != 1200) return(-1);
 			break;
 	   	default:
 		        return(-1);
 	   }
 	}
 	break;
-     case CRT2_TV:
+
+     case CRT2_TV:  
 	switch (sisbios_mode[myindex].xres) {
-	case 512:
+	case 320:
 		if(vbflags & VB_CHRONTEL) return(-1);
+		if((myres != 200) && (myres != 240))
+		       	return(-1);
+		break;
+	case 400:
+		if(vbflags & VB_CHRONTEL) return(-1);
+		if(myres != 300) return(-1);
+		break;
+	case 512:
+		if((vbflags & VB_CHRONTEL) && (ivideo.chip < SIS_315H))
+			return(-1);
 		if((vbflags & VB_SISBRIDGE) && (vbflags & TV_NTSC))
 		   	return(-1);
-		/* fall through */
+		if(myres != 384) return(-1);
+		break;
 	case 640:
-	case 800:
+		if((myres != 400) && (myres != 480))
+		       	return(-1);
 		break;
 	case 720:
-		if(vbflags & VB_CHRONTEL) return -1;
-		if(vbflags & TV_NTSC) {
-			if (sisbios_mode[myindex].yres != 480) {
-				return(-1);
-			}
-		} else if(vbflags & TV_PAL) {
-			if (sisbios_mode[myindex].yres != 576) {
-				return(-1);
-			}
-		}
+		if(vbflags & VB_CHRONTEL) return(-1);
+		if((vbflags & TV_NTSC) && (myres != 480))
+			return(-1);
+		if((vbflags & TV_PAL) && (myres != 576))
+			return(-1);
+		break;
+	case 768:
+		if(vbflags & VB_CHRONTEL) return(-1);
+		if(!(vbflags & TV_PAL)) return(-1);
+		if(myres != 576) return(-1);
+		break;
+	case 800:
+		if(myres != 600) return(-1);
 		break;
 	case 1024:
 		if(vbflags & VB_301) return(-1);
@@ -714,9 +758,10 @@ static int sisfb_validate_mode(int myindex, unsigned long vbflags)
 		return(-1);
 	}
 	break;
-     case CRT2_VGA:	
+
+     case CRT2_VGA:
         if(sisbios_mode[myindex].xres > 1600) return(-1);
-	if(!(vbflags & (VB_301B|VB_302B))) {
+	if(!(vbflags & (VB_301B|VB_301C|VB_302B))) {
 	   if(sisbios_mode[myindex].xres > 1400) return(-1);
 	}
 	break;	
@@ -732,7 +777,7 @@ static void sisfb_search_crt2type(const char *name)
 		return;
 
 	while(sis_crt2type[i].type_no != -1) {
-		if (!strcmp(name, sis_crt2type[i].name)) {
+		if (!strnicmp(name, sis_crt2type[i].name, strlen(sis_crt2type[i].name))) {
 			sisfb_crt2type = sis_crt2type[i].type_no;
 			sisfb_tvplug = sis_crt2type[i].tvplug_no;
 			sisfb_dstn = (sis_crt2type[i].flags & FL_550_DSTN) ? 1 : 0;
@@ -756,7 +801,7 @@ static void sisfb_search_queuemode(const char *name)
 		return;
 
 	while (sis_queuemode[i].type_no != -1) {
-		if (!strcmp(name, sis_queuemode[i].name)) {
+		if (!strnicmp(name, sis_queuemode[i].name, strlen(sis_queuemode[i].name))) {
 			sisfb_queuemode = sis_queuemode[i].type_no;
 			break;
 		}
@@ -820,12 +865,49 @@ static void sisfb_search_tvstd(const char *name)
 		return;
 
 	while (sis_tvtype[i].type_no != -1) {
-		if (!strcmp(name, sis_tvtype[i].name)) {
+		if (!strnicmp(name, sis_tvtype[i].name, strlen(sis_tvtype[i].name))) {
 			ivideo.vbflags |= sis_tvtype[i].type_no;
 			break;
 		}
 		i++;
 	}
+}
+
+static void sisfb_search_specialtiming(const char *name)
+{
+	int i = 0;
+	BOOLEAN found = FALSE;
+
+	if(name == NULL)
+		return;
+
+	if(!strnicmp(name, "none", 4)) {
+	        SiS_Pr.SiS_CustomT = CUT_FORCENONE;
+		printk(KERN_DEBUG "sisfb: Special timing disabled\n");
+	} else {
+	   while(mycustomttable[i].chipID != 0) {
+	      if(!strnicmp(name,mycustomttable[i].optionName, strlen(mycustomttable[i].optionName))) {
+		 SiS_Pr.SiS_CustomT = mycustomttable[i].SpecialID;
+		 found = TRUE;
+		 printk(KERN_INFO "sisfb: Special timing for %s %s forced\n",
+		 mycustomttable[i].vendorName, mycustomttable[i].cardName);
+		 break;
+	      }
+	      i++;
+	   }
+	   if(!found) {
+	      printk(KERN_WARNING "sisfb: Invalid SpecialTiming parameter, valid are:");
+	      printk(KERN_WARNING "\t\"none\" (to disable special timings)\n");
+	      i = 0;
+	      while(mycustomttable[i].chipID != 0) {
+		 printk(KERN_WARNING "\t\"%s\" (for %s %s)\n",
+		     mycustomttable[i].optionName,
+		     mycustomttable[i].vendorName,
+		     mycustomttable[i].cardName);
+		 i++;
+	      }
+           }
+ 	}
 }
 
 static BOOLEAN sisfb_bridgeisslave(void)
@@ -989,12 +1071,12 @@ static int sisfb_myblank(int blank)
       }
 
       if(sisvga_engine == SIS_300_VGA) {
-         if((ivideo.vbflags & (VB_301B|VB_302B)) &&
+         if((ivideo.vbflags & (VB_301B|VB_301C|VB_302B)) &&
             (!(ivideo.vbflags & VB_30xBDH))) {
 	    setSISIDXREG(SISPART1, 0x13, 0x3f, p1_13);
 	 }
       } else if(sisvga_engine == SIS_315_VGA) {
-         if((ivideo.vbflags & (VB_301B|VB_302B)) &&
+         if((ivideo.vbflags & (VB_301B|VB_301C|VB_302B)) &&
             (!(ivideo.vbflags & VB_30xBDH))) {
 	    setSISIDXREG(SISPART2, 0x00, 0x1f, p2_0);
 	 }
@@ -1002,7 +1084,7 @@ static int sisfb_myblank(int blank)
 
    } else if(ivideo.currentvbflags & CRT2_VGA) {
 
-      if(ivideo.vbflags & (VB_301B|VB_302B)) {
+      if(ivideo.vbflags & (VB_301B|VB_301C|VB_302B)) {
          setSISIDXREG(SISPART2, 0x00, 0x1f, p2_0);
       }
 
@@ -1749,6 +1831,7 @@ static int sisfb_mmap(struct fb_info *info, struct file *file,
 	if (boot_cpu_data.x86 > 3)
 		pgprot_val(vma->vm_page_prot) |= _PAGE_PCD;
 #endif
+        /* RedHat requires vma as the first paramater to the following call */
 	if (io_remap_page_range(vma->vm_start, off, vma->vm_end - vma->vm_start,
 				vma->vm_page_prot))
 		return -EAGAIN;
@@ -1846,11 +1929,9 @@ static int sisfb_get_cmap_len(const struct fb_var_screeninfo *var)
 		rc = 256;	
 		break;
 	case 16:
-		rc = 16;	
-		break;		
 	case 32:
 		rc = 16;
-		break;	
+		break;
 	}
 	return rc;
 }
@@ -2249,7 +2330,7 @@ static int sisfb_ioctl(struct inode *inode, struct file *file,
 		if(copy_to_user((void *)arg, &sisapdata, sizeof(sisapdata)))
 			return -EFAULT;
 		break;
-	   case SISFB_GET_INFO:  /* New for communication with X driver */
+	   case SISFB_GET_INFO:  /* For communication with X driver */
 	        {
 			sisfb_info x;
 
@@ -2262,7 +2343,7 @@ static int sisfb_ioctl(struct inode *inode, struct file *file,
 			x.heapstart = ivideo.heapstart / 1024;
 			x.fbvidmode = sisfb_mode_no;
 			x.sisfb_caps = sisfb_caps;
-			x.sisfb_tqlen = 512; /* yet unused */
+			x.sisfb_tqlen = 512; /* yet fixed */
 			x.sisfb_pcibus = ivideo.pcibus;
 			x.sisfb_pcislot = ivideo.pcislot;
 			x.sisfb_pcifunc = ivideo.pcifunc;
@@ -2270,6 +2351,8 @@ static int sisfb_ioctl(struct inode *inode, struct file *file,
 			x.sisfb_lcda = sisfb_detectedlcda;
 			x.sisfb_vbflags = ivideo.vbflags;
 			x.sisfb_currentvbflags = ivideo.currentvbflags;
+			x.sisfb_scalelcd = SiS_Pr.UsePanelScaler;
+			x.sisfb_specialtiming = SiS_Pr.SiS_CustomT;
 			if(copy_to_user((void *)arg, &x, sizeof(x)))
 				return -EFAULT;
 	                break;
@@ -2332,7 +2415,7 @@ static int sisfb_get_fix(struct fb_fix_screeninfo *fix, int con,
 	fix->mmio_len    = sisfb_mmio_size;
 	if(sisvga_engine == SIS_300_VGA) 
 	   fix->accel    = FB_ACCEL_SIS_GLAMOUR;
-	else if((ivideo.chip == SIS_330) || (ivideo.chip == SIS_660))
+	else if((ivideo.chip == SIS_330) || (ivideo.chip == SIS_660) || (ivideo.chip == SIS_760))
 	   fix->accel    = FB_ACCEL_SIS_XABRE;
 	else
 	   fix->accel    = FB_ACCEL_SIS_GLAMOUR_2;
@@ -2418,9 +2501,12 @@ static int sisfb_get_dram_size_300(void)
 
 	} else {		/* 540, 630, 730 */
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,74)
 		pci_for_each_dev(pdev) {
-
-			if ((pdev->vendor == PCI_VENDOR_ID_SI) 
+#else
+		while((pdev = pci_find_device(PCI_VENDOR_ID_SI, PCI_ANY_ID, pdev))) {
+#endif
+			if ((pdev->vendor == PCI_VENDOR_ID_SI)
 				       && (pdev->device == nbridge_id)) {
 				pci_read_config_byte(pdev, IND_BRI_DRAM_STATUS, &pci_data);
 				pci_data = (pci_data & BRI_DRAM_SIZE_MASK) >> 4;
@@ -2461,7 +2547,7 @@ static int sisfb_get_dram_size_300(void)
 #endif  /* CONFIG_FB_SIS_300 */
 
 
-#ifdef CONFIG_FB_SIS_315    /* for SiS 315/550/650/740/330 */
+#ifdef CONFIG_FB_SIS_315    /* for SiS 315/550/650/740/330/660/760 */
 
 static int sisfb_get_dram_size_315(void)
 {
@@ -2473,24 +2559,30 @@ static int sisfb_get_dram_size_315(void)
 	if (ivideo.chip == SIS_550 ||
 	    ivideo.chip == SIS_650 ||
 	    ivideo.chip == SIS_740 ||
-	    ivideo.chip == SIS_660) {
+	    ivideo.chip == SIS_660 ||
+	    ivideo.chip == SIS_760) {
 
 #ifdef LINUXBIOS
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,74)
 		pci_for_each_dev(pdev) {
+#else
+		while((pdev = pci_find_device(PCI_VENDOR_ID_SI, PCI_ANY_ID, pdev))) {
+#endif
 
 			if ( (pdev->vendor == PCI_VENDOR_ID_SI)
 				&& ( (pdev->device == PCI_DEVICE_ID_SI_550) ||
 				     (pdev->device == PCI_DEVICE_ID_SI_650) ||
 				     (pdev->device == PCI_DEVICE_ID_SI_740) ||
-				     (pdev->device == PCI_DEVICE_ID_SI_660))) {
+				     (pdev->device == PCI_DEVICE_ID_SI_660) ||
+				     (pdev->device == PCI_DEVICE_ID_SI_760))) {
 				pci_read_config_byte(pdev, IND_BRI_DRAM_STATUS,
 				                     &pci_data);
 				pci_data = (pci_data & BRI_DRAM_SIZE_MASK) >> 4;
 				ivideo.video_size = (unsigned int)(1 << (pci_data + 21));
 				pdev_valid = 1;
 
-				/* TW: Initialize SR14 "by hand" */
+				/* Initialize SR14 "by hand" */
 				inSISIDXREG(SISSR, IND_SIS_DRAM_SIZE, reg);
 				reg &= 0xC0;
 				switch (pci_data) {
@@ -2552,7 +2644,11 @@ static int sisfb_get_dram_size_315(void)
 			       "now reading from PCI config\n");
 			pdev_valid = 0;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,74)
 			pci_for_each_dev(pdev) {
+#else
+			while((pdev = pci_find_device(PCI_VENDOR_ID_SI, PCI_ANY_ID, pdev))) {
+#endif
 
 			   if ( (pdev->vendor == PCI_VENDOR_ID_SI)
 			         && (pdev->device == PCI_DEVICE_ID_SI_550) ) {
@@ -2625,7 +2721,7 @@ static int sisfb_get_dram_size_315(void)
 		reg >>= 2;
 		
 		if(ivideo.chip == SIS_330) {
-		
+
 		   if(reg) ivideo.video_size <<= 1;
 		
 		} else {
@@ -2786,10 +2882,14 @@ static void sisfb_get_VB_type(void)
 			ivideo.vbflags |= VB_301;
 			sishw_ext.ujVBChipID = VB_CHIP_301;
 			printk(KERN_INFO "%s SiS301 %s\n", stdstr, bridgestr);
-		} else if(reg < 0xd0) {
+		} else if(reg < 0xc0) {
 		 	ivideo.vbflags |= VB_301B;
 			sishw_ext.ujVBChipID = VB_CHIP_301B;
 			printk(KERN_INFO "%s SiS301B %s\n", stdstr, bridgestr);
+		} else if(reg < 0xd0) {
+		 	ivideo.vbflags |= VB_301C;
+			sishw_ext.ujVBChipID = VB_CHIP_301C;
+			printk(KERN_INFO "%s SiS301C %s\n", stdstr, bridgestr);
 		} else if(reg < 0xe0) {
 			ivideo.vbflags |= VB_301LV;
 			sishw_ext.ujVBChipID = VB_CHIP_301LV;
@@ -2842,10 +2942,9 @@ static void sisfb_get_VB_type(void)
 				break;
 			   case SIS_EXTERNAL_CHIP_TRUMPION:
 				ivideo.hasVB = HASVB_TRUMPION;
-				ivideo.vbflags |= VB_TRUMPION;
 				sishw_ext.usExternalChip = 0x02;
 				printk(KERN_INFO "%s Trumpion LCD scaler\n", stdstr);
-				break;	   
+				break;
 			   case SIS_EXTERNAL_CHIP_CHRONTEL:
 				ivideo.hasVB = HASVB_CHRONTEL;
 				ivideo.vbflags |= VB_CHRONTEL;
@@ -2927,7 +3026,7 @@ SiS_Sense30x(void)
 
   if(sisvga_engine == SIS_300_VGA) {
 
-	if(ivideo.vbflags & (VB_301B|VB_302B|VB_301LV|VB_302LV)) {
+	if(ivideo.vbflags & (VB_301B|VB_301C|VB_302B|VB_301LV|VB_302LV)) {
 	   	testvga2_tempbh = 0x01; testvga2_tempbl = 0x90;
 	   	testsvhs_tempbh = 0x01; testsvhs_tempbl = 0x6b;
 	   	testcvbs_tempbh = 0x01; testcvbs_tempbl = 0x74;
@@ -2959,7 +3058,7 @@ SiS_Sense30x(void)
 
   } else {
 
-	if(ivideo.vbflags & (VB_301B|VB_302B)) {
+	if(ivideo.vbflags & (VB_301B|VB_301C|VB_302B)) {
 		testvga2_tempbh = 0x01; testvga2_tempbl = 0x90;
 		testsvhs_tempbh = 0x01; testsvhs_tempbl = 0x6b;
 		testcvbs_tempbh = 0x01; testcvbs_tempbl = 0x74;
@@ -2972,7 +3071,7 @@ SiS_Sense30x(void)
         	testsvhs_tempbh = 0x00; testsvhs_tempbl = 0xb9;
 		testcvbs_tempbh = 0x00; testcvbs_tempbl = 0xb3;
 	}
-	if(ivideo.vbflags & (VB_301|VB_301B|VB_302B)) {
+	if(ivideo.vbflags & (VB_301|VB_301B|VB_301C|VB_302B)) {
 	   inSISIDXREG(SISPART4,0x01,myflag);
 	   if(myflag & 0x04) {
 	      testvga2_tempbh = 0x00; testvga2_tempbl = 0xfd;
@@ -3196,8 +3295,13 @@ static int sisfb_heap_init(void)
 	unsigned long *write_port = 0;
 	SIS_CMDTYPE    cmd_type;
 #ifndef AGPOFF
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
+	struct agp_kern_info  *agp_info;
+	struct agp_memory     *agp;
+#else
 	agp_kern_info  *agp_info;
 	agp_memory     *agp;
+#endif
 	u32            agp_phys;
 #endif
 #endif
@@ -3211,8 +3315,9 @@ static int sisfb_heap_init(void)
  *     in XF86Config-4.
  *     The heap start can also be specified by parameter "mem" when starting the sisfb
  *     driver. sisfb mem=1024 lets heap starts at 1MB, etc.
- *     On the 315 series, the default is a 1MB heap since DRI is not supported
- *     there.
+ *
+ *     On the 315 and Xabre series, the default is a 1MB heap since DRI is not
+ *     supported there.
  */
      if ((!sisfb_mem) || (sisfb_mem > (ivideo.video_size/1024))) {
         if(sisvga_engine == SIS_300_VGA) {
@@ -3280,8 +3385,13 @@ static int sisfb_heap_init(void)
 
 #ifndef AGPOFF
 	if (sisfb_queuemode == AGP_CMD_QUEUE) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,0)
+		agp_info = vmalloc(sizeof(*agp_info));
+		memset((void*)agp_info, 0x00, sizeof(*agp_info));
+#else
 		agp_info = vmalloc(sizeof(agp_kern_info));
 		memset((void*)agp_info, 0x00, sizeof(agp_kern_info));
+#endif
 		agp_copy_info(agp_info);
 
 		agp_backend_acquire();
@@ -3382,10 +3492,6 @@ static int sisfb_heap_init(void)
 		break;
 
 	   default:  /* MMIO */
-	   	/* TW: This previously only wrote SIS_MMIO_CMD_ENABLE
-		 * to IND_SIS_CMDQUEUE_SET. I doubt that this is
-		 * enough. Reserve memory in any way.
-		 */
 	   	sisfb_heap_end -= COMMAND_QUEUE_AREA_SIZE;
 		sisfb_heap_size -= COMMAND_QUEUE_AREA_SIZE;
 
@@ -3394,7 +3500,7 @@ static int sisfb_heap_init(void)
 
 		*write_port = *read_port;
 
-		/* TW: Set Auto_Correction bit */
+		/* Set Auto_Correction bit */
 		temp |= (SIS_MMIO_CMD_ENABLE | SIS_CMD_AUTO_CORR);
 		outSISIDXREG(SISSR, IND_SIS_CMDQUEUE_SET, temp);
 
@@ -3782,6 +3888,13 @@ static void sisfb_pre_setmode(void)
 	outSISIDXREG(SISCR, IND_SIS_SCRATCH_REG_CR31, cr31);
 	outSISIDXREG(SISCR, IND_SIS_SCRATCH_REG_CR33, cr33);
 
+#ifdef CONFIG_FB_SIS_315
+        if(sisvga_engine == SIS_315_VGA) {
+	   /* Clear LCDA and PAL-N/M bits */
+	   andSISIDXREG(SISCR,0x38,~0xc3);
+	}
+#endif
+
 	if(ivideo.accel) sisfb_syncaccel();
 
 	SiS_Pr.SiS_UseOEM = sisfb_useoem;
@@ -3871,6 +3984,7 @@ static void sisfb_post_setmode(void)
 		   case 720:
 			filter_tb = (ivideo.vbflags & TV_NTSC) ? 6 : 14;
 			break;
+		   case 400:
 		   case 800:
 			filter_tb = (ivideo.vbflags & TV_NTSC) ? 7 : 15;
 			break;
@@ -3906,6 +4020,7 @@ static void sisfb_post_setmode(void)
 					outSISIDXREG(SISPART2, 0x37, 0x22);
 					outSISIDXREG(SISPART2, 0x38, 0x08);
 					break;
+				case 400:
 				case 800:
 					outSISIDXREG(SISPART2, 0x35, 0xEB);
 					outSISIDXREG(SISPART2, 0x36, 0x15);
@@ -3940,6 +4055,7 @@ static void sisfb_post_setmode(void)
 					outSISIDXREG(SISPART2, 0x37, 0x1D);
 					outSISIDXREG(SISPART2, 0x38, 0x20);
 					break;
+				case 400:
 				case 800:
 					outSISIDXREG(SISPART2, 0x35, 0xFC);
 					outSISIDXREG(SISPART2, 0x36, 0xFB);
@@ -3950,7 +4066,7 @@ static void sisfb_post_setmode(void)
 			}
 		}
 
-		if ((filter >= 0) && (filter <=7)) {
+		if ((filter >= 0) && (filter <= 7)) {
 			DPRINTK("FilterTable[%d]-%d: %02x %02x %02x %02x\n", filter_tb, filter,
 				sis_TV_filter[filter_tb].filter[filter][0],
 				sis_TV_filter[filter_tb].filter[filter][1],
@@ -3974,11 +4090,14 @@ int sisfb_setup(char *options)
 	
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 	sis_fb_info.fontname[0] = '\0';
-#endif	
+#endif
 
 	ivideo.refresh_rate = 0;
+	SiS_Pr.SiS_CustomT = CUT_NONE;
+	SiS_Pr.UsePanelScaler = -1;
+	SiS_Pr.LVDSHL = -1;
 
-        printk(KERN_INFO "sisfb: Options %s\n", options);
+        printk(KERN_DEBUG "sisfb: Options %s\n", options);
 
 	if (!options || !*options)
 		return 0;
@@ -3987,57 +4106,67 @@ int sisfb_setup(char *options)
 
 		if (!*this_opt)	continue;
 
-		if (!strncmp(this_opt, "mode:", 5)) {
+		if (!strnicmp(this_opt, "mode:", 5)) {
 			sisfb_search_mode(this_opt + 5, FALSE);
-		} else if (!strncmp(this_opt, "vesa:", 5)) {
+		} else if (!strnicmp(this_opt, "vesa:", 5)) {
 			sisfb_search_vesamode(simple_strtoul(this_opt + 5, NULL, 0), FALSE);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)			
-		} else if (!strcmp(this_opt, "inverse")) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+		} else if (!strnicmp(this_opt, "inverse", 7)) {
 			sisfb_inverse = 1;
 			/* fb_invert_cmaps(); */
-		} else if (!strncmp(this_opt, "font:", 5)) {
+		} else if (!strnicmp(this_opt, "font:", 5)) {
 			strcpy(sis_fb_info.fontname, this_opt + 5);
 #endif
-		} else if (!strncmp(this_opt, "vrate:", 6)) {
+		} else if (!strnicmp(this_opt, "vrate:", 6)) {
 			ivideo.refresh_rate = simple_strtoul(this_opt + 6, NULL, 0);
 			sisfb_parm_rate = ivideo.refresh_rate;
-		} else if (!strncmp(this_opt, "rate:", 5)) {
+		} else if (!strnicmp(this_opt, "rate:", 5)) {
 			ivideo.refresh_rate = simple_strtoul(this_opt + 5, NULL, 0);
 			sisfb_parm_rate = ivideo.refresh_rate;
-		} else if (!strncmp(this_opt, "off", 3)) {
+		} else if (!strnicmp(this_opt, "off", 3)) {
 			sisfb_off = 1;
-		} else if (!strncmp(this_opt, "crt1off", 7)) {
+		} else if (!strnicmp(this_opt, "crt1off", 7)) {
 			sisfb_crt1off = 1;
-		} else if (!strncmp(this_opt, "filter:", 7)) {
+		} else if (!strnicmp(this_opt, "filter:", 7)) {
 			filter = (int)simple_strtoul(this_opt + 7, NULL, 0);
-		} else if (!strncmp(this_opt, "forcecrt2type:", 14)) {
+		} else if (!strnicmp(this_opt, "forcecrt2type:", 14)) {
 			sisfb_search_crt2type(this_opt + 14);
-		} else if (!strncmp(this_opt, "forcecrt1:", 10)) {
+		} else if (!strnicmp(this_opt, "forcecrt1:", 10)) {
 			sisfb_forcecrt1 = (int)simple_strtoul(this_opt + 10, NULL, 0);
-                } else if (!strncmp(this_opt, "tvmode:",7)) {
+                } else if (!strnicmp(this_opt, "tvmode:",7)) {
 		        sisfb_search_tvstd(this_opt + 7);
-                } else if (!strncmp(this_opt, "tvstandard:",11)) {
+                } else if (!strnicmp(this_opt, "tvstandard:",11)) {
 			sisfb_search_tvstd(this_opt + 7);
-                } else if (!strncmp(this_opt, "mem:",4)) {
+                } else if (!strnicmp(this_opt, "mem:",4)) {
 		        sisfb_mem = simple_strtoul(this_opt + 4, NULL, 0);
-		} else if (!strncmp(this_opt, "queuemode:", 10)) {
+		} else if (!strnicmp(this_opt, "queuemode:", 10)) {
 			sisfb_search_queuemode(this_opt + 10);
-		} else if (!strncmp(this_opt, "pdc:", 4)) {
+		} else if (!strnicmp(this_opt, "pdc:", 4)) {
 		        sisfb_pdc = simple_strtoul(this_opt + 4, NULL, 0);
-		        if(sisfb_pdc & ~0x3c) {
-			   printk(KERN_INFO "sisfb: Illegal pdc parameter\n");
-			   sisfb_pdc = 0;
-		        }
-		} else if (!strncmp(this_opt, "noaccel", 7)) {
+		} else if (!strnicmp(this_opt, "noaccel", 7)) {
 			sisfb_accel = 0;
-		} else if (!strncmp(this_opt, "noypan", 6)) {
+		} else if (!strnicmp(this_opt, "noypan", 6)) {
 		        sisfb_ypan = 0;
-		} else if (!strncmp(this_opt, "userom:", 7)) {
+		} else if (!strnicmp(this_opt, "userom:", 7)) {
 			sisfb_userom = (int)simple_strtoul(this_opt + 7, NULL, 0);
-		} else if (!strncmp(this_opt, "useoem:", 7)) {
+		} else if (!strnicmp(this_opt, "useoem:", 7)) {
 			sisfb_useoem = (int)simple_strtoul(this_opt + 7, NULL, 0);
-		} else if (!strncmp(this_opt, "nocrt2rate", 10)) {
-			sisfb_nocrt2rate = 1;			
+		} else if (!strnicmp(this_opt, "nocrt2rate", 10)) {
+			sisfb_nocrt2rate = 1;
+	 	} else if (!strnicmp(this_opt, "scalelcd:", 9)) {
+		        unsigned long temp = 2;
+		        temp = simple_strtoul(this_opt + 9, NULL, 0);
+		        if((temp == 0) || (temp == 1)) {
+			   SiS_Pr.UsePanelScaler = temp ^ 1;
+		        }
+		} else if (!strnicmp(this_opt, "specialtiming:", 14)) {
+			sisfb_search_specialtiming(this_opt + 14);
+		} else if (!strnicmp(this_opt, "lvdshl:", 7)) {
+		        unsigned long temp = 4;
+		        temp = simple_strtoul(this_opt + 7, NULL, 0);
+		        if((temp >= 0) && (temp <= 3)) {
+			   SiS_Pr.LVDSHL = temp;
+		        }
 		} else if(this_opt[0] >= '0' && this_opt[0] <= '9') {
 			sisfb_search_mode(this_opt, TRUE);
 		} else {
@@ -4066,14 +4195,14 @@ static char *sis_find_rom(void)
         char *sis_sig_300[4] = {
           "300", "540", "630", "730"
         };
-        char *sis_sig_310[8] = {
-          "315", "315", "315", "5315", "6325", "6325", "Xabre", "6330"
+        char *sis_sig_310[9] = {
+          "315", "315", "315", "5315", "6325", "6325", "Xabre", "6330", "6330"
         };
 	ushort sis_nums_300[4] = {
 	  SIS_300, SIS_540, SIS_630, SIS_730
 	};
-	unsigned short sis_nums_310[8] = {
-	  SIS_315PRO, SIS_315H, SIS_315, SIS_550, SIS_650, SIS_740, SIS_330, SIS_660
+	unsigned short sis_nums_310[9] = {
+	  SIS_315PRO, SIS_315H, SIS_315, SIS_550, SIS_650, SIS_740, SIS_330, SIS_660, SIS_760
 	};
 
         for(segstart=0x000c0000; segstart<0x000f0000; segstart+=0x00001000) {
@@ -4110,7 +4239,7 @@ static char *sis_find_rom(void)
                     }
                 }
 		if(stage != 4) {
-                   for(i = 0;(i < 8) && (stage != 4); i++) {
+                   for(i = 0;(i < 9) && (stage != 4); i++) {
                       if(strncmp(sis_sig_310[i], rom, strlen(sis_sig_310[i])) == 0) {
 		          if(sis_nums_310[i] == ivideo.chip) {
                              stage = 4;
@@ -4169,7 +4298,11 @@ int __init sisfb_init(void)
 	memset(&sis_disp, 0, sizeof(sis_disp));
 #endif	
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,74)
 	pci_for_each_dev(pdev) {
+#else
+	while((pdev = pci_find_device(PCI_VENDOR_ID_SI, PCI_ANY_ID, pdev))) {
+#endif
 		for (b = sisdev_list; b->vendor; b++) {
 			if ((b->vendor == pdev->vendor)
 			    && (b->device == pdev->device)) {
@@ -4211,18 +4344,17 @@ int __init sisfb_init(void)
 		break;
 	   case PCI_DEVICE_ID_SI_630_VGA:
 		{
+			ivideo.chip = SIS_630;
 			sisfb_set_reg4(0xCF8, 0x80000000);
 			reg32 = sisfb_get_reg3(0xCFC);
 			if(reg32 == 0x07301039) {
 				ivideo.chip = SIS_730;
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,5,0)				
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,5,0)
 				strcpy(sis_fb_info.modename, "SIS 730");
 #else
 				strcpy(myid, "SIS 730");
-#endif				
-			} else
-				ivideo.chip = SIS_630;
-
+#endif
+			}
 			sisvga_engine = SIS_300_VGA;
 			sisfb_hwcursor_size = HW_CURSOR_AREA_SIZE_300 * 2;
 			sisfb_CRT2_write_enable = IND_SIS_CRT2_WRITE_ENABLE_300;
@@ -4267,11 +4399,11 @@ int __init sisfb_init(void)
 			reg32 = sisfb_get_reg3(0xCFC);
 			if(reg32 == 0x07401039) {
 				ivideo.chip = SIS_740;
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,5,0)				
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,5,0)
 				strcpy(sis_fb_info.modename, "SIS 740");
 #else
-				strcpy(myid, "SIS 740");				
-#endif				
+				strcpy(myid, "SIS 740");
+#endif
 			}
 			sisvga_engine = SIS_315_VGA;
 			sisfb_hwcursor_size = HW_CURSOR_AREA_SIZE_315 * 2;
@@ -4285,11 +4417,23 @@ int __init sisfb_init(void)
 		sisfb_CRT2_write_enable = IND_SIS_CRT2_WRITE_ENABLE_315;
 		break;
 	   case PCI_DEVICE_ID_SI_660_VGA:
-		ivideo.chip = SIS_660;
-		sisvga_engine = SIS_315_VGA;
-		sisfb_hwcursor_size = HW_CURSOR_AREA_SIZE_315 * 2;
-		sisfb_CRT2_write_enable = IND_SIS_CRT2_WRITE_ENABLE_315;
-		break;
+	   	{
+			ivideo.chip = SIS_660;
+			sisfb_set_reg4(0xCF8, 0x80000000);
+			reg32 = sisfb_get_reg3(0xCFC);
+			if(reg32 == 0x07601039) {
+				ivideo.chip = SIS_760;
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,5,0)
+				strcpy(sis_fb_info.modename, "SIS 760");
+#else
+				strcpy(myid, "SIS 760");
+#endif
+			}
+			sisvga_engine = SIS_315_VGA;
+			sisfb_hwcursor_size = HW_CURSOR_AREA_SIZE_315 * 2;
+			sisfb_CRT2_write_enable = IND_SIS_CRT2_WRITE_ENABLE_315;
+			break;
+		}
 #endif
            default:
 	        return -ENODEV;
@@ -4315,9 +4459,7 @@ int __init sisfb_init(void)
 	SiS_Pr.SiS_Backup70xx = 0xff;
         SiS_Pr.SiS_CHOverScan = -1;
         SiS_Pr.SiS_ChSW = FALSE;
-	SiS_Pr.SiS_CustomT = CUT_NONE;
 	SiS_Pr.SiS_UseLCDA = FALSE;
-	SiS_Pr.UsePanelScaler = -1;
 	SiSRegInit(&SiS_Pr, (USHORT)sishw_ext.ulIOAddress);
 
 #ifdef CONFIG_FB_SIS_300
@@ -4364,7 +4506,8 @@ int __init sisfb_init(void)
 #endif
 #ifdef CONFIG_FB_SIS_315
 	if (ivideo.chip == SIS_550 || ivideo.chip == SIS_650 ||
-	    ivideo.chip == SIS_740 || ivideo.chip == SIS_660) {
+	    ivideo.chip == SIS_740 || ivideo.chip == SIS_660 ||
+	    ivideo.chip == SIS_760) {
 	        outSISIDXREG(SISSR, 0x28, 0x5a);
 
                 outSISIDXREG(SISSR, 0x29, 0x64);
@@ -4386,6 +4529,7 @@ int __init sisfb_init(void)
 		   case SIS_650:
 		   case SIS_740:
 		   case SIS_660:
+		   case SIS_760:
 			sishw_ext.bIntegratedMMEnabled = TRUE;
 			break;
 		   default:
@@ -4426,26 +4570,46 @@ int __init sisfb_init(void)
 	strcpy(sishw_ext.szVBIOSVer, "0.84");
 
         /* Find systems for special custom timing */
-	if(sishw_ext.UseROM) {
-	   int i=0,j;
-	   unsigned char *biosver = sishw_ext.pjVirtualRomBase + 0x06;
-           unsigned char *biosdate = sishw_ext.pjVirtualRomBase + 0x2c;
+	if(SiS_Pr.SiS_CustomT == CUT_NONE) {
+	   int i=0, j;
+	   unsigned char *biosver = NULL;
+           unsigned char *biosdate = NULL;
 	   BOOLEAN footprint;
+	   unsigned long chksum = 0;
+
+	   if(sishw_ext.UseROM) {
+	      biosver = sishw_ext.pjVirtualRomBase + 0x06;
+	      biosdate = sishw_ext.pjVirtualRomBase + 0x2c;
+              for(i=0; i<32768; i++) chksum += sishw_ext.pjVirtualRomBase[i];
+	   }
+
+	   i=0;
            do {
 	      if( (mycustomttable[i].chipID == ivideo.chip) &&
-	          (!strncmp(mycustomttable[i].biosversion, biosver, strlen(mycustomttable[i].biosversion))) &&
-	          (!strncmp(mycustomttable[i].biosdate, biosdate, strlen(mycustomttable[i].biosdate))) ) {
+	          ((!strlen(mycustomttable[i].biosversion)) ||
+		   (sishw_ext.UseROM &&
+		   (!strncmp(mycustomttable[i].biosversion, biosver, strlen(mycustomttable[i].biosversion))))) &&
+	          ((!strlen(mycustomttable[i].biosdate)) ||
+		   (sishw_ext.UseROM &&
+		   (!strncmp(mycustomttable[i].biosdate, biosdate, strlen(mycustomttable[i].biosdate))))) &&
+		  ((!mycustomttable[i].bioschksum) ||
+		   (sishw_ext.UseROM &&
+	           (mycustomttable[i].bioschksum == chksum)))	&&
+		  (mycustomttable[i].pcisubsysvendor == ivideo.subsysvendor) &&
+		  (mycustomttable[i].pcisubsyscard == ivideo.subsysdevice) ) {
 		 footprint = TRUE;
-	         for(j=0; j<5; j++) {
-	           if(mycustomttable[i].biosFootprintAddr[j]) {
-	              if(sishw_ext.pjVirtualRomBase[mycustomttable[i].biosFootprintAddr[j]] !=
+		 if(sishw_ext.UseROM) {
+	            for(j=0; j<5; j++) {
+	               if(mycustomttable[i].biosFootprintAddr[j]) {
+	                  if(sishw_ext.pjVirtualRomBase[mycustomttable[i].biosFootprintAddr[j]] !=
 		      		mycustomttable[i].biosFootprintData[j])
-		         footprint = FALSE;
-		   }
+		          footprint = FALSE;
+		       }
+		    }
 	         }
 	         if(footprint) {
 	 	    SiS_Pr.SiS_CustomT = mycustomttable[i].SpecialID;
-		    printk(KERN_DEBUG "sisfb: Identified [%s %s] for non-standard timing\n",
+		    printk(KERN_DEBUG "sisfb: Identified [%s %s], special timing applies\n",
 		        mycustomttable[i].vendorName,
 			mycustomttable[i].cardName);
 	            break;
@@ -4456,7 +4620,7 @@ int __init sisfb_init(void)
 	}
 
 #ifdef CONFIG_FB_SIS_300
-	/* TW: Mode numbers for 1280x768 are different for 300 and 315 series */
+	/* Mode numbers for 1280x768 are different for 300 and 315 series */
 	if(sisvga_engine == SIS_300_VGA) {
 		sisbios_mode[MODEINDEX_1280x768].mode_no = 0x55;
 		sisbios_mode[MODEINDEX_1280x768+1].mode_no = 0x5a;
@@ -4579,6 +4743,7 @@ int __init sisfb_init(void)
 
 	sishw_ext.ulVideoMemorySize = ivideo.video_size;
 
+	if(sisvga_engine == SIS_300_VGA) sisfb_pdc &= 0x3c;
 	if(sisfb_pdc) {
 	    sishw_ext.pdc = sisfb_pdc;
 	} else {
@@ -4700,8 +4865,31 @@ int __init sisfb_init(void)
 	        sisfb_detectedlcda = 0xff;
 #ifndef LINUXBIOS
 #ifdef CONFIG_FB_SIS_315
-                /* TW: Try to find about LCDA */
+
 		if(sisvga_engine == SIS_315_VGA) {
+		   /* Save PDC */
+		   if(ivideo.vbflags & (VB_301LV | VB_302LV)) {
+		      int tmp;
+		      inSISIDXREG(SISCR,0x30,tmp);
+		      if(tmp & 0x20) {
+		         /* Currently on LCD? If yes, read current pdc */
+		         inSISIDXREG(SISPART1,0x2D,sisfb_detectedpdc);
+			 if(sishw_ext.pdc == 0) {
+			    /* Let option override detection */
+			    sishw_ext.pdc = sisfb_detectedpdc;
+			 }
+			 printk(KERN_INFO
+			        "sisfb: Detected LCD PanelDelayCompensation %d\n",
+  			         sisfb_detectedpdc);
+		      }
+		      if((sishw_ext.pdc) && (sishw_ext.pdc != sisfb_detectedpdc)) {
+		         printk(KERN_INFO
+			         "sisfb: Using LCD PanelDelayCompensation %d\n",
+				 sishw_ext.pdc);
+		      }
+		   }
+
+		   /* Try to find about LCDA */
 		   if(ivideo.vbflags & (VB_302B | VB_301LV | VB_302LV)) {
 		      int tmp;
 		      inSISIDXREG(SISCR,0x34,tmp);
@@ -4727,7 +4915,7 @@ int __init sisfb_init(void)
 		      }
 		      if(SiS_Pr.SiS_UseLCDA) {
 		         sisfb_detectedlcda = 0x03;
-		         printk(KERN_INFO
+		         printk(KERN_DEBUG
 			        "sisfb: Bridge uses LCDA for low resolution and text modes\n");
 		      }
 	          }
@@ -4738,7 +4926,7 @@ int __init sisfb_init(void)
 		if (!sisfb_crt1off) {
 		   	sisfb_handle_ddc(&sisfb_thismonitor, 0);
 		} else {
-		   	if ((ivideo.vbflags & (VB_301|VB_301B|VB_302B)) &&
+		   	if ((ivideo.vbflags & (VB_301|VB_301B|VB_301C|VB_302B)) &&
 		      	    (ivideo.vbflags & (CRT2_VGA | CRT2_LCD))) {
 		      		sisfb_handle_ddc(&sisfb_thismonitor, 1);
 		   	}
@@ -4839,7 +5027,7 @@ int __init sisfb_init(void)
 		default_var.xres = default_var.xres_virtual = ivideo.video_width;
 		default_var.yres = default_var.yres_virtual = ivideo.video_height;
 		default_var.bits_per_pixel = ivideo.video_bpp;
-		
+
 		sisfb_bpp_to_var(&default_var);
 		
 		default_var.pixclock = (u32) (1E12 /
@@ -4856,7 +5044,7 @@ int __init sisfb_init(void)
 				default_var.pixclock <<= 1;
 	   		}
 	        }
-		
+
 		ivideo.accel = 0;
 		if(sisfb_accel) {
 		   ivideo.accel = -1;
@@ -4870,7 +5058,7 @@ int __init sisfb_init(void)
 	    		if(default_var.yres_virtual <= default_var.yres) {
 	        		default_var.yres_virtual = default_var.yres;
 	    		}
-		} 
+		}
 
 		sis_fb_info.flags = FBINFO_FLAG_DEFAULT;
 		sis_fb_info.var = default_var;
@@ -4878,6 +5066,9 @@ int __init sisfb_init(void)
 		sis_fb_info.par = &ivideo;
 		sis_fb_info.screen_base = ivideo.video_vbase;
 		sis_fb_info.fbops = &sisfb_ops;
+#if 0  		/* Waits for class patch to go in */
+		sis_fb_info.dev = &pdev->dev;
+#endif
 		sisfb_get_fix(&sis_fb_info.fix, -1, &sis_fb_info);
 		sis_fb_info.pseudo_palette = pseudo_palette;
 		
@@ -4893,6 +5084,7 @@ int __init sisfb_init(void)
 		if(ivideo.mtrr) {
 			printk(KERN_INFO "sisfb: Added MTRRs\n");
 		}
+
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
@@ -4913,6 +5105,7 @@ int __init sisfb_init(void)
 		sisfb_registered = 1;			
 
 		printk(KERN_INFO "sisfb: Installed SISFB_GET_INFO ioctl (%x)\n", SISFB_GET_INFO);
+		printk(KERN_INFO "sisfb: Installed SISFB_GET_VBRSTATUS ioctl (%x)\n", SISFB_GET_VBRSTATUS);
 		
 		printk(KERN_INFO "sisfb: 2D acceleration is %s, scrolling mode %s\n",
 		     sisfb_accel ? "enabled" : "disabled",
@@ -4956,8 +5149,11 @@ static int          userom = 1;
 static int          useoem = -1;
 static char         *tvstandard = NULL;
 static int	    nocrt2rate = 0;
+static int          scalelcd = -1;
+static char	    *specialtiming = NULL;
+static int	    lvdshl = -1;
 
-MODULE_DESCRIPTION("SiS 300/540/630/730/315/550/650/740/330/660 framebuffer driver");
+MODULE_DESCRIPTION("SiS 300/540/630/730/315/550/650/651/661/740/741/330 framebuffer driver");
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Thomas Winischhofer <thomas@winischhofer.net>; SiS; Various others");
 
@@ -5024,11 +5220,12 @@ MODULE_PARM_DESC(queuemode,
 MODULE_PARM(mem,    "i");
 MODULE_PARM_DESC(mem,
 	"\nDetermines the beginning of the video memory heap in KB. This heap is used\n"
-	  "for video RAM management for eg. DRM/DRI. The default depends on the amount\n"
-	  "of video RAM available. If 8MB of video RAM or less is available, the heap\n"
-	  "starts at 4096KB, if between 8 and 16MB are available at 8192KB, otherwise\n"
-	  "at 12288KB. The value is to be specified without 'KB' and should match\n"
-	  "the MaxXFBMem setting for XFree 4.x (x>=2).");
+	  "for video RAM management for eg. DRM/DRI. On 300 series, the default depends\n"
+	  "on the amount of video RAM available. If 8MB of video RAM or less is available,\n"
+	  "the heap starts at 4096KB, if between 8 and 16MB are available at 8192KB,\n"
+	  "otherwise at 12288KB. On 315 and Xabre series, the heap is 1MB by default. The\n"
+	  "value is to be specified without 'KB' and should match the MaxXFBMem setting for\n"
+	  "XFree 4.x (x>=2).");
 
 MODULE_PARM(forcecrt2type, "s");
 MODULE_PARM_DESC(forcecrt2type,
@@ -5046,11 +5243,12 @@ MODULE_PARM_DESC(forcecrt1,
 
 MODULE_PARM(pdc, "i");
 MODULE_PARM_DESC(pdc,
-        "\n(300 series only) This is for manually selecting the LCD panel delay\n"
-	  "compensation. The driver should detect this correctly in most cases; however,\n"
-	  "sometimes this is not possible. If you see 'small waves' on the LCD, try\n"
-	  "setting this to 4, 32 or 24. If the problem persists, try other values\n"
-	  "between 4 and 60 in steps of 4. (default: [autodetected])");
+        "\nThis is for manually selecting the LCD panel delay compensation. The driver\n"
+	  "should detect this correctly in most cases; however, sometimes this is not\n"
+	  "possible. If you see 'small waves' on the LCD, try setting this to 4, 32 or 24\n"
+	  "on a 300 series chipset; 3 or 51 on a 315 series chipset. If the problem persists,\n"
+	  "try other values (on 300 series: between 4 and 60 in steps of 4; on 315 series:\n"
+	  "and value from 0 to 255). (default: [autodetected])");
 
 MODULE_PARM(noaccel, "i");
 MODULE_PARM_DESC(noaccel,
@@ -5060,8 +5258,7 @@ MODULE_PARM_DESC(noaccel,
 MODULE_PARM(noypan, "i");
 MODULE_PARM_DESC(noypan,
         "\nIf set to anything other than 0, y-panning will be disabled and scrolling\n"
- 	  "will be performed by redrawing the screen. This required 2D acceleration, so\n"
-	  "if the option noaccel is set, y-panning will be disabled. (default: 0)");
+ 	  "will be performed by redrawing the screen. (default: 0)");
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)	
 MODULE_PARM(inverse, "i");
@@ -5078,23 +5275,43 @@ MODULE_PARM_DESC(userom,
 MODULE_PARM(useoem, "i");
 MODULE_PARM_DESC(useoem,
         "\nSetting this to 0 keeps sisfb from using its internel OEM data for some LCD\n"
-	  "panels and TV connector types. (default: auto)");
+	  "panels and TV connector types. (default: [auto])");
 
 MODULE_PARM(tvstandard, "s");
 MODULE_PARM_DESC(tvstandard,
 	"\nThis allows overriding the BIOS default for the TV standard. Valid choices are\n"
-	  "pal and ntsc. (default: auto)");
+	  "pal and ntsc. (default: [auto])");
 
 MODULE_PARM(nocrt2rate, "i");
 MODULE_PARM_DESC(nocrt2rate,
 	"\nSetting this to 1 will force the driver to use the default refresh rate for\n"
-	  "CRT2 if CRT2 type is VGA. (default: 0, use same rate as crt1)");
-	
+	  "CRT2 if CRT2 type is VGA. (default: 0, use same rate as CRT1)");
+
+MODULE_PARM(scalelcd, "i");
+MODULE_PARM_DESC(scalelcd,
+	"\nSetting this to 1 will force the driver to scale the LCD image to the panel's\n"
+	  "native resolution. Setting it to 0 will disable scaling; if the panel can scale\n"
+	  "by itself, it will probably do this, otherwise you will see a black bar around\n"
+	  "the screen image. Default: [autodetect if panel can scale]");
+
+MODULE_PARM(specialtiming, "s");
+
+MODULE_PARM(lvdshl, "i");
+
+
 int init_module(void)
 {
 	int err;
 
+	SiS_Pr.UsePanelScaler = -1;
+	SiS_Pr.SiS_CustomT = CUT_NONE;
+	SiS_Pr.LVDSHL = -1;
+
 	ivideo.refresh_rate = sisfb_parm_rate = rate;
+
+	if((scalelcd == 0) || (scalelcd == 1)) {
+	   SiS_Pr.UsePanelScaler = scalelcd ^ 1;
+	}
 
 	if(mode)
 		sisfb_search_mode(mode, FALSE);
@@ -5150,13 +5367,14 @@ int init_module(void)
 	        sisfb_accel = 0;
 	}
 
-        if(pdc) {
-	   if(!(pdc & ~0x3c)) {
-	        sisfb_pdc = pdc & 0x3c;
-	   }
-	}
-	
+        if(pdc) sisfb_pdc = pdc & 0x3c;
+
 	sisfb_nocrt2rate = nocrt2rate;
+
+	if(specialtiming)
+		sisfb_search_specialtiming(specialtiming);
+
+	if((lvdshl >= 0) && (lvdshl <= 3)) SiS_Pr.LVDSHL = lvdshl;
 
 	if((err = sisfb_init()) < 0) return err;
 

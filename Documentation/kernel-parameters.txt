@@ -73,7 +73,16 @@ running once the system is up.
 		off	Disable ACPI
 		ht	Limit ACPI to boot-time LAPIC enumeration for HT,
 			disabling the run-time AML interpreter.
+
+	acpi_pic_sci=	[HW,ACPI] ACPI System Conrol Interrupt trigger mode
+		level	Force PIC-mode SCI to Level Trigger (default)
+		edge	Force PIC-mode SCI to Edge Trigger
  
+	acpi_irq_balance	ACPI will balance active IRQs
+	acpi_irq_nobalance	ACPI will not move active IRQs
+	acpi_irq_pci=	If irq_balance, Clear listed IRQs for use by PCI
+	acpi_irq_isa=	If irq_balance, Mark listed IRQs used by ISA
+
 	ad1816=		[HW,SOUND]
 
 	ad1848=		[HW,SOUND]
@@ -278,6 +287,8 @@ running once the system is up.
 
 	keepinitrd	[HW, ARM]
 
+	lapic		[IA-32,APIC] Enable the local APIC even if BIOS disabled it.
+
 	load_ramdisk=	[RAM] List of ramdisks to load from floppy.
 
 	lockd.udpport=	[NFS]
@@ -414,6 +425,8 @@ running once the system is up.
 
 	nointroute	[IA-64]
  
+	nolapic		[IA-32,APIC] Do not enable or use the local APIC.
+
 	no-scroll	[VGA]
 
 	nosmp		[SMP] Tells an SMP kernel to act as a UP kernel.

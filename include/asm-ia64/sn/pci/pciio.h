@@ -13,17 +13,30 @@
  * pciio.h -- platform-independent PCI interface
  */
 
+#ifdef __KERNEL__
 #include <linux/config.h>
 #include <linux/ioport.h>
 #include <asm/sn/ioerror.h>
 #include <asm/sn/driver.h>
+#include <asm/sn/invent.h>
 #include <asm/sn/hcl.h>
-
+#else
+#include <linux/config.h>
+#include <linux/ioport.h>
+#include <ioerror.h>
+#include <driver.h>
+#include <hcl.h>
+#endif
 
 #ifndef __ASSEMBLY__
 
+#ifdef __KERNEL__
 #include <asm/sn/dmamap.h>
 #include <asm/sn/alenlist.h>
+#else
+#include <dmamap.h>
+#include <alenlist.h>
+#endif
 
 typedef int pciio_vendor_id_t;
 
@@ -186,20 +199,6 @@ typedef enum pciio_endian_e {
     PCIDMA_ENDIAN_BIG,
     PCIDMA_ENDIAN_LITTLE
 } pciio_endian_t;
-
-/*
- * Interface to set PCI arbitration priority for devices that require
- * realtime characteristics.  pciio_priority_set is used to switch a
- * device between the PCI high-priority arbitration ring and the low
- * priority arbitration ring.
- *
- * (Note: this is strictly for the PCI arbitrary priority.  It has
- * no direct relationship to GBR.)
- */
-typedef enum pciio_priority_e {
-    PCI_PRIO_LOW,
-    PCI_PRIO_HIGH
-} pciio_priority_t;
 
 /*
  * handles of various sorts
@@ -396,17 +395,10 @@ pciio_provider_shutdown_f (vertex_hdl_t pciio_provider);
 typedef int	
 pciio_reset_f		(vertex_hdl_t conn);	/* pci connection point */
 
-typedef int
-pciio_write_gather_flush_f (vertex_hdl_t dev);    /* Device flushing buffers */
-
 typedef pciio_endian_t			/* actual endianness */
 pciio_endian_set_f      (vertex_hdl_t dev,	/* specify endianness for this device */
 			 pciio_endian_t device_end,	/* endianness of device */
 			 pciio_endian_t desired_end);	/* desired endianness */
-
-typedef pciio_priority_t
-pciio_priority_set_f    (vertex_hdl_t pcicard,
-			 pciio_priority_t device_prio);
 
 typedef uint64_t
 pciio_config_get_f	(vertex_hdl_t conn,	/* pci connection point */
@@ -479,9 +471,7 @@ typedef struct pciio_provider_s {
     pciio_provider_startup_f *provider_startup;
     pciio_provider_shutdown_f *provider_shutdown;
     pciio_reset_f	   *reset;
-    pciio_write_gather_flush_f *write_gather_flush;
     pciio_endian_set_f     *endian_set;
-    pciio_priority_set_f   *priority_set;
     pciio_config_get_f	   *config_get;
     pciio_config_set_f	   *config_set;
 
@@ -521,13 +511,9 @@ extern pciio_intr_cpu_get_f pciio_intr_cpu_get;
 extern pciio_provider_startup_f pciio_provider_startup;
 extern pciio_provider_shutdown_f pciio_provider_shutdown;
 extern pciio_reset_f pciio_reset;
-extern pciio_write_gather_flush_f pciio_write_gather_flush;
 extern pciio_endian_set_f pciio_endian_set;
-extern pciio_priority_set_f pciio_priority_set;
 extern pciio_config_get_f pciio_config_get;
 extern pciio_config_set_f pciio_config_set;
-extern pciio_error_devenable_f pciio_error_devenable;
-extern pciio_error_extract_f pciio_error_extract;
 
 /* Widgetdev in the IOERROR structure is encoded as follows.
  *	+---------------------------+
@@ -695,5 +681,63 @@ extern int		pciio_info_type1_get(pciio_info_t);
 extern int              pciio_error_handler(vertex_hdl_t, int, ioerror_mode_t, ioerror_t *);
 extern int		pciio_dma_enabled(vertex_hdl_t);
 
+/**
+ * sn_pci_set_vchan - Set the requested Virtual Channel bits into the mapped DMA 
+ *                    address.
+ * @pci_dev: pci device pointer
+ * @addr: mapped dma address
+ * @vchan: Virtual Channel to use 0 or 1.
+ *
+ * Set the Virtual Channel bit in the mapped dma address.
+ */
+static inline int
+sn_pci_set_vchan(struct pci_dev *pci_dev,
+	dma_addr_t *addr,
+	int vchan)
+{
+
+	if (vchan > 1) {
+		return -1;
+	}
+
+	if (!(*addr >> 32))	/* Using a mask here would be cleaner */
+		return 0;	/* but this generates better code */
+
+	if (vchan == 1) {
+		/* Set Bit 57 */
+		*addr |= (1UL << 57);
+	} else {
+		/* Clear Bit 57 */
+		*addr &= ~(1UL << 57);
+	}
+
+	return 0;
+}
+
 #endif				/* C or C++ */
+
+
+/*
+ * Prototypes
+ */
+
+int snia_badaddr_val(volatile void *addr, int len, volatile void *ptr);
+nasid_t snia_get_console_nasid(void);
+nasid_t snia_get_master_baseio_nasid(void);
+void snia_ioerror_dump(char *name, int error_code, int error_mode, ioerror_t *ioerror);
+int snia_pcibr_rrb_alloc(struct pci_dev *pci_dev, int *count_vchan0, int *count_vchan1);
+pciio_endian_t snia_pciio_endian_set(struct pci_dev *pci_dev,
+	pciio_endian_t device_end, pciio_endian_t desired_end);
+iopaddr_t snia_pciio_dmatrans_addr(struct pci_dev *pci_dev, device_desc_t dev_desc,
+	paddr_t paddr, size_t byte_count, unsigned flags);
+pciio_dmamap_t snia_pciio_dmamap_alloc(struct pci_dev *pci_dev,
+	device_desc_t dev_desc, size_t byte_count_max, unsigned flags);
+void snia_pciio_dmamap_free(pciio_dmamap_t pciio_dmamap);
+iopaddr_t snia_pciio_dmamap_addr(pciio_dmamap_t pciio_dmamap, paddr_t paddr,
+	size_t byte_count);
+void snia_pciio_dmamap_done(pciio_dmamap_t pciio_dmamap);
+void *snia_kmem_zalloc(size_t size);
+void snia_kmem_free(void *ptr, size_t size);
+void *snia_kmem_alloc_node(register size_t size, cnodeid_t node);
+
 #endif				/* _ASM_SN_PCI_PCIIO_H */

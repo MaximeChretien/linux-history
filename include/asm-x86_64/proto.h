@@ -43,6 +43,8 @@ extern void show_trace(unsigned long *stack);
 extern void __show_regs(struct pt_regs * regs);
 extern void show_regs(struct pt_regs * regs);
 
+extern int apic_disabled;
+extern int acpi_disabled;
 
 #define round_up(x,y) (((x) + (y) - 1) & ~((y)-1))
 #define round_down(x,y) ((x) & ~((y)-1))

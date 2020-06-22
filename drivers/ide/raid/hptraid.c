@@ -584,7 +584,7 @@ static unsigned long maxsectors (int major,int minor)
 	ide_drive_t *ideinfo;
 	
 	dev = MKDEV(major,minor);
-	ideinfo = get_info_ptr (dev);
+	ideinfo = ide_info_ptr (dev, 0);
 	if (ideinfo==NULL)
 		return 0;
 	

@@ -506,14 +506,8 @@ CONFIG_MAC_PARTITION=y
 # CONFIG_SOUND is not set
 
 #
-# MPC8xx CPM Options
+# MPC8xx Options
 #
-# CONFIG_SCC_ENET is not set
-CONFIG_FEC_ENET=y
-CONFIG_USE_MDIO=y
-CONFIG_ENET_BIG_BUFFERS=y
-# CONFIG_SMC2_UART is not set
-# CONFIG_USE_SCC_IO is not set
 
 #
 # Generic MPC8xx Options
@@ -521,6 +515,27 @@ CONFIG_ENET_BIG_BUFFERS=y
 CONFIG_8xx_COPYBACK=y
 # CONFIG_8xx_CPU6 is not set
 # CONFIG_UCODE_PATCH is not set
+
+#
+# MPC8xx CPM Options
+#
+# CONFIG_SCC_ENET is not set
+CONFIG_FEC_ENET=y
+CONFIG_USE_MDIO=y
+# CONFIG_FEC_GENERIC_PHY is not set
+# CONFIG_FEC_AM79C874 is not set
+# CONFIG_FEC_LXT970 is not set
+# CONFIG_FEC_QS6612 is not set
+# CONFIG_FEC_LXT970 is not set
+CONFIG_FEC_DP83843=y
+# CONFIG_FEC_DP83846A is not set
+CONFIG_ENET_BIG_BUFFERS=y
+CONFIG_8xx_SMC1=y
+# CONFIG_SMC2_UART is not set
+# CONFIG_8xx_SCC1 is not set
+# CONFIG_8xx_SCC2 is not set
+# CONFIG_8xx_SCC3 is not set
+# CONFIG_8xx_SCC4 is not set
 
 #
 # USB support

@@ -29,12 +29,12 @@ extern void __setup_cpu_7410(unsigned long offset, int cpu_nr, struct cpu_spec* 
 extern void __setup_cpu_745x(unsigned long offset, int cpu_nr, struct cpu_spec* spec);
 extern void __setup_cpu_power3(unsigned long offset, int cpu_nr, struct cpu_spec* spec);
 extern void __setup_cpu_power4(unsigned long offset, int cpu_nr, struct cpu_spec* spec);
+extern void __setup_cpu_ppc970(unsigned long offset, int cpu_nr, struct cpu_spec* spec);
 extern void __setup_cpu_8xx(unsigned long offset, int cpu_nr, struct cpu_spec* spec);
 extern void __setup_cpu_generic(unsigned long offset, int cpu_nr, struct cpu_spec* spec);
 
-#define CLASSIC_PPC (!defined(CONFIG_8xx) && 	 \
-		     !defined(CONFIG_4xx) && !defined(CONFIG_POWER3) &&  \
-		     !defined(CONFIG_POWER4))
+#define CLASSIC_PPC (!defined(CONFIG_8xx) && !defined(CONFIG_4xx) && \
+		     !defined(CONFIG_POWER3) && !defined(CONFIG_POWER4))
 
 /* This table only contains "desktop" CPUs, it need to be filled with embedded
  * ones as well...
@@ -322,6 +322,14 @@ struct cpu_spec	cpu_specs[] = {
 	128, 128,
 	__setup_cpu_power4
     },
+    {	/* PPC970 */
+	0xffff0000, 0x00390000, "PPC970",
+	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_USE_TB | CPU_FTR_HPTE_TABLE |
+	CPU_FTR_ALTIVEC_COMP | CPU_FTR_CAN_NAP,
+	COMMON_PPC | PPC_FEATURE_64 | PPC_FEATURE_HAS_ALTIVEC,
+	128, 128,
+	__setup_cpu_ppc970
+    },
 #endif /* CONFIG_POWER4 */
 #ifdef CONFIG_8xx
     {	/* 8xx */
@@ -370,6 +378,29 @@ struct cpu_spec	cpu_specs[] = {
 	0, /*__setup_cpu_405 */
     },
 #endif /* CONFIG_4xx */
+#ifdef CONFIG_44x
+    { /* 440GP Rev. B */
+        0xf0000fff, 0x40000440, "440GP Rev. B",
+        CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_USE_TB,
+        PPC_FEATURE_32 | PPC_FEATURE_HAS_MMU,
+        32, 32,
+        0, /*__setup_cpu_440 */
+    },
+    { /* 440GP Rev. C */
+        0xf0000fff, 0x40000481, "440GP Rev. C",
+        CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_USE_TB,
+        PPC_FEATURE_32 | PPC_FEATURE_HAS_MMU,
+        32, 32,
+        0, /*__setup_cpu_440 */
+    },
+    { /* 440GX Rev. A */
+        0xf0000fff, 0x50000850, "440GX Rev. A",
+        CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_USE_TB,
+        PPC_FEATURE_32 | PPC_FEATURE_HAS_MMU,
+        32, 32,
+        0, /*__setup_cpu_440 */
+    },
+#endif /* CONFIG_44x */
 #if !CLASSIC_PPC
     {	/* default match */
     	0x00000000, 0x00000000, "(generic PPC)",

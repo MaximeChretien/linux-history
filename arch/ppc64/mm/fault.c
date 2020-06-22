@@ -59,8 +59,10 @@ extern unsigned long get_srr1(void);
 #endif
 
 /*
- * For 600- and 800-family processors, the error_code parameter is DSISR
- * for a data fault, SRR1 for an instruction fault.
+ * The error_code parameter is
+ *  - DSISR for a non-SLB data access fault,
+ *  - SRR1 & 0x08000000 for a non-SLB instruction access fault
+ *  - 0 any SLB fault.
  */
 void do_page_fault(struct pt_regs *regs, unsigned long address,
 		   unsigned long error_code)
@@ -71,16 +73,6 @@ void do_page_fault(struct pt_regs *regs, unsigned long address,
 	unsigned long code = SEGV_MAPERR;
 	unsigned long is_write = error_code & 0x02000000;
 	unsigned long mm_fault_return;
-
-	PPCDBG(PPCDBG_MM, "Entering do_page_fault: addr = 0x%16.16lx, error_code = %lx\n\tregs_trap = %lx, srr0 = %lx, srr1 = %lx\n", address, error_code, regs->trap, get_srr0(), get_srr1());
-	/*
-	 * Fortunately the bit assignments in SRR1 for an instruction
-	 * fault and DSISR for a data fault are mostly the same for the
-	 * bits we are interested in.  But there are some bits which
-	 * indicate errors in DSISR but can validly be set in SRR1.
-	 */
-	if (regs->trap == 0x400)
-		error_code &= 0x48200000;
 
 #if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
 	if (debugger_fault_handler && (regs->trap == 0x300 ||

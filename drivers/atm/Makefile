@@ -59,8 +59,6 @@ ifeq ($(CONFIG_ATM_HE_USE_SUNI),y)
   obj-$(CONFIG_ATM_HE)		+= suni.o
 endif
 
-EXTRA_CFLAGS=-g
-
 list-multi	:= fore_200e.o
 fore_200e-objs	:= fore200e.o $(FORE200E_FW_OBJS)
 

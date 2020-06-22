@@ -35,9 +35,6 @@
  *	
  */
 
-#define AAC_DRIVER_VERSION		"1.1.2"
-#define AAC_DRIVER_BUILD_DATE		__DATE__ " " __TIME__
-
 #include <linux/module.h>
 #include <linux/config.h>
 #include <linux/kernel.h>
@@ -56,15 +53,11 @@
 #include "aacraid.h"
 #include "sd.h"
 
-#define AAC_DRIVERNAME	"aacraid"
+#define AAC_DRIVER_NAME	"aacraid"
 
 MODULE_AUTHOR("Red Hat Inc and Adaptec");
 MODULE_DESCRIPTION("Supports Dell PERC2, 2/Si, 3/Si, 3/Di, Adaptec Advanced Raid Products, and HP NetRAID-4M devices. http://domsch.com/linux/ or http://linux.adaptec.com");
 MODULE_LICENSE("GPL");
-MODULE_PARM(paemode, "i");
-MODULE_PARM_DESC(paemode, "Control whether dma addressing is using PAE. 0=off, 1=on");
-
-static int paemode = -1;
 
 struct aac_dev *aac_devices[MAXIMUM_NUM_ADAPTERS];
 
@@ -107,15 +100,19 @@ static struct aac_driver_ident aac_drivers[] = {
 	{ 0x9005, 0x0285, 0x9005, 0x0292, aac_rx_init, "aacraid",  "ADAPTEC ", "AAR-2810SA SATA ", 2 }, 		/* AAR-2810SA PCI SATA 8ch (Corsair-8) */
 	{ 0x9005, 0x0285, 0x9005, 0x0293, aac_rx_init, "aacraid",  "ADAPTEC ", "AAR-21610SA SATA ", 2 },		/* AAR-21610SA PCI SATA 16ch (Corsair-16) */
 	{ 0x9005, 0x0285, 0x9005, 0x0294, aac_rx_init, "aacraid",  "ADAPTEC ", "SO-DIMM SATA ZCR ", 2 },		/* ESD SO-DIMM PCI-X SATA ZCR (Prowler) */
-	/* ServeRAID */
-/*	{ 0x9005, 0x0250, 0x1014, 0x0279, aac_rx_init, "aacraid",  "ADAPTEC ", "Adaptec         ", 2 }, */ /*  (Marco) */
-/*	{ 0x9005, 0x0250, 0x1014, 0x028c, aac_rx_init, "aacraid",  "ADAPTEC ", "Adaptec         ", 2 }, */ /* (Sebring)*/
+	{ 0x9005, 0x0285, 0x0E11, 0x0295, aac_rx_init, "aacraid",  "ADAPTEC ", "SATA 6Channel   ", 1 }, 		/* SATA 6Ch (Bearcat) */
 
 	{ 0x9005, 0x0285, 0x1028, 0x0287, aac_rx_init, "percraid", "DELL    ", "PERC 320/DC     ", 2 },			/* Perc 320/DC*/
 	{ 0x1011, 0x0046, 0x9005, 0x0365, aac_sa_init, "aacraid",  "ADAPTEC ", "Adaptec 5400S   ", 4 }, 		/* Adaptec 5400S (Mustang)*/
 	{ 0x1011, 0x0046, 0x9005, 0x0364, aac_sa_init, "aacraid",  "ADAPTEC ", "AAC-364         ", 4 },			/* Adaptec 5400S (Mustang)*/
 	{ 0x1011, 0x0046, 0x9005, 0x1364, aac_sa_init, "percraid", "DELL    ", "PERCRAID        ", 4 },			/* Dell PERC2 "Quad Channel" */
-	{ 0x1011, 0x0046, 0x103c, 0x10c2, aac_sa_init, "hpnraid",  "HP      ", "NetRAID         ", 4 }			/* HP NetRAID-4M */
+	{ 0x1011, 0x0046, 0x103c, 0x10c2, aac_sa_init, "hpnraid",  "HP      ", "NetRAID         ", 4 },			/* HP NetRAID-4M */
+	{ 0x9005, 0x0285, 0x1028, PCI_ANY_ID,
+					  aac_rx_init, "aacraid",  "DELL    ", "RAID            ", 2, AAC_QUIRK_31BIT },/* Dell Catchall */
+	{ 0x9005, 0x0285, 0x17aa, PCI_ANY_ID,
+					  aac_rx_init, "aacraid",  "Legend  ", "RAID            ", 2, AAC_QUIRK_31BIT },/* Legend Catchall */
+	{ 0x9005, 0x0285, PCI_ANY_ID, PCI_ANY_ID,
+					  aac_rx_init, "aacraid",  "ADAPTEC ", "RAID            ", 2, AAC_QUIRK_31BIT } /* Adaptec Catch All */
 };
 
 #define NUM_AACTYPES	(sizeof(aac_drivers) / sizeof(struct aac_driver_ident))
@@ -175,9 +172,15 @@ static int aac_detect(Scsi_Host_Template *template)
 	struct fsa_scsi_hba *fsa_dev_ptr;
 	char *name = NULL;
 	
-	printk(KERN_INFO "Red Hat/Adaptec aacraid driver (%s %s)\n", AAC_DRIVER_VERSION, AAC_DRIVER_BUILD_DATE);
-
+	printk(KERN_INFO "Red Hat/Adaptec %s driver (%d.%d-%d %s)\n",
+		AAC_DRIVER_NAME,
+		AAC_DRIVER_VERSION >> 24,
+		(AAC_DRIVER_VERSION >> 16) & 0xFF,
+		(AAC_DRIVER_VERSION >> 8) & 0xFF,
+		AAC_DRIVER_BUILD_DATE);
+		
 	/* setting up the proc directory structure */
+	
 	template->proc_name = "aacraid";
 	spin_unlock_irq(&io_request_lock);
 
@@ -607,7 +610,7 @@ static int aac_eh_bus_reset(Scsi_Cmnd* cmd)
 
 static int aac_eh_reset(Scsi_Cmnd* cmd)
 {
-	printk(KERN_ERR "aacraid: Host adapter reset request. SCSI hang ?\n");
+	printk(KERN_ERR "%s: Host adapter reset request. SCSI hang ?\n", AAC_DRIVER_NAME);
 	return FAILED;
 }
 
@@ -741,13 +744,41 @@ static Scsi_Host_Template driver_template = {
 static int aac_procinfo(char *proc_buffer, char **start_ptr,off_t offset,
 			int bytes_available, int host_no, int write)
 {
+	struct aac_dev * dev;
+	int index, ret, tmp;
+
 	if(write || offset > 0)
 		return 0;
 	*start_ptr = proc_buffer;
-	return sprintf(proc_buffer,
-	  "Adaptec Raid Controller %s %s, scsi hba number %d\n",
-	  AAC_DRIVER_VERSION, AAC_DRIVER_BUILD_DATE,
-	  host_no);
+	ret = sprintf(proc_buffer,
+		  "Adaptec Raid Controller %d.%d-%d %s, scsi hba number %d\n",
+		  AAC_DRIVER_VERSION >> 24,
+		  (AAC_DRIVER_VERSION >> 16) & 0xFF,
+		  (AAC_DRIVER_VERSION >> 8) & 0xFF,
+		  AAC_DRIVER_BUILD_DATE,
+		  host_no);
+	for (index = 0; index < aac_count; ++index) {
+		if (((dev = aac_devices[index]) != NULL) && dev->scsi_host_ptr->host_no == host_no)
+			break;
+	}
+	if (index >= aac_count || dev == NULL)
+		return ret;
+	tmp = dev->adapter_info.kernelrev;
+	ret += sprintf(proc_buffer + ret, "kernel: %d.%d-%d[%d]\n", 
+		tmp >> 24, (tmp >> 16) & 0xff, (tmp >> 8) & 0xff,
+		dev->adapter_info.kernelbuild);
+	tmp = dev->adapter_info.monitorrev;
+	ret += sprintf(proc_buffer + ret, "monitor: %d.%d-%d[%d]\n", 
+		tmp >> 24, (tmp >> 16) & 0xff, (tmp >> 8) & 0xff,
+		dev->adapter_info.monitorbuild);
+	tmp = dev->adapter_info.biosrev;
+	ret += sprintf(proc_buffer + ret, "bios: %d.%d-%d[%d]\n", 
+		tmp >> 24, (tmp >> 16) & 0xff, (tmp >> 8) & 0xff,
+		dev->adapter_info.biosbuild);
+	ret += sprintf(proc_buffer + ret, "serial: %x%x\n",
+		dev->adapter_info.serial[0],
+		dev->adapter_info.serial[1]);
+	return ret;
 }
 
 EXPORT_NO_SYMBOLS;

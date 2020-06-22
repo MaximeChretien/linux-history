@@ -13,10 +13,14 @@
  * xwidget.h - generic crosstalk widget header file
  */
 
+#ifdef __KERNEL__
 #include <asm/sn/xtalk/xtalk.h>
 #ifndef __ASSEMBLY__
 #include <asm/sn/cdl.h>
 #endif /* __ASSEMBLY__ */
+#else
+#include <xtalk/xtalk.h>
+#endif
 
 #ifdef LITTLE_ENDIAN
 #define WIDGET_ID			0x00

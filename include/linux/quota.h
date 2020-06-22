@@ -222,8 +222,6 @@ struct dquot {
 	loff_t dq_off;			/* Offset of dquot on disk */
 	short dq_type;			/* Type of quota */
 	short dq_flags;			/* See DQ_* */
-	unsigned long dq_referenced;	/* Number of times this dquot was 
-					   referenced during its lifetime */
 	struct mem_dqblk dq_dqb;	/* Diskquota usage */
 };
 

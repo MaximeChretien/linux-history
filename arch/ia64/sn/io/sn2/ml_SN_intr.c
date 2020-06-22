@@ -102,7 +102,7 @@ intr_init_vecblk( nodepda_t *npda,
 
 	local5_config.sh_local_int5_config_regval = 0;
 	local5_config.sh_local_int5_config_s.idx = SGI_UART_VECTOR;
-	local5_config.sh_local_int5_config_s.pid = cpu0;
+	local5_config.sh_local_int5_config_s.pid = cpu;
 	HUB_S( (unsigned long *)GLOBAL_MMR_ADDR(nasid, SH_LOCAL_INT5_CONFIG),
 		local5_config.sh_local_int5_config_regval);
 
@@ -366,6 +366,7 @@ intr_heuristic(vertex_hdl_t dev,
 	vertex_hdl_t	pconn_vhdl;
 	pcibr_soft_t	pcibr_soft;
 	int 		bit;
+	static cnodeid_t last_node = 0;
 
 /* SN2 + pcibr addressing limitation */
 /* Due to this limitation, all interrupts from a given bridge must go to the name node.*/
@@ -413,18 +414,20 @@ intr_heuristic(vertex_hdl_t dev,
 
 	if (candidate  != CPU_NONE) {
 		printk("Cannot target interrupt to target node (%ld).\n",candidate);
-		return CPU_NONE; } else {
-		/* printk("Cannot target interrupt to closest node (%d) 0x%p\n",
-			master_node_get(dev), (void *)owner_dev); */
+		return CPU_NONE; 
+	} else {
+		printk("Cannot target interrupt to closest node (0x%x) 0x%p\n",
+			master_node_get(dev), (void *)owner_dev);
 	}
 
 	// We couldn't put it on the closest node.  Try to find another one.
 	// Do a stupid round-robin assignment of the node.
 
 	{
-		static cnodeid_t last_node = -1;
+		int i;
+
 		if (last_node >= numnodes) last_node = 0;
-		for (candidate_node = last_node + 1; candidate_node != last_node; candidate_node++) {
+		for (i = 0, candidate_node = last_node; i < numnodes; candidate_node++,i++) {
 			if (candidate_node == numnodes) candidate_node = 0;
 			cpuid = intr_bit_reserve_test(CPU_NONE,
 							0,
@@ -435,6 +438,7 @@ intr_heuristic(vertex_hdl_t dev,
 							name,
 							resp_bit);
 			if (cpuid != CPU_NONE) {
+				last_node = candidate_node + 1;
 				return cpuid;
 			}
 		}

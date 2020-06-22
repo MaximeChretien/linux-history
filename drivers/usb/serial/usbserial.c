@@ -2,8 +2,8 @@
  * USB Serial Converter driver
  *
  * Copyright (C) 1999 - 2002 Greg Kroah-Hartman (greg@kroah.com)
- * Copyright (c) 2000 Peter Berger (pberger@brimson.com)
- * Copyright (c) 2000 Al Borchers (borchers@steinerpoint.com)
+ * Copyright (C) 2000 Peter Berger (pberger@brimson.com)
+ * Copyright (C) 2000 Al Borchers (borchers@steinerpoint.com)
  *
  *	This program is free software; you can redistribute it and/or
  *	modify it under the terms of the GNU General Public License version
@@ -556,7 +556,10 @@ static void __serial_close(struct usb_serial_port *port, struct file *filp)
 		else
 			generic_close(port, filp);
 		port->open_count = 0;
-		port->tty = NULL;
+		if (port->tty) {
+			port->tty->driver_data = NULL;
+			port->tty = NULL;
+		}
 	}
 
 	if (port->serial->type->owner)
@@ -1401,12 +1404,9 @@ static void usb_serial_disconnect(struct usb_device *dev, void *ptr)
 		for (i = 0; i < serial->num_ports; ++i) {
 			port = &serial->port[i];
 			down (&port->sem);
-			if (port->tty != NULL) {
-				while (port->open_count > 0) {
+			if (port->tty != NULL)
+				while (port->open_count > 0)
 					__serial_close(port, NULL);
-				}
-				port->tty->driver_data = NULL;
-			}
 			up (&port->sem);
 		}
 

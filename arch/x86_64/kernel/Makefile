@@ -37,7 +37,7 @@ obj-$(CONFIG_EARLY_PRINTK) +=  early_printk.o
 obj-$(CONFIG_GART_IOMMU) += pci-gart.o aperture.o
 obj-$(CONFIG_DUMMY_IOMMU) += pci-nommu.o
 obj-$(CONFIG_MCE) += bluesmoke.o
-obj-$(CONFIG_ACPI)		+= acpi.o
+obj-$(CONFIG_ACPI_BOOT)		+= acpi.o
 obj-$(CONFIG_ACPI_SLEEP)	+= acpi_wakeup.o suspend.o
  
 

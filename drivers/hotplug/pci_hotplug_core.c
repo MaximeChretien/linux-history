@@ -1,8 +1,8 @@
 /*
  * PCI HotPlug Controller Core
  *
- * Copyright (c) 2001-2002 Greg Kroah-Hartman (greg@kroah.com)
- * Copyright (c) 2001-2002 IBM Corp.
+ * Copyright (C) 2001-2002 Greg Kroah-Hartman (greg@kroah.com)
+ * Copyright (C) 2001-2002 IBM Corp.
  *
  * All rights reserved.
  *
@@ -49,7 +49,7 @@
 	#define MY_NAME	THIS_MODULE->name
 #endif
 
-#define dbg(fmt, arg...) do { if (debug) printk(KERN_DEBUG "%s: "__FUNCTION__": " fmt , MY_NAME , ## arg); } while (0)
+#define dbg(fmt, arg...) do { if (debug) printk(KERN_DEBUG "%s: %s: " fmt , MY_NAME , __FUNCTION__ , ## arg); } while (0)
 #define err(format, arg...) printk(KERN_ERR "%s: " format , MY_NAME , ## arg)
 #define info(format, arg...) printk(KERN_INFO "%s: " format , MY_NAME , ## arg)
 #define warn(format, arg...) printk(KERN_WARNING "%s: " format , MY_NAME , ## arg)

@@ -36,7 +36,6 @@
 
 #define fake_ino(pid,ino) (((pid)<<16)|(ino))
 
-ssize_t proc_pid_read_maps(struct task_struct*,struct file*,char*,size_t,loff_t*);
 int proc_pid_stat(struct task_struct*,char*);
 int proc_pid_status(struct task_struct*,char*);
 int proc_pid_statm(struct task_struct*,char*);
@@ -269,19 +268,23 @@ static int proc_permission(struct inode *inode, int mask)
 	return proc_check_root(inode);
 }
 
-static ssize_t pid_maps_read(struct file * file, char * buf,
-			      size_t count, loff_t *ppos)
+extern struct seq_operations proc_pid_maps_op;
+static int maps_open(struct inode *inode, struct file *file)
 {
-	struct inode * inode = file->f_dentry->d_inode;
 	struct task_struct *task = inode->u.proc_i.task;
-	ssize_t res;
-
-	res = proc_pid_read_maps(task, file, buf, count, ppos);
-	return res;
+	int ret = seq_open(file, &proc_pid_maps_op);
+	if (!ret) {
+		struct seq_file *m = file->private_data;
+		m->private = task;
+	}
+	return ret;
 }
 
 static struct file_operations proc_maps_operations = {
-	read:		pid_maps_read,
+	.open		= maps_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= seq_release,
 };
 
 extern struct seq_operations mounts_op;
@@ -473,7 +476,24 @@ static ssize_t mem_write(struct file * file, const char * buf,
 }
 #endif
 
+static loff_t mem_lseek(struct file * file, loff_t offset, int orig)
+{
+	switch (orig) {
+	case 0:
+		file->f_pos = offset;
+		break;
+	case 1:
+		file->f_pos += offset;
+		break;
+	default:
+		return -EINVAL;
+	}
+	force_successful_syscall_return();
+	return file->f_pos;
+}
+
 static struct file_operations proc_mem_operations = {
+	llseek:		mem_lseek,
 	read:		mem_read,
 	write:		mem_write,
 	open:		mem_open,
@@ -515,8 +535,10 @@ static int do_proc_readlink(struct dentry *dentry, struct vfsmount *mnt,
 		
 	inode = dentry->d_inode;
 	path = d_path(dentry, mnt, tmp, PAGE_SIZE);
-	if (IS_ERR(path))
+	if (IS_ERR(path)) {
+		free_page((unsigned long)tmp);
 		return PTR_ERR(path);
+	}
 	len = tmp + PAGE_SIZE - 1 - path;
 
 	if (len < buflen)

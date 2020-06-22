@@ -58,7 +58,9 @@ extern int get_module_list(char *);
 extern int get_device_list(char *);
 extern int get_filesystem_list(char *);
 extern int get_exec_domain_list(char *);
+#ifndef CONFIG_X86
 extern int get_irq_list(char *);
+#endif
 extern int get_dma_list(char *);
 extern int get_locks_status (char *, char **, off_t, int);
 extern int get_swaparea_info (char *);
@@ -164,7 +166,7 @@ static int meminfo_read_proc(char *page, char **start, off_t off,
 #define B(x) ((unsigned long long)(x) << PAGE_SHIFT)
 	si_meminfo(&i);
 	si_swapinfo(&i);
-	pg_size = atomic_read(&page_cache_size) - i.bufferram ;
+	pg_size = page_cache_size - i.bufferram;
 
 	len = sprintf(page, "        total:    used:    free:  shared: buffers:  cached:\n"
 		"Mem:  %8Lu %8Lu %8Lu %8Lu %8Lu %8Lu\n"
@@ -389,6 +391,7 @@ static int devices_read_proc(char *page, char **start, off_t off,
 	return proc_calc_metrics(page, start, off, count, eof, len);
 }
 
+#ifndef CONFIG_X86
 #if !defined(CONFIG_ARCH_S390)
 static int interrupts_read_proc(char *page, char **start, off_t off,
 				 int count, int *eof, void *data)
@@ -397,6 +400,38 @@ static int interrupts_read_proc(char *page, char **start, off_t off,
 	return proc_calc_metrics(page, start, off, count, eof, len);
 }
 #endif
+
+#else /* !CONFIG_X86 */
+
+extern int show_interrupts(struct seq_file *p, void *v);
+static int interrupts_open(struct inode *inode, struct file *file)
+{
+	unsigned size = PAGE_SIZE * (1 + smp_num_cpus / 8);
+	char *buf = kmalloc(size, GFP_KERNEL);
+	struct seq_file *m;
+	int res;
+
+	if (!buf)
+		return -ENOMEM;
+	res = single_open(file, show_interrupts, NULL);
+	if (!res) {
+		m = file->private_data;
+		m->buf = buf;
+		m->size = size;
+	} else
+		kfree(buf);
+	return res;
+}
+static struct file_operations proc_interrupts_operations = {
+	.open		= interrupts_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+#endif /* !CONFIG_X86 */
+
+extern struct file_operations proc_ioports_operations;
+extern struct file_operations proc_iomem_operations;
 
 static int filesystems_read_proc(char *page, char **start, off_t off,
 				 int count, int *eof, void *data)
@@ -409,13 +444,6 @@ static int dma_read_proc(char *page, char **start, off_t off,
 				 int count, int *eof, void *data)
 {
 	int len = get_dma_list(page);
-	return proc_calc_metrics(page, start, off, count, eof, len);
-}
-
-static int ioports_read_proc(char *page, char **start, off_t off,
-				 int count, int *eof, void *data)
-{
-	int len = get_ioport_list(page);
 	return proc_calc_metrics(page, start, off, count, eof, len);
 }
 
@@ -460,13 +488,6 @@ static int swaps_read_proc(char *page, char **start, off_t off,
 				 int count, int *eof, void *data)
 {
 	int len = get_swaparea_info(page);
-	return proc_calc_metrics(page, start, off, count, eof, len);
-}
-
-static int memory_read_proc(char *page, char **start, off_t off,
-				 int count, int *eof, void *data)
-{
-	int len = get_mem_list(page);
 	return proc_calc_metrics(page, start, off, count, eof, len);
 }
 
@@ -588,19 +609,17 @@ void __init proc_misc_init(void)
 #endif
 		{"stat",	kstat_read_proc},
 		{"devices",	devices_read_proc},
-#if !defined(CONFIG_ARCH_S390)
+#if !defined(CONFIG_ARCH_S390) && !defined(CONFIG_X86)
 		{"interrupts",	interrupts_read_proc},
 #endif
 		{"filesystems",	filesystems_read_proc},
 		{"dma",		dma_read_proc},
-		{"ioports",	ioports_read_proc},
 		{"cmdline",	cmdline_read_proc},
 #ifdef CONFIG_SGI_DS1286
 		{"rtc",		ds1286_read_proc},
 #endif
 		{"locks",	locks_read_proc},
 		{"swaps",	swaps_read_proc},
-		{"iomem",	memory_read_proc},
 		{"execdomains",	execdomains_read_proc},
 		{NULL,}
 	};
@@ -614,6 +633,11 @@ void __init proc_misc_init(void)
 	if (entry)
 		entry->proc_fops = &proc_kmsg_operations;
 	create_seq_entry("cpuinfo", 0, &proc_cpuinfo_operations);
+#if defined(CONFIG_X86)
+	create_seq_entry("interrupts", 0, &proc_interrupts_operations);
+#endif
+	create_seq_entry("ioports", 0, &proc_ioports_operations);
+	create_seq_entry("iomem", 0, &proc_iomem_operations);
 	create_seq_entry("partitions", 0, &proc_partitions_operations);
 	create_seq_entry("slabinfo",S_IWUSR|S_IRUGO,&proc_slabinfo_operations);
 #ifdef CONFIG_MODULES

@@ -30,7 +30,8 @@
 #define M_RD_IOCTL_CMD_NEW		0x81
 #define M_RD_DRIVER_IOCTL_INTERFACE	0x82
 
-#define MEGARAID_VERSION "v1.18f (Release Date: Tue Dec 10 09:54:39 EST 2002)\n"
+#define MEGARAID_VERSION "v1.18k (Release Date: Thu Aug 28 10:05:11 EDT 2003)\n"
+
 
 #define MEGARAID_IOCTL_VERSION 	114
 
@@ -190,6 +191,7 @@
 #define	AMI_SUBSYS_ID			0x101E
 #define DELL_SUBSYS_ID			0x1028
 #define	HP_SUBSYS_ID			0x103C
+#define	INTEL_SUBSYS_ID			0x8086
 
 #define AMI_SIGNATURE	      		0x3344
 #define AMI_SIGNATURE_471	  	0xCCCC
@@ -899,7 +901,9 @@ struct mbox_passthru {
  * Defines for Driver IOCTL interface, Op-code:M_RD_DRIVER_IOCTL_INTERFACE
  */
 #define MEGAIOC_MAGIC  	'm'
-#define MEGAIOCCMD     	_IOWR(MEGAIOC_MAGIC, 0)	/* Mega IOCTL command */
+
+/* Mega IOCTL command */
+#define MEGAIOCCMD     	_IOWR(MEGAIOC_MAGIC, 0, struct uioctl_t)
 
 #define MEGAIOC_QNADAP		'm'	/* Query # of adapters */
 #define MEGAIOC_QDRVRVER	'e'	/* Query driver version */

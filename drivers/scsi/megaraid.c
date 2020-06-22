@@ -9,7 +9,7 @@
  *              as published by the Free Software Foundation; either version
  *              2 of the License, or (at your option) any later version.
  *
- * Version : v1.18f (Dec 10, 2002)
+ * Version : v1.18k (Aug 28, 2003)
  *
  * Description: Linux device driver for LSI Logic MegaRAID controller
  *
@@ -512,6 +512,54 @@
  *
  * remove GFP_DMA flag for ioctl. This was causing overrun of DMA buffers.
  *
+ * Version 1.18g
+ * Fri Jan 31 18:29:25 EST 2003 - Atul Mukker <atul.mukker@lsil.com>
+ *
+ * Write the interrupt valid signature 0x10001234 as soon as reading it to
+ * flush memory caches.
+ *
+ * While sending back the inquiry information, check if the original request
+ * had an associated scatter-gather list and tranfer data from bounce buffer
+ * accordingly.
+ *
+ * Version 1.18h
+ * Thu Feb  6 17:18:48 EST 2003 - Atul Mukker <atul.mukker@lsil.com>
+ *
+ * Reduce the number of sectors per command to 128 from original value of
+ * 1024. Big IO sizes along with certain other operation going on in parallel,
+ * e.g., check consistency and rebuild put a heavy constraint on fW resources
+ * resulting in aborted commands.
+ *
+ * Version 1.18i
+ * Fri Jun 20 07:39:05 EDT 2003 - Atul Mukker <atulm@lsil.com>
+ *
+ * Request and reserve memory/IO regions. Otherwise a panic occurs if 2.00.x
+ * driver is loaded on top of 1.18x driver
+ *
+ * Prevent memory leak in cases when data transfer from/to application fails
+ * and ioctl is failing.
+ *
+ * Set the PCI dma_mask to default value of 0xFFFFFFFF when we get a handle to
+ * it. The previous value of 64-bit might be sticky and would cause the memory
+ * for mailbox and scatter lists to be allocated beyond 4GB. This was observed
+ * on an Itenium
+ *
+ * Version 1.18j
+ * Mon Jul  7 14:39:55 EDT 2003 - Atul Mukker <atulm@lsil.com>
+ *
+ * Disable /proc/megaraid/stat file to prevent buffer overflow error during
+ * read of this file.
+ *
+ * Add support for ioctls on AMD-64 bit platforms
+ *			- Sreenivas Bagalkote <sreenib@lsil.com>
+ *
+ * Version 1.18k
+ * Thu Aug 28 10:05:11 EDT 2003 - Atul Mukker <atulm@lsil.com>
+ *
+ * Make sure to read the correct status and command ids while in ISR. The
+ * numstatus and command id array is invalidated before issuing the commands.
+ * The ISR busy-waits till the correct values are updated in host memory.
+ *
  * BUGS:
  *     Some older 2.1 kernels (eg. 2.1.90) have a bug in pci.c that
  *     fails to detect the controller as a pci device on the system.
@@ -575,11 +623,26 @@
 #include <linux/reboot.h>
 #include <linux/init.h>
 
+#ifdef __x86_64__
+#include <asm/ioctl32.h>
+#endif
+
 #include "sd.h"
 #include "scsi.h"
 #include "hosts.h"
 
 #include "megaraid.h"
+
+#ifdef __x86_64__
+/*
+ * The IOCTL cmd received from 32 bit compiled applications
+ */
+
+extern int register_ioctl32_conversion( unsigned int cmd,
+				int(*handler)(unsigned int, unsigned int, unsigned long,
+						struct file* ));
+extern int unregister_ioctl32_conversion( unsigned int cmd );
+#endif
 
 /*
  *================================================================
@@ -1141,8 +1204,14 @@ static void mega_cmd_done (mega_host_config * megaCfg, mega_scb * pScb, int stat
 	switch (SCpnt->cmnd[0]) {
 	case INQUIRY:
 	case READ_CAPACITY:
-		memcpy (SCpnt->request_buffer,
-			pScb->bounce_buffer, SCpnt->request_bufflen);
+		if ( SCpnt->use_sg ) {
+			sgList = (struct scatterlist *)SCpnt->request_buffer;
+			memcpy(sgList[0].address, pScb->bounce_buffer,
+							SCpnt->request_bufflen);
+		} else {
+				memcpy (SCpnt->request_buffer, pScb->bounce_buffer,
+								SCpnt->request_bufflen);
+		}
 		break;
 	}
 #endif
@@ -2202,30 +2271,22 @@ static void megaraid_isr (int irq, void *devp, struct pt_regs *regs)
 	megaCfg = (mega_host_config *) devp;
 	mbox = (mega_mailbox *) tmpBox;
 
-	if (megaCfg->host->irq == irq) {
-		if (megaCfg->flag & IN_ISR) {
-			TRACE (("ISR called reentrantly!!\n"));
-			printk ("ISR called reentrantly!!\n");
-		}
-		megaCfg->flag |= IN_ISR;
-
-		if (mega_busyWaitMbox (megaCfg)) {
-			printk (KERN_WARNING "Error: mailbox busy in isr!\n");
-		}
+		IO_LOCK;
 
 		/* Check if a valid interrupt is pending */
 		if (megaCfg->flag & BOARD_QUARTZ) {
 			dword = RDOUTDOOR (megaCfg);
 			if (dword != 0x10001234) {
 				/* Spurious interrupt */
-				megaCfg->flag &= ~IN_ISR;
+				IO_UNLOCK;
 				return;
 			}
+			WROUTDOOR (megaCfg, 0x10001234);
 		} else {
 			byte = READ_PORT (megaCfg->host->io_port, INTR_PORT);
 			if ((byte & VALID_INTR_BYTE) == 0) {
 				/* Spurious interrupt */
-				megaCfg->flag &= ~IN_ISR;
+				IO_UNLOCK;
 				return;
 			}
 			WRITE_PORT (megaCfg->host->io_port, INTR_PORT, byte);
@@ -2234,57 +2295,26 @@ static void megaraid_isr (int irq, void *devp, struct pt_regs *regs)
 		for (idx = 0; idx < MAX_FIRMWARE_STATUS; idx++)
 			completed[idx] = 0;
 
-		IO_LOCK;
 
 		megaCfg->nInterrupts++;
-		qCnt = 0xff;
 		while ((qCnt = megaCfg->mbox->numstatus) == 0xFF) ;
-
-		qStatus = 0xff;
-		while ((qStatus = megaCfg->mbox->status) == 0xFF) ;
+		megaCfg->mbox->numstatus = 0xFF;
 
 		/* Get list of completed requests */
 		for (idx = 0; idx < qCnt; idx++) {
-			while ((sIdx = megaCfg->mbox->completed[idx]) == 0xFF) {
-				printk ("p");
-			}
-			completed[idx] = sIdx;
-			sIdx = 0xFF;
+			while ((completed[idx] = megaCfg->mbox->completed[idx]) == 0xFF);
+			megaCfg->mbox->completed[idx] = 0xFF;
 		}
 
+		qStatus = megaCfg->mbox->status;
+
 		if (megaCfg->flag & BOARD_QUARTZ) {
-			WROUTDOOR (megaCfg, dword);
 			/* Acknowledge interrupt */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,0)
-			/* In this case mbox contains physical address */
-#if 0
-			WRINDOOR (megaCfg, megaCfg->adjdmahandle64 | 0x2);
-#else
 			WRINDOOR (megaCfg, 0x2);
-#endif
-
-#else
-
-#if 0
-			WRINDOOR (megaCfg, virt_to_bus (megaCfg->mbox) | 0x2);
-#else
-			WRINDOOR (megaCfg, 0x2);
-#endif
-
-#endif
-
-#if 0
 			while (RDINDOOR (megaCfg) & 0x02) ;
-#endif
 		} else {
 			CLEAR_INTR (megaCfg->host->io_port);
 		}
-
-#if DEBUG
-		if (qCnt >= MAX_FIRMWARE_STATUS) {
-			printk ("megaraid_isr: cmplt=%d ", qCnt);
-		}
-#endif
 
 		for (idx = 0; idx < qCnt; idx++) {
 			sIdx = completed[idx];
@@ -2355,26 +2385,24 @@ static void megaraid_isr (int irq, void *devp, struct pt_regs *regs)
 		mega_runpendq (megaCfg);
 		IO_UNLOCK;
 
-	}
-
 }
 
 /*==================================================*/
 /* Wait until the controller's mailbox is available */
 /*==================================================*/
 
-static int mega_busyWaitMbox (mega_host_config * megaCfg)
+static inline int mega_busyWaitMbox (mega_host_config * megaCfg)
 {
 	mega_mailbox *mbox = (mega_mailbox *) megaCfg->mbox;
 	long counter;
 
-	for (counter = 0; counter < 10000; counter++) {
+	for (counter = 0; counter < 10; counter++) {
 		if (!mbox->busy) {
 			return 0;
 		}
-		udelay (100);
+		udelay (1);
 	}
-	return -1;		/* give up after 1 second */
+	return -1;		/* give up after 10 usecs */
 }
 
 /*=====================================================
@@ -2409,6 +2437,7 @@ static int megaIssueCmd (mega_host_config * megaCfg, u_char * mboxData,
 	u32 phys_mbox;
 #endif
 	u8 retval = -1;
+	int	i;
 
 	mboxData[0x1] = (pScb ? pScb->idx + 1 : 0xFE);	/* Set cmdid */
 	mboxData[0xF] = 1;	/* Set busy */
@@ -2420,25 +2449,8 @@ static int megaIssueCmd (mega_host_config * megaCfg, u_char * mboxData,
 	phys_mbox = virt_to_bus (megaCfg->mbox);
 #endif
 
-#if DEBUG
-	ShowMbox (pScb);
-#endif
-
 	/* Wait until mailbox is free */
 	if (mega_busyWaitMbox (megaCfg)) {
-		printk ("Blocked mailbox......!!\n");
-		udelay (1000);
-
-#if DEBUG
-		showMbox (pLastScb);
-#endif
-
-		/* Abort command */
-		if (pScb == NULL) {
-			TRACE (("NULL pScb in megaIssue\n"));
-			printk ("NULL pScb in megaIssue\n");
-		}
-		mega_cmd_done (megaCfg, pScb, 0x08);
 		return -1;
 	}
 
@@ -2486,13 +2498,10 @@ static int megaIssueCmd (mega_host_config * megaCfg, u_char * mboxData,
 			WRINDOOR (megaCfg, phys_mbox | 0x1);
 
 			while (mbox->numstatus == 0xFF) ;
-			while (mbox->status == 0xFF) ;
 			while (mbox->mraid_poll != 0x77) ;
 			mbox->mraid_poll = 0;
 			mbox->mraid_ack = 0x77;
-
-			/* while ((cmdDone = RDOUTDOOR (megaCfg)) != 0x10001234);
-			   WROUTDOOR (megaCfg, cmdDone); */
+			mbox->numstatus = 0xFF;
 
 			if (pScb) {
 				mega_cmd_done (megaCfg, pScb, mbox->status);
@@ -2520,15 +2529,14 @@ static int megaIssueCmd (mega_host_config * megaCfg, u_char * mboxData,
 				TRACE (("Error: NULL pScb!\n"));
 			}
 		}
+
+		for (i = 0; i < MAX_FIRMWARE_STATUS; i++) {
+				mbox->completed[i] = 0xFF;
+		}
+
 		enable_irq (megaCfg->host->irq);
 		retval = mbox->status;
 	}
-#if DEBUG
-	while (mega_busyWaitMbox (megaCfg)) {
-		printk(KERN_ERR "Blocked mailbox on exit......!\n");
-		udelay (1000);
-	}
-#endif
 
 	return retval;
 }
@@ -2964,15 +2972,15 @@ static int mega_findCard (Scsi_Host_Template * pHostTmpl,
 
 	int		i, j;
 
-#if BITS_PER_LONG==64
-	u64 megaBase;
-#else
-	u32 megaBase;
-#endif
+	unsigned long megaBase;
+	unsigned long tbase;
 
 	u16 pciIdx = 0;
 	u16 numFound = 0;
 	u16 subsysid, subsysvid;
+	u8 did_mem_map_f = 0;
+	u8 did_io_map_f = 0;
+	u8 did_scsi_register_f = 0;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,1,0)	/* 0x20100 */
 	while (!pcibios_find_device
@@ -2991,6 +2999,17 @@ static int mega_findCard (Scsi_Host_Template * pHostTmpl,
 		pciBus = pdev->bus->number;
 		pciDevFun = pdev->devfn;
 #endif
+
+		/*
+		 * Set the dma_mask to default value. It might be sticky from previous
+		 * insmod-rmmod sequence
+		 */
+		pdev->dma_mask = 0xFFFFFFFF;
+
+		did_mem_map_f = 0;
+		did_io_map_f = 0;
+		did_scsi_register_f = 0;
+
 		if ((flag & BOARD_QUARTZ) && (skip_id == -1)) {
 				if( (pciVendor == PCI_VENDOR_ID_PERC4_DI_YSTONE &&
 					pciDev == PCI_DEVICE_ID_PERC4_DI_YSTONE) ||
@@ -3041,6 +3060,7 @@ static int mega_findCard (Scsi_Host_Template * pHostTmpl,
 			if( (subsysvid != AMI_SUBSYS_ID) &&
 					(subsysvid != DELL_SUBSYS_ID) &&
 					(subsysvid != LSI_SUBSYS_ID) &&
+					(subsysvid != INTEL_SUBSYS_ID) &&
 					(subsysvid != HP_SUBSYS_ID) ) continue;
 
 		}
@@ -3065,22 +3085,55 @@ static int mega_findCard (Scsi_Host_Template * pHostTmpl,
 		megaIrq = pdev->irq;
 #endif
 
+		tbase = megaBase;
+
 		pciIdx++;
 
 		if (flag & BOARD_QUARTZ) {
+
 			megaBase &= PCI_BASE_ADDRESS_MEM_MASK;
+
+			if( ! request_mem_region(megaBase, 128,
+									"MegaRAID: LSI Logic Corporation" ) ) {
+
+					printk(KERN_WARNING "megaraid: mem region busy!\n");
+
+					continue;
+			}
+
 			megaBase = (long) ioremap (megaBase, 128);
-			if (!megaBase)
+
+			if (!megaBase) {
+
+				printk(KERN_WARNING "megaraid: could not map hba memory!\n");
+
+				release_mem_region(tbase, 128);
+
 				continue;
+			}
+			did_mem_map_f = 1;
+
 		} else {
 			megaBase &= PCI_BASE_ADDRESS_IO_MASK;
 			megaBase += 0x10;
+
+			if( ! request_region(megaBase, 16,
+									"MegaRAID: LSI Logic Corporation") ) {
+
+					printk(KERN_WARNING "megaraid: region busy.\n");
+
+					continue;
+			}
+			did_io_map_f = 1;
+
 		}
 
 		/* Initialize SCSI Host structure */
 		host = scsi_register (pHostTmpl, sizeof (mega_host_config));
 		if (!host)
-			goto err_unmap;
+			goto fail_attach;
+
+		did_scsi_register_f = 1;
 
 		/*
 		 * Comment the following initialization if you know 'max_sectors' is
@@ -3088,7 +3141,7 @@ static int mega_findCard (Scsi_Host_Template * pHostTmpl,
 		 * This field was introduced in Linus's kernel 2.4.7pre3 and it
 		 * greatly increases the IO performance - AM
 		 */
-		host->max_sectors = 1024;
+		host->max_sectors = 128;
 
 		scsi_set_pci_device(host, pdev);
 		megaCfg = (mega_host_config *) host->hostdata;
@@ -3130,11 +3183,8 @@ static int mega_findCard (Scsi_Host_Template * pHostTmpl,
 		megaCfg->host->unique_id = (pciBus << 8) | pciDevFun;
 		megaCtlrs[numCtlrs] = megaCfg;
 
-		if (!(flag & BOARD_QUARTZ)) {
-
-			/* Request our IO Range */
-			if( !request_region(megaBase, 16, "megaraid") )
-				goto err_unregister;
+		if (flag & BOARD_QUARTZ) {
+				megaCfg->host->base = tbase;
 		}
 
 		/* Request our IRQ */
@@ -3143,7 +3193,7 @@ static int mega_findCard (Scsi_Host_Template * pHostTmpl,
 			printk (KERN_WARNING
 				"megaraid: Couldn't register IRQ %d!\n",
 				megaIrq);
-			goto err_release;
+			goto fail_attach;
 		}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,0)
@@ -3265,8 +3315,7 @@ static int mega_findCard (Scsi_Host_Template * pHostTmpl,
 					     sizeof (mega_mailbox64),
 					     (void *) megaCfg->mailbox64ptr,
 					     megaCfg->dma_handle64);
-			scsi_unregister (host);
-			continue;
+			goto fail_attach;
 		}
 
 		/*
@@ -3301,14 +3350,17 @@ static int mega_findCard (Scsi_Host_Template * pHostTmpl,
 #endif
 #endif
 		continue;
-	      err_release:
-		if (flag & BOARD_QUARTZ)
-			release_region (megaBase, 16);
-	      err_unregister:
-		scsi_unregister (host);
-	      err_unmap:
-		if (flag & BOARD_QUARTZ)
-			iounmap ((void *) megaBase);
+fail_attach:
+		if( did_mem_map_f ) {
+				iounmap((void *)megaBase);
+				release_mem_region(tbase, 128);
+		}
+		if( did_io_map_f ) {
+				release_region(megaBase, 16);
+		}
+		if( did_scsi_register_f ) {
+				scsi_unregister (host);
+		}
 	}
 	return numFound;
 }
@@ -3408,6 +3460,12 @@ int megaraid_detect (Scsi_Host_Template * pHostTmpl)
 		}
 
 		init_MUTEX (&mimd_entry_mtx);
+#ifdef __x86_64__
+		/*
+		 * Register the 32-bit ioctl conversion
+		 */
+		register_ioctl32_conversion( MEGAIOCCMD, sys_ioctl );
+#endif
 	}
 
 	return count;
@@ -3439,6 +3497,7 @@ int megaraid_release (struct Scsi_Host *pSHost)
 	/* Free our resources */
 	if (megaCfg->flag & BOARD_QUARTZ) {
 		iounmap ((void *) megaCfg->base);
+		release_mem_region(megaCfg->host->base, 128);
 	} else {
 		release_region (megaCfg->host->io_port, 16);
 	}
@@ -3485,6 +3544,9 @@ int megaraid_release (struct Scsi_Host *pSHost)
 
 	unregister_chrdev (major, "megadev");
 	unregister_reboot_notifier (&mega_notifier);
+#ifdef __x86_64__
+	unregister_ioctl32_conversion( MEGAIOCCMD );
+#endif
 
 	return 0;
 }
@@ -4235,7 +4297,6 @@ static int proc_read_config (char *page, char **start, off_t offset,
 static int proc_read_stat (char *page, char **start, off_t offset,
 		int count, int *eof, void *data)
 {
-	int i;
 	mega_host_config *megaCfg = (mega_host_config *) data;
 
 	*start = page;
@@ -4244,6 +4305,11 @@ static int proc_read_stat (char *page, char **start, off_t offset,
 	proc_printf (megaCfg, "Interrupts Collected = %lu\n",
 		     megaCfg->nInterrupts);
 
+	proc_printf (megaCfg, "INTERFACE DISABLED\n");
+	COPY_BACK;
+	return count;
+
+#if 0	// can cause buffer overrun with 40 logical drives and IO information
 	for (i = 0; i < megaCfg->numldrv; i++) {
 		proc_printf (megaCfg, "Logical Drive %d:\n", i);
 
@@ -4259,6 +4325,7 @@ static int proc_read_stat (char *page, char **start, off_t offset,
 
 	COPY_BACK;
 	return count;
+#endif
 }
 
 static int proc_read_status (char *page, char **start, off_t offset,
@@ -4896,16 +4963,16 @@ static int megadev_ioctl (struct inode *inode, struct file *filep,
 			if( kvaddr == NULL ) {
 				printk(KERN_WARNING "megaraid:allocation failed\n");
 				ret = -ENOMEM;
-				goto out;
+				goto out_ioctl_cmd_new;
 			}
 
 			ioc.ui.fcs.buffer = kvaddr;
 
 			if (inlen) {
 				/* copyin the user data */
-				if (copy_from_user(kvaddr, (char *)uaddr, length )) {
-					ret = -EFAULT;
-					goto out;
+				if( copy_from_user(kvaddr, (char *)uaddr, length ) ) {
+						ret = -EFAULT;
+						goto out_ioctl_cmd_new;
 				}
 			}
 		}
@@ -4923,10 +4990,9 @@ static int megadev_ioctl (struct inode *inode, struct file *filep,
 		down(&mimd_ioctl_sem);
 
 		if( !scsicmd->result && outlen ) {
-			if (copy_to_user(uaddr, kvaddr, length))
-			{
-				ret = -EFAULT;
-				goto out;
+			if (copy_to_user(uaddr, kvaddr, length)) {
+				return -EFAULT;
+				goto out_ioctl_cmd_new;
 			}
 		}
 
@@ -4946,7 +5012,8 @@ static int megadev_ioctl (struct inode *inode, struct file *filep,
 			put_user (scsicmd->result, &uioc->mbox[17]);
 		}
 
-out:
+out_ioctl_cmd_new:
+
 		if (kvaddr) {
 			dma_free_consistent(pdevp, length, kvaddr, dma_addr);
 		}
@@ -5047,12 +5114,8 @@ out:
 
 			if( kvaddr == NULL ) {
 				printk (KERN_WARNING "megaraid:allocation failed\n");
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,0)	/*0x20400 */
-				kfree(scsicmd);
-#else
-				scsi_init_free((char *)scsicmd, sizeof(Scsi_Cmnd));
-#endif
-				return -ENOMEM;
+				ret = -ENOMEM;
+				goto out_ioctl_cmd;
 			}
 
 			ioc.data = kvaddr;
@@ -5060,9 +5123,15 @@ out:
 			if (inlen) {
 				if (ioc.mbox[0] == MEGA_MBOXCMD_PASSTHRU) {
 					/* copyin the user data */
-					copy_from_user (kvaddr, uaddr, ioc.pthru.dataxferlen);
+					if( copy_from_user (kvaddr, uaddr, ioc.pthru.dataxferlen)){
+							ret = -EFAULT;
+							goto out_ioctl_cmd;
+					}
 				} else {
-					copy_from_user (kvaddr, uaddr, inlen);
+					if( copy_from_user (kvaddr, uaddr, inlen) ) {
+							ret = -EFAULT;
+							goto out_ioctl_cmd;
+					}
 				}
 			}
 		}
@@ -5080,11 +5149,15 @@ out:
 
 		if (!scsicmd->result && outlen) {
 			if (ioc.mbox[0] == MEGA_MBOXCMD_PASSTHRU) {
-				if (copy_to_user (uaddr, kvaddr, ioc.pthru.dataxferlen))	
+				if (copy_to_user (uaddr, kvaddr, ioc.pthru.dataxferlen)) {
 					ret = -EFAULT;
+					goto out_ioctl_cmd;
+				}
 			} else {
-				if (copy_to_user (uaddr, kvaddr, outlen)) 
+				if (copy_to_user (uaddr, kvaddr, outlen)) {
 					ret = -EFAULT;
+					goto out_ioctl_cmd;
+				}
 			}
 		}
 
@@ -5108,6 +5181,8 @@ out:
 			put_user (1, &uioc->mbox[16]);	/* numstatus */
 			put_user (scsicmd->result, &uioc->mbox[17]); /* status */
 		}
+
+out_ioctl_cmd:
 
 		if (kvaddr) {
 			dma_free_consistent(pdevp, PAGE_SIZE, kvaddr, dma_addr );

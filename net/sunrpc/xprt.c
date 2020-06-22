@@ -138,18 +138,21 @@ xprt_from_sock(struct sock *sk)
 static int
 __xprt_lock_write(struct rpc_xprt *xprt, struct rpc_task *task)
 {
+	struct rpc_rqst *req = task->tk_rqstp;
 	if (!xprt->snd_task) {
 		if (xprt->nocong || __xprt_get_cong(xprt, task)) {
 			xprt->snd_task = task;
-			if (task->tk_rqstp)
-				task->tk_rqstp->rq_bytes_sent = 0;
+			if (req) {
+				req->rq_bytes_sent = 0;
+				req->rq_ntrans++;
+			}
 		}
 	}
 	if (xprt->snd_task != task) {
 		dprintk("RPC: %4d TCP write queue full\n", task->tk_pid);
 		task->tk_timeout = 0;
 		task->tk_status = -EAGAIN;
-		if (task->tk_rqstp && task->tk_rqstp->rq_nresend)
+		if (req && req->rq_ntrans)
 			rpc_sleep_on(&xprt->resend, task, NULL, NULL);
 		else
 			rpc_sleep_on(&xprt->sending, task, NULL, NULL);
@@ -183,9 +186,12 @@ __xprt_lock_write_next(struct rpc_xprt *xprt)
 			return;
 	}
 	if (xprt->nocong || __xprt_get_cong(xprt, task)) {
+		struct rpc_rqst *req = task->tk_rqstp;
 		xprt->snd_task = task;
-		if (task->tk_rqstp)
-			task->tk_rqstp->rq_bytes_sent = 0;
+		if (req) {
+			req->rq_bytes_sent = 0;
+			req->rq_ntrans++;
+		}
 	}
 }
 
@@ -590,14 +596,14 @@ xprt_complete_rqst(struct rpc_xprt *xprt, struct rpc_rqst *req, int copied)
 
 	/* Adjust congestion window */
 	if (!xprt->nocong) {
+		int timer = rpcproc_timer(clnt, task->tk_msg.rpc_proc);
 		xprt_adjust_cwnd(xprt, copied);
 		__xprt_put_cong(xprt, req);
-	       	if (!req->rq_nresend) {
-			int timer = rpcproc_timer(clnt, task->tk_msg.rpc_proc);
+	       	if (req->rq_ntrans == 1) {
 			if (timer)
 				rpc_update_rtt(&clnt->cl_rtt, timer, (long)jiffies - req->rq_xtime);
 		}
-		rpc_clear_timeo(&clnt->cl_rtt);
+		rpc_set_timeo(&clnt->cl_rtt, timer, req->rq_ntrans - 1);
 	}
 
 #ifdef RPC_PROFILE
@@ -1063,7 +1069,7 @@ xprt_timer(struct rpc_task *task)
 		goto out;
 
 	xprt_adjust_cwnd(req->rq_xprt, -ETIMEDOUT);
-	req->rq_nresend++;
+	__xprt_put_cong(xprt, req);
 
 	dprintk("RPC: %4d xprt_timer (%s request)\n",
 		task->tk_pid, req ? "pending" : "backlogged");
@@ -1217,8 +1223,9 @@ do_xprt_transmit(struct rpc_task *task)
 	spin_lock_bh(&xprt->sock_lock);
 	/* Set the task's receive timeout value */
 	if (!xprt->nocong) {
-		task->tk_timeout = rpc_calc_rto(&clnt->cl_rtt,
-				rpcproc_timer(clnt, task->tk_msg.rpc_proc));
+		int timer = rpcproc_timer(clnt, task->tk_msg.rpc_proc);
+		task->tk_timeout = rpc_calc_rto(&clnt->cl_rtt, timer);
+		task->tk_timeout <<= rpc_ntimeo(&clnt->cl_rtt, timer);
 		task->tk_timeout <<= clnt->cl_timeout.to_retries
 			- req->rq_timeout.to_retries;
 		if (task->tk_timeout > req->rq_timeout.to_maxval)

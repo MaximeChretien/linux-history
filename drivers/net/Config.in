@@ -49,9 +49,9 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
    fi
    if [ "$CONFIG_ZORRO" = "y" ]; then
       tristate '  Ariadne support' CONFIG_ARIADNE
-      tristate '  Ariadne II and X-Surf support' CONFIG_NE2K_ZORRO
       tristate '  A2065 support' CONFIG_A2065
       tristate '  Hydra support' CONFIG_HYDRA
+      tristate '  Zorro NS8390-based Ethernet support' CONFIG_ZORRO8390
    fi
    if [ "$CONFIG_PARISC" = "y" ]; then
       dep_tristate '  Lasi ethernet' CONFIG_LASI_82596 $CONFIG_GSC_LASI
@@ -268,9 +268,15 @@ dep_tristate 'National Semiconductor DP83820 support' CONFIG_NS83820 $CONFIG_PCI
 dep_tristate 'Packet Engines Hamachi GNIC-II support' CONFIG_HAMACHI $CONFIG_PCI
 dep_tristate 'Packet Engines Yellowfin Gigabit-NIC support (EXPERIMENTAL)' CONFIG_YELLOWFIN $CONFIG_PCI $CONFIG_EXPERIMENTAL
 dep_tristate 'Realtek 8169 Gigabit Ethernet support' CONFIG_R8169 $CONFIG_PCI
-dep_tristate 'SysKonnect SK-98xx and SK-95xx Gigabit Ethernet Adapter family support' CONFIG_SK98LIN $CONFIG_PCI
+dep_tristate 'Marvell Yukon Chipset / SysKonnect SK-98xx Support' CONFIG_SK98LIN $CONFIG_PCI
 dep_tristate 'Broadcom Tigon3 support' CONFIG_TIGON3 $CONFIG_PCI
 
+if [ "$CONFIG_MOMENCO_OCELOT_C" = "y" -o "$CONFIG_MOMENCO_JAGUAR_ATX" = "y" ]; then
+   bool '  MV-64340 Ethernet support' CONFIG_MV64340_ETH
+   dep_bool '    MV-64340 Port 0' CONFIG_MV64340_ETH_0 $CONFIG_MV64340_ETH
+   dep_bool '    MV-64340 Port 1' CONFIG_MV64340_ETH_1 $CONFIG_MV64340_ETH
+   dep_bool '    MV-64340 Port 2' CONFIG_MV64340_ETH_2 $CONFIG_MV64340_ETH
+fi
 endmenu
 
 if [ "$CONFIG_PPC_ISERIES" = "y" ]; then

@@ -139,9 +139,12 @@ static void __init MP_bus_info (struct mpc_config_bus *m)
 	str[6] = 0;
 	Dprintk("Bus #%d is %s\n", m->mpc_busid, str);
 
-	if (m->mpc_busid >= MAX_MP_BUSSES) {
+#if MAX_MP_BUSSES < 256
+	if ((long)m->mpc_busid >= MAX_MP_BUSSES) {
 		printk(KERN_ERR "MAX_MP_BUSSES ERROR mpc_busid %d, max %d\n", m->mpc_busid, MAX_MP_BUSSES);
-	} else if (strncmp(str, "ISA", 3) == 0) {
+	} else 
+#endif	
+	if (strncmp(str, "ISA", 3) == 0) {
 		mp_bus_id_to_type[m->mpc_busid] = MP_BUS_ISA;
 	} else if (strncmp(str, "EISA", 4) == 0) {
 		mp_bus_id_to_type[m->mpc_busid] = MP_BUS_EISA;
@@ -688,7 +691,7 @@ void __init mp_register_lapic (
 	MP_processor_info(&processor);
 }
 
-#ifdef CONFIG_X86_IO_APIC
+#if defined(CONFIG_X86_IO_APIC) && defined(CONFIG_ACPI_INTERPRETER)
 
 #define MP_ISA_BUS		0
 #define MP_MAX_IOAPIC_PIN	127
@@ -713,7 +716,7 @@ static int __init mp_find_ioapic (
 			return i;
 	}
 
-	printk(KERN_ERR "ERROR: Unable to locate IOAPIC for IRQ %d/n", irq);
+	printk(KERN_ERR "ERROR: Unable to locate IOAPIC for IRQ %d\n", irq);
 
 	return -1;
 }
@@ -756,7 +759,7 @@ void __init mp_register_ioapic (
 	mp_ioapic_routing[idx].irq_end = irq_base + 
 		io_apic_get_redir_entries(idx);
 
-	printk("IOAPIC[%d]: apic_id %d, version %d, address 0x%lx, "
+	printk("IOAPIC[%d]: apic_id %d, version %d, address 0x%x, "
 		"IRQ %d-%d\n", idx, mp_ioapics[idx].mpc_apicid, 
 		mp_ioapics[idx].mpc_apicver, mp_ioapics[idx].mpc_apicaddr,
 		mp_ioapic_routing[idx].irq_start,
@@ -883,8 +886,6 @@ void __init mp_config_acpi_legacy_irqs (void)
 
 #ifndef CONFIG_ACPI_HT_ONLY
 
-/* Ensure the ACPI SCI interrupt level is active low, edge-triggered */
-
 extern FADT_DESCRIPTOR acpi_fadt;
 
 void __init mp_config_ioapic_for_sci(int irq)
@@ -893,6 +894,7 @@ void __init mp_config_ioapic_for_sci(int irq)
 	int ioapic_pin;
 	struct acpi_table_madt* madt;
 	struct acpi_table_int_src_ovr *entry = NULL;
+	acpi_interrupt_flags flags;
 	void *madt_end;
 	acpi_status status;
 
@@ -911,22 +913,41 @@ void __init mp_config_ioapic_for_sci(int irq)
 
 		while ((void *) entry < madt_end) {
                 	if (entry->header.type == ACPI_MADT_INT_SRC_OVR &&
-			    acpi_fadt.sci_int == entry->global_irq)
-                		return;
+ 			    acpi_fadt.sci_int == entry->bus_irq)
+ 				goto found;
 
                 	entry = (struct acpi_table_int_src_ovr *)
                 	        ((unsigned long) entry + entry->header.length);
         	}
 	}
+ 	/*
+ 	 * Although the ACPI spec says that the SCI should be level/low
+ 	 * don't reprogram it unless there is an explicit MADT OVR entry
+ 	 * instructing us to do so -- otherwise we break Tyan boards which
+ 	 * have the SCI wired edge/high but no MADT OVR.
+ 	 */
+ 	return;
+
+found:
+ 	/*
+ 	 * See the note at the end of ACPI 2.0b section
+ 	 * 5.2.10.8 for what this is about.
+ 	 */
+ 	flags = entry->flags;
+ 	acpi_fadt.sci_int = entry->global_irq;
+ 	irq = entry->global_irq;
 
 	ioapic = mp_find_ioapic(irq);
 
 	ioapic_pin = irq - mp_ioapic_routing[ioapic].irq_start;
 
-	io_apic_set_pci_routing(ioapic, ioapic_pin, irq);
+ 	io_apic_set_pci_routing(ioapic, ioapic_pin, irq, 
+ 				(flags.trigger >> 1) , (flags.polarity >> 1));
 }
 
 #endif /*CONFIG_ACPI_HT_ONLY*/
+
+int acpi_tolerant;
 
 #ifdef CONFIG_ACPI_PCI
 
@@ -939,6 +960,8 @@ void __init mp_parse_prt (void)
 	int			ioapic_pin = 0;
 	int			irq = 0;
 	int			idx, bit = 0;
+	int			edge_level = 0;
+	int			active_high_low = 0;
 
 	/*
 	 * Parsing through the PCI Interrupt Routing Table (PRT) and program
@@ -949,13 +972,23 @@ void __init mp_parse_prt (void)
 
 		/* Need to get irq for dynamic entry */
 		if (entry->link.handle) {
-			irq = acpi_pci_link_get_irq(entry->link.handle, entry->link.index);
+			irq = acpi_pci_link_get_irq(entry->link.handle, entry->link.index, &edge_level, &active_high_low);
 			if (!irq)
 				continue;
-		} else
+		} else {
+			edge_level = 1;
+			active_high_low = 1;
 			irq = entry->link.index;
+		}
 
 		irq = entry->link.index;
+
+  		/* Don't set up the ACPI SCI because it's already set up */
+                if (acpi_fadt.sci_int == irq) {
+                         entry->irq = irq; /*we still need to set entry's irq*/
+ 			continue;
+                }
+
 		ioapic = mp_find_ioapic(irq);
 		if (ioapic < 0)
 			continue;
@@ -983,7 +1016,7 @@ void __init mp_parse_prt (void)
 
 		mp_ioapic_routing[ioapic].pin_programmed[idx] |= (1<<bit);
 
-		vector = io_apic_set_pci_routing(ioapic, ioapic_pin, irq);
+		vector = io_apic_set_pci_routing(ioapic, ioapic_pin, irq, edge_level, active_high_low);
 		if (vector)
 			entry->irq = irq;
 
@@ -993,12 +1026,14 @@ void __init mp_parse_prt (void)
 			mp_ioapic_routing[ioapic].apic_id, ioapic_pin, vector, 
 			entry->irq);
 	}
-	
+
+	print_IO_APIC();
+
 	return;
 }
 
 #endif /*CONFIG_ACPI_PCI*/
 
-#endif /*CONFIG_X86_IO_APIC*/
+#endif /*CONFIG_X86_IO_APIC && CONFIG_ACPI_INTERPRETER*/
 
 #endif /*CONFIG_ACPI_BOOT*/

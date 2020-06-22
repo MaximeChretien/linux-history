@@ -26,9 +26,15 @@ CFLAGS_pal4_pci.o	+= -I$(TOPDIR)/arch/ppc/kernel
 
 O_TARGET := platform.o
 
-export-objs			:= prep_setup.o
+export-objs			:= prep_setup.o ibm440gp.o ibm440gx.o
 
-obj-$(CONFIG_WALNUT)		+= walnut.o ibm405gp.o
+obj-$(CONFIG_405GP)		+= ibm405gp.o
+obj-$(CONFIG_440GP)		+= ibm440gp.o
+obj-$(CONFIG_440GX)		+= ibm440gx.o
+
+obj-$(CONFIG_EBONY)		+= ebony.o
+obj-$(CONFIG_OCOTEA)		+= ocotea.o
+obj-$(CONFIG_WALNUT)		+= walnut.o
 
 obj-$(CONFIG_APUS)		+= apus_setup.o
 ifeq ($(CONFIG_APUS),y)

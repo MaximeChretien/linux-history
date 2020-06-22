@@ -152,12 +152,12 @@ int show_cpuinfo(struct seq_file *m, void *v)
 		return 0;
 	pvr = cpu_data[i].pvr;
 	lpj = cpu_data[i].loops_per_jiffy;
-	seq_printf(m, "processor\t: %lu\n", i);
 #else
 	pvr = mfspr(PVR);
 	lpj = loops_per_jiffy;
 #endif
 
+	seq_printf(m, "processor\t: %lu\n", i);
 	seq_printf(m, "cpu\t\t: ");
 
 	if (cur_cpu_spec[i]->pvr_mask)
@@ -566,12 +566,10 @@ void __init setup_arch(char **cmdline_p)
 #if defined(CONFIG_KGDB)
 	kgdb_map_scc();
 	set_debug_traps();
-	if (strstr(cmd_line, "nokgdb"))
-		printk("kgdb default breakpoint deactivated on command line\n");
-	else {
+	if (strstr(cmd_line, "gdb")) {
 		if (ppc_md.progress)
 			ppc_md.progress("setup_arch: kgdb breakpoint", 0x4000);
-		printk("kgdb default breakpoint activated\n");
+		printk("kgdb breakpoint activated\n");
 		breakpoint();
 	}
 #endif

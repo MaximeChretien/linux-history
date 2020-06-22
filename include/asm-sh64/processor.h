@@ -113,11 +113,12 @@ extern struct sh_cpuinfo boot_cpu_data;
 #ifndef __ASSEMBLY__
 
 /*
- * FPU structure and data
+ * FPU structure and data : require 8-byte alignment as we need to access it
+   with fld.p, fst.p
  */
 
 struct sh_fpu_hard_struct {
-	unsigned long long fp_regs[32];
+	unsigned long fp_regs[64];
 	unsigned int fpscr;
 	/* long status; * software status information */
 };
@@ -135,6 +136,9 @@ struct sh_fpu_soft_struct {
 union sh_fpu_union {
 	struct sh_fpu_hard_struct hard;
 	// struct sh_fpu_soft_struct soft;
+	/* 'hard' itself only produces 32 bit alignment, yet we need
+	   to access it using 64 bit load/store as well. */
+	unsigned long long alignment_dummy;
 };
 
 struct thread_struct {

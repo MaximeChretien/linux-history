@@ -14,6 +14,13 @@
 extern vertex_hdl_t hwgraph_root;
 extern vertex_hdl_t linux_busnum;
 
+void hwgraph_debug(char *, char *, int, vertex_hdl_t, vertex_hdl_t, char *, ...);
+
+#if 1
+#define HWGRAPH_DEBUG(args) hwgraph_debug args ;
+#else   
+#define HWGRAPH_DEBUG(args)
+#endif  
 
 typedef long            labelcl_info_place_t;
 typedef long            arbitrary_info_t;
@@ -55,6 +62,7 @@ struct invplace_s;
 /*
  * External declarations of EXPORTED SYMBOLS in hcl.c
  */
+extern int hwgraph_generate_path(vertex_hdl_t, char *, int);
 extern vertex_hdl_t hwgraph_register(vertex_hdl_t, const char *,
 	unsigned int, unsigned int, unsigned int, unsigned int,
 	umode_t, uid_t, gid_t, struct file_operations *, void *);

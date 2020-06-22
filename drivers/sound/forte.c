@@ -50,7 +50,7 @@
 #include <asm/io.h>
 
 #define DRIVER_NAME	"forte"
-#define DRIVER_VERSION 	"$Id: forte.c,v 1.63 2003/03/01 05:32:42 mkp Exp $"
+#define DRIVER_VERSION 	"$Id: forte.c,v 1.65 2003/09/18 15:28:39 mkp Exp $"
 #define PFX 		DRIVER_NAME ": "
 
 #undef M_DEBUG
@@ -157,7 +157,6 @@ struct forte_channel {
 	void 			*buf; 		/* Buffer */
 	dma_addr_t		buf_handle; 	/* Buffer handle */
 
-        unsigned int 		record;
 	unsigned int		format;
         unsigned int		rate;
 	unsigned int		stereo;
@@ -367,11 +366,11 @@ forte_mixer_ioctl (struct inode *inode, struct file *file,
 
 
 static struct file_operations forte_mixer_fops = {
-	owner:	    		THIS_MODULE,
-	llseek:         	no_llseek,
-	ioctl:          	forte_mixer_ioctl,
-	open:           	forte_mixer_open,
-	release:        	forte_mixer_release,
+	.owner			= THIS_MODULE,
+	.llseek			= no_llseek,
+	.ioctl			= forte_mixer_ioctl,
+	.open			= forte_mixer_open,
+	.release		= forte_mixer_release,
 };
 
 
@@ -665,14 +664,14 @@ forte_channel_buffer (struct forte_channel *channel, int sz, int num)
  * Locking:	Lock held.
  */
 
-static void
+static int
 forte_channel_prep (struct forte_channel *channel)
 {
 	struct page *page;
 	int i;
 	
 	if (channel->buf)
-		return;
+		return 0;
 
 	forte_channel_buffer (channel, channel->frag_sz, channel->frag_num);
 	channel->buf_pages = channel->buf_sz >> PAGE_SHIFT;
@@ -690,7 +689,7 @@ forte_channel_prep (struct forte_channel *channel)
 					     &channel->buf_handle);
 
 	if (!channel->buf || !channel->buf_handle)
-		BUG();
+		return -ENOMEM;
 
 	page = virt_to_page (channel->buf);
 	
@@ -709,6 +708,8 @@ forte_channel_prep (struct forte_channel *channel)
 
 	DPRINTK ("%s: %s buffer @ %p (%p)\n", __FUNCTION__, channel->name, 
 		 channel->buf, channel->buf_handle);
+
+	return 0;
 }
 
 
@@ -789,7 +790,6 @@ forte_channel_init (struct forte_chip *chip, struct forte_channel *channel)
 	else if (channel == &chip->rec) {
 		channel->name = "PCM_IN";
 		channel->iobase = chip->iobase + FORTE_CAP_OFFSET;
-		channel->record = 1;
 		DPRINTK ("%s: PCM-IN iobase @ %p\n", __FUNCTION__, 
 			 (void *) channel->iobase);
 	}
@@ -800,12 +800,15 @@ forte_channel_init (struct forte_chip *chip, struct forte_channel *channel)
 
 	/* Defaults: 48kHz, 16-bit, stereo */
 	channel->ctrl = inw (channel->iobase + FORTE_PLY_CTRL);
+
+	channel->frag_sz = FORTE_DEF_FRAG_SIZE;
+	channel->frag_num = FORTE_DEF_FRAGMENTS;
+	channel->frag_msecs = 0;
+
 	forte_channel_reset (channel);
 	forte_channel_stereo (channel, 1);
 	forte_channel_format (channel, AFMT_S16_LE);
 	forte_channel_rate (channel, 48000);
-	channel->frag_sz = FORTE_DEF_FRAG_SIZE;
-	channel->frag_num = FORTE_DEF_FRAGMENTS;
 
 	chip->trigger = 0;
 	spin_unlock_irq (&chip->lock);
@@ -828,6 +831,9 @@ forte_channel_init (struct forte_chip *chip, struct forte_channel *channel)
 static void
 forte_channel_free (struct forte_chip *chip, struct forte_channel *channel)
 {
+	struct page *page;
+	int i;
+
 	DPRINTK ("%s: %s\n", __FUNCTION__, channel->name);
 
 	if (!channel->buf_handle)
@@ -835,7 +841,12 @@ forte_channel_free (struct forte_chip *chip, struct forte_channel *channel)
 
 	pci_free_consistent (chip->pci_dev, channel->buf_pages * PAGE_SIZE, 
 			     channel->buf, channel->buf_handle);
-	
+
+	page = virt_to_page (channel->buf);
+
+	for (i = 0; i < channel->buf_pages ; i++)
+		mem_map_unreserve (page++);
+
 	memset (channel, 0x0, sizeof (*channel));
 }
 
@@ -1071,7 +1082,7 @@ forte_dsp_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 
 		spin_unlock_irq (&chip->lock);
 
-		return copy_to_user ((void *) arg, &abi, sizeof (abi));
+		return copy_to_user ((void *) arg, &abi, sizeof (abi)) ? -EFAULT : 0;
 
 	case SNDCTL_DSP_GETIPTR:
 		DPRINTK ("%s: GETIPTR\n", __FUNCTION__);
@@ -1092,7 +1103,7 @@ forte_dsp_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 
 		spin_unlock_irq (&chip->lock);
 
-		return copy_to_user ((void *) arg, &cinfo, sizeof (cinfo));
+		return copy_to_user ((void *) arg, &cinfo, sizeof (cinfo)) ? -EFAULT : 0;
 
         case SNDCTL_DSP_GETOSPACE:
 		if (!wr)
@@ -1120,7 +1131,7 @@ forte_dsp_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 
 		spin_unlock_irq (&chip->lock);
 		
-		return copy_to_user ((void *) arg, &abi, sizeof (abi));
+		return copy_to_user ((void *) arg, &abi, sizeof (abi)) ? -EFAULT : 0;
 
 	case SNDCTL_DSP_GETOPTR:
 		if (!wr)
@@ -1139,7 +1150,7 @@ forte_dsp_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 
 		spin_unlock_irq (&chip->lock);
 
-		return copy_to_user ((void *) arg, &cinfo, sizeof (cinfo));
+		return copy_to_user ((void *) arg, &cinfo, sizeof (cinfo)) ? -EFAULT : 0;
 
 	case SNDCTL_DSP_GETODELAY:
 		if (!wr)
@@ -1189,7 +1200,12 @@ forte_dsp_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 				forte_channel_start (&chip->play);
 			else {		
 				chip->trigger = 1;
-				forte_channel_prep (&chip->play);
+
+				if (forte_channel_prep (&chip->play)) {
+					spin_unlock_irq (&chip->lock);
+					return -ENOMEM;
+				}
+					
 				forte_channel_stop (&chip->play);
 			}
 
@@ -1202,7 +1218,12 @@ forte_dsp_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 				forte_channel_start (&chip->rec);
 			else {		
 				chip->trigger = 1;
-				forte_channel_prep (&chip->rec);
+
+				if (forte_channel_prep (&chip->rec)) {
+					spin_unlock_irq (&chip->lock);
+					return -ENOMEM;
+				}
+					
 				forte_channel_stop (&chip->rec);
 			}
 
@@ -1397,7 +1418,11 @@ forte_dsp_mmap (struct file *file, struct vm_area_struct *vma)
 		goto out;
 	}
 
-	forte_channel_prep (channel);
+	if (forte_channel_prep (channel)) {
+		ret = -ENOMEM;
+		goto out;
+	}
+		
 	channel->mapped = 1;
 
         if (vma->vm_pgoff != 0) {
@@ -1461,7 +1486,10 @@ forte_dsp_write (struct file *file, const char *buffer, size_t bytes,
 	spin_lock_irqsave (&chip->lock, flags);
 
 	/* Set up buffers with the right fragment size */
-	forte_channel_prep (channel);
+	if (forte_channel_prep (channel)) {
+		spin_unlock_irqrestore (&chip->lock, flags);
+		return -ENOMEM;
+	}
 
 	while (i) {
 		/* All fragment buffers in use -> wait */
@@ -1569,7 +1597,10 @@ forte_dsp_read (struct file *file, char *buffer, size_t bytes,
 	spin_lock_irqsave (&chip->lock, flags);
 
 	/* Set up buffers with the right fragment size */
-	forte_channel_prep (channel);
+	if (forte_channel_prep (channel)) {
+		spin_unlock_irqrestore (&chip->lock, flags);
+		return -ENOMEM;
+	}		
 
 	/* Start recording */
 	if (!chip->trigger)
@@ -1637,15 +1668,15 @@ forte_dsp_read (struct file *file, char *buffer, size_t bytes,
 
 
 static struct file_operations forte_dsp_fops = {
-	owner:			THIS_MODULE,
-	llseek:     		&no_llseek,
-	read:       		&forte_dsp_read,
-	write:      		&forte_dsp_write,
-	poll:       		&forte_dsp_poll,
-	ioctl:      		&forte_dsp_ioctl,
-	open:       		&forte_dsp_open,
-	release:    		&forte_dsp_release,
-	mmap:			&forte_dsp_mmap,
+	.owner			= THIS_MODULE,
+	.llseek			= &no_llseek,
+	.read			= &forte_dsp_read,
+	.write			= &forte_dsp_write,
+	.poll			= &forte_dsp_poll,
+	.ioctl			= &forte_dsp_ioctl,
+	.open			= &forte_dsp_open,
+	.release		= &forte_dsp_release,
+	.mmap			= &forte_dsp_mmap,
 };
 
 
@@ -2104,11 +2135,10 @@ static struct pci_device_id forte_pci_ids[] __devinitdata = {
 
 
 static struct pci_driver forte_pci_driver = {
-	name:       		DRIVER_NAME,
-	id_table:   		forte_pci_ids,
-	probe:      		forte_probe,
-	remove:     		forte_remove,
-
+	.name			= DRIVER_NAME,
+	.id_table		= forte_pci_ids,
+	.probe			= forte_probe,
+	.remove			= forte_remove,
 };
 
 

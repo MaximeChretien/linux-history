@@ -1683,13 +1683,9 @@ static int do_command(struct cam_data *cam, u16 command, u8 a, u8 b, u8 c, u8 d)
 			 * values.             - rich@annexia.org
 			 */
 			if (cam->params.exposure.redComp < 220 ||
-			    cam->params.exposure.redComp > 255 ||
 			    cam->params.exposure.green1Comp < 214 ||
-			    cam->params.exposure.green1Comp > 255 ||
 			    cam->params.exposure.green2Comp < 214 ||
-			    cam->params.exposure.green2Comp > 255 ||
-			    cam->params.exposure.blueComp < 230 ||
-			    cam->params.exposure.blueComp > 255)
+			    cam->params.exposure.blueComp < 230)
 			  {
 			    printk (KERN_WARNING "*_comp parameters have gone AWOL (%d/%d/%d/%d) - reseting them\n",
 				    cam->params.exposure.redComp,

@@ -47,6 +47,8 @@
 #include <asm/sn/sn2/shub_mmr.h>
 #endif
 #include <linux/acpi.h>
+#include <acpi/acpi.h>
+#include <acpi/actbl.h>
 #include "fpmem.h"
 
 #define RSDP_NAME               "RSDP"
@@ -66,11 +68,12 @@
 #define BOOT_SIG                "BOOT"      /* Boot table */
 #define ACPI_SRAT_REVISION 1
 #define ACPI_SLIT_REVISION 1
+#define ACPI_FADT_REVISION 3
+#define ACPI_DSDT_REVISION 1
 
 #define OEMID			"SGI"
 #ifdef SGI_SN2
 #define PRODUCT			"SN2"
-#define PROXIMITY_DOMAIN(nasid)	(((nasid)>>1) & 255)
 #endif
 
 #define MB	(1024*1024UL)
@@ -80,15 +83,6 @@
 #define MIN(i,j)		((i) < (j) ? (i) : (j))
 #define ABS(i)			((i) > 0   ? (i) : -(i))
 #define ALIGN8(p)		(((long)(p) +7) & ~7)
-
-#define FPROM_BUG()		do {while (1);} while (0)
-#define MAX_SN_NODES		128
-#define MAX_LSAPICS		512
-#define MAX_CPUS		512
-#define MAX_CPUS_NODE		4
-#define CPUS_PER_NODE		4
-#define CPUS_PER_FSB		2
-#define CPUS_PER_FSB_MASK	(CPUS_PER_FSB-1)
 
 #define NUM_EFI_DESCS		2
 
@@ -126,11 +120,10 @@ typedef struct {
  */
 long		base_nasid;
 long		num_cpus;
-long		bsp_entry_pc=0;
+long		bsp_entry_pc;
 long		num_nodes;
-long		app_entry_pc;
-int		bsp_lid;
 func_ptr_t	ap_entry;
+char		nasid_present[MAX_NASID];
 
 
 extern void pal_emulator(void);
@@ -141,8 +134,11 @@ static char fw_mem[(  sizeof(efi_system_table_t)
 		    + sizeof(struct ia64_sal_systab)
 		    + sizeof(struct ia64_sal_desc_entry_point)
 		    + sizeof(struct ia64_sal_desc_ap_wakeup)
+		    + sizeof(struct ia64_sal_desc_platform_feature)
 		    + sizeof(struct acpi20_table_rsdp)
 		    + sizeof(struct acpi_table_xsdt)
+		    + sizeof(struct acpi_table_header) /* dummy DSDT */
+		    + sizeof(struct fadt_descriptor_rev2)
 		    + sizeof(struct acpi_table_slit)
 		    +   MAX_SN_NODES*MAX_SN_NODES+8
 		    + sizeof(struct acpi_table_madt)
@@ -242,7 +238,11 @@ sal_emulator (long index, unsigned long in1, unsigned long in2,
 	if (index == SAL_FREQ_BASE) {
 		switch (in1) {
 		      case SAL_FREQ_BASE_PLATFORM:
-			r9 = 500000000;
+			     /* slow down the clock on large systems to reduce the interrupt rate */
+			if (num_cpus < 32)
+				r9 = 500000000UL;
+			else
+				r9 = 5000000000UL;
 			break;
 
 		      case SAL_FREQ_BASE_INTERVAL_TIMER:
@@ -446,7 +446,7 @@ acpi_checksum_rsdp20(struct acpi20_table_rsdp *p, int length)
 }
 
 int
-nasid_present(int nasid)
+is_nasid_present(int nasid)
 {
 	int	cnode;
 	for (cnode=0; cnode<num_nodes; cnode++)
@@ -456,7 +456,7 @@ nasid_present(int nasid)
 }
 
 void
-sys_fw_init (const char *args, int arglen, int bsp)
+sys_fw_init (const char *args, int arglen)
 {
 	/*
 	 * Use static variables to keep from overflowing the RSE stack
@@ -472,33 +472,30 @@ sys_fw_init (const char *args, int arglen, int bsp)
 	static struct acpi_table_slit *acpi_slit;
 	static struct acpi_table_madt *acpi_madt;
 	static struct acpi_table_lsapic *lsapic20;
+	static struct acpi_table_header *acpi_dsdt;
+	static struct fadt_descriptor_rev2 *acpi_fadt;
 	static struct ia64_sal_systab *sal_systab;
 	static struct acpi_table_srat *acpi_srat;
 	static struct acpi_table_processor_affinity *srat_cpu_affinity;
-	static struct acpi_table_memory_affinity *srat_memory_affinity;
 	static efi_memory_desc_t *efi_memmap, *md;
 	static unsigned long *pal_desc, *sal_desc;
 	static struct ia64_sal_desc_entry_point *sal_ed;
 	static struct ia64_boot_param *bp;
 	static struct ia64_sal_desc_ap_wakeup *sal_apwake;
+	static struct ia64_sal_desc_platform_feature *sal_feature;
 	static unsigned char checksum;
 	static char *cp, *cmd_line, *vendor;
 	static void *ptr;
 	static int mdsize, domain, last_domain ;
 	static int i, j, cnode, max_nasid, nasid, cpu, num_memmd, cpus_found;
 
-	/*
-	 * Pass the parameter base address to the build_efi_xxx routines.
-	 */
-#if defined(SGI_SN2)
-	build_init(0x3000000000UL | ((long)base_nasid<<38));
-#endif
-
 	num_nodes = GetNumNodes();
 	num_cpus = GetNumCpus();
 	for (max_nasid=0, cnode=0; cnode<num_nodes; cnode++)
 		max_nasid = MAX(max_nasid, GetNasid(cnode));
 
+	//max_nasid = 0;
+	//num_nodes = 1;
 
 	memset(fw_mem, 0, sizeof(fw_mem));
 
@@ -518,10 +515,13 @@ sys_fw_init (const char *args, int arglen, int bsp)
 	sal_ed      = (void *) cp; cp += ALIGN8(sizeof(*sal_ed));
 	sal_ptc     = (void *) cp; cp += ALIGN8(sizeof(*sal_ptc));
 	sal_apwake  = (void *) cp; cp += ALIGN8(sizeof(*sal_apwake));
+	sal_feature = (void *) cp; cp += ALIGN8(sizeof(*sal_feature));
 	acpi20_rsdp = (void *) cp; cp += ALIGN8(sizeof(*acpi20_rsdp));
-	acpi_xsdt   = (void *) cp; cp += ALIGN8(sizeof(*acpi_xsdt) + 64); 
+	acpi_xsdt   = (void *) cp; cp += ALIGN8(sizeof(*acpi_xsdt) + 64);
 			/* save space for more OS defined table pointers. */
 
+	acpi_dsdt   = (void *) cp; cp += ALIGN8(sizeof(*acpi_dsdt));
+	acpi_fadt   = (void *) cp; cp += ALIGN8(sizeof(*acpi_fadt));
 	acpi_slit   = (void *) cp; cp += ALIGN8(sizeof(*acpi_slit) + 8 + (max_nasid+1)*(max_nasid+1));
 	acpi_madt   = (void *) cp; cp += ALIGN8(sizeof(*acpi_madt) + sizeof(struct acpi_table_lsapic) * (num_cpus+1));
 	acpi_srat   = (void *) cp; cp += ALIGN8(sizeof(struct acpi_table_srat));
@@ -546,7 +546,7 @@ sys_fw_init (const char *args, int arglen, int bsp)
 	 * You can also edit this line to pass other arguments to the kernel.
 	 *    Note: disable kernel text replication.
 	 */
-	strcpy(cmd_line, "init=/bin/bash ktreplicate=0");
+	strcpy(cmd_line, "init=/bin/bash console=ttyS0");
 
 	memset(efi_systab, 0, sizeof(efi_systab));
 	efi_systab->hdr.signature = EFI_SYSTEM_TABLE_SIGNATURE;
@@ -598,7 +598,9 @@ sys_fw_init (const char *args, int arglen, int bsp)
 	acpi_xsdt->entry[0] = __fwtab_pa(base_nasid, acpi_madt);
 	acpi_xsdt->entry[1] = __fwtab_pa(base_nasid, acpi_slit);
 	acpi_xsdt->entry[2] = __fwtab_pa(base_nasid, acpi_srat);
-	acpi_checksum(&acpi_xsdt->header, sizeof(struct acpi_table_xsdt) + 16);
+	acpi_xsdt->entry[3] = __fwtab_pa(base_nasid, acpi_fadt);
+	acpi_xsdt->entry[4] = __fwtab_pa(base_nasid, acpi_dsdt);
+	acpi_checksum(&acpi_xsdt->header, sizeof(struct acpi_table_xsdt) + 32);
 
 	/* Set up the APIC table */
 	acpi_table_initx(&acpi_madt->header, APIC_SIG, 4, 1, 1);
@@ -614,7 +616,7 @@ sys_fw_init (const char *args, int arglen, int bsp)
 			lsapic20->flags.enabled = 1;
 #if defined(SGI_SN2)
 			lsapic20->eid = nasid&0xffff;
-			lsapic20->id = (cpu<<4) | (nasid>>16);
+			lsapic20->id = (cpu<<4) | (nasid>>8);
 #endif
 			lsapic20 = (struct acpi_table_lsapic*) ((long)lsapic20+sizeof(struct acpi_table_lsapic));
 		}
@@ -624,23 +626,10 @@ sys_fw_init (const char *args, int arglen, int bsp)
 	/* Set up the SRAT table */
 	acpi_table_initx(&acpi_srat->header, SRAT_SIG, 4, ACPI_SRAT_REVISION, 1);
 	ptr = acpi_srat+1;
-	for (cnode=0; cnode<num_nodes; cnode++) {
-		nasid = GetNasid(cnode);
-		srat_memory_affinity = ptr;
-		ptr = srat_memory_affinity+1;
-		srat_memory_affinity->header.type = ACPI_SRAT_MEMORY_AFFINITY;
-		srat_memory_affinity->header.length = sizeof(struct acpi_table_memory_affinity);
-		srat_memory_affinity->proximity_domain = PROXIMITY_DOMAIN(nasid);
-		srat_memory_affinity->base_addr_lo = 0;
-		srat_memory_affinity->length_lo = 0;
-#if defined(SGI_SN2)
-		srat_memory_affinity->base_addr_hi = (nasid<<6) | (3<<4);
-		srat_memory_affinity->length_hi = (MD_BANKSIZE*MD_BANKS_PER_NODE)>>32;
-#endif
-		srat_memory_affinity->memory_type = ACPI_ADDRESS_RANGE_MEMORY;
-		srat_memory_affinity->flags.enabled = 1;
-	}
 
+	ptr = build_memory_srat(ptr);
+
+	/* Build processor SRAT */
 	for (cnode=0; cnode<num_nodes; cnode++) {
 		nasid = GetNasid(cnode);
 		for(cpu=0; cpu<CPUS_PER_NODE; cpu++) {
@@ -654,12 +643,24 @@ sys_fw_init (const char *args, int arglen, int bsp)
 			srat_cpu_affinity->flags.enabled = 1;
 #if defined(SGI_SN2)
 			srat_cpu_affinity->lsapic_eid = nasid&0xffff;
-			srat_cpu_affinity->apic_id = (cpu<<4) | (nasid>>16);
+			srat_cpu_affinity->apic_id = (cpu<<4) | (nasid>>8);
 #endif
 		}
 	}
 	acpi_checksum(&acpi_srat->header, (char*)ptr - (char*)acpi_srat);
 
+	acpi_table_initx(acpi_dsdt, DSDT_SIG, 4, ACPI_DSDT_REVISION, 1);
+	acpi_checksum(acpi_dsdt, sizeof(*acpi_dsdt));
+
+	/* Set up the FADT table */
+	acpi_table_initx((struct acpi_table_header *)&acpi_fadt->header, FADT_SIG, 4, ACPI_FADT_REVISION, 1);
+	/*
+	 * We don't have legacy PC keyboard support etc.
+	 */
+	acpi_fadt->iapc_boot_arch = 0;
+	acpi_fadt->Xdsdt = (u64)__fwtab_pa(base_nasid, acpi_dsdt);
+	acpi_checksum((struct acpi_table_header *)&acpi_fadt->header,
+		      sizeof(*acpi_fadt));
 
 	/* Set up the SLIT table */
 	acpi_table_initx(&acpi_slit->header, SLIT_SIG, 4, ACPI_SLIT_REVISION, 1);
@@ -668,8 +669,10 @@ sys_fw_init (const char *args, int arglen, int bsp)
 	memset(cp, 255, acpi_slit->localities*acpi_slit->localities);
 
 	for (i=0; i<=max_nasid; i++)
+		nasid_present[i] = is_nasid_present(i);
+	for (i=0; i<=max_nasid; i++)
 		for (j=0; j<=max_nasid; j++)
-			if (nasid_present(i) && nasid_present(j))
+			if (nasid_present[i] && nasid_present[j])
 				*(cp+PROXIMITY_DOMAIN(i)*acpi_slit->localities+PROXIMITY_DOMAIN(j)) = 10 + MIN(254, 5*ABS(i-j));
 
 	cp = acpi_slit->entry + acpi_slit->localities*acpi_slit->localities;
@@ -681,7 +684,7 @@ sys_fw_init (const char *args, int arglen, int bsp)
 	sal_systab->size = sizeof(*sal_systab);
 	sal_systab->sal_rev_minor = 1;
 	sal_systab->sal_rev_major = 0;
-	sal_systab->entry_count = 3;
+	sal_systab->entry_count = 4;
 	sal_systab->sal_b_rev_major = 0x1; /* set the SN SAL rev to */
 	sal_systab->sal_b_rev_minor = 0x0; /* 1.00 */
 
@@ -730,6 +733,10 @@ sys_fw_init (const char *args, int arglen, int bsp)
 	sal_apwake->mechanism = IA64_SAL_AP_EXTERNAL_INT;
 	sal_apwake->vector = 18;
 
+	/* Setup the SAL feature descriptor */
+	sal_feature->type = SAL_DESC_PLATFORM_FEATURE;
+	sal_feature->feature_mask = IA64_SAL_PLATFORM_FEATURE_ITC_DRIFT;
+
 	for (checksum=0, cp=(char*)sal_systab; cp < (char *)efi_memmap; ++cp)
 		checksum += *cp;
 	sal_systab->checksum = -checksum;
@@ -754,22 +761,4 @@ sys_fw_init (const char *args, int arglen, int bsp)
 	bp->console_info.orig_x = 0;
 	bp->console_info.orig_y = 24;
 	bp->fpswa = 0;
-
-	/*
-	 * Now pick the BSP & store it LID value in
-	 * a global variable. Note if BSP is greater than last cpu,
-	 * pick the last cpu.
-	 */
-	for (cnode=0; cnode<num_nodes; cnode++) {
-		for(cpu=0; cpu<CPUS_PER_NODE; cpu++) {
-			if (!IsCpuPresent(cnode, cpu))
-				continue;
-#ifdef SGI_SN2
-			bsp_lid = (GetNasid(cnode)<<16) | (cpu<<28);
-#endif
-			if (bsp-- > 0)
-				continue;
-			return;
-		}
-	}
 }

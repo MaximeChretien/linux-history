@@ -1016,7 +1016,8 @@ struct irq_routing_table * __devinit pcibios_get_irq_routing_table(void)
 		"xor %%ah, %%ah\n"
 		"1:"
 		: "=a" (ret),
-		  "=b" (map)
+		  "=b" (map),
+		  "+m" (opt)
 		: "0" (PCIBIOS_GET_ROUTING_OPTIONS),
 		  "1" (0),
 		  "D" ((long) &opt),
@@ -1414,8 +1415,6 @@ void __devinit pcibios_config_init(void)
 	return;
 }
 
-int use_acpi_pci __initdata = 1;
-
 void __init pcibios_init(void)
 {
 	int quad;
@@ -1427,9 +1426,11 @@ void __init pcibios_init(void)
 		return;
 	}
 
+	pcibios_set_cacheline_size();
+
 	printk(KERN_INFO "PCI: Probing PCI hardware\n");
 #ifdef CONFIG_ACPI_PCI
-	if (use_acpi_pci && !acpi_pci_irq_init()) {
+	if (!acpi_noirq && !acpi_pci_irq_init()) {
 		pci_using_acpi_prt = 1;
 		printk(KERN_INFO "PCI: Using ACPI for IRQ routing\n");
 		printk(KERN_INFO "PCI: if you experience problems, try using option 'pci=noacpi' or even 'acpi=off'\n");
@@ -1502,7 +1503,7 @@ char * __devinit  pcibios_setup(char *str)
 		pcibios_last_bus = simple_strtol(str+8, NULL, 0);
 		return NULL;
 	} else if (!strncmp(str, "noacpi", 6)) {
-		use_acpi_pci = 0;
+		acpi_noirq_set();
 		return NULL;
 	}
 	return str;

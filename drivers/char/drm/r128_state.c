@@ -29,9 +29,9 @@
 
 #include "r128.h"
 #include "drmP.h"
-#include "r128_drv.h"
 #include "drm.h"
-#include <linux/delay.h>
+#include "r128_drm.h"
+#include "r128_drv.h"
 
 
 /* ================================================================
@@ -528,7 +528,7 @@ static void r128_cce_dispatch_flip( drm_device_t *dev )
 {
 	drm_r128_private_t *dev_priv = dev->dev_private;
 	RING_LOCALS;
-	DRM_DEBUG( "%s: page=%d\n", __FUNCTION__, dev_priv->current_page );
+	DRM_DEBUG( "page=%d\n", dev_priv->current_page );
 
 #if R128_PERFORMANCE_BOXES
 	/* Do some trivial performance monitoring...
@@ -577,8 +577,7 @@ static void r128_cce_dispatch_vertex( drm_device_t *dev,
 	int prim = buf_priv->prim;
 	int i = 0;
 	RING_LOCALS;
-	DRM_DEBUG( "%s: buf=%d nbox=%d\n",
-		   __FUNCTION__, buf->idx, sarea_priv->nbox );
+	DRM_DEBUG( "buf=%d nbox=%d\n", buf->idx, sarea_priv->nbox );
 
 	if ( 0 )
 		r128_print_dirty( "dispatch_vertex", sarea_priv->dirty );
@@ -789,7 +788,7 @@ static int r128_cce_dispatch_blit( drm_device_t *dev,
 	u32 *data;
 	int dword_shift, dwords;
 	RING_LOCALS;
-	DRM_DEBUG( "%s\n", __FUNCTION__ );
+	DRM_DEBUG( "\n" );
 
 	/* The compiler won't optimize away a division by a variable,
 	 * even if the only legal values are powers of two.  Thus, we'll

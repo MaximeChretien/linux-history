@@ -269,6 +269,7 @@ fi
 
 if [ "$CONFIG_SMP" = "y" ]; then
    define_bool CONFIG_HAVE_DEC_LOCK y
+   int  'Maximum number of CPUs (2-32)' CONFIG_NR_CPUS 32
 fi
 
 if [ "$CONFIG_ALPHA_GENERIC" = "y" -o "$CONFIG_ALPHA_SRM" = "y" ]; then
@@ -439,7 +440,16 @@ source net/bluetooth/Config.in
 mainmenu_option next_comment
 comment 'Kernel hacking'
 
-bool 'Legacy kernel start address' CONFIG_ALPHA_LEGACY_START_ADDRESS
+if [ "$CONFIG_ALPHA_TITAN" = "y" -o "$CONFIG_ALPHA_WILDFIRE" = "y" -o \
+     "$CONFIG_ALPHA_MARVEL" = "y" ]; then
+   define_bool CONFIG_ALPHA_LEGACY_START_ADDRESS n
+else
+   if [ "$CONFIG_ALPHA_GENERIC" = "y" ]; then
+      bool 'Legacy kernel start address' CONFIG_ALPHA_LEGACY_START_ADDRESS
+   else
+      define_bool CONFIG_ALPHA_LEGACY_START_ADDRESS y
+   fi
+fi
 
 bool 'Kernel debugging' CONFIG_DEBUG_KERNEL
 if [ "$CONFIG_DEBUG_KERNEL" != "n" ]; then
@@ -452,6 +462,8 @@ if [ "$CONFIG_DEBUG_KERNEL" != "n" ]; then
 else
    define_tristate CONFIG_MATHEMU y
 fi
+
+int 'Kernel messages buffer length shift (0 = default)' CONFIG_LOG_BUF_SHIFT 0
 
 endmenu
 

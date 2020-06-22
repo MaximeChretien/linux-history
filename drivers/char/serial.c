@@ -914,10 +914,15 @@ static void rs_interrupt_single(int irq, void *dev_id, struct pt_regs * regs)
 		if (status & UART_LSR_DR)
 			receive_chars(info, &status, regs);
 		check_modem_status(info);
+#ifdef CONFIG_MELAN
 		if ((status & UART_LSR_THRE) ||
 		    /* For buggy ELAN processors */
 		    ((iir & UART_IIR_ID) == UART_IIR_THRI))
 			transmit_chars(info, 0);
+#else
+		if (status & UART_LSR_THRE)
+			transmit_chars(info, 0);
+#endif
 		if (pass_counter++ > RS_ISR_PASS_LIMIT) {
 #if SERIAL_DEBUG_INTR
 			printk("rs_single loop break.\n");

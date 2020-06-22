@@ -164,7 +164,9 @@ gotit:
 			if (sk2->num == snum &&
 			    sk2 != sk &&
 			    !ipv6_only_sock(sk2) &&
-			    sk2->bound_dev_if == sk->bound_dev_if &&
+			    (!sk2->bound_dev_if ||
+			     !sk->bound_dev_if ||
+			     sk2->bound_dev_if == sk->bound_dev_if) &&
 			    (!sk2->rcv_saddr ||
 			     !sk->rcv_saddr ||
 			     sk2->rcv_saddr == sk->rcv_saddr) &&

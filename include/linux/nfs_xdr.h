@@ -109,8 +109,6 @@ struct nfs_entry {
 	const char *		name;
 	unsigned int		len;
 	int			eof;
-	struct nfs_fh		fh;
-	struct nfs_fattr	fattr;
 };
 
 /*

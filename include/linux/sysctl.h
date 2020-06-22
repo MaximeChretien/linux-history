@@ -69,7 +69,7 @@ enum
 /* CTL_BUS names: */
 enum
 {
-	BUS_ISA=1		/* ISA */
+	CTL_BUS_ISA=1		/* ISA */
 };
 
 /* CTL_KERN names: */
@@ -127,6 +127,7 @@ enum
  	KERN_CORE_PATTERN=56,	/* string: pattern for core-files */
 	KERN_PPC_L3CR=57,       /* l3cr register on PPC */
 	KERN_EXCEPTION_TRACE=58, /* boolean: exception trace */
+ 	KERN_CORE_SETUID=59,	/* int: set to allow core dumps of setuid apps */
 };
 
 
@@ -146,6 +147,15 @@ enum
 	VM_MAX_MAP_COUNT=11,	/* int: Maximum number of active map areas */
 	VM_MIN_READAHEAD=12,    /* Min file readahead */
 	VM_MAX_READAHEAD=13,    /* Max file readahead */
+	VM_VFS_SCAN_RATIO=14,   /* part of the inactive vfs lists to scan */
+	VM_LRU_BALANCE_RATIO=15,/* balance active and inactive caches */
+	VM_PASSES=16,           /* number of vm passes before failing */
+	VM_PAGEBUF=17,		/* struct: Control pagebuf parameters */
+	VM_GFP_DEBUG=18,        /* debug GFP failures */
+	VM_CACHE_SCAN_RATIO=19, /* part of the inactive cache list to scan */
+	VM_MAPPED_RATIO=20,     /* amount of unfreeable pages that triggers swapout */
+	VM_LAPTOP_MODE=21,	/* kernel in laptop flush mode */
+	VM_BLOCK_DUMP=22,	/* dump fs activity to log */
 };
 
 
@@ -168,7 +178,8 @@ enum
 	NET_TR=14,
 	NET_DECNET=15,
 	NET_ECONET=16,
-	NET_KHTTPD=17
+	NET_KHTTPD=17,
+	NET_SCTP=18
 };
 
 /* /proc/sys/kernel/random */
@@ -236,6 +247,7 @@ enum
 	NET_IPV4_NEIGH=17,
 	NET_IPV4_ROUTE=18,
 	NET_IPV4_FIB_HASH=19,
+	NET_IPV4_NETFILTER=20,
 
 	NET_IPV4_TCP_TIMESTAMPS=33,
 	NET_IPV4_TCP_WINDOW_SCALING=34,
@@ -348,6 +360,24 @@ enum
 	NET_IPV4_CONF_MEDIUM_ID=14,
 };
 
+/* /proc/sys/net/ipv4/netfilter */
+enum
+{
+	NET_IPV4_NF_CONNTRACK_MAX=1,
+	NET_IPV4_NF_CONNTRACK_TCP_TIMEOUT_SYN_SENT=2,
+	NET_IPV4_NF_CONNTRACK_TCP_TIMEOUT_SYN_RECV=3,
+	NET_IPV4_NF_CONNTRACK_TCP_TIMEOUT_ESTABLISHED=4,
+	NET_IPV4_NF_CONNTRACK_TCP_TIMEOUT_FIN_WAIT=5,
+	NET_IPV4_NF_CONNTRACK_TCP_TIMEOUT_CLOSE_WAIT=6,
+	NET_IPV4_NF_CONNTRACK_TCP_TIMEOUT_LAST_ACK=7,
+	NET_IPV4_NF_CONNTRACK_TCP_TIMEOUT_TIME_WAIT=8,
+	NET_IPV4_NF_CONNTRACK_TCP_TIMEOUT_CLOSE=9,
+	NET_IPV4_NF_CONNTRACK_UDP_TIMEOUT=10,
+	NET_IPV4_NF_CONNTRACK_UDP_TIMEOUT_STREAM=11,
+	NET_IPV4_NF_CONNTRACK_ICMP_TIMEOUT=12,
+	NET_IPV4_NF_CONNTRACK_GENERIC_TIMEOUT=13,
+};
+ 
 /* /proc/sys/net/ipv6 */
 enum {
 	NET_IPV6_CONF=16,
@@ -501,6 +531,21 @@ enum {
 	NET_DECNET_DEBUG_LEVEL = 255
 };
 
+/* /proc/sys/net/sctp */
+enum {
+	NET_SCTP_RTO_INITIAL = 1,
+	NET_SCTP_RTO_MIN     = 2,
+	NET_SCTP_RTO_MAX     = 3,
+	NET_SCTP_RTO_ALPHA   = 4,
+	NET_SCTP_RTO_BETA    = 5,
+	NET_SCTP_VALID_COOKIE_LIFE       =  6,
+	NET_SCTP_ASSOCIATION_MAX_RETRANS =  7,
+	NET_SCTP_PATH_MAX_RETRANS        =  8,
+	NET_SCTP_MAX_INIT_RETRANSMITS    =  9,
+	NET_SCTP_HB_INTERVAL             = 10,
+	NET_SCTP_PRESERVE_ENABLE         = 11,
+	NET_SCTP_MAX_BURST               = 12,
+};
 /* /proc/sys/net/khttpd/ */
 enum {
 	NET_KHTTPD_DOCROOT	= 1,

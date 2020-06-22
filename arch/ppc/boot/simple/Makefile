@@ -28,6 +28,35 @@ ZIMAGEINITRD			:= zImage.initrd-EMBEDDED
 TFTPIMAGE			:= /tftpboot/zImage.embedded
 MISC				:= misc-embedded.o
 endif
+ifeq ($(CONFIG_IBM_OPENBIOS),y)
+ZIMAGE				:= zImage-TREE
+ZIMAGEINITRD			:= zImage.initrd-TREE
+END				:= treeboot
+ZNETBOOT			:= zImage.treeboot
+ZNETBOOTRD			:= zImage.initrd.treeboot
+TFTPIMAGE			:= /tftpboot/zImage.embedded
+MISC				:= misc-embedded.o
+endif
+ifeq ($(CONFIG_EBONY),y)
+ZIMAGE				:= zImage-TREE
+ZIMAGEINITRD			:= zImage.initrd-TREE
+END				:= ebony
+ENTRYPOINT			:= 0x00800000
+ZNETBOOT			:= zImage.treeboot
+ZNETBOOTRD			:= zImage.initrd.treeboot
+TFTPIMAGE			:= /tftpboot/zImage.$(END)
+EXTRA				:= misc-44x.o
+endif
+ifeq ($(CONFIG_OCOTEA),y)
+ZIMAGE				:= zImage-TREE
+ZIMAGEINITRD			:= zImage.initrd-TREE
+END				:= ocotea
+ENTRYPOINT			:= 0x00800000
+ZNETBOOT			:= zImage.treeboot
+ZNETBOOTRD			:= zImage.initrd.treeboot
+TFTPIMAGE			:= /tftpboot/zImage.$(END)
+EXTRA				:= misc-44x.o
+endif
 ifeq ($(CONFIG_GEMINI),y)
 ZIMAGE				:= zImage-SMON
 ZIMAGEINITRD			:= zImage.initrd-SMON
@@ -68,7 +97,7 @@ LD_ARGS				= -T ../ld.script -Ttext 0x00800000 -Bstatic
 ifdef CONFIG_8xx
 LD_ARGS				:= -T ../ld.script -Ttext 0x00180000 -Bstatic
 endif
-ifeq ($(CONFIG_8260)$(CONFIG_4xx),y)
+ifeq ($(CONFIG_8260)$(CONFIG_40x),y)
 LD_ARGS				:= -T ../ld.script -Ttext 0x00400000 -Bstatic
 endif
 OBJCOPY_ARGS			:= -O elf32-powerpc
@@ -147,10 +176,10 @@ zImage.initrd-EMBEDDED: zvmlinux.initrd
 	mv zvmlinux.initrd ../images/zImage.initrd.embedded
 
 zImage-PAL4: zvmlinux
-	cp zvmlinux ../images/zImage.pal4
+	mv zvmlinux ../images/zImage.pal4
 
 zImage.initrd-PAL4: zvmlinux.initrd
-	cp zvmlinux.initrd ../images/zImage.initrd.pal4
+	mv zvmlinux.initrd ../images/zImage.initrd.pal4
 
 zImage-PPLUS: zvmlinux $(MKPREP) $(MKBUGBOOT)
 	$(MKPREP) -pbp zvmlinux ../images/zImage.pplus

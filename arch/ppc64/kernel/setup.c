@@ -366,8 +366,11 @@ void parse_cmd_line(unsigned long r3, unsigned long r4, unsigned long r5,
 					val = "hvc0";
 				}
 				if (val) {
-					i = strlen(cmd_line);
-					sprintf(cmd_line + i, " AUTOCONSOLE console=%s", val);
+					char tmp_cmd_line[512];
+					snprintf(tmp_cmd_line, 512, 
+						 "AUTOCONSOLE console=%s %s",
+						 val, cmd_line);
+					memcpy(cmd_line, tmp_cmd_line, 512);
 					printk("console= not found, add console=%s\ncmd_line is now %s\n",
 					       val, cmd_line);
 				}

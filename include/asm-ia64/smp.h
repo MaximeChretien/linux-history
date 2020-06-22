@@ -124,6 +124,7 @@ extern void smp_do_timer (struct pt_regs *regs);
 extern int smp_call_function_single (int cpuid, void (*func) (void *info), void *info,
 				     int retry, int wait);
 
+extern void smp_build_cpu_map(void);
 
 #endif /* CONFIG_SMP */
 #endif /* _ASM_IA64_SMP_H */

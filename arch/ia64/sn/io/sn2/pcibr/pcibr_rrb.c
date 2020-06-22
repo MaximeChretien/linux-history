@@ -407,14 +407,6 @@ pcibr_wrb_flush(vertex_hdl_t pconn_vhdl)
 	while (*wrb_flush)
 		;
     }
-    else {
-	if (io_get_sh_swapper(NASID_GET(bridge))) {
-		while (BRIDGE_REG_GET32((wrb_flush)));
-	} else {
-		while (*wrb_flush)
-			;
-	}
-    }
     return(0);
 }
 

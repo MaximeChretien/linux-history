@@ -1,5 +1,5 @@
 /*
- *  linux/arch/ppc/kernel/traps.c
+ *  arch/ppc/kernel/traps.c
  *
  *  Copyright (C) 1995-1996  Gary Thomas (gdt@linuxppc.org)
  *
@@ -173,6 +173,10 @@ static inline int check_io_access(struct pt_regs *regs)
 #define REASON_PRIVILEGED	ESR_PPR
 #define REASON_TRAP		ESR_PTR
 
+/* single-step stuff */
+#define single_stepping(regs)	(current->thread.dbcr0 & DBCR0_IC)
+#define clear_single_step(regs)	(current->thread.dbcr0 &= ~DBCR0_IC)
+
 #else
 /* On non-4xx, the reason for the machine check or program
    exception is in the MSR. */
@@ -181,6 +185,9 @@ static inline int check_io_access(struct pt_regs *regs)
 #define REASON_ILLEGAL		0x80000
 #define REASON_PRIVILEGED	0x40000
 #define REASON_TRAP		0x20000
+
+#define single_stepping(regs)	((regs)->msr & MSR_SE)
+#define clear_single_step(regs)	((regs)->msr &= ~MSR_SE)
 #endif
 
 void
@@ -320,6 +327,22 @@ emulate_instruction(struct pt_regs *regs)
 	return retval;
 }
 
+/*
+ * After we have successfully emulated an instruction, we have to
+ * check if the instruction was being single-stepped, and if so,
+ * pretend we got a single-step exception.  This was pointed out
+ * by Kumar Gala.  -- paulus
+ */
+static void emulate_single_step(struct pt_regs *regs)
+{
+	if (single_stepping(regs)) {
+		clear_single_step(regs);
+		if (debugger_sstep(regs))
+			return;
+		_exception(SIGTRAP, regs, TRAP_TRACE, 0);
+	}
+}
+
 void
 ProgramCheckException(struct pt_regs *regs)
 {
@@ -334,8 +357,10 @@ ProgramCheckException(struct pt_regs *regs)
 	 * hardware people - not sure if it can happen on any illegal
 	 * instruction or only on FP instructions, whether there is a
 	 * pattern to occurences etc. -dgibson 31/Mar/2003 */
-	if (!(reason & REASON_TRAP) && do_mathemu(regs) == 0)
+	if (!(reason & REASON_TRAP) && do_mathemu(regs) == 0) {
+		emulate_single_step(regs);
 		return;
+	}
 #endif /* CONFIG_MATH_EMULATION */
 
 	if (reason & REASON_FP) {
@@ -371,8 +396,10 @@ ProgramCheckException(struct pt_regs *regs)
 
 	if (reason & REASON_PRIVILEGED) {
 		/* Try to emulate it if we should. */
-		if (emulate_instruction(regs) == 0)
+		if (emulate_instruction(regs) == 0) {
+			emulate_single_step(regs);
 			return;
+		}
 		_exception(SIGILL, regs, ILL_PRVOPC, regs->nip);
 		return;
 	}
@@ -397,6 +424,7 @@ AlignmentException(struct pt_regs *regs)
 	fixed = fix_alignment(regs);
 	if (fixed == 1) {
 		regs->nip += 4;	/* skip over emulated instruction */
+		emulate_single_step(regs);
 		return;
 	}
 	if (fixed == -EFAULT) {
@@ -453,11 +481,12 @@ SoftwareEmulation(struct pt_regs *regs)
 			_exception(SIGSEGV, regs, 0, 0);
 		else
 			_exception(SIGILL, regs, ILL_ILLOPC, regs->nip);
-	}
+	} else
+		emulate_single_step(regs);
 }
 #endif /* CONFIG_8xx */
 
-#if defined(CONFIG_4xx)
+#if defined(CONFIG_4xx) || defined(CONFIG_BOOKE)
 
 void DebugException(struct pt_regs *regs)
 {
@@ -484,16 +513,27 @@ void DebugException(struct pt_regs *regs)
 		_exception(SIGTRAP, regs, 0, 0);
 	}
 }
-#endif /* CONFIG_4xx */
+#endif /* CONFIG_4xx || CONFIG_BOOKE */
 
 #if !defined(CONFIG_TAU_INT)
 void
 TAUException(struct pt_regs *regs)
 {
-	printk("TAU trap at PC: %lx, SR: %lx, vector=%lx    %s\n",
+	printk("Thermal trap at PC: %lx, SR: %lx, vector=%lx    %s\n",
 	       regs->nip, regs->msr, regs->trap, print_tainted());
 }
 #endif /* CONFIG_INT_TAU */
+
+#ifdef CONFIG_ALTIVEC
+void
+AltivecAssistException(struct pt_regs *regs)
+{
+	if (regs->msr & MSR_VEC)
+		giveup_altivec(current);
+	/* XXX quick hack for now: set the non-Java bit in the VSCR */
+	current->thread.vscr.u[3] |= 0x10000;
+}
+#endif /* CONFIG_ALTIVEC */
 
 void __init trap_init(void)
 {

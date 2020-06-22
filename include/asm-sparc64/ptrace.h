@@ -97,6 +97,10 @@ struct sparc_trapf {
 #define user_mode(regs) (!((regs)->tstate & TSTATE_PRIV))
 #define instruction_pointer(regs) ((regs)->tpc)
 extern void show_regs(struct pt_regs *);
+#define force_successful_syscall_return() \
+do { \
+	current->thread.flags |= SPARC_FLAG_SYS_SUCCESS; \
+} while (0)
 #endif
 
 #else /* __ASSEMBLY__ */

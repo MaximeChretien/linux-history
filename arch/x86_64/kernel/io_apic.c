@@ -165,6 +165,14 @@ void clear_IO_APIC_pin(unsigned int apic, unsigned int pin)
 	struct IO_APIC_route_entry entry;
 	unsigned long flags;
 
+        /* Check delivery_mode to be sure we're not clearing an SMI pin */
+        spin_lock_irqsave(&ioapic_lock, flags);
+        *(((int*)&entry) + 0) = io_apic_read(apic, 0x10 + 2 * pin);
+        *(((int*)&entry) + 1) = io_apic_read(apic, 0x11 + 2 * pin);
+        spin_unlock_irqrestore(&ioapic_lock, flags);
+        if (entry.delivery_mode == dest_SMI)
+                return;
+
 	/*
 	 * Disable it in the IO-APIC irq-routing table:
 	 */
@@ -194,9 +202,11 @@ static void clear_IO_APIC (void)
 int pirq_entries [MAX_PIRQS];
 int pirqs_enabled;
 int skip_ioapic_setup;
+int ioapic_force; 
 
 static int __init noioapic_setup(char *str)
 {
+	ioapic_force = 1;
 	skip_ioapic_setup = 1;
 	return 1;
 }
@@ -205,12 +215,66 @@ __setup("noapic", noioapic_setup);
 
 static int __init ioapic_setup(char *str)
 {
+	ioapic_force = 1;
 	skip_ioapic_setup = 0;
 	return 1;
 }
 
 __setup("apic", ioapic_setup);
 
+#ifndef CONFIG_SMP
+#include <asm/pci-direct.h>
+#include <linux/pci_ids.h>
+#include <linux/pci.h>
+
+/* Temporary Hack. Nvidia and VIA boards currently only work with IO-APIC
+   off. Check for an Nvidia or VIA PCI bridge and turn it off.
+   Use pci direct infrastructure because this runs before the PCI subsystem. 
+
+   Can be overwritten with "apic" */
+void __init check_ioapic(void) 
+{ 
+	int num,slot,func; 
+	if (ioapic_force) 
+		return; 
+
+	/* Poor man's PCI discovery */
+	for (num = 0; num < 32; num++) { 
+		for (slot = 0; slot < 32; slot++) { 
+			for (func = 0; func < 8; func++) { 
+				u32 class;
+				u32 vendor;
+				class = read_pci_config(num,slot,func,
+							PCI_CLASS_REVISION);
+				if (class == 0xffffffff)
+					break; 
+
+		       		if ((class >> 16) != PCI_CLASS_BRIDGE_PCI)
+					continue; 
+
+				vendor = read_pci_config(num, slot, func, 
+							 PCI_VENDOR_ID);
+				vendor &= 0xffff;
+				switch (vendor) { 
+				case PCI_VENDOR_ID_NVIDIA: 
+				case PCI_VENDOR_ID_VIA:
+					printk(KERN_INFO 
+     "PCI bridge %02x:%02x from %x found. Setting \"noapic\". Overwrite with \"apic\"\n",
+					       num,slot,vendor); 
+					skip_ioapic_setup = 1;
+					return;
+				} 
+
+				/* No multi-function device? */
+				u8 type = read_pci_config_byte(num,slot,func,
+							       PCI_HEADER_TYPE);
+				if (!(type & 0x80))
+					break;
+			} 
+		}
+	}
+} 
+#endif
 
 static int __init ioapic_pirq_setup(char *str)
 {
@@ -712,7 +776,7 @@ void __init setup_ExtINT_IRQ0_pin(unsigned int pin, int vector)
 	entry.vector = vector;
 
 	/*
-	 * The timer IRQ doesnt have to know that behind the
+	 * The timer IRQ doesn't have to know that behind the
 	 * scene we have a 8259A-master in AEOI mode ...
 	 */
 	irq_desc[0].handler = &ioapic_edge_irq_type;
@@ -1047,10 +1111,6 @@ static void __init setup_ioapic_ids_from_mpc (void)
 	int i;
 	unsigned char old_id;
 	unsigned long flags;
-
- 	if (acpi_ioapic)
- 		/* This gets done during IOAPIC enumeration for ACPI. */
- 		return;
 
 	/*
 	 * Set the IOAPIC ID to the value stored in the MPC table.
@@ -1588,7 +1648,7 @@ static inline void check_timer(void)
 	printk(" failed.\n");
 
 	if (nmi_watchdog) {
-		printk(KERN_WARNING "timer doesnt work through the IO-APIC - disabling NMI Watchdog!\n");
+		printk(KERN_WARNING "timer doesn't work through the IO-APIC - disabling NMI Watchdog!\n");
 		nmi_watchdog = 0;
 	}
 
@@ -1649,12 +1709,14 @@ void __init setup_IO_APIC(void)
 	/*
 	 * Set up IO-APIC IRQ routing.
 	 */
-	setup_ioapic_ids_from_mpc();
+	if (!acpi_ioapic)
+		setup_ioapic_ids_from_mpc();
 	sync_Arb_IDs();
 	setup_IO_APIC_irqs();
 	init_IO_APIC_traps();
 	check_timer();
-	print_IO_APIC();
+	if (!acpi_ioapic)
+		print_IO_APIC();
 }
 
 
@@ -1762,7 +1824,7 @@ int __init io_apic_get_redir_entries (int ioapic)
 }
 
 
-int io_apic_set_pci_routing (int ioapic, int pin, int irq)
+int io_apic_set_pci_routing (int ioapic, int pin, int irq, int edge_level, int active_high_low)
 {
 	struct IO_APIC_route_entry entry;
 	unsigned long flags;
@@ -1785,18 +1847,21 @@ int io_apic_set_pci_routing (int ioapic, int pin, int irq)
 	entry.dest_mode = INT_DELIVERY_MODE;
 	entry.dest.logical.logical_dest = TARGET_CPUS;
 	entry.mask = 1;					 /* Disabled (masked) */
-	entry.trigger = 1;				   /* Level sensitive */
-	entry.polarity = 1;					/* Low active */
+	entry.trigger = edge_level;
+	entry.polarity = active_high_low;
 
 	add_pin_to_irq(irq, ioapic, pin);
 
 	entry.vector = assign_irq_vector(irq);
 
 	printk(KERN_DEBUG "IOAPIC[%d]: Set PCI routing entry (%d-%d -> 0x%x -> "
-		"IRQ %d)\n", ioapic, 
-		mp_ioapics[ioapic].mpc_apicid, pin, entry.vector, irq);
+		"IRQ %d Mode:%i Active:%i)\n", ioapic,
+		mp_ioapics[ioapic].mpc_apicid, pin, entry.vector, irq, edge_level, active_high_low);
 
-	irq_desc[irq].handler = &ioapic_level_irq_type;
+	if (edge_level)
+		irq_desc[irq].handler = &ioapic_level_irq_type;
+	else
+		irq_desc[irq].handler = &ioapic_edge_irq_type;
 
 	set_intr_gate(entry.vector, interrupt[irq]);
 

@@ -530,7 +530,7 @@ iosapic_register_platform_intr (u32 int_type, unsigned int gsi,
 		delivery = IOSAPIC_INIT;
 		break;
 	      case ACPI_INTERRUPT_CPEI:
-		vector = IA64_PCE_VECTOR;
+		vector = IA64_CPE_VECTOR;
 		delivery = IOSAPIC_LOWEST_PRIORITY;
 		break;
 	      default:

@@ -1,5 +1,5 @@
 /*
- * linux/drivers/ide/ide-tape.c		Version 1.17b	Dec, 2002
+ * linux/drivers/ide/ide-tape.c		Version 1.17c	Sep, 2003
  *
  * Copyright (C) 1995 - 1999 Gadi Oxman <gadio@netvision.net.il>
  *
@@ -313,6 +313,9 @@
  *			Cosmetic fixes to miscellaneous debugging output messages.
  *			Set the minimum /proc/ide/hd?/settings values for "pipeline",
  *			 "pipeline_min", and "pipeline_max" to 1.
+ * Ver 1.17c Sep 2003	Stuart Hayes <stuart_hayes@dell.com>
+ *			Initialized "feature" in idetape_issue_packet_command
+ *			 (this was causing lockups on certain systems)
  *
  * Here are some words from the first releases of hd.c, which are quoted
  * in ide.c and apply here as well:
@@ -422,7 +425,7 @@
  *		sharing a (fast) ATA-2 disk with any (slow) new ATAPI device.
  */
 
-#define IDETAPE_VERSION "1.17b-ac1"
+#define IDETAPE_VERSION "1.17c"
 
 #include <linux/config.h>
 #include <linux/module.h>
@@ -2366,6 +2369,8 @@ static ide_startstop_t idetape_issue_packet_command (ide_drive_t *drive, idetape
 	idetape_tape_t *tape = drive->driver_data;
 	atapi_feature_t feature;
 	atapi_bcount_t bcount;
+
+	feature.all = 0;
 
 #if IDETAPE_DEBUG_BUGS
 	if (tape->pc->c[0] == IDETAPE_REQUEST_SENSE_CMD &&

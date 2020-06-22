@@ -47,13 +47,12 @@ unsigned char num_bridges;
 static int done_probing;
 extern irqpda_t *irqpdaindr;
 
-static int pci_bus_map_create(vertex_hdl_t xtalk, char * io_moduleid);
+static int pci_bus_map_create(vertex_hdl_t xtalk, int brick_type, char * io_moduleid);
 vertex_hdl_t devfn_to_vertex(unsigned char busnum, unsigned int devfn);
 
 extern void register_pcibr_intr(int irq, pcibr_intr_t intr);
 
 void sn_dma_flush_init(unsigned long start, unsigned long end, int idx, int pin, int slot);
-
 
 /*
  * For the given device, initialize whether it is a PIC device.
@@ -148,8 +147,7 @@ devfn_to_vertex(unsigned char busnum, unsigned int devfn)
 	 */
 	if (func == 0) {
         	sprintf(name, "%d", slot);
-		if (hwgraph_traverse(pci_bus, name, &device_vertex) == 
-			GRAPH_SUCCESS) {
+		if (hwgraph_traverse(pci_bus, name, &device_vertex) == GRAPH_SUCCESS) {
 			if (device_vertex) {
 				return(device_vertex);
 			}
@@ -168,54 +166,6 @@ devfn_to_vertex(unsigned char busnum, unsigned int devfn)
 	}
 
 	return(device_vertex);
-}
-
-/*
- * For the given device, initialize the addresses for both the Device(x) Flush 
- * Write Buffer register and the Xbow Flush Register for the port the PCI bus 
- * is connected.
- */
-static void
-set_flush_addresses(struct pci_dev *device_dev, 
-	struct sn_device_sysdata *device_sysdata)
-{
-	pciio_info_t pciio_info = pciio_info_get(device_sysdata->vhdl);
-	pciio_slot_t pciio_slot = pciio_info_slot_get(pciio_info);
-	pcibr_soft_t pcibr_soft = (pcibr_soft_t) pciio_info_mfast_get(pciio_info);
-    	bridge_t               *bridge = pcibr_soft->bs_base;
-	nasid_t			nasid;
-
-	/*
-	 * Get the nasid from the bridge.
-	 */
-	nasid = NASID_GET(device_sysdata->dma_buf_sync);
-	if (IS_PIC_DEVICE(device_dev)) {
-		device_sysdata->dma_buf_sync = (volatile unsigned int *)
-			&bridge->b_wr_req_buf[pciio_slot].reg;
-		device_sysdata->xbow_buf_sync = (volatile unsigned int *)
-			XBOW_PRIO_LINKREGS_PTR(NODE_SWIN_BASE(nasid, 0),
-			pcibr_soft->bs_xid);
-	} else {
-		/*
-		 * Accessing Xbridge and Xbow register when SHUB swapoper is on!.
-		 */
-		device_sysdata->dma_buf_sync = (volatile unsigned int *)
-			((uint64_t)&(bridge->b_wr_req_buf[pciio_slot].reg)^4);
-		device_sysdata->xbow_buf_sync = (volatile unsigned int *)
-			((uint64_t)(XBOW_PRIO_LINKREGS_PTR(
-			NODE_SWIN_BASE(nasid, 0), pcibr_soft->bs_xid)) ^ 4);
-	}
-
-#ifdef DEBUG
-	printk("set_flush_addresses: dma_buf_sync %p xbow_buf_sync %p\n", 
-		device_sysdata->dma_buf_sync, device_sysdata->xbow_buf_sync);
-
-printk("set_flush_addresses: dma_buf_sync\n");
-	while((volatile unsigned int )*device_sysdata->dma_buf_sync);
-printk("set_flush_addresses: xbow_buf_sync\n");
-	while((volatile unsigned int )*device_sysdata->xbow_buf_sync);
-#endif
-
 }
 
 struct sn_flush_nasid_entry flush_nasid_list[MAX_NASIDS];
@@ -247,6 +197,9 @@ sn_dma_flush_init(unsigned long start, unsigned long end, int idx, int pin, int 
 	if (flush_nasid_list[nasid].widget_p == NULL) {
 		flush_nasid_list[nasid].widget_p = (struct sn_flush_device_list **)kmalloc((HUB_WIDGET_ID_MAX+1) *
 			sizeof(struct sn_flush_device_list *), GFP_KERNEL);
+		if (flush_nasid_list[nasid].widget_p <= 0)
+			BUG(); /* Cannot afford to run out of memory. */
+
 		memset(flush_nasid_list[nasid].widget_p, 0, (HUB_WIDGET_ID_MAX+1) * sizeof(struct sn_flush_device_list *));
 	}
 	if (bwin > 0) {
@@ -326,6 +279,9 @@ sn_dma_flush_init(unsigned long start, unsigned long end, int idx, int pin, int 
 	if (flush_nasid_list[nasid].widget_p[wid_num] == NULL) {
 		flush_nasid_list[nasid].widget_p[wid_num] = (struct sn_flush_device_list *)kmalloc(
 			DEV_PER_WIDGET * sizeof (struct sn_flush_device_list), GFP_KERNEL);
+		if (flush_nasid_list[nasid].widget_p[wid_num] <= 0)
+			BUG(); /* Cannot afford to run out of memory. */
+
 		memset(flush_nasid_list[nasid].widget_p[wid_num], 0, 
 			DEV_PER_WIDGET * sizeof (struct sn_flush_device_list));
 		p = &flush_nasid_list[nasid].widget_p[wid_num][0];
@@ -430,13 +386,6 @@ set_sn_pci64(struct pci_dev *dev)
 		}
 	}
 
-	if (vendor == PCI_VENDOR_ID_SGI) {
-		if (device == PCI_DEVICE_ID_SGI_IOC3) {
-			SET_PCIA64(dev);
-			return;
-		}
-	}
-
 }
 
 /*
@@ -455,7 +404,7 @@ sn_pci_fixup(int arg)
 	struct sn_widget_sysdata *widget_sysdata;
 	struct sn_device_sysdata *device_sysdata;
 	pciio_intr_t intr_handle;
-	int cpuid, bit;
+	int cpuid;
 	vertex_hdl_t device_vertex;
 	pciio_intr_line_t lines;
 	extern void sn_pci_find_bios(void);
@@ -488,6 +437,9 @@ sn_pci_fixup(int arg)
 		pci_bus = pci_bus_b(ln);
 		widget_sysdata = kmalloc(sizeof(struct sn_widget_sysdata), 
 					GFP_KERNEL);
+		if (widget_sysdata <= 0)
+			BUG(); /* Cannot afford to run out of memory */
+
 		widget_sysdata->vhdl = pci_bus_to_vertex(pci_bus->number);
 		pci_bus->sysdata = (void *)widget_sysdata;
 	}
@@ -516,24 +468,15 @@ sn_pci_fixup(int arg)
 		unsigned long size;
 		extern int bit_pos_to_irq(int);
 
-		if (device_dev->vendor == PCI_VENDOR_ID_SGI &&
-				device_dev->device == PCI_DEVICE_ID_SGI_IOC3) {
-			extern void pci_fixup_ioc3(struct pci_dev *d);
-			pci_fixup_ioc3(device_dev);
-		}
-
 		/* Set the device vertex */
 
 		device_sysdata = kmalloc(sizeof(struct sn_device_sysdata),
 					GFP_KERNEL);
+		if (device_sysdata <= 0)
+			BUG(); /* Cannot afford to run out of memory */
+
 		device_sysdata->vhdl = devfn_to_vertex(device_dev->bus->number, device_dev->devfn);
 		device_sysdata->isa64 = 0;
-		/*
-		 * Set the xbridge Device(X) Write Buffer Flush and Xbow Flush 
-		 * register addresses.
-		 */
-		(void) set_flush_addresses(device_dev, device_sysdata);
-
 		device_dev->sysdata = (void *) device_sysdata;
 		set_sn_pci64(device_dev);
 		set_isPIC(device_sysdata);
@@ -552,7 +495,7 @@ sn_pci_fixup(int arg)
 			size = device_dev->resource[idx].end -
 				device_dev->resource[idx].start;
 			if (size) {
-				device_dev->resource[idx].start = (unsigned long)pciio_pio_addr(vhdl, 0, PCIIO_SPACE_WIN(idx), 0, size, 0, (IS_PIC_DEVICE(device_dev)) ? 0 : PCIIO_BYTE_STREAM);
+				device_dev->resource[idx].start = (unsigned long)pciio_pio_addr(vhdl, 0, PCIIO_SPACE_WIN(idx), 0, size, 0, 0);
 				device_dev->resource[idx].start |= __IA64_UNCACHED_OFFSET;
 			}
 			else
@@ -583,7 +526,7 @@ sn_pci_fixup(int arg)
 		if (size) {
 			device_dev->resource[PCI_ROM_RESOURCE].start =
 			(unsigned long) pciio_pio_addr(vhdl, 0, PCIIO_SPACE_ROM, 0, 
-				size, 0, (IS_PIC_DEVICE(device_dev)) ? 0 : PCIIO_BYTE_STREAM);
+				size, 0, 0);
 			device_dev->resource[PCI_ROM_RESOURCE].start |= __IA64_UNCACHED_OFFSET;
 			device_dev->resource[PCI_ROM_RESOURCE].end =
 			device_dev->resource[PCI_ROM_RESOURCE].start + size;
@@ -598,11 +541,6 @@ sn_pci_fixup(int arg)
 		pci_write_config_word(device_dev, PCI_COMMAND, cmd);
 
 		pci_read_config_byte(device_dev, PCI_INTERRUPT_PIN, (unsigned char *)&lines);
-		if (device_dev->vendor == PCI_VENDOR_ID_SGI &&
-			device_dev->device == PCI_DEVICE_ID_SGI_IOC3 ) {
-				lines = 1;
-		}
- 
 		device_sysdata = (struct sn_device_sysdata *)device_dev->sysdata;
 		device_vertex = device_sysdata->vhdl;
  
@@ -703,13 +641,11 @@ linux_bus_cvlink(void)
  *	
  */
 static int 
-pci_bus_map_create(vertex_hdl_t xtalk, char * io_moduleid)
+pci_bus_map_create(vertex_hdl_t xtalk, int brick_type, char * io_moduleid)
 {
 
-	vertex_hdl_t master_node_vertex = NULL;
 	vertex_hdl_t xwidget = NULL;
 	vertex_hdl_t pci_bus = NULL;
-	hubinfo_t hubinfo = NULL;
 	xwidgetnum_t widgetnum;
 	char pathname[128];
 	graph_error_t rv;
@@ -718,73 +654,6 @@ pci_bus_map_create(vertex_hdl_t xtalk, char * io_moduleid)
 	extern void ioconfig_get_busnum(char *, int *);
 
 	int bus_number;
-
-	/*
-	 * Loop throught this vertex and get the Xwidgets ..
-	 */
-
-
-	/* PCI devices */
-
-	for (widgetnum = HUB_WIDGET_ID_MAX; widgetnum >= HUB_WIDGET_ID_MIN; widgetnum--) {
-		sprintf(pathname, "%d", widgetnum);
-		xwidget = NULL;
-		
-		/*
-		 * Example - /hw/module/001c16/Pbrick/xtalk/8 is the xwidget
-		 *	     /hw/module/001c16/Pbrick/xtalk/8/pci/1 is device
-		 */
-		rv = hwgraph_traverse(xtalk, pathname, &xwidget);
-		if ( (rv != GRAPH_SUCCESS) ) {
-			if (!xwidget) {
-				continue;
-			}
-		}
-
-		sprintf(pathname, "%d/"EDGE_LBL_PCI, widgetnum);
-		pci_bus = NULL;
-		if (hwgraph_traverse(xtalk, pathname, &pci_bus) != GRAPH_SUCCESS)
-			if (!pci_bus) {
-				continue;
-}
-
-		/*
-		 * Assign the correct bus number and also the nasid of this 
-		 * pci Xwidget.
-		 * 
-		 * Should not be any race here ...
-		 */
-		num_bridges++;
-		busnum_to_pcibr_vhdl[num_bridges - 1] = pci_bus;
-
-		/*
-		 * Get the master node and from there get the NASID.
-		 */
-		master_node_vertex = device_master_get(xwidget);
-		if (!master_node_vertex) {
-			printk("WARNING: pci_bus_map_create: Unable to get .master for vertex 0x%p\n", (void *)xwidget);
-		}
-	
-		hubinfo_get(master_node_vertex, &hubinfo);
-		if (!hubinfo) {
-			printk("WARNING: pci_bus_map_create: Unable to get hubinfo for master node vertex 0x%p\n", (void *)master_node_vertex);
-			return(1);
-		} else {
-			busnum_to_nid[num_bridges - 1] = hubinfo->h_nasid;
-		}
-
-		/*
-		 * Pre assign DMA maps needed for 32 Bits Page Map DMA.
-		 */
-		busnum_to_atedmamaps[num_bridges - 1] = (void *) kmalloc(
-			sizeof(struct sn_dma_maps_s) * MAX_ATE_MAPS, GFP_KERNEL);
-		if (!busnum_to_atedmamaps[num_bridges - 1])
-			printk("WARNING: pci_bus_map_create: Unable to precreate ATE DMA Maps for busnum %d vertex 0x%p\n", num_bridges - 1, (void *)xwidget);
-
-		memset(busnum_to_atedmamaps[num_bridges - 1], 0x0, 
-			sizeof(struct sn_dma_maps_s) * MAX_ATE_MAPS);
-
-	}
 
 	/*
 	 * PCIX devices
@@ -829,11 +698,11 @@ pci_bus_map_create(vertex_hdl_t xtalk, char * io_moduleid)
 			 * 
 			 * Should not be any race here ...
 			 */
-			bus_number = basebus_num + bus + io_brick_map_widget(MODULE_PXBRICK, widgetnum);
+			bus_number = basebus_num + bus + io_brick_map_widget(brick_type, widgetnum);
 #ifdef DEBUG
-			printk("bus_number %d basebus_num %d bus %d io %d\n", 
+			printk("bus_number %d basebus_num %d bus %d io %d pci_bus 0x%x brick_type %d \n", 
 				bus_number, basebus_num, bus, 
-				io_brick_map_widget(MODULE_PXBRICK, widgetnum));
+				io_brick_map_widget(brick_type, widgetnum), pci_bus, brick_type);
 #endif
 			busnum_to_pcibr_vhdl[bus_number] = pci_bus;
 	
@@ -842,14 +711,71 @@ pci_bus_map_create(vertex_hdl_t xtalk, char * io_moduleid)
 			 */
 			busnum_to_atedmamaps[bus_number] = (void *) kmalloc(
 				sizeof(struct sn_dma_maps_s) * MAX_ATE_MAPS, GFP_KERNEL);
-			if (!busnum_to_atedmamaps[bus_number])
-				printk("WARNING: pci_bus_map_create: Unable to precreate ATE DMA Maps for busnum %d vertex 0x%p\n", num_bridges - 1, (void *)xwidget);
+			if (busnum_to_atedmamaps[bus_number] <= 0)
+				BUG(); /* Cannot afford to run out of memory. */
 	
 			memset(busnum_to_atedmamaps[bus_number], 0x0, 
 				sizeof(struct sn_dma_maps_s) * MAX_ATE_MAPS);
 		}
 	}
 
+	/* AGP/CGbrick */
+
+	for (widgetnum = HUB_WIDGET_ID_MIN; widgetnum <= HUB_WIDGET_ID_MAX; widgetnum++) {
+
+		/* Do both buses */
+		for ( bus = 0; bus < 2; bus++ ) {
+			sprintf(pathname, "%d", widgetnum);
+			xwidget = NULL;
+			
+			/*
+			 * Example - /hw/module/001c16/slab/0/CGbrick/xtalk/15 is the xwidget
+			 *	     /hw/module/001c16/slab/0/CGbrick/xtalk/15/agp/0 is the bus
+			 *	     /hw/module/001c16/slab/0/CGbrick/xtalk/15/agp/0/1a is device
+			 */
+			rv = hwgraph_traverse(xtalk, pathname, &xwidget);
+			if ( (rv != GRAPH_SUCCESS) ) {
+				if (!xwidget) {
+					continue;
+				}
+			}
+	
+			if ( bus == 0 )
+				sprintf(pathname, "%d/"EDGE_LBL_AGP_0, widgetnum);
+			else
+				sprintf(pathname, "%d/"EDGE_LBL_AGP_1, widgetnum);
+			pci_bus = NULL;
+			if (hwgraph_traverse(xtalk, pathname, &pci_bus) != GRAPH_SUCCESS)
+				if (!pci_bus) {
+					continue;
+				}
+	
+			/*
+			 * Assign the correct bus number and also the nasid of this 
+			 * pci Xwidget.
+			 * 
+			 * Should not be any race here ...
+			 */
+			bus_number = basebus_num + bus + io_brick_map_widget(brick_type, widgetnum);
+#ifdef DEBUG
+			printk("bus_number %d basebus_num %d bus %d io %d pci_bus 0x%x\n", 
+				bus_number, basebus_num, bus, 
+				io_brick_map_widget(brick_type, widgetnum), pci_bus);
+#endif
+			busnum_to_pcibr_vhdl[bus_number] = pci_bus;
+
+			/*
+			 * Pre assign DMA maps needed for 32 Bits Page Map DMA.
+			 */
+			busnum_to_atedmamaps[bus_number] = (void *) kmalloc(
+				sizeof(struct sn_dma_maps_s) * MAX_ATE_MAPS, GFP_KERNEL);
+			if (busnum_to_atedmamaps[bus_number] <= 0)
+				BUG(); /* Cannot afford to run out of memory */
+	
+			memset(busnum_to_atedmamaps[bus_number], 0x0, 
+				sizeof(struct sn_dma_maps_s) * MAX_ATE_MAPS);
+		}
+	}
         return(0);
 }
 
@@ -868,11 +794,20 @@ pci_bus_to_hcl_cvlink(void)
 	vertex_hdl_t devfs_hdl = NULL;
 	vertex_hdl_t xtalk = NULL;
 	int rv = 0;
-	char name[256];
-	char tmp_name[256];
+	char *name;
+	char *tmp_name;
 	int i, ii, j;
 	char *brick_name;
 	extern void ioconfig_bus_new_entries(void);
+	extern int iobrick_type_get_nasid(nasid_t);
+
+	name = kmalloc(256, GFP_KERNEL);
+	if (!name)
+		BUG();
+
+	tmp_name = kmalloc(256, GFP_KERNEL);
+	if (!name)
+		 BUG();
 
 	/*
 	 * Figure out which IO Brick is connected to the Compute Bricks.
@@ -881,32 +816,39 @@ pci_bus_to_hcl_cvlink(void)
 		extern int iomoduleid_get(nasid_t);
 		moduleid_t iobrick_id;
 		nasid_t nasid = -1;
-		int nodecnt;
 		int n = 0;
 
-		nodecnt = modules[i]->nodecnt;
-		for ( n = 0; n < nodecnt; n++ ) {
+		for ( n = 0; n <= MAX_SLABS; n++ ) {
+			if (modules[i]->nodes[n] == -1)
+				continue; /* node is not alive in module */
+
 			nasid = cnodeid_to_nasid(modules[i]->nodes[n]);
 			iobrick_id = iomoduleid_get(nasid);
 			if ((int)iobrick_id > 0) { /* Valid module id */
 				char name[12];
 				memset(name, 0, 12);
 				format_module_id((char *)&(modules[i]->io[n].moduleid), iobrick_id, MODULE_FORMAT_BRIEF);
+				modules[i]->io[n].iobrick_type = (uint64_t)iobrick_type_get_nasid(nasid);
 			}
 		}
 	}
 				
 	devfs_hdl = hwgraph_path_to_vertex("hw/module");
 	for (i = 0; i < nummodules ; i++) {
-	    for ( j = 0; j < 3; j++ ) {
+	    for ( j = 0; j < 4; j++ ) {
 		if ( j == 0 )
-			brick_name = EDGE_LBL_PBRICK;
+			brick_name = EDGE_LBL_IXBRICK;
 		else if ( j == 1 )
 			brick_name = EDGE_LBL_PXBRICK;
-		else
-			brick_name = EDGE_LBL_IXBRICK;
+		else if ( j == 2 )
+			brick_name = EDGE_LBL_OPUSBRICK;
+		else	/* 3 */
+			brick_name = EDGE_LBL_CGBRICK;
 
-		for ( ii = 0; ii < 2 ; ii++ ) {
+		for ( ii = 0; ii <= MAX_SLABS ; ii++ ) {
+			if (modules[i]->nodes[ii] == -1)
+				continue; /* Missing slab */
+
 			memset(name, 0, 256);
 			memset(tmp_name, 0, 256);
 			format_module_id(name, modules[i]->id, MODULE_FORMAT_BRIEF);
@@ -915,10 +857,13 @@ pci_bus_to_hcl_cvlink(void)
 			xtalk = NULL;
 			rv = hwgraph_edge_get(devfs_hdl, name, &xtalk);
 			if ( rv == 0 ) 
-				pci_bus_map_create(xtalk, (char *)&(modules[i]->io[ii].moduleid));
+				pci_bus_map_create(xtalk, (int)modules[i]->io[ii].iobrick_type, (char *)&(modules[i]->io[ii].moduleid));
 		}
 	    }
 	}
+
+	kfree(name);
+	kfree(tmp_name);
 
 	/*
 	 * Create the Linux PCI bus number vertex link.

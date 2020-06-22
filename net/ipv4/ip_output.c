@@ -339,7 +339,7 @@ fragment:
 	return ip_fragment(skb, skb->dst->output);
 }
 
-int ip_queue_xmit(struct sk_buff *skb)
+int ip_queue_xmit(struct sk_buff *skb, int ipfragok)
 {
 	struct sock *sk = skb->sk;
 	struct ip_options *opt = sk->protinfo.af_inet.opt;
@@ -384,7 +384,7 @@ packet_routed:
 	iph = (struct iphdr *) skb_push(skb, sizeof(struct iphdr) + (opt ? opt->optlen : 0));
 	*((__u16 *)iph)	= htons((4 << 12) | (5 << 8) | (sk->protinfo.af_inet.tos & 0xff));
 	iph->tot_len = htons(skb->len);
-	if (ip_dont_fragment(sk, &rt->u.dst))
+	if (ip_dont_fragment(sk, &rt->u.dst) && !ipfragok)
 		iph->frag_off = htons(IP_DF);
 	else
 		iph->frag_off = 0;
@@ -879,6 +879,7 @@ int ip_fragment(struct sk_buff *skb, int (*output)(struct sk_buff*))
 #endif
 #ifdef CONFIG_NETFILTER
 		skb2->nfmark = skb->nfmark;
+		skb2->nfcache = skb->nfcache;
 		/* Connection association is same as pre-frag packet */
 		skb2->nfct = skb->nfct;
 		nf_conntrack_get(skb2->nfct);

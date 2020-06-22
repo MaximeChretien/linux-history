@@ -42,6 +42,7 @@ struct pci_dev;
 ** or architectures with incomplete PCI setup by the loader 
 */
 #define pcibios_assign_all_busses()     1
+#define pcibios_scan_all_fns()		0
 
 /* 
 ** These are currently the correct values for the STM overdrive board.

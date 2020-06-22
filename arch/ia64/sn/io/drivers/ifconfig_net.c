@@ -22,6 +22,7 @@
 #include <linux/skbuff.h>
 
 #include <asm/sn/sgi.h>
+#include <asm/uaccess.h>
 #include <linux/devfs_fs.h>
 #include <linux/devfs_fs_kernel.h>
 #include <asm/io.h>
@@ -37,8 +38,11 @@
 /*
  * Some Global definitions.
  */
-static devfs_handle_t ifconfig_net_handle;
+static vertex_hdl_t ifconfig_net_handle;
 static unsigned long ifconfig_net_debug;
+static struct ifname_MAC *new_devices;
+static struct ifname_num *ifname_num;
+
 
 /*
  * ifconfig_net_open - Opens the special device node "/devhw/.ifconfig_net".
@@ -189,8 +193,7 @@ static int ifconfig_net_ioctl(struct inode * inode, struct file * file,
 	char temp[64];
 #endif
 	struct ifname_MAC *ifname_MAC;
-	struct ifname_MAC *new_devices, *temp_new_devices;
-	struct ifname_num *ifname_num;
+	struct ifname_MAC *temp_new_devices;
 	unsigned long size;
 
 
@@ -204,14 +207,24 @@ static int ifconfig_net_ioctl(struct inode * inode, struct file * file,
 	 */
 	ifname_num = (struct ifname_num *) kmalloc(sizeof(struct ifname_num), 
 			GFP_KERNEL);
-	copy_from_user( ifname_num, (char *) arg, sizeof(struct ifname_num));
+	if (copy_from_user( ifname_num, (char *) arg, sizeof(struct ifname_num)))
+		return -EFAULT;
 	size = ifname_num->size;
 	kfree(ifname_num);
 	ifname_num = (struct ifname_num *) kmalloc(size, GFP_KERNEL);
+	if (ifname_num <= 0)
+		return -ENOMEM;
 	ifname_MAC = (struct ifname_MAC *) ((char *)ifname_num + (sizeof(struct ifname_num)) );
 
-	copy_from_user( ifname_num, (char *) arg, size);
+	if (copy_from_user( ifname_num, (char *) arg, size)){
+		kfree(ifname_num);
+		return -EFAULT;
+	}
 	new_devices =  kmalloc(size - sizeof(struct ifname_num), GFP_KERNEL);
+	if (new_devices <= 0){
+		kfree(ifname_num);
+		return -ENOMEM;
+	}
 	temp_new_devices = new_devices;
 
 	memset(new_devices, 0, size - sizeof(struct ifname_num));
@@ -257,10 +270,10 @@ static int ifconfig_net_ioctl(struct inode * inode, struct file * file,
 	/*
 	 * Copy back to the User Buffer area any new devices encountered.
 	 */
-	copy_to_user((char *)arg + (sizeof(struct ifname_num)), new_devices, 
-			size - sizeof(struct ifname_num));
+	kfree(new_devices);
+	return copy_to_user((char *)arg + (sizeof(struct ifname_num)), new_devices, 
+			size - sizeof(struct ifname_num))?-EFAULT:0;
 
-	return(0);
 
 }
 

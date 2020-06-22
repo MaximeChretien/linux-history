@@ -206,7 +206,8 @@ void __mark_inode_dirty(struct inode *inode, int flags)
 	if ((inode->i_state & flags) != flags) {
 		inode->i_state |= flags;
 		/* Only add valid (ie hashed) inodes to the dirty list */
-		if (!(inode->i_state & I_LOCK) && !list_empty(&inode->i_hash)) {
+		if (!(inode->i_state & (I_LOCK|I_FREEING|I_CLEAR)) &&
+		    !list_empty(&inode->i_hash)) {
 			list_del(&inode->i_list);
 			list_add(&inode->i_list, &sb->s_dirty);
 		}
@@ -235,6 +236,30 @@ static inline void wait_on_inode(struct inode *inode)
 		__wait_on_inode(inode);
 }
 
+/*
+ * If we try to find an inode in the inode hash while it is being deleted, we
+ * have to wait until the filesystem completes its deletion before reporting
+ * that it isn't found.  This is because iget will immediately call
+ * ->read_inode, and we want to be sure that evidence of the deletion is found
+ * by ->read_inode.
+ *
+ * This call might return early if an inode which shares the waitq is woken up.
+ * This is most easily handled by the caller which will loop around again
+ * looking for the inode.
+ *
+ * This is called with inode_lock held.
+ */
+static void __wait_on_freeing_inode(struct inode *inode)
+{
+        DECLARE_WAITQUEUE(wait, current);
+
+        add_wait_queue(&inode->i_wait, &wait);
+        set_current_state(TASK_UNINTERRUPTIBLE);
+        spin_unlock(&inode_lock);
+        schedule();
+        remove_wait_queue(&inode->i_wait, &wait);
+        spin_lock(&inode_lock);
+}
 
 static inline void write_inode(struct inode *inode, int sync)
 {
@@ -583,22 +608,30 @@ void clear_inode(struct inode *inode)
  * Dispose-list gets a local list with local inodes in it, so it doesn't
  * need to worry about list corruption and SMP locks.
  */
-static void dispose_list(struct list_head * head)
+static void dispose_list(struct list_head *head)
 {
-	struct list_head * inode_entry;
-	struct inode * inode;
+	int nr_disposed = 0;
 
-	while ((inode_entry = head->next) != head)
-	{
-		list_del(inode_entry);
+	while (!list_empty(head)) {
+		struct inode *inode;
 
-		inode = list_entry(inode_entry, struct inode, i_list);
+		inode = list_entry(head->next, struct inode, i_list);
+		list_del(&inode->i_list);
+
 		if (inode->i_data.nrpages)
 			truncate_inode_pages(&inode->i_data, 0);
 		clear_inode(inode);
+		spin_lock(&inode_lock);
+		list_del(&inode->i_hash);
+		INIT_LIST_HEAD(&inode->i_hash);
+		spin_unlock(&inode_lock);
+		wake_up(&inode->i_wait);
 		destroy_inode(inode);
-		inodes_stat.nr_inodes--;
+		nr_disposed++;
 	}
+	spin_lock(&inode_lock);
+	inodes_stat.nr_inodes -= nr_disposed;
+	spin_unlock(&inode_lock);
 }
 
 /*
@@ -704,6 +737,14 @@ int invalidate_device(kdev_t dev, int do_sync)
  *
  * We don't expect to have to call this very often.
  *
+ * We leave the inode in the inode hash table until *after* 
+ * the filesystem's ->delete_inode (in dispose_list) completes.
+ * This ensures that an iget (such as nfsd might instigate) will 
+ * always find up-to-date information either in the hash or on disk.
+ *
+ * I_FREEING is set so that no-one will take a new reference
+ * to the inode while it is being deleted.
+ *
  * N.B. The spinlock is released during the call to
  *      dispose_list.
  */
@@ -736,8 +777,6 @@ void prune_icache(int goal)
 		if (atomic_read(&inode->i_count))
 			continue;
 		list_del(tmp);
-		list_del(&inode->i_hash);
-		INIT_LIST_HEAD(&inode->i_hash);
 		list_add(tmp, freeable);
 		inode->i_state |= I_FREEING;
 		count++;
@@ -790,6 +829,7 @@ static struct inode * find_inode(struct super_block * sb, unsigned long ino, str
 	struct list_head *tmp;
 	struct inode * inode;
 
+repeat:
 	tmp = head;
 	for (;;) {
 		tmp = tmp->next;
@@ -803,6 +843,10 @@ static struct inode * find_inode(struct super_block * sb, unsigned long ino, str
 			continue;
 		if (find_actor && !find_actor(inode, ino, opaque))
 			continue;
+		if (inode->i_state & (I_FREEING|I_CLEAR)) {
+			__wait_on_freeing_inode(inode);
+			goto repeat;
+		}
 		break;
 	}
 	return inode;
@@ -944,6 +988,37 @@ retry:
 	
 }
 
+/**
+ *	ilookup - search for an inode in the inode cache
+ *	@sb:         super block of file system to search
+ *	@ino:        inode number to search for
+ *
+ *	If the inode is in the cache, the inode is returned with an
+ *	incremented reference count.
+ *
+ *	Otherwise, %NULL is returned.
+ *
+ *	This is almost certainly not the function you are looking for.
+ *	If you think you need to use this, consult an expert first.
+ */
+struct inode *ilookup(struct super_block *sb, unsigned long ino)
+{
+	struct list_head * head = inode_hashtable + hash(sb,ino);
+	struct inode * inode;
+
+	spin_lock(&inode_lock);
+	inode = find_inode(sb, ino, head, NULL, NULL);
+	if (inode) {
+		__iget(inode);
+		spin_unlock(&inode_lock);
+		wait_on_inode(inode);
+		return inode;
+	}
+	spin_unlock(&inode_lock);
+
+	return inode;
+}
+
 struct inode *igrab(struct inode *inode)
 {
 	spin_lock(&inode_lock);
@@ -1042,8 +1117,6 @@ void iput(struct inode *inode)
 			return;
 
 		if (!inode->i_nlink) {
-			list_del(&inode->i_hash);
-			INIT_LIST_HEAD(&inode->i_hash);
 			list_del(&inode->i_list);
 			INIT_LIST_HEAD(&inode->i_list);
 			inode->i_state|=I_FREEING;
@@ -1061,6 +1134,11 @@ void iput(struct inode *inode)
 				delete(inode);
 			} else
 				clear_inode(inode);
+			spin_lock(&inode_lock);
+			list_del(&inode->i_hash);
+			INIT_LIST_HEAD(&inode->i_hash);
+			spin_unlock(&inode_lock);
+			wake_up(&inode->i_wait);
 			if (inode->i_state != I_CLEAR)
 				BUG();
 		} else {

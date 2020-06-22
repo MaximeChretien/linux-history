@@ -1,4 +1,4 @@
-/* $Id: traps.c,v 1.1.1.1.2.4 2002/05/10 17:58:54 jzs Exp $
+/* $Id: traps.c,v 1.1.1.1.2.5 2003/10/23 22:08:56 yoshii Exp $
  *
  *  linux/arch/sh/traps.c
  *
@@ -51,6 +51,13 @@ asmlinkage void do_##name(unsigned long r4, unsigned long r5, \
 			  struct pt_regs regs) \
 { \
 	unsigned long error_code; \
+ \
+	/* Check if it's a DSP instruction */ \
+ 	if (is_dsp_inst(&regs)) { \
+		/* Enable DSP mode, and restart instruction. */ \
+		regs.sr |= SR_DSP; \
+		return; \
+	} \
  \
 	asm volatile("stc	r2_bank, %0": "=r" (error_code)); \
 	sti(); \
@@ -526,6 +533,28 @@ asmlinkage void do_address_error(struct pt_regs *regs,
 		set_fs(oldfs);
 	}
 }
+
+#ifdef CONFIG_SH_DSP
+/*
+ *	SH-DSP support gerg@snapgear.com.
+ */
+int is_dsp_inst(struct pt_regs *regs)
+{
+	unsigned short inst;
+
+	get_user(inst, ((unsigned short *) regs->pc));
+
+	inst &= 0xf000;
+
+	/* Check for any type of DSP or support instruction */
+	if ((inst == 0xf000) || (inst == 0x4000))
+		return 1;
+
+	return 0;
+}
+#else
+#define is_dsp_inst(regs)	(0)
+#endif /* CONFIG_SH_DSP */
 
 DO_ERROR(12, SIGILL,  "reserved instruction", reserved_inst, current)
 DO_ERROR(13, SIGILL,  "illegal slot instruction", illegal_slot_inst, current)

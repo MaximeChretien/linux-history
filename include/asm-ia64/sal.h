@@ -23,6 +23,18 @@
  *                      (plus examples of platform error info structures from smariset @ Intel)
  */
 
+#define IA64_SAL_PLATFORM_FEATURE_BUS_LOCK_BIT		0
+#define IA64_SAL_PLATFORM_FEATURE_IRQ_REDIR_HINT_BIT	1
+#define IA64_SAL_PLATFORM_FEATURE_IPI_REDIR_HINT_BIT	2
+#define IA64_SAL_PLATFORM_FEATURE_ITC_DRIFT_BIT	 	3
+
+#define IA64_SAL_PLATFORM_FEATURE_BUS_LOCK	  (1<<IA64_SAL_PLATFORM_FEATURE_BUS_LOCK_BIT)
+#define IA64_SAL_PLATFORM_FEATURE_IRQ_REDIR_HINT (1<<IA64_SAL_PLATFORM_FEATURE_IRQ_REDIR_HINT_BIT)
+#define IA64_SAL_PLATFORM_FEATURE_IPI_REDIR_HINT (1<<IA64_SAL_PLATFORM_FEATURE_IPI_REDIR_HINT_BIT)
+#define IA64_SAL_PLATFORM_FEATURE_ITC_DRIFT	  (1<<IA64_SAL_PLATFORM_FEATURE_ITC_DRIFT_BIT)
+
+#ifndef __ASSEMBLY__
+
 #include <linux/spinlock.h>
 #include <linux/efi.h>
 
@@ -54,6 +66,13 @@ extern spinlock_t sal_lock;
 	__SAL_CALL(result, args);			\
 	local_irq_restore(__ia64_scn_flags);		\
 	ia64_load_scratch_fpregs(__ia64_scn_fr);	\
+} while (0)
+
+# define SAL_CALL_REENTRANT(result,args...) do {	\
+	struct ia64_fpreg __ia64_scs_fr[6];		\
+	ia64_save_scratch_fpregs(__ia64_scs_fr);	\
+	__SAL_CALL(result, args);			\
+	ia64_load_scratch_fpregs(__ia64_scs_fr);	\
 } while (0)
 
 #define SAL_SET_VECTORS			0x01000000
@@ -162,11 +181,6 @@ typedef struct ia64_sal_desc_memory {
 	u8 oem_reserved[8];
 } ia64_sal_desc_memory_t;
 
-#define IA64_SAL_PLATFORM_FEATURE_BUS_LOCK		(1 << 0)
-#define IA64_SAL_PLATFORM_FEATURE_IRQ_REDIR_HINT	(1 << 1)
-#define IA64_SAL_PLATFORM_FEATURE_IPI_REDIR_HINT	(1 << 2)
-#define IA64_SAL_PLATFORM_FEATURE_ITC_DRIFT	 	(1 << 3)
-
 typedef struct ia64_sal_desc_platform_feature {
 	u8 type;
 	u8 feature_mask;
@@ -226,7 +240,7 @@ enum {
 
 /* Encodings for machine check parameter types */
 enum {
-	SAL_MC_PARAM_RENDEZ_INT    = 1,	/* Rendezevous interrupt */
+	SAL_MC_PARAM_RENDEZ_INT    = 1,	/* Rendezvous interrupt */
 	SAL_MC_PARAM_RENDEZ_WAKEUP = 2,	/* Wakeup */
 	SAL_MC_PARAM_CPE_INT	   = 3	/* Corrected Platform Error Int */
 };
@@ -658,8 +672,8 @@ static inline s64
 ia64_sal_clear_state_info (u64 sal_info_type)
 {
 	struct ia64_sal_retval isrv;
-    SAL_CALL(isrv, SAL_CLEAR_STATE_INFO, sal_info_type, 0,
-             0, 0, 0, 0, 0);
+	SAL_CALL_REENTRANT(isrv, SAL_CLEAR_STATE_INFO, sal_info_type, 0,
+	              0, 0, 0, 0, 0);
 	return isrv.status;
 }
 
@@ -671,8 +685,8 @@ static inline u64
 ia64_sal_get_state_info (u64 sal_info_type, u64 *sal_info)
 {
 	struct ia64_sal_retval isrv;
-	SAL_CALL(isrv, SAL_GET_STATE_INFO, sal_info_type, 0,
-	         sal_info, 0, 0, 0, 0);
+	SAL_CALL_REENTRANT(isrv, SAL_GET_STATE_INFO, sal_info_type, 0,
+	              sal_info, 0, 0, 0, 0);
 	if (isrv.status)
 		return 0;
 
@@ -687,8 +701,8 @@ static inline u64
 ia64_sal_get_state_info_size (u64 sal_info_type)
 {
 	struct ia64_sal_retval isrv;
-    SAL_CALL(isrv, SAL_GET_STATE_INFO_SIZE, sal_info_type, 0,
-             0, 0, 0, 0, 0);
+	SAL_CALL_REENTRANT(isrv, SAL_GET_STATE_INFO_SIZE, sal_info_type, 0,
+	              0, 0, 0, 0, 0);
 	if (isrv.status)
 		return 0;
 	return isrv.v0;
@@ -791,5 +805,7 @@ ia64_sal_update_pal (u64 param_buf, u64 scratch_buf, u64 scratch_buf_size,
 }
 
 extern unsigned long sal_platform_features;
+
+#endif /* __ASSEMBLY__ */
 
 #endif /* _ASM_IA64_PAL_H */

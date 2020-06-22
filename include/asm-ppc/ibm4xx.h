@@ -80,6 +80,16 @@ do {						\
 #define PCI_DRAM_OFFSET	0
 #endif
 
+#elif CONFIG_44x
+
+#if defined(CONFIG_EBONY)
+#include <platforms/ebony.h>
+#endif
+
+#if defined(CONFIG_OCOTEA)
+#include <platforms/ocotea.h>
+#endif
+
 #endif /* CONFIG_40x */
 
 #ifndef __ASSEMBLY__

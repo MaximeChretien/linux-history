@@ -235,7 +235,7 @@ alloc_resource (char *name, struct resource *root, unsigned long start, unsigned
 }
 
 static u64
-add_io_space (acpi_resource_address64 *addr)
+add_io_space (struct acpi_resource_address64 *addr)
 {
 	u64 offset;
 	int sparse = 0;
@@ -266,10 +266,10 @@ add_io_space (acpi_resource_address64 *addr)
 }
 
 static acpi_status
-count_window (acpi_resource *resource, void *data)
+count_window (struct acpi_resource *resource, void *data)
 {
 	unsigned int *windows = (unsigned int *) data;
-	acpi_resource_address64 addr;
+	struct acpi_resource_address64 addr;
 	acpi_status status;
 
 	status = acpi_resource_to_address64(resource, &addr);
@@ -287,11 +287,11 @@ struct pci_root_info {
 };
 
 static acpi_status
-add_window (acpi_resource *res, void *data)
+add_window (struct acpi_resource *res, void *data)
 {
 	struct pci_root_info *info = (struct pci_root_info *) data;
 	struct pci_window *window;
-	acpi_resource_address64 addr;
+	struct acpi_resource_address64 addr;
 	acpi_status status;
 	unsigned long flags, offset = 0;
 	struct resource *root;
@@ -390,9 +390,6 @@ pcibios_config_init (void)
 void __init
 pcibios_init (void)
 {
-	int i = 0;
-	struct pci_controller *controller;
-
 #ifdef CONFIG_IA64_MCA
 	ia64_mca_check_errors();    /* For post-failure MCA error logging */
 #endif

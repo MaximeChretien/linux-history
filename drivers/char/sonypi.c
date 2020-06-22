@@ -303,12 +303,12 @@ static void sonypi_setbluetoothpower(u8 state) {
 }
 
 /* Interrupt handler: some event is available */
-void sonypi_irq(int irq, void *dev_id, struct pt_regs *regs) {
+static irqreturn_t sonypi_irq(int irq, void *dev_id, struct pt_regs *regs) {
 	u8 v1, v2, event = 0;
 	int i, j;
 
 	v1 = inb_p(sonypi_device.ioport1);
-	v2 = inb_p(sonypi_device.ioport2);
+	v2 = inb_p(sonypi_device.ioport1 + sonypi_device.evtype_offset);
 
 	for (i = 0; sonypi_eventtypes[i].model; i++) {
 		if (sonypi_device.model != sonypi_eventtypes[i].model)
@@ -328,7 +328,10 @@ void sonypi_irq(int irq, void *dev_id, struct pt_regs *regs) {
 	if (verbose)
 		printk(KERN_WARNING 
 		       "sonypi: unknown event port1=0x%02x,port2=0x%02x\n",v1,v2);
-	return;
+	/* We need to return IRQ_HANDLED here because there *are*
+	 * events belonging to the sonypi device we don't know about, 
+	 * but we still don't want those to pollute the logs... */
+	return IRQ_HANDLED;
 
 found:
 	if (verbose > 1)
@@ -351,6 +354,7 @@ found:
 	}
 #endif /* SONYPI_USE_INPUT */
 	sonypi_pushq(event);
+	return IRQ_HANDLED;
 }
 
 /* External camera command (exported to the motion eye v4l driver) */
@@ -665,11 +669,13 @@ static int __devinit sonypi_probe(struct pci_dev *pcidev) {
 	if (sonypi_device.model == SONYPI_DEVICE_MODEL_TYPE2) {
 		ioport_list = sonypi_type2_ioport_list;
 		sonypi_device.region_size = SONYPI_TYPE2_REGION_SIZE;
+		sonypi_device.evtype_offset = SONYPI_TYPE2_EVTYPE_OFFSET;
 		irq_list = sonypi_type2_irq_list;
 	}
 	else {
 		ioport_list = sonypi_type1_ioport_list;
 		sonypi_device.region_size = SONYPI_TYPE1_REGION_SIZE;
+		sonypi_device.evtype_offset = SONYPI_TYPE1_EVTYPE_OFFSET;
 		irq_list = sonypi_type1_irq_list;
 	}
 

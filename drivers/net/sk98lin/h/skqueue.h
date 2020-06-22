@@ -1,17 +1,17 @@
 /******************************************************************************
  *
  * Name:	skqueue.h
- * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.14 $
- * Date:	$Date: 2002/03/15 10:52:13 $
+ * Project:	Gigabit Ethernet Adapters, Schedule-Modul
+ * Version:	$Revision: 1.15 $
+ * Date:	$Date: 2003/05/13 17:54:57 $
  * Purpose:	Defines for the Event queue
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998,1999 SysKonnect,
- *	a business unit of Schneider & Koch & Co. Datensysteme GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 2002-2003 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -27,6 +27,9 @@
  * History:
  *
  *	$Log: skqueue.h,v $
+ *	Revision 1.15  2003/05/13 17:54:57  mkarl
+ *	Editorial changes.
+ *	
  *	Revision 1.14  2002/03/15 10:52:13  mkunz
  *	Added event classes for link aggregation
  *	

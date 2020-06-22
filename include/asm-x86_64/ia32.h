@@ -234,6 +234,11 @@ struct iovec32 {
 	int iov_len; 
 };
 
+struct timespec32 {
+	int 	tv_sec;
+	int	tv_nsec;
+};
+
 #endif /* !CONFIG_IA32_SUPPORT */
  
 #endif 

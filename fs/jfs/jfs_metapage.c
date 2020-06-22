@@ -1,6 +1,6 @@
 /*
- *   Copyright (c) International Business Machines Corp., 2000-2002
- *   Portions Copyright (c) Christoph Hellwig, 2001-2002
+ *   Copyright (C) International Business Machines Corp., 2000-2003
+ *   Portions Copyright (C) Christoph Hellwig, 2001-2002
  *
  *   This program is free software;  you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #include <linux/fs.h>
 #include <linux/init.h>
 #include "jfs_incore.h"
+#include "jfs_superblock.h"
 #include "jfs_filsys.h"
 #include "jfs_metapage.h"
 #include "jfs_txnmgr.h"
@@ -291,14 +292,23 @@ struct metapage *__get_metapage(struct inode *inode, unsigned long lblock,
 	if (mp) {
 	      page_found:
 		if (test_bit(META_discard, &mp->flag)) {
-			assert(new);	/* It's okay to reuse a discarded
-					 * if we expect it to be empty
-					 */
+			if (!new) {
+				spin_unlock(&meta_lock);
+				jfs_error(inode->i_sb,
+					  "__get_metapage: using a "
+					  "discarded metapage");
+				return NULL;
+			}
 			clear_bit(META_discard, &mp->flag);
 		}
 		mp->count++;
 		jfs_info("__get_metapage: found 0x%p, in hash", mp);
-		assert(mp->logical_size == size);
+		if (mp->logical_size != size) {
+			spin_unlock(&meta_lock);
+			jfs_error(inode->i_sb,
+				  "__get_metapage: mp->logical_size != size");
+			return NULL;
+		}
 		lock_metapage(mp);
 		spin_unlock(&meta_lock);
 	} else {
@@ -548,9 +558,6 @@ void __invalidate_metapages(struct inode *ip, s64 addr, int len)
 		if (mp) {
 			set_bit(META_discard, &mp->flag);
 			spin_unlock(&meta_lock);
-			lock_page(mp->page);
-			block_flushpage(mp->page, 0);
-			UnlockPage(mp->page);
 		} else {
 			spin_unlock(&meta_lock);
 			page = find_lock_page(mapping, lblock>>l2BlocksPerPage);

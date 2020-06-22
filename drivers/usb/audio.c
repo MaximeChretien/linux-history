@@ -105,6 +105,8 @@
  *              functionality. Tested and used in production with the emagic emi 2|6 
  *              on PPC and Intel. Also fixed a few logic 'crash and burn' corner 
  *              cases.
+ * 2003-06-30:  Thomas Sailer
+ *              Fix SETTRIGGER non OSS API conformity
  */
 
 /*
@@ -279,23 +281,24 @@ struct dmabuf {
 	unsigned int srate;
 	/* physical buffer */
 	unsigned char *sgbuf[NRSGBUF];
-	unsigned bufsize;
-	unsigned numfrag;
-	unsigned fragshift;
-	unsigned wrptr, rdptr;
-	unsigned total_bytes;
+	unsigned int bufsize;
+	unsigned int numfrag;
+	unsigned int fragshift;
+	unsigned int wrptr, rdptr;
+	unsigned int total_bytes;
 	int count;
-	unsigned error; /* over/underrun */
+	unsigned int error; /* over/underrun */
 	wait_queue_head_t wait;
 	/* redundant, but makes calculations easier */
-	unsigned fragsize;
-	unsigned dmasize;
+	unsigned int fragsize;
+	unsigned int dmasize;
 	/* OSS stuff */
-	unsigned mapped:1;
-	unsigned ready:1;
-	unsigned ossfragshift;
+	unsigned int mapped:1;
+	unsigned int ready:1;
+	unsigned int enabled:1;
+	unsigned int ossfragshift;
 	int ossmaxfrags;
-	unsigned subdivision;
+	unsigned int subdivision;
 };
 
 struct usb_audio_state;
@@ -562,6 +565,7 @@ static int dmabuf_init(struct dmabuf *db)
 			break;
 	}
 	db->bufsize = nr << PAGE_SHIFT;
+	db->enabled = 1;
 	db->ready = 1;
 	dprintk((KERN_DEBUG "usbaudio: dmabuf_init bytepersec %d bufs %d ossfragshift %d ossmaxfrags %d "
 	         "fragshift %d fragsize %d numfrag %d dmasize %d bufsize %d fmt 0x%x srate %d\n",
@@ -2299,7 +2303,7 @@ static ssize_t usb_audio_read(struct file *file, char *buffer, size_t count, lof
 		if (cnt > count)
 			cnt = count;
 		if (cnt <= 0) {
-			if (usbin_start(as)) {
+			if (as->usbin.dma.enabled && usbin_start(as)) {
 				if (!ret)
 					ret = -ENODEV;
 				break;
@@ -2332,6 +2336,11 @@ static ssize_t usb_audio_read(struct file *file, char *buffer, size_t count, lof
 		count -= cnt;
 		buffer += cnt;
 		ret += cnt;
+		if (as->usbin.dma.enabled && usbin_start(as)) {
+			if (!ret)
+				ret = -ENODEV;
+			break;
+		}
 	}
 	__set_current_state(TASK_RUNNING);
 	remove_wait_queue(&as->usbin.dma.wait, &wait);
@@ -2378,7 +2387,7 @@ static ssize_t usb_audio_write(struct file *file, const char *buffer, size_t cou
 		if (cnt > count)
 			cnt = count;
 		if (cnt <= 0) {
-			if (usbout_start(as)) {
+			if (as->usbout.dma.enabled && usbout_start(as)) {
 				if (!ret)
 					ret = -ENODEV;
 				break;
@@ -2411,7 +2420,7 @@ static ssize_t usb_audio_write(struct file *file, const char *buffer, size_t cou
 		count -= cnt;
 		buffer += cnt;
 		ret += cnt;
-		if (as->usbout.dma.count >= start_thr && usbout_start(as)) {
+		if (as->usbout.dma.enabled && as->usbout.dma.count >= start_thr && usbout_start(as)) {
 			if (!ret)
 				ret = -ENODEV;
 			break;
@@ -2616,19 +2625,25 @@ static int usb_audio_ioctl(struct inode *inode, struct file *file, unsigned int 
 			if (val & PCM_ENABLE_INPUT) {
 				if (!as->usbin.dma.ready && (ret = prog_dmabuf_in(as)))
 					return ret;
+				as->usbin.dma.enabled = 1;
 				if (usbin_start(as))
 					return -ENODEV;
-			} else
+			} else {
+				as->usbin.dma.enabled = 0;
 				usbin_stop(as);
+			}
 		}
 		if (file->f_mode & FMODE_WRITE) {
 			if (val & PCM_ENABLE_OUTPUT) {
 				if (!as->usbout.dma.ready && (ret = prog_dmabuf_out(as)))
 					return ret;
+				as->usbout.dma.enabled = 1;
 				if (usbout_start(as))
 					return -ENODEV;
-			} else
+			} else {
+				as->usbout.dma.enabled = 0;
 				usbout_stop(as);
+			}
 		}
 		return 0;
 
@@ -2827,10 +2842,14 @@ static int usb_audio_open(struct inode *inode, struct file *file)
 		if (signal_pending(current))
 			return -ERESTARTSYS;
 	}
-	if (file->f_mode & FMODE_READ)
+	if (file->f_mode & FMODE_READ) {
 		as->usbin.dma.ossfragshift = as->usbin.dma.ossmaxfrags = as->usbin.dma.subdivision = 0;
-	if (file->f_mode & FMODE_WRITE)
+		as->usbin.dma.enabled = 1;
+	}
+	if (file->f_mode & FMODE_WRITE) {
 		as->usbout.dma.ossfragshift = as->usbout.dma.ossmaxfrags = as->usbout.dma.subdivision = 0;
+		as->usbout.dma.enabled = 1;
+	}
 	if (set_format(as, file->f_mode, ((minor & 0xf) == SND_DEV_DSP16) ? AFMT_S16_LE : AFMT_U8 /* AFMT_ULAW */, 8000)) {
 		up(&open_sem);
 		return -EIO;

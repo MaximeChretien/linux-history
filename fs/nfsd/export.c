@@ -640,7 +640,7 @@ struct flags {
 	{ NFSEXP_UIDMAP, {"uidmap", ""}},
 	{ NFSEXP_KERBEROS, { "kerberos", ""}},
 	{ NFSEXP_SUNSECURE, { "sunsecure", ""}},
-	{ NFSEXP_CROSSMNT, {"nohide", ""}},
+	{ NFSEXP_NOHIDE, {"nohide", ""}},
 	{ NFSEXP_NOSUBTREECHECK, {"no_subtree_check", ""}},
 	{ NFSEXP_NOAUTHNLM, {"insecure_locks", ""}},
 #ifdef MSNFS
@@ -903,8 +903,10 @@ exp_nlmdetach(void)
 {
 	struct svc_client	*clp;
 
+	exp_readlock();
 	for (clp = clients; clp; clp = clp->cl_next)
 		nfsd_lockd_unexport(clp);
+	exp_unlock();
 }
 
 /*

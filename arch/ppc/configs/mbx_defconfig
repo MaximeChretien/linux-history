@@ -465,6 +465,17 @@ CONFIG_PARTITION_ADVANCED=y
 # CONFIG_SOUND is not set
 
 #
+# MPC8xx Options
+#
+
+#
+# Generic MPC8xx Options
+#
+CONFIG_8xx_COPYBACK=y
+CONFIG_8xx_CPU6=y
+# CONFIG_UCODE_PATCH is not set
+
+#
 # MPC8xx CPM Options
 #
 CONFIG_SCC_ENET=y
@@ -473,17 +484,13 @@ CONFIG_SCC1_ENET=y
 # CONFIG_SCC3_ENET is not set
 # CONFIG_FEC_ENET is not set
 CONFIG_ENET_BIG_BUFFERS=y
+CONFIG_8xx_SMC1=y
 CONFIG_SMC2_UART=y
 # CONFIG_ALTSMC2 is not set
 # CONFIG_CONS_SMC2 is not set
-CONFIG_USE_SCC_IO=y
-
-#
-# Generic MPC8xx Options
-#
-CONFIG_8xx_COPYBACK=y
-CONFIG_8xx_CPU6=y
-# CONFIG_UCODE_PATCH is not set
+# CONFIG_8xx_SCC2 is not set
+# CONFIG_8xx_SCC3 is not set
+# CONFIG_8xx_SCC4 is not set
 
 #
 # USB support

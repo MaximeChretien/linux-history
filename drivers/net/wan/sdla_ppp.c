@@ -3331,7 +3331,7 @@ static int chk_bcast_mcast_addr(sdla_t *card, netdevice_t* dev,
 
 void s508_lock (sdla_t *card, unsigned long *smp_flags)
 {
-#if defined(__SMP__) || defined(LINUX_2_4)
+#if defined(CONFIG_SMP) || defined(LINUX_2_4)
 	spin_lock_irqsave(&card->wandev.lock, *smp_flags);
 #else
 	disable_irq(card->hw.irq);
@@ -3340,7 +3340,7 @@ void s508_lock (sdla_t *card, unsigned long *smp_flags)
 
 void s508_unlock (sdla_t *card, unsigned long *smp_flags)
 {
-#if defined(__SMP__) || defined(LINUX_2_4)
+#if defined(CONFIG_SMP) || defined(LINUX_2_4)
         spin_unlock_irqrestore(&card->wandev.lock, *smp_flags);
 #else
 	enable_irq(card->hw.irq);

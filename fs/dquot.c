@@ -392,6 +392,7 @@ restart:
 		 * is enough since if dquot is locked/modified it can't be
 		 * on the free list */
 		get_dquot_ref(dquot);
+		dqstats.lookups++;
 		if (dquot->dq_flags & DQ_LOCKED)
 			wait_on_dquot(dquot);
 		if (dquot_dirty(dquot))
@@ -622,7 +623,6 @@ we_slept:
 		dqput(dquot);
 		return NODQUOT;
 	}
-	++dquot->dq_referenced;
 	dqstats.lookups++;
 
 	return dquot;
@@ -642,7 +642,6 @@ static struct dquot *dqduplicate(struct dquot *dquot)
 	if (dquot->dq_flags & DQ_LOCKED)
 		printk(KERN_ERR "VFS: dqduplicate(): Locked quota to be duplicated!\n");
 	get_dquot_dup_ref(dquot);
-	dquot->dq_referenced++;
 	dqstats.lookups++;
 
 	return dquot;

@@ -57,7 +57,9 @@
 	st8	[_tmp]=r9,0x08;;			\
 	st8	[_tmp]=r10,0x08;;			\
 	st8	[_tmp]=r11,0x08;;			\
-	st8	[_tmp]=r12,0x08
+	st8	[_tmp]=r12,0x08;;			\
+	st8	[_tmp]=r17,0x08;;			\
+	st8	[_tmp]=r18,0x08
 
 /*
  * OS_MCA_TO_SAL_HANDOFF_STATE (SAL 3.0 spec)

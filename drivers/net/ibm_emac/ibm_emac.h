@@ -85,22 +85,52 @@ typedef struct emac_regs {
 #define EMAC_M1_IST			0x01000000
 #define EMAC_M1_MF_1000MBPS		0x00800000	/* 0's for 10MBPS */
 #define EMAC_M1_MF_100MBPS		0x00400000
+#define EMAC_M1_TR			0x00008000
+#ifdef CONFIG_IBM_EMAC4
+#define EMAC_M1_RFS_16K                 0x00280000	/* 000 for 512 byte */
+#define EMAC_M1_RFS_8K                  0x00200000
+#define EMAC_M1_RFS_4K                  0x00180000
+#define EMAC_M1_RFS_2K                  0x00100000
+#define EMAC_M1_RFS_1K                  0x00080000
+#define EMAC_M1_TX_FIFO_16K             0x00050000	/* 0's for 512 byte */
+#define EMAC_M1_TX_FIFO_8K              0x00040000
+#define EMAC_M1_TX_FIFO_4K              0x00030000
+#define EMAC_M1_TX_FIFO_2K              0x00020000
+#define EMAC_M1_TX_FIFO_1K              0x00010000
+#define EMAC_M1_TX_MWSW                 0x00001000	/* 0 wait for status */
+#define EMAC_M1_JUMBO_ENABLE            0x00000800	/* Upt to 9Kr status */
+#define EMAC_M1_OPB_CLK_66              0x00000010	/* 66Mhz */
+#define EMAC_M1_OPB_CLK_83              0x00000008	/* 83hz */
+#define EMAC_M1_OPB_CLK_100             0x00000018	/* 100Mhz */
+#define EMAC_M1_OPB_CLK_100P            0x00000020	/* 100Mhz+ */
+#else /* CONFIG_IBM_EMAC4 */
 #define EMAC_M1_RFS_4K			0x00300000	/* ~4k for 512 byte */
 #define EMAC_M1_RFS_2K			0x00200000
 #define EMAC_M1_RFS_1K			0x00100000
 #define EMAC_M1_TX_FIFO_2K		0x00080000	/* 0's for 512 byte */
 #define EMAC_M1_TX_FIFO_1K		0x00040000
 #define EMAC_M1_TR0_DEPEND		0x00010000	/* 0'x for single packet */
-#define EMAC_M1_TR0_MULTI		0x00008000
 #define EMAC_M1_TR1_DEPEND		0x00004000
 #define EMAC_M1_TR1_MULTI		0x00002000
 #define EMAC_M1_JUMBO_ENABLE		0x00001000
+#endif /* CONFIG_IBM_EMAC4 */
+#define EMAC_M1_BASE			(EMAC_M1_RFS_4K | \
+					EMAC_M1_TX_FIFO_2K | \
+					EMAC_M1_APP | \
+					EMAC_M1_TR)
 
 /* Transmit Mode Register 0 */
-#define EMAC_TXM0_GNP0			0x80000000
-#define EMAC_TXM0_GNP1			0x40000000
-#define EMAC_TXM0_GNPD			0x20000000
-#define EMAC_TXM0_FC			0x10000000
+#define EMAC_TMR0_GNP0			0x80000000
+#define EMAC_TMR0_GNP1			0x40000000
+#define EMAC_TMR0_GNPD			0x20000000
+#define EMAC_TMR0_FC			0x10000000
+#define EMAC_TMR0_TFAE_2_32		0x00000001
+#define EMAC_TMR0_TFAE_4_64		0x00000002
+#define EMAC_TMR0_TFAE_8_128		0x00000003
+#define EMAC_TMR0_TFAE_16_256		0x00000004
+#define EMAC_TMR0_TFAE_32_512		0x00000005
+#define EMAC_TMR0_TFAE_64_1024		0x00000006
+#define EMAC_TMR0_TFAE_128_2048		0x00000007
 
 /* Receive Mode Register */
 #define EMAC_RMR_SP			0x80000000
@@ -116,6 +146,14 @@ typedef struct emac_regs {
 #define EMAC_RMR_MIAE			0x00200000
 #define EMAC_RMR_BAE			0x00100000
 #define EMAC_RMR_MAE			0x00080000
+#define EMAC_RMR_RFAF_2_32		0x00000001
+#define EMAC_RMR_RFAF_4_64		0x00000002
+#define EMAC_RMR_RFAF_8_128		0x00000003
+#define EMAC_RMR_RFAF_16_256		0x00000004
+#define EMAC_RMR_RFAF_32_512		0x00000005
+#define EMAC_RMR_RFAF_64_1024		0x00000006
+#define EMAC_RMR_RFAF_128_2048		0x00000007
+#define EMAC_RMR_BASE			(EMAC_RMR_IAE | EMAC_RMR_BAE)
 
 /* Interrupt Status & enable Regs */
 #define EMAC_ISR_OVR			0x02000000
@@ -148,10 +186,10 @@ typedef struct emac_regs {
 #define EMAC_STACR_CLK_100MHZ		0x00000C00
 
 /* Transmit Request Threshold Register */
-#define EMAC_TRTR_256			0x18000000	/* 0's for 64 Bytes */
+#define EMAC_TRTR_1600			0x18000000	/* 0's for 64 Bytes */
+#define EMAC_TRTR_256			0x03000000
 #define EMAC_TRTR_192			0x10000000
 #define EMAC_TRTR_128			0x01000000
-
 
 #define EMAC_TX_CTRL_GFCS		0x0200
 #define EMAC_TX_CTRL_GP			0x0100
@@ -176,8 +214,6 @@ typedef struct emac_regs {
 #define EMAC_TX_ST_UR			0x0002
 #define EMAC_TX_ST_SQE			0x0001
 
-#define EMAC_TX_ST_DEFAULT		0x03F3
-
 /* madmal receive status / Control bits */
 #define EMAC_RX_ST_OE			0x0200
 #define EMAC_RX_ST_PP			0x0100
@@ -191,5 +227,36 @@ typedef struct emac_regs {
 #define EMAC_RX_ST_IRE			0x0001
 #define EMAC_BAD_RX_PACKET		0x02ff
 
+/* Revision specific EMAC register defaults */
+#ifdef CONFIG_IBM_EMAC4
+#define EMAC_M1_DEFAULT			(EMAC_M1_BASE | \
+					EMAC_M1_OPB_CLK_66 | \
+					EMAC_M1_TX_MWSW)
+#define EMAC_RMR_DEFAULT		(EMAC_RMR_BASE | \
+					EMAC_RMR_RFAF_128_2048)
+#define EMAC_TMR0_XMIT			(EMAC_TMR0_GNP0 | \
+					EMAC_TMR0_TFAE_128_2048)
+#define EMAC_TRTR_DEFAULT		EMAC_TRTR_256
+#else /* !CONFIG_IBM_EMAC4 */
+#define EMAC_M1_DEFAULT			EMAC_M1_BASE
+#define EMAC_RMR_DEFAULT		EMAC_RMR_BASE
+#define EMAC_TMR0_XMIT			EMAC_TMR0_GNP0
+#define EMAC_TRTR_DEFAULT		EMAC_TRTR_1600
+#endif /* CONFIG_IBM_EMAC4 */
+
+/* SoC implementation specific EMAC register defaults */
+#if defined(CONFIG_440GP)
+#define EMAC_RWMR_DEFAULT		0x80009000
+#define EMAC_TMR0_DEFAULT		0x00000000
+#define EMAC_TMR1_DEFAULT		0xf8640000
+#elif defined(CONFIG_440GX)
+#define EMAC_RWMR_DEFAULT		0x1000a200
+#define EMAC_TMR0_DEFAULT		EMAC_TMR0_TFAE_128_2048
+#define EMAC_TMR1_DEFAULT		0x88810000
+#else
+#define EMAC_RWMR_DEFAULT		0x0f002000
+#define EMAC_TMR0_DEFAULT		0x00000000
+#define EMAC_TMR1_DEFAULT		0x380f0000
+#endif /* CONFIG_440GP */
 
 #endif

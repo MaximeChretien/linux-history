@@ -194,6 +194,6 @@ int br_stp_handle_bpdu(struct sk_buff *skb)
 	}
 
  err:
-	kfree(skb);
+	kfree_skb(skb);
 	return 0;
 }

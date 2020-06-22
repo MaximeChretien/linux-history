@@ -192,7 +192,10 @@ static int help(const struct iphdr *iph, size_t len,
 			DEBUGP("DCC bound ip/port: %u.%u.%u.%u:%u\n",
 				HIPQUAD(dcc_ip), dcc_port);
 
-			if (ct->tuplehash[dir].tuple.src.ip != htonl(dcc_ip)) {
+			/* dcc_ip can be the internal OR external (NAT'ed) IP
+			 * Tiago Sousa <mirage@kaotik.org> */
+			if (ct->tuplehash[dir].tuple.src.ip != htonl(dcc_ip)
+			    && ct->tuplehash[IP_CT_DIR_REPLY].tuple.dst.ip != htonl(dcc_ip)) {
 				if (net_ratelimit())
 					printk(KERN_WARNING
 						"Forged DCC command from "
@@ -218,7 +221,7 @@ static int help(const struct iphdr *iph, size_t len,
 
 			exp->tuple = ((struct ip_conntrack_tuple)
 				{ { 0, { 0 } },
-				  { htonl(dcc_ip), { .tcp = { htons(dcc_port) } },
+				  { ct->tuplehash[dir].tuple.src.ip, { .tcp = { htons(dcc_port) } },
 				    IPPROTO_TCP }});
 			exp->mask = ((struct ip_conntrack_tuple)
 				{ { 0, { 0 } },

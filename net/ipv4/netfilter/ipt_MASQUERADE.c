@@ -87,13 +87,21 @@ masquerade_target(struct sk_buff **pskb,
 	key.dst = (*pskb)->nh.iph->daddr;
 	key.src = 0; /* Unknown: that's what we're trying to establish */
 	key.tos = RT_TOS((*pskb)->nh.iph->tos)|RTO_CONN;
-	key.oif = out->ifindex;
+	key.oif = 0;
 #ifdef CONFIG_IP_ROUTE_FWMARK
 	key.fwmark = (*pskb)->nfmark;
 #endif
 	if (ip_route_output_key(&rt, &key) != 0) {
-		/* Shouldn't happen */
-		printk("MASQUERADE: No route: Rusty's brain broke!\n");
+                /* Funky routing can do this. */
+                if (net_ratelimit())
+                        printk("MASQUERADE:"
+                               " No route: Rusty's brain broke!\n");
+                return NF_DROP;
+        }
+        if (rt->u.dst.dev != out) {
+                if (net_ratelimit())
+                        printk("MASQUERADE:"
+                               " Route sent us somewhere else.\n");
 		return NF_DROP;
 	}
 

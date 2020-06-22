@@ -700,7 +700,7 @@ static int nsc_ircc_setup(chipio_t *info)
 	switch_bank(iobase, BANK3);
 	version = inb(iobase+MID);
 
-	IRDA_DEBUG(2, __FUNCTION__  "() Driver %s Found chip version %02x\n",
+	IRDA_DEBUG(2, "%s() Driver %s Found chip version %02x\n", __FUNCTION__,
 		   driver_name, version);
 
 	/* Should be 0x2? */

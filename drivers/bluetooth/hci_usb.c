@@ -70,11 +70,17 @@
 static struct usb_driver hci_usb_driver; 
 
 static struct usb_device_id bluetooth_ids[] = {
+	/* Digianswer device */
+	{ USB_DEVICE(0x08fd, 0x0001), driver_info: HCI_DIGIANSWER },
+
 	/* Generic Bluetooth USB device */
 	{ USB_DEVICE_INFO(HCI_DEV_CLASS, HCI_DEV_SUBCLASS, HCI_DEV_PROTOCOL) },
 
 	/* Ericsson with non-standard id */
 	{ USB_DEVICE(0x0bdb, 0x1002) },
+
+	/* ALPS Module with non-standard id */
+	{ USB_DEVICE(0x044e, 0x3002) },
 
 	/* Bluetooth Ultraport Module from IBM */
 	{ USB_DEVICE(0x04bf, 0x030a) },
@@ -302,7 +308,8 @@ static int hci_usb_open(struct hci_dev *hdev)
 
 #ifdef CONFIG_BLUEZ_USB_SCO
 		if (husb->isoc_iface)
-			hci_usb_isoc_rx_submit(husb);
+			for (i = 0; i < HCI_MAX_ISOC_RX; i++)
+				hci_usb_isoc_rx_submit(husb);
 #endif
 	} else {
 		clear_bit(HCI_RUNNING, &hdev->flags);
@@ -427,7 +434,7 @@ static inline int hci_usb_send_ctrl(struct hci_usb *husb, struct sk_buff *skb)
 	} else
 		dr = (void *) _urb->urb.setup_packet;
 
-	dr->bRequestType = HCI_CTRL_REQ;
+	dr->bRequestType = husb->ctrl_req;
 	dr->bRequest = 0;
 	dr->wIndex   = 0;
 	dr->wValue   = 0;
@@ -522,7 +529,7 @@ static void hci_usb_tx_process(struct hci_usb *husb)
 #ifdef CONFIG_BLUEZ_USB_SCO
 		/* Process SCO queue */
 		q = __transmit_q(husb, HCI_SCODATA_PKT);
-		if (!atomic_read(__pending_tx(husb, HCI_SCODATA_PKT)) &&
+		if (atomic_read(__pending_tx(husb, HCI_SCODATA_PKT)) < HCI_MAX_ISOC_TX &&
 				(skb = skb_dequeue(q))) {
 			if (hci_usb_send_isoc(husb, skb) < 0)
 				skb_queue_head(q, skb);
@@ -830,7 +837,7 @@ static void *hci_usb_probe(struct usb_device *udev, unsigned int ifnum, const st
 
 #ifdef CONFIG_BLUEZ_USB_SCO
 				case USB_ENDPOINT_XFER_ISOC:
-					if (ep->wMaxPacketSize < size)
+					if (ep->wMaxPacketSize < size || a > 2)
 						break;
 					size = ep->wMaxPacketSize;
 
@@ -872,6 +879,11 @@ static void *hci_usb_probe(struct usb_device *udev, unsigned int ifnum, const st
 	husb->bulk_out_ep = bulk_out_ep[0];
 	husb->bulk_in_ep  = bulk_in_ep[0];
 	husb->intr_in_ep  = intr_in_ep[0];
+
+	if (id->driver_info & HCI_DIGIANSWER)
+		husb->ctrl_req = HCI_DIGI_REQ;
+	else
+		husb->ctrl_req = HCI_CTRL_REQ;
 
 #ifdef CONFIG_BLUEZ_USB_SCO
 	if (isoc_iface) {

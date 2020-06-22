@@ -34,7 +34,7 @@
 #define X86_HARD_MATH	CPU_PARAMS+6
 #define X86_CPUID	CPU_PARAMS+8
 #define X86_CAPABILITY	CPU_PARAMS+12
-#define X86_VENDOR_ID	CPU_PARAMS+28
+#define X86_VENDOR_ID	CPU_PARAMS+36	/* tied to NCAPINTS in cpufeature.h */
 
 /*
  * swapper_pg_dir is the main page directory, address 0x00101000
@@ -113,7 +113,7 @@ startup_32:
 	popfl
 	jmp checkCPUtype
 1:
-#endif CONFIG_SMP
+#endif /* CONFIG_SMP */
 
 /*
  * Clear BSS first so that there are no surprises...

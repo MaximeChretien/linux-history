@@ -1,6 +1,6 @@
 /*
- *   Copyright (c) International Business Machines Corp., 2000-2002
- *   Portions Copyright (c) Christoph Hellwig, 2001-2002
+ *   Copyright (C) International Business Machines Corp., 2000-2003
+ *   Portions Copyright (C) Christoph Hellwig, 2001-2002
  *
  *   This program is free software;  you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -77,6 +77,43 @@ extern wait_queue_head_t jfs_IO_thread_wait;
 extern wait_queue_head_t jfs_commit_thread_wait;
 extern wait_queue_head_t jfs_sync_thread_wait;
 
+static void jfs_handle_error(struct super_block *sb)
+{
+	struct jfs_sb_info *sbi = JFS_SBI(sb);
+
+	if (sb->s_flags & MS_RDONLY)
+		return;
+
+	updateSuper(sb, FM_DIRTY);
+
+	if (sbi->flag & JFS_ERR_PANIC)
+		panic("JFS (device %s): panic forced after error\n",
+			bdevname(sb->s_dev));
+	else if (sbi->flag & JFS_ERR_REMOUNT_RO) {
+		jfs_err("ERROR: (device %s): remounting filesystem "
+			"as read-only\n",
+			bdevname(sb->s_dev));
+		sb->s_flags |= MS_RDONLY;
+	} 
+
+	/* nothing is done for continue beyond marking the superblock dirty */
+}
+
+void jfs_error(struct super_block *sb, const char * function, ...)
+{
+	static char error_buf[256];
+	va_list args;
+
+	va_start(args, function);
+	vsprintf(error_buf, function, args);
+	va_end(args);
+
+	printk(KERN_ERR "ERROR: (device %s): %s\n", bdevname(sb->s_dev),
+	       error_buf);
+
+	jfs_handle_error(sb);
+}
+
 static int jfs_statfs(struct super_block *sb, struct statfs *buf)
 {
 	struct jfs_sb_info *sbi = JFS_SBI(sb);
@@ -142,7 +179,8 @@ s64 jfs_get_volume_size(struct super_block *sb)
 	return 0;
 }
 
-static int parse_options(char *options, struct super_block *sb, s64 *newLVSize)
+static int parse_options(char *options, struct super_block *sb, s64 *newLVSize,
+			 int *flag)
 {
 	void *nls_map = NULL;
 	char *this_char;
@@ -158,7 +196,30 @@ static int parse_options(char *options, struct super_block *sb, s64 *newLVSize)
 			continue;
 		if ((value = strchr(this_char, '=')) != NULL)
 			*value++ = 0;
-		if (!strcmp(this_char, "iocharset")) {
+		if (!strcmp(this_char, "errors")) {
+			if (!value || !*value)
+				goto needs_arg;
+			if (!strcmp(value, "continue")) {
+				*flag &= ~JFS_ERR_REMOUNT_RO;
+				*flag &= ~JFS_ERR_PANIC;
+				*flag |= JFS_ERR_CONTINUE;
+			} else if (!strcmp(value, "remount-ro")) {
+				*flag &= ~JFS_ERR_CONTINUE;
+				*flag &= ~JFS_ERR_PANIC;
+				*flag |= JFS_ERR_REMOUNT_RO;
+			} else if (!strcmp(value, "panic")) {
+				*flag &= ~JFS_ERR_CONTINUE;
+				*flag &= ~JFS_ERR_REMOUNT_RO;
+				*flag |= JFS_ERR_PANIC;
+			} else {
+				printk(KERN_ERR "JFS: %s is an invalid error handler\n", value);
+				goto cleanup;
+			}
+		} else if (!strcmp(this_char, "integrity")) {
+			*flag &= ~JFS_NOINTEGRITY;
+		} else 	if (!strcmp(this_char, "nointegrity")) {
+			*flag |= JFS_NOINTEGRITY;
+		} else if (!strcmp(this_char, "iocharset")) {
 			if (!value || !*value)
 				goto needs_arg;
 			if (nls_map)	/* specified iocharset twice! */
@@ -208,8 +269,9 @@ int jfs_remount(struct super_block *sb, int *flags, char *data)
 {
 	s64 newLVSize = 0;
 	int rc = 0;
+	int flag = JFS_SBI(sb)->flag;
 
-	if (!parse_options(data, sb, &newLVSize)) {
+	if (!parse_options(data, sb, &newLVSize, &flag)) {
 		return -EINVAL;
 	}
 	if (newLVSize) {
@@ -223,10 +285,24 @@ int jfs_remount(struct super_block *sb, int *flags, char *data)
 			return rc;
 	}
 
-	if ((sb->s_flags & MS_RDONLY) && !(*flags & MS_RDONLY))
+	if ((sb->s_flags & MS_RDONLY) && !(*flags & MS_RDONLY)) {
+		JFS_SBI(sb)->flag = flag;
 		return jfs_mount_rw(sb, 1);
-	else if ((!(sb->s_flags & MS_RDONLY)) && (*flags & MS_RDONLY))
-		return jfs_umount_rw(sb);
+	}
+	if ((!(sb->s_flags & MS_RDONLY)) && (*flags & MS_RDONLY)) {
+		rc = jfs_umount_rw(sb);
+		JFS_SBI(sb)->flag = flag;
+		return rc;
+	}
+	if ((JFS_SBI(sb)->flag & JFS_NOINTEGRITY) != (flag & JFS_NOINTEGRITY))
+		if (!(sb->s_flags & MS_RDONLY)) {
+			rc = jfs_umount_rw(sb);
+			if (rc)
+				return rc;
+			JFS_SBI(sb)->flag = flag;
+			return jfs_mount_rw(sb, 1);
+		}
+	JFS_SBI(sb)->flag = flag;
 
 	return 0;
 }
@@ -238,6 +314,7 @@ static struct super_block *jfs_read_super(struct super_block *sb,
 	struct inode *inode;
 	int rc;
 	s64 newLVSize = 0;
+	int flag;
 
 	jfs_info("In jfs_read_super s_dev=0x%x s_flags=0x%lx", sb->s_dev,
 		 sb->s_flags);
@@ -248,10 +325,14 @@ static struct super_block *jfs_read_super(struct super_block *sb,
 	memset(sbi, 0, sizeof (struct jfs_sb_info));
 	sb->u.generic_sbp = sbi;
 
-	if (!parse_options((char *) data, sb, &newLVSize)) {
+	/* initialize the mount flag and determine the default error handler */
+	flag = JFS_ERR_REMOUNT_RO;
+
+	if (!parse_options((char *) data, sb, &newLVSize, &flag)) {
 		kfree(sbi);
 		return NULL;
 	}
+	sbi->flag = flag;
 
 	if (newLVSize) {
 		printk(KERN_ERR "resize option for remount only\n");
@@ -483,7 +564,7 @@ free_metapage:
 	metapage_exit();
 free_slab:
 	kmem_cache_destroy(jfs_inode_cachep);
-	return -rc;
+	return rc;
 }
 
 static void __exit exit_jfs_fs(void)

@@ -110,7 +110,7 @@ enum dvma_rev {
 /* Linux DMA information structure, filled during probe. */
 struct Linux_SBus_DMA {
 	struct Linux_SBus_DMA *next;
-	struct linux_sbus_device *SBus_dev;
+	struct sbus_dev *SBus_dev;
 	struct sparc_dma_registers *regs;
 
 	/* Status, misc info */

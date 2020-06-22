@@ -7,7 +7,7 @@
  *		2 of the License, or (at your option) any later version.
  *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
- *              Jamal Hadi Salim, <hadi@nortelnetworks.com> 990601
+ *              Jamal Hadi Salim, <hadi@cyberus.ca> 990601
  *              - Ingress support
  */
 
@@ -283,6 +283,8 @@ pfifo_fast_enqueue(struct sk_buff *skb, struct Qdisc* qdisc)
 	if (list->qlen <= qdisc->dev->tx_queue_len) {
 		__skb_queue_tail(list, skb);
 		qdisc->q.qlen++;
+		qdisc->stats.bytes += skb->len;
+		qdisc->stats.packets++;
 		return 0;
 	}
 	qdisc->stats.drops++;
@@ -331,6 +333,21 @@ pfifo_fast_reset(struct Qdisc* qdisc)
 	qdisc->q.qlen = 0;
 }
 
+static int pfifo_fast_dump(struct Qdisc *qdisc, struct sk_buff *skb)
+{
+	unsigned char	 *b = skb->tail;
+	struct tc_prio_qopt opt;
+
+	opt.bands = 3; 
+	memcpy(&opt.priomap, prio2band, TC_PRIO_MAX+1);
+	RTA_PUT(skb, TCA_OPTIONS, sizeof(opt), &opt);
+	return skb->len;
+
+rtattr_failure:
+	skb_trim(skb, b - skb->data);
+	return -1;
+}
+
 static int pfifo_fast_init(struct Qdisc *qdisc, struct rtattr *opt)
 {
 	int i;
@@ -358,6 +375,10 @@ static struct Qdisc_ops pfifo_fast_ops =
 
 	pfifo_fast_init,
 	pfifo_fast_reset,
+	NULL,
+	NULL,
+	pfifo_fast_dump,
+
 };
 
 struct Qdisc * qdisc_create_dflt(struct net_device *dev, struct Qdisc_ops *ops)
@@ -406,7 +427,6 @@ void qdisc_destroy(struct Qdisc *qdisc)
 
 	dev = qdisc->dev;
 
-#ifdef CONFIG_NET_SCHED
 	if (dev) {
 		struct Qdisc *q, **qp;
 		for (qp = &qdisc->dev->qdisc_list; (q=*qp) != NULL; qp = &q->next) {
@@ -418,7 +438,6 @@ void qdisc_destroy(struct Qdisc *qdisc)
 	}
 #ifdef CONFIG_NET_ESTIMATOR
 	qdisc_kill_estimator(&qdisc->stats);
-#endif
 #endif
 	if (ops->reset)
 		ops->reset(qdisc);
@@ -445,6 +464,12 @@ void dev_activate(struct net_device *dev)
 				printk(KERN_INFO "%s: activation failed\n", dev->name);
 				return;
 			}
+
+			write_lock(&qdisc_tree_lock);
+			qdisc->next = dev->qdisc_list;
+			dev->qdisc_list = qdisc;
+			write_unlock(&qdisc_tree_lock);
+
 		} else {
 			qdisc =  &noqueue_qdisc;
 		}

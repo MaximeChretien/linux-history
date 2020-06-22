@@ -14,14 +14,6 @@
 #include <linux/types.h>
 #include <linux/pci.h>
 
-/* for application compatibility with IRIX (why do I bother?) */
-
-#ifndef __KERNEL__
-typedef u_int8_t uint8_t;
-typedef u_int16_t uint16_t;
-typedef u_int32_t uint32_t;
-#endif
-
 #define PCI_CFG_VENDOR_ID	PCI_VENDOR_ID
 #define PCI_CFG_COMMAND		PCI_COMMAND
 #define PCI_CFG_REV_ID		PCI_REVISION_ID

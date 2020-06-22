@@ -1003,6 +1003,7 @@ typedef struct hwif_s {
 	unsigned	udma_four  : 1;	/* 1=ATA-66 capable, 0=default */
 	unsigned	highmem    : 1;	/* can do full 32-bit dma */
 	unsigned	no_dsc     : 1;	/* 0 default, 1 dsc_overlap disabled */
+	unsigned	sata	   : 1; /* 0 PATA, 1 SATA */
 
 	void		*hwif_data;	/* extra hwif data */
 } ide_hwif_t;
@@ -1331,9 +1332,10 @@ extern int ide_wait_stat(ide_startstop_t *, ide_drive_t *, u8, u8, unsigned long
 extern int ide_xlate_1024(kdev_t, int, int, const char *);
 
 /*
- * Convert kdev_t structure into ide_drive_t * one.
+ * Convert kdev_t structure into ide_drive_t * one. If force is set the
+ * non present drives can be opened.
  */
-extern ide_drive_t *get_info_ptr(kdev_t i_rdev);
+extern ide_drive_t *ide_info_ptr(kdev_t i_rdev, int force);
 
 /*
  * Return the current idea about the total capacity of this drive.
@@ -1347,12 +1349,6 @@ extern void ide_revalidate_drive(ide_drive_t *);
  * The caller should return immediately after invoking this.
  */
 extern ide_startstop_t ide_do_reset(ide_drive_t *);
-
-/*
- * Re-Start an operation for an IDE interface.
- * The caller should return immediately after invoking this.
- */
-extern int restart_request(ide_drive_t *, struct request *);
 
 /*
  * This function is intended to be used prior to invoking ide_do_drive_cmd().
@@ -1721,6 +1717,12 @@ static inline void ide_release_dma(ide_hwif_t *x) {;}
 #endif
 
 extern void hwif_unregister(ide_hwif_t *);
+
+extern void ide_probe_reset(ide_hwif_t *);
+extern void ide_tune_drives(ide_hwif_t *);
+extern int ide_wait_hwif_ready(ide_hwif_t *);
+extern u8 ide_probe_for_drive(ide_drive_t *);
+
 
 extern void export_ide_init_queue(ide_drive_t *);
 extern u8 export_probe_for_drive(ide_drive_t *);

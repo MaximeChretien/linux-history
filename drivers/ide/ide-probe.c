@@ -553,7 +553,7 @@ static void enable_nest (ide_drive_t *drive)
 }
 
 /**
- *	probe_for_drives	-	upper level drive probe
+ *	ide_probe_for_drives	-	upper level drive probe
  *	@drive: drive to probe for
  *
  *	probe_for_drive() tests for existence of a given drive using do_probe()
@@ -564,7 +564,7 @@ static void enable_nest (ide_drive_t *drive)
  *			   still be 0)
  */
  
-static inline u8 probe_for_drive (ide_drive_t *drive)
+u8 ide_probe_for_drive (ide_drive_t *drive)
 {
 	/*
 	 *	In order to keep things simple we have an id
@@ -687,9 +687,6 @@ static void hwif_register (ide_hwif_t *hwif)
 
 //EXPORT_SYMBOL(hwif_register);
 
-/* Enable code below on all archs later, for now, I want it on PPC
- */
-#ifdef CONFIG_PPC
 /*
  * This function waits for the hwif to report a non-busy status
  * see comments in probe_hwif()
@@ -716,7 +713,7 @@ static int wait_not_busy(ide_hwif_t *hwif, unsigned long timeout)
 	return ((stat & BUSY_STAT) == 0) ? 0 : -EBUSY;
 }
 
-static int wait_hwif_ready(ide_hwif_t *hwif)
+int ide_wait_hwif_ready(ide_hwif_t *hwif)
 {
 	int rc;
 
@@ -751,7 +748,67 @@ static int wait_hwif_ready(ide_hwif_t *hwif)
 	
 	return rc;
 }
-#endif /* CONFIG_PPC */
+
+void ide_probe_reset(ide_hwif_t *hwif)
+{
+	if (hwif->io_ports[IDE_CONTROL_OFFSET] && hwif->reset) {
+		unsigned long timeout = jiffies + WAIT_WORSTCASE;
+		u8 stat;
+
+		printk(KERN_WARNING "%s: reset\n", hwif->name);
+		hwif->OUTB(12, hwif->io_ports[IDE_CONTROL_OFFSET]);
+		udelay(10);
+		hwif->OUTB(8, hwif->io_ports[IDE_CONTROL_OFFSET]);
+		do {
+			ide_delay_50ms();
+			stat = hwif->INB(hwif->io_ports[IDE_STATUS_OFFSET]);
+		} while ((stat & BUSY_STAT) && time_after(timeout, jiffies));
+	}
+}
+
+void ide_tune_drives(ide_hwif_t *hwif)
+{
+	int unit;
+	
+	for (unit = 0; unit < MAX_DRIVES; ++unit) {
+		ide_drive_t *drive = &hwif->drives[unit];
+		int enable_dma = 1;
+
+		if (drive->present) {
+			if (hwif->tuneproc != NULL && 
+				drive->autotune == IDE_TUNE_AUTO)
+				/* auto-tune PIO mode */
+				hwif->tuneproc(drive, 255);
+
+#ifdef CONFIG_IDEDMA_ONLYDISK
+			if (drive->media != ide_disk)
+				enable_dma = 0;
+#endif
+			/*
+			 * MAJOR HACK BARF :-/
+			 *
+			 * FIXME: chipsets own this cruft!
+			 */
+			/*
+			 * Move here to prevent module loading clashing.
+			 */
+	//		drive->autodma = hwif->autodma;
+			if ((hwif->ide_dma_check) &&
+				((drive->autotune == IDE_TUNE_DEFAULT) ||
+				(drive->autotune == IDE_TUNE_AUTO))) {
+				/*
+				 * Force DMAing for the beginning of the check.
+				 * Some chipsets appear to do interesting
+				 * things, if not checked and cleared.
+				 *   PARANOIA!!!
+				 */
+				hwif->ide_dma_off_quietly(drive);
+				if (enable_dma)
+					hwif->ide_dma_check(drive);
+			}
+		}
+	}
+}
 
 /*
  * This routine only knows how to look for drive units 0 and 1
@@ -822,7 +879,7 @@ void probe_hwif (ide_hwif_t *hwif)
 	 *  
 	 *  BenH.
 	 */
-	if (wait_hwif_ready(hwif))
+	if (ide_wait_hwif_ready(hwif))
 		printk(KERN_WARNING "%s: Wait for ready failed before probe !\n", hwif->name);
 #endif /* CONFIG_PPC */
 
@@ -834,7 +891,7 @@ void probe_hwif (ide_hwif_t *hwif)
 		ide_drive_t *drive = &hwif->drives[unit];
 		drive->dn = ((hwif->channel ? 2 : 0) + unit);
 		hwif->drives[unit].dn = ((hwif->channel ? 2 : 0) + unit);
-		(void) probe_for_drive(drive);
+		(void) ide_probe_for_drive(drive);
 		if (drive->present && !hwif->present) {
 			hwif->present = 1;
 			if (hwif->chipset != ide_4drives ||
@@ -844,20 +901,8 @@ void probe_hwif (ide_hwif_t *hwif)
 			}
 		}
 	}
-	if (hwif->io_ports[IDE_CONTROL_OFFSET] && hwif->reset) {
-		unsigned long timeout = jiffies + WAIT_WORSTCASE;
-		u8 stat;
-
-		printk(KERN_WARNING "%s: reset\n", hwif->name);
-		hwif->OUTB(12, hwif->io_ports[IDE_CONTROL_OFFSET]);
-		udelay(10);
-		hwif->OUTB(8, hwif->io_ports[IDE_CONTROL_OFFSET]);
-		do {
-			ide_delay_50ms();
-			stat = hwif->INB(hwif->io_ports[IDE_STATUS_OFFSET]);
-		} while ((stat & BUSY_STAT) && time_after(timeout, jiffies));
-
-	}
+	
+	ide_probe_reset(hwif);
 	local_irq_restore(flags);
 	/*
 	 * Use cached IRQ number. It might be (and is...) changed by probe
@@ -865,45 +910,9 @@ void probe_hwif (ide_hwif_t *hwif)
 	 */
 	if (irqd)
 		enable_irq(irqd);
+		
+	ide_tune_drives(hwif);
 
-	for (unit = 0; unit < MAX_DRIVES; ++unit) {
-		ide_drive_t *drive = &hwif->drives[unit];
-		int enable_dma = 1;
-
-		if (drive->present) {
-			if (hwif->tuneproc != NULL && 
-				drive->autotune == IDE_TUNE_AUTO)
-				/* auto-tune PIO mode */
-				hwif->tuneproc(drive, 255);
-
-#ifdef CONFIG_IDEDMA_ONLYDISK
-			if (drive->media != ide_disk)
-				enable_dma = 0;
-#endif
-			/*
-			 * MAJOR HACK BARF :-/
-			 *
-			 * FIXME: chipsets own this cruft!
-			 */
-			/*
-			 * Move here to prevent module loading clashing.
-			 */
-	//		drive->autodma = hwif->autodma;
-			if ((hwif->ide_dma_check) &&
-				((drive->autotune == IDE_TUNE_DEFAULT) ||
-				(drive->autotune == IDE_TUNE_AUTO))) {
-				/*
-				 * Force DMAing for the beginning of the check.
-				 * Some chipsets appear to do interesting
-				 * things, if not checked and cleared.
-				 *   PARANOIA!!!
-				 */
-				hwif->ide_dma_off_quietly(drive);
-				if (enable_dma)
-					hwif->ide_dma_check(drive);
-			}
-		}
-	}
 }
 
 EXPORT_SYMBOL(probe_hwif);
@@ -1335,13 +1344,6 @@ void export_ide_init_queue (ide_drive_t *drive)
 
 EXPORT_SYMBOL(export_ide_init_queue);
 
-u8 export_probe_for_drive (ide_drive_t *drive)
-{
-	return probe_for_drive(drive);
-}
-
-EXPORT_SYMBOL(export_probe_for_drive);
-
 #ifndef HWIF_PROBE_CLASSIC_METHOD
 int probe_hwif_init (ide_hwif_t *hwif)
 {
@@ -1414,22 +1416,30 @@ int ideprobe_init (void)
 #ifdef MODULE
 extern int (*ide_xlate_1024_hook)(kdev_t, int, int, const char *);
 
-int init_module (void)
+static int ideprobe_done = 0;
+
+int ideprobe_init_module (void)
 {
 	unsigned int index;
+
+	if (ideprobe_done)
+    		return -EBUSY;
 	
 	for (index = 0; index < MAX_HWIFS; ++index)
 		ide_unregister(index);
 	ideprobe_init();
 	create_proc_ide_interfaces();
 	ide_xlate_1024_hook = ide_xlate_1024;
+	ideprobe_done++;
 	return 0;
 }
 
-void cleanup_module (void)
+void ideprobe_cleanup_module (void)
 {
 	ide_probe = NULL;
 	ide_xlate_1024_hook = 0;
 }
+EXPORT_SYMBOL(ideprobe_init_module);
+EXPORT_SYMBOL(ideprobe_cleanup_module);
 MODULE_LICENSE("GPL");
 #endif /* MODULE */

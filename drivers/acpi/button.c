@@ -85,7 +85,7 @@ acpi_button_read_info (
 
 	ACPI_FUNCTION_TRACE("acpi_button_read_info");
 
-	if (!button || !button->device)
+	if (!button || !button->device || (off != 0))
 		goto end;
 
 	p += sprintf(p, "type:                    %s\n", 
@@ -119,7 +119,7 @@ acpi_button_lid_read_state(
 
 	ACPI_FUNCTION_TRACE("acpi_button_lid_read_state");
 
-	if (!button || !button->device)
+	if (!button || !button->device || (off != 0))
 		goto end;
 
 	status=acpi_evaluate_integer(button->handle,"_LID",NULL,&state);

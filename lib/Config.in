@@ -41,4 +41,9 @@ else
   fi
 fi
 
+if [ "$CONFIG_EXPERIMENTAL" = "y" -a \
+     "$CONFIG_HOTPLUG" = "y" ]; then
+   tristate 'Hotplug firmware loading support (EXPERIMENTAL)' CONFIG_FW_LOADER
+fi
+
 endmenu

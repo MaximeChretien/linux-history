@@ -361,7 +361,20 @@ _GLOBAL(_tlbia)
 	cmpwi	0, r3, 61		/* reserve last two entries */
 	ble	1b
 	isync
-#else
+#elif defined(CONFIG_44x)
+	lis	r3,0
+	sync
+1:
+	tlbwe	r3,r3,PPC44x_TLB_PAGEID
+	addi	r3,r3,1
+	/* Load high watermark */
+	lis	r4,tlb_44x_hwater@h
+	ori	r4,r4,tlb_44x_hwater@l
+	lwz	r5,0(r4)
+	cmpw	0,r3,r5
+	ble	1b
+	isync
+#else /* !(CONFIG_40x || CONFIG_44x) */
 #if defined(CONFIG_SMP)
 	mfmsr	r10
 	SYNC
@@ -406,7 +419,31 @@ _GLOBAL(_tlbie)
 	tlbwe	r3, r3, TLB_TAG
 	isync
 10:
-#else
+#elif defined(CONFIG_44x)
+	mfspr	r4,SPRN_MMUCR			/* Get MMUCR */
+	lis	r5,PPC44x_MMUCR_STS@h
+	ori	r5,r5,PPC44x_MMUCR_TID@l	/* Create mask */
+	andc	r4,r4,r5			/* Clear out TID/STS bits */
+	mfspr	r5,SPRN_PID			/* Get PID */
+	or	r4,r4,r5			/* Set TID bits */
+	mfmsr	r6				/* Get MSR */
+	andi.	r6,r6,MSR_IS@l			/* TS=1? */
+	beq	11f				/* If not, leave STS=0 */
+	oris	r4,r4,PPC44x_MMUCR_STS@h	/* Set STS=1 */
+11:	mtspr	SPRN_MMUCR, r4			/* Put MMUCR */
+
+	tlbsx.	r3, 0, r3
+	bne	10f
+	sync
+	/* There are only 64 TLB entries, so r3 < 64,
+	 * which means bit 22, is clear.  Since 22 is
+	 * the V bit in the TLB_PAGEID, loading this
+	 * value will invalidate the TLB entry.
+	 */
+	tlbwe	r3, r3, PPC44x_TLB_PAGEID
+	isync
+10:
+#else /* !(CONFIG_40x || CONFIG_44x) */
 #if defined(CONFIG_SMP)
 	mfmsr	r10
 	SYNC
@@ -570,7 +607,7 @@ _GLOBAL(invalidate_dcache_range)
 #ifdef CONFIG_NOT_COHERENT_CACHE
 /*
  * 40x cores have 8K or 16K dcache and 32 byte line size.
- * 440 has a 32K dcache and 32 byte line size.
+ * 44x has a 32K dcache and 32 byte line size.
  * 8xx has 1, 2, 4, 8K variants.
  * For now, cover the worst case of the 440.
  * Must be called with external interrupts disabled.
@@ -1243,6 +1280,24 @@ _GLOBAL(sys_call_table)
 	.long sys_ni_syscall 	/*	reserved for sys_io_getevents */
 	.long sys_ni_syscall 	/* 230	reserved for sys_io_submit */
 	.long sys_ni_syscall 	/*	reserved for sys_io_cancel */
+	.long sys_ni_syscall	/*	reserved for sys_set_tid_address */
+	.long sys_ni_syscall	/*	reserved for sys_fadvise64 */
+	.long sys_ni_syscall	/*	reserved for sys_exit_group */
+	.long sys_ni_syscall	/* 235	reserved for sys_lookup_dcookie */
+	.long sys_ni_syscall	/*	reserved for sys_epoll_create */
+	.long sys_ni_syscall	/*	reserved for sys_epoll_ctl */
+	.long sys_ni_syscall	/*	reserved for sys_epoll_wait */
+	.long sys_ni_syscall	/*	reserved for sys_remap_file_pages */
+	.long sys_ni_syscall	/* 240	reserved for sys_timer_create */
+	.long sys_ni_syscall	/*	reserved for sys_timer_settime */
+	.long sys_ni_syscall	/*	reserved for sys_timer_gettime */
+	.long sys_ni_syscall	/*	reserved for sys_timer_getoverrun */
+	.long sys_ni_syscall	/*	reserved for sys_timer_delete */
+	.long sys_ni_syscall	/* 245	reserved for sys_clock_settime */
+	.long sys_ni_syscall	/*	reserved for sys_clock_gettime */
+	.long sys_ni_syscall	/*	reserved for sys_clock_getres */
+	.long sys_ni_syscall	/*	reserved for sys_clock_nanosleep */
+	.long sys_swapcontext
 
 	.rept NR_syscalls-(.-sys_call_table)/4
 		.long sys_ni_syscall

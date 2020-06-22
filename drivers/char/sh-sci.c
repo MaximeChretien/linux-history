@@ -1,4 +1,4 @@
-/* $Id: sh-sci.c,v 1.1.1.1.2.7 2003/07/16 18:45:31 yoshii Exp $
+/* $Id: sh-sci.c,v 1.1.1.1.2.10 2003/09/17 23:38:56 davidm-sf Exp $
  *
  *  linux/drivers/char/sh-sci.c
  *
@@ -6,6 +6,7 @@
  *  Copyright (C) 1999, 2000  Niibe Yutaka
  *  Copyright (C) 2000  Sugioka Toshinobu
  *  Modified to support multiple serial ports. Stuart Menefy (May 2000).
+ *  Modified to support SecureEdge. David McCullough (2002) 
  *  Modified to support SH7300 SCIF. Takashi Kusuda (Jun 2003).
  *
  * TTY code is based on sx.c (Specialix SX driver) by:
@@ -239,6 +240,51 @@ static void put_string(struct sci_port *port, const char *buffer, int count)
 #endif /* CONFIG_SERIAL_CONSOLE */
 
 
+#if defined(CONFIG_SH_SECUREEDGE5410)
+
+struct timer_list sci_timer_struct;
+static unsigned char sci_dcdstatus[2];
+
+/*
+ * This subroutine is called when the RS_TIMER goes off. It is used
+ * to monitor the state of the DCD lines - since they have no edge
+ * sensors and interrupt generators.
+ */
+static void sci_timer(unsigned long data)
+{
+	unsigned short s, i;
+	unsigned char  dcdstatus[2];
+
+	s = SECUREEDGE_READ_IOPORT();
+	dcdstatus[0] = !(s & 0x10);
+	dcdstatus[1] = !(s & 0x1);
+
+	for (i = 0; i < 2; i++) {
+		if (dcdstatus[i] != sci_dcdstatus[i]) {
+			if (sci_ports[i].gs.count != 0) {
+				if (sci_ports[i].gs.flags & ASYNC_CHECK_CD) {
+					if (dcdstatus[i]) { /* DCD has gone high */
+						wake_up_interruptible(&sci_ports[i].gs.open_wait);
+					} else if (!((sci_ports[i].gs.flags&ASYNC_CALLOUT_ACTIVE) &&
+							(sci_ports[i].gs.flags & ASYNC_CALLOUT_NOHUP))) {
+						if (sci_ports[i].gs.tty)
+							tty_hangup(sci_ports[i].gs.tty);
+					}
+				}
+			}
+		}
+		sci_dcdstatus[i] = dcdstatus[i];
+	}
+
+	sci_timer_struct.expires = jiffies + HZ/25;
+	add_timer(&sci_timer_struct);
+}
+
+#endif
+
+
+
+
 #ifdef CONFIG_SH_KGDB
 
 /* Is the SCI ready, ie is there a char waiting? */
@@ -359,7 +405,7 @@ static void sci_init_pins_scif(struct sci_port* port, unsigned int cflag)
 		/* We need to set SCPCR to enable RTS/CTS */
 		data = ctrl_inw(SCPCR);
 		/* Clear out SCP7MD1,0, SCP6MD1,0, SCP4MD1,0*/
-		ctrl_outw(data&0x0fcf, SCPCR);
+		ctrl_outw(data&0x0cff, SCPCR);
 	}
 	if (cflag & CRTSCTS)
 		fcr_val |= SCFCR_MCE;
@@ -370,7 +416,7 @@ static void sci_init_pins_scif(struct sci_port* port, unsigned int cflag)
 		data = ctrl_inw(SCPCR);
 		/* Clear out SCP7MD1,0, SCP4MD1,0,
 		   Set SCP6MD1,0 = {01} (output)  */
-		ctrl_outw((data&0x0fcf)|0x1000, SCPCR);
+		ctrl_outw((data&0x0cff)|0x1000, SCPCR);
 
 		data = ctrl_inb(SCPDR);
 		/* Set /RTS2 (bit6) = 0 */
@@ -413,7 +459,29 @@ static void sci_setsignals(struct sci_port *port, int dtr, int rts)
 	/* This routine is used for seting signals of: DTR, DCD, CTS/RTS */
 	/* We use SCIF's hardware for CTS/RTS, so don't need any for that. */
 	/* If you have signals for DTR and DCD, please implement here. */
-	;
+
+#if defined(CONFIG_SH_SECUREEDGE5410)
+	int flags;
+
+	save_and_cli(flags);
+	if (port == &sci_ports[1]) { /* port 1 only */
+		if (dtr == 0)
+			SECUREEDGE_WRITE_IOPORT(0x0080, 0x0080);
+		else if (dtr == 1)
+			SECUREEDGE_WRITE_IOPORT(0x0000, 0x0080);
+	}
+	if (port == &sci_ports[0]) { /* port 0 only */
+		if (dtr == 0)
+			SECUREEDGE_WRITE_IOPORT(0x0200, 0x0200);
+		else if (dtr == 1)
+			SECUREEDGE_WRITE_IOPORT(0x0000, 0x0200);
+		if (rts == 0)
+			SECUREEDGE_WRITE_IOPORT(0x0100, 0x0100);
+		else if (rts == 1)
+			SECUREEDGE_WRITE_IOPORT(0x0000, 0x0100);
+	}
+	restore_flags(flags);
+#endif
 }
 
 static int sci_getsignals(struct sci_port *port)
@@ -421,15 +489,34 @@ static int sci_getsignals(struct sci_port *port)
 	/* This routine is used for geting signals of: DTR, DCD, DSR, RI,
 	   and CTS/RTS */
 
+#if defined(CONFIG_SH_SECUREEDGE5410)
+	if (port == &sci_ports[1]) { /* port 1 only */
+		unsigned short s = SECUREEDGE_READ_IOPORT();
+		int rc = TIOCM_RTS|TIOCM_DSR|TIOCM_CTS;
+
+		if ((s & 0x0001) == 0)
+			rc |= TIOCM_CAR;
+		if ((SECUREEDGE_READ_IOPORT() & 0x0080) == 0)
+			rc |= TIOCM_DTR;
+		return(rc);
+	}
+	if (port == &sci_ports[0]) { /* port 0 only */
+		unsigned short s = SECUREEDGE_READ_IOPORT();
+		int rc = TIOCM_DSR;
+
+		if ((s & 0x0010) == 0)
+			rc |= TIOCM_CAR;
+		if ((s & 0x0004) == 0)
+			rc |= TIOCM_CTS;
+		if ((SECUREEDGE_READ_IOPORT() & 0x0200) == 0)
+			rc |= TIOCM_DTR;
+		if ((SECUREEDGE_READ_IOPORT() & 0x0100) == 0)
+			rc |= TIOCM_RTS;
+		return(rc);
+	}
+#endif
+
 	return TIOCM_DTR|TIOCM_RTS|TIOCM_DSR;
-/*
-	(((o_stat & OP_DTR)?TIOCM_DTR:0) |
-	 ((o_stat & OP_RTS)?TIOCM_RTS:0) |
-	 ((i_stat & IP_CTS)?TIOCM_CTS:0) |
-	 ((i_stat & IP_DCD)?TIOCM_CAR:0) |
-	 ((i_stat & IP_DSR)?TIOCM_DSR:0) |
-	 ((i_stat & IP_RI) ?TIOCM_RNG:0)
-*/
 }
 
 static void sci_set_baud(struct sci_port *port, int baud)
@@ -458,6 +545,11 @@ static void sci_set_baud(struct sci_port *port, int baud)
 	case 57600:
 		t = BPS_57600;
 		break;
+	case 230400:
+		if (BPS_230400 != BPS_115200) {
+			t = BPS_230400;
+			break;
+		}
 	default:
 		printk(KERN_INFO "sci: unsupported baud rate: %d, using 115200 instead.\n", baud);
 	case 115200:
@@ -513,6 +605,11 @@ static void sci_set_termios_cflag(struct sci_port *port, int cflag, int baud)
 
 	port->init_pins(port, cflag);
 	sci_out(port, SCSCR, SCSCR_INIT(port));
+
+	if (cflag & CLOCAL)
+		port->gs.flags &= ~ASYNC_CHECK_CD;
+	else
+		port->gs.flags |= ASYNC_CHECK_CD;
 }
 
 static int sci_set_real_termios(void *ptr)
@@ -524,22 +621,6 @@ static int sci_set_real_termios(void *ptr)
 		sci_set_termios_cflag(port, port->old_cflag, port->gs.baud);
 		sci_enable_rx_interrupts(port);
 	}
-
-	/* Tell line discipline whether we will do input cooking */
-	if (I_OTHER(port->gs.tty))
-		clear_bit(TTY_HW_COOK_IN, &port->gs.tty->flags);
-	else
-		set_bit(TTY_HW_COOK_IN, &port->gs.tty->flags);
-
-/* Tell line discipline whether we will do output cooking.
- * If OPOST is set and no other output flags are set then we can do output
- * processing.  Even if only *one* other flag in the O_OTHER group is set
- * we do cooking in software.
- */
-	if (O_OPOST(port->gs.tty) && !O_OTHER(port->gs.tty))
-		set_bit(TTY_HW_COOK_OUT, &port->gs.tty->flags);
-	else
-		clear_bit(TTY_HW_COOK_OUT, &port->gs.tty->flags);
 
 	return 0;
 }
@@ -561,8 +642,8 @@ static inline void sci_sched_event(struct sci_port *port, int event)
 
 static void sci_transmit_chars(struct sci_port *port)
 {
-	int count, i;
-	int txroom;
+	unsigned int count, i;
+	unsigned int txroom;
 	unsigned long flags;
 	unsigned short status;
 	unsigned short ctrl;
@@ -645,7 +726,7 @@ static void sci_transmit_chars(struct sci_port *port)
 static inline void sci_receive_chars(struct sci_port *port,
 				     struct pt_regs *regs)
 {
-	int i, count;
+	int count;
 	struct tty_struct *tty;
 	int copied=0;
 	unsigned short status;
@@ -655,6 +736,7 @@ static inline void sci_receive_chars(struct sci_port *port,
 		return;
 
 	tty = port->gs.tty;
+
 	while (1) {
 		if (port->type == PORT_SCIF) {
 #if defined(CONFIG_CPU_SUBTYPE_SH7300)
@@ -666,34 +748,41 @@ static inline void sci_receive_chars(struct sci_port *port,
 			count = (sci_in(port, SCxSR)&SCxSR_RDxF(port))?1:0;
 		}
 
-		/* Don't copy more bytes than there is room for in the buffer */
-		if (tty->flip.count + count > TTY_FLIPBUF_SIZE)
-			count = TTY_FLIPBUF_SIZE - tty->flip.count;
+		/* we must clear RDF or we get stuck in the interrupt for ever */
+		sci_in(port, SCxSR); /* dummy read */
+		sci_out(port, SCxSR, SCxSR_RDxF_CLEAR(port));
 
 		/* If for any reason we can't copy more data, we're done! */
 		if (count == 0)
 			break;
 
 		if (port->type == PORT_SCI) {
-			tty->flip.char_buf_ptr[0] = sci_in(port, SCxRDR);
-			tty->flip.flag_buf_ptr[0] = TTY_NORMAL;
+			if (tty->flip.count < TTY_FLIPBUF_SIZE) {
+				*tty->flip.char_buf_ptr++ = sci_in(port, SCxRDR);
+				*tty->flip.flag_buf_ptr++ = TTY_NORMAL;
+				tty->flip.count++;
+				port->icount.rx++;
+				copied++;
+				count--;
+			}
 		} else {
-			for (i=0; i<count; i++) {
+			while (count > 0 && tty->flip.count < TTY_FLIPBUF_SIZE){
 				char c = sci_in(port, SCxRDR);
 				status = sci_in(port, SCxSR);
+
 #if defined(__SH3__)
 				/* Skip "chars" during break */
 				if (port->break_flag) {
 					if ((c == 0) &&
 					    (status & SCxSR_FER(port))) {
-						count--; i--;
+						count--;
 						continue;
 					}
 					/* Nonzero => end-of-break */
 					dprintk("scif: debounce<%02x>\n", c);
 					port->break_flag = 0;
 					if (STEPFN(c)) {
-						count--; i--;
+						count--;
 						continue;
 					}
 				}
@@ -706,7 +795,7 @@ static inline void sci_receive_chars(struct sci_port *port,
 						handle_sysrq(c, regs,
 							     NULL, NULL);
 						break_pressed = 0;
-						count--; i--;
+						count--;
 						continue;
 					} else if (c != 0) {
 						break_pressed = 0;
@@ -715,29 +804,31 @@ static inline void sci_receive_chars(struct sci_port *port,
 #endif /* CONFIG_SERIAL_CONSOLE && CONFIG_MAGIC_SYSRQ */
 
 				/* Store data and status */
-				tty->flip.char_buf_ptr[i] = c;
+				*tty->flip.char_buf_ptr++ = c;
+
 				if (status&SCxSR_FER(port)) {
-					tty->flip.flag_buf_ptr[i] = TTY_FRAME;
+					*tty->flip.flag_buf_ptr++ = TTY_FRAME;
 					dprintk("sci: frame error\n");
 				} else if (status&SCxSR_PER(port)) {
-					tty->flip.flag_buf_ptr[i] = TTY_PARITY;
+					*tty->flip.flag_buf_ptr++ = TTY_PARITY;
 					dprintk("sci: parity error\n");
 				} else {
-					tty->flip.flag_buf_ptr[i] = TTY_NORMAL;
+					*tty->flip.flag_buf_ptr++ = TTY_NORMAL;
 				}
+				tty->flip.count++;
+				port->icount.rx++;
+				copied++;
+				count--;
 			}
 		}
 
-		sci_in(port, SCxSR); /* dummy read */
-		sci_out(port, SCxSR, SCxSR_RDxF_CLEAR(port));
-
-		/* Update the kernel buffer end */
-		tty->flip.count += count;
-		tty->flip.char_buf_ptr += count;
-		tty->flip.flag_buf_ptr += count;
-
-		copied += count;
-		port->icount.rx += count;
+		/* drop any remaining chars,  we are full */
+		if (count > 0) {
+			/* force an overrun error on last received char */
+			tty->flip.flag_buf_ptr[TTY_FLIPBUF_SIZE - 1] = TTY_OVERRUN;
+			while (count-- > 0)
+				(void) sci_in(port, SCxRDR);
+		}
 	}
 
 	if (copied)
@@ -821,9 +912,11 @@ static inline int sci_handle_breaks(struct sci_port *port)
 		*tty->flip.flag_buf_ptr++ = TTY_BREAK;
 		dprintk("sci: BREAK detected\n");
 	}
+#if defined(CONFIG_CPU_SH3) || defined(CONFIG_SERIAL_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ)
  break_continue:
+#endif
 
-#if defined(CONFIG_CPU_SUBTYPE_SH7750) || defined(CONFIG_CPU_SUBTYPE_ST40)
+#if defined(CONFIG_CPU_SUBTYPE_SH7750) || defined (CONFIG_CPU_SUBTYPE_SH7751) || defined(CONFIG_CPU_SUBTYPE_ST40)
 	/* XXX: Handle SCIF overrun error */
 	if (port->type == PORT_SCIF && (sci_in(port, SCLSR) & SCIF_ORER) != 0) {
 		sci_out(port, SCLSR, 0);
@@ -994,6 +1087,15 @@ static void sci_enable_rx_interrupts(void * ptr)
 static int sci_get_CD(void * ptr)
 {
 	/* If you have signal for CD (Carrier Detect), please change here. */
+
+#if defined(CONFIG_SH_SECUREEDGE5410)
+	struct sci_port *port = ptr;
+
+	if (port == &sci_ports[0] || port == &sci_ports[1])
+		if ((sci_getsignals(port) & TIOCM_CAR) == 0)
+			return 0;
+#endif
+
 	return 1;
 }
 
@@ -1409,6 +1511,18 @@ int __init sci_init(void)
 		       (port->type == PORT_SCI) ? "SCI" : "SCIF");
 	}
 
+#if defined(CONFIG_SH_SECUREEDGE5410)
+	init_timer(&sci_timer_struct);
+	sci_timer_struct.function = sci_timer;
+	sci_timer_struct.data = 0;
+	sci_timer_struct.expires = jiffies + HZ/25;
+	add_timer(&sci_timer_struct);
+
+	j = SECUREEDGE_READ_IOPORT();
+	sci_dcdstatus[0] = !(j & 0x10);
+	sci_dcdstatus[1] = !(j & 0x1);
+#endif
+
 	sci_init_drivers();
 
 #ifdef CONFIG_SH_STANDARD_BIOS
@@ -1425,6 +1539,9 @@ module_init(sci_init);
 
 void cleanup_module(void)
 {
+#if defined(CONFIG_SH_SECUREEDGE5410)
+	del_timer(&sci_timer_struct);
+#endif
 	tty_unregister_driver(&sci_driver);
 	tty_unregister_driver(&sci_callout_driver);
 }
@@ -1494,6 +1611,9 @@ static int __init serial_console_setup(struct console *co, char *options)
 			break;
 		case 115200:
 			cflag |= B115200;
+			break;
+		case 230400:
+			cflag |= B230400;
 			break;
 		case 9600:
 		default:

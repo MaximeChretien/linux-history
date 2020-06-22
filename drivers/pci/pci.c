@@ -907,8 +907,12 @@ pci_set_master(struct pci_dev *dev)
 	pcibios_set_master(dev);
 }
 
+#ifndef HAVE_ARCH_PCI_MWI
+/* This can be overridden by arch code. */
+u8 pci_cache_line_size = L1_CACHE_BYTES >> 2;
+
 /**
- * pdev_set_mwi - arch helper function for pcibios_set_mwi
+ * pci_generic_prep_mwi - helper function for pci_set_mwi
  * @dev: the PCI device for which MWI is enabled
  *
  * Helper function for implementation the arch-specific pcibios_set_mwi
@@ -917,35 +921,34 @@ pci_set_master(struct pci_dev *dev)
  *
  * RETURNS: An appriopriate -ERRNO error value on eror, or zero for success.
  */
-int
-pdev_set_mwi(struct pci_dev *dev)
+static int
+pci_generic_prep_mwi(struct pci_dev *dev)
 {
-	int rc = 0;
-	u8 cache_size;
+	u8 cacheline_size;
 
-	/*
-	 * Looks like this is necessary to deal with on all architectures,
-	 * even this %$#%$# N440BX Intel based thing doesn't get it right.
-	 * Ie. having two NICs in the machine, one will have the cache
-	 * line set at boot time, the other will not.
-	 */
-	pci_read_config_byte(dev, PCI_CACHE_LINE_SIZE, &cache_size);
-	cache_size <<= 2;
-	if (cache_size != SMP_CACHE_BYTES) {
-		printk(KERN_WARNING "PCI: %s PCI cache line size set incorrectly (%i bytes) by BIOS/FW.\n",
-		       dev->slot_name, cache_size);
-		if (cache_size > SMP_CACHE_BYTES) {
-			printk("PCI: %s cache line size too large - expecting %i.\n", dev->slot_name, SMP_CACHE_BYTES);
-			rc = -EINVAL;
-		} else {
-			printk("PCI: %s PCI cache line size corrected to %i.\n", dev->slot_name, SMP_CACHE_BYTES);
-			pci_write_config_byte(dev, PCI_CACHE_LINE_SIZE,
-					      SMP_CACHE_BYTES >> 2);
-		}
-	}
+	if (!pci_cache_line_size)
+		return -EINVAL;		/* The system doesn't support MWI. */
 
-	return rc;
+	/* Validate current setting: the PCI_CACHE_LINE_SIZE must be
+	   equal to or multiple of the right value. */
+	pci_read_config_byte(dev, PCI_CACHE_LINE_SIZE, &cacheline_size);
+	if (cacheline_size >= pci_cache_line_size &&
+	    (cacheline_size % pci_cache_line_size) == 0)
+		return 0;
+
+	/* Write the correct value. */
+	pci_write_config_byte(dev, PCI_CACHE_LINE_SIZE, pci_cache_line_size);
+	/* Read it back. */
+	pci_read_config_byte(dev, PCI_CACHE_LINE_SIZE, &cacheline_size);
+	if (cacheline_size == pci_cache_line_size)
+		return 0;
+
+	printk(KERN_WARNING "PCI: cache line size of %d is not supported "
+	       "by device %s\n", pci_cache_line_size << 2, dev->slot_name);
+
+	return -EINVAL;
 }
+#endif /* !HAVE_ARCH_PCI_MWI */
 
 /**
  * pci_set_mwi - enables memory-write-invalidate PCI transaction
@@ -966,7 +969,7 @@ pci_set_mwi(struct pci_dev *dev)
 #ifdef HAVE_ARCH_PCI_MWI
 	rc = pcibios_set_mwi(dev);
 #else
-	rc = pdev_set_mwi(dev);
+	rc = pci_generic_prep_mwi(dev);
 #endif
 
 	if (rc)
@@ -1472,17 +1475,22 @@ struct pci_dev * __devinit pci_scan_slot(struct pci_dev *temp)
 	u8 hdr_type;
 
 	for (func = 0; func < 8; func++, temp->devfn++) {
-		if (func && !is_multi)		/* not a multi-function device */
-			continue;
 		if (pci_read_config_byte(temp, PCI_HEADER_TYPE, &hdr_type))
 			continue;
 		temp->hdr_type = hdr_type & 0x7f;
 
 		dev = pci_scan_device(temp);
-		if (!dev)
-			continue;
+		if (!pcibios_scan_all_fns() && func == 0) {
+			if (!dev)
+				break;
+		} else {
+			if (!dev)
+				continue;
+			is_multi = 1;
+		}
+
 		pci_name_device(dev);
-		if (!func) {
+		if (!first_dev) {
 			is_multi = hdr_type & 0x80;
 			first_dev = dev;
 		}
@@ -1496,6 +1504,14 @@ struct pci_dev * __devinit pci_scan_slot(struct pci_dev *temp)
 
 		/* Fix up broken headers */
 		pci_fixup_device(PCI_FIXUP_HEADER, dev);
+
+		/*
+		 * If this is a single function device
+		 * don't scan past the first function.
+		 */
+		if (!is_multi)
+			break;
+
 	}
 	return first_dev;
 }
@@ -2148,7 +2164,6 @@ EXPORT_SYMBOL(pci_find_subsys);
 EXPORT_SYMBOL(pci_set_master);
 EXPORT_SYMBOL(pci_set_mwi);
 EXPORT_SYMBOL(pci_clear_mwi);
-EXPORT_SYMBOL(pdev_set_mwi);
 EXPORT_SYMBOL(pci_set_dma_mask);
 EXPORT_SYMBOL(pci_dac_set_dma_mask);
 EXPORT_SYMBOL(pci_assign_resource);

@@ -21,6 +21,8 @@
 #include <linux/swapctl.h>
 #include <linux/timex.h>
 
+#if 0		/* Nothing in this file is used */
+
 /* #define DEBUG */
 
 /**
@@ -151,7 +153,6 @@ void oom_kill_task(struct task_struct *p)
 	 * exit() and clear out its resources quickly...
 	 */
 	p->counter = 5 * HZ;
-	p->flags |= PF_MEMALLOC | PF_MEMDIE;
 
 	/* This process has hardware access, be more careful. */
 	if (cap_t(p->cap_effective) & CAP_TO_MASK(CAP_SYS_RAWIO)) {
@@ -256,3 +257,5 @@ reset:
 	first = now;
 	count = 0;
 }
+
+#endif	/* Unused file */

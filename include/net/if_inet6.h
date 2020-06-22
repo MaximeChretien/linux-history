@@ -15,6 +15,10 @@
 #ifndef _NET_IF_INET6_H
 #define _NET_IF_INET6_H
 
+#include <linux/ipv6.h>
+
+#define IF_RA_OTHERCONF	0x80
+#define IF_RA_MANAGED	0x40
 #define IF_RA_RCVD	0x20
 #define IF_RS_SENT	0x10
 
@@ -123,22 +127,6 @@ struct ifacaddr6
 #define	IFA_LINK	IPV6_ADDR_LINKLOCAL
 #define	IFA_SITE	IPV6_ADDR_SITELOCAL
 #define	IFA_GLOBAL	0x0000U
-
-struct ipv6_devconf
-{
-	int		forwarding;
-	int		hop_limit;
-	int		mtu6;
-	int		accept_ra;
-	int		accept_redirects;
-	int		autoconf;
-	int		dad_transmits;
-	int		rtr_solicits;
-	int		rtr_solicit_interval;
-	int		rtr_solicit_delay;
-
-	void		*sysctl;
-};
 
 struct inet6_dev 
 {

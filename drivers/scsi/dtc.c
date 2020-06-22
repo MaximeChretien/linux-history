@@ -261,24 +261,24 @@ int __init dtc_detect(Scsi_Host_Template * tpnt)
 #ifndef DONT_USE_INTR
 		/* With interrupts enabled, it will sometimes hang when doing heavy
 		 * reads. So better not enable them until I figure it out. */
-		if (instance->irq != IRQ_NONE)
+		if (instance->irq != SCSI_IRQ_NONE)
 			if (request_irq(instance->irq, do_dtc_intr, SA_INTERRUPT, "dtc")) 
 			{
 				printk(KERN_WARNING "scsi%d : IRQ%d not free, interrupts disabled\n", instance->host_no, instance->irq);
-				instance->irq = IRQ_NONE;
+				instance->irq = SCSI_IRQ_NONE;
 			}
 
-		if (instance->irq == IRQ_NONE) {
+		if (instance->irq == SCSI_IRQ_NONE) {
 			printk(KERN_INFO "scsi%d : interrupts not enabled. for better interactive performance,\n", instance->host_no);
 			printk(KERN_INFO "scsi%d : please jumper the board for a free IRQ.\n", instance->host_no);
 		}
 #else
-		if (instance->irq != IRQ_NONE)
+		if (instance->irq != SCSI_IRQ_NONE)
 			printk(KERN_INFO "scsi%d : interrupts not used. Might as well not jumper it.\n", instance->host_no);
-		instance->irq = IRQ_NONE;
+		instance->irq = SCSI_IRQ_NONE;
 #endif
 		printk(KERN_INFO "scsi%d : at 0x%05X", instance->host_no, (int) instance->base);
-		if (instance->irq == IRQ_NONE)
+		if (instance->irq == SCSI_IRQ_NONE)
 			printk(" interrupts disabled");
 		else
 			printk(" irq %d", instance->irq);
@@ -336,7 +336,7 @@ static inline int NCR5380_pread(struct Scsi_Host *instance, unsigned char *dst, 
 	i = 0;
 	NCR5380_read(RESET_PARITY_INTERRUPT_REG);
 	NCR5380_write(MODE_REG, MR_ENABLE_EOP_INTR | MR_DMA_MODE);
-	if (instance->irq == IRQ_NONE)
+	if (instance->irq == SCSI_IRQ_NONE)
 		NCR5380_write(DTC_CONTROL_REG, CSR_DIR_READ);
 	else
 		NCR5380_write(DTC_CONTROL_REG, CSR_DIR_READ | CSR_INT_BASE);
@@ -384,7 +384,7 @@ static inline int NCR5380_pwrite(struct Scsi_Host *instance, unsigned char *src,
 	NCR5380_read(RESET_PARITY_INTERRUPT_REG);
 	NCR5380_write(MODE_REG, MR_ENABLE_EOP_INTR | MR_DMA_MODE);
 	/* set direction (write) */
-	if (instance->irq == IRQ_NONE)
+	if (instance->irq == SCSI_IRQ_NONE)
 		NCR5380_write(DTC_CONTROL_REG, 0);
 	else
 		NCR5380_write(DTC_CONTROL_REG, CSR_5380_INTR);

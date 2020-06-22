@@ -7,7 +7,7 @@ bttv.o
   card=5 - Diamond DTV2000
   card=6 - AVerMedia TVPhone
   card=7 - MATRIX-Vision MV-Delta
-  card=8 - Lifeview FlyVideo II (Bt848) LR26
+  card=8 - Lifeview FlyVideo II (Bt848) LR26 / MAXI TV Video PCI2 LR26
   card=9 - IMS/IXmicro TurboTV
   card=10 - Hauppauge (bt878)
   card=11 - MIRO PCTV pro
@@ -104,6 +104,11 @@ bttv.o
   card=102 - IVC-200
   card=103 - Grand X-Guard / Trust 814PCI
   card=104 - Nebula Electronics DigiTV
+  card=105 - ProVideo PV143
+  card=106 - PHYTEC VD-009-X1 MiniDIN (bt878)
+  card=107 - PHYTEC VD-009-X1 Combi (bt878)
+  card=108 - PHYTEC VD-009 MiniDIN (bt878)
+  card=109 - PHYTEC VD-009 Combi (bt878)
 
 tuner.o
   type=0 - Temic PAL (4002 FH5)
@@ -147,3 +152,4 @@ tuner.o
   type=38 - Philips PAL/SECAM multi (FM1216ME MK3)
   type=39 - LG NTSC (newer TAPC series)
   type=40 - HITACHI V7-J180AT
+  type=41 - Philips PAL_MK (FI1216 MK)

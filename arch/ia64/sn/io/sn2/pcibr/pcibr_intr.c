@@ -34,7 +34,7 @@
 inline int
 compare_and_swap_ptr(void **location, void *old_ptr, void *new_ptr)
 {
-	FIXME("compare_and_swap_ptr : NOT ATOMIC");
+	/* FIXME - compare_and_swap_ptr NOT ATOMIC */
 	if (*location == old_ptr) {
 		*location = new_ptr;
 		return(1);
@@ -103,7 +103,7 @@ pcibr_wrap_get(pcibr_intr_cbuf_t cbuf)
     pcibr_intr_wrap_t	wrap;
 
 	if (cbuf->ib_in == cbuf->ib_out)
-	    PRINT_PANIC( "pcibr intr circular buffer empty, cbuf=0x%p, ib_in=ib_out=%d\n",
+	    panic( "pcibr intr circular buffer empty, cbuf=0x%p, ib_in=ib_out=%d\n",
 		(void *)cbuf, cbuf->ib_out);
 
 	wrap = cbuf->ib_cbuf[cbuf->ib_out++];
@@ -118,22 +118,21 @@ void
 pcibr_wrap_put(pcibr_intr_wrap_t wrap, pcibr_intr_cbuf_t cbuf)
 {
 	int	in;
-	int	s;
 
 	/*
 	 * Multiple CPUs could be executing this code simultaneously
 	 * if a handler has registered multiple interrupt lines and
 	 * the interrupts are directed to different CPUs.
 	 */
-	s = mutex_spinlock(&cbuf->ib_lock);
+	spin_lock(&cbuf->ib_lock);
 	in = (cbuf->ib_in + 1) % IBUFSIZE;
 	if (in == cbuf->ib_out) 
-	    PRINT_PANIC( "pcibr intr circular buffer full, cbuf=0x%p, ib_in=%d\n",
+	    panic( "pcibr intr circular buffer full, cbuf=0x%p, ib_in=%d\n",
 		(void *)cbuf, cbuf->ib_in);
 
 	cbuf->ib_cbuf[cbuf->ib_in] = wrap;
 	cbuf->ib_in = in;
-	mutex_spinunlock(&cbuf->ib_lock, s);
+	spin_unlock(&cbuf->ib_lock);
 	return;
 }
 
@@ -341,7 +340,7 @@ pcibr_intr_alloc(vertex_hdl_t pconn_vhdl,
     pcibr_intr->bi_mustruncpu = CPU_NONE;
     pcibr_intr->bi_ibuf.ib_in = 0;
     pcibr_intr->bi_ibuf.ib_out = 0;
-    mutex_spinlock_init(&pcibr_intr->bi_ibuf.ib_lock);
+    spin_lock_init(&pcibr_intr->bi_ibuf.ib_lock);
     pcibr_int_bits = pcibr_soft->bs_intr_bits((pciio_info_t)pcibr_info, lines, 
 		PCIBR_NUM_SLOTS(pcibr_soft));
 
@@ -857,7 +856,7 @@ pcibr_setwidint(xtalk_intr_t intr)
 		printk(KERN_WARNING  "NEW=0x%x/0x%x  OLD=0x%x/0x%x\n",
 			NEW_b_wid_int_upper, NEW_b_wid_int_lower,
 			OLD_b_wid_int_upper, OLD_b_wid_int_lower);
-		PRINT_PANIC("PCI Bridge interrupt targetting error\n");
+		panic("PCI Bridge interrupt targetting error\n");
 	}
     }
 

@@ -120,6 +120,8 @@
 #include <asm/dma.h>
 #include <asm/mpspec.h>
 #include <asm/mmu_context.h>
+#include <asm/io_apic.h>
+#include <asm/edd.h>
 /*
  * Machine setup..
  */
@@ -176,18 +178,16 @@ static int disable_x86_serial_nr __initdata = 1;
 static u32 disabled_x86_caps[NCAPINTS] __initdata = { 0 };
 
 #ifdef	CONFIG_ACPI_INTERPRETER
-	int acpi_disabled __initdata = 0;
+	int acpi_disabled = 0;
 #else
-	int acpi_disabled __initdata = 1;
+	int acpi_disabled = 1;
 #endif
 EXPORT_SYMBOL(acpi_disabled);
 
 #ifdef	CONFIG_ACPI_BOOT
-	int acpi_ht __initdata = 1; 	/* enable HT */
-#endif
-
-
+extern	int __initdata acpi_ht;
 int acpi_force __initdata = 0;
+#endif
 
 extern int blk_nohighio;
 
@@ -211,6 +211,8 @@ extern int blk_nohighio;
 #define KERNEL_START (*(unsigned long *) (PARAM+0x214))
 #define INITRD_START (*(unsigned long *) (PARAM+0x218))
 #define INITRD_SIZE (*(unsigned long *) (PARAM+0x21c))
+#define EDD_NR     (*(unsigned char *) (PARAM+EDDNR))
+#define EDD_BUF     ((struct edd_info *) (PARAM+EDDBUF))
 #define COMMAND_LINE ((char *) (PARAM+2048))
 #define COMMAND_LINE_SIZE 256
 
@@ -715,6 +717,23 @@ static int __init copy_e820_map(struct e820entry * biosmap, int nr_map)
 	return 0;
 }
 
+#if defined(CONFIG_EDD) || defined(CONFIG_EDD_MODULE)
+unsigned char eddnr;
+struct edd_info edd[EDDMAXNR];
+/**
+ * copy_edd() - Copy the BIOS EDD information
+ *              from empty_zero_page into a safe place.
+ *
+ */
+static inline void copy_edd(void)
+{
+     eddnr = EDD_NR;
+     memcpy(edd, EDD_BUF, sizeof(edd));
+}
+#else
+static inline void copy_edd(void) {}
+#endif
+
 /*
  * Do NOT EVER look at the BIOS memory size location.
  * It does not work on many machines.
@@ -829,6 +848,10 @@ static void __init parse_cmdline_early (char ** cmdline_p)
 			acpi_ht = 1; 
 			if (!acpi_force) acpi_disabled = 1; 
 		} 
+
+		else if (!memcmp(from, "pci=noacpi", 10)) { 
+			acpi_noirq_set();
+		}
 
                 /* disable IO-APIC */
                 else if (!memcmp(from, "noapic", 6))
@@ -1151,6 +1174,7 @@ void __init setup_arch(char **cmdline_p)
 	rd_doload = ((RAMDISK_FLAGS & RAMDISK_LOAD_FLAG) != 0);
 #endif
 	setup_memory_region();
+	copy_edd();
 
 	if (!MOUNT_ROOT_RDONLY)
 		root_mountflags &= ~MS_RDONLY;
@@ -1976,6 +2000,37 @@ static void __init winchip2_protect_mcr(void)
 	
 #endif
 
+static void __init init_c3(struct cpuinfo_x86 *c)
+{
+	u32  lo, hi;
+
+	/* Test for Centaur Extended Feature Flags presence */
+	if (cpuid_eax(0xC0000000) >= 0xC0000001) {
+		/* store Centaur Extended Feature Flags as
+		 * word 5 of the CPU capability bit array
+		 */
+		c->x86_capability[5] = cpuid_edx(0xC0000001);
+	}
+
+	switch (c->x86_model) {
+		case 6 ... 8:		/* Cyrix III family */
+			rdmsr (MSR_VIA_FCR, lo, hi);
+			lo |= (1<<1 | 1<<7);	/* Report CX8 & enable PGE */
+			wrmsr (MSR_VIA_FCR, lo, hi);
+
+			set_bit(X86_FEATURE_CX8, c->x86_capability);
+			set_bit(X86_FEATURE_3DNOW, c->x86_capability);
+
+			/* fall through */
+
+		case 9:	/* Nehemiah */
+		default:
+			get_model_name(c);
+			display_cacheinfo(c);
+			break;
+	}
+}
+
 static void __init init_centaur(struct cpuinfo_x86 *c)
 {
 	enum {
@@ -2114,23 +2169,7 @@ static void __init init_centaur(struct cpuinfo_x86 *c)
 			break;
 
 		case 6:
-			switch (c->x86_model) {
-				case 6 ... 8:		/* Cyrix III family */
-					rdmsr (MSR_VIA_FCR, lo, hi);
-					lo |= (1<<1 | 1<<7);	/* Report CX8 & enable PGE */
-					wrmsr (MSR_VIA_FCR, lo, hi);
-
-					set_bit(X86_FEATURE_CX8, &c->x86_capability);
-					set_bit(X86_FEATURE_3DNOW, &c->x86_capability);
-
-					/* fall through */
-
-				case 9: /* Nehemiah */
-				default:
-					get_model_name(c);
-					display_cacheinfo(c);
-					break;
-			}
+			init_c3(c);
 			break;
 	}
 }
@@ -2254,6 +2293,8 @@ static struct _cache_table cache_table[] __initdata =
 	{ 0x23, LVL_3,      1024 },
 	{ 0x25, LVL_3,      2048 },
 	{ 0x29, LVL_3,      4096 },
+	{ 0x2c, LVL_1_DATA, 32 },
+	{ 0x30, LVL_1_INST, 32 },
 	{ 0x39, LVL_2,      128 },
 	{ 0x3b, LVL_2,      128 },
 	{ 0x3C, LVL_2,      256 },
@@ -2276,6 +2317,8 @@ static struct _cache_table cache_table[] __initdata =
 	{ 0x83, LVL_2,      512 },
 	{ 0x84, LVL_2,      1024 },
 	{ 0x85, LVL_2,      2048 },
+	{ 0x86, LVL_2,      512 },
+	{ 0x87, LVL_2,      1024 },
 	{ 0x00, 0, 0}
 };
 
@@ -2765,10 +2808,16 @@ void __init identify_cpu(struct cpuinfo_x86 *c)
 
 		/* Intel-defined flags: level 0x00000001 */
 		if ( c->cpuid_level >= 0x00000001 ) {
-			cpuid(0x00000001, &tfms, &junk, &junk,
-			      &c->x86_capability[0]);
+			u32 capability, excap;
+			cpuid(0x00000001, &tfms, &junk, &excap, &capability);
+			c->x86_capability[0] = capability;
+			c->x86_capability[4] = excap;
 			c->x86 = (tfms >> 8) & 15;
 			c->x86_model = (tfms >> 4) & 15;
+			if (c->x86 == 0xf) {
+				c->x86 += (tfms >> 20) & 0xff;
+				c->x86_model += ((tfms >> 16) & 0xF) << 4;
+			} 
 			c->x86_mask = tfms & 15;
 		} else {
 			/* Have CPUID level 0 only - unheard of */
@@ -2972,12 +3021,12 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	        "fpu", "vme", "de", "pse", "tsc", "msr", "pae", "mce",
 	        "cx8", "apic", NULL, "sep", "mtrr", "pge", "mca", "cmov",
 	        "pat", "pse36", "pn", "clflush", NULL, "dts", "acpi", "mmx",
-	        "fxsr", "sse", "sse2", "ss", "ht", "tm", "ia64", NULL,
+	        "fxsr", "sse", "sse2", "ss", "ht", "tm", "ia64", "pbe",
 
 		/* AMD-defined */
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 		NULL, NULL, NULL, "syscall", NULL, NULL, NULL, NULL,
-		NULL, NULL, NULL, NULL, NULL, NULL, "mmxext", NULL,
+		NULL, NULL, NULL, "mp", NULL, NULL, "mmxext", NULL,
 		NULL, NULL, NULL, NULL, NULL, "lm", "3dnowext", "3dnow",
 
 		/* Transmeta-defined */
@@ -2987,7 +3036,20 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 
 		/* Other (Linux-defined) */
-		"cxmmx", "k6_mtrr", "cyrix_arr", "centaur_mcr", NULL, NULL, NULL, NULL,
+		"cxmmx", "k6_mtrr", "cyrix_arr", "centaur_mcr",
+		NULL, NULL, NULL, NULL,
+		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+
+		/* Intel-defined (#2) */
+		"pni", NULL, NULL, "monitor", "ds_cpl", NULL, NULL, "tm2",
+		"est", NULL, "cid", NULL, NULL, NULL, NULL, NULL,
+		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+
+		/* VIA/Cyrix/Centaur-defined */
+		NULL, NULL, "xstore", NULL, NULL, NULL, NULL, NULL,
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,

@@ -68,6 +68,13 @@ static void force_interrupt(int irq);
 extern void pcibr_force_interrupt(pcibr_intr_t intr);
 extern int sn_force_interrupt_flag;
 
+struct pcibr_intr_list_t {
+	struct pcibr_intr_list_t *next;
+	pcibr_intr_t intr;
+};
+
+static struct pcibr_intr_list_t **pcibr_intr_list;
+
 
 
 static unsigned int
@@ -134,14 +141,37 @@ sn_end_irq(unsigned int irq)
 				platform_send_ipi(smp_processor_id(), SGI_UART_VECTOR, IA64_IPI_DM_INT, 0);
 		}
 	}
-	__clear_bit(ivec, (volatile void *)pda.sn_in_service_ivecs);
+	clear_bit(ivec, (volatile void *)pda.sn_in_service_ivecs);
 	if (sn_force_interrupt_flag)
 		force_interrupt(irq);
 }
 
 static void
-sn_set_affinity_irq(unsigned int irq, unsigned long mask)
+sn_set_affinity_irq(unsigned int irq, unsigned long cpu)
 {
+	int redir = 0;
+	struct pcibr_intr_list_t *p = pcibr_intr_list[irq];
+	pcibr_intr_t intr;
+	extern void sn_shub_redirect_intr(pcibr_intr_t intr, unsigned long cpu);
+	extern void sn_tio_redirect_intr(pcibr_intr_t intr, unsigned long cpu);
+
+	if (p == NULL)
+		return;
+
+	intr = p->intr;
+
+	if (intr == NULL)
+		return;
+
+	if (IS_PIC_SOFT(intr->bi_soft) ) {
+		sn_shub_redirect_intr(intr, cpu);
+	// Defer TIO for now.
+	// } else if (IS_TIO_SOFT(intr->bi_soft) {
+		// sn_tio_redirect_intr(intr, cpu);
+	} else {
+		return;
+	}
+	(void) set_irq_affinity_info(irq, cpu_physical_id(cpu), redir);
 }
 
 
@@ -181,7 +211,7 @@ sn_irq_init (void)
 	int i;
 	irq_desc_t *base_desc = _irq_desc;
 
-	for (i=IA64_FIRST_DEVICE_VECTOR; i<NR_IRQS; i++) {
+	for (i=0; i<NR_IRQS; i++) {
 		if (base_desc[i].handler == &no_irq_type) {
 			base_desc[i].handler = &irq_type_sn;
 		}
@@ -204,18 +234,11 @@ irq_to_bit_pos(int irq) {
         return bit;
 }
 
-struct pcibr_intr_list_t {
-	struct pcibr_intr_list_t *next;
-	pcibr_intr_t intr;
-};
-
-static struct pcibr_intr_list_t **pcibr_intr_list;
-
 void
 register_pcibr_intr(int irq, pcibr_intr_t intr) {
 	struct pcibr_intr_list_t *p = kmalloc(sizeof(struct pcibr_intr_list_t), GFP_KERNEL);
 	struct pcibr_intr_list_t *list;
-	int cpu = SN_CPU_FROM_IRQ(irq);
+	int cpu = intr->bi_cpu;
 
 	if (pcibr_intr_list == NULL) {
 		pcibr_intr_list = kmalloc(sizeof(struct pcibr_intr_list_t *) * NR_IRQS, GFP_KERNEL);
@@ -227,7 +250,7 @@ register_pcibr_intr(int irq, pcibr_intr_t intr) {
 	if (pdacpu(cpu).sn_last_irq < irq) {
 		pdacpu(cpu).sn_last_irq = irq;
 	}
-	if (pdacpu(cpu).sn_first_irq > irq) pdacpu(cpu).sn_first_irq = irq;
+	if (pdacpu(cpu).sn_first_irq == 0 || pdacpu(cpu).sn_first_irq > irq) pdacpu(cpu).sn_first_irq = irq;
 	if (!p) panic("Could not allocate memory for pcibr_intr_list_t\n");
 	if ((list = pcibr_intr_list[irq])) {
 		while (list->next) list = list->next;

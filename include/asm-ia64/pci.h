@@ -15,6 +15,7 @@
  * loader.
  */
 #define pcibios_assign_all_busses()     0
+#define pcibios_scan_all_fns()		0
 
 #define PCIBIOS_MIN_IO		0x1000
 #define PCIBIOS_MIN_MEM		0x10000000
@@ -82,8 +83,8 @@ extern int pcibios_set_mwi (struct pci_dev *);
 #define pci_dac_dma_to_offset(dev,dma_addr)	((dma_addr) & ~PAGE_MASK)
 #define pci_dac_dma_sync_single(dev,dma_addr,len,dir)	do { /* nothing */ } while (0)
 
-/* Return the index of the PCI controller for device PDEV. */
-#define pci_controller_num(PDEV)	(0)
+/* Return the PCI domain number */
+#define pci_controller_num(pdev)	(PCI_SEGMENT(pdev))
 
 #define sg_dma_address(sg)	((sg)->dma_address)
 #define sg_dma_len(sg)		((sg)->dma_length)

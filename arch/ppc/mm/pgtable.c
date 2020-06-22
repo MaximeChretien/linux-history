@@ -37,10 +37,11 @@ unsigned long ioremap_base;
 unsigned long ioremap_bot;
 int io_bat_index;
 
-/* Maximum 768Mb of lowmem. On SMP, this value will be
- * trimmed down to whatever can be covered by BATs though.
+/* The maximum lowmem defaults to 768Mb, but this can be configured to
+ * another value.  On SMP, this value will be trimmed down to whatever
+ * can be covered by BATs.
  */
-#define MAX_LOW_MEM	0x30000000
+#define MAX_LOW_MEM	CONFIG_LOWMEM_SIZE
 
 #ifndef CONFIG_SMP
 struct pgtable_cache_struct quicklists;
@@ -67,16 +68,35 @@ void setbat(int index, unsigned long virt, unsigned long phys,
 #define p_mapped_by_bats(x)	(0UL)
 #endif /* HAVE_BATS */
 
+#ifdef CONFIG_PTE_64BIT
 void *
-ioremap(unsigned long addr, unsigned long size)
+ioremap(phys_addr_t addr, unsigned long size)
+{
+	phys_addr_t addr64 = fixup_bigphys_addr(addr, size);;
+
+	return ioremap64(addr64, size);
+}
+
+void *
+ioremap64(unsigned long long addr, unsigned long size)
 {
 	return __ioremap(addr, size, _PAGE_NO_CACHE);
 }
 
+#else /* !CONFIG_PTE_64BIT */
+
 void *
-__ioremap(unsigned long addr, unsigned long size, unsigned long flags)
+ioremap(phys_addr_t addr, unsigned long size)
 {
-	unsigned long p, v, i;
+	return __ioremap(addr, size, _PAGE_NO_CACHE);
+}
+#endif /* CONFIG_PTE_64BIT */
+
+void *
+__ioremap(phys_addr_t addr, unsigned long size, unsigned long flags)
+{
+	unsigned long v, i;
+	phys_addr_t p;
 	int err;
 
 	/*
@@ -101,7 +121,7 @@ __ioremap(unsigned long addr, unsigned long size, unsigned long flags)
 	 */
 	if ( mem_init_done && (p < virt_to_phys(high_memory)) )
 	{
-		printk("__ioremap(): phys addr %0lx is RAM lr %p\n", p,
+		printk("__ioremap(): phys addr "PTE_FMT" is RAM lr %p\n", p,
 		       __builtin_return_address(0));
 		return NULL;
 	}
@@ -152,7 +172,7 @@ __ioremap(unsigned long addr, unsigned long size, unsigned long flags)
 	}
 
 out:
-	return (void *) (v + (addr & ~PAGE_MASK));
+	return (void *) (v + ((unsigned long)addr & ~PAGE_MASK));
 }
 
 void iounmap(void *addr)
@@ -168,7 +188,7 @@ void iounmap(void *addr)
 }
 
 int
-map_page(unsigned long va, unsigned long pa, int flags)
+map_page(unsigned long va, phys_addr_t pa, int flags)
 {
 	pmd_t *pd;
 	pte_t *pg;
@@ -308,7 +328,7 @@ void __init mapin_ram(void)
  * virt, phys, size must all be page-aligned.
  * This should only be called before ioremap is called.
  */
-void __init io_block_mapping(unsigned long virt, unsigned long phys,
+void __init io_block_mapping(unsigned long virt, phys_addr_t phys,
 			     unsigned int size, int flags)
 {
 	int i;

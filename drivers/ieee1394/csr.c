@@ -20,6 +20,7 @@
 #include <linux/string.h>
 #include <linux/module.h> /* needed for MODULE_PARM */
 #include <linux/param.h>
+#include <linux/spinlock.h>
 
 #include "ieee1394_types.h"
 #include "hosts.h"
@@ -115,6 +116,8 @@ static inline void calculate_expire(struct csr_control *csr)
 
 	/* Just to keep from rounding low */
 	csr->expire++;
+
+	HPSB_VERBOSE("CSR: setting expire to %lu, HZ=%lu", csr->expire, HZ);
 }
 
 
@@ -187,7 +190,7 @@ int hpsb_get_config_rom(struct hpsb_host *host, quadlet_t *buffer,
 
 /* Read topology / speed maps and configuration ROM */
 static int read_maps(struct hpsb_host *host, int nodeid, quadlet_t *buffer,
-                     u64 addr, unsigned int length, u16 fl)
+                     u64 addr, size_t length, u16 fl)
 {
 	unsigned long flags;
         int csraddr = addr - CSR_REGISTER_BASE;
@@ -197,6 +200,7 @@ static int read_maps(struct hpsb_host *host, int nodeid, quadlet_t *buffer,
 
         if (csraddr < CSR_TOPOLOGY_MAP) {
                 if (csraddr + length > CSR_CONFIG_ROM + host->csr.rom_size) {
+                        spin_unlock_irqrestore(&host->csr.lock, flags);
                         return RCODE_ADDRESS_ERROR;
                 }
                 src = ((char *)host->csr.rom) + csraddr - CSR_CONFIG_ROM;
@@ -216,7 +220,7 @@ static int read_maps(struct hpsb_host *host, int nodeid, quadlet_t *buffer,
 #define out if (--length == 0) break
 
 static int read_regs(struct hpsb_host *host, int nodeid, quadlet_t *buf,
-                     u64 addr, unsigned int length, u16 flags)
+                     u64 addr, size_t length, u16 flags)
 {
         int csraddr = addr - CSR_REGISTER_BASE;
         int oldcycle;
@@ -330,7 +334,7 @@ static int read_regs(struct hpsb_host *host, int nodeid, quadlet_t *buf,
 }
 
 static int write_regs(struct hpsb_host *host, int nodeid, int destid,
-		      quadlet_t *data, u64 addr, unsigned int length, u16 flags)
+		      quadlet_t *data, u64 addr, size_t length, u16 flags)
 {
         int csraddr = addr - CSR_REGISTER_BASE;
         
@@ -656,7 +660,7 @@ static int lock64_regs(struct hpsb_host *host, int nodeid, octlet_t * store,
 }
 
 static int write_fcp(struct hpsb_host *host, int nodeid, int dest,
-		     quadlet_t *data, u64 addr, unsigned int length, u16 flags)
+		     quadlet_t *data, u64 addr, size_t length, u16 flags)
 {
         int csraddr = addr - CSR_REGISTER_BASE;
 

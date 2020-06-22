@@ -2474,7 +2474,6 @@ static int ymf_ac97_init(ymfpci_t *unit, int num_ac97)
 	eid = ymfpci_codec_read(codec, AC97_EXTENDED_ID);
 	if (eid==0xFFFF) {
 		printk(KERN_WARNING "ymfpci: no codec attached ?\n");
-		goto out_kfree;
 	}
 
 	unit->ac97_features = eid;
@@ -2626,7 +2625,6 @@ static int __devinit ymf_probe_one(struct pci_dev *pcidev, const struct pci_devi
  out_release_region:
 	release_mem_region(pci_resource_start(pcidev, 0), 0x8000);
  out_free:
-	ac97_release_codec(codec->ac97_codec[0]);
 	return -ENODEV;
 }
 

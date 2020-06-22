@@ -81,6 +81,7 @@ struct sh_machine_vector
 	unsigned int mv_hw_7751se: 1;
 	unsigned int mv_hw_adx : 1;
 	unsigned int mv_hw_snapgear : 1;
+	unsigned int mv_hw_sh4202_microdev : 1;
 };
 
 extern struct sh_machine_vector sh_mv;
@@ -102,6 +103,7 @@ extern struct sh_machine_vector sh_mv;
 #define MACH_7751SE	(sh_mv.mv_hw_7751se)
 #define MACH_ADX	(sh_mv.mv_hw_adx)
 #define MACH_SNAPGEAR	(sh_mv.mv_snapgear)
+#define MACH_SH4202_MICRODEV	(sh_mv.mv_hw_sh4202_microdev)
 #else
 # ifdef CONFIG_SH_SOLUTION_ENGINE
 #  define MACH_SE		1
@@ -182,6 +184,11 @@ extern struct sh_machine_vector sh_mv;
 #  define MACH_SNAPGEAR		1
 # else
 #  define MACH_SNAPGEAR		0
+# endif
+# ifdef CONFIG_SH_SH4202_MICRODEV
+#  define MACH_SH4202_MICRODEV	1
+# else
+#  define MACH_SH4202_MICRODEV	0
 # endif
 #endif
 

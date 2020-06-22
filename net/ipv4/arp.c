@@ -852,8 +852,15 @@ out:
 
 int arp_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt)
 {
-	struct arphdr *arp = skb->nh.arph;
+	struct arphdr *arp;
 
+	/* ARP header, plus 2 device addresses, plus 2 IP addresses.  */
+	if (!pskb_may_pull(skb, (sizeof(struct arphdr) +
+				 (2 * dev->addr_len) +
+				 (2 * sizeof(u32)))))
+		goto freeskb;
+
+	arp = skb->nh.arph;
 	if (arp->ar_hln != dev->addr_len ||
 	    dev->flags & IFF_NOARP ||
 	    skb->pkt_type == PACKET_OTHERHOST ||
@@ -863,11 +870,6 @@ int arp_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt)
 
 	if ((skb = skb_share_check(skb, GFP_ATOMIC)) == NULL)
 		goto out_of_mem;
-
-	if (skb_is_nonlinear(skb)) {
-		if (skb_linearize(skb, GFP_ATOMIC) != 0)
-			goto freeskb;
-	}
 
 	return NF_HOOK(NF_ARP, NF_ARP_IN, skb, dev, NULL, arp_process);
 
@@ -1212,6 +1214,26 @@ done:
 }
 #endif
 
+static int arp_netdev_event(struct notifier_block *this, unsigned long event, void *ptr)
+{
+	struct net_device *dev = ptr;
+
+	switch (event) {
+	case NETDEV_CHANGEADDR:
+		neigh_changeaddr(&arp_tbl, dev);
+		rt_cache_flush(0);
+		break;
+	default:
+		break;
+	}
+
+	return NOTIFY_DONE;
+}
+
+struct notifier_block arp_netdev_notifier = {
+	.notifier_call = arp_netdev_event,
+};
+
 /* Note, that it is not on notifier chain.
    It is necessary, that this routine was called after route cache will be
    flushed.
@@ -1243,6 +1265,7 @@ void __init arp_init (void)
 #ifdef CONFIG_SYSCTL
 	neigh_sysctl_register(NULL, &arp_tbl.parms, NET_IPV4, NET_IPV4_NEIGH, "ipv4");
 #endif
+	register_netdevice_notifier(&arp_netdev_notifier);
 }
 
 

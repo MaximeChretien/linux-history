@@ -49,20 +49,20 @@
  * xswitch vertex is created.
  */
 typedef struct xswitch_vol_s {
-	mutex_t xswitch_volunteer_mutex;
+	struct semaphore xswitch_volunteer_mutex;
 	int		xswitch_volunteer_count;
 	vertex_hdl_t	xswitch_volunteer[NUM_XSWITCH_VOLUNTEER];
 } *xswitch_vol_t;
+
 
 void
 xswitch_vertex_init(vertex_hdl_t xswitch)
 {
 	xswitch_vol_t xvolinfo;
 	int rc;
-	extern void * snia_kmem_zalloc(size_t size, int flag);
 
-	xvolinfo = snia_kmem_zalloc(sizeof(struct xswitch_vol_s), GFP_KERNEL);
-	mutex_init(&xvolinfo->xswitch_volunteer_mutex);
+	xvolinfo = snia_kmem_zalloc(sizeof(struct xswitch_vol_s));
+	init_MUTEX(&xvolinfo->xswitch_volunteer_mutex);
 	rc = hwgraph_info_add_LBL(xswitch, 
 			INFO_LBL_XSWITCH_VOL,
 			(arbitrary_info_t)xvolinfo);
@@ -108,7 +108,7 @@ volunteer_for_widgets(vertex_hdl_t xswitch, vertex_hdl_t master)
 	    return;
 	}
 
-	mutex_lock(&xvolinfo->xswitch_volunteer_mutex);
+	down(&xvolinfo->xswitch_volunteer_mutex);
 	ASSERT(xvolinfo->xswitch_volunteer_count < NUM_XSWITCH_VOLUNTEER);
 	xvolinfo->xswitch_volunteer[xvolinfo->xswitch_volunteer_count] = master;
 	xvolinfo->xswitch_volunteer_count++;
@@ -126,7 +126,7 @@ volunteer_for_widgets(vertex_hdl_t xswitch, vertex_hdl_t master)
 			xvolinfo->xswitch_volunteer[1] = hubv;
 		}
 	}
-	mutex_unlock(&xvolinfo->xswitch_volunteer_mutex);
+	up(&xvolinfo->xswitch_volunteer_mutex);
 }
 
 extern int xbow_port_io_enabled(nasid_t nasid, int widgetnum);
@@ -193,16 +193,16 @@ assign_widgets_to_volunteers(vertex_hdl_t xswitch, vertex_hdl_t hubv)
 		 * hub that owned it in the prom.
 		 */
 		if (is_master_baseio_nasid_widget(nasid, widgetnum)) {
-			extern nasid_t get_master_baseio_nasid(void);
+			extern nasid_t snia_get_master_baseio_nasid(void);
 			for (i=0; i<num_volunteer; i++) {
 				hubv = xvolinfo->xswitch_volunteer[i];
 				hubinfo_get(hubv, &hubinfo);
 				nasid = hubinfo->h_nasid;
-				if (nasid == get_master_baseio_nasid())
+				if (nasid == snia_get_master_baseio_nasid())
 					goto do_assignment;
 			}
-			PRINT_PANIC("Nasid == %d, console nasid == %d",
-				nasid, get_master_baseio_nasid());
+			panic("Nasid == %d, console nasid == %d",
+				nasid, snia_get_master_baseio_nasid());
 		}
 
 		/*
@@ -237,44 +237,12 @@ do_assignment:
 }
 
 /*
- * Early iograph initialization.  Called by master CPU in mlreset().
- * Useful for including iograph.o in kernel.o.
- */
-void
-iograph_early_init(void)
-{
-/*
- * Need new way to get this information ..
- */
-	cnodeid_t cnode;
-	nasid_t nasid;
-	lboard_t *board;
-	
-	/*
-	 * Init. the board-to-hwgraph link early, so FRU analyzer
-	 * doesn't trip on leftover values if we panic early on.
-	 */
-	for(cnode = 0; cnode < numnodes; cnode++) {
-		nasid = COMPACT_TO_NASID_NODEID(cnode);
-		board = (lboard_t *)KL_CONFIG_INFO(nasid);
-		DBG("iograph_early_init: Found board 0x%p\n", board);
-
-		/* Check out all the board info stored on a node */
-		while(board) {
-			board->brd_graph_link = GRAPH_VERTEX_NONE;
-			board = KLCF_NEXT(board);
-			DBG("iograph_early_init: Found board 0x%p\n", board);
-		}
-	}
-}
-
-/*
  * Let boot processor know that we're done initializing our node's IO
  * and then exit.
  */
 /* ARGSUSED */
 static void
-io_init_done(cnodeid_t cnodeid,cpu_cookie_t c)
+io_init_done(cnodeid_t cnodeid,cpuid_t c)
 {
 	/* Let boot processor know that we're done. */
 }
@@ -414,8 +382,8 @@ io_xswitch_widget_init(vertex_hdl_t  	xswitchv,
 		 * If the current hub is not supposed to be the master 
 		 * for this widgetnum, then skip this widget.
 		 */
-		if (xswitch_info_master_assignment_get(xswitch_info,
-						       widgetnum) != hubv) {
+
+		if (xswitch_info_master_assignment_get(xswitch_info, widgetnum) != hubv) {
 			return;
 		}
 
@@ -461,6 +429,8 @@ io_xswitch_widget_init(vertex_hdl_t  	xswitchv,
 			(board->brd_type == KLTYPE_PBRICK) ? EDGE_LBL_PBRICK :
 			(board->brd_type == KLTYPE_PXBRICK) ? EDGE_LBL_PXBRICK :
 			(board->brd_type == KLTYPE_IXBRICK) ? EDGE_LBL_IXBRICK :
+			(board->brd_type == KLTYPE_CGBRICK) ? EDGE_LBL_CGBRICK :
+			(board->brd_type == KLTYPE_OPUSBRICK) ? EDGE_LBL_OPUSBRICK :
 			(board->brd_type == KLTYPE_XBRICK) ? EDGE_LBL_XBRICK : "?brick",
 			EDGE_LBL_XTALK, widgetnum);
 		
@@ -503,7 +473,6 @@ io_xswitch_widget_init(vertex_hdl_t  	xswitchv,
 				       hubv, hub_widgetid);
 
 		ia64_sn_sysctl_iobrick_module_get(nasid, &io_module);
-
 		if (io_module >= 0) {
 			char			buffer[16];
 			vertex_hdl_t		to, from;
@@ -514,8 +483,8 @@ io_xswitch_widget_init(vertex_hdl_t  	xswitchv,
 			memset(buffer, 0, 16);
 			format_module_id(buffer, geo_module(board->brd_geoid), MODULE_FORMAT_BRIEF);
 
-			if ( islower(MODULE_GET_BTCHAR(io_module)) ) {
-				bt = toupper(MODULE_GET_BTCHAR(io_module));
+			if ( isupper(MODULE_GET_BTCHAR(io_module)) ) {
+				bt = tolower(MODULE_GET_BTCHAR(io_module));
 			}
 			else {
 				bt = MODULE_GET_BTCHAR(io_module);
@@ -534,13 +503,16 @@ io_xswitch_widget_init(vertex_hdl_t  	xswitchv,
 				EDGE_LBL_NODE "/" EDGE_LBL_XTALK "/"
 				"0",
 				buffer, geo_slab(board->brd_geoid));
+			DBG("io_xswitch_widget_init: FROM path '%s'\n", pathname);
+
 			from = hwgraph_path_to_vertex(pathname);
 			ASSERT_ALWAYS(from);
+
 			sprintf(pathname, EDGE_LBL_HW "/" EDGE_LBL_MODULE "/%s/"
 				EDGE_LBL_SLAB "/%d/"
 				"%s",
 				buffer, geo_slab(board->brd_geoid), brick_name);
-
+			DBG("io_xswitch_widget_init: TO path '%s'\n", pathname);
 			to = hwgraph_path_to_vertex(pathname);
 			ASSERT_ALWAYS(to);
 			rc = hwgraph_edge_add(from, to,
@@ -568,11 +540,8 @@ io_init_xswitch_widgets(vertex_hdl_t xswitchv, cnodeid_t cnode)
 	
 	DBG("io_init_xswitch_widgets: xswitchv 0x%p for cnode %d\n", xswitchv, cnode);
 
-	for (widgetnum = HUB_WIDGET_ID_MIN; widgetnum <= HUB_WIDGET_ID_MAX; 
-	     widgetnum++) {
-		io_xswitch_widget_init(xswitchv,
-				       cnodeid_to_vertex(cnode),
-				       widgetnum);
+	for (widgetnum = HUB_WIDGET_ID_MIN; widgetnum <= HUB_WIDGET_ID_MAX; widgetnum++) {
+		io_xswitch_widget_init(xswitchv, cnodeid_to_vertex(cnode), widgetnum);
 	}
 }
 
@@ -654,8 +623,7 @@ io_init_node(cnodeid_t cnodeid)
 	nodepda_t	*npdap;
 	struct semaphore *peer_sema = 0;
 	uint32_t	widget_partnum;
-	cpu_cookie_t	c = 0;
-	extern int hubdev_docallouts(vertex_hdl_t);
+	cpuid_t	c = 0;
 
 	npdap = NODEPDA(cnodeid);
 
@@ -670,8 +638,6 @@ io_init_node(cnodeid_t cnodeid)
 	DBG("io_init_node: Initialize IO for cnode %d hubv(node) 0x%p npdap 0x%p\n", cnodeid, hubv, npdap);
 
 	ASSERT(hubv != GRAPH_VERTEX_NONE);
-
-	hubdev_docallouts(hubv);
 
 	/*
 	 * Read mfg info on this hub
@@ -817,12 +783,15 @@ io_init_node(cnodeid_t cnodeid)
 		 *	5) Initialize all xwidgets on the xswitch
 		 */
 
+		DBG("call volunteer_for_widgets\n");
+
 		volunteer_for_widgets(switchv, hubv);
 
 		/* If there's someone else on this crossbow, recognize him */
 		if (npdap->xbow_peer != INVALID_NASID) {
 			nodepda_t *peer_npdap = NODEPDA(NASID_TO_COMPACT_NODEID(npdap->xbow_peer));
 			peer_sema = &peer_npdap->xbow_sema;
+			DBG("call volunteer_for_widgets again\n");
 			volunteer_for_widgets(switchv, peer_npdap->node_vertex);
 		}
 
@@ -830,13 +799,13 @@ io_init_node(cnodeid_t cnodeid)
 
 		/* Signal that we're done */
 		if (peer_sema) {
-			mutex_unlock(peer_sema);
+			up(peer_sema);
 		}
 		
 	}
 	else {
 	    /* Wait 'til master is done assigning widgets. */
-	    mutex_lock(&npdap->xbow_sema);
+	    down(&npdap->xbow_sema);
 	}
 
 #ifdef PROBE_TEST
@@ -961,7 +930,7 @@ devnamefromarcs(char *devnm)
 		else
 			DBG("none found!\n");
 
-		DELAY(15000000);
+		udelay(15000000);
 		//prom_reboot();
 		panic("FIXME: devnamefromarcs: should call prom_reboot here.\n");
 		/* NOTREACHED */
@@ -1013,10 +982,10 @@ struct io_brick_map_s io_brick_tab[] = {
         2,                                      /* 0x8            */
         1,                                      /* 0x9            */
         0, 0,                                   /* 0xa - 0xb      */
-        4,                                      /* 0xc            */
+        5,                                      /* 0xc            */
         6,                                      /* 0xd            */
-        3,                                      /* 0xe            */
-        5                                       /* 0xf            */
+        4,                                      /* 0xe            */
+        3                                       /* 0xf            */
     }
  },
 
@@ -1031,6 +1000,20 @@ struct io_brick_map_s io_brick_tab[] = {
         5,                                      /* 0xd            */
         0,                                      /* 0xe            */
         3                                       /* 0xf            */
+    }
+ },
+
+/* OPUSbrick widget number to PCI bus number map */
+ {      MODULE_OPUSBRICK,                       /* OPUSbrick type */ 
+    /*  PCI Bus #                                  Widget #       */
+    {   0, 0, 0, 0, 0, 0, 0, 0,                 /* 0x0 - 0x7      */
+        0,                                      /* 0x8            */
+        0,                                      /* 0x9            */
+        0, 0,                                   /* 0xa - 0xb      */
+        0,                                      /* 0xc            */
+        0,                                      /* 0xd            */
+        0,                                      /* 0xe            */
+        1                                       /* 0xf            */
     }
  },
 
@@ -1060,6 +1043,19 @@ struct io_brick_map_s io_brick_tab[] = {
         0,                                      /* 0xe            */
         0                                       /* 0xf            */
     }
+ },
+/* CG brick widget number to PCI bus number map */
+ {      MODULE_CGBRICK,                    /* CG brick       */
+    /*  PCI Bus #                                  Widget #       */
+    {   0, 0, 0, 0, 0, 0, 0, 0,                 /* 0x0 - 0x7      */
+        0,                                      /* 0x8            */
+        0,                                      /* 0x9            */
+        0, 1,                                   /* 0xa - 0xb      */
+        0,                                      /* 0xc            */
+        0,                                      /* 0xd            */
+        0,                                      /* 0xe            */
+        0                                       /* 0xf            */
+     }
  }
 };
 

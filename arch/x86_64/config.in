@@ -10,7 +10,7 @@ define_bool CONFIG_X86 y
 define_bool CONFIG_ISA n
 define_bool CONFIG_SBUS n
 
-define_bool CONFIG_UID16 y
+define_bool CONFIG_UID16 n
 define_bool CONFIG_RWSEM_GENERIC_SPINLOCK y
 define_bool CONFIG_RWSEM_XCHGADD_ALGORITHM n
 define_bool CONFIG_X86_CMPXCHG y
@@ -66,6 +66,7 @@ if [ "$CONFIG_SMP" != "y" ]; then
    define_bool CONFIG_X86_UP_IOAPIC y
 else
    define_bool CONFIG_HAVE_DEC_LOCK y
+   int  'Maximum number of CPUs (2-8)' CONFIG_NR_CPUS 4
 fi
 
 bool 'Machine check support' CONFIG_MCE
@@ -244,6 +245,9 @@ if [ "$CONFIG_DEBUG_KERNEL" != "n" ]; then
    bool '  IOMMU leak tracing' CONFIG_IOMMU_LEAK
    bool '  Probalistic stack overflow check' CONFIG_DEBUG_STACKOVERFLOW
 fi
+
+int 'Kernel messages buffer length shift (0 = default)' CONFIG_LOG_BUF_SHIFT 0
+
 endmenu
 
 source lib/Config.in

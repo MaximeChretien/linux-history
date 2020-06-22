@@ -32,6 +32,10 @@
 #include <platforms/rpxclassic.h>
 #endif
 
+#ifdef CONFIG_DBOX2
+#include <platforms/dbox2.h>
+#endif
+
 #if defined(CONFIG_TQM8xxL)
 #include <platforms/tqm8xx.h>
 #endif

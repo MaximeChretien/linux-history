@@ -72,17 +72,16 @@
  *
  *  ICH 4 caveats
  *
- *      The ICH4 has the feature, that the codec ID doesn't have to be 
- *      congruent with the IO connection.
+ *	The ICH4 has the feature, that the codec ID doesn't have to be 
+ *	congruent with the IO connection.
  * 
- *      Therefore, from driver version 0.23 on, there is a "codec ID" <->
- *      "IO register base offset" mapping (card->ac97_id_map) field.
+ *	Therefore, from driver version 0.23 on, there is a "codec ID" <->
+ *	"IO register base offset" mapping (card->ac97_id_map) field.
  *   
- *      Juergen "George" Sawinski (jsaw) 
+ *	Juergen "George" Sawinski (jsaw) 
  */
  
 #include <linux/module.h>
-#include <linux/version.h>
 #include <linux/string.h>
 #include <linux/ctype.h>
 #include <linux/ioport.h>
@@ -92,6 +91,7 @@
 #include <linux/slab.h>
 #include <linux/soundcard.h>
 #include <linux/pci.h>
+#include <linux/interrupt.h>
 #include <asm/io.h>
 #include <asm/dma.h>
 #include <linux/init.h>
@@ -99,7 +99,6 @@
 #include <linux/spinlock.h>
 #include <linux/smp_lock.h>
 #include <linux/ac97_codec.h>
-#include <linux/wrapper.h>
 #include <asm/uaccess.h>
 #include <asm/hardirq.h>
 
@@ -143,10 +142,10 @@
 #define PCI_DEVICE_ID_AMD_8111_AC97	0x746d
 #endif
 
-static int ftsodell=0;
-static int strict_clocking=0;
-static unsigned int clocking=0;
-static int spdif_locked=0;
+static int ftsodell;
+static int strict_clocking;
+static unsigned int clocking;
+static int spdif_locked;
 
 //#define DEBUG
 //#define DEBUG2
@@ -182,7 +181,7 @@ struct sg_item {
 struct i810_channel 
 {
 	/* these sg guys should probably be allocated
-	   seperately as nocache. Must be 8 byte aligned */
+	   separately as nocache. Must be 8 byte aligned */
 	struct sg_item sg[SG_LEN];	/* 32*8 */
 	u32 offset;			/* 4 */
 	u32 port;			/* 4 */
@@ -191,7 +190,7 @@ struct i810_channel
 };
 
 /*
- * we have 3 seperate dma engines.  pcm in, pcm out, and mic.
+ * we have 3 separate dma engines.  pcm in, pcm out, and mic.
  * each dma engine has controlling registers.  These goofy
  * names are from the datasheet, but make it easy to write
  * code while leafing through it.
@@ -317,7 +316,7 @@ static struct {
 	/*@FIXME to be verified*/	{  3, 0x0001 }, /* AMD8111 */
 };
 
-static struct pci_device_id i810_pci_tbl [] __initdata = {
+static struct pci_device_id i810_pci_tbl [] = {
 	{PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801,
 	 PCI_ANY_ID, PCI_ANY_ID, 0, 0, ICH82801AA},
 	{PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82901,
@@ -880,7 +879,7 @@ static void start_dac(struct i810_state *state)
 #define DMABUF_DEFAULTORDER (16-PAGE_SHIFT)
 #define DMABUF_MINORDER 1
 
-/* allocate DMA buffer, playback and recording buffer should be allocated seperately */
+/* allocate DMA buffer, playback and recording buffer should be allocated separately */
 static int alloc_dmabuf(struct i810_state *state)
 {
 	struct dmabuf *dmabuf = &state->dmabuf;
@@ -922,7 +921,7 @@ static int alloc_dmabuf(struct i810_state *state)
 	/* now mark the pages as reserved; otherwise remap_page_range doesn't do what we want */
 	pend = virt_to_page(rawbuf + (PAGE_SIZE << order) - 1);
 	for (page = virt_to_page(rawbuf); page <= pend; page++)
-		mem_map_reserve(page);
+		SetPageReserved(page);
 
 	return 0;
 }
@@ -937,7 +936,7 @@ static void dealloc_dmabuf(struct i810_state *state)
 		/* undo marking the pages as reserved */
 		pend = virt_to_page(dmabuf->rawbuf + (PAGE_SIZE << dmabuf->buforder) - 1);
 		for (page = virt_to_page(dmabuf->rawbuf); page <= pend; page++)
-			mem_map_unreserve(page);
+			ClearPageReserved(page);
 		pci_free_consistent(state->card->pci_dev, PAGE_SIZE << dmabuf->buforder,
 				    dmabuf->rawbuf, dmabuf->dma_handle);
 	}
@@ -1370,7 +1369,7 @@ static void i810_channel_interrupt(struct i810_card *card)
 #endif
 }
 
-static void i810_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+static irqreturn_t i810_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 {
 	struct i810_card *card = (struct i810_card *)dev_id;
 	u32 status;
@@ -1382,7 +1381,7 @@ static void i810_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 	if(!(status & INT_MASK)) 
 	{
 		spin_unlock(&card->lock);
-		return;  /* not for us */
+		return IRQ_NONE;  /* not for us */
 	}
 
 	if(status & (INT_PO|INT_PI|INT_MC))
@@ -1391,6 +1390,7 @@ static void i810_interrupt(int irq, void *dev_id, struct pt_regs *regs)
  	/* clear 'em */
 	outl(status & INT_MASK, card->iobase + GLOB_STA);
 	spin_unlock(&card->lock);
+	return IRQ_HANDLED;
 }
 
 /* in this loop, dmabuf.count signifies the amount of data that is
@@ -1800,7 +1800,8 @@ static int i810_ioctl(struct inode *inode, struct file *file, unsigned int cmd, 
 		}
 		if (c != NULL) {
 			outb(2, state->card->iobase+c->port+OFF_CR);   /* reset DMA machine */
-			while ( inb(state->card->iobase+c->port+OFF_CR) & 2 );
+			while ( inb(state->card->iobase+c->port+OFF_CR) & 2 )
+				cpu_relax();
 			outl((u32)state->card->chandma +
 			    c->num*sizeof(struct i810_channel),
 			    state->card->iobase+c->port+OFF_BDBAR);
@@ -2386,9 +2387,9 @@ static int i810_ioctl(struct inode *inode, struct file *file, unsigned int cmd, 
 				i810_set_dac_channels ( state, channels );
 
 				/* check that they really got turned on */
-				if ( !state->card->ac97_status & SURR_ON )
+				if (!(state->card->ac97_status & SURR_ON))
 					val &= ~DSP_BIND_SURR;
-				if ( !state->card->ac97_status & CENTER_LFE_ON )
+				if (!(state->card->ac97_status & CENTER_LFE_ON))
 					val &= ~DSP_BIND_CENTER_LFE;
 			}
 		}
@@ -2537,15 +2538,15 @@ static int i810_release(struct inode *inode, struct file *file)
 }
 
 static /*const*/ struct file_operations i810_audio_fops = {
-	owner:		THIS_MODULE,
-	llseek:		no_llseek,
-	read:		i810_read,
-	write:		i810_write,
-	poll:		i810_poll,
-	ioctl:		i810_ioctl,
-	mmap:		i810_mmap,
-	open:		i810_open,
-	release:	i810_release,
+	.owner		= THIS_MODULE,
+	.llseek		= no_llseek,
+	.read		= i810_read,
+	.write		= i810_write,
+	.poll		= i810_poll,
+	.ioctl		= i810_ioctl,
+	.mmap		= i810_mmap,
+	.open		= i810_open,
+	.release	= i810_release,
 };
 
 /* Write AC97 codec registers */
@@ -2682,10 +2683,10 @@ static int i810_ioctl_mixdev(struct inode *inode, struct file *file, unsigned in
 }
 
 static /*const*/ struct file_operations i810_mixer_fops = {
-	owner:		THIS_MODULE,
-	llseek:		no_llseek,
-	ioctl:		i810_ioctl_mixdev,
-	open:		i810_open_mixdev,
+	.owner		= THIS_MODULE,
+	.llseek		= no_llseek,
+	.ioctl		= i810_ioctl_mixdev,
+	.open		= i810_open_mixdev,
 };
 
 /* AC97 codec initialisation.  These small functions exist so we don't
@@ -2727,7 +2728,7 @@ static int i810_ac97_probe_and_powerup(struct i810_card *card,struct ac97_codec 
 		      i810_ac97_get(codec, AC97_POWER_CONTROL) & ~0x7f00);
 
 	/* wait for analog ready */
-	for (i=10; i && ((i810_ac97_get(codec, AC97_POWER_CONTROL) & 0xf) != 0xf); i--)
+	for (i=100; i && ((i810_ac97_get(codec, AC97_POWER_CONTROL) & 0xf) != 0xf); i--)
 	{
 		set_current_state(TASK_UNINTERRUPTIBLE);
 		schedule_timeout(HZ/20);
@@ -3250,7 +3251,6 @@ out_iospace:
 out_pio:	
 	release_region(card->iobase, 64);
 	release_region(card->ac97base, 256);
-out_chan:
 	pci_free_consistent(pci_dev, sizeof(struct i810_channel)*NR_HW_CH,
 	    card->channel, card->chandma);
 out_mem:
@@ -3266,6 +3266,8 @@ static void __devexit i810_remove(struct pci_dev *pci_dev)
 	free_irq(card->irq, devs);
 	release_region(card->iobase, 64);
 	release_region(card->ac97base, 256);
+	pci_free_consistent(pci_dev, sizeof(struct i810_channel)*NR_HW_CH,
+			    card->channel, card->chandma);
 	if (card->use_mmio) {
 		iounmap(card->ac97base_mmio);
 		iounmap(card->iobase_mmio);
@@ -3421,22 +3423,19 @@ MODULE_PARM(spdif_locked, "i");
 #define I810_MODULE_NAME "intel810_audio"
 
 static struct pci_driver i810_pci_driver = {
-	name:		I810_MODULE_NAME,
-	id_table:	i810_pci_tbl,
-	probe:		i810_probe,
-	remove:		__devexit_p(i810_remove),
+	.name		= I810_MODULE_NAME,
+	.id_table	= i810_pci_tbl,
+	.probe		= i810_probe,
+	.remove		= __devexit_p(i810_remove),
 #ifdef CONFIG_PM
-	suspend:	i810_pm_suspend,
-	resume:		i810_pm_resume,
+	.suspend	= i810_pm_suspend,
+	.resume		= i810_pm_resume,
 #endif /* CONFIG_PM */
 };
 
 
 static int __init i810_init_module (void)
 {
-	if (!pci_present())   /* No PCI bus in this machine! */
-		return -ENODEV;
-
 	printk(KERN_INFO "Intel 810 + AC97 Audio, version "
 	       DRIVER_VERSION ", " __TIME__ " " __DATE__ "\n");
 

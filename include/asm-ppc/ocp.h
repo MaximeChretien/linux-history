@@ -40,6 +40,7 @@
 #include <linux/config.h>
 #include <linux/devfs_fs_kernel.h>
 
+#include <asm/mmu.h>
 #include <asm/ocp_ids.h>
 #include <asm/rwsem.h>
 #include <asm/semaphore.h>
@@ -103,7 +104,7 @@ struct ocp_def {
 	unsigned int	vendor;
 	unsigned int	function;
 	int		index;
-	unsigned long	paddr;
+	phys_addr_t	paddr;
 	int	  	irq;
 	unsigned long	pm;
 	void		*additions;

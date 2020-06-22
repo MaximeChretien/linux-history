@@ -46,7 +46,7 @@ static efi_runtime_services_t *runtime;
  * prior to creating their own entries under /proc/efi.
  */
 #ifdef CONFIG_PROC_FS
-struct proc_dir_entry *efi_dir = NULL;
+struct proc_dir_entry *efi_dir;
 #endif
 
 static unsigned long mem_limit = ~0UL;
@@ -324,7 +324,7 @@ efi_memmap_walk (efi_freemem_callback_t callback, void *arg)
 				check_md = q;
 
 				if (check_md->attribute & EFI_MEMORY_WB)
-					trim_bottom(md, granule_addr);
+					trim_bottom(check_md, granule_addr);
 
 				if (check_md->phys_addr < granule_addr)
 					continue;

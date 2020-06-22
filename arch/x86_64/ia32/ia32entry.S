@@ -3,7 +3,7 @@
  * 		
  * Copyright 2000,2001 Andi Kleen, SuSE Labs.
  * 
- * $Id: ia32entry.S,v 1.40 2003/04/03 09:46:54 ak Exp $ 		
+ * $Id: ia32entry.S,v 1.41 2003/09/22 04:25:53 ak Exp $ 		
  */		 
 
 #include <asm/calling.h>
@@ -256,10 +256,10 @@ ia32_sys_call_table:
 	.quad sys32_adjtimex
 	.quad sys32_mprotect		/* 125 */
 	.quad sys32_sigprocmask
-	.quad sys32_module_warning	/* create_module */
-	.quad sys32_module_warning	/* init_module */
-	.quad sys32_module_warning	/* delete module */
-	.quad sys32_module_warning	/* 130  get_kernel_syms */
+	.quad sys32_create_module
+	.quad sys32_init_module
+	.quad sys32_delete_module
+	.quad sys32_get_kernel_syms 	/* 130 */
 	.quad ni_syscall	/* quotactl */ 
 	.quad sys_getpgid
 	.quad sys_fchdir
@@ -296,7 +296,7 @@ ia32_sys_call_table:
 	.quad sys_setresuid16
 	.quad sys_getresuid16	/* 165 */
 	.quad sys32_vm86_warning	/* vm86 */ 
-	.quad quiet_ni_syscall	/* query_module */
+	.quad sys32_query_module
 	.quad sys_poll
 	.quad sys32_nfsservctl
 	.quad sys_setresgid16	/* 170 */
@@ -322,8 +322,8 @@ ia32_sys_call_table:
 	.quad stub32_vfork            /* 190 */
 	.quad sys32_getrlimit
 	.quad sys32_mmap2
-	.quad sys_truncate
-	.quad sys_ftruncate
+	.quad sys32_truncate64
+	.quad sys32_ftruncate64
 	.quad sys32_stat64		/* 195 */
 	.quad sys32_lstat64
 	.quad sys32_fstat64

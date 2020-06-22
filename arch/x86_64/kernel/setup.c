@@ -48,7 +48,11 @@
 #include <asm/bootsetup.h>
 #include <asm/proto.h>
 
-int acpi_disabled __initdata = 0;
+int acpi_disabled = 0;
+#ifdef	CONFIG_ACPI_BOOT
+int acpi_noirq __initdata = 0;	/* skip ACPI IRQ initialization */
+#endif
+
 
 /*
  * Machine setup..
@@ -295,6 +299,11 @@ void __init setup_arch(char **cmdline_p)
 #endif
 
 	paging_init();
+#if !defined(CONFIG_SMP) && defined(CONFIG_X86_IO_APIC)
+	extern void check_ioapic(void);
+	check_ioapic();
+#endif
+
 #ifdef CONFIG_ACPI_BOOT
 	/*
 	 * Parse the ACPI tables for possible boot-time SMP configuration.
@@ -377,7 +386,10 @@ static void __init display_cacheinfo(struct cpuinfo_x86 *c)
 		c->x86_cache_size=(ecx>>24)+(edx>>24);	
 		if (n >= 0x80000006) {
 			printk(KERN_INFO "CPU: L2 Cache: %dK (%d bytes/line/%d way)\n",
-			       ecx_2>>16, ecx_2&0xFF, (ecx_2>>12)&0xf);
+			       ecx_2>>16, ecx_2&0xFF, 
+			       /*  use bits[15:13] as power of 2 for # of ways */
+			       1 << ((ecx>>13) & 0x7) 
+			       /* Direct and Full associative L2 are very unlikely */);
 			c->x86_cache_size = ecx_2 >> 16;
 		c->x86_tlbsize = ((ebx>>16)&0xff) + ((ebx_2>>16)&0xfff) + 
 			(ebx&0xff) + ((ebx_2)&0xfff);

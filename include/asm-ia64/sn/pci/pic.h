@@ -72,9 +72,6 @@
 extern "C" {
 #endif
 
-// #include <sys/types.h>
-#include <asm/sn/pci/pciio.h>
-
 
 /*********************************************************************
  *    bus provider function table
@@ -88,7 +85,13 @@ extern "C" {
  *	pcibr, we can go directly to this ops table.
  */
 
+#ifdef __KERNEL__
+#include <linux/config.h>
+#include <asm/sn/pci/pciio.h>
 extern pciio_provider_t pci_pic_provider;
+#else
+#include <linux/config.h>
+#endif
 
 
 /*********************************************************************

@@ -75,7 +75,11 @@ int vlan_dev_rebuild_header(struct sk_buff *skb)
 static inline struct sk_buff *vlan_check_reorder_header(struct sk_buff *skb)
 {
 	if (VLAN_DEV_INFO(skb->dev)->flags & 1) {
-		skb = skb_share_check(skb, GFP_ATOMIC);
+		if (skb_shared(skb) || skb_cloned(skb)) {
+			struct sk_buff *nskb = skb_copy(skb, GFP_ATOMIC);
+			kfree_skb(skb);
+			skb = nskb;
+		}
 		if (skb) {
 			/* Lifted from Gleb's VLAN code... */
 			memmove(skb->data - ETH_HLEN,
@@ -171,7 +175,7 @@ int vlan_skb_recv(struct sk_buff *skb, struct net_device *dev,
 
 #ifdef VLAN_DEBUG
 		printk(VLAN_DBG "%s: dropping skb: %p because came in on wrong device, dev: %s  real_dev: %s, skb_dev: %s\n",
-			__FUNCTION__ skb, dev->name, 
+			__FUNCTION__, skb, dev->name, 
 			VLAN_DEV_INFO(skb->dev)->real_dev->name, 
 			skb->dev->name);
 #endif

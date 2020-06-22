@@ -199,6 +199,7 @@
 #define I2C_HW_SMBUS_AMD756	0x05
 #define I2C_HW_SMBUS_SIS5595	0x06
 #define I2C_HW_SMBUS_ALI1535	0x07
+#define I2C_HW_SMBUS_W9968CF	0x08
 
 /* --- ISA pseudo-adapter						*/
 #define I2C_HW_ISA 0x00

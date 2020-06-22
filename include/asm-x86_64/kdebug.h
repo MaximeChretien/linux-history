@@ -39,11 +39,13 @@ static inline int notify_die(enum die_val val,char *str,struct pt_regs *regs,lon
 	return notifier_call_chain(&die_chain, val, &args); 
 } 
 
-
 extern int printk_address(unsigned long address);
 extern void die(const char *,struct pt_regs *,long);
+extern void __die(const char *,struct pt_regs *,long);
 extern void show_stack(unsigned long* esp);
 extern void show_registers(struct pt_regs *regs);
 extern void dump_pagetable(unsigned long);
+extern void prepare_die(unsigned long *flags);
+extern void exit_die(unsigned long flags);
 
 #endif

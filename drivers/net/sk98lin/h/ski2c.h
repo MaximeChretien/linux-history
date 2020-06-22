@@ -2,17 +2,15 @@
  *
  * Name:	ski2c.h
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.33 $
- * Date:	$Date: 2002/10/14 16:40:50 $
+ * Version:	$Revision: 1.34 $
+ * Date:	$Date: 2003/01/28 09:11:21 $
  * Purpose:	Defines to access Voltage and Temperature Sensor
- *		(taken from Monalisa (taken from Concentrator))
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998,1999 SysKonnect,
- *	a business unit of Schneider & Koch & Co. Datensysteme GmbH.
+ *	(C)Copyright 1998-2003 SysKonnect GmbH.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -28,6 +26,9 @@
  * History:
  *
  *	$Log: ski2c.h,v $
+ *	Revision 1.34  2003/01/28 09:11:21  rschmidt
+ *	Editorial changes
+ *	
  *	Revision 1.33  2002/10/14 16:40:50  rschmidt
  *	Editorial changes (TWSI)
  *	
@@ -163,7 +164,7 @@ typedef struct  s_Sensor SK_SENSOR;
 #define I2C_READ	0
 #define I2C_WRITE	1
 #define I2C_BURST	1
-#define I2C_SIGLE	0
+#define I2C_SINGLE	0
 
 #define SKERR_I2C_E001		(SK_ERRBASE_I2C+0)
 #define SKERR_I2C_E001MSG	"Sensor index unknown"

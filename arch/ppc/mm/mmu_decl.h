@@ -21,11 +21,12 @@
  */
 
 #include <asm/pgtable.h>
+#include <asm/mmu.h>
 
 extern void mapin_ram(void);
 extern void bat_mapin_ram(unsigned long bat2, unsigned long bat3);
 extern void adjust_total_lowmem(void);
-extern int map_page(unsigned long va, unsigned long pa, int flags);
+extern int map_page(unsigned long va, phys_addr_t pa, int flags);
 extern void setbat(int index, unsigned long virt, unsigned long phys,
 		   unsigned int size, int flags);
 extern void reserve_phys_mem(unsigned long start, unsigned long size);

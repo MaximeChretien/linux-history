@@ -120,6 +120,8 @@ svc_sock_enqueue(struct svc_sock *svsk)
 	if (!(svsk->sk_flags &
 	      ( (1<<SK_CONN)|(1<<SK_DATA)|(1<<SK_CLOSE)) ))
 		return;
+	if (test_bit(SK_DEAD, &svsk->sk_flags))
+		return;
 
 	spin_lock_bh(&serv->sv_lock);
 
@@ -315,6 +317,9 @@ svc_sendto(struct svc_rqst *rqstp, struct iovec *iov, int nr)
 	struct svc_sock	*svsk = rqstp->rq_sock;
 	struct socket	*sock = svsk->sk_sock;
 	struct msghdr	msg;
+	char 		buffer[CMSG_SPACE(sizeof(struct in_pktinfo))];
+	struct cmsghdr *cmh = (struct cmsghdr *)buffer;
+	struct in_pktinfo *pki = (struct in_pktinfo *)CMSG_DATA(cmh);
 	int		i, buflen, len;
 
 	for (i = buflen = 0; i < nr; i++)
@@ -324,8 +329,18 @@ svc_sendto(struct svc_rqst *rqstp, struct iovec *iov, int nr)
 	msg.msg_namelen = sizeof(rqstp->rq_addr);
 	msg.msg_iov     = iov;
 	msg.msg_iovlen  = nr;
-	msg.msg_control = NULL;
-	msg.msg_controllen = 0;
+	if (rqstp->rq_prot == IPPROTO_UDP) {
+		msg.msg_control = cmh;
+		msg.msg_controllen = sizeof(buffer);
+		cmh->cmsg_len = CMSG_LEN(sizeof(*pki));
+		cmh->cmsg_level = SOL_IP;
+		cmh->cmsg_type = IP_PKTINFO;
+		pki->ipi_ifindex = 0;
+		pki->ipi_spec_dst.s_addr = rqstp->rq_daddr;
+	} else {
+		msg.msg_control = NULL;
+		msg.msg_controllen = 0;
+	}
 
 	/* This was MSG_DONTWAIT, but I now want it to wait.
 	 * The only thing that it would wait for is memory and
@@ -529,6 +544,7 @@ svc_udp_recvfrom(struct svc_rqst *rqstp)
 	rqstp->rq_addr.sin_family = AF_INET;
 	rqstp->rq_addr.sin_port = skb->h.uh->source;
 	rqstp->rq_addr.sin_addr.s_addr = skb->nh.iph->saddr;
+	rqstp->rq_daddr = skb->nh.iph->daddr;
 
 	if (serv->sv_stats)
 		serv->sv_stats->netudpcnt++;
@@ -930,6 +946,9 @@ svc_tcp_sendto(struct svc_rqst *rqstp)
 	bufp->iov[0].iov_len  = bufp->len << 2;
 	bufp->base[0] = htonl(0x80000000|((bufp->len << 2) - 4));
 
+	if (test_bit(SK_DEAD, &rqstp->rq_sock->sk_flags))
+		return -ENOTCONN;
+
 	sent = svc_sendto(rqstp, bufp->iov, bufp->nriov);
 	if (sent != bufp->len<<2) {
 		printk(KERN_NOTICE "rpc-srv/tcp: %s: sent only %d bytes of %d - shutting down socket\n",
@@ -1277,6 +1296,9 @@ svc_delete_socket(struct svc_sock *svsk)
 
 	dprintk("svc: svc_delete_socket(%p)\n", svsk);
 
+	if (test_and_set_bit(SK_DEAD, &svsk->sk_flags))
+		return ;
+
 	serv = svsk->sk_server;
 	sk = svsk->sk_sk;
 
@@ -1292,8 +1314,6 @@ svc_delete_socket(struct svc_sock *svsk)
 	if (test_bit(SK_QUED, &svsk->sk_flags))
 		list_del(&svsk->sk_ready);
 
-
-	set_bit(SK_DEAD, &svsk->sk_flags);
 
 	if (!svsk->sk_inuse) {
 		spin_unlock_bh(&serv->sv_lock);

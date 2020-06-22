@@ -37,6 +37,7 @@
 #include <linux/init.h>
 #include <linux/version.h>
 #include <linux/smp_lock.h>
+#include <linux/vmalloc.h>
 #include <asm/uaccess.h>
 #include <asm/atomic.h>
 #include <linux/devfs_fs_kernel.h>
@@ -84,9 +85,9 @@ static const int iso_buffer_max = 4 * 1024 * 1024; /* 4 MB */
 static struct hpsb_highlevel raw1394_highlevel;
 
 static int arm_read (struct hpsb_host *host, int nodeid, quadlet_t *buffer,
-             u64 addr, unsigned int length, u16 flags);
+		     u64 addr, size_t length, u16 flags);
 static int arm_write (struct hpsb_host *host, int nodeid, int destid,
-              quadlet_t *data, u64 addr, unsigned int length, u16 flags);
+		      quadlet_t *data, u64 addr, size_t length, u16 flags);
 static int arm_lock (struct hpsb_host *host, int nodeid, quadlet_t *store,
              u64 addr, quadlet_t data, quadlet_t arg, int ext_tcode, u16 flags);
 static int arm_lock64 (struct hpsb_host *host, int nodeid, octlet_t *store,
@@ -181,6 +182,7 @@ static void queue_complete_cb(struct pending_request *req)
 
         if ((req->req.type == RAW1394_REQ_ASYNC_READ) ||
 	    (req->req.type == RAW1394_REQ_ASYNC_WRITE) ||
+	    (req->req.type == RAW1394_REQ_ASYNC_STREAM) ||
 	    (req->req.type == RAW1394_REQ_LOCK) ||
 	    (req->req.type == RAW1394_REQ_LOCK64))
                 hpsb_free_tlabel(packet);
@@ -294,7 +296,7 @@ static void host_reset(struct hpsb_host *host)
 }
 
 static void iso_receive(struct hpsb_host *host, int channel, quadlet_t *data,
-                        unsigned int length)
+                        size_t length)
 {
         unsigned long flags;
         struct list_head *lh;
@@ -346,7 +348,7 @@ static void iso_receive(struct hpsb_host *host, int channel, quadlet_t *data,
                         req->req.generation = get_hpsb_generation(host);
                         req->req.misc = 0;
                         req->req.recvb = ptr2int(fi->iso_buffer);
-                        req->req.length = MIN(length, fi->iso_buffer_length);
+                        req->req.length = min(length, fi->iso_buffer_length);
                         
                         list_add_tail(&req->list, &reqs);
                 }
@@ -363,7 +365,7 @@ static void iso_receive(struct hpsb_host *host, int channel, quadlet_t *data,
 }
 
 static void fcp_request(struct hpsb_host *host, int nodeid, int direction,
-                        int cts, u8 *data, unsigned int length)
+			int cts, u8 *data, size_t length)
 {
         unsigned long flags;
         struct list_head *lh;
@@ -539,9 +541,9 @@ static int state_initialized(struct file_info *fi, struct pending_request *req)
 
                 if (khl != NULL) {
                         req->req.error = RAW1394_ERROR_NONE;
-                        req->req.length = MIN(req->req.length,
-                                              sizeof(struct raw1394_khost_list)
-                                              * req->req.misc);
+                        req->req.length = min(req->req.length,
+                                              (u32)(sizeof(struct raw1394_khost_list)
+                                              * req->req.misc));
                         req->free_data = 1;
                 } else {
                         return -ENOMEM;
@@ -689,6 +691,21 @@ static int handle_async_request(struct file_info *fi,
 			
 		req->req.length = 0;
 	    break;
+
+	case RAW1394_REQ_ASYNC_STREAM:
+		DBGMSG("stream_request called");
+
+		packet = hpsb_make_streampacket(fi->host, NULL, req->req.length, node & 0x3f/*channel*/,
+                                        (req->req.misc >> 16) & 0x3, req->req.misc & 0xf);
+		if (!packet)
+			return -ENOMEM;
+
+		if (copy_from_user(packet->data, int2ptr(req->req.sendb),
+		                   req->req.length))
+			req->req.error = RAW1394_ERROR_MEMFAULT;
+			
+		req->req.length = 0;
+		break;
 
         case RAW1394_REQ_LOCK:
                 DBGMSG("lock_request called");
@@ -879,7 +896,7 @@ static int handle_async_send(struct file_info *fi, struct pending_request *req)
 }
 
 static int arm_read (struct hpsb_host *host, int nodeid, quadlet_t *buffer,
-             u64 addr, unsigned int length, u16 flags)
+		     u64 addr, size_t length, u16 flags)
 {
         struct pending_request *req;
         struct list_head *lh;
@@ -893,7 +910,7 @@ static int arm_read (struct hpsb_host *host, int nodeid, quadlet_t *buffer,
         struct arm_request_response *arm_req_resp = NULL;
 
         DBGMSG("arm_read  called by node: %X"
-              "addr: %4.4x %8.8x length: %u", nodeid,
+              "addr: %4.4x %8.8x length: %Zu", nodeid,
               (u16) ((addr >>32) & 0xFFFF), (u32) (addr & 0xFFFFFFFF),
               length);
         spin_lock(&host_info_lock);
@@ -1015,7 +1032,7 @@ static int arm_read (struct hpsb_host *host, int nodeid, quadlet_t *buffer,
 }
 
 static int arm_write (struct hpsb_host *host, int nodeid, int destid,
-              quadlet_t *data, u64 addr, unsigned int length, u16 flags)
+		      quadlet_t *data, u64 addr, size_t length, u16 flags)
 {
         struct pending_request *req;
         struct list_head *lh;
@@ -1029,7 +1046,7 @@ static int arm_write (struct hpsb_host *host, int nodeid, int destid,
         struct arm_request_response *arm_req_resp = NULL;
 
         DBGMSG("arm_write called by node: %X"
-              "addr: %4.4x %8.8x length: %u", nodeid,
+              "addr: %4.4x %8.8x length: %Zu", nodeid,
               (u16) ((addr >>32) & 0xFFFF), (u32) (addr & 0xFFFFFFFF),
               length);
         spin_lock(&host_info_lock);
@@ -1567,8 +1584,8 @@ static int arm_register(struct file_info *fi, struct pending_request *req)
               req->req.length, ((req->req.misc >> 8) & 0xFF),
               (req->req.misc & 0xFF),((req->req.misc >> 16) & 0xFFFF));
         /* check addressrange */
-        if ((((req->req.address) & ~((u64)0xFFFFFFFFFFFFLL)) != 0) ||
-                (((req->req.address + req->req.length) & ~((u64)0xFFFFFFFFFFFFLL)) != 0)) {
+        if ((((req->req.address) & ~(0xFFFFFFFFFFFFULL)) != 0) ||
+                (((req->req.address + req->req.length) & ~(0xFFFFFFFFFFFFULL)) != 0)) {
                 req->req.length = 0;
                 return (-EINVAL);
         }
@@ -1579,7 +1596,7 @@ static int arm_register(struct file_info *fi, struct pending_request *req)
                 return (-ENOMEM);
         } 
         /* allocation of addr_space_buffer */
-        addr->addr_space_buffer = (u8 *)kmalloc(req->req.length,SLAB_KERNEL);
+        addr->addr_space_buffer = (u8 *)vmalloc(req->req.length);
         if (!(addr->addr_space_buffer)) {
                 kfree(addr);
                 req->req.length = 0;
@@ -1593,7 +1610,7 @@ static int arm_register(struct file_info *fi, struct pending_request *req)
                 /* init: user -> kernel */
                 if (copy_from_user(addr->addr_space_buffer,int2ptr(req->req.sendb),
                         req->req.length)) {
-                        kfree(addr->addr_space_buffer);
+                        vfree(addr->addr_space_buffer);
                         kfree(addr);
                         return (-EFAULT);
                 }
@@ -1634,7 +1651,7 @@ static int arm_register(struct file_info *fi, struct pending_request *req)
         }
         if (same_host) {
                 /* addressrange occupied by same host */
-                kfree(addr->addr_space_buffer);
+                vfree(addr->addr_space_buffer);
                 kfree(addr);
                 spin_unlock_irqrestore(&host_info_lock, flags);
                 return (-EALREADY);
@@ -1669,7 +1686,7 @@ static int arm_register(struct file_info *fi, struct pending_request *req)
                         int2ptr(&addr->start),sizeof(u64))) {
                         printk(KERN_ERR "raw1394: arm_register failed "
                               " address-range-entry is invalid -> EFAULT !!!\n");
-                        kfree(addr->addr_space_buffer);
+                        vfree(addr->addr_space_buffer);
                         kfree(addr);
                         spin_unlock_irqrestore(&host_info_lock, flags);
                         return (-EFAULT);
@@ -1687,7 +1704,7 @@ static int arm_register(struct file_info *fi, struct pending_request *req)
                list_add_tail(&addr->addr_list, &fi->addr_list);
         } else {
                 DBGMSG("arm_register failed errno: %d \n",retval);
-                kfree(addr->addr_space_buffer);
+                vfree(addr->addr_space_buffer);
                 kfree(addr);
                 spin_unlock_irqrestore(&host_info_lock, flags);
                 return (-EALREADY); 
@@ -1761,7 +1778,7 @@ static int arm_unregister(struct file_info *fi, struct pending_request *req)
         if (another_host) {
                 DBGMSG("delete entry from list -> success");
                 list_del(&addr->addr_list);
-                kfree(addr->addr_space_buffer);
+                vfree(addr->addr_space_buffer);
                 kfree(addr);
                 free_pending_request(req); /* immediate success or fail */
                 spin_unlock_irqrestore(&host_info_lock, flags);
@@ -1776,7 +1793,7 @@ static int arm_unregister(struct file_info *fi, struct pending_request *req)
         DBGMSG("delete entry from list -> success");
         list_del(&addr->addr_list);
         spin_unlock_irqrestore(&host_info_lock, flags);
-        kfree(addr->addr_space_buffer);
+        vfree(addr->addr_space_buffer);
         kfree(addr);
         free_pending_request(req); /* immediate success or fail */
         return sizeof(struct raw1394_request);
@@ -2080,6 +2097,9 @@ static int raw1394_iso_xmit_init(struct file_info *fi, void *uaddr)
 {
 	struct raw1394_iso_status stat;
 
+	if (!fi->host)
+		return -EINVAL;
+
 	if (copy_from_user(&stat, uaddr, sizeof(stat)))
 		return -EFAULT;
 
@@ -2108,6 +2128,9 @@ static int raw1394_iso_xmit_init(struct file_info *fi, void *uaddr)
 static int raw1394_iso_recv_init(struct file_info *fi, void *uaddr)
 {
 	struct raw1394_iso_status stat;
+
+	if (!fi->host)
+		return -EINVAL;
 
 	if (copy_from_user(&stat, uaddr, sizeof(stat)))
 		return -EFAULT;
@@ -2435,7 +2458,7 @@ static int raw1394_release(struct inode *inode, struct file *file)
                 }
                 DBGMSG("raw1394_release: delete addr_entry from list");
                 list_del(&addr->addr_list);
-                kfree(addr->addr_space_buffer);
+                vfree(addr->addr_space_buffer);
                 kfree(addr);
         } /* while */
         spin_unlock_irq(&host_info_lock);

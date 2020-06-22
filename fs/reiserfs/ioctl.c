@@ -84,6 +84,7 @@ int reiserfs_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
 	default:
 		return -ENOTTY;
 	}
+	return 0;
 }
 
 /*

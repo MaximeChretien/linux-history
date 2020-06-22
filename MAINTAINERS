@@ -163,8 +163,8 @@ W:	http://domsch.com/linux
 S:	Supported
 
 ACPI
-P:	Andy Grover
-M:	andrew.grover@intel.com
+P:	Len Brown
+M:	len.brown@intel.com
 L:	acpi-devel@lists.sourceforge.net
 W:	http://sf.net/projects/acpi/
 S:	Maintained
@@ -202,7 +202,7 @@ S:	Maintained
 
 ALCATEL SPEEDTOUCH USB DRIVER
 P:	Duncan Sands
-M:	duncan.sands@wanadoo.fr
+M:	duncan.sands@free.fr
 L:	linux-usb-users@lists.sourceforge.net
 L:	linux-usb-devel@lists.sourceforge.net
 W:	http://www.linux-usb.org/SpeedTouch/
@@ -264,6 +264,16 @@ ARPD SUPPORT
 P:	Jonathan Layes
 M:	layes@loran.com
 L:	linux-net@vger.kernel.org
+S:	Maintained
+
+ASUS ACPI EXTRAS DRIVER
+P:	Karol Kozimor
+M:	sziwan@users.sourceforge.net
+P:	Julien Lerouge
+M:	julien.lerouge@free.fr
+L:	acpi4asus-user@lists.sourceforge.net
+W:	http://sourceforge.net/projects/acpi4asus
+W:	http://julien.lerouge.free.fr
 S:	Maintained
 
 ATM
@@ -420,26 +430,24 @@ L:	codalist@coda.cs.cmu.edu
 W:	http://www.coda.cs.cmu.edu/
 S:	Maintained
 
-HP (was COMPAQ) FIBRE CHANNEL 64-bit/66MHz PCI non-intelligent HBA
-P:      Stephen Cameron
-M:      arrays@hp.com 
-M:      steve.cameron@hp.com
-L:	cpqfc-discuss@lists.sourceforge.net
+HP FIBRE CHANNEL 64-bit/66MHz PCI non-intelligent HBA
+P:      Chase Maupin
+M:      chase.maupin@hp.com
+L:     iss_storagedev@hp.com
 S:      Odd Fixes
 
-HP (was COMPAQ) SMART2 RAID DRIVER
-P:	Stephen Cameron
-M:	arrays@hp.com
-M:	steve.cameron@hp.com
-L:	cpqarray-discuss@lists.sourceforge.net
+
+HP SMART2 RAID DRIVER
+P:     Francis Wiran
+M:     francis.wiran@hp.com
+L:     iss_storagedev@hp.com
 S:	Odd Fixes
 
-HP (was COMPAQ) SMART CISS RAID DRIVER 
-P:	Stephen Cameron
-M:	arrays@hp.com
-M:	steve.cameron@hp.com
-L:	cciss-discuss@lists.sourceforge.net
-S:	Supported 
+HP SMART CISS RAID DRIVER
+P:     Mike Miller, Michael Ni
+M:     mike.miller@hp.com
+L:     iss_storagedev@hp.com
+S:	Supported
 
 COMPUTONE INTELLIPORT MULTIPORT CARD
 P:     Michael H. Warfield
@@ -503,6 +511,14 @@ CRYPTO API
 P:	James Morris
 M:	jmorris@intercode.com.au
 P:	David S. Miller
+M:	davem@redhat.com
+MARVELL YUKON / SYSKONNECT DRIVER
+P:	Mirko Lindner
+M: 	mlindner@syskonnect.de
+P:	Ralph Roesler
+M: 	rroesler@syskonnect.de
+W: 	http://www.syskonnect.com
+S: 	Supported
 M:	davem@redhat.com
 W	http://samba.org/~jamesm/crypto/
 L:	linux-kernel@vger.kernel.org
@@ -670,7 +686,7 @@ S:	Maintained
 ETHERNET BRIDGE
 P:	Stephen Hemminger
 M:	shemminger@osdl.org
-L:	bridge@math.leidenuniv.nl
+L:	bridge@osdl.org
 W:	http://bridge.sourceforge.net/
 S:	Maintained
 
@@ -790,13 +806,11 @@ M:	mikulas@artax.karlin.mff.cuni.cz
 W:	http://artax.karlin.mff.cuni.cz/~mikulas/vyplody/hpfs/index-e.cgi
 S:	Maintained
 
-I2C DRIVERS
-P:	Simon Vogl
-M:	simon@tk.uni-linz.ac.at
-P:	Frodo Looijaard
-M:	frodol@dds.nl
-L:	linux-i2c@pelican.tk.uni-linz.ac.at
-W:	http://www.tk.uni-linz.ac.at/~simon/private/i2c
+I2C AND SENSORS DRIVERS
+P:	Jean Delvare
+M:	khali@linux-fr.org
+L:	sensors@stimpy.netroedge.com
+W:	http://www.lm-sensors.nu/
 S:	Maintained
 
 i386 BOOT CODE
@@ -942,6 +956,11 @@ IOC3 DRIVER
 P:	Ralf Baechle
 M:	ralf@oss.sgi.com
 L:	linux-mips@linux-mips.org
+S:	Maintained
+
+IOC4 IDE DRIVER
+P:	Jeremy Higdon
+M:	jeremy@sgi.com
 S:	Maintained
 
 IP MASQUERADING:
@@ -1214,7 +1233,7 @@ M:	James.Bottomley@HansenPartnership.com
 L:	linux-scsi@vger.kernel.org
 S:	Maintained
 
-NETFILTER/IPTABLES
+NETFILTER/IPTABLES/IPCHAINS
 P:	Rusty Russell
 P:	Marc Boucher
 P:	James Morris
@@ -1725,8 +1744,6 @@ P:	Paul Mundt
 M:	lethal@linux-sh.org
 P:	Richard Curnow
 M:	richard.curnow@superh.com
-P:	Benedict Gaster
-M:	benedict.gaster@superh.com
 L:	linuxsh-shmedia-dev@lists.sourceforge.net
 W:	http://www.linux-sh.org
 W:	http://linux-shmedia.bkbits.net
@@ -1744,12 +1761,6 @@ P:	Martin Mares
 M:	mj@ucw.cz
 L:	linux-video@atrey.karlin.mff.cuni.cz
 S:	Maintained
-
-SYSKONNECT DRIVER
-P: Mirko Lindner
-M: mlindner@syskonnect.de
-W: http://www.syskonnect.com
-S: Supported
 
 SYSV FILESYSTEM
 P:	Christoph Hellwig
@@ -2050,6 +2061,13 @@ P:	David Brownell
 M:	dbrownell@users.sourceforge.net
 L:	linux-usb-devel@lists.sourceforge.net
 S:	Maintained
+
+USB W9968CF DRIVER
+P:      Luca Risolia
+M:      luca_ing@libero.it
+L:      linux-usb-devel@lists.sourceforge.net
+W:      http://go.lamarinapunto.com
+S:      Maintained
 
 VFAT FILESYSTEM:
 P:	Gordon Chaffee

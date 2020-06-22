@@ -1102,7 +1102,8 @@ aiptek_procfs_write(struct file *file, const char *buffer, unsigned long count,
 	int num;
 
 	num = (count < 64) ? count : 64;
-	copy_from_user(buf, buffer, num);
+	if (copy_from_user(buf, buffer, num))
+		return -EFAULT;
 	buf[num] = '\0';
 
 	scan = buf;

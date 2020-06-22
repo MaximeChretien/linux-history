@@ -279,6 +279,7 @@ static u32 last_cyclone_timer;
 static inline void mark_timeoffset_cyclone(void)
 {
 	int count;
+	unsigned long lost;
 	unsigned long delta = last_cyclone_timer;
 	spin_lock(&i8253_lock);
 	/* quickly read the cyclone timer */
@@ -293,11 +294,12 @@ static inline void mark_timeoffset_cyclone(void)
 	spin_unlock(&i8253_lock);
 
 	/*lost tick compensation*/
-	delta = last_cyclone_timer - delta;
-	if(delta > loops_per_jiffy+2000){
-		delta = (delta/loops_per_jiffy)-1;
-		jiffies += delta;
-	}
+	delta = last_cyclone_timer - delta;	
+	delta /= (CYCLONE_TIMER_FREQ/1000000);
+	delta += delay_at_last_interrupt;
+	lost = delta/(1000000/HZ);
+	if (lost >= 2)
+		jiffies += lost-1;
                
 	count = ((LATCH-1) - count) * TICK_SIZE;
 	delay_at_last_interrupt = (count + LATCH/2) / LATCH;

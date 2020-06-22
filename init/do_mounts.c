@@ -360,6 +360,7 @@ retry:
 				flags |= MS_RDONLY;
 				goto retry;
 			case -EINVAL:
+		        case -EBUSY:
 				continue;
 		}
 	        /*

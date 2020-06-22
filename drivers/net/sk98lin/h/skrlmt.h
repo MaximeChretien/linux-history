@@ -2,15 +2,16 @@
  *
  * Name:	skrlmt.h
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.33 $
- * Date:	$Date: 2001/07/03 12:16:48 $
+ * Version:	$Revision: 1.37 $
+ * Date:	$Date: 2003/04/15 09:43:43 $
  * Purpose:	Header file for Redundant Link ManagemenT.
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2001 SysKonnect GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 2002-2003 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -26,6 +27,18 @@
  * History:
  *
  *	$Log: skrlmt.h,v $
+ *	Revision 1.37  2003/04/15 09:43:43  tschilli
+ *	Copyright messages changed.
+ *	
+ *	Revision 1.36  2003/04/14 15:56:22  tschilli
+ *	"#error C++ is not yet supported." removed.
+ *	
+ *	Revision 1.35  2003/01/31 14:12:41  mkunz
+ *	single port adapter runs now with two identical MAC addresses
+ *	
+ *	Revision 1.34  2002/09/23 15:13:41  rwahl
+ *	Editorial changes.
+ *	
  *	Revision 1.33  2001/07/03 12:16:48  mkunz
  *	New Flag ChgBcPrio (Change priority of last broadcast received)
  *	
@@ -163,7 +176,6 @@
 #define __INC_SKRLMT_H
 
 #ifdef __cplusplus
-#error C++ is not yet supported.
 extern "C" {
 #endif	/* cplusplus */
 
@@ -286,28 +298,33 @@ unsigned	*pNumBytes	/* #Bytes to present to SK_RLMT_LOOKAHEAD */
 	_PortNum = (SK_U32)(PortNum); \
 	/* _pAC->Rlmt.Port[_PortNum].PacketsRx++; */ \
 	_pAC->Rlmt.Port[_PortNum].PacketsPerTimeSlot++; \
-	if ((_pAC->Rlmt.Port[_PortNum].Net->RlmtMode & SK_RLMT_TRANSPARENT) != 0) { \
+    if (_pAC->Rlmt.RlmtOff) { \
 		*(pNumBytes) = 0; \
-	} \
-	else if (IsBc) { \
-		if (_pAC->Rlmt.Port[_PortNum].Net->RlmtMode != SK_RLMT_MODE_CLS) { \
-			*(pNumBytes) = 6; \
-			*(pOffset) = 6; \
-		} \
-		else { \
-			*(pNumBytes) = 0; \
-		} \
-	} \
-	else { \
-		if ((PktLen) > SK_RLMT_MAX_TX_BUF_SIZE) { \
-			/* _pAC->Rlmt.Port[_PortNum].DataPacketsPerTimeSlot++; */ \
-			*(pNumBytes) = 0; \
-		} \
-		else { \
-			*(pNumBytes) = 6; \
-			*(pOffset) = 0; \
-		} \
-	} \
+    } \
+    else {\
+        if ((_pAC->Rlmt.Port[_PortNum].Net->RlmtMode & SK_RLMT_TRANSPARENT) != 0) { \
+    		*(pNumBytes) = 0; \
+    	} \
+    	else if (IsBc) { \
+    		if (_pAC->Rlmt.Port[_PortNum].Net->RlmtMode != SK_RLMT_MODE_CLS) { \
+    			*(pNumBytes) = 6; \
+    			*(pOffset) = 6; \
+    		} \
+    		else { \
+    			*(pNumBytes) = 0; \
+    		} \
+    	} \
+    	else { \
+    		if ((PktLen) > SK_RLMT_MAX_TX_BUF_SIZE) { \
+    			/* _pAC->Rlmt.Port[_PortNum].DataPacketsPerTimeSlot++; */ \
+    			*(pNumBytes) = 0; \
+    		} \
+    		else { \
+    			*(pNumBytes) = 6; \
+    			*(pOffset) = 0; \
+    		} \
+    	} \
+    } \
 }
 
 #if 0
@@ -505,8 +522,10 @@ typedef struct s_Rlmt {
 
 /* ----- Private part ----- */
 	SK_BOOL			CheckSwitch;
-	SK_U8			Align01;
-	SK_U16			Align02;
+	SK_BOOL			RlmtOff;            /* set to zero if the Mac addresses 
+                                           are equal or the second one 
+                                           is zero */
+	SK_U16			Align01;
 
 } SK_RLMT;
 

@@ -1,4 +1,4 @@
-/* $Id: entry.S,v 1.1.1.1.2.16 2003/07/16 18:41:20 yoshii Exp $
+/* $Id: entry.S,v 1.1.1.1.2.18 2003/10/23 22:08:56 yoshii Exp $
  *
  *  linux/arch/sh/entry.S
  *
@@ -561,6 +561,41 @@ restore_all:
 	lds.l	@r15+, mach
 	lds.l	@r15+, macl
 	add	#4, r15			! skip placeholder
+ 
+#ifdef CONFIG_SH_DSP
+	mov.l	@r15+, k0		! DSP mode marker
+	mov.l	5f, k1
+	cmp/eq	k0, k1			! Do we have a DSP stack frame?
+	bf	skip_restore
+
+	stc	sr, k0			! Enable CPU DSP mode
+	or	k1, k0			! (within kernel it may be disabled)
+	ldc	k0, sr
+	mov	r2, k0			! Backup r2
+
+	! Restore DSP registers from stack
+	mov	r15, r2
+	movs.l	@r2+, a1
+	movs.l	@r2+, a0g
+	movs.l	@r2+, a1g
+	movs.l	@r2+, m0
+	movs.l	@r2+, m1
+	mov	r2, r15
+
+	lds.l	@r15+, a0
+	lds.l	@r15+, x0
+	lds.l	@r15+, x1
+	lds.l	@r15+, y0
+	lds.l	@r15+, y1
+	lds.l	@r15+, dsr
+	ldc.l	@r15+, rs
+	ldc.l	@r15+, re
+	ldc.l	@r15+, mod
+
+	mov	k0, r2			! Restore r2
+skip_restore:
+#endif
+
 	!
 	!
 	! Calculate new SR value
@@ -589,6 +624,7 @@ restore_all:
 	mov	#0, k1
 	mov.b	k1, @k0
 #endif
+	mov.l	@r15+, k2		! restore EXPEVT
 	mov	k4, r15
 	rte
 	 nop
@@ -601,6 +637,7 @@ __blrb_flags:	.long	0x30000000
 #if defined(CONFIG_KGDB_NMI)
 4:	.long	SYMBOL_NAME(in_nmi)
 #endif
+5:	.long	0x00001000	! DSP
 
 
 ! Exception Vector Base
@@ -677,7 +714,43 @@ handle_exception:
 	!
 9:	mov.l	3f, k1
 	!
+#ifdef CONFIG_SH_DSP
+	mov.l	r2, @-r15		! Save r2, we need another reg
+	stc	sr, k4
+	mov.l	4f, r2
+	tst	r2, k4			! Check if in DSP mode
+	mov.l	@r15+, r2		! Restore r2 now
+	bt/s	skip_save
+	 mov	#0, k4			! Set marker for no stack frame
+
+	mov	r2, k4			! Backup r2 (in k4) for later
+
+	! Save DSP registers on stack
+	stc.l	mod, @-r15
+	stc.l	re, @-r15
+	stc.l	rs, @-r15
+	sts.l	dsr, @-r15
+	sts.l	y1, @-r15
+	sts.l	y0, @-r15
+	sts.l	x1, @-r15
+	sts.l	x0, @-r15
+	sts.l	a0, @-r15
+	mov     r15, r2
+	movs.l	a1, @-r2
+	movs.l	a0g, @-r2
+	movs.l	a1g, @-r2
+	movs.l	m0, @-r2
+	movs.l	m1, @-r2
+	mov	r2, r15
+
+	mov	k4, r2			! Restore r2
+	mov.l	4f, k4			! Force DSP stack frame
+skip_save:
+	mov.l	k4, @-r15		! Push DSP mode marker onto stack
+#endif
+
 	! Save the user registers on the stack.
+	mov.l	k2, @-r15	! EXPEVT
 	add	#-4, r15	! placeholder
 	!
 	sts.l	macl, @-r15
@@ -724,6 +797,7 @@ handle_exception:
 	.align	2
 1:	.long	SYMBOL_NAME(exception_handling_table)
 3:	.long	0x000000f0	! FD=0, IMASK=15
+4:	.long	0x00001000	! DSP bit set
 5:	.long	0xcfffffff	! RB=0, BL=0
 6:	.long	0x00080000	! SZ=0, PR=1
 

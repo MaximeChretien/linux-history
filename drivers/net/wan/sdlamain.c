@@ -511,7 +511,7 @@ static int setup (wan_device_t* wandev, wandev_conf_t* conf)
 	if (!card->configured){
 
 		/* Initialize the Spin lock */
-#if defined(__SMP__) || defined(LINUX_2_4) 
+#if defined(CONFIG_SMP) || defined(LINUX_2_4) 
 		printk(KERN_INFO "%s: Initializing for SMP\n",wandev->name);
 #endif
 

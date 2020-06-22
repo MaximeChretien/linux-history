@@ -510,7 +510,6 @@ static void __init isapnp_add_irq_resource(struct pci_dev *dev,
                                                int dependent, int size)
 {
 	unsigned char tmp[3];
-	int i;
 	struct isapnp_irq *irq, *ptr;
 
 	isapnp_peek(tmp, size);
@@ -538,9 +537,13 @@ static void __init isapnp_add_irq_resource(struct pci_dev *dev,
 	else
 		(*res)->irq = irq;
 #ifdef CONFIG_PCI
-	for (i=0; i<16; i++)
-		if (irq->map & (1<<i))
-			pcibios_penalize_isa_irq(i);
+	{
+		int i;
+
+		for (i=0; i<16; i++)
+			if (irq->map & (1<<i))
+				pcibios_penalize_isa_irq(i);
+	}
 #endif
 }
 

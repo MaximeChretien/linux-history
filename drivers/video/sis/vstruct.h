@@ -27,8 +27,8 @@
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
  *
- * Author: 	Thomas Winischhofer <thomas@winischhofer.net>
- *              ?
+ * Authors: 	Thomas Winischhofer <thomas@winischhofer.net>
+ *              Silicon Integrated Systems
  *
  */
  
@@ -214,10 +214,15 @@ typedef struct _SiS_ModeResInfoStruct
 typedef UCHAR DRAM4Type[4];
 
 /* Defines for SiS_Customt */
-#define CUT_NONE       0
-#define CUT_FORCENONE  1
-#define CUT_BARCO1366  2
-#define CUT_BARCO1024  3
+#define CUT_NONE        0
+#define CUT_FORCENONE   1
+#define CUT_BARCO1366   2
+#define CUT_BARCO1024   3
+#define CUT_COMPAQ1280  4
+#define CUT_COMPAQ12802 5
+#define CUT_PANEL848    6
+#define CUT_CLEVO1024   7
+#define CUT_CLEVO10242  8
 
 typedef struct _SiS_Private
 {
@@ -443,6 +448,8 @@ typedef struct _SiS_Private
 	const SiS_LVDSDataStruct  *SiS_LVDSBARCO1366Data_2;
 	const SiS_LVDSDataStruct  *SiS_LVDSBARCO1024Data_1;
 	const SiS_LVDSDataStruct  *SiS_LVDSBARCO1024Data_2;
+	const SiS_LVDSDataStruct  *SiS_LVDS848x480Data_1;
+	const SiS_LVDSDataStruct  *SiS_LVDS848x480Data_2;
 	const SiS_LVDSDataStruct  *SiS_CHTVUNTSCData;
 	const SiS_LVDSDataStruct  *SiS_CHTVONTSCData;
 	const SiS_LVDSDataStruct  *SiS_CHTVUPALData;
@@ -631,6 +638,8 @@ typedef struct _SiS_Private
 
 	BOOLEAN SiS_CHPALM;
 	BOOLEAN SiS_CHPALN;
+
+	int	LVDSHL;
 	
 	BOOLEAN Backup;
 	UCHAR Backup_Mode;

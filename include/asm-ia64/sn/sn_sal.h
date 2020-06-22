@@ -16,6 +16,7 @@
 #include <asm/sal.h>
 #include <asm/sn/sn_cpuid.h>
 #include <asm/sn/arch.h>
+#include <asm/sn/nodepda.h>
 
 
 // SGI Specific Calls
@@ -597,8 +598,16 @@ static inline int
 sn_change_memprotect(u64 paddr, u64 len, u64 perms, u64 *nasid_array)
 {
 	struct ia64_sal_retval ret_stuff;
-	SAL_CALL(ret_stuff, SN_SAL_MEMPROTECT, paddr, len, nasid_array,
+	int cnodeid;
+	unsigned long irq_flags;
+
+	cnodeid = nasid_to_cnodeid(get_node_number(paddr));
+	spin_lock(&NODEPDA(cnodeid)->bist_lock);
+	local_irq_save(irq_flags);
+	SAL_CALL_NOLOCK(ret_stuff, SN_SAL_MEMPROTECT, paddr, len, nasid_array,
 		 perms, 0, 0, 0);
+	local_irq_restore(irq_flags);
+	spin_unlock(&NODEPDA(cnodeid)->bist_lock);
 	return ret_stuff.status;
 }
 #define SN_MEMPROT_ACCESS_CLASS_0		0x14a080

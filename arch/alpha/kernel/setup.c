@@ -583,6 +583,35 @@ setup_arch(char **cmdline_p)
 	       var_name, alpha_mv.vector_name,
 	       (alpha_using_srm ? "SRM" : "MILO"));
 
+	printk("Major Options: "
+#ifdef CONFIG_SMP
+	       "SMP "
+#endif
+#ifdef CONFIG_ALPHA_EV56
+	       "EV56 "
+#endif
+#ifdef CONFIG_ALPHA_EV67
+	       "EV67 "
+#endif
+#ifdef CONFIG_ALPHA_LEGACY_START_ADDRESS
+	       "LEGACY_START "
+#endif
+
+#ifdef CONFIG_DISCONTIGMEM
+	       "DISCONTIGMEM "
+#ifdef CONFIG_NUMA
+	       "NUMA "
+#endif
+#endif
+
+#ifdef CONFIG_DEBUG_SPINLOCK
+	       "DEBUG_SPINLOCK "
+#endif
+#ifdef CONFIG_MAGIC_SYSRQ
+	       "MAGIC_SYSRQ "
+#endif
+	       "\n");
+
 	printk("Command line: %s\n", command_line);
 
 	/* 

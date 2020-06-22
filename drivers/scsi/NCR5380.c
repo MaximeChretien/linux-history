@@ -693,7 +693,7 @@ static int __init NCR5380_probe_irq(struct Scsi_Host *instance, int possible)
 			trying_irqs |= mask;
 
 	timeout = jiffies + (250 * HZ / 1000);
-	probe_irq = IRQ_NONE;
+	probe_irq = SCSI_IRQ_NONE;
 
 	/*
 	 * A interrupt is triggered whenever BSY = false, SEL = true
@@ -710,7 +710,7 @@ static int __init NCR5380_probe_irq(struct Scsi_Host *instance, int possible)
 	NCR5380_write(OUTPUT_DATA_REG, hostdata->id_mask);
 	NCR5380_write(INITIATOR_COMMAND_REG, ICR_BASE | ICR_ASSERT_DATA | ICR_ASSERT_SEL);
 
-	while (probe_irq == IRQ_NONE && time_before(jiffies, timeout))
+	while (probe_irq == SCSI_IRQ_NONE && time_before(jiffies, timeout))
 		barrier();
 
 	NCR5380_write(SELECT_ENABLE_REG, 0);
@@ -860,7 +860,7 @@ int NCR5380_proc_info(char *buffer, char **start, off_t offset, int length, int 
 
 	SPRINTF("\nBase Addr: 0x%05lX    ", (long) instance->base);
 	SPRINTF("io_port: %04x      ", (int) instance->io_port);
-	if (instance->irq == IRQ_NONE)
+	if (instance->irq == SCSI_IRQ_NONE)
 		SPRINTF("IRQ: None.\n");
 	else
 		SPRINTF("IRQ: %d.\n", instance->irq);
@@ -1706,7 +1706,7 @@ part2:
 #endif				/* def NCR_TIMEOUT */
 
 	dprintk(NDEBUG_SELECTION, ("scsi%d : target %d selected, going into MESSAGE OUT phase.\n", instance->host_no, cmd->target));
-	tmp[0] = IDENTIFY(((instance->irq == IRQ_NONE) ? 0 : 1), cmd->lun);
+	tmp[0] = IDENTIFY(((instance->irq == SCSI_IRQ_NONE) ? 0 : 1), cmd->lun);
 
 	len = 1;
 	cmd->tag = 0;

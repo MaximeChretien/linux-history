@@ -49,7 +49,7 @@ MODULE_LICENSE("GPL");
 
 #define	PREFIX			"ACPI: "
 
-extern void eisa_set_level_irq(unsigned int irq);
+extern void __init acpi_pic_sci_set_trigger(unsigned int irq);
 
 extern int			acpi_disabled;
 
@@ -1881,7 +1881,7 @@ acpi_bus_init (void)
         if (acpi_ioapic)
          	mp_config_ioapic_for_sci(acpi_fadt.sci_int);
 	else
-                eisa_set_level_irq(acpi_fadt.sci_int);
+		acpi_pic_sci_set_trigger(acpi_fadt.sci_int);
 #endif
 
 	status = acpi_enable_subsystem(ACPI_FULL_INITIALIZATION);
@@ -1898,9 +1898,7 @@ acpi_bus_init (void)
 	 * of that.
 	 */
 	result = acpi_ec_ecdt_probe();
-	if (result) {
-		goto error1;
-	}
+	/* Ignore result. Not having an ECDT is not fatal. */
 #endif
 
 	status = acpi_initialize_objects(ACPI_FULL_INITIALIZATION);

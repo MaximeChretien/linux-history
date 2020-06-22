@@ -35,7 +35,6 @@
 #include <asm/uaccess.h>
 #include <asm/io.h>
 #include <linux/delay.h>
-#include <linux/wrapper.h>
 #include <linux/interrupt.h>
 #include <linux/vmalloc.h>
 
@@ -139,7 +138,7 @@ static void *rvmalloc(unsigned long size) {
 		memset(mem, 0, size); /* Clear the ram out, no junk to the user */
 	        adr = (unsigned long)mem;
 		while (size > 0) {
-			mem_map_reserve(vmalloc_to_page((void *)adr));
+			SetPageReserved(vmalloc_to_page((void *)adr));
 			adr += PAGE_SIZE;
 			size -= PAGE_SIZE;
 		}
@@ -153,7 +152,7 @@ static void rvfree(void * mem, unsigned long size) {
 	if (mem) {
 	        adr = (unsigned long) mem;
 		while ((long) size > 0) {
-			mem_map_unreserve(vmalloc_to_page((void *)adr));
+			ClearPageReserved(vmalloc_to_page((void *)adr));
 			adr += PAGE_SIZE;
 			size -= PAGE_SIZE;
 		}
@@ -863,7 +862,7 @@ static void mchip_cont_compression_start(void) {
 /* Interrupt handling                                                       */
 /****************************************************************************/
 
-static void meye_irq(int irq, void *dev_id, struct pt_regs *regs) {
+static irqreturn_t meye_irq(int irq, void *dev_id, struct pt_regs *regs) {
 	u32 v;
 	int reqnr;
 	v = mchip_read(MCHIP_MM_INTA);
@@ -871,7 +870,7 @@ static void meye_irq(int irq, void *dev_id, struct pt_regs *regs) {
 	while (1) {
 		v = mchip_get_frame();
 		if (!(v & MCHIP_MM_FIR_RDY))
-			return;
+			return IRQ_NONE;
 		switch (meye.mchip_mode) {
 
 		case MCHIP_HIC_MODE_CONT_OUT:
@@ -904,11 +903,12 @@ static void meye_irq(int irq, void *dev_id, struct pt_regs *regs) {
 
 		default:
 			/* do not free frame, since it can be a snap */
-			return;
+			return IRQ_NONE;
 		} /* switch */
 
 		mchip_free_frame();
 	}
+	return IRQ_HANDLED;
 }
 
 /****************************************************************************/
@@ -948,7 +948,7 @@ static int meye_do_ioctl(struct inode *inode, struct file *file,
 
 	case VIDIOCGCAP: {
 		struct video_capability *b = arg;
-		strcpy(b->name,meye.video_dev.name);
+		strcpy(b->name,meye.video_dev->name);
 		b->type = VID_TYPE_CAPTURE;
 		b->channels = 1;
 		b->audios = 0;
@@ -1253,6 +1253,8 @@ static struct video_device meye_template = {
 	.type		= VID_TYPE_CAPTURE,
 	.hardware	= VID_HARDWARE_MEYE,
 	.fops		= &meye_fops,
+	.release	= video_device_release,
+	.minor		= -1,
 };
 
 #ifdef CONFIG_PM
@@ -1303,10 +1305,16 @@ static int __devinit meye_probe(struct pci_dev *pcidev,
 		goto out1;
 	}
 
-	sonypi_camera_command(SONYPI_COMMAND_SETCAMERA, 1);
-
 	meye.mchip_dev = pcidev;
-	memcpy(&meye.video_dev, &meye_template, sizeof(meye_template));
+	meye.video_dev = video_device_alloc();
+	if (!meye.video_dev) {
+		printk(KERN_ERR "meye: video_device_alloc() failed!\n");
+		ret = -EBUSY;
+		goto out1;
+	}
+	memcpy(meye.video_dev, &meye_template, sizeof(meye_template));
+
+	sonypi_camera_command(SONYPI_COMMAND_SETCAMERA, 1);
 
 	if ((ret = pci_enable_device(meye.mchip_dev))) {
 		printk(KERN_ERR "meye: pci_enable_device failed\n");
@@ -1363,7 +1371,7 @@ static int __devinit meye_probe(struct pci_dev *pcidev,
 	wait_ms(1);
 	mchip_set(MCHIP_MM_INTA, MCHIP_MM_INTA_HIC_1_MASK);
 
-	if (video_register_device(&meye.video_dev, VFL_TYPE_GRABBER, video_nr) < 0) {
+	if (video_register_device(meye.video_dev, VFL_TYPE_GRABBER, video_nr) < 0) {
 
 		printk(KERN_ERR "meye: video_register_device failed\n");
 		ret = -EIO;
@@ -1411,6 +1419,9 @@ out4:
 out3:
 	pci_disable_device(meye.mchip_dev);
 out2:
+	video_device_release(meye.video_dev);
+	meye.video_dev = NULL;
+
 	sonypi_camera_command(SONYPI_COMMAND_SETCAMERA, 0);
 out1:
 	return ret;
@@ -1418,7 +1429,7 @@ out1:
 
 static void __devexit meye_remove(struct pci_dev *pcidev) {
 
-	video_unregister_device(&meye.video_dev);
+	video_unregister_device(meye.video_dev);
 
 	mchip_hic_stop();
 
@@ -1444,7 +1455,7 @@ static void __devexit meye_remove(struct pci_dev *pcidev) {
 	printk(KERN_INFO "meye: removed\n");
 }
 
-static struct pci_device_id meye_pci_tbl[] __devinitdata = {
+static struct pci_device_id meye_pci_tbl[] = {
 	{ PCI_VENDOR_ID_KAWASAKI, PCI_DEVICE_ID_MCHIP_KL5A72002, 
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 },
 	{ }
@@ -1503,8 +1514,6 @@ __setup("meye=", meye_setup);
 MODULE_AUTHOR("Stelian Pop <stelian@popies.net>");
 MODULE_DESCRIPTION("video4linux driver for the MotionEye camera");
 MODULE_LICENSE("GPL");
-
-EXPORT_NO_SYMBOLS;
 
 MODULE_PARM(gbuffers,"i");
 MODULE_PARM_DESC(gbuffers,"number of capture buffers, default is 2 (32 max)");

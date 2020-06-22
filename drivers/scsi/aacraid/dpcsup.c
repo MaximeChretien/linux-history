@@ -74,12 +74,12 @@ unsigned int aac_response_normal(struct aac_queue * q)
 	 */
 	while(aac_consumer_get(dev, q, &entry))
 	{
-		u32 fast ;
-		fast = (entry->addr & cpu_to_le32(0x01));
-//		fib = &dev->fibs[(entry->addr >> 1)];
-//		hwfib = fib->hw_fib;
-		hwfib = bus_to_virt(le32_to_cpu(entry->addr & cpu_to_le32(~0x01)));
-		fib = &dev->fibs[hwfib->header.SenderData];
+		int fast;
+		u32 index;
+		index = le32_to_cpu(entry->addr);
+		fast = index & 0x01;
+		fib = &dev->fibs[index >> 1];
+		hwfib = fib->hw_fib;
 
 		aac_consumer_free(dev, q, HostNormRespQueue);
 		/*
@@ -178,13 +178,12 @@ unsigned int aac_command_normal(struct aac_queue *q)
 	while(aac_consumer_get(dev, q, &entry))
 	{
 		struct fib fibctx;
+		struct hw_fib * hw_fib;
+		u32 index;
 		struct fib *fib = &fibctx;
-		u32 hw_fib_pa = le32_to_cpu(entry->addr & cpu_to_le32(~0x01));
-		struct hw_fib * hw_fib_va = ((dev->comm_phys <= hw_fib_pa)
-		 && (hw_fib_pa < (dev->comm_phys + dev->comm_size)))
-		  ? dev->comm_addr + (hw_fib_pa - dev->comm_phys)
-		  : /* inconceivable */ bus_to_virt(hw_fib_pa);
-		dprintk((KERN_INFO "hw_fib_pa=%x hw_fib_va=%p\n", hw_fib_pa, hw_fib_va));
+
+		index = le32_to_cpu(entry->addr / sizeof(struct hw_fib));
+		hw_fib = &dev->aif_base_va[index];
 
 		/*
 		 *	Allocate a FIB at all costs. For non queued stuff
@@ -199,8 +198,8 @@ unsigned int aac_command_normal(struct aac_queue *q)
 		INIT_LIST_HEAD(&fib->fiblink);
 		fib->type = FSAFS_NTC_FIB_CONTEXT;
 		fib->size = sizeof(struct fib);
-		fib->hw_fib = hw_fib_va;
-		fib->data = hw_fib_va->data;
+		fib->hw_fib = hw_fib;
+		fib->data = hw_fib->data;
 		fib->dev = dev;
 		
 		if (dev->aif_thread && fib != &fibctx)
@@ -214,7 +213,7 @@ unsigned int aac_command_normal(struct aac_queue *q)
 			/*
 			 *	Set the status of this FIB
 			 */
-			*(u32 *)hw_fib_va->data = cpu_to_le32(ST_OK);
+			*(u32 *)hw_fib->data = cpu_to_le32(ST_OK);
 			fib_adapter_complete(fib, sizeof(u32));
 			spin_lock_irqsave(q->lock, flags);
 		}		

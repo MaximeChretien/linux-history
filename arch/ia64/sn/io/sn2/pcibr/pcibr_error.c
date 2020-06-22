@@ -101,6 +101,7 @@ static struct reg_desc   xio_cmd_bits[] =
 
 #define F(s,n)          { 1l<<(s),-(s), n }
 
+#if defined(FORCE_ERRORS)
 static struct reg_values       space_v[] =
 {
     {PCIIO_SPACE_NONE, "none"},
@@ -147,6 +148,7 @@ static struct reg_desc   device_bits[] =
     {BRIDGE_DEV_OFF_MASK, BRIDGE_DEV_OFF_ADDR_SHFT, "DEV_OFF", "%x"},
     {0}
 };
+#endif /* FORCE_ERRORS */
 
 static void
 print_bridge_errcmd(uint32_t cmdword, char *errtype)
@@ -663,7 +665,7 @@ pcibr_error_intr_handler(int irq, void *arg, struct pt_regs *ep)
 	entry = pcibr_list;
 	while (1) {
 	    if (entry == NULL) {
-		PRINT_PANIC("pcibr_error_intr_handler:\tmy parameter (0x%p) is not a pcibr_soft!", arg);
+		panic("pcibr_error_intr_handler:\tmy parameter (0x%p) is not a pcibr_soft!", arg);
 	    }
 	    if ((intr_arg_t) entry->bl_soft == arg)
 		break;
@@ -936,11 +938,11 @@ pcibr_error_intr_handler(int irq, void *arg, struct pt_regs *ep)
         (err_status & (BRIDGE_ISR_LLP_REC_SNERR | BRIDGE_ISR_LLP_REC_CBERR))) {
         printk("BRIDGE ERR_STATUS 0x%lx\n", err_status);
         pcibr_error_dump(pcibr_soft);
-        PRINT_PANIC("PCI Bridge Error interrupt killed the system");
+        panic("PCI Bridge Error interrupt killed the system");
     }
 
     if (err_status & BRIDGE_ISR_ERROR_FATAL) {
-	PRINT_PANIC("PCI Bridge Error interrupt killed the system");
+	panic("PCI Bridge Error interrupt killed the system");
 	    /*NOTREACHED */
     }
 
@@ -1080,7 +1082,9 @@ pcibr_pioerror(
     int                     retval = IOERROR_HANDLED;
 
     vertex_hdl_t            pcibr_vhdl = pcibr_soft->bs_vhdl;
+#if defined(FORCE_ERRORS)
     bridge_t               *bridge = pcibr_soft->bs_base;
+#endif
 
     iopaddr_t               bad_xaddr;
 
@@ -1414,9 +1418,6 @@ pcibr_pioerror(
 	}
 #if defined(FORCE_ERRORS)
 	if (0) {
-#elif !DEBUG
-	if (kdebug) {
-#endif
 	    /*
 	     * Dump raw data from Bridge/PCI layer.
 	     */
@@ -1444,9 +1445,8 @@ pcibr_pioerror(
 		    BEM_ADD_REG(device);
 		}
 	    }
-#if !DEBUG || defined(FORCE_ERRORS)
 	}
-#endif
+#endif	/* FORCE_ERRORS */
 
 	/*
 	 * Since error could not be handled at lower level,

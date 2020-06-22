@@ -1,4 +1,4 @@
-/* $Id: ia32_ioctl.c,v 1.34 2003/05/08 06:34:01 ak Exp $
+/* $Id: ia32_ioctl.c,v 1.37 2003/08/20 11:00:23 ak Exp $
  * ioctl32.c: Conversion between 32bit and 64bit native ioctls.
  *
  * Copyright (C) 1997-2000  Jakub Jelinek  (jakub@redhat.com)
@@ -2472,6 +2472,9 @@ static int do_lvm_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 	mm_segment_t old_fs;
 	void *karg = &u;
 
+	if (!capable(CAP_SYS_ADMIN))
+		return -EACCES;
+
 	switch (cmd) {
 	case VG_STATUS:
 		v = kmalloc(sizeof(vg_t), GFP_KERNEL);
@@ -3535,6 +3538,7 @@ COMPATIBLE_IOCTL(TIOCSCTTY)
 COMPATIBLE_IOCTL(TIOCGPTN)
 COMPATIBLE_IOCTL(TIOCSPTLCK)
 COMPATIBLE_IOCTL(TIOCSERGETLSR)
+COMPATIBLE_IOCTL(FIOQSIZE)
 /* Big F */
 COMPATIBLE_IOCTL(FBIOGET_VSCREENINFO)
 COMPATIBLE_IOCTL(FBIOPUT_VSCREENINFO)
@@ -4416,6 +4420,9 @@ int register_ioctl32_conversion(unsigned int cmd, int (*handler)(unsigned int, u
 	struct ioctl_trans *t;
 	unsigned long hash = ioctl32_hash(cmd);
 
+	if (handler == NULL)
+		handler = (void *)sys_ioctl; 
+
 	lock_kernel(); 
 	for (t = (struct ioctl_trans *)ioctl32_hash_table[hash];
 	     t;
@@ -4555,7 +4562,7 @@ asmlinkage long sys32_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg
 			       "cmd(%08x){%s} arg(%08x) on %s\n",
 			       current->comm, current->pid,
 			       (int)fd, (unsigned int)cmd, buf, (unsigned int)arg,
-			       IS_ERR(fn) ? "???" : fn);
+			       fn);
 			if (path) 
 				free_page((unsigned long)path); 
 		}

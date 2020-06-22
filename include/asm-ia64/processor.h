@@ -19,6 +19,7 @@
 #include <asm/ptrace.h>
 #include <asm/kregs.h>
 #include <asm/types.h>
+#include <asm/ustack.h>
 
 #define IA64_NUM_DBG_REGS	8
 /*
@@ -87,6 +88,9 @@
 #include <asm/rse.h>
 #include <asm/unwind.h>
 #include <asm/atomic.h>
+#ifdef CONFIG_NUMA
+#include <asm/nodedata.h>
+#endif
 
 /* like above but expressed as bitfields for more efficient access: */
 struct ia64_psr {
@@ -187,8 +191,8 @@ struct cpuinfo_ia64 {
 	} ipi;
 #endif
 #ifdef CONFIG_NUMA
-	void *node_directory;
-	int numa_node_id;
+	struct ia64_node_data *node_data;
+	int nodeid;
 	struct cpuinfo_ia64 *cpu_data[NR_CPUS];
 #endif
 	/* Platform specific word.  MUST BE LAST IN STRUCT */
@@ -213,9 +217,9 @@ struct cpuinfo_ia64 {
  */
 #ifdef CONFIG_NUMA
 # define cpu_data(cpu)		local_cpu_data->cpu_data[cpu]
-# define numa_node_id()		(local_cpu_data->numa_node_id)
+# define numa_node_id()		(local_cpu_data->nodeid)
 #else
-  extern struct cpuinfo_ia64 _cpu_data[NR_CPUS];
+  extern struct cpuinfo_ia64	_cpu_data[NR_CPUS];
 # define cpu_data(cpu)		(&_cpu_data[cpu])
 #endif
 
@@ -257,6 +261,7 @@ struct thread_struct {
 	unsigned long flags;		/* various flags */
 	__u64 map_base;			/* base address for get_unmapped_area() */
 	__u64 task_size;		/* limit for task size */
+	__u64 rbs_bot;			/* the base address for the RBS */
 	struct siginfo *siginfo;	/* current siginfo struct for ptrace() */
 
 #ifdef CONFIG_IA32_SUPPORT
@@ -265,11 +270,9 @@ struct thread_struct {
 	__u64 fcr;			/* IA32 floating pt control reg */
 	__u64 fir;			/* IA32 fp except. instr. reg */
 	__u64 fdr;			/* IA32 fp except. data reg */
-	__u64 csd;			/* IA32 code selector descriptor */
-	__u64 ssd;			/* IA32 stack selector descriptor */
 	__u64 old_k1;			/* old value of ar.k1 */
 	__u64 old_iob;			/* old IOBase value */
-# define INIT_THREAD_IA32	0, 0, 0x17800000037fULL, 0, 0, 0, 0, 0, 0,
+# define INIT_THREAD_IA32	0, 0, 0x17800000037fULL, 0, 0, 0, 0, 
 #else
 # define INIT_THREAD_IA32
 #endif /* CONFIG_IA32_SUPPORT */
@@ -296,6 +299,7 @@ struct thread_struct {
 	0,				/* flags */	\
 	DEFAULT_MAP_BASE,		/* map_base */	\
 	DEFAULT_TASK_SIZE,		/* task_size */	\
+	DEFAULT_USER_STACK_SIZE,	/* rbs_bot */	\
 	0,				/* siginfo */	\
 	INIT_THREAD_IA32				\
 	INIT_THREAD_PM					\
@@ -312,7 +316,7 @@ struct thread_struct {
 	regs->cr_iip = new_ip;									\
 	regs->ar_rsc = 0xf;		/* eager mode, privilege level 3 */			\
 	regs->ar_rnat = 0;									\
-	regs->ar_bspstore = IA64_RBS_BOT;							\
+	regs->ar_bspstore = current->thread.rbs_bot;						\
 	regs->ar_fpsr = FPSR_DEFAULT;								\
 	regs->loadrs = 0;									\
 	regs->r8 = current->mm->dumpable;	/* set "don't zap registers" flag */		\
@@ -337,11 +341,15 @@ struct thread_struct {
 		regs->r24 = 0; regs->r25 = 0; regs->r26 = 0; regs->r27 = 0;			\
 		regs->r28 = 0; regs->r29 = 0; regs->r30 = 0; regs->r31 = 0;			\
 		regs->ar_ccv = 0;								\
+		regs->ar_csd = 0;                                                               \
+		regs->ar_ssd = 0;                                                               \
 		regs->b0 = 0; regs->b7 = 0;							\
 		regs->f6.u.bits[0] = 0; regs->f6.u.bits[1] = 0;					\
 		regs->f7.u.bits[0] = 0; regs->f7.u.bits[1] = 0;					\
 		regs->f8.u.bits[0] = 0; regs->f8.u.bits[1] = 0;					\
 		regs->f9.u.bits[0] = 0; regs->f9.u.bits[1] = 0;					\
+		regs->f10.u.bits[0] = 0; regs->f10.u.bits[1] = 0;				\
+		regs->f11.u.bits[0] = 0; regs->f11.u.bits[1] = 0;				\
 	}											\
 } while (0)
 
@@ -655,8 +663,17 @@ ia64_set_lrr0 (unsigned long val)
 	asm volatile ("mov cr.lrr0=%0;; srlz.d" :: "r"(val) : "memory");
 }
 
-#define cpu_relax()	do { } while (0)
+#ifdef GAS_HAS_HINT_INSN
+static inline void
+ia64_hint_pause (void)
+{
+	asm volatile ("hint @pause" ::: "memory");
+}
 
+#define cpu_relax()	ia64_hint_pause()
+#else
+#define cpu_relax()	barrier()
+#endif
 
 static inline void
 ia64_set_lrr1 (unsigned long val)
@@ -759,18 +776,12 @@ thread_saved_pc (struct thread_struct *t)
 #define init_task	(init_task_union.task)
 #define init_stack	(init_task_union.stack)
 
-/*
- * Set the correctable machine check vector register
- */
 static inline void
 ia64_set_cmcv (__u64 val)
 {
 	asm volatile ("mov cr.cmcv=%0" :: "r"(val) : "memory");
 }
 
-/*
- * Read the correctable machine check vector register
- */
 static inline __u64
 ia64_get_cmcv (void)
 {
@@ -948,6 +959,18 @@ ia64_tpa (__u64 addr)
 	__u64 result;
 	asm ("tpa %0=%1" : "=r"(result) : "r"(addr));
 	return result;
+}
+
+/*
+ * Take a mapped kernel address and return the equivalent address
+ * in the region 7 identity mapped virtual area.
+ */
+static inline void *
+ia64_imva (void *addr)
+{
+	void *result;
+	asm ("tpa %0=%1" : "=r"(result) : "r"(addr));
+	return __va(result);
 }
 
 #define ARCH_HAS_PREFETCH

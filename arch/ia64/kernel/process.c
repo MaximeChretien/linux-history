@@ -1,7 +1,7 @@
 /*
  * Architecture-specific setup.
  *
- * Copyright (C) 1998-2002 Hewlett-Packard Co
+ * Copyright (C) 1998-2003 Hewlett-Packard Co
  *	David Mosberger-Tang <davidm@hpl.hp.com>
  */
 #define __KERNEL_SYSCALLS__	/* see <asm/unistd.h> */
@@ -33,15 +33,15 @@
 #include <asm/sn/idle.h>
 #endif
 
-#define print_symbol(fmt, addr)	printk(fmt, "");
+#define print_symbol(fmt, addr)	printk(fmt, "(no symbol)");
 
 void
 ia64_do_show_stack (struct unw_frame_info *info, void *arg)
 {
 	unsigned long ip, sp, bsp;
-	char buf[80];			/* don't make it so big that it overflows the stack! */
+	char buf[128];			/* don't make it so big that it overflows the stack! */
 
-	printk("\nCall Trace: ");
+	printk("\nCall Trace:\n");
 	do {
 		unw_get_ip(info, &ip);
 		if (ip == 0)
@@ -49,16 +49,12 @@ ia64_do_show_stack (struct unw_frame_info *info, void *arg)
 
 		unw_get_sp(info, &sp);
 		unw_get_bsp(info, &bsp);
-		snprintf(buf, sizeof(buf), " [<%016lx>] %%s\n\t\t\t\tsp=%016lx bsp=%016lx\n",
+		snprintf(buf, sizeof(buf),
+			 " [<%016lx>] %%s\n"
+			 "                                sp=%016lx bsp=%016lx\n",
 			 ip, sp, bsp);
 		print_symbol(buf, ip);
 	} while (unw_unwind(info) >= 0);
-}
-
-void
-show_trace_task (struct task_struct *task)
-{
-	show_stack(task);
 }
 
 void
@@ -75,19 +71,27 @@ show_stack (struct task_struct *task)
 }
 
 void
+show_trace_task (struct task_struct *task)
+{
+	show_stack(task);
+}
+
+void
 show_regs (struct pt_regs *regs)
 {
 	unsigned long ip = regs->cr_iip + ia64_psr(regs)->ri;
 
-	printk("\nPid: %d, comm: %20s\n", current->pid, current->comm);
+	printk("\nPid: %d, CPU %d, comm: %20s\n", current->pid, smp_processor_id(), current->comm);
 	printk("psr : %016lx ifs : %016lx ip  : [<%016lx>]    %s\n",
 	       regs->cr_ipsr, regs->cr_ifs, ip, print_tainted());
+	print_symbol("ip is at %s\n", ip);
 	printk("unat: %016lx pfs : %016lx rsc : %016lx\n",
 	       regs->ar_unat, regs->ar_pfs, regs->ar_rsc);
 	printk("rnat: %016lx bsps: %016lx pr  : %016lx\n",
 	       regs->ar_rnat, regs->ar_bspstore, regs->pr);
 	printk("ldrs: %016lx ccv : %016lx fpsr: %016lx\n",
 	       regs->loadrs, regs->ar_ccv, regs->ar_fpsr);
+	printk("csd : %016lx ssd : %016lx\n", regs->ar_csd, regs->ar_ssd);
 	printk("b0  : %016lx b6  : %016lx b7  : %016lx\n", regs->b0, regs->b6, regs->b7);
 	printk("f6  : %05lx%016lx f7  : %05lx%016lx\n",
 	       regs->f6.u.bits[1], regs->f6.u.bits[0],
@@ -95,6 +99,9 @@ show_regs (struct pt_regs *regs)
 	printk("f8  : %05lx%016lx f9  : %05lx%016lx\n",
 	       regs->f8.u.bits[1], regs->f8.u.bits[0],
 	       regs->f9.u.bits[1], regs->f9.u.bits[0]);
+	printk("f10 : %05lx%016lx f11 : %05lx%016lx\n",
+	       regs->f10.u.bits[1], regs->f10.u.bits[0],
+	       regs->f11.u.bits[1], regs->f11.u.bits[0]);
 
 	printk("r1  : %016lx r2  : %016lx r3  : %016lx\n", regs->r1, regs->r2, regs->r3);
 	printk("r8  : %016lx r9  : %016lx r10 : %016lx\n", regs->r8, regs->r9, regs->r10);
@@ -124,16 +131,32 @@ show_regs (struct pt_regs *regs)
 		show_stack(NULL);
 }
 
+/*
+ * We use this if we don't have any better idle routine..
+ */
+void
+default_idle (void)
+{
+#ifdef CONFIG_IA64_PAL_IDLE
+	if (!current->need_resched)
+		safe_halt();
+#endif
+}
+
 void __attribute__((noreturn))
 cpu_idle (void *unused)
 {
-	/* endless idle loop with no priority at all */
 	init_idle();
 	current->nice = 20;
 	current->counter = -100;
 
 
+	/* endless idle loop with no priority at all */
 	while (1) {
+		void (*idle)(void) = pm_idle;
+		if (!idle)
+			idle = default_idle;
+
 #ifdef CONFIG_SMP
 		if (!current->need_resched)
 			min_xtp();
@@ -143,7 +166,7 @@ cpu_idle (void *unused)
 #ifdef CONFIG_IA64_SGI_SN
 			snidle();
 #endif
-			continue;
+			(*idle)();
 		}
 
 #ifdef CONFIG_IA64_SGI_SN
@@ -155,8 +178,6 @@ cpu_idle (void *unused)
 #endif
 		schedule();
 		check_pgt_cache();
-		if (pm_idle)
-			(*pm_idle)();
 	}
 }
 
@@ -426,6 +447,8 @@ do_copy_regs (struct unw_frame_info *info, void *arg)
 	dst[52] = pt->ar_pfs;	/* UNW_AR_PFS is == to pt->cr_ifs for interrupt frames */
 	unw_get_ar(info, UNW_AR_LC, &dst[53]);
 	unw_get_ar(info, UNW_AR_EC, &dst[54]);
+	unw_get_ar(info, UNW_AR_CSD, &dst[55]);
+	unw_get_ar(info, UNW_AR_SSD, &dst[56]);
 }
 
 void

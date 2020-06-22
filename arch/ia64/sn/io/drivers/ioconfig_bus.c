@@ -17,6 +17,8 @@
 #include <linux/pci.h>
 
 #include <asm/sn/sgi.h>
+#include <asm/uaccess.h>
+
 #include <linux/devfs_fs.h>
 #include <linux/devfs_fs_kernel.h>
 #include <asm/io.h>
@@ -36,6 +38,7 @@
  */
 static vertex_hdl_t ioconfig_bus_handle;
 static unsigned long ioconfig_bus_debug;
+static struct ioconfig_parm parm;
 
 #ifdef IOCONFIG_BUS_DEBUG
 #define DBG(x...)	printk(x)
@@ -162,8 +165,13 @@ build_moduleid_table(char *file_contents, struct ascii_moduleid *table)
 	struct ascii_moduleid *moduleid;
 
 	line = kmalloc(256, GFP_KERNEL);
+	if (line <= 0)
+		BUG(); /* Do not want to continue system boot .. */
 	memset(line, 0,256);
 	name = kmalloc(125, GFP_KERNEL);
+	if (name <= 0){
+		BUG(); /* Do not want to continue system boot .. */
+	}
 	memset(name, 0, 125);
 	moduleid = table;
 	current = file_contents;
@@ -252,6 +260,9 @@ ioconfig_bus_init(void)
 		ret_stuff.v0, (void *)ioconfig_file, (int)ioconfig_file_size);
 
 	ioconfig_bus_table = kmalloc( 512, GFP_KERNEL );
+	if (ioconfig_bus_table <= 0)
+		BUG(); /* Seriously, we should not be out of memory at init */
+
 	memset(ioconfig_bus_table, 0, 512);
 
 	/*
@@ -264,7 +275,6 @@ ioconfig_bus_init(void)
 		DBG("ioconfig_bus_init: Kernel Options given.\n");
 		(void) build_moduleid_table((char *)ioconfig_kernopts, ioconfig_bus_table);
 		(void) dump_ioconfig_table();
-		return;
 	}
 
 	if (ioconfig_activated) {
@@ -305,16 +315,20 @@ static int ioconfig_bus_ioctl(struct inode * inode, struct file * file,
         unsigned int cmd, unsigned long arg)
 {
 
-	struct ioconfig_parm parm;
-
+	int length;
 	/*
 	 * Copy in the parameters.
 	 */
-	copy_from_user(&parm, (char *)arg, sizeof(struct ioconfig_parm));
+	length = copy_from_user(&parm, (char *)arg, sizeof(struct ioconfig_parm));
+	if (length <= 0)
+		return -EFAULT;
 	parm.number = free_entry - new_entry;
 	parm.ioconfig_activated = ioconfig_activated;
-	copy_to_user((char *)arg, &parm, sizeof(struct ioconfig_parm));
-	copy_to_user((char *)parm.buffer, &ioconfig_bus_table[new_entry], sizeof(struct  ascii_moduleid) * (free_entry - new_entry));
+	if (copy_to_user((char *)arg, &parm, sizeof(struct ioconfig_parm)))
+		return -EFAULT;
+
+	if (copy_to_user((char *)parm.buffer, &ioconfig_bus_table[new_entry], sizeof(struct  ascii_moduleid) * (free_entry - new_entry)))
+		return -EFAULT;
 
 	return 0;
 }

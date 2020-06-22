@@ -1,5 +1,5 @@
 /*
- *  arch/ppc/kernel/cputable.c
+ *  arch/ppc64/kernel/cputable.c
  *
  *  Copyright (C) 2001 Ben. Herrenschmidt (benh@kernel.crashing.org)
  *

@@ -119,6 +119,7 @@ void __init pcibios_init(void)
 {
 	unsigned int sec_bus = li_pcib_read16(LI_PCI_BUSNUM) & 0xff;
 
+	pcibios_set_cacheline_size();
 	printk("PCI: Probing PCI hardware on host buses 00 and %02x\n", sec_bus);
 	pci_scan_bus(0, &visws_pci_ops, NULL);
 	pci_scan_bus(sec_bus, &visws_pci_ops, NULL);

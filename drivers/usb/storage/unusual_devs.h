@@ -119,7 +119,7 @@ UNUSUAL_DEV(  0x04b8, 0x0602, 0x0110, 0x0110,
 UNUSUAL_DEV(  0x04cb, 0x0100, 0x0000, 0x2210,
 		"Fujifilm",
 		"FinePix 1400Zoom",
-		US_SC_8070, US_PR_CBI, NULL, US_FL_FIX_INQUIRY),
+		US_SC_DEVICE, US_PR_DEVICE, NULL, US_FL_FIX_INQUIRY),
 
 /* Reported by Peter Wächtler <pwaechtler@loewe-komp.de>
  * The device needs the flags only.
@@ -236,7 +236,7 @@ UNUSUAL_DEV(  0x0525, 0xa140, 0x0100, 0x0100,
 UNUSUAL_DEV(  0x054c, 0x0010, 0x0106, 0x0450, 
 		"Sony",
 		"DSC-S30/S70/S75/505V/F505/F707/F717/P8", 
-		US_SC_SCSI, US_PR_CB, NULL,
+		US_SC_SCSI, US_PR_DEVICE, NULL,
 		US_FL_SINGLE_LUN | US_FL_MODE_XLATE ),
 
 /* Reported by wim@geeks.nl */
@@ -264,7 +264,7 @@ UNUSUAL_DEV(  0x054c, 0x002d, 0x0100, 0x0100,
 UNUSUAL_DEV(  0x054c, 0x002e, 0x0106, 0x0310, 
 		"Sony",
 		"Handycam",
-		US_SC_SCSI, US_PR_CB, NULL,
+		US_SC_SCSI, US_PR_DEVICE, NULL,
 		US_FL_SINGLE_LUN | US_FL_MODE_XLATE),
 
 UNUSUAL_DEV(  0x054c, 0x0032, 0x0000, 0x9999,
@@ -289,7 +289,7 @@ UNUSUAL_DEV(  0x054c, 0x006d, 0x0000, 0x9999,
 UNUSUAL_DEV(  0x057b, 0x0000, 0x0000, 0x0299, 
 		"Y-E Data",
 		"Flashbuster-U",
-		US_SC_UFI,  US_PR_CB, NULL,
+		US_SC_DEVICE,  US_PR_CB, NULL,
 		US_FL_SINGLE_LUN),
 
 UNUSUAL_DEV(  0x057b, 0x0000, 0x0300, 0x9999, 
@@ -388,6 +388,18 @@ UNUSUAL_DEV(  0x066b, 0x0105, 0x0100, 0x0100,
 		US_FL_SINGLE_LUN ),
 #endif
 
+/* Submitted by Benny Sjostrand <benny@hostmobility.com> */
+UNUSUAL_DEV( 0x0686, 0x4011, 0x0001, 0x0001,
+		"Minolta",
+		"Dimage F300",
+		US_SC_SCSI, US_PR_BULK, NULL, 0 ),
+
+/* Reported by Miguel A. Fosas <amn3s1a@ono.com> */
+UNUSUAL_DEV(  0x0686, 0x4017, 0x0001, 0x0001,
+                "Minolta",
+                "DIMAGE E223",
+                US_SC_SCSI, US_PR_DEVICE, NULL, 0 ),
+
 UNUSUAL_DEV(  0x0693, 0x0002, 0x0100, 0x0100, 
 		"Hagiwara",
 		"FlashGate SmartMedia",
@@ -407,7 +419,7 @@ UNUSUAL_DEV(  0x0781, 0x0001, 0x0200, 0x0200,
 UNUSUAL_DEV(  0x0781, 0x0002, 0x0009, 0x0009, 
 		"Sandisk",
 		"ImageMate SDDR-31",
-		US_SC_SCSI, US_PR_BULK, NULL,
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_IGNORE_SER ),
 
 UNUSUAL_DEV(  0x0781, 0x0100, 0x0100, 0x0100,
@@ -536,10 +548,10 @@ UNUSUAL_DEV(  0x07c4, 0xa400, 0x0000, 0xffff,
  * - They don't like the INQUIRY command. So we must handle this command
  *   of the SCSI layer ourselves.
  */
-UNUSUAL_DEV( 0x07cf, 0x1001, 0x1000, 0x9009,
+UNUSUAL_DEV( 0x07cf, 0x1001, 0x1000, 0x9999,
 		"Casio",
 		"QV DigitalCamera",
-		US_SC_8070, US_PR_CB, NULL,
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_FIX_INQUIRY ),
 
 /* Submitted by Hartmut Wahl <hwahl@hwahl.de>*/
@@ -555,7 +567,7 @@ UNUSUAL_DEV( 0x0839, 0x000a, 0x0001, 0x0001,
 UNUSUAL_DEV(  0x08ca, 0x2011, 0x0000, 0x9999,
 		"AIPTEK",
 		"PocketCAM 3Mega",
-		US_SC_SCSI, US_PR_BULK, NULL,
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_MODE_XLATE ),
 
 /* aeb */
@@ -605,6 +617,30 @@ UNUSUAL_DEV(  0x0bf6, 0xa001, 0x0100, 0x0110,
 		0 ),
 #endif
 
+/* Submitted by Antoine Mairesse <antoine.mairesse@free.fr> */
+UNUSUAL_DEV( 0x0ed1, 0x6660, 0x0100, 0x0300,
+		"USB",
+		"Solid state disk",
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
+		US_FL_FIX_INQUIRY ),
+
+/* Submitted by Joris Struyve <joris@struyve.be> */
+UNUSUAL_DEV( 0x0d96, 0x410a, 0x0001, 0xffff,
+		"Medion",
+		"MD 7425",
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
+		US_FL_FIX_INQUIRY),
+
+/*
+ * Entry for Jenoptik JD 5200z3
+ *
+ * email: car.busse@gmx.de
+ */
+UNUSUAL_DEV(  0x0d96, 0x5200, 0x0001, 0x0200,
+		"Jenoptik",
+		"JD 5200 z3",
+		US_SC_DEVICE, US_PR_DEVICE, NULL, US_FL_FIX_INQUIRY),
+		
 /* Reported by Kevin Cernekee <kpc-usbdev@gelato.uiuc.edu>
  * Tested on hardware version 1.10.
  * Entry is needed only for the initializer function override.

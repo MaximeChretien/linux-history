@@ -18,6 +18,7 @@
 #include <asm/registers.h>
 #include <asm/cache.h>
 #include <asm/mmu_context.h>
+#include <asm/tlb.h>
 
 /*
  * Fixed TLB entries to identity map the beginning of RAM

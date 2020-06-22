@@ -462,7 +462,7 @@ __SYSCALL(__NR_fremovexattr, sys_ni_syscall)
 #define __NR_tkill	200	/* 2.5 only */
 __SYSCALL(__NR_tkill, sys_ni_syscall) 
 #define __NR_time		201
-__SYSCALL(__NR_time, sys_time)
+__SYSCALL(__NR_time, sys_time64)
 #define __NR_futex		202 /* 2.5 only */
 __SYSCALL(__NR_futex, sys_ni_syscall)
 #define __NR_sched_setaffinity    203
@@ -495,8 +495,12 @@ __SYSCALL(__NR_epoll_wait, sys_ni_syscall)
 __SYSCALL(__NR_remap_file_pages, sys_ni_syscall)
 #define __NR_getdents64 217
 __SYSCALL(__NR_getdents64, sys_getdents64)
+#define __NR_restart_syscall	219
+__SYSCALL(__NR_restart_syscall, sys_ni_syscall)
+#define __NR_semtimedop		220
+__SYSCALL(__NR_semtimedop, sys_semtimedop)
 
-#define __NR_syscall_max __NR_getdents64
+#define __NR_syscall_max __NR_semtimedop
 
 #ifndef __NO_STUBS
 

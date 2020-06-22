@@ -93,6 +93,9 @@ endif
 obj-$(CONFIG_SH_KEYWEST)	+= mach_keywest.o setup_keywest.o io_keywest.o
 machine-specific-objs		+= mach_keywest.o setup_keywest.o io_keywest.o
 
+obj-$(CONFIG_SH_SH4202_MICRODEV)+= mach_microdev.o setup_microdev.o io_microdev.o irq_microdev.o
+machine-specific-objs		+= mach_microdev.o setup_microdev.o io_microdev.o irq_microdev.o
+
 # Doesn't compile well, so don't include in machine-specific-objs
 obj-$(CONFIG_HD64465)		+= setup_hd64465.o io_hd64465.o hd64465_gpio.o
 obj-$(CONFIG_SH_DMIDA)		+= mach_dmida.o

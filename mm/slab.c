@@ -1784,8 +1784,9 @@ int kmem_cache_reap (int gfp_mask)
 		full_free = 0;
 		p = searchp->slabs_free.next;
 		while (p != &searchp->slabs_free) {
-			slabp = list_entry(p, slab_t, list);
 #if DEBUG
+			slabp = list_entry(p, slab_t, list);
+
 			if (slabp->inuse)
 				BUG();
 #endif

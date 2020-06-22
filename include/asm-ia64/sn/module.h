@@ -138,6 +138,8 @@ extern char brick_types[];
 #define MODULE_PEBRICK          8
 #define MODULE_PXBRICK          9
 #define MODULE_IXBRICK          10
+#define MODULE_CGBRICK		11
+#define MODULE_OPUSBRICK        12
 
 /*
  * Moduleid_t comparison macros
@@ -155,12 +157,13 @@ struct module_s {
     spinlock_t		lock;		/* Lock for this structure	   */
 
     /* List of nodes in this module */
-    cnodeid_t		nodes[MODULE_MAX_NODES];
-    geoid_t		geoid[MODULE_MAX_NODES];
+    cnodeid_t		nodes[MAX_SLABS + 1];
+    geoid_t		geoid[MAX_SLABS + 1];
     struct {
-		char	moduleid[8];
-    } io[MODULE_MAX_NODES];
-    int			nodecnt;	/* Number of nodes in array        */
+		char	 moduleid[8];
+		uint64_t iobrick_type;
+    } io[MAX_SLABS + 1];
+
     /* Fields for Module System Controller */
     int			mesgpend;	/* Message pending                 */
     int			shutdown;	/* Shutdown in progress            */

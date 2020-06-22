@@ -429,7 +429,7 @@ void ppc_irq_dispatch_handler(struct pt_regs *regs, int irq)
 	int status;
 	struct irqaction *action;
 	int cpu = smp_processor_id();
-	irq_desc_t *desc = irq_desc + irq;
+	irq_desc_t *desc = &irq_desc[irq];
 
 	kstat.irqs[cpu][irq]++;
 	spin_lock(&desc->lock);
@@ -501,12 +501,25 @@ out:
 	 * The ->end() handler has to deal with interrupts which got
 	 * disabled while the handler was running.
 	 */
-	if (irq_desc[irq].handler) {
-		if (irq_desc[irq].handler->end)
-			irq_desc[irq].handler->end(irq);
-		else if (irq_desc[irq].handler->enable)
-			irq_desc[irq].handler->enable(irq);
+	if (desc->handler) {
+		if (desc->handler->end)
+			desc->handler->end(irq);
+		else if (desc->handler->enable)
+			desc->handler->enable(irq);
 	}
+
+#ifdef CONFIG_DBOX2
+	/*
+	 * Interrupts marked as oneshot are level
+	 * triggered. We disable them here for onboard
+	 * hardware which can not be configured to
+	 * generate edge triggered interrupts due to
+	 * lack of documentation.
+	 */
+	if ((action) && (action->flags & SA_ONESHOT))
+		disable_irq_nosync(irq);
+#endif
+
 	spin_unlock(&desc->lock);
 }
 

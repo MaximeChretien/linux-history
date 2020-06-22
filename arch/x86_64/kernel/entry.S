@@ -5,7 +5,7 @@
  *  Copyright (C) 2000, 2001, 2002  Andi Kleen SuSE Labs
  *  Copyright (C) 2000  Pavel Machek <pavel@suse.cz>
  * 
- *  $Id: entry.S,v 1.98 2003/05/12 14:39:00 ak Exp $		
+ *  $Id: entry.S,v 1.99 2003/10/24 17:48:32 ak Exp $		
  */
 
 /*
@@ -351,6 +351,7 @@ iret_label:
 	.section .fixup,"ax"
 	/* force a signal here? this matches i386 behaviour */
 bad_iret:
+	/* runs with kernelgs again */	
 	movq $-9999,%rdi	/* better code? */
 	jmp do_exit			
 	.previous	
@@ -504,7 +505,12 @@ error_kernelspace:
 	incl %r15d
 	/* There are two places in the kernel that can potentially fault with
 	   usergs. Handle them here. */	   
-	cmpq $iret_label,RIP(%rsp)
+	leaq iret_label(%rip),%rdx
+	cmpq %rdx,RIP(%rsp)
+	je 1f
+	/* check truncated address too. This works around a CPU issue */
+	movl %edx,%edx	/* zero extend */
+	cmpq %rdx,RIP(%rsp)
 	je   1f
 	cmpq $gs_change,RIP(%rsp)
 	jne  error_action

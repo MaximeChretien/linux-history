@@ -135,7 +135,7 @@ static const char hexchars[]="0123456789abcdef";
 /* typedef void (*trapfunc_t)(void); */
 
 static void kgdb_fault_handler(struct pt_regs *regs);
-static void handle_exception (struct pt_regs *regs);
+static int handle_exception (struct pt_regs *regs);
 
 #if 0
 /* Install an exception handler for kgdb */
@@ -387,14 +387,12 @@ static void kgdb_fault_handler(struct pt_regs *regs)
 
 int kgdb_bpt(struct pt_regs *regs)
 {
-	handle_exception(regs);
-	return 1;
+	return handle_exception(regs);
 }
 
 int kgdb_sstep(struct pt_regs *regs)
 {
-	handle_exception(regs);
-	return 1;
+	return handle_exception(regs);
 }
 
 void kgdb(struct pt_regs *regs)
@@ -404,16 +402,14 @@ void kgdb(struct pt_regs *regs)
 
 int kgdb_iabr_match(struct pt_regs *regs)
 {
-	printk("kgdb doesn't support iabr, what?!?\n");
-	handle_exception(regs);
-	return 1;
+	printk(KERN_ERR "kgdb doesn't support iabr, what?!?\n");
+	return handle_exception(regs);
 }
 
 int kgdb_dabr_match(struct pt_regs *regs)
 {
-	printk("kgdb doesn't support dabr, what?!?\n");
-	handle_exception(regs);
-	return 1;
+	printk(KERN_ERR "kgdb doesn't support dabr, what?!?\n");
+	return handle_exception(regs);
 }
 
 /* Convert the SPARC hardware trap type code to a unix signal number. */
@@ -459,7 +455,7 @@ static int computeSignal(unsigned int tt)
 /*
  * This function does all command processing for interfacing to gdb.
  */
-static void
+static int
 handle_exception (struct pt_regs *regs)
 {
 	int sigval;
@@ -468,14 +464,19 @@ handle_exception (struct pt_regs *regs)
 	char *ptr;
 	unsigned int msr;
 
+	/* We don't handle user-mode breakpoints. */
+	if (user_mode(regs))
+		return 0;
+
 	if (debugger_fault_handler) {
 		debugger_fault_handler(regs);
 		panic("kgdb longjump failed!\n");
 	}
 	if (kgdb_active) {
-		printk("interrupt while in kgdb, returning\n");
-		return;
+		printk(KERN_ERR "interrupt while in kgdb, returning\n");
+		return 0;
 	}
+
 	kgdb_active = 1;
 	kgdb_started = 1;
 
@@ -677,14 +678,14 @@ handle_exception (struct pt_regs *regs)
 			kgdb_interruptible(1);
 			unlock_kernel();
 			kgdb_active = 0;
-			return;
+			return 1;
 
 		case 's':
 			kgdb_flush_cache_all();
 			regs->msr |= MSR_SE;
 			unlock_kernel();
 			kgdb_active = 0;
-			return;
+			return 1;
 
 		case 'r':		/* Reset (if user process..exit ???)*/
 			panic("kgdb reset.");

@@ -16,7 +16,7 @@
  *
  * This file assumes that there is a hole at the end of user address space.
  *
- * $Id: sys_ia32.c,v 1.58 2003/05/09 17:21:17 ak Exp $
+ * $Id: sys_ia32.c,v 1.66 2003/11/10 13:09:54 ak Exp $
  */
 
 #include <linux/config.h>
@@ -56,6 +56,7 @@
 #include <linux/rwsem.h>
 #include <linux/binfmts.h>
 #include <linux/init.h>
+#include <linux/highuid.h>
 #include <asm/mman.h>
 #include <asm/types.h>
 #include <asm/uaccess.h>
@@ -84,17 +85,23 @@
 #define low2highgid(gid) ((gid) == (u16)-1) ? (gid_t)-1 : (gid_t)(gid)
 extern int overflowuid,overflowgid; 
 
+typedef u16 old_uid_t;
+typedef u16 old_gid_t;
+
+#include "../../../kernel/uid16.c" 
 
 static int
 putstat(struct stat32 *ubuf, struct stat *kbuf)
 {
+	if (kbuf->st_size > 0x7fffffff)
+		return -EOVERFLOW;
 	if (verify_area(VERIFY_WRITE, ubuf, sizeof(struct stat32)) ||
 	    __put_user (kbuf->st_dev, &ubuf->st_dev) ||
 	    __put_user (kbuf->st_ino, &ubuf->st_ino) ||
 	    __put_user (kbuf->st_mode, &ubuf->st_mode) ||
 	    __put_user (kbuf->st_nlink, &ubuf->st_nlink) ||
-	    __put_user (kbuf->st_uid, &ubuf->st_uid) ||
-	    __put_user (kbuf->st_gid, &ubuf->st_gid) ||
+	    __put_user (high2lowuid(kbuf->st_uid), &ubuf->st_uid) ||
+	    __put_user (high2lowgid(kbuf->st_gid), &ubuf->st_gid) ||
 	    __put_user (kbuf->st_rdev, &ubuf->st_rdev) ||
 	    __put_user (kbuf->st_size, &ubuf->st_size) ||
 	    __put_user (kbuf->st_atime, &ubuf->st_atime) ||
@@ -111,16 +118,21 @@ extern asmlinkage long sys_newstat(char * filename, struct stat * statbuf);
 asmlinkage long
 sys32_newstat(char * filename, struct stat32 *statbuf)
 {
+	char *name;
 	int ret;
 	struct stat s;
 	mm_segment_t old_fs = get_fs();
 	
+	name = getname(filename);
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 	set_fs (KERNEL_DS);
-	ret = sys_newstat(filename, &s);
+	ret = sys_newstat(name, &s);
 	set_fs (old_fs);
-	if (putstat (statbuf, &s))
-		return -EFAULT;
+	putname(name);
+	if (ret)
 	return ret;
+	return putstat(statbuf, &s);
 }
 
 extern asmlinkage long sys_newlstat(char * filename, struct stat * statbuf);
@@ -128,16 +140,21 @@ extern asmlinkage long sys_newlstat(char * filename, struct stat * statbuf);
 asmlinkage long
 sys32_newlstat(char * filename, struct stat32 *statbuf)
 {
+	char *name;
 	int ret;
 	struct stat s;
 	mm_segment_t old_fs = get_fs();
 	
+	name = getname(filename);
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 	set_fs (KERNEL_DS);
-	ret = sys_newlstat(filename, &s);
+	ret = sys_newlstat(name, &s);
 	set_fs (old_fs);
-	if (putstat (statbuf, &s))
-		return -EFAULT;
+	putname(name);
+	if (ret) 
 	return ret;
+	return putstat(statbuf, &s);
 }
 
 extern asmlinkage long sys_newfstat(unsigned int fd, struct stat * statbuf);
@@ -152,9 +169,22 @@ sys32_newfstat(unsigned int fd, struct stat32 *statbuf)
 	set_fs (KERNEL_DS);
 	ret = sys_newfstat(fd, &s);
 	set_fs (old_fs);
-	if (putstat (statbuf, &s))
-		return -EFAULT;
+	if (ret)
 	return ret;
+	return putstat(statbuf, &s);
+}
+
+asmlinkage long
+sys32_truncate64(char * filename, unsigned long offset_low, unsigned long offset_high)
+{
+       return sys_truncate(filename, ((loff_t) offset_high << 32) | offset_low);
+}
+
+
+asmlinkage long
+sys32_ftruncate64(unsigned int fd, unsigned long offset_low, unsigned long offset_high)
+{
+       return sys_ftruncate(fd, ((loff_t) offset_high << 32) | offset_low);
 }
 
 /* Another set for IA32/LFS -- x86_64 struct stat is different due to 
@@ -185,31 +215,41 @@ putstat64(struct stat64 *ubuf, struct stat *kbuf)
 asmlinkage long
 sys32_stat64(char * filename, struct stat64 *statbuf)
 {
+	char *name;
 	int ret;
 	struct stat s;
 	mm_segment_t old_fs = get_fs();
 	
+	name = getname(filename);
+	if (IS_ERR(name))
+		return PTR_ERR(name);	
 	set_fs (KERNEL_DS);
-	ret = sys_newstat(filename, &s);
+	ret = sys_newstat(name, &s);
 	set_fs (old_fs);
-	if (putstat64 (statbuf, &s))
-		return -EFAULT;
+	putname(name);
+	if (ret)
 	return ret;
+	return putstat64(statbuf, &s);
 }
 
 asmlinkage long
 sys32_lstat64(char * filename, struct stat64 *statbuf)
 {
+	char *name;
 	int ret;
 	struct stat s;
 	mm_segment_t old_fs = get_fs();
 	
+	name = getname(filename);
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 	set_fs (KERNEL_DS);
-	ret = sys_newlstat(filename, &s);
+	ret = sys_newlstat(name, &s);
 	set_fs (old_fs);
-	if (putstat64 (statbuf, &s))
-		return -EFAULT;
+	putname(name); 
+	if (ret)
 	return ret;
+	return putstat64(statbuf, &s);
 }
 
 asmlinkage long
@@ -222,9 +262,9 @@ sys32_fstat64(unsigned int fd, struct stat64 *statbuf)
 	set_fs (KERNEL_DS);
 	ret = sys_newfstat(fd, &s);
 	set_fs (old_fs);
-	if (putstat64 (statbuf, &s))
-		return -EFAULT;
+	if (ret)
 	return ret;
+	return putstat64(statbuf, &s);
 }
 
 /* Don't set O_LARGEFILE implicitely. */
@@ -475,7 +515,13 @@ put_statfs (struct statfs32 *ubuf, struct statfs *kbuf)
 	    __put_user (kbuf->f_ffree, &ubuf->f_ffree) ||
 	    __put_user (kbuf->f_namelen, &ubuf->f_namelen) ||
 	    __put_user (kbuf->f_fsid.val[0], &ubuf->f_fsid.val[0]) ||
-	    __put_user (kbuf->f_fsid.val[1], &ubuf->f_fsid.val[1]))
+	    __put_user (kbuf->f_fsid.val[1], &ubuf->f_fsid.val[1]) ||
+	    __put_user (0, &ubuf->f_spare[0]) ||
+	    __put_user (0, &ubuf->f_spare[1]) ||
+	    __put_user (0, &ubuf->f_spare[2]) ||
+	    __put_user (0, &ubuf->f_spare[3]) ||
+	    __put_user (0, &ubuf->f_spare[4]) ||
+	    __put_user (0, &ubuf->f_spare[5]))
 		return -EFAULT;
 	return 0;
 }
@@ -488,10 +534,15 @@ sys32_statfs(const char * path, struct statfs32 *buf)
 	int ret;
 	struct statfs s;
 	mm_segment_t old_fs = get_fs();
+	const char *name;
 	
+	name = getname(path);
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 	set_fs (KERNEL_DS);
-	ret = sys_statfs((const char *)path, &s);
+	ret = sys_statfs(name, &s);
 	set_fs (old_fs);
+	putname(name);
 	if (put_statfs(buf, &s))
 		return -EFAULT;
 	return ret;
@@ -925,11 +976,6 @@ sys32_old_select(struct sel_arg_struct *arg)
 			    (struct timeval32 *)A(a.tvp));
 }
 
-struct timespec32 {
-	int 	tv_sec;
-	int	tv_nsec;
-};
-
 extern asmlinkage long sys_nanosleep(struct timespec *rqtp, struct timespec *rmtp); 
 
 asmlinkage long
@@ -1237,7 +1283,6 @@ sys32_waitpid(__kernel_pid_t32 pid, unsigned int *stat_addr, int options)
 	return sys32_wait4(pid, stat_addr, options, NULL);
 }
 
-
 extern asmlinkage long
 sys_getrusage(int who, struct rusage *ru);
 
@@ -1517,10 +1562,30 @@ sys32_sysinfo(struct sysinfo32 *info)
 	struct sysinfo s;
 	int ret;
 	mm_segment_t old_fs = get_fs ();
+	int bitcount = 0;
 	
 	set_fs (KERNEL_DS);
 	ret = sys_sysinfo(&s);
 	set_fs (old_fs);
+
+        /* Check to see if any memory value is too large for 32-bit and scale
+	 *  down if needed
+	 */
+	if ((s.totalram >> 32) || (s.totalswap >> 32)) {
+		while (s.mem_unit < PAGE_SIZE) {
+			s.mem_unit <<= 1;
+			bitcount++;
+		}
+		s.totalram >>= bitcount;
+		s.freeram >>= bitcount;
+		s.sharedram >>= bitcount;
+		s.bufferram >>= bitcount;
+		s.totalswap >>= bitcount;
+		s.freeswap >>= bitcount;
+		s.totalhigh >>= bitcount;
+		s.freehigh >>= bitcount;
+	}
+
 	if (verify_area(VERIFY_WRITE, info, sizeof(struct sysinfo32)) ||
 	    __put_user (s.uptime, &info->uptime) ||
 	    __put_user (s.loads[0], &info->loads[0]) ||
@@ -2534,16 +2599,421 @@ long asmlinkage sys32_nfsservctl(int cmd, void *notused, void *notused2)
 }
 #endif
 
-long sys32_module_warning(void)
+#ifdef CONFIG_MODULES
+
+extern asmlinkage unsigned long sys_create_module(const char *name_user, size_t size);
+
+asmlinkage unsigned long sys32_create_module(const char *name_user, __kernel_size_t32 size)
 { 
-	static long warn_time = -(60*HZ); 
-	if (time_before(warn_time + 60*HZ,jiffies) && strcmp(current->comm,"klogd")) { 
-		printk(KERN_INFO "%s: 32bit modutils not supported on 64bit kernel\n",
-		       current->comm);
-		warn_time = jiffies;
+	return sys_create_module(name_user, (size_t)size);
+}
+
+extern asmlinkage int sys_init_module(const char *name_user, struct module *mod_user);
+
+/* Hey, when you're trying to init module, take time and prepare us a nice 64bit
+ * module structure, even if from 32bit modutils... Why to pollute kernel... :))
+ */
+asmlinkage int sys32_init_module(const char *name_user, struct module *mod_user)
+{
+	return sys_init_module(name_user, mod_user);
+}
+
+extern asmlinkage int sys_delete_module(const char *name_user);
+
+asmlinkage int sys32_delete_module(const char *name_user)
+{
+	return sys_delete_module(name_user);
+}
+
+struct module_info32 {
+	u32 addr;
+	u32 size;
+	u32 flags;
+	s32 usecount;
+};
+
+/* Query various bits about modules.  */
+
+static inline long
+get_mod_name(const char *user_name, char **buf)
+{
+	unsigned long page;
+	long retval;
+
+	if ((unsigned long)user_name >= TASK_SIZE
+	    && !segment_eq(get_fs (), KERNEL_DS))
+		return -EFAULT;
+
+	page = __get_free_page(GFP_KERNEL);
+	if (!page)
+		return -ENOMEM;
+
+	retval = strncpy_from_user((char *)page, user_name, PAGE_SIZE);
+	if (retval > 0) {
+		if (retval < PAGE_SIZE) {
+			*buf = (char *)page;
+			return retval;
 	} 
-	return -ENOSYS ;
+		retval = -ENAMETOOLONG;
+	} else if (!retval)
+		retval = -EINVAL;
+
+	free_page(page);
+	return retval;
+}
+
+static inline void
+put_mod_name(char *buf)
+{
+	free_page((unsigned long)buf);
 } 
+
+static __inline__ struct module *find_module(const char *name)
+{
+	struct module *mod;
+
+	for (mod = module_list; mod ; mod = mod->next) {
+		if (mod->flags & MOD_DELETED)
+			continue;
+		if (!strcmp(mod->name, name))
+			break;
+	}
+
+	return mod;
+}
+
+static int
+qm_modules(char *buf, size_t bufsize, __kernel_size_t32 *ret)
+{
+	struct module *mod;
+	size_t nmod, space, len;
+
+	nmod = space = 0;
+
+	for (mod = module_list; mod->next != NULL; mod = mod->next, ++nmod) {
+		len = strlen(mod->name)+1;
+		if (len > bufsize)
+			goto calc_space_needed;
+		if (copy_to_user(buf, mod->name, len))
+			return -EFAULT;
+		buf += len;
+		bufsize -= len;
+		space += len;
+	}
+
+	if (put_user(nmod, ret))
+		return -EFAULT;
+	else
+		return 0;
+
+calc_space_needed:
+	space += len;
+	while ((mod = mod->next)->next != NULL)
+		space += strlen(mod->name)+1;
+
+	if (put_user(space, ret))
+		return -EFAULT;
+	else
+		return -ENOSPC;
+}
+
+static int
+qm_deps(struct module *mod, char *buf, size_t bufsize, __kernel_size_t32 *ret)
+{
+	size_t i, space, len;
+
+	if (mod->next == NULL)
+		return -EINVAL;
+	if (!MOD_CAN_QUERY(mod))
+		return put_user(0, ret);
+
+	space = 0;
+	for (i = 0; i < mod->ndeps; ++i) {
+		const char *dep_name = mod->deps[i].dep->name;
+
+		len = strlen(dep_name)+1;
+		if (len > bufsize)
+			goto calc_space_needed;
+		if (copy_to_user(buf, dep_name, len))
+			return -EFAULT;
+		buf += len;
+		bufsize -= len;
+		space += len;
+	}
+
+	return put_user(i, ret);
+
+calc_space_needed:
+	space += len;
+	while (++i < mod->ndeps)
+		space += strlen(mod->deps[i].dep->name)+1;
+
+	if (put_user(space, ret))
+		return -EFAULT;
+	else
+		return -ENOSPC;
+}
+
+static int
+qm_refs(struct module *mod, char *buf, size_t bufsize, __kernel_size_t32 *ret)
+{
+	size_t nrefs, space, len;
+	struct module_ref *ref;
+
+	if (mod->next == NULL)
+		return -EINVAL;
+	if (!MOD_CAN_QUERY(mod))
+		if (put_user(0, ret))
+			return -EFAULT;
+		else
+			return 0;
+
+	space = 0;
+	for (nrefs = 0, ref = mod->refs; ref ; ++nrefs, ref = ref->next_ref) {
+		const char *ref_name = ref->ref->name;
+
+		len = strlen(ref_name)+1;
+		if (len > bufsize)
+			goto calc_space_needed;
+		if (copy_to_user(buf, ref_name, len))
+			return -EFAULT;
+		buf += len;
+		bufsize -= len;
+		space += len;
+	}
+
+	if (put_user(nrefs, ret))
+		return -EFAULT;
+	else
+		return 0;
+
+calc_space_needed:
+	space += len;
+	while ((ref = ref->next_ref) != NULL)
+		space += strlen(ref->ref->name)+1;
+
+	if (put_user(space, ret))
+		return -EFAULT;
+	else
+		return -ENOSPC;
+}
+
+static inline int
+qm_symbols(struct module *mod, char *buf, size_t bufsize, __kernel_size_t32 *ret)
+{
+	size_t i, space, len;
+	struct module_symbol *s;
+	char *strings;
+	unsigned *vals;
+
+	if (!MOD_CAN_QUERY(mod))
+		if (put_user(0, ret))
+			return -EFAULT;
+		else
+			return 0;
+
+	space = mod->nsyms * 2*sizeof(u32);
+
+	i = len = 0;
+	s = mod->syms;
+
+	if (space > bufsize)
+		goto calc_space_needed;
+
+	if (!access_ok(VERIFY_WRITE, buf, space))
+		return -EFAULT;
+
+	bufsize -= space;
+	vals = (unsigned *)buf;
+	strings = buf+space;
+
+	for (; i < mod->nsyms ; ++i, ++s, vals += 2) {
+		len = strlen(s->name)+1;
+		if (len > bufsize)
+			goto calc_space_needed;
+
+		if (copy_to_user(strings, s->name, len)
+		    || __put_user(s->value, vals+0)
+		    || __put_user(space, vals+1))
+			return -EFAULT;
+
+		strings += len;
+		bufsize -= len;
+		space += len;
+	}
+
+	if (put_user(i, ret))
+		return -EFAULT;
+	else
+		return 0;
+
+calc_space_needed:
+	for (; i < mod->nsyms; ++i, ++s)
+		space += strlen(s->name)+1;
+
+	if (put_user(space, ret))
+		return -EFAULT;
+	else
+		return -ENOSPC;
+}
+
+static inline int
+qm_info(struct module *mod, char *buf, size_t bufsize, __kernel_size_t32 *ret)
+{
+	int error = 0;
+
+	if (mod->next == NULL)
+		return -EINVAL;
+
+	if (sizeof(struct module_info32) <= bufsize) {
+		struct module_info32 info;
+		info.addr = (unsigned long)mod;
+		info.size = mod->size;
+		info.flags = mod->flags;
+		info.usecount =
+			((mod_member_present(mod, can_unload)
+			  && mod->can_unload)
+			 ? -1 : atomic_read(&mod->uc.usecount));
+
+		if (copy_to_user(buf, &info, sizeof(struct module_info32)))
+			return -EFAULT;
+	} else
+		error = -ENOSPC;
+
+	if (put_user(sizeof(struct module_info32), ret))
+		return -EFAULT;
+
+	return error;
+}
+
+asmlinkage int sys32_query_module(char *name_user, int which, char *buf, __kernel_size_t32 bufsize, u32 ret)
+{
+	struct module *mod;
+	int err;
+
+	lock_kernel();
+	if (name_user == 0) {
+		/* This finds "kernel_module" which is not exported. */
+		for(mod = module_list; mod->next != NULL; mod = mod->next)
+			;
+	} else {
+		long namelen;
+		char *name;
+
+		if ((namelen = get_mod_name(name_user, &name)) < 0) {
+			err = namelen;
+			goto out;
+		}
+		err = -ENOENT;
+		if (namelen == 0) {
+			/* This finds "kernel_module" which is not exported. */
+			for(mod = module_list; mod->next != NULL; mod = mod->next)
+				;
+		} else if ((mod = find_module(name)) == NULL) {
+			put_mod_name(name);
+			goto out;
+		}
+		put_mod_name(name);
+	}
+
+	switch (which)
+	{
+	case 0:
+		err = 0;
+		break;
+	case QM_MODULES:
+		err = qm_modules(buf, bufsize, (__kernel_size_t32 *)AA(ret));
+		break;
+	case QM_DEPS:
+		err = qm_deps(mod, buf, bufsize, (__kernel_size_t32 *)AA(ret));
+		break;
+	case QM_REFS:
+		err = qm_refs(mod, buf, bufsize, (__kernel_size_t32 *)AA(ret));
+		break;
+	case QM_SYMBOLS:
+		err = qm_symbols(mod, buf, bufsize, (__kernel_size_t32 *)AA(ret));
+		break;
+	case QM_INFO:
+		err = qm_info(mod, buf, bufsize, (__kernel_size_t32 *)AA(ret));
+		break;
+	default:
+		err = -EINVAL;
+		break;
+	}
+out:
+	unlock_kernel();
+	return err;
+}
+
+struct kernel_sym32 {
+	u32 value;
+	char name[60];
+};
+		 
+extern asmlinkage int sys_get_kernel_syms(struct kernel_sym *table);
+
+asmlinkage int sys32_get_kernel_syms(struct kernel_sym32 *table)
+{
+	int len, i;
+	struct kernel_sym *tbl;
+	mm_segment_t old_fs;
+	
+	len = sys_get_kernel_syms(NULL);
+	if (!table) return len;
+	tbl = kmalloc (len * sizeof (struct kernel_sym), GFP_KERNEL);
+	if (!tbl) return -ENOMEM;
+	old_fs = get_fs();
+	set_fs (KERNEL_DS);
+	sys_get_kernel_syms(tbl);
+	set_fs (old_fs);
+	for (i = 0; i < len; i++, table++) {
+		if (put_user (tbl[i].value, &table->value) ||
+		    copy_to_user (table->name, tbl[i].name, 60))
+			break;
+	}
+	kfree (tbl);
+	return i;
+}
+
+#else /* CONFIG_MODULES */
+
+asmlinkage unsigned long
+sys32_create_module(const char *name_user, size_t size)
+{
+	return -ENOSYS;
+}
+
+asmlinkage int
+sys32_init_module(const char *name_user, struct module *mod_user)
+{
+	return -ENOSYS;
+}
+
+asmlinkage int
+sys32_delete_module(const char *name_user)
+{
+	return -ENOSYS;
+}
+
+asmlinkage int
+sys32_query_module(const char *name_user, int which, char *buf, size_t bufsize,
+		 size_t *ret)
+{
+	/* Let the program know about the new interface.  Not that
+	   it'll do them much good.  */
+	if (which == 0)
+		return 0;
+
+	return -ENOSYS;
+}
+
+asmlinkage int
+sys32_get_kernel_syms(struct kernel_sym *table)
+{
+	return -ENOSYS;
+}
+
+#endif  /* CONFIG_MODULES */
 
 long sys32_vm86_warning(void)
 { 
@@ -2565,7 +3035,7 @@ struct exec_domain ia32_exec_domain = {
 
 static int __init ia32_init (void)
 {
-	printk("IA32 emulation $Id: sys_ia32.c,v 1.58 2003/05/09 17:21:17 ak Exp $\n");  
+	printk("IA32 emulation $Id: sys_ia32.c,v 1.66 2003/11/10 13:09:54 ak Exp $\n");  
 	ia32_exec_domain.signal_map = default_exec_domain.signal_map;
 	ia32_exec_domain.signal_invmap = default_exec_domain.signal_invmap;
 	register_exec_domain(&ia32_exec_domain);

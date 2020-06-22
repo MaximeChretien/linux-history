@@ -1,16 +1,17 @@
 /******************************************************************************
  *
  * Name:	skerror.h
- * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.5 $
- * Date:	$Date: 2002/04/25 11:05:10 $
+ * Project:	Gigabit Ethernet Adapters, Common Modules
+ * Version:	$Revision: 1.7 $
+ * Date:	$Date: 2003/05/13 17:25:13 $
  * Purpose:	SK specific Error log support
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect.
+ *	(C)Copyright 2002-2003 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -25,6 +26,12 @@
  *
  * History:
  *	$Log: skerror.h,v $
+ *	Revision 1.7  2003/05/13 17:25:13  mkarl
+ *	Editorial changes.
+ *	
+ *	Revision 1.6  2003/03/31 07:17:48  mkarl
+ *	Corrected Copyright.
+ *	
  *	Revision 1.5  2002/04/25 11:05:10  rschmidt
  *	Editorial changes
  *	

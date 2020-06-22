@@ -29,28 +29,34 @@ typedef struct node_memmap_s
 {
         unsigned int    b0size  :3,     /* 0-2   bank 0 size */
                         b0dou   :1,     /* 3     bank 0 is 2-sided */
-                        ena0    :1,     /* 4     bank 0 enabled */
-                        r0      :3,     /* 5-7   reserved */
+                        hack0   :4,     /* 4-7   bank 0 hack */
         		b1size  :3,     /* 8-10  bank 1 size */
                         b1dou   :1,     /* 11    bank 1 is 2-sided */
-                        ena1    :1,     /* 12    bank 1 enabled */
-                        r1      :3,     /* 13-15 reserved */
+                        hack1   :4,     /* 12-15 bank 1 hack */
         		b2size  :3,     /* 16-18 bank 2 size */
                         b2dou   :1,     /* 19    bank 1 is 2-sided */
-                        ena2    :1,     /* 20    bank 2 enabled */
-                        r2      :3,     /* 21-23 reserved */
+                        hack2   :4,     /* 20-23 bank 2 hack */
         		b3size  :3,     /* 24-26 bank 3 size */
                         b3dou   :1,     /* 27    bank 3 is 2-sided */
-                        ena3    :1,     /* 28    bank 3 enabled */
-                        r3      :3;     /* 29-31 reserved */
+                        hack3   :4;     /* 28-31 bank 3 hack */
 } node_memmap_t ;
 
+#define PROXIMITY_DOMAIN(nasid) (((nasid)>>1) & 255)
 #define SN2_BANK_SIZE_SHIFT		(MBSHIFT+6)     /* 64 MB */
-#define BankPresent(bsize)		(bsize<6)
-#define BankSizeBytes(bsize)            (BankPresent(bsize) ? 1UL<<((bsize)+SN2_BANK_SIZE_SHIFT) : 0)
 #define MD_BANKS_PER_NODE 4
 #define MD_BANKSIZE			(1UL << 34)
+
+#define MAX_SN_NODES            256
+#define MAX_LSAPICS             512
+#define MAX_CPUS_NODE           4
+#define MAX_CPUS                (MAX_CPUS_NODE*MAX_SN_NODES)
+#define CPUS_PER_FSB            2
+#define CPUS_PER_FSB_MASK       (CPUS_PER_FSB-1)
+#define MAX_NASID               2048
+
 #endif
+
+#define FPROM_BUG()             do {while (1);} while (0)
 
 typedef struct sn_memmap_s
 {
@@ -66,7 +72,9 @@ typedef struct sn_config_s
 	sn_memmap_t	memmap[1];		/* start of array */
 } sn_config_t;
 
+struct acpi_table_memory_affinity;
 
+extern long base_nasid;
 
 extern void build_init(unsigned long);
 extern int build_efi_memmap(void *, int);
@@ -74,3 +82,5 @@ extern int GetNumNodes(void);
 extern int GetNumCpus(void);
 extern int IsCpuPresent(int, int);
 extern int GetNasid(int);
+extern void* build_memory_srat(struct acpi_table_memory_affinity *);
+extern void GetLogicalCpu(int, int *, int *);

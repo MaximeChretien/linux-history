@@ -16,6 +16,8 @@
 
 #include <asm/ia32.h>
 
+extern int sem_ctls[];
+
 /*
  * sys32_ipc() is the de-multiplexer for the SysV IPC calls in 32bit emulation..
  *
@@ -163,6 +165,7 @@ struct ipc_kludge {
 #define SEMOP		 1
 #define SEMGET		 2
 #define SEMCTL		 3
+#define SEMTIMEDOP       4
 #define MSGSND		11
 #define MSGRCV		12
 #define MSGGET		13
@@ -638,7 +641,27 @@ sys32_ipc (u32 call, int first, int second, int third, u32 ptr, u32 fifth)
 	switch (call) {
 	      case SEMOP:
 		/* struct sembuf is the same on 32 and 64bit :)) */
-		return sys_semop(first, (struct sembuf *)AA(ptr), second);
+		return sys_semtimedop(first, (struct sembuf *)AA(ptr), second, NULL);
+	      case SEMTIMEDOP: { 
+		int err;
+		mm_segment_t oldfs = get_fs();
+		struct timespec32 *ts32 = (struct timespec32 *)AA(fifth);
+		struct timespec ts;
+		if ((unsigned)second > sem_ctls[2])
+			return -EINVAL;		
+		if (ts32) { 
+			if (get_user(ts.tv_sec, &ts32->tv_sec) ||
+				__get_user(ts.tv_nsec, &ts32->tv_nsec) ||
+				verify_area(VERIFY_READ, (void *)AA(ptr), 
+								second*sizeof(struct sembuf)))
+					return -EFAULT; 
+		} 			
+		set_fs(KERNEL_DS); 
+	 	err = sys_semtimedop(first, (struct sembuf *)AA(ptr), second,
+					ts32 ? &ts : NULL); 
+		set_fs(oldfs);
+		return err; 			
+	      }	
 	      case SEMGET:
 		return sys_semget(first, second, third);
 	      case SEMCTL:
@@ -663,9 +686,7 @@ sys32_ipc (u32 call, int first, int second, int third, u32 ptr, u32 fifth)
 	      case SHMCTL:
 		return shmctl32(first, second, (void *)AA(ptr));
 
-	      default:
-		return -EINVAL;
 	}
-	return -EINVAL;
+	return -ENOSYS;
 }
 

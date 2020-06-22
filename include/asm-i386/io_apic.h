@@ -131,9 +131,6 @@ static inline void io_apic_sync(unsigned int apic)
 	(void) *(IO_APIC_BASE(apic)+4);
 }
 
-/* 1 if "noapic" boot option passed */
-extern int skip_ioapic_setup;
-
 /*
  * If we use the IO-APIC for IRQ routing, disable automatic
  * assignment of PCI IRQ's.
@@ -147,8 +144,24 @@ extern int io_apic_get_redir_entries (int ioapic);
 extern int io_apic_set_pci_routing (int ioapic, int pin, int irq, int edge_level, int active_high_low);
 #endif
 
-#else  /* !CONFIG_X86_IO_APIC */
+extern int skip_ioapic_setup;	/* 1 for "noapic" */
+
+static inline void disable_ioapic_setup(void)
+{
+	skip_ioapic_setup = 1;
+}
+
+static inline int ioapic_setup_disabled(void)
+{
+	return skip_ioapic_setup;
+}
+
+#else	/* !CONFIG_X86_IO_APIC */
 #define io_apic_assign_pci_irqs 0
-#endif
+
+static inline void disable_ioapic_setup(void)
+{ }
+
+#endif	/* !CONFIG_X86_IO_APIC */
 
 #endif

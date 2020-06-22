@@ -1200,6 +1200,9 @@ struct r_port {
 #ifndef PCI_DEVICE_ID_RP8J
 #define PCI_DEVICE_ID_RP8J		0x0006
 #endif
+#ifndef PCI_DEVICE_ID_RP4J
+#define PCI_DEVICE_ID_RP4J		0x0007
+#endif
 #ifndef PCI_DEVICE_ID_RPP4
 #define PCI_DEVICE_ID_RPP4		0x000A
 #endif

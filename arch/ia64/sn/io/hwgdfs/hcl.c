@@ -233,6 +233,15 @@ static int __init hcl_setup(char *str)
 __setup("hcl=", hcl_setup);
 
 
+int
+hwgraph_generate_path(
+        vertex_hdl_t		de,
+        char                    *path,
+        int                     buflen)
+{
+	return (devfs_generate_path(de, path, buflen));
+}
+
 /*
  * Set device specific "fast information".
  *

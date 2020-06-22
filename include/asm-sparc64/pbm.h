@@ -128,6 +128,25 @@ struct pci_pbm_info {
 	/* PCI controller we sit under. */
 	struct pci_controller_info	*parent;
 
+	/* Physical address base of controller registers. */
+	unsigned long			controller_regs;
+
+	/* Physical address base of PBM registers. */
+	unsigned long			pbm_regs;
+
+	/* Opaque 32-bit system bus Port ID. */
+	u32				portid;
+
+	/* Chipset version information. */
+	int				chip_type;
+#define PBM_CHIP_TYPE_SABRE		1
+#define PBM_CHIP_TYPE_PSYCHO		2
+#define PBM_CHIP_TYPE_SCHIZO		3
+#define PBM_CHIP_TYPE_SCHIZO_PLUS	4
+#define PBM_CHIP_TYPE_TOMATILLO		5
+	int				chip_version;
+	int				chip_revision;
+
 	/* Name used for top-level resources. */
 	char				name[64];
 
@@ -139,6 +158,7 @@ struct pci_pbm_info {
 	struct linux_prom_pci_intmap	pbm_intmap[PROM_PCIIMAP_MAX];
 	int				num_pbm_intmap;
 	struct linux_prom_pci_intmask	pbm_intmask;
+	u64				ino_bitmap;
 
 	/* PBM I/O and Memory space resources. */
 	struct resource			io_space;
@@ -169,12 +189,6 @@ struct pci_pbm_info {
 struct pci_controller_info {
 	/* List of all PCI controllers. */
 	struct pci_controller_info	*next;
-
-	/* Physical address base of controller registers. */
-	unsigned long			controller_regs;
-
-	/* Opaque 32-bit system bus Port ID. */
-	u32				portid;
 
 	/* Each controller gets a unique index, used mostly for
 	 * error logging purposes.

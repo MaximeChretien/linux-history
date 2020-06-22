@@ -12,5 +12,7 @@ O_TARGET := mm.o
 export-objs := init.o
 
 obj-y	 := init.o fault.o tlb.o extable.o
+obj-$(CONFIG_NUMA) += numa.o
+obj-$(CONFIG_DISCONTIGMEM) += discontig.o
 
 include $(TOPDIR)/Rules.make

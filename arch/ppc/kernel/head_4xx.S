@@ -304,6 +304,7 @@ label:
 	 */
 	li	r22, 0x0ce2
 	andc	r21, r21, r22		/* Make sure 20, 21 are zero */
+	ori	r21, r21, _PAGE_HWEXEC	/* make it executable */
 
 	/* find the TLB index that caused the fault.  It has to be here.
 	*/
@@ -782,6 +783,7 @@ finish_tlb_load:
 	stw	r23, tlb_4xx_index@l(0)
 
 6:
+	ori	r21, r21, _PAGE_HWEXEC		/* make it executable */
 	tlbwe	r21, r23, TLB_DATA		/* Load TLB LO */
 
 	/* Create EPN.  This is the faulting address plus a static

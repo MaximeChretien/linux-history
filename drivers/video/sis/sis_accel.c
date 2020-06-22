@@ -230,7 +230,7 @@ SiS310SetupForScreenToScreenCopy(int xdir, int ydir, int rop,
 		/* SiSSetupCMDFlag(BITBLT | SRCVIDEO) */
 	}
 	SiS310SetupCMDFlag(ivideo.SiS310_AccelDepth)
-	/* TW: The 315 series is smart enough to know the direction */
+	/* The 315 series is smart enough to know the direction */
 }
 
 static void

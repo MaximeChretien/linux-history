@@ -40,6 +40,21 @@ static void idedefault_setup (ide_drive_t *drive)
 {
 }
 
+static int idedefault_open(struct inode *inode, struct file *filp, ide_drive_t *drive)
+{
+	MOD_INC_USE_COUNT;
+	if(filp->f_flags & O_NDELAY)
+		return 0;
+	MOD_DEC_USE_COUNT;
+	drive->usage--;
+	return -ENXIO;
+}
+
+static void idedefault_release(struct inode *inode, struct file *filp, ide_drive_t *drive)
+{
+	MOD_DEC_USE_COUNT;
+}
+
 int idedefault_init (void);
 int idedefault_attach(ide_drive_t *drive);
 
@@ -56,6 +71,8 @@ ide_driver_t idedefault_driver = {
 	supports_dsc_overlap:	0,
 	init:			idedefault_init,
 	attach:			idedefault_attach,
+	open:			idedefault_open,
+	release:		idedefault_release
 };
 
 static ide_module_t idedefault_module = {

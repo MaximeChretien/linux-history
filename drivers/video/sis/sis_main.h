@@ -12,7 +12,7 @@
 
 #define VER_MAJOR                 1
 #define VER_MINOR                 6
-#define VER_LEVEL                 11
+#define VER_LEVEL                 16
 
 #include "sis.h"
 
@@ -35,13 +35,16 @@
 #ifndef PCI_DEVICE_ID_SI_660_VGA
 #define PCI_DEVICE_ID_SI_660_VGA  0x6330
 #endif
+#ifndef PCI_DEVICE_ID_SI_760
+#define PCI_DEVICE_ID_SI_760      0x0760
+#endif
 
 /* To be included in fb.h */
 #ifndef FB_ACCEL_SIS_GLAMOUR_2
-#define FB_ACCEL_SIS_GLAMOUR_2  40	/* SiS 315, 650, 740		*/
+#define FB_ACCEL_SIS_GLAMOUR_2  40	/* SiS 315, 650, 661, 740		*/
 #endif
 #ifndef FB_ACCEL_SIS_XABRE
-#define FB_ACCEL_SIS_XABRE      41	/* SiS 330 ("Xabre")		*/
+#define FB_ACCEL_SIS_XABRE      41	/* SiS 330 ("Xabre"), 660, 760 (DOA)	*/
 #endif
 
 #define MAX_ROM_SCAN              0x10000
@@ -57,7 +60,7 @@
 #define TURBO_QUEUE_AREA_SIZE     0x80000 /* 512K */
 #endif
 
-/* For 315 series */
+/* For 315/Xabre series */
 #ifdef CONFIG_FB_SIS_315
 #define COMMAND_QUEUE_AREA_SIZE   0x80000 /* 512K */
 #define COMMAND_QUEUE_THRESHOLD   0x1F
@@ -325,7 +328,7 @@ static struct fb_fix_screeninfo sisfb_fix = {
 	.xpanstep	= 0,
 	.ypanstep	= 1,
 };
-static char myid[20];
+static char myid[40];
 static u32 pseudo_palette[17];
 #endif
 
@@ -370,7 +373,7 @@ static int sisfb_fstn = 0;
 VGA_ENGINE sisvga_engine = UNKNOWN_VGA;
 int 	   sisfb_accel = -1;
 
-/* TW: These are to adapted according to VGA_ENGINE type */
+/* These are to adapted according to VGA_ENGINE type */
 static int sisfb_hwcursor_size = 0;
 static int sisfb_CRT2_write_enable = 0;
 
@@ -423,9 +426,11 @@ static struct board {
 	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_315,     "SIS 315"},
 	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_315PRO,  "SIS 315PRO"},
 	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_550_VGA, "SIS 550 VGA"},
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_650_VGA, "SIS 650/M650/651/740 VGA"},
+	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_650_VGA, "SIS 650/M650/651/661FX/M661FX/740/741 VGA"},
 	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_330,     "SIS 330"},
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_660_VGA, "SIS 660 VGA"},
+#if 0
+	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_660_VGA, "SIS 660/M660/760/M760 VGA"},
+#endif
 	{0, 0, NULL}
 };
 
@@ -483,13 +488,17 @@ struct _sisbios_mode {
 	{"720x576x16",   0x34, 0x0000, 0x0000,  720,  576, 16, 1,  90, 36, MD_SIS300|MD_SIS315},
 	{"720x576x24",   0x36, 0x0000, 0x0000,  720,  576, 32, 1,  90, 36, MD_SIS300|MD_SIS315},
 	{"720x576x32",   0x36, 0x0000, 0x0000,  720,  576, 32, 1,  90, 36, MD_SIS300|MD_SIS315},
+	{"768x576x8",    0x5f, 0x0000, 0x0000,  768,  576,  8, 1,  96, 36, MD_SIS300|MD_SIS315},
+	{"768x576x16",   0x60, 0x0000, 0x0000,  768,  576, 16, 1,  96, 36, MD_SIS300|MD_SIS315},
+	{"768x576x24",   0x61, 0x0000, 0x0000,  768,  576, 32, 1,  96, 36, MD_SIS300|MD_SIS315},
+	{"768x576x32",   0x61, 0x0000, 0x0000,  768,  576, 32, 1,  96, 36, MD_SIS300|MD_SIS315},
 	{"800x480x8",    0x70, 0x0000, 0x0000,  800,  480,  8, 1, 100, 30, MD_SIS300|MD_SIS315},
 	{"800x480x16",   0x7a, 0x0000, 0x0000,  800,  480, 16, 1, 100, 30, MD_SIS300|MD_SIS315},
 	{"800x480x24",   0x76, 0x0000, 0x0000,  800,  480, 32, 1, 100, 30, MD_SIS300|MD_SIS315},
 	{"800x480x32",   0x76, 0x0000, 0x0000,  800,  480, 32, 1, 100, 30, MD_SIS300|MD_SIS315},
-#define DEFAULT_MODE              39 /* index for 800x600x8 */
-#define DEFAULT_LCDMODE           39 /* index for 800x600x8 */
-#define DEFAULT_TVMODE            39 /* index for 800x600x8 */
+#define DEFAULT_MODE              43 /* index for 800x600x8 */
+#define DEFAULT_LCDMODE           43 /* index for 800x600x8 */
+#define DEFAULT_TVMODE            43 /* index for 800x600x8 */
 	{"800x600x8",    0x30, 0x0103, 0x0103,  800,  600,  8, 2, 100, 37, MD_SIS300|MD_SIS315},
 	{"800x600x16",   0x47, 0x0114, 0x0114,  800,  600, 16, 2, 100, 37, MD_SIS300|MD_SIS315},
 	{"800x600x24",   0x63, 0x013b, 0x0115,  800,  600, 32, 2, 100, 37, MD_SIS300|MD_SIS315},
@@ -526,7 +535,7 @@ struct _sisbios_mode {
 	{"1280x720x16",  0x75, 0x0000, 0x0000, 1280,  720, 16, 1, 160, 45, MD_SIS300|MD_SIS315},
 	{"1280x720x24",  0x78, 0x0000, 0x0000, 1280,  720, 32, 1, 160, 45, MD_SIS300|MD_SIS315},
 	{"1280x720x32",  0x78, 0x0000, 0x0000, 1280,  720, 32, 1, 160, 45, MD_SIS300|MD_SIS315},
-#define MODEINDEX_1280x768 75
+#define MODEINDEX_1280x768 79
 	{"1280x768x8",   0x23, 0x0000, 0x0000, 1280,  768,  8, 1, 160, 48, MD_SIS300|MD_SIS315},
 	{"1280x768x16",  0x24, 0x0000, 0x0000, 1280,  768, 16, 1, 160, 48, MD_SIS300|MD_SIS315},
 	{"1280x768x24",  0x25, 0x0000, 0x0000, 1280,  768, 32, 1, 160, 48, MD_SIS300|MD_SIS315},
@@ -575,11 +584,11 @@ int sisfb_mode_idx = -1;               /* Use a default mode if we are inside th
 u8  sisfb_mode_no  = 0;
 u8  sisfb_rate_idx = 0;
 
-/* TW: CR36 evaluation */
+/* CR36 evaluation */
 const USHORT sis300paneltype[] =
     { LCD_UNKNOWN,   LCD_800x600,   LCD_1024x768,  LCD_1280x1024,
       LCD_1280x960,  LCD_640x480,   LCD_1024x600,  LCD_1152x768,
-      LCD_1024x768,   LCD_1024x768,  LCD_1024x768,  LCD_1024x768,
+      LCD_1024x768,  LCD_1024x768,  LCD_1024x768,  LCD_1024x768,
       LCD_1024x768,  LCD_1024x768,  LCD_320x480,   LCD_1024x768 };
 
 const USHORT sis310paneltype[] =
@@ -604,17 +613,8 @@ static const struct _sis_crt2type {
 	{"SVIDEO", 	CRT2_TV, 	TV_SVIDEO, 0},
 	{"COMPOSITE", 	CRT2_TV, 	TV_AVIDEO, 0},
 	{"SCART", 	CRT2_TV, 	TV_SCART,  0},
-	{"none", 	0, 		-1,        0},
-	{"lcd",  	CRT2_LCD, 	-1,        0},
-	{"tv",   	CRT2_TV, 	-1,        0},
-	{"vga",  	CRT2_VGA, 	-1,        0},
-	{"svideo", 	CRT2_TV, 	TV_SVIDEO, 0},
-	{"composite", 	CRT2_TV, 	TV_AVIDEO, 0},
-	{"scart", 	CRT2_TV, 	TV_SCART,  0},
 	{"DSTN",        CRT2_LCD,       -1,        FL_550_DSTN},
-	{"dstn",        CRT2_LCD,       -1,        FL_550_DSTN},
 	{"FSTN",        CRT2_LCD,       -1,        FL_550_FSTN},
-	{"fstn",        CRT2_LCD,       -1,        FL_550_FSTN},
 	{"\0",  	-1, 		-1,        0}
 };
 
@@ -626,9 +626,6 @@ static const struct _sis_queuemode {
 	{"AGP",  	AGP_CMD_QUEUE},
 	{"VRAM", 	VM_CMD_QUEUE},
 	{"MMIO", 	MMIO_CMD},
-	{"agp",  	AGP_CMD_QUEUE},
-	{"vram", 	VM_CMD_QUEUE},
-	{"mmio", 	MMIO_CMD},
 	{"\0",   	-1}
 };
 
@@ -639,8 +636,6 @@ static const struct _sis_tvtype {
 } sis_tvtype[] = {
 	{"PAL",  	TV_PAL},
 	{"NTSC", 	TV_NTSC},
-	{"pal", 	TV_PAL},
-	{"ntsc",  	TV_NTSC},
 	{"\0",   	-1}
 };
 
@@ -662,6 +657,7 @@ static const struct _sis_vrate {
 	{7,  640,  480, 160,  TRUE}, {8,  640,  480, 200,  TRUE},
 	{1,  720,  480,  60,  TRUE},
 	{1,  720,  576,  58,  TRUE},
+	{1,  768,  576,  58,  TRUE},
 	{1,  800,  480,  60,  TRUE}, {2,  800,  480,  75,  TRUE}, {3,  800,  480,  85,  TRUE},
 	{1,  800,  600,  56,  TRUE}, {2,  800,  600,  60,  TRUE}, {3,  800,  600,  72,  TRUE},
 	{4,  800,  600,  75,  TRUE}, {5,  800,  600,  85,  TRUE}, {6,  800,  600, 105,  TRUE},
@@ -760,26 +756,63 @@ static const struct _customttable {
     unsigned short chipID;
     char *biosversion;
     char *biosdate;
+    unsigned long bioschksum;
     unsigned short biosFootprintAddr[5];
     unsigned char biosFootprintData[5];
+    unsigned short pcisubsysvendor;
+    unsigned short pcisubsyscard;
     char *vendorName;
     char *cardName;
     unsigned long SpecialID;
     char *optionName;
 } mycustomttable[] = {
         { SIS_630, "2.00.07", "09/27/2002-13:38:25",
+	  0x3240A8,
 	  { 0x220, 0x227, 0x228, 0x229, 0x22a },
 	  {  0x01,  0xe3,  0x9a,  0x6a,  0x00 },
+	  0x1039, 0x6300,
 	  "Barco", "iQ R200L/300/400", CUT_BARCO1366, "BARCO1366"
 	},
 	{ SIS_630, "2.00.07", "09/27/2002-13:38:25",
+	  0x323FBD,
 	  { 0x220, 0x227, 0x228, 0x229, 0x22a },
 	  {  0x00,  0x5a,  0x64,  0x41,  0x00 },
+	  0x1039, 0x6300,
 	  "Barco", "iQ G200L/300/400/500", CUT_BARCO1024, "BARCO1024"
 	},
+	{ SIS_650, "", "",
+	  0,
+	  { 0, 0, 0, 0, 0 },
+	  { 0, 0, 0, 0, 0 },
+	  0x0e11, 0x083c,
+	  "Compaq", "Presario 3017cl/3045US", CUT_COMPAQ12802, "COMPAQ1280"
+	},
+	{ SIS_650, "", "",
+	  0,
+	  { 0x00c, 0, 0, 0, 0 },
+	  { 'e'  , 0, 0, 0, 0 },
+	  0x1558, 0x0287,
+	  "Clevo", "L285/L287 (Version 1)", CUT_CLEVO1024, "CLEVO1024"
+	},
+	{ SIS_650, "", "",
+	  0,
+	  { 0x00c, 0, 0, 0, 0 },
+	  { 'y'  , 0, 0, 0, 0 },
+	  0x1558, 0x0287,
+	  "Clevo", "L285/L287 (Version 2)", CUT_CLEVO10242, "CLEVO10242"
+	},
+	{ 4321, "", "",			/* This is hopefully NEVER autodetected */
+	  0,
+	  { 0, 0, 0, 0, 0 },
+	  { 0, 0, 0, 0, 0 },
+	  0, 0,
+	  "Generic", "LVDS/Parallel 848x480", CUT_PANEL848, "PANEL848x480"
+	},
 	{ 0, "", "",
+	  0,
 	  { 0, 0, 0, 0 },
 	  { 0, 0, 0, 0 },
+	  0, 0,
 	  "", "", CUT_NONE, ""
 	}
 };
@@ -841,7 +874,7 @@ static const struct _sis_TV_filter {
 	   {0xF8,0xF4,0x18,0x38},
 	   {0xFC,0xFB,0x14,0x2A},
 	   {0x00,0x00,0x10,0x20},
-	   {0x00,0x04,0x10,0x18}, 
+	   {0x00,0x04,0x10,0x18},
 	   {0xFF,0xFF,0xFF,0xFF} }},
 	{ {{0x00,0x00,0x00,0x40},  /* NTSCFilter_2 */
 	   {0xF5,0xEE,0x1B,0x44},
@@ -861,7 +894,7 @@ static const struct _sis_TV_filter {
 	   {0xF9,0x0A,0x17,0x0C},
 	   {0x00,0x07,0x10,0x12}, 
 	   {0xFF,0xFF,0xFF,0xFF} }},
-	{ {{0x00,0x00,0x00,0x40},  /* NTSCFilter_4 */
+	{ {{0x00,0x00,0x00,0x40},  /* NTSCFilter_4 - 320 */
 	   {0x00,0xE0,0x10,0x60},
 	   {0x00,0xEE,0x10,0x44},
 	   {0x00,0xF4,0x10,0x38},
@@ -870,7 +903,7 @@ static const struct _sis_TV_filter {
 	   {0x00,0x00,0x10,0x20},
 	   {0x00,0x04,0x10,0x18}, 
 	   {0xFF,0xFF,0xFF,0xFF} }},
-	{ {{0x00,0x00,0x00,0x40},  /* NTSCFilter_5 */
+	{ {{0x00,0x00,0x00,0x40},  /* NTSCFilter_5 - 640 */
 	   {0xF5,0xEE,0x1B,0x44},
 	   {0xF8,0xF4,0x18,0x38},
 	   {0xEB,0x04,0x25,0x18},
@@ -879,7 +912,7 @@ static const struct _sis_TV_filter {
 	   {0xFA,0x06,0x16,0x14},
 	   {0x00,0x04,0x10,0x18}, 
 	   {0xFF,0xFF,0xFF,0xFF} }},
-	{ {{0x00,0x00,0x00,0x40},  /* NTSCFilter_6 */
+	{ {{0x00,0x00,0x00,0x40},  /* NTSCFilter_6 - 720 */
 	   {0xEB,0x04,0x25,0x18},
 	   {0xE7,0x0E,0x29,0x04},
 	   {0xEE,0x0C,0x22,0x08},
@@ -888,7 +921,7 @@ static const struct _sis_TV_filter {
 	   {0xFC,0x0A,0x14,0x0C},
 	   {0x00,0x08,0x10,0x10}, 
 	   {0xFF,0xFF,0xFF,0xFF} }},
-	{ {{0x00,0x00,0x00,0x40},  /* NTSCFilter_7 */
+	{ {{0x00,0x00,0x00,0x40},  /* NTSCFilter_7 - 800 */
 	   {0xEC,0x02,0x24,0x1C},
 	   {0xF2,0x04,0x1E,0x18},
 	   {0xEB,0x15,0x25,0xF6},
@@ -933,7 +966,7 @@ static const struct _sis_TV_filter {
 	   {0xFB,0x04,0x15,0x18},
 	   {0x00,0x06,0x10,0x14}, 
 	   {0xFF,0xFF,0xFF,0xFF} }},
-	{ {{0x00,0x00,0x00,0x40},  /* PALFilter_4 */
+	{ {{0x00,0x00,0x00,0x40},  /* PALFilter_4 - 320 */
 	   {0x00,0xE0,0x10,0x60},
 	   {0x00,0xEE,0x10,0x44},
 	   {0x00,0xF4,0x10,0x38},
@@ -942,7 +975,7 @@ static const struct _sis_TV_filter {
 	   {0x00,0x00,0x10,0x20},
 	   {0x00,0x04,0x10,0x18}, 
 	   {0xFF,0xFF,0xFF,0xFF} }},
-	{ {{0x00,0x00,0x00,0x40},  /* PALFilter_5 */
+	{ {{0x00,0x00,0x00,0x40},  /* PALFilter_5 - 640 */
 	   {0xF5,0xEE,0x1B,0x44},
 	   {0xF8,0xF4,0x18,0x38},
 	   {0xF1,0xF7,0x1F,0x32},
@@ -951,7 +984,7 @@ static const struct _sis_TV_filter {
 	   {0xFB,0x01,0x15,0x1E},
 	   {0x00,0x04,0x10,0x18}, 
 	   {0xFF,0xFF,0xFF,0xFF} }},
-	{ {{0x00,0x00,0x00,0x40},  /* PALFilter_6 */
+	{ {{0x00,0x00,0x00,0x40},  /* PALFilter_6 - 720 */
 	   {0xF5,0xEE,0x1B,0x2A},
 	   {0xEE,0xFE,0x22,0x24},
 	   {0xF3,0x00,0x1D,0x20},
@@ -960,7 +993,7 @@ static const struct _sis_TV_filter {
 	   {0xFB,0x04,0x15,0x18},
 	   {0x00,0x06,0x10,0x14}, 
 	   {0xFF,0xFF,0xFF,0xFF} }},
-	{ {{0x00,0x00,0x00,0x40},  /* PALFilter_7 */
+	{ {{0x00,0x00,0x00,0x40},  /* PALFilter_7 - 800 */
 	   {0xF5,0xEE,0x1B,0x44},
 	   {0xF8,0xF4,0x18,0x38},
 	   {0xFC,0xFB,0x14,0x2A},

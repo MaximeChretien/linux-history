@@ -19,7 +19,7 @@
 # 20010105  Andi Kleen, add IA32 compiler.
 #           ....and later removed it again....
 #
-# $Id: Makefile,v 1.33 2003/05/12 14:36:34 ak Exp $
+# $Id: Makefile,v 1.34 2003/09/25 02:50:05 ak Exp $
 
 #
 # early bootup linking needs 32bit. You can either use real 32bit tools
@@ -38,6 +38,8 @@ OBJCOPY=$(CROSS_COMPILE)objcopy -O binary -R .note -R .comment -S
 LDFLAGS=-e stext
 LINKFLAGS =-T $(TOPDIR)/arch/x86_64/vmlinux.lds $(LDFLAGS)
 
+check_gcc = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null > /dev/null 2>&1 ; then echo "$(1)"; else echo "$(2)"; fi)
+
 CFLAGS += -mno-red-zone
 CFLAGS += -mcmodel=kernel
 CFLAGS += -pipe
@@ -51,9 +53,7 @@ CFLAGS += -Wno-sign-compare
 ifneq ($(CONFIG_X86_REMOTE_DEBUG),y)
 CFLAGS += -fno-asynchronous-unwind-tables
 endif
-
-# prevent gcc from keeping the stack 16 byte aligned (FIXME)
-#CFLAGS += -mpreferred-stack-boundary=2
+CFLAGS += $(call check_gcc,-fno-unit-at-a-time,)
 
 HEAD := arch/x86_64/kernel/head.o arch/x86_64/kernel/head64.o arch/x86_64/kernel/init_task.o
 

@@ -2,15 +2,15 @@
  *
  * Name:	skvpd.h
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.13 $
- * Date:	$Date: 2002/10/14 15:58:18 $
+ * Version:	$Revision: 1.15 $
+ * Date:	$Date: 2003/01/13 10:39:38 $
  * Purpose:	Defines and Macros for VPD handling
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 1998-2003 SysKonnect GmbH.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -26,6 +26,14 @@
  * History:
  *
  *	$Log: skvpd.h,v $
+ *	Revision 1.15  2003/01/13 10:39:38  rschmidt
+ *	Replaced define for PCI device Id for YUKON with GENESIS
+ *	Editorial changes
+ *	
+ *	Revision 1.14  2002/11/14 15:18:10  gheinig
+ *	Added const specifier to key and buf parameters for VpdPara,VpdRead
+ *	and VpdWrite. This is necessary for the Diag 7 GUI API
+ *	
  *	Revision 1.13  2002/10/14 15:58:18  rschmidt
  *	Added entry in rom_size struct s_vpd
  *	Editorial changes
@@ -63,7 +71,7 @@
  *	Changed constants in SK_SWAP_32 to UL.
  *	
  *	Revision 1.4  1998/08/19 08:14:09  gklug
- *	fix: remove struct keyword as much as possible from the c-code (see CCC)
+ *	fix: remove struct keyword as much as possible from the C-code (see CCC)
  *	
  *	Revision 1.3  1998/08/18 08:18:56  malthoff
  *	Modify VPD in and out macros for SK_DIAG
@@ -118,7 +126,7 @@
  * Define READ and WRITE Constants.
  */
 
-#define VPD_PCI_ID_YUKON 	0x4320
+#define VPD_DEV_ID_GENESIS 	0x4300
 
 #define	VPD_SIZE_YUKON		256
 #define	VPD_SIZE_GENESIS	512
@@ -249,8 +257,8 @@ extern SK_U32	VpdReadDWord(
 
 extern int	VpdSetupPara(
 	SK_AC		*pAC,
-	char		*key,
-	char		*buf,
+	const char	*key,
+	const char	*buf,
 	int			len,
 	int			type,
 	int			op);
@@ -269,7 +277,7 @@ extern int	VpdKeys(
 extern int	VpdRead(
 	SK_AC		*pAC,
 	SK_IOC		IoC,
-	char		*key,
+	const char	*key,
 	char		*buf,
 	int			*len);
 
@@ -279,8 +287,8 @@ extern SK_BOOL	VpdMayWrite(
 extern int	VpdWrite(
 	SK_AC		*pAC,
 	SK_IOC		IoC,
-	char		*key,
-	char		*buf);
+	const char	*key,
+	const char	*buf);
 
 extern int	VpdDelete(
 	SK_AC		*pAC,

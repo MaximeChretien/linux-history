@@ -35,8 +35,8 @@
 	.globl	start
 start:
 	bl	start_
-#ifdef CONFIG_TREEBOOT
-	/* The IBM "Tree" bootrom knows that the address of the bootrom
+#ifdef CONFIG_IBM_OPENBIOS
+	/* The IBM OpenBIOS bootroms know that the address of the bootrom
 	 * read only structure is 4 bytes after _start.
 	 */
 	.long	0x62726f6d		# structure ID - "brom"

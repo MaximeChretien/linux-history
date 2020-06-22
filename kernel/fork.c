@@ -266,6 +266,7 @@ inline void __mmdrop(struct mm_struct *mm)
 {
 	BUG_ON(mm == &init_mm);
 	pgd_free(mm->pgd);
+	check_pgt_cache();
 	destroy_context(mm);
 	free_mm(mm);
 }
@@ -746,7 +747,8 @@ int do_fork(unsigned long clone_flags, unsigned long stack_start,
 		goto bad_fork_cleanup_fs;
 	if (copy_mm(clone_flags, p))
 		goto bad_fork_cleanup_sighand;
-	if (copy_namespace(clone_flags, p))
+	retval = copy_namespace(clone_flags, p);
+	if (retval)
 		goto bad_fork_cleanup_mm;
 	retval = copy_thread(0, clone_flags, stack_start, stack_size, p, regs);
 	if (retval)

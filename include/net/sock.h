@@ -49,6 +49,9 @@
 #include <linux/icmp.h>
 #endif
 #include <linux/tcp.h>		/* struct tcphdr */
+#if defined(CONFIG_IP_SCTP) || defined (CONFIG_IP_SCTP_MODULE)
+#include <net/sctp/structs.h>	/* struct sctp_opt */
+#endif
 
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>	/* struct sk_buff */
@@ -586,6 +589,9 @@ struct sock {
 
 	union {
 		struct tcp_opt		af_tcp;
+#if defined(CONFIG_IP_SCTP) || defined (CONFIG_IP_SCTP_MODULE)
+		struct sctp_opt		af_sctp;
+#endif
 #if defined(CONFIG_INET) || defined (CONFIG_INET_MODULE)
 		struct raw_opt		tp_raw4;
 #endif

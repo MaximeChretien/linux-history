@@ -350,7 +350,7 @@ static unsigned long calc_pdcblock_offset (int major,int minor)
 	ide_drive_t *ideinfo;
 	
 	dev = MKDEV(major,minor);
-	ideinfo = get_info_ptr (dev);
+	ideinfo = ide_info_ptr (dev, 0);
 	if (ideinfo==NULL)
 		return 0;
 	

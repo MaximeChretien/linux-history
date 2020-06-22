@@ -9,7 +9,7 @@
 #ifndef _ASM_SN_SN2_IO_H
 #define _ASM_SN_SN2_IO_H
 
-extern void * sn_io_addr(unsigned long port); /* Forward definition */
+extern void * sn_io_addr(unsigned long port) __attribute__ ((__const__)); /* Forward definition */
 extern void sn_mmiob(void); /* Forward definition */
 
 #define __sn_mf_a()   __asm__ __volatile__ ("mf.a" ::: "memory")

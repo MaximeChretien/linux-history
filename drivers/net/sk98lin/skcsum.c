@@ -2,15 +2,15 @@
  *
  * Name:	skcsum.c
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.10 $
- * Date:	$Date: 2002/04/11 10:02:04 $
+ * Version:	$Revision: 1.11 $
+ * Date:	$Date: 2003/03/11 14:05:55 $
  * Purpose:	Store/verify Internet checksum in send/receive packets.
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2001 SysKonnect GmbH.
+ *	(C)Copyright 1998-2003 SysKonnect GmbH.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -26,6 +26,10 @@
  * History:
  *
  *	$Log: skcsum.c,v $
+ *	Revision 1.11  2003/03/11 14:05:55  rschmidt
+ *	Replaced memset() by macro SK_MEMSET()
+ *	Editorial changes
+ *	
  *	Revision 1.10  2002/04/11 10:02:04  rwahl
  *	Fix in SkCsGetSendInfo():
  *	- function did not return ProtocolFlags in every case.
@@ -73,9 +77,8 @@
 #ifdef SK_USE_CSUM	/* Check if CSUM is to be used. */
 
 #ifndef lint
-static const char SysKonnectFileId[] = "@(#)"
-	"$Id: skcsum.c,v 1.10 2002/04/11 10:02:04 rwahl Exp $"
-	" (C) SysKonnect.";
+static const char SysKonnectFileId[] =
+	"@(#) $Id: skcsum.c,v 1.11 2003/03/11 14:05:55 rschmidt Exp $ (C) SysKonnect.";
 #endif	/* !lint */
 
 /******************************************************************************
@@ -107,8 +110,8 @@ static const char SysKonnectFileId[] = "@(#)"
  *
  *	"h/skdrv1st.h"
  *	"h/skcsum.h"
- *	 "h/sktypes.h"
- *	 "h/skqueue.h"
+ *	"h/sktypes.h"
+ *	"h/skqueue.h"
  *	"h/skdrv2nd.h"
  *
  ******************************************************************************/
@@ -173,7 +176,7 @@ static const char SysKonnectFileId[] = "@(#)"
  * little/big endian conversion on little endian machines only.
  */
 #ifdef SK_LITTLE_ENDIAN
-#define SKCS_HTON16(Val16)	(((unsigned) (Val16) >> 8) | (((Val16) & 0xFF) << 8))
+#define SKCS_HTON16(Val16)	(((unsigned) (Val16) >> 8) | (((Val16) & 0xff) << 8))
 #endif	/* SK_LITTLE_ENDIAN */
 #ifdef SK_BIG_ENDIAN
 #define SKCS_HTON16(Val16)	(Val16)
@@ -204,7 +207,7 @@ static const char SysKonnectFileId[] = "@(#)"
  *	zero.)
  *
  * Note:
- *	There is a bug in the ASIC which may lead to wrong checksums.
+ *	There is a bug in the GENESIS ASIC which may lead to wrong checksums.
  *
  * Arguments:
  *	pAc - A pointer to the adapter context struct.
@@ -603,7 +606,7 @@ int			NetNumber)	/* Net number */
 	NextLevelProtocol = *(SK_U8 *)
 		SKCS_IDX(pIpHeader, SKCS_OFS_IP_NEXT_LEVEL_PROTOCOL);
 
-	if (IpHeaderChecksum != 0xFFFF) {
+	if (IpHeaderChecksum != 0xffff) {
 		pAc->Csum.ProtoStats[NetNumber][SKCS_PROTO_STATS_IP].RxErrCts++;
 		/* the NDIS tester wants to know the upper level protocol too */
 		if (NextLevelProtocol == SKCS_PROTO_ID_TCP) {
@@ -721,7 +724,7 @@ int			NetNumber)	/* Net number */
 
 	/* Check if the TCP/UDP checksum is ok. */
 
-	if ((unsigned) NextLevelProtocolChecksum == 0xFFFF) {
+	if ((unsigned) NextLevelProtocolChecksum == 0xffff) {
 
 		/* TCP/UDP checksum ok. */
 
@@ -903,12 +906,12 @@ SK_EVPARA	Param)	/* Event dependent parameter. */
 		NetNumber = (int)Param.Para32[0];
 		if (ProtoIndex < 0) {	/* Clear for all protocols. */
 			if (NetNumber >= 0) {
-				memset(&pAc->Csum.ProtoStats[NetNumber][0], 0,
+				SK_MEMSET(&pAc->Csum.ProtoStats[NetNumber][0], 0,
 					sizeof(pAc->Csum.ProtoStats[NetNumber]));
 			}
 		}
 		else {					/* Clear for individual protocol. */
-			memset(&pAc->Csum.ProtoStats[NetNumber][ProtoIndex], 0,
+			SK_MEMSET(&pAc->Csum.ProtoStats[NetNumber][ProtoIndex], 0,
 				sizeof(pAc->Csum.ProtoStats[NetNumber][ProtoIndex]));
 		}
 		break;

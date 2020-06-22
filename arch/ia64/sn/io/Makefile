@@ -13,8 +13,9 @@ EXTRA_CFLAGS    += -DSHUB_SWAP_WAR
 
 O_TARGET := sgiio.o
  
-obj-y :=	sgi_if.o xswitch.o sgi_io_sim.o \
-		cdl.o io.o
+export-objs := snia_if.o
+
+obj-y :=	sgi_if.o xswitch.o cdl.o io.o snia_if.o
 
 obj-y		+= sn2/snio.o machvec/snio.o \
 	           drivers/snio.o platform_init/snio.o

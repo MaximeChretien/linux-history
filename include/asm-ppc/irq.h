@@ -71,8 +71,8 @@ irq_cannonicalize(int irq)
 	return (irq);
 }
 
-#elif defined(CONFIG_440)
-#include <asm/ibm440.h>
+#elif defined(CONFIG_44x)
+#include <asm/ibm44x.h>
 
 #define	NR_UIC_IRQS	32
 #define	NR_IRQS		((NR_UIC_IRQS * NR_UICS) + NR_BOARD_IRQS)

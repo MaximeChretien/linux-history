@@ -393,12 +393,14 @@ void cpia_unregister_camera(struct cam_data *cam);
 /* ErrorCode */
 #define ERROR_FLICKER_BELOW_MIN_EXP     0x01 /*flicker exposure got below minimum exposure */
 
-#define ALOG(lineno,fmt,args...) printk(fmt,lineno,##args)
-#define LOG(fmt,args...) ALOG((__LINE__),KERN_INFO __FILE__":"__FUNCTION__"(%d):"fmt,##args)
+#define ALOG(function,lineno,fmt,args...) printk(fmt, function, lineno, ##args)
+#define LOG(fmt,args...) ALOG((__FUNCTION__), (__LINE__), \
+			      KERN_INFO __FILE__":%s(%d):"fmt, ##args)
 
 #ifdef _CPIA_DEBUG_
-#define ADBG(lineno,fmt,args...) printk(fmt, jiffies, lineno, ##args)
-#define DBG(fmt,args...) ADBG((__LINE__),KERN_DEBUG __FILE__"(%ld):"__FUNCTION__"(%d):"fmt,##args)
+#define ADBG(function,lineno,fmt,args...) printk(fmt, jiffies, function, lineno, ##args)
+#define DBG(fmt,args...) ADBG((__FUNCTION__), (__LINE__), \
+			      KERN_DEBUG __FILE__"(%ld):%s(%d):"fmt, ##args)
 #else
 #define DBG(fmn,args...) do {} while(0)
 #endif

@@ -89,7 +89,7 @@
 #include "sbp2.h"
 
 static char version[] __devinitdata =
-	"$Rev: 1010 $ Ben Collins <bcollins@debian.org>";
+	"$Rev: 1074 $ Ben Collins <bcollins@debian.org>";
 
 /*
  * Module load parameter definitions
@@ -389,7 +389,7 @@ static struct hpsb_packet *
 sbp2util_allocate_write_packet(struct sbp2scsi_host_info *hi,
 			       struct node_entry *ne, u64 addr,
 			       size_t data_size,
-			       quadlet_t *data)
+			       quadlet_t *data, int complete)
 {
 	struct hpsb_packet *packet;
 
@@ -399,8 +399,9 @@ sbp2util_allocate_write_packet(struct sbp2scsi_host_info *hi,
         if (!packet)
                 return NULL;
 
-	hpsb_set_packet_complete_task(packet, (void (*)(void*))sbp2_free_packet,
-				      packet);
+	if (complete)
+		hpsb_set_packet_complete_task(packet,
+			(void (*)(void*))sbp2_free_packet, packet);
 
 	hpsb_node_fill_packet(ne, packet);
 
@@ -973,6 +974,15 @@ alloc_fail:
 		return -EBUSY;
 	}
 
+	/* Schedule a timeout here. The reason is that we may be so close
+	 * to a bus reset, that the device is not available for logins.
+	 * This can happen when the bus reset is caused by the host
+	 * connected to the sbp2 device being removed. That host would
+	 * have a certain amount of time to relogin before the sbp2 device
+	 * allows someone else to login instead. One second makes sense. */
+	set_current_state(TASK_INTERRUPTIBLE);
+	schedule_timeout(HZ);
+
 	/*
 	 * Login to the sbp-2 device
 	 */
@@ -1084,7 +1094,7 @@ static void sbp2_remove_device(struct scsi_id_instance_data *scsi_id)
  * physical dma in hardware). Mostly just here for debugging...
  */
 static int sbp2_handle_physdma_write(struct hpsb_host *host, int nodeid, int destid, quadlet_t *data,
-                                     u64 addr, unsigned int length, u16 flags)
+                                     u64 addr, size_t length, u16 flags)
 {
 
         /*
@@ -1100,7 +1110,7 @@ static int sbp2_handle_physdma_write(struct hpsb_host *host, int nodeid, int des
  * physical dma in hardware). Mostly just here for debugging...
  */
 static int sbp2_handle_physdma_read(struct hpsb_host *host, int nodeid, quadlet_t *data,
-                                    u64 addr, unsigned int length, u16 flags)
+                                    u64 addr, size_t length, u16 flags)
 {
 
         /*
@@ -1763,7 +1773,7 @@ static int sbp2_agent_reset(struct scsi_id_instance_data *scsi_id, int wait)
 	packet = sbp2util_allocate_write_packet(hi, scsi_id->ne,
 						scsi_id->sbp2_command_block_agent_addr +
 						SBP2_AGENT_RESET_OFFSET,
-						4, &data);
+						4, &data, wait ? 0 : 1);
 
 	if (!packet) {
 		SBP2_ERR("sbp2util_allocate_write_packet failed");
@@ -1779,6 +1789,7 @@ static int sbp2_agent_reset(struct scsi_id_instance_data *scsi_id, int wait)
 	if (wait) {
 		down(&packet->state_change);
 		down(&packet->state_change);
+		sbp2_free_packet(packet);
 	}
 
 	/*
@@ -2073,7 +2084,7 @@ static int sbp2_link_orb_command(struct scsi_id_instance_data *scsi_id,
 
 			packet = sbp2util_allocate_write_packet(hi, scsi_id->ne,
 								scsi_id->sbp2_command_block_agent_addr +
-								SBP2_ORB_POINTER_OFFSET, 8, NULL);
+								SBP2_ORB_POINTER_OFFSET, 8, NULL, 1);
 		
 			if (!packet) {
 				SBP2_ERR("sbp2util_allocate_write_packet failed");
@@ -2123,7 +2134,7 @@ static int sbp2_link_orb_command(struct scsi_id_instance_data *scsi_id,
 
 			packet = sbp2util_allocate_write_packet(hi, scsi_id->ne,
 					scsi_id->sbp2_command_block_agent_addr +
-					SBP2_DOORBELL_OFFSET, 4, &data);
+					SBP2_DOORBELL_OFFSET, 4, &data, 1);
 	
 			if (!packet) {
 				SBP2_ERR("sbp2util_allocate_write_packet failed");
@@ -2427,7 +2438,7 @@ static void sbp2_check_sbp2_response(struct scsi_id_instance_data *scsi_id,
  * This function deals with status writes from the SBP-2 device
  */
 static int sbp2_handle_status_write(struct hpsb_host *host, int nodeid, int destid,
-				    quadlet_t *data, u64 addr, unsigned int length, u16 fl)
+				    quadlet_t *data, u64 addr, size_t length, u16 fl)
 {
 	struct sbp2scsi_host_info *hi = NULL;
 	struct scsi_id_instance_data *scsi_id = NULL;

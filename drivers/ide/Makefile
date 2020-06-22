@@ -9,7 +9,7 @@
 #
 
 
-export-objs := ide-iops.o ide-taskfile.o ide-proc.o ide.o ide-probe.o ide-dma.o ide-lib.o setup-pci.o ide-io.o ide-disk.o
+export-objs := ide-iops.o ide-taskfile.o ide-proc.o ide.o ide-probe.o ide-probe-mini.o ide-dma.o ide-lib.o setup-pci.o ide-io.o ide-disk.o
 
 all-subdirs	:= arm legacy pci ppc raid
 mod-subdirs	:= arm legacy pci ppc raid
@@ -28,9 +28,8 @@ endif
 
 # Core IDE code - must come before legacy
 
-ide-core-objs	:= ide-iops.o ide-taskfile.o ide.o ide-lib.o ide-io.o ide-default.o ide-proc.o
-ide-detect-objs	:= ide-probe.o ide-geometry.o
-
+ide-core-objs	:= ide-iops.o ide-taskfile.o ide.o ide-lib.o ide-io.o ide-default.o ide-proc.o ide-probe.o ide-geometry.o
+ide-detect-objs	:= ide-probe-mini.o
 
 ifeq ($(CONFIG_BLK_DEV_IDEPCI),y)
 ide-core-objs += setup-pci.o
@@ -47,8 +46,6 @@ endif
 #	Raid scans the devices
 
 obj-$(CONFIG_BLK_DEV_IDE)		+= ide-core.o
-
-obj-$(CONFIG_BLK_DEV_IDE_SIBYTE)	+= ide-sibyte.o
 
 ifeq ($(CONFIG_BLK_DEV_IDE),y)
   obj-y		+= legacy/idedriver-legacy.o

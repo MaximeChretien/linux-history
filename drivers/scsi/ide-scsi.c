@@ -531,6 +531,8 @@ static ide_startstop_t idescsi_issue_pc (ide_drive_t *drive, idescsi_pc_t *pc)
 	atapi_bcount_t bcount;
 	struct request *rq = pc->rq;
 
+	feature.all = 0;
+
 	/* Set the current packet command */
 	scsi->pc = pc;
 	/* We haven't transferred any data yet */
@@ -538,6 +540,7 @@ static ide_startstop_t idescsi_issue_pc (ide_drive_t *drive, idescsi_pc_t *pc)
 	pc->current_position = pc->buffer;
 	/* Request to transfer the entire buffer at once */
 	bcount.all = IDE_MIN(pc->request_transfer, 63 * 1024);
+
 
 	if (drive->using_dma && rq->bh) {
 		if (test_bit(PC_WRITING, &pc->flags))

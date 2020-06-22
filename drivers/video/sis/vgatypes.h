@@ -27,7 +27,8 @@
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
  *
- * Author: 	Thomas Winischhofer <thomas@winischhofer.net>
+ * Authors: 	Thomas Winischhofer <thomas@winischhofer.net>
+ *		Silicon Integrated Systems
  *
  */
 #ifndef _VGATYPES_
@@ -132,6 +133,7 @@ typedef enum _SIS_CHIP_TYPE {
     SIS_740,
     SIS_330,
     SIS_660,
+    SIS_760,
     MAX_SIS_CHIP
 } SIS_CHIP_TYPE;
 #endif
@@ -146,6 +148,7 @@ typedef enum _SIS_VB_CHIP_TYPE {
     VB_CHIP_302,
     VB_CHIP_302B,
     VB_CHIP_302LV,
+    VB_CHIP_301C,
     VB_CHIP_UNKNOWN, /* other video bridge or no video bridge */
     MAX_VB_CHIP
 } SIS_VB_CHIP_TYPE;
@@ -170,6 +173,7 @@ typedef enum _SIS_LCD_TYPE {
     LCD_1024x600,
     LCD_640x480_2,     /* FSTN, DSTN */
     LCD_640x480_3,     /* FSTN, DSTN */
+    LCD_848x480,
     LCD_CUSTOM,
     LCD_UNKNOWN
 } SIS_LCD_TYPE;
@@ -309,7 +313,13 @@ struct _SISFB_INFO {
 	
 	unsigned char sisfb_lcda;
 
-	char reserved[235]; 		/* for future use */
+	unsigned long sisfb_vbflags;
+	unsigned long sisfb_currentvbflags;
+
+	int sisfb_scalelcd;
+	unsigned long sisfb_specialtiming;
+
+	char reserved[219]; 		/* for future use */
 };
 #endif
 

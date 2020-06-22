@@ -148,6 +148,8 @@ static int q40fb_set_var(struct fb_var_screeninfo *var, int con,
 		return -EINVAL;
 	if(var->activate!=FB_ACTIVATE_NOW)
 		return -EINVAL;
+// ignore broken tools trying to set these values
+#if 0
 	if(var->pixclock!=0)
 		return -EINVAL;
 	if(var->left_margin!=0)
@@ -162,6 +164,7 @@ static int q40fb_set_var(struct fb_var_screeninfo *var, int con,
 		return -EINVAL;
 	if(var->vmode!=FB_VMODE_NONINTERLACED)
 		return -EINVAL;
+#endif
 
 	return 0;
 

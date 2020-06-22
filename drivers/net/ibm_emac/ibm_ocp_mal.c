@@ -103,17 +103,17 @@ int mal_set_rcbs(struct ibm_ocp_mal *mal, int channel, unsigned long size)
 	case 0:
 		set_mal_dcrn(mal, DCRN_MALRCBS0, size);
 		break;
-#ifdef DCRN_RCBS1
+#ifdef DCRN_MALRCBS1
 	case 1:
 		set_mal_dcrn(mal, DCRN_MALRCBS1, size);
 		break;
 #endif
-#ifdef DCRN_RCBS2
+#ifdef DCRN_MALRCBS2
 	case 2:
 		set_mal_dcrn(mal, DCRN_MALRCBS2, size);
 		break;
 #endif
-#ifdef DCRN_RCBS3
+#ifdef DCRN_MALRCBS3
 	case 3:
 		set_mal_dcrn(mal, DCRN_MALRCBS3, size);
 		break;

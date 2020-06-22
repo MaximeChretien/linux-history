@@ -21,11 +21,11 @@
 #include <asm/sn/slotnum.h>
 
 void *
-snia_kmem_zalloc(size_t size, int flag)
+snia_kmem_zalloc(size_t size)
 {
         void *ptr = kmalloc(size, GFP_KERNEL);
 	if ( ptr )
-        	BZERO(ptr, size);
+        	memset(ptr, 0, size);
         return(ptr);
 }
 
@@ -39,19 +39,10 @@ snia_kmem_free(void *ptr, size_t size)
  * the alloc/free_node routines do a simple kmalloc for now ..
  */
 void *
-snia_kmem_alloc_node(register size_t size, register int flags, cnodeid_t node)
+snia_kmem_alloc_node(register size_t size, cnodeid_t node)
 {
 	/* someday will Allocate on node 'node' */
 	return(kmalloc(size, GFP_KERNEL));
-}
-
-void *
-snia_kmem_zalloc_node(register size_t size, register int flags, cnodeid_t node)
-{
-	void *ptr = kmalloc(size, GFP_KERNEL);
-	if ( ptr )
-		BZERO(ptr, size);
-        return(ptr);
 }
 
 

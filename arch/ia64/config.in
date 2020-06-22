@@ -35,7 +35,6 @@ choice 'IA-64 system type'					\
 	 DIG-compliant		CONFIG_IA64_DIG			\
 	 HP-simulator		CONFIG_IA64_HP_SIM		\
 	 HP-zx1			CONFIG_IA64_HP_ZX1		\
-	 SGI-SN1		CONFIG_IA64_SGI_SN1		\
 	 SGI-SN2		CONFIG_IA64_SGI_SN2" generic
 
 if [ "$CONFIG_ITANIUM" = "y" ]; then
@@ -54,11 +53,7 @@ fi
 if [ "$CONFIG_ITANIUM" = "y" ]; then
 	define_bool CONFIG_IA64_BRL_EMU y
 	bool '  Enable Itanium B-step specific code' CONFIG_ITANIUM_BSTEP_SPECIFIC
-	if [ "$CONFIG_IA64_SGI_SN1" = "y" ]; then
-	  define_int CONFIG_IA64_L1_CACHE_SHIFT 7 # align cache-sensitive data to 128 bytes
-	else
-	  define_int CONFIG_IA64_L1_CACHE_SHIFT 6 # align cache-sensitive data to 64 bytes
-	fi
+	define_int CONFIG_IA64_L1_CACHE_SHIFT 6 # align cache-sensitive data to 64 bytes
 fi
 
 if [ "$CONFIG_MCKINLEY" = "y" ]; then
@@ -66,17 +61,20 @@ if [ "$CONFIG_MCKINLEY" = "y" ]; then
 fi
 
 if [ "$CONFIG_IA64_GENERIC" = "y" -o "$CONFIG_IA64_DIG" = "y" -o "$CONFIG_IA64_HP_ZX1" = "y" ]; then
+	bool '  Enable NUMA support' CONFIG_NUMA
+	if [ "$CONFIG_NUMA" = "y" ]; then
+	  define_bool CONFIG_DISCONTIGMEM y
+	fi
 	bool '  Enable IA-64 Machine Check Abort' CONFIG_IA64_MCA
 	define_bool CONFIG_PM y
 fi
 
-if [ "$CONFIG_IA64_SGI_SN1" = "y" -o "$CONFIG_IA64_SGI_SN2" = "y" ]; then
+if [ "$CONFIG_IA64_SGI_SN2" = "y" ]; then
 	define_bool CONFIG_IA64_SGI_SN y
 	bool '  Enable extra debugging code' CONFIG_IA64_SGI_SN_DEBUG
 	bool '  Enable SGI Medusa Simulator Support' CONFIG_IA64_SGI_SN_SIM
-	bool '  Enable autotest (llsc). Option to run cache test instead of booting' \
-			CONFIG_IA64_SGI_AUTOTEST
 	bool '  Enable protocol mode for the L1 console' CONFIG_SERIAL_SGI_L1_PROTOCOL
+	define_bool CONFIG_HWGFS_FS y
 	define_bool CONFIG_DISCONTIGMEM y
 	define_bool CONFIG_IA64_MCA y
 	define_bool CONFIG_NUMA y
@@ -86,7 +84,12 @@ fi
 
 define_bool CONFIG_KCORE_ELF y	# On IA-64, we always want an ELF /proc/kcore.
 
+bool 'Use PAL_HALT_LIGHT in idle loop' CONFIG_IA64_PAL_IDLE
 bool 'SMP support' CONFIG_SMP
+if [ "$CONFIG_SMP" = "y" ]; then
+   int  'Maximum number of CPUs (2-32)' CONFIG_NR_CPUS 32
+fi
+
 tristate 'Support running of Linux/x86 binaries' CONFIG_IA32_SUPPORT
 bool 'Performance monitor support' CONFIG_PERFMON
 tristate '/proc/pal support' CONFIG_IA64_PALINFO
@@ -289,5 +292,7 @@ if [ "$CONFIG_DEBUG_KERNEL" != "n" ]; then
    bool '  Turn on compare-and-exchange bug checking (slow!)' CONFIG_IA64_DEBUG_CMPXCHG
    bool '  Turn on irq debug checks (slow!)' CONFIG_IA64_DEBUG_IRQ
 fi
+
+int 'Kernel messages buffer length shift (0 = default)' CONFIG_LOG_BUF_SHIFT 0
 
 endmenu

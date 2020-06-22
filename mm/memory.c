@@ -1287,7 +1287,8 @@ static int do_no_page(struct mm_struct * mm, struct vm_area_struct * vma,
 	 */
 	/* Only go through if we didn't race with anybody else... */
 	if (pte_none(*page_table)) {
-		++mm->rss;
+		if (!PageReserved(new_page))
+			++mm->rss;
 		flush_page_to_ram(new_page);
 		flush_icache_page(vma, new_page);
 		entry = mk_pte(new_page, vma->vm_page_prot);
@@ -1414,6 +1415,7 @@ pmd_t *__pmd_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address)
 		 */
 		if (!pgd_none(*pgd)) {
 			pmd_free(new);
+			check_pgt_cache();
 			goto out;
 		}
 	}
@@ -1448,6 +1450,7 @@ pte_t *pte_alloc(struct mm_struct *mm, pmd_t *pmd, unsigned long address)
 			 */
 			if (!pmd_none(*pmd)) {
 				pte_free(new);
+				check_pgt_cache();
 				goto out;
 			}
 		}

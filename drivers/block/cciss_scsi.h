@@ -89,7 +89,7 @@ struct cciss_scsi_dev_t {
 };
 
 struct cciss_scsi_hba_t {
-	char *name;
+	char name[32];
 	int ndevices;
 #define CCISS_MAX_SCSI_DEVS_PER_HBA 16
 	struct cciss_scsi_dev_t dev[CCISS_MAX_SCSI_DEVS_PER_HBA];

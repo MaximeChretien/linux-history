@@ -60,7 +60,7 @@ LIST_HEAD(ip_conntrack_expect_list);
 LIST_HEAD(protocol_list);
 static LIST_HEAD(helpers);
 unsigned int ip_conntrack_htable_size = 0;
-static int ip_conntrack_max = 0;
+int ip_conntrack_max = 0;
 static atomic_t ip_conntrack_count = ATOMIC_INIT(0);
 struct list_head *ip_conntrack_hash;
 static kmem_cache_t *ip_conntrack_cachep;
@@ -291,14 +291,15 @@ static void remove_expectations(struct ip_conntrack *ct, int drop_refcount)
 static void
 clean_from_lists(struct ip_conntrack *ct)
 {
+	unsigned int ho, hr;
+	
 	DEBUGP("clean_from_lists(%p)\n", ct);
 	MUST_BE_WRITE_LOCKED(&ip_conntrack_lock);
-	LIST_DELETE(&ip_conntrack_hash
-		    [hash_conntrack(&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple)],
-		    &ct->tuplehash[IP_CT_DIR_ORIGINAL]);
-	LIST_DELETE(&ip_conntrack_hash
-		    [hash_conntrack(&ct->tuplehash[IP_CT_DIR_REPLY].tuple)],
-		    &ct->tuplehash[IP_CT_DIR_REPLY]);
+
+	ho = hash_conntrack(&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple);
+	hr = hash_conntrack(&ct->tuplehash[IP_CT_DIR_REPLY].tuple);
+	LIST_DELETE(&ip_conntrack_hash[ho], &ct->tuplehash[IP_CT_DIR_ORIGINAL]);
+	LIST_DELETE(&ip_conntrack_hash[hr], &ct->tuplehash[IP_CT_DIR_REPLY]);
 
 	/* Destroy all un-established, pending expectations */
 	remove_expectations(ct, 1);
@@ -307,7 +308,7 @@ clean_from_lists(struct ip_conntrack *ct)
 static void
 destroy_conntrack(struct nf_conntrack *nfct)
 {
-	struct ip_conntrack *ct = (struct ip_conntrack *)nfct;
+	struct ip_conntrack *ct = (struct ip_conntrack *)nfct, *master = NULL;
 	struct ip_conntrack_protocol *proto;
 
 	DEBUGP("destroy_conntrack(%p)\n", ct);
@@ -334,11 +335,14 @@ destroy_conntrack(struct nf_conntrack *nfct)
 			/* can't call __unexpect_related here,
 			 * since it would screw up expect_list */
 			list_del(&ct->master->expected_list);
-			ip_conntrack_put(ct->master->expectant);
+			master = ct->master->expectant;
 		}
 		kfree(ct->master);
 	}
 	WRITE_UNLOCK(&ip_conntrack_lock);
+
+	if (master)
+		ip_conntrack_put(master);
 
 	DEBUGP("destroy_conntrack: returning ct=%p to slab\n", ct);
 	kmem_cache_free(ip_conntrack_cachep, ct);
@@ -370,9 +374,10 @@ __ip_conntrack_find(const struct ip_conntrack_tuple *tuple,
 		    const struct ip_conntrack *ignored_conntrack)
 {
 	struct ip_conntrack_tuple_hash *h;
+	unsigned int hash = hash_conntrack(tuple);
 
 	MUST_BE_READ_LOCKED(&ip_conntrack_lock);
-	h = LIST_FIND(&ip_conntrack_hash[hash_conntrack(tuple)],
+	h = LIST_FIND(&ip_conntrack_hash[hash],
 		      conntrack_tuple_cmp,
 		      struct ip_conntrack_tuple_hash *,
 		      tuple, ignored_conntrack);
@@ -1303,9 +1308,14 @@ static int
 getorigdst(struct sock *sk, int optval, void *user, int *len)
 {
 	struct ip_conntrack_tuple_hash *h;
-	struct ip_conntrack_tuple tuple = { { sk->rcv_saddr, { .tcp = { sk->sport } } },
-					    { sk->daddr, { .tcp = { sk->dport } },
-					      IPPROTO_TCP } };
+	struct ip_conntrack_tuple tuple;
+
+	IP_CT_TUPLE_U_BLANK(&tuple);
+	tuple.src.ip = sk->rcv_saddr;
+	tuple.src.u.tcp.port = sk->sport;
+	tuple.dst.ip = sk->daddr;
+	tuple.dst.u.tcp.port = sk->dport;
+	tuple.dst.protonum = IPPROTO_TCP;
 
 	/* We only do TCP at the moment: is there a better way? */
 	if (strcmp(sk->prot->name, "TCP") != 0) {
@@ -1349,29 +1359,6 @@ static struct nf_sockopt_ops so_getorigdst
     SO_ORIGINAL_DST, SO_ORIGINAL_DST+1, &getorigdst,
     0, NULL };
 
-#define NET_IP_CONNTRACK_MAX 2089
-#define NET_IP_CONNTRACK_MAX_NAME "ip_conntrack_max"
-
-#ifdef CONFIG_SYSCTL
-static struct ctl_table_header *ip_conntrack_sysctl_header;
-
-static ctl_table ip_conntrack_table[] = {
-	{ NET_IP_CONNTRACK_MAX, NET_IP_CONNTRACK_MAX_NAME, &ip_conntrack_max,
-	  sizeof(ip_conntrack_max), 0644,  NULL, proc_dointvec },
- 	{ 0 }
-};
-
-static ctl_table ip_conntrack_dir_table[] = {
-	{NET_IPV4, "ipv4", NULL, 0, 0555, ip_conntrack_table, 0, 0, 0, 0, 0},
-	{ 0 }
-};
-
-static ctl_table ip_conntrack_root_table[] = {
-	{CTL_NET, "net", NULL, 0, 0555, ip_conntrack_dir_table, 0, 0, 0, 0, 0},
-	{ 0 }
-};
-#endif /*CONFIG_SYSCTL*/
-
 static int kill_all(const struct ip_conntrack *i, void *data)
 {
 	return 1;
@@ -1381,9 +1368,6 @@ static int kill_all(const struct ip_conntrack *i, void *data)
    supposed to kill the mall. */
 void ip_conntrack_cleanup(void)
 {
-#ifdef CONFIG_SYSCTL
-	unregister_sysctl_table(ip_conntrack_sysctl_header);
-#endif
 	ip_ct_attach = NULL;
 	/* This makes sure all current packets have passed through
            netfilter framework.  Roll on, two-stage module
@@ -1462,25 +1446,10 @@ int __init ip_conntrack_init(void)
 	for (i = 0; i < ip_conntrack_htable_size; i++)
 		INIT_LIST_HEAD(&ip_conntrack_hash[i]);
 
-/* This is fucking braindead.  There is NO WAY of doing this without
-   the CONFIG_SYSCTL unless you don't want to detect errors.
-   Grrr... --RR */
-#ifdef CONFIG_SYSCTL
-	ip_conntrack_sysctl_header
-		= register_sysctl_table(ip_conntrack_root_table, 0);
-	if (ip_conntrack_sysctl_header == NULL) {
-		goto err_free_ct_cachep;
-	}
-#endif /*CONFIG_SYSCTL*/
-
 	/* For use by ipt_REJECT */
 	ip_ct_attach = ip_conntrack_attach;
 	return ret;
 
-#ifdef CONFIG_SYSCTL
-err_free_ct_cachep:
-	kmem_cache_destroy(ip_conntrack_cachep);
-#endif /*CONFIG_SYSCTL*/
 err_free_hash:
 	vfree(ip_conntrack_hash);
 err_unreg_sockopt:

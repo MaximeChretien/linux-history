@@ -503,7 +503,6 @@ static int do_set_attach_filter(int fd, int level, int optname,
 		__u32 filter;
 	} *fprog32 = (struct sock_fprog32 *)optval;
 	struct sock_fprog kfprog;
-	unsigned int fsize;
 	mm_segment_t old_fs;
 	__u32 uptr;
 	int ret;

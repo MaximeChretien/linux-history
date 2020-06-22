@@ -64,7 +64,6 @@ EXPORT_SYMBOL(physical_node_map);
 #include <asm/sn/sn_sal.h>
 EXPORT_SYMBOL(sal_lock);
 EXPORT_SYMBOL(sn_partid);
-EXPORT_SYMBOL(sn_local_partid);
 EXPORT_SYMBOL(sn_system_serial_number_string);
 EXPORT_SYMBOL(sn_partition_serial_number);
 

@@ -22,6 +22,7 @@
 #if defined(CONFIG_405GP) || defined(CONFIG_NP405H) || defined(CONFIG_NP405L)
 #include <linux/netdevice.h>
 #endif
+extern unsigned long timebase_period_ns;
 
 /* For those boards that don't provide one.
 */
@@ -640,7 +641,7 @@ embed_config(bd_t **bdp)
 }
 #endif /* WILLOW */
 
-#ifdef CONFIG_TREEBOOT
+#ifdef CONFIG_IBM_OPENBIOS
 /* This could possibly work for all treeboot roms.
 */
 #define	BOARD_INFO_VECTOR	0xFFFE0B50
@@ -654,15 +655,12 @@ embed_config(bd_t **bdp)
 	bd_t *(*get_board_info)(void) =
 	    (bd_t *(*)(void))(*(unsigned long *)BOARD_INFO_VECTOR);
 #if !defined(CONFIG_STB03xxx)
-	volatile emac_t *emacp;
-	emacp = (emac_t *)EMAC0_BASE;  /* assume 1st emac - armin */
-
 	/* shut down the Ethernet controller that the boot rom
 	 * sometimes leaves running.
 	 */
-	mtdcr(DCRN_MALCR, MALCR_MMSR);                /* 1st reset MAL */
-	while (mfdcr(DCRN_MALCR) & MALCR_MMSR) {};    /* wait for the reset */
-	emacp->em0mr0 = 0x20000000;        /* then reset EMAC */
+	mtdcr(DCRN_MALCR(DCRN_MAL_BASE), MALCR_MMSR);                /* 1st reset MAL */
+	while (mfdcr(DCRN_MALCR(DCRN_MAL_BASE)) & MALCR_MMSR) {};    /* wait for the reset */
+	out_be32((u32 *)EMAC0_BASE, 0x20000000);        /* then reset EMAC */
 	eieio();
 #endif
 
@@ -752,6 +750,6 @@ embed_config(bd_t **bdp)
 	bd->bi_busfreq   = 100000000;
 	bd->bi_pci_busfreq= 33000000 ;
 #endif
+	timebase_period_ns = 1000000000 / bd->bi_tbfreq;
 }
 #endif
-

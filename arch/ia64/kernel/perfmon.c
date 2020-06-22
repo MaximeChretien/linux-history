@@ -447,7 +447,9 @@ static struct {
  * forward declarations
  */
 static void pfm_reset_pmu(struct task_struct *);
+#ifndef CONFIG_SMP
 static unsigned long pfm_lazy_save_regs (struct task_struct *ta);
+#endif
 
 #if   defined(CONFIG_ITANIUM)
 #include "perfmon_itanium.h"
@@ -472,13 +474,13 @@ pfm_set_psr_pp(void)
 static inline void
 pfm_clear_psr_up(void)
 {
-	__asm__ __volatile__ ("rum psr.up;; srlz.i;;"::: "memory");
+	__asm__ __volatile__ ("rsm psr.up;; srlz.i;;"::: "memory");
 }
 
 static inline void
 pfm_set_psr_up(void)
 {
-	__asm__ __volatile__ ("sum psr.up;; srlz.i;;"::: "memory");
+	__asm__ __volatile__ ("ssm psr.up;; srlz.i;;"::: "memory");
 }
 
 static inline unsigned long

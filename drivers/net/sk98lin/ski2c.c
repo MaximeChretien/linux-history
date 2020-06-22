@@ -2,15 +2,15 @@
  *
  * Name:	ski2c.c
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.56 $
- * Date:	$Date: 2002/12/19 14:20:41 $
+ * Version:	$Revision: 1.57 $
+ * Date:	$Date: 2003/01/28 09:17:38 $
  * Purpose:	Functions to access Voltage and Temperature Sensor
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 1998-2003 SysKonnect GmbH.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -26,6 +26,10 @@
  * History:
  *
  *	$Log: ski2c.c,v $
+ *	Revision 1.57  2003/01/28 09:17:38  rschmidt
+ *	Fixed handling for sensors on YUKON Fiber.
+ *	Editorial changes.
+ *	
  *	Revision 1.56  2002/12/19 14:20:41  rschmidt
  *	Added debugging code in SkI2cWait().
  *	Replaced all I2C-write operations with function SkI2cWrite().
@@ -228,7 +232,7 @@
  *	I2C Protocol
  */
 static const char SysKonnectFileId[] =
-	"$Id: ski2c.c,v 1.56 2002/12/19 14:20:41 rschmidt Exp $";
+	"$Id: ski2c.c,v 1.57 2003/01/28 09:17:38 rschmidt Exp $";
 
 #include "h/skdrv1st.h"		/* Driver Specific Definitions */
 #include "h/lm80.h"
@@ -249,7 +253,7 @@ static const char SysKonnectFileId[] =
 	The Genesis has 2 I2C buses. One for the EEPROM which holds
 	the VPD Data and one for temperature and voltage sensor.
 	The following picture shows the I2C buses, I2C devices and
-	there control registers.
+	their control registers.
 
 	Note: The VPD functions are in skvpd.c
 .
@@ -314,23 +318,23 @@ intro()
  * If new devices are added to the I2C bus the timing values have to be checked.
  */
 #ifndef I2C_SLOW_TIMING
-#define	T_CLK_LOW		1300L	/* clock low time in ns */
-#define	T_CLK_HIGH		 600L	/* clock high time in ns */
+#define	T_CLK_LOW			1300L	/* clock low time in ns */
+#define	T_CLK_HIGH		 	 600L	/* clock high time in ns */
 #define T_DATA_IN_SETUP		 100L	/* data in Set-up Time */
 #define T_START_HOLD		 600L	/* start condition hold time */
 #define T_START_SETUP		 600L	/* start condition Set-up time */
 #define	T_STOP_SETUP		 600L	/* stop condition Set-up time */
-#define T_BUS_IDLE		1300L	/* time the bus must free after Tx */
+#define T_BUS_IDLE			1300L	/* time the bus must free after Tx */
 #define	T_CLK_2_DATA_OUT	 900L	/* max. clock low to data output valid */
 #else	/* I2C_SLOW_TIMING */
 /* I2C Standard Mode Timing */
-#define	T_CLK_LOW		4700L	/* clock low time in ns */
-#define	T_CLK_HIGH		4000L	/* clock high time in ns */
+#define	T_CLK_LOW			4700L	/* clock low time in ns */
+#define	T_CLK_HIGH			4000L	/* clock high time in ns */
 #define T_DATA_IN_SETUP		 250L	/* data in Set-up Time */
 #define T_START_HOLD		4000L	/* start condition hold time */
 #define T_START_SETUP		4700L	/* start condition Set-up time */
 #define	T_STOP_SETUP		4000L	/* stop condition Set-up time */
-#define T_BUS_IDLE		4700L	/* time the bus must free after Tx */
+#define T_BUS_IDLE			4700L	/* time the bus must free after Tx */
 #endif	/* !I2C_SLOW_TIMING */
 
 #define NS2BCLK(x)	(((x)*125)/10000)
@@ -858,18 +862,18 @@ SK_IOC	IoC)	/* I/O Context */
 	
 	pPrt = &pAC->GIni.GP[0];
 	
-    switch (pPrt->PhyType) {
-	case SK_PHY_BCOM:
-		if (pAC->GIni.GIMacsFound == 1) {
-			pAC->I2c.MaxSens += 1;
+	if (pAC->GIni.GIGenesis) {
+		if (pPrt->PhyType == SK_PHY_BCOM) {
+			if (pAC->GIni.GIMacsFound == 1) {
+				pAC->I2c.MaxSens += 1;
+			}
+			else {
+				pAC->I2c.MaxSens += 3;
+			}
 		}
-		else {
-			pAC->I2c.MaxSens += 3;
-		}
-		break;
-	case SK_PHY_MARV_COPPER:
+	}
+	else {
 		pAC->I2c.MaxSens += 3;
-		break;
 	}
 	
 	for (i = 0; i < pAC->I2c.MaxSens; i++) {
@@ -912,14 +916,23 @@ SK_IOC	IoC)	/* I/O Context */
 			pAC->I2c.SenTable[i].SenReg = LM80_VT2_IN;
 			break;
 		case 4:
-			if (pPrt->PhyType == SK_PHY_BCOM) {
-				pAC->I2c.SenTable[i].SenDesc = "Voltage PHY A PLL";
-				pAC->I2c.SenTable[i].SenThreErrHigh = SK_SEN_PLL_3V3_HIGH_ERR;
-				pAC->I2c.SenTable[i].SenThreWarnHigh = SK_SEN_PLL_3V3_HIGH_WARN;
-				pAC->I2c.SenTable[i].SenThreWarnLow = SK_SEN_PLL_3V3_LOW_WARN;
-				pAC->I2c.SenTable[i].SenThreErrLow = SK_SEN_PLL_3V3_LOW_ERR;
+			if (pAC->GIni.GIGenesis) {
+				if (pPrt->PhyType == SK_PHY_BCOM) {
+					pAC->I2c.SenTable[i].SenDesc = "Voltage PHY A PLL";
+					pAC->I2c.SenTable[i].SenThreErrHigh = SK_SEN_PLL_3V3_HIGH_ERR;
+					pAC->I2c.SenTable[i].SenThreWarnHigh = SK_SEN_PLL_3V3_HIGH_WARN;
+					pAC->I2c.SenTable[i].SenThreWarnLow = SK_SEN_PLL_3V3_LOW_WARN;
+					pAC->I2c.SenTable[i].SenThreErrLow = SK_SEN_PLL_3V3_LOW_ERR;
+				}
+				else {
+					pAC->I2c.SenTable[i].SenDesc = "Voltage PMA";
+					pAC->I2c.SenTable[i].SenThreErrHigh = SK_SEN_PLL_3V3_HIGH_ERR;
+					pAC->I2c.SenTable[i].SenThreWarnHigh = SK_SEN_PLL_3V3_HIGH_WARN;
+					pAC->I2c.SenTable[i].SenThreWarnLow = SK_SEN_PLL_3V3_LOW_WARN;
+					pAC->I2c.SenTable[i].SenThreErrLow = SK_SEN_PLL_3V3_LOW_ERR;
+				}
 			}
-			else if (pPrt->PhyType == SK_PHY_MARV_COPPER) {
+			else {
 				pAC->I2c.SenTable[i].SenDesc = "Voltage VAUX";
 				pAC->I2c.SenTable[i].SenThreErrHigh = SK_SEN_VAUX_3V3_HIGH_ERR;
 				pAC->I2c.SenTable[i].SenThreWarnHigh = SK_SEN_VAUX_3V3_HIGH_WARN;
@@ -932,40 +945,33 @@ SK_IOC	IoC)	/* I/O Context */
 					pAC->I2c.SenTable[i].SenThreWarnLow = SK_SEN_VAUX_0V_WARN_ERR;
 				}
 			}
-			else {
-				pAC->I2c.SenTable[i].SenDesc = "Voltage PMA";
-				pAC->I2c.SenTable[i].SenThreErrHigh = SK_SEN_PLL_3V3_HIGH_ERR;
-				pAC->I2c.SenTable[i].SenThreWarnHigh = SK_SEN_PLL_3V3_HIGH_WARN;
-				pAC->I2c.SenTable[i].SenThreWarnLow = SK_SEN_PLL_3V3_LOW_WARN;
-				pAC->I2c.SenTable[i].SenThreErrLow = SK_SEN_PLL_3V3_LOW_ERR;
-			}
 			pAC->I2c.SenTable[i].SenType = SK_SEN_VOLT;
 			pAC->I2c.SenTable[i].SenReg = LM80_VT3_IN;
 			break;
 		case 5:
-			if (pPrt->PhyType == SK_PHY_MARV_COPPER) {
-				pAC->I2c.SenTable[i].SenDesc = "Voltage ASIC-Co 1V5";
-				pAC->I2c.SenTable[i].SenThreErrHigh = SK_SEN_CORE_1V5_HIGH_ERR;
-				pAC->I2c.SenTable[i].SenThreWarnHigh = SK_SEN_CORE_1V5_HIGH_WARN;
-				pAC->I2c.SenTable[i].SenThreWarnLow = SK_SEN_CORE_1V5_LOW_WARN;
-				pAC->I2c.SenTable[i].SenThreErrLow = SK_SEN_CORE_1V5_LOW_ERR;
-			}
-			else {
+			if (pAC->GIni.GIGenesis) {
 				pAC->I2c.SenTable[i].SenDesc = "Voltage PHY 2V5";
 				pAC->I2c.SenTable[i].SenThreErrHigh = SK_SEN_PHY_2V5_HIGH_ERR;
 				pAC->I2c.SenTable[i].SenThreWarnHigh = SK_SEN_PHY_2V5_HIGH_WARN;
 				pAC->I2c.SenTable[i].SenThreWarnLow = SK_SEN_PHY_2V5_LOW_WARN;
 				pAC->I2c.SenTable[i].SenThreErrLow = SK_SEN_PHY_2V5_LOW_ERR;
 			}
+			else {
+				pAC->I2c.SenTable[i].SenDesc = "Voltage ASIC-Co 1V5";
+				pAC->I2c.SenTable[i].SenThreErrHigh = SK_SEN_CORE_1V5_HIGH_ERR;
+				pAC->I2c.SenTable[i].SenThreWarnHigh = SK_SEN_CORE_1V5_HIGH_WARN;
+				pAC->I2c.SenTable[i].SenThreWarnLow = SK_SEN_CORE_1V5_LOW_WARN;
+				pAC->I2c.SenTable[i].SenThreErrLow = SK_SEN_CORE_1V5_LOW_ERR;
+			}
 			pAC->I2c.SenTable[i].SenType = SK_SEN_VOLT;
 			pAC->I2c.SenTable[i].SenReg = LM80_VT4_IN;
 			break;
 		case 6:
-			if (pPrt->PhyType == SK_PHY_MARV_COPPER) {
-				pAC->I2c.SenTable[i].SenDesc = "Voltage PHY 3V3";
+			if (pAC->GIni.GIGenesis) {
+				pAC->I2c.SenTable[i].SenDesc = "Voltage PHY B PLL";
 			}
 			else {
-				pAC->I2c.SenTable[i].SenDesc = "Voltage PHY B PLL";
+				pAC->I2c.SenTable[i].SenDesc = "Voltage PHY 3V3";
 			}
 			pAC->I2c.SenTable[i].SenType = SK_SEN_VOLT;
 			pAC->I2c.SenTable[i].SenThreErrHigh = SK_SEN_PLL_3V3_HIGH_ERR;
@@ -975,16 +981,7 @@ SK_IOC	IoC)	/* I/O Context */
 			pAC->I2c.SenTable[i].SenReg = LM80_VT5_IN;
 			break;
 		case 7:
-			if (pPrt->PhyType == SK_PHY_MARV_COPPER) {
-				pAC->I2c.SenTable[i].SenDesc = "Voltage PHY 2V5";
-				pAC->I2c.SenTable[i].SenType = SK_SEN_VOLT;
-				pAC->I2c.SenTable[i].SenThreErrHigh = SK_SEN_PHY_2V5_HIGH_ERR;
-				pAC->I2c.SenTable[i].SenThreWarnHigh = SK_SEN_PHY_2V5_HIGH_WARN;
-				pAC->I2c.SenTable[i].SenThreWarnLow = SK_SEN_PHY_2V5_LOW_WARN;
-				pAC->I2c.SenTable[i].SenThreErrLow = SK_SEN_PHY_2V5_LOW_ERR;
-				pAC->I2c.SenTable[i].SenReg = LM80_VT6_IN;
-			}
-			else {
+			if (pAC->GIni.GIGenesis) {
 				pAC->I2c.SenTable[i].SenDesc = "Speed Fan";
 				pAC->I2c.SenTable[i].SenType = SK_SEN_FAN;
 				pAC->I2c.SenTable[i].SenThreErrHigh = SK_SEN_FAN_HIGH_ERR;
@@ -992,6 +989,15 @@ SK_IOC	IoC)	/* I/O Context */
 				pAC->I2c.SenTable[i].SenThreWarnLow = SK_SEN_FAN_LOW_WARN;
 				pAC->I2c.SenTable[i].SenThreErrLow = SK_SEN_FAN_LOW_ERR;
 				pAC->I2c.SenTable[i].SenReg = LM80_FAN2_IN;
+			}
+			else {
+				pAC->I2c.SenTable[i].SenDesc = "Voltage PHY 2V5";
+				pAC->I2c.SenTable[i].SenType = SK_SEN_VOLT;
+				pAC->I2c.SenTable[i].SenThreErrHigh = SK_SEN_PHY_2V5_HIGH_ERR;
+				pAC->I2c.SenTable[i].SenThreWarnHigh = SK_SEN_PHY_2V5_HIGH_WARN;
+				pAC->I2c.SenTable[i].SenThreWarnLow = SK_SEN_PHY_2V5_LOW_WARN;
+				pAC->I2c.SenTable[i].SenThreErrLow = SK_SEN_PHY_2V5_LOW_ERR;
+				pAC->I2c.SenTable[i].SenReg = LM80_VT6_IN;
 			}
 			break;
 		default:

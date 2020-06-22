@@ -248,6 +248,7 @@ static void init_hwif_data (unsigned int index)
 	hwif->ultra_mask = 0x80;	/* disable all ultra */
 	hwif->mwdma_mask = 0x80;	/* disable all mwdma */
 	hwif->swdma_mask = 0x80;	/* disable all swdma */
+	hwif->sata = 0;			/* assume PATA */
 
 	default_hwif_iops(hwif);
 	default_hwif_transport(hwif);
@@ -458,7 +459,7 @@ int ide_revalidate_disk (kdev_t i_rdev)
 	unsigned int p, major, minor;
 	unsigned long flags;
 
-	if ((drive = get_info_ptr(i_rdev)) == NULL)
+	if ((drive = ide_info_ptr(i_rdev, 0)) == NULL)
 		return -ENODEV;
 	major = MAJOR(i_rdev);
 	minor = drive->select.b.unit << PARTN_BITS;
@@ -547,30 +548,48 @@ EXPORT_SYMBOL(ide_driver_module);
 static int ide_open (struct inode * inode, struct file * filp)
 {
 	ide_drive_t *drive;
+	int force = 1/*FIXME 0*/;
+	
+	if(capable(CAP_SYS_ADMIN) && (filp->f_flags & O_NDELAY))
+		force = 1;
 
-	if ((drive = get_info_ptr(inode->i_rdev)) == NULL)
+	if ((drive = ide_info_ptr(inode->i_rdev, force)) == NULL)
 		return -ENXIO;
-	if (drive->driver == &idedefault_driver)
-		ide_driver_module(1);
-	if (drive->driver == &idedefault_driver) {
-		if (drive->media == ide_disk)
-			(void) request_module("ide-disk");
-		if (drive->scsi)
-			(void) request_module("ide-scsi");
-		if (drive->media == ide_cdrom)
-			(void) request_module("ide-cd");
-		if (drive->media == ide_tape)
-			(void) request_module("ide-tape");
-		if (drive->media == ide_floppy)
-			(void) request_module("ide-floppy");
+	
+	/*
+	 *	If the device is present make sure that we attach any
+	 *	needed driver
+	 */	
+
+	if (drive->present)
+	{
+		if (drive->driver == &idedefault_driver)
+			ide_driver_module(1);
+		if (drive->driver == &idedefault_driver) {
+			if (drive->media == ide_disk)
+				(void) request_module("ide-disk");
+			if (drive->scsi)
+				(void) request_module("ide-scsi");
+			if (drive->media == ide_cdrom)
+				(void) request_module("ide-cd");
+			if (drive->media == ide_tape)
+				(void) request_module("ide-tape");
+			if (drive->media == ide_floppy)
+				(void) request_module("ide-floppy");
+		}
+	
+		/* The locking here isnt enough, but this is hard to fix
+		   in the 2.4 cases */
+		while (drive->busy)
+			sleep_on(&drive->wqueue);
 	}
 	
-	/* The locking here isnt enough, but this is hard to fix
-	   in the 2.4 cases */
-	while (drive->busy)
-		sleep_on(&drive->wqueue);
+	/*
+	 *	Now do the actual open
+	 */
+	 
 	drive->usage++;
-	if (!drive->dead)
+	if (!drive->dead || force)
 		return DRIVER(drive)->open(inode, filp, drive);
 	printk(KERN_WARNING "%s: driver not present\n", drive->name);
 	drive->usage--;
@@ -585,7 +604,7 @@ static int ide_release (struct inode * inode, struct file * file)
 {
 	ide_drive_t *drive;
 
-	if ((drive = get_info_ptr(inode->i_rdev)) != NULL) {
+	if ((drive = ide_info_ptr(inode->i_rdev, 1)) != NULL) {
 		drive->usage--;
 		DRIVER(drive)->release(inode, file, drive);
 	}
@@ -635,6 +654,179 @@ void hwif_unregister (ide_hwif_t *hwif)
 EXPORT_SYMBOL(hwif_unregister);
 
 extern void init_hwif_data(unsigned int index);
+
+/**
+ *	ide_prepare_tristate	-	prepare interface for warm unplug
+ *	@drive: drive on this hwif we are using
+ *
+ *	Prepares a drive for shutdown after a bus tristate. The
+ *	drives must be quiescent and the only user the calling ioctl
+ */
+ 
+static int ide_prepare_tristate(ide_drive_t *our_drive)
+{
+	ide_drive_t *drive;
+	int unit;
+	unsigned long flags;
+	int minor;
+	int p;
+	int i;
+	ide_hwif_t *hwif = HWIF(our_drive);
+		
+	if(our_drive->busy)
+		printk("HUH? We are busy.\n");
+		
+	if (!hwif->present)
+		BUG();
+	spin_lock_irqsave(&io_request_lock, flags);
+	
+	/* Abort if anything is busy */
+	for (unit = 0; unit < MAX_DRIVES; ++unit) {
+		drive = &hwif->drives[unit];
+		if (!drive->present)
+			continue;
+		if (drive == our_drive && drive->usage != 1)
+			goto abort;
+		if (drive != our_drive && drive->usage)
+			goto abort;
+		if (drive->busy)
+			goto abort;
+	}
+	/* Commit to shutdown sequence */
+	for (unit = 0; unit < MAX_DRIVES; ++unit) {
+		drive = &hwif->drives[unit];
+		if (!drive->present)
+			continue;
+		if (drive != our_drive && DRIVER(drive)->shutdown(drive))
+			goto abort;
+	}
+	/* We hold the lock here.. which is important as we need to play
+	   with usage counts beyond the scenes */
+	   
+	our_drive->usage--;
+	i = DRIVER(our_drive)->shutdown(our_drive);
+	if(i)
+		goto abort_fix;
+	/* Drive shutdown sequence done */
+	/* Prevent new opens ?? */
+	spin_unlock_irqrestore(&io_request_lock, flags);
+	/*
+	 * Flush kernel side caches, and dump the /proc files
+	 */
+	spin_unlock_irqrestore(&io_request_lock, flags);
+	for (unit = 0; unit < MAX_DRIVES; ++unit) {
+		drive = &hwif->drives[unit];
+		if (!drive->present)
+			continue;
+		DRIVER(drive)->cleanup(drive);
+		minor = drive->select.b.unit << PARTN_BITS;
+		for (p = 0; p < (1<<PARTN_BITS); ++p) {
+			if (drive->part[p].nr_sects > 0) {
+				kdev_t devp = MKDEV(hwif->major, minor+p);
+				invalidate_device(devp, 0);
+			}
+		}
+#ifdef CONFIG_PROC_FS
+		destroy_proc_ide_drives(hwif);
+#endif
+	}
+	spin_lock_irqsave(&io_request_lock, flags);
+	our_drive->usage++;
+	for (i = 0; i < MAX_DRIVES; ++i) {
+		drive = &hwif->drives[i];
+		if (drive->de) {
+			devfs_unregister(drive->de);
+			drive->de = NULL;
+		}
+		if (!drive->present)
+			continue;
+		if (drive->id != NULL) {
+			kfree(drive->id);
+			drive->id = NULL;
+		}
+		drive->present = 0;
+		/* Safe to clear now */
+		drive->dead = 0;
+	}
+	spin_unlock_irqrestore(&io_request_lock, flags);
+	return 0;
+
+abort_fix:
+	our_drive->usage++;
+abort:
+	spin_unlock_irqrestore(&io_request_lock, flags);
+	return -EBUSY;
+}
+
+
+/**
+ *	ide_resume_hwif		-	return a hwif to active mode
+ *	@hwif: interface to resume
+ *	
+ *	Restore a dead interface from tristate back to normality. At this
+ *	point the hardware driver busproc has reconnected the bus, but
+ *	nothing else has happened
+ */
+ 
+static int ide_resume_hwif(ide_drive_t *our_drive)
+{
+	ide_hwif_t *hwif = HWIF(our_drive);
+	int err = ide_wait_hwif_ready(hwif);
+	int irqd;
+	int present = 0;
+	int unit;
+		
+	if(err)
+	{
+		printk(KERN_ERR "%s: drives not ready.\n", our_drive->name);
+		return err;
+	}
+		
+	/* The drives are now taking commands */
+	
+	irqd = hwif->irq;
+	if(irqd)
+		disable_irq(irqd);
+		
+	/* Identify and probe the drives */
+	
+	for (unit = 0; unit < MAX_DRIVES; ++unit) {
+		ide_drive_t *drive = &hwif->drives[unit];
+		drive->dn = ((hwif->channel ? 2 : 0) + unit);
+		drive->usage = 0;
+		drive->busy = 0;
+		hwif->drives[unit].dn = ((hwif->channel ? 2 : 0) + unit);
+		(void) ide_probe_for_drive(drive);
+		if (drive->present)
+			present = 1;
+	}
+	ide_probe_reset(hwif);
+	if(irqd)
+		enable_irq(irqd);
+	
+	if(present)
+		printk(KERN_INFO "ide: drives found on hot-added interface.\n");
+			
+	/*
+	 *	Set up the drive modes (Even if we didnt swap drives
+	 *	we may have lost settings when we disconnected the bus)
+	 */
+	 
+	ide_tune_drives(hwif);
+	if(present)
+		hwif->present = 1;
+		
+	/*
+	 *	Reattach the devices to drivers
+	 */
+	for (unit = 0; unit < MAX_DRIVES; ++unit) {
+		ide_drive_t *drive = &hwif->drives[unit];
+		if(drive->present && !drive->dead)
+			ide_attach_drive(drive);
+	}
+	our_drive->usage++;
+	return 0;
+}
 
 int ide_unregister (unsigned int index)
 {
@@ -798,7 +990,7 @@ int ide_unregister (unsigned int index)
 	hwif->swdma_mask		= old_hwif.swdma_mask;
 
 	hwif->chipset			= old_hwif.chipset;
-	hwif->hold                      = old_hwif.hold;
+	hwif->hold			= old_hwif.hold;
 
 #ifdef CONFIG_BLK_DEV_IDEPCI
 	hwif->pci_dev			= old_hwif.pci_dev;
@@ -1534,11 +1726,22 @@ static int ide_ioctl (struct inode *inode, struct file *file,
 	struct request rq;
 	kdev_t dev;
 	ide_settings_t *setting;
-
+	int force = 0;
+	
 	if (!inode || !(dev = inode->i_rdev))
 		return -EINVAL;
+		
+	switch(cmd)
+	{
+		case HDIO_GET_BUSSTATE:
+		case HDIO_SET_BUSSTATE:
+		case HDIO_SCAN_HWIF:
+		case HDIO_UNREGISTER_HWIF:
+			force = 1;
+	}
+	
 	major = MAJOR(dev); minor = MINOR(dev);
-	if ((drive = get_info_ptr(inode->i_rdev)) == NULL)
+	if ((drive = ide_info_ptr(inode->i_rdev, force)) == NULL)
 		return -ENODEV;
 
 	down(&ide_setting_sem);
@@ -1737,11 +1940,42 @@ static int ide_ioctl (struct inode *inode, struct file *file,
 			return 0;
 
 		case HDIO_SET_BUSSTATE:
+		{
+			ide_hwif_t *hwif =  HWIF(drive);
+			
 			if (!capable(CAP_SYS_ADMIN))
 				return -EACCES;
-			if (HWIF(drive)->busproc)
+#ifdef OLD_STUFF
+			if (hwif->busproc)
 				return HWIF(drive)->busproc(drive, (int)arg);
 			return -EOPNOTSUPP;
+#else
+			if(hwif->bus_state == arg)
+				return 0;
+				
+			if(hwif->bus_state == BUSSTATE_ON)
+			{
+				/* "drive" may vanish beyond here */
+				if((err = ide_prepare_tristate(drive)) != 0)
+					return err;
+				hwif->bus_state = arg;
+			}
+			if (hwif->busproc)
+			{
+				err = hwif->busproc(drive, (int)arg);
+				if(err)
+					return err;
+			}
+			if(arg != BUSSTATE_OFF)
+			{
+				err = ide_resume_hwif(drive);
+				hwif->bus_state = arg;
+				if(err)
+					return err;
+			}
+			return 0;
+#endif			
+		}				
 
 		default:
 			return DRIVER(drive)->ioctl(drive, inode, file, cmd, arg);
@@ -1753,7 +1987,7 @@ static int ide_check_media_change (kdev_t i_rdev)
 {
 	ide_drive_t *drive;
 
-	if ((drive = get_info_ptr(i_rdev)) == NULL)
+	if ((drive = ide_info_ptr(i_rdev, 0)) == NULL)
 		return -ENODEV;
 	return DRIVER(drive)->media_change(drive);
 }

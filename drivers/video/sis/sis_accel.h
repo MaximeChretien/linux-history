@@ -342,16 +342,27 @@ int     CmdQueLen;
    bits 7:0:   2D counter 1
 
    Where is the command queue length (current amount of commands the queue
-   can accept) on the 315 series? (The current implementation is taken
-   from 300 series and certainly wrong...)
+   can accept) on the 315 series?
 */
 
 /* TW: FIXME: CmdQueLen is... where....? */
+/* We assume a length of 4 bytes per command; since 512K of
+ * of RAM are allocated, the number of commands is easily
+ * calculated (assuming that there is no 3D support yet)
+ * We calculate it very cautiously (128K only) and let the
+ * rest to the (never?)-to-come (?) 3D engine. (The 3D engine
+ * can use a similar technique, using the remaining 384K,
+ * hence a queue overflow is avoided)
+ * UPDATE: This technique causes a terrible system latency
+ * on integrated chipsets. Disable the queue handling for
+ * now.
+ */
 #define SiS310Idle \
   { \
   while( (MMIO_IN16(ivideo.mmio_vbase, Q_STATUS+2) & 0x8000) != 0x8000){}; \
   while( (MMIO_IN16(ivideo.mmio_vbase, Q_STATUS+2) & 0x8000) != 0x8000){}; \
-  CmdQueLen=MMIO_IN16(ivideo.mmio_vbase, Q_STATUS); \
+  CmdQueLen = 0; \
+  /*CmdQueLen = ((128 * 1024) / 4) - 64; */ \
   }
 
 #define SiS310SetupSRCBase(base) \

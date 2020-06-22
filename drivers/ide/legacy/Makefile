@@ -17,7 +17,10 @@ obj-$(CONFIG_BLK_DEV_GAYLE)		+= gayle.o
 obj-$(CONFIG_BLK_DEV_MAC_IDE)		+= macide.o
 obj-$(CONFIG_BLK_DEV_Q40IDE)		+= q40ide.o
 
+obj-$(CONFIG_BLK_DEV_IDE_SIBYTE)	+= sibyte.o
+
 obj-$(CONFIG_BLK_DEV_IDECS)		+= ide-cs.o
+
 
 # Last of all
 obj-$(CONFIG_BLK_DEV_HD)		+= hd.o

@@ -4707,13 +4707,13 @@ void s508_s514_lock(sdla_t *card, unsigned long *smp_flags)
 {
 	if (card->hw.type != SDLA_S514){
 
-#if defined(__SMP__) || defined(LINUX_2_4)
+#if defined(CONFIG_SMP) || defined(LINUX_2_4)
 		spin_lock_irqsave(&card->wandev.lock, *smp_flags);
 #else
           	disable_irq(card->hw.irq);
 #endif
 	}else{
-#if defined(__SMP__) || defined(LINUX_2_4)
+#if defined(CONFIG_SMP) || defined(LINUX_2_4)
 		spin_lock(&card->u.f.if_send_lock);
 #endif
 	}
@@ -4725,13 +4725,13 @@ void s508_s514_unlock(sdla_t *card, unsigned long *smp_flags)
 {
 	if (card->hw.type != SDLA_S514){
 
-#if defined(__SMP__) || defined(LINUX_2_4)
+#if defined(CONFIG_SMP) || defined(LINUX_2_4)
 		spin_unlock_irqrestore (&card->wandev.lock, *smp_flags);
 #else
           	enable_irq(card->hw.irq);
 #endif
 	}else{
-#if defined(__SMP__) || defined(LINUX_2_4)
+#if defined(CONFIG_SMP) || defined(LINUX_2_4)
 		spin_unlock(&card->u.f.if_send_lock);
 #endif
 	}

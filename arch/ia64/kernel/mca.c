@@ -59,13 +59,13 @@
 #include <asm/sal.h>
 #include <asm/mca.h>
 
-#include <asm/processor.h>
 #include <asm/irq.h>
 #include <asm/hw_irq.h>
 
 #undef MCA_PRT_XTRA_DATA
 
-#define print_symbol(fmt, addr)	printk(fmt, "");
+#define print_symbol(fmt, addr)	printk(fmt, "(no symbol)");
+extern void show_stack(struct task_struct *);
 
 typedef struct ia64_fptr {
 	unsigned long fp;
@@ -99,6 +99,12 @@ static struct irqaction cmci_irqaction = {
 	.name =		"cmc_hndlr"
 };
 
+static struct irqaction cmcp_irqaction = {
+	.handler =	ia64_mca_cmc_int_caller,
+	.flags =	SA_INTERRUPT,
+	.name =		"cmc_poll"
+};
+
 static struct irqaction mca_rdzv_irqaction = {
 	.handler =	ia64_mca_rendez_int_handler,
 	.flags =	SA_INTERRUPT,
@@ -117,6 +123,12 @@ static struct irqaction mca_cpe_irqaction = {
 	.name =		"cpe_hndlr"
 };
 
+static struct irqaction mca_cpep_irqaction = {
+	.handler =	ia64_mca_cpe_int_caller,
+	.flags =	SA_INTERRUPT,
+	.name =		"cpe_poll"
+};
+
 #define MAX_CPE_POLL_INTERVAL (15*60*HZ) /* 15 minutes */
 #define MIN_CPE_POLL_INTERVAL (2*60*HZ)  /* 2 minutes */
 #define CMC_POLL_INTERVAL     (1*60*HZ)  /* 1 minute */
@@ -125,10 +137,19 @@ static struct irqaction mca_cpe_irqaction = {
 static struct timer_list cpe_poll_timer;
 static struct timer_list cmc_poll_timer;
 /*
+ * This variable tells whether we are currently in polling mode.
  * Start with this in the wrong state so we won't play w/ timers
  * before the system is ready.
  */
 static int cmc_polling_enabled = 1;
+
+/*
+ * Clearing this variable prevents CPE polling from getting activated
+ * in mca_late_init.  Use it if your system doesn't provide a CPEI,
+ * but encounters problems retrieving CPE logs.  This should only be
+ * necessary for debugging.
+ */
+static int cpe_poll_enabled = 1;
 
 extern void salinfo_log_wakeup(int);
 
@@ -178,6 +199,9 @@ ia64_mca_cpe_int_handler (int cpe_irq, void *arg, struct pt_regs *ptregs)
 {
 	IA64_MCA_DEBUG("ia64_mca_cpe_int_handler: received interrupt. CPU:%d vector = %#x\n",
 		       smp_processor_id(), cpe_irq);
+
+	/* SAL spec states this should run w/ interrupts enabled */
+	local_irq_enable();
 
 	/* Get the CMC error record and log it */
 	ia64_mca_log_sal_error_record(SAL_INFO_TYPE_CPE, 0);
@@ -322,7 +346,7 @@ fetch_min_state (pal_min_state_area_t *ms, struct pt_regs *pt, struct switch_sta
 }
 
 void
-init_handler_platform (sal_log_processor_info_t *proc_ptr,
+init_handler_platform (pal_min_state_area_t *ms,
 		       struct pt_regs *pt, struct switch_stack *sw)
 {
 	struct unw_frame_info info;
@@ -337,11 +361,32 @@ init_handler_platform (sal_log_processor_info_t *proc_ptr,
 	 */
 	printk("Delaying for 5 seconds...\n");
 	udelay(5*1000000);
-	show_min_state(&SAL_LPI_PSI_INFO(proc_ptr)->min_state_area);
+	show_min_state(ms);
 
-	fetch_min_state(&SAL_LPI_PSI_INFO(proc_ptr)->min_state_area, pt, sw);
+	printk("Backtrace of current task (pid %d, %s)\n", current->pid, current->comm);
+	fetch_min_state(ms, pt, sw);
 	unw_init_from_interruption(&info, current, pt, sw);
 	ia64_do_show_stack(&info, NULL);
+
+#ifdef CONFIG_SMP
+	/* read_trylock() would be handy... */
+	if (!tasklist_lock.write_lock)
+		read_lock(&tasklist_lock);
+#endif
+	{
+		struct task_struct *t;
+		for_each_task(t) {
+			if (t == current)
+				continue;
+
+			printk("\nBacktrace of pid %d (%s)\n", t->pid, t->comm);
+			show_stack(t);
+		}
+	}
+#ifdef CONFIG_SMP
+	if (!tasklist_lock.write_lock)
+		read_unlock(&tasklist_lock);
+#endif
 
 	printk("\nINIT dump complete.  Please reboot now.\n");
 	while (1);			/* hang city if no debugger */
@@ -653,17 +698,17 @@ ia64_mca_init(void)
 
 	IA64_MCA_DEBUG("ia64_mca_init: registered mca rendezvous spinloop and wakeup mech.\n");
 
-	ia64_mc_info.imi_mca_handler        = __pa(mca_hldlr_ptr->fp);
+	ia64_mc_info.imi_mca_handler        = ia64_tpa(mca_hldlr_ptr->fp);
 	/*
 	 * XXX - disable SAL checksum by setting size to 0; should be
-	 *	__pa(ia64_os_mca_dispatch_end) - __pa(ia64_os_mca_dispatch);
+	 *	ia64_tpa(ia64_os_mca_dispatch_end) - ia64_tpa(ia64_os_mca_dispatch);
 	 */
 	ia64_mc_info.imi_mca_handler_size	= 0;
 
 	/* Register the os mca handler with SAL */
 	if ((rc = ia64_sal_set_vectors(SAL_VECTOR_OS_MCA,
 				       ia64_mc_info.imi_mca_handler,
-				       mca_hldlr_ptr->gp,
+				       ia64_tpa(mca_hldlr_ptr->gp),
 				       ia64_mc_info.imi_mca_handler_size,
 				       0, 0, 0)))
 	{
@@ -673,15 +718,15 @@ ia64_mca_init(void)
 	}
 
 	IA64_MCA_DEBUG("ia64_mca_init: registered os mca handler with SAL at 0x%lx, gp = 0x%lx\n",
-		       ia64_mc_info.imi_mca_handler, mca_hldlr_ptr->gp);
+		       ia64_mc_info.imi_mca_handler, ia64_tpa(mca_hldlr_ptr->gp));
 
 	/*
 	 * XXX - disable SAL checksum by setting size to 0, should be
 	 * IA64_INIT_HANDLER_SIZE
 	 */
-	ia64_mc_info.imi_monarch_init_handler		= __pa(mon_init_ptr->fp);
+	ia64_mc_info.imi_monarch_init_handler		= ia64_tpa(mon_init_ptr->fp);
 	ia64_mc_info.imi_monarch_init_handler_size	= 0;
-	ia64_mc_info.imi_slave_init_handler		= __pa(slave_init_ptr->fp);
+	ia64_mc_info.imi_slave_init_handler		= ia64_tpa(slave_init_ptr->fp);
 	ia64_mc_info.imi_slave_init_handler_size	= 0;
 
 	IA64_MCA_DEBUG("ia64_mca_init: os init handler at %lx\n",
@@ -690,10 +735,10 @@ ia64_mca_init(void)
 	/* Register the os init handler with SAL */
 	if ((rc = ia64_sal_set_vectors(SAL_VECTOR_OS_INIT,
 				       ia64_mc_info.imi_monarch_init_handler,
-				       __pa(ia64_get_gp()),
+				       ia64_tpa(ia64_get_gp()),
 				       ia64_mc_info.imi_monarch_init_handler_size,
 				       ia64_mc_info.imi_slave_init_handler,
-				       __pa(ia64_get_gp()),
+				       ia64_tpa(ia64_get_gp()),
 				       ia64_mc_info.imi_slave_init_handler_size)))
 	{
 		printk(KERN_ERR "ia64_mca_init: Failed to register m/s init handlers with SAL. "
@@ -704,10 +749,11 @@ ia64_mca_init(void)
 	IA64_MCA_DEBUG("ia64_mca_init: registered os init handler with SAL\n");
 
 	/*
-	 *  Configure the CMCI vector and handler. Interrupts for CMC are
+	 *  Configure the CMCI/P vector and handler. Interrupts for CMC are
 	 *  per-processor, so AP CMC interrupts are setup in smp_callin() (smpboot.c).
 	 */
 	register_percpu_irq(IA64_CMC_VECTOR, &cmci_irqaction);
+	register_percpu_irq(IA64_CMCP_VECTOR, &cmcp_irqaction);
 	ia64_mca_cmc_vector_setup();       /* Setup vector on BSP & enable */
 
 	/* Setup the MCA rendezvous interrupt vector */
@@ -822,9 +868,12 @@ ia64_mca_wakeup_all(void)
 	int cpu;
 
 	/* Clear the Rendez checkin flag for all cpus */
-	for(cpu = 0; cpu < smp_num_cpus; cpu++)
+	for(cpu = 0; cpu < NR_CPUS; cpu++) {
+		if (!cpu_online(cpu))
+			continue;
 		if (ia64_mc_info.imi_rendez_checkin[cpu] == IA64_MCA_RENDEZ_CHECKIN_DONE)
 			ia64_mca_wakeup(cpu);
+	}
 
 }
 
@@ -841,11 +890,11 @@ ia64_mca_wakeup_all(void)
 void
 ia64_mca_rendez_int_handler(int rendez_irq, void *arg, struct pt_regs *ptregs)
 {
-	int flags;
+	unsigned long flags;
 	int cpu = smp_processor_id();
 
 	/* Mask all interrupts */
-	save_and_cli(flags);
+	local_irq_save(flags);
 
 	ia64_mc_info.imi_rendez_checkin[cpu] = IA64_MCA_RENDEZ_CHECKIN_DONE;
 	/* Register with the SAL monarch that the slave has
@@ -860,7 +909,7 @@ ia64_mca_rendez_int_handler(int rendez_irq, void *arg, struct pt_regs *ptregs)
 	ia64_mca_wakeup_ipi_wait();
 
 	/* Enable all interrupts */
-	restore_flags(flags);
+	local_irq_restore(flags);
 }
 
 
@@ -882,7 +931,6 @@ ia64_mca_rendez_int_handler(int rendez_irq, void *arg, struct pt_regs *ptregs)
 void
 ia64_mca_wakeup_int_handler(int wakeup_irq, void *arg, struct pt_regs *ptregs)
 {
-
 }
 
 /*
@@ -987,6 +1035,9 @@ ia64_mca_cmc_int_handler(int cmc_irq, void *arg, struct pt_regs *ptregs)
 	IA64_MCA_DEBUG("ia64_mca_cmc_int_handler: received interrupt vector = %#x on CPU %d\n",
 		       cmc_irq, smp_processor_id());
 
+	/* SAL spec states this should run w/ interrupts enabled */
+	local_irq_enable();
+
 	/* Get the CMC error record and log it */
 	ia64_mca_log_sal_error_record(SAL_INFO_TYPE_CMC, 0);
 
@@ -994,7 +1045,7 @@ ia64_mca_cmc_int_handler(int cmc_irq, void *arg, struct pt_regs *ptregs)
 	if (!cmc_polling_enabled) {
 		int i, count = 1; /* we know 1 happened now */
 		unsigned long now = jiffies;
-		
+
 		for (i = 0; i < CMC_HISTORY_LENGTH; i++) {
 			if (now - cmc_history[i] <= HZ)
 				count++;
@@ -1002,34 +1053,24 @@ ia64_mca_cmc_int_handler(int cmc_irq, void *arg, struct pt_regs *ptregs)
 
 		IA64_MCA_DEBUG(KERN_INFO "CMC threshold %d/%d\n", count, CMC_HISTORY_LENGTH);
 		if (count >= CMC_HISTORY_LENGTH) {
-			/*
-			 * CMC threshold exceeded, clear the history
-			 * so we have a fresh start when we return
-			 */
-			for (index = 0 ; index < CMC_HISTORY_LENGTH; index++)
-				cmc_history[index] = 0;
-			index = 0;
 
-			/* Switch to polling mode */
 			cmc_polling_enabled = 1;
+			spin_unlock(&cmc_history_lock);
 
 			/*
-			 * Unlock & enable interrupts  before
-			 * smp_call_function or risk deadlock
+			 * We rely on the local_irq_enable() above so
+			 * that this can't deadlock.
 			 */
-			spin_unlock(&cmc_history_lock);
 			ia64_mca_cmc_vector_disable(NULL);
 
-			local_irq_enable();
-			smp_call_function(ia64_mca_cmc_vector_disable, NULL, 1, 1);
+			smp_call_function(ia64_mca_cmc_vector_disable, NULL, 1, 0);
 
 			/*
 			 * Corrected errors will still be corrected, but
 			 * make sure there's a log somewhere that indicates
 			 * something is generating more than we can handle.
 			 */
-			printk(KERN_WARNING "ia64_mca_cmc_int_handler: WARNING: Switching to polling CMC handler, error records may be lost\n");
-			
+			printk(KERN_WARNING "%s: WARNING: Switching to polling CMC handler, error records may be lost\n", __FUNCTION__);
 
 			mod_timer(&cmc_poll_timer, jiffies + CMC_POLL_INTERVAL);
 
@@ -1082,16 +1123,62 @@ static ia64_state_log_t ia64_state_log[IA64_MAX_LOG_TYPES];
 /*
  *  ia64_mca_cmc_int_caller
  *
- * 	Call CMC interrupt handler, only purpose is to have a
- * 	smp_call_function callable entry.
+ * 	Triggered by sw interrupt from CMC polling routine.  Calls
+ * 	real interrupt handler and either triggers a sw interrupt
+ * 	on the next cpu or does cleanup at the end.
  *
- * Inputs   :	dummy(unused)
- * Outputs  :	None
- * */
-static void
-ia64_mca_cmc_int_caller(void *dummy)
+ * Inputs
+ *	interrupt number
+ *	client data arg ptr
+ *	saved registers ptr
+ * Outputs
+ *	None
+ */
+void
+ia64_mca_cmc_int_caller(int cpe_irq, void *arg, struct pt_regs *ptregs)
 {
-	ia64_mca_cmc_int_handler(0, NULL, NULL);
+	static int start_count = -1;
+	unsigned int cpuid;
+
+	cpuid = smp_processor_id();
+
+	/* If first cpu, update count */
+	if (start_count == -1)
+		start_count = IA64_LOG_COUNT(SAL_INFO_TYPE_CMC);
+
+	ia64_mca_cmc_int_handler(cpe_irq, arg, ptregs);
+
+	for (++cpuid ; cpuid < NR_CPUS && !cpu_online(cpuid) ; cpuid++);
+		
+	if (cpuid < NR_CPUS) {
+		platform_send_ipi(cpuid, IA64_CMCP_VECTOR, IA64_IPI_DM_INT, 0);
+	} else {
+		/* If no log recored, switch out of polling mode */
+		if (start_count == IA64_LOG_COUNT(SAL_INFO_TYPE_CMC)) {
+
+			printk(KERN_WARNING "%s: Returning to interrupt driven CMC handler\n", __FUNCTION__);
+
+			/*
+			 * The cmc interrupt handler enabled irqs, so
+			 * this can't deadlock.
+			 */
+			smp_call_function(ia64_mca_cmc_vector_enable, NULL, 1, 0);
+
+			/*
+			 * Turn off interrupts before re-enabling the
+			 * cmc vector locally.  Make sure we get out.
+			 */
+			local_irq_disable();
+			ia64_mca_cmc_vector_enable(NULL);
+			cmc_polling_enabled = 0;
+
+		} else {
+
+			mod_timer(&cmc_poll_timer, jiffies + CMC_POLL_INTERVAL);
+		}
+
+		start_count = -1;
+	}
 }
 
 /*
@@ -1106,49 +1193,63 @@ ia64_mca_cmc_int_caller(void *dummy)
 static void
 ia64_mca_cmc_poll (unsigned long dummy)
 {
-	int start_count;
-
-	start_count = IA64_LOG_COUNT(SAL_INFO_TYPE_CMC);
-
-	/* Call the interrupt handler */
-	smp_call_function(ia64_mca_cmc_int_caller, NULL, 1, 1);
-	local_irq_disable();
-	ia64_mca_cmc_int_caller(NULL);
-	local_irq_enable();
-
-	/*
-	 * If no log recored, switch out of polling mode.
-	 */
-	if (start_count == IA64_LOG_COUNT(SAL_INFO_TYPE_CMC)) {
-		printk(KERN_WARNING "ia64_mca_cmc_poll: Returning to interrupt driven CMC handler\n");
-		cmc_polling_enabled = 0;
-		smp_call_function(ia64_mca_cmc_vector_enable, NULL, 1, 1);
-		ia64_mca_cmc_vector_enable(NULL);
-	} else {
-		mod_timer(&cmc_poll_timer, jiffies + CMC_POLL_INTERVAL);
-	}
+	/* Trigger a CMC interrupt cascade  */
+	platform_send_ipi(__ffs(cpu_online_map), IA64_CMCP_VECTOR, IA64_IPI_DM_INT, 0);
 }
 
 /*
  *  ia64_mca_cpe_int_caller
  *
- * 	Call CPE interrupt handler, only purpose is to have a
- * 	smp_call_function callable entry.
+ * 	Triggered by sw interrupt from CPE polling routine.  Calls
+ * 	real interrupt handler and either triggers a sw interrupt
+ * 	on the next cpu or does cleanup at the end.
  *
- * Inputs   :	dummy(unused)
- * Outputs  :	None
- * */
-static void
-ia64_mca_cpe_int_caller(void *dummy)
+ * Inputs
+ *	interrupt number
+ *	client data arg ptr
+ *	saved registers ptr
+ * Outputs
+ *	None
+ */
+void
+ia64_mca_cpe_int_caller(int cpe_irq, void *arg, struct pt_regs *ptregs)
 {
-	ia64_mca_cpe_int_handler(0, NULL, NULL);
+	static int start_count = -1;
+	static int poll_time = MAX_CPE_POLL_INTERVAL;
+	unsigned int cpuid;
+
+	cpuid = smp_processor_id();
+
+	/* If first cpu, update count */
+	if (start_count == -1)
+		start_count = IA64_LOG_COUNT(SAL_INFO_TYPE_CPE);
+
+	ia64_mca_cpe_int_handler(cpe_irq, arg, ptregs);
+
+	for (++cpuid ; cpuid < NR_CPUS && !cpu_online(cpuid) ; cpuid++);
+
+	if (cpuid < NR_CPUS) {
+		platform_send_ipi(cpuid, IA64_CPEP_VECTOR, IA64_IPI_DM_INT, 0);
+	} else {
+		/*
+		 * If a log was recorded, increase our polling frequency,
+		 * otherwise, backoff.
+		 */
+		if (start_count != IA64_LOG_COUNT(SAL_INFO_TYPE_CPE)) {
+			poll_time = max(MIN_CPE_POLL_INTERVAL, poll_time / 2);
+		} else {
+			poll_time = min(MAX_CPE_POLL_INTERVAL, poll_time * 2);
+		}
+		start_count = -1;
+		mod_timer(&cpe_poll_timer, jiffies + poll_time);
+	}
 }
 
 /*
  *  ia64_mca_cpe_poll
  *
- *	Poll for Corrected Platform Errors (CPEs), dynamically adjust
- *	polling interval based on occurance of an event.
+ *	Poll for Corrected Platform Errors (CPEs), trigger interrupt
+ *	on first cpu, from there it will trickle through all the cpus.
  *
  * Inputs   :   dummy(unused)
  * Outputs  :   None
@@ -1157,27 +1258,8 @@ ia64_mca_cpe_int_caller(void *dummy)
 static void
 ia64_mca_cpe_poll (unsigned long dummy)
 {
-	int start_count;
-	static int poll_time = MAX_CPE_POLL_INTERVAL;
-
-	start_count = IA64_LOG_COUNT(SAL_INFO_TYPE_CPE);
-
-	/* Call the interrupt handler */
-	smp_call_function(ia64_mca_cpe_int_caller, NULL, 1, 1);
-	local_irq_disable();
-	ia64_mca_cpe_int_caller(NULL);
-	local_irq_enable();
-
-	/*
-	 * If a log was recorded, increase our polling frequency,
-	 * otherwise, backoff.
-	 */
-	if (start_count != IA64_LOG_COUNT(SAL_INFO_TYPE_CPE)) {
-		poll_time = max(MIN_CPE_POLL_INTERVAL, poll_time/2);
-	} else {
-		poll_time = min(MAX_CPE_POLL_INTERVAL, poll_time * 2);
-	}
-	mod_timer(&cpe_poll_timer, jiffies + poll_time);
+	/* Trigger a CPE interrupt cascade  */
+	platform_send_ipi(__ffs(cpu_online_map), IA64_CPEP_VECTOR, IA64_IPI_DM_INT, 0);
 }
 
 /*
@@ -1203,8 +1285,10 @@ ia64_mca_late_init(void)
 	cpe_poll_timer.function = ia64_mca_cpe_poll;
 
 	/* If platform doesn't support CPEI, get the timer going. */
-	if (acpi_request_vector(ACPI_INTERRUPT_CPEI) < 0)
+	if (acpi_request_vector(ACPI_INTERRUPT_CPEI) < 0 && cpe_poll_enabled) {
+		register_percpu_irq(IA64_CPEP_VECTOR, &mca_cpep_irqaction);
 		ia64_mca_cpe_poll(0UL);
+	}
 
 	return 0;
 }
@@ -1226,29 +1310,19 @@ module_init(ia64_mca_late_init);
 void
 ia64_init_handler (struct pt_regs *pt, struct switch_stack *sw)
 {
-	sal_log_processor_info_t *proc_ptr;
-	ia64_err_rec_t *plog_ptr;
+	pal_min_state_area_t *ms;
 
-	printk(KERN_INFO "Entered OS INIT handler\n");
-
-	/* Get the INIT processor log */
-	if (!ia64_log_get(SAL_INFO_TYPE_INIT, (prfunc_t)printk))
-		return;                 // no record retrieved
-
-#ifdef IA64_DUMP_ALL_PROC_INFO
-	ia64_log_print(SAL_INFO_TYPE_INIT, (prfunc_t)printk);
-#endif
+	printk(KERN_INFO "Entered OS INIT handler. PSP=%lx\n",
+		ia64_sal_to_os_handoff_state.proc_state_param);
 
 	/*
-	 * get pointer to min state save area
-	 *
+	 * Address of minstate area provided by PAL is physical,
+	 * uncacheable (bit 63 set). Convert to Linux virtual
+	 * address in region 6.
 	 */
-	plog_ptr=(ia64_err_rec_t *)IA64_LOG_CURR_BUFFER(SAL_INFO_TYPE_INIT);
-	proc_ptr = &plog_ptr->proc_err;
+	ms = (pal_min_state_area_t *)(ia64_sal_to_os_handoff_state.pal_min_state | (6ul<<61));
 
-	ia64_process_min_state_save(&SAL_LPI_PSI_INFO(proc_ptr)->min_state_area);
-
-	init_handler_platform(proc_ptr, pt, sw);	/* call platform specific routines */
+	init_handler_platform(ms, pt, sw);	/* call platform specific routines */
 }
 
 /*
@@ -1271,7 +1345,8 @@ ia64_log_prt_guid (efi_guid_t *p_guid, prfunc_t prfunc)
 static void
 ia64_log_hexdump(unsigned char *p, unsigned long n_ch, prfunc_t prfunc)
 {
-	int i, j;
+	unsigned long i;
+	int j;
 
 	if (!p)
 		return;
@@ -1912,9 +1987,9 @@ ia64_log_plat_specific_err_info_print (sal_log_plat_specific_err_info_t *psei,
 		ia64_log_prt_guid(&psei->guid, prfunc);
 	}
 	if (psei->valid.oem_data) {
-		platform_plat_specific_err_print((int)psei->header.len,
-				      (int)sizeof(sal_log_plat_specific_err_info_t) - 1,
-				      &(psei->oem_data[0]), prfunc);
+		platform_plat_specific_err_print((int) psei->header.len,
+				      (char *) psei->oem_data - (char *) psei,
+				      &psei->oem_data[0], prfunc);
 	}
 	prfunc("\n");
 }
@@ -2119,7 +2194,7 @@ ia64_log_processor_info_print(sal_log_record_header_t *lh, prfunc_t prfunc)
 {
 	sal_log_section_hdr_t       *slsh;
 	int                         n_sects;
-	int                         ercd_pos;
+	u32                         ercd_pos;
 
 	if (!lh)
 		return;
@@ -2181,7 +2256,7 @@ ia64_log_platform_info_print (sal_log_record_header_t *lh, prfunc_t prfunc)
 {
 	sal_log_section_hdr_t	*slsh;
 	int			n_sects;
-	int			ercd_pos;
+	u32			ercd_pos;
 	int			platform_err = 0;
 
 	if (!lh)
@@ -2319,3 +2394,12 @@ ia64_log_print(int sal_info_type, prfunc_t prfunc)
 	}
 	return platform_err;
 }
+
+static int __init
+ia64_mca_disable_cpe_polling(char *str)
+{
+	cpe_poll_enabled = 0;
+	return 1;
+}
+
+__setup("disable_cpe_poll", ia64_mca_disable_cpe_polling);

@@ -124,7 +124,6 @@ int q40_request_irq(unsigned int irq,
 	  case 11: 	      
 	    printk("warning IRQ 10 and 11 not distinguishable\n");
 	    irq=10;
-	  default:
 	  }
 
 	if (irq<Q40_IRQ_SAMPLE)
@@ -168,10 +167,9 @@ void q40_free_irq(unsigned int irq, void *dev_id)
 	  {
 	  case 1: case 2: case 8: case 9:
 	  case 12: case 13:
-	    printk("%s: ISA IRQ %d from %x illegal\n", __FUNCTION__, irq, (unsigned)dev_id);
+	    printk("%s: ISA IRQ %d from %x invalid\n", __FUNCTION__, irq, (unsigned)dev_id);
 	    return;
 	  case 11: irq=10;
-	  default:
 	  }
 	
 	if (irq<Q40_IRQ_SAMPLE)
@@ -196,7 +194,9 @@ void q40_free_irq(unsigned int irq, void *dev_id)
 
 void q40_process_int (int level, struct pt_regs *fp)
 {
-  printk("unexpected interrupt %x\n",level);
+  printk("unexpected interrupt vec=%x, pc=%lx, d0=%lx, d0_orig=%lx, d1=%lx, d2=%lx\n",
+          level, fp->pc, fp->d0, fp->orig_d0, fp->d1, fp->d2);
+  printk("\tIIRQ_REG = %x, EIRQ_REG = %x\n",master_inb(IIRQ_REG),master_inb(EIRQ_REG));
 }
 
 /* 
@@ -313,7 +313,6 @@ void q40_irq2_handler (int vec, void *devname, struct pt_regs *fp)
   unsigned mir, mer;
   int irq,i;
 
- repeat:
   mir=master_inb(IIRQ_REG);
   if (mir&Q40_IRQ_FRAME_MASK) {
 	  irq_tab[Q40_IRQ_FRAME].count++;
@@ -373,7 +372,6 @@ void q40_irq2_handler (int vec, void *devname, struct pt_regs *fp)
 				  /*printk("reenabling irq %d\n",irq); */
 #endif
 			  }
-// used to do 'goto repeat;' her, this delayed bh processing too long
 			  return;
 		  }
 	  }
@@ -382,6 +380,7 @@ void q40_irq2_handler (int vec, void *devname, struct pt_regs *fp)
   } 
  iirq:
   mir=master_inb(IIRQ_REG);
+  /* should test whether keyboard irq is really enabled, doing it in defhand */
   if (mir&Q40_IRQ_KEYB_MASK) {
 	  irq_tab[Q40_IRQ_KEYBOARD].count++;
 	  irq_tab[Q40_IRQ_KEYBOARD].handler(Q40_IRQ_KEYBOARD,irq_tab[Q40_IRQ_KEYBOARD].dev_id,fp);
@@ -408,7 +407,9 @@ int q40_get_irq_list (char *buf)
 
 static void q40_defhand (int irq, void *dev_id, struct pt_regs *fp)
 {
-	printk ("Unknown q40 interrupt 0x%02x\n", irq);
+        if (irq!=Q40_IRQ_KEYBOARD)
+	     printk ("Unknown q40 interrupt %d\n", irq);
+	else master_outb(-1,KEYBOARD_UNLOCK_REG);
 }
 static void sys_default_handler(int lev, void *dev_id, struct pt_regs *regs)
 {

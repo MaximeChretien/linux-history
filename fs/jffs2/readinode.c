@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: readinode.c,v 1.58.2.6 2002/10/10 13:18:38 dwmw2 Exp $
+ * $Id: readinode.c,v 1.58.2.8 2003/11/02 13:54:20 dwmw2 Exp $
  *
  */
 
@@ -468,23 +468,12 @@ void jffs2_clear_inode (struct inode *inode)
 	struct jffs2_node_frag *frag, *frags;
 	struct jffs2_full_dirent *fd, *fds;
 	struct jffs2_inode_info *f = JFFS2_INODE_INFO(inode);
-        /* I don't think we care about the potential race due to reading this
-           without f->sem. It can never get undeleted. */
-        int deleted = f->inocache && !f->inocache->nlink;
+        int deleted;
 
 	D1(printk(KERN_DEBUG "jffs2_clear_inode(): ino #%lu mode %o\n", inode->i_ino, inode->i_mode));
 
-	/* If it's a deleted inode, grab the alloc_sem. This prevents
-	   jffs2_garbage_collect_pass() from deciding that it wants to
-	   garbage collect one of the nodes we're just about to mark 
-	   obsolete -- by the time we drop alloc_sem and return, all
-	   the nodes are marked obsolete, and jffs2_g_c_pass() won't
-	   call iget() for the inode in question.
-	*/
-	if (deleted)
-		down(&c->alloc_sem);
-
 	down(&f->sem);
+	deleted = f->inocache && !f->inocache->nlink;
 
 	frags = f->fraglist;
 	fds = f->dents;
@@ -515,8 +504,5 @@ void jffs2_clear_inode (struct inode *inode)
 	}
 
 	up(&f->sem);
-
-	if(deleted)
-		up(&c->alloc_sem);
 };
 

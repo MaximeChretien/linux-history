@@ -102,7 +102,7 @@ static void fill_async_stream_packet(struct hpsb_packet *packet, int length,
 				     int channel, int tag, int sync)
 {
 	packet->header[0] = (length << 16) | (tag << 14) | (channel << 8)
-		| (TCODE_STREAM_DATA << 4) | sync;
+	                  | (TCODE_STREAM_DATA << 4) | sync;
 
 	packet->header_size = 4;
 	packet->data_size = length;
@@ -113,35 +113,33 @@ static void fill_async_stream_packet(struct hpsb_packet *packet, int length,
 /**
  * hpsb_get_tlabel - allocate a transaction label
  * @packet: the packet who's tlabel/tpool we set
- * @wait: whether to sleep if no tlabel is available
  *
- * Every asynchronous transaction on the 1394 bus needs a transaction label to
- * match the response to the request.  This label has to be different from any
- * other transaction label in an outstanding request to the same node to make
- * matching possible without ambiguity.
+ * Every asynchronous transaction on the 1394 bus needs a transaction
+ * label to match the response to the request.  This label has to be
+ * different from any other transaction label in an outstanding request to
+ * the same node to make matching possible without ambiguity.
  *
- * There are 64 different tlabels, so an allocated tlabel has to be freed with
- * hpsb_free_tlabel() after the transaction is complete (unless it's reused again for
- * the same target node).
- *
- * @wait cannot be set if in_interrupt()
+ * There are 64 different tlabels, so an allocated tlabel has to be freed
+ * with hpsb_free_tlabel() after the transaction is complete (unless it's
+ * reused again for the same target node).
  *
  * Return value: Zero on success, otherwise non-zero. A non-zero return
- * generally means there are no available tlabels.
+ * generally means there are no available tlabels. If this is called out
+ * of interrupt or atomic context, then it will sleep until can return a
+ * tlabel.
  */
-int hpsb_get_tlabel(struct hpsb_packet *packet, int wait)
+int hpsb_get_tlabel(struct hpsb_packet *packet)
 {
 	unsigned long flags;
 	struct hpsb_tlabel_pool *tp;
 
 	tp = &packet->host->tpool[packet->node_id & NODE_MASK];
 
-	if (wait) {
-		BUG_ON(in_interrupt());
-		down(&tp->count);
-	} else {
+	if (in_interrupt()) {
 		if (down_trylock(&tp->count))
 			return 1;
+	} else {
+		down(&tp->count);
 	}
 
 	spin_lock_irqsave(&tp->lock, flags);
@@ -270,7 +268,7 @@ struct hpsb_packet *hpsb_make_readpacket(struct hpsb_host *host, nodeid_t node,
 	packet->host = host;
 	packet->node_id = node;
 
-	if (hpsb_get_tlabel(packet, in_interrupt() ? 0 : 1)) {
+	if (hpsb_get_tlabel(packet)) {
 		free_hpsb_packet(packet);
 		return NULL;
 	}
@@ -301,7 +299,7 @@ struct hpsb_packet *hpsb_make_writepacket (struct hpsb_host *host, nodeid_t node
 	packet->host = host;
 	packet->node_id = node;
 
-	if (hpsb_get_tlabel(packet, in_interrupt() ? 0 : 1)) {
+	if (hpsb_get_tlabel(packet)) {
 		free_hpsb_packet(packet);
 		return NULL;
 	}
@@ -313,6 +311,35 @@ struct hpsb_packet *hpsb_make_writepacket (struct hpsb_host *host, nodeid_t node
 		if (buffer)
 			memcpy(packet->data, buffer, length);
 	}
+
+	return packet;
+}
+
+struct hpsb_packet *hpsb_make_streampacket(struct hpsb_host *host, u8 *buffer, int length,
+                                           int channel, int tag, int sync)
+{
+	struct hpsb_packet *packet;
+
+	if (length == 0)
+		return NULL;
+
+	packet = alloc_hpsb_packet(length + (length % 4 ? 4 - (length % 4) : 0));
+	if (!packet)
+		return NULL;
+
+	if (length % 4) { /* zero padding bytes */
+		packet->data[length >> 2] = 0;
+	}
+	packet->host = host;
+    
+	if (hpsb_get_tlabel(packet)) {
+		free_hpsb_packet(packet);
+		return NULL;
+	}
+
+	fill_async_stream_packet(packet, length, channel, tag, sync);
+	if (buffer)
+		memcpy(packet->data, buffer, length);
 
 	return packet;
 }
@@ -329,7 +356,7 @@ struct hpsb_packet *hpsb_make_lockpacket(struct hpsb_host *host, nodeid_t node,
 
 	p->host = host;
 	p->node_id = node;
-	if (hpsb_get_tlabel(p, in_interrupt() ? 0 : 1)) {
+	if (hpsb_get_tlabel(p)) {
 		free_hpsb_packet(p);
 		return NULL;
 	}
@@ -366,7 +393,7 @@ struct hpsb_packet *hpsb_make_lock64packet(struct hpsb_host *host, nodeid_t node
 
 	p->host = host;
 	p->node_id = node;
-	if (hpsb_get_tlabel(p, in_interrupt() ? 0 : 1)) {
+	if (hpsb_get_tlabel(p)) {
 		free_hpsb_packet(p);
 		return NULL;
 	}
@@ -580,27 +607,18 @@ int hpsb_send_gasp(struct hpsb_host *host, int channel, unsigned int generation,
 	u16 specifier_id_hi = (specifier_id & 0x00ffff00) >> 8;
 	u8 specifier_id_lo = specifier_id & 0xff;
 
-#ifdef CONFIG_IEEE1394_VERBOSEDEBUG
-	HPSB_DEBUG("Send GASP: channel = %d, length = %d", channel, length);
-#endif
+	HPSB_VERBOSE("Send GASP: channel = %d, length = %Zd", channel, length);
 
 	length += 8;
-
-	packet = alloc_hpsb_packet(length + (length % 4 ? 4 - (length % 4) : 0));
+    
+	packet = hpsb_make_streampacket(host, NULL, length, channel, 3, 0);
 	if (!packet)
 		return -ENOMEM;
 
-	if (length % 4) {
-		packet->data[length / 4] = 0;
-	}
-
-	packet->host = host;
-	fill_async_stream_packet(packet, length, channel, 3, 0);
-        
 	packet->data[0] = cpu_to_be32((host->node_id << 16) | specifier_id_hi);
 	packet->data[1] = cpu_to_be32((specifier_id_lo << 24) | (version & 0x00ffffff));
 
-	memcpy(&(packet->data[2]), buffer, length - 4);
+	memcpy(&(packet->data[2]), buffer, length - 8);
 
 	packet->generation = generation;
 

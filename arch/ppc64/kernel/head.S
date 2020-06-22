@@ -583,14 +583,17 @@ fast_exception_return:
  */
 	.globl DataAccess_common
 DataAccess_common:
-	mfspr   r22,DAR
-	srdi    r22,r22,60
-	cmpi    0,r22,0xc
+	mfspr   r22,DSISR
+	andis.  r22,r22,0x0020
+	beq	1f
+	mfspr   r22,DAR			/* if it's a segment table miss, */
+	srdi    r22,r22,60		/* check if it is in kernel region */
+	cmpi    0,r22,0xc		/* and call do_stab_bolted if so */
 	beq     .do_stab_bolted
 	cmpi    0,r22,0xb
 	beq     .do_stab_bolted
 
-stab_bolted_user_return:
+1:
 	EXCEPTION_PROLOG_COMMON
 	ld      r3,_DSISR(r1)
 	andis.	r0,r3,0xa450		/* weird error? */
@@ -642,6 +645,7 @@ DataAccessSLB_common:
 	rldicl	r20,r23,49,63   	/* copy EE bit from saved MSR */
 #endif
 	li	r6,0x380
+	li	r5,0
 	bl      .save_remaining_regs
 	bl      .do_page_fault
 	b       .ret_from_except
@@ -663,7 +667,7 @@ InstructionAccess_common:
 	bl	.do_hash_page_ISI	/* Try to handle as hpte fault */
 1:
 	mr	r4,r22
-	mr	r5,r23
+	rlwinm	r5,r23,0,4,4		/* We only care about PR in error_code */
 	addi	r3,r1,STACK_FRAME_OVERHEAD
 #ifdef DO_SOFT_DISABLE
 	ld	r20,SOFTE(r1)
@@ -691,6 +695,7 @@ InstructionAccessSLB_common:
 	rldicl	r20,r23,49,63   	/* copy EE bit from saved MSR */
 #endif
 	li	r6,0x480
+	li	r5,0
 	bl      .save_remaining_regs
 	bl      .do_page_fault
 	b       .ret_from_except
@@ -1043,25 +1048,6 @@ _GLOBAL(do_hash_page_DSI)
 _GLOBAL(do_stab_bolted)
 	stw	r23,EX_CCR(r21)	/* save CR in exc. frame */
 
-	mfspr   r22,DSISR
-	andis.  r22,r22,0x0020
-	bne+    2f
-	ld	r22,8(r21)	/* get SRR1 */
-	andi.	r22,r22,MSR_PR	/* check if from user */
-	bne+	stab_bolted_user_return  /* from user, send the error on up */
-	li	r3,0
-#ifdef CONFIG_XMON
-	bl	.xmon
-#endif
-#ifdef CONFIG_KDB
-	/*	    kdb(KDB_REASON_FAULT,regs->trap,regs); */
-	li      r3,1   /* reason_call, regs considered invalid*/
-	li      r4,0x200  /* trap */
-	li      r5,0      /* pointers to regs.*/
-	bl	.kdb
-#endif
-1:	b	1b
-2:
 	/* (((ea >> 28) & 0x1fff) << 15) | (ea >> 60) */
 	mfspr	r21,DAR
 	rldicl  r20,r21,36,32   /* Permits a full 32b of ESID */

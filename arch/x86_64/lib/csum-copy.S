@@ -56,29 +56,18 @@
 	.globl csum_partial_copy_generic
 	.p2align 4
 csum_partial_copy_generic:
-	cmpl	 $3*64,%edx
+	cmpl	 $2*64,%edx
 	jle	 .Lignore
 
-	ignore
-	prefetch (%rdi)
 	ignore
 	prefetch 1*64(%rdi)
 	ignore
 	prefetch 2*64(%rdi)
 	ignore
-	prefetch 3*64(%rdi)
-	ignore
-	prefetch 4*64(%rdi)
-	ignore
 	prefetchw (%rsi)
 	ignore
 	prefetchw 1*64(%rsi)
 	ignore
-	prefetchw 2*64(%rsi)
-	ignore
-	prefetchw 3*64(%rsi)
-	ignore
-	prefetchw 4*64(%rsi)
 
 .Lignore:		
 	subq  $7*8,%rsp
@@ -126,9 +115,6 @@ csum_partial_copy_generic:
 	source
 	movq  56(%rdi),%r13
 		
-	ignore 2f
-	prefetch 5*64(%rdi)
-2:							
 	adcq  %rbx,%rax
 	adcq  %r8,%rax
 	adcq  %r11,%rax
@@ -157,10 +143,6 @@ csum_partial_copy_generic:
 	movq %r14,48(%rsi)
 	dest
 	movq %r13,56(%rsi)
-	
-	ignore 3f
-	prefetchw 5*64(%rsi)
-3:
 	
 	leaq 64(%rdi),%rdi
 	leaq 64(%rsi),%rsi

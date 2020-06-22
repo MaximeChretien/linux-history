@@ -237,6 +237,10 @@ void usb_stor_ufi_command(Scsi_Cmnd *srb, struct us_data *us)
 	 * a unsigned char cmnd[12], so we know we have storage available
 	 */
 
+	/* Pad the ATAPI command with zeros */
+	for (; srb->cmd_len<12; srb->cmd_len++)
+		srb->cmnd[srb->cmd_len] = 0;
+
 	/* set command length to 12 bytes (this affects the transport layer) */
 	srb->cmd_len = 12;
 

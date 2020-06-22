@@ -341,8 +341,8 @@ struct node_data * new_node(void)
 	TRACE();
 	
 	node = kmalloc(sizeof(struct node_data), GFP_KERNEL);
-	if (node == NULL)
-		return NULL;
+	if (node <= 0)
+		return node;
 	list_add(&node->global_node_list, &global_node_list);
 	return node;
 }
@@ -455,7 +455,7 @@ register_pci_device(vertex_hdl_t device_dir_handle, struct pci_dev * dev)
            if present */
 	if (pci_resource_len(dev, PCI_ROM_RESOURCE) != 0) {
 		nd = new_node();
-		if (nd == NULL)
+		if (nd <= 0)
 			return failure;
 		node_devfs_handle = hwgraph_register(device_dir_handle, "rom",
 						   0, DEVFS_FL_NONE, 0, 0,
@@ -478,7 +478,7 @@ register_pci_device(vertex_hdl_t device_dir_handle, struct pci_dev * dev)
            and free DMA buffers, as well as memory map those
            buffers. */
 	nd = new_node();
-	if (nd == NULL)
+	if (nd <= 0)
 		return failure;
 	node_devfs_handle =
 		hwgraph_register(device_dir_handle, "dma", 0, DEVFS_FL_NONE,
@@ -763,7 +763,7 @@ dma_ioctl(struct inode * inode, struct file * file,
 
 		dma_alloc = (struct dma_allocation *)
 			kmalloc(sizeof(struct dma_allocation), GFP_KERNEL);
-		if (dma_alloc == NULL)
+		if (dma_alloc <= 0)
 			return -ENOMEM;
 
 		dma_alloc->size = (size_t)argv;
@@ -899,7 +899,7 @@ mmap_pci_address(struct vm_area_struct * vma, unsigned long pci_va)
 	/* the __pa macro is intended for region 7 on IA64, so it
 	   doesn't work for region 6 */
   	/* pci_pa = __pa(pci_va); */
-	/* should be replaced by __tpa or equivalent (preferably a
+	/* should be replaced by ia64_tpa or equivalent (preferably a
 	   generic equivalent) */
 	pci_pa = pci_va & ~0xe000000000000000ul;
 	DPRINTF("PCI base at physical address %lx\n", pci_pa);

@@ -2,15 +2,16 @@
  *
  * Name:	skgemib.c
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.7 $
- * Date:	$Date: 2002/12/16 09:04:34 $
+ * Version:	$Revision: 1.9 $
+ * Date:	$Date: 2003/05/23 12:55:20 $
  * Purpose:	Private Network Management Interface Management Database
  *
  ****************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 2002 SysKonnect GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 2002-2003 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -26,6 +27,12 @@
  * History:
  *
  *	$Log: skgemib.c,v $
+ *	Revision 1.9  2003/05/23 12:55:20  tschilli
+ *	OID_SKGE_BOARDLEVEL added.
+ *	
+ *	Revision 1.8  2003/03/27 11:19:15  tschilli
+ *	Copyright messages changed.
+ *	
  *	Revision 1.7  2002/12/16 09:04:34  tschilli
  *	Code for VCT handling added.
  *	
@@ -100,8 +107,13 @@ PNMI_STATIC int Vct(SK_AC *pAC, SK_IOC IoC, int action, SK_U32 Id,
 PNMI_STATIC int PowerManagement(SK_AC *pAC, SK_IOC IoC, int action, SK_U32 Id,
 	char *pBuf, unsigned int *pLen, SK_U32 Instance,
 	unsigned int TableIndex, SK_U32 NetIndex);
-#endif
+#endif /* SK_POWER_MGMT */
 
+#ifdef SK_DIAG_SUPPORT
+PNMI_STATIC int DiagActions(SK_AC *pAC, SK_IOC IoC, int action, SK_U32 Id,
+	char *pBuf, unsigned int *pLen, SK_U32 Instance,
+	unsigned int TableIndex, SK_U32 NetIndex);
+#endif /* SK_DIAG_SUPPORT */
 
 
 /* defines *******************************************************************/
@@ -267,6 +279,13 @@ PNMI_STATIC const SK_PNMI_TAB_ENTRY IdTable[] = {
 		0,
 		SK_PNMI_RW, PowerManagement, 0},
 #endif /* SK_POWER_MGMT */
+#ifdef SK_DIAG_SUPPORT
+	{OID_SKGE_DIAG_MODE,
+		0,
+		0,
+		0,
+		SK_PNMI_RW, DiagActions, 0},
+#endif /* SK_DIAG_SUPPORT */
 	{OID_SKGE_MDB_VERSION,
 		1,
 		0,
@@ -1052,5 +1071,10 @@ PNMI_STATIC const SK_PNMI_TAB_ENTRY IdTable[] = {
 		0,
 		0,
 		SK_PNMI_RO, Vct, 0},
+	{OID_SKGE_BOARDLEVEL,
+		0,
+		0,
+		0,
+		SK_PNMI_RO, General, 0},
 };
 

@@ -113,6 +113,7 @@ extern void acquire_console_sem(void);
 extern void release_console_sem(void);
 extern void console_conditional_schedule(void);
 extern void console_unblank(void);
+extern void disable_console_blank(void);
 
 /* VESA Blanking Levels */
 #define VESA_NO_BLANKING        0

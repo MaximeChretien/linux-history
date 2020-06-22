@@ -1057,7 +1057,7 @@ static int eth16i_tx(struct sk_buff *skb, struct net_device *dev)
 	int ioaddr = dev->base_addr;
 	int status = 0;
 	ushort length = skb->len;
-	unsigned char *buf = skb->data;
+	unsigned char *buf;
 	unsigned long flags;
 
 	if(length < ETH_ZLEN)
@@ -1067,6 +1067,7 @@ static int eth16i_tx(struct sk_buff *skb, struct net_device *dev)
 			return 0;
 		length = ETH_ZLEN;
 	}
+	buf = skb->data;
 
 	netif_stop_queue(dev);
 		

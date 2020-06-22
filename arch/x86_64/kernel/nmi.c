@@ -30,6 +30,7 @@
 unsigned int nmi_watchdog = NMI_LOCAL_APIC;
 static unsigned int nmi_hz = HZ;
 unsigned int nmi_perfctr_msr;	/* the MSR to reset in NMI handler */
+int panic_on_timeout;
 
 int nmi_watchdog_disabled; 
 
@@ -121,6 +122,13 @@ static int __init setup_nmi_watchdog(char *str)
 {
 	int nmi;
 
+	if (!strncmp(str,"panic",5)) {
+		panic_on_timeout = 1;
+		str = strchr(str, ',');
+		if (!str) 
+			return 1; 
+		++str;	
+	}			
 	get_option(&str, &nmi);
 
 	if (nmi >= NMI_INVALID)
@@ -380,6 +388,8 @@ void nmi_watchdog_tick (struct pt_regs * regs, unsigned reason)
 			bust_spinlocks(1);
 			printk("NMI Watchdog detected LOCKUP on CPU%d, eip %16lx, registers:\n", cpu, regs->rip);
 			show_registers(regs);
+			if (panic_on_timeout)
+				panic("NMI lockup");
 			printk("console shuts up ...\n");
 			console_silent();
 			spin_unlock(&nmi_print_lock);

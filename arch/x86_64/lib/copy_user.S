@@ -4,7 +4,7 @@
  * Functions to copy from and to user space.		
  */		 
 
-#define FIX_ALIGNMENT 1
+/* #define FIX_ALIGNMENT 1 */
 
 	#include <asm/current.h>
 	#include <asm/offset.h>
@@ -59,9 +59,8 @@ bad_to_user:
 	.globl copy_user_generic	
 	.p2align 4
 copy_user_generic:	
-	/* Put the first cacheline into cache. This should handle
-	   the small movements in ioctls etc., but not penalize the bigger
-	   filesystem data copies too much. */
+	prefetch (%rsi)
+	prefetchw (%rdi)
 	pushq %rbx
 	xorl %eax,%eax		/*zero for the exception handler */
 

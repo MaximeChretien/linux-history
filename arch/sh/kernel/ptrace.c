@@ -1,4 +1,4 @@
-/* $Id: ptrace.c,v 1.1.1.1.2.1 2002/11/12 02:24:19 jzs Exp $
+/* $Id: ptrace.c,v 1.1.1.1.2.3 2003/10/23 22:11:08 yoshii Exp $
  *
  * linux/arch/sh/kernel/ptrace.c
  *
@@ -349,6 +349,37 @@ asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
 		ret = 0;
 		break;
 	}
+
+#ifdef CONFIG_SH_DSP
+	case PTRACE_GETDSPREGS: {
+		unsigned long dp;
+
+		ret = -EIO;
+		dp = ((unsigned long) child) + THREAD_SIZE -
+			 sizeof(struct pt_dspregs);
+		if (*((int *) (dp - 4)) == SR_DSP) {
+			copy_to_user(addr, (void *) dp,
+				sizeof(struct pt_dspregs));
+			ret = 0;
+		}
+		break;
+	}
+
+	case PTRACE_SETDSPREGS: {
+		unsigned long dp;
+		int i;
+
+		ret = -EIO;
+		dp = ((unsigned long) child) + THREAD_SIZE -
+			 sizeof(struct pt_dspregs);
+		if (*((int *) (dp - 4)) == SR_DSP) {
+			copy_from_user((void *) dp, addr,
+				sizeof(struct pt_dspregs));
+			ret = 0;
+		}
+		break;
+	}
+#endif
 
 	default:
 		ret = -EIO;

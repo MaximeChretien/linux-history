@@ -56,6 +56,9 @@
 #define		LCR_BITS7	0x02	/* 7 bits per char */
 #define		LCR_BITS8	0x03	/* 8 bits per char */
 
+#define		LCR_1_STOP_BITS	0x00	/* 1 stop bit */
+#define		LCR_2_STOP_BITS	0x04	/* 2 stop bits */
+
 #define		LCR_MASK_BITS_CHAR 		0x03
 #define 	LCR_MASK_STOP_BITS		0x04
 #define		LCR_MASK_PARITY_BITS	0x18
@@ -142,6 +145,9 @@
 #define DU_RTS_ASSERTED(x)  (((x) & MCR_RTS) != 0)
 #define DU_RTS_ASSERT(x)    ((x) |= MCR_RTS)
 #define DU_RTS_DEASSERT(x)  ((x) &= ~MCR_RTS)
+
+#define SER_DIVISOR(x, clk)		(((clk) + (x) * 8) / ((x) * 16))
+#define DIVISOR_TO_BAUD(div, clk)	((clk) / 16 / (div))
 
 
 /*

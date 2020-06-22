@@ -17,7 +17,7 @@ CFLAGS	+= -fno-builtin -D__BOOTER__ -I$(TOPDIR)/arch/$(ARCH)/boot/include
 AFLAGS	+= -D__BOOTER__
 OBJCOPY_ARGS = -O elf32-powerpc
 
-MKIMAGE				:= ./utils/mkimage.wrapper
+MKIMAGE				:= $(TOPDIR)/scripts/mkuboot.sh
 
 lib/zlib.a: lib/zlib.c
 	$(MAKE) -C lib
@@ -61,12 +61,14 @@ ifdef CONFIG_APUS
 	gzip $(GZIP_FLAGS) images/vmapus
 endif
 
-# Make an image for PPCBoot
-pImage: images/vmlinux.gz
-	$(MKIMAGE) -A ppc -O linux -T kernel -C gzip -a 00000000 -e 00000000 \
+# Make an image for PPCBoot / U-Boot.
+uImage: $(MKIMAGE) images/vmlinux.gz
+	$(CONFIG_SHELL) $(MKIMAGE) -A ppc -O linux -T kernel \
+	-C gzip -a 00000000 -e 00000000 \
 	-n 'Linux-$(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION)' \
-	-d $< images/vmlinux.PPCBoot
-	ln -sf vmlinux.PPCBoot images/pImage
+	-d images/vmlinux.gz images/vmlinux.UBoot
+	ln -sf vmlinux.UBoot images/uImage
+	rm -f ./mkuboot
 
 # These are subdirs with files not normally rm'ed. -- Tom
 clean:

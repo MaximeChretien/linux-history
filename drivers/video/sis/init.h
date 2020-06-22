@@ -28,6 +28,9 @@
  * PERFORMANCE OF THIS SOFTWARE.
  *
  * Author: 	Thomas Winischhofer <thomas@winischhofer.net>
+ *
+ * Based on code by Silicon Intergrated Systems
+ *
  */
 
 #ifndef _INIT_
@@ -766,7 +769,8 @@ static const SiS_TVDataStruct  SiS_ExtPALData[] =
  {   12,   5, 954, 448,1270, 530,  50,   0,  50,0xf1,0x04,0x1f,0x18},
  {    9,   4, 960, 463,1644, 438,  50,   0,  50,0xf4,0x0b,0x1c,0x0a},
  {    9,   4, 848, 528,1270, 530,   0,   0,  50,0xf5,0xfb,0x1b,0x2a},  /* 640x480, 320x240 */
- {   36,  25,1060, 648,1316, 530, 438,   0, 438,0xeb,0x05,0x25,0x16},  /* 800x600, 400x300 */
+/*{  36,  25,1060, 648,1316, 530, 438,   0, 438,0xeb,0x05,0x25,0x16},*//* 800x600, 400x300 */
+ {   36,  25,1060, 648,1270, 530, 438,   0, 438,0xeb,0x05,0x25,0x16},  /* 800x600, 400x300 - better */
  {    3,   2,1080, 619,1270, 540, 438,   0, 438,0xf3,0x00,0x1d,0x20},  /* 720x576 */
  {    1,   1,1170, 821,1270, 520, 686,   0, 686,0xF3,0x00,0x1D,0x20}   /* 1024x768 */
 };
@@ -926,27 +930,45 @@ static const SiS_LCDDataStruct  SiS_NoScaleData1400x1050[] =
 };
 
 static const SiS_LCDDataStruct  SiS_StLCD1600x1200Data[] =
-{  /* TODO */
-	{    0,   0,   0,   0,   0,   0}
+{
+	{27,  4, 800, 500, 2160, 1250 },
+	{27,  4, 800, 500, 2160, 1250 },
+	{ 6,  1, 900, 500, 2160, 1250 },
+	{ 6,  1, 900, 500, 2160, 1250 },
+	{27,  1, 800, 500, 2160, 1250 },
+	{ 4,  1,1080, 625, 2160, 1250 },
+	{ 5,  2,1350, 800, 2160, 1250 },
+	{135,88,1600,1100, 2160, 1250 },
+	{135,88,1600,1100, 2160, 1250 },
+	{ 1,  1,2160,1250, 2160, 1250 }
 };
 
 static const SiS_LCDDataStruct  SiS_ExtLCD1600x1200Data[] =
-{  /* TODO */
-	{    0,   0,   0,   0,   0,   0}
+{
+	{27, 4, 800, 500, 2160, 1250 },
+	{27, 4, 800, 500, 2160, 1250 },
+	{ 6, 1, 900, 500, 2160, 1250 },
+	{ 6, 1, 900, 500, 2160, 1250 },
+	{27, 1, 800, 500, 2160, 1250 },
+	{ 4, 1,1080, 625, 2160, 1250 },
+	{ 5, 2,1350, 800, 2160, 1250 },
+	{27,16,1500,1064, 2160, 1250 },
+	{27,16,1500,1064, 2160, 1250 },
+	{ 1, 1,2160,1250, 2160, 1250 }
 };
 
 static const SiS_LCDDataStruct  SiS_NoScaleData1600x1200[] =
-{  /* TODO - values guessed */
-        {1,  1, 2048, 1250, 2048, 1250},
-	{1,  1, 2048, 1250, 2048, 1250},
-	{1,  1, 2048, 1250, 2048, 1250},
-	{1,  1, 2048, 1250, 2048, 1250},
-	{1,  1, 2048, 1250, 2048, 1250},
-	{1,  1, 2048, 1250, 2048, 1250},
-	{1,  1, 2048, 1250, 2048, 1250},
-	{1,  1, 2048, 1250, 2048, 1250},
-	{1,  1, 2048, 1250, 2048, 1250},
-	{1,  1, 2048, 1250, 2048, 1250}
+{
+        {1,  1, 2160, 1250, 2048, 1250},
+	{1,  1, 2160, 1250, 2048, 1250},
+	{1,  1, 2160, 1250, 2048, 1250},
+	{1,  1, 2160, 1250, 2048, 1250},
+	{1,  1, 2160, 1250, 2048, 1250},
+	{1,  1, 2160, 1250, 2048, 1250},
+	{1,  1, 2160, 1250, 2048, 1250},
+	{1,  1, 2160, 1250, 2048, 1250},
+	{1,  1, 2160, 1250, 2048, 1250},
+	{1,  1, 2160, 1250, 2048, 1250},
 };
 
 static const SiS_LCDDataStruct  SiS_NoScaleData[] =
@@ -960,7 +982,7 @@ static const SiS_LCDDataStruct  SiS_NoScaleData[] =
 	{ 1, 1,1344, 806,1344, 806 },
 	{ 1, 1,1688,1066,1688,1066 },
         { 1, 1,1688, 802,1688, 802 },  /* 1280x768: 802 was 806 in both cases */
-        { 1, 1,2048,1250,2048,1250 },  /* 1600x1200 (guessed) */
+        { 1, 1,2160,1250,2160,1250 },  /* 1600x1200 */
 	{ 1, 1,1800,1000,1800,1000 }   /* 1280x960 */
 };
 
@@ -1300,6 +1322,40 @@ static const SiS_LVDSDataStruct  SiS_LVDS1280x960Data_2[]=
 	{1344, 806,1344, 806},
 	{ 800, 449,1280, 801},
 	{ 800, 525,1280, 813}
+};
+
+static const SiS_LVDSDataStruct  SiS_LVDS848x480Data_1[]=
+{
+	{   0,   0,   0,   0},
+	{   0,   0,   0,   0},
+	{   0,   0,   0,   0},
+	{   0,   0,   0,   0},
+	{1088, 525,1088, 525},  /* 640x480 TODO */
+	{1088, 525,1088, 525},  /* 800x600 TODO */
+	{1088, 525,1088, 525},  /* 1024x768 TODO */
+	{   0,   0,   0,   0},
+	{   0,   0,   0,   0},
+	{   0,   0,   0,   0},
+	{   0,   0,   0,   0},
+	{1088, 525,1088, 525},  /* 848x480 */
+	{1088, 525,1088, 525}   /* 1360x768 TODO */
+};
+
+static const SiS_LVDSDataStruct  SiS_LVDS848x480Data_2[]=
+{
+	{   0,   0,   0,   0},
+	{   0,   0,   0,   0},
+	{   0,   0,   0,   0},
+	{   0,   0,   0,   0},
+	{1088, 525,1088, 525},  /*  640x480 */
+	{1088, 525,1088, 525},  /*  800x600 */
+	{1088, 525,1088, 525},  /* 1024x768 */
+	{   0,   0,   0,   0},  
+	{   0,   0,   0,   0},
+	{   0,   0,   0,   0},
+	{   0,   0,   0,   0},
+	{1088, 525,1088, 525},  /* 848x480 */
+	{1088, 525,1088, 525}	/* 1360x768 TODO */
 };
 
 /* LCDA */
@@ -2126,6 +2182,7 @@ typedef struct _SiS_PlasmaTables
    USHORT vendor;
    UCHAR  productnum;
    USHORT product[5];
+   const char *DDCnames[5];
    const char *plasmaname;
    UCHAR  modenum;
    UCHAR  plasmamodes[20];  /* | 0x80 = DVI-capable, | 0x40 = analog */
@@ -2233,13 +2290,17 @@ static const SiS_PlasmaTables SiS_PlasmaTable[] = {
 #if 0  /* Product IDs missing */
    { 0x38a3, 4,
      { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+     { "", "", "", "", "" },
      "NEC PlasmaSync 42VP4/42VP4D/42VP4G/42VP4DG",
-     14,   /* All DVI, except 0, 7, 13; 3, 15, 16 unknown */
-     { 0|0x40, 1|0xc0, 2|0xc0, 3|0xc0, 4|0xc0, 7|0x40, 9|0xc0,10|0xc0,11|0xc0,12|0xc0,
-      13|0x40,14|0xc0,15|0xc0,16|0xc0, 0     , 0     , 0     , 0     , 0     , 0 }
+     11,   /* All DVI, except 0, 7, 13 */
+     { 0|0x40, 1|0xc0, 2|0xc0, 4|0xc0, 7|0x40, 9|0xc0,10|0xc0,11|0xc0,13|0x40,14|0xc0,
+      17|0xc0, 0     , 0     , 0     , 0     , 0     , 0     , 0     , 0     , 0       }
    },
+#endif
+#if 0  /* Product IDs missing */
    { 0x38a3, 3,
      { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+     { "", "", "", "", "" },
      "NEC PlasmaSync 42PD1/50PD1/50PD2",
      5,   /* DVI entirely unknown */
      { 0|0x40, 1|0xc0, 2|0xc0, 4|0xc0, 9|0xc0, 0     , 0     , 0     , 0     , 0     ,
@@ -2247,6 +2308,7 @@ static const SiS_PlasmaTables SiS_PlasmaTable[] = {
    },
    { 0x38a3, 1,
      { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+     { "", "", "", "", "" },
      "NEC PlasmaSync 42PD3",
      10,   /* DVI entirely unknown */
      { 0|0x40, 1|0xc0, 2|0xc0, 3|0xc0, 4|0xc0, 5|0xc0, 6|0xc0, 7|0x40, 8|0xc0, 9|0xc0,
@@ -2254,6 +2316,7 @@ static const SiS_PlasmaTables SiS_PlasmaTable[] = {
    },
    { 0x38a3, 2,
      { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+     { "", "", "", "", "" },
      "NEC PlasmaSync 42VM3/61XM1",
      11,  /* DVI entirely unknown */
      { 0|0x40, 1|0xc0, 2|0xc0, 3|0xc0, 4|0xc0, 5|0xc0, 6|0xc0, 8|0xc0, 9|0xc0,11|0xc0,
@@ -2261,6 +2324,7 @@ static const SiS_PlasmaTables SiS_PlasmaTable[] = {
    },
    { 0x38a3, 2,
      { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+     { "", "", "", "", "" },
      "NEC PlasmaSync 42MP1/42MP2",
      6,   /* DVI entirely unknown */
      { 0|0x40, 1|0xc0, 2|0xc0, 4|0xc0, 9|0xc0,11|0xc0, 0     , 0     , 0     , 0     ,
@@ -2268,6 +2332,7 @@ static const SiS_PlasmaTables SiS_PlasmaTable[] = {
    },
    { 0x38a3, 1,
      { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+     { "", "", "", "", "" },
      "NEC PlasmaSync 50MP1",
      10,   /* DVI entirely unknown */
      { 0|0x40, 1|0xc0, 2|0xc0, 4|0xc0, 7|0x40, 9|0xc0,10|0xc0,11|0xc0,13|0x40,14|0xc0,
@@ -2276,6 +2341,7 @@ static const SiS_PlasmaTables SiS_PlasmaTable[] = {
 #endif
    { 0x38a3, 4,
      { 0xa482, 0xa483, 0x0000, 0x0000, 0x0000 },
+     { "PX-42VM", "", "", "", "" },
      "NEC PlasmaSync 42MP3/42MP4/50MP2/61MP1",
      11,   /* All DVI except 0, 7, 13, 17 */
      { 0|0x40, 1|0xc0, 2|0xc0, 4|0xc0, 7|0x40, 9|0xc0,10|0xc0,11|0xc0,13|0x40,14|0xc0,
@@ -2284,6 +2350,7 @@ static const SiS_PlasmaTables SiS_PlasmaTable[] = {
 #if 0  /* Product IDs missing */
    { 0x38a3, 1,
      { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+     { "", "", "", "", "" },
      "NEC PlasmaSync 3300W",
      3,
      { 0|0x40, 1|0xc0,18|0xc0, 0     , 0     , 0     , 0     , 0     , 0     , 0     ,
@@ -2291,6 +2358,7 @@ static const SiS_PlasmaTables SiS_PlasmaTable[] = {
    },
    { 0x38a3, 1,
      { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+     { "", "", "", "", "" },
      "NEC PlasmaSync 4200W",
      4,   /* DVI entirely unknown */
      { 0|0x40, 1|0xc0, 2|0xc0, 4|0xc0, 0     , 0     , 0     , 0     , 0     , 0     ,
@@ -2298,6 +2366,7 @@ static const SiS_PlasmaTables SiS_PlasmaTable[] = {
    },
    { 0x38a3, 1,
      { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+     { "", "", "", "", "" },
      "NEC PlasmaSync 4210W",
      6,   /* DVI entirely unknown */
      { 0|0x40, 1|0xc0, 2|0xc0, 4|0xc0, 9|0xc0,11|0xc0, 0     , 0     , 0     , 0     ,
@@ -2305,6 +2374,7 @@ static const SiS_PlasmaTables SiS_PlasmaTable[] = {
    },
    { 0x38a3, 1,
      { 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+     { "", "", "", "", "" },
      "NEC PlasmaSync 5000W",
      7,   /* DVI entirely unknown */
      { 0|0x40, 1|0xc0, 2|0xc0, 4|0xc0, 7|0x40, 9|0xc0,11|0xc0, 0     , 0     , 0     ,
@@ -2313,6 +2383,7 @@ static const SiS_PlasmaTables SiS_PlasmaTable[] = {
 #endif
    { 0x412f, 2,
      { 0x000c, 0x000b, 0x0000, 0x0000, 0x0000 },
+     { "", "", "", "", "" },
      "Pioneer 503CMX/PDA-5002",
      6,   /* DVI unknown */
      { 1|0xc0, 2|0xc0, 9|0xc0,11|0xc0,12|0xc0,15|0xc0, 0     , 0     , 0     , 0     ,
@@ -2320,6 +2391,7 @@ static const SiS_PlasmaTables SiS_PlasmaTable[] = {
    },
    { 0x34a9, 1,
      { 0xa00e, 0x0000, 0x0000, 0x0000, 0x0000 },
+     { "", "", "", "", "" },
      "Panasonic TH-42",
      5,   /* No DVI output */
      { 1|0x40, 2|0x40, 4|0x40, 9|0x40,15|0x40, 0     , 0     , 0     , 0     , 0     ,
@@ -2338,51 +2410,21 @@ UCHAR    SiS_GetReg2(USHORT);
 ULONG    SiS_GetReg3(USHORT);
 USHORT   SiS_GetReg4(USHORT);
 void     SiS_ClearDAC(SiS_Private *SiS_Pr, ULONG);
-void     SiS_SetMemoryClock(SiS_Private *SiS_Pr, UCHAR *ROMAddr,PSIS_HW_DEVICE_INFO HwDeviceExtension);
-void     SiS_SetDRAMModeRegister(SiS_Private *SiS_Pr, UCHAR *ROMAddr,PSIS_HW_DEVICE_INFO HwDeviceExtension);
 BOOLEAN  SiS_SearchVBModeID(SiS_Private *SiS_Pr, UCHAR *ROMAddr, USHORT *ModeNo);
 void     SiS_IsLowResolution(SiS_Private *SiS_Pr, UCHAR *ROMAddr,USHORT ModeNo,USHORT ModeIdIndex);
 void     SiS_GetSysFlags(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension);
-
-#ifdef SIS300
-void     SiS_SetDRAMSize_300(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension);
-USHORT   SiS_ChkBUSWidth_300(SiS_Private *SiS_Pr, ULONG FBAddress);
-#endif
-
 #ifdef SIS315H
 UCHAR    SiS_Get310DRAMType(SiS_Private *SiS_Pr, UCHAR *ROMAddr,PSIS_HW_DEVICE_INFO HwDeviceExtension);
-void     SiS_DDR_MRS(SiS_Private *SiS_Pr);
-void     SiS_SDR_MRS(SiS_Private *SiS_Pr);
-void     SiS_DisableRefresh(SiS_Private *SiS_Pr);
-void     SiS_EnableRefresh(SiS_Private *SiS_Pr, UCHAR *ROMAddr);
-void     SiS_SetDRAMSize_310(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO);
-void     SiS_DisableChannelInterleaving(SiS_Private *SiS_Pr, int index,USHORT SiS_DDRDRAM_TYPE[][5]);
-void     SiS_SetDRAMSizingType(SiS_Private *SiS_Pr, int index,USHORT DRAMTYPE_TABLE[][5]);
-void     SiS_CheckBusWidth_310(SiS_Private *SiS_Pr, UCHAR *ROMAddress,ULONG FBAddress,
-                               PSIS_HW_DEVICE_INFO HwDeviceExtension);
-int      SiS_SetRank(SiS_Private *SiS_Pr, int index,UCHAR RankNo,USHORT DRAMTYPE_TABLE[][5]);
-int      SiS_SetDDRChannel(SiS_Private *SiS_Pr, int index,UCHAR ChannelNo,
-                           USHORT DRAMTYPE_TABLE[][5]);
-int      SiS_CheckColumn(SiS_Private *SiS_Pr, int index,USHORT DRAMTYPE_TABLE[][5],ULONG FBAddress);
-int      SiS_CheckBanks(SiS_Private *SiS_Pr, int index,USHORT DRAMTYPE_TABLE[][5],ULONG FBAddress);
-int      SiS_CheckRank(SiS_Private *SiS_Pr, int RankNo,int index,USHORT DRAMTYPE_TABLE[][5],ULONG FBAddress);
-int      SiS_CheckDDRRank(SiS_Private *SiS_Pr, int RankNo,int index,USHORT DRAMTYPE_TABLE[][5],ULONG FBAddress);
-int      SiS_CheckRanks(SiS_Private *SiS_Pr, int RankNo,int index,USHORT DRAMTYPE_TABLE[][5],ULONG FBAddress);
-int      SiS_CheckDDRRanks(SiS_Private *SiS_Pr, int RankNo,int index,USHORT DRAMTYPE_TABLE[][5],ULONG FBAddress);
-int      SiS_SDRSizing(SiS_Private *SiS_Pr, ULONG FBAddress);
-int      SiS_DDRSizing(SiS_Private *SiS_Pr, ULONG FBAddress);
-int      Is315E(SiS_Private *SiS_Pr);
-void     SiS_VerifyMclk(SiS_Private *SiS_Pr, ULONG FBAddr);
 #endif
-
 void     SiS_HandleCRT1(SiS_Private *SiS_Pr);
 void     SiS_Handle301B_1400x1050(SiS_Private *SiS_Pr, USHORT ModeNo);
 void     SiS_SetEnableDstn(SiS_Private *SiS_Pr, int enable);
 void     SiS_SetEnableFstn(SiS_Private *SiS_Pr, int enable);
-void     SiS_Delay15us(SiS_Private *SiS_Pr);
 BOOLEAN  SiS_SearchModeID(SiS_Private *SiS_Pr, UCHAR *ROMAddr, USHORT *ModeNo,USHORT *ModeIdIndex);
+#ifndef LINUX_XF86
 BOOLEAN  SiS_CheckMemorySize(SiS_Private *SiS_Pr, UCHAR *ROMAddr,PSIS_HW_DEVICE_INFO HwDeviceExtension,
                              USHORT ModeNo,USHORT ModeIdIndex);
+#endif
 UCHAR    SiS_GetModePtr(SiS_Private *SiS_Pr, UCHAR *ROMAddr, USHORT ModeNo,USHORT ModeIdIndex);
 void     SiS_WhatTheHellIsThis(SiS_Private *SiS_Pr,PSIS_HW_DEVICE_INFO HwDeviceExtension,USHORT BaseAddr);
 void     SiS_StrangeStuff(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension);
@@ -2434,14 +2476,6 @@ USHORT   SiS_CalcDelay2(SiS_Private *SiS_Pr, UCHAR *ROMAddr, UCHAR,PSIS_HW_DEVIC
 void     SiS_ClearBuffer(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO,USHORT ModeNo);
 void     SiS_SetCRT1Group(SiS_Private *SiS_Pr, UCHAR *ROMAddr,PSIS_HW_DEVICE_INFO HwDeviceExtension,
                           USHORT ModeNo,USHORT ModeIdIndex,USHORT BaseAddr);
-void     SiS_DetectMonitor(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension,USHORT BaseAddr);
-void     SiS_GetSenseStatus(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension,UCHAR *ROMAddr);
-USHORT   SiS_TestMonitorType(SiS_Private *SiS_Pr, UCHAR R_DAC,UCHAR G_DAC,UCHAR B_DAC);
-USHORT   SiS_SenseCHTV(SiS_Private *SiS_Pr);
-BOOLEAN  SiS_Sense(SiS_Private *SiS_Pr, USHORT tempbx,USHORT tempcx);
-BOOLEAN  SiS_GetPanelID(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO);
-BOOLEAN  SiS_GetLCDDDCInfo(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO);
-USHORT   SiS_SenseLCD(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO);
 void     SiSRegInit(SiS_Private *SiS_Pr, USHORT BaseAddr);
 void     SiSInitPtr(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension);
 void     SiSSetLVDSetc(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension,USHORT ModeNo);
@@ -2449,6 +2483,7 @@ void     SiSInitPCIetc(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtensio
 void     SiSDetermineROMUsage(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension, UCHAR *ROMAddr);
 
 #ifdef LINUX_XF86
+BOOLEAN  	SiS_GetPanelID(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO);
 USHORT 		SiS_CheckBuildCustomMode(ScrnInfoPtr pScrn, DisplayModePtr mode, int VBFlags);
 void    	SiS_SetPitch(SiS_Private *SiS_Pr, ScrnInfoPtr pScrn, UShort BaseAddr);
 void    	SiS_SetPitchCRT1(SiS_Private *SiS_Pr, ScrnInfoPtr pScrn, UShort BaseAddr);

@@ -156,8 +156,8 @@ bte_copy(u64 src, u64 dest, u64 len, u64 mode, void *notification)
 
 	/* Set the notification register */
 	BTE_PRINTKV(("IBNA - HUB_S(0x%p, 0x%lx)\n", BTEREG_NOTIF_ADDR,
-		     (TO_PHYS(__tpa(bte->most_rcnt_na)))));
-	HUB_S(BTEREG_NOTIF_ADDR, (TO_PHYS(__tpa(bte->most_rcnt_na))));
+		     (TO_PHYS(ia64_tpa(bte->most_rcnt_na)))));
+	HUB_S(BTEREG_NOTIF_ADDR, (TO_PHYS(ia64_tpa(bte->most_rcnt_na))));
 
 
 	/* Initiate the transfer */
@@ -294,7 +294,7 @@ bte_unaligned_copy(u64 src, u64 dest, u64 len, u64 mode)
 				headBteLen += footBteLen;
 			} else if (footBcopyLen > 0) {
 				rv = bte_copy(footBteSource,
-					      __tpa(bteBlock),
+					      ia64_tpa(bteBlock),
 					      footBteLen, mode, NULL);
 				if (rv != BTE_SUCCESS) {
 					return rv;
@@ -344,7 +344,7 @@ bte_unaligned_copy(u64 src, u64 dest, u64 len, u64 mode)
 
 	if (headBcopyLen > 0) {
 		rv = bte_copy(headBteSource,
-			      __tpa(bteBlock), headBteLen, mode, NULL);
+			      ia64_tpa(bteBlock), headBteLen, mode, NULL);
 		if (rv != BTE_SUCCESS) {
 			return rv;
 		}

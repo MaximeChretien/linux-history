@@ -21,9 +21,9 @@
  *
  */
 
+#include <linux/config.h>
 #include <asm/processor.h>
 #include <asm/page.h>
-#include <linux/config.h>
 #include <asm/mmu.h>
 #include <asm/cache.h>
 #include <asm/pgtable.h>
@@ -817,16 +817,31 @@ start_here:
  * kernel initialization.  This maps the first 8 MBytes of memory 1:1
  * virtual to physical.  Also, set the cache mode since that is defined
  * by TLB entries and perform any additional mapping (like of the IMMR).
+ * If configured to pin some TLBs, we pin the first 8 Mbytes of kernel,
+ * 24 Mbytes of data, and the 8M IMMR space.  Anything not covered by
+ * these mappings is mapped by page tables.
  */
 initial_mmu:
 	tlbia			/* Invalidate all TLB entries */
+#ifdef CONFIG_PIN_TLB
+	lis	r8, MI_RSV4I@h
+	ori	r8, r8, 0x1c00
+#else
 	li	r8, 0
-	mtspr	MI_CTR, r8	/* Set instruction control to zero */
-	lis	r8, MD_RESETVAL@h
-#ifndef CONFIG_8xx_COPYBACK
-	oris	r8, r8, MD_WTDEF@h
 #endif
-	mtspr	MD_CTR, r8	/* Set data TLB control */
+	mtspr	MI_CTR, r8	/* Set instruction MMU control */
+
+#ifdef CONFIG_PIN_TLB
+	lis	r10, (MD_RSV4I | MD_RESETVAL)@h
+	ori	r10, r10, 0x1c00
+	mr	r8, r10
+#else
+	lis	r10, MD_RESETVAL@h
+#endif
+#ifndef CONFIG_8xx_COPYBACK
+	oris	r10, r10, MD_WTDEF@h
+#endif
+	mtspr	MD_CTR, r10	/* Set data TLB control */
 
 	/* Now map the lower 8 Meg into the TLBs.  For this quick hack,
 	 * we can load the instruction and data TLB registers with the
@@ -850,6 +865,10 @@ initial_mmu:
 	/* Map another 8 MByte at the IMMR to get the processor
 	 * internal registers (among other things).
 	 */
+#ifdef CONFIG_PIN_TLB
+	addi	r10, r10, 0x0100
+	mtspr	MD_CTR, r10
+#endif
 	mfspr	r9, 638			/* Get current IMMR */
 	andis.	r9, r9, 0xff80		/* Get 8Mbyte boundary */
 
@@ -862,6 +881,30 @@ initial_mmu:
 	mr	r8, r9			/* Create paddr for TLB */
 	ori	r8, r8, MI_BOOTINIT|0x2 /* Inhibit cache -- Cort */
 	mtspr	MD_RPN, r8
+
+#ifdef CONFIG_PIN_TLB
+	/* Map two more 8M kernel data pages.
+	*/
+	addi	r10, r10, 0x0100
+	mtspr	MD_CTR, r10
+
+	lis	r8, KERNELBASE@h	/* Create vaddr for TLB */
+	addis	r8, r8, 0x0080		/* Add 8M */
+	ori	r8, r8, MI_EVALID	/* Mark it valid */
+	mtspr	MD_EPN, r8
+	li	r9, MI_PS8MEG		/* Set 8M byte page */
+	ori	r9, r9, MI_SVALID	/* Make it valid */
+	mtspr	MD_TWC, r9
+	li	r11, MI_BOOTINIT	/* Create RPN for address 0 */
+	addis	r11, r11, 0x0080	/* Add 8M */
+	mtspr	MD_RPN, r8
+
+	addis	r8, r8, 0x0080		/* Add 8M */
+	mtspr	MD_EPN, r8
+	mtspr	MD_TWC, r9
+	addis	r11, r11, 0x0080	/* Add 8M */
+	mtspr	MD_RPN, r8
+#endif
 
 	/* Since the cache is enabled according to the information we
 	 * just loaded into the TLB, invalidate and enable the caches here.

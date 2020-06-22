@@ -34,7 +34,7 @@ static volatile unsigned long last_wall_rtc;
  */
 extern unsigned long wall_jiffies; /* from kernel/timer.c */
 
-static volatile long rtc_offset;
+static volatile long rtc_offset __cacheline_aligned;
 static long rtc_cycles_per_usec;
 static long rtc_per_timer_tick;
 
@@ -85,7 +85,6 @@ void sn2_reset_wall_time(void)
 	rtc_offset = 0;
 	last_wall_rtc = GET_RTC_COUNTER();
 }
-
 
 void __init
 sn_timer_init(void)

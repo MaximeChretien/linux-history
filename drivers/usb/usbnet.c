@@ -133,6 +133,7 @@
 #include <linux/etherdevice.h>
 #include <linux/random.h>
 #include <linux/ethtool.h>
+#include <linux/mii.h>
 #include <linux/tqueue.h>
 #include <asm/uaccess.h>
 #include <asm/unaligned.h>
@@ -157,6 +158,7 @@
 
 /* minidrivers _could_ be individually configured */
 #define	CONFIG_USB_AN2720
+#define	CONFIG_USB_AX8817X
 #define	CONFIG_USB_BELKIN
 #define	CONFIG_USB_EPSON2888
 #define	CONFIG_USB_GENESYS
@@ -227,6 +229,7 @@ struct usbnet {
 	struct net_device	net;
 	struct net_device_stats	stats;
 	int			msg_level;
+	struct mii_if_info	mii;
 
 #ifdef CONFIG_USB_NET1080
 	u16			packet_id;
@@ -254,6 +257,10 @@ struct driver_info {
 #define FLAG_FRAMING_GL	0x0002		/* genelink batches packets */
 #define FLAG_FRAMING_Z	0x0004		/* zaurus adds a trailer */
 #define FLAG_NO_SETINT	0x0010		/* device can't set_interface() */
+#define FLAG_ETHER	0x0020		/* maybe use "eth%d" names */
+
+	/* init device ... can sleep, or cause probe() failure */
+	int	(*bind)(struct usbnet *, struct usb_device *);
 
 	/* reset device ... can sleep */
 	int	(*reset)(struct usbnet *);
@@ -275,6 +282,8 @@ struct driver_info {
 	int		in;		/* rx endpoint */
 	int		out;		/* tx endpoint */
 	int		epsize;
+
+	unsigned long	data;		/* Misc driver specific data */
 };
 
 // we record the state for each of our queued skbs
@@ -304,6 +313,8 @@ MODULE_PARM_DESC (msg_level, "Initial message level (default = 1)");
 
 #define	RUN_CONTEXT (in_irq () ? "in_irq" \
 			: (in_interrupt () ? "in_interrupt" : "can sleep"))
+
+static struct ethtool_ops usbnet_ethtool_ops;
 
 /* mostly for PDA style devices, which are always present */
 static int always_connected (struct usbnet *dev)
@@ -370,14 +381,14 @@ found:
 
 #ifdef DEBUG
 #define devdbg(usbnet, fmt, arg...) \
-	printk(KERN_DEBUG "%s: " fmt "\n" , (usbnet)->net.name, ## arg)
+	printk(KERN_DEBUG "%s: " fmt "\n" , (usbnet)->net.name , ## arg)
 #else
 #define devdbg(usbnet, fmt, arg...) do {} while(0)
 #endif
 
 #define devinfo(usbnet, fmt, arg...) \
 	do { if ((usbnet)->msg_level >= 1) \
-	printk(KERN_INFO "%s: " fmt "\n" , (usbnet)->net.name, ## arg); \
+	printk(KERN_INFO "%s: " fmt "\n" , (usbnet)->net.name , ## arg); \
 	} while (0)
 
 
@@ -405,6 +416,306 @@ static const struct driver_info	an2720_info = {
 
 #endif	/* CONFIG_USB_AN2720 */
 
+
+#ifdef CONFIG_USB_AX8817X
+/* ASIX AX8817X based USB 2.0 Ethernet Devices */
+
+#define HAVE_HARDWARE
+#define NEED_MII
+
+#include <linux/crc32.h>
+
+#define AX_CMD_SET_SW_MII		0x06
+#define AX_CMD_READ_MII_REG		0x07
+#define AX_CMD_WRITE_MII_REG		0x08
+#define AX_CMD_SET_HW_MII		0x0a
+#define AX_CMD_WRITE_RX_CTL		0x10
+#define AX_CMD_READ_IPG012		0x11
+#define AX_CMD_WRITE_IPG0		0x12
+#define AX_CMD_WRITE_IPG1		0x13
+#define AX_CMD_WRITE_IPG2		0x14
+#define AX_CMD_WRITE_MULTI_FILTER	0x16
+#define AX_CMD_READ_NODE_ID		0x17
+#define AX_CMD_READ_PHY_ID		0x19
+#define AX_CMD_WRITE_MEDIUM_MODE	0x1b
+#define AX_CMD_WRITE_GPIOS		0x1f
+
+#define AX_MCAST_FILTER_SIZE		8
+#define AX_MAX_MCAST			64
+
+static int ax8817x_read_cmd(struct usbnet *dev, u8 cmd, u16 value, u16 index,
+			    u16 size, void *data)
+{
+	return usb_control_msg(
+		dev->udev,
+		usb_rcvctrlpipe(dev->udev, 0),
+		cmd,
+		USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
+		value,
+		index,
+		data,
+		size,
+		CONTROL_TIMEOUT_JIFFIES);
+}
+
+static int ax8817x_write_cmd(struct usbnet *dev, u8 cmd, u16 value, u16 index,
+			     u16 size, void *data)
+{
+	return usb_control_msg(
+		dev->udev,
+		usb_sndctrlpipe(dev->udev, 0),
+		cmd,
+		USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
+		value,
+		index,
+		data,
+		size,
+		CONTROL_TIMEOUT_JIFFIES);
+}
+
+static void ax8817x_async_cmd_callback(struct urb *urb)
+{
+	struct usb_ctrlrequest *req = (struct usb_ctrlrequest *)urb->context;
+
+	if (urb->status < 0)
+		printk(KERN_DEBUG "ax8817x_async_cmd_callback() failed with %d",
+			urb->status);
+
+	kfree(req);
+	usb_free_urb(urb);
+}
+
+static void ax8817x_write_cmd_async(struct usbnet *dev, u8 cmd, u16 value, u16 index,
+				    u16 size, void *data)
+{
+	struct usb_ctrlrequest *req;
+	int status;
+	struct urb *urb;
+
+	if ((urb = ALLOC_URB(0, GFP_ATOMIC)) == NULL) {
+		devdbg(dev, "Error allocating URB in write_cmd_async!");
+		return;
+	}
+
+	if ((req = kmalloc(sizeof(struct usb_ctrlrequest), GFP_ATOMIC)) == NULL) {
+		devdbg(dev, "Failed to allocate memory for control request");
+		usb_free_urb(urb);
+		return;
+	}
+
+	req->bRequestType = USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE;
+	req->bRequest = cmd;
+	req->wValue = cpu_to_le16(value);
+	req->wIndex = cpu_to_le16(index); 
+	req->wLength = cpu_to_le16(size);
+
+	usb_fill_control_urb(urb, dev->udev,
+			     usb_sndctrlpipe(dev->udev, 0),
+			     (void *)req, data, size,
+			     ax8817x_async_cmd_callback, req);
+
+	if((status = SUBMIT_URB(urb, GFP_ATOMIC)) < 0)
+		devdbg(dev, "Error submitting the control message: status=%d", status);
+}
+
+static void ax8817x_set_multicast(struct net_device *net)
+{
+	struct usbnet *dev = (struct usbnet *) net->priv;
+	u8 rx_ctl = 0x8c;
+
+	if (net->flags & IFF_PROMISC) {
+		rx_ctl |= 0x01;
+	} else if (net->flags & IFF_ALLMULTI
+		   || net->mc_count > AX_MAX_MCAST) {
+		rx_ctl |= 0x02;
+	} else if (net->mc_count == 0) {
+		/* just broadcast and directed */
+	} else {
+		struct dev_mc_list *mc_list = net->mc_list;
+		u8 *multi_filter;
+		u32 crc_bits;
+		int i;
+
+		multi_filter = kmalloc(AX_MCAST_FILTER_SIZE, GFP_ATOMIC);
+		if (multi_filter == NULL) {
+			/* Oops, couldn't allocate a buffer for setting the multicast
+			   filter. Try all multi mode. */
+			rx_ctl |= 0x02;
+		} else {
+			memset(multi_filter, 0, AX_MCAST_FILTER_SIZE);
+
+			/* Build the multicast hash filter. */
+			for (i = 0; i < net->mc_count; i++) {
+				crc_bits =
+				    ether_crc(ETH_ALEN,
+					      mc_list->dmi_addr) >> 26;
+				multi_filter[crc_bits >> 3] |=
+				    1 << (crc_bits & 7);
+				mc_list = mc_list->next;
+			}
+
+			ax8817x_write_cmd_async(dev, AX_CMD_WRITE_MULTI_FILTER, 0, 0,
+					   AX_MCAST_FILTER_SIZE, multi_filter);
+
+			rx_ctl |= 0x10;
+		}
+	}
+
+	ax8817x_write_cmd_async(dev, AX_CMD_WRITE_RX_CTL, rx_ctl, 0, 0, NULL);
+}
+
+static int ax8817x_mdio_read(struct net_device *netdev, int phy_id, int loc)
+{
+	struct usbnet *dev = netdev->priv;
+	u16 res;
+	u8 buf[4];
+
+	ax8817x_write_cmd(dev, AX_CMD_SET_SW_MII, 0, 0, 0, &buf);
+	ax8817x_read_cmd(dev, AX_CMD_READ_MII_REG, phy_id, (__u16)loc, 2, (u16 *)&res);
+	ax8817x_write_cmd(dev, AX_CMD_SET_HW_MII, 0, 0, 0, &buf);
+
+	return res & 0xffff;
+}
+
+static void ax8817x_mdio_write(struct net_device *netdev, int phy_id, int loc, int val)
+{
+	struct usbnet *dev = netdev->priv;
+	u16 res = val;
+	u8 buf[4];
+
+	ax8817x_write_cmd(dev, AX_CMD_SET_SW_MII, 0, 0, 0, &buf);
+	ax8817x_write_cmd(dev, AX_CMD_WRITE_MII_REG, phy_id, (__u16)loc, 2, (u16 *)&res);
+	ax8817x_write_cmd(dev, AX_CMD_SET_HW_MII, 0, 0, 0, &buf);
+}
+
+static int ax8817x_bind(struct usbnet *dev, struct usb_device *intf)
+{
+	int ret;
+	u8 buf[6];
+	u16 *buf16 = (u16 *) buf;
+	int i;
+	unsigned long gpio_bits = dev->driver_info->data;
+
+	dev->in = usb_rcvbulkpipe(dev->udev, 3);
+	dev->out = usb_sndbulkpipe(dev->udev, 2);
+
+	/* Toggle the GPIOs in a manufacturer/model specific way */
+	for (i = 2; i >= 0; i--) {
+		if ((ret = ax8817x_write_cmd(dev, AX_CMD_WRITE_GPIOS,
+				       (gpio_bits >> (i * 8)) & 0xff, 0, 0,
+				       buf)) < 0)
+			return ret;
+		wait_ms(5);
+        }
+                                                                                
+	if ((ret = ax8817x_write_cmd(dev, AX_CMD_WRITE_RX_CTL, 0x80, 0, 0, buf)) < 0) {
+		dbg("send AX_CMD_WRITE_RX_CTL failed: %d", ret);
+		return ret;
+	}
+
+	/* Get the MAC address */
+	memset(buf, 0, ETH_ALEN);
+	if ((ret = ax8817x_read_cmd(dev, AX_CMD_READ_NODE_ID, 0, 0, 6, buf)) < 0) {
+		dbg("read AX_CMD_READ_NODE_ID failed: %d", ret);
+		return ret;
+	}
+	memcpy(dev->net.dev_addr, buf, ETH_ALEN);
+
+	/* Get IPG values */
+	if ((ret = ax8817x_read_cmd(dev, AX_CMD_READ_IPG012, 0, 0, 3, buf)) < 0) {
+		dbg("Error reading IPG values: %d", ret);
+		return ret;
+	}
+
+	for(i = 0;i < 3;i++) {
+		ax8817x_write_cmd(dev, AX_CMD_WRITE_IPG0 + i, 0, 0, 1, &buf[i]);
+	}
+
+	/* Get the PHY id */
+	if ((ret = ax8817x_read_cmd(dev, AX_CMD_READ_PHY_ID, 0, 0, 2, buf)) < 0) {
+		dbg("error on read AX_CMD_READ_PHY_ID: %02x", ret);
+		return ret;
+	} else if (ret < 2) {
+		/* this should always return 2 bytes */
+		dbg("AX_CMD_READ_PHY_ID returned less than 2 bytes: ret=%02x", ret);
+		return -EIO;
+	}
+
+	/* Initialize MII structure */
+	dev->mii.dev = &dev->net;
+	dev->mii.mdio_read = ax8817x_mdio_read;
+	dev->mii.mdio_write = ax8817x_mdio_write;
+	dev->mii.phy_id_mask = 0x3f;
+	dev->mii.reg_num_mask = 0x1f;
+	dev->mii.phy_id = buf[1];
+
+	if ((ret = ax8817x_write_cmd(dev, AX_CMD_SET_SW_MII, 0, 0, 0, &buf)) < 0) {
+		dbg("Failed to go to software MII mode: %02x", ret);
+		return ret;
+	}
+
+	*buf16 = cpu_to_le16(BMCR_RESET);
+	if ((ret = ax8817x_write_cmd(dev, AX_CMD_WRITE_MII_REG,
+				     dev->mii.phy_id, MII_BMCR, 2, buf16)) < 0) {
+		dbg("Failed to write MII reg - MII_BMCR: %02x", ret);
+		return ret;
+	}
+
+	/* Advertise that we can do full-duplex pause */
+	*buf16 = cpu_to_le16(ADVERTISE_ALL | ADVERTISE_CSMA | 0x0400);
+	if ((ret = ax8817x_write_cmd(dev, AX_CMD_WRITE_MII_REG,
+			   	     dev->mii.phy_id, MII_ADVERTISE, 
+				     2, buf16)) < 0) {
+		dbg("Failed to write MII_REG advertisement: %02x", ret);
+		return ret;
+	}
+
+	*buf16 = cpu_to_le16(BMCR_ANENABLE | BMCR_ANRESTART);
+	if ((ret = ax8817x_write_cmd(dev, AX_CMD_WRITE_MII_REG,
+			  	     dev->mii.phy_id, MII_BMCR, 
+				     2, buf16)) < 0) {
+		dbg("Failed to write MII reg autonegotiate: %02x", ret);
+		return ret;
+	}
+
+	if ((ret = ax8817x_write_cmd(dev, AX_CMD_SET_HW_MII, 0, 0, 0, &buf)) < 0) {
+		dbg("Failed to set hardware MII: %02x", ret);
+		return ret;
+	}
+
+	dev->net.set_multicast_list = ax8817x_set_multicast;
+
+	return 0;
+}
+
+static const struct driver_info ax8817x_info = {
+	.description = "ASIX AX8817x USB 2.0 Ethernet",
+	.bind = ax8817x_bind,
+	.flags =  FLAG_ETHER,
+	.data = 0x00130103,
+};
+
+static const struct driver_info dlink_dub_e100_info = {
+	.description = "DLink DUB-E100 USB Ethernet",
+	.bind = ax8817x_bind,
+	.flags =  FLAG_ETHER,
+	.data = 0x009f9d9f,
+};
+
+static const struct driver_info netgear_fa120_info = {
+	.description = "Netgear FA-120 USB Ethernet",
+	.bind = ax8817x_bind,
+	.flags =  FLAG_ETHER,
+	.data = 0x00130103,
+};
+
+static const struct driver_info hawking_uf200_info = {
+	.description = "Hawking UF200 USB Ethernet",
+	.bind = ax8817x_bind,
+	.flags =  FLAG_ETHER,
+	.data = 0x001f1d1f,
+};
+#endif /* CONFIG_USB_AX8817X */
 
 
 #ifdef	CONFIG_USB_BELKIN
@@ -1391,27 +1702,8 @@ static const struct driver_info	zaurus_sl5x00_info = {
 };
 
 /* PXA-2xx based */
-static const struct driver_info	zaurus_sla300_info = {
-	.description =	"Sharp Zaurus SL-A300",
-	.flags =	FLAG_FRAMING_Z,
-	.check_connect = always_connected,
-	.tx_fixup = 	zaurus_tx_fixup,
-
-	.in = 1, .out = 2,
-	.epsize = 64,
-};
-static const struct driver_info	zaurus_slb500_info = {
-	/* Japanese B500 ~= US SL-5600 */
-	.description =	"Sharp Zaurus SL-B500",
-	.flags =	FLAG_FRAMING_Z,
-	.check_connect = always_connected,
-	.tx_fixup = 	zaurus_tx_fixup,
-
-	.in = 1, .out = 2,
-	.epsize = 64,
-};
-static const struct driver_info	zaurus_slc700_info = {
-	.description =	"Sharp Zaurus SL-C700",
+static const struct driver_info zaurus_pxa_info = {
+	.description =	"Sharp Zaurus, PXA-2xx based",
 	.flags =	FLAG_FRAMING_Z,
 	.check_connect = always_connected,
 	.tx_fixup = 	zaurus_tx_fixup,
@@ -1798,74 +2090,56 @@ done:
 
 /*-------------------------------------------------------------------------*/
 
-static int usbnet_ethtool_ioctl (struct net_device *net, void *useraddr)
+static void usbnet_get_drvinfo (struct net_device *net, struct ethtool_drvinfo *info)
 {
-	struct usbnet	*dev = (struct usbnet *) net->priv;
-	u32		cmd;
+	struct usbnet *dev = net->priv;
 
-	if (get_user (cmd, (u32 *)useraddr))
-		return -EFAULT;
-	switch (cmd) {
+	strncpy (info->driver, driver_name, sizeof info->driver);
+	strncpy (info->version, DRIVER_VERSION, sizeof info->version);
+	strncpy (info->fw_version, dev->driver_info->description,
+		sizeof info->fw_version);
+	usb_make_path (dev->udev, info->bus_info, sizeof info->bus_info);
+}
 
-	case ETHTOOL_GDRVINFO: {	/* get driver info */
-		struct ethtool_drvinfo		info;
+static u32 usbnet_get_link (struct net_device *net)
+{
+	struct usbnet *dev = net->priv;
 
-		memset (&info, 0, sizeof info);
-		info.cmd = ETHTOOL_GDRVINFO;
-		strncpy (info.driver, driver_name, sizeof info.driver);
-		strncpy (info.version, DRIVER_VERSION, sizeof info.version);
-		strncpy (info.fw_version, dev->driver_info->description,
-			sizeof info.fw_version);
-		usb_make_path (dev->udev, info.bus_info, sizeof info.bus_info);
-		if (copy_to_user (useraddr, &info, sizeof (info)))
-			return -EFAULT;
-		return 0;
-		}
+	/* If a check_connect is defined, return it's results */
+	if (dev->driver_info->check_connect)
+		return dev->driver_info->check_connect (dev) == 0;
 
-	case ETHTOOL_GLINK: 		/* get link status */
-		if (dev->driver_info->check_connect) {
-			struct ethtool_value	edata = { ETHTOOL_GLINK };
+	/* Otherwise, we're up to avoid breaking scripts */
+	return 1;
+}
 
-			edata.data = dev->driver_info->check_connect (dev) == 0;
-			if (copy_to_user (useraddr, &edata, sizeof (edata)))
-				return -EFAULT;
-			return 0;
-		}
-		break;
+static u32 usbnet_get_msglevel (struct net_device *net)
+{
+	struct usbnet *dev = net->priv;
 
-	case ETHTOOL_GMSGLVL: {		/* get message-level */
-		struct ethtool_value	edata = {ETHTOOL_GMSGLVL};
+	return dev->msg_level;
+}
 
-		edata.data = dev->msg_level;
-		if (copy_to_user (useraddr, &edata, sizeof (edata)))
-			return -EFAULT;
-		return 0;
-		}
+static void usbnet_set_msglevel (struct net_device *net, u32 level)
+{
+	struct usbnet *dev = net->priv;
 
-	case ETHTOOL_SMSGLVL: {		/* set message-level */
-		struct ethtool_value	edata;
-
-		if (copy_from_user (&edata, useraddr, sizeof (edata)))
-			return -EFAULT;
-		dev->msg_level = edata.data;
-		return 0;
-		}
-	
-	/* could also map RINGPARAM to RX/TX QLEN */
-
-	}
-	/* Note that the ethtool user space code requires EOPNOTSUPP */
-	return -EOPNOTSUPP;
+	dev->msg_level = level;
 }
 
 static int usbnet_ioctl (struct net_device *net, struct ifreq *rq, int cmd)
 {
-	switch (cmd) {
-	case SIOCETHTOOL:
-		return usbnet_ethtool_ioctl (net, (void *)rq->ifr_data);
-	default:
-		return -EOPNOTSUPP;
+#ifdef NEED_MII
+	{
+	struct usbnet *dev = (struct usbnet *)net->priv;
+
+	if (dev->mii.mdio_read != NULL && dev->mii.mdio_write != NULL)
+		return generic_mii_ioctl(&dev->mii,
+				(struct mii_ioctl_data *) &rq->ifr_data,
+				cmd, NULL);
 	}
+#endif
+	return -EOPNOTSUPP;
 }
 
 /*-------------------------------------------------------------------------*/
@@ -2174,6 +2448,7 @@ usbnet_probe (struct usb_device *udev, unsigned ifnum,
 	struct net_device 		*net;
 	struct driver_info		*info;
 	int				altnum = 0;
+	int				status;
 
 	info = (struct driver_info *) prod->driver_info;
 
@@ -2240,21 +2515,26 @@ usbnet_probe (struct usb_device *udev, unsigned ifnum,
 	net->watchdog_timeo = TX_TIMEOUT_JIFFIES;
 	net->tx_timeout = usbnet_tx_timeout;
 	net->do_ioctl = usbnet_ioctl;
+	net->ethtool_ops = &usbnet_ethtool_ops;
 
-	// get rx/tx params from descriptors; avoid compiled-in details
-	if (!info->in || !info->out) {
-		int status = get_endpoints (dev,
-					udev->actconfig->interface + ifnum);
-		if (status < 0) {
-			err ("get_endpoints failed, %d", status);
-			kfree (dev);
-			return 0;
-		}
-	} else {
+	// allow device-specific bind/init procedures
+	// NOTE net->name still not usable ...
+	if (info->bind) {
+		status = info->bind (dev, udev);
+		// heuristic:  "usb%d" for links we know are two-host,
+		// else "eth%d" when there's reasonable doubt.  userspace
+		// can rename the link if it knows better.
+		if ((dev->driver_info->flags & FLAG_ETHER) != 0
+				&& (net->dev_addr [0] & 0x02) == 0)
+			strcpy (net->name, "eth%d");
+	} else if (!info->in || info->out)
+		status = get_endpoints (dev, udev->actconfig->interface + ifnum);
+	else {
 		dev->in = usb_rcvbulkpipe (udev, info->in);
 		dev->out = usb_sndbulkpipe (udev, info->out);
-		dev->maxpacket = info->epsize;
 	}
+
+	dev->maxpacket = usb_maxpacket (dev->udev, dev->out, 1);
 
 	register_netdev (&dev->net);
 	devinfo (dev, "register usbnet usb-%s-%s, %s",
@@ -2291,6 +2571,30 @@ static const struct usb_device_id	products [] = {
 	USB_DEVICE (0x0547, 0x2727),	// Xircom PGUNET
 	.driver_info =	(unsigned long) &an2720_info,
 },
+#endif
+
+#ifdef CONFIG_USB_AX8817X
+{
+	// Linksys USB200M
+	USB_DEVICE (0x077b, 0x2226),
+	.driver_info =	(unsigned long) &ax8817x_info,
+}, {
+	// Netgear FA120
+	USB_DEVICE (0x0846, 0x1040),
+	.driver_info =	(unsigned long) &netgear_fa120_info,
+}, {
+	// DLink DUB-E100
+	USB_DEVICE (0x2001, 0x1a00),
+	.driver_info =	(unsigned long) &dlink_dub_e100_info,
+}, {
+	// Intellinet, ST Lab USB Ethernet
+	USB_DEVICE (0x0b95, 0x1720),
+	.driver_info =	(unsigned long) &ax8817x_info,
+}, {
+	// Hawking UF200, TrendNet TU2-ET100
+	USB_DEVICE (0x07b8, 0x420a),
+	.driver_info =	(unsigned long) &hawking_uf200_info,
+}, 
 #endif
 
 #ifdef	CONFIG_USB_BELKIN
@@ -2388,29 +2692,38 @@ static const struct usb_device_id	products [] = {
 	.match_flags	=   USB_DEVICE_ID_MATCH_INT_INFO
 			  | USB_DEVICE_ID_MATCH_DEVICE, 
 	.idVendor		= 0x04DD,
-	.idProduct		= 0x8005,
+	.idProduct		= 0x8005, /* A-300 */
 	.bInterfaceClass	= 0x02,
 	.bInterfaceSubClass	= 0x0a,
 	.bInterfaceProtocol	= 0x00,
-	.driver_info =  (unsigned long) &zaurus_sla300_info,
+	.driver_info =  (unsigned long) &zaurus_pxa_info,
 }, {
 	.match_flags	=   USB_DEVICE_ID_MATCH_INT_INFO
 			  | USB_DEVICE_ID_MATCH_DEVICE, 
 	.idVendor		= 0x04DD,
-	.idProduct		= 0x8006,
+	.idProduct		= 0x8006, /* B-500/SL-5600 */
 	.bInterfaceClass	= 0x02,
 	.bInterfaceSubClass	= 0x0a,
 	.bInterfaceProtocol	= 0x00,
-	.driver_info =  (unsigned long) &zaurus_slb500_info,
+	.driver_info =  (unsigned long) &zaurus_pxa_info,
 }, {
 	.match_flags	=   USB_DEVICE_ID_MATCH_INT_INFO
 			  | USB_DEVICE_ID_MATCH_DEVICE, 
 	.idVendor		= 0x04DD,
-	.idProduct		= 0x8007,
+	.idProduct		= 0x8007, /* C-700 */
 	.bInterfaceClass	= 0x02,
 	.bInterfaceSubClass	= 0x0a,
 	.bInterfaceProtocol	= 0x00,
-	.driver_info =  (unsigned long) &zaurus_slc700_info,
+	.driver_info =  (unsigned long) &zaurus_pxa_info,
+}, {
+	.match_flags	=   USB_DEVICE_ID_MATCH_INT_INFO
+			  | USB_DEVICE_ID_MATCH_DEVICE,
+	.idVendor		= 0x04DD,
+	.idProduct		= 0x9031, /* C-750 C-760 */
+	.bInterfaceClass	= 0x02,
+	.bInterfaceSubClass	= 0x0a,
+	.bInterfaceProtocol	= 0x00,
+	.driver_info =	(unsigned long) &zaurus_pxa_info,
 },
 #endif
 
@@ -2425,6 +2738,13 @@ static struct usb_driver usbnet_driver = {
 	.disconnect =	usbnet_disconnect,
 };
 
+/* Default ethtool_ops assigned.  Devices can override in their bind() routine */
+static struct ethtool_ops usbnet_ethtool_ops = {
+	.get_drvinfo		= usbnet_get_drvinfo,
+	.get_link		= usbnet_get_link,
+	.get_msglevel		= usbnet_get_msglevel,
+	.set_msglevel		= usbnet_set_msglevel,
+};
 /*-------------------------------------------------------------------------*/
 
 static int __init usbnet_init (void)

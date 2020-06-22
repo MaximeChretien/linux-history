@@ -83,7 +83,6 @@ void probe_cmos_for_drives (ide_hwif_t *hwif)
 }
 
 
-extern ide_drive_t * get_info_ptr(kdev_t);
 extern unsigned long current_capacity (ide_drive_t *);
 
 /*
@@ -156,7 +155,7 @@ int ide_xlate_1024 (kdev_t i_rdev, int xparm, int ptheads, const char *msg)
 	int transl = 1;		/* try translation */
 	int ret = 0;
 
-	drive = get_info_ptr(i_rdev);
+	drive = ide_info_ptr(i_rdev, 0);
 	if (!drive)
 		return 0;
 

@@ -13,6 +13,8 @@
 
 #include <asm/sn/addrs.h>
 
+extern int numionodes;
+
 /* Because we only have PCI I/O ports.  */
 #define IIO_ITTE_BASE	0x400160	/* base of translation table entries */
 #define IIO_ITTE(bigwin)	(IIO_ITTE_BASE + 8*(bigwin))

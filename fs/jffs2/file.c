@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: file.c,v 1.58.2.6 2002/11/12 13:17:01 dwmw2 Exp $
+ * $Id: file.c,v 1.58.2.7 2003/11/02 13:51:17 dwmw2 Exp $
  *
  */
 

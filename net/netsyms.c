@@ -18,6 +18,7 @@
 #include <linux/fcdevice.h>
 #include <linux/ioport.h>
 #include <linux/tty.h>
+#include <linux/ethtool.h>
 #include <net/neighbour.h>
 #include <net/snmp.h>
 #include <net/dst.h>
@@ -59,7 +60,7 @@ extern __u32 sysctl_rmem_max;
 
 extern struct net_proto_family inet_family_ops;
 
-#if defined(CONFIG_IPV6) || defined (CONFIG_IPV6_MODULE) || defined (CONFIG_KHTTPD) || defined (CONFIG_KHTTPD_MODULE)
+#if defined(CONFIG_IPV6) || defined (CONFIG_IPV6_MODULE) || defined (CONFIG_KHTTPD) || defined (CONFIG_KHTTPD_MODULE) || defined (CONFIG_IP_SCTP_MODULE)
 #include <linux/in6.h>
 #include <linux/icmpv6.h>
 #include <net/ipv6.h>
@@ -163,6 +164,7 @@ EXPORT_SYMBOL(datagram_poll);
 EXPORT_SYMBOL(put_cmsg);
 EXPORT_SYMBOL(sock_kmalloc);
 EXPORT_SYMBOL(sock_kfree_s);
+EXPORT_SYMBOL(sock_map_fd);
 EXPORT_SYMBOL(sockfd_lookup);
 
 #ifdef CONFIG_FILTER
@@ -193,6 +195,7 @@ EXPORT_SYMBOL(neigh_parms_alloc);
 EXPORT_SYMBOL(neigh_parms_release);
 EXPORT_SYMBOL(neigh_rand_reach_time);
 EXPORT_SYMBOL(neigh_compat_output); 
+EXPORT_SYMBOL(neigh_changeaddr);
 
 /*	dst_entry	*/
 EXPORT_SYMBOL(dst_alloc);
@@ -254,6 +257,8 @@ EXPORT_SYMBOL(inet_unregister_protosw);
 EXPORT_SYMBOL(ip_route_output_key);
 EXPORT_SYMBOL(ip_route_input);
 EXPORT_SYMBOL(icmp_send);
+EXPORT_SYMBOL(icmp_statistics);
+EXPORT_SYMBOL(icmp_err_convert);
 EXPORT_SYMBOL(ip_options_compile);
 EXPORT_SYMBOL(ip_options_undo);
 EXPORT_SYMBOL(arp_send);
@@ -265,6 +270,7 @@ EXPORT_SYMBOL(inet_family_ops);
 EXPORT_SYMBOL(in_aton);
 EXPORT_SYMBOL(ip_mc_inc_group);
 EXPORT_SYMBOL(ip_mc_dec_group);
+EXPORT_SYMBOL(ip_mc_join_group);
 EXPORT_SYMBOL(ip_finish_output);
 EXPORT_SYMBOL(inet_stream_ops);
 EXPORT_SYMBOL(inet_dgram_ops);
@@ -291,19 +297,7 @@ EXPORT_SYMBOL(dlci_ioctl_hook);
 #endif
 
 
-#ifdef CONFIG_IPV6
-EXPORT_SYMBOL(ipv6_addr_type);
-EXPORT_SYMBOL(icmpv6_send);
-EXPORT_SYMBOL(ndisc_mc_map);
-EXPORT_SYMBOL(register_inet6addr_notifier);
-EXPORT_SYMBOL(unregister_inet6addr_notifier);
-#include <net/ip6_route.h>
-EXPORT_SYMBOL(ip6_route_output);
-#ifdef CONFIG_NETFILTER
-EXPORT_SYMBOL(ip6_route_me_harder);
-#endif
-#endif
-#if defined (CONFIG_IPV6_MODULE) || defined (CONFIG_KHTTPD) || defined (CONFIG_KHTTPD_MODULE)
+#if defined (CONFIG_IPV6_MODULE) || defined (CONFIG_KHTTPD) || defined (CONFIG_KHTTPD_MODULE) || defined (CONFIG_IP_SCTP_MODULE)
 /* inet functions common to v4 and v6 */
 EXPORT_SYMBOL(inet_release);
 EXPORT_SYMBOL(inet_stream_connect);
@@ -418,6 +412,14 @@ EXPORT_SYMBOL(secure_ipv6_id);
 #endif
 
 EXPORT_SYMBOL(tcp_read_sock);
+
+#ifdef CONFIG_IP_SCTP_MODULE
+EXPORT_SYMBOL(ip_setsockopt);
+EXPORT_SYMBOL(ip_getsockopt);
+EXPORT_SYMBOL(inet_ioctl);
+EXPORT_SYMBOL(inet_bind);
+EXPORT_SYMBOL(inet_getname);
+#endif /* CONFIG_IP_SCTP_MODULE */
 
 EXPORT_SYMBOL(netlink_set_err);
 EXPORT_SYMBOL(netlink_broadcast);
@@ -609,6 +611,18 @@ EXPORT_SYMBOL(softnet_data);
 #if defined(CONFIG_NET_RADIO) || defined(CONFIG_NET_PCMCIA_RADIO)
 #include <net/iw_handler.h>
 EXPORT_SYMBOL(wireless_send_event);
+EXPORT_SYMBOL(iw_handler_set_spy);
+EXPORT_SYMBOL(iw_handler_get_spy);
+EXPORT_SYMBOL(iw_handler_set_thrspy);
+EXPORT_SYMBOL(iw_handler_get_thrspy);
+EXPORT_SYMBOL(wireless_spy_update);
 #endif /* CONFIG_NET_RADIO || CONFIG_NET_PCMCIA_RADIO */
+
+/* ethtool.c */
+EXPORT_SYMBOL(ethtool_op_get_link);
+EXPORT_SYMBOL(ethtool_op_get_tx_csum);
+EXPORT_SYMBOL(ethtool_op_set_tx_csum);
+EXPORT_SYMBOL(ethtool_op_get_sg);
+EXPORT_SYMBOL(ethtool_op_set_sg);
 
 #endif  /* CONFIG_NET */

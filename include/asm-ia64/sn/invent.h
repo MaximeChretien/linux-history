@@ -701,16 +701,6 @@ typedef struct invent_routerinfo{
 
 #ifdef __KERNEL__
 
-typedef struct irix5_inventory_s {
-	app32_ptr_t	inv_next;	/* next inventory record in list */
-	int	inv_class;		/* class of object */
-	int	inv_type;		/* class sub-type of object */
-	major_t	inv_controller;		/* object major identifier */
-	minor_t	inv_unit;		/* object minor identifier */
-	int	inv_state;		/* information specific to object or
-					   class */
-} irix5_inventory_t;
-
 typedef struct invplace_s {
 	vertex_hdl_t		invplace_vhdl;		/* current vertex */
 	vertex_hdl_t		invplace_vplace;	/* place in vertex list */

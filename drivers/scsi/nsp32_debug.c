@@ -1,5 +1,5 @@
 /*
- * Workbit NinjaSCSI-32Bi/UDE PCI/Cardbus SCSI Host Bus Adapter driver
+ * Workbit NinjaSCSI-32Bi/UDE PCI/CardBus SCSI Host Bus Adapter driver
  * Debug routine
  *
  * This software may be used and distributed according to the terms of
@@ -85,22 +85,22 @@ static void print_opcodek(unsigned char opcode)
 
 static void print_commandk (unsigned char *command)
 {
-	int i,s;
+	int i, size;
 //	printk(KERN_DEBUG);
 	print_opcodek(command[0]);
-	/*printk(KERN_DEBUG __func__ " ");*/
+	/*printk(KERN_DEBUG "%s ", __FUNCTION__);*/
 	if ((command[0] >> 5) == 6 ||
 	    (command[0] >> 5) == 7 ) {
-		s = 12; /* vender specific */
+		size = 12; /* vender specific */
 	} else {
-		s = COMMAND_SIZE(command[0]);
+		size = COMMAND_SIZE(command[0]);
 	}
 
 	for ( i = 1; i < s; ++i) {
 		printk("%02x ", command[i]);
 	}
 
-	switch (s) {
+	switch (size) {
 	case 6:
 		printk("LBA=%d len=%d",
 		       (((unsigned int)command[1] & 0x0f) << 16) |
@@ -137,9 +137,9 @@ static void print_commandk (unsigned char *command)
 	printk("\n");
 }
 
-static void show_command(Scsi_Cmnd *ptr)
+static void show_command(Scsi_Cmnd *SCpnt)
 {
-	print_commandk(ptr->cmnd);
+	print_commandk(SCpnt->cmnd);
 }
 
 static void show_busphase(unsigned char stat)
@@ -260,3 +260,45 @@ static void nsp32_print_register(int base)
 	}
 }
 
+/*
+ * Byte dumper
+ *
+ * ptr:    start address
+ * offset: offset value for address section
+ * size:   dump size in byte
+ */
+static void nsp32_byte_dump(void *ptr, int offset, int size)
+{
+	unsigned char *tmp = ptr;
+	int pos;
+
+	if (size == 0) {
+		return;
+	}
+
+	pos = 0;
+	while(pos < size) {
+		/* address */
+		if (pos % 16 == 0) {
+			printk(/*KERN_DEBUG*/ "%08x:", pos + offset);
+		}
+
+		/* half separator */
+		if (pos % 16 == 8) {
+			printk(" -");
+		}
+
+		printk(" %02x", tmp[pos]);
+
+		/* Don't print "\n" at last line.
+		   Because we can get one more "\n". */
+		if ((pos % 16 == 15) && (pos + 1 != size)) {
+			printk("\n");
+		}
+
+		pos ++;
+	}
+	printk("\n");
+}
+
+/* end */

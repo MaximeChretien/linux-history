@@ -10,7 +10,9 @@
 #define _ASM_SN_XTALK_XTALK_H
 #include <linux/config.h>
 
+#ifdef __KERNEL__
 #include "asm/sn/sgi.h"
+#endif
 
 
 /*

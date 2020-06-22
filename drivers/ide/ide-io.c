@@ -56,38 +56,6 @@
 
 #include "ide_modes.h"
 
-#if (DISK_RECOVERY_TIME > 0)
-
-Error So the User Has To Fix the Compilation And Stop Hacking Port 0x43
-Does anyone ever use this anyway ??
-
-/*
- * For really screwy hardware (hey, at least it *can* be used with Linux)
- * we can enforce a minimum delay time between successive operations.
- */
-static unsigned long read_timer (ide_hwif_t *hwif)
-{
-	unsigned long t, flags;
-	int i;
-	
-	/* FIXME this is completely unsafe! */
-	local_irq_save(flags);
-	t = jiffies * 11932;
-	outb_p(0, 0x43);
-	i = inb_p(0x40);
-	i |= inb_p(0x40) << 8;
-	local_irq_restore(flags);
-	return (t - i);
-}
-#endif /* DISK_RECOVERY_TIME */
-
-static inline void set_recovery_timer (ide_hwif_t *hwif)
-{
-#if (DISK_RECOVERY_TIME > 0)
-	hwif->last_time = read_timer(hwif);
-#endif /* DISK_RECOVERY_TIME */
-}
-
 /*
  *	ide_end_request		-	complete an IDE I/O
  *	@drive: IDE device for the I/O
@@ -237,6 +205,7 @@ EXPORT_SYMBOL(ide_end_drive_cmd);
  *	by read a sector's worth of data from the drive.  Of course,
  *	this may not help if the drive is *waiting* for data from *us*.
  */
+
 void try_to_flush_leftover_data (ide_drive_t *drive)
 {
 	int i = (drive->mult_count ? drive->mult_count : 1) * SECTOR_WORDS;
@@ -573,9 +542,9 @@ ide_startstop_t execute_drive_cmd (ide_drive_t *drive, struct request *rq)
 EXPORT_SYMBOL(execute_drive_cmd);
 
 /**
- *	start_request	-	start of I/O and command issuing for IDE
+ *	ide_start_request	-	start of I/O and command issuing for IDE
  *
- *	start_request() initiates handling of a new I/O request. It
+ *	ide_start_request() initiates handling of a new I/O request. It
  *	accepts commands and I/O (read/write) requests. It also does
  *	the final remapping for weird stuff like EZDrive. Once 
  *	device mapper can work sector level the EZDrive stuff can go away
@@ -583,7 +552,7 @@ EXPORT_SYMBOL(execute_drive_cmd);
  *	FIXME: this function needs a rename
  */
  
-ide_startstop_t start_request (ide_drive_t *drive, struct request *rq)
+static ide_startstop_t ide_start_request (ide_drive_t *drive, struct request *rq)
 {
 	ide_startstop_t startstop;
 	unsigned long block, blockend;
@@ -591,12 +560,12 @@ ide_startstop_t start_request (ide_drive_t *drive, struct request *rq)
 	ide_hwif_t *hwif = HWIF(drive);
 
 #ifdef DEBUG
-	printk("%s: start_request: current=0x%08lx\n",
+	printk("%s: ide_start_request: current=0x%08lx\n",
 		hwif->name, (unsigned long) rq);
 #endif
 
 	/* bail early if we've exceeded max_failures */
-	if (drive->max_failures && (drive->failures > drive->max_failures)) {
+	if (!drive->present || (drive->max_failures && (drive->failures > drive->max_failures))) {
 		goto kill_rq;
 	}
 
@@ -636,10 +605,6 @@ ide_startstop_t start_request (ide_drive_t *drive, struct request *rq)
 	if (block == 0 && drive->remap_0_to_1 == 1)
 		block = 1;  /* redirect MBR access to EZ-Drive partn table */
 
-#if (DISK_RECOVERY_TIME > 0)
-	while ((read_timer() - hwif->last_time) < DISK_RECOVERY_TIME);
-#endif
-
 	SELECT_DRIVE(drive);
 	if (ide_wait_stat(&startstop, drive, drive->ready_stat, BUSY_STAT|DRQ_STAT, WAIT_READY)) {
 		printk(KERN_ERR "%s: drive not ready for command\n", drive->name);
@@ -662,16 +627,6 @@ kill_rq:
 	DRIVER(drive)->end_request(drive, 0);
 	return ide_stopped;
 }
-
-EXPORT_SYMBOL(start_request);
-
-int restart_request (ide_drive_t *drive, struct request *rq)
-{
-	(void) start_request(drive, rq);
-	return 0;
-}
-
-EXPORT_SYMBOL(restart_request);
 
 /**
  *	ide_stall_queue		-	pause an IDE device
@@ -865,7 +820,7 @@ void ide_do_request (ide_hwgroup_t *hwgroup, int masked_irq)
 		spin_unlock(&io_request_lock);
 		local_irq_enable();
 			/* allow other IRQs while we start this request */
-		startstop = start_request(drive, rq);
+		startstop = ide_start_request(drive, rq);
 		spin_lock_irq(&io_request_lock);
 		if (hwif->irq != masked_irq)
 			enable_irq(hwif->irq);
@@ -1043,7 +998,6 @@ void ide_timer_expiry (unsigned long data)
 					startstop = DRIVER(drive)->error(drive, "irq timeout", hwif->INB(IDE_STATUS_REG));
 				}
 			}
-			set_recovery_timer(hwif);
 			drive->service_time = jiffies - drive->service_start;
 			spin_lock_irq(&io_request_lock);
 			enable_irq(hwif->irq);
@@ -1236,7 +1190,6 @@ void ide_intr (int irq, void *dev_id, struct pt_regs *regs)
 	 * same irq as is currently being serviced here, and Linux
 	 * won't allow another of the same (on any CPU) until we return.
 	 */
-	set_recovery_timer(HWIF(drive));
 	drive->service_time = jiffies - drive->service_start;
 	if (startstop == ide_stopped) {
 		if (hwgroup->handler == NULL) {	/* paranoia */
@@ -1256,7 +1209,7 @@ EXPORT_SYMBOL(ide_intr);
  * get_info_ptr() returns the (ide_drive_t *) for a given device number.
  * It returns NULL if the given device number does not match any present drives.
  */
-ide_drive_t *get_info_ptr (kdev_t i_rdev)
+ide_drive_t *ide_info_ptr (kdev_t i_rdev, int force)
 {
 	int		major = MAJOR(i_rdev);
 	unsigned int	h;
@@ -1267,7 +1220,7 @@ ide_drive_t *get_info_ptr (kdev_t i_rdev)
 			unsigned unit = DEVICE_NR(i_rdev);
 			if (unit < MAX_DRIVES) {
 				ide_drive_t *drive = &hwif->drives[unit];
-				if (drive->present)
+				if (drive->present || force)
 					return drive;
 			}
 			break;
@@ -1276,7 +1229,7 @@ ide_drive_t *get_info_ptr (kdev_t i_rdev)
 	return NULL;
 }
 
-EXPORT_SYMBOL(get_info_ptr);
+EXPORT_SYMBOL(ide_info_ptr);
 
 /**
  *	ide_init_drive_cmd	-	initialize a drive command request

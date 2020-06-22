@@ -433,8 +433,6 @@ nfs3_proc_rmdir(struct inode *dir, struct qstr *name)
  * The decode function itself doesn't perform any decoding, it just makes
  * sure the reply is syntactically correct.
  *
- * Also note that this implementation handles both plain readdir and
- * readdirplus.
  */
 static int
 nfs3_proc_readdir(struct inode *dir, struct rpc_cred *cred,
@@ -448,11 +446,7 @@ nfs3_proc_readdir(struct inode *dir, struct rpc_cred *cred,
 	struct rpc_message	msg = { NFS3PROC_READDIR, &arg, &res, cred };
 	int			status;
 
-	if (plus)
-		msg.rpc_proc = NFS3PROC_READDIRPLUS;
-
-	dprintk("NFS call  readdir%s %d\n",
-			plus? "plus" : "", (unsigned int) cookie);
+	dprintk("NFS call  readdir %d\n", (unsigned int) cookie);
 
 	dir_attr.valid = 0;
 	status = rpc_call_sync(NFS_CLIENT(dir), &msg, 0);

@@ -1552,6 +1552,7 @@ ahc_softc_comp(struct ahc_softc *lahc, struct ahc_softc *rahc)
 
 	/* Still equal.  Sort by BIOS address, ioport, or bus/slot/func. */
 	switch (rvalue) {
+#ifdef CONFIG_PCI
 	case AHC_PCI:
 	{
 		char primary_channel;
@@ -1584,6 +1585,8 @@ ahc_softc_comp(struct ahc_softc *lahc, struct ahc_softc *rahc)
 			value = 1;
 		break;
 	}
+#endif
+#ifdef CONFIG_EISA
 	case AHC_EISA:
 		if ((rahc->flags & AHC_BIOS_ENABLED) != 0) {
 			value = rahc->platform_data->bios_address
@@ -1593,6 +1596,7 @@ ahc_softc_comp(struct ahc_softc *lahc, struct ahc_softc *rahc)
 			      - lahc->bsh.ioport; 
 		}
 		break;
+#endif
 	default:
 		panic("ahc_softc_sort: invalid bus type");
 	}

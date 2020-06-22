@@ -1,16 +1,17 @@
 /******************************************************************************
  *
  * Name:	skgesirq.h
- * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.26 $
- * Date:	$Date: 2002/10/14 09:52:36 $
+ * Project:	Gigabit Ethernet Adapters, Common Modules
+ * Version:	$Revision: 1.30 $
+ * Date:	$Date: 2003/07/04 12:34:13 $
  * Purpose:	SK specific Gigabit Ethernet special IRQ functions
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect.
+ *	(C)Copyright 2002-2003 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -25,8 +26,22 @@
  *
  * History:
  *	$Log: skgesirq.h,v $
+ *	Revision 1.30  2003/07/04 12:34:13  rschmidt
+ *	Added SKERR_SIRQ_E025 for Downshift detected (Yukon-Copper)
+ *	
+ *	Revision 1.29  2003/05/28 15:14:49  rschmidt
+ *	Moved defines for return codes of SkGePortCheckUp() to header file.
+ *	Minor changes to avoid LINT warnings.
+ *	
+ *	Revision 1.28  2003/05/13 17:22:43  mkarl
+ *	Editorial changes.
+ *	
+ *	Revision 1.27  2003/03/31 07:32:34  mkarl
+ *	Corrected Copyright.
+ *	Editorial changes.
+ *	
  *	Revision 1.26  2002/10/14 09:52:36  rschmidt
- *	Added SKERR_SIRQ_E023 and SKERR_SIRQ_E023 for GPHY (Yukon)
+ *	Added SKERR_SIRQ_E023 and SKERR_SIRQ_E024 for GPHY (Yukon)
  *	Editorial changes
  *	
  *	Revision 1.25  2002/07/15 18:15:52  rwahl
@@ -115,10 +130,15 @@
 #ifndef _INC_SKGESIRQ_H_
 #define _INC_SKGESIRQ_H_
 
+/* Define return codes of SkGePortCheckUp and CheckShort */
+#define	SK_HW_PS_NONE		0	/* No action needed */
+#define	SK_HW_PS_RESTART	1	/* Restart needed */
+#define	SK_HW_PS_LINK		2	/* Link Up actions needed */
+
 /*
  * Define the Event the special IRQ/INI module can handle
  */
-#define SK_HWEV_WATIM			1	/* Timeout for WA errata #2 XMAC */
+#define SK_HWEV_WATIM			1	/* Timeout for WA Errata #2 XMAC */
 #define SK_HWEV_PORT_START		2	/* Port Start Event by RLMT */
 #define SK_HWEV_PORT_STOP		3	/* Port Stop Event by RLMT */
 #define SK_HWEV_CLEAR_STAT		4	/* Clear Statistics by PNMI */
@@ -129,10 +149,10 @@
 #define SK_HWEV_SET_SPEED		9	/* Set Link Speed by PNMI */
 #define SK_HWEV_HALFDUP_CHK		10	/* Half Duplex Hangup Workaround */
 
-#define SK_WA_ACT_TIME		(5000000L)	/* 5 sec */
-#define SK_WA_INA_TIME		(100000L)	/* 100 msec */
+#define SK_WA_ACT_TIME		(5000000UL)	/* 5 sec */
+#define SK_WA_INA_TIME		(100000UL)	/* 100 msec */
 
-#define SK_HALFDUP_CHK_TIME	(10000L)	/* 10 msec */
+#define SK_HALFDUP_CHK_TIME	(10000UL)	/* 10 msec */
 
 /*
  * Define the error numbers and messages
@@ -185,6 +205,8 @@
 #define SKERR_SIRQ_E023MSG	"Auto-negotiation error"
 #define SKERR_SIRQ_E024		(SKERR_SIRQ_E023+1)
 #define SKERR_SIRQ_E024MSG	"FIFO overflow error"
+#define SKERR_SIRQ_E025		(SKERR_SIRQ_E024+1)
+#define SKERR_SIRQ_E025MSG	"2 Pair Downshift detected"
 
 extern void SkGeSirqIsr(SK_AC *pAC, SK_IOC IoC, SK_U32 Istatus);
 extern int  SkGeSirqEvent(SK_AC *pAC, SK_IOC IoC, SK_U32 Event, SK_EVPARA Para);

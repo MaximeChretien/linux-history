@@ -56,8 +56,10 @@
 #include <asm/machvec.h>
 #include <asm/system.h>
 #include <asm/processor.h>
+#include <asm/pgalloc.h>
 #include <asm/sn/sgi.h>
 #include <asm/sn/io.h>
+#include <asm/sn/pci/pciio.h>
 #include <asm/sn/arch.h>
 #include <asm/sn/addrs.h>
 #include <asm/sn/pda.h>
@@ -71,7 +73,7 @@
 #include <asm/sn/sn_sal.h>
 #include <asm/sn/sn2/shub.h>
 
-#define pxm_to_nasid(pxm) ((pxm)<<1)
+#define pxm_to_nasid(pxm) (((pxm)<<1) | (get_nasid() & ~0x1ff))
 
 #define MAX_PHYS_MEMORY		(1UL << 49)	/* 1 TB */
 
@@ -79,8 +81,12 @@ extern void bte_init_node (nodepda_t *, cnodeid_t);
 extern void bte_init_cpu (void);
 extern void sn_timer_init(void);
 extern unsigned long last_time_offset;
+extern void init_platform_hubinfo(nodepda_t **nodepdaindr);
 extern void (*ia64_mark_idle)(int);
+extern void (*ia64_platform_timer_extras)(void);
+extern void sn_timer_interrupt_extras(void);
 extern void snidle(int);
+extern unsigned char acpi_kbd_controller_present;
 
 unsigned long sn_rtc_cycles_per_second;   
 
@@ -90,6 +96,7 @@ u64 sn_partition_serial_number;
 
 short	physical_node_map[MAX_PHYSNODE_ID];
 
+int	numionodes;
 /*
  * This is the address of the RRegs in the HSpace of the global
  * master.  It is used by a hack in serial.c (serial_[in|out],
@@ -223,7 +230,77 @@ sn_check_for_wars(void)
 			shub_1_1_found = 1;
 }
 
+/*
+ * SN2 requires very slightly different alternate data-TLB miss handle than what
+ * the mainline linux kernel provides.  At some point this approach could be used
+ * to allow the use of the low-memory thrown away on other platforms when VGA is
+ * present.
+ *
+ * On SN2 we want to load small TCs for granule-0 (and aliases of) faulting
+ * addresses.  The details of this are more sublte than at which they first
+ * appear.
+ */
+static void __init
+sn2_replace_ivt(void)
+{
+	extern unsigned char alt_dtlb_miss[], ia64_ivt_page_fault[];
+	extern unsigned char sn2_alt_dtlb_miss[], sn2_alt_dtlb_miss_end[];
+	extern unsigned char sn2_alt_dtlb_miss_patch1[];
 
+	unsigned char *s, *d;
+	u64 *p;
+	u64 len = (u64)sn2_alt_dtlb_miss_end - (u64)sn2_alt_dtlb_miss;
+	u64 broffs = (ia64_ivt_page_fault - alt_dtlb_miss) - (sn2_alt_dtlb_miss_patch1 - sn2_alt_dtlb_miss);
+	u64 psr;
+	int i;
+
+	/* printk(KERN_DEBUG "Replacing alternate data-TLB miss handler.\n"); */
+
+	/* Check the code isn't too large */
+	if (len > 1024) {
+		printk(KERN_ERR "SGI: Specific alt_dtlb_misse too large!  Not replacing\n");
+		return;
+	}
+
+	/* check the offset is sane (should always be) */
+	if ((broffs>>4) + (1<<20) >= (1<<21)) {
+		printk(KERN_ERR "SGI: IVT patch ivt offset %ld invalid!   Not replacing!\n", broffs);
+		return;
+	}
+
+	/* 2nd half of bundle to patch (has slot 2) */
+	p = (u64*)sn2_alt_dtlb_miss_patch1 + 1;
+	/* patch the offset into slot 2 (imm20b + s) */
+	*p = (*p & ~(0x8fffff000000000)) | ((broffs & 0x1000000) << 35) | ((broffs & 0x0fffff0) << 32);
+
+	/* don't want any interrupts when doing this */
+	psr = ia64_clear_ic();
+
+	/* copy over the existing code, flush i-cache as required */
+	d = alt_dtlb_miss;
+	s = sn2_alt_dtlb_miss;
+	for (i=0; i<len; ++i, ++s) {
+		*d++ = *s;
+		if ((((u64)s) & 63) == 63) {
+			ia64_insn_group_barrier();
+			ia64_fc((void*)s);
+		}
+	}
+	ia64_insn_group_barrier();
+	ia64_fc((void*)s);
+
+	/* sync & serialize instruction stream */
+	ia64_sync_i();
+	ia64_srlz_i();
+
+	/* restore interrupt status */
+	ia64_set_psr(psr);
+
+	/* flush any TC's we have had previously loaded that could cause problems here */
+	local_flush_tlb_all();
+
+	printk(KERN_DEBUG "SGI: Replaced alt_dtlb_miss handler.\n");
+}
 
 /**
  * sn_setup - SN platform setup routine
@@ -237,11 +314,26 @@ void __init
 sn_setup(char **cmdline_p)
 {
 	long status, ticks_per_sec, drift;
-	int i, pxm;
+	int pxm;
 	int major = sn_sal_rev_major(), minor = sn_sal_rev_minor();
-	extern void io_sh_swapper(int, int);
-	extern nasid_t get_master_baseio_nasid(void);
 	extern void sn_cpu_init(void);
+
+	/*
+	 * If the generic code has enabled vga console support - lets
+	 * get rid of it again. This is a kludge for the fact that ACPI
+	 * currtently has no way of informing us if legacy VGA is available
+	 * or not.
+	 */
+#if defined(CONFIG_VT) && defined(CONFIG_VGA_CONSOLE)
+	if (conswitchp == &vga_con) {
+		printk(KERN_DEBUG "SGI: Disabling VGA console\n");
+#ifdef CONFIG_DUMMY_CONSOLE
+		conswitchp = &dummy_con;
+#else
+		conswitchp = NULL;
+#endif /* CONFIG_DUMMY_CONSOLE */
+	}
+#endif /* def(CONFIG_VT) && def(CONFIG_VGA_CONSOLE) */
 
 	MAX_DMA_ADDRESS = PAGE_OFFSET + MAX_PHYS_MEMORY;
 
@@ -249,6 +341,19 @@ sn_setup(char **cmdline_p)
 	for (pxm=0; pxm<MAX_PXM_DOMAINS; pxm++)
 		if (pxm_to_nid_map[pxm] != -1)
 			physical_node_map[pxm_to_nasid(pxm)] = pxm_to_nid_map[pxm];
+
+
+	/*
+	 * Old PROMs do not provide an ACPI FADT. Disable legacy keyboard
+	 * support here so we don't have to listen to failed keyboard probe
+	 * messages.
+	 */
+	if ((major < 2 || (major == 2 && minor <= 9)) &&
+	    acpi_kbd_controller_present) {
+		printk(KERN_INFO "Disabling legacy keyboard support as prom "
+		       "is too old and doesn't provide FADT\n");
+		acpi_kbd_controller_present = 0;
+	}
 
 	printk("SGI SAL version %x.%02x\n", major, minor);
 
@@ -262,11 +367,12 @@ sn_setup(char **cmdline_p)
 		panic("PROM version too old\n");
 	}
 
-	io_sh_swapper(get_nasid(), 0);
+	/* Patch the ivt */
+	sn2_replace_ivt();
 
 	master_nasid = get_nasid();
-	(void)get_console_nasid();
-	(void)get_master_baseio_nasid();
+	(void)snia_get_console_nasid();
+	(void)snia_get_master_baseio_nasid();
 
 	status = ia64_sal_freq_base(SAL_FREQ_BASE_REALTIME_CLOCK, &ticks_per_sec, &drift);
 	if (status != 0 || ticks_per_sec < 100000) {
@@ -277,7 +383,7 @@ sn_setup(char **cmdline_p)
 	else
 		sn_rtc_cycles_per_second = ticks_per_sec;
 
-	platform_intr_list[ACPI_INTERRUPT_CPEI] = IA64_PCE_VECTOR;
+	platform_intr_list[ACPI_INTERRUPT_CPEI] = IA64_CPE_VECTOR;
 
 
 	if ( IS_RUNNING_ON_SIMULATOR() )
@@ -298,11 +404,6 @@ sn_setup(char **cmdline_p)
 	 */
 	sn_init_pdas(cmdline_p);
 
-	/*
-	 * Check for WARs.
-	 */
-	sn_check_for_wars();
-
 	ia64_mark_idle = &snidle;
 
 	/* 
@@ -311,10 +412,17 @@ sn_setup(char **cmdline_p)
 	 */
 	sn_cpu_init();
 
+	/*
+	 * Setup hubinfo stuff. Has to happen AFTER sn_cpu_init(),
+	 * because it uses the cnode to nasid tables.
+	 */
+	init_platform_hubinfo(nodepdaindr);
 #ifdef CONFIG_SMP
 	init_smp_config();
 #endif
 	screen_info = sn_screen_info;
+
+	ia64_platform_timer_extras = &sn_timer_interrupt_extras;
 
 	sn_timer_init();
 }
@@ -328,6 +436,7 @@ void
 sn_init_pdas(char **cmdline_p)
 {
 	cnodeid_t	cnode;
+	void scan_for_ionodes(void);
 
 	/*
 	 * Make sure that the PDA fits entirely in the same page as the 
@@ -340,6 +449,9 @@ sn_init_pdas(char **cmdline_p)
 	for (cnode=0; cnode<numnodes; cnode++)
 		pda.cnodeid_to_nasid_table[cnode] = pxm_to_nasid(nid_to_pxm_map[cnode]);
 
+	numionodes = numnodes;
+	scan_for_ionodes();
+
         /*
          * Allocate & initalize the nodepda for each node.
          */
@@ -348,10 +460,18 @@ sn_init_pdas(char **cmdline_p)
 		memset(nodepdaindr[cnode], 0, sizeof(nodepda_t));
         }
 
+	/* 
+	 * Allocate & initialize nodepda for TIOs.  For now, put them on node 0.
+	 */
+	for (cnode = numnodes; cnode < numionodes; cnode ++) {
+		nodepdaindr[cnode] = alloc_bootmem_node(NODE_DATA(0), sizeof(nodepda_t));
+		memset(nodepdaindr[cnode], 0, sizeof(nodepda_t));
+	}
+
 	/*
 	 * Now copy the array of nodepda pointers to each nodepda.
 	 */
-        for (cnode=0; cnode < numnodes; cnode++)
+        for (cnode=0; cnode < numionodes; cnode++)
 		memcpy(nodepdaindr[cnode]->pernode_pdaindr, nodepdaindr, sizeof(nodepdaindr));
 
 
@@ -362,7 +482,15 @@ sn_init_pdas(char **cmdline_p)
 	 */
 	for (cnode = 0; cnode < numnodes; cnode++) {
 		init_platform_nodepda(nodepdaindr[cnode], cnode);
+		spin_lock_init(&nodepdaindr[cnode]->bist_lock);
 		bte_init_node (nodepdaindr[cnode], cnode);
+	}
+
+	/*
+	 * Handle TIO differently .. we do not do BTE init ..
+	 */
+	for (cnode = numnodes; cnode < numionodes; cnode++) {
+		init_platform_nodepda(nodepdaindr[cnode], cnode);
 	}
 }
 
@@ -383,6 +511,7 @@ sn_cpu_init(void)
 	int	nasid;
 	int	slice;
 	int	cnode, i;
+	static int	wars_have_been_checked = 0;
 
 	/*
 	 * The boot cpu makes this call again after platform initialization is
@@ -407,11 +536,22 @@ sn_cpu_init(void)
 	pda.hb_count = HZ/2;
 	pda.hb_state = 0;
 	pda.idle_flag = 0;
-	pda.shub_1_1_found = shub_1_1_found;
 	
 	memset(pda.cnodeid_to_nasid_table, -1, sizeof(pda.cnodeid_to_nasid_table));
 	for (i=0; i<numnodes; i++)
 		pda.cnodeid_to_nasid_table[i] = pxm_to_nasid(nid_to_pxm_map[i]);
+	/*
+	 * Check for WARs.
+	 * Only needs to be done once, on BSP.
+	 * Has to be done after loop above, because it uses pda.cnodeid_to_nasid_table[i].
+	 * Has to be done before assignment below.
+	 */
+	if (!wars_have_been_checked) {
+		sn_check_for_wars();
+		wars_have_been_checked = 1;
+	}
+
+	pda.shub_1_1_found = shub_1_1_found;
 
 	if (local_node_data->active_cpu_count == 1)
 		nodepda->node_first_cpu = cpuid;
@@ -443,4 +583,28 @@ sn_cpu_init(void)
 	}
 
 	bte_init_cpu();
+}
+
+/*
+ * Scan klconfig for TIO's.  Add the TIO nasids to the
+ * physical_node_map and the pda and increment numionodes.
+ */
+
+void
+scan_for_ionodes() {
+	int nasid = 0;
+	lboard_t *brd;
+
+	/* Scan all compute nodes. */
+	for (nasid = 0; nasid < MAX_PHYSNODE_ID; nasid +=2) {
+		/* if there's no nasid, don't try to read the klconfig on the node */
+		if (physical_node_map[nasid] == -1) continue;
+		brd = find_lboard((lboard_t *)KL_CONFIG_INFO(nasid), KLTYPE_TIO);
+		while (brd) {
+			pda.cnodeid_to_nasid_table[numionodes] = brd->brd_nasid;
+			physical_node_map[brd->brd_nasid] = numionodes++;
+			brd = KLCF_NEXT(brd);
+			brd = find_lboard(brd, KLTYPE_TIO);
+		}
+	}
 }

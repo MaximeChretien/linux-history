@@ -705,7 +705,7 @@ static journal_t * journal_init_common (void)
 	init_MUTEX(&journal->j_checkpoint_sem);
 	init_MUTEX(&journal->j_sem);
 
-	journal->j_commit_interval = (HZ * 5);
+	journal->j_commit_interval = get_buffer_flushtime();
 
 	/* The journal is marked for error until we succeed with recovery! */
 	journal->j_flags = JFS_ABORT;

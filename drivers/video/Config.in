@@ -96,6 +96,9 @@ if [ "$CONFIG_FB" = "y" ]; then
       tristate '  Hercules mono graphics console (EXPERIMENTAL)' CONFIG_FB_HGA
       define_bool CONFIG_VIDEO_SELECT y
    fi
+   if [ "$CONFIG_IA64" = "y" ]; then
+      tristate '  VGA 16-color graphics console' CONFIG_FB_VGA16
+   fi
    if [ "$CONFIG_VISWS" = "y" ]; then
       tristate '  SGI Visual Workstation framebuffer support' CONFIG_FB_SGIVW
       define_bool CONFIG_BUS_I2C y
@@ -144,14 +147,17 @@ if [ "$CONFIG_FB" = "y" ]; then
 	 if [ "$CONFIG_FB_ATY" != "n" ]; then
 	    bool '    Mach64 GX support (EXPERIMENTAL)' CONFIG_FB_ATY_GX
 	    bool '    Mach64 CT/VT/GT/LT (incl. 3D RAGE) support' CONFIG_FB_ATY_CT
+            if [ "$ARCH" = "i386" -a "$CONFIG_FB_ATY_CT" != "n" ]; then
+              bool '    Mach64 generic LCD monitor support (EXPERIMENTAL)' CONFIG_FB_ATY_GENERIC_LCD
+            fi
 	 fi
  	 tristate '  ATI Radeon display support (EXPERIMENTAL)' CONFIG_FB_RADEON
 	 tristate '  ATI Rage128 display support (EXPERIMENTAL)' CONFIG_FB_ATY128
 	 tristate '  Intel 830M/845G/852GM/855GM/865G display support (EXPERIMENTAL)' CONFIG_FB_INTEL 
-	 tristate '  SIS acceleration (EXPERIMENTAL)' CONFIG_FB_SIS
+	 tristate '  SIS display support (EXPERIMENTAL)' CONFIG_FB_SIS
 	 if [ "$CONFIG_FB_SIS" != "n" ]; then
-	    bool '    SIS 630/540/730 support' CONFIG_FB_SIS_300
-	    bool '    SIS 315H/315 support' CONFIG_FB_SIS_315
+	    bool '    SIS 300 series support' CONFIG_FB_SIS_300
+	    bool '    SIS 315/330 series support' CONFIG_FB_SIS_315
 	 fi
 	 tristate '  NeoMagic display support (EXPERIMENTAL)' CONFIG_FB_NEOMAGIC
 	 tristate '  3Dfx Banshee/Voodoo3 display support (EXPERIMENTAL)' CONFIG_FB_3DFX
@@ -294,6 +300,7 @@ if [ "$CONFIG_FB" = "y" ]; then
            "$CONFIG_FB_PM3" = "y" -o "$CONFIG_FB_TRIDENT" = "y" -o \
 	   "$CONFIG_FB_P9100" = "y" -o "$CONFIG_FB_ATY128" = "y" -o \
 	   "$CONFIG_FB_RIVA" = "y" -o "$CONFIG_FB_RADEON" = "y" -o \
+	   "$CONFIG_FB_INTEL" = "y" -o \
 	   "$CONFIG_FB_SGIVW" = "y" -o "$CONFIG_FB_CYBER2000" = "y" -o \
 	   "$CONFIG_FB_SA1100" = "y" -o "$CONFIG_FB_3DFX" = "y" -o \
 	   "$CONFIG_FB_PMAG_BA" = "y" -o "$CONFIG_FB_PMAGB_B" = "y" -o \
@@ -314,12 +321,13 @@ if [ "$CONFIG_FB" = "y" ]; then
 	      "$CONFIG_FB_VALKYRIE" = "m" -o "$CONFIG_FB_PLATINUM" = "m" -o \
               "$CONFIG_FB_IGA" = "m" -o "$CONFIG_FB_MATROX" = "m" -o \
 	      "$CONFIG_FB_CT65550" = "m" -o "$CONFIG_FB_PM2" = "m" -o \
-              "$CONFIG_FB_PM3" = "m" -o "$CONFIG_FB_TRIDENT" = "y" -o \
+              "$CONFIG_FB_PM3" = "m" -o "$CONFIG_FB_TRIDENT" = "m" -o \
 	      "$CONFIG_FB_P9100" = "m" -o "$CONFIG_FB_ATY128" = "m" -o \
 	      "$CONFIG_FB_RIVA" = "m" -o "$CONFIG_FB_3DFX" = "m" -o \
 	      "$CONFIG_FB_SGIVW" = "m" -o "$CONFIG_FB_CYBER2000" = "m" -o \
 	      "$CONFIG_FB_PMAG_BA" = "m" -o "$CONFIG_FB_PMAGB_B" = "m" -o \
 	      "$CONFIG_FB_MAXINE" = "m" -o "$CONFIG_FB_RADEON" = "m" -o \
+	      "$CONFIG_FB_INTEL" = "m" -o \
 	      "$CONFIG_FB_SA1100" = "m" -o "$CONFIG_FB_SIS" = "m" -o \
 	      "$CONFIG_FB_TX3912" = "m" -o "$CONFIG_FB_NEOMAGIC" = "m" -o \
 	      "$CONFIG_FB_STI" = "m" -o "$CONFIG_FB_INTEL" = "m" ]; then
@@ -330,6 +338,7 @@ if [ "$CONFIG_FB" = "y" ]; then
 	   "$CONFIG_FB_MAC" = "y" -o "$CONFIG_FB_VESA" = "y" -o \
 	   "$CONFIG_FB_VIRTUAL" = "y" -o "$CONFIG_FB_TBOX" = "y" -o \
 	   "$CONFIG_FB_Q40" = "y" -o "$CONFIG_FB_RADEON" = "y" -o \
+	   "$CONFIG_FB_INTEL" = "y" -o \
 	   "$CONFIG_FB_CONTROL" = "y" -o "$CONFIG_FB_CLGEN" = "y" -o \
 	   "$CONFIG_FB_VIRGE" = "y" -o "$CONFIG_FB_CYBER" = "y" -o \
 	   "$CONFIG_FB_VALKYRIE" = "y" -o "$CONFIG_FB_PLATINUM" = "y" -o \
@@ -352,10 +361,11 @@ if [ "$CONFIG_FB" = "y" ]; then
 	      "$CONFIG_FB_VALKYRIE" = "m" -o "$CONFIG_FB_PLATINUM" = "m" -o \
 	      "$CONFIG_FB_CT65550" = "m" -o "$CONFIG_FB_MATROX" = "m" -o \
 	      "$CONFIG_FB_PM2" = "m" -o "$CONFIG_FB_SGIVW" = "m" -o \
-              "$CONFIG_FB_PM3" = "m" -o "$CONFIG_FB_TRIDENT" = "y" -o \
+              "$CONFIG_FB_PM3" = "m" -o "$CONFIG_FB_TRIDENT" = "m" -o \
 	      "$CONFIG_FB_RIVA" = "m" -o "$CONFIG_FB_ATY128" = "m" -o \
 	      "$CONFIG_FB_CYBER2000" = "m" -o "$CONFIG_FB_SIS" = "m" -o \
 	      "$CONFIG_FB_SA1100" = "m" -o "$CONFIG_FB_RADEON" = "m" -o \
+	      "$CONFIG_FB_INTEL" = "m" -o \
 	      "$CONFIG_FB_PVR2" = "m" -o "$CONFIG_FB_VOODOO1" = "m" -o \
 	      "$CONFIG_FB_NEOMAGIC" = "m" -o "$CONFIG_FB_INTEL" = "m" ]; then
 	    define_tristate CONFIG_FBCON_CFB16 m
@@ -387,6 +397,7 @@ if [ "$CONFIG_FB" = "y" ]; then
 	   "$CONFIG_FB_RIVA" = "y" -o "$CONFIG_FB_ATY128" = "y" -o \
 	   "$CONFIG_FB_FM2" = "y" -o "$CONFIG_FB_SGIVW" = "y" -o \
 	   "$CONFIG_FB_RADEON" = "y" -o "$CONFIG_FB_PVR2" = "y" -o \
+	   "$CONFIG_FB_INTEL" = "y" -o \
 	   "$CONFIG_FB_3DFX" = "y" -o "$CONFIG_FB_SIS" = "y" -o \
 	   "$CONFIG_FB_VOODOO1" = "y" -o "$CONFIG_FB_CYBER2000" = "y" -o \
 	   "$CONFIG_FB_STI" = "y"  -o "$CONFIG_FB_INTEL" = "y" ]; then
@@ -397,13 +408,13 @@ if [ "$CONFIG_FB" = "y" ]; then
 	      "$CONFIG_FB_CONTROL" = "m" -o "$CONFIG_FB_CLGEN" = "m" -o \
 	      "$CONFIG_FB_TGA" = "m" -o "$CONFIG_FB_PLATINUM" = "m" -o \
 	      "$CONFIG_FB_MATROX" = "m" -o "$CONFIG_FB_PM2" = "m" -o \
-              "$CONFIG_FB_PM3" = "m" -o "$CONFIG_FB_TRIDENT" = "y" -o \
+              "$CONFIG_FB_PM3" = "m" -o "$CONFIG_FB_TRIDENT" = "m" -o \
 	      "$CONFIG_FB_RIVA" = "m" -o "$CONFIG_FB_ATY128" = "m" -o \
 	      "$CONFIG_FB_3DFX" = "m" -o "$CONFIG_FB_RADEON" = "m" -o \
+	      "$CONFIG_FB_INTEL" = "m" -o \
 	      "$CONFIG_FB_SGIVW" = "m" -o "$CONFIG_FB_SIS" = "m" -o \
 	      "$CONFIG_FB_PVR2" = "m" -o "$CONFIG_FB_VOODOO1" = "m" -o \
-	      "$CONFIG_FB_CYBER2000" = "m" -o "$CONFIG_FB_STI" = "y" -o \
-	      "$CONFIG_FB_INTEL" = "m" ]; then
+	      "$CONFIG_FB_CYBER2000" = "m" -o "$CONFIG_FB_STI" = "m" ]; then
 	    define_tristate CONFIG_FBCON_CFB32 m
 	 fi
       fi
@@ -450,9 +461,9 @@ if [ "$CONFIG_FB" = "y" ]; then
 	    define_tristate CONFIG_FBCON_HGA m
 	 fi
       fi
-      if [ "$CONFIG_FB_STI" = "y" ]; then
-	 define_tristate CONFIG_FBCON_STI y
-      fi
+   fi
+   if [ "$CONFIG_FB_STI" = "y" ]; then
+      define_tristate CONFIG_FBCON_STI y
    fi
    bool '  Support only 8 pixels wide fonts' CONFIG_FBCON_FONTWIDTH8_ONLY
    if [ "$CONFIG_SPARC32" = "y" -o "$CONFIG_SPARC64" = "y" ]; then

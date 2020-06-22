@@ -1539,10 +1539,10 @@ int netif_receive_skb(struct sk_buff *skb)
 	return ret;
 }
 
-static int process_backlog(struct net_device *blog_dev, int *budget)
+static int process_backlog(struct net_device *backlog_dev, int *budget)
 {
 	int work = 0;
-	int quota = min(blog_dev->quota, *budget);
+	int quota = min(backlog_dev->quota, *budget);
 	int this_cpu = smp_processor_id();
 	struct softnet_data *queue = &softnet_data[this_cpu];
 	unsigned long start_time = jiffies;
@@ -1570,8 +1570,8 @@ static int process_backlog(struct net_device *blog_dev, int *budget)
 
 #ifdef CONFIG_NET_HW_FLOWCONTROL
 		if (queue->throttle && queue->input_pkt_queue.qlen < no_cong_thresh ) {
+			queue->throttle = 0;
 			if (atomic_dec_and_test(&netdev_dropping)) {
-				queue->throttle = 0;
 				netdev_wakeup();
 				break;
 			}
@@ -1579,16 +1579,17 @@ static int process_backlog(struct net_device *blog_dev, int *budget)
 #endif
 	}
 
-	blog_dev->quota -= work;
+	backlog_dev->quota -= work;
 	*budget -= work;
 	return -1;
 
 job_done:
-	blog_dev->quota -= work;
+	backlog_dev->quota -= work;
 	*budget -= work;
 
-	list_del(&blog_dev->poll_list);
-	clear_bit(__LINK_STATE_RX_SCHED, &blog_dev->state);
+	list_del(&backlog_dev->poll_list);
+	smp_mb__before_clear_bit();
+	netif_poll_enable(backlog_dev);
 
 	if (queue->throttle) {
 		queue->throttle = 0;
@@ -2198,7 +2199,6 @@ static int dev_ifsioc(struct ifreq *ifr, unsigned int cmd)
 			    cmd == SIOCBONDSLAVEINFOQUERY ||
 			    cmd == SIOCBONDINFOQUERY ||
 			    cmd == SIOCBONDCHANGEACTIVE ||
-			    cmd == SIOCETHTOOL ||
 			    cmd == SIOCGMIIPHY ||
 			    cmd == SIOCGMIIREG ||
 			    cmd == SIOCSMIIREG ||
@@ -2294,6 +2294,20 @@ int dev_ioctl(unsigned int cmd, void *arg)
 			}
 			return ret;
 
+		case SIOCETHTOOL:
+			dev_load(ifr.ifr_name);
+			rtnl_lock();
+			ret = dev_ethtool(&ifr);
+			rtnl_unlock();
+			if (!ret) {
+				if (colon)
+					*colon = ':';
+				if (copy_to_user(arg, &ifr,
+						 sizeof(struct ifreq)))
+					ret = -EFAULT;
+			}
+			return ret;
+
 		/*
 		 *	These ioctl calls:
 		 *	- require superuser power.
@@ -2301,7 +2315,6 @@ int dev_ioctl(unsigned int cmd, void *arg)
 		 *	- return a value
 		 */
 		 
-		case SIOCETHTOOL:
 		case SIOCGMIIPHY:
 		case SIOCGMIIREG:
 			if (!capable(CAP_NET_ADMIN))

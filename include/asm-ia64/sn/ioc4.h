@@ -30,7 +30,6 @@
 #ifndef _ASM_IA64_SN_IOC4_H
 #define _ASM_IA64_SN_IOC4_H
 
-#if 0
 
 /*
  * ioc4.h - IOC4 chip header file
@@ -46,7 +45,7 @@
  *
  * All IOC4 registers are 32 bits wide.
  */
-typedef __uint32_t ioc4reg_t;
+typedef uint32_t ioc4reg_t;
 
 /*
  * PCI Configuration Space Register Address Map, use offset from IOC4 PCI
@@ -70,10 +69,12 @@ typedef __uint32_t ioc4reg_t;
  * PCI Memory Space Map 
  */
 #define IOC4_PCI_ERR_ADDR_L     0x000	/* Low Error Address */
-#define IOC4_PCI_ERR_ADDR_VLD	     (0x1 << 0)
-#define IOC4_PCI_ERR_ADDR_MST_ID_MSK (0xf << 1)
-#define IOC4_PCI_ERR_ADDR_MUL_ERR    (0x1 << 5)
-#define IOC4_PCI_ERR_ADDR_ADDR_MSK   (0x3ffffff << 6)
+#define IOC4_PCI_ERR_ADDR_VLD	        (0x1 << 0)
+#define IOC4_PCI_ERR_ADDR_MST_ID_MSK    (0xf << 1)
+#define IOC4_PCI_ERR_ADDR_MST_NUM_MSK   (0xe << 1)
+#define IOC4_PCI_ERR_ADDR_MST_TYP_MSK   (0x1 << 1)
+#define IOC4_PCI_ERR_ADDR_MUL_ERR       (0x1 << 5)
+#define IOC4_PCI_ERR_ADDR_ADDR_MSK      (0x3ffffff << 6)
 
 /* Master IDs contained in PCI_ERR_ADDR_MST_ID_MSK */
 #define IOC4_MST_ID_S0_TX		0
@@ -569,25 +570,26 @@ typedef volatile struct ioc4_serialregs {
 
 /* IOC4 UART register map */
 typedef volatile struct ioc4_uartregs {
+    char                    i4u_lcr;
     union {
-        char                    rbr;    /* read only, DLAB == 0 */
-        char                    thr;    /* write only, DLAB == 0 */
-        char                    dll;    /* DLAB == 1 */
-    } u1;
+        char                    iir;    /* read only */
+        char                    fcr;    /* write only */
+    } u3;
     union {
         char                    ier;    /* DLAB == 0 */
         char                    dlm;    /* DLAB == 1 */
     } u2;
     union {
-        char                    iir;    /* read only */
-        char                    fcr;    /* write only */
-    } u3;
-    char                    i4u_lcr;
-    char                    i4u_mcr;
-    char                    i4u_lsr;
-    char                    i4u_msr;
+        char                    rbr;    /* read only, DLAB == 0 */
+        char                    thr;    /* write only, DLAB == 0 */
+        char                    dll;    /* DLAB == 1 */
+    } u1;
     char                    i4u_scr;
+    char                    i4u_msr;
+    char                    i4u_lsr;
+    char                    i4u_mcr;
 } ioc4_uart_t;
+
 
 #define i4u_rbr u1.rbr
 #define i4u_thr u1.thr
@@ -704,7 +706,6 @@ typedef volatile struct ioc4_memregs {
     ioc4_uart_t		    uart_3;
 } ioc4_mem_t;
 
-#endif	/* 0 */
 
 /*
  * Bytebus device space
@@ -714,7 +715,6 @@ typedef volatile struct ioc4_memregs {
 #define IOC4_BYTEBUS_DEV2	0xC0000L  /* Addressed using pci_bar0 */
 #define IOC4_BYTEBUS_DEV3	0xE0000L  /* Addressed using pci_bar0 */
 
-#if 0
 /* UART clock speed */
 #define IOC4_SER_XIN_CLK        66000000
 
@@ -749,7 +749,7 @@ typedef enum ioc4_subdevs_e {
 #define IOC4_INTA_SUBDEVS	(IOC4_SDB_SERIAL | IOC4_SDB_KBMS | IOC4_SDB_RT | IOC4_SDB_GENERIC)
 
 extern int		ioc4_subdev_enabled(vertex_hdl_t, ioc4_subdev_t);
-extern void		ioc4_subdev_enables(vertex_hdl_t, ulong_t);
+extern void		ioc4_subdev_enables(vertex_hdl_t, uint64_t);
 extern void		ioc4_subdev_enable(vertex_hdl_t, ioc4_subdev_t);
 extern void		ioc4_subdev_disable(vertex_hdl_t, ioc4_subdev_t);
 
@@ -767,7 +767,7 @@ typedef void
 ioc4_intr_func_f	(intr_arg_t, ioc4reg_t);
 
 typedef void
-ioc4_intr_connect_f	(vertex_hdl_t conn_vhdl,
+ioc4_intr_connect_f	(struct pci_dev *conn_vhdl,
 			 ioc4_intr_type_t,
 			 ioc4reg_t,
 			 ioc4_intr_func_f *,
@@ -784,18 +784,17 @@ ioc4_intr_disconnect_f	(vertex_hdl_t conn_vhdl,
 			 intr_arg_t info,
 			 vertex_hdl_t owner_vhdl);
 
-ioc4_intr_disconnect_f	ioc4_intr_disconnect;
-ioc4_intr_connect_f	ioc4_intr_connect;
+void ioc4_intr_connect(vertex_hdl_t, ioc4_intr_type_t, ioc4reg_t,
+		  ioc4_intr_func_f *, intr_arg_t, vertex_hdl_t,
+		  vertex_hdl_t);
 
 extern int		ioc4_is_console(vertex_hdl_t conn_vhdl);
 
 extern void		ioc4_mlreset(ioc4_cfg_t *, ioc4_mem_t *);
 
-extern intr_func_f	ioc4_intr;
 
 extern ioc4_mem_t      *ioc4_mem_ptr(void *ioc4_fastinfo);
 
 typedef ioc4_intr_func_f *ioc4_intr_func_t;
 
-#endif	/* 0 */
 #endif				/* _ASM_IA64_SN_IOC4_H */

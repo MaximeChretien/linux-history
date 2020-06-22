@@ -1,17 +1,67 @@
 /*
  * linux/arch/sh/kernel/io_shmse.c
  *
- * Copyright (C) 2003 Takashi Kusuda <kusuda-takashi@hitachi-ul.co.jp>
- * Based largely on io_se.c
- *
- * I/O routine for SH-Mobile SolutionEngine.
+ * Copyright (C) 2003 YOSHII Takashi <yoshii-takashi@hitachi-ul.co.jp>
  */
 
 #include <linux/kernel.h>
-#include <linux/types.h>
-#include <asm/io.h>
 #include <asm/hitachi_shmse.h>
-#include <asm/addrspace.h>
+#include <asm/io.h>
+
+#define badio(fn, a) panic("bad i/o operation %s for %08lx.", #fn, a)
+
+struct iop {
+	unsigned long start, end;
+	unsigned long base;
+	struct iop *(*check)(struct iop *p, unsigned long port);
+	unsigned char (*inb)(struct iop *p, unsigned long port);
+	unsigned short (*inw)(struct iop *p, unsigned long port);
+	void (*outb)(struct iop *p, unsigned char value, unsigned long port);
+	void (*outw)(struct iop *p, unsigned short value, unsigned long port);
+};
+ 
+struct iop *simple_check(struct iop *p, unsigned long port){
+	if((p->start <= port) && (port <= p->end))
+		return p;
+	else
+		badio(check, port);
+}
+
+unsigned short simple_inw(struct iop *p, unsigned long port){
+	return *(unsigned short*)(p->base+port);
+}
+
+void simple_outw(struct iop *p, unsigned short value, unsigned long port){
+	*(unsigned short*)(p->base+port)=value;
+}
+
+unsigned char bad_inb(struct iop *p, unsigned long port)
+{
+	badio(inb, port);
+}
+
+void bad_outb(struct iop *p, unsigned char value, unsigned long port){
+	badio(inw, port);
+}
+
+/* MSTLANEX01 LAN at 0xb400:0000 */
+static struct iop laniop = {
+	.start = 0x200,	// device is at 0x300, but start here for probing.
+	.end = 0x30f,
+	.base = 0xb4000000,
+	.check = simple_check,
+	.inb = bad_inb,
+	.inw = simple_inw,
+	.outb = bad_outb,
+	.outw = simple_outw,
+};
+
+static __inline__ struct iop *port2iop(unsigned long port){
+	if(laniop.check(&laniop, port))
+		return &laniop;
+	else
+		badio(check, port); /* XXX: dummy fallback routine? */
+}
 
 static inline void delay(void)
 {
@@ -19,151 +69,117 @@ static inline void delay(void)
 	ctrl_inw(0xac000000);
 }
 
-#define maybebadio(name,port) \
-  printk("bad PC-like io %s for port 0x%lx at 0x%08lx\n", \
-	#name, (port), (volatile unsigned long) __builtin_return_address(0))
-
 unsigned char shmse_inb(unsigned long port)
 {
-	if (PXSEG(port)){
-		return *(volatile unsigned char *) port; 
-	}else{
-		maybebadio(inb, port);
-		return 0;
-	}
+	struct iop *p=port2iop(port);
+	return (p->inb)(p, port);
 }
 
 unsigned char shmse_inb_p(unsigned long port)
 {
-	unsigned char v;
-
-	if (PXSEG(port)){
-		v = *(volatile unsigned char *)port;
-	}else{
-		maybebadio(inb_p, port);
-		return 0;
-	}
+	unsigned char v=shmse_inb(port);
 	delay();
 	return v;
 }
 
 unsigned short shmse_inw(unsigned long port)
 {
-	if (PXSEG(port)){
-		return *(volatile unsigned short *) port; 
-	}else{
-		maybebadio(inw, port);
-		return 0;
-	}
+	struct iop *p=port2iop(port);
+	return (p->inw)(p, port);
 }
 
 unsigned int shmse_inl(unsigned long port)
 {
-	if (PXSEG(port)){
-		return *(volatile unsigned short *) port; 
-	}else{
-		maybebadio(inl, port);
-		return 0;
-	}
+	badio(inl, port);
 }
 
 void shmse_outb(unsigned char value, unsigned long port)
 {
-	if (PXSEG(port)){
-		*(volatile unsigned char *)port = value; 
-	}else{
-		maybebadio(outb, port);
-	}
+	struct iop *p=port2iop(port);
+	(p->outb)(p, value, port);
 }
 
 void shmse_outb_p(unsigned char value, unsigned long port)
 {
-	if (PXSEG(port)){
-		*(volatile unsigned char *)port = value; 
-	}else{
-		maybebadio(outb_p, port);
-	}
+	shmse_outb(value, port);
 	delay();
 }
 
 void shmse_outw(unsigned short value, unsigned long port)
 {
-	if (PXSEG(port)){
-		*(volatile unsigned short *)port = value; 
-	}else{
-		maybebadio(outw, port);
-	}
+	struct iop *p=port2iop(port);
+	(p->outw)(p, value, port);
 }
 
 void shmse_outl(unsigned int value, unsigned long port)
 {
-	if (PXSEG(port)){
-		*(volatile unsigned long *)port = value; 
-	}else{
-		maybebadio(outl, port);
-	}
+	badio(outl, port);
 }
 
 void shmse_insb(unsigned long port, void *addr, unsigned long count)
 {
-	unsigned char *p = addr;
-	while (count--) *p++ = shmse_inb(port);
+	unsigned char *a = addr;
+	struct iop *p=port2iop(port);
+	while (count--) *a++ = (p->inb)(p, port);
 }
 
 void shmse_insw(unsigned long port, void *addr, unsigned long count)
 {
-	unsigned short *p = addr;
-	while (count--) *p++ = shmse_inw(port);
+	unsigned short *a = addr;
+	struct iop *p=port2iop(port);
+	while (count--) *a++ = (p->inw)(p, port);
 }
 
 void shmse_insl(unsigned long port, void *addr, unsigned long count)
 {
-	maybebadio(insl, port);
+	badio(insl, port);
 }
 
 void shmse_outsb(unsigned long port, const void *addr, unsigned long count)
 {
-	unsigned char *p = (unsigned char *)addr;
-	while (count--) shmse_outb(*p++, port);
+	unsigned char *a = (unsigned char*)addr;
+	struct iop *p=port2iop(port);
+	while (count--) (p->outb)(p, *a++, port);
 }
 
 void shmse_outsw(unsigned long port, const void *addr, unsigned long count)
 {
-	unsigned short *p = (unsigned short *)addr;
-	while (count--) shmse_outw(*p++, port);
+	unsigned short *a = (unsigned short*)addr;
+	struct iop *p=port2iop(port);
+	while (count--) (p->outw)(p, *a++, port);
 }
 
 void shmse_outsl(unsigned long port, const void *addr, unsigned long count)
 {
-	maybebadio(outsw, port);
+	badio(outsw, port);
 }
 
 unsigned char shmse_readb(unsigned long addr)
 {
-	return *(volatile unsigned char*)addr;
+	badio(readb, addr);
 }
 
 unsigned short shmse_readw(unsigned long addr)
 {
-	return *(volatile unsigned short*)addr;
+	badio(readw, addr);
 }
 
 unsigned int shmse_readl(unsigned long addr)
 {
-	return *(volatile unsigned long*)addr;
+	badio(readl, addr);
 }
 
 void shmse_writeb(unsigned char b, unsigned long addr)
 {
-	*(volatile unsigned char*)addr = b;
+	badio(writeb, addr);
 }
 
 void shmse_writew(unsigned short b, unsigned long addr)
 {
-	*(volatile unsigned short*)addr = b;
+	badio(writew, addr);
 }
 
 void shmse_writel(unsigned int b, unsigned long addr)
 {
-        *(volatile unsigned long*)addr = b;
+	badio(writel, addr);
 }

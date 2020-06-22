@@ -108,7 +108,9 @@ gotit:
 		     sk2 = sk2->next) {
 			if (sk2->num == snum &&
 			    sk2 != sk &&
-			    sk2->bound_dev_if == sk->bound_dev_if &&
+			    (!sk2->bound_dev_if ||
+			     !sk->bound_dev_if ||
+			     sk2->bound_dev_if == sk->bound_dev_if) &&
 			    ((!sk2->rcv_saddr && !ipv6_only_sock(sk)) ||
 			     (sk2->family == AF_INET6 && 
 			      ipv6_addr_any(&sk2->net_pinfo.af_inet6.rcv_saddr) &&

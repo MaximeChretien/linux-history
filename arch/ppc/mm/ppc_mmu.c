@@ -3,9 +3,6 @@
  * PowerPC implementations where the MMU substantially follows the
  * architecture specification.  This includes the 6xx, 7xx, 7xxx,
  * 8260, and POWER3 implementations but excludes the 8xx and 4xx.
- * Although the iSeries hardware does comply with the architecture
- * specification, the need to work through the hypervisor makes
- * things sufficiently different that it is handled elsewhere.
  *  -- paulus
  *
  *  Derived from arch/ppc/mm/init.c:
@@ -181,6 +178,17 @@ void __init MMU_init_hw(void)
 #define MIN_N_HPTEG	1024		/* min 64kB hash table */
 #endif
 
+#ifdef CONFIG_POWER4
+	/* The hash table has already been allocated and initialized
+	   in prom.c */
+	n_hpteg = Hash_size >> LG_HPTEG_SIZE;
+	lg_n_hpteg = __ilog2(n_hpteg);
+
+	/* Remove the hash table from the available memory */
+	if (Hash)
+		reserve_phys_mem(__pa(Hash), Hash_size);
+
+#else /* CONFIG_POWER4 */
 	/*
 	 * Allow 1 HPTE (1/8 HPTEG) for each page of memory.
 	 * This is less than the recommended amount, but then
@@ -204,6 +212,7 @@ void __init MMU_init_hw(void)
 	cacheable_memzero(Hash, Hash_size);
 	_SDR1 = __pa(Hash) | SDR1_LOW_BITS;
 	Hash_end = (PTE *) ((unsigned long)Hash + Hash_size);
+#endif /* CONFIG_POWER4 */
 
 	printk("Total memory = %ldMB; using %ldkB for hash table (at %p)\n",
 	       total_memory >> 20, Hash_size >> 10, Hash);

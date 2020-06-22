@@ -32,8 +32,14 @@
 
 /* www.crystalfontz.com devices - thanx for providing free devices for evaluation ! */
 /* they use the ftdi chipset for the USB interface and the vendor id is the same */
-#define FTDI_XF_634_PID  0xFC09	/* Four line device */
-#define FTDI_XF_632_PID  0xFC08	/* Two line device */
+#define FTDI_XF_632_PID 0xFC08	/* 632: 16x2 Character Display */
+#define FTDI_XF_634_PID 0xFC09	/* 634: 20x4 Character Display */
+#define FTDI_XF_547_PID 0xFC0A	/* 547: Two line Display */
+#define FTDI_XF_633_PID 0xFC0B	/* 633: 16x2 Character Display with Keys */
+#define FTDI_XF_631_PID 0xFC0C	/* 631: 20x2 Character Display */
+#define FTDI_XF_635_PID 0xFC0D	/* 635: 20x4 Character Display */
+#define FTDI_XF_640_PID 0xFC0E	/* 640: Two line Display */
+#define FTDI_XF_642_PID 0xFC0F	/* 642: Two line Display */
 
 /* Video Networks Limited / Homechoice in the UK use an ftdi-based device for their 1Mb */
 /* broadband internet service.  The following PID is exhibited by the usb device supplied */
@@ -44,7 +50,6 @@
  * The following are the values for the Matrix Orbital LCD displays,
  * which are the FT232BM ( similar to the 8U232AM )
  */
-#define FTDI_MTXORB_VID                FTDI_VID        /* Matrix Orbital Product Id */
 #define FTDI_MTXORB_0_PID      0xFA00  /* Matrix Orbital Product Id */
 #define FTDI_MTXORB_1_PID      0xFA01  /* Matrix Orbital Product Id */
 #define FTDI_MTXORB_2_PID      0xFA02  /* Matrix Orbital Product Id */
@@ -52,6 +57,12 @@
 #define FTDI_MTXORB_4_PID      0xFA04  /* Matrix Orbital Product Id */
 #define FTDI_MTXORB_5_PID      0xFA05  /* Matrix Orbital Product Id */
 #define FTDI_MTXORB_6_PID      0xFA06  /* Matrix Orbital Product Id */
+
+/*
+ * The following are the values for the Perle Systems
+ * UltraPort USB serial converters
+ */
+#define FTDI_PERLE_ULTRAPORT_PID 0xF0C0	/* Perle UltraPort Product Id */
 
 /*
  * The following are the values for the Sealevel SeaLINK+ adapters.
@@ -120,6 +131,19 @@
 /* USB-UIRT - An infrared receiver and transmitter using the 8U232AM chip */
 /* http://home.earthlink.net/~jrhees/USBUIRT/index.htm */
 #define FTDI_USB_UIRT_PID	0xF850	/* Product Id */
+
+/*
+ * Definitions for ID TECH (www.idt-net.com) devices
+ */
+#define IDTECH_VID		0x0ACD	/* ID TECH Vendor ID */
+#define IDTECH_IDT1221U_PID	0x0300	/* IDT1221U USB to RS-232 adapter */
+
+/*
+ * Definitions for Omnidirectional Control Technology, Inc. devices
+ */
+#define OCT_VID			0x0B39	/* OCT vendor ID */
+/* Note: OCT US101 is also rebadged as Dick Smith Electronics (NZ) XH6381 */
+#define OCT_US101_PID		0x0421	/* OCT US101 USB to RS-232 */
 
 /* Commands */
 #define FTDI_SIO_RESET 		0 /* Reset the port */

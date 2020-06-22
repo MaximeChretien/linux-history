@@ -194,6 +194,40 @@ ENTRY(__clear_user_page)
 	 nop
 .L4096:	.word	4096
 
+/*
+ * __flush_cache_4096
+ *
+ * Flush the page at the specified physical address by writing to to
+ * the memory mapped address array.
+ * The offset into the memory mapped cache array selects the `color' of the
+ * virtual addresses which will be checked.
+ * Lower two bits of phys control the operation (invalidate/write-back).
+ *
+ * void __flush_cache_4096(unsigned long addr, unsigned long phys,
+ *                         unsigned long exec_offset);
+ *
+ * @addr: address of the memory mapped cache address array
+ * @phys: P1 address to be flushed
+ * @exec_offset: set to 0x20000000 if the flush needs to be executed from P2
+ * (ie from uncached memory), otherwise 0.
+ */
+
+/*
+ * Updated for the 2-way associative cache option on the SH-4-202 and SH7751R.
+ *
+ * The current implmentation simply adds an additional loop to flush the 
+ * other way, but this could be improved by merging both loops to handle the
+ * flushing of boths ways with one iteration.
+ *  
+ * benedict.gaster@superh.com
+ */
+ 
+/*
+ * r4 --- addr
+ * r5 --- phys
+ * r6 --- exec_offset
+ */
+
 ENTRY(__flush_cache_4096)
 	mov.l	1f,r3
 	add	r6,r3
@@ -206,6 +240,9 @@ ENTRY(__flush_cache_4096)
 	.align	2
 1:	.long	2f
 2:
+#if defined (CONFIG_SH_CACHE_ASSOC)
+	mov     r5, r3
+#endif
 	.rept	32
 	mov.l	r5,@r0
 	mov.l	r5,@(32,r0)
@@ -214,6 +251,21 @@ ENTRY(__flush_cache_4096)
 	add	r2,r5
 	add	r2,r0
 	.endr
+
+#if defined (CONFIG_SH_CACHE_ASSOC)
+	mov     r4, r0
+	mov     #0x40, r1	! set bit 14 in r0 to imply 2 way.
+	shll8   r1
+	or      r1, r0
+	.rept	32
+	mov.l	r3,@r0
+	mov.l	r3,@(32,r0)
+	mov.l	r3,@(r0,r6)
+	mov.l	r3,@(r0,r7)
+	add	r2,r3
+	add	r2,r0
+	.endr
+#endif
 	nop
 	nop
 	nop
@@ -222,7 +274,8 @@ ENTRY(__flush_cache_4096)
 	nop
 	nop
 	rts
-	 nop
+	nop
+		
 
 ENTRY(__flush_dcache_all)
 	mov.l	2f,r0
@@ -233,6 +286,46 @@ ENTRY(__flush_dcache_all)
 	or	r1,r2
 	mov	#32,r3
 	shll2	r3
+
+! TODO : make this be dynamically selected based on CPU probing rather than assembled-in
+
+#if defined (CONFIG_SH_CACHE_ASSOC)
+	mov	#0x40, r5
+	shll8	r5
+	add	r4, r5		! r5 = r4 + 16k
+1:
+	ldc	r2,sr		! set BL bit
+	movca.l	r0,@r4
+	movca.l	r0,@r5
+	ocbi	@r4
+	add	#32,r4
+	ocbi	@r5
+	add	#32,r5
+	movca.l	r0,@r4
+	movca.l	r0,@r5
+	ocbi	@r4
+	add	#32,r4
+	ocbi	@r5
+	add	#32,r5
+	movca.l	r0,@r4
+	movca.l	r0,@r5
+	ocbi	@r4
+	add	#32,r4
+	ocbi	@r5
+	add	#32,r5
+	movca.l	r0,@r4
+	movca.l	r0,@r5
+	ocbi	@r4
+	add	#32, r4
+	ocbi	@r5
+	ldc	r1,sr		! restore SR
+	dt	r3
+	bf/s	1b
+	 add	#32,r5
+
+	rts
+	 nop
+#else
 1:
 	ldc	r2,sr		! set BL bit
 	movca.l	r0,@r4
@@ -253,8 +346,11 @@ ENTRY(__flush_dcache_all)
 
 	rts
 	 nop
+#endif /* CONFIG_SH_CACHE_ASSOC */
+
 	.align	2
 2:	.long	0xffffc000
+
 3:	.long	SYMBOL_NAME(empty_zero_page)
 4:	.long	0x10000000	! BL bit
 
@@ -268,11 +364,52 @@ ENTRY(flush_cache_4096_all)
 	mov.l	4f,r2
 	or	r1,r2
 	mov	#32,r3
+! TODO : make this be dynamically selected based on CPU probing rather than assembled-in
+
+#if defined (CONFIG_SH_CACHE_ASSOC)
+	mov	#0x40, r5
+	shll8	r5
+	add	r4, r5		! r5 = r4 + 16k
+1:
+	ldc	r2,sr		! set BL bit
+	movca.l	r0,@r4
+	movca.l	r0,@r5
+	ocbi	@r4
+	add	#32,r4
+	ocbi	@r5
+	add	#32,r5
+	movca.l	r0,@r4
+	movca.l	r0,@r5
+	ocbi	@r4
+	add	#32,r4
+	ocbi	@r5
+	add	#32,r5
+	movca.l	r0,@r4
+	movca.l	r0,@r5
+	ocbi	@r4
+	add	#32,r4
+	ocbi	@r5
+	add	#32,r5
+	movca.l	r0,@r4
+	movca.l	r0,@r5
+	ocbi	@r4
+	add	#32,r4
+	ocbi	@r5
+
+	ldc	r1,sr		! restore SR
+	dt	r3
+	bf/s	1b
+	add	#32,r5
+
+	rts
+	nop
+#else
 1:
 	ldc	r2,sr		! set BL bit
 	movca.l	r0,@r4
 	ocbi	@r4
 	add	#32,r4
+	
 	movca.l	r0,@r4
 	ocbi	@r4
 	add	#32,r4
@@ -281,15 +418,19 @@ ENTRY(flush_cache_4096_all)
 	add	#32,r4
 	movca.l	r0,@r4
 	ocbi	@r4
+
 	ldc	r1,sr		! restore SR
 	dt	r3
 	bf/s	1b
-	 add	#32,r4
+	add	#32,r4
 
 	rts
-	 nop
+	nop
+#endif
+
 	.align	2
 2:	.long	0xffffc000
 3:	.long	SYMBOL_NAME(empty_zero_page)
 4:	.long	0x10000000	! BL bit
+	
 #endif

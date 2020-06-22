@@ -51,7 +51,7 @@
 #include <net/bluetooth/l2cap.h>
 #include <net/bluetooth/rfcomm.h>
 
-#define VERSION "1.0"
+#define VERSION "1.1"
 
 #ifndef CONFIG_BLUEZ_RFCOMM_DEBUG
 #undef  BT_DBG
@@ -202,7 +202,7 @@ static void rfcomm_dlc_clear_state(struct rfcomm_dlc *d)
 	d->mtu        = RFCOMM_DEFAULT_MTU;
 	d->v24_sig    = RFCOMM_V24_RTC | RFCOMM_V24_RTR | RFCOMM_V24_DV;
 
-	d->credits    = RFCOMM_MAX_CREDITS;
+	d->cfc        = RFCOMM_CFC_DISABLED;
 	d->rx_credits = RFCOMM_DEFAULT_CREDITS;
 }
 
@@ -309,8 +309,8 @@ static int __rfcomm_dlc_open(struct rfcomm_dlc *d, bdaddr_t *src, bdaddr_t *dst,
 	d->state    = BT_CONFIG;
 	rfcomm_dlc_link(s, d);
 
-	d->mtu     = s->mtu;
-	d->credits = s->credits;
+	d->mtu = s->mtu;
+	d->cfc = (s->cfc == RFCOMM_CFC_UNKNOWN) ? 0 : s->cfc;
 
 	if (s->state == BT_CONNECTED)
 		rfcomm_send_pn(s, 1, d);
@@ -410,7 +410,7 @@ void __rfcomm_dlc_throttle(struct rfcomm_dlc *d)
 {
 	BT_DBG("dlc %p state %ld", d, d->state);
 
-	if (!d->credits) {
+	if (!d->cfc) {
 		d->v24_sig |= RFCOMM_V24_FC;
 		set_bit(RFCOMM_MSC_PENDING, &d->flags);
 	}
@@ -421,7 +421,7 @@ void __rfcomm_dlc_unthrottle(struct rfcomm_dlc *d)
 {
 	BT_DBG("dlc %p state %ld", d, d->state);
 
-	if (!d->credits) {
+	if (!d->cfc) {
 		d->v24_sig &= ~RFCOMM_V24_FC;
 		set_bit(RFCOMM_MSC_PENDING, &d->flags);
 	}
@@ -474,8 +474,8 @@ struct rfcomm_session *rfcomm_session_add(struct socket *sock, int state)
 	s->state = state;
 	s->sock  = sock;
 
-	s->mtu     = RFCOMM_DEFAULT_MTU;
-	s->credits = RFCOMM_MAX_CREDITS;
+	s->mtu   = RFCOMM_DEFAULT_MTU;
+	s->cfc   = RFCOMM_CFC_UNKNOWN;
 	
 	list_add(&s->list, &session_list);
 
@@ -746,7 +746,7 @@ static int rfcomm_send_pn(struct rfcomm_session *s, int cr, struct rfcomm_dlc *d
 	pn->ack_timer   = 0;
 	pn->max_retrans = 0;
 
-	if (d->credits) {
+	if (s->cfc) {
 		pn->flow_ctrl = cr ? 0xf0 : 0xe0;
 		pn->credits = RFCOMM_DEFAULT_CREDITS;
 	} else {
@@ -847,6 +847,50 @@ static int rfcomm_send_msc(struct rfcomm_session *s, int cr, u8 dlci, u8 v24_sig
 	msc = (void *) ptr; ptr += sizeof(*msc);
 	msc->dlci    = __addr(1, dlci);
 	msc->v24_sig = v24_sig | 0x01;
+
+	*ptr = __fcs(buf); ptr++;
+
+	return rfcomm_send_frame(s, buf, ptr - buf);
+}
+
+static int rfcomm_send_fcoff(struct rfcomm_session *s, int cr)
+{
+	struct rfcomm_hdr *hdr;
+	struct rfcomm_mcc *mcc;
+	u8 buf[16], *ptr = buf;
+
+	BT_DBG("%p cr %d", s, cr);
+
+	hdr = (void *) ptr; ptr += sizeof(*hdr);
+	hdr->addr = __addr(s->initiator, 0);
+	hdr->ctrl = __ctrl(RFCOMM_UIH, 0);
+	hdr->len  = __len8(sizeof(*mcc));
+
+	mcc = (void *) ptr; ptr += sizeof(*mcc);
+	mcc->type = __mcc_type(cr, RFCOMM_FCOFF);
+	mcc->len  = __len8(0);
+
+	*ptr = __fcs(buf); ptr++;
+
+	return rfcomm_send_frame(s, buf, ptr - buf);
+}
+
+static int rfcomm_send_fcon(struct rfcomm_session *s, int cr)
+{
+	struct rfcomm_hdr *hdr;
+	struct rfcomm_mcc *mcc;
+	u8 buf[16], *ptr = buf;
+
+	BT_DBG("%p cr %d", s, cr);
+
+	hdr = (void *) ptr; ptr += sizeof(*hdr);
+	hdr->addr = __addr(s->initiator, 0);
+	hdr->ctrl = __ctrl(RFCOMM_UIH, 0);
+	hdr->len  = __len8(sizeof(*mcc));
+
+	mcc = (void *) ptr; ptr += sizeof(*mcc);
+	mcc->type = __mcc_type(cr, RFCOMM_FCON);
+	mcc->len  = __len8(0);
 
 	*ptr = __fcs(buf); ptr++;
 
@@ -1091,28 +1135,22 @@ static int rfcomm_recv_sabm(struct rfcomm_session *s, u8 dlci)
 
 static int rfcomm_apply_pn(struct rfcomm_dlc *d, int cr, struct rfcomm_pn *pn)
 {
+	struct rfcomm_session *s = d->session;
+
 	BT_DBG("dlc %p state %ld dlci %d mtu %d fc 0x%x credits %d", 
 			d, d->state, d->dlci, pn->mtu, pn->flow_ctrl, pn->credits);
 
-	if (cr) {
-		if (pn->flow_ctrl == 0xf0) {
-			d->tx_credits = pn->credits;
-		} else {
-			set_bit(RFCOMM_TX_THROTTLED, &d->flags);
-			d->credits = 0;
-		}
+	if (pn->flow_ctrl == 0xf0 || pn->flow_ctrl == 0xe0) {
+		d->cfc = s->cfc = RFCOMM_CFC_ENABLED;
+		d->tx_credits = pn->credits;
 	} else {
-		if (pn->flow_ctrl == 0xe0) {
-			d->tx_credits = pn->credits;
-		} else {
-			set_bit(RFCOMM_TX_THROTTLED, &d->flags);
-			d->credits = 0;
-		}
+		d->cfc = s->cfc = RFCOMM_CFC_DISABLED;
+		set_bit(RFCOMM_TX_THROTTLED, &d->flags);
 	}
 
 	d->priority = pn->priority;
 
-	d->mtu = btohs(pn->mtu);
+	d->mtu = s->mtu = btohs(pn->mtu);
 
 	return 0;
 }
@@ -1302,7 +1340,7 @@ static int rfcomm_recv_msc(struct rfcomm_session *s, int cr, struct sk_buff *skb
 		return 0;
 
 	if (cr) {
-		if (msc->v24_sig & RFCOMM_V24_FC && !d->credits)
+		if (msc->v24_sig & RFCOMM_V24_FC && !d->cfc)
 			set_bit(RFCOMM_TX_THROTTLED, &d->flags);
 		else
 			clear_bit(RFCOMM_TX_THROTTLED, &d->flags);
@@ -1351,6 +1389,20 @@ static int rfcomm_recv_mcc(struct rfcomm_session *s, struct sk_buff *skb)
 		rfcomm_recv_msc(s, cr, skb);
 		break;
 
+	case RFCOMM_FCOFF:
+		if (cr) {
+			set_bit(RFCOMM_TX_THROTTLED, &s->flags);
+			rfcomm_send_fcoff(s, 0);
+		}
+		break;
+
+	case RFCOMM_FCON:
+		if (cr) {
+			clear_bit(RFCOMM_TX_THROTTLED, &s->flags);
+			rfcomm_send_fcon(s, 0);
+		}
+		break;
+
 	case RFCOMM_TEST:
 		if (cr)
 			rfcomm_send_test(s, 0, skb->data, skb->len);
@@ -1379,7 +1431,7 @@ static int rfcomm_recv_data(struct rfcomm_session *s, u8 dlci, int pf, struct sk
 		goto drop;
 	}
 
-	if (pf && d->credits) {
+	if (pf && d->cfc) {
 		u8 credits = *(u8 *) skb->data; skb_pull(skb, 1);
 
 		d->tx_credits += credits;
@@ -1484,20 +1536,20 @@ static inline int rfcomm_process_tx(struct rfcomm_dlc *d)
 	struct sk_buff *skb;
 	int err;
 
-	BT_DBG("dlc %p state %ld credits %d rx_credits %d tx_credits %d", 
-			d, d->state, d->credits, d->rx_credits, d->tx_credits);
+	BT_DBG("dlc %p state %ld cfc %d rx_credits %d tx_credits %d", 
+			d, d->state, d->cfc, d->rx_credits, d->tx_credits);
 
 	/* Send pending MSC */
 	if (test_and_clear_bit(RFCOMM_MSC_PENDING, &d->flags))
 		rfcomm_send_msc(d->session, 1, d->dlci, d->v24_sig);
 	
-	if (d->credits) {
+	if (d->cfc) {
 		/* CFC enabled. 
 		 * Give them some credits */
 		if (!test_bit(RFCOMM_RX_THROTTLED, &d->flags) &&
-			       	d->rx_credits <= (d->credits >> 2)) {
-			rfcomm_send_credits(d->session, d->addr, d->credits - d->rx_credits);
-			d->rx_credits = d->credits;
+			       	d->rx_credits <= (d->cfc >> 2)) {
+			rfcomm_send_credits(d->session, d->addr, d->cfc - d->rx_credits);
+			d->rx_credits = d->cfc;
 		}
 	} else {
 		/* CFC disabled. 
@@ -1518,7 +1570,7 @@ static inline int rfcomm_process_tx(struct rfcomm_dlc *d)
 		d->tx_credits--;
 	}
 
-	if (d->credits && !d->tx_credits) {
+	if (d->cfc && !d->tx_credits) {
 		/* We're out of TX credits.
 		 * Set TX_THROTTLED flag to avoid unnesary wakeups by dlc_send. */
 		set_bit(RFCOMM_TX_THROTTLED, &d->flags);
@@ -1540,6 +1592,9 @@ static inline void rfcomm_process_dlcs(struct rfcomm_session *s)
 			__rfcomm_dlc_close(d, ETIMEDOUT);
 			continue;
 		}
+
+		if (test_bit(RFCOMM_TX_THROTTLED, &s->flags))
+			continue;
 
 		if ((d->state == BT_CONNECTED || d->state == BT_DISCONN) &&
 				d->mscex == RFCOMM_MSCEX_OK)

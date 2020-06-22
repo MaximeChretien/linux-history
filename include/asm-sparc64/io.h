@@ -413,7 +413,7 @@ out:
  */
 #define ioremap(__offset, __size)	((void *)(__offset))
 #define ioremap_nocache(X,Y)		ioremap((X),(Y))
-#define iounmap(__addr)			do { } while(0)
+#define iounmap(__addr)			do { (void)(__addr); } while(0)
 
 /* Similarly for SBUS. */
 #define sbus_ioremap(__res, __offset, __size, __name) \

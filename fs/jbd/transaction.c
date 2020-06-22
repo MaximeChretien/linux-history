@@ -1581,9 +1581,6 @@ void __journal_unfile_buffer(struct journal_head *jh)
 	assert_spin_locked(&journal_datalist_lock);
 	transaction = jh->b_transaction;
 
-#ifdef __SMP__
-	J_ASSERT (current->lock_depth >= 0);
-#endif
 	J_ASSERT_JH(jh, jh->b_jlist < BJ_Types);
 
 	if (jh->b_jlist != BJ_None)
@@ -2016,9 +2013,6 @@ void __journal_file_buffer(struct journal_head *jh,
 
 	assert_spin_locked(&journal_datalist_lock);
 	
-#ifdef __SMP__
-	J_ASSERT (current->lock_depth >= 0);
-#endif
 	J_ASSERT_JH(jh, jh->b_jlist < BJ_Types);
 	J_ASSERT_JH(jh, jh->b_transaction == transaction ||
 				jh->b_transaction == 0);
@@ -2108,9 +2102,6 @@ void __journal_refile_buffer(struct journal_head *jh)
 	int was_dirty = 0;
 
 	assert_spin_locked(&journal_datalist_lock);
-#ifdef __SMP__
-	J_ASSERT_JH(jh, current->lock_depth >= 0);
-#endif
 	/* If the buffer is now unused, just drop it. */
 	if (jh->b_next_transaction == NULL) {
 		__journal_unfile_buffer(jh);

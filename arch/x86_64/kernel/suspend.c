@@ -5,6 +5,9 @@
  *
  * Copyright (c) 2002 Pavel Machek <pavel@suse.cz>
  * Copyright (c) 2001 Patrick Mochel <mochel@osdl.org>
+ * 
+ * AK currently useless for 24 because the core ACPI code doesn't support S3.
+ *    and most of the infrastructure is missing.
  */
 
 #include <linux/config.h>

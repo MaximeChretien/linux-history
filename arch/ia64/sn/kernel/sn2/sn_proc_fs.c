@@ -36,6 +36,7 @@
 #ifdef CONFIG_PROC_FS
 #include <linux/proc_fs.h>
 #include <asm/sn/sn_sal.h>
+#include <asm/sn/sn_cpuid.h>
 
 
 static int partition_id_read_proc(char *page, char **start, off_t off,
@@ -184,12 +185,66 @@ register_sn_linkstats(void) {
 	}
 }
 
+#define SHUB_MAX_VERSION 3
+static struct proc_dir_entry **proc_entries;
+static char* shub_revision[SHUB_MAX_VERSION+1] = {
+	"unknown",
+	"1.0",
+	"1.1",
+	"1.2"
+};
+
+static int
+read_shub_info_entry(char* page, char **start, off_t off, int count, int *eof,
+		     void* data) {
+	unsigned long id;
+	int rev;
+	int nasid = (long) data; /* Data contains NASID of this node */
+	int len = 0;
+
+	id = REMOTE_HUB_L(nasid, SH_SHUB_ID);
+	rev = (id & SH_SHUB_ID_REVISION_MASK) >> SH_SHUB_ID_REVISION_SHFT;
+	len += sprintf(&page[len], "type     : SHub\n");
+	len += sprintf(&page[len], "revision : %s\n", 
+		       (rev <= SHUB_MAX_VERSION) ? shub_revision[rev] : "unknown");
+	len += sprintf(&page[len], "nasid    : %d\n", nasid);
+
+	return len;
+}
+
+static void
+register_sn_nodes(void) {
+	struct proc_dir_entry **entp;
+	cnodeid_t cnodeid;
+	nasid_t nasid;
+	char name[11];
+
+	if (!sgi_proc_dir) {
+		sgi_proc_dir = proc_mkdir("sgi_sn", 0);
+	}
+
+	proc_entries = kmalloc(numnodes * sizeof(struct proc_dir_entry *),
+			       GFP_KERNEL);
+
+	for (cnodeid = 0, entp = proc_entries;
+	     cnodeid < numnodes;
+	     cnodeid++, entp++) {
+		sprintf(name, "node%d", cnodeid);
+		*entp = proc_mkdir(name, sgi_proc_dir);
+		nasid = cnodeid_to_nasid(cnodeid);
+		create_proc_read_entry(
+			"hubinfo", 0, *entp, read_shub_info_entry,
+			(void*) (long) nasid);
+	}
+}
+
 void
 register_sn_procfs(void) {
 	register_sn_partition_id();
 	register_sn_serial_numbers();
 	register_sn_force_interrupt();
 	register_sn_linkstats();
+	register_sn_nodes();
 }
 
 #endif /* CONFIG_PROC_FS */

@@ -28,6 +28,7 @@ mainmenu_option next_comment
 comment 'Processor type and features'
 choice 'SuperH system type'					\
 	"Generic		CONFIG_SH_GENERIC		\
+	 SH4-202-MicroDev	CONFIG_SH_SH4202_MICRODEV	\
 	 SolutionEngine		CONFIG_SH_SOLUTION_ENGINE	\
 	 SolutionEngine7751	CONFIG_SH_7751_SOLUTION_ENGINE	\
 	 SHMobileSolutionEngine	CONFIG_SH_MOBILE_SOLUTION_ENGINE \
@@ -68,7 +69,9 @@ choice 'Processor type' \
     SH7708 CONFIG_CPU_SUBTYPE_SH7708 \
     SH7709 CONFIG_CPU_SUBTYPE_SH7709 \
     SH7750 CONFIG_CPU_SUBTYPE_SH7750 \
+    SH7751R CONFIG_CPU_SUBTYPE_SH7751R \
     SH7751 CONFIG_CPU_SUBTYPE_SH7751 \
+    SH4-202 CONFIG_CPU_SUBTYPE_SH4_202 \
     ST40RA/ST40STB1 CONFIG_CPU_SUBTYPE_ST40STB1 \
     ST40GX1 CONFIG_CPU_SUBTYPE_ST40GX1" SH7708
 if [ "$CONFIG_CPU_SUBTYPE_SH7300" = "y" ]; then
@@ -94,6 +97,19 @@ fi
 if [ "$CONFIG_CPU_SUBTYPE_SH7751" = "y" ]; then
    define_bool CONFIG_CPU_SH3 n
    define_bool CONFIG_CPU_SH4 y
+fi
+if [ "$CONFIG_CPU_SUBTYPE_SH7751R" = "y" ]; then
+   define_bool CONFIG_CPU_SH3 n
+   define_bool CONFIG_CPU_SH4 y
+   define_bool CONFIG_CPU_SUBTYPE_SH7751 y
+fi
+if [ "$CONFIG_CPU_SUBTYPE_SH4_202" = "y" ]; then
+   define_bool CONFIG_CPU_SH3 n
+   define_bool CONFIG_CPU_SH4 y
+fi
+if [ "$CONFIG_CPU_SUBTYPE_SH7751R" = "y" -o \
+     "$CONFIG_CPU_SUBTYPE_SH4_202" = "y" ]; then
+   bool 'Use 2-way set associative caches' CONFIG_SH_CACHE_ASSOC
 fi
 if [ "$CONFIG_CPU_SUBTYPE_ST40STB1" = "y" ]; then
    define_bool CONFIG_CPU_SH3 n
@@ -157,7 +173,11 @@ if [ "$CONFIG_MEMORY_SET" != "y" ]; then
    hex 'Physical memory start address' CONFIG_MEMORY_START 08000000
    hex 'Physical memory size' CONFIG_MEMORY_SIZE 00400000
 fi
+
+hex 'Link address offset for booting' CONFIG_BOOT_LINK_OFFSET 00210000
+
 dep_bool 'Enable OC RAM zone (experimental)' CONFIG_SCRATCH_SPACE $CONFIG_EXPERIMENTAL
+bool 'DSP mode support' CONFIG_SH_DSP
 
 if [ "$CONFIG_CPU_SUBTYPE_ST40" = "y" ]; then
    bool 'PCI emulation of on-chip peripherals' CONFIG_SH_PCI_EMULATION
@@ -332,9 +352,9 @@ endmenu
 #
 source drivers/input/Config.in
 
-if [ "$CONFIG_SH_DREAMCAST" = "y" ]; then
-   source drivers/maple/Config.in
-fi
+#if [ "$CONFIG_SH_DREAMCAST" = "y" ]; then
+#   source drivers/maple/Config.in
+#fi
 
 mainmenu_option next_comment
 comment 'Character devices'
@@ -465,6 +485,9 @@ if [ "$CONFIG_SH_KGDB" = "y" ]; then
           8 CONFIG_KGDB_DEFBITS_8"	8
    endmenu
 fi
+
+int 'Kernel messages buffer length shift (0 = default)' CONFIG_LOG_BUF_SHIFT 0
+
 endmenu
 
 source crypto/Config.in

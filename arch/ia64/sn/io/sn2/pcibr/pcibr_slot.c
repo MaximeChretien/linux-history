@@ -12,6 +12,7 @@
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <asm/sn/sgi.h>
+#include <asm/uaccess.h>
 #include <asm/sn/sn_cpuid.h>
 #include <asm/sn/addrs.h>
 #include <asm/sn/arch.h>
@@ -87,6 +88,8 @@ int scsi_ctlr_nums_add(vertex_hdl_t, vertex_hdl_t);
 int max_splittrans_to_numbuf[MAX_SPLIT_TABLE] = {1, 2, 3, 4, 8, 12, 16, 32};
 int max_readcount_to_bufsize[MAX_READCNT_TABLE] = {512, 1024, 2048, 4096 };
 
+
+#define COPYOUT(a, b, c)	copy_to_user(b,a,c)
 
 /*==========================================================================
  *	BRIDGE PCI SLOT RELATED IOCTLs
@@ -320,9 +323,8 @@ pcibr_slot_info_return(pcibr_soft_t             pcibr_soft,
     reg_p                        b_respp;
     pcibr_slot_info_resp_t       slotp;
     pcibr_slot_func_info_resp_t  funcp;
-    extern void snia_kmem_free(void *, int);
 
-    slotp = snia_kmem_zalloc(sizeof(*slotp), 0);
+    slotp = snia_kmem_zalloc(sizeof(*slotp));
     if (slotp == NULL) {
         return(ENOMEM);
     }
@@ -1188,8 +1190,8 @@ pcibr_slot_addr_space_init(vertex_hdl_t pcibr_vhdl,
 
 	    align = (win) ? size : align_slot; 
 
-	    if (align < _PAGESZ)
-		align = _PAGESZ;        /* ie. 0x00004000 */
+	    if (align < PAGE_SIZE)
+		align = PAGE_SIZE;        /* ie. 0x00004000 */
  
 	    switch (space) {
 	    case PCIIO_SPACE_IO:
@@ -1740,7 +1742,6 @@ pcibr_probe_slot_pic(bridge_t *bridge,
 {
 	int rv;
 	picreg_t p_old_enable = (picreg_t)0, p_new_enable;
-	extern int badaddr_val(volatile void *, int, volatile void *);
 
 	p_old_enable = bridge->p_int_enable_64;
 	p_new_enable = p_old_enable & ~(BRIDGE_IMR_PCI_MST_TIMEOUT | PIC_ISR_PCIX_MTOUT);
@@ -1753,7 +1754,7 @@ pcibr_probe_slot_pic(bridge_t *bridge,
 		bridge->p_int_rst_stat_64 = (BRIDGE_IRR_PCI_GRP_CLR | PIC_PCIX_GRP_CLR);
 		(void) bridge->b_wid_tflush;	/* flushbus */
 	}
-	rv = badaddr_val((void *) cfg, 4, valp);
+	rv = snia_badaddr_val((void *) cfg, 4, valp);
 	if (bridge->p_err_int_view_64 & (BRIDGE_ISR_PCI_MST_TIMEOUT | PIC_ISR_PCIX_MTOUT)) {
 		bridge->p_int_rst_stat_64 = BRIDGE_IRR_MULTI_CLR;
 		rv = 1;         /* unoccupied slot */

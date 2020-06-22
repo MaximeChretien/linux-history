@@ -34,20 +34,19 @@
  * For a detailed PIC register layout see pic.h.
  */
 
+#ifdef __KERNEL__
 #include <linux/config.h>
 #include <asm/sn/xtalk/xwidget.h>
 #include <asm/sn/pci/pic.h>
-
-extern int io_get_sh_swapper(nasid_t);
-#define BRIDGE_REG_GET32(reg) \
-                __swab32( *(volatile uint32_t *) (((uint64_t)reg)^4) )
-
-#define BRIDGE_REG_SET32(reg) \
-                *(volatile uint32_t *) (((uint64_t)reg)^4)
+#else
+#include <linux/config.h>
+#include <xtalk/xwidget.h>
+#include <pci/pic.h>
+#endif
 
 /* I/O page size */
 
-#if _PAGESZ == 4096
+#if PAGE_SIZE == 4096
 #define IOPFNSHIFT		12	/* 4K per mapped page */
 #else
 #define IOPFNSHIFT		14	/* 16K per mapped page */

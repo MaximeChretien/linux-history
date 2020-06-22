@@ -17,6 +17,7 @@
 #include <asm/sn/iograph.h>
 #include <asm/sn/invent.h>
 #include <asm/sn/hcl.h>
+#include <asm/sn/hcl_util.h>
 #include <asm/sn/labelcl.h>
 #include <asm/sn/xtalk/xwidget.h>
 #include <asm/sn/pci/bridge.h>
@@ -130,7 +131,7 @@ pic_bus1_redist(nasid_t nasid, vertex_hdl_t conn_v)
 	char pathname[256], peer_path[256], tmpbuf[256];
 	char *p;
 	int rc;
-	vertex_hdl_t peer_conn_v;
+	vertex_hdl_t peer_conn_v, hubv;
 	int pos;
 	slabid_t slab;
 
@@ -139,7 +140,7 @@ pic_bus1_redist(nasid_t nasid, vertex_hdl_t conn_v)
 		/* pcibr widget hw/module/001c11/slab/0/Pbrick/xtalk/12 */
 		/* sprintf(pathname, "%v", conn_v); */
 		xbow_peer = NASID_TO_COMPACT_NODEID(NODEPDA(cnode)->xbow_peer);
-		pos = hwgfs_generate_path(conn_v, tmpbuf, 256);
+		pos = hwgraph_generate_path(conn_v, tmpbuf, 256);
 		strcpy(pathname, &tmpbuf[pos]);
 		p = pathname + strlen("hw/module/001c01/slab/0/");
 
@@ -183,6 +184,11 @@ pic_bus1_redist(nasid_t nasid, vertex_hdl_t conn_v)
 			    if (!pic_bus1_widget_info_dup(conn_v, peer_conn_v, xbow_peer))
 					return 0;
 
+			    hubv = cnodeid_to_vertex(xbow_peer);
+			    ASSERT(hubv != GRAPH_VERTEX_NONE);
+			    device_master_set(peer_conn_v, hubv);
+			    xtalk_provider_register(hubv, &hub_provider);
+			    xtalk_provider_startup(hubv);
 			    return peer_conn_v;
 			}
 		}
@@ -199,6 +205,9 @@ pic_attach(vertex_hdl_t conn_v)
 	vertex_hdl_t	pcibr_vhdl0, pcibr_vhdl1 = (vertex_hdl_t)0;
 	pcibr_soft_t	bus0_soft, bus1_soft = (pcibr_soft_t)0;
 	vertex_hdl_t  conn_v0, conn_v1, peer_conn_v;
+	int             brick_type;
+	int             iobrick_type_get_nasid(nasid_t nasid);
+
 
 	PCIBR_DEBUG_ALWAYS((PCIBR_DEBUG_ATTACH, conn_v, "pic_attach()\n"));
 
@@ -228,10 +237,19 @@ pic_attach(vertex_hdl_t conn_v)
 	 * the Bridge registers themselves.
 	 */
 	/* FIXME: what should the hwgraph path look like ? */
-	rc = hwgraph_path_add(conn_v0, EDGE_LBL_PCIX_0, &pcibr_vhdl0);
-	ASSERT(rc == GRAPH_SUCCESS);
-	rc = hwgraph_path_add(conn_v1, EDGE_LBL_PCIX_1, &pcibr_vhdl1);
-	ASSERT(rc == GRAPH_SUCCESS);
+	brick_type = iobrick_type_get_nasid(NASID_GET(bridge0));
+	if ( brick_type == MODULE_CGBRICK ) {
+		rc = hwgraph_path_add(conn_v0, EDGE_LBL_AGP_0, &pcibr_vhdl0);
+		ASSERT(rc == GRAPH_SUCCESS);
+		rc = hwgraph_path_add(conn_v1, EDGE_LBL_AGP_1, &pcibr_vhdl1);
+		ASSERT(rc == GRAPH_SUCCESS);
+	}
+	else {
+		rc = hwgraph_path_add(conn_v0, EDGE_LBL_PCIX_0, &pcibr_vhdl0);
+		ASSERT(rc == GRAPH_SUCCESS);
+		rc = hwgraph_path_add(conn_v1, EDGE_LBL_PCIX_1, &pcibr_vhdl1);
+		ASSERT(rc == GRAPH_SUCCESS);
+	}
 
 	PCIBR_DEBUG_ALWAYS((PCIBR_DEBUG_ATTACH, conn_v,
 		    "pic_attach: pcibr_vhdl0=%v, pcibr_vhdl1=%v\n",
@@ -292,9 +310,7 @@ pciio_provider_t        pci_pic_provider =
     (pciio_provider_startup_f *) pcibr_provider_startup,
     (pciio_provider_shutdown_f *) pcibr_provider_shutdown,
     (pciio_reset_f *) pcibr_reset,
-    (pciio_write_gather_flush_f *) pcibr_write_gather_flush,
     (pciio_endian_set_f *) pcibr_endian_set,
-    (pciio_priority_set_f *) pcibr_priority_set,
     (pciio_config_get_f *) pcibr_config_get,
     (pciio_config_set_f *) pcibr_config_set,
     (pciio_error_devenable_f *) 0,

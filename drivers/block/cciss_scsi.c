@@ -71,16 +71,7 @@ int cciss_scsi_reset(Scsi_Cmnd *cmd);
 #endif
 #endif
 
-static struct cciss_scsi_hba_t ccissscsi[MAX_CTLR] = {
-	{ name: "cciss0", ndevices: 0 },
-	{ name: "cciss1", ndevices: 0 },
-	{ name: "cciss2", ndevices: 0 },
-	{ name: "cciss3", ndevices: 0 },
-	{ name: "cciss4", ndevices: 0 },
-	{ name: "cciss5", ndevices: 0 },
-	{ name: "cciss6", ndevices: 0 },
-	{ name: "cciss7", ndevices: 0 },
-};
+static struct cciss_scsi_hba_t ccissscsi[MAX_CTLR];
 
 /* We need one Scsi_Host_Template *per controller* instead of
    the usual one Scsi_Host_Template per controller *type*. This
@@ -92,11 +83,7 @@ static struct cciss_scsi_hba_t ccissscsi[MAX_CTLR] = {
    (that's called from cciss.c:cciss_init_one()) */
 
 static
-Scsi_Host_Template driver_template[MAX_CTLR] =
-{
-	CCISS_SCSI, CCISS_SCSI, CCISS_SCSI, CCISS_SCSI,
-	CCISS_SCSI, CCISS_SCSI, CCISS_SCSI, CCISS_SCSI,
-};
+Scsi_Host_Template driver_template[MAX_CTLR];
 
 #pragma pack(1)
 struct cciss_scsi_cmd_stack_elem_t {
@@ -803,13 +790,7 @@ cciss_scsi_detect(Scsi_Host_Template *tpnt)
 
 	sh->this_id = SELF_SCSI_ID;
 
-	/* This is a bit kludgey, using the adapter name to figure out */
-	/* which scsi host template we've got, won't scale beyond 9 ctlrs. */
-	i = tpnt->name[5] - '0';
-
-#	if MAX_CTLR > 9
-#		error "cciss_scsi.c: MAX_CTLR > 9, code maintenance needed."
-#	endif
+	i = simple_strtol((char *)&tpnt->name[5], NULL, 10);
 
 	if (i<0 || i>=MAX_CTLR || hba[i] == NULL) {
 		/* we didn't find ourself... we shouldn't get here. */
@@ -1528,9 +1509,10 @@ cciss_register_scsi(int ctlr, int this_is_init_time)
 	unsigned long flags;
 
 	CPQ_TAPE_LOCK(ctlr, flags);
-	driver_template[ctlr].name = ccissscsi[ctlr].name;
-	driver_template[ctlr].proc_name = ccissscsi[ctlr].name;
-	driver_template[ctlr].module = THIS_MODULE;;
+
+	sprintf( ccissscsi[ctlr].name, "cciss%d", ctlr );
+	
+	init_driver_template(ctlr);
 
 	/* Since this is really a block driver, the SCSI core may not be
 	   initialized yet, in which case, calling scsi_register_module

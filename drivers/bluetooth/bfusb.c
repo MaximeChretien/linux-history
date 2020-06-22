@@ -32,21 +32,18 @@
 #include <linux/errno.h>
 #include <linux/skbuff.h>
 
+#include <linux/firmware.h>
 #include <linux/usb.h>
 
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci_core.h>
-
-#include "bfusb.h"
 
 #ifndef CONFIG_BLUEZ_HCIBFUSB_DEBUG
 #undef  BT_DBG
 #define BT_DBG(D...)
 #endif
 
-#define VERSION "1.0"
-
-static struct usb_driver bfusb_driver;
+#define VERSION "1.1"
 
 static struct usb_device_id bfusb_table[] = {
 	/* AVM BlueFRITZ! USB */
@@ -576,12 +573,12 @@ static int bfusb_ioctl(struct hci_dev *hdev, unsigned int cmd, unsigned long arg
 }
 
 
-static int bfusb_load_firmware(struct bfusb *bfusb)
+static int bfusb_load_firmware(struct bfusb *bfusb, unsigned char *firmware, int count)
 {
-	unsigned char *buf, *ptr;
-	int err, pipe, len, count, size, sent = 0;
+	unsigned char *buf;
+	int err, pipe, len, size, sent = 0;
 
-	BT_DBG("bfusb %p udev %p", bfusb, bfusb->udev);
+	BT_DBG("bfusb %p udev %p firmware %p count %d", bfusb, bfusb->udev, firmware, count);
 
 	BT_INFO("BlueFRITZ! USB loading firmware");
 
@@ -596,15 +593,12 @@ static int bfusb_load_firmware(struct bfusb *bfusb)
 		return -ENOMEM;
 	}
 
-	count = BFUSB_FIRMWARE_SIZE;
-	ptr = &bfusb_firmware[0];
-
 	pipe = usb_sndbulkpipe(bfusb->udev, bfusb->bulk_out_ep);
 
 	while (count) {
 		size = min_t(uint, count, BFUSB_MAX_BLOCK_SIZE + 3);
 
-		memcpy(buf, ptr + sent, size);
+		memcpy(buf, firmware + sent, size);
 
 		err = usb_bulk_msg(bfusb->udev, pipe, buf, size,
 					&len, BFUSB_BLOCK_TIMEOUT);
@@ -647,6 +641,8 @@ error:
 
 static void *bfusb_probe(struct usb_device *udev, unsigned int ifnum, const struct usb_device_id *id)
 {
+	const struct firmware *firmware;
+	char device[16];
 	struct usb_interface *iface;
 	struct usb_interface_descriptor *iface_desc;
 	struct usb_endpoint_descriptor *bulk_out_ep;
@@ -692,10 +688,19 @@ static void *bfusb_probe(struct usb_device *udev, unsigned int ifnum, const stru
 	skb_queue_head_init(&bfusb->pending_q);
 	skb_queue_head_init(&bfusb->completed_q);
 
-	if (bfusb_load_firmware(bfusb) < 0) {
-		BT_ERR("Firmware loading failed");
+	snprintf(device, sizeof(device), "bfusb%3.3d%3.3d", udev->bus->busnum, udev->devnum);
+
+	if (request_firmware(&firmware, "bfubase.frm", device) < 0) {
+		BT_ERR("Firmware request failed");
 		goto error;
 	}
+
+	if (bfusb_load_firmware(bfusb, firmware->data, firmware->size) < 0) {
+		BT_ERR("Firmware loading failed");
+		goto release;
+	}
+
+	release_firmware(firmware);
 
 	/* Initialize and register HCI device */
 	hdev = &bfusb->hdev;
@@ -716,6 +721,9 @@ static void *bfusb_probe(struct usb_device *udev, unsigned int ifnum, const stru
 	}
 
 	return bfusb;
+
+release:
+	release_firmware(firmware);
 
 error:
 	kfree(bfusb);

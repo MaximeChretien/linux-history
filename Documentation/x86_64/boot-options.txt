@@ -65,13 +65,14 @@ Timing
   0 don't use an NMI watchdog
   1 use the IO-APIC timer for the NMI watchdog
   2 use the local APIC for the NMI watchdog using a performance counter. Note
-  This will use one performance counter.
+  This will use one performance counter and the local APIC's performance
+  counter vector.
 
 Idle loop
 
   idle=poll
   Don't do power saving in the idle loop using HLT, but poll for rescheduling 
-  event. This will make the CPUs eat a lot more power, but may be useful 
+  events. This will make the CPUs burn a lot more power, but may be useful 
   to get slightly better performance in multiprocessor benchmarks. It also
   makes some profiling using performance counters more accurate.
 
@@ -145,7 +146,7 @@ IOMMU
    off   don't use the IOMMU
    leak  turn on simple iommu leak tracing (only when CONFIG_IOMMU_LEAK is on)
    memaper[=order] allocate an own aperture over RAM with size 32MB^order.
-   noforce don't force IOMMU usage. Should be fastest.
-   force  Force IOMMU and turn on unmap debugging.  
+   noforce don't force IOMMU usage. Default.
+   force  Force IOMMU for all devices.
 
 

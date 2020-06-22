@@ -741,6 +741,10 @@ EXPORT_SYMBOL(eighty_ninty_three);
 
 int ide_ata66_check (ide_drive_t *drive, ide_task_t *args)
 {
+	/* SATA has no cable restrictions */
+	if (HWIF(drive)->sata)
+		return 0;
+		
 	if ((args->tfRegister[IDE_COMMAND_OFFSET] == WIN_SETFEATURES) &&
 	    (args->tfRegister[IDE_SECTOR_OFFSET] > XFER_UDMA_2) &&
 	    (args->tfRegister[IDE_FEATURE_OFFSET] == SETFEATURES_XFER)) {

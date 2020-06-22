@@ -188,6 +188,7 @@
 	** defines below are used only in .../arch/sh5/kernel/fpu.c
 	*/
 #	define __f(x)	__str(fr##x)
+#	define __p(x)	__str(fp##x)
 #	define __d(x)	__str(dr##x)
 
 	/*

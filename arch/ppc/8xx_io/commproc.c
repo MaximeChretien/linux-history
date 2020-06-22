@@ -54,6 +54,7 @@ struct	cpm_action {
 static	struct	cpm_action cpm_vecs[CPMVEC_NR];
 static	void	cpm_interrupt(int irq, void * dev, struct pt_regs * regs);
 static	void	cpm_error_interrupt(int irq, void *, struct pt_regs * regs);
+static	void	alloc_host_memory(void);
 
 /* Define a table of names to identify CPM interrupt handlers in
  * /proc/interrupts.
@@ -104,7 +105,7 @@ struct hw_interrupt_type cpm_pic = {
 };
 
 void
-m8xx_cpm_reset(uint host_page_addr)
+m8xx_cpm_reset()
 {
 	volatile immap_t	 *imp;
 	volatile cpm8xx_t	*commproc;
@@ -130,7 +131,7 @@ m8xx_cpm_reset(uint host_page_addr)
 	 * this is what we realy want for some applications, but the
 	 * manual recommends it.
 	 * Bit 25, FAM can also be set to use FEC aggressive mode (860T).
-	*/
+	 */
 	imp->im_siu_conf.sc_sdcr = 1;
 
 	/* Reclaim the DP memory for our use.
@@ -138,25 +139,23 @@ m8xx_cpm_reset(uint host_page_addr)
 	dp_alloc_base = CPM_DATAONLY_BASE;
 	dp_alloc_top = dp_alloc_base + CPM_DATAONLY_SIZE;
 
-	/* Set the host page for allocation.
-	*/
-	host_buffer = host_page_addr;	/* Host virtual page address */
-	host_end = host_page_addr + PAGE_SIZE;
-
-	/* We need to get this page early, so I have to do it the
-	 * hard way.
-	 */
-	if (get_pteptr(&init_mm, host_page_addr, &pte)) {
-		pte_val(*pte) |= _PAGE_NO_CACHE;
-		flush_tlb_page(init_mm.mmap, host_buffer);
-	}
-	else {
-		panic("Huh?  No CPM host page?");
-	}
-
 	/* Tell everyone where the comm processor resides.
 	*/
 	cpmp = (cpm8xx_t *)commproc;
+}
+
+/* We used to do this earlier, but have to postpone as long as possible
+ * to ensure the kernel VM is now running.
+ */
+static void
+alloc_host_memory()
+{
+	uint	physaddr;
+
+	/* Set the host page for allocation.
+	*/
+	host_buffer = (uint)consistent_alloc(GFP_KERNEL, PAGE_SIZE, &physaddr);
+	host_end = host_buffer + PAGE_SIZE;
 }
 
 /* This is called during init_IRQ.  We used to do it above, but this
@@ -320,6 +319,9 @@ uint
 m8xx_cpm_hostalloc(uint size)
 {
 	uint	retloc;
+
+	if (host_buffer == 0)
+		alloc_host_memory();
 
 	if ((host_buffer + size) >= host_end)
 		return(0);

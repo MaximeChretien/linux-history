@@ -225,8 +225,19 @@ nfs_writepage(struct page *page)
 	struct inode *inode = page->mapping->host;
 	unsigned long end_index;
 	unsigned offset = PAGE_CACHE_SIZE;
+	int inode_referenced = 0;
 	int err;
 
+	/*
+	 * Note: We need to ensure that we have a reference to the inode
+	 *       if we are to do asynchronous writes. If not, waiting
+	 *       in nfs_wait_on_request() may deadlock with clear_inode().
+	 *
+	 *       If igrab() fails here, then it is in any case safe to
+	 *       call nfs_wb_page(), since there will be no pending writes.
+	 */
+	if (igrab(inode) != 0)
+		inode_referenced = 1;
 	end_index = inode->i_size >> PAGE_CACHE_SHIFT;
 
 	/* Ensure we've flushed out any previous writes */
@@ -244,7 +255,8 @@ nfs_writepage(struct page *page)
 		goto out;
 do_it:
 	lock_kernel();
-	if (NFS_SERVER(inode)->wsize >= PAGE_CACHE_SIZE && !IS_SYNC(inode)) {
+	if (NFS_SERVER(inode)->wsize >= PAGE_CACHE_SIZE && !IS_SYNC(inode) &&
+			inode_referenced) {
 		err = nfs_writepage_async(NULL, inode, page, 0, offset);
 		if (err >= 0)
 			err = 0;
@@ -256,7 +268,9 @@ do_it:
 	unlock_kernel();
 out:
 	UnlockPage(page);
-	return err; 
+	if (inode_referenced)
+		iput(inode);
+	return err;
 }
 
 /*

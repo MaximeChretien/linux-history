@@ -56,8 +56,6 @@ struct sn_device_sysdata {
         vertex_hdl_t  vhdl;
 	int		isa64;
 	int		isPIC;
-	volatile unsigned int *dma_buf_sync;
-	volatile unsigned int *xbow_buf_sync;
 };
 
 struct sn_dma_maps_s{

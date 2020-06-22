@@ -203,7 +203,7 @@ void fib_init(struct fib *fibptr)
 	hw_fib->header.StructType = FIB_MAGIC;
 	hw_fib->header.Size = cpu_to_le16(sizeof(struct hw_fib));
 	hw_fib->header.XferState = cpu_to_le32(HostOwned | FibInitialized | FibEmpty | FastResponseCapable);
-	hw_fib->header.SenderFibAddress = cpu_to_le32(fibptr->hw_fib_pa);
+	hw_fib->header.SenderFibAddress = 0; /* Filled in later if needed */
 	hw_fib->header.ReceiverFibAddress = cpu_to_le32(fibptr->hw_fib_pa);
 	hw_fib->header.SenderSize = cpu_to_le16(sizeof(struct hw_fib));
 }
@@ -450,8 +450,7 @@ int fib_send(u16 command, struct fib * fibptr, unsigned long size,  int priority
 	 *	Map the fib into 32bits by using the fib number
 	 */
 
-//	hw_fib->header.SenderFibAddress = ((u32)(fibptr-dev->fibs)) << 1;
-	hw_fib->header.SenderFibAddress = cpu_to_le32((u32)(ulong)fibptr->hw_fib_pa);
+	hw_fib->header.SenderFibAddress = cpu_to_le32(((u32)(fibptr - dev->fibs)) << 1);
 	hw_fib->header.SenderData = (u32)(fibptr - dev->fibs);
 	/*
 	 *	Set FIB state to indicate where it came from and if we want a
@@ -792,7 +791,6 @@ static void aac_handle_aif(struct aac_dev * dev, struct fib * fibptr)
 	struct aac_aifcmd * aifcmd = (struct aac_aifcmd *)hw_fib->data;
 	int busy;
 	u32 container;
-	mm_segment_t fs;
 
 	/* Sniff for container changes */
 	dprintk ((KERN_INFO "AifCmdDriverNotify=%x\n", le32_to_cpu(*(u32 *)aifcmd->data)));
@@ -859,18 +857,24 @@ static void aac_handle_aif(struct aac_dev * dev, struct fib * fibptr)
 		 * go away. We need to check the access_count for the
 		 * device since we are not wanting the devices to go away.
 		 */
-		if (busy == 0 && proc_scsi != NULL) {
+		if ((busy == 0)
+		 && (proc_scsi != (struct proc_dir_entry *)NULL)) {
 			struct proc_dir_entry * entry;
 
 			dprintk((KERN_INFO "proc_scsi=%p ", proc_scsi));
-			for (entry = proc_scsi->subdir; entry != (struct proc_dir_entry *)NULL; entry = entry->next) {
+			for (entry = proc_scsi->subdir;
+			  entry != (struct proc_dir_entry *)NULL;
+			  entry = entry->next) {
 				dprintk(("\"%.*s\"[%d]=%x ", entry->namelen,
 				  entry->name, entry->namelen, entry->low_ino));
-				if ((entry->low_ino != 0) && (entry->namelen == 4) && (memcmp ("scsi", entry->name, 4) == 0)) {
+				if ((entry->low_ino != 0)
+				 && (entry->namelen == 4)
+				 && (memcmp ("scsi", entry->name, 4) == 0)) {
 					dprintk(("%p->write_proc=%p ", entry, entry->write_proc));
 					if (entry->write_proc != (int (*)(struct file *, const char *, unsigned long, void *))NULL) {
 						char buffer[80];
 						int length;
+						mm_segment_t fs;
 
 						sprintf (buffer,
 						  "scsi add-single-device %d %d %d %d\n",
@@ -879,12 +883,17 @@ static void aac_handle_aif(struct aac_dev * dev, struct fib * fibptr)
 						  CONTAINER_TO_TARGET(container),
 						  CONTAINER_TO_LUN(container));
 						length = strlen (buffer);
-						dprintk((KERN_INFO "echo %.*s > /proc/scsi/scsi\n", length-1, buffer));
+						dprintk((KERN_INFO
+						  "echo %.*s > /proc/scsi/scsi\n",
+						  length-1,
+						  buffer));
 						fs = get_fs();
 						set_fs(get_ds());
-						length = entry->write_proc(NULL, buffer, length, NULL);
+						length = entry->write_proc(
+						  NULL, buffer, length, NULL);
 						set_fs(fs);
-						dprintk((KERN_INFO "returns %d\n", length));
+						dprintk((KERN_INFO
+						  "returns %d\n", length));
 					}
 					break;
 				}

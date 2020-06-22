@@ -1005,7 +1005,7 @@ static ssize_t mem_dmaread(struct memdata *md, u32 physbuf, ssize_t count,
         DECLARE_WAITQUEUE(wait, current);
 
         count &= ~3;
-        count = MIN(count, 53196);
+        count = min(count, 53196);
         retval = count;
 
         if (reg_read(md->lynx, DMA_CHAN_CTRL(CHANNEL_LOCALBUS))
@@ -1016,14 +1016,14 @@ static ssize_t mem_dmaread(struct memdata *md, u32 physbuf, ssize_t count,
         reg_write(md->lynx, LBUS_ADDR, md->type | offset);
 
         pcl = edit_pcl(md->lynx, md->lynx->dmem_pcl, &pcltmp);
-        pcl->buffer[0].control = PCL_CMD_LBUS_TO_PCI | MIN(count, 4092);
+        pcl->buffer[0].control = PCL_CMD_LBUS_TO_PCI | min(count, 4092);
         pcl->buffer[0].pointer = physbuf;
         count -= 4092;
 
         i = 0;
         while (count > 0) {
                 i++;
-                pcl->buffer[i].control = MIN(count, 4092);
+                pcl->buffer[i].control = min(count, 4092);
                 pcl->buffer[i].pointer = physbuf + i * 4092;
                 count -= 4092;
         }
@@ -1127,7 +1127,7 @@ static ssize_t mem_read(struct file *file, char *buffer, size_t count,
         retval = copy_to_user(buffer, md->lynx->mem_dma_buffer, count);
         up(&md->lynx->mem_dma_mutex);
 
-        if (retval < 0) return retval;
+	if (retval) return -EFAULT;
         *offset += count;
         return count;
 }
@@ -1148,14 +1148,17 @@ static ssize_t mem_write(struct file *file, const char *buffer, size_t count,
         /* FIXME: dereferencing pointers to PCI mem doesn't work everywhere */
         switch (md->type) {
         case aux:
-                copy_from_user(md->lynx->aux_port+(*offset), buffer, count);
+		if (copy_from_user(md->lynx->aux_port+(*offset), buffer, count))
+			return -EFAULT;
                 break;
         case ram:
-                copy_from_user(md->lynx->local_ram+(*offset), buffer, count);
+		if (copy_from_user(md->lynx->local_ram+(*offset), buffer, count))
+			return -EFAULT;
                 break;
         case rom:
                 /* the ROM may be writeable */
-                copy_from_user(md->lynx->local_rom+(*offset), buffer, count);
+		if (copy_from_user(md->lynx->local_rom+(*offset), buffer, count))
+			return -EFAULT;
                 break;
         }
 
@@ -1805,9 +1808,8 @@ static int __devinit add_card(struct pci_dev *dev,
                 i2c_adapter.algo_data = &i2c_adapter_data;
                 i2c_adapter_data.data = lynx;
 
-#ifdef CONFIG_IEEE1394_VERBOSEDEBUG
-                PRINT(KERN_DEBUG, lynx->id,"original eeprom control: %d",reg_read(lynx,SERIAL_EEPROM_CONTROL));
-#endif
+		PRINTD(KERN_DEBUG, lynx->id,"original eeprom control: %d",
+		       reg_read(lynx, SERIAL_EEPROM_CONTROL));
 
         	/* reset hardware to sane state */
         	lynx->i2c_driven_state = 0x00000070;
@@ -1850,17 +1852,16 @@ static int __devinit add_card(struct pci_dev *dev,
                         if (i2c_transfer(&i2c_adapter, msg, 2) < 0) {
                                 PRINT(KERN_ERR, lynx->id, "unable to read bus info block from i2c");
                         } else {
-#ifdef CONFIG_IEEE1394_VERBOSEDEBUG
                                 int i;
-#endif
-                                PRINT(KERN_INFO, lynx->id, "got bus info block from serial eeprom");
-                                /* FIXME: probably we shoud rewrite the max_rec, max_ROM(1394a), generation(1394a) and link_spd(1394a) field
-                                   and recalculate the CRC */
 
-#ifdef CONFIG_IEEE1394_VERBOSEDEBUG
-                                for (i=0; i < 5 ; i++)
-                                        PRINT(KERN_DEBUG, lynx->id, "Businfo block quadlet %i: %08x",i, be32_to_cpu(lynx->config_rom[i]));
-#endif
+                                PRINT(KERN_INFO, lynx->id, "got bus info block from serial eeprom");
+				/* FIXME: probably we shoud rewrite the max_rec, max_ROM(1394a),
+				 * generation(1394a) and link_spd(1394a) field and recalculate
+				 * the CRC */
+
+                                for (i = 0; i < 5 ; i++)
+                                        PRINTD(KERN_DEBUG, lynx->id, "Businfo block quadlet %i: %08x",
+					       i, be32_to_cpu(lynx->config_rom[i]));
 
                                 /* info_length, crc_length and 1394 magic number to check, if it is really a bus info block */
                                 if (((be32_to_cpu(lynx->config_rom[0]) & 0xffff0000) == 0x04040000) &&

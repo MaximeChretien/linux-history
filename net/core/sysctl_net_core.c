@@ -55,7 +55,7 @@ ctl_table core_table[] = {
 	 &netdev_max_backlog, sizeof(int), 0644, NULL,
 	 &proc_dointvec},
 	{NET_CORE_NO_CONG_THRESH, "no_cong_thresh",
-	 &no_cong, sizeof(int), 0644, NULL,
+	 &no_cong_thresh, sizeof(int), 0644, NULL,
 	 &proc_dointvec},
 	{NET_CORE_NO_CONG, "no_cong",
 	 &no_cong, sizeof(int), 0644, NULL,

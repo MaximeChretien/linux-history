@@ -3,18 +3,43 @@
  *
  * Copyright (c) 2003/06, Courage Co., Ltd.
  *
- * Based on: 
+ * Based on:
  *	1.uhci.c by Linus Torvalds, Johannes Erdfelt, Randy Dunlap,
  * 	  Georg Acher, Deti Fliegl, Thomas Sailer, Roman Weissgaerber,
  * 	  Adam Richter, Gregory P. Smith;
-  	2.Original SL811 driver (hc_sl811.o) by Pei Liu <pbl@cypress.com>
+ * 	2.Original SL811 driver (hc_sl811.o) by Pei Liu <pbl@cypress.com>
+ *	3.Rewrited as sl811.o by Yin Aihua <yinah:couragetech.com.cn>
  *
- * It's now support isosynchronous mode and more effective than hc_sl811.o
+ * It's now support isochornous mode and more effective than hc_sl811.o
+ * Support x86 architecture now.
+ *
+ * 19.09.2003 (05.06.2003) HNE
+ * sl811_alloc_hc: Set "bus->bus_name" at init.
+ * sl811_reg_test (hc_reset,regTest):
+ *   Stop output at first failed pattern.
+ * Down-Grade for Kernel 2.4.20 and from 2.4.22
+ * Splitt hardware depens into file sl811-x86.h and sl811-arm.h.
+ *
+ * 22.09.2003 HNE
+ * sl811_found_hc: First patterntest, than interrupt enable.
+ * Do nothing, if patterntest failed. Release io, if failed.
+ * Stop Interrupts first, than remove handle. (Old blocked Shred IRQ)
+ * Alternate IO-Base for second Controller (CF/USB1).
+ *
+ * 24.09.2003 HNE
+ * Remove all arm specific source (moved into include/asm/sl811-hw.h).
+ *
+ * 03.10.2003 HNE
+ * Low level only for port io into hardware-include.
+
  *
  * To do:
  *	1.Modify the timeout part, it's some messy
  *	2.Use usb-a and usb-b set in Ping-Pong mode
- 	
+ *	o Floppy do not work.
+ *	o driver crash, if io region can't register
+ * 	o Only as module tested! Compiled in Version not tested!
+
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -41,13 +66,10 @@
 #include "../hub.h"
 #include "sl811.h"
 
-#define DRIVER_VERSION "v0.28"
-#define DRIVER_AUTHOR "Yin Aihua <yinah@couragetech.com.cn>"
-#define DRIVER_DESC "Sl811 USB Host Controller Driver"
-
-static int sl811_addr_io = 0xf100000e;
-static int sl811_data_io = 0xf100000f;
-static int sl811_irq = 44;
+#define DRIVER_VERSION "v0.30"
+#define MODNAME "SL811"
+#define DRIVER_AUTHOR "Yin Aihua <yinah@couragetech.com.cn>, Henry Nestler <hne@ist1.de>"
+#define DRIVER_DESC "Sl811 USB Host Controller Alternate Driver"
 
 static LIST_HEAD(sl811_hcd_list);
 
@@ -57,70 +79,53 @@ static LIST_HEAD(sl811_hcd_list);
  * 2, error maybe occur in normal
  * 3, useful and detail debug information
  * 4, function level enter and level inforamtion
- * 5, endless information will output because of timer function or interrupt 
+ * 5, endless information will output because of timer function or interrupt
  */
 static int debug = 0;
-
-MODULE_PARM(sl811_addr_io,"i");
-MODULE_PARM_DESC(sl811_addr_io,"sl811 address io port 0xf100000e");
-MODULE_PARM(sl811_data_io,"i");
-MODULE_PARM_DESC(sl811_data_io,"sl811 data io port 0xf100000f");
-MODULE_PARM(sl811_irq,"i");
-MODULE_PARM_DESC(sl811_irq,"sl811 irq 44(default)");
 MODULE_PARM(debug,"i");
 MODULE_PARM_DESC(debug,"debug level");
 
+#include <asm/sl811-hw.h>	/* Include hardware and board depens */
+
 static void sl811_rh_int_timer_do(unsigned long ptr);
-static void sl811_transfer_done(struct sl811_hc *hc, int sof); 
+static void sl811_transfer_done(struct sl811_hc *hc, int sof);
 
 /*
  * Read	a byte of data from the	SL811H/SL11H
  */
-static __u8 sl811_read(struct sl811_hc *hc,	__u8 offset)
+static __u8 inline sl811_read(struct sl811_hc *hc, __u8 offset)
 {
-	__u8 data;
-
-	writeb(offset, hc->addr_io);
-	wmb();
-	data = readb(hc->data_io);
-	rmb();
-
-	return data;
+	sl811_write_index (hc, offset);
+	return (sl811_read_data (hc));
 }
 
 /*
  * Write a byte	of data	to the SL811H/SL11H
  */
-static void sl811_write(struct sl811_hc *hc, __u8 offset, __u8 data)
+static void inline sl811_write(struct sl811_hc *hc, __u8 offset, __u8 data)
 {
-	writeb(offset, hc->addr_io);
-	writeb(data, hc->data_io);
-	wmb();
+	sl811_write_index_data (hc, offset, data);
 }
 
 /*
  * Read	consecutive bytes of data from the SL811H/SL11H	buffer
  */
-static void sl811_read_buf(struct sl811_hc *hc, __u8 offset, __u8 *buf, __u8 size)
+static void inline sl811_read_buf(struct sl811_hc *hc, __u8 offset, __u8 *buf, __u8 size)
 {
-	writeb(offset, hc->addr_io);
-	wmb();
+	sl811_write_index (hc, offset);
 	while (size--) {
-		*buf++ = readb(hc->data_io);
-		rmb();
+		*buf++ = sl811_read_data(hc);
 	}
 }
 
 /*
  * Write consecutive bytes of data to the SL811H/SL11H buffer
  */
-static void sl811_write_buf(struct sl811_hc *hc, __u8 offset, __u8 *buf, __u8 size)
+static void inline sl811_write_buf(struct sl811_hc *hc, __u8 offset, __u8 *buf, __u8 size)
 {
-	writeb(offset, hc->addr_io);
-	wmb();
+	sl811_write_index (hc, offset);
 	while (size--) {
-		writeb(*buf, hc->data_io);
-		wmb();
+		sl811_write_data (hc, *buf);
 		buf++;
 	}
 }
@@ -147,6 +152,10 @@ static int sl811_reg_test(struct sl811_hc *hc)
 		if (data != i) {
 			PDEBUG(1, "Pattern test failed!! value = 0x%x, s/b 0x%x", data, i);
 			result = -1;
+
+			/* If no Debug, show only first failed Address */
+			if (!debug)
+			    break;
 		}
 	}
 
@@ -160,6 +169,7 @@ static int sl811_reg_test(struct sl811_hc *hc)
 /*
  * Display all SL811HS register	values
  */
+#if 0 /* unused (hne) */
 static void sl811_reg_show(struct sl811_hc *hc)
 {
 	int i;
@@ -167,6 +177,7 @@ static void sl811_reg_show(struct sl811_hc *hc)
 	for (i = 0; i <	256; i++)
 		PDEBUG(4, "offset %d: 0x%x", i, sl811_read(hc, i));
 }
+#endif
 
 /*
  * This	function enables SL811HS interrupts
@@ -796,9 +807,9 @@ static inline void sl811_reset_td(struct sl811_td *td)
 
 static void sl811_print_td(int level, struct sl811_td *td)
 {
-	 PDEBUG(level, "td = %p, ctrl = %x, addr = %x, len = %x, pidep = %x\n 
-		dev = %x, status = %x, left = %x, errcnt = %x, done = %x\n 
-		buf = %p, bustime = %d, td_status = %d\n", 
+	 PDEBUG(level, "td = %p, ctrl = %x, addr = %x, len = %x, pidep = %x\n "
+		"dev = %x, status = %x, left = %x, errcnt = %x, done = %x\n "
+		"buf = %p, bustime = %d, td_status = %d\n", 
 		td, td->ctrl, td->addr, td->len, td->pidep,
 		td->dev, td->status, td->left, td->errcnt, td->done,
 		td->buf, td->bustime, td->td_status);
@@ -845,7 +856,7 @@ static int sl811_submit_isochronous(struct urb *urb)
 		if (urbp->cur_td == NULL)
 			urbp->cur_td = urbp->first_td = td;	
 	}
-	
+
 	urbp->last_td = td;	
 	
 	PDEBUG(4, "leave success");
@@ -2397,7 +2408,7 @@ static void sl811_start_sof(struct sl811_hc *hc)
 	struct sl811_td *next_td;
 #ifdef SL811_DEBUG
 	static struct sl811_td *repeat_td = NULL;
-	static repeat_cnt = 1;
+	static int repeat_cnt = 1;
 #endif	
 	if (++hc->frame_number > 1024)
 		hc->frame_number = 0;
@@ -2464,7 +2475,7 @@ static int sl811_hc_reset(struct sl811_hc *hc)
 
 	mdelay(20);
 	
-	// Disable hardware SOF generation.
+	// Disable hardware SOF generation, clear all irq status.
 	sl811_write(hc,	SL811_CTRL1, 0);
 	mdelay(2);
 	sl811_write(hc, SL811_INTRSTS, 0xff); 
@@ -2532,7 +2543,7 @@ static void sl811_interrupt(int irq, void *__hc, struct pt_regs * r)
 
 	status = sl811_read(hc, SL811_INTRSTS);
 	if (status == 0)
-		return ;
+		return ; /* Not me */
 
 	sl811_write(hc,	SL811_INTRSTS, 0xff);
 
@@ -2603,6 +2614,7 @@ static struct sl811_hc* __devinit sl811_alloc_hc(void)
 	}
 
 	hc->bus	= bus;
+	bus->bus_name = MODNAME;
 	bus->hcpriv = hc;
 
 	return hc;
@@ -2619,14 +2631,23 @@ static void sl811_release_hc(struct sl811_hc *hc)
 	if (hc->bus->root_hub)
 		usb_disconnect(&hc->bus->root_hub);
 
-	if (hc->addr_io)
-		release_region(hc->addr_io, 1);
-
-	if (hc->data_io)
-		release_region(hc->data_io, 1);
-
+	// Stop interrupt handle
 	if (hc->irq)
 		free_irq(hc->irq, hc);
+	hc->irq = 0;
+
+	/* Stop interrupt for sharing, but only, if PatternTest ok */
+	if (hc->addr_io) {
+		/* Disable Interrupts */
+		sl811_write(hc,	SL811_INTR, 0);
+
+		/* Remove all Interrupt events */
+		mdelay(2);
+		sl811_write(hc,	SL811_INTRSTS, 0xff);
+	}
+
+	/* free io regions */
+	sl811_release_regions(hc);
 
 	usb_deregister_bus(hc->bus);
 	usb_free_bus(hc->bus);
@@ -2635,16 +2656,6 @@ static void sl811_release_hc(struct sl811_hc *hc)
 	INIT_LIST_HEAD(&hc->hc_hcd_list);
 
 	kfree (hc);
-}
-
-/*
- * This	function is board specific.  It	sets up	the interrupt to
- * be an edge trigger and trigger on the rising	edge
- */
-static void sl811_init_irq(void)
-{
-	GPDR &=	~(1<<23);
-	set_GPIO_IRQ_edge(1<<23, GPIO_RISING_EDGE);
 }
 
 /*
@@ -2667,33 +2678,11 @@ static int __devinit sl811_found_hc(int addr_io, int data_io, int irq)
 	if (!hc)
 		return -ENOMEM;
 
-	sl811_init_irq();
-
-	if (!request_region(addr_io, 1, "SL811 USB HOST")) {
-		PDEBUG(1, "request address %d failed", addr_io);
+	if (sl811_request_regions (hc, addr_io, data_io, MODNAME)) {
+		PDEBUG(1, "ioport %X,%X is in use!", addr_io, data_io);
 		sl811_release_hc(hc);
 		return -EBUSY;
 	}
-	hc->addr_io =	addr_io;
-
-	if (!request_region(data_io, 1, "SL811 USB HOST")) {
-		PDEBUG(1, "request address %d failed", data_io);
-		sl811_release_hc (hc);
-		return -EBUSY;
-	}
-	hc->data_io =	data_io;
-
-	usb_register_bus(hc->bus);
-
-	if (request_irq(irq, sl811_interrupt, 0, "SL811", hc)) {
-		PDEBUG(1, "request interrupt %d failed", irq);
-		sl811_release_hc(hc);
-		return -EBUSY;
-	}
-	hc->irq	= irq;
-
-	printk(KERN_INFO __FILE__ ": USB SL811 at %x, addr2 = %x, IRQ %d\n",
-		addr_io, data_io, irq);
 
 	if (sl811_reg_test(hc)) {
 		PDEBUG(1, "SL811 register test failed!");
@@ -2701,6 +2690,35 @@ static int __devinit sl811_found_hc(int addr_io, int data_io, int irq)
 		return -ENODEV;
 	}
 	
+#ifdef SL811_DEBUG_VERBOSE
+	{
+	    __u8 u = SL811Read (hci, SL11H_HWREVREG);
+	    
+	    // Show the hardware revision of chip
+	    PDEBUG(1, "SL811 HW: %02Xh", u);
+	    switch (u & 0xF0) {
+	    case 0x00: PDEBUG(1, "SL11H");		break;
+	    case 0x10: PDEBUG(1, "SL811HS rev1.2");	break;
+	    case 0x20: PDEBUG(1, "SL811HS rev1.5");	break;
+	    default:   PDEBUG(1, "Revision unknown!");
+	    }
+	}
+#endif // SL811_DEBUG_VERBOSE
+
+	sl811_init_irq();
+
+	usb_register_bus(hc->bus);
+
+	if (request_irq(irq, sl811_interrupt, SA_SHIRQ, MODNAME, hc)) {
+		PDEBUG(1, "request interrupt %d failed", irq);
+		sl811_release_hc(hc);
+		return -EBUSY;
+	}
+	hc->irq	= irq;
+
+	printk(KERN_INFO __FILE__ ": USB SL811 at %x,%x, IRQ %d\n",
+		addr_io, data_io, irq);
+
 	sl811_hc_reset(hc);
 	sl811_connect_rh(hc);
 	
@@ -2714,13 +2732,21 @@ static int __devinit sl811_found_hc(int addr_io, int data_io, int irq)
  */
 static int __init sl811_hcd_init(void)
 {
-	int ret;
-
-	PDEBUG(5, "etner");
+	int ret = -ENODEV;
+        int count;
+	
+	PDEBUG(5, "enter");
 
 	info(DRIVER_VERSION " : " DRIVER_DESC);
-	
-	ret = sl811_found_hc(sl811_addr_io, sl811_data_io, sl811_irq);
+
+        // registering some instance
+	for (count = 0; count < MAX_CONTROLERS; count++) {
+		if (io[count]) {
+			ret = sl811_found_hc(io[count], io[count]+OFFSET_DATA_REG, irq[count]);
+			if (ret)
+				return (ret);
+		}
+	}
 
 	return ret;
 }

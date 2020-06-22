@@ -30,6 +30,7 @@
 #include <linux/init.h>
 #include <linux/sysrq.h>
 #include <linux/highuid.h>
+#include <linux/swap.h>
 
 #include <asm/uaccess.h>
 
@@ -49,8 +50,11 @@ extern atomic_t nr_queued_signals;
 extern int max_queued_signals;
 extern int sysrq_enabled;
 extern int core_uses_pid;
+extern int core_setuid_ok;
 extern char core_pattern[];
 extern int cad_pid;
+extern int laptop_mode;
+extern int block_dump;
 
 /* this is needed for the proc_dointvec_minmax for [fs_]overflow UID and GID */
 static int maxolduid = 65535;
@@ -176,6 +180,8 @@ static ctl_table kern_table[] = {
 	 0644, NULL, &proc_dointvec},
 	{KERN_CORE_USES_PID, "core_uses_pid", &core_uses_pid, sizeof(int),
 	 0644, NULL, &proc_dointvec},
+	{KERN_CORE_SETUID, "core_setuid_ok", &core_setuid_ok, sizeof(int),
+	0644, NULL, &proc_dointvec},
 	{KERN_CORE_PATTERN, "core_pattern", core_pattern, 64,
 	 0644, NULL, &proc_dostring, &sysctl_string},
 	{KERN_TAINTED, "tainted", &tainted, sizeof(int),
@@ -273,6 +279,18 @@ static ctl_table kern_table[] = {
 };
 
 static ctl_table vm_table[] = {
+	{VM_GFP_DEBUG, "vm_gfp_debug", 
+	 &vm_gfp_debug, sizeof(int), 0644, NULL, &proc_dointvec},
+	{VM_VFS_SCAN_RATIO, "vm_vfs_scan_ratio", 
+	 &vm_vfs_scan_ratio, sizeof(int), 0644, NULL, &proc_dointvec},
+	{VM_CACHE_SCAN_RATIO, "vm_cache_scan_ratio", 
+	 &vm_cache_scan_ratio, sizeof(int), 0644, NULL, &proc_dointvec},
+	{VM_MAPPED_RATIO, "vm_mapped_ratio", 
+	 &vm_mapped_ratio, sizeof(int), 0644, NULL, &proc_dointvec},
+	{VM_LRU_BALANCE_RATIO, "vm_lru_balance_ratio", 
+	 &vm_lru_balance_ratio, sizeof(int), 0644, NULL, &proc_dointvec},
+	{VM_PASSES, "vm_passes", 
+	 &vm_passes, sizeof(int), 0644, NULL, &proc_dointvec},
 	{VM_BDFLUSH, "bdflush", &bdf_prm, 9*sizeof(int), 0644, NULL,
 	 &proc_dointvec_minmax, &sysctl_intvec, NULL,
 	 &bdflush_min, &bdflush_max},
@@ -290,6 +308,10 @@ static ctl_table vm_table[] = {
 	&vm_max_readahead,sizeof(int), 0644, NULL, &proc_dointvec},
 	{VM_MAX_MAP_COUNT, "max_map_count",
 	 &max_map_count, sizeof(int), 0644, NULL, &proc_dointvec},
+	{VM_LAPTOP_MODE, "laptop_mode",
+	 &laptop_mode, sizeof(int), 0644, NULL, &proc_dointvec},
+	{VM_BLOCK_DUMP, "block_dump",
+	 &block_dump, sizeof(int), 0644, NULL, &proc_dointvec},
 	{0}
 };
 
