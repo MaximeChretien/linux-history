@@ -1844,10 +1844,9 @@ acpi_bus_init_irq (void)
 }
 
 
-static int __init
-acpi_bus_init (void)
+void __init
+acpi_early_init (void)
 {
-	int			result = 0;
 	acpi_status		status = AE_OK;
 	struct acpi_buffer	buffer = {sizeof(acpi_fadt), &acpi_fadt};
 
@@ -1871,7 +1870,7 @@ acpi_bus_init (void)
 	status = acpi_get_table(ACPI_TABLE_FADT, 1, &buffer);
 	if (ACPI_FAILURE(status)) {
 		printk(KERN_ERR PREFIX "Unable to get the FADT\n");
-		goto error1;
+		goto error0;
 	}
 
 #ifdef CONFIG_X86
@@ -1894,12 +1893,40 @@ acpi_bus_init (void)
 	}
 #endif
 
-	status = acpi_enable_subsystem(ACPI_FULL_INITIALIZATION);
+	status = acpi_enable_subsystem(~(ACPI_NO_HARDWARE_INIT | ACPI_NO_ACPI_ENABLE));
+	if (ACPI_FAILURE(status)) {
+		printk(KERN_ERR PREFIX "Unable to enable ACPI\n");
+		goto error0;
+	}
+
+	return;
+
+error0:
+	disable_acpi();
+	return;
+}
+
+static int __init
+acpi_bus_init (void)
+{
+	int			result = 0;
+	acpi_status		status = AE_OK;
+	extern acpi_status	acpi_os_initialize1(void);
+
+	ACPI_FUNCTION_TRACE("acpi_bus_init");
+
+	status = acpi_os_initialize1();
+
+	status = acpi_enable_subsystem(ACPI_NO_HARDWARE_INIT | ACPI_NO_ACPI_ENABLE);
 	if (ACPI_FAILURE(status)) {
 		printk(KERN_ERR PREFIX "Unable to start the ACPI Interpreter\n");
 		goto error1;
 	}
 
+	if (ACPI_FAILURE(status)) {
+		printk(KERN_ERR PREFIX "Unable to initialize ACPI OS objects\n");
+		goto error1;
+	}
 #ifdef CONFIG_ACPI_EC
 	/*
 	 * ACPI 2.0 requires the EC driver to be loaded and work before
@@ -1979,6 +2006,7 @@ acpi_bus_init (void)
 	if (result)
 		goto error4;
 
+	acpi_motherboard_init();
 	return_VALUE(0);
 
 	/* Mimic structured exception handling */
@@ -1991,7 +2019,6 @@ error2:
 		ACPI_SYSTEM_NOTIFY, &acpi_bus_notify);
 error1:
 	acpi_terminate();
-error0:
 	return_VALUE(-ENODEV);
 }
 

@@ -1158,6 +1158,13 @@ static int usbdev_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 		up_read(&ps->devsem);
 		return -ENODEV;
 	}
+
+	/*
+	 * grab device's exclusive_access mutex to prevent its driver from
+	 * using this device while it is being accessed by us.
+	 */
+	down(&ps->dev->exclusive_access);
+
 	switch (cmd) {
 	case USBDEVFS_CONTROL:
 		ret = proc_control(ps, (void *)arg);
@@ -1237,6 +1244,7 @@ static int usbdev_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 		ret = proc_ioctl(ps, (void *) arg);
 		break;
 	}
+	up(&ps->dev->exclusive_access);
 	up_read(&ps->devsem);
 	if (ret >= 0)
 		inode->i_atime = CURRENT_TIME;

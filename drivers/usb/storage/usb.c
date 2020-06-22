@@ -994,7 +994,7 @@ static void * storage_probe(struct usb_device *dev, unsigned int ifnum,
 		 * the host controller thread in us_detect.  But how else are
 		 * we to do it?
 		 */
-		(struct us_data *)ss->htmplt.proc_dir = ss; 
+		ss->htmplt.proc_dir = (void *)ss; 
 
 		/* Just before we start our control thread, initialize
 		 * the device if it needs initialization */

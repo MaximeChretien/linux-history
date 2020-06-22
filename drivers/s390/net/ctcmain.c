@@ -3096,7 +3096,7 @@ static ssize_t ctc_loglevel_read(struct file *file, char *buf, size_t count,
 
 	privptr = (ctc_priv *)dev->priv;
 
-	if (!*sbus || pos == 0)
+	if (!*sbuf || pos == 0)
 		sprintf(sbuf, "0x%02x\n", loglevel);
 
 	l = strlen(sbuf);
@@ -3169,7 +3169,7 @@ static ssize_t ctc_stat_read(struct file *file, char *buf, size_t count,
 
 	privptr = (ctc_priv *)dev->priv;
 
-	if (!*sbus || pos == 0) {
+	if (!*sbuf || pos == 0) {
 		p += sprintf(p, "Device FSM state: %s\n",
 			     fsm_getstate_str(privptr->fsm));
 		p += sprintf(p, "RX channel FSM state: %s\n",

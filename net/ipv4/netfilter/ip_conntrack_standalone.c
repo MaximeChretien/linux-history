@@ -393,6 +393,13 @@ static int init_or_cleanup(int init)
  cleanup_inandlocalops:
 	nf_unregister_hook(&ip_conntrack_local_out_ops);
  cleanup_inops:
+	/* Frag queues may hold fragments with skb->dst == NULL */
+	ip_ct_no_defrag = 1;
+	local_bh_disable();
+	br_write_lock(BR_NETPROTO_LOCK);
+	br_write_unlock(BR_NETPROTO_LOCK);
+	ipfrag_flush();
+	local_bh_enable();
 	nf_unregister_hook(&ip_conntrack_in_ops);
  cleanup_proc:
 	proc_net_remove("ip_conntrack");

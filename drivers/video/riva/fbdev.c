@@ -117,7 +117,7 @@
 static void rivafb_blank(int blank, struct fb_info *info);
 
 extern void riva_setup_accel(struct rivafb_info *rinfo);
-extern inline void wait_for_idle(struct rivafb_info *rinfo);
+extern void wait_for_idle(struct rivafb_info *rinfo);
 
 
 
@@ -2221,7 +2221,6 @@ err_out_free_base1:
 	release_mem_region(rinfo->fb_base_phys, rinfo->base1_region_size);
 err_out_free_base0:
 	release_mem_region(rinfo->ctrl_base_phys, rinfo->base0_region_size);
-err_out_kfree:
 	kfree(rinfo);
 err_out:
 	return -ENODEV;

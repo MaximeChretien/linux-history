@@ -3,7 +3,7 @@
  *	Forwarding Information Database
  *
  *	Authors:
- *	Pedro Roque		<roque@di.fc.ul.pt>	
+ *	Pedro Roque		<pedro_m@yahoo.com>	
  *
  *	$Id: ip6_fib.c,v 1.25 2001/10/31 21:55:55 davem Exp $
  *

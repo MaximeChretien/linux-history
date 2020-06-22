@@ -845,6 +845,7 @@ static void yenta_close(pci_socket_t *sock)
 
 #include "ti113x.h"
 #include "ricoh.h"
+#include "o2micro.h"
 
 /*
  * Different cardbus controllers have slightly different
@@ -879,6 +880,8 @@ static struct cardbus_override_struct {
 	{ PD(ENE,1225),  &ti_ops },
 	{ PD(ENE,1410),  &ti_ops },
 	{ PD(ENE,1420),  &ti_ops },
+
+	{ PCI_VENDOR_ID_O2, PCI_ANY_ID, &o2micro_ops },
 
 	{ PD(RICOH,RL5C465), &ricoh_ops },
 	{ PD(RICOH,RL5C466), &ricoh_ops },

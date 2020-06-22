@@ -23,6 +23,7 @@
 #define PIRQ_VERSION 0x0100
 
 int broken_hp_bios_irq9;
+int acer_tm360_irqrouting;
 
 static struct irq_routing_table *pirq_table;
 
@@ -894,6 +895,14 @@ static int pcibios_lookup_irq(struct pci_dev *dev, int assign)
 		r->set(pirq_router_dev, dev, pirq, 11);
 	}
 
+	/* same for Acer Travelmate 360, but with CB and irq 11 -> 10 */
+	if (acer_tm360_irqrouting && dev->irq == 11 && dev->vendor == PCI_VENDOR_ID_O2) {
+		pirq = 0x68;
+		mask = 0x400;
+		dev->irq = r->get(pirq_router_dev, dev, pirq);
+		pci_write_config_byte(dev, PCI_INTERRUPT_LINE, dev->irq);
+ 	}
+
 	/*
 	 * Find the best IRQ to assign: use the one
 	 * reported by the device if possible.
@@ -1103,10 +1112,6 @@ void pcibios_enable_irq(struct pci_dev *dev)
 				}
 				dev = temp_dev;
 				if (irq >= 0) {
-#ifdef CONFIG_PCI_USE_VECTOR
-					if (!platform_legacy_irq(irq))
-						irq = IO_APIC_VECTOR(irq);
-#endif
 					printk(KERN_INFO "PCI->APIC IRQ transform: (B%d,I%d,P%d) -> %d\n",
 						dev->bus->number, PCI_SLOT(dev->devfn), pin, irq);
 					dev->irq = irq;
@@ -1124,6 +1129,6 @@ void pcibios_enable_irq(struct pci_dev *dev)
 	/* VIA bridges use interrupt line for apic/pci steering across
 	   the V-Link */
 	else if (interrupt_line_quirk)
-		pci_write_config_byte(dev, PCI_INTERRUPT_LINE, dev->irq);
+		pci_write_config_byte(dev, PCI_INTERRUPT_LINE, dev->irq & 15);
 		
 }

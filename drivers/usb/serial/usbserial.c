@@ -508,8 +508,18 @@ static void post_helper(void *arg)
 		down(&port->sem);
 		dbg("%s - port %d len %d backlog %d", __FUNCTION__,
 		    port->number, job->len, port->write_backlog);
-		if (port->tty != NULL)
-			__serial_write(port, 0, job->buff, job->len);
+		if (port->tty != NULL) {
+			int rc;
+			int sent = 0;
+			while (sent < job->len) {
+				rc = __serial_write(port, 0, job->buff + sent, job->len - sent);
+				if ((rc < 0) || signal_pending(current))
+					break;
+				sent += rc;
+				if ((sent < job->len) && current->need_resched)
+					schedule();
+			}
+		}
 		up(&port->sem);
 
 		spin_lock_irqsave(&post_lock, flags);

@@ -71,14 +71,6 @@
 #include <linux/iobuf.h>
 
 /*
- * ioctl commands that are used by Linux filesystems
- */
-#define XFS_IOC_GETXFLAGS	_IOR('f', 1, long)
-#define XFS_IOC_SETXFLAGS	_IOW('f', 2, long)
-#define XFS_IOC_GETVERSION	_IOR('v', 1, long)
-
-
-/*
  * xfs_find_handle maps from userspace xfs_fsop_handlereq structure to
  * a file or fs handle.
  *
@@ -827,13 +819,23 @@ xfs_ioctl(
 	case XFS_IOC_FREEZE:
 		if (!capable(CAP_SYS_ADMIN))
 			return -EPERM;
-		xfs_fs_freeze(mp);
+
+		if (vp->v_vfsp->vfs_frozen == SB_UNFROZEN) {
+			freeze_bdev(mp->m_ddev_targp->pbr_bdev);
+			if (mp->m_rtdev_targp)
+				freeze_bdev(mp->m_rtdev_targp->pbr_bdev);
+		}
 		return 0;
 
 	case XFS_IOC_THAW:
 		if (!capable(CAP_SYS_ADMIN))
 			return -EPERM;
-		xfs_fs_thaw(mp);
+
+		if (vp->v_vfsp->vfs_frozen != SB_UNFROZEN) {
+			thaw_bdev(mp->m_ddev_targp->pbr_bdev, inode->i_sb);
+			if (mp->m_rtdev_targp)
+				thaw_bdev(mp->m_ddev_targp->pbr_bdev, NULL);
+		}
 		return 0;
 
 	case XFS_IOC_GOINGDOWN: {

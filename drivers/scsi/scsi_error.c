@@ -664,7 +664,10 @@ STATIC void scsi_send_eh_cmnd(Scsi_Cmnd * SCpnt, int timeout)
 			SCpnt->eh_state = SUCCESS;
 			break;
 		case NEEDS_RETRY:
-			goto retry;
+			if ((++SCpnt->retries) < SCpnt->allowed)
+				goto retry;
+			SCpnt->eh_state = SUCCESS;
+			break;
 		case FAILED:
 		default:
 			SCpnt->eh_state = FAILED;

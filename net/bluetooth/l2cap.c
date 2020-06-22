@@ -70,7 +70,7 @@ struct bluez_sock_list l2cap_sk_list = {
 
 static int l2cap_conn_del(struct hci_conn *conn, int err);
 
-static inline void l2cap_chan_add(struct l2cap_conn *conn, struct sock *sk, struct sock *parent);
+static void __l2cap_chan_add(struct l2cap_conn *conn, struct sock *sk, struct sock *parent);
 static void l2cap_chan_del(struct sock *sk, int err);
 static int  l2cap_chan_send(struct sock *sk, struct msghdr *msg, int len);
 
@@ -418,6 +418,14 @@ static int l2cap_sock_bind(struct socket *sock, struct sockaddr *addr, int addr_
 done:
 	release_sock(sk);
 	return err;
+}
+
+static inline void l2cap_chan_add(struct l2cap_conn *conn, struct sock *sk, struct sock *parent)
+{
+	struct l2cap_chan_list *l = &conn->chan_list;
+	write_lock(&l->lock);
+	__l2cap_chan_add(conn, sk, parent);
+	write_unlock(&l->lock);
 }
 
 static int l2cap_do_connect(struct sock *sk)
@@ -895,14 +903,6 @@ static void __l2cap_chan_add(struct l2cap_conn *conn, struct sock *sk, struct so
 
 	if (parent)
 		bluez_accept_enqueue(parent, sk);
-}
-
-static inline void l2cap_chan_add(struct l2cap_conn *conn, struct sock *sk, struct sock *parent)
-{
-	struct l2cap_chan_list *l = &conn->chan_list;
-	write_lock(&l->lock);
-	__l2cap_chan_add(conn, sk, parent);
-	write_unlock(&l->lock);
 }
 
 /* Delete channel. 

@@ -593,9 +593,10 @@ static int dmabuf_mmap(struct dmabuf *db, unsigned long start, unsigned long siz
 	return 0;
 }
 
-static void dmabuf_copyin(struct dmabuf *db, const void *buffer, unsigned int size)
+static void dmabuf_copyin(struct dmabuf *db, const void *_buffer, unsigned int size)
 {
 	unsigned int pgrem, rem;
+	const char *buffer = _buffer;
 
 	db->total_bytes += size;
 	for (;;) {
@@ -609,16 +610,17 @@ static void dmabuf_copyin(struct dmabuf *db, const void *buffer, unsigned int si
 			pgrem = rem;
 		memcpy((db->sgbuf[db->wrptr >> PAGE_SHIFT]) + (db->wrptr & (PAGE_SIZE-1)), buffer, pgrem);
 		size -= pgrem;
-		(char *)buffer += pgrem;
+		buffer += pgrem;
 		db->wrptr += pgrem;
 		if (db->wrptr >= db->dmasize)
 			db->wrptr = 0;
 	}
 }
 
-static void dmabuf_copyout(struct dmabuf *db, void *buffer, unsigned int size)
+static void dmabuf_copyout(struct dmabuf *db, void *_buffer, unsigned int size)
 {
 	unsigned int pgrem, rem;
+	char *buffer = _buffer;
 
 	db->total_bytes += size;
 	for (;;) {
@@ -632,16 +634,17 @@ static void dmabuf_copyout(struct dmabuf *db, void *buffer, unsigned int size)
 			pgrem = rem;
 		memcpy(buffer, (db->sgbuf[db->rdptr >> PAGE_SHIFT]) + (db->rdptr & (PAGE_SIZE-1)), pgrem);
 		size -= pgrem;
-		(char *)buffer += pgrem;
+		buffer += pgrem;
 		db->rdptr += pgrem;
 		if (db->rdptr >= db->dmasize)
 			db->rdptr = 0;
 	}
 }
 
-static int dmabuf_copyin_user(struct dmabuf *db, unsigned int ptr, const void *buffer, unsigned int size)
+static int dmabuf_copyin_user(struct dmabuf *db, unsigned int ptr, const void *_buffer, unsigned int size)
 {
 	unsigned int pgrem, rem;
+	const char *buffer = _buffer;
 
 	if (!db->ready || db->mapped)
 		return -EINVAL;
@@ -657,16 +660,17 @@ static int dmabuf_copyin_user(struct dmabuf *db, unsigned int ptr, const void *b
 		if (copy_from_user((db->sgbuf[ptr >> PAGE_SHIFT]) + (ptr & (PAGE_SIZE-1)), buffer, pgrem))
 			return -EFAULT;
 		size -= pgrem;
-		(char *)buffer += pgrem;
+		buffer += pgrem;
 		ptr += pgrem;
 		if (ptr >= db->dmasize)
 			ptr = 0;
 	}
 }
 
-static int dmabuf_copyout_user(struct dmabuf *db, unsigned int ptr, void *buffer, unsigned int size)
+static int dmabuf_copyout_user(struct dmabuf *db, unsigned int ptr, void *_buffer, unsigned int size)
 {
 	unsigned int pgrem, rem;
+	char *buffer = _buffer;
 
 	if (!db->ready || db->mapped)
 		return -EINVAL;
@@ -682,7 +686,7 @@ static int dmabuf_copyout_user(struct dmabuf *db, unsigned int ptr, void *buffer
 		if (copy_to_user(buffer, (db->sgbuf[ptr >> PAGE_SHIFT]) + (ptr & (PAGE_SIZE-1)), pgrem))
 			return -EFAULT;
 		size -= pgrem;
-		(char *)buffer += pgrem;
+		buffer += pgrem;
 		ptr += pgrem;
 		if (ptr >= db->dmasize)
 			ptr = 0;

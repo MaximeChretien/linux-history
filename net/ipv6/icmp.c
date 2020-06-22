@@ -3,7 +3,7 @@
  *	Linux INET6 implementation
  *
  *	Authors:
- *	Pedro Roque		<roque@di.fc.ul.pt>
+ *	Pedro Roque		<pedro_m@yahoo.com>
  *
  *	$Id: icmp.c,v 1.37 2001/09/18 22:29:10 davem Exp $
  *

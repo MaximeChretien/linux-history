@@ -79,6 +79,7 @@ struct proc_dir_entry {
 extern struct proc_dir_entry proc_root;
 extern struct proc_dir_entry *proc_root_fs;
 extern struct proc_dir_entry *proc_net;
+extern struct proc_dir_entry *proc_net_stat;
 extern struct proc_dir_entry *proc_bus;
 extern struct proc_dir_entry *proc_root_driver;
 extern struct proc_dir_entry *proc_root_kcore;
@@ -168,6 +169,16 @@ static inline struct proc_dir_entry *proc_net_create(const char *name,
 	mode_t mode, get_info_t *get_info)
 {
 	return create_proc_info_entry(name,mode,proc_net,get_info);
+}
+
+static inline struct proc_dir_entry *proc_net_fops_create(const char *name,
+	mode_t mode, struct file_operations *fops)
+{
+	struct proc_dir_entry *res = create_proc_entry(name, mode, proc_net);
+
+	if (res)
+		res->proc_fops = fops;
+	return res;
 }
 
 static inline void proc_net_remove(const char *name)

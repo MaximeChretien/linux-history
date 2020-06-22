@@ -45,8 +45,6 @@ extern int pciehp_poll_mode;
 extern int pciehp_poll_time;
 extern int pciehp_debug;
 
-extern int pciehp_msi_quirk;
-
 /*#define dbg(format, arg...) do { if (pciehp_debug) printk(KERN_DEBUG "%s: " format, MY_NAME , ## arg); } while (0)*/
 #define dbg(format, arg...) do { if (pciehp_debug) printk("%s: " format, MY_NAME , ## arg); } while (0)
 #define err(format, arg...) printk(KERN_ERR "%s: " format, MY_NAME , ## arg)

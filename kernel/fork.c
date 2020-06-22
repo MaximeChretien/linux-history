@@ -39,7 +39,7 @@ int last_pid;
 
 struct task_struct *pidhash[PIDHASH_SZ];
 
-void add_wait_queue(wait_queue_head_t *q, wait_queue_t * wait)
+void fastcall add_wait_queue(wait_queue_head_t *q, wait_queue_t * wait)
 {
 	unsigned long flags;
 
@@ -49,7 +49,7 @@ void add_wait_queue(wait_queue_head_t *q, wait_queue_t * wait)
 	wq_write_unlock_irqrestore(&q->lock, flags);
 }
 
-void add_wait_queue_exclusive(wait_queue_head_t *q, wait_queue_t * wait)
+void fastcall add_wait_queue_exclusive(wait_queue_head_t *q, wait_queue_t * wait)
 {
 	unsigned long flags;
 
@@ -59,7 +59,7 @@ void add_wait_queue_exclusive(wait_queue_head_t *q, wait_queue_t * wait)
 	wq_write_unlock_irqrestore(&q->lock, flags);
 }
 
-void remove_wait_queue(wait_queue_head_t *q, wait_queue_t * wait)
+void fastcall remove_wait_queue(wait_queue_head_t *q, wait_queue_t * wait)
 {
 	unsigned long flags;
 
@@ -264,7 +264,7 @@ struct mm_struct * mm_alloc(void)
  * is dropped: either by a lazy thread or by
  * mmput. Free the page directory and the mm.
  */
-inline void __mmdrop(struct mm_struct *mm)
+void fastcall __mmdrop(struct mm_struct *mm)
 {
 	BUG_ON(mm == &init_mm);
 	pgd_free(mm->pgd);

@@ -573,8 +573,19 @@ static _INLINE_ void receive_chars(struct async_struct *info,
 	do {
 		if (tty->flip.count >= TTY_FLIPBUF_SIZE) {
 			tty->flip.tqueue.routine((void *) tty);
-			if (tty->flip.count >= TTY_FLIPBUF_SIZE)
+			if (tty->flip.count >= TTY_FLIPBUF_SIZE) {
+				/* no room in flip buffer, discard rx FIFO contents to clear IRQ
+				 * *FIXME* Hardware with auto flow control
+				 * would benefit from leaving the data in the FIFO and
+				 * disabling the rx IRQ until space becomes available.
+				 */
+				do {
+					serial_inp(info, UART_RX);
+					icount->overrun++;
+					*status = serial_inp(info, UART_LSR);
+				} while ((*status & UART_LSR_DR) && (max_count-- > 0));
 				return;		// if TTY_DONT_FLIP is set
+			}
 		}
 		ch = serial_inp(info, UART_RX);
 		*tty->flip.char_buf_ptr = ch;

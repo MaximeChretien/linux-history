@@ -136,5 +136,7 @@ extern void xfs_blkdev_put(struct block_device *);
 
 /* matching a 2.6 kernel export, thus no xfs_ prefix */
 extern struct dentry *d_alloc_anon(struct inode *inode);
+extern struct super_block *freeze_bdev(struct block_device *bdev);
+extern void thaw_bdev(struct block_device *bdev, struct super_block *sb);
 
 #endif	/* __XFS_SUPER_H__ */

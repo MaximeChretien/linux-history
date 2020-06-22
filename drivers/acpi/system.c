@@ -102,7 +102,6 @@ acpi_power_off (void)
 		BUG();
 	/* Some SMP machines only can poweroff in boot CPU */
 	set_cpus_allowed(current, 1UL << cpu_logical_map(0));
-	acpi_system_save_state(ACPI_STATE_S5);
 	acpi_enter_sleep_state_prep(ACPI_STATE_S5);
 	ACPI_DISABLE_IRQS();
 	acpi_enter_sleep_state(ACPI_STATE_S5);

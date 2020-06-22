@@ -1055,7 +1055,7 @@ asmlinkage long sys_accept(int fd, struct sockaddr *upeer_sockaddr, int *upeer_a
 	if (!sock)
 		goto out;
 
-	err = -EMFILE;
+	err = -ENFILE;
 	if (!(newsock = sock_alloc())) 
 		goto out_put;
 

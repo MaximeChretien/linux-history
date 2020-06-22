@@ -346,10 +346,11 @@ static int hpc_check_lnk_status(struct controller *ctrl)
 		return retval;
 	}
 
-	if ( (lnk_status & (LNK_TRN | LNK_TRN_ERR)) == 0x0C00) {
+	dbg("%s: lnk_status = %x\n", __FUNCTION__, lnk_status);
+	if ( (lnk_status & LNK_TRN) || (lnk_status & LNK_TRN_ERR) || 
+		!(lnk_status & NEG_LINK_WD)) {
 		err("%s : Link Training Error occurs \n", __FUNCTION__);
-		retval = -1;
-		return retval;
+		return -1;
 	}
 
 	DBG_LEAVE_ROUTINE 
@@ -911,7 +912,6 @@ static void pcie_isr(int IRQ, void *dev_id, struct pt_regs *regs)
 		err("%s : hp_register_read_word SLOT_STATUS failed\n", __FUNCTION__);
 		return;
 	}
-	/* dbg("%s: hp_register_read_word SLOT_STATUS with value %x\n", __FUNCTION__, slot_status); */
 
 	intr_detect = ( ATTN_BUTTN_PRESSED | PWR_FAULT_DETECTED | MRL_SENS_CHANGED |
 					PRSN_DETECT_CHANGED | CMD_COMPLETED );
@@ -932,8 +932,6 @@ static void pcie_isr(int IRQ, void *dev_id, struct pt_regs *regs)
 			return;
 		}
 
-		dbg("%s: Set Mask Hot-plug Interrupt Enable\n", __FUNCTION__);
-		dbg("%s: hp_register_read_word SLOT_CTRL with value %x\n", __FUNCTION__, temp_word);
 		temp_word = (temp_word & ~HP_INTR_ENABLE & ~CMD_CMPL_INTR_ENABLE) | 0x00;
 
 		rc = hp_register_write_word(php_ctlr->pci_dev, SLOT_CTRL, temp_word);
@@ -941,14 +939,12 @@ static void pcie_isr(int IRQ, void *dev_id, struct pt_regs *regs)
 			err("%s : hp_register_write_word SLOT_CTRL failed\n", __FUNCTION__);
 			return;
 		}
-		dbg("%s: hp_register_write_word SLOT_CTRL with value %x\n", __FUNCTION__, temp_word);
 		
 		rc = hp_register_read_word(php_ctlr->pci_dev, SLOT_STATUS, slot_status);
 		if (rc) {
 			err("%s : hp_register_read_word SLOT_STATUS failed\n", __FUNCTION__);
 			return;
 		}
-		dbg("%s: hp_register_read_word SLOT_STATUS with value %x\n", __FUNCTION__, slot_status); 
 		
 		/* Clear command complete interrupt caused by this write */
 		temp_word = 0x1f;
@@ -957,7 +953,6 @@ static void pcie_isr(int IRQ, void *dev_id, struct pt_regs *regs)
 			err("%s : hp_register_write_word SLOT_STATUS failed\n", __FUNCTION__);
 			return;
 		}
-		dbg("%s: hp_register_write_word SLOT_STATUS with value %x\n", __FUNCTION__, temp_word); 	
 	}
 
 	if (intr_loc & CMD_COMPLETED) {
@@ -995,8 +990,6 @@ static void pcie_isr(int IRQ, void *dev_id, struct pt_regs *regs)
 			err("%s : hp_register_read_word SLOT_CTRL failed\n", __FUNCTION__);
 			return;
 		}
-		dbg("%s: Unmask Hot-plug Interrupt Enable\n", __FUNCTION__);
-		dbg("%s: hp_register_read_word SLOT_CTRL with value %x\n", __FUNCTION__, temp_word);
 		temp_word = (temp_word & ~HP_INTR_ENABLE) | HP_INTR_ENABLE;
 
 		rc = hp_register_write_word(php_ctlr->pci_dev, SLOT_CTRL, temp_word);
@@ -1004,14 +997,12 @@ static void pcie_isr(int IRQ, void *dev_id, struct pt_regs *regs)
 			err("%s : hp_register_write_word SLOT_CTRL failed\n", __FUNCTION__);
 			return;
 		}	
-		dbg("%s: hp_register_write_word SLOT_CTRL with value %x\n", __FUNCTION__, temp_word); 	
 	
 		rc = hp_register_read_word(php_ctlr->pci_dev, SLOT_STATUS, slot_status);
 		if (rc) {
 			err("%s : hp_register_read_word SLOT_STATUS failed\n", __FUNCTION__);
 			return;
 		}
-		dbg("%s: hp_register_read_word SLOT_STATUS with value %x\n", __FUNCTION__, slot_status); 
 		
 		/* Clear command complete interrupt caused by this write */
 		temp_word = 0x1F;
@@ -1020,7 +1011,6 @@ static void pcie_isr(int IRQ, void *dev_id, struct pt_regs *regs)
 			err("%s : hp_register_write_word SLOT_STATUS failed\n", __FUNCTION__);
 			return;
 		}
-		dbg("%s: hp_register_write_word SLOT_STATUS with value %x\n", __FUNCTION__, temp_word); 	
 	}
 	return;
 }
@@ -1409,17 +1399,6 @@ int pcie_init(struct controller * ctrl,
 		start_int_poll_timer( php_ctlr, 10 );   /* start with 10 second delay */
 	} else {
 		/* Installs the interrupt handler */
-#ifdef CONFIG_PCI_USE_VECTOR 
-		if (!pciehp_msi_quirk) {	
-			rc = pci_enable_msi(pdev);
-			if (rc) {
-				info("Can't get msi for the hotplug controller\n");
-				info("Use INTx for the hotplug controller\n");
-				dbg("%s: rc = %x\n", __FUNCTION__, rc);
-			} else
-				php_ctlr->irq = pdev->irq;
-		}
-#endif
 		rc = request_irq(php_ctlr->irq, pcie_isr, SA_SHIRQ, MY_NAME, (void *) ctrl);
 		dbg("%s: request_irq %d for hpc%d (returns %d)\n", __FUNCTION__, php_ctlr->irq, ctlr_seq_num, rc);
 		if (rc) {

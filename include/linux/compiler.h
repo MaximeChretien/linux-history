@@ -37,5 +37,6 @@
 
 /* no checker support, so we unconditionally define this as (null) */
 #define __user
+#define __iomem
 
 #endif /* __LINUX_COMPILER_H */

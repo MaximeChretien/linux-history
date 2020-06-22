@@ -604,7 +604,7 @@ xfs_write(
 	io = &xip->i_iocore;
 	mp = io->io_mount;
 
-	xfs_check_frozen(mp, bdp, XFS_FREEZE_WRITE);
+	fs_check_frozen(vp->v_vfsp, SB_FREEZE_WRITE);
 
 	if (XFS_FORCED_SHUTDOWN(xip->i_mount)) {
 		return -EIO;
@@ -619,8 +619,6 @@ xfs_write(
 		iolock = XFS_IOLOCK_SHARED;
 		locktype = VRWLOCK_WRITE_DIRECT;
 	} else {
-		if (io->io_flags & XFS_IOCORE_RT)
-			return XFS_ERROR(-EINVAL);
 		iolock = XFS_IOLOCK_EXCL;
 		locktype = VRWLOCK_WRITE;
 	}

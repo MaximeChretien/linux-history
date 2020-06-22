@@ -3221,7 +3221,7 @@ asmlinkage long sys32_setsockopt(int fd, int level, int optname, char* optval, i
 	
 	PPCDBG(PPCDBG_SYS32,"sys32_setsockopt - running - pid=%ld, comm=%s\n", current->pid, current->comm);
 
-	if (optname == SO_ATTACH_FILTER) {
+	if (level == SOL_SOCKET && optname == SO_ATTACH_FILTER) {
 		struct sock_fprog32 {
 			__u16 len;
 			__u32 filter;

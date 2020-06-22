@@ -1073,6 +1073,116 @@ e100_change_mtu(struct net_device *dev, int new_mtu)
 	return 0;
 }
 
+/**
+ * e100_prepare_xmit_buff - prepare a buffer for transmission
+ * @bdp: atapter's private data struct
+ * @skb: skb to send
+ *
+ * This routine prepare a buffer for transmission. It checks
+ * the message length for the appropiate size. It picks up a
+ * free tcb from the TCB pool and sets up the corresponding
+ * TBD's. If the number of fragments are more than the number
+ * of TBD/TCB it copies all the fragments in a coalesce buffer.
+ * It returns a pointer to the prepared TCB.
+ */
+static inline tcb_t *
+e100_prepare_xmit_buff(struct e100_private *bdp, struct sk_buff *skb)
+{
+	tcb_t *tcb, *prev_tcb;
+
+	tcb = bdp->tcb_pool.data;
+	tcb += TCB_TO_USE(bdp->tcb_pool);
+
+	if (bdp->flags & USE_IPCB) {
+		tcb->tcbu.ipcb.ip_activation_high = IPCB_IP_ACTIVATION_DEFAULT;
+		tcb->tcbu.ipcb.ip_schedule &= ~IPCB_TCP_PACKET;
+		tcb->tcbu.ipcb.ip_schedule &= ~IPCB_TCPUDP_CHECKSUM_ENABLE;
+	}
+
+	if(bdp->vlgrp && vlan_tx_tag_present(skb)) {
+		(tcb->tcbu).ipcb.ip_activation_high |= IPCB_INSERTVLAN_ENABLE;
+		(tcb->tcbu).ipcb.vlan = cpu_to_be16(vlan_tx_tag_get(skb));
+	}
+	
+	tcb->tcb_hdr.cb_status = 0;
+	tcb->tcb_thrshld = bdp->tx_thld;
+	tcb->tcb_hdr.cb_cmd |= __constant_cpu_to_le16(CB_S_BIT);
+
+	/* Set I (Interrupt) bit on every (TX_FRAME_CNT)th packet */
+	if (!(++bdp->tx_count % TX_FRAME_CNT))
+		tcb->tcb_hdr.cb_cmd |= __constant_cpu_to_le16(CB_I_BIT);
+	else
+		/* Clear I bit on other packets */
+		tcb->tcb_hdr.cb_cmd &= ~__constant_cpu_to_le16(CB_I_BIT);
+
+	tcb->tcb_skb = skb;
+
+	if (skb->ip_summed == CHECKSUM_HW) {
+		const struct iphdr *ip = skb->nh.iph;
+
+		if ((ip->protocol == IPPROTO_TCP) ||
+		    (ip->protocol == IPPROTO_UDP)) {
+
+			tcb->tcbu.ipcb.ip_activation_high |=
+				IPCB_HARDWAREPARSING_ENABLE;
+			tcb->tcbu.ipcb.ip_schedule |=
+				IPCB_TCPUDP_CHECKSUM_ENABLE;
+
+			if (ip->protocol == IPPROTO_TCP)
+				tcb->tcbu.ipcb.ip_schedule |= IPCB_TCP_PACKET;
+		}
+	}
+
+	if (!skb_shinfo(skb)->nr_frags) {
+		(tcb->tbd_ptr)->tbd_buf_addr =
+			cpu_to_le32(pci_map_single(bdp->pdev, skb->data,
+						   skb->len, PCI_DMA_TODEVICE));
+		(tcb->tbd_ptr)->tbd_buf_cnt = cpu_to_le16(skb->len);
+		tcb->tcb_tbd_num = 1;
+		tcb->tcb_tbd_ptr = tcb->tcb_tbd_dflt_ptr;
+	} else {
+		int i;
+		void *addr;
+		tbd_t *tbd_arr_ptr = &(tcb->tbd_ptr[1]);
+		skb_frag_t *frag = &skb_shinfo(skb)->frags[0];
+
+		(tcb->tbd_ptr)->tbd_buf_addr =
+			cpu_to_le32(pci_map_single(bdp->pdev, skb->data,
+						   skb_headlen(skb),
+						   PCI_DMA_TODEVICE));
+		(tcb->tbd_ptr)->tbd_buf_cnt =
+			cpu_to_le16(skb_headlen(skb));
+
+		for (i = 0; i < skb_shinfo(skb)->nr_frags;
+		     i++, tbd_arr_ptr++, frag++) {
+
+			addr = ((void *) page_address(frag->page) +
+				frag->page_offset);
+
+			tbd_arr_ptr->tbd_buf_addr =
+				cpu_to_le32(pci_map_single(bdp->pdev,
+							   addr, frag->size,
+							   PCI_DMA_TODEVICE));
+			tbd_arr_ptr->tbd_buf_cnt = cpu_to_le16(frag->size);
+		}
+		tcb->tcb_tbd_num = skb_shinfo(skb)->nr_frags + 1;
+		tcb->tcb_tbd_ptr = tcb->tcb_tbd_expand_ptr;
+	}
+
+	/* clear the S-BIT on the previous tcb */
+	prev_tcb = bdp->tcb_pool.data;
+	prev_tcb += PREV_TCB_USED(bdp->tcb_pool);
+	prev_tcb->tcb_hdr.cb_cmd &= __constant_cpu_to_le16((u16) ~CB_S_BIT);
+
+	bdp->tcb_pool.tail = NEXT_TCB_TOUSE(bdp->tcb_pool.tail);
+
+	wmb();
+
+	e100_start_cu(bdp, tcb);
+
+	return tcb;
+}
+
 static int
 e100_xmit_frame(struct sk_buff *skb, struct net_device *dev)
 {
@@ -1605,6 +1715,32 @@ e100_alloc_tcb_pool(struct e100_private *bdp)
 	return 1;
 }
 
+/**
+ * e100_tx_skb_free - free TX skbs resources
+ * @bdp: atapter's private data struct
+ * @tcb: associated tcb of the freed skb
+ *
+ * This routine frees resources of TX skbs.
+ */
+static inline void
+e100_tx_skb_free(struct e100_private *bdp, tcb_t *tcb)
+{
+	if (tcb->tcb_skb) {
+		int i;
+		tbd_t *tbd_arr = tcb->tbd_ptr;
+		int frags = skb_shinfo(tcb->tcb_skb)->nr_frags;
+
+		for (i = 0; i <= frags; i++, tbd_arr++) {
+			pci_unmap_single(bdp->pdev,
+					 le32_to_cpu(tbd_arr->tbd_buf_addr),
+					 le16_to_cpu(tbd_arr->tbd_buf_cnt),
+					 PCI_DMA_TODEVICE);
+		}
+		dev_kfree_skb_irq(tcb->tcb_skb);
+		tcb->tcb_skb = NULL;
+	}
+}
+
 void
 e100_free_tcb_pool(struct e100_private *bdp)
 {
@@ -1910,32 +2046,6 @@ e100intr(int irq, void *dev_inst, struct pt_regs *regs)
 }
 
 /**
- * e100_tx_skb_free - free TX skbs resources
- * @bdp: atapter's private data struct
- * @tcb: associated tcb of the freed skb
- *
- * This routine frees resources of TX skbs.
- */
-static inline void
-e100_tx_skb_free(struct e100_private *bdp, tcb_t *tcb)
-{
-	if (tcb->tcb_skb) {
-		int i;
-		tbd_t *tbd_arr = tcb->tbd_ptr;
-		int frags = skb_shinfo(tcb->tcb_skb)->nr_frags;
-
-		for (i = 0; i <= frags; i++, tbd_arr++) {
-			pci_unmap_single(bdp->pdev,
-					 le32_to_cpu(tbd_arr->tbd_buf_addr),
-					 le16_to_cpu(tbd_arr->tbd_buf_cnt),
-					 PCI_DMA_TODEVICE);
-		}
-		dev_kfree_skb_irq(tcb->tcb_skb);
-		tcb->tcb_skb = NULL;
-	}
-}
-
-/**
  * e100_tx_srv - service TX queues
  * @bdp: atapter's private data struct
  *
@@ -2153,116 +2263,6 @@ e100_refresh_txthld(struct e100_private *bdp)
 			bdp->tx_thld = 189;
 		}
 	}			/* end underrun check */
-}
-
-/**
- * e100_prepare_xmit_buff - prepare a buffer for transmission
- * @bdp: atapter's private data struct
- * @skb: skb to send
- *
- * This routine prepare a buffer for transmission. It checks
- * the message length for the appropiate size. It picks up a
- * free tcb from the TCB pool and sets up the corresponding
- * TBD's. If the number of fragments are more than the number
- * of TBD/TCB it copies all the fragments in a coalesce buffer.
- * It returns a pointer to the prepared TCB.
- */
-static inline tcb_t *
-e100_prepare_xmit_buff(struct e100_private *bdp, struct sk_buff *skb)
-{
-	tcb_t *tcb, *prev_tcb;
-
-	tcb = bdp->tcb_pool.data;
-	tcb += TCB_TO_USE(bdp->tcb_pool);
-
-	if (bdp->flags & USE_IPCB) {
-		tcb->tcbu.ipcb.ip_activation_high = IPCB_IP_ACTIVATION_DEFAULT;
-		tcb->tcbu.ipcb.ip_schedule &= ~IPCB_TCP_PACKET;
-		tcb->tcbu.ipcb.ip_schedule &= ~IPCB_TCPUDP_CHECKSUM_ENABLE;
-	}
-
-	if(bdp->vlgrp && vlan_tx_tag_present(skb)) {
-		(tcb->tcbu).ipcb.ip_activation_high |= IPCB_INSERTVLAN_ENABLE;
-		(tcb->tcbu).ipcb.vlan = cpu_to_be16(vlan_tx_tag_get(skb));
-	}
-	
-	tcb->tcb_hdr.cb_status = 0;
-	tcb->tcb_thrshld = bdp->tx_thld;
-	tcb->tcb_hdr.cb_cmd |= __constant_cpu_to_le16(CB_S_BIT);
-
-	/* Set I (Interrupt) bit on every (TX_FRAME_CNT)th packet */
-	if (!(++bdp->tx_count % TX_FRAME_CNT))
-		tcb->tcb_hdr.cb_cmd |= __constant_cpu_to_le16(CB_I_BIT);
-	else
-		/* Clear I bit on other packets */
-		tcb->tcb_hdr.cb_cmd &= ~__constant_cpu_to_le16(CB_I_BIT);
-
-	tcb->tcb_skb = skb;
-
-	if (skb->ip_summed == CHECKSUM_HW) {
-		const struct iphdr *ip = skb->nh.iph;
-
-		if ((ip->protocol == IPPROTO_TCP) ||
-		    (ip->protocol == IPPROTO_UDP)) {
-
-			tcb->tcbu.ipcb.ip_activation_high |=
-				IPCB_HARDWAREPARSING_ENABLE;
-			tcb->tcbu.ipcb.ip_schedule |=
-				IPCB_TCPUDP_CHECKSUM_ENABLE;
-
-			if (ip->protocol == IPPROTO_TCP)
-				tcb->tcbu.ipcb.ip_schedule |= IPCB_TCP_PACKET;
-		}
-	}
-
-	if (!skb_shinfo(skb)->nr_frags) {
-		(tcb->tbd_ptr)->tbd_buf_addr =
-			cpu_to_le32(pci_map_single(bdp->pdev, skb->data,
-						   skb->len, PCI_DMA_TODEVICE));
-		(tcb->tbd_ptr)->tbd_buf_cnt = cpu_to_le16(skb->len);
-		tcb->tcb_tbd_num = 1;
-		tcb->tcb_tbd_ptr = tcb->tcb_tbd_dflt_ptr;
-	} else {
-		int i;
-		void *addr;
-		tbd_t *tbd_arr_ptr = &(tcb->tbd_ptr[1]);
-		skb_frag_t *frag = &skb_shinfo(skb)->frags[0];
-
-		(tcb->tbd_ptr)->tbd_buf_addr =
-			cpu_to_le32(pci_map_single(bdp->pdev, skb->data,
-						   skb_headlen(skb),
-						   PCI_DMA_TODEVICE));
-		(tcb->tbd_ptr)->tbd_buf_cnt =
-			cpu_to_le16(skb_headlen(skb));
-
-		for (i = 0; i < skb_shinfo(skb)->nr_frags;
-		     i++, tbd_arr_ptr++, frag++) {
-
-			addr = ((void *) page_address(frag->page) +
-				frag->page_offset);
-
-			tbd_arr_ptr->tbd_buf_addr =
-				cpu_to_le32(pci_map_single(bdp->pdev,
-							   addr, frag->size,
-							   PCI_DMA_TODEVICE));
-			tbd_arr_ptr->tbd_buf_cnt = cpu_to_le16(frag->size);
-		}
-		tcb->tcb_tbd_num = skb_shinfo(skb)->nr_frags + 1;
-		tcb->tcb_tbd_ptr = tcb->tcb_tbd_expand_ptr;
-	}
-
-	/* clear the S-BIT on the previous tcb */
-	prev_tcb = bdp->tcb_pool.data;
-	prev_tcb += PREV_TCB_USED(bdp->tcb_pool);
-	prev_tcb->tcb_hdr.cb_cmd &= __constant_cpu_to_le16((u16) ~CB_S_BIT);
-
-	bdp->tcb_pool.tail = NEXT_TCB_TOUSE(bdp->tcb_pool.tail);
-
-	wmb();
-
-	e100_start_cu(bdp, tcb);
-
-	return tcb;
 }
 
 /* Changed for 82558 enhancement */

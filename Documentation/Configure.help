@@ -696,6 +696,24 @@ CONFIG_BLK_DEV_IDE
   could say N here, and select the "Old hard disk driver" below
   instead to save about 13 KB of memory in the kernel.
 
+Support for SATA (deprecated; conflicts with libata SATA driver)
+CONFIG_BLK_DEV_IDE_SATA
+  There are two drivers for Serial ATA controllers.
+
+  The main driver, "libata", exists inside the SCSI subsystem
+  and supports most modern SATA controllers.
+
+  The IDE driver (which you are currently configuring) supports
+  a few first-generation SATA controllers.
+
+  In order to eliminate conflicts between the two subsystems,
+  this config option enables the IDE driver's SATA support.
+  Normally this is disabled, as it is preferred that libata
+  supports SATA controllers, and this (IDE) driver supports
+  PATA controllers.
+
+  If unsure, say N.
+
 Old hard disk (MFM/RLL/IDE) driver
 CONFIG_BLK_DEV_HD_ONLY
   There are two drivers for MFM/RLL/IDE hard disks. Most people use
@@ -762,6 +780,13 @@ CONFIG_BLK_DEV_IDECS
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>. The module will be called
   ide-cs.o
+
+Cardbus IDE support (Delkin/ASKA/Workbit)
+CONFIG_BLK_DEV_DELKIN
+  Support for Delkin/ASKA/Workbit cardbus CompactFlash Adapters.
+  This may also work for similar SD and XD adapters.  If you want
+  to be able to use one of these, then say M here.  The module will
+  be called delkin_cb.o
 
 Include IDE/ATAPI CD-ROM support
 CONFIG_BLK_DEV_IDECD
@@ -4678,12 +4703,6 @@ CONFIG_BINFMT_ELF
   ld.so (check the file <file:Documentation/Changes> for location and
   latest version).
 
-  If you want to compile this as a module ( = code which can be
-  inserted in and removed from the running kernel whenever you want),
-  say M here and read <file:Documentation/modules.txt>.  The module
-  will be called binfmt_elf.o. Saying M or N here is dangerous because
-  some crucial programs on your system might be in ELF format.
-
 Kernel support for a.out binaries
 CONFIG_BINFMT_AOUT
   A.out (Assembler.OUTput) is a set of formats for libraries and
@@ -7953,7 +7972,7 @@ CONFIG_SCSI_LOGGING
 QDIO base support for IBM S/390 and zSeries
 CONFIG_QDIO
   This driver provides the Queued Direct I/O base support for the
-  IBM S/390 (G5 and G6) and eServer zSeries (z800 and z900).
+  IBM S/390 (G5 and G6) and eServer zSeries (z800, z900 and z990).
 
   For details please refer to the documentation provided by IBM at
   <http://www10.software.ibm.com/developerworks/opensource/linux390>
@@ -7970,6 +7989,37 @@ CONFIG_QDIO_PERF_STATS
   Say Y here to get performance statistics in /proc/qdio_perf
 
   If unsure, say N.
+
+IBM S/390 and zSeries OSA-Express and HiperSockets device driver
+CONFIG_QETH
+  This driver supports the IBM S/390 and zSeries OSA Express adapters
+  in QDIO mode (all media types), HiperSockets interfaces and VM GuestLAN
+  interfaces in QDIO and HIPER mode.
+
+  For details please refer to the documentation provided by IBM at
+  <http://www10.software.ibm.com/developerworks/opensource/linux390>
+
+  This driver is also available as a module (code which can be
+  inserted in and removed from the running kernel whenever you
+  want). If you want to compile it as a module, say 'M' here and
+  read file Documentation/modules.txt.
+
+IPv6 support for qeth
+CONFIG_QETH_IPV6
+  If CONFIG_QETH is switched on, this option will include IPv6
+  support in the qeth device driver.
+
+IEEE 802.1q VLAN support for qeth
+CONFIG_QETH_VLAN
+  If CONFIG_QETH is switched on, this option will include IEEE
+  802.1q VLAN support in the qeth device driver.
+
+Performance statistics for the qeth drivers
+CONFIG_QETH_PERF_STATS
+  When switched on, this option will add a file in the proc-fs
+  (/proc/qeth_perf_stats) containing performance statistics. It
+  may slightly impact performance, so this is only recommended for
+  internal tuning of the device driver.
 
 SGI WD93C93 SCSI Driver
 CONFIG_SCSI_SGIWD93
@@ -9281,6 +9331,16 @@ CONFIG_SCSI_SATA_SVW
 
   If unsure, say N.
 
+CONFIG_SCSI_ATA_PIIX
+  This option enables support for ICH5 Serial ATA.
+
+  If unsure, say N.
+
+CONFIG_SCSI_SATA_NV
+  This option enables support for NVIDIA Serial ATA.
+
+  If unsure, say N.
+
 CONFIG_SCSI_SATA_PROMISE
   This option enables support for Promise Serial ATA TX2/TX4.
 
@@ -9298,6 +9358,11 @@ CONFIG_SCSI_SATA_SIL
 
 CONFIG_SCSI_SATA_SIS
   This option enables support for SiS Serial ATA 964/180.
+
+  If unsure, say N.
+
+CONFIG_SCSI_SATA_ULI
+  This option enables support for ULi Electronics SATA.
 
   If unsure, say N.
 
@@ -10076,6 +10141,49 @@ CONFIG_AIRONET4500_CS
   The module will be called aironet4500_cs.o. If you want to
   compile it as a module, say M here and read
   <file:Documentation/modules.txt>.
+
+Intersil 802.11(a/b/g) Prism GT/Duette/Indigo support
+CONFIG_PRISM54
+  Enable PCI and Cardbus support for the following chipset based cards:
+
+  ISL3880 - Prism GT		802.11 b/g
+  ISL3877 - Prism Indigo	802.11 a
+  ISL3890 - Prism Duette	802.11 a/b/g
+  
+  For a complete list of supported cards visit <http://prism54.org>.
+  Here is the latest confirmed list of supported cards:
+
+  3com OfficeConnect 11g Cardbus Card aka 3CRWE154G72
+  Allnet ALL0271 PCI Card
+  Compex WL54G Cardbus Card
+  Corega CG-WLCB54GT Cardbus Card
+  D-Link Air Plus Xtreme G A1 Cardbus Card aka DWL-g650
+  I-O Data WN-G54/CB Cardbus Card
+  Kobishi XG-300 aka Z-Com Cardbus Card
+  Netgear WG511 Cardbus Card
+  Ovislink WL-5400PCI PCI Card
+  Peabird WLG-PCI PCI Card
+  Sitecom WL-100i Cardbus Card
+  Sitecom WL-110i PCI Card
+  SMC2802W - EZ Connect g 2.4GHz 54 Mbps Wireless PCI Card
+  SMC2835W - EZ Connect g 2.4GHz 54 Mbps Wireless Cardbus Card
+  Z-Com XG-900 PCI Card
+  Zyxel G-100 Cardbus Card
+
+  If you enable this, you require a firmware file as well.
+  You will need to copy this to /usr/lib/hotplug/firmware/isl3890.
+  You can get this non-GPL'd firmware file from the Prism54 project page:
+  <http://prism54.org>.
+  You will also need the /etc/hotplug/firmware.agent script from
+  a current hotplug package.
+
+
+  Note: You need a motherboard with DMA support to use any of these cards 
+  
+  If you want to compile the driver as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want),
+  say M here and read <file:Documentation/modules.txt>.  The module
+  will be called prism54.o.
 
 Aironet 4500/4800 PROC interface
 CONFIG_AIRONET4500_PROC
@@ -17211,10 +17319,11 @@ CONFIG_NFSD_V3
   If you would like to include the NFSv3 server as well as the NFSv2
   server, say Y here.  If unsure, say Y.
 
-Provide NFS over TCP server support EXPERIMENTAL
+Provide NFS over TCP server support
 CONFIG_NFSD_TCP
-  Enable NFS service over TCP connections.  This the officially
-  still experimental, but seems to work well.
+  If you want your NFS server to support TCP connections, say Y here.
+  TCP connections usually perform better than the default UDP when
+  the network is lossy or congested.  If unsure, say Y.
 
 OS/2 HPFS file system support
 CONFIG_HPFS_FS
@@ -25344,13 +25453,13 @@ CONFIG_S390_PARTITION
 Support for DASD hard disks
 CONFIG_DASD
   Enable this option if you want to access DASDs directly utilizing
-  S/390s channel subsystem commands. This is necessary for running
+  S/390's or zSeries' channel subsystem commands. This is necessary for running
   natively on a single image or an LPAR.
 
 Support for ECKD hard disks
 CONFIG_DASD_ECKD
   ECKD (Extended Count Key Data) devices are the most commonly used 
-  devices on S/390s. You should enable this option unless you are 
+  devices on zSeries and S/390. You should enable this option unless you are
   very sure you have no ECKD device.
 
 ECKD demand loading
@@ -28864,6 +28973,15 @@ CONFIG_CRYPTO_SHA512
   This code also includes SHA-384, a 384 bit hash with 192 bits
   of security against collision attacks.
 
+CONFIG_CRYPTO_WP512
+  Whirlpool hash algorithm 512, 384 and 256-bit hashes
+
+  Whirlpool-512 is part of the NESSIE cryptographic primitives.
+  Whirlpool will be part of the ISO/IEC 10118-3:2003(E) standard
+
+  See also:
+  http://planeta.terra.com.br/informatica/paulobarreto/WhirlpoolPage.html
+
 CONFIG_CRYPTO_DES
   DES cipher algorithm (FIPS 46-2), and Triple DES EDE (FIPS 46-3).
 
@@ -28891,7 +29009,8 @@ CONFIG_CRYPTO_SERPENT
   Serpent cipher algorithm, by Anderson, Biham & Knudsen.
 
   Keys are allowed to be from 0 to 256 bits in length, in steps
-  of 8 bits.
+  of 8 bits. Also includes the 'Tnepres' algorithm, a reversed
+  variant of Serpent for compatibility with old kerneli code.
 
   See also:
   http://www.cl.cam.ac.uk/~rja14/serpent.html
@@ -28932,7 +29051,7 @@ CONFIG_CRYPTO_TEA
   many rounds for security.  It is very fast and uses
   little memory.
 
-  Xtendend Tiny Encryption Algorithm is a modifcation to
+  Xtendend Tiny Encryption Algorithm is a modification to
   the TEA algorithm to address a potential key weakness
   in the TEA algorithm.
 
@@ -28943,6 +29062,27 @@ CONFIG_CRYPTO_ARC4
   bits in length.  This algorithm is required for driver-based 
   WEP, but it should not be for other purposes because of the
   weakness of the algorithm.
+
+CONFIG_CRYPTO_KHAZAD
+  Khazad cipher algorithm.
+
+  Khazad was a finalist in the initial NESSIE competition.  It is
+  an algorithm optimized for 64-bit processors with good performance
+  on 32-bit processors.  Khazad uses an 128 bit key size.
+
+  See also:
+  http://planeta.terra.com.br/informatica/paulobarreto/KhazadPage.html
+
+CONFIG_CRYPTO_ANUBIS
+  Anubis cipher algorithm.
+
+  Anubis is a variable key length cipher which can use keys from 
+  128 bits to 320 bits in length.  It was evaluated as a entrant
+  in the NESSIE competition.
+	  
+  See also:
+  https://www.cosic.esat.kuleuven.ac.be/nessie/reports/
+  http://planeta.terra.com.br/informatica/paulobarreto/AnubisPage.html
 
 CONFIG_CRYPTO_DEFLATE
   This is the Deflate algorithm (RFC1951), specified for use in

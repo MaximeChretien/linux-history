@@ -61,7 +61,7 @@
 #define virt_addr_valid(x)	VALID_PAGE(virt_to_page((x)))
 #define sock_owned_by_user(sk)  ((sk)->lock.users)
 #define sk_set_owner(x, y)
-#define __unsafe(x) MOD_INC_USE_COUNT
+#define __unsafe(x)
 #define dst_pmtu(x) ((x)->pmtu)
 
 #define sk_family family

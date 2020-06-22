@@ -4546,6 +4546,26 @@ static inline int stli_eisamemprobe(stlibrd_t *brdp)
 /*****************************************************************************/
 
 /*
+ *	Find the next available board number that is free.
+ */
+
+static inline int stli_getbrdnr()
+{
+	int	i;
+
+	for (i = 0; (i < STL_MAXBRDS); i++) {
+		if (stli_brds[i] == (stlibrd_t *) NULL) {
+			if (i >= stli_nrbrds)
+				stli_nrbrds = i + 1;
+			return(i);
+		}
+	}
+	return(-1);
+}
+
+/*****************************************************************************/
+
+/*
  *	Probe around and try to find any EISA boards in system. The biggest
  *	problem here is finding out what memory address is associated with
  *	an EISA board after it is found. The registers of the ECPE and
@@ -4621,26 +4641,6 @@ static inline int stli_findeisabrds()
 	}
 
 	return(0);
-}
-
-/*****************************************************************************/
-
-/*
- *	Find the next available board number that is free.
- */
-
-static inline int stli_getbrdnr()
-{
-	int	i;
-
-	for (i = 0; (i < STL_MAXBRDS); i++) {
-		if (stli_brds[i] == (stlibrd_t *) NULL) {
-			if (i >= stli_nrbrds)
-				stli_nrbrds = i + 1;
-			return(i);
-		}
-	}
-	return(-1);
 }
 
 /*****************************************************************************/

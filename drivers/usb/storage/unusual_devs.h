@@ -153,6 +153,16 @@ UNUSUAL_DEV(  0x04da, 0x0d05, 0x0000, 0x0000,
 		"CD-R/RW Drive",
 		US_SC_8070, US_PR_CB, NULL, 0),
 
+/* Reported by Adriaan Penning <a.penning@luon.net>
+ * Note that these cameras report "Medium not present" after
+ * ALLOW_MEDIUM_REMOVAL, so they also need to be marked
+ * NOT_LOCKABLE in the SCSI blacklist (and the vendor is MATSHITA). */
+UNUSUAL_DEV(  0x04da, 0x2372, 0x0000, 0x9999,
+		"Panasonic",
+		"DMC-LCx Camera",
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
+		US_FL_FIX_CAPACITY ),
+
 /* Most of the following entries were developed with the help of
  * Shuttle/SCM directly.
  */
@@ -430,6 +440,13 @@ UNUSUAL_DEV(  0x066b, 0x0105, 0x0100, 0x0100,
 		US_FL_SINGLE_LUN ),
 #endif
 
+/* Reported by Darsen Lu <darsen@micro.ee.nthu.edu.tw> */
+UNUSUAL_DEV( 0x066f, 0x8000, 0x0001, 0x0001,
+		"SigmaTel",
+		"USBMSC Audio Player",
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
+		US_FL_FIX_CAPACITY ),
+
 /* Submitted by Benny Sjostrand <benny@hostmobility.com> */
 UNUSUAL_DEV( 0x0686, 0x4011, 0x0001, 0x0001,
 		"Minolta",
@@ -679,7 +696,7 @@ UNUSUAL_DEV( 0x090c, 0x1132, 0x0000, 0xffff,
 UNUSUAL_DEV(  0x097a, 0x0001, 0x0000, 0x0001,
 		"Minds@Work",
 		"Digital Wallet",
- 		US_SC_SCSI, US_PR_CB, NULL,
+ 		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_MODE_XLATE ),
 
 UNUSUAL_DEV(  0x0a16, 0x8888, 0x0100, 0x0100,

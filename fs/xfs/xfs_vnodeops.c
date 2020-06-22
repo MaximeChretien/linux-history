@@ -283,7 +283,7 @@ xfs_getattr(
 /*
  * xfs_setattr
  */
-STATIC int
+int
 xfs_setattr(
 	bhv_desc_t		*bdp,
 	vattr_t			*vap,
@@ -305,6 +305,7 @@ xfs_setattr(
 	int			mandlock_before, mandlock_after;
 	struct xfs_dquot	*udqp, *gdqp, *olddquot1, *olddquot2;
 	int			file_owner;
+	int			need_iolock = (flags & ATTR_DMI) == 0;
 
 	vp = BHV_TO_VNODE(bdp);
 	vn_trace_entry(vp, __FUNCTION__, (inst_t *)__return_address);
@@ -406,7 +407,8 @@ xfs_setattr(
 				goto error_return;
 			}
 		}
-		lock_flags |= XFS_IOLOCK_EXCL;
+		if (need_iolock)
+			lock_flags |= XFS_IOLOCK_EXCL;
 	}
 
 	xfs_ilock(ip, lock_flags);
@@ -678,7 +680,8 @@ xfs_setattr(
 					     XFS_TRANS_PERM_LOG_RES,
 					     XFS_ITRUNCATE_LOG_COUNT))) {
 			xfs_trans_cancel(tp, 0);
-			xfs_iunlock(ip, XFS_IOLOCK_EXCL);
+			if (need_iolock)
+				xfs_iunlock(ip, XFS_IOLOCK_EXCL);
 			return code;
 		}
 		commit_flags = XFS_TRANS_RELEASE_LOG_RES;
@@ -823,10 +826,15 @@ xfs_setattr(
 				mp->m_sb.sb_blocklog;
 		}
 		if (mask & XFS_AT_XFLAGS) {
-			ip->i_d.di_flags = 0;
-			if (vap->va_xflags & XFS_XFLAG_REALTIME) {
+			/* can't set PREALLOC this way, just preserve it */
+			ip->i_d.di_flags =
+				(ip->i_d.di_flags & XFS_DIFLAG_PREALLOC);
+			if (vap->va_xflags & XFS_XFLAG_REALTIME &&
+			    (ip->i_d.di_mode & S_IFMT) == S_IFREG) {
 				ip->i_d.di_flags |= XFS_DIFLAG_REALTIME;
 				ip->i_iocore.io_flags |= XFS_IOCORE_RT;
+			} else {
+				ip->i_iocore.io_flags &= ~XFS_IOCORE_RT;
 			}
 			if (vap->va_xflags & XFS_XFLAG_IMMUTABLE)
 				ip->i_d.di_flags |= XFS_DIFLAG_IMMUTABLE;
@@ -838,7 +846,9 @@ xfs_setattr(
 				ip->i_d.di_flags |= XFS_DIFLAG_NOATIME;
 			if (vap->va_xflags & XFS_XFLAG_NODUMP)
 				ip->i_d.di_flags |= XFS_DIFLAG_NODUMP;
-			/* can't set PREALLOC this way, just ignore it */
+			if ((vap->va_xflags & XFS_XFLAG_RTINHERIT) &&
+			    (ip->i_d.di_mode & S_IFMT) == S_IFDIR)
+				ip->i_d.di_flags |= XFS_DIFLAG_RTINHERIT;
 		}
 		xfs_trans_log_inode(tp, ip, XFS_ILOG_CORE);
 		timeflags |= XFS_ICHGTIME_CHG;
@@ -1821,8 +1831,6 @@ xfs_lookup(
 	return error;
 }
 
-
-#define	XFS_CREATE_NEW_MAXTRIES	10000
 
 /*
  * xfs_create (create a new file).
@@ -4292,6 +4300,7 @@ xfs_free_file_space(
 	int			rt;
 	xfs_fileoff_t		startoffset_fsb;
 	xfs_trans_t		*tp;
+	int			need_iolock = (attr_flags & ATTR_DMI) == 0;
 
 	vn_trace_entry(XFS_ITOV(ip), __FUNCTION__, (inst_t *)__return_address);
 	mp = ip->i_mount;
@@ -4319,7 +4328,8 @@ xfs_free_file_space(
 			return(error);
 	}
 
-	xfs_ilock(ip, XFS_IOLOCK_EXCL);
+	if (need_iolock)
+		xfs_ilock(ip, XFS_IOLOCK_EXCL);
 	rounding = MAX((__uint8_t)(1 << mp->m_sb.sb_blocklog),
 			(__uint8_t)NBPP);
 	ilen = len + (offset & (rounding - 1));
@@ -4338,7 +4348,7 @@ xfs_free_file_space(
 		error = xfs_bmapi(NULL, ip, startoffset_fsb, 1, 0, NULL, 0,
 			&imap, &nimap, NULL);
 		if (error)
-			return error;
+			goto out_unlock_iolock;
 		ASSERT(nimap == 0 || nimap == 1);
 		if (nimap && imap.br_startblock != HOLESTARTBLOCK) {
 			xfs_daddr_t	block;
@@ -4353,7 +4363,7 @@ xfs_free_file_space(
 		error = xfs_bmapi(NULL, ip, endoffset_fsb - 1, 1, 0, NULL, 0,
 			&imap, &nimap, NULL);
 		if (error)
-			return error;
+			goto out_unlock_iolock;
 		ASSERT(nimap == 0 || nimap == 1);
 		if (nimap && imap.br_startblock != HOLESTARTBLOCK) {
 			ASSERT(imap.br_startblock != DELAYSTARTBLOCK);
@@ -4442,14 +4452,17 @@ xfs_free_file_space(
 		xfs_iunlock(ip, XFS_ILOCK_EXCL);
 	}
 
-	xfs_iunlock(ip, XFS_IOLOCK_EXCL);
+ out_unlock_iolock:
+	if (need_iolock)
+		xfs_iunlock(ip, XFS_IOLOCK_EXCL);
 	return error;
 
  error0:
 	xfs_bmap_cancel(&free_list);
  error1:
 	xfs_trans_cancel(tp, XFS_TRANS_RELEASE_LOG_RES | XFS_TRANS_ABORT);
-	xfs_iunlock(ip, XFS_ILOCK_EXCL | XFS_IOLOCK_EXCL);
+	xfs_iunlock(ip, need_iolock ? (XFS_ILOCK_EXCL | XFS_IOLOCK_EXCL) :
+		    XFS_ILOCK_EXCL);
 	return error;
 }
 
@@ -4606,20 +4619,21 @@ xfs_change_file_space(
 	xfs_trans_ijoin(tp, ip, XFS_ILOCK_EXCL);
 	xfs_trans_ihold(tp, ip);
 
-	ip->i_d.di_mode &= ~S_ISUID;
+	if ((attr_flags & ATTR_DMI) == 0) {
+		ip->i_d.di_mode &= ~S_ISUID;
 
-	/*
-	 * Note that we don't have to worry about mandatory
-	 * file locking being disabled here because we only
-	 * clear the S_ISGID bit if the Group execute bit is
-	 * on, but if it was on then mandatory locking wouldn't
-	 * have been enabled.
-	 */
-	if (ip->i_d.di_mode & S_IXGRP)
-		ip->i_d.di_mode &= ~S_ISGID;
+		/*
+		 * Note that we don't have to worry about mandatory
+		 * file locking being disabled here because we only
+		 * clear the S_ISGID bit if the Group execute bit is
+		 * on, but if it was on then mandatory locking wouldn't
+		 * have been enabled.
+		 */
+		if (ip->i_d.di_mode & S_IXGRP)
+			ip->i_d.di_mode &= ~S_ISGID;
 
-	xfs_ichgtime(ip, XFS_ICHGTIME_MOD | XFS_ICHGTIME_CHG);
-
+		xfs_ichgtime(ip, XFS_ICHGTIME_MOD | XFS_ICHGTIME_CHG);
+	}
 	if (setprealloc)
 		ip->i_d.di_flags |= XFS_DIFLAG_PREALLOC;
 	else if (clrprealloc)

@@ -97,7 +97,7 @@ int init_private_file(struct file *filp, struct dentry *dentry, int mode)
 		return 0;
 }
 
-void fput(struct file * file)
+void fastcall fput(struct file * file)
 {
 	struct dentry * dentry = file->f_dentry;
 	struct vfsmount * mnt = file->f_vfsmnt;
@@ -126,7 +126,7 @@ void fput(struct file * file)
 	}
 }
 
-struct file * fget(unsigned int fd)
+struct file fastcall *fget(unsigned int fd)
 {
 	struct file * file;
 	struct files_struct *files = current->files;

@@ -106,8 +106,8 @@ extern void aarp_proxy_remove(struct net_device *dev, struct at_addr *sa);
 #endif /* APPLETALK_DEBUG */
 
 #ifdef CONFIG_SYSCTL
-extern inline void atalk_register_sysctl(void);
-extern inline void atalk_unregister_sysctl(void);
+extern void atalk_register_sysctl(void);
+extern void atalk_unregister_sysctl(void);
 #endif /* CONFIG_SYSCTL */
 
 struct datalink_proto *ddp_dl, *aarp_dl;

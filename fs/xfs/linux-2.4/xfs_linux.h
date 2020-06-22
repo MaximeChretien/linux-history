@@ -35,6 +35,9 @@
 #include <linux/types.h>
 #include <linux/config.h>
 
+#undef __user
+#define __user
+
 /*
  * Some types are conditional depending on the target system.
  * XFS_BIG_BLKNOS needs block layer disk addresses to be 64 bits.

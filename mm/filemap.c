@@ -68,7 +68,7 @@ spinlock_cacheline_t pagemap_lru_lock_cacheline = {SPIN_LOCK_UNLOCKED};
 #define CLUSTER_OFFSET(x)	(((x) >> page_cluster) << page_cluster)
 
 static void FASTCALL(add_page_to_hash_queue(struct page * page, struct page **p));
-static void add_page_to_hash_queue(struct page * page, struct page **p)
+static void fastcall add_page_to_hash_queue(struct page * page, struct page **p)
 {
 	struct page *next = *p;
 
@@ -151,7 +151,7 @@ static inline int sync_page(struct page *page)
 /*
  * Add a page to the dirty page list.
  */
-void set_page_dirty(struct page *page)
+void fastcall set_page_dirty(struct page *page)
 {
 	if (!test_and_set_bit(PG_dirty, &page->flags)) {
 		struct address_space *mapping = page->mapping;
@@ -260,7 +260,7 @@ static void truncate_complete_page(struct page *page)
 }
 
 static int FASTCALL(truncate_list_pages(struct list_head *, unsigned long, unsigned *));
-static int truncate_list_pages(struct list_head *head, unsigned long start, unsigned *partial)
+static int fastcall truncate_list_pages(struct list_head *head, unsigned long start, unsigned *partial)
 {
 	struct list_head *curr;
 	struct page * page;
@@ -382,7 +382,7 @@ static inline int invalidate_this_page2(struct page * page,
 }
 
 static int FASTCALL(invalidate_list_pages2(struct list_head *));
-static int invalidate_list_pages2(struct list_head *head)
+static int fastcall invalidate_list_pages2(struct list_head *head)
 {
 	struct list_head *curr;
 	struct page * page;
@@ -755,7 +755,7 @@ int add_to_page_cache_unique(struct page * page,
  * and schedules an I/O to read in its contents from disk.
  */
 static int FASTCALL(page_cache_read(struct file * file, unsigned long offset));
-static int page_cache_read(struct file * file, unsigned long offset)
+static int fastcall page_cache_read(struct file * file, unsigned long offset)
 {
 	struct address_space *mapping = file->f_dentry->d_inode->i_mapping;
 	struct page **hash = page_hash(mapping, offset);
@@ -790,7 +790,7 @@ static int page_cache_read(struct file * file, unsigned long offset)
  */
 static int FASTCALL(read_cluster_nonblocking(struct file * file, unsigned long offset,
 					     unsigned long filesize));
-static int read_cluster_nonblocking(struct file * file, unsigned long offset,
+static int fastcall read_cluster_nonblocking(struct file * file, unsigned long offset,
 	unsigned long filesize)
 {
 	unsigned long pages = CLUSTER_PAGES;
@@ -871,7 +871,7 @@ static inline wait_queue_head_t *page_waitqueue(struct page *page)
  * callbacks that would result into the blkdev layer waking
  * up the page after a queue unplug.
  */
-void wakeup_page_waiters(struct page * page)
+void fastcall wakeup_page_waiters(struct page * page)
 {
 	wait_queue_head_t * head;
 
@@ -927,7 +927,7 @@ void ___wait_on_page(struct page *page)
  * of the waiters for all of the pages in the appropriate
  * wait queue are woken.
  */
-void unlock_page(struct page *page)
+void fastcall unlock_page(struct page *page)
 {
 	wait_queue_head_t *waitqueue = page_waitqueue(page);
 	ClearPageLaunder(page);
@@ -974,7 +974,7 @@ static void __lock_page(struct page *page)
  * Get an exclusive lock on the page, optimistically
  * assuming it's not locked..
  */
-void lock_page(struct page *page)
+void fastcall lock_page(struct page *page)
 {
 	if (TryLockPage(page))
 		__lock_page(page);
@@ -1025,7 +1025,7 @@ struct page *find_trylock_page(struct address_space *mapping, unsigned long offs
  * during blocking operations..
  */
 static struct page * FASTCALL(__find_lock_page_helper(struct address_space *, unsigned long, struct page *));
-static struct page * __find_lock_page_helper(struct address_space *mapping,
+static struct page * fastcall __find_lock_page_helper(struct address_space *mapping,
 					unsigned long offset, struct page *hash)
 {
 	struct page *page;
@@ -1388,7 +1388,7 @@ static void generic_file_readahead(int reada_ok,
  * If it was already so marked, move it to the active queue and drop
  * the referenced bit.  Otherwise, just mark it for future action..
  */
-void mark_page_accessed(struct page *page)
+void fastcall mark_page_accessed(struct page *page)
 {
 	if (!PageActive(page) && PageReferenced(page)) {
 		activate_page(page);
@@ -1639,8 +1639,9 @@ static inline int do_call_directIO(int rw, struct file *filp, struct kiobuf *iob
 
 static ssize_t generic_file_direct_IO(int rw, struct file * filp, char * buf, size_t count, loff_t offset)
 {
-	ssize_t retval;
-	int new_iobuf, chunk_size, blocksize_mask, blocksize, blocksize_bits, iosize, progress;
+	ssize_t retval, progress;
+	int new_iobuf, chunk_size, blocksize_mask, blocksize, blocksize_bits;
+	ssize_t iosize;
 	struct kiobuf * iobuf;
 	struct address_space * mapping = filp->f_dentry->d_inode->i_mapping;
 	struct inode * inode = mapping->host;

@@ -177,10 +177,8 @@ S:	Maintained
 
 AD1816 SOUND DRIVER
 P:	Thorsten Knabe
-M:	Thorsten Knabe <tek@rbg.informatik.tu-darmstadt.de>
-M:	Thorsten Knabe <tek01@hrzpub.tu-darmstadt.de>
-W:	http://www.student.informatik.tu-darmstadt.de/~tek/projects/linux.html
-W:	http://www.tu-darmstadt.de/~tek01/projects/linux.html
+M:	Thorsten Knabe <linux@thorsten-knabe.de>
+W:	http://linux.thorsten-knabe.de
 S:	Maintained
 
 ADVANSYS SCSI DRIVER
@@ -456,14 +454,20 @@ L:	omnibook@zurich.ai.mit.edu
 S:      Maintained
 
 
-HP SMART2 RAID DRIVER
-P:     Francis Wiran
-M:     francis.wiran@hp.com
-L:     iss_storagedev@hp.com
-S:	Odd Fixes
+HP 66Mhz FIBRE CHANNEL DRIVER
+P:	Chirag Kantharia
+M:	chirag.kantharia@hp.com
+L:	iss_storagedev@hp.com
+S:	Maintained
 
-HP SMART CISS RAID DRIVER
-P:     Mike Miller, Michael Ni
+HP SMART2 RAID DRIVER
+P:	Chirag Kantharia
+M:	chirag.kantharia@hp.com
+L:     iss_storagedev@hp.com
+S:	Maintained
+
+HP SMART ARRAY CISS RAID DRIVER (cciss)
+P:	Mike Miller
 M:     mike.miller@hp.com
 L:     iss_storagedev@hp.com
 S:	Supported
@@ -530,15 +534,7 @@ CRYPTO API
 P:	James Morris
 M:	jmorris@intercode.com.au
 P:	David S. Miller
-M:	davem@redhat.com
-MARVELL YUKON / SYSKONNECT DRIVER
-P:	Mirko Lindner
-M: 	mlindner@syskonnect.de
-P:	Ralph Roesler
-M: 	rroesler@syskonnect.de
-W: 	http://www.syskonnect.com
-S: 	Supported
-M:	davem@redhat.com
+M:	davem@davemloft.net
 W	http://samba.org/~jamesm/crypto/
 L:	linux-kernel@vger.kernel.org
 S:	Maintained
@@ -577,9 +573,9 @@ W:	http://www.garloff.de/kurt/linux/dc390/
 S:	Maintained
 
 DECnet NETWORK LAYER
-P:	Steven Whitehouse
-M:	SteveW@ACM.org
-W:	http://www.sucs.swan.ac.uk/~rohan/DECnet/index.html
+P:	Patrick Caulfield
+M:	patrick@tykepenguin.com
+W:	http://linux-decnet.sourceforge.net
 L:	linux-decnet-user@lists.sourceforge.net
 S:	Maintained
 
@@ -770,7 +766,7 @@ S:	Odd fixes (e.g., new signatures)
 
 GDT SCSI DISK ARRAY CONTROLLER DRIVER
 P:	Achim Leubner
-M:	achim@vortex.de
+M:	achim_leubner@adaptec.com
 L:	linux-scsi@vger.kernel.org
 W:	http://www.icp-vortex.com/
 S:	Supported
@@ -997,6 +993,14 @@ P:	Juanjo Ciarlante
 M:	jjciarla@raiz.uncu.edu.ar
 S:	Maintained
 
+IPVS
+P:	Wensong Zhang
+M:	wensong@linux-vs.org
+P:	Julian Anastasov
+M:	ja@ssi.bg
+L:	lvs-users@linuxvirtualserver.org
+S:	Maintained
+
 IPX NETWORK LAYER
 P:	Arnaldo Carvalho de Melo
 M:	acme@conectiva.com.br
@@ -1188,6 +1192,14 @@ L:	linux-mips@linux-mips.org
 L:	netdev@oss.sgi.com
 S:	Supported
 
+MARVELL YUKON / SYSKONNECT DRIVER
+P:	Mirko Lindner
+M: 	mlindner@syskonnect.de
+P:	Ralph Roesler
+M: 	rroesler@syskonnect.de
+W: 	http://www.syskonnect.com
+S: 	Supported
+
 MATROX FRAMEBUFFER DRIVER
 P:	Petr Vandrovec
 M:	vandrove@vc.cvut.cz
@@ -1312,7 +1324,7 @@ S:	Maintained
 
 NETWORKING [IPv4/IPv6]
 P:	David S. Miller
-M:	davem@redhat.com
+M:	davem@davemloft.net
 P:	Alexey Kuznetsov
 M:	kuznet@ms2.inr.ac.ru
 P:	Pekka Savola (ipv6)
@@ -1448,9 +1460,8 @@ L:	linux-kernel@vger.kernel.org
 S:	Odd Fixes
 
 PCI HOTPLUG CORE
-P:	Greg Kroah-Hartman
-M:	greg@kroah.com
-M:	gregkh@us.ibm.com
+P:	Gary Hade
+M:	garyhade@us.ibm.com
 S:	Supported
 
 PCI HOTPLUG COMPAQ DRIVER
@@ -1523,6 +1534,13 @@ S:	Maintained
 PPP OVER ETHERNET
 P:	Michal Ostrowski
 M:	mostrows@styx.uwaterloo.ca
+S:	Maintained
+
+PRISM54 WIRELESS DRIVER
+P:	Prism54 Development Team
+M:	prism54-private@prism54.org
+L:	netdev@oss.sgi.com
+W:	http://prism54.org
 S:	Maintained
 
 PROMISE DC4030 CACHING DISK CONTROLLER DRIVER
@@ -1689,10 +1707,8 @@ S:	Maintained
 
 SMB FILESYSTEM
 P:	Urban Widmark
-M:	urban@teststation.com
-W:	http://samba.org/
-L:	samba@samba.org
-S:	Maintained
+M:	Urban.Widmark@enlight.net
+S:	Odd Fixes
 
 SNA NETWORK LAYER
 P:	Jay Schulist
@@ -1723,7 +1739,7 @@ S:	Maintained
 
 UltraSPARC (sparc64):
 P:	David S. Miller
-M:	davem@redhat.com
+M:	davem@davemloft.net
 P:	Eddie C. Dost
 M:	ecd@skynet.be
 P:	Jakub Jelinek
@@ -1735,8 +1751,8 @@ L:	ultralinux@vger.kernel.org
 S:	Maintained
 
 SPARC (sparc32):
-P:	Keith M. Wesolowski
-M:	wesolows@foobazco.org
+P:	William L. Irwin
+M:	wli@holomorphy.com
 L:	sparclinux@vger.kernel.org
 S:	Maintained
 

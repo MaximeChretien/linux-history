@@ -1746,7 +1746,7 @@ setup_hfcpci(struct IsdnCard *card)
 			printk(KERN_WARNING "HFC-PCI: Error allocating memory for FIFO!\n");
 			return 0;
 		}
-		(ulong) cs->hw.hfcpci.fifos =
+		cs->hw.hfcpci.fifos = (void *)
 		    (((ulong) cs->hw.hfcpci.share_start) & ~0x7FFF) + 0x8000;
 		pcibios_write_config_dword(cs->hw.hfcpci.pci_bus,
 				       cs->hw.hfcpci.pci_device_fn, 0x80,

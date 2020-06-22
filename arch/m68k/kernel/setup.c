@@ -290,13 +290,20 @@ void __init setup_arch(char **cmdline_p)
 		i = 1;
 	    }
 #ifdef CONFIG_ATARI
-	    /* This option must be parsed very early */
+	    /* These options must be parsed very early */
 	    if (!strncmp( p, "switches=", 9 )) {
 		extern void atari_switches_setup( const char *, int );
 		atari_switches_setup( p+9, (q = strchr( p+9, ' ' )) ?
 				           (q - (p+9)) : strlen(p+9) );
 		i = 1;
 	    }
+#ifdef CONFIG_STRAM_SWAP
+	    if (!strncmp( p, "stram_swap=", 11 )) {
+		extern void stram_swap_setup( char * );
+		stram_swap_setup( p+11 );
+		i = 1;
+	    }
+#endif	/* CONFIG_STRAM_SWAP */
 #endif
 
 	    if (i) {

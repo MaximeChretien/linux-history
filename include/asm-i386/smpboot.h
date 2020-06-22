@@ -130,8 +130,8 @@ static inline int target_cpus(void)
 			cpu = (cpu+1)%smp_num_cpus;
 			return cpu_to_physical_apicid(cpu);
 		default:
+			return cpu_online_map;
 	}
-	return cpu_online_map;
 }
 #else
 #define target_cpus() (cpu_online_map)

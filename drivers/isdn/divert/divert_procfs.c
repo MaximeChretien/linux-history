@@ -92,7 +92,7 @@ isdn_divert_read(struct file *file, char *buf, size_t count, loff_t * off)
 		return (0);
 
 	inf->usage_cnt--;	/* new usage count */
-	(struct divert_info **) file->private_data = &inf->next;	/* next structure */
+	file->private_data = &inf->next;	/* next structure */
 	if ((len = strlen(inf->info_start)) <= count) {
 		if (copy_to_user(buf, inf->info_start, len))
 			return -EFAULT;
@@ -141,9 +141,9 @@ isdn_divert_open(struct inode *ino, struct file *filep)
 	cli();
 	if_used++;
 	if (divert_info_head)
-		(struct divert_info **) filep->private_data = &(divert_info_tail->next);
+		filep->private_data = &(divert_info_tail->next);
 	else
-		(struct divert_info **) filep->private_data = &divert_info_head;
+		filep->private_data = &divert_info_head;
 	restore_flags(flags);
 	/*  start_divert(); */
 	unlock_kernel();

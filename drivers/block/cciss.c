@@ -80,7 +80,7 @@ const struct pci_device_id cciss_pci_device_id[] = {
                         0x0E11, 0x4091, 0, 0, 0},
 	{ PCI_VENDOR_ID_COMPAQ, PCI_DEVICE_ID_COMPAQ_CISSC,
                         0x0E11, 0x409E, 0, 0, 0},
-	{ PCI_VENDOR_ID_COMPAQ, PCI_DEVICE_ID_COMPAQ_CISSC,
+	{ PCI_VENDOR_ID_HP, PCI_DEVICE_ID_HP_CISS,
                         0x103C, 0x3211, 0, 0, 0},
 	{0,}
 };
@@ -125,7 +125,7 @@ static struct board_type products[] = {
 /* Originally cciss driver only supports 8 major number */
 #define MAX_CTLR_ORIG  COMPAQ_CISS_MAJOR7 - COMPAQ_CISS_MAJOR + 1
 
-#define CCISS_DMA_MASK 0xFFFFFFFFFFFFFFFF /* 64 bit DMA */
+#define CCISS_DMA_MASK 0xFFFFFFFFFFFFFFFFULL /* 64 bit DMA */
 
 #ifdef CONFIG_CISS_MONITOR_THREAD
 static int cciss_monitor(void *ctlr);
@@ -167,6 +167,35 @@ static int cciss_proc_get_info(char *buffer, char **start, off_t offset,
 		int length, int *eof, void *data) { return 0;}
 static void cciss_procinit(int i) {}
 #endif /* CONFIG_PROC_FS */
+
+/*
+ * Enqueuing and dequeuing functions for cmdlists.
+ */
+static inline void addQ(CommandList_struct **Qptr, CommandList_struct *c)
+{
+        if (*Qptr == NULL) {
+                *Qptr = c;
+                c->next = c->prev = c;
+        } else {
+                c->prev = (*Qptr)->prev;
+                c->next = (*Qptr);
+                (*Qptr)->prev->next = c;
+                (*Qptr)->prev = c;
+        }
+}
+
+static inline CommandList_struct *removeQ(CommandList_struct **Qptr, 
+						CommandList_struct *c)
+{
+        if (c && c->next != c) {
+                if (*Qptr == c) *Qptr = c->next;
+                c->prev->next = c->next;
+                c->next->prev = c->prev;
+        } else {
+                *Qptr = NULL;
+        }
+        return c;
+}
 
 static struct block_device_operations cciss_fops  = {
 	owner:			THIS_MODULE,
@@ -503,10 +532,9 @@ register_ioctl32_conversion(unsigned int cmd, int (*handler)(unsigned int,
 extern int unregister_ioctl32_conversion(unsigned int cmd);
 
 static int cciss_ioctl32_passthru(unsigned int fd, unsigned cmd, unsigned long arg, struct file *file);
-static int cciss_ioctl32_big_passthru(unsigned int fd, unsigned cmd, unsigned long arg, 
-	struct file *file);
+static int cciss_ioctl32_big_passthru(unsigned int fd, unsigned cmd, unsigned long arg, struct file *file);
 
-typedef long (*handler type) (unsigned int, unsigned int, unsigned long,
+typedef int (*handler_type) (unsigned int, unsigned int, unsigned long,
 				struct file *);
 
 static struct ioctl32_map {
@@ -576,13 +604,15 @@ int cciss_ioctl32_passthru(unsigned int fd, unsigned cmd, unsigned long arg,
 	IOCTL_Command_struct arg64;
 	mm_segment_t old_fs; 
 	int err;
+	__u64 tmp_ptr;
 
 	err = 0;
 	err |= copy_from_user(&arg64.LUN_info, &arg32->LUN_info, sizeof(arg64.LUN_info));
 	err |= copy_from_user(&arg64.Request, &arg32->Request, sizeof(arg64.Request));
 	err |= copy_from_user(&arg64.error_info, &arg32->error_info, sizeof(arg64.error_info));
 	err |= get_user(arg64.buf_size, &arg32->buf_size);
-	err |= get_user(arg64.buf, &arg32->buf);
+	err |= get_user(tmp_ptr, &arg32->buf);
+	arg64.buf = (BYTE *) tmp_ptr;
 	if (err) 
 		return -EFAULT; 
 
@@ -592,7 +622,7 @@ int cciss_ioctl32_passthru(unsigned int fd, unsigned cmd, unsigned long arg,
 	set_fs(old_fs);
 	if (err)
 		return err;
-	err |= copy_to_user(&arg32->error_info, &arg64.error_info, sizeof(&arg32->error_info));
+	err |= copy_to_user(&arg32->error_info, &arg64.error_info, sizeof(arg32->error_info));
 	if (err) 
 		return -EFAULT; 
 	return err;
@@ -605,6 +635,7 @@ int cciss_ioctl32_big_passthru(unsigned int fd, unsigned cmd, unsigned long arg,
 	BIG_IOCTL_Command_struct arg64;
 	mm_segment_t old_fs; 
 	int err;
+	__u64 tmp_ptr;
 
 	err = 0;
 	err |= copy_from_user(&arg64.LUN_info, &arg32->LUN_info, sizeof(arg64.LUN_info));
@@ -612,7 +643,8 @@ int cciss_ioctl32_big_passthru(unsigned int fd, unsigned cmd, unsigned long arg,
 	err |= copy_from_user(&arg64.error_info, &arg32->error_info, sizeof(arg64.error_info));
 	err |= get_user(arg64.buf_size, &arg32->buf_size);
 	err |= get_user(arg64.malloc_size, &arg32->malloc_size);
-	err |= get_user(arg64.buf, &arg32->buf);
+	err |= get_user(tmp_ptr, &arg32->buf);
+	arg64.buf = (BYTE *) tmp_ptr;
 	if (err) return -EFAULT; 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
@@ -620,7 +652,7 @@ int cciss_ioctl32_big_passthru(unsigned int fd, unsigned cmd, unsigned long arg,
 	set_fs(old_fs);
 	if (err)
 		return err;
-	err |= copy_to_user(&arg32->error_info, &arg64.error_info, sizeof(&arg32->error_info));
+	err |= copy_to_user(&arg32->error_info, &arg64.error_info, sizeof(arg32->error_info));
 	if (err) 
 		return -EFAULT; 
 	return err;
@@ -629,6 +661,7 @@ int cciss_ioctl32_big_passthru(unsigned int fd, unsigned cmd, unsigned long arg,
 static inline void register_cciss_ioctl32(void) {}
 static inline void unregister_cciss_ioctl32(void) {}
 #endif
+
 /*
  * ioctl 
  */
@@ -942,6 +975,8 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 			{
 				kfree(buff);
 				return -EFAULT;
+			} else {
+				memset(buff, 0, iocommand.buf_size);
 			}
 		}
 		if ((c = cmd_alloc(h , 0)) == NULL) {
@@ -1060,12 +1095,15 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 					goto cleanup1;
 				}
 				if (iocommand.Request.Type.Direction == 
-						XFER_WRITE)
+						XFER_WRITE) {
 				   /* Copy the data into the buffer created */
 				   if (copy_from_user(buff[sg_used], data_ptr, 
 						buff_size[sg_used])) {
 					status = -ENOMEM;
 					goto cleanup1;			
+				   } else {
+					memset(buff[sg_used], 0, buff_size[sg_used]);
+				   }
 				   }
 				size_left_alloc -= buff_size[sg_used];
 				data_ptr += buff_size[sg_used];
@@ -2129,35 +2167,6 @@ static ulong remap_pci_mem(ulong base, ulong size)
         return (ulong) (page_remapped ? (page_remapped + page_offs) : 0UL);
 }
 
-/*
- * Enqueuing and dequeuing functions for cmdlists.
- */
-static inline void addQ(CommandList_struct **Qptr, CommandList_struct *c)
-{
-        if (*Qptr == NULL) {
-                *Qptr = c;
-                c->next = c->prev = c;
-        } else {
-                c->prev = (*Qptr)->prev;
-                c->next = (*Qptr);
-                (*Qptr)->prev->next = c;
-                (*Qptr)->prev = c;
-        }
-}
-
-static inline CommandList_struct *removeQ(CommandList_struct **Qptr, 
-						CommandList_struct *c)
-{
-        if (c && c->next != c) {
-                if (*Qptr == c) *Qptr = c->next;
-                c->prev->next = c->next;
-                c->next->prev = c->prev;
-        } else {
-                *Qptr = NULL;
-        }
-        return c;
-}
-
 /* 
  * Takes jobs of the Q and sends them to the hardware, then puts it on 
  * the Q to wait for completion. 
@@ -2671,7 +2680,7 @@ static int find_PCI_BAR_index(struct pci_dev *pdev,
 static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 {
 	ushort subsystem_vendor_id, subsystem_device_id, command;
-	unchar irq = pdev->irq, ready = 0;
+	int ready = 0;
 	__u32 board_id, scratchpad;
 	__u64 cfg_offset;
 	__u32 cfg_base_addr;
@@ -2727,11 +2736,11 @@ static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 
 #ifdef CCISS_DEBUG
 	printk("command = %x\n", command);
-	printk("irq = %x\n", irq);
+	printk("irq = %x\n", pdev->irq);
 	printk("board_id = %x\n", board_id);
 #endif /* CCISS_DEBUG */ 
 
-	c->intr = irq;
+	c->intr = pdev->irq;
 
 	/*
 	 * Memory base addr is first addr , the second points to the config

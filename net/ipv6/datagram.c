@@ -3,7 +3,7 @@
  *	Linux INET6 implementation 
  *
  *	Authors:
- *	Pedro Roque		<roque@di.fc.ul.pt>	
+ *	Pedro Roque		<pedro_m@yahoo.com>	
  *
  *	$Id: datagram.c,v 1.23 2001/09/01 00:31:50 davem Exp $
  *

@@ -828,6 +828,8 @@ struct usb_device {
 
 	atomic_t refcnt;		/* Reference count */
 	struct semaphore serialize;
+	struct semaphore exclusive_access; /* prevent driver & proc accesses  */
+					   /* from overlapping cmds at device */
 
 	unsigned int toggle[2];		/* one bit for each endpoint ([0] = IN, [1] = OUT) */
 	unsigned int halted[2];		/* endpoint halts; one bit per endpoint # & direction; */

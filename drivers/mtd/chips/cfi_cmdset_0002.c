@@ -461,7 +461,6 @@ static int do_write_oneword(struct map_info *map, struct flchip *chip, unsigned 
 	unsigned int dq6, dq5;	
 	struct cfi_private *cfi = map->fldrv_priv;
 	DECLARE_WAITQUEUE(wait, current);
-	int ret = 0;
 
  retry:
 	cfi_spin_lock(chip->mutex);
@@ -554,7 +553,7 @@ static int do_write_oneword(struct map_info *map, struct flchip *chip, unsigned 
 			wake_up(&chip->wq);
 			cfi_spin_unlock(chip->mutex);
 			DISABLE_VPP(map);
-			ret = -EIO;
+			return -EIO;
 		}
 	}
 
@@ -563,7 +562,7 @@ static int do_write_oneword(struct map_info *map, struct flchip *chip, unsigned 
 	wake_up(&chip->wq);
 	cfi_spin_unlock(chip->mutex);
 
-	return ret;
+	return 0;
 }
 
 static int cfi_amdstd_write (struct mtd_info *mtd, loff_t to , size_t len, size_t *retlen, const u_char *buf)

@@ -879,7 +879,7 @@ static int do_proc_dointvec(ctl_table *table, int write, struct file *filp,
 				if (!isspace(c))
 					break;
 				left--;
-				((char *) buffer)++;
+				buffer++;
 			}
 			if (!left)
 				break;
@@ -1032,7 +1032,7 @@ int proc_dointvec_minmax(ctl_table *table, int write, struct file *filp,
 				if (!isspace(c))
 					break;
 				left--;
-				((char *) buffer)++;
+				buffer++;
 			}
 			if (!left)
 				break;
@@ -1133,7 +1133,7 @@ static int do_proc_doulongvec_minmax(ctl_table *table, int write,
 				if (!isspace(c))
 					break;
 				left--;
-				((char *) buffer)++;
+				buffer++;
 			}
 			if (!left)
 				break;

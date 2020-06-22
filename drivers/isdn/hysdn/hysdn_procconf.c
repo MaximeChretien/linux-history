@@ -219,20 +219,25 @@ hysdn_conf_read(struct file *file, char *buf, size_t count, loff_t * off)
 	if (off != &file->f_pos)	/* fs error check */
 		return -ESPIPE;
 
+	if (!(file->f_mode & FMODE_READ))
+		return -EPERM;
+
 	if (!(cp = file->private_data))
 		return (-EFAULT);	/* should never happen */
+
 	i = strlen(cp);	/* get total string length */
-	if (pos == (unsigned)pos && pos < i) {
-		/* still bytes to transfer */
-		cp += pos;	/* point to desired data offset */
-		i -= pos;	/* remaining length */
-		if (i > count)
-			i = count;	/* limit length to transfer */
-		if (copy_to_user(buf, cp, i))
-			return (-EFAULT);	/* copy error */
-		*off = pos + i;	/* adjust offset */
-	} else
-		return (0);
+
+	if (pos != (unsigned)pos || pos >= i)
+		return 0;
+
+	/* still bytes to transfer */
+	cp += pos;	/* point to desired data offset */
+	i -= pos;	/* remaining length */
+	if (i > count)
+		i = count;	/* limit length to transfer */
+	if (copy_to_user(buf, cp, i))
+		return (-EFAULT);	/* copy error */
+	*off = pos + i;	/* adjust offset */
 
 	return (i);
 }				/* hysdn_conf_read */

@@ -179,9 +179,13 @@ EXPORT_SYMBOL(neigh_connected_output);
 EXPORT_SYMBOL(neigh_update);
 EXPORT_SYMBOL(neigh_create);
 EXPORT_SYMBOL(neigh_lookup);
+EXPORT_SYMBOL(neigh_lookup_nodev);
 EXPORT_SYMBOL(__neigh_event_send);
 EXPORT_SYMBOL(neigh_event_ns);
 EXPORT_SYMBOL(neigh_ifdown);
+EXPORT_SYMBOL(neigh_seq_start);
+EXPORT_SYMBOL(neigh_seq_next);
+EXPORT_SYMBOL(neigh_seq_stop);
 #ifdef CONFIG_ARPD
 EXPORT_SYMBOL(neigh_app_ns);
 #endif
@@ -283,6 +287,7 @@ EXPORT_SYMBOL(ip_dev_find);
 EXPORT_SYMBOL(inetdev_by_index);
 EXPORT_SYMBOL(in_dev_finish_destroy);
 EXPORT_SYMBOL(ip_defrag);
+EXPORT_SYMBOL(ipfrag_flush);
 
 /* Route manipulation */
 EXPORT_SYMBOL(ip_rt_ioctl);

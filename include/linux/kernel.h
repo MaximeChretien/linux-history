@@ -51,8 +51,10 @@ extern int console_printk[];
 
 #ifdef __i386__
 #define FASTCALL(x)	x __attribute__((regparm(3)))
+#define fastcall	__attribute__((regparm(3)))
 #else
 #define FASTCALL(x)	x
+#define fastcall
 #endif
 
 struct completion;

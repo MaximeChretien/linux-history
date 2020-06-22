@@ -973,7 +973,7 @@ shmem_file_write(struct file *file, const char *buf, size_t count, loff_t *ppos)
 	struct inode	*inode = file->f_dentry->d_inode;
 	loff_t		pos;
 	unsigned long	written;
-	int		err;
+	ssize_t		err;
 
 	if ((ssize_t) count < 0)
 		return -EINVAL;
@@ -1174,13 +1174,27 @@ static int shmem_statfs(struct super_block *sb, struct statfs *buf)
 }
 
 /*
+ * Retaining negative dentries for an in-memory filesystem just wastes
+ * memory and lookup time: arrange for them to be deleted immediately.
+ */
+static int shmem_delete_dentry(struct dentry *dentry)
+{
+	return 1;
+}
+
+/*
  * Lookup the data. This is trivial - if the dentry didn't already
- * exist, we know it is negative.
+ * exist, we know it is negative.  Set d_op to delete negative dentries.
  */
 static struct dentry *shmem_lookup(struct inode *dir, struct dentry *dentry)
 {
+	static struct dentry_operations shmem_dentry_operations = {
+		.d_delete = shmem_delete_dentry,
+	};
+
 	if (dentry->d_name.len > NAME_MAX)
 		return ERR_PTR(-ENAMETOOLONG);
+	dentry->d_op = &shmem_dentry_operations;
 	d_add(dentry, NULL);
 	return NULL;
 }

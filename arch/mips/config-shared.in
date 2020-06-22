@@ -943,7 +943,7 @@ bool 'Sysctl support' CONFIG_SYSCTL
 define_bool CONFIG_KCORE_ELF y
 define_bool CONFIG_KCORE_AOUT n
 define_bool CONFIG_BINFMT_AOUT n
-tristate 'Kernel support for ELF binaries' CONFIG_BINFMT_ELF
+bool 'Kernel support for ELF binaries' CONFIG_BINFMT_ELF
 dep_bool 'Kernel support for Linux/MIPS 32-bit binary compatibility' CONFIG_MIPS32_COMPAT $CONFIG_MIPS64
 dep_bool 'Kernel support for o32 binaries' CONFIG_MIPS32_O32 $CONFIG_MIPS32_COMPAT
 dep_bool 'Kernel support for n32 binaries' CONFIG_MIPS32_N32 $CONFIG_MIPS32_COMPAT

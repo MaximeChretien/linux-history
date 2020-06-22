@@ -540,11 +540,14 @@ static inline int do_write_buffer(struct map_info *map, struct flchip *chip,
 	/* Write data */
 	for (z = 0; z < len; z += CFIDEV_BUSWIDTH) {
 		if (cfi_buswidth_is_1()) {
-			map->write8 (map, *((__u8*)buf)++, adr+z);
+			map->write8 (map, *(__u8*)buf, adr+z);
+			buf += sizeof(__u8);
 		} else if (cfi_buswidth_is_2()) {
-			map->write16 (map, *((__u16*)buf)++, adr+z);
+			map->write16 (map, *(__u16*)buf, adr+z);
+			buf += sizeof(__u16);
 		} else if (cfi_buswidth_is_4()) {
-			map->write32 (map, *((__u32*)buf)++, adr+z);
+			map->write32 (map, *(__u32*)buf, adr+z);
+			buf += sizeof(__u32);
 		} else {
 			DISABLE_VPP(map);
 			return -EINVAL;

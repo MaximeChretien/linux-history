@@ -229,11 +229,8 @@ xfs_qm_hold_quotafs_ref(
 	 */
 	XFS_QM_LOCK(xfs_Gqm);
 
-	if (xfs_Gqm == NULL) {
-		if ((xfs_Gqm = xfs_Gqm_init()) == NULL) {
-			return (XFS_ERROR(EINVAL));
-		}
-	}
+	if (xfs_Gqm == NULL)
+		xfs_Gqm = xfs_Gqm_init();
 	/*
 	 * We can keep a list of all filesystems with quotas mounted for
 	 * debugging and statistical purposes, but ...
@@ -1216,22 +1213,46 @@ xfs_qm_init_quotainfo(
 			     XFS_QMOPT_DQSUSER|XFS_QMOPT_DOWARN,
 			     &dqp);
 	if (! error) {
+		xfs_disk_dquot_t	*ddqp = &dqp->q_core;
+
 		/*
 		 * The warnings and timers set the grace period given to
 		 * a user or group before he or she can not perform any
 		 * more writing. If it is zero, a default is used.
 		 */
-		qinf->qi_btimelimit = INT_GET(dqp->q_core.d_btimer, ARCH_CONVERT) ?
-			INT_GET(dqp->q_core.d_btimer, ARCH_CONVERT) : XFS_QM_BTIMELIMIT;
-		qinf->qi_itimelimit = INT_GET(dqp->q_core.d_itimer, ARCH_CONVERT) ?
-			INT_GET(dqp->q_core.d_itimer, ARCH_CONVERT) : XFS_QM_ITIMELIMIT;
-		qinf->qi_rtbtimelimit = INT_GET(dqp->q_core.d_rtbtimer, ARCH_CONVERT) ?
-			INT_GET(dqp->q_core.d_rtbtimer, ARCH_CONVERT) : XFS_QM_RTBTIMELIMIT;
-		qinf->qi_bwarnlimit = INT_GET(dqp->q_core.d_bwarns, ARCH_CONVERT) ?
-			INT_GET(dqp->q_core.d_bwarns, ARCH_CONVERT) : XFS_QM_BWARNLIMIT;
-		qinf->qi_iwarnlimit = INT_GET(dqp->q_core.d_iwarns, ARCH_CONVERT) ?
-			INT_GET(dqp->q_core.d_iwarns, ARCH_CONVERT) : XFS_QM_IWARNLIMIT;
-
+		qinf->qi_btimelimit =
+				INT_GET(ddqp->d_btimer, ARCH_CONVERT) ?
+				INT_GET(ddqp->d_btimer, ARCH_CONVERT) :
+				XFS_QM_BTIMELIMIT;
+		qinf->qi_itimelimit =
+				INT_GET(ddqp->d_itimer, ARCH_CONVERT) ?
+				INT_GET(ddqp->d_itimer, ARCH_CONVERT) :
+				XFS_QM_ITIMELIMIT;
+		qinf->qi_rtbtimelimit =
+				INT_GET(ddqp->d_rtbtimer, ARCH_CONVERT) ?
+				INT_GET(ddqp->d_rtbtimer, ARCH_CONVERT) :
+				XFS_QM_RTBTIMELIMIT;
+		qinf->qi_bwarnlimit =
+				INT_GET(ddqp->d_bwarns, ARCH_CONVERT) ?
+				INT_GET(ddqp->d_bwarns, ARCH_CONVERT) :
+				XFS_QM_BWARNLIMIT;
+		qinf->qi_iwarnlimit =
+				INT_GET(ddqp->d_iwarns, ARCH_CONVERT) ?
+				INT_GET(ddqp->d_iwarns, ARCH_CONVERT) :
+				XFS_QM_IWARNLIMIT;
+		qinf->qi_bhardlimit =
+				INT_GET(ddqp->d_blk_hardlimit, ARCH_CONVERT);
+		qinf->qi_bsoftlimit =
+				INT_GET(ddqp->d_blk_softlimit, ARCH_CONVERT);
+		qinf->qi_ihardlimit =
+				INT_GET(ddqp->d_ino_hardlimit, ARCH_CONVERT);
+		qinf->qi_isoftlimit =
+				INT_GET(ddqp->d_ino_softlimit, ARCH_CONVERT);
+		qinf->qi_rtbhardlimit =
+				INT_GET(ddqp->d_rtb_hardlimit, ARCH_CONVERT);
+		qinf->qi_rtbsoftlimit =
+				INT_GET(ddqp->d_rtb_softlimit, ARCH_CONVERT);
+ 
 		/*
 		 * We sent the XFS_QMOPT_DQSUSER flag to dqget because
 		 * we don't want this dquot cached. We haven't done a
@@ -1691,10 +1712,12 @@ xfs_qm_quotacheck_dqadjust(
 	}
 
 	/*
-	 * Adjust the timers since we just changed usages
+	 * Set default limits, adjust timers (since we changed usages)
 	 */
-	if (! XFS_IS_SUSER_DQUOT(dqp))
+	if (! XFS_IS_SUSER_DQUOT(dqp)) {
+		xfs_qm_adjust_dqlimits(dqp->q_mount, &dqp->q_core);
 		xfs_qm_adjust_dqtimers(dqp->q_mount, &dqp->q_core);
+	}
 
 	dqp->dq_flags |= XFS_DQ_DIRTY;
 }
@@ -1735,7 +1758,7 @@ STATIC int
 xfs_qm_dqusage_adjust(
 	xfs_mount_t	*mp,		/* mount point for filesystem */
 	xfs_ino_t	ino,		/* inode number to get data for */
-	void		*buffer,	/* not used */
+	void		__user *buffer,	/* not used */
 	int		ubsize,		/* not used */
 	void		*private_data,	/* not used */
 	xfs_daddr_t	bno,		/* starting block of inode cluster */

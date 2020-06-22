@@ -127,7 +127,7 @@ static int release(struct Scsi_Host *psh)
 	wait_for_completion(&(us->notify));
 
 	/* remove the pointer to the data structure we were using */
-	(struct us_data*)psh->hostdata[0] = NULL;
+	psh->hostdata[0] = (unsigned long)NULL;
 
 	/* we always have a successful release */
 	return 0;

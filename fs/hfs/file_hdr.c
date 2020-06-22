@@ -241,7 +241,9 @@ static struct hfs_hdr_layout *dup_layout(const struct hfs_hdr_layout *old)
 	if (HFS_NEW(new)) {
 		memcpy(new, old, sizeof(*new));
 		for (lcv = 0; lcv < new->entries; ++lcv) {
-			(char *)(new->order[lcv]) += (char *)new - (char *)old;
+			new->order[lcv] = (struct hfs_hdr_descr *)
+					  ((char *)(new->order[lcv]) +
+					   ((char *)new - (char *)old));
 		}
 	}
 	return new;
@@ -640,17 +642,18 @@ static hfs_rwret_t hdr_write(struct file *filp, const char *buf,
         int left, lcv, written = 0;
 	struct hdr_hdr meta;
 	int built_meta = 0;
-        off_t pos;
+        loff_t pos;
 
 	if (!S_ISREG(inode->i_mode)) {
 		hfs_warn("hfs_hdr_write: mode = %07o\n", inode->i_mode);
 		return -EINVAL;
 	}
+
+	pos = (filp->f_flags & O_APPEND) ? inode->i_size : *ppos;
+
 	if (count <= 0 || pos != (unsigned)pos) {
 		return 0;
 	}
-
-	pos = (filp->f_flags & O_APPEND) ? inode->i_size : *ppos;
 
 	if (!HFS_I(inode)->layout) {
 		HFS_I(inode)->layout = dup_layout(HFS_I(inode)->default_layout);

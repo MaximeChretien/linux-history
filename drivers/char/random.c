@@ -750,6 +750,11 @@ static void add_timer_randomness(struct timer_rand_state *state, unsigned num)
 	__u32 high;
 	rdtsc(time, high);
 	num ^= high;
+#elif defined (__sparc_v9__)
+	unsigned long tick = tick_ops->get_tick();
+
+	time = (unsigned int) tick;
+	num ^= (tick >> 32UL);
 #else
 	time = jiffies;
 #endif

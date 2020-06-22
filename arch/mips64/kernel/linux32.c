@@ -1568,7 +1568,7 @@ static int do_set_icmpv6_filter(int fd, int level, int optname,
 asmlinkage int sys32_setsockopt(int fd, int level, int optname,
 				char *optval, int optlen)
 {
-	if (optname == SO_ATTACH_FILTER)
+	if (level == SOL_SOCKET && optname == SO_ATTACH_FILTER)
 		return do_set_attach_filter(fd, level, optname,
 					    optval, optlen);
 	if (level == SOL_ICMPV6 && optname == ICMPV6_FILTER)

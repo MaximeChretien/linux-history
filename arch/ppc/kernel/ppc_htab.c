@@ -489,7 +489,7 @@ int proc_dol2crvec(ctl_table *table, int write, struct file *filp,
 				if (!isspace(c))
 					break;
 				left--;
-				((char *) buffer)++;
+				buffer++;
 			}
 			if (!left)
 				break;

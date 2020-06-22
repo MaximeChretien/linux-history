@@ -620,14 +620,16 @@ static __u8 *fetch_item(__u8 *start, __u8 *end, struct hid_item *item)
 
 				case 2:
 					if ((end - start) >= 2) {
-						item->data.u16 = le16_to_cpu( get_unaligned(((__u16*)start)++));
+						item->data.u16 = le16_to_cpu(get_unaligned((__u16*)start));
+						start = (__u8 *)((__u16 *)start + 1);
 						return start;
 					}
 
 				case 3:
 					item->size++;
 					if ((end - start) >= 4) {
-						item->data.u32 = le32_to_cpu( get_unaligned(((__u32*)start)++));
+						item->data.u32 = le32_to_cpu(get_unaligned((__u32*)start));
+						start = (__u8 *)((__u32 *)start + 1);
 						return start;
 					}
 			}
@@ -1457,8 +1459,8 @@ static int __init hid_init(void)
 
 static void __exit hid_exit(void)
 {
-	hiddev_exit();
 	usb_deregister(&hid_driver);
+	hiddev_exit();
 }
 
 module_init(hid_init);

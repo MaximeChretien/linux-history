@@ -935,6 +935,7 @@ static void radeon_pm_full_reset_sdram(struct radeonfb_info *rinfo);
 #endif /* CONFIG_PMAC_BACKLIGHT */
 
 static struct fb_ops radeon_fb_ops = {
+	owner:			THIS_MODULE,
 	fb_get_fix:		radeonfb_get_fix,
 	fb_get_var:		radeonfb_get_var,
 	fb_set_var:		radeonfb_set_var,
@@ -2368,7 +2369,7 @@ try_again:
 			disp->visual = FB_VISUAL_DIRECTCOLOR;
 			v.red.offset = 10;
 			v.green.offset = 5;
-			v.red.offset = 0;
+			v.blue.offset = 0;
 			v.red.length = v.green.length = v.blue.length = 5;
 			v.transp.offset = v.transp.length = 0;
 			break;

@@ -3,7 +3,7 @@
  *	FIB front-end.
  *
  *	Authors:
- *	Pedro Roque		<roque@di.fc.ul.pt>	
+ *	Pedro Roque		<pedro_m@yahoo.com>	
  *
  *	$Id: route.c,v 1.56 2001/10/31 21:55:55 davem Exp $
  *

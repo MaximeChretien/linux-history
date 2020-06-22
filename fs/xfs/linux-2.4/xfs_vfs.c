@@ -243,6 +243,18 @@ vfs_force_shutdown(
 	((*bhvtovfsops(next)->vfs_force_shutdown)(next, fl, file, line));
 }
 
+void
+vfs_freeze(
+	struct bhv_desc		*bdp)
+{
+	struct bhv_desc		*next = bdp;
+
+	ASSERT(next);
+	while (! (bhvtovfsops(next))->vfs_freeze)
+		next = BHV_NEXT(next);
+	((*bhvtovfsops(next)->vfs_freeze)(next));
+}
+
 vfs_t *
 vfs_allocate( void )
 {
@@ -251,6 +263,7 @@ vfs_allocate( void )
 	vfsp = kmem_zalloc(sizeof(vfs_t), KM_SLEEP);
 	bhv_head_init(VFS_BHVHEAD(vfsp), "vfs");
 	init_waitqueue_head(&vfsp->vfs_wait_sync_task);
+	init_waitqueue_head(&vfsp->vfs_wait_unfrozen);
 	return vfsp;
 }
 

@@ -389,6 +389,8 @@ acpi_find_rsdp (void)
 }
 
 
+extern int mp_irqs_alloc(void);
+
 /*
  * acpi_boot_init()
  *  called from setup_arch(), always.

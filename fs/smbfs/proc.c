@@ -1289,10 +1289,12 @@ smb_proc_read(struct inode *inode, loff_t offset, int count, char *data)
 	data_len = WVAL(buf, 1);
 
 	/* we can NOT simply trust the data_len given by the server ... */
-	if (data_len > server->packet_size - (buf+3 - server->packet)) {
-		printk(KERN_ERR "smb_proc_read: invalid data length!! "
-		       "%d > %d - (%p - %p)\n",
-		       data_len, server->packet_size, buf+3, server->packet);
+	if (data_len > count ||
+		(buf+3 - server->packet) + data_len > server->packet_size) {
+		printk(KERN_ERR "smb_proc_read: invalid data length/offset!! "
+		       "%d > %d || (%p - %p) + %d > %d\n",
+		       data_len, count,
+		       buf+3, server->packet, data_len, server->packet_size);
 		result = -EIO;
 		goto out;
 	}
@@ -1378,10 +1380,12 @@ smb_proc_readX(struct inode *inode, loff_t offset, int count, char *data)
 	buf = smb_base(server->packet) + data_off;
 
 	/* we can NOT simply trust the info given by the server ... */
-	if (data_len > server->packet_size - (buf - server->packet)) {
-		printk(KERN_ERR "smb_proc_read: invalid data length!! "
-		       "%d > %d - (%p - %p)\n",
-		       data_len, server->packet_size, buf, server->packet);
+	if (data_len > count ||
+		(buf - server->packet) + data_len > server->packet_size) {
+		printk(KERN_ERR "smb_proc_readX: invalid data length/offset!! "
+		       "%d > %d || (%p - %p) + %d > %d\n",
+		       data_len, count,
+		       buf, server->packet, data_len, server->packet_size);
 		result = -EIO;
 		goto out;
 	}

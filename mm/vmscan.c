@@ -323,7 +323,7 @@ out_unlock:
 }
 
 static int FASTCALL(swap_out(zone_t * classzone));
-static int swap_out(zone_t * classzone)
+static int fastcall swap_out(zone_t * classzone)
 {
 	int counter, nr_pages = SWAP_CLUSTER_MAX;
 	struct mm_struct *mm;
@@ -366,7 +366,7 @@ empty:
 
 static void FASTCALL(refill_inactive(int nr_pages, zone_t * classzone));
 static int FASTCALL(shrink_cache(int nr_pages, zone_t * classzone, unsigned int gfp_mask, int * failed_swapout));
-static int shrink_cache(int nr_pages, zone_t * classzone, unsigned int gfp_mask, int * failed_swapout)
+static int fastcall shrink_cache(int nr_pages, zone_t * classzone, unsigned int gfp_mask, int * failed_swapout)
 {
 	struct list_head * entry;
 	int max_scan = (classzone->nr_inactive_pages + classzone->nr_active_pages) / vm_cache_scan_ratio;
@@ -577,7 +577,7 @@ page_mapped:
  * We move them the other way when we see the
  * reference bit on the page.
  */
-static void refill_inactive(int nr_pages, zone_t * classzone)
+static void fastcall refill_inactive(int nr_pages, zone_t * classzone)
 {
 	struct list_head * entry;
 	unsigned long ratio;
@@ -610,7 +610,7 @@ static void refill_inactive(int nr_pages, zone_t * classzone)
 }
 
 static int FASTCALL(shrink_caches(zone_t * classzone, unsigned int gfp_mask, int nr_pages, int * failed_swapout));
-static int shrink_caches(zone_t * classzone, unsigned int gfp_mask, int nr_pages, int * failed_swapout)
+static int fastcall shrink_caches(zone_t * classzone, unsigned int gfp_mask, int nr_pages, int * failed_swapout)
 {
 	nr_pages -= kmem_cache_reap(gfp_mask);
 	if (nr_pages <= 0)
@@ -627,7 +627,7 @@ out:
 
 static int check_classzone_need_balance(zone_t * classzone);
 
-int try_to_free_pages_zone(zone_t *classzone, unsigned int gfp_mask)
+int fastcall try_to_free_pages_zone(zone_t *classzone, unsigned int gfp_mask)
 {
 	gfp_mask = pf_gfp_mask(gfp_mask);
 
@@ -665,7 +665,7 @@ int try_to_free_pages_zone(zone_t *classzone, unsigned int gfp_mask)
 	return 0;
 }
 
-int try_to_free_pages(unsigned int gfp_mask)
+int fastcall try_to_free_pages(unsigned int gfp_mask)
 {
 	pg_data_t *pgdat;
 	zonelist_t *zonelist;

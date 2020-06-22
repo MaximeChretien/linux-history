@@ -606,6 +606,7 @@ again:
 			if (page) {
 				block_flushpage(page, 0);
 				UnlockPage(page);
+				page_cache_release(page);
 			}
 		}
 	}

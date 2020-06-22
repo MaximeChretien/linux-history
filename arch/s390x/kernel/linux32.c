@@ -4427,7 +4427,7 @@ asmlinkage long sys32_stat64(char * filename, struct stat64_emu31 * statbuf, lon
     ret = sys_newstat(tmp, &s);
     set_fs (old_fs);
     putname(tmp);
-    if (putstat64 (statbuf, &s)) 
+    if (!ret && putstat64 (statbuf, &s))
 	    return -EFAULT;
     return ret;
 }
@@ -4451,7 +4451,7 @@ asmlinkage long sys32_lstat64(char * filename, struct stat64_emu31 * statbuf, lo
     ret = sys_newlstat(tmp, &s);
     set_fs (old_fs);
     putname(tmp);
-    if (putstat64 (statbuf, &s)) 
+    if (!ret && putstat64 (statbuf, &s))
 	    return -EFAULT;
     return ret;
 }
@@ -4467,7 +4467,7 @@ asmlinkage long sys32_fstat64(unsigned long fd, struct stat64_emu31 * statbuf, l
     set_fs (KERNEL_DS);
     ret = sys_newfstat(fd, &s);
     set_fs (old_fs);
-    if (putstat64 (statbuf, &s))
+    if (!ret && putstat64 (statbuf, &s))
 	    return -EFAULT;
     return ret;
 }
@@ -4507,7 +4507,7 @@ static inline long do_mmap2(
 	error = do_mmap_pgoff(file, addr, len, prot, flags, pgoff);
 	if (!IS_ERR((void *) error) && error + len >= 0x80000000ULL) {
 		/* Result is out of bounds.  */
-		do_munmap(current->mm, addr, len);
+		do_munmap(current->mm, error, len);
 		error = -ENOMEM;
 	}
 	up_write(&current->mm->mmap_sem);

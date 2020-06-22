@@ -86,8 +86,6 @@
 
 /* Forward declarations for internal helper functions. */
 static int sctp_writeable(struct sock *sk);
-static inline int sctp_wspace(struct sctp_association *asoc);
-static inline void sctp_set_owner_w(struct sctp_chunk *chunk);
 static void sctp_wfree(struct sk_buff *skb);
 static int sctp_wait_for_sndbuf(struct sctp_association *, long *timeo_p,
 				size_t msg_len);
@@ -95,7 +93,8 @@ static int sctp_wait_for_packet(struct sock * sk, int *err, long *timeo_p);
 static int sctp_wait_for_connect(struct sctp_association *, long *timeo_p);
 static int sctp_wait_for_accept(struct sock *sk, long timeo);
 static void sctp_wait_for_close(struct sock *sk, long timeo);
-static inline int sctp_verify_addr(struct sock *, union sctp_addr *, int);
+static struct sctp_af *sctp_sockaddr_af(struct sctp_opt *opt,
+					union sctp_addr *addr, int len);
 static int sctp_bindx_add(struct sock *, struct sockaddr *, int);
 static int sctp_bindx_rem(struct sock *, struct sockaddr *, int);
 static int sctp_send_asconf_add_ip(struct sock *, struct sockaddr *, int);
@@ -110,6 +109,64 @@ static char *sctp_hmac_alg = SCTP_COOKIE_HMAC_ALG;
 
 extern kmem_cache_t *sctp_bucket_cachep;
 extern int sctp_assoc_valid(struct sock *sk, struct sctp_association *asoc);
+
+/* Get the sndbuf space available at the time on the association.  */
+static inline int sctp_wspace(struct sctp_association *asoc)
+{
+	struct sock *sk = asoc->base.sk;
+	int amt = 0;
+
+	amt = sk->sk_sndbuf - asoc->sndbuf_used;
+	if (amt < 0)
+		amt = 0;
+	return amt;
+}
+
+/* Increment the used sndbuf space count of the corresponding association by
+ * the size of the outgoing data chunk.
+ * Also, set the skb destructor for sndbuf accounting later.
+ *
+ * Since it is always 1-1 between chunk and skb, and also a new skb is always
+ * allocated for chunk bundling in sctp_packet_transmit(), we can use the
+ * destructor in the data chunk skb for the purpose of the sndbuf space
+ * tracking.
+ */
+static inline void sctp_set_owner_w(struct sctp_chunk *chunk)
+{
+	struct sctp_association *asoc = chunk->asoc;
+	struct sock *sk = asoc->base.sk;
+
+	/* The sndbuf space is tracked per association.  */
+	sctp_association_hold(asoc);
+
+	chunk->skb->destructor = sctp_wfree;
+	/* Save the chunk pointer in skb for sctp_wfree to use later.  */
+	*((struct sctp_chunk **)(chunk->skb->cb)) = chunk;
+
+	asoc->sndbuf_used += SCTP_DATA_SNDSIZE(chunk);
+	sk->sk_wmem_queued += SCTP_DATA_SNDSIZE(chunk);
+}
+
+/* Verify that this is a valid address. */
+static inline int sctp_verify_addr(struct sock *sk, union sctp_addr *addr,
+				   int len)
+{
+	struct sctp_af *af;
+
+	/* Verify basic sockaddr. */
+	af = sctp_sockaddr_af(sctp_sk(sk), addr, len);
+	if (!af)
+		return -EINVAL;
+
+	/* Is this a valid SCTP address?  */
+	if (!af->addr_valid(addr, sctp_sk(sk)))
+		return -EINVAL;
+
+	if (!sctp_sk(sk)->pf->send_verify(sctp_sk(sk), (addr)))
+		return -EINVAL;
+
+	return 0;
+}
 
 /* Look up the association by its id.  If this is not a UDP-style
  * socket, the ID field is always ignored.
@@ -999,7 +1056,7 @@ SCTP_STATIC int sctp_sendmsg(struct sock *sk, struct msghdr *msg, int msg_len)
 	struct sctp_sndrcvinfo *sinfo;
 	struct sctp_initmsg *sinit;
 	sctp_assoc_t associd = NULL;
-	sctp_cmsgs_t cmsgs = { 0 };
+	sctp_cmsgs_t cmsgs = { NULL };
 	int err;
 	sctp_scope_t scope;
 	long timeo;
@@ -1630,6 +1687,32 @@ static int sctp_setsockopt_peer_addr_params(struct sock *sk,
 	if (copy_from_user(&params, optval, optlen))
 		return -EFAULT;
 
+	/*
+	 * API 7. Socket Options (setting the default value for the endpoint)
+	 * All options that support specific settings on an association by
+	 * filling in either an association id variable or a sockaddr_storage
+	 * SHOULD also support setting of the same value for the entire endpoint
+	 * (i.e. future associations). To accomplish this the following logic is
+	 * used when setting one of these options:
+
+	 * c) If neither the sockaddr_storage or association identification is
+	 *    set i.e. the sockaddr_storage is set to all 0's (INADDR_ANY) and
+	 *    the association identification is 0, the settings are a default
+	 *    and to be applied to the endpoint (all future associations).
+	 */
+
+	/* update default value for endpoint (all future associations) */
+	if (!params.spp_assoc_id && 
+	    sctp_is_any(( union sctp_addr *)&params.spp_address)) {
+		if (params.spp_hbinterval)
+			sctp_sk(sk)->paddrparam.spp_hbinterval =
+						params.spp_hbinterval;
+		if (sctp_max_retrans_path)
+			sctp_sk(sk)->paddrparam.spp_pathmaxrxt =
+						params.spp_pathmaxrxt;
+		return 0;
+	}
+
 	trans = sctp_addr_id2transport(sk, &params.spp_address,
 				       params.spp_assoc_id);
 	if (!trans)
@@ -2028,6 +2111,20 @@ static int sctp_setsockopt_peer_primary_addr(struct sock *sk, char *optval,
 	return err;
 }
 
+static int sctp_setsockopt_adaption_layer(struct sock *sk, char __user *optval,
+					  int optlen)
+{
+	__u32 val;
+
+	if (optlen < sizeof(__u32))
+		return -EINVAL;
+	if (copy_from_user(&val, optval, sizeof(__u32)))
+		return -EFAULT;
+
+	sctp_sk(sk)->adaption_ind = val;
+
+	return 0;
+}
 
 /* API 6.2 setsockopt(), getsockopt()
  *
@@ -2127,6 +2224,10 @@ SCTP_STATIC int sctp_setsockopt(struct sock *sk, int level, int optname,
 	case SCTP_MAXSEG:
 		retval = sctp_setsockopt_maxseg(sk, optval, optlen);
 		break;
+	case SCTP_ADAPTION_LAYER:
+		retval = sctp_setsockopt_adaption_layer(sk, optval, optlen);
+		break;
+
 	default:
 		retval = -ENOPROTOOPT;
 		break;
@@ -2425,6 +2526,8 @@ SCTP_STATIC int sctp_init_sock(struct sock *sk)
 
 	/* User specified fragmentation limit. */
 	sp->user_frag         = 0;
+
+	sp->adaption_ind = 0;
 
 	sp->pf = sctp_get_pf_specific(sk->sk_family);
 
@@ -2795,6 +2898,17 @@ static int sctp_getsockopt_peer_addr_params(struct sock *sk, int len,
 	if (copy_from_user(&params, optval, *optlen))
 		return -EFAULT;
 
+	/* If no association id is specified retrieve the default value
+	 * for the endpoint that will be used for all future associations
+	 */
+	if (!params.spp_assoc_id &&
+	    sctp_is_any(( union sctp_addr *)&params.spp_address)) {
+		params.spp_hbinterval = sctp_sk(sk)->paddrparam.spp_hbinterval;
+		params.spp_pathmaxrxt = sctp_sk(sk)->paddrparam.spp_pathmaxrxt;
+
+		goto done;
+	}
+
 	trans = sctp_addr_id2transport(sk, &params.spp_address,
 				       params.spp_assoc_id);
 	if (!trans)
@@ -2814,6 +2928,7 @@ static int sctp_getsockopt_peer_addr_params(struct sock *sk, int len,
 	 */
 	params.spp_pathmaxrxt = trans->error_threshold;
 
+done:
 	if (copy_to_user(optval, &params, len))
 		return -EFAULT;
 
@@ -3049,6 +3164,29 @@ static int sctp_getsockopt_primary_addr(struct sock *sk, int len,
 	if (copy_to_user(optval, &prim, sizeof(struct sctp_prim)))
 		return -EFAULT;
 
+	return 0;
+}
+
+/*
+ * 7.1.11  Set Adaption Layer Indicator (SCTP_ADAPTION_LAYER)
+ *
+ * Requests that the local endpoint set the specified Adaption Layer
+ * Indication parameter for all future INIT and INIT-ACK exchanges.
+ */
+static int sctp_getsockopt_adaption_layer(struct sock *sk, int len,
+				  char __user *optval, int __user *optlen)
+{
+	__u32 val;
+
+	if (len < sizeof(__u32))
+		return -EINVAL;
+
+	len = sizeof(__u32);
+	val = sctp_sk(sk)->adaption_ind;
+	if (put_user(len, optlen))
+		return -EFAULT;
+	if (copy_to_user(optval, &val, len))
+		return -EFAULT;
 	return 0;
 }
 
@@ -3403,6 +3541,10 @@ SCTP_STATIC int sctp_getsockopt(struct sock *sk, int level, int optname,
 		break;
 	case SCTP_GET_PEER_ADDR_INFO:
 		retval = sctp_getsockopt_peer_addr_info(sk, len, optval,
+							optlen);
+		break;
+	case SCTP_ADAPTION_LAYER:
+		retval = sctp_getsockopt_adaption_layer(sk, len, optval,
 							optlen);
 		break;
 	default:
@@ -4136,64 +4278,6 @@ static struct sk_buff *sctp_skb_recv_datagram(struct sock *sk, int flags,
 no_packet:
 	*err = error;
 	return NULL;
-}
-
-/* Verify that this is a valid address. */
-static inline int sctp_verify_addr(struct sock *sk, union sctp_addr *addr,
-				   int len)
-{
-	struct sctp_af *af;
-
-	/* Verify basic sockaddr. */
-	af = sctp_sockaddr_af(sctp_sk(sk), addr, len);
-	if (!af)
-		return -EINVAL;
-
-	/* Is this a valid SCTP address?  */
-	if (!af->addr_valid(addr, sctp_sk(sk)))
-		return -EINVAL;
-
-	if (!sctp_sk(sk)->pf->send_verify(sctp_sk(sk), (addr)))
-		return -EINVAL;
-
-	return 0;
-}
-
-/* Get the sndbuf space available at the time on the association.  */
-static inline int sctp_wspace(struct sctp_association *asoc)
-{
-	struct sock *sk = asoc->base.sk;
-	int amt = 0;
-
-	amt = sk->sk_sndbuf - asoc->sndbuf_used;
-	if (amt < 0)
-		amt = 0;
-	return amt;
-}
-
-/* Increment the used sndbuf space count of the corresponding association by
- * the size of the outgoing data chunk.
- * Also, set the skb destructor for sndbuf accounting later.
- *
- * Since it is always 1-1 between chunk and skb, and also a new skb is always
- * allocated for chunk bundling in sctp_packet_transmit(), we can use the
- * destructor in the data chunk skb for the purpose of the sndbuf space
- * tracking.
- */
-static inline void sctp_set_owner_w(struct sctp_chunk *chunk)
-{
-	struct sctp_association *asoc = chunk->asoc;
-	struct sock *sk = asoc->base.sk;
-
-	/* The sndbuf space is tracked per association.  */
-	sctp_association_hold(asoc);
-
-	chunk->skb->destructor = sctp_wfree;
-	/* Save the chunk pointer in skb for sctp_wfree to use later.  */
-	*((struct sctp_chunk **)(chunk->skb->cb)) = chunk;
-
-	asoc->sndbuf_used += SCTP_DATA_SNDSIZE(chunk);
-	sk->sk_wmem_queued += SCTP_DATA_SNDSIZE(chunk);
 }
 
 /* If sndbuf has changed, wake up per association sndbuf waiters.  */

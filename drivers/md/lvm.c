@@ -2689,6 +2689,10 @@ static int lvm_do_lv_status_byname(vg_t * vg_ptr, void *arg)
 			    (&lv_status_byname_req.lv->lv_current_pe,
 			     &saved_ptr1, sizeof(void *)) != 0)
 				return -EFAULT;
+			if (copy_to_user
+			    (&lv_status_byname_req.lv->lv_block_exception,
+			     &saved_ptr2, sizeof(void *)) != 0)
+				return -EFAULT;
 			return 0;
 		}
 	}
@@ -2741,6 +2745,10 @@ static int lvm_do_lv_status_byindex(vg_t * vg_ptr, void *arg)
 	/* Restore usermode pointers */
 	if (copy_to_user
 	    (&lv_status_byindex_req.lv->lv_current_pe, &saved_ptr1,
+	     sizeof(void *)) != 0)
+		return -EFAULT;
+	if (copy_to_user
+	    (&lv_status_byindex_req.lv->lv_block_exception, &saved_ptr2,
 	     sizeof(void *)) != 0)
 		return -EFAULT;
 
@@ -2799,6 +2807,10 @@ static int lvm_do_lv_status_bydev(vg_t * vg_ptr, void *arg)
 	/* Restore usermode pointers */
 	if (copy_to_user
 	    (&lv_status_bydev_req.lv->lv_current_pe, &saved_ptr1,
+	     sizeof(void *)) != 0)
+		return -EFAULT;
+	if (copy_to_user
+	    (&lv_status_bydev_req.lv->lv_block_exception, &saved_ptr2,
 	     sizeof(void *)) != 0)
 		return -EFAULT;
 

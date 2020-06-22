@@ -767,11 +767,8 @@ pagebuf_get(				/* allocate a buffer		*/
 	pb = _pagebuf_find(target, ioff, isize, flags, new_pb);
 	if (pb == new_pb) {
 		error = _pagebuf_lookup_pages(pb, flags);
-		if (unlikely(error)) {
-			printk(KERN_WARNING
-			       "pagebuf_get: failed to lookup pages\n");
+		if (error)
 			goto no_buffer;
-		}
 	} else {
 		pagebuf_deallocate(new_pb);
 		if (unlikely(pb == NULL))
@@ -1445,6 +1442,7 @@ xfs_free_buftarg(
 	xfs_flush_buftarg(btp, 1);
 	if (external)
 		xfs_blkdev_put(btp->pbr_bdev);
+	iput(btp->pbr_mapping->host);
 	kmem_free(btp, sizeof(*btp));
 }
 
@@ -1458,7 +1456,7 @@ xfs_incore_relse(
 	truncate_inode_pages(btp->pbr_mapping, 0LL);
 }
 
-void
+int
 xfs_setsize_buftarg(
 	xfs_buftarg_t		*btp,
 	unsigned int		blocksize,
@@ -1472,7 +1470,40 @@ xfs_setsize_buftarg(
 		printk(KERN_WARNING
 			"XFS: Cannot set_blocksize to %u on device 0x%x\n",
 			sectorsize, kdev_t_to_nr(btp->pbr_kdev));
+		return EINVAL;
 	}
+	return 0;
+}
+
+STATIC int
+xfs_mapping_buftarg(
+	xfs_buftarg_t		*btp,
+	struct block_device	*bdev)
+{
+	kdev_t			kdev;
+	struct inode		*inode;
+	struct address_space	*mapping;
+	static struct address_space_operations mapping_aops = {
+		.sync_page = block_sync_page,
+	};
+
+	kdev = to_kdev_t(bdev->bd_dev);
+	inode = new_inode(bdev->bd_inode->i_sb);
+	if (!inode) {
+		printk(KERN_WARNING
+			"XFS: Cannot allocate mapping inode for device %s\n",
+			XFS_BUFTARG_NAME(btp));
+		return ENOMEM;
+	}
+	inode->i_mode = S_IFBLK;
+	inode->i_dev  = kdev;
+	inode->i_rdev = kdev;
+	inode->i_bdev = bdev;
+	mapping = &inode->i_data;
+	mapping->a_ops = &mapping_aops;
+	mapping->gfp_mask = GFP_KERNEL;
+	btp->pbr_mapping = mapping;
+	return 0;
 }
 
 xfs_buftarg_t *
@@ -1480,16 +1511,14 @@ xfs_alloc_buftarg(
 	struct block_device	*bdev)
 {
 	xfs_buftarg_t		*btp;
+	kdev_t			kdev;
 
 	btp = kmem_zalloc(sizeof(*btp), KM_SLEEP);
 
+	kdev = to_kdev_t(bdev->bd_dev);
 	btp->pbr_dev =  bdev->bd_dev;
-	btp->pbr_kdev = to_kdev_t(btp->pbr_dev);
+	btp->pbr_kdev = kdev;
 	btp->pbr_bdev = bdev;
-	btp->pbr_mapping = bdev->bd_inode->i_mapping;
-	xfs_setsize_buftarg(btp, PAGE_CACHE_SIZE,
-			    get_hardsect_size(btp->pbr_kdev));
-
 	switch (MAJOR(btp->pbr_dev)) {
 	case MD_MAJOR:
 	case EVMS_MAJOR:
@@ -1499,8 +1528,15 @@ xfs_alloc_buftarg(
 		btp->pbr_flags = PBR_SECTOR_ONLY;
 		break;
 	}
-
+	if (xfs_setsize_buftarg(btp, PAGE_CACHE_SIZE, get_hardsect_size(kdev)))
+		goto error;
+	if (xfs_mapping_buftarg(btp, bdev))
+		goto error;
 	return btp;
+
+error:
+	kmem_free(btp, sizeof(*btp));
+	return NULL;
 }
 
 /*

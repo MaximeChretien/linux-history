@@ -989,6 +989,7 @@ struct usb_device *usb_alloc_dev(struct usb_device *parent, struct usb_bus *bus)
 	INIT_LIST_HEAD(&dev->filelist);
 
 	init_MUTEX(&dev->serialize);
+	init_MUTEX(&dev->exclusive_access);
 
 	dev->bus->op->allocate(dev);
 

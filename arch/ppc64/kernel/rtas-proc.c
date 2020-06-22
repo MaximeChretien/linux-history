@@ -406,7 +406,7 @@ static ssize_t ppc_rtas_progress_read(struct file * file, char * buf,
 		n = sn - pos;
 	if (n > count)
 		n = count;
-	if (copy_to_user(buf, tmpbuf + pos), n) {
+	if (copy_to_user(buf, tmpbuf + pos, n)) {
 		kfree(tmpbuf);
 		return -EFAULT;
 	}

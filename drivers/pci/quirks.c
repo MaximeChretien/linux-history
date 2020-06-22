@@ -719,13 +719,6 @@ static void __init asus_hides_smbus_lpc(struct pci_dev *dev)
 	}
 }
 
-int pciehp_msi_quirk;
-
-static void __devinit quirk_pciehp_msi(struct pci_dev *pdev)
-{
-	pciehp_msi_quirk = 1;
-}
-
 /*
  *  The main table of quirks.
  */
@@ -815,8 +808,6 @@ static struct pci_fixup pci_fixups[] __initdata = {
 	{ PCI_FIXUP_HEADER,	PCI_VENDOR_ID_INTEL,	PCI_DEVICE_ID_INTEL_82801DB_0,	asus_hides_smbus_lpc },
 	{ PCI_FIXUP_HEADER,	PCI_VENDOR_ID_INTEL,	PCI_DEVICE_ID_INTEL_82801BA_0,	asus_hides_smbus_lpc },
 
-	{ PCI_FIXUP_FINAL,	PCI_VENDOR_ID_INTEL,	PCI_DEVICE_ID_INTEL_SMCH,  quirk_pciehp_msi },
-	
 	{ 0 }
 };
 

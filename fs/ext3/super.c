@@ -1302,6 +1302,7 @@ static journal_t *ext3_get_journal(struct super_block *sb, int journal_inum)
 	if (!journal) {
 		printk(KERN_ERR "EXT3-fs: Could not load journal inode\n");
 		iput(journal_inode);
+		return NULL;
 	}
 	ext3_init_journal_params(EXT3_SB(sb), journal);
 	return journal;

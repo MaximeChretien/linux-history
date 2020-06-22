@@ -25,6 +25,7 @@
 #include <linux/if.h>
 #include <linux/hdlc.h>
 #include <asm/delay.h>
+#include <asm/io.h>
 
 #include "farsync.h"
 

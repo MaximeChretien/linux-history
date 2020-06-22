@@ -63,7 +63,8 @@ static char *tvmem;
 static char *check[] = {
 	"des", "md5", "des3_ede", "rot13", "sha1", "sha256", "blowfish",
 	"twofish", "serpent", "sha384", "sha512", "md4", "aes", "cast6", 
-	"arc4", "michael_mic", "deflate", "tea", "xtea", NULL
+	"arc4", "michael_mic", "deflate", "tea", "xtea", "khazad", 
+	"wp512", "wp384", "wp256", "tnepres", "anubis", NULL
 };
 
 static void
@@ -550,6 +551,10 @@ do_test(void)
 		test_cipher ("serpent", MODE_ECB, ENCRYPT, serpent_enc_tv_template, SERPENT_ENC_TEST_VECTORS);
 		test_cipher ("serpent", MODE_ECB, DECRYPT, serpent_dec_tv_template, SERPENT_DEC_TEST_VECTORS);
 		
+		//TNEPRES
+		test_cipher ("tnepres", MODE_ECB, ENCRYPT, tnepres_enc_tv_template, TNEPRES_ENC_TEST_VECTORS);
+		test_cipher ("tnepres", MODE_ECB, DECRYPT, tnepres_dec_tv_template, TNEPRES_DEC_TEST_VECTORS);
+
 		//AES
 		test_cipher ("aes", MODE_ECB, ENCRYPT, aes_enc_tv_template, AES_ENC_TEST_VECTORS);
 		test_cipher ("aes", MODE_ECB, DECRYPT, aes_dec_tv_template, AES_DEC_TEST_VECTORS);
@@ -575,8 +580,21 @@ do_test(void)
 		test_cipher ("xtea", MODE_ECB, ENCRYPT, xtea_enc_tv_template, XTEA_ENC_TEST_VECTORS);
 		test_cipher ("xtea", MODE_ECB, DECRYPT, xtea_dec_tv_template, XTEA_DEC_TEST_VECTORS);
 
+		//KHAZAD
+		test_cipher ("khazad", MODE_ECB, ENCRYPT, khazad_enc_tv_template, KHAZAD_ENC_TEST_VECTORS);
+		test_cipher ("khazad", MODE_ECB, DECRYPT, khazad_dec_tv_template, KHAZAD_DEC_TEST_VECTORS);
+
+		//ANUBIS
+		test_cipher ("anubis", MODE_ECB, ENCRYPT, anubis_enc_tv_template, ANUBIS_ENC_TEST_VECTORS);
+		test_cipher ("anubis", MODE_ECB, DECRYPT, anubis_dec_tv_template, ANUBIS_DEC_TEST_VECTORS);
+		test_cipher ("anubis", MODE_CBC, ENCRYPT, anubis_cbc_enc_tv_template, ANUBIS_CBC_ENC_TEST_VECTORS);
+		test_cipher ("anubis", MODE_CBC, DECRYPT, anubis_cbc_dec_tv_template, ANUBIS_CBC_ENC_TEST_VECTORS);
+
 		test_hash("sha384", sha384_tv_template, SHA384_TEST_VECTORS);
 		test_hash("sha512", sha512_tv_template, SHA512_TEST_VECTORS);
+		test_hash("wp512", wp512_tv_template, WP512_TEST_VECTORS);
+		test_hash("wp384", wp384_tv_template, WP384_TEST_VECTORS);
+		test_hash("wp256", wp256_tv_template, WP256_TEST_VECTORS);
 		test_deflate();		
 #ifdef CONFIG_CRYPTO_HMAC
 		test_hmac("md5", hmac_md5_tv_template, HMAC_MD5_TEST_VECTORS);
@@ -630,6 +648,8 @@ do_test(void)
 		break;
 		
 	case 9:
+		test_cipher ("serpent", MODE_ECB, ENCRYPT, serpent_enc_tv_template, SERPENT_ENC_TEST_VECTORS);
+		test_cipher ("serpent", MODE_ECB, DECRYPT, serpent_dec_tv_template, SERPENT_DEC_TEST_VECTORS);
 		break;
 
 	case 10:
@@ -676,6 +696,33 @@ do_test(void)
 	case 20:
 		test_cipher ("xtea", MODE_ECB, ENCRYPT, xtea_enc_tv_template, XTEA_ENC_TEST_VECTORS);
 		test_cipher ("xtea", MODE_ECB, DECRYPT, xtea_dec_tv_template, XTEA_DEC_TEST_VECTORS);
+		break;
+
+	case 21:
+		test_cipher ("khazad", MODE_ECB, ENCRYPT, khazad_enc_tv_template, KHAZAD_ENC_TEST_VECTORS);
+		test_cipher ("khazad", MODE_ECB, DECRYPT, khazad_dec_tv_template, KHAZAD_DEC_TEST_VECTORS);
+	case 22:
+		test_hash("wp512", wp512_tv_template, WP512_TEST_VECTORS);
+		break;
+
+	case 23:
+		test_hash("wp384", wp384_tv_template, WP384_TEST_VECTORS);
+		break;
+
+	case 24:
+		test_hash("wp256", wp256_tv_template, WP256_TEST_VECTORS);
+		break;
+
+	case 25:
+		test_cipher ("tnepres", MODE_ECB, ENCRYPT, tnepres_enc_tv_template, TNEPRES_ENC_TEST_VECTORS);
+		test_cipher ("tnepres", MODE_ECB, DECRYPT, tnepres_dec_tv_template, TNEPRES_DEC_TEST_VECTORS);
+		break;
+
+	case 26:
+		test_cipher ("anubis", MODE_ECB, ENCRYPT, anubis_enc_tv_template, ANUBIS_ENC_TEST_VECTORS);
+		test_cipher ("anubis", MODE_ECB, DECRYPT, anubis_dec_tv_template, ANUBIS_DEC_TEST_VECTORS);
+		test_cipher ("anubis", MODE_CBC, ENCRYPT, anubis_cbc_enc_tv_template, ANUBIS_CBC_ENC_TEST_VECTORS);
+		test_cipher ("anubis", MODE_CBC, DECRYPT, anubis_cbc_dec_tv_template, ANUBIS_CBC_ENC_TEST_VECTORS);
 		break;
 
 #ifdef CONFIG_CRYPTO_HMAC

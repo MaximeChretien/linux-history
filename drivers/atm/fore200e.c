@@ -101,6 +101,7 @@
 
 
 #if 1
+#undef ASSERT
 #define ASSERT(expr)     if (!(expr)) { \
                              printk(FORE200E "assertion failed! %s[%d]: %s\n", \
 			            __FUNCTION__, __LINE__, #expr); \
@@ -1620,7 +1621,7 @@ fore200e_open(struct atm_vcc *vcc, short vpi, int vci)
     set_bit(ATM_VF_PARTIAL,&vcc->flags);
     set_bit(ATM_VF_ADDR, &vcc->flags);
 
-    FORE200E_VCC(vcc) = fore200e_vcc;
+    vcc->dev_data = fore200e_vcc;
 
     if (fore200e_activate_vcin(fore200e, 1, vcc, vcc->qos.rxtp.max_sdu) < 0) {
 
@@ -1629,7 +1630,7 @@ fore200e_open(struct atm_vcc *vcc, short vpi, int vci)
 	clear_bit(ATM_VF_ADDR, &vcc->flags);
 	clear_bit(ATM_VF_PARTIAL,&vcc->flags);
 
-	FORE200E_VCC(vcc) = NULL;
+	vcc->dev_data = NULL;
 
 	fore200e->available_cell_rate += vcc->qos.txtp.max_pcr;
 
@@ -1691,7 +1692,7 @@ fore200e_close(struct atm_vcc* vcc)
     vcc->itf = vcc->vci = vcc->vpi = 0;
 
     fore200e_vcc = FORE200E_VCC(vcc);
-    FORE200E_VCC(vcc) = NULL;
+    vcc->dev_data = NULL;
 
     spin_unlock_irqrestore(&fore200e->q_lock, flags);
 
@@ -2738,7 +2739,7 @@ fore200e_register(struct fore200e* fore200e)
 	return -ENODEV;
     }
 
-    FORE200E_DEV(atm_dev) = fore200e;
+    atm_dev->dev_data = fore200e;
     fore200e->atm_dev = atm_dev;
 
     atm_dev->ci_range.vpi_bits = FORE200E_VPI_BITS;

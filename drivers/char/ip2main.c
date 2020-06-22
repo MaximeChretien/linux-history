@@ -282,8 +282,8 @@ static void ip2_interrupt_bh(i2eBordStrPtr pB);
 static void ip2_interrupt(int irq, void *dev_id, struct pt_regs * regs);
 static void ip2_poll(unsigned long arg);
 static inline void service_all_boards(void);
-static inline void do_input(i2ChanStrPtr pCh);
-static inline void do_status(i2ChanStrPtr pCh);
+static void do_input(i2ChanStrPtr pCh);
+static void do_status(i2ChanStrPtr pCh);
 
 static void ip2_wait_until_sent(PTTY,int);
 
@@ -1433,7 +1433,7 @@ ip2_poll(unsigned long arg)
 	ip2trace (ITRC_NO_PORT, ITRC_INTR, ITRC_RETURN, 0 );
 }
 
-static inline void 
+static void 
 do_input( i2ChanStrPtr pCh )
 {
 	unsigned long flags;
@@ -1468,7 +1468,7 @@ isig(int sig, struct tty_struct *tty, int flush)
 	}
 }
 
-static inline void
+static void
 do_status( i2ChanStrPtr pCh )
 {
 	int status;

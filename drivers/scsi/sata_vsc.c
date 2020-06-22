@@ -192,6 +192,7 @@ static Scsi_Host_Template vsc_sata_sht = {
 	.name			= DRV_NAME,
 	.detect			= ata_scsi_detect,
 	.release		= ata_scsi_release,
+	.ioctl			= ata_scsi_ioctl,
 	.queuecommand		= ata_scsi_queuecmd,
 	.eh_strategy_handler	= ata_scsi_error,
 	.can_queue		= ATA_DEF_QUEUE,
@@ -211,14 +212,17 @@ static struct ata_port_operations vsc_sata_ops = {
 	.port_disable		= ata_port_disable,
 	.tf_load		= vsc_sata_tf_load,
 	.tf_read		= vsc_sata_tf_read,
-	.exec_command		= ata_exec_command_mmio,
-	.check_status		= ata_check_status_mmio,
+	.exec_command		= ata_exec_command,
+	.check_status		= ata_check_status,
+	.dev_select		= ata_std_dev_select,
 	.phy_reset		= sata_phy_reset,
-	.bmdma_setup            = ata_bmdma_setup_mmio,
-	.bmdma_start            = ata_bmdma_start_mmio,
-	.fill_sg		= ata_fill_sg,
+	.bmdma_setup            = ata_bmdma_setup,
+	.bmdma_start            = ata_bmdma_start,
+	.qc_prep		= ata_qc_prep,
+	.qc_issue		= ata_qc_issue_prot,
 	.eng_timeout		= ata_eng_timeout,
 	.irq_handler		= vsc_sata_interrupt,
+	.irq_clear		= ata_bmdma_irq_clear,
 	.scr_read		= vsc_sata_scr_read,
 	.scr_write		= vsc_sata_scr_write,
 	.port_start		= ata_port_start,
@@ -316,6 +320,7 @@ static int __devinit vsc_sata_init_one (struct pci_dev *pdev, const struct pci_d
 	 * if we don't fill these
 	 */
 	probe_ent->pio_mask = 0x1f;
+	probe_ent->mwdma_mask = 0x07;
 	probe_ent->udma_mask = 0x7f;
 
 	/* We have 4 ports per PCI function */

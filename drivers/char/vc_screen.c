@@ -136,10 +136,12 @@ vcs_read(struct file *file, char *buf, size_t count, loff_t *ppos)
 	if (!vc_cons_allocated(currcons))
 		goto unlock_out;
 
-	read = 0;
-	ret = 0;
+	ret = -EINVAL;
 	if (pos != n)
 		goto unlock_out;
+
+	read = 0;
+	ret = 0;
 	while (count) {
 		char *con_buf0, *con_buf_start;
 		long this_round, size;

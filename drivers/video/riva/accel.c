@@ -153,8 +153,10 @@ static void fbcon_riva_writechr(struct vc_data *conp, struct display *p,
 		for (j = 0; j < cnt; j++) {
 			if (w <= 8) 
 				cdat2 = *cdat++;
-			else
-				cdat2 = *((u16*)cdat)++;
+			else {
+				cdat2 = *(u16*)cdat;
+				cdat += sizeof(u16);
+			}
 			fbcon_reverse_order(&cdat2);
 			d[j] = cdat2;
 		}

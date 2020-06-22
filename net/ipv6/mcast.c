@@ -3,7 +3,7 @@
  *	Linux INET6 implementation 
  *
  *	Authors:
- *	Pedro Roque		<roque@di.fc.ul.pt>	
+ *	Pedro Roque		<pedro_m@yahoo.com>	
  *
  *	$Id: mcast.c,v 1.38 2001/08/15 07:36:31 davem Exp $
  *

@@ -1259,7 +1259,7 @@ static inline void mark_buffer_dirty_inode(struct buffer_head *bh, struct inode 
 }
 
 extern void set_buffer_flushtime(struct buffer_head *);
-extern inline int get_buffer_flushtime(void);
+extern int get_buffer_flushtime(void);
 extern void balance_dirty(void);
 extern int check_disk_change(kdev_t);
 extern int invalidate_inodes(struct super_block *);
@@ -1523,7 +1523,7 @@ extern int writeout_one_page(struct page *);
 extern int generic_file_mmap(struct file *, struct vm_area_struct *);
 extern int file_read_actor(read_descriptor_t * desc, struct page *page, unsigned long offset, unsigned long size);
 extern ssize_t generic_file_read(struct file *, char *, size_t, loff_t *);
-extern inline ssize_t do_generic_direct_read(struct file *, char *, size_t, loff_t *);
+extern ssize_t do_generic_direct_read(struct file *, char *, size_t, loff_t *);
 extern int precheck_file_write(struct file *, struct inode *, size_t *, loff_t *);
 extern ssize_t generic_file_write(struct file *, const char *, size_t, loff_t *);
 extern void do_generic_file_read(struct file *, loff_t *, read_descriptor_t *, read_actor_t);

@@ -1349,7 +1349,7 @@ static void mask_and_ack_level_ioapic_irq (unsigned int irq) { /* nothing */ }
 
 #ifndef CONFIG_SMP
 
-void send_IPI_self(int vector)
+void fastcall send_IPI_self(int vector)
 {
 	unsigned int cfg;
 

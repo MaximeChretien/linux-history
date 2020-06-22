@@ -137,7 +137,7 @@ struct ip_reply_arg {
 void ip_send_reply(struct sock *sk, struct sk_buff *skb, struct ip_reply_arg *arg,
 		   unsigned int len); 
 
-extern __inline__ int ip_finish_output(struct sk_buff *skb);
+extern int ip_finish_output(struct sk_buff *skb);
 
 struct ipv4_config
 {
@@ -228,6 +228,7 @@ extern int	ip_call_ra_chain(struct sk_buff *skb);
  */
  
 struct sk_buff *ip_defrag(struct sk_buff *skb);
+extern void ipfrag_flush(void);
 extern int ip_frag_nqueues;
 extern atomic_t ip_frag_mem;
 

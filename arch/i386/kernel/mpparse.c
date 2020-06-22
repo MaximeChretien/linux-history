@@ -1105,7 +1105,7 @@ void __init mp_register_ioapic (
 
 
 /* allocate mp_irqs[] for ACPI parsing table parsing */
-int __init mp_irqs_alloc()
+int __init mp_irqs_alloc(void)
 {
 	int size = (MAX_IRQ_SOURCES * sizeof(int)) * 4;
 

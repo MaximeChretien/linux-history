@@ -177,6 +177,7 @@ static struct pci_ops pci_direct_mq_conf1 = {
 };
 
 #endif /* !CONFIG_MULTIQUAD */
+#undef PCI_CONF1_ADDRESS
 #define PCI_CONF1_ADDRESS(bus, dev, fn, reg) \
 	(0x80000000 | (bus << 16) | (dev << 11) | (fn << 8) | (reg & ~3))
 
@@ -1017,11 +1018,13 @@ struct irq_routing_table * __devinit pcibios_get_irq_routing_table(void)
 		"1:"
 		: "=a" (ret),
 		  "=b" (map),
-		  "+m" (opt)
+		  "=m" (opt)
 		: "0" (PCIBIOS_GET_ROUTING_OPTIONS),
 		  "1" (0),
 		  "D" ((long) &opt),
-		  "S" (&pci_indirect));
+		  "S" (&pci_indirect),
+		  "m" (opt)
+		: "memory");
 	DBG("OK  ret=%d, size=%d, map=%x\n", ret, opt.size, map);
 	if (ret & 0xff00)
 		printk(KERN_ERR "PCI: Error %02x when fetching IRQ routing table.\n", (ret >> 8) & 0xff);

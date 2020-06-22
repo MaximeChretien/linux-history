@@ -303,7 +303,8 @@ static int bios_handoff (struct ehci_hcd *ehci, int where, u32 cap)
 		if (cap & (1 << 16)) {
 			ehci_err (ehci, "BIOS handoff failed (%d, %04x)\n",
 				where, cap);
-			return 1;
+			pci_write_config_dword (ehci->hcd.pdev, where, 0);
+			return 0;
 		} 
 		ehci_dbg (ehci, "BIOS handoff succeeded\n");
 	}
@@ -547,7 +548,8 @@ static void ehci_stop (struct usb_hcd *hcd)
 
 	/* root hub is shut down separately (first, when possible) */
 	spin_lock_irq (&ehci->lock);
-	ehci_work (ehci, NULL);
+	if (ehci->async)
+		ehci_work (ehci, NULL);
 	spin_unlock_irq (&ehci->lock);
 	ehci_mem_cleanup (ehci);
 

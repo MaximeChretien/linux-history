@@ -3,7 +3,7 @@
  *	Linux INET6 implementation
  *
  *	Authors:
- *	Pedro Roque		<roque@di.fc.ul.pt>	
+ *	Pedro Roque		<pedro_m@yahoo.com>	
  *	Alexey Kuznetsov	<kuznet@ms2.inr.ac.ru>
  *
  *	$Id: sit.c,v 1.53 2001/09/25 05:09:53 davem Exp $
@@ -500,6 +500,7 @@ static int ipip6_tunnel_xmit(struct sk_buff *skb, struct net_device *dev)
 		goto tx_error_icmp;
 	}
 	if (rt->rt_type != RTN_UNICAST) {
+		ip_rt_put(rt);
 		tunnel->stat.tx_carrier_errors++;
 		goto tx_error_icmp;
 	}

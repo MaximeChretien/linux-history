@@ -2948,7 +2948,7 @@ static int do_lvm_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 	case LV_REMOVE:
 	case LV_RENAME:
 	case LV_STATUS_BYNAME:
-	        err = copy_from_user(&u.pv_status, arg, sizeof(u.pv_status.pv_name));
+	        err = copy_from_user(&u.lv_req, arg, sizeof(u.lv_req.lv_name));
 		if (err)
 			return -EFAULT;
 		if (cmd != LV_REMOVE) {
@@ -2991,7 +2991,7 @@ static int do_lvm_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 
 	case PV_CHANGE:
 	case PV_STATUS:
-		err = copy_from_user(&u.pv_status, arg, sizeof(u.lv_req.lv_name));
+		err = copy_from_user(&u.pv_status, arg, sizeof(u.pv_status.pv_name));
 		if (err)
 			return -EFAULT;
 		err = __get_user(ptr, &((pv_status_req32_t *)arg)->pv);
@@ -3063,7 +3063,7 @@ static int do_lvm_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 	        if (u.lv_bydev.lv) {
 			if (!err)
 				err = copy_lv_t(ptr, u.lv_bydev.lv);
-			put_lv_t(u.lv_byindex.lv);
+			put_lv_t(u.lv_bydev.lv);
 	        }
 	        break;
 

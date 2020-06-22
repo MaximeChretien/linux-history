@@ -117,9 +117,7 @@ static int configure_visit_pci_dev (struct pci_dev_wrapped *wrapped_dev, struct 
 			temp_func->pci_dev->bus->number, temp_func->pci_dev->devfn); 
 		dbg("%s: PCI_SLOT_NAME=%s\n", __FUNCTION__, 
 			temp_func->pci_dev->slot_name);
-		//pci_enable_device(temp_func->pci_dev);
-		//dbg("%s: after calling pci_enable_device, irq = %x\n", 
-		//	__FUNCTION__, temp_func->pci_dev->irq); 
+		pci_enable_device(temp_func->pci_dev);
 		pci_proc_attach_device(temp_func->pci_dev);
 		pci_announce_device_to_drivers(temp_func->pci_dev);
 	}

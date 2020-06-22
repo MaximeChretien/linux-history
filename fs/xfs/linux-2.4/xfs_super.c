@@ -568,32 +568,73 @@ linvfs_remount(
 	return -error;
 }
 
+struct super_block *freeze_bdev(struct block_device *bdev)
+{
+	struct super_block *sb;
+	struct vfs *vfsp;
+	int error;
+
+	sb = get_super(to_kdev_t(bdev->bd_dev));
+	if (sb && !(sb->s_flags & MS_RDONLY)) {
+		vfsp = LINVFS_GET_VFS(sb);
+
+		/* Stop new writers */
+		vfsp->vfs_frozen = SB_FREEZE_WRITE;
+		wmb();
+
+		/* Flush the refcache */
+		VFS_SYNC(vfsp, SYNC_REFCACHE|SYNC_WAIT, NULL, error);
+
+		/* Flush delalloc and delwri data */
+		VFS_SYNC(vfsp, SYNC_DELWRI|SYNC_WAIT, NULL, error);
+
+		/* Pause transaction subsystem */
+		vfsp->vfs_frozen = SB_FREEZE_TRANS;
+		wmb();
+
+		/* Flush any remaining inodes into buffers */
+		VFS_SYNC(vfsp, SYNC_ATTR|SYNC_WAIT, NULL, error);
+
+		 /* Push all buffers out to disk */
+		sync_buffers(sb->s_dev, 1);
+
+		/* Push the superblock and write an unmount record */
+		VFS_FREEZE(vfsp);
+	}
+
+	sync_buffers(to_kdev_t(bdev->bd_dev), 1);
+	return sb;      /* thaw_bdev releases sb->s_umount */
+}
+
+void thaw_bdev(struct block_device *bdev, struct super_block *sb)
+{
+	if (sb) {
+		struct vfs *vfsp = LINVFS_GET_VFS(sb);
+
+		BUG_ON(sb->s_bdev != bdev);
+
+		vfsp->vfs_frozen = SB_UNFROZEN;
+		wmb();
+		wake_up(&vfsp->vfs_wait_unfrozen);
+
+		drop_super(sb);
+	}
+}
+
 STATIC void
 linvfs_freeze_fs(
 	struct super_block	*sb)
 {
-	vfs_t			*vfsp = LINVFS_GET_VFS(sb);
-	vnode_t			*vp;
-	int			error;
-
 	if (sb->s_flags & MS_RDONLY)
 		return;
-	VFS_ROOT(vfsp, &vp, error);
-	VOP_IOCTL(vp, LINVFS_GET_IP(vp), NULL, 0, XFS_IOC_FREEZE, 0, error);
-	VN_RELE(vp);
+	freeze_bdev(sb->s_bdev);
 }
 
 STATIC void
 linvfs_unfreeze_fs(
 	struct super_block	*sb)
 {
-	vfs_t			*vfsp = LINVFS_GET_VFS(sb);
-	vnode_t			*vp;
-	int			error;
-
-	VFS_ROOT(vfsp, &vp, error);
-	VOP_IOCTL(vp, LINVFS_GET_IP(vp), NULL, 0, XFS_IOC_THAW, 0, error);
-	VN_RELE(vp);
+	thaw_bdev(sb->s_bdev, sb);
 }
 
 STATIC int

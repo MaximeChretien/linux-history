@@ -835,7 +835,5 @@ extern int pci_pci_problems;
 #define PCIPCI_VSFX		16
 #define PCIPCI_ALIMAGIK		32
 
-extern int pciehp_msi_quirk;
-
 #endif /* __KERNEL__ */
 #endif /* LINUX_PCI_H */

@@ -3,7 +3,7 @@
  *	Linux INET6 implementation 
  *
  *	Authors:
- *	Pedro Roque		<roque@di.fc.ul.pt>	
+ *	Pedro Roque		<pedro_m@yahoo.com>	
  *
  *	$Id: tcp_ipv6.c,v 1.142.2.1 2001/12/21 05:06:08 davem Exp $
  *
@@ -978,11 +978,11 @@ static void tcp_v6_send_reset(struct sk_buff *skb)
 	 * and then put it into the queue to be sent.
 	 */
 
-	buff = alloc_skb(MAX_HEADER + sizeof(struct ipv6hdr), GFP_ATOMIC);
+	buff = alloc_skb(MAX_HEADER + sizeof(struct ipv6hdr) + sizeof(struct tcphdr), GFP_ATOMIC);
 	if (buff == NULL) 
 	  	return;
 
-	skb_reserve(buff, MAX_HEADER + sizeof(struct ipv6hdr));
+	skb_reserve(buff, MAX_HEADER + sizeof(struct ipv6hdr) + sizeof(struct tcphdr));
 
 	t1 = (struct tcphdr *) skb_push(buff,sizeof(struct tcphdr));
 
@@ -1037,14 +1037,14 @@ static void tcp_v6_send_ack(struct sk_buff *skb, u32 seq, u32 ack, u32 win, u32 
 	struct flowi fl;
 	int tot_len = sizeof(struct tcphdr);
 
-	buff = alloc_skb(MAX_HEADER + sizeof(struct ipv6hdr), GFP_ATOMIC);
+	if (ts)
+		tot_len += 3*4;
+
+	buff = alloc_skb(MAX_HEADER + sizeof(struct ipv6hdr) + tot_len, GFP_ATOMIC);
 	if (buff == NULL)
 		return;
 
-	skb_reserve(buff, MAX_HEADER + sizeof(struct ipv6hdr));
-
-	if (ts)
-		tot_len += 3*4;
+	skb_reserve(buff, MAX_HEADER + sizeof(struct ipv6hdr) + tot_len);
 
 	t1 = (struct tcphdr *) skb_push(buff,tot_len);
 

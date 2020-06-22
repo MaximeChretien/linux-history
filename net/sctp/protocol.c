@@ -97,7 +97,7 @@ __init int sctp_proc_init(void)
 {
 	if (!proc_net_sctp) {
 		struct proc_dir_entry *ent;
-		ent = proc_mkdir("net/sctp", 0);
+		ent = proc_mkdir("net/sctp", NULL);
 		if (ent) {
 			ent->owner = THIS_MODULE;
 			proc_net_sctp = ent;
@@ -621,8 +621,8 @@ static void sctp_v4_seq_dump_addr(struct seq_file *seq, union sctp_addr *addr)
 /* Event handler for inet address addition/deletion events.
  * Basically, whenever there is an event, we re-build our local address list.
  */
-static int sctp_inetaddr_event(struct notifier_block *this, unsigned long ev,
-			       void *ptr)
+int sctp_inetaddr_event(struct notifier_block *this, unsigned long ev,
+                        void *ptr)
 {
 	unsigned long flags;
 
@@ -823,7 +823,7 @@ static struct sctp_pf sctp_pf_inet = {
 };
 
 /* Notifier for inetaddr addition/deletion events.  */
-struct notifier_block sctp_inetaddr_notifier = {
+static struct notifier_block sctp_inetaddr_notifier = {
 	.notifier_call = sctp_inetaddr_event,
 };
 

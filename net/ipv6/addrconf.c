@@ -3,7 +3,7 @@
  *	Linux INET6 implementation
  *
  *	Authors:
- *	Pedro Roque		<roque@di.fc.ul.pt>	
+ *	Pedro Roque		<pedro_m@yahoo.com>	
  *	Alexey Kuznetsov	<kuznet@ms2.inr.ac.ru>
  *
  *	$Id: addrconf.c,v 1.69 2001/10/31 21:55:54 davem Exp $

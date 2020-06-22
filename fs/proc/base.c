@@ -780,6 +780,7 @@ out:
 	return inode;
 
 out_unlock:
+	inode->u.generic_ip = NULL;
 	iput(inode);
 	return NULL;
 }

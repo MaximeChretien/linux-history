@@ -20,7 +20,6 @@ pci_hotplug-objs	:=	pci_hotplug_core.o	\
 
 cpqphp-objs		:=	cpqphp_core.o	\
 				cpqphp_ctrl.o	\
-				cpqphp_proc.o	\
 				cpqphp_pci.o
 
 ibmphp-objs		:=	ibmphp_core.o	\
@@ -62,6 +61,10 @@ endif
 
 ifeq ($(CONFIG_HOTPLUG_PCI_COMPAQ_NVRAM),y)
 	cpqphp-objs += cpqphp_nvram.o
+endif
+
+ifeq ($(CONFIG_PROC_FS),y)
+	cpqphp-objs += cpqphp_proc.o
 endif
 
 include $(TOPDIR)/Rules.make

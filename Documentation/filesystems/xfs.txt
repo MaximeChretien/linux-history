@@ -120,18 +120,18 @@ The following sysctls are available for the XFS filesystem:
 
   fs.xfs.stats_clear		(Min: 0  Default: 0  Max: 1)
 	Setting this to "1" clears accumulated XFS statistics 
-	in /proc/fs/xfs/stat.  It then immediately reset to "0".
+	in /proc/fs/xfs/stat.  It then immediately resets to "0".
   	
-  fs.xfs.sync_interval		(Min: HZ  Default: 30*HZ  Max: 60*HZ)
+  fs.xfs.xfssyncd_centisecs	(Min: 100  Default: 3000  Max: 6000)
 	The interval at which the xfssyncd thread flushes metadata
 	out to disk.  This thread will flush log activity out, and
 	do some processing on unlinked inodes.
 
-  fs.xfs.age_buffer             (Min: 1*HZ  Default: 15*HZ  Max: 300*HZ)
-	The age at which xfsbufd flushes dirty metadata buffers to disk.
-
-  fs.xfs.flush_interval         (Min: HZ/2  Default: HZ  Max: 30*HZ)
+  fs.xfs.xfsbufd_centisecs	(Min: 50  Default: 100  Max: 3000)
 	The interval at which xfsbufd scans the dirty metadata buffers list.
+
+  fs.xfs.age_buffer_centisecs	(Min: 100  Default: 1500  Max: 30000)
+	The age at which xfsbufd flushes dirty metadata buffers to disk.
 
   fs.xfs.error_level		(Min: 0  Default: 3  Max: 11)
 	A volume knob for error reporting when internal errors occur.

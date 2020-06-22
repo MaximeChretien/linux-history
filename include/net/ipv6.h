@@ -2,7 +2,7 @@
  *	Linux INET6 implementation
  *
  *	Authors:
- *	Pedro Roque		<roque@di.fc.ul.pt>
+ *	Pedro Roque		<pedro_m@yahoo.com>
  *
  *	$Id: ipv6.h,v 1.23 2000/12/13 18:31:48 davem Exp $
  *

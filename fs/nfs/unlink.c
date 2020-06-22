@@ -130,13 +130,14 @@ nfs_async_unlink_done(struct rpc_task *task)
 	if (nfs_async_handle_jukebox(task))
 		return;
 	if (!dir)
-		return;
+		goto out;
 	dir_i = dir->d_inode;
 	nfs_zap_caches(dir_i);
 	NFS_PROTO(dir_i)->unlink_done(dir, &task->tk_msg);
 	put_rpccred(data->cred);
 	data->cred = NULL;
 	dput(dir);
+out:
 	data->completed = 1;
 	wake_up(&data->waitq);
 }

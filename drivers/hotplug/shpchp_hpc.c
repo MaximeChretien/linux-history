@@ -1547,15 +1547,6 @@ int shpc_init(struct controller * ctrl,
 		start_int_poll_timer( php_ctlr, 10 );   /* start with 10 second delay */
 	} else {
 		/* Installs the interrupt handler */
-#ifdef CONFIG_PCI_USE_VECTOR 
-		rc = pci_enable_msi(pdev);
-		if (rc) {
-			info("Can't get msi for the hotplug controller\n");
-			info("Use INTx for the hotplug controller\n");
-			dbg("%s: rc = %x\n", __FUNCTION__, rc);
-		} else
-			php_ctlr->irq = pdev->irq;
-#endif		
 		rc = request_irq(php_ctlr->irq, shpc_isr, SA_SHIRQ, MY_NAME, (void *) ctrl);
 		dbg("%s: request_irq %d for hpc%d (returns %d)\n", __FUNCTION__, php_ctlr->irq, 
 			ctlr_seq_num, rc);
@@ -1563,7 +1554,6 @@ int shpc_init(struct controller * ctrl,
 			err("Can't get irq %d for the hotplug controller\n", php_ctlr->irq);
 			goto abort_free_ctlr;
 		}
-		/* Execute OSHP method here */
 	}
 	dbg("%s: Before adding HPC to HPC list\n", __FUNCTION__);
 

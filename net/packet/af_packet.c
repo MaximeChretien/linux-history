@@ -1777,6 +1777,7 @@ static int packet_mmap(struct file *file, struct socket *sock, struct vm_area_st
 
 	atomic_inc(&po->mapped);
 	start = vma->vm_start;
+	vma->vm_flags |= VM_IO;
 	err = -EAGAIN;
 	for (i=0; i<po->pg_vec_len; i++) {
 		if (remap_page_range(start, __pa(po->pg_vec[i]),

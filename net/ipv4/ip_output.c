@@ -184,7 +184,7 @@ static inline int ip_finish_output2(struct sk_buff *skb)
 	return -EINVAL;
 }
 
-__inline__ int ip_finish_output(struct sk_buff *skb)
+static __inline__ int __ip_finish_output(struct sk_buff *skb)
 {
 	struct net_device *dev = skb->dst->dev;
 
@@ -193,6 +193,11 @@ __inline__ int ip_finish_output(struct sk_buff *skb)
 
 	return NF_HOOK(PF_INET, NF_IP_POST_ROUTING, skb, NULL, dev,
 		       ip_finish_output2);
+}
+
+int ip_finish_output(struct sk_buff *skb)
+{
+	return __ip_finish_output(skb);
 }
 
 int ip_mc_output(struct sk_buff *skb)
@@ -253,7 +258,7 @@ int ip_mc_output(struct sk_buff *skb)
 				newskb->dev, ip_dev_loopback_xmit);
 	}
 
-	return ip_finish_output(skb);
+	return __ip_finish_output(skb);
 }
 
 int ip_output(struct sk_buff *skb)
@@ -269,7 +274,7 @@ int ip_output(struct sk_buff *skb)
 		ip_do_nat(skb);
 #endif
 
-	return ip_finish_output(skb);
+	return __ip_finish_output(skb);
 }
 
 /* Queues a packet to be sent, and starts the transmitter if necessary.  
