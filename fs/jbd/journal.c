@@ -204,6 +204,7 @@ int kjournald(void *arg)
 
 	lock_kernel();
 	daemonize();
+	reparent_to_init();
 	spin_lock_irq(&current->sigmask_lock);
 	sigfillset(&current->blocked);
 	recalc_sigpending(current);
@@ -267,6 +268,7 @@ int kjournald(void *arg)
 
 	journal->j_task = NULL;
 	wake_up(&journal->j_wait_done_commit);
+	unlock_kernel();
 	jbd_debug(1, "Journal thread exiting.\n");
 	return 0;
 }

@@ -963,7 +963,9 @@ printk("dmasound_pmac: tx-irq: xfer died - patching it up...\n") ;
 			st_le16(&cp->res_count, 0);
 			st_le16(&cp->xfer_status, 0);
 			st_le32(&cp->phy_addr, phy);
-			st_le16(&cp->command, OUTPUT_MORE + INTR_ALWAYS);
+			st_le32(&cp->cmd_dep, virt_to_bus(&awacs_tx_cmds[(i+1)%write_sq.max_count]));
+			st_le16(&cp->command, OUTPUT_MORE | BR_ALWAYS | INTR_ALWAYS);
+			
 			/* point at our patched up command block */
 			out_le32(&awacs_txdma->cmdptr, virt_to_bus(cp));
 			/* we must re-start the controller */

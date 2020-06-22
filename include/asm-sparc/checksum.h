@@ -16,6 +16,7 @@
  *      RFC1071 Computing the Internet Checksum
  */
  
+#include <linux/in6.h>
 #include <asm/uaccess.h>
 #include <asm/cprefix.h>
 

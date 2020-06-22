@@ -198,12 +198,10 @@ S: Notre Dame, Indiana
 S: USA
 
 N: Greg Banks
-E: gnb@linuxfan.com
+E: gnb@alphalink.com.au
 D: IDT77105 ATM network driver
-S: NEC Australia
-S: 649-655 Springvale Rd
-S: Mulgrave, Victoria 3170
-S: Australia
+D: some SuperH port work
+D: some trivial futzing with kconfig
 
 N: James Banks
 E: james@sovereign.org
@@ -586,8 +584,15 @@ D: USB Bluetooth Driver
 S: University of Michigan
 S: Ann Arbor, MI
 
+N: Michael Cornwell
+E: cornwell@acm.org
+D: Original designer and co-author of ATA Taskfile
+D: Kernel module SMART utilities
+S: Santa Cruz, California
+S: USA
+
 N: Kees Cook
-E: cook@cpoint.net
+E: kees@outflux.net
 W: http://outflux.net/
 P: 1024D/17063E6D 9FA3 C49C 23C9 D1BC 2E30  1975 1FFF 4BA9 1706 3E6D
 D: Minor updates to SCSI code for the Communications type
@@ -627,6 +632,11 @@ S: 81 Hood Street
 S: Northampton
 S: NN1 3QT
 S: United Kingdom
+
+N: Stephane Dalton
+E: sdalton@videotron.ca
+D: Tieman Voyager USB Braille display driver.
+S: Québec, Canada
 
 N: Uwe Dannowski
 E: Uwe.Dannowski@ira.uka.de
@@ -733,6 +743,11 @@ N: Cort Dougan
 E: cort@fsmlabs.com
 W: http://www.fsmlabs.com/linuxppcbk.html
 D: PowerPC
+
+N: Stéphane Doyon
+E: s.doyon@videotron.ca
+D: Tieman Voyager USB Braille display driver.
+S: Québec, Canada
 
 N: Oleg Drokin
 E: green@ccssu.crimea.ua
@@ -1184,22 +1199,19 @@ D: Selection mechanism
 
 N: Andre Hedrick
 E: andre@linux-ide.org
-E: andre@aslab.com
-E: andre@suse.com
+E: andre@linuxdiskcert.org
 W: http://www.linux-ide.org/
+W: http://www.linuxdiskcert.org/
 D: Random SMP kernel hacker...
 D: Uniform Multi-Platform E-IDE driver
 D: Active-ATA-Chipset maddness..........
-D: Ultra DMA 100/66/33
-D: ATA-Disconnect
+D: Ultra DMA 133/100/66/33 w/48-bit Addressing
+D: ATA-Disconnect, ATA-TCQ
 D: ATA-Smart Kernel Daemon
+D: Serial ATA
+D: ATA Command Block and Taskfile
 S: Linux ATA Development (LAD)
 S: Concord, CA
-S: ASL, Inc. 1-877-ASL-3535
-S: 1757 Houret Court, Milpitas, CA 95035
-S: SuSE Linux, Inc.
-S: 580 Second Street, Suite 210  Oakland, CA  94607
-S: USA
 
 N: Jochen Hein
 E: jochen@jochen.org
@@ -1500,6 +1512,13 @@ S: Botanicka' 68a
 S: 602 00 Brno
 S: Czech Republic
 
+N: Jakob Kemi
+E: jakob.kemi@telia.com
+D: V4L W9966 Webcam driver
+S: Forsbyvägen 33
+S: 74143 Knivsta
+S: Sweden
+
 N: Fred N. van Kempen
 E: waltje@linux.com
 D: NET-2
@@ -1574,8 +1593,10 @@ S: L-1148 Luxembourg-City
 S: Luxembourg
 
 N: Gerd Knorr
-E: kraxel@goldbach.in-berlin.de
-D: SCSI CD-ROM driver hacking, vesafb, v4l, minor bug fixes
+W: http://bytesex.org
+E: kraxel@bytesex.org
+E: kraxel@suse.de
+D: video4linux, bttv, vesafb, some scsi, misc fixes
 
 N: Harald Koenig
 E: koenig@tat.physik.uni-tuebingen.de
@@ -1652,6 +1673,14 @@ S: Post Office Box 691886
 S: San Antonio, Texas 78269-1886
 S: USA
 
+N: Denis O. Kropp
+E: dok@directfb.org
+D: NeoMagic framebuffer driver
+D: CyberPro 32 bit support, fixes
+S: Badensche Str. 46
+S: 10715 Berlin
+S: Germany
+
 N: Andrzej M. Krzysztofowicz
 E: ankry@mif.pg.gda.pl
 D: Some 8-bit XT disk driver and devfs hacking 
@@ -1660,13 +1689,6 @@ D: PIIX chipset IDE
 S: ul. Matemblewska 1B/10
 S: 80-283 Gdansk
 S: Poland
-
-N: Jakob Kemi
-E: jakob.kemi@telia.com
-D: V4L W9966 Webcam driver
-S: Forsbyvägen 33
-S: 74143 Knivsta
-S: Sweden
 
 N: Gero Kuhlmann
 E: gero@gkminix.han.de
@@ -1895,13 +1917,14 @@ S: Santa Clara, CA 95052
 S: USA
 
 N: Petko Manolov
-E: petkan@dce.bg
-D: USB ethernet (pegasus) driver
-D: optimizing i[45]86 string routines
-D: i386 task swithing hacks
-S: 5, Vrah Mancho str.
-S: 1324 Sofia
-S: Bulgaria
+E: petkan@users.sourceforge.net
+D: USB ethernet pegasus/pegasus-II driver
+D: USB ethernet rtl8150 driver
+D: i[45]86 optimized string routines
+D: i386 task switching hacks
+S: 482 Shadowgraph Dr.
+S: San Jose, CA  95110
+S: USA
 
 N: Martin Mares
 E: mj@ucw.cz
@@ -2129,6 +2152,10 @@ D: Wacom Intuos USB Support
 S: 22 Seaview St
 S: Fullarton 5063
 S: South Australia
+
+N. Wolfgang Muees
+E: wmues@nexgo.de
+D: Auerswald USB driver
 
 N: Ian A. Murdock
 E: imurdock@gnu.ai.mit.edu
@@ -2513,6 +2540,7 @@ S: Germany
 
 N: Thiago Berlitz Rondon
 E: maluco@mileniumnet.com.br
+W: http://vivaldi.linuxms.com.br/~maluco
 D: Miscellaneous kernel hacker
 S: R. Anhanguera, 1487 - Ipiranga
 S: 79080-740 - Campo Grande - Mato Grosso do Sul
@@ -2740,6 +2768,10 @@ S: USA
 N: Christopher Smith
 E: x@xman.org
 D: Tulip net driver hacker
+
+N: Mark Smith
+E: mark.smith@comdev.cc
+D: Multicast support in bonding driver
 
 N: Miquel van Smoorenburg
 E: miquels@cistron.nl
@@ -3265,9 +3297,10 @@ S: Bellevue, Washington 98007
 S: USA
 
 N: Richard Zidlicky
-E: rdzidlic@geocities.com,rdzidlic@cip.informatik.uni-erlangen.de
-W: http://www.geocities.com/SiliconValley/Bay/2602/
+E: rz@linux-m68k.org, rdzidlic@geocities.com
+W: http://www.geocities.com/rdzidlic
 D: Q40 port - see arch/m68k/q40/README
+D: various m68k hacks
 S: Germany
 
 N: Werner Zimmermann

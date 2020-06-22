@@ -24,9 +24,8 @@
 #include <linux/interrupt.h>
 #include <linux/init.h>
 
-#include <asm/system.h>
-#include <asm/io.h>
 #include <asm/leds.h>
+#include <asm/system.h>
 #include <asm/uaccess.h>
 
 /*

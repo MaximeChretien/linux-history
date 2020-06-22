@@ -15,10 +15,10 @@
 .S.o:
 	$(CC) $(CFLAGS) -c $< -o $*.o
 
-all: pb1000.o
-
 O_TARGET := pb1000.o
 
 obj-y := init.o setup.o
+
+obj-$(CONFIG_PCI) += pci_fixup.o pci_ops.o
 
 include $(TOPDIR)/Rules.make

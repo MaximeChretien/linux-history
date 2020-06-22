@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.zlib.c 1.8 05/18/01 15:17:24 cort
+ * BK Id: SCCS/s.zlib.c 1.9 12/05/01 16:19:42 mporter
  */
 /*
  * This file is derived from various .h and .c files from the zlib-0.95
@@ -651,11 +651,6 @@ struct inflate_blocks_state {
 /*   load local pointers */
 #define LOAD {LOADIN LOADOUT}
 
-/*
- * The IBM 150 firmware munges the data right after _etext[].  This
- * protects it. -- Cort
- */
-local uInt protect_mask[] = {0, 0, 0, 0, 0, 0, 0, 0, 0 ,0 ,0 ,0};
 /* And'ing with mask[n] masks the lower n bits */
 local uInt inflate_mask[] = {
     0x0000,
@@ -933,7 +928,10 @@ int r;
       {
         r = t;
         if (r == Z_DATA_ERROR)
+	{
+          ZFREE(z, s->sub.trees.blens, s->sub.trees.nblens * sizeof(uInt));
           s->mode = BADB;
+	}
         LEAVE
       }
       s->sub.trees.index = 0;
@@ -969,6 +967,7 @@ int r;
           if (i + j > 258 + (t & 0x1f) + ((t >> 5) & 0x1f) ||
               (c == 16 && i < 1))
           {
+            ZFREE(z, s->sub.trees.blens, s->sub.trees.nblens * sizeof(uInt));
             s->mode = BADB;
             z->msg = "invalid bit length repeat";
             r = Z_DATA_ERROR;
@@ -996,7 +995,10 @@ int r;
         if (t != Z_OK)
         {
           if (t == (uInt)Z_DATA_ERROR)
+	  {
+            ZFREE(z, s->sub.trees.blens, s->sub.trees.nblens * sizeof(uInt));
             s->mode = BADB;
+	  }
           r = t;
           LEAVE
         }

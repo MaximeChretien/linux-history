@@ -9,7 +9,7 @@
 
 #include <asm/hardware.h>
 #include <asm/irq.h>
-#include <asm/arch/pcmcia.h>
+#include "sa1100_generic.h"
 
 
 static inline void pcmcia_power(int on) {
@@ -30,13 +30,9 @@ static int yopy_pcmcia_init(struct pcmcia_init *init)
 	pcmcia_power(0);
 	pcmcia_reset(1);
 
-	/* All those are inputs */
-	GPDR &= ~(GPIO_CF_CD | GPIO_CF_BVD2 | GPIO_CF_BVD1 | GPIO_CF_IREQ);
-	GAFR &= ~(GPIO_CF_CD | GPIO_CF_BVD2 | GPIO_CF_BVD1 | GPIO_CF_IREQ);
-
 	/* Set transition detect */
-	set_GPIO_IRQ_edge( GPIO_CF_CD|GPIO_CF_BVD2|GPIO_CF_BVD1,
-			   GPIO_BOTH_EDGES );
+	set_GPIO_IRQ_edge(GPIO_CF_CD|GPIO_CF_BVD2|GPIO_CF_BVD1,
+			  GPIO_NO_EDGES);
 	set_GPIO_IRQ_edge( GPIO_CF_IREQ, GPIO_FALLING_EDGE );
 
 	/* Register interrupts */
@@ -130,10 +126,27 @@ static int yopy_pcmcia_configure_socket(const struct pcmcia_configure *configure
 	return 0;
 }
 
+static int yopy_pcmcia_socket_init(int sock)
+{
+	set_GPIO_IRQ_edge(GPIO_CF_CD|GPIO_CF_BVD2|GPIO_CF_BVD1,
+			  GPIO_BOTH_EDGES);
+	return 0;
+}
+
+static int yopy_pcmcia_socket_suspend(int sock)
+{
+	set_GPIO_IRQ_edge(GPIO_CF_CD|GPIO_CF_BVD2|GPIO_CF_BVD1,
+			  GPIO_NO_EDGES);
+	return 0;
+}
+
 struct pcmcia_low_level yopy_pcmcia_ops = {
-	yopy_pcmcia_init,
-	yopy_pcmcia_shutdown,
-	yopy_pcmcia_socket_state,
-	yopy_pcmcia_get_irq_info,
-	yopy_pcmcia_configure_socket
+	init:			yopy_pcmcia_init,
+	shutdown:		yopy_pcmcia_shutdown,
+	socket_state:		yopy_pcmcia_socket_state,
+	get_irq_info:		yopy_pcmcia_get_irq_info,
+	configure_socket:	yopy_pcmcia_configure_socket,
+
+	socket_init:		yopy_pcmcia_socket_init,
+	socket_suspend:		yopy_pcmcia_socket_suspend,
 };

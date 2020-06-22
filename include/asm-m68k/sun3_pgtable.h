@@ -123,9 +123,6 @@ extern inline void pte_clear (pte_t *ptep) { pte_val (*ptep) = 0; }
 
 /* FIXME: this is only a guess */
 #define pte_pagenr(pte)		((__pte_page(pte) - PAGE_OFFSET) >> PAGE_SHIFT)
-/* Permanent address of a page. */
-#define page_address(page)	({ if (!(page)->virtual) BUG(); (page)->virtual; })
-#define __page_address(page)	(PAGE_OFFSET + (((page) - mem_map) << PAGE_SHIFT))
 #define pte_page(pte)		(mem_map+pte_pagenr(pte))
 
 

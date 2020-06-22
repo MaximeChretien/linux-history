@@ -23,6 +23,8 @@ pdf:	$(PDF)
 
 html:	$(HTML)
 
+man:	kernel-api-man
+
 %.eps: %.fig
 	fig2dev -Leps $< $@
 
@@ -93,6 +95,8 @@ APISOURCES :=	$(TOPDIR)/drivers/media/video/videodev.c \
 		$(TOPDIR)/drivers/net/8390.c \
 		$(TOPDIR)/drivers/char/serial.c \
 		$(TOPDIR)/drivers/pci/pci.c \
+		$(TOPDIR)/drivers/hotplug/pci_hotplug_core.c \
+		$(TOPDIR)/drivers/hotplug/pci_hotplug_util.c \
 		$(TOPDIR)/drivers/block/ll_rw_blk.c \
 		$(TOPDIR)/drivers/sound/sound_core.c \
 		$(TOPDIR)/drivers/sound/sound_firmware.c \

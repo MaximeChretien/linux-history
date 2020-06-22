@@ -5,7 +5,7 @@
  *
  * This code is GPL
  * 
- * $Id: dc21285.c,v 1.6 2001/10/02 15:05:14 dwmw2 Exp $
+ * $Id: dc21285.c,v 1.7 2001/10/11 16:17:51 nico Exp $
  */
 
 #include <linux/module.h>
@@ -44,15 +44,15 @@ void dc21285_copy_from(struct map_info *map, void *to, unsigned long from, ssize
 
 void dc21285_write8(struct map_info *map, __u8 d, unsigned long adr)
 {
-	*CSR_ROMWRITEREG = adr;
+	*CSR_ROMWRITEREG = adr & 3;
 	adr &= ~3;
 	*(__u8*)(map->map_priv_1 + adr) = d;
 }
 
 void dc21285_write16(struct map_info *map, __u16 d, unsigned long adr)
 {
-	*CSR_ROMWRITEREG = adr;
-	adr &= ~1;
+	*CSR_ROMWRITEREG = adr & 3;
+	adr &= ~3;
 	*(__u16*)(map->map_priv_1 + adr) = d;
 }
 

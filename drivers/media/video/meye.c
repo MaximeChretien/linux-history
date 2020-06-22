@@ -115,77 +115,29 @@ static inline int meye_emptyq(struct meye_queue *queue, int *elem) {
 /* Memory allocation routines (stolen from bttv-driver.c)                   */
 /****************************************************************************/
 
-#define MDEBUG(x)	do {} while (0)
-/* #define MDEBUG(x)	x */
-
-/* Given PGD from the address space's page table, return the kernel
- * virtual mapping of the physical memory mapped at ADR.
- */
-static inline unsigned long uvirt_to_kva(pgd_t *pgd, unsigned long adr) {
-        unsigned long ret = 0UL;
-	pmd_t *pmd;
-	pte_t *ptep, pte;
-  
-	if (!pgd_none(*pgd)) {
-                pmd = pmd_offset(pgd, adr);
-                if (!pmd_none(*pmd)) {
-                        ptep = pte_offset(pmd, adr);
-                        pte = *ptep;
-                        if(pte_present(pte)) {
-				ret = (unsigned long)page_address(pte_page(pte));
-				ret |= (adr & (PAGE_SIZE - 1));
-				
-			}
-                }
-        }
-        MDEBUG(printk("uv2kva(%lx-->%lx)\n", adr, ret));
-	return ret;
-}
-
-static inline unsigned long uvirt_to_bus(unsigned long adr) {
-        unsigned long kva, ret;
-
-        kva = uvirt_to_kva(pgd_offset(current->mm, adr), adr);
-	ret = virt_to_bus((void *)kva);
-        MDEBUG(printk("uv2b(%lx-->%lx)\n", adr, ret));
-        return ret;
-}
-
-static inline unsigned long kvirt_to_bus(unsigned long adr) {
-        unsigned long va, kva, ret;
-
-        va = VMALLOC_VMADDR(adr);
-        kva = uvirt_to_kva(pgd_offset_k(va), va);
-	ret = virt_to_bus((void *)kva);
-        MDEBUG(printk("kv2b(%lx-->%lx)\n", adr, ret));
-        return ret;
-}
-
 /* Here we want the physical address of the memory.
- * This is used when initializing the contents of the
- * area and marking the pages as reserved.
+ * This is used when initializing the contents of the area.
  */
 static inline unsigned long kvirt_to_pa(unsigned long adr) {
-        unsigned long va, kva, ret;
+        unsigned long kva, ret;
 
-        va = VMALLOC_VMADDR(adr);
-        kva = uvirt_to_kva(pgd_offset_k(va), va);
+        kva = (unsigned long) page_address(vmalloc_to_page((void *)adr));
+	kva |= adr & (PAGE_SIZE-1); /* restore the offset */
 	ret = __pa(kva);
-        MDEBUG(printk("kv2pa(%lx-->%lx)\n", adr, ret));
         return ret;
 }
 
-static void *rvmalloc(signed long size) {
+static void *rvmalloc(unsigned long size) {
 	void *mem;
-	unsigned long adr, page;
+	unsigned long adr;
 
+	size = PAGE_ALIGN(size);
 	mem = vmalloc_32(size);
 	if (mem) {
 		memset(mem, 0, size); /* Clear the ram out, no junk to the user */
 	        adr = (unsigned long)mem;
 		while (size > 0) {
-	                page = kvirt_to_pa(adr);
-			mem_map_reserve(virt_to_page(__va(page)));
+			mem_map_reserve(vmalloc_to_page((void *)adr));
 			adr += PAGE_SIZE;
 			size -= PAGE_SIZE;
 		}
@@ -193,14 +145,13 @@ static void *rvmalloc(signed long size) {
 	return mem;
 }
 
-static void rvfree(void * mem, signed long size) {
-        unsigned long adr, page;
-        
+static void rvfree(void * mem, unsigned long size) {
+        unsigned long adr;
+
 	if (mem) {
 	        adr = (unsigned long) mem;
-		while (size > 0) {
-	                page = kvirt_to_pa(adr);
-			mem_map_unreserve(virt_to_page(__va(page)));
+		while ((long) size > 0) {
+			mem_map_unreserve(vmalloc_to_page((void *)adr));
 			adr += PAGE_SIZE;
 			size -= PAGE_SIZE;
 		}
@@ -209,30 +160,63 @@ static void rvfree(void * mem, signed long size) {
 }
 
 /* return a page table pointing to N pages of locked memory */
-static void *ptable_alloc(int npages, u32 *pt_addr) {
+static int ptable_alloc(void) {
+	u32 *pt;
 	int i;
-	void *vmem;
-	u32 *ptable;
-	unsigned long adr;
 
-	vmem = rvmalloc((npages + 1) * PAGE_SIZE);
-	if (!vmem)
-		return NULL;
+	memset(meye.mchip_ptable, 0, sizeof(meye.mchip_ptable));
 
-        adr = (unsigned long)vmem;
-	ptable = (u32 *)(vmem + npages * PAGE_SIZE);
-	for (i = 0; i < npages; i++) {
-		ptable[i] = (u32) kvirt_to_bus(adr);
-		adr += PAGE_SIZE;
+	meye.mchip_ptable[MCHIP_NB_PAGES] = pci_alloc_consistent(meye.mchip_dev, 
+								 PAGE_SIZE, 
+								 &meye.mchip_dmahandle);
+	if (!meye.mchip_ptable[MCHIP_NB_PAGES])
+		return -1;
+
+	pt = (u32 *)meye.mchip_ptable[MCHIP_NB_PAGES];
+	for (i = 0; i < MCHIP_NB_PAGES; i++) {
+		meye.mchip_ptable[i] = pci_alloc_consistent(meye.mchip_dev, 
+							    PAGE_SIZE,
+							    pt);
+		if (!meye.mchip_ptable[i])
+			return -1;
+		pt++;
 	}
-
-	*pt_addr = (u32) kvirt_to_bus(adr);
-	return vmem;
+	return 0;
 }
 
-static void ptable_free(void *vmem, int npages) {
-	rvfree(vmem, (npages + 1) * PAGE_SIZE);
+static void ptable_free(void) {
+	u32 *pt;
+	int i;
+
+	pt = (u32 *)meye.mchip_ptable[MCHIP_NB_PAGES];
+	for (i = 0; i < MCHIP_NB_PAGES; i++)
+		if (meye.mchip_ptable[i])
+			pci_free_consistent(meye.mchip_dev, 
+					    PAGE_SIZE, 
+					    meye.mchip_ptable[i], *pt);
+
+	if (meye.mchip_ptable[MCHIP_NB_PAGES])
+		pci_free_consistent(meye.mchip_dev, 
+				    PAGE_SIZE, 
+				    meye.mchip_ptable[MCHIP_NB_PAGES], 
+				    meye.mchip_dmahandle);
+
+	memset(meye.mchip_ptable, 0, sizeof(meye.mchip_ptable));
+	meye.mchip_dmahandle = 0;
 }
+
+/* copy data from ptable into buf */
+static void ptable_copy(u8 *buf, int start, int size, int pt_pages) {
+	int i;
+	
+	for (i = 0; i < (size / PAGE_SIZE) * PAGE_SIZE; i += PAGE_SIZE) {
+		memcpy(buf + i, meye.mchip_ptable[start++], PAGE_SIZE);
+		if (start >= pt_pages)
+			start = 0;
+	}
+	memcpy(buf + i, meye.mchip_ptable[start], size % PAGE_SIZE);
+}
+
 
 /****************************************************************************/
 /* JPEG tables at different qualities to load into the VRJ chip             */
@@ -587,29 +571,23 @@ static void mchip_vrj_setup(u8 mode) {
 
 /* setup for DMA transfers - also zeros the framebuffer */
 static int mchip_dma_alloc(void) {
-	if (!meye.mchip_fbuffer) {
-		meye.mchip_fbuffer = ptable_alloc(MCHIP_NB_PAGES, 
-				                  &meye.mchip_ptaddr);
-		if (!meye.mchip_fbuffer)
+	if (!meye.mchip_dmahandle)
+		if (ptable_alloc())
 			return -1;
-	}
 	return 0;
 }
 
 /* frees the DMA buffer */
 static void mchip_dma_free(void) {
-	if (meye.mchip_fbuffer) {
-		ptable_free(meye.mchip_fbuffer, MCHIP_NB_PAGES);
-		meye.mchip_fbuffer = 0;
-		meye.mchip_ptaddr = 0;
-	}
+	if (meye.mchip_dmahandle)
+		ptable_free();
 }
 
 /* sets the DMA parameters into the chip */
 static void mchip_dma_setup(void) {
 	int i;
 
-	mchip_set(MCHIP_MM_PT_ADDR, meye.mchip_ptaddr);
+	mchip_set(MCHIP_MM_PT_ADDR, meye.mchip_dmahandle);
 	for (i = 0; i < 4; i++)
 		mchip_set(MCHIP_MM_FIR(i), 0);
 	meye.mchip_fnum = 0;
@@ -658,59 +636,40 @@ static void mchip_free_frame(void) {
 	meye.mchip_fnum %= 4;
 }
 
-
 /* read one frame from the framebuffer assuming it was captured using
    a uncompressed transfer */
-static void  mchip_cont_read_frame(u32 v, u8 *buf, int size) {
+static void mchip_cont_read_frame(u32 v, u8 *buf, int size) {
 	int pt_id;
-	int avail;
 
 	pt_id = (v >> 17) & 0x3FF;
-	avail = MCHIP_NB_PAGES - pt_id;
 
-	if (size > avail*PAGE_SIZE) {
-		memcpy(buf, meye.mchip_fbuffer + pt_id * PAGE_SIZE, 
-		       avail * PAGE_SIZE);
-		memcpy(buf +avail * PAGE_SIZE, meye.mchip_fbuffer,
-		       size - avail * PAGE_SIZE);
-	}
-	else
-		memcpy(buf, meye.mchip_fbuffer + pt_id * PAGE_SIZE, size);
+	ptable_copy(buf, pt_id, size, MCHIP_NB_PAGES);
+
 }
 
 /* read a compressed frame from the framebuffer */
 static int mchip_comp_read_frame(u32 v, u8 *buf, int size) {
 	int pt_start, pt_end, trailer;
-	int fsize, fsize2;
+	int fsize;
 	int i;
 
 	pt_start = (v >> 19) & 0xFF;
 	pt_end = (v >> 11) & 0xFF;
 	trailer = (v >> 1) & 0x3FF;
 
-	if (pt_end < pt_start) {
-		fsize = (MCHIP_NB_PAGES_MJPEG - pt_start) * PAGE_SIZE;
-		fsize2 = pt_end * PAGE_SIZE + trailer * 4;
-		if (fsize + fsize2 > size) {
-			printk(KERN_WARNING "meye: oversized compressed frame %d %d\n", 
-			       fsize, fsize2);
-			return -1;
-		} else {
-			memcpy(buf, meye.mchip_fbuffer + pt_start * PAGE_SIZE, 
-			       fsize);
-			memcpy(buf + fsize, meye.mchip_fbuffer, fsize2); 
-			fsize += fsize2;
-		}
-	} else {
+	if (pt_end < pt_start)
+		fsize = (MCHIP_NB_PAGES_MJPEG - pt_start) * PAGE_SIZE +
+			pt_end * PAGE_SIZE + trailer * 4;
+	else
 		fsize = (pt_end - pt_start) * PAGE_SIZE + trailer * 4;
-		if (fsize > size) {
-			printk(KERN_WARNING "meye: oversized compressed frame %d\n", 
-			       fsize);
-			return -1;
-		} else
-			memcpy(buf, meye.mchip_fbuffer + pt_start * PAGE_SIZE, 
-			       fsize);
+
+	if (fsize > size) {
+		printk(KERN_WARNING "meye: oversized compressed frame %d\n", 
+		       fsize);
+		return -1;
 	}
+
+	ptable_copy(buf, pt_start, fsize, MCHIP_NB_PAGES_MJPEG);
 
 
 #ifdef MEYE_JPEG_CORRECTION
@@ -909,124 +868,108 @@ out:
 /* video4linux integration                                                  */
 /****************************************************************************/
 
-static int meye_open(struct video_device *dev, int flags) {
-	int i;
+static int meye_open(struct inode *inode, struct file *file) {
+	int i, err;
 
-	down(&meye.lock);
-	if (meye.open_count) {
-		up(&meye.lock);
-		return -EBUSY;
-	}
-	meye.open_count++;
+	err = video_exclusive_open(inode,file);
+	if (err < 0)
+		return err;
+			
 	if (mchip_dma_alloc()) {
 		printk(KERN_ERR "meye: mchip framebuffer allocation failed\n");
-		up(&meye.lock);
+		video_exclusive_release(inode,file);
 		return -ENOBUFS;
 	}
 	mchip_hic_stop();
 	meye_initq(&meye.grabq);
 	for (i = 0; i < MEYE_MAX_BUFNBRS; i++)
 		meye.grab_buffer[i].state = MEYE_BUF_UNUSED;
-	up(&meye.lock);
 	return 0;
 }
 
-static void meye_close(struct video_device *dev) {
-	down(&meye.lock);
-	meye.open_count--;
+static int meye_release(struct inode *inode, struct file *file) {
 	mchip_hic_stop();
-	up(&meye.lock);
+	video_exclusive_release(inode,file);
+	return 0;
 }
 
-static int meye_ioctl(struct video_device *dev, unsigned int cmd, void *arg) {
+static int meye_do_ioctl(struct inode *inode, struct file *file,
+			 unsigned int cmd, void *arg) {
 
 	switch (cmd) {
 
 	case VIDIOCGCAP: {
-		struct video_capability b;
-		strcpy(b.name,meye.video_dev.name);
-		b.type = VID_TYPE_CAPTURE;
-		b.channels = 1;
-		b.audios = 0;
-		b.maxwidth = 640;
-		b.maxheight = 480;
-		b.minwidth = 320;
-		b.minheight = 240;
-		if(copy_to_user(arg,&b,sizeof(b)))
-			return -EFAULT;
+		struct video_capability *b = arg;
+		strcpy(b->name,meye.video_dev.name);
+		b->type = VID_TYPE_CAPTURE;
+		b->channels = 1;
+		b->audios = 0;
+		b->maxwidth = 640;
+		b->maxheight = 480;
+		b->minwidth = 320;
+		b->minheight = 240;
 		break;
 	}
 
 	case VIDIOCGCHAN: {
-		struct video_channel v;
-		if(copy_from_user(&v, arg,sizeof(v)))
-			return -EFAULT;
-		v.flags = 0;
-		v.tuners = 0;
-		v.type = VIDEO_TYPE_CAMERA;
-		if (v.channel != 0)
+		struct video_channel *v = arg;
+		v->flags = 0;
+		v->tuners = 0;
+		v->type = VIDEO_TYPE_CAMERA;
+		if (v->channel != 0)
 			return -EINVAL;
-		strcpy(v.name,"Camera");
-		if(copy_to_user(arg,&v,sizeof(v)))
-			return -EFAULT;
+		strcpy(v->name,"Camera");
 		break;
 	}
 
 	case VIDIOCSCHAN: {
-		struct video_channel v;
-		if(copy_from_user(&v, arg,sizeof(v)))
-			return -EFAULT;
-		if (v.channel != 0)
+		struct video_channel *v = arg;
+		if (v->channel != 0)
 			return -EINVAL;
 		break;
 	}
 
 	case VIDIOCGPICT: {
-		struct video_picture p = meye.picture;
-		if(copy_to_user(arg, &p, sizeof(p)))
-			return -EFAULT;
+		struct video_picture *p = arg;
+		*p = meye.picture;
 		break;
 	}
 
 	case VIDIOCSPICT: {
-		struct video_picture p;
-		if(copy_from_user(&p, arg,sizeof(p)))
-			return -EFAULT;
-		if (p.depth != 2)
+		struct video_picture *p = arg;
+		if (p->depth != 2)
 			return -EINVAL;
-		if (p.palette != VIDEO_PALETTE_YUV422)
+		if (p->palette != VIDEO_PALETTE_YUV422)
 			return -EINVAL;
 		down(&meye.lock);
 		sonypi_camera_command(SONYPI_COMMAND_SETCAMERABRIGHTNESS, 
-				      p.brightness >> 10);
+				      p->brightness >> 10);
 		sonypi_camera_command(SONYPI_COMMAND_SETCAMERAHUE, 
-				      p.hue >> 10);
+				      p->hue >> 10);
 		sonypi_camera_command(SONYPI_COMMAND_SETCAMERACOLOR, 
-				      p.colour >> 10);
+				      p->colour >> 10);
 		sonypi_camera_command(SONYPI_COMMAND_SETCAMERACONTRAST, 
-				      p.contrast >> 10);
-		memcpy(&meye.picture, &p, sizeof(p));
+				      p->contrast >> 10);
+		meye.picture = *p;
 		up(&meye.lock);
 		break;
 	}
 
 	case VIDIOCSYNC: {
-		int i;
+		int *i = arg;
 		DECLARE_WAITQUEUE(wait, current);
 
-		if(copy_from_user((void *)&i,arg,sizeof(int)))
-			return -EFAULT;
-		if (i < 0 || i >= gbuffers)
+		if (*i < 0 || *i >= gbuffers)
 			return -EINVAL;
 
-		switch (meye.grab_buffer[i].state) {
+		switch (meye.grab_buffer[*i].state) {
 
 		case MEYE_BUF_UNUSED:
 			return -EINVAL;
 		case MEYE_BUF_USING:
 			add_wait_queue(&meye.grabq.proc_list, &wait);
 			current->state = TASK_INTERRUPTIBLE;
-			while (meye.grab_buffer[i].state == MEYE_BUF_USING) {
+			while (meye.grab_buffer[*i].state == MEYE_BUF_USING) {
 				schedule();
 				if(signal_pending(current)) {
 					remove_wait_queue(&meye.grabq.proc_list, &wait);
@@ -1038,36 +981,34 @@ static int meye_ioctl(struct video_device *dev, unsigned int cmd, void *arg) {
 			current->state = TASK_RUNNING;
 			/* fall through */
 		case MEYE_BUF_DONE:
-			meye.grab_buffer[i].state = MEYE_BUF_UNUSED;
+			meye.grab_buffer[*i].state = MEYE_BUF_UNUSED;
 		}
 		break;
 	}
 
 	case VIDIOCMCAPTURE: {
-		struct video_mmap vm;
+		struct video_mmap *vm = arg;
 		int restart = 0;
 
-		if(copy_from_user((void *) &vm, (void *) arg, sizeof(vm)))
-			return -EFAULT;
-		if (vm.frame >= gbuffers || vm.frame < 0)
+		if (vm->frame >= gbuffers || vm->frame < 0)
 			return -EINVAL;
-		if (vm.format != VIDEO_PALETTE_YUV422)
+		if (vm->format != VIDEO_PALETTE_YUV422)
 			return -EINVAL;
-		if (vm.height * vm.width * 2 > gbufsize)
+		if (vm->height * vm->width * 2 > gbufsize)
 			return -EINVAL;
 		if (!meye.grab_fbuffer)
 			return -EINVAL;
-		if (meye.grab_buffer[vm.frame].state != MEYE_BUF_UNUSED)
+		if (meye.grab_buffer[vm->frame].state != MEYE_BUF_UNUSED)
 			return -EBUSY;
 
 		down(&meye.lock);
-		if (vm.width == 640 && vm.height == 480) {
+		if (vm->width == 640 && vm->height == 480) {
 			if (meye.params.subsample) {
 				meye.params.subsample = 0;
 				restart = 1;
 			}
 		}
-		else if (vm.width == 320 && vm.height == 240) {
+		else if (vm->width == 320 && vm->height == 240) {
 			if (!meye.params.subsample) {
 				meye.params.subsample = 1;
 				restart = 1;
@@ -1080,49 +1021,45 @@ static int meye_ioctl(struct video_device *dev, unsigned int cmd, void *arg) {
 
 		if (restart || meye.mchip_mode != MCHIP_HIC_MODE_CONT_OUT)
 			mchip_continuous_start();
-		meye.grab_buffer[vm.frame].state = MEYE_BUF_USING;
-		meye_pushq(&meye.grabq, vm.frame);
+		meye.grab_buffer[vm->frame].state = MEYE_BUF_USING;
+		meye_pushq(&meye.grabq, vm->frame);
 		up(&meye.lock);
 		break;
 	}
 
 	case VIDIOCGMBUF: {
-		struct video_mbuf vm;
+		struct video_mbuf *vm = arg;
 		int i;
 
-		memset(&vm, 0 , sizeof(vm));
-		vm.size = gbufsize * gbuffers;
-		vm.frames = gbuffers;
+		memset(vm, 0 , sizeof(*vm));
+		vm->size = gbufsize * gbuffers;
+		vm->frames = gbuffers;
 		for (i = 0; i < gbuffers; i++)
-			vm.offsets[i] = i * gbufsize;
-		if(copy_to_user((void *)arg, (void *)&vm, sizeof(vm)))
-			return -EFAULT;
+			vm->offsets[i] = i * gbufsize;
 		break;
 	}
 
 	case MEYEIOC_G_PARAMS: {
-		if (copy_to_user(arg, &meye.params, sizeof(meye.params)))
-			return -EFAULT;
+		struct meye_params *p = arg;
+		*p = meye.params;
 		break;
 	}
 
 	case MEYEIOC_S_PARAMS: {
-		struct meye_params jp;
-		if (copy_from_user(&jp, arg, sizeof(jp)))
-			return -EFAULT;
-		if (jp.subsample > 1)
+		struct meye_params *jp = arg;
+		if (jp->subsample > 1)
 			return -EINVAL;
-		if (jp.quality > 10)
+		if (jp->quality > 10)
 			return -EINVAL;
-		if (jp.sharpness > 63 || jp.agc > 63 || jp.picture > 63)
+		if (jp->sharpness > 63 || jp->agc > 63 || jp->picture > 63)
 			return -EINVAL;
-		if (jp.framerate > 31)
+		if (jp->framerate > 31)
 			return -EINVAL;
 		down(&meye.lock);
-		if (meye.params.subsample != jp.subsample ||
-		    meye.params.quality != jp.quality)
+		if (meye.params.subsample != jp->subsample ||
+		    meye.params.quality != jp->quality)
 			mchip_hic_stop();	/* need restart */
-		memcpy(&meye.params, &jp, sizeof(jp));
+		meye.params = *jp;
 		sonypi_camera_command(SONYPI_COMMAND_SETCAMERASHARPNESS,
 				      meye.params.sharpness);
 		sonypi_camera_command(SONYPI_COMMAND_SETCAMERAAGC,
@@ -1134,48 +1071,43 @@ static int meye_ioctl(struct video_device *dev, unsigned int cmd, void *arg) {
 	}
 
 	case MEYEIOC_QBUF_CAPT: {
-		int nb;
-
-		if (copy_from_user((void *) &nb, (void *) arg, sizeof(int)))
-			return -EFAULT;
+		int *nb = arg;
 
 		if (!meye.grab_fbuffer) 
 			return -EINVAL;
-		if (nb >= gbuffers)
+		if (*nb >= gbuffers)
 			return -EINVAL;
-		if (nb < 0) {
+		if (*nb < 0) {
 			/* stop capture */
 			mchip_hic_stop();
 			return 0;
 		}
-		if (meye.grab_buffer[nb].state != MEYE_BUF_UNUSED)
+		if (meye.grab_buffer[*nb].state != MEYE_BUF_UNUSED)
 			return -EBUSY;
 		down(&meye.lock);
 		if (meye.mchip_mode != MCHIP_HIC_MODE_CONT_COMP)
 			mchip_cont_compression_start();
-		meye.grab_buffer[nb].state = MEYE_BUF_USING;
-		meye_pushq(&meye.grabq, nb);
+		meye.grab_buffer[*nb].state = MEYE_BUF_USING;
+		meye_pushq(&meye.grabq, *nb);
 		up(&meye.lock);
 		break;
 	}
 
 	case MEYEIOC_SYNC: {
-		int i;
+		int *i = arg;
 		DECLARE_WAITQUEUE(wait, current);
 
-		if(copy_from_user((void *)&i,arg,sizeof(int)))
-			return -EFAULT;
-		if (i < 0 || i >= gbuffers)
+		if (*i < 0 || *i >= gbuffers)
 			return -EINVAL;
 
-		switch (meye.grab_buffer[i].state) {
+		switch (meye.grab_buffer[*i].state) {
 
 		case MEYE_BUF_UNUSED:
 			return -EINVAL;
 		case MEYE_BUF_USING:
 			add_wait_queue(&meye.grabq.proc_list, &wait);
 			current->state = TASK_INTERRUPTIBLE;
-			while (meye.grab_buffer[i].state == MEYE_BUF_USING) {
+			while (meye.grab_buffer[*i].state == MEYE_BUF_USING) {
 				schedule();
 				if(signal_pending(current)) {
 					remove_wait_queue(&meye.grabq.proc_list, &wait);
@@ -1187,11 +1119,9 @@ static int meye_ioctl(struct video_device *dev, unsigned int cmd, void *arg) {
 			current->state = TASK_RUNNING;
 			/* fall through */
 		case MEYE_BUF_DONE:
-			meye.grab_buffer[i].state = MEYE_BUF_UNUSED;
+			meye.grab_buffer[*i].state = MEYE_BUF_UNUSED;
 		}
-		i = meye.grab_buffer[i].size;
-		if (copy_to_user(arg, (void *)&i, sizeof(int)))
-			return -EFAULT;
+		*i = meye.grab_buffer[*i].size;
 		break;
 	}
 
@@ -1213,7 +1143,7 @@ static int meye_ioctl(struct video_device *dev, unsigned int cmd, void *arg) {
 	}
 
 	case MEYEIOC_STILLJCAPT: {
-		int len = -1;
+		int *len = arg;
 
 		if (!meye.grab_fbuffer) 
 			return -EINVAL;
@@ -1221,14 +1151,13 @@ static int meye_ioctl(struct video_device *dev, unsigned int cmd, void *arg) {
 			return -EBUSY;
 		down(&meye.lock);
 		meye.grab_buffer[0].state = MEYE_BUF_USING;
-		while (len == -1) {
+		*len = -1;
+		while (*len == -1) {
 			mchip_take_picture();
-			len = mchip_compress_frame(meye.grab_fbuffer, gbufsize);
+			*len = mchip_compress_frame(meye.grab_fbuffer, gbufsize);
 		}
 		meye.grab_buffer[0].state = MEYE_BUF_DONE;
 		up(&meye.lock);
-		if (copy_to_user(arg, (void *)&len, sizeof(int)))
-			return -EFAULT;
 		break;
 	}
 
@@ -1240,10 +1169,16 @@ static int meye_ioctl(struct video_device *dev, unsigned int cmd, void *arg) {
 	return 0;
 }
 
-static int meye_mmap(struct video_device *dev, const char *adr, 
-		     unsigned long size) {
-	unsigned long start=(unsigned long) adr;
-	unsigned long page,pos;
+static int meye_ioctl(struct inode *inode, struct file *file,
+		     unsigned int cmd, unsigned long arg)
+{
+	return video_usercopy(inode, file, cmd, arg, meye_do_ioctl);
+}
+
+static int meye_mmap(struct file *file, struct vm_area_struct *vma) {
+	unsigned long start = vma->vm_start;
+	unsigned long size  = vma->vm_end - vma->vm_start;
+	unsigned long page, pos;
 
 	down(&meye.lock);
 	if (size > gbuffers * gbufsize) {
@@ -1275,15 +1210,21 @@ static int meye_mmap(struct video_device *dev, const char *adr,
 	return 0;
 }
 
+static struct file_operations meye_fops = {
+	owner:		THIS_MODULE,
+	open:		meye_open,
+	release:	meye_release,
+	mmap:		meye_mmap,
+	ioctl:		meye_ioctl,
+	llseek:		no_llseek,
+};
+
 static struct video_device meye_template = {
 	owner:		THIS_MODULE,
 	name:		"meye",
 	type:		VID_TYPE_CAPTURE,
 	hardware:	VID_HARDWARE_MEYE,
-	open:		meye_open,
-	close:		meye_close,
-	ioctl:		meye_ioctl,
-	mmap:		meye_mmap,
+	fops:		&meye_fops,
 };
 
 static int __devinit meye_probe(struct pci_dev *pcidev, 
@@ -1301,7 +1242,6 @@ static int __devinit meye_probe(struct pci_dev *pcidev,
 	sonypi_camera_command(SONYPI_COMMAND_SETCAMERA, 1);
 
 	meye.mchip_dev = pcidev;
-	meye.mchip_irq = pcidev->irq;
 	memcpy(&meye.video_dev, &meye_template, sizeof(meye_template));
 
 	if (mchip_dma_alloc()) {
@@ -1315,6 +1255,7 @@ static int __devinit meye_probe(struct pci_dev *pcidev,
 		goto out3;
 	}
 
+	meye.mchip_irq = pcidev->irq;
 	mchip_adr = pci_resource_start(meye.mchip_dev,0);
 	if (!mchip_adr) {
 		printk(KERN_ERR "meye: mchip has no device base address\n");
@@ -1478,6 +1419,27 @@ static int __init meye_init_module(void) {
 static void __exit meye_cleanup_module(void) {
 	pci_unregister_driver(&meye_driver);
 }
+
+#ifndef MODULE
+static int __init meye_setup(char *str) {
+	int ints[4];
+
+	str = get_options(str, ARRAY_SIZE(ints), ints);
+	if (ints[0] <= 0) 
+		goto out;
+	gbuffers = ints[1];
+	if (ints[0] == 1)
+		goto out;
+	gbufsize = ints[2];
+	if (ints[0] == 2)
+		goto out;
+	video_nr = ints[3];
+out:
+	return 1;
+}
+
+__setup("meye=", meye_setup);
+#endif
 
 MODULE_AUTHOR("Stelian Pop <stelian.pop@fr.alcove.com>");
 MODULE_DESCRIPTION("video4linux driver for the MotionEye camera");

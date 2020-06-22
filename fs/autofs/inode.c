@@ -208,7 +208,7 @@ static void autofs_read_inode(struct inode *inode)
 	/* Initialize to the default case (stub directory) */
 
 	inode->i_op = &autofs_dir_inode_operations;
-	inode->i_fop = &autofs_dir_operations;
+	inode->i_fop = &dcache_dir_ops;
 	inode->i_mode = S_IFDIR | S_IRUGO | S_IXUGO;
 	inode->i_nlink = 2;
 	inode->i_mtime = inode->i_atime = inode->i_ctime = CURRENT_TIME;

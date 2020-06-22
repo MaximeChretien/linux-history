@@ -25,7 +25,7 @@
 #ifndef _BTTVP_H_
 #define _BTTVP_H_
 
-#define BTTV_VERSION_CODE KERNEL_VERSION(0,7,83)
+#define BTTV_VERSION_CODE KERNEL_VERSION(0,7,91)
 
 
 #include <linux/types.h>
@@ -136,7 +136,6 @@ struct bttv {
         unsigned int nr;
 	unsigned short id;
 	struct pci_dev *dev;
-	unsigned int irq;          /* IRQ used by Bt848 card */
 	unsigned char revision;
 	unsigned long bt848_adr;      /* bus address of IO mem returned by PCI BIOS */
 	unsigned char *bt848_mem;   /* pointer to mapped IO memory */

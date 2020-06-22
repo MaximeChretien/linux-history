@@ -15,11 +15,12 @@
  *
  *      (see also mptbase.c)
  *
- *  Copyright (c) 1999-2001 LSI Logic Corporation
+ *  Copyright (c) 1999-2002 LSI Logic Corporation
  *  Originally By: Steven J. Ralston
- *  (mailto:Steve.Ralston@lsil.com)
+ *  (mailto:netscape.net)
+ *  (mailto:Pam.Delaney@lsil.com)
  *
- *  $Id: mptscsih.h,v 1.7 2001/01/11 16:56:43 sralston Exp $
+ *  $Id: mptscsih.h,v 1.16 2002/02/27 18:44:30 sralston Exp $
  */
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
@@ -68,14 +69,47 @@
  *	SCSI Public stuff...
  */
 
-#ifdef __sparc__
-#define MPT_SCSI_CAN_QUEUE	63
-#define MPT_SCSI_CMD_PER_LUN	63
-	/* FIXME!  Still investigating qd=64 hang on sparc64... */
-#else
-#define MPT_SCSI_CAN_QUEUE	64
-#define MPT_SCSI_CMD_PER_LUN	64
-#endif
+/*
+ *	Try to keep these at 2^N-1
+ */
+#define MPT_FC_CAN_QUEUE	63
+#define MPT_SCSI_CAN_QUEUE	31
+#define MPT_SCSI_CMD_PER_LUN	 7
+
+#define MPT_SCSI_SG_DEPTH	40
+
+/* To disable domain validation, uncomment the
+ * following line. No effect for FC devices.
+ * For SCSI devices, driver will negotiate to
+ * NVRAM settings (if available) or to maximum adapter
+ * capabilities.
+ */
+/* #define MPTSCSIH_DISABLE_DOMAIN_VALIDATION */
+
+
+/* SCSI driver setup structure. Settings can be overridden
+ * by command line options.
+ */
+#define MPTSCSIH_DOMAIN_VALIDATION      1
+#define MPTSCSIH_MAX_WIDTH              1
+#define MPTSCSIH_MIN_SYNC               0x08
+
+struct mptscsih_driver_setup
+{
+        u8      dv;
+        u8      max_width;
+        u8      min_sync_fac;
+};
+
+
+#define MPTSCSIH_DRIVER_SETUP                   \
+{                                               \
+        MPTSCSIH_DOMAIN_VALIDATION,             \
+        MPTSCSIH_MAX_WIDTH,                     \
+        MPTSCSIH_MIN_SYNC,                      \
+}
+
+
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
@@ -143,6 +177,7 @@
 #define x_scsi_dev_reset	mptscsih_dev_reset
 #define x_scsi_host_reset	mptscsih_host_reset
 #define x_scsi_bios_param	mptscsih_bios_param
+#define x_scsi_select_queue_depths	mptscsih_select_queue_depths
 
 #define x_scsi_taskmgmt_bh	mptscsih_taskmgmt_bh
 #define x_scsi_old_abort	mptscsih_old_abort
@@ -155,7 +190,6 @@
 extern	int		 x_scsi_detect(Scsi_Host_Template *);
 extern	int		 x_scsi_release(struct Scsi_Host *host);
 extern	const char	*x_scsi_info(struct Scsi_Host *);
-/*extern	int		 x_scsi_command(Scsi_Cmnd *);*/
 extern	int		 x_scsi_queuecommand(Scsi_Cmnd *, void (*done)(Scsi_Cmnd *));
 #ifdef MPT_SCSI_USE_NEW_EH
 extern	int		 x_scsi_abort(Scsi_Cmnd *);
@@ -167,6 +201,7 @@ extern	int		 x_scsi_old_abort(Scsi_Cmnd *);
 extern	int		 x_scsi_old_reset(Scsi_Cmnd *, unsigned int);
 #endif
 extern	int		 x_scsi_bios_param(Disk *, kdev_t, int *);
+extern	void		 x_scsi_select_queue_depths(struct Scsi_Host *, Scsi_Device *);
 extern	void		 x_scsi_taskmgmt_bh(void *);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
@@ -194,7 +229,7 @@ extern	void		 x_scsi_taskmgmt_bh(void *);
 	bios_param:			x_scsi_bios_param,	\
 	can_queue:			MPT_SCSI_CAN_QUEUE,	\
 	this_id:			-1,			\
-	sg_tablesize:			25,			\
+	sg_tablesize:			MPT_SCSI_SG_DEPTH,	\
 	cmd_per_lun:			MPT_SCSI_CMD_PER_LUN,	\
 	unchecked_isa_dma:		0,			\
 	use_clustering:			ENABLE_CLUSTERING,	\
@@ -217,7 +252,7 @@ extern	void		 x_scsi_taskmgmt_bh(void *);
 	bios_param:			x_scsi_bios_param,	\
 	can_queue:			MPT_SCSI_CAN_QUEUE,	\
 	this_id:			-1,			\
-	sg_tablesize:			25,			\
+	sg_tablesize:			MPT_SCSI_SG_DEPTH,	\
 	cmd_per_lun:			MPT_SCSI_CMD_PER_LUN,	\
 	unchecked_isa_dma:		0,			\
 	use_clustering:			ENABLE_CLUSTERING	\

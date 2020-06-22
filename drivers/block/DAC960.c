@@ -7013,3 +7013,5 @@ static void DAC960_DestroyProcEntries(void)
 
 module_init(DAC960_Initialize);
 module_exit(DAC960_Finalize);
+
+MODULE_LICENSE("GPL");

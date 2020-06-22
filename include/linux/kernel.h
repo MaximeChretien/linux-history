@@ -11,6 +11,7 @@
 #include <linux/linkage.h>
 #include <linux/stddef.h>
 #include <linux/types.h>
+#include <linux/compiler.h>
 
 /* Optimization barrier */
 /* The "volatile" is due to gcc bugs */
@@ -161,6 +162,9 @@ extern const char *print_tainted(void);
 #define max_t(type,x,y) \
 	({ type __x = (x); type __y = (y); __x > __y ? __x: __y; })
 
+extern void __out_of_line_bug(int line) ATTRIB_NORET;
+#define out_of_line_bug() __out_of_line_bug(__LINE__)
+
 #endif /* __KERNEL__ */
 
 #define SI_LOAD_SHIFT	16
@@ -181,4 +185,6 @@ struct sysinfo {
 	char _f[20-2*sizeof(long)-sizeof(int)];	/* Padding: libc5 uses this.. */
 };
 
-#endif
+#define BUG_ON(condition) do { if (unlikely((condition)!=0)) BUG(); } while(0)
+
+#endif /* _LINUX_KERNEL_H */

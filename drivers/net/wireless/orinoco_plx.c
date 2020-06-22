@@ -1,4 +1,4 @@
-/* orinoco_plx.c 0.09b
+/* orinoco_plx.c 0.11b
  * 
  * Driver for Prism II devices which would usually be driven by orinoco_cs,
  * but are connected to the PCI bus by a PLX9052. 
@@ -129,25 +129,19 @@ not have time for a while..
 #include <linux/wireless.h>
 #include <linux/fcntl.h>
 
-#include <pcmcia/version.h>
-#include <pcmcia/cs_types.h>
-#include <pcmcia/cs.h>
-#include <pcmcia/cistpl.h>
 #include <pcmcia/cisreg.h>
-#include <pcmcia/ds.h>
-#include <pcmcia/bus_ops.h>
 
 #include "hermes.h"
 #include "orinoco.h"
 
-static char version[] __initdata = "orinoco_plx.c 0.09b (Daniel Barlow <dan@telent.net>)";
+static char version[] __initdata = "orinoco_plx.c 0.11b (Daniel Barlow <dan@telent.net>)";
 MODULE_AUTHOR("Daniel Barlow <dan@telent.net>");
 MODULE_DESCRIPTION("Driver for wireless LAN cards using the PLX9052 PCI bridge");
 #ifdef MODULE_LICENSE
 MODULE_LICENSE("Dual MPL/GPL");
 #endif
 
-static dev_info_t dev_info = "orinoco_plx";
+static char dev_info[] = "orinoco_plx";
 
 #define COR_OFFSET    (0x3e0 / 2)	/* COR attribute offset of Prism2 PC card */
 #define COR_VALUE     (COR_LEVEL_REQ | COR_FUNC_ENA) /* Enable PC card with interrupt in level trigger */
@@ -272,30 +266,25 @@ static int orinoco_plx_init_one(struct pci_dev *pdev,
 		goto fail;
 	}
 
-	priv = kmalloc(sizeof(*priv), GFP_KERNEL);
-	if (! priv) {
+	dev = alloc_orinocodev(0);
+	if (! dev) {
 		err = -ENOMEM;
 		goto fail;
 	}
-	memset(priv, 0, sizeof(*priv));
 
-	dev = &priv->ndev;
-
-	err = orinoco_setup(priv);
-	if (err)
-		goto fail;
+	priv = dev->priv;
 	dev->base_addr = pccard_ioaddr;
 	dev->open = orinoco_plx_open;
 	dev->stop = orinoco_plx_stop;
-	priv->card_reset_handler = NULL; /* We have no reset handler */
 	SET_MODULE_OWNER(dev);
 
 	printk(KERN_DEBUG
 	       "Detected Orinoco/Prism2 PLX device at %s irq:%d, io addr:0x%lx\n",
 	       pdev->slot_name, pdev->irq, pccard_ioaddr);
 
-	hermes_struct_init(&(priv->hw), dev->base_addr);
-	pci_set_drvdata(pdev, priv);
+	hermes_struct_init(&(priv->hw), dev->base_addr,
+			HERMES_IO, HERMES_16BIT_REGSPACING);
+	pci_set_drvdata(pdev, dev);
 
 	err = request_irq(pdev->irq, orinoco_plx_interrupt, SA_SHIRQ, dev->name, priv);
 	if (err) {
@@ -348,12 +337,12 @@ static int orinoco_plx_init_one(struct pci_dev *pdev,
 
 static void __devexit orinoco_plx_remove_one(struct pci_dev *pdev)
 {
-	struct orinoco_private *priv = pci_get_drvdata(pdev);
-	struct net_device *dev = &priv->ndev;
+	struct net_device *dev = pci_get_drvdata(pdev);
+	struct orinoco_private *priv = dev->priv;
 
 	TRACE_ENTER("orinoco_plx");
 
-	if (!priv)
+	if (! dev)
 		BUG();
 
 	orinoco_proc_dev_cleanup(priv);
@@ -363,7 +352,7 @@ static void __devexit orinoco_plx_remove_one(struct pci_dev *pdev)
 	if (dev->irq)
 		free_irq(dev->irq, priv);
 		
-	kfree(priv);
+	kfree(dev);
 
 	release_region(pci_resource_start(pdev, 3), pci_resource_len(pdev, 3));
 
@@ -374,10 +363,9 @@ static void __devexit orinoco_plx_remove_one(struct pci_dev *pdev)
 
 
 static struct pci_device_id orinoco_plx_pci_id_table[] __devinitdata = {
+	{0x111a, 0x1023, PCI_ANY_ID, PCI_ANY_ID,},	/* Siemens SpeedStream SS1023 */
 	{0x1385, 0x4100, PCI_ANY_ID, PCI_ANY_ID,},	/* Netgear MA301 */
-#if 0
-	{0x15e8, 0x0130, PCI_ANY_ID, PCI_ANY_ID,},	/* Correga */
-#endif
+	{0x15e8, 0x0130, PCI_ANY_ID, PCI_ANY_ID,},	/* Correga  - does this work? */
 	{0x1638, 0x1100, PCI_ANY_ID, PCI_ANY_ID,},	/* SMC EZConnect SMC2602W,
 							   Eumitcom PCI WL11000,
 							   Addtron AWA-100*/
@@ -385,6 +373,9 @@ static struct pci_device_id orinoco_plx_pci_id_table[] __devinitdata = {
 	{0x16ab, 0x1101, PCI_ANY_ID, PCI_ANY_ID,},	/* Reported working, but unknown */
 	{0x16ab, 0x1102, PCI_ANY_ID, PCI_ANY_ID,},	/* Linksys WDT11 */
 	{0x16ec, 0x3685, PCI_ANY_ID, PCI_ANY_ID,},	/* USR 2415 */
+	{0xec80, 0xec00, PCI_ANY_ID, PCI_ANY_ID,},	/* Belkin F5D6000 tested by
+							   Brendan W. McAdams <rit@jacked-in.org> */
+	{0x126c, 0x8030, PCI_ANY_ID, PCI_ANY_ID,},	/* Nortel emobility */
 	{0,},
 };
 

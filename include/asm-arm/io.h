@@ -37,9 +37,9 @@
 #define __arch_putb(v,a)		(*(volatile unsigned char *)(a) = (v))
 #define __arch_putl(v,a)		(*(volatile unsigned int  *)(a) = (v))
 
-extern void __raw_writesb(unsigned int addr, void *data, int bytelen);
-extern void __raw_writesw(unsigned int addr, void *data, int wordlen);
-extern void __raw_writesl(unsigned int addr, void *data, int longlen);
+extern void __raw_writesb(unsigned int addr, const void *data, int bytelen);
+extern void __raw_writesw(unsigned int addr, const void *data, int wordlen);
+extern void __raw_writesl(unsigned int addr, const void *data, int longlen);
 
 extern void __raw_readsb(unsigned int addr, void *data, int bytelen);
 extern void __raw_readsw(unsigned int addr, void *data, int wordlen);

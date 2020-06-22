@@ -238,13 +238,16 @@ static int cyberjack_write (struct usb_serial_port *port, int from_user, const u
 	if( (count+priv->wrfilled)>sizeof(priv->wrbuf) ) {
 		/* To much data  for buffer. Reset buffer. */
 		priv->wrfilled=0;
+		up (&port->sem);
 		return (0);
 	}
 
 	/* Copy data */
 	if (from_user) {
-		if (copy_from_user(priv->wrbuf+priv->wrfilled, buf, count))
+		if (copy_from_user(priv->wrbuf+priv->wrfilled, buf, count)) {
+			up (&port->sem);
 			return -EFAULT;
+		}
 	} else {
 		memcpy (priv->wrbuf+priv->wrfilled, buf, count);
 	}  

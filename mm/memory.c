@@ -44,6 +44,7 @@
 #include <linux/iobuf.h>
 #include <linux/highmem.h>
 #include <linux/pagemap.h>
+#include <linux/module.h>
 
 #include <asm/pgalloc.h>
 #include <asm/uaccess.h>
@@ -51,6 +52,7 @@
 
 unsigned long max_mapnr;
 unsigned long num_physpages;
+unsigned long num_mappedpages;
 void * high_memory;
 struct page *highmem_start_page;
 
@@ -144,6 +146,7 @@ int check_pgt_cache(void)
 void clear_page_tables(struct mm_struct *mm, unsigned long first, int nr)
 {
 	pgd_t * page_dir = mm->pgd;
+	unsigned long	last = first + nr;
 
 	spin_lock(&mm->page_table_lock);
 	page_dir += first;
@@ -153,6 +156,8 @@ void clear_page_tables(struct mm_struct *mm, unsigned long first, int nr)
 	} while (--nr);
 	spin_unlock(&mm->page_table_lock);
 
+	flush_tlb_pgtables(mm, first * PGDIR_SIZE, last * PGDIR_SIZE);
+	
 	/* keep the page table cache within bounds */
 	check_pgt_cache();
 }
@@ -523,6 +528,8 @@ bad_page:
 	i = -EFAULT;
 	goto out;
 }
+
+EXPORT_SYMBOL(get_user_pages);
 
 /*
  * Force in an entire range of pages from the current process's user VA,
@@ -1466,4 +1473,25 @@ int make_pages_present(unsigned long addr, unsigned long end)
 	ret = get_user_pages(current, current->mm, addr,
 			len, write, 0, NULL, NULL);
 	return ret == len ? 0 : -1;
+}
+
+struct page * vmalloc_to_page(void * vmalloc_addr)
+{
+	unsigned long addr = (unsigned long) vmalloc_addr;
+	struct page *page = NULL;
+	pmd_t *pmd;
+	pte_t *pte;
+	pgd_t *pgd;
+	
+	pgd = pgd_offset_k(addr);
+	if (!pgd_none(*pgd)) {
+		pmd = pmd_offset(pgd, addr);
+		if (!pmd_none(*pmd)) {
+			pte = pte_offset(pmd, addr);
+			if (pte_present(*pte)) {
+				page = pte_page(*pte);
+			}
+		}
+	}
+	return page;
 }

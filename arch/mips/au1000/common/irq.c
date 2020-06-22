@@ -47,7 +47,13 @@
 #include <asm/system.h>
 #include <asm/au1000.h>
 
-#define ALLINTS (IE_IRQ0 | IE_IRQ1 | IE_IRQ2 | IE_IRQ3 | IE_IRQ4 | IE_IRQ5)
+#if defined(CONFIG_MIPS_PB1000)
+#include <asm/pb1000.h>
+#elif defined(CONFIG_MIPS_PB1500)
+#include <asm/pb1500.h>
+#else
+#error unsupported alchemy board
+#endif
 
 #undef DEBUG_IRQ
 #ifdef DEBUG_IRQ
@@ -68,11 +74,8 @@ extern void breakpoint(void);
 #endif
 
 extern asmlinkage void au1000_IRQ(void);
-
 extern void set_debug_traps(void);
-extern irq_cpustat_t irq_stat [];
-extern irq_desc_t irq_desc[NR_IRQS];
-
+extern irq_cpustat_t irq_stat [NR_CPUS];
 unsigned int local_bh_count[NR_CPUS];
 unsigned int local_irq_count[NR_CPUS];
 
@@ -82,147 +85,106 @@ static void end_irq(unsigned int irq_nr);
 static inline void mask_and_ack_level_irq(unsigned int irq_nr);
 static inline void mask_and_ack_rise_edge_irq(unsigned int irq_nr);
 static inline void mask_and_ack_fall_edge_irq(unsigned int irq_nr);
-static inline void local_enable_irq(unsigned int irq_nr);
-static inline void local_disable_irq(unsigned int irq_nr);
+inline void local_enable_irq(unsigned int irq_nr);
+inline void local_disable_irq(unsigned int irq_nr);
 
-unsigned long spurious_interrupts;
 extern unsigned int do_IRQ(int irq, struct pt_regs *regs);
 extern void __init init_generic_irq(void);
 
-static inline void sync(void)
-{
-	__asm volatile ("sync");
-}
-
-
-/* Function for careful CP0 interrupt mask access */
-static inline void modify_cp0_intmask(unsigned clr_mask, unsigned set_mask)
-{
-	unsigned long status = read_32bit_cp0_register(CP0_STATUS);
-	status &= ~((clr_mask & 0xFF) << 8);
-	status |=   (set_mask & 0xFF) << 8;
-	write_32bit_cp0_register(CP0_STATUS, status);
-}
-
-
-static inline void mask_cpu_irq_input(unsigned int irq_nr)
-{
-	modify_cp0_intmask(irq_nr, 0);
-}
-
-
-static inline void unmask_cpu_irq_input(unsigned int irq_nr)
-{
-	modify_cp0_intmask(0, irq_nr);
-}
-
-
-static void disable_cpu_irq_input(unsigned int irq_nr)
-{
-	unsigned long flags;
-
-	save_and_cli(flags);
-	mask_cpu_irq_input(irq_nr);
-	restore_flags(flags);
-}
-
-
-static void enable_cpu_irq_input(unsigned int irq_nr)
-{
-	unsigned long flags;
-
-	save_and_cli(flags);
-	unmask_cpu_irq_input(irq_nr);
-	restore_flags(flags);
-}
+#ifdef CONFIG_PM
+extern void counter0_irq(int irq, void *dev_id, struct pt_regs *regs);
+#endif
 
 
 static void setup_local_irq(unsigned int irq_nr, int type, int int_req)
 {
+	if (irq_nr > AU1000_MAX_INTR) return;
 	/* Config2[n], Config1[n], Config0[n] */
 	if (irq_nr > AU1000_LAST_INTC0_INT) {
 		switch (type) {
 			case INTC_INT_RISE_EDGE: /* 0:0:1 */
-				outl(1<<irq_nr,INTC1_CONFIG2_CLEAR);
-				outl(1<<irq_nr, INTC1_CONFIG1_CLEAR);
-				outl(1<<irq_nr, INTC1_CONFIG0_SET);
+				outl(1<<(irq_nr-32), IC1_CFG2CLR);
+				outl(1<<(irq_nr-32), IC1_CFG1CLR);
+				outl(1<<(irq_nr-32), IC1_CFG0SET);
 				break;
 			case INTC_INT_FALL_EDGE: /* 0:1:0 */
-				outl(1<<irq_nr, INTC1_CONFIG2_CLEAR);
-				outl(1<<irq_nr, INTC1_CONFIG1_SET);
-				outl(1<<irq_nr, INTC1_CONFIG0_CLEAR);
+				outl(1<<(irq_nr-32), IC1_CFG2CLR);
+				outl(1<<(irq_nr-32), IC1_CFG1SET);
+				outl(1<<(irq_nr-32), IC1_CFG0CLR);
 				break;
 			case INTC_INT_HIGH_LEVEL: /* 1:0:1 */
-				outl(1<<irq_nr, INTC1_CONFIG2_SET);
-				outl(1<<irq_nr, INTC1_CONFIG1_CLEAR);
-				outl(1<<irq_nr, INTC1_CONFIG0_SET);
+				outl(1<<(irq_nr-32), IC1_CFG2SET);
+				outl(1<<(irq_nr-32), IC1_CFG1CLR);
+				outl(1<<(irq_nr-32), IC1_CFG0SET);
 				break;
 			case INTC_INT_LOW_LEVEL: /* 1:1:0 */
-				outl(1<<irq_nr, INTC1_CONFIG2_SET);
-				outl(1<<irq_nr, INTC1_CONFIG1_SET);
-				outl(1<<irq_nr, INTC1_CONFIG0_CLEAR);
+				outl(1<<(irq_nr-32), IC1_CFG2SET);
+				outl(1<<(irq_nr-32), IC1_CFG1SET);
+				outl(1<<(irq_nr-32), IC1_CFG0CLR);
 				break;
 			case INTC_INT_DISABLED: /* 0:0:0 */
-				outl(1<<irq_nr, INTC1_CONFIG0_CLEAR);
-				outl(1<<irq_nr, INTC1_CONFIG1_CLEAR);
-				outl(1<<irq_nr, INTC1_CONFIG2_CLEAR);
+				outl(1<<(irq_nr-32), IC1_CFG0CLR);
+				outl(1<<(irq_nr-32), IC1_CFG1CLR);
+				outl(1<<(irq_nr-32), IC1_CFG2CLR);
 				break;
 			default: /* disable the interrupt */
 				printk("unexpected int type %d (irq %d)\n", type, irq_nr);
-				outl(1<<irq_nr, INTC1_CONFIG0_CLEAR);
-				outl(1<<irq_nr, INTC1_CONFIG1_CLEAR);
-				outl(1<<irq_nr, INTC1_CONFIG2_CLEAR);
+				outl(1<<(irq_nr-32), IC1_CFG0CLR);
+				outl(1<<(irq_nr-32), IC1_CFG1CLR);
+				outl(1<<(irq_nr-32), IC1_CFG2CLR);
 				return;
 		}
 		if (int_req) /* assign to interrupt request 1 */
-			outl(1<<irq_nr, INTC1_ASSIGN_REQ_CLEAR);
+			outl(1<<(irq_nr-32), IC1_ASSIGNCLR);
 		else	     /* assign to interrupt request 0 */
-			outl(1<<irq_nr, INTC1_ASSIGN_REQ_SET);
-		outl(1<<irq_nr, INTC1_SOURCE_SET);
-		outl(1<<irq_nr, INTC1_MASK_CLEAR);
+			outl(1<<(irq_nr-32), IC1_ASSIGNSET);
+		outl(1<<(irq_nr-32), IC1_SRCSET);
+		outl(1<<(irq_nr-32), IC1_MASKCLR);
+		outl(1<<(irq_nr-32), IC1_WAKECLR);
 	}
 	else {
 		switch (type) {
 			case INTC_INT_RISE_EDGE: /* 0:0:1 */
-				outl(1<<irq_nr,INTC0_CONFIG2_CLEAR);
-				outl(1<<irq_nr, INTC0_CONFIG1_CLEAR);
-				outl(1<<irq_nr, INTC0_CONFIG0_SET);
+				outl(1<<irq_nr, IC0_CFG2CLR);
+				outl(1<<irq_nr, IC0_CFG1CLR);
+				outl(1<<irq_nr, IC0_CFG0SET);
 				break;
 			case INTC_INT_FALL_EDGE: /* 0:1:0 */
-				outl(1<<irq_nr, INTC0_CONFIG2_CLEAR);
-				outl(1<<irq_nr, INTC0_CONFIG1_SET);
-				outl(1<<irq_nr, INTC0_CONFIG0_CLEAR);
+				outl(1<<irq_nr, IC0_CFG2CLR);
+				outl(1<<irq_nr, IC0_CFG1SET);
+				outl(1<<irq_nr, IC0_CFG0CLR);
 				break;
 			case INTC_INT_HIGH_LEVEL: /* 1:0:1 */
-				outl(1<<irq_nr, INTC0_CONFIG2_SET);
-				outl(1<<irq_nr, INTC0_CONFIG1_CLEAR);
-				outl(1<<irq_nr, INTC0_CONFIG0_SET);
+				outl(1<<irq_nr, IC0_CFG2SET);
+				outl(1<<irq_nr, IC0_CFG1CLR);
+				outl(1<<irq_nr, IC0_CFG0SET);
 				break;
 			case INTC_INT_LOW_LEVEL: /* 1:1:0 */
-				outl(1<<irq_nr, INTC0_CONFIG2_SET);
-				outl(1<<irq_nr, INTC0_CONFIG1_SET);
-				outl(1<<irq_nr, INTC0_CONFIG0_CLEAR);
+				outl(1<<irq_nr, IC0_CFG2SET);
+				outl(1<<irq_nr, IC0_CFG1SET);
+				outl(1<<irq_nr, IC0_CFG0CLR);
 				break;
 			case INTC_INT_DISABLED: /* 0:0:0 */
-				outl(1<<irq_nr, INTC0_CONFIG0_CLEAR);
-				outl(1<<irq_nr, INTC0_CONFIG1_CLEAR);
-				outl(1<<irq_nr, INTC0_CONFIG2_CLEAR);
+				outl(1<<irq_nr, IC0_CFG0CLR);
+				outl(1<<irq_nr, IC0_CFG1CLR);
+				outl(1<<irq_nr, IC0_CFG2CLR);
 				break;
 			default: /* disable the interrupt */
 				printk("unexpected int type %d (irq %d)\n", type, irq_nr);
-				outl(1<<irq_nr, INTC0_CONFIG0_CLEAR);
-				outl(1<<irq_nr, INTC0_CONFIG1_CLEAR);
-				outl(1<<irq_nr, INTC0_CONFIG2_CLEAR);
+				outl(1<<irq_nr, IC0_CFG0CLR);
+				outl(1<<irq_nr, IC0_CFG1CLR);
+				outl(1<<irq_nr, IC0_CFG2CLR);
 				return;
 		}
 		if (int_req) /* assign to interrupt request 1 */
-			outl(1<<irq_nr, INTC0_ASSIGN_REQ_CLEAR);
+			outl(1<<irq_nr, IC0_ASSIGNCLR);
 		else	     /* assign to interrupt request 0 */
-			outl(1<<irq_nr, INTC0_ASSIGN_REQ_SET);
-		outl(1<<irq_nr, INTC0_SOURCE_SET);
-		outl(1<<irq_nr, INTC0_MASK_CLEAR);
+			outl(1<<irq_nr, IC0_ASSIGNSET);
+		outl(1<<irq_nr, IC0_SRCSET);
+		outl(1<<irq_nr, IC0_MASKCLR);
+		outl(1<<irq_nr, IC0_WAKECLR);
 	}
-	sync();
+	au_sync();
 }
 
 
@@ -240,71 +202,136 @@ static void shutdown_irq(unsigned int irq_nr)
 }
 
 
-static inline void local_enable_irq(unsigned int irq_nr)
+inline void local_enable_irq(unsigned int irq_nr)
 {
 	if (irq_nr > AU1000_LAST_INTC0_INT) {
-		outl(1<<irq_nr, INTC1_MASK_SET);
+		outl(1<<(irq_nr-32), IC1_MASKSET);
+		outl(1<<(irq_nr-32), IC1_WAKESET);
 	}
 	else {
-		outl(1<<irq_nr, INTC0_MASK_SET);
+		outl(1<<irq_nr, IC0_MASKSET);
+		outl(1<<irq_nr, IC0_WAKESET);
 	}
-	sync();
+	au_sync();
 }
 
 
-static inline void local_disable_irq(unsigned int irq_nr)
+inline void local_disable_irq(unsigned int irq_nr)
 {
 	if (irq_nr > AU1000_LAST_INTC0_INT) {
-		outl(1<<irq_nr, INTC1_MASK_CLEAR);
+		outl(1<<(irq_nr-32), IC1_MASKCLR);
+		outl(1<<(irq_nr-32), IC1_WAKECLR);
 	}
 	else {
-		outl(1<<irq_nr, INTC0_MASK_CLEAR);
+		outl(1<<irq_nr, IC0_MASKCLR);
+		outl(1<<irq_nr, IC0_WAKECLR);
 	}
-	sync();
+	au_sync();
 }
 
 
 static inline void mask_and_ack_rise_edge_irq(unsigned int irq_nr)
 {
 	if (irq_nr > AU1000_LAST_INTC0_INT) {
-		outl(1<<irq_nr, INTC1_R_EDGE_DETECT_CLEAR);
-		outl(1<<irq_nr, INTC1_MASK_CLEAR);
+		outl(1<<(irq_nr-32), IC1_RISINGCLR);
+		outl(1<<(irq_nr-32), IC1_MASKCLR);
 	}
 	else {
-		outl(1<<irq_nr, INTC0_R_EDGE_DETECT_CLEAR);
-		outl(1<<irq_nr, INTC0_MASK_CLEAR);
+		outl(1<<irq_nr, IC0_RISINGCLR);
+		outl(1<<irq_nr, IC0_MASKCLR);
 	}
-	sync();
+	au_sync();
 }
 
 
 static inline void mask_and_ack_fall_edge_irq(unsigned int irq_nr)
 {
 	if (irq_nr > AU1000_LAST_INTC0_INT) {
-		outl(1<<irq_nr, INTC1_F_EDGE_DETECT_CLEAR);
-		outl(1<<irq_nr, INTC1_MASK_CLEAR);
+		outl(1<<(irq_nr-32), IC1_FALLINGCLR);
+		outl(1<<(irq_nr-32), IC1_MASKCLR);
 	}
 	else {
-		outl(1<<irq_nr, INTC0_F_EDGE_DETECT_CLEAR);
-		outl(1<<irq_nr, INTC0_MASK_CLEAR);
+		outl(1<<irq_nr, IC0_FALLINGCLR);
+		outl(1<<irq_nr, IC0_MASKCLR);
 	}
+	au_sync();
 }
 
 
 static inline void mask_and_ack_level_irq(unsigned int irq_nr)
 {
+
 	local_disable_irq(irq_nr);
-	sync();
+	au_sync();
+#if defined(CONFIG_MIPS_PB1000)
+	if (irq_nr == AU1000_GPIO_15) {
+		writew(0x8000, PB1000_MDR); /* ack int */
+		au_sync();
+	}
+#endif
 	return;
 }
 
 
 static void end_irq(unsigned int irq_nr)
 {
-	if (!(irq_desc[irq_nr].status & (IRQ_DISABLED|IRQ_INPROGRESS)))
+	if (!(irq_desc[irq_nr].status & (IRQ_DISABLED|IRQ_INPROGRESS))) {
 		local_enable_irq(irq_nr);
+	}
+	else {
+		printk("warning: end_irq %d did not enable (%x)\n", 
+				irq_nr, irq_desc[irq_nr].status);
+	}
+#if defined(CONFIG_MIPS_PB1000)
+	if (irq_nr == AU1000_GPIO_15) {
+		writew(0x4000, PB1000_MDR); /* enable int */
+		au_sync();
+	}
+#endif
+}
+
+unsigned long save_local_and_disable(int controller)
+{
+	int i;
+	unsigned long flags, mask;
+	save_and_cli(flags);
+
+	if (controller) {
+		mask = readl(IC1_MASKSET);
+		for (i=32; i<64; i++) {
+			local_disable_irq(i);
+		}
+	}
+	else {
+		mask = readl(IC0_MASKSET);
+		for (i=0; i<32; i++) {
+			local_disable_irq(i);
+		}
+	}
+	restore_flags(flags);
+	return mask;
+}
+
+void restore_local_and_enable(int controller, unsigned long mask)
+{
+	int i;
+	unsigned long flags, new_mask;
+	save_and_cli(flags);
+
+	for (i=0; i<32; i++) {
+		if (mask & (1<<i)) {
+			if (controller)
+				local_enable_irq(i+32);
+			else
+				local_enable_irq(i);
+		}
+	}
+	if (controller)
+		new_mask = readl(IC1_MASKSET);
 	else
-		printk("warning: end_irq %d did not enable\n", irq_nr);
+		new_mask = readl(IC0_MASKSET);
+
+	restore_flags(flags);
 }
 
 
@@ -343,37 +370,104 @@ static struct hw_interrupt_type level_irq_type = {
 	NULL
 };
 
-
-void enable_cpu_timer(void)
+#ifdef CONFIG_PM
+void startup_match20_interrupt(void)
 {
-	enable_cpu_irq_input(1<<MIPS_TIMER_IP); /* timer interrupt */
+	local_enable_irq(AU1000_TOY_MATCH2_INT);
 }
+#endif
 
 
 void __init init_IRQ(void)
 {
 	int i;
 	unsigned long cp0_status;
+	extern char except_vec0_au1000;
 
 	cp0_status = read_32bit_cp0_register(CP0_STATUS);
 	memset(irq_desc, 0, sizeof(irq_desc));
 	set_except_vector(0, au1000_IRQ);
 
 	init_generic_irq();
+
+	/* override the generic vec0 handler */
+	memcpy((void *)KSEG0, &except_vec0_au1000, 0x80);
+	flush_icache_range(KSEG0, KSEG0 + 0x200);
 	
-	/* 
-	 * Setup high priority interrupts on int_request0; low priority on
-	 * int_request1
-	 */
-	for (i = 0; i <= NR_IRQS; i++) {
+	for (i = 0; i <= AU1000_MAX_INTR; i++) {
 		switch (i) {
+			case AU1000_UART0_INT:
+			case AU1000_UART3_INT:
+#ifdef CONFIG_MIPS_PB1000
+			case AU1000_UART1_INT:
+			case AU1000_UART2_INT:
+
+			case AU1000_SSI0_INT:
+			case AU1000_SSI1_INT:
+#endif
+
+		        case AU1000_DMA_INT_BASE:
+		        case AU1000_DMA_INT_BASE+1:
+		        case AU1000_DMA_INT_BASE+2:
+		        case AU1000_DMA_INT_BASE+3:
+		        case AU1000_DMA_INT_BASE+4:
+		        case AU1000_DMA_INT_BASE+5:
+		        case AU1000_DMA_INT_BASE+6:
+		        case AU1000_DMA_INT_BASE+7:
+
+			case AU1000_IRDA_TX_INT:
+			case AU1000_IRDA_RX_INT:
+
 			case AU1000_MAC0_DMA_INT:
 			case AU1000_MAC1_DMA_INT:
+
+			case AU1500_GPIO_204:
 				setup_local_irq(i, INTC_INT_HIGH_LEVEL, 0);
 				irq_desc[i].handler = &level_irq_type;
 				break;
+
+#ifdef CONFIG_MIPS_PB1000
+			case AU1000_GPIO_15:
+#endif
+		        case AU1000_USB_HOST_INT:
+#ifdef CONFIG_MIPS_PB1500
+			case AU1000_PCI_INTA:
+			case AU1000_PCI_INTB:
+			case AU1000_PCI_INTC:
+			case AU1000_PCI_INTD:
+			case AU1500_GPIO_201:
+			case AU1500_GPIO_202:
+			case AU1500_GPIO_203:
+			case AU1500_GPIO_205:
+			case AU1500_GPIO_207:
+#endif
+				setup_local_irq(i, INTC_INT_LOW_LEVEL, 0);
+				irq_desc[i].handler = &level_irq_type;
+                                break;
+			case AU1000_ACSYNC_INT:
+			case AU1000_AC97C_INT:
+		        case AU1000_USB_DEV_REQ_INT:
+		        case AU1000_USB_DEV_SUS_INT:
+			case AU1000_TOY_INT:
+			case AU1000_TOY_MATCH0_INT:
+			case AU1000_TOY_MATCH1_INT:
+			case AU1000_RTC_INT:
+			case AU1000_RTC_MATCH0_INT:
+			case AU1000_RTC_MATCH1_INT:
+			case AU1000_RTC_MATCH2_INT:
+			        setup_local_irq(i, INTC_INT_RISE_EDGE, 0);
+                                irq_desc[i].handler = &rise_edge_irq_type;
+                                break;
+
+				 // Careful if you change match 2 request!
+				 // The interrupt handler is called directly
+				 // from the low level dispatch code.
+			case AU1000_TOY_MATCH2_INT:
+				 setup_local_irq(i, INTC_INT_RISE_EDGE, 1);
+				 irq_desc[i].handler = &rise_edge_irq_type;
+				  break;
 			default: /* active high, level interrupt */
-				setup_local_irq(i, INTC_INT_HIGH_LEVEL, 1);
+				setup_local_irq(i, INTC_INT_HIGH_LEVEL, 0);
 				irq_desc[i].handler = &level_irq_type;
 				break;
 		}
@@ -389,27 +483,28 @@ void __init init_IRQ(void)
 }
 
 
-void mips_spurious_interrupt(struct pt_regs *regs)
-{
-	spurious_interrupts++;
-}
-
+/*
+ * Interrupts are nested. Even if an interrupt handler is registered
+ * as "fast", we might get another interrupt before we return from
+ * intcX_reqX_irqdispatch().
+ */
 
 void intc0_req0_irqdispatch(struct pt_regs *regs)
 {
 	int irq = 0, i;
-	unsigned long int_request;
+	static unsigned long intc0_req0 = 0;
 
-	int_request = inl(INTC0_REQ0_INT);
+	intc0_req0 |= inl(IC0_REQ0INT);
 
-	if (!int_request) return;
+	if (!intc0_req0) return;
 
 	for (i=0; i<32; i++) {
-		if ((int_request & 0x1)) {
+		if ((intc0_req0 & (1<<i))) {
+			intc0_req0 &= ~(1<<i);
 			do_IRQ(irq, regs);
+			break;
 		}
 		irq++;
-		int_request >>= 1;
 	}
 }
 
@@ -417,55 +512,86 @@ void intc0_req0_irqdispatch(struct pt_regs *regs)
 void intc0_req1_irqdispatch(struct pt_regs *regs)
 {
 	int irq = 0, i;
-	unsigned long int_request;
+	static unsigned long intc0_req1 = 0;
 
-	int_request = inl(INTC0_REQ1_INT);
+	intc0_req1 = inl(IC0_REQ1INT);
 
-	if (!int_request) return;
+	if (!intc0_req1) return;
 
 	for (i=0; i<32; i++) {
-		if ((int_request & 0x1)) {
-			do_IRQ(irq, regs);
+		if ((intc0_req1 & (1<<i))) {
+			intc0_req1 &= ~(1<<i);
+#ifdef CONFIG_PM
+			if (i == AU1000_TOY_MATCH2_INT) {
+				mask_and_ack_rise_edge_irq(irq);
+				counter0_irq(irq, NULL, regs);
+				local_enable_irq(irq);
+			}
+			else 
+#endif
+			{
+				do_IRQ(irq, regs);
+			}
+			break;
 		}
 		irq++;
-		int_request >>= 1;
 	}
 }
 
 
+/*
+ * Interrupt Controller 1:
+ * interrupts 32 - 63
+ */
 void intc1_req0_irqdispatch(struct pt_regs *regs)
 {
 	int irq = 0, i;
-	unsigned long int_request;
+	static unsigned long intc1_req0 = 0;
+	volatile unsigned short levels, mdr;
+	unsigned char ide_status;
 
-	int_request = inl(INTC1_REQ0_INT);
+	intc1_req0 |= inl(IC1_REQ0INT);
 
-	if (!int_request) return;
+	if (!intc1_req0) return;
 
+#ifdef CONFIG_MIPS_PB1000
+	writew(1, CPLD_AUX0); /* debug led 0 */
+#endif
 	for (i=0; i<32; i++) {
-		if ((int_request & 0x1)) {
-			do_IRQ(irq, regs);
+		if ((intc1_req0 & (1<<i))) {
+			intc1_req0 &= ~(1<<i);
+#ifdef CONFIG_MIPS_PB1000
+			writew(2, CPLD_AUX0); /* turn on debug led 1  */
+			do_IRQ(irq+32, regs);
+			writew(0, CPLD_AUX0); /* turn off debug led 1 */
+#else
+			do_IRQ(irq+32, regs);
+#endif
+			break;
 		}
 		irq++;
-		int_request >>= 1;
 	}
+#ifdef CONFIG_MIPS_PB1000
+	writew(0, CPLD_AUX0);
+#endif
 }
 
 
 void intc1_req1_irqdispatch(struct pt_regs *regs)
 {
 	int irq = 0, i;
-	unsigned long int_request;
+	static unsigned long intc1_req1 = 0;
 
-	int_request = inl(INTC1_REQ1_INT);
+	intc1_req1 |= inl(IC1_REQ1INT);
 
-	if (!int_request) return;
+	if (!intc1_req1) return;
 
 	for (i=0; i<32; i++) {
-		if ((int_request & 0x1)) {
-			do_IRQ(irq, regs);
+		if ((intc1_req1 & (1<<i))) {
+			intc1_req1 &= ~(1<<i);
+			do_IRQ(irq+32, regs);
+			break;
 		}
 		irq++;
-		int_request >>= 1;
 	}
 }

@@ -1,4 +1,4 @@
-/* $Id: pci_common.c,v 1.27.2.2 2002/02/01 00:56:44 davem Exp $
+/* $Id: pci_common.c,v 1.27.2.5 2002/03/10 05:21:26 davem Exp $
  * pci_common.c: PCI controller common support.
  *
  * Copyright (C) 1999 David S. Miller (davem@redhat.com)
@@ -571,33 +571,55 @@ static int __init pci_intmap_match(struct pci_dev *pdev, unsigned int *interrupt
 	struct pci_pbm_info *pbm = dev_pcp->pbm;
 	struct linux_prom_pci_registers *pregs = dev_pcp->prom_regs;
 	unsigned int hi, mid, lo, irq;
-	int i, num_intmap;
-
-	if (pbm->num_pbm_intmap == 0)
-		return 0;
+	int i, num_intmap, map_slot;
 
 	intmap = &pbm->pbm_intmap[0];
 	intmask = &pbm->pbm_intmask;
 	num_intmap = pbm->num_pbm_intmap;
+	map_slot = 0;
 
 	/* If we are underneath a PCI bridge, use PROM register
 	 * property of the parent bridge which is closest to
 	 * the PBM.
+	 *
+	 * However if that parent bridge has interrupt map/mask
+	 * properties of it's own we use the PROM register property
+	 * of the next child device on the path to PDEV.
+	 *
+	 * In detail the two cases are (note that the 'X' below is the
+	 * 'next child on the path to PDEV' mentioned above):
+	 *
+	 * 1) PBM --> PCI bus lacking int{map,mask} --> X ... PDEV
+	 *
+	 *    Here we use regs of 'PCI bus' device.
+	 *
+	 * 2) PBM --> PCI bus with int{map,mask} --> X ... PDEV
+	 *
+	 *    Here we use regs of 'X'.  Note that X can be PDEV.
 	 */
 	if (pdev->bus->number != pbm->pci_first_busno) {
-		struct pcidev_cookie *bus_pcp;
-		struct pci_dev *pwalk;
-		int offset, plen;
+		struct pcidev_cookie *bus_pcp, *regs_pcp;
+		struct pci_dev *bus_dev, *regs_dev;
+		int plen;
 
-		pwalk = pdev->bus->self;
-		while (pwalk->bus &&
-		       pwalk->bus->number != pbm->pci_first_busno)
-			pwalk = pwalk->bus->self;
+		bus_dev = pdev->bus->self;
+		regs_dev = pdev;
 
-		bus_pcp = pwalk->sysdata;
+		while (bus_dev->bus &&
+		       bus_dev->bus->number != pbm->pci_first_busno) {
+			regs_dev = bus_dev;
+			bus_dev = bus_dev->bus->self;
+		}
+
+		regs_pcp = regs_dev->sysdata;
+		pregs = regs_pcp->prom_regs;
+
+		bus_pcp = bus_dev->sysdata;
 
 		/* But if the PCI bridge has it's own interrupt map
-		 * and mask properties, use that and the device regs.
+		 * and mask properties, use that and the regs of the
+		 * PCI entity at the next level down on the path to the
+		 * device.
 		 */
 		plen = prom_getproperty(bus_pcp->prom_node, "interrupt-map",
 					(char *) &bridge_local_intmap[0],
@@ -605,38 +627,31 @@ static int __init pci_intmap_match(struct pci_dev *pdev, unsigned int *interrupt
 		if (plen != -1) {
 			intmap = &bridge_local_intmap[0];
 			num_intmap = plen / sizeof(struct linux_prom_pci_intmap);
-			plen = prom_getproperty(bus_pcp->prom_node, "interrupt-map-mask",
+			plen = prom_getproperty(bus_pcp->prom_node,
+						"interrupt-map-mask",
 						(char *) &bridge_local_intmask,
 						sizeof(bridge_local_intmask));
 			if (plen == -1) {
-				prom_printf("pbm_intmap_match: Bridge has intmap but "
-					    "no intmask.\n");
-				prom_halt();
+				printk("pci_intmap_match: Warning! Bridge has intmap "
+				       "but no intmask.\n");
+				printk("pci_intmap_match: Trying to recover.\n");
+				return 0;
 			}
-			goto check_intmap;
-		}
 
-		pregs = bus_pcp->prom_regs;
-
-		offset = prom_getint(dev_pcp->prom_node,
-				     "fcode-rom-offset");
-
-		/* Did PROM know better and assign an interrupt other
-		 * than #INTA to the device? - We test here for presence of
-		 * FCODE on the card, in this case we assume PROM has set
-		 * correct 'interrupts' property, unless it is quadhme.
-		 */
-		if (offset == -1 ||
-		    !strcmp(dev_pcp->prom_name, "SUNW,qfe") ||
-		    !strcmp(dev_pcp->prom_name, "qfe")) {
-			/*
-			 * No, use low slot number bits of child as IRQ line.
-			 */
-			*interrupt = ((*interrupt - 1 + PCI_SLOT(pdev->devfn)) & 3) + 1;
+			if (pdev->bus->self != bus_dev)
+				map_slot = 1;
+		} else {
+			pregs = bus_pcp->prom_regs;
+			map_slot = 1;
 		}
 	}
 
-check_intmap:
+	if (map_slot) {
+		*interrupt = ((*interrupt
+			       - 1
+			       + PCI_SLOT(pdev->devfn)) & 0x3) + 1;
+	}
+
 	hi   = pregs->phys_hi & intmask->phys_hi;
 	mid  = pregs->phys_mid & intmask->phys_mid;
 	lo   = pregs->phys_lo & intmask->phys_lo;
@@ -648,16 +663,35 @@ check_intmap:
 		    intmap[i].phys_lo  == lo	&&
 		    intmap[i].interrupt == irq) {
 			*interrupt = intmap[i].cinterrupt;
+			printk("PCI-IRQ: Routing bus[%2x] slot[%2x] map[%d] to INO[%02x]\n",
+			       pdev->bus->number, PCI_SLOT(pdev->devfn),
+			       map_slot, *interrupt);
 			return 1;
 		}
 	}
 
-	prom_printf("pbm_intmap_match: bus %02x, devfn %02x: ",
-		    pdev->bus->number, pdev->devfn);
-	prom_printf("IRQ [%08x.%08x.%08x.%08x] not found in interrupt-map\n",
-		    pregs->phys_hi, pregs->phys_mid, pregs->phys_lo, *interrupt);
-	prom_printf("Please email this information to davem@redhat.com\n");
-	prom_halt();
+	/* We will run this code even if pbm->num_pbm_intmap is zero, just so
+	 * we can apply the slot mapping to the PROM interrupt property value.
+	 * So do not spit out these warnings in that case.
+	 */
+	if (num_intmap != 0) {
+		/* Print it both to OBP console and kernel one so that if bootup
+		 * hangs here the user has the information to report.
+		 */
+		prom_printf("pci_intmap_match: bus %02x, devfn %02x: ",
+			    pdev->bus->number, pdev->devfn);
+		prom_printf("IRQ [%08x.%08x.%08x.%08x] not found in interrupt-map\n",
+			    pregs->phys_hi, pregs->phys_mid, pregs->phys_lo, *interrupt);
+		prom_printf("Please email this information to davem@redhat.com\n");
+
+		printk("pci_intmap_match: bus %02x, devfn %02x: ",
+		       pdev->bus->number, pdev->devfn);
+		printk("IRQ [%08x.%08x.%08x.%08x] not found in interrupt-map\n",
+		       pregs->phys_hi, pregs->phys_mid, pregs->phys_lo, *interrupt);
+		printk("Please email this information to davem@redhat.com\n");
+	}
+
+	return 0;
 }
 
 static void __init pdev_fixup_irq(struct pci_dev *pdev)
@@ -738,12 +772,19 @@ static void __init pdev_fixup_irq(struct pci_dev *pdev)
 		 * ranges. -DaveM
  		 */
 		if (pdev->bus->number == pbm->pci_first_busno) {
-			slot = (pdev->devfn >> 3) - pbm->pci_first_slot;
+			slot = PCI_SLOT(pdev->devfn) - pbm->pci_first_slot;
 		} else {
+			struct pci_dev *bus_dev;
+
 			/* Underneath a bridge, use slot number of parent
-			 * bridge.
+			 * bridge which is closest to the PBM.
 			 */
-			slot = (pdev->bus->self->devfn >> 3) - pbm->pci_first_slot;
+			bus_dev = pdev->bus->self;
+			while (bus_dev->bus &&
+			       bus_dev->bus->number != pbm->pci_first_busno)
+				bus_dev = bus_dev->bus->self;
+
+			slot = PCI_SLOT(bus_dev->devfn) - pbm->pci_first_slot;
 		}
 		slot = slot << 2;
 

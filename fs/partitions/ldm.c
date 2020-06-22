@@ -29,6 +29,7 @@
 #include <linux/genhd.h>
 #include <linux/blkdev.h>
 #include <linux/slab.h>
+#include <linux/pagemap.h>
 #include "check.h"
 #include "ldm.h"
 #include "msdos.h"

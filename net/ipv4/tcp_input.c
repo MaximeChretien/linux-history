@@ -124,9 +124,6 @@ static __inline__ void tcp_measure_rcv_mss(struct tcp_opt *tp, struct sk_buff *s
 	len = skb->len;
 	if (len >= tp->ack.rcv_mss) {
 		tp->ack.rcv_mss = len;
-		/* Dubious? Rather, it is final cut. 8) */
-		if (tcp_flag_word(skb->h.th)&TCP_REMNANT)
-			tp->ack.pending |= TCP_ACK_PUSHED;
 	} else {
 		/* Otherwise, we make more careful check taking into account,
 		 * that SACKs block is variable.
@@ -461,13 +458,13 @@ static __inline__ void tcp_rtt_estimator(struct tcp_opt *tp, __u32 mrtt)
 		if (after(tp->snd_una, tp->rtt_seq)) {
 			if (tp->mdev_max < tp->rttvar)
 				tp->rttvar -= (tp->rttvar-tp->mdev_max)>>2;
-			tp->rtt_seq = tp->snd_una;
+			tp->rtt_seq = tp->snd_nxt;
 			tp->mdev_max = TCP_RTO_MIN;
 		}
 	} else {
 		/* no previous measure. */
 		tp->srtt = m<<3;	/* take the measured time to be rtt */
-		tp->mdev = m<<2;	/* make sure rto = 3*rtt */
+		tp->mdev = m<<1;	/* make sure rto = 3*rtt */
 		tp->mdev_max = tp->rttvar = max(tp->mdev, TCP_RTO_MIN);
 		tp->rtt_seq = tp->snd_nxt;
 	}
@@ -1763,6 +1760,7 @@ static int tcp_clean_rtx_queue(struct sock *sk)
 			acked |= FLAG_DATA_ACKED;
 		} else {
 			acked |= FLAG_SYN_ACKED;
+			tp->retrans_stamp = 0;
 		}
 
 		if (sacked) {
@@ -3850,6 +3848,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 	switch (sk->state) {
 	case TCP_CLOSE_WAIT:
 	case TCP_CLOSING:
+	case TCP_LAST_ACK:
 		if (!before(TCP_SKB_CB(skb)->seq, tp->rcv_nxt))
 			break;
 	case TCP_FIN_WAIT1:

@@ -1,5 +1,6 @@
+
 /*
- * kernel/lvm-internal.h
+ * kernel/lvm_internal.h
  *
  * Copyright (C) 2001 Sistina Software
  *
@@ -24,7 +25,9 @@
 /*
  * Changelog
  *
- *    05/01/2001:Joe Thornber - Factored this file out of lvm.c
+ *    05/01/2001 - Factored this file out of lvm.c (Joe Thornber)
+ *    11/01/2001 - Renamed lvm_internal and added declarations
+ *                 for lvm_fs.c stuff
  *
  */
 
@@ -33,7 +36,7 @@
 
 #include <linux/lvm.h>
 
-#define _LVM_INTERNAL_H_VERSION "LVM "LVM_RELEASE_NAME" ("LVM_RELEASE_DATE")"
+#define	_LVM_INTERNAL_H_VERSION	"LVM "LVM_RELEASE_NAME" ("LVM_RELEASE_DATE")"
 
 /* global variables, defined in lvm.c */
 extern char *lvm_version;
@@ -42,11 +45,15 @@ extern int loadtime;
 extern const char *const lvm_name;
 
 
+extern uint vg_count;
 extern vg_t *vg[];
 extern struct file_operations lvm_chr_fops;
 
 extern struct block_device_operations lvm_blk_dops;
 
+#define lvm_sectsize(dev) get_hardsect_size(dev)
+
+/* 2.4.8 had no global min/max macros, and 2.4.9's were flawed */
 
 /* debug macros */
 #ifdef DEBUG_IOCTL

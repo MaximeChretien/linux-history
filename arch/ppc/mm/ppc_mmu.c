@@ -163,7 +163,6 @@ void __init MMU_init_hw(void)
 
 	extern unsigned int hash_page_patch_A[];
 	extern unsigned int hash_page_patch_B[], hash_page_patch_C[];
-	extern unsigned int hash_page[];
 	extern unsigned int flush_hash_patch_A[], flush_hash_patch_B[];
 
 #ifdef CONFIG_PPC64BRIDGE
@@ -184,9 +183,15 @@ void __init MMU_init_hw(void)
 #else /* CONFIG_PPC64BRIDGE */
 	unsigned int h;
 
-	if ((cur_cpu_spec[0]->cpu_features & CPU_FTR_HPTE_TABLE) == 0)
+	if ((cur_cpu_spec[0]->cpu_features & CPU_FTR_HPTE_TABLE) == 0) {
+		Hash_size = 0;
+		Hash_end = 0;
+		Hash = 0;
 		return;
+	}
+
 	if ( ppc_md.progress ) ppc_md.progress("hash:enter", 0x105);
+
 	/*
 	 * Allow 64k of hash table for every 16MB of memory,
 	 * up to a maximum of 2MB.
@@ -252,18 +257,7 @@ void __init MMU_init_hw(void)
 		flush_icache_range((unsigned long) &flush_hash_patch_A[0],
 				   (unsigned long) &flush_hash_patch_B[1]);
 	}
-	else {
-		Hash_end = 0;
-		/*
-		 * Put a blr (procedure return) instruction at the
-		 * start of hash_page, since we can still get DSI
-		 * exceptions on a 603.
-		 */
-		hash_page[0] = 0x4e800020;
-		flush_icache_range((unsigned long) &hash_page[0],
-				   (unsigned long) &hash_page[1]);
-	}
-
+	
 	if ( ppc_md.progress ) ppc_md.progress("hash:done", 0x205);
 }
 

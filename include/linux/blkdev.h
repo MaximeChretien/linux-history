@@ -30,6 +30,7 @@ struct request {
 	kdev_t rq_dev;
 	int cmd;		/* READ or WRITE */
 	int errors;
+	unsigned long start_time;
 	unsigned long sector;
 	unsigned long nr_sectors;
 	unsigned long hard_sector, hard_nr_sectors;
@@ -79,6 +80,16 @@ struct request_queue
 	struct request_list	rq[2];
 
 	/*
+	 * The total number of requests on each queue
+	 */
+	int nr_requests;
+
+	/*
+	 * Batching threshold for sleep/wakeup decisions
+	 */
+	int batch_requests;
+
+	/*
 	 * Together with queue_head for cacheline sharing
 	 */
 	struct list_head	queue_head;
@@ -119,9 +130,9 @@ struct request_queue
 	spinlock_t		queue_lock;
 
 	/*
-	 * Tasks wait here for free request
+	 * Tasks wait here for free read and write requests
 	 */
-	wait_queue_head_t	wait_for_request;
+	wait_queue_head_t	wait_for_requests[2];
 };
 
 struct blk_dev_struct {
@@ -157,6 +168,7 @@ extern void blkdev_release_request(struct request *);
 /*
  * Access functions for manipulating queue properties
  */
+extern int blk_grow_request_list(request_queue_t *q, int nr_requests);
 extern void blk_init_queue(request_queue_t *, request_fn_proc *);
 extern void blk_cleanup_queue(request_queue_t *);
 extern void blk_queue_headactive(request_queue_t *, int);

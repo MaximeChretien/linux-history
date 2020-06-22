@@ -129,6 +129,6 @@ signal_processor_ps(__u32 *statusptr, __u32 parameter,
    return ccode;
 }
 
-#endif __SIGP__
+#endif /* __SIGP__ */
 
 

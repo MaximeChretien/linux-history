@@ -1,3 +1,31 @@
+2002-04-25  Tim Waugh  <twaugh@redhat.com>
+
+	* parport_serial.c, parport_pc.c: Move some SIIG cards around.
+	Patch from Andrey Panin.
+
+2001-12-07  Tim Waugh  <twaugh@redhat.com>
+
+	* parport_pc.c (parport_pc_pci_probe): Hooks for PCI cards before
+	and after probing for ports.
+	* parport_serial.c (parport_register): Likewise.
+
+2002-01-20  Tim Waugh  <twaugh@redhat.com>
+
+	* parport_pc.c (parport_pc_compat_write_block_pio,
+	parport_pc_ecp_write_block_pio, parport_pc_ecp_read_block_pio):
+	Use the default implementations if the caller wants to use
+	O_NONBLOCK.
+
+2002-01-21  Tim Waugh  <twaugh@redhat.com>
+
+	* daisy.c: Apply patch from Max Vorobiev to make parport_daisy_select
+	work for ECP/EPP modes.
+
+2002-02-25  Tim Waugh  <twaugh@redhat.com>
+
+	* parport_pc.c: Make sure that priv->ctr_writable includes IntEn
+	even if IRQ is given as a parameter.
+
 2002-01-13  Niels Kristian Bech Jensen  <nkbj@image.dk>
 
 	* parport_pc.c: Change some occurrences of frob_set_mode to

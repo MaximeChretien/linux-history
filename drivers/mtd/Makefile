@@ -8,7 +8,7 @@
 # Note 2! The CFLAGS definitions are now inherited from the
 # parent makes..
 #
-# $Id: Makefile,v 1.63 2001/06/13 09:43:07 dwmw2 Exp $
+# $Id: Makefile,v 1.65 2002/03/22 07:10:34 dwmw2 Exp $
 
 
 obj-y           += chips/chipslink.o maps/mapslink.o \
@@ -19,7 +19,7 @@ obj-            :=
 
 O_TARGET	:= mtdlink.o
 
-export-objs	:= mtdcore.o mtdpart.o redboot.o bootldr.o afs.o
+export-objs	:= mtdcore.o mtdpart.o redboot.o bootldr.o afs.o mtdconcat.o
 list-multi	:= nftl.o
 
 mod-subdirs	:= 
@@ -44,6 +44,7 @@ subdir-m	:= $(subdir-y)
 
 # Core functionality.
 obj-$(CONFIG_MTD)		+= mtdcore.o
+obj-$(CONFIG_MTD_CONCAT)		+= mtdconcat.o
 obj-$(CONFIG_MTD_PARTITIONS)	+= mtdpart.o
 obj-$(CONFIG_MTD_REDBOOT_PARTS) += redboot.o
 obj-$(CONFIG_MTD_BOOTLDR_PARTS) += bootldr.o

@@ -15,25 +15,19 @@
 #include <linux/quotaops.h>
 #include <linux/acct.h>
 #include <linux/module.h>
-#include <linux/devfs_fs_kernel.h>
 
 #include <asm/uaccess.h>
 
 #include <linux/seq_file.h>
+#include <linux/namespace.h>
 
-struct vfsmount *do_kern_mount(char *type, int flags, char *name, void *data);
+struct vfsmount *do_kern_mount(const char *type, int flags, char *name, void *data);
 int do_remount_sb(struct super_block *sb, int flags, void * data);
 void kill_super(struct super_block *sb);
 
 static struct list_head *mount_hashtable;
 static int hash_mask, hash_bits;
 static kmem_cache_t *mnt_cache; 
-
-static LIST_HEAD(vfsmntlist);
-static DECLARE_MUTEX(mount_sem);
-
-/* Will be static */
-struct vfsmount *root_vfsmnt;
 
 static inline unsigned long hash(struct vfsmount *mnt, struct dentry *dentry)
 {
@@ -43,7 +37,7 @@ static inline unsigned long hash(struct vfsmount *mnt, struct dentry *dentry)
 	return tmp & hash_mask;
 }
 
-struct vfsmount *alloc_vfsmnt(void)
+struct vfsmount *alloc_vfsmnt(char *name)
 {
 	struct vfsmount *mnt = kmem_cache_alloc(mnt_cache, GFP_KERNEL); 
 	if (mnt) {
@@ -53,6 +47,14 @@ struct vfsmount *alloc_vfsmnt(void)
 		INIT_LIST_HEAD(&mnt->mnt_child);
 		INIT_LIST_HEAD(&mnt->mnt_mounts);
 		INIT_LIST_HEAD(&mnt->mnt_list);
+		if (name) {
+			int size = strlen(name)+1;
+			char * newname = kmalloc(size, GFP_KERNEL);
+			if (newname) {
+				memcpy(newname, name, size);
+				mnt->mnt_devname = newname;
+			}
+		}
 	}
 	return mnt;
 }
@@ -62,18 +64,6 @@ void free_vfsmnt(struct vfsmount *mnt)
 	if (mnt->mnt_devname)
 		kfree(mnt->mnt_devname);
 	kmem_cache_free(mnt_cache, mnt);
-}
-
-void set_devname(struct vfsmount *mnt, const char *name)
-{
-	if (name) {
-		int size = strlen(name)+1;
-		char * newname = kmalloc(size, GFP_KERNEL);
-		if (newname) {
-			memcpy(newname, name, size);
-			mnt->mnt_devname = newname;
-		}
-	}
 }
 
 struct vfsmount *lookup_mnt(struct vfsmount *mnt, struct dentry *dentry)
@@ -100,7 +90,7 @@ static int check_mnt(struct vfsmount *mnt)
 	while (mnt->mnt_parent != mnt)
 		mnt = mnt->mnt_parent;
 	spin_unlock(&dcache_lock);
-	return mnt == root_vfsmnt;
+	return mnt == current->namespace->root;
 }
 
 static void detach_mnt(struct vfsmount *mnt, struct nameidata *old_nd)
@@ -143,11 +133,10 @@ static struct vfsmount *
 clone_mnt(struct vfsmount *old, struct dentry *root)
 {
 	struct super_block *sb = old->mnt_sb;
-	struct vfsmount *mnt = alloc_vfsmnt();
+	struct vfsmount *mnt = alloc_vfsmnt(old->mnt_devname);
 
 	if (mnt) {
 		mnt->mnt_flags = old->mnt_flags;
-		set_devname(mnt, old->mnt_devname);
 		atomic_inc(&sb->s_active);
 		mnt->mnt_sb = sb;
 		mnt->mnt_root = dget(root);
@@ -168,26 +157,29 @@ void __mntput(struct vfsmount *mnt)
 /* iterator */
 static void *m_start(struct seq_file *m, loff_t *pos)
 {
+	struct namespace *n = m->private;
 	struct list_head *p;
-	loff_t n = *pos;
+	loff_t l = *pos;
 
-	down(&mount_sem);
-	list_for_each(p, &vfsmntlist)
-		if (!n--)
+	down_read(&n->sem);
+	list_for_each(p, &n->list)
+		if (!l--)
 			return list_entry(p, struct vfsmount, mnt_list);
 	return NULL;
 }
 
 static void *m_next(struct seq_file *m, void *v, loff_t *pos)
 {
+	struct namespace *n = m->private;
 	struct list_head *p = ((struct vfsmount *)v)->mnt_list.next;
 	(*pos)++;
-	return p==&vfsmntlist ? NULL : list_entry(p, struct vfsmount, mnt_list);
+	return p==&n->list ? NULL : list_entry(p, struct vfsmount, mnt_list);
 }
 
 static void m_stop(struct seq_file *m, void *v)
 {
-	up(&mount_sem);
+	struct namespace *n = m->private;
+	up_read(&n->sem);
 }
 
 static inline void mangle(struct seq_file *m, const char *s)
@@ -333,7 +325,7 @@ static int do_umount(struct vfsmount *mnt, int flags)
 		return retval;
 	}
 
-	down(&mount_sem);
+	down_write(&current->namespace->sem);
 	spin_lock(&dcache_lock);
 
 	if (atomic_read(&sb->s_active) == 1) {
@@ -352,7 +344,7 @@ static int do_umount(struct vfsmount *mnt, int flags)
 		retval = 0;
 	}
 	spin_unlock(&dcache_lock);
-	up(&mount_sem);
+	up_write(&current->namespace->sem);
 	return retval;
 }
 
@@ -462,8 +454,7 @@ Enomem:
 	return NULL;
 }
 
-/* Will become static */
-int graft_tree(struct vfsmount *mnt, struct nameidata *nd)
+static int graft_tree(struct vfsmount *mnt, struct nameidata *nd)
 {
 	int err;
 	if (mnt->mnt_sb->s_flags & MS_NOUSER)
@@ -483,7 +474,7 @@ int graft_tree(struct vfsmount *mnt, struct nameidata *nd)
 		struct list_head head;
 		attach_mnt(mnt, nd);
 		list_add_tail(&head, &mnt->mnt_list);
-		list_splice(&head, vfsmntlist.prev);
+		list_splice(&head, current->namespace->list.prev);
 		mntget(mnt);
 		err = 0;
 	}
@@ -510,7 +501,7 @@ static int do_loopback(struct nameidata *nd, char *old_name, int recurse)
 	if (err)
 		return err;
 
-	down(&mount_sem);
+	down_write(&current->namespace->sem);
 	err = -EINVAL;
 	if (check_mnt(nd->mnt) && (!recurse || check_mnt(old_nd.mnt))) {
 		err = -ENOMEM;
@@ -530,7 +521,7 @@ static int do_loopback(struct nameidata *nd, char *old_name, int recurse)
 			mntput(mnt);
 	}
 
-	up(&mount_sem);
+	up_write(&current->namespace->sem);
 	path_release(&old_nd);
 	return err;
 }
@@ -577,7 +568,7 @@ static int do_move_mount(struct nameidata *nd, char *old_name)
 	if (err)
 		return err;
 
-	down(&mount_sem);
+	down_write(&current->namespace->sem);
 	while(d_mountpoint(nd->dentry) && follow_down(&nd->mnt, &nd->dentry))
 		;
 	err = -EINVAL;
@@ -617,7 +608,7 @@ out2:
 out1:
 	up(&nd->dentry->d_inode->i_zombie);
 out:
-	up(&mount_sem);
+	up_write(&current->namespace->sem);
 	if (!err)
 		path_release(&parent_nd);
 	path_release(&old_nd);
@@ -627,13 +618,22 @@ out:
 static int do_add_mount(struct nameidata *nd, char *type, int flags,
 			int mnt_flags, char *name, void *data)
 {
-	struct vfsmount *mnt = do_kern_mount(type, flags, name, data);
-	int err = PTR_ERR(mnt);
+	struct vfsmount *mnt;
+	int err;
 
+	if (!type || !memchr(type, 0, PAGE_SIZE))
+		return -EINVAL;
+
+	/* we need capabilities... */
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	mnt = do_kern_mount(type, flags, name, data);
+	err = PTR_ERR(mnt);
 	if (IS_ERR(mnt))
 		goto out;
 
-	down(&mount_sem);
+	down_write(&current->namespace->sem);
 	/* Something was mounted here while we slept */
 	while(d_mountpoint(nd->dentry) && follow_down(&nd->mnt, &nd->dentry))
 		;
@@ -649,7 +649,7 @@ static int do_add_mount(struct nameidata *nd, char *type, int flags,
 	mnt->mnt_flags = mnt_flags;
 	err = graft_tree(mnt, nd);
 unlock:
-	up(&mount_sem);
+	up_write(&current->namespace->sem);
 	mntput(mnt);
 out:
 	return err;
@@ -747,6 +747,86 @@ long do_mount(char * dev_name, char * dir_name, char *type_page,
 				      dev_name, data_page);
 	path_release(&nd);
 	return retval;
+}
+
+int copy_namespace(int flags, struct task_struct *tsk)
+{
+	struct namespace *namespace = tsk->namespace;
+	struct namespace *new_ns;
+	struct vfsmount *rootmnt = NULL, *pwdmnt = NULL, *altrootmnt = NULL;
+	struct fs_struct *fs = tsk->fs;
+
+	if (!namespace)
+		return 0;
+
+	get_namespace(namespace);
+
+	if (! (flags & CLONE_NEWNS))
+		return 0;
+
+	if (!capable(CAP_SYS_ADMIN)) {
+		put_namespace(namespace);
+		return -EPERM;
+	}
+
+	new_ns = kmalloc(sizeof(struct namespace *), GFP_KERNEL);
+	if (!new_ns)
+		goto out;
+
+	atomic_set(&new_ns->count, 1);
+	init_rwsem(&new_ns->sem);
+	new_ns->root = NULL;
+	INIT_LIST_HEAD(&new_ns->list);
+
+	down_write(&tsk->namespace->sem);
+	/* First pass: copy the tree topology */
+	new_ns->root = copy_tree(namespace->root, namespace->root->mnt_root);
+	spin_lock(&dcache_lock);
+	list_add_tail(&new_ns->list, &new_ns->root->mnt_list);
+	spin_unlock(&dcache_lock);
+
+	/* Second pass: switch the tsk->fs->* elements */
+	if (fs) {
+		struct vfsmount *p, *q;
+		write_lock(&fs->lock);
+
+		p = namespace->root;
+		q = new_ns->root;
+		while (p) {
+			if (p == fs->rootmnt) {
+				rootmnt = p;
+				fs->rootmnt = mntget(q);
+			}
+			if (p == fs->pwdmnt) {
+				pwdmnt = p;
+				fs->pwdmnt = mntget(q);
+			}
+			if (p == fs->altrootmnt) {
+				altrootmnt = p;
+				fs->altrootmnt = mntget(q);
+			}
+			p = next_mnt(p, namespace->root);
+			q = next_mnt(q, new_ns->root);
+		}
+		write_unlock(&fs->lock);
+	}
+	up_write(&tsk->namespace->sem);
+
+	tsk->namespace = new_ns;
+
+	if (rootmnt)
+		mntput(rootmnt);
+	if (pwdmnt)
+		mntput(pwdmnt);
+	if (altrootmnt)
+		mntput(altrootmnt);
+
+	put_namespace(namespace);
+	return 0;
+
+out:
+	put_namespace(namespace);
+	return -ENOMEM;
 }
 
 asmlinkage long sys_mount(char * dev_name, char * dir_name, char * type,
@@ -867,7 +947,7 @@ asmlinkage long sys_pivot_root(const char *new_root, const char *put_old)
 	user_nd.mnt = mntget(current->fs->rootmnt);
 	user_nd.dentry = dget(current->fs->root);
 	read_unlock(&current->fs->lock);
-	down(&mount_sem);
+	down_write(&current->namespace->sem);
 	down(&old_nd.dentry->d_inode->i_zombie);
 	error = -EINVAL;
 	if (!check_mnt(user_nd.mnt))
@@ -912,7 +992,7 @@ asmlinkage long sys_pivot_root(const char *new_root, const char *put_old)
 	path_release(&parent_nd);
 out2:
 	up(&old_nd.dentry->d_inode->i_zombie);
-	up(&mount_sem);
+	up_write(&current->namespace->sem);
 	path_release(&user_nd);
 	path_release(&old_nd);
 out1:
@@ -925,52 +1005,34 @@ out3:
 	goto out2;
 }
 
-/*
- * Absolutely minimal fake fs - only empty root directory and nothing else.
- * In 2.5 we'll use ramfs or tmpfs, but for now it's all we need - just
- * something to go with root vfsmount.
- */
-static struct dentry *rootfs_lookup(struct inode *dir, struct dentry *dentry)
-{
-	d_add(dentry, NULL);
-	return NULL;
-}
-static struct file_operations rootfs_dir_operations = {
-	read:		generic_read_dir,
-	readdir:	dcache_readdir,
-};
-static struct inode_operations rootfs_dir_inode_operations = {
-	lookup:		rootfs_lookup,
-};
-static struct super_block *rootfs_read_super(struct super_block * sb, void * data, int silent)
-{
-	struct inode * inode;
-	struct dentry * root;
-	static struct super_operations s_ops = {};
-	sb->s_op = &s_ops;
-	inode = new_inode(sb);
-	if (!inode)
-		return NULL;
-	inode->i_mode = S_IFDIR|0555;
-	inode->i_uid = inode->i_gid = 0;
-	inode->i_op = &rootfs_dir_inode_operations;
-	inode->i_fop = &rootfs_dir_operations;
-	root = d_alloc_root(inode);
-	if (!root) {
-		iput(inode);
-		return NULL;
-	}
-	sb->s_root = root;
-	return sb;
-}
-static DECLARE_FSTYPE(root_fs_type, "rootfs", rootfs_read_super, FS_NOMOUNT);
-
 static void __init init_mount_tree(void)
 {
-	register_filesystem(&root_fs_type);
-	root_vfsmnt = do_kern_mount("rootfs", 0, "rootfs", NULL);
-	if (IS_ERR(root_vfsmnt))
-		panic("can't allocate root vfsmount");
+	struct vfsmount *mnt;
+	struct namespace *namespace;
+	struct task_struct *p;
+
+	mnt = do_kern_mount("rootfs", 0, "rootfs", NULL);
+	if (IS_ERR(mnt))
+		panic("Can't create rootfs");
+	namespace = kmalloc(sizeof(*namespace), GFP_KERNEL);
+	if (!namespace)
+		panic("Can't allocate initial namespace");
+	atomic_set(&namespace->count, 1);
+	INIT_LIST_HEAD(&namespace->list);
+	init_rwsem(&namespace->sem);
+	list_add(&mnt->mnt_list, &namespace->list);
+	namespace->root = mnt;
+
+	init_task.namespace = namespace;
+	read_lock(&tasklist_lock);
+	for_each_task(p) {
+		get_namespace(namespace);
+		p->namespace = namespace;
+	}
+	read_unlock(&tasklist_lock);
+
+	set_fs_pwd(current->fs, namespace->root, namespace->root->mnt_root);
+	set_fs_root(current->fs, namespace->root, namespace->root->mnt_root);
 }
 
 void __init mnt_init(unsigned long mempages)
@@ -1028,93 +1090,6 @@ void __init mnt_init(unsigned long mempages)
 		d++;
 		i--;
 	} while (i);
+	init_rootfs();
 	init_mount_tree();
 }
-
-#ifdef CONFIG_BLK_DEV_INITRD
-
-int __init change_root(kdev_t new_root_dev,const char *put_old)
-{
-	struct vfsmount *old_rootmnt;
-	struct nameidata devfs_nd, nd;
-	struct nameidata parent_nd;
-	char *new_devname = kmalloc(strlen("/dev/root.old")+1, GFP_KERNEL);
-	int error = 0;
-
-	if (new_devname)
-		strcpy(new_devname, "/dev/root.old");
-
-	read_lock(&current->fs->lock);
-	old_rootmnt = mntget(current->fs->rootmnt);
-	read_unlock(&current->fs->lock);
-	/*  First unmount devfs if mounted  */
-	if (path_init("/dev", LOOKUP_FOLLOW|LOOKUP_POSITIVE, &devfs_nd))
-		error = path_walk("/dev", &devfs_nd);
-	if (!error) {
-		if (devfs_nd.mnt->mnt_sb->s_magic == DEVFS_SUPER_MAGIC &&
-		    devfs_nd.dentry == devfs_nd.mnt->mnt_root) {
-			do_umount(devfs_nd.mnt, 0);
-		}
-		path_release(&devfs_nd);
-	}
-	spin_lock(&dcache_lock);
-	detach_mnt(old_rootmnt, &parent_nd);
-	spin_unlock(&dcache_lock);
-	ROOT_DEV = new_root_dev;
-	mount_root();
-#if 1
-	shrink_dcache();
-	printk("change_root: old root has d_count=%d\n", 
-	       atomic_read(&old_rootmnt->mnt_root->d_count));
-#endif
-	mount_devfs_fs ();
-	/*
-	 * Get the new mount directory
-	 */
-	error = 0;
-	if (path_init(put_old, LOOKUP_FOLLOW|LOOKUP_POSITIVE|LOOKUP_DIRECTORY, &nd))
-		error = path_walk(put_old, &nd);
-	if (error) {
-		int blivet;
-		struct block_device *ramdisk = old_rootmnt->mnt_sb->s_bdev;
-
-		atomic_inc(&ramdisk->bd_count);
-		blivet = blkdev_get(ramdisk, FMODE_READ, 0, BDEV_FS);
-		printk(KERN_NOTICE "Trying to unmount old root ... ");
-		if (!blivet) {
-			spin_lock(&dcache_lock);
-			list_del_init(&old_rootmnt->mnt_list);
- 			spin_unlock(&dcache_lock);
- 			mntput(old_rootmnt);
-			mntput(old_rootmnt);
-			blivet = ioctl_by_bdev(ramdisk, BLKFLSBUF, 0);
-			path_release(&parent_nd);
-			blkdev_put(ramdisk, BDEV_FS);
-		}
-		if (blivet) {
-			printk(KERN_ERR "error %d\n", blivet);
-		} else {
-			printk("okay\n");
-			error = 0;
-		}			
-		kfree(new_devname);
-		return error;
-	}
-
-	spin_lock(&dcache_lock);
-	attach_mnt(old_rootmnt, &nd);
-	if (new_devname) {
-		if (old_rootmnt->mnt_devname)
-			kfree(old_rootmnt->mnt_devname);
-		old_rootmnt->mnt_devname = new_devname;
-	}
-	spin_unlock(&dcache_lock);
-
-	/* put the old stuff */
-	path_release(&parent_nd);
-	mntput(old_rootmnt);
-	path_release(&nd);
-	return 0;
-}
-
-#endif

@@ -378,10 +378,17 @@ static int irda_usb_hard_xmit(struct sk_buff *skb, struct net_device *netdev)
 		return 0;
 	}
 
-	/* Make room for IrDA-USB header (note skb->len += USB_IRDA_HEADER) */
-	if (skb_cow(skb, USB_IRDA_HEADER)) {
-		dev_kfree_skb(skb);
-		return 0;
+	/* Make sure there is room for IrDA-USB header. The actual
+	 * allocation will be done lower in skb_push().
+	 * Also, we don't use directly skb_cow(), because it require
+	 * headroom >= 16, which force unnecessary copies - Jean II */
+	if (skb_headroom(skb) < USB_IRDA_HEADER) {
+		IRDA_DEBUG(0, __FUNCTION__ "(), Insuficient skb headroom.\n");
+		if (skb_cow(skb, USB_IRDA_HEADER)) {
+			WARNING(__FUNCTION__ "(), failed skb_cow() !!!\n");
+			dev_kfree_skb(skb);
+			return 0;
+		}
 	}
 
 	spin_lock_irqsave(&self->lock, flags);
@@ -432,7 +439,7 @@ static int irda_usb_hard_xmit(struct sk_buff *skb, struct net_device *netdev)
 #ifdef IU_USB_MIN_RTT
 			/* Factor in USB delays -> Get rid of udelay() that
 			 * would be lost in the noise - Jean II */
-			diff -= IU_USB_MIN_RTT;
+			diff += IU_USB_MIN_RTT;
 #endif /* IU_USB_MIN_RTT */
 			if (diff < 0)
 				diff += 1000000;
@@ -848,8 +855,8 @@ done:
 	/* Submit the idle URB to replace the URB we've just received */
 	irda_usb_submit(self, skb, self->idle_rx_urb);
 	/* Recycle Rx URB : Now, the idle URB is the present one */
-	self->idle_rx_urb = purb;
 	purb->context = NULL;
+	self->idle_rx_urb = purb;
 }
 
 /*------------------------------------------------------------------*/
@@ -952,13 +959,17 @@ static int irda_usb_net_open(struct net_device *netdev)
 	/* Allow IrLAP to send data to us */
 	netif_start_queue(netdev);
 
+	/* We submit all the Rx URB except for one that we keep idle.
+	 * Need to be initialised before submitting other USBs, because
+	 * in some cases as soon as we submit the URBs the USB layer
+	 * will trigger a dummy receive - Jean II */
+	self->idle_rx_urb = &(self->rx_urb[IU_MAX_ACTIVE_RX_URBS]);
+	self->idle_rx_urb->context = NULL;
+
 	/* Now that we can pass data to IrLAP, allow the USB layer
 	 * to send us some data... */
 	for (i = 0; i < IU_MAX_ACTIVE_RX_URBS; i++)
 		irda_usb_submit(self, NULL, &(self->rx_urb[i]));
-	/* Note : we submit all the Rx URB except for one - Jean II */
-	self->idle_rx_urb = &(self->rx_urb[IU_MAX_ACTIVE_RX_URBS]);
-	self->idle_rx_urb->context = NULL;
 
 	/* Ready to play !!! */
 	MOD_INC_USE_COUNT;
@@ -1582,3 +1593,4 @@ MODULE_PARM(qos_mtt_bits, "i");
 MODULE_PARM_DESC(qos_mtt_bits, "Minimum Turn Time");
 MODULE_AUTHOR("Roman Weissgaerber <weissg@vienna.at>, Dag Brattli <dag@brattli.net> and Jean Tourrilhes <jt@hpl.hp.com>");
 MODULE_DESCRIPTION("IrDA-USB Dongle Driver"); 
+MODULE_LICENSE("GPL");

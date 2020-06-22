@@ -6,18 +6,18 @@
 #include <linux/types.h>
 #include <linux/version.h>
 #include <linux/list.h>
+#include <linux/init.h>
 #include <asm/byteorder.h>
 
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
-#include "linux22compat.h"
-#else
-#define V22_COMPAT_MOD_INC_USE_COUNT do {} while (0)
-#define V22_COMPAT_MOD_DEC_USE_COUNT do {} while (0)
-#define OWNER_THIS_MODULE owner: THIS_MODULE,
+/* The great kdev_t changeover in 2.5.x */
+#include <linux/kdev_t.h>
+#ifndef minor
+#define minor(dev) MINOR(dev)
+#endif
 
-#define INIT_TQ_LINK(tq) INIT_LIST_HEAD(&(tq).list)
-#define INIT_TQ_HEAD(tq) INIT_LIST_HEAD(&(tq))
+#ifndef __devexit_p
+#define __devexit_p(x) x
 #endif
 
 /* This showed up around this time */
@@ -37,17 +37,17 @@
 
 #endif /* Linux version < 2.4.12 */
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,18)
-#include <asm/spinlock.h>
-#else
 #include <linux/spinlock.h>
-#endif
 
 #ifndef list_for_each_safe
 #define list_for_each_safe(pos, n, head) \
 	for (pos = (head)->next, n = pos->next; pos != (head); \
 		pos = n, n = pos->next)
 
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,5)
+#define pte_offset_kernel pte_offset
 #endif
 
 #ifndef MIN
@@ -67,7 +67,8 @@ typedef u16 nodeid_t;
 #define LOCAL_BUS 0xffc0
 #define ALL_NODES 0x003f
 
-#define NODE_BUS_FMT    "%d:%d"
+/* Can be used to consistently print a node/bus ID. */
+#define NODE_BUS_FMT    "%02d:%04d"
 #define NODE_BUS_ARGS(nodeid) \
 	(nodeid & NODE_MASK), ((nodeid & BUS_MASK) >> 6)
 

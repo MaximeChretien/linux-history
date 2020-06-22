@@ -44,7 +44,7 @@
  * PFS-168 definitions:
  */
 
-#define SA1111_BASE             (0x40000000)
+#define PFS168_SA1111_BASE	(0x40000000)
 
 #ifndef __ASSEMBLY__
 #define machine_has_neponset() (0)

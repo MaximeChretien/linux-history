@@ -9,7 +9,7 @@
 
 #include <asm/hardware.h>
 #include <asm/irq.h>
-#include <asm/arch/pcmcia.h>
+#include "sa1100_generic.h"
 
 
 static int freebird_pcmcia_init(struct pcmcia_init *init){
@@ -26,14 +26,10 @@ static int freebird_pcmcia_init(struct pcmcia_init *init){
   mdelay(100);
   LINKUP_PRC = 0xc0;
 
-  /* All those are inputs */
-  ////GPDR &= ~(GPIO_CF_CD | GPIO_CF_BVD2 | GPIO_CF_BVD1 | GPIO_CF_IRQ);
-  GPDR &= ~(GPIO_FREEBIRD_CF_CD | GPIO_FREEBIRD_CF_IRQ | GPIO_FREEBIRD_CF_BVD);
-
   /* Set transition detect */
   //set_GPIO_IRQ_edge( GPIO_CF_CD|GPIO_CF_BVD2|GPIO_CF_BVD1, GPIO_BOTH_EDGES );
   //set_GPIO_IRQ_edge( GPIO_CF_IRQ, GPIO_FALLING_EDGE );
-  set_GPIO_IRQ_edge(GPIO_FREEBIRD_CF_CD|GPIO_FREEBIRD_CF_BVD,GPIO_BOTH_EDGES);
+  set_GPIO_IRQ_edge(GPIO_FREEBIRD_CF_CD|GPIO_FREEBIRD_CF_BVD,GPIO_NO_EDGES);
   set_GPIO_IRQ_edge(GPIO_FREEBIRD_CF_IRQ, GPIO_FALLING_EDGE);
 
   /* Register interrupts */
@@ -150,11 +146,26 @@ static int freebird_pcmcia_configure_socket(const struct pcmcia_configure
   return 0;
 }
 
+static int freebird_pcmcia_socket_init(int sock)
+{
+  set_GPIO_IRQ_edge(GPIO_FREEBIRD_CF_CD|GPIO_FREEBIRD_CF_BVD, GPIO_BOTH_EDGES);
+  return 0;
+}
+
+static int freebird_pcmcia_socket_suspend(int sock)
+{
+  set_GPIO_IRQ_edge(GPIO_FREEBIRD_CF_CD|GPIO_FREEBIRD_CF_BVD, GPIO_NO_EDGES);
+  return 0;
+}
+
 struct pcmcia_low_level freebird_pcmcia_ops = {
-  freebird_pcmcia_init,
-  freebird_pcmcia_shutdown,
-  freebird_pcmcia_socket_state,
-  freebird_pcmcia_get_irq_info,
-  freebird_pcmcia_configure_socket
+  init:			freebird_pcmcia_init,
+  shutdown:		freebird_pcmcia_shutdown,
+  socket_state:		freebird_pcmcia_socket_state,
+  get_irq_info:		freebird_pcmcia_get_irq_info,
+  configure_socket:	freebird_pcmcia_configure_socket,
+
+  socket_init:		freebird_pcmcia_socket_init,
+  socket_suspend:	freebird_pcmcia_socket_suspend,
 };
 

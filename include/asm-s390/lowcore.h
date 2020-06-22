@@ -185,12 +185,12 @@ extern __inline__ void set_prefix(__u32 address)
 extern struct _lowcore *lowcore_ptr[];
 
 #ifndef CONFIG_SMP
-#define get_cpu_lowcore(cpu)    S390_lowcore
-#define safe_get_cpu_lowcore(cpu) S390_lowcore
+#define get_cpu_lowcore(cpu)      (&S390_lowcore)
+#define safe_get_cpu_lowcore(cpu) (&S390_lowcore)
 #else
-#define get_cpu_lowcore(cpu)    (*lowcore_ptr[cpu])
+#define get_cpu_lowcore(cpu)      (lowcore_ptr[(cpu)])
 #define safe_get_cpu_lowcore(cpu) \
-        ((cpu)==smp_processor_id() ? S390_lowcore:(*lowcore_ptr[(cpu)]))
+        ((cpu) == smp_processor_id() ? &S390_lowcore : lowcore_ptr[(cpu)])
 #endif
 #endif /* __ASSEMBLY__ */
 

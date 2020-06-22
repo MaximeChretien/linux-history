@@ -1,9 +1,9 @@
 /* Driver for USB Mass Storage compliant devices
  *
- * $Id: usb.c,v 1.70 2002/01/06 07:14:12 mdharm Exp $
+ * $Id: usb.c,v 1.73 2002/01/27 09:02:15 mdharm Exp $
  *
  * Current development and maintenance by:
- *   (c) 1999, 2000 Matthew Dharm (mdharm-usb@one-eyed-alien.net)
+ *   (c) 1999-2002 Matthew Dharm (mdharm-usb@one-eyed-alien.net)
  *
  * Developed with the assistance of:
  *   (c) 2000 David L. Brown, Jr. (usb-storage@davidb.org)
@@ -318,6 +318,7 @@ static int usb_stor_control_thread(void * __us)
 	current->files = init_task.files;
 	atomic_inc(&current->files->count);
 	daemonize();
+	reparent_to_init();
 
 	/* avoid getting signals */
 	spin_lock_irq(&current->sigmask_lock);
@@ -958,6 +959,7 @@ static void * storage_probe(struct usb_device *dev, unsigned int ifnum,
 			ss->protocol_name = "Unknown";
 			kfree(ss->current_urb);
 			kfree(ss);
+			usb_dec_dev_use(dev);
 			return NULL;
 			break;
 		}
@@ -965,6 +967,8 @@ static void * storage_probe(struct usb_device *dev, unsigned int ifnum,
 
 		/* allocate an IRQ callback if one is needed */
 		if ((ss->protocol == US_PR_CBI) && usb_stor_allocate_irq(ss)) {
+			kfree(ss->current_urb);
+			kfree(ss);
 			usb_dec_dev_use(dev);
 			return NULL;
 		}

@@ -18,10 +18,17 @@
 
 #ifdef __KERNEL__
 
-#ifndef _LANGUAGE_ASSEMBLY
+#ifndef __ASSEMBLY__
 
 #define BUG() do { printk("kernel BUG at %s:%d!\n", __FILE__, __LINE__); *(int *)0=0; } while (0)
 #define PAGE_BUG(page) do {  BUG(); } while (0)
+
+/*
+ * Prototypes for clear_page / copy_page variants with processor dependant
+ * optimizations.
+ */
+void sb1_clear_page(void * page);
+void sb1_copy_page(void * to, void * from);
 
 extern void (*_clear_page)(void * page);
 extern void (*_copy_page)(void * to, void * from);
@@ -45,11 +52,25 @@ typedef struct { unsigned long pgprot; } pgprot_t;
 #define pgprot_val(x)	((x).pgprot)
 
 #define __pte(x)	((pte_t) { (x) } )
-#define __pme(x)	((pme_t) { (x) } )
+#define __pmd(x)	((pmd_t) { (x) } )
 #define __pgd(x)	((pgd_t) { (x) } )
 #define __pgprot(x)	((pgprot_t) { (x) } )
 
-#endif /* _LANGUAGE_ASSEMBLY */
+/* Pure 2^n version of get_order */
+extern __inline__ int get_order(unsigned long size)
+{
+	int order;
+
+	size = (size-1) >> (PAGE_SHIFT-1);
+	order = -1;
+	do {
+       		size >>= 1;
+       		order++;
+	} while (size);
+	return order;
+}
+
+#endif /* !__ASSEMBLY__ */
 
 /* to align the pointer to the (next) page boundary */
 #define PAGE_ALIGN(addr)	(((addr)+PAGE_SIZE-1)&PAGE_MASK)
@@ -57,12 +78,19 @@ typedef struct { unsigned long pgprot; } pgprot_t;
 /*
  * This handles the memory map.
  * We handle pages at KSEG0 for kernels with upto 512mb of memory,
- * at XKPHYS for kernels with more than that.
+ * at XKPHYS with a suitable caching mode for kernels with more than that.
  */
-#ifdef CONFIG_SGI_IP22
+#if defined(CONFIG_SGI_IP22) || defined(CONFIG_MIPS_ATLAS) || \
+    defined(CONFIG_MIPS_MALTA)
 #define PAGE_OFFSET	0xffffffff80000000UL
 #endif
-#ifdef CONFIG_SGI_IP27
+#if defined(CONFIG_SGI_IP32)
+#define PAGE_OFFSET	0x9800000000000000UL
+#endif
+#if defined(CONFIG_SGI_IP27)
+#define PAGE_OFFSET	0xa800000000000000UL
+#endif
+#if defined(CONFIG_SIBYTE_SB1250)
 #define PAGE_OFFSET	0xa800000000000000UL
 #endif
 
@@ -72,6 +100,9 @@ typedef struct { unsigned long pgprot; } pgprot_t;
 #define virt_to_page(kaddr)	(mem_map + (__pa(kaddr) >> PAGE_SHIFT))
 #define VALID_PAGE(page)	((page - mem_map) < max_mapnr)
 #endif
+
+#define VM_DATA_DEFAULT_FLAGS	(VM_READ | VM_WRITE | VM_EXEC | \
+				 VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC)
 
 #endif /* defined (__KERNEL__) */
 

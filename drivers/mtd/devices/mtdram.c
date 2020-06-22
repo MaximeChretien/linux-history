@@ -1,6 +1,6 @@
 /*
  * mtdram - a test mtd device
- * $Id: mtdram.c,v 1.25 2001/10/02 15:05:13 dwmw2 Exp $
+ * $Id: mtdram.c,v 1.26 2001/12/01 10:24:18 dwmw2 Exp $
  * Author: Alexander Larsson <alex@cendio.se>
  *
  * Copyright (c) 1999 Alexander Larsson <alex@cendio.se>
@@ -123,7 +123,7 @@ int __init init_mtdram(void)
    // Allocate some memory
    mtd_info = (struct mtd_info *)kmalloc(sizeof(struct mtd_info), GFP_KERNEL);
    if (!mtd_info)
-      return 0;
+      return -ENOMEM;
    
    memset(mtd_info, 0, sizeof(*mtd_info));
 

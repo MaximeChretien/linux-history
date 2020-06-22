@@ -1778,7 +1778,7 @@ static int radeonfb_do_maximize(struct radeonfb_info *rinfo,
                 
         /* use highest possible virtual resolution */
         if (v->xres_virtual == -1 && v->yres_virtual == -1) {
-                printk("radeonfb: using max availabe virtual resolution\n");
+                printk("radeonfb: using max available virtual resolution\n");
                 for (i=0; modes[i].xres != -1; i++) {
                         if (modes[i].xres * nom / den * modes[i].yres <
                             rinfo->video_ram / 2)
@@ -1855,7 +1855,7 @@ static int radeonfb_get_fix (struct fb_fix_screeninfo *fix, int con,
 	if (noaccel)
 	        fix->accel = FB_ACCEL_NONE;
 	else
-		fix->accel = 40;	/* XXX */
+		fix->accel = FB_ACCEL_ATI_RADEON;
         
         return 0;
 }

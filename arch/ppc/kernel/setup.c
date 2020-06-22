@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.setup.c 1.67 12/01/01 20:09:07 benh
+ * BK Id: SCCS/s.setup.c 1.75 04/16/02 20:08:22 paulus
  */
 /*
  * Common prep/pmac/chrp boot and setup code.
@@ -50,16 +50,17 @@
 extern void platform_init(unsigned long r3, unsigned long r4,
 		unsigned long r5, unsigned long r6, unsigned long r7);
 extern void bootx_init(unsigned long r4, unsigned long phys);
-extern unsigned long reloc_offset(void);
 extern void identify_cpu(unsigned long offset, unsigned long cpu);
 extern void do_cpu_ftr_fixups(unsigned long offset);
+extern void reloc_got2(unsigned long offset);
 
 #ifdef CONFIG_XMON
 extern void xmon_map_scc(void);
 #endif
 
 extern boot_infos_t *boot_infos;
-char saved_command_line[256];
+char saved_command_line[512];
+extern char cmd_line[512];
 unsigned char aux_device_present;
 struct ide_machdep_calls ppc_ide_md;
 char *sysmap;
@@ -291,22 +292,22 @@ early_init(int r3, int r4, int r5)
 	do_cpu_ftr_fixups(offset);
 
 #if defined(CONFIG_ALL_PPC)
+	reloc_got2(offset);
+
 	/* If we came here from BootX, clear the screen,
 	 * set up some pointers and return. */
-	if ((r3 == 0x426f6f58) && (r5 == 0)) {
+	if ((r3 == 0x426f6f58) && (r5 == 0))
 		bootx_init(r4, phys);
-		return phys;
-	}
 
-	/* check if we're prep, return if we are */
-	if ( *(unsigned long *)(0) == 0xdeadc0de )
-		return phys;
-
-	/* 
+	/*
+	 * don't do anything on prep
 	 * for now, don't use bootinfo because it breaks yaboot 0.5
 	 * and assume that if we didn't find a magic number, we have OF
 	 */
-	phys = prom_init(r3, r4, (prom_entry)r5);
+	else if (*(unsigned long *)(0) != 0xdeadc0de)
+		phys = prom_init(r3, r4, (prom_entry)r5);
+
+	reloc_got2(-offset);
 #endif
 
 	return phys;
@@ -343,11 +344,9 @@ platform_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	      unsigned long r6, unsigned long r7)
 {
 #ifdef CONFIG_BOOTX_TEXT
-	extern boot_infos_t *disp_bi;
-
-	if (disp_bi) {
+	if (boot_text_mapped) {
 		btext_clearscreen();
-		btext_welcome(disp_bi);
+		btext_welcome();
 	}
 #endif	
 
@@ -409,15 +408,14 @@ platform_init(unsigned long r3, unsigned long r4, unsigned long r5,
 		char *p;
 			
 #ifdef CONFIG_BLK_DEV_INITRD
-		if (r3 && r4 && r4 != 0xdeadbeef)
-			{
-				if (r3 < KERNELBASE)
-					r3 += KERNELBASE;
-				initrd_start = r3;
-				initrd_end = r3 + r4;
-				ROOT_DEV = MKDEV(RAMDISK_MAJOR, 0);
-				initrd_below_start_ok = 1;
-			}
+		if (r3 && r4 && r4 != 0xdeadbeef) {
+			if (r3 < KERNELBASE)
+				r3 += KERNELBASE;
+			initrd_start = r3;
+			initrd_end = r3 + r4;
+			ROOT_DEV = MKDEV(RAMDISK_MAJOR, 0);
+			initrd_below_start_ok = 1;
+		}
 #endif
 		chosen = find_devices("chosen");
 		if (chosen != NULL) {
@@ -524,6 +522,12 @@ int __init ppc_setup_l2cr(char *str)
 	return 1;
 }
 __setup("l2cr=", ppc_setup_l2cr);
+
+void __init arch_discover_root(void)
+{
+	if (ppc_md.discover_root != NULL)
+		ppc_md.discover_root();
+}
 
 void __init ppc_init(void)
 {
@@ -694,8 +698,12 @@ void ppc_generic_ide_fix_driveid(struct hd_driveid *id)
 	id->CurAPMvalues   = __le16_to_cpu(id->CurAPMvalues);
 	id->word92         = __le16_to_cpu(id->word92);
 	id->hw_config      = __le16_to_cpu(id->hw_config);
-	for (i = 0; i < 32; i++)
-		id->words94_125[i]  = __le16_to_cpu(id->words94_125[i]);
+	id->acoustic       = __le16_to_cpu(id->acoustic);
+	for (i = 0; i < 5; i++)
+		id->words95_99[i]  = __le16_to_cpu(id->words95_99[i]);
+	id->lba_capacity_2 = __le64_to_cpu(id->lba_capacity_2);
+	for (i = 0; i < 22; i++)
+		id->words104_125[i]   = __le16_to_cpu(id->words104_125[i]);
 	id->last_lun       = __le16_to_cpu(id->last_lun);
 	id->word127        = __le16_to_cpu(id->word127);
 	id->dlf            = __le16_to_cpu(id->dlf);
@@ -705,6 +713,12 @@ void ppc_generic_ide_fix_driveid(struct hd_driveid *id)
 	id->word156        = __le16_to_cpu(id->word156);
 	for (i = 0; i < 3; i++)
 		id->words157_159[i] = __le16_to_cpu(id->words157_159[i]);
-	for (i = 0; i < 96; i++)
-		id->words160_255[i] = __le16_to_cpu(id->words160_255[i]);
+	id->cfa_power      = __le16_to_cpu(id->cfa_power);
+	for (i = 0; i < 14; i++)
+		id->words161_175[i] = __le16_to_cpu(id->words161_175[i]);
+	for (i = 0; i < 31; i++)
+		id->words176_205[i] = __le16_to_cpu(id->words176_205[i]);
+	for (i = 0; i < 48; i++)
+		id->words206_254[i] = __le16_to_cpu(id->words206_254[i]);
+	id->integrity_word  = __le16_to_cpu(id->integrity_word);
 }

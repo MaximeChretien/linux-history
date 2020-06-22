@@ -11,6 +11,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/rtc.h>
 
 #include <asm/system.h>
 #include <asm/rtc.h>
@@ -57,7 +58,7 @@ void sun3_gettod (int *yearp, int *monp, int *dayp,
 
 /* get/set hwclock */
 
-int sun3_hwclk(int set, struct hwclk_time *t)
+int sun3_hwclk(int set, struct rtc_time *t)
 {
 	volatile struct intersil_dt *todintersil;
 	unsigned long flags;
@@ -71,23 +72,23 @@ int sun3_hwclk(int set, struct hwclk_time *t)
 	/* set or read the clock */
 	if(set) {
 		todintersil->csec = 0;
-		todintersil->hour = t->hour;
-		todintersil->minute = t->min;
-		todintersil->second = t->sec;
-		todintersil->month = t->mon;
-		todintersil->day = t->day;
-		todintersil->year = t->year - 68;
-		todintersil->weekday = t->wday;
+		todintersil->hour = t->tm_hour;
+		todintersil->minute = t->tm_min;
+		todintersil->second = t->tm_sec;
+		todintersil->month = t->tm_mon;
+		todintersil->day = t->tm_mday;
+		todintersil->year = t->tm_year - 68;
+		todintersil->weekday = t->tm_wday;
 	} else {
 		/* read clock */
-		t->sec = todintersil->csec;
-		t->hour = todintersil->hour;
-		t->min = todintersil->minute;
-		t->sec = todintersil->second;
-		t->mon = todintersil->month;
-		t->day = todintersil->day;
-		t->year = todintersil->year + 68;
-		t->wday = todintersil->weekday;
+		t->tm_sec = todintersil->csec;
+		t->tm_hour = todintersil->hour;
+		t->tm_min = todintersil->minute;
+		t->tm_sec = todintersil->second;
+		t->tm_mon = todintersil->month;
+		t->tm_mday = todintersil->day;
+		t->tm_year = todintersil->year + 68;
+		t->tm_wday = todintersil->weekday;
 	}
 
 	intersil_clock->cmd_reg = START_VAL;

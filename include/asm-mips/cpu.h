@@ -26,10 +26,8 @@
 
 #define PRID_COMP_LEGACY       0x000000
 #define PRID_COMP_MIPS         0x010000
+#define PRID_COMP_BROADCOM     0x020000
 #define PRID_COMP_ALCHEMY      0x030000
-/* 
- * Don't know who should be here...QED and Sandcraft, maybe?
- */
 #define PRID_COMP_SIBYTE       0x040000
 
 /*
@@ -38,7 +36,8 @@
  * be examined.  These are valid when 23:16 == PRID_COMP_LEGACY
  */
 #define PRID_IMP_R2000		0x0100
-#define PRID_IMP_AU1000	0x0100
+#define PRID_IMP_AU1_REV1	0x0100
+#define PRID_IMP_AU1_REV2	0x0200
 #define PRID_IMP_R3000		0x0200		/* Same as R2000A  */
 #define PRID_IMP_R6000		0x0300		/* Same as R3000A  */
 #define PRID_IMP_R4000		0x0400
@@ -54,13 +53,16 @@
 #define PRID_IMP_R4640		0x2200
 #define PRID_IMP_R4650		0x2200		/* Same as R4640 */
 #define PRID_IMP_R5000		0x2300
+#define PRID_IMP_TX49		0x2d00
 #define PRID_IMP_SONIC		0x2400
 #define PRID_IMP_MAGIC		0x2500
 #define PRID_IMP_RM7000		0x2700
 #define PRID_IMP_NEVADA		0x2800		/* RM5260 ??? */
 #define PRID_IMP_R5432		0x5400
+#define PRID_IMP_R5500		0x5500
 #define PRID_IMP_4KC		0x8000
 #define PRID_IMP_5KC		0x8100
+#define PRID_IMP_20KC		0x8200
 #define PRID_IMP_4KEC		0x8400
 #define PRID_IMP_4KSC		0x8600
 
@@ -86,13 +88,25 @@
 #define PRID_REV_TX3922 	0x0030
 #define PRID_REV_TX3927 	0x0040
 
-#ifndef  _LANGUAGE_ASSEMBLY
+/*
+ * FPU implementation/revision register (CP1 control register 0).
+ *
+ * +---------------------------------+----------------+----------------+
+ * | 0                               | Implementation | Revision       |
+ * +---------------------------------+----------------+----------------+
+ *  31                             16 15             8 7              0
+ */
+
+#define FPIR_IMP_NONE		0x0000
+
+#ifndef __ASSEMBLY__
 /*
  * Capability and feature descriptor structure for MIPS CPU
  */
 struct mips_cpu {
 	unsigned int processor_id;
-	unsigned int cputype;		/* Old "mips_cputype" code */
+	unsigned int fpu_id;
+	unsigned int cputype;
 	int isa_level;
 	int options;
 	int tlbsize;
@@ -102,7 +116,22 @@ struct mips_cpu {
 	struct cache_desc tcache;	/* Tertiary/split secondary cache */
 };
 
-#endif
+extern struct mips_cpu mips_cpu;
+
+enum cputype {
+	CPU_UNKNOWN,
+	CPU_R2000, CPU_R3000, CPU_R3000A, CPU_R3041, CPU_R3051, CPU_R3052,
+	CPU_R3081, CPU_R3081E, CPU_R4000PC, CPU_R4000SC, CPU_R4000MC,
+	CPU_R4200, CPU_R4400PC, CPU_R4400SC, CPU_R4400MC, CPU_R4600,
+	CPU_R6000, CPU_R6000A, CPU_R8000, CPU_R10000, CPU_R12000, CPU_R4300,
+	CPU_R4650, CPU_R4700, CPU_R5000, CPU_R5000A, CPU_R4640, CPU_NEVADA,
+	CPU_RM7000, CPU_R5432, CPU_4KC, CPU_5KC, CPU_R4310, CPU_SB1,
+	CPU_TX3912, CPU_TX3922, CPU_TX3927, CPU_AU1000, CPU_4KEC, CPU_4KSC,
+	CPU_VR41XX, CPU_R5500, CPU_TX49XX, CPU_TX39XX, CPU_AU1500, CPU_20KC,
+	CPU_LAST
+};
+
+#endif /* !__ASSEMBLY__ */
 
 /*
  * ISA Level encodings
@@ -118,17 +147,20 @@ struct mips_cpu {
 /*
  * CPU Option encodings
  */
-#define MIPS_CPU_TLB		0x00000001  /* CPU has TLB */
+#define MIPS_CPU_TLB		0x00000001 /* CPU has TLB */
 /* Leave a spare bit for variant MMU types... */
-#define MIPS_CPU_4KEX		0x00000004  /* "R4K" exception model */
-#define MIPS_CPU_4KTLB		0x00000008  /* "R4K" TLB handler */
-#define MIPS_CPU_FPU		0x00000010  /* CPU has FPU */
-#define MIPS_CPU_32FPR		0x00000020  /* 32 dbl. prec. FP registers */
-#define MIPS_CPU_COUNTER	0x00000040  /* Cycle count/compare */
-#define MIPS_CPU_WATCH		0x00000080  /* watchpoint registers */
-#define MIPS_CPU_MIPS16		0x00000100  /* code compression */
-#define MIPS_CPU_DIVEC		0x00000200  /* dedicated interrupt vector */
-#define MIPS_CPU_VCE		0x00000400  /* virt. coherence conflict possible */
+#define MIPS_CPU_4KEX		0x00000004 /* "R4K" exception model */
+#define MIPS_CPU_4KTLB		0x00000008 /* "R4K" TLB handler */
+#define MIPS_CPU_FPU		0x00000010 /* CPU has FPU */
+#define MIPS_CPU_32FPR		0x00000020 /* 32 dbl. prec. FP registers */
+#define MIPS_CPU_COUNTER	0x00000040 /* Cycle count/compare */
+#define MIPS_CPU_WATCH		0x00000080 /* watchpoint registers */
+#define MIPS_CPU_MIPS16		0x00000100 /* code compression */
+#define MIPS_CPU_DIVEC		0x00000200 /* dedicated interrupt vector */
+#define MIPS_CPU_VCE		0x00000400 /* virt. coherence conflict possible */
 #define MIPS_CPU_CACHE_CDEX	0x00000800 /* Create_Dirty_Exclusive CACHE op */
+#define MIPS_CPU_MCHECK		0x00001000 /* Machine check exception */
+#define MIPS_CPU_EJTAG		0x00002000 /* EJTAG exception */
+#define MIPS_CPU_NOFPUEX	0x00004000 /* no FPU exception */
 
 #endif /* _ASM_CPU_H */

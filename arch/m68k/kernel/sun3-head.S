@@ -15,9 +15,6 @@ SUN3_INVALID_PMEG = 255
 .globl SYMBOL_NAME(bootup_user_stack)
 .globl SYMBOL_NAME(bootup_kernel_stack)
 .globl SYMBOL_NAME(pg0)
-.globl SYMBOL_NAME(empty_bad_page)
-.globl SYMBOL_NAME(empty_bad_page_table)
-.globl SYMBOL_NAME(empty_zero_page)
 .globl SYMBOL_NAME(swapper_pg_dir)
 .globl SYMBOL_NAME(kernel_pmd_table)
 .globl SYMBOL_NAME(availmem)
@@ -26,10 +23,7 @@ SUN3_INVALID_PMEG = 255
 | todo: all these should be in bss!
 SYMBOL_NAME(swapper_pg_dir):                .skip 0x2000
 SYMBOL_NAME(pg0):                           .skip 0x2000
-SYMBOL_NAME(empty_bad_page):                .skip 0x2000
-SYMBOL_NAME(empty_bad_page_table):          .skip 0x2000
 SYMBOL_NAME(kernel_pmd_table):              .skip 0x2000
-SYMBOL_NAME(empty_zero_page):               .skip 0x2000
 
 .globl SYMBOL_NAME(kernel_pg_dir)
 .equ    SYMBOL_NAME(kernel_pg_dir),SYMBOL_NAME(kernel_pmd_table)

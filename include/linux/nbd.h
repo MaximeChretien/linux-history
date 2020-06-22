@@ -68,8 +68,9 @@ struct nbd_device {
 	struct socket * sock;
 	struct file * file; 		/* If == NULL, device is not ready, yet	*/
 	int magic;			/* FIXME: not if debugging is off	*/
+	spinlock_t queue_lock;
 	struct list_head queue_head;	/* Requests are added here...			*/
-	struct semaphore queue_lock;
+	struct semaphore tx_lock;
 };
 #endif
 

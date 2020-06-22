@@ -364,7 +364,6 @@ EXPORT_SYMBOL(tcp_inherit_port);
 EXPORT_SYMBOL(tcp_v4_syn_recv_sock);
 EXPORT_SYMBOL(tcp_v4_do_rcv);
 EXPORT_SYMBOL(tcp_v4_connect);
-EXPORT_SYMBOL(tcp_v4_hash_connecting);
 EXPORT_SYMBOL(tcp_unhash);
 EXPORT_SYMBOL(udp_prot);
 EXPORT_SYMBOL(tcp_prot);
@@ -409,6 +408,8 @@ EXPORT_SYMBOL(secure_ipv6_id);
 
 #endif
 
+EXPORT_SYMBOL(tcp_read_sock);
+
 EXPORT_SYMBOL(netlink_set_err);
 EXPORT_SYMBOL(netlink_broadcast);
 EXPORT_SYMBOL(netlink_unicast);
@@ -447,7 +448,6 @@ EXPORT_SYMBOL(ipv4_config);
 EXPORT_SYMBOL(dev_open);
 
 /* Used by other modules */
-EXPORT_SYMBOL(in_ntoa);
 EXPORT_SYMBOL(xrlim_allow);
 
 EXPORT_SYMBOL(ip_rcv);

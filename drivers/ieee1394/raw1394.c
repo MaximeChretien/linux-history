@@ -21,10 +21,7 @@
 #include <linux/smp_lock.h>
 #include <asm/uaccess.h>
 #include <asm/atomic.h>
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,3,0)
 #include <linux/devfs_fs_kernel.h>
-#endif
 
 #include "ieee1394.h"
 #include "ieee1394_types.h"
@@ -192,6 +189,8 @@ static void remove_host(struct hpsb_host *host)
         }
 
         kfree(hi);
+
+        atomic_inc(&internal_generation);
 }
 
 static void host_reset(struct hpsb_host *host)
@@ -226,8 +225,6 @@ static void host_reset(struct hpsb_host *host)
                 }
         }
         spin_unlock_irqrestore(&host_info_lock, flags);
-
-        atomic_inc(&internal_generation);
 }
 
 static void iso_receive(struct hpsb_host *host, int channel, quadlet_t *data,
@@ -467,7 +464,7 @@ static int state_initialized(struct file_info *fi, struct pending_request *req)
                                 hi = list_entry(lh, struct host_info, list);
 
                                 khl->nodes = hi->host->node_count;
-                                strcpy(khl->name, hi->host->template->name);
+                                strcpy(khl->name, hi->host->driver->name);
 
                                 khl++;
                         }
@@ -495,7 +492,7 @@ static int state_initialized(struct file_info *fi, struct pending_request *req)
                                 lh = lh->next;
                         }
                         hi = list_entry(lh, struct host_info, list);
-                        hpsb_inc_host_usage(hi->host);
+                        hpsb_ref_host(hi->host);
                         list_add_tail(&fi->list, &hi->file_info_list);
                         fi->host = hi->host;
                         fi->state = connected;
@@ -915,17 +912,13 @@ static int raw1394_open(struct inode *inode, struct file *file)
 {
         struct file_info *fi;
 
-        if (MINOR(inode->i_rdev)) {
+        if (ieee1394_file_to_instance(file) > 0) {
                 return -ENXIO;
         }
 
-        V22_COMPAT_MOD_INC_USE_COUNT;
-
         fi = kmalloc(sizeof(struct file_info), SLAB_KERNEL);
-        if (fi == NULL) {
-                V22_COMPAT_MOD_DEC_USE_COUNT;
+        if (fi == NULL)
                 return -ENOMEM;
-        }
         
         memset(fi, 0, sizeof(struct file_info));
 
@@ -949,7 +942,6 @@ static int raw1394_release(struct inode *inode, struct file *file)
         struct pending_request *req;
         int done = 0, i;
 
-        lock_kernel();
         for (i = 0; i < 64; i++) {
                 if (fi->listen_channels & (1ULL << i)) {
                         hpsb_unlisten_channel(hl_handle, fi->host, i);
@@ -984,31 +976,29 @@ static int raw1394_release(struct inode *inode, struct file *file)
                 list_del(&fi->list);
                 spin_unlock_irq(&host_info_lock);
 
-                hpsb_dec_host_usage(fi->host);
+                hpsb_unref_host(fi->host);
         }
 
         kfree(fi);
 
-        V22_COMPAT_MOD_DEC_USE_COUNT;
-        unlock_kernel();
         return 0;
 }
 
 static struct hpsb_highlevel_ops hl_ops = {
-        add_host:     add_host,
-        remove_host:  remove_host,
-        host_reset:   host_reset,
-        iso_receive:  iso_receive,
-        fcp_request:  fcp_request,
+        .add_host =    add_host,
+        .remove_host = remove_host,
+        .host_reset =  host_reset,
+        .iso_receive = iso_receive,
+        .fcp_request = fcp_request,
 };
 
 static struct file_operations file_ops = {
-        OWNER_THIS_MODULE
-        read:     raw1394_read, 
-        write:    raw1394_write, 
-        poll:     raw1394_poll, 
-        open:     raw1394_open, 
-        release:  raw1394_release, 
+	.owner =	THIS_MODULE,
+        .read =		raw1394_read, 
+        .write =	raw1394_write, 
+        .poll =		raw1394_poll, 
+        .open =		raw1394_open, 
+        .release =	raw1394_release, 
 };
 
 static int __init init_raw1394(void)
@@ -1019,14 +1009,18 @@ static int __init init_raw1394(void)
                 return -ENOMEM;
         }
 
-	devfs_handle = devfs_register(NULL, RAW1394_DEVICE_NAME, DEVFS_FL_NONE,
-                                      RAW1394_DEVICE_MAJOR, 0,
+	devfs_handle = devfs_register(NULL,
+				      RAW1394_DEVICE_NAME, DEVFS_FL_NONE,
+                                      IEEE1394_MAJOR,
+				      IEEE1394_MINOR_BLOCK_RAW1394 * 16,
                                       S_IFCHR | S_IRUSR | S_IWUSR, &file_ops,
                                       NULL);
 
-        if (devfs_register_chrdev(RAW1394_DEVICE_MAJOR, RAW1394_DEVICE_NAME, 
-                                  &file_ops)) {
-                HPSB_ERR("raw1394 failed to register /dev/raw1394 device");
+        if (ieee1394_register_chardev(IEEE1394_MINOR_BLOCK_RAW1394,
+				      THIS_MODULE, &file_ops)) {
+                HPSB_ERR("raw1394 failed to register minor device block");
+		devfs_unregister(devfs_handle);
+		hpsb_unregister_highlevel(hl_handle);
                 return -EBUSY;
         }
 	printk(KERN_INFO "raw1394: /dev/%s device initialized\n", RAW1394_DEVICE_NAME);
@@ -1035,7 +1029,7 @@ static int __init init_raw1394(void)
 
 static void __exit cleanup_raw1394(void)
 {
-        devfs_unregister_chrdev(RAW1394_DEVICE_MAJOR, RAW1394_DEVICE_NAME);
+        ieee1394_unregister_chardev(IEEE1394_MINOR_BLOCK_RAW1394);
 	devfs_unregister(devfs_handle);
         hpsb_unregister_highlevel(hl_handle);
 }

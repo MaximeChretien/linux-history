@@ -147,6 +147,19 @@ static void process_dma(sa1100_dma_t * dma)
 		}
 
 		/*
+		 * This improves latency if there are some active spinning
+		 * buffers.  We kill them altogether.
+		 */
+		if (dma->spin_ref > 0) {
+			if (channel_is_sa1111_sac(dma - dma_chan))
+				sa1111_reset_sac_dma(dma - dma_chan);
+			else
+				dma->regs->ClrDCSR =
+				    DCSR_STRTA|DCSR_STRTB|DCSR_DONEA|DCSR_DONEB;
+			dma->spin_ref = 0;
+		}
+
+		/*
 		 * Let's try to start DMA on the current buffer.
 		 * If DMA is busy then we break here.
 		 */
@@ -188,8 +201,7 @@ void sa1100_dma_done (sa1100_dma_t *dma)
 			 */
 			DPRINTK("IRQ: buf done\n");
 			dma->curr = buf->next;
-			if (dma->curr == NULL)
-				dma->spin_ref = -dma->spin_ref;
+			dma->spin_ref = -dma->spin_ref;
 			if (dma->head == buf)
 				dma->head = NULL;
 			if (dma->callback) {
@@ -468,7 +480,6 @@ int sa1100_dma_resume(dmach_t channel)
 		int flags;
 		save_flags_cli(flags);
 		dma->stopped = 0;
-		dma->spin_ref = 0;
 		process_dma(dma);
 		restore_flags(flags);
 	}

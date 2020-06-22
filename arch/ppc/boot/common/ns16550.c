@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.ns16550.c 1.12 10/08/01 17:16:50 paulus
+ * BK Id: SCCS/s.ns16550.c 1.16 03/13/02 09:17:06 trini
  */
 /*
  * COM1 NS16550 support
@@ -10,7 +10,6 @@
 #include <linux/serial_reg.h>
 #include <asm/serial.h>
 
-/* Default serial baud rate */
 #define SERIAL_BAUD	9600
 
 extern void outb(int port, unsigned char val);
@@ -23,8 +22,10 @@ static struct serial_state rs_table[RS_TABLE_SIZE] = {
 
 static int shift;
 
-unsigned long serial_init(int chan) {
+unsigned long serial_init(int chan, void *ignored)
+{
 	unsigned long com_port;
+	unsigned char lcr, dlm;
 
 	/* We need to find out which type io we're expecting.  If it's
 	 * 'SERIAL_IO_PORT', we get an offset from the isa_io_base.
@@ -43,30 +44,33 @@ unsigned long serial_init(int chan) {
 
 	/* How far apart the registers are. */
 	shift = rs_table[chan].iomem_reg_shift;
-
-	/* See if port is present */
-	outb(com_port + (UART_LCR << shift), 0x00);
-	outb(com_port + (UART_IER << shift), 0x00);
+	
+	/* save the LCR */
+	lcr = inb(com_port + (UART_LCR << shift));
 	/* Access baud rate */
 	outb(com_port + (UART_LCR << shift), 0x80);
+	dlm = inb(com_port + (UART_DLM << shift));
 	/*
 	 * Test if serial port is unconfigured.
 	 * We assume that no-one uses less than 110 baud or
 	 * less than 7 bits per character these days.
 	 *  -- paulus.
 	 */
-	if (inb(com_port + (UART_DLM << shift)) > 4
-	    || (inb(com_port + (UART_LCR << shift)) & 2) == 0) {
+
+	if ((dlm <= 4) && (lcr & 2))
+		/* port is configured, put the old LCR back */
+		outb(com_port + (UART_LCR << shift), lcr);
+	else {
 		/* Input clock. */
 		outb(com_port + (UART_DLL << shift),
-		     (BASE_BAUD / SERIAL_BAUD));
+		     (BASE_BAUD / SERIAL_BAUD) & 0xFF);
 		outb(com_port + (UART_DLM << shift),
 		     (BASE_BAUD / SERIAL_BAUD) >> 8);
+		/* 8 data, 1 stop, no parity */
+		outb(com_port + (UART_LCR << shift), 0x03);
+		/* RTS/DTR */
+		outb(com_port + (UART_MCR << shift), 0x03);
 	}
-	 /* 8 data, 1 stop, no parity */
-	outb(com_port + (UART_LCR << shift), 0x03);
-	/* RTS/DTR */
-	outb(com_port + (UART_MCR << shift), 0x03);
 	/* Clear & enable FIFOs */
 	outb(com_port + (UART_FCR << shift), 0x07);
 
@@ -93,4 +97,9 @@ int
 serial_tstc(unsigned long com_port)
 {
 	return ((inb(com_port + (UART_LSR << shift)) & UART_LSR_DR) != 0);
+}
+
+void
+serial_close(unsigned long com_port)
+{
 }

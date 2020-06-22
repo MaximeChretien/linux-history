@@ -275,6 +275,8 @@ static ctl_table vm_table[] = {
 	&vm_min_readahead,sizeof(int), 0644, NULL, &proc_dointvec},
 	{VM_MAX_READAHEAD, "max-readahead",
 	&vm_max_readahead,sizeof(int), 0644, NULL, &proc_dointvec},
+	{VM_MAX_MAP_COUNT, "max_map_count",
+	 &max_map_count, sizeof(int), 0644, NULL, &proc_dointvec},
 	{0}
 };
 
@@ -483,11 +485,11 @@ int do_sysctl_strategy (ctl_table *table,
 }
 
 /**
- * register_sysctl_table - register a sysctl heirarchy
+ * register_sysctl_table - register a sysctl hierarchy
  * @table: the top-level table structure
  * @insert_at_head: whether the entry should be inserted in front or at the end
  *
- * Register a sysctl table heirarchy. @table should be a filled in ctl_table
+ * Register a sysctl table hierarchy. @table should be a filled in ctl_table
  * array. An entry with a ctl_name of 0 terminates the table. 
  *
  * The members of the &ctl_table structure are used as follows:
@@ -571,7 +573,7 @@ struct ctl_table_header *register_sysctl_table(ctl_table * table,
 }
 
 /**
- * unregister_sysctl_table - unregister a sysctl table heirarchy
+ * unregister_sysctl_table - unregister a sysctl table hierarchy
  * @header: the header returned from register_sysctl_table
  *
  * Unregisters the sysctl table and all children. proc entries may not
@@ -984,7 +986,7 @@ int proc_dointvec_minmax(ctl_table *table, int write, struct file *filp,
 	vleft = table->maxlen / sizeof(int);
 	left = *lenp;
 	
-	for (; left && vleft--; i++, first=0) {
+	for (; left && vleft--; i++, min++, max++, first=0) {
 		if (write) {
 			while (left) {
 				char c;
@@ -1020,9 +1022,7 @@ int proc_dointvec_minmax(ctl_table *table, int write, struct file *filp,
 			buffer += len;
 			left -= len;
 
-			if (min && val < *min++)
-				continue;
-			if (max && val > *max++)
+			if ((min && val < *min) || (max && val > *max))
 				continue;
 			*i = val;
 		} else {

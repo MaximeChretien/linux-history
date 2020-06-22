@@ -1,7 +1,7 @@
 /*
  * linux/arch/arm/mach-sa1100/pfs168.c
  */
-
+#include <linux/config.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/tty.h>
@@ -34,7 +34,7 @@ static int __init pfs168_init(void)
 	/*
 	 * Probe for SA1111.
 	 */
-	ret = sa1111_probe();
+	ret = sa1111_probe(PFS168_SA1111_BASE);
 	if (ret < 0)
 		return ret;
 
@@ -65,8 +65,7 @@ static int __init pfs168_init(void)
 	 */
 	sa1110_mb_enable();
 
-	set_GPIO_IRQ_edge(GPIO_GPIO(25), GPIO_RISING_EDGE);
-	sa1111_init_irq(SA1100_GPIO_TO_IRQ(25));	/* SA1111 IRQ on GPIO 25 */
+	sa1111_init_irq(IRQ_GPIO25);	/* SA1111 IRQ on GPIO 25 */
 
 	return 0;
 }
@@ -84,6 +83,8 @@ static void __init pfs168_init_irq(void)
 	 */
 	set_GPIO_IRQ_edge(GPIO_GPIO(19), GPIO_RISING_EDGE);
 	set_GPIO_IRQ_edge(GPIO_GPIO(20), GPIO_RISING_EDGE);
+	set_GPIO_IRQ_edge(GPIO_GPIO(25), GPIO_RISING_EDGE);
+	set_GPIO_IRQ_edge(GPIO_UCB1300_IRQ, GPIO_RISING_EDGE);
 }
 
 
@@ -101,20 +102,20 @@ fixup_pfs168(struct machine_desc *desc, struct param_struct *params,
 
 static struct map_desc pfs168_io_desc[] __initdata = {
  /* virtual     physical    length      domain     r  w  c  b */
-  { 0xe8000000, 0x00000000, 0x02000000, DOMAIN_IO, 1, 1, 0, 0 }, /* Flash bank 0 */
-  { 0xf0000000, 0x10000000, 0x00001000, DOMAIN_IO, 1, 1, 0, 0 }, /* 16C752 DUART port A (COM5) */
-  { 0xf0001000, 0x10800000, 0x00001000, DOMAIN_IO, 1, 1, 0, 0 }, /* 16C752 DUART port B (COM6) */
-  { 0xf0002000, 0x11000000, 0x00001000, DOMAIN_IO, 1, 1, 0, 0 }, /* COM1 RTS control (SYSC1RTS) */
-  { 0xf0003000, 0x11400000, 0x00001000, DOMAIN_IO, 1, 1, 0, 0 }, /* Status LED control (SYSLED) */
-  { 0xf0004000, 0x11800000, 0x00001000, DOMAIN_IO, 1, 1, 0, 0 }, /* DTMF code read (SYSDTMF) */
-  { 0xf0005000, 0x11c00000, 0x00001000, DOMAIN_IO, 1, 1, 0, 0 }, /* LCD configure, enable (SYSLCDDE) */
-  { 0xf0006000, 0x12000000, 0x00001000, DOMAIN_IO, 1, 1, 0, 0 }, /* COM1 DSR and motion sense (SYSC1DSR) */
-  { 0xf0007000, 0x12800000, 0x00001000, DOMAIN_IO, 1, 1, 0, 0 }, /* COM3 xmit enable (SYSC3TEN) */
-  { 0xf0008000, 0x13000000, 0x00001000, DOMAIN_IO, 1, 1, 0, 0 }, /* Control register A (SYSCTLA) */
-  { 0xf0009000, 0x13800000, 0x00001000, DOMAIN_IO, 1, 1, 0, 0 }, /* Control register B (SYSCTLB) */
-  { 0xf000a000, 0x18000000, 0x00001000, DOMAIN_IO, 1, 1, 0, 0 }, /* SMC91C96 */
-  { 0xf2800000, 0x4b800000, 0x00800000, DOMAIN_IO, 1, 1, 0, 0 }, /* MQ200 */
-  { 0xf4000000, 0x40000000, 0x00100000, DOMAIN_IO, 1, 1, 0, 0 }, /* SA-1111 */
+  { 0xe8000000, 0x00000000, 0x02000000, DOMAIN_IO, 0, 1, 0, 0 }, /* Flash bank 0 */
+  { 0xf0000000, 0x10000000, 0x00001000, DOMAIN_IO, 0, 1, 0, 0 }, /* 16C752 DUART port A (COM5) */
+  { 0xf0001000, 0x10800000, 0x00001000, DOMAIN_IO, 0, 1, 0, 0 }, /* 16C752 DUART port B (COM6) */
+  { 0xf0002000, 0x11000000, 0x00001000, DOMAIN_IO, 0, 1, 0, 0 }, /* COM1 RTS control (SYSC1RTS) */
+  { 0xf0003000, 0x11400000, 0x00001000, DOMAIN_IO, 0, 1, 0, 0 }, /* Status LED control (SYSLED) */
+  { 0xf0004000, 0x11800000, 0x00001000, DOMAIN_IO, 0, 1, 0, 0 }, /* DTMF code read (SYSDTMF) */
+  { 0xf0005000, 0x11c00000, 0x00001000, DOMAIN_IO, 0, 1, 0, 0 }, /* LCD configure, enable (SYSLCDDE) */
+  { 0xf0006000, 0x12000000, 0x00001000, DOMAIN_IO, 0, 1, 0, 0 }, /* COM1 DSR and motion sense (SYSC1DSR) */
+  { 0xf0007000, 0x12800000, 0x00001000, DOMAIN_IO, 0, 1, 0, 0 }, /* COM3 xmit enable (SYSC3TEN) */
+  { 0xf0008000, 0x13000000, 0x00001000, DOMAIN_IO, 0, 1, 0, 0 }, /* Control register A (SYSCTLA) */
+  { 0xf0009000, 0x13800000, 0x00001000, DOMAIN_IO, 0, 1, 0, 0 }, /* Control register B (SYSCTLB) */
+  { 0xf000a000, 0x18000000, 0x00001000, DOMAIN_IO, 0, 1, 0, 0 }, /* SMC91C96 */
+  { 0xf2800000, 0x4b800000, 0x00800000, DOMAIN_IO, 0, 1, 0, 0 }, /* MQ200 */
+  { 0xf4000000, 0x40000000, 0x00100000, DOMAIN_IO, 0, 1, 0, 0 }, /* SA-1111 */
   LAST_DESC
 };
 

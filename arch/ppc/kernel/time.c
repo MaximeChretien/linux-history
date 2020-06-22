@@ -358,7 +358,7 @@ void __init time_init(void)
 #define	STARTOFTIME		1970
 #define SECDAY			86400L
 #define SECYR			(SECDAY * 365)
-#define	leapyear(year)		((year) % 4 == 0)
+#define	leapyear(y)		((!(y % 4) && (y % 100)) || !(y % 400))
 #define	days_in_year(a) 	(leapyear(a) ? 366 : 365)
 #define	days_in_month(a) 	(month_days[(a) - 1])
 

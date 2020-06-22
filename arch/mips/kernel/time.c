@@ -30,13 +30,18 @@
 
 /* This is for machines which generate the exact clock. */
 #define USECS_PER_JIFFY (1000000/HZ)
-#define USECS_PER_JIFFY_FRAC ((1000000ULL << 32) / HZ & 0xffffffff)
+#define USECS_PER_JIFFY_FRAC ((u32)((1000000ULL << 32) / HZ))
 
 /*
  * forward reference
  */
 extern rwlock_t xtime_lock;
 extern volatile unsigned long wall_jiffies;
+
+/*
+ * whether we emulate local_timer_interrupts for SMP machines.
+ */
+int emulate_local_timer_interrupt;
 
 /*
  * By default we provide the null RTC ops
@@ -255,8 +260,7 @@ unsigned long calibrate_div64_gettimeoffset(void)
 	        :"r" (timerhi),
 	         "m" (timerlo),
 	         "r" (tmp),
-	         "r" (USECS_PER_JIFFY)
-	        :"$1");
+	         "r" (USECS_PER_JIFFY));
 	        cached_quotient = quotient;
 	}
 
@@ -284,6 +288,42 @@ unsigned long calibrate_div64_gettimeoffset(void)
 
 
 /*
+ * local_timer_interrupt() does profiling and process accounting
+ * on a per-CPU basis.  
+ *
+ * In UP mode, it is invoked from the (global) timer_interrupt.  
+ *
+ * In SMP mode, it might invoked by per-CPU timer interrupt, or
+ * a broadcasted inter-processor interrupt which itself is triggered
+ * by the global timer interrupt.
+ */
+void local_timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+{
+	if (!user_mode(regs)) {
+		if (prof_buffer && current->pid) {
+			extern int _stext;
+			unsigned long pc = regs->cp0_epc;
+
+			pc -= (unsigned long) &_stext;
+			pc >>= prof_shift;
+			/*
+			 * Dont ignore out-of-bounds pc values silently,
+			 * put them into the last histogram slot, so if
+			 * present, they will show up as a sharp peak.
+			 */
+			if (pc > prof_len-1)
+			pc = prof_len-1;
+			atomic_inc((atomic_t *)&prof_buffer[pc]);
+		}
+	}
+
+#ifdef CONFIG_SMP
+	/* in UP mode, update_process_times() is invoked by do_timer() */
+	update_process_times(user_mode(regs));
+#endif
+}
+
+/*
  * high-level timer interrupt service routines.  This function
  * is set as irqaction->handler and is invoked through do_IRQ.
  */
@@ -308,24 +348,6 @@ void timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 		write_32bit_cp0_register (CP0_COMPARE,
 					  count + cycles_per_jiffy);
 
-	}
-
-	if(!user_mode(regs)) {
-		if (prof_buffer && current->pid) {
-			extern int _stext;
-			unsigned long pc = regs->cp0_epc;
-
-			pc -= (unsigned long) &_stext;
-			pc >>= prof_shift;
-			/*
-			 * Dont ignore out-of-bounds pc values silently,
-			 * put them into the last histogram slot, so if
-			 * present, they will show up as a sharp peak.
-			 */
-			if (pc > prof_len-1)
-			pc = prof_len-1;
-			atomic_inc((atomic_t *)&prof_buffer[pc]);
-		}
 	}
 
 	/*
@@ -360,6 +382,31 @@ void timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 	if (!jiffies) {
 		timerhi = timerlo = 0;
 	}
+
+#if !defined(CONFIG_SMP)
+	/* 
+	 * In UP mode, we call local_timer_interrupt() to do profiling
+	 * and process accouting.  
+	 *
+	 * In SMP mode, local_timer_interrupt() is invoked by appropriate
+	 * low-level local timer interrupt handler.
+	 */
+	local_timer_interrupt(0, NULL, regs);
+
+#else	/* CONFIG_SMP */
+
+	if (emulate_local_timer_interrupt) {
+		/* 
+		 * this is the place where we send out inter-process
+		 * interrupts and let each CPU do its own profiling
+		 * and process accouting.
+		 *
+		 * Obviously we need to call local_timer_interrupt() for
+		 * the current CPU too.
+		 */
+		panic("Not implemented yet!!!");
+	}
+#endif	/* CONFIG_SMP */
 }
 
 asmlinkage void ll_timer_interrupt(int irq, struct pt_regs *regs)
@@ -378,6 +425,21 @@ asmlinkage void ll_timer_interrupt(int irq, struct pt_regs *regs)
 		do_softirq();
 }
 
+asmlinkage void ll_local_timer_interrupt(int irq, struct pt_regs *regs)
+{
+	int cpu = smp_processor_id();
+
+	irq_enter(cpu, irq);
+	kstat.irqs[cpu][irq]++;
+
+	/* we keep interrupt disabled all the time */
+	local_timer_interrupt(irq, NULL, regs);
+	
+	irq_exit(cpu, irq);
+
+	if (softirq_pending(cpu))
+		do_softirq();
+}
 
 /*
  * time_init() - it does the following things.
@@ -407,7 +469,8 @@ static struct irqaction timer_irqaction = {
 	0,
 	"timer",
 	NULL,
-	NULL};
+	NULL
+};
 
 void __init time_init(void)
 {
@@ -475,10 +538,10 @@ static int month_days[12] = {
 
 void to_tm(unsigned long tim, struct rtc_time * tm)
 {
-	long hms, day;
+	long hms, day, gday;
 	int i;
 
-	day = tim / SECDAY;
+	gday = day = tim / SECDAY;
 	hms = tim % SECDAY;
 
 	/* Hours, minutes, seconds are easy */
@@ -497,7 +560,7 @@ void to_tm(unsigned long tim, struct rtc_time * tm)
 	for (i = 1; day >= days_in_month(i); i++)
 	day -= days_in_month(i);
 	days_in_month(FEBRUARY) = 28;
-	tm->tm_mon = i;
+	tm->tm_mon = i-1;	/* tm_mon starts from 0 to 11 */
 
 	/* Days are what is left over (+1) from all that. */
 	tm->tm_mday = day + 1;
@@ -505,5 +568,5 @@ void to_tm(unsigned long tim, struct rtc_time * tm)
 	/*
 	 * Determine the day of week
 	 */
-	tm->tm_wday = (day + 3) % 7;
+	tm->tm_wday = (gday + 4) % 7; /* 1970/1/1 was Thursday */
 }

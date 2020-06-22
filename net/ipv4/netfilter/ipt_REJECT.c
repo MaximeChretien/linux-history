@@ -39,7 +39,8 @@ static void send_reset(struct sk_buff *oldskb, int local)
 	struct tcphdr *otcph, *tcph;
 	struct rtable *rt;
 	unsigned int otcplen;
-	u_int16_t tmp;
+	u_int16_t tmp_port;
+	u_int32_t tmp_addr;
 	int needs_ack;
 
 	/* IP header checks: fragment, too short. */
@@ -78,10 +79,12 @@ static void send_reset(struct sk_buff *oldskb, int local)
 	tcph = (struct tcphdr *)((u_int32_t*)nskb->nh.iph + nskb->nh.iph->ihl);
 
 	/* Swap source and dest */
-	nskb->nh.iph->daddr = xchg(&nskb->nh.iph->saddr, nskb->nh.iph->daddr);
-	tmp = tcph->source;
+	tmp_addr = nskb->nh.iph->saddr;
+	nskb->nh.iph->saddr = nskb->nh.iph->daddr;
+	nskb->nh.iph->daddr = tmp_addr;
+	tmp_port = tcph->source;
 	tcph->source = tcph->dest;
-	tcph->dest = tmp;
+	tcph->dest = tmp_port;
 
 	/* Truncate to length (no data) */
 	tcph->doff = sizeof(struct tcphdr)/4;
@@ -234,11 +237,8 @@ static void send_unreach(struct sk_buff *skb_in, int code)
 	iph->tos=tos;
 	iph->tot_len = htons(length);
 
-	/* This abbreviates icmp->send->ip_build_xmit->ip_dont_fragment */
-	if (!ipv4_config.no_pmtu_disc
-	    && !(rt->u.dst.mxlock&(1<<RTAX_MTU)))
-		iph->frag_off = htons(IP_DF);
-	else iph->frag_off = 0;
+	/* PMTU discovery never applies to ICMP packets. */
+	iph->frag_off = 0;
 
 	iph->ttl = MAXTTL;
 	ip_select_ident(iph, &rt->u.dst, NULL);

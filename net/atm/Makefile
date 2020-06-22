@@ -21,6 +21,15 @@ obj-y += clip.o
 NEED_IPCOM = ipcommon.o
 endif
 
+ifeq ($(CONFIG_ATM_BR2684),y)
+  NEED_IPCOM = ipcommon.o
+else
+  ifeq ($(CONFIG_ATM_BR2684),m)
+	NEED_IPCOM = ipcommon.o
+  endif
+endif
+obj-$(CONFIG_ATM_BR2684) += br2684.o
+
 ifeq ($(CONFIG_NET_SCH_ATM),y)
 NEED_IPCOM = ipcommon.o
 endif

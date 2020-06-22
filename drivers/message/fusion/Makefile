@@ -27,6 +27,7 @@ EXTRA_CFLAGS += -I. ${MPT_CFLAGS}
 #EXTRA_CFLAGS += -DDEBUG
 #EXTRA_CFLAGS += -DMPT_DEBUG
 #EXTRA_CFLAGS += -DMPT_DEBUG_MSG_FRAME
+#EXTRA_CFLAGS += -DMPT_DEBUG_SG
 #
 # driver/module specifics...
 #
@@ -34,11 +35,13 @@ EXTRA_CFLAGS += -I. ${MPT_CFLAGS}
 #CFLAGS_mptbase.o += -DMPT_DEBUG_HANDSHAKE
 #CFLAGS_mptbase.o += -DMPT_DEBUG_IRQ
 #
-#  For {mptscsih, mptctl}:
+#  For mptscsih:
 #CFLAGS_mptscsih.o += -DMPT_SCSI_USE_NEW_EH
 #CFLAGS_mptscsih.o += -DMPT_DEBUG_SCANDV
-#CFLAGS_mptscsih.o += -DMPT_DEBUG_SG
-#CFLAGS_mptctl.o += -DMPT_DEBUG_SG
+#CFLAGS_mptscsih.o += -DMPT_DEBUG_RESET
+#
+#  For mptctl:
+#CFLAGS_mptctl.o += -DMPT_DEBUG_IOCTL
 #
 #  For mptlan:
 #CFLAGS_mptlan.o += -DMPT_LAN_IO_DEBUG

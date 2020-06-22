@@ -169,6 +169,11 @@ typedef struct _IOCTL_Command_struct {
   BYTE			   *buf;
 } IOCTL_Command_struct;
 
+typedef struct _LogvolInfo_struct{
+   __u32	LunID;
+   int		num_opens;  /* number of opens on the logical volume */
+   int		num_parts;  /* number of partitions configured on logvol */
+} LogvolInfo_struct;
 
 #define CCISS_GETPCIINFO _IOR(CCISS_IOC_MAGIC, 1, cciss_pci_info_struct)
 
@@ -182,8 +187,9 @@ typedef struct _IOCTL_Command_struct {
 #define CCISS_GETBUSTYPES  _IOR(CCISS_IOC_MAGIC, 7, BusTypes_type)
 #define CCISS_GETFIRMVER   _IOR(CCISS_IOC_MAGIC, 8, FirmwareVer_type)
 #define CCISS_GETDRIVVER   _IOR(CCISS_IOC_MAGIC, 9, DriverVer_type)
-#define CCISS_REVALIDVOLS  _IO(CCISS_IOC_MAGIC, 10)
+#define CCISS_REVALIDVOLS  _IO(CCISS_IOC_MAGIC, 10) /* obsolete */
 #define CCISS_PASSTHRU	   _IOWR(CCISS_IOC_MAGIC, 11, IOCTL_Command_struct)
+#define CCISS_GETLUNINFO  _IOR(CCISS_IOC_MAGIC, 17, LogvolInfo_struct)
 
 
 #endif  

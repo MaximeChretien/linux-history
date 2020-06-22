@@ -58,11 +58,12 @@ EXPORT_SYMBOL(disable_irq_nosync);
 EXPORT_SYMBOL(probe_irq_mask);
 EXPORT_SYMBOL(screen_info);
 EXPORT_SYMBOL(perf_irq);
-#ifdef CONFIG_ALPHA_SRM
 EXPORT_SYMBOL(callback_getenv);
 EXPORT_SYMBOL(callback_setenv);
 EXPORT_SYMBOL(callback_save_env);
-#endif /* CONFIG_ALPHA_SRM */
+#ifdef CONFIG_ALPHA_GENERIC
+EXPORT_SYMBOL(alpha_using_srm);
+#endif /* CNFIG_ALPHA_GENERIC */
 
 /* platform dependent support */
 EXPORT_SYMBOL(_inb);
@@ -214,6 +215,7 @@ EXPORT_SYMBOL(flush_tlb_page);
 EXPORT_SYMBOL(smp_imb);
 EXPORT_SYMBOL(cpu_data);
 EXPORT_SYMBOL(__cpu_number_map);
+EXPORT_SYMBOL(__cpu_logical_map);
 EXPORT_SYMBOL(smp_num_cpus);
 EXPORT_SYMBOL(smp_call_function);
 EXPORT_SYMBOL(smp_call_function_on_cpu);

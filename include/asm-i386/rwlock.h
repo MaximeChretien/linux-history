@@ -17,8 +17,6 @@
 #ifndef _ASM_I386_RWLOCK_H
 #define _ASM_I386_RWLOCK_H
 
-#include <linux/stringify.h>
-
 #define RW_LOCK_BIAS		 0x01000000
 #define RW_LOCK_BIAS_STR	"0x01000000"
 
@@ -26,29 +24,23 @@
 	asm volatile(LOCK "subl $1,(%0)\n\t" \
 		     "js 2f\n" \
 		     "1:\n" \
-		     ".subsection 1\n" \
-		     ".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n" \
-		     "_text_lock_" __stringify(KBUILD_BASENAME) ":\n" \
-		     ".endif\n" \
+		     LOCK_SECTION_START("") \
 		     "2:\tcall " helper "\n\t" \
 		     "jmp 1b\n" \
-		     ".subsection 0\n" \
+		     LOCK_SECTION_END \
 		     ::"a" (rw) : "memory")
 
 #define __build_read_lock_const(rw, helper)   \
 	asm volatile(LOCK "subl $1,%0\n\t" \
 		     "js 2f\n" \
 		     "1:\n" \
-		     ".subsection 1\n" \
-		     ".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n" \
-		     "_text_lock_" __stringify(KBUILD_BASENAME) ":\n" \
-		     ".endif\n" \
+		     LOCK_SECTION_START("") \
 		     "2:\tpushl %%eax\n\t" \
 		     "leal %0,%%eax\n\t" \
 		     "call " helper "\n\t" \
 		     "popl %%eax\n\t" \
 		     "jmp 1b\n" \
-		     ".subsection 0\n" \
+		     LOCK_SECTION_END \
 		     :"=m" (*(volatile int *)rw) : : "memory")
 
 #define __build_read_lock(rw, helper)	do { \
@@ -62,29 +54,23 @@
 	asm volatile(LOCK "subl $" RW_LOCK_BIAS_STR ",(%0)\n\t" \
 		     "jnz 2f\n" \
 		     "1:\n" \
-		     ".subsection 1\n" \
-		     ".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n" \
-		     "_text_lock_" __stringify(KBUILD_BASENAME) ":\n" \
-		     ".endif\n" \
+		     LOCK_SECTION_START("") \
 		     "2:\tcall " helper "\n\t" \
 		     "jmp 1b\n" \
-		     ".subsection 0\n" \
+		     LOCK_SECTION_END \
 		     ::"a" (rw) : "memory")
 
 #define __build_write_lock_const(rw, helper) \
 	asm volatile(LOCK "subl $" RW_LOCK_BIAS_STR ",(%0)\n\t" \
 		     "jnz 2f\n" \
 		     "1:\n" \
-		     ".subsection 1\n" \
-		     ".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n" \
-		     "_text_lock_" __stringify(KBUILD_BASENAME) ":\n" \
-		     ".endif\n" \
+		     LOCK_SECTION_START("") \
 		     "2:\tpushl %%eax\n\t" \
 		     "leal %0,%%eax\n\t" \
 		     "call " helper "\n\t" \
 		     "popl %%eax\n\t" \
 		     "jmp 1b\n" \
-		     ".subsection 0\n" \
+		     LOCK_SECTION_END \
 		     :"=m" (*(volatile int *)rw) : : "memory")
 
 #define __build_write_lock(rw, helper)	do { \

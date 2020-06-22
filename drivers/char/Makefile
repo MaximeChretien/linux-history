@@ -23,7 +23,8 @@ obj-y	 += mem.o tty_io.o n_tty.o tty_ioctl.o raw.o pty.o misc.o random.o
 
 export-objs     :=	busmouse.o console.o keyboard.o sysrq.o \
 			misc.o pty.o random.o selection.o serial.o \
-			sonypi.o tty_io.o tty_ioctl.o generic_serial.o
+			sonypi.o tty_io.o tty_ioctl.o generic_serial.o \
+			au1000_gpio.o
 
 mod-subdirs	:=	joystick ftape drm drm-4.0 pcmcia
 
@@ -58,9 +59,16 @@ ifeq ($(ARCH),m68k)
    ifdef CONFIG_AMIGA
       KEYBD = amikeyb.o
    else
-      KEYBD =
+      ifndef CONFIG_MAC
+	 KEYBD =
+      endif
    endif
    SERIAL   =
+endif
+
+ifdef CONFIG_Q40
+  KEYBD += q40_keyb.o
+  SERIAL = serial.o
 endif
 
 ifeq ($(ARCH),arm)
@@ -124,12 +132,17 @@ ifeq ($(CONFIG_QTRONIX_KEYBOARD),y)
   KEYMAP   = qtronixmap.o
 endif
 
+ifeq ($(CONFIG_DUMMY_KEYB),y)
+  KEYBD = dummy_keyb.o
+endif
+
 obj-$(CONFIG_VT) += vt.o vc_screen.o consolemap.o consolemap_deftbl.o $(CONSOLE) selection.o
 obj-$(CONFIG_SERIAL) += $(SERIAL)
-obj-$(CONFIG_SERIAL_ACPI) += acpi_serial.o
+obj-$(CONFIG_SERIAL_HCDP) += hcdp_serial.o
 obj-$(CONFIG_SERIAL_21285) += serial_21285.o
 obj-$(CONFIG_SERIAL_SA1100) += serial_sa1100.o
 obj-$(CONFIG_SERIAL_AMBA) += serial_amba.o
+obj-$(CONFIG_TS_AU1000_ADS7846) += au1000_ts.o
 
 ifndef CONFIG_SUN_KEYBOARD
   obj-$(CONFIG_VT) += keyboard.o $(KEYMAP) $(KEYBD)
@@ -147,6 +160,7 @@ obj-$(CONFIG_DIGIEPCA) += epca.o
 obj-$(CONFIG_CYCLADES) += cyclades.o
 obj-$(CONFIG_STALLION) += stallion.o
 obj-$(CONFIG_ISTALLION) += istallion.o
+obj-$(CONFIG_SIBYTE_SB1250_DUART) += sb1250_duart.o
 obj-$(CONFIG_COMPUTONE) += ip2.o ip2main.o
 obj-$(CONFIG_RISCOM8) += riscom8.o
 obj-$(CONFIG_ISI) += isicom.o
@@ -164,6 +178,7 @@ obj-$(CONFIG_MVME147_SCC) += generic_serial.o vme_scc.o
 obj-$(CONFIG_MVME162_SCC) += generic_serial.o vme_scc.o
 obj-$(CONFIG_BVME6000_SCC) += generic_serial.o vme_scc.o
 obj-$(CONFIG_SERIAL_TX3912) += generic_serial.o serial_tx3912.o
+obj-$(CONFIG_TXX927_SERIAL) += serial_txx927.o
 
 subdir-$(CONFIG_RIO) += rio
 subdir-$(CONFIG_INPUT) += joystick
@@ -187,6 +202,7 @@ obj-$(CONFIG_AMIGAMOUSE) += amigamouse.o
 obj-$(CONFIG_ATARIMOUSE) += atarimouse.o
 obj-$(CONFIG_ADBMOUSE) += adbmouse.o
 obj-$(CONFIG_PC110_PAD) += pc110pad.o
+obj-$(CONFIG_MK712_MOUSE) += mk712.o
 obj-$(CONFIG_RTC) += rtc.o
 obj-$(CONFIG_EFI_RTC) += efirtc.o
 ifeq ($(CONFIG_PPC),)
@@ -196,6 +212,11 @@ obj-$(CONFIG_TOSHIBA) += toshiba.o
 obj-$(CONFIG_I8K) += i8k.o
 obj-$(CONFIG_DS1620) += ds1620.o
 obj-$(CONFIG_INTEL_RNG) += i810_rng.o
+obj-$(CONFIG_AMD_RNG) += amd768_rng.o
+
+obj-$(CONFIG_ITE_GPIO) += ite_gpio.o
+obj-$(CONFIG_AU1000_GPIO) += au1000_gpio.o
+obj-$(CONFIG_COBALT_LCD) += lcd.o
 
 obj-$(CONFIG_QIC02_TAPE) += tpqic02.o
 
@@ -226,6 +247,8 @@ obj-$(CONFIG_ADVANTECH_WDT) += advantechwdt.o
 obj-$(CONFIG_IB700_WDT) += ib700wdt.o
 obj-$(CONFIG_MIXCOMWD) += mixcomwd.o
 obj-$(CONFIG_60XX_WDT) += sbc60xxwdt.o
+obj-$(CONFIG_W83877F_WDT) += w83877f_wdt.o
+obj-$(CONFIG_SC520_WDT) += sc520_wdt.o
 obj-$(CONFIG_WDT) += wdt.o
 obj-$(CONFIG_WDTPCI) += wdt_pci.o
 obj-$(CONFIG_21285_WATCHDOG) += wdt285.o
@@ -234,6 +257,10 @@ obj-$(CONFIG_I810_TCO) += i810-tco.o
 obj-$(CONFIG_MACHZ_WDT) += machzwd.o
 obj-$(CONFIG_SH_WDT) += shwdt.o
 obj-$(CONFIG_EUROTECH_WDT) += eurotechwdt.o
+obj-$(CONFIG_ALIM7101_WDT) += alim7101_wdt.o
+obj-$(CONFIG_INDYDOG) += indydog.o
+obj-$(CONFIG_SC1200_WDT) += sc1200wdt.o
+obj-$(CONFIG_WAFER_WDT) += wafer5823wdt.o
 obj-$(CONFIG_SOFT_WATCHDOG) += softdog.o
 
 subdir-$(CONFIG_MWAVE) += mwave

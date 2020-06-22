@@ -32,7 +32,6 @@
  */
 extern int		nfs_reqlist_alloc(struct nfs_server *);
 extern void		nfs_reqlist_free(struct nfs_server *);
-extern int		nfs_reqlist_init(struct nfs_server *);
 extern void		nfs_reqlist_exit(struct nfs_server *);
 extern void		nfs_wake_flushd(void);
 

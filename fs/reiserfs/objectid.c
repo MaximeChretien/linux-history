@@ -5,6 +5,7 @@
 #include <linux/config.h>
 #include <linux/string.h>
 #include <linux/locks.h>
+#include <linux/random.h>
 #include <linux/sched.h>
 #include <linux/reiserfs_fs.h>
 
@@ -195,6 +196,10 @@ int reiserfs_convert_objectid_map_v1(struct super_block *s) {
 
     /* set the max size so we don't overflow later */
     disk_sb->s_oid_maxsize = cpu_to_le16(new_size) ;
+
+    /* Zero out label and generate random UUID */
+    memset(disk_sb->s_label, 0, sizeof(disk_sb->s_label)) ;
+    generate_random_uuid(disk_sb->s_uuid);
 
     /* finally, zero out the unused chunk of the new super */
     memset(disk_sb->s_unused, 0, sizeof(disk_sb->s_unused)) ;

@@ -33,6 +33,7 @@
  * Alan Cox		: Added CS4236->4239 identification
  * Daniel T. Cobra	: Alernate config/mixer for later chips
  * Alan Cox		: Merged chip idents and config code
+ * Zwane Mwaikambo	: Fix ISA PnP scan
  *
  * TODO
  *		APM save restore assist code on IBM thinkpad
@@ -3003,11 +3004,10 @@ static struct pci_dev *activate_dev(char *devname, char *resname, struct pci_dev
 	return(dev);
 }
 
-static struct pci_dev *ad1848_init_generic(struct pci_bus *bus, struct address_info *hw_config, int slot)
+static struct pci_dev *ad1848_init_generic(struct pci_dev *dev, struct address_info *hw_config, int slot)
 {
-
-	/* Configure Audio device */
-	if((ad1848_dev = isapnp_find_dev(bus, ad1848_isapnp_list[slot].vendor, ad1848_isapnp_list[slot].function, NULL)))
+	/* Configure Audio device, point ad1848_dev to device found */
+	if((ad1848_dev = dev))
 	{
 		int ret;
 		ret = ad1848_dev->prepare(ad1848_dev);
@@ -3038,25 +3038,25 @@ static struct pci_dev *ad1848_init_generic(struct pci_bus *bus, struct address_i
 	return(ad1848_dev);
 }
 
-static int __init ad1848_isapnp_init(struct address_info *hw_config, struct pci_bus *bus, int slot)
+static int __init ad1848_isapnp_init(struct address_info *hw_config, struct pci_dev *dev, int slot)
 {
-	char *busname = bus->name[0] ? bus->name : ad1848_isapnp_list[slot].name;
+	char *devname = dev->name[0] ? dev->name : ad1848_isapnp_list[slot].name;
 
-	printk(KERN_INFO "ad1848: %s detected\n", busname);
+	printk(KERN_INFO "ad1848: %s detected\n", devname);
 
 	/* Initialize this baby. */
 
-	if(ad1848_init_generic(bus, hw_config, slot)) {
+	if(ad1848_init_generic(dev, hw_config, slot)) {
 		/* We got it. */
 
 		printk(KERN_NOTICE "ad1848: ISAPnP reports '%s' at i/o %#x, irq %d, dma %d, %d\n",
-		       busname,
+		       devname,
 		       hw_config->io_base, hw_config->irq, hw_config->dma,
 		       hw_config->dma2);
 		return 1;
 	}
 	else
-		printk(KERN_INFO "ad1848: Failed to initialize %s\n", busname);
+		printk(KERN_INFO "ad1848: Failed to initialize %s\n", devname);
 
 	return 0;
 }
@@ -3080,14 +3080,14 @@ static int __init ad1848_isapnp_probe(struct address_info *hw_config)
 		i = isapnpjump;
 	first = 0;
 	while(ad1848_isapnp_list[i].card_vendor != 0) {
-		static struct pci_bus *bus = NULL;
+		static struct pci_dev *dev = NULL;
 
-		while ((bus = isapnp_find_card(
-				ad1848_isapnp_list[i].card_vendor,
-				ad1848_isapnp_list[i].card_device,
-				bus))) {
-
-			if(ad1848_isapnp_init(hw_config, bus, i)) {
+		while ((dev = isapnp_find_dev(NULL,
+				ad1848_isapnp_list[i].vendor,
+				ad1848_isapnp_list[i].function,
+				NULL))) {
+			
+			if(ad1848_isapnp_init(hw_config, dev, i)) {
 				isapnpjump = i; /* start next search from here */
 				return 0;
 			}

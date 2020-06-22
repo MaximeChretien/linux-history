@@ -23,11 +23,6 @@ static struct dentry *autofs_dir_lookup(struct inode *dir,struct dentry *dentry)
 	return NULL;
 }
 
-struct file_operations autofs_dir_operations = {
-	read:		generic_read_dir,
-	readdir:	dcache_readdir,
-};
-
 struct inode_operations autofs_dir_inode_operations = {
 	lookup:		autofs_dir_lookup,
 };

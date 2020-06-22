@@ -157,6 +157,9 @@ struct pci_board_inst {
 	struct pci_dev		*dev;
 };
 
+extern int pci_siig10x_fn(struct pci_dev *dev, struct pci_board *board, int enable);
+extern int pci_siig20x_fn(struct pci_dev *dev, struct pci_board *board, int enable);
+
 #ifndef PCI_ANY_ID
 #define PCI_ANY_ID (~0)
 #endif

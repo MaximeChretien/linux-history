@@ -18,14 +18,14 @@
  * Please select one of the following when turning on debugging.
  */
 #ifdef DEBUG
-#if 0 /* DC21285-type */
+#if defined(CONFIG_DEBUG_DC21285_PORT)
 		.macro	loadsp,	rb
 		mov	\rb, #0x7c000000
 		.endm
 		.macro	writeb,	rb
 		strb	\rb, [r3, #0x3f8]
 		.endm
-#elif 0 /* RiscPC-type */
+#elif defined(CONFIG_ARCH_RPC)
 		.macro	loadsp,	rb
 		mov	\rb, #0x03000000
 		orr	\rb, \rb, #0x00010000
@@ -33,12 +33,24 @@
 		.macro	writeb,	rb
 		strb	\rb, [r3, #0x3f8 << 2]
 		.endm
-#elif 0 /* integrator-type */
+#elif defined(CONFIG_ARCH_INTEGRATOR)
 		.macro	loadsp, rb
 		mov	\rb, #0x16000000
 		.endm
 		.macro	writeb, rb
 		strb	\rb, [r3, #0]
+		.endm
+#elif defined(CONFIG_ARCH_SA1100)
+		.macro	loadsp, rb
+		mov	\rb, #0x80000000	@ physical base address
+#  if defined(CONFIG_DEBUG_LL_SER3)
+		add	\rb, \rb, #0x00050000	@ Ser3
+#  else
+		add	\rb, \rb, #0x00010000	@ Ser1
+#  endif
+		.endm
+		.macro	writeb, rb
+		str	\rb, [r3, #0x14]	@ UTDR
 		.endm
 #else
 #error no serial architecture defined
@@ -64,7 +76,7 @@
 		kphex	r7, 8		/* architecture id */
 		kputc	#':'
 		mrc	p15, 0, r0, c1, c0
-		kphex	r0, 8		/* control reg
+		kphex	r0, 8		/* control reg */
 		kputc	#'\n'
 		kphex	r5, 8		/* decompressed kernel start */
 		kputc	#'-'
@@ -218,7 +230,8 @@ cache_on:	ldr	r1, proc_sa110_type
 		ldr     r1, proc_sa1110_type
 		eor	r1, r1, r6
 		movs	r1, r1, lsr #4
-		movne	pc, lr
+@		movne	pc, lr
+		bne	cache_off
 1:
 		sub	r3, r4, #16384		@ Page directory size
 		bic	r3, r3, #0xff		@ Align the pointer

@@ -4,6 +4,7 @@
 
 # only included if CONFIG_ISDN != n
 
+define_bool CONFIG_ISDN_BOOL y
 if [ "$CONFIG_INET" != "n" ]; then
    bool '  Support synchronous PPP' CONFIG_ISDN_PPP
    if [ "$CONFIG_ISDN_PPP" != "n" ]; then
@@ -32,6 +33,7 @@ mainmenu_option next_comment
 comment 'Passive ISDN cards'
 dep_tristate 'HiSax SiemensChipSet driver support' CONFIG_ISDN_DRV_HISAX $CONFIG_ISDN
 if [ "$CONFIG_ISDN_DRV_HISAX" != "n" ]; then
+   define_bool CONFIG_ISDN_HISAX y
    comment '  D-channel protocol features'
    bool '  HiSax Support for EURO/DSS1' CONFIG_HISAX_EURO
    if [ "$CONFIG_HISAX_EURO" != "n" ]; then
@@ -79,10 +81,12 @@ if [ "$CONFIG_ISDN_DRV_HISAX" != "n" ]; then
    fi
    bool '  HiSax debugging' CONFIG_HISAX_DEBUG
 
-   dep_tristate 'Sedlbauer PCMCIA cards' CONFIG_HISAX_SEDLBAUER_CS $CONFIG_PCMCIA
-   dep_tristate 'ELSA PCMCIA MicroLink cards' CONFIG_HISAX_ELSA_CS $CONFIG_PCMCIA
-   dep_tristate 'ST5481 USB ISDN modem (EXPERIMENTAL)' CONFIG_HISAX_ST5481 $CONFIG_HISAX $CONFIG_USB $CONFIG_EXPERIMENTAL
-   dep_tristate 'Fritz!PCIv2 support (EXPERIMENTAL)' CONFIG_HISAX_FRITZ_PCIPNP $CONFIG_HISAX $CONFIG_EXPERIMENTAL
+   dep_tristate 'Sedlbauer PCMCIA cards'                              CONFIG_HISAX_SEDLBAUER_CS  $CONFIG_ISDN_DRV_HISAX $CONFIG_PCMCIA
+   dep_tristate 'ELSA PCMCIA MicroLink cards'                         CONFIG_HISAX_ELSA_CS       $CONFIG_ISDN_DRV_HISAX $CONFIG_PCMCIA
+   dep_tristate 'AVM A1 PCMCIA cards'                                 CONFIG_HISAX_AVM_A1_CS     $CONFIG_ISDN_DRV_HISAX $CONFIG_PCMCIA $CONFIG_HISAX_AVM_A1_PCMCIA
+   dep_tristate 'ST5481 USB ISDN modem (EXPERIMENTAL)'                CONFIG_HISAX_ST5481        $CONFIG_ISDN_DRV_HISAX $CONFIG_USB    $CONFIG_EXPERIMENTAL
+   dep_tristate 'AVM Fritz!Card PCI/PCIv2/PnP support (EXPERIMENTAL)' CONFIG_HISAX_FRITZ_PCIPNP  $CONFIG_ISDN_DRV_HISAX                $CONFIG_EXPERIMENTAL
+
 fi
 endmenu
 

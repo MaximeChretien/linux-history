@@ -33,14 +33,16 @@ static void puts( const char *s )
 
 	for (; *s; s++) {
 		/* wait for space in the UART's transmiter */
-		while (!(UART(UTSR1) & UTSR1_TNF));
+		while (!(UART(UTSR1) & UTSR1_TNF))
+			barrier();
 
 		/* send the character out. */
 		UART(UTDR) = *s;
 
 		/* if a LF, also do CR... */
 		if (*s == 10) {
-			while (!(UART(UTSR1) & UTSR1_TNF));
+			while (!(UART(UTSR1) & UTSR1_TNF))
+				barrier();
 			UART(UTDR) = 13;
 		}
 	}

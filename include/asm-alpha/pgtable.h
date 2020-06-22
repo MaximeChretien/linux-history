@@ -194,8 +194,8 @@ extern unsigned long __zero_page(void);
 #define PAGE_TO_PA(page)	((page - mem_map) << PAGE_SHIFT)
 #else
 #define PAGE_TO_PA(page) \
-		((((page)-(page)->zone->zone_mem_map) << PAGE_SHIFT) \
-		+ (page)->zone->zone_start_paddr)
+		((((page)-page_zone(page)->zone_mem_map) << PAGE_SHIFT) \
+		+ page_zone(page)->zone_start_paddr)
 #endif
 
 #ifndef CONFIG_DISCONTIGMEM
@@ -213,8 +213,8 @@ extern unsigned long __zero_page(void);
 	pte_t pte;								\
 	unsigned long pfn;							\
 										\
-	pfn = ((unsigned long)((page)-(page)->zone->zone_mem_map)) << 32;	\
-	pfn += (page)->zone->zone_start_paddr << (32-PAGE_SHIFT);		\
+	pfn = ((unsigned long)((page)-page_zone(page)->zone_mem_map)) << 32;	\
+	pfn += page_zone(page)->zone_start_paddr << (32-PAGE_SHIFT);		\
 	pte_val(pte) = pfn | pgprot_val(pgprot);				\
 										\
 	pte;									\
@@ -267,8 +267,6 @@ extern inline int pgd_none(pgd_t pgd)		{ return !pgd_val(pgd); }
 extern inline int pgd_bad(pgd_t pgd)		{ return (pgd_val(pgd) & ~_PFN_MASK) != _PAGE_TABLE; }
 extern inline int pgd_present(pgd_t pgd)	{ return pgd_val(pgd) & _PAGE_VALID; }
 extern inline void pgd_clear(pgd_t * pgdp)	{ pgd_val(*pgdp) = 0; }
-
-#define page_address(page)	((page)->virtual)
 
 /*
  * The following only work if pte_present() is true.

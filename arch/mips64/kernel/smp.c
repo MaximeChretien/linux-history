@@ -1,13 +1,26 @@
+/*
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
+ *
+ * Copyright (C) 2000, 2001 Kanoj Sarcar
+ * Copyright (C) 2000, 2001 Ralf Baechle
+ * Copyright (C) 2000, 2001 Silicon Graphics, Inc.
+ */
 #include <linux/config.h>
+#include <linux/delay.h>
 #include <linux/init.h>
+#include <linux/interrupt.h>
 #include <linux/spinlock.h>
 #include <linux/threads.h>
+#include <linux/module.h>
 #include <linux/time.h>
 #include <linux/timex.h>
 #include <linux/sched.h>
 #include <linux/cache.h>
 
 #include <asm/atomic.h>
+#include <asm/cpu.h>
 #include <asm/processor.h>
 #include <asm/system.h>
 #include <asm/hardirq.h>
@@ -15,86 +28,66 @@
 #include <asm/mmu_context.h>
 #include <asm/irq.h>
 
-#ifdef CONFIG_SGI_IP27
-
-#include <asm/sn/arch.h>
-#include <asm/sn/intr.h>
-#include <asm/sn/addrs.h>
-#include <asm/sn/agent.h>
-#include <asm/sn/sn0/ip27.h>
-
-#define DORESCHED	0xab
-#define DOCALL		0xbc
-
-static void sendintr(int destid, unsigned char status)
-{
-	int irq;
-
-#if (CPUS_PER_NODE == 2)
-	switch (status) {
-		case DORESCHED:	irq = CPU_RESCHED_A_IRQ; break;
-		case DOCALL:	irq = CPU_CALL_A_IRQ; break;
-		default:	panic("sendintr");
-	}
-	irq += cputoslice(destid);
-
-	/*
-	 * Convert the compact hub number to the NASID to get the correct
-	 * part of the address space.  Then set the interrupt bit associated
-	 * with the CPU we want to send the interrupt to.
-	 */
-	REMOTE_HUB_SEND_INTR(COMPACT_TO_NASID_NODEID(cputocnode(destid)),
-			FAST_IRQ_TO_LEVEL(irq));
-#else
-	<< Bomb!  Must redefine this for more than 2 CPUS. >>
-#endif
-}
-
-#endif /* CONFIG_SGI_IP27 */
-
 /* The 'big kernel lock' */
 spinlock_t kernel_flag __cacheline_aligned_in_smp = SPIN_LOCK_UNLOCKED;
 int smp_threads_ready;	/* Not used */
 atomic_t smp_commenced = ATOMIC_INIT(0);
 struct cpuinfo_mips cpu_data[NR_CPUS];
-int smp_num_cpus = 1;		/* Number that came online.  */
+void (*volatile smp_cpu0_finalize)(void);
+
+// static atomic_t cpus_booted = ATOMIC_INIT(0);
+atomic_t cpus_booted = ATOMIC_INIT(0);
+
+int smp_num_cpus = 1;			/* Number that came online.  */
+cpumask_t cpu_online_map;		/* Bitmask of currently online CPUs */
 int __cpu_number_map[NR_CPUS];
 int __cpu_logical_map[NR_CPUS];
 cycles_t cacheflush_time;
 
-static void smp_tune_scheduling (void)
+// static void smp_tune_scheduling (void)
+void smp_tune_scheduling (void)
 {
 }
 
-void __init smp_boot_cpus(void)
+void __init smp_callin(void)
 {
-	extern void allowboot(void);
-
-	init_new_context(current, &init_mm);
-	current->processor = 0;
-	init_idle();
-	smp_tune_scheduling();
-	allowboot();
+#if 0
+	calibrate_delay();
+	smp_store_cpu_info(cpuid);
+#endif
 }
+
+#ifndef CONFIG_SGI_IP27
+/*
+ * Hook for doing final board-specific setup after the generic smp setup
+ * is done
+ */
+asmlinkage void start_secondary(void)
+{
+	unsigned int cpu = smp_processor_id();
+
+	prom_init_secondary();
+	per_cpu_trap_init();
+
+	/*
+	 * XXX parity protection should be folded in here when it's converted
+	 * to an option instead of something based on .cputype
+	 */
+	pgd_current[cpu] = init_mm.pgd;
+	cpu_data[cpu].udelay_val = loops_per_jiffy;
+	prom_smp_finish();
+	printk("Slave cpu booted successfully\n");
+	CPUMASK_SETB(cpu_online_map, cpu);
+	atomic_inc(&cpus_booted);
+	while (!atomic_read(&smp_commenced));
+	cpu_idle();
+}
+#endif /* CONFIG_SGI_IP27 */
 
 void __init smp_commence(void)
 {
 	wmb();
-	atomic_set(&smp_commenced,1);
-}
-
-static void stop_this_cpu(void *dummy)
-{
-	/*
-	 * Remove this CPU
-	 */
-	for (;;);
-}
-
-void smp_send_stop(void)
-{
-	smp_call_function(stop_this_cpu, NULL, 1, 0);
-	smp_num_cpus = 1;
+	atomic_set(&smp_commenced, 1);
 }
 
 /*
@@ -104,7 +97,7 @@ void smp_send_stop(void)
  */
 void smp_send_reschedule(int cpu)
 {
-	sendintr(cpu, DORESCHED);
+	core_send_ipi(cpu, SMP_RESCHEDULE_YOURSELF);
 }
 
 /* Not really SMP stuff ... */
@@ -112,6 +105,10 @@ int setup_profiling_timer(unsigned int multiplier)
 {
 	return 0;
 }
+
+static spinlock_t call_lock = SPIN_LOCK_UNLOCKED;
+
+struct call_data_struct *call_data;
 
 /*
  * Run a function on all other CPUs.
@@ -124,22 +121,15 @@ int setup_profiling_timer(unsigned int multiplier)
  * Does not return until remote CPUs are nearly ready to execute <func>
  * or are or have executed.
  */
-static volatile struct call_data_struct {
-	void (*func) (void *info);
-	void *info;
-	atomic_t started;
-	atomic_t finished;
-	int wait;
-} *call_data;
 
 int smp_call_function (void (*func) (void *info), void *info, int retry, 
 								int wait)
 {
 	struct call_data_struct data;
-	int i, cpus = smp_num_cpus-1;
-	static spinlock_t lock = SPIN_LOCK_UNLOCKED;
+	int i, cpus = smp_num_cpus - 1;
+	int cpu = smp_processor_id();
 
-	if (cpus == 0)
+	if (!cpus)
 		return 0;
 
 	data.func = func;
@@ -149,12 +139,13 @@ int smp_call_function (void (*func) (void *info), void *info, int retry,
 	if (wait)
 		atomic_set(&data.finished, 0);
 
-	spin_lock_bh(&lock);
+	spin_lock(&call_lock);
 	call_data = &data;
+
 	/* Send a message to all other CPUs and wait for them to respond */
 	for (i = 0; i < smp_num_cpus; i++)
-		if (smp_processor_id() != i)
-			sendintr(i, DOCALL);
+		if (i != cpu)
+			core_send_ipi(i, SMP_CALL_FUNCTION);
 
 	/* Wait for response */
 	/* FIXME: lock-up detection, backtrace on lock-up */
@@ -164,45 +155,68 @@ int smp_call_function (void (*func) (void *info), void *info, int retry,
 	if (wait)
 		while (atomic_read(&data.finished) != cpus)
 			barrier();
-	spin_unlock_bh(&lock);
+	spin_unlock(&call_lock);
+
 	return 0;
 }
 
-extern void smp_call_function_interrupt(int irq, void *d, struct pt_regs *r)
+void smp_call_function_interrupt(void)
 {
 	void (*func) (void *info) = call_data->func;
 	void *info = call_data->info;
 	int wait = call_data->wait;
+	int cpu = smp_processor_id();
 
+	irq_enter(cpu, 0);	/* XXX choose an irq number? */
 	/*
 	 * Notify initiating CPU that I've grabbed the data and am
 	 * about to execute the function.
 	 */
+	mb();
 	atomic_inc(&call_data->started);
 
 	/*
 	 * At this point the info structure may be out of scope unless wait==1.
 	 */
 	(*func)(info);
-	if (wait)
+	if (wait) {
+		mb();
 		atomic_inc(&call_data->finished);
+	}
+	irq_exit(cpu, 0);	/* XXX choose an irq number? */
 }
-	
+
+static void stop_this_cpu(void *dummy)
+{
+	int cpu = smp_processor_id();
+	if (cpu)
+		for (;;);		/* XXX Use halt like i386 */
+
+	/* XXXKW this isn't quite there yet */
+	while (!smp_cpu0_finalize) ;
+	smp_cpu0_finalize();
+}
+
+void smp_send_stop(void)
+{
+	smp_call_function(stop_this_cpu, NULL, 1, 0);
+	smp_num_cpus = 1;
+}
 
 static void flush_tlb_all_ipi(void *info)
 {
-	_flush_tlb_all();
+	local_flush_tlb_all();
 }
 
 void flush_tlb_all(void)
 {
 	smp_call_function(flush_tlb_all_ipi, 0, 1, 1);
-	_flush_tlb_all();
+	local_flush_tlb_all();
 }
 
 static void flush_tlb_mm_ipi(void *mm)
 {
-	_flush_tlb_mm((struct mm_struct *)mm);
+	local_flush_tlb_mm((struct mm_struct *)mm);
 }
 
 /*
@@ -228,7 +242,7 @@ void flush_tlb_mm(struct mm_struct *mm)
 			if (smp_processor_id() != i)
 				CPU_CONTEXT(i, mm) = 0;
 	}
-	_flush_tlb_mm(mm);
+	local_flush_tlb_mm(mm);
 }
 
 struct flush_tlb_data {
@@ -242,7 +256,7 @@ static void flush_tlb_range_ipi(void *info)
 {
 	struct flush_tlb_data *fd = (struct flush_tlb_data *)info;
 
-	_flush_tlb_range(fd->mm, fd->addr1, fd->addr2);
+	local_flush_tlb_range(fd->mm, fd->addr1, fd->addr2);
 }
 
 void flush_tlb_range(struct mm_struct *mm, unsigned long start, unsigned long end)
@@ -260,14 +274,14 @@ void flush_tlb_range(struct mm_struct *mm, unsigned long start, unsigned long en
 			if (smp_processor_id() != i)
 				CPU_CONTEXT(i, mm) = 0;
 	}
-	_flush_tlb_range(mm, start, end);
+	local_flush_tlb_range(mm, start, end);
 }
 
 static void flush_tlb_page_ipi(void *info)
 {
 	struct flush_tlb_data *fd = (struct flush_tlb_data *)info;
 
-	_flush_tlb_page(fd->vma, fd->addr1);
+	local_flush_tlb_page(fd->vma, fd->addr1);
 }
 
 void flush_tlb_page(struct vm_area_struct *vma, unsigned long page)
@@ -284,6 +298,15 @@ void flush_tlb_page(struct vm_area_struct *vma, unsigned long page)
 			if (smp_processor_id() != i)
 				CPU_CONTEXT(i, vma->vm_mm) = 0;
 	}
-	_flush_tlb_page(vma, page);
+	local_flush_tlb_page(vma, page);
 }
 
+EXPORT_SYMBOL(smp_num_cpus);
+EXPORT_SYMBOL(flush_tlb_page);
+EXPORT_SYMBOL(cpu_data);
+EXPORT_SYMBOL(synchronize_irq);
+EXPORT_SYMBOL(kernel_flag);
+EXPORT_SYMBOL(__global_sti);
+EXPORT_SYMBOL(__global_cli);
+EXPORT_SYMBOL(__global_save_flags);
+EXPORT_SYMBOL(__global_restore_flags);

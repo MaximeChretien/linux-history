@@ -312,7 +312,7 @@ do {							\
 		printk(".");				\
 } while(0)
 
-#define clobber(p, size) memset((p)->virtual, 0xaa, (size))
+#define clobber(p, size) memset(page_address(p), 0xaa, (size))
 
 void __init mem_stress(void)
 {

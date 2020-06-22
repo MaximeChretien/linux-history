@@ -27,6 +27,7 @@
  *  with this program; if not, write  to the Free Software Foundation, Inc.,
  *  675 Mass Ave, Cambridge, MA 02139, USA.
  */
+
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
@@ -38,12 +39,21 @@
 #include <linux/kernel.h>
 #include <linux/sched.h>
 
-extern int prom_argc;
-extern char **prom_argv, **prom_envp;
+int prom_argc;
+char **prom_argv, **prom_envp;
 extern void  __init prom_init_cmdline(void);
+extern char *prom_getenv(char *envname);
+
+const char *get_system_type(void)
+{
+	return "Alchemy Pb1000";
+}
 
 int __init prom_init(int argc, char **argv, char **envp, int *prom_vec)
 {
+	unsigned char *memsize_str;
+	unsigned long memsize;
+
 	prom_argc = argc;
 	prom_argv = argv;
 	prom_envp = envp;
@@ -52,8 +62,12 @@ int __init prom_init(int argc, char **argv, char **envp, int *prom_vec)
 	mips_machtype = MACH_PB1000;  
 
 	prom_init_cmdline();
-
-	add_memory_region(1, 64 << 20, BOOT_MEM_RAM);
-
+	memsize_str = prom_getenv("memsize");
+	if (!memsize_str) {
+		memsize = 0x04000000;
+	} else {
+		memsize = simple_strtol(memsize_str, NULL, 0);
+	}
+	add_memory_region(0, memsize, BOOT_MEM_RAM);
 	return 0;
 }

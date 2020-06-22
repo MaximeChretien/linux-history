@@ -11,10 +11,6 @@ LINKFLAGS	:=-p -X -T arch/arm/vmlinux.lds
 GZFLAGS		:=-9
 CFLAGS		+=-fno-common -pipe
 
-ifneq ($(CONFIG_NO_FRAME_POINTER),y)
-CFLAGS		:=$(CFLAGS:-fomit-frame-pointer=)
-endif
-
 ifeq ($(CONFIG_DEBUG_INFO),y)
 CFLAGS		+=-g
 endif
@@ -39,10 +35,12 @@ tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
 tune-$(CONFIG_CPU_ARM710)	:=-mtune=arm710
 tune-$(CONFIG_CPU_ARM720T)	:=-mtune=arm7tdmi
 tune-$(CONFIG_CPU_ARM920T)	:=-mtune=arm9tdmi
+tune-$(CONFIG_CPU_ARM922T)	:=-mtune=arm9tdmi
 tune-$(CONFIG_CPU_ARM926T)	:=-mtune=arm9tdmi
 tune-$(CONFIG_CPU_SA110)	:=-mtune=strongarm110
 tune-$(CONFIG_CPU_SA1100)	:=-mtune=strongarm1100
 
+CFLAGS_BOOT	:=$(apcs-y) $(arch-y) $(tune-y) -mshort-load-bytes -msoft-float
 CFLAGS		+=$(apcs-y) $(arch-y) $(tune-y) -mshort-load-bytes -msoft-float
 AFLAGS		+=$(apcs-y) $(arch-y) -mno-fpu -msoft-float
 
@@ -74,6 +72,8 @@ endif
 
 ifeq ($(CONFIG_ARCH_EBSA110),y)
 MACHINE		 = ebsa110
+CFLAGS_3c589_cs	:=-DISA_SIXTEEN_BIT_PERIPHERAL
+export CFLAGS_3c589_cs
 endif
 
 ifeq ($(CONFIG_ARCH_CLPS7500),y)
@@ -121,6 +121,10 @@ ifeq ($(CONFIG_ARCH_INTEGRATOR),y)
 MACHINE		 = integrator
 endif
 
+ifeq ($(CONFIG_ARCH_MX1ADS),y)
+MACHINE		 = mx1ads
+endif
+
 ifeq ($(CONFIG_ARCH_CAMELOT),y)
 MACHINE          = epxa10db
 endif
@@ -130,11 +134,15 @@ TEXTADDR	 = 0xc0028000
 MACHINE		 = clps711x
 endif
 
+ifeq ($(CONFIG_ARCH_FORTUNET),y)
+TEXTADDR	 = 0xc0008000
+endif
+
 ifeq ($(CONFIG_ARCH_ANAKIN),y)
 MACHINE		 = anakin
 endif
 
-export	MACHINE PROCESSOR TEXTADDR GZFLAGS
+export	MACHINE PROCESSOR TEXTADDR GZFLAGS CFLAGS_BOOT
 
 # Only set INCDIR if its not already defined above
 # Grr, ?= doesn't work as all the other assignment operators do.  Make bug?
@@ -207,6 +215,7 @@ CLEAN_FILES	+= \
 	arch/arm/vmlinux.lds
 
 MRPROPER_FILES	+= \
+	arch/arm/tools/constants.h* \
 	include/asm-arm/arch \
 	include/asm-arm/proc \
 	include/asm-arm/constants.h* \
@@ -254,7 +263,7 @@ bp:;	@$(MAKEBOOT) bootpImage
 	@( \
 	CFG=$(@:_config=); \
 	if [ -f arch/arm/def-configs/$$CFG ]; then \
-	  [ -f .config ] && $(MV) .config .config.old; \
+	  [ -f .config ] && mv -f .config .config.old; \
 	  cp arch/arm/def-configs/$$CFG .config; \
 	  echo "*** Default configuration for $$CFG installed"; \
 	  echo "*** Next, you may run 'make oldconfig'"; \

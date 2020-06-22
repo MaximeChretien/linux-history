@@ -21,6 +21,8 @@
 #ifndef __ASM_ARCH_SYSTEM_H
 #define __ASM_ARCH_SYSTEM_H
 
+#include <asm/hardware.h>
+#include <asm/io.h>
 #include <asm/arch/platform.h>
 
 static void arch_idle(void)

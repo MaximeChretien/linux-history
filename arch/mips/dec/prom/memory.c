@@ -3,8 +3,6 @@
  *
  * Copyright (C) 1998 Harald Koerfgen, Frieder Streffer and Paul M. Antoine
  * Copyright (C) 2000 Maciej W. Rozycki
- *
- * $Id: memory.c,v 1.3 1999/10/09 00:00:58 ralf Exp $
  */
 #include <linux/init.h>
 #include <linux/config.h>
@@ -118,7 +116,7 @@ void __init prom_free_prom_memory (void)
 	 * the first page reserved for the exception handlers.
 	 */
 
-#ifdef CONFIG_DECLANCE
+#if defined(CONFIG_DECLANCE) || defined(CONFIG_DECLANCE_MODULE)
 	/*
 	 * Leave 128 KB reserved for Lance memory for
 	 * IOASIC DECstations.

@@ -22,6 +22,7 @@
 #include <linux/init.h>
 #include <linux/major.h>
 #include <linux/serial_reg.h>
+#include <linux/rtc.h>
 
 #include <asm/io.h>
 #include <asm/rtc.h>
@@ -36,7 +37,6 @@
 #include <asm/q40_master.h>
 #include <asm/keyboard.h>
 
-extern void floppy_eject(void);
 extern void floppy_setup(char *str, int *ints);
 
 extern int q40kbd_translate(unsigned char scancode, unsigned char *keycode,
@@ -56,7 +56,7 @@ extern void q40_sched_init(void (*handler)(int, void *, struct pt_regs *));
 extern unsigned long q40_gettimeoffset (void);
 extern void q40_gettod (int *year, int *mon, int *day, int *hour,
                            int *min, int *sec);
-extern int q40_hwclk (int, struct hwclk_time *);
+extern int q40_hwclk (int, struct rtc_time *);
 extern int q40_set_clock_mmss (unsigned long);
 extern void q40_reset (void);
 void q40_halt(void);
@@ -73,10 +73,8 @@ static void q40_mem_console_write(struct console *co, const char *b,
 
 extern int ql_ticks;
 
-static int q40_wait_key(struct console *co){return 0;}
 static struct console q40_console_driver = {
 	name:		"debug",
-	wait_key:	q40_wait_key,
 	flags:		CON_PRINTBUFFER,
 	index:		-1,
 };
@@ -298,14 +296,14 @@ unsigned long q40_gettimeoffset (void)
 extern void q40_gettod (int *year, int *mon, int *day, int *hour,
                            int *min, int *sec)
 {
-	RTC_CTRL |= RTC_READ;
-	*year = bcd2bin (RTC_YEAR);
-	*mon = bcd2bin (RTC_MNTH);
-	*day = bcd2bin (RTC_DATE);
-	*hour = bcd2bin (RTC_HOUR);
-	*min = bcd2bin (RTC_MINS);
-	*sec = bcd2bin (RTC_SECS);
-	RTC_CTRL &= ~(RTC_READ);
+	Q40_RTC_CTRL |= Q40_RTC_READ;
+	*year = bcd2bin (Q40_RTC_YEAR);
+	*mon = bcd2bin (Q40_RTC_MNTH);
+	*day = bcd2bin (Q40_RTC_DATE);
+	*hour = bcd2bin (Q40_RTC_HOUR);
+	*min = bcd2bin (Q40_RTC_MINS);
+	*sec = bcd2bin (Q40_RTC_SECS);
+	Q40_RTC_CTRL &= ~(Q40_RTC_READ);
 
 }
 
@@ -326,39 +324,39 @@ extern void q40_gettod (int *year, int *mon, int *day, int *hour,
  * };
  */
 
-int q40_hwclk(int op, struct hwclk_time *t)
+int q40_hwclk(int op, struct rtc_time *t)
 {
         if (op)
 	{	/* Write.... */
-	        RTC_CTRL |= RTC_WRITE;
+	        Q40_RTC_CTRL |= Q40_RTC_WRITE;
 
-		RTC_SECS = bin2bcd(t->sec);
-		RTC_MINS = bin2bcd(t->min);
-		RTC_HOUR = bin2bcd(t->hour);
-		RTC_DATE = bin2bcd(t->day);
-		RTC_MNTH = bin2bcd(t->mon + 1);
-		RTC_YEAR = bin2bcd(t->year%100);
-		if (t->wday >= 0)
-			RTC_DOW = bin2bcd(t->wday+1);
+		Q40_RTC_SECS = bin2bcd(t->tm_sec);
+		Q40_RTC_MINS = bin2bcd(t->tm_min);
+		Q40_RTC_HOUR = bin2bcd(t->tm_hour);
+		Q40_RTC_DATE = bin2bcd(t->tm_mday);
+		Q40_RTC_MNTH = bin2bcd(t->tm_mon + 1);
+		Q40_RTC_YEAR = bin2bcd(t->tm_year%100);
+		if (t->tm_wday >= 0)
+			Q40_RTC_DOW = bin2bcd(t->tm_wday+1);
 
-	        RTC_CTRL &= ~(RTC_WRITE);
+	        Q40_RTC_CTRL &= ~(Q40_RTC_WRITE);
 	}
 	else
 	{	/* Read....  */
-	  RTC_CTRL |= RTC_READ;
+	  Q40_RTC_CTRL |= Q40_RTC_READ;
 
-	  t->year = bcd2bin (RTC_YEAR);
-	  t->mon  = bcd2bin (RTC_MNTH)-1;
-	  t->day  = bcd2bin (RTC_DATE);
-	  t->hour = bcd2bin (RTC_HOUR);
-	  t->min  = bcd2bin (RTC_MINS);
-	  t->sec  = bcd2bin (RTC_SECS);
+	  t->tm_year = bcd2bin (Q40_RTC_YEAR);
+	  t->tm_mon  = bcd2bin (Q40_RTC_MNTH)-1;
+	  t->tm_mday = bcd2bin (Q40_RTC_DATE);
+	  t->tm_hour = bcd2bin (Q40_RTC_HOUR);
+	  t->tm_min  = bcd2bin (Q40_RTC_MINS);
+	  t->tm_sec  = bcd2bin (Q40_RTC_SECS);
 
-	  RTC_CTRL &= ~(RTC_READ);
+	  Q40_RTC_CTRL &= ~(Q40_RTC_READ);
 	  
-	  if (t->year < 70)
-	    t->year += 100;
-	  t->wday = bcd2bin(RTC_DOW)-1;
+	  if (t->tm_year < 70)
+	    t->tm_year += 100;
+	  t->tm_wday = bcd2bin(Q40_RTC_DOW)-1;
 
 	}
 
@@ -378,16 +376,16 @@ int q40_set_clock_mmss (unsigned long nowtime)
 	int rtc_minutes;
 
 
-	rtc_minutes = bcd2bin (RTC_MINS);
+	rtc_minutes = bcd2bin (Q40_RTC_MINS);
 
 	if ((rtc_minutes < real_minutes
 		? real_minutes - rtc_minutes
 			: rtc_minutes - real_minutes) < 30)
 	{	   
-	        RTC_CTRL |= RTC_WRITE;
-		RTC_MINS = bin2bcd(real_minutes);
-		RTC_SECS = bin2bcd(real_seconds);
-		RTC_CTRL &= ~(RTC_WRITE);
+	        Q40_RTC_CTRL |= Q40_RTC_WRITE;
+		Q40_RTC_MINS = bin2bcd(real_minutes);
+		Q40_RTC_SECS = bin2bcd(real_seconds);
+		Q40_RTC_CTRL &= ~(Q40_RTC_WRITE);
 	}
 	else
 		retval = -1;

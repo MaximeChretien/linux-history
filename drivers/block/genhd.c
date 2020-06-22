@@ -130,25 +130,52 @@ out:
 EXPORT_SYMBOL(get_gendisk);
 
 
+/**
+ * walk_gendisk - issue a command for every registered gendisk
+ * @walk: user-specified callback
+ * @data: opaque data for the callback
+ *
+ * This function walks through the gendisk chain and calls back
+ * into @walk for every element.
+ */
+int
+walk_gendisk(int (*walk)(struct gendisk *, void *), void *data)
+{
+	struct gendisk *gp;
+	int error = 0;
+
+	read_lock(&gendisk_lock);
+	for (gp = gendisk_head; gp; gp = gp->next)
+		if ((error = walk(gp, data)))
+			break;
+	read_unlock(&gendisk_lock);
+
+	return error;
+}
+
+
 #ifdef CONFIG_PROC_FS
 int
 get_partition_list(char *page, char **start, off_t offset, int count)
 {
 	struct gendisk *gp;
+	struct hd_struct *hd;
 	char buf[64];
 	int len, n;
 
 	len = sprintf(page, "major minor  #blocks  name\n\n");
+		
 	read_lock(&gendisk_lock);
 	for (gp = gendisk_head; gp; gp = gp->next) {
 		for (n = 0; n < (gp->nr_real << gp->minor_shift); n++) {
 			if (gp->part[n].nr_sects == 0)
 				continue;
 
-			len += snprintf(page + len, 63,
-					"%4d  %4d %10d %s\n",
-					gp->major, n, gp->sizes[n],
-					disk_name(gp, n, buf));
+			hd = &gp->part[n]; disk_round_stats(hd);
+			len += sprintf(page + len,
+				"%4d  %4d %10d %s\n", gp->major,
+				n, gp->sizes[n], disk_name(gp, n, buf));
+
 			if (len < offset)
 				offset -= len, len = 0;
 			else if (len >= offset + count)
@@ -168,34 +195,15 @@ out:
 
 
 extern int blk_dev_init(void);
-#ifdef CONFIG_FUSION_BOOT
-extern int fusion_init(void);
-#endif
 extern int net_dev_init(void);
 extern void console_map_init(void);
-extern int soc_probe(void);
 extern int atmdev_init(void);
-extern int i2o_init(void);
-extern int cpqarray_init(void);
 
 int __init device_init(void)
 {
 	rwlock_init(&gendisk_lock);
 	blk_dev_init();
 	sti();
-#ifdef CONFIG_I2O
-	i2o_init();
-#endif
-#ifdef CONFIG_FUSION_BOOT
-	fusion_init();
-#endif
-#ifdef CONFIG_FC4_SOC
-	/* This has to be done before scsi_dev_init */
-	soc_probe();
-#endif
-#ifdef CONFIG_BLK_CPQ_DA
-	cpqarray_init();
-#endif
 #ifdef CONFIG_NET
 	net_dev_init();
 #endif

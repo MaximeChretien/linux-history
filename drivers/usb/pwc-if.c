@@ -1,6 +1,6 @@
 /* Linux driver for Philips webcam 
    USB and Video4Linux interface part.
-   (C) 1999-2001 Nemosoft Unv.
+   (C) 1999-2002 Nemosoft Unv.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -66,7 +66,7 @@
 
 /* hotplug device table support */
 static __devinitdata struct usb_device_id pwc_device_table [] = {
-	{ USB_DEVICE(0x0471, 0x0302) },
+	{ USB_DEVICE(0x0471, 0x0302) }, /* Philips models */
 	{ USB_DEVICE(0x0471, 0x0303) },
 	{ USB_DEVICE(0x0471, 0x0304) },
 	{ USB_DEVICE(0x0471, 0x0307) },
@@ -75,12 +75,14 @@ static __devinitdata struct usb_device_id pwc_device_table [] = {
 	{ USB_DEVICE(0x0471, 0x0310) },
 	{ USB_DEVICE(0x0471, 0x0311) },
 	{ USB_DEVICE(0x0471, 0x0312) },
-	{ USB_DEVICE(0x069A, 0x0001) },
-	{ USB_DEVICE(0x046D, 0x08b0) },
-	{ USB_DEVICE(0x055D, 0x9000) },
+	{ USB_DEVICE(0x069A, 0x0001) }, /* Askey */
+	{ USB_DEVICE(0x046D, 0x08b0) }, /* Logitech */
+	{ USB_DEVICE(0x055D, 0x9000) }, /* Samsung */
 	{ USB_DEVICE(0x055D, 0x9001) },
-	{ USB_DEVICE(0x041E, 0x400C) },
-	{ USB_DEVICE(0x04CC, 0x8116) },
+	{ USB_DEVICE(0x041E, 0x400C) }, /* Creative */
+	{ USB_DEVICE(0x04CC, 0x8116) }, /* Afina Eye */
+	{ USB_DEVICE(0x0d81, 0x1910) }, /* Visionite */
+	{ USB_DEVICE(0x0d81, 0x1900) },
 	{ }
 };
 MODULE_DEVICE_TABLE(usb, pwc_device_table);
@@ -105,7 +107,7 @@ static int default_fbufs = 3;   /* Default number of frame buffers */
 static int default_mbufs = 2;	/* Default number of mmap() buffers */
        int pwc_trace = TRACE_MODULE | TRACE_FLOW | TRACE_PWCX;
 static int power_save = 0;
-static int led_on = 1, led_off = 0; /* defaults to LED that is on while in use */
+static int led_on = 100, led_off = 0; /* defaults to LED that is on while in use */
        int pwc_preferred_compression = 2; /* 0..3 = uncompressed..high */
 static struct {
 	int type;
@@ -163,7 +165,7 @@ static struct video_device pwc_template = {
    succeeded. The pwc_device struct links back to both structures.
 
    When a device is unplugged while in use it will be removed from the 
-   list of known USB devices; I also de-register as a V4L device, but 
+   list of known USB devices; I also de-register it as a V4L device, but 
    unfortunately I can't free the memory since the struct is still in use
    by the file descriptor. This free-ing is then deferend until the first
    opportunity. Crude, but it works.
@@ -351,6 +353,8 @@ static int pwc_allocate_buffers(struct pwc_device *pdev)
 	for (; i < MAX_IMAGES; i++)
 		pdev->image_ptr[i] = NULL;
 
+	kbuf = NULL;
+	  
 	Trace(TRACE_MEMORY, "Leaving pwc_allocate_buffers().\n");
 	return 0;
 }
@@ -405,6 +409,7 @@ static void pwc_free_buffers(struct pwc_device *pdev)
 		rvfree(pdev->image_data, default_mbufs * pdev->len_per_image);
 	}
 	pdev->image_data = NULL;
+	
 	Trace(TRACE_MEMORY, "Leaving free_buffers().\n");
 }
 
@@ -606,12 +611,10 @@ static inline void pwc_next_image(struct pwc_device *pdev)
 	pdev->fill_image = (pdev->fill_image + 1) % default_mbufs;
 }
 
-/* 2001-10-14: The YUV420 is still there, but you can only set it from within 
-   a program (YUV420P being the default) */
+/* 2001-10-14: YUV420P is the only palette remaining. */
 static int pwc_set_palette(struct pwc_device *pdev, int pal)
 {
-	if (   pal == VIDEO_PALETTE_YUV420
-            || pal == VIDEO_PALETTE_YUV420P
+	if (   pal == VIDEO_PALETTE_YUV420P
 #if PWC_DEBUG
             || pal == VIDEO_PALETTE_RAW
 #endif
@@ -629,7 +632,7 @@ static int pwc_set_palette(struct pwc_device *pdev, int pal)
 /* This gets called for the Isochronous pipe (video). This is done in
  * interrupt time, so it has to be fast, not crash, and not stall. Neat.
  */
-static void pwc_isoc_handler(purb_t urb)
+static void pwc_isoc_handler(struct urb *urb)
 {
 	struct pwc_device *pdev;
 	int i, fst, flen;
@@ -791,7 +794,7 @@ static void pwc_isoc_handler(purb_t urb)
 static int pwc_isoc_init(struct pwc_device *pdev)
 {
 	struct usb_device *udev;
-	purb_t urb;
+	struct urb *urb;
 	int i, j, ret;
 
 	struct usb_interface_descriptor *idesc;
@@ -905,7 +908,6 @@ static void pwc_isoc_cleanup(struct pwc_device *pdev)
 int pwc_try_video_mode(struct pwc_device *pdev, int width, int height, int new_fps, int new_compression, int new_snapshot)
 {
 	int ret;
-
 	/* Stop isoc stuff */
 	pwc_isoc_cleanup(pdev);
 	/* Reset parameters */
@@ -968,6 +970,29 @@ static int pwc_video_open(struct video_device *vdev, int mode)
 		if (usb_set_interface(pdev->udev, 0, 0))
 			Info("Failed to set alternate interface to 0.\n");
 		pdev->usb_init = 1;
+		
+		if (pwc_trace & TRACE_OPEN) {
+			/* Query CMOS sensor type */
+			const char *sensor_type = NULL;
+
+			i = pwc_get_cmos_sensor(pdev);
+			switch(i) {
+			case -1: /* Unknown, show nothing */; break;
+			case 0x00:  sensor_type = "Hyundai CMOS sensor"; break;
+			case 0x20:  sensor_type = "Sony CCD sensor + TDA8787"; break;
+			case 0x2E:  sensor_type = "Sony CCD sensor + Exas 98L59"; break;
+			case 0x2F:  sensor_type = "Sony CCD sensor + ADI 9804"; break;
+			case 0x30:  sensor_type = "Sharp CCD sensor + TDA8787"; break;
+			case 0x3E:  sensor_type = "Sharp CCD sensor + Exas 98L59"; break;
+			case 0x3F:  sensor_type = "Sharp CCD sensor + ADI 9804"; break;
+			case 0x40:  sensor_type = "UPA 1021 sensor"; break;
+			case 0x100: sensor_type = "VGA sensor"; break;
+			case 0x101: sensor_type = "PAL MR sensor"; break;
+			default:   sensor_type = "unknown type of sensor"; break;
+			}
+			if (sensor_type != NULL)
+				Info("Thes %s camera is equipped with a %s (%d).\n", pdev->vdev->name, sensor_type, i);
+		}
 	}
 
 	/* Turn on camera */
@@ -1590,6 +1615,7 @@ static int pwc_video_mmap(struct video_device *vdev, const char *adr, unsigned l
 	pdev = vdev->priv;
 
 	/* FIXME - audit mmap during a read */		
+	/* Nemo: 9 months and 20 kernel revisions later I still don't know what you mean by this :-) */
 	pos = (unsigned long)pdev->image_data;
 	while (size > 0) {
 		page = kvirt_to_pa(pos);
@@ -1621,7 +1647,7 @@ static void *usb_pwc_probe(struct usb_device *udev, unsigned int ifnum, const st
 	int vendor_id, product_id, type_id;
 	int i, hint;
 	int video_nr = -1; /* default: use next available device */
-	char serial_number[30];
+	char serial_number[30], *name;
 
 	free_mem_leak();
 	
@@ -1642,38 +1668,47 @@ static void *usb_pwc_probe(struct usb_device *udev, unsigned int ifnum, const st
 		switch (product_id) {
 		case 0x0302:
 			Info("Philips PCA645VC USB webcam detected.\n");
+			name = "Philips 645 webcam";
 			type_id = 645;
 			break;
 		case 0x0303:
 			Info("Philips PCA646VC USB webcam detected.\n");
+			name = "Philips 646 webcam";
 			type_id = 646;
 			break;
 		case 0x0304:
 			Info("Askey VC010 type 2 USB webcam detected.\n");
+			name = "Askey VC010 webcam";
 			type_id = 646;
 			break;
 		case 0x0307:
 			Info("Philips PCVC675K (Vesta) USB webcam detected.\n");
+			name = "Philips 675 webcam";
 			type_id = 675;
 			break;
 		case 0x0308:
 			Info("Philips PCVC680K (Vesta Pro) USB webcam detected.\n");
+			name = "Philips 680 webcam";
 			type_id = 680;
 			break;
 		case 0x030C:
 			Info("Philips PCVC690K (Vesta Pro Scan) USB webcam detected.\n");
+			name = "Philips 690 webcam";
 			type_id = 690;
 			break;
 		case 0x0310:
 			Info("Philips PCVC730K (ToUCam Fun) USB webcam detected.\n");
+			name = "Philips 730 webcam";
 			type_id = 730;
 			break;
 		case 0x0311:
 			Info("Philips PCVC740K (ToUCam Pro) USB webcam detected.\n");
+			name = "Philips 740 webcam";
 			type_id = 740;
 			break;
 		case 0x0312:
 			Info("Philips PCVC750K (ToUCam Pro Scan) USB webcam detected.\n");
+			name = "Philips 750 webcam";
 			type_id = 750;
 			break;
 		default:
@@ -1685,6 +1720,7 @@ static void *usb_pwc_probe(struct usb_device *udev, unsigned int ifnum, const st
 		switch(product_id) {
 		case 0x0001:
 			Info("Askey VC010 type 1 USB webcam detected.\n");
+			name = "Askey VC010 webcam";
 			type_id = 645;
 			break;
 		default:
@@ -1695,7 +1731,8 @@ static void *usb_pwc_probe(struct usb_device *udev, unsigned int ifnum, const st
 	else if (vendor_id == 0x046d) {
 		switch(product_id) {
 		case 0x08b0:
-			Info("Logitech QuickCam 3000 Pro detected.\n");
+			Info("Logitech QuickCam 3000 Pro USB webcam detected.\n");
+			name = "Logitech QuickCam 3000 Pro";
 			type_id = 730;
         		break;
         	default:
@@ -1711,10 +1748,12 @@ static void *usb_pwc_probe(struct usb_device *udev, unsigned int ifnum, const st
 		switch(product_id) {
 		case 0x9000:
 			Info("Samsung MPC-C10 USB webcam detected.\n");
+			name = "Samsung MPC-C10";
 			type_id = 675;
 			break;
 		case 0x9001:
 			Info("Samsung MPC-C30 USB webcam detected.\n");
+			name = "Samsung MPC-C30";
 			type_id = 675;
 			break;
 		default:
@@ -1726,6 +1765,7 @@ static void *usb_pwc_probe(struct usb_device *udev, unsigned int ifnum, const st
 		switch(product_id) {
 		case 0x400c:
 			Info("Creative Labs Webcam 5 detected.\n");
+			name = "Creative Labs Webcam 5";
 			type_id = 730;
 			break;
 		default:
@@ -1736,7 +1776,8 @@ static void *usb_pwc_probe(struct usb_device *udev, unsigned int ifnum, const st
 	else if (vendor_id == 0x04cc) { 
 		switch(product_id) {
 		case 0x8116:
-			Info("SOTEC CMS-001 USB webcam detected.\n");
+			Info("Sotec Afina Eye USB webcam detected.\n");
+			name = "Sotec Afina Eye";
 			type_id = 730;
 			break;  
 		default:
@@ -1744,7 +1785,25 @@ static void *usb_pwc_probe(struct usb_device *udev, unsigned int ifnum, const st
 			break;
 		}
 	}
-	else return NULL; /* Not Philips, Askey, Logitech, Samsung, Creative or SOTEC, for sure. */
+	else if (vendor_id == 0x0d81) {
+		switch(product_id) {
+		case 0x1900:
+			Info("Visionite VCS-UC300 USB webcam detected.\n");
+			name = "Visionite VCS-UC300";
+			type_id = 740; /* CCD sensor */
+			break;
+		case 0x1910:
+			Info("Visionite VCS-UM100 USB webcam detected.\n");
+			name = "Visionite VCS-UM100";
+			type_id = 730; /* CMOS sensor */
+			break;
+		default:
+			return NULL;
+			break;
+		}
+	}
+	else 
+		return NULL; /* Not any of the know types; but the list keeps growing. */
 
 	memset(serial_number, 0, 30);
 	usb_string(udev, udev->descriptor.iSerialNumber, serial_number, 29);
@@ -1778,14 +1837,13 @@ static void *usb_pwc_probe(struct usb_device *udev, unsigned int ifnum, const st
 		return NULL;
 	}
 	memcpy(vdev, &pwc_template, sizeof(pwc_template));
-	sprintf(vdev->name, "Philips %d webcam", pdev->type);
+	strcpy(vdev->name, name);
 	SET_MODULE_OWNER(vdev);
 	pdev->vdev = vdev;
 	vdev->priv = pdev;
 
 	pdev->release = udev->descriptor.bcdDevice;
 	Trace(TRACE_PROBE, "Release: %04x\n", pdev->release);
-
 
 	/* Now search device_hint[] table for a match, so we can hint a node number. */
 	for (hint = 0; hint < MAX_DEV_HINTS; hint++) {
@@ -1951,11 +2009,12 @@ static int __init usb_pwc_init(void)
 	char *sizenames[PSZ_MAX] = { "sqcif", "qsif", "qcif", "sif", "cif", "vga" };
 
 	Info("Philips PCA645/646 + PCVC675/680/690 + PCVC730/740/750 webcam module version " PWC_VERSION " loaded.\n");
-	Info("Also supports the Askey VC010, Logitech Quickcam 3000 Pro, Samsung MPC-C10 and MPC-C30, the Creative WebCam 5 and the SOTEC CMS-001.\n");
+	Info("Also supports the Askey VC010, Logitech Quickcam 3000 Pro, Samsung MPC-C10 and MPC-C30,\n");
+	Info("the Creative WebCam 5, SOTEC Afina Eye and Visionite VCS-UC300 and VCS-UM100.\n");
 
 	if (fps) {
-		if (fps < 5 || fps > 30) {
-			Err("Framerate out of bounds (5-30).\n");
+		if (fps < 4 || fps > 30) {
+			Err("Framerate out of bounds (4-30).\n");
 			return -EINVAL;
 		}
 		default_fps = fps;
@@ -2007,9 +2066,9 @@ static int __init usb_pwc_init(void)
 	if (power_save)
 		Info("Enabling power save on open/close.\n");
 	if (leds[0] >= 0)
-		led_on = leds[0] / 100;
+		led_on = leds[0];
 	if (leds[1] >= 0)
-		led_off = leds[1] / 100;
+		led_off = leds[1];
 
 	/* Big device node whoopla. Basicly, it allows you to assign a 
 	   device node (/dev/videoX) to a camera, based on its type 

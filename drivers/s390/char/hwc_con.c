@@ -31,20 +31,12 @@ void hwc_console_unblank (void);
 
 #define  HWC_CON_PRINT_HEADER "hwc console driver: "
 
-struct console hwc_console =
-{
-
-	hwc_console_name,
-	hwc_console_write,
-	NULL,
-	hwc_console_device,
-	NULL,
-	hwc_console_unblank,
-	NULL,
-	CON_PRINTBUFFER,
-	0,
-	0,
-	NULL
+struct console hwc_console = {
+	name:	hwc_console_name,
+	write:	hwc_console_write,
+	device:	hwc_console_device,
+	unblank:hwc_console_unblank,
+	flags:	CON_PRINTBUFFER,
 };
 
 void 

@@ -37,9 +37,9 @@
  * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGES.
  *
- * $FreeBSD: src/sys/dev/aic7xxx/aic7xxx.reg,v 1.31 2000/11/10 20:13:40 gibbs Exp $
+ * $FreeBSD: src/sys/dev/aic7xxx/aic7xxx.reg,v 1.20.2.11 2002/04/29 19:36:30 gibbs Exp $
  */
-VERSION = "$Id: //depot/aic7xxx/aic7xxx/aic7xxx.reg#24 $"
+VERSION = "$Id: //depot/aic7xxx/aic7xxx/aic7xxx.reg#30 $"
 
 /*
  * This file is processed by the aic7xxx_asm utility for use in assembling
@@ -474,7 +474,7 @@ register SPIOCAP {
 	bit	SOFT1		0x80
 	bit	SOFT0		0x40
 	bit	SOFTCMDEN	0x20	
-	bit	HAS_BRDCTL	0x10	/* External Board control */
+	bit	EXT_BRDCTL	0x10	/* External Board control */
 	bit	SEEPROM		0x08	/* External serial eeprom logic */
 	bit	EEPROM		0x04	/* Writable external BIOS ROM */
 	bit	ROM		0x02	/* Logic for accessing external ROM */
@@ -1009,7 +1009,9 @@ register SFUNCT {
  * SCB Definition (p. 5-4)
  */
 scb {
-	address			0x0a0
+	address		0x0a0
+	size		64
+
 	SCB_CDB_PTR {
 		size	4
 		alias	SCB_RESIDUAL_DATACNT
@@ -1254,7 +1256,8 @@ register SG_CACHE_SHADOW {
  */
 
 scratch_ram {
-	address			0x020
+	address		0x020
+	size		58
 
 	/*
 	 * 1 byte per target starting at this address for configuration values
@@ -1316,7 +1319,7 @@ scratch_ram {
 		bit	SDMAENACK	0x10
 		bit	HDMAEN		0x08
 		bit	HDMAENACK	0x08
-		bit	DIRECTION	0x04
+		bit	DIRECTION	0x04	/* Set indicates PCI->SCSI */
 		bit	FIFOFLUSH	0x02
 		bit	FIFORESET	0x01
 	}
@@ -1469,26 +1472,46 @@ scratch_ram {
 	DATA_COUNT_ODD {
 		size		1
 	}
+}
+
+scratch_ram {
+	address		0x056
+	size		4
+	/*
+	 * These scratch ram locations are initialized by the 274X BIOS.
+	 * We reuse them after capturing the BIOS settings during
+	 * initialization.
+	 */
 
 	/*
 	 * The initiator specified tag for this target mode transaction.
 	 */
-	INITIATOR_TAG {
-		size		1
+	HA_274_BIOSGLOBAL {
+		size	1
+		bit	HA_274_EXTENDED_TRANS	0x01
+		alias	INITIATOR_TAG
 	}
 
 	SEQ_FLAGS2 {
-		size		1
-		bit	SCB_DMA			  0x01
-		bit	TARGET_MSG_PENDING	  0x02
+		size	1
+		bit	SCB_DMA			0x01
+		bit	TARGET_MSG_PENDING	0x02
 	}
+}
+
+scratch_ram {
+	address		0x05a
+	size		6
 	/*
-	 * These are reserved registers in the card's scratch ram.  Some of
-	 * the values are specified in the AHA2742 technical reference manual
-	 * and are initialized by the BIOS at boot time.
+	 * These are reserved registers in the card's scratch ram on the 2742.
+	 * The EISA configuraiton chip is mapped here.  On Rev E. of the
+	 * aic7770, the sequencer can use this area for scratch, but the
+	 * host cannot directly access these registers.  On later chips, this
+	 * area can be read and written by both the host and the sequencer.
+	 * Even on later chips, many of these locations are initialized by
+	 * the BIOS.
 	 */
 	SCSICONF {
-		address		0x05a
 		size		1
 		bit	TERM_ENB	0x80
 		bit	RESET_SCSI	0x40
@@ -1513,11 +1536,16 @@ scratch_ram {
 		mask	BIOSDISABLED		0x30	
 		bit	CHANNEL_B_PRIMARY	0x08
 	}
+}
+
+scratch_ram {
+	address		0x070
+	size		16
+
 	/*
 	 * Per target SCSI offset values for Ultra2 controllers.
 	 */
 	TARG_OFFSET {
-		address		0x070
 		size		16
 	}
 }

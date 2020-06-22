@@ -7,7 +7,7 @@
  * Original driver (sg.c):
  *        Copyright (C) 1992 Lawrence Foard
  * Version 2 and 3 extensions to driver:
- *        Copyright (C) 1998 - 2001 Douglas Gilbert
+ *        Copyright (C) 1998 - 2002 Douglas Gilbert
  *
  *  Modified  19-JAN-1998  Richard Gooch <rgooch@atnf.csiro.au>  Devfs support
  *
@@ -19,9 +19,9 @@
  */
 #include <linux/config.h>
 #ifdef CONFIG_PROC_FS
- static char sg_version_str[] = "Version: 3.1.22 (20011208)";
+ static char * sg_version_str = "Version: 3.1.24 (20020505)";
 #endif
- static int sg_version_num = 30122; /* 2 digits for each component */
+ static int sg_version_num = 30124; /* 2 digits for each component */
 /*
  *  D. P. Gilbert (dgilbert@interlog.com, dougg@triode.net.au), notes:
  *      - scsi logging is available via SCSI_LOG_TIMEOUT macros. First
@@ -287,7 +287,7 @@ static int sg_open(struct inode * inode, struct file * filp)
 
     if (flags & O_EXCL) {
         if (O_RDONLY == (flags & O_ACCMODE))  {
-            retval = -EACCES;   /* Can't lock it with read only access */
+            retval = -EPERM;   /* Can't lock it with read only access */
 	    goto error_out;
 	}
 	if (sdp->headfp && (flags & O_NONBLOCK))
@@ -580,7 +580,7 @@ static ssize_t sg_write(struct file * filp, const char * buf,
     hp->iovec_count = 0;
     hp->mx_sb_len = 0;
     if (input_size > 0)
-	hp->dxfer_direction = ((old_hdr.reply_len - SZ_SG_HEADER) > 0) ?
+	hp->dxfer_direction = (old_hdr.reply_len > SZ_SG_HEADER) ?
 			      SG_DXFER_TO_FROM_DEV : SG_DXFER_TO_DEV;
     else
 	hp->dxfer_direction = (mxsize > 0) ? SG_DXFER_FROM_DEV :
@@ -649,7 +649,7 @@ static ssize_t sg_new_write(Sg_fd * sfp, const char * buf, size_t count,
     if (read_only &&
 	(! sg_allow_access(cmnd[0], sfp->parentdp->device->type))) {
 	sg_remove_request(sfp, srp);
-	return -EACCES;
+	return -EPERM;
     }
     k = sg_common_write(sfp, srp, cmnd, timeout, blocking);
     if (k < 0) return k;
@@ -981,7 +981,7 @@ static int sg_ioctl(struct inode * inode, struct file * filp,
 
 	    copy_from_user(&opcode, siocp->data, 1);
 	    if (! sg_allow_access(opcode, sdp->device->type))
-		return -EACCES;
+		return -EPERM;
 	}
         return scsi_ioctl_send_command(sdp->device, (void *)arg);
     case SG_SET_DEBUG:
@@ -998,7 +998,7 @@ static int sg_ioctl(struct inode * inode, struct file * filp,
         return scsi_ioctl(sdp->device, cmd_in, (void *)arg);
     default:
 	if (read_only)
-            return -EACCES; /* don't know so take safe approach */
+            return -EPERM; /* don't know so take safe approach */
         return scsi_ioctl(sdp->device, cmd_in, (void *)arg);
     }
 }
@@ -1884,8 +1884,11 @@ static int sg_write_xfer(Sg_request * srp)
 	    res = sg_u_iovec(hp, iovec_count, j, 1, &usglen, &up);
 	    if (res) return res;
 
-	    for (; (k < schp->k_use_sg) && p;
-		 ++k, ++sclp, ksglen = (int)sclp->length, p = sclp->address) {
+	    for (; k < schp->k_use_sg; ++k, ++sclp) {
+		ksglen = (int)sclp->length;
+		p = sclp->address;
+		if (NULL == p)
+		    break;
 		ok = (SG_USER_MEM != mem_src_arr[k]);
 		if (usglen <= 0)
 		    break;
@@ -2037,8 +2040,11 @@ static int sg_read_xfer(Sg_request * srp)
 	    res = sg_u_iovec(hp, iovec_count, j, 0, &usglen, &up);
 	    if (res) return res;
 
-	    for (; (k < schp->k_use_sg) && p;
-		 ++k, ++sclp, ksglen = (int)sclp->length, p = sclp->address) {
+	    for (; k < schp->k_use_sg; ++k, ++sclp) {
+		ksglen = (int)sclp->length;
+		p = sclp->address;
+		if (NULL == p)
+		    break;
 		ok = (SG_USER_MEM != mem_src_arr[k]);
 		if (usglen <= 0)
 		    break;
@@ -2452,7 +2458,11 @@ static char * sg_low_malloc(int rqSz, int lowDma, int mem_src, int * retSzp)
         return resp;
     if (SG_HEAP_KMAL == mem_src) {
         resp = kmalloc(rqSz, page_mask);
-        if (resp && retSzp) *retSzp = rqSz;
+	if (resp) {
+	    if (!capable(CAP_SYS_ADMIN) || !capable(CAP_SYS_RAWIO))
+	    	memset(resp, 0, rqSz);
+	    if (retSzp) *retSzp = rqSz;
+	}
         return resp;
     }
     if (SG_HEAP_POOL == mem_src) {
@@ -2469,6 +2479,8 @@ static char * sg_low_malloc(int rqSz, int lowDma, int mem_src, int * retSzp)
                 (scsi_dma_free_sectors > (SG_LOW_POOL_THRESHHOLD + num_sect))) {
                 resp = scsi_malloc(rqSz);
                 if (resp) {
+		    if (!capable(CAP_SYS_ADMIN) || !capable(CAP_SYS_RAWIO))
+			memset(resp, 0, rqSz);
                     if (retSzp) *retSzp = rqSz;
                     sg_pool_secs_avail -= num_sect;
                     return resp;
@@ -2494,7 +2506,11 @@ static char * sg_low_malloc(int rqSz, int lowDma, int mem_src, int * retSzp)
             resp = (char *)__get_free_pages(page_mask, order); /* try half */
             resSz = a_size;
         }
-        if (retSzp) *retSzp = resSz;
+	if (resp) {
+	    if (!capable(CAP_SYS_ADMIN) || !capable(CAP_SYS_RAWIO))
+                memset(resp, 0, resSz);
+	    if (retSzp) *retSzp = resSz;
+	}
     }
     else
         printk(KERN_ERR "sg_low_malloc: bad mem_src=%d, rqSz=%df\n", 
@@ -2632,9 +2648,9 @@ static inline unsigned sg_jif_to_ms(int jifs)
     }
 }
 
-static unsigned char allow_ops[] = {TEST_UNIT_READY, INQUIRY,
-READ_CAPACITY, READ_BUFFER, READ_6, READ_10, READ_12,
-MODE_SENSE, MODE_SENSE_10};
+static unsigned char allow_ops[] = {TEST_UNIT_READY, REQUEST_SENSE,
+INQUIRY, READ_CAPACITY, READ_BUFFER, READ_6, READ_10, READ_12,
+MODE_SENSE, MODE_SENSE_10, LOG_SENSE};
 
 static int sg_allow_access(unsigned char opcode, char dev_type)
 {
@@ -3036,17 +3052,28 @@ static int sg_proc_hoststrs_read(char * buffer, char ** start, off_t offset,
 				 int size, int * eof, void * data)
 { SG_PROC_READ_FN(sg_proc_hoststrs_info); }
 
+#define SG_MAX_HOST_STR_LEN 256
+
 static int sg_proc_hoststrs_info(char * buffer, int * len, off_t * begin,
 				 off_t offset, int size)
 {
     struct Scsi_Host * shp;
     int k;
+    char buff[SG_MAX_HOST_STR_LEN];
+    char * cp;
 
     for (k = 0, shp = scsi_hostlist; shp; shp = shp->next, ++k) {
     	for ( ; k < shp->host_no; ++k)
 	    PRINT_PROC("<no active host>\n");
-	PRINT_PROC("%s\n", shp->hostt->info ? shp->hostt->info(shp) :
-		    (shp->hostt->name ? shp->hostt->name : "<no name>"));
+	strncpy(buff, shp->hostt->info ? shp->hostt->info(shp) :
+		    (shp->hostt->name ? shp->hostt->name : "<no name>"),
+		SG_MAX_HOST_STR_LEN);
+	buff[SG_MAX_HOST_STR_LEN - 1] = '\0';
+	for (cp = buff; *cp; ++cp) {
+	    if ('\n' == *cp)
+		*cp = ' '; /* suppress imbedded newlines */
+	}
+	PRINT_PROC("%s\n", buff);
     }
     return 1;
 }

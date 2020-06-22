@@ -1,49 +1,99 @@
-
-	Linux I2O Support	(c) Copyright 1999 Red Hat Software
-					and others.
+	Linux I2O Support	(c) Copyright 1999-2002 Red Hat and others.
 
 	This program is free software; you can redistribute it and/or
 	modify it under the terms of the GNU General Public License
 	as published by the Free Software Foundation; either version
 	2 of the License, or (at your option) any later version.
 
-AUTHORS (so far)
 
-Alan Cox, Building Number Three Ltd.
-	Core code, SCSI and Block OSMs
+Hardware Compatibility
+-----------------------
 
-Steve Ralston, LSI Logic Corp.
-	Debugging SCSI and Block OSM
+This is an informal test summary. It is not definitive as a reference work
+or guaranteed of any accuracy.
 
-Deepak Saxena, Intel Corp.
-	Various core/block extensions
-	/proc interface, bug fixes
-	Ioctl interfaces for control
-	Debugging LAN OSM
+Last updated for 2.4.19pre7-ac1
 
-Philip Rumpf
-	Fixed assorted dumb SMP locking bugs
 
-Juha Sievanen, University of Helsinki Finland
-	LAN OSM code
-	/proc interface to LAN class
-	Bug fixes
-	Core code extensions
+Tested Hardware			block	config	lan	proc	scsi
+-----------------------------------------------------------------------
+Current Release
+	AMI MegaRAID[0]		YES	YES	N/A	YES	N/A
 
-Auvo Häkkinen, University of Helsinki Finland
-	LAN OSM code
-	/Proc interface to LAN class
-	Bug fixes
-	Core code extensions
 
-Taneli Vähäkangas, University of Helsinki Finland
-	Fixes to i2o_config
+Previous Stable Release (2.4.18ac3)
+	AMI MegaRAID[0]		FAIL
+	DPT Smartraid		------------ Use dpt_i2o module ------------
+	Intel SCU RAID		FAIL[2]	???	N/A	???	FAIL[2]
+	Promise Supertrak100	YES[3]	YES[3]	N/A	YES[3]	N/A
+	Promise SX6000		YES[3]	YES[3]	N/A	YES[3]	N/A
+	Symbios FC920		YES	YES[4]	N/A	YES	YES
 
-CREDITS
 
+[0] In I2O mode. For normal mode use the megaraid driver
+[1] Initialisation oddities and scsi failure. Use dpt_i2o module instead.
+[2] Card hangs under certain load patterns.
+[3] The driver works correctly. Certain values are misreported by this
+card but the results are only cosmetic. Firmware updates are required for some
+very early cards. Set the card into I2O not 'Linux' mode.
+[4] HTML configuration mode not available.
+
+Requirements
+------------
+
+I2O 1.5 compliant hardware
+PCI bus interrupt driven I2O devices
+Devices in classes Block, Lan or SCSI.
+32bit I2O messages supported
+
+Limitations
+-----------
+64bit message formats are not supported (64bit I2O is basically a whole 
+		different driver variant)
+I2O Tape class is not supported (no known devices using this..)
+Currently only 32bit x86 platforms are supported.
+
+
+Authors
+--------
+	Alan Cox, Building Number Three Ltd.
+		Core code, SCSI and Block OSMs
+
+	Steve Ralston, LSI Logic Corp.
+		Debugging SCSI and Block OSM
+
+	Deepak Saxena, Intel Corp.
+		Various core/block extensions
+		/proc interface, bug fixes
+		Ioctl interfaces for control
+		Debugging LAN OSM
+
+	Philip Rumpf
+		Fixed assorted dumb SMP locking bugs
+
+	Juha Sievanen, University of Helsinki Finland
+		LAN OSM code
+		/proc interface to LAN class
+		Bug fixes
+		Core code extensions
+
+	Auvo Häkkinen, University of Helsinki Finland
+		LAN OSM code
+		/Proc interface to LAN class
+		Bug fixes
+		Core code extensions
+
+	Taneli Vähäkangas, University of Helsinki Finland
+		Fixes to i2o_config
+
+	Boji T Kannanthanam
+		Intel i2o controller work, extending proc/config stuff
+
+Credits
+--------
 	This work was made possible by 
 
-Red Hat Software
+Red Hat
 	Funding for the Building #3 part of the project
 
 Symbios Logic (Now LSI)
@@ -62,32 +112,26 @@ SysKonnect
 ASUSTeK
         Loan of I2O motherboard 
 
-STATUS:
+Promise
+	Providing a Supertrak 100 board and support info
 
-o	The core setup works within limits.
-o	The scsi layer seems to almost work. 
-           I'm still chasing down the hang bug.
-o	The block OSM is mostly functional
-o	LAN OSM works with FDDI and Ethernet cards.
+DPT (now Adaptec)
+	Providing a DPT smartraid I2O card (use dpt_i2o for this
+	board however)
 
-TO DO:
 
 General:
-o	Provide hidden address space if asked
-o	Long term message flow control
+o	Finish 64bit and big endian cleanup
+o	Switch to new PCI mapping layer throughout
+o	Hotswap of controllers
 o	PCI IOP's without interrupts are not supported yet
 o	Push FAIL handling into the core
-o	DDM control interfaces for module load etc
-o       Add I2O 2.0 support (Deffered to 2.5 kernel)
 
 Block:
-o	Multiple major numbers
-o	Read ahead and cache handling stuff. Talk to Ingo and people
+o	Multiple major numbers (problem goes away in 2.5)
 o	Power management
-o	Finish Media changers
 
 SCSI:
-o	Find the right way to associate drives/luns/busses
 
 Lan:	
 o	Performance tuning
@@ -95,4 +139,3 @@ o	Test Fibre Channel code
 
 Tape:
 o	Anyone seen anything implementing this ?
-           (D.S: Will attempt to do so if spare cycles permit)

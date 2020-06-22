@@ -18,10 +18,12 @@
 static __inline__ void putc(char c)
 {
 	if (machine_is_netwinder()) {
-		while ((SER0_BASE[5] & 0x60) != 0x60);
+		while ((SER0_BASE[5] & 0x60) != 0x60)
+			barrier();
 		SER0_BASE[0] = c;
 	} else {
-		while (DC21285_BASE[6] & 8);
+		while (DC21285_BASE[6] & 8)
+			barrier();
 		DC21285_BASE[0] = c;
 	}
 }

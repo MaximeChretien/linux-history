@@ -275,6 +275,7 @@ ENTRY(alt_itlb_miss)
 	mov r16=cr.ifa		// get address that caused the TLB miss
 	movl r17=PAGE_KERNEL
 	mov r21=cr.ipsr
+	movl r19=(((1 << IA64_MAX_PHYS_BITS) - 1) & ~0xfff)
 	mov r31=pr
 	;;
 #ifdef CONFIG_DISABLE_VHPT
@@ -289,12 +290,12 @@ ENTRY(alt_itlb_miss)
 (p8)	br.cond.dptk itlb_fault
 #endif
 	extr.u r23=r21,IA64_PSR_CPL0_BIT,2	// extract psr.cpl
+	and r19=r19,r16		// clear ed, reserved bits, and PTE control bits
 	shr.u r18=r16,57	// move address bit 61 to bit 4
-	dep r19=0,r16,IA64_MAX_PHYS_BITS,(64-IA64_MAX_PHYS_BITS)	// clear ed & reserved bits
 	;;
 	andcm r18=0x10,r18	// bit 4=~address-bit(61)
 	cmp.ne p8,p0=r0,r23	// psr.cpl != 0?
-	dep r19=r17,r19,0,12	// insert PTE control bits into r19
+	or r19=r17,r19		// insert PTE control bits into r19
 	;;
 	or r19=r19,r18		// set bit 4 (uncached) if the access was to region 6
 (p8)	br.cond.spnt page_fault
@@ -312,6 +313,7 @@ ENTRY(alt_dtlb_miss)
 	mov r16=cr.ifa		// get address that caused the TLB miss
 	movl r17=PAGE_KERNEL
 	mov r20=cr.isr
+	movl r19=(((1 << IA64_MAX_PHYS_BITS) - 1) & ~0xfff)
 	mov r21=cr.ipsr
 	mov r31=pr
 	;;
@@ -328,15 +330,15 @@ ENTRY(alt_dtlb_miss)
 #endif
 	extr.u r23=r21,IA64_PSR_CPL0_BIT,2	// extract psr.cpl
 	tbit.nz p6,p7=r20,IA64_ISR_SP_BIT	// is speculation bit on?
+	and r19=r19,r16		// clear ed, reserved bits, and PTE control bits
 	shr.u r18=r16,57	// move address bit 61 to bit 4
-	dep r19=0,r16,IA64_MAX_PHYS_BITS,(64-IA64_MAX_PHYS_BITS) // clear ed & reserved bits
 	;;
 	andcm r18=0x10,r18	// bit 4=~address-bit(61)
 	cmp.ne p8,p0=r0,r23
 (p8)	br.cond.spnt page_fault
 
 	dep r21=-1,r21,IA64_PSR_ED_BIT,1
-	dep r19=r17,r19,0,12	// insert PTE control bits into r19
+	or r19=r19,r17		// insert PTE control bits into r19
 	;;
 	or r19=r19,r18		// set bit 4 (uncached) if the access was to region 6
 (p6)	mov cr.ipsr=r21

@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.prep_setup.c 1.47 12/19/01 09:45:54 trini
+ * BK Id: SCCS/s.prep_setup.c 1.52 04/05/02 10:17:22 trini
  */
 /*
  *  linux/arch/ppc/kernel/setup.c
@@ -111,12 +111,6 @@ extern unsigned long Hash_size, Hash_mask;
 extern int probingmem;
 extern unsigned long loops_per_jiffy;
 
-#ifdef CONFIG_BLK_DEV_RAM
-extern int rd_doload;		/* 1 = load ramdisk, 0 = don't load */
-extern int rd_prompt;		/* 1 = prompt for ramdisk, 0 = don't prompt */
-extern int rd_image_start;	/* starting block # of image */
-#endif
-
 #ifdef CONFIG_SOUND_MODULE
 EXPORT_SYMBOL(ppc_cs4232_dma);
 EXPORT_SYMBOL(ppc_cs4232_dma2);
@@ -209,15 +203,13 @@ no_l2:
 static int __prep
 prep_show_percpuinfo(struct seq_file *m, int i)
 {
-	int len = 0;
-
 	/* PREP's without residual data will give incorrect values here */
 	seq_printf(m, "clock\t\t: ");
 #ifdef CONFIG_PREP_RESIDUAL	
 	if (res->ResidualLength)
 		seq_printf(m, "%ldMHz\n",
 			   (res->VitalProductData.ProcessorHz > 1024) ?
-			   res->VitalProductData.ProcessorHz>>20 :
+			   res->VitalProductData.ProcessorHz / 1000000 :
 			   res->VitalProductData.ProcessorHz);
 	else
 #endif /* CONFIG_PREP_RESIDUAL */
@@ -247,13 +239,6 @@ prep_setup_arch(void)
 	reg = (reg & 0x3F) | 0x40;
 	outb(reg, SIO_CONFIG_RD);
 	outb(reg, SIO_CONFIG_RD);	/* Have to write twice to change! */
-
-	/*
-	 * We need to set up the NvRAM access routines early as prep_init
-	 * has yet to be called
-	 */
-	ppc_md.nvram_read_val = prep_nvram_read_val;
-	ppc_md.nvram_write_val = prep_nvram_write_val;
 
 	/* we should determine this according to what we find! -- Cort */
 	switch ( _prep_type )
@@ -840,21 +825,6 @@ prep_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	}
 #endif
 
-#ifdef CONFIG_BLK_DEV_INITRD
-	if ( r4 )
-	{
-		initrd_start = r4 + KERNELBASE;
-		initrd_end = r5 + KERNELBASE;
-	}
-#endif /* CONFIG_BLK_DEV_INITRD */
-
-	/* Copy cmd_line parameters */
-	if ( r6 )
-	{
-		*(char *)(r7 + KERNELBASE) = 0;
-		strcpy(cmd_line, (char *)(r6 + KERNELBASE));
-	}
-	
 	isa_io_base = PREP_ISA_IO_BASE;
 	isa_mem_base = PREP_ISA_MEM_BASE;
 	pci_dram_offset = PREP_PCI_DRAM_OFFSET;
@@ -889,6 +859,9 @@ prep_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	ppc_md.restart        = prep_restart;
 	ppc_md.power_off      = prep_power_off;
 	ppc_md.halt           = prep_halt;
+
+	ppc_md.nvram_read_val = prep_nvram_read_val;
+	ppc_md.nvram_write_val = prep_nvram_write_val;
 
 	ppc_md.time_init      = NULL;
 	if (_prep_type == _PREP_IBM) {

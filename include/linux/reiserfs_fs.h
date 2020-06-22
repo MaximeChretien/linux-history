@@ -204,7 +204,15 @@ struct unfm_nodeinfo {
 #define REISERFS_VALID_FS    1
 #define REISERFS_ERROR_FS    2
 
-
+//
+// there are 5 item types currently
+//
+#define TYPE_STAT_DATA 0
+#define TYPE_INDIRECT 1
+#define TYPE_DIRECT 2
+#define TYPE_DIRENTRY 3 
+#define TYPE_MAXTYPE 3 
+#define TYPE_ANY 15 // FIXME: comment is required
 
 /***************************************************************************/
 /*                       KEY & ITEM HEAD                                   */
@@ -240,7 +248,7 @@ static inline __u16 offset_v2_k_type( const struct offset_v2 *v2 )
 {
     offset_v2_esafe_overlay tmp = *(const offset_v2_esafe_overlay *)v2;
     tmp.linear = le64_to_cpu( tmp.linear );
-    return tmp.offset_v2.k_type;
+    return (tmp.offset_v2.k_type <= TYPE_MAXTYPE)?tmp.offset_v2.k_type:TYPE_ANY;
 }
  
 static inline void set_offset_v2_k_type( struct offset_v2 *v2, int type )
@@ -388,15 +396,6 @@ struct item_head
 */
 #define get_block_num(p, i) le32_to_cpu(get_unaligned((p) + (i)))
 #define put_block_num(p, i, v) put_unaligned(cpu_to_le32(v), (p) + (i))
-
-//
-// there are 5 item types currently
-//
-#define TYPE_STAT_DATA 0
-#define TYPE_INDIRECT 1
-#define TYPE_DIRECT 2
-#define TYPE_DIRENTRY 3 
-#define TYPE_ANY 15 // FIXME: comment is required
 
 //
 // in old version uniqueness field shows key type
@@ -718,11 +717,41 @@ struct stat_data_v1
 #define set_sd_v1_first_direct_byte(sdp,v) \
                                 ((sdp)->sd_first_direct_byte = cpu_to_le32(v))
 
+#include <linux/ext2_fs.h>
+
+/* inode flags stored in sd_attrs (nee sd_reserved) */
+
+/* we want common flags to have the same values as in ext2,
+   so chattr(1) will work without problems */
+#define REISERFS_IMMUTABLE_FL EXT2_IMMUTABLE_FL
+#define REISERFS_SYNC_FL      EXT2_SYNC_FL
+#define REISERFS_NOATIME_FL   EXT2_NOATIME_FL
+#define REISERFS_NODUMP_FL    EXT2_NODUMP_FL
+#define REISERFS_SECRM_FL     EXT2_SECRM_FL
+#define REISERFS_UNRM_FL      EXT2_UNRM_FL
+#define REISERFS_COMPR_FL     EXT2_COMPR_FL
+/* persistent flag to disable tails on per-file basic.
+   Note, that is inheritable: mark directory with this and
+   all new files inside will not have tails. 
+
+   Teodore Tso allocated EXT2_NODUMP_FL (0x00008000) for this. Change
+   numeric constant to ext2 macro when available. */
+#define REISERFS_NOTAIL_FL    (0x00008000) /* EXT2_NOTAIL_FL */
+
+/* persistent flags that file inherits from the parent directory */
+#define REISERFS_INHERIT_MASK ( REISERFS_IMMUTABLE_FL |	\
+				REISERFS_SYNC_FL |	\
+				REISERFS_NOATIME_FL |	\
+				REISERFS_NODUMP_FL |	\
+				REISERFS_SECRM_FL |	\
+				REISERFS_COMPR_FL |	\
+				REISERFS_NOTAIL_FL )
+
 /* Stat Data on disk (reiserfs version of UFS disk inode minus the
    address blocks) */
 struct stat_data {
     __u16 sd_mode;	/* file type, permissions */
-    __u16 sd_reserved;
+    __u16 sd_attrs;     /* persistent inode flags */
     __u32 sd_nlink;	/* number of hard links */
     __u64 sd_size;	/* file size */
     __u32 sd_uid;		/* owner */
@@ -775,6 +804,8 @@ struct stat_data {
 #define set_sd_v2_rdev(sdp,v)   ((sdp)->u.sd_rdev = cpu_to_le32(v))
 #define sd_v2_generation(sdp)   (le32_to_cpu((sdp)->u.sd_generation))
 #define set_sd_v2_generation(sdp,v) ((sdp)->u.sd_generation = cpu_to_le32(v))
+#define sd_v2_attrs(sdp)         (le16_to_cpu((sdp)->sd_attrs))
+#define set_sd_v2_attrs(sdp,v)   ((sdp)->sd_attrs = cpu_to_le16(v))
 
 
 /***************************************************************************/
@@ -1203,6 +1234,13 @@ struct virtual_node
   struct virtual_item * vn_vi;	/* array of items (including a new one, excluding item to be deleted) */
 };
 
+/* used by directory items when creating virtual nodes */
+struct direntry_uarea {
+    int flags;
+    __u16 entry_count;
+    __u16 entry_sizes[1];
+} __attribute__ ((__packed__)) ;
+
 
 /***************************************************************************/
 /*                  TREE BALANCE                                           */
@@ -1365,7 +1403,7 @@ struct item_operations {
 
 extern struct item_operations stat_data_ops, indirect_ops, direct_ops, 
   direntry_ops;
-extern struct item_operations * item_ops [4];
+extern struct item_operations * item_ops [TYPE_ANY + 1];
 
 #define op_bytes_number(ih,bsize)                    item_ops[le_ih_k_type (ih)]->bytes_number (ih, bsize)
 #define op_is_left_mergeable(key,bsize)              item_ops[le_key_k_type (le_key_version (key), key)]->is_left_mergeable (key, bsize)
@@ -1701,6 +1739,9 @@ struct inode * reiserfs_new_inode (struct reiserfs_transaction_handle *th,
 int reiserfs_sync_inode (struct reiserfs_transaction_handle *th, struct inode * inode);
 void reiserfs_update_sd (struct reiserfs_transaction_handle *th, struct inode * inode);
 
+void sd_attrs_to_i_attrs( __u16 sd_attrs, struct inode *inode );
+void i_attrs_to_sd_attrs( struct inode *inode, __u16 *sd_attrs );
+
 /* namei.c */
 inline void set_de_name_and_namelen (struct reiserfs_dir_entry * de);
 int search_by_entry_key (struct super_block * sb, const struct cpu_key * key, 
@@ -1792,8 +1833,14 @@ struct buffer_head * reiserfs_bread (struct super_block *super, int n_block,
 				     int n_size);
 
 /* fix_nodes.c */
+#ifdef CONFIG_REISERFS_CHECK
 void * reiserfs_kmalloc (size_t size, int flags, struct super_block * s);
 void reiserfs_kfree (const void * vp, size_t size, struct super_block * s);
+#else
+#define reiserfs_kmalloc(x, y, z) kmalloc(x, y)
+#define reiserfs_kfree(x, y, z) kfree(x)
+#endif
+
 int fix_nodes (int n_op_mode, struct tree_balance * p_s_tb, 
 	       struct item_head * p_s_ins_ih, const void *);
 void unfix_nodes (struct tree_balance *);
@@ -1824,6 +1871,7 @@ void print_block_head (struct buffer_head * bh, char * mes);
 void check_leaf (struct buffer_head * bh);
 void check_internal (struct buffer_head * bh);
 void print_statistics (struct super_block * s);
+char * reiserfs_hashname(int code);
 
 /* lbalance.c */
 int leaf_move_items (int shift_mode, struct tree_balance * tb, int mov_num, int mov_bytes, struct buffer_head * Snew);
@@ -1918,6 +1966,12 @@ int reiserfs_unpack (struct inode * inode, struct file * filp);
  
 /* ioctl's command */
 #define REISERFS_IOC_UNPACK		_IOW(0xCD,1,long)
+/* define following flags to be the same as in ext2, so that chattr(1),
+   lsattr(1) will work with us. */
+#define REISERFS_IOC_GETFLAGS           EXT2_IOC_GETFLAGS
+#define REISERFS_IOC_SETFLAGS           EXT2_IOC_SETFLAGS
+#define REISERFS_IOC_GETVERSION 	EXT2_IOC_GETVERSION
+#define REISERFS_IOC_SETVERSION         EXT2_IOC_SETVERSION
  			         
 #endif /* _LINUX_REISER_FS_H */
 

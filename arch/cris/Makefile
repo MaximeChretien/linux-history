@@ -1,4 +1,4 @@
-# $Id: Makefile,v 1.26 2001/11/16 17:42:17 pkj Exp $
+# $Id: Makefile,v 1.27 2002/03/08 13:08:50 bjornw Exp $
 # cris/Makefile
 #
 # This file is included by the global makefile so that you can add your own
@@ -29,9 +29,9 @@ LD = if [ ! -e $(LD_SCRIPT).tmp -o $(LD_SCRIPT) -nt $(LD_SCRIPT).tmp ]; then \
               -e s/@CONFIG_ETRAX_DRAM_SIZE_M@/$(CONFIG_ETRAX_DRAM_SIZE)/ \
               < $(LD_SCRIPT) > $(LD_SCRIPT).tmp; \
      else true; \
-     fi && $(CROSS_COMPILE)gcc -mlinux -nostdlib
+     fi && $(CROSS_COMPILE)ld -mcrislinux
 
-LINKFLAGS = -mlinux -T $(LD_SCRIPT).tmp
+LINKFLAGS = -T $(LD_SCRIPT).tmp
 
 # objcopy is used to make binary images from the resulting linked file
 

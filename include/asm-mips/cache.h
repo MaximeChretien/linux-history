@@ -11,7 +11,7 @@
 
 #include <linux/config.h>
 
-#ifndef _LANGUAGE_ASSEMBLY
+#ifndef __ASSEMBLY__
 /*
  * Descriptor for a cache
  */
@@ -21,14 +21,14 @@ struct cache_desc {
 	int ways;
 	int flags;	/* Details like write thru/back, coherent, etc. */
 };
-#endif
+#endif /* !__ASSEMBLY__ */
 
 /*
  * Flag definitions
  */
 #define MIPS_CACHE_NOT_PRESENT 0x00000001
 
-#if defined(CONFIG_CPU_R3000) || defined(CONFIG_CPU_R6000)
+#if defined(CONFIG_CPU_R3000) || defined(CONFIG_CPU_R6000) || defined(CONFIG_CPU_TX39XX)
 #define L1_CACHE_BYTES		16
 #else
 #define L1_CACHE_BYTES 		32	/* A guess */

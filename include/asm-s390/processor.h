@@ -16,6 +16,7 @@
 #include <asm/page.h>
 #include <asm/ptrace.h>
 
+#ifdef __KERNEL__
 /*
  * Default implementation of macro that returns current
  * instruction pointer ("program counter").
@@ -64,8 +65,7 @@ extern struct task_struct *last_task_used_math;
 #define THREAD_SIZE (2*PAGE_SIZE)
 
 typedef struct {
-        unsigned long seg;
-        unsigned long acc4;
+        unsigned long ar4;
 } mm_segment_t;
 
 /* if you change the thread_struct structure, you must
@@ -82,8 +82,6 @@ struct thread_struct
         __u32   error_code;            /* error-code of last prog-excep.   */
         __u32   prot_addr;             /* address of protection-excep.     */
         __u32   trap_no;
-        /* perform syscall argument validation (get/set_fs) */
-        mm_segment_t fs;
         per_struct per_info;/* Must be aligned on an 4 byte boundary*/
 	/* Used to give failing instruction back to user for ieee exceptions */
 	addr_t  ieee_instruction_pointer; 
@@ -99,7 +97,6 @@ typedef struct thread_struct thread_struct;
                     sizeof(init_stack) + (__u32) &init_stack,     \
               (__pa((__u32) &swapper_pg_dir[0]) + _SEGMENT_TABLE),\
                      0,0,0,                                       \
-                     (mm_segment_t) { 0,1},                       \
                      (per_struct) {{{{0,}}},0,0,0,0,{{0,}}},      \
                      0, 0                                         \
 }
@@ -138,8 +135,8 @@ extern inline unsigned long thread_saved_pc(struct thread_struct *t)
 }
 
 unsigned long get_wchan(struct task_struct *p);
-#define __KSTK_PTREGS(tsk) \
-	((struct pt_regs *)((unsigned long) tsk+THREAD_SIZE) - 1)
+#define __KSTK_PTREGS(tsk) ((struct pt_regs *) \
+	(((unsigned long) tsk + THREAD_SIZE - sizeof(struct pt_regs)) & -8L))
 #define KSTK_EIP(tsk)	(__KSTK_PTREGS(tsk)->psw.addr)
 #define KSTK_ESP(tsk)	(__KSTK_PTREGS(tsk)->gprs[15])
 
@@ -169,6 +166,46 @@ unsigned long get_wchan(struct task_struct *p);
 #define PSW_PER_MASK            0x40000000UL
 #define USER_STD_MASK           0x00000080UL
 #define PSW_PROBLEM_STATE       0x00010000UL
+
+/*
+ * Set PSW mask to specified value, while leaving the
+ * PSW addr pointing to the next instruction.
+ */
+
+static inline void __load_psw_mask (unsigned long mask)
+{
+	unsigned long addr;
+
+	psw_t psw;
+	psw.mask = mask;
+
+	asm volatile (
+		"    basr %0,0\n"
+		"0:  ahi  %0,1f-0b\n"
+		"    st   %0,4(%1)\n"
+		"    lpsw 0(%1)\n"
+		"1:"
+		: "=&d" (addr) : "a" (&psw) : "memory", "cc" );
+}
+ 
+/*
+ * Function to stop a processor until an interruption occured
+ */
+static inline void enabled_wait(void)
+{
+	unsigned long reg;
+	psw_t wait_psw;
+
+	wait_psw.mask = 0x070e0000;
+	asm volatile (
+		"    basr %0,0\n"
+		"0:  la   %0,1f-0b(%0)\n"
+		"    st   %0,4(%1)\n"
+		"    oi   4(%1),0x80\n"
+		"    lpsw 0(%1)\n"
+		"1:"
+		: "=&a" (reg) : "a" (&wait_psw) : "memory", "cc" );
+}
 
 /*
  * Function to drop a processor into disabled wait state
@@ -205,5 +242,7 @@ static inline void disabled_wait(unsigned long code)
                       "    lpsw 0(%0)"
                       : : "a" (dw_psw), "a" (&ctl_buf) : "cc" );
 }
+
+#endif
 
 #endif                                 /* __ASM_S390_PROCESSOR_H           */

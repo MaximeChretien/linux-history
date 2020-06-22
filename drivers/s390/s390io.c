@@ -93,7 +93,6 @@ static int         sync_isc_cnt = 0;      // synchronous irq processing lock
 
 static spinlock_t  adapter_lock = SPIN_LOCK_UNLOCKED;
                                           // adapter interrupt lock
-static psw_t      io_sync_wait;           // wait PSW for sync IO, prot. by sync_isc
 static int        cons_dev          = -1; // identify console device
 static int        init_IRQ_complete = 0;
 static int        cio_show_msg      = 0;
@@ -1413,7 +1412,7 @@ int s390_start_IO( int            irq,      /* IRQ */
 		 */
 		if ( flag & DOIO_WAIT_FOR_INTERRUPT )
 		{
-			psw_t            io_new_psw;
+			unsigned long    psw_mask;
 			int              ccode;
 			uint64_t         time_start;    	
 			uint64_t         time_curr;    	
@@ -1431,30 +1430,25 @@ int s390_start_IO( int            irq,      /* IRQ */
 			 *  sync. interrupt arrived we reset the I/O old PSW to
 			 *  its original value.
 			 */
-			memcpy( &io_new_psw, &lc->io_new_psw, sizeof(psw_t));
 
 			ccode = iac();
 
 			switch (ccode) {
 			case 0:  		// primary-space
-				io_sync_wait.mask =   _IO_PSW_MASK
-				                    | _PSW_PRIM_SPACE_MODE
-				                    | _PSW_IO_WAIT;
+				psw_mask = _IO_PSW_MASK
+				    | _PSW_PRIM_SPACE_MODE | _PSW_IO_WAIT;
 				break;
 			case 1:			// secondary-space
-				io_sync_wait.mask =   _IO_PSW_MASK
-				                    | _PSW_SEC_SPACE_MODE
-				                    | _PSW_IO_WAIT;
+				psw_mask = _IO_PSW_MASK
+				    | _PSW_SEC_SPACE_MODE | _PSW_IO_WAIT;
 				break;
 			case 2:			// access-register
-				io_sync_wait.mask =   _IO_PSW_MASK
-				                    | _PSW_ACC_REG_MODE
-				                    | _PSW_IO_WAIT;
+				psw_mask = _IO_PSW_MASK
+				    | _PSW_ACC_REG_MODE | _PSW_IO_WAIT;
 				break;
 			case 3:			// home-space	
-				io_sync_wait.mask =   _IO_PSW_MASK
-				                    | _PSW_HOME_SPACE_MODE
-				                    | _PSW_IO_WAIT;
+				psw_mask = _IO_PSW_MASK
+				    | _PSW_HOME_SPACE_MODE | _PSW_IO_WAIT;
 				break;
 			default:
 				panic( "start_IO() : unexpected "
@@ -1462,8 +1456,6 @@ int s390_start_IO( int            irq,      /* IRQ */
 				       ccode);
 				break;
 			} /* endswitch */
-
-			io_sync_wait.addr = FIX_PSW(&&io_wakeup);
 
 			/*
 			 * Martin didn't like modifying the new PSW, now we take
@@ -1502,9 +1494,8 @@ int s390_start_IO( int            irq,      /* IRQ */
 				}
 				else
 				{
-					__load_psw( io_sync_wait );
+					__load_psw_mask( psw_mask );
 
-io_wakeup:
 					io_sub  = (__u32)*(__u16 *)__LC_SUBCHANNEL_NR;
 
 				} /* endif */
@@ -1984,7 +1975,7 @@ int halt_IO( int           irq,
 			{
 				int              io_sub;
 				__u32            io_parm;
-				psw_t            io_new_psw;
+				unsigned long    psw_mask;
 				int              ccode;
   	
 				int              ready = 0;
@@ -1999,32 +1990,29 @@ int halt_IO( int           irq,
 				 *  arrived we reset the I/O old PSW to its
 				 *  original value.
 				 */
-				memcpy( &io_new_psw,
-				        &lc->io_new_psw,
-				        sizeof(psw_t));
 
 				ccode = iac();
 
 				switch (ccode) {
 				case 0:  		// primary-space
-					io_sync_wait.mask =   _IO_PSW_MASK
-					                    | _PSW_PRIM_SPACE_MODE
-					                    | _PSW_IO_WAIT;
+					psw_mask = _IO_PSW_MASK
+						| _PSW_PRIM_SPACE_MODE
+						| _PSW_IO_WAIT;
 					break;
 				case 1:			// secondary-space
-					io_sync_wait.mask =   _IO_PSW_MASK
-					                    | _PSW_SEC_SPACE_MODE
-					                    | _PSW_IO_WAIT;
+					psw_mask = _IO_PSW_MASK
+						| _PSW_SEC_SPACE_MODE
+						| _PSW_IO_WAIT;
 					break;
 				case 2:			// access-register
-					io_sync_wait.mask =   _IO_PSW_MASK
-					                    | _PSW_ACC_REG_MODE
-					                    | _PSW_IO_WAIT;
+					psw_mask = _IO_PSW_MASK
+						| _PSW_ACC_REG_MODE
+						| _PSW_IO_WAIT;
 					break;
 				case 3:			// home-space	
-					io_sync_wait.mask =   _IO_PSW_MASK
-					                    | _PSW_HOME_SPACE_MODE
-					                    | _PSW_IO_WAIT;
+					psw_mask = _IO_PSW_MASK
+						| _PSW_HOME_SPACE_MODE
+						| _PSW_IO_WAIT;
 					break;
 				default:
 					panic( "halt_IO() : unexpected "
@@ -2032,8 +2020,6 @@ int halt_IO( int           irq,
 					       ccode);
 					break;
 				} /* endswitch */
-
-				io_sync_wait.addr = FIX_PSW(&&hio_wakeup);
 
 				/*
 				 * Martin didn't like modifying the new PSW, now we take
@@ -2044,8 +2030,8 @@ int halt_IO( int           irq,
 				do
 				{
 
-					__load_psw( io_sync_wait );
-hio_wakeup:
+					__load_psw_mask( psw_mask );
+
 				   io_parm = *(__u32 *)__LC_IO_INT_PARM;
 				   io_sub  = (__u32)*(__u16 *)__LC_SUBCHANNEL_NR;
 
@@ -2243,7 +2229,7 @@ int clear_IO( int           irq,
 			{
 				int              io_sub;
 				__u32            io_parm;
-				psw_t            io_new_psw;
+				unsigned long    psw_mask;
 				int              ccode;
   	
 				int              ready = 0;
@@ -2258,32 +2244,29 @@ int clear_IO( int           irq,
 				 *  arrived we reset the I/O old PSW to its
 				 *  original value.
 				 */
-				memcpy( &io_new_psw,
-				        &lc->io_new_psw,
-				        sizeof(psw_t));
 
 				ccode = iac();
 
 				switch (ccode) {
 				case 0:  		// primary-space
-					io_sync_wait.mask =   _IO_PSW_MASK
-					                    | _PSW_PRIM_SPACE_MODE
-					                    | _PSW_IO_WAIT;
+					psw_mask = _IO_PSW_MASK
+						| _PSW_PRIM_SPACE_MODE
+						| _PSW_IO_WAIT;
 					break;
 				case 1:			// secondary-space
-					io_sync_wait.mask =   _IO_PSW_MASK
-					                    | _PSW_SEC_SPACE_MODE
-					                    | _PSW_IO_WAIT;
+					psw_mask = _IO_PSW_MASK
+						| _PSW_SEC_SPACE_MODE
+						| _PSW_IO_WAIT;
 					break;
 				case 2:			// access-register
-					io_sync_wait.mask =   _IO_PSW_MASK
-					                    | _PSW_ACC_REG_MODE
-					                    | _PSW_IO_WAIT;
+					psw_mask = _IO_PSW_MASK
+						| _PSW_ACC_REG_MODE
+						| _PSW_IO_WAIT;
 					break;
 				case 3:			// home-space	
-					io_sync_wait.mask =   _IO_PSW_MASK
-					                    | _PSW_HOME_SPACE_MODE
-					                    | _PSW_IO_WAIT;
+					psw_mask =   _IO_PSW_MASK
+					        | _PSW_HOME_SPACE_MODE
+					        | _PSW_IO_WAIT;
 					break;
 				default:
 					panic( "clear_IO() : unexpected "
@@ -2291,8 +2274,6 @@ int clear_IO( int           irq,
 					       ccode);
 					break;
 				} /* endswitch */
-
-				io_sync_wait.addr = FIX_PSW(&&cio_wakeup);
 
 				/*
 				 * Martin didn't like modifying the new PSW, now we take
@@ -2302,9 +2283,8 @@ int clear_IO( int           irq,
 
 				do
 				{
+					__load_psw_mask( psw_mask );
 
-					__load_psw( io_sync_wait );
-cio_wakeup:
 				   io_parm = *(__u32 *)__LC_IO_INT_PARM;
 				   io_sub  = (__u32)*(__u16 *)__LC_SUBCHANNEL_NR;
 

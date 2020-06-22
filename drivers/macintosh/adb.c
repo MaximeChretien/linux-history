@@ -64,7 +64,7 @@ static struct adb_driver *adb_driver_list[] = {
 #ifdef CONFIG_ADB_IOP
 	&adb_iop_driver,
 #endif
-#ifdef CONFIG_ADB_PMU
+#if defined(CONFIG_ADB_PMU) || defined(CONFIG_ADB_PMU68K)
 	&via_pmu_driver,
 #endif
 #ifdef CONFIG_ADB_MACIO
@@ -78,7 +78,7 @@ struct notifier_block *adb_client_list = NULL;
 static int adb_got_sleep = 0;
 static int adb_inited = 0;
 static pid_t adb_probe_task_pid;
-static int adb_probe_task_flag;
+static DECLARE_MUTEX(adb_probe_mutex);
 static struct completion adb_probe_task_comp;
 static int sleepy_trackpad;
 int __adb_probe_sync;
@@ -242,7 +242,8 @@ adb_probe_task(void *x)
 	printk(KERN_INFO "adb: finished probe task...\n");
 	
 	adb_probe_task_pid = 0;
-	clear_bit(0, &adb_probe_task_flag);
+	up(&adb_probe_mutex);
+	
 	return 0;
 }
 
@@ -264,14 +265,8 @@ adb_reset_bus(void)
 		do_adb_reset_bus();
 		return 0;
 	}
-		
-	/* We need to get a lock on the probe thread */
-	while (test_and_set_bit(0, &adb_probe_task_flag))
-		schedule();
 
-	/* Just wait for PID to be 0 just in case (possible race) */
-	while (adb_probe_task_pid != 0)
-		schedule();
+	down(&adb_probe_mutex);
 
 	/* Create probe thread as a child of keventd */
 	if (current_is_keventd())
@@ -341,21 +336,20 @@ adb_notify_sleep(struct pmu_sleep_notifier *self, int when)
 	case PBOOK_SLEEP_REQUEST:
 		adb_got_sleep = 1;
 		/* We need to get a lock on the probe thread */
-		while (test_and_set_bit(0, &adb_probe_task_flag))
-			schedule();
-		/* Just wait for PID to be 0 just in case (possible race) */
-		while (adb_probe_task_pid != 0)
-			schedule();
+		down(&adb_probe_mutex);
+		/* Stop autopoll */
 		if (adb_controller->autopoll)
 			adb_controller->autopoll(0);
 		ret = notifier_call_chain(&adb_client_list, ADB_MSG_POWERDOWN, NULL);
-		if (ret & NOTIFY_STOP_MASK)
+		if (ret & NOTIFY_STOP_MASK) {
+			up(&adb_probe_mutex);
 			return PBOOK_SLEEP_REFUSE;
+		}
 		break;
 	case PBOOK_SLEEP_REJECT:
 		if (adb_got_sleep) {
 			adb_got_sleep = 0;
-			clear_bit(0, &adb_probe_task_flag);
+			up(&adb_probe_mutex);
 			adb_reset_bus();
 		}
 		break;
@@ -364,7 +358,7 @@ adb_notify_sleep(struct pmu_sleep_notifier *self, int when)
 		break;
 	case PBOOK_WAKE:
 		adb_got_sleep = 0;
-		clear_bit(0, &adb_probe_task_flag);
+		up(&adb_probe_mutex);
 		adb_reset_bus();
 		break;
 	}
@@ -773,9 +767,9 @@ static ssize_t adb_write(struct file *file, const char *buf,
 
 	atomic_inc(&state->n_pending);
 
-	/* If a probe is in progress, wait for it to complete */
-	while (adb_probe_task_pid != 0 || test_bit(0, &adb_probe_task_flag))
-		schedule();
+	/* If a probe is in progress or we are sleeping, wait for it to complete */
+	down(&adb_probe_mutex);
+	up(&adb_probe_mutex);
 
 	/* Special case for ADB_BUSRESET request, all others are sent to
 	   the controller */

@@ -397,7 +397,7 @@ static LIST_HEAD(devs);
  * so that it cannot wreak havoc. The attribute makes sure it doesn't
  * cross a page boundary and ensures dword alignment for the DMA engine
  */
-static unsigned char bugbuf[16] __attribute__ ((aligned (16)));
+static unsigned char *bugbuf;  // [16] __attribute__ ((aligned (16)));
 
 /* --------------------------------------------------------------------- */
 
@@ -1638,7 +1638,7 @@ static int es1370_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 		if (s->dma_adc.mapped)
 			s->dma_adc.count &= s->dma_adc.fragsize-1;
 		spin_unlock_irqrestore(&s->lock, flags);
-                return copy_to_user((void *)arg, &cinfo, sizeof(cinfo));
+                return copy_to_user((void *)arg, &cinfo, sizeof(cinfo)) ? -EFAULT : 0;
 
         case SNDCTL_DSP_GETOPTR:
 		if (!(file->f_mode & FMODE_WRITE))
@@ -1656,7 +1656,7 @@ static int es1370_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 		if (s->dma_dac2.mapped)
 			s->dma_dac2.count &= s->dma_dac2.fragsize-1;
 		spin_unlock_irqrestore(&s->lock, flags);
-                return copy_to_user((void *)arg, &cinfo, sizeof(cinfo));
+                return copy_to_user((void *)arg, &cinfo, sizeof(cinfo)) ? -EFAULT : 0;
 
         case SNDCTL_DSP_GETBLKSIZE:
 		if (file->f_mode & FMODE_WRITE) {
@@ -2115,7 +2115,7 @@ static int es1370_ioctl_dac(struct inode *inode, struct file *file, unsigned int
 		if (s->dma_dac1.mapped)
 			s->dma_dac1.count &= s->dma_dac1.fragsize-1;
 		spin_unlock_irqrestore(&s->lock, flags);
-                return copy_to_user((void *)arg, &cinfo, sizeof(cinfo));
+                return copy_to_user((void *)arg, &cinfo, sizeof(cinfo)) ? -EFAULT : 0;
 
         case SNDCTL_DSP_GETBLKSIZE:
 		if ((val = prog_dmabuf_dac1(s)))
@@ -2564,6 +2564,11 @@ static int __devinit es1370_probe(struct pci_dev *pcidev, const struct pci_devic
 	mm_segment_t fs;
 	int i, val, ret;
 
+	if (bugbuf == NULL)
+		bugbuf = kmalloc(16, GFP_KERNEL);
+	if (bugbuf == NULL)
+		return -ENOMEM;
+	
 	if ((ret=pci_enable_device(pcidev)))
 		return ret;
 
@@ -2747,6 +2752,8 @@ static void __exit cleanup_es1370(void)
 {
 	printk(KERN_INFO "es1370: unloading\n");
 	pci_unregister_driver(&es1370_driver);
+	if(bugbuf)
+		kfree(bugbuf);
 }
 
 module_init(init_es1370);

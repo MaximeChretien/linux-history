@@ -447,7 +447,7 @@ int ioctl_html(unsigned long arg)
 	int token;
 	u32 len;
 	u32 reslen;
-	u32 msg[MSG_FRAME_SIZE/4];
+	u32 msg[MSG_FRAME_SIZE];
 
 	if(copy_from_user(&kcmd, cmd, sizeof(struct i2o_html)))
 	{
@@ -908,11 +908,7 @@ static struct miscdevice i2o_miscdev = {
 	&config_fops
 };	
 
-#ifdef MODULE
-int init_module(void)
-#else
-int __init i2o_config_init(void)
-#endif
+static int __init i2o_config_init(void)
 {
 	printk(KERN_INFO "I2O configuration manager v 0.04.\n");
 	printk(KERN_INFO "  (C) Copyright 1999 Red Hat Software\n");
@@ -946,9 +942,7 @@ int __init i2o_config_init(void)
 	return 0;
 }
 
-#ifdef MODULE
-
-void cleanup_module(void)
+static void i2o_config_exit(void)
 {
 	misc_deregister(&i2o_miscdev);
 	
@@ -963,4 +957,5 @@ MODULE_AUTHOR("Red Hat Software");
 MODULE_DESCRIPTION("I2O Configuration");
 MODULE_LICENSE("GPL");
 
-#endif
+module_init(i2o_config_init);
+module_exit(i2o_config_exit);

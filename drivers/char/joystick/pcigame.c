@@ -76,19 +76,19 @@ struct pcigame {
 
 static unsigned char pcigame_read(struct gameport *gameport)
 {
-	struct pcigame *pcigame = gameport->private;
+	struct pcigame *pcigame = gameport->driver;
 	return readb(pcigame->base + pcigame->data->legacy);
 }
 
 static void pcigame_trigger(struct gameport *gameport)
 {
-	struct pcigame *pcigame = gameport->private;
+	struct pcigame *pcigame = gameport->driver;
 	writeb(0xff, pcigame->base + pcigame->data->legacy);
 }
 
 static int pcigame_cooked_read(struct gameport *gameport, int *axes, int *buttons)
 {
-        struct pcigame *pcigame = gameport->private;
+        struct pcigame *pcigame = gameport->driver;
 	int i;
 
 	*buttons = (~readb(pcigame->base + pcigame->data->legacy) >> 4) & 0xf;
@@ -103,7 +103,7 @@ static int pcigame_cooked_read(struct gameport *gameport, int *axes, int *button
 
 static int pcigame_open(struct gameport *gameport, int mode)
 {
-	struct pcigame *pcigame = gameport->private;
+	struct pcigame *pcigame = gameport->driver;
 
 	switch (mode) {
 		case GAMEPORT_MODE_COOKED:
@@ -135,7 +135,7 @@ static int __devinit pcigame_probe(struct pci_dev *dev, const struct pci_device_
 	pcigame->dev = dev;
 	pci_set_drvdata(dev, pcigame);
 
-	pcigame->gameport.private = pcigame;
+	pcigame->gameport.driver = pcigame;
 	pcigame->gameport.fuzz = 64;
 	
 	pcigame->gameport.read = pcigame_read;

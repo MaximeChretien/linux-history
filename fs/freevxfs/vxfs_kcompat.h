@@ -17,27 +17,5 @@ static inline void map_bh(struct buffer_head *bh, struct super_block *sb, int bl
 	bh->b_blocknr = block;
 }
 
-/* From fs/block_dev.c (Linux 2.5.2-pre2)  */
-static inline int sb_set_blocksize(struct super_block *sb, int size)
-{
-	int bits;
-	if (set_blocksize(sb->s_dev, size) < 0)
-		return 0;
-	sb->s_blocksize = size;
-	for (bits = 9, size >>= 9; size >>= 1; bits++)
-		;
-	sb->s_blocksize_bits = bits;
-	return sb->s_blocksize;
-}
-
-/* Dito.  */
-static inline int sb_min_blocksize(struct super_block *sb, int size)
-{
-	int minsize = get_hardsect_size(sb->s_dev);
-	if (size < minsize)
-		size = minsize;
-	return sb_set_blocksize(sb, size);
-}
-
 #endif /* Kernel 2.4 */
 #endif /* _VXFS_KCOMPAT_H */

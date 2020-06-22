@@ -50,6 +50,7 @@ define_bool CONFIG_SUN_AUXIO y
 define_bool CONFIG_SUN_IO y
 define_bool CONFIG_RWSEM_GENERIC_SPINLOCK y
 define_bool CONFIG_RWSEM_XCHGADD_ALGORITHM n
+define_bool CONFIG_SUN_PM y
 
 bool 'Support for SUN4 machines (disables SUN4[CDM] support)' CONFIG_SUN4
 if [ "$CONFIG_SUN4" != "y" ]; then
@@ -211,6 +212,12 @@ if [ "$CONFIG_NET" = "y" ]; then
         dep_tristate '  PPP support for sync tty ports' CONFIG_PPP_SYNC_TTY $CONFIG_PPP
         dep_tristate '  PPP Deflate compression' CONFIG_PPP_DEFLATE $CONFIG_PPP
         dep_tristate '  PPP BSD-Compress compression' CONFIG_PPP_BSDCOMP m
+	if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
+	  dep_tristate '  PPP over Ethernet (EXPERIMENTAL)' CONFIG_PPPOE $CONFIG_PPP
+	  if [ "$CONFIG_ATM" = "y" ]; then
+	    dep_tristate '  PPP over ATM (EXPERIMENTAL)' CONFIG_PPPOATM $CONFIG_PPP
+	  fi
+	fi
       fi
       tristate '  SLIP (serial line) support' CONFIG_SLIP
       if [ "$CONFIG_SLIP" != "n" ]; then
@@ -251,9 +258,7 @@ endmenu
 
 source fs/Config.in
 
-if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
-   source net/bluetooth/Config.in
-fi
+source net/bluetooth/Config.in
 
 mainmenu_option next_comment
 comment 'Watchdog'

@@ -14,6 +14,7 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 
    dep_tristate '  Include IDE/ATA-2 DISK support' CONFIG_BLK_DEV_IDEDISK $CONFIG_BLK_DEV_IDE
    dep_mbool '    Use multi-mode by default' CONFIG_IDEDISK_MULTI_MODE $CONFIG_BLK_DEV_IDEDISK
+   dep_mbool '    Auto-Geometry Resizing support' CONFIG_IDEDISK_STROKE $CONFIG_BLK_DEV_IDEDISK
 
    define_bool CONFIG_BLK_DEV_IDEDISK_VENDOR n
    dep_mbool '    Fujitsu Vendor Specific' CONFIG_BLK_DEV_IDEDISK_FUJITSU $CONFIG_BLK_DEV_IDEDISK_VENDOR
@@ -32,6 +33,9 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
    dep_tristate '  Include IDE/ATAPI FLOPPY support' CONFIG_BLK_DEV_IDEFLOPPY $CONFIG_BLK_DEV_IDE
    dep_tristate '  SCSI emulation support' CONFIG_BLK_DEV_IDESCSI $CONFIG_BLK_DEV_IDE $CONFIG_SCSI
 
+   bool '  IDE Taskfile Access' CONFIG_IDE_TASK_IOCTL
+#   bool '  IDE Taskfile IO' CONFIG_IDE_TASKFILE_IO
+
    comment 'IDE chipset support/bugfixes'
    if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
       dep_bool '  CMD640 chipset bugfix/support' CONFIG_BLK_DEV_CMD640 $CONFIG_X86
@@ -43,14 +47,17 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 	 if [ "$CONFIG_BLK_DEV_IDEPCI" = "y" ]; then
 	    bool '    Sharing PCI IDE interrupts support' CONFIG_IDEPCI_SHARE_IRQ
 	    bool '    Generic PCI bus-master DMA support' CONFIG_BLK_DEV_IDEDMA_PCI
-#	    bool '    Asynchronous DMA support (EXPERIMENTAL)' CONFIG_BLK_DEV_ADMA $CONFIG_BLK_DEV_IDEDMA_PCI
-	    define_bool CONFIG_BLK_DEV_ADMA $CONFIG_BLK_DEV_IDEDMA_PCI
 	    bool '    Boot off-board chipsets first support' CONFIG_BLK_DEV_OFFBOARD
+	    dep_bool '      Force enable legacy 2.0.X HOSTS to use DMA' CONFIG_BLK_DEV_IDEDMA_FORCED $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_bool '      Use PCI DMA by default when available' CONFIG_IDEDMA_PCI_AUTO $CONFIG_BLK_DEV_IDEDMA_PCI
+            dep_bool '    Enable DMA only for disks ' CONFIG_IDEDMA_ONLYDISK $CONFIG_IDEDMA_PCI_AUTO
 	    define_bool CONFIG_BLK_DEV_IDEDMA $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_bool '      ATA Work(s) In Progress (EXPERIMENTAL)' CONFIG_IDEDMA_PCI_WIP $CONFIG_BLK_DEV_IDEDMA_PCI $CONFIG_EXPERIMENTAL
-#	    dep_bool '      Attempt to HACK around Chipsets that TIMEOUT (WIP)' CONFIG_BLK_DEV_IDEDMA_TIMEOUT $CONFIG_IDEDMA_PCI_WIP
+	    dep_bool '      Attempt to HACK around Chipsets that TIMEOUT (WIP)' CONFIG_BLK_DEV_IDEDMA_TIMEOUT $CONFIG_IDEDMA_PCI_WIP
 	    dep_bool '      Good-Bad DMA Model-Firmware (WIP)' CONFIG_IDEDMA_NEW_DRIVE_LISTINGS $CONFIG_IDEDMA_PCI_WIP
+#	    dep_bool '      Asynchronous DMA support (WIP) (EXPERIMENTAL)' CONFIG_BLK_DEV_ADMA $CONFIG_BLK_DEV_IDEDMA_PCI $CONFIG_IDEDMA_PCI_WIP $CONFIG_EXPERIMENTAL
+	    define_bool CONFIG_BLK_DEV_ADMA $CONFIG_BLK_DEV_IDEDMA_PCI
+#	    dep_bool '      Tag Command Queue DMA support (WIP) (EXPERIMENTAL)' CONFIG_BLK_DEV_IDEDMA_TCQ $CONFIG_BLK_DEV_IDEDMA_PCI $CONFIG_IDEDMA_PCI_WIP $CONFIG_EXPERIMENTAL
 
 	    dep_bool '    AEC62XX chipset support' CONFIG_BLK_DEV_AEC62XX $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_mbool '      AEC62XX Tuning support' CONFIG_AEC62XX_TUNING $CONFIG_BLK_DEV_AEC62XX
@@ -59,11 +66,12 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 	    dep_bool '    AMD Viper support' CONFIG_BLK_DEV_AMD74XX $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_mbool '      AMD Viper ATA-66 Override (WIP)' CONFIG_AMD74XX_OVERRIDE $CONFIG_BLK_DEV_AMD74XX $CONFIG_IDEDMA_PCI_WIP
 	    dep_bool '    CMD64X chipset support' CONFIG_BLK_DEV_CMD64X $CONFIG_BLK_DEV_IDEDMA_PCI
+	    dep_bool '    CMD680 chipset tuning support' CONFIG_BLK_DEV_CMD680 $CONFIG_BLK_DEV_CMD64X
 	    dep_bool '    CY82C693 chipset support' CONFIG_BLK_DEV_CY82C693 $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_bool '    Cyrix CS5530 MediaGX chipset support' CONFIG_BLK_DEV_CS5530 $CONFIG_BLK_DEV_IDEDMA_PCI
   	    dep_bool '    HPT34X chipset support' CONFIG_BLK_DEV_HPT34X $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_mbool '      HPT34X AUTODMA support (WIP)' CONFIG_HPT34X_AUTODMA $CONFIG_BLK_DEV_HPT34X $CONFIG_IDEDMA_PCI_WIP
-	    dep_bool '    HPT366 chipset support' CONFIG_BLK_DEV_HPT366 $CONFIG_BLK_DEV_IDEDMA_PCI
+	    dep_bool '    HPT366/368/370 chipset support' CONFIG_BLK_DEV_HPT366 $CONFIG_BLK_DEV_IDEDMA_PCI
 	    if [ "$CONFIG_X86" = "y" -o "$CONFIG_IA64" = "y" ]; then
 	       dep_mbool '    Intel PIIXn chipsets support' CONFIG_BLK_DEV_PIIX $CONFIG_BLK_DEV_IDEDMA_PCI
 	       dep_mbool '      PIIXn Tuning support' CONFIG_PIIX_TUNING $CONFIG_BLK_DEV_PIIX $CONFIG_IDEDMA_PCI_AUTO
@@ -72,23 +80,21 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 	       dep_mbool '    IT8172 IDE support' CONFIG_BLK_DEV_IT8172 $CONFIG_BLK_DEV_IDEDMA_PCI
 	       dep_mbool '      IT8172 IDE Tuning support' CONFIG_IT8172_TUNING $CONFIG_BLK_DEV_IT8172 $CONFIG_IDEDMA_PCI_AUTO
 	    fi
-	    dep_bool '    NS87415 chipset support (EXPERIMENTAL)' CONFIG_BLK_DEV_NS87415 $CONFIG_BLK_DEV_IDEDMA_PCI
+	    dep_bool '    NS87415 chipset support (EXPERIMENTAL)' CONFIG_BLK_DEV_NS87415 $CONFIG_BLK_DEV_IDEDMA_PCI $CONFIG_EXPERIMENTAL
 	    dep_bool '    OPTi 82C621 chipset enhanced support (EXPERIMENTAL)' CONFIG_BLK_DEV_OPTI621 $CONFIG_EXPERIMENTAL
-	    dep_bool '    PROMISE PDC202{46|62|65|67|68} support' CONFIG_BLK_DEV_PDC202XX $CONFIG_BLK_DEV_IDEDMA_PCI
+#	    dep_mbool '   Pacific Digital A-DMA support (EXPERIMENTAL)' CONFIG_BLK_DEV_PDC_ADMA $CONFIG_BLK_DEV_ADMA $CONFIG_IDEDMA_PCI_WIP $CONFIG_EXPERIMENTAL
+	    dep_bool '    PROMISE PDC202{46|62|65|67|68|69|70} support' CONFIG_BLK_DEV_PDC202XX $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_bool '      Special UDMA Feature' CONFIG_PDC202XX_BURST $CONFIG_BLK_DEV_PDC202XX
 	    dep_bool '      Special FastTrak Feature' CONFIG_PDC202XX_FORCE $CONFIG_BLK_DEV_PDC202XX
 	    dep_bool '    ServerWorks OSB4/CSB5 chipsets support' CONFIG_BLK_DEV_SVWKS $CONFIG_BLK_DEV_IDEDMA_PCI $CONFIG_X86
 	    dep_bool '    SiS5513 chipset support' CONFIG_BLK_DEV_SIS5513 $CONFIG_BLK_DEV_IDEDMA_PCI $CONFIG_X86
 	    dep_bool '    SLC90E66 chipset support' CONFIG_BLK_DEV_SLC90E66 $CONFIG_BLK_DEV_IDEDMA_PCI $CONFIG_X86
-	    dep_bool '    Tekram TRM290 chipset support (EXPERIMENTAL)' CONFIG_BLK_DEV_TRM290 $CONFIG_BLK_DEV_IDEDMA_PCI
+	    dep_bool '    Tekram TRM290 chipset support (EXPERIMENTAL)' CONFIG_BLK_DEV_TRM290 $CONFIG_BLK_DEV_IDEDMA_PCI $CONFIG_EXPERIMENTAL
 	    dep_bool '    VIA82CXXX chipset support' CONFIG_BLK_DEV_VIA82CXXX $CONFIG_BLK_DEV_IDEDMA_PCI
+	    if [ "$CONFIG_PPC" = "y" -o "$CONFIG_ARM" = "y" ]; then
+	       bool '    Winbond SL82c105 support' CONFIG_BLK_DEV_SL82C105
+	    fi
          fi
-
-#	 dep_mbool '   Pacific Digital A-DMA support (EXPERIMENTAL)' CONFIG_BLK_DEV_PDC_ADMA $CONFIG_BLK_DEV_ADMA $CONFIG_IDEDMA_PCI_WIP
-
-	 if [ "$CONFIG_PPC" = "y" -o "$CONFIG_ARM" = "y" ]; then
-	    bool '    Winbond SL82c105 support' CONFIG_BLK_DEV_SL82C105
-	 fi
       fi
       if [ "$CONFIG_ALL_PPC" = "y" ]; then
 	 bool '    Builtin PowerMac IDE support' CONFIG_BLK_DEV_IDE_PMAC
@@ -100,6 +106,9 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 	 if [ "$CONFIG_BLK_DEV_IDEDMA_PMAC" = "y" ]; then
 	   define_bool CONFIG_BLK_DEV_IDEPCI $CONFIG_BLK_DEV_IDEDMA_PMAC
 	 fi
+      fi
+      if [ "$CONFIG_SIBYTE_SWARM" = "y" ]; then
+	 bool '  SWARM onboard IDE support' CONFIG_BLK_DEV_IDE_SWARM
       fi
       if [ "$CONFIG_ARCH_ACORN" = "y" ]; then
 	 dep_bool '    ICS IDE interface support' CONFIG_BLK_DEV_IDE_ICSIDE $CONFIG_ARCH_ACORN
@@ -113,7 +122,7 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 	 dep_mbool '    Amiga IDE Doubler support (EXPERIMENTAL)' CONFIG_BLK_DEV_IDEDOUBLER $CONFIG_BLK_DEV_GAYLE $CONFIG_EXPERIMENTAL
       fi
       if [ "$CONFIG_ZORRO" = "y" -a "$CONFIG_EXPERIMENTAL" = "y" ]; then
-	 dep_mbool '  Buddha/Catweasel IDE interface support (EXPERIMENTAL)' CONFIG_BLK_DEV_BUDDHA $CONFIG_ZORRO $CONFIG_EXPERIMENTAL
+	 dep_mbool '  Buddha/Catweasel/X-Surf IDE interface support (EXPERIMENTAL)' CONFIG_BLK_DEV_BUDDHA $CONFIG_ZORRO $CONFIG_EXPERIMENTAL
       fi
       if [ "$CONFIG_ATARI" = "y" ]; then
 	 dep_bool '  Falcon IDE interface support' CONFIG_BLK_DEV_FALCON_IDE $CONFIG_ATARI
@@ -173,6 +182,7 @@ if [ "$CONFIG_BLK_DEV_TIVO" = "y" ]; then
 else
   define_bool CONFIG_DMA_NONPCI n
 fi
+
 if [ "$CONFIG_IDE_CHIPSETS" = "y" -o \
      "$CONFIG_BLK_DEV_AEC62XX" = "y" -o \
      "$CONFIG_BLK_DEV_ALI15X3" = "y" -o \

@@ -357,7 +357,7 @@ extern tub_t *tubfindbyirq(int);
  * Find tub_t * given fullscreen device's inode pointer
  * This algorithm takes into account /dev/3270/tub.
  */
-extern inline tub_t *INODE2TUB(struct inode *ip)
+static inline tub_t *INODE2TUB(struct inode *ip)
 {
 	unsigned int minor = MINOR(ip->i_rdev);
 	tub_t *tubp = NULL;
@@ -381,7 +381,7 @@ extern inline tub_t *INODE2TUB(struct inode *ip)
 /*
  * Find tub_t * given non-fullscreen (tty) device's tty_struct pointer
  */
-extern inline tub_t *TTY2TUB(struct tty_struct *tty)
+static inline tub_t *TTY2TUB(struct tty_struct *tty)
 {
 	unsigned int minor = MINOR(tty->device);
 	tub_t *tubp = NULL;

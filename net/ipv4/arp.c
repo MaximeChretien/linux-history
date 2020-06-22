@@ -112,7 +112,7 @@
 #include <asm/system.h>
 #include <asm/uaccess.h>
 
-
+#include <linux/netfilter_arp.h>
 
 /*
  *	Interface to generic neighbour cache.
@@ -450,6 +450,32 @@ int arp_bind_neighbour(struct dst_entry *dst)
 }
 
 /*
+ * Check if we can use proxy ARP for this path
+ */
+
+static inline int arp_fwd_proxy(struct in_device *in_dev, struct rtable *rt)
+{
+	struct in_device *out_dev;
+	int imi, omi = -1;
+
+	if (!IN_DEV_PROXY_ARP(in_dev))
+		return 0;
+
+	if ((imi = IN_DEV_MEDIUM_ID(in_dev)) == 0)
+		return 1;
+	if (imi == -1)
+		return 0;
+
+	/* place to check for proxy_arp for routes */
+
+	if ((out_dev = in_dev_get(rt->u.dst.dev)) != NULL) {
+		omi = IN_DEV_MEDIUM_ID(out_dev);
+		in_dev_put(out_dev);
+	}
+	return (omi != imi && omi != -1);
+}
+
+/*
  *	Interface to link layer: send routine and receive handler.
  */
 
@@ -561,7 +587,8 @@ void arp_send(int type, int ptype, u32 dest_ip,
 	arp_ptr+=dev->addr_len;
 	memcpy(arp_ptr, &dest_ip, 4);
 
-	dev_queue_xmit(skb);
+	/* Send it off, maybe filter it using firewalling first.  */
+	NF_HOOK(NF_ARP, NF_ARP_OUT, skb, NULL, dev, dev_queue_xmit);
 	return;
 
 out:
@@ -574,45 +601,31 @@ static void parp_redo(struct sk_buff *skb)
 }
 
 /*
- *	Receive an arp request by the device layer.
+ *	Process an arp request.
  */
 
-int arp_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt)
+int arp_process(struct sk_buff *skb)
 {
-	struct arphdr *arp = skb->nh.arph;
-	unsigned char *arp_ptr= (unsigned char *)(arp+1);
+	struct net_device *dev = skb->dev;
+	struct in_device *in_dev = in_dev_get(dev);
+	struct arphdr *arp;
+	unsigned char *arp_ptr;
 	struct rtable *rt;
 	unsigned char *sha, *tha;
 	u32 sip, tip;
 	u16 dev_type = dev->type;
 	int addr_type;
-	struct in_device *in_dev = in_dev_get(dev);
 	struct neighbour *n;
 
-/*
- *	The hardware length of the packet should match the hardware length
- *	of the device.  Similarly, the hardware types should match.  The
- *	device should be ARP-able.  Also, if pln is not 4, then the lookup
- *	is not from an IP number.  We can't currently handle this, so toss
- *	it. 
- */  
-	if (in_dev == NULL ||
-	    arp->ar_hln != dev->addr_len    || 
-	    dev->flags & IFF_NOARP ||
-	    skb->pkt_type == PACKET_OTHERHOST ||
-	    skb->pkt_type == PACKET_LOOPBACK ||
-	    arp->ar_pln != 4)
+	/* arp_rcv below verifies the ARP header, verifies the device
+	 * is ARP'able, and linearizes the SKB (if needed).
+	 */
+
+	if (in_dev == NULL)
 		goto out;
 
-	if ((skb = skb_share_check(skb, GFP_ATOMIC)) == NULL)
-		goto out_of_mem;
-
-	if (skb_is_nonlinear(skb)) {
-		if (skb_linearize(skb, GFP_ATOMIC) != 0)
-			goto freeskb;
-		arp = skb->nh.arph;
-		arp_ptr= (unsigned char *)(arp+1);
-	}
+	arp = skb->nh.arph;
+	arp_ptr= (unsigned char *)(arp+1);
 
 	switch (dev_type) {
 	default:	
@@ -768,7 +781,7 @@ int arp_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt)
 		} else if (IN_DEV_FORWARD(in_dev)) {
 			if ((rt->rt_flags&RTCF_DNAT) ||
 			    (addr_type == RTN_UNICAST  && rt->u.dst.dev != dev &&
-			     (IN_DEV_PROXY_ARP(in_dev) || pneigh_lookup(&arp_tbl, &tip, dev, 0)))) {
+			     (arp_fwd_proxy(in_dev, rt) || pneigh_lookup(&arp_tbl, &tip, dev, 0)))) {
 				n = neigh_event_ns(&arp_tbl, sha, &sip, dev);
 				if (n)
 					neigh_release(n);
@@ -827,13 +840,41 @@ int arp_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt)
 out:
 	if (in_dev)
 		in_dev_put(in_dev);
+	kfree_skb(skb);
+	return 0;
+}
+
+
+/*
+ *	Receive an arp request from the device layer.
+ */
+
+int arp_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt)
+{
+	struct arphdr *arp = skb->nh.arph;
+
+	if (arp->ar_hln != dev->addr_len ||
+	    dev->flags & IFF_NOARP ||
+	    skb->pkt_type == PACKET_OTHERHOST ||
+	    skb->pkt_type == PACKET_LOOPBACK ||
+	    arp->ar_pln != 4)
+		goto freeskb;
+
+	if ((skb = skb_share_check(skb, GFP_ATOMIC)) == NULL)
+		goto out_of_mem;
+
+	if (skb_is_nonlinear(skb)) {
+		if (skb_linearize(skb, GFP_ATOMIC) != 0)
+			goto freeskb;
+	}
+
+	return NF_HOOK(NF_ARP, NF_ARP_IN, skb, dev, NULL, arp_process);
+
 freeskb:
 	kfree_skb(skb);
 out_of_mem:
 	return 0;
 }
-
-
 
 /*
  *	User level interface (ioctl, /proc)

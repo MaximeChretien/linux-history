@@ -199,9 +199,7 @@ int __init a3000_detect(Scsi_Host_Template *tpnt)
     return 1;
 
 fail_irq:
-#ifdef MODULE
     wd33c93_release();
-#endif /* MODULE */
     scsi_unregister(a3000_host);
 fail_register:
     release_mem_region(0xDD0000, 256);
@@ -216,11 +214,11 @@ static Scsi_Host_Template driver_template = _A3000_SCSI;
 
 int __exit a3000_release(struct Scsi_Host *instance)
 {
-#ifdef MODULE
     wd33c93_release();
-#endif /* MODULE*/
     DMA(instance)->CNTR = 0;
     release_mem_region(0xDD0000, 256);
     free_irq(IRQ_AMIGA_PORTS, a3000_intr);
     return 1;
 }
+
+MODULE_LICENSE("GPL");

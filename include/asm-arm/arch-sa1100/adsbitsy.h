@@ -11,4 +11,4 @@
 #error "include <asm/hardware.h> instead"
 #endif
 
-#define	SA1111_BASE		(0x18000000)
+#define ADSBITSY_SA1111_BASE	(0x18000000)

@@ -1,12 +1,52 @@
-/* $Id: ethernet.c,v 1.22 2002/01/30 07:48:22 matsfg Exp $
+/* $Id: ethernet.c,v 1.30 2002/05/07 18:50:08 johana Exp $
  *
  * e100net.c: A network driver for the ETRAX 100LX network controller.
  *
- * Copyright (c) 1998-2001 Axis Communications AB.
+ * Copyright (c) 1998-2002 Axis Communications AB.
  *
  * The outline of this driver comes from skeleton.c.
  *
  * $Log: ethernet.c,v $
+ * Revision 1.30  2002/05/07 18:50:08  johana
+ * Correct spelling in comments.
+ *
+ * Revision 1.29  2002/05/06 05:38:49  starvik
+ * Performance improvements:
+ *    Large packets are not copied (breakpoint set to 256 bytes)
+ *    The cache bug workaround is delayed until half of the receive list
+ *      has been used
+ *    Added transmit list
+ *    Transmit interrupts are only enabled when transmit queue is full
+ *
+ * Revision 1.28.2.1  2002/04/30 08:15:51  starvik
+ * Performance improvements:
+ *   Large packets are not copied (breakpoint set to 256 bytes)
+ *   The cache bug workaround is delayed until half of the receive list
+ *     has been used.
+ *   Added transmit list
+ *   Transmit interrupts are only enabled when transmit queue is full
+ *
+ * Revision 1.28  2002/04/22 11:47:21  johana
+ * Fix according to 2.4.19-pre7. time_after/time_before and
+ * missing end of comment.
+ * The patch has a typo for ethernet.c in e100_clear_network_leds(),
+ *  that is fixed here.
+ *
+ * Revision 1.27  2002/04/12 11:55:11  bjornw
+ * Added TODO
+ *
+ * Revision 1.26  2002/03/15 17:11:02  bjornw
+ * Use prepare_rx_descriptor after the CPU has touched the receiving descs
+ *
+ * Revision 1.25  2002/03/08 13:07:53  bjornw
+ * Unnecessary spinlock removed
+ *
+ * Revision 1.24  2002/02/20 12:57:43  fredriks
+ * Replaced MIN() with min().
+ *
+ * Revision 1.23  2002/02/20 10:58:14  fredriks
+ * Strip the Ethernet checksum (4 bytes) before forwarding a frame to upper layers.
+ *
  * Revision 1.22  2002/01/30 07:48:22  matsfg
  * Initiate R_NETWORK_TR_CTRL
  *
@@ -127,7 +167,6 @@
 //#define ETHDEBUG
 #define D(x)
 
-
 /*
  * The name of the card. Is used for messages and in the requests for
  * io regions, irqs and dma channels
@@ -154,6 +193,11 @@ struct net_local {
 	spinlock_t lock;
 };
 
+typedef struct etrax_eth_descr
+{
+	etrax_dma_descr descr;
+	struct sk_buff* skb;
+} etrax_eth_descr;
 
 /* Duplex settings */
 enum duplex
@@ -164,8 +208,6 @@ enum duplex
 };
 
 /* Dma descriptors etc. */
-
-#define RX_BUF_SIZE 32768
 
 #define MAX_MEDIA_DATA_SIZE 1518
 
@@ -207,9 +249,17 @@ enum duplex
 #define NO_NETWORK_ACTIVITY 0
 #define NETWORK_ACTIVITY    1
 
-#define RX_DESC_BUF_SIZE   256
-#define NBR_OF_RX_DESC     (RX_BUF_SIZE / \
-                            RX_DESC_BUF_SIZE)
+#define NBR_OF_RX_DESC     64
+#define NBR_OF_TX_DESC     256
+
+/* Large packets are sent directly to upper layers while small packets are */
+/* copied (to reduce memory waste). The following constant decides the breakpoint */
+#define RX_COPYBREAK 256
+
+/* Due to a chip bug we need to flush the cache when descriptors are returned */
+/* to the DMA. To decrease performance impact we return descriptors in chunks. */
+/* The following constant determines the number of descriptors to return. */
+#define RX_QUEUE_THRESHOLD  NBR_OF_RX_DESC/2
 
 #define GET_BIT(bit,val)   (((val) >> (bit)) & 0x01)
 
@@ -219,17 +269,17 @@ enum duplex
 #define SETS(var, reg, field, val) var = (var & ~IO_MASK(##reg##, field)) | \
 					  IO_STATE(##reg##, field, val)
 
-static etrax_dma_descr *myNextRxDesc;  /* Points to the next descriptor to
+static etrax_eth_descr *myNextRxDesc;  /* Points to the next descriptor to
                                           to be processed */
-static etrax_dma_descr *myLastRxDesc;  /* The last processed descriptor */
-static etrax_dma_descr *myPrevRxDesc;  /* The descriptor right before myNextRxDesc */
+static etrax_eth_descr *myLastRxDesc;  /* The last processed descriptor */
+static etrax_eth_descr *myPrevRxDesc;  /* The descriptor right before myNextRxDesc */
 
-static unsigned char RxBuf[RX_BUF_SIZE];
+static etrax_eth_descr RxDescList[NBR_OF_RX_DESC] __attribute__ ((aligned(32)));
 
-static etrax_dma_descr RxDescList[NBR_OF_RX_DESC] __attribute__ ((aligned(4)));
-static etrax_dma_descr TxDesc __attribute__ ((aligned(4)));
-
-static struct sk_buff *tx_skb;
+static etrax_eth_descr* myFirstTxDesc; /* First packet not yet sent */
+static etrax_eth_descr* myLastTxDesc;  /* End of send queue */
+static etrax_eth_descr* myNextTxDesc;  /* Next descriptor to use */
+static etrax_eth_descr TxDescList[NBR_OF_TX_DESC] __attribute__ ((aligned(32)));
 
 static unsigned int network_rec_config_shadow = 0;
 
@@ -240,6 +290,7 @@ static int current_speed; /* Speed read from tranceiver */
 static int current_speed_selection; /* Speed selected by user */
 static int led_next_time;
 static int led_active;
+static int rx_queue_len;
 
 /* Duplex */
 static struct timer_list duplex_timer;
@@ -295,7 +346,6 @@ static int __init
 etrax_ethernet_init(struct net_device *dev)
 {
 	int i;
-	int anOffset = 0;
 
 	printk("ETRAX 100LX 10/100MBit ethernet v2.0 (c) 2000-2001 Axis Communications AB\n");
 
@@ -348,28 +398,44 @@ etrax_ethernet_init(struct net_device *dev)
 
 	/* Initialise receive descriptors */
 
-	for (i = 0; i < (NBR_OF_RX_DESC - 1); i++) {
-		RxDescList[i].ctrl   = 0;
-		RxDescList[i].sw_len = RX_DESC_BUF_SIZE;
-		RxDescList[i].next   = virt_to_phys(&RxDescList[i + 1]);
-		RxDescList[i].buf    = virt_to_phys(RxBuf + anOffset);
-		RxDescList[i].status = 0;
-		RxDescList[i].hw_len = 0;
-		anOffset += RX_DESC_BUF_SIZE;
+	for (i = 0; i < NBR_OF_RX_DESC; i++) {
+		RxDescList[i].skb = dev_alloc_skb(MAX_MEDIA_DATA_SIZE);
+		RxDescList[i].descr.ctrl   = 0;
+		RxDescList[i].descr.sw_len = MAX_MEDIA_DATA_SIZE;
+		RxDescList[i].descr.next   = virt_to_phys(&RxDescList[i + 1]);
+		RxDescList[i].descr.buf    = virt_to_phys(RxDescList[i].skb->data);
+		RxDescList[i].descr.status = 0;
+		RxDescList[i].descr.hw_len = 0;
+             
+		prepare_rx_descriptor(&RxDescList[i].descr);
 	}
 
-	RxDescList[i].ctrl   = d_eol;
-	RxDescList[i].sw_len = RX_DESC_BUF_SIZE;
-	RxDescList[i].next   = virt_to_phys(&RxDescList[0]);
-	RxDescList[i].buf    = virt_to_phys(RxBuf + anOffset);
-	RxDescList[i].status = 0;
-	RxDescList[i].hw_len = 0;
+	RxDescList[NBR_OF_RX_DESC - 1].descr.ctrl   = d_eol;
+	RxDescList[NBR_OF_RX_DESC - 1].descr.next   = virt_to_phys(&RxDescList[0]);
+	rx_queue_len = 0;
 
+	/* Initialize transmit descriptors */
+	for (i = 0; i < NBR_OF_TX_DESC; i++) {
+		TxDescList[i].descr.ctrl   = 0;
+		TxDescList[i].descr.sw_len = 0;
+		TxDescList[i].descr.next   = virt_to_phys(&TxDescList[i + 1].descr);
+		TxDescList[i].descr.buf    = 0;
+		TxDescList[i].descr.status = 0;
+		TxDescList[i].descr.hw_len = 0;
+		TxDescList[i].skb = 0;
+	}
+
+	TxDescList[NBR_OF_TX_DESC - 1].descr.ctrl   = d_eol;
+	TxDescList[NBR_OF_TX_DESC - 1].descr.next   = virt_to_phys(&TxDescList[0].descr);
+        
 	/* Initialise initial pointers */
 
-	myNextRxDesc = &RxDescList[0];
-	myLastRxDesc = &RxDescList[NBR_OF_RX_DESC - 1];
-	myPrevRxDesc = &RxDescList[NBR_OF_RX_DESC - 1];
+	myNextRxDesc  = &RxDescList[0];
+	myLastRxDesc  = &RxDescList[NBR_OF_RX_DESC - 1];
+	myPrevRxDesc  = &RxDescList[NBR_OF_RX_DESC - 1];
+	myFirstTxDesc = &TxDescList[0];
+	myNextTxDesc  = &TxDescList[0];
+	myLastTxDesc  = &TxDescList[NBR_OF_TX_DESC - 1];
 
 	/* Initialize speed indicator stuff. */
 
@@ -530,14 +596,14 @@ e100_open(struct net_device *dev)
 		IO_STATE(R_NETWORK_GEN_CONFIG, phy,    mii_clk) |
 		IO_STATE(R_NETWORK_GEN_CONFIG, enable, on);
 
-        *R_NETWORK_TR_CTRL = 
-                IO_STATE(R_NETWORK_TR_CTRL, clr_error, clr) |
-                IO_STATE(R_NETWORK_TR_CTRL, delay, none) |
-                IO_STATE(R_NETWORK_TR_CTRL, cancel, dont) |
-                IO_STATE(R_NETWORK_TR_CTRL, cd, enable) |
-                IO_STATE(R_NETWORK_TR_CTRL, retry, enable) |
-                IO_STATE(R_NETWORK_TR_CTRL, pad, enable) |
-                IO_STATE(R_NETWORK_TR_CTRL, crc, enable);
+	*R_NETWORK_TR_CTRL = 
+		IO_STATE(R_NETWORK_TR_CTRL, clr_error, clr) |
+		IO_STATE(R_NETWORK_TR_CTRL, delay, none) |
+		IO_STATE(R_NETWORK_TR_CTRL, cancel, dont) |
+		IO_STATE(R_NETWORK_TR_CTRL, cd, enable) |
+		IO_STATE(R_NETWORK_TR_CTRL, retry, enable) |
+		IO_STATE(R_NETWORK_TR_CTRL, pad, enable) |
+		IO_STATE(R_NETWORK_TR_CTRL, crc, enable);
 
 	save_flags(flags);
 	cli();
@@ -545,15 +611,12 @@ e100_open(struct net_device *dev)
 	/* enable the irq's for ethernet DMA */
 
 	*R_IRQ_MASK2_SET =
-		IO_STATE(R_IRQ_MASK2_SET, dma0_eop, set) |
-		IO_STATE(R_IRQ_MASK2_SET, dma1_eop, set);
+		IO_STATE(R_IRQ_MASK2_SET, dma1_eop, set); 
 
 	*R_IRQ_MASK0_SET =
 		IO_STATE(R_IRQ_MASK0_SET, overrun,       set) |
 		IO_STATE(R_IRQ_MASK0_SET, underrun,      set) |
 		IO_STATE(R_IRQ_MASK0_SET, excessive_col, set);
-
-	tx_skb = 0;
 
 	/* make sure the irqs are cleared */
 
@@ -569,6 +632,11 @@ e100_open(struct net_device *dev)
 
 	*R_DMA_CH1_FIRST = virt_to_phys(myNextRxDesc);
 	*R_DMA_CH1_CMD = IO_STATE(R_DMA_CH1_CMD, cmd, start);
+
+	/* Set up transmit DMA channel so it can be restarted later */
+        
+	*R_DMA_CH0_FIRST = 0;
+	*R_DMA_CH0_DESCR = virt_to_phys(myLastTxDesc);
 
 	restore_flags(flags);
 	
@@ -839,11 +907,18 @@ e100_tx_timeout(struct net_device *dev)
 	
 	e100_reset_tranceiver();
 	
-	/* and get rid of the packet that never got an interrupt */
-	
-	dev_kfree_skb(tx_skb);
-	tx_skb = 0;
-	
+	/* and get rid of the packets that never got an interrupt */
+	while (myFirstTxDesc != myNextTxDesc)
+	{
+		dev_kfree_skb(myFirstTxDesc->skb);
+		myFirstTxDesc->skb = 0;
+		myFirstTxDesc = phys_to_virt(myFirstTxDesc->descr.next);
+	}
+
+	/* Set up transmit DMA channel so it can be restarted later */
+	*R_DMA_CH0_FIRST = 0;
+	*R_DMA_CH0_DESCR = virt_to_phys(myLastTxDesc);	
+
 	/* tell the upper layers we're ok again */
 	
 	netif_wake_queue(dev);
@@ -866,19 +941,38 @@ e100_send_packet(struct sk_buff *skb, struct net_device *dev)
 #ifdef ETHDEBUG
 	printk("send packet len %d\n", length);
 #endif
-	spin_lock_irq(&np->lock);  /* protect from tx_interrupt */
+	spin_lock_irq(&np->lock);  /* protect from tx_interrupt and ourself */
 
-	tx_skb = skb; /* remember it so we can free it in the tx irq handler later */
+	myNextTxDesc->skb = skb;
+
 	dev->trans_start = jiffies;
 	
 	e100_hardware_send_packet(buf, length);
 
-	/* this simple TX driver has only one send-descriptor so we're full
-	 * directly. If this had a send-ring instead, we would only do this if
-	 * the ring got full.
-	 */
+	myNextTxDesc = phys_to_virt(myNextTxDesc->descr.next);
 
-	netif_stop_queue(dev);
+	/* Stop queue if full */
+	if (myNextTxDesc == myFirstTxDesc) {
+		/* Enable transmit interrupt to wake up queue */
+		*R_DMA_CH0_CLR_INTR = IO_STATE(R_DMA_CH0_CLR_INTR, clr_eop, do);		
+		*R_IRQ_MASK2_SET = IO_STATE(R_IRQ_MASK2_SET, dma0_eop, set);
+		netif_stop_queue(dev);
+	}
+	else {
+	  /* Report any packets that have been sent */
+		while (myFirstTxDesc != phys_to_virt(*R_DMA_CH0_FIRST) &&
+		       myFirstTxDesc != myNextTxDesc)
+		{
+			np->stats.tx_bytes += myFirstTxDesc->skb->len;
+			np->stats.tx_packets++;
+
+			/* dma is ready with the transmission of the data in tx_skb, so now
+			   we can release the skb memory */
+			dev_kfree_skb(myFirstTxDesc->skb);
+			myFirstTxDesc->skb = 0;
+			myFirstTxDesc = phys_to_virt(myFirstTxDesc->descr.next);				
+		}
+	}
 
 	spin_unlock_irq(&np->lock);
 
@@ -936,31 +1030,28 @@ e100tx_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 	struct net_local *np = (struct net_local *)dev->priv;
 
 	/* check for a dma0_eop interrupt */
-	if (irqbits & IO_STATE(R_IRQ_MASK2_RD, dma0_eop, active)) { 
-		/* This protects us from concurrent execution of
-		 * our dev->hard_start_xmit function above.
-		 */
+	if (irqbits & IO_STATE(R_IRQ_MASK2_RD, dma0_eop, active)) {
+		/* Report all sent packets */
+		do {
+			/* acknowledge the eop interrupt */
+			*R_DMA_CH0_CLR_INTR = IO_STATE(R_DMA_CH0_CLR_INTR, clr_eop, do);
 
-		spin_lock(&np->lock);
-		
-		/* acknowledge the eop interrupt */
-
-		*R_DMA_CH0_CLR_INTR = IO_STATE(R_DMA_CH0_CLR_INTR, clr_eop, do);
-
-		if (*R_DMA_CH0_FIRST == 0 && tx_skb) {
-			np->stats.tx_bytes += tx_skb->len;
+			np->stats.tx_bytes += myFirstTxDesc->skb->len;
 			np->stats.tx_packets++;
+
 			/* dma is ready with the transmission of the data in tx_skb, so now
 			   we can release the skb memory */
-			dev_kfree_skb_irq(tx_skb);
-			tx_skb = 0;
-			netif_wake_queue(dev);
-		} else {
-			printk(KERN_WARNING "%s: tx weird interrupt\n",
-			       cardname);
-		}
+			dev_kfree_skb_irq(myFirstTxDesc->skb);
+			myFirstTxDesc->skb = 0;
 
-		spin_unlock(&np->lock);
+			if (netif_queue_stopped(dev)) {
+			  	/* Queue is running, disable tx IRQ */
+			  	*R_IRQ_MASK2_CLR = IO_STATE(R_IRQ_MASK2_CLR, dma0_eop, clr);		
+				netif_wake_queue(dev);
+			}
+			myFirstTxDesc = phys_to_virt(myFirstTxDesc->descr.next);
+		} while (myFirstTxDesc != phys_to_virt(*R_DMA_CH0_FIRST) &&
+		         myFirstTxDesc != myNextTxDesc);
 	}
 }
 
@@ -989,7 +1080,6 @@ e100nw_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 		np->stats.tx_errors++;
 		D(printk("ethernet excessive collisions!\n"));
 	}
-
 }
 
 /* We have a good packet(s), get it/them out of the buffers. */
@@ -999,13 +1089,12 @@ e100_rx(struct net_device *dev)
 	struct sk_buff *skb;
 	int length = 0;
 	struct net_local *np = (struct net_local *)dev->priv;
-	struct etrax_dma_descr *mySaveRxDesc = myNextRxDesc;
 	unsigned char *skb_data_ptr;
 #ifdef ETHDEBUG
 	int i;
 #endif
 
-	if (!led_active && jiffies > led_next_time) {
+	if (!led_active && time_after(jiffies, led_next_time)) {
 		/* light the network leds depending on the current speed. */
 		e100_set_network_leds(NETWORK_ACTIVITY);
 
@@ -1015,24 +1104,13 @@ e100_rx(struct net_device *dev)
 		mod_timer(&clear_led_timer, jiffies + HZ/10);
 	}
 
-	/* If the packet is broken down in many small packages then merge
-	 * count how much space we will need to alloc with skb_alloc() for
-	 * it to fit.
-	 */
-
-	while (!(myNextRxDesc->status & d_eop)) {
-		length += myNextRxDesc->sw_len; /* use sw_len for the first descs */
-		myNextRxDesc->status = 0;
-		myNextRxDesc = phys_to_virt(myNextRxDesc->next);
-	}
-
-	length += myNextRxDesc->hw_len; /* use hw_len for the last descr */
+	length = myNextRxDesc->descr.hw_len - 4;
 	((struct net_local *)dev->priv)->stats.rx_bytes += length;
 
 #ifdef ETHDEBUG
 	printk("Got a packet of length %d:\n", length);
 	/* dump the first bytes in the packet */
-	skb_data_ptr = (unsigned char *)phys_to_virt(mySaveRxDesc->buf);
+	skb_data_ptr = (unsigned char *)phys_to_virt(myNextRxDesc->descr.buf);
 	for (i = 0; i < 8; i++) {
 		printk("%d: %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x\n", i * 8,
 		       skb_data_ptr[0],skb_data_ptr[1],skb_data_ptr[2],skb_data_ptr[3],
@@ -1041,53 +1119,55 @@ e100_rx(struct net_device *dev)
 	}
 #endif
 
-	skb = dev_alloc_skb(length - ETHER_HEAD_LEN);
-	if (!skb) {
-		np->stats.rx_errors++;
-		printk(KERN_NOTICE "%s: Memory squeeze, dropping packet.\n",
-		       dev->name);
-		return;
-	}
+	if (length < RX_COPYBREAK) {
+		/* Small packet, copy data */
+		skb = dev_alloc_skb(length - ETHER_HEAD_LEN);
+		if (!skb) {
+			np->stats.rx_errors++;
+			printk(KERN_NOTICE "%s: Memory squeeze, dropping packet.\n", dev->name);
+			return;
+		}
 
-	skb_put(skb, length - ETHER_HEAD_LEN);        /* allocate room for the packet body */
-	skb_data_ptr = skb_push(skb, ETHER_HEAD_LEN); /* allocate room for the header */
+		skb_put(skb, length - ETHER_HEAD_LEN);        /* allocate room for the packet body */
+		skb_data_ptr = skb_push(skb, ETHER_HEAD_LEN); /* allocate room for the header */
 
 #ifdef ETHDEBUG
-	printk("head = 0x%x, data = 0x%x, tail = 0x%x, end = 0x%x\n",
-	       skb->head, skb->data, skb->tail, skb->end);
-	printk("copying packet to 0x%x.\n", skb_data_ptr);
+		printk("head = 0x%x, data = 0x%x, tail = 0x%x, end = 0x%x\n",
+		  skb->head, skb->data, skb->tail, skb->end);
+		printk("copying packet to 0x%x.\n", skb_data_ptr);
 #endif
-
-	/* this loop can be made using max two memcpy's if optimized */
-
-	while (mySaveRxDesc != myNextRxDesc) {
-		memcpy(skb_data_ptr, phys_to_virt(mySaveRxDesc->buf),
-		       mySaveRxDesc->sw_len);
-		skb_data_ptr += mySaveRxDesc->sw_len;
-		mySaveRxDesc = phys_to_virt(mySaveRxDesc->next);
+          
+		memcpy(skb_data_ptr, phys_to_virt(myNextRxDesc->descr.buf), length);
 	}
-
-	memcpy(skb_data_ptr, phys_to_virt(mySaveRxDesc->buf),
-	       mySaveRxDesc->hw_len);
+	else {
+		/* Large packet, send directly to upper layers and allocate new memory */		 
+		skb = myNextRxDesc->skb;
+		skb_put(skb, length);
+		myNextRxDesc->skb = dev_alloc_skb(MAX_MEDIA_DATA_SIZE);
+		myNextRxDesc->descr.buf = virt_to_phys(myNextRxDesc->skb->data);
+	}
 
 	skb->dev = dev;
 	skb->protocol = eth_type_trans(skb, dev);
 
 	/* Send the packet to the upper layers */
-
 	netif_rx(skb);
 
 	/* Prepare for next packet */
-
-	myNextRxDesc->status = 0;
+	myNextRxDesc->descr.status = 0;
 	myPrevRxDesc = myNextRxDesc;
-	myNextRxDesc = phys_to_virt(myNextRxDesc->next);
+	myNextRxDesc = phys_to_virt(myNextRxDesc->descr.next);
 
-	myPrevRxDesc->ctrl |= d_eol;
-	myLastRxDesc->ctrl &= ~d_eol;
-	myLastRxDesc = myPrevRxDesc;
+	rx_queue_len++;
 
-	return;
+	/* Check if descriptors should be returned */
+	if (rx_queue_len == RX_QUEUE_THRESHOLD) {
+		flush_etrax_cache();
+		myPrevRxDesc->descr.ctrl |= d_eol;
+		myLastRxDesc->descr.ctrl &= ~d_eol;
+		myLastRxDesc = myPrevRxDesc;
+		rx_queue_len = 0;
+	}
 }
 
 /* The inverse routine to net_open(). */
@@ -1297,7 +1377,7 @@ e100_hardware_send_packet(char *buf, int length)
 {
 	D(printk("e100 send pack, buf 0x%x len %d\n", buf, length));
 
-	if (!led_active && jiffies > led_next_time) {
+	if (!led_active && time_after(jiffies, led_next_time)) {
 		/* light the network leds depending on the current speed. */
 		e100_set_network_leds(NETWORK_ACTIVITY);
 
@@ -1308,21 +1388,22 @@ e100_hardware_send_packet(char *buf, int length)
 	}
 
 	/* configure the tx dma descriptor */
+	myNextTxDesc->descr.sw_len = length;
+	myNextTxDesc->descr.ctrl = d_eop | d_eol | d_wait;
+	myNextTxDesc->descr.buf = virt_to_phys(buf);
 
-	TxDesc.sw_len = length;
-	TxDesc.ctrl = d_eop | d_eol | d_wait;
-	TxDesc.buf = virt_to_phys(buf);
+        /* Move end of list */
+        myLastTxDesc->descr.ctrl &= ~d_eol;
+        myLastTxDesc = myNextTxDesc;
 
-	/* setup the dma channel and start it */
-
-	*R_DMA_CH0_FIRST = virt_to_phys(&TxDesc);
-	*R_DMA_CH0_CMD = IO_STATE(R_DMA_CH0_CMD, cmd, start);
+	/* Restart DMA channel */
+	*R_DMA_CH0_CMD = IO_STATE(R_DMA_CH0_CMD, cmd, restart);
 }
 
 static void
 e100_clear_network_leds(unsigned long dummy)
 {
-	if (led_active && jiffies > led_next_time) {
+	if (led_active && time_after(jiffies, led_next_time)) {
 		e100_set_network_leds(NO_NETWORK_ACTIVITY);
 
 		/* Set the earliest time we may set the LED */

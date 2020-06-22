@@ -1,4 +1,4 @@
-/* (C) 1999-2001 Nemosoft Unv. (webcam@smcc.demon.nl)
+/* (C) 1999-2002 Nemosoft Unv. (webcam@smcc.demon.nl)
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,8 +20,8 @@
    significant change should be reflected by increasing the 
    pwc_decompressor_version major number.
  */
-#ifndef PWC_DEC_H
-#define PWC_DEC_H
+#ifndef PWC_UNCOMPRESS_H
+#define PWC_UNCOMPRESS_H
 
 #include <linux/config.h>
 #include <linux/list.h>

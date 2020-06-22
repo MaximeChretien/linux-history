@@ -43,6 +43,12 @@ NESTED(handle_sys, PT_SIZE, sp)
 	daddiu	t1, 4			# skip to next instruction
 	beqz	t0, not_o32_scall
 	sd	t1, PT_EPC(sp)
+#if 0
+ SAVE_ALL
+ move a1, v0
+ PRINT("Scall %ld\n")
+ RESTORE_ALL
+#endif
 
 	/* XXX Put both in one cacheline, should save a bit. */
 	dsll	t0, v0, 3		# offset into table
@@ -192,12 +198,14 @@ illegal_syscall:
 	END(handle_sys)
 
 	LEAF(mips_atomic_set)
-	ld	v1, THREAD_CURDS($28)
+	andi	v0, a1, 3			# must be word aligned
+	bnez	v0, bad_alignment
+
+	ld	v1, THREAD_CURDS($28)		# in legal address range?
 	daddiu	a0, a1, 4
 	or	a0, a0, a1
-	li	v0, -EFAULT
 	and	a0, a0, v1
-	bltz	a0, 9f
+	bltz	a0, bad_address
 
 	/* Ok, this is the ll/sc case.  World is sane :-)  */
 1:	ll	v0, (a1)
@@ -223,14 +231,19 @@ illegal_syscall:
 	li	a3, 0			# success
 	j	ret_from_sys_call
 
-9:	li	v0, -EFAULT
+bad_address:
+	li	v0, -EFAULT
+	jr	ra
+
+bad_alignment:
+	li	v0, -EINVAL
 	jr	ra
 	END(mips_atomic_set)
 
-	LEAF(sys_sysmips)
+	LEAF(sys32_sysmips)
 	beq	a0, MIPS_ATOMIC_SET, mips_atomic_set
-	j	_sys_sysmips
-	END(sys_sysmips)
+	j	sys_sysmips
+	END(sys32_sysmips)
 
 	.macro	syscalltable
 	sys	sys_syscall	0			/* 4000 */
@@ -363,7 +376,7 @@ illegal_syscall:
 	sys	sys_create_module 2
 	sys	sys_init_module	5
 	sys	sys_delete_module 1
-	sys	sys_get_kernel_syms 1			/* 4130 */
+	sys	sys32_get_kernel_syms 1			/* 4130 */
 	sys	sys_quotactl	0
 	sys	sys_getpgid	1
 	sys	sys_fchdir	1
@@ -382,7 +395,7 @@ illegal_syscall:
 	sys	sys32_writev	3
 	sys	sys_cacheflush	3
 	sys	sys_cachectl	3
-	sys	sys_sysmips	4
+	sys	sys32_sysmips	4
 	sys	sys_ni_syscall	0			/* 4150 */
 	sys	sys_getsid	1
 	sys	sys_fdatasync	0
@@ -454,6 +467,27 @@ illegal_syscall:
 	sys	sys_madvise	3
 	sys	sys_getdents64	3
 	sys	sys32_fcntl64	3			/* 4220 */
+	sys	sys_ni_syscall	0
+	sys	sys_gettid	0
+	sys	sys32_readahead	5
+	sys	sys_ni_syscall	0		/* reserved for setxattr */
+	sys	sys_ni_syscall	0		/* 4225 res. for lsetxattr */
+	sys	sys_ni_syscall	0		/* reserved for fsetxattr */
+	sys	sys_ni_syscall	0		/* reserved for getxattr */
+	sys	sys_ni_syscall	0		/* reserved for lgetxattr */
+	sys	sys_ni_syscall	0		/* reserved for fgetxattr */
+	sys	sys_ni_syscall	0		/* 4230 res. for listxattr */
+	sys	sys_ni_syscall	0		/* reserved for llistxattr */
+	sys	sys_ni_syscall	0		/* reserved for flistxattr */
+	sys	sys_ni_syscall	0		/* reserved for removexattr */
+	sys	sys_ni_syscall	0		/* reserved for lremovexattr */
+	sys	sys_ni_syscall	0		/* 4235 res. for fremovexattr */
+	sys	sys_tkill, 2
+	sys	sys_ni_syscall, 0		/* res. for sendfile64 */
+	sys	sys_ni_syscall, 0		/* res. for futex */
+	sys	sys_ni_syscall, 0		/* res. for sched_setaffinity */
+	sys	sys_ni_syscall, 0		/* 4240 res. for sched_getaffinity */
+
 	.endm
 
 	.macro	sys function, nargs

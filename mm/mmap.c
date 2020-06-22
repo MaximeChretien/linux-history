@@ -45,6 +45,7 @@ pgprot_t protection_map[16] = {
 };
 
 int sysctl_overcommit_memory;
+int max_map_count = DEFAULT_MAX_MAP_COUNT;
 
 /* Check that a process has enough memory to allocate a
  * new virtual mapping.
@@ -413,7 +414,7 @@ unsigned long do_mmap_pgoff(struct file * file, unsigned long addr, unsigned lon
 		return -EINVAL;
 
 	/* Too many mappings? */
-	if (mm->map_count > MAX_MAP_COUNT)
+	if (mm->map_count > max_map_count)
 		return -ENOMEM;
 
 	/* Obtain the address to map to. we verify (or select) it and ensure
@@ -478,7 +479,6 @@ unsigned long do_mmap_pgoff(struct file * file, unsigned long addr, unsigned lon
 	}
 
 	/* Clear old maps */
-	error = -ENOMEM;
 munmap_back:
 	vma = find_vma_prepare(mm, addr, &prev, &rb_link, &rb_parent);
 	if (vma && vma->vm_start < addr + len) {
@@ -548,7 +548,30 @@ munmap_back:
 	 * Answer: Yes, several device drivers can do it in their
 	 *         f_op->mmap method. -DaveM
 	 */
-	addr = vma->vm_start;
+	if (addr != vma->vm_start) {
+		/*
+		 * It is a bit too late to pretend changing the virtual
+		 * area of the mapping, we just corrupted userspace
+		 * in the do_munmap, so FIXME (not in 2.4 to avoid breaking
+		 * the driver API).
+		 */
+		struct vm_area_struct * stale_vma;
+		/* Since addr changed, we rely on the mmap op to prevent 
+		 * collisions with existing vmas and just use find_vma_prepare 
+		 * to update the tree pointers.
+		 */
+		addr = vma->vm_start;
+		stale_vma = find_vma_prepare(mm, addr, &prev,
+						&rb_link, &rb_parent);
+		/*
+		 * Make sure the lowlevel driver did its job right.
+		 */
+		if (unlikely(stale_vma && stale_vma->vm_start < vma->vm_end)) {
+			printk(KERN_ERR "buggy mmap operation: [<%p>]\n",
+				file ? file->f_op->mmap : NULL);
+			BUG();
+		}
+	}
 
 	vma_link(mm, vma, prev, rb_link, rb_parent);
 	if (correct_wcount)
@@ -885,7 +908,6 @@ no_mmaps:
 	end_index = pgd_index(last);
 	if (end_index > start_index) {
 		clear_page_tables(mm, start_index, end_index - start_index);
-		flush_tlb_pgtables(mm, first & PGDIR_MASK, last & PGDIR_MASK);
 	}
 }
 
@@ -919,7 +941,7 @@ int do_munmap(struct mm_struct *mm, unsigned long addr, size_t len)
 
 	/* If we'll make "hole", check the vm areas limit */
 	if ((mpnt->vm_start < addr && mpnt->vm_end > addr+len)
-	    && mm->map_count >= MAX_MAP_COUNT)
+	    && mm->map_count >= max_map_count)
 		return -ENOMEM;
 
 	/*
@@ -1040,16 +1062,13 @@ unsigned long do_brk(unsigned long addr, unsigned long len)
 	    > current->rlim[RLIMIT_AS].rlim_cur)
 		return -ENOMEM;
 
-	if (mm->map_count > MAX_MAP_COUNT)
+	if (mm->map_count > max_map_count)
 		return -ENOMEM;
 
 	if (!vm_enough_memory(len >> PAGE_SHIFT))
 		return -ENOMEM;
 
-	flags = calc_vm_flags(PROT_READ|PROT_WRITE|PROT_EXEC,
-				MAP_FIXED|MAP_PRIVATE) | mm->def_flags;
-
-	flags |= VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC;
+	flags = VM_DATA_DEFAULT_FLAGS | mm->def_flags;
 
 	/* Can we just expand an old anonymous mapping? */
 	if (rb_parent && vma_merge(mm, prev, rb_parent, addr, addr + len, flags))

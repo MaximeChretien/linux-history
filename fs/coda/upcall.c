@@ -15,7 +15,6 @@
  */
 
 #include <asm/system.h>
-#include <asm/segment.h>
 #include <asm/signal.h>
 #include <linux/signal.h>
 
@@ -176,10 +175,7 @@ int venus_store(struct super_block *sb, struct ViceFid *fid, int flags,
 	insize = SIZE(store);
 	UPARG(CODA_STORE);
 	
-	if ( cred ) {
-		memcpy(&(inp->ih.cred), cred, sizeof(*cred));
-	} else 
-		printk("CODA: store without valid file creds.\n");
+	memcpy(&(inp->ih.cred), cred, sizeof(*cred));
 	
         inp->coda_store.VFid = *fid;
         inp->coda_store.flags = flags;
@@ -218,10 +214,7 @@ int venus_close(struct super_block *sb, struct ViceFid *fid, int flags,
 	insize = SIZE(release);
 	UPARG(CODA_CLOSE);
 	
-	if ( cred ) {
-		memcpy(&(inp->ih.cred), cred, sizeof(*cred));
-	} else 
-		printk("CODA: close without valid file creds.\n");
+	memcpy(&(inp->ih.cred), cred, sizeof(*cred));
 	
         inp->coda_close.VFid = *fid;
         inp->coda_close.flags = flags;

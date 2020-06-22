@@ -58,6 +58,11 @@ static inline void do_identify (ide_drive_t *drive, byte cmd)
 	struct hd_driveid *id;
 
 	id = drive->id = kmalloc (SECTOR_WORDS*4, GFP_ATOMIC);	/* called with interrupts disabled! */
+	if (!id) {
+		printk(KERN_WARNING "(ide-probe::do_identify) Out of memory.\n");
+		goto err_kmalloc;
+	}
+
 	ide_input_data(drive, id, SECTOR_WORDS);		/* read 512 bytes of id info */
 	ide__sti();	/* local CPU only */
 	ide_fix_driveid(id);
@@ -76,8 +81,7 @@ static inline void do_identify (ide_drive_t *drive, byte cmd)
 	if ((id->model[0] == 'P' && id->model[1] == 'M')
 	 || (id->model[0] == 'S' && id->model[1] == 'K')) {
 		printk("%s: EATA SCSI HBA %.10s\n", drive->name, id->model);
-		drive->present = 0;
-		return;
+		goto err_misc;
 	}
 #endif /* CONFIG_SCSI_EATA_DMA || CONFIG_SCSI_EATA_PIO */
 
@@ -96,7 +100,7 @@ static inline void do_identify (ide_drive_t *drive, byte cmd)
 	ide_fixstring (id->serial_no, sizeof(id->serial_no), bswap);
 
 	if (strstr(id->model, "E X A B Y T E N E S T"))
-		return;
+		goto err_misc;
 
 	id->model[sizeof(id->model)-1] = '\0';	/* we depend on this a lot! */
 	printk("%s: %s, ", drive->name, id->model);
@@ -111,8 +115,7 @@ static inline void do_identify (ide_drive_t *drive, byte cmd)
 #ifdef CONFIG_BLK_DEV_PDC4030
 		if (HWIF(drive)->channel == 1 && HWIF(drive)->chipset == ide_pdc4030) {
 			printk(" -- not supported on 2nd Promise port\n");
-			drive->present = 0;
-			return;
+			goto err_misc;
 		}
 #endif /* CONFIG_BLK_DEV_PDC4030 */
 		switch (type) {
@@ -173,6 +176,12 @@ static inline void do_identify (ide_drive_t *drive, byte cmd)
 	drive->media = ide_disk;
 	printk("ATA DISK drive\n");
 	QUIRK_LIST(HWIF(drive),drive);
+	return;
+
+err_misc:
+	kfree(id);
+err_kmalloc:
+	drive->present = 0;
 	return;
 }
 
@@ -370,7 +379,7 @@ static void enable_nest (ide_drive_t *drive)
 	OUT_BYTE(EXABYTE_ENABLE_NEST, IDE_COMMAND_REG);
 	timeout = jiffies + WAIT_WORSTCASE;
 	do {
-		if (jiffies > timeout) {
+		if (time_after(jiffies, timeout)) {
 			printk("failed (timeout)\n");
 			return;
 		}
@@ -597,6 +606,12 @@ static void ide_init_queue(ide_drive_t *drive)
 
 	q->queuedata = HWGROUP(drive);
 	blk_init_queue(q, do_ide_request);
+
+	if (drive->media == ide_disk) {
+#ifdef CONFIG_BLK_DEV_ELEVATOR_NOOP
+		elevator_init(&q->elevator, ELEVATOR_NOOP);
+#endif
+	}
 }
 
 /*
@@ -685,6 +700,10 @@ static int init_irq (ide_hwif_t *hwif)
 #else /* !CONFIG_IDEPCI_SHARE_IRQ */
 		int sa = IDE_CHIPSET_IS_PCI(hwif->chipset) ? SA_INTERRUPT|SA_SHIRQ : SA_INTERRUPT;
 #endif /* CONFIG_IDEPCI_SHARE_IRQ */
+
+		if (hwif->io_ports[IDE_CONTROL_OFFSET])
+			OUT_BYTE(0x08, hwif->io_ports[IDE_CONTROL_OFFSET]); /* clear nIEN */
+
 		if (ide_request_irq(hwif->irq, &ide_intr, sa, hwif->name, hwgroup)) {
 			if (!match)
 				kfree(hwgroup);
@@ -752,18 +771,35 @@ static void init_gendisk (ide_hwif_t *hwif)
 	int *bs, *max_sect, *max_ra;
 	extern devfs_handle_t ide_devfs_handle;
 
+#if 1
+	units = MAX_DRIVES;
+#else
 	/* figure out maximum drive number on the interface */
 	for (units = MAX_DRIVES; units > 0; --units) {
 		if (hwif->drives[units-1].present)
 			break;
 	}
+#endif
+
 	minors    = units * (1<<PARTN_BITS);
 	gd        = kmalloc (sizeof(struct gendisk), GFP_KERNEL);
+	if (!gd)
+		goto err_kmalloc_gd;
 	gd->sizes = kmalloc (minors * sizeof(int), GFP_KERNEL);
+	if (!gd->sizes)
+		goto err_kmalloc_gd_sizes;
 	gd->part  = kmalloc (minors * sizeof(struct hd_struct), GFP_KERNEL);
+	if (!gd->part)
+		goto err_kmalloc_gd_part;
 	bs        = kmalloc (minors*sizeof(int), GFP_KERNEL);
+	if (!bs)
+		goto err_kmalloc_bs;
 	max_sect  = kmalloc (minors*sizeof(int), GFP_KERNEL);
+	if (!max_sect)
+		goto err_kmalloc_max_sect;
 	max_ra    = kmalloc (minors*sizeof(int), GFP_KERNEL);
+	if (!max_ra)
+		goto err_kmalloc_max_ra;
 
 	memset(gd->part, 0, minors * sizeof(struct hd_struct));
 
@@ -773,12 +809,10 @@ static void init_gendisk (ide_hwif_t *hwif)
 	max_readahead[hwif->major] = max_ra;
 	for (unit = 0; unit < minors; ++unit) {
 		*bs++ = BLOCK_SIZE;
-#ifdef CONFIG_BLK_DEV_PDC4030
-		*max_sect++ = ((hwif->chipset == ide_pdc4030) ? 127 : 255);
-#else
-		/* IDE can do up to 128K per request. */
-		*max_sect++ = 255;
-#endif
+		/*
+		 * IDE can do up to 128K per request == 256
+		 */
+		*max_sect++ = ((hwif->chipset == ide_pdc4030) ? 127 : 128);
 		*max_ra++ = vm_max_readahead;
 	}
 
@@ -804,6 +838,17 @@ static void init_gendisk (ide_hwif_t *hwif)
 	add_gendisk(gd);
 
 	for (unit = 0; unit < units; ++unit) {
+#if 1
+		char name[64];
+		ide_add_generic_settings(hwif->drives + unit);
+		hwif->drives[unit].dn = ((hwif->channel ? 2 : 0) + unit);
+		sprintf (name, "host%d/bus%d/target%d/lun%d",
+			(hwif->channel && hwif->mate) ?
+			hwif->mate->index : hwif->index,
+			hwif->channel, unit, hwif->drives[unit].lun);
+		if (hwif->drives[unit].present)
+			hwif->drives[unit].de = devfs_mk_dir(ide_devfs_handle, name, NULL);
+#else
 		if (hwif->drives[unit].present) {
 			char name[64];
 
@@ -815,7 +860,23 @@ static void init_gendisk (ide_hwif_t *hwif)
 			hwif->drives[unit].de =
 				devfs_mk_dir (ide_devfs_handle, name, NULL);
 		}
+#endif
 	}
+	return;
+
+err_kmalloc_max_ra:
+	kfree(max_sect);
+err_kmalloc_max_sect:
+	kfree(bs);
+err_kmalloc_bs:
+	kfree(gd->part);
+err_kmalloc_gd_part:
+	kfree(gd->sizes);
+err_kmalloc_gd_sizes:
+	kfree(gd);
+err_kmalloc_gd:
+	printk(KERN_WARNING "(ide::init_gendisk) Out of memory\n");
+	return;
 }
 
 static int hwif_init (ide_hwif_t *hwif)
@@ -880,6 +941,19 @@ static int hwif_init (ide_hwif_t *hwif)
 	return hwif->present;
 }
 
+void export_ide_init_queue (ide_drive_t *drive)
+{
+	ide_init_queue(drive);
+}
+
+byte export_probe_for_drive (ide_drive_t *drive)
+{
+	return probe_for_drive(drive);
+}
+
+EXPORT_SYMBOL(export_ide_init_queue);
+EXPORT_SYMBOL(export_probe_for_drive);
+
 int ideprobe_init (void);
 static ide_module_t ideprobe_module = {
 	IDE_PROBE_MODULE,
@@ -913,6 +987,8 @@ int ideprobe_init (void)
 }
 
 #ifdef MODULE
+extern int (*ide_xlate_1024_hook)(kdev_t, int, int, const char *);
+
 int init_module (void)
 {
 	unsigned int index;
@@ -921,12 +997,14 @@ int init_module (void)
 		ide_unregister(index);
 	ideprobe_init();
 	create_proc_ide_interfaces();
+	ide_xlate_1024_hook = ide_xlate_1024;
 	return 0;
 }
 
 void cleanup_module (void)
 {
 	ide_probe = NULL;
+	ide_xlate_1024_hook = 0;
 }
 MODULE_LICENSE("GPL");
 #endif /* MODULE */

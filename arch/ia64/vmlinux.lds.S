@@ -13,6 +13,8 @@ SECTIONS
 	*(.text.exit)
 	*(.data.exit)
 	*(.exitcall.exit)
+	*(.IA_64.unwind.text.exit)
+	*(.IA_64.unwind_info.text.exit)
 	}
 
   v = PAGE_OFFSET;	/* this symbol is here to make debugging easier... */

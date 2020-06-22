@@ -2418,26 +2418,26 @@ static void calculate_speeds(ide_drive_t *drive)
 	idetape_tape_t *tape = drive->driver_data;
 	int full = 125, empty = 75;
 
-	if (jiffies > tape->controlled_pipeline_head_time + 120 * HZ) {
+	if (time_after(jiffies, tape->controlled_pipeline_head_time + 120 * HZ)) {
 		tape->controlled_previous_pipeline_head = tape->controlled_last_pipeline_head;
 		tape->controlled_previous_head_time = tape->controlled_pipeline_head_time;
 		tape->controlled_last_pipeline_head = tape->pipeline_head;
 		tape->controlled_pipeline_head_time = jiffies;
 	}
-	if (jiffies > tape->controlled_pipeline_head_time + 60 * HZ)
+	if (time_after(jiffies, tape->controlled_pipeline_head_time + 60 * HZ))
 		tape->controlled_pipeline_head_speed = (tape->pipeline_head - tape->controlled_last_pipeline_head) * 32 * HZ / (jiffies - tape->controlled_pipeline_head_time);
-	else if (jiffies > tape->controlled_previous_head_time)
+	else if (time_after(jiffies, tape->controlled_previous_head_time))
 		tape->controlled_pipeline_head_speed = (tape->pipeline_head - tape->controlled_previous_pipeline_head) * 32 * HZ / (jiffies - tape->controlled_previous_head_time);
 
 	if (tape->nr_pending_stages < tape->max_stages /*- 1 */) { /* -1 for read mode error recovery */
-		if (jiffies > tape->uncontrolled_previous_head_time + 10 * HZ) {
+		if (time_after(jiffies, tape->uncontrolled_previous_head_time + 10 * HZ)) {
 			tape->uncontrolled_pipeline_head_time = jiffies;
 			tape->uncontrolled_pipeline_head_speed = (tape->pipeline_head - tape->uncontrolled_previous_pipeline_head) * 32 * HZ / (jiffies - tape->uncontrolled_previous_head_time);
 		}
 	} else {
 		tape->uncontrolled_previous_head_time = jiffies;
 		tape->uncontrolled_previous_pipeline_head = tape->pipeline_head;
-		if (jiffies > tape->uncontrolled_pipeline_head_time + 30 * HZ) {
+		if (time_after(jiffies, tape->uncontrolled_pipeline_head_time + 30 * HZ)) {
 			tape->uncontrolled_pipeline_head_time = jiffies;
 		}
 	}
@@ -2500,7 +2500,7 @@ static ide_startstop_t idetape_rw_callback (ide_drive_t *drive)
 		tape->insert_time = jiffies;
 		tape->insert_size = 0;
 	}
-	if (jiffies > tape->insert_time)
+	if (time_after(jiffies, tape->insert_time))
 		tape->insert_speed = tape->insert_size / 1024 * HZ / (jiffies - tape->insert_time);
 	if (jiffies - tape->avg_time >= HZ) {
 		tape->avg_speed = tape->avg_size * HZ / (jiffies - tape->avg_time) / 1024;
@@ -2680,11 +2680,11 @@ static ide_startstop_t idetape_do_request (ide_drive_t *drive, struct request *r
 		tape->reads_since_buffer_fill = 0;
 		tape->last_buffer_fill = jiffies;
 		idetape_queue_onstream_buffer_fill(drive);
-		if (jiffies > tape->insert_time)
+		if (time_after(jiffies, tape->insert_time))
 			tape->insert_speed = tape->insert_size / 1024 * HZ / (jiffies - tape->insert_time);
 		return ide_stopped;
 	}
-	if (jiffies > tape->insert_time)
+	if (time_after(jiffies, tape->insert_time))
 		tape->insert_speed = tape->insert_size / 1024 * HZ / (jiffies - tape->insert_time);
 	calculate_speeds(drive);
 	if (tape->onstream && tape->max_frames &&
@@ -2740,7 +2740,7 @@ static ide_startstop_t idetape_do_request (ide_drive_t *drive, struct request *r
 			if (tape->onstream) {
 				if (tape->cur_frames - tape->reads_since_buffer_fill <= 0)
 					tape->req_buffer_fill = 1;
-				if (jiffies > tape->last_buffer_fill + 5 * HZ / 100)
+				if (time_after(jiffies, tape->last_buffer_fill + 5 * HZ / 100))
 					tape->req_buffer_fill = 1;
 			}
 			pc = idetape_next_pc_storage (drive);
@@ -2756,7 +2756,7 @@ static ide_startstop_t idetape_do_request (ide_drive_t *drive, struct request *r
 			if (tape->onstream) {
 				if (tape->cur_frames + tape->writes_since_buffer_fill >= tape->max_frames)
 					tape->req_buffer_fill = 1;
-				if (jiffies > tape->last_buffer_fill + 5 * HZ / 100)
+				if (time_after(jiffies, tape->last_buffer_fill + 5 * HZ / 100))
 					tape->req_buffer_fill = 1;
 				calculate_speeds(drive);
 			}
@@ -3096,10 +3096,10 @@ static ide_startstop_t idetape_read_position_callback (ide_drive_t *drive)
 	idetape_tape_t *tape = drive->driver_data;
 	idetape_read_position_result_t *result;
 	
-//#if IDETAPE_DEBUG_LOG
-//	if (tape->debug_level >= 4)
+#if IDETAPE_DEBUG_LOG
+	if (tape->debug_level >= 4)
 		printk (KERN_INFO "ide-tape: Reached idetape_read_position_callback\n");
-//#endif /* IDETAPE_DEBUG_LOG */
+#endif /* IDETAPE_DEBUG_LOG */
 
 	if (!tape->pc->error) {
 		result = (idetape_read_position_result_t *) tape->pc->buffer;
@@ -3214,7 +3214,7 @@ static int idetape_wait_ready (ide_drive_t *drive, unsigned long long timeout)
 	 * Wait for the tape to become ready
 	 */
 	timeout += jiffies;
-	while (jiffies < timeout) {
+	while (time_before(jiffies, timeout)) {
 		idetape_create_test_unit_ready_cmd(&pc);
 		if (!__idetape_queue_pc_tail(drive, &pc))
 			return 0;
@@ -3273,10 +3273,10 @@ static int idetape_read_position (ide_drive_t *drive)
 	idetape_pc_t pc;
 	int position;
 
-//#if IDETAPE_DEBUG_LOG
-//        if (tape->debug_level >= 4)
+#if IDETAPE_DEBUG_LOG
+        if (tape->debug_level >= 4)
 	printk (KERN_INFO "ide-tape: Reached idetape_read_position\n");
-//#endif /* IDETAPE_DEBUG_LOG */
+#endif /* IDETAPE_DEBUG_LOG */
 
 #ifdef NO_LONGER_REQUIRED
 	idetape_flush_tape_buffers(drive);
@@ -6132,10 +6132,7 @@ static ide_proc_entry_t idetape_proc[] = {
 
 #endif
 
-static int idetape_reinit (ide_drive_t *drive)
-{
-	return 0;
-}
+int idetape_reinit(ide_drive_t *drive);
 
 /*
  *	IDE subdriver functions, registered with ide.c
@@ -6148,6 +6145,8 @@ static ide_driver_t idetape_driver = {
 	supports_dma:		1,
 	supports_dsc_overlap: 	1,
 	cleanup:		idetape_cleanup,
+	standby:		NULL,
+	flushcache:		NULL,
 	do_request:		idetape_do_request,
 	end_request:		idetape_end_request,
 	ioctl:			idetape_blkdev_ioctl,
@@ -6158,7 +6157,9 @@ static ide_driver_t idetape_driver = {
 	pre_reset:		idetape_pre_reset,
 	capacity:		NULL,
 	proc:			idetape_proc,
-	driver_reinit:		idetape_reinit,
+	reinit:			idetape_reinit,
+	ata_prebuilder:		NULL,
+	atapi_prebuilder:	NULL,
 };
 
 int idetape_init (void);
@@ -6180,6 +6181,92 @@ static struct file_operations idetape_fops = {
 	open:		idetape_chrdev_open,
 	release:	idetape_chrdev_release,
 };
+
+int idetape_reinit (ide_drive_t *drive)
+{
+#if 0
+	idetape_tape_t *tape;
+	int minor, failed = 0, supported = 0;
+/* DRIVER(drive)->busy++; */
+	MOD_INC_USE_COUNT;
+#if ONSTREAM_DEBUG
+        printk(KERN_INFO "ide-tape: MOD_INC_USE_COUNT in idetape_init\n");
+#endif
+	if (!idetape_chrdev_present)
+		for (minor = 0; minor < MAX_HWIFS * MAX_DRIVES; minor++ )
+			idetape_chrdevs[minor].drive = NULL;
+
+	if ((drive = ide_scan_devices (ide_tape, idetape_driver.name, NULL, failed++)) == NULL) {
+		ide_register_module (&idetape_module);
+		MOD_DEC_USE_COUNT;
+#if ONSTREAM_DEBUG
+		printk(KERN_INFO "ide-tape: MOD_DEC_USE_COUNT in idetape_init\n");
+#endif
+		return 0;
+	}
+	if (!idetape_chrdev_present &&
+	    devfs_register_chrdev (IDETAPE_MAJOR, "ht", &idetape_fops)) {
+		printk (KERN_ERR "ide-tape: Failed to register character device interface\n");
+		MOD_DEC_USE_COUNT;
+#if ONSTREAM_DEBUG
+		printk(KERN_INFO "ide-tape: MOD_DEC_USE_COUNT in idetape_init\n");
+#endif
+		return -EBUSY;
+	}
+	do {
+		if (!idetape_identify_device (drive, drive->id)) {
+			printk (KERN_ERR "ide-tape: %s: not supported by this version of ide-tape\n", drive->name);
+			continue;
+		}
+		if (drive->scsi) {
+			if (strstr(drive->id->model, "OnStream DI-30")) {
+				printk("ide-tape: ide-scsi emulation is not supported for %s.\n", drive->id->model);
+			} else {
+				printk("ide-tape: passing drive %s to ide-scsi emulation.\n", drive->name);
+				continue;
+			}
+		}
+		tape = (idetape_tape_t *) kmalloc (sizeof (idetape_tape_t), GFP_KERNEL);
+		if (tape == NULL) {
+			printk (KERN_ERR "ide-tape: %s: Can't allocate a tape structure\n", drive->name);
+			continue;
+		}
+		if (ide_register_subdriver (drive, &idetape_driver, IDE_SUBDRIVER_VERSION)) {
+			printk (KERN_ERR "ide-tape: %s: Failed to register the driver with ide.c\n", drive->name);
+			kfree (tape);
+			continue;
+		}
+		for (minor = 0; idetape_chrdevs[minor].drive != NULL; minor++);
+		idetape_setup (drive, tape, minor);
+		idetape_chrdevs[minor].drive = drive;
+		tape->de_r =
+		    devfs_register (drive->de, "mt", DEVFS_FL_DEFAULT,
+				    HWIF(drive)->major, minor,
+				    S_IFCHR | S_IRUGO | S_IWUGO,
+				    &idetape_fops, NULL);
+		tape->de_n =
+		    devfs_register (drive->de, "mtn", DEVFS_FL_DEFAULT,
+				    HWIF(drive)->major, minor + 128,
+				    S_IFCHR | S_IRUGO | S_IWUGO,
+				    &idetape_fops, NULL);
+		devfs_register_tape (tape->de_r);
+		supported++; failed--;
+	} while ((drive = ide_scan_devices (ide_tape, idetape_driver.name, NULL, failed++)) != NULL);
+	if (!idetape_chrdev_present && !supported) {
+		devfs_unregister_chrdev (IDETAPE_MAJOR, "ht");
+	} else
+		idetape_chrdev_present = 1;
+	ide_register_module (&idetape_module);
+	MOD_DEC_USE_COUNT;
+#if ONSTREAM_DEBUG
+	printk(KERN_INFO "ide-tape: MOD_DEC_USE_COUNT in idetape_init\n");
+#endif
+
+	return 0;
+#else
+	return 1;
+#endif
+}
 
 MODULE_DESCRIPTION("ATAPI Streaming TAPE Driver");
 MODULE_LICENSE("GPL");
@@ -6205,7 +6292,7 @@ int idetape_init (void)
 	ide_drive_t *drive;
 	idetape_tape_t *tape;
 	int minor, failed = 0, supported = 0;
-
+/* DRIVER(drive)->busy++; */
 	MOD_INC_USE_COUNT;
 #if ONSTREAM_DEBUG
         printk(KERN_INFO "ide-tape: MOD_INC_USE_COUNT in idetape_init\n");

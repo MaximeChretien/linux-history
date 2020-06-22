@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.pci.c 1.40 01/25/02 15:15:24 benh
+ * BK Id: SCCS/s.pci.c 1.43 05/08/02 15:01:15 benh
  */
 /*
  * Common pmac/prep/chrp pci routines. -- Cort
@@ -46,6 +46,7 @@ void pcibios_make_OF_bus_map(void);
 static void pcibios_fixup_resources(struct pci_dev* dev);
 static void fixup_broken_pcnet32(struct pci_dev* dev);
 static void fixup_rev1_53c810(struct pci_dev* dev);
+static void fixup_cpc710_pci64(struct pci_dev* dev);
 #ifdef CONFIG_ALL_PPC
 static void pcibios_fixup_cardbus(struct pci_dev* dev);
 static u8* pci_to_OF_bus_map;
@@ -64,6 +65,7 @@ static int pci_bus_count;
 struct pci_fixup pcibios_fixups[] = {
 	{ PCI_FIXUP_HEADER,	PCI_VENDOR_ID_TRIDENT,	PCI_ANY_ID,			fixup_broken_pcnet32 },
 	{ PCI_FIXUP_HEADER,	PCI_VENDOR_ID_NCR,	PCI_DEVICE_ID_NCR_53C810,	fixup_rev1_53c810 },
+	{ PCI_FIXUP_HEADER,	PCI_VENDOR_ID_IBM,	PCI_DEVICE_ID_IBM_CPC710_PCI64,	fixup_cpc710_pci64},
 	{ PCI_FIXUP_HEADER,	PCI_ANY_ID,		PCI_ANY_ID,			pcibios_fixup_resources },
 #ifdef CONFIG_ALL_PPC
 	/* We should add per-machine fixup support in xxx_setup.c or xxx_pci.c */
@@ -93,6 +95,18 @@ fixup_broken_pcnet32(struct pci_dev* dev)
 		pci_write_config_word(dev, PCI_VENDOR_ID, PCI_VENDOR_ID_AMD);
 		pci_name_device(dev);
 	}
+}
+
+static void
+fixup_cpc710_pci64(struct pci_dev* dev)
+{
+	/* Hide the PCI64 BARs from the kernel as their content doesn't
+	 * fit well in the resource management
+	 */
+	dev->resource[0].start = dev->resource[0].end = 0;
+	dev->resource[0].flags = 0;
+	dev->resource[1].start = dev->resource[1].end = 0;
+	dev->resource[1].flags = 0;
 }
 
 void
@@ -179,14 +193,24 @@ pcibios_fixup_cardbus(struct pci_dev* dev)
 	if (_machine != _MACH_Pmac)
 		return;
 	/*
-	 * Fix the interrupt routing on the TI1211 chip on the 1999
-	 * G3 powerbook, which doesn't get initialized properly by OF.
-	 * Same problem with the 1410 of the new titanium pbook which
-	 * has the same register.
+	 * Fix the interrupt routing on the various cardbus bridges
+	 * used on powerbooks
 	 */
-	if (dev->vendor == PCI_VENDOR_ID_TI
-	    && (dev->device == PCI_DEVICE_ID_TI_1211 ||
-	        dev->device == PCI_DEVICE_ID_TI_1410)) {
+	if (dev->vendor != PCI_VENDOR_ID_TI)
+		return;
+	if (dev->device == PCI_DEVICE_ID_TI_1130 ||
+	    dev->device == PCI_DEVICE_ID_TI_1131) {
+		u8 val;
+	    	/* Enable PCI interrupt */
+		if (pci_read_config_byte(dev, 0x91, &val) == 0)
+			pci_write_config_byte(dev, 0x91, val | 0x30);
+		/* Disable ISA interrupt mode */	
+		if (pci_read_config_byte(dev, 0x92, &val) == 0)
+			pci_write_config_byte(dev, 0x92, val & ~0x06);
+	}
+	if (dev->device == PCI_DEVICE_ID_TI_1210 ||
+	    dev->device == PCI_DEVICE_ID_TI_1211 ||
+	    dev->device == PCI_DEVICE_ID_TI_1410) {
 		u8 val;
 		/* 0x8c == TI122X_IRQMUX, 2 says to route the INTA
 		   signal out the MFUNC0 pin */

@@ -83,8 +83,8 @@ typedef unsigned long pgprot_t;
 
 extern void clear_page(void *page);
 extern void copy_page(void *to, void *from);
-#define clear_user_page(page, vaddr)	clear_page(page)
-#define copy_user_page(to, from, vaddr)	copy_page(to, from)
+extern void clear_user_page(void *page, unsigned long vaddr);
+extern void copy_user_page(void *to, void *from, unsigned long vaddr);
 
 /* map phys->virtual and virtual->phys for RAM pages */
 static inline unsigned long ___pa(unsigned long v)
@@ -137,5 +137,9 @@ extern __inline__ int get_order(unsigned long size)
 }
 
 #endif /* __ASSEMBLY__ */
+
+#define VM_DATA_DEFAULT_FLAGS	(VM_READ | VM_WRITE | VM_EXEC | \
+				 VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC)
+
 #endif /* __KERNEL__ */
 #endif /* _PPC_PAGE_H */

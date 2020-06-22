@@ -247,15 +247,15 @@ static inline void __sync_one(struct inode *inode, int sync)
 
 static inline void sync_one(struct inode *inode, int sync)
 {
-	if (inode->i_state & I_LOCK) {
+	while (inode->i_state & I_LOCK) {
 		__iget(inode);
 		spin_unlock(&inode_lock);
 		__wait_on_inode(inode);
 		iput(inode);
 		spin_lock(&inode_lock);
-	} else {
-		__sync_one(inode, sync);
 	}
+
+	__sync_one(inode, sync);
 }
 
 static inline void sync_list(struct list_head *head)
@@ -725,8 +725,7 @@ int shrink_icache_memory(int priority, int gfp_mask)
 	count = inodes_stat.nr_unused / priority;
 
 	prune_icache(count);
-	kmem_cache_shrink(inode_cachep);
-	return 0;
+	return kmem_cache_shrink(inode_cachep);
 }
 
 /*
@@ -1152,7 +1151,7 @@ void __init inode_init(unsigned long mempages)
 			__get_free_pages(GFP_ATOMIC, order);
 	} while (inode_hashtable == NULL && --order >= 0);
 
-	printk("Inode-cache hash table entries: %d (order: %ld, %ld bytes)\n",
+	printk(KERN_INFO "Inode cache hash table entries: %d (order: %ld, %ld bytes)\n",
 			nr_hash, order, (PAGE_SIZE << order));
 
 	if (!inode_hashtable)

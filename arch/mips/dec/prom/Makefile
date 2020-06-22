@@ -1,4 +1,4 @@
-# $Id: Makefile,v 1.1 1999/01/17 03:49:44 ralf Exp $
+#
 # Makefile for the DECstation prom monitor library routines
 # under Linux.
 #
@@ -8,22 +8,10 @@
 #
 # Note 2! The CFLAGS definitions are now in the main makefile...
 
-.S.s:
-	$(CPP) $(CFLAGS) $< -o $*.s
-.S.o:
-	$(CC) $(CFLAGS) -c $< -o $*.o
+USE_STANDARD_AS_RULE := true
 
-OBJS  = init.o memory.o cmdline.o identify.o locore.o
+L_TARGET  = rexlib.a
 
-all: 	rexlib.a
-
-rexlib.a: $(OBJS)
-	$(AR) rcs rexlib.a $(OBJS)
-	sync
-
-locore.o: locore.S
-
-dep:
-	$(CPP) $(CPPFLAGS) -M *.c > .depend
+obj-y +=  init.o memory.o cmdline.o identify.o locore.o
 
 include $(TOPDIR)/Rules.make

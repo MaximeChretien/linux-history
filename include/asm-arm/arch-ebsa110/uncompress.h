@@ -13,6 +13,8 @@
  */
 static void puts(const char *s)
 {
+	unsigned long tmp1, tmp2;
+
 	__asm__ __volatile__("
 	ldrb	%0, [%2], #1
 	teq	%0, #0
@@ -32,7 +34,9 @@ static void puts(const char *s)
 	and	%1, %1, #0x60
 	teq	%1, #0x60
 	bne	3b
-	" : : "r" (0), "r" (0), "r" (s), "r" (0xf0000be0) : "cc");
+	"
+	 : "=&r" (tmp1), "=&r" (tmp2)
+	 : "0" (0), "1" (0), "r" (s), "r" (0xf0000be0) : "cc");
 }
 
 /*

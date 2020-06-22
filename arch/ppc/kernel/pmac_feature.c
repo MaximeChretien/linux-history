@@ -193,13 +193,14 @@ simple_feature_tweak(struct device_node* node, int type, int reg, u32 mask, int 
 }
 
 static int __pmac
-generic_scc_enable(struct device_node* node, u32 enable_mask, u32 reset_mask,
-	int param, int value)
+ohare_htw_scc_enable(struct device_node* node, int param, int value)
 {
 	struct macio_chip*	macio;
 	unsigned long		chan_mask;
 	unsigned long		fcr;
 	unsigned long		flags;
+	int			htw, trans;
+	unsigned long		rmask;
 	
 	macio = macio_find(node, 0);
 	if (!macio)
@@ -211,20 +212,41 @@ generic_scc_enable(struct device_node* node, u32 enable_mask, u32 reset_mask,
 	else
 		return -ENODEV;
 
+	htw = (macio->type == macio_heathrow || macio->type == macio_paddington
+		|| macio->type == macio_gatwick);
+	/* On these machines, the HRW_SCC_TRANS_EN_N bit mustn't be touched */
+	trans = (pmac_mb.model_id != PMAC_TYPE_YOSEMITE &&
+	    	 pmac_mb.model_id != PMAC_TYPE_YIKES);
 	if (value) {
+#ifdef CONFIG_ADB_PMU
+		if ((param & 0xfff) == PMAC_SCC_IRDA)
+			pmu_enable_irled(1);
+#endif /* CONFIG_ADB_PMU */		
 		LOCK(flags);
 		fcr = MACIO_IN32(OHARE_FCR);
 		/* Check if scc cell need enabling */
 		if (!(fcr & OH_SCC_ENABLE)) {
-			fcr |= enable_mask;
-			MACIO_OUT32(OHARE_FCR, fcr);
-			fcr |= reset_mask;
-			MACIO_OUT32(OHARE_FCR, fcr);
+			fcr |= OH_SCC_ENABLE;
+			if (htw) {
+				/* Side effect: this will also power up the
+				 * modem, but it's too messy to figure out on which
+				 * ports this controls the tranceiver and on which
+				 * it controls the modem
+				 */
+				if (trans)
+					fcr &= ~HRW_SCC_TRANS_EN_N;
+				MACIO_OUT32(OHARE_FCR, fcr);
+				fcr |= (rmask = HRW_RESET_SCC);
+				MACIO_OUT32(OHARE_FCR, fcr);
+			} else {
+				fcr |= (rmask = OH_SCC_RESET);
+				MACIO_OUT32(OHARE_FCR, fcr);
+			}
 			UNLOCK(flags);
 			(void)MACIO_IN32(OHARE_FCR);
 			mdelay(15);
 			LOCK(flags);
-			fcr &= ~reset_mask;
+			fcr &= ~rmask;
 			MACIO_OUT32(OHARE_FCR, fcr);
 		}
 		if (chan_mask & MACIO_FLAG_SCCA_ON)
@@ -247,31 +269,20 @@ generic_scc_enable(struct device_node* node, u32 enable_mask, u32 reset_mask,
 			fcr &= ~OH_SCCB_IO;
 		MACIO_OUT32(OHARE_FCR, fcr);
 		if ((fcr & (OH_SCCA_IO | OH_SCCB_IO)) == 0) {
-			fcr &= ~enable_mask;
+			fcr &= ~OH_SCC_ENABLE;
+			if (htw && trans)
+				fcr |= HRW_SCC_TRANS_EN_N;
 			MACIO_OUT32(OHARE_FCR, fcr);
 		}
 		macio->flags &= ~(chan_mask);
 		UNLOCK(flags);
 		mdelay(10);
+#ifdef CONFIG_ADB_PMU
+		if ((param & 0xfff) == PMAC_SCC_IRDA)
+			pmu_enable_irled(0);
+#endif /* CONFIG_ADB_PMU */		
 	}
 	return 0;
-}
-
-static int __pmac
-ohare_scc_enable(struct device_node* node, int param, int value)
-{
-	int rc;
-
-#ifdef CONFIG_ADB_PMU
-	if (value && (param & 0xfff) == PMAC_SCC_IRDA)
-		pmu_enable_irled(1);
-#endif /* CONFIG_ADB_PMU */		
-	rc = generic_scc_enable(node, OH_SCC_ENABLE, OH_SCC_RESET, param, value);
-#ifdef CONFIG_ADB_PMU
-	if ((param & 0xfff) == PMAC_SCC_IRDA && (rc || !value))
-		pmu_enable_irled(0);
-#endif /* CONFIG_ADB_PMU */		
-	return rc;
 }
 
 static int __pmac
@@ -331,34 +342,13 @@ ohare_sleep_state(struct device_node* node, int param, int value)
 
 	if ((pmac_mb.board_flags & PMAC_MB_CAN_SLEEP) == 0)
 		return -EPERM;
-	if (value) {
+	if (value == 1) {
 		MACIO_BIC(OHARE_FCR, OH_IOBUS_ENABLE);
-	} else {
+	} else if (value == 0) {
 		MACIO_BIS(OHARE_FCR, OH_IOBUS_ENABLE);
 	}
 	
 	return 0;
-}
-
-static int __pmac
-heathrow_scc_enable(struct device_node* node, int param, int value)
-{
-	int rc;
-	
-#ifdef CONFIG_ADB_PMU
-	if (value && param == PMAC_SCC_IRDA)
-		pmu_enable_irled(1);
-#endif /* CONFIG_ADB_PMU */		
-	/* Fixme: It's possible that wallstreet (heathrow) is different
-	 * than other paddington machines. I still have to figure that
-	 * out exactly, for now, the paddington values are used
-	 */
-	rc = generic_scc_enable(node, HRW_SCC_ENABLE, PADD_RESET_SCC, param, value);
-#ifdef CONFIG_ADB_PMU
-	if (param == PMAC_SCC_IRDA && (rc || !value))
-		pmu_enable_irled(0);
-#endif /* CONFIG_ADB_PMU */		
-	return rc;
 }
 
 static int __pmac
@@ -382,16 +372,10 @@ heathrow_modem_enable(struct device_node* node, int param, int value)
 	if (pmac_mb.model_id != PMAC_TYPE_YOSEMITE &&
 	    pmac_mb.model_id != PMAC_TYPE_YIKES) {
 	    	LOCK(flags);
-	    	/* We use the paddington values as they seem to work properly
-	    	 * on the wallstreet (heathrow) as well. I can't tell why we
-	    	 * had to flip them on older feature.c, the fact is that new
-	    	 * code uses the paddington values which are also the ones used
-	    	 * in Darwin, and that works on wallstreet !
-	    	 */
 	    	if (value)
-	    		MACIO_BIC(HEATHROW_FCR, PADD_MODEM_POWER_N);
+	    		MACIO_BIC(HEATHROW_FCR, HRW_SCC_TRANS_EN_N);
 	    	else
-	    		MACIO_BIS(HEATHROW_FCR, PADD_MODEM_POWER_N);
+	    		MACIO_BIS(HEATHROW_FCR, HRW_SCC_TRANS_EN_N);
 	    	UNLOCK(flags);
 	    	(void)MACIO_IN32(HEATHROW_FCR);
 		mdelay(250);
@@ -406,7 +390,7 @@ heathrow_modem_enable(struct device_node* node, int param, int value)
 	    	UNLOCK(flags); mdelay(250); LOCK(flags);
 		MACIO_OUT8(HRW_GPIO_MODEM_RESET, gpio | 1);
 		(void)MACIO_IN8(HRW_GPIO_MODEM_RESET);
-	    	UNLOCK(flags); mdelay(250); LOCK(flags);
+	    	UNLOCK(flags); mdelay(250);
 	}
 	return 0;
 }
@@ -614,11 +598,14 @@ heathrow_sleep(struct macio_chip* macio, int secondary)
 		/* This seems to be necessary as well or the fan
 		 * keeps coming up and battery drains fast */
 		MACIO_BIC(HEATHROW_FCR, HRW_IOBUS_ENABLE);
+		/* Make sure eth is down even if module or sleep
+		 * won't work properly */
+		MACIO_BIC(HEATHROW_FCR, HRW_BMAC_IO_ENABLE | HRW_BMAC_RESET);
 	}
 	/* Make sure modem is shut down */
 	MACIO_OUT8(HRW_GPIO_MODEM_RESET,
 		MACIO_IN8(HRW_GPIO_MODEM_RESET) & ~1);
-	MACIO_BIS(HEATHROW_FCR, PADD_MODEM_POWER_N);
+	MACIO_BIS(HEATHROW_FCR, HRW_SCC_TRANS_EN_N);
 	MACIO_BIC(HEATHROW_FCR, OH_SCCA_IO|OH_SCCB_IO|HRW_SCC_ENABLE);
 
 	/* Let things settle */
@@ -810,7 +797,7 @@ core99_modem_enable(struct device_node* node, int param, int value)
 	    	UNLOCK(flags); mdelay(250); LOCK(flags);
 		MACIO_OUT8(KL_GPIO_MODEM_RESET, gpio | KEYLARGO_GPIO_OUTOUT_DATA);
 		(void)MACIO_IN8(KL_GPIO_MODEM_RESET);
-	    	UNLOCK(flags); mdelay(250); LOCK(flags);
+	    	UNLOCK(flags); mdelay(250);
 	}
 	return 0;
 }
@@ -1467,7 +1454,7 @@ pangea_modem_enable(struct device_node* node, int param, int value)
 	    	UNLOCK(flags); mdelay(250); LOCK(flags);
 		MACIO_OUT8(KL_GPIO_MODEM_RESET, gpio | KEYLARGO_GPIO_OUTOUT_DATA);
 		(void)MACIO_IN8(KL_GPIO_MODEM_RESET);
-	    	UNLOCK(flags); mdelay(250); LOCK(flags);
+	    	UNLOCK(flags); mdelay(250);
 	}
 	return 0;
 }
@@ -1483,7 +1470,8 @@ generic_get_mb_info(struct device_node* node, int param, int value)
 			return pmac_mb.board_flags;
 		case PMAC_MB_INFO_NAME:	
 			/* hack hack hack... but should work */
-			return (int)pmac_mb.model_name;
+			*((const char **)value) = pmac_mb.model_name;
+			break;
 	}
 	return 0;
 }
@@ -1505,7 +1493,7 @@ static struct feature_table_entry any_features[]  __pmacdata = {
  * to have issues with turning on/off those asic cells
  */
 static struct feature_table_entry ohare_features[]  __pmacdata = {
-	{ PMAC_FTR_SCC_ENABLE,		ohare_scc_enable },
+	{ PMAC_FTR_SCC_ENABLE,		ohare_htw_scc_enable },
 	{ PMAC_FTR_SWIM3_ENABLE,	ohare_floppy_enable },
 	{ PMAC_FTR_MESH_ENABLE,		ohare_mesh_enable },
 	{ PMAC_FTR_IDE_ENABLE,		ohare_ide_enable},
@@ -1531,7 +1519,7 @@ static struct feature_table_entry heathrow_desktop_features[]  __pmacdata = {
  * powerbooks.
  */
 static struct feature_table_entry heathrow_laptop_features[]  __pmacdata = {
-	{ PMAC_FTR_SCC_ENABLE,		heathrow_scc_enable },
+	{ PMAC_FTR_SCC_ENABLE,		ohare_htw_scc_enable },
 	{ PMAC_FTR_MODEM_ENABLE,	heathrow_modem_enable },
 	{ PMAC_FTR_SWIM3_ENABLE,	heathrow_floppy_enable },
 	{ PMAC_FTR_MESH_ENABLE,		heathrow_mesh_enable },
@@ -1547,7 +1535,7 @@ static struct feature_table_entry heathrow_laptop_features[]  __pmacdata = {
  * The lombard (101) powerbook, first iMac models, B&W G3 and Yikes G4.
  */
 static struct feature_table_entry paddington_features[]  __pmacdata = {
-	{ PMAC_FTR_SCC_ENABLE,		heathrow_scc_enable },
+	{ PMAC_FTR_SCC_ENABLE,		ohare_htw_scc_enable },
 	{ PMAC_FTR_MODEM_ENABLE,	heathrow_modem_enable },
 	{ PMAC_FTR_SWIM3_ENABLE,	heathrow_floppy_enable },
 	{ PMAC_FTR_MESH_ENABLE,		heathrow_mesh_enable },
@@ -1621,6 +1609,10 @@ static struct pmac_mb_def pmac_mb_defs[] __pmacdata = {
 		PMAC_TYPE_PSURGE,		NULL,
 		0
 	},
+	{	"AAPL,ShinerESB",		"Apple Network Server",
+		PMAC_TYPE_ANS,			NULL,
+		0
+	},
 	{	"AAPL,e407",			"Alchemy",
 		PMAC_TYPE_ALCHEMY,		NULL,
 		0
@@ -1661,9 +1653,21 @@ static struct pmac_mb_def pmac_mb_defs[] __pmacdata = {
 		PMAC_TYPE_PANGEA_IMAC,		pangea_features,
 		PMAC_MB_CAN_SLEEP
 	},
+	{	"PowerBook4,3",			"iBook 2 with 14\" LCD",
+		PMAC_TYPE_IBOOK2,		pangea_features,
+		PMAC_MB_CAN_SLEEP | PMAC_MB_HAS_FW_POWER
+	},
+	{	"PowerBook4,2",			"iBook 2 with 14\" LCD",
+		PMAC_TYPE_IBOOK2,		pangea_features,
+		PMAC_MB_CAN_SLEEP | PMAC_MB_HAS_FW_POWER
+	},
 	{	"PowerBook4,1",			"iBook 2",
 		PMAC_TYPE_IBOOK2,		pangea_features,
 		PMAC_MB_CAN_SLEEP | PMAC_MB_HAS_FW_POWER
+	},
+	{	"PowerMac4,2",			"Flat panel iMac",
+		PMAC_TYPE_FLAT_PANEL_IMAC,	pangea_features,
+		PMAC_MB_CAN_SLEEP
 	},
 	{	"PowerMac1,1",			"Blue&White G3",
 		PMAC_TYPE_YOSEMITE,		paddington_features,
@@ -1724,6 +1728,10 @@ static struct pmac_mb_def pmac_mb_defs[] __pmacdata = {
 		PMAC_TYPE_TITANIUM2,		core99_features,
 		PMAC_MB_CAN_SLEEP | PMAC_MB_HAS_FW_POWER
 	},
+	{	"PowerBook3,4",			"PowerBook Titanium III",
+		PMAC_TYPE_TITANIUM3,		core99_features,
+		PMAC_MB_CAN_SLEEP | PMAC_MB_HAS_FW_POWER
+	},
 };
 
 /*
@@ -1737,13 +1745,12 @@ pmac_do_feature_call(unsigned int selector, ...)
 	feature_call func = NULL;
 	va_list args;
 	
-	if (!pmac_mb.features)
-		return -ENODEV;
-	for (i=0; pmac_mb.features[i].function; i++)
-		if (pmac_mb.features[i].selector == selector) {
-			func = pmac_mb.features[i].function;
-			break;
-		}
+	if (pmac_mb.features)
+		for (i=0; pmac_mb.features[i].function; i++)
+			if (pmac_mb.features[i].selector == selector) {
+				func = pmac_mb.features[i].function;
+				break;
+			}
 	if (!func)
 		for (i=0; any_features[i].function; i++)
 			if (any_features[i].selector == selector) {
@@ -2062,10 +2069,20 @@ set_initial_features(void)
 		}
 	}
 
-	/* On all machines, switch sound off */
+	/* On all machines that support sound PM, switch sound off */
 	if (macio_chips[0].of_node)
 		pmac_do_feature_call(PMAC_FTR_SOUND_CHIP_ENABLE,
 			macio_chips[0].of_node, 0, 0);
+
+	/* While on some desktop G3s, we turn it back on */
+	if (macio_chips[0].of_node && macio_chips[0].type == macio_heathrow
+		&& (pmac_mb.model_id == PMAC_TYPE_GOSSAMER ||
+		    pmac_mb.model_id == PMAC_TYPE_SILK)) {
+		struct macio_chip* macio = &macio_chips[0];
+		MACIO_BIS(HEATHROW_FCR, HRW_SOUND_CLK_ENABLE);
+		MACIO_BIC(HEATHROW_FCR, HRW_SOUND_POWER_N);
+	}
+
 
 	/* On all machines, switch modem & serial ports off */
 	np = find_devices("ch-a");

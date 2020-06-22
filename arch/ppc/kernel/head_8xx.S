@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.head_8xx.S 1.23 09/16/01 19:32:54 trini
+ * BK Id: SCCS/s.head_8xx.S 1.25 01/08/02 16:41:27 trini
  */
 /*
  *  arch/ppc/kernel/except_8xx.S
@@ -520,6 +520,34 @@ DataTLBError:
 	mfspr	r20, DSISR
 	andis.	r21, r20, 0x0200	/* If set, indicates store op */
 	beq	2f
+
+	/* The EA of a data TLB miss is automatically stored in the MD_EPN 
+	 * register.  The EA of a data TLB error is automatically stored in 
+	 * the DAR, but not the MD_EPN register.  We must copy the 20 most 
+	 * significant bits of the EA from the DAR to MD_EPN before we 
+	 * start walking the page tables.  We also need to copy the CASID 
+	 * value from the M_CASID register.
+	 * Addendum:  The EA of a data TLB error is _supposed_ to be stored 
+	 * in DAR, but it seems that this doesn't happen in some cases, such 
+	 * as when the error is due to a dcbi instruction to a page with a 
+	 * TLB that doesn't have the changed bit set.  In such cases, there 
+	 * does not appear to be any way  to recover the EA of the error 
+	 * since it is neither in DAR nor MD_EPN.  As a workaround, the 
+	 * _PAGE_HWWRITE bit is set for all kernel data pages when the PTEs 
+	 * are initialized in mapin_ram().  This will avoid the problem, 
+	 * assuming we only use the dcbi instruction on kernel addresses.
+	 */
+	mfspr	r20, DAR
+	rlwinm	r21, r20, 0, 0, 19
+	ori	r21, r21, MD_EVALID
+	mfspr	r20, M_CASID
+	rlwimi	r21, r20, 0, 28, 31
+#ifdef CONFIG_8xx_CPU6
+	li	r3, 0x3780
+	stw	r3, 12(r0)
+	lwz	r3, 12(r0)
+#endif
+	mtspr	MD_EPN, r21
 
 	mfspr	r20, M_TWB	/* Get level 1 table entry address */
 

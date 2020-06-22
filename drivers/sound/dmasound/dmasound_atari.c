@@ -143,7 +143,7 @@ static void FalconMixerInit(void);
 static int AtaMixerIoctl(u_int cmd, u_long arg);
 static int TTMixerIoctl(u_int cmd, u_long arg);
 static int FalconMixerIoctl(u_int cmd, u_long arg);
-static void AtaWriteSqSetup(void);
+static int AtaWriteSqSetup(void);
 static int AtaSqOpen(mode_t mode);
 static int TTStateInfo(char *buffer, size_t space);
 static int FalconStateInfo(char *buffer, size_t space);

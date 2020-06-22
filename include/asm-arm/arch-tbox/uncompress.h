@@ -18,10 +18,12 @@ static void puts(const char *s)
   while (*s)
   {
     char c = *(s++);
-    while (!(__raw_readb(UARTBASE + 0x14) & 0x20));
+    while (!(__raw_readb(UARTBASE + 0x14) & 0x20))
+      barrier();
     __raw_writeb(c, UARTBASE);
     if (c == 10) {
-      while (!(__raw_readb(UARTBASE + 0x14) & 0x20));
+      while (!(__raw_readb(UARTBASE + 0x14) & 0x20))
+        barrier();
       __raw_writeb(13, UARTBASE);
     }
   }

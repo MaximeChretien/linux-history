@@ -18,6 +18,7 @@
 #include <linux/mm.h>
 #include <linux/tty.h>
 #include <linux/console.h>
+#include <linux/rtc.h>
 #include <linux/init.h>
 #ifdef CONFIG_ZORRO
 #include <linux/zorro.h>
@@ -91,14 +92,13 @@ extern int amiga_get_irq_list (char *);
 static unsigned long amiga_gettimeoffset (void);
 static void a3000_gettod (int *, int *, int *, int *, int *, int *);
 static void a2000_gettod (int *, int *, int *, int *, int *, int *);
-static int amiga_hwclk (int, struct hwclk_time *);
+static int amiga_hwclk (int, struct rtc_time *);
 static int amiga_set_clock_mmss (unsigned long);
 extern void amiga_mksound( unsigned int count, unsigned int ticks );
 #ifdef CONFIG_AMIGA_FLOPPY
 extern void amiga_floppy_setup(char *, int *);
 #endif
 static void amiga_reset (void);
-static int amiga_wait_key (struct console *co);
 extern void amiga_init_sound(void);
 static void amiga_savekmsg_init(void);
 static void amiga_mem_console_write(struct console *co, const char *b,
@@ -112,7 +112,6 @@ static void amiga_heartbeat(int on);
 
 static struct console amiga_console_driver = {
 	name:		"debug",
-	wait_key:	amiga_wait_key,
 	flags:		CON_PRINTBUFFER,
 	index:		-1,
 };
@@ -615,7 +614,7 @@ static void a2000_gettod (int *yearp, int *monp, int *dayp,
 	tod->cntrl1 &= ~TOD2000_CNTRL1_HOLD;
 }
 
-static int amiga_hwclk(int op, struct hwclk_time *t)
+static int amiga_hwclk(int op, struct rtc_time *t)
 {
 	if (AMIGAHW_PRESENT(A3000_CLK)) {
 		volatile struct tod3000 *tod = TOD_3000;
@@ -623,32 +622,32 @@ static int amiga_hwclk(int op, struct hwclk_time *t)
 		tod->cntrl1 = TOD3000_CNTRL1_HOLD;
 
 		if (!op) { /* read */
-			t->sec  = tod->second1 * 10 + tod->second2;
-			t->min  = tod->minute1 * 10 + tod->minute2;
-			t->hour = tod->hour1   * 10 + tod->hour2;
-			t->day  = tod->day1    * 10 + tod->day2;
-			t->wday = tod->weekday;
-			t->mon  = tod->month1  * 10 + tod->month2 - 1;
-			t->year = tod->year1   * 10 + tod->year2;
-			if (t->year <= 69)
-				t->year += 100;
+			t->tm_sec  = tod->second1 * 10 + tod->second2;
+			t->tm_min  = tod->minute1 * 10 + tod->minute2;
+			t->tm_hour = tod->hour1   * 10 + tod->hour2;
+			t->tm_mday = tod->day1    * 10 + tod->day2;
+			t->tm_wday = tod->weekday;
+			t->tm_mon  = tod->month1  * 10 + tod->month2 - 1;
+			t->tm_year = tod->year1   * 10 + tod->year2;
+			if (t->tm_year <= 69)
+				t->tm_year += 100;
 		} else {
-			tod->second1 = t->sec / 10;
-			tod->second2 = t->sec % 10;
-			tod->minute1 = t->min / 10;
-			tod->minute2 = t->min % 10;
-			tod->hour1   = t->hour / 10;
-			tod->hour2   = t->hour % 10;
-			tod->day1    = t->day / 10;
-			tod->day2    = t->day % 10;
-			if (t->wday != -1)
-				tod->weekday = t->wday;
-			tod->month1  = (t->mon + 1) / 10;
-			tod->month2  = (t->mon + 1) % 10;
-			if (t->year >= 100)
-				t->year -= 100;
-			tod->year1   = t->year / 10;
-			tod->year2   = t->year % 10;
+			tod->second1 = t->tm_sec / 10;
+			tod->second2 = t->tm_sec % 10;
+			tod->minute1 = t->tm_min / 10;
+			tod->minute2 = t->tm_min % 10;
+			tod->hour1   = t->tm_hour / 10;
+			tod->hour2   = t->tm_hour % 10;
+			tod->day1    = t->tm_mday / 10;
+			tod->day2    = t->tm_mday % 10;
+			if (t->tm_wday != -1)
+				tod->weekday = t->tm_wday;
+			tod->month1  = (t->tm_mon + 1) / 10;
+			tod->month2  = (t->tm_mon + 1) % 10;
+			if (t->tm_year >= 100)
+				t->tm_year -= 100;
+			tod->year1   = t->tm_year / 10;
+			tod->year2   = t->tm_year % 10;
 		}
 
 		tod->cntrl1 = TOD3000_CNTRL1_FREE;
@@ -661,45 +660,45 @@ static int amiga_hwclk(int op, struct hwclk_time *t)
 			;
 
 		if (!op) { /* read */
-			t->sec  = tod->second1     * 10 + tod->second2;
-			t->min  = tod->minute1     * 10 + tod->minute2;
-			t->hour = (tod->hour1 & 3) * 10 + tod->hour2;
-			t->day  = tod->day1        * 10 + tod->day2;
-			t->wday = tod->weekday;
-			t->mon  = tod->month1      * 10 + tod->month2 - 1;
-			t->year = tod->year1       * 10 + tod->year2;
-			if (t->year <= 69)
-				t->year += 100;
+			t->tm_sec  = tod->second1     * 10 + tod->second2;
+			t->tm_min  = tod->minute1     * 10 + tod->minute2;
+			t->tm_hour = (tod->hour1 & 3) * 10 + tod->hour2;
+			t->tm_mday = tod->day1        * 10 + tod->day2;
+			t->tm_wday = tod->weekday;
+			t->tm_mon  = tod->month1      * 10 + tod->month2 - 1;
+			t->tm_year = tod->year1       * 10 + tod->year2;
+			if (t->tm_year <= 69)
+				t->tm_year += 100;
 
 			if (!(tod->cntrl3 & TOD2000_CNTRL3_24HMODE)){
-				if (!(tod->hour1 & TOD2000_HOUR1_PM) && t->hour == 12)
-					t->hour = 0;
-				else if ((tod->hour1 & TOD2000_HOUR1_PM) && t->hour != 12)
-					t->hour += 12;
+				if (!(tod->hour1 & TOD2000_HOUR1_PM) && t->tm_hour == 12)
+					t->tm_hour = 0;
+				else if ((tod->hour1 & TOD2000_HOUR1_PM) && t->tm_hour != 12)
+					t->tm_hour += 12;
 			}
 		} else {
-			tod->second1 = t->sec / 10;
-			tod->second2 = t->sec % 10;
-			tod->minute1 = t->min / 10;
-			tod->minute2 = t->min % 10;
+			tod->second1 = t->tm_sec / 10;
+			tod->second2 = t->tm_sec % 10;
+			tod->minute1 = t->tm_min / 10;
+			tod->minute2 = t->tm_min % 10;
 			if (tod->cntrl3 & TOD2000_CNTRL3_24HMODE)
-				tod->hour1 = t->hour / 10;
-			else if (t->hour >= 12)
+				tod->hour1 = t->tm_hour / 10;
+			else if (t->tm_hour >= 12)
 				tod->hour1 = TOD2000_HOUR1_PM +
-					(t->hour - 12) / 10;
+					(t->tm_hour - 12) / 10;
 			else
-				tod->hour1 = t->hour / 10;
-			tod->hour2   = t->hour % 10;
-			tod->day1    = t->day / 10;
-			tod->day2    = t->day % 10;
-			if (t->wday != -1)
-				tod->weekday = t->wday;
-			tod->month1  = (t->mon + 1) / 10;
-			tod->month2  = (t->mon + 1) % 10;
-			if (t->year >= 100)
-				t->year -= 100;
-			tod->year1   = t->year / 10;
-			tod->year2   = t->year % 10;
+				tod->hour1 = t->tm_hour / 10;
+			tod->hour2   = t->tm_hour % 10;
+			tod->day1    = t->tm_mday / 10;
+			tod->day2    = t->tm_mday % 10;
+			if (t->tm_wday != -1)
+				tod->weekday = t->tm_wday;
+			tod->month1  = (t->tm_mon + 1) / 10;
+			tod->month2  = (t->tm_mon + 1) % 10;
+			if (t->tm_year >= 100)
+				t->tm_year -= 100;
+			tod->year1   = t->tm_year / 10;
+			tod->year2   = t->tm_year % 10;
 		}
 
 		tod->cntrl1 &= ~TOD2000_CNTRL1_HOLD;
@@ -740,33 +739,6 @@ static int amiga_set_clock_mmss (unsigned long nowtime)
 	}
 
 	return 0;
-}
-
-static int amiga_wait_key (struct console *co)
-{
-    int i;
-
-    while (1) {
-	while (ciaa.pra & 0x40);
-
-	/* debounce */
-	for (i = 0; i < 1000; i++);
-
-	if (!(ciaa.pra & 0x40))
-	    break;
-    }
-
-    /* wait for button up */
-    while (1) {
-	while (!(ciaa.pra & 0x40));
-
-	/* debounce */
-	for (i = 0; i < 1000; i++);
-
-	if (ciaa.pra & 0x40)
-	    break;
-    }
-    return 0;
 }
 
 static NORET_TYPE void amiga_reset( void )

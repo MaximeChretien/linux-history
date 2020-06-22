@@ -139,7 +139,7 @@ static __inline__ void pte_free_slow(pte_t *pte)
 	free_page((unsigned long)pte);
 }
 
-#define pte_free(pte)		pte_free_slow(pte)
+#define pte_free(pte)		pte_free_fast(pte)
 #define pgd_free(pgd)		free_pgd_slow(pgd)
 #define pgd_alloc(mm)		get_pgd_fast()
 
@@ -227,13 +227,12 @@ struct tlb_state
 };
 extern struct tlb_state cpu_tlbstate[NR_CPUS];
 
-
-#endif
+#endif /* CONFIG_SMP */
 
 static inline void flush_tlb_pgtables(struct mm_struct *mm,
 				      unsigned long start, unsigned long end)
 {
-	/* i386 does not keep any page table caches in TLB */
+	flush_tlb_mm(mm);
 }
 
 #endif /* _I386_PGALLOC_H */

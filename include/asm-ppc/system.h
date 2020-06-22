@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.system.h 1.14 08/20/01 14:34:41 paulus
+ * BK Id: SCCS/s.system.h 1.20 03/19/02 15:04:39 benh
  */
 /*
  * Copyright (C) 1999 Cort Dougan <cort@cs.nmt.edu>
@@ -58,9 +58,13 @@ extern void poweroff_now(void);
 #ifdef CONFIG_6xx
 extern long _get_L2CR(void);
 extern void _set_L2CR(unsigned long);
+extern long _get_L3CR(void);
+extern void _set_L3CR(unsigned long);
 #else
-#define _get_L2CR()	0
+#define _get_L2CR()	0L
 #define _set_L2CR(val)	do { } while(0)
+#define _get_L3CR()	0L
+#define _set_L3CR(val)	do { } while(0)
 #endif
 extern void via_cuda_init(void);
 extern void pmac_nvram_init(void);
@@ -119,10 +123,6 @@ extern void __global_restore_flags(unsigned long);
 #define local_irq_enable()		__sti()
 #define local_irq_save(flags)		__save_and_cli(flags)
 #define local_irq_restore(flags)	__restore_flags(flags)
-
-#endif /* __KERNEL__ */
-
-#define xchg(ptr,x) ((__typeof__(*(ptr)))__xchg((unsigned long)(x),(ptr),sizeof(*(ptr))))
 
 static __inline__ unsigned long
 xchg_u32(volatile void *p, unsigned long val)
@@ -222,4 +222,5 @@ __cmpxchg(volatile void *ptr, unsigned long old, unsigned long new, int size)
 				    (unsigned long)_n_, sizeof(*(ptr))); \
   })
 
+#endif /* __KERNEL__ */
 #endif /* __PPC_SYSTEM_H */

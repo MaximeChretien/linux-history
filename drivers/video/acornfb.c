@@ -1139,9 +1139,6 @@ acornfb_mmap(struct fb_info *info, struct file *file, struct vm_area_struct *vma
 	off += start;
 	vma->vm_pgoff = off >> PAGE_SHIFT;
 
-	/* This is an IO map - tell maydump to skip this VMA */
-	vma->vm_flags |= VM_IO;
-
 #ifdef CONFIG_CPU_32
 	pgprot_val(vma->vm_page_prot) &= ~L_PTE_CACHEABLE;
 #endif

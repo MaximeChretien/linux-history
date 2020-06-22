@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.idle.c 1.18 12/01/01 20:09:06 benh
+ * BK Id: SCCS/s.idle.c 1.20 03/19/02 15:04:39 benh
  */
 /*
  * Idle daemon for PowerPC.  Idle daemon will handle any action
@@ -49,7 +49,9 @@ int idled(void)
 {
 	int do_power_save = 0;
 
-	if (cur_cpu_spec[smp_processor_id()]->cpu_features & CPU_FTR_CAN_DOZE)
+	/* Check if CPU can powersave */
+	if (cur_cpu_spec[smp_processor_id()]->cpu_features &
+		(CPU_FTR_CAN_DOZE | CPU_FTR_CAN_NAP))
 		do_power_save = 1;
 
 	/* endless loop with no priority at all */
@@ -227,6 +229,8 @@ void zero_paged(void)
 }
 #endif /* 0 */
 
+#define DSSALL		.long	(0x1f<<26)+(0x10<<21)+(0x336<<1)
+
 void power_save(void)
 {
 	unsigned long hid0;
@@ -235,7 +239,7 @@ void power_save(void)
 	/* 7450 has no DOZE mode mode, we return if powersave_nap
 	 * isn't enabled
 	 */
-	if (!nap &&  cur_cpu_spec[smp_processor_id()]->cpu_features & CPU_FTR_SPEC7450)
+	if (!(nap || (cur_cpu_spec[smp_processor_id()]->cpu_features & CPU_FTR_CAN_DOZE)))
 		return;
 	/*
 	 * Disable interrupts to prevent a lost wakeup
@@ -252,10 +256,23 @@ void power_save(void)
 	_nmask_and_or_msr(MSR_EE, 0);
 	if (!current->need_resched)
 	{
-		asm("mfspr %0,1008" : "=r" (hid0) :);
+		__asm__ __volatile__("mfspr %0,1008" : "=r" (hid0) :);
 		hid0 &= ~(HID0_NAP | HID0_SLEEP | HID0_DOZE);
 		hid0 |= (powersave_nap? HID0_NAP: HID0_DOZE) | HID0_DPM;
-		asm("mtspr 1008,%0" : : "r" (hid0));
+		__asm__ __volatile__("mtspr 1008,%0" : : "r" (hid0));
+		/* Flush pending data streams, consider this instruction
+		 * exist on all altivec capable CPUs
+		 */
+		__asm__ __volatile__(
+			"98:	" stringify(DSSALL) "\n"
+			"	sync\n"
+			"99:\n"
+			".section __ftr_fixup,\"a\"\n"
+			"	.long %0\n"
+			"	.long %1\n"
+			"	.long 98b\n"
+			"	.long 99b\n"
+			".previous" : : "i" (CPU_FTR_ALTIVEC), "i" (CPU_FTR_ALTIVEC));
 		
 		/* set the POW bit in the MSR, and enable interrupts
 		 * so we wake up sometime! */

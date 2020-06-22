@@ -32,6 +32,9 @@
  *      version         : 1.2 
  *      
  *    Fixes for C104H/PCI by Tim Hockin <thockin@sun.com>
+ *    Added support for: C102, CI-132, CI-134, CP-132, CP-114, CT-114 cards
+ *                        by Damian Wrobel <dwrobel@ertel.com.pl>
+ *
  */
 
 #include <linux/config.h>
@@ -62,7 +65,7 @@
 #include <asm/bitops.h>
 #include <asm/uaccess.h>
 
-#define		MXSER_VERSION			"1.2"
+#define		MXSER_VERSION			"1.2.1"
 
 #define		MXSERMAJOR	 	174
 #define		MXSERCUMAJOR		175
@@ -115,10 +118,22 @@
 #ifndef PCI_DEVICE_ID_C104
 #define PCI_DEVICE_ID_C104	0x1040
 #endif
+#ifndef PCI_DEVICE_ID_CP132
+#define PCI_DEVICE_ID_CP132	0x1320
+#endif
+#ifndef PCI_DEVICE_ID_CP114
+#define PCI_DEVICE_ID_CP114	0x1141
+#endif
+#ifndef PCI_DEVICE_ID_CT114
+#define PCI_DEVICE_ID_CT114	0x1140
+#endif
 
 #define C168_ASIC_ID    1
 #define C104_ASIC_ID    2
+#define CI134_ASIC_ID   3
+#define CI132_ASIC_ID   4
 #define CI104J_ASIC_ID  5
+#define C102_ASIC_ID	0xB
 
 enum {
 	MXSER_BOARD_C168_ISA = 0,
@@ -126,6 +141,12 @@ enum {
 	MXSER_BOARD_CI104J,
 	MXSER_BOARD_C168_PCI,
 	MXSER_BOARD_C104_PCI,
+	MXSER_BOARD_C102_ISA,
+	MXSER_BOARD_CI132,
+	MXSER_BOARD_CI134,
+	MXSER_BOARD_CP132_PCI,
+	MXSER_BOARD_CP114_PCI,
+	MXSER_BOARD_CT114_PCI
 };
 
 static char *mxser_brdname[] =
@@ -135,6 +156,12 @@ static char *mxser_brdname[] =
 	"CI-104J series",
 	"C168H/PCI series",
 	"C104H/PCI series",
+	"C102 series",
+	"CI-132 series",
+	"CI-134 series",
+	"CP-132 series",
+	"CP-114 series",
+	"CT-114 series"
 };
 
 static int mxser_numports[] =
@@ -144,6 +171,12 @@ static int mxser_numports[] =
 	4,
 	8,
 	4,
+	2,
+	2,
+	4,
+	2,
+	4,
+	4
 };
 
 /*
@@ -164,6 +197,12 @@ static struct pci_device_id mxser_pcibrds[] = {
 	  MXSER_BOARD_C168_PCI },
 	{ PCI_VENDOR_ID_MOXA, PCI_DEVICE_ID_C104, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 
 	  MXSER_BOARD_C104_PCI },
+	{ PCI_VENDOR_ID_MOXA, PCI_DEVICE_ID_CP132, PCI_ANY_ID, PCI_ANY_ID, 0, 0,
+	  MXSER_BOARD_CP132_PCI },
+	{ PCI_VENDOR_ID_MOXA, PCI_DEVICE_ID_CP114, PCI_ANY_ID, PCI_ANY_ID, 0, 0,
+	  MXSER_BOARD_CP114_PCI },
+	{ PCI_VENDOR_ID_MOXA, PCI_DEVICE_ID_CT114, PCI_ANY_ID, PCI_ANY_ID, 0, 0,
+	  MXSER_BOARD_CT114_PCI },
 	{ 0 }
 };
 MODULE_DEVICE_TABLE(pci, mxser_pcibrds);
@@ -2137,8 +2176,7 @@ static int mxser_get_serial_info(struct mxser_struct *info,
 	tmp.closing_wait = info->closing_wait;
 	tmp.custom_divisor = info->custom_divisor;
 	tmp.hub6 = 0;
-	copy_to_user(retinfo, &tmp, sizeof(*retinfo));
-	return (0);
+	return copy_to_user(retinfo, &tmp, sizeof(*retinfo)) ? -EFAULT : 0;
 }
 
 static int mxser_set_serial_info(struct mxser_struct *info,
@@ -2150,7 +2188,8 @@ static int mxser_set_serial_info(struct mxser_struct *info,
 
 	if (!new_info || !info->base)
 		return (-EFAULT);
-	copy_from_user(&new_serial, new_info, sizeof(new_serial));
+	if (copy_from_user(&new_serial, new_info, sizeof(new_serial)))
+		return -EFAULT;
 
 	if ((new_serial.irq != info->irq) ||
 	    (new_serial.port != info->base) ||
@@ -2304,6 +2343,12 @@ static int mxser_get_ISA_conf(int cap, struct mxser_hwconf *hwconf)
 		hwconf->board_type = MXSER_BOARD_C168_ISA;
 	else if (id == C104_ASIC_ID)
 		hwconf->board_type = MXSER_BOARD_C104_ISA;
+	else if (id == C102_ASIC_ID)
+		hwconf->board_type = MXSER_BOARD_C102_ISA;
+	else if (id == CI132_ASIC_ID)
+		hwconf->board_type = MXSER_BOARD_CI132;
+	else if (id == CI134_ASIC_ID)
+		hwconf->board_type = MXSER_BOARD_CI134;
 	else if (id == CI104J_ASIC_ID)
 		hwconf->board_type = MXSER_BOARD_CI104J;
 	else
@@ -2415,7 +2460,8 @@ static int mxser_program_mode(int port)
 	(void) inb(port);
 	restore_flags(flags);
 	id = inb(port + 1) & 0x1F;
-	if ((id != C168_ASIC_ID) && (id != C104_ASIC_ID) && (id != CI104J_ASIC_ID))
+	if ((id != C168_ASIC_ID) && (id != C104_ASIC_ID) && (id != CI104J_ASIC_ID) &&
+		(id != C102_ASIC_ID) &&	(id != CI132_ASIC_ID) && (id != CI134_ASIC_ID))
 		return (-1);
 	for (i = 0, j = 0; i < 4; i++) {
 		n = inb(port + 2);

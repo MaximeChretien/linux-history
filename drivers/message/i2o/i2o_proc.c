@@ -20,18 +20,12 @@
  *   LAN entries by Juha Sievänen (Juha.Sievanen@cs.Helsinki.FI),
  *		    Auvo Häkkinen (Auvo.Hakkinen@cs.Helsinki.FI)
  *   University of Helsinki, Department of Computer Science
- */
-
-/*
- * set tabstop=3
- */
-
-/*
- * TODO List
  *
- * - Add support for any version 2.0 spec changes once 2.0 IRTOS is
- *   is available to test with
- * - Clean up code to use official structure definitions 
+ *   Some cleanup (c) 2002 Red Hat <alan@redhat.com>
+ *   Working to make I2O 64bit safe and following the PCI API
+ *
+ *   TODO List
+ *	- Clean up code to use official structure definitions 
  */
 
 // FIXME!
@@ -3371,8 +3365,5 @@ static void __exit i2o_proc_exit(void)
 	i2o_remove_handler(&i2o_proc_handler);
 }
 
-#ifdef MODULE
 module_init(i2o_proc_init);
-#endif
 module_exit(i2o_proc_exit);
-

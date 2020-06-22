@@ -1,5 +1,5 @@
 /* This version ported to the Linux-MTD system by dwmw2@infradead.org
- * $Id: ftl.c,v 1.39 2001/10/02 15:05:11 dwmw2 Exp $
+ * $Id: ftl.c,v 1.43 2002/02/13 15:31:37 dwmw2 Exp $
  *
  * Fixes: Arnaldo Carvalho de Melo <acme@conectiva.com.br>
  * - fixes some leaks on failure in build_maps and ftl_notify_add, cleanups
@@ -87,7 +87,7 @@
 #define register_disk(dev, drive, minors, ops, size) \
     do { (dev)->part[(drive)*(minors)].nr_sects = size; \
         if (size == 0) (dev)->part[(drive)*(minors)].start_sect = -1; \
-        resetup_one_dev(dev, drive); } while (0);
+        resetup_one_dev(dev, drive); } while (0)
 #endif
 
 #if (LINUX_VERSION_CODE < 0x20320)
@@ -99,6 +99,13 @@
 #define request_arg_t           request_queue_t *q
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,14)
+#define BLK_INC_USE_COUNT MOD_INC_USE_COUNT
+#define BLK_DEC_USE_COUNT MOD_DEC_USE_COUNT
+#else
+#define BLK_INC_USE_COUNT do {} while(0)
+#define BLK_DEC_USE_COUNT do {} while(0)
+#endif
 
 /*====================================================================*/
 
@@ -235,7 +242,9 @@ static struct file_operations ftl_blk_fops = {
 };
 #else
 static struct block_device_operations ftl_blk_fops = {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,14)
     owner:	THIS_MODULE,
+#endif
     open:	ftl_open,
     release:	ftl_close,
     ioctl:	ftl_ioctl,
@@ -895,11 +904,16 @@ static int ftl_open(struct inode *inode, struct file *file)
     if (ftl_gendisk.part[minor].nr_sects == 0)
 	return -ENXIO;
 
-    if (!get_mtd_device(partition->mtd, -1))
-	    return /* -E'SBUGGEREDOFF */ -ENXIO;
+    BLK_INC_USE_COUNT;
 
+    if (!get_mtd_device(partition->mtd, -1)) {
+	    BLK_DEC_USE_COUNT;
+	    return -ENXIO;
+    }
+    
     if ((file->f_mode & 2) && !(partition->mtd->flags & MTD_CLEAR_BITS) ) {
 	    put_mtd_device(partition->mtd);
+	    BLK_DEC_USE_COUNT;
             return -EROFS;
     }
     
@@ -920,9 +934,6 @@ static release_t ftl_close(struct inode *inode, struct file *file)
     
     DEBUG(0, "ftl_cs: ftl_close(%d)\n", minor);
 
-    /* Flush all writes */
-    invalidate_device(inode->i_rdev, 1);
-
     /* Wait for any pending erase operations to complete */
     if (part->mtd->sync)
 	    part->mtd->sync(part->mtd);
@@ -935,6 +946,7 @@ static release_t ftl_close(struct inode *inode, struct file *file)
     atomic_dec(&part->open);
 
     put_mtd_device(part->mtd);
+    BLK_DEC_USE_COUNT;
     release_return(0);
 } /* ftl_close */
 
@@ -1171,9 +1183,11 @@ static int ftl_ioctl(struct inode *inode, struct file *file,
     case BLKGETSIZE:
 	ret = put_user(ftl_hd[minor].nr_sects, (unsigned long *)arg);
 	break;
+#ifdef BLKGETSIZE64
     case BLKGETSIZE64:
 	ret = put_user((u64)ftl_hd[minor].nr_sects << 9, (u64 *)arg);
 	break;
+#endif
     case BLKRRPART:
 	ret = ftl_reread_partitions(minor);
 	break;
@@ -1401,7 +1415,7 @@ int init_ftl(void)
 
     memset(myparts, 0, sizeof(myparts));
     
-    DEBUG(0, "$Id: ftl.c,v 1.39 2001/10/02 15:05:11 dwmw2 Exp $\n");
+    DEBUG(0, "$Id: ftl.c,v 1.43 2002/02/13 15:31:37 dwmw2 Exp $\n");
     
     if (register_blkdev(FTL_MAJOR, "ftl", &ftl_blk_fops)) {
 	printk(KERN_NOTICE "ftl_cs: unable to grab major "

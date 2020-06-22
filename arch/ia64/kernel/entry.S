@@ -115,7 +115,7 @@ GLOBAL_ENTRY(sys_clone)
 	mov loc1=r16				// save ar.pfs across do_fork
 	.body
 	mov out1=in1
-	mov out3=0
+	mov out3=16				// stacksize (compensates for 16-byte scratch area)
 	adds out2=IA64_SWITCH_STACK_SIZE+16,sp	// out2 = &regs
 	mov out0=in0				// out0 = clone_flags
 	br.call.sptk.many rp=do_fork
@@ -521,35 +521,38 @@ GLOBAL_ENTRY(ia64_leave_kernel)
 	;;
 	mov.ret.sptk rp=r14,.restart
 .restart:
+	// need_resched and signals atomic test
+(pUser)	rsm psr.i
 	adds r17=IA64_TASK_NEED_RESCHED_OFFSET,r13
 	adds r18=IA64_TASK_SIGPENDING_OFFSET,r13
 #ifdef CONFIG_PERFMON
-	adds r19=IA64_TASK_PFM_MUST_BLOCK_OFFSET,r13
+	adds r19=IA64_TASK_PFM_OVFL_BLOCK_RESET_OFFSET,r13
 #endif
 	;;
 #ifdef CONFIG_PERFMON
-(pUser)	ld8 r19=[r19]				// load current->thread.pfm_must_block
+(pUser)	ld8 r19=[r19]				// load current->thread.pfm_ovfl_block_reset
 #endif
 (pUser)	ld8 r17=[r17]				// load current->need_resched
 (pUser)	ld4 r18=[r18]				// load current->sigpending
 	;;
 #ifdef CONFIG_PERFMON
-(pUser)	cmp.ne.unc p9,p0=r19,r0			// current->thread.pfm_must_block != 0?
+(pUser)	cmp.ne.unc p9,p0=r19,r0			// current->thread.pfm_ovfl_block_reset != 0?
 #endif
 (pUser)	cmp.ne.unc p7,p0=r17,r0			// current->need_resched != 0?
 (pUser)	cmp.ne.unc p8,p0=r18,r0			// current->sigpending != 0?
 	;;
-	adds r2=PT(R8)+16,r12
-	adds r3=PT(R9)+16,r12
 #ifdef CONFIG_PERFMON
-(p9)	br.call.spnt.many b7=pfm_block_on_overflow
+(p9)	br.call.spnt.many b7=pfm_ovfl_block_reset
 #endif
 #if __GNUC__ < 3
 (p7)	br.call.spnt.many b7=invoke_schedule
 #else
 (p7)	br.call.spnt.many b7=schedule
 #endif
-(p8)	br.call.spnt.many b7=handle_signal_delivery	// check & deliver pending signals
+(p8)	br.call.spnt.many rp=handle_signal_delivery	// check & deliver pending signals (once)
+	;;
+.ret9:	adds r2=PT(R8)+16,r12
+	adds r3=PT(R9)+16,r12
 	;;
 	// start restoring the state saved on the kernel stack (struct pt_regs):
 	ld8.fill r8=[r2],16
@@ -582,7 +585,7 @@ GLOBAL_ENTRY(ia64_leave_kernel)
 	ld8.fill r30=[r2],16
 	ld8.fill r31=[r3],16
 	;;
-	rsm psr.i | psr.ic	// initiate turning off of interrupts & interruption collection
+	rsm psr.i | psr.ic	// initiate turning off of interrupt and interruption collection
 	invala			// invalidate ALAT
 	;;
 	ld8 r1=[r2],16		// ar.ccv
@@ -601,7 +604,7 @@ GLOBAL_ENTRY(ia64_leave_kernel)
 	mov ar.fpsr=r13
 	mov b0=r14
 	;;
-	srlz.i			// ensure interrupts & interruption collection are off
+	srlz.i			// ensure interruption collection is off
 	mov b7=r15
 	;;
 	bsw.0			// switch back to bank 0
@@ -1142,7 +1145,7 @@ sys_call_table:
 	data8 ia64_ni_syscall
 	data8 ia64_ni_syscall
 	data8 ia64_ni_syscall
-	data8 ia64_ni_syscall
+	data8 sys_tkill
 	data8 ia64_ni_syscall			// 1230
 	data8 ia64_ni_syscall
 	data8 ia64_ni_syscall

@@ -377,9 +377,12 @@ static int
 scsi_ioctl_get_pci(Scsi_Device * dev, void *arg)
 {
 
-        if (!dev->host->pci_dev) return -ENXIO;
-        return copy_to_user(arg, dev->host->pci_dev->slot_name,
-                            sizeof(dev->host->pci_dev->slot_name));
+        if (!dev->host->pci_dev)
+        	return -ENXIO;
+        if(copy_to_user(arg, dev->host->pci_dev->slot_name,
+                            sizeof(dev->host->pci_dev->slot_name)))
+		return -EFAULT;
+	return 0;
 }
 
 

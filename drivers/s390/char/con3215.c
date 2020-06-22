@@ -119,7 +119,7 @@ static int tty3215_refcount;
 /*
  * Get a request structure from the free list
  */
-extern inline raw3215_req *raw3215_alloc_req(void) {
+static inline raw3215_req *raw3215_alloc_req(void) {
 	raw3215_req *req;
 	unsigned long flags;
 
@@ -133,7 +133,7 @@ extern inline raw3215_req *raw3215_alloc_req(void) {
 /*
  * Put a request structure back to the free list
  */
-extern inline void raw3215_free_req(raw3215_req *req) {
+static inline void raw3215_free_req(raw3215_req *req) {
 	unsigned long flags;
 
         if (req->type == RAW3215_FREE)
@@ -312,7 +312,7 @@ static void raw3215_timeout(unsigned long __data)
  * amount of data is bigger than RAW3215_MIN_WRITE. If a write is not
  * done immediatly a timer is started with a delay of RAW3215_TIMEOUT.
  */
-extern inline void raw3215_try_io(raw3215_info *raw)
+static inline void raw3215_try_io(raw3215_info *raw)
 {
 	if (!(raw->flags & RAW3215_ACTIVE))
 		return;

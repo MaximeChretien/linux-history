@@ -1,11 +1,25 @@
+/*
+ * PCI code for DDB5477.
+ *
+ * Copyright (C) 2001 MontaVista Software Inc.
+ * Author: Jun Sun, jsun@mvista.com or jsun@junsun.net
+ *
+ * This program is free software; you can redistribute  it and/or modify it
+ * under  the terms of  the GNU General  Public License as published by the
+ * Free Software Foundation;  either version 2 of the  License, or (at your
+ * option) any later version.
+ *
+ */
+
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/types.h>
 #include <linux/pci.h>
 
+#include <asm/pci_channel.h>
+#include <asm/debug.h>
+
 #include <asm/ddb5xxx/ddb5xxx.h>
-#include <asm/ddb5xxx/debug.h>
-#include <asm/ddb5xxx/pci.h>
 
 static struct resource extpci_io_resource = {
 	"ext pci IO space", 
@@ -103,8 +117,16 @@ void __init pcibios_fixup_irqs(void)
 
 	pci_for_each_dev(dev) {
 		slot_num = PCI_SLOT(dev->devfn);
-		MIPS_ASSERT(slot_num < MAX_SLOT_NUM);
-		MIPS_ASSERT(irq_map[slot_num] != 0xff);
+
+               /* we don't do IRQ fixup for sub-bus yet */
+               if (dev->bus->parent != NULL) {
+                       db_run(printk("Don't know how to fixup irq for PCI device %d on sub-bus %d\n",
+                                       slot_num, dev->bus->number));
+                       continue;
+               }
+
+		db_assert(slot_num < MAX_SLOT_NUM);
+		db_assert(irq_map[slot_num] != 0xff);
 
 		pci_write_config_byte(dev, 
 				      PCI_INTERRUPT_LINE,
@@ -113,7 +135,7 @@ void __init pcibios_fixup_irqs(void)
 	}
 }
 
-#if defined(CONFIG_LL_DEBUG)
+#if defined(CONFIG_DEBUG)
 extern void jsun_scan_pci_bus(void);
 extern void jsun_assign_pci_resource(void);
 #endif
@@ -143,5 +165,15 @@ void __init ddb_pci_reset_bus(void)
 
 unsigned __init int pcibios_assign_all_busses(void)
 {
+	/* we hope pci_auto has assigned the bus numbers to all buses */
 	return 1;
 }
+
+void __init pcibios_fixup_resources(struct pci_dev *dev)
+{
+}
+
+void __init pcibios_fixup(void)
+{
+}
+

@@ -78,6 +78,7 @@ static inline struct nfs_inode_info *NFS_I(struct inode *inode)
 #define NFS_CONGESTED(inode)		(RPC_CONGESTED(NFS_CLIENT(inode)))
 #define NFS_COOKIEVERF(inode)		((inode)->u.nfs_i.cookieverf)
 #define NFS_READTIME(inode)		((inode)->u.nfs_i.read_cache_jiffies)
+#define NFS_MTIME_UPDATE(inode)		((inode)->u.nfs_i.cache_mtime_jiffies)
 #define NFS_CACHE_CTIME(inode)		((inode)->u.nfs_i.read_cache_ctime)
 #define NFS_CACHE_MTIME(inode)		((inode)->u.nfs_i.read_cache_mtime)
 #define NFS_CACHE_ISIZE(inode)		((inode)->u.nfs_i.read_cache_isize)
@@ -100,7 +101,6 @@ do { \
 #define NFS_STALE(inode)		(NFS_FLAGS(inode) & NFS_INO_STALE)
 
 #define NFS_FILEID(inode)		((inode)->u.nfs_i.fileid)
-#define NFS_FSID(inode)			((inode)->u.nfs_i.fsid)
 
 /* Inode Flags */
 #define NFS_USE_READDIRPLUS(inode)	((NFS_FLAGS(inode) & NFS_INO_ADVISE_RDPLUS) ? 1 : 0)
@@ -153,6 +153,7 @@ extern int nfs_permission(struct inode *, int);
 extern int nfs_open(struct inode *, struct file *);
 extern int nfs_release(struct inode *, struct file *);
 extern int __nfs_revalidate_inode(struct nfs_server *, struct inode *);
+extern int nfs_check_stale(struct inode *);
 extern int nfs_notify_change(struct dentry *, struct iattr *);
 
 /*
@@ -165,10 +166,12 @@ extern struct address_space_operations nfs_file_aops;
 static __inline__ struct rpc_cred *
 nfs_file_cred(struct file *file)
 {
-	struct rpc_cred *cred = (struct rpc_cred *)(file->private_data);
+	struct rpc_cred *cred = NULL;
+	if (file)
+		cred = (struct rpc_cred *)file->private_data;
 #ifdef RPC_DEBUG
 	if (cred && cred->cr_magic != RPCAUTH_CRED_MAGIC)
-		BUG();
+		out_of_line_bug();
 #endif
 	return cred;
 }
@@ -272,6 +275,9 @@ extern int  nfs_scan_lru_read_timeout(struct nfs_server *, struct list_head *);
  */
 extern int  nfs_mount(struct sockaddr_in *, char *, struct nfs_fh *);
 extern int  nfs3_mount(struct sockaddr_in *, char *, struct nfs_fh *);
+
+/* linux/net/ipv4/ipconfig.c: trims ip addr off front of name, too. */
+extern u32 root_nfs_parse_addr(char *name); /*__init*/
 
 /*
  * inline functions

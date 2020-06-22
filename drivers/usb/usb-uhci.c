@@ -86,8 +86,8 @@
 	static kmem_cache_t *urb_priv_kmem;
 #endif
 
-#define SLAB_FLAG     (in_interrupt ()? SLAB_ATOMIC : SLAB_KERNEL)
-#define KMALLOC_FLAG  (in_interrupt ()? GFP_ATOMIC : GFP_KERNEL)
+#define SLAB_FLAG     (in_interrupt () || current->state != TASK_RUNNING ? SLAB_ATOMIC : SLAB_KERNEL)
+#define KMALLOC_FLAG  (in_interrupt () || current->state != TASK_RUNNING ? GFP_ATOMIC : GFP_KERNEL)
 
 /* CONFIG_USB_UHCI_HIGH_BANDWITH turns on Full Speed Bandwidth
  * Reclamation: feature that puts loop on descriptor loop when
@@ -95,7 +95,7 @@
  * is optimal, but PCI can be slowed down up-to 5 times, slowing down
  * system performance (eg. framebuffer devices).
  */
-#define CONFIG_USB_UHCI_HIGH_BANDWIDTH 
+#define CONFIG_USB_UHCI_HIGH_BANDWIDTH
 
 /* *_DEPTH_FIRST puts descriptor in depth-first mode. This has
  * somehow similar effect to FSBR (higher speed), but does not
@@ -143,7 +143,7 @@ void clean_descs(uhci_t *s, int force)
 	q=s->free_desc.prev;
 
 	while (q != &s->free_desc && (force || n<100)) {
-		qh = list_entry (q, uhci_desc_t, horizontal);		
+		qh = list_entry (q, uhci_desc_t, horizontal);
 		q=qh->horizontal.prev;
 
 		if ((qh->last_used!=now) || force)
@@ -170,7 +170,7 @@ _static void uhci_switch_timer_int(uhci_t *s)
 #ifdef CONFIG_USB_UHCI_HIGH_BANDWIDTH
 _static void enable_desc_loop(uhci_t *s, urb_t *urb)
 {
-	int flags;
+	unsigned long flags;
 
 	if (urb->transfer_flags & USB_NO_FSBR)
 		return;
@@ -185,7 +185,7 @@ _static void enable_desc_loop(uhci_t *s, urb_t *urb)
 /*-------------------------------------------------------------------*/
 _static void disable_desc_loop(uhci_t *s, urb_t *urb)
 {
-	int flags;
+	unsigned long flags;
 
 	if (urb->transfer_flags & USB_NO_FSBR)
 		return;

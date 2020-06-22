@@ -207,7 +207,7 @@ static void finish_unfinished (struct super_block * s)
         }
  
         iput (inode);
-        reiserfs_warning ("done\n");
+        printk ("done\n");
         done ++;
     }
     s -> u.reiserfs_sb.s_is_unlinked_ok = 0;
@@ -269,7 +269,8 @@ void add_save_link (struct reiserfs_transaction_handle * th,
     /* look for its place in the tree */
     retval = search_item (inode->i_sb, &key, &path);
     if (retval != ITEM_NOT_FOUND) {
-	reiserfs_warning ("vs-2100: add_save_link:"
+	if ( retval != -ENOSPC )
+	    reiserfs_warning ("vs-2100: add_save_link:"
 			  "search_by_key (%K) returned %d\n", &key, retval);
 	pathrelse (&path);
 	return;
@@ -280,10 +281,11 @@ void add_save_link (struct reiserfs_transaction_handle * th,
 
     /* put "save" link inot tree */
     retval = reiserfs_insert_item (th, &path, &key, &ih, (char *)&link);
-    if (retval)
-	reiserfs_warning ("vs-2120: add_save_link: insert_item returned %d\n",
+    if (retval) {
+	if (retval != -ENOSPC)
+	    reiserfs_warning ("vs-2120: add_save_link: insert_item returned %d\n",
 			  retval);
-    else {
+    } else {
 	if( truncate )
 	    inode -> u.reiserfs_i.i_flags |= i_link_saved_truncate_mask;
 	else
@@ -488,6 +490,8 @@ static int parse_options (char * options, unsigned long * mount_options, unsigne
 	  	printk("reiserfs: hash option requires a value\n");
 		return 0 ;
 	    }
+	} else if (!strcmp (this_char, "attrs")) {
+	    set_bit (REISERFS_ATTRS, mount_options);
 	} else {
 	    printk ("reiserfs: Unrecognized mount option %s\n", this_char);
 	    return 0;
@@ -502,6 +506,24 @@ int reiserfs_is_super(struct super_block *s) {
 }
 
 
+static void handle_attrs( struct super_block *s )
+{
+	struct reiserfs_super_block * rs;
+
+	if( reiserfs_attrs( s ) ) {
+		rs = SB_DISK_SUPER_BLOCK (s);
+		if( old_format_only(s) ) {
+			reiserfs_warning( "reiserfs: cannot support attributes on 3.5.x disk format\n" );
+			s -> u.reiserfs_sb.s_mount_opt &= ~ ( 1 << REISERFS_ATTRS );
+			return;
+		}
+		if( !( le32_to_cpu( rs -> s_flags ) & reiserfs_attrs_cleared ) ) {
+				reiserfs_warning( "reiserfs: cannot support attributes until flag is set in super-block\n" );
+				s -> u.reiserfs_sb.s_mount_opt &= ~ ( 1 << REISERFS_ATTRS );
+		}
+	}
+}
+
 //
 // a portion of this function, particularly the VFS interface portion,
 // was derived from minix or ext2's analog and evolved as the
@@ -514,12 +536,27 @@ static int reiserfs_remount (struct super_block * s, int * flags, char * data)
   struct reiserfs_super_block * rs;
   struct reiserfs_transaction_handle th ;
   unsigned long blocks;
-  unsigned long mount_options;
+  unsigned long mount_options = 0;
 
   rs = SB_DISK_SUPER_BLOCK (s);
 
   if (!parse_options(data, &mount_options, &blocks))
   	return 0;
+
+#define SET_OPT( opt, bits, super )					\
+    if( ( bits ) & ( 1 << ( opt ) ) )					\
+	    ( super ) -> u.reiserfs_sb.s_mount_opt |= ( 1 << ( opt ) )
+
+  /* set options in the super-block bitmask */
+  SET_OPT( NOTAIL, mount_options, s );
+  SET_OPT( REISERFS_NO_BORDER, mount_options, s );
+  SET_OPT( REISERFS_NO_UNHASHED_RELOCATION, mount_options, s );
+  SET_OPT( REISERFS_HASHED_RELOCATION, mount_options, s );
+  SET_OPT( REISERFS_TEST4, mount_options, s );
+  SET_OPT( REISERFS_ATTRS, mount_options, s );
+#undef SET_OPT
+
+  handle_attrs( s );
 
   if(blocks) {
       int rc = reiserfs_resize(s, blocks);
@@ -572,28 +609,30 @@ static int reiserfs_remount (struct super_block * s, int * flags, char * data)
 
 static int read_bitmaps (struct super_block * s)
 {
-    int i, bmp, dl ;
-    struct reiserfs_super_block * rs = SB_DISK_SUPER_BLOCK(s);
+    int i, bmp;
 
-    SB_AP_BITMAP (s) = reiserfs_kmalloc (sizeof (struct buffer_head *) * sb_bmap_nr(rs), GFP_NOFS, s);
+    SB_AP_BITMAP (s) = reiserfs_kmalloc (sizeof (struct buffer_head *) * SB_BMAP_NR(s), GFP_NOFS, s);
     if (SB_AP_BITMAP (s) == 0)
-	return 1;
-    memset (SB_AP_BITMAP (s), 0, sizeof (struct buffer_head *) * sb_bmap_nr(rs));
-
-    /* reiserfs leaves the first 64k unused so that any partition
-       labeling scheme currently used will have enough space. Then we
-       need one block for the super.  -Hans */
-    bmp = (REISERFS_DISK_OFFSET_IN_BYTES / s->s_blocksize) + 1;	/* first of bitmap blocks */
-    SB_AP_BITMAP (s)[0] = reiserfs_bread (s, bmp, s->s_blocksize);
-    if(!SB_AP_BITMAP(s)[0])
-	return 1;
-    for (i = 1, bmp = dl = s->s_blocksize * 8; i < sb_bmap_nr(rs); i ++) {
-	SB_AP_BITMAP (s)[i] = reiserfs_bread (s, bmp, s->s_blocksize);
-	if (!SB_AP_BITMAP (s)[i])
-	    return 1;
-	bmp += dl;
+      return 1;
+    for (i = 0, bmp = REISERFS_DISK_OFFSET_IN_BYTES / s->s_blocksize + 1;
+ 	 i < SB_BMAP_NR(s); i++, bmp = s->s_blocksize * 8 * i) {
+      SB_AP_BITMAP (s)[i] = getblk (s->s_dev, bmp, s->s_blocksize);
+      if (!buffer_uptodate(SB_AP_BITMAP(s)[i]))
+	ll_rw_block(READ, 1, SB_AP_BITMAP(s) + i); 
     }
-
+    for (i = 0; i < SB_BMAP_NR(s); i++) {
+      wait_on_buffer(SB_AP_BITMAP (s)[i]);
+      if (!buffer_uptodate(SB_AP_BITMAP(s)[i])) {
+	reiserfs_warning("sh-2029: reiserfs read_bitmaps: "
+			 "bitmap block (#%lu) reading failed\n",
+			 SB_AP_BITMAP(s)[i]->b_blocknr);
+	for (i = 0; i < SB_BMAP_NR(s); i++)
+	  brelse(SB_AP_BITMAP(s)[i]);
+	reiserfs_kfree(SB_AP_BITMAP(s), sizeof(struct buffer_head *) * SB_BMAP_NR(s), s);
+	SB_AP_BITMAP(s) = NULL;
+	return 1;
+      }
+    }   
     return 0;
 }
 
@@ -704,8 +743,18 @@ static int read_super_block (struct super_block * s, int size, int offset)
 	       "It must not be of this format type.\n", bh->b_blocknr) ;
 	return 1 ;
     }
+
+    if ( rs->s_root_block == -1 ) {
+	brelse(bh) ;
+	printk("dev %s: Unfinished reiserfsck --rebuild-tree run detected. Please run\n"
+	       "reiserfsck --rebuild-tree and wait for a completion. If that fails\n"
+	       "get newer reiserfsprogs package\n", kdevname (s->s_dev));
+	return 1;
+    }
+
     SB_BUFFER_WITH_SB (s) = bh;
     SB_DISK_SUPER_BLOCK (s) = rs;
+
     s->s_op = &reiserfs_sops;
 
     /* new format is limited by the 32 bit wide i_blocks field, want to
@@ -760,7 +809,9 @@ __u32 find_hash_out (struct super_block * s)
 
     inode = s->s_root->d_inode;
 
-    while (1) {
+    do { // Some serious "goto"-hater was there ;)
+	u32 teahash, r5hash, yurahash;
+
 	make_cpu_key (&key, inode, ~0, TYPE_DIRENTRY, 3);
 	retval = search_by_entry_key (s, &key, &path, &de);
 	if (retval == IO_ERROR) {
@@ -779,20 +830,30 @@ __u32 find_hash_out (struct super_block * s)
 	                     "is using the default hash\n");
 	    break;
 	}
-	if (GET_HASH_VALUE(yura_hash (de.de_name, de.de_namelen)) == 
-	    GET_HASH_VALUE(keyed_hash (de.de_name, de.de_namelen))) {
-	    reiserfs_warning ("reiserfs: Could not detect hash function "
-			      "please mount with -o hash={tea,rupasov,r5}\n") ;
-	    hash = UNSET_HASH ;
+	r5hash=GET_HASH_VALUE (r5_hash (de.de_name, de.de_namelen));
+	teahash=GET_HASH_VALUE (keyed_hash (de.de_name, de.de_namelen));
+	yurahash=GET_HASH_VALUE (yura_hash (de.de_name, de.de_namelen));
+	if ( ( (teahash == r5hash) && (GET_HASH_VALUE( deh_offset(&(de.de_deh[de.de_entry_num]))) == r5hash) ) ||
+	     ( (teahash == yurahash) && (yurahash == GET_HASH_VALUE( deh_offset(&(de.de_deh[de.de_entry_num])))) ) ||
+	     ( (r5hash == yurahash) && (yurahash == GET_HASH_VALUE( deh_offset(&(de.de_deh[de.de_entry_num])))) ) ) {
+	    reiserfs_warning("reiserfs: Unable to automatically detect hash"
+		"function for device %s\n"
+		"please mount with -o hash={tea,rupasov,r5}\n", kdevname (s->s_dev));
+	    hash = UNSET_HASH;
 	    break;
 	}
-	if (GET_HASH_VALUE( deh_offset(&(de.de_deh[de.de_entry_num])) ) ==
-	    GET_HASH_VALUE (yura_hash (de.de_name, de.de_namelen)))
+	if (GET_HASH_VALUE( deh_offset(&(de.de_deh[de.de_entry_num])) ) == yurahash)
 	    hash = YURA_HASH;
-	else
+	else if (GET_HASH_VALUE( deh_offset(&(de.de_deh[de.de_entry_num])) ) == teahash)
 	    hash = TEA_HASH;
-	break;
-    }
+	else if (GET_HASH_VALUE( deh_offset(&(de.de_deh[de.de_entry_num])) ) == r5hash)
+	    hash = R5_HASH;
+	else {
+	    reiserfs_warning("reiserfs: Unrecognised hash function for "
+			     "device %s\n", kdevname (s->s_dev));
+	    hash = UNSET_HASH;
+	}
+    } while (0);
 
     pathrelse (&path);
     return hash;
@@ -817,16 +878,16 @@ static int what_hash (struct super_block * s)
 	** mount options 
 	*/
 	if (reiserfs_rupasov_hash(s) && code != YURA_HASH) {
-	    printk("REISERFS: Error, tea hash detected, "
-		   "unable to force rupasov hash\n") ;
+	    printk("REISERFS: Error, %s hash detected, "
+		   "unable to force rupasov hash\n", reiserfs_hashname(code)) ;
 	    code = UNSET_HASH ;
 	} else if (reiserfs_tea_hash(s) && code != TEA_HASH) {
-	    printk("REISERFS: Error, rupasov hash detected, "
-		   "unable to force tea hash\n") ;
+	    printk("REISERFS: Error, %s hash detected, "
+		   "unable to force tea hash\n", reiserfs_hashname(code)) ;
 	    code = UNSET_HASH ;
 	} else if (reiserfs_r5_hash(s) && code != R5_HASH) {
-	    printk("REISERFS: Error, r5 hash detected, "
-		   "unable to force r5 hash\n") ;
+	    printk("REISERFS: Error, %s hash detected, "
+		   "unable to force r5 hash\n", reiserfs_hashname(code)) ;
 	    code = UNSET_HASH ;
 	} 
     } else { 
@@ -934,6 +995,8 @@ static struct super_block * reiserfs_read_super (struct super_block * s, void * 
 	    old_format = 1;
     }
 
+    rs = SB_DISK_SUPER_BLOCK (s);
+
     s->u.reiserfs_sb.s_mount_state = SB_REISERFS_STATE(s);
     s->u.reiserfs_sb.s_mount_state = REISERFS_VALID_FS ;
 
@@ -1033,6 +1096,8 @@ static struct super_block * reiserfs_read_super (struct super_block * s, void * 
     }
     // mark hash in super block: it could be unset. overwrite should be ok
     set_sb_hash_function_code( rs, function2code(s->u.reiserfs_sb.s_hash_function ) );
+
+    handle_attrs( s );
 
     reiserfs_proc_info_init( s );
     reiserfs_proc_register( s, "version", reiserfs_version_in_proc );

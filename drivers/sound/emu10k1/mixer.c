@@ -251,7 +251,7 @@ static int emu10k1_private_mixer(struct emu10k1_card *card, unsigned int cmd, un
 		case CMD_SETRECSRC:
 			switch (ctl->val[0]) {
 			case WAVERECORD_AC97:
-				if (card->isaps) {
+				if (card->is_aps) {
 					ret = -EINVAL;
 					break;
 				}
@@ -455,7 +455,7 @@ static int emu10k1_private_mixer(struct emu10k1_card *card, unsigned int cmd, un
 
 			card->mgr.ctrl_gpr[id][ch] = addr;
 
-			if (card->isaps)
+			if (card->is_aps)
 				break;
 
 			if (addr >= 0) {
@@ -558,7 +558,7 @@ static int emu10k1_private_mixer(struct emu10k1_card *card, unsigned int cmd, un
 
 				card->tankmem.size = size;
 
-				sblive_writeptr_tag(card, 0, TCB, card->tankmem.dma_handle, TCBS, size_reg, TAGLIST_END);
+				sblive_writeptr_tag(card, 0, TCB, (u32) card->tankmem.dma_handle, TCBS, size_reg, TAGLIST_END);
 
 				emu10k1_writefn0(card, HCFG_LOCKTANKCACHE, 0);
 			}
@@ -621,7 +621,7 @@ static int emu10k1_mixer_ioctl(struct inode *inode, struct file *file, unsigned 
 	unsigned int oss_mixer = _IOC_NR(cmd);
 	
 	ret = -EINVAL;
-	if (!card->isaps) {
+	if (!card->is_aps) {
 		if (cmd == SOUND_MIXER_INFO) {
 			mixer_info info;
 

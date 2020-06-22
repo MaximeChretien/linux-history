@@ -180,10 +180,12 @@ start_ap:
 	.rodata
 alive_msg:
 	stringz "I'm alive and well\n"
+alive_msg_end:
 	.previous
 
 	alloc r2=ar.pfs,0,0,2,0
 	movl out0=alive_msg
+	movl out1=alive_msg_end-alive_msg-1
 	;;
 	br.call.sptk.many rp=early_printk
 1:	// force new bundle

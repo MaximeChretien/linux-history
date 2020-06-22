@@ -3,8 +3,11 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
+#include <linux/config.h>
 #include <asm/processor.h> 
 #include <asm/msr.h>
+
+#ifdef CONFIG_X86_MCE
 
 static int mce_disabled __initdata = 0;
 
@@ -41,13 +44,12 @@ static void intel_machine_check(struct pt_regs * regs, long error_code)
 			if(high&(1<<27))
 			{
 				rdmsr(MSR_IA32_MC0_MISC+i*4, alow, ahigh);
-				printk("[%08x%08x]", alow, ahigh);
+				printk("[%08x%08x]", ahigh, alow);
 			}
 			if(high&(1<<26))
 			{
 				rdmsr(MSR_IA32_MC0_ADDR+i*4, alow, ahigh);
-				printk(" at %08x%08x", 
-					high, low);
+				printk(" at %08x%08x", ahigh, alow);
 			}
 			printk("\n");
 			/* Clear it */
@@ -247,3 +249,8 @@ static int __init mcheck_enable(char *str)
 
 __setup("nomce", mcheck_disable);
 __setup("mce", mcheck_enable);
+
+#else
+asmlinkage void do_machine_check(struct pt_regs * regs, long error_code) {}
+void __init mcheck_init(struct cpuinfo_x86 *c) {}
+#endif

@@ -24,7 +24,7 @@ subdir-$(CONFIG_NUBUS)		+= nubus
 subdir-$(CONFIG_TC)		+= tc
 subdir-$(CONFIG_VT)		+= video
 subdir-$(CONFIG_MAC)		+= macintosh
-subdir-$(CONFIG_ALL_PPC)	+= macintosh
+subdir-$(CONFIG_PPC)		+= macintosh
 subdir-$(CONFIG_USB)		+= usb
 subdir-$(CONFIG_INPUT)		+= input
 subdir-$(CONFIG_PHONE)		+= telephony
@@ -36,7 +36,7 @@ subdir-$(CONFIG_FUSION)		+= message/fusion
 subdir-$(CONFIG_MD)		+= md
 subdir-$(CONFIG_IEEE1394)	+= ieee1394
 subdir-$(CONFIG_PNP)		+= pnp
-subdir-$(CONFIG_ISDN)		+= isdn
+subdir-$(CONFIG_ISDN_BOOL)	+= isdn
 subdir-$(CONFIG_ATM)		+= atm
 subdir-$(CONFIG_FC4)		+= fc4
 

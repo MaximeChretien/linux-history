@@ -5,7 +5,7 @@
  *
  *		The Internet Protocol (IP) output module.
  *
- * Version:	$Id: ip_output.c,v 1.99 2001/10/15 12:34:50 davem Exp $
+ * Version:	$Id: ip_output.c,v 1.99.2.1 2002/03/10 04:26:08 davem Exp $
  *
  * Authors:	Ross Biro, <bir7@leland.Stanford.Edu>
  *		Fred N. van Kempen, <waltje@uWalt.NL.Mugnet.ORG>
@@ -134,9 +134,10 @@ int ip_build_and_send_pkt(struct sk_buff *skb, struct sock *sk,
 	iph->version  = 4;
 	iph->ihl      = 5;
 	iph->tos      = sk->protinfo.af_inet.tos;
-	iph->frag_off = 0;
 	if (ip_dont_fragment(sk, &rt->u.dst))
-		iph->frag_off |= htons(IP_DF);
+		iph->frag_off = htons(IP_DF);
+	else
+		iph->frag_off = 0;
 	iph->ttl      = sk->protinfo.af_inet.ttl;
 	iph->daddr    = rt->rt_dst;
 	iph->saddr    = rt->rt_src;
@@ -307,9 +308,6 @@ static inline int ip_queue_xmit2(struct sk_buff *skb)
 	if (skb->len > rt->u.dst.pmtu)
 		goto fragment;
 
-	if (ip_dont_fragment(sk, &rt->u.dst))
-		iph->frag_off |= __constant_htons(IP_DF);
-
 	ip_select_ident(iph, &rt->u.dst, sk);
 
 	/* Add an IP checksum. */
@@ -323,8 +321,8 @@ fragment:
 		/* Reject packet ONLY if TCP might fragment
 		 * it itself, if were careful enough.
 		 */
-		iph->frag_off |= __constant_htons(IP_DF);
-		NETDEBUG(printk(KERN_DEBUG "sending pkt_too_big to self\n"));
+		NETDEBUG(printk(KERN_DEBUG "sending pkt_too_big (len[%u] pmtu[%u]) to self\n",
+				skb->len, rt->u.dst.pmtu));
 
 		icmp_send(skb, ICMP_DEST_UNREACH, ICMP_FRAG_NEEDED,
 			  htonl(rt->u.dst.pmtu));
@@ -383,7 +381,10 @@ packet_routed:
 	iph = (struct iphdr *) skb_push(skb, sizeof(struct iphdr) + (opt ? opt->optlen : 0));
 	*((__u16 *)iph)	= htons((4 << 12) | (5 << 8) | (sk->protinfo.af_inet.tos & 0xff));
 	iph->tot_len = htons(skb->len);
-	iph->frag_off = 0;
+	if (ip_dont_fragment(sk, &rt->u.dst))
+		iph->frag_off = __constant_htons(IP_DF);
+	else
+		iph->frag_off = 0;
 	iph->ttl      = sk->protinfo.af_inet.ttl;
 	iph->protocol = sk->protocol;
 	iph->saddr    = rt->rt_src;

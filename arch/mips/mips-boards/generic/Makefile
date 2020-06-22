@@ -2,8 +2,6 @@
 # Carsten Langgaard, carstenl@mips.com
 # Copyright (C) 1999,2000 MIPS Technologies, Inc.  All rights reserved.
 #
-# ########################################################################
-#
 # This program is free software; you can distribute it and/or modify it
 # under the terms of the GNU General Public License (Version 2) as
 # published by the Free Software Foundation.
@@ -17,8 +15,6 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 59 Temple Place - Suite 330, Boston MA 02111-1307, USA.
 #
-# #######################################################################
-#
 # Makefile for the MIPS boards generic routines under Linux.
 #
 # Note! Dependencies are done automagically by 'make dep', which also
@@ -27,15 +23,13 @@
 #
 # Note 2! The CFLAGS definitions are now in the main makefile...
 
-.S.s:
-	$(CPP) $(CFLAGS) $< -o $*.s
-.S.o:
-	$(CC) $(CFLAGS) -c $< -o $*.o
+USE_STANDARD_AS_RULE := true
 
 O_TARGET := mipsboards.o
 
-obj-y				:= mipsIRQ.o pci.o reset.o display.o init.o \
+obj-y				:= mipsIRQ.o reset.o display.o init.o \
 				   memory.o printf.o cmdline.o time.o
+obj-$(CONFIG_PCI)		+= pci.o
 obj-$(CONFIG_REMOTE_DEBUG)	+= gdb_hook.o
 
 include $(TOPDIR)/Rules.make

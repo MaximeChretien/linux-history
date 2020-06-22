@@ -11,7 +11,8 @@
  *		   enable 32 bit fifo transfer
  *		   support cdrom & remove device run ultra speed
  *		   fix disconnect bug  2000/12/21
- *		   support atp880 chip lvd u160 2001/05/15 (7.1)
+ *		   support atp880 chip lvd u160 2001/05/15
+ *		   fix prd table bug 2001/09/12 (7.1)
  */
 
 #include <linux/module.h>
@@ -803,8 +804,18 @@ oktosend:
 		sgpnt = (struct scatterlist *) workrequ->request_buffer;
 		i = 0;
 		for (j = 0; j < workrequ->use_sg; j++) {
-			(unsigned long) (((unsigned long *) (prd))[i >> 1]) = virt_to_bus(sgpnt[j].address);
-			(unsigned short int) (((unsigned short int *) (prd))[i + 2]) = sgpnt[j].length;
+			bttl = virt_to_bus(sgpnt[j].address);
+			l = sgpnt[j].length;
+			while (l > 0x10000) {
+				(unsigned short int) (((unsigned short int *) (prd))[i + 3]) = 0x0000;
+				(unsigned short int) (((unsigned short int *) (prd))[i + 2]) = 0x0000;
+				(unsigned long) (((unsigned long *) (prd))[i >> 1]) = bttl;
+				l -= 0x10000;
+				bttl += 0x10000;
+				i += 0x04;
+			}
+			(unsigned long) (((unsigned long *) (prd))[i >> 1]) = bttl;
+			(unsigned short int) (((unsigned short int *) (prd))[i + 2]) = l;
 			(unsigned short int) (((unsigned short int *) (prd))[i + 3]) = 0;
 			i += 0x04;
 		}
@@ -2527,7 +2538,7 @@ int atp870u_detect(Scsi_Host_Template * tpnt)
 		   host_id = inb(base_io + 0x39);
 		   host_id >>= 0x04;
 
-		   printk(KERN_INFO "   ACARD AEC-67160 PCI Ultra160 LVD/SE SCSI Adapter: %d    IO:%x, IRQ:%d.\n"
+		   printk(KERN_INFO "   ACARD AEC-67160 PCI Ultra3 LVD Host Adapter: %d    IO:%x, IRQ:%d.\n"
 			  ,h, base_io, irq);
 		   dev->ioport = base_io + 0x40;
 		   dev->pciport = base_io + 0x28;
@@ -2764,7 +2775,7 @@ const char *atp870u_info(struct Scsi_Host *notused)
 {
 	static char buffer[128];
 
-	strcpy(buffer, "ACARD AEC-6710/6712/67160 PCI Ultra/W/LVD SCSI-3 Adapter Driver V2.5+ac ");
+	strcpy(buffer, "ACARD AEC-6710/6712/67160 PCI Ultra/W/LVD SCSI-3 Adapter Driver V2.6+ac ");
 
 	return buffer;
 }
@@ -2809,7 +2820,7 @@ int atp870u_proc_info(char *buffer, char **start, off_t offset, int length,
 	if (offset == 0) {
 		memset(buff, 0, sizeof(buff));
 	}
-	size += sprintf(BLS, "ACARD AEC-671X Driver Version: 2.5+ac\n");
+	size += sprintf(BLS, "ACARD AEC-671X Driver Version: 2.6+ac\n");
 	len += size;
 	pos = begin + len;
 	size = 0;

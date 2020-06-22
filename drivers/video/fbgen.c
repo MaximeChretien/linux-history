@@ -106,6 +106,7 @@ int fbgen_set_var(struct fb_var_screeninfo *var, int con, struct fb_info *info)
     struct fb_info_gen *info2 = (struct fb_info_gen *)info;
     int err;
     int oldxres, oldyres, oldbpp, oldxres_virtual, oldyres_virtual, oldyoffset;
+    struct fb_bitfield oldred, oldgreen, oldblue;
 
     if ((err = fbgen_do_set_var(var, con == currcon, info2)))
 	return err;
@@ -115,12 +116,18 @@ int fbgen_set_var(struct fb_var_screeninfo *var, int con, struct fb_info *info)
 	oldxres_virtual = fb_display[con].var.xres_virtual;
 	oldyres_virtual = fb_display[con].var.yres_virtual;
 	oldbpp = fb_display[con].var.bits_per_pixel;
+	oldred = fb_display[con].var.red;
+	oldgreen = fb_display[con].var.green;
+	oldblue = fb_display[con].var.blue;
 	oldyoffset = fb_display[con].var.yoffset;
 	fb_display[con].var = *var;
 	if (oldxres != var->xres || oldyres != var->yres ||
 	    oldxres_virtual != var->xres_virtual ||
 	    oldyres_virtual != var->yres_virtual ||
 	    oldbpp != var->bits_per_pixel ||
+	    (!(memcmp(&oldred, &(var->red), sizeof(struct fb_bitfield)))) || 
+	    (!(memcmp(&oldgreen, &(var->green), sizeof(struct fb_bitfield)))) ||
+	    (!(memcmp(&oldblue, &(var->blue), sizeof(struct fb_bitfield)))) ||
 	    oldyoffset != var->yoffset) {
 	    fbgen_set_disp(con, info2);
 	    if (info->changevar)
@@ -441,3 +448,21 @@ void fbgen_blank(int blank, struct fb_info *info)
 	fbgen_install_cmap(currcon, info2);
 }
 MODULE_LICENSE("GPL");
+
+
+    /*
+     *  Visible symbols for modules
+     */
+
+EXPORT_SYMBOL(fbgen_get_var);
+EXPORT_SYMBOL(fbgen_get_cmap);
+EXPORT_SYMBOL(fbgen_get_fix);
+EXPORT_SYMBOL(fbgen_set_var);
+EXPORT_SYMBOL(fbgen_set_cmap);
+EXPORT_SYMBOL(fbgen_set_disp);
+EXPORT_SYMBOL(fbgen_install_cmap);
+EXPORT_SYMBOL(fbgen_pan_display);
+EXPORT_SYMBOL(fbgen_update_var);
+EXPORT_SYMBOL(fbgen_do_set_var);
+EXPORT_SYMBOL(fbgen_switch);
+EXPORT_SYMBOL(fbgen_blank);

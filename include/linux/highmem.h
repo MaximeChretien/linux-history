@@ -64,7 +64,7 @@ static inline void memclear_highpage_flush(struct page *page, unsigned int offse
 	char *kaddr;
 
 	if (offset + size > PAGE_SIZE)
-		BUG();
+		out_of_line_bug();
 	kaddr = kmap(page);
 	memset(kaddr + offset, 0, size);
 	flush_dcache_page(page);

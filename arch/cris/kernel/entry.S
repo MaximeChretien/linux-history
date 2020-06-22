@@ -1,12 +1,15 @@
-/* $Id: entry.S,v 1.38 2002/01/16 15:15:30 bjornw Exp $
+/* $Id: entry.S,v 1.39 2002/04/24 00:46:45 bjornw Exp $
  *
  *  linux/arch/cris/entry.S
  *
- *  Copyright (C) 2000, 2001 Axis Communications AB
+ *  Copyright (C) 2000, 2001, 2002 Axis Communications AB
  *
  *  Authors:	Bjorn Wesen (bjornw@axis.com)
  *
  *  $Log: entry.S,v $
+ *  Revision 1.39  2002/04/24 00:46:45  bjornw
+ *  Added sys_tkill
+ *
  *  Revision 1.38  2002/01/16 15:15:30  bjornw
  *  Use a C-code compatible watchdog reset when NICE_DOGGY is enabled
  *
@@ -1013,7 +1016,8 @@ sys_call_table:
         .long SYMBOL_NAME(sys_ni_syscall)       /* Reserved for Security */
         .long SYMBOL_NAME(sys_gettid)
         .long SYMBOL_NAME(sys_readahead)        /* 225 */
-
+	.long SYMBOL_NAME(sys_tkill)
+	
         /*
          * NOTE!! This doesn't have to be exact - we just have
          * to make sure we have _enough_ of the "sys_ni_syscall"

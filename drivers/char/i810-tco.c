@@ -1,5 +1,5 @@
 /*
- *	i810-tco 0.02:	TCO timer driver for i810 chipsets
+ *	i810-tco 0.05:	TCO timer driver for i8xx chipsets
  *
  *	(c) Copyright 2000 kernel concepts <nils@kernelconcepts.de>, All Rights Reserved.
  *				http://www.kernelconcepts.de
@@ -9,25 +9,40 @@
  *	as published by the Free Software Foundation; either version
  *	2 of the License, or (at your option) any later version.
  *	
- *	Neither kernel concepts nor Nils Faerber admit liability nor provide 
- *	warranty for any of this software. This material is provided 
- *	"AS-IS" and at no charge.	
+ *	Neither kernel concepts nor Nils Faerber admit liability nor provide
+ *	warranty for any of this software. This material is provided
+ *	"AS-IS" and at no charge.
  *
  *	(c) Copyright 2000	kernel concepts <nils@kernelconcepts.de>
  *				developed for
  *                              Jentro AG, Haar/Munich (Germany)
  *
- *	TCO timer driver for i810/i815 chipsets
+ *	TCO timer driver for i8xx chipsets
  *	based on softdog.c by Alan Cox <alan@redhat.com>
  *
- *	The TCO timer is implemented in the 82801AA (82801AB) chip,
- *	see intel documentation from http://developer.intel.com,
- *	order number 290655-003
+ *	The TCO timer is implemented in the following I/O controller hubs:
+ *	(See the intel documentation on http://developer.intel.com.)
+ *	82801AA & 82801AB  chip : document number 290655-003, 290677-004,
+ *	82801BA & 82801BAM chip : document number 290687-002, 298242-005,
+ *	82801CA & 82801CAM chip : document number 290716-001, 290718-001,
+ *	82801DB & 82801E   chip : document number 290744-001, 273599-001
  *
  *  20000710 Nils Faerber
  *	Initial Version 0.01
  *  20000728 Nils Faerber
- *      0.02 Fix for SMI_EN->TCO_EN bit, some cleanups
+ *	0.02 Fix for SMI_EN->TCO_EN bit, some cleanups
+ *  20011214 Matt Domsch <Matt_Domsch@dell.com>
+ *	0.03 Added nowayout module option to override CONFIG_WATCHDOG_NOWAYOUT
+ *	     Didn't add timeout option as i810_margin already exists.
+ *  20020224 Joel Becker, Wim Van Sebroeck
+ *	0.04 Support for 82801CA(M) chipset, timer margin needs to be > 3,
+ *	     add support for WDIOC_SETTIMEOUT and WDIOC_GETTIMEOUT.
+ *  20020412 Rob Radez <rob@osinvestor.com>, Wim Van Sebroeck
+ *	0.05 Fix possible timer_alive race, add expect close support,
+ *	     clean up ioctls (WDIOC_GETSTATUS, WDIOC_GETBOOTSTATUS and
+ *	     WDIOC_SETOPTIONS), made i810tco_getdevice __init,
+ *	     removed boot_status, removed tco_timer_read,
+ *	     added support for 82801DB and 82801E chipset, general cleanup.
  */
  
 #include <linux/module.h>
@@ -46,30 +61,41 @@
 #include "i810-tco.h"
 
 
-/* Just in case that the PCI vendor and device IDs are not yet defined */
-#ifndef PCI_DEVICE_ID_INTEL_82801AA_0
-#define PCI_DEVICE_ID_INTEL_82801AA_0	0x2410
-#endif
+/* Module and version information */
+#define TCO_VERSION "0.05"
+#define TCO_MODULE_NAME "i810 TCO timer"
+#define TCO_DRIVER_NAME   TCO_MODULE_NAME ", v" TCO_VERSION
 
 /* Default expire timeout */
-#define TIMER_MARGIN	50	/* steps of 0.6sec, 2<n<64. Default is 30 seconds */
+#define TIMER_MARGIN	50	/* steps of 0.6sec, 3<n<64. Default is 30 seconds */
 
 static unsigned int ACPIBASE;
 static spinlock_t tco_lock;	/* Guards the hardware */
 
 static int i810_margin = TIMER_MARGIN;	/* steps of 0.6sec */
 
-MODULE_PARM (i810_margin, "i");
+MODULE_PARM(i810_margin, "i");
+MODULE_PARM_DESC(i810_margin, "i810-tco timeout in steps of 0.6sec, 3<n<64. Default = 50 (30 seconds)");
+
+#ifdef CONFIG_WATCHDOG_NOWAYOUT
+static int nowayout = 1;
+#else
+static int nowayout = 0;
+#endif
+
+MODULE_PARM(nowayout,"i");
+MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default=CONFIG_WATCHDOG_NOWAYOUT)");
+
 
 /*
  *	Timer active flag
  */
 
-static int timer_alive;
-static int boot_status;
+static unsigned long timer_alive;
+static char tco_expect_close;
 
 /*
- * Some i810 specific functions
+ * Some TCO specific functions
  */
 
 
@@ -120,7 +146,7 @@ static int tco_timer_settimer (unsigned char tmrval)
 
 	/* from the specs: */
 	/* "Values of 0h-3h are ignored and should not be attempted" */
-	if (tmrval > 0x3f || tmrval < 0x03)
+	if (tmrval > 0x3f || tmrval < 0x04)
 		return -1;
 	
 	spin_lock(&tco_lock);
@@ -150,21 +176,12 @@ static void tco_timer_reload (void)
 }
 
 /*
- * Read the current timer value
- */
-static unsigned char tco_timer_read (void)
-{
-	return (inb (TCO1_RLD));
-}
-
-
-/*
  *	Allow only one person to hold it open
  */
 
 static int i810tco_open (struct inode *inode, struct file *file)
 {
-	if (timer_alive)
+	if (test_and_set_bit(0, &timer_alive))
 		return -EBUSY;
 
 	/*
@@ -172,7 +189,6 @@ static int i810tco_open (struct inode *inode, struct file *file)
 	 */
 	tco_timer_reload ();
 	tco_timer_start ();
-	timer_alive = 1;
 	return 0;
 }
 
@@ -181,10 +197,14 @@ static int i810tco_release (struct inode *inode, struct file *file)
 	/*
 	 *      Shut off the timer.
 	 */
-#ifndef CONFIG_WATCHDOG_NOWAYOUT
-	tco_timer_stop ();
-	timer_alive = 0;
-#endif	
+	if (tco_expect_close == 42 && !nowayout) {
+		tco_timer_stop ();
+	} else {
+		tco_timer_reload ();
+		printk(KERN_CRIT TCO_MODULE_NAME ": Unexpected close, not stopping watchdog!\n");
+	}
+	clear_bit(0, &timer_alive);
+	tco_expect_close = 0;
 	return 0;
 }
 
@@ -195,10 +215,19 @@ static ssize_t i810tco_write (struct file *file, const char *data,
 	if (ppos != &file->f_pos)
 		return -ESPIPE;
 
-	/*
-	 *      Refresh the timer.
-	 */
+	/* See if we got the magic character 'V' and reload the timer */
 	if (len) {
+		size_t i;
+
+		tco_expect_close = 0;
+
+		/* scan to see wether or not we got the magic character */
+		for (i = 0; i != len; i++) {
+			if (data[i] == 'V')
+				tco_expect_close = 42;
+		}
+
+		/* someone wrote to us, we should reload the timer */
 		tco_timer_reload ();
 		return 1;
 	}
@@ -209,41 +238,53 @@ static int i810tco_ioctl (struct inode *inode, struct file *file,
 			  unsigned int cmd, unsigned long arg)
 {
 	int new_margin, u_margin;
+	int options, retval = -EINVAL;
 
 	static struct watchdog_info ident = {
-		WDIOF_SETTIMEOUT | WDIOF_KEEPALIVEPING,
-		0,
-		"i810 TCO timer"
+		options:		WDIOF_SETTIMEOUT | WDIOF_KEEPALIVEPING,
+		firmware_version:	0,
+		identity:		"i810 TCO timer",
 	};
 	switch (cmd) {
-	default:
-		return -ENOTTY;
-	case WDIOC_GETSUPPORT:
-		if (copy_to_user
-		    ((struct watchdog_info *) arg, &ident, sizeof (ident)))
-			return -EFAULT;
-		return 0;
-	case WDIOC_GETSTATUS:
-		return put_user (tco_timer_read (),
-				 (unsigned int *) (int) arg);
-	case WDIOC_GETBOOTSTATUS:
-		return put_user (boot_status, (int *) arg);
-	case WDIOC_KEEPALIVE:
-		tco_timer_reload ();
-		return 0;
-	case WDIOC_SETTIMEOUT:
-		if (get_user(u_margin, (int *) arg))
-			return -EFAULT;
-		new_margin = (u_margin * 10 + 5) / 6;
-		if ((new_margin < 3) || (new_margin > 63))
-			return -EINVAL;
-		if (tco_timer_settimer((unsigned char)new_margin))
-		    return -EINVAL;
-		i810_margin = new_margin;
-		tco_timer_reload();
-		/* Fall */
-	case WDIOC_GETTIMEOUT:
-		return put_user((int)(i810_margin * 6 / 10), (int *) arg);
+		default:
+			return -ENOTTY;
+		case WDIOC_GETSUPPORT:
+			if (copy_to_user
+			    ((struct watchdog_info *) arg, &ident, sizeof (ident)))
+				return -EFAULT;
+			return 0;
+		case WDIOC_GETSTATUS:
+		case WDIOC_GETBOOTSTATUS:
+			return put_user (0, (int *) arg);
+		case WDIOC_SETOPTIONS:
+			if (get_user (options, (int *) arg))
+				return -EFAULT;
+			if (options & WDIOS_DISABLECARD) {
+				tco_timer_stop ();
+				retval = 0;
+			}
+			if (options & WDIOS_ENABLECARD) {
+				tco_timer_reload ();
+				tco_timer_start ();
+				retval = 0;
+			}
+			return retval;
+		case WDIOC_KEEPALIVE:
+			tco_timer_reload ();
+			return 0;
+		case WDIOC_SETTIMEOUT:
+			if (get_user (u_margin, (int *) arg))
+				return -EFAULT;
+			new_margin = (u_margin * 10 + 5) / 6;
+			if ((new_margin < 4) || (new_margin > 63))
+				return -EINVAL;
+			if (tco_timer_settimer ((unsigned char) new_margin))
+			    return -EINVAL;
+			i810_margin = new_margin;
+			tco_timer_reload ();
+			/* Fall */
+		case WDIOC_GETTIMEOUT:
+			return put_user ((int)(i810_margin * 6 / 10), (int *) arg);
 	}
 }
 
@@ -260,13 +301,17 @@ static struct pci_device_id i810tco_pci_tbl[] __initdata = {
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801AB_0,	PCI_ANY_ID, PCI_ANY_ID, },
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801BA_0,	PCI_ANY_ID, PCI_ANY_ID, },
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801BA_10,	PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801CA_0,	PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801CA_12,	PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801DB_0,	PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801E_0,	PCI_ANY_ID, PCI_ANY_ID, },
 	{ 0, },
 };
 MODULE_DEVICE_TABLE (pci, i810tco_pci_tbl);
 
 static struct pci_dev *i810tco_pci;
 
-static unsigned char i810tco_getdevice (void)
+static unsigned char __init i810tco_getdevice (void)
 {
 	struct pci_dev *dev;
 	u8 val1, val2;
@@ -294,7 +339,7 @@ static unsigned char i810tco_getdevice (void)
 		ACPIBASE = badr;
 		/* Something's wrong here, ACPIBASE has to be set */
 		if (badr == 0x0001 || badr == 0x0000) {
-			printk (KERN_ERR "i810tco init: failed to get TCOBASE address\n");
+			printk (KERN_ERR TCO_MODULE_NAME " init: failed to get TCOBASE address\n");
 			return 0;
 		}
 		/*
@@ -306,7 +351,7 @@ static unsigned char i810tco_getdevice (void)
 			pci_write_config_byte (i810tco_pci, 0xd4, val1);
 			pci_read_config_byte (i810tco_pci, 0xd4, &val1);
 			if (val1 & 0x02) {
-				printk (KERN_ERR "i810tco init: failed to reset NO_REBOOT flag, reboot disabled by hardware\n");
+				printk (KERN_ERR TCO_MODULE_NAME " init: failed to reset NO_REBOOT flag, reboot disabled by hardware\n");
 				return 0;	/* Cannot reset NO_REBOOT bit */
 			}
 		}
@@ -316,7 +361,6 @@ static unsigned char i810tco_getdevice (void)
 		outb (val1, SMI_EN + 1);
 		/* Clear out the (probably old) status */
 		outb (0, TCO1_STS);
-		boot_status = (int) inb (TCO2_STS);
 		outb (3, TCO2_STS);
 		return 1;
 	}
@@ -332,9 +376,9 @@ static struct file_operations i810tco_fops = {
 };
 
 static struct miscdevice i810tco_miscdev = {
-	WATCHDOG_MINOR,
-	"watchdog",
-	&i810tco_fops
+	minor:		WATCHDOG_MINOR,
+	name:		"watchdog",
+	fops:		&i810tco_fops,
 };
 
 static int __init watchdog_init (void)
@@ -343,22 +387,22 @@ static int __init watchdog_init (void)
 	if (!i810tco_getdevice () || i810tco_pci == NULL)
 		return -ENODEV;
 	if (!request_region (TCOBASE, 0x10, "i810 TCO")) {
-		printk (KERN_ERR
-			"i810 TCO timer: I/O address 0x%04x already in use\n",
+		printk (KERN_ERR TCO_MODULE_NAME
+			": I/O address 0x%04x already in use\n",
 			TCOBASE);
 		return -EIO;
 	}
 	if (misc_register (&i810tco_miscdev) != 0) {
 		release_region (TCOBASE, 0x10);
-		printk (KERN_ERR "i810 TCO timer: cannot register miscdev\n");
+		printk (KERN_ERR TCO_MODULE_NAME ": cannot register miscdev\n");
 		return -EIO;
 	}
 	tco_timer_settimer ((unsigned char) i810_margin);
 	tco_timer_reload ();
 
-	printk (KERN_INFO
-		"i810 TCO timer: V0.02, timer margin: %d sec (0x%04x)\n",
-		(int) (i810_margin * 6 / 10), TCOBASE);
+	printk (KERN_INFO TCO_DRIVER_NAME
+		": timer margin: %d sec (0x%04x) (nowayout=%d)\n",
+		(int) (i810_margin * 6 / 10), TCOBASE, nowayout);
 	return 0;
 }
 
@@ -379,4 +423,7 @@ static void __exit watchdog_cleanup (void)
 module_init(watchdog_init);
 module_exit(watchdog_cleanup);
 
+MODULE_AUTHOR("Nils Faerber");
+MODULE_DESCRIPTION("TCO timer driver for i8xx chipsets");
 MODULE_LICENSE("GPL");
+EXPORT_NO_SYMBOLS;

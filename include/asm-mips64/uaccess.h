@@ -56,7 +56,7 @@
 #define access_ok(type,addr,size) \
 	__access_ok(((unsigned long)(addr)),(size),__access_mask)
 
-extern inline int verify_area(int type, const void * addr, unsigned long size)
+static inline int verify_area(int type, const void * addr, unsigned long size)
 {
 	return access_ok(type,addr,size) ? 0 : -EFAULT;
 }
@@ -219,107 +219,106 @@ extern void __put_user_unknown(void);
 
 extern size_t __copy_user(void *__to, const void *__from, size_t __n);
 
-#define __copy_to_user(to,from,n)				\
-({								\
-	void *__cu_to;						\
-	const void *__cu_from;					\
-	long __cu_len;						\
-								\
-	__cu_to = (to);						\
-	__cu_from = (from);					\
-	__cu_len = (n);						\
-	__asm__ __volatile__(					\
-	"move\t$4, %1\n\t"					\
-	"move\t$5, %2\n\t"					\
-	"move\t$6, %3\n\t"					\
-	__MODULE_JAL(__copy_user)				\
-	"move\t%0, $6"						\
-	: "=r" (__cu_len)					\
-	: "r" (__cu_to), "r" (__cu_from), "r" (__cu_len)	\
-	: "$4", "$5", "$6", "$8", "$9", "$10", "$11", "$12",	\
-	  "$15", "$24", "$31","memory");			\
-	__cu_len;						\
+#define __invoke_copy_to_user(to,from,n)				\
+({									\
+	register void *__cu_to_r __asm__ ("$4");			\
+	register const void *__cu_from_r __asm__ ("$5");		\
+	register long __cu_len_r __asm__ ("$6");			\
+									\
+	__cu_to_r = (to);						\
+	__cu_from_r = (from);						\
+	__cu_len_r = (n);						\
+	__asm__ __volatile__(						\
+	__MODULE_JAL(__copy_user)					\
+	: "+r" (__cu_to_r), "+r" (__cu_from_r), "+r" (__cu_len_r)	\
+	:								\
+	: "$8", "$9", "$10", "$11", "$12", "$15", "$24", "$31",		\
+	  "memory");							\
+	__cu_len_r;							\
 })
 
-#define __copy_from_user(to,from,n)				\
-({								\
-	void *__cu_to;						\
-	const void *__cu_from;					\
-	long __cu_len;						\
-								\
-	__cu_to = (to);						\
-	__cu_from = (from);					\
-	__cu_len = (n);						\
-	__asm__ __volatile__(					\
-	"move\t$4, %1\n\t"					\
-	"move\t$5, %2\n\t"					\
-	"move\t$6, %3\n\t"					\
-	".set\tnoreorder\n\t"					\
-	__MODULE_JAL(__copy_user)				\
-	".set\tnoat\n\t"					\
-	"daddu\t$1, %2, %3\n\t"					\
-	".set\tat\n\t"						\
-	".set\treorder\n\t"					\
-	"move\t%0, $6"						\
-	: "=r" (__cu_len)					\
-	: "r" (__cu_to), "r" (__cu_from), "r" (__cu_len)	\
-	: "$4", "$5", "$6", "$8", "$9", "$10", "$11", "$12",	\
-	  "$15", "$24", "$31","memory");			\
-	__cu_len;						\
+#define __copy_to_user(to,from,n)					\
+({									\
+	void *__cu_to;							\
+	const void *__cu_from;						\
+	long __cu_len;							\
+									\
+	__cu_to = (to);							\
+	__cu_from = (from);						\
+	__cu_len = (n);							\
+	__cu_len = __invoke_copy_to_user(__cu_to, __cu_from, __cu_len);	\
+	__cu_len;							\
 })
 
-#define copy_to_user(to,from,n)					\
-({								\
-	void *__cu_to;						\
-	const void *__cu_from;					\
-	long __cu_len;						\
-								\
-	__cu_to = (to);						\
-	__cu_from = (from);					\
-	__cu_len = (n);						\
-	if (access_ok(VERIFY_WRITE, __cu_to, __cu_len))		\
-		__asm__ __volatile__(				\
-		"move\t$4, %1\n\t"				\
-		"move\t$5, %2\n\t"				\
-		"move\t$6, %3\n\t"				\
-		__MODULE_JAL(__copy_user)			\
-		"move\t%0, $6"					\
-		: "=r" (__cu_len)				\
-		: "r" (__cu_to), "r" (__cu_from), "r" (__cu_len) \
-		: "$4", "$5", "$6", "$8", "$9", "$10", "$11",	\
-		  "$12", "$15", "$24", "$31","memory");		\
-	__cu_len;						\
+#define copy_to_user(to,from,n)						\
+({									\
+	void *__cu_to;							\
+	const void *__cu_from;						\
+	long __cu_len;							\
+									\
+	__cu_to = (to);							\
+	__cu_from = (from);						\
+	__cu_len = (n);							\
+	if (access_ok(VERIFY_WRITE, __cu_to, __cu_len))			\
+		__cu_len = __invoke_copy_to_user(__cu_to, __cu_from,	\
+		                                __cu_len);		\
+	__cu_len;							\
 })
 
-#define copy_from_user(to,from,n)				\
-({								\
-	void *__cu_to;						\
-	const void *__cu_from;					\
-	long __cu_len;						\
-								\
-	__cu_to = (to);						\
-	__cu_from = (from);					\
-	__cu_len = (n);						\
-	if (access_ok(VERIFY_READ, __cu_from, __cu_len))	\
-		__asm__ __volatile__(				\
-		"move\t$4, %1\n\t"				\
-		"move\t$5, %2\n\t"				\
-		"move\t$6, %3\n\t"				\
-		".set\tnoreorder\n\t"				\
-		__MODULE_JAL(__copy_user)			\
-		".set\tnoat\n\t"				\
-		"daddu\t$1, %2, %3\n\t"				\
-		".set\tat\n\t"					\
-		".set\treorder\n\t"				\
-		"move\t%0, $6"					\
-		: "=r" (__cu_len)				\
-		: "r" (__cu_to), "r" (__cu_from), "r" (__cu_len) \
-		: "$4", "$5", "$6", "$8", "$9", "$10", "$11",	\
-		  "$12", "$15", "$24", "$31","memory");		\
-	__cu_len;						\
+#define __invoke_copy_from_user(to,from,n)				\
+({									\
+	register void *__cu_to_r __asm__ ("$4");			\
+	register const void *__cu_from_r __asm__ ("$5");		\
+	register long __cu_len_r __asm__ ("$6");			\
+									\
+	__cu_to_r = (to);						\
+	__cu_from_r = (from);						\
+	__cu_len_r = (n);						\
+	__asm__ __volatile__(						\
+	".set\tnoreorder\n\t"						\
+	__MODULE_JAL(__copy_user)					\
+	".set\tnoat\n\t"						\
+	"daddu\t$1, %1, %2\n\t"						\
+	".set\tat\n\t"							\
+	".set\treorder\n\t"						\
+	"move\t%0, $6"							\
+	: "+r" (__cu_to_r), "+r" (__cu_from_r), "+r" (__cu_len_r)	\
+	:								\
+	: "$8", "$9", "$10", "$11", "$12", "$15", "$24", "$31",		\
+	  "memory");							\
+	__cu_len_r;							\
 })
 
-extern inline __kernel_size_t
+#define __copy_from_user(to,from,n)					\
+({									\
+	void *__cu_to;							\
+	const void *__cu_from;						\
+	long __cu_len;							\
+									\
+	__cu_to = (to);							\
+	__cu_from = (from);						\
+	__cu_len = (n);							\
+	__cu_len = __invoke_copy_from_user(__cu_to, __cu_from,		\
+	                                   __cu_len);			\
+	__cu_len;							\
+})
+
+#define copy_from_user(to,from,n)					\
+({									\
+	void *__cu_to;							\
+	const void *__cu_from;						\
+	long __cu_len;							\
+									\
+	__cu_to = (to);							\
+	__cu_from = (from);						\
+	__cu_len = (n);							\
+	if (access_ok(VERIFY_READ, __cu_from, __cu_len))		\
+		__cu_len = __invoke_copy_from_user(__cu_to, __cu_from,	\
+		                                   __cu_len);		\
+	__cu_len;							\
+})
+
+static inline __kernel_size_t
 __clear_user(void *addr, __kernel_size_t size)
 {
 	__kernel_size_t res;
@@ -351,7 +350,7 @@ __clear_user(void *addr, __kernel_size_t size)
  * Returns: -EFAULT if exception before terminator, N if the entire
  * buffer filled, else strlen.
  */
-extern inline long
+static inline long
 __strncpy_from_user(char *__to, const char *__from, long __len)
 {
 	long res;
@@ -369,7 +368,7 @@ __strncpy_from_user(char *__to, const char *__from, long __len)
 	return res;
 }
 
-extern inline long
+static inline long
 strncpy_from_user(char *__to, const char *__from, long __len)
 {
 	long res;
@@ -388,7 +387,7 @@ strncpy_from_user(char *__to, const char *__from, long __len)
 }
 
 /* Returns: 0 if bad, string length+1 (memory size) of string if ok */
-extern inline long __strlen_user(const char *s)
+static inline long __strlen_user(const char *s)
 {
 	long res;
 
@@ -403,7 +402,7 @@ extern inline long __strlen_user(const char *s)
 	return res;
 }
 
-extern inline long strlen_user(const char *s)
+static inline long strlen_user(const char *s)
 {
 	long res;
 
@@ -419,7 +418,7 @@ extern inline long strlen_user(const char *s)
 }
 
 /* Returns: 0 if bad, string length+1 (memory size) of string if ok */
-extern inline long __strnlen_user(const char *s, long n)
+static inline long __strnlen_user(const char *s, long n)
 {
 	long res;
 
@@ -435,7 +434,7 @@ extern inline long __strnlen_user(const char *s, long n)
 	return res;
 }
 
-extern inline long strnlen_user(const char *s, long n)
+static inline long strnlen_user(const char *s, long n)
 {
 	long res;
 

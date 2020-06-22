@@ -1,4 +1,4 @@
-/* $Id: ebus.c,v 1.64 2001/11/08 04:41:33 davem Exp $
+/* $Id: ebus.c,v 1.64.2.1 2002/03/12 18:46:14 davem Exp $
  * ebus.c: PCI to EBus bridge device.
  *
  * Copyright (C) 1997  Eddie C. Dost  (ecd@skynet.be)
@@ -32,7 +32,7 @@ static inline void *ebus_alloc(size_t size)
 
 	mem = kmalloc(size, GFP_ATOMIC);
 	if (!mem)
-		panic(__FUNCTION__ ": out of memory");
+		panic("ebus_alloc: out of memory");
 	memset((char *)mem, 0, size);
 	return mem;
 }
@@ -66,7 +66,7 @@ static void __init ebus_intmap_init(struct linux_ebus *ebus)
 				   (char *)&ebus->ebus_intmask,
 				   sizeof(ebus->ebus_intmask));
 	if (success == -1) {
-		prom_printf("%s: can't get interrupt-map-mask\n", __FUNCTION__);
+		prom_printf("ebus: can't get interrupt-map-mask\n");
 		prom_halt();
 	}
 }
@@ -125,7 +125,7 @@ void __init fill_ebus_child(int node, struct linux_prom_registers *preg,
 			if (rnum >= dev->parent->num_addrs) {
 				prom_printf("UGH: property for %s was %d, need < %d\n",
 					    dev->prom_name, len, dev->parent->num_addrs);
-				panic(__FUNCTION__);
+				panic("fill_ebus_child");
 			}
 			dev->resource[i].start = dev->parent->resource[i].start;
 			dev->resource[i].end = dev->parent->resource[i].end;
@@ -208,7 +208,8 @@ void __init fill_ebus_device(int node, struct linux_ebus_device *dev)
 	dev->num_addrs = len / sizeof(struct linux_prom_registers);
 
 	for (i = 0; i < dev->num_addrs; i++) {
-		if (dev->bus->is_rio == 0)
+		/* XXX Learn how to interpret ebus ranges... -DaveM */
+		if (regs[i].which_io >= 0x10)
 			n = (regs[i].which_io - 0x10) >> 2;
 		else
 			n = regs[i].which_io;
@@ -274,6 +275,25 @@ probe_interrupts:
 	printk("]");
 }
 
+static struct pci_dev *find_next_ebus(struct pci_dev *start, int *is_rio_p)
+{
+	struct pci_dev *pdev = start;
+
+	do {
+		pdev = pci_find_device(PCI_VENDOR_ID_SUN, PCI_ANY_ID, pdev);
+		if (pdev &&
+		    (pdev->device == PCI_DEVICE_ID_SUN_EBUS ||
+		     pdev->device == PCI_DEVICE_ID_SUN_RIO_EBUS))
+			break;
+	} while (pdev != NULL);
+
+	if (pdev && (pdev->device == PCI_DEVICE_ID_SUN_RIO_EBUS))
+		*is_rio_p = 1;
+	else
+		*is_rio_p = 0;
+
+	return pdev;
+}
 
 void __init ebus_init(void)
 {
@@ -288,12 +308,7 @@ void __init ebus_init(void)
 	if (!pci_present())
 		return;
 
-	is_rio = 0;
-	pdev = pci_find_device(PCI_VENDOR_ID_SUN, PCI_DEVICE_ID_SUN_EBUS, 0);
-	if (!pdev) {
-		pdev = pci_find_device(PCI_VENDOR_ID_SUN, PCI_DEVICE_ID_SUN_RIO_EBUS, 0);
-		is_rio = 1;
-	}
+	pdev = find_next_ebus(NULL, &is_rio);
 	if (!pdev) {
 		printk("ebus: No EBus's found.\n");
 		return;
@@ -314,16 +329,7 @@ void __init ebus_init(void)
 		   we'd have to tweak with the ebus_chain
 		   in the runtime after initialization. -jj */
 		if (!prom_getchild (ebusnd)) {
-			struct pci_dev *orig_pdev = pdev;
-
-			is_rio = 0;
-			pdev = pci_find_device(PCI_VENDOR_ID_SUN, 
-					       PCI_DEVICE_ID_SUN_EBUS, orig_pdev);
-			if (!pdev) {
-				pdev = pci_find_device(PCI_VENDOR_ID_SUN, 
-						       PCI_DEVICE_ID_SUN_RIO_EBUS, orig_pdev);
-				is_rio = 1;
-			}
+			pdev = find_next_ebus(pdev, &is_rio);
 			if (!pdev) {
 				if (ebus == ebus_chain) {
 					ebus_chain = NULL;
@@ -373,20 +379,9 @@ void __init ebus_init(void)
 	next_ebus:
 		printk("\n");
 
-		{
-			struct pci_dev *orig_pdev = pdev;
-
-			is_rio = 0;
-			pdev = pci_find_device(PCI_VENDOR_ID_SUN,
-					       PCI_DEVICE_ID_SUN_EBUS, orig_pdev);
-			if (!pdev) {
-				pdev = pci_find_device(PCI_VENDOR_ID_SUN,
-						       PCI_DEVICE_ID_SUN_RIO_EBUS, orig_pdev);
-				is_rio = 1;
-			}
-			if (!pdev)
-				break;
-		}
+		pdev = find_next_ebus(pdev, &is_rio);
+		if (!pdev)
+			break;
 
 		cookie = pdev->sysdata;
 		ebusnd = cookie->prom_node;

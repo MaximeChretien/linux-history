@@ -14,22 +14,9 @@
 #ifdef __KERNEL__
 
 #include <linux/config.h>
-
-struct hwclk_time {
-	unsigned	sec;	/* 0..59 */
-	unsigned	min;	/* 0..59 */
-	unsigned	hour;	/* 0..23 */
-	unsigned	day;	/* 1..31 */
-	unsigned	mon;	/* 0..11 */
-	unsigned	year;	/* 70... */
-	int		wday;	/* 0..6, 0 is Sunday, -1 means unknown/don't set */
-};
-
-/* a few implementation details for the emulation : */
-
-extern unsigned gen_rtc_irq_flags; /* which sort(s) of interrupts caused int */
-extern unsigned gen_rtc_irq_ctrl;  /*                             are enabled */
-extern short q40rtc_oldsecs;
+#include <linux/rtc.h>
+#include <linux/delay.h>
+#include <asm/machdep.h>
 
 #define RTC_PIE 0x40		/* periodic interrupt enable */
 #define RTC_AIE 0x20		/* alarm interrupt enable */

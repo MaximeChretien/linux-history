@@ -34,21 +34,8 @@ typedef struct { volatile int counter; } __attribute__ ((aligned (4))) atomic_t;
                              : "=&d" (old_val), "=&d" (new_val)		\
 			     : "a" (ptr), "d" (op_val) : "cc" );
 
-static __inline__ int atomic_read(atomic_t *v)
-{
-        int retval;
-        __asm__ __volatile__("bcr      15,0\n\t"
-                             "l        %0,%1"
-                             : "=d" (retval) : "m" (*v) );
-        return retval;
-}
-
-static __inline__ void atomic_set(atomic_t *v, int i)
-{
-        __asm__ __volatile__("st  %1,%0\n\t"
-                             "bcr 15,0"
-                             : "=m" (*v) : "d" (i) );
-}
+#define atomic_read(v)          ((v)->counter)
+#define atomic_set(v,i)         (((v)->counter) = (i))
 
 static __inline__ void atomic_add(int i, atomic_t *v)
 {

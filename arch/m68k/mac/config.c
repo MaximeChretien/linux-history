@@ -64,7 +64,7 @@ unsigned long mac_orig_videoaddr;
 /* Mac specific timer functions */
 extern void mac_gettod (int *, int *, int *, int *, int *, int *);
 extern unsigned long mac_gettimeoffset (void);
-extern int mac_hwclk (int, struct hwclk_time *);
+extern int mac_hwclk (int, struct rtc_time *);
 extern int mac_set_clock_mmss (unsigned long);
 extern int mac_get_irq_list(char *);
 extern void iop_preinit(void);

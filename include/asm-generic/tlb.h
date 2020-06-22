@@ -55,8 +55,9 @@ static inline mmu_gather_t *tlb_gather_mmu(struct mm_struct *mm)
 #define tlb_remove_page(ctxp, pte, addr) do {\
 		/* Handle the common case fast, first. */\
 		if ((ctxp)->nr == ~0UL) {\
-			__free_pte(*(pte));\
-			pte_clear((pte));\
+			pte_t __pte = *(pte);\
+			pte_clear(pte);\
+			__free_pte(__pte);\
 			break;\
 		}\
 		if (!(ctxp)->nr) \

@@ -1,4 +1,4 @@
-/* $Id: ultra.S,v 1.70 2001/11/29 16:42:10 kanoj Exp $
+/* $Id: ultra.S,v 1.70.2.1 2002/03/03 10:31:56 davem Exp $
  * ultra.S: Don't expand these all over the place...
  *
  * Copyright (C) 1997, 2000 David S. Miller (davem@redhat.com)
@@ -10,6 +10,8 @@
 #include <asm/page.h>
 #include <asm/spitfire.h>
 #include <asm/mmu_context.h>
+#include <asm/pil.h>
+#include <asm/head.h>
 
 	/* Basically, all this madness has to do with the
 	 * fact that Cheetah does not support IMMU flushes
@@ -489,6 +491,15 @@ xcall_flush_tlb_range:
 	nop
 	nop
 
+	/* NOTE: This is SPECIAL!!  We do etrap/rtrap however
+	 *       we choose to deal with the "BH's run with
+	 *       %pil==15" problem (described in asm/pil.h)
+	 *       by just invoking rtrap directly past where
+	 *       BH's are checked for.
+	 *
+	 *       We do it like this because we do not want %pil==15
+	 *       lockups to prevent regs being reported.
+	 */
 	.globl		xcall_report_regs
 xcall_report_regs:
 	rdpr		%pstate, %g2
@@ -500,8 +511,10 @@ xcall_report_regs:
 109:	 or		%g7, %lo(109b), %g7
 	call		__show_regs
 	 add		%sp, STACK_BIAS + REGWIN_SZ, %o0
-	b,pt		%xcc, rtrap
-	 clr		%l6
+	clr		%l6
+	/* Has to be a non-v9 branch due to the large distance. */
+	b		rtrap_xcall
+	 ldx		[%sp + PTREGS_OFF + PT_V9_TSTATE], %l1
 
 	.align		32
 	.globl		xcall_flush_dcache_page_cheetah
@@ -550,20 +563,6 @@ xcall_flush_dcache_page_spitfire: /* %g1 == physical page address
 	nop
 	nop
 
-	.globl		xcall_capture
-xcall_capture:
-	rdpr		%pstate, %g2
-	wrpr		%g2, PSTATE_IG | PSTATE_AG, %pstate
-	rdpr		%pil, %g2
-	wrpr		%g0, 15, %pil
-	sethi		%hi(109f), %g7
-	b,pt		%xcc, etrap_irq
-109:	 or		%g7, %lo(109b), %g7
-	call		smp_penguin_jailcell
-	 nop
-	b,pt		%xcc, rtrap
-	 clr		%l6
-
 	.globl		xcall_promstop
 xcall_promstop:
 	rdpr		%pstate, %g2
@@ -579,21 +578,6 @@ xcall_promstop:
 	/* We should not return, just spin if we do... */
 1:	b,a,pt		%xcc, 1b
 	nop
-
-	.globl		xcall_receive_signal
-xcall_receive_signal:
-	rdpr		%pstate, %g2
-	wrpr		%g2, PSTATE_IG | PSTATE_AG, %pstate
-	rdpr		%tstate, %g1
-	andcc		%g1, TSTATE_PRIV, %g0
-	/* If we did not trap from user space, just ignore. */
-	bne,pn		%xcc, 99f
-	 sethi		%hi(109f), %g7
-	b,pt		%xcc, etrap
-109:	 or		%g7, %lo(109b), %g7
-	b,pt		%xcc, rtrap
-	 clr		%l6
-99:	retry
 
 	.data
 
@@ -677,18 +661,20 @@ __spitfire_xcall_flush_cache_all:
 __cheetah_xcall_flush_cache_all:
 	retry
 
+	/* These just get rescheduled to PIL vectors. */
 	.globl		xcall_call_function
 xcall_call_function:
-	rdpr		%pstate, %g2
-	wrpr		%g2, PSTATE_IG | PSTATE_AG, %pstate
-	rdpr		%pil, %g2
-	wrpr		%g0, 15, %pil
-	sethi		%hi(109f), %g7
-	b,pt		%xcc, etrap_irq
-109:	 or		%g7, %lo(109b), %g7
-	call		smp_call_function_client
-	 nop
-	b,pt		%xcc, rtrap
-	 clr		%l6
+	wr		%g0, (1 << PIL_SMP_CALL_FUNC), %set_softint
+	retry
+
+	.globl		xcall_receive_signal
+xcall_receive_signal:
+	wr		%g0, (1 << PIL_SMP_RECEIVE_SIGNAL), %set_softint
+	retry
+
+	.globl		xcall_capture
+xcall_capture:
+	wr		%g0, (1 << PIL_SMP_CAPTURE), %set_softint
+	retry
 
 #endif /* CONFIG_SMP */

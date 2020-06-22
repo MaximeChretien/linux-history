@@ -2,6 +2,7 @@
 #define __LINUX_HUB_H
 
 #include <linux/list.h>
+#include <linux/compiler.h>	/* likely()/unlikely() */
 
 /*
  * Hub request types
@@ -136,6 +137,7 @@ struct usb_hub {
 	struct usb_hub_descriptor *descriptor;
 
 	struct semaphore khubd_sem;
+	struct usb_tt		tt;		/* Transaction Translator */
 };
 
 #endif /* __LINUX_HUB_H */

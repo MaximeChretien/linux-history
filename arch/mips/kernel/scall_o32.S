@@ -3,22 +3,19 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 1997, 1998, 1999, 2000 by Ralf Baechle
+ * Copyright (C) 1997, 1998, 1999, 2000, 2001 by Ralf Baechle
+ * Copyright (C) 2001 MIPS Technologies, Inc.
  */
-#include <asm/asm.h>
+#include <linux/config.h>
 #include <linux/errno.h>
+#include <asm/asm.h>
 #include <asm/current.h>
 #include <asm/mipsregs.h>
 #include <asm/regdef.h>
 #include <asm/stackframe.h>
 #include <asm/isadep.h>
+#include <asm/sysmips.h>
 #include <asm/unistd.h>
-
-/* This duplicates the definition from <linux/sched.h> */
-#define PT_TRACESYS	0x00000002	/* tracing system calls */
-
-/* This duplicates the definition from <asm/signal.h> */
-#define SIGILL		4		/* Illegal instruction (ANSI).  */
 
 /* Highest syscall used of any syscall flavour */
 #define MAX_SYSCALL_NO	__NR_Linux + __NR_Linux_syscalls
@@ -86,13 +83,13 @@ signal_return:
 	ori	t0, t0, 1
 	mtc0	t0, CP0_STATUS
 
+	SAVE_STATIC
 	move	a0, zero
 	move	a1, sp
 	jal	do_signal
 	b	restore_all
 
 o32_reschedule:
-	SAVE_STATIC
 	jal	schedule
 	b	o32_ret_from_sys_call
 
@@ -192,3 +189,146 @@ illegal_syscall:
 	sw	t0, PT_R7(sp)
 	j	ret_from_sys_call
 	END(handle_sys)
+
+	LEAF(mips_atomic_set)
+	andi	v0, a1, 3			# must be word aligned
+	bnez	v0, bad_alignment
+
+	lw	v1, THREAD_CURDS($28)		# in legal address range?
+	addiu	a0, a1, 4
+	or	a0, a0, a1
+	and	a0, a0, v1
+	bltz	a0, bad_address
+
+#ifdef CONFIG_CPU_HAS_LLSC
+	/* Ok, this is the ll/sc case.  World is sane :-)  */
+1:	ll	v0, (a1)
+	move	a0, a2
+2:	sc	a0, (a1)
+	beqz	a0, 1b
+
+	.section __ex_table,"a"
+	PTR	1b, bad_stack
+	PTR	2b, bad_stack
+	.previous
+#else
+	sw	a1, 16(sp)
+	sw	a2, 20(sp)
+
+	move	a0, sp
+	move	a2, a1
+	li	a1, 1
+	jal	do_page_fault
+
+	lw	a1, 16(sp)
+	lw	a2, 20(sp)
+
+	/*
+	 * At this point the page should be readable and writable unless
+	 * there was no more memory available.
+	 */
+1:	lw	v0, (a1)
+2:	sw	a2, (a1)
+
+	.section __ex_table,"a"
+	PTR	1b, no_mem
+	PTR	2b, no_mem
+	.previous
+#endif
+
+	sw	v0, PT_R2(sp)		# result
+1:
+
+	/* Success, so skip usual error handling garbage.  */
+	lw	t0, TASK_PTRACE($28)	# syscall tracing enabled?
+	andi	t0, PT_TRACESYS
+	bnez	t0, 1f
+	b	o32_ret_from_sys_call
+
+1:	SAVE_STATIC
+	jal	syscall_trace
+	li	a3, 0			# success
+	j	ret_from_sys_call
+
+no_mem:	li	v0, -ENOMEM
+	jr	ra
+
+bad_address:
+	li	v0, -EFAULT
+	jr	ra
+
+bad_alignment:
+	li	v0, -EINVAL
+	jr	ra
+	END(mips_atomic_set)	
+
+	LEAF(sys_sysmips)
+	beq	a0, MIPS_ATOMIC_SET, mips_atomic_set
+	j	_sys_sysmips
+	END(sys_sysmips)
+
+	LEAF(sys_syscall)
+	lw	t0, PT_R29(sp)			# user sp
+
+	sltu	v0, a0, __NR_Linux + __NR_Linux_syscalls + 1
+	beqz	v0, enosys
+
+	sll	v0, t1, 2
+	la	v1, sys_syscall
+	lw	t2, sys_call_table(v0)		# function pointer
+	lbu	t4, sys_narg_table(t1)		# number of arguments
+
+	li	v0, -EINVAL
+	beq	t2, v1, out			# do not recurse
+
+	beqz	t2, enosys			# null function pointer?
+
+	andi	v0, t0, 0x3			# unaligned stack pointer?
+	bnez	v0, sigsegv
+
+	addu	v0, t0, 16			# v0 = usp + 16
+	addu	t1, v0, 12			# 3 32-bit arguments
+	lw	v1, THREAD_CURDS($28)
+	or	v0, v0, t1
+	and	v1, v1, v0
+	bltz	v1, efault
+
+	move	a0, a1				# shit argument registers
+	move	a1, a2
+	move	a2, a3
+
+1:	lw	a3, 16(t0)
+2:	lw	t3, 20(t0)
+3:	lw	t4, 24(t0)
+
+	.section	__ex_table, "a"
+	.word	1b, efault
+	.word	2b, efault
+	.word	3b, efault
+	.previous
+
+	sw	t3, 16(sp)			# put into new stackframe
+	sw	t4, 20(sp)
+
+	bnez	t4, 1f				# zero arguments?
+	addu	a0, sp, 32			# then pass sp in a0
+1:
+
+	sw	t3, 16(sp)
+	sw	v1, 20(sp)
+	jr	t2
+	/* Unreached */
+
+enosys:	li	v0, -ENOSYS
+	b	out
+
+sigsegv:
+	li	a0, _SIGSEGV
+	move	a1, $28
+	jal	force_sig
+	/* Fall through */
+
+efault:	li	v0, -EFAULT
+
+out:	jr	ra
+	END(sys_syscall)

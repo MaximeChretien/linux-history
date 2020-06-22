@@ -10,6 +10,7 @@
 
 #include <linux/config.h>
 #include <linux/sched.h>
+#include <linux/init.h>
 #include <asm/processor.h>
 #include <asm/i387.h>
 #include <asm/math_emu.h>
@@ -24,6 +25,29 @@
 #define HAVE_HWFP 1
 #endif
 
+static union i387_union empty_fpu_state;
+
+void __init boot_init_fpu(void)
+{
+	memset(&empty_fpu_state, 0, sizeof(union i387_union));
+
+	if (!cpu_has_fxsr) {
+		empty_fpu_state.fsave.cwd = 0xffff037f;
+		empty_fpu_state.fsave.swd = 0xffff0000;
+		empty_fpu_state.fsave.twd = 0xffffffff;
+		empty_fpu_state.fsave.fos = 0xffff0000;
+	} else {
+		empty_fpu_state.fxsave.cwd = 0x37f;
+		if (cpu_has_xmm)
+			empty_fpu_state.fxsave.mxcsr = 0x1f80;
+	}
+}
+
+void load_empty_fpu(struct task_struct * tsk)
+{
+	memcpy(&tsk->thread.i387, &empty_fpu_state, sizeof(union i387_union));
+}
+
 /*
  * The _current_ task is using the FPU for the first time
  * so initialize it and set the mxcsr to its default
@@ -32,10 +56,10 @@
  */
 void init_fpu(void)
 {
-	__asm__("fninit");
-	if ( cpu_has_xmm )
-		load_mxcsr(0x1f80);
-		
+	if (cpu_has_fxsr)
+		asm volatile("fxrstor %0" : : "m" (empty_fpu_state.fxsave));
+	else
+		__asm__("fninit");
 	current->used_math = 1;
 }
 

@@ -269,8 +269,9 @@ static struct raid1_bh *raid1_alloc_buf(raid1_conf_t *conf)
 static int raid1_grow_buffers (raid1_conf_t *conf, int cnt)
 {
 	int i = 0;
+	struct raid1_bh *head = NULL, **tail;
+	tail = &head;
 
-	md_spin_lock_irq(&conf->device_lock);
 	while (i < cnt) {
 		struct raid1_bh *r1_bh;
 		struct page *page;
@@ -287,24 +288,36 @@ static int raid1_grow_buffers (raid1_conf_t *conf, int cnt)
 		memset(r1_bh, 0, sizeof(*r1_bh));
 		r1_bh->bh_req.b_page = page;
 		r1_bh->bh_req.b_data = page_address(page);
-		r1_bh->next_r1 = conf->freebuf;
-		conf->freebuf = r1_bh;
+		*tail = r1_bh;
+		r1_bh->next_r1 = NULL;
+		tail = & r1_bh->next_r1;
 		i++;
 	}
+	/* this lock probably isn't needed, as at the time when
+	 * we are allocating buffers, nobody else will be touching the
+	 * freebuf list.  But it doesn't hurt....
+	 */
+	md_spin_lock_irq(&conf->device_lock);
+	*tail = conf->freebuf;
+	conf->freebuf = head;
 	md_spin_unlock_irq(&conf->device_lock);
 	return i;
 }
 
 static void raid1_shrink_buffers (raid1_conf_t *conf)
 {
+	struct raid1_bh *head;
 	md_spin_lock_irq(&conf->device_lock);
-	while (conf->freebuf) {
-		struct raid1_bh *r1_bh = conf->freebuf;
-		conf->freebuf = r1_bh->next_r1;
+	head = conf->freebuf;
+	conf->freebuf = NULL;
+	md_spin_unlock_irq(&conf->device_lock);
+
+	while (head) {
+		struct raid1_bh *r1_bh = head;
+		head = r1_bh->next_r1;
 		__free_page(r1_bh->bh_req.b_page);
 		kfree(r1_bh);
 	}
-	md_spin_unlock_irq(&conf->device_lock);
 }
 
 static int raid1_map (mddev_t *mddev, kdev_t *rdev)
@@ -825,7 +838,7 @@ static void close_sync(raid1_conf_t *conf)
 	conf->start_ready = conf->start_pending;
 	wait_event_lock_irq(conf->wait_ready, !conf->cnt_pending, conf->segment_lock);
 	conf->start_active =conf->start_ready = conf->start_pending = conf->start_future;
-	conf->start_future = mddev->sb->size+1;
+	conf->start_future = (mddev->sb->size<<1)+1;
 	conf->cnt_pending = conf->cnt_future;
 	conf->cnt_future = 0;
 	conf->phase = conf->phase ^1;
@@ -849,6 +862,14 @@ static int raid1_diskop(mddev_t *mddev, mdp_disk_t **d, int state)
 	mdk_rdev_t *spare_rdev, *failed_rdev;
 
 	print_raid1_conf(conf);
+
+	switch (state) {
+	case DISKOP_SPARE_ACTIVE:
+	case DISKOP_SPARE_INACTIVE:
+		/* need to wait for pending sync io before locking device */
+		close_sync(conf);
+	}
+
 	md_spin_lock_irq(&conf->device_lock);
 	/*
 	 * find the disk ...
@@ -951,7 +972,11 @@ static int raid1_diskop(mddev_t *mddev, mdp_disk_t **d, int state)
 	 * Deactivate a spare disk:
 	 */
 	case DISKOP_SPARE_INACTIVE:
-		close_sync(conf);
+		if (conf->start_future > 0) {
+			MD_BUG();
+			err = -EBUSY;
+			break;
+		}
 		sdisk = conf->mirrors + spare_disk;
 		sdisk->operational = 0;
 		sdisk->write_only = 0;
@@ -964,7 +989,11 @@ static int raid1_diskop(mddev_t *mddev, mdp_disk_t **d, int state)
 	 * property)
 	 */
 	case DISKOP_SPARE_ACTIVE:
-		close_sync(conf);
+		if (conf->start_future > 0) {
+			MD_BUG();
+			err = -EBUSY;
+			break;
+		}
 		sdisk = conf->mirrors + spare_disk;
 		fdisk = conf->mirrors + failed_disk;
 
@@ -1123,9 +1152,12 @@ static void raid1d (void *data)
 	struct raid1_bh *r1_bh;
 	struct buffer_head *bh;
 	unsigned long flags;
-	mddev_t *mddev;
+	raid1_conf_t *conf = data;
+	mddev_t *mddev = conf->mddev;
 	kdev_t dev;
 
+	if (mddev->sb_dirty)
+		md_update_sb(mddev);
 
 	for (;;) {
 		md_spin_lock_irqsave(&retry_list_lock, flags);
@@ -1136,8 +1168,6 @@ static void raid1d (void *data)
 		md_spin_unlock_irqrestore(&retry_list_lock, flags);
 
 		mddev = r1_bh->mddev;
-		if (mddev->sb_dirty)
-			md_update_sb(mddev);
 		bh = &r1_bh->bh_req;
 		switch(r1_bh->cmd) {
 		case SPECIAL:
@@ -1148,7 +1178,6 @@ static void raid1d (void *data)
 				int i, sum_bhs = 0;
 				int disks = MD_SB_DISKS;
 				struct buffer_head *bhl, *mbh;
-				raid1_conf_t *conf;
 				
 				conf = mddev_to_conf(mddev);
 				bhl = raid1_alloc_bh(conf, conf->raid_disks); /* don't really need this many */
@@ -1328,23 +1357,25 @@ static int raid1_sync_request (mddev_t *mddev, unsigned long sector_nr)
 	int bsize;
 	int disk;
 	int block_nr;
+	int buffs;
 
-	spin_lock_irq(&conf->segment_lock);
 	if (!sector_nr) {
-		/* initialize ...*/
-		int buffs;
-		conf->start_active = 0;
-		conf->start_ready = 0;
-		conf->start_pending = 0;
-		conf->start_future = 0;
-		conf->phase = 0;
 		/* we want enough buffers to hold twice the window of 128*/
 		buffs = 128 *2 / (PAGE_SIZE>>9);
 		buffs = raid1_grow_buffers(conf, buffs);
 		if (buffs < 2)
 			goto nomem;
-		
 		conf->window = buffs*(PAGE_SIZE>>9)/2;
+	}
+	spin_lock_irq(&conf->segment_lock);
+	if (!sector_nr) {
+		/* initialize ...*/
+		conf->start_active = 0;
+		conf->start_ready = 0;
+		conf->start_pending = 0;
+		conf->start_future = 0;
+		conf->phase = 0;
+		
 		conf->cnt_future += conf->cnt_done+conf->cnt_pending;
 		conf->cnt_done = conf->cnt_pending = 0;
 		if (conf->cnt_ready || conf->cnt_active)
@@ -1429,7 +1460,6 @@ static int raid1_sync_request (mddev_t *mddev, unsigned long sector_nr)
 
 nomem:
 	raid1_shrink_buffers(conf);
-	spin_unlock_irq(&conf->segment_lock);
 	return -ENOMEM;
 }
 

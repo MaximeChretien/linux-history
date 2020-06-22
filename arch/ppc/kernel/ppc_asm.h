@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.ppc_asm.h 1.18 10/18/01 15:02:09 trini
+ * BK Id: SCCS/s.ppc_asm.h 1.20 03/19/02 15:04:39 benh
  */
 /*
  * arch/ppc/kernel/ppc_asm.h
@@ -55,6 +55,7 @@
 #define STVX(r,a,b)	.long	(31<<26)+((r)<<21)+((a)<<16)+((b)<<11)+(231<<1)
 #define MFVSCR(r)	.long	(4<<26)+((r)<<21)+(770<<1)
 #define MTVSCR(r)	.long	(4<<26)+((r)<<11)+(802<<1)
+#define DSSALL		.long	(0x1f<<26)+(0x10<<21)+(0x336<<1)
 
 #define SAVE_VR(n,b,base)	li b,THREAD_VR0+(16*(n)); STVX(n,b,base)
 #define SAVE_2VR(n,b,base)	SAVE_VR(n,b,base); SAVE_VR(n+1,b,base) 

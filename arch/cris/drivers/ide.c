@@ -1,13 +1,34 @@
-/* $Id: ide.c,v 1.19 2001/05/09 12:53:16 johana Exp $
+/* $Id: ide.c,v 1.24 2002/04/22 11:47:21 johana Exp $
  *
  * Etrax specific IDE functions, like init and PIO-mode setting etc.
  * Almost the entire ide.c is used for the rest of the Etrax ATA driver.
- * Copyright (c) 2000, 2001 Axis Communications AB 
+ * Copyright (c) 2000, 2001, 2002 Axis Communications AB 
  *
  * Authors:    Bjorn Wesen        (initial version)
  *             Mikael Starvik     (pio setup stuff)
  *
  * $Log: ide.c,v $
+ * Revision 1.24  2002/04/22 11:47:21  johana
+ * Fix according to 2.4.19-pre7. time_after/time_before and
+ * missing end of comment.
+ * The patch has a typo for ethernet.c in e100_clear_network_leds(),
+ *  that is fixed here.
+ *
+ * Revision 1.23  2002/03/19 15:35:51  bjornw
+ * Cleaned up the bus-reset code a bit and made G27-reset work
+ *
+ * Revision 1.22  2002/03/19 15:23:05  bjornw
+ * Added flush_etrax_cache before starting the receiving DMA
+ *
+ * Revision 1.21  2002/03/06 15:37:56  hp
+ * 	* ide.c (OUT_BYTE): If timing out in the first busy-loop, do a
+ * 	printk, fall through and still do the write.
+ * 	(IN_BYTE): If timing out in the first loop, and reg indicated it's
+ * 	the ATA status register in the device being read, return BUSY_STAT.
+ *
+ * Revision 1.20  2002/02/22 11:47:56  bjornw
+ * Added a timeout to IN_BYTE and OUT_BYTE
+ *
  * Revision 1.19  2001/05/09 12:53:16  johana
  * Added #include <asm/dma.h>
  *
@@ -112,6 +133,13 @@
 /* number of Etrax DMA descriptors */
 #define MAX_DMA_DESCRS 64
 
+/* number of times to retry busy-flags when reading/writing IDE-registers 
+ * this can't be too high because a hung harddisk might cause the watchdog
+ * to trigger (sometimes IN_BYTE and OUT_BYTE are called with irq's disabled)
+ */
+
+#define IDE_REGISTER_TIMEOUT 300
+
 #ifdef CONFIG_ETRAX_IDE_CSE1_16_RESET
 /* address where the memory-mapped IDE reset bit lives, if used */
 static volatile unsigned long *reset_addr;
@@ -120,21 +148,84 @@ static volatile unsigned long *reset_addr;
 #define LOWDB(x)
 #define D(x) 
 
-void OUT_BYTE(unsigned char data, ide_ioreg_t reg) {
+void 
+OUT_BYTE(unsigned char data, ide_ioreg_t reg) {
+	int timeleft;
 	LOWDB(printk("ob: data 0x%x, reg 0x%x\n", data, reg));
-	while(*R_ATA_STATUS_DATA & IO_MASK(R_ATA_STATUS_DATA, busy)); /* wait for busy flag */
+
+	/* note the lack of handling any timeouts. we stop waiting, but we don't
+	 * really notify anybody.
+	 */
+
+	timeleft = IDE_REGISTER_TIMEOUT;
+	/* wait for busy flag */
+	while(timeleft && (*R_ATA_STATUS_DATA & IO_MASK(R_ATA_STATUS_DATA, busy)))
+		timeleft--;
+
+	/*
+	 * Fall through at a timeout, so the ongoing command will be
+	 * aborted by the write below, which is expected to be a dummy
+	 * command to the command register.  This happens when a faulty
+	 * drive times out on a command.  See comment on timeout in
+	 * IN_BYTE.
+	 */
+	if(!timeleft)
+		printk("ATA timeout reg 0x%lx := 0x%x\n", reg, data);
+
 	*R_ATA_CTRL_DATA = reg | data; /* write data to the drive's register */
-	while(!(*R_ATA_STATUS_DATA &
-		IO_MASK(R_ATA_STATUS_DATA, tr_rdy))); /* wait for transmitter ready */
+
+	timeleft = IDE_REGISTER_TIMEOUT;
+	/* wait for transmitter ready */
+	while(timeleft && !(*R_ATA_STATUS_DATA &
+			    IO_MASK(R_ATA_STATUS_DATA, tr_rdy)))
+		timeleft--;
 }
 
-unsigned char IN_BYTE(ide_ioreg_t reg) {
+unsigned char 
+IN_BYTE(ide_ioreg_t reg) {
 	int status;
-	while(*R_ATA_STATUS_DATA & IO_MASK(R_ATA_STATUS_DATA, busy)); /* wait for busy flag */
+	int timeleft;
+
+	timeleft = IDE_REGISTER_TIMEOUT;
+	/* wait for busy flag */
+	while(timeleft && (*R_ATA_STATUS_DATA & IO_MASK(R_ATA_STATUS_DATA, busy)))
+		timeleft--;
+
+	if(!timeleft) {
+		/*
+		 * If we're asked to read the status register, like for
+		 * example when a command does not complete for an
+		 * extended time, but the ATA interface is stuck in a
+		 * busy state at the *ETRAX* ATA interface level (as has
+		 * happened repeatedly with at least one bad disk), then
+		 * the best thing to do is to pretend that we read
+		 * "busy" in the status register, so the IDE driver will
+		 * time-out, abort the ongoing command and perform a
+		 * reset sequence.  Note that the subsequent OUT_BYTE
+		 * call will also timeout on busy, but as long as the
+		 * write is still performed, everything will be fine.
+		 */
+		if ((reg & IO_MASK (R_ATA_CTRL_DATA, addr))
+		    == IO_FIELD (R_ATA_CTRL_DATA, addr, IDE_STATUS_OFFSET))
+			return BUSY_STAT;
+		else
+			/* For other rare cases we assume 0 is good enough.  */
+			return 0;
+	}
+
 	*R_ATA_CTRL_DATA = reg | IO_STATE(R_ATA_CTRL_DATA, rw, read); /* read data */ 
-	while(!((status = *R_ATA_STATUS_DATA) &
-		IO_MASK(R_ATA_STATUS_DATA, dav))); /* wait for available */
+
+	timeleft = IDE_REGISTER_TIMEOUT;
+	/* wait for available */
+	while(timeleft && !((status = *R_ATA_STATUS_DATA) &
+			    IO_MASK(R_ATA_STATUS_DATA, dav)))
+		timeleft--;
+
+	if(!timeleft)
+		return 0;
+
 	LOWDB(printk("inb: 0x%x from reg 0x%x\n", status & 0xff, reg));
+
 	return (unsigned char)status; /* data was in the lower 16 bits in the status reg */
 }
 
@@ -279,20 +370,8 @@ init_e100_ide (void)
 		hwif->dmaproc = &e100_dmaproc;
 		hwif->ideproc = &e100_ideproc;
 	}
+
 	/* actually reset and configure the etrax100 ide/ata interface */
-
-	/* This is mystifying; why is not G27 SET anywhere ? It's just reset here twice. */
-
-	/* de-assert bus-reset */
-#ifdef CONFIG_ETRAX_IDE_PB7_RESET  
-	port_pb_dir_shadow = port_pb_dir_shadow | 
-		IO_STATE(R_PORT_PB_DIR, dir7, output);
-	*R_PORT_PB_DIR = port_pb_dir_shadow;
-	REG_SHADOW_SET(R_PORT_PB_DATA, port_pb_data_shadow, 7, 1);
-#endif
-#ifdef CONFIG_ETRAX_IDE_G27_RESET
-	*R_PORT_G_DATA = 0;
-#endif 
 
 	*R_ATA_CTRL_DATA = 0;
 	*R_ATA_TRANSFER_CNT = 0;
@@ -308,18 +387,31 @@ init_e100_ide (void)
 
 	*R_GEN_CONFIG = genconfig_shadow;
 
+        /* pull the chosen /reset-line low */
+        
+#ifdef CONFIG_ETRAX_IDE_G27_RESET
+        REG_SHADOW_SET(R_PORT_G_DATA, port_g_data_shadow, 27, 0);
+#endif 
 #ifdef CONFIG_ETRAX_IDE_CSE1_16_RESET
         init_ioremap();
         REG_SHADOW_SET(port_cse1_addr, port_cse1_shadow, 16, 0);
 #endif
-
 #ifdef CONFIG_ETRAX_IDE_CSP0_8_RESET
         init_ioremap();
         REG_SHADOW_SET(port_csp0_addr, port_csp0_shadow, 8, 0);
 #endif
+#ifdef CONFIG_ETRAX_IDE_PB7_RESET  
+	port_pb_dir_shadow = port_pb_dir_shadow | 
+		IO_STATE(R_PORT_PB_DIR, dir7, output);
+	*R_PORT_PB_DIR = port_pb_dir_shadow;
+	REG_SHADOW_SET(R_PORT_PB_DATA, port_pb_data_shadow, 7, 1);
+#endif
 
 	/* wait some */
+
 	udelay(25);
+
+	/* de-assert bus-reset */
 
 #ifdef CONFIG_ETRAX_IDE_CSE1_16_RESET
 	REG_SHADOW_SET(port_cse1_addr, port_cse1_shadow, 16, 1);
@@ -328,7 +420,7 @@ init_e100_ide (void)
 	REG_SHADOW_SET(port_csp0_addr, port_csp0_shadow, 8, 1);
 #endif
 #ifdef CONFIG_ETRAX_IDE_G27_RESET
-	*R_PORT_G_DATA = 0; /* de-assert bus-reset */
+	REG_SHADOW_SET(R_PORT_G_DATA, port_g_data_shadow, 27, 1);
 #endif 
 
 	/* make a dummy read to set the ata controller in a proper state */
@@ -351,12 +443,13 @@ init_e100_ide (void)
 			     IO_STATE( R_IRQ_MASK0_SET, ata_irq2, set ) |
 			     IO_STATE( R_IRQ_MASK0_SET, ata_irq3, set ) );
 
-	printk("ide: waiting %d seconds for drives to regain consciousness\n", CONFIG_ETRAX_IDE_DELAY);
+	printk("ide: waiting %d seconds for drives to regain consciousness\n",
+	       CONFIG_ETRAX_IDE_DELAY);
 
 	h = jiffies + (CONFIG_ETRAX_IDE_DELAY * HZ);
-	while(jiffies < h) ;
+	while(time_before(jiffies, h)) /* nothing */ ;
 
-  /* reset the dma channels we will use */
+	/* reset the dma channels we will use */
 
 	RESET_DMA(ATA_TX_DMA_NBR);
 	RESET_DMA(ATA_RX_DMA_NBR);
@@ -657,10 +750,9 @@ static int e100_ide_build_dmatable (ide_drive_t *drive)
                 }
 		/* ok we want to do IO at addr, size bytes. set up a new descriptor entry */
                 if(size == 65536) {
-                  ata_descrs[count].sw_len = 0;  /* 0 means 65536, this is a 16-bit field */
-                }
-                else {
-                  ata_descrs[count].sw_len = size;
+			ata_descrs[count].sw_len = 0;  /* 0 means 65536, this is a 16-bit field */
+                } else {
+			ata_descrs[count].sw_len = size;
                 }
 		ata_descrs[count].ctrl = 0;
 		ata_descrs[count].buf = addr;
@@ -823,7 +915,15 @@ static int e100_dmaproc (ide_dma_action_t func, ide_drive_t *drive)
 		}
 
 		/* begin DMA */
-	      
+		
+		/* need to do this before RX DMA due to a chip bug
+		 * it is enough to just flush the part of the cache that
+		 * corresponds to the buffers we start, but since HD transfers
+		 * usually are more than 8 kB, it is easier to optimize for the
+		 * normal case and just flush the entire cache. its the only
+		 * way to be sure! (OB movie quote)
+		 */
+		flush_etrax_cache();  
 		*R_DMA_CH3_FIRST = virt_to_phys(ata_descrs);
 		*R_DMA_CH3_CMD   = IO_STATE(R_DMA_CH3_CMD, cmd, start);
 		

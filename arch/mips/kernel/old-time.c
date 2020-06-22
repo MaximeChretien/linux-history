@@ -89,8 +89,7 @@ static unsigned long do_fast_gettimeoffset(void)
 			:"r" (timerhi),
 			 "m" (timerlo),
 			 "r" (tmp),
-			 "r" (USECS_PER_JIFFY)
-			:"$1");
+			 "r" (USECS_PER_JIFFY));
 		cached_quotient = quotient;
 	}
 
@@ -389,15 +388,19 @@ timer_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 	    xtime.tv_sec > last_rtc_update + 660 &&
 	    xtime.tv_usec >= 500000 - ((unsigned) tick) / 2 &&
 	    xtime.tv_usec <= 500000 + ((unsigned) tick) / 2) {
-	  if (set_rtc_mmss(xtime.tv_sec) == 0)
-	    last_rtc_update = xtime.tv_sec;
-	  else
-	    last_rtc_update = xtime.tv_sec - 600; /* do it again in 60 s */
+		if (set_rtc_mmss(xtime.tv_sec) == 0)
+			last_rtc_update = xtime.tv_sec;
+		else
+			/* do it again in 60 s */
+			last_rtc_update = xtime.tv_sec - 600;
 	}
-	/* As we return to user mode fire off the other CPU schedulers.. this is 
-	   basically because we don't yet share IRQ's around. This message is
-	   rigged to be safe on the 386 - basically it's a hack, so don't look
-	   closely for now.. */
+
+	/*
+	 * As we return to user mode fire off the other CPU schedulers.. this
+	 * is basically because we don't yet share IRQ's around. This message
+	 * is rigged to be safe on the 386 - basically it's a hack, so don't
+	 * look closely for now..
+	 */
 	/*smp_message_pass(MSG_ALL_BUT_SELF, MSG_RESCHEDULE, 0L, 0); */
 	read_unlock (&xtime_lock); 
 }
@@ -442,10 +445,12 @@ r4k_timer_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 
 void indy_r4k_timer_interrupt (struct pt_regs *regs)
 {
-	static const int INDY_R4K_TIMER_IRQ = 7;
 	int cpu = smp_processor_id();
+	int irq = 7;
 
-	r4k_timer_interrupt (INDY_R4K_TIMER_IRQ, NULL, regs);
+	irq_enter(cpu, irq);
+	r4k_timer_interrupt(irq, NULL, regs);
+	irq_exit(cpu, irq);
 
 	if (softirq_pending(cpu))
 		do_softirq();

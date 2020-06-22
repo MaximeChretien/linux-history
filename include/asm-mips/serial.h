@@ -7,7 +7,6 @@
  * Copyright (C) 1999, 2000 Silicon Graphics, Inc.
  */
 #include <linux/config.h>
-#include <asm/bootinfo.h>
 #include <asm/jazz.h>
 
 /*
@@ -85,6 +84,15 @@
 #define ATLAS_SERIAL_PORT_DEFNS
 #endif
 
+#ifdef CONFIG_MIPS_COBALT
+#define COBALT_BASE_BAUD  (18432000 / 16)
+#define COBALT_SERIAL_PORT_DEFNS		\
+	/* UART CLK   PORT  IRQ  FLAGS    */ 		\
+	{ 0, COBALT_BASE_BAUD, 0xc800000, 7, STD_COM_FLAGS },   /* ttyS0 */
+#else
+#define COBALT_SERIAL_PORT_DEFNS
+#endif
+
 /*
  * Both Galileo boards have the same UART mappings.
  */
@@ -92,12 +100,14 @@
 #include <asm/galileo-boards/ev96100.h>
 #include <asm/galileo-boards/ev96100int.h>
 #define EV96100_SERIAL_PORT_DEFNS                                  \
-    { baud_base: EV96100_BASE_BAUD, port: EV96100_UART0_REGS_BASE, \
-      irq: EV96100INT_UART_0, flags: STD_COM_FLAGS, type: 0x3,   \
-      iomem_base: EV96100_UART0_REGS_BASE },                       \
-    { baud_base: EV96100_BASE_BAUD, port: EV96100_UART1_REGS_BASE, \
-      irq: EV96100INT_UART_0, flags: STD_COM_FLAGS, type: 0x3,   \
-      iomem_base: EV96100_UART1_REGS_BASE },
+    { baud_base: EV96100_BASE_BAUD, irq: EV96100INT_UART_0, \
+      flags: STD_COM_FLAGS,  \
+      iomem_base: EV96100_UART0_REGS_BASE, iomem_reg_shift: 2, \
+      io_type: SERIAL_IO_MEM }, \
+    { baud_base: EV96100_BASE_BAUD, irq: EV96100INT_UART_0, \
+      flags: STD_COM_FLAGS, \
+      iomem_base: EV96100_UART1_REGS_BASE, iomem_reg_shift: 2, \
+      io_type: SERIAL_IO_MEM },
 #else
 #define EV96100_SERIAL_PORT_DEFNS
 #endif
@@ -147,6 +157,17 @@
       flags: STD_COM_FLAGS, type: 1 },
 #else
 #define AU1000_SERIAL_PORT_DEFNS
+#endif
+
+#ifdef CONFIG_TOSHIBA_JMR3927
+#include <asm/jmr3927/jmr3927.h>
+#define TXX927_SERIAL_PORT_DEFNS                              \
+    { baud_base: JMR3927_BASE_BAUD, port: UART0_ADDR, irq: UART0_INT,  \
+      flags: UART0_FLAGS, type: 1 },                        \
+    { baud_base: JMR3927_BASE_BAUD, port: UART1_ADDR, irq: UART1_INT,  \
+      flags: UART1_FLAGS, type: 1 },     
+#else
+#define TXX927_SERIAL_PORT_DEFNS
 #endif
 
 #ifdef CONFIG_HAVE_STD_PC_SERIAL_PORT
@@ -262,6 +283,7 @@
 	IVR_SERIAL_PORT_DEFNS           \
 	ITE_SERIAL_PORT_DEFNS           \
 	ATLAS_SERIAL_PORT_DEFNS		\
+	COBALT_SERIAL_PORT_DEFNS	\
 	EV96100_SERIAL_PORT_DEFNS	\
 	JAZZ_SERIAL_PORT_DEFNS		\
 	STD_SERIAL_PORT_DEFNS		\
@@ -269,4 +291,5 @@
 	HUB6_SERIAL_PORT_DFNS		\
 	MOMENCO_OCELOT_SERIAL_PORT_DEFNS\
 	AU1000_SERIAL_PORT_DEFNS	\
+        TXX927_SERIAL_PORT_DEFNS        \
 	DDB5477_SERIAL_PORT_DEFNS

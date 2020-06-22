@@ -60,6 +60,7 @@ install: vmlinux
 
 archclean:
 	@$(MAKEBOOT) clean
+	$(MAKE) -C arch/$(ARCH)/kernel clean
 
 archmrproper:
 

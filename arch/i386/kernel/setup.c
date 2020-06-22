@@ -71,6 +71,13 @@
  *  CacheSize bug workaround updates for AMD, Intel & VIA Cyrix.
  *  Dave Jones <davej@suse.de>, September, October 2001.
  *
+ *  Short-term fix for a conflicting cache attribute bug in the kernel
+ *  that is exposed by advanced speculative caching on new AMD Athlon
+ *  processors.
+ *  Richard Brunner <richard.brunner@amd.com> and Mark Langsdorf
+ *  <mark.langsdorf@amd.com>, June 2002 
+ *  Adapted to work with uniprocessor APIC by Bryan O'Sullivan
+ *  <bos@serpentine.com>, June 2002.
  */
 
 /*
@@ -98,6 +105,8 @@
 #endif
 #include <linux/highmem.h>
 #include <linux/bootmem.h>
+#include <linux/pci.h>
+#include <linux/pci_ids.h>
 #include <linux/seq_file.h>
 #include <asm/processor.h>
 #include <linux/console.h>
@@ -139,6 +148,9 @@ unsigned int mca_pentium_flag;
 /* For PCI or other memory-mapped resources */
 unsigned long pci_mem_start = 0x10000000;
 
+/* user-defined highmem size */
+static unsigned int highmem_pages __initdata = -1;
+
 /*
  * Setup options
  */
@@ -155,13 +167,21 @@ struct e820map e820;
 unsigned char aux_device_present;
 
 extern void mcheck_init(struct cpuinfo_x86 *c);
+extern void dmi_scan_machine(void);
 extern int root_mountflags;
 extern char _text, _etext, _edata, _end;
 
 static int disable_x86_serial_nr __initdata = 1;
 static int disable_x86_fxsr __initdata = 0;
+static int disable_x86_ht __initdata = 0;
 
 int enable_acpi_smp_table;
+
+#if defined(CONFIG_AGP) || defined(CONFIG_AGP_MODULE)
+int disable_adv_spec_cache __initdata = 1;
+#else
+int disable_adv_spec_cache __initdata = 0;
+#endif /* CONFIG_AGP */
 
 /*
  * This is set up by the setup-routine at boot-time
@@ -408,6 +428,22 @@ static void __init probe_roms(void)
 	}
 }
 
+static void __init limit_regions (unsigned long long size)
+{
+	unsigned long long current_addr = 0;
+	int i;
+
+	for (i = 0; i < e820.nr_map; i++) {
+		if (e820.map[i].type == E820_RAM) {
+			current_addr = e820.map[i].addr + e820.map[i].size;
+			if (current_addr >= size) {
+				e820.map[i].size -= current_addr-size;
+				e820.nr_map = i + 1;
+				return;
+			}
+		}
+	}
+}
 static void __init add_memory_region(unsigned long long start,
                                   unsigned long long size, int type)
 {
@@ -705,17 +741,54 @@ static void __init setup_memory_region(void)
 } /* setup_memory_region */
 
 
-static void __init parse_mem_cmdline (char ** cmdline_p)
+int __init amd_adv_spec_cache_feature(void)
+{
+	char vendor_id[16];
+	int ident;
+	int family, model;
+ 
+	/* Must have CPUID */
+	if(!have_cpuid_p())
+		goto donthave;
+	if(cpuid_eax(0)<1)
+		goto donthave;
+	
+	/* Must be x86 architecture */
+	cpuid(0, &ident,  
+		(int *)&vendor_id[0],
+		(int *)&vendor_id[8],
+		(int *)&vendor_id[4]);
+
+	if (memcmp(vendor_id, "AuthenticAMD", 12)) 
+	       goto donthave;
+
+	ident = cpuid_eax(1);
+	family = (ident >> 8) & 0xf;
+	model  = (ident >> 4) & 0xf;
+	if (((family == 6)  && (model >= 6)) || (family == 15)) {
+		printk(KERN_INFO "Advanced speculative caching feature present\n");
+		return 1;
+	}
+
+donthave:
+	printk(KERN_INFO "Advanced speculative caching feature not present\n");
+	return 0;
+}
+
+
+static void __init parse_cmdline_early (char ** cmdline_p)
 {
 	char c = ' ', *to = command_line, *from = COMMAND_LINE;
 	int len = 0;
-	int usermem = 0;
+	int userdef = 0;
 
 	/* Save unparsed command line copy for /proc/cmdline */
 	memcpy(saved_command_line, COMMAND_LINE, COMMAND_LINE_SIZE);
 	saved_command_line[COMMAND_LINE_SIZE-1] = '\0';
 
 	for (;;) {
+		if (c != ' ')
+			goto nextchar;
 		/*
 		 * "mem=nopentium" disables the 4MB page tables.
 		 * "mem=XXX[kKmM]" defines a memory region from HIGH_MEM
@@ -723,7 +796,7 @@ static void __init parse_mem_cmdline (char ** cmdline_p)
 		 * "mem=XXX[KkmM]@XXX[KkmM]" defines a memory region from
 		 * <start> to <start>+<mem>, overriding the bios size.
 		 */
-		if (c == ' ' && !memcmp(from, "mem=", 4)) {
+		if (!memcmp(from, "mem=", 4)) {
 			if (to != command_line)
 				to--;
 			if (!memcmp(from+4, "nopentium", 9)) {
@@ -732,38 +805,54 @@ static void __init parse_mem_cmdline (char ** cmdline_p)
 			} else if (!memcmp(from+4, "exactmap", 8)) {
 				from += 8+4;
 				e820.nr_map = 0;
-				usermem = 1;
+				userdef = 1;
 			} else {
 				/* If the user specifies memory size, we
-				 * blow away any automatically generated
-				 * size
+				 * limit the BIOS-provided memory map to
+				 * that size. exactmap can be used to specify
+				 * the exact map. mem=number can be used to
+				 * trim the existing memory map.
 				 */
 				unsigned long long start_at, mem_size;
  
-				if (usermem == 0) {
-					/* first time in: zap the whitelist
-					 * and reinitialize it with the
-					 * standard low-memory region.
-					 */
-					e820.nr_map = 0;
-					usermem = 1;
-					add_memory_region(0, LOWMEMSIZE(), E820_RAM);
-				}
 				mem_size = memparse(from+4, &from);
-				if (*from == '@')
+				if (*from == '@') {
 					start_at = memparse(from+1, &from);
-				else {
-					start_at = HIGH_MEMORY;
-					mem_size -= HIGH_MEMORY;
-					usermem=0;
+					add_memory_region(start_at, mem_size, E820_RAM);
+				} else {
+					limit_regions(mem_size);
+					userdef=1;
 				}
-				add_memory_region(start_at, mem_size, E820_RAM);
 			}
 		}
-		/* acpismp=force forces parsing and use of the ACPI SMP table */
-		if (c == ' ' && !memcmp(from, "acpismp=force", 13)) 	
-			 enable_acpi_smp_table = 1;
-	
+
+		/* "noht" disables HyperThreading (2 logical cpus per Xeon) */
+		else if (!memcmp(from, "noht", 4))
+			disable_x86_ht = 1;
+
+		/* "acpismp=force" forces parsing and use of the ACPI SMP table */
+		else if (!memcmp(from, "acpismp=force", 13))
+			enable_acpi_smp_table = 1;
+
+		/*
+		 * highmem=size forces highmem to be exactly 'size' bytes.
+		 * This works even on boxes that have no highmem otherwise.
+		 * This also works to reduce highmem size on bigger boxes.
+		 */
+		else if (!memcmp(from, "highmem=", 8))
+			highmem_pages = memparse(from+8, &from) >> PAGE_SHIFT;
+		/*
+		 * unsafe-gart-alias overrides the short-term fix for a
+		 * conflicting cache attribute bug in the kernel that is
+		 * exposed by advanced speculative caching in newer AMD
+		 * Athlon processors.  Overriding the fix will allow
+		 * higher performance but the kernel bug can cause system
+		 * lock-ups if the system uses an AGP card.  unsafe-gart-alias
+		 * can be turned on for higher performance in servers.
+		 */
+		else if (!memcmp(from, "unsafe-gart-alias", 17))
+			disable_adv_spec_cache = 0;
+nextchar:
 		c = *(from++);
 		if (!c)
 			break;
@@ -773,7 +862,7 @@ static void __init parse_mem_cmdline (char ** cmdline_p)
 	}
 	*to = '\0';
 	*cmdline_p = command_line;
-	if (usermem) {
+	if (userdef) {
 		printk(KERN_INFO "user-defined physical RAM map:\n");
 		print_memory_map("user");
 	}
@@ -820,7 +909,7 @@ void __init setup_arch(char **cmdline_p)
 	data_resource.start = virt_to_bus(&_etext);
 	data_resource.end = virt_to_bus(&_edata)-1;
 
-	parse_mem_cmdline(cmdline_p);
+	parse_cmdline_early(cmdline_p);
 
 #define PFN_UP(x)	(((x) + PAGE_SIZE-1) >> PAGE_SHIFT)
 #define PFN_DOWN(x)	((x) >> PAGE_SHIFT)
@@ -860,6 +949,14 @@ void __init setup_arch(char **cmdline_p)
 	 */
 	max_low_pfn = max_pfn;
 	if (max_low_pfn > MAXMEM_PFN) {
+		if (highmem_pages == -1)
+			highmem_pages = max_pfn - MAXMEM_PFN;
+		if (highmem_pages + MAXMEM_PFN < max_pfn)
+			max_pfn = MAXMEM_PFN + highmem_pages;
+		if (highmem_pages + MAXMEM_PFN > max_pfn) {
+			printk("only %luMB highmem pages available, ignoring highmem size of %uMB.\n", pages_to_mb(max_pfn - MAXMEM_PFN), pages_to_mb(highmem_pages));
+			highmem_pages = 0;
+		}
 		max_low_pfn = MAXMEM_PFN;
 #ifndef CONFIG_HIGHMEM
 		/* Maximum memory usable is what is directly addressable */
@@ -878,16 +975,37 @@ void __init setup_arch(char **cmdline_p)
 		}
 #endif /* !CONFIG_X86_PAE */
 #endif /* !CONFIG_HIGHMEM */
+	} else {
+		if (highmem_pages == -1)
+			highmem_pages = 0;
+#if CONFIG_HIGHMEM
+		if (highmem_pages >= max_pfn) {
+			printk(KERN_ERR "highmem size specified (%uMB) is bigger than pages available (%luMB)!.\n", pages_to_mb(highmem_pages), pages_to_mb(max_pfn));
+			highmem_pages = 0;
+		}
+		if (highmem_pages) {
+			if (max_low_pfn-highmem_pages < 64*1024*1024/PAGE_SIZE){
+				printk(KERN_ERR "highmem size %uMB results in smaller than 64MB lowmem, ignoring it.\n", pages_to_mb(highmem_pages));
+				highmem_pages = 0;
+			}
+			max_low_pfn -= highmem_pages;
+		}
+#else
+		if (highmem_pages)
+			printk(KERN_ERR "ignoring highmem size on non-highmem kernel!\n");
+#endif
 	}
 
 #ifdef CONFIG_HIGHMEM
 	highstart_pfn = highend_pfn = max_pfn;
-	if (max_pfn > MAXMEM_PFN) {
-		highstart_pfn = MAXMEM_PFN;
-		printk(KERN_NOTICE "%ldMB HIGHMEM available.\n",
-			pages_to_mb(highend_pfn - highstart_pfn));
+	if (max_pfn > max_low_pfn) {
+		highstart_pfn = max_low_pfn;
 	}
+	printk(KERN_NOTICE "%ldMB HIGHMEM available.\n",
+		pages_to_mb(highend_pfn - highstart_pfn));
 #endif
+	printk(KERN_NOTICE "%ldMB LOWMEM available.\n",
+			pages_to_mb(max_low_pfn));
 	/*
 	 * Initialize the boot-time allocator (with low memory only):
 	 */
@@ -976,6 +1094,21 @@ void __init setup_arch(char **cmdline_p)
 #endif
 
 	/*
+	 * If enable_acpi_smp_table and HT feature present, acpitable.c
+	 * will find all logical cpus despite disable_x86_ht: so if both
+	 * "noht" and "acpismp=force" are specified, let "noht" override
+	 * "acpismp=force" cleanly.  Why retain "acpismp=force"? because
+	 * parsing ACPI SMP table might prove useful on some non-HT cpu.
+	 */
+	if (disable_x86_ht) {
+		clear_bit(X86_FEATURE_HT, &boot_cpu_data.x86_capability[0]);
+		enable_acpi_smp_table = 0;
+	}
+	if (test_bit(X86_FEATURE_HT, &boot_cpu_data.x86_capability[0]))
+		enable_acpi_smp_table = 1;
+	
+
+	/*
 	 * NOTE: before this point _nobody_ is allowed to allocate
 	 * any memory using the bootmem allocator.
 	 */
@@ -983,6 +1116,14 @@ void __init setup_arch(char **cmdline_p)
 #ifdef CONFIG_SMP
 	smp_alloc_memory(); /* AP processor realmode stacks in low memory*/
 #endif
+	/*
+	 * short-term fix for a conflicting cache attribute bug in the 
+	 * kernel that is exposed by advanced speculative caching on
+	 * newer AMD Athlon processors.
+	 */
+	if (disable_adv_spec_cache && amd_adv_spec_cache_feature())
+		clear_bit(X86_FEATURE_PSE, &boot_cpu_data.x86_capability);
+
 	paging_init();
 #ifdef CONFIG_X86_LOCAL_APIC
 	/*
@@ -990,7 +1131,6 @@ void __init setup_arch(char **cmdline_p)
 	 */
 	if (smp_found_config)
 		get_smp_config();
-	init_apic_mappings();
 #endif
 
 
@@ -1042,6 +1182,7 @@ void __init setup_arch(char **cmdline_p)
 	conswitchp = &dummy_con;
 #endif
 #endif
+	dmi_scan_machine();
 }
 
 static int cachesize_override __initdata = -1;
@@ -1150,6 +1291,31 @@ static void __init display_cacheinfo(struct cpuinfo_x86 *c)
 	printk(KERN_INFO "CPU: L2 Cache: %dK (%d bytes/line)\n",
 	       l2size, ecx & 0xFF);
 }
+
+
+/*=======================================================================
+ * amd_adv_spec_cache_disable
+ * Setting a special MSR big that disables a small part of advanced
+ * speculative caching as part of a short-term fix for a conflicting cache
+ * attribute bug in the kernel that is exposed by advanced speculative
+ * caching in newer AMD Athlon processors.
+ =======================================================================*/
+static void amd_adv_spec_cache_disable(void)
+{
+	printk(KERN_INFO "Disabling advanced speculative caching\n");
+
+	__asm__ __volatile__ (
+		" movl	 $0x9c5a203a,%%edi   \n" /* msr enable */
+		" movl	 $0xc0011022,%%ecx   \n" /* msr addr	 */
+		" rdmsr			     \n" /* get reg val	 */
+		" orl	 $0x00010000,%%eax   \n" /* set bit 16	 */
+		" wrmsr			     \n" /* put it back	 */
+		" xorl	%%edi, %%edi	     \n" /* clear msr enable */
+		: /* no outputs */
+		: /* no inputs, either */
+		: "%eax","%ecx","%edx","%edi" /* clobbered regs */ );
+}
+
 
 /*
  *	B step AMD K6 before B 9730xxxx have hardware bugs that can cause
@@ -1284,10 +1450,21 @@ static int __init init_amd(struct cpuinfo_x86 *c)
  			 * to enable SSE on Palomino/Morgan CPU's.
 			 * If the BIOS didn't enable it already, enable it
 			 * here.
+			 *
+			 * Avoiding the use of 4MB/2MB pages along with
+			 * setting a special MSR bit that disables a small
+			 * part of advanced speculative caching as part of a
+			 * short-term fix for a conflicting cache attribute
+			 * bug in the kernel that is exposed by advanced
+			 * speculative caching in newer AMD Atlon processors.
+			 *
+			 * If we cleared the PSE bit earlier as part
+			 * of the workaround for this problem, we need
+			 * to clear it again, as our caller may have
+			 * clobbered it if uniprocessor APIC is enabled.
 			 */
-			if (c->x86_model == 6 || c->x86_model == 7) {
-				if (!test_bit(X86_FEATURE_XMM,
-					      &c->x86_capability)) {
+			if (c->x86_model >= 6) {
+				if (!cpu_has_xmm) {
 					printk(KERN_INFO
 					       "Enabling Disabled K7/SSE Support...\n");
 					rdmsr(MSR_K7_HWCR, l, h);
@@ -1296,6 +1473,18 @@ static int __init init_amd(struct cpuinfo_x86 *c)
 					set_bit(X86_FEATURE_XMM,
                                                 &c->x86_capability);
 				}
+				if (disable_adv_spec_cache &&
+				    amd_adv_spec_cache_feature()) {
+					clear_bit(X86_FEATURE_PSE,
+						  &c->x86_capability);
+					amd_adv_spec_cache_disable();
+				}
+			}
+			break;
+		case 15: 
+			if (disable_adv_spec_cache && amd_adv_spec_cache_feature()) {
+				clear_bit(X86_FEATURE_PSE, &c->x86_capability);
+				amd_adv_spec_cache_disable();
 			}
 			break;
 
@@ -1306,7 +1495,7 @@ static int __init init_amd(struct cpuinfo_x86 *c)
 }
 
 /*
- * Read Cyrix DEVID registers (DIR) to get more detailed info. about the CPU
+ * Read NSC/Cyrix DEVID registers (DIR) to get more detailed info. about the CPU
  */
 static void __init do_cyrix_devid(unsigned char *dir0, unsigned char *dir1)
 {
@@ -1468,11 +1657,6 @@ static void __init init_cyrix(struct cpuinfo_x86 *c)
 		break;
 
 	case 4: /* MediaGX/GXm */
-		/*
-		 *	Life sometimes gets weiiiiiiiird if we use this
-		 *	on the MediaGX. So we turn it off for now. 
-		 */
-		
 #ifdef CONFIG_PCI
 		/* It isnt really a PCI quirk directly, but the cure is the
 		   same. The MediaGX has deep magic SMM stuff that handles the
@@ -1494,14 +1678,22 @@ static void __init init_cyrix(struct cpuinfo_x86 *c)
 		/* GXm supports extended cpuid levels 'ala' AMD */
 		if (c->cpuid_level == 2) {
 			get_model_name(c);  /* get CPU marketing name */
-			clear_bit(X86_FEATURE_TSC, c->x86_capability);
+			/*
+	 		 *	The 5510/5520 companion chips have a funky PIT
+			 *	that breaks the TSC synchronizing, so turn it off
+			 */
+			if(pci_find_device(PCI_VENDOR_ID_CYRIX, PCI_DEVICE_ID_CYRIX_5510, NULL) ||
+			   pci_find_device(PCI_VENDOR_ID_CYRIX, PCI_DEVICE_ID_CYRIX_5520, NULL))
+				clear_bit(X86_FEATURE_TSC, c->x86_capability);
 			return;
 		}
 		else {  /* MediaGX */
 			Cx86_cb[2] = (dir0_lsn & 1) ? '3' : '4';
 			p = Cx86_cb+2;
 			c->x86_model = (dir1 & 0x20) ? 1 : 2;
-			clear_bit(X86_FEATURE_TSC, &c->x86_capability);
+			if(pci_find_device(PCI_VENDOR_ID_CYRIX, PCI_DEVICE_ID_CYRIX_5510, NULL) ||
+			   pci_find_device(PCI_VENDOR_ID_CYRIX, PCI_DEVICE_ID_CYRIX_5520, NULL))
+				clear_bit(X86_FEATURE_TSC, &c->x86_capability);
 		}
 		break;
 
@@ -2210,7 +2402,7 @@ static void __init init_intel(struct cpuinfo_x86 *c)
 		strcpy(c->x86_model_id, p);
 	
 #ifdef CONFIG_SMP
-	if (test_bit(X86_FEATURE_HT, &c->x86_capability)) {
+	if (test_bit(X86_FEATURE_HT, &c->x86_capability) && !disable_x86_ht) {
 		extern	int phys_proc_id[NR_CPUS];
 		
 		u32 	eax, ebx, ecx, edx;
@@ -2270,6 +2462,8 @@ void __init get_cpu_vendor(struct cpuinfo_x86 *c)
 		c->x86_vendor = X86_VENDOR_AMD;
 	else if (!strcmp(v, "CyrixInstead"))
 		c->x86_vendor = X86_VENDOR_CYRIX;
+	else if (!strcmp(v, "Geode by NSC"))
+		c->x86_vendor = X86_VENDOR_NSC;
 	else if (!strcmp(v, "UMC UMC UMC "))
 		c->x86_vendor = X86_VENDOR_UMC;
 	else if (!strcmp(v, "CentaurHauls"))
@@ -2555,6 +2749,12 @@ void __init identify_cpu(struct cpuinfo_x86 *c)
 			      &c->x86_capability[0]);
 			c->x86 = (tfms >> 8) & 15;
 			c->x86_model = (tfms >> 4) & 15;
+			if ( (c->x86_vendor == X86_VENDOR_AMD) &&
+				(c->x86 == 0xf)) {
+				/* AMD Extended Family and Model Values */
+				c->x86 += (tfms >> 20) & 0xff;
+				c->x86_model += (tfms >> 12) & 0xf0;
+			}
 			c->x86_mask = tfms & 15;
 		} else {
 			/* Have CPUID level 0 only - unheard of */
@@ -2613,6 +2813,10 @@ void __init identify_cpu(struct cpuinfo_x86 *c)
 		init_cyrix(c);
 		break;
 
+	case X86_VENDOR_NSC:
+	        init_cyrix(c);
+		break;
+
 	case X86_VENDOR_AMD:
 		init_amd(c);
 		break;
@@ -2654,6 +2858,10 @@ void __init identify_cpu(struct cpuinfo_x86 *c)
 	if ( tsc_disable )
 		clear_bit(X86_FEATURE_TSC, &c->x86_capability);
 #endif
+
+	/* HT disabled? */
+	if (disable_x86_ht)
+		clear_bit(X86_FEATURE_HT, &c->x86_capability);
 
 	/* FXSR disabled? */
 	if (disable_x86_fxsr) {
@@ -2713,14 +2921,17 @@ void __init dodgy_tsc(void)
 {
 	get_cpu_vendor(&boot_cpu_data);
 
-	if ( boot_cpu_data.x86_vendor == X86_VENDOR_CYRIX )
+	if ( boot_cpu_data.x86_vendor == X86_VENDOR_CYRIX ||
+	     boot_cpu_data.x86_vendor == X86_VENDOR_NSC )
 		init_cyrix(&boot_cpu_data);
 }
 
 
 /* These need to match <asm/processor.h> */
 static char *cpu_vendor_names[] __initdata = {
-	"Intel", "Cyrix", "AMD", "UMC", "NexGen", "Centaur", "Rise", "Transmeta" };
+	"Intel", "Cyrix", "AMD", "UMC", "NexGen", 
+	"Centaur", "Rise", "Transmeta", "NSC"
+};
 
 
 void __init print_cpu_info(struct cpuinfo_x86 *c)

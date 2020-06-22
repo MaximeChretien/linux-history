@@ -12,7 +12,6 @@
 #include <linux/coda_psdev.h>
 
 extern int coda_debug;
-extern int coda_print_entry;
 
 inline int coda_fideq(ViceFid *fid1, ViceFid *fid2)
 {
@@ -69,11 +68,14 @@ struct inode * coda_iget(struct super_block * sb, ViceFid * fid,
 	struct inode *inode;
 	struct coda_inode_info *cii;
 	ino_t ino = coda_f2i(fid);
+	struct coda_sb_info *sbi = coda_sbp(sb);
 
+	down(&sbi->sbi_iget4_mutex);
 	inode = iget4(sb, ino, coda_inocmp, fid);
 
 	if ( !inode ) { 
 		CDEBUG(D_CNODE, "coda_iget: no inode\n");
+		up(&sbi->sbi_iget4_mutex);
 		return ERR_PTR(-ENOMEM);
 	}
 
@@ -82,9 +84,7 @@ struct inode * coda_iget(struct super_block * sb, ViceFid * fid,
 	if (coda_isnullfid(&cii->c_fid))
 		/* new, empty inode found... initializing */
 		cii->c_fid = *fid;
-
-	/* we shouldnt see inode collisions anymore */
-	if (!coda_fideq(fid, &cii->c_fid)) BUG();
+	up(&sbi->sbi_iget4_mutex);
 
 	/* always replace the attributes, type might have changed */
 	coda_fill_inode(inode, attr);
@@ -149,6 +149,7 @@ struct inode *coda_fid_to_inode(ViceFid *fid, struct super_block *sb)
 	ino_t nr;
 	struct inode *inode;
 	struct coda_inode_info *cii;
+	struct coda_sb_info *sbi;
 
 	if ( !sb ) {
 		printk("coda_fid_to_inode: no sb!\n");
@@ -157,12 +158,14 @@ struct inode *coda_fid_to_inode(ViceFid *fid, struct super_block *sb)
 
 	CDEBUG(D_INODE, "%s\n", coda_f2s(fid));
 
+	sbi = coda_sbp(sb);
 	nr = coda_f2i(fid);
+	down(&sbi->sbi_iget4_mutex);
 	inode = iget4(sb, nr, coda_inocmp, fid);
 	if ( !inode ) {
 		printk("coda_fid_to_inode: null from iget, sb %p, nr %ld.\n",
 		       sb, (long)nr);
-		return NULL;
+		goto out_unlock;
 	}
 
 	cii = ITOC(inode);
@@ -171,31 +174,33 @@ struct inode *coda_fid_to_inode(ViceFid *fid, struct super_block *sb)
 	if (coda_isnullfid(&cii->c_fid)) {
 		inode->i_nlink = 0;
 		iput(inode);
-		return NULL;
+		goto out_unlock;
 	}
 
-	/* we shouldn't see inode collisions anymore */
-	if ( !coda_fideq(fid, &cii->c_fid) ) BUG();
-
         CDEBUG(D_INODE, "found %ld\n", inode->i_ino);
-        return inode;
+	up(&sbi->sbi_iget4_mutex);
+	return inode;
+
+out_unlock:
+	up(&sbi->sbi_iget4_mutex);
+	return NULL;
 }
 
 /* the CONTROL inode is made without asking attributes from Venus */
 int coda_cnode_makectl(struct inode **inode, struct super_block *sb)
 {
-    int error = 0;
+	int error = 0;
 
-    *inode = iget(sb, CTL_INO);
-    if ( *inode ) {
-	(*inode)->i_op = &coda_ioctl_inode_operations;
-	(*inode)->i_fop = &coda_ioctl_operations;
-	(*inode)->i_mode = 0444;
-	error = 0;
-    } else { 
-	error = -ENOMEM;
-    }
+	*inode = iget(sb, CTL_INO);
+	if ( *inode ) {
+		(*inode)->i_op = &coda_ioctl_inode_operations;
+		(*inode)->i_fop = &coda_ioctl_operations;
+		(*inode)->i_mode = 0444;
+		error = 0;
+	} else { 
+		error = -ENOMEM;
+	}
     
-    return error;
+	return error;
 }
 

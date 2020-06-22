@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.smp.h 1.12 08/16/01 07:49:31 paulus
+ * BK Id: SCCS/s.smp.h 1.14 03/28/02 16:54:23 hozer
  */
 /* smp.h: PPC specific SMP stuff.
  *
@@ -61,6 +61,12 @@ struct klock_info_struct {
 extern struct klock_info_struct klock_info;
 #define KLOCK_HELD       0xffffffff
 #define KLOCK_CLEAR      0x0
+
+#ifdef CONFIG_750_SMP
+#define smp_send_tlb_invalidate(x) smp_ppc750_send_tlb_invalidate(x)
+#else
+#define smp_send_tlb_invalidate(x) do {} while(0)
+#endif
 
 #endif /* __ASSEMBLY__ */
 

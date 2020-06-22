@@ -603,12 +603,20 @@ tty3270_hangup(struct tty_struct *tty)
 static void
 tty3270_bh(void *data)
 {
-	long flags;
 	tub_t *tubp;
+	ioinfo_t *ioinfop;
+	long flags;
 	struct tty_struct *tty;
 
-	tubp = data;
-	TUBLOCK(tubp->irq, flags);
+	ioinfop = ioinfo[(tubp = data)->irq];
+	while (TUBTRYLOCK(tubp->irq, flags) == 0) {
+		if (ioinfop->ui.flags.unready == 1)
+			return;
+	}
+	if (ioinfop->ui.flags.unready == 1 ||
+	    ioinfop->ui.flags.ready == 0)
+		goto do_unlock;
+
 	tubp->flags &= ~TUB_BHPENDING;
 	tty = tubp->tty;
 

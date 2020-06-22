@@ -1944,12 +1944,8 @@ static ssize_t qic02_tape_read(struct file *filp, char *buf, size_t count,
 			}
 			/* copy buffer to user-space in one go */
 			if (bytes_done > 0) {
-				err =
-				    copy_to_user(buf, buffaddr,
-						 bytes_done);
-				if (err) {
+				if (copy_to_user(buf, buffaddr, bytes_done))
 					return -EFAULT;
-				}
 			}
 #if 1
 			/* Checks Ton's patch below */
@@ -2085,10 +2081,8 @@ static ssize_t qic02_tape_write(struct file *filp, const char *buf,
 
 		/* copy from user to DMA buffer and initiate transfer. */
 		if (bytes_todo > 0) {
-			err = copy_from_user(buffaddr, buf, bytes_todo);
-			if (err) {
+			if (copy_from_user(buffaddr, buf, bytes_todo))
 				return -EFAULT;
-			}
 
 /****************** similar problem with read() at FM could happen here at EOT.
  ******************/
@@ -2750,7 +2744,9 @@ static int qic02_get_resources(void)
 	 * the config parameters have been set using MTSETCONFIG.
 	 */
 
-	if (check_region(QIC02_TAPE_PORT, QIC02_TAPE_PORT_RANGE)) {
+	/* Grab the IO region. */
+	if (!request_region(QIC02_TAPE_PORT, QIC02_TAPE_PORT_RANGE,
+			   TPQIC02_NAME)) {
 		printk(TPQIC02_NAME
 		       ": IO space at 0x%x [%d ports] already reserved\n",
 		       QIC02_TAPE_PORT, QIC02_TAPE_PORT_RANGE);
@@ -2764,6 +2760,7 @@ static int qic02_get_resources(void)
 		printk(TPQIC02_NAME
 		       ": can't allocate IRQ%d for QIC-02 tape\n",
 		       QIC02_TAPE_IRQ);
+		release_region(QIC02_TAPE_PORT, QIC02_TAPE_PORT_RANGE);
 		return -EBUSY;
 	}
 
@@ -2773,12 +2770,9 @@ static int qic02_get_resources(void)
 		       ": can't allocate DMA%d for QIC-02 tape\n",
 		       QIC02_TAPE_DMA);
 		free_irq(QIC02_TAPE_IRQ, NULL);
+		release_region(QIC02_TAPE_PORT, QIC02_TAPE_PORT_RANGE);
 		return -EBUSY;
 	}
-
-	/* Grab the IO region. We already made sure it's available. */
-	request_region(QIC02_TAPE_PORT, QIC02_TAPE_PORT_RANGE,
-		       TPQIC02_NAME);
 
 	/* Setup the page-address for the dma transfer. */
 	buffaddr =

@@ -55,7 +55,7 @@
 
 
 /* version number of this driver */
-#define RIVAFB_VERSION "0.9.2a"
+#define RIVAFB_VERSION "0.9.3"
 
 
 
@@ -1309,9 +1309,6 @@ static int rivafb_get_fix(struct fb_fix_screeninfo *fix, int con,
 	memset(fix, 0, sizeof(struct fb_fix_screeninfo));
 	sprintf(fix->id, "nVidia %s", rivainfo->drvr_name);
 
-	fix->smem_start = rivainfo->fb_base_phys;
-	fix->smem_len = rivainfo->ram_amount;
-
 	fix->type = p->type;
 	fix->type_aux = p->type_aux;
 	fix->visual = p->visual;
@@ -1325,7 +1322,7 @@ static int rivafb_get_fix(struct fb_fix_screeninfo *fix, int con,
 	fix->mmio_start = rivainfo->ctrl_base_phys;
 	fix->mmio_len = rivainfo->base0_region_size;
 	fix->smem_start = rivainfo->fb_base_phys;
-	fix->smem_len = rivainfo->base1_region_size;
+	fix->smem_len = rivainfo->ram_amount;
 
 	switch (rivainfo->riva.Architecture) {
 	case NV_ARCH_03:
@@ -1883,9 +1880,6 @@ static int __devinit rivafb_init_one(struct pci_dev *pd,
 	rinfo->base0_region_size = pci_resource_len(pd, 0);
 	rinfo->base1_region_size = pci_resource_len(pd, 1);
 
-	assert(rinfo->base0_region_size >= 0x00800000);	/* from GGI */
-	assert(rinfo->base1_region_size >= 0x01000000);	/* from GGI */
-
 	rinfo->ctrl_base_phys = pci_resource_start(rinfo->pd, 0);
 	rinfo->fb_base_phys = pci_resource_start(rinfo->pd, 1);
 
@@ -1895,12 +1889,6 @@ static int __devinit rivafb_init_one(struct pci_dev *pd,
 		goto err_out_kfree;
 	}
 
-	if (!request_mem_region(rinfo->fb_base_phys,
-				rinfo->base1_region_size, "rivafb")) {
-		printk(KERN_ERR PFX "cannot reserve FB region\n");
-		goto err_out_free_base0;
-	}
-	
 	rinfo->ctrl_base = ioremap(rinfo->ctrl_base_phys,
 				   rinfo->base0_region_size);
 	if (!rinfo->ctrl_base) {
@@ -1908,27 +1896,6 @@ static int __devinit rivafb_init_one(struct pci_dev *pd,
 		goto err_out_free_base1;
 	}
 	
-	rinfo->fb_base = ioremap(rinfo->fb_base_phys,
-				 rinfo->base1_region_size);
-	if (!rinfo->fb_base) {
-		printk(KERN_ERR PFX "cannot ioremap FB base\n");
-		goto err_out_iounmap_ctrl;
-	}
-	
-#ifdef CONFIG_MTRR
-	if (!nomtrr) {
-		rinfo->mtrr.vram = mtrr_add(rinfo->fb_base_phys,
-					    rinfo->base1_region_size, MTRR_TYPE_WRCOMB, 1);
-		if (rinfo->mtrr.vram < 0) {
-			printk(KERN_ERR PFX "unable to setup MTRR\n");
-		} else {
-			rinfo->mtrr.vram_valid = 1;
-			/* let there be speed */
-			printk(KERN_INFO PFX "RIVA MTRR set to ON\n");
-		}
-	}
-#endif /* CONFIG_MTRR */
-
 	rinfo->riva.EnableIRQ = 0;
 	rinfo->riva.PRAMDAC = (unsigned *)(rinfo->ctrl_base + 0x00680000);
 	rinfo->riva.PFB = (unsigned *)(rinfo->ctrl_base + 0x00100000);
@@ -1945,6 +1912,26 @@ static int __devinit rivafb_init_one(struct pci_dev *pd,
 
 	rinfo->riva.IO = (MISCin(rinfo) & 0x01) ? 0x3D0 : 0x3B0;
 
+	if (rinfo->riva.Architecture == NV_ARCH_03) {
+		/*
+		 * We have to map the full BASE_1 aperture for Riva128's
+		 * because they use the PRAMIN set in "framebuffer" space
+		 */
+		if (!request_mem_region(rinfo->fb_base_phys,
+					rinfo->base1_region_size, "rivafb")) {
+			printk(KERN_ERR PFX "cannot reserve FB region\n");
+			goto err_out_free_base0;
+		}
+	
+		rinfo->fb_base = ioremap(rinfo->fb_base_phys,
+					 rinfo->base1_region_size);
+		if (!rinfo->fb_base) {
+			printk(KERN_ERR PFX "cannot ioremap FB base\n");
+			goto err_out_iounmap_ctrl;
+		}
+	}
+
+
 	switch (rinfo->riva.Architecture) {
 	case NV_ARCH_03:
 		rinfo->riva.PRAMIN = (unsigned *)(rinfo->fb_base + 0x00C00000);
@@ -1959,18 +1946,48 @@ static int __devinit rivafb_init_one(struct pci_dev *pd,
 
 	RivaGetConfig(&rinfo->riva);
 
-	/* back to normal */
+	rinfo->ram_amount = rinfo->riva.RamAmountKBytes * 1024;
+	rinfo->dclk_max = rinfo->riva.MaxVClockFreqKHz * 1000;
 
-	assert(rinfo->pd != NULL);
+	if (rinfo->riva.Architecture != NV_ARCH_03) {
+		/*
+		 * Now the _normal_ chipsets can just map the amount of
+		 * real physical ram instead of the whole aperture
+		 */
+		if (!request_mem_region(rinfo->fb_base_phys,
+					rinfo->ram_amount, "rivafb")) {
+			printk(KERN_ERR PFX "cannot reserve FB region\n");
+			goto err_out_free_base0;
+		}
+	
+		rinfo->fb_base = ioremap(rinfo->fb_base_phys,
+					 rinfo->ram_amount);
+		if (!rinfo->fb_base) {
+			printk(KERN_ERR PFX "cannot ioremap FB base\n");
+			goto err_out_iounmap_ctrl;
+		}
+	}
+
+#ifdef CONFIG_MTRR
+	if (!nomtrr) {
+		rinfo->mtrr.vram = mtrr_add(rinfo->fb_base_phys,
+					    rinfo->ram_amount,
+					    MTRR_TYPE_WRCOMB, 1);
+		if (rinfo->mtrr.vram < 0) {
+			printk(KERN_ERR PFX "unable to setup MTRR\n");
+		} else {
+			rinfo->mtrr.vram_valid = 1;
+			/* let there be speed */
+			printk(KERN_INFO PFX "RIVA MTRR set to ON\n");
+		}
+	}
+#endif /* CONFIG_MTRR */
 
 	/* unlock io */
 	CRTCout(rinfo, 0x11, 0xFF);	/* vgaHWunlock() + riva unlock (0x7F) */
 	rinfo->riva.LockUnlock(&rinfo->riva, 0);
 
 	riva_save_state(rinfo, &rinfo->initial_state);
-
-	rinfo->ram_amount = rinfo->riva.RamAmountKBytes * 1024;
-	rinfo->dclk_max = rinfo->riva.MaxVClockFreqKHz * 1000;
 
 	if (!nohwcursor) rinfo->cursor = rivafb_init_cursor(rinfo);
 
@@ -1990,7 +2007,7 @@ static int __devinit rivafb_init_one(struct pci_dev *pd,
 	pci_set_drvdata(pd, rinfo);
 
 	printk(KERN_INFO PFX
-		"PCI nVidia NV%d framebuffer ver %s (%s, %dMB @ 0x%lX)\n",
+		"PCI nVidia NV%x framebuffer ver %s (%s, %dMB @ 0x%lX)\n",
 		rinfo->riva.Architecture,
 		RIVAFB_VERSION,
 		rinfo->drvr_name,
@@ -2035,7 +2052,7 @@ static void __devexit rivafb_remove_one(struct pci_dev *pd)
 #ifdef CONFIG_MTRR
 	if (board->mtrr.vram_valid)
 		mtrr_del(board->mtrr.vram, board->fb_base_phys,
-			 board->base1_region_size);
+			 board->ram_amount);
 #endif /* CONFIG_MTRR */
 
 	iounmap(board->ctrl_base);
@@ -2044,7 +2061,7 @@ static void __devexit rivafb_remove_one(struct pci_dev *pd)
 	release_mem_region(board->ctrl_base_phys,
 			   board->base0_region_size);
 	release_mem_region(board->fb_base_phys,
-			   board->base1_region_size);
+			   board->ram_amount);
 
 	kfree(board);
 

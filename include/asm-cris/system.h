@@ -62,8 +62,8 @@ struct __xchg_dummy { unsigned long a[100]; };
 #define save_flags(x) __asm__ __volatile__ ("move $ccr,%0" : "=rm" (x) : : "memory");
 #define restore_flags(x) __asm__ __volatile__ ("move %0,$ccr\n\tbtstq 5,%0\n\tbpl 1f\n\tnop\n\tpush $r0\n\tmoveq 0,$r0\n\tmove.d $r0,[0x90000000]\n\tpop $r0\n1:\n" : : "r" (x) : "memory");
 #else
-#define __cli() __asm__ __volatile__ ( "di");
-#define __sti() __asm__ __volatile__ ( "ei" );
+#define __cli() __asm__ __volatile__ ( "di" : : :"memory");
+#define __sti() __asm__ __volatile__ ( "ei" : : :"memory");
 #define __save_flags(x) __asm__ __volatile__ ("move $ccr,%0" : "=rm" (x) : : "memory");
 #define __restore_flags(x) __asm__ __volatile__ ("move %0,$ccr" : : "rm" (x) : "memory");
 

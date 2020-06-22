@@ -1737,6 +1737,12 @@ long usbvideo_v4l_read(struct video_device *dev, char *buf, unsigned long count,
 	 * have - even if the application wants more. That would be
 	 * a big security embarassment!
 	 */
+	 
+	if (count + frame->seqRead_Index < count)
+	{
+		count = -EINVAL;
+		goto read_done;
+	}
 	if ((count + frame->seqRead_Index) > frame->seqRead_Length)
 		count = frame->seqRead_Length - frame->seqRead_Index;
 

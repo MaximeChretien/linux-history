@@ -20,11 +20,23 @@ struct coda_inode_info {
         struct ViceFid     c_fid;	/* Coda identifier */
         u_short	           c_flags;     /* flags (see below) */
 	struct list_head   c_cilist;    /* list of all coda inodes */
-	struct file	  *c_container; /* container file for this cnode */
-	unsigned int       c_contcount; /* refcount for container file */
+	int		   c_mapcount;	/* how often is this inode mmapped */
         struct coda_cred   c_cached_cred; /* credentials of cached perms */
         unsigned int       c_cached_perm; /* cached access permissions */
 };
+
+/*
+ * coda fs file private data
+ */
+#define CODA_MAGIC 0xC0DAC0DA
+struct coda_file_info {
+	int		 cfi_magic;	/* magic number */
+	int		 cfi_mapcount;  /* how often this file is mapped */
+	struct file	*cfi_container;	/* container file for this cnode */
+	struct coda_cred cfi_cred;	/* credentials of opener */
+};
+
+#define CODA_FTOC(file) ((struct coda_file_info *)((file)->private_data))
 
 /* flags */
 #define C_VATTR       0x1   /* Validity of vattr in inode */

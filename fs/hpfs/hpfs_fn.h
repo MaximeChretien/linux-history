@@ -156,9 +156,11 @@ extern inline unsigned de_size(int namelen, secno down_ptr)
 
 extern inline void copy_de(struct hpfs_dirent *dst, struct hpfs_dirent *src)
 {
-	int a = dst->down;
-	int n = dst->not_8x3;
+	int a;
+	int n;
 	if (!dst || !src) return;
+	a = dst->down;
+	n = dst->not_8x3;
 	memcpy((char *)dst + 2, (char *)src + 2, 28);
 	dst->down = a;
 	dst->not_8x3 = n;

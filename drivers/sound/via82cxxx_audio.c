@@ -354,8 +354,6 @@ static inline void via_card_cleanup_proc (struct via_info *card) {}
 static struct pci_device_id via_pci_tbl[] __initdata = {
 	{ PCI_VENDOR_ID_VIA, PCI_DEVICE_ID_VIA_82C686_5,
 	  PCI_ANY_ID, PCI_ANY_ID, },
-	{ PCI_VENDOR_ID_VIA, PCI_DEVICE_ID_VIA_8233_5,
-	  PCI_ANY_ID, PCI_ANY_ID, },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci,via_pci_tbl);
@@ -2051,7 +2049,7 @@ handle_one_block:
 	while ((count > 0) && (chan->slop_len < chan->frag_size)) {
 		size_t slop_left = chan->frag_size - chan->slop_len;
 		void *base = chan->pgtbl[n / (PAGE_SIZE / chan->frag_size)].cpuaddr;
-		unsigned ofs = n % (PAGE_SIZE / chan->frag_size);
+		unsigned ofs = (n % (PAGE_SIZE / chan->frag_size)) * chan->frag_size;
 
 		size = (count < slop_left) ? count : slop_left;
 		if (copy_to_user (userbuf,
@@ -2528,7 +2526,7 @@ static int via_dsp_ioctl_space (struct via_info *card,
 		info.fragments,
 		info.bytes);
 
-	return copy_to_user (arg, &info, sizeof (info));
+	return copy_to_user (arg, &info, sizeof (info))?-EFAULT:0;
 }
 
 
@@ -2572,7 +2570,7 @@ static int via_dsp_ioctl_ptr (struct via_info *card,
 		info.blocks,
 		info.ptr);
 
-	return copy_to_user (arg, &info, sizeof (info));
+	return copy_to_user (arg, &info, sizeof (info))?-EFAULT:0;
 }
 
 

@@ -42,8 +42,14 @@ nativex - the width in pixels of the flat panel.If you know it (usually 1024
 bpp  - bits per pixel (8,16 or 32)
 mode - a mode name like 800x600 (as described in Documentation/fb/modedb.txt)
 
+Example:
+video=trident:memsize=2048,800x600
+
 Using insane values for the above parameters will probably result in driver
 misbehaviour so take care(for instance memsize=12345678 or memdiff=23784 or
 nativex=93)
 
-Contact: jani@astechnix.ro
+If you have trouble with the driver you could check http://sf.net/projects/tridentfb
+to see if there's a newer version available.
+
+Contact: jani@iv.ro

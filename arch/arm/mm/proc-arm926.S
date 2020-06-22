@@ -56,35 +56,39 @@
  * cpu_arm926_data_abort()
  *
  * obtain information about current aborted instruction
+ * Note: we read user space.  This means we might cause a data
+ * abort here if the I-TLB and D-TLB aren't seeing the same
+ * picture.  Unfortunately, this does happen.  We live with it.
  *
  * Inputs:
- *  r0 = address of abort 
- *  r1 = cpsr of abort 
+ *  r2 = address of abort 
+ *  r3 = cpsr of abort
  *
  * Returns:
  *  r0 = address of abort
  *  r1 != 0 if writing
  *  r3 = FSR
+ *  r4 = corrupted
  */
 	.align	5
 ENTRY(cpu_arm926_data_abort)
-	tst	r1, #1<<24			@ Check for Jbit (NE -> found)
-	movne	r1, #-1 			@ Mark as writing
+	mrc	p15, 0, r0, c6, c0, 0		@ get FAR
+	mrc	p15, 0, r4, c5, c0, 0		@ get FSR
+
+	tst	r3, #1<<24			@ Check for Jbit (NE -> found)
+	movne	r3, #-1 			@ Mark as writing
 	bne	2f
 
-	tst	r1, #1<<5			@ Check for Thumb-bit (NE -> found)
-	ldrneh	r1, [r0]			@ Read aborted Thumb instruction        
+	tst	r3, #1<<5			@ Check for Thumb-bit (NE -> found)
+	ldrneh	r1, [r2]			@ Read aborted Thumb instruction        
 	tstne	r1, r1, lsr #12 		@ C = bit 11
 
-	ldreq	r1, [r0]			@ Read aborted ARM instruction
+	ldreq	r1, [r2]			@ Read aborted ARM instruction
 	tsteq	r1, r1, lsr #21 		@ C = bit 20
 
 	sbc	r1, r1, r1			@ r1 = C - 1
 2:
-	mrc	p15, 0, r3, c5, c0, 0		@ get FSR
-	and	r3, r3, #255
-	mrc	p15, 0, r0, c6, c0, 0		@ get FAR
-
+	and	r3, r4, #255
 	mov	pc, lr
 
 /*
@@ -193,10 +197,9 @@ cpu_arm926_cache_clean_invalidate_all_r2:
 	.align	5
 ENTRY(cpu_arm926_cache_clean_invalidate_range)
 	bic	r0, r0, #DCACHELINESIZE - 1	@ && added by PGM
-	bic	r1, r1, #DCACHELINESIZE - 1	@ && added by DHM
 	sub	r3, r1, r0
 	cmp	r3, #MAX_AREA_SIZE
-	bgt	cpu_arm926_cache_clean_invalidate_all_r2
+	bhi	cpu_arm926_cache_clean_invalidate_all_r2
 
 1:	teq	r2, #0
 #ifdef CONFIG_CPU_ARM926_WRITETHROUGH
@@ -216,7 +219,7 @@ ENTRY(cpu_arm926_cache_clean_invalidate_range)
 #endif
         
 	cmp	r0, r1
-	blt	1b
+	blo	1b
 
 	mcr	p15, 0, r1, c7, c10, 4		@ drain WB
 
@@ -267,14 +270,13 @@ ENTRY(cpu_arm926_dcache_invalidate_range)
 	tst	r0, #DCACHELINESIZE - 1
 	mcrne	p15, 0, r0, c7, c10, 1		@ clean D entry
 	tst	r1, #DCACHELINESIZE - 1
-	mcrne	p15, 0, r1, c7, c10, 1
-#endif		@ clean D entry
+	mcrne	p15, 0, r1, c7, c10, 1		@ clean D entry
+#endif
 	bic	r0, r0, #DCACHELINESIZE - 1
-	bic	r1, r1, #DCACHELINESIZE - 1
 1:	mcr	p15, 0, r0, c7, c6, 1		@ invalidate D entry
 	add	r0, r0, #DCACHELINESIZE
 	cmp	r0, r1
-	blt	1b
+	blo	1b
 	mov	pc, lr
 
 /*
@@ -291,18 +293,15 @@ ENTRY(cpu_arm926_dcache_invalidate_range)
 ENTRY(cpu_arm926_dcache_clean_range)
 #ifndef CONFIG_CPU_ARM926_WRITETHROUGH
 	bic	r0, r0, #DCACHELINESIZE - 1
-	sub	r1, r1, r0
-	cmp	r1, #MAX_AREA_SIZE
+	sub	r3, r1, r0
+	cmp	r3, #MAX_AREA_SIZE
 	mov	r2, #0
-	bgt	cpu_arm926_cache_clean_invalidate_all_r2
-
-	bic	r1, r1, #DCACHELINESIZE -1
-	add	r1, r1, #DCACHELINESIZE
+	bhi	cpu_arm926_cache_clean_invalidate_all_r2
 
 1:	mcr	p15, 0, r0, c7, c10, 1		@ clean D entry
 	add	r0, r0, #DCACHELINESIZE
-	subs	r1, r1, #DCACHELINESIZE
-	bpl	1b
+	cmp	r0, r1
+	blo	1b
 #endif
 	mcr	p15, 0, r2, c7, c10, 4		@ drain WB
 	mov	pc, lr
@@ -354,7 +353,12 @@ ENTRY(cpu_arm926_dcache_clean_entry)
 /*
  * cpu_arm926_icache_invalidate_range(start, end)
  *
- * invalidate a range of virtual addresses from the Icache
+ * This *is not* just icache.  It is to make data written to memory
+ * consistent such that instructions fetched from the region are what
+ * we expect.
+ *
+ * This is typically used after we have copied a module into kernel space,
+ * and we're about to start executing code from that module.
  *
  * start: virtual start address
  * end:   virtual end address
@@ -362,17 +366,14 @@ ENTRY(cpu_arm926_dcache_clean_entry)
 	.align	5
 ENTRY(cpu_arm926_icache_invalidate_range)
 	bic	r0, r0, #DCACHELINESIZE - 1	@ Safety check
-	sub	r1, r1, r0
-	cmp	r1, #MAX_AREA_SIZE
-	bgt	cpu_arm926_cache_clean_invalidate_all_r2
-
-	bic	r1, r1, #DCACHELINESIZE - 1
-	add	r1, r1, #DCACHELINESIZE
+	sub	r3, r1, r0
+	cmp	r3, #MAX_AREA_SIZE
+	bhi	cpu_arm926_cache_clean_invalidate_all_r2
 
 1:	mcr	p15, 0, r0, c7, c5, 1		@ clean I entries
 	add	r0, r0, #DCACHELINESIZE
-	subs	r1, r1, #DCACHELINESIZE
-	bne	1b
+	cmp	r0, r1
+	blo	1b
 
 	mov	r0, #0
 	mcr	p15, 0, r0, c7, c10, 4		@ drain WB
@@ -410,16 +411,14 @@ ENTRY(cpu_arm926_tlb_invalidate_range)
 	mov	r3, #0
 	mcr	p15, 0, r3, c7, c10, 4		@ drain WB
 
-	mov	r3, #PAGESIZE
-	sub	r3, r3, #1
-	bic	r0, r0, r3
-	bic	r1, r1, r3
+	bic	r0, r0, #(PAGESIZE - 1) & 0x00ff
+	bic	r0, r0, #(PAGESIZE - 1) & 0xff00
 
 1:	mcr	p15, 0, r0, c8, c6, 1		@ invalidate D TLB entry
 	mcr	p15, 0, r0, c8, c5, 1		@ invalidate I TLB entry
 	add	r0, r0, #PAGESIZE
 	cmp	r0, r1
-	blt	1b
+	blo	1b
 	mov	pc, lr
 
 /*

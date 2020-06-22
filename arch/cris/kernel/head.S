@@ -1,4 +1,4 @@
-/* $Id: head.S,v 1.43 2001/11/08 15:09:43 starvik Exp $
+/* $Id: head.S,v 1.44 2002/02/05 15:39:57 bjornw Exp $
  * 
  * Head of the kernel - alter with care
  *
@@ -7,6 +7,9 @@
  * Authors:	Bjorn Wesen (bjornw@axis.com)
  * 
  * $Log: head.S,v $
+ * Revision 1.44  2002/02/05 15:39:57  bjornw
+ * Oops.. non-CRAMFS_MAGIC should jump over the copying, not into it...
+ *
  * Revision 1.43  2001/11/08 15:09:43  starvik
  * Only start MII clock if Ethernet is configured
  *
@@ -420,7 +423,7 @@ _no_romfs_in_flash:
 	move.d	__vmlinux_end, $r0; the image will be after the vmlinux end address
 	move.d	[$r0], $r1	; cramfs assumes same endian on host/target
 	cmp.d	CRAMFS_MAGIC, $r1; magic value in cramfs superblock
-	bne	1f
+	bne	2f
 	nop
 
 	;; Ok. What is its size ? 
@@ -450,7 +453,8 @@ _no_romfs_in_flash:
 	subq	1, $r2
 	bne	1b
 	nop
-	
+
+2:	
 	;; Dont worry that the BSS is tainted. It will be cleared later.
 
 	moveq	0, $r0

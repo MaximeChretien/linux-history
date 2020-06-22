@@ -138,24 +138,26 @@ proc_file_write(struct file * file, const char * buffer,
 
 
 static loff_t
-proc_file_lseek(struct file * file, loff_t offset, int orig)
+proc_file_lseek(struct file * file, loff_t offset, int origin)
 {
-    switch (orig) {
-    case 0:
-	if (offset < 0)
-	    return -EINVAL;    
-	file->f_pos = offset;
-	return(file->f_pos);
-    case 1:
-	if (offset + file->f_pos < 0)
-	    return -EINVAL;    
-	file->f_pos += offset;
-	return(file->f_pos);
-    case 2:
-	return(-EINVAL);
-    default:
-	return(-EINVAL);
-    }
+	long long retval;
+
+	switch (origin) {
+		case 2:
+			offset += file->f_dentry->d_inode->i_size;
+			break;
+		case 1:
+			offset += file->f_pos;
+	}
+	retval = -EINVAL;
+	if (offset>=0 && offset<=file->f_dentry->d_inode->i_sb->s_maxbytes) {
+		if (offset != file->f_pos) {
+			file->f_pos = offset;
+			file->f_reada = 0;
+		}
+		retval = offset;
+	}
+	return retval;
 }
 
 /*

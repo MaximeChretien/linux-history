@@ -1,7 +1,7 @@
 /*
  * Physical mapping layer for MTD using the Axis partitiontable format
  *
- * Copyright (c) 2001 Axis Communications AB
+ * Copyright (c) 2001, 2002 Axis Communications AB
  *
  * This file is under the GPL.
  *
@@ -11,6 +11,27 @@
  * partition split defined below.
  *
  * $Log: axisflashmap.c,v $
+ * Revision 1.23  2002/05/13 12:12:28  johana
+ * Allow compile without CONFIG_MTD_MTDRAM but warn at compiletime and
+ * be informative at runtime.
+ *
+ * Revision 1.22  2002/05/13 10:24:44  johana
+ * Added #if checks on MTDRAM CONFIG
+ *
+ * Revision 1.21  2002/05/06 16:05:20  johana
+ * Removed debug printout.
+ *
+ * Revision 1.20  2002/05/06 16:03:00  johana
+ * No more cramfs as root hack in generic code.
+ * It's handled by axisflashmap using mtdram.
+ *
+ * Revision 1.19  2002/03/15 17:10:28  bjornw
+ * Changed comment about cached access since we changed this before
+ *
+ * Revision 1.18  2002/03/05 17:06:15  jonashg
+ * Try amd_flash probe before cfi_probe since amd_flash driver can handle two
+ * (or more) flash chips of different model and the cfi driver cannot.
+ *
  * Revision 1.17  2001/11/12 19:42:38  pkj
  * Fixed compiler warnings.
  *
@@ -80,6 +101,7 @@
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/map.h>
 #include <linux/mtd/partitions.h>
+#include <linux/mtd/mtdram.h>
 
 #include <asm/axisflashmap.h>
 #include <asm/mmu.h>
@@ -106,9 +128,8 @@ extern unsigned long romfs_start, romfs_length, romfs_in_flash; /* From head.S *
 /* 
  * Map driver
  *
- * Ok this is the scoop - we need to access the flash both with and without
- * the cache - without when doing all the fancy flash interfacing, and with
- * when we do actual copying because otherwise it will be slow like molasses.
+ * We run into tricky coherence situations if we mix cached with uncached
+ * accesses to we use the uncached version here.
  */
 
 static __u8 flash_read8(struct map_info *map, unsigned long ofs)
@@ -239,6 +260,7 @@ static struct mtd_info *mymtd;
 static int __init
 init_axis_flash(void)
 {
+	int err = 0;
 	int pidx = 0;
 	struct partitiontable_head *ptable_head;
 	struct partitiontable_entry *ptable;
@@ -247,14 +269,13 @@ init_axis_flash(void)
 
 	printk(KERN_NOTICE "Axis flash mapping: %x at %lx\n",
 	       WINDOW_SIZE, FLASH_CACHED_ADDR);
-
-#ifdef CONFIG_MTD_CFI
-	mymtd = (struct mtd_info *)do_map_probe("cfi_probe", &axis_map);
+#ifdef CONFIG_MTD_AMDSTD
+	mymtd = (struct mtd_info *)do_map_probe("amd_flash", &axis_map);
 #endif
 
-#ifdef CONFIG_MTD_AMDSTD
+#ifdef CONFIG_MTD_CFI
 	if (!mymtd) {
-		mymtd = (struct mtd_info *)do_map_probe("amd_flash", &axis_map);
+		mymtd = (struct mtd_info *)do_map_probe("cfi_probe", &axis_map);
 	}
 #endif
 
@@ -333,8 +354,8 @@ init_axis_flash(void)
 
 	if (use_default_ptable) {
 		printk(" Using default partition table\n");
-		return add_mtd_partitions(mymtd, axis_default_partitions,
-					  NUM_DEFAULT_PARTITIONS);
+		err = add_mtd_partitions(mymtd, axis_default_partitions,
+		                         NUM_DEFAULT_PARTITIONS);
 	} else {
 		if (romfs_in_flash) {
 			axis_partitions[pidx].name = "romfs";
@@ -348,8 +369,39 @@ init_axis_flash(void)
 			       axis_partitions[pidx].size);
 			pidx++;
 		}
-		return add_mtd_partitions(mymtd, axis_partitions, pidx);
-	}		
+
+		err = add_mtd_partitions(mymtd, axis_partitions, pidx);
+	}
+	if (!err && !romfs_in_flash) {
+#ifdef CONFIG_MTD_MTDRAM
+		/* Allocate, initialise and forget the mtd ram struct
+		 * when booting from RAM
+		 */
+		struct mtd_info *romfs_mtd = (struct mtd_info *)kmalloc(sizeof(struct mtd_info), GFP_KERNEL);
+		printk("MTD RAM device romfs_start: 0x%08lX len %lu\n",
+		       romfs_start, romfs_length);
+
+#if (CONFIG_MTDRAM_TOTAL_SIZE != 0) || (CONFIG_MTDRAM_ABS_POS != 0)
+#error "You must set CONFIG_MTDRAM_TOTAL_SIZE and CONFIG_MTDRAM_ABS_POS to 0"
+#endif
+		err = mtdram_init_device(romfs_mtd, (void*)romfs_start, 
+		                         romfs_length, "romfs in RAM");
+#else
+#warning ######################################
+#warning # You must enable CONFIG_MTD_MTDRAM  #
+#warning # with TOTAL_SIZE 0 and ABS_POS 0 to # 
+#warning # be able to boot with cramfs in RAM #
+#warning ######################################
+/* Maybe overkill to save these bytes in non debug builds, but let's do it..
+ * (No point in printing if we don't have a debug port anyway...)
+ */
+#ifndef CONFIG_ETRAX_DEBUG_PORT_NULL
+		printk("## Can't mount romfs in RAM using MTDRAM.\n");
+		printk("## You must enable MTD_MTDRAM with TOTAL_SIZE 0 and ABS_POS 0\n");
+#endif
+#endif /* CONFIG_MTD_MTDRAM */
+	}
+	return err;
 }
 
 /* This adds the above to the kernels init-call chain */

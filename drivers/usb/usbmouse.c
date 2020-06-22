@@ -114,7 +114,9 @@ static void *usb_mouse_probe(struct usb_device *dev, unsigned int ifnum,
 	endpoint = interface->endpoint + 0;
 	if (!(endpoint->bEndpointAddress & 0x80)) return NULL;
 	if ((endpoint->bmAttributes & 3) != 3) return NULL;
-
+	/* wacom tablets match... */
+ 	if (dev->descriptor.idVendor == 0x056a) return NULL;
+	
 	pipe = usb_rcvintpipe(dev, endpoint->bEndpointAddress);
 	maxp = usb_maxpacket(dev, pipe, usb_pipeout(pipe));
 

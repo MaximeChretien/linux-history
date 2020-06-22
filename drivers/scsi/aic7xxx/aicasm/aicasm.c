@@ -37,7 +37,7 @@
  * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGES.
  *
- * $Id: //depot/aic7xxx/aic7xxx/aicasm/aicasm.c#11 $
+ * $Id: //depot/aic7xxx/aic7xxx/aicasm/aicasm.c#15 $
  *
  * $FreeBSD: src/sys/dev/aic7xxx/aicasm/aicasm.c,v 1.29 2000/10/05 04:25:42 gibbs Exp $
  */
@@ -46,6 +46,7 @@
 
 #include <ctype.h>
 #include <inttypes.h>
+#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -90,6 +91,8 @@ char *regfilename;
 FILE *regfile;
 char *listfilename;
 FILE *listfile;
+int   src_mode;
+int   dst_mode;
 
 static STAILQ_HEAD(,instruction) seq_program;
 struct cs_tailq cs_tailq;
@@ -98,7 +101,9 @@ symlist_t patch_functions;
 
 #if DEBUG
 extern int yy_flex_debug;
+extern int mm_flex_debug;
 extern int yydebug;
+extern int mmdebug;
 #endif
 extern FILE *yyin;
 extern int yyparse(void);
@@ -131,7 +136,9 @@ main(int argc, char *argv[])
 	listfile = NULL;
 #if DEBUG
 	yy_flex_debug = 0;
+	mm_flex_debug = 0;
 	yydebug = 0;
+	mmdebug = 0;
 #endif
 	while ((ch = getopt(argc, argv, "d:l:n:o:r:I:O:")) != -1) {
 		switch(ch) {
@@ -139,8 +146,10 @@ main(int argc, char *argv[])
 #if DEBUG
 			if (strcmp(optarg, "s") == 0) {
 				yy_flex_debug = 1;
+				mm_flex_debug = 1;
 			} else if (strcmp(optarg, "p") == 0) {
 				yydebug = 1;
+				mmdebug = 1;
 			} else {
 				fprintf(stderr, "%s: -d Requires either an "
 					"'s' or 'p' argument\n", appname);
@@ -243,8 +252,7 @@ main(int argc, char *argv[])
 	if (retval == 0) {
 		if (SLIST_FIRST(&scope_stack) == NULL
 		 || SLIST_FIRST(&scope_stack)->type != SCOPE_ROOT) {
-			stop("Unterminated conditional expression",
-			     EX_DATAERR);
+			stop("Unterminated conditional expression", EX_DATAERR);
 			/* NOTREACHED */
 		}
 
@@ -355,6 +363,10 @@ output_code()
 	}
 	fprintf(ofile, "\n};\n\n");
 
+	if (patch_arg_list == NULL)
+		stop("Patch argument list not defined",
+		     EX_DATAERR);
+
 	/*
 	 *  Output patch information.  Patch functions first.
 	 */
@@ -362,31 +374,33 @@ output_code()
 	     cur_node != NULL;
 	     cur_node = SLIST_NEXT(cur_node,links)) {
 		fprintf(ofile,
-"static int ahc_patch%d_func(struct ahc_softc *ahc);
+"static int aic_patch%d_func(%s);
 
 static int
-ahc_patch%d_func(struct ahc_softc *ahc)
+aic_patch%d_func(%s)
 {
 	return (%s);
 }\n\n",
 			cur_node->symbol->info.condinfo->func_num,
+			patch_arg_list,
 			cur_node->symbol->info.condinfo->func_num,
+			patch_arg_list,
 			cur_node->symbol->name);
 	}
 
 	fprintf(ofile,
-"typedef int patch_func_t (struct ahc_softc *);
-struct patch {
+"typedef int patch_func_t (%s);
+static struct patch {
 	patch_func_t	*patch_func;
 	uint32_t	begin	   :10,
 			skip_instr :10,
 			skip_patch :12;
-} patches[] = {\n");
+} patches[] = {\n", patch_arg_list);
 
-	for(cur_patch = STAILQ_FIRST(&patches);
-	    cur_patch != NULL;
-	    cur_patch = STAILQ_NEXT(cur_patch,links)) {
-		fprintf(ofile, "%s\t{ ahc_patch%d_func, %d, %d, %d }",
+	for (cur_patch = STAILQ_FIRST(&patches);
+	     cur_patch != NULL;
+	     cur_patch = STAILQ_NEXT(cur_patch,links)) {
+		fprintf(ofile, "%s\t{ aic_patch%d_func, %d, %d, %d }",
 			cur_patch == STAILQ_FIRST(&patches) ? "" : ",\n",
 			cur_patch->patch_func, cur_patch->begin,
 			cur_patch->skip_instr, cur_patch->skip_patch);
@@ -395,14 +409,14 @@ struct patch {
 	fprintf(ofile, "\n};\n");
 
 	fprintf(ofile,
-"struct cs {
+"static struct cs {
 	u_int16_t	begin;
 	u_int16_t	end;
 } critical_sections[] = {\n");
 
-	for(cs = TAILQ_FIRST(&cs_tailq);
-	    cs != NULL;
-	    cs = TAILQ_NEXT(cs, links)) {
+	for (cs = TAILQ_FIRST(&cs_tailq);
+	     cs != NULL;
+	     cs = TAILQ_NEXT(cs, links)) {
 		fprintf(ofile, "%s\t{ %d, %d }",
 			cs == TAILQ_FIRST(&cs_tailq) ? "" : ",\n",
 			cs->begin_addr, cs->end_addr);
@@ -411,8 +425,8 @@ struct patch {
 	fprintf(ofile, "\n};\n");
 
 	fprintf(ofile,
-"const int num_critical_sections = sizeof(critical_sections)
-				 / sizeof(*critical_sections);\n");
+"static const int num_critical_sections = sizeof(critical_sections)
+				       / sizeof(*critical_sections);\n");
 
 	fprintf(stderr, "%s: %d instructions used\n", appname, instrcount);
 }
@@ -555,9 +569,9 @@ output_listing(char *ifilename)
 
 	/* Now output the listing */
 	cur_patch = STAILQ_FIRST(&patches);
-	for(cur_instr = STAILQ_FIRST(&seq_program);
-	    cur_instr != NULL;
-	    cur_instr = STAILQ_NEXT(cur_instr, links), instrcount++) {
+	for (cur_instr = STAILQ_FIRST(&seq_program);
+	     cur_instr != NULL;
+	     cur_instr = STAILQ_NEXT(cur_instr, links), instrcount++) {
 
 		if (check_patch(&cur_patch, instrcount,
 				&skip_addr, func_values) == 0) {

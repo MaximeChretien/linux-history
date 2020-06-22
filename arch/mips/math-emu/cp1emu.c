@@ -34,6 +34,7 @@
  * Note if you know that you won't have an fpu, then you'll get much 
  * better performance by compiling with -msoft-float!
  */
+#include <linux/compiler.h>
 #include <linux/mm.h>
 #include <linux/signal.h>
 #include <linux/smp.h>
@@ -66,7 +67,7 @@ typedef void *vaddr_t;
 
 /* Function which emulates the instruction in a branch delay slot. */
 
-static int mips_dsemul(struct pt_regs *, mips_instruction, vaddr_t);
+static int mips_dsemul(struct pt_regs *, mips_instruction, unsigned long);
 
 /* Function which emulates a floating point instruction. */
 
@@ -167,54 +168,6 @@ static int isBranchInstr(mips_instruction * i)
 #define REG_TO_VA (vaddr_t)
 #define VA_TO_REG (unsigned long)
 
-static unsigned long mips_get_word(struct pt_regs *xcp, void *va, int *perr)
-{
-	unsigned long temp;
-
-	if (!user_mode(xcp)) {
-		*perr = 0;
-		return (*(unsigned long *) va);
-	}
-
-	*perr = (int) get_user(temp, (unsigned long *) va);
-	return temp;
-}
-
-static unsigned long long
-mips_get_dword(struct pt_regs *xcp, void *va, int *perr)
-{
-	unsigned long long temp;
-
-	if (!user_mode(xcp)) {
-		*perr = 0;
-		return (*(unsigned long long *) va);
-	}
-
-	*perr = (int) get_user(temp, (unsigned long long *) va);
-	return temp;
-}
-
-static int mips_put_word(struct pt_regs *xcp, void *va, unsigned long val)
-{
-	if (!user_mode(xcp)) {
-		*(unsigned long *) va = val;
-		return 0;
-	}
-
-	return put_user(val, (unsigned long *) va);
-}
-
-static int mips_put_dword(struct pt_regs *xcp, void *va, long long val)
-{
-	if (!user_mode(xcp)) {
-		*(unsigned long long *) va = val;
-		return 0;
-	}
-
-	return put_user(val, (unsigned long long *) va);
-}
-
-
 /*
  * In the Linux kernel, we support selection of FPR format on the
  * basis of the Status.FR bit.  This does imply that, if a full 32
@@ -230,25 +183,24 @@ static int mips_put_dword(struct pt_regs *xcp, void *va, long long val)
  * Two instructions if the instruction is in a branch delay slot.
  */
 
-static int cop1Emulate(struct pt_regs *xcp, struct mips_fpu_soft_struct *ctx)
+static int cop1Emulate(struct pt_regs *regs, struct mips_fpu_soft_struct *ctx)
 {
+	vaddr_t emulpc, contpc;
 	mips_instruction ir;
-	vaddr_t emulpc;
-	vaddr_t contpc;
 	unsigned int cond;
 	int err = 0;
 
-	ir = mips_get_word(xcp, REG_TO_VA xcp->cp0_epc, &err);
+	err = get_user(ir, (mips_instruction *) regs->cp0_epc);
 	if (err) {
 		fpuemuprivate.stats.errors++;
 		return SIGBUS;
 	}
 
 	/* XXX NEC Vr54xx bug workaround */
-	if ((xcp->cp0_cause & CAUSEF_BD) && !isBranchInstr(&ir))
-		xcp->cp0_cause &= ~CAUSEF_BD;
+	if ((regs->cp0_cause & CAUSEF_BD) && !isBranchInstr(&ir))
+		regs->cp0_cause &= ~CAUSEF_BD;
 
-	if (xcp->cp0_cause & CAUSEF_BD) {
+	if (regs->cp0_cause & CAUSEF_BD) {
 		/*
 		 * The instruction to be emulated is in a branch delay slot
 		 * which means that we have to  emulate the branch instruction
@@ -261,24 +213,27 @@ static int cop1Emulate(struct pt_regs *xcp, struct mips_fpu_soft_struct *ctx)
 		 * Linux MIPS branch emulator operates on context, updating the
 		 * cp0_epc.
 		 */
-		emulpc = REG_TO_VA(xcp->cp0_epc + 4);	/* Snapshot emulation target */
+		emulpc = REG_TO_VA(regs->cp0_epc + 4);	/* Snapshot emulation target */
 
-		if (__compute_return_epc(xcp)) {
+		if (__compute_return_epc(regs)) {
 #ifdef CP1DBG
 			printk("failed to emulate branch at %p\n",
-				    REG_TO_VA(xcp->cp0_epc));
+				    REG_TO_VA(regs->cp0_epc));
 #endif
-			return SIGILL;;
+			return SIGILL;
 		}
-		ir = mips_get_word(xcp, emulpc, &err);
+		err = get_user(ir, (mips_instruction *) emulpc);
 		if (err) {
 			fpuemuprivate.stats.errors++;
 			return SIGBUS;
 		}
-		contpc = REG_TO_VA xcp->cp0_epc;
+		/* __computer_return_epc() will have updated cp0_epc */
+		contpc = REG_TO_VA regs->cp0_epc;
+		/* In order not to confuse ptrace() et al, tweak context */
+		regs->cp0_epc = VA_TO_REG emulpc - 4;
 	} else {
-		emulpc = REG_TO_VA xcp->cp0_epc;
-		contpc = REG_TO_VA xcp->cp0_epc + 4;
+		emulpc = REG_TO_VA regs->cp0_epc;
+		contpc = REG_TO_VA regs->cp0_epc + 4;
 	}
 
 emul:
@@ -289,12 +244,13 @@ emul:
 #ifndef SINGLE_ONLY_FPU
 	case ldc1_op:
 		{
-			void *va = REG_TO_VA(xcp->regs[MIPSInst_RS(ir)])
-			    + MIPSInst_SIMM(ir);
+			u64 *va = REG_TO_VA(regs->regs[MIPSInst_RS(ir)]) +
+			          MIPSInst_SIMM(ir);
 			int ft = MIPSInst_RT(ir);
-			if (!(xcp->cp0_status & ST0_FR))
+
+			if (!(regs->cp0_status & ST0_FR))
 				ft &= ~1;
-			ctx->regs[ft] = mips_get_dword(xcp, va, &err);
+			err = get_user(ctx->regs[ft], va);
 			fpuemuprivate.stats.loads++;
 			if (err) {
 				fpuemuprivate.stats.errors++;
@@ -305,13 +261,14 @@ emul:
 
 	case sdc1_op:
 		{
-			void *va = REG_TO_VA(xcp->regs[MIPSInst_RS(ir)])
-			    + MIPSInst_SIMM(ir);
+			fpureg_t *va = REG_TO_VA(regs->regs[MIPSInst_RS(ir)]) +
+			               MIPSInst_SIMM(ir);
 			int ft = MIPSInst_RT(ir);
-			if (!(xcp->cp0_status & ST0_FR))
+
+			if (!(regs->cp0_status & ST0_FR))
 				ft &= ~1;
 			fpuemuprivate.stats.stores++;
-			if (mips_put_dword(xcp, va, ctx->regs[ft])) {
+			if (put_user(ctx->regs[ft], va)) {
 				fpuemuprivate.stats.errors++;
 				return SIGBUS;
 			}
@@ -321,19 +278,20 @@ emul:
 
 	case lwc1_op:
 		{
-			void *va = REG_TO_VA(xcp->regs[MIPSInst_RS(ir)])
-			    + MIPSInst_SIMM(ir);
-			fpureg_t val;
+			u32 *va = REG_TO_VA(regs->regs[MIPSInst_RS(ir)]) +
+			               MIPSInst_SIMM(ir);
 			int ft = MIPSInst_RT(ir);
+			u32 val;
+
 			fpuemuprivate.stats.loads++;
-			val = mips_get_word(xcp, va, &err);
+			err = get_user(val, va);
 			if (err) {
 				fpuemuprivate.stats.errors++;
 				return SIGBUS;
 			}
-			if (xcp->cp0_status & ST0_FR) {
+			if (regs->cp0_status & ST0_FR) {
 				/* load whole register */
-				ctx->regs[ft] = val;
+				ctx->regs[ft] = (s64) val;
 			} else if (ft & 1) {
 				/* load to m.s. 32 bits */
 #ifdef SINGLE_ONLY_FPU
@@ -341,7 +299,7 @@ emul:
 				return SIGILL;
 #else
 				ctx->regs[(ft & ~1)] &= 0xffffffff;
-				ctx->regs[(ft & ~1)] |= val << 32;
+				ctx->regs[(ft & ~1)] |= (fpureg_t) val << 32;
 #endif
 			} else {
 				/* load to l.s. 32 bits */
@@ -353,12 +311,13 @@ emul:
 
 	case swc1_op:
 		{
-			void *va = REG_TO_VA(xcp->regs[MIPSInst_RS(ir)])
-			    + MIPSInst_SIMM(ir);
+			u32 *va = REG_TO_VA(regs->regs[MIPSInst_RS(ir)]) +
+			          MIPSInst_SIMM(ir);
 			unsigned int val;
 			int ft = MIPSInst_RT(ir);
+
 			fpuemuprivate.stats.stores++;
-			if (xcp->cp0_status & ST0_FR) {
+			if (regs->cp0_status & ST0_FR) {
 				/* store whole register */
 				val = ctx->regs[ft];
 			} else if (ft & 1) {
@@ -373,7 +332,7 @@ emul:
 				/* store from l.s. 32 bits */
 				val = ctx->regs[ft];
 			}
-			if (mips_put_word(xcp, va, val)) {
+			if (put_user(val, va)) {
 				fpuemuprivate.stats.errors++;
 				return SIGBUS;
 			}
@@ -382,10 +341,10 @@ emul:
 #else				/* old 32-bit fpu registers */
 	case lwc1_op:
 		{
-			void *va = REG_TO_VA(xcp->regs[MIPSInst_RS(ir)])
-			    + MIPSInst_SIMM(ir);
-			ctx->regs[MIPSInst_RT(ir)] =
-			    mips_get_word(xcp, va, &err);
+			u32 *va = REG_TO_VA(regs->regs[MIPSInst_RS(ir)]) +
+			          MIPSInst_SIMM(ir);
+			err = get_user(ctx->regs[MIPSInst_RT(ir)], va);
+
 			fpuemuprivate.stats.loads++;
 			if (err) {
 				fpuemuprivate.stats.errors++;
@@ -396,11 +355,10 @@ emul:
 
 	case swc1_op:
 		{
-			void *va = REG_TO_VA(xcp->regs[MIPSInst_RS(ir)])
-			    + MIPSInst_SIMM(ir);
+			u32 *va = REG_TO_VA(regs->regs[MIPSInst_RS(ir)]) +
+			          MIPSInst_SIMM(ir);
 			fpuemuprivate.stats.stores++;
-			if (mips_put_word
-			    (xcp, va, ctx->regs[MIPSInst_RT(ir)])) {
+			if (put_user(ctx->regs[MIPSInst_RT(ir)], va)) {
 				fpuemuprivate.stats.errors++;
 				return SIGBUS;
 			}
@@ -408,25 +366,17 @@ emul:
 		break;
 	case ldc1_op:
 		{
-			void *va = REG_TO_VA(xcp->regs[MIPSInst_RS(ir)])
+			u32 *va = REG_TO_VA(regs->regs[MIPSInst_RS(ir)])
 			    + MIPSInst_SIMM(ir);
 			unsigned int rt = MIPSInst_RT(ir) & ~1;
 			int errs = 0;
 			fpuemuprivate.stats.loads++;
 #if (defined(BYTE_ORDER) && BYTE_ORDER == BIG_ENDIAN) || defined(__MIPSEB__)
-			ctx->regs[rt + 1] =
-			    mips_get_word(xcp, va + 0, &err);
-			errs += err;
-			ctx->regs[rt + 0] =
-			    mips_get_word(xcp, va + 4, &err);
-			errs += err;
+			err = get_user(ctx->regs[rt + 1], va + 0);
+			err |= get_user(ctx->regs[rt + 0], va + 1);
 #else
-			ctx->regs[rt + 0] =
-			    mips_get_word(xcp, va + 0, &err);
-			errs += err;
-			ctx->regs[rt + 1] =
-			    mips_get_word(xcp, va + 4, &err);
-			errs += err;
+			err = get_user(ctx->regs[rt + 0], va + 0);
+			err |= get_user(ctx->regs[rt + 1], va + 1);
 #endif
 			if (err)
 				return SIGBUS;
@@ -435,19 +385,18 @@ emul:
 
 	case sdc1_op:
 		{
-			void *va = REG_TO_VA(xcp->regs[MIPSInst_RS(ir)])
-			    + MIPSInst_SIMM(ir);
+			u32 *va = REG_TO_VA(regs->regs[MIPSInst_RS(ir)]) +
+			          MIPSInst_SIMM(ir);
 			unsigned int rt = MIPSInst_RT(ir) & ~1;
+
 			fpuemuprivate.stats.stores++;
 #if (defined(BYTE_ORDER) && BYTE_ORDER == BIG_ENDIAN) || defined(__MIPSEB__)
-			if (mips_put_word(xcp, va + 0, ctx->regs[rt + 1]))
-				return SIGBUS;
-			if (mips_put_word(xcp, va + 4, ctx->regs[rt + 0]))
+			if (put_user(ctx->regs[rt + 1], va + 0)
+			    || put_user(ctx->regs[rt + 0], va + 1))
 				return SIGBUS;
 #else
-			if (mips_put_word(xcp, va + 0, ctx->regs[rt + 0]))
-				return SIGBUS;
-			if (mips_put_word(xcp, va + 4, ctx->regs[rt + 1]))
+			if (put_user(ctx->regs[rt + 0], va + 0)
+			    || put_user(ctx->regs[rt + 1], va + 1))
 				return SIGBUS;
 #endif
 		}
@@ -463,9 +412,9 @@ emul:
 			/* copregister fs -> gpr[rt] */
 			if (MIPSInst_RT(ir) != 0) {
 				int fs = MIPSInst_RD(ir);
-				if (!(xcp->cp0_status & ST0_FR))
+				if (!(regs->cp0_status & ST0_FR))
 					fs &= ~1;
-				xcp->regs[MIPSInst_RT(ir)] = ctx->regs[fs];
+				regs->regs[MIPSInst_RT(ir)] = ctx->regs[fs];
 			}
 			break;
 
@@ -473,11 +422,11 @@ emul:
 			/* copregister fs <- rt */
 				fpureg_t value;
 				int fs = MIPSInst_RD(ir);
-				if (!(xcp->cp0_status & ST0_FR))
+				if (!(regs->cp0_status & ST0_FR))
 					fs &= ~1;
 				value =
 				    (MIPSInst_RT(ir) ==
-				     0) ? 0 : xcp->regs[MIPSInst_RT(ir)];
+				     0) ? 0 : regs->regs[MIPSInst_RT(ir)];
 				ctx->regs[fs] = value;
 			break;
 		}
@@ -493,7 +442,7 @@ emul:
 					/* illegal register in single-float mode */
 					return SIGILL;
 #else
-					if (!(xcp->cp0_status & ST0_FR)) {
+					if (!(regs->cp0_status & ST0_FR)) {
 						/* move from m.s. 32 bits */
 						value =
 						    ctx->
@@ -502,7 +451,7 @@ emul:
 					}
 #endif
 				}
-				xcp->regs[MIPSInst_RT(ir)] = value;
+				regs->regs[MIPSInst_RT(ir)] = value;
 			}
 			break;
 
@@ -514,14 +463,14 @@ emul:
 					value = 0;
 				else
 					value =
-					    (unsigned int) xcp->
+					    (unsigned int) regs->
 					    regs[MIPSInst_RT(ir)];
 				if (MIPSInst_RD(ir) & 1) {
 #ifdef SINGLE_ONLY_FPU
 					/* illegal register in single-float mode */
 					return SIGILL;
 #else
-					if (!(xcp->cp0_status & ST0_FR)) {
+					if (!(regs->cp0_status & ST0_FR)) {
 						/* move to m.s. 32 bits */
 						ctx->
 						    regs[
@@ -550,7 +499,7 @@ emul:
 			if (MIPSInst_RT(ir) != 0) {
 				unsigned value =
 				    ctx->regs[MIPSInst_RD(ir)];
-				xcp->regs[MIPSInst_RT(ir)] = value;
+				regs->regs[MIPSInst_RT(ir)] = value;
 			}
 			break;
 
@@ -560,7 +509,7 @@ emul:
 				unsigned value;
 				value =
 				    (MIPSInst_RT(ir) ==
-				     0) ? 0 : xcp->regs[MIPSInst_RT(ir)];
+				     0) ? 0 : regs->regs[MIPSInst_RT(ir)];
 				ctx->regs[MIPSInst_RD(ir)] = value;
 			}
 			break;
@@ -576,7 +525,7 @@ emul:
 #ifdef CSRTRACE
 					printk
 					    ("%p gpr[%d]<-csr=%08x\n",
-					     REG_TO_VA(xcp->cp0_epc),
+					     REG_TO_VA(regs->cp0_epc),
 					     MIPSInst_RT(ir), value);
 #endif
 				} else if (MIPSInst_RD(ir) == FPCREG_RID)
@@ -584,7 +533,7 @@ emul:
 				else
 					value = 0;
 				if (MIPSInst_RT(ir))
-					xcp->regs[MIPSInst_RT(ir)] = value;
+					regs->regs[MIPSInst_RT(ir)] = value;
 			}
 			break;
 
@@ -596,7 +545,7 @@ emul:
 				if (MIPSInst_RT(ir) == 0)
 					value = 0;
 				else
-					value = xcp->regs[MIPSInst_RT(ir)];
+					value = regs->regs[MIPSInst_RT(ir)];
 
 				/* we only have one writable control reg
 				 */
@@ -604,11 +553,14 @@ emul:
 #ifdef CSRTRACE
 					printk
 					    ("%p gpr[%d]->csr=%08x\n",
-					     REG_TO_VA(xcp->cp0_epc),
+					     REG_TO_VA(regs->cp0_epc),
 					     MIPSInst_RT(ir), value);
 #endif
 					ctx->sr = value;
-					/* copy new rounding mode to ieee library state! */
+					/* copy new rounding mode and
+					   flush bit to ieee library state! */
+					ieee754_csr.nod =
+					    (ctx->sr & 0x1000000) != 0;
 					ieee754_csr.rm =
 					    ieee_rm[value & 0x3];
 				}
@@ -618,7 +570,7 @@ emul:
 		case bc_op: {
 			int likely = 0;
 
-			if (xcp->cp0_cause & CAUSEF_BD)
+			if (regs->cp0_cause & CAUSEF_BD)
 				return SIGILL;
 
 #if __mips >= 4
@@ -641,15 +593,15 @@ emul:
 				return SIGILL;
 			}
 
-			xcp->cp0_cause |= CAUSEF_BD;
+			regs->cp0_cause |= CAUSEF_BD;
 			if (cond) {
 				/* branch taken: emulate dslot instruction */
-				xcp->cp0_epc += 4;
-				contpc = REG_TO_VA xcp->cp0_epc +
-				         (MIPSInst_SIMM(ir) << 2);
+				regs->cp0_epc += 4;
+				contpc = REG_TO_VA regs->cp0_epc +
+				                   (MIPSInst_SIMM(ir) << 2);
 
-				ir = mips_get_word(xcp, REG_TO_VA(xcp->cp0_epc),
-				      &err);
+				err = get_user(ir,
+					(mips_instruction *)regs->cp0_epc);
 				if (err) {
 					fpuemuprivate.stats.errors++;
 					return SIGBUS;
@@ -680,16 +632,21 @@ emul:
 				 * Single step the non-cp1 instruction in the
 				 * dslot
 				 */
-				return mips_dsemul(xcp, ir, contpc);
+				return mips_dsemul(regs, ir, contpc);
 			} else {
 				/* branch not taken */
-				if (likely)
+				if (likely) {
 					/*
 					 * branch likely nullifies dslot if not
 					 * taken
 					 */
-					xcp->cp0_epc += 4;
-					/* else continue & execute dslot as normal insn */
+					regs->cp0_epc += 4;
+					contpc += 4;
+					/*
+					 * else continue & execute dslot as
+					 * normal insn
+					 */
+				}
 			}
 			break;
 		}
@@ -701,7 +658,7 @@ emul:
 				return SIGILL;
 
 			/* a real fpu computation instruction */
-				if ((sig = fpu_emu(xcp, ctx, ir)))
+				if ((sig = fpu_emu(regs, ctx, ir)))
 					return sig;
 			}
 		}
@@ -711,7 +668,7 @@ emul:
 	case cop1x_op:
 		{
 			int sig;
-			if ((sig = fpux_emu(xcp, ctx, ir)))
+			if ((sig = fpux_emu(regs, ctx, ir)))
 				return sig;
 		}
 		break;
@@ -722,9 +679,9 @@ emul:
 		if (MIPSInst_FUNC(ir) != movc_op)
 			return SIGILL;
 		cond = fpucondbit[MIPSInst_RT(ir) >> 2];
-		if (((ctx->sr & cond) != 0) !=
-		    ((MIPSInst_RT(ir) & 1) != 0)) return 0;
-		xcp->regs[MIPSInst_RD(ir)] = xcp->regs[MIPSInst_RS(ir)];
+		if (((ctx->sr & cond) != 0) != ((MIPSInst_RT(ir) & 1) != 0))
+			return 0;
+		regs->regs[MIPSInst_RD(ir)] = regs->regs[MIPSInst_RS(ir)];
 		break;
 #endif
 
@@ -733,8 +690,8 @@ emul:
 	}
 
 	/* we did it !! */
-	xcp->cp0_epc = VA_TO_REG(contpc);
-	xcp->cp0_cause &= ~CAUSEF_BD;
+	regs->cp0_epc = VA_TO_REG(contpc);
+	regs->cp0_cause &= ~CAUSEF_BD;
 	return 0;
 }
 
@@ -755,59 +712,100 @@ emul:
  *  execution of delay-slot instruction execution.
  */
 
+/* Instruction inserted following delay slot instruction to force trap */
+#define AdELOAD 0x8c000001	/* lw $0,1($0) */
+
+/* Instruction inserted following the AdELOAD to further tag the sequence */
+#define BD_COOKIE 0x0000bd36	/* tne $0,$0 with baggage */
+
+struct emuframe {
+	mips_instruction	emul;
+	mips_instruction	adel;
+	mips_instruction	cookie;
+	unsigned long	epc;
+};
+
 int do_dsemulret(struct pt_regs *xcp)
 {
+	struct emuframe *fr;
+	unsigned long epc;
+	u32 insn, cookie;
+	int err = 0;
+
+	fr = (struct emuframe *) (xcp->cp0_epc - sizeof(mips_instruction));
+
+	/* 
+	 * If we can't even access the area, something is very wrong, but we'll
+	 * leave that to the default handling
+	 */
+	if (verify_area(VERIFY_READ, fr, sizeof(struct emuframe)))
+		return 0;
+
+	/*
+	 * Do some sanity checking on the stackframe:
+	 *
+	 *  - Is the instruction pointed to by the EPC an AdELOAD?
+	 *  - Is the following memory word the BD_COOKIE?
+	 */
+	err = __get_user(insn, &fr->adel);
+	err |= __get_user(cookie, &fr->cookie);
+
+	if (unlikely(err || (insn != AdELOAD) || (cookie != BD_COOKIE))) {
+		fpuemuprivate.stats.errors++;
+
+		return 0;
+	}
+
+	/* 
+	 * At this point, we are satisfied that it's a BD emulation trap.  Yes,
+	 * a user might have deliberately put two malformed and useless
+	 * instructions in a row in his program, in which case he's in for a
+	 * nasty surprise - the next instruction will be treated as a
+	 * continuation address!  Alas, this seems to be the only way that we
+	 * can handle signals, recursion, and longjmps() in the context of
+	 * emulating the branch delay instruction.
+	 */
+
 #ifdef DSEMUL_TRACE
 	printk("desemulret\n");
 #endif
-	/* Set EPC to return to post-branch instruction */
-	xcp->cp0_epc = current->thread.dsemul_epc;
-	/*
-	 * Clear the state that got us here.
-	 */
-	current->thread.dsemul_aerpc = (unsigned long) 0;
+	if (__get_user(epc, &fr->epc)) {		/* Saved EPC */
+		/* This is not a good situation to be in */
+		force_sig(SIGBUS, current);
 
-	return 0;
+		return 1;
+	}
+
+	/* Set EPC to return to post-branch instruction */
+	xcp->cp0_epc = epc;
+
+	return 1;
 }
 
-
-#define AdELOAD 0x8c000001	/* lw $0,1($0) */
-
-static int
-mips_dsemul(struct pt_regs *xcp, mips_instruction ir, vaddr_t cpc)
+static int mips_dsemul(struct pt_regs *regs, mips_instruction ir,
+	unsigned long cpc)
 {
-	mips_instruction *dsemul_insns;
-	mips_instruction forcetrap;
 	extern asmlinkage void handle_dsemulret(void);
+	mips_instruction *dsemul_insns;
+	struct emuframe *fr;
+	int err;
 
 	if (ir == 0) {		/* a nop is easy */
-		xcp->cp0_epc = VA_TO_REG(cpc);
+		regs->cp0_epc = cpc;
+		regs->cp0_cause &= ~CAUSEF_BD;
 		return 0;
 	}
 #ifdef DSEMUL_TRACE
-	printk("desemul %p %p\n", REG_TO_VA(xcp->cp0_epc), cpc);
-#endif
+	printk("desemul %lx %lx\n", regs->cp0_epc, cpc);
 
+#endif
+ 
 	/* 
 	 * The strategy is to push the instruction onto the user stack 
 	 * and put a trap after it which we can catch and jump to 
 	 * the required address any alternative apart from full 
 	 * instruction emulation!!.
-	 */
-	dsemul_insns = (mips_instruction *) (xcp->regs[29] & ~3);
-	dsemul_insns -= 3;	/* Two instructions, plus one for luck ;-) */
-
-	/* Verify that the stack pointer is not competely insane */
-	if (verify_area(VERIFY_WRITE, dsemul_insns,
-	                sizeof(mips_instruction) * 2))
-		return SIGBUS;
-
-	if (mips_put_word(xcp, &dsemul_insns[0], ir)) {
-		fpuemuprivate.stats.errors++;
-		return SIGBUS;
-	}
-
-	/* 
+	 *
 	 * Algorithmics used a system call instruction, and
 	 * borrowed that vector.  MIPS/Linux version is a bit
 	 * more heavyweight in the interests of portability and
@@ -816,22 +814,28 @@ mips_dsemul(struct pt_regs *xcp, mips_instruction ir, vaddr_t cpc)
 	 * address error excpetion.
 	 */
 
-	/* If one is *really* paranoid, one tests for a bad stack pointer */
-	if ((xcp->regs[29] & 0x3) == 0x3)
-		forcetrap = AdELOAD - 1;
-	else
-		forcetrap = AdELOAD;
+	/* Ensure that the two instructions are in the same cache line */
+	dsemul_insns = (mips_instruction *) (regs->regs[29] & ~0xf);
+	dsemul_insns -= 4;	/* Retain 16-byte alignment */
+	fr = (struct emuframe *) dsemul_insns;
 
-	if (mips_put_word(xcp, &dsemul_insns[1], forcetrap)) {
+	/* Verify that the stack pointer is not competely insane */
+	if (unlikely(verify_area(VERIFY_WRITE, fr, sizeof(struct emuframe))))
+		return SIGBUS;
+
+	err = __put_user(ir, &dsemul_insns[0]);
+	err |= __put_user((mips_instruction)AdELOAD, &fr->adel);
+	err |= __put_user((mips_instruction)BD_COOKIE, &fr->cookie);
+	err |= __put_user(cpc, &fr->epc);
+
+	if (unlikely(err)) {
 		fpuemuprivate.stats.errors++;
-		return (SIGBUS);
+		return SIGBUS;
 	}
 
-	/* Set thread state to catch and handle the exception */
-	current->thread.dsemul_epc = (unsigned long) cpc;
-	current->thread.dsemul_aerpc = (unsigned long) &dsemul_insns[1];
-	xcp->cp0_epc = VA_TO_REG & dsemul_insns[0];
-	flush_cache_sigtramp((unsigned long) dsemul_insns);
+	regs->cp0_epc = VA_TO_REG & dsemul_insns[0];
+
+	flush_cache_sigtramp((unsigned long)&fr->adel);
 
 	return SIGILL;		/* force out of emulation loop */
 }
@@ -864,15 +868,15 @@ static const unsigned char cmptab[8] = {
 
 #ifdef CP0_STATUS_FR_SUPPORT
 #define DPFROMREG(dp,x)	((dp).bits = \
-			ctx->regs[(xcp->cp0_status & ST0_FR) ? x : (x & ~1)])
-#define DPTOREG(dp,x)	(ctx->regs[(xcp->cp0_status & ST0_FR) ? x : (x & ~1)]\
-			= (dp).bits)
+	ctx->regs[(xcp->cp0_status & ST0_FR) ? x : (x & ~1)])
+#define DPTOREG(dp,x)	(ctx->regs[(xcp->cp0_status & ST0_FR) ? x : (x & ~1)] \
+	= (dp).bits)
 #else
 /* Beware: MIPS COP1 doubles are always little_word endian in registers */
 #define DPFROMREG(dp,x)	\
-  ((dp).bits = ((unsigned long long)ctx->regs[(x)+1] << 32) | ctx->regs[x])
+	((dp).bits = ((u64)ctx->regs[(x)+1] << 32) | ctx->regs[x])
 #define DPTOREG(dp,x) \
-  (ctx->regs[x] = (dp).bits, ctx->regs[(x)+1] = (dp).bits >> 32)
+	(ctx->regs[x] = (dp).bits, ctx->regs[(x)+1] = (dp).bits >> 32)
 #endif
 
 #if __mips >= 4 && __mips != 32
@@ -880,6 +884,22 @@ static const unsigned char cmptab[8] = {
 /*
  * Additional MIPS4 instructions
  */
+
+#define DEF3OP(name, p, f1, f2, f3) \
+static ieee754##p fpemu_##p##_##name (ieee754##p r, ieee754##p s, \
+    ieee754##p t) \
+{ \
+    struct ieee754_csr ieee754_csr_save; \
+    s = f1 (s, t); \
+    ieee754_csr_save = ieee754_csr; \
+    s = f2 (s, r); \
+    ieee754_csr_save.cx |= ieee754_csr.cx; \
+    ieee754_csr_save.sx |= ieee754_csr.sx; \
+    s = f3 (s); \
+    ieee754_csr.cx |= ieee754_csr_save.cx; \
+    ieee754_csr.sx |= ieee754_csr_save.sx; \
+    return s; \
+}    
 
 static ieee754dp fpemu_dp_recip(ieee754dp d)
 {
@@ -901,47 +921,14 @@ static ieee754sp fpemu_sp_rsqrt(ieee754sp s)
 	return ieee754sp_div(ieee754sp_one(0), ieee754sp_sqrt(s));
 }
 
-
-static ieee754dp fpemu_dp_madd(ieee754dp r, ieee754dp s, ieee754dp t)
-{
-	return ieee754dp_add(ieee754dp_mul(s, t), r);
-}
-
-static ieee754dp fpemu_dp_msub(ieee754dp r, ieee754dp s, ieee754dp t)
-{
-	return ieee754dp_sub(ieee754dp_mul(s, t), r);
-}
-
-static ieee754dp fpemu_dp_nmadd(ieee754dp r, ieee754dp s, ieee754dp t)
-{
-	return ieee754dp_neg(ieee754dp_add(ieee754dp_mul(s, t), r));
-}
-
-static ieee754dp fpemu_dp_nmsub(ieee754dp r, ieee754dp s, ieee754dp t)
-{
-	return ieee754dp_neg(ieee754dp_sub(ieee754dp_mul(s, t), r));
-}
-
-
-static ieee754sp fpemu_sp_madd(ieee754sp r, ieee754sp s, ieee754sp t)
-{
-	return ieee754sp_add(ieee754sp_mul(s, t), r);
-}
-
-static ieee754sp fpemu_sp_msub(ieee754sp r, ieee754sp s, ieee754sp t)
-{
-	return ieee754sp_sub(ieee754sp_mul(s, t), r);
-}
-
-static ieee754sp fpemu_sp_nmadd(ieee754sp r, ieee754sp s, ieee754sp t)
-{
-	return ieee754sp_neg(ieee754sp_add(ieee754sp_mul(s, t), r));
-}
-
-static ieee754sp fpemu_sp_nmsub(ieee754sp r, ieee754sp s, ieee754sp t)
-{
-	return ieee754sp_neg(ieee754sp_sub(ieee754sp_mul(s, t), r));
-}
+DEF3OP(madd, sp, ieee754sp_mul, ieee754sp_add, );
+DEF3OP(msub, sp, ieee754sp_mul, ieee754sp_sub, );
+DEF3OP(nmadd, sp, ieee754sp_mul, ieee754sp_add, ieee754sp_neg);
+DEF3OP(nmsub, sp, ieee754sp_mul, ieee754sp_sub, ieee754sp_neg);
+DEF3OP(madd, dp, ieee754dp_mul, ieee754dp_add, );
+DEF3OP(msub, dp, ieee754dp_mul, ieee754dp_sub, );
+DEF3OP(nmadd, dp, ieee754dp_mul, ieee754dp_add, ieee754dp_neg);
+DEF3OP(nmsub, dp, ieee754dp_mul, ieee754dp_sub, ieee754dp_neg);
 
 static int fpux_emu(struct pt_regs *xcp, struct mips_fpu_soft_struct *ctx,
                     mips_instruction ir)
@@ -960,25 +947,18 @@ static int fpux_emu(struct pt_regs *xcp, struct mips_fpu_soft_struct *ctx,
 			switch (MIPSInst_FUNC(ir)) {
 			case lwxc1_op:
 				{
-					void *va =
-					    REG_TO_VA(xcp->
-						      regs[MIPSInst_FR(ir)]
-						      +
-						      xcp->
-						      regs[MIPSInst_FT
-							   (ir)]);
+					u32 *va = REG_TO_VA(
+						xcp->regs[MIPSInst_FR(ir)] +
+						xcp->regs[MIPSInst_FT(ir)]);
 					fpureg_t val;
-					int err = 0;
-					val = mips_get_word(xcp, va, &err);
-					if (err) {
-						fpuemuprivate.stats.
-						    errors++;
+
+					if (get_user(val, va)) {
+						fpuemuprivate.stats.errors++;
 						return SIGBUS;
 					}
 					if (xcp->cp0_status & ST0_FR) {
 						/* load whole register */
-						ctx->
-						    regs[MIPSInst_FD(ir)] =
+						ctx->regs[MIPSInst_FD(ir)] =
 						    val;
 					} else if (MIPSInst_FD(ir) & 1) {
 						/* load to m.s. 32 bits */
@@ -1011,30 +991,21 @@ static int fpux_emu(struct pt_regs *xcp, struct mips_fpu_soft_struct *ctx,
 
 			case swxc1_op:
 				{
-					void *va =
-					    REG_TO_VA(xcp->
-						      regs[MIPSInst_FR(ir)]
-						      +
-						      xcp->
-						      regs[MIPSInst_FT
-							   (ir)]);
+					u32 *va = REG_TO_VA(
+						xcp->regs[MIPSInst_FR(ir)] +
+						xcp->regs[MIPSInst_FT(ir)]);
 					unsigned int val;
+
 					if (xcp->cp0_status & ST0_FR) {
 						/* store whole register */
-						val =
-						    ctx->
-						    regs[MIPSInst_FS(ir)];
+						val = ctx->regs[MIPSInst_FS(ir)];
 					} else if (MIPSInst_FS(ir) & 1) {
 #if defined(SINGLE_ONLY_FPU)
 						/* illegal register in single-float mode */
 						return SIGILL;
 #else
 						/* store from m.s. 32 bits */
-						val =
-						    ctx->
-						    regs[
-							 (MIPSInst_FS(ir) &
-							  ~1)] >> 32;
+						val = ctx->regs[(MIPSInst_FS(ir) & ~1)] >> 32;
 #endif
 					} else {
 						/* store from l.s. 32 bits */
@@ -1042,9 +1013,8 @@ static int fpux_emu(struct pt_regs *xcp, struct mips_fpu_soft_struct *ctx,
 						    ctx->
 						    regs[MIPSInst_FS(ir)];
 					}
-					if (mips_put_word(xcp, va, val)) {
-						fpuemuprivate.stats.
-						    errors++;
+					if (put_user(val, va)) {
+						fpuemuprivate.stats.errors++;
 						return SIGBUS;
 					}
 				}
@@ -1086,6 +1056,8 @@ static int fpux_emu(struct pt_regs *xcp, struct mips_fpu_soft_struct *ctx,
 
 				ctx->sr =
 				    (ctx->sr & ~FPU_CSR_ALL_X) | rcsr;
+				if (ieee754_csr.nod)
+				    ctx->sr |= 0x1000000;
 				if ((ctx->sr >> 5) & ctx->
 				    sr & FPU_CSR_ALL_E) {
 		/*printk ("SIGFPE: fpu csr = %08x\n",ctx->sr); */
@@ -1110,38 +1082,29 @@ static int fpux_emu(struct pt_regs *xcp, struct mips_fpu_soft_struct *ctx,
 			switch (MIPSInst_FUNC(ir)) {
 			case ldxc1_op:
 				{
-					void *va =
-					    REG_TO_VA(xcp->
-						      regs[MIPSInst_FR(ir)]
-						      +
-						      xcp->
-						      regs[MIPSInst_FT
-							   (ir)]);
-					int err = 0;
-					ctx->regs[MIPSInst_FD(ir)] =
-					    mips_get_dword(xcp, va, &err);
-					if (err) {
-						fpuemuprivate.stats.
-						    errors++;
+					u64 *va = REG_TO_VA(
+						xcp->regs[MIPSInst_FR(ir)] +
+						xcp->regs[MIPSInst_FT(ir)]);
+					u64 val;
+
+					if (get_user(val, va)) {
+						fpuemuprivate.stats.errors++;
 						return SIGBUS;
 					}
+					ctx->regs[MIPSInst_FD(ir)] = val;
 				}
 				break;
 
 			case sdxc1_op:
 				{
-					void *va =
-					    REG_TO_VA(xcp->
-						      regs[MIPSInst_FR(ir)]
-						      +
-						      xcp->
-						      regs[MIPSInst_FT
-							   (ir)]);
-					if (mips_put_dword
-					    (xcp, va,
-					     ctx->regs[MIPSInst_FS(ir)])) {
-						fpuemuprivate.stats.
-						    errors++;
+					u64 *va = REG_TO_VA(
+						xcp->regs[MIPSInst_FR(ir)] +
+						xcp->regs[MIPSInst_FT(ir)]);
+					u64 val;
+
+					val = ctx->regs[MIPSInst_FS(ir)];
+					if (put_user(val, va)) {
+						fpuemuprivate.stats.errors++;
 						return SIGBUS;
 					}
 				}
@@ -1150,12 +1113,15 @@ static int fpux_emu(struct pt_regs *xcp, struct mips_fpu_soft_struct *ctx,
 			case madd_d_op:
 				handler = fpemu_dp_madd;
 				goto dcoptop;
+
 			case msub_d_op:
 				handler = fpemu_dp_msub;
 				goto dcoptop;
+
 			case nmadd_d_op:
 				handler = fpemu_dp_nmadd;
 				goto dcoptop;
+
 			case nmsub_d_op:
 				handler = fpemu_dp_nmsub;
 				goto dcoptop;
@@ -1274,7 +1240,8 @@ static int fpu_emu(struct pt_regs *xcp, struct mips_fpu_soft_struct *ctx,
 		case fmov_op:
 			/* an easy one */
 			SPFROMREG(rv.s, MIPSInst_FS(ir));
-			break;
+			goto copcsr;
+
 			/* binary op on handler */
 scopbop:
 			{
@@ -1386,13 +1353,16 @@ copcsr:
 				rfmt = -1;
 				if ((cmpop & 0x8) && ieee754_cxtest(IEEE754_INVALID_OPERATION))
 					rcsr = FPU_CSR_INV_X | FPU_CSR_INV_S;
-				} else {
-					return SIGILL;
-				}
-				break;
+				else
+					goto copcsr;
+
+			} else {
+				return SIGILL;
 			}
 			break;
 		}
+		break;
+	}
 
 #if !defined(SINGLE_ONLY_FPU)
 	case d_fmt: {
@@ -1456,7 +1426,7 @@ copcsr:
 		case fmov_op:
 			/* an easy one */
 			DPFROMREG(rv.d, MIPSInst_FS(ir));
-			break;
+			goto copcsr;
 
 			/* binary op on handler */
 dcopbop:
@@ -1553,6 +1523,9 @@ dcopuop:
 				rfmt = -1;
 				if ((cmpop & 0x8) && ieee754_cxtest (IEEE754_INVALID_OPERATION))
 					rcsr = FPU_CSR_INV_X | FPU_CSR_INV_S;
+				else
+					goto copcsr;
+
 			} else {
 				return SIGILL;
 			}
@@ -1668,29 +1641,42 @@ int fpu_emulator_cop1Handler(struct pt_regs *xcp)
 {
 	struct mips_fpu_soft_struct *ctx = &current->thread.fpu.soft;
 	unsigned long oldepc, prevepc;
-	unsigned int insn;
+	mips_instruction insn, *insnp;
 	int sig = 0;
-	int err = 0;
 
 	oldepc = xcp->cp0_epc;
 	do {
-		if (current->need_resched)
-			schedule();
-
 		prevepc = xcp->cp0_epc;
-		insn = mips_get_word(xcp, REG_TO_VA(xcp->cp0_epc), &err);
-		if (err) {
+
+		/*
+		 * This is a braindead way to do it but the only sane way I
+		 * found to keep the 64-bit egcs 1.1.2 from crashing.
+		 */
+		insnp = (mips_instruction *) xcp->cp0_epc;
+		if (verify_area(VERIFY_READ, insnp, 4) ||
+		    __get_user(insn, insnp)) {
 			fpuemuprivate.stats.errors++;
 			return SIGBUS;
 		}
-		if (insn != 0)
-			sig = cop1Emulate(xcp, ctx);
-		else
+		if (insn == 0)
 			xcp->cp0_epc += 4;	/* skip nops */
+		else {
+			/* Update ieee754_csr. Only relevant if we have a
+			   h/w FPU */
+			ieee754_csr.nod = (ctx->sr & 0x1000000) != 0;
+			ieee754_csr.rm = ieee_rm[ctx->sr & 0x3];
+			ieee754_csr.cx = (ctx->sr >> 12) & 0x1f;
+			sig = cop1Emulate(xcp, ctx);
+		}
 
 		if (mips_cpu.options & MIPS_CPU_FPU)
 			break;
-	} while (xcp->cp0_epc > prevepc && sig == 0);
+		if (sig)
+			break;
+
+		if (current->need_resched)
+			schedule();
+	} while (xcp->cp0_epc > prevepc);
 
 	/* SIGILL indicates a non-fpu instruction */
 	if (sig == SIGILL && xcp->cp0_epc != oldepc)
@@ -1699,80 +1685,3 @@ int fpu_emulator_cop1Handler(struct pt_regs *xcp)
 
 	return sig;
 }
-
-
-#ifdef NOTDEF
-/*
- * Patch up the hardware fpu state when an f.p. exception occurs.  
- */
-static int cop1Patcher(int xcptno, struct pt_regs *xcp)
-{
-	struct mips_fpu_soft_struct *ctx = &current->thread.fpu.soft;
-	unsigned sr;
-	int sig;
-
-	/* reenable Cp1, else fpe_save() will get nested exception */
-	sr = mips_bissr(ST0_CU1);
-
-	/* get fpu registers and status, then clear pending exceptions */
-	fpe_save(ctx);
-	fpe_setsr(ctx->sr &= ~FPU_CSR_ALL_X);
-
-	/* get current rounding mode for IEEE library, and emulate insn */
-	ieee754_csr.rm = ieee_rm[ctx->sr & 0x3];
-	sig = cop1Emulate(xcp, ctx);
-
-	/* don't return with f.p. exceptions pending */
-	ctx->sr &= ~FPU_CSR_ALL_X;
-	fpe_restore(ctx);
-
-	mips_setsr(sr);
-	return sig;
-}
-
-void _cop1_init(int emulate)
-{
-	extern int _nofpu;
-
-	if (emulate) {
-		/* 
-		 * Install cop1 emulator to handle "coprocessor unusable" exception
-		 */
-		xcption(XCPTCPU, cop1Handler);
-		fpuemuactive = 1;	/* tell dbg.c that we are in charge */
-		_nofpu = 0;	/* tell setjmp() it "has" an fpu */
-	} else {
-		/* 
-		 * Install cop1 emulator for floating point exceptions only,
-		 * i.e. denormalised results, underflow, overflow etc, which
-		 * must be emulated in s/w.
-		 */
-#ifdef 1
-		/* r4000 or above use dedicate exception */
-		xcption(XCPTFPE, cop1Patcher);
-#else
-		/* r3000 et al use interrupt */
-		extern int _sbd_getfpuintr(void);
-		int intno = _sbd_getfpuintr();
-		intrupt(intno, cop1Patcher, 0);
-		mips_bissr(SR_IM0 << intno);
-#endif
-
-#if (#cpu(r4640) || #cpu(r4650)) && !defined(SINGLE_ONLY_FPU)
-		/* For R4640/R4650 compiled *without* the -msingle-float flag,
-		   then we share responsibility: the h/w handles the single
-		   precision operations, and the trap emulator handles the
-		   double precision. We set fpuemuactive so that dbg.c first
-		   fetches the s/w state before saving the h/w state. */
-		fpuemuactive = 1;
-		{
-			int i;
-			/* initialise the unused d.p high order words to be NaN */
-			for (i = 0; i < 32; i++)
-				current->thread.fpu.soft.regs[i] =
-				    0x7ff80bad00000000LL;
-		}
-#endif				/* (r4640 || r4650) && !fpu(single) */
-	}
-}
-#endif

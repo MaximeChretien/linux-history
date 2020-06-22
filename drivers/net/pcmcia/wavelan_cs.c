@@ -22,7 +22,7 @@
 #ifdef WAVELAN_ROAMING	
  * Roaming support added 07/22/98 by Justin Seger (jseger@media.mit.edu)
  * based on patch by Joe Finney from Lancaster University.
-#endif :-)
+#endif
  *
  * Lucent (formerly AT&T GIS, formerly NCR) WaveLAN PCMCIA card: An
  * Ethernet-like radio transceiver controlled by an Intel 82593 coprocessor.

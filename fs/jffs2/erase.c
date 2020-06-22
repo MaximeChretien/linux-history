@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: erase.c,v 1.23 2001/09/19 21:51:11 dwmw2 Exp $
+ * $Id: erase.c,v 1.24 2001/12/06 16:38:38 dwmw2 Exp $
  *
  */
 #include <linux/kernel.h>
@@ -215,8 +215,8 @@ static inline void jffs2_remove_node_refs_from_ino_list(struct jffs2_sb_info *c,
 
 	D2({
 		int i=0;
-        struct jffs2_raw_node_ref *this;		
-        printk(KERN_DEBUG "After remove_node_refs_from_ino_list: \n" KERN_DEBUG);
+		struct jffs2_raw_node_ref *this;
+		printk(KERN_DEBUG "After remove_node_refs_from_ino_list: \n" KERN_DEBUG);
 
 		this = ic->nodes;
 	   

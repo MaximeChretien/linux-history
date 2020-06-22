@@ -116,7 +116,7 @@ struct e100_serial {
 	int			break_detected_cnt;
 	int			errorcode;
 
-#ifdef CONFIG_RS485
+#ifdef CONFIG_ETRAX_RS485
 	struct rs485_control	rs485;  /* RS-485 support */
 #endif
 };

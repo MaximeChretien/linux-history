@@ -36,20 +36,11 @@
 #define insl    __arch_readsl*/
 
 #define __io(a)			(a)
-#if 0
-#define __mem_pci(a)		((unsigned long)(a))
-#define __mem_isa(a)		(PCI_MEMORY_VADDR + (unsigned long)(a))
-/*
- * Validate the pci memory address for ioremap.
- */
-#define iomem_valid_addr(iomem,size)	\
-	((iomem) > 0 && (iomem) + (size) <= 0x20000000)
+#define __mem_pci(a)            (a) 
+#define __arch_getw(a)			(*(volatile unsigned short  *)(a))
+#define __arch_putw(v,a)		(*(volatile unsigned short *)(a) = (v))
+#define iomem_valid_addr(off,size) (1)
+#define iomem_to_phys(off) (off)
 
-/*
- * Convert PCI memory space to a CPU physical address
- */
-#define iomem_to_phys(iomem)	((iomem) + PHYS_PCI_MEM_BASE)
-
-#endif
 
 #endif

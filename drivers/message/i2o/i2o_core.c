@@ -70,7 +70,7 @@ int i2o_num_controllers;
 static int core_context;
 
 /* Initialization && shutdown functions */
-static void i2o_sys_init(void);
+void i2o_sys_init(void);
 static void i2o_sys_shutdown(void);
 static int i2o_reset_controller(struct i2o_controller *);
 static int i2o_reboot_event(struct notifier_block *, unsigned long , void *);
@@ -119,28 +119,6 @@ static int sys_tbl_len;
  * deletes it before the new_dev_notify() handler is called.
  */
 static spinlock_t i2o_dev_lock = SPIN_LOCK_UNLOCKED;
-
-#ifdef MODULE
-/* 
- * Function table to send to bus specific layers
- * See <include/linux/i2o.h> for explanation of this
- */
-static struct i2o_core_func_table i2o_core_functions =
-{
-	i2o_install_controller,
-	i2o_activate_controller,
-	i2o_find_controller,
-	i2o_unlock_controller,
-	i2o_run_queue,
-	i2o_delete_controller
-};
-
-#ifdef CONFIG_I2O_PCI_MODULE
-extern int i2o_pci_core_attach(struct i2o_core_func_table *);
-extern void i2o_pci_core_detach(void);
-#endif /* CONFIG_I2O_PCI_MODULE */
-
-#endif /* MODULE */
 
 /*
  * Structures and definitions for synchronous message posting.
@@ -2013,10 +1991,10 @@ static int i2o_systab_send(struct i2o_controller *iop)
  	 */
 	msg[6] = 0x54000000 | sys_tbl_len;
 	msg[7] = virt_to_bus(sys_tbl);
-	msg[8] = 0x54000000 | 8;
-	msg[9] = virt_to_bus(privbuf);
-	msg[10] = 0xD4000000 | 8;
-	msg[11] = virt_to_bus(privbuf+2);
+	msg[8] = 0x54000000 | privbuf[1];
+	msg[9] = privbuf[0];
+	msg[10] = 0xD4000000 | privbuf[3];
+	msg[11] = privbuf[2];
 
 	ret=i2o_post_wait_mem(iop, msg, sizeof(msg), 120, privbuf, NULL);
 	
@@ -2044,7 +2022,7 @@ static int i2o_systab_send(struct i2o_controller *iop)
 /*
  * Initialize I2O subsystem.
  */
-static void __init i2o_sys_init(void)
+void __init i2o_sys_init(void)
 {
 	struct i2o_controller *iop, *niop = NULL;
 
@@ -2220,9 +2198,8 @@ int i2o_init_outbound_q(struct i2o_controller *c)
 	msg[2]= core_context;
 	msg[3]= 0x0106;				/* Transaction context */
 	msg[4]= 4096;				/* Host page frame size */
-	/* Frame size is in words. Pick 128, its what everyone elses uses and
-		other sizes break some adapters. */
-	msg[5]= MSG_FRAME_SIZE<<16|0x80;	/* Outbound msg frame size and Initcode */
+	/* Frame size is in words. 256 bytes a frame for now */
+	msg[5]= MSG_FRAME_SIZE<<16|0x80;	/* Outbound msg frame size in words and Initcode */
 	msg[6]= 0xD0000004;			/* Simple SG LE, EOB */
 	msg[7]= virt_to_bus(status);
 
@@ -2295,7 +2272,7 @@ int i2o_post_outbound_messages(struct i2o_controller *c)
 	for(i=0; i< NMBR_MSG_FRAMES; i++) {
 		I2O_REPLY_WRITE32(c,m);
 		mb();
-		m += MSG_FRAME_SIZE;
+		m += (MSG_FRAME_SIZE << 2);
 	}
 
 	return 0;
@@ -2479,9 +2456,8 @@ static int i2o_build_sys_table(void)
 		sys_tbl->iops[count].last_changed = sys_tbl_ind - 1; // ??
 		sys_tbl->iops[count].iop_capabilities = 
 				iop->status_block->iop_capabilities;
-		sys_tbl->iops[count].inbound_low = 
-				(u32)virt_to_bus(iop->post_port);
-		sys_tbl->iops[count].inbound_high = 0;	// TODO: 64-bit support
+		sys_tbl->iops[count].inbound_low = iop->post_port;
+		sys_tbl->iops[count].inbound_high = 0;	// FIXME: 64-bit support
 
 		count++;
 	}
@@ -3433,6 +3409,10 @@ EXPORT_SYMBOL(i2o_status_get);
 EXPORT_SYMBOL(i2o_install_handler);
 EXPORT_SYMBOL(i2o_remove_handler);
 
+EXPORT_SYMBOL(i2o_install_controller);
+EXPORT_SYMBOL(i2o_delete_controller);
+EXPORT_SYMBOL(i2o_run_queue);
+
 EXPORT_SYMBOL(i2o_claim_device);
 EXPORT_SYMBOL(i2o_release_device);
 EXPORT_SYMBOL(i2o_device_notify_on);
@@ -3457,37 +3437,27 @@ EXPORT_SYMBOL(i2o_dump_message);
 
 EXPORT_SYMBOL(i2o_get_class_name);
 
-#ifdef MODULE
+EXPORT_SYMBOL_GPL(i2o_sys_init);
 
 MODULE_AUTHOR("Red Hat Software");
 MODULE_DESCRIPTION("I2O Core");
 MODULE_LICENSE("GPL");
 
-
-
-int init_module(void)
+static int i2o_core_init(void)
 {
 	printk(KERN_INFO "I2O Core - (C) Copyright 1999 Red Hat Software\n");
 	if (i2o_install_handler(&i2o_core_handler) < 0)
 	{
-		printk(KERN_ERR 
-			"i2o_core: Unable to install core handler.\nI2O stack not loaded!");
+		printk(KERN_ERR "i2o_core: Unable to install core handler.\nI2O stack not loaded!");
 		return 0;
 	}
 
 	core_context = i2o_core_handler.context;
 
 	/*
-	 * Attach core to I2O PCI transport (and others as they are developed)
-	 */
-#ifdef CONFIG_I2O_PCI_MODULE
-	if(i2o_pci_core_attach(&i2o_core_functions) < 0)
-		printk(KERN_INFO "i2o: No PCI I2O controllers found\n");
-#endif
-
-	/*
 	 * Initialize event handling thread
 	 */	
+
 	init_MUTEX_LOCKED(&evt_sem);
 	evt_pid = kernel_thread(i2o_core_evt, &evt_reply, CLONE_SIGHAND);
 	if(evt_pid < 0)
@@ -3507,7 +3477,7 @@ int init_module(void)
 	return 0;
 }
 
-void cleanup_module(void)
+static void i2o_core_exit(void)
 {
 	int stat;
 
@@ -3528,73 +3498,10 @@ void cleanup_module(void)
 		}
 		printk("done.\n");
 	}
-
-#ifdef CONFIG_I2O_PCI_MODULE
-	i2o_pci_core_detach();
-#endif
-
 	i2o_remove_handler(&i2o_core_handler);
-
 	unregister_reboot_notifier(&i2o_reboot_notifier);
 }
 
-#else
+module_init(i2o_core_init);
+module_exit(i2o_core_exit);
 
-extern int i2o_block_init(void);
-extern int i2o_config_init(void);
-extern int i2o_lan_init(void);
-extern int i2o_pci_init(void);
-extern int i2o_proc_init(void);
-extern int i2o_scsi_init(void);
-
-int __init i2o_init(void)
-{
-	printk(KERN_INFO "Loading I2O Core - (c) Copyright 1999 Red Hat Software\n");
-	
-	if (i2o_install_handler(&i2o_core_handler) < 0)
-	{
-		printk(KERN_ERR 
-			"i2o_core: Unable to install core handler.\nI2O stack not loaded!");
-		return 0;
-	}
-
-	core_context = i2o_core_handler.context;
-
-	/*
-	 * Initialize event handling thread
-	 * We may not find any controllers, but still want this as 
-	 * down the road we may have hot pluggable controllers that
-	 * need to be dealt with.
-	 */	
-	init_MUTEX_LOCKED(&evt_sem);
-	if((evt_pid = kernel_thread(i2o_core_evt, &evt_reply, CLONE_SIGHAND)) < 0)
-	{
-		printk(KERN_ERR "I2O: Could not create event handler kernel thread\n");
-		i2o_remove_handler(&i2o_core_handler);
-		return 0;
-	}
-
-
-#ifdef CONFIG_I2O_PCI
-	i2o_pci_init();
-#endif
-
-	if(i2o_num_controllers)
-		i2o_sys_init();
-
-	register_reboot_notifier(&i2o_reboot_notifier);
-
-	i2o_config_init();
-#ifdef CONFIG_I2O_BLOCK
-	i2o_block_init();
-#endif
-#ifdef CONFIG_I2O_LAN
-	i2o_lan_init();
-#endif
-#ifdef CONFIG_I2O_PROC
-	i2o_proc_init();
-#endif
-	return 0;
-}
-
-#endif

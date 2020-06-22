@@ -28,7 +28,7 @@
 
 #include <asm/hardware.h>
 #include <asm/irq.h>
-#include <asm/arch/pcmcia.h>
+#include "sa1100_generic.h"
 
 static int debug = 0;
 
@@ -41,14 +41,8 @@ static int stork_pcmcia_init(struct pcmcia_init *init)
 
         sa1100_stork_pcmcia_init = *init;
 
-        /* Enable CF bus: */
-        storkSetLatchA(STORK_PCMCIA_PULL_UPS_POWER_ON);
-
-        /* All those are inputs */
-	GPDR &= ~(GPIO_STORK_PCMCIA_A_CARD_DETECT | GPIO_STORK_PCMCIA_B_CARD_DETECT | GPIO_STORK_PCMCIA_A_RDY| GPIO_STORK_PCMCIA_B_RDY);
-
 	/* Set transition detect */
-	set_GPIO_IRQ_edge( GPIO_STORK_PCMCIA_A_CARD_DETECT | GPIO_STORK_PCMCIA_B_CARD_DETECT, GPIO_BOTH_EDGES );
+	set_GPIO_IRQ_edge( GPIO_STORK_PCMCIA_A_CARD_DETECT | GPIO_STORK_PCMCIA_B_CARD_DETECT, GPIO_NO_EDGES );
         set_GPIO_IRQ_edge( GPIO_STORK_PCMCIA_A_RDY| GPIO_STORK_PCMCIA_B_RDY, GPIO_FALLING_EDGE );
 
 	/* Register interrupts */
@@ -192,11 +186,41 @@ static int stork_pcmcia_configure_socket(const struct pcmcia_configure *configur
         return 0;
 }
 
-struct pcmcia_low_level stork_pcmcia_ops = { 
-        stork_pcmcia_init,
-        stork_pcmcia_shutdown,
-        stork_pcmcia_socket_state,
-        stork_pcmcia_get_irq_info,
-        stork_pcmcia_configure_socket
-};
+static int stork_pcmcia_socket_init(int sock)
+{
+        storkSetLatchA(STORK_PCMCIA_PULL_UPS_POWER_ON);
 
+        if (sock == 0)
+		set_GPIO_IRQ_edge(GPIO_STORK_PCMCIA_A_CARD_DETECT, GPIO_BOTH_EDGES);
+        else if (sock == 1)
+		set_GPIO_IRQ_edge(GPIO_STORK_PCMCIA_B_CARD_DETECT, GPIO_BOTH_EDGES);
+
+	return 0;
+}
+
+static int stork_pcmcia_socket_suspend(int sock)
+{
+        if (sock == 0)
+		set_GPIO_IRQ_edge(GPIO_STORK_PCMCIA_A_CARD_DETECT, GPIO_NO_EDGES);
+        else if (sock == 1) {
+		set_GPIO_IRQ_edge(GPIO_STORK_PCMCIA_B_CARD_DETECT, GPIO_NO_EDGES);
+
+		/*
+		 * Hack!
+		 */
+	        storkClearLatchA(STORK_PCMCIA_PULL_UPS_POWER_ON);
+	}
+
+	return 0;
+}
+
+struct pcmcia_low_level stork_pcmcia_ops = { 
+	init:			stork_pcmcia_init,
+	shutdown:		stork_pcmcia_shutdown,
+	socket_state:		stork_pcmcia_socket_state,
+	get_irq_info:		stork_pcmcia_get_irq_info,
+	configure_socket:	stork_pcmcia_configure_socket,
+
+	socket_init:		stork_pcmcia_socket_init,
+	socket_suspend:		stork_pcmcia_socket_suspend,
+};

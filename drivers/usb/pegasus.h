@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 1999,2000 Petko Manolov - Petkan (pmanolov@lnxw.com)
+ * Copyright (c) 1999-2002 Petko Manolov - Petkan (petkan@users.sourceforge.net)
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,14 +31,6 @@
 #define	EPROM_WR_ENABLE		0x10
 #define	EPROM_LOAD		0x20
 
-#define	MII_BMCR		0x00
-#define	MII_BMSR		0x01
-#define	BMSR_MEDIA		0x7808
-#define	MII_ANLPA		0x05
-#define	ANLPA_100TX_FD		0x0100
-#define	ANLPA_100TX_HD		0x0080
-#define	ANLPA_10T_FD		0x0040
-#define	ANLPA_10T_HD		0x0020
 #define	PHY_DONE		0x80
 #define	PHY_READ		0x40
 #define	PHY_WRITE		0x20
@@ -74,7 +66,6 @@
 #define	PEGASUS_REQ_GET_REGS	0xf0
 #define	PEGASUS_REQ_SET_REGS	0xf1
 #define	PEGASUS_REQ_SET_REG	PEGASUS_REQ_SET_REGS
-#define	ALIGN(x)		x __attribute__((aligned(L1_CACHE_BYTES)))
 
 enum pegasus_registers {
 	EthCtrl0 = 0,
@@ -107,13 +98,13 @@ typedef struct pegasus {
 	unsigned		features;
 	int			dev_index;
 	int			intr_interval;
-	struct urb		ctrl_urb, rx_urb, tx_urb, intr_urb;
+	struct urb		*ctrl_urb, *rx_urb, *tx_urb, *intr_urb;
 	devrequest		dr;
 	wait_queue_head_t	ctrl_wait;
-	struct semaphore	ctrl_sem;
-	unsigned char		ALIGN(rx_buff[PEGASUS_MAX_MTU]);
-	unsigned char		ALIGN(tx_buff[PEGASUS_MAX_MTU]);
-	unsigned char		ALIGN(intr_buff[8]);
+	struct semaphore	sem;
+	unsigned char		rx_buff[PEGASUS_MAX_MTU];
+	unsigned char		tx_buff[PEGASUS_MAX_MTU];
+	unsigned char		intr_buff[8];
 	__u8			eth_regs[4];
 	__u8			phy;
 	__u8			gpio_res;
@@ -134,9 +125,12 @@ struct usb_eth_dev {
 #define	VENDOR_ALLIEDTEL	0x07c9
 #define	VENDOR_BELKIN		0x050d
 #define	VENDOR_BILLIONTON	0x08dd
+#define	VENDOR_COMPAQ		0x049f
 #define	VENDOR_COREGA		0x07aa
 #define	VENDOR_DLINK		0x2001
+#define VENDOR_ELCON		0x0db7
 #define	VENDOR_ELSA		0x05cc
+#define	VENDOR_HAWKING		0x0e66
 #define	VENDOR_IODATA		0x04bb
 #define	VENDOR_KINGSTON		0x0951
 #define	VENDOR_LANEED		0x056e
@@ -145,7 +139,7 @@ struct usb_eth_dev {
 #define	VENDOR_SMARTBRIDGES	0x08d1
 #define	VENDOR_SMC		0x0707
 #define	VENDOR_SOHOWARE		0x15e8
-
+#define	VENDOR_SIEMENS		0x067c
 
 #else	/* PEGASUS_DEV */
 
@@ -173,12 +167,16 @@ PEGASUS_DEV( "USB 10/100 Fast Ethernet", VENDOR_ABOCOM, 0x200c,
 		DEFAULT_GPIO_RESET | PEGASUS_II ) 	
 PEGASUS_DEV( "Accton USB 10/100 Ethernet Adapter", VENDOR_ACCTON, 0x1046,
 		DEFAULT_GPIO_RESET )
+PEGASUS_DEV( "SpeedStream USB 10/100 Ethernet", VENDOR_ACCTON, 0x5046,
+		DEFAULT_GPIO_RESET )
 PEGASUS_DEV( "ADMtek ADM8511 \"Pegasus II\" USB Ethernet",
 		VENDOR_ADMTEK, 0x8511,
 		DEFAULT_GPIO_RESET | PEGASUS_II )
 PEGASUS_DEV( "ADMtek AN986 \"Pegasus\" USB Ethernet (eval. board)",
 		VENDOR_ADMTEK, 0x0986,
 		DEFAULT_GPIO_RESET | HAS_HOME_PNA )
+PEGASUS_DEV( "ADMtek AN986A USB MAC", VENDOR_ADMTEK, 0x1986,
+		DEFAULT_GPIO_RESET | PEGASUS_II )
 PEGASUS_DEV( "Allied Telesyn Int. AT-USB100", VENDOR_ALLIEDTEL, 0xb100,
 		DEFAULT_GPIO_RESET | PEGASUS_II )
 PEGASUS_DEV( "Belkin F5D5050 USB Ethernet", VENDOR_BELKIN, 0x0121,
@@ -187,6 +185,8 @@ PEGASUS_DEV( "Billionton USB-100", VENDOR_BILLIONTON, 0x0986,
 		DEFAULT_GPIO_RESET )
 PEGASUS_DEV( "Billionton USBLP-100", VENDOR_BILLIONTON, 0x0987,
 		DEFAULT_GPIO_RESET | HAS_HOME_PNA )
+PEGASUS_DEV( "iPAQ Networking 10/100 USB", VENDOR_COMPAQ, 0x8511,
+		DEFAULT_GPIO_RESET | PEGASUS_II )
 PEGASUS_DEV( "Billionton USBEL-100", VENDOR_BILLIONTON, 0x0988,
 		DEFAULT_GPIO_RESET )
 PEGASUS_DEV( "Billionton USBE-100", VENDOR_BILLIONTON, 0x8511,
@@ -207,10 +207,16 @@ PEGASUS_DEV( "D-Link DSB-650TX(PNA)", VENDOR_DLINK, 0x4003,
 		DEFAULT_GPIO_RESET | HAS_HOME_PNA )
 PEGASUS_DEV( "D-Link DSB-650", VENDOR_DLINK, 0xabc1,
 		DEFAULT_GPIO_RESET )
+PEGASUS_DEV( "ELCON EPLC10Mi USB to Powerline Adapter", VENDOR_ELCON, 0x0002,
+		DEFAULT_GPIO_RESET | PEGASUS_II | HAS_HOME_PNA )
 PEGASUS_DEV( "Elsa Micolink USB2Ethernet", VENDOR_ELSA, 0x3000,
 		DEFAULT_GPIO_RESET )
+PEGASUS_DEV( "Hawking UF100 10/100 Ethernet", VENDOR_HAWKING, 0x400c,
+		DEFAULT_GPIO_RESET | PEGASUS_II )
 PEGASUS_DEV( "IO DATA USB ET/TX", VENDOR_IODATA, 0x0904,
 		DEFAULT_GPIO_RESET )
+PEGASUS_DEV( "IO DATA USB ET/TX-S", VENDOR_IODATA, 0x0913,
+		DEFAULT_GPIO_RESET | PEGASUS_II )
 PEGASUS_DEV( "Kingston KNU101TX Ethernet", VENDOR_KINGSTON, 0x000a,
 		DEFAULT_GPIO_RESET)
 PEGASUS_DEV( "LANEED USB Ethernet LD-USB/TX", VENDOR_LANEED, 0x4002,
@@ -243,8 +249,13 @@ PEGASUS_DEV( "smartNIC 2 PnP Adapter", VENDOR_SMARTBRIDGES, 0x0003,
 		DEFAULT_GPIO_RESET | PEGASUS_II )
 PEGASUS_DEV( "SMC 202 USB Ethernet", VENDOR_SMC, 0x0200,
 		DEFAULT_GPIO_RESET )
+PEGASUS_DEV( "SMC 2206 USB Ethernet", VENDOR_SMC, 0x0201,
+		DEFAULT_GPIO_RESET | PEGASUS_II )
 PEGASUS_DEV( "SOHOware NUB100 Ethernet", VENDOR_SOHOWARE, 0x9100,
 		DEFAULT_GPIO_RESET )
-
+PEGASUS_DEV( "SOHOware NUB110 Ethernet", VENDOR_SOHOWARE, 0x9110,
+		DEFAULT_GPIO_RESET | PEGASUS_II )
+PEGASUS_DEV( "SpeedStream USB 10/100 Ethernet", VENDOR_SIEMENS, 0x1001,
+		DEFAULT_GPIO_RESET )
 
 #endif	/* PEGASUS_DEV */

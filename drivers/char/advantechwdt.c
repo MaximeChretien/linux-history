@@ -13,10 +13,10 @@
  *	modify it under the terms of the GNU General Public License
  *	as published by the Free Software Foundation; either version
  *	2 of the License, or (at your option) any later version.
- *	
- *	Neither Alan Cox nor CymruNet Ltd. admit liability nor provide 
- *	warranty for any of this software. This material is provided 
- *	"AS-IS" and at no charge.	
+ *
+ *	Neither Alan Cox nor CymruNet Ltd. admit liability nor provide
+ *	warranty for any of this software. This material is provided
+ *	"AS-IS" and at no charge.
  *
  *	(c) Copyright 1995    Alan Cox <alan@redhat.com>
  *
@@ -24,14 +24,11 @@
 
 #include <linux/config.h>
 #include <linux/module.h>
-#include <linux/version.h>
 #include <linux/types.h>
 #include <linux/errno.h>
 #include <linux/kernel.h>
-#include <linux/sched.h>
 #include <linux/miscdevice.h>
 #include <linux/watchdog.h>
-#include <linux/slab.h>
 #include <linux/ioport.h>
 #include <linux/fcntl.h>
 #include <asm/io.h>
@@ -40,41 +37,67 @@
 #include <linux/notifier.h>
 #include <linux/reboot.h>
 #include <linux/init.h>
-#include <linux/spinlock.h>
-#include <linux/smp_lock.h>
 
-static int advwdt_is_open;
-static spinlock_t advwdt_lock;
+static unsigned long advwdt_is_open;
+static char adv_expect_close;
 
 /*
  *	You must set these - there is no sane way to probe for this board.
  *
  *	To enable or restart, write the timeout value in seconds (1 to 63)
- *	to I/O port WDT_START.  To disable, read I/O port WDT_STOP.
+ *	to I/O port wdt_start.  To disable, read I/O port wdt_stop.
  *	Both are 0x443 for most boards (tested on a PCA-6276VE-00B1), but
  *	check your manual (at least the PCA-6159 seems to be different -
- *	the manual says WDT_STOP is 0x43, not 0x443).
+ *	the manual says wdt_stop is 0x43, not 0x443).
  *	(0x43 is also a write-only control register for the 8254 timer!)
- *
- *	TODO: module parameters to set the I/O port addresses and NOWAYOUT
- *	option at load time.
  */
  
-#define WDT_STOP 0x443
-#define WDT_START 0x443
+static int wdt_stop = 0x443;
+static int wdt_start = 0x443;
 
-#define WD_TIMO 60		/* 1 minute */
-static int wd_margin = WD_TIMO;
+static int wd_margin = 60; /* 60 sec default timeout */
 
 /*
  *	Kernel methods.
  */
- 
+
+#ifndef MODULE
+
+static int __init adv_setup(char *str)
+{
+	int ints[4];
+
+	str = get_options(str, ARRAY_SIZE(ints), ints);
+
+	if(ints[0] > 0){
+		wdt_stop = ints[1];
+		if(ints[0] > 1)
+			wdt_start = ints[2];
+	}
+
+	return 1;
+}
+
+__setup("advwdt=", adv_setup);
+
+#endif /* !MODULE */
+
+MODULE_PARM(wdt_stop, "i");
+MODULE_PARM_DESC(wdt_stop, "Advantech WDT 'stop' io port (default 0x443)");
+MODULE_PARM(wdt_start, "i");
+MODULE_PARM_DESC(wdt_start, "Advantech WDT 'start' io port (default 0x443)");
+
 static void
 advwdt_ping(void)
 {
 	/* Write a watchdog value */
-	outb_p(wd_margin, WDT_START);
+	outb_p(wd_margin, wdt_start);
+}
+
+static void
+advwdt_disable(void)
+{
+	inb_p(wdt_stop);
 }
 
 static ssize_t
@@ -85,16 +108,19 @@ advwdt_write(struct file *file, const char *buf, size_t count, loff_t *ppos)
 		return -ESPIPE;
 
 	if (count) {
-		advwdt_ping();
-		return 1;
-	}
-	return 0;
-}
+#ifndef CONFIG_WATCHDOG_NOWAYOUT
+		size_t i;
 
-static ssize_t
-advwdt_read(struct file *file, char *buf, size_t count, loff_t *ppos)
-{
-	return -EINVAL;
+		adv_expect_close = 0;
+
+		for (i = 0; i != count; i++) {
+			if (buf[i] == 'V')
+				adv_expect_close = 42;
+		}
+#endif
+		advwdt_ping();
+	}
+	return count;
 }
 
 static int
@@ -103,19 +129,20 @@ advwdt_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 {
 	int new_margin;
 	static struct watchdog_info ident = {
-		WDIOF_KEEPALIVEPING | WDIOF_SETTIMEOUT, 1, "Advantech WDT"
+		options:		WDIOF_KEEPALIVEPING | WDIOF_SETTIMEOUT,
+		firmware_version:	0,
+		identity:		"Advantech WDT"
 	};
-	
+
 	switch (cmd) {
 	case WDIOC_GETSUPPORT:
 	  if (copy_to_user((struct watchdog_info *)arg, &ident, sizeof(ident)))
 	    return -EFAULT;
 	  break;
-	  
+
 	case WDIOC_GETSTATUS:
-	  if (copy_to_user((int *)arg, &advwdt_is_open,  sizeof(int)))
-	    return -EFAULT;
-	  break;
+	case WDIOC_GETBOOTSTATUS:
+	  return put_user(0, (int *)arg);
 
 	case WDIOC_KEEPALIVE:
 	  advwdt_ping();
@@ -132,7 +159,26 @@ advwdt_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 
 	case WDIOC_GETTIMEOUT:
 	  return put_user(wd_margin, (int *)arg);
-	  break;
+
+	case WDIOC_SETOPTIONS:
+	{
+	  int options, retval = -EINVAL;
+
+	  if (get_user(options, (int *)arg))
+	    return -EFAULT;
+
+	  if (options & WDIOS_DISABLECARD) {
+	    advwdt_disable();
+	    retval = 0;
+	  }
+
+	  if (options & WDIOS_ENABLECARD) {
+	    advwdt_ping();
+	    retval = 0;
+	  }
+
+	  return retval;
+	}
 
 	default:
 	  return -ENOTTY;
@@ -143,39 +189,27 @@ advwdt_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 static int
 advwdt_open(struct inode *inode, struct file *file)
 {
-	switch (MINOR(inode->i_rdev)) {
-		case WATCHDOG_MINOR:
-			spin_lock(&advwdt_lock);
-			if (advwdt_is_open) {
-				spin_unlock(&advwdt_lock);
-				return -EBUSY;
-			}
-			/*
-			 *	Activate 
-			 */
-	 
-			advwdt_is_open = 1;
-			advwdt_ping();
-			spin_unlock(&advwdt_lock);
-			return 0;
-		default:
-			return -ENODEV;
-	}
+	if (test_and_set_bit(0, &advwdt_is_open))
+		return -EBUSY;
+	/*
+	 *	Activate
+	 */
+
+	advwdt_ping();
+	return 0;
 }
 
 static int
 advwdt_close(struct inode *inode, struct file *file)
 {
-	lock_kernel();
-	if (MINOR(inode->i_rdev) == WATCHDOG_MINOR) {
-		spin_lock(&advwdt_lock);
-#ifndef CONFIG_WATCHDOG_NOWAYOUT	
-		inb_p(WDT_STOP);
-#endif		
-		advwdt_is_open = 0;
-		spin_unlock(&advwdt_lock);
+	if (adv_expect_close == 42) {
+		advwdt_disable();
+	} else {
+		printk(KERN_CRIT "advancetechwdt: Unexpected close, not stopping watchdog!\n");
+		advwdt_ping();
 	}
-	unlock_kernel();
+	clear_bit(0, &advwdt_is_open);
+	adv_expect_close = 0;
 	return 0;
 }
 
@@ -189,7 +223,7 @@ advwdt_notify_sys(struct notifier_block *this, unsigned long code,
 {
 	if (code == SYS_DOWN || code == SYS_HALT) {
 		/* Turn the WDT off */
-		inb_p(WDT_STOP);
+		advwdt_disable();
 	}
 	return NOTIFY_DONE;
 }
@@ -200,7 +234,7 @@ advwdt_notify_sys(struct notifier_block *this, unsigned long code,
  
 static struct file_operations advwdt_fops = {
 	owner:		THIS_MODULE,
-	read:		advwdt_read,
+	llseek:		no_llseek,
 	write:		advwdt_write,
 	ioctl:		advwdt_ioctl,
 	open:		advwdt_open,
@@ -208,14 +242,14 @@ static struct file_operations advwdt_fops = {
 };
 
 static struct miscdevice advwdt_miscdev = {
-	WATCHDOG_MINOR,
-	"watchdog",
-	&advwdt_fops
+	minor:		WATCHDOG_MINOR,
+	name:		"watchdog",
+	fops:		&advwdt_fops,
 };
 
 /*
  *	The WDT needs to learn about soft shutdowns in order to
- *	turn the timebomb registers off. 
+ *	turn the timebomb registers off.
  */
  
 static struct notifier_block advwdt_notifier = {
@@ -227,14 +261,12 @@ static struct notifier_block advwdt_notifier = {
 static int __init
 advwdt_init(void)
 {
-	printk("WDT driver for Advantech single board computer initialising.\n");
+	printk(KERN_INFO "WDT driver for Advantech single board computer initialising.\n");
 
-	spin_lock_init(&advwdt_lock);
 	misc_register(&advwdt_miscdev);
-#if WDT_START != WDT_STOP
-	request_region(WDT_STOP, 1, "Advantech WDT");
-#endif
-	request_region(WDT_START, 1, "Advantech WDT");
+	if(wdt_stop != wdt_start)
+		request_region(wdt_stop, 1, "Advantech WDT");
+	request_region(wdt_start, 1, "Advantech WDT");
 	register_reboot_notifier(&advwdt_notifier);
 	return 0;
 }
@@ -244,16 +276,18 @@ advwdt_exit(void)
 {
 	misc_deregister(&advwdt_miscdev);
 	unregister_reboot_notifier(&advwdt_notifier);
-#if WDT_START != WDT_STOP
-	release_region(WDT_STOP,1);
-#endif
-	release_region(WDT_START,1);
+	if(wdt_stop != wdt_start)
+		release_region(wdt_stop,1);
+	release_region(wdt_start,1);
 }
 
 module_init(advwdt_init);
 module_exit(advwdt_exit);
 
 MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Marek Michalkiewicz <marekm@linux.org.pl>");
+MODULE_DESCRIPTION("Advantech Single Board Computer WDT driver");
+EXPORT_NO_SYMBOLS;
 
 /* end of advantechwdt.c */
 

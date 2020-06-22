@@ -67,7 +67,7 @@ static inline void d_free(struct dentry *dentry)
 }
 
 /*
- * Release the dentry's inode, using the fileystem
+ * Release the dentry's inode, using the filesystem
  * d_iput() operation if defined.
  * Called with dcache_lock held, drops it.
  */
@@ -568,8 +568,7 @@ int shrink_dcache_memory(int priority, unsigned int gfp_mask)
 	count = dentry_stat.nr_unused / priority;
 
 	prune_dcache(count);
-	kmem_cache_shrink(dentry_cache);
-	return 0;
+	return kmem_cache_shrink(dentry_cache);
 }
 
 #define NAME_ALLOC_LEN(len)	((len+16) & ~15)
@@ -1210,7 +1209,7 @@ static void __init dcache_init(unsigned long mempages)
 			__get_free_pages(GFP_ATOMIC, order);
 	} while (dentry_hashtable == NULL && --order >= 0);
 
-	printk("Dentry-cache hash table entries: %d (order: %ld, %ld bytes)\n",
+	printk(KERN_INFO "Dentry cache hash table entries: %d (order: %ld, %ld bytes)\n",
 			nr_hash, order, (PAGE_SIZE << order));
 
 	if (!dentry_hashtable)

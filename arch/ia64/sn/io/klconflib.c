@@ -4,8 +4,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 1992 - 1997, 2000 Silicon Graphics, Inc.
- * Copyright (C) 2000 by Colin Ngam
+ * Copyright (C) 1992 - 1997, 2000-2002 Silicon Graphics, Inc. All rights reserved.
  */
 
 
@@ -13,12 +12,13 @@
 #include <linux/config.h>
 #include <linux/ctype.h>
 #include <asm/sn/sgi.h>
+#include <asm/sn/sn_sal.h>
+#include <asm/sn/io.h>
+#include <asm/sn/sn_cpuid.h>
 #include <asm/sn/iograph.h>
 #include <asm/sn/invent.h>
 #include <asm/sn/hcl.h>
 #include <asm/sn/labelcl.h>
-
-#include <asm/sn/agent.h>
 #include <asm/sn/klconfig.h>
 #include <asm/sn/nodepda.h>
 #include <asm/sn/module.h>
@@ -39,6 +39,9 @@ int hasmetarouter;
 #endif /* DEBUG_KLGRAPH */
 
 static void sort_nic_names(lboard_t *) ;
+
+u64 klgraph_addr[MAX_COMPACT_NODES];
+int module_number = 0;
 
 lboard_t *
 find_lboard(lboard_t *start, unsigned char brd_type)
@@ -213,14 +216,13 @@ is_master_baseio(nasid_t nasid,moduleid_t module,slotid_t slot)
 {
 	lboard_t	*board;
 
-#if CONFIG_SGI_IP35 || CONFIG_IA64_SGI_SN1 || CONFIG_IA64_GENERIC
-/* BRINGUP: If this works then look for callers of is_master_baseio()
+#if defined(CONFIG_IA64_SGI_SN1) || defined(CONFIG_IA64_GENERIC)
+/* If this works then look for callers of is_master_baseio()
  * (e.g. iograph.c) and let them pass in a slot if they want
  */
 	board = find_lboard_module((lboard_t *)KL_CONFIG_INFO(nasid), module);
 #else
-	board = find_lboard_modslot((lboard_t *)KL_CONFIG_INFO(nasid),
-				    module, slot);
+	board = find_lboard_modslot((lboard_t *)KL_CONFIG_INFO(nasid), module, slot);
 #endif
 
 #ifndef _STANDALONE
@@ -228,7 +230,7 @@ is_master_baseio(nasid_t nasid,moduleid_t module,slotid_t slot)
 		cnodeid_t cnode = NASID_TO_COMPACT_NODEID(nasid);
 
 		if (!board && (NODEPDA(cnode)->xbow_peer != INVALID_NASID))
-#if CONFIG_SGI_IP35 || CONFIG_IA64_SGI_SN1 || CONFIG_IA64_GENERIC
+#if defined(CONFIG_IA64_SGI_SN1) || defined(CONFIG_IA64_GENERIC)
 			board = find_lboard_module((lboard_t *)
 				    KL_CONFIG_INFO(NODEPDA(cnode)->xbow_peer),
 				    module);
@@ -300,16 +302,6 @@ get_board_name(nasid_t nasid, moduleid_t mod, slotid_t slot, char *name)
 	return(brd);
 }
 
-int
-get_cpu_slice(cpuid_t cpu)
-{
-	klcpu_t *acpu;
-	if ((acpu = get_cpuinfo(cpu)) == NULL)
-	    return -1;
-	return acpu->cpu_info.physid;
-}
-
-
 /*
  * get_actual_nasid
  *
@@ -366,10 +358,6 @@ board_to_path(lboard_t *brd, char *path)
 {
 	moduleid_t modnum;
 	char *board_name;
-#if !defined(CONFIG_SGI_IP35) && !defined(CONFIG_IA64_SGI_SN1) && !defined(CONFIG_IA64_GENERIC)
-	slotid_t slot;
-	char slot_name[SLOTNUM_MAXLENGTH];
-#endif
 
 	ASSERT(brd);
 
@@ -410,7 +398,10 @@ board_to_path(lboard_t *brd, char *path)
 			
 	modnum = brd->brd_module;
 
-	ASSERT(modnum != MODULE_UNKNOWN && modnum != INVALID_MODULE);
+	/* ASSERT(modnum != MODULE_UNKNOWN && modnum != INVALID_MODULE); */
+if ((modnum == MODULE_UNKNOWN) || (modnum == INVALID_MODULE)) {
+	modnum = ++module_number;
+}
 #ifdef __ia64
 	{
 		char	buffer[16];
@@ -431,7 +422,7 @@ get_module_id(nasid_t nasid)
 {
 	lboard_t *brd;
 
-	brd = find_lboard((lboard_t *)KL_CONFIG_INFO(nasid), KLTYPE_IP27);
+	brd = find_lboard((lboard_t *)KL_CONFIG_INFO(nasid), KLTYPE_SNIA);
 
 	if (!brd)
 		return INVALID_MODULE;
@@ -569,8 +560,8 @@ board_serial_number_get(lboard_t *board,char *serial_number)
 		if (component_serial_number_get(board,
 						hub->hub_mfg_nic,
 						serial_number,
-#if defined(CONFIG_SGI_IP35) || defined(CONFIG_IA64_SGI_SN1) || defined(CONFIG_IA64_GENERIC)
-						"IP35"))
+#if defined(CONFIG_IA64_SGI_SN1) || defined(CONFIG_IA64_GENERIC)
+						"IP37"))
 #else
 						"IP27"))
 			/* Try with IP31 key if IP27 key fails */
@@ -578,7 +569,7 @@ board_serial_number_get(lboard_t *board,char *serial_number)
 							hub->hub_mfg_nic,
 							serial_number,
 							"IP31"))
-#endif /* CONFIG_SGI_IP35 || CONFIG_IA64_SGI_SN1 */
+#endif /* CONFIG_IA64_SGI_SN1 */
 				return(1);
 		break;
 	}
@@ -875,9 +866,10 @@ sort_nic_names(lboard_t *lb)
 }
 
 
-#if defined(CONFIG_SGI_IP35) || defined(CONFIG_IA64_SGI_SN1) || defined(CONFIG_IA64_GENERIC)
 
 char brick_types[MAX_BRICK_TYPES + 1] = "crikxdp789012345";
+
+#if defined(CONFIG_IA64_SGI_SN1) || defined(CONFIG_IA64_GENERIC)
 
 /*
  * Format a module id for printing.
@@ -1009,7 +1001,7 @@ parse_module_id(char *buffer)
 	return (int)(unsigned short)m;
 }
 
-#else /* CONFIG_SGI_IP35 || CONFIG_IA64_SGI_SN1 */
+#else /* CONFIG_IA64_SGI_SN1 */
 
 /*
  * Format a module id for printing.
@@ -1038,8 +1030,8 @@ parse_module_id(char *buffer)
     if (strstr(buffer, EDGE_LBL_MODULE "/") == buffer)
 	buffer += strlen(EDGE_LBL_MODULE "/");
 
-    m = 0;
-    while(c = *buffer++) {
+    for (m = 0; *buffer; buffer++) {
+	c = *buffer;
 	if (!isdigit(c))
 	    return -1;
 	m = 10 * m + (c - '0');
@@ -1049,6 +1041,6 @@ parse_module_id(char *buffer)
     return (int)(unsigned short)m;
 }
 
-#endif /* CONFIG_SGI_IP35 || CONFIG_IA64_SGI_SN1 */
+#endif /* CONFIG_IA64_SGI_SN1 */
 
 

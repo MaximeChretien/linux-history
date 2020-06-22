@@ -180,7 +180,11 @@
 #define __NR_pivot_root         217
 #define __NR_mincore            218
 #define __NR_madvise            219
-#define __NR_getdents64         220
+/*
+ * Numbers 224-235 are reserved for posix acl
+ */
+#define __NR_gettid		236
+#define __NR_tkill		237
 
 
 /* user-visible error numbers are in the range -1 - -122: see <asm-s390/errno.h> */

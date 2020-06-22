@@ -1,13 +1,10 @@
 /*
- *
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2000 Silicon Graphics, Inc.
- * Copyright (C) 2000 by Jack Steiner (steiner@sgi.com)
+ * Copyright (C) 1999-2002 Silicon Graphics, Inc. All rights reserved.
  */
-
 
 /*
  * WARNING:     There is more than one copy of this file in different isms.
@@ -28,37 +25,24 @@
  *
  */
 
-/**************************************************************************
- *                                                                        *
- *  Copyright (C) 1999 Silicon Graphics, Inc.                             *
- *                                                                        *
- *  These coded instructions, statements, and computer programs  contain  *
- *  unpublished  proprietary  information of Silicon Graphics, Inc., and  *
- *  are protected by Federal copyright law.  They  may  not be disclosed  *
- *  to  third  parties  or copied or duplicated in any form, in whole or  *
- *  in part, without the prior written consent of Silicon Graphics, Inc.  *
- *                                                                        *
- **************************************************************************
- */
-
-
 #include <linux/types.h>
 #include <linux/config.h>
 #include <linux/slab.h>
 #include <asm/sn/sgi.h>
+#include <asm/sn/io.h>
 #include <asm/sn/iograph.h>
 #include <asm/sn/invent.h>
 #include <asm/sn/hcl.h>
 #include <asm/sn/hcl_util.h>
 #include <asm/sn/labelcl.h>
 #include <asm/sn/eeprom.h>
-#include <asm/sn/ksys/i2c.h>
-/* #include <sys/SN/SN1/ip27log.h> */
 #include <asm/sn/router.h>
 #include <asm/sn/module.h>
 #include <asm/sn/ksys/l1.h>
 #include <asm/sn/nodepda.h>
 #include <asm/sn/clksupport.h>
+#include <asm/sn/sn_cpuid.h>
+#include <asm/sn/simulator.h>
 
 #if defined(EEPROM_DEBUG)
 #define db_printf(x) printk x
@@ -384,9 +368,6 @@ int is_iobrick( int nasid, int widget_num )
 
 int cbrick_uid_get( nasid_t nasid, uint64_t *uid )
 {
-#if !defined(CONFIG_SERIAL_SGI_L1_PROTOCOL)
-    return EEP_L1;
-#else
     char uid_str[32];
     char msg[BRL1_QSIZE];
     int subch, len;
@@ -421,7 +402,7 @@ int cbrick_uid_get( nasid_t nasid, uint64_t *uid )
     }
     else {
 	scp = &sc;
-	sc_init( &sc, nasid, BRL1_LOCALUART );
+	sc_init( &sc, nasid, BRL1_LOCALHUB_UART );
     }
 
     /* fill in msg with the opcode & params */
@@ -455,15 +436,11 @@ int cbrick_uid_get( nasid_t nasid, uint64_t *uid )
     *uid = generate_unique_id( uid_str, strlen( uid_str ) );
 
     return EEP_OK;
-#endif /* CONFIG_SERIAL_SGI_L1_PROTOCOL */
 }
 
 
 int rbrick_uid_get( nasid_t nasid, net_vec_t path, uint64_t *uid )
 {
-#if !defined(CONFIG_SERIAL_SGI_L1_PROTOCOL)
-    return EEP_L1;
-#else
     char uid_str[32];
     char msg[BRL1_QSIZE];
     int subch, len;
@@ -472,14 +449,12 @@ int rbrick_uid_get( nasid_t nasid, net_vec_t path, uint64_t *uid )
     if ( IS_RUNNING_ON_SIMULATOR() )
 	return EEP_L1;
 
-#ifdef BRINGUP
 #define FAIL								\
     {									\
 	*uid = rtc_time();						\
 	printk( "rbrick_uid_get failed; using current time as uid\n" );	\
 	return EEP_OK;							\
     }
-#endif /* BRINGUP */
 
     ROUTER_LOCK(path);
     sc_init( &sc, nasid, path );
@@ -520,7 +495,6 @@ int rbrick_uid_get( nasid_t nasid, net_vec_t path, uint64_t *uid )
     *uid = generate_unique_id( uid_str, strlen( uid_str ) );
 
     return EEP_OK;
-#endif /* CONFIG_SERIAL_SGI_L1_PROTOCOL */
 }
 
 int iobrick_uid_get( nasid_t nasid, uint64_t *uid )
@@ -593,12 +567,10 @@ int ibrick_mac_addr_get( nasid_t nasid, char *eaddr )
 
 extern char *nic_vertex_info_get( devfs_handle_t );
 extern void nic_vmc_check( devfs_handle_t, char * );
-#ifdef BRINGUP
 /* the following were lifted from nic.c - change later? */
 #define MAX_INFO 2048
 #define NEWSZ(ptr,sz)   ((ptr) = kern_malloc((sz)))
 #define DEL(ptr) (kern_free((ptr)))
-#endif /* BRINGUP */
 
 char *eeprom_vertex_info_set( int component, int nasid, devfs_handle_t v,
                               net_vec_t path )
@@ -884,9 +856,6 @@ int fake_an_eeprom_record( eeprom_brd_record_t *buf, int component,
 int read_ia( l1sc_t *sc, int subch, int l1_compt, 
 	     int ia_code, char *eep_record )
 {
-#if !defined(CONFIG_SERIAL_SGI_L1_PROTOCOL)
-    return EEP_L1;
-#else
     char msg[BRL1_QSIZE]; 	   /* message buffer */
     int len;              	   /* number of bytes used in message buffer */
     int ia_len = EEPROM_CHUNKSIZE; /* remaining bytes in info area */
@@ -936,16 +905,12 @@ int read_ia( l1sc_t *sc, int subch, int l1_compt,
     }
 
     return EEP_OK;
-#endif /* CONFIG_SERIAL_SGI_L1_PROTOCOL */
 }
 
 
 int read_spd( l1sc_t *sc, int subch, int l1_compt,
 	      eeprom_spd_u *spd )
 {
-#if !defined(CONFIG_SERIAL_SGI_L1_PROTOCOL)
-    return EEP_L1;
-#else
     char msg[BRL1_QSIZE]; 	    /* message buffer */
     int len;              	    /* number of bytes used in message buffer */
     int resp;                       /* l1 response code */
@@ -1010,7 +975,6 @@ int read_spd( l1sc_t *sc, int subch, int l1_compt,
 	offset += EEPROM_CHUNKSIZE;
     }
     return EEP_OK;
-#endif /* CONFIG_SERIAL_SGI_L1_PROTOCOL */
 }
 
 
@@ -1068,7 +1032,7 @@ int read_chassis_ia( l1sc_t *sc, int subch, int l1_compt,
     if( (checksum & 0xff) != 0 )
     {
 	db_printf(( "read_chassis_ia: bad checksum\n" ));
-	db_printf(( "read_chassis_ia: target 0x%x  uart 0x%x\n",
+	db_printf(( "read_chassis_ia: target 0x%x  uart 0x%lx\n",
 			   sc->subch[subch].target, sc->uart ));
 	return EEP_BAD_CHECKSUM;
     }
@@ -1199,7 +1163,7 @@ int read_board_ia( l1sc_t *sc, int subch, int l1_compt,
     if( (checksum & 0xff) != 0 )
     {
 	db_printf(( "read_board_ia: bad checksum\n" ));
-	db_printf(( "read_board_ia: target 0x%x  uart 0x%x\n",
+	db_printf(( "read_board_ia: target 0x%x  uart 0x%lx\n",
 		    sc->subch[subch].target, sc->uart ));
 	return EEP_BAD_CHECKSUM;
     }
@@ -1211,9 +1175,6 @@ int read_board_ia( l1sc_t *sc, int subch, int l1_compt,
 int _cbrick_eeprom_read( eeprom_brd_record_t *buf, l1sc_t *scp,
 			 int component )
 {
-#if !defined(CONFIG_SERIAL_SGI_L1_PROTOCOL)
-    return EEP_L1;
-#else
     int r;
     uint64_t uid = 0;
 #ifdef LOG_GETENV
@@ -1290,16 +1251,12 @@ int _cbrick_eeprom_read( eeprom_brd_record_t *buf, l1sc_t *scp,
 	return fake_an_eeprom_record( buf, component, uid );
     }
     return EEP_OK;
-#endif /* CONFIG_SERIAL_SGI_L1_PROTOCOL */
 }
 
 
 int cbrick_eeprom_read( eeprom_brd_record_t *buf, nasid_t nasid,
     		        int component )
 {
-#if !defined(CONFIG_SERIAL_SGI_L1_PROTOCOL)
-    return EEP_L1;
-#else
     l1sc_t *scp;
     int local = (nasid == get_nasid());
 
@@ -1318,16 +1275,12 @@ int cbrick_eeprom_read( eeprom_brd_record_t *buf, nasid_t nasid,
     }
 
     return _cbrick_eeprom_read( buf, scp, component );
-#endif /* CONFIG_SERIAL_SGI_L1_PROTOCOL */
 }
 
 
 int iobrick_eeprom_read( eeprom_brd_record_t *buf, nasid_t nasid,
 			 int component )
 {
-#if !defined(CONFIG_SERIAL_SGI_L1_PROTOCOL)
-    return EEP_L1;
-#else
     int r;
     int l1_compt, subch;
     l1sc_t *scp;
@@ -1391,16 +1344,12 @@ int iobrick_eeprom_read( eeprom_brd_record_t *buf, nasid_t nasid,
 	return r;
     }
     return EEP_OK;
-#endif /* CONFIG_SERIAL_SGI_L1_PROTOCOL */    
 }
 
 
 int vector_eeprom_read( eeprom_brd_record_t *buf, nasid_t nasid,
 			net_vec_t path, int component )
 {
-#if !defined(CONFIG_SERIAL_SGI_L1_PROTOCOL)
-    return EEP_L1;
-#else
     int r;
     uint64_t uid = 0;
     int l1_compt, subch;
@@ -1470,5 +1419,4 @@ int vector_eeprom_read( eeprom_brd_record_t *buf, nasid_t nasid,
 	/* unsupported brick type */
 	return EEP_PARAM;
     }
-#endif /* CONFIG_SERIAL_SGI_L1_PROTOCOL */
 }

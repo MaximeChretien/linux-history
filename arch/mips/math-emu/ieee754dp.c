@@ -42,9 +42,7 @@ int ieee754dp_isnan(ieee754dp x)
 int ieee754dp_issnan(ieee754dp x)
 {
 	assert(ieee754dp_isnan(x));
-	if (ieee754_csr.noq)
-		return 1;
-	return !(DPMANT(x) & DP_MBIT(DP_MBITS - 1));
+	return ((DPMANT(x) & DP_MBIT(DP_MBITS-1)) == DP_MBIT(DP_MBITS-1));
 }
 
 
@@ -73,10 +71,11 @@ ieee754dp ieee754dp_nanxcpt(ieee754dp r, const char *op, ...)
 
 	if (!SETCX(IEEE754_INVALID_OPERATION)) {
 		/* not enabled convert to a quiet NaN */
-		if (ieee754_csr.noq)
+		DPMANT(r) &= (~DP_MBIT(DP_MBITS-1));
+		if (ieee754dp_isnan(r))
 			return r;
-		DPMANT(r) |= DP_MBIT(DP_MBITS - 1);
-		return r;
+		else
+			return ieee754dp_indef();
 	}
 
 	ax.op = op;
@@ -99,6 +98,32 @@ ieee754dp ieee754dp_bestnan(ieee754dp x, ieee754dp y)
 }
 
 
+static unsigned long long get_rounding(int sn, unsigned long long xm)
+{
+	/* inexact must round of 3 bits 
+	 */
+	if (xm & (DP_MBIT(3) - 1)) {
+		switch (ieee754_csr.rm) {
+		case IEEE754_RZ:
+			break;
+		case IEEE754_RN:
+			xm += 0x3 + ((xm >> 3) & 1);
+			/* xm += (xm&0x8)?0x4:0x3 */
+			break;
+		case IEEE754_RU:	/* toward +Infinity */
+			if (!sn)	/* ?? */
+				xm += 0x8;
+			break;
+		case IEEE754_RD:	/* toward -Infinity */
+			if (sn)	/* ?? */
+				xm += 0x8;
+			break;
+		}
+	}
+	return xm;
+}
+
+
 /* generate a normal/denormal number with over,under handeling
  * sn is sign
  * xe is an unbiased exponent
@@ -117,40 +142,59 @@ ieee754dp ieee754dp_format(int sn, int xe, unsigned long long xm)
 
 		if (ieee754_csr.nod) {
 			SETCX(IEEE754_UNDERFLOW);
-			return ieee754dp_zero(sn);
+			SETCX(IEEE754_INEXACT);
+
+			switch(ieee754_csr.rm) {
+			case IEEE754_RN:
+				return ieee754dp_zero(sn);
+			case IEEE754_RZ:
+				return ieee754dp_zero(sn);
+			case IEEE754_RU:    /* toward +Infinity */
+				if(sn == 0)
+					return ieee754dp_min(0);
+				else
+					return ieee754dp_zero(1);
+			case IEEE754_RD:    /* toward -Infinity */
+				if(sn == 0)
+					return ieee754dp_zero(0);
+				else
+					return ieee754dp_min(1);
+			}
 		}
 
-		/* sticky right shift es bits 
-		 */
-		xm = XDPSRS(xm, es);
-		xe += es;
-
-		assert((xm & (DP_HIDDEN_BIT << 3)) == 0);
-		assert(xe == DP_EMIN);
+		if (xe == DP_EMIN - 1
+				&& get_rounding(sn, xm) >> (DP_MBITS + 1 + 3))
+		{
+			/* Not tiny after rounding */
+			SETCX(IEEE754_INEXACT);
+			xm = get_rounding(sn, xm);
+			xm >>= 1;
+			/* Clear grs bits */
+			xm &= ~(DP_MBIT(3) - 1);
+			xe++;
+		}
+		else {
+			/* sticky right shift es bits 
+			 */
+			xm = XDPSRS(xm, es);
+			xe += es;
+			assert((xm & (DP_HIDDEN_BIT << 3)) == 0);
+			assert(xe == DP_EMIN);
+		}
 	}
 	if (xm & (DP_MBIT(3) - 1)) {
 		SETCX(IEEE754_INEXACT);
+		if ((xm & (DP_HIDDEN_BIT << 3)) == 0) {
+			SETCX(IEEE754_UNDERFLOW);
+		}
+
 		/* inexact must round of 3 bits 
 		 */
-		switch (ieee754_csr.rm) {
-		case IEEE754_RZ:
-			break;
-		case IEEE754_RN:
-			xm += 0x3 + ((xm >> 3) & 1);
-			/* xm += (xm&0x8)?0x4:0x3 */
-			break;
-		case IEEE754_RU:	/* toward +Infinity */
-			if (!sn)	/* ?? */
-				xm += 0x8;
-			break;
-		case IEEE754_RD:	/* toward -Infinity */
-			if (sn)	/* ?? */
-				xm += 0x8;
-			break;
-		}
+		xm = get_rounding(sn, xm);
 		/* adjust exponent for rounding add overflowing 
 		 */
-		if (xm >> (DP_MBITS + 3 + 1)) {	/* add causes mantissa overflow */
+		if (xm >> (DP_MBITS + 3 + 1)) {
+			/* add causes mantissa overflow */
 			xm >>= 1;
 			xe++;
 		}
@@ -163,6 +207,7 @@ ieee754dp ieee754dp_format(int sn, int xe, unsigned long long xm)
 
 	if (xe > DP_EMAX) {
 		SETCX(IEEE754_OVERFLOW);
+		SETCX(IEEE754_INEXACT);
 		/* -O can be table indexed by (rm,sn) */
 		switch (ieee754_csr.rm) {
 		case IEEE754_RN:
@@ -186,7 +231,8 @@ ieee754dp ieee754dp_format(int sn, int xe, unsigned long long xm)
 	if ((xm & DP_HIDDEN_BIT) == 0) {
 		/* we underflow (tiny/zero) */
 		assert(xe == DP_EMIN);
-		SETCX(IEEE754_UNDERFLOW);
+		if (ieee754_csr.mx & IEEE754_UNDERFLOW)
+			SETCX(IEEE754_UNDERFLOW);
 		return builddp(sn, DP_EMIN - 1 + DP_EBIAS, xm);
 	} else {
 		assert((xm >> (DP_MBITS + 1)) == 0);	/* no execess */

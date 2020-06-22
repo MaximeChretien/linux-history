@@ -22,7 +22,7 @@ btfixupprep: btfixupprep.c
 clean:
 	rm -f btfixupprep piggyback tftpboot.img btfix.o btfix.s
 
-BTOBJS := $(HEAD) init/main.o init/version.o
+BTOBJS := $(HEAD) init/main.o init/version.o init/do_mounts.o
 BTLIBS := $(CORE_FILES_NO_BTFIX) $(FILESYSTEMS) \
 	$(DRIVERS) $(NETWORKS)
 

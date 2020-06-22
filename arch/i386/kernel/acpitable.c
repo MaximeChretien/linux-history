@@ -172,40 +172,41 @@ acpi_find_root_pointer(void)
 
 
 /*
- * Temporarily use the virtual area starting from FIX_IO_APIC_BASE_0,
+ * Temporarily use the virtual area starting from FIX_IO_APIC_BASE_END,
  * to map the target physical address. The problem is that set_fixmap()
  * provides a single page, and it is possible that the page is not
  * sufficient.
  * By using this area, we can map up to MAX_IO_APICS pages temporarily,
  * i.e. until the next __va_range() call.
+ *
+ * Important Safety Note:  The fixed I/O APIC page numbers are *subtracted*
+ * from the fixed base.  That's why we start at FIX_IO_APIC_BASE_END and
+ * count idx down while incrementing the phys address.
  */
-static __inline__ char *
+static __init char *
 __va_range(unsigned long phys, unsigned long size)
 {
-	unsigned long base, offset, mapped_size, mapped_phys = phys;
-	int idx = FIX_IO_APIC_BASE_0;
+	unsigned long base, offset, mapped_size;
+	int idx;
 
 	offset = phys & (PAGE_SIZE - 1);
 	mapped_size = PAGE_SIZE - offset;
-	set_fixmap(idx, mapped_phys);
-	base = fix_to_virt(FIX_IO_APIC_BASE_0);
+	set_fixmap(FIX_IO_APIC_BASE_END, phys);
+	base = fix_to_virt(FIX_IO_APIC_BASE_END);
+	dprintk("__va_range(0x%lx, 0x%lx): idx=%d mapped at %lx\n", phys, size,
+		FIX_IO_APIC_BASE_END, base);
 
 	/*
 	 * Most cases can be covered by the below.
 	 */
-	if (mapped_size >= size)
-		return ((unsigned char *) base + offset);
-
-	dprintk("__va_range: mapping more than a single page, size = 0x%lx\n",
-		size);
-
-	do {
-		if (idx++ == FIX_IO_APIC_BASE_END)
+	idx = FIX_IO_APIC_BASE_END;
+	while (mapped_size < size) {
+		if (--idx < FIX_IO_APIC_BASE_0)
 			return 0;	/* cannot handle this */
-		mapped_phys = mapped_phys + PAGE_SIZE;
-		set_fixmap(idx, mapped_phys);
-		mapped_size = mapped_size + PAGE_SIZE;
-	} while (mapped_size < size);
+		phys += PAGE_SIZE;
+		set_fixmap(idx, phys);
+		mapped_size += PAGE_SIZE;
+	}
 
 	return ((unsigned char *) base + offset);
 }
@@ -267,11 +268,14 @@ static int __init acpi_tables_init(void)
 	}
 
 	for (i = 0; i < tables; i++) {
-
+		/* Map in header, then map in full table length. */
 		header = (acpi_table_header *)
 			    __va_range(saved_rsdt.entry[i],
 				       sizeof(acpi_table_header));
-
+		if (!header)
+			break;
+		header = (acpi_table_header *)
+			    __va_range(saved_rsdt.entry[i], header->length);
 		if (!header)
 			break;
 

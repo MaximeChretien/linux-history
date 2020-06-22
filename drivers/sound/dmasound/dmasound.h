@@ -252,17 +252,14 @@ struct sound_queue {
 #define WAKE_UP(queue)		(wake_up_interruptible(&queue))
 
 extern struct sound_queue dmasound_write_sq;
+#define write_sq	dmasound_write_sq
+
 #ifdef HAS_RECORD
 extern struct sound_queue dmasound_read_sq;
-#endif
-
-#define write_sq	dmasound_write_sq
-#ifdef HAS_RECORD
 #define read_sq		dmasound_read_sq
 #endif
 
 extern int dmasound_catchRadius;
-
 #define catchRadius	dmasound_catchRadius
 
 /* define the value to be put in the byte-swap reg in mac-io

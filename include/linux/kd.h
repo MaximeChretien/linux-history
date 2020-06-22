@@ -26,8 +26,8 @@ struct consolefontdesc {
 #define KDGETLED	0x4B31	/* return current led state */
 #define KDSETLED	0x4B32	/* set led state [lights, not flags] */
 #define 	LED_SCR		0x01	/* scroll lock led */
-#define 	LED_CAP		0x04	/* caps lock led */
 #define 	LED_NUM		0x02	/* num lock led */
+#define 	LED_CAP		0x04	/* caps lock led */
 
 #define KDGKBTYPE	0x4B33	/* get keyboard type */
 #define 	KB_84		0x01
@@ -89,10 +89,10 @@ struct unimapinit {
 #define KDSKBMETA	0x4B63	/* sets meta key handling mode */
 
 #define		K_SCROLLLOCK	0x01
-#define		K_CAPSLOCK	0x02
-#define		K_NUMLOCK	0x04
+#define		K_NUMLOCK	0x02
+#define		K_CAPSLOCK	0x04
 #define	KDGKBLED	0x4B64	/* get led flags (not lights) */
-#define KDSKBLED	0x4B65	/* set led flags (not lights) */
+#define	KDSKBLED	0x4B65	/* set led flags (not lights) */
 
 struct kbentry {
 	unsigned char kb_table;
@@ -131,19 +131,6 @@ struct kbkeycode {
 #define KDSETKEYCODE	0x4B4D	/* write kernel keycode table entry */
 
 #define KDSIGACCEPT	0x4B4E	/* accept kbd generated signals */
-
-struct hwclk_time {
-	unsigned	sec;	/* 0..59 */
-	unsigned	min;	/* 0..59 */
-	unsigned	hour;	/* 0..23 */
-	unsigned	day;	/* 1..31 */
-	unsigned	mon;	/* 0..11 */
-	unsigned	year;	/* 70... */
-	int		wday;	/* 0..6, 0 is Sunday, -1 means unknown/don't set */
-};
-
-#define KDGHWCLK        0x4B50	/* get hardware clock */
-#define KDSHWCLK        0x4B51  /* set hardware clock */
 
 struct kbd_repeat {
 	int delay;	/* in msec; <= 0: don't change */

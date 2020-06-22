@@ -160,6 +160,8 @@ extern void sgi_serial_console_init(void);
 extern void sci_console_init(void);
 extern void tx3912_console_init(void);
 extern void tx3912_rs_init(void);
+extern void txx927_console_init(void);
+extern void sb1250_serial_console_init(void);
 
 #ifndef MIN
 #define MIN(a,b)	((a) < (b) ? (a) : (b))
@@ -599,12 +601,6 @@ void disassociate_ctty(int on_exit)
 	  	if (p->session == current->session)
 			p->tty = NULL;
 	read_unlock(&tasklist_lock);
-}
-
-void wait_for_keypress(void)
-{
-        struct console *c = console_drivers;
-        if (c) c->wait_key(c);
 }
 
 void stop_tty(struct tty_struct *tty)
@@ -2248,6 +2244,12 @@ void __init console_init(void)
 #endif
 #ifdef CONFIG_SERIAL_TX3912_CONSOLE
 	tx3912_console_init();
+#endif
+#ifdef CONFIG_TXX927_SERIAL_CONSOLE
+	txx927_console_init();
+#endif
+#ifdef CONFIG_SIBYTE_SB1250_DUART_CONSOLE
+	sb1250_serial_console_init();
 #endif
 }
 

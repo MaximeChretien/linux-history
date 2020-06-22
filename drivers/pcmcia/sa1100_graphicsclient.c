@@ -17,7 +17,9 @@
 
 #include <asm/hardware.h>
 #include <asm/irq.h>
-#include <asm/arch/pcmcia.h>
+#include "sa1100_generic.h"
+
+#error This is broken!
 
 #define	S0_CD_IRQ		60				// Socket 0 Card Detect IRQ
 #define	S0_STS_IRQ		55				// Socket 0 PCMCIA IRQ
@@ -144,11 +146,24 @@ static int gcplus_pcmcia_configure_socket(const struct pcmcia_configure
   return 0;
 }
 
+static int gcplus_pcmcia_socket_init(int sock)
+{
+  return 0;
+}
+
+static int gcplus_pcmcia_socket_suspend(int sock)
+{
+  return 0;
+}
+
 struct pcmcia_low_level gcplus_pcmcia_ops = { 
-  gcplus_pcmcia_init,
-  gcplus_pcmcia_shutdown,
-  gcplus_pcmcia_socket_state,
-  gcplus_pcmcia_get_irq_info,
-  gcplus_pcmcia_configure_socket
+  init:			gcplus_pcmcia_init,
+  shutdown:		gcplus_pcmcia_shutdown,
+  socket_state:		gcplus_pcmcia_socket_state,
+  get_irq_info:		gcplus_pcmcia_get_irq_info,
+  configure_socket:	gcplus_pcmcia_configure_socket,
+
+  socket_init:		gcplus_pcmcia_socket_init,
+  socket_suspend:	gcplus_pcmcia_socket_suspend,
 };
 

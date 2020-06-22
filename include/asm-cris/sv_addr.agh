@@ -691,10 +691,10 @@
 #define R_GEN_CONFIG__g24dir__WIDTH 1
 #define R_GEN_CONFIG__g24dir__in 0
 #define R_GEN_CONFIG__g24dir__out 1
-#define R_GEN_CONFIG__g16_20dir__BITNR 26
-#define R_GEN_CONFIG__g16_20dir__WIDTH 1
-#define R_GEN_CONFIG__g16_20dir__in 0
-#define R_GEN_CONFIG__g16_20dir__out 1
+#define R_GEN_CONFIG__g16_23dir__BITNR 26
+#define R_GEN_CONFIG__g16_23dir__WIDTH 1
+#define R_GEN_CONFIG__g16_23dir__in 0
+#define R_GEN_CONFIG__g16_23dir__out 1
 #define R_GEN_CONFIG__g8_15dir__BITNR 25
 #define R_GEN_CONFIG__g8_15dir__WIDTH 1
 #define R_GEN_CONFIG__g8_15dir__in 0

@@ -581,8 +581,6 @@ static int ext3_alloc_branch(handle_t *handle, struct inode *inode,
 			
 			parent = nr;
 		}
-		if (IS_SYNC(inode))
-			handle->h_sync = 1;
 	}
 	if (n == num)
 		return 0;
@@ -1015,8 +1013,8 @@ static int ext3_prepare_write(struct file *file, struct page *page,
 			      unsigned from, unsigned to)
 {
 	struct inode *inode = page->mapping->host;
-	handle_t *handle = ext3_journal_current_handle();
 	int ret, needed_blocks = ext3_writepage_trans_blocks(inode);
+	handle_t *handle;
 
 	lock_kernel();
 	handle = ext3_journal_start(inode, needed_blocks);

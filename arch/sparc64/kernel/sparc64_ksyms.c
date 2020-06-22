@@ -1,4 +1,4 @@
-/* $Id: sparc64_ksyms.c,v 1.119 2001/11/30 01:04:10 davem Exp $
+/* $Id: sparc64_ksyms.c,v 1.119.2.2 2002/03/14 01:26:21 kanoj Exp $
  * arch/sparc64/kernel/sparc64_ksyms.c: Sparc64 specific ksyms support.
  *
  * Copyright (C) 1996 David S. Miller (davem@caip.rutgers.edu)
@@ -133,6 +133,11 @@ EXPORT_SYMBOL(__global_cli);
 EXPORT_SYMBOL(__global_sti);
 EXPORT_SYMBOL(__global_save_flags);
 EXPORT_SYMBOL(__global_restore_flags);
+
+#if defined(CONFIG_MCOUNT)
+extern void mcount(void);
+EXPORT_SYMBOL(mcount);
+#endif
 
 /* Per-CPU information table */
 EXPORT_SYMBOL(cpu_data);
@@ -354,6 +359,10 @@ EXPORT_SYMBOL_NOVERS(memmove);
 void VISenter(void);
 /* RAID code needs this */
 EXPORT_SYMBOL_NOVERS(VISenter);
+
+extern void batten_down_hatches(void);
+/* for input/keybdev */
+EXPORT_SYMBOL(batten_down_hatches);
 
 #ifdef CONFIG_DEBUG_BUGVERBOSE
 EXPORT_SYMBOL(do_BUG);

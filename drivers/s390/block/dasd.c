@@ -3797,12 +3797,16 @@ static ssize_t
 dasd_devices_write (struct file *file, const char *user_buf,
 		    size_t user_len, loff_t * offset)
 {
-	char *buffer = vmalloc (user_len+1);
+	char *buffer;
 	int off = 0;
 	char *temp;
 	dasd_range_t range;
         int features;
 
+	if (user_len > PAGE_SIZE)
+		return -EINVAL;
+		
+	buffer = vmalloc (user_len+1);
 	if (buffer == NULL)
 		return -ENOMEM;
 	if (copy_from_user (buffer, user_buf, user_len)) {
@@ -4187,6 +4191,7 @@ dasd_init (void)
 		goto failed;
 	}
 	genhd_dasd_name = dasd_device_name;
+	genhd_dasd_ioctl = dasd_ioctl;
 
 	if (dasd_autodetect) {	/* update device range to all devices */
 		for (irq = get_irq_first (); irq != -ENODEV;
@@ -4309,7 +4314,9 @@ cleanup_dasd (void)
 	printk (KERN_INFO PRINTK_HEADER
 		"De-Registered ECKD discipline successfully\n");
 #endif /* CONFIG_DASD_ECKD_BUILTIN */
-        
+
+	genhd_dasd_name = NULL;
+	genhd_dasd_ioctl = NULL;
 	dasd_proc_cleanup ();
         
 	list_for_each_safe (l, n, &dasd_major_info[0].list) {

@@ -1,5 +1,5 @@
 /*
- * $Id: netiucv.c,v 1.16 2001/12/03 14:28:45 felfert Exp $
+ * $Id: netiucv.c,v 1.17 2002/02/12 21:52:20 felfert Exp $
  *
  * IUCV network driver
  *
@@ -28,7 +28,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * RELEASE-TAG: IUCV network driver $Revision: 1.16 $
+ * RELEASE-TAG: IUCV network driver $Revision: 1.17 $
  *
  */
 
@@ -70,7 +70,7 @@ MODULE_DESCRIPTION ("Linux for S/390 IUCV network driver");
 MODULE_PARM (iucv, "1s");
 MODULE_PARM_DESC (iucv,
 		  "Specify the initial remote userids for iucv0 .. iucvn:\n"
-		  "iucv=userid0:userid1:...:useridN\n");
+		  "iucv=userid0:userid1:...:useridN");
 #endif
 
 static char *iucv = "";
@@ -2005,7 +2005,7 @@ netiucv_free_netdevice(net_device *dev)
 static void
 netiucv_banner(void)
 {
-	char vbuf[] = "$Revision: 1.16 $";
+	char vbuf[] = "$Revision: 1.17 $";
 	char *version = vbuf;
 
 	if ((version = strchr(version, ':'))) {

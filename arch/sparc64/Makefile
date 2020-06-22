@@ -1,4 +1,4 @@
-# $Id: Makefile,v 1.51 2001/11/17 00:15:27 davem Exp $
+# $Id: Makefile,v 1.51.2.1 2002/03/14 01:26:21 kanoj Exp $
 # sparc64/Makefile
 #
 # Makefile for the architecture dependent flags and dependencies on the
@@ -46,6 +46,11 @@ else
 	    -ffixed-g4 -fcall-used-g5 -fcall-used-g7 -Wno-sign-compare \
 	    $(CC_UNDECL)
   AFLAGS += -m64 -mcpu=ultrasparc $(CC_UNDECL)
+endif
+
+ifeq ($(CONFIG_MCOUNT),y)
+  CFLAGS := $(subst -fomit-frame-pointer,,$(CFLAGS))
+  CFLAGS := $(CFLAGS) -pg
 endif
 
 LINKFLAGS = -T arch/sparc64/vmlinux.lds

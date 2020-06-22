@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.head.S 1.34 12/02/01 11:35:27 benh
+ * BK Id: SCCS/s.head.S 1.43 06/25/02 17:24:29 benh
  */
 /*
  *  PowerPC version 
@@ -217,11 +217,17 @@ turn_on_mmu:
 	SYNC
 	RFI				/* enables MMU */
 
-#ifdef CONFIG_SMP
+/*
+ * We need __secondary_hold as a place to hold the other cpus on
+ * an SMP machine, even when we are running a UP kernel.
+ */
+	. = 0xc0			/* for prep bootloader */
+	li	r3,1			/* MTX only has 1 cpu */
 	.globl	__secondary_hold
 __secondary_hold:
 	/* tell the master we're here */
 	stw	r3,4(0)
+#ifdef CONFIG_SMP
 100:	lwz	r4,0(0)
 	/* wait until we're told to start */
 	cmpw	0,r4,r3
@@ -229,7 +235,9 @@ __secondary_hold:
 	/* our cpu # was at addr 0 - go */
 	mr	r24,r3			/* cpu # */
 	b	__secondary_start
-#endif
+#else
+	b	.
+#endif /* CONFIG_SMP */
 
 /*
  * Exception entry code.  This code runs with address translation
@@ -301,6 +309,10 @@ i##n:						\
 #endif
 
 /* Machine check */
+BEGIN_FTR_SECTION
+	DSSALL
+	sync
+END_FTR_SECTION_IFSET(CPU_FTR_ALTIVEC)
 	STD_EXCEPTION(0x200, MachineCheck, MachineCheckException)
 
 /* Data access exception. */
@@ -313,11 +325,13 @@ DataAccess:
 	EXCEPTION_PROLOG
 #endif /* CONFIG_PPC64BRIDGE */
 	mfspr	r20,DSISR
+BEGIN_FTR_SECTION
 	andis.	r0,r20,0xa470		/* weird error? */
 	bne	1f			/* if not, try to put a PTE */
 	mfspr	r4,DAR			/* into the hash table */
 	rlwinm	r3,r20,32-15,21,21	/* DSISR_STORE -> _PAGE_RW */
 	bl	hash_page
+END_FTR_SECTION_IFSET(CPU_FTR_HPTE_TABLE)
 1:	stw	r20,_DSISR(r21)
 	mr	r5,r20
 	mfspr	r4,DAR
@@ -354,11 +368,13 @@ InstructionAccessCont:
 InstructionAccess:
 	EXCEPTION_PROLOG
 #endif /* CONFIG_PPC64BRIDGE */
+BEGIN_FTR_SECTION
 	andis.	r0,r23,0x4000		/* no pte found? */
 	beq	1f			/* if so, try to put a PTE */
 	li	r3,0			/* into the hash table */
 	mr	r4,r22			/* SRR0 is fault address */
 	bl	hash_page
+END_FTR_SECTION_IFSET(CPU_FTR_HPTE_TABLE)
 1:	addi	r3,r1,STACK_FRAME_OVERHEAD
 	mr	r4,r22
 	mr	r5,r23
@@ -1361,6 +1377,18 @@ _GLOBAL(__setup_cpu_7450)
 	bl	setup_7450_hid0
 	mtlr	r4
 	blr
+_GLOBAL(__setup_cpu_7450_23)
+	mflr	r4
+	bl	setup_common_caches
+	bl	setup_7450_23_hid0
+	mtlr	r4
+	blr
+_GLOBAL(__setup_cpu_7455)
+	mflr	r4
+	bl	setup_common_caches
+	bl	setup_7455_hid0
+	mtlr	r4
+	blr
 _GLOBAL(__setup_cpu_power3)
 	blr
 _GLOBAL(__setup_cpu_power4)
@@ -1430,21 +1458,53 @@ setup_750_7400_hid0:
  */
 setup_7450_hid0:
 	/* We check for the presence of an L3 cache setup by
-	 * the firmware. If any, we disable DOZE capability
+	 * the firmware. If any, we disable NAP capability as
+	 * it's known to be bogus on rev 2.1 and earlier
 	 */
 	mfspr	r11,SPRN_L3CR
 	andis.	r11,r11,L3CR_L3E@h
 	beq	1f
-	li	r7,CPU_FTR_CAN_DOZE
+	li	r7,CPU_FTR_CAN_NAP
 	lwz	r6,CPU_SPEC_FEATURES(r5)
 	andc	r6,r6,r7
 	stw	r6,CPU_SPEC_FEATURES(r5)
 1:	
+setup_7450_23_hid0:
 	mfspr	r11,HID0
 
 	/* All of the bits we have to set.....
 	*/
-	ori	r11,r11,HID0_SGE | HID0_FOLD | HID0_BHTE | HID0_BTIC
+	ori	r11,r11,HID0_SGE | HID0_FOLD | HID0_BHTE | HID0_BTIC | HID0_LRSTK
+	oris	r11,r11,HID0_DPM@h	/* enable dynamic power mgmt */
+
+	/* All of the bits we have to clear....
+	*/
+	li	r3,HID0_SPD | HID0_NOPDST | HID0_NOPTI
+	andc	r11,r11,r3		/* clear SPD: enable speculative */
+ 	li	r3,0
+
+ 	mtspr	ICTC,r3			/* Instruction Cache Throttling off */
+	isync
+	mtspr	HID0,r11
+	sync
+	isync
+	blr
+
+/* 7450
+ * Enable Store Gathering (SGE), Branch Folding (FOLD)
+ * Branch History Table (BHTE), Branch Target ICache (BTIC)
+ * Dynamic Power Management (DPM), Speculative (SPD)
+ * Ensure our data cache instructions really operate.
+ * Timebase has to be running or we wouldn't have made it here,
+ * just ensure we don't disable it.
+ * Clear Instruction cache throttling (ICTC)
+ */
+setup_7455_hid0:
+	mfspr	r11,HID0
+
+	/* All of the bits we have to set.....
+	*/
+	ori	r11,r11,HID0_SGE | HID0_FOLD | HID0_BHTE | HID0_BTIC | HID0_LRSTK
 	oris	r11,r11,HID0_DPM@h	/* enable dynamic power mgmt */
 
 	/* All of the bits we have to clear....
@@ -1592,6 +1652,10 @@ _GLOBAL(set_context)
 	li	r0,NUM_USER_SEGMENTS
 	mtctr	r0
 	li	r4,0
+BEGIN_FTR_SECTION
+	DSSALL
+	sync
+END_FTR_SECTION_IFSET(CPU_FTR_ALTIVEC)
 3:
 #ifdef CONFIG_PPC64BRIDGE
 	slbie	r4
@@ -1601,7 +1665,7 @@ _GLOBAL(set_context)
 	rlwinm	r3,r3,0,8,3	/* clear out any overflow from VSID field */
 	addis	r4,r4,0x1000	/* address of next segment */
 	bdnz	3b
-	SYNC_601
+	sync
 	isync
 	blr
 

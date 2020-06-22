@@ -283,9 +283,9 @@ struct tcp_opt {
 	/* Data for direct copy to user */
 	struct {
 		struct sk_buff_head	prequeue;
-		int			memory;
 		struct task_struct	*task;
 		struct iovec		*iov;
+		int			memory;
 		int			len;
 	} ucopy;
 
@@ -484,7 +484,7 @@ typedef struct {
 do {	spin_lock_init(&((__sk)->lock.slock)); \
 	(__sk)->lock.users = 0; \
 	init_waitqueue_head(&((__sk)->lock.wq)); \
-} while(0);
+} while(0)
 
 struct sock {
 	/* Socket demultiplex comparisons on incoming packets. */
@@ -1221,16 +1221,13 @@ static inline void sk_wake_async(struct sock *sk, int how, int band)
 
 #define SOCK_MIN_SNDBUF 2048
 #define SOCK_MIN_RCVBUF 256
-/* Must be less or equal SOCK_MIN_SNDBUF */
-#define SOCK_MIN_WRITE_SPACE	SOCK_MIN_SNDBUF
 
 /*
  *	Default write policy as shown to user space via poll/select/SIGIO
- *	Kernel internally doesn't use the MIN_WRITE_SPACE threshold.
  */
 static inline int sock_writeable(struct sock *sk) 
 {
-	return sock_wspace(sk) >= SOCK_MIN_WRITE_SPACE;
+	return atomic_read(&sk->wmem_alloc) < (sk->sndbuf / 2);
 }
 
 static inline int gfp_any(void)

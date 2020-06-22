@@ -416,9 +416,9 @@ do_boot_cpu (int sapicid)
 	if (!idle)
 		panic("No idle process for CPU %d", cpu);
 
-	idle->processor = cpu;
+	task_set_cpu(idle, cpu);	/* we schedule the first task manually */
+
 	ia64_cpu_to_sapicid[cpu] = sapicid;
-	idle->cpus_runnable = 1 << cpu; /* we schedule the first task manually */
 
 	del_from_runqueue(idle);
 	unhash_process(idle);

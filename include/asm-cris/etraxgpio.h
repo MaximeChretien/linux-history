@@ -1,9 +1,27 @@
+/* $Id: etraxgpio.h,v 1.7 2002/04/10 11:55:50 johana Exp $ */
+/*
+ * The following devices are accessable using this driver using
+ * GPIO_MAJOR (120) and a couple of minor numbers:
+ * /dev/gpioa  minor 0, 8 bit GPIO, each bit can change direction
+ * /dev/gpiob  minor 1, 8 bit GPIO, each bit can change direction
+ * /dev/leds   minor 2, Access to leds depending on kernelconfig
+ * /dev/gpiog  minor 3
+         g0dir, g8_15dir, g16_23dir, g24 dir configurable in R_GEN_CONFIG
+         g1-g7 and g25-g31 is both input and outputs but on different pins
+         Also note that some bits change pins depending on what interfaces 
+         are enabled.
+ */
 #ifndef _ASM_ETRAXGPIO_H
 #define _ASM_ETRAXGPIO_H
 
 /* etraxgpio _IOC_TYPE, bits 8 to 15 in ioctl cmd */
 
 #define ETRAXGPIO_IOCTYPE 43
+#define GPIO_MINOR_A 0
+#define GPIO_MINOR_B 1
+#define GPIO_MINOR_LEDS 2
+#define GPIO_MINOR_G 3
+#define GPIO_MINOR_LAST 3
 
 /* supported ioctl _IOC_NR's */
 
@@ -23,10 +41,10 @@
 
 /* GPIO direction ioctl's */
 #define IO_READDIR    0x8  /* Read direction 0=input 1=output */
-#define IO_SETINPUT   0x9  /* Set direction 0=unchanged 1=input, 
-                              returns current dir */
-#define IO_SETOUTPUT  0xA  /* Set direction 0=unchanged 1=output,
-                              returns current dir */
+#define IO_SETINPUT   0x9  /* Set direction for bits set, 0=unchanged 1=input, 
+                              returns mask with current inputs */
+#define IO_SETOUTPUT  0xA  /* Set direction for bits set, 0=unchanged 1=output,
+                              returns mask with current outputs */
 
 /* LED ioctl extended */
 #define IO_LED_SETBIT 0xB

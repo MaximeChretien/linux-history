@@ -8,88 +8,19 @@
  *
  * Low level exception handling
  */
-#define __ASSEMBLY__
 #include <linux/init.h>
 #include <asm/asm.h>
 #include <asm/regdef.h>
 #include <asm/fpregdef.h>
 #include <asm/mipsregs.h>
 #include <asm/stackframe.h>
+#include <asm/exception.h>
 #include <asm/r4kcacheops.h>
-
-	.macro	__build_clear_none
-	.endm
-
-	.macro	__build_clear_sti
-	STI
-	.endm
-
-	.macro	__build_clear_cli
-	CLI
-	.endm
-
-	.macro	__build_clear_fpe
-	cfc1	a1, fcr31
-	li	a2, ~(0x3f << 13)
-	and	a2, a1
-	ctc1	a2, fcr31
-	STI
-	.endm
-
-	.macro	__build_clear_ade
-	dmfc0	t0, CP0_BADVADDR
-	sd	t0, PT_BVADDR(sp)
-	KMODE
-	.endm
-
-	.macro	__BUILD_silent exception
-	.endm
-
-	/* Gas tries to parse the PRINT argument as a string containing
-	   string escapes and emits bogus warnings if it believes to
-	   recognize an unknown escape code.  So make the arguments
-	   start with an n and gas will believe \n is ok ...  */
-	.macro	__BUILD_verbose	nexception
-	ld	a1, PT_EPC(sp)
-	PRINT("Got \nexception at %016lx\012")
-	.endm
-
-	.macro	__BUILD_count exception
-	.set	reorder
-	ld	t0,exception_count_\exception
-	daddiu	t0, 1
-	sd	t0,exception_count_\exception
-	.set	noreorder
-	.comm	exception_count\exception, 8, 8
-	.endm
-
-	.macro	BUILD_HANDLER exception handler clear verbose
-	.align	5
-	NESTED(handle_\exception, PT_SIZE, sp)
-	.set	noat
-	SAVE_ALL
-#if DEBUG_MIPS64
-jal dodebug2
-ld $4, PT_R4(sp)
-ld $5, PT_R5(sp)
-ld $6, PT_R6(sp)
-ld $7, PT_R7(sp)
-ld $2, PT_R2(sp)
-#endif
-	__BUILD_clear_\clear
-	.set	at
-	__BUILD_\verbose \exception
-	move	a0, sp
-	jal	do_\handler
-	j	ret_from_sys_call
-	 nop
-	END(handle_\exception)
-	.endm
 
 	BUILD_HANDLER adel ade ade silent		/* #4  */
 	BUILD_HANDLER ades ade ade silent		/* #5  */
-	BUILD_HANDLER ibe ibe cli silent		/* #6  */
-	BUILD_HANDLER dbe dbe cli silent		/* #7  */
+	BUILD_HANDLER ibe be cli silent			/* #6  */
+	BUILD_HANDLER dbe be cli silent			/* #7  */
 	BUILD_HANDLER bp bp sti silent			/* #9  */
 	BUILD_HANDLER ri ri sti silent			/* #10 */
 	BUILD_HANDLER cpu cpu sti silent		/* #11 */
@@ -97,6 +28,7 @@ ld $2, PT_R2(sp)
 	BUILD_HANDLER tr tr sti silent			/* #13 */
 	BUILD_HANDLER fpe fpe fpe silent		/* #15 */
 	BUILD_HANDLER watch watch sti verbose		/* #23 */
+	BUILD_HANDLER mcheck mcheck cli verbose		/* #24 */
 	BUILD_HANDLER reserved reserved sti verbose	/* others */
 
 	__INIT

@@ -4,7 +4,7 @@
 struct pt_regs;
 struct kbd_repeat;
 struct mktime;
-struct hwclk_time;
+struct rtc_time;
 struct gendisk;
 struct buffer_head;
 
@@ -28,7 +28,7 @@ extern void (*mach_process_int) (int irq, struct pt_regs *fp);
 extern unsigned long (*mach_gettimeoffset)(void);
 extern void (*mach_gettod)(int *year, int *mon, int *day, int *hour,
 			   int *min, int *sec);
-extern int (*mach_hwclk)(int, struct hwclk_time*);
+extern int (*mach_hwclk)(int, struct rtc_time*);
 extern int (*mach_set_clock_mmss)(unsigned long);
 extern void (*mach_reset)( void );
 extern void (*mach_halt)( void );
@@ -37,7 +37,6 @@ extern unsigned long (*mach_hd_init) (unsigned long, unsigned long);
 extern void (*mach_hd_setup)(char *, int *);
 extern long mach_max_dma_address;
 extern void (*mach_floppy_setup)(char *, int *);
-extern void (*mach_floppy_eject)(void);
 extern void (*mach_heartbeat) (int);
 extern void (*mach_l2_flush) (int);
 extern int mach_sysrq_key;

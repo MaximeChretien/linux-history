@@ -445,6 +445,24 @@ static int reiserfs_get_block_create_0 (struct inode * inode, long block,
     return reiserfs_get_block(inode, block, bh_result, GET_BLOCK_NO_HOLE) ;
 }
 
+static int reiserfs_get_block_direct_io (struct inode * inode, long block,
+			struct buffer_head * bh_result, int create) {
+    int ret ;
+
+    ret = reiserfs_get_block(inode, block, bh_result, create) ;
+
+    /* don't allow direct io onto tail pages */
+    if (ret == 0 && buffer_mapped(bh_result) && bh_result->b_blocknr == 0) {
+	/* make sure future calls to the direct io funcs for this offset
+	** in the file fail by unmapping the buffer
+	*/
+	reiserfs_unmap_buffer(bh_result);
+        ret = -EINVAL ;
+    }
+    return ret ;
+}
+
+
 /*
 ** helper function for when reiserfs_get_block is called for a hole
 ** but the file tail is still in a direct item
@@ -748,14 +766,24 @@ static int reiserfs_get_block (struct inode * inode, long block,
 
 		retval = convert_tail_for_hole(inode, bh_result, tail_offset) ;
 		if (retval) {
-		    printk("clm-6004: convert tail failed inode %lu, error %d\n", inode->i_ino, retval) ;
-		    if (allocated_block_nr)
+		    if ( retval != -ENOSPC )
+			printk("clm-6004: convert tail failed inode %lu, error %d\n", inode->i_ino, retval) ;
+		    if (allocated_block_nr) {
+			/* the bitmap, the super, and the stat data == 3 */
+			journal_begin(&th, inode->i_sb, 3) ;
 			reiserfs_free_block (&th, allocated_block_nr);
+			transaction_started = 1 ;
+		    }
 		    goto failure ;
 		}
 		goto research ;
 	    }
 	    retval = direct2indirect (&th, inode, &path, unbh, tail_offset);
+	    if (retval) {
+		reiserfs_unmap_buffer(unbh);
+		reiserfs_free_block (&th, allocated_block_nr);
+		goto failure;
+	    }
 	    /* it is important the mark_buffer_uptodate is done after
 	    ** the direct2indirect.  The buffer might contain valid
 	    ** data newer than the data on disk (read by readpage, changed,
@@ -765,10 +793,7 @@ static int reiserfs_get_block (struct inode * inode, long block,
 	    ** the disk
 	    */
 	    mark_buffer_uptodate (unbh, 1);
-	    if (retval) {
-		reiserfs_free_block (&th, allocated_block_nr);
-		goto failure;
-	    }
+
 	    /* we've converted the tail, so we must 
 	    ** flush unbh before the transaction commits
 	    */
@@ -914,7 +939,7 @@ static void init_inode (struct inode * inode, struct path * path)
 	inode->i_blocks = sd_v1_blocks(sd);
 	inode->i_generation = le32_to_cpu (INODE_PKEY (inode)->k_dir_id);
 	blocks = (inode->i_size + 511) >> 9;
-	blocks = _ROUND_UP (blocks, inode->i_blksize >> 9);
+	blocks = _ROUND_UP (blocks, inode->i_sb->s_blocksize >> 9);
 	if (inode->i_blocks > blocks) {
 	    // there was a bug in <=3.5.23 when i_blocks could take negative
 	    // values. Starting from 3.5.17 this value could even be stored in
@@ -926,6 +951,9 @@ static void init_inode (struct inode * inode, struct path * path)
 
         rdev = sd_v1_rdev(sd);
 	inode->u.reiserfs_i.i_first_direct_byte = sd_v1_first_direct_byte(sd);
+	/* nopack is initially zero for v1 objects. For v2 objects,
+	   nopack is initialised from sd_attrs */
+	inode->u.reiserfs_i.i_flags &= ~i_nopack_mask;
     } else {
 	// new stat data found, but object may have old items
 	// (directories and symlinks)
@@ -952,10 +980,12 @@ static void init_inode (struct inode * inode, struct path * path)
             set_inode_item_key_version (inode, KEY_FORMAT_3_6);
 
         set_inode_sd_version (inode, STAT_DATA_V2);
+	/* read persistent inode attributes from sd and initalise
+	   generic inode flags from them */
+	inode -> u.reiserfs_i.i_attrs = sd_v2_attrs( sd );
+	sd_attrs_to_i_attrs( sd_v2_attrs( sd ), inode );
     }
 
-    /* nopack = 0, by default */
-    inode->u.reiserfs_i.i_flags &= ~i_nopack_mask;
 
     pathrelse (path);
     if (S_ISREG (inode->i_mode)) {
@@ -979,6 +1009,7 @@ static void init_inode (struct inode * inode, struct path * path)
 static void inode2sd (void * sd, struct inode * inode)
 {
     struct stat_data * sd_v2 = (struct stat_data *)sd;
+    __u16 flags;
 
     set_sd_v2_mode(sd_v2, inode->i_mode );
     set_sd_v2_nlink(sd_v2, inode->i_nlink );
@@ -989,13 +1020,13 @@ static void inode2sd (void * sd, struct inode * inode)
     set_sd_v2_atime(sd_v2, inode->i_atime );
     set_sd_v2_ctime(sd_v2, inode->i_ctime );
     set_sd_v2_blocks(sd_v2, inode->i_blocks );
-    if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode)) {
+    if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode))
         set_sd_v2_rdev(sd_v2, inode->i_rdev );
-}
     else
-    {
         set_sd_v2_generation(sd_v2, inode->i_generation);
-    }
+    flags = inode -> u.reiserfs_i.i_attrs;
+    i_attrs_to_sd_attrs( inode, &flags );
+    set_sd_v2_attrs( sd_v2, flags );
 }
 
 
@@ -1493,7 +1524,9 @@ struct inode * reiserfs_new_inode (struct reiserfs_transaction_handle *th,
     }
 
     sb = dir->i_sb;
-    inode->i_flags = 0;//inode->i_sb->s_flags;
+    inode -> u.reiserfs_i.i_attrs = 
+	    dir -> u.reiserfs_i.i_attrs & REISERFS_INHERIT_MASK;
+    sd_attrs_to_i_attrs( inode -> u.reiserfs_i.i_attrs, inode );
 
     /* item head of new item */
     ih.ih_key.k_dir_id = INODE_PKEY (dir)->k_objectid;
@@ -1551,6 +1584,10 @@ struct inode * reiserfs_new_inode (struct reiserfs_transaction_handle *th,
 	    inode->i_mode |= S_ISGID;
     } else
 	inode->i_gid = current->fsgid;
+
+    /* symlink cannot be immutable or append only, right? */
+    if( S_ISLNK( inode -> i_mode ) )
+	    inode -> i_flags &= ~ ( S_IMMUTABLE | S_APPEND );
 
     inode->i_mtime = inode->i_atime = inode->i_ctime = CURRENT_TIME;
     inode->i_size = i_size;
@@ -1898,14 +1935,21 @@ out:
 static inline void submit_bh_for_writepage(struct buffer_head **bhp, int nr) {
     struct buffer_head *bh ;
     int i;
+
+    /* lock them all first so the end_io handler doesn't unlock the page
+    ** too early
+    */
     for(i = 0 ; i < nr ; i++) {
         bh = bhp[i] ;
 	lock_buffer(bh) ;
 	set_buffer_async_io(bh) ;
+    }
+    for(i = 0 ; i < nr ; i++) {
 	/* submit_bh doesn't care if the buffer is dirty, but nobody
 	** later on in the call chain will be cleaning it.  So, we
 	** clean the buffer here, it still gets written either way.
 	*/
+        bh = bhp[i] ;
 	clear_bit(BH_Dirty, &bh->b_state) ;
 	set_bit(BH_Uptodate, &bh->b_state) ;
 	submit_bh(WRITE, bh) ;
@@ -2073,11 +2117,64 @@ static int reiserfs_commit_write(struct file *f, struct page *page,
     return ret ;
 }
 
+void sd_attrs_to_i_attrs( __u16 sd_attrs, struct inode *inode )
+{
+	if( reiserfs_attrs( inode -> i_sb ) ) {
+		if( sd_attrs & REISERFS_SYNC_FL )
+			inode -> i_flags |= S_SYNC;
+		else
+			inode -> i_flags &= ~S_SYNC;
+		if( sd_attrs & REISERFS_IMMUTABLE_FL )
+			inode -> i_flags |= S_IMMUTABLE;
+		else
+			inode -> i_flags &= ~S_IMMUTABLE;
+		if( sd_attrs & REISERFS_NOATIME_FL )
+			inode -> i_flags |= S_NOATIME;
+		else
+			inode -> i_flags &= ~S_NOATIME;
+		if( sd_attrs & REISERFS_NOTAIL_FL )
+			inode->u.reiserfs_i.i_flags |= i_nopack_mask;
+		else
+			inode->u.reiserfs_i.i_flags &= ~i_nopack_mask;
+	}
+}
+
+void i_attrs_to_sd_attrs( struct inode *inode, __u16 *sd_attrs )
+{
+	if( reiserfs_attrs( inode -> i_sb ) ) {
+		if( inode -> i_flags & S_IMMUTABLE )
+			*sd_attrs |= REISERFS_IMMUTABLE_FL;
+		else
+			*sd_attrs &= ~REISERFS_IMMUTABLE_FL;
+		if( inode -> i_flags & S_SYNC )
+			*sd_attrs |= REISERFS_SYNC_FL;
+		else
+			*sd_attrs &= ~REISERFS_SYNC_FL;
+		if( inode -> i_flags & S_NOATIME )
+			*sd_attrs |= REISERFS_NOATIME_FL;
+		else
+			*sd_attrs &= ~REISERFS_NOATIME_FL;
+		if( inode->u.reiserfs_i.i_flags & i_nopack_mask )
+			*sd_attrs |= REISERFS_NOTAIL_FL;
+		else
+			*sd_attrs &= ~REISERFS_NOTAIL_FL;
+	}
+}
+
+static int reiserfs_direct_io(int rw, struct inode *inode, 
+                              struct kiobuf *iobuf, unsigned long blocknr,
+			      int blocksize) 
+{
+    return generic_direct_IO(rw, inode, iobuf, blocknr, blocksize,
+                             reiserfs_get_block_direct_io) ;
+}
+
 struct address_space_operations reiserfs_address_space_operations = {
     writepage: reiserfs_writepage,
     readpage: reiserfs_readpage, 
     sync_page: block_sync_page,
     prepare_write: reiserfs_prepare_write,
     commit_write: reiserfs_commit_write,
-    bmap: reiserfs_aop_bmap
+    bmap: reiserfs_aop_bmap,
+    direct_IO: reiserfs_direct_io,
 } ;

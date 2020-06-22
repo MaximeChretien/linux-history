@@ -73,7 +73,7 @@ static inline dma_addr_t pci_map_single(struct pci_dev *hwdev, void *ptr,
 					size_t size, int direction)
 {
 	if (direction == PCI_DMA_NONE)
-		BUG();
+		out_of_line_bug();
 	flush_write_buffers();
 	return virt_to_bus(ptr);
 }
@@ -89,7 +89,7 @@ static inline void pci_unmap_single(struct pci_dev *hwdev, dma_addr_t dma_addr,
 				    size_t size, int direction)
 {
 	if (direction == PCI_DMA_NONE)
-		BUG();
+		out_of_line_bug();
 	/* Nothing to do */
 }
 
@@ -101,16 +101,16 @@ static inline dma_addr_t pci_map_page(struct pci_dev *hwdev, struct page *page,
 				      unsigned long offset, size_t size, int direction)
 {
 	if (direction == PCI_DMA_NONE)
-		BUG();
+		out_of_line_bug();
 
-	return (page - mem_map) * PAGE_SIZE + offset;
+	return (dma_addr_t)(page - mem_map) * PAGE_SIZE + offset;
 }
 
 static inline void pci_unmap_page(struct pci_dev *hwdev, dma_addr_t dma_address,
 				  size_t size, int direction)
 {
 	if (direction == PCI_DMA_NONE)
-		BUG();
+		out_of_line_bug();
 	/* Nothing to do */
 }
 
@@ -143,16 +143,16 @@ static inline int pci_map_sg(struct pci_dev *hwdev, struct scatterlist *sg,
 	int i;
 
 	if (direction == PCI_DMA_NONE)
-		BUG();
+		out_of_line_bug();
  
  	/*
  	 * temporary 2.4 hack
  	 */
  	for (i = 0; i < nents; i++ ) {
  		if (sg[i].address && sg[i].page)
- 			BUG();
+ 			out_of_line_bug();
  		else if (!sg[i].address && !sg[i].page)
- 			BUG();
+ 			out_of_line_bug();
  
  		if (sg[i].address)
  			sg[i].dma_address = virt_to_bus(sg[i].address);
@@ -172,7 +172,7 @@ static inline void pci_unmap_sg(struct pci_dev *hwdev, struct scatterlist *sg,
 				int nents, int direction)
 {
 	if (direction == PCI_DMA_NONE)
-		BUG();
+		out_of_line_bug();
 	/* Nothing to do */
 }
 
@@ -190,7 +190,7 @@ static inline void pci_dma_sync_single(struct pci_dev *hwdev,
 				       size_t size, int direction)
 {
 	if (direction == PCI_DMA_NONE)
-		BUG();
+		out_of_line_bug();
 	flush_write_buffers();
 }
 
@@ -205,7 +205,7 @@ static inline void pci_dma_sync_sg(struct pci_dev *hwdev,
 				   int nelems, int direction)
 {
 	if (direction == PCI_DMA_NONE)
-		BUG();
+		out_of_line_bug();
 	flush_write_buffers();
 }
 

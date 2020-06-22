@@ -20,6 +20,44 @@
 #ifndef _IEEE1394_NODEMGR_H
 #define _IEEE1394_NODEMGR_H
 
+#define CONFIG_ROM_BUS_INFO_LENGTH(q)		((q) >> 24)
+#define CONFIG_ROM_BUS_CRC_LENGTH(q)		(((q) >> 16) & 0xff)
+#define CONFIG_ROM_BUS_CRC(q)			((q) & 0xffff)
+
+#define CONFIG_ROM_ROOT_LENGTH(q)		((q) >> 16)
+#define CONFIG_ROM_ROOT_CRC(q)			((q) & 0xffff)
+
+#define CONFIG_ROM_DIRECTORY_LENGTH(q)		((q) >> 16)
+#define CONFIG_ROM_DIRECTORY_CRC(q)		((q) & 0xffff)
+
+#define CONFIG_ROM_LEAF_LENGTH(q)		((q) >> 16)
+#define CONFIG_ROM_LEAF_CRC(q)			((q) & 0xffff)
+
+#define CONFIG_ROM_DESCRIPTOR_TYPE(q)		((q) >> 24)
+#define CONFIG_ROM_DESCRIPTOR_SPECIFIER_ID(q)	((q) & 0xffffff)
+#define CONFIG_ROM_DESCRIPTOR_WIDTH(q)		((q) >> 28)
+#define CONFIG_ROM_DESCRIPTOR_CHAR_SET(q)	(((q) >> 16) & 0xfff)
+#define CONFIG_ROM_DESCRIPTOR_LANG(q)		((q) & 0xffff)
+
+#define CONFIG_ROM_KEY_ID_MASK			0x3f
+#define CONFIG_ROM_KEY_TYPE_MASK		0xc0
+#define CONFIG_ROM_KEY_TYPE_IMMEDIATE		0x00
+#define CONFIG_ROM_KEY_TYPE_OFFSET		0x40
+#define CONFIG_ROM_KEY_TYPE_LEAF		0x80
+#define CONFIG_ROM_KEY_TYPE_DIRECTORY		0xc0
+
+#define CONFIG_ROM_KEY(q)			((q) >> 24)
+#define CONFIG_ROM_VALUE(q)			((q) & 0xffffff)
+
+#define CONFIG_ROM_VENDOR_ID			0x03
+#define CONFIG_ROM_MODEL_ID			0x17
+#define CONFIG_ROM_NODE_CAPABILITES		0x0C
+#define CONFIG_ROM_UNIT_DIRECTORY		0xd1
+#define CONFIG_ROM_SPECIFIER_ID			0x12 
+#define CONFIG_ROM_UNIT_SW_VERSION		0x13
+#define CONFIG_ROM_DESCRIPTOR_LEAF		0x81
+#define CONFIG_ROM_DESCRIPTOR_DIRECTORY		0xc1
+
 /* '1' '3' '9' '4' in ASCII */
 #define IEEE1394_BUSID_MAGIC	0x31333934
 
@@ -42,6 +80,8 @@ struct bus_options {
 #define UNIT_DIRECTORY_MODEL_ID		0x02
 #define UNIT_DIRECTORY_SPECIFIER_ID	0x04
 #define UNIT_DIRECTORY_VERSION		0x08
+#define UNIT_DIRECTORY_VENDOR_TEXT	0x10
+#define UNIT_DIRECTORY_MODEL_TEXT	0x20
 
 /*
  * A unit directory corresponds to a protocol supported by the
@@ -58,16 +98,13 @@ struct unit_directory {
 	octlet_t address;	/* Address of the unit directory on the node */
 	u8 flags;		/* Indicates which entries were read */
 	quadlet_t vendor_id;
-	char *vendor_name;
+	const char *vendor_name;
+	int vendor_name_size;
 	quadlet_t model_id;
-	char *model_name;
+	const char *model_name;
+	int model_name_size;
 	quadlet_t specifier_id;
 	quadlet_t version;
-
-	/* Groupings for arbitrary key/value pairs */
-	int arb_count;			/* Number of arbitrary key/values */
-	char arb_keys[16];		/* Up to 16 keys */
-	quadlet_t arb_values[16];	/* Same for values */
 
 	struct hpsb_protocol_driver *driver;
 	void *driver_data;
@@ -77,6 +114,9 @@ struct unit_directory {
 
 	/* For linking directories belonging to a node */
 	struct list_head node_list;
+
+	int count;		/* Number of quadlets */
+	quadlet_t quadlets[0];
 };
 
 struct node_entry {
@@ -85,17 +125,20 @@ struct node_entry {
 	struct hpsb_host *host;		/* Host this node is attached to */
 	nodeid_t nodeid;		/* NodeID */
 	struct bus_options busopt;	/* Bus Options */
-	atomic_t generation;		/* Synced with hpsb generation */
+	unsigned int generation;	/* Synced with hpsb generation */
 
 	/* The following is read from the config rom */
 	u32 vendor_id;
 	u32 capabilities;	
 	struct list_head unit_directories;
+
+	const char *vendor_name;
+	quadlet_t quadlets[0];
 };
 
 static inline int hpsb_node_entry_valid(struct node_entry *ne)
 {
-	return atomic_read(&ne->generation) == get_hpsb_generation(ne->host);
+	return ne->generation == get_hpsb_generation(ne->host);
 }
 
 /*
@@ -127,10 +170,17 @@ struct hpsb_host *hpsb_get_host_by_ne(struct node_entry *ne);
  * number).  It will at least reliably fail so that you don't accidentally and
  * unknowingly send your packet to the wrong node.
  */
-int hpsb_guid_fill_packet(struct node_entry *ne, struct hpsb_packet *pkt);
+void hpsb_node_fill_packet(struct node_entry *ne, struct hpsb_packet *pkt);
+
+int hpsb_node_read(struct node_entry *ne, u64 addr,
+		   quadlet_t *buffer, size_t length);
+int hpsb_node_write(struct node_entry *ne, u64 addr, 
+		    quadlet_t *buffer, size_t length);
+int hpsb_node_lock(struct node_entry *ne, u64 addr, 
+		   int extcode, quadlet_t *data, quadlet_t arg);
 
 
-void init_ieee1394_nodemgr(void);
+void init_ieee1394_nodemgr(int disable_hotplug);
 void cleanup_ieee1394_nodemgr(void);
 
 #endif /* _IEEE1394_NODEMGR_H */

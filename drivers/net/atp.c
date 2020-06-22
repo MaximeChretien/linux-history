@@ -140,6 +140,7 @@ static int xcvr[NUM_UNITS]; 			/* The data transfer mode. */
 #include <asm/dma.h>
 #include <linux/errno.h>
 #include <linux/init.h>
+#include <linux/crc32.h>
 
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
@@ -666,7 +667,7 @@ static void atp_interrupt(int irq, void *dev_instance, struct pt_regs * regs)
 			}
 			num_tx_since_rx++;
 		} else if (num_tx_since_rx > 8
-				   && jiffies > dev->last_rx + HZ) {
+				   && time_after(jiffies, dev->last_rx + HZ)) {
 			if (net_debug > 2)
 				printk(KERN_DEBUG "%s: Missed packet? No Rx after %d Tx and "
 					   "%ld jiffies status %02x  CMR1 %02x.\n", dev->name,
@@ -856,26 +857,6 @@ net_get_stats(struct net_device *dev)
 /*
  *	Set or clear the multicast filter for this adapter.
  */
-
-/* The little-endian AUTODIN32 ethernet CRC calculation.
-   This is common code and should be moved to net/core/crc.c */
-static unsigned const ethernet_polynomial_le = 0xedb88320U;
-static inline unsigned ether_crc_le(int length, unsigned char *data)
-{
-    unsigned int crc = 0xffffffff;	/* Initial value. */
-    while(--length >= 0) {
-		unsigned char current_octet = *data++;
-		int bit;
-		for (bit = 8; --bit >= 0; current_octet >>= 1) {
-			if ((crc ^ current_octet) & 1) {
-				crc >>= 1;
-				crc ^= ethernet_polynomial_le;
-			} else
-				crc >>= 1;
-		}
-    }
-    return crc;
-}
 
 static void set_rx_mode_8002(struct net_device *dev)
 {

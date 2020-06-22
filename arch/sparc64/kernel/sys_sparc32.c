@@ -1,4 +1,4 @@
-/* $Id: sys_sparc32.c,v 1.182 2001/10/18 09:06:36 davem Exp $
+/* $Id: sys_sparc32.c,v 1.182.2.1 2002/02/20 08:49:24 davem Exp $
  * sys_sparc32.c: Conversion between 32bit and 64bit native syscalls.
  *
  * Copyright (C) 1997,1998 Jakub Jelinek (jj@sunsite.mff.cuni.cz)
@@ -49,6 +49,7 @@
 #include <linux/in.h>
 #include <linux/icmpv6.h>
 #include <linux/sysctl.h>
+#include <linux/dnotify.h>
 
 #include <asm/types.h>
 #include <asm/ipc.h>
@@ -1066,16 +1067,20 @@ static long do_readv_writev32(int type, struct file *file,
 	/* First get the "struct iovec" from user memory and
 	 * verify all the pointers
 	 */
+	retval = 0;
 	if (!count)
-		return 0;
+		goto out_nofree;
+	retval = -EFAULT;
 	if (verify_area(VERIFY_READ, vector, sizeof(struct iovec32)*count))
-		return -EFAULT;
+		goto out_nofree;
+	retval = -EINVAL;
 	if (count > UIO_MAXIOV)
-		return -EINVAL;
+		goto out_nofree;
 	if (count > UIO_FASTIOV) {
+		retval = -ENOMEM;
 		iov = kmalloc(count*sizeof(struct iovec), GFP_KERNEL);
 		if (!iov)
-			return -ENOMEM;
+			goto out_nofree;
 	}
 
 	tot_len = 0;
@@ -1135,6 +1140,11 @@ static long do_readv_writev32(int type, struct file *file,
 out:
 	if (iov != iovstack)
 		kfree(iov);
+out_nofree:
+	/* VERIFY_WRITE actually means a read, as we write to user space */
+	if ((retval + (type == VERIFY_WRITE)) > 0)
+		dnotify_parent(file->f_dentry,
+			(type == VERIFY_WRITE) ? DN_MODIFY : DN_ACCESS);
 
 	return retval;
 }

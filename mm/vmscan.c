@@ -20,7 +20,6 @@
 #include <linux/init.h>
 #include <linux/highmem.h>
 #include <linux/file.h>
-#include <linux/compiler.h>
 
 #include <asm/pgalloc.h>
 
@@ -58,7 +57,7 @@ static inline int try_to_swap_out(struct mm_struct * mm, struct vm_area_struct* 
 		return 0;
 
 	/* Don't bother replenishing zones not under pressure.. */
-	if (!memclass(page->zone, classzone))
+	if (!memclass(page_zone(page), classzone))
 		return 0;
 
 	if (TryLockPage(page))
@@ -234,8 +233,7 @@ static inline int swap_out_vma(struct mm_struct * mm, struct vm_area_struct * vm
 	pgdir = pgd_offset(mm, address);
 
 	end = vma->vm_end;
-	if (address >= end)
-		BUG();
+	BUG_ON(address >= end);
 	do {
 		count = swap_out_pgd(mm, vma, pgdir, address, end, count, classzone);
 		if (!count)
@@ -354,10 +352,8 @@ static int shrink_cache(int nr_pages, zone_t * classzone, unsigned int gfp_mask,
 
 		page = list_entry(entry, struct page, lru);
 
-		if (unlikely(!PageLRU(page)))
-			BUG();
-		if (unlikely(PageActive(page)))
-			BUG();
+		BUG_ON(!PageLRU(page));
+		BUG_ON(PageActive(page));
 
 		list_del(entry);
 		list_add(entry, &inactive_list);
@@ -369,7 +365,7 @@ static int shrink_cache(int nr_pages, zone_t * classzone, unsigned int gfp_mask,
 		if (unlikely(!page_count(page)))
 			continue;
 
-		if (!memclass(page->zone, classzone))
+		if (!memclass(page_zone(page), classzone))
 			continue;
 
 		/* Racy check to avoid trylocking when not worthwhile */

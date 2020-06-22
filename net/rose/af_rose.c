@@ -26,6 +26,7 @@
  *
  *  ROSE 0.63	Jean-Paul(F6FBB) Fixed wrong length of L3 packets
  *					Added CLEAR_REQUEST facilities
+ *  ROSE 0.64	Jean-Paul(F6FBB) Fixed null pointer in rose_kill_by_device
  */
 
 #include <linux/config.h>
@@ -227,7 +228,8 @@ static void rose_kill_by_device(struct net_device *dev)
 	for (s = rose_list; s != NULL; s = s->next) {
 		if (s->protinfo.rose->device == dev) {
 			rose_disconnect(s, ENETUNREACH, ROSE_OUT_OF_ORDER, 0);
-			s->protinfo.rose->neighbour->use--;
+			if (s->protinfo.rose->neighbour)
+				s->protinfo.rose->neighbour->use--;
 			s->protinfo.rose->device = NULL;
 		}
 	}
@@ -1433,7 +1435,7 @@ static struct notifier_block rose_dev_notifier = {
 
 static struct net_device *dev_rose;
 
-static const char banner[] = KERN_INFO "F6FBB/G4KLX ROSE for Linux. Version 0.63 for AX25.037 Linux 2.4\n";
+static const char banner[] = KERN_INFO "F6FBB/G4KLX ROSE for Linux. Version 0.64 for AX25.037 Linux 2.4\n";
 
 static int __init rose_proto_init(void)
 {
@@ -1488,6 +1490,7 @@ MODULE_PARM_DESC(rose_ndevs, "number of ROSE devices");
 
 MODULE_AUTHOR("Jonathan Naylor G4KLX <g4klx@g4klx.demon.co.uk>");
 MODULE_DESCRIPTION("The amateur radio ROSE network layer protocol");
+MODULE_LICENSE("GPL");
 
 static void __exit rose_exit(void)
 {

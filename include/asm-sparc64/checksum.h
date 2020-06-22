@@ -1,4 +1,4 @@
-/* $Id: checksum.h,v 1.17 2001/04/24 01:09:12 davem Exp $ */
+/* $Id: checksum.h,v 1.17.2.1 2002/03/01 11:40:54 davem Exp $ */
 #ifndef __SPARC64_CHECKSUM_H
 #define __SPARC64_CHECKSUM_H
 
@@ -16,6 +16,7 @@
  *      RFC1071 Computing the Internet Checksum
  */
 
+#include <linux/in6.h> 
 #include <asm/uaccess.h> 
 
 /* computes the checksum of a memory block at buff, length len,

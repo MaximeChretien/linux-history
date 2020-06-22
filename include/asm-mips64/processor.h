@@ -15,43 +15,27 @@
 
 /*
  * Return current * instruction pointer ("program counter").
- *
- * Two implementations.  The ``la'' version results in shorter code for
- * the kernel which we assume to reside in the 32-bit compat address space.
- * The  ``jal'' version is for use by modules which live in outer space.
- * This is just a single instruction unlike the long dla macro expansion.
  */
-#ifdef MODULE
 #define current_text_addr()						\
 ({									\
 	void *_a;							\
 									\
-	__asm__ ("jal\t1f, %0\n\t"					\
-		"1:"							\
-		: "=r" (_a));						\
+	__asm__ ("bal\t1f\t\t\t# current_text_addr\n"			\
+		"1:\tmove\t%0, $31"					\
+		: "=r" (_a)						\
+		:							\
+		: "$31");						\
 									\
 	_a;								\
 })
-#else
-#define current_text_addr()						\
-({									\
-	void *_a;							\
-									\
-	__asm__ ("dla\t%0, 1f\n\t"					\
-		"1:"							\
-		: "=r" (_a));						\
-									\
-	_a;								\
-})
-#endif
 
-#if !defined (_LANGUAGE_ASSEMBLY)
+#ifndef __ASSEMBLY__
 #include <asm/cachectl.h>
 #include <asm/mipsregs.h>
 #include <asm/reg.h>
 #include <asm/system.h>
 
-#if (defined(CONFIG_SGI_IP27))
+#if defined(CONFIG_SGI_IP27)
 #include <asm/sn/types.h>
 #include <asm/sn/intr_public.h>
 #endif
@@ -71,17 +55,25 @@ struct cpuinfo_mips {
 	unsigned char	p_slice;	/* Physical position on node board */
 	hub_intmasks_t	p_intmasks;	/* SN0 per-CPU interrupt masks */
 #endif
+#if 0
+	unsigned long loops_per_sec;
+	unsigned long pgtable_cache_sz;
+	unsigned long ipi_count;
+	unsigned long irq_attempt[NR_IRQS];
+	unsigned long smp_local_irq_count;
+	unsigned long prof_multiplier;
+	unsigned long prof_counter;
+#endif
 } __attribute__((aligned(128)));
 
 /*
  * System setup and hardware flags..
  * XXX: Should go into mips_cpuinfo.
  */
-extern char wait_available;		/* only available on R4[26]00 */
-extern char cyclecounter_available;	/* only available from R4000 upwards. */
-extern char dedicated_iv_available;	/* some embedded MIPS like Nevada */
-extern char vce_available;		/* Supports VCED / VCEI exceptions */
-extern char mips4_available;		/* CPU has MIPS IV ISA or better */
+extern void (*cpu_wait)(void);
+extern void r3081_wait(void);
+extern void r39xx_wait(void);
+extern void r4k_wait(void);
 
 extern unsigned int vced_count, vcei_count;
 extern struct cpuinfo_mips cpu_data[];
@@ -126,7 +118,7 @@ extern struct task_struct *last_task_used_math;
  * is limited to 1TB by the R4000 architecture; R10000 and better can
  * support 16TB.
  */
-#define TASK_SIZE32	   0x80000000UL
+#define TASK_SIZE32	   0x7fff8000UL
 #define TASK_SIZE	0x10000000000UL
 
 /* This decides where the kernel will search for a free chunk of vm
@@ -148,11 +140,17 @@ struct mips_fpu_hard_struct {
 };
 
 /*
- * FIXME: no fpu emulator yet (but who cares anyway?)
+ * It would be nice to add some more fields for emulator statistics, but there
+ * are a number of fixed offsets in offset.h and elsewhere that would have to
+ * be recalculated by hand.  So the additional information will be private to
+ * the FPU emulator for now.  See asm-mips/fpu_emulator.h.
  */
+typedef u64 fpureg_t;
 struct mips_fpu_soft_struct {
-	long	dummy;
+	fpureg_t	regs[NUM_FPU_REGS];
+	unsigned int	sr;
 };
+
 
 union mips_fpu_union {
         struct mips_fpu_hard_struct hard;
@@ -196,7 +194,7 @@ struct thread_struct {
 	unsigned long irix_oldctx;
 };
 
-#endif /* !defined (_LANGUAGE_ASSEMBLY) */
+#endif /* !__ASSEMBLY__ */
 
 #define INIT_THREAD  { \
         /* \
@@ -226,7 +224,7 @@ struct thread_struct {
 
 #define KERNEL_STACK_SIZE 0x4000
 
-#if !defined (_LANGUAGE_ASSEMBLY)
+#ifndef __ASSEMBLY__
 
 /* Free all resources held by a thread. */
 #define release_thread(thread) do { } while(0)
@@ -240,7 +238,7 @@ extern int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags);
 /*
  * Return saved PC of a blocked thread.
  */
-extern inline unsigned long thread_saved_pc(struct thread_struct *t)
+static inline unsigned long thread_saved_pc(struct thread_struct *t)
 {
 	extern void ret_from_sys_call(void);
 
@@ -292,7 +290,7 @@ unsigned long get_wchan(struct task_struct *p);
 
 #define cpu_relax()	do { } while (0)
 
-#endif /* !defined (_LANGUAGE_ASSEMBLY) */
+#endif /* !__ASSEMBLY__ */
 #endif /* __KERNEL__ */
 
 /*

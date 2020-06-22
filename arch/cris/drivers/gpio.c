@@ -1,14 +1,26 @@
-/* $Id: gpio.c,v 1.12 2001/11/12 19:42:15 pkj Exp $
+/* $Id: gpio.c,v 1.15 2002/05/06 13:19:13 johana Exp $
  *
  * Etrax general port I/O device
  *
- * Copyright (c) 1999, 2000, 2001 Axis Communications AB
+ * Copyright (c) 1999, 2000, 2001, 2002 Axis Communications AB
  *
  * Authors:    Bjorn Wesen      (initial version)
  *             Ola Knutsson     (LED handling)
- *             Johan Adolfsson  (read/set directions, write)
+ *             Johan Adolfsson  (read/set directions, write, port G)
  *
  * $Log: gpio.c,v $
+ * Revision 1.15  2002/05/06 13:19:13  johana
+ * IO_SETINPUT returns mask with bit set = inputs for PA and PB as well.
+ *
+ * Revision 1.14  2002/04/12 12:01:53  johana
+ * Use global r_port_g_data_shadow.
+ * Moved gpio_init_port_g() closer to gpio_init() and marked it __init.
+ *
+ * Revision 1.13  2002/04/10 12:03:55  johana
+ * Added support for port G /dev/gpiog (minor 3).
+ * Changed indentation on switch cases.
+ * Fixed other spaces to tabs.
+ *
  * Revision 1.12  2001/11/12 19:42:15  pkj
  * * Corrected return values from gpio_leds_ioctl().
  * * Fixed compiler warnings.
@@ -94,14 +106,17 @@ static unsigned int gpio_poll(struct file *filp, struct poll_table_struct *wait)
 
 struct gpio_private {
 	struct gpio_private *next;
+	/* These fields are for PA and PB only */
 	volatile unsigned char *port, *shadow;
 	volatile unsigned char *dir, *dir_shadow;
 	unsigned char changeable_dir;
 	unsigned char changeable_bits;
-	unsigned char highalarm, lowalarm;
 	unsigned char clk_mask;
 	unsigned char data_mask;
 	unsigned char write_msb;
+	unsigned char pad1, pad2, pad3;
+	/* These fields are generic */
+	unsigned long highalarm, lowalarm;
 	wait_queue_head_t alarm_wq;
 	int minor;
 };
@@ -110,10 +125,17 @@ struct gpio_private {
 
 static struct gpio_private *alarmlist = 0;
 
-#define NUM_PORTS 2
-static volatile unsigned char *ports[2] = { R_PORT_PA_DATA, R_PORT_PB_DATA };
-static volatile unsigned char *shads[2] = {
-	&port_pa_data_shadow, &port_pb_data_shadow };
+/* Port A and B use 8 bit access, but Port G is 32 bit */
+#define NUM_PORTS (GPIO_MINOR_B+1)
+
+static volatile unsigned char *ports[NUM_PORTS] = { 
+	R_PORT_PA_DATA, 
+	R_PORT_PB_DATA,
+};
+static volatile unsigned char *shads[NUM_PORTS] = {
+	&port_pa_data_shadow, 
+	&port_pb_data_shadow
+};
 
 /* What direction bits that are user changeable 1=changeable*/
 #ifndef CONFIG_ETRAX_PA_CHANGEABLE_DIR
@@ -131,17 +153,36 @@ static volatile unsigned char *shads[2] = {
 #endif
 
 
-static unsigned char changeable_dir[2] = { CONFIG_ETRAX_PA_CHANGEABLE_DIR,
-                                           CONFIG_ETRAX_PB_CHANGEABLE_DIR };
-static unsigned char changeable_bits[2] = { CONFIG_ETRAX_PA_CHANGEABLE_BITS,
-                                            CONFIG_ETRAX_PB_CHANGEABLE_BITS };
+static unsigned char changeable_dir[NUM_PORTS] = { 
+	CONFIG_ETRAX_PA_CHANGEABLE_DIR,
+	CONFIG_ETRAX_PB_CHANGEABLE_DIR 
+};
+static unsigned char changeable_bits[NUM_PORTS] = { 
+	CONFIG_ETRAX_PA_CHANGEABLE_BITS,
+	CONFIG_ETRAX_PB_CHANGEABLE_BITS 
+};
 
-static volatile unsigned char *dir[2] = { R_PORT_PA_DIR, R_PORT_PB_DIR };
+static volatile unsigned char *dir[NUM_PORTS] = { 
+	R_PORT_PA_DIR, 
+	R_PORT_PB_DIR 
+};
 
-static volatile unsigned char *dir_shadow[2] = {
-	&port_pa_dir_shadow, &port_pb_dir_shadow };
+static volatile unsigned char *dir_shadow[NUM_PORTS] = {
+	&port_pa_dir_shadow, 
+	&port_pb_dir_shadow 
+};
 
-#define LEDS 2
+/* Port G is 32 bit, handle it special, some bits are both inputs 
+   and outputs at the same time, only some of the bits can change direction
+   and some of them in groups of 8 bit. */
+static unsigned long changeable_dir_g;
+static unsigned long dir_g_in_bits;
+static unsigned long dir_g_out_bits;
+static unsigned long dir_g_shadow; /* 1=output */
+
+#define USE_PORTS(priv) ((priv)->minor <= GPIO_MINOR_B)
+
+
 
 static unsigned int 
 gpio_poll(struct file *filp,
@@ -149,10 +190,10 @@ gpio_poll(struct file *filp,
 {
 	/* TODO poll on alarms! */
 #if 0
-        if (!ANYTHING_WANTED) {
+	if (!ANYTHING_WANTED) {
 		D(printk("gpio_select sleeping task\n"));
-	        select_wait(&gpio_wq, table);
-	        return 0;
+		select_wait(&gpio_wq, table);
+		return 0;
 	}
 	D(printk("gpio_select ready\n"));
 #endif
@@ -166,6 +207,10 @@ static ssize_t gpio_write(struct file * file, const char * buf, size_t count,
 	unsigned char data, clk_mask, data_mask, write_msb;
 	unsigned long flags;
 	ssize_t retval = count;
+	if (priv->minor !=GPIO_MINOR_A && priv->minor != GPIO_MINOR_B) {
+		return -EFAULT;
+	}
+    
 	if (verify_area(VERIFY_READ, buf, count)) {
 		return -EFAULT;
 	}
@@ -210,13 +255,15 @@ static ssize_t gpio_write(struct file * file, const char * buf, size_t count,
 	return retval;
 }
 
+
+
 static int
 gpio_open(struct inode *inode, struct file *filp)
 {
 	struct gpio_private *priv;
 	int p = MINOR(inode->i_rdev);
 
-	if (p >= NUM_PORTS && p != LEDS)
+	if (p > GPIO_MINOR_LAST)
 		return -EINVAL;
 
 	priv = (struct gpio_private *)kmalloc(sizeof(struct gpio_private), 
@@ -231,13 +278,21 @@ gpio_open(struct inode *inode, struct file *filp)
 
 	priv->next = alarmlist;
 	alarmlist = priv;
-	priv->port = ports[p];
-	priv->shadow = shads[p];
-
-	priv->changeable_dir = changeable_dir[p];
-	priv->changeable_bits = changeable_bits[p];
-	priv->dir = dir[p];
-	priv->dir_shadow = dir_shadow[p];
+	if (USE_PORTS(priv)) { /* A and B */
+		priv->port = ports[p];
+		priv->shadow = shads[p];
+		priv->dir = dir[p];
+		priv->dir_shadow = dir_shadow[p];
+		priv->changeable_dir = changeable_dir[p];
+		priv->changeable_bits = changeable_bits[p];
+	} else {
+		priv->port = NULL;
+		priv->shadow = NULL;
+		priv->dir = NULL;
+		priv->dir_shadow = NULL;
+		priv->changeable_dir = 0;
+		priv->changeable_bits = 0;
+	}
 
 	priv->highalarm = 0;
 	priv->lowalarm = 0;
@@ -289,87 +344,189 @@ gpio_ioctl(struct inode *inode, struct file *file,
 	}
 
 	switch (_IOC_NR(cmd)) {
-		case IO_READBITS:
-			// read the port
+	case IO_READBITS:
+		// read the port
+		if (USE_PORTS(priv)) {
 			return *priv->port;
-		case IO_SETBITS:
-			save_flags(flags); cli();
-			// set changeable bits with a 1 in arg
+		} else if (priv->minor == GPIO_MINOR_G) {
+			return *R_PORT_G_DATA;
+		}
+		break;
+	case IO_SETBITS:
+		save_flags(flags); cli();
+		// set changeable bits with a 1 in arg
+		if (USE_PORTS(priv)) {
 			*priv->port = *priv->shadow |= 
 			  ((unsigned char)arg & priv->changeable_bits);
-			restore_flags(flags);
-			break;
-		case IO_CLRBITS:
-			save_flags(flags); cli();
-			// clear changeable bits with a 1 in arg
+		} else if (priv->minor == GPIO_MINOR_G) {
+			*R_PORT_G_DATA = port_g_data_shadow |= (arg & dir_g_out_bits);
+		}
+		restore_flags(flags);
+		break;
+	case IO_CLRBITS:
+		save_flags(flags); cli();
+		// clear changeable bits with a 1 in arg
+		if (USE_PORTS(priv)) {
 			*priv->port = *priv->shadow &= 
-			  ~((unsigned char)arg & priv->changeable_bits);
-			restore_flags(flags);
-			break;
-		case IO_HIGHALARM:
-			// set alarm when bits with 1 in arg go high
-			priv->highalarm |= (unsigned char)arg;
-			break;
-		case IO_LOWALARM:
-			// set alarm when bits with 1 in arg go low
-			priv->lowalarm |= (unsigned char)arg;
-			break;
-		case IO_CLRALARM:
-			// clear alarm for bits with 1 in arg
-			priv->highalarm &= ~(unsigned char)arg;
-			priv->lowalarm  &= ~(unsigned char)arg;
-			break;
-		case IO_READDIR:
-			/* Read direction 0=input 1=output */
+			 ~((unsigned char)arg & priv->changeable_bits);
+		} else if (priv->minor == GPIO_MINOR_G) {
+			*R_PORT_G_DATA = port_g_data_shadow &= ~((unsigned long)arg & dir_g_out_bits);
+		}
+		restore_flags(flags);
+		break;
+	case IO_HIGHALARM:
+		// set alarm when bits with 1 in arg go high
+		priv->highalarm |= arg;
+		break;
+	case IO_LOWALARM:
+		// set alarm when bits with 1 in arg go low
+		priv->lowalarm |= arg;
+		break;
+	case IO_CLRALARM:
+		// clear alarm for bits with 1 in arg
+		priv->highalarm &= ~arg;
+		priv->lowalarm  &= ~arg;
+		break;
+	case IO_READDIR:
+		/* Read direction 0=input 1=output */
+		if (USE_PORTS(priv)) {
 			return *priv->dir_shadow;
-		case IO_SETINPUT:
+		} else if (priv->minor == GPIO_MINOR_G) {
+			/* Note: Some bits are both in and out,
+			 * Those that are dual is set hare as well.
+			 */
+			return dir_g_shadow | dir_g_out_bits;
+		}
+	case IO_SETINPUT:
+		/* Set direction 0=unchanged 1=input, 
+		 * return mask with 1=input 
+		 */
+		if (USE_PORTS(priv)) {
 			save_flags(flags); cli();
-			/* Set direction 0=unchanged 1=input */
 			*priv->dir = *priv->dir_shadow &= 
 			~((unsigned char)arg & priv->changeable_dir);
 			restore_flags(flags);
-			return *priv->dir_shadow;
-		case IO_SETOUTPUT:
+			return ~(*priv->dir_shadow);
+		} else if (priv->minor == GPIO_MINOR_G) {
+			/* We must fiddle with R_GEN_CONFIG to change dir */
+			if (((arg & dir_g_in_bits) != arg) && 
+			    (arg & changeable_dir_g)) {
+				arg &= changeable_dir_g;
+				/* Clear bits in genconfig to set to input */
+				if (arg & (1<<0)) {
+					genconfig_shadow &= ~IO_MASK(R_GEN_CONFIG,g0dir);
+					dir_g_in_bits |= (1<<0);
+					dir_g_out_bits &= ~(1<<0);
+				}
+				if ((arg & 0x0000FF00) == 0x0000FF00) {
+					genconfig_shadow &= ~IO_MASK(R_GEN_CONFIG,g8_15dir);
+					dir_g_in_bits |= 0x0000FF00;
+					dir_g_out_bits &= ~0x0000FF00;
+				}
+				if ((arg & 0x00FF0000) == 0x00FF0000) {
+					genconfig_shadow &= ~IO_MASK(R_GEN_CONFIG,g16_23dir);
+					dir_g_in_bits |= 0x00FF0000;
+					dir_g_out_bits &= ~0x00FF0000;
+				}
+				if (arg & (1<<24)) {
+					genconfig_shadow &= ~IO_MASK(R_GEN_CONFIG,g24dir);
+					dir_g_in_bits |= (1<<24);
+					dir_g_out_bits &= ~(1<<24);
+				}
+				printk("gpio: SETINPUT on port G set "
+					"genconfig to 0x%08lX "
+					"in_bits: 0x%08lX "
+					"out_bits: 0x%08lX\n", 
+				       (unsigned long)genconfig_shadow, 
+				       dir_g_in_bits, dir_g_out_bits);
+				*R_GEN_CONFIG = genconfig_shadow;
+				/* Must be a >120 ns delay before writing this again */
+				
+			}
+			return dir_g_in_bits;
+		}
+		return 0;
+
+	case IO_SETOUTPUT:
+		/* Set direction 0=unchanged 1=output, 
+		 * return mask with 1=output 
+		 */
+		if (USE_PORTS(priv)) {
 			save_flags(flags); cli();
-			/* Set direction 0=unchanged 1=output */
 			*priv->dir = *priv->dir_shadow |= 
 			  ((unsigned char)arg & priv->changeable_dir);
 			restore_flags(flags);
 			return *priv->dir_shadow;
-                case IO_SHUTDOWN:
-                       SOFT_SHUTDOWN();
-                       break;
-                case IO_GET_PWR_BT:
-#if defined (CONFIG_ETRAX_SOFT_SHUTDOWN)
-                       return (*R_PORT_G_DATA & 
-                               ( 1 << CONFIG_ETRAX_POWERBUTTON_BIT));
-#else
-                       return 0;
-#endif
-			break;
-		case IO_CFG_WRITE_MODE:
-			priv->clk_mask = arg & 0xFF;
-			priv->data_mask = (arg >> 8) & 0xFF;
-			priv->write_msb = (arg >> 16) & 0x01;
-			/* Check if we're allowed to change the bits and
-			 * the direction is correct
-			 */
-			if (!((priv->clk_mask & priv->changeable_bits) &&
-			      (priv->data_mask & priv->changeable_bits) &&
-			      (priv->clk_mask & *priv->dir_shadow) &&
-			      (priv->data_mask & *priv->dir_shadow)))
-			{
-				priv->clk_mask = 0;
-				priv->data_mask = 0;
-				return -EPERM;
+		} else if (priv->minor == GPIO_MINOR_G) {
+			/* We must fiddle with R_GEN_CONFIG to change dir */			
+			if (((arg & dir_g_out_bits) != arg) &&
+			    (arg & changeable_dir_g)) {
+				/* Set bits in genconfig to set to output */
+				if (arg & (1<<0)) {
+					genconfig_shadow |= IO_MASK(R_GEN_CONFIG,g0dir);
+					dir_g_out_bits |= (1<<0);
+					dir_g_in_bits &= ~(1<<0);
+				}
+				if ((arg & 0x0000FF00) == 0x0000FF00) {
+					genconfig_shadow |= IO_MASK(R_GEN_CONFIG,g8_15dir);
+					dir_g_out_bits |= 0x0000FF00;
+					dir_g_in_bits &= ~0x0000FF00;
+				}
+				if ((arg & 0x00FF0000) == 0x00FF0000) {
+					genconfig_shadow |= IO_MASK(R_GEN_CONFIG,g16_23dir);
+					dir_g_out_bits |= 0x00FF0000;
+					dir_g_in_bits &= ~0x00FF0000;
+				}
+				if (arg & (1<<24)) {
+					genconfig_shadow |= IO_MASK(R_GEN_CONFIG,g24dir);
+					dir_g_out_bits |= (1<<24);
+					dir_g_in_bits &= ~(1<<24);
+				}
+				printk("gpio: SETOUTPUT on port G set "
+					"genconfig to 0x%08lX "
+					"in_bits: 0x%08lX "
+					"out_bits: 0x%08lX\n", 
+				       (unsigned long)genconfig_shadow, 
+				       dir_g_in_bits, dir_g_out_bits);
+				*R_GEN_CONFIG = genconfig_shadow;
+				/* Must be a >120 ns delay before writing this again */
 			}
-			break;
-		default:
-			if (priv->minor == LEDS)
-				return gpio_leds_ioctl(cmd, arg);
-                        else
-				return -EINVAL;
-	}
+			return dir_g_out_bits;
+		}
+		return 0;
+	case IO_SHUTDOWN:
+		SOFT_SHUTDOWN();
+		break;
+	case IO_GET_PWR_BT:
+#if defined (CONFIG_ETRAX_SOFT_SHUTDOWN)
+		return (*R_PORT_G_DATA & ( 1 << CONFIG_ETRAX_POWERBUTTON_BIT));
+#else
+		return 0;
+#endif
+		break;
+	case IO_CFG_WRITE_MODE:
+		priv->clk_mask = arg & 0xFF;
+		priv->data_mask = (arg >> 8) & 0xFF;
+		priv->write_msb = (arg >> 16) & 0x01;
+		/* Check if we're allowed to change the bits and
+		 * the direction is correct
+		 */
+		if (!((priv->clk_mask & priv->changeable_bits) &&
+		      (priv->data_mask & priv->changeable_bits) &&
+		      (priv->clk_mask & *priv->dir_shadow) &&
+		      (priv->data_mask & *priv->dir_shadow)))
+		{
+			priv->clk_mask = 0;
+			priv->data_mask = 0;
+			return -EPERM;
+		}
+		break;
+	default:
+		if (priv->minor == GPIO_MINOR_LEDS)
+			return gpio_leds_ioctl(cmd, arg);
+		else
+			return -EINVAL;
+	} /* switch */
 	
 	return 0;
 }
@@ -381,24 +538,24 @@ gpio_leds_ioctl(unsigned int cmd, unsigned long arg)
 	unsigned char red;
 
 	switch (_IOC_NR(cmd)) {
-		case IO_LEDACTIVE_SET:
-			green = ((unsigned char) arg) & 1;
-			red   = (((unsigned char) arg) >> 1) & 1;
-			LED_ACTIVE_SET_G(green);
-			LED_ACTIVE_SET_R(red);
-			break;
+	case IO_LEDACTIVE_SET:
+		green = ((unsigned char) arg) & 1;
+		red   = (((unsigned char) arg) >> 1) & 1;
+		LED_ACTIVE_SET_G(green);
+		LED_ACTIVE_SET_R(red);
+		break;
 
-		case IO_LED_SETBIT:                 
-			LED_BIT_SET(arg);
-			break;
+	case IO_LED_SETBIT:
+		LED_BIT_SET(arg);
+		break;
 
-		case IO_LED_CLRBIT:
-			LED_BIT_CLR(arg);
-			break;
+	case IO_LED_CLRBIT:
+		LED_BIT_CLR(arg);
+		break;
 
-		default:
-			return -EINVAL;
-	}
+	default:
+		return -EINVAL;
+	} /* switch */
 
 	return 0;
 }
@@ -411,6 +568,92 @@ struct file_operations gpio_fops = {
 	open:        gpio_open,
 	release:     gpio_release,
 };
+
+
+static void __init gpio_init_port_g(void)
+{
+#define GROUPA (0x0000FF3F)
+#define GROUPB (1<<6 | 1<<7)
+#define GROUPC (1<<30 | 1<<31)
+#define GROUPD (0x3FFF0000)
+#define GROUPD_LOW (0x00FF0000)
+	unsigned long used_in_bits = 0;
+	unsigned long used_out_bits = 0;
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, scsi0, select)){
+		used_in_bits  |= GROUPA | GROUPB | 0 | 0;
+		used_out_bits |= GROUPA | GROUPB | 0 | 0;
+	}
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, ata, select)) {
+		used_in_bits  |= GROUPA | GROUPB | GROUPC | (GROUPD & ~(1<<25|1<<26));
+		used_out_bits |= GROUPA | GROUPB | GROUPC | GROUPD;
+	}
+
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, par0, select)) {
+		used_in_bits  |= (GROUPA & ~(1<<0)) | 0 | 0 | 0;
+		used_out_bits |= (GROUPA & ~(1<<0)) | 0 | 0 | 0;
+	}
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, ser2, select)) {
+		used_in_bits  |= 0 | GROUPB | 0 | 0;
+		used_out_bits |= 0 | GROUPB | 0 | 0;
+	}
+	/* mio same as shared RAM ? */
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, mio, select)) {
+		used_in_bits  |= (GROUPA & ~(1<<0)) | 0 |0 |GROUPD_LOW;
+		used_out_bits |= (GROUPA & ~(1<<0|1<<1|1<<2)) | 0 |0 |GROUPD_LOW;
+	}
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, scsi1, select)) {
+		used_in_bits  |= 0 | 0 | GROUPC | GROUPD;
+		used_out_bits |= 0 | 0 | GROUPC | GROUPD;
+	}
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, scsi0w, select)) {
+		used_in_bits  |= GROUPA | GROUPB | 0 | (GROUPD_LOW | 1<<24);
+		used_out_bits |= GROUPA | GROUPB | 0 | (GROUPD_LOW | 1<<24 | 1<<25|1<<26);
+	}
+
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, par1, select)) {
+		used_in_bits  |= 0 | 0 | 0 | (GROUPD & ~(1<<24));
+		used_out_bits |= 0 | 0 | 0 | (GROUPD & ~(1<<24));
+	}
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, ser3, select)) {
+		used_in_bits  |= 0 | 0 | GROUPC | 0;
+		used_out_bits |= 0 | 0 | GROUPC | 0;
+	}
+	/* mio same as shared RAM-W? */
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, mio_w, select)) {
+		used_in_bits  |= (GROUPA & ~(1<<0)) | 0 | 0 |GROUPD_LOW;
+		used_out_bits |= (GROUPA & ~(1<<0|1<<1|1<<2)) | 0 | 0 |GROUPD_LOW;
+	}
+	/* TODO: USB p2, parw, sync ser3? */
+
+	/* Initialise the dir_g_shadow etc. depending on genconfig */
+	/* 0=input 1=output */
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, g0dir, out)) 
+		dir_g_shadow |= (1 << 0);
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, g8_15dir, out))
+		dir_g_shadow |= 0x0000FF00;
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, g16_23dir, out))
+		dir_g_shadow |= 0x00FF0000;
+	if (genconfig_shadow & IO_STATE(R_GEN_CONFIG, g24dir, out))
+		dir_g_shadow |= (1 << 24);
+
+	dir_g_in_bits = ~used_in_bits;
+	dir_g_out_bits = ~used_out_bits;
+
+	changeable_dir_g = 0x01FFFF01; /* all that can change dir */
+	changeable_dir_g &= dir_g_out_bits;
+	changeable_dir_g &= dir_g_in_bits;
+	/* Correct the bits that can change direction */ 
+	dir_g_out_bits &= ~changeable_dir_g;
+	dir_g_out_bits |= dir_g_shadow;
+	dir_g_in_bits &= ~changeable_dir_g;
+	dir_g_in_bits |= (~dir_g_shadow & changeable_dir_g);
+
+
+	printk("GPIO port G: in_bits: 0x%08lX out_bits: 0x%08lX val: %08lX\n",
+	       dir_g_in_bits, dir_g_out_bits, (unsigned long)*R_PORT_G_DATA);
+	printk("GPIO port G: dir: %08lX changeable: %08lX\n", 
+	       dir_g_shadow, changeable_dir_g);
+}
 
 /* main driver initialization routine, called from mem.c */
 
@@ -431,13 +674,13 @@ gpio_init(void)
 		return res;
 	}
 
-        /* Clear all leds */
+	/* Clear all leds */
 #if defined (CONFIG_ETRAX_CSP0_LEDS) ||  defined (CONFIG_ETRAX_PA_LEDS) || defined (CONFIG_ETRAX_PB_LEDS) 
 	init_ioremap();
 	LED_NETWORK_SET(0);
 	LED_ACTIVE_SET(0);
 	LED_DISK_READ(0);
-	LED_DISK_WRITE(0);        
+	LED_DISK_WRITE(0);
 
 #if defined (CONFIG_ETRAX_CSP0_LEDS)
 	for (i = 0; i < 32; i++) {
@@ -446,8 +689,8 @@ gpio_init(void)
 #endif
 
 #endif
-	
-	printk("ETRAX 100LX GPIO driver v2.2, (c) 2001 Axis Communications AB\n");
+	gpio_init_port_g();
+	printk("ETRAX 100LX GPIO driver v2.3, (c) 2001, 2002 Axis Communications AB\n");
 
 	return res;
 }

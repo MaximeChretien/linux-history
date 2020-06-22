@@ -77,7 +77,7 @@ static int l4_wait_ready(void)
 
 static int l4_cooked_read(struct gameport *gameport, int *axes, int *buttons)
 {
-	struct l4 *l4 = gameport->private;
+	struct l4 *l4 = gameport->driver;
 	unsigned char status;
 	int i, result = -1;
 
@@ -110,7 +110,7 @@ fail:	outb(L4_SELECT_ANALOG, L4_PORT);
 
 static int l4_open(struct gameport *gameport, int mode)
 {
-	struct l4 *l4 = gameport->private;
+	struct l4 *l4 = gameport->driver;
         if (l4->port != 0 && mode != GAMEPORT_MODE_COOKED)
 		return -1;
 	outb(L4_SELECT_ANALOG, L4_PORT);
@@ -188,7 +188,7 @@ static int l4_calibrate(struct gameport *gameport, int *axes, int *max)
 {
 	int i, t;
 	int cal[4];
-	struct l4 *l4 = gameport->private;
+	struct l4 *l4 = gameport->driver;
 
 	if (l4_getcal(l4->port, cal))
 		return -1;
@@ -248,7 +248,7 @@ int __init l4_init(void)
 			l4->port = i * 4 + j;
 
 			gameport = &l4->gameport;
-			gameport->private = l4;
+			gameport->driver = l4;
 			gameport->open = l4_open;
 			gameport->cooked_read = l4_cooked_read;
 			gameport->calibrate = l4_calibrate;

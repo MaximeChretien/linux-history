@@ -222,12 +222,19 @@ cuda_probe()
 static int
 cuda_init(void)
 {
+#ifdef CONFIG_PPC
     if (via == NULL)
 	return -ENODEV;
-#ifndef CONFIG_PPC
+    return 0;
+#else 
+    int err = cuda_init_via();
+    if (err) {
+	printk(KERN_ERR "cuda_init_via() failed\n");
+	return -ENODEV;
+    }
+
     return via_cuda_start();
 #endif
-    return 0;
 }
 #endif /* CONFIG_ADB */
 

@@ -120,6 +120,9 @@ hpusbscsi_usb_probe (struct usb_device *dev, unsigned int interface,
 	if (scsi_register_module (MODULE_SCSI_HA, &(new->ctempl)))
 		goto err_out;
 
+	new->sense_command[0] = REQUEST_SENSE;
+	new->sense_command[4] = HPUSBSCSI_SENSE_LENGTH;
+
 	/* adding to list for module unload */
 	list_add (&hpusbscsi_devices, &new->lh);
 
@@ -141,6 +144,7 @@ static struct usb_device_id hpusbscsi_usb_ids[] = {
 	{USB_DEVICE (0x03f0, 0x0701)},	/* HP 53xx */
 	{USB_DEVICE (0x03f0, 0x0801)},	/* HP 7400 */
 	{USB_DEVICE (0x0638, 0x026a)},	/*Scan Dual II */
+	{USB_DEVICE (0x0686, 0x4004)},  /*Minolta Elite II */
 	{}			/* Terminating entry */
 };
 
@@ -163,7 +167,6 @@ hpusbscsi_init (void)
 	int result;
 
 	INIT_LIST_HEAD (&hpusbscsi_devices);
-	DEBUG ("Driver loaded\n");
 
 	if ((result = usb_register (&hpusbscsi_usb_driver)) < 0) {
 		printk (KERN_ERR "hpusbscsi: driver registration failed\n");
@@ -185,7 +188,8 @@ hpusbscsi_exit (void)
 		tmp = tmp->next;
 		o = (struct hpusbscsi *)old;
 		usb_unlink_urb(&o->controlurb);
-		scsi_unregister_module(MODULE_SCSI_HA,&o->ctempl);
+		if(scsi_unregister_module(MODULE_SCSI_HA,&o->ctempl)<0)
+			printk(KERN_CRIT"Deregistering failed!\n");
 		kfree(old);
 	}
 
@@ -270,7 +274,13 @@ static int hpusbscsi_scsi_queuecommand (Scsi_Cmnd *srb, scsi_callback callback)
 	/* Now we need to decide which callback to give to the urb we send the command with */
 
 	if (!srb->bufflen) {
-		usb_callback = simple_command_callback;
+		if (srb->cmnd[0] == REQUEST_SENSE){
+			/* the usual buffer is not used, needs a special case */
+			hpusbscsi->current_data_pipe = usb_rcvbulkpipe(hpusbscsi->dev, hpusbscsi->ep_in);
+			usb_callback = request_sense_callback;
+		} else {
+			usb_callback = simple_command_callback;
+		}
 	} else {
         	if (srb->use_sg) {
 			usb_callback = scatter_gather_callback;
@@ -332,8 +342,8 @@ static int hpusbscsi_scsi_host_reset (Scsi_Cmnd *srb)
 	struct hpusbscsi* hpusbscsi = (struct hpusbscsi*)(srb->host->hostdata[0]);
 
 	printk(KERN_DEBUG"SCSI reset requested.\n");
-	usb_reset_device(hpusbscsi->dev);
-	printk(KERN_DEBUG"SCSI reset completed.\n");
+	//usb_reset_device(hpusbscsi->dev);
+	//printk(KERN_DEBUG"SCSI reset completed.\n");
 	hpusbscsi->state = HP_STATE_FREE;
 
 	return 0;
@@ -342,10 +352,9 @@ static int hpusbscsi_scsi_host_reset (Scsi_Cmnd *srb)
 static int hpusbscsi_scsi_abort (Scsi_Cmnd *srb)
 {
 	struct hpusbscsi* hpusbscsi = (struct hpusbscsi*)(srb->host->hostdata[0]);
-	printk(KERN_DEBUG"Requested is canceled.\n");
+	printk(KERN_DEBUG"Request is canceled.\n");
 
 	usb_unlink_urb(&hpusbscsi->dataurb);
-	usb_unlink_urb(&hpusbscsi->controlurb);
 	hpusbscsi->state = HP_STATE_FREE;
 
 	return SCSI_ABORT_PENDING;
@@ -365,6 +374,7 @@ static void handle_usb_error (struct hpusbscsi *hpusbscsi)
 static void  control_interrupt_callback (struct urb *u)
 {
 	struct hpusbscsi * hpusbscsi = (struct hpusbscsi *)u->context;
+	u8 scsi_state;
 
 DEBUG("Getting status byte %d \n",hpusbscsi->scsi_state_byte);
 	if(u->status < 0) {
@@ -372,10 +382,23 @@ DEBUG("Getting status byte %d \n",hpusbscsi->scsi_state_byte);
                         handle_usb_error(hpusbscsi);
 		return;
 	}
-	hpusbscsi->srb->result &= SCSI_ERR_MASK;
-	hpusbscsi->srb->result |= hpusbscsi->scsi_state_byte<<1;
 
-	if (hpusbscsi->scallback != NULL && hpusbscsi->state == HP_STATE_WAIT)
+	scsi_state = hpusbscsi->scsi_state_byte;
+        if (hpusbscsi->state != HP_STATE_ERROR) {
+                hpusbscsi->srb->result &= SCSI_ERR_MASK;
+                hpusbscsi->srb->result |= scsi_state;
+        }
+
+	if (scsi_state == CHECK_CONDITION << 1) {
+		if (hpusbscsi->state == HP_STATE_WAIT) {
+			issue_request_sense(hpusbscsi);
+		} else {
+			/* we request sense after an eventual data transfer */
+			hpusbscsi->state = HP_STATE_ERROR;
+		}
+	}
+
+	if (hpusbscsi->scallback != NULL && hpusbscsi->state == HP_STATE_WAIT && scsi_state != CHECK_CONDITION <<1)
 		/* we do a callback to the scsi layer if and only if all data has been transfered */
 		hpusbscsi->scallback(hpusbscsi->srb);
 
@@ -389,6 +412,8 @@ DEBUG("Getting status byte %d \n",hpusbscsi->scsi_state_byte);
 	case HP_STATE_BEGINNING:
 		hpusbscsi->state = HP_STATE_PREMATURE;
 	TRACE_STATE;
+		break;
+	case HP_STATE_ERROR:
 		break;
 	default:
 		printk(KERN_ERR"hpusbscsi: Unexpected status report.\n");
@@ -453,7 +478,7 @@ static void scatter_gather_callback(struct urb *u)
 
         res = usb_submit_urb(u);
         if (res)
-                hpusbscsi->state = HP_STATE_ERROR;
+        	handle_usb_error(hpusbscsi);
 	TRACE_STATE;
 }
 
@@ -468,11 +493,16 @@ static void simple_done (struct urb *u)
         DEBUG("Data transfer done\n");
 	TRACE_STATE;
 	if (hpusbscsi->state != HP_STATE_PREMATURE) {
-		if (u->status < 0)
-			hpusbscsi->state = HP_STATE_ERROR;
-		else
-			hpusbscsi->state = HP_STATE_WAIT;
+		if (u->status < 0) {
+			handle_usb_error(hpusbscsi);
+		} else {
+			if (hpusbscsi->state != HP_STATE_ERROR) {
+				hpusbscsi->state = HP_STATE_WAIT;
+			} else {
+				issue_request_sense(hpusbscsi);
+			}
 		TRACE_STATE;
+		}
 	} else {
 		if (hpusbscsi->scallback != NULL)
 			hpusbscsi->scallback(hpusbscsi->srb);
@@ -509,11 +539,52 @@ static void simple_payload_callback (struct urb *u)
 	if (hpusbscsi->state != HP_STATE_PREMATURE) {
 		hpusbscsi->state = HP_STATE_WORKING;
 	TRACE_STATE;
-	} else {
-		if (hpusbscsi->scallback != NULL)
-			hpusbscsi->scallback(hpusbscsi->srb);
-		hpusbscsi->state = HP_STATE_FREE;
-	TRACE_STATE;
+	}
+}
+
+static void request_sense_callback (struct urb *u)
+{
+	struct hpusbscsi * hpusbscsi = (struct hpusbscsi *)u->context;
+
+	if (u->status<0) {
+                handle_usb_error(hpusbscsi);
+		return;
+        }
+
+	FILL_BULK_URB(
+		u,
+		hpusbscsi->dev,
+		hpusbscsi->current_data_pipe,
+		hpusbscsi->srb->sense_buffer,
+		SCSI_SENSE_BUFFERSIZE,
+		simple_done,
+		hpusbscsi
+	);
+
+	if (0 > usb_submit_urb(u)) {
+		handle_usb_error(hpusbscsi);
+		return;
+	}
+	if (hpusbscsi->state != HP_STATE_PREMATURE && hpusbscsi->state != HP_STATE_ERROR)
+		hpusbscsi->state = HP_STATE_WORKING;
+}
+
+static void issue_request_sense (struct hpusbscsi *hpusbscsi)
+{
+	FILL_BULK_URB(
+		&hpusbscsi->dataurb,
+		hpusbscsi->dev,
+		usb_sndbulkpipe(hpusbscsi->dev, hpusbscsi->ep_out),
+		&hpusbscsi->sense_command,
+		SENSE_COMMAND_SIZE,
+		request_sense_callback,
+		hpusbscsi
+	);
+
+	hpusbscsi->current_data_pipe = usb_rcvbulkpipe(hpusbscsi->dev, hpusbscsi->ep_in);
+
+	if (0 > usb_submit_urb(&hpusbscsi->dataurb)) {
+		handle_usb_error(hpusbscsi);
 	}
 }
 

@@ -3,6 +3,9 @@
  * HISTORY:
  *
  * $Log: pgtable.h,v $
+ * Revision 1.15  2002/04/23 15:37:52  bjornw
+ * Removed page_address and added flush_icache_user_range
+ *
  * Revision 1.14  2001/12/10 03:08:50  bjornw
  * Added pgtable_cache_init dummy
  *
@@ -125,6 +128,7 @@ extern void paging_init(void);
 #define flush_dcache_page(page)                 do { } while (0)
 #define flush_icache_range(start, end)          do { } while (0)
 #define flush_icache_page(vma,pg)               do { } while (0)
+#define flush_icache_user_range(vma,pg,adr,len)	do { } while (0)
 
 /*
  * TLB flushing (implemented in arch/cris/mm/tlb.c):
@@ -438,7 +442,6 @@ static inline unsigned long __pte_page(pte_t pte)
 
 /* permanent address of a page */
 
-#define page_address(page)      ((page)->virtual)
 #define __page_address(page)    (PAGE_OFFSET + (((page) - mem_map) << PAGE_SHIFT))
 #define pte_page(pte)           (mem_map+pte_pagenr(pte))
 

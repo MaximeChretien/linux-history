@@ -1,7 +1,7 @@
 /* Linux driver for NAND Flash Translation Layer      */
 /* (c) 1999 Machine Vision Holdings, Inc.             */
 /* Author: David Woodhouse <dwmw2@infradead.org>      */
-/* $Id: nftlcore.c,v 1.82 2001/10/02 15:05:11 dwmw2 Exp $ */
+/* $Id: nftlcore.c,v 1.85 2001/11/20 11:42:33 dwmw2 Exp $ */
 
 /*
   The contents of this file are distributed under the GNU General
@@ -76,6 +76,14 @@ static struct gendisk nftl_gendisk = {
 	part:		part_table,     /* hd struct */
 	sizes:		nftl_sizes,     /* block sizes */
 };
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,14)
+#define BLK_INC_USE_COUNT MOD_INC_USE_COUNT
+#define BLK_DEC_USE_COUNT MOD_DEC_USE_COUNT
+#else
+#define BLK_INC_USE_COUNT do {} while(0)
+#define BLK_DEC_USE_COUNT do {} while(0)
+#endif
 
 struct NFTLrecord *NFTLs[MAX_NFTLS];
 
@@ -805,9 +813,12 @@ static int nftl_ioctl(struct inode * inode, struct file * file, unsigned int cmd
 	case BLKGETSIZE:   /* Return device size */
 		return put_user(part_table[MINOR(inode->i_rdev)].nr_sects,
                                 (unsigned long *) arg);
+
+#ifdef BLKGETSIZE64
 	case BLKGETSIZE64:
 		return put_user((u64)part_table[MINOR(inode->i_rdev)].nr_sects << 9,
                                 (u64 *)arg);
+#endif
 
 	case BLKFLSBUF:
 		if (!capable(CAP_SYS_ADMIN)) return -EACCES;
@@ -984,8 +995,11 @@ static int nftl_open(struct inode *ip, struct file *fp)
 #endif /* !CONFIG_NFTL_RW */
 
 	thisNFTL->usecount++;
-	if (!get_mtd_device(thisNFTL->mtd, -1))
-		return /* -E'SBUGGEREDOFF */ -ENXIO;
+	BLK_INC_USE_COUNT;
+	if (!get_mtd_device(thisNFTL->mtd, -1)) {
+		BLK_DEC_USE_COUNT;
+		return -ENXIO;
+	}
 
 	return 0;
 }
@@ -998,11 +1012,10 @@ static int nftl_release(struct inode *inode, struct file *fp)
 
 	DEBUG(MTD_DEBUG_LEVEL2, "NFTL_release\n");
 
-	invalidate_device(inode->i_rdev, 1);
-
 	if (thisNFTL->mtd->sync)
 		thisNFTL->mtd->sync(thisNFTL->mtd);
 	thisNFTL->usecount--;
+	BLK_DEC_USE_COUNT;
 
 	put_mtd_device(thisNFTL->mtd);
 
@@ -1020,7 +1033,9 @@ static struct file_operations nftl_fops = {
 #else
 static struct block_device_operations nftl_fops = 
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,14)
 	owner:		THIS_MODULE,
+#endif
 	open:		nftl_open,
 	release:	nftl_release,
 	ioctl: 		nftl_ioctl
@@ -1047,7 +1062,7 @@ int __init init_nftl(void)
 	int i;
 
 #ifdef PRERELEASE 
-	printk(KERN_INFO "NFTL driver: nftlcore.c $Revision: 1.82 $, nftlmount.c %s\n", nftlmountrev);
+	printk(KERN_INFO "NFTL driver: nftlcore.c $Revision: 1.85 $, nftlmount.c %s\n", nftlmountrev);
 #endif
 
 	if (register_blkdev(MAJOR_NR, "nftl", &nftl_fops)){

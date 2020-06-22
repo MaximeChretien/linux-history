@@ -65,7 +65,12 @@
  *  static const char RCSid[] = "$Header:";
  */
 
+/* system major --> sd_gendisks index */
+#define SD_MAJOR_IDX(i)		(MAJOR(i) & SD_MAJOR_MASK)
+/* sd_gendisks index --> system major */
 #define SD_MAJOR(i) (!(i) ? SCSI_DISK0_MAJOR : SCSI_DISK1_MAJOR-1+(i))
+
+#define SD_PARTITION(dev)	((SD_MAJOR_IDX(dev) << 8) | (MINOR(dev) & 255))
 
 #define SCSI_DISKS_PER_MAJOR	16
 #define SD_MAJOR_NUMBER(i)	SD_MAJOR((i) >> 8)
@@ -84,9 +89,8 @@
 #define SD_TIMEOUT (30 * HZ)
 #define SD_MOD_TIMEOUT (75 * HZ)
 
-struct hd_struct *sd;
-
 static Scsi_Disk *rscsi_disks;
+static struct gendisk *sd_gendisks;
 static int *sd_sizes;
 static int *sd_blocksizes;
 static int *sd_hardsizes;	/* Hardware sector size */
@@ -195,7 +199,9 @@ static int sd_ioctl(struct inode * inode, struct file * file, unsigned int cmd, 
 			if (put_user(diskinfo[0], &loc->heads) ||
 				put_user(diskinfo[1], &loc->sectors) ||
 				put_user(diskinfo[2], &loc->cylinders) ||
-				put_user(sd[SD_PARTITION(inode->i_rdev)].start_sect, &loc->start))
+				put_user(sd_gendisks[SD_MAJOR_IDX(
+				    inode->i_rdev)].part[MINOR(
+				    inode->i_rdev)].start_sect, &loc->start))
 				return -EFAULT;
 			return 0;
 		}
@@ -226,7 +232,9 @@ static int sd_ioctl(struct inode * inode, struct file * file, unsigned int cmd, 
 			if (put_user(diskinfo[0], &loc->heads) ||
 				put_user(diskinfo[1], &loc->sectors) ||
 				put_user(diskinfo[2], (unsigned int *) &loc->cylinders) ||
-				put_user(sd[SD_PARTITION(inode->i_rdev)].start_sect, &loc->start))
+				put_user(sd_gendisks[SD_MAJOR_IDX(
+				    inode->i_rdev)].part[MINOR(
+				    inode->i_rdev)].start_sect, &loc->start))
 				return -EFAULT;
 			return 0;
 		}
@@ -279,37 +287,39 @@ static request_queue_t *sd_find_queue(kdev_t dev)
  	target = DEVICE_NR(dev);
 
 	dpnt = &rscsi_disks[target];
-	if (!dpnt)
+	if (!dpnt->device)
 		return NULL;	/* No such device */
 	return &dpnt->device->request_queue;
 }
 
 static int sd_init_command(Scsi_Cmnd * SCpnt)
 {
-	int dev, devm, block, this_count;
+	int dev, block, this_count;
+	struct hd_struct *ppnt;
 	Scsi_Disk *dpnt;
 #if CONFIG_SCSI_LOGGING
 	char nbuff[6];
 #endif
 
-	devm = SD_PARTITION(SCpnt->request.rq_dev);
+	ppnt = &sd_gendisks[SD_MAJOR_IDX(SCpnt->request.rq_dev)].part[MINOR(SCpnt->request.rq_dev)];
 	dev = DEVICE_NR(SCpnt->request.rq_dev);
 
 	block = SCpnt->request.sector;
 	this_count = SCpnt->request_bufflen >> 9;
 
-	SCSI_LOG_HLQUEUE(1, printk("Doing sd request, dev = %d, block = %d\n", devm, block));
+	SCSI_LOG_HLQUEUE(1, printk("Doing sd request, dev = 0x%x, block = %d\n",
+	    SCpnt->request.rq_dev, block));
 
 	dpnt = &rscsi_disks[dev];
-	if (devm >= (sd_template.dev_max << 4) ||
-	    !dpnt ||
+	if (dev >= sd_template.dev_max ||
+	    !dpnt->device ||
 	    !dpnt->device->online ||
- 	    block + SCpnt->request.nr_sectors > sd[devm].nr_sects) {
+ 	    block + SCpnt->request.nr_sectors > ppnt->nr_sects) {
 		SCSI_LOG_HLQUEUE(2, printk("Finishing %ld sectors\n", SCpnt->request.nr_sectors));
 		SCSI_LOG_HLQUEUE(2, printk("Retry with 0x%p\n", SCpnt));
 		return 0;
 	}
-	block += sd[devm].start_sect;
+	block += ppnt->start_sect;
 	if (dpnt->device->changed) {
 		/*
 		 * quietly refuse to do anything to a changed disc until the changed
@@ -318,7 +328,7 @@ static int sd_init_command(Scsi_Cmnd * SCpnt)
 		/* printk("SCSI disk has been changed. Prohibiting further I/O.\n"); */
 		return 0;
 	}
-	SCSI_LOG_HLQUEUE(2, sd_devname(devm, nbuff));
+	SCSI_LOG_HLQUEUE(2, sd_devname(dev, nbuff));
 	SCSI_LOG_HLQUEUE(2, printk("%s : real dev = /dev/%d, block = %d\n",
 				   nbuff, dev, block));
 
@@ -576,8 +586,6 @@ static struct gendisk sd_gendisk =
 	fops:		&sd_fops,
 };
 
-static struct gendisk *sd_gendisks = &sd_gendisk;
-
 #define SD_GENDISK(i)    sd_gendisks[(i) / SCSI_DISKS_PER_MAJOR]
 
 /*
@@ -595,6 +603,7 @@ static void rw_intr(Scsi_Cmnd * SCpnt)
 	int this_count = SCpnt->bufflen >> 9;
 	int good_sectors = (result == 0 ? this_count : 0);
 	int block_sectors = 1;
+	long error_sector;
 
 	SCSI_LOG_HLCOMPLETE(1, sd_devname(DEVICE_NR(SCpnt->request.rq_dev), nbuff));
 
@@ -611,10 +620,11 @@ static void rw_intr(Scsi_Cmnd * SCpnt)
 	 */
 
 	/* An error occurred */
-	if (driver_byte(result) != 0) {
-		/* Sense data is valid */
-		if (SCpnt->sense_buffer[0] == 0xF0 && SCpnt->sense_buffer[2] == MEDIUM_ERROR) {
-			long error_sector = (SCpnt->sense_buffer[3] << 24) |
+	if (driver_byte(result) != 0 && 	/* An error occured */
+	    SCpnt->sense_buffer[0] == 0xF0) {	/* Sense data is valid */
+		switch (SCpnt->sense_buffer[2]) {
+		case MEDIUM_ERROR:
+			error_sector = (SCpnt->sense_buffer[3] << 24) |
 			(SCpnt->sense_buffer[4] << 16) |
 			(SCpnt->sense_buffer[5] << 8) |
 			SCpnt->sense_buffer[6];
@@ -642,18 +652,37 @@ static void rw_intr(Scsi_Cmnd * SCpnt)
 			default:
 				break;
 			}
-			error_sector -= sd[SD_PARTITION(SCpnt->request.rq_dev)].start_sect;
+			error_sector -= sd_gendisks[SD_MAJOR_IDX(
+				SCpnt->request.rq_dev)].part[MINOR(
+				SCpnt->request.rq_dev)].start_sect;
 			error_sector &= ~(block_sectors - 1);
 			good_sectors = error_sector - SCpnt->request.sector;
 			if (good_sectors < 0 || good_sectors >= this_count)
 				good_sectors = 0;
-		}
-		if (SCpnt->sense_buffer[2] == ILLEGAL_REQUEST) {
+			break;
+
+		case RECOVERED_ERROR:
+			/*
+			 * An error occured, but it recovered.  Inform the
+			 * user, but make sure that it's not treated as a
+			 * hard error.
+			 */
+			print_sense("sd", SCpnt);
+			result = 0;
+			SCpnt->sense_buffer[0] = 0x0;
+			good_sectors = this_count;
+			break;
+
+		case ILLEGAL_REQUEST:
 			if (SCpnt->device->ten == 1) {
 				if (SCpnt->cmnd[0] == READ_10 ||
 				    SCpnt->cmnd[0] == WRITE_10)
 					SCpnt->device->ten = 0;
 			}
+			break;
+
+		default:
+			break;
 		}
 	}
 	/*
@@ -1127,23 +1156,12 @@ static int sd_init()
 		hardsect_size[SD_MAJOR(i)] = sd_hardsizes + i * (SCSI_DISKS_PER_MAJOR << 4);
 		max_sectors[SD_MAJOR(i)] = sd_max_sectors + i * (SCSI_DISKS_PER_MAJOR << 4);
 	}
-	/*
-	 * FIXME: should unregister blksize_size, hardsect_size and max_sectors when
-	 * the module is unloaded.
-	 */
-	sd = kmalloc((sd_template.dev_max << 4) *
-					  sizeof(struct hd_struct),
-					  GFP_ATOMIC);
-	if (!sd)
-		goto cleanup_sd;
-	memset(sd, 0, (sd_template.dev_max << 4) * sizeof(struct hd_struct));
 
-	if (N_USED_SD_MAJORS > 1)
-		sd_gendisks = kmalloc(N_USED_SD_MAJORS * sizeof(struct gendisk), GFP_ATOMIC);
-		if (!sd_gendisks)
-			goto cleanup_sd_gendisks;
+	sd_gendisks = kmalloc(N_USED_SD_MAJORS * sizeof(struct gendisk), GFP_ATOMIC);
+	if (!sd_gendisks)
+		goto cleanup_sd_gendisks;
 	for (i = 0; i < N_USED_SD_MAJORS; i++) {
-		sd_gendisks[i] = sd_gendisk;
+		sd_gendisks[i] = sd_gendisk;	/* memcpy */
 		sd_gendisks[i].de_arr = kmalloc (SCSI_DISKS_PER_MAJOR * sizeof *sd_gendisks[i].de_arr,
                                                  GFP_ATOMIC);
 		if (!sd_gendisks[i].de_arr)
@@ -1160,7 +1178,11 @@ static int sd_init()
 		sd_gendisks[i].major_name = "sd";
 		sd_gendisks[i].minor_shift = 4;
 		sd_gendisks[i].max_p = 1 << 4;
-		sd_gendisks[i].part = sd + (i * SCSI_DISKS_PER_MAJOR << 4);
+		sd_gendisks[i].part = kmalloc((SCSI_DISKS_PER_MAJOR << 4) * sizeof(struct hd_struct),
+						GFP_ATOMIC);
+		if (!sd_gendisks[i].part)
+			goto cleanup_gendisks_part;
+		memset(sd_gendisks[i].part, 0, (SCSI_DISKS_PER_MAJOR << 4) * sizeof(struct hd_struct));
 		sd_gendisks[i].sizes = sd_sizes + (i * SCSI_DISKS_PER_MAJOR << 4);
 		sd_gendisks[i].nr_real = 0;
 		sd_gendisks[i].real_devices =
@@ -1169,18 +1191,19 @@ static int sd_init()
 
 	return 0;
 
+cleanup_gendisks_part:
+	kfree(sd_gendisks[i].flags);
 cleanup_gendisks_flags:
 	kfree(sd_gendisks[i].de_arr);
 cleanup_gendisks_de_arr:
 	while (--i >= 0 ) {
 		kfree(sd_gendisks[i].de_arr);
 		kfree(sd_gendisks[i].flags);
+		kfree(sd_gendisks[i].part);
 	}
-	if (sd_gendisks != &sd_gendisk)
-		kfree(sd_gendisks);
+	kfree(sd_gendisks);
+	sd_gendisks = NULL;
 cleanup_sd_gendisks:
-	kfree(sd);
-cleanup_sd:
 	kfree(sd_max_sectors);
 cleanup_max_sectors:
 	kfree(sd_hardsizes);
@@ -1301,6 +1324,7 @@ static int sd_attach(Scsi_Device * SDp)
  */
 int revalidate_scsidisk(kdev_t dev, int maxusage)
 {
+	struct gendisk *sdgd;
 	int target;
 	int max_p;
 	int start;
@@ -1314,14 +1338,15 @@ int revalidate_scsidisk(kdev_t dev, int maxusage)
 	}
 	DEVICE_BUSY = 1;
 
-	max_p = sd_gendisks->max_p;
-	start = target << sd_gendisks->minor_shift;
+	sdgd = &SD_GENDISK(target);
+	max_p = sd_gendisk.max_p;
+	start = target << sd_gendisk.minor_shift;
 
 	for (i = max_p - 1; i >= 0; i--) {
 		int index = start + i;
 		invalidate_device(MKDEV_SD_PARTITION(index), 1);
-		sd_gendisks->part[index].start_sect = 0;
-		sd_gendisks->part[index].nr_sects = 0;
+		sdgd->part[SD_MINOR_NUMBER(index)].start_sect = 0;
+		sdgd->part[SD_MINOR_NUMBER(index)].nr_sects = 0;
 		/*
 		 * Reset the blocksize for everything so that we can read
 		 * the partition table.  Technically we will determine the
@@ -1353,6 +1378,7 @@ static int fop_revalidate_scsidisk(kdev_t dev)
 static void sd_detach(Scsi_Device * SDp)
 {
 	Scsi_Disk *dpnt;
+	struct gendisk *sdgd;
 	int i, j;
 	int max_p;
 	int start;
@@ -1365,17 +1391,18 @@ static void sd_detach(Scsi_Device * SDp)
 
 			/* If we are disconnecting a disk driver, sync and invalidate
 			 * everything */
+			sdgd = &SD_GENDISK(i);
 			max_p = sd_gendisk.max_p;
 			start = i << sd_gendisk.minor_shift;
 
 			for (j = max_p - 1; j >= 0; j--) {
 				int index = start + j;
 				invalidate_device(MKDEV_SD_PARTITION(index), 1);
-				sd_gendisks->part[index].start_sect = 0;
-				sd_gendisks->part[index].nr_sects = 0;
+				sdgd->part[SD_MINOR_NUMBER(index)].start_sect = 0;
+				sdgd->part[SD_MINOR_NUMBER(index)].nr_sects = 0;
 				sd_sizes[index] = 0;
 			}
-                        devfs_register_partitions (&SD_GENDISK (i),
+                        devfs_register_partitions (sdgd,
                                                    SD_MINOR_NUMBER (start), 1);
 			/* unregister_disk() */
 			dpnt->has_part_table = 0;
@@ -1411,16 +1438,22 @@ static void __exit exit_sd(void)
 		kfree(sd_sizes);
 		kfree(sd_blocksizes);
 		kfree(sd_hardsizes);
-		kfree((char *) sd);
+		for (i = 0; i < N_USED_SD_MAJORS; i++) {
+#if 0 /* XXX aren't we forgetting to deallocate something? */
+			kfree(sd_gendisks[i].de_arr);
+			kfree(sd_gendisks[i].flags);
+#endif
+			kfree(sd_gendisks[i].part);
+		}
 	}
 	for (i = 0; i < N_USED_SD_MAJORS; i++) {
 		del_gendisk(&sd_gendisks[i]);
-		blk_size[SD_MAJOR(i)] = NULL;
+		blk_size[SD_MAJOR(i)] = NULL;	/* XXX blksize_size actually? */
 		hardsect_size[SD_MAJOR(i)] = NULL;
 		read_ahead[SD_MAJOR(i)] = 0;
 	}
 	sd_template.dev_max = 0;
-	if (sd_gendisks != &sd_gendisk)
+	if (sd_gendisks != NULL)    /* kfree tests for 0, but leave explicit */
 		kfree(sd_gendisks);
 }
 

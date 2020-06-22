@@ -12,6 +12,7 @@ struct seq_file {
 	loff_t index;
 	struct semaphore sem;
 	struct seq_operations *op;
+	void *private;
 };
 
 struct seq_operations {

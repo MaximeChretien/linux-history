@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 1996, 1998, 1999 by Ralf Baechle
+ * Copyright (C) 1996, 1998, 1999, 2002 by Ralf Baechle
  * Copyright (C) 1999 Silicon Graphics, Inc.
  *
  * This file contains exception handler for address error exception with the
@@ -96,10 +96,8 @@
 	if ((long)(~(pc) & ((a) | ((a)+(s)))) < 0)	\
 		goto sigbus;
 
-static inline void
-emulate_load_store_insn(struct pt_regs *regs,
-                        unsigned long addr,
-                        unsigned long pc)
+static inline int emulate_load_store_insn(struct pt_regs *regs,
+	unsigned long addr, unsigned long pc)
 {
 	union mips_instruction insn;
 	unsigned long value, fixup;
@@ -163,10 +161,9 @@ emulate_load_store_insn(struct pt_regs *regs,
 			STR(PTR)"\t2b,%2\n\t"
 			".previous"
 			:"=&r" (value)
-			:"r" (addr), "i" (&&fault)
-			:"$1");
+			:"r" (addr), "i" (&&fault));
 		regs->regs[insn.i_format.rt] = value;
-		return;
+		return 0;
 
 	case lw_op:
 		check_axs(pc, addr, 4);
@@ -186,7 +183,7 @@ emulate_load_store_insn(struct pt_regs *regs,
 			:"=&r" (value)
 			:"r" (addr), "i" (&&fault));
 			regs->regs[insn.i_format.rt] = value;
-			return;
+			return 0;
 
 	case lhu_op:
 		check_axs(pc, addr, 2);
@@ -208,10 +205,9 @@ emulate_load_store_insn(struct pt_regs *regs,
 			STR(PTR)"\t2b,%2\n\t"
 			".previous"
 			:"=&r" (value)
-			:"r" (addr), "i" (&&fault)
-			:"$1");
+			:"r" (addr), "i" (&&fault));
 		regs->regs[insn.i_format.rt] = value;
-		return;
+		return 0;
 
 	case lwu_op:
 		check_axs(pc, addr, 4);
@@ -232,7 +228,7 @@ emulate_load_store_insn(struct pt_regs *regs,
 			:"r" (addr), "i" (&&fault));
 		value &= 0xffffffff;
 		regs->regs[insn.i_format.rt] = value;
-		return;
+		return 0;
 
 	case ld_op:
 		check_axs(pc, addr, 8);
@@ -254,7 +250,7 @@ emulate_load_store_insn(struct pt_regs *regs,
 			:"=&r" (value)
 			:"r" (addr), "i" (&&fault));
 		regs->regs[insn.i_format.rt] = value;
-		return;
+		return 0;
 
 	case sh_op:
 		check_axs(pc, addr, 2);
@@ -279,9 +275,8 @@ emulate_load_store_insn(struct pt_regs *regs,
 			STR(PTR)"\t2b,%2\n\t"
 			".previous"
 			: /* no outputs */
-			:"r" (value), "r" (addr), "i" (&&fault)
-			:"$1");
-		return;
+			:"r" (value), "r" (addr), "i" (&&fault));
+		return 0;
 
 	case sw_op:
 		check_axs(pc, addr, 4);
@@ -301,7 +296,7 @@ emulate_load_store_insn(struct pt_regs *regs,
 			".previous"
 			: /* no outputs */
 			:"r" (value), "r" (addr), "i" (&&fault));
-		return;
+		return 0;
 
 	case sd_op:
 		check_axs(pc, addr, 8);
@@ -323,7 +318,7 @@ emulate_load_store_insn(struct pt_regs *regs,
 			".previous"
 			: /* no outputs */
 			:"r" (value), "r" (addr), "i" (&&fault));
-		return;
+		return 0;
 
 	case lwc1_op:
 	case ldc1_op:
@@ -352,31 +347,31 @@ emulate_load_store_insn(struct pt_regs *regs,
 		 */
 		goto sigill;
 	}
-	return;
+	return 0;
 
 fault:
 	/* Did we have an exception handler installed? */
-	fixup = search_exception_table(regs->cp0_epc);
+	fixup = search_exception_table(exception_epc(regs));
 	if (fixup) {
 		long new_epc;
 		new_epc = fixup_exception(dpf_reg, fixup, regs->cp0_epc);
 		printk(KERN_DEBUG "%s: Forwarding exception at [<%lx>] (%lx)\n",
 		       current->comm, regs->cp0_epc, new_epc);
 		regs->cp0_epc = new_epc;
-		return;
+		return 1;
 	}
 
 	die_if_kernel ("Unhandled kernel unaligned access", regs);
 	send_sig(SIGSEGV, current, 1);
-	return;
+	return 0;
 sigbus:
 	die_if_kernel ("Unhandled kernel unaligned access", regs);
 	send_sig(SIGBUS, current, 1);
-	return;
+	return 0;
 sigill:
 	die_if_kernel ("Unhandled kernel unaligned access or invalid instruction", regs);
 	send_sig(SIGILL, current, 1);
-	return;
+	return 0;
 }
 
 #ifdef CONFIG_PROC_FS
@@ -386,6 +381,24 @@ unsigned long unaligned_instructions;
 asmlinkage void do_ade(struct pt_regs *regs)
 {
 	unsigned long pc;
+	extern int do_dsemulret(struct pt_regs *);
+
+#if 0
+        printk("ade: Cpu%d[%s:%d:%0lx:%0lx]\n", smp_processor_id(),
+                current->comm, current->pid, regs->cp0_badvaddr, regs->cp0_epc);
+#endif
+
+	/*
+	 * Address errors may be deliberately induced
+	 * by the FPU emulator to take retake control
+	 * of the CPU after executing the instruction
+	 * in the delay slot of an emulated branch.
+	 */
+	/* Terminate if exception was recognized as a delay slot return */
+	if (do_dsemulret(regs))
+		return;
+
+        /* Otherwise handle as normal */
 
 	/*
 	 * Did we catch a fault trying to load an instruction?
@@ -396,12 +409,16 @@ asmlinkage void do_ade(struct pt_regs *regs)
 		goto sigbus;
 
 	pc = regs->cp0_epc + ((regs->cp0_cause & CAUSEF_BD) ? 4 : 0);
-	if (compute_return_epc(regs))
-		return;
 	if ((current->thread.mflags & MF_FIXADE) == 0)
 		goto sigbus;
 
-	emulate_load_store_insn(regs, regs->cp0_badvaddr, pc);
+	/*
+	 * Do branch emulation only if we didn't forward the exception.
+	 * This is all so but ugly ...
+	 */
+	if (!emulate_load_store_insn(regs, regs->cp0_badvaddr, pc))
+		compute_return_epc(regs);
+
 #ifdef CONFIG_PROC_FS
 	unaligned_instructions++;
 #endif
@@ -409,6 +426,6 @@ asmlinkage void do_ade(struct pt_regs *regs)
 	return;
 
 sigbus:
-	die_if_kernel ("Kernel unaligned instruction access", regs);
+	die_if_kernel("Kernel unaligned instruction access", regs);
 	force_sig(SIGBUS, current);
 }

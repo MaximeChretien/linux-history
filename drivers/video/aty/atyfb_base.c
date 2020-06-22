@@ -304,7 +304,7 @@ static char m64n_mob_p[] __initdata = "3D RAGE Mobility (PCI)";
 static char m64n_mob_a[] __initdata = "3D RAGE Mobility (AGP)";
 #endif /* CONFIG_FB_ATY_CT */
 
-static const struct {
+static struct {
     u16 pci_id, chip_type;
     u8 rev_mask, rev_val;
     const char *name;

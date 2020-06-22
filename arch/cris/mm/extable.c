@@ -2,6 +2,9 @@
  * linux/arch/cris/mm/extable.c
  *
  * $Log: extable.c,v $
+ * Revision 1.4  2002/03/19 15:21:10  bjornw
+ * Fixed warning
+ *
  * Revision 1.3  2001/09/27 13:52:40  bjornw
  * Harmonize underscore-ness with other parts
  *
@@ -39,13 +42,12 @@ search_one_table(const struct exception_table_entry *first,
 unsigned long
 search_exception_table(unsigned long addr)
 {
-	unsigned long ret;
-
 #ifndef CONFIG_MODULES
 	/* There is only the kernel to search.  */
 	return search_one_table(__start___ex_table, __stop___ex_table-1, addr);
 #else
 	/* The kernel is the last "module" -- no need to treat it special.  */
+	unsigned long ret;
 	struct module *mp;
 	for (mp = module_list; mp != NULL; mp = mp->next) {
 		if (mp->ex_table_start == NULL)

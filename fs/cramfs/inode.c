@@ -116,7 +116,7 @@ static void *cramfs_read(struct super_block *sb, unsigned int offset, unsigned i
 	unsigned i, blocknr, buffer, unread;
 	unsigned long devsize;
 	int major, minor;
-	
+
 	char *data;
 
 	if (!len)
@@ -186,7 +186,7 @@ static void *cramfs_read(struct super_block *sb, unsigned int offset, unsigned i
 	}
 	return read_buffers[buffer] + offset;
 }
-			
+
 
 static struct super_block * cramfs_read_super(struct super_block *sb, void *data, int silent)
 {
@@ -268,7 +268,7 @@ static int cramfs_statfs(struct super_block *sb, struct statfs *buf)
 	buf->f_bavail = 0;
 	buf->f_files = sb->CRAMFS_SB_FILES;
 	buf->f_ffree = 0;
-	buf->f_namelen = 255;
+	buf->f_namelen = CRAMFS_MAXPATHLEN;
 	return 0;
 }
 
@@ -461,4 +461,3 @@ static void __exit exit_cramfs_fs(void)
 module_init(init_cramfs_fs)
 module_exit(exit_cramfs_fs)
 MODULE_LICENSE("GPL");
-

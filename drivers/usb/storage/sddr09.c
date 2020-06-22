@@ -1,6 +1,6 @@
 /* Driver for SanDisk SDDR-09 SmartMedia reader
  *
- * $Id: sddr09.c,v 1.22 2001/12/08 23:32:48 mdharm Exp $
+ * $Id: sddr09.c,v 1.23 2002/02/25 00:40:13 mdharm Exp $
  *
  * SDDR09 driver v0.1:
  *
@@ -8,6 +8,9 @@
  *
  * Current development and maintenance by:
  *   (c) 2000, 2001 Robert Baruch (autophile@starband.net)
+ *
+ * Developed with the assistance of:
+ *   (c) 2002 Alan Stern <stern@rowland.org>
  *
  * The SanDisk SDDR-09 SmartMedia reader uses the Shuttle EUSB-01 chip.
  * This chip is a programmable USB controller. In the SDDR-09, it has
@@ -113,8 +116,8 @@ static int sddr09_send_control(struct us_data *us,
 		/* a stall is a fatal condition from the device */
 		if (result == -EPIPE) {
 			US_DEBUGP("-- Stall on control pipe. Clearing\n");
-			result = usb_clear_halt(us->pusb_dev, pipe);
-			US_DEBUGP("-- usb_clear_halt() returns %d\n", result);
+			result = usb_stor_clear_halt(us, pipe);
+			US_DEBUGP("-- usb_stor_clear_halt() returns %d\n", result);
 			return USB_STOR_TRANSPORT_FAILED;
 		}
 
@@ -146,7 +149,7 @@ static int sddr09_raw_bulk(struct us_data *us,
        	        US_DEBUGP("EPIPE: clearing endpoint halt for"
 			" pipe 0x%x, stalled at %d bytes\n",
 			pipe, act_len);
-               	usb_clear_halt(us->pusb_dev, pipe);
+               	usb_stor_clear_halt(us, pipe);
         }
 
 	if (result) {

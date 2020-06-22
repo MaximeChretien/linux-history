@@ -29,7 +29,7 @@
  * Notes: 
  *  1) the IEEE754 library (-le) performs the actual arithmetic;
  *  2) if you know that you won't have an fpu, then you'll get much 
- *     better performance by compiling with -msoft-float!  */
+ *     better performance by compiling with -msoft-float!
  *
  *  Nov 7, 2000
  *  Massive changes to integrate with Linux kernel.
@@ -1780,7 +1780,7 @@ void _cop1_init(int emulate)
 		 * i.e. denormalised results, underflow, overflow etc, which
 		 * must be emulated in s/w.
 		 */
-#ifdef 1
+#if 1
 		/* r4000 or above use dedicate exception */
 		xcption(XCPTFPE, cop1Patcher);
 #else

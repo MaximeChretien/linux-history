@@ -454,6 +454,31 @@ ENTRY(soft_irq_mask)
 		.macro	irq_prio_table
 		.endm
 
+#elif defined(CONFIG_ARCH_MX1ADS)
+
+		.macro	disable_fiq
+		.endm
+#define AITC_NIVECSR   0x40
+		.macro	get_irqnr_and_base, irqnr, irqstat, base, tmp
+		ldr	\irqstat, =IO_ADDRESS(MX1ADS_AITC_BASE)
+		@ Load offset & priority of the highest priority
+		@ interrupt pending.
+		ldr	\irqnr, [\irqstat, #AITC_NIVECSR]
+		@ Shift off the priority leaving the offset or
+		@ "interrupt number"
+		mov	\irqnr, \irqnr, lsr #16
+ 		ldr	\irqstat, =1	@ dummy compare
+		ldr	\base, =0xFFFF		// invalid interrupt
+		cmp	\irqnr, \base
+		bne	1001f
+		ldr	\irqstat, =0
+1001:
+		tst	\irqstat, #1	@ to make the condition code = TRUE
+		.endm
+
+		.macro	irq_prio_table
+		.endm
+
 #elif defined(CONFIG_ARCH_CLPS711X)
 
 #include <asm/hardware/clps7111.h>
@@ -643,14 +668,14 @@ __dabt_svc:	sub	sp, sp, #S_FRAME_SIZE
 		mrs	r9, cpsr			@ Enable interrupts if they were
 		tst	r3, #I_BIT
 		biceq	r9, r9, #I_BIT			@ previously
-		mov	r0, r2
+		mov	r0, r2				@ *** remove once everyones in sync
 /*
  * This routine must not corrupt r9
  */
 #ifdef MULTI_CPU
-		ldr	r2, .LCprocfns			@ pass r0, r3 to
+		ldr	r4, .LCprocfns			@ pass r0, r3 to
 		mov	lr, pc				@ processor code
-		ldr	pc, [r2]			@ call processor specific code
+		ldr	pc, [r4]			@ call processor specific code
 #else
 		bl	cpu_data_abort
 #endif
@@ -747,15 +772,16 @@ __dabt_usr:	sub	sp, sp, #S_FRAME_SIZE		@ Allocate frame size in one go
 		stmia	sp, {r0 - r12}			@ save r0 - r12
 		ldr	r7, .LCabt
 		add	r5, sp, #S_PC
-		ldmia	r7, {r0, r3, r4}		@ Get USR pc, cpsr
-		stmia	r5, {r0, r3, r4}		@ Save USR pc, cpsr, old_r0
+		ldmia	r7, {r2 - r4}			@ Get USR pc, cpsr
+		stmia	r5, {r2 - r4}			@ Save USR pc, cpsr, old_r0
 		stmdb	r5, {sp, lr}^
 		alignment_trap r7, r7, __temp_abt
 		zero_fp
+		mov	r0, r2				@ remove once everyones in sync
 #ifdef MULTI_CPU
-		ldr	r2, .LCprocfns			@ pass r0, r3 to
+		ldr	r4, .LCprocfns			@ pass r0, r3 to
 		mov	lr, pc				@ processor code
-		ldr	pc, [r2]			@ call processor specific code
+		ldr	pc, [r4]			@ call processor specific code
 #else
 		bl	cpu_data_abort
 #endif

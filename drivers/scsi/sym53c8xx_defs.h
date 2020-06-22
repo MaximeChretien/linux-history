@@ -51,6 +51,10 @@
 **  NVRAM detection and reading.
 **    Copyright (C) 1997 Richard Waltham <dormouse@farsrobt.demon.co.uk>
 **
+**  Added support for MIPS big endian systems.
+**  Carsten Langgaard, carstenl@mips.com
+**  Copyright (C) 2000 MIPS Technologies, Inc.  All rights reserved.
+**
 *******************************************************************************
 */
 
@@ -384,7 +388,16 @@
 #define	readl_l2b(a)	le32_to_cpu(readl(a))
 #define	writew_b2l(v,a)	writew(cpu_to_le16(v),a)
 #define	writel_b2l(v,a)	writel(cpu_to_le32(v),a)
-#else	/* Other bid-endian */
+#elif defined(__mips__)
+#define readw_l2b	readw
+#define readl_l2b	readl
+#define writew_b2l	writew
+#define writel_b2l	writel
+#define inw_l2b 	inw
+#define inl_l2b 	inl
+#define outw_b2l	outw
+#define outl_b2l	outl
+#else	/* Other big-endian */
 #define	readw_l2b	readw
 #define	readl_l2b	readl
 #define	writew_b2l	writew

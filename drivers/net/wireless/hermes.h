@@ -48,7 +48,6 @@
 #define		HERMES_PDA_LEN_MAX		(1024)	/* in bytes, from EK */
 #define		HERMES_SCANRESULT_MAX		(35)
 #define		HERMES_CHINFORESULT_MAX		(8)
-#define		HERMES_FRAME_LEN_MAX		(2304)
 #define		HERMES_MAX_MULTICAST		(16)
 #define		HERMES_MAGIC			(0x7d1f)
 
@@ -251,13 +250,36 @@ struct hermes_scan_frame {
 	struct hermes_scan_apinfo aps[35];        /* Scan result */
 } __attribute__ ((packed));
 
+// #define HERMES_DEBUG_BUFFER 1
+#define HERMES_DEBUG_BUFSIZE 4096
+struct hermes_debug_entry {
+	int bap;
+	u16 id, offset;
+	int cycles;
+};
+
 #ifdef __KERNEL__
+
+/* Timeouts */
+#define HERMES_BAP_BUSY_TIMEOUT (500) /* In iterations of ~1us */
 
 /* Basic control structure */
 typedef struct hermes {
-	uint iobase;
+	ulong iobase;
+	int io_space; /* 1 if we IO-mapped IO, 0 for memory-mapped IO? */
+#define HERMES_IO	1
+#define HERMES_MEM	0
+	int reg_spacing;
+#define HERMES_16BIT_REGSPACING	0
+#define HERMES_32BIT_REGSPACING	1
 
 	u16 inten; /* Which interrupts should be enabled? */
+
+#ifdef HERMES_DEBUG_BUFFER
+	struct hermes_debug_entry dbuf[HERMES_DEBUG_BUFSIZE];
+	unsigned long dbufp;
+	unsigned long profile[HERMES_BAP_BUSY_TIMEOUT+1];
+#endif
 } hermes_t;
 
 typedef struct hermes_response {
@@ -265,19 +287,22 @@ typedef struct hermes_response {
 } hermes_response_t;
 
 /* Register access convenience macros */
-#define hermes_read_reg(hw, off) (inw((hw)->iobase + (off)))
-#define hermes_write_reg(hw, off, val) (outw_p((val), (hw)->iobase + (off)))
+#define hermes_read_reg(hw, off) ((hw)->io_space ? \
+	inw((hw)->iobase + ( (off) << (hw)->reg_spacing )) : \
+	readw((hw)->iobase + ( (off) << (hw)->reg_spacing )))
+#define hermes_write_reg(hw, off, val) ((hw)->io_space ? \
+	outw_p((val), (hw)->iobase + ( (off) << (hw)->reg_spacing )) : \
+	writew((val), (hw)->iobase + ( (off) << (hw)->reg_spacing )))
 
 #define hermes_read_regn(hw, name) (hermes_read_reg((hw), HERMES_##name))
 #define hermes_write_regn(hw, name, val) (hermes_write_reg((hw), HERMES_##name, (val)))
 
 /* Function prototypes */
-void hermes_struct_init(hermes_t *hw, uint io);
+void hermes_struct_init(hermes_t *hw, ulong address, int io_space, int reg_spacing);
 int hermes_reset(hermes_t *hw);
 int hermes_docmd_wait(hermes_t *hw, u16 cmd, u16 parm0, hermes_response_t *resp);
 int hermes_allocate(hermes_t *hw, u16 size, u16 *fid);
 
-int hermes_bap_seek(hermes_t *hw, int bap, u16 id, u16 offset);
 int hermes_bap_pread(hermes_t *hw, int bap, void *buf, int len,
 		       u16 id, u16 offset);
 int hermes_bap_pwrite(hermes_t *hw, int bap, const void *buf, int len,
@@ -308,35 +333,62 @@ static inline void hermes_set_irqmask(hermes_t *hw, u16 events)
 
 static inline int hermes_enable_port(hermes_t *hw, int port)
 {
-	hermes_response_t resp;
-
 	return hermes_docmd_wait(hw, HERMES_CMD_ENABLE | (port << 8),
-				 0, &resp);
+				 0, NULL);
 }
 
 static inline int hermes_disable_port(hermes_t *hw, int port)
 {
-	hermes_response_t resp;
-
 	return hermes_docmd_wait(hw, HERMES_CMD_DISABLE | (port << 8), 
-				 0, &resp);
+				 0, NULL);
 }
 
 /* Initiate an INQUIRE command (tallies or scan).  The result will come as an
- * information frame in __dldwd_ev_info() */
+ * information frame in __orinoco_ev_info() */
 static inline int hermes_inquire(hermes_t *hw, u16 rid)
 {
-	hermes_response_t resp;
-
-	return hermes_docmd_wait(hw, HERMES_CMD_INQUIRE, rid, &resp);
+	return hermes_docmd_wait(hw, HERMES_CMD_INQUIRE, rid, NULL);
 }
 
 #define HERMES_BYTES_TO_RECLEN(n) ( ((n) % 2) ? (((n)+1)/2)+1 : ((n)/2)+1 )
 #define HERMES_RECLEN_TO_BYTES(n) ( ((n)-1) * 2 )
 
 /* Note that for the next two, the count is in 16-bit words, not bytes */
-#define hermes_read_words(hw, off, buf, count) (insw((hw)->iobase + (off), (buf), (count)))
-#define hermes_write_words(hw, off, buf, count) (outsw((hw)->iobase + (off), (buf), (count)))
+static inline void hermes_read_words(struct hermes *hw, int off, void *buf, int count)
+{
+	off = off << hw->reg_spacing;;
+
+	if (hw->io_space) {
+		insw(hw->iobase + off, buf, count);
+	} else {
+		int i;
+		u16 *p;
+
+		/* This need to *not* byteswap (like insw()) but
+		 * readw() does byteswap hence the conversion */
+		for (i = 0, p = buf; i < count; i++) {
+			*p++ = cpu_to_le16(readw(hw->iobase + off));
+		}
+	}
+}
+
+static inline void hermes_write_words(struct hermes *hw, int off, const void *buf, int count)
+{
+	off = off << hw->reg_spacing;;
+
+	if (hw->io_space) {
+		outsw(hw->iobase + off, buf, count);
+	} else {
+		int i;
+		const u16 *p;
+
+		/* This need to *not* byteswap (like outsw()) but
+		 * writew() does byteswap hence the conversion */
+		for (i = 0, p = buf; i < count; i++) {
+			writew(le16_to_cpu(*p++), hw->iobase + off);
+		}
+	}
+}
 
 #define HERMES_READ_RECORD(hw, bap, rid, buf) \
 	(hermes_read_ltv((hw),(bap),(rid), sizeof(*buf), NULL, (buf)))

@@ -156,7 +156,7 @@ returns zero on success.  If ->flushpage is zero, the kernel uses
 block_flushpage() instead.
 	->releasepage() is called when the kernel is about to try to drop the
 buffers from the page in preparation for freeing it.  It returns zero to
-indicate that the buffers are (or may be) freeable.  If ->flushpage is zero,
+indicate that the buffers are (or may be) freeable.  If ->releasepage is zero,
 the kernel assumes that the fs has no private interest in the buffers.
 
 	Note: currently almost all instances of address_space methods are

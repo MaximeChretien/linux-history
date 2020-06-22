@@ -63,6 +63,7 @@ struct cpuinfo_x86 {
 #define X86_VENDOR_CENTAUR 5
 #define X86_VENDOR_RISE 6
 #define X86_VENDOR_TRANSMETA 7
+#define X86_VENDOR_NSC 8
 #define X86_VENDOR_UNKNOWN 0xff
 
 /*
@@ -189,6 +190,9 @@ static inline unsigned int cpuid_edx(unsigned int op)
 #define X86_CR4_PCE		0x0100	/* enable performance counters at ipl 3 */
 #define X86_CR4_OSFXSR		0x0200	/* enable fast FPU save and restore */
 #define X86_CR4_OSXMMEXCPT	0x0400	/* enable unmasked SSE exceptions */
+
+#define load_cr3(pgdir) \
+	asm volatile("movl %0,%%cr3": :"r" (__pa(pgdir)));
 
 /*
  * Save the cr4 feature set we're using (ie
@@ -377,7 +381,7 @@ struct thread_struct {
 /* virtual 86 mode info */
 	struct vm86_struct	* vm86_info;
 	unsigned long		screen_bitmap;
-	unsigned long		v86flags, v86mask, v86mode, saved_esp0;
+	unsigned long		v86flags, v86mask, saved_esp0;
 /* IO permissions */
 	int		ioperm;
 	unsigned long	io_bitmap[IO_BITMAP_SIZE+1];
@@ -389,7 +393,7 @@ struct thread_struct {
 	{ [0 ... 7] = 0 },	/* debugging registers */	\
 	0, 0, 0,						\
 	{ { 0, }, },		/* 387 state */			\
-	0,0,0,0,0,0,						\
+	0,0,0,0,0,						\
 	0,{~0,}			/* io permissions */		\
 }
 

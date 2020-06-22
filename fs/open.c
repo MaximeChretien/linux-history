@@ -71,6 +71,30 @@ out:
 	return error;
 }
 
+/*
+ * Install a file pointer in the fd array.  
+ *
+ * The VFS is full of places where we drop the files lock between
+ * setting the open_fds bitmap and installing the file in the file
+ * array.  At any such point, we are vulnerable to a dup2() race
+ * installing a file in the array before us.  We need to detect this and
+ * fput() the struct file we are about to overwrite in this case.
+ *
+ * It should never happen - if we allow dup2() do it, _really_ bad things
+ * will follow.
+ */
+
+void fd_install(unsigned int fd, struct file * file)
+{
+	struct files_struct *files = current->files;
+	
+	write_lock(&files->file_lock);
+	if (files->fd[fd])
+		BUG();
+	files->fd[fd] = file;
+	write_unlock(&files->file_lock);
+}
+
 int do_truncate(struct dentry *dentry, loff_t length)
 {
 	struct inode *inode = dentry->d_inode;
@@ -301,7 +325,8 @@ asmlinkage long sys_utimes(char * filename, struct timeval * utimes)
 		newattrs.ia_mtime = times[1].tv_sec;
 		newattrs.ia_valid |= ATTR_ATIME_SET | ATTR_MTIME_SET;
 	} else {
-		if ((error = permission(inode,MAY_WRITE)) != 0)
+		if (current->fsuid != inode->i_uid &&
+		    (error = permission(inode,MAY_WRITE)) != 0)
 			goto dput_and_out;
 	}
 	error = notify_change(nd.dentry, &newattrs);
@@ -833,7 +858,7 @@ int filp_close(struct file *filp, fl_owner_t id)
 		retval = filp->f_op->flush(filp);
 		unlock_kernel();
 	}
-	fcntl_dirnotify(0, filp, 0);
+	dnotify_flush(filp, id);
 	locks_remove_posix(filp, id);
 	fput(filp);
 	return retval;

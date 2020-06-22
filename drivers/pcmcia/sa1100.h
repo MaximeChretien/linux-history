@@ -38,9 +38,7 @@
 #include <pcmcia/bulkmem.h>
 #include <pcmcia/cistpl.h>
 #include "cs_internal.h"
-
-#include <asm/arch/pcmcia.h>
-
+#include "sa1100_generic.h"
 
 /* MECR: Expansion Memory Configuration Register
  * (SA-1100 Developers Manual, p.10-13; SA-1110 Developers Manual, p.10-24)
@@ -157,15 +155,24 @@ static inline unsigned int sa1100_pcmcia_cmd_time(unsigned int cpu_clock_khz,
  * use when responding to a Card Services query of some kind.
  */
 struct sa1100_pcmcia_socket {
+  /*
+   * Core PCMCIA state
+   */
   socket_state_t        cs_state;
-  struct pcmcia_state   k_state;
-  unsigned int          irq;
-  void                  (*handler)(void *, unsigned int);
-  void                  *handler_info;
   pccard_io_map         io_map[MAX_IO_WIN];
   pccard_mem_map        mem_map[MAX_WIN];
-  ioaddr_t              virt_io, phys_attr, phys_mem;
+  void                  (*handler)(void *, unsigned int);
+  void                  *handler_info;
+
+  struct pcmcia_state   k_state;
+  ioaddr_t              phys_attr, phys_mem;
+  void			*virt_io;
   unsigned short        speed_io, speed_attr, speed_mem;
+
+  /*
+   * Info from low level handler
+   */
+  unsigned int          irq;
 };
 
 
@@ -189,6 +196,7 @@ extern struct pcmcia_low_level cerf_pcmcia_ops;
 extern struct pcmcia_low_level gcplus_pcmcia_ops;
 extern struct pcmcia_low_level xp860_pcmcia_ops;
 extern struct pcmcia_low_level yopy_pcmcia_ops;
+extern struct pcmcia_low_level shannon_pcmcia_ops;
 extern struct pcmcia_low_level pangolin_pcmcia_ops;
 extern struct pcmcia_low_level freebird_pcmcia_ops;
 extern struct pcmcia_low_level pfs168_pcmcia_ops;
@@ -198,5 +206,6 @@ extern struct pcmcia_low_level simpad_pcmcia_ops;
 extern struct pcmcia_low_level graphicsmaster_pcmcia_ops;
 extern struct pcmcia_low_level adsbitsy_pcmcia_ops;
 extern struct pcmcia_low_level stork_pcmcia_ops;
+extern struct pcmcia_low_level badge4_pcmcia_ops;
 
 #endif  /* !defined(_PCMCIA_SA1100_H) */

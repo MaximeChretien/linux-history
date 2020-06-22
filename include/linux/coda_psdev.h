@@ -11,6 +11,7 @@ struct coda_sb_info
 	struct venus_comm * sbi_vcomm;
 	struct super_block *sbi_sb;
 	struct list_head    sbi_cihead;
+	struct semaphore    sbi_iget4_mutex;
 };
 
 /* communication pending/processing queues */

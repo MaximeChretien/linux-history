@@ -7,6 +7,7 @@
 #include <linux/highuid.h>
 #include <linux/module.h>
 #include <linux/mm.h>
+#include <linux/smp.h>
 #include <asm/checksum.h>
 #include <asm/delay.h>
 #include <asm/pgalloc.h>

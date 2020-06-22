@@ -410,34 +410,8 @@ static void agp_generic_agp_enable(u32 mode)
 	 */
 
 
-	pci_for_each_dev(device)
-	{
-		/*
-		 *	Enable AGP devices. Most will be VGA display but
-		 *	some may be coprocessors on non VGA devices too
-		 */
-		 
-		if((((device->class >> 16) & 0xFF) != PCI_BASE_CLASS_DISPLAY) &&
-			(device->class != (PCI_CLASS_PROCESSOR_CO << 8)))
-			continue;
-
-		pci_read_config_dword(device, 0x04, &scratch);
-
-		if (!(scratch & 0x00100000))
-			continue;
-
-		pci_read_config_byte(device, 0x34, &cap_ptr);
-
-		if (cap_ptr != 0x00) {
-			do {
-				pci_read_config_dword(device,
-						      cap_ptr, &cap_id);
-
-				if ((cap_id & 0xff) != 0x02)
-					cap_ptr = (cap_id >> 8) & 0xff;
-			}
-			while (((cap_id & 0xff) != 0x02) && (cap_ptr != 0x00));
-		}
+	pci_for_each_dev(device) {
+		cap_ptr = pci_find_capability(device, PCI_CAP_ID_AGP);
 		if (cap_ptr != 0x00) {
 			/*
 			 * Ok, here we have a AGP device. Disable impossible 
@@ -506,25 +480,8 @@ static void agp_generic_agp_enable(u32 mode)
 	 *        command registers.
 	 */
 
-	while ((device = pci_find_class(PCI_CLASS_DISPLAY_VGA << 8,
-					device)) != NULL) {
-		pci_read_config_dword(device, 0x04, &scratch);
-
-		if (!(scratch & 0x00100000))
-			continue;
-
-		pci_read_config_byte(device, 0x34, &cap_ptr);
-
-		if (cap_ptr != 0x00) {
-			do {
-				pci_read_config_dword(device,
-						      cap_ptr, &cap_id);
-
-				if ((cap_id & 0xff) != 0x02)
-					cap_ptr = (cap_id >> 8) & 0xff;
-			}
-			while (((cap_id & 0xff) != 0x02) && (cap_ptr != 0x00));
-		}
+	pci_for_each_dev(device) {
+		cap_ptr = pci_find_capability(device, PCI_CAP_ID_AGP);
 		if (cap_ptr != 0x00)
 			pci_write_config_dword(device, cap_ptr + 8, command);
 	}
@@ -622,7 +579,7 @@ static int agp_generic_create_gatt_table(void)
 	table_end = table + ((PAGE_SIZE * (1 << page_order)) - 1);
 
 	for (page = virt_to_page(table); page <= virt_to_page(table_end); page++)
-		set_bit(PG_reserved, &page->flags);
+		SetPageReserved(page);
 
 	agp_bridge.gatt_table_real = (unsigned long *) table;
 	CACHE_FLUSH();
@@ -632,7 +589,7 @@ static int agp_generic_create_gatt_table(void)
 
 	if (agp_bridge.gatt_table == NULL) {
 		for (page = virt_to_page(table); page <= virt_to_page(table_end); page++)
-			clear_bit(PG_reserved, &page->flags);
+			ClearPageReserved(page);
 
 		free_pages((unsigned long) table, page_order);
 
@@ -699,7 +656,7 @@ static int agp_generic_free_gatt_table(void)
 	table_end = table + ((PAGE_SIZE * (1 << page_order)) - 1);
 
 	for (page = virt_to_page(table); page <= virt_to_page(table_end); page++)
-		clear_bit(PG_reserved, &page->flags);
+		ClearPageReserved(page);
 
 	free_pages((unsigned long) agp_bridge.gatt_table_real, page_order);
 	return 0;
@@ -812,8 +769,8 @@ static unsigned long agp_generic_alloc_page(void)
 	if (page == NULL) {
 		return 0;
 	}
-	atomic_inc(&page->count);
-	set_bit(PG_locked, &page->flags);
+	get_page(page);
+	LockPage(page);
 	atomic_inc(&agp_bridge.current_memory_agp);
 	return (unsigned long)page_address(page);
 }
@@ -828,9 +785,8 @@ static void agp_generic_destroy_page(unsigned long addr)
 	}
 	
 	page = virt_to_page(pt);
-	atomic_dec(&page->count);
-	clear_bit(PG_locked, &page->flags);
-	wake_up(&page->wait);
+	put_page(page);
+	UnlockPage(page);
 	free_page((unsigned long) pt);
 	atomic_dec(&agp_bridge.current_memory_agp);
 }
@@ -1137,7 +1093,8 @@ static struct _intel_i830_private {
 	int gtt_entries;
 } intel_i830_private;
 
-static void intel_i830_init_gtt_entries(void) {
+static void intel_i830_init_gtt_entries(void)
+{
 	u16 gmch_ctrl;
 	int gtt_entries;
 	u8 rdct;
@@ -1147,15 +1104,15 @@ static void intel_i830_init_gtt_entries(void) {
 
 	switch (gmch_ctrl & I830_GMCH_GMS_MASK) {
 	case I830_GMCH_GMS_STOLEN_512:
-		gtt_entries = KB(512);
+		gtt_entries = KB(512) - KB(132);
 		printk(KERN_INFO PFX "detected %dK stolen memory.\n",gtt_entries / KB(1));
 		break;
 	case I830_GMCH_GMS_STOLEN_1024:
-		gtt_entries = MB(1);
+		gtt_entries = MB(1) - KB(132);
 		printk(KERN_INFO PFX "detected %dK stolen memory.\n",gtt_entries / KB(1));
 		break;
 	case I830_GMCH_GMS_STOLEN_8192:
-		gtt_entries = MB(8);
+		gtt_entries = MB(8) - KB(132);
 		printk(KERN_INFO PFX "detected %dK stolen memory.\n",gtt_entries / KB(1));
 		break;
 	case I830_GMCH_GMS_LOCAL:
@@ -1445,6 +1402,12 @@ static int intel_8xx_fetch_size(void)
 	aper_size_info_8 *values;
 
 	pci_read_config_byte(agp_bridge.dev, INTEL_APSIZE, &temp);
+
+        /* Intel 815 chipsets have a _weird_ APSIZE register with only
+         * one non-reserved bit, so mask the others out ... */
+        if (agp_bridge.type == INTEL_I815) 
+          temp &= (1 << 3);
+        
 	values = A_SIZE_8(agp_bridge.aperture_sizes);
 
 	for (i = 0; i < agp_bridge.num_aperture_sizes; i++) {
@@ -1531,6 +1494,44 @@ static int intel_configure(void)
 			      (temp2 & ~(1 << 10)) | (1 << 9));
 	/* clear any possible error conditions */
 	pci_write_config_byte(agp_bridge.dev, INTEL_ERRSTS + 1, 7);
+	return 0;
+}
+
+static int intel_815_configure(void)
+{
+	u32 temp, addr;
+	u8 temp2;
+	aper_size_info_8 *current_size;
+
+	current_size = A_SIZE_8(agp_bridge.current_size);
+
+	/* aperture size */
+	pci_write_config_byte(agp_bridge.dev, INTEL_APSIZE,
+			      current_size->size_value); 
+
+	/* address to map to */
+	pci_read_config_dword(agp_bridge.dev, INTEL_APBASE, &temp);
+	agp_bridge.gart_bus_addr = (temp & PCI_BASE_ADDRESS_MEM_MASK);
+
+	/* attbase - aperture base */
+        /* the Intel 815 chipset spec. says that bits 29-31 in the
+         * ATTBASE register are reserved -> try not to write them */
+        if (agp_bridge.gatt_bus_addr &  INTEL_815_ATTBASE_MASK)
+		panic("gatt bus addr too high");
+	pci_read_config_dword(agp_bridge.dev, INTEL_ATTBASE, &addr);
+	addr &= INTEL_815_ATTBASE_MASK;
+	addr |= agp_bridge.gatt_bus_addr;
+	pci_write_config_dword(agp_bridge.dev, INTEL_ATTBASE, addr);
+
+	/* agpctrl */
+	pci_write_config_dword(agp_bridge.dev, INTEL_AGPCTRL, 0x0000); 
+
+	/* apcont */
+	pci_read_config_byte(agp_bridge.dev, INTEL_815_APCONT, &temp2);
+	pci_write_config_byte(agp_bridge.dev, INTEL_815_APCONT,
+			      temp2 | (1 << 1));
+	/* clear any possible error conditions */
+        /* Oddness : this chipset seems to have no ERRSTS register ! */
 	return 0;
 }
 
@@ -1768,6 +1769,12 @@ static gatt_mask intel_generic_masks[] =
 	{0x00000017, 0}
 };
 
+static aper_size_info_8 intel_815_sizes[2] =
+{
+	{64, 16384, 4, 0},
+	{32, 8192, 3, 8},
+};
+
 static aper_size_info_8 intel_8xx_sizes[7] =
 {
 	{256, 65536, 6, 0},
@@ -1831,7 +1838,38 @@ static int __init intel_generic_setup (struct pci_dev *pdev)
 	(void) pdev; /* unused */
 }
 
+static int __init intel_815_setup (struct pci_dev *pdev)
+{
+	agp_bridge.masks = intel_generic_masks;
+	agp_bridge.num_of_masks = 1;
+	agp_bridge.aperture_sizes = (void *) intel_815_sizes;
+	agp_bridge.size_type = U8_APER_SIZE;
+	agp_bridge.num_aperture_sizes = 2;
+	agp_bridge.dev_private_data = NULL;
+	agp_bridge.needs_scratch_page = FALSE;
+	agp_bridge.configure = intel_815_configure;
+	agp_bridge.fetch_size = intel_8xx_fetch_size;
+	agp_bridge.cleanup = intel_8xx_cleanup;
+	agp_bridge.tlb_flush = intel_8xx_tlbflush;
+	agp_bridge.mask_memory = intel_mask_memory;
+	agp_bridge.agp_enable = agp_generic_agp_enable;
+	agp_bridge.cache_flush = global_cache_flush;
+	agp_bridge.create_gatt_table = agp_generic_create_gatt_table;
+	agp_bridge.free_gatt_table = agp_generic_free_gatt_table;
+	agp_bridge.insert_memory = agp_generic_insert_memory;
+	agp_bridge.remove_memory = agp_generic_remove_memory;
+	agp_bridge.alloc_by_type = agp_generic_alloc_by_type;
+	agp_bridge.free_by_type = agp_generic_free_by_type;
+	agp_bridge.agp_alloc_page = agp_generic_alloc_page;
+	agp_bridge.agp_destroy_page = agp_generic_destroy_page;
+	agp_bridge.suspend = agp_generic_suspend;
+	agp_bridge.resume = agp_generic_resume;
+	agp_bridge.cant_use_aperture = 0;
 
+	return 0;
+	
+	(void) pdev; /* unused */
+}
 
 static int __init intel_820_setup (struct pci_dev *pdev)
 {
@@ -2285,13 +2323,12 @@ static int amd_create_page_map(amd_page_map *page_map)
 	if (page_map->real == NULL) {
 		return -ENOMEM;
 	}
-	set_bit(PG_reserved, &virt_to_page(page_map->real)->flags);
+	SetPageReserved(virt_to_page(page_map->real));
 	CACHE_FLUSH();
 	page_map->remapped = ioremap_nocache(virt_to_phys(page_map->real), 
 					    PAGE_SIZE);
 	if (page_map->remapped == NULL) {
-		clear_bit(PG_reserved, 
-			  &virt_to_page(page_map->real)->flags);
+		ClearPageReserved(virt_to_page(page_map->real));
 		free_page((unsigned long) page_map->real);
 		page_map->real = NULL;
 		return -ENOMEM;
@@ -2308,8 +2345,7 @@ static int amd_create_page_map(amd_page_map *page_map)
 static void amd_free_page_map(amd_page_map *page_map)
 {
 	iounmap(page_map->remapped);
-	clear_bit(PG_reserved, 
-		  &virt_to_page(page_map->real)->flags);
+	ClearPageReserved(virt_to_page(page_map->real));
 	free_page((unsigned long) page_map->real);
 }
 
@@ -2797,8 +2833,8 @@ static unsigned long ali_alloc_page(void)
 	if (page == NULL)
 		return 0;
 
-	atomic_inc(&page->count);
-	set_bit(PG_locked, &page->flags);
+	get_page(page);
+	LockPage(page);
 	atomic_inc(&agp_bridge.current_memory_agp);
 
 	global_cache_flush();
@@ -2833,9 +2869,8 @@ static void ali_destroy_page(unsigned long addr)
 	}
 
 	page = virt_to_page(pt);
-	atomic_dec(&page->count);
-	clear_bit(PG_locked, &page->flags);
-	wake_up(&page->wait);
+	put_page(page);
+	UnlockPage(page);
 	free_page((unsigned long) pt);
 	atomic_dec(&agp_bridge.current_memory_agp);
 }
@@ -2917,13 +2952,12 @@ static int serverworks_create_page_map(serverworks_page_map *page_map)
 	if (page_map->real == NULL) {
 		return -ENOMEM;
 	}
-	set_bit(PG_reserved, &virt_to_page(page_map->real)->flags);
+	SetPageReserved(virt_to_page(page_map->real));
 	CACHE_FLUSH();
 	page_map->remapped = ioremap_nocache(virt_to_phys(page_map->real), 
 					    PAGE_SIZE);
 	if (page_map->remapped == NULL) {
-		clear_bit(PG_reserved, 
-			  &virt_to_page(page_map->real)->flags);
+		ClearPageReserved(virt_to_page(page_map->real));
 		free_page((unsigned long) page_map->real);
 		page_map->real = NULL;
 		return -ENOMEM;
@@ -2940,8 +2974,7 @@ static int serverworks_create_page_map(serverworks_page_map *page_map)
 static void serverworks_free_page_map(serverworks_page_map *page_map)
 {
 	iounmap(page_map->remapped);
-	clear_bit(PG_reserved, 
-		  &virt_to_page(page_map->real)->flags);
+	ClearPageReserved(virt_to_page(page_map->real));
 	free_page((unsigned long) page_map->real);
 }
 
@@ -3331,24 +3364,8 @@ static void serverworks_agp_enable(u32 mode)
 	 */
 
 
-	pci_for_each_dev(device)
-	{
-		/*
-		 *	Enable AGP devices. Most will be VGA display but
-		 *	some may be coprocessors on non VGA devices too
-		 */
-		 
-		if((((device->class >> 16) & 0xFF) != PCI_BASE_CLASS_DISPLAY) &&
-			(device->class != (PCI_CLASS_PROCESSOR_CO << 8)))
-			continue;
-
-		pci_read_config_dword(device, 0x04, &scratch);
-
-		if (!(scratch & 0x00100000))
-			continue;
-
-		pci_read_config_byte(device, 0x34, &cap_ptr);
-
+	pci_for_each_dev(device) {
+		cap_ptr = pci_find_capability(device, PCI_CAP_ID_AGP);
 		if (cap_ptr != 0x00) {
 			do {
 				pci_read_config_dword(device,
@@ -3426,25 +3443,8 @@ static void serverworks_agp_enable(u32 mode)
 	 *        command registers.
 	 */
 
-	while ((device = pci_find_class(PCI_CLASS_DISPLAY_VGA << 8,
-					device)) != NULL) {
-		pci_read_config_dword(device, 0x04, &scratch);
-
-		if (!(scratch & 0x00100000))
-			continue;
-
-		pci_read_config_byte(device, 0x34, &cap_ptr);
-
-		if (cap_ptr != 0x00) {
-			do {
-				pci_read_config_dword(device,
-						      cap_ptr, &cap_id);
-
-				if ((cap_id & 0xff) != 0x02)
-					cap_ptr = (cap_id >> 8) & 0xff;
-			}
-			while (((cap_id & 0xff) != 0x02) && (cap_ptr != 0x00));
-		}
+	pci_for_each_dev(device) {
+		cap_ptr = pci_find_capability(device, PCI_CAP_ID_AGP);
 		if (cap_ptr != 0x00)
 			pci_write_config_dword(device, cap_ptr + 8, command);
 	}
@@ -3522,6 +3522,368 @@ static int __init serverworks_setup (struct pci_dev *pdev)
 
 #endif /* CONFIG_AGP_SWORKS */
 
+#ifdef CONFIG_AGP_HP_ZX1
+
+#ifndef log2
+#define log2(x)		ffz(~(x))
+#endif
+
+#define HP_ZX1_IOVA_BASE	GB(1UL)
+#define HP_ZX1_IOVA_SIZE	GB(1UL)
+#define HP_ZX1_GART_SIZE	(HP_ZX1_IOVA_SIZE / 2)
+#define HP_ZX1_SBA_IOMMU_COOKIE	0x0000badbadc0ffeeUL
+
+#define HP_ZX1_PDIR_VALID_BIT	0x8000000000000000UL
+#define HP_ZX1_IOVA_TO_PDIR(va)	((va - hp_private.iova_base) >> \
+					hp_private.io_tlb_shift)
+
+static aper_size_info_fixed hp_zx1_sizes[] =
+{
+	{0, 0, 0},		/* filled in by hp_zx1_fetch_size() */
+};
+
+static gatt_mask hp_zx1_masks[] =
+{
+	{HP_ZX1_PDIR_VALID_BIT, 0}
+};
+
+static struct _hp_private {
+	struct pci_dev *ioc;
+	volatile u8 *registers;
+	u64 *io_pdir;		// PDIR for entire IOVA
+	u64 *gatt;		// PDIR just for GART (subset of above)
+	u64 gatt_entries;
+	u64 iova_base;
+	u64 gart_base;
+	u64 gart_size;
+	u64 io_pdir_size;
+	int io_pdir_owner;	// do we own it, or share it with sba_iommu?
+	int io_page_size;
+	int io_tlb_shift;
+	int io_tlb_ps;		// IOC ps config
+	int io_pages_per_kpage;
+} hp_private;
+
+static int __init hp_zx1_ioc_shared(void)
+{
+	struct _hp_private *hp = &hp_private;
+
+	printk(KERN_INFO PFX "HP ZX1 IOC: IOPDIR shared with sba_iommu\n");
+
+	/*
+	 * IOC already configured by sba_iommu module; just use
+	 * its setup.  We assume:
+	 * 	- IOVA space is 1Gb in size
+	 * 	- first 512Mb is IOMMU, second 512Mb is GART
+	 */
+	hp->io_tlb_ps = INREG64(hp->registers, HP_ZX1_TCNFG);
+	switch (hp->io_tlb_ps) {
+		case 0: hp->io_tlb_shift = 12; break;
+		case 1: hp->io_tlb_shift = 13; break;
+		case 2: hp->io_tlb_shift = 14; break;
+		case 3: hp->io_tlb_shift = 16; break;
+		default:
+			printk(KERN_ERR PFX "Invalid IOTLB page size "
+			       "configuration 0x%x\n", hp->io_tlb_ps);
+			hp->gatt = 0;
+			hp->gatt_entries = 0;
+			return -ENODEV;
+	}
+	hp->io_page_size = 1 << hp->io_tlb_shift;
+	hp->io_pages_per_kpage = PAGE_SIZE / hp->io_page_size;
+
+	hp->iova_base = INREG64(hp->registers, HP_ZX1_IBASE) & ~0x1;
+	hp->gart_base = hp->iova_base + HP_ZX1_IOVA_SIZE - HP_ZX1_GART_SIZE;
+
+	hp->gart_size = HP_ZX1_GART_SIZE;
+	hp->gatt_entries = hp->gart_size / hp->io_page_size;
+
+	hp->io_pdir = phys_to_virt(INREG64(hp->registers, HP_ZX1_PDIR_BASE));
+	hp->gatt = &hp->io_pdir[HP_ZX1_IOVA_TO_PDIR(hp->gart_base)];
+
+	if (hp->gatt[0] != HP_ZX1_SBA_IOMMU_COOKIE) {
+	    	hp->gatt = 0;
+		hp->gatt_entries = 0;
+		printk(KERN_ERR PFX "No reserved IO PDIR entry found; "
+		       "GART disabled\n");
+		return -ENODEV;
+	}
+
+	return 0;
+}
+
+static int __init hp_zx1_ioc_owner(u8 ioc_rev)
+{
+	struct _hp_private *hp = &hp_private;
+
+	printk(KERN_INFO PFX "HP ZX1 IOC: IOPDIR dedicated to GART\n");
+
+	/*
+	 * Select an IOV page size no larger than system page size.
+	 */
+	if (PAGE_SIZE >= KB(64)) {
+		hp->io_tlb_shift = 16;
+		hp->io_tlb_ps = 3;
+	} else if (PAGE_SIZE >= KB(16)) {
+		hp->io_tlb_shift = 14;
+		hp->io_tlb_ps = 2;
+	} else if (PAGE_SIZE >= KB(8)) {
+		hp->io_tlb_shift = 13;
+		hp->io_tlb_ps = 1;
+	} else {
+		hp->io_tlb_shift = 12;
+		hp->io_tlb_ps = 0;
+	}
+	hp->io_page_size = 1 << hp->io_tlb_shift;
+	hp->io_pages_per_kpage = PAGE_SIZE / hp->io_page_size;
+
+	hp->iova_base = HP_ZX1_IOVA_BASE;
+	hp->gart_size = HP_ZX1_GART_SIZE;
+	hp->gart_base = hp->iova_base + HP_ZX1_IOVA_SIZE - hp->gart_size;
+
+	hp->gatt_entries = hp->gart_size / hp->io_page_size;
+	hp->io_pdir_size = (HP_ZX1_IOVA_SIZE / hp->io_page_size) * sizeof(u64);
+
+	return 0;
+}
+
+static int __init hp_zx1_ioc_init(void)
+{
+	struct _hp_private *hp = &hp_private;
+	struct pci_dev *ioc;
+	int i;
+	u8 ioc_rev;
+
+	ioc = pci_find_device(PCI_VENDOR_ID_HP, PCI_DEVICE_ID_HP_ZX1_IOC, NULL);
+	if (!ioc) {
+		printk(KERN_ERR PFX "Detected HP ZX1 AGP bridge but no IOC\n");
+		return -ENODEV;
+	}
+	hp->ioc = ioc;
+
+	pci_read_config_byte(ioc, PCI_REVISION_ID, &ioc_rev);
+
+	for (i = 0; i < PCI_NUM_RESOURCES; i++) {
+		if (pci_resource_flags(ioc, i) == IORESOURCE_MEM) {
+			hp->registers = (u8 *) ioremap(pci_resource_start(ioc,
+									    i),
+						    pci_resource_len(ioc, i));
+			break;
+		}
+	}
+	if (!hp->registers) {
+		printk(KERN_ERR PFX "Detected HP ZX1 AGP bridge but no CSRs\n");
+
+		return -ENODEV;
+	}
+
+	/*
+	 * If the IOTLB is currently disabled, we can take it over.
+	 * Otherwise, we have to share with sba_iommu.
+	 */
+	hp->io_pdir_owner = (INREG64(hp->registers, HP_ZX1_IBASE) & 0x1) == 0;
+
+	if (hp->io_pdir_owner)
+		return hp_zx1_ioc_owner(ioc_rev);
+
+	return hp_zx1_ioc_shared();
+}
+
+static int hp_zx1_fetch_size(void)
+{
+	int size;
+
+	size = hp_private.gart_size / MB(1);
+	hp_zx1_sizes[0].size = size;
+	agp_bridge.current_size = (void *) &hp_zx1_sizes[0];
+	return size;
+}
+
+static int hp_zx1_configure(void)
+{
+	struct _hp_private *hp = &hp_private;
+
+	agp_bridge.gart_bus_addr = hp->gart_base;
+	agp_bridge.capndx = pci_find_capability(agp_bridge.dev, PCI_CAP_ID_AGP);
+	pci_read_config_dword(agp_bridge.dev,
+		agp_bridge.capndx + PCI_AGP_STATUS, &agp_bridge.mode);
+
+	if (hp->io_pdir_owner) {
+		OUTREG64(hp->registers, HP_ZX1_PDIR_BASE,
+			virt_to_phys(hp->io_pdir));
+		OUTREG64(hp->registers, HP_ZX1_TCNFG, hp->io_tlb_ps);
+		OUTREG64(hp->registers, HP_ZX1_IMASK, ~(HP_ZX1_IOVA_SIZE - 1));
+		OUTREG64(hp->registers, HP_ZX1_IBASE, hp->iova_base | 0x1);
+		OUTREG64(hp->registers, HP_ZX1_PCOM,
+			hp->iova_base | log2(HP_ZX1_IOVA_SIZE));
+		INREG64(hp->registers, HP_ZX1_PCOM);
+	}
+
+	return 0;
+}
+
+static void hp_zx1_cleanup(void)
+{
+	struct _hp_private *hp = &hp_private;
+
+	if (hp->io_pdir_owner)
+		OUTREG64(hp->registers, HP_ZX1_IBASE, 0);
+	iounmap((void *) hp->registers);
+}
+
+static void hp_zx1_tlbflush(agp_memory * mem)
+{
+	struct _hp_private *hp = &hp_private;
+
+	OUTREG64(hp->registers, HP_ZX1_PCOM, 
+		hp->gart_base | log2(hp->gart_size));
+	INREG64(hp->registers, HP_ZX1_PCOM);
+}
+
+static int hp_zx1_create_gatt_table(void)
+{
+	struct _hp_private *hp = &hp_private;
+	int i;
+
+	if (hp->io_pdir_owner) {
+		hp->io_pdir = (u64 *) __get_free_pages(GFP_KERNEL,
+						get_order(hp->io_pdir_size));
+		if (!hp->io_pdir) {
+			printk(KERN_ERR PFX "Couldn't allocate contiguous "
+				"memory for I/O PDIR\n");
+			hp->gatt = 0;
+			hp->gatt_entries = 0;
+			return -ENOMEM;
+		}
+		memset(hp->io_pdir, 0, hp->io_pdir_size);
+
+		hp->gatt = &hp->io_pdir[HP_ZX1_IOVA_TO_PDIR(hp->gart_base)];
+	}
+
+	for (i = 0; i < hp->gatt_entries; i++) {
+		hp->gatt[i] = (unsigned long) agp_bridge.scratch_page;
+	}
+
+	return 0;
+}
+
+static int hp_zx1_free_gatt_table(void)
+{
+	struct _hp_private *hp = &hp_private;
+	
+	if (hp->io_pdir_owner)
+		free_pages((unsigned long) hp->io_pdir,
+			    get_order(hp->io_pdir_size));
+	else
+		hp->gatt[0] = HP_ZX1_SBA_IOMMU_COOKIE;
+	return 0;
+}
+
+static int hp_zx1_insert_memory(agp_memory * mem, off_t pg_start, int type)
+{
+	struct _hp_private *hp = &hp_private;
+	int i, k;
+	off_t j, io_pg_start;
+	int io_pg_count;
+
+	if (type != 0 || mem->type != 0) {
+		return -EINVAL;
+	}
+
+	io_pg_start = hp->io_pages_per_kpage * pg_start;
+	io_pg_count = hp->io_pages_per_kpage * mem->page_count;
+	if ((io_pg_start + io_pg_count) > hp->gatt_entries) {
+		return -EINVAL;
+	}
+
+	j = io_pg_start;
+	while (j < (io_pg_start + io_pg_count)) {
+		if (hp->gatt[j]) {
+			return -EBUSY;
+		}
+		j++;
+	}
+
+	if (mem->is_flushed == FALSE) {
+		CACHE_FLUSH();
+		mem->is_flushed = TRUE;
+	}
+
+	for (i = 0, j = io_pg_start; i < mem->page_count; i++) {
+		unsigned long paddr;
+
+		paddr = mem->memory[i];
+		for (k = 0;
+		     k < hp->io_pages_per_kpage;
+		     k++, j++, paddr += hp->io_page_size) {
+			hp->gatt[j] = agp_bridge.mask_memory(paddr, type);
+		}
+	}
+
+	agp_bridge.tlb_flush(mem);
+	return 0;
+}
+
+static int hp_zx1_remove_memory(agp_memory * mem, off_t pg_start, int type)
+{
+	struct _hp_private *hp = &hp_private;
+	int i, io_pg_start, io_pg_count;
+
+	if (type != 0 || mem->type != 0) {
+		return -EINVAL;
+	}
+
+	io_pg_start = hp->io_pages_per_kpage * pg_start;
+	io_pg_count = hp->io_pages_per_kpage * mem->page_count;
+	for (i = io_pg_start; i < io_pg_count + io_pg_start; i++) {
+		hp->gatt[i] = agp_bridge.scratch_page;
+	}
+
+	agp_bridge.tlb_flush(mem);
+	return 0;
+}
+
+static unsigned long hp_zx1_mask_memory(unsigned long addr, int type)
+{
+	return HP_ZX1_PDIR_VALID_BIT | addr;
+}
+
+static unsigned long hp_zx1_unmask_memory(unsigned long addr)
+{
+	return addr & ~(HP_ZX1_PDIR_VALID_BIT);
+}
+
+static int __init hp_zx1_setup (struct pci_dev *pdev)
+{
+	agp_bridge.masks = hp_zx1_masks;
+	agp_bridge.num_of_masks = 1;
+	agp_bridge.dev_private_data = NULL;
+	agp_bridge.size_type = FIXED_APER_SIZE;
+	agp_bridge.needs_scratch_page = FALSE;
+	agp_bridge.configure = hp_zx1_configure;
+	agp_bridge.fetch_size = hp_zx1_fetch_size;
+	agp_bridge.cleanup = hp_zx1_cleanup;
+	agp_bridge.tlb_flush = hp_zx1_tlbflush;
+	agp_bridge.mask_memory = hp_zx1_mask_memory;
+	agp_bridge.unmask_memory = hp_zx1_unmask_memory;
+	agp_bridge.agp_enable = agp_generic_agp_enable;
+	agp_bridge.cache_flush = global_cache_flush;
+	agp_bridge.create_gatt_table = hp_zx1_create_gatt_table;
+	agp_bridge.free_gatt_table = hp_zx1_free_gatt_table;
+	agp_bridge.insert_memory = hp_zx1_insert_memory;
+	agp_bridge.remove_memory = hp_zx1_remove_memory;
+	agp_bridge.alloc_by_type = agp_generic_alloc_by_type;
+	agp_bridge.free_by_type = agp_generic_free_by_type;
+	agp_bridge.agp_alloc_page = agp_generic_alloc_page;
+	agp_bridge.agp_destroy_page = agp_generic_destroy_page;
+	agp_bridge.cant_use_aperture = 1;
+
+	return hp_zx1_ioc_init();
+
+	(void) pdev; /* unused */
+}
+
+#endif /* CONFIG_AGP_HP_ZX1 */
 
 /* per-chipset initialization data.
  * note -- all chipsets for a single vendor MUST be grouped together
@@ -3566,6 +3928,12 @@ static struct {
 		"Ali",
 		"M1641",
 		ali_generic_setup },
+	{ PCI_DEVICE_ID_AL_M1644_0,
+		PCI_VENDOR_ID_AL,
+		ALI_M1644,
+		"Ali",
+		"M1644",
+		ali_generic_setup },
 	{ PCI_DEVICE_ID_AL_M1647_0,
 		PCI_VENDOR_ID_AL,
 		ALI_M1647,
@@ -3577,6 +3945,12 @@ static struct {
 		ALI_M1651,
 		"Ali",
 		"M1651",
+		ali_generic_setup },  
+	{ PCI_DEVICE_ID_AL_M1671_0,
+		PCI_VENDOR_ID_AL,
+		ALI_M1671,
+		"Ali",
+		"M1671",
 		ali_generic_setup },  
 	{ 0,
 		PCI_VENDOR_ID_AL,
@@ -3597,7 +3971,7 @@ static struct {
 		PCI_VENDOR_ID_AMD,
 		AMD_IRONGATE,
 		"AMD",
-		"AMD 760MP",
+		"760MP",
 		amd_irongate_setup },
 	{ PCI_DEVICE_ID_AMD_761_0,
 		PCI_VENDOR_ID_AMD,
@@ -3609,7 +3983,7 @@ static struct {
 		PCI_VENDOR_ID_AMD,
 		AMD_762,
 		"AMD",
-		"AMD 760MP",
+		"760MP",
 		amd_irongate_setup },
 	{ 0,
 		PCI_VENDOR_ID_AMD,
@@ -3643,7 +4017,7 @@ static struct {
 		INTEL_I815,
 		"Intel",
 		"i815",
-		intel_generic_setup },
+		intel_815_setup },
 	{ PCI_DEVICE_ID_INTEL_820_0,
 		PCI_VENDOR_ID_INTEL,
 		INTEL_I820,
@@ -3662,6 +4036,12 @@ static struct {
 		"Intel",
 		"i830M",
 		intel_830mp_setup },
+    { PCI_DEVICE_ID_INTEL_845_G_0,
+		 PCI_VENDOR_ID_INTEL,
+		 INTEL_I845_G,
+		 "Intel",
+		 "i845G",
+		 intel_830mp_setup },
 	{ PCI_DEVICE_ID_INTEL_840_0,
 		PCI_VENDOR_ID_INTEL,
 		INTEL_I840,
@@ -3719,6 +4099,12 @@ static struct {
 		SIS_GENERIC,
 		"SiS",
 		"735",
+		sis_generic_setup },
+	{ PCI_DEVICE_ID_SI_745,
+		PCI_VENDOR_ID_SI,
+		SIS_GENERIC,
+		"SiS",
+		"745",
 		sis_generic_setup },
 	{ PCI_DEVICE_ID_SI_730,
 		PCI_VENDOR_ID_SI,
@@ -3814,6 +4200,15 @@ static struct {
 		"Generic",
 		via_generic_setup },
 #endif /* CONFIG_AGP_VIA */
+
+#ifdef CONFIG_AGP_HP_ZX1
+	{ PCI_DEVICE_ID_HP_ZX1_LBA,
+		PCI_VENDOR_ID_HP,
+		HP_ZX1,
+		"HP",
+		"ZX1",
+		hp_zx1_setup },
+#endif
 
 	{ 0, }, /* dummy final entry, always present */
 };
@@ -3979,6 +4374,28 @@ static int __init agp_find_supported_device(void)
 			agp_bridge.type = INTEL_I810;
 			return intel_i810_setup(i810_dev);
 
+		case PCI_DEVICE_ID_INTEL_845_G_0:
+			i810_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
+					PCI_DEVICE_ID_INTEL_845_G_1, NULL);
+			if(i810_dev && PCI_FUNC(i810_dev->devfn) != 0) {
+				i810_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
+					PCI_DEVICE_ID_INTEL_845_G_1, i810_dev);
+			}
+
+			if (i810_dev == NULL) {
+                                /* 
+                                 * We probably have a I845 G chipset
+                                 * with an external graphics
+                                 * card. It will be initialized later 
+                                 */
+				agp_bridge.type = INTEL_I845_G;
+				break;
+			}
+			printk(KERN_INFO PFX "Detected an Intel "
+				   "845G Chipset.\n");
+			agp_bridge.type = INTEL_I810;
+			return intel_i830_setup(i810_dev);
+		   
 		case PCI_DEVICE_ID_INTEL_830_M_0:
 			i810_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
 					PCI_DEVICE_ID_INTEL_830_M_1, NULL);
@@ -4041,21 +4458,25 @@ static int __init agp_find_supported_device(void)
 
 #endif	/* CONFIG_AGP_SWORKS */
 
-	/* find capndx */
-	pci_read_config_dword(dev, 0x04, &scratch);
-	if (!(scratch & 0x00100000))
-		return -ENODEV;
-
-	pci_read_config_byte(dev, 0x34, &cap_ptr);
-	if (cap_ptr != 0x00) {
+#ifdef CONFIG_AGP_HP_ZX1
+	if (dev->vendor == PCI_VENDOR_ID_HP) {
 		do {
-			pci_read_config_dword(dev, cap_ptr, &cap_id);
-
-			if ((cap_id & 0xff) != 0x02)
-				cap_ptr = (cap_id >> 8) & 0xff;
-		}
-		while (((cap_id & 0xff) != 0x02) && (cap_ptr != 0x00));
+			/* ZX1 LBAs can be either PCI or AGP bridges */
+			if (pci_find_capability(dev, PCI_CAP_ID_AGP)) {
+				printk(KERN_INFO PFX "Detected HP ZX1 AGP "
+				       "chipset at %s\n", dev->slot_name);
+				agp_bridge.type = HP_ZX1;
+				agp_bridge.dev = dev;
+				return hp_zx1_setup(dev);
+			}
+			dev = pci_find_class(PCI_CLASS_BRIDGE_HOST << 8, dev);
+		} while (dev);
+		return -ENODEV;
 	}
+#endif	/* CONFIG_AGP_HP_ZX1 */
+
+	/* find capndx */
+	cap_ptr = pci_find_capability(dev, PCI_CAP_ID_AGP);
 	if (cap_ptr == 0x00)
 		return -ENODEV;
 	agp_bridge.capndx = cap_ptr;

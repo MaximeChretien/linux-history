@@ -4,7 +4,7 @@
  *  Copyright (C) 2000 Steven J. Hill (sjhill@cotw.com)
  *                     Toshiba America Electronics Components, Inc.
  *
- * $Id: nand_ecc.c,v 1.6 2001/06/28 10:52:26 dwmw2 Exp $
+ * $Id: nand_ecc.c,v 1.7 2002/03/21 14:13:50 dwmw2 Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -207,3 +207,7 @@ int nand_correct_data (u_char *dat, u_char *read_ecc, u_char *calc_ecc)
 
 EXPORT_SYMBOL(nand_calculate_ecc);
 EXPORT_SYMBOL(nand_correct_data);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Steven J. Hill <sjhill@cotw.com>");
+MODULE_DESCRIPTION("Generic NAND ECC support");

@@ -11,7 +11,7 @@
  * not going to guess how to send commands to them, plus I expect they will
  * all speak CFI..
  *
- * $Id: jedec.c,v 1.12 2001/11/06 14:37:35 dwmw2 Exp $
+ * $Id: jedec.c,v 1.13 2002/02/08 15:57:21 rkaiser Exp $
  */
 
 #include <linux/mtd/jedec.h>
@@ -738,6 +738,7 @@ static int flash_erase(struct mtd_info *mtd, struct erase_info *instr)
    }
        	    
    //printk("done\n");
+   instr->state = MTD_ERASE_DONE;
    if (instr->callback)
 	instr->callback(instr);
    return 0;

@@ -36,7 +36,7 @@
  * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGES.
  *
- * $Id: //depot/aic7xxx/aic7xxx/aicasm/aicasm_symbol.c#9 $
+ * $Id: //depot/aic7xxx/aic7xxx/aicasm/aicasm_symbol.c#13 $
  *
  * $FreeBSD: src/sys/dev/aic7xxx/aicasm/aicasm_symbol.c,v 1.11 2000/09/22 22:19:54 gibbs Exp $
  */
@@ -49,6 +49,7 @@
 #include <db.h>
 #endif
 #include <fcntl.h>
+#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -318,12 +319,15 @@ symtable_dump(FILE *ofile)
 	symlist_t constants;
 	symlist_t download_constants;
 	symlist_t aliases;
+	symlist_t exported_labels;
+	u_int	  i;
 
 	SLIST_INIT(&registers);
 	SLIST_INIT(&masks);
 	SLIST_INIT(&constants);
 	SLIST_INIT(&download_constants);
 	SLIST_INIT(&aliases);
+	SLIST_INIT(&exported_labels);
 
 	if (symtable != NULL) {
 		DBT	 key;
@@ -345,10 +349,8 @@ symtable_dump(FILE *ofile)
 				symlist_add(&masks, cursym, SYMLIST_SORT);
 				break;
 			case CONST:
-				if (cursym->info.cinfo->define == FALSE) {
-					symlist_add(&constants, cursym,
-						    SYMLIST_INSERT_HEAD);
-				}
+				symlist_add(&constants, cursym,
+					    SYMLIST_INSERT_HEAD);
 				break;
 			case DOWNLOAD_CONST:
 				symlist_add(&download_constants, cursym,
@@ -356,6 +358,12 @@ symtable_dump(FILE *ofile)
 				break;
 			case ALIAS:
 				symlist_add(&aliases, cursym,
+					    SYMLIST_INSERT_HEAD);
+				break;
+			case LABEL:
+				if (cursym->info.linfo->exported == 0)
+					break;
+				symlist_add(&exported_labels, cursym,
 					    SYMLIST_INSERT_HEAD);
 				break;
 			default:
@@ -403,7 +411,7 @@ symtable_dump(FILE *ofile)
 %s */\n", versions);
 		while (SLIST_FIRST(&registers) != NULL) {
 			symbol_node_t *curnode;
-			u_int8_t value;
+			u_int value;
 			char *tab_str;
 			char *tab_str2;
 
@@ -463,7 +471,7 @@ symtable_dump(FILE *ofile)
 		
 		fprintf(ofile, "\n\n/* Downloaded Constant Definitions */\n");
 
-		while (SLIST_FIRST(&download_constants) != NULL) {
+		for (i = 0; SLIST_FIRST(&download_constants) != NULL; i++) {
 			symbol_node_t *curnode;
 
 			curnode = SLIST_FIRST(&download_constants);
@@ -471,6 +479,20 @@ symtable_dump(FILE *ofile)
 			fprintf(ofile, "#define\t%-8s\t0x%02x\n",
 				curnode->symbol->name,
 				curnode->symbol->info.cinfo->value);
+			free(curnode);
+		}
+		fprintf(ofile, "#define\tDOWNLOAD_CONST_COUNT\t0x%02x\n", i);
+
+		fprintf(ofile, "\n\n/* Exported Labels */\n");
+
+		while (SLIST_FIRST(&exported_labels) != NULL) {
+			symbol_node_t *curnode;
+
+			curnode = SLIST_FIRST(&exported_labels);
+			SLIST_REMOVE_HEAD(&exported_labels, links);
+			fprintf(ofile, "#define\tLABEL_%-8s\t0x%02x\n",
+				curnode->symbol->name,
+				curnode->symbol->info.linfo->address);
 			free(curnode);
 		}
 	}

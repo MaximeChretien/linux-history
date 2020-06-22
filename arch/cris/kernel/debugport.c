@@ -12,6 +12,9 @@
  *    init_etrax_debug()
  *
  * $Log: debugport.c,v $
+ * Revision 1.7  2002/04/23 15:35:50  bjornw
+ * Cleaned up sercons struct and removed the waitkey ptr (2.4.19-pre)
+ *
  * Revision 1.6  2001/04/17 13:58:39  orjanf
  * * Renamed CONFIG_KGDB to CONFIG_ETRAX_KGDB.
  *
@@ -224,17 +227,16 @@ console_setup(struct console *co, char *options)
 }
 
 static struct console sercons = {
-        "ttyS",
-        console_write,
-        NULL,
-        console_device,
-        NULL,
-	NULL,
-	console_setup,
-	CON_PRINTBUFFER,
-	DEBUG_PORT_IDX,
-	0,
-	NULL
+        name : "ttyS",
+        write: console_write,
+        read : NULL,
+        device : console_device,
+	unblank : NULL,
+	setup : console_setup,
+	flags : CON_PRINTBUFFER,
+	index : DEBUG_PORT_IDX,
+	cflag : 0,
+	next : NULL
 };
 
 /*

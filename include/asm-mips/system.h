@@ -21,98 +21,121 @@
 #include <asm/ptrace.h>
 #include <linux/kernel.h>
 
+__asm__ (
+	".macro\t__sti\n\t"
+	".set\tpush\n\t"
+	".set\treorder\n\t"
+	".set\tnoat\n\t"
+	"mfc0\t$1,$12\n\t"
+	"ori\t$1,0x1f\n\t"
+	"xori\t$1,0x1e\n\t"
+	"mtc0\t$1,$12\n\t"
+	".set\tpop\n\t"
+	".endm");
+
 extern __inline__ void
 __sti(void)
 {
 	__asm__ __volatile__(
-		".set\tpush\n\t"
-		".set\treorder\n\t"
-		".set\tnoat\n\t"
-		"mfc0\t$1,$12\n\t"
-		"ori\t$1,0x1f\n\t"
-		"xori\t$1,0x1e\n\t"
-		"mtc0\t$1,$12\n\t"
-		".set\tpop\n\t"
+		"__sti"
 		: /* no outputs */
 		: /* no inputs */
-		: "$1", "memory");
+		: "memory");
 }
 
 /*
- * For cli() we have to insert nops to make shure that the new value
+ * For cli() we have to insert nops to make sure that the new value
  * has actually arrived in the status register before the end of this
  * macro.
  * R4000/R4400 need three nops, the R4600 two nops and the R10000 needs
  * no nops at all.
  */
+__asm__ (
+	".macro\t__cli\n\t"
+	".set\tpush\n\t"
+	".set\tnoat\n\t"
+	"mfc0\t$1,$12\n\t"
+	"ori\t$1,1\n\t"
+	"xori\t$1,1\n\t"
+	".set\tnoreorder\n\t"
+	"mtc0\t$1,$12\n\t"
+	"sll\t$0, $0, 1\t\t\t# nop\n\t"
+	"sll\t$0, $0, 1\t\t\t# nop\n\t"
+	"sll\t$0, $0, 1\t\t\t# nop\n\t"
+	".set\tpop\n\t"
+	".endm");
+
 extern __inline__ void
 __cli(void)
 {
 	__asm__ __volatile__(
-		".set\tpush\n\t"
-		".set\treorder\n\t"
-		".set\tnoat\n\t"
-		"mfc0\t$1,$12\n\t"
-		"ori\t$1,1\n\t"
-		"xori\t$1,1\n\t"
-		".set\tnoreorder\n\t"
-		"mtc0\t$1,$12\n\t"
-		"nop\n\t"
-		"nop\n\t"
-		"nop\n\t"
-		".set\tpop\n\t"
+		"__cli"
 		: /* no outputs */
 		: /* no inputs */
-		: "$1", "memory");
+		: "memory");
 }
+
+__asm__ (
+	".macro\t__save_flags flags\n\t"
+	".set\tpush\n\t"
+	".set\treorder\n\t"
+	"mfc0\t\\flags, $12\n\t"
+	".set\tpop\n\t"
+	".endm");
 
 #define __save_flags(x)							\
 __asm__ __volatile__(							\
-	".set\tpush\n\t"						\
-	".set\treorder\n\t"						\
-	"mfc0\t%0,$12\n\t"						\
-	".set\tpop\n\t"							\
+	"__save_flags %0"						\
 	: "=r" (x))
+
+__asm__ (
+	".macro\t__save_and_cli result\n\t"
+	".set\tpush\n\t"
+	".set\treorder\n\t"
+	".set\tnoat\n\t"
+	"mfc0\t\\result, $12\n\t"
+	"ori\t$1, \\result, 1\n\t"
+	"xori\t$1, 1\n\t"
+	".set\tnoreorder\n\t"
+	"mtc0\t$1, $12\n\t"
+	"sll\t$0, $0, 1\t\t\t# nop\n\t"
+	"sll\t$0, $0, 1\t\t\t# nop\n\t"
+	"sll\t$0, $0, 1\t\t\t# nop\n\t"
+	".set\tpop\n\t"	
+	".endm");
 
 #define __save_and_cli(x)						\
 __asm__ __volatile__(							\
-	".set\tpush\n\t"						\
-	".set\treorder\n\t"						\
-	".set\tnoat\n\t"						\
-	"mfc0\t%0,$12\n\t"						\
-	"ori\t$1,%0,1\n\t"						\
-	"xori\t$1,1\n\t"						\
-	".set\tnoreorder\n\t"						\
-	"mtc0\t$1,$12\n\t"						\
-	"nop\n\t"							\
-	"nop\n\t"							\
-	"nop\n\t"							\
-	".set\tpop\n\t"							\
+	"__save_and_cli\t%0"						\
 	: "=r" (x)							\
 	: /* no inputs */						\
-	: "$1", "memory")
+	: "memory")
+
+__asm__(".macro\t__restore_flags flags\n\t"
+	".set\tnoreorder\n\t"
+	".set\tnoat\n\t"
+	"mfc0\t$1, $12\n\t"
+	"andi\t\\flags, 1\n\t"
+	"ori\t$1, 1\n\t"
+	"xori\t$1, 1\n\t"
+	"or\t\\flags, $1\n\t"
+	"mtc0\t\\flags, $12\n\t"
+	"sll\t$0, $0, 1\t\t\t# nop\n\t"
+	"sll\t$0, $0, 1\t\t\t# nop\n\t"
+	"sll\t$0, $0, 1\t\t\t# nop\n\t"
+	".set\tat\n\t"
+	".set\treorder\n\t"
+	".endm");
 
 #define __restore_flags(flags)						\
 do {									\
 	unsigned long __tmp1;						\
 									\
 	__asm__ __volatile__(						\
-		".set\tnoreorder\t\t\t# __restore_flags\n\t"		\
-		".set\tnoat\n\t"					\
-		"mfc0\t$1, $12\n\t"					\
-		"andi\t%0, 1\n\t"					\
-		"ori\t$1, 1\n\t"					\
-		"xori\t$1, 1\n\t"					\
-		"or\t%0, $1\n\t"					\
-		"mtc0\t%0, $12\n\t"					\
-		"nop\n\t"						\
-		"nop\n\t"						\
-		"nop\n\t"						\
-		".set\tat\n\t"						\
-		".set\treorder"						\
+		"__restore_flags\t%0"					\
 		: "=r" (__tmp1)						\
 		: "0" (flags)						\
-		: "$1", "memory");					\
+		: "memory");						\
 } while(0)
 
 #ifdef CONFIG_SMP
@@ -138,10 +161,10 @@ extern void __global_restore_flags(unsigned long);
 #endif /* SMP */
 
 /* For spinlocks etc */
-#define local_irq_save(x)	__save_and_cli(x);
-#define local_irq_restore(x)	__restore_flags(x);
-#define local_irq_disable()	__cli();
-#define local_irq_enable()	__sti();
+#define local_irq_save(x)	__save_and_cli(x)
+#define local_irq_restore(x)	__restore_flags(x)
+#define local_irq_disable()	__cli()
+#define local_irq_enable()	__sti()
 
 /*
  * These are probably defined overly paranoid ...
@@ -186,13 +209,13 @@ do { var = value; mb(); } while (0)
 #define set_wmb(var, value) \
 do { var = value; wmb(); } while (0)
 
-#if !defined (_LANGUAGE_ASSEMBLY)
+#ifndef __ASSEMBLY__
 /*
  * switch_to(n) should switch tasks to task nr n, first
  * checking that n isn't the current task, in which case it does nothing.
  */
 extern asmlinkage void *resume(void *last, void *next);
-#endif /* !defined (_LANGUAGE_ASSEMBLY) */
+#endif /* !__ASSEMBLY__ */
 
 #define prepare_to_switch()	do { } while(0)
 #define switch_to(prev,next,last) \
@@ -210,17 +233,18 @@ extern __inline__ unsigned long xchg_u32(volatile int * m, unsigned long val)
 	unsigned long dummy;
 
 	__asm__ __volatile__(
-		".set\tnoreorder\t\t\t# xchg_u32\n\t"
-		".set\tnoat\n\t"
+		".set\tpush\t\t\t\t# xchg_u32\n\t"
+		".set\tnoreorder\n\t"
+		".set\tnomacro\n\t"
 		"ll\t%0, %3\n"
-		"1:\tmove\t$1, %2\n\t"
-		"sc\t$1, %1\n\t"
-		"beqzl\t$1, 1b\n\t"
+		"1:\tmove\t%2, %z4\n\t"
+		"sc\t%2, %1\n\t"
+		"beqzl\t%2, 1b\n\t"
 		" ll\t%0, %3\n\t"
-		".set\tat\n\t"
-		".set\treorder"
-		: "=r" (val), "=o" (*m), "=r" (dummy)
-		: "o" (*m), "2" (val)
+		"sync\n\t"
+		".set\tpop"
+		: "=&r" (val), "=m" (*m), "=&r" (dummy)
+		: "R" (*m), "Jr" (val)
 		: "memory");
 
 	return val;
@@ -231,7 +255,7 @@ extern __inline__ unsigned long xchg_u32(volatile int * m, unsigned long val)
 	cli();
 	retval = *m;
 	*m = val;
-	restore_flags(flags);
+	restore_flags(flags);	/* implies memory barrier  */
 	return retval;
 #endif /* Processor-dependent optimization */
 }

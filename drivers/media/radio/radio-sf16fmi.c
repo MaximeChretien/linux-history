@@ -85,23 +85,12 @@ static inline int fmi_setfreq(struct fmi_device *dev)
 {
         int myport = dev->port;
 	unsigned long freq = dev->curfreq;
-	int i;
 	
 	down(&lock);
-	
 	outbits(16, RSF16_ENCODE(freq), myport);
 	outbits(8, 0xC0, myport);
-	for(i=0; i< 100; i++)
-	{
-		udelay(1400);
-		if(current->need_resched)
-			schedule();
-	}
-/* If this becomes allowed use it ... 	
 	current->state = TASK_UNINTERRUPTIBLE;
 	schedule_timeout(HZ/7);
-*/	
-
 	up(&lock);
 	if (dev->curvol) fmi_unmute(myport);
 	return 0;
@@ -112,22 +101,13 @@ static inline int fmi_getsigstr(struct fmi_device *dev)
 	int val;
 	int res;
 	int myport = dev->port;
-	int i;
 	
 	down(&lock);
 	val = dev->curvol ? 0x08 : 0x00;	/* unmute/mute */
 	outb(val, myport);
 	outb(val | 0x10, myport);
-	for(i=0; i< 100; i++)
-	{
-		udelay(1400);
-		if(current->need_resched)
-			schedule();
-	}
-/* If this becomes allowed use it ... 	
 	current->state = TASK_UNINTERRUPTIBLE;
 	schedule_timeout(HZ/7);
-*/	
 	res = (int)inb(myport+1);
 	outb(val, myport);
 	
@@ -324,7 +304,7 @@ static int __init fmi_init(void)
 	if (io < 0)
 		io = isapnp_fmi_probe();
 	if (io < 0) {
-		printk(KERN_ERR "radio-sf16fmi: No PnP card found.");
+		printk(KERN_ERR "radio-sf16fmi: No PnP card found.\n");
 		return io;
 	}
 	if (!request_region(io, 2, "radio-sf16fmi")) {

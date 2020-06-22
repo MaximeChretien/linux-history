@@ -29,7 +29,7 @@
 #define _MEYE_PRIV_H_
 
 #define MEYE_DRIVER_MAJORVERSION	1
-#define MEYE_DRIVER_MINORVERSION	1
+#define MEYE_DRIVER_MINORVERSION	4
 
 /****************************************************************************/
 /* Motion JPEG chip registers                                               */
@@ -292,15 +292,14 @@ struct meye {
 	u8 mchip_fnum;			/* current mchip frame number */
 
 	unsigned char *mchip_mmregs;	/* mchip: memory mapped registers */
-	unsigned char *mchip_fbuffer;	/* mchip: framebuffer */
-	u32 mchip_ptaddr;		/* mchip: pointer to framebuffer */
+	u8 *mchip_ptable[MCHIP_NB_PAGES+1];/* mchip: ptable + ptable toc */
+	dma_addr_t mchip_dmahandle;	/* mchip: dma handle to ptable toc */
 
 	unsigned char *grab_fbuffer;	/* capture framebuffer */
 					/* list of buffers */
 	struct meye_grab_buffer grab_buffer[MEYE_MAX_BUFNBRS];
 
 	/* other */
-	unsigned int open_count;	/* open() count */
 	struct semaphore lock;		/* semaphore for open/mmap... */
 
 	struct meye_queue grabq;	/* queue for buffers to be grabbed */

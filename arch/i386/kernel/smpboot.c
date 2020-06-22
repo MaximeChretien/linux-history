@@ -213,7 +213,7 @@ extern unsigned long fast_gettimeoffset_quotient;
  *		    ^---- (this multiplication can overflow)
  */
 
-static unsigned long long div64 (unsigned long long a, unsigned long b0)
+static unsigned long long __init div64 (unsigned long long a, unsigned long b0)
 {
 	unsigned int a1, a2;
 	unsigned long long res;
@@ -973,7 +973,7 @@ extern int prof_counter[NR_CPUS];
 
 static int boot_cpu_logical_apicid;
 /* Where the IO area was mapped on multiquad, always 0 otherwise */
-void *xquad_portio = NULL;
+void *xquad_portio;
 
 int cpu_sibling_map[NR_CPUS] __cacheline_aligned;
 
@@ -981,11 +981,14 @@ void __init smp_boot_cpus(void)
 {
 	int apicid, cpu, bit;
 
-        if (clustered_apic_mode) {
-                /* remap the 1st quad's 256k range for cross-quad I/O */
-                xquad_portio = ioremap (XQUAD_PORTIO_BASE, XQUAD_PORTIO_LEN);
-                printk("Cross quad port I/O vaddr 0x%08lx, len %08lx\n",
-                        (u_long) xquad_portio, (u_long) XQUAD_PORTIO_LEN);
+        if (clustered_apic_mode && (numnodes > 1)) {
+                printk("Remapping cross-quad port I/O for %d quads\n",
+			numnodes);
+                printk("xquad_portio vaddr 0x%08lx, len %08lx\n",
+                        (u_long) xquad_portio, 
+			(u_long) numnodes * XQUAD_PORTIO_LEN);
+                xquad_portio = ioremap (XQUAD_PORTIO_BASE, 
+			numnodes * XQUAD_PORTIO_LEN);
         }
 
 #ifdef CONFIG_MTRR

@@ -81,9 +81,9 @@ struct i2o_device
 struct i2o_pci
 {
 	int		irq;
-	int		queue_buggy:3;	/* Don't send a lot of messages */
 	int		short_req:1;	/* Use small block sizes        */
 	int		dpt:1;		/* Don't quiesce                */
+	int		promise:1;	/* Promise controller		*/
 #ifdef CONFIG_MTRR
 	int		mtrr_reg0;
 	int		mtrr_reg1;
@@ -112,9 +112,9 @@ struct i2o_controller
 	atomic_t users;
 	struct i2o_device *devices;		/* I2O device chain */
 	struct i2o_controller *next;		/* Controller chain */
-	volatile u32 *post_port;		/* Inbout port */
-	volatile u32 *reply_port;		/* Outbound port */
-	volatile u32 *irq_mask;			/* Interrupt register */
+	unsigned long post_port;		/* Inbout port address */
+	unsigned long reply_port;		/* Outbound port address */
+	unsigned long irq_mask;			/* Interrupt register address */
 
 	/* Dynamic LCT related data */
 	struct semaphore lct_sem;
@@ -126,8 +126,8 @@ struct i2o_controller
 	i2o_lct *dlct;				/* Temp LCT */
 	i2o_hrt *hrt;				/* HW Resource Table */
 
-	u32 mem_offset;				/* MFA offset */
-	u32 mem_phys;				/* MFA physical */
+	unsigned long mem_offset;		/* MFA offset */
+	unsigned long mem_phys;			/* MFA physical */
 
 	int battery:1;				/* Has a battery backup */
 	int io_alloc:1;				/* An I/O resource was allocated */
@@ -295,6 +295,13 @@ static inline void i2o_flush_reply(struct i2o_controller *c, u32 m)
 	I2O_REPLY_WRITE32(c, m);
 }
 
+/*
+ *	Endian handling wrapped into the macro - keeps the core code
+ *	cleaner.
+ */
+ 
+#define i2o_raw_writel(val, mem)	__raw_writel(cpu_to_le32(val), mem)
+
 extern struct i2o_controller *i2o_find_controller(int);
 extern void i2o_unlock_controller(struct i2o_controller *);
 extern struct i2o_controller *i2o_controller_chain;
@@ -339,13 +346,66 @@ extern int i2o_activate_controller(struct i2o_controller *);
 extern void i2o_run_queue(struct i2o_controller *);
 extern int i2o_delete_controller(struct i2o_controller *);
 
+/*
+ *	Cache strategies
+ */
+ 
+ 
+/*	The NULL strategy leaves everything up to the controller. This tends to be a
+ *	pessimal but functional choice.
+ */
+#define CACHE_NULL		0
+/*	Prefetch data when reading. We continually attempt to load the next 32 sectors
+ *	into the controller cache. 
+ */
+#define CACHE_PREFETCH		1
+/*	Prefetch data when reading. We sometimes attempt to load the next 32 sectors
+ *	into the controller cache. When an I/O is less <= 8K we assume its probably
+ *	not sequential and don't prefetch (default)
+ */
+#define CACHE_SMARTFETCH	2
+/*	Data is written to the cache and then out on to the disk. The I/O must be
+ *	physically on the medium before the write is acknowledged (default without
+ *	NVRAM)
+ */
+#define CACHE_WRITETHROUGH	17
+/*	Data is written to the cache and then out on to the disk. The controller
+ *	is permitted to write back the cache any way it wants. (default if battery
+ *	backed NVRAM is present). It can be useful to set this for swap regardless of
+ *	battery state.
+ */
+#define CACHE_WRITEBACK		18
+/*	Optimise for under powered controllers, especially on RAID1 and RAID0. We
+ *	write large I/O's directly to disk bypassing the cache to avoid the extra
+ *	memory copy hits. Small writes are writeback cached
+ */
+#define CACHE_SMARTBACK		19
+/*	Optimise for under powered controllers, especially on RAID1 and RAID0. We
+ *	write large I/O's directly to disk bypassing the cache to avoid the extra
+ *	memory copy hits. Small writes are writethrough cached. Suitable for devices
+ *	lacking battery backup
+ */
+#define CACHE_SMARTTHROUGH	20
 
 /*
- * I2O Function codes
+ *	Ioctl structures
+ */
+ 
+
+#define 	BLKI2OGRSTRAT	_IOR('2', 1, int) 
+#define 	BLKI2OGWSTRAT	_IOR('2', 2, int) 
+#define 	BLKI2OSRSTRAT	_IOW('2', 3, int) 
+#define 	BLKI2OSWSTRAT	_IOW('2', 4, int) 
+
+
+
+
+/*
+ *	I2O Function codes
  */
 
 /*
- * Executive Class
+ *	Executive Class
  */
 #define	I2O_CMD_ADAPTER_ASSIGN		0xB3
 #define	I2O_CMD_ADAPTER_READ		0xB2
@@ -416,6 +476,7 @@ extern int i2o_delete_controller(struct i2o_controller *);
 #define I2O_CMD_BLOCK_MUNLOCK		0x4B
 #define I2O_CMD_BLOCK_MMOUNT		0x41
 #define I2O_CMD_BLOCK_MEJECT		0x43
+#define I2O_CMD_BLOCK_POWER		0x70
 
 #define I2O_PRIVATE_MSG			0xFF
 
@@ -574,6 +635,7 @@ extern int i2o_delete_controller(struct i2o_controller *);
 #define EIGHT_WORD_MSG_SIZE	0x00080000
 #define NINE_WORD_MSG_SIZE	0x00090000
 #define TEN_WORD_MSG_SIZE	0x000A0000
+#define ELEVEN_WORD_MSG_SIZE	0x000B0000
 #define I2O_MESSAGE_SIZE(x)	((x)<<16)
 
 
@@ -582,10 +644,10 @@ extern int i2o_delete_controller(struct i2o_controller *);
 #define ADAPTER_TID		0
 #define HOST_TID		1
 
-#define MSG_FRAME_SIZE		128
+#define MSG_FRAME_SIZE		64	/* i2o_scsi assumes >= 32 */
 #define NMBR_MSG_FRAMES		128
 
-#define MSG_POOL_SIZE		16384
+#define MSG_POOL_SIZE		(MSG_FRAME_SIZE*NMBR_MSG_FRAMES*sizeof(u32))
 
 #define I2O_POST_WAIT_OK	0
 #define I2O_POST_WAIT_TIMEOUT	-ETIMEDOUT

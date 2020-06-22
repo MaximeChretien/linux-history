@@ -20,7 +20,7 @@
 void _ll_write_char(char c)
 {
 	while (!(__raw_readb(DUART_START + 0x4) & 0x4))
-		;
+		barrier();
 	__raw_writeb(c, DUART_START + 0xc);
 }
 

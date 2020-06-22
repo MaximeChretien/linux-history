@@ -140,6 +140,8 @@
 
 #define LVM_CHAR_MAJOR	109	/* Logical Volume Manager */
 
+#define	UMEM_MAJOR	116	/* http://www.umem.com/ Battery Backed RAM */
+
 #define RTF_MAJOR	150
 #define RAW_MAJOR	162
 

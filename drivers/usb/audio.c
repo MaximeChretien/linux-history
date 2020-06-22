@@ -399,7 +399,7 @@ struct usb_audio_state {
 
 /* prevent picking up a bogus abs macro */
 #undef abs
-extern inline int abs(int x)
+static inline int abs(int x)
 {
         if (x < 0)
 		return -x;
@@ -408,7 +408,7 @@ extern inline int abs(int x)
                                 
 /* --------------------------------------------------------------------- */
 
-extern inline unsigned ld2(unsigned int x)
+static inline unsigned ld2(unsigned int x)
 {
 	unsigned r = 0;
 	
@@ -1931,13 +1931,13 @@ static void release(struct usb_audio_state *s)
 	kfree(s);
 }
 
-extern inline int prog_dmabuf_in(struct usb_audiodev *as)
+static inline int prog_dmabuf_in(struct usb_audiodev *as)
 {
 	usbin_stop(as);
 	return dmabuf_init(&as->usbin.dma);
 }
 
-extern inline int prog_dmabuf_out(struct usb_audiodev *as)
+static inline int prog_dmabuf_out(struct usb_audiodev *as)
 {
 	usbout_stop(as);
 	return dmabuf_init(&as->usbout.dma);
@@ -2536,7 +2536,7 @@ static int usb_audio_ioctl(struct inode *inode, struct file *file, unsigned int 
 		if (as->usbin.dma.mapped)
 			as->usbin.dma.count &= as->usbin.dma.fragsize-1;
 		spin_unlock_irqrestore(&as->lock, flags);
-		return copy_to_user((void *)arg, &cinfo, sizeof(cinfo));
+		return copy_to_user((void *)arg, &cinfo, sizeof(cinfo)) ? -EFAULT : 0;
 
 	case SNDCTL_DSP_GETOPTR:
 		if (!(file->f_mode & FMODE_WRITE))
@@ -2548,7 +2548,7 @@ static int usb_audio_ioctl(struct inode *inode, struct file *file, unsigned int 
 		if (as->usbout.dma.mapped)
 			as->usbout.dma.count &= as->usbout.dma.fragsize-1;
 		spin_unlock_irqrestore(&as->lock, flags);
-		return copy_to_user((void *)arg, &cinfo, sizeof(cinfo));
+		return copy_to_user((void *)arg, &cinfo, sizeof(cinfo)) ? -EFAULT : 0;
 
        case SNDCTL_DSP_GETBLKSIZE:
 		if (file->f_mode & FMODE_WRITE) {
@@ -3207,7 +3207,7 @@ static void prepmixch(struct consmixstate *state)
 
 static void usb_audio_recurseunit(struct consmixstate *state, unsigned char unitid);
 
-extern inline int checkmixbmap(unsigned char *bmap, unsigned char flg, unsigned int inidx, unsigned int numoch)
+static inline int checkmixbmap(unsigned char *bmap, unsigned char flg, unsigned int inidx, unsigned int numoch)
 {
 	unsigned int idx;
 

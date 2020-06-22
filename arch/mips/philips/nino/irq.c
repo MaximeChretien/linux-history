@@ -1,314 +1,264 @@
 /*
- *  linux/arch/mips/philips/nino/irq.c
+ *  arch/mips/philips/nino/irq.c
  *
- *  Copyright (C) 1992 Linus Torvalds
- *  Copyright (C) 1999 Harald Koerfgen
- *  Copyright (C) 2000 Pavel Machek (pavel@suse.cz)
  *  Copyright (C) 2001 Steven J. Hill (sjhill@realitydiluted.com)
- * 
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
- *  
- *  Generic interrupt handler for Philips Nino.
+ *
+ *  Interrupt service routines for Philips Nino
  */
-#include <linux/errno.h>
 #include <linux/init.h>
-#include <linux/kernel_stat.h>
-#include <linux/signal.h>
 #include <linux/sched.h>
-#include <linux/types.h>
 #include <linux/interrupt.h>
-#include <linux/ioport.h>
-#include <linux/timex.h>
-#include <linux/slab.h>
-#include <linux/random.h>
-
-#include <asm/bitops.h>
-#include <asm/bootinfo.h>
 #include <asm/io.h>
-#include <asm/irq.h>
 #include <asm/mipsregs.h>
-#include <asm/system.h>
 #include <asm/tx3912.h>
 
-unsigned long spurious_count = 0;
+#define ALLINTS (IE_IRQ0 | IE_IRQ1 | IE_IRQ2 | IE_IRQ3 | IE_IRQ4 | IE_IRQ5)
 
-irq_cpustat_t irq_stat [NR_CPUS];
+extern asmlinkage void do_IRQ(int irq, struct pt_regs *regs);
 
-static inline void mask_irq(unsigned int irq_nr)
+static void enable_irq6(unsigned int irq)
 {
-	switch (irq_nr) {
-	case 0:  /* Periodic Timer Interrupt */ 
-		IntClear5 = INT5_PERIODICINT;
-		IntClear6 = INT6_PERIODICINT;
-		IntEnable6 &= ~INT6_PERIODICINT;
-		break;
-
-	case 3:
-		/* Serial port receive interrupt */
-		break;
-
-	case 2:
-		/* Serial port transmit interrupt */
-		break;
-
-	default:
-		printk( "Attempt to mask unknown IRQ %d?\n", irq_nr );
+	if(irq == 0) {
+		outl(inl(TX3912_INT6_ENABLE) |
+			TX3912_INT6_ENABLE_PRIORITYMASK_PERINT,
+			TX3912_INT6_ENABLE);
+		outl(inl(TX3912_INT5_ENABLE) | TX3912_INT5_PERINT,
+			TX3912_INT5_ENABLE);
+	}
+	if(irq == 3) {
+		outl(inl(TX3912_INT6_ENABLE) |
+			TX3912_INT6_ENABLE_PRIORITYMASK_UARTARXINT,
+			TX3912_INT6_ENABLE);
+		outl(inl(TX3912_INT2_ENABLE) | TX3912_INT2_UARTA_RX_BITS,
+			TX3912_INT2_ENABLE);
 	}
 }
 
-static inline void unmask_irq(unsigned int irq_nr)
+static unsigned int startup_irq6(unsigned int irq)
 {
-	switch (irq_nr) {
-	case 0:
-		IntEnable6 |= INT6_PERIODICINT;
-		break;
+	enable_irq6(irq);
 
-	case 3:
-		/* Serial port receive interrupt */
-		break;
+	return 0;		/* Never anything pending  */
+}
 
-	case 2:
-		/* Serial port transmit interrupt */
-		break;
-
-	default:
-		printk( "Attempt to unmask unknown IRQ %d?\n", irq_nr );
+static void disable_irq6(unsigned int irq)
+{
+	if(irq == 0) {
+		outl(inl(TX3912_INT6_ENABLE) &
+			~TX3912_INT6_ENABLE_PRIORITYMASK_PERINT,
+			TX3912_INT6_ENABLE);
+		outl(inl(TX3912_INT5_ENABLE) & ~TX3912_INT5_PERINT,
+			TX3912_INT5_ENABLE);
+		outl(inl(TX3912_INT5_CLEAR) | TX3912_INT5_PERINT,
+			TX3912_INT5_CLEAR);
+	}
+	if(irq == 3) {
+		outl(inl(TX3912_INT6_ENABLE) &
+			~TX3912_INT6_ENABLE_PRIORITYMASK_UARTARXINT,
+			TX3912_INT6_ENABLE);
+		outl(inl(TX3912_INT2_ENABLE) & ~TX3912_INT2_UARTA_RX_BITS,
+			TX3912_INT2_ENABLE);
 	}
 }
 
-void disable_irq(unsigned int irq_nr)
-{
-    unsigned long flags;
+#define shutdown_irq6		disable_irq6
+#define mask_and_ack_irq6	disable_irq6
 
-    save_and_cli(flags);
-    mask_irq(irq_nr);
-    restore_flags(flags);
+static void end_irq6(unsigned int irq)
+{
+	if(!(irq_desc[irq].status & (IRQ_DISABLED|IRQ_INPROGRESS)))
+		enable_irq6(irq);
 }
 
-void enable_irq(unsigned int irq_nr)
-{
-    unsigned long flags;
-
-    save_and_cli(flags);
-    unmask_irq(irq_nr);
-    restore_flags(flags);
-}
-
-/*
- * Pointers to the low-level handlers: first the general ones, then the
- * fast ones, then the bad ones.
- */
-extern void interrupt(void);
-
-static struct irqaction *irq_action[NR_IRQS] =
-{
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+static struct hw_interrupt_type irq6_type = {
+	"MIPS",
+	startup_irq6,
+	shutdown_irq6,
+	enable_irq6,
+	disable_irq6,
+	mask_and_ack_irq6,
+	end_irq6,
+	NULL
 };
 
-int get_irq_list(char *buf)
+void irq6_dispatch(struct pt_regs *regs)
 {
-    int i, len = 0;
-    struct irqaction *action;
+	int irq = -1;
 
-    for (i = 0; i < NR_IRQS; i++) {
-	action = irq_action[i];
-	if (!action)
-	    continue;
-	len += sprintf(buf + len, "%2d: %8d %c %s",
-		       i, kstat.irqs[0][i],
-		       (action->flags & SA_INTERRUPT) ? '+' : ' ',
-		       action->name);
-	for (action = action->next; action; action = action->next) {
-	    len += sprintf(buf + len, ",%s %s",
-			   (action->flags & SA_INTERRUPT) ? " +" : "",
-			   action->name);
+	if((inl(TX3912_INT6_STATUS) & TX3912_INT6_STATUS_INTVEC_UARTARXINT) ==
+		TX3912_INT6_STATUS_INTVEC_UARTARXINT) {
+		irq = 3;
+		goto done;
 	}
-	len += sprintf(buf + len, "\n");
-    }
-    return len;
-}
-
-atomic_t __mips_bh_counter;
-
-/*
- * do_IRQ handles IRQ's that have been installed without the
- * SA_INTERRUPT flag: it uses the full signal-handling return
- * and runs with other interrupts enabled. All relatively slow
- * IRQ's should use this format: notably the keyboard/timer
- * routines.
- */
-asmlinkage void do_IRQ(int irq, struct pt_regs *regs)
-{
-    struct irqaction *action;
-    int do_random, cpu;
-
-    if (irq == 20) {
-        if (IntStatus2 & 0xfffff00) {
-		if (IntStatus2 & 0x0f000000)
-		return do_IRQ(2, regs);
+	if ((inl(TX3912_INT6_STATUS) & TX3912_INT6_STATUS_INTVEC_PERINT) ==
+		TX3912_INT6_STATUS_INTVEC_PERINT) {
+		irq = 0;
+		goto done;
 	}
-    }
 
-    cpu = smp_processor_id();
-    irq_enter(cpu, irq);
-    kstat.irqs[cpu][irq]++;
+	/* if irq == -1, then interrupt was cleared or is invalid */
+	if (irq == -1) {
+		panic("Unhandled High Priority PR31700 Interrupt = 0x%08x",
+			inl(TX3912_INT6_STATUS));
+	}
 
-    if (irq == 20) {
-            printk("20 %08lx %08lx\n   %08lx %08lx\n   %08lx\n",
-                   IntStatus1, IntStatus2, IntStatus3,
-                   IntStatus4, IntStatus5 );
-            printk("20 %08lx %08lx\n   %08lx %08lx\n   %08lx\n",
-                   IntEnable1, IntEnable2, IntEnable3,
-                   IntEnable4, IntEnable5 );
-
-    }
-
-    mask_irq(irq);
-    action = *(irq + irq_action);
-    if (action) {
-	if (!(action->flags & SA_INTERRUPT))
-	    __sti();
-	do_random = 0;
-	do {
-	    do_random |= action->flags;
-	    action->handler(irq, action->dev_id, regs);
-	    action = action->next;
-	} while (action);
-	if (do_random & SA_SAMPLE_RANDOM)
-	    add_interrupt_randomness(irq);
-	unmask_irq(irq);
-	__cli();
-    } else {
-            IntClear1 = ~0;
-            IntClear3 = ~0;
-	    IntClear4 = ~0;
-	    IntClear5 = ~0;
-	    unmask_irq(irq);
-    }
-    irq_exit(cpu, irq);
-
-    /* unmasking and bottom half handling is done magically for us. */
+done:
+	do_IRQ(irq, regs);
 }
 
-/*
- * Idea is to put all interrupts
- * in a single table and differenciate them just by number.
- */
-int setup_nino_irq(int irq, struct irqaction *new)
+static void enable_irq4(unsigned int irq)
 {
-    int shared = 0;
-    struct irqaction *old, **p;
-    unsigned long flags;
-
-    p = irq_action + irq;
-    if ((old = *p) != NULL) {
-	/* Can't share interrupts unless both agree to */
-	if (!(old->flags & new->flags & SA_SHIRQ))
-	    return -EBUSY;
-
-	/* Can't share interrupts unless both are same type */
-	if ((old->flags ^ new->flags) & SA_INTERRUPT)
-	    return -EBUSY;
-
-	/* add new interrupt at end of irq queue */
-	do {
-	    p = &old->next;
-	    old = *p;
-	} while (old);
-	shared = 1;
-    }
-    if (new->flags & SA_SAMPLE_RANDOM)
-	rand_initialize_irq(irq);
-
-    save_and_cli(flags);
-    *p = new;
-
-    if (!shared) {
-	unmask_irq(irq);
-    }
-    restore_flags(flags);
-    return 0;
+	set_cp0_status(STATUSF_IP4);
+	if (irq == 2) {
+		outl(inl(TX3912_INT2_CLEAR) | TX3912_INT2_UARTA_TX_BITS,
+			TX3912_INT2_CLEAR);
+		outl(inl(TX3912_INT2_ENABLE) | TX3912_INT2_UARTA_TX_BITS,
+			TX3912_INT2_ENABLE);
+	}
 }
 
-int request_irq(unsigned int irq,
-		void (*handler) (int, void *, struct pt_regs *),
-		unsigned long irqflags,
-		const char *devname,
-		void *dev_id)
+static unsigned int startup_irq4(unsigned int irq)
 {
-    int retval;
-    struct irqaction *action;
+	enable_irq4(irq);
 
-    if (irq >= NR_IRQS)
-	return -EINVAL;
-    if (!handler)
-	return -EINVAL;
-
-    action = (struct irqaction *) kmalloc(sizeof(struct irqaction), GFP_KERNEL);
-    if (!action)
-	return -ENOMEM;
-
-    action->handler = handler;
-    action->flags = irqflags;
-    action->mask = 0;
-    action->name = devname;
-    action->next = NULL;
-    action->dev_id = dev_id;
-
-    retval = setup_nino_irq(irq, action);
-
-    if (retval)
-	kfree(action);
-    return retval;
+	return 0;		/* Never anything pending  */
 }
 
-void free_irq(unsigned int irq, void *dev_id)
+static void disable_irq4(unsigned int irq)
 {
-    struct irqaction *action, **p;
-    unsigned long flags;
+	clear_cp0_status(STATUSF_IP4);
+}
 
-    if (irq >= NR_IRQS) {
-	printk(KERN_CRIT __FUNCTION__ ": trying to free IRQ%d\n", irq);
+#define shutdown_irq4		disable_irq4
+#define mask_and_ack_irq4	disable_irq4
+
+static void end_irq4(unsigned int irq)
+{
+	if(!(irq_desc[irq].status & (IRQ_DISABLED|IRQ_INPROGRESS)))
+		enable_irq4(irq);
+}
+
+static struct hw_interrupt_type irq4_type = {
+	"MIPS",
+	startup_irq4,
+	shutdown_irq4,
+	enable_irq4,
+	disable_irq4,
+	mask_and_ack_irq4,
+	end_irq4,
+	NULL
+};
+
+void irq4_dispatch(struct pt_regs *regs)
+{
+	int irq = -1;
+
+	if(inl(TX3912_INT2_STATUS) & TX3912_INT2_UARTA_TX_BITS) {
+		irq = 2;
+		goto done;
+	}
+
+	/* if irq == -1, then interrupt was cleared or is invalid */
+	if (irq == -1) {
+		printk("PR31700 Interrupt Status Register 1 = 0x%08x\n",
+			inl(TX3912_INT1_STATUS));
+		printk("PR31700 Interrupt Status Register 2 = 0x%08x\n",
+			inl(TX3912_INT2_STATUS));
+		printk("PR31700 Interrupt Status Register 3 = 0x%08x\n",
+			inl(TX3912_INT3_STATUS));
+		printk("PR31700 Interrupt Status Register 4 = 0x%08x\n",
+			inl(TX3912_INT4_STATUS));
+		printk("PR31700 Interrupt Status Register 5 = 0x%08x\n",
+			inl(TX3912_INT5_STATUS));
+		panic("Unhandled Low Priority PR31700 Interrupt");
+	}
+
+done:
+	do_IRQ(irq, regs);
 	return;
-    }
-    for (p = irq + irq_action; (action = *p) != NULL; p = &action->next) {
-	if (action->dev_id != dev_id)
-	    continue;
-
-	/* Found it - now free it */
-	save_and_cli(flags);
-	*p = action->next;
-	if (!irq[irq_action])
-	    mask_irq(irq);
-	restore_flags(flags);
-	kfree(action);
-	return;
-    }
-    printk(KERN_CRIT __FUNCTION__ ": trying to free free IRQ%d\n", irq);
 }
 
-unsigned long probe_irq_on(void)
+void irq_bad(struct pt_regs *regs)
 {
-    /* TODO */
-    return 0;
+	/* This should never happen */
+	printk(" CAUSE register = 0x%08lx\n", regs->cp0_cause);
+	printk("STATUS register = 0x%08lx\n", regs->cp0_status);
+	printk("   EPC register = 0x%08lx\n", regs->cp0_epc);
+	panic("Stray interrupt, spinning...");
 }
 
-int probe_irq_off(unsigned long irqs)
+void __init nino_irq_setup(void)
 {
-    /* TODO */
-    return 0;
+	extern asmlinkage void ninoIRQ(void);
+
+	unsigned int i;
+
+	/* Disable all hardware interrupts */
+	change_cp0_status(ST0_IM, 0x00);
+
+	/* Clear interrupts */
+	outl(0xffffffff, TX3912_INT1_CLEAR);
+	outl(0xffffffff, TX3912_INT2_CLEAR);
+	outl(0xffffffff, TX3912_INT3_CLEAR);
+	outl(0xffffffff, TX3912_INT4_CLEAR);
+	outl(0xffffffff, TX3912_INT5_CLEAR);
+
+	/*
+	 * Disable all PR31700 interrupts. We let the various
+	 * device drivers in the system register themselves
+	 * and set the proper hardware bits.
+	 */
+	outl(0x00000000, TX3912_INT1_ENABLE);
+	outl(0x00000000, TX3912_INT2_ENABLE);
+	outl(0x00000000, TX3912_INT3_ENABLE);
+	outl(0x00000000, TX3912_INT4_ENABLE);
+	outl(0x00000000, TX3912_INT5_ENABLE);
+
+	/* Initialize IRQ vector table */
+	init_generic_irq();
+
+	/* Initialize IRQ action handlers */
+	for (i = 0; i < 16; i++) {
+		hw_irq_controller *handler = NULL;
+		if (i == 0 || i == 3)
+			handler		= &irq6_type;
+		else
+			handler		= &irq4_type;
+
+		irq_desc[i].status	= IRQ_DISABLED;
+		irq_desc[i].action	= 0;
+		irq_desc[i].depth	= 1;
+		irq_desc[i].handler	= handler;
+	}
+
+	/* Set up the external interrupt exception vector */
+	set_except_vector(0, ninoIRQ);
+
+	/* Enable high priority interrupts */
+	outl(TX3912_INT6_ENABLE_GLOBALEN | TX3912_INT6_ENABLE_HIGH_PRIORITY,
+		TX3912_INT6_ENABLE);
+
+	/* Enable all interrupts */
+	change_cp0_status(ST0_IM, ALLINTS);
 }
+
+void (*irq_setup)(void);
 
 void __init init_IRQ(void)
 {
-    irq_setup();
+#ifdef CONFIG_REMOTE_DEBUG
+	extern void breakpoint(void);
+	extern void set_debug_traps(void);
+
+	printk("Wait for gdb client connection ...\n");
+	set_debug_traps();
+	breakpoint();
+#endif
+
+	/* Invoke board-specific irq setup */
+	irq_setup();
 }

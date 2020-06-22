@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.start.c 1.18 12/01/01 20:09:07 benh
+ * BK Id: SCCS/s.start.c 1.20 04/09/02 21:01:58 paulus
  */
 /*
  * Copyright (C) 1996 Paul Mackerras.
@@ -67,8 +67,6 @@ xmon_map_scc(void)
 		unsigned long addr;
 #ifdef CONFIG_BOOTX_TEXT
 		if (!machine_is_compatible("iMac")) {
-			extern boot_infos_t *disp_bi;
-
 			/* see if there is a keyboard in the device tree
 			   with a parent of type "adb" */
 			for (np = find_devices("keyboard"); np; np = np->next)
@@ -79,11 +77,11 @@ xmon_map_scc(void)
 			/* needs to be hacked if xmon_printk is to be used
 			   from within find_via_pmu() */
 #ifdef CONFIG_ADB_PMU
-			if (np != NULL && disp_bi && find_via_pmu())
+			if (np != NULL && boot_text_mapped && find_via_pmu())
 				use_screen = 1;
 #endif
 #ifdef CONFIG_ADB_CUDA
-			if (np != NULL && disp_bi && find_via_cuda())
+			if (np != NULL && boot_text_mapped && find_via_cuda())
 				use_screen = 1;
 #endif
 		}

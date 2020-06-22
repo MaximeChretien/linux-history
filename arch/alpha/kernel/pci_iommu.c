@@ -217,9 +217,14 @@ pci_map_single_1(struct pci_dev *pdev, void *cpu_addr, size_t size,
 	}
 
 	/* If the machine doesn't define a pci_tbi routine, we have to
-	   assume it doesn't support sg mapping.  */
+	   assume it doesn't support sg mapping, and, since we tried to
+	   use direct_map above, it now must be considered an error. */
 	if (! alpha_mv.mv_pci_tbi) {
-		printk(KERN_WARNING "pci_map_single failed: no hw sg\n");
+		static int been_here = 0; /* Only print the message once. */
+		if (!been_here) {
+		    printk(KERN_WARNING "pci_map_single: no HW sg\n");
+		    been_here = 1;
+		}
 		return 0;
 	}
 		

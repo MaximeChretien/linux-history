@@ -41,7 +41,7 @@ extern int  dquot_transfer(struct inode *inode, struct iattr *iattr);
 static __inline__ void DQUOT_INIT(struct inode *inode)
 {
 	if (!inode->i_sb)
-		BUG();
+		out_of_line_bug();
 	lock_kernel();
 	if (sb_any_quota_enabled(inode->i_sb) && !IS_NOQUOTA(inode))
 		inode->i_sb->dq_op->initialize(inode, -1);
@@ -53,7 +53,7 @@ static __inline__ void DQUOT_DROP(struct inode *inode)
 	lock_kernel();
 	if (IS_QUOTAINIT(inode)) {
 		if (!inode->i_sb)
-			BUG();
+			out_of_line_bug();
 		inode->i_sb->dq_op->drop(inode);	/* Ops must be set when there's any quota... */
 	}
 	unlock_kernel();

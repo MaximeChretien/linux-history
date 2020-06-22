@@ -62,7 +62,7 @@ extern void FASTCALL(kunmap_high(struct page *page));
 static inline void *kmap(struct page *page)
 {
 	if (in_interrupt())
-		BUG();
+		out_of_line_bug();
 	if (page < highmem_start_page)
 		return page_address(page);
 	return kmap_high(page);
@@ -71,7 +71,7 @@ static inline void *kmap(struct page *page)
 static inline void kunmap(struct page *page)
 {
 	if (in_interrupt())
-		BUG();
+		out_of_line_bug();
 	if (page < highmem_start_page)
 		return;
 	kunmap_high(page);
@@ -95,7 +95,7 @@ static inline void *kmap_atomic(struct page *page, enum km_type type)
 	vaddr = __fix_to_virt(FIX_KMAP_BEGIN + idx);
 #if HIGHMEM_DEBUG
 	if (!pte_none(*(kmap_pte-idx)))
-		BUG();
+		out_of_line_bug();
 #endif
 	set_pte(kmap_pte-idx, mk_pte(page, kmap_prot));
 	__flush_tlb_one(vaddr);
@@ -113,7 +113,7 @@ static inline void kunmap_atomic(void *kvaddr, enum km_type type)
 		return;
 
 	if (vaddr != __fix_to_virt(FIX_KMAP_BEGIN+idx))
-		BUG();
+		out_of_line_bug();
 
 	/*
 	 * force other mappings to Oops if they'll try to access

@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.pgtable.h 1.15 09/22/01 11:26:52 trini
+ * BK Id: SCCS/s.pgtable.h 1.21 03/12/02 11:49:48 paulus
  */
 #ifdef __KERNEL__
 #ifndef _PPC_PGTABLE_H
@@ -82,13 +82,14 @@ static inline void flush_tlb_pgtables(struct mm_struct *mm,
 #define flush_cache_mm(mm)		do { } while (0)
 #define flush_cache_range(mm, a, b)	do { } while (0)
 #define flush_cache_page(vma, p)	do { } while (0)
-#define flush_icache_page(vma, page)	do { } while (0)
+#define flush_page_to_ram(page)		do { } while (0)
 
+extern void flush_icache_user_range(struct vm_area_struct *vma,
+		struct page *page, unsigned long addr, int len);
 extern void flush_icache_range(unsigned long, unsigned long);
-extern void __flush_page_to_ram(unsigned long page_va);
-extern void flush_page_to_ram(struct page *page);
-
-#define flush_dcache_page(page)			do { } while (0)
+extern void __flush_dcache_icache(void *page_va);
+extern void flush_dcache_page(struct page *page);
+extern void flush_icache_page(struct vm_area_struct *vma, struct page *page);
 
 extern unsigned long va_to_phys(unsigned long address);
 extern pte_t *va_to_pte(unsigned long address);
@@ -263,15 +264,6 @@ extern unsigned long ioremap_bot, ioremap_base;
 #define _PAGE_HWWRITE	0
 #endif
 
-/* We can't use _PAGE_HWWRITE on any SMP due to the lack of ability
- * to atomically manage _PAGE_HWWRITE and it's coordination flags,
- * _PAGE_DIRTY or _PAGE_RW.  The SMP systems must manage HWWRITE
- * or its logical equivalent in the MMU management software.
- */
-#if CONFIG_SMP && _PAGE_HWWRITE
-#error "You can't configure SMP and HWWRITE"
-#endif
-
 #define _PAGE_CHG_MASK	(PAGE_MASK | _PAGE_ACCESSED | _PAGE_DIRTY)
 
 /*
@@ -281,7 +273,7 @@ extern unsigned long ioremap_bot, ioremap_base;
  * another purpose.  -- paulus.
  */
 #define _PAGE_BASE	_PAGE_PRESENT | _PAGE_ACCESSED
-#define _PAGE_WRENABLE	_PAGE_RW | _PAGE_DIRTY
+#define _PAGE_WRENABLE	_PAGE_RW | _PAGE_DIRTY | _PAGE_HWWRITE
 
 #define _PAGE_KERNEL	_PAGE_BASE | _PAGE_WRENABLE | _PAGE_SHARED
 #define _PAGE_IO	_PAGE_KERNEL | _PAGE_NO_CACHE | _PAGE_GUARDED
@@ -341,10 +333,6 @@ extern unsigned long empty_zero_page[1024];
 #define	pmd_present(pmd)	((pmd_val(pmd) & PAGE_MASK) != 0)
 #define	pmd_clear(pmdp)		do { pmd_val(*(pmdp)) = 0; } while (0)
 
-/*
- * Permanent address of a page.
- */
-#define page_address(page)	((page)->virtual)
 #define pte_page(x)		(mem_map+(unsigned long)((pte_val(x) >> PAGE_SHIFT)))
 
 #ifndef __ASSEMBLY__
@@ -445,10 +433,18 @@ static inline unsigned long pte_update(pte_t *p, unsigned long clr,
 }
 
 /*
- * Writing a new value into the PTE doesn't disturb the state of the
- * _PAGE_HASHPTE bit, on those machines which use an MMU hash table.
+ * set_pte stores a linux PTE into the linux page table.
+ * On machines which use an MMU hash table we avoid changing the
+ * _PAGE_HASHPTE bit.
  */
-extern void set_pte(pte_t *ptep, pte_t pte);
+static inline void set_pte(pte_t *ptep, pte_t pte)
+{
+#if _PAGE_HASHPTE != 0
+	pte_update(ptep, ~_PAGE_HASHPTE, pte_val(pte) & ~_PAGE_HASHPTE);
+#else
+	*ptep = pte;
+#endif
+}
 
 static inline int ptep_test_and_clear_young(pte_t *ptep)
 {

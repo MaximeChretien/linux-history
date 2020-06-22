@@ -39,8 +39,24 @@
  * address that the kernel will allocate out.
  */
 #define VA_BITS		44
+#ifndef __ASSEMBLY__
 #define VPTE_SIZE	(1UL << (VA_BITS - PAGE_SHIFT + 3))
+#else
+#define VPTE_SIZE	(1 << (VA_BITS - PAGE_SHIFT + 3))
+#endif
 #define TASK_SIZE	((unsigned long)-VPTE_SIZE)
+
+/*
+ * The vpte base must be able to hold the entire vpte, half
+ * of which lives above, and half below, the base. And it
+ * is placed as close to the highest address range as possible.
+ */
+#define VPTE_BASE_SPITFIRE	(-(VPTE_SIZE/2))
+#if 1
+#define VPTE_BASE_CHEETAH	VPTE_BASE_SPITFIRE
+#else
+#define VPTE_BASE_CHEETAH	0xffe0000000000000
+#endif
 
 #ifndef __ASSEMBLY__
 
@@ -92,6 +108,7 @@ struct thread_struct {
 #define SPARC_FLAG_32BIT        0x04    /* task is older 32-bit binary		*/
 #define SPARC_FLAG_NEWCHILD     0x08    /* task is just-spawned child process	*/
 #define SPARC_FLAG_PERFCTR	0x10    /* task has performance counters active	*/
+#define SPARC_FLAG_ABI_PENDING	0x20    /* change of SPARC_FLAG_32BIT pending	*/
 
 #define FAULT_CODE_WRITE	0x01	/* Write access, implies D-TLB		*/
 #define FAULT_CODE_DTLB		0x02	/* Miss happened in D-TLB		*/

@@ -44,15 +44,17 @@
 
 #define flush_cache_range(_mm,_start,_end)				\
 	do {								\
-		if ((_mm) == current->mm)				\
-			cpu_cache_clean_invalidate_range((_start), (_end), 1); \
+		if ((_mm) == current->active_mm)			\
+			cpu_cache_clean_invalidate_range((_start) & PAGE_MASK, \
+							 PAGE_ALIGN(_end), 1); \
 	} while (0)
 
 #define flush_cache_page(_vma,_vmaddr)					\
 	do {								\
-		if ((_vma)->vm_mm == current->mm) {			\
-			cpu_cache_clean_invalidate_range((_vmaddr),	\
-				(_vmaddr) + PAGE_SIZE,			\
+		if ((_vma)->vm_mm == current->active_mm) {		\
+			unsigned long _addr = (_vmaddr) & PAGE_MASK;	\
+			cpu_cache_clean_invalidate_range(_addr,		\
+				_addr + PAGE_SIZE,			\
 				((_vma)->vm_flags & VM_EXEC));		\
 		} \
 	} while (0)
@@ -114,10 +116,11 @@ static __inline__ void flush_page_to_ram(struct page *page)
  * about to change to user space.  This is the same method as used on SPARC64.
  * See update_mmu_cache for the user space part.
  */
+#define mapping_mapped(map)	((map)->i_mmap || (map)->i_mmap_shared)
+
 static inline void flush_dcache_page(struct page *page)
 {
-	if (page->mapping && !(page->mapping->i_mmap) &&
-	     !(page->mapping->i_mmap_shared))
+	if (page->mapping && !mapping_mapped(page->mapping))
 		set_bit(PG_dcache_dirty, &page->flags);
 	else {
 		unsigned long virt = (unsigned long)page_address(page);
@@ -126,21 +129,6 @@ static inline void flush_dcache_page(struct page *page)
 }
 
 #define clean_dcache_entry(_s)		cpu_dcache_clean_entry((unsigned long)(_s))
-
-/*
- * I cache coherency stuff.
- *
- * This *is not* just icache.  It is to make data written to memory
- * consistent such that instructions fetched from the region are what
- * we expect.
- *
- * This generally means that we have to clean out the Dcache and write
- * buffers, and maybe flush the Icache in the specified range.
- */
-#define flush_icache_range(_s,_e)					\
-	do {								\
-		cpu_icache_invalidate_range((_s), (_e));		\
-	} while (0)
 
 /*
  * This function is misnamed IMHO.  There are three places where it
@@ -169,13 +157,19 @@ static inline void flush_dcache_page(struct page *page)
 #define flush_icache_page(vma,pg)	do { } while (0)
 
 /*
- * Old ARM MEMC stuff.  This supports the reversed mapping handling that
- * we have on the older 26-bit machines.  We don't have a MEMC chip, so...
+ * I cache coherency stuff.
+ *
+ * This *is not* just icache.  It is to make data written to memory
+ * consistent such that instructions fetched from the region are what
+ * we expect.
+ *
+ * This generally means that we have to clean out the Dcache and write
+ * buffers, and maybe flush the Icache in the specified range.
  */
-#define memc_update_all()		do { } while (0)
-#define memc_update_mm(mm)		do { } while (0)
-#define memc_update_addr(mm,pte,log)	do { } while (0)
-#define memc_clear(mm,physaddr)		do { } while (0)
+#define flush_icache_range(_s,_e)					\
+	do {								\
+		cpu_icache_invalidate_range((_s), (_e));		\
+	} while (0)
 
 /*
  * TLB flushing.
@@ -239,3 +233,13 @@ static inline void flush_dcache_page(struct page *page)
  * back to the page.
  */
 extern void update_mmu_cache(struct vm_area_struct *vma, unsigned long addr, pte_t pte);
+
+/*
+ * Old ARM MEMC stuff.  This supports the reversed mapping handling that
+ * we have on the older 26-bit machines.  We don't have a MEMC chip, so...
+ */
+#define memc_update_all()		do { } while (0)
+#define memc_update_mm(mm)		do { } while (0)
+#define memc_update_addr(mm,pte,log)	do { } while (0)
+#define memc_clear(mm,physaddr)		do { } while (0)
+

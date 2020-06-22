@@ -1,7 +1,7 @@
 /*
  * include/asm-cris/processor.h
  *
- * Copyright (C) 2000, 2001 Axis Communications AB
+ * Copyright (C) 2000, 2001, 2002 Axis Communications AB
  *
  * Authors:         Bjorn Wesen        Initial version
  *
@@ -33,7 +33,7 @@
 #ifdef CONFIG_CRIS_LOW_MAP
 #define TASK_SIZE       (0x50000000UL)   /* 1.25 GB */
 #else
-#define TASK_SIZE       (0xB0000000UL)   /* 2.75 GB */
+#define TASK_SIZE       (0xA0000000UL)   /* 2.56 GB */
 #endif
 
 /* This decides where the kernel will search for a free chunk of vm

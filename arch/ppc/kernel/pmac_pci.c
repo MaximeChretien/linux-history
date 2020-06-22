@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.pmac_pci.c 1.31 01/20/02 23:53:11 benh
+ * BK Id: SCCS/s.pmac_pci.c 1.35 05/06/02 01:37:30 benh
  */
 /*
  * Support for PCI bridges found on Power Macintoshes.
@@ -258,20 +258,11 @@ init_bandit(struct pci_controller *bp)
 		rev = in_8(bp->cfg_data);
 		if (rev != BANDIT_REVID)
 			printk(KERN_WARNING
-			       "Unknown revision %d for bandit at %08lx\n",
-			       rev, bp->io_base_phys);
+			       "Unknown revision %d for bandit\n", rev);
 	} else if (vendev != (BANDIT_DEVID_2 << 16) + PCI_VENDOR_ID_APPLE) {
 		printk(KERN_WARNING "bandit isn't? (%x)\n", vendev);
 		return;
 	}
-
-	/* read the revision id */
-	out_le32(bp->cfg_addr, (1UL << BANDIT_DEVNUM) + PCI_REVISION_ID);
-	udelay(2);
-	rev = in_8(bp->cfg_data);
-	if (rev != BANDIT_REVID)
-		printk(KERN_WARNING "Unknown revision %d for bandit at %08lx\n",
-		       rev, bp->io_base_phys);
 
 	/* read the word at offset 0x50 */
 	out_le32(bp->cfg_addr, (1UL << BANDIT_DEVNUM) + BANDIT_MAGIC);
@@ -282,8 +273,7 @@ init_bandit(struct pci_controller *bp)
 	magic |= BANDIT_COHERENT;
 	udelay(2);
 	out_le32((volatile unsigned int *)bp->cfg_data, magic);
-	printk(KERN_INFO "Cache coherency enabled for bandit/PSX at %08lx\n",
-	       bp->io_base_phys);
+	printk(KERN_INFO "Cache coherency enabled for bandit/PSX\n");
 }
 
 
@@ -492,26 +482,16 @@ pcibios_fixup_OF_interrupts(void)
 {	
 	struct pci_dev* dev;
 	
-	pci_for_each_dev(dev)
-	{
-		/*
-		 * Open Firmware often doesn't initialize the,
-		 * PCI_INTERRUPT_LINE config register properly, so we
-		 * should find the device node and se if it has an
-		 * AAPL,interrupts property.
-		 */
-		unsigned char pin;
-		struct device_node* node;
-			
-		if (pci_read_config_byte(dev, PCI_INTERRUPT_PIN, &pin) || !pin)
-			continue; /* No interrupt generated -> no fixup */
-		node = pci_device_to_OF_node(dev);
-		if (!node) {
-			printk("No OF node for device %x:%x\n", dev->bus->number, dev->devfn >> 3);
-			continue;
-		}
+	/*
+	 * Open Firmware often doesn't initialize the
+	 * PCI_INTERRUPT_LINE config register properly, so we
+	 * should find the device node and apply the interrupt
+	 * obtained from the OF device-tree
+	 */
+	pci_for_each_dev(dev) {
+		struct device_node* node = pci_device_to_OF_node(dev);
 		/* this is the node, see if it has interrupts */
-		if (node->n_intrs > 0) 
+		if (node && node->n_intrs > 0)
 			dev->irq = node->intrs[0].line;
 		pci_write_config_byte(dev, PCI_INTERRUPT_LINE, dev->irq);
 	}

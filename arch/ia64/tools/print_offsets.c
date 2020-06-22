@@ -2,7 +2,7 @@
  * Utility to generate asm-ia64/offsets.h.
  *
  * Copyright (C) 1999-2001 Hewlett-Packard Co
- * Copyright (C) 1999-2001 David Mosberger-Tang <davidm@hpl.hp.com>
+ *	David Mosberger-Tang <davidm@hpl.hp.com>
  *
  * Note that this file has dual use: when building the kernel
  * natively, the file is translated into a binary and executed.  When
@@ -58,7 +58,7 @@ tab[] =
     { "IA64_TASK_THREAD_OFFSET",	offsetof (struct task_struct, thread) },
     { "IA64_TASK_THREAD_KSP_OFFSET",	offsetof (struct task_struct, thread.ksp) },
 #ifdef CONFIG_PERFMON
-    { "IA64_TASK_PFM_MUST_BLOCK_OFFSET",offsetof(struct task_struct, thread.pfm_must_block) },
+    { "IA64_TASK_PFM_OVFL_BLOCK_RESET_OFFSET",offsetof(struct task_struct, thread.pfm_ovfl_block_reset) },
 #endif
     { "IA64_TASK_PID_OFFSET",		offsetof (struct task_struct, pid) },
     { "IA64_TASK_MM_OFFSET",		offsetof (struct task_struct, mm) },

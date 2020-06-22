@@ -64,6 +64,8 @@ const struct pci_device_id cciss_pci_device_id[] = {
                         0x0E11, 0x4080, 0, 0, 0},
 	{ PCI_VENDOR_ID_COMPAQ, PCI_DEVICE_ID_COMPAQ_CISSB,
                         0x0E11, 0x4082, 0, 0, 0},
+	{ PCI_VENDOR_ID_COMPAQ, PCI_DEVICE_ID_COMPAQ_CISSB,
+                        0x0E11, 0x4083, 0, 0, 0},
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, cciss_pci_device_id);
@@ -78,6 +80,7 @@ static struct board_type products[] = {
 	{ 0x40700E11, "Smart Array 5300",	&SA5_access },
 	{ 0x40800E11, "Smart Array 5i", &SA5B_access},
 	{ 0x40820E11, "Smart Array 532", &SA5B_access},
+	{ 0x40830E11, "Smart Array 5312", &SA5B_access},
 };
 
 /* How long to wait (in millesconds) for board to go into simple mode */
@@ -99,7 +102,6 @@ static int cciss_release(struct inode *inode, struct file *filep);
 static int cciss_ioctl(struct inode *inode, struct file *filep, 
 		unsigned int cmd, unsigned long arg);
 
-static int revalidate_allvol(kdev_t dev);
 static int revalidate_logvol(kdev_t dev, int maxusage);
 static int frevalidate_logvol(kdev_t dev);
 
@@ -125,6 +127,8 @@ static struct block_device_operations cciss_fops  = {
         ioctl:			cciss_ioctl,
 	revalidate:		frevalidate_logvol,
 };
+
+#include "cciss_scsi.c"		/* For SCSI tape support */
 
 /*
  * Report information about this controller.
@@ -162,6 +166,7 @@ static int cciss_proc_get_info(char *buffer, char **start, off_t offset,
 		h->maxQsinceinit, h->max_outstanding, h->maxSG);
 
         pos += size; len += size;
+	cciss_proc_tape_report(ctlr, buffer, &pos, &len);
 	for(i=0; i<h->num_luns; i++) {
                 drv = &h->drv[i];
                 size = sprintf(buffer+len, "cciss/c%dd%d: blksz=%d nr_blocks=%d\n",
@@ -181,20 +186,53 @@ static int cciss_proc_get_info(char *buffer, char **start, off_t offset,
         return len;
 }
 
+static int
+cciss_proc_write(struct file *file, const char *buffer,
+			unsigned long count, void *data)
+{
+	unsigned char cmd[80];
+	int len;
+#ifdef CONFIG_CISS_SCSI_TAPE
+	ctlr_info_t *h = (ctlr_info_t *) data;
+	int rc;
+#endif
+
+	if (count > sizeof(cmd)-1) return -EINVAL;
+	if (copy_from_user(cmd, buffer, count)) return -EFAULT;
+	cmd[count] = '\0';
+	len = strlen(cmd);	// safe???
+	if (cmd[len-1] == '\n')
+		cmd[--len] = '\0';
+#	ifdef CONFIG_CISS_SCSI_TAPE
+		if (strcmp("engage scsi", cmd)==0) {
+			rc = cciss_engage_scsi(h->ctlr);
+			if (rc != 0) return -rc;
+			return count;
+		}
+		/* might be nice to have "disengage" too, but it's not
+		   safely possible. (only 1 module use count, lock issues.) */
+#	endif
+	return -EINVAL;
+}
+
 /*
  * Get us a file in /proc/cciss that says something about each controller.
  * Create /proc/cciss if it doesn't exist yet.
  */
 static void __init cciss_procinit(int i)
 {
-        if (proc_cciss == NULL) {
-                proc_cciss = proc_mkdir("cciss", proc_root_driver);
-                if (!proc_cciss) 
-			return;
-        }
+	struct proc_dir_entry *pde;
 
-        create_proc_read_entry(hba[i]->devname, 0, proc_cciss,
-        		cciss_proc_get_info, hba[i]);
+	if (proc_cciss == NULL) {
+		proc_cciss = proc_mkdir("cciss", proc_root_driver);
+		if (!proc_cciss)
+			return;
+	}
+
+	pde = create_proc_read_entry(hba[i]->devname,
+		S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH,
+		proc_cciss, cciss_proc_get_info, hba[i]);
+	pde->write_proc = cciss_proc_write;
 }
 #endif /* CONFIG_PROC_FS */
 
@@ -331,20 +369,18 @@ static int cciss_open(struct inode *inode, struct file *filep)
 
 	if (ctlr > MAX_CTLR || hba[ctlr] == NULL)
 		return -ENXIO;
-
-	if (!suser() && hba[ctlr]->sizes[ MINOR(inode->i_rdev)] == 0)
-		return -ENXIO;
-
 	/*
 	 * Root is allowed to open raw volume zero even if its not configured
-	 * so array config can still work.  I don't think I really like this,
+	 * so array config can still work. I don't think I really like this,
 	 * but I'm already using way to many device nodes to claim another one
 	 * for "raw controller".
 	 */
-	if (suser()
-		&& (hba[ctlr]->sizes[MINOR(inode->i_rdev)] == 0) 
-		&& (MINOR(inode->i_rdev)!= 0))
-		return -ENXIO;
+	if (hba[ctlr]->sizes[MINOR(inode->i_rdev)] == 0) { /* not online? */
+		if (MINOR(inode->i_rdev) != 0)	 /* not node 0? */
+			return -ENXIO;
+		if (!capable(CAP_SYS_ADMIN))
+			return -EPERM;
+	}
 
 	hba[ctlr]->drv[dsk].usage_count++;
 	hba[ctlr]->usage_count++;
@@ -377,8 +413,6 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 {
 	int ctlr = MAJOR(inode->i_rdev) - MAJOR_NR;
 	int dsk  = MINOR(inode->i_rdev) >> NWD_SHIFT;
-	int diskinfo[4];
-	struct hd_geometry *geo = (struct hd_geometry *)arg;
 
 #ifdef CCISS_DEBUG
 	printk(KERN_DEBUG "cciss_ioctl: Called with cmd=%x %lx\n", cmd, arg);
@@ -386,19 +420,45 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 	
 	switch(cmd) {
 	case HDIO_GETGEO:
+	{
+		struct hd_geometry driver_geo;
 		if (hba[ctlr]->drv[dsk].cylinders) {
-			diskinfo[0] = hba[ctlr]->drv[dsk].heads;
-			diskinfo[1] = hba[ctlr]->drv[dsk].sectors;
-			diskinfo[2] = hba[ctlr]->drv[dsk].cylinders;
+			driver_geo.heads = hba[ctlr]->drv[dsk].heads;
+			driver_geo.sectors = hba[ctlr]->drv[dsk].sectors;
+			driver_geo.cylinders = hba[ctlr]->drv[dsk].cylinders;
 		} else {
-			diskinfo[0] = 0xff;
-			diskinfo[1] = 0x3f;
-			diskinfo[2] = hba[ctlr]->drv[dsk].nr_blocks / (0xff*0x3f);		}
-		put_user(diskinfo[0], &geo->heads);
-		put_user(diskinfo[1], &geo->sectors);
-		put_user(diskinfo[2], &geo->cylinders);
-		put_user(hba[ctlr]->hd[MINOR(inode->i_rdev)].start_sect, &geo->start);
-		return 0;
+			driver_geo.heads = 0xff;
+			driver_geo.sectors = 0x3f;
+			driver_geo.cylinders = 
+				hba[ctlr]->drv[dsk].nr_blocks / (0xff*0x3f);
+		}
+		driver_geo.start=
+			hba[ctlr]->hd[MINOR(inode->i_rdev)].start_sect;
+		if (copy_to_user((void *) arg, &driver_geo,
+				sizeof( struct hd_geometry)))
+			return  -EFAULT;
+		return(0);
+	}
+	case HDIO_GETGEO_BIG:
+	{
+		struct hd_big_geometry driver_geo;
+		if (hba[ctlr]->drv[dsk].cylinders) {
+			driver_geo.heads = hba[ctlr]->drv[dsk].heads;
+			driver_geo.sectors = hba[ctlr]->drv[dsk].sectors;
+			driver_geo.cylinders = hba[ctlr]->drv[dsk].cylinders;
+		} else {
+			driver_geo.heads = 0xff;
+			driver_geo.sectors = 0x3f;
+			driver_geo.cylinders = 
+				hba[ctlr]->drv[dsk].nr_blocks / (0xff*0x3f);
+		}
+		driver_geo.start= 
+		hba[ctlr]->hd[MINOR(inode->i_rdev)].start_sect;
+		if (copy_to_user((void *) arg, &driver_geo,  
+				sizeof( struct hd_big_geometry)))
+			return  -EFAULT;
+		return(0);
+	}
 	case BLKGETSIZE:
 		put_user(hba[ctlr]->hd[MINOR(inode->i_rdev)].nr_sects, (unsigned long *)arg);
 		return 0;
@@ -406,6 +466,8 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 		put_user((u64)hba[ctlr]->hd[MINOR(inode->i_rdev)].nr_sects << 9, (u64*)arg);
 		return 0;
 	case BLKRRPART:
+		if(!capable(CAP_SYS_ADMIN))
+			return -EPERM;
 		return revalidate_logvol(inode->i_rdev, 1);
 	case BLKFLSBUF:
 	case BLKBSZSET:
@@ -581,9 +643,28 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
                 return(0);
         }
 
-	case CCISS_REVALIDVOLS:
-                return( revalidate_allvol(inode->i_rdev));
-	
+	case CCISS_GETLUNINFO:
+	{
+		LogvolInfo_struct luninfo;
+		int num_parts = 0;
+		int i, start;
+
+		luninfo.LunID = hba[ctlr]->drv[dsk].LunID;
+		luninfo.num_opens = hba[ctlr]->drv[dsk].usage_count;
+
+		/* count partitions 1 to 15 with sizes > 0 */
+  		start = (dsk << NWD_SHIFT);
+		for(i=1; i <MAX_PART; i++) {
+			int minor = start+i;
+			if(hba[ctlr]->sizes[minor] != 0)
+				num_parts++;
+		}
+		luninfo.num_parts = num_parts;
+		if (copy_to_user((void *) arg, &luninfo,
+				sizeof( LogvolInfo_struct) ))
+			return -EFAULT;
+		return(0);
+	}
 	case CCISS_PASSTHRU:
 	{
 		IOCTL_Command_struct iocommand;
@@ -592,6 +673,7 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 		char 	*buff = NULL;
 		u64bit	temp64;
 		unsigned long flags;
+		DECLARE_COMPLETION(wait);
 
 		if (!arg) return -EINVAL;
 	
@@ -657,6 +739,8 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 			c->SG[0].Len = iocommand.buf_size;
 			c->SG[0].Ext = 0;  // we are not chaining
 		}
+		c->waiting = &wait;
+
 		/* Put the request on the tail of the request queue */
 		spin_lock_irqsave(&io_request_lock, flags);
 		addQ(&h->reqQ, c);
@@ -664,9 +748,7 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 		start_io(h);
 		spin_unlock_irqrestore(&io_request_lock, flags);
 
-		/* Wait for completion */
-		while(c->cmd_type != CMD_IOCTL_DONE)
-			schedule_timeout(1);
+		wait_for_completion(&wait);
 
 		/* unlock the buffers from DMA */
 		temp64.val32.lower = c->SG[0].Addr.lower;
@@ -755,69 +837,6 @@ static int frevalidate_logvol(kdev_t dev)
 #endif /* CCISS_DEBUG */ 
 	return revalidate_logvol(dev, 0);
 }
-
-/*
- * revalidate_allvol is for online array config utilities.  After a
- * utility reconfigures the drives in the array, it can use this function
- * (through an ioctl) to make the driver zap any previous disk structs for
- * that controller and get new ones.
- *
- * Right now I'm using the getgeometry() function to do this, but this
- * function should probably be finer grained and allow you to revalidate one
- * particualar logical volume (instead of all of them on a particular
- * controller).
- */
-static int revalidate_allvol(kdev_t dev)
-{
-	int ctlr, i;
-	unsigned long flags;
-
-	ctlr = MAJOR(dev) - MAJOR_NR;
-        if (MINOR(dev) != 0)
-                return -ENXIO;
-
-        spin_lock_irqsave(&io_request_lock, flags);
-        if (hba[ctlr]->usage_count > 1) {
-                spin_unlock_irqrestore(&io_request_lock, flags);
-                printk(KERN_WARNING "cciss: Device busy for volume"
-                        " revalidation (usage=%d)\n", hba[ctlr]->usage_count);
-                return -EBUSY;
-        }
-        spin_unlock_irqrestore(&io_request_lock, flags);
-        hba[ctlr]->usage_count++;
-
-        /*
-         * Set the partition and block size structures for all volumes
-         * on this controller to zero.  We will reread all of this data
-         */
-	memset(hba[ctlr]->hd,         0, sizeof(struct hd_struct) * 256);
-        memset(hba[ctlr]->sizes,      0, sizeof(int) * 256);
-        memset(hba[ctlr]->blocksizes, 0, sizeof(int) * 256);
-        memset(hba[ctlr]->hardsizes,  0, sizeof(int) * 256);
-        memset(hba[ctlr]->drv,        0, sizeof(drive_info_struct)
-						* CISS_MAX_LUN);
-        hba[ctlr]->gendisk.nr_real = 0;
-
-        /*
-         * Tell the array controller not to give us any interrupts while
-         * we check the new geometry.  Then turn interrupts back on when
-         * we're done.
-         */
-        hba[ctlr]->access.set_intr_mask(hba[ctlr], CCISS_INTR_OFF);
-        cciss_getgeometry(ctlr);
-        hba[ctlr]->access.set_intr_mask(hba[ctlr], CCISS_INTR_ON);
-
-        cciss_geninit(ctlr);
-        for(i=0; i<NWD; i++)
-                if (hba[ctlr]->sizes[ i<<NWD_SHIFT ])
-                        revalidate_logvol(dev+(i<<NWD_SHIFT), 2);
-
-        hba[ctlr]->usage_count--;
-        return 0;
-}
-
-
-
 /*
  *   Wait polling for a command to complete.
  *   The memory mapped FIFO is polled for the completion.
@@ -849,9 +868,12 @@ static int sendcmd(
 	int	ctlr,
 	void	*buff,
 	size_t	size,
-	unsigned int use_unit_num,
+	unsigned int use_unit_num, /* 0: address the controller,
+				      1: address logical volume log_unit,
+				      2: periph device address is scsi3addr */
 	unsigned int log_unit,
-	__u8	page_code )
+	__u8	page_code,
+	unsigned char *scsi3addr)
 {
 	CommandList_struct *c;
 	int i;
@@ -885,15 +907,23 @@ static int sendcmd(
 				to controller so It's a physical command
 				mode = 0 target = 0.
 				So we have nothing to write. 
-				Otherwise 
-				mode = 1  target = LUNID
+				otherwise, if use_unit_num == 1,
+				mode = 1(volume set addressing) target = LUNID
+				otherwise, if use_unit_num == 2,
+				mode = 0(periph dev addr) target = scsi3addr
 			*/
-			if(use_unit_num != 0)
+			if(use_unit_num == 1)
 			{
 				c->Header.LUN.LogDev.VolId=
                                 	hba[ctlr]->drv[log_unit].LunID;
                         	c->Header.LUN.LogDev.Mode = 1;
 			}
+			else if (use_unit_num == 2)
+			{
+				memcpy(c->Header.LUN.LunAddrBytes,scsi3addr,8);
+				c->Header.LUN.LogDev.Mode = 0; // phys dev addr
+			}
+
 			/* are we trying to read a vital product page */
 			if(page_code != 0)
 			{
@@ -909,6 +939,7 @@ static int sendcmd(
 			c->Request.CDB[4] = size  & 0xFF;  
 		break;
 		case CISS_REPORT_LOG:
+		case CISS_REPORT_PHYS:
                         /* Talking to controller so It's a physical command
                                 mode = 00 target = 0.
                                 So we have nothing to write.
@@ -918,7 +949,7 @@ static int sendcmd(
                         c->Request.Type.Attribute = ATTR_SIMPLE; 
                         c->Request.Type.Direction = XFER_READ; // Read
                         c->Request.Timeout = 0; // Don't time out
-                        c->Request.CDB[0] = CISS_REPORT_LOG;
+			c->Request.CDB[0] = cmd;
                         c->Request.CDB[6] = (size >> 24) & 0xFF;  //MSB
                         c->Request.CDB[7] = (size >> 16) & 0xFF;
                         c->Request.CDB[8] = (size >> 8) & 0xFF;
@@ -935,6 +966,15 @@ static int sendcmd(
                         c->Request.Type.Direction = XFER_READ; // Read
                         c->Request.Timeout = 0; // Don't time out
                         c->Request.CDB[0] = CCISS_READ_CAPACITY;
+		break;
+		case CCISS_CACHE_FLUSH:
+			c->Request.CDBLen = 12;
+			c->Request.Type.Type =  TYPE_CMD; // It is a command.
+			c->Request.Type.Attribute = ATTR_SIMPLE;
+			c->Request.Type.Direction = XFER_WRITE; // No data
+			c->Request.Timeout = 0; // Don't time out
+			c->Request.CDB[0] = BMIC_WRITE;  // BMIC Passthru
+			c->Request.CDB[6] = BMIC_CACHE_FLUSH;
 		break;
 		default:
 			printk(KERN_WARNING
@@ -996,6 +1036,7 @@ static int sendcmd(
 				ignore it 
 			*/
 			if (((c->Request.CDB[0] == CISS_REPORT_LOG) ||
+			     (c->Request.CDB[0] == CISS_REPORT_PHYS) ||
 			     (c->Request.CDB[0] == CISS_INQUIRY)) &&
 				((c->err_info->CommandStatus == 
 					CMD_DATA_OVERRUN) || 
@@ -1145,17 +1186,27 @@ static inline void complete_command( CommandList_struct *cmd, int timeout)
 	{ /* an error has occurred */ 
 		switch(cmd->err_info->CommandStatus)
 		{
+			unsigned char sense_key;
 			case CMD_TARGET_STATUS:
-				printk(KERN_WARNING "cciss: cmd %p has "
-					" completed with errors\n", cmd);
-				if( cmd->err_info->ScsiStatus)
-                		{
-                    			printk(KERN_WARNING "cciss: cmd %p "
-					"has SCSI Status = %x\n",
-                        			cmd,  
-						cmd->err_info->ScsiStatus);
-                		}
-
+				status = 0;
+			
+				if( cmd->err_info->ScsiStatus == 0x02) {
+					printk(KERN_WARNING "cciss: cmd %p "
+						"has CHECK CONDITION,"
+						" sense key = 0x%x\n", cmd,
+						cmd->err_info->SenseInfo[2]);
+					/* check the sense key */
+					sense_key = 0xf & 
+						cmd->err_info->SenseInfo[2];
+					/* no status or recovered error */
+					if ((sense_key == 0x0) ||
+						(sense_key == 0x1))
+							status = 1;
+				} else {
+					printk(KERN_WARNING "cciss: cmd %p "
+						"has SCSI Status 0x%x\n",
+						cmd, cmd->err_info->ScsiStatus);
+				}
 			break;
 			case CMD_DATA_UNDERRUN:
 				printk(KERN_WARNING "cciss: cmd %p has"
@@ -1441,8 +1492,13 @@ static void do_cciss_intr(int irq, void *dev_id, struct pt_regs *regs)
 					complete_command(c, 0);
 					cmd_free(h, c, 1);
 				} else if (c->cmd_type == CMD_IOCTL_PEND) {
-					c->cmd_type = CMD_IOCTL_DONE;
+					complete(c->waiting);
 				}
+#				ifdef CONFIG_CISS_SCSI_TAPE
+				else if (c->cmd_type == CMD_SCSI) {
+					complete_scsi_command(c, 0, a1);
+				}
+#				endif
 				continue;
 			}
 		}
@@ -1493,6 +1549,15 @@ static void print_cfg_table( CfgTable_struct *tb)
 }
 #endif /* CCISS_DEBUG */ 
 
+static void release_io_mem(ctlr_info_t *c)
+{
+	/* if IO mem was not protected do nothing */
+	if( c->io_mem_addr == 0)
+		return;
+	release_region(c->io_mem_addr, c->io_mem_length);
+	c->io_mem_addr = 0;
+	c->io_mem_length = 0;
+}
 static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 {
 	ushort vendor_id, device_id, command;
@@ -1533,6 +1598,36 @@ static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 	(void) pci_read_config_dword(pdev, PCI_SUBSYSTEM_VENDOR_ID, 
 						&board_id);
 
+	/* check to see if controller has been disabled */
+	if (!(command & 0x02)) {
+		printk(KERN_WARNING "cciss: controller appears to be disabled\n");
+		return(-1);
+	}
+	/* search for our IO range so we can protect it */
+	for (i=0; i<6; i++) {
+		/* is this an IO range */
+		if (pdev->resource[i].flags & 0x01) {
+			c->io_mem_addr = pdev->resource[i].start;
+			c->io_mem_length = pdev->resource[i].end -
+				pdev->resource[i].start +1; 
+#ifdef CCISS_DEBUG
+			printk("IO value found base_addr[%d] %lx %lx\n", i,
+				c->io_mem_addr, c->io_mem_length);
+#endif /* CCISS_DEBUG */
+			/* register the IO range */
+			if (!request_region( c->io_mem_addr,
+                                        c->io_mem_length, "cciss")) {
+				printk(KERN_WARNING 
+					"cciss I/O memory range already in "
+					"use addr=%lx length=%ld\n",
+				c->io_mem_addr, c->io_mem_length);
+				c->io_mem_addr= 0;
+				c->io_mem_length = 0;
+			}
+			break;
+		}
+	}
+
 #ifdef CCISS_DEBUG
 	printk("vendor_id = %x\n", vendor_id);
 	printk("device_id = %x\n", device_id);
@@ -1553,7 +1648,7 @@ static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
          *   table
 	 */
 
-	c->paddr = addr[0] & 0xfffffff0; /* remove the addressing mode bits */
+	c->paddr = addr[0] ; /* addressing mode bits already removed */
 #ifdef CCISS_DEBUG
 	printk("address 0 = %x\n", c->paddr);
 #endif /* CCISS_DEBUG */ 
@@ -1650,7 +1745,7 @@ static void cciss_getgeometry(int cntl_num)
 	int return_code;
 	int i;
 	int listlength = 0;
-	int lunid = 0;
+	__u32 lunid = 0;
 	int block_size;
 	int total_size; 
 
@@ -1678,7 +1773,7 @@ static void cciss_getgeometry(int cntl_num)
         }
 	/* Get the firmware version */ 
 	return_code = sendcmd(CISS_INQUIRY, cntl_num, inq_buff, 
-		sizeof(InquiryData_struct), 0, 0 ,0 );
+		sizeof(InquiryData_struct), 0, 0 ,0, NULL);
 	if (return_code == IO_OK)
 	{
 		hba[cntl_num]->firm_ver[0] = inq_buff->data_byte[32];
@@ -1692,7 +1787,7 @@ static void cciss_getgeometry(int cntl_num)
 	}
 	/* Get the number of logical volumes */ 
 	return_code = sendcmd(CISS_REPORT_LOG, cntl_num, ld_buff, 
-			sizeof(ReportLunData_struct), 0, 0, 0 );
+			sizeof(ReportLunData_struct), 0, 0, 0, NULL);
 
 	if( return_code == IO_OK)
 	{
@@ -1738,7 +1833,7 @@ static void cciss_getgeometry(int cntl_num)
 
 	  	memset(size_buff, 0, sizeof(ReadCapdata_struct));
 	  	return_code = sendcmd(CCISS_READ_CAPACITY, cntl_num, size_buff, 
-				sizeof( ReadCapdata_struct), 1, i, 0 );
+				sizeof( ReadCapdata_struct), 1, i, 0, NULL);
 	  	if (return_code == IO_OK)
 		{
 			total_size = (0xff & 
@@ -1770,7 +1865,7 @@ static void cciss_getgeometry(int cntl_num)
 		/* Execute the command to read the disk geometry */
 		memset(inq_buff, 0, sizeof(InquiryData_struct));
 		return_code = sendcmd(CISS_INQUIRY, cntl_num, inq_buff,
-                	sizeof(InquiryData_struct), 1, i ,0xC1 );
+			sizeof(InquiryData_struct), 1, i, 0xC1, NULL );
 	  	if (return_code == IO_OK)
 		{
 			if(inq_buff->data_byte[8] == 0xFF)
@@ -1814,6 +1909,7 @@ static void cciss_getgeometry(int cntl_num)
 	}
 	kfree(ld_buff);
 	kfree(size_buff);
+	kfree(inq_buff);
 }	
 
 /* Function to find the first free pointer into our hba[] array */
@@ -1878,17 +1974,20 @@ static int __init cciss_init_one(struct pci_dev *pdev,
 	{
 		printk(KERN_ERR "cciss:  Unable to get major number "
 			"%d for %s\n", MAJOR_NR+i, hba[i]->devname);
+		release_io_mem(hba[i]);
 		free_hba(i);
 		return(-1);
 	}
 	/* make sure the board interrupts are off */
 	hba[i]->access.set_intr_mask(hba[i], CCISS_INTR_OFF);
 	if( request_irq(hba[i]->intr, do_cciss_intr, 
-		SA_INTERRUPT|SA_SHIRQ, hba[i]->devname, hba[i]))
+		SA_INTERRUPT | SA_SHIRQ | SA_SAMPLE_RANDOM, 
+			hba[i]->devname, hba[i]))
 	{
 		printk(KERN_ERR "ciss: Unable to get irq %d for %s\n",
 			hba[i]->intr, hba[i]->devname);
 		unregister_blkdev( MAJOR_NR+i, hba[i]->devname);
+		release_io_mem(hba[i]);
 		free_hba(i);
 		return(-1);
 	}
@@ -1917,6 +2016,7 @@ static int __init cciss_init_one(struct pci_dev *pdev,
 				hba[i]->errinfo_pool_dhandle);
                 free_irq(hba[i]->intr, hba[i]);
                 unregister_blkdev(MAJOR_NR+i, hba[i]->devname);
+		release_io_mem(hba[i]);
 		free_hba(i);
                 printk( KERN_ERR "cciss: out of memory");
 		return(-1);
@@ -1934,6 +2034,8 @@ static int __init cciss_init_one(struct pci_dev *pdev,
 #endif /* CCISS_DEBUG */
 
 	cciss_getgeometry(i);
+
+	cciss_find_non_disk_devices(i);	/* find our tape drives, if any */
 
 	/* Turn the interrupts on so we can service requests */
 	hba[i]->access.set_intr_mask(hba[i], CCISS_INTR_ON);
@@ -1975,6 +2077,8 @@ static int __init cciss_init_one(struct pci_dev *pdev,
 			MAX_PART, &cciss_fops, 
 			hba[i]->drv[j].nr_blocks);
 
+	cciss_register_scsi(i, 1);  /* hook ourself into SCSI subsystem */
+
 	return(1);
 }
 
@@ -1982,6 +2086,8 @@ static void __devexit cciss_remove_one (struct pci_dev *pdev)
 {
 	ctlr_info_t *tmp_ptr;
 	int i;
+	char flush_buf[4];
+	int return_code; 
 
 	if (pci_get_drvdata(pdev) == NULL)
 	{
@@ -1996,11 +2102,19 @@ static void __devexit cciss_remove_one (struct pci_dev *pdev)
 			"already be removed \n");
 		return;
 	}
-	/* Turn board interrupts off */
-	hba[i]->access.set_intr_mask(hba[i], CCISS_INTR_OFF);
+ 	/* Turn board interrupts off  and send the flush cache command */
+ 	/* sendcmd will turn off interrupt, and send the flush...
+ 	 * To write all data in the battery backed cache to disks */
+ 	memset(flush_buf, 0, 4);
+ 	return_code = sendcmd(CCISS_CACHE_FLUSH, i, flush_buf, 4,0,0,0, NULL);
+ 	if (return_code != IO_OK) {
+ 		printk(KERN_WARNING 
+			"Error Flushing cache on controller %d\n", i);
+ 	}
 	free_irq(hba[i]->intr, hba[i]);
 	pci_set_drvdata(pdev, NULL);
 	iounmap((void*)hba[i]->vaddr);
+	cciss_unregister_scsi(i);  /* unhook from SCSI subsystem */
 	unregister_blkdev(MAJOR_NR+i, hba[i]->devname);
 	remove_proc_entry(hba[i]->devname, proc_cciss);	
 	
@@ -2013,6 +2127,7 @@ static void __devexit cciss_remove_one (struct pci_dev *pdev)
 	pci_free_consistent(hba[i]->pdev, NR_CMDS * sizeof( ErrorInfo_struct),
 		hba[i]->errinfo_pool, hba[i]->errinfo_pool_dhandle);
 	kfree(hba[i]->cmd_pool_bits);
+	release_io_mem(hba[i]);
 	free_hba(i);
 }	
 

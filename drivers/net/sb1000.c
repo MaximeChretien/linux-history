@@ -204,7 +204,12 @@ sb1000_probe(struct net_device *dev)
 		/*
 		 *	Ok set it up.
 		 */
-		 
+		if (!request_region(ioaddr[0], 16, dev->name))
+			continue;
+		if (!request_region(ioaddr[1], 16, dev->name)) {
+			release_region(ioaddr[0], 16);
+			continue;
+		}
 		 
 		dev->base_addr = ioaddr[0];
 		/* rmem_end holds the second I/O address - fv */
@@ -261,9 +266,6 @@ sb1000_probe(struct net_device *dev)
 		dev->flags		= IFF_POINTOPOINT|IFF_NOARP;
 
 		/* Lock resources */
-
-		request_region(ioaddr[0], 16, dev->name);
-		request_region(ioaddr[1], 16, dev->name);
 
 		return 0;
 	}
@@ -403,7 +405,7 @@ sb1000_wait_for_ready(const int ioaddr[], const char* name)
 	}
 	timeout = jiffies + Sb1000TimeOutJiffies;
 	while (!(inb(ioaddr[1] + 6) & 0x40)) {
-		if (jiffies >= timeout) {
+		if (time_after_eq(jiffies, timeout)) {
 			printk(KERN_WARNING "%s: sb1000_wait_for_ready timeout\n",
 				name);
 			return -ETIME;
@@ -421,7 +423,7 @@ sb1000_wait_for_ready_clear(const int ioaddr[], const char* name)
 
 	timeout = jiffies + Sb1000TimeOutJiffies;
 	while (inb(ioaddr[1] + 6) & 0x80) {
-		if (jiffies >= timeout) {
+		if (time_after_eq(jiffies, timeout)) {
 			printk(KERN_WARNING "%s: sb1000_wait_for_ready_clear timeout\n",
 				name);
 			return -ETIME;
@@ -429,7 +431,7 @@ sb1000_wait_for_ready_clear(const int ioaddr[], const char* name)
 	}
 	timeout = jiffies + Sb1000TimeOutJiffies;
 	while (inb(ioaddr[1] + 6) & 0x40) {
-		if (jiffies >= timeout) {
+		if (time_after_eq(jiffies, timeout)) {
 			printk(KERN_WARNING "%s: sb1000_wait_for_ready_clear timeout\n",
 				name);
 			return -ETIME;
@@ -962,8 +964,6 @@ sb1000_open(struct net_device *dev)
 	/* rmem_end holds the second I/O address - fv */
 	ioaddr[1] = dev->rmem_end;
 	name = dev->name;
-	request_region(ioaddr[0], SB1000_IO_EXTENT, "sb1000");
-	request_region(ioaddr[1], SB1000_IO_EXTENT, "sb1000");
 
 	/* initialize sb1000 */
 	if ((status = sb1000_reset(ioaddr, name)))

@@ -122,7 +122,7 @@ static inline void enable_heartbeat(void)
 
 static void AmiMixerInit(void);
 static int AmiMixerIoctl(u_int cmd, u_long arg);
-static void AmiWriteSqSetup(void);
+static int AmiWriteSqSetup(void);
 static int AmiStateInfo(char *buffer, size_t space);
 
 
@@ -655,10 +655,11 @@ static int AmiMixerIoctl(u_int cmd, u_long arg)
 }
 
 
-static void AmiWriteSqSetup(void)
+static int AmiWriteSqSetup(void)
 {
 	write_sq_block_size_half = write_sq.block_size>>1;
 	write_sq_block_size_quarter = write_sq_block_size_half>>1;
+	return 0;
 }
 
 

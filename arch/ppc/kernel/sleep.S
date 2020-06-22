@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.sleep.S 1.18 12/02/01 12:38:54 benh
+ * BK Id: SCCS/s.sleep.S 1.20 03/19/02 15:04:39 benh
  */
 /*
  * This file contains sleep low-level functions for PowerBook G3.
@@ -13,10 +13,10 @@
  *
  */
 
-#include "ppc_asm.tmpl"
 #include <asm/processor.h>
 #include <asm/page.h>
 #include <asm/cputable.h>
+#include "ppc_asm.h"
 
 #define MAGIC	0x4c617273	/* 'Lars' */
 
@@ -48,9 +48,6 @@
 #define SL_CR		0x88
 #define SL_R12		0x8c	/* r12 to r31 */
 #define SL_SIZE		(SL_R12 + 80)
-
-#define tophys(rd,rs)   addis   rd,rs,-KERNELBASE@h     
-#define tovirt(rd,rs)	addis	rd,rs,KERNELBASE@h
 
 	.text
 	.align	5
@@ -190,6 +187,10 @@ _GLOBAL(low_sleep_handler)
 	addi r3,r3,sleep_storage@l
 	stw r5,0(r3)
 
+	BEGIN_FTR_SECTION
+	DSSALL
+	sync
+	END_FTR_SECTION_IFSET(CPU_FTR_ALTIVEC)
 
 /*
  * Flush the L1 data cache by reading the first 128kB of RAM

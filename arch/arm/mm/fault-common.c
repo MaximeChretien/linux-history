@@ -141,6 +141,7 @@ __do_user_fault(struct task_struct *tsk, unsigned long addr, int error_code,
 	printk(KERN_DEBUG "%s: unhandled page fault at pc=0x%08lx, "
 	       "lr=0x%08lx (bad address=0x%08lx, code %d)\n",
 	       tsk->comm, regs->ARM_pc, regs->ARM_lr, addr, error_code);
+	show_regs(regs);
 #endif
 
 	tsk->thread.address = addr;

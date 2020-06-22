@@ -29,6 +29,7 @@ obj-$(CONFIG_COMX)		+= 				comx.o
 obj-$(CONFIG_COMX_HW_COMX)	+= 				comx-hw-comx.o
 obj-$(CONFIG_COMX_HW_LOCOMX)	+= z85230.o	syncppp.o	comx-hw-locomx.o
 obj-$(CONFIG_COMX_HW_MIXCOM)	+=				comx-hw-mixcom.o
+obj-$(CONFIG_COMX_HW_MUNICH)	+=				comx-hw-munich.o
 obj-$(CONFIG_COMX_PROTO_PPP)	+=		syncppp.o	comx-proto-ppp.o
 obj-$(CONFIG_COMX_PROTO_LAPB)	+=				comx-proto-lapb.o
 obj-$(CONFIG_COMX_PROTO_FR)	+=				comx-proto-fr.o
@@ -44,6 +45,13 @@ subdir-$(CONFIG_LANMEDIA) += lmc
 ifeq ($(CONFIG_LANMEDIA),y)
   obj-y += lmc/lmc.o
 endif
+
+subdir-$(CONFIG_ATI_XX20) += 8253x
+
+ifeq ($(CONFIG_ATI_XX20),y)
+  obj-y += 8253x/ASLX.o
+endif
+
  
 obj-$(CONFIG_DLCI)		+= dlci.o 
 obj-$(CONFIG_SDLA)		+= sdla.o

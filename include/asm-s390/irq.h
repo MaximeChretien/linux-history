@@ -630,11 +630,6 @@ extern __inline__ int msch_err(int irq, volatile schib_t *addr)
                 "   .align 8\n"
                 "   .quad 0b,2b\n"
                 ".previous"
-                "    lr   1,%1\n"
-                "    msch 0(%2)\n"
-                "0:  ipm  %0\n"
-                "    srl  %0,28\n"
-                "1:\n"
 #else
                 ".section .fixup,\"ax\"\n"
                 "2:  l    %0,%3\n"

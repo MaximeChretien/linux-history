@@ -31,12 +31,14 @@
 static void puts(const char *s)
 {
 	while (*s) {
-		while (AMBA_UART_FR & (1 << 5));
+		while (AMBA_UART_FR & (1 << 5))
+			barrier();
 
 		AMBA_UART_DR = *s;
 
 		if (*s == '\n') {
-			while (AMBA_UART_FR & (1 << 5));
+			while (AMBA_UART_FR & (1 << 5))
+				barrier();
 
 			AMBA_UART_DR = '\r';
 		}

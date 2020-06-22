@@ -8,7 +8,6 @@
  */
 #include <linux/delay.h>
 #include <linux/init.h>
-#include <linux/irq.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/spinlock.h>
@@ -126,7 +125,7 @@ void pciasic_hwint134(struct pt_regs *regs)
 
 void __init init_pciasic(void)
 {
-	unsigned int flags;
+	unsigned long flags;
 
 	spin_lock_irqsave(&pciasic_lock, flags);
 	* (volatile u8 *) PCIMT_IRQSEL =

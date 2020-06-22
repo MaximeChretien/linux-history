@@ -1318,26 +1318,13 @@ static struct pci_dev *ad1816_init_generic(struct pci_bus *bus, struct pci_dev *
 	return(ad1816_dev);
 }
 
-static struct ad1816_data {
-	struct pci_dev * (*initfunc)(struct pci_bus*, struct pci_dev *, struct address_info *);
-	char *name;
-} ad1816_pnp_data[] __initdata = {
-	{ &ad1816_init_generic, "Analog Devices 1815" },
-	{ &ad1816_init_generic, "Analog Devices 1816A" }
-};
-
-static struct {
-	unsigned short card_vendor, card_device;
-	unsigned short vendor;
-	unsigned short function;
-	struct ad1816_data *data;
-} isapnp_ad1816_list[] __initdata = {
+struct isapnp_device_id isapnp_ad1816_list[] __initdata = {
 	{	ISAPNP_ANY_ID, ISAPNP_ANY_ID,
 		ISAPNP_VENDOR('A','D','S'), ISAPNP_FUNCTION(0x7150), 
-		&ad1816_pnp_data[0] },
+		0 },
 	{	ISAPNP_ANY_ID, ISAPNP_ANY_ID,
 		ISAPNP_VENDOR('A','D','S'), ISAPNP_FUNCTION(0x7180),
-		&ad1816_pnp_data[1] },
+		0 },
 	{0}
 };
 
@@ -1346,27 +1333,22 @@ MODULE_DEVICE_TABLE(isapnp, isapnp_ad1816_list);
 static int __init ad1816_init_isapnp(struct address_info *hw_config,
 	struct pci_bus *bus, struct pci_dev *card, int slot)
 {
+	char *busname = bus->name[0] ? bus->name : "Analog Devices AD1816a";
 	struct pci_dev *idev = NULL;
-	
-	/* You missed the init func? That's bad. */
-	if(isapnp_ad1816_list[slot].data->initfunc) {
-		char *busname = bus->name[0] ? bus->name : isapnp_ad1816_list[slot].data->name;
 		
-		printk(KERN_INFO "ad1816: %s detected\n", busname);
+	printk(KERN_INFO "ad1816: %s detected\n", busname);
 		
-		/* Initialize this baby. */
-		if((idev = isapnp_ad1816_list[slot].data->initfunc(bus, card, hw_config))) {
-			/* We got it. */
+	/* Initialize this baby. */
+	if ((idev = ad1816_init_generic(bus, card, hw_config))) {
+		/* We got it. */
 
-			printk(KERN_NOTICE "ad1816: ISAPnP reports '%s' at i/o %#x, irq %d, dma %d, %d\n",
-				busname,
-				hw_config->io_base, hw_config->irq, hw_config->dma,
-				hw_config->dma2);
-			return 1;
-		} else
-			printk(KERN_INFO "ad1816: Failed to initialize %s\n", busname);
+		printk(KERN_NOTICE "ad1816: ISAPnP reports '%s' at i/o %#x, irq %d, dma %d, %d\n",
+			busname,
+			hw_config->io_base, hw_config->irq, hw_config->dma,
+			hw_config->dma2);
+		return 1;
 	} else
-		printk(KERN_ERR "ad1816: Bad entry in ad1816.c PnP table\n");
+		printk(KERN_INFO "ad1816: Failed to initialize %s\n", busname);
 	
 	return 0;
 }

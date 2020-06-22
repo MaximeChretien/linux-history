@@ -3,19 +3,17 @@
     scaler, and clock generator circuit (DESCpro), as used in
     the PlanB video input of the Powermac 7x00/8x00 series.
   
-    Copyright (C) 1998 Michel Lanners (mlan@cpu.lu)
+    Copyright (C) 1998 - 2002 Michel Lanners <mailto:mlan@cpu.lu>
 
     The register defines are shamelessly copied from the meteor
-    driver out of NetBSD (with permission),
+    driver out of FreeBSD (with permission),
     and are copyrighted (c) 1995 Mark Tinguely and Jim Lowe
     (Thanks !)
   
-    Additional debugging and coding by Takashi Oe (toe@unlinfo.unl.edu)
-
     The default values used for PlanB are my mistakes.
 */
 
-/* $Id: saa7196.h,v 1.5 1999/03/26 23:28:47 mlan Exp $ */
+/* $Id: saa7196.h,v 2.3 2002/04/03 15:57:57 mlan Exp mlan $ */
 
 #ifndef _SAA7196_H_
 #define _SAA7196_H_

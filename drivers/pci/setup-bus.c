@@ -201,6 +201,16 @@ pbus_assign_resources(struct pci_bus *bus, struct pbus_set_ranges_data *ranges)
 		b->resource[0]->end = ranges->io_end - 1;
 		b->resource[1]->end = ranges->mem_end - 1;
 
+		/* Add bridge resources to the resource tree. */
+		if (b->resource[0]->end > b->resource[0]->start &&
+		    request_resource(bus->resource[0], b->resource[0]) < 0)
+			printk(KERN_ERR "PCI: failed to reserve IO "
+					"for bus %d\n",	b->number);
+		if (b->resource[1]->end > b->resource[1]->start &&
+		    request_resource(bus->resource[1], b->resource[1]) < 0)
+			printk(KERN_ERR "PCI: failed to reserve MEM "
+					"for bus %d\n", b->number);
+
 		pci_setup_bridge(b);
 	}
 }

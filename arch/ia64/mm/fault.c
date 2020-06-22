@@ -1,7 +1,7 @@
 /*
  * MMU fault handling support.
  *
- * Copyright (C) 1998-2001 Hewlett-Packard Co
+ * Copyright (C) 1998-2002 Hewlett-Packard Co
  *	David Mosberger-Tang <davidm@hpl.hp.com>
  */
 #include <linux/sched.h>
@@ -96,7 +96,7 @@ ia64_do_page_fault (unsigned long address, unsigned long isr, struct pt_regs *re
 	 * sure we exit gracefully rather than endlessly redo the
 	 * fault.
 	 */
-	switch (handle_mm_fault(mm, vma, address, mask)) {
+	switch (handle_mm_fault(mm, vma, address, (mask & VM_WRITE) != 0)) {
 	      case 1:
 		++current->min_flt;
 		break;
@@ -151,6 +151,8 @@ ia64_do_page_fault (unsigned long address, unsigned long isr, struct pt_regs *re
 		si.si_errno = 0;
 		si.si_code = code;
 		si.si_addr = (void *) address;
+		si.si_isr = isr;
+		si.si_flags = __ISR_VALID;
 		force_sig_info(signal, &si, current);
 		return;
 	}

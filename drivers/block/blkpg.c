@@ -110,6 +110,7 @@ int add_partition(kdev_t dev, struct blkpg_partition *p) {
 	g->part[minor].nr_sects = plength;
 	if (g->sizes)
 		g->sizes[minor] = (plength >> (BLOCK_SIZE_BITS - 9));
+	devfs_register_partitions (g, first_minor, 0);
 	return 0;
 }
 
@@ -157,6 +158,7 @@ int del_partition(kdev_t dev, struct blkpg_partition *p) {
 	g->part[minor].nr_sects = 0;
 	if (g->sizes)
 		g->sizes[minor] = 0;
+	devfs_register_partitions (g, first_minor, 0);
 
 	return 0;
 }

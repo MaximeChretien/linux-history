@@ -9,22 +9,16 @@
 
 #include <asm/hardware.h>
 #include <asm/irq.h>
-#include <asm/arch/pcmcia.h>
+#include "sa1100_generic.h"
 
 static int pangolin_pcmcia_init(struct pcmcia_init *init){
   int irq, res;
 
-  /* set GPIO_PCMCIA_CD & GPIO_PCMCIA_IRQ as inputs */
-  GPDR &= ~(GPIO_PCMCIA_CD|GPIO_PCMCIA_IRQ);
 #ifndef CONFIG_SA1100_PANGOLIN_PCMCIA_IDE
-  /* set GPIO pins GPIO_PCMCIA_BUS_ON & GPIO_PCMCIA_RESET as output */
-  GPDR |= (GPIO_PCMCIA_BUS_ON|GPIO_PCMCIA_RESET);
   /* Enable PCMCIA bus: */
   GPCR = GPIO_PCMCIA_BUS_ON;
-#else
-  /* set GPIO pin GPIO_PCMCIA_RESET as output */
-  GPDR |= GPIO_PCMCIA_RESET;
 #endif
+
   /* Set transition detect */
   set_GPIO_IRQ_edge( GPIO_PCMCIA_CD, GPIO_BOTH_EDGES );
   set_GPIO_IRQ_edge( GPIO_PCMCIA_IRQ, GPIO_FALLING_EDGE );
@@ -147,11 +141,26 @@ static int pangolin_pcmcia_configure_socket(const struct pcmcia_configure
   return 0;
 }
 
+static int pangolin_pcmcia_socket_init(int sock)
+{
+  /* enable card status IRQs - see sa1100_assabet.c for details  */
+  return -1;
+}
+
+static int pangolin_pcmcia_socket_suspend(int sock)
+{
+  /* disable card status IRQs - see sa1100_assabet.c for details */
+  return -1;
+}
+
 struct pcmcia_low_level pangolin_pcmcia_ops = { 
-  pangolin_pcmcia_init,
-  pangolin_pcmcia_shutdown,
-  pangolin_pcmcia_socket_state,
-  pangolin_pcmcia_get_irq_info,
-  pangolin_pcmcia_configure_socket
+  init:			pangolin_pcmcia_init,
+  shutdown:		pangolin_pcmcia_shutdown,
+  socket_state:		pangolin_pcmcia_socket_state,
+  get_irq_info:		pangolin_pcmcia_get_irq_info,
+  configure_socket:	pangolin_pcmcia_configure_socket,
+
+  socket_init:		pangolin_pcmcia_socket_init,
+  socket_suspend,	pangolin_pcmcia_socket_suspend,
 };
 

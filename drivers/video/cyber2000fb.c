@@ -6,11 +6,14 @@
  *  MIPS and 50xx clock support
  *  Copyright (C) 2001 Bradley D. LaRonde <brad@ltc.com>
  *
+ *  32 bit support, text color and panning fixes for modes != 8 bit
+ *  Copyright (C) 2002 Denis Oliver Kropp <dok@directfb.org>
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Integraphics CyberPro 2000, 2010 and 5000 frame buffer device
+ * Intergraphics CyberPro 2000, 2010 and 5000 frame buffer device
  *
  * Based on cyberfb.c.
  *
@@ -50,6 +53,7 @@
 #include <video/fbcon-cfb8.h>
 #include <video/fbcon-cfb16.h>
 #include <video/fbcon-cfb24.h>
+#include <video/fbcon-cfb32.h>
 
 /*
  * Define this if you don't want RGB565, but RGB555 for 16bpp displays.
@@ -249,6 +253,11 @@ cyber2000_accel_clear(struct vc_data *conp, struct display *p, int sy, int sx,
 		cyber2000fb_writeb(dst, CO_REG_X_PHASE, cfb);
 		bgx = ((u32 *)p->dispsw_data)[bgx];
 		break;
+
+	case 32:
+		bgx = ((u32 *)p->dispsw_data)[bgx];
+		cyber2000fb_writel(dst, CO_REG_DEST_PTR, cfb);
+		break;
 	}
 
 	cyber2000fb_writel(bgx, CO_REG_FOREGROUND, cfb);
@@ -313,12 +322,15 @@ cyber2000_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
 {
 	struct cfb_info *cfb = (struct cfb_info *)info;
 
+	u_int alpha = transp ^ 0xFFFF;
+
 	if (regno >= NR_PALETTE)
 		return 1;
 
 	red   >>= 8;
 	green >>= 8;
 	blue  >>= 8;
+	alpha >>= 8;
 
 	cfb->palette[regno].red   = red;
 	cfb->palette[regno].green = green;
@@ -355,7 +367,9 @@ cyber2000_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
 
 		if (regno < 16)
 			((u16 *)cfb->fb.pseudo_palette)[regno] =
-				regno | regno << 5 | regno << 11;
+				((red   << 8) & 0xf800) |
+				((green << 3) & 0x07e0) |
+				((blue  >> 3));
 		break;
 #endif
 
@@ -368,7 +382,9 @@ cyber2000_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
 		}
 		if (regno < 16)
 			((u16 *)cfb->fb.pseudo_palette)[regno] =
-				regno | regno << 5 | regno << 10;
+				((red   << 7) & 0x7c00) |
+				((green << 2) & 0x03e0) |
+				((blue  >> 3));
 		break;
 
 #endif
@@ -382,7 +398,20 @@ cyber2000_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
 
 		if (regno < 16)
 			((u32 *)cfb->fb.pseudo_palette)[regno] =
-				regno | regno << 8 | regno << 16;
+				(red << 16) | (green << 8) | blue;
+		break;
+#endif
+
+#ifdef FBCON_HAS_CFB32
+	case 32:
+		cyber2000fb_writeb(regno, 0x3c8, cfb);
+		cyber2000fb_writeb(red,   0x3c9, cfb);
+		cyber2000fb_writeb(green, 0x3c9, cfb);
+		cyber2000fb_writeb(blue,  0x3c9, cfb);
+
+		if (regno < 16)
+			((u32 *)cfb->fb.pseudo_palette)[regno] =
+				(alpha << 24) | (red << 16) | (green << 8) | blue;
 		break;
 #endif
 
@@ -522,6 +551,10 @@ cyber2000fb_update_start(struct cfb_info *cfb, struct fb_var_screeninfo *var)
 	u_int base;
 
 	base = var->yoffset * var->xres_virtual + var->xoffset;
+
+	/* have to be careful, because bits_per_pixel might be 15
+	   in this version of the driver -- dok@directfb.org 2002/06/13 */
+	base *= (var->bits_per_pixel + 7) >> 3;
 
 	base >>= 2;
 
@@ -808,6 +841,14 @@ cyber2000fb_decode_var(struct fb_var_screeninfo *var, struct cfb_info *cfb,
 		hw->palette_ctrl	|= 0x10;
 		break;
 #endif
+#ifdef FBCON_HAS_CFB32
+	case 32:/* TRUECOLOUR, 16m */
+		hw->pixformat		= PIXFORMAT_32BPP;
+		hw->visualid		= VISUALID_16M_32;
+		hw->pitch		= hw->width >> 1;
+		hw->palette_ctrl	|= 0x10;
+		break;
+#endif
 	default:
 		return -EINVAL;
 	}
@@ -902,7 +943,6 @@ cyber2000fb_set_var(struct fb_var_screeninfo *var, int con,
 #ifdef FBCON_HAS_CFB16
 	case 16:/* DIRECTCOLOUR, 64k */
 #ifndef CFB16_IS_CFB15
-		var->bits_per_pixel	= 15;
 		var->red.offset		= 11;
 		var->red.length		= 5;
 		var->green.offset	= 5;
@@ -944,6 +984,23 @@ cyber2000fb_set_var(struct fb_var_screeninfo *var, int con,
 		cfb->dispsw		= &fbcon_cfb24;
 		display->dispsw_data	= cfb->fb.pseudo_palette;
 		display->next_line	= var->xres_virtual * 3;
+		break;
+#endif
+#ifdef FBCON_HAS_CFB32
+	case 32:/* TRUECOLOUR, 16m */
+		var->transp.offset	= 24;
+		var->transp.length	= 8;
+		var->red.offset		= 16;
+		var->red.length		= 8;
+		var->green.offset	= 8;
+		var->green.length	= 8;
+		var->blue.offset	= 0;
+		var->blue.length	= 8;
+
+		cfb->fb.fix.visual	= FB_VISUAL_TRUECOLOR;
+		cfb->dispsw		= &fbcon_cfb32;
+		display->dispsw_data	= cfb->fb.pseudo_palette;
+		display->next_line	= var->xres_virtual * 4;
 		break;
 #endif
 	default:/* in theory this should never happen */

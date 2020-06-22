@@ -103,7 +103,6 @@ void ptrace_disable(struct task_struct *child)
 asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
 {
 	struct task_struct *child;
-	unsigned long flags;
 	int ret;
 
 	lock_kernel();

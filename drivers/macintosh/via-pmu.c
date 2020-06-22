@@ -58,7 +58,9 @@
 /* Some compile options */
 #undef SUSPEND_USES_PMU
 #define DEBUG_SLEEP
+#undef VERBOSE_WAKEUP
 #undef HACKED_PCI_SAVE
+#define NEW_OHARE_CODE
 
 /* Misc minor number allocated for /dev/pmu */
 #define PMU_MINOR		154
@@ -150,6 +152,10 @@ static int query_batt_timer = BATTERY_POLLING_COUNT;
 static struct adb_request batt_req;
 static struct proc_dir_entry *proc_pmu_batt[PMU_MAX_BATTERIES];
 #endif /* CONFIG_PMAC_PBOOK */
+
+#if defined(CONFIG_INPUT_ADBHID) && defined(CONFIG_PMAC_BACKLIGHT)
+extern int disable_kernel_backlight;
+#endif /* defined(CONFIG_INPUT_ADBHID) && defined(CONFIG_PMAC_BACKLIGHT) */
 
 int __fake_sleep;
 int asleep;
@@ -544,6 +550,74 @@ pmu_get_model(void)
 /* 
  * WARNING ! This code probably needs some debugging... -- BenH.
  */
+#ifdef NEW_OHARE_CODE
+static void __pmac
+done_battery_state_ohare(struct adb_request* req)
+{
+	unsigned int bat_flags = 0;
+	int current = 0;
+	unsigned int capa, max, voltage, time;
+	int lrange[] = { 0, 275, 850, 1680, 2325, 
+				2765, 3160, 3500, 3830, 4115, 
+				4360, 4585, 4795, 4990, 5170, 
+				5340, 5510, 5710, 5930, 6150, 
+				6370, 6500
+				};
+	
+	if (req->reply[0] & 0x01)
+		pmu_power_flags |= PMU_PWR_AC_PRESENT;
+	else
+		pmu_power_flags &= ~PMU_PWR_AC_PRESENT;
+
+	if (req->reply[0] & 0x04) {
+		int vb, i, j, k, charge, pcharge;
+		bat_flags |= PMU_BATT_PRESENT;
+		vb = (req->reply[1] << 8) | req->reply[2];
+		voltage = ((vb * 2650) + 726650)/100;
+		vb *= 100;
+		current = req->reply[5];
+		if ((req->reply[0] & 0x01) == 0 && (current > 200))
+			vb += (current - 200) * 15;
+		else if (req->reply[0] & 0x02)
+			vb = (vb - 2000);
+	  	i = (33000 - vb) / 10;
+	  	j = i - (i % 100);
+		k = j/100;
+		if (k <= 0)
+	       		charge = 0;
+		else if (k >= 21)
+	       		charge = 650000;
+	  	else
+			charge = (lrange[k + 1] - lrange[k]) * (i - j) + (lrange[k] * 100);
+		charge = (1000 - charge / 650) / 10;
+		if (req->reply[0] & 0x40) {
+			pcharge = (req->reply[6] << 8) + req->reply[7];
+			if (pcharge > 6500)
+				pcharge = 6500;
+			pcharge *= 100;
+			pcharge = (1000 - pcharge / 650) / 10;
+			if (pcharge < charge)
+				charge = pcharge;
+		}
+		capa = charge;
+		max = 100;
+		time = (charge * 16440) / current;
+		current = -current;
+		
+	} else
+		capa = max = current = voltage = time = 0;
+
+	if (req->reply[0] & 0x02)
+		bat_flags |= PMU_BATT_CHARGING;
+
+	pmu_batteries[pmu_cur_battery].flags = bat_flags;
+	pmu_batteries[pmu_cur_battery].charge = capa;
+	pmu_batteries[pmu_cur_battery].max_charge = max;
+	pmu_batteries[pmu_cur_battery].current = current;
+	pmu_batteries[pmu_cur_battery].voltage = voltage;
+	pmu_batteries[pmu_cur_battery].time_remaining = time;
+}
+#else /* NEW_OHARE_CODE */
 static void __pmac
 done_battery_state_ohare(struct adb_request* req)
 {
@@ -605,6 +679,88 @@ done_battery_state_ohare(struct adb_request* req)
 
 	pmu_batteries[pmu_cur_battery].flags = bat_flags;
 	pmu_batteries[pmu_cur_battery].charge = capa;
+	pmu_batteries[pmu_cur_battery].max_charge = max;
+	pmu_batteries[pmu_cur_battery].current = current;
+	pmu_batteries[pmu_cur_battery].voltage = voltage;
+	pmu_batteries[pmu_cur_battery].time_remaining = time;
+}
+#endif /* NEW_OHARE_CODE */
+
+ static void __pmac
+done_battery_state_comet(struct adb_request* req)
+{
+	/* format:
+	 *  [0]    :  flags
+	 *    0x01 :  AC indicator
+	 *    0x02 :  charging
+	 *    0x04 :  battery exist
+	 *    0x08 :  
+	 *    0x10 :  
+	 *    0x20 :  full charged
+	 *    0x40 :  pcharge reset
+	 *    0x80 :  battery exist
+	 *
+	 *  [1][2] :  battery voltage
+	 *  [3]    :  CPU temperature
+	 *  [4]    :  battery temperature
+	 *  [5]    :  current
+	 *  [6][7] :  pcharge
+	 *              --tkoba
+	 */
+
+	unsigned int bat_flags = 0;
+	int current = 0;
+	unsigned int max = 100;
+	unsigned int charge, voltage, time;
+	int lrange[] = { 0, 600, 750, 900, 1000, 1080, 
+				1180, 1250, 1300, 1340, 1360, 
+				1390, 1420, 1440, 1470, 1490, 
+				1520, 1550, 1580, 1610, 1650, 
+				1700
+				};
+	
+	if (req->reply[0] & 0x01)
+		pmu_power_flags |= PMU_PWR_AC_PRESENT;
+	else
+		pmu_power_flags &= ~PMU_PWR_AC_PRESENT;
+
+	if (req->reply[0] & 0x04) {	/* battery exist */
+		int vb, i;
+		bat_flags |= PMU_BATT_PRESENT;
+		vb = (req->reply[1] << 8) | req->reply[2];
+		voltage = ((vb * 2650) + 726650)/100;
+		vb *= 10;
+		current = req->reply[5];
+		if ((req->reply[0] & 0x01) == 0 && (current > 200))
+			vb += ((current - 200) * 3);	/* vb = 500<->1800 */
+		else if (req->reply[0] & 0x02)
+			vb = ((vb - 800) * 1700/13)/100;	/*  in charging vb = 1300<->2130 */
+
+		if (req->reply[0] & 0x20) {	/* full charged */
+			charge = max;
+		} else {
+			if (lrange[21] < vb)
+				charge = max;
+			else {
+				if (vb < lrange[1])
+					charge = 0;
+				else {
+					for (i=21; vb < lrange[i]; --i);
+					charge = (i * 100)/21;
+				}
+			}
+			if (charge > max) charge = max;
+		}
+		time = (charge * 72);
+		current = -current;
+	} else
+		max = current = voltage = time = 0;
+
+	if (req->reply[0] & 0x02)
+		bat_flags |= PMU_BATT_CHARGING;
+
+	pmu_batteries[pmu_cur_battery].flags = bat_flags;
+	pmu_batteries[pmu_cur_battery].charge = charge;
 	pmu_batteries[pmu_cur_battery].max_charge = max;
 	pmu_batteries[pmu_cur_battery].current = current;
 	pmu_batteries[pmu_cur_battery].voltage = voltage;
@@ -691,10 +847,17 @@ query_battery_state(void)
 {
 	if (!batt_req.complete)
 		return;
-	if (pmu_kind == PMU_OHARE_BASED)
-		pmu_request(&batt_req, done_battery_state_ohare,
-			1, PMU_BATTERY_STATE);
-	else
+	if (pmu_kind == PMU_OHARE_BASED) {
+		int mb = pmac_call_feature(PMAC_FTR_GET_MB_INFO,
+			NULL, PMAC_MB_INFO_MODEL, 0);
+
+		if (mb == PMAC_TYPE_COMET)
+			pmu_request(&batt_req, done_battery_state_comet,
+				1, PMU_BATTERY_STATE);
+		else
+			pmu_request(&batt_req, done_battery_state_ohare,
+				1, PMU_BATTERY_STATE);
+	} else
 		pmu_request(&batt_req, done_battery_state_smart,
 			2, PMU_SMART_BATTERY_STATE, pmu_cur_battery+1);
 }
@@ -1372,8 +1535,11 @@ pmu_handle_data(unsigned char *data, int len, struct pt_regs *regs)
 		/* Sound/brightness button pressed */
 		if ((data[0] & PMU_INT_SNDBRT) && len == 3) {
 #ifdef CONFIG_PMAC_BACKLIGHT
-			set_backlight_level(data[1] >> 4);
-#endif
+#ifdef CONFIG_INPUT_ADBHID
+			if (!disable_kernel_backlight)
+#endif /* CONFIG_INPUT_ADBHID */
+				set_backlight_level(data[1] >> 4);
+#endif /* CONFIG_PMAC_BACKLIGHT */
 		}
 #ifdef CONFIG_PMAC_PBOOK
 		/* Environement or tick interrupt, query batteries */
@@ -1588,7 +1754,15 @@ broadcast_wake(void)
 	for (list = sleep_notifiers.next; list != &sleep_notifiers;
 	     list = list->next) {
 		notifier = list_entry(list, struct pmu_sleep_notifier, list);
+#ifdef VERBOSE_WAKEUP
+		if (notifier->priority < SLEEP_LEVEL_VIDEO)
+			xmon_printf("wake, before notifier %x\n", notifier);		
+#endif
 		notifier->notifier_call(notifier, PBOOK_WAKE);
+#ifdef VERBOSE_WAKEUP
+		if (notifier->priority <= SLEEP_LEVEL_VIDEO)
+			xmon_printf("wake, after notifier %x\n", notifier);		
+#endif
 	}
 	return ret;
 }
@@ -1607,28 +1781,48 @@ static struct pci_save {
 	u32	config[16];
 #endif	
 } *pbook_pci_saves;
-static int n_pbook_pci_saves;
+static int pbook_npci_saves;
 
 static void __openfirmware
-pbook_pci_save(void)
+pbook_alloc_pci_save(void)
 {
 	int npci;
 	struct pci_dev *pd;
-	struct pci_save *ps;
 
 	npci = 0;
 	pci_for_each_dev(pd) {
 		++npci;
 	}
-	n_pbook_pci_saves = npci;
 	if (npci == 0)
 		return;
-	ps = (struct pci_save *) kmalloc(npci * sizeof(*ps), GFP_KERNEL);
-	pbook_pci_saves = ps;
+	pbook_pci_saves = (struct pci_save *)
+		kmalloc(npci * sizeof(struct pci_save), GFP_KERNEL);
+	pbook_npci_saves = npci;
+}
+
+static void __openfirmware
+pbook_free_pci_save(void)
+{
+	if (pbook_pci_saves == NULL)
+		return;
+	kfree(pbook_pci_saves);
+	pbook_pci_saves = NULL;
+	pbook_npci_saves = 0;
+}
+
+static void __openfirmware
+pbook_pci_save(void)
+{
+	struct pci_save *ps = pbook_pci_saves;
+	struct pci_dev *pd;
+	int npci = pbook_npci_saves;
+	
 	if (ps == NULL)
 		return;
 
 	pci_for_each_dev(pd) {
+		if (npci-- == 0)
+			return;
 #ifndef HACKED_PCI_SAVE
 		pci_read_config_word(pd, PCI_COMMAND, &ps->command);
 		pci_read_config_word(pd, PCI_CACHE_LINE_SIZE, &ps->cache_lat);
@@ -1653,16 +1847,22 @@ pbook_pci_restore(void)
 	u16 cmd;
 	struct pci_save *ps = pbook_pci_saves - 1;
 	struct pci_dev *pd;
+	int npci = pbook_npci_saves;
 	int j;
 
 	pci_for_each_dev(pd) {
 #ifdef HACKED_PCI_SAVE
 		int i;
+		if (npci-- == 0)
+			return;
 		ps++;
 		for (i=2;i<16;i++)
 			pci_write_config_dword(pd, i<<4, ps->config[i]);
 		pci_write_config_dword(pd, 4, ps->config[1]);
 #else
+		if (npci-- == 0)
+			return;
+		ps++;
 		if (ps->command == 0)
 			continue;
 		pci_read_config_word(pd, PCI_COMMAND, &cmd);
@@ -2115,9 +2315,13 @@ int __openfirmware powerbook_sleep_3400(void)
 	}
 	mem_ctrl_sleep = (unsigned int *) (mem_ctrl + PB3400_MEM_CTRL_SLEEP);
 
+	/* Allocate room for PCI save */
+	pbook_alloc_pci_save();
+
 	/* Notify device drivers */
 	ret = broadcast_sleep(PBOOK_SLEEP_REQUEST, PBOOK_SLEEP_REJECT);
 	if (ret != PBOOK_SLEEP_OK) {
+		pbook_free_pci_save();
 		printk("pmu: sleep rejected\n");
 		return -EBUSY;
 	}
@@ -2138,6 +2342,7 @@ int __openfirmware powerbook_sleep_3400(void)
 	ret = broadcast_sleep(PBOOK_SLEEP_NOW, PBOOK_WAKE);
 	if (ret != PBOOK_SLEEP_OK) {
 		printk("pmu: sleep failed\n");
+		pbook_free_pci_save();
 		return -EBUSY;
 	}
 
@@ -2211,6 +2416,7 @@ int __openfirmware powerbook_sleep_3400(void)
 	/* Notify drivers */
 	broadcast_wake();
 
+	pbook_free_pci_save();
 	iounmap(mem_ctrl);
 	return 0;
 }
@@ -2229,6 +2435,9 @@ struct pmu_private {
 	}	rb_buf[RB_SIZE];
 	wait_queue_head_t wait;
 	spinlock_t lock;
+#if defined(CONFIG_INPUT_ADBHID) && defined(CONFIG_PMAC_BACKLIGHT)
+	int	backlight_locker;
+#endif /* defined(CONFIG_INPUT_ADBHID) && defined(CONFIG_PMAC_BACKLIGHT) */	
 };
 
 static LIST_HEAD(all_pmu_pvt);
@@ -2274,9 +2483,13 @@ static int __openfirmware pmu_open(struct inode *inode, struct file *file)
 	spin_lock_init(&pp->lock);
 	init_waitqueue_head(&pp->wait);
 	spin_lock_irqsave(&all_pvt_lock, flags);
+#if defined(CONFIG_INPUT_ADBHID) && defined(CONFIG_PMAC_BACKLIGHT)
+	pp->backlight_locker = 0;
+#endif /* defined(CONFIG_INPUT_ADBHID) && defined(CONFIG_PMAC_BACKLIGHT) */	
 	list_add(&pp->list, &all_pmu_pvt);
 	spin_unlock_irqrestore(&all_pvt_lock, flags);
 	file->private_data = pp;
+	
 	return 0;
 }
 
@@ -2365,6 +2578,13 @@ static int pmu_release(struct inode *inode, struct file *file)
 		spin_lock_irqsave(&all_pvt_lock, flags);
 		list_del(&pp->list);
 		spin_unlock_irqrestore(&all_pvt_lock, flags);
+#if defined(CONFIG_INPUT_ADBHID) && defined(CONFIG_PMAC_BACKLIGHT)
+		if (pp->backlight_locker) {
+			spin_lock_irqsave(&pmu_lock, flags);
+			disable_kernel_backlight--;
+			spin_unlock_irqrestore(&pmu_lock, flags);
+		}
+#endif /* defined(CONFIG_INPUT_ADBHID) && defined(CONFIG_PMAC_BACKLIGHT) */
 		kfree(pp);
 	}
 	unlock_kernel();
@@ -2375,6 +2595,7 @@ static int pmu_release(struct inode *inode, struct file *file)
 static int pmu_ioctl(struct inode * inode, struct file *filp,
 		     u_int cmd, u_long arg)
 {
+	struct pmu_private *pp = filp->private_data;
 	int error;
 
 	switch (cmd) {
@@ -2424,6 +2645,18 @@ static int pmu_ioctl(struct inode * inode, struct file *filp,
 			error = set_backlight_level(value);
 		return error;
 	}
+#ifdef CONFIG_INPUT_ADBHID
+	case PMU_IOC_GRAB_BACKLIGHT: {
+		unsigned long flags;
+		if (pp->backlight_locker)
+			return 0;
+		pp->backlight_locker = 1;
+		spin_lock_irqsave(&pmu_lock, flags);
+		disable_kernel_backlight++;
+		spin_unlock_irqrestore(&pmu_lock, flags);
+		return 0;
+	}
+#endif /* CONFIG_INPUT_ADBHID */
 #endif /* CONFIG_PMAC_BACKLIGHT */
 	case PMU_IOC_GET_MODEL:
 	    	return put_user(pmu_kind, (__u32 *)arg);

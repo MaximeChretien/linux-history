@@ -155,6 +155,8 @@ CD_sizeof	= CD_Unused+(4*4)
 #include <linux/init.h>
 #include <linux/ioport.h>
 
+#include <asm/zorro.h>
+
 struct zorro_dev {
     struct ExpansionRom rom;
     zorro_id id;

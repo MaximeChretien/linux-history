@@ -8,20 +8,10 @@
 # Tom Rini	January 2001
 #
 
-.c.s:
-	$(CC) $(CFLAGS) -S -o $*.s $<
-.s.o:
-	$(AS) -o $*.o $<
-.c.o:
-	$(CC) $(CFLAGS) -c -o $*.o $<
-.S.s:
-	$(CPP) $(AFLAGS) -traditional -o $*.o $<
-.S.o:
-	$(CC) $(AFLAGS) -traditional -c -o $*.o $<
-
-OBJCOPY_ARGS = -O elf32-powerpc
+USE_STANDARD_AS_RULE	:= true
 
 coffcrt0.o:
-	$(CC) $(AFLAGS) -DXCOFF -traditional -c -o coffcrt0.o crt0.S
+	$(CC) -I$(TOPDIR)/arch/$(ARCH)/kernel $(AFLAGS) -DXCOFF \
+		-traditional -c -o coffcrt0.o crt0.S
 
 include $(TOPDIR)/Rules.make

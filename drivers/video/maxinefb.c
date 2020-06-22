@@ -79,7 +79,7 @@ struct maxinefb_par {
 };
 
 static int currcon = 0;
-struct maxinefb_par current_par;
+static struct maxinefb_par current_par;
 
 /* Reference to machine type set in arch/mips/dec/prom/identify.c, KM */
 extern unsigned long mips_machtype;
@@ -301,7 +301,7 @@ static void maxinefb_set_disp(int con)
 	display->next_line = fix.line_length;
 	display->can_soft_blank = 0;
 	display->inverse = 0;
-
+	display->scrollmode = SCROLL_YREDRAW;
 	display->dispsw = &fbcon_cfb8;
 }
 

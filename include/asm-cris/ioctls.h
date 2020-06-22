@@ -70,6 +70,11 @@
 #define TIOCGHAYESESP   0x545E  /* Get Hayes ESP configuration */
 #define TIOCSHAYESESP   0x545F  /* Set Hayes ESP configuration */
 
+#define TIOCSERSETRS485 0x5460  /* enable rs-485 */
+#define TIOCSERWRRS485  0x5461  /* write rs-485 */
+
+
+
 /* Used for packet mode */
 #define TIOCPKT_DATA		 0
 #define TIOCPKT_FLUSHREAD	 1

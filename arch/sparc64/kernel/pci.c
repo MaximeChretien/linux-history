@@ -1,4 +1,4 @@
-/* $Id: pci.c,v 1.36 2001/10/06 00:38:25 davem Exp $
+/* $Id: pci.c,v 1.36.2.4 2002/02/10 15:06:48 ecd Exp $
  * pci.c: UltraSparc PCI controller support.
  *
  * Copyright (C) 1997, 1998, 1999 David S. Miller (davem@redhat.com)
@@ -234,33 +234,63 @@ int pci_claim_resource(struct pci_dev *pdev, int resource)
 	return request_resource(root, res);
 }
 
+/*
+ * Given the PCI bus a device resides on, try to
+ * find an acceptable resource allocation for a
+ * specific device resource..
+ */
+static int pci_assign_bus_resource(const struct pci_bus *bus,
+	struct pci_dev *dev,
+	struct resource *res,
+	unsigned long size,
+	unsigned long min,
+	int resno)
+{
+	unsigned int type_mask;
+	int i;
+
+	type_mask = IORESOURCE_IO | IORESOURCE_MEM;
+	for (i = 0 ; i < 4; i++) {
+		struct resource *r = bus->resource[i];
+		if (!r)
+			continue;
+
+		/* type_mask must match */
+		if ((res->flags ^ r->flags) & type_mask)
+			continue;
+
+		/* Ok, try it out.. */
+		if (allocate_resource(r, res, size, min, -1, size, NULL, NULL) < 0)
+			continue;
+
+		/* PCI config space updated by caller.  */
+		return 0;
+	}
+	return -EBUSY;
+}
+
 int pci_assign_resource(struct pci_dev *pdev, int resource)
 {
 	struct pcidev_cookie *pcp = pdev->sysdata;
 	struct pci_pbm_info *pbm = pcp->pbm;
 	struct resource *res = &pdev->resource[resource];
-	struct resource *root;
-	unsigned long min, max, size, align;
+	unsigned long min, size;
 	int err;
 
-	if (res->flags & IORESOURCE_IO) {
-		root = &pbm->io_space;
-		min = root->start + 0x400UL;
-		max = root->end;
-	} else {
-		root = &pbm->mem_space;
-		min = root->start;
-		max = min + 0x80000000UL;
-	}
+	if (res->flags & IORESOURCE_IO)
+		min = pbm->io_space.start + 0x400UL;
+	else
+		min = pbm->mem_space.start;
 
-	size = res->end - res->start;
-	align = size + 1;
+	size = res->end - res->start + 1;
 
-	err = allocate_resource(root, res, size + 1, min, max, align, NULL, NULL);
+	err = pci_assign_bus_resource(pdev->bus, pdev, res, size, min, resource);
+
 	if (err < 0) {
 		printk("PCI: Failed to allocate resource %d for %s\n",
 		       resource, pdev->name);
 	} else {
+		/* Update PCI config space. */
 		pbm->parent->base_address_update(pdev, resource);
 	}
 
@@ -418,7 +448,7 @@ static int __pci_mmap_make_offset(struct pci_dev *dev, struct vm_area_struct *vm
 				  enum pci_mmap_state mmap_state)
 {
 	unsigned long user_offset = vma->vm_pgoff << PAGE_SHIFT;
-	unsigned long user32 = user_offset & 0xffffffffUL;
+	unsigned long user32 = user_offset & pci_memspace_mask;
 	unsigned long largest_base, this_base, addr32;
 	int i;
 
@@ -448,7 +478,7 @@ static int __pci_mmap_make_offset(struct pci_dev *dev, struct vm_area_struct *vm
 
 		this_base = rp->start;
 
-		addr32 = (this_base & PAGE_MASK) & 0xffffffffUL;
+		addr32 = (this_base & PAGE_MASK) & pci_memspace_mask;
 
 		if (mmap_state == pci_mmap_io)
 			addr32 &= 0xffffff;
@@ -464,7 +494,7 @@ static int __pci_mmap_make_offset(struct pci_dev *dev, struct vm_area_struct *vm
 	if (mmap_state == pci_mmap_io)
 		vma->vm_pgoff = (((largest_base & ~0xffffffUL) | user32) >> PAGE_SHIFT);
 	else
-		vma->vm_pgoff = (((largest_base & ~0xffffffffUL) | user32) >> PAGE_SHIFT);
+		vma->vm_pgoff = (((largest_base & ~(pci_memspace_mask)) | user32) >> PAGE_SHIFT);
 
 	return 0;
 }

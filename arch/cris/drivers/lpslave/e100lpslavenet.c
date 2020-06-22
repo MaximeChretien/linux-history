@@ -1,4 +1,4 @@
-/* $Id: e100lpslavenet.c,v 1.4 2001/06/21 16:55:26 olof Exp $
+/* $Id: e100lpslavenet.c,v 1.5 2002/04/22 11:47:24 johana Exp $
  *
  * e100lpslavenet.c: A network driver for the ETRAX 100LX slave controller.
  *
@@ -7,6 +7,12 @@
  * The outline of this driver comes from skeleton.c.
  *
  * $Log: e100lpslavenet.c,v $
+ * Revision 1.5  2002/04/22 11:47:24  johana
+ * Fix according to 2.4.19-pre7. time_after/time_before and
+ * missing end of comment.
+ * The patch has a typo for ethernet.c in e100_clear_network_leds(),
+ *  that is fixed here.
+ *
  * Revision 1.4  2001/06/21 16:55:26  olof
  * Minimized par port setup time to gain bandwidth
  *
@@ -310,7 +316,7 @@ e100_open(struct net_device *dev)
 		IO_STATE(R_PAR0_CONFIG, iautofd, noninv)    |
           /* Not used in reverse direction, don't care */
 		IO_STATE(R_PAR0_CONFIG, istrb,   noninv)    |
-          /* Not connected, don't care /
+          /* Not connected, don't care */
 		IO_STATE(R_PAR0_CONFIG, iinit,   noninv)    |
           /* perror is GND and reverse wants 0, noninv */
 		IO_STATE(R_PAR0_CONFIG, iperr,   noninv)    |

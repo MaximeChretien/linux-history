@@ -80,8 +80,9 @@ __get_user_8:
 
 	/* fall through */
 
-__get_user_bad:
+__get_user_bad_8:
 	mov	r2, #0
+__get_user_bad:
 	mov	r1, #0
 	mov	r0, #-14
 	mov	pc, lr
@@ -91,6 +92,6 @@ __get_user_bad:
 	.long	2b, __get_user_bad
 	.long	3b, __get_user_bad
 	.long	4b, __get_user_bad
-	.long	5b, __get_user_bad
-	.long	6b, __get_user_bad
+	.long	5b, __get_user_bad_8
+	.long	6b, __get_user_bad_8
 .previous

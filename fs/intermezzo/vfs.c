@@ -1969,8 +1969,8 @@ int lento_iopen(const char *name, ino_t ino, unsigned int generation,
          * just turn off the flag and ignore it.
          */
         if (flags & O_CREAT) {
-                printk(KERN_WARNING __FUNCTION__
-                       ": create file by inode number (%ld) not allowed\n",ino);
+                printk(KERN_WARNING "%s: create file by inode number (%ld) not allowed\n",
+                	__FUNCTION__, ino);
                 EXIT;
                 return -EACCES;
         }

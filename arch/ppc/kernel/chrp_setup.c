@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.chrp_setup.c 1.40 12/19/01 09:45:54 trini
+ * BK Id: SCCS/s.chrp_setup.c 1.42 04/09/02 21:43:09 paulus
  */
 /*
  *  linux/arch/ppc/kernel/setup.c
@@ -374,7 +374,7 @@ void __init chrp_init_IRQ(void)
 	openpic_init(1, NUM_8259_INTERRUPTS, chrp_int_ack_special, nmi_irq);
 	for ( i = 0 ; i < NUM_8259_INTERRUPTS  ; i++ )
 		irq_desc[i].handler = &i8259_pic;
-	i8259_init(NULL);
+	i8259_init(0);
 #if defined(CONFIG_VT) && defined(CONFIG_ADB_KEYBOARD) && defined(XMON)
 	/* see if there is a keyboard in the device tree
 	   with a parent of type "adb" */

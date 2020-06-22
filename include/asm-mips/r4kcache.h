@@ -3,8 +3,6 @@
  *
  * Copyright (C) 1996 David S. Miller (dm@engr.sgi.com)
  *
- * $Id: r4kcache.h,v 1.7 1997/12/18 13:00:45 ralf Exp $
- *
  * FIXME: Handle split L2 caches.
  */
 #ifndef _MIPS_R4KCACHE_H
@@ -13,7 +11,7 @@
 #include <asm/asm.h>
 #include <asm/cacheops.h>
 
-extern inline void flush_icache_line_indexed(unsigned long addr)
+static inline void flush_icache_line_indexed(unsigned long addr)
 {
 	__asm__ __volatile__(
 		".set noreorder\n\t"
@@ -26,7 +24,7 @@ extern inline void flush_icache_line_indexed(unsigned long addr)
 		  "i" (Index_Invalidate_I));
 }
 
-extern inline void flush_dcache_line_indexed(unsigned long addr)
+static inline void flush_dcache_line_indexed(unsigned long addr)
 {
 	__asm__ __volatile__(
 		".set noreorder\n\t"
@@ -39,7 +37,7 @@ extern inline void flush_dcache_line_indexed(unsigned long addr)
 		  "i" (Index_Writeback_Inv_D));
 }
 
-extern inline void flush_scache_line_indexed(unsigned long addr)
+static inline void flush_scache_line_indexed(unsigned long addr)
 {
 	__asm__ __volatile__(
 		".set noreorder\n\t"
@@ -52,7 +50,7 @@ extern inline void flush_scache_line_indexed(unsigned long addr)
 		  "i" (Index_Writeback_Inv_SD));
 }
 
-extern inline void flush_icache_line(unsigned long addr)
+static inline void flush_icache_line(unsigned long addr)
 {
 	__asm__ __volatile__(
 		".set noreorder\n\t"
@@ -65,7 +63,7 @@ extern inline void flush_icache_line(unsigned long addr)
 		  "i" (Hit_Invalidate_I));
 }
 
-extern inline void flush_dcache_line(unsigned long addr)
+static inline void flush_dcache_line(unsigned long addr)
 {
 	__asm__ __volatile__(
 		".set noreorder\n\t"
@@ -78,7 +76,7 @@ extern inline void flush_dcache_line(unsigned long addr)
 		  "i" (Hit_Writeback_Inv_D));
 }
 
-extern inline void invalidate_dcache_line(unsigned long addr)
+static inline void invalidate_dcache_line(unsigned long addr)
 {
 	__asm__ __volatile__(
 		".set noreorder\n\t"
@@ -91,7 +89,7 @@ extern inline void invalidate_dcache_line(unsigned long addr)
 		  "i" (Hit_Invalidate_D));
 }
 
-extern inline void invalidate_scache_line(unsigned long addr)
+static inline void invalidate_scache_line(unsigned long addr)
 {
 	__asm__ __volatile__(
 		".set noreorder\n\t"
@@ -104,7 +102,7 @@ extern inline void invalidate_scache_line(unsigned long addr)
 		  "i" (Hit_Invalidate_SD));
 }
 
-extern inline void flush_scache_line(unsigned long addr)
+static inline void flush_scache_line(unsigned long addr)
 {
 	__asm__ __volatile__(
 		".set noreorder\n\t"
@@ -120,7 +118,7 @@ extern inline void flush_scache_line(unsigned long addr)
 /*
  * The next two are for badland addresses like signal trampolines.
  */
-extern inline void protected_flush_icache_line(unsigned long addr)
+static inline void protected_flush_icache_line(unsigned long addr)
 {
 	__asm__ __volatile__(
 		".set noreorder\n\t"
@@ -136,7 +134,7 @@ extern inline void protected_flush_icache_line(unsigned long addr)
 		  "i" (Hit_Invalidate_I));
 }
 
-extern inline void protected_writeback_dcache_line(unsigned long addr)
+static inline void protected_writeback_dcache_line(unsigned long addr)
 {
 	__asm__ __volatile__(
 		".set noreorder\n\t"
@@ -178,7 +176,7 @@ extern inline void protected_writeback_dcache_line(unsigned long addr)
 		: "r" (base),					\
 		  "i" (op));
 
-extern inline void blast_dcache16(void)
+static inline void blast_dcache16(void)
 {
 	unsigned long start = KSEG0;
 	unsigned long end = (start + dcache_size);
@@ -189,7 +187,21 @@ extern inline void blast_dcache16(void)
 	}
 }
 
-extern inline void blast_dcache16_page(unsigned long page)
+static inline void blast_dcache16_wayLSB(void)
+{
+	unsigned long start = KSEG0;
+	unsigned long end = (start + mips_cpu.dcache.sets * mips_cpu.dcache.linesz);
+	int way;
+
+	while(start < end) {
+		/* LSB of VA select the way */
+		for (way = 0; way < mips_cpu.dcache.ways; way++)
+			cache16_unroll32(start|way,Index_Writeback_Inv_D);
+		start += 0x200;
+	}
+}
+
+static inline void blast_dcache16_page(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = (start + PAGE_SIZE);
@@ -200,7 +212,7 @@ extern inline void blast_dcache16_page(unsigned long page)
 	}
 }
 
-extern inline void blast_dcache16_page_indexed(unsigned long page)
+static inline void blast_dcache16_page_indexed(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = (start + PAGE_SIZE);
@@ -211,7 +223,21 @@ extern inline void blast_dcache16_page_indexed(unsigned long page)
 	}
 }
 
-extern inline void blast_icache16(void)
+static inline void blast_dcache16_page_indexed_wayLSB(unsigned long page)
+{
+	unsigned long start = page;
+	unsigned long end = (start + PAGE_SIZE);
+	int way;
+
+	while(start < end) {
+		/* LSB of VA select the way */
+		for (way = 0; way < mips_cpu.dcache.ways; way++)
+			cache16_unroll32(start|way,Index_Writeback_Inv_D);
+		start += 0x200;
+	}
+}
+
+static inline void blast_icache16(void)
 {
 	unsigned long start = KSEG0;
 	unsigned long end = (start + icache_size);
@@ -222,7 +248,21 @@ extern inline void blast_icache16(void)
 	}
 }
 
-extern inline void blast_icache16_page(unsigned long page)
+static inline void blast_icache16_wayLSB(void)
+{
+	unsigned long start = KSEG0;
+	unsigned long end = (start + mips_cpu.icache.sets * mips_cpu.icache.linesz);
+	int way;
+
+	while(start < end) {
+		/* LSB of VA select the way */
+		for (way = 0; way < mips_cpu.icache.ways; way++)
+			cache16_unroll32(start|way,Index_Invalidate_I);
+		start += 0x200;
+	}
+}
+
+static inline void blast_icache16_page(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = (start + PAGE_SIZE);
@@ -233,7 +273,7 @@ extern inline void blast_icache16_page(unsigned long page)
 	}
 }
 
-extern inline void blast_icache16_page_indexed(unsigned long page)
+static inline void blast_icache16_page_indexed(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = (start + PAGE_SIZE);
@@ -244,7 +284,7 @@ extern inline void blast_icache16_page_indexed(unsigned long page)
 	}
 }
 
-extern inline void blast_scache16(void)
+static inline void blast_scache16(void)
 {
 	unsigned long start = KSEG0;
 	unsigned long end = KSEG0 + scache_size;
@@ -255,7 +295,7 @@ extern inline void blast_scache16(void)
 	}
 }
 
-extern inline void blast_scache16_page(unsigned long page)
+static inline void blast_scache16_page(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = page + PAGE_SIZE;
@@ -266,7 +306,7 @@ extern inline void blast_scache16_page(unsigned long page)
 	}
 }
 
-extern inline void blast_scache16_page_indexed(unsigned long page)
+static inline void blast_scache16_page_indexed(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = page + PAGE_SIZE;
@@ -303,13 +343,27 @@ extern inline void blast_scache16_page_indexed(unsigned long page)
 		: "r" (base),					\
 		  "i" (op));
 
-extern inline void blast_dcache32(void)
+static inline void blast_dcache32(void)
 {
 	unsigned long start = KSEG0;
 	unsigned long end = (start + dcache_size);
 
 	while(start < end) {
 		cache32_unroll32(start,Index_Writeback_Inv_D);
+		start += 0x400;
+	}
+}
+
+static inline void blast_dcache32_wayLSB(void)
+{
+	unsigned long start = KSEG0;
+	unsigned long end = (start + mips_cpu.dcache.sets * mips_cpu.dcache.linesz);
+	int way;
+
+	while(start < end) {
+		/* LSB of VA select the way */
+		for (way = 0; way < mips_cpu.dcache.ways; way++)
+			cache32_unroll32(start|way,Index_Writeback_Inv_D);
 		start += 0x400;
 	}
 }
@@ -326,7 +380,7 @@ extern inline void blast_dcache32(void)
  * (Revision 2.0 device errata from IDT available on http://www.idt.com/
  * in .pdf format.)
  */
-extern inline void blast_dcache32_page(unsigned long page)
+static inline void blast_dcache32_page(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = (start + PAGE_SIZE);
@@ -343,7 +397,7 @@ extern inline void blast_dcache32_page(unsigned long page)
 	}
 }
 
-extern inline void blast_dcache32_page_indexed(unsigned long page)
+static inline void blast_dcache32_page_indexed(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = (start + PAGE_SIZE);
@@ -354,7 +408,21 @@ extern inline void blast_dcache32_page_indexed(unsigned long page)
 	}
 }
 
-extern inline void blast_icache32(void)
+static inline void blast_dcache32_page_indexed_wayLSB(unsigned long page)
+{
+	unsigned long start = page;
+	unsigned long end = (start + PAGE_SIZE);
+	int way;
+
+	while(start < end) {
+		/* LSB of VA select the way */
+		for (way = 0; way < mips_cpu.dcache.ways; way++)
+			cache32_unroll32(start|way,Index_Writeback_Inv_D);
+		start += 0x400;
+	}
+}
+
+static inline void blast_icache32(void)
 {
 	unsigned long start = KSEG0;
 	unsigned long end = (start + icache_size);
@@ -365,7 +433,21 @@ extern inline void blast_icache32(void)
 	}
 }
 
-extern inline void blast_icache32_page(unsigned long page)
+static inline void blast_icache32_wayLSB(void)
+{
+	unsigned long start = KSEG0;
+	unsigned long end = (start + mips_cpu.icache.sets * mips_cpu.icache.linesz);
+	int way;
+
+	while(start < end) {
+		/* LSB of VA select the way */
+		for (way = 0; way < mips_cpu.icache.ways; way++)
+			cache32_unroll32(start|way,Index_Invalidate_I);
+		start += 0x400;
+	}
+}
+
+static inline void blast_icache32_page(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = (start + PAGE_SIZE);
@@ -376,7 +458,7 @@ extern inline void blast_icache32_page(unsigned long page)
 	}
 }
 
-extern inline void blast_icache32_page_indexed(unsigned long page)
+static inline void blast_icache32_page_indexed(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = (start + PAGE_SIZE);
@@ -387,7 +469,7 @@ extern inline void blast_icache32_page_indexed(unsigned long page)
 	}
 }
 
-extern inline void blast_scache32(void)
+static inline void blast_scache32(void)
 {
 	unsigned long start = KSEG0;
 	unsigned long end = KSEG0 + scache_size;
@@ -398,7 +480,7 @@ extern inline void blast_scache32(void)
 	}
 }
 
-extern inline void blast_scache32_page(unsigned long page)
+static inline void blast_scache32_page(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = page + PAGE_SIZE;
@@ -409,7 +491,7 @@ extern inline void blast_scache32_page(unsigned long page)
 	}
 }
 
-extern inline void blast_scache32_page_indexed(unsigned long page)
+static inline void blast_scache32_page_indexed(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = page + PAGE_SIZE;
@@ -446,7 +528,7 @@ extern inline void blast_scache32_page_indexed(unsigned long page)
 		: "r" (base),					\
 		  "i" (op));
 
-extern inline void blast_scache64(void)
+static inline void blast_scache64(void)
 {
 	unsigned long start = KSEG0;
 	unsigned long end = KSEG0 + scache_size;
@@ -457,7 +539,7 @@ extern inline void blast_scache64(void)
 	}
 }
 
-extern inline void blast_scache64_page(unsigned long page)
+static inline void blast_scache64_page(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = page + PAGE_SIZE;
@@ -468,7 +550,7 @@ extern inline void blast_scache64_page(unsigned long page)
 	}
 }
 
-extern inline void blast_scache64_page_indexed(unsigned long page)
+static inline void blast_scache64_page_indexed(unsigned long page)
 {
 	unsigned long start = page;
 	unsigned long end = page + PAGE_SIZE;
@@ -505,7 +587,7 @@ extern inline void blast_scache64_page_indexed(unsigned long page)
 		: "r" (base),					\
 		  "i" (op));
 
-extern inline void blast_scache128(void)
+static inline void blast_scache128(void)
 {
 	unsigned long start = KSEG0;
 	unsigned long end = KSEG0 + scache_size;
@@ -516,12 +598,12 @@ extern inline void blast_scache128(void)
 	}
 }
 
-extern inline void blast_scache128_page(unsigned long page)
+static inline void blast_scache128_page(unsigned long page)
 {
 	cache128_unroll32(page,Hit_Writeback_Inv_SD);
 }
 
-extern inline void blast_scache128_page_indexed(unsigned long page)
+static inline void blast_scache128_page_indexed(unsigned long page)
 {
 	cache128_unroll32(page,Index_Writeback_Inv_SD);
 }

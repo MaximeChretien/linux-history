@@ -21,6 +21,7 @@ Currently, these files are in /proc/sys/vm:
 - buffermem
 - freepages
 - kswapd
+- max_map_count
 - overcommit_memory
 - page-cluster
 - pagecache
@@ -167,6 +168,19 @@ programs that malloc() huge amounts of memory "just-in-case"
 and don't use much of it.
 
 Look at: mm/mmap.c::vm_enough_memory() for more information.
+
+==============================================================
+
+max_map_count:
+
+This file contains the maximum number of memory map areas a
+process may have. Memory map areas are used as a side-effect
+of calling malloc, directly by mmap and mprotect, and also
+when loading shared libraries.
+
+While most applications need less than a thousand maps,
+certain programs, particularly malloc debuggers, may consume 
+lots of them, e.g. up to one or two maps per allocation.
 
 ==============================================================
 

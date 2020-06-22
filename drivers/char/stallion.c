@@ -188,14 +188,6 @@ static stlport_t	stl_dummyport;
  */
 static char		stl_unwanted[SC26198_RXFIFOSIZE];
 
-/*
- *	Keep track of what interrupts we have requested for us.
- *	We don't need to request an interrupt twice if it is being
- *	shared with another Stallion board.
- */
-static int	stl_gotintrs[STL_MAXBRDS];
-static int	stl_numintrs;
-
 /*****************************************************************************/
 
 static stlbrd_t		*stl_brds[STL_MAXBRDS];
@@ -520,7 +512,6 @@ static int	stl_readproc(char *page, char **start, off_t off, int count, int *eof
 
 static int	stl_brdinit(stlbrd_t *brdp);
 static int	stl_initports(stlbrd_t *brdp, stlpanel_t *panelp);
-static int	stl_mapirq(int irq, char *name);
 static void	stl_getserial(stlport_t *portp, struct serial_struct *sp);
 static int	stl_setserial(stlport_t *portp, struct serial_struct *sp);
 static int	stl_getbrdstats(combrd_t *bp);
@@ -836,6 +827,7 @@ void cleanup_module()
 			}
 			kfree(panelp);
 		}
+		free_irq(brdp->irq, brdp);
 
 		release_region(brdp->ioaddr1, brdp->iosize1);
 		if (brdp->iosize2 > 0)
@@ -844,10 +836,6 @@ void cleanup_module()
 		kfree(brdp);
 		stl_brds[i] = (stlbrd_t *) NULL;
 	}
-
-	for (i = 0; (i < stl_numintrs); i++)
-		free_irq(stl_gotintrs[i], NULL);
-
 	restore_flags(flags);
 }
 
@@ -1553,7 +1541,8 @@ static int stl_setserial(stlport_t *portp, struct serial_struct *sp)
 	printk("stl_setserial(portp=%x,sp=%x)\n", (int) portp, (int) sp);
 #endif
 
-	copy_from_user(&sio, sp, sizeof(struct serial_struct));
+	if (copy_from_user(&sio, sp, sizeof(struct serial_struct)))
+		return -EFAULT;
 	if (!capable(CAP_SYS_ADMIN)) {
 		if ((sio.baud_base != portp->baud_base) ||
 		    (sio.close_delay != portp->close_delay) ||
@@ -2083,19 +2072,12 @@ stl_readdone:
 static void stl_intr(int irq, void *dev_id, struct pt_regs *regs)
 {
 	stlbrd_t	*brdp;
-	int		i;
 
 #if DEBUG
 	printk("stl_intr(irq=%d,regs=%x)\n", irq, (int) regs);
 #endif
-
-	for (i = 0; (i < stl_nrbrds); i++) {
-		if ((brdp = stl_brds[i]) == (stlbrd_t *) NULL)
-			continue;
-		if (brdp->state == 0)
-			continue;
-		(* brdp->isr)(brdp);
-	}
+	brdp = (stlbrd_t *) dev_id;
+	(* brdp->isr)(brdp);
 }
 
 /*****************************************************************************/
@@ -2265,39 +2247,6 @@ static void stl_offintr(void *private)
 	unlock_kernel();
 out:
 	MOD_DEC_USE_COUNT;
-}
-
-/*****************************************************************************/
-
-/*
- *	Map in interrupt vector to this driver. Check that we don't
- *	already have this vector mapped, we might be sharing this
- *	interrupt across multiple boards.
- */
-
-static int __init stl_mapirq(int irq, char *name)
-{
-	int	rc, i;
-
-#if DEBUG
-	printk("stl_mapirq(irq=%d,name=%s)\n", irq, name);
-#endif
-
-	rc = 0;
-	for (i = 0; (i < stl_numintrs); i++) {
-		if (stl_gotintrs[i] == irq)
-			break;
-	}
-	if (i >= stl_numintrs) {
-		if (request_irq(irq, stl_intr, SA_SHIRQ, name, NULL) != 0) {
-			printk("STALLION: failed to register interrupt "
-				"routine for %s irq=%d\n", name, irq);
-			rc = -ENODEV;
-		} else {
-			stl_gotintrs[stl_numintrs++] = irq;
-		}
-	}
-	return(rc);
 }
 
 /*****************************************************************************/
@@ -2484,7 +2433,12 @@ static inline int stl_initeio(stlbrd_t *brdp)
 	brdp->nrpanels = 1;
 	brdp->state |= BRD_FOUND;
 	brdp->hwid = status;
-	rc = stl_mapirq(brdp->irq, name);
+	if (request_irq(brdp->irq, stl_intr, SA_SHIRQ, name, brdp) != 0) {
+		printk("STALLION: failed to register interrupt "
+		       "routine for %s irq=%d\n", name, brdp->irq);
+		rc = -ENODEV;
+	}
+
 	return(rc);
 }
 
@@ -2684,7 +2638,12 @@ static int inline stl_initech(stlbrd_t *brdp)
 		outb((brdp->ioctrlval | ECH_BRDDISABLE), brdp->ioctrl);
 
 	brdp->state |= BRD_FOUND;
-	i = stl_mapirq(brdp->irq, name);
+	if (request_irq(brdp->irq, stl_intr, SA_SHIRQ, name, brdp) != 0) {
+		printk("STALLION: failed to register interrupt "
+		       "routine for %s irq=%d\n", name, brdp->irq);
+		i = -ENODEV;
+	}
+
 	return(i);
 }
 
@@ -2940,7 +2899,8 @@ static int stl_getbrdstats(combrd_t *bp)
 	stlpanel_t	*panelp;
 	int		i;
 
-	copy_from_user(&stl_brdstats, bp, sizeof(combrd_t));
+	if (copy_from_user(&stl_brdstats, bp, sizeof(combrd_t)))
+		return -EFAULT;
 	if (stl_brdstats.brd >= STL_MAXBRDS)
 		return(-ENODEV);
 	brdp = stl_brds[stl_brdstats.brd];
@@ -2964,8 +2924,7 @@ static int stl_getbrdstats(combrd_t *bp)
 		stl_brdstats.panels[i].nrports = panelp->nrports;
 	}
 
-	copy_to_user(bp, &stl_brdstats, sizeof(combrd_t));
-	return(0);
+	return copy_to_user(bp, &stl_brdstats, sizeof(combrd_t)) ? -EFAULT : 0;
 }
 
 /*****************************************************************************/
@@ -3008,7 +2967,8 @@ static int stl_getportstats(stlport_t *portp, comstats_t *cp)
 	unsigned long	flags;
 
 	if (portp == (stlport_t *) NULL) {
-		copy_from_user(&stl_comstats, cp, sizeof(comstats_t));
+		if (copy_from_user(&stl_comstats, cp, sizeof(comstats_t)))
+			return -EFAULT;
 		portp = stl_getport(stl_comstats.brd, stl_comstats.panel,
 			stl_comstats.port);
 		if (portp == (stlport_t *) NULL)
@@ -3049,8 +3009,8 @@ static int stl_getportstats(stlport_t *portp, comstats_t *cp)
 
 	portp->stats.signals = (unsigned long) stl_getsignals(portp);
 
-	copy_to_user(cp, &portp->stats, sizeof(comstats_t));
-	return(0);
+	return copy_to_user(cp, &portp->stats,
+			    sizeof(comstats_t)) ? -EFAULT : 0;
 }
 
 /*****************************************************************************/
@@ -3062,7 +3022,8 @@ static int stl_getportstats(stlport_t *portp, comstats_t *cp)
 static int stl_clrportstats(stlport_t *portp, comstats_t *cp)
 {
 	if (portp == (stlport_t *) NULL) {
-		copy_from_user(&stl_comstats, cp, sizeof(comstats_t));
+		if (copy_from_user(&stl_comstats, cp, sizeof(comstats_t)))
+			return -EFAULT;
 		portp = stl_getport(stl_comstats.brd, stl_comstats.panel,
 			stl_comstats.port);
 		if (portp == (stlport_t *) NULL)
@@ -3073,8 +3034,8 @@ static int stl_clrportstats(stlport_t *portp, comstats_t *cp)
 	portp->stats.brd = portp->brdnr;
 	portp->stats.panel = portp->panelnr;
 	portp->stats.port = portp->portnr;
-	copy_to_user(cp, &portp->stats, sizeof(comstats_t));
-	return(0);
+	return copy_to_user(cp, &portp->stats,
+			    sizeof(comstats_t)) ? -EFAULT : 0;
 }
 
 /*****************************************************************************/
@@ -3087,13 +3048,14 @@ static int stl_getportstruct(unsigned long arg)
 {
 	stlport_t	*portp;
 
-	copy_from_user(&stl_dummyport, (void *) arg, sizeof(stlport_t));
+	if (copy_from_user(&stl_dummyport, (void *) arg, sizeof(stlport_t)))
+		return -EFAULT;
 	portp = stl_getport(stl_dummyport.brdnr, stl_dummyport.panelnr,
 		 stl_dummyport.portnr);
 	if (portp == (stlport_t *) NULL)
 		return(-ENODEV);
-	copy_to_user((void *) arg, portp, sizeof(stlport_t));
-	return(0);
+	return copy_to_user((void *)arg, portp,
+			    sizeof(stlport_t)) ? -EFAULT : 0;
 }
 
 /*****************************************************************************/
@@ -3106,14 +3068,14 @@ static int stl_getbrdstruct(unsigned long arg)
 {
 	stlbrd_t	*brdp;
 
-	copy_from_user(&stl_dummybrd, (void *) arg, sizeof(stlbrd_t));
+	if (copy_from_user(&stl_dummybrd, (void *) arg, sizeof(stlbrd_t)))
+		return -EFAULT;
 	if ((stl_dummybrd.brdnr < 0) || (stl_dummybrd.brdnr >= STL_MAXBRDS))
 		return(-ENODEV);
 	brdp = stl_brds[stl_dummybrd.brdnr];
 	if (brdp == (stlbrd_t *) NULL)
 		return(-ENODEV);
-	copy_to_user((void *) arg, brdp, sizeof(stlbrd_t));
-	return(0);
+	return copy_to_user((void *)arg, brdp, sizeof(stlbrd_t)) ? -EFAULT : 0;
 }
 
 /*****************************************************************************/

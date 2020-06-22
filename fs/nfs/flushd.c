@@ -59,7 +59,7 @@ static void	nfs_flushd(struct rpc_task *);
 static void	nfs_flushd_exit(struct rpc_task *);
 
 
-int nfs_reqlist_init(struct nfs_server *server)
+static int nfs_reqlist_init(struct nfs_server *server)
 {
 	struct nfs_reqlist	*cache;
 	struct rpc_task		*task;
@@ -136,7 +136,7 @@ int nfs_reqlist_alloc(struct nfs_server *server)
 	init_waitqueue_head(&cache->request_wait);
 	server->rw_requests = cache;
 
-	return 0;
+	return nfs_reqlist_init(server);
 }
 
 void nfs_reqlist_free(struct nfs_server *server)

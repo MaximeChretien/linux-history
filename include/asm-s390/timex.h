@@ -25,8 +25,16 @@ static inline cycles_t get_cycles(void)
 {
 	cycles_t cycles;
 
-	__asm__("stck  %0" : "=m" (cycles) : : "cc");
+	__asm__("stck 0(%0)" : : "a" (&(cycles)) : "memory", "cc");
 	return cycles >> 2;
+}
+
+static inline unsigned long long get_clock (void)
+{
+	unsigned long long clk;
+
+	__asm__("stck 0(%0)" : : "a" (&(clk)) : "memory", "cc");
+	return clk;
 }
 
 #endif

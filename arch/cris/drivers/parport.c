@@ -1,4 +1,4 @@
-/* $Id: parport.c,v 1.8 2001/09/26 11:51:52 bjornw Exp $
+/* $Id: parport.c,v 1.9 2002/05/15 12:30:24 starvik Exp $
  * 
  * Elinux parallel port driver
  * NOTE!
@@ -204,7 +204,7 @@ parport_etrax_write_control(struct parport *p, unsigned char control)
 	SETF(info->reg_ctrl_data_shadow, R_PAR0_CTRL_DATA, autofd,
 	     (control & PARPORT_CONTROL_AUTOFD) > 0);
 	SETF(info->reg_ctrl_data_shadow, R_PAR0_CTRL_DATA, init,
-	     (control & PARPORT_CONTROL_INIT) > 0);
+	     (control & PARPORT_CONTROL_INIT) == 0);
 	SETF(info->reg_ctrl_data_shadow, R_PAR0_CTRL_DATA, seli,
 	     (control & PARPORT_CONTROL_SELECT) > 0);
 
@@ -223,7 +223,7 @@ parport_etrax_read_control( struct parport *p)
 		ret |= PARPORT_CONTROL_STROBE;
 	if (IO_EXTRACT(R_PAR0_CTRL_DATA, autofd, info->reg_ctrl_data_shadow))
 		ret |= PARPORT_CONTROL_AUTOFD;
-	if (IO_EXTRACT(R_PAR0_CTRL_DATA, init, info->reg_ctrl_data_shadow))
+	if (!IO_EXTRACT(R_PAR0_CTRL_DATA, init, info->reg_ctrl_data_shadow))
 		ret |= PARPORT_CONTROL_INIT;
 	if (IO_EXTRACT(R_PAR0_CTRL_DATA, seli, info->reg_ctrl_data_shadow))
 		ret |= PARPORT_CONTROL_SELECT;
@@ -258,7 +258,7 @@ parport_etrax_read_status(struct parport *p)
 		ret |= PARPORT_STATUS_ERROR;
 	if (IO_EXTRACT(R_PAR0_STATUS_DATA, sel, *info->reg_status_data))
 		ret |= PARPORT_STATUS_SELECT;
-	if (!IO_EXTRACT(R_PAR0_STATUS_DATA, perr, *info->reg_status_data))
+	if (IO_EXTRACT(R_PAR0_STATUS_DATA, perr, *info->reg_status_data))
 		ret |= PARPORT_STATUS_PAPEROUT;
 	if (IO_EXTRACT(R_PAR0_STATUS_DATA, ack, *info->reg_status_data))
 		ret |= PARPORT_STATUS_ACK;

@@ -736,6 +736,10 @@ typedef struct iic {
 	ushort	iic_tbptr;	/* Internal */
 	ushort	iic_tbc;	/* Internal */
 	uint	iic_txtmp;	/* Internal */
+	uint	iic_res;
+	ushort	iic_rpbase;	/* Relocation pointer */
+	ushort	iic_res2;
+	
 } iic_t;
 
 #define BD_IIC_START		((ushort)0x0400)

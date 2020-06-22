@@ -20,6 +20,7 @@
 #include <linux/unistd.h>
 #include <linux/slab.h>
 #include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
 #include <linux/nfs.h>
 #include <linux/sunrpc/svc.h>
@@ -31,6 +32,7 @@
 #include <asm/uaccess.h>
 #include <linux/smp.h>
 #include <linux/smp_lock.h>
+#include <linux/init.h>
 
 static int	nfsctl_svc(struct nfsctl_svc *data);
 static int	nfsctl_addclient(struct nfsctl_client *data);
@@ -44,31 +46,26 @@ static int	nfsctl_getfs(struct nfsctl_fsparm *, struct knfsd_fh *);
 static int	nfsctl_ugidupdate(struct nfsctl_ugidmap *data);
 #endif
 
-static int	initialized;
-
-int exp_procfs_exports(char *buffer, char **start, off_t offset,
-                             int length, int *eof, void *data);
+extern struct seq_operations nfs_exports_op;
+static int exports_open(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &nfs_exports_op);
+}
+static struct file_operations exports_operations = {
+	open:		exports_open,
+	read:		seq_read,
+	llseek:		seq_lseek,
+	release:	seq_release,
+};
 
 void proc_export_init(void)
 {
+	struct proc_dir_entry *entry;
 	if (!proc_mkdir("fs/nfs", 0))
 		return;
-	create_proc_read_entry("fs/nfs/exports", 0, 0, exp_procfs_exports,NULL);
-}
-
-
-/*
- * Initialize nfsd
- */
-static void
-nfsd_init(void)
-{
-	nfsd_stat_init();	/* Statistics */
-	nfsd_cache_init();	/* RPC reply cache */
-	nfsd_export_init();	/* Exports table */
-	nfsd_lockd_init();	/* lockd->nfsd callbacks */
-	proc_export_init();
-	initialized = 1;
+	entry = create_proc_entry("fs/nfs/exports", 0, NULL);
+	if (entry)
+		entry->proc_fops =  &exports_operations;
 }
 
 static inline int
@@ -225,10 +222,8 @@ asmlinkage handle_sys_nfsservctl(int cmd, void *opaque_argp, void *opaque_resp)
 	int			err;
 	int			argsize, respsize;
 
-	MOD_INC_USE_COUNT;
 	lock_kernel ();
-	if (!initialized)
-		nfsd_init();
+
 	err = -EPERM;
 	if (!capable(CAP_SYS_ADMIN)) {
 		goto done;
@@ -301,38 +296,47 @@ done:
 		kfree(res);
 
 	unlock_kernel ();
-	MOD_DEC_USE_COUNT;
 	return err;
 }
 
-#ifdef MODULE
-/* New-style module support since 2.1.18 */
 EXPORT_NO_SYMBOLS;
 MODULE_AUTHOR("Olaf Kirch <okir@monad.swb.de>");
 MODULE_LICENSE("GPL");
 
+#ifdef MODULE
 struct nfsd_linkage nfsd_linkage_s = {
 	do_nfsservctl: handle_sys_nfsservctl,
+	owner: THIS_MODULE,
 };
+#endif
 
 /*
  * Initialize the module
  */
-int
-init_module(void)
+static int __init
+nfsd_init(void)
 {
 	printk(KERN_INFO "Installing knfsd (copyright (C) 1996 okir@monad.swb.de).\n");
+#ifdef MODULE
 	nfsd_linkage = &nfsd_linkage_s;
+#endif
+	nfsd_stat_init();	/* Statistics */
+	nfsd_cache_init();	/* RPC reply cache */
+	nfsd_export_init();	/* Exports table */
+	nfsd_lockd_init();	/* lockd->nfsd callbacks */
+	proc_export_init();
 	return 0;
 }
 
 /*
  * Clean up the mess before unloading the module
  */
-void
-cleanup_module(void)
+static void __exit
+nfsd_exit(void)
 {
+#ifdef MODULE
 	nfsd_linkage = NULL;
+#endif
 	nfsd_export_shutdown();
 	nfsd_cache_shutdown();
 	remove_proc_entry("fs/nfs/exports", NULL);
@@ -340,4 +344,6 @@ cleanup_module(void)
 	nfsd_stat_shutdown();
 	nfsd_lockd_shutdown();
 }
-#endif
+
+module_init(nfsd_init);
+module_exit(nfsd_exit);

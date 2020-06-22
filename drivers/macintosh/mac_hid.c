@@ -204,7 +204,8 @@ static unsigned char e0_keys[128] = {
 	0, 0, 0, 0, 0, KEY_VOLUMEDOWN, KEY_MUTE, 0,		/* 0x20-0x27 */
 	0, 0, 0, 0, 0, 0, 0, 0,					/* 0x28-0x2f */
 	0, 0, 0, 0, 0, KEY_KPSLASH, 0, KEY_SYSRQ,		/* 0x30-0x37 */
-	KEY_RIGHTALT, 0, 0, KEY_EJECTCD, 0, 0, 0, 0,		/* 0x38-0x3f */
+	KEY_RIGHTALT, KEY_BRIGHTNESSUP, KEY_BRIGHTNESSDOWN, 
+		KEY_EJECTCD, 0, 0, 0, 0,			/* 0x38-0x3f */
 	0, 0, 0, 0, 0, 0, 0, KEY_HOME,				/* 0x40-0x47 */
 	KEY_UP, KEY_PAGEUP, 0, KEY_LEFT, 0, KEY_RIGHT, 0, KEY_END, /* 0x48-0x4f */
 	KEY_DOWN, KEY_PAGEDOWN, KEY_INSERT, KEY_DELETE, 0, 0, 0, 0, /* 0x50-0x57 */

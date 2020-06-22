@@ -125,10 +125,12 @@ struct agp_bridge_data {
 	
 };
 
+#define OUTREG64(mmap, addr, val)   __raw_writeq((val), (mmap)+(addr))
 #define OUTREG32(mmap, addr, val)   __raw_writel((val), (mmap)+(addr))
 #define OUTREG16(mmap, addr, val)   __raw_writew((val), (mmap)+(addr))
 #define OUTREG8(mmap, addr, val)   __raw_writeb((val), (mmap)+(addr))
 
+#define INREG64(mmap, addr)         __raw_readq((mmap)+(addr))
 #define INREG32(mmap, addr)         __raw_readl((mmap)+(addr))
 #define INREG16(mmap, addr)         __raw_readw((mmap)+(addr))
 #define INREG8(mmap, addr)         __raw_readb((mmap)+(addr))
@@ -169,6 +171,12 @@ struct agp_bridge_data {
 #endif
 #ifndef PCI_DEVICE_ID_INTEL_810_0
 #define PCI_DEVICE_ID_INTEL_810_0       0x7120
+#endif
+#ifndef PCI_DEVICE_ID_INTEL_845_G_0
+#define PCI_DEVICE_ID_INTEL_845_G_0	0x2560
+#endif
+#ifndef PCI_DEVICE_ID_INTEL_845_G_1
+#define PCI_DEVICE_ID_INTEL_845_G_1     0x2562
 #endif
 #ifndef PCI_DEVICE_ID_INTEL_830_M_0
 #define PCI_DEVICE_ID_INTEL_830_M_0	0x3575
@@ -248,11 +256,17 @@ struct agp_bridge_data {
 #ifndef PCI_DEVICE_ID_AL_M1641_0
 #define PCI_DEVICE_ID_AL_M1641_0	0x1641
 #endif
+#ifndef PCI_DEVICE_ID_AL_M1644_0
+#define PCI_DEVICE_ID_AL_M1644_0	0x1644
+#endif
 #ifndef PCI_DEVICE_ID_AL_M1647_0
 #define PCI_DEVICE_ID_AL_M1647_0	0x1647
 #endif
 #ifndef PCI_DEVICE_ID_AL_M1651_0
 #define PCI_DEVICE_ID_AL_M1651_0	0x1651
+#endif
+#ifndef PCI_DEVICE_ID_AL_M1671_0
+#define PCI_DEVICE_ID_AL_M1671_0	0x1671
 #endif
 
 /* intel register */
@@ -281,6 +295,10 @@ struct agp_bridge_data {
 
 /* This one is for I830MP w. an external graphic card */
 #define INTEL_I830_ERRSTS          0x92
+
+/* intel 815 register */
+#define INTEL_815_APCONT        0x51
+#define INTEL_815_ATTBASE_MASK  ~0x1FFFFFFF
 
 /* intel i820 registers */
 #define INTEL_I820_RDCR     0x51
@@ -374,5 +392,14 @@ struct agp_bridge_data {
 #define SVWRKS_TLBFLUSH   0x10
 #define SVWRKS_POSTFLUSH  0x14
 #define SVWRKS_DIRFLUSH   0x0c
+
+/* HP ZX1 SBA registers */
+#define HP_ZX1_CTRL		0x200
+#define HP_ZX1_IBASE		0x300
+#define HP_ZX1_IMASK		0x308
+#define HP_ZX1_PCOM		0x310
+#define HP_ZX1_TCNFG		0x318
+#define HP_ZX1_PDIR_BASE	0x320
+#define HP_ZX1_CACHE_FLUSH	0x428
 
 #endif				/* _AGP_BACKEND_PRIV_H */

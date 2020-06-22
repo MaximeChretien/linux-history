@@ -182,7 +182,7 @@ struct emu10k1_card
 
 	u8 chiprev;                    /* Chip revision                */
 
-	int isaps;
+	u8 is_aps;
 
 	struct patch_manager mgr;
 	struct pt_data pt;

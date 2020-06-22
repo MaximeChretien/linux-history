@@ -1105,13 +1105,47 @@ static int pnp_get_info(char *buffer, char **start,
 #endif /* CONFIG_PROC_FS */
 
 /*
+ *  Extract IP address from the parameter string if needed. Note that we
+ *  need to have root_server_addr set _before_ IPConfig gets called as it
+ *  can override it.
+ */
+u32 __init root_nfs_parse_addr(char *name)
+{
+	u32 addr;
+	int octets = 0;
+	char *cp, *cq;
+
+	cp = cq = name;
+	while (octets < 4) {
+		while (*cp >= '0' && *cp <= '9')
+			cp++;
+		if (cp == cq || cp - cq > 3)
+			break;
+		if (*cp == '.' || octets == 3)
+			octets++;
+		if (octets < 4)
+			cp++;
+		cq = cp;
+	}
+	if (octets == 4 && (*cp == ':' || *cp == '\0')) {
+		if (*cp == ':')
+			*cp++ = '\0';
+		addr = in_aton(name);
+		strcpy(name, cp);
+	} else
+		addr = INADDR_NONE;
+
+	return addr;
+}
+
+/*
  *	IP Autoconfig dispatcher.
  */
 
 static int __init ip_auto_config(void)
 {
-	int retries = CONF_OPEN_RETRIES;
 	unsigned long jiff;
+	u32 addr;
 
 #ifdef CONFIG_PROC_FS
 	proc_net_create("pnp", 0, pnp_get_info);
@@ -1122,7 +1156,9 @@ static int __init ip_auto_config(void)
 
 	DBG(("IP-Config: Entered.\n"));
 
+#ifdef IPCONFIG_DYNAMIC
  try_try_again:
+#endif
 	/* Give hardware a chance to settle */
 	jiff = jiffies + CONF_PRE_OPEN;
 	while (time_before(jiffies, jiff))
@@ -1151,6 +1187,8 @@ static int __init ip_auto_config(void)
 #endif
 	    ic_first_dev->next) {
 #ifdef IPCONFIG_DYNAMIC
+
+		int retries = CONF_OPEN_RETRIES;
 
 		if (ic_dynamic() < 0) {
 			ic_close_devs();
@@ -1196,6 +1234,10 @@ static int __init ip_auto_config(void)
 		/* Device selected manually or only one device -> use it */
 		ic_dev = ic_first_dev->dev;
 	}
+
+	addr = root_nfs_parse_addr(root_server_path);
+	if (root_server_addr == INADDR_NONE)
+		root_server_addr = addr;
 
 	/*
 	 * Use defaults whereever applicable.

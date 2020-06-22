@@ -61,8 +61,18 @@ struct reiserfs_super_block
                                    superblock. -Hans */
   __u16 s_reserved;
   __u32 s_inode_generation;
-  char s_unused[124] ;			/* zero filled by mkreiserfs */
+  __u32 s_flags;		       /* Right now used only by inode-attributes, if enabled */
+  unsigned char s_uuid[16];            /* filesystem unique identifier */
+  unsigned char s_label[16];           /* filesystem volume label */
+  char s_unused[88] ;                  /* zero filled by mkreiserfs and
+                                        * reiserfs_convert_objectid_map_v1()
+                                        * so any additions must be updated
+                                        * there as well. */
 } __attribute__ ((__packed__));
+
+typedef enum {
+  reiserfs_attrs_cleared       = 0x00000001,
+} reiserfs_super_block_flags;
 
 #define SB_SIZE (sizeof(struct reiserfs_super_block))
 /* struct reiserfs_super_block accessors/mutators
@@ -330,6 +340,12 @@ typedef struct reiserfs_proc_info_data
   stat_cnt_t search_by_key_fs_changed;
   stat_cnt_t search_by_key_restarted;
 
+  stat_cnt_t insert_item_restarted;
+  stat_cnt_t paste_into_item_restarted;
+  stat_cnt_t cut_from_item_restarted;
+  stat_cnt_t delete_solid_item_restarted;
+  stat_cnt_t delete_item_restarted;
+
   stat_cnt_t leaked_oid;
   stat_cnt_t leaves_removable;
 
@@ -472,6 +488,8 @@ struct reiserfs_sb_info
 #define REISERFS_TEST3 13
 #define REISERFS_TEST4 14 
 
+#define REISERFS_ATTRS (15)
+
 #define reiserfs_r5_hash(s) ((s)->u.reiserfs_sb.s_mount_opt & (1 << FORCE_R5_HASH))
 #define reiserfs_rupasov_hash(s) ((s)->u.reiserfs_sb.s_mount_opt & (1 << FORCE_RUPASOV_HASH))
 #define reiserfs_tea_hash(s) ((s)->u.reiserfs_sb.s_mount_opt & (1 << FORCE_TEA_HASH))
@@ -484,6 +502,7 @@ struct reiserfs_sb_info
 #define dont_have_tails(s) ((s)->u.reiserfs_sb.s_mount_opt & (1 << NOTAIL))
 #define replay_only(s) ((s)->u.reiserfs_sb.s_mount_opt & (1 << REPLAYONLY))
 #define reiserfs_dont_log(s) ((s)->u.reiserfs_sb.s_mount_opt & (1 << REISERFS_NOLOG))
+#define reiserfs_attrs(s) ((s)->u.reiserfs_sb.s_mount_opt & (1 << REISERFS_ATTRS))
 #define old_format_only(s) ((s)->u.reiserfs_sb.s_properties & (1 << REISERFS_3_5))
 #define convert_reiserfs(s) ((s)->u.reiserfs_sb.s_mount_opt & (1 << REISERFS_CONVERT))
 

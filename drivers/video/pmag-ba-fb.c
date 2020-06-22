@@ -91,7 +91,7 @@ struct pmagbafb_par {
 };
 
 static int currcon = 0;
-struct pmagbafb_par current_par;
+static struct pmagbafb_par current_par;
 
 static void pmagbafb_encode_var(struct fb_var_screeninfo *var,
 				struct pmagbafb_par *par)
@@ -324,7 +324,7 @@ static void pmagbafb_set_disp(int con, struct pmag_ba_my_fb_info *info)
 	display->next_line = fix.line_length;
 	display->can_soft_blank = 0;
 	display->inverse = 0;
-
+	display->scrollmode = SCROLL_YREDRAW;
 	display->dispsw = &fbcon_cfb8;
 }
 
@@ -423,11 +423,6 @@ int __init pmagbafb_init(void)
 	} else {
 		return -ENODEV;
 	}
-}
-
-int __init pmagbafb_setup(char *options)
-{
-	return 0;
 }
 
 MODULE_LICENSE("GPL");

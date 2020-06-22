@@ -31,6 +31,9 @@
 #define IDAREVALIDATEVOLS	0x30303131
 #define IDADRIVERVERSION	0x31313232
 #define IDAGETPCIINFO		0x32323333
+#define IDADEREGDISK		0x33333434
+#define IDAREGNEWDISK		0x34343535
+#define IDAGETLOGINFO		0x35353636
 
 typedef struct _ida_pci_info_struct
 {
@@ -38,6 +41,13 @@ typedef struct _ida_pci_info_struct
 	unsigned char 	dev_fn;
 	__u32 		board_id;
 } ida_pci_info_struct;
+
+typedef struct _idaLogvolInfo_struct{
+int		LogVolID;
+int		num_opens;  /* number of opens on the logical volume */
+int		num_parts;  /* number of partitions configured on logvol */
+} idaLogvolInfo_struct;
+
 /*
  * Normally, the ioctl determines the logical unit for this command by
  * the major,minor number of the fd passed to ioctl.  If you need to send

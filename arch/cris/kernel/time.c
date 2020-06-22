@@ -1,4 +1,4 @@
-/* $Id: time.c,v 1.11 2001/11/12 18:26:22 pkj Exp $
+/* $Id: time.c,v 1.14 2002/03/05 13:31:03 johana Exp $
  *
  *  linux/arch/cris/kernel/time.c
  *
@@ -19,6 +19,12 @@
  *
  * Authors:    Bjorn Wesen
  *             Johan Adolfsson  
+ * 2002-03-04    Johan Adolfsson
+ *      Use prescale timer at 25000 Hz instead of the baudrate timer at 
+ *      19200 to get rid of the 64ppm to fast timer (and we get better 
+ *      resolution within a jiffie as well.
+ * 2002-03-05    Johan Adolfsson
+ *      Use prescaler in do_slow_gettimeoffset() to get 1 us resolution (40ns)
  *
  */
 
@@ -44,6 +50,8 @@
 
 #include <asm/svinto.h>
 
+#define CRIS_TEST_TIMERS 0
+
 static int have_rtc;  /* used to remember if we have an RTC or not */
 
 /* define this if you need to use print_timestamp */
@@ -52,19 +60,85 @@ static int have_rtc;  /* used to remember if we have an RTC or not */
 
 extern int setup_etrax_irq(int, struct irqaction *);
 
-/* Lookup table to convert *R_TIMER0 to microseconds (us) 
- * Timer goes from TIMER0_DIV down to 1 meaning 0-10000us in step of approx 52us
- */
-unsigned short cris_timer0_value_us[TIMER0_DIV+1];
-
 #define TICK_SIZE tick
+
+/* The timers count from their initial value down to 1 
+ * The R_TIMER0_DATA counts down when R_TIM_PRESC_STATUS reaches halv
+ * of the divider value.
+ */ 
+unsigned long get_ns_in_jiffie(void)
+{
+	unsigned char timer_count, t1;
+	unsigned short presc_count;
+	unsigned long ns;
+	unsigned long flags;
+
+	save_flags(flags);
+	cli();	
+	timer_count = *R_TIMER0_DATA;
+	presc_count = *R_TIM_PRESC_STATUS;  
+	/* presc_count might be wrapped */
+	t1 = *R_TIMER0_DATA;
+
+	if (timer_count != t1){
+		/* it wrapped, read prescaler again...  */
+		presc_count = *R_TIM_PRESC_STATUS;
+		timer_count = t1;
+	}
+	restore_flags(flags);
+	if (presc_count >= PRESCALE_VALUE/2 ){
+		presc_count =  PRESCALE_VALUE - presc_count + PRESCALE_VALUE/2;
+	} else {
+		presc_count =  PRESCALE_VALUE - presc_count - PRESCALE_VALUE/2;
+	}
+
+	ns = ( (TIMER0_DIV - timer_count) * ((1000000000/HZ)/TIMER0_DIV )) + 
+	     ( (presc_count) * (1000000000/PRESCALE_FREQ));
+	return ns;
+}
+
+
+
+#if CRIS_TEST_TIMERS 
+#define NS_TEST_SIZE 4000
+static unsigned long ns_test[NS_TEST_SIZE];
+void cris_test_timers(void)
+{
+	int i;
+#if 0
+	for (i = 0; i < NS_TEST_SIZE; i++)
+	{
+		ns_test[i] = *R_TIMER0_DATA | (*R_TIM_PRESC_STATUS<<16);
+	}
+	for (i = 1; i < NS_TEST_SIZE; i++)
+	{
+		printk("%4i. %lu %lu %09lu ns \n",
+		       i, ns_test[i]&0x0FFFF, (ns_test[i]>>16), 
+	get_ns_in_jiffie_from_data(ns_test[i]&0x0FFFF, ns_test[i]>>16));
+	}
+#else
+	for (i = 0; i < NS_TEST_SIZE; i++)
+	{
+		ns_test[i] = get_ns_in_jiffie();
+	}
+
+	for (i = 1; i < NS_TEST_SIZE; i++)
+	{
+		printk("%4i. %09lu ns diff %li ns\n",
+		       i, ns_test[i], ns_test[i]- ns_test[i-1]);
+	}
+#endif
+}
+
+#endif
 
 static unsigned long do_slow_gettimeoffset(void)
 {
-	unsigned long count;
+	unsigned long count, t1;
 	unsigned long usec_count = 0;
+	unsigned short presc_count;
 
-	static unsigned long count_p = LATCH;    /* for the first call after boot */
+	static unsigned long count_p = TIMER0_DIV;/* for the first call after boot */
 	static unsigned long jiffies_p = 0;
 
 	/*
@@ -80,8 +154,17 @@ static unsigned long do_slow_gettimeoffset(void)
 #ifndef CONFIG_SVINTO_SIM
 	/* Not available in the xsim simulator. */
 	count = *R_TIMER0_DATA;
+	presc_count = *R_TIM_PRESC_STATUS;  
+	/* presc_count might be wrapped */
+	t1 = *R_TIMER0_DATA;
+	if (count != t1){
+		/* it wrapped, read prescaler again...  */
+		presc_count = *R_TIM_PRESC_STATUS;
+		count = t1;
+	}
 #else
 	count = 0;
+	presc_count = 0;
 #endif
 
  	jiffies_t = jiffies;
@@ -92,22 +175,26 @@ static unsigned long do_slow_gettimeoffset(void)
 	 *  1. the timer counter underflows
 	 *  2. we are after the timer interrupt, but the bottom half handler
 	 *     hasn't executed yet.
- */
+	 */
 	if( jiffies_t == jiffies_p ) {
 		if( count > count_p ) {
-			/* Timer wrapped */
-			count = count_p;
-			usec_count = 1000000/CLOCK_TICK_RATE/2;
+			/* Timer wrapped, use new count and prescale 
+			 * increase the time corresponding to one jiffie
+			 */
+			usec_count = 1000000/HZ;
 		}
 	} else
 		jiffies_p = jiffies_t;
         count_p = count;
-	/* Convert timer value to usec using table lookup */
-	usec_count += cris_timer0_value_us[count];
-#if 0
-	count = ((LATCH-1) - count) * TICK_SIZE;
-	count = (count + LATCH/2) / LATCH;
-#endif
+	if (presc_count >= PRESCALE_VALUE/2 ){
+		presc_count =  PRESCALE_VALUE - presc_count + PRESCALE_VALUE/2;
+	} else {
+		presc_count =  PRESCALE_VALUE - presc_count - PRESCALE_VALUE/2;
+	}
+	/* Convert timer value to usec */
+	usec_count += ( (TIMER0_DIV - count) * (1000000/HZ)/TIMER0_DIV ) +
+	              (( (presc_count) * (1000000000/PRESCALE_FREQ))/1000);
+
 	return usec_count;
 }
 
@@ -124,11 +211,11 @@ void do_gettimeofday(struct timeval *tv)
 	cli();
 	*tv = xtime;
 	tv->tv_usec += do_gettimeoffset();
-	if (tv->tv_usec >= 1000000) {
+	restore_flags(flags);
+	while (tv->tv_usec >= 1000000) {
 		tv->tv_usec -= 1000000;
 		tv->tv_sec++;
 	}
-	restore_flags(flags);
 }
 
 void do_settimeofday(struct timeval *tv)
@@ -392,7 +479,6 @@ static struct irqaction irq2  = { timer_interrupt, SA_SHIRQ | SA_INTERRUPT,
 void __init
 time_init(void)
 {	
-	int i;
 	/* probe for the RTC and read it if it exists */
 
 	if(RTC_INIT() < 0) {
@@ -435,33 +521,33 @@ time_init(void)
 		IO_STATE( R_TIMER_CTRL, tm0, run) |
 		IO_STATE( R_TIMER_CTRL, clksel0, c6250kHz);
 #else
+  
 	*R_TIMER_CTRL = 
 		IO_FIELD(R_TIMER_CTRL, timerdiv1, 192)      | 
-		IO_FIELD(R_TIMER_CTRL, timerdiv0, 192)      |
+		IO_FIELD(R_TIMER_CTRL, timerdiv0, TIMER0_DIV)      |
 		IO_STATE(R_TIMER_CTRL, i1,        nop)      | 
 		IO_STATE(R_TIMER_CTRL, tm1,       stop_ld)  |
 		IO_STATE(R_TIMER_CTRL, clksel1,   c19k2Hz)  |
 		IO_STATE(R_TIMER_CTRL, i0,        nop)      |
 		IO_STATE(R_TIMER_CTRL, tm0,       stop_ld)  |
-		IO_STATE(R_TIMER_CTRL, clksel0,   c19k2Hz);
+		IO_STATE(R_TIMER_CTRL, clksel0,   flexible);
 	
 	*R_TIMER_CTRL = r_timer_ctrl_shadow =
 		IO_FIELD(R_TIMER_CTRL, timerdiv1, 192)      | 
-		IO_FIELD(R_TIMER_CTRL, timerdiv0, 192)      |
+		IO_FIELD(R_TIMER_CTRL, timerdiv0, TIMER0_DIV)      |
 		IO_STATE(R_TIMER_CTRL, i1,        nop)      |
 		IO_STATE(R_TIMER_CTRL, tm1,       run)      |
 		IO_STATE(R_TIMER_CTRL, clksel1,   c19k2Hz)  |
 		IO_STATE(R_TIMER_CTRL, i0,        nop)      |
 		IO_STATE(R_TIMER_CTRL, tm0,       run)      |
-		IO_STATE(R_TIMER_CTRL, clksel0,   c19k2Hz);
+		IO_STATE(R_TIMER_CTRL, clksel0,   flexible);
+
+	*R_TIMER_PRESCALE = PRESCALE_VALUE;
 #endif
 
-	for (i=0; i <= TIMER0_DIV; i++) {
-		/* We must be careful not to get overflow... */
-		cris_timer0_value_us[TIMER0_DIV-i] = 
-		  (unsigned short)((unsigned long)
-		  ((i*(1000000/HZ))/TIMER0_DIV)&0x0000FFFFL);
-	}
+#if CRIS_TEST_TIMERS
+	cris_test_timers();
+#endif
 	
 	*R_IRQ_MASK0_SET =
 		IO_STATE(R_IRQ_MASK0_SET, timer0, set); /* unmask the timer irq */

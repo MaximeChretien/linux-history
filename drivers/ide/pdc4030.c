@@ -89,6 +89,12 @@
 
 #include "pdc4030.h"
 
+#ifdef CONFIG_IDE_TASKFILE_IO
+#  define __TASKFILE__IO
+#else /* CONFIG_IDE_TASKFILE_IO */
+#  undef __TASKFILE__IO
+#endif /* CONFIG_IDE_TASKFILE_IO */
+
 /*
  * promise_selectproc() is invoked by ide.c
  * in preparation for access to the specified drive.
@@ -298,8 +304,6 @@ void __init ide_probe_for_pdc4030(void)
 	}
 }
 
-
-
 /*
  * promise_read_intr() is the handler for disk read/multread interrupts
  */
@@ -495,11 +499,15 @@ static ide_startstop_t promise_write (ide_drive_t *drive)
  */
 ide_startstop_t do_pdc4030_io (ide_drive_t *drive, struct request *rq)
 {
+	ide_startstop_t startstop;
 	unsigned long timeout;
 	byte stat;
 
-	if (rq->cmd == READ) {
-		OUT_BYTE(PROMISE_READ, IDE_COMMAND_REG);
+	switch(rq->cmd) {
+		case READ:
+#ifndef __TASKFILE__IO
+			OUT_BYTE(PROMISE_READ, IDE_COMMAND_REG);
+#endif
 /*
  * The card's behaviour is odd at this point. If the data is
  * available, DRQ will be true, and no interrupt will be
@@ -510,44 +518,61 @@ ide_startstop_t do_pdc4030_io (ide_drive_t *drive, struct request *rq)
  * If neither of these is the case, we wait for up to 50ms (badly I'm
  * afraid!) until one of them is.
  */
-		timeout = jiffies + HZ/20; /* 50ms wait */
-		do {
-			stat=GET_STAT();
-			if (stat & DRQ_STAT) {
-				udelay(1);
-				return promise_read_intr(drive);
-			}
-			if (IN_BYTE(IDE_SELECT_REG) & 0x01) {
+			timeout = jiffies + HZ/20; /* 50ms wait */
+			do {
+				stat=GET_STAT();
+				if (stat & DRQ_STAT) {
+					udelay(1);
+					return promise_read_intr(drive);
+				}
+				if (IN_BYTE(IDE_SELECT_REG) & 0x01) {
 #ifdef DEBUG_READ
-				printk(KERN_DEBUG "%s: read: waiting for "
-				                  "interrupt\n", drive->name);
+	printk(KERN_DEBUG "%s: read: waiting for interrupt\n", drive->name);
 #endif
-				ide_set_handler(drive, &promise_read_intr, WAIT_CMD, NULL);
-				return ide_started;
-			}
-			udelay(1);
-		} while (time_before(jiffies, timeout));
+					ide_set_handler(drive, &promise_read_intr, WAIT_CMD, NULL);
+					return ide_started;
+				}
+				udelay(1);
+			} while (time_before(jiffies, timeout));
 
-		printk(KERN_ERR "%s: reading: No DRQ and not waiting - Odd!\n",
-			drive->name);
-		return ide_stopped;
-	} else if (rq->cmd == WRITE) {
-		ide_startstop_t startstop;
-		OUT_BYTE(PROMISE_WRITE, IDE_COMMAND_REG);
-		if (ide_wait_stat(&startstop, drive, DATA_READY, drive->bad_wstat, WAIT_DRQ)) {
-			printk(KERN_ERR "%s: no DRQ after issuing "
-			       "PROMISE_WRITE\n", drive->name);
-			return startstop;
-	    	}
-		if (!drive->unmask)
-			__cli();	/* local CPU only */
-		HWGROUP(drive)->wrq = *rq; /* scratchpad */
-		return promise_write(drive);
-
-	} else {
-		printk("KERN_WARNING %s: bad command: %d\n",
-		       drive->name, rq->cmd);
-		ide_end_request(0, HWGROUP(drive));
-		return ide_stopped;
+			printk(KERN_ERR "%s: reading: No DRQ and not waiting - Odd!\n", drive->name);
+			return ide_stopped;
+		case WRITE:
+#ifndef __TASKFILE__IO
+			OUT_BYTE(PROMISE_WRITE, IDE_COMMAND_REG);
+#endif
+			if (ide_wait_stat(&startstop, drive, DATA_READY, drive->bad_wstat, WAIT_DRQ)) {
+				printk(KERN_ERR "%s: no DRQ after issuing PROMISE_WRITE\n", drive->name);
+				return startstop;
+		    	}
+			if (!drive->unmask)
+				__cli();	/* local CPU only */
+			HWGROUP(drive)->wrq = *rq; /* scratchpad */
+			return promise_write(drive);
+		default:
+			printk("KERN_WARNING %s: bad command: %d\n", drive->name, rq->cmd);
+			ide_end_request(0, HWGROUP(drive));
+			return ide_stopped;
 	}
 }
+
+#ifdef __TASKFILE__IO
+
+ide_startstop_t promise_rw_disk (ide_drive_t *drive, struct request *rq, unsigned long block)
+{
+	struct hd_drive_task_hdr taskfile;
+
+	memset(&taskfile, 0, sizeof(struct hd_drive_task_hdr));
+
+	taskfile.sector_count	= rq->nr_sectors;
+	taskfile.sector_number	= block;
+	taskfile.low_cylinder	= (block>>=8);
+	taskfile.high_cylinder	= (block>>=8);
+	taskfile.device_head	= ((block>>8)&0x0f)|drive->select.all;
+	taskfile.command	= (rq->cmd==READ)?PROMISE_READ:PROMISE_WRITE;
+
+	do_taskfile(drive, &taskfile, NULL, NULL);
+	return do_pdc4030_io(drive, rq);
+}
+#endif
+

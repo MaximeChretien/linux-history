@@ -7,6 +7,9 @@
 *! Functions exported: ds1302_readreg, ds1302_writereg, ds1302_init, get_rtc_status
 *!
 *! $Log: ds1302.c,v $
+*! Revision 1.12  2002/04/10 15:35:25  johana
+*! Moved probe function closer to init function and marked it __init.
+*!
 *! Revision 1.11  2001/06/14 12:35:52  jonashg
 *! The ATA hack is back. It is unfortunately the only way to set g27 to output.
 *!
@@ -82,7 +85,7 @@
 *!
 *! (C) Copyright 1999, 2000, 2001  Axis Communications AB, LUND, SWEDEN
 *!
-*! $Id: ds1302.c,v 1.11 2001/06/14 12:35:52 jonashg Exp $
+*! $Id: ds1302.c,v 1.12 2002/04/10 15:35:25 johana Exp $
 *!
 *!***************************************************************************/
 
@@ -228,54 +231,6 @@ ds1302_wdisable(void)
 	stop();
 }
 
-/* Probe for the chip by writing something to its RAM and try reading it back. */
-
-#define MAGIC_PATTERN 0x42
-
-static int
-ds1302_probe(void) 
-{
-	int retval, res; 
-
-	TK_RST_DIR(1);
-	TK_SCL_DIR(1);
-	TK_SDA_DIR(0);
-	
-	/* Try to talk to timekeeper. */
-
-	ds1302_wenable();  
-	start();
-	out_byte(0xc0); /* write RAM byte 0 */	
-	out_byte(MAGIC_PATTERN); /* write something magic */
-	start();
-	out_byte(0xc1); /* read RAM byte 0 */
-
-	if((res = in_byte()) == MAGIC_PATTERN) {
-		char buf[100];
-		stop();
-		ds1302_wdisable();
-		printk("%s: RTC found.\n", ds1302_name);
-		printk("%s: SDA, SCL, RST on PB%i, PB%i, %s%i\n",
-		       ds1302_name,
-		       CONFIG_ETRAX_DS1302_SDABIT,
-		       CONFIG_ETRAX_DS1302_SCLBIT,
-#ifdef CONFIG_ETRAX_DS1302_RST_ON_GENERIC_PORT
-		       "GENIO",
-#else
-		       "PB",
-#endif
-		       CONFIG_ETRAX_DS1302_RSTBIT);
-                get_rtc_status(buf);
-                printk(buf);
-		retval = 1;
-	} else {
-		stop();
-		printk("%s: RTC not found.\n", ds1302_name);
-		retval = 0;
-	}
-
-	return retval;
-}
 
 
 /* Read a byte from the selected register in the DS1302. */
@@ -479,6 +434,56 @@ static struct file_operations rtc_fops = {
         owner:          THIS_MODULE,
         ioctl:          rtc_ioctl,	
 }; 
+
+/* Probe for the chip by writing something to its RAM and try reading it back. */
+
+#define MAGIC_PATTERN 0x42
+
+static int __init
+ds1302_probe(void) 
+{
+	int retval, res; 
+
+	TK_RST_DIR(1);
+	TK_SCL_DIR(1);
+	TK_SDA_DIR(0);
+	
+	/* Try to talk to timekeeper. */
+
+	ds1302_wenable();  
+	start();
+	out_byte(0xc0); /* write RAM byte 0 */	
+	out_byte(MAGIC_PATTERN); /* write something magic */
+	start();
+	out_byte(0xc1); /* read RAM byte 0 */
+
+	if((res = in_byte()) == MAGIC_PATTERN) {
+		char buf[100];
+		stop();
+		ds1302_wdisable();
+		printk("%s: RTC found.\n", ds1302_name);
+		printk("%s: SDA, SCL, RST on PB%i, PB%i, %s%i\n",
+		       ds1302_name,
+		       CONFIG_ETRAX_DS1302_SDABIT,
+		       CONFIG_ETRAX_DS1302_SCLBIT,
+#ifdef CONFIG_ETRAX_DS1302_RST_ON_GENERIC_PORT
+		       "GENIO",
+#else
+		       "PB",
+#endif
+		       CONFIG_ETRAX_DS1302_RSTBIT);
+                get_rtc_status(buf);
+                printk(buf);
+		retval = 1;
+	} else {
+		stop();
+		printk("%s: RTC not found.\n", ds1302_name);
+		retval = 0;
+	}
+
+	return retval;
+}
+
 
 /* Just probe for the RTC and register the device to handle the ioctl needed. */
 

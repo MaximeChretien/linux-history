@@ -27,6 +27,7 @@
 #include <linux/smp_lock.h>
 #include <linux/reboot.h>
 #include <linux/delay.h>
+#include <linux/pm.h>
 
 #include <asm/auxio.h>
 #include <asm/oplib.h>
@@ -39,6 +40,19 @@
 #include <asm/processor.h>
 #include <asm/psr.h>
 #include <asm/elf.h>
+
+/* 
+ * Power management idle function 
+ * Set in pm platform drivers
+ */
+void (*pm_idle)(void);
+
+/* 
+ * Power-off handler instantiation for pm.h compliance
+ * This is done via auxio, but could be used as a fallback
+ * handler when auxio is not present-- unused for now...
+ */
+void (*pm_power_off)(void);
 
 extern void fpsave(unsigned long *, unsigned long *, void *, unsigned long *);
 
@@ -67,9 +81,9 @@ int cpu_idle(void)
 	for (;;) {
 		if (ARCH_SUN4C_SUN4) {
 			static int count = HZ;
-			static unsigned long last_jiffies = 0;
-			static unsigned long last_faults = 0;
-			static unsigned long fps = 0;
+			static unsigned long last_jiffies;
+			static unsigned long last_faults;
+			static unsigned long fps;
 			unsigned long now;
 			unsigned long faults;
 			unsigned long flags;
@@ -87,7 +101,7 @@ int cpu_idle(void)
 				fps = (fps + (faults - last_faults)) >> 1;
 				last_faults = faults;
 #if 0
-				printk("kernel faults / second = %d\n", fps);
+				printk("kernel faults / second = %ld\n", fps);
 #endif
 				if (fps >= SUN4C_FAULT_HIGH) {
 					sun4c_grow_kernel_ring();
@@ -95,8 +109,13 @@ int cpu_idle(void)
 			}
 			restore_flags(flags);
 		}
-		check_pgt_cache();
+
+		while((!current->need_resched) && pm_idle) {
+				(*pm_idle)();
+		}
+
 		schedule();
+		check_pgt_cache();
 	}
 	ret = 0;
 out:

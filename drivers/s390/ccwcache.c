@@ -291,9 +291,11 @@ ccwcache_cleanup (void)
 	/* Shrink the caches, if available */
 	for ( cachind = 0; cachind < CCW_NUMBER_CACHES; cachind ++ ) {
 		if ( ccw_cache[cachind] ) {
+#if 0 /* this is useless and could cause an OOPS in the worst case */
 			if ( kmem_cache_shrink(ccw_cache[cachind]) == 0 ) {
 				ccw_cache[cachind] = NULL;
 			}
+#endif
 			kmem_cache_destroy(ccw_cache[cachind]);
 		}
 	}

@@ -39,33 +39,17 @@ static void prom_console_write(struct console *co, const char *s,
 	}
 }
 
-static int prom_console_wait_key(struct console *co)
-{
-	return 0;
-}
-
-static int __init prom_console_setup(struct console *co, char *options)
-{
-	return 0;
-}
-
 static kdev_t prom_console_device(struct console *c)
 {
 	return MKDEV(TTY_MAJOR, 64 + c->index);
 }
 
 static struct console arc_cons = {
-	"ttyS",
-	prom_console_write,
-	NULL,
-	prom_console_device,
-	prom_console_wait_key,
-	NULL,
-	prom_console_setup,
-	CON_PRINTBUFFER,
-	-1,
-	0,
-	NULL
+    name:	"ttyS",
+    write:	prom_console_write,
+    device:	prom_console_device,
+    flags:	CON_PRINTBUFFER,
+    index:	-1,
 };
 
 /*

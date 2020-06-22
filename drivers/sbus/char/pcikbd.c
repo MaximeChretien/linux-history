@@ -29,7 +29,7 @@
 #include <linux/init.h>
 
 #include <asm/ebus.h>
-#if defined(CONFIG_USB) && defined(CONFIG_SPARC64)
+#if (defined(CONFIG_USB) || defined(CONFIG_USB_MODULE)) && defined(CONFIG_SPARC64)
 #include <asm/isa.h>
 #endif
 #include <asm/oplib.h>
@@ -640,7 +640,7 @@ static void pcikbd_kd_mksound(unsigned int hz, unsigned int ticks)
 	restore_flags(flags);
 }
 
-#if defined(CONFIG_USB) && defined(CONFIG_SPARC64)
+#if (defined(CONFIG_USB) || defined(CONFIG_USB_MODULE)) && defined(CONFIG_SPARC64)
 static void isa_kd_nosound(unsigned long __unused)
 {
 	/* disable counter 2 */
@@ -758,7 +758,7 @@ void __init pcikbd_init_hw(void)
 				}
 			}
 		}
-#ifdef CONFIG_USB
+#if defined(CONFIG_USB) || defined(CONFIG_USB_MODULE)
 		/* We are being called for the sake of USB keyboard
 		 * state initialization.  So we should check for beeper
 		 * device in this case.

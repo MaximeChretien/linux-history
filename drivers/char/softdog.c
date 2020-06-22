@@ -68,7 +68,7 @@ static void watchdog_fire(unsigned long);
 static struct timer_list watchdog_ticktock = {
 	function:	watchdog_fire,
 };
-static int timer_alive;
+static unsigned long timer_alive;
 
 
 /*
@@ -93,7 +93,7 @@ static void watchdog_fire(unsigned long data)
  
 static int softdog_open(struct inode *inode, struct file *file)
 {
-	if(timer_alive)
+	if(test_and_set_bit(0, &timer_alive))
 		return -EBUSY;
 #ifdef CONFIG_WATCHDOG_NOWAYOUT	 
 	MOD_INC_USE_COUNT;
@@ -102,7 +102,6 @@ static int softdog_open(struct inode *inode, struct file *file)
 	 *	Activate timer
 	 */
 	mod_timer(&watchdog_ticktock, jiffies+(soft_margin*HZ));
-	timer_alive=1;
 	return 0;
 }
 
@@ -112,12 +111,10 @@ static int softdog_release(struct inode *inode, struct file *file)
 	 *	Shut off the timer.
 	 * 	Lock it in if it's a module and we defined ...NOWAYOUT
 	 */
-	 lock_kernel();
 #ifndef CONFIG_WATCHDOG_NOWAYOUT	 
 	del_timer(&watchdog_ticktock);
 #endif	
-	timer_alive=0;
-	unlock_kernel();
+	clear_bit(0, &timer_alive);
 	return 0;
 }
 

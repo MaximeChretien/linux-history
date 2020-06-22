@@ -1491,7 +1491,6 @@ static int fd_ioctl(struct inode *inode, struct file *filp,
 {
 	int drive = inode->i_rdev & 3;
 	static struct floppy_struct getprm;
-	struct super_block * sb;
 
 	switch(cmd){
 	case HDIO_GETGEO:
@@ -1678,9 +1677,6 @@ static int floppy_open(struct inode *inode, struct file *filp)
 
 static int floppy_release(struct inode * inode, struct file * filp)
 {
-#ifdef DEBUG
-	struct super_block * sb;
-#endif
 	int drive = MINOR(inode->i_rdev) & 3;
 
 	if (unit[drive].dirty == 1) {

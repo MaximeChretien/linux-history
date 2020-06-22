@@ -3,7 +3,7 @@
 
 /*
  * Copyright (C) 1998-2001 Hewlett-Packard Co
- * Copyright (C) 1998-2001 David Mosberger-Tang <davidm@hpl.hp.com>
+ *	David Mosberger-Tang <davidm@hpl.hp.com>
  * Copyright (C) 1999 Walt Drummond <drummond@valinux.com>
  *
  * This file is used for SMP configurations only.
@@ -84,7 +84,7 @@ typedef struct {
 	"mov r29 = 1\n"						\
 	";;\n"							\
 	"1:\n"							\
-	"ld4.bias r2 = [%0]\n"					\
+	"ld4 r2 = [%0]\n"					\
 	";;\n"							\
 	"cmp4.eq p0,p7 = r0,r2\n"				\
 	"(p7) br.cond.spnt.few 1b \n"				\
@@ -93,7 +93,7 @@ typedef struct {
 	"cmp4.eq p0,p7 = r0, r2\n"				\
 	"(p7) br.cond.spnt.few 1b\n"				\
 	";;\n"							\
-	:: "r"(&(x)->lock) : "r2", "r29", "memory")
+	:: "r"(&(x)->lock) : "ar.ccv", "p7", "r2", "r29", "memory")
 
 #define spin_is_locked(x)	((x)->lock != 0)
 #define spin_unlock(x)		do { barrier(); ((spinlock_t *) x)->lock = 0; } while (0)
@@ -128,7 +128,7 @@ do {										\
 			      ";;\n"						\
 			      ".previous\n"					\
 			      : "=&r" (tmp)					\
-			      : "r" (rw): "memory");				\
+			      : "r" (rw) : "p6", "memory");			\
 } while(0)
 
 #define read_unlock(rw)								\
@@ -156,13 +156,13 @@ do {										\
 		"cmp4.eq p0,p7 = r0, r2\n"					\
 		"(p7) br.cond.spnt.few 1b\n"					\
 		";;\n"								\
-		:: "r"(rw) : "r2", "r29", "memory");				\
+		:: "r"(rw) : "ar.ccv", "p7", "r2", "r29", "memory");		\
 } while(0)
 
-/*
- * clear_bit() has "acq" semantics; we're really need "rel" semantics,
- * but for simplicity, we simply do a fence for now...
- */
-#define write_unlock(x)				({clear_bit(31, (x)); mb();})
+#define write_unlock(x)									\
+({											\
+	smp_mb__before_clear_bit();	/* need barrier before releasing lock... */	\
+	clear_bit(31, (x));								\
+})
 
 #endif /*  _ASM_IA64_SPINLOCK_H */

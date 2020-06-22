@@ -219,8 +219,8 @@ asmlinkage unsigned long sys_getxpid(int a0, int a1, int a2, int a3, int a4,
 	 * isn't actually going to matter, as if the parent happens
 	 * to change we can happily return either of the pids.
 	 */
-	(&regs)->r20 = tsk->p_opptr->pid;
-	return tsk->pid;
+	(&regs)->r20 = tsk->p_opptr->tgid;
+	return tsk->tgid;
 }
 
 asmlinkage unsigned long osf_mmap(unsigned long addr, unsigned long len,
@@ -1384,3 +1384,44 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 
 	return addr;
 }
+
+#ifdef CONFIG_OSF4_COMPAT
+extern ssize_t sys_readv(unsigned long, const struct iovec *, unsigned long);
+extern ssize_t sys_writev(unsigned long, const struct iovec *, unsigned long);
+
+/* Clear top 32 bits of iov_len in the user's buffer for
+   compatibility with old versions of OSF/1 where iov_len
+   was defined as int. */
+static int
+osf_fix_iov_len(const struct iovec *iov, unsigned long count)
+{
+	unsigned long i;
+
+	for (i = 0 ; i < count ; i++) {
+		int *iov_len_high = (int *)&iov[i].iov_len + 1;
+
+		if (put_user(0, iov_len_high))
+			return -EFAULT;
+	}
+	return 0;
+}
+
+asmlinkage ssize_t
+osf_readv(unsigned long fd, const struct iovec * vector, unsigned long count)
+{
+	if (unlikely(personality(current->personality) == PER_OSF4))
+		if (osf_fix_iov_len(vector, count))
+			return -EFAULT;
+	return sys_readv(fd, vector, count);
+}
+
+asmlinkage ssize_t
+osf_writev(unsigned long fd, const struct iovec * vector, unsigned long count)
+{
+	if (unlikely(personality(current->personality) == PER_OSF4))
+		if (osf_fix_iov_len(vector, count))
+			return -EFAULT;
+	return sys_writev(fd, vector, count);
+}
+
+#endif

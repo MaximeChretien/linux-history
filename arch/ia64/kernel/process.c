@@ -1,8 +1,8 @@
 /*
  * Architecture-specific setup.
  *
- * Copyright (C) 1998-2001 Hewlett-Packard Co
- * Copyright (C) 1998-2001 David Mosberger-Tang <davidm@hpl.hp.com>
+ * Copyright (C) 1998-2002 Hewlett-Packard Co
+ *	David Mosberger-Tang <davidm@hpl.hp.com>
  */
 #define __KERNEL_SYSCALLS__	/* see <asm/unistd.h> */
 #include <linux/config.h>
@@ -12,6 +12,7 @@
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
+#include <linux/personality.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/smp_lock.h>
@@ -28,6 +29,10 @@
 #include <asm/unwind.h>
 #include <asm/user.h>
 
+#ifdef CONFIG_IA64_SGI_SN
+#include <asm/sn/idle.h>
+#endif
+
 static void
 do_show_stack (struct unw_frame_info *info, void *arg)
 {
@@ -43,6 +48,15 @@ do_show_stack (struct unw_frame_info *info, void *arg)
 		unw_get_bsp(info, &bsp);
 		printk("[<%016lx>] sp=0x%016lx bsp=0x%016lx\n", ip, sp, bsp);
 	} while (unw_unwind(info) >= 0);
+}
+
+void
+show_trace_task (struct task_struct *task)
+{
+	struct unw_frame_info info;
+
+	unw_init_from_blocked_task(&info, task);
+	do_show_stack(&info, 0);
 }
 
 void
@@ -90,8 +104,8 @@ show_regs (struct pt_regs *regs)
 	printk("r26 : %016lx r27 : %016lx r28 : %016lx\n", regs->r26, regs->r27, regs->r28);
 	printk("r29 : %016lx r30 : %016lx r31 : %016lx\n", regs->r29, regs->r30, regs->r31);
 
-	/* print the stacked registers if cr.ifs is valid: */
-	if (regs->cr_ifs & 0x8000000000000000) {
+	if (user_mode(regs)) {
+		/* print the stacked registers */
 		unsigned long val, sof, *bsp, ndirty;
 		int i, is_nat = 0;
 
@@ -122,8 +136,18 @@ cpu_idle (void *unused)
 		if (!current->need_resched)
 			min_xtp();
 #endif
-		while (!current->need_resched)
+
+		while (!current->need_resched) {
+#ifdef CONFIG_IA64_SGI_SN
+			snidle();
+#endif
 			continue;
+		}
+
+#ifdef CONFIG_IA64_SGI_SN
+		snidleoff();
+#endif
+
 #ifdef CONFIG_SMP
 		normal_xtp();
 #endif
@@ -139,10 +163,17 @@ ia64_save_extra (struct task_struct *task)
 {
 	if ((task->thread.flags & IA64_THREAD_DBG_VALID) != 0)
 		ia64_save_debug_regs(&task->thread.dbr[0]);
+
 #ifdef CONFIG_PERFMON
 	if ((task->thread.flags & IA64_THREAD_PM_VALID) != 0)
 		pfm_save_regs(task);
+
+# ifdef CONFIG_SMP
+	if (local_cpu_data->pfm_syst_wide)
+		pfm_syst_wide_update_task(task, 0);
+# endif
 #endif
+
 	if (IS_IA32_PROCESS(ia64_task_regs(task)))
 		ia32_save_state(task);
 }
@@ -152,10 +183,17 @@ ia64_load_extra (struct task_struct *task)
 {
 	if ((task->thread.flags & IA64_THREAD_DBG_VALID) != 0)
 		ia64_load_debug_regs(&task->thread.dbr[0]);
+
 #ifdef CONFIG_PERFMON
 	if ((task->thread.flags & IA64_THREAD_PM_VALID) != 0)
 		pfm_load_regs(task);
+
+# ifdef CONFIG_SMP
+	if (local_cpu_data->pfm_syst_wide)
+		pfm_syst_wide_update_task(task, 1);
+# endif
 #endif
+
 	if (IS_IA32_PROCESS(ia64_task_regs(task)))
 		ia32_load_state(task);
 }
@@ -235,7 +273,7 @@ copy_thread (int nr, unsigned long clone_flags,
 
 	if (user_mode(child_ptregs)) {
 		if (user_stack_base) {
-			child_ptregs->r12 = user_stack_base + user_stack_size;
+			child_ptregs->r12 = user_stack_base + user_stack_size - 16;
 			child_ptregs->ar_bspstore = user_stack_base;
 			child_ptregs->ar_rnat = 0;
 			child_ptregs->loadrs = 0;
@@ -288,9 +326,15 @@ copy_thread (int nr, unsigned long clone_flags,
 	if (IS_IA32_PROCESS(ia64_task_regs(current)))
 		ia32_save_state(p);
 #endif
+
 #ifdef CONFIG_PERFMON
-	if (p->thread.pfm_context)
-		retval = pfm_inherit(p, child_ptregs);
+	/*
+	 * reset notifiers and owner check (may not have a perfmon context)
+	 */
+	atomic_set(&p->thread.pfm_notifiers_check, 0);
+	atomic_set(&p->thread.pfm_owners_check, 0);
+
+	if (current->thread.pfm_context) retval = pfm_inherit(p, child_ptregs);
 #endif
 	return retval;
 }
@@ -414,6 +458,16 @@ out:
 	return error;
 }
 
+void
+ia64_set_personality (struct elf64_hdr *elf_ex, int ibcs2_interpreter)
+{
+	set_personality(PER_LINUX);
+	if (elf_ex->e_flags & EF_IA_64_LINUX_EXECUTABLE_STACK)
+		current->thread.flags |= IA64_THREAD_XSTACK;
+	else
+		current->thread.flags &= ~IA64_THREAD_XSTACK;
+}
+
 pid_t
 kernel_thread (int (*fn)(void *), void *arg, unsigned long flags)
 {
@@ -445,15 +499,15 @@ flush_thread (void)
 
 #ifdef CONFIG_PERFMON
 /*
- * By the time we get here, the task is detached from the tasklist. This is important
- * because it means that no other tasks can ever find it as a notifiied task, therfore
- * there is no race condition between this code and let's say a pfm_context_create().
- * Conversely, the pfm_cleanup_notifiers() cannot try to access a task's pfm context if
- * this other task is in the middle of its own pfm_context_exit() because it would alreayd
- * be out of the task list. Note that this case is very unlikely between a direct child
- * and its parents (if it is the notified process) because of the way the exit is notified
- * via SIGCHLD.
+ * by the time we get here, the task is detached from the tasklist. This is important
+ * because it means that no other tasks can ever find it as a notified task, therfore there
+ * is no race condition between this code and let's say a pfm_context_create().
+ * Conversely, the pfm_cleanup_notifiers() cannot try to access a task's pfm context if this
+ * other task is in the middle of its own pfm_context_exit() because it would already be out of
+ * the task list. Note that this case is very unlikely between a direct child and its parents
+ * (if it is the notified process) because of the way the exit is notified via SIGCHLD.
  */
+
 void
 release_thread (struct task_struct *task)
 {
@@ -462,6 +516,12 @@ release_thread (struct task_struct *task)
 
 	if (atomic_read(&task->thread.pfm_notifiers_check) > 0)
 		pfm_cleanup_notifiers(task);
+
+	if (atomic_read(&task->thread.pfm_owners_check) > 0)
+		pfm_cleanup_owners(task);
+
+	if (task->thread.pfm_smpl_buf_list)
+		pfm_cleanup_smpl_buf(task);
 }
 #endif
 
@@ -477,21 +537,13 @@ exit_thread (void)
 		ia64_set_fpu_owner(0);
 #endif
 #ifdef CONFIG_PERFMON
-       /* stop monitoring */
-	if ((current->thread.flags & IA64_THREAD_PM_VALID) != 0) {
-		/*
-		 * we cannot rely on switch_to() to save the PMU
-		 * context for the last time. There is a possible race
-		 * condition in SMP mode between the child and the
-		 * parent.  by explicitly saving the PMU context here
-		 * we garantee no race.  this call we also stop
-		 * monitoring
-		 */
+       /* if needed, stop monitoring and flush state to perfmon context */
+	if (current->thread.pfm_context) 
 		pfm_flush_regs(current);
-		/*
-		 * make sure that switch_to() will not save context again
-		 */
-		current->thread.flags &= ~IA64_THREAD_PM_VALID;
+
+	/* free debug register resources */
+	if ((current->thread.flags & IA64_THREAD_DBG_VALID) != 0) {
+		pfm_release_debug_registers(current);
 	}
 #endif
 }

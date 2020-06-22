@@ -1,5 +1,5 @@
 /*
- * $Id: mtdblock_ro.c,v 1.9 2001/10/02 15:05:11 dwmw2 Exp $
+ * $Id: mtdblock_ro.c,v 1.12 2001/11/20 11:42:33 dwmw2 Exp $
  *
  * Read-only version of the mtdblock device, without the 
  * read/erase/modify/writeback stuff
@@ -37,6 +37,13 @@ static int debug = MTDBLOCK_DEBUG;
 MODULE_PARM(debug, "i");
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,14)
+#define BLK_INC_USE_COUNT MOD_INC_USE_COUNT
+#define BLK_DEC_USE_COUNT MOD_DEC_USE_COUNT
+#else
+#define BLK_INC_USE_COUNT do {} while(0)
+#define BLK_DEC_USE_COUNT do {} while(0)
+#endif
 
 static int mtd_sizes[MAX_MTD_DEVICES];
 
@@ -62,6 +69,8 @@ static int mtdblock_open(struct inode *inode, struct file *file)
 		return -EINVAL;
 	}
 
+	BLK_INC_USE_COUNT;
+
 	mtd_sizes[dev] = mtd->size>>9;
 
 	DEBUG(1, "ok\n");
@@ -79,13 +88,12 @@ static release_t mtdblock_release(struct inode *inode, struct file *file)
 	if (inode == NULL)
 		release_return(-ENODEV);
    
-	invalidate_device(inode->i_rdev, 1);
-
 	dev = MINOR(inode->i_rdev);
 	mtd = __get_mtd_device(NULL, dev);
 
 	if (!mtd) {
 		printk(KERN_WARNING "MTD device is absent on mtd_release!\n");
+		BLK_DEC_USE_COUNT;
 		release_return(-ENODEV);
 	}
 	
@@ -96,6 +104,7 @@ static release_t mtdblock_release(struct inode *inode, struct file *file)
 
 	DEBUG(1, "ok\n");
 
+	BLK_DEC_USE_COUNT;
 	release_return(0);
 }  
 
@@ -210,9 +219,12 @@ static int mtdblock_ioctl(struct inode * inode, struct file * file,
 	switch (cmd) {
 	case BLKGETSIZE:   /* Return device size */
 		return put_user((mtd->size >> 9), (unsigned long *) arg);
+
+#ifdef BLKGETSIZE64
 	case BLKGETSIZE64:
 		return put_user((u64)mtd->size, (u64 *)arg);
-		
+#endif
+
 	case BLKFLSBUF:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,2,0)
 		if(!capable(CAP_SYS_ADMIN))  return -EACCES;
@@ -240,7 +252,9 @@ static struct file_operations mtd_fops =
 #else
 static struct block_device_operations mtd_fops = 
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,14)
 	owner: THIS_MODULE,
+#endif
 	open: mtdblock_open,
 	release: mtdblock_release,
 	ioctl: mtdblock_ioctl
@@ -254,7 +268,7 @@ int __init init_mtdblock(void)
 	if (register_blkdev(MAJOR_NR,DEVICE_NAME,&mtd_fops)) {
 		printk(KERN_NOTICE "Can't allocate major number %d for Memory Technology Devices.\n",
 		       MTD_BLOCK_MAJOR);
-		return EAGAIN;
+		return -EAGAIN;
 	}
 	
 	/* We fill it in at open() time. */

@@ -54,7 +54,7 @@
 #include <asm/amigaints.h>
 #include <asm/amigahw.h>
 #include <linux/zorro.h>
-#include <asm/io.h>
+
 #include <asm/irq.h>
 
 #include "ariadne.h"
@@ -847,3 +847,5 @@ static void __exit ariadne_cleanup(void)
 
 module_init(ariadne_probe);
 module_exit(ariadne_cleanup);
+
+MODULE_LICENSE("GPL");

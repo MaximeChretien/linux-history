@@ -1707,6 +1707,7 @@ static int event_thread(void* data)
 	struct controller *ctrl;
 	lock_kernel();
 	daemonize();
+	reparent_to_init();
 	
 	//  New name
 	strcpy(current->comm, "phpd_event");

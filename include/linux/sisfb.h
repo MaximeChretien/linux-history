@@ -20,6 +20,7 @@
 #define HASVB_303       	0x40
 #define HASVB_CHRONTEL  	0x80
 
+/* Never change the order of the following enum */
 typedef enum _SIS_CHIP_TYPE {
 	SIS_VGALegacy = 0,
 	SIS_300,
@@ -32,7 +33,8 @@ typedef enum _SIS_CHIP_TYPE {
 	SIS_315PRO,
 	SIS_640,
 	SIS_740,
-	SIS_330, 
+	SIS_650,
+	SIS_330,
 	MAX_SIS_CHIP
 } SIS_CHIP_TYPE;
 
@@ -88,6 +90,7 @@ struct video_info {
 	unsigned long mmio_base;
 	char  *mmio_vbase; 
 	unsigned long vga_base;
+	unsigned long mtrr;
 
 	int    video_bpp;
 	int    video_width;

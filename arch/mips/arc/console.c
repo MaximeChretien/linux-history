@@ -6,7 +6,6 @@
  * Copyright (C) 1996 David S. Miller (dm@sgi.com)
  * Compability with board caches, Ulf Carlsson
  */
-#include <linux/config.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <asm/sgialib.h>
@@ -31,7 +30,7 @@ void prom_putchar(char c)
 	char it = c;
 
 	bc_disable();
-	romvec->write(1, &it, 1, &cnt);
+	ArcWrite(1, &it, 1, &cnt);
 	bc_enable();
 }
 
@@ -41,7 +40,7 @@ char __init prom_getchar(void)
 	char c;
 
 	bc_disable();
-	romvec->read(0, &c, 1, &cnt);
+	ArcRead(0, &c, 1, &cnt);
 	bc_enable();
 
 	return c;

@@ -12,7 +12,7 @@
 #define _ASM_PROCESSOR_H
 
 #include <linux/config.h>
-
+#include <linux/cache.h>
 #include <asm/isadep.h>
 
 /*
@@ -21,38 +21,36 @@
  */
 #define current_text_addr() ({ __label__ _l; _l: &&_l;})
 
-#if !defined (_LANGUAGE_ASSEMBLY)
+#ifndef __ASSEMBLY__
 #include <linux/threads.h>
 #include <asm/cachectl.h>
 #include <asm/mipsregs.h>
 #include <asm/reg.h>
 #include <asm/system.h>
 
-struct mips_cpuinfo {
+struct cpuinfo_mips {
 	unsigned long udelay_val;
 	unsigned long *pgd_quick;
 	unsigned long *pte_quick;
 	unsigned long pgtable_cache_sz;
-};
+	unsigned long asid_cache;
+} __attribute__((__aligned__(SMP_CACHE_BYTES)));
 
 /*
  * System setup and hardware flags..
- * XXX: Should go into mips_cpuinfo.
  */
-extern void (*cpu_wait)(void);	/* only available on R4[26]00 and R3081 */
+extern void (*cpu_wait)(void);
 extern void r3081_wait(void);
+extern void r39xx_wait(void);
 extern void r4k_wait(void);
-extern char cyclecounter_available;	/* only available from R4000 upwards. */
 
-extern struct mips_cpuinfo boot_cpu_data;
+extern struct cpuinfo_mips cpu_data[];
 extern unsigned int vced_count, vcei_count;
 
 #ifdef CONFIG_SMP
-extern struct mips_cpuinfo cpu_data[];
 #define current_cpu_data cpu_data[smp_processor_id()]
 #else
-#define cpu_data &boot_cpu_data
-#define current_cpu_data boot_cpu_data
+#define current_cpu_data cpu_data[0]
 #endif
 
 /*
@@ -151,24 +149,9 @@ struct thread_struct {
 	mm_segment_t current_ds;
 	unsigned long irix_trampoline;  /* Wheee... */
 	unsigned long irix_oldctx;
-
-	/*
-	 * These are really only needed if the full FPU emulator is configured.
-	 * Would be made conditional on MIPS_FPU_EMULATOR if it weren't for the
-	 * fact that having offset.h rebuilt differently for different config
-	 * options would be asking for trouble.
-	 *
-	 * Saved EPC during delay-slot emulation (see math-emu/cp1emu.c)
-	 */
-	unsigned long dsemul_epc;
-
-	/*
-	 * Pointer to instruction used to induce address error
-	 */
-	unsigned long dsemul_aerpc;
 };
 
-#endif /* !defined (_LANGUAGE_ASSEMBLY) */
+#endif /* !__ASSEMBLY__ */
 
 #define INIT_THREAD  { \
         /* \
@@ -191,19 +174,14 @@ struct thread_struct {
 	/* \
 	 * For now the default is to fix address errors \
 	 */ \
-	MF_FIXADE, { 0 }, 0, 0, \
-	/* \
-	 * dsemul_epc and dsemul_aerpc should never be used uninitialized, \
-	 * but... \
-	 */ \
-	0 ,0 \
+	MF_FIXADE, { 0 }, 0, 0 \
 }
 
 #ifdef __KERNEL__
 
 #define KERNEL_STACK_SIZE 8192
 
-#if !defined (_LANGUAGE_ASSEMBLY)
+#ifndef __ASSEMBLY__
 
 /* Free all resources held by a thread. */
 #define release_thread(thread) do { } while(0)
@@ -217,7 +195,7 @@ extern int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags);
 /*
  * Return saved PC of a blocked thread.
  */
-extern inline unsigned long thread_saved_pc(struct thread_struct *t)
+static inline unsigned long thread_saved_pc(struct thread_struct *t)
 {
 	extern void ret_from_fork(void);
 
@@ -225,15 +203,15 @@ extern inline unsigned long thread_saved_pc(struct thread_struct *t)
 	if (t->reg31 == (unsigned long) ret_from_fork)
 		return t->reg31;
 
-	return ((unsigned long *)t->reg29)[10];
+	return ((unsigned long *)t->reg29)[13];
 }
 
 /*
  * Do necessary setup to start up a newly executed thread.
  */
 #define start_thread(regs, new_pc, new_sp) do {				\
-	/* New thread looses kernel privileges. */			\
-	regs->cp0_status = (regs->cp0_status & ~(ST0_CU0|ST0_KSU)) | KU_USER;\
+	/* New thread loses kernel and FPU privileges. */	       	\
+	regs->cp0_status = (regs->cp0_status & ~(ST0_CU0|ST0_KSU|ST0_CU1)) | KU_USER;\
 	regs->cp0_epc = new_pc;						\
 	regs->regs[29] = new_sp;					\
 	current->thread.current_ds = USER_DS;				\
@@ -261,7 +239,7 @@ unsigned long get_wchan(struct task_struct *p);
 
 #define cpu_relax()	do { } while (0)
 
-#endif /* !defined (_LANGUAGE_ASSEMBLY) */
+#endif /* !__ASSEMBLY__ */
 #endif /* __KERNEL__ */
 
 /*

@@ -36,7 +36,8 @@
 #include <linux/init.h>
 #include <net/arp.h>
 
-static void tr_source_route(struct sk_buff *skb, struct trh_hdr *trh, struct net_device *dev);
+void tr_source_route(struct sk_buff *skb, struct trh_hdr *trh,
+		     struct net_device *dev);
 static void tr_add_rif_info(struct trh_hdr *trh, struct net_device *dev);
 static void rif_check_expire(unsigned long dummy);
 
@@ -65,7 +66,7 @@ struct rif_cache_s {
  *	up a lot.
  */
  
-rif_cache rif_table[RIF_TABLE_SIZE]={ NULL, };
+rif_cache rif_table[RIF_TABLE_SIZE];
 
 static spinlock_t rif_lock = SPIN_LOCK_UNLOCKED;
 
@@ -230,7 +231,8 @@ unsigned short tr_type_trans(struct sk_buff *skb, struct net_device *dev)
  *	We try to do source routing... 
  */
 
-static void tr_source_route(struct sk_buff *skb,struct trh_hdr *trh,struct net_device *dev) 
+void tr_source_route(struct sk_buff *skb, struct trh_hdr *trh,
+		     struct net_device *dev) 
 {
 	int i, slack;
 	unsigned int hash;

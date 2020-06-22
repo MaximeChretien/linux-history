@@ -407,10 +407,10 @@ static int ext2_alloc_branch(struct inode *inode,
 		mark_buffer_uptodate(bh, 1);
 		unlock_buffer(bh);
 		mark_buffer_dirty_inode(bh, inode);
-		if (IS_SYNC(inode) || inode->u.ext2_i.i_osync) {
-			ll_rw_block (WRITE, 1, &bh);
-			wait_on_buffer (bh);
-		}
+		/* We used to sync bh here if IS_SYNC(inode).
+		 * But we now rely upon generic_osync_inode()
+		 * and b_inode_buffers
+		 */
 		parent = nr;
 	}
 	if (n == num)
@@ -469,18 +469,10 @@ static inline int ext2_splice_branch(struct inode *inode,
 	inode->i_ctime = CURRENT_TIME;
 
 	/* had we spliced it onto indirect block? */
-	if (where->bh) {
+	if (where->bh)
 		mark_buffer_dirty_inode(where->bh, inode);
-		if (IS_SYNC(inode) || inode->u.ext2_i.i_osync) {
-			ll_rw_block (WRITE, 1, &where->bh);
-			wait_on_buffer(where->bh);
-		}
-	}
 
-	if (IS_SYNC(inode) || inode->u.ext2_i.i_osync)
-		ext2_sync_inode (inode);
-	else
-		mark_inode_dirty(inode);
+	mark_inode_dirty(inode);
 	return 0;
 
 changed:
@@ -837,10 +829,6 @@ void ext2_truncate (struct inode * inode)
 				   (u32*)partial->bh->b_data + addr_per_block,
 				   (chain+n-1) - partial);
 		mark_buffer_dirty_inode(partial->bh, inode);
-		if (IS_SYNC(inode)) {
-			ll_rw_block (WRITE, 1, &partial->bh);
-			wait_on_buffer (partial->bh);
-		}
 		brelse (partial->bh);
 		partial--;
 	}
@@ -872,10 +860,12 @@ do_indirects:
 			;
 	}
 	inode->i_mtime = inode->i_ctime = CURRENT_TIME;
-	if (IS_SYNC(inode))
+	if (IS_SYNC(inode)) {
+		fsync_inode_buffers(inode);
 		ext2_sync_inode (inode);
-	else
+	} else {
 		mark_inode_dirty(inode);
+	}
 }
 
 void ext2_read_inode (struct inode * inode)

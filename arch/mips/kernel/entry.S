@@ -1,5 +1,4 @@
 /*
-/*
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
@@ -9,15 +8,17 @@
  * Copyright (C) 2001 MIPS Technologies, Inc.
  */
 #include <linux/config.h>
+#include <linux/init.h>
 #include <linux/sys.h>
 
 #include <asm/addrspace.h>
 #include <asm/asm.h>
+#include <asm/cacheops.h>
 #include <asm/current.h>
 #include <asm/errno.h>
 #include <asm/mipsregs.h>
 #include <asm/page.h>
-#include <asm/pgtable.h>
+#include <asm/pgtable-bits.h>
 #include <asm/stackframe.h>
 #include <asm/processor.h>
 #include <asm/regdef.h>
@@ -66,6 +67,7 @@ EXPORT(ret_from_sys_call)
 		lw	v1, TASK_SIGPENDING($28)
 		bnez	v0, reschedule
 		bnez	v1, signal_return
+		FEXPORT(restore_all)
 restore_all:	.set	noat
 		RESTORE_ALL_AND_RET
 		.set	at
@@ -93,14 +95,88 @@ LEAF(spurious_interrupt)
 		 * Someone tried to fool us by sending an interrupt but we
 		 * couldn't find a cause for it.
 		 */
-		lui     t1,%hi(spurious_count)
-		.set	reorder
-		lw      t0,%lo(spurious_count)(t1)
-		.set	noreorder
+		lui     t1,%hi(irq_err_count)
+		lw      t0,%lo(irq_err_count)(t1)
 		addiu   t0,1
-		sw      t0,%lo(spurious_count)(t1)
+		sw      t0,%lo(irq_err_count)(t1)
 		j	ret_from_irq
 		END(spurious_interrupt)
+
+		__INIT
+
+		.set	reorder
+
+		NESTED(except_vec1_generic, 0, sp)
+		PANIC("Exception vector 1 called")
+		END(except_vec1_generic)
+
+		/*
+		 * General exception vector.  Used for all CPUs except R4000
+		 * and R4400 SC and MC versions.
+		 */
+		NESTED(except_vec3_generic, 0, sp)
+		mfc0	k1, CP0_CAUSE
+		la	k0, exception_handlers
+		andi	k1, k1, 0x7c
+		addu	k0, k0, k1
+		lw	k0, (k0)
+		jr	k0
+		END(except_vec3_generic)
+		.set	at
+
+		/* General exception vector R4000 version. */
+		NESTED(except_vec3_r4000, 0, sp)
+		.set	push
+		.set    mips3
+		.set	noat
+		mfc0	k1, CP0_CAUSE
+		li	k0, 31<<2
+		andi	k1, k1, 0x7c
+		.set	noreorder
+		beq	k1, k0, handle_vced
+		 li	k0, 14<<2
+		beq	k1, k0, handle_vcei
+		 la	k0, exception_handlers
+		.set	reorder
+		addu	k0, k0, k1
+		lw	k0, (k0)
+		jr	k0
+
+		/*
+		 * Big shit, we now may have two dirty primary cache lines for
+		 * the same physical address.  We can savely invalidate the
+		 * line pointed to by c0_badvaddr because after return from
+		 * this exception handler the load / store will be re-executed.
+		 */
+handle_vced:
+		mfc0	k0, CP0_BADVADDR
+		li	k1, -4
+		and	k0, k1
+		mtc0	zero, CP0_TAGLO
+		cache	Index_Store_Tag_D,(k0)
+		cache	Hit_Writeback_Inv_SD,(k0)
+#ifdef CONFIG_PROC_FS
+		lui	k0, %hi(vced_count)
+		lw	k1, %lo(vced_count)(k0)
+		addiu	k1, 1
+		sw	k1, %lo(vced_count)(k0)
+#endif
+		eret
+
+handle_vcei:
+		mfc0	k0, CP0_BADVADDR
+		cache	Hit_Writeback_Inv_SD, (k0)	# also cleans pi
+#ifdef CONFIG_PROC_FS
+		lui	k0, %hi(vcei_count)
+		lw	k1, %lo(vcei_count)(k0)
+		addiu	k1, 1
+		sw	k1, %lo(vcei_count)(k0)
+#endif
+		eret
+		.set    pop
+		END(except_vec3_r4000)
+
+		__FINIT
 
 /*
  * Build a default exception handler for the exceptions that don't need
@@ -148,6 +224,7 @@ EXPORT(exception_count_##exception);                                    \
 		NESTED(handle_##exception, PT_SIZE, sp);                \
 		.set	noat;                                           \
 		SAVE_ALL;                                               \
+		FEXPORT(handle_##exception##_int);			\
 		__BUILD_clear_##clear(exception);                       \
 		.set	at;                                             \
 		__BUILD_##verbose(exception);                           \
@@ -159,16 +236,17 @@ EXPORT(exception_count_##exception);                                    \
 
 		BUILD_HANDLER(adel,ade,ade,silent)		/* #4  */
 		BUILD_HANDLER(ades,ade,ade,silent)		/* #5  */
-		BUILD_HANDLER(ibe,ibe,cli,verbose)		/* #6  */
-		BUILD_HANDLER(dbe,dbe,cli,silent)		/* #7  */
+		BUILD_HANDLER(ibe,be,cli,silent)		/* #6  */
+		BUILD_HANDLER(dbe,be,cli,silent)		/* #7  */
 		BUILD_HANDLER(bp,bp,sti,silent)			/* #9  */
 		BUILD_HANDLER(ri,ri,sti,silent)			/* #10 */
 		BUILD_HANDLER(cpu,cpu,sti,silent)		/* #11 */
 		BUILD_HANDLER(ov,ov,sti,silent)			/* #12 */
 		BUILD_HANDLER(tr,tr,sti,silent)			/* #13 */
 		BUILD_HANDLER(fpe,fpe,fpe,silent)		/* #15 */
-		BUILD_HANDLER(watch,watch,sti,verbose)		/* #23 */
-		BUILD_HANDLER(reserved,reserved,sti,verbose)	/* others */
+		BUILD_HANDLER(watch,watch,sti,silent)		/* #23 */
+		BUILD_HANDLER(mcheck,mcheck,cli,silent)		/* #24 */
+		BUILD_HANDLER(reserved,reserved,sti,silent)	/* others */
 
 		.set	pop
 

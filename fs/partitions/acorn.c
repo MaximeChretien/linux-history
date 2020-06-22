@@ -17,6 +17,7 @@
 #include <linux/string.h>
 #include <linux/genhd.h>
 #include <linux/fs.h>
+#include <linux/pagemap.h>
 
 #include "check.h"
 #include "acorn.h"

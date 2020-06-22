@@ -154,7 +154,6 @@ struct pt_regs
 	__u32 acrs[NUM_ACRS];
 	__u64 orig_gpr2;
 	__u32 trap;
-	__u32 old_ilc;
 } __attribute__ ((packed));
 
 /*

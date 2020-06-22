@@ -1,8 +1,6 @@
 /*
  * linux/arch/arm/mach-sa1100/yopy.c
  */
-
-#include <linux/config.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -52,14 +50,16 @@ EXPORT_SYMBOL(yopy_gpio_set);
 
 static int __init yopy_hw_init(void)
 {
-	YOPY_EGPIO = yopy_egpio;
+	if (machine_is_yopy()) {
+		YOPY_EGPIO = yopy_egpio;
 
-	/* Enable Output */
-	PPDR |= PPC_L_BIAS;
-	PSDR &= ~PPC_L_BIAS;
-	PPSR |= PPC_L_BIAS;
+		/* Enable Output */
+		PPDR |= PPC_L_BIAS;
+		PSDR &= ~PPC_L_BIAS;
+		PPSR |= PPC_L_BIAS;
 
-	YOPY_EGPIO = yopy_egpio;
+		YOPY_EGPIO = yopy_egpio;
+	}
 
 	return 0;
 }
@@ -69,9 +69,9 @@ __initcall(yopy_hw_init);
 
 static struct map_desc yopy_io_desc[] __initdata = {
  /* virtual     physical    length      domain     r  w  c  b */
-  { 0xe8000000, 0x00000000, 0x04000000, DOMAIN_IO, 1, 1, 0, 0 }, /* Flash 0 */
-  { 0xec000000, 0x08000000, 0x04000000, DOMAIN_IO, 1, 1, 0, 0 }, /* Flash 1 */
-  { 0xf0000000, 0x48000000, 0x00300000, DOMAIN_IO, 1, 1, 0, 0 }, /* LCD */
+  { 0xe8000000, 0x00000000, 0x04000000, DOMAIN_IO, 0, 1, 0, 0 }, /* Flash 0 */
+  { 0xec000000, 0x08000000, 0x04000000, DOMAIN_IO, 0, 1, 0, 0 }, /* Flash 1 */
+  { 0xf0000000, 0x48000000, 0x00300000, DOMAIN_IO, 0, 1, 0, 0 }, /* LCD */
   { 0xf1000000, 0x10000000, 0x00100000, DOMAIN_IO, 0, 1, 0, 0 }, /* EGPIO */
   LAST_DESC
 };
@@ -82,6 +82,8 @@ static void __init yopy_map_io(void)
 	iotable_init(yopy_io_desc);
 
 	sa1100_register_uart(0, 3);
+
+	set_GPIO_IRQ_edge(GPIO_UCB1200_IRQ, GPIO_RISING_EDGE);
 }
 
 

@@ -1,7 +1,7 @@
 /*
  * USB Compaq iPAQ driver
  *
- *	Copyright (C) 2001
+ *	Copyright (C) 2001 - 2002
  *	    Ganesh Varadarajan <ganesh@veritas.com>
  *
  *	This program is free software; you can redistribute it and/or modify
@@ -9,6 +9,27 @@
  *	the Free Software Foundation; either version 2 of the License, or
  *	(at your option) any later version.
  *
+ * (30/4/2002) ganesh
+ * 	Added support for the Casio EM500. Completely untested. Thanks
+ * 	to info from Nathan <wfilardo@fuse.net>
+ *
+ * (19/3/2002) ganesh
+ * 	Don't submit urbs while holding spinlocks. Thanks to Greg for pointing
+ * 	this out.
+ *
+ * (8/3/2002) ganesh
+ * 	The ipaq sometimes emits a '\0' before the CLIENT string. At this
+ * 	point of time, the ppp ldisc is not yet attached to the tty, so
+ * 	n_tty echoes "^ " to the ipaq, which messes up the chat. In 2.5.6-pre2
+ * 	this causes a panic because echo_char() tries to sleep in interrupt
+ * 	context.
+ * 	The fix is to tell the upper layers that this is a raw device so that
+ * 	echoing is suppressed. Thanks to Lyle Lindholm for a detailed bug
+ * 	report.
+ *
+ * (25/2/2002) ganesh
+ * 	Added support for the HP Jornada 548 and 568. Completely untested.
+ * 	Thanks to info from Heath Robinson and Arieh Davidoff.
  */
 
 #include <linux/config.h>
@@ -39,9 +60,9 @@
 /*
  * Version Information
  */
-#define DRIVER_VERSION "v0.1"
+#define DRIVER_VERSION "v0.2"
 #define DRIVER_AUTHOR "Ganesh Varadarajan <ganesh@veritas.com>"
-#define DRIVER_DESC "USB Compaq iPAQ driver"
+#define DRIVER_DESC "USB Compaq iPAQ, HP Jornada, Casio EM500 driver"
 
 /* Function prototypes for an ipaq */
 static int  ipaq_open (struct usb_serial_port *port, struct file *filp);
@@ -52,7 +73,7 @@ static int ipaq_write(struct usb_serial_port *port, int from_user, const unsigne
 		       int count);
 static int ipaq_write_bulk(struct usb_serial_port *port, int from_user, const unsigned char *buf,
 			   int count);
-static int ipaq_write_flush(struct usb_serial_port *port);
+static void ipaq_write_gather(struct usb_serial_port *port);
 static void ipaq_read_bulk_callback (struct urb *urb);
 static void ipaq_write_bulk_callback(struct urb *urb);
 static int ipaq_write_room(struct usb_serial_port *port);
@@ -61,7 +82,10 @@ static void ipaq_destroy_lists(struct usb_serial_port *port);
 
 
 static __devinitdata struct usb_device_id ipaq_id_table [] = {
-	{ USB_DEVICE(IPAQ_VENDOR_ID, IPAQ_PRODUCT_ID) },
+	{ USB_DEVICE(COMPAQ_VENDOR_ID, COMPAQ_IPAQ_ID) },
+	{ USB_DEVICE(HP_VENDOR_ID, HP_JORNADA_548_ID) },
+	{ USB_DEVICE(HP_VENDOR_ID, HP_JORNADA_568_ID) },
+	{ USB_DEVICE(CASIO_VENDOR_ID, CASIO_EM500_ID) },
 	{ }					/* Terminating entry */
 };
 
@@ -71,10 +95,10 @@ MODULE_DEVICE_TABLE (usb, ipaq_id_table);
 struct usb_serial_device_type ipaq_device = {
 	name:			"Compaq iPAQ",
 	id_table:		ipaq_id_table,
-	needs_interrupt_in:	MUST_HAVE_NOT,
+	needs_interrupt_in:	DONT_CARE,
 	needs_bulk_in:		MUST_HAVE,
 	needs_bulk_out:		MUST_HAVE,
-	num_interrupt_in:	0,
+	num_interrupt_in:	NUM_DONT_CARE,
 	num_bulk_in:		1,
 	num_bulk_out:		1,
 	num_ports:		1,
@@ -149,6 +173,8 @@ static int ipaq_open(struct usb_serial_port *port, struct file *filp)
 		 */
 
 		port->tty->low_latency = 1;
+		port->tty->raw = 1;
+		port->tty->real_raw = 1;
 
 		/*
 		 * Lose the small buffers usbserial provides. Make larger ones.
@@ -365,17 +391,23 @@ static int ipaq_write_bulk(struct usb_serial_port *port, int from_user, const un
 	priv->queue_len += count;
 	if (priv->active == 0) {
 		priv->active = 1;
-		result = ipaq_write_flush(port);
+		ipaq_write_gather(port);
+		spin_unlock_irqrestore(&write_list_lock, flags);
+		result = usb_submit_urb(port->write_urb);
+		if (result) {
+			err(__FUNCTION__ " - failed submitting write urb, error %d", result);
+		}
+	} else {
+		spin_unlock_irqrestore(&write_list_lock, flags);
 	}
-	spin_unlock_irqrestore(&write_list_lock, flags);
 	return result;
 }
 
-static int ipaq_write_flush(struct usb_serial_port *port)
+static void ipaq_write_gather(struct usb_serial_port *port)
 {
 	struct ipaq_private	*priv = (struct ipaq_private *)port->private;
 	struct usb_serial	*serial = port->serial;
-	int			count, room, result;
+	int			count, room;
 	struct ipaq_packet	*pkt;
 	struct urb		*urb = port->write_urb;
 	struct list_head	*tmp;
@@ -383,7 +415,7 @@ static int ipaq_write_flush(struct usb_serial_port *port)
 	if (urb->status == -EINPROGRESS) {
 		/* Should never happen */
 		err(__FUNCTION__ " - flushing while urb is active !");
-		return -EAGAIN;
+		return;
 	}
 	room = URBDATA_SIZE;
 	for (tmp = priv->queue.next; tmp != &priv->queue;) {
@@ -410,11 +442,7 @@ static int ipaq_write_flush(struct usb_serial_port *port)
 		      usb_sndbulkpipe(serial->dev, port->bulk_out_endpointAddress),
 		      port->write_urb->transfer_buffer, count, ipaq_write_bulk_callback,
 		      port);
-	result = usb_submit_urb(urb);
-	if (result) {
-		err(__FUNCTION__ " - failed submitting write urb, error %d", result);
-	}
-	return result;
+	return;
 }
 
 static void ipaq_write_bulk_callback(struct urb *urb)
@@ -422,6 +450,7 @@ static void ipaq_write_bulk_callback(struct urb *urb)
 	struct usb_serial_port	*port = (struct usb_serial_port *)urb->context;
 	struct ipaq_private	*priv = (struct ipaq_private *)port->private;
 	unsigned long		flags;
+	int			result;
 
 	if (port_paranoia_check (port, __FUNCTION__)) {
 		return;
@@ -435,11 +464,16 @@ static void ipaq_write_bulk_callback(struct urb *urb)
 
 	spin_lock_irqsave(&write_list_lock, flags);
 	if (!list_empty(&priv->queue)) {
-		ipaq_write_flush(port);
+		ipaq_write_gather(port);
+		spin_unlock_irqrestore(&write_list_lock, flags);
+		result = usb_submit_urb(port->write_urb);
+		if (result) {
+			err(__FUNCTION__ " - failed submitting write urb, error %d", result);
+		}
 	} else {
 		priv->active = 0;
+		spin_unlock_irqrestore(&write_list_lock, flags);
 	}
-	spin_unlock_irqrestore(&write_list_lock, flags);
 	queue_task(&port->tqueue, &tq_immediate);
 	mark_bh(IMMEDIATE_BH);
 	

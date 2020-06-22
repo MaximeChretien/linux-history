@@ -184,7 +184,7 @@ do_delayed_trace:
 #if 0
 #if CONFIG_AMIGA
 SYMBOL_NAME_LABEL(ami_inthandler)
-	addql	#1,SYMBOL_NAME(irq_stat)+8	| local_irq_count
+	addql	#1,SYMBOL_NAME(irq_stat)+4	| local_irq_count
 	SAVE_ALL_INT
 	GET_CURRENT(%d0)
 
@@ -216,7 +216,7 @@ ENTRY(nmi_handler)
 SYMBOL_NAME_LABEL(inthandler)
 	SAVE_ALL_INT
 	GET_CURRENT(%d0)
-	addql	#1,SYMBOL_NAME(irq_stat)+8	| local_irq_count
+	addql	#1,SYMBOL_NAME(irq_stat)+4	| local_irq_count
 					|  put exception # in d0
 	bfextu %sp@(PT_VECTOR){#4,#10},%d0
 
@@ -235,7 +235,7 @@ SYMBOL_NAME_LABEL(inthandler)
 3:     	addql	#8,%sp			|  pop parameters off stack
 
 SYMBOL_NAME_LABEL(ret_from_interrupt)
-	subql	#1,SYMBOL_NAME(irq_stat)+8	| local_irq_count
+	subql	#1,SYMBOL_NAME(irq_stat)+4	| local_irq_count
 	jeq	1f
 2:
 	RESTORE_ALL
@@ -248,11 +248,8 @@ SYMBOL_NAME_LABEL(ret_from_interrupt)
 	jhi	2b
 #endif
 	/* check if we need to do software interrupts */
-
-	movel	SYMBOL_NAME(irq_stat),%d0	| softirq_active
-	andl	SYMBOL_NAME(irq_stat)+4,%d0	| softirq_mask
+	tstl	SYMBOL_NAME(irq_stat)	| softirq_pending ?
 	jeq	SYMBOL_NAME(ret_from_exception)
-
 	pea	SYMBOL_NAME(ret_from_exception)
 	jra	SYMBOL_NAME(do_softirq)
 
@@ -642,10 +639,12 @@ SYMBOL_NAME_LABEL(sys_call_table)
 	.long SYMBOL_NAME(sys_setgid)
 	.long SYMBOL_NAME(sys_setfsuid)		/* 215 */
 	.long SYMBOL_NAME(sys_setfsgid)
-	.long SYMBOL_NAME(sys_ni_syscall)
+	.long SYMBOL_NAME(sys_pivot_root)
 	.long SYMBOL_NAME(sys_ni_syscall)
 	.long SYMBOL_NAME(sys_ni_syscall)
 	.long SYMBOL_NAME(sys_getdents64)	/* 220 */
+	.long SYMBOL_NAME(sys_gettid)
+	.long SYMBOL_NAME(sys_tkill)
 
 	.rept NR_syscalls-(.-SYMBOL_NAME(sys_call_table))/4
 		.long SYMBOL_NAME(sys_ni_syscall)

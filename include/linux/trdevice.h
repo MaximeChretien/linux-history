@@ -31,6 +31,9 @@
 extern int		tr_header(struct sk_buff *skb, struct net_device *dev,
 				   unsigned short type, void *daddr,
 				   void *saddr, unsigned len);
+extern void		tr_source_route(struct sk_buff *skb,
+					struct trh_hdr *trh,
+					struct net_device *dev);
 extern int		tr_rebuild_header(struct sk_buff *skb);
 extern unsigned short	tr_type_trans(struct sk_buff *skb, struct net_device *dev);
 extern struct net_device *init_trdev(struct net_device *dev, int sizeof_priv);

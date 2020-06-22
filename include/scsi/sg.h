@@ -9,11 +9,15 @@
 Original driver (sg.h):
 *       Copyright (C) 1992 Lawrence Foard
 Version 2 and 3 extensions to driver:
-*       Copyright (C) 1998 - 2001 Douglas Gilbert
+*       Copyright (C) 1998 - 2002 Douglas Gilbert
 
-    Version: 3.1.22 (20011208)
+    Version: 3.1.23 (20020318)
     This version is for 2.4 series kernels.
 
+    Changes since 3.1.22 (20011208)
+	- change EACCES to EPERM when O_RDONLY is insufficient
+	- suppress newlines in host string ( /proc/scsi/sg/host_strs output)
+	- fix xfer direction, old interface, short reply_len [Travers Carter]
     Changes since 3.1.21 (20011029)
     	- add support for SG_FLAG_MMAP_IO [permit mmap() on sg devices]
     	- update documentation pointers in this header

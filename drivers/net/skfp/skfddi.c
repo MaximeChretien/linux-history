@@ -56,6 +56,7 @@
  *		12-Nov-99	CG	Source code release
  *		22-Nov-99	CG	Included in kernel source.
  *		07-May-00	DM	64 bit fixes, new dma interface
+ *		06-May-02	ML	Structure fixes
  *
  * Compilation options (-Dxxx):
  *              DRIVERDEBUG     print lots of messages to log file
@@ -68,7 +69,7 @@
 
 /* Version information string - should be updated prior to */
 /* each new release!!! */
-#define VERSION		"2.06"
+#define VERSION		"2.07"
 
 static const char *boot_msg = 
 	"SysKonnect FDDI PCI Adapter driver v" VERSION " for\n"
@@ -188,6 +189,7 @@ static struct pci_device_id skfddi_pci_tbl[] __initdata = {
 };
 MODULE_DEVICE_TABLE(pci, skfddi_pci_tbl);
 MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Mirko Lindner <mlindner@syskonnect.de>");
 
 // Define module-wide (static) variables
 

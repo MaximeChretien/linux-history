@@ -404,7 +404,7 @@ int presto_remount(struct super_block * sb, int *flags, char *data)
 
         cache = presto_find_cache(sb->s_dev);
         if (!cache) {
-                printk(__FUNCTION__ ": cannot find cache on remount\n");
+                printk( "%s: cannot find cache on remount\n", __FUNCTION__);
                 err = -ENODEV;
                 EXIT;
                 goto out_err;

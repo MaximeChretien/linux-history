@@ -46,6 +46,15 @@ sourcedir=${1-/usr/src/linux}
 patchdir=${2-.}
 stopvers=${3-imnotaversion}
 
+if [ "$1" = -h -o "$1" = --help -o ! -r "$sourcedir/Makefile" ]; then
+cat << USAGE
+usage: patch-kernel [-h] [ sourcedir [ patchdir [ stopversion ] [ -acxx ] ] ]
+  The source directory defaults to /usr/src/linux, and
+  the patch directory defaults to the current directory.
+USAGE
+exit 1
+fi
+
 # See if we have any -ac options
 for PARM in $*
 do
@@ -59,7 +68,7 @@ done
 # ---------------------------------------------------------------------------
 # Find a file, first parameter is basename of file
 # it tries many compression mechanisms and sets variables to say how to get it
-function findFile {
+findFile () {
   filebase=$1;
 
   if [ -r ${filebase}.gz ]; then
@@ -97,7 +106,7 @@ function findFile {
 # Apply a patch and check it goes in cleanly
 # First param is patch name (e.g. patch-2.4.9-ac5) - without path or extension
 
-function applyPatch {
+applyPatch () {
   echo -n "Applying $1 (${name})... "
   if $uncomp ${patchdir}/$1${ext} | patch -p1 -s -N -E -d $sourcedir
   then

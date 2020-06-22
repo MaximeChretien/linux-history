@@ -65,12 +65,12 @@ static int aac_alloc_comm(struct aac_dev *dev, void **commaddr, unsigned long co
 		printk(KERN_ERR "aacraid: unable to create mapping.\n");
 		return 0;
 	}
-	dev->comm_addr  = (void *)base;
+	dev->comm_addr = (void *)base;
 	dev->comm_phys = phys;
-	dev->comm_size     = size;
+	dev->comm_size = size;
 
 	dev->init = (struct aac_init *)(base + fibsize);
-	dev->init_pa = (struct aac_init *)(phys + fibsize);
+	dev->init_pa = phys + fibsize;
 
 	init = dev->init;
 
@@ -82,7 +82,7 @@ static int aac_alloc_comm(struct aac_dev *dev, void **commaddr, unsigned long co
 	 *	Adapter Fibs are the first thing allocated so that they
 	 *	start page aligned
 	 */
-	init->AdapterFibsVirtualAddress = cpu_to_le32(base);
+	init->AdapterFibsVirtualAddress = cpu_to_le32((long)base);
 	init->AdapterFibsPhysicalAddress = cpu_to_le32(phys);
 	init->AdapterFibsSize = cpu_to_le32(fibsize);
 	init->AdapterFibAlign = cpu_to_le32(sizeof(struct hw_fib));

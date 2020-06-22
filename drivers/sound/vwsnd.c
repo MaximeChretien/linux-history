@@ -535,7 +535,7 @@ static int li_ad1843_wait(lithium_t *lith)
 {
 	unsigned long later = jiffies + 2;
 	while (li_readl(lith, LI_CODEC_COMMAND) & LI_CC_BUSY)
-		if (jiffies >= later)
+		if (time_after_eq(jiffies, later))
 			return -EBUSY;
 	return 0;
 }
@@ -1358,7 +1358,7 @@ static int __init ad1843_init(lithium_t *lith)
 	later = jiffies + HZ / 2;	/* roughly half a second */
 	DBGDO(shut_up++);
 	while (ad1843_read_bits(lith, &ad1843_PDNO)) {
-		if (jiffies > later) {
+		if (time_after(jiffies, later)) {
 			printk(KERN_ERR
 			       "vwsnd audio: AD1843 won't power up\n");
 			return -EIO;
@@ -2650,7 +2650,7 @@ static int vwsnd_audio_do_ioctl(struct inode *inode,
 		DBGXV("SNDCTL_DSP_GETOSPACE returns { %d %d %d %d }\n",
 		     buf_info.fragments, buf_info.fragstotal,
 		     buf_info.fragsize, buf_info.bytes);
-		return copy_to_user((void *) arg, &buf_info, sizeof buf_info);
+		return copy_to_user((void *) arg, &buf_info, sizeof buf_info) ? -EFAULT : 0;
 
 	case SNDCTL_DSP_GETISPACE:	/* _SIOR ('P',13, audio_buf_info) */
 		DBGX("SNDCTL_DSP_GETISPACE\n");
@@ -2667,7 +2667,7 @@ static int vwsnd_audio_do_ioctl(struct inode *inode,
 		DBGX("SNDCTL_DSP_GETISPACE returns { %d %d %d %d }\n",
 		     buf_info.fragments, buf_info.fragstotal,
 		     buf_info.fragsize, buf_info.bytes);
-		return copy_to_user((void *) arg, &buf_info, sizeof buf_info);
+		return copy_to_user((void *) arg, &buf_info, sizeof buf_info) ? -EFAULT : 0;
 
 	case SNDCTL_DSP_NONBLOCK:	/* _SIO  ('P',14) */
 		DBGX("SNDCTL_DSP_NONBLOCK\n");
@@ -2725,7 +2725,7 @@ static int vwsnd_audio_do_ioctl(struct inode *inode,
 			rport->frag_count = 0;
 		}
 		spin_unlock_irqrestore(&rport->lock, flags);
-		return copy_to_user((void *) arg, &info, sizeof info);
+		return copy_to_user((void *) arg, &info, sizeof info) ? -EFAULT : 0;
 
 	case SNDCTL_DSP_GETOPTR:	/* _SIOR ('P',18, count_info) */
 		DBGX("SNDCTL_DSP_GETOPTR\n");
@@ -2747,7 +2747,7 @@ static int vwsnd_audio_do_ioctl(struct inode *inode,
 			wport->frag_count = 0;
 		}
 		spin_unlock_irqrestore(&wport->lock, flags);
-		return copy_to_user((void *) arg, &info, sizeof info);
+		return copy_to_user((void *) arg, &info, sizeof info) ? -EFAULT : 0;
 
 	case SNDCTL_DSP_GETODELAY:	/* _SIOR ('P', 23, int) */
 		DBGX("SNDCTL_DSP_GETODELAY\n");

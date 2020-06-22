@@ -7,10 +7,11 @@
  *
  *	Adapted from linux/net/ipv4/raw.c
  *
- *	$Id: raw.c,v 1.50 2001/09/18 22:29:10 davem Exp $
+ *	$Id: raw.c,v 1.50.2.1 2002/03/05 12:47:34 davem Exp $
  *
  *	Fixes:
  *	Hideaki YOSHIFUJI	:	sin6_scope_id support
+ *	YOSHIFUJI,H.@USAGI	:	raw checksum (RFC2292(bis) compliance) 
  *
  *	This program is free software; you can redistribute it and/or
  *      modify it under the terms of the GNU General Public License
@@ -278,6 +279,16 @@ void rawv6_err(struct sock *sk, struct sk_buff *skb,
 
 static inline int rawv6_rcv_skb(struct sock * sk, struct sk_buff * skb)
 {
+#if defined(CONFIG_FILTER)
+	if (sk->filter && skb->ip_summed != CHECKSUM_UNNECESSARY) {
+		if ((unsigned short)csum_fold(skb_checksum(skb, 0, skb->len, skb->csum))) {
+			IP6_INC_STATS_BH(Ip6InDiscards);
+			kfree_skb(skb);
+			return 0;
+		}
+		skb->ip_summed = CHECKSUM_UNNECESSARY;
+	}
+#endif
 	/* Charge it to the socket. */
 	if (sock_queue_rcv_skb(sk,skb)<0) {
 		IP6_INC_STATS_BH(Ip6InDiscards);
@@ -298,9 +309,33 @@ static inline int rawv6_rcv_skb(struct sock * sk, struct sk_buff * skb)
  */
 int rawv6_rcv(struct sock *sk, struct sk_buff *skb)
 {
+	if (!sk->tp_pinfo.tp_raw.checksum)
+		skb->ip_summed = CHECKSUM_UNNECESSARY;
+
+	if (skb->ip_summed != CHECKSUM_UNNECESSARY) {
+		if (skb->ip_summed == CHECKSUM_HW) {
+			skb->ip_summed = CHECKSUM_UNNECESSARY;
+			if (csum_ipv6_magic(&skb->nh.ipv6h->saddr,
+					    &skb->nh.ipv6h->daddr,
+					    skb->len, sk->num, skb->csum)) {
+				NETDEBUG(if (net_ratelimit()) printk(KERN_DEBUG "raw v6 hw csum failure.\n"));
+				skb->ip_summed = CHECKSUM_NONE;
+			}
+		}
+		if (skb->ip_summed == CHECKSUM_NONE)
+			skb->csum = ~csum_ipv6_magic(&skb->nh.ipv6h->saddr,
+						     &skb->nh.ipv6h->daddr,
+						     skb->len, sk->num, 0);
+	}
+
 	if (sk->protinfo.af_inet.hdrincl) {
-		__skb_push(skb, skb->nh.raw - skb->data);
-		skb->h.raw = skb->nh.raw;
+		if (skb->ip_summed != CHECKSUM_UNNECESSARY &&
+		    (unsigned short)csum_fold(skb_checksum(skb, 0, skb->len, skb->csum))) {
+			IP6_INC_STATS_BH(Ip6InDiscards);
+			kfree_skb(skb);
+			return 0;
+		}
+		skb->ip_summed = CHECKSUM_UNNECESSARY;
 	}
 
 	rawv6_rcv_skb(sk, skb);
@@ -339,7 +374,17 @@ int rawv6_recvmsg(struct sock *sk, struct msghdr *msg, int len,
   		msg->msg_flags |= MSG_TRUNC;
   	}
 
-	err = skb_copy_datagram_iovec(skb, 0, msg->msg_iov, copied);
+	if (skb->ip_summed==CHECKSUM_UNNECESSARY) {
+		err = skb_copy_datagram_iovec(skb, 0, msg->msg_iov, copied);
+	} else if (msg->msg_flags&MSG_TRUNC) {
+		if ((unsigned short)csum_fold(skb_checksum(skb, 0, skb->len, skb->csum)))
+			goto csum_copy_err;
+		err = skb_copy_datagram_iovec(skb, 0, msg->msg_iov, copied);
+	} else {
+		err = skb_copy_and_csum_datagram_iovec(skb, 0, msg->msg_iov);
+		if (err == -EINVAL)
+			goto csum_copy_err;
+	}
 	if (err)
 		goto out_free;
 
@@ -366,6 +411,27 @@ out_free:
 	skb_free_datagram(sk, skb);
 out:
 	return err;
+
+csum_copy_err:
+	/* Clear queue. */
+	if (flags&MSG_PEEK) {
+		int clear = 0;
+		spin_lock_irq(&sk->receive_queue.lock);
+		if (skb == skb_peek(&sk->receive_queue)) {
+			__skb_unlink(skb, &sk->receive_queue);
+			clear = 1;
+		}
+		spin_unlock_irq(&sk->receive_queue.lock);
+		if (clear)
+			kfree_skb(skb);
+	}
+
+	/* Error for blocking case is chosen to masquerade
+	   as some normal condition.
+	 */
+	err = (flags&MSG_DONTWAIT) ? -EAGAIN : -EHOSTUNREACH;
+	IP6_INC_STATS_USER(Ip6InDiscards);
+	goto out_free;
 }
 
 /*
@@ -415,11 +481,18 @@ static int rawv6_frag_cksum(const void *data, struct in6_addr *addr,
 		hdr->cksum = csum_ipv6_magic(addr, daddr, hdr->len,
 					     hdr->proto, hdr->cksum);
 		
-		if (opt->offset < len) {
+		if (opt->offset + 1 < len) {
 			__u16 *csum;
 
 			csum = (__u16 *) (buff + opt->offset);
-			*csum = hdr->cksum;
+			if (*csum) {
+				/* in case cksum was not initialized */
+				__u32 sum = hdr->cksum;
+				sum += *csum;
+				*csum = hdr->cksum = (sum + (sum>>16));
+			} else {
+				*csum = hdr->cksum;
+			}
 		} else {
 			if (net_ratelimit())
 				printk(KERN_DEBUG "icmp: cksum offset too big\n");
@@ -647,6 +720,10 @@ static int rawv6_setsockopt(struct sock *sk, int level, int optname,
 
 	switch (optname) {
 		case IPV6_CHECKSUM:
+			/* You may get strange result with a positive odd offset;
+			   RFC2292bis agrees with me. */
+			if (val > 0 && (val&1))
+				return(-EINVAL);
 			if (val < 0) {
 				opt->checksum = 0;
 			} else {
@@ -744,6 +821,11 @@ static void rawv6_close(struct sock *sk, long timeout)
 
 static int rawv6_init_sk(struct sock *sk)
 {
+	if (sk->num == IPPROTO_ICMPV6){
+		struct raw6_opt *opt = &sk->tp_pinfo.tp_raw;
+		opt->checksum = 1;
+		opt->offset = 2;
+	}
 	return(0);
 }
 
@@ -761,7 +843,7 @@ static void get_raw6_sock(struct sock *sp, char *tmpbuf, int i)
 	srcp  = sp->num;
 	sprintf(tmpbuf,
 		"%4d: %08X%08X%08X%08X:%04X %08X%08X%08X%08X:%04X "
-		"%02X %08X:%08X %02X:%08lX %08X %5d %8d %ld %d %p",
+		"%02X %08X:%08X %02X:%08lX %08X %5d %8d %lu %d %p",
 		i,
 		src->s6_addr32[0], src->s6_addr32[1],
 		src->s6_addr32[2], src->s6_addr32[3], srcp,

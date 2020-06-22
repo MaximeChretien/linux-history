@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.init.c 1.40 01/25/02 15:15:24 benh
+ * BK Id: SCCS/s.init.c 1.43 03/12/02 12:13:51 paulus
  */
 /*
  *  PowerPC version 
@@ -230,7 +230,7 @@ void free_initmem(void)
 		 (unsigned long)(&__ ## TYPE ## _end), \
 		 #TYPE);
 
-	printk ("Freeing unused kernel memory:");
+	printk (KERN_INFO "Freeing unused kernel memory:");
 	FREESEC(init);
 	if (_machine != _MACH_Pmac)
 		FREESEC(pmac);
@@ -247,7 +247,7 @@ void free_initmem(void)
 #ifdef CONFIG_BLK_DEV_INITRD
 void free_initrd_mem(unsigned long start, unsigned long end)
 {
-	printk ("Freeing initrd memory: %ldk freed\n", (end - start) >> 10);
+	printk (KERN_INFO "Freeing initrd memory: %ldk freed\n", (end - start) >> 10);
 
 	for (; start < end; start += PAGE_SIZE) {
 		ClearPageReserved(virt_to_page(start));
@@ -515,7 +515,7 @@ void __init mem_init(void)
 	}
 #endif /* CONFIG_HIGHMEM */
 
-        printk("Memory: %luk available (%dk kernel code, %dk data, %dk init, %ldk highmem)\n",
+        printk(KERN_INFO "Memory: %luk available (%dk kernel code, %dk data, %dk init, %ldk highmem)\n",
 	       (unsigned long)nr_free_pages()<< (PAGE_SHIFT-10),
 	       codepages<< (PAGE_SHIFT-10), datapages<< (PAGE_SHIFT-10),
 	       initpages<< (PAGE_SHIFT-10),
@@ -570,9 +570,6 @@ set_phys_avail(unsigned long total_memory)
 	/* remove the RTAS pages from the available memory */
 	if (rtas_data)
 		mem_pieces_remove(&phys_avail, rtas_data, rtas_size, 1);
-	/* remove the sysmap pages from the available memory */
-	if (sysmap)
-		mem_pieces_remove(&phys_avail, __pa(sysmap), sysmap_size, 1);
 	/* Because of some uninorth weirdness, we need a page of
 	 * memory as high as possible (it must be outside of the
 	 * bus address seen as the AGP aperture). It will be used
@@ -588,6 +585,9 @@ set_phys_avail(unsigned long total_memory)
 		agp_special_page = (unsigned long)__va(agp_special_page);
 	}
 #endif /* CONFIG_ALL_PPC */
+	/* remove the sysmap pages from the available memory */
+	if (sysmap)
+		mem_pieces_remove(&phys_avail, __pa(sysmap), sysmap_size, 1);
 }
 
 /* Mark some memory as reserved by removing it from phys_avail. */
@@ -596,23 +596,44 @@ void __init reserve_phys_mem(unsigned long start, unsigned long size)
 	mem_pieces_remove(&phys_avail, start, size, 1);
 }
 
-void flush_page_to_ram(struct page *page)
+/*
+ * This is called when a page has been modified by the kernel.
+ * It just marks the page as not i-cache clean.  We do the i-cache
+ * flush later when the page is given to a user process, if necessary.
+ */
+void flush_dcache_page(struct page *page)
 {
-	unsigned long vaddr = (unsigned long) kmap(page);
-	__flush_page_to_ram(vaddr);
-	kunmap(page);
+	clear_bit(PG_arch_1, &page->flags);
 }
 
-/*
- * set_pte stores a linux PTE into the linux page table.
- * On machines which use an MMU hash table we avoid changing the
- * _PAGE_HASHPTE bit.
- */
-void set_pte(pte_t *ptep, pte_t pte)
+void flush_icache_page(struct vm_area_struct *vma, struct page *page)
 {
-#if _PAGE_HASHPTE != 0
-	pte_update(ptep, ~_PAGE_HASHPTE, pte_val(pte) & ~_PAGE_HASHPTE);
-#else
-	*ptep = pte;
-#endif
+	if (page->mapping && !PageReserved(page)
+	    && !test_bit(PG_arch_1, &page->flags)) {
+		__flush_dcache_icache(kmap(page));
+		kunmap(page);
+		set_bit(PG_arch_1, &page->flags);
+	}
+}
+
+void clear_user_page(void *page, unsigned long vaddr)
+{
+	clear_page(page);
+	__flush_dcache_icache(page);
+}
+
+void copy_user_page(void *vto, void *vfrom, unsigned long vaddr)
+{
+	copy_page(vto, vfrom);
+	__flush_dcache_icache(vto);
+}
+
+void flush_icache_user_range(struct vm_area_struct *vma, struct page *page,
+			     unsigned long addr, int len)
+{
+	unsigned long maddr;
+
+	maddr = (unsigned long) kmap(page) + (addr & ~PAGE_MASK);
+	flush_icache_range(maddr, maddr + len);
+	kunmap(page);
 }

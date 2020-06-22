@@ -37,10 +37,11 @@
  * String handling code courtesy of Gerard Roudier's <groudier@club-internet.fr>
  * sym driver.
  *
- * $Id: //depot/aic7xxx/linux/drivers/scsi/aic7xxx/aic7xxx_proc.c#13 $
+ * $Id: //depot/aic7xxx/linux/drivers/scsi/aic7xxx/aic7xxx_proc.c#19 $
  */
 #include "aic7xxx_osm.h"
 #include "aic7xxx_inline.h"
+#include "aic7xxx_93cx6.h"
 
 static void	copy_mem_info(struct info_str *info, char *data, int len);
 static int	copy_info(struct info_str *info, char *fmt, ...);
@@ -51,6 +52,8 @@ static void	ahc_dump_target_state(struct ahc_softc *ahc,
 				      u_int target_id, u_int target_offset);
 static void	ahc_dump_device_state(struct info_str *info,
 				      struct ahc_linux_device *dev);
+static int	ahc_proc_write_seeprom(struct ahc_softc *ahc,
+				       char *buffer, int length);
 
 static void
 copy_mem_info(struct info_str *info, char *data, int len)
@@ -225,6 +228,96 @@ ahc_dump_device_state(struct info_str *info, struct ahc_linux_device *dev)
 	copy_info(info, "\t\tDevice Queue Frozen Count %d\n", dev->qfrozen);
 }
 
+static int
+ahc_proc_write_seeprom(struct ahc_softc *ahc, char *buffer, int length)
+{
+	struct seeprom_descriptor sd;
+	int have_seeprom;
+	u_long s;
+	int paused;
+	int written;
+
+	/* Default to failure. */
+	written = -EINVAL;
+	ahc_lock(ahc, &s);
+	paused = ahc_is_paused(ahc);
+	if (!paused)
+		ahc_pause(ahc);
+
+	if (length != sizeof(struct seeprom_config)) {
+		printf("ahc_proc_write_seeprom: incorrect buffer size\n");
+		goto done;
+	}
+
+	have_seeprom = ahc_verify_cksum((struct seeprom_config*)buffer);
+	if (have_seeprom == 0) {
+		printf("ahc_proc_write_seeprom: cksum verification failed\n");
+		goto done;
+	}
+
+	sd.sd_ahc = ahc;
+	if ((ahc->chip & AHC_VL) != 0) {
+		sd.sd_control_offset = SEECTL_2840;
+		sd.sd_status_offset = STATUS_2840;
+		sd.sd_dataout_offset = STATUS_2840;		
+		sd.sd_chip = C46;
+		sd.sd_MS = 0;
+		sd.sd_RDY = EEPROM_TF;
+		sd.sd_CS = CS_2840;
+		sd.sd_CK = CK_2840;
+		sd.sd_DO = DO_2840;
+		sd.sd_DI = DI_2840;
+		have_seeprom = TRUE;
+	} else {
+		sd.sd_control_offset = SEECTL;
+		sd.sd_status_offset = SEECTL;
+		sd.sd_dataout_offset = SEECTL;
+		if (ahc->flags & AHC_LARGE_SEEPROM)
+			sd.sd_chip = C56_66;
+		else
+			sd.sd_chip = C46;
+		sd.sd_MS = SEEMS;
+		sd.sd_RDY = SEERDY;
+		sd.sd_CS = SEECS;
+		sd.sd_CK = SEECK;
+		sd.sd_DO = SEEDO;
+		sd.sd_DI = SEEDI;
+		have_seeprom = ahc_acquire_seeprom(ahc, &sd);
+	}
+
+	if (!have_seeprom) {
+		printf("ahc_proc_write_seeprom: No Serial EEPROM\n");
+		goto done;
+	} else {
+		u_int start_addr;
+
+		if (ahc->seep_config == NULL) {
+			ahc->seep_config = malloc(sizeof(*ahc->seep_config),
+						  M_DEVBUF, M_NOWAIT);
+			if (ahc->seep_config == NULL) {
+				printf("aic7xxx: Unable to allocate serial "
+				       "eeprom buffer.  Write failing\n");
+				goto done;
+			}
+		}
+		printf("aic7xxx: Writing Serial EEPROM\n");
+		start_addr = 32 * (ahc->channel - 'A');
+		ahc_write_seeprom(&sd, (u_int16_t *)buffer, start_addr,
+				  sizeof(struct seeprom_config)/2);
+		ahc_read_seeprom(&sd, (uint16_t *)ahc->seep_config,
+				 start_addr, sizeof(struct seeprom_config)/2);
+		if ((ahc->chip & AHC_VL) == 0)
+			ahc_release_seeprom(&sd);
+		written = length;
+	}
+
+done:
+	if (!paused)
+		ahc_unpause(ahc);
+	ahc_unlock(ahc, &s);
+	return (written);
+}
+
 /*
  * Return information to handle /proc support for the driver.
  */
@@ -235,20 +328,26 @@ ahc_linux_proc_info(char *buffer, char **start, off_t offset,
 	struct	ahc_softc *ahc;
 	struct	info_str info;
 	char	ahc_info[256];
+	u_long	s;
 	u_int	max_targ;
 	u_int	i;
+	int	retval;
 
+	retval = -EINVAL;
+	ahc_list_lock(&s);
 	TAILQ_FOREACH(ahc, &ahc_tailq, links) {
 		if (ahc->platform_data->host->host_no == hostno)
 			break;
 	}
 
 	if (ahc == NULL)
-		return (-EINVAL);
+		goto done;
 
 	 /* Has data been written to the file? */ 
-	if (inout == TRUE)
-		return (-ENOSYS);
+	if (inout == TRUE) {
+		retval = ahc_proc_write_seeprom(ahc, buffer, length);
+		goto done;
+	}
 
 	if (start)
 		*start = buffer;
@@ -261,7 +360,22 @@ ahc_linux_proc_info(char *buffer, char **start, off_t offset,
 	copy_info(&info, "Adaptec AIC7xxx driver version: %s\n",
 		  AIC7XXX_DRIVER_VERSION);
 	ahc_controller_info(ahc, ahc_info);
-	copy_info(&info, "%s\n", ahc_info);
+	copy_info(&info, "%s\n\n", ahc_info);
+
+	if (ahc->seep_config == NULL)
+		copy_info(&info, "No Serial EEPROM\n");
+	else {
+		copy_info(&info, "Serial EEPROM:\n");
+		for (i = 0; i < sizeof(*ahc->seep_config)/2; i++) {
+			if (((i % 8) == 0) && (i != 0)) {
+				copy_info(&info, "\n");
+			}
+			copy_info(&info, "0x%.4x ",
+				  ((uint16_t*)ahc->seep_config)[i]);
+		}
+		copy_info(&info, "\n");
+	}
+	copy_info(&info, "\n");
 
 	max_targ = 15;
 	if ((ahc->features & (AHC_WIDE|AHC_TWIN)) == 0)
@@ -284,5 +398,8 @@ ahc_linux_proc_info(char *buffer, char **start, off_t offset,
 		ahc_dump_target_state(ahc, &info, our_id,
 				      channel, target_id, i);
 	}
-	return (info.pos > info.offset ? info.pos - info.offset : 0);
+	retval = info.pos > info.offset ? info.pos - info.offset : 0;
+done:
+	ahc_list_unlock(&s);
+	return (retval);
 }

@@ -28,21 +28,21 @@
  * For historical reasons, these macros are grossly misnamed.
  */
 
-#define MAKE_MM_SEG(s,a)  ((mm_segment_t) { (s),(a) })
+#define MAKE_MM_SEG(a)  ((mm_segment_t) { (a) })
 
 
-#define KERNEL_DS       MAKE_MM_SEG(0x7FFFFFFF,0)
-#define USER_DS         MAKE_MM_SEG(PAGE_OFFSET,1)
+#define KERNEL_DS       MAKE_MM_SEG(0)
+#define USER_DS         MAKE_MM_SEG(1)
 
 #define get_ds()        (KERNEL_DS)
-#define get_fs()        (current->thread.fs)
-#define set_fs(x)       ({asm volatile("sar   4,%0"::"a" (x.acc4)); \
-                         current->thread.fs = (x);})
+#define get_fs()        (current->addr_limit)
+#define set_fs(x)       ({asm volatile("sar   4,%0"::"a" ((x).ar4)); \
+                         current->addr_limit = (x);})
 
-#define segment_eq(a,b) ((a).acc4 == (b).acc4)
+#define segment_eq(a,b) ((a).ar4 == (b).ar4)
 
 
-#define __access_ok(addr,size) ((((long) addr + size)&0x7FFFFFFFL) < current->addr_limit.seg)
+#define __access_ok(addr,size) (1)
 
 #define access_ok(type,addr,size) __access_ok(addr,size)
 
@@ -197,38 +197,34 @@ extern inline int __put_user_asm_1(__u8 x, void *ptr)
  */
 #define __put_user(x, ptr)                                      \
 ({                                                              \
+        __typeof__(*(ptr)) *__pu_addr = (ptr);                  \
+        __typeof__(*(ptr)) __x = (x);                           \
         int __pu_err;                                           \
         switch (sizeof (*(ptr))) {                              \
-                case 1:                                         \
-                        __pu_err = __put_user_asm_1((__u8)(__u32)x,(ptr));\
-                        break;                                  \
-                case 2:                                         \
-                        __pu_err = __put_user_asm_2((__u16)(__u32)x,(ptr));\
-                        break;                                  \
-                case 4:                                         \
-                        __pu_err = __put_user_asm_4((__u32) x,(ptr));\
-                        break;                                  \
-		case 8:						\
-			__pu_err = __put_user_asm_8((__u64) x,(ptr));\
-			break;					\
-                default:                                        \
+        case 1:                                                 \
+                __pu_err = __put_user_asm_1((__u8)(__u32) __x,  \
+                                            __pu_addr);         \
+                break;                                          \
+        case 2:                                                 \
+                __pu_err = __put_user_asm_2((__u16)(__u32) __x, \
+                                            __pu_addr);         \
+                break;                                          \
+        case 4:                                                 \
+                __pu_err = __put_user_asm_4((__u32) __x,        \
+                                            __pu_addr);         \
+                break;                                          \
+        case 8:                                                 \
+                __pu_err = __put_user_asm_8((__u64) __x,        \
+                                            __pu_addr);         \
+                break;                                          \
+        default:                                                \
                 __pu_err = __put_user_bad();                    \
                 break;                                          \
          }                                                      \
         __pu_err;                                               \
 })
 
-#define put_user(x, ptr)                                        \
-({                                                              \
-        long __pu_err = -EFAULT;                                \
-        __typeof__(*(ptr)) *__pu_addr = (ptr);                  \
-        __typeof__(*(ptr)) __x = (x);                           \
-        if (__access_ok((long)__pu_addr,sizeof(*(ptr)))) {      \
-                __pu_err = 0;                                   \
-                __put_user((__x), (__pu_addr));                 \
-        }                                                       \
-        __pu_err;                                               \
-})
+#define put_user(x, ptr) __put_user(x, ptr)
 
 extern int __put_user_bad(void);
 
@@ -336,42 +332,32 @@ extern int __put_user_bad(void);
 
 #define __get_user(x, ptr)                                      \
 ({                                                              \
+        __typeof__(ptr) __gu_addr = (ptr);                      \
+        __typeof__(*(ptr)) __x;                                 \
         int __gu_err;                                           \
-        switch (sizeof(*(ptr))) {                               \
-                case 1:                                         \
-                        __get_user_asm_1(x,ptr,__gu_err);       \
-                        break;                                  \
-                case 2:                                         \
-                        __get_user_asm_2(x,ptr,__gu_err);       \
-                        break;                                  \
-                case 4:                                         \
-                        __get_user_asm_4(x,ptr,__gu_err);       \
-                        break;                                  \
-                case 8:                                         \
-                        __get_user_asm_8(x,ptr,__gu_err);       \
-                        break;                                  \
-                default:                                        \
-                        (x) = 0;                                \
-                        __gu_err = __get_user_bad();            \
+        switch (sizeof(*(__gu_addr))) {                         \
+        case 1:                                                 \
+                __get_user_asm_1(__x, __gu_addr, __gu_err);     \
+                break;                                          \
+        case 2:                                                 \
+                __get_user_asm_2(__x, __gu_addr, __gu_err);     \
+                break;                                          \
+        case 4:                                                 \
+                __get_user_asm_4(__x, __gu_addr, __gu_err);     \
+                break;                                          \
+        case 8:                                                 \
+                __get_user_asm_8(__x, __gu_addr, __gu_err);     \
+                break;                                          \
+        default:                                                \
+                __x = 0;                                        \
+                __gu_err = __get_user_bad();                    \
                 break;                                          \
         }                                                       \
+        (x) = __x;                                              \
         __gu_err;                                               \
 })
 
-#define get_user(x, ptr)                                        \
-({                                                              \
-        long __gu_err = -EFAULT;                                \
-        __typeof__(ptr) __gu_addr = (ptr);                      \
-        __typeof__(*(ptr)) __x;                                 \
-        if (__access_ok((long)__gu_addr,sizeof(*(ptr)))) {      \
-                __gu_err = 0;                                   \
-                __get_user((__x), (__gu_addr));                 \
-                (x) = __x;                                      \
-        }                                                       \
-        else                                                    \
-                (x) = 0;                                        \
-        __gu_err;                                               \
-})
+#define get_user(x, ptr) __get_user(x, ptr)
 
 extern int __get_user_bad(void);
 

@@ -210,7 +210,6 @@ __up_wakeup:
 	mov	r0, ip
 	bl	__up
 	ldmfd	sp!, {r0 - r3, pc}^
-
 	");
 
 #else
@@ -248,7 +247,6 @@ __up_wakeup:
 	mov	r0, ip
 	bl	__up
 	ldmfd	sp!, {r0 - r3, pc}
-
 	");
 
 #endif

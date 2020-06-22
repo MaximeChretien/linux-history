@@ -217,9 +217,12 @@ static int usb_hub_configure(struct usb_hub *hub, struct usb_endpoint_descriptor
 			break;
 		case 1:
 			dbg("Single TT");
+			hub->tt.hub = dev;
 			break;
 		case 2:
-			dbg("Multiple TT");
+			dbg("TT per port");
+			hub->tt.hub = dev;
+			hub->tt.multi = 1;
 			break;
 		default:
 			dbg("Unrecognized hub protocol %d",
@@ -496,6 +499,29 @@ static void usb_hub_disconnect(struct usb_device *dev)
 	err("cannot disconnect hub %d", dev->devnum);
 }
 
+static int usb_hub_port_status(struct usb_device *hub, int port,
+			       u16 *status, u16 *change)
+{
+	struct usb_port_status *portsts;
+	int ret = -ENOMEM;
+
+	portsts = kmalloc(sizeof(*portsts), GFP_KERNEL);
+	if (portsts) {
+		ret = usb_get_port_status(hub, port + 1, portsts);
+		if (ret < 0)
+			err("%s (%d) failed (err = %d)", __FUNCTION__, hub->devnum, ret);
+		else {
+			*status = le16_to_cpu(portsts->wPortStatus);
+			*change = le16_to_cpu(portsts->wPortChange); 
+			dbg("port %d, portstatus %x, change %x, %s", port + 1,
+				*status, *change, portspeed(*status));
+			ret = 0;
+		}
+		kfree(portsts);
+	}
+	return ret;
+}
+
 #define HUB_RESET_TRIES		5
 #define HUB_PROBE_TRIES		2
 #define HUB_SHORT_RESET_TIME	10
@@ -507,24 +533,22 @@ static int usb_hub_port_wait_reset(struct usb_device *hub, int port,
 				struct usb_device *dev, unsigned int delay)
 {
 	int delay_time, ret;
-	struct usb_port_status portsts;
-	unsigned short portchange, portstatus;
+	u16 portstatus;
+	u16 portchange;
 
 	for (delay_time = 0; delay_time < HUB_RESET_TIMEOUT; delay_time += delay) {
 		/* wait to give the device a chance to reset */
 		wait_ms(delay);
 
 		/* read and decode port status */
-		ret = usb_get_port_status(hub, port + 1, &portsts);
+		ret = usb_hub_port_status(hub, port, &portstatus, &portchange);
 		if (ret < 0) {
-			err("get_port_status(%d) failed (err = %d)", port + 1, ret);
 			return -1;
 		}
 
-		portstatus = le16_to_cpu(portsts.wPortStatus);
-		portchange = le16_to_cpu(portsts.wPortChange);
-		dbg("port %d, portstatus %x, change %x, %s", port + 1,
-			portstatus, portchange, portspeed (portstatus));
+		/* Device went away? */
+		if (!(portstatus & USB_PORT_STAT_CONNECTION))
+			return 1;
 
 		/* bomb out completely if something weird happened */
 		if ((portchange & USB_PORT_STAT_C_CONNECTION))
@@ -592,17 +616,58 @@ void usb_hub_port_disable(struct usb_device *hub, int port)
 			port + 1, hub->devnum, ret);
 }
 
-static void usb_hub_port_connect_change(struct usb_device *hub, int port,
-					struct usb_port_status *portsts)
+/* USB 2.0 spec, 7.1.7.3 / fig 7-29:
+ *
+ * Between connect detection and reset signaling there must be a delay
+ * of 100ms at least for debounce and power-settling. The corresponding
+ * timer shall restart whenever the downstream port detects a disconnect.
+ * 
+ * Apparently there are some bluetooth and irda-dongles and a number
+ * of low-speed devices which require longer delays of about 200-400ms.
+ * Not covered by the spec - but easy to deal with.
+ *
+ * This implementation uses 400ms minimum debounce timeout and checks
+ * every 100ms for transient disconnects to restart the delay.
+ */
+
+#define HUB_DEBOUNCE_TIMEOUT	400
+#define HUB_DEBOUNCE_STEP	100
+
+/* return: -1 on error, 0 on success, 1 on disconnect.  */
+static int usb_hub_port_debounce(struct usb_device *hub, int port)
 {
+	int ret;
+	unsigned delay_time;
+	u16 portchange, portstatus;
+
+	for (delay_time = 0; delay_time < HUB_DEBOUNCE_TIMEOUT; /* empty */ ) {
+
+		/* wait debounce step increment */
+		wait_ms(HUB_DEBOUNCE_STEP);
+
+		ret = usb_hub_port_status(hub, port, &portstatus, &portchange);
+		if (ret < 0)
+			return -1;
+
+		if ((portchange & USB_PORT_STAT_C_CONNECTION)) {
+			usb_clear_port_feature(hub, port+1, USB_PORT_FEAT_C_CONNECTION);
+			delay_time = 0;
+		}
+		else
+			delay_time += HUB_DEBOUNCE_STEP;
+	}
+	return ((portstatus&USB_PORT_STAT_CONNECTION)) ? 0 : 1;
+}
+
+static void usb_hub_port_connect_change(struct usb_hub *hubstate, int port,
+					u16 portstatus, u16 portchange)
+{
+	struct usb_device *hub = hubstate->dev;
 	struct usb_device *dev;
-	unsigned short portstatus, portchange;
 	unsigned int delay = HUB_SHORT_RESET_TIME;
 	int i;
 	char *portstr, *tempstr;
 
-	portstatus = le16_to_cpu(portsts->wPortStatus);
-	portchange = le16_to_cpu(portsts->wPortChange);
 	dbg("port %d, portstatus %x, change %x, %s",
 		port + 1, portstatus, portchange, portspeed (portstatus));
 
@@ -621,11 +686,10 @@ static void usb_hub_port_connect_change(struct usb_device *hub, int port,
 		return;
 	}
 
-	/* Some low speed devices have problems with the quick delay, so */
-	/*  be a bit pessimistic with those devices. RHbug #23670 */
-	if (portstatus & USB_PORT_STAT_LOW_SPEED) {
-		wait_ms(400);
-		delay = HUB_LONG_RESET_TIME;
+	if (usb_hub_port_debounce(hub, port)) {
+		err("connect-debounce failed, port %d disabled", port+1);
+		usb_hub_port_disable(hub, port);
+		return;
 	}
 
 	down(&usb_address0_sem);
@@ -653,6 +717,16 @@ static void usb_hub_port_connect_change(struct usb_device *hub, int port,
 
 		/* Find a new device ID for it */
 		usb_connect(dev);
+
+		/* Set up TT records, if needed  */
+		if (hub->tt) {
+			dev->tt = hub->tt;
+			dev->ttport = hub->ttport;
+		} else if (dev->speed != USB_SPEED_HIGH
+				&& hub->speed == USB_SPEED_HIGH) {
+			dev->tt = &hubstate->tt;
+			dev->ttport = port + 1;
+		}
 
 		/* Create a readable topology string */
 		cdev = dev;
@@ -709,7 +783,10 @@ static void usb_hub_events(void)
 	struct usb_device *dev;
 	struct usb_hub *hub;
 	struct usb_hub_status hubsts;
-	unsigned short hubstatus, hubchange;
+	u16 hubstatus;
+	u16 hubchange;
+	u16 portstatus;
+	u16 portchange;
 	int i, ret;
 
 	/*
@@ -751,22 +828,15 @@ static void usb_hub_events(void)
 		}
 
 		for (i = 0; i < hub->descriptor->bNbrPorts; i++) {
-			struct usb_port_status portsts;
-			unsigned short portstatus, portchange;
-
-			ret = usb_get_port_status(dev, i + 1, &portsts);
+			ret = usb_hub_port_status(dev, i, &portstatus, &portchange);
 			if (ret < 0) {
-				err("get_port_status failed (err = %d)", ret);
 				continue;
 			}
-
-			portstatus = le16_to_cpu(portsts.wPortStatus);
-			portchange = le16_to_cpu(portsts.wPortChange);
 
 			if (portchange & USB_PORT_STAT_C_CONNECTION) {
 				dbg("port %d connection change", i + 1);
 
-				usb_hub_port_connect_change(dev, i, &portsts);
+				usb_hub_port_connect_change(hub, i, portstatus, portchange);
 			} else if (portchange & USB_PORT_STAT_C_ENABLE) {
 				dbg("port %d enable change, status %x", i + 1, portstatus);
 				usb_clear_port_feature(dev, i + 1, USB_PORT_FEAT_C_ENABLE);
@@ -780,7 +850,7 @@ static void usb_hub_events(void)
 				    (portstatus & USB_PORT_STAT_CONNECTION) && (dev->children[i])) {
 					err("already running port %i disabled by hub (EMI?), re-enabling...",
 						i + 1);
-					usb_hub_port_connect_change(dev, i, &portsts);
+					usb_hub_port_connect_change(hub, i, portstatus, portchange);
 				}
 			}
 
@@ -834,6 +904,7 @@ static int usb_hub_thread(void *__hub)
 	 */
 
 	daemonize();
+	reparent_to_init();
 
 	/* Setup a nice name */
 	strcpy(current->comm, "khubd");
@@ -841,7 +912,7 @@ static int usb_hub_thread(void *__hub)
 	/* Send me a signal to get me die (for debugging) */
 	do {
 		usb_hub_events();
-		interruptible_sleep_on(&khubd_wait);
+		wait_event_interruptible(khubd_wait, !list_empty(&hub_event_list)); 
 	} while (!signal_pending(current));
 
 	dbg("usb_hub_thread exiting");

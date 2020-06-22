@@ -75,9 +75,11 @@ void
 isdn_lock_drivers(void)
 {
 	int i;
+	isdn_ctrl cmd;
 
-	for (i = 0; i < dev->drivers; i++) {
-		isdn_ctrl cmd;
+	for (i = 0; i < ISDN_MAX_DRIVERS; i++) {
+		if (!dev->drv[i])
+			continue;
 
 		cmd.driver = i;
 		cmd.arg = 0;
@@ -99,7 +101,10 @@ isdn_unlock_drivers(void)
 {
 	int i;
 
-	for (i = 0; i < dev->drivers; i++)
+	for (i = 0; i < ISDN_MAX_DRIVERS; i++) {
+		if (!dev->drv[i])
+			continue;
+
 		if (dev->drv[i]->locks > 0) {
 			isdn_ctrl cmd;
 
@@ -109,6 +114,7 @@ isdn_unlock_drivers(void)
 			isdn_command(&cmd);
 			dev->drv[i]->locks--;
 		}
+	}
 }
 
 void

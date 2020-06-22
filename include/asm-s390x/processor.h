@@ -149,8 +149,8 @@ extern inline unsigned long thread_saved_pc(struct thread_struct *t)
 }
 
 unsigned long get_wchan(struct task_struct *p);
-#define __KSTK_PTREGS(tsk) \
-	((struct pt_regs *)((unsigned long) tsk+THREAD_SIZE) - 1)
+#define __KSTK_PTREGS(tsk) ((struct pt_regs *) \
+        (((unsigned long) tsk + THREAD_SIZE - sizeof(struct pt_regs)) & -8L))
 #define KSTK_EIP(tsk)	(__KSTK_PTREGS(tsk)->psw.addr)
 #define KSTK_ESP(tsk)	(__KSTK_PTREGS(tsk)->gprs[15])
 
@@ -180,6 +180,43 @@ unsigned long get_wchan(struct task_struct *p);
 #define PSW_PER_MASK            0x4000000000000000UL
 #define USER_STD_MASK           0x0000000000000080UL
 #define PSW_PROBLEM_STATE       0x0001000000000000UL
+
+/*
+ * Set PSW mask to specified value, while leaving the
+ * PSW addr pointing to the next instruction.
+ */
+
+static inline void __load_psw_mask (unsigned long mask)
+{
+	unsigned long addr;
+
+	psw_t psw;
+	psw.mask = mask;
+
+	asm volatile (
+		"    larl  %0,1f\n"
+		"    stg   %0,8(%1)\n"
+		"    lpswe 0(%1)\n"
+		"1:"
+		: "=&d" (addr) : "a" (&psw) : "memory", "cc" );
+}
+
+/*
+ * Function to stop a processor until an interruption occured
+ */
+static inline void enabled_wait(void)
+{
+	unsigned long reg;
+	psw_t wait_psw;
+
+	wait_psw.mask = 0x0706000180000000;
+	asm volatile (
+		"    larl  %0,0f\n"
+		"    stg   %0,8(%1)\n"
+		"    lpswe 0(%1)\n"
+		"0:"
+		: "=&a" (reg) : "a" (&wait_psw) : "memory", "cc" );
+}
 
 /*
  * Function to drop a processor into disabled wait state

@@ -80,7 +80,6 @@ struct serial_struct {
 #define SERIAL_IO_PORT	0
 #define SERIAL_IO_HUB6	1
 #define SERIAL_IO_MEM	2
-#define SERIAL_IO_GSC	3
 
 struct serial_uart_config {
 	char	*name;
@@ -182,11 +181,8 @@ extern void unregister_serial(int line);
 /* Allow complicated architectures to specify rs_table[] at run time */
 extern int early_serial_setup(struct serial_struct *req);
 
-#ifdef CONFIG_ACPI
-/* tty ports reserved for the ACPI serial console port and debug port */
-#define ACPI_SERIAL_CONSOLE_PORT        4
-#define ACPI_SERIAL_DEBUG_PORT          5
-#endif
+/* tty port reserved for the HCDP serial console port */
+#define HCDP_SERIAL_CONSOLE_PORT	4
 
 #endif /* __KERNEL__ */
 #endif /* _LINUX_SERIAL_H */

@@ -79,6 +79,38 @@ sys32_ioctl (unsigned int fd, unsigned int cmd, unsigned int arg)
 
 		      return ret;
 	      }
+		case IOCTL_NR(SIOCGIFCONF):
+		{
+			struct ifconf32 {
+				int		ifc_len;
+				unsigned int	ifc_ptr;
+			} ifconf32;
+			struct ifconf ifconf;
+			int i, n;
+			char *p32, *p64;
+			char buf[32];	/* sizeof IA32 ifreq structure */
+
+			if (copy_from_user(&ifconf32, P(arg), sizeof(ifconf32)))
+				return -EFAULT;
+			ifconf.ifc_len = ifconf32.ifc_len;
+			ifconf.ifc_req = P(ifconf32.ifc_ptr);
+			ret = DO_IOCTL(fd, SIOCGIFCONF, &ifconf);
+			ifconf32.ifc_len = ifconf.ifc_len;
+			if (copy_to_user(P(arg), &ifconf32, sizeof(ifconf32)))
+				return -EFAULT;
+			n = ifconf.ifc_len / sizeof(struct ifreq);
+			p32 = P(ifconf32.ifc_ptr);
+			p64 = P(ifconf32.ifc_ptr);
+			for (i = 0; i < n; i++) {
+				if (copy_from_user(buf, p64, sizeof(struct ifreq)))
+					return -EFAULT;
+				if (copy_to_user(p32, buf, sizeof(buf)))
+					return -EFAULT;
+				p32 += sizeof(buf);
+				p64 += sizeof(struct ifreq);
+			}
+			return ret;
+		}
 
 	      case IOCTL_NR(DRM_IOCTL_VERSION):
 	      {

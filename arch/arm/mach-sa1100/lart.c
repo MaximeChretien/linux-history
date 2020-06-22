@@ -18,8 +18,8 @@
 
 static struct map_desc lart_io_desc[] __initdata = {
  /* virtual     physical    length      domain     r  w  c  b */
-  { 0xe8000000, 0x00000000, 0x00400000, DOMAIN_IO, 1, 1, 0, 0 }, /* main flash memory */
-  { 0xec000000, 0x08000000, 0x00400000, DOMAIN_IO, 1, 1, 0, 0 }, /* main flash, alternative location */
+  { 0xe8000000, 0x00000000, 0x00400000, DOMAIN_IO, 0, 1, 0, 0 }, /* main flash memory */
+  { 0xec000000, 0x08000000, 0x00400000, DOMAIN_IO, 0, 1, 0, 0 }, /* main flash, alternative location */
   LAST_DESC
 };
 
@@ -31,6 +31,7 @@ static void __init lart_map_io(void)
 	sa1100_register_uart(0, 3);
 	sa1100_register_uart(1, 1);
 	sa1100_register_uart(2, 2);
+
 	GAFR |= (GPIO_UART_TXD | GPIO_UART_RXD);
 	GPDR |= GPIO_UART_TXD;
 	GPDR &= ~GPIO_UART_RXD;

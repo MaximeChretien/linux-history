@@ -57,7 +57,7 @@ void *_mmx_memcpy(void *to, const void *from, size_t len)
 		: : "r" (from) );
 		
 	
-	for(; i>0; i--)
+	for(; i>5; i--)
 	{
 		__asm__ __volatile__ (
 		"1:  prefetch 320(%0)\n"
@@ -85,6 +85,30 @@ void *_mmx_memcpy(void *to, const void *from, size_t len)
 		"	.align 4\n"
 		"	.long 1b, 3b\n"
 		".previous"
+		: : "r" (from), "r" (to) : "memory");
+		from+=64;
+		to+=64;
+	}
+
+	for(; i>0; i--)
+	{
+		__asm__ __volatile__ (
+		"  movq (%0), %%mm0\n"
+		"  movq 8(%0), %%mm1\n"
+		"  movq 16(%0), %%mm2\n"
+		"  movq 24(%0), %%mm3\n"
+		"  movq %%mm0, (%1)\n"
+		"  movq %%mm1, 8(%1)\n"
+		"  movq %%mm2, 16(%1)\n"
+		"  movq %%mm3, 24(%1)\n"
+		"  movq 32(%0), %%mm0\n"
+		"  movq 40(%0), %%mm1\n"
+		"  movq 48(%0), %%mm2\n"
+		"  movq 56(%0), %%mm3\n"
+		"  movq %%mm0, 32(%1)\n"
+		"  movq %%mm1, 40(%1)\n"
+		"  movq %%mm2, 48(%1)\n"
+		"  movq %%mm3, 56(%1)\n"
 		: : "r" (from), "r" (to) : "memory");
 		from+=64;
 		to+=64;

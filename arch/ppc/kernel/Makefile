@@ -1,4 +1,4 @@
-# BK Id: SCCS/s.Makefile 1.36 12/01/01 20:09:06 benh
+# BK Id: SCCS/s.Makefile 1.41 04/16/02 20:08:22 paulus
 #
 #
 # Makefile for the linux kernel.
@@ -14,6 +14,13 @@ USE_STANDARD_AS_RULE	:= true
 ifdef CONFIG_PPC64BRIDGE
 EXTRA_AFLAGS		:= -Wa,-mppc64bridge
 endif
+
+# Extra CFLAGS so we don't have to do relative includes
+CFLAGS_pmac_setup.o	+= -I$(TOPDIR)/arch/$(ARCH)/mm -I$(TOPDIR)/drivers/scsi
+
+# Code in these files is used before the kernel is moved to its final position
+CFLAGS_prom_init.o	+= -mrelocatable-lib
+CFLAGS_btext.o		+= -mrelocatable-lib
 
 # Start off with 'head.o', change as needed.
 HEAD-y				:= head.o
@@ -56,10 +63,11 @@ ifeq ($(CONFIG_APUS),y)
 obj-$(CONFIG_PCI)		+= apus_pci.o
 endif
 obj-$(CONFIG_ALL_PPC)		+= pmac_pic.o pmac_setup.o pmac_time.o prom.o \
-					pmac_feature.o pmac_pci.o chrp_setup.o \
-					chrp_time.o chrp_pci.o 	open_pic.o \
-					indirect_pci.o i8259.o prep_pci.o \
-					prep_time.o prep_nvram.o prep_setup.o
+					prom_init.o pmac_feature.o pmac_pci.o \
+					chrp_setup.o chrp_time.o chrp_pci.o \
+					open_pic.o indirect_pci.o i8259.o \
+					prep_pci.o prep_time.o prep_nvram.o \
+					prep_setup.o
 obj-$(CONFIG_NVRAM)		+= pmac_nvram.o
 obj-$(CONFIG_PMAC_BACKLIGHT)	+= pmac_backlight.o
 obj-$(CONFIG_PMAC_PBOOK)	+= sleep.o

@@ -14,10 +14,10 @@
 #include <linux/init.h>
 #include <linux/bootmem.h>
 
+#include <asm/hardware.h>
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
 #include <asm/page.h>
-#include <asm/io.h>
 #include <asm/setup.h>
 
 #include <asm/mach/map.h>
@@ -224,6 +224,19 @@ static void __init create_mapping(struct map_desc *md)
 	unsigned long virt, length;
 	int prot_sect, prot_pte;
 	long off;
+
+	if (md->prot_read && md->prot_write &&
+	    !md->cacheable && !md->bufferable) {
+		printk(KERN_WARNING "Security risk: creating user "
+		       "accessible mapping for 0x%08lx at 0x%08lx\n",
+		       md->physical, md->virtual);
+	}
+
+	if (md->virtual != vectors_base() && md->virtual < PAGE_OFFSET) {
+		printk(KERN_WARNING "MM: not creating mapping for "
+		       "0x%08lx at 0x%08lx in user region\n",
+		       md->physical, md->virtual);
+	}
 
 	prot_pte = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
 		   (md->prot_read  ? L_PTE_USER       : 0) |

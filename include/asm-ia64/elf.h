@@ -4,8 +4,8 @@
 /*
  * ELF archtecture specific definitions.
  *
- * Copyright (C) 1998, 1999 Hewlett-Packard Co
- * Copyright (C) 1998, 1999 David Mosberger-Tang <davidm@hpl.hp.com>
+ * Copyright (C) 1998, 1999, 2002 Hewlett-Packard Co
+ *	David Mosberger-Tang <davidm@hpl.hp.com>
  */
 
 #include <asm/fpu.h>
@@ -24,6 +24,10 @@
 #define ELF_ARCH	EM_IA_64
 
 #define USE_ELF_CORE_DUMP
+
+/* Least-significant four bits of ELF header's e_flags are OS-specific.  The bits are
+   interpreted as follows by Linux: */
+#define EF_IA_64_LINUX_EXECUTABLE_STACK	0x1	/* is stack (& heap) executable by default? */
 
 /* always align to 64KB to allow for future page sizes of up to 64KB: */
 #define ELF_EXEC_PAGESIZE	PAGE_SIZE
@@ -82,7 +86,9 @@ extern void ia64_elf_core_copy_regs (struct pt_regs *src, elf_gregset_t dst);
 #define ELF_PLATFORM	0
 
 #ifdef __KERNEL__
-#define SET_PERSONALITY(ex, ibcs2) set_personality((ibcs2)?PER_SVR4:PER_LINUX)
+struct elf64_hdr;
+extern void ia64_set_personality (struct elf64_hdr *elf_ex, int ibcs2_interpreter);
+#define SET_PERSONALITY(ex, ibcs2)	ia64_set_personality(&(ex), ibcs2)
 #endif
 
 #endif /* _ASM_IA64_ELF_H */

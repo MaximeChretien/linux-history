@@ -30,7 +30,7 @@
 
 #define _BLOCKABLE (~(sigmask(SIGKILL) | sigmask(SIGSTOP)))
 
-#define _USER_PSW_MASK32 0x0701C00080000000
+#define _USER_PSW_MASK32 0x0705C00080000000
 
 typedef struct 
 {
@@ -699,10 +699,7 @@ int do_signal32(struct pt_regs *regs, sigset_t *oldset)
                                 /* FALLTHRU */
 
 			default:
-				sigaddset(&current->pending.signal, signr);
-				recalc_sigpending(current);
-				current->flags |= PF_SIGNALED;
-				do_exit(exit_code);
+				sig_exit(signr, exit_code, &info);
 				/* NOTREACHED */
 			}
 		}

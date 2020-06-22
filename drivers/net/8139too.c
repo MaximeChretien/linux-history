@@ -92,7 +92,7 @@
 */
 
 #define DRV_NAME	"8139too"
-#define DRV_VERSION	"0.9.24"
+#define DRV_VERSION	"0.9.25"
 
 
 #include <linux/config.h>
@@ -109,6 +109,7 @@
 #include <linux/ethtool.h>
 #include <linux/mii.h>
 #include <linux/completion.h>
+#include <linux/crc32.h>
 #include <asm/io.h>
 #include <asm/uaccess.h>
 
@@ -597,7 +598,6 @@ static void rtl8139_interrupt (int irq, void *dev_instance,
 static int rtl8139_close (struct net_device *dev);
 static int netdev_ioctl (struct net_device *dev, struct ifreq *rq, int cmd);
 static struct net_device_stats *rtl8139_get_stats (struct net_device *dev);
-static inline u32 ether_crc (int length, unsigned char *data);
 static void rtl8139_set_rx_mode (struct net_device *dev);
 static void __set_rx_mode (struct net_device *dev);
 static void rtl8139_hw_start (struct net_device *dev);
@@ -1008,6 +1008,7 @@ static int __devinit rtl8139_init_one (struct pci_dev *pdev,
 	} else
 #endif
 		tp->phys[0] = 32;
+	tp->mii.phy_id = tp->phys[0];
 
 	/* The lower four bits are the media type. */
 	option = (board_idx >= MAX_UNITS) ? 0 : media[board_idx];
@@ -2329,7 +2330,7 @@ static int netdev_ioctl (struct net_device *dev, struct ifreq *rq, int cmd)
 
 	if (cmd != SIOCETHTOOL) {
 		/* With SIOCETHTOOL, this would corrupt the pointer.  */
-		data->phy_id &= 0x1f;
+		data->phy_id &= 0x3f;
 		data->reg_num &= 0x1f;
 	}
 
@@ -2397,23 +2398,6 @@ static struct net_device_stats *rtl8139_get_stats (struct net_device *dev)
 /* Set or clear the multicast filter for this adaptor.
    This routine is not state sensitive and need not be SMP locked. */
 
-static unsigned const ethernet_polynomial = 0x04c11db7U;
-static inline u32 ether_crc (int length, unsigned char *data)
-{
-	int crc = -1;
-
-	while (--length >= 0) {
-		unsigned char current_octet = *data++;
-		int bit;
-		for (bit = 0; bit < 8; bit++, current_octet >>= 1)
-			crc = (crc << 1) ^ ((crc < 0) ^ (current_octet & 1) ?
-			     ethernet_polynomial : 0);
-	}
-
-	return crc;
-}
-
-
 static void __set_rx_mode (struct net_device *dev)
 {
 	struct rtl8139_private *tp = dev->priv;
@@ -2447,7 +2431,7 @@ static void __set_rx_mode (struct net_device *dev)
 		     i++, mclist = mclist->next) {
 			int bit_nr = ether_crc(ETH_ALEN, mclist->dmi_addr) >> 26;
 
-			mc_filter[bit_nr >> 5] |= cpu_to_le32(1 << (bit_nr & 31));
+			mc_filter[bit_nr >> 5] |= 1 << (bit_nr & 31);
 			rx_mode |= AcceptMulticast;
 		}
 	}

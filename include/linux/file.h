@@ -71,30 +71,7 @@ static inline void put_unused_fd(unsigned int fd)
 	write_unlock(&files->file_lock);
 }
 
-/*
- * Install a file pointer in the fd array.  
- *
- * The VFS is full of places where we drop the files lock between
- * setting the open_fds bitmap and installing the file in the file
- * array.  At any such point, we are vulnerable to a dup2() race
- * installing a file in the array before us.  We need to detect this and
- * fput() the struct file we are about to overwrite in this case.
- *
- * It should never happen - if we allow dup2() do it, _really_ bad things
- * will follow.
- */
-
-static inline void fd_install(unsigned int fd, struct file * file)
-{
-	struct files_struct *files = current->files;
-	
-	write_lock(&files->file_lock);
-	if (files->fd[fd])
-		BUG();
-	files->fd[fd] = file;
-	write_unlock(&files->file_lock);
-}
-
+void fd_install(unsigned int fd, struct file * file);
 void put_files_struct(struct files_struct *fs);
 
 #endif /* __LINUX_FILE_H */

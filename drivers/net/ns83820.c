@@ -1,10 +1,12 @@
-#define _VERSION "0.15"
-/* ns83820.c by Benjamin LaHaise <bcrl@redhat.com> with contributions.
+#define _VERSION "0.18"
+/* ns83820.c by Benjamin LaHaise with contributions.
  *
- * $Revision: 1.34.2.12 $
+ * Questions/comments/discussion to linux-ns83820@kvack.org.
+ *
+ * $Revision: 1.34.2.16 $
  *
  * Copyright 2001 Benjamin LaHaise.
- * Copyright 2001 Red Hat.
+ * Copyright 2001, 2002 Red Hat.
  *
  * Mmmm, chocolate vanilla mocha...
  *
@@ -51,6 +53,10 @@
  *				suppress duplicate link status messages
  *	20011117 	0.14 - ethtool GDRVINFO, GLINK support from jgarzik
  *	20011204 	0.15	get ppc (big endian) working
+ *	20011218	0.16	various cleanups
+ *	20020310	0.17	speedups
+ *	20020610	0.18 -	actually use the pci dma api for highmem
+ *			     -	remove pci latency register fiddling
  *
  * Driver Overview
  * ===============
@@ -93,8 +99,8 @@
 #include <linux/in.h>	/* for IPPROTO_... */
 #include <linux/eeprom.h>
 #include <linux/compiler.h>
+#include <linux/prefetch.h>
 #include <linux/ethtool.h>
-//#include <linux/skbrefill.h>
 
 #include <asm/io.h>
 #include <asm/uaccess.h>
@@ -103,61 +109,29 @@
 #undef Dprintk
 #define	Dprintk			dprintk
 
-#ifdef CONFIG_HIGHMEM64G
+#if defined(CONFIG_HIGHMEM64G) || defined(__ia64__)
 #define USE_64BIT_ADDR	"+"
-#elif defined(__ia64__)
-#define USE_64BIT_ADDR	"+"
-#endif
-
-/* Tell davem to fix the pci dma api.  Grrr. */
-/* stolen from acenic.c */
-#if 0 //def CONFIG_HIGHMEM
-#if defined(CONFIG_X86)
-#define DMAADDR_OFFSET  0
-#if defined(CONFIG_HIGHMEM64G)
-typedef u64 dmaaddr_high_t;
-#else
-typedef u32 dmaaddr_high_t;
-#endif
-#elif defined(CONFIG_PPC)
-#define DMAADDR_OFFSET PCI_DRAM_OFFSET
-typedef unsigned long dmaaddr_high_t;
-#endif
-
-static inline dmaaddr_high_t
-pci_map_single_high(struct pci_dev *hwdev, struct page *page,
-		    int offset, size_t size, int dir)
-{
-	u64 phys;
-	phys = page - mem_map;
-	phys <<= PAGE_SHIFT;
-	phys += offset;
-	phys += DMAADDR_OFFSET;
-	return phys;
-}
-#else
-
-typedef unsigned long dmaaddr_high_t;
-
-static inline dmaaddr_high_t
-pci_map_single_high(struct pci_dev *hwdev, struct page *page,
-		    int offset, size_t size, int dir)
-{
-	return pci_map_single(hwdev, page_address(page) + offset, size, dir);
-}
 #endif
 
 #if defined(USE_64BIT_ADDR)
 #define	VERSION	_VERSION USE_64BIT_ADDR
+#define TRY_DAC	1
 #else
 #define	VERSION	_VERSION
+#define TRY_DAC	0
 #endif
 
 /* tunables */
-#define RX_BUF_SIZE	6144	/* 8192 */
-#define NR_RX_DESC	256
+#define RX_BUF_SIZE	1500	/* 8192 */
 
-#define NR_TX_DESC	256
+/* Must not exceed ~65000. */
+#define NR_RX_DESC	64
+#define NR_TX_DESC	64
+
+/* not tunable */
+#define REAL_RX_BUF_SIZE (RX_BUF_SIZE + 14)	/* rx/tx mac addr + type */
+
+#define MIN_TX_DESC_FREE	8
 
 /* register defines */
 #define CFGCS		0x04
@@ -376,12 +350,21 @@ pci_map_single_high(struct pci_dev *hwdev, struct page *page,
 } while(0)
 
 #ifdef USE_64BIT_ADDR
-typedef u64	hw_addr_t;
+#define HW_ADDR_LEN	8
+#define desc_addr_set(desc, addr)				\
+	do {							\
+		u64 __addr = (addr);				\
+		desc[BUFPTR] = cpu_to_le32(__addr);		\
+		desc[BUFPTR+1] = cpu_to_le32(__addr >> 32);	\
+	} while(0)
+#define desc_addr_get(desc)					\
+		(((u64)le32_to_cpu(desc[BUFPTR+1]) << 32)	\
+		     | le32_to_cpu(desc[BUFPTR]))
 #else
-typedef u32	hw_addr_t;
+#define HW_ADDR_LEN	4
+#define desc_addr_set(desc, addr)	(desc[BUFPTR] = cpu_to_le32(addr))
+#define desc_addr_get(desc)		(le32_to_cpu(desc[BUFPTR]))
 #endif
-
-#define HW_ADDR_LEN	(sizeof(hw_addr_t))
 
 #define LINK		0
 #define BUFPTR		(LINK + HW_ADDR_LEN/4)
@@ -394,6 +377,7 @@ typedef u32	hw_addr_t;
 #define CMDSTS_INTR	0x20000000
 #define CMDSTS_ERR	0x10000000
 #define CMDSTS_OK	0x08000000
+#define CMDSTS_LEN_MASK	0x0000ffff
 
 #define CMDSTS_DEST_MASK	0x01800000
 #define CMDSTS_DEST_SELF	0x00800000
@@ -408,7 +392,8 @@ struct rx_info {
 
 	struct sk_buff	*skbs[NR_RX_DESC];
 
-	unsigned	next_rx, next_empty;
+	u32		*next_rx_desc;
+	u16		next_rx, next_empty;
 
 	u32		*descs;
 	dma_addr_t	phy_descs;
@@ -423,6 +408,7 @@ struct ns83820 {
 	struct pci_dev		*pci_dev;
 
 	struct rx_info		rx_info;
+	struct tasklet_struct	rx_tasklet;
 
 	unsigned		ihr;
 	struct tq_struct	tq_refill;
@@ -441,10 +427,11 @@ struct ns83820 {
 	spinlock_t	tx_lock;
 
 	long		tx_idle;
-	u32		tx_done_idx;
-	u32		tx_idx;
-	volatile u32	tx_free_idx;	/* idx of free desc chain */
-	u32		tx_intr_idx;
+
+	u16		tx_done_idx;
+	u16		tx_idx;
+	volatile u16	tx_free_idx;	/* idx of free desc chain */
+	u16		tx_intr_idx;
 
 	struct sk_buff	*tx_skbs[NR_TX_DESC];
 
@@ -455,7 +442,7 @@ struct ns83820 {
 
 //free = (tx_done_idx + NR_TX_DESC-2 - free_idx) % NR_TX_DESC
 #define start_tx_okay(dev)	\
-	(((NR_TX_DESC-2 + dev->tx_done_idx - dev->tx_free_idx) % NR_TX_DESC) > NR_TX_DESC/2)
+	(((NR_TX_DESC-2 + dev->tx_done_idx - dev->tx_free_idx) % NR_TX_DESC) > MIN_TX_DESC_FREE)
 
 
 /* Packet Receiver
@@ -504,12 +491,12 @@ static inline int ns83820_add_rx_skb(struct ns83820 *dev, struct sk_buff *skb)
 	unsigned next_empty;
 	u32 cmdsts;
 	u32 *sg;
-	hw_addr_t buf;
+	dma_addr_t buf;
 
 	next_empty = dev->rx_info.next_empty;
 
 	/* don't overrun last rx marker */
-	if (nr_rx_empty(dev) <= 2) {
+	if (unlikely(nr_rx_empty(dev) <= 2)) {
 		kfree_skb(skb);
 		return 1;
 	}
@@ -523,25 +510,29 @@ static inline int ns83820_add_rx_skb(struct ns83820 *dev, struct sk_buff *skb)
 #endif
 
 	sg = dev->rx_info.descs + (next_empty * DESC_SIZE);
-	if (dev->rx_info.skbs[next_empty])
+	if (unlikely(NULL != dev->rx_info.skbs[next_empty]))
 		BUG();
 	dev->rx_info.skbs[next_empty] = skb;
 
 	dev->rx_info.next_empty = (next_empty + 1) % NR_RX_DESC;
-	cmdsts = RX_BUF_SIZE | CMDSTS_INTR;
-	buf = pci_map_single(dev->pci_dev, skb->tail, RX_BUF_SIZE, PCI_DMA_FROMDEVICE);
+	cmdsts = REAL_RX_BUF_SIZE | CMDSTS_INTR;
+	buf = pci_map_single(dev->pci_dev, skb->tail,
+			     REAL_RX_BUF_SIZE, PCI_DMA_FROMDEVICE);
 	build_rx_desc(dev, sg, 0, buf, cmdsts, 0);
 	/* update link of previous rx */
-	if (next_empty != dev->rx_info.next_rx)
+	if (likely(next_empty != dev->rx_info.next_rx))
 		dev->rx_info.descs[((NR_RX_DESC + next_empty - 1) % NR_RX_DESC) * DESC_SIZE] = cpu_to_le32(dev->rx_info.phy_descs + (next_empty * DESC_SIZE * 4));
 
 	return 0;
 }
 
-static int rx_refill(struct ns83820 *dev, int gfp)
+static inline int rx_refill(struct ns83820 *dev, int gfp)
 {
 	unsigned i;
 	long flags = 0;
+
+	if (unlikely(nr_rx_empty(dev) <= 2))
+		return 0;
 
 	dprintk("rx_refill(%p)\n", dev);
 	if (gfp == GFP_ATOMIC)
@@ -549,8 +540,9 @@ static int rx_refill(struct ns83820 *dev, int gfp)
 	for (i=0; i<NR_RX_DESC; i++) {
 		struct sk_buff *skb;
 		long res;
-		skb = __dev_alloc_skb(RX_BUF_SIZE+16, gfp);
-		if (!skb)
+		/* extra 16 bytes for alignment */
+		skb = __dev_alloc_skb(REAL_RX_BUF_SIZE+16, gfp);
+		if (unlikely(!skb))
 			break;
 
 		res = (long)skb->tail & 0xf;
@@ -575,6 +567,12 @@ static int rx_refill(struct ns83820 *dev, int gfp)
 	return i ? 0 : -ENOMEM;
 }
 
+static void FASTCALL(rx_refill_atomic(struct ns83820 *dev));
+static void rx_refill_atomic(struct ns83820 *dev)
+{
+	rx_refill(dev, GFP_ATOMIC);
+}
+
 /* REFILL */
 static inline void queue_refill(void *_dev)
 {
@@ -590,6 +588,7 @@ static inline void clear_rx_desc(struct ns83820 *dev, unsigned i)
 	build_rx_desc(dev, dev->rx_info.descs + (DESC_SIZE * i), 0, 0, CMDSTS_OWN, 0);
 }
 
+static void FASTCALL(phy_intr(struct ns83820 *dev));
 static void phy_intr(struct ns83820 *dev)
 {
 	static char *speeds[] = { "10", "100", "1000", "1000(?)", "1000F" };
@@ -600,7 +599,6 @@ static void phy_intr(struct ns83820 *dev)
 	cfg = readl(dev->base + CFG) ^ SPDSTS_POLARITY;
 
 	if (dev->CFG_cache & CFG_TBI_EN) {
-
 		/* we have an optical transceiver */
 		tbisr = readl(dev->base + TBISR);
 		tanar = readl(dev->base + TANAR);
@@ -646,20 +644,24 @@ static void phy_intr(struct ns83820 *dev)
 		new_cfg = dev->CFG_cache & ~(CFG_SB | CFG_MODE_1000 | CFG_SPDSTS);
 
 		if (cfg & CFG_SPDSTS1)
-			new_cfg |= CFG_MODE_1000 | CFG_SB;
+			new_cfg |= CFG_MODE_1000;
 		else
-			new_cfg &= ~CFG_MODE_1000 | CFG_SB;
+			new_cfg &= ~CFG_MODE_1000;
 
-		if ((cfg & CFG_LNKSTS) && ((new_cfg ^ dev->CFG_cache) & CFG_MODE_1000)) {
+		speed = ((cfg / CFG_SPDSTS0) & 3);
+		fullduplex = (cfg & CFG_DUPSTS);
+
+		if (fullduplex)
+			new_cfg |= CFG_SB;
+
+		if ((cfg & CFG_LNKSTS) &&
+		    ((new_cfg ^ dev->CFG_cache) & CFG_MODE_1000)) {
 			writel(new_cfg, dev->base + CFG);
 			dev->CFG_cache = new_cfg;
 		}
 
 		dev->CFG_cache &= ~CFG_SPDSTS;
 		dev->CFG_cache |= cfg & CFG_SPDSTS;
-
-		speed = ((cfg / CFG_SPDSTS0) & 3);
-		fullduplex = (cfg & CFG_DUPSTS);
 	}
 
 	newlinkstate = (cfg & CFG_LNKSTS) ? LINK_UP : LINK_DOWN;
@@ -690,6 +692,7 @@ static int ns83820_setup_rx(struct ns83820 *dev)
 
 	dev->rx_info.idle = 1;
 	dev->rx_info.next_rx = 0;
+	dev->rx_info.next_rx_desc = dev->rx_info.descs;
 	dev->rx_info.next_empty = 0;
 
 	for (i=0; i<NR_RX_DESC; i++)
@@ -724,7 +727,7 @@ static int ns83820_setup_rx(struct ns83820 *dev)
 		dev->IMR_cache |= ISR_RXDESC;
 		dev->IMR_cache |= ISR_RXIDLE;
 		dev->IMR_cache |= ISR_TXDESC;
-		//dev->IMR_cache |= ISR_TXIDLE;
+		dev->IMR_cache |= ISR_TXIDLE;
 
 		writel(dev->IMR_cache, dev->base + IMR);
 		writel(1, dev->base + IER);
@@ -770,6 +773,24 @@ static void ns83820_cleanup_rx(struct ns83820 *dev)
 	}
 }
 
+static void FASTCALL(ns83820_rx_kick(struct ns83820 *dev));
+static void ns83820_rx_kick(struct ns83820 *dev)
+{
+	/*if (nr_rx_empty(dev) >= NR_RX_DESC/4)*/ {
+		if (dev->rx_info.up) {
+			rx_refill_atomic(dev);
+			kick_rx(dev);
+		}
+	}
+
+	if (dev->rx_info.up && nr_rx_empty(dev) > NR_RX_DESC*3/4)
+		schedule_task(&dev->tq_refill);
+	else
+		kick_rx(dev);
+	if (dev->rx_info.idle)
+		Dprintk("BAD\n");
+}
+
 /* rx_irq
  *	
  */
@@ -785,10 +806,10 @@ static void rx_irq(struct ns83820 *dev)
 	dprintk("rx_irq(%p)\n", dev);
 	dprintk("rxdp: %08x, descs: %08lx next_rx[%d]: %p next_empty[%d]: %p\n",
 		readl(dev->base + RXDP),
-		(dev->rx_info.phy_descs),
-		dev->rx_info.next_rx,
+		(long)(dev->rx_info.phy_descs),
+		(int)dev->rx_info.next_rx,
 		(dev->rx_info.descs + (DESC_SIZE * dev->rx_info.next_rx)),
-		dev->rx_info.next_empty,
+		(int)dev->rx_info.next_empty,
 		(dev->rx_info.descs + (DESC_SIZE * dev->rx_info.next_empty))
 		);
 
@@ -798,12 +819,12 @@ static void rx_irq(struct ns83820 *dev)
 
 	dprintk("walking descs\n");
 	next_rx = info->next_rx;
-	desc = info->descs + (DESC_SIZE * next_rx);
+	desc = info->next_rx_desc;
 	while ((CMDSTS_OWN & (cmdsts = le32_to_cpu(desc[CMDSTS]))) &&
 	       (cmdsts != CMDSTS_OWN)) {
 		struct sk_buff *skb;
 		u32 extsts = le32_to_cpu(desc[EXTSTS]);
-		dmaaddr_high_t bufptr = le32_to_cpu(desc[BUFPTR]);
+		dma_addr_t bufptr = desc_addr_get(desc);
 
 		dprintk("cmdsts: %08x\n", cmdsts);
 		dprintk("link: %08x\n", cpu_to_le32(desc[LINK]));
@@ -813,29 +834,16 @@ static void rx_irq(struct ns83820 *dev)
 		info->skbs[next_rx] = NULL;
 		info->next_rx = (next_rx + 1) % NR_RX_DESC;
 
-		barrier();
+		mb();
 		clear_rx_desc(dev, next_rx);
 
 		pci_unmap_single(dev->pci_dev, bufptr,
 				 RX_BUF_SIZE, PCI_DMA_FROMDEVICE);
-		if (CMDSTS_OK & cmdsts) {
-#if 0 //ndef __i386__
-			struct sk_buff *tmp;
-#endif
+		if (likely(CMDSTS_OK & cmdsts)) {
 			int len = cmdsts & 0xffff;
-			if (!skb)
-				BUG();
 			skb_put(skb, len);
-#if 0 //ndef __i386__	/* I hate the network stack sometimes */
-			tmp = __dev_alloc_skb(RX_BUF_SIZE+16, GFP_ATOMIC);
-			if (!tmp)
-				goto done;
-			tmp->dev = &dev->net_dev;
-			skb_reserve(tmp, 2);
-			memcpy(skb_put(tmp, len), skb->data, len);
-			kfree_skb(skb);
-			skb = tmp;
-#endif
+			if (unlikely(!skb))
+				goto netdev_mangle_me_harder_failed;
 			if (cmdsts & CMDSTS_DEST_MULTI)
 				dev->stats.multicast ++;
 			dev->stats.rx_packets ++;
@@ -846,11 +854,10 @@ static void rx_irq(struct ns83820 *dev)
 				skb->ip_summed = CHECKSUM_NONE;
 			}
 			skb->protocol = eth_type_trans(skb, &dev->net_dev);
-			if (NET_RX_DROP == netif_rx(skb))
+			if (NET_RX_DROP == netif_rx(skb)) {
+netdev_mangle_me_harder_failed:
 				dev->stats.rx_dropped ++;
-#if 0 //ndef __i386__
-		done:;
-#endif
+			}
 		} else {
 			kfree_skb(skb);
 		}
@@ -860,6 +867,7 @@ static void rx_irq(struct ns83820 *dev)
 		desc = info->descs + (DESC_SIZE * next_rx);
 	}
 	info->next_rx = next_rx;
+	info->next_rx_desc = info->descs + (DESC_SIZE * next_rx);
 
 out:
 	if (0 && !nr) {
@@ -869,6 +877,15 @@ out:
 	spin_unlock_irqrestore(&info->lock, flags);
 }
 
+static void rx_action(unsigned long _dev)
+{
+	struct ns83820 *dev = (void *)_dev;
+	rx_irq(dev);
+	writel(0x002, dev->base + IHR);
+	writel(dev->IMR_cache | ISR_RXDESC, dev->base + IMR);
+	rx_irq(dev);
+	ns83820_rx_kick(dev);
+}
 
 /* Packet Transmit code
  */
@@ -879,7 +896,9 @@ static inline void kick_tx(struct ns83820 *dev)
 	writel(CR_TXE, dev->base + CR);
 }
 
-/* no spinlock needed on the transmit irq path as the interrupt handler is serialized */
+/* No spinlock needed on the transmit irq path as the interrupt handler is
+ * serialized.
+ */
 static void do_tx_done(struct ns83820 *dev)
 {
 	u32 cmdsts, tx_done_idx, *desc;
@@ -893,6 +912,8 @@ static void do_tx_done(struct ns83820 *dev)
 	while ((tx_done_idx != dev->tx_free_idx) &&
 	       !(CMDSTS_OWN & (cmdsts = le32_to_cpu(desc[CMDSTS]))) ) {
 		struct sk_buff *skb;
+		unsigned len;
+		dma_addr_t addr;
 
 		if (cmdsts & CMDSTS_ERR)
 			dev->stats.tx_errors ++;
@@ -906,18 +927,25 @@ static void do_tx_done(struct ns83820 *dev)
 		skb = dev->tx_skbs[tx_done_idx];
 		dev->tx_skbs[tx_done_idx] = NULL;
 		dprintk("done(%p)\n", skb);
+
+		len = cmdsts & CMDSTS_LEN_MASK;
+		addr = desc_addr_get(desc);
 		if (skb) {
 			pci_unmap_single(dev->pci_dev,
-					le32_to_cpu(desc[BUFPTR]),
-					skb->len,
+					addr,
+					len,
 					PCI_DMA_TODEVICE);
 			dev_kfree_skb_irq(skb);
-		}
+		} else
+			pci_unmap_page(dev->pci_dev, 
+					addr,
+					len,
+					PCI_DMA_TODEVICE);
 
 		tx_done_idx = (tx_done_idx + 1) % NR_TX_DESC;
 		dev->tx_done_idx = tx_done_idx;
 		desc[CMDSTS] = cpu_to_le32(0);
-		barrier();
+		mb();
 		desc = dev->tx_descs + (tx_done_idx * DESC_SIZE);
 	}
 
@@ -952,14 +980,13 @@ static void ns83820_cleanup_tx(struct ns83820 *dev)
  * while trying to track down a bug in either the zero copy code or
  * the tx fifo (hence the MAX_FRAG_LEN).
  */
-#define MAX_FRAG_LEN	8192	/* disabled for now */
 static int ns83820_hard_start_xmit(struct sk_buff *skb, struct net_device *_dev)
 {
 	struct ns83820 *dev = (struct ns83820 *)_dev;
 	u32 free_idx, cmdsts, extsts;
 	int nr_free, nr_frags;
 	unsigned tx_done_idx;
-	dmaaddr_high_t buf;
+	dma_addr_t buf;
 	unsigned len;
 	skb_frag_t *frag;
 	int stopped = 0;
@@ -970,9 +997,9 @@ static int ns83820_hard_start_xmit(struct sk_buff *skb, struct net_device *_dev)
 
 	nr_frags =  skb_shinfo(skb)->nr_frags;
 again:
-	if (__builtin_expect(dev->CFG_cache & CFG_LNKSTS, 0)) {
+	if (unlikely(dev->CFG_cache & CFG_LNKSTS)) {
 		netif_stop_queue(&dev->net_dev);
-		if (__builtin_expect(dev->CFG_cache & CFG_LNKSTS, 0))
+		if (unlikely(dev->CFG_cache & CFG_LNKSTS))
 			return 1;
 		netif_start_queue(&dev->net_dev);
 	}
@@ -981,7 +1008,7 @@ again:
 	tx_done_idx = dev->tx_done_idx;
 	nr_free = (tx_done_idx + NR_TX_DESC-2 - free_idx) % NR_TX_DESC;
 	nr_free -= 1;
-	if ((nr_free <= nr_frags) || (nr_free <= 8192 / MAX_FRAG_LEN)) {
+	if (nr_free <= nr_frags) {
 		dprintk("stop_queue - not enough(%p)\n", dev);
 		netif_stop_queue(&dev->net_dev);
 
@@ -996,11 +1023,11 @@ again:
 
 	if (free_idx == dev->tx_intr_idx) {
 		do_intr = 1;
-		dev->tx_intr_idx = (dev->tx_intr_idx + NR_TX_DESC/2) % NR_TX_DESC;
+		dev->tx_intr_idx = (dev->tx_intr_idx + NR_TX_DESC/4) % NR_TX_DESC;
 	}
 
 	nr_free -= nr_frags;
-	if (nr_free < 1) {
+	if (nr_free < MIN_TX_DESC_FREE) {
 		dprintk("stop_queue - last entry(%p)\n", dev);
 		netif_stop_queue(&dev->net_dev);
 		stopped = 1;
@@ -1028,20 +1055,12 @@ again:
 	for (;;) {
 		volatile u32 *desc = dev->tx_descs + (free_idx * DESC_SIZE);
 		u32 residue = 0;
-#if 0
-		if (len > MAX_FRAG_LEN) {
-			residue = len;
-			/* align the start address of the next fragment */
-			len = MAX_FRAG_LEN;
-			residue -= len;
-		}
-#endif
 
 		dprintk("frag[%3u]: %4u @ 0x%08Lx\n", free_idx, len,
 			(unsigned long long)buf);
 		free_idx = (free_idx + 1) % NR_TX_DESC;
 		desc[LINK] = cpu_to_le32(dev->tx_phy_descs + (free_idx * DESC_SIZE * 4));
-		desc[BUFPTR] = cpu_to_le32(buf);
+		desc_addr_set(desc, buf);
 		desc[EXTSTS] = cpu_to_le32(extsts);
 
 		cmdsts = ((nr_frags|residue) ? CMDSTS_MORE : do_intr ? CMDSTS_INTR : 0);
@@ -1058,11 +1077,12 @@ again:
 		if (!nr_frags)
 			break;
 
-		buf = pci_map_single_high(dev->pci_dev, frag->page,
-					  frag->page_offset,
-					  frag->size, PCI_DMA_TODEVICE);
-		dprintk("frag: buf=%08Lx  page=%08lx\n",
-			(long long)buf, (long)(frag->page - mem_map));
+		buf = pci_map_page(dev->pci_dev, frag->page,
+				   frag->page_offset,
+				   frag->size, PCI_DMA_TODEVICE);
+		dprintk("frag: buf=%08Lx  page=%08lx offset=%08lx\n",
+			(long long)buf, (long)(frag->page - mem_map),
+			frag->page_offset);
 		len = frag->size;
 		frag++;
 		nr_frags--;
@@ -1084,6 +1104,7 @@ static void ns83820_update_stats(struct ns83820 *dev)
 {
 	u8 *base = dev->base;
 
+	/* the DP83820 will freeze counters, so we need to read all of them */
 	dev->stats.rx_errors		+= readl(base + 0x60) & 0xffff;
 	dev->stats.rx_crc_errors	+= readl(base + 0x64) & 0xffff;
 	dev->stats.rx_missed_errors	+= readl(base + 0x68) & 0xffff;
@@ -1162,54 +1183,54 @@ static int ns83820_ioctl(struct net_device *_dev, struct ifreq *rq, int cmd)
 	}
 }
 
+static void ns83820_mib_isr(struct ns83820 *dev)
+{
+	spin_lock(&dev->misc_lock);
+	ns83820_update_stats(dev);
+	spin_unlock(&dev->misc_lock);
+}
+
 static void ns83820_irq(int foo, void *data, struct pt_regs *regs)
 {
 	struct ns83820 *dev = data;
-	int count = 0;
 	u32 isr;
 	dprintk("ns83820_irq(%p)\n", dev);
 
 	dev->ihr = 0;
 
-	while (count++ < 32 && (isr = readl(dev->base + ISR))) {
-		dprintk("irq: %08x\n", isr);
+	isr = readl(dev->base + ISR);
+	dprintk("irq: %08x\n", isr);
 
-		if (isr & ~(ISR_PHY | ISR_RXDESC | ISR_RXEARLY | ISR_RXOK | ISR_RXERR | ISR_TXIDLE | ISR_TXOK | ISR_TXDESC))
-			Dprintk("odd isr? 0x%08x\n", isr);
+#ifdef DEBUG
+	if (isr & ~(ISR_PHY | ISR_RXDESC | ISR_RXEARLY | ISR_RXOK | ISR_RXERR | ISR_TXIDLE | ISR_TXOK | ISR_TXDESC))
+		Dprintk("odd isr? 0x%08x\n", isr);
+#endif
 
-	if ((ISR_RXEARLY | ISR_RXIDLE | ISR_RXORN | ISR_RXDESC | ISR_RXOK | ISR_RXERR) & isr) {
- 		if (ISR_RXIDLE & isr) {
-			dev->rx_info.idle = 1;
-			Dprintk("oh dear, we are idle\n");
-		}
-
-		if ((ISR_RXDESC) & isr) {
-			rx_irq(dev);
-			writel(4, dev->base + IHR);
-		}
-
-		if (nr_rx_empty(dev) >= NR_RX_DESC/4) {
-			if (dev->rx_info.up) {
-				rx_refill(dev, GFP_ATOMIC);
-				kick_rx(dev);
-			}
-		}
-
-		if (dev->rx_info.up && nr_rx_empty(dev) > NR_RX_DESC*3/4)
-			schedule_task(&dev->tq_refill);
-		else
-			kick_rx(dev);
-		if (dev->rx_info.idle)
-			Dprintk("BAD\n");
+	if (ISR_RXIDLE & isr) {
+		dev->rx_info.idle = 1;
+		Dprintk("oh dear, we are idle\n");
+		ns83820_rx_kick(dev);
 	}
+
+	if ((ISR_RXDESC | ISR_RXOK) & isr) {
+		prefetch(dev->rx_info.next_rx_desc);
+		writel(dev->IMR_cache & ~(ISR_RXDESC | ISR_RXOK), dev->base + IMR);
+		tasklet_schedule(&dev->rx_tasklet);
+		//rx_irq(dev);
+		//writel(4, dev->base + IHR);
+	}
+
+	if ((ISR_RXIDLE | ISR_RXORN | ISR_RXDESC | ISR_RXOK | ISR_RXERR) & isr)
+		ns83820_rx_kick(dev);
 
 	if (unlikely(ISR_RXSOVR & isr)) {
-		Dprintk("overrun: rxsovr\n");
-		dev->stats.rx_over_errors ++;
+		//printk("overrun: rxsovr\n");
+		dev->stats.rx_fifo_errors ++;
 	}
+
 	if (unlikely(ISR_RXORN & isr)) {
-		Dprintk("overrun: rxorn\n");
-		dev->stats.rx_over_errors ++;
+		//printk("overrun: rxorn\n");
+		dev->stats.rx_fifo_errors ++;
 	}
 
 	if ((ISR_RXRCMP & isr) && dev->rx_info.up)
@@ -1241,15 +1262,11 @@ static void ns83820_irq(int foo, void *data, struct pt_regs *regs)
 	if ((ISR_TXDESC | ISR_TXIDLE) & isr)
 		do_tx_done(dev);
 
-	if (ISR_MIB & isr) {
-		spin_lock(&dev->misc_lock);
-		ns83820_update_stats(dev);
-		spin_unlock(&dev->misc_lock);
-	}
+	if (unlikely(ISR_MIB & isr))
+		ns83820_mib_isr(dev);
 
-	if (ISR_PHY & isr)
+	if (unlikely(ISR_PHY & isr))
 		phy_intr(dev);
-	}
 
 #if 0	/* Still working on the interrupt mitigation strategy */
 	if (dev->ihr)
@@ -1396,6 +1413,16 @@ static int __devinit ns83820_init_one(struct pci_dev *pci_dev, const struct pci_
 	struct ns83820 *dev;
 	long addr;
 	int err;
+	int using_dac = 0;
+
+	if (TRY_DAC && !pci_set_dma_mask(pci_dev, 0xffffffffffffffff)) {
+		using_dac = 1;
+	} else if (!pci_set_dma_mask(pci_dev, 0xffffffff)) {
+		using_dac = 0;
+	} else {
+		printk(KERN_WARNING "ns83820.c: pci_set_dma_mask failed!\n");
+		return -ENODEV;
+	}
 
 	dev = (struct ns83820 *)alloc_etherdev((sizeof *dev) - (sizeof dev->net_dev));
 	err = -ENOMEM;
@@ -1412,6 +1439,7 @@ static int __devinit ns83820_init_one(struct pci_dev *pci_dev, const struct pci_
 	dev->net_dev.owner = THIS_MODULE;
 
 	PREPARE_TQUEUE(&dev->tq_refill, queue_refill, dev);
+	tasklet_init(&dev->rx_tasklet, rx_action, (unsigned long)dev);
 
 	err = pci_enable_device(pci_dev);
 	if (err) {
@@ -1430,8 +1458,9 @@ static int __devinit ns83820_init_one(struct pci_dev *pci_dev, const struct pci_
 	if (!dev->base || !dev->tx_descs || !dev->rx_info.descs)
 		goto out_disable;
 
-	dprintk("%p: %08lx  %p: %08lx\n", dev->tx_descs, dev->tx_phy_descs,
-		dev->rx_info.descs, dev->rx_info.phy_descs);
+	dprintk("%p: %08lx  %p: %08lx\n",
+		dev->tx_descs, (long)dev->tx_phy_descs,
+		dev->rx_info.descs, (long)dev->rx_info.phy_descs);
 	/* disable interrupts */
 	writel(0, dev->base + IMR);
 	writel(0, dev->base + IER);
@@ -1484,14 +1513,14 @@ static int __devinit ns83820_init_one(struct pci_dev *pci_dev, const struct pci_
 	dev->CFG_cache = readl(dev->base + CFG);
 
 	if ((dev->CFG_cache & CFG_PCI64_DET)) {
-		printk("%s: enabling 64 bit PCI addressing.\n",
+		printk("%s: detected 64 bit PCI data bus.\n",
 			dev->net_dev.name);
-		dev->CFG_cache |= CFG_T64ADDR | CFG_DATA64_EN;
-#if defined(USE_64BIT_ADDR)
-		dev->net_dev.features |= NETIF_F_HIGHDMA;
-#endif
+		/*dev->CFG_cache |= CFG_DATA64_EN;*/
+		if (!(dev->CFG_cache & CFG_DATA64_EN))
+			printk("%s: EEPROM did not enable 64 bit bus.  Disabled.\n",
+				dev->net_dev.name);
 	} else
-		dev->CFG_cache &= ~(CFG_T64ADDR | CFG_DATA64_EN);
+		dev->CFG_cache &= ~(CFG_DATA64_EN);
 
 	dev->CFG_cache &= (CFG_TBI_EN  | CFG_MRM_DIS   | CFG_MWI_DIS |
 			   CFG_T64ADDR | CFG_DATA64_EN | CFG_EXT_125 |
@@ -1503,6 +1532,9 @@ static int __devinit ns83820_init_one(struct pci_dev *pci_dev, const struct pci_
 #ifdef USE_64BIT_ADDR
 	dev->CFG_cache |= CFG_M64ADDR;
 #endif
+	if (using_dac)
+		dev->CFG_cache |= CFG_T64ADDR;
+
 	/* Big endian mode does not seem to do what the docs suggest */
 	dev->CFG_cache &= ~CFG_BEM;
 
@@ -1528,8 +1560,12 @@ static int __devinit ns83820_init_one(struct pci_dev *pci_dev, const struct pci_
 	writel(dev->CFG_cache, dev->base + CFG);
 	dprintk("CFG: %08x\n", dev->CFG_cache);
 
+#if 0	/* Huh?  This sets the PCI latency register.  Should be done via 
+	 * the PCI layer.  FIXME.
+	 */
 	if (readl(dev->base + SRR))
 		writel(readl(dev->base+0x20c) | 0xfe00, dev->base + 0x20c);
+#endif
 
 	/* Note!  The DMA burst size interacts with packet
 	 * transmission, such that the largest packet that
@@ -1543,13 +1579,15 @@ static int __devinit ns83820_init_one(struct pci_dev *pci_dev, const struct pci_
 	/* Flush the interrupt holdoff timer */
 	writel(0x000, dev->base + IHR);
 	writel(0x100, dev->base + IHR);
+	writel(0x000, dev->base + IHR);
 
 	/* Set Rx to full duplex, don't accept runt, errored, long or length
-	 * range errored packets.  Set MXDMA to 7 => 512 word burst
+	 * range errored packets.  Set MXDMA to 0 => 1024 word burst
 	 */
 	writel(RXCFG_AEP | RXCFG_ARP | RXCFG_AIRL | RXCFG_RX_FD
+		| RXCFG_STRIPCRC
 		| RXCFG_ALP
-		| RXCFG_MXDMA | 0, dev->base + RXCFG);
+		| (RXCFG_MXDMA0 * 0) | 0, dev->base + RXCFG);
 
 	/* Disable priority queueing */
 	writel(0, dev->base + PQCR);
@@ -1575,9 +1613,12 @@ static int __devinit ns83820_init_one(struct pci_dev *pci_dev, const struct pci_
 	/* Yes, we support dumb IP checksum on transmit */
 	dev->net_dev.features |= NETIF_F_SG;
 	dev->net_dev.features |= NETIF_F_IP_CSUM;
-#if defined(USE_64BIT_ADDR) || defined(CONFIG_HIGHMEM4G)
-	dev->net_dev.features |= NETIF_F_HIGHDMA;
-#endif
+
+	if (using_dac) {
+		printk(KERN_INFO "%s: using 64 bit addressing.\n",
+			dev->net_dev.name);
+		dev->net_dev.features |= NETIF_F_HIGHDMA;
+	}
 
 	printk(KERN_INFO "%s: ns83820 v" VERSION ": DP83820 v%u.%u: %02x:%02x:%02x:%02x:%02x:%02x io=0x%08lx irq=%d f=%s\n",
 		dev->net_dev.name,
@@ -1587,7 +1628,7 @@ static int __devinit ns83820_init_one(struct pci_dev *pci_dev, const struct pci_
 		dev->net_dev.dev_addr[2], dev->net_dev.dev_addr[3],
 		dev->net_dev.dev_addr[4], dev->net_dev.dev_addr[5],
 		addr, pci_dev->irq,
-		(dev->net_dev.features & NETIF_F_HIGHDMA) ? "sg" : "h,sg"
+		(dev->net_dev.features & NETIF_F_HIGHDMA) ? "h,sg" : "sg"
 		);
 
 	return 0;

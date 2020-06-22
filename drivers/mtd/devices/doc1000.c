@@ -1,6 +1,6 @@
 /*======================================================================
 
-  $Id: doc1000.c,v 1.15 2001/10/02 15:05:13 dwmw2 Exp $
+  $Id: doc1000.c,v 1.16 2001/12/28 22:45:17 dwmw2 Exp $
 
 ======================================================================*/
 
@@ -483,7 +483,7 @@ static void flashcard_periodic(unsigned long data)
 			else
 				priv->devstat[erase->dev] = erase->state = MTD_ERASE_PENDING;
 		}
-		else if (erase->time + erase_timeout < jiffies)
+		else if (time_after(jiffies, erase->time + erase_timeout))
 		{
 			printk("Flash erase timed out. The world is broken.\n");
 

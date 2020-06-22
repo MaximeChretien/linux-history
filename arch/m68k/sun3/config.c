@@ -42,7 +42,7 @@ extern void sun3_get_model (char* model);
 extern void idprom_init (void);
 extern void sun3_gettod (int *yearp, int *monp, int *dayp,
                    int *hourp, int *minp, int *secp);
-extern int sun3_hwclk(int set, struct hwclk_time *t);
+extern int sun3_hwclk(int set, struct rtc_time *t);
 
 extern void sun_serial_setup(void);
 volatile char* clock_va; 

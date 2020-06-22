@@ -42,7 +42,7 @@ choice 'Processor family' \
 	 Winchip-C6				CONFIG_MWINCHIPC6 \
 	 Winchip-2				CONFIG_MWINCHIP2 \
 	 Winchip-2A/Winchip-3			CONFIG_MWINCHIP3D \
-	 CyrixIII/C3				CONFIG_MCYRIXIII" Pentium-Pro
+	 CyrixIII/VIA-C3/VIA-C5			CONFIG_MCYRIXIII" Pentium-Pro
 #
 # Define implied options from the CPU selection here
 #
@@ -163,6 +163,9 @@ if [ "$CONFIG_MWINCHIP3D" = "y" ]; then
    define_bool CONFIG_X86_USE_PPRO_CHECKSUM y
    define_bool CONFIG_X86_OOSTORE y
 fi
+
+bool 'Machine Check Exception' CONFIG_X86_MCE
+
 tristate 'Toshiba Laptop support' CONFIG_TOSHIBA
 tristate 'Dell laptop support' CONFIG_I8K
 
@@ -407,9 +410,7 @@ endmenu
 
 source drivers/usb/Config.in
 
-if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
-   source net/bluetooth/Config.in
-fi
+source net/bluetooth/Config.in
 
 mainmenu_option next_comment
 comment 'Kernel hacking'
@@ -421,7 +422,7 @@ if [ "$CONFIG_DEBUG_KERNEL" != "n" ]; then
    bool '  Memory mapped I/O debugging' CONFIG_DEBUG_IOVIRT
    bool '  Magic SysRq key' CONFIG_MAGIC_SYSRQ
    bool '  Spinlock debugging' CONFIG_DEBUG_SPINLOCK
-   bool '  Verbose BUG() reporting (adds 70K)' CONFIG_DEBUG_BUGVERBOSE
+   bool '  Compile the kernel with frame pointers' CONFIG_FRAME_POINTER
 fi
 
 endmenu

@@ -117,12 +117,14 @@ static void shm_open (struct vm_area_struct *shmd)
  *
  * @shp: struct to free
  *
- * It has to be called with shp and shm_ids.sem locked
+ * It has to be called with shp and shm_ids.sem locked,
+ * but returns with shp unlocked and freed.
  */
 static void shm_destroy (struct shmid_kernel *shp)
 {
 	shm_tot -= (shp->shm_segsz + PAGE_SIZE - 1) >> PAGE_SHIFT;
 	shm_rmid (shp->id);
+	shm_unlock(shp->id);
 	shmem_lock(shp->shm_file, 0);
 	fput (shp->shm_file);
 	kfree (shp);
@@ -150,8 +152,8 @@ static void shm_close (struct vm_area_struct *shmd)
 	if(shp->shm_nattch == 0 &&
 	   shp->shm_flags & SHM_DEST)
 		shm_destroy (shp);
-
-	shm_unlock(id);
+	else
+		shm_unlock(id);
 	up (&shm_ids.sem);
 }
 
@@ -511,11 +513,9 @@ asmlinkage long sys_shmctl (int shmid, int cmd, struct shmid_ds *buf)
 			shp->shm_flags |= SHM_DEST;
 			/* Do not find it any more */
 			shp->shm_perm.key = IPC_PRIVATE;
+			shm_unlock(shmid);
 		} else
 			shm_destroy (shp);
-
-		/* Unlock */
-		shm_unlock(shmid);
 		up(&shm_ids.sem);
 		return err;
 	}
@@ -653,7 +653,8 @@ invalid:
 	if(shp->shm_nattch == 0 &&
 	   shp->shm_flags & SHM_DEST)
 		shm_destroy (shp);
-	shm_unlock(shmid);
+	else
+		shm_unlock(shmid);
 	up (&shm_ids.sem);
 
 	*raddr = (unsigned long) user_addr;
@@ -672,16 +673,19 @@ asmlinkage long sys_shmdt (char *shmaddr)
 {
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *shmd, *shmdnext;
+	int retval = -EINVAL;
 
 	down_write(&mm->mmap_sem);
 	for (shmd = mm->mmap; shmd; shmd = shmdnext) {
 		shmdnext = shmd->vm_next;
 		if (shmd->vm_ops == &shm_vm_ops
-		    && shmd->vm_start - (shmd->vm_pgoff << PAGE_SHIFT) == (ulong) shmaddr)
+		    && shmd->vm_start - (shmd->vm_pgoff << PAGE_SHIFT) == (ulong) shmaddr) {
 			do_munmap(mm, shmd->vm_start, shmd->vm_end - shmd->vm_start);
+			retval = 0;
+		}
 	}
 	up_write(&mm->mmap_sem);
-	return 0;
+	return retval;
 }
 
 #ifdef CONFIG_PROC_FS

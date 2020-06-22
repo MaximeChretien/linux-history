@@ -597,7 +597,11 @@ struct super_block * ufs_read_super (struct super_block * sb, void * data,
 	}
 	
 again:	
-	set_blocksize (sb->s_dev, block_size);
+	if (set_blocksize (sb->s_dev, block_size)) {
+		printk(KERN_ERR "UFS: failed to set blocksize\n");
+		goto failed;
+	}
+
 	sb->s_blocksize = block_size;
 
 	/*
@@ -653,14 +657,34 @@ magic_found:
 	uspi->s_fmask = fs32_to_cpu(sb, usb1->fs_fmask);
 	uspi->s_fshift = fs32_to_cpu(sb, usb1->fs_fshift);
 
-	if (uspi->s_bsize != 4096 && uspi->s_bsize != 8192 
-	  && uspi->s_bsize != 32768) {
-		printk("ufs_read_super: fs_bsize %u != {4096, 8192, 32768}\n", uspi->s_bsize);
+	if (uspi->s_fsize & (uspi->s_fsize - 1)) {
+		printk(KERN_ERR "ufs_read_super: fragment size %u is not a power of 2\n",
+			uspi->s_fsize);
 		goto failed;
 	}
-	if (uspi->s_fsize != 512 && uspi->s_fsize != 1024 
-	  && uspi->s_fsize != 2048 && uspi->s_fsize != 4096) {
-		printk("ufs_read_super: fs_fsize %u != {512, 1024, 2048. 4096}\n", uspi->s_fsize);
+	if (uspi->s_fsize < 512) {
+		printk(KERN_ERR "ufs_read_super: fragment size %u is too small\n",
+			uspi->s_fsize);
+		goto failed;
+	}
+	if (uspi->s_fsize > 4096) {
+		printk(KERN_ERR "ufs_read_super: fragment size %u is too large\n",
+			uspi->s_fsize);
+		goto failed;
+	}
+	if (uspi->s_bsize & (uspi->s_bsize - 1)) {
+		printk(KERN_ERR "ufs_read_super: block size %u is not a power of 2\n",
+			uspi->s_bsize);
+		goto failed;
+	}
+	if (uspi->s_bsize < 4096) {
+		printk(KERN_ERR "ufs_read_super: block size %u is too small\n",
+			uspi->s_bsize);
+		goto failed;
+	}
+	if (uspi->s_bsize / uspi->s_fsize > 8) {
+		printk(KERN_ERR "ufs_read_super: too many fragments per block (%u)\n",
+			uspi->s_bsize / uspi->s_fsize);
 		goto failed;
 	}
 	if (uspi->s_fsize != block_size || uspi->s_sbsize != super_block_size) {

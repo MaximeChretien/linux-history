@@ -28,7 +28,7 @@
 #define __CS4281_WRAPPER_H
 
 /* 2.4.x wrapper */
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,12)
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,9)
 static int cs4281_null_suspend(struct pci_dev *pcidev, u32 unused) { return 0; }
 static int cs4281_null_resume(struct pci_dev *pcidev) { return 0; }
 #else

@@ -76,14 +76,14 @@ void fbcon_cfb24_bmove(struct display *p, int sy, int sx, int dy, int dx,
 	out1 = (in1<<8)  | (in2>>16); \
 	out2 = (in2<<16) | (in3>>8); \
 	out3 = (in3<<24) | in4; \
-    } while (0);
+    } while (0)
 #elif defined(__LITTLE_ENDIAN)
 #define convert4to3(in1, in2, in3, in4, out1, out2, out3) \
     do { \
 	out1 = in1       | (in2<<24); \
 	out2 = (in2>> 8) | (in3<<16); \
 	out3 = (in3>>16) | (in4<< 8); \
-    } while (0);
+    } while (0)
 #else
 #error FIXME: No endianness??
 #endif

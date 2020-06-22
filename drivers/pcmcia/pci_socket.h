@@ -23,7 +23,9 @@ typedef struct pci_socket {
 	struct socket_info_t *pcmcia_socket;
 	struct tq_struct tq_task;
 	struct timer_list poll_timer;
-
+	/* Zoom video behaviour is so chip specific its not worth adding
+  	   this to _ops */
+	void (*zoom_video)(struct pci_socket *, int);
 	/* A few words of private data for the low-level driver.. */
 	unsigned int private[8];
 } pci_socket_t;

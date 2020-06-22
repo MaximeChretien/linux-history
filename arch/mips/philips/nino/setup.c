@@ -1,5 +1,5 @@
 /*
- *  linux/arch/mips/philips/nino/setup.c
+ *  arch/mips/philips/nino/setup.c
  *
  *  Copyright (C) 2001 Steven J. Hill (sjhill@realitydiluted.com)
  *
@@ -7,114 +7,99 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- *  Interrupt and exception initialization for Philips Nino.
+ *  Interrupt and exception initialization for Philips Nino
  */
 #include <linux/console.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
-#include <linux/mc146818rtc.h>
 #include <linux/sched.h>
 #include <asm/addrspace.h>
-#include <asm/gdb-stub.h>
+#include <asm/io.h>
 #include <asm/irq.h>
-#include <asm/wbflush.h>
+#include <asm/reboot.h>
+#include <asm/time.h>
 #include <asm/tx3912.h>
 
-extern struct rtc_ops nino_rtc_ops;
-
-extern void nino_wait(void);
-extern void setup_nino_reset_vectors(void);
-extern asmlinkage void nino_handle_int(void);
-extern int setup_nino_irq(int, struct irqaction *);
-void (*board_time_init) (struct irqaction * irq);
-
-#ifdef CONFIG_REMOTE_DEBUG
-extern void set_debug_traps(void);
-extern void breakpoint(void);
-static int remote_debug = 0;
-#endif
-
-static void __init nino_irq_setup(void)
+static void nino_machine_restart(char *command)
 {
-	unsigned int tmp;
+	static void (*back_to_prom)(void) = (void (*)(void)) 0xbfc00000;
 
-	/* Turn all interrupts off */
-	IntEnable1 = 0;
-	IntEnable2 = 0;
-	IntEnable3 = 0;
-	IntEnable4 = 0;
-	IntEnable5 = 0;
-	IntEnable6 = 0;
-
-	/* Clear all interrupts */
-	IntClear1 = 0xffffffff;
-	IntClear2 = 0xffffffff;
-	IntClear3 = 0xffffffff;
-	IntClear4 = 0xffffffff;
-	IntClear5 = 0xffffffff;
-	IntClear6 = 0xffffffff;
-
-	/*
-	 * Enable only the interrupts for the UART and negative
-	 * edge (1-to-0) triggered multi-function I/O pins.
-	 */
-    	change_cp0_status(ST0_BEV, 0);
-	tmp = read_32bit_cp0_register(CP0_STATUS);
-    	change_cp0_status(ST0_IM, tmp | IE_IRQ2 | IE_IRQ4);
-
-	/* Register the global interrupt handler */
-	set_except_vector(0, nino_handle_int);
-
-#ifdef CONFIG_REMOTE_DEBUG
-	if (remote_debug) {
-		set_debug_traps();
-		breakpoint();
-	}
-#endif
+	/* Reboot */
+	back_to_prom();
 }
 
-static __init void nino_time_init(struct irqaction *irq)
+static void nino_machine_halt(void)
 {
-	unsigned int scratch = 0;
+	printk("Nino halted.\n");
+	while(1);
+}
 
+static void nino_machine_power_off(void)
+{
+	printk("Nino halted. Please turn off power.\n");
+	while(1);
+}
+
+static void __init nino_board_init()
+{
 	/*
-	 * Enable periodic interrupts
+	 * Set up the master clock module. The value set in
+	 * the Clock Control Register by WindowsCE is 0x00432ba.
+	 * We set a few values here and let the device drivers
+	 * handle the rest.
+	 *
+	 * NOTE: The UART clocks must be enabled here to provide
+	 *       enough time for them to settle.
 	 */
-	setup_nino_irq(0, irq);
+	outl(0x00000000, TX3912_CLK_CTRL);
+	outl((TX3912_CLK_CTRL_SIBMCLKDIR | TX3912_CLK_CTRL_SIBMCLKDIV_2 |
+		TX3912_CLK_CTRL_ENSIBMCLK | TX3912_CLK_CTRL_CSERSEL |
+		TX3912_CLK_CTRL_CSERDIV_3 | TX3912_CLK_CTRL_ENCSERCLK |
+		TX3912_CLK_CTRL_ENUARTACLK | TX3912_CLK_CTRL_ENUARTBCLK),
+		TX3912_CLK_CTRL);
+}
 
-	RTCperiodTimer = PER_TIMER_COUNT;
-	RTCtimerControl = TIM_ENPERTIMER;
-	IntEnable5 |= INT5_PERIODICINT;
+static __init void nino_time_init(void)
+{
+	/* Load the counter and enable the timer */
+	outl(TX3912_SYS_TIMER_VALUE, TX3912_TIMER_PERIOD);
+	outl(TX3912_TIMER_CTRL_ENPERTIMER, TX3912_TIMER_CTRL);
 
-	scratch = inl(TX3912_CLK_CTRL_BASE);
-	scratch |= TX3912_CLK_CTRL_ENTIMERCLK;
-	outl(scratch, TX3912_CLK_CTRL_BASE);
+	/* Enable the master timer clock */
+	outl(inl(TX3912_CLK_CTRL) | TX3912_CLK_CTRL_ENTIMERCLK,
+		TX3912_CLK_CTRL);
 
-	/* Enable all interrupts */
-	IntEnable6 |= INT6_GLOBALEN | INT6_PERIODICINT;
+	/* Enable the interrupt */
+	outl(inl(TX3912_INT5_ENABLE) | TX3912_INT5_PERINT,
+		TX3912_INT5_ENABLE);
+}
+
+static __init void nino_timer_setup(struct irqaction *irq)
+{
+	irq->dev_id = (void *) irq;
+	setup_irq(0, irq);
 }
 
 void __init nino_setup(void)
 {
+	extern void nino_irq_setup(void);
+	extern void nino_wait(void);
+
 	irq_setup = nino_irq_setup;
+	set_io_port_base(KSEG1ADDR(0x10c00000));
+
+	_machine_restart = nino_machine_restart;
+	_machine_halt = nino_machine_halt;
+	_machine_power_off = nino_machine_power_off;
 
 	board_time_init = nino_time_init;
+	board_timer_setup = nino_timer_setup;
 
-	/* Base address to use for PC type I/O accesses */
-	mips_io_port_base = KSEG1ADDR(0xB0C00000);
-
-	setup_nino_reset_vectors();
-
-	/* Function called during process idle (cpu_idle) */
 	cpu_wait = nino_wait;
 
 #ifdef CONFIG_FB
 	conswitchp = &dummy_con;
 #endif
 
-#ifdef CONFIG_REMOTE_DEBUG
-	remote_debug = 1;
-#endif
-
-	rtc_ops = &nino_rtc_ops;
+	nino_board_init();
 }

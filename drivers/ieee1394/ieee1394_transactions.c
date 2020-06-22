@@ -169,8 +169,9 @@ void fill_phy_packet(struct hpsb_packet *packet, quadlet_t data)
  */
 int get_tlabel(struct hpsb_host *host, nodeid_t nodeid, int wait)
 {
-	int tlabel;
+	int tlabel = 0;
 	unsigned long flags;
+	int found_tlabel = 0;
 
 	if (wait) {
 		down(&host->tlabel_count);
@@ -180,15 +181,18 @@ int get_tlabel(struct hpsb_host *host, nodeid_t nodeid, int wait)
 
 	spin_lock_irqsave(&host->tlabel_lock, flags);
 
-	if (host->tlabel_pool[0] != ~0) {
-		tlabel = ffz(host->tlabel_pool[0]);
-		host->tlabel_pool[0] |= 1 << tlabel;
-	} else {
-		tlabel = ffz(host->tlabel_pool[1]);
-		host->tlabel_pool[1] |= 1 << tlabel;
-		tlabel += 32;
+	while (!found_tlabel) {
+		tlabel = host->tlabel_current;
+		if (tlabel < 32 && !(host->tlabel_pool[0] & 1 << tlabel)) {
+			host->tlabel_pool[0] |= 1 << tlabel;
+			found_tlabel = 1;
+		} else if (!(host->tlabel_pool[1] & 1 << (tlabel - 32))) {
+			host->tlabel_pool[1] |= 1 << (tlabel - 32);
+			found_tlabel = 1;
+		}
+		host->tlabel_current = (host->tlabel_current + 1) % 64;
 	}
-
+	
 	spin_unlock_irqrestore(&host->tlabel_lock, flags);
 
 	return tlabel;
@@ -246,7 +250,7 @@ int hpsb_packet_success(struct hpsb_packet *packet)
                                  packet->node_id);
                         return -EAGAIN;
                 }
-                HPSB_PANIC("reached unreachable code 1 in " __FUNCTION__);
+                HPSB_PANIC("reached unreachable code 1 in %s", __FUNCTION__);
 
         case ACK_BUSY_X:
         case ACK_BUSY_A:
@@ -290,7 +294,7 @@ int hpsb_packet_success(struct hpsb_packet *packet)
                 return -EAGAIN;
         }
 
-        HPSB_PANIC("reached unreachable code 2 in " __FUNCTION__);
+        HPSB_PANIC("reached unreachable code 2 in %s", __FUNCTION__);
 }
 
 
@@ -415,8 +419,8 @@ struct hpsb_packet *hpsb_make_phypacket(struct hpsb_host *host,
  * avoid in kernel buffers for user space callers
  */
 
-int hpsb_read(struct hpsb_host *host, nodeid_t node, u64 addr,
-              quadlet_t *buffer, size_t length)
+int hpsb_read(struct hpsb_host *host, nodeid_t node, unsigned int generation,
+	      u64 addr, quadlet_t *buffer, size_t length)
 {
         struct hpsb_packet *packet;
         int retval = 0;
@@ -447,7 +451,7 @@ int hpsb_read(struct hpsb_host *host, nodeid_t node, u64 addr,
                 return -ENOMEM;
         }
 
-	packet->generation = get_hpsb_generation(host);
+	packet->generation = generation;
         if (!hpsb_send_packet(packet)) {
 		retval = -EINVAL;
 		goto hpsb_read_fail;
@@ -496,8 +500,8 @@ struct hpsb_packet *hpsb_make_packet (struct hpsb_host *host, nodeid_t node,
 	return packet;
 }
 
-int hpsb_write(struct hpsb_host *host, nodeid_t node, u64 addr,
-	       quadlet_t *buffer, size_t length)
+int hpsb_write(struct hpsb_host *host, nodeid_t node, unsigned int generation,
+	       u64 addr, quadlet_t *buffer, size_t length)
 {
 	struct hpsb_packet *packet;
 	int retval;
@@ -522,7 +526,7 @@ int hpsb_write(struct hpsb_host *host, nodeid_t node, u64 addr,
 	if (!packet)
 		return -ENOMEM;
 
-	packet->generation = get_hpsb_generation(host);
+	packet->generation = generation;
         if (!hpsb_send_packet(packet)) {
 		retval = -EINVAL;
 		goto hpsb_write_fail;
@@ -541,8 +545,8 @@ hpsb_write_fail:
 
 
 /* We need a hpsb_lock64 function for the 64 bit equivalent.  Probably. */
-int hpsb_lock(struct hpsb_host *host, nodeid_t node, u64 addr, int extcode,
-              quadlet_t *data, quadlet_t arg)
+int hpsb_lock(struct hpsb_host *host, nodeid_t node, unsigned int generation,
+	      u64 addr, int extcode, quadlet_t *data, quadlet_t arg)
 {
         struct hpsb_packet *packet;
         int retval = 0, length;
@@ -588,7 +592,7 @@ int hpsb_lock(struct hpsb_host *host, nodeid_t node, u64 addr, int extcode,
         }
         fill_async_lock(packet, addr, extcode, length);
 
-	packet->generation = get_hpsb_generation(host);
+	packet->generation = generation;
         if (!hpsb_send_packet(packet)) {
 		retval = -EINVAL;
 		goto hpsb_lock_fail;

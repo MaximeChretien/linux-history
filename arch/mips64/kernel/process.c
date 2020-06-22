@@ -15,6 +15,7 @@
 #include <linux/ptrace.h>
 #include <linux/slab.h>
 #include <linux/mman.h>
+#include <linux/personality.h>
 #include <linux/sys.h>
 #include <linux/user.h>
 #include <linux/a.out.h>
@@ -29,7 +30,7 @@
 #include <asm/io.h>
 #include <asm/elf.h>
 
-asmlinkage int cpu_idle(void)
+ATTRIB_NORET void cpu_idle(void)
 {
 	/* endless idle loop with no priority at all */
 	init_idle();
@@ -37,8 +38,8 @@ asmlinkage int cpu_idle(void)
 	current->counter = -100;
 	while (1) {
 		while (!current->need_resched)
-			if (wait_available)
-				__asm__("wait");
+			if (cpu_wait)
+				(*cpu_wait)();
 		schedule();
 		check_pgt_cache();
 	}
@@ -52,7 +53,7 @@ void exit_thread(void)
 {
 	/* Forget lazy fpu state */
 	if (IS_FPU_OWNER()) {
-		set_cp0_status(ST0_CU1, ST0_CU1);
+		__enable_fpu();
 		__asm__ __volatile__("cfc1\t$0,$31");
 		CLEAR_FPU_OWNER();
 	}
@@ -62,17 +63,17 @@ void flush_thread(void)
 {
 	/* Forget lazy fpu state */
 	if (IS_FPU_OWNER()) {
-		set_cp0_status(ST0_CU1, ST0_CU1);
+		__enable_fpu();
 		__asm__ __volatile__("cfc1\t$0,$31");
 		CLEAR_FPU_OWNER();
 	}
 }
 
 int copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
-		 unsigned long unused,
-                 struct task_struct * p, struct pt_regs * regs)
+		unsigned long unused, struct task_struct *p,
+		struct pt_regs *regs)
 {
-	struct pt_regs * childregs;
+	struct pt_regs *childregs;
 	long childksp;
 
 	childksp = (unsigned long)p + KERNEL_STACK_SIZE - 32;
@@ -84,16 +85,9 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
 	childregs = (struct pt_regs *) childksp - 1;
 	*childregs = *regs;
 	childregs->regs[7] = 0;	/* Clear error flag */
-	if (current->personality == PER_LINUX) {
-		childregs->regs[2] = 0;	/* Child gets zero as return value */
-		regs->regs[2] = p->pid;
-	} else {
-		/* Under IRIX things are a little different. */
-		childregs->regs[2] = 0;
-		childregs->regs[3] = 1;
-		regs->regs[2] = p->pid;
-		regs->regs[3] = 0;
-	}
+	childregs->regs[2] = 0;	/* Child gets zero as return value */
+	regs->regs[2] = p->pid;
+
 	if (childregs->cp0_status & ST0_CU0) {
 		childregs->regs[28] = (unsigned long) p;
 		childregs->regs[29] = childksp;
@@ -122,10 +116,11 @@ int dump_fpu(struct pt_regs *regs, elf_fpregset_t *r)
 	/* We actually store the FPU info in the task->thread
 	 * area.
 	 */
-	if(regs->cp0_status & ST0_CU1) {
+	if (regs->cp0_status & ST0_CU1) {
 		memcpy(r, &current->thread.fpu, sizeof(current->thread.fpu));
 		return 1;
 	}
+
 	return 0; /* Task didn't use the fpu at all. */
 }
 
@@ -172,8 +167,8 @@ int kernel_thread(int (*fn)(void *), void *arg, unsigned long flags)
 
 		 /* The called subroutine might have destroyed any of the
 		  * at, result, argument or temporary registers ...  */
-		:"$1", "$2", "$3", "$4", "$5", "$6", "$7", "$8",
-		 "$9","$10","$11","$12","$13","$14","$15","$24","$25");
+		: "$2", "$3", "$4", "$5", "$6", "$7", "$8",
+		  "$9","$10","$11","$12","$13","$14","$15","$24","$25");
 
 	return retval;
 }

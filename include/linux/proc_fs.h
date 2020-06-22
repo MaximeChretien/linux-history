@@ -132,6 +132,12 @@ extern void proc_device_tree_init(void);
  */
 extern void proc_rtas_init(void);
 
+/*
+ * PPC64
+ */ 
+extern void proc_ppc64_init(void);
+extern void iSeries_proc_create(void);
+
 extern struct proc_dir_entry *proc_symlink(const char *,
 		struct proc_dir_entry *, const char *);
 extern struct proc_dir_entry *proc_mknod(const char *,mode_t,

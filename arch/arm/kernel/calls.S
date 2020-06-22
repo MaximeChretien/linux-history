@@ -236,6 +236,27 @@ __syscall_start:
 		.long	SYMBOL_NAME(sys_mincore)
 /* 220 */	.long	SYMBOL_NAME(sys_madvise)
 		.long	SYMBOL_NAME(sys_fcntl64)
+		.long	SYMBOL_NAME(sys_ni_syscall) /* TUX */
+		.long	SYMBOL_NAME(sys_ni_syscall) /* Security */
+		.long	SYMBOL_NAME(sys_gettid)
+/* 225 */	.long	SYMBOL_NAME(sys_readahead)
+		.long	SYMBOL_NAME(sys_ni_syscall) /* sys_setxattr */
+		.long	SYMBOL_NAME(sys_ni_syscall) /* sys_lsetxattr */
+		.long	SYMBOL_NAME(sys_ni_syscall) /* sys_fsetxattr */
+		.long	SYMBOL_NAME(sys_ni_syscall) /* sys_getxattr */
+/* 230 */	.long	SYMBOL_NAME(sys_ni_syscall) /* sys_lgetxattr */
+		.long	SYMBOL_NAME(sys_ni_syscall) /* sys_fgetxattr */
+		.long	SYMBOL_NAME(sys_ni_syscall) /* sys_listxattr */
+		.long	SYMBOL_NAME(sys_ni_syscall) /* sys_llistxattr */
+		.long	SYMBOL_NAME(sys_ni_syscall) /* sys_flistxattr */
+/* 235 */	.long	SYMBOL_NAME(sys_ni_syscall) /* sys_removexattr */
+		.long	SYMBOL_NAME(sys_ni_syscall) /* sys_lremovexattr */
+		.long	SYMBOL_NAME(sys_ni_syscall) /* sys_fremovexattr */
+		.long	SYMBOL_NAME(sys_tkill)
+		/*
+		 * Please check 2.5 _before_ adding calls here,
+		 * and copy changes to rmk@arm.linux.org.uk.  Thanks.
+		 */
 __syscall_end:
 
 		.rept	NR_syscalls - (__syscall_end - __syscall_start) / 4

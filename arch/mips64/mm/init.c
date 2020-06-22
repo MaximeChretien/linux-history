@@ -32,14 +32,11 @@
 #include <asm/system.h>
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
-#ifdef CONFIG_SGI_IP22
-#include <asm/sgialib.h>
-#endif
 #include <asm/mmu_context.h>
 #include <asm/tlb.h>
+#include <asm/cpu.h>
 
 mmu_gather_t mmu_gathers[NR_CPUS];
-
 unsigned long totalram_pages;
 
 void pgd_init(unsigned long page)
@@ -135,7 +132,7 @@ unsigned long setup_zero_pages(void)
 	unsigned long order, size;
 	struct page *page;
 
-	switch (mips_cputype) {
+	switch (mips_cpu.cputype) {
 	case CPU_R4000SC:
 	case CPU_R4000MC:
 	case CPU_R4400SC:
@@ -162,157 +159,6 @@ unsigned long setup_zero_pages(void)
 	memset((void *)empty_zero_page, 0, size);
 
 	return 1UL << order;
-}
-
-void __init add_memory_region(unsigned long start, unsigned long size,
-                              long type)
-{
-        int x = boot_mem_map.nr_map;
-
-        if (x == BOOT_MEM_MAP_MAX) {
-                printk("Ooops! Too many entries in the memory map!\n");
-                return;
-        }
-
-        boot_mem_map.map[x].addr = start;
-        boot_mem_map.map[x].size = size;
-        boot_mem_map.map[x].type = type;
-        boot_mem_map.nr_map++;
-}
-
-static void __init print_memory_map(void)
-{
-        int i;
-
-        for (i = 0; i < boot_mem_map.nr_map; i++) {
-                printk(" memory: %08lx @ %08lx ",
-                        boot_mem_map.map[i].size, boot_mem_map.map[i].addr);
-                switch (boot_mem_map.map[i].type) {
-                case BOOT_MEM_RAM:
-                        printk("(usable)\n");
-                        break;
-                case BOOT_MEM_ROM_DATA:
-                        printk("(ROM data)\n");
-                        break;
-                case BOOT_MEM_RESERVED:
-                        printk("(reserved)\n");
-                        break;
-                default:
-                        printk("type %lu\n", boot_mem_map.map[i].type);
-                        break;
-                }
-        }
-}
-
-void bootmem_init(void) {
-#ifdef CONFIG_BLK_DEV_INITRD
-	unsigned long tmp;
-	unsigned long *initrd_header;
-#endif
-	unsigned long bootmap_size;
-	unsigned long start_pfn, max_pfn;
-	int i;
-	extern int _end;
-
-#define PFN_UP(x)	(((x) + PAGE_SIZE - 1) >> PAGE_SHIFT)
-#define PFN_DOWN(x)	((x) >> PAGE_SHIFT)
-#define PFN_PHYS(x)	((x) << PAGE_SHIFT)
-
-	/*
-	 * Partially used pages are not usable - thus
-	 * we are rounding upwards.
-	 */
-	start_pfn = PFN_UP(__pa(&_end));
-
-	/* Find the highest page frame number we have available.  */
-	max_pfn = 0;
-	for (i = 0; i < boot_mem_map.nr_map; i++) {
-		unsigned long start, end;
-
-		if (boot_mem_map.map[i].type != BOOT_MEM_RAM)
-			continue;
-
-		start = PFN_UP(boot_mem_map.map[i].addr);
-		end = PFN_DOWN(boot_mem_map.map[i].addr
-		      + boot_mem_map.map[i].size);
-
-		if (start >= end)
-			continue;
-		if (end > max_pfn)
-			max_pfn = end;
-	}
-
-	/* Initialize the boot-time allocator.  */
-	bootmap_size = init_bootmem(start_pfn, max_pfn);
-
-	/*
-	 * Register fully available low RAM pages with the bootmem allocator.
-	 */
-	for (i = 0; i < boot_mem_map.nr_map; i++) {
-		unsigned long curr_pfn, last_pfn, size;
-
-		/*
-		 * Reserve usable memory.
-		 */
-		if (boot_mem_map.map[i].type != BOOT_MEM_RAM)
-			continue;
-
-		/*
-		 * We are rounding up the start address of usable memory:
-		 */
-		curr_pfn = PFN_UP(boot_mem_map.map[i].addr);
-		if (curr_pfn >= max_pfn)
-			continue;
-		if (curr_pfn < start_pfn)
-			curr_pfn = start_pfn;
-
-		/*
-		 * ... and at the end of the usable range downwards:
-		 */
-		last_pfn = PFN_DOWN(boot_mem_map.map[i].addr
-				    + boot_mem_map.map[i].size);
-
-		if (last_pfn > max_pfn)
-			last_pfn = max_pfn;
-
-		/*
-		 * ... finally, did all the rounding and playing
-		 * around just make the area go away?
-		 */
-		if (last_pfn <= curr_pfn)
-			continue;
-
-		size = last_pfn - curr_pfn;
-		free_bootmem(PFN_PHYS(curr_pfn), PFN_PHYS(size));
-	}
-
-	/* Reserve the bootmap memory.  */
-	reserve_bootmem(PFN_PHYS(start_pfn), bootmap_size);
-
-#ifdef CONFIG_BLK_DEV_INITRD
-#error "Initrd is broken, please fit it."
-	tmp = (((unsigned long)&_end + PAGE_SIZE-1) & PAGE_MASK) - 8;
-	if (tmp < (unsigned long)&_end)
-		tmp += PAGE_SIZE;
-	initrd_header = (unsigned long *)tmp;
-	if (initrd_header[0] == 0x494E5244) {
-		initrd_start = (unsigned long)&initrd_header[2];
-		initrd_end = initrd_start + initrd_header[1];
-		initrd_below_start_ok = 1;
-		if (initrd_end > memory_end) {
-			printk("initrd extends beyond end of memory "
-			       "(0x%08lx > 0x%08lx)\ndisabling initrd\n",
-			       initrd_end,memory_end);
-			initrd_start = 0;
-		} else
-			*memory_start_p = initrd_end;
-	}
-#endif
-
-#undef PFN_UP
-#undef PFN_DOWN
-#undef PFN_PHYS
-
 }
 
 void show_mem(void)
@@ -367,7 +213,7 @@ void __init paging_init(void)
 	max_dma =  virt_to_phys((char *)MAX_DMA_ADDRESS) >> PAGE_SHIFT;
 	low = max_low_pfn;
 
-#if defined(CONFIG_PCI) || defined(CONFIG_ISA)
+#ifdef CONFIG_ISA
 	if (low < max_dma)
 		zones_size[ZONE_DMA] = low;
 	else {
@@ -379,7 +225,7 @@ void __init paging_init(void)
 #endif
 
 	free_area_init(zones_size);
-	
+
 	memset((void *)kptbl, 0, PAGE_SIZE << KPTBL_PAGE_ORDER);
 	memset((void *)kpmdtbl, 0, PAGE_SIZE);
 	pgd_set(swapper_pg_dir, kpmdtbl);
@@ -387,14 +233,38 @@ void __init paging_init(void)
 		pmd_val(*pmd) = (unsigned long)pte;
 }
 
-extern int page_is_ram(unsigned long pagenr);
+//extern int page_is_ram(unsigned long pagenr);
+
+#define PFN_UP(x)	(((x) + PAGE_SIZE - 1) >> PAGE_SHIFT)
+#define PFN_DOWN(x)	((x) >> PAGE_SHIFT)
+
+static inline int page_is_ram(unsigned long pagenr)
+{
+	int i;
+
+	for (i = 0; i < boot_mem_map.nr_map; i++) {
+	unsigned long addr, end;
+
+	if (boot_mem_map.map[i].type != BOOT_MEM_RAM)
+		/* not usable memory */
+		continue;
+
+	addr = PFN_UP(boot_mem_map.map[i].addr);
+	end = PFN_DOWN(boot_mem_map.map[i].addr + boot_mem_map.map[i].size);
+
+	if (pagenr >= addr && pagenr < end)
+		return 1;
+	}
+
+	return 0;
+}
 
 void __init mem_init(void)
 {
 	unsigned long codesize, reservedpages, datasize, initsize;
 	unsigned long tmp, ram;
 
-	max_mapnr = num_physpages = max_low_pfn;
+	max_mapnr = num_mappedpages = num_physpages = max_low_pfn;
 	high_memory = (void *) __va(max_mapnr << PAGE_SHIFT);
 
 	totalram_pages += free_all_bootmem();
@@ -412,8 +282,8 @@ void __init mem_init(void)
 	datasize =  (unsigned long) &_edata - (unsigned long) &_fdata;
 	initsize =  (unsigned long) &__init_end - (unsigned long) &__init_begin;
 
-	printk("Memory: %luk/%luk available (%ldk kernel code, %ldk reserved, "
-	       "%ldk data, %ldk init)\n",
+	printk(KERN_INFO "Memory: %luk/%luk available (%ldk kernel code, "
+	       "%ldk reserved, %ldk data, %ldk init)\n",
 	       (unsigned long) nr_free_pages() << (PAGE_SHIFT-10),
 	       ram << (PAGE_SHIFT-10),
 	       codesize >> 10,
@@ -432,7 +302,8 @@ void free_initrd_mem(unsigned long start, unsigned long end)
 		free_page(start);
 		totalram_pages++;
 	}
-	printk ("Freeing initrd memory: %ldk freed\n", (end - start) >> 10);
+	printk(KERN_INFO "Freeing initrd memory: %ldk freed\n",
+	       (end - start) >> 10);
 }
 #endif
 
@@ -455,7 +326,7 @@ free_initmem(void)
 		totalram_pages++;
 		addr += PAGE_SIZE;
 	}
-	printk("Freeing unused kernel memory: %ldk freed\n",
+	printk(KERN_INFO "Freeing unused kernel memory: %ldk freed\n",
 	       (&__init_end - &__init_begin) >> 10);
 }
 
@@ -463,7 +334,7 @@ void
 si_meminfo(struct sysinfo *val)
 {
 	val->totalram = totalram_pages;
-	val->sharedram = atomic_read(&shmem_nrpages);
+	val->sharedram = 0;
 	val->freeram = nr_free_pages();
 	val->bufferram = atomic_read(&buffermem_pages);
 	val->totalhigh = 0;

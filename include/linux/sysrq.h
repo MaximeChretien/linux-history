@@ -105,7 +105,7 @@ static inline int __reterr(void)
 
 /* Deferred actions */
 
-extern int emergency_sync_scheduled;
+extern volatile int emergency_sync_scheduled;
 
 #define EMERG_SYNC 1
 #define EMERG_REMOUNT 2

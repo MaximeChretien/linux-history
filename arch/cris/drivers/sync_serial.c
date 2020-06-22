@@ -199,7 +199,6 @@ static int __init etrax_sync_serial_init(void)
 	/* Deselect synchronous serial ports */
 	SETS(gen_config_ii_shadow, R_GEN_CONFIG_II, sermode1, async);
 	SETS(gen_config_ii_shadow, R_GEN_CONFIG_II, sermode3, async);
-	SETS(gen_config_ii_shadow, R_GEN_CONFIG_II, ser3, select);
 	*R_GEN_CONFIG_II = gen_config_ii_shadow;
   
 	/* Initialize Ports */

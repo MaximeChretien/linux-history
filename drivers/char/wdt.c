@@ -51,7 +51,7 @@
 #include <linux/reboot.h>
 #include <linux/init.h>
 
-static int wdt_is_open;
+static unsigned long wdt_is_open;
 
 /*
  *	You must set these - there is no sane way to probe for this board.
@@ -355,7 +355,7 @@ static int wdt_open(struct inode *inode, struct file *file)
 	switch(MINOR(inode->i_rdev))
 	{
 		case WATCHDOG_MINOR:
-			if(wdt_is_open)
+			if(test_and_set_bit(0, &wdt_is_open))
 				return -EBUSY;
 			/*
 			 *	Activate 
@@ -392,16 +392,14 @@ static int wdt_open(struct inode *inode, struct file *file)
  
 static int wdt_release(struct inode *inode, struct file *file)
 {
-	lock_kernel();
 	if(MINOR(inode->i_rdev)==WATCHDOG_MINOR)
 	{
 #ifndef CONFIG_WATCHDOG_NOWAYOUT	
 		inb_p(WDT_DC);		/* Disable counters */
 		wdt_ctr_load(2,0);	/* 0 length reset pulses now */
 #endif		
-		wdt_is_open=0;
+		clear_bit(0, &wdt_is_open);
 	}
-	unlock_kernel();
 	return 0;
 }
 

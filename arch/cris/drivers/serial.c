@@ -1,12 +1,24 @@
-/* $Id: serial.c,v 1.29 2002/01/14 16:10:01 pkj Exp $
+/* $Id: serial.c,v 1.32 2002/05/22 13:58:00 johana Exp $
  *
  * Serial port driver for the ETRAX 100LX chip
  *
- *      Copyright (C) 1998, 1999, 2000, 2001  Axis Communications AB
+ *      Copyright (C) 1998, 1999, 2000, 2001, 2002  Axis Communications AB
  *
  *      Many, many authors. Based once upon a time on serial.c for 16x50.
  *
  * $Log: serial.c,v $
+ * Revision 1.32  2002/05/22 13:58:00  johana
+ * Renamed rs_write() to raw_write() and made it inline.
+ * New rs_write() handles RS-485 if configured and enabled
+ * (moved code from e100_write_rs485()).
+ * RS-485 ioctl's uses copy_from_user() instead of verify_area().
+ *
+ * Revision 1.31  2002/04/22 11:20:03  johana
+ * Updated copyright years.
+ *
+ * Revision 1.30  2002/04/22 09:39:12  johana
+ * RS-485 support compiles.
+ *
  * Revision 1.29  2002/01/14 16:10:01  pkj
  * Allocate the receive buffers dynamically. The static 4kB buffer was
  * too small for the peaks. This means that we can get rid of the extra
@@ -291,7 +303,7 @@
  *
  */
 
-static char *serial_version = "$Revision: 1.29 $";
+static char *serial_version = "$Revision: 1.32 $";
 
 #include <linux/config.h>
 #include <linux/version.h>
@@ -322,7 +334,7 @@ static char *serial_version = "$Revision: 1.29 $";
 #include <asm/system.h>
 #include <asm/segment.h>
 #include <asm/bitops.h>
-#include <asm/delay.h>
+#include <linux/delay.h>
 
 #include <asm/svinto.h>
 
@@ -390,6 +402,13 @@ static void change_speed(struct e100_serial *info);
 static void rs_wait_until_sent(struct tty_struct *tty, int timeout);
 static int rs_write(struct tty_struct * tty, int from_user,
                     const unsigned char *buf, int count);
+static inline int raw_write(struct tty_struct * tty, int from_user,
+                            const unsigned char *buf, int count);
+static int e100_write_rs485(struct tty_struct * tty, int from_user,
+                            const unsigned char *buf, int count);
+static int 
+get_lsr_info(struct e100_serial * info, unsigned int *value);
+
 
 #define DEF_BAUD 0x99   /* 115.2 kbit/s */
 #define STD_FLAGS (ASYNC_BOOT_AUTOCONF | ASYNC_SKIP_TEST)
@@ -827,12 +846,12 @@ static inline void
 e100_rts(struct e100_serial *info, int set)
 {
 #ifndef CONFIG_SVINTO_SIM
-#ifdef SERIAL_DEBUG_IO  
-	printk("ser%i rts %i\n", info->line, set);
-#endif
 	info->rx_ctrl &= ~E100_RTS_MASK;
 	info->rx_ctrl |= (set ? 0 : E100_RTS_MASK);  /* RTS is active low */
 	info->port[REG_REC_CTRL] = info->rx_ctrl;
+#ifdef SERIAL_DEBUG_IO  
+	printk("ser%i rts %i\n", info->line, set);
+#endif
 #endif
 }
 
@@ -985,63 +1004,32 @@ e100_enable_rs485(struct tty_struct *tty,struct rs485_control *r)
 	info->rs485.rts_after_sent = 0x01 & r->rts_after_sent;
 	info->rs485.delay_rts_before_send = r->delay_rts_before_send;
 	info->rs485.enabled = r->enabled;
-	
+/*	printk("rts: on send = %i, after = %i, enabled = %i",
+		    info->rs485.rts_on_send,
+		    info->rs485.rts_after_sent,
+		    info->rs485.enabled
+	);
+*/		
 	return 0;
 }
 
 static int
-e100_write_rs485(struct tty_struct *tty,struct rs485_write *r)
+e100_write_rs485(struct tty_struct *tty, int from_user, 
+                 const unsigned char *buf, int count)
 {
-	int total;
 	struct e100_serial * info = (struct e100_serial *)tty->driver_data;
+	int old_enabled = info->rs485.enabled;
 
-	/* If we are in RS-485 mode, we need to toggle RTS and disable
-	 * the receiver before initiating a DMA transfer
+	/* rs485 is always implicitly enabled if we're using the ioctl() 
+	 * but it doesn't have to be set in the rs485_control
+	 * (to be backward compatible with old apps)
+	 * So we store, set and restore it.
 	 */
-	e100_rts(info, info->rs485.rts_on_send);
-#if defined(CONFIG_ETRAX_RS485_DISABLE_RECEIVER)
-	e100_disable_rx(info);
-	e100_disable_rxdma_irq(info);
-#endif
-
-	if (info->rs485.delay_rts_before_send > 0) {
-		current->timeout = jiffies + (info->rs485.delay_rts_before_send * HZ)/1000;
-		current->state = TASK_INTERRUPTIBLE;
-		schedule();
-		current->timeout = 0;
-	}
-	total = rs_write(tty, 1, (*r).outc, (*r).outc_size);
-
-	/* If we are in RS-485 mode the following things has to be done:
-	 * wait until DMA is ready
-	 * wait on transmit shift register
-	 * wait to toggle RTS
-	 * enable the receiver
-	 */	
-
-	/* Sleep until all sent */
-	tty_wait_until_sent(tty, 0);
-#ifdef CONFIG_ETRAX_SERIAL_FAST_TIMER
-	/* Now sleep a little more so that shift register is empty */
-	schedule_usleep(info->char_time_usec * 2);
-#else
-	{
-		unsigned int val;
-		/* wait on transmit shift register */
-		do{
-			get_lsr_info(info, &val);
-		}while (!(val & TIOCSER_TEMT));
-	}
-#endif
-
-	e100_rts(info, info->rs485.rts_after_sent);
-	
-#if defined(CONFIG_ETRAX_RS485_DISABLE_RECEIVER)
-	e100_enable_rx(info);
-	e100_enable_rxdma_irq(info);
-#endif
-
-	return total;
+	info->rs485.enabled = 1;
+	/* rs_write now deals with RS485 if enabled */
+	count = rs_write(tty, from_user, buf, count);
+	info->rs485.enabled = old_enabled;
+	return count;
 }
 #endif
 
@@ -1185,26 +1173,6 @@ transmit_chars(struct e100_serial *info)
 	if (c <= 0) {
 		/* our job here is done, don't schedule any new DMA transfer */
 		info->tr_running = 0;
-
-#if defined(CONFIG_ETRAX_RS485)
-		/* Check if we should toggle RTS now */
-		if (info->rs485.enabled) {
-			/* Make sure fifo is empty */
-			int in_fifo = 0;
-
-			do {
-				in_fifo = IO_EXTRACT(R_DMA_CH6_STATUS, avail,
-						     *info->ostatusadr);
-			}  while (in_fifo > 0);
-			/* Any way to really check transmitter empty? (TEMT) */
-			/* Control RTS to set to RX mode */
-			e100_rts(info, info->rs485.rts_after_sent); 
-#if defined(CONFIG_ETRAX_RS485_DISABLE_RECEIVER)
-			e100_enable_rx(info);
-			e100_enable_rxdma_irq(info);
-#endif
-		}
-#endif /* RS485 */
 
 		return;
 	}
@@ -2352,8 +2320,8 @@ rs_flush_chars(struct tty_struct *tty)
 	restore_flags(flags);
 }
 
-static int 
-rs_write(struct tty_struct * tty, int from_user,
+static inline int 
+raw_write(struct tty_struct * tty, int from_user,
 	 const unsigned char *buf, int count)
 {
 	int	c, ret = 0;
@@ -2367,7 +2335,7 @@ rs_write(struct tty_struct * tty, int from_user,
 	
 #ifdef SERIAL_DEBUG_DATA
 	if (info->line == SERIAL_DEBUG_LINE)
-		printk("rs_write (%d), status %d\n", 
+		printk("raw_write (%d), status %d\n", 
 		       count, info->port[REG_STATUS]);
 #endif
 
@@ -2453,7 +2421,69 @@ rs_write(struct tty_struct * tty, int from_user,
 	}
  	
 	return ret;
+} /* raw_write() */
+
+static int 
+rs_write(struct tty_struct * tty, int from_user,
+	 const unsigned char *buf, int count)
+{
+#if defined(CONFIG_ETRAX_RS485)
+	struct e100_serial *info = (struct e100_serial *)tty->driver_data;
+
+	if (info->rs485.enabled)
+	{
+		/* If we are in RS-485 mode, we need to toggle RTS and disable
+		 * the receiver before initiating a DMA transfer
+		 */
+		e100_rts(info, info->rs485.rts_on_send);
+#if defined(CONFIG_ETRAX_RS485_DISABLE_RECEIVER)
+		e100_disable_rx(info);
+		e100_disable_rxdma_irq(info);
+#endif
+
+		if (info->rs485.delay_rts_before_send > 0) {
+			set_current_state(TASK_INTERRUPTIBLE);
+			schedule_timeout((info->rs485.delay_rts_before_send * HZ)/1000);
+		}
+	}
+#endif /* CONFIG_ETRAX_RS485 */
+
+	count = raw_write(tty, from_user, buf, count);
+
+#if defined(CONFIG_ETRAX_RS485)
+	if (info->rs485.enabled)
+	{
+		unsigned int val;
+		/* If we are in RS-485 mode the following has to be done:
+		 * wait until DMA is ready
+		 * wait on transmit shift register
+		 * toggle RTS
+		 * enable the receiver
+		 */	
+
+		/* Sleep until all sent */
+		tty_wait_until_sent(tty, 0);
+#ifdef CONFIG_ETRAX_SERIAL_FAST_TIMER
+		/* Now sleep a little more so that shift register is empty */
+		schedule_usleep(info->char_time_usec * 2);
+#endif
+		/* wait on transmit shift register */
+		do{
+			get_lsr_info(info, &val);
+		}while (!(val & TIOCSER_TEMT));
+
+		e100_rts(info, info->rs485.rts_after_sent);
+	
+#if defined(CONFIG_ETRAX_RS485_DISABLE_RECEIVER)
+		e100_enable_rx(info);
+		e100_enable_rxdma_irq(info);
+#endif
+	}
+#endif /* CONFIG_ETRAX_RS485 */
+
+	return count;
 }
+
 
 /* how much space is available in the xmit buffer? */
 
@@ -2882,7 +2912,7 @@ rs_ioctl(struct tty_struct *tty, struct file * file,
 	 unsigned int cmd, unsigned long arg)
 {
 	struct e100_serial * info = (struct e100_serial *)tty->driver_data;
-#if defined(CONFIG_ETRAX_RS485) || (LINUX_VERSION_CODE < 131394) /* Linux 2.1.66 */
+#if (LINUX_VERSION_CODE < 131394) /* Linux 2.1.66 */
 	int error;
 #endif
 #if (LINUX_VERSION_CODE < 131394) /* Linux 2.1.66 */
@@ -2959,22 +2989,22 @@ rs_ioctl(struct tty_struct *tty, struct file * file,
 
 #if defined(CONFIG_ETRAX_RS485)
 		case TIOCSERSETRS485:
-			error = verify_area(VERIFY_WRITE, (void *) arg,
-					sizeof(struct rs485_control));
-			
-			if (error)
-				return error;
-			
-			return e100_enable_rs485(tty, (struct rs485_control *) arg);
+		{
+			struct rs485_control rs485ctrl;
+			if (copy_from_user(&rs485ctrl, (struct rs485_control*)arg, sizeof(rs485ctrl)))
+				return -EFAULT;
+
+			return e100_enable_rs485(tty, &rs485ctrl);
+		}
 
 		case TIOCSERWRRS485:
-			error = verify_area(VERIFY_WRITE, (void *) arg,
-					sizeof(struct rs485_write));
-			
-			if (error)
-				return error;
-			
-			return e100_write_rs485(tty, (struct rs485_write *) arg);
+		{
+			struct rs485_write rs485wr;
+			if (copy_from_user(&rs485wr, (struct rs485_write*)arg, sizeof(rs485wr)))
+				return -EFAULT;
+
+			return e100_write_rs485(tty, 1, rs485wr.outc, rs485wr.outc_size);
+		}
 #endif
 			
 		default:
@@ -3518,8 +3548,8 @@ done:
 static void 
 show_serial_version(void)
 {
-	printk("ETRAX 100LX serial-driver %s, (c) 2000 Axis Communications AB\r\n",
-	       serial_version);
+	printk("ETRAX 100LX serial-driver %s, (c) 2000-2002 Axis Communications AB\r\n",
+	       &serial_version[11]); /* "$Revision: x.yy" */
 }
 
 /* rs_init inits the driver at boot (using the module_init chain) */

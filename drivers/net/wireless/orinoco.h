@@ -28,18 +28,17 @@ typedef orinoco_key_t orinoco_keys_t[ORINOCO_MAX_KEYS];
 /*====================================================================*/
 
 struct orinoco_private {
-	void* card;	/* Pointer to card dependant structure */
+	void *card;	/* Pointer to card dependant structure */
 	/* card dependant extra reset code (i.e. bus/interface specific */
-	int (*card_reset_handler)(struct orinoco_private *);
+	int (*hard_reset)(struct orinoco_private *);
 
 	spinlock_t lock;
 	long state;
 #define ORINOCO_STATE_INIRQ 0
 #define ORINOCO_STATE_DOIRQ 1
-	atomic_t queue_length;
 
 	/* Net device stuff */
-	struct net_device ndev;
+	struct net_device *ndev;
 	struct net_device_stats stats;
 	struct iw_statistics wstats;
 
@@ -52,23 +51,22 @@ struct orinoco_private {
 #define FIRMWARE_TYPE_AGERE 1
 #define FIRMWARE_TYPE_INTERSIL 2
 #define FIRMWARE_TYPE_SYMBOL 3
-	int has_ibss, has_port3, prefer_port3, has_ibss_any, ibss_port;
+	int has_ibss, has_port3, has_ibss_any, ibss_port;
 	int has_wep, has_big_wep;
 	int has_mwo;
 	int has_pm;
 	int has_preamble;
-	int need_card_reset, broken_reset, broken_allocate;
+	int has_sensitivity;
+	int nicbuf_size;
+	int broken_cor_reset;
 	u16 channel_mask;
 
-	/* Current configuration */
+	/* Configuration paramaters */
 	u32 iw_mode;
-	int port_type, allow_ibss;
-
+	int prefer_port3;
 	u16 wep_on, wep_restrict, tx_key;
 	orinoco_keys_t keys;
-
 	int bitratemode;
-
  	char nick[IW_ESSID_MAX_SIZE+1];
 	char desired_essid[IW_ESSID_MAX_SIZE+1];
 	u16 frag_thresh, mwo_robust;
@@ -76,19 +74,19 @@ struct orinoco_private {
 	u16 ap_density, rts_thresh;
 	u16 pm_on, pm_mcast, pm_period, pm_timeout;
 	u16 preamble;
-
-	int promiscuous, mc_count;
-
 #ifdef WIRELESS_SPY
 	int			spy_number;
 	u_char			spy_address[IW_MAX_SPY][ETH_ALEN];
 	struct iw_quality	spy_stat[IW_MAX_SPY];
 #endif
 
+	/* Configuration dependent variables */
+	int port_type, allow_ibss;
+	int promiscuous, mc_count;
+
+
 	/* /proc based debugging stuff */
 	struct proc_dir_entry *dir_dev;
-	struct proc_dir_entry *dir_regs;
-	struct proc_dir_entry *dir_recs;
 };
 
 /*====================================================================*/
@@ -109,19 +107,10 @@ extern int orinoco_debug;
 
 #define RUP_EVEN(a) ( (a) % 2 ? (a) + 1 : (a) )
 
-/* struct net_device methods */
-extern int orinoco_init(struct net_device *dev);
-extern int orinoco_xmit(struct sk_buff *skb, struct net_device *dev);
-extern void orinoco_tx_timeout(struct net_device *dev);
-
-extern int orinoco_ioctl(struct net_device *dev, struct ifreq *rq, int cmd);
-extern int orinoco_change_mtu(struct net_device *dev, int new_mtu);
-extern void orinoco_set_multicast_list(struct net_device *dev);
-
 /* utility routines */
+struct net_device *alloc_orinocodev(int sizeof_card);
 extern void orinoco_shutdown(struct orinoco_private *dev);
 extern int orinoco_reset(struct orinoco_private *dev);
-extern int orinoco_setup(struct orinoco_private* priv);
 extern int orinoco_proc_dev_init(struct orinoco_private *dev);
 extern void orinoco_proc_dev_cleanup(struct orinoco_private *priv);
 extern void orinoco_interrupt(int irq, void * dev_id, struct pt_regs *regs);

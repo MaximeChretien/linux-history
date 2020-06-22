@@ -48,7 +48,7 @@ unsigned int console_mode = 0;
 unsigned int console_device = -1;
 unsigned long memory_size = 0;
 unsigned long machine_flags = 0;
-struct { unsigned long addr, size, type; } memory_chunk[16];
+struct { unsigned long addr, size, type; } memory_chunk[16] = { { 0 } };
 #define CHUNK_READ_WRITE 0
 #define CHUNK_READ_ONLY 1
 __u16 boot_cpu_addr;
@@ -284,8 +284,8 @@ void __init setup_arch(char **cmdline_p)
          * print what head.S has found out about the machine 
          */
 	printk((MACHINE_IS_VM) ?
-	       "We are running under VM\n" :
-	       "We are running native\n");
+	       "We are running under VM (31 bit mode)\n" :
+	       "We are running native (31 bit mode)\n");
 	printk((MACHINE_HAS_IEEE) ?
 	       "This machine has an IEEE fpu\n" :
 	       "This machine has no IEEE fpu\n");
@@ -494,9 +494,9 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 			       "bogomips per cpu: %lu.%02lu\n",
 			       smp_num_cpus, loops_per_jiffy/(500000/HZ),
 			       (loops_per_jiffy/(5000/HZ))%100);
-	} 
+	}
 	if (cpu_online_map & (1 << n)) {
-		cpuinfo = &safe_get_cpu_lowcore(n).cpu_data;
+		cpuinfo = &safe_get_cpu_lowcore(n)->cpu_data;
 		seq_printf(m, "processor %i: "
 			       "version = %02X,  "
 			       "identification = %06X,  "

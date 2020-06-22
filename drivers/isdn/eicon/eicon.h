@@ -348,19 +348,19 @@ extern eicon_card *cards;
 extern char *eicon_ctype_name[];
 
 
-extern __inline__ void eicon_schedule_tx(eicon_card *card)
+static inline void eicon_schedule_tx(eicon_card *card)
 {
         queue_task(&card->snd_tq, &tq_immediate);
         mark_bh(IMMEDIATE_BH);
 }
 
-extern __inline__ void eicon_schedule_rx(eicon_card *card)
+static inline void eicon_schedule_rx(eicon_card *card)
 {
         queue_task(&card->rcv_tq, &tq_immediate);
         mark_bh(IMMEDIATE_BH);
 }
 
-extern __inline__ void eicon_schedule_ack(eicon_card *card)
+static inline void eicon_schedule_ack(eicon_card *card)
 {
         queue_task(&card->ack_tq, &tq_immediate);
         mark_bh(IMMEDIATE_BH);

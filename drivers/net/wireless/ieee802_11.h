@@ -1,6 +1,13 @@
 #ifndef _IEEE802_11_H
 #define _IEEE802_11_H
 
+#define IEEE802_11_DATA_LEN		2304
+/* Actually, the standard seems to be inconsistent about what the
+   maximum frame size really is.  S6.2.1.1.2 says 2304 octets, but the
+   figure in section 7.1.2 says 2312 octects. */
+#define IEEE802_11_HLEN			30
+#define IEEE802_11_FRAME_LEN		(IEEE802_11_DATA_LEN + IEEE802_11_HLEN)
+
 struct ieee802_11_hdr {
 	u16 frame_ctl;
 	u16 duration_id;
@@ -9,7 +16,6 @@ struct ieee802_11_hdr {
 	u8 addr3[ETH_ALEN];
 	u16 seq_ctl;
 	u8 addr4[ETH_ALEN];
-	u16 data_len;
 } __attribute__ ((packed));
 
 /* Frame control field constants */

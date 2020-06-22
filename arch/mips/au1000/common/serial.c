@@ -131,7 +131,7 @@ static int serial_refcount;
 
 static struct timer_list serial_timer;
 
-extern unsigned long get_au1000_uart_baud(void);
+extern unsigned long get_au1000_uart_baud_base(void);
 
 /* serial subtype definitions */
 #ifndef SERIAL_TYPE_NORMAL
@@ -241,12 +241,12 @@ static inline int serial_paranoia_check(struct async_struct *info,
 
 static _INLINE_ unsigned int serial_in(struct async_struct *info, int offset)
 {
-	return (inl(info->port+offset) & 0xff);
+	return (inl(info->port+offset) & 0xffff);
 }
 
 static _INLINE_ void serial_out(struct async_struct *info, int offset, int value)
 {
-	outl(value & 0xff, info->port+offset);
+	outl(value & 0xffff, info->port+offset);
 }
 
 
@@ -752,6 +752,7 @@ static int startup(struct async_struct * info)
 
 	if (inl(UART_MOD_CNTRL + state->port) != 0x3) {
 		outl(3, UART_MOD_CNTRL + state->port);
+		au_sync_delay(10);
 	}
 #ifdef SERIAL_DEBUG_OPEN
 	printk("starting up ttys%d (irq %d)...", info->line, state->irq);
@@ -986,6 +987,10 @@ static void shutdown(struct async_struct * info)
 		set_bit(TTY_IO_ERROR, &info->tty->flags);
 
 	info->flags &= ~ASYNC_INITIALIZED;
+#ifndef CONFIG_REMOTE_DEBUG
+	outl(0, UART_MOD_CNTRL + state->port);
+	au_sync_delay(10);
+#endif
 	restore_flags(flags);
 }
 
@@ -1037,7 +1042,8 @@ static void change_speed(struct async_struct *info,
 	if (!baud) {
 		baud = 9600;	/* B0 transition handled in rs_set_termios */
 	}
-	baud_base = info->state->baud_base;
+	baud_base = get_au1000_uart_baud_base();
+
 	//if (baud == 38400 &&
 	if (((info->flags & ASYNC_SPD_MASK) == ASYNC_SPD_CUST)) {
 		quot = info->state->custom_divisor;
@@ -2511,6 +2517,7 @@ static void autoconfig(struct serial_state * state)
 
 	if (inl(UART_MOD_CNTRL + state->port) != 0x3) {
 		outl(3, UART_MOD_CNTRL + state->port);
+		au_sync_delay(10);
 	}
 		
 	state->type = PORT_16550;
@@ -2541,7 +2548,11 @@ static void autoconfig(struct serial_state * state)
 	serial_outp(info, UART_FCR, 0);
 	(void)serial_in(info, UART_RX);
 	serial_outp(info, UART_IER, 0);
-	
+
+#ifndef CONFIG_REMOTE_DEBUG
+	outl(0, UART_MOD_CNTRL + state->port);
+	au_sync_delay(10);
+#endif
 	restore_flags(flags);
 }
 
@@ -2643,12 +2654,12 @@ static int __init rs_init(void)
 	callout_driver.proc_entry = 0;
 
 	if (tty_register_driver(&serial_driver))
-		panic("Couldn't register serial driver\n");
+		panic("Couldn't register serial driver");
 	if (tty_register_driver(&callout_driver))
-		panic("Couldn't register callout driver\n");
+		panic("Couldn't register callout driver");
 	
 	for (i = 0, state = rs_table; i < NR_PORTS; i++,state++) {
-		state->baud_base = get_au1000_uart_baud();
+		state->baud_base = get_au1000_uart_baud_base();
 		state->magic = SSTATE_MAGIC;
 		state->line = i;
 		state->type = PORT_UNKNOWN;
@@ -2922,35 +2933,6 @@ static void serial_console_write(struct console *co, const char *s,
 	serial_out(info, UART_IER, ier);
 }
 
-/*
- *	Receive character from the serial port
- */
-static int serial_console_wait_key(struct console *co)
-{
-	static struct async_struct *info;
-	int ier, c;
-
-	info = &async_sercons;
-
-	/*
-	 *	First save the IER then disable the interrupts so
-	 *	that the real driver for the port does not get the
-	 *	character.
-	 */
-	ier = serial_in(info, UART_IER);
-	serial_out(info, UART_IER, 0x00);
- 
-	while ((serial_in(info, UART_LSR) & UART_LSR_DR) == 0);
-	c = serial_in(info, UART_RX);
-
-	/*
-	 *	Restore the interrupts
-	 */
-	serial_out(info, UART_IER, ier);
-
-	return c;
-}
-
 static kdev_t serial_console_device(struct console *c)
 {
 	return MKDEV(TTY_MAJOR, 64 + c->index);
@@ -3044,7 +3026,7 @@ static int __init serial_console_setup(struct console *co, char *options)
 	info->io_type = state->io_type;
 	info->iomem_base = state->iomem_base;
 	info->iomem_reg_shift = state->iomem_reg_shift;
-	state->baud_base = get_au1000_uart_baud();
+	state->baud_base = get_au1000_uart_baud_base();
 	quot = state->baud_base / baud;
 
 	cval = cflag & (CSIZE | CSTOPB);
@@ -3075,7 +3057,6 @@ static struct console sercons = {
 	name:		"ttyS",
 	write:		serial_console_write,
 	device:		serial_console_device,
-	wait_key:	serial_console_wait_key,
 	setup:		serial_console_setup,
 	flags:		CON_PRINTBUFFER,
 	index:		-1,

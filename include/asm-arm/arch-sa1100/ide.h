@@ -3,6 +3,9 @@
  *
  * Copyright (c) 1998 Hugo Fiennes & Nicolas Pitre
  *
+ * 26-feb-2002: Add support for 2d3D SA-1110 Development board
+ *              Abraham van der Merwe <abraham@2d3d.co.za>
+ *
  * 18-aug-2000: Cleanup by Erik Mouw (J.A.K.Mouw@its.tudelft.nl)
  *              Get rid of the special ide_init_hwif_ports() functions
  *              and make a generalised function that can be used by all
@@ -33,6 +36,10 @@ ide_init_hwif_ports(hw_regs_t *hw, int data_port, int ctrl_port, int *irq)
 	/* The LART doesn't use A0 for IDE */
 	if (machine_is_lart())
 		regincr = 1 << 1;
+
+	/* Frodo has the first 14 address lines unused */
+	if (machine_is_frodo())
+		regincr = 1 << 14;
 
 	memset(hw, 0, sizeof(*hw));
 
@@ -124,6 +131,20 @@ ide_init_default_hwifs(void)
         ide_register_hw(&hw, NULL);
 #endif
     }
+	else if (machine_is_frodo ()) {
+#ifdef CONFIG_SA1100_FRODO
+		hw_regs_t hw;
+
+		/* enable GPIO as interrupt line */
+		GPDR &= ~FRODO_IDE_GPIO;
+		set_GPIO_IRQ_edge (FRODO_IDE_GPIO,GPIO_RISING_EDGE);
+
+		/* init the interface */
+		ide_init_hwif_ports (&hw,FRODO_IDE_DATA,FRODO_IDE_CTRL,NULL);
+		hw.irq = FRODO_IDE_IRQ;
+		ide_register_hw (&hw,NULL);
+#endif
+	}
 }
 
 

@@ -89,7 +89,19 @@ typedef union {
 		unsigned unit		: 1;	/* drive select number, 0 or 1 */
 		unsigned head		: 4;	/* always zeros here */
 	} b;
-	} select_t;
+} select_t;
+
+typedef union {
+	unsigned all			: 8;	/* all of the bits together */
+	struct {
+		unsigned HOB		: 1;	/* 48-bit address ordering */
+		unsigned reserved456	: 3;
+		unsigned bit3		: 1;	/* ATA-2 thingy */
+		unsigned SRST		: 1;	/* host soft reset bit */
+		unsigned nIEN		: 1;	/* device INTRQ to host */
+		unsigned bit0		: 1;
+	} b;
+} control_t;
 
 static __inline__ int ide_request_irq(unsigned int irq, void (*handler)(int, void *, struct pt_regs *),
 			unsigned long flags, const char *device, void *dev_id)
@@ -160,22 +172,20 @@ static __inline__ void ide_release_region (ide_ioreg_t from, unsigned int extent
 #define HD_DATA NULL
 
 
-/* get rid of defs from io.h - ide has its private and conflicting versions */
-#undef inb
-#undef inw
-#undef outb
-#undef outw
-#undef inb_p
-#undef outb_p
+/*
+ * get rid of defs from io.h
+ * ide still has some private and conflicting versions
+ */
 #undef insw
+#undef insl
 #undef outsw
-#undef insw_swapw
-#undef outsw_swapw
+#undef outsl
 
-/* 
+
+/*
  * define IO method and translation,
- * so far only Q40 has ide-if on ISA 
-*/
+ * so far only Q40 has ide-if on ISA
+ */
 #ifndef CONFIG_Q40
 
 #define ADDR_TRANS_B(_addr_) (_addr_)
@@ -187,19 +197,21 @@ static __inline__ void ide_release_region (ide_ioreg_t from, unsigned int extent
 #define ADDR_TRANS_W(_addr_) (MACH_IS_Q40 ? ((unsigned char *)Q40_ISA_IO_W(_addr_)) : (_addr_))
 #endif
 
-#define inb(p)     in_8(ADDR_TRANS_B(p))
-#define inb_p(p)     in_8(ADDR_TRANS_B(p))
-#define inw(p)     in_be16(ADDR_TRANS_W(p))
-#define outb(v,p)  out_8(ADDR_TRANS_B(p),v)
-#define outb_p(v,p)  out_8(ADDR_TRANS_B(p),v)
-#define outw(v,p)  out_be16(ADDR_TRANS_W(p),v)
+#define HAVE_ARCH_OUT_BYTE
+
+#define OUT_BYTE(v,p)	out_8(ADDR_TRANS_B((p)), (v))
+#define OUT_WORD(v,p)	out_be16(ADDR_TRANS_W((p)), (v))
+
+#define HAVE_ARCH_IN_BYTE
+
+#define IN_BYTE(p)	in_8(ADDR_TRANS_B((p)))
+#define IN_WORD(p)	in_be16(ADDR_TRANS_W((p)))
 
 #define insw(port, buf, nr) raw_insw(ADDR_TRANS_W(port), buf, nr)
 #define outsw(port, buf, nr) raw_outsw(ADDR_TRANS_W(port), buf, nr)
 
 #define insl(data_reg, buffer, wcount) insw(data_reg, buffer, (wcount)<<1)
 #define outsl(data_reg, buffer, wcount) outsw(data_reg, buffer, (wcount)<<1)
-
 
 
 #if defined(CONFIG_ATARI) || defined(CONFIG_Q40)

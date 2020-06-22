@@ -101,6 +101,8 @@ static struct timer_vec * const tvecs[] = {
 	(struct timer_vec *)&tv1, &tv2, &tv3, &tv4, &tv5
 };
 
+static struct list_head * run_timer_list_running;
+
 #define NOOF_TVECS (sizeof(tvecs) / sizeof(tvecs[0]))
 
 void init_timervecs (void)
@@ -128,7 +130,9 @@ static inline void internal_add_timer(struct timer_list *timer)
 	unsigned long idx = expires - timer_jiffies;
 	struct list_head * vec;
 
-	if (idx < TVR_SIZE) {
+	if (run_timer_list_running)
+		vec = run_timer_list_running;
+	else if (idx < TVR_SIZE) {
 		int i = expires & TVR_MASK;
 		vec = tv1.vec + i;
 	} else if (idx < 1 << (TVR_BITS + TVN_BITS)) {
@@ -289,6 +293,7 @@ static inline void run_timer_list(void)
 {
 	spin_lock_irq(&timerlist_lock);
 	while ((long)(jiffies - timer_jiffies) >= 0) {
+		LIST_HEAD(queued);
 		struct list_head *head, *curr;
 		if (!tv1.index) {
 			int n = 1;
@@ -296,6 +301,7 @@ static inline void run_timer_list(void)
 				cascade_timers(tvecs[n]);
 			} while (tvecs[n]->index == 1 && ++n < NOOF_TVECS);
 		}
+		run_timer_list_running = &queued;
 repeat:
 		head = tv1.vec + tv1.index;
 		curr = head->next;
@@ -317,8 +323,18 @@ repeat:
 			timer_exit();
 			goto repeat;
 		}
+		run_timer_list_running = NULL;
 		++timer_jiffies; 
 		tv1.index = (tv1.index + 1) & TVR_MASK;
+
+		curr = queued.next;
+		while (curr != &queued) {
+			struct timer_list *timer;
+
+			timer = list_entry(curr, struct timer_list, list);
+			curr = curr->next;
+			internal_add_timer(timer);
+		}			
 	}
 	spin_unlock_irq(&timerlist_lock);
 }

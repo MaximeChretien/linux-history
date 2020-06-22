@@ -168,7 +168,7 @@ asmlinkage void IRQ_NAME(n);						   \
 void atari_slow_irq_##n##_dummy (void) {				   \
 __asm__ (__ALIGN_STR "\n"						   \
 SYMBOL_NAME_STR(atari_slow_irq_) #n "_handler:\t"			   \
-"	addql	#1,"SYMBOL_NAME_STR(irq_stat)"+8\n" /* local_irq_count */  \
+"	addql	#1,%5\n"		/* local_irq_count++ */		   \
 	SAVE_ALL_INT "\n"						   \
 	GET_CURRENT(%%d0) "\n"						   \
 "	andb	#~(1<<(%c3&7)),%a4:w\n"	/* mask this interrupt */	   \
@@ -193,8 +193,10 @@ SYMBOL_NAME_STR(atari_slow_irq_) #n "_handler:\t"			   \
 	 : : "i" (&kstat.irqs[0][n+8]), "i" (&irq_handler[n+8]),	   \
 	     "n" (PT_OFF_SR), "n" (n),					   \
 	     "i" (n & 8 ? (n & 16 ? &tt_mfp.int_mk_a : &mfp.int_mk_a)	   \
-		        : (n & 16 ? &tt_mfp.int_mk_b : &mfp.int_mk_b))	   \
+		        : (n & 16 ? &tt_mfp.int_mk_b : &mfp.int_mk_b)),	   \
+	     "m" (local_irq_count(0))					   \
 );									   \
+	for (;;);			/* fake noreturn */		   \
 }
 
 BUILD_SLOW_IRQ(0);
@@ -274,7 +276,7 @@ __asm__ (__ALIGN_STR "\n"
 SYMBOL_NAME_STR(atari_fast_irq_handler) ":
 	orw 	#0x700,%%sr		/* disable all interrupts */
 "SYMBOL_NAME_STR(atari_prio_irq_handler) ":\t
-	addql	#1,"SYMBOL_NAME_STR(irq_stat)"+8\n" /* local_irq_count */
+	addql	#1,%2\n"		/* local_irq_count++ */
 	SAVE_ALL_INT "\n"
 	GET_CURRENT(%%d0) "
 	/* get vector number from stack frame and convert to source */
@@ -294,8 +296,10 @@ SYMBOL_NAME_STR(atari_fast_irq_handler) ":
 	addql	#8,%%sp
 	addql	#4,%%sp
 	jbra	"SYMBOL_NAME_STR(ret_from_interrupt)
-	 : : "i" (&kstat.irqs[0]), "n" (PT_OFF_FORMATVEC)
+	 : : "i" (&kstat.irqs[0]), "n" (PT_OFF_FORMATVEC),
+	     "m" (local_irq_count(0))
 );
+	for (;;);
 }
 
 /* GK:

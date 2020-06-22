@@ -576,11 +576,9 @@ fh_verify(struct svc_rqst *rqstp, struct svc_fh *fhp, int type, int access)
 		error = nfserr_stale; 
 		exp = exp_get(rqstp->rq_client, xdev, xino);
 
-		if (!exp) {
+		if (!exp)
 			/* export entry revoked */
-			nfsdstats.fh_stale++;
 			goto out;
-		}
 
 		/* Check if the request originated from a secure port. */
 		error = nfserr_perm;
@@ -657,7 +655,7 @@ fh_verify(struct svc_rqst *rqstp, struct svc_fh *fhp, int type, int access)
 	 * write call).
 	 */
 
-	/* When is type ever negative? */
+	/* Type can be negative to e.g. exclude directories from linking */
 	if (type > 0 && (inode->i_mode & S_IFMT) != type) {
 		error = (type == S_IFDIR)? nfserr_notdir : nfserr_isdir;
 		goto out;
@@ -690,13 +688,11 @@ fh_verify(struct svc_rqst *rqstp, struct svc_fh *fhp, int type, int access)
 				    && !(tdentry->d_inode->i_mode & S_IXOTH)
 					) {
 					error = nfserr_stale;
-					nfsdstats.fh_stale++;
 					dprintk("fh_verify: no root_squashed access.\n");
 				}
 			} while ((tdentry != tdentry->d_parent));
 			if (exp->ex_dentry != tdentry) {
 				error = nfserr_stale;
-				nfsdstats.fh_stale++;
 				printk("nfsd Security: %s/%s bad export.\n",
 				       dentry->d_parent->d_name.name,
 				       dentry->d_name.name);
@@ -716,6 +712,8 @@ fh_verify(struct svc_rqst *rqstp, struct svc_fh *fhp, int type, int access)
 	}
 #endif
 out:
+	if (error == nfserr_stale)
+		nfsdstats.fh_stale++;
 	return error;
 }
 

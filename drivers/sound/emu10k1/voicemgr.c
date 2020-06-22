@@ -43,7 +43,7 @@
 int emu10k1_voice_alloc_buffer(struct emu10k1_card *card, struct voice_mem *mem, u32 pages)
 {
 	u32 pageindex, pagecount;
-	unsigned long busaddx;
+	u32 busaddx;
 	int i;
 
 	DPD(2, "requested pages is: %d\n", pages);
@@ -66,9 +66,9 @@ int emu10k1_voice_alloc_buffer(struct emu10k1_card *card, struct voice_mem *mem,
 		DPD(2, "Virtual Addx: %p\n", mem->addr[pagecount]);
 
 		for (i = 0; i < PAGE_SIZE / EMUPAGESIZE; i++) {
-			busaddx = mem->dma_handle[pagecount] + i * EMUPAGESIZE;
+			busaddx = (u32) mem->dma_handle[pagecount] + i * EMUPAGESIZE;
 
-			DPD(3, "Bus Addx: %#lx\n", busaddx);
+			DPD(3, "Bus Addx: %#x\n", busaddx);
 
 			pageindex = mem->emupageindex + pagecount * PAGE_SIZE / EMUPAGESIZE + i;
 
@@ -102,7 +102,7 @@ void emu10k1_voice_free_buffer(struct emu10k1_card *card, struct voice_mem *mem)
 		for (i = 0; i < PAGE_SIZE / EMUPAGESIZE; i++) {
 			pageindex = mem->emupageindex + pagecount * PAGE_SIZE / EMUPAGESIZE + i;
 			((u32 *) card->virtualpagetable.addr)[pageindex] =
-				cpu_to_le32((card->silentpage.dma_handle * 2) | pageindex);
+				cpu_to_le32(((u32) card->silentpage.dma_handle * 2) | pageindex);
 		}
 	}
 
@@ -231,8 +231,8 @@ void emu10k1_voice_playback_setup(struct emu_voice *voice)
 				    Z1, 0,
 				    Z2, 0,
 				    /* Invalidate maps */
-				    MAPA, MAP_PTI_MASK | (card->silentpage.dma_handle * 2),
-				    MAPB, MAP_PTI_MASK | (card->silentpage.dma_handle * 2),
+				    MAPA, MAP_PTI_MASK | ((u32) card->silentpage.dma_handle * 2),
+				    MAPB, MAP_PTI_MASK | ((u32) card->silentpage.dma_handle * 2),
 				/* modulation envelope */
 				    CVCF, 0x0000ffff,
 				    VTFT, 0x0000ffff,

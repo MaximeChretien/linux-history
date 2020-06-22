@@ -2,9 +2,9 @@
 #define _ASM_IA64_PROCESSOR_H
 
 /*
- * Copyright (C) 1998-2001 Hewlett-Packard Co
- * Copyright (C) 1998-2001 David Mosberger-Tang <davidm@hpl.hp.com>
- * Copyright (C) 1998-2001 Stephane Eranian <eranian@hpl.hp.com>
+ * Copyright (C) 1998-2002 Hewlett-Packard Co
+ *	David Mosberger-Tang <davidm@hpl.hp.com>
+ *	Stephane Eranian <eranian@hpl.hp.com>
  * Copyright (C) 1999 Asit Mallick <asit.k.mallick@intel.com>
  * Copyright (C) 1999 Don Dugger <don.dugger@intel.com>
  *
@@ -14,6 +14,7 @@
  */
 
 #include <linux/config.h>
+#include <linux/cache.h>
 
 #include <asm/ptrace.h>
 #include <asm/kregs.h>
@@ -27,7 +28,6 @@
  */
 #define IA64_NUM_PMC_REGS	32
 #define IA64_NUM_PMD_REGS	32
-#define IA64_NUM_PMD_COUNTERS	4
 
 #define DEFAULT_MAP_BASE	0x2000000000000000
 #define DEFAULT_TASK_SIZE	0xa000000000000000
@@ -170,6 +170,7 @@
 #define IA64_THREAD_KRBS_SYNCED	(__IA64_UL(1) << 5)	/* krbs synced with process vm? */
 #define IA64_THREAD_FPEMU_NOPRINT (__IA64_UL(1) << 6)	/* don't log any fpswa faults */
 #define IA64_THREAD_FPEMU_SIGFPE  (__IA64_UL(1) << 7)	/* send a SIGFPE for fpswa faults */
+#define IA64_THREAD_XSTACK	(__IA64_UL(1) << 8)	/* stack executable by default? */
 
 #define IA64_THREAD_UAC_SHIFT	3
 #define IA64_THREAD_UAC_MASK	(IA64_THREAD_UAC_NOPRINT | IA64_THREAD_UAC_SIGBUS)
@@ -275,15 +276,23 @@ struct cpuinfo_ia64 {
 	__u32 ptce_stride[2];
 	struct task_struct *ksoftirqd;	/* kernel softirq daemon for this CPU */
 #ifdef CONFIG_SMP
+	int processor;
 	__u64 loops_per_jiffy;
 	__u64 ipi_count;
 	__u64 prof_counter;
 	__u64 prof_multiplier;
-	__u64 ipi_operation;
+	__u32 pfm_syst_wide;
+	__u32 pfm_dcr_pp;
+	/* this is written to by *other* CPUs: */
+	__u64 ipi_operation ____cacheline_aligned;
 #endif
 #ifdef CONFIG_NUMA
+	void *node_directory;
+	int numa_node_id;
 	struct cpuinfo_ia64 *cpu_data[NR_CPUS];
 #endif
+	/* Platform specific word.  MUST BE LAST IN STRUCT */
+	__u64 platform_specific;
 } __attribute__ ((aligned (PAGE_SIZE))) ;
 
 /*
@@ -303,7 +312,8 @@ struct cpuinfo_ia64 {
  * the array.
  */
 #ifdef CONFIG_NUMA
-# define cpu_data(cpu)		local_cpu_data->cpu_data_ptrs[cpu]
+# define cpu_data(cpu)		local_cpu_data->cpu_data[cpu]
+# define numa_node_id()		(local_cpu_data->numa_node_id)
 #else
   extern struct cpuinfo_ia64 _cpu_data[NR_CPUS];
 # define cpu_data(cpu)		(&_cpu_data[cpu])
@@ -366,10 +376,12 @@ struct thread_struct {
 #ifdef CONFIG_PERFMON
 	__u64 pmc[IA64_NUM_PMC_REGS];
 	__u64 pmd[IA64_NUM_PMD_REGS];
-	unsigned long pfm_must_block;	/* non-zero if we need to block on overflow */
+	unsigned long pfm_ovfl_block_reset;/* non-zero if we need to block or reset regs on ovfl */
 	void *pfm_context;		/* pointer to detailed PMU context */
-	atomic_t pfm_notifiers_check;	/* indicate if release_thread much check tasklist */
-# define INIT_THREAD_PM		{0, }, {0, }, 0, 0, {0},
+	atomic_t pfm_notifiers_check;	/* when >0, will cleanup ctx_notify_task in tasklist */
+	atomic_t pfm_owners_check;	/* when >0, will cleanup ctx_owner in tasklist */
+	void *pfm_smpl_buf_list;	/* list of sampling buffers to vfree */
+# define INIT_THREAD_PM		{0, }, {0, }, 0, NULL, {0}, {0}, NULL,
 #else
 # define INIT_THREAD_PM
 #endif
@@ -398,6 +410,7 @@ struct thread_struct {
 	ia64_psr(regs)->cpl = 3;	/* set user mode */					\
 	ia64_psr(regs)->ri = 0;		/* clear return slot number */				\
 	ia64_psr(regs)->is = 0;		/* IA-64 instruction set */				\
+	ia64_psr(regs)->sp = 1;		/* enforce secure perfmon */				\
 	regs->cr_iip = new_ip;									\
 	regs->ar_rsc = 0xf;		/* eager mode, privilege level 3 */			\
 	regs->ar_rnat = 0;									\
@@ -540,11 +553,6 @@ extern void ia64_load_debug_regs (unsigned long *save_area);
 #ifdef CONFIG_IA32_SUPPORT
 extern void ia32_save_state (struct task_struct *task);
 extern void ia32_load_state (struct task_struct *task);
-#endif
-
-#ifdef CONFIG_PERFMON
-extern void ia64_save_pm_regs (struct task_struct *task);
-extern void ia64_load_pm_regs (struct task_struct *task);
 #endif
 
 #define ia64_fph_enable()	asm volatile (";; rsm psr.dfh;; srlz.d;;" ::: "memory");

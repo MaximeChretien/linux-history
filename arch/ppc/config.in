@@ -1,4 +1,4 @@
-# BK Id: SCCS/s.config.in 1.47 12/01/01 20:09:06 benh
+# BK Id: SCCS/s.config.in 1.51 03/07/02 13:36:31 trini
 #
 # For a description of the syntax of this configuration file,
 # see Documentation/kbuild/config-language.txt.
@@ -122,6 +122,9 @@ if [ "$CONFIG_4xx" = "y" -o "$CONFIG_8xx" = "y" ]; then
   bool 'Math emulation' CONFIG_MATH_EMULATION
 fi
 
+if [ "$CONFIG_8xx" = "y" -o "$CONFIG_8260" = "y" ]; then
+    define_bool CONFIG_EMBEDDEDBOOT y
+fi
 endmenu
 
 mainmenu_option next_comment
@@ -194,6 +197,7 @@ if [ "$CONFIG_ALL_PPC" = "y" ]; then
   bool 'Support for RTAS (RunTime Abstraction Services) in /proc' CONFIG_PPC_RTAS
   bool 'Support for early boot text console (BootX or OpenFirmware only)' CONFIG_BOOTX_TEXT
   bool 'Support for PReP Residual Data' CONFIG_PREP_RESIDUAL
+  dep_bool '  Support for reading of PReP Residual Data in /proc' CONFIG_PROC_PREPRESIDUAL $CONFIG_PREP_RESIDUAL
 fi
 
 bool 'Default bootloader kernel arguments' CONFIG_CMDLINE_BOOL
@@ -389,9 +393,7 @@ fi
 
 source drivers/usb/Config.in
 
-if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
-   source net/bluetooth/Config.in
-fi
+source net/bluetooth/Config.in
 
 mainmenu_option next_comment
 comment 'Kernel hacking'

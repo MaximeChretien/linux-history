@@ -1955,7 +1955,7 @@ int usb_set_interface(struct usb_device *dev, int interface, int alternate)
 	/* 9.4.10 says devices don't need this, if the interface
 	   only has one alternate setting */
 	if (iface->num_altsetting == 1) {
-		warn("ignoring set_interface for dev %d, iface %d, alt %d",
+		dbg("ignoring set_interface for dev %d, iface %d, alt %d",
 			dev->devnum, interface, alternate);
 		return 0;
 	}

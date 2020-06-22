@@ -129,6 +129,12 @@
  * floppy controller (lingering task on list after module is gone... boom.)
  */
 
+/*
+ * 2002/02/07 -- Anton Altaparmakov - Fix io ports reservation to correct range
+ * (0x3f2-0x3f5, 0x3f7). This fix is a bit of a hack but the proper fix
+ * requires many non-obvious changes in arch dependent code.
+ */
+
 #define FLOPPY_SANITY_CHECK
 #undef  FLOPPY_SILENT_DCL_CLEAR
 
@@ -4181,9 +4187,12 @@ int __init floppy_init(void)
 		CLEARSTRUCT(FDCS);
 		FDCS->dtr = -1;
 		FDCS->dor = 0x4;
-#ifdef __sparc__
-		/*sparcs don't have a DOR reset which we can fall back on to*/
-		FDCS->version = FDC_82072A;
+#if defined(__sparc__) || defined(__mc68000__)
+		/*sparcs/sun3x don't have a DOR reset which we can fall back on to*/
+#ifdef __mc68000__
+		if(MACH_IS_SUN3X)
+#endif
+			FDCS->version = FDC_82072A;		
 #endif
 	}
 
@@ -4229,7 +4238,7 @@ int __init floppy_init(void)
 		FDCS->rawcmd = 2;
 		if (user_reset_fdc(-1,FD_RESET_ALWAYS,0)){
  			/* free ioports reserved by floppy_grab_irq_and_dma() */
- 			release_region(FDCS->address, 6);
+ 			release_region(FDCS->address+2, 4);
  			release_region(FDCS->address+7, 1);
 			FDCS->address = -1;
 			FDCS->version = FDC_NONE;
@@ -4239,7 +4248,7 @@ int __init floppy_init(void)
 		FDCS->version = get_fdc_version();
 		if (FDCS->version == FDC_NONE){
  			/* free ioports reserved by floppy_grab_irq_and_dma() */
- 			release_region(FDCS->address, 6);
+ 			release_region(FDCS->address+2, 4);
  			release_region(FDCS->address+7, 1);
 			FDCS->address = -1;
 			continue;
@@ -4318,11 +4327,11 @@ static int floppy_grab_irq_and_dma(void)
 
 	for (fdc=0; fdc< N_FDC; fdc++){
 		if (FDCS->address != -1){
-			if (!request_region(FDCS->address, 6, "floppy")) {
-				DPRINT("Floppy io-port 0x%04lx in use\n", FDCS->address);
+			if (!request_region(FDCS->address+2, 4, "floppy")) {
+				DPRINT("Floppy io-port 0x%04lx in use\n", FDCS->address + 2);
 				goto cleanup1;
 			}
-			if (!request_region(FDCS->address + 7, 1, "floppy DIR")) {
+			if (!request_region(FDCS->address+7, 1, "floppy DIR")) {
 				DPRINT("Floppy io-port 0x%04lx in use\n", FDCS->address + 7);
 				goto cleanup2;
 			}
@@ -4350,12 +4359,12 @@ static int floppy_grab_irq_and_dma(void)
 	irqdma_allocated = 1;
 	return 0;
 cleanup2:
-	release_region(FDCS->address, 6);
+	release_region(FDCS->address + 2, 4);
 cleanup1:
 	fd_free_irq();
 	fd_free_dma();
 	while(--fdc >= 0) {
-		release_region(FDCS->address, 6);
+		release_region(FDCS->address + 2, 4);
 		release_region(FDCS->address + 7, 1);
 	}
 	MOD_DEC_USE_COUNT;
@@ -4422,7 +4431,7 @@ static void floppy_release_irq_and_dma(void)
 	old_fdc = fdc;
 	for (fdc = 0; fdc < N_FDC; fdc++)
 		if (FDCS->address != -1) {
-			release_region(FDCS->address, 6);
+			release_region(FDCS->address+2, 4);
 			release_region(FDCS->address+7, 1);
 		}
 	fdc = old_fdc;
@@ -4481,22 +4490,6 @@ MODULE_LICENSE("GPL");
 
 __setup ("floppy=", floppy_setup);
 
-/* eject the boot floppy (if we need the drive for a different root floppy) */
-/* This should only be called at boot time when we're sure that there's no
- * resource contention. */
-void floppy_eject(void)
-{
-	int dummy;
-	if (have_no_fdc)
-		return;
-	if(floppy_grab_irq_and_dma()==0)
-	{
-		lock_fdc(MAXTIMEOUT,0);
-		dummy=fd_eject(0);
-		process_fd_request();
-		floppy_release_irq_and_dma();
-	}
-}
 #endif
 
 EXPORT_NO_SYMBOLS;

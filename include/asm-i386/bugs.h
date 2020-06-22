@@ -204,7 +204,10 @@ static void __init check_config(void)
 
 static void __init check_bugs(void)
 {
+	extern void __init boot_init_fpu(void);
+
 	identify_cpu(&boot_cpu_data);
+	boot_init_fpu();
 #ifndef CONFIG_SMP
 	printk("CPU: ");
 	print_cpu_info(&boot_cpu_data);

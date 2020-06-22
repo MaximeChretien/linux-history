@@ -195,20 +195,20 @@
      */
 
 int dmasound_catchRadius = 0;
+MODULE_PARM(dmasound_catchRadius, "i");
+
 static unsigned int numWriteBufs = DEFAULT_N_BUFFERS;
+MODULE_PARM(numWriteBufs, "i");
 static unsigned int writeBufSize = DEFAULT_BUFF_SIZE ;	/* in bytes */
+MODULE_PARM(writeBufSize, "i");
+
 #ifdef HAS_RECORD
 static unsigned int numReadBufs = DEFAULT_N_BUFFERS;
-static unsigned int readBufSize = DEFAULT_BUFF_SIZE;	/* in bytes */
-#endif
-
-MODULE_PARM(dmasound_catchRadius, "i");
-MODULE_PARM(numWriteBufs, "i");
-MODULE_PARM(writeBufSize, "i");
-#ifdef HAS_RECORD
 MODULE_PARM(numReadBufs, "i");
+static unsigned int readBufSize = DEFAULT_BUFF_SIZE;	/* in bytes */
 MODULE_PARM(readBufSize, "i");
 #endif
+
 MODULE_LICENSE("GPL");
 
 #ifdef MODULE
@@ -396,12 +396,9 @@ static void __init mixer_init(void)
      */
 
 struct sound_queue dmasound_write_sq;
-#ifdef HAS_RECORD
-struct sound_queue dmasound_read_sq;
-#endif
-
 static void sq_reset_output(void) ;
 #ifdef HAS_RECORD
+struct sound_queue dmasound_read_sq;
 static void sq_reset_input(void) ;
 #endif
 
@@ -444,7 +441,7 @@ static void sq_release_buffers(struct sound_queue *sq)
 
 static int sq_setup(struct sound_queue *sq)
 {
-	int (*setup_func)(void);
+	int (*setup_func)(void) = 0;
 	int hard_frame ;
 
 	if (sq->locked) { /* are we already set? - and not changeable */
@@ -548,7 +545,7 @@ static ssize_t sq_write(struct file *file, const char *src, size_t uLeft,
 {
 	ssize_t uWritten = 0;
 	u_char *dest;
-	ssize_t uUsed, bUsed, bLeft;
+	ssize_t uUsed = 0, bUsed, bLeft;
 	unsigned long flags ;
 
 	/* ++TeSche: Is something like this necessary?
@@ -859,6 +856,13 @@ static int sq_open2(struct sound_queue *sq, struct file *file, mode_t mode,
 #define read_sq_release_buffers()	sq_release_buffers(&read_sq)
 #define read_sq_open(file)	\
 	sq_open2(&read_sq, file, FMODE_READ, numReadBufs, readBufSize )
+#else
+#define read_sq_init_waitqueue()	do {} while (0)
+#if 0 /* blocking open() */
+#define read_sq_wake_up(file)		do {} while (0)
+#endif
+#define read_sq_release_buffers()	do {} while (0)
+#define sq_reset_input()		do {} while (0)
 #endif
 
 static int sq_open(struct inode *inode, struct file *file)
@@ -981,9 +985,7 @@ static void sq_reset_input(void)
 static void sq_reset(void)
 {
 	sq_reset_output() ;
-#ifdef HAS_RECORD
 	sq_reset_input() ;
-#endif
 	/* we could consider resetting the shared_resources_owner here... but I
 	   think it is probably still rather non-obvious to application writer
 	*/
@@ -1058,9 +1060,7 @@ static int sq_release(struct inode *inode, struct file *file)
 	/* Iain: hmm I don't understand this next comment ... */
 	/* There is probably a DOS atack here. They change the mode flag. */
 	/* XXX add check here,*/
-#ifdef HAS_RECORD
 	read_sq_wake_up(file); /* checks f_mode */
-#endif
 	write_sq_wake_up(file); /* checks f_mode */
 #endif /* blocking open() */
 
@@ -1200,10 +1200,8 @@ static int sq_ioctl(struct inode *inode, struct file *file, u_int cmd,
 		   everything - read, however, is killed imediately.
 		*/
 		result = 0 ;
-#ifdef HAS_RECORD
 		if ((file->f_mode & FMODE_READ) && dmasound.mach.record)
 			sq_reset_input() ;
-#endif
 		if (file->f_mode & FMODE_WRITE) {
 			result = sq_fsync(file, file->f_dentry);
 			sq_reset_output() ;
@@ -1252,6 +1250,8 @@ static int sq_ioctl(struct inode *inode, struct file *file, u_int cmd,
 		} else
 			return -EINVAL ;
 		break ;
+	case SOUND_PCM_READ_CHANNELS:
+		return IOCTL_OUT(arg, dmasound.soft.stereo+1);
 	case SNDCTL_DSP_SETFMT:
 		if (shared_resources_are_mine(file->f_mode) &&
 		    queues_are_quiescent()) {
@@ -1262,8 +1262,6 @@ static int sq_ioctl(struct inode *inode, struct file *file, u_int cmd,
 			result = IOCTL_OUT(arg, format);
 			if (result < 0)
 				return result;
-			if (format != data)
-				return -EINVAL;
 			return 0;
 		} else
 			return -EINVAL ;
@@ -1356,9 +1354,7 @@ static int __init sq_init(void)
 	}
 
 	write_sq_init_waitqueue();
-#ifdef HAS_RECORD
 	read_sq_init_waitqueue();
-#endif
 
 	/* These parameters will be restored for every clean open()
 	 * in the case of multiple open()s (e.g. dsp0 & dsp1) they

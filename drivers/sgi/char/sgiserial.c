@@ -49,8 +49,6 @@
 #define NUM_SERIAL 1     /* One chip on board. */
 #define NUM_CHANNELS (NUM_SERIAL * 2)
 
-extern wait_queue_head_t keypress_wait;
-
 struct sgi_zslayout *zs_chips[NUM_SERIAL] = { 0, };
 struct sgi_zschannel *zs_channels[NUM_CHANNELS] = { 0, 0, };
 struct sgi_zschannel *zs_conschan;
@@ -428,8 +426,6 @@ static _INLINE_ void receive_chars(struct sgi_serial *info, struct pt_regs *regs
 			show_buffers();
 			return;
 		}
-		/* It is a 'keyboard interrupt' ;-) */
-		wake_up(&keypress_wait);
 	}
 	/* Look for kgdb 'stop' character, consult the gdb documentation
 	 * for remote target debugging and arch/sparc/kernel/sparc-stub.c
@@ -1239,7 +1235,7 @@ static int get_serial_info(struct sgi_serial * info,
 	tmp.close_delay = info->close_delay;
 	tmp.closing_wait = info->closing_wait;
 	tmp.custom_divisor = info->custom_divisor;
-	return copy_to_user(retinfo,&tmp,sizeof(*retinfo));
+	return copy_to_user(retinfo,&tmp,sizeof(*retinfo)) ? -EFAULT : 0;
 }
 
 static int set_serial_info(struct sgi_serial * info,
@@ -1875,7 +1871,11 @@ int rs_init(void)
 	
 	memset(&serial_driver, 0, sizeof(struct tty_driver));
 	serial_driver.magic = TTY_DRIVER_MAGIC;
+#ifdef CONFIG_DEVFS_FS
+	serial_driver.name = "tts/%d";
+#else
 	serial_driver.name = "ttyS";
+#endif
 	serial_driver.major = TTY_MAJOR;
 	serial_driver.minor_start = 64;
 	serial_driver.num = NUM_CHANNELS;
@@ -1911,14 +1911,18 @@ int rs_init(void)
 	 * major number and the subtype code.
 	 */
 	callout_driver = serial_driver;
+#ifdef CONFIG_DEVFS_FS
+	callout_driver.name = "cua/%d";
+#else
 	callout_driver.name = "cua";
+#endif
 	callout_driver.major = TTYAUX_MAJOR;
 	callout_driver.subtype = SERIAL_TYPE_CALLOUT;
 
 	if (tty_register_driver(&serial_driver))
-		panic("Couldn't register serial driver\n");
+		panic("Couldn't register serial driver");
 	if (tty_register_driver(&callout_driver))
-		panic("Couldn't register callout driver\n");
+		panic("Couldn't register callout driver");
 	
 	save_flags(flags); cli();
 
@@ -2017,7 +2021,7 @@ int rs_init(void)
 
 	if (request_irq(zilog_irq, rs_interrupt, (SA_INTERRUPT),
 			"Zilog8530", zs_chain))
-		panic("Unable to attach zs intr\n");
+		panic("Unable to attach zs intr");
 	restore_flags(flags);
 
 	return 0;
@@ -2115,12 +2119,6 @@ static void zs_console_write(struct console *co, const char *str,
 
 	/* Comment this if you want to have a strict interrupt-driven output */
 	rs_fair_output();
-}
-
-static int zs_console_wait_key(struct console *con)
-{
-	sleep_on(&keypress_wait);
-	return 0;
 }
 
 static kdev_t zs_console_device(struct console *con)
@@ -2274,7 +2272,6 @@ static struct console sgi_console_driver = {
 	name:		"ttyS",
 	write:		zs_console_write,
 	device:		zs_console_device,
-	wait_key:	zs_console_wait_key,
 	setup:		zs_console_setup,
 	flags:		CON_PRINTBUFFER,
 	index:		-1,

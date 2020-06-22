@@ -50,28 +50,40 @@ asmlinkage void ret_from_fork(void) __asm__("ret_from_fork");
  * The idle loop on a S390...
  */
 
-static psw_t wait_psw;
-
 int cpu_idle(void *unused)
 {
+	psw_t wait_psw;
+	unsigned long reg;
+
 	/* endless idle loop with no priority at all */
         init_idle();
 	current->nice = 20;
 	current->counter = -100;
-	wait_psw.mask = _WAIT_PSW_MASK;
-	wait_psw.addr = (unsigned long) &&idle_wakeup | 0x80000000L;
-	while(1) {
-                if (current->need_resched) {
-                        schedule();
-                        check_pgt_cache();
-                        continue;
-                }
+	while (1) {
+		if (current->need_resched) {
+			schedule();
+			check_pgt_cache();
+			continue;
+		}
 
-		/* load wait psw */
+		/* 
+		 * Wait for external, I/O or machine check interrupt and
+		 * switch of machine check bit after the wait has ended.
+		 */
+		wait_psw.mask = _WAIT_PSW_MASK;
 		asm volatile (
-                        "lpsw %0"
-                        : : "m" (wait_psw) );
-idle_wakeup:
+			"    basr %0,0\n"
+			"0:  la   %0,1f-0b(%0)\n"
+			"    st   %0,4(%1)\n"
+			"    oi   4(%1),0x80\n"
+			"    lpsw 0(%1)\n"
+			"1:  la   %0,2f-1b(%0)\n"
+			"    st   %0,4(%1)\n"
+			"    oi   4(%1),0x80\n"
+			"    ni   1(%1),0xf9\n"
+			"    lpsw 0(%1)\n"
+			"2:"
+			: "=&a" (reg) : "a" (&wait_psw) : "memory", "cc" );
 	}
 }
 
@@ -166,11 +178,9 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long new_stackp,
 
         /* fake return stack for resume(), don't go back to schedule */
         frame->gprs[9]  = (unsigned long) frame;
-	frame->childregs.old_ilc = -1; /* We are not single stepping an svc */
         /* save fprs, if used in last task */
 	save_fp_regs(&p->thread.fp_regs);
         p->thread.user_seg = __pa((unsigned long) p->mm->pgd) | _SEGMENT_TABLE;
-        p->thread.fs = USER_DS;
         /* Don't copy debug registers */
         memset(&p->thread.per_info,0,sizeof(p->thread.per_info));
         return 0;

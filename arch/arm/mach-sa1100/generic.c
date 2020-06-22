@@ -56,20 +56,13 @@ static const unsigned short cclk_frequency_100khz[NR_FREQS] = {
 /*
  * Return the current CPU clock frequency in units of 100kHz
  */
-unsigned short get_cclk_frequency(void)
+static inline unsigned short get_cclk_frequency(void)
 {
 	return cclk_frequency_100khz[PPCR & 0xf];
 }
 
-EXPORT_SYMBOL(get_cclk_frequency);
-
 #ifdef CONFIG_CPU_FREQ
-
-/*
- * Validate the speed in khz.  If we can't generate the precise
- * frequency requested, round it down (to be on the safe side).
- */
-unsigned int sa1100_validatespeed(unsigned int khz)
+unsigned int sa11x0_freq_to_ppcr(unsigned int khz)
 {
 	int i;
 
@@ -79,35 +72,34 @@ unsigned int sa1100_validatespeed(unsigned int khz)
 		if (cclk_frequency_100khz[i] <= khz)
 			break;
 
-	return cclk_frequency_100khz[i] * 100;
+	return i;
 }
 
 /*
- * Ok, set the CPU frequency.  Since we've done the validation
- * above, we can match for an exact frequency.  If we don't find
- * an exact match, we will to set the lowest frequency to be safe.
+ * Validate the speed in khz.  If we can't generate the precise
+ * frequency requested, round it down (to be on the safe side).
  */
-void sa1100_setspeed(unsigned int khz)
+unsigned int sa11x0_validatespeed(unsigned int khz)
 {
-	int i;
-
-	khz /= 100;
-
-	for (i = NR_FREQS - 1; i > 0; i--)
-		if (cclk_frequency_100khz[i] == khz)
-			break;
-//printk("setting ppcr to %d\n", i);
-	PPCR = i;
+	return cclk_frequency_100khz[sa11x0_freq_to_ppcr(khz)] * 100;
 }
 
-static int __init sa1100_init_clock(void)
+static int __init sa11x0_init_clock(void)
 {
-	cpufreq_init(get_cclk_frequency() * 100);
-	cpufreq_setfunctions(sa1100_validatespeed, sa1100_setspeed);
+	cpufreq_init(cclk_frequency_100khz[PPCR & 0xf] * 100);
 	return 0;
 }
 
-__initcall(sa1100_init_clock);
+__initcall(sa11x0_init_clock);
+#else
+/*
+ * We still need to provide this so building without cpufreq works.
+ */ 
+unsigned int cpufreq_get(int cpu)
+{
+	return cclk_frequency_100khz[PPCR & 0xf] * 100;
+}
+EXPORT_SYMBOL(cpufreq_get);
 #endif
 
 /*
@@ -130,13 +122,13 @@ static void sa1100_power_off(void)
 	PMCR = PMCR_SF;
 }
 
-static int __init sa1100_set_poweroff(void)
+static int __init sa1100_init(void)
 {
 	pm_power_off = sa1100_power_off;
 	return 0;
 }
 
-__initcall(sa1100_set_poweroff);
+__initcall(sa1100_init);
 
 
 /*
@@ -149,7 +141,8 @@ __initcall(sa1100_set_poweroff);
  * 0xf0000000-0xf3ffffff:	miscellaneous stuff (CPLDs, etc.)
  * 0xf4000000-0xf4ffffff:	SA-1111
  * 0xf5000000-0xf5ffffff:	reserved (used by cache flushing area)
- * 0xf6000000-0xffffffff:	reserved (internal SA1100 IO defined above)
+ * 0xf6000000-0xfffeffff:	reserved (internal SA1100 IO defined above)
+ * 0xffff0000-0xffff0fff:	SA1100 exception vectors
  *
  * Below 0xe8000000 is reserved for vm allocation.
  *
@@ -159,8 +152,8 @@ __initcall(sa1100_set_poweroff);
 
 static struct map_desc standard_io_desc[] __initdata = {
  /* virtual     physical    length      domain     r  w  c  b */
-  { 0xf6000000, 0x20000000, 0x01000000, DOMAIN_IO, 1, 1, 0, 0 }, /* PCMCIA0 IO */
-  { 0xf7000000, 0x30000000, 0x01000000, DOMAIN_IO, 1, 1, 0, 0 }, /* PCMCIA1 IO */
+  { 0xf6000000, 0x20000000, 0x01000000, DOMAIN_IO, 0, 1, 0, 0 }, /* PCMCIA0 IO */
+  { 0xf7000000, 0x30000000, 0x01000000, DOMAIN_IO, 0, 1, 0, 0 }, /* PCMCIA1 IO */
   { 0xf8000000, 0x80000000, 0x00100000, DOMAIN_IO, 0, 1, 0, 0 }, /* PCM */
   { 0xfa000000, 0x90000000, 0x00100000, DOMAIN_IO, 0, 1, 0, 0 }, /* SCM */
   { 0xfc000000, 0xa0000000, 0x00100000, DOMAIN_IO, 0, 1, 0, 0 }, /* MER */

@@ -13,6 +13,7 @@
 #include <linux/sched.h>
 #include <linux/mmzone.h>	/* for numnodes */
 #include <linux/mm.h>
+#include <asm/cpu.h>
 #include <asm/pgalloc.h>
 #include <asm/pgtable.h>
 #include <asm/sn/types.h>
@@ -359,12 +360,11 @@ void per_cpu_init(void)
 	int cpu = smp_processor_id();
 	cnodeid_t cnode = get_compact_nodeid();
 
-	current_cpu_data.asid_cache = ASID_FIRST_VERSION;
 	TLBMISS_HANDLER_SETUP();
 #if 0
 	intr_init();
 #endif
-	set_cp0_status(ST0_IM, 0);
+	clear_cp0_status(ST0_IM);
 	per_hub_init(cnode);
 	cpu_time_init();
 	if (smp_processor_id())	/* master can't do this early, no kmalloc */
@@ -374,12 +374,12 @@ void per_cpu_init(void)
 #if 0
 	install_tlbintr(cpu);
 #endif
-	set_cp0_status(SRB_DEV0 | SRB_DEV1, SRB_DEV0 | SRB_DEV1);
+	set_cp0_status(SRB_DEV0 | SRB_DEV1);
 	if (is_slave) {
-		set_cp0_status(ST0_BEV, 0);
-		if (mips4_available)
-			set_cp0_status(ST0_XX, ST0_XX);
-		set_cp0_status(ST0_KX|ST0_SX|ST0_UX, ST0_KX|ST0_SX|ST0_UX);
+		clear_cp0_status(ST0_BEV);
+		if (mips_cpu.isa_level == MIPS_CPU_ISA_IV)
+			set_cp0_status(ST0_XX);
+		set_cp0_status(ST0_KX|ST0_SX|ST0_UX);
 		sti();
 		load_mmu();
 		atomic_inc(&numstarted);
@@ -420,47 +420,30 @@ static void alloc_cpupda(cpuid_t cpu, int cpunum)
 	cpu_data[cpunum].p_cpuid = cpu;
 }
 
-void __init smp_callin(void)
-{
-#if 0
-	calibrate_delay();
-	smp_store_cpu_info(cpuid);
-#endif
-}
-
-int __init start_secondary(void)
-{
-	extern int cpu_idle(void);
-	extern atomic_t smp_commenced;
-
-	smp_callin();
-	while (!atomic_read(&smp_commenced));
-	return cpu_idle();
-}
-
 static volatile cpumask_t boot_barrier;
 
-void cboot(void)
+void __init start_secondary(void)
 {
 	CPUMASK_CLRB(boot_barrier, getcpuid());	/* needs atomicity */
 	per_cpu_init();
+	per_cpu_trap_init();
 #if 0
 	ecc_init();
 	bte_lateinit();
 	init_mfhi_war();
 #endif
-	_flush_tlb_all();
+	local_flush_tlb_all();
 	flush_cache_l1();
 	flush_cache_l2();
 	start_secondary();
 }
 
-void allowboot(void)
+__init void allowboot(void)
 {
 	int		num_cpus = 0;
 	cpuid_t		cpu, mycpuid = getcpuid();
 	cnodeid_t	cnode;
-	extern void	bootstrap(void);
+	extern void	smp_bootstrap(void);
 
 	sn_mp_setup();
 	/* Master has already done per_cpu_init() */
@@ -502,16 +485,16 @@ void allowboot(void)
 			/* Attach to the address space of init_task. */
 			atomic_inc(&init_mm.mm_count);
 			p->active_mm = &init_mm;
-			
+
 			/*
-		 	 * Launch a slave into bootstrap().
+		 	 * Launch a slave into smp_bootstrap().
 		 	 * It doesn't take an argument, and we
 			 * set sp to the kernel stack of the newly 
 			 * created idle process, gp to the proc struct
 			 * (so that current-> works).
 		 	 */
 			LAUNCH_SLAVE(cputonasid(num_cpus),cputoslice(num_cpus), 
-				(launch_proc_t)MAPPED_KERN_RW_TO_K0(bootstrap),
+				(launch_proc_t)MAPPED_KERN_RW_TO_K0(smp_bootstrap),
 				0, (void *)((unsigned long)p + 
 				KERNEL_STACK_SIZE - 32), (void *)p);
 
@@ -522,6 +505,7 @@ void allowboot(void)
 			 */
 			__cpu_number_map[cpu] = num_cpus;
 			__cpu_logical_map[num_cpus] = cpu;
+			CPUMASK_SETB(cpu_online_map, cpu);
 			num_cpus++;
 			/*
 			 * Wait this cpu to start up and initialize its hub,
@@ -554,8 +538,22 @@ void allowboot(void)
 	smp_num_cpus = num_cpus;
 }
 
+void __init smp_boot_cpus(void)
+{
+	extern void allowboot(void);
+
+	init_new_context(current, &init_mm);
+	current->processor = 0;
+	init_idle();
+	smp_tune_scheduling();
+	allowboot();
+}
+
 #else /* CONFIG_SMP */
-void cboot(void) {}
+void __init start_secondary(void)
+{
+	/* XXX Why do we need this empty definition at all?  */
+}
 #endif /* CONFIG_SMP */
 
 

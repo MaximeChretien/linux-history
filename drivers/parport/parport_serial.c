@@ -41,6 +41,11 @@ enum parport_pc_pci_cards {
 	avlab_2s1p,
 	avlab_2s1p_650,
 	avlab_2s1p_850,
+	siig_1s1p_10x,
+	siig_2s1p_10x,
+	siig_2p1s_20x,
+	siig_1s1p_20x,
+	siig_2s1p_20x,
 };
 
 
@@ -53,6 +58,15 @@ static struct parport_pc_pci {
 		int hi; /* -1 if not there, >6 for offset-method (max
                            BAR is 6) */
 	} addr[4];
+
+	/* If set, this is called immediately after pci_enable_device.
+	 * If it returns non-zero, no probing will take place and the
+	 * ports will not be used. */
+	int (*preinit_hook) (struct pci_dev *pdev, int autoirq, int autodma);
+
+	/* If set, this is called after probing for ports.  If 'failed'
+	 * is non-zero we couldn't use any of the ports. */
+	void (*postinit_hook) (struct pci_dev *pdev, int failed);
 } cards[] __devinitdata = {
 	/* titan_110l */		{ 1, { { 3, -1 }, } },
 	/* titan_210l */		{ 1, { { 3, -1 }, } },
@@ -65,6 +79,11 @@ static struct parport_pc_pci {
 	/* avlab_2s1p     */		{ 1, { { 2, 3}, } },
 	/* avlab_2s1p_650 */		{ 1, { { 2, 3}, } },
 	/* avlab_2s1p_850 */		{ 1, { { 2, 3}, } },
+	/* siig_1s1p_10x */		{ 1, { { 3, 4 }, } },
+	/* siig_2s1p_10x */		{ 1, { { 4, 5 }, } },
+	/* siig_2p1s_20x */		{ 2, { { 1, 2 }, { 3, 4 }, } },
+	/* siig_1s1p_20x */		{ 1, { { 1, 2 }, } },
+	/* siig_2s1p_20x */		{ 1, { { 2, 3 }, } },
 };
 
 static struct pci_device_id parport_serial_pci_tbl[] __devinitdata = {
@@ -83,6 +102,37 @@ static struct pci_device_id parport_serial_pci_tbl[] __devinitdata = {
 	{ 0x14db, 0x2160, PCI_ANY_ID, PCI_ANY_ID, 0, 0, avlab_2s1p},
 	{ 0x14db, 0x2161, PCI_ANY_ID, PCI_ANY_ID, 0, 0, avlab_2s1p_650},
 	{ 0x14db, 0x2162, PCI_ANY_ID, PCI_ANY_ID, 0, 0, avlab_2s1p_850},
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_1S1P_10x_550,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_1s1p_10x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_1S1P_10x_650,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_1s1p_10x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_1S1P_10x_850,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_1s1p_10x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_2S1P_10x_550,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_2s1p_10x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_2S1P_10x_650,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_2s1p_10x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_2S1P_10x_850,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_2s1p_10x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_2P1S_20x_550,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_2p1s_20x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_2P1S_20x_650,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_2p1s_20x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_2P1S_20x_850,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_2p1s_20x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_1S1P_20x_550,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_2s1p_20x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_1S1P_20x_650,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_1s1p_20x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_1S1P_20x_850,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_1s1p_20x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_2S1P_20x_550,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_2s1p_20x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_2S1P_20x_650,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_2s1p_20x },
+	{ PCI_VENDOR_ID_SIIG, PCI_DEVICE_ID_SIIG_2S1P_20x_850,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, siig_2s1p_20x },
+
 	{ 0, } /* terminate list */
 };
 MODULE_DEVICE_TABLE(pci,parport_serial_pci_tbl);
@@ -97,6 +147,16 @@ struct pci_board_no_ids {
 			int enable);
 	int first_uart_offset;
 };
+
+static int __devinit siig10x_init_fn(struct pci_dev *dev, struct pci_board_no_ids *board, int enable)
+{
+	return pci_siig10x_fn(dev, NULL, enable);
+}
+
+static int __devinit siig20x_init_fn(struct pci_dev *dev, struct pci_board_no_ids *board, int enable)
+{
+	return pci_siig20x_fn(dev, NULL, enable);
+}
 
 static struct pci_board_no_ids pci_boards[] __devinitdata = {
 	/*
@@ -120,6 +180,11 @@ static struct pci_board_no_ids pci_boards[] __devinitdata = {
 /* avlab_2s1p (n/t) */	{ SPCI_FL_BASE0 | SPCI_FL_BASE_TABLE, 2, 115200 },
 /* avlab_2s1p_650 (nt)*/{ SPCI_FL_BASE0 | SPCI_FL_BASE_TABLE, 2, 115200 },
 /* avlab_2s1p_850 (nt)*/{ SPCI_FL_BASE0 | SPCI_FL_BASE_TABLE, 2, 115200 },
+/* siig_1s1p_10x */	{ SPCI_FL_BASE2, 1, 460800, 0, 0, siig10x_init_fn },
+/* siig_2s1p_10x */	{ SPCI_FL_BASE2, 1, 921600, 0, 0, siig10x_init_fn },
+/* siig_2p1s_20x */	{ SPCI_FL_BASE0, 1, 921600, 0, 0, siig20x_init_fn },
+/* siig_1s1p_20x */	{ SPCI_FL_BASE0, 1, 921600, 0, 0, siig20x_init_fn },
+/* siig_2s1p_20x */	{ SPCI_FL_BASE0, 1, 921600, 0, 0, siig20x_init_fn },
 };
 
 struct parport_serial_private {
@@ -239,6 +304,10 @@ static int __devinit parport_register (struct pci_dev *dev,
 	int i = id->driver_data, n;
 	int success = 0;
 
+	if (cards[i].preinit_hook &&
+	    cards[i].preinit_hook (dev, PARPORT_IRQ_NONE, PARPORT_DMA_NONE))
+		return -ENODEV;
+
 	for (n = 0; n < cards[i].numports; n++) {
 		struct parport *port;
 		int lo = cards[i].addr[n].lo;
@@ -264,6 +333,9 @@ static int __devinit parport_register (struct pci_dev *dev,
 			success = 1;
 		}
 	}
+
+	if (cards[i].postinit_hook)
+		cards[i].postinit_hook (dev, !success);
 
 	return success ? 0 : 1;
 }

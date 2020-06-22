@@ -6,6 +6,7 @@ SECTIONS
   .init          : { *(.init)		} =0
   .text      :
   {
+    _ftext = .;
     *(.text)
     *(.rodata)
     *(.rodata.*)
@@ -23,6 +24,10 @@ SECTIONS
   __start___dbe_table = .;	/* Exception table for data bus errors */
   __dbe_table : { *(__dbe_table) }
   __stop___dbe_table = .;
+
+  __start___ksymtab = .;	/* Kernel symbol table */
+  __ksymtab : { *(__ksymtab) }
+  __stop___ksymtab = .;
 
   _etext = .;
 

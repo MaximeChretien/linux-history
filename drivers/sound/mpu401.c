@@ -15,6 +15,7 @@
  * Alan Cox		modularisation, use normal request_irq, use dev_id
  * Bartlomiej Zolnierkiewicz	removed some __init to allow using many drivers
  * Chris Rankin		Update the module-usage counter for the coprocessor
+ * Zwane Mwaikambo	Changed attach/unload resource freeing
  */
 
 #include <linux/module.h>
@@ -77,7 +78,7 @@ struct mpu_config
 
 static void mpu401_close(int dev);
 
-static int mpu401_status(struct mpu_config *devc)
+static inline int mpu401_status(struct mpu_config *devc)
 {
 	return inb(STATPORT(devc->base));
 }
@@ -85,17 +86,17 @@ static int mpu401_status(struct mpu_config *devc)
 #define input_avail(devc)		(!(mpu401_status(devc)&INPUT_AVAIL))
 #define output_ready(devc)		(!(mpu401_status(devc)&OUTPUT_READY))
 
-static void write_command(struct mpu_config *devc, unsigned char cmd)
+static inline void write_command(struct mpu_config *devc, unsigned char cmd)
 {
 	outb(cmd, COMDPORT(devc->base));
 }
 
-static int read_data(struct mpu_config *devc)
+static inline int read_data(struct mpu_config *devc)
 {
 	return inb(DATAPORT(devc->base));
 }
 
-static void write_data(struct mpu_config *devc, unsigned char byte)
+static inline void write_data(struct mpu_config *devc, unsigned char byte)
 {
 	outb(byte, DATAPORT(devc->base));
 }
@@ -965,12 +966,12 @@ static void mpu401_chk_version(int n, struct mpu_config *devc)
 	restore_flags(flags);
 }
 
-void attach_mpu401(struct address_info *hw_config, struct module *owner)
+int attach_mpu401(struct address_info *hw_config, struct module *owner)
 {
 	unsigned long flags;
 	char revision_char;
 
-	int m;
+	int m, ret;
 	struct mpu_config *devc;
 
 	hw_config->slots[1] = -1;
@@ -978,7 +979,8 @@ void attach_mpu401(struct address_info *hw_config, struct module *owner)
 	if (m == -1)
 	{
 		printk(KERN_WARNING "MPU-401: Too many midi devices detected\n");
-		return;
+		ret = -ENOMEM;
+		goto out_err;
 	}
 	devc = &dev_conf[m];
 	devc->base = hw_config->io_base;
@@ -1008,16 +1010,16 @@ void attach_mpu401(struct address_info *hw_config, struct module *owner)
 		if (!reset_mpu401(devc))
 		{
 			printk(KERN_WARNING "mpu401: Device didn't respond\n");
-			sound_unload_mididev(m);
-			return;
+			ret = -ENODEV;
+			goto out_mididev;
 		}
 		if (!devc->shared_irq)
 		{
 			if (request_irq(devc->irq, mpuintr, 0, "mpu401", (void *)m) < 0)
 			{
 				printk(KERN_WARNING "mpu401: Failed to allocate IRQ%d\n", devc->irq);
-				sound_unload_mididev(m);
-				return;
+				ret = -ENOMEM;
+				goto out_mididev;
 			}
 		}
 		save_flags(flags);
@@ -1027,7 +1029,12 @@ void attach_mpu401(struct address_info *hw_config, struct module *owner)
 			mpu401_chk_version(m, devc);
 		restore_flags(flags);
 	}
-	request_region(hw_config->io_base, 2, "mpu401");
+
+	if (!request_region(hw_config->io_base, 2, "mpu401"))
+	{
+		ret = -ENOMEM;
+		goto out_irq;
+	}	
 
 	if (devc->version != 0)
 		if (mpu_cmd(m, 0xC5, 0) >= 0)	/* Set timebase OK */
@@ -1039,9 +1046,9 @@ void attach_mpu401(struct address_info *hw_config, struct module *owner)
 
 	if (mpu401_synth_operations[m] == NULL)
 	{
-		sound_unload_mididev(m);
 		printk(KERN_ERR "mpu401: Can't allocate memory\n");
-		return;
+		ret = -ENOMEM;
+		goto out_resource;
 	}
 	if (!(devc->capabilities & MPU_CAP_INTLG))	/* No intelligent mode */
 	{
@@ -1120,6 +1127,17 @@ void attach_mpu401(struct address_info *hw_config, struct module *owner)
 
 	hw_config->slots[1] = m;
 	sequencer_init();
+	
+	return 0;
+
+out_resource:
+	release_region(hw_config->io_base, 2);
+out_irq:
+	free_irq(devc->irq, (void *)m);
+out_mididev:
+	sound_unload_mididev(m);
+out_err:
+	return ret;
 }
 
 static int reset_mpu401(struct mpu_config *devc)
@@ -1231,15 +1249,17 @@ void unload_mpu401(struct address_info *hw_config)
 {
 	void *p;
 	int n=hw_config->slots[1];
-	
-	release_region(hw_config->io_base, 2);
-	if (hw_config->always_detect == 0 && hw_config->irq > 0)
-		free_irq(hw_config->irq, (void *)n);
-	p=mpu401_synth_operations[n];
-	sound_unload_mididev(n);
-	sound_unload_timerdev(hw_config->slots[2]);
-	if(p)
-		kfree(p);
+		
+	if (n != -1) {
+		release_region(hw_config->io_base, 2);
+		if (hw_config->always_detect == 0 && hw_config->irq > 0)
+			free_irq(hw_config->irq, (void *)n);
+		p=mpu401_synth_operations[n];
+		sound_unload_mididev(n);
+		sound_unload_timerdev(hw_config->slots[2]);
+		if(p)
+			kfree(p);
+	}
 }
 
 /*****************************************************
@@ -1754,6 +1774,7 @@ MODULE_PARM(io, "i");
 
 int __init init_mpu401(void)
 {
+	int ret;
 	/* Can be loaded either for module use or to provide functions
 	   to others */
 	if (io != -1 && irq != -1) {
@@ -1761,7 +1782,8 @@ int __init init_mpu401(void)
 		cfg.io_base = io;
 		if (probe_mpu401(&cfg) == 0)
 			return -ENODEV;
-		attach_mpu401(&cfg, THIS_MODULE);
+		if ((ret = attach_mpu401(&cfg, THIS_MODULE)))
+			return ret;
 	}
 	
 	return 0;

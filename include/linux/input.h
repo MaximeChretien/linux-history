@@ -307,6 +307,9 @@ struct input_event {
 
 #define KEY_UNKNOWN		220
 
+#define KEY_BRIGHTNESSDOWN	224
+#define KEY_BRIGHTNESSUP	225
+
 #define BTN_MISC		0x100
 #define BTN_0			0x100
 #define BTN_1			0x101

@@ -78,7 +78,9 @@
  *          Cleaned up poll() functions (audio and midi). Don't start input.
  *	    Restrict DMA pages used to 512Mib range.
  *	    New AC97_BOOST mixer ioctl.
- *
+ *     0.19 Real fix for kernel with highmem support (cast dma_handle to u32)
+ *	    Fix recording buffering parameters calculation
+ *	    Use unsigned long for variables in bit ops.
  *********************************************************************/
 
 /* These are only included once per module */
@@ -111,7 +113,7 @@
 #define SNDCARD_EMU10K1 46
 #endif
  
-#define DRIVER_VERSION "0.18"
+#define DRIVER_VERSION "0.19"
 
 /* the emu10k1 _seems_ to only supports 29 bit (512MiB) bit bus master */
 #define EMU10K1_DMA_MASK                0x1fffffff	/* DMA buffer mask for pci_alloc_consist */
@@ -196,7 +198,7 @@ static int __devinit emu10k1_audio_init(struct emu10k1_card *card)
 
 	/* Assign default recording parameters */
 	/* FIXME */
-	if(card->isaps)
+	if (card->is_aps)
 		card->wavein.recsrc = WAVERECORD_FX;
 	else
 		card->wavein.recsrc = WAVERECORD_AC97;
@@ -229,7 +231,7 @@ static int __devinit emu10k1_mixer_init(struct emu10k1_card *card)
 
 	card->ac97.private_data = card;
 
-	if (!card->isaps) {
+	if (!card->is_aps) {
 		card->ac97.id = 0;
 		card->ac97.codec_read = emu10k1_ac97_read;
         	card->ac97.codec_write = emu10k1_ac97_write;
@@ -287,7 +289,7 @@ static void __devinit emu10k1_mixer_cleanup(struct emu10k1_card *card)
 {
 	char s[32];
 
-	if (!card->isaps) {
+	if (!card->is_aps) {
 		sprintf(s, "driver/emu10k1/%s/ac97", card->pci_dev->slot_name);
 		remove_proc_entry(s, NULL);
 
@@ -867,19 +869,19 @@ static int __devinit hw_init(struct emu10k1_card *card)
 	}
 
 	for (pagecount = 0; pagecount < MAXPAGES; pagecount++)
-		((u32 *) card->virtualpagetable.addr)[pagecount] = cpu_to_le32((card->silentpage.dma_handle * 2) | pagecount);
+		((u32 *) card->virtualpagetable.addr)[pagecount] = cpu_to_le32(((u32) card->silentpage.dma_handle * 2) | pagecount);
 
 	/* Init page table & tank memory base register */
 	sblive_writeptr_tag(card, 0,
-			    PTB, card->virtualpagetable.dma_handle,
+			    PTB, (u32) card->virtualpagetable.dma_handle,
 			    TCB, 0,
 			    TCBS, 0,
 			    TAGLIST_END);
 
 	for (nCh = 0; nCh < NUM_G; nCh++) {
 		sblive_writeptr_tag(card, nCh,
-				    MAPA, MAP_PTI_MASK | (card->silentpage.dma_handle * 2),
-				    MAPB, MAP_PTI_MASK | (card->silentpage.dma_handle * 2),
+				    MAPA, MAP_PTI_MASK | ((u32) card->silentpage.dma_handle * 2),
+				    MAPB, MAP_PTI_MASK | ((u32) card->silentpage.dma_handle * 2),
 				    TAGLIST_END);
 	}
 
@@ -1059,7 +1061,7 @@ static int __devinit emu10k1_probe(struct pci_dev *pci_dev, const struct pci_dev
 		card->iobase + card->length - 1, card->irq);
 
 	pci_read_config_dword(pci_dev, PCI_SUBSYSTEM_VENDOR_ID, &subsysvid);
-	card->isaps = (subsysvid == EMU_APS_SUBID);
+	card->is_aps = (subsysvid == EMU_APS_SUBID);
 
 	spin_lock_init(&card->lock);
 	init_MUTEX(&card->open_sem);
@@ -1090,7 +1092,7 @@ static int __devinit emu10k1_probe(struct pci_dev *pci_dev, const struct pci_dev
 		goto err_emu10k1_init;
 	}
 
-	if (card->isaps)
+	if (card->is_aps)
 		emu10k1_ecard_init(card);
 
 	list_add(&card->list, &emu10k1_devs);
@@ -1135,7 +1137,7 @@ static void __devexit emu10k1_remove(struct pci_dev *pci_dev)
 	pci_set_drvdata(pci_dev, NULL);
 }
 
-MODULE_AUTHOR("Bertrand Lee, Cai Ying. (Email to: emu10k1-devel@opensource.creative.com)");
+MODULE_AUTHOR("Bertrand Lee, Cai Ying. (Email to: emu10k1-devel@lists.sourceforge.net)");
 MODULE_DESCRIPTION("Creative EMU10K1 PCI Audio Driver v" DRIVER_VERSION "\nCopyright (C) 1999 Creative Technology Ltd.");
 MODULE_LICENSE("GPL");
 

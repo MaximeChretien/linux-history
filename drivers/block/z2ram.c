@@ -38,7 +38,7 @@
 #include <asm/bitops.h>
 #include <asm/amigahw.h>
 #include <asm/pgtable.h>
-#include <asm/io.h>
+
 #include <linux/zorro.h>
 
 
@@ -207,7 +207,7 @@ z2_open( struct inode *inode, struct file *filp )
 						   _PAGE_WRITETHRU);
 
 #else
-		vaddr = (unsigned long)ioremap(paddr, size);
+		vaddr = (unsigned long)z_remap_nocache_nonser(paddr, size);
 #endif
 		z2ram_map = 
 			kmalloc((size/Z2RAM_CHUNKSIZE)*sizeof(z2ram_map[0]),

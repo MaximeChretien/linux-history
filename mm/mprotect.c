@@ -284,7 +284,7 @@ asmlinkage long sys_mprotect(unsigned long start, size_t len, unsigned long prot
 	down_write(&current->mm->mmap_sem);
 
 	vma = find_vma_prev(current->mm, start, &prev);
-	error = -EFAULT;
+	error = -ENOMEM;
 	if (!vma || vma->vm_start > start)
 		goto out;
 
@@ -317,7 +317,7 @@ asmlinkage long sys_mprotect(unsigned long start, size_t len, unsigned long prot
 		nstart = tmp;
 		vma = next;
 		if (!vma || vma->vm_start != nstart) {
-			error = -EFAULT;
+			error = -ENOMEM;
 			goto out;
 		}
 	}

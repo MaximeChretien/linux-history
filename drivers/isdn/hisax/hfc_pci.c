@@ -76,6 +76,8 @@ release_io_hfcpci(struct IsdnCardState *cs)
 {
 	unsigned long flags;
 
+	printk(KERN_INFO "HiSax: release hfcpci at %p\n",
+		cs->hw.hfcpci.pci_io);
 	save_flags(flags);
 	cli();
 	cs->hw.hfcpci.int_m2 = 0;	/* interrupt output off ! */
@@ -86,13 +88,11 @@ release_io_hfcpci(struct IsdnCardState *cs)
 	set_current_state(TASK_UNINTERRUPTIBLE);
 	schedule_timeout((30 * HZ) / 1000);	/* Timeout 30ms */
 	Write_hfc(cs, HFCPCI_CIRM, 0);	/* Reset Off */
-#if CONFIG_PCI
 	pcibios_write_config_word(cs->hw.hfcpci.pci_bus, cs->hw.hfcpci.pci_device_fn, PCI_COMMAND, 0);	/* disable memory mapped ports + busmaster */
-#endif				/* CONFIG_PCI */
 	del_timer(&cs->hw.hfcpci.timer);
 	kfree(cs->hw.hfcpci.share_start);
 	cs->hw.hfcpci.share_start = NULL;
-	vfree(cs->hw.hfcpci.pci_io);
+	iounmap((void *)cs->hw.hfcpci.pci_io);
 }
 
 /********************************************************************************/

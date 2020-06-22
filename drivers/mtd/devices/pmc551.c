@@ -1,5 +1,5 @@
 /*
- * $Id: pmc551.c,v 1.19 2001/10/02 15:05:13 dwmw2 Exp $
+ * $Id: pmc551.c,v 1.20 2002/03/05 13:47:08 dwmw2 Exp $
  *
  * PMC551 PCI Mezzanine Ram Device
  *
@@ -716,7 +716,7 @@ int __init init_pmc551(void)
                 }
 
 		/*
-		 * This is needed untill the driver is capable of reading the
+		 * This is needed until the driver is capable of reading the
 		 * onboard I2C SROM to discover the "real" memory size.
 		 */
 		if(msize) {

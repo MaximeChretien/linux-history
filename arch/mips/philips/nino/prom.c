@@ -1,5 +1,5 @@
 /*
- *  linux/arch/mips/philips/nino/prom.c
+ *  arch/mips/philips/nino/prom.c
  *
  *  Copyright (C) 2001 Steven J. Hill (sjhill@realitydiluted.com)
  *
@@ -7,7 +7,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *  
- *  Early initialization code for the Philips Nino.
+ *  Early initialization code for the Philips Nino
  */
 #include <linux/config.h>
 #include <linux/init.h>
@@ -17,29 +17,25 @@
 #include <asm/addrspace.h>
 #include <asm/page.h>
 
-char arcs_cmdline[COMMAND_LINE_SIZE];
+char arcs_cmdline[CL_SIZE];
 
 #ifdef CONFIG_FB_TX3912
-extern u_long tx3912fb_paddr;
-extern u_long tx3912fb_vaddr;
-extern u_long tx3912fb_size;
+extern unsigned long tx3912fb_paddr;
+extern unsigned long tx3912fb_vaddr;
+extern unsigned long tx3912fb_size;
 #endif
 
-/* Do basic initialization */
-void __init prom_init(int argc, char **argv,
-		unsigned long magic, int *prom_vec)
+const char *get_system_type(void)
 {
-	u_long free_end, mem_size;
-	u_int i;
+	return "Philips Nino";
+}
 
-	/*
-	 * collect args and prepare cmd_line
-	 */
-	for (i = 1; i < argc; i++) {
-		strcat(arcs_cmdline, argv[i]);
-		if (i < (argc - 1))
-			strcat(arcs_cmdline, " ");
-	}
+/* Do basic initialization */
+void __init prom_init(int argc, char **argv, unsigned long magic, int *prom_vec)
+{
+	unsigned long mem_size;
+
+	strcpy(arcs_cmdline, "console=tty0 console=ttyS0,115200");
 
 	mips_machgroup = MACH_GROUP_PHILIPS;
 	mips_machtype = MACH_PHILIPS_NINO;
@@ -53,6 +49,9 @@ void __init prom_init(int argc, char **argv,
 #endif
 
 #ifdef CONFIG_FB_TX3912
+{
+	unsigned long free_end;
+
 	/*
 	 * The LCD controller requires that the framebuffer
 	 * start address fall within a 1MB segment and is
@@ -70,6 +69,7 @@ void __init prom_init(int argc, char **argv,
 	 */
 	tx3912fb_paddr = PHYSADDR(free_end);
 	tx3912fb_vaddr = KSEG1ADDR(free_end);
+}
 #else
 	add_memory_region(0, mem_size, BOOT_MEM_RAM); 
 #endif

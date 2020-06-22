@@ -14,4 +14,7 @@
 #define iu_eblock	u.bfs_i.i_eblock
 
 #define printf(format, args...) \
-	printk(KERN_ERR "BFS-fs: " __FUNCTION__ "(): " format, ## args)
+do { \
+	printk(KERN_ERR "BFS-fs: %s(): ", __FUNCTION__); \
+	printk(format, args); \
+} while (0)

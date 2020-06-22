@@ -39,9 +39,11 @@ static void debug_printf(char *fmt, ...)
 #define PIXFORMAT_8BPP		0
 #define PIXFORMAT_16BPP		1
 #define PIXFORMAT_24BPP		2
+#define PIXFORMAT_32BPP		3
 
 #define VISUALID_256		1
 #define VISUALID_64K		2
+#define VISUALID_16M_32		3
 #define VISUALID_16M		4
 #define VISUALID_32K		6
 

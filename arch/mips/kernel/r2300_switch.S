@@ -10,15 +10,15 @@
  * Further modifications to make this work:
  * Copyright (c) 1998-2000 Harald Koerfgen
  */
+#include <linux/config.h>
 #include <asm/asm.h>
-#include <asm/bootinfo.h>
 #include <asm/cachectl.h>
 #include <asm/current.h>
 #include <asm/fpregdef.h>
 #include <asm/mipsregs.h>
 #include <asm/offset.h>
 #include <asm/page.h>
-#include <asm/pgtable.h>
+#include <asm/pgtable-bits.h>
 #include <asm/processor.h>
 #include <asm/regdef.h>
 #include <asm/stackframe.h>
@@ -72,7 +72,7 @@ LEAF(resume)
 
 LEAF(lazy_fpu_switch)
 	mfc0	t0, CP0_STATUS			# enable cp1
-	li	t3, 0x20000000
+	li	t3, ST0_CU1
 	or	t0, t3
 	mtc0	t0, CP0_STATUS
 
@@ -118,7 +118,7 @@ LEAF(restore_fp)
 
 LEAF(init_fpu)
 	mfc0	t0, CP0_STATUS
-	li	t1, 0x20000000
+	li	t1, ST0_CU1
 	or	t0, t1
 	mtc0	t0, CP0_STATUS
 

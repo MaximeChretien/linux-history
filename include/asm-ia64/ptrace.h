@@ -247,7 +247,33 @@ force_successful_syscall_return (void)
 
 #endif /* !__KERNEL__ */
 
+/* pt_all_user_regs is used for PTRACE_GETREGS PTRACE_SETREGS */
+struct pt_all_user_regs {
+	unsigned long nat;
+	unsigned long cr_iip;
+	unsigned long cfm;
+	unsigned long cr_ipsr;
+	unsigned long pr;
+
+	unsigned long gr[32];
+	unsigned long br[8];
+	unsigned long ar[128];
+	struct ia64_fpreg fr[128];
+};
+
 #endif /* !__ASSEMBLY__ */
+
+/* indices to application-registers array in pt_all_user_regs */
+#define PT_AUR_RSC	16
+#define PT_AUR_BSP	17
+#define PT_AUR_BSPSTORE	18
+#define PT_AUR_RNAT	19
+#define PT_AUR_CCV	32
+#define PT_AUR_UNAT	36
+#define PT_AUR_FPSR	40
+#define PT_AUR_PFS	64
+#define PT_AUR_LC	65
+#define PT_AUR_EC	66
 
 /*
  * The numbers chosen here are somewhat arbitrary but absolutely MUST
@@ -256,5 +282,7 @@ force_successful_syscall_return (void)
 #define PTRACE_SINGLEBLOCK	12	/* resume execution until next branch */
 #define PTRACE_GETSIGINFO	13	/* get child's siginfo structure */
 #define PTRACE_SETSIGINFO	14	/* set child's siginfo structure */
+#define PTRACE_GETREGS		18	/* get all registers (pt_all_user_regs) in one shot */
+#define PTRACE_SETREGS		19	/* set all registers (pt_all_user_regs) in one shot */
 
 #endif /* _ASM_IA64_PTRACE_H */

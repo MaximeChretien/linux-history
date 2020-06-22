@@ -1,7 +1,7 @@
 /*
     btaudio - bt878 audio dma driver for linux 2.4.x
 
-    (c) 2000 Gerd Knorr <kraxel@bytesex.org>
+    (c) 2000-2002 Gerd Knorr <kraxel@bytesex.org>
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -33,6 +33,7 @@
 #include <linux/sound.h>
 #include <linux/soundcard.h>
 #include <linux/slab.h>
+#include <linux/kdev_t.h>
 #include <asm/uaccess.h>
 #include <asm/io.h>
 
@@ -300,7 +301,7 @@ static void stop_recording(struct btaudio *bta)
 
 static int btaudio_mixer_open(struct inode *inode, struct file *file)
 {
-	int minor = MINOR(inode->i_rdev);
+	int minor = minor(inode->i_rdev);
 	struct btaudio *bta;
 
 	for (bta = btaudios; bta != NULL; bta = bta->next)
@@ -459,7 +460,7 @@ static int btaudio_dsp_open(struct inode *inode, struct file *file,
 
 static int btaudio_dsp_open_digital(struct inode *inode, struct file *file)
 {
-	int minor = MINOR(inode->i_rdev);
+	int minor = minor(inode->i_rdev);
 	struct btaudio *bta;
 
 	for (bta = btaudios; bta != NULL; bta = bta->next)
@@ -475,7 +476,7 @@ static int btaudio_dsp_open_digital(struct inode *inode, struct file *file)
 
 static int btaudio_dsp_open_analog(struct inode *inode, struct file *file)
 {
-	int minor = MINOR(inode->i_rdev);
+	int minor = minor(inode->i_rdev);
 	struct btaudio *bta;
 
 	for (bta = btaudios; bta != NULL; bta = bta->next)
@@ -682,7 +683,7 @@ static int btaudio_dsp_ioctl(struct inode *inode, struct file *file,
 		return put_user((bta->channels)-1, (int *)arg);
 
         case SNDCTL_DSP_CHANNELS:
-		if (!analog) {
+		if (!bta->analog) {
 			if (get_user(val, (int*)arg))
 				return -EFAULT;
 			bta->channels    = (val > 1) ? 2 : 1;
@@ -697,7 +698,7 @@ static int btaudio_dsp_ioctl(struct inode *inode, struct file *file,
 		return put_user(bta->channels, (int *)arg);
 		
         case SNDCTL_DSP_GETFMTS: /* Returns a mask */
-		if (analog)
+		if (bta->analog)
 			return put_user(AFMT_S16_LE|AFMT_S8, (int*)arg);
 		else
 			return put_user(AFMT_S16_LE, (int*)arg);
@@ -706,7 +707,7 @@ static int btaudio_dsp_ioctl(struct inode *inode, struct file *file,
 		if (get_user(val, (int*)arg))
 			return -EFAULT;
                 if (val != AFMT_QUERY) {
-			if (analog)
+			if (bta->analog)
 				bta->bits = (val == AFMT_S8) ? 8 : 16;
 			else
 				bta->bits = 16;
@@ -783,7 +784,7 @@ static unsigned int btaudio_dsp_poll(struct file *file, struct poll_table_struct
 
 	poll_wait(file, &bta->readq, wait);
 
-	if (0 == bta->read_count)
+	if (0 != bta->read_count)
 		mask |= (POLLIN | POLLRDNORM);
 
 	return mask;
@@ -886,10 +887,8 @@ static int __devinit btaudio_probe(struct pci_dev *pci_dev,
 
 	bta = kmalloc(sizeof(*bta),GFP_ATOMIC);
 	if (!bta) {
-		printk(KERN_WARNING 
-		       "btaudio: not enough memory\n");
 		rc = -ENOMEM;
-		goto fail1;
+		goto fail0;
 	}
 	memset(bta,0,sizeof(*bta));
 
@@ -942,6 +941,8 @@ static int __devinit btaudio_probe(struct pci_dev *pci_dev,
 			       "btaudio: can't register digital dsp (rc=%d)\n",rc);
 			goto fail2;
 		}
+		printk(KERN_INFO "btaudio: registered device dsp%d [digital]\n",
+		       bta->dsp_digital >> 4);
 	}
 	if (analog) {
 		rc = bta->dsp_analog =
@@ -951,16 +952,17 @@ static int __devinit btaudio_probe(struct pci_dev *pci_dev,
 			       "btaudio: can't register analog dsp (rc=%d)\n",rc);
 			goto fail3;
 		}
+		printk(KERN_INFO "btaudio: registered device dsp%d [analog]\n",
+		       bta->dsp_analog >> 4);
 		rc = bta->mixer_dev = register_sound_mixer(&btaudio_mixer_fops,mixer);
 		if (rc < 0) {
 			printk(KERN_WARNING
 			       "btaudio: can't register mixer (rc=%d)\n",rc);
 			goto fail4;
 		}
+		printk(KERN_INFO "btaudio: registered device mixer%d\n",
+		       bta->mixer_dev >> 4);
 	}
-	if (debug)
-		printk(KERN_DEBUG "btaudio: minors: digital=%d, analog=%d, mixer=%d\n",
-		       bta->dsp_digital, bta->dsp_analog, bta->mixer_dev);
 
 	/* hook into linked list */
 	bta->next = btaudios;
@@ -977,9 +979,10 @@ static int __devinit btaudio_probe(struct pci_dev *pci_dev,
  fail2:
         free_irq(bta->irq,bta);	
  fail1:
+	kfree(bta);
+ fail0:
 	release_mem_region(pci_resource_start(pci_dev,0),
 			   pci_resource_len(pci_dev,0));
-	kfree(bta);
 	return rc;
 }
 
@@ -1039,16 +1042,16 @@ static struct pci_driver btaudio_pci_driver = {
         remove:   __devexit_p(btaudio_remove),
 };
 
-int btaudio_init_module(void)
+static int btaudio_init_module(void)
 {
 	printk(KERN_INFO "btaudio: driver version 0.6 loaded [%s%s%s]\n",
-	       analog ? "analog" : "",
+	       digital ? "digital" : "",
 	       analog && digital ? "+" : "",
-	       digital ? "digital" : "");
+	       analog ? "analog" : "");
 	return pci_module_init(&btaudio_pci_driver);
 }
 
-void btaudio_cleanup_module(void)
+static void btaudio_cleanup_module(void)
 {
 	pci_unregister_driver(&btaudio_pci_driver);
 	return;

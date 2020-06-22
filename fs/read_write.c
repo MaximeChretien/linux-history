@@ -2,6 +2,21 @@
  *  linux/fs/read_write.c
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
+ *  Minor pieces Copyright (C) 2002 Red Hat Inc, All Rights Reserved
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <linux/slab.h> 
@@ -203,7 +218,7 @@ static ssize_t do_readv_writev(int type, struct file *file,
 	typedef ssize_t (*io_fn_t)(struct file *, char *, size_t, loff_t *);
 	typedef ssize_t (*iov_fn_t)(struct file *, const struct iovec *, unsigned long, loff_t *);
 
-	size_t tot_len;
+	ssize_t tot_len;
 	struct iovec iovstack[UIO_FASTIOV];
 	struct iovec *iov=iovstack;
 	ssize_t ret, i;
@@ -233,17 +248,23 @@ static ssize_t do_readv_writev(int type, struct file *file,
 	if (copy_from_user(iov, vector, count*sizeof(*vector)))
 		goto out;
 
-	/* BSD readv/writev returns EINVAL if one of the iov_len
-	   values < 0 or tot_len overflowed a 32-bit integer. -ink */
+	/*
+	 * Single unix specification:
+	 * We should -EINVAL if an element length is not >= 0 and fitting an ssize_t
+	 * The total length is fitting an ssize_t
+	 *
+	 * Be careful here because iov_len is a size_t not an ssize_t
+	 */
+	 
 	tot_len = 0;
 	ret = -EINVAL;
 	for (i = 0 ; i < count ; i++) {
-		size_t tmp = tot_len;
-		int len = iov[i].iov_len;
-		if (len < 0)
+		ssize_t tmp = tot_len;
+		ssize_t len = (ssize_t) iov[i].iov_len;
+		if (len < 0)	/* size_t not fitting an ssize_t .. */
 			goto out;
-		(u32)tot_len += len;
-		if (tot_len < tmp || tot_len < (u32)len)
+		tot_len += len;
+		if (tot_len < tmp) /* maths overflow on the ssize_t */
 			goto out;
 	}
 

@@ -57,10 +57,10 @@ __set_bit (int nr, volatile void *addr)
 }
 
 /*
- * clear_bit() doesn't provide any barrier for the compiler.
+ * clear_bit() has "acquire" semantics.
  */
 #define smp_mb__before_clear_bit()	smp_mb()
-#define smp_mb__after_clear_bit()	smp_mb()
+#define smp_mb__after_clear_bit()	do { /* skip */; } while (0)
 
 /**
  * clear_bit - Clears a bit in memory
@@ -357,6 +357,8 @@ find_next_zero_bit (void *addr, unsigned long size, unsigned long offset)
 	tmp = *p;
 found_first:
 	tmp |= ~0UL << size;
+	if (tmp == ~0UL)		/* any bits zero? */
+		return result + size;	/* nope */
 found_middle:
 	return result + ffz(tmp);
 }

@@ -12,6 +12,7 @@
 #define __ASM_SYSTEM_H
 
 #include <linux/config.h>
+#include <asm/types.h>
 #ifdef __KERNEL__
 #include <asm/lowcore.h>
 #endif
@@ -23,7 +24,7 @@
                 break;                                                       \
 	save_fp_regs1(&prev->thread.fp_regs);                                \
 	restore_fp_regs1(&next->thread.fp_regs);              		     \
-	last = resume(&prev->thread,&next->thread);                          \
+	last = resume(prev,next);					     \
 } while (0)
 
 struct task_struct;
@@ -97,8 +98,6 @@ static inline unsigned long __xchg(unsigned long x, void * ptr, int size)
                                 : "+d&" (x) : "a" (ptr)
                                 : "memory", "cc", "0" );
                         break;
-               default:
-                        abort();
         }
         return x;
 }
@@ -132,24 +131,24 @@ static inline unsigned long __xchg(unsigned long x, void * ptr, int size)
 #define __sti() ({ \
         __u8 dummy; \
         __asm__ __volatile__ ( \
-                "stosm %0,0x03" : "=m" (dummy) : : "memory"); \
+                "stosm 0(%0),0x03" : : "a" (&dummy) : "memory"); \
         })
 
 #define __cli() ({ \
         __u32 flags; \
         __asm__ __volatile__ ( \
-                "stnsm %0,0xFC" : "=m" (flags) : : "memory"); \
+                "stnsm 0(%0),0xFC" : : "a" (&flags) : "memory"); \
         flags; \
         })
 
 #define __save_flags(x) \
-        __asm__ __volatile__("stosm %0,0" : "=m" (x) : : "memory")
+        __asm__ __volatile__("stosm 0(%0),0" : : "a" (&x) : "memory")
 
 #define __restore_flags(x) \
-        __asm__ __volatile__("ssm   %0" : : "m" (x) : "memory")
+        __asm__ __volatile__("ssm   0(%0)" : : "a" (&x) : "memory")
 
 #define __load_psw(psw) \
-	__asm__ __volatile__("lpsw %0" : : "m" (psw) : "cc" );
+	__asm__ __volatile__("lpsw 0(%0)" : : "a" (&psw) : "cc" );
 
 #define __ctl_load(array, low, high) ({ \
 	__asm__ __volatile__ ( \
@@ -244,7 +243,7 @@ extern void smp_ctl_clear_bit(int cr, int bit);
 #endif
 
 #ifdef __KERNEL__
-extern struct task_struct *resume(void *,void *);
+extern struct task_struct *resume(void *, void *);
 
 extern int save_fp_regs1(s390_fp_regs *fpregs);
 extern void save_fp_regs(s390_fp_regs *fpregs);

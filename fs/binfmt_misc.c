@@ -38,7 +38,7 @@ enum {Enabled, Magic};
 
 typedef struct {
 	struct list_head list;
-	int flags;			/* type, status, etc. */
+	unsigned long flags;		/* type, status, etc. */
 	int offset;			/* offset of magic */
 	int size;			/* size of magic/mask */
 	char *magic;			/* magic or filename extension */
@@ -600,11 +600,6 @@ static struct dentry * bm_lookup(struct inode *dir, struct dentry *dentry)
 	return NULL;
 }
 
-static struct file_operations bm_dir_operations = {
-	read:		generic_read_dir,
-	readdir:	dcache_readdir,
-};
-
 static struct inode_operations bm_dir_inode_operations = {
 	lookup:		bm_lookup,
 };
@@ -646,7 +641,7 @@ static struct super_block *bm_read_super(struct super_block * sb, void * data, i
 	if (!inode)
 		return NULL;
 	inode->i_op = &bm_dir_inode_operations;
-	inode->i_fop = &bm_dir_operations;
+	inode->i_fop = &dcache_dir_ops;
 	dentry[0] = d_alloc_root(inode);
 	if (!dentry[0]) {
 		iput(inode);

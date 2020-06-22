@@ -9,141 +9,194 @@
 
 #include <asm/hardware.h>
 #include <asm/irq.h>
-#include <asm/arch/pcmcia.h>
 #include <asm/arch/assabet.h>
 
-static int assabet_pcmcia_init(struct pcmcia_init *init){
-  int irq, res;
+#include "sa1100_generic.h"
 
-  /* Enable CF bus: */
-  ASSABET_BCR_clear(ASSABET_BCR_CF_BUS_OFF);
+static struct irqs {
+	int irq;
+	unsigned int gpio;
+	const char *str;
+} irqs[] = {
+	{ ASSABET_IRQ_GPIO_CF_CD,   ASSABET_GPIO_CF_CD,   "CF_CD"   },
+	{ ASSABET_IRQ_GPIO_CF_BVD2, ASSABET_GPIO_CF_BVD2, "CF_BVD2" },
+	{ ASSABET_IRQ_GPIO_CF_BVD1, ASSABET_GPIO_CF_BVD1, "CF_BVD1" },
+};
 
-  /* All those are inputs */
-  GPDR &= ~(ASSABET_GPIO_CF_CD | ASSABET_GPIO_CF_BVD2 | ASSABET_GPIO_CF_BVD1 | ASSABET_GPIO_CF_IRQ);
+static int assabet_pcmcia_init(struct pcmcia_init *init)
+{
+	int i, res;
 
-  /* Set transition detect */
-  set_GPIO_IRQ_edge( ASSABET_GPIO_CF_CD|ASSABET_GPIO_CF_BVD2|ASSABET_GPIO_CF_BVD1, GPIO_BOTH_EDGES );
-  set_GPIO_IRQ_edge( ASSABET_GPIO_CF_IRQ, GPIO_FALLING_EDGE );
+	/* Set transition detect */
+	set_GPIO_IRQ_edge(ASSABET_GPIO_CF_IRQ, GPIO_FALLING_EDGE);
 
-  /* Register interrupts */
-  irq = ASSABET_IRQ_GPIO_CF_CD;
-  res = request_irq( irq, init->handler, SA_INTERRUPT, "CF_CD", NULL );
-  if( res < 0 ) goto irq_err;
-  irq = ASSABET_IRQ_GPIO_CF_BVD2;
-  res = request_irq( irq, init->handler, SA_INTERRUPT, "CF_BVD2", NULL );
-  if( res < 0 ) goto irq_err;
-  irq = ASSABET_IRQ_GPIO_CF_BVD1;
-  res = request_irq( irq, init->handler, SA_INTERRUPT, "CF_BVD1", NULL );
-  if( res < 0 ) goto irq_err;
+	/* Register interrupts */
+	for (i = 0; i < ARRAY_SIZE(irqs); i++) {
+		set_GPIO_IRQ_edge(irqs[i].gpio, GPIO_NO_EDGES);
+		res = request_irq(irqs[i].irq, init->handler, SA_INTERRUPT,
+				  irqs[i].str, NULL);
+		if (res)
+			goto irq_err;
+	}
 
-  /* There's only one slot, but it's "Slot 1": */
-  return 2;
+	/* There's only one slot, but it's "Slot 1": */
+	return 2;
 
-irq_err:
-  printk( KERN_ERR "%s: Request for IRQ %u failed\n", __FUNCTION__, irq );
-  return -1;
+ irq_err:
+	printk(KERN_ERR "%s: request for IRQ%d failed\n",
+		__FUNCTION__, irqs[i].irq);
+
+	while (i--)
+		free_irq(irqs[i].irq, NULL);
+
+	return -1;
 }
 
+/*
+ * Release all resources.
+ */
 static int assabet_pcmcia_shutdown(void)
 {
-  /* disable IRQs */
-  free_irq( ASSABET_IRQ_GPIO_CF_CD, NULL );
-  free_irq( ASSABET_IRQ_GPIO_CF_BVD2, NULL );
-  free_irq( ASSABET_IRQ_GPIO_CF_BVD1, NULL );
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(irqs); i++)
+		free_irq(irqs[i].irq, NULL);
   
-  /* Disable CF bus: */
-  ASSABET_BCR_set(ASSABET_BCR_CF_BUS_OFF);
-
-  return 0;
+	return 0;
 }
 
-static int assabet_pcmcia_socket_state(struct pcmcia_state_array
-				       *state_array){
-  unsigned long levels;
-
-  if(state_array->size<2) return -1;
-
-  memset(state_array->state, 0, 
-	 (state_array->size)*sizeof(struct pcmcia_state));
-
-  levels=GPLR;
-
-  state_array->state[1].detect=((levels & ASSABET_GPIO_CF_CD)==0)?1:0;
-
-  state_array->state[1].ready=(levels & ASSABET_GPIO_CF_IRQ)?1:0;
-
-  state_array->state[1].bvd1=(levels & ASSABET_GPIO_CF_BVD1)?1:0;
-
-  state_array->state[1].bvd2=(levels & ASSABET_GPIO_CF_BVD2)?1:0;
-
-  state_array->state[1].wrprot=0; /* Not available on Assabet. */
-
-  state_array->state[1].vs_3v=1;  /* Can only apply 3.3V on Assabet. */
-
-  state_array->state[1].vs_Xv=0;
-
-  return 1;
-}
-
-static int assabet_pcmcia_get_irq_info(struct pcmcia_irq_info *info){
-
-  if(info->sock>1) return -1;
-
-  if(info->sock==1)
-    info->irq=ASSABET_IRQ_GPIO_CF_IRQ;
-
-  return 0;
-}
-
-static int assabet_pcmcia_configure_socket(const struct pcmcia_configure
-					   *configure)
+static int
+assabet_pcmcia_socket_state(struct pcmcia_state_array *state_array)
 {
-  unsigned long value, flags;
+	unsigned long levels;
 
-  if(configure->sock>1) return -1;
+	if (state_array->size < 2)
+		return -1;
 
-  if(configure->sock==0) return 0;
+	levels = GPLR;
 
-  save_flags_cli(flags);
+	state_array->state[1].detect = (levels & ASSABET_GPIO_CF_CD) ? 0 : 1;
+	state_array->state[1].ready  = (levels & ASSABET_GPIO_CF_IRQ) ? 1 : 0;
+	state_array->state[1].bvd1   = (levels & ASSABET_GPIO_CF_BVD1) ? 1 : 0;
+	state_array->state[1].bvd2   = (levels & ASSABET_GPIO_CF_BVD2) ? 1 : 0;
+	state_array->state[1].wrprot = 0; /* Not available on Assabet. */
+	state_array->state[1].vs_3v  = 1; /* Can only apply 3.3V on Assabet. */
+	state_array->state[1].vs_Xv  = 0;
 
-  value = BCR_value;
+	return 1;
+}
 
-  switch(configure->vcc){
-  case 0:
-    value &= ~ASSABET_BCR_CF_PWR;
-    break;
+static int assabet_pcmcia_get_irq_info(struct pcmcia_irq_info *info)
+{
+	if (info->sock > 1)
+		return -1;
 
-  case 50:
-    printk(KERN_WARNING "%s(): CS asked for 5V, applying 3.3V...\n",
-	   __FUNCTION__);
+	if (info->sock == 1)
+		info->irq = ASSABET_IRQ_GPIO_CF_IRQ;
 
-  case 33:  /* Can only apply 3.3V to the CF slot. */
-    value |= ASSABET_BCR_CF_PWR;
-    break;
+	return 0;
+}
 
-  default:
-    printk(KERN_ERR "%s(): unrecognized Vcc %u\n", __FUNCTION__,
-	   configure->vcc);
-    restore_flags(flags);
-    return -1;
-  }
+static int
+assabet_pcmcia_configure_socket(const struct pcmcia_configure *configure)
+{
+	unsigned int mask;
 
-  value = (configure->reset) ? (value | ASSABET_BCR_CF_RST) : (value & ~ASSABET_BCR_CF_RST);
+	if (configure->sock > 1)
+		return -1;
 
-  /* Silently ignore Vpp, output enable, speaker enable. */
+	if (configure->sock == 0)
+		return 0;
 
-  ASSABET_BCR = BCR_value = value;
+	switch (configure->vcc) {
+	case 0:
+		mask = 0;
+		break;
 
-  restore_flags(flags);
+	case 50:
+		printk(KERN_WARNING "%s(): CS asked for 5V, applying 3.3V...\n",
+			__FUNCTION__);
 
-  return 0;
+	case 33:  /* Can only apply 3.3V to the CF slot. */
+		mask = ASSABET_BCR_CF_PWR;
+		break;
+
+	default:
+		printk(KERN_ERR "%s(): unrecognized Vcc %u\n", __FUNCTION__,
+			configure->vcc);
+		return -1;
+	}
+
+	/* Silently ignore Vpp, output enable, speaker enable. */
+
+	if (configure->reset)
+		mask |= ASSABET_BCR_CF_RST;
+
+	ASSABET_BCR_frob(ASSABET_BCR_CF_RST | ASSABET_BCR_CF_PWR, mask);
+
+	/*
+	 * Handle suspend mode properly.  This prevents a
+	 * flood of IRQs from the CF device.
+	 */
+	if (configure->irq)
+		enable_irq(ASSABET_IRQ_GPIO_CF_IRQ);
+	else
+		disable_irq(ASSABET_IRQ_GPIO_CF_IRQ);
+
+	return 0;
+}
+
+/*
+ * Enable card status IRQs on (re-)initialisation.  This can
+ * be called at initialisation, power management event, or
+ * pcmcia event.
+ */
+static int assabet_pcmcia_socket_init(int sock)
+{
+	int i;
+
+	if (sock == 1) {
+		/*
+		 * Enable CF bus
+		 */
+		ASSABET_BCR_clear(ASSABET_BCR_CF_BUS_OFF);
+
+		for (i = 0; i < ARRAY_SIZE(irqs); i++)
+			set_GPIO_IRQ_edge(irqs[i].gpio, GPIO_BOTH_EDGES);
+	}
+
+	return 0;
+}
+
+/*
+ * Disable card status IRQs on suspend.
+ */
+static int assabet_pcmcia_socket_suspend(int sock)
+{
+	int i;
+
+	if (sock == 1) {
+		for (i = 0; i < ARRAY_SIZE(irqs); i++)
+			set_GPIO_IRQ_edge(irqs[i].gpio, GPIO_NO_EDGES);
+
+		/*
+		 * Tristate the CF bus signals.  Also assert CF
+		 * reset as per user guide page 4-11.
+		 */
+		ASSABET_BCR_set(ASSABET_BCR_CF_BUS_OFF | ASSABET_BCR_CF_RST);
+	}
+
+	return 0;
 }
 
 struct pcmcia_low_level assabet_pcmcia_ops = { 
-  assabet_pcmcia_init,
-  assabet_pcmcia_shutdown,
-  assabet_pcmcia_socket_state,
-  assabet_pcmcia_get_irq_info,
-  assabet_pcmcia_configure_socket
+	init:			assabet_pcmcia_init,
+	shutdown:		assabet_pcmcia_shutdown,
+	socket_state:		assabet_pcmcia_socket_state,
+	get_irq_info:		assabet_pcmcia_get_irq_info,
+	configure_socket:	assabet_pcmcia_configure_socket,
+
+	socket_init:		assabet_pcmcia_socket_init,
+	socket_suspend:		assabet_pcmcia_socket_suspend,
 };
 

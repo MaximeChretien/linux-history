@@ -3,7 +3,7 @@
 
 extern void sun3x_gettod (int *yearp, int *monp, int *dayp,
                    int *hourp, int *minp, int *secp);
-extern int sun3x_hwclk(int set, struct hwclk_time *t);
+extern int sun3x_hwclk(int set, struct rtc_time *t);
 unsigned long sun3x_gettimeoffset (void);
 void sun3x_sched_init(void (*vector)(int, void *, struct pt_regs *));
 

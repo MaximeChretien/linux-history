@@ -12,7 +12,6 @@ struct nfs_inode_info {
 	/*
 	 * The 64bit 'inode number'
 	 */
-	__u64 fsid;
 	__u64 fileid;
 
 	/*
@@ -50,6 +49,12 @@ struct nfs_inode_info {
 	unsigned long		attrtimeo_timestamp;
 
 	/*
+	 * Timestamp that dates the change made to read_cache_mtime.
+	 * This is of use for dentry revalidation
+	 */
+	unsigned long		cache_mtime_jiffies;
+
+	/*
 	 * This is the cookie verifier used for NFSv3 readdir
 	 * operations
 	 */
@@ -67,11 +72,6 @@ struct nfs_inode_info {
 				ndirty,
 				ncommit,
 				npages;
-
-	/* Flush daemon info */
-	struct inode		*hash_next,
-				*hash_prev;
-	unsigned long		nextscan;
 
 	/* Credentials for shared mmap */
 	struct rpc_cred		*mm_cred;

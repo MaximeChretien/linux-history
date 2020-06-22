@@ -102,19 +102,44 @@ if [ "$CONFIG_ALPHA_CABRIOLET" = "y" ]
 then
 	define_bool CONFIG_ALPHA_EB64P y
 fi
-if [ "$CONFIG_ALPHA_EB164" = "y" -o "$CONFIG_ALPHA_PC164" = "y" \
-	-o "$CONFIG_ALPHA_ALCOR" = "y" -o "$CONFIG_ALPHA_TAKARA" = "y" ]
+if [ "$CONFIG_ALPHA_ALCOR" = "y" ]
+then
+	define_bool CONFIG_ALPHA_EV5 y
+	define_bool CONFIG_ALPHA_CIA y
+	bool 'EV56 CPU (speed >= 366MHz)?' CONFIG_ALPHA_EV56
+fi
+if [ "$CONFIG_ALPHA_EB164" = "y" ]
 then
 	define_bool CONFIG_ALPHA_EV5 y
 	define_bool CONFIG_ALPHA_CIA y
 fi
-if [ "$CONFIG_ALPHA_MIKASA" = "y" -o "$CONFIG_ALPHA_NORITAKE" = "y" ]
+if [ "$CONFIG_ALPHA_PC164" = "y" -o "$CONFIG_ALPHA_TAKARA" = "y" ]
+then
+	define_bool CONFIG_ALPHA_EV5 y
+	define_bool CONFIG_ALPHA_EV56 y
+	define_bool CONFIG_ALPHA_CIA y
+fi
+if [ "$CONFIG_ALPHA_MIKASA" = "y" ]
 then
 	bool 'EV5 CPU daughtercard (model 5/xxx)?' CONFIG_ALPHA_PRIMO
 	if [ "$CONFIG_ALPHA_PRIMO" = "y" ]
 	then
 		define_bool CONFIG_ALPHA_EV5 y
 		define_bool CONFIG_ALPHA_CIA y
+		bool 'EV56 CPU (speed >= 333MHz)?' CONFIG_ALPHA_EV56
+	else
+		define_bool CONFIG_ALPHA_EV4 y
+		define_bool CONFIG_ALPHA_APECS y
+	fi
+fi
+if [ "$CONFIG_ALPHA_NORITAKE" = "y" ]
+then
+	bool 'EV5 CPU (model 5/xxx)?' CONFIG_ALPHA_PRIMO
+	if [ "$CONFIG_ALPHA_PRIMO" = "y" ]
+	then
+		define_bool CONFIG_ALPHA_EV5 y
+		define_bool CONFIG_ALPHA_CIA y
+		bool 'EV56 CPU (speed >= 333MHz)?' CONFIG_ALPHA_EV56
 	else
 		define_bool CONFIG_ALPHA_EV4 y
 		define_bool CONFIG_ALPHA_APECS y
@@ -135,6 +160,7 @@ if [ "$CONFIG_ALPHA_MIATA" = "y" -o "$CONFIG_ALPHA_LX164" = "y" \
 	-o "$CONFIG_ALPHA_SX164" = "y" -o "$CONFIG_ALPHA_RUFFIAN" = "y" ]
 then
 	define_bool CONFIG_ALPHA_EV5 y
+	define_bool CONFIG_ALPHA_EV56 y
 	define_bool CONFIG_ALPHA_CIA y
 	define_bool CONFIG_ALPHA_PYXIS y
 fi
@@ -159,10 +185,12 @@ if [ "$CONFIG_ALPHA_RAWHIDE" = "y" ]
 then
 	define_bool CONFIG_ALPHA_EV5 y
 	define_bool CONFIG_ALPHA_MCPCIA y
+	bool 'EV56 CPU (speed >= 400MHz)?' CONFIG_ALPHA_EV56
 fi
 if [ "$CONFIG_ALPHA_RX164" = "y" ]
 then
 	define_bool CONFIG_ALPHA_EV5 y
+	define_bool CONFIG_ALPHA_EV56 y
 	define_bool CONFIG_ALPHA_POLARIS y
 fi
 if [ "$CONFIG_ALPHA_JENSEN" = "y" ]
@@ -250,11 +278,15 @@ if [ "$CONFIG_PROC_FS" = "y" ]; then
 	"ELF		CONFIG_KCORE_ELF	\
 	 A.OUT		CONFIG_KCORE_AOUT" ELF
 fi
-if [ "$CONFIG_PROC_FS" != "n" -a "$CONFIG_ALPHA_SRM" = "y" ]; then
+if [ "$CONFIG_PROC_FS" != "n" ]; then
    tristate 'SRM environment through procfs' CONFIG_SRM_ENV
 fi
  
 tristate 'Kernel support for a.out (ECOFF) binaries' CONFIG_BINFMT_AOUT
+if [ "$CONFIG_BINFMT_AOUT" != "n" ]; then
+	bool '  OSF/1 v4 readv/writev compatibility' CONFIG_OSF4_COMPAT
+fi
+
 tristate 'Kernel support for ELF binaries' CONFIG_BINFMT_ELF
 tristate 'Kernel support for MISC binaries' CONFIG_BINFMT_MISC
 tristate 'Kernel support for Linux/Intel ELF binaries' CONFIG_BINFMT_EM86
@@ -371,9 +403,7 @@ endmenu
 source drivers/usb/Config.in
 source drivers/input/Config.in
 
-if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
-   source net/bluetooth/Config.in
-fi
+source net/bluetooth/Config.in
 
 mainmenu_option next_comment
 comment 'Kernel hacking'

@@ -556,7 +556,7 @@ asmlinkage void schedule(void)
 
 	spin_lock_prefetch(&runqueue_lock);
 
-	if (!current->active_mm) BUG();
+	BUG_ON(!current->active_mm);
 need_resched_back:
 	prev = current;
 	this_cpu = prev->processor;
@@ -675,12 +675,12 @@ repeat_schedule:
 		struct mm_struct *mm = next->mm;
 		struct mm_struct *oldmm = prev->active_mm;
 		if (!mm) {
-			if (next->active_mm) BUG();
+			BUG_ON(next->active_mm);
 			next->active_mm = oldmm;
 			atomic_inc(&oldmm->mm_count);
 			enter_lazy_tlb(oldmm, next, this_cpu);
 		} else {
-			if (next->active_mm != mm) BUG();
+			BUG_ON(next->active_mm != mm);
 			switch_mm(oldmm, mm, next, this_cpu);
 		}
 

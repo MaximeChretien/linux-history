@@ -110,6 +110,8 @@
 #define  RL5C4XX_CMD_SHIFT		4
 #define  RL5C4XX_HOLD_MASK		0x1c00
 #define  RL5C4XX_HOLD_SHIFT		10
+#define  RL5C4XX_MISC_CONTROL           0x2F /* 8 bit */
+#define  RL5C4XX_ZV_ENABLE              0x08
 
 #ifdef __YENTA_H
 
@@ -134,14 +136,45 @@ static int ricoh_open(pci_socket_t *socket)
 	return 0;
 }
 
+static void ricoh_zoom_video(pci_socket_t *socket, int onoff)
+{
+        u8 reg;
+
+        reg = exca_readb(socket, RL5C4XX_MISC_CONTROL);
+        if (onoff)
+                /* Zoom zoom, we will all go together, zoom zoom, zoom zoom */
+                reg |=  RL5C4XX_ZV_ENABLE;
+        else
+                reg &= ~RL5C4XX_ZV_ENABLE;
+	
+        exca_writeb(socket, RL5C4XX_MISC_CONTROL, reg);
+}
+
+static void ricoh_set_zv(pci_socket_t *socket)
+{
+        if(socket->dev->vendor == PCI_VENDOR_ID_RICOH)
+        {
+                switch(socket->dev->device)
+                {
+                        /* There may be more .. */
+		case  PCI_DEVICE_ID_RICOH_RL5C478:
+			socket->zoom_video = ricoh_zoom_video;
+			break;  
+                }
+        }
+}
+
+
 static int ricoh_init(pci_socket_t *socket)
 {
 	yenta_init(socket);
+	ricoh_set_zv(socket);
 
 	config_writew(socket, RL5C4XX_MISC, rl_misc(socket));
 	config_writew(socket, RL5C4XX_16BIT_CTL, rl_ctl(socket));
 	config_writew(socket, RL5C4XX_16BIT_IO_0, rl_io(socket));
 	config_writew(socket, RL5C4XX_16BIT_MEM_0, rl_mem(socket));
+
 	return 0;
 }
 

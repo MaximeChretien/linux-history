@@ -9,8 +9,9 @@
 #ifndef _ASM_BITOPS_H
 #define _ASM_BITOPS_H
 
+#include <linux/config.h>
 #include <linux/types.h>
-#include <linux/byteorder/swab.h>		/* sigh ... */
+#include <asm/byteorder.h>		/* sigh ... */
 
 #ifndef __KERNEL__
 #error "Don't do this, sucker ..."
@@ -18,7 +19,6 @@
 
 #include <asm/system.h>
 #include <asm/sgidefs.h>
-#include <asm/mipsregs.h>
 
 /*
  * set_bit - Atomically set a bit in memory
@@ -30,8 +30,7 @@
  * Note that @nr may be almost arbitrarily large; this function is not
  * restricted to acting on a single-word quantity.
  */
-extern __inline__ void
-set_bit(unsigned long nr, volatile void *addr)
+static inline void set_bit(unsigned long nr, volatile void *addr)
 {
 	unsigned long *m = ((unsigned long *) addr) + (nr >> 6);
 	unsigned long temp;
@@ -55,7 +54,7 @@ set_bit(unsigned long nr, volatile void *addr)
  * If it's called on the same region of memory simultaneously, the effect
  * may be that only one operation succeeds.
  */
-extern __inline__ void __set_bit(int nr, volatile void * addr)
+static inline void __set_bit(int nr, volatile void * addr)
 {
 	unsigned long * m = ((unsigned long *) addr) + (nr >> 6);
 
@@ -72,8 +71,7 @@ extern __inline__ void __set_bit(int nr, volatile void * addr)
  * you should call smp_mb__before_clear_bit() and/or smp_mb__after_clear_bit()
  * in order to ensure changes are visible on other processors.
  */
-extern __inline__ void
-clear_bit(unsigned long nr, volatile void *addr)
+static inline void clear_bit(unsigned long nr, volatile void *addr)
 {
 	unsigned long *m = ((unsigned long *) addr) + (nr >> 6);
 	unsigned long temp;
@@ -87,8 +85,8 @@ clear_bit(unsigned long nr, volatile void *addr)
 		: "ir" (~(1UL << (nr & 0x3f))), "m" (*m));
 }
 
-#define smp_mb__before_clear_bit()	barrier()
-#define smp_mb__after_clear_bit()	barrier()
+#define smp_mb__before_clear_bit()	smp_mb()
+#define smp_mb__after_clear_bit()	smp_mb()
 
 /*
  * change_bit - Toggle a bit in memory
@@ -99,8 +97,7 @@ clear_bit(unsigned long nr, volatile void *addr)
  * Note that @nr may be almost arbitrarily large; this function is not
  * restricted to acting on a single-word quantity.
  */
-extern __inline__ void
-change_bit(unsigned long nr, volatile void *addr)
+static inline void change_bit(unsigned long nr, volatile void *addr)
 {
 	unsigned long *m = ((unsigned long *) addr) + (nr >> 6);
 	unsigned long temp;
@@ -123,7 +120,7 @@ change_bit(unsigned long nr, volatile void *addr)
  * If it's called on the same region of memory simultaneously, the effect
  * may be that only one operation succeeds.
  */
-extern __inline__ void __change_bit(int nr, volatile void * addr)
+static inline void __change_bit(int nr, volatile void * addr)
 {
 	unsigned long * m = ((unsigned long *) addr) + (nr >> 6);
 
@@ -138,8 +135,8 @@ extern __inline__ void __change_bit(int nr, volatile void * addr)
  * This operation is atomic and cannot be reordered.  
  * It also implies a memory barrier.
  */
-extern __inline__ unsigned long
-test_and_set_bit(unsigned long nr, volatile void *addr)
+static inline unsigned long test_and_set_bit(unsigned long nr,
+					     volatile void *addr)
 {
 	unsigned long *m = ((unsigned long *) addr) + (nr >> 6);
 	unsigned long temp, res;
@@ -151,6 +148,9 @@ test_and_set_bit(unsigned long nr, volatile void *addr)
 		"scd\t%2, %1\n\t"
 		"beqz\t%2, 1b\n\t"
 		" and\t%2, %0, %3\n\t"
+#ifdef CONFIG_SMP
+		"sync\n\t"
+#endif
 		".set\treorder"
 		: "=&r" (temp), "=m" (*m), "=&r" (res)
 		: "r" (1UL << (nr & 0x3f)), "m" (*m)
@@ -168,8 +168,7 @@ test_and_set_bit(unsigned long nr, volatile void *addr)
  * If two examples of this operation race, one can appear to succeed
  * but actually fail.  You must protect multiple accesses with a lock.
  */
-extern __inline__ int
-__test_and_set_bit(int nr, volatile void * addr)
+static inline int __test_and_set_bit(int nr, volatile void *addr)
 {
 	unsigned long mask, retval;
 	long *a = (unsigned long *) addr;
@@ -190,8 +189,8 @@ __test_and_set_bit(int nr, volatile void * addr)
  * This operation is atomic and cannot be reordered.  
  * It also implies a memory barrier.
  */
-extern __inline__ unsigned long
-test_and_clear_bit(unsigned long nr, volatile void *addr)
+static inline unsigned long test_and_clear_bit(unsigned long nr,
+					       volatile void *addr)
 {
 	unsigned long *m = ((unsigned long *) addr) + (nr >> 6);
 	unsigned long temp, res;
@@ -204,6 +203,9 @@ test_and_clear_bit(unsigned long nr, volatile void *addr)
 		"scd\t%2, %1\n\t"
 		"beqz\t%2, 1b\n\t"
 		" and\t%2, %0, %3\n\t"
+#ifdef CONFIG_SMP
+		"sync\n\t"
+#endif
 		".set\treorder"
 		: "=&r" (temp), "=m" (*m), "=&r" (res)
 		: "r" (1UL << (nr & 0x3f)), "m" (*m)
@@ -221,8 +223,7 @@ test_and_clear_bit(unsigned long nr, volatile void *addr)
  * If two examples of this operation race, one can appear to succeed
  * but actually fail.  You must protect multiple accesses with a lock.
  */
-extern __inline__ int
-__test_and_clear_bit(int nr, volatile void * addr)
+static inline int __test_and_clear_bit(int nr, volatile void * addr)
 {
 	unsigned long mask, retval;
 	unsigned long *a = (unsigned long *) addr;
@@ -243,8 +244,8 @@ __test_and_clear_bit(int nr, volatile void * addr)
  * This operation is atomic and cannot be reordered.  
  * It also implies a memory barrier.
  */
-extern __inline__ unsigned long
-test_and_change_bit(unsigned long nr, volatile void *addr)
+static inline unsigned long test_and_change_bit(unsigned long nr,
+						volatile void *addr)
 {
 	unsigned long *m = ((unsigned long *) addr) + (nr >> 6);
 	unsigned long temp, res;
@@ -256,6 +257,9 @@ test_and_change_bit(unsigned long nr, volatile void *addr)
 		"scd\t%2, %1\n\t"
 		"beqz\t%2, 1b\n\t"
 		" and\t%2, %0, %3\n\t"
+#ifdef CONFIG_SMP
+		"sync\n\t"
+#endif
 		".set\treorder"
 		: "=&r" (temp), "=m" (*m), "=&r" (res)
 		: "r" (1UL << (nr & 0x3f)), "m" (*m)
@@ -273,8 +277,7 @@ test_and_change_bit(unsigned long nr, volatile void *addr)
  * If two examples of this operation race, one can appear to succeed
  * but actually fail.  You must protect multiple accesses with a lock.
  */
-extern __inline__ int
-__test_and_change_bit(int nr, volatile void * addr)
+static inline int __test_and_change_bit(int nr, volatile void *addr)
 {
 	unsigned long mask, retval;
 	unsigned long *a = (unsigned long *) addr;
@@ -291,8 +294,7 @@ __test_and_change_bit(int nr, volatile void * addr)
  * @nr: bit number to test
  * @addr: Address to start counting from
  */
-extern __inline__ unsigned long
-test_bit(int nr, volatile void * addr)
+static inline unsigned long test_bit(int nr, volatile void * addr)
 {
 	return 1UL & (((volatile unsigned long *) addr)[nr >> 6] >> (nr & 0x3f));
 }
@@ -309,8 +311,7 @@ test_bit(int nr, volatile void * addr)
  * Returns the bit-number of the first zero bit, not the number of the byte
  * containing a bit.
  */
-extern __inline__ int
-find_first_zero_bit (void *addr, unsigned size)
+static inline int find_first_zero_bit (void *addr, unsigned size)
 {
 	unsigned long dummy;
 	int res;
@@ -346,8 +347,7 @@ find_first_zero_bit (void *addr, unsigned size)
 		"2:"
 		: "=r" (res), "=r" (dummy), "=r" (addr)
 		: "0" ((signed int) 0), "1" ((unsigned int) 0xffffffff),
-		  "2" (addr), "r" (size)
-		: "$1");
+		  "2" (addr), "r" (size));
 
 	return res;
 }
@@ -358,8 +358,7 @@ find_first_zero_bit (void *addr, unsigned size)
  * @offset: The bitnumber to start searching at
  * @size: The maximum size to search
  */
-extern __inline__ int
-find_next_zero_bit (void * addr, int size, int offset)
+static inline int find_next_zero_bit (void * addr, int size, int offset)
 {
 	unsigned int *p = ((unsigned int *) addr) + (offset >> 5);
 	int set = 0, bit = offset & 31, res;
@@ -380,8 +379,7 @@ find_next_zero_bit (void * addr, int size, int offset)
 			".set\treorder\n"
 			"1:"
 			: "=r" (set), "=r" (dummy)
-			: "0" (0), "1" (1 << bit), "r" (*p)
-			: "$1");
+			: "0" (0), "1" (1 << bit), "r" (*p));
 		if (set < (32 - bit))
 			return set + offset;
 		set = 32 - bit;
@@ -402,20 +400,19 @@ find_next_zero_bit (void * addr, int size, int offset)
  *
  * Undefined if no zero exists, so code should check against ~0UL first.
  */
-extern __inline__ unsigned long ffz(unsigned long word)
+static __inline__ unsigned long ffz(unsigned long word)
 {
-	unsigned long k;
+	int b = 0, s;
 
 	word = ~word;
-	k = 63;
-	if (word & 0x00000000ffffffffUL) { k -= 32; word <<= 32; }
-	if (word & 0x0000ffff00000000UL) { k -= 16; word <<= 16; }
-	if (word & 0x00ff000000000000UL) { k -= 8;  word <<= 8;  }
-	if (word & 0x0f00000000000000UL) { k -= 4;  word <<= 4;  }
-	if (word & 0x3000000000000000UL) { k -= 2;  word <<= 2;  }
-	if (word & 0x4000000000000000UL) { k -= 1; }
+        s = 32; if (word << 32 != 0) s = 0; b += s; word >>= s;
+        s = 16; if (word << 48 != 0) s = 0; b += s; word >>= s;
+        s =  8; if (word << 56 != 0) s = 0; b += s; word >>= s;
+        s =  4; if (word << 60 != 0) s = 0; b += s; word >>= s;
+        s =  2; if (word << 62 != 0) s = 0; b += s; word >>= s;
+        s =  1; if (word << 63 != 0) s = 0; b += s;
 
-	return k;
+	return b;
 }
 
 #ifdef __KERNEL__
@@ -453,8 +450,8 @@ extern __inline__ unsigned long ffz(unsigned long word)
  * @offset: The bitnumber to start searching at
  * @size: The maximum size to search
  */
-extern __inline__ unsigned long
-find_next_zero_bit(void *addr, unsigned long size, unsigned long offset)
+static inline unsigned long find_next_zero_bit(void *addr, unsigned long size,
+					       unsigned long offset)
 {
 	unsigned long *p = ((unsigned long *) addr) + (offset >> 6);
 	unsigned long result = offset & ~63UL;
@@ -501,8 +498,7 @@ found_middle:
 
 #ifdef __MIPSEB__
 
-extern inline int
-ext2_set_bit(int nr,void * addr)
+static inline int ext2_set_bit(int nr,void * addr)
 {
 	int		mask, retval, flags;
 	unsigned char	*ADDR = (unsigned char *) addr;
@@ -516,8 +512,7 @@ ext2_set_bit(int nr,void * addr)
 	return retval;
 }
 
-extern inline int
-ext2_clear_bit(int nr, void * addr)
+static inline int ext2_clear_bit(int nr, void * addr)
 {
 	int		mask, retval, flags;
 	unsigned char	*ADDR = (unsigned char *) addr;
@@ -531,8 +526,7 @@ ext2_clear_bit(int nr, void * addr)
 	return retval;
 }
 
-extern inline int
-ext2_test_bit(int nr, const void * addr)
+static inline int ext2_test_bit(int nr, const void * addr)
 {
 	int			mask;
 	const unsigned char	*ADDR = (const unsigned char *) addr;
@@ -545,8 +539,9 @@ ext2_test_bit(int nr, const void * addr)
 #define ext2_find_first_zero_bit(addr, size) \
         ext2_find_next_zero_bit((addr), (size), 0)
 
-extern inline unsigned int
-ext2_find_next_zero_bit(void *addr, unsigned long size, unsigned long offset)
+static inline unsigned int ext2_find_next_zero_bit(void *addr,
+						   unsigned long size,
+						   unsigned long offset)
 {
 	unsigned int *p = ((unsigned int *) addr) + (offset >> 5);
 	unsigned int result = offset & ~31UL;

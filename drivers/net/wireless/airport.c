@@ -1,4 +1,4 @@
-/* airport.c 0.09b
+/* airport.c 0.11b
  *
  * A driver for "Hermes" chipset based Apple Airport wireless
  * card.
@@ -42,19 +42,20 @@
 #include "hermes.h"
 #include "orinoco.h"
 
-static char version[] __initdata = "airport.c 0.09b (Benjamin Herrenschmidt <benh@kernel.crashing.org>)";
+static char version[] __initdata = "airport.c 0.11b (Benjamin Herrenschmidt <benh@kernel.crashing.org>)";
 MODULE_AUTHOR("Benjamin Herrenschmidt <benh@kernel.crashing.org>");
 MODULE_DESCRIPTION("Driver for the Apple Airport wireless card.");
 MODULE_LICENSE("Dual MPL/GPL");
 EXPORT_NO_SYMBOLS;
 
+#define AIRPORT_IO_LEN	(0x1000)	/* one page */
+
 struct airport {
 	struct device_node* node;
+	void *vaddr;
 	int irq_requested;
 	int ndev_registered;
 	int open;
-	/* Common structure (fully included), see orinoco.h */
-	struct orinoco_private priv;
 };
 
 #ifdef CONFIG_PMAC_PBOOK
@@ -68,8 +69,8 @@ static struct pmu_sleep_notifier airport_sleep_notifier = {
  * Function prototypes
  */
 
-static struct orinoco_private* airport_attach(struct device_node *of_node);
-static void airport_detach(struct orinoco_private* priv);
+static struct net_device *airport_attach(struct device_node *of_node);
+static void airport_detach(struct net_device *dev);
 static int airport_open(struct net_device *dev);
 static int airport_stop(struct net_device *dev);
 
@@ -83,7 +84,7 @@ static int airport_stop(struct net_device *dev);
    device numbers are used to derive the corresponding array index.
 */
 
-static struct orinoco_private *airport_dev;
+static struct net_device *airport_dev;
 
 static int
 airport_open(struct net_device *dev)
@@ -91,6 +92,8 @@ airport_open(struct net_device *dev)
 	struct orinoco_private *priv = dev->priv;
 	struct airport* card = (struct airport *)priv->card;
 	int rc;
+
+	TRACE_ENTER(dev->name);
 
 	netif_device_attach(dev);
 
@@ -102,6 +105,8 @@ airport_open(struct net_device *dev)
 		netif_start_queue(dev);
 	}
 
+	TRACE_EXIT(dev->name);
+
 	return rc;
 }
 
@@ -111,13 +116,13 @@ airport_stop(struct net_device *dev)
 	struct orinoco_private *priv = dev->priv;
 	struct airport* card = (struct airport *)priv->card;
 
-	TRACE_ENTER(priv->ndev.name);
+	TRACE_ENTER(dev->name);
 
 	netif_stop_queue(dev);
 	orinoco_shutdown(priv);
 	card->open = 0;
 
-	TRACE_EXIT(priv->ndev.name);
+	TRACE_EXIT(dev->name);
 
 	return 0;
 }
@@ -126,9 +131,9 @@ airport_stop(struct net_device *dev)
 static int
 airport_sleep_notify(struct pmu_sleep_notifier *self, int when)
 {
-	struct orinoco_private *priv = airport_dev;
+	struct net_device *dev = airport_dev;
+	struct orinoco_private *priv = (struct orinoco_private *)dev->priv;
 	struct hermes *hw = &priv->hw;
-	struct net_device *dev = &priv->ndev;
 	struct airport* card = (struct airport *)priv->card;
 	int rc;
 	
@@ -167,12 +172,13 @@ airport_sleep_notify(struct pmu_sleep_notifier *self, int when)
 }
 #endif /* CONFIG_PMAC_PBOOK */
 
-static struct orinoco_private*
+static struct net_device *
 airport_attach(struct device_node* of_node)
 {
 	struct orinoco_private *priv;
-	struct net_device *ndev;
-	struct airport* card;
+	struct net_device *dev;
+	struct airport *card;
+	unsigned long phys_addr;
 	hermes_t *hw;
 
 	TRACE_ENTER("orinoco");
@@ -183,45 +189,42 @@ airport_attach(struct device_node* of_node)
 	}
 
 	/* Allocate space for private device-specific data */
-	card = kmalloc(sizeof(*card), GFP_KERNEL);
-	if (!card) {
+	dev = alloc_orinocodev(sizeof(*card));
+	if (! dev) {
 		printk(KERN_ERR "airport: can't allocate device datas\n");
 		return NULL;
 	}
-	memset(card, 0, sizeof(*card));
+	priv = dev->priv;
+	card = priv->card;
 
-	priv = &(card->priv);
-	priv->card = card;
-	ndev = &priv->ndev;
 	hw = &priv->hw;
 	card->node = of_node;
 
-	if (!request_OF_resource(of_node, 0, " (airport)")) {
+	if (! request_OF_resource(of_node, 0, " (airport)")) {
 		printk(KERN_ERR "airport: can't request IO resource !\n");
-		kfree(card);
+		kfree(dev);
 		return NULL;
 	}
 	
-	/* Setup the common part */
-	if (orinoco_setup(priv) < 0) {
-		release_OF_resource(of_node, 0);
-		kfree(card);
-		return NULL;
-	}
-
-
-	ndev->name[0] = '\0';	/* register_netdev will give us an ethX name */
-	SET_MODULE_OWNER(ndev);
+	dev->name[0] = '\0';	/* register_netdev will give us an ethX name */
+	SET_MODULE_OWNER(dev);
 
 	/* Overrides */
-	ndev->open = airport_open;
-	ndev->stop = airport_stop;
+	dev->open = airport_open;
+	dev->stop = airport_stop;
 
 	/* Setup interrupts & base address */
-	ndev->irq = of_node->intrs[0].line;
-	ndev->base_addr = (unsigned long)ioremap(of_node->addrs[0].address, 0x1000) - _IO_BASE;
+	dev->irq = of_node->intrs[0].line;
+	phys_addr = of_node->addrs[0].address; /* Physical address */
+	dev->base_addr = phys_addr;
+	card->vaddr = ioremap(phys_addr, AIRPORT_IO_LEN);
+	if (! card->vaddr) {
+		printk("airport: ioremap() failed\n");
+		goto failed;
+	}
 
-	hermes_struct_init(hw, ndev->base_addr);
+	hermes_struct_init(hw, (ulong)card->vaddr,
+			HERMES_MEM, HERMES_16BIT_REGSPACING);
 		
 	/* Power up card */
 	pmac_call_feature(PMAC_FTR_AIRPORT_ENABLE, card->node, 0, 1);
@@ -231,32 +234,32 @@ airport_attach(struct device_node* of_node)
 	/* Reset it before we get the interrupt */
 	hermes_reset(hw);
 
-	if (request_irq(ndev->irq, orinoco_interrupt, 0, "Airport", (void *)priv)) {
-		printk(KERN_ERR "airport: Couldn't get IRQ %d\n", ndev->irq);
+	if (request_irq(dev->irq, orinoco_interrupt, 0, "Airport", (void *)priv)) {
+		printk(KERN_ERR "airport: Couldn't get IRQ %d\n", dev->irq);
 		goto failed;
 	}
 	card->irq_requested = 1;
 	
 	/* Tell the stack we exist */
-	if (register_netdev(ndev) != 0) {
+	if (register_netdev(dev) != 0) {
 		printk(KERN_ERR "airport: register_netdev() failed\n");
 		goto failed;
 	}
-	printk(KERN_DEBUG "airport: card registered for interface %s\n", ndev->name);
+	printk(KERN_DEBUG "airport: card registered for interface %s\n", dev->name);
 	card->ndev_registered = 1;
 
 	/* And give us the proc nodes for debugging */
 	if (orinoco_proc_dev_init(priv) != 0)
 		printk(KERN_ERR "airport: Failed to create /proc node for %s\n",
-		       ndev->name);
+		       dev->name);
 
 #ifdef CONFIG_PMAC_PBOOK
 	pmu_register_sleep_notifier(&airport_sleep_notifier);
 #endif
-	return priv;
+	return dev;
 	
 failed:
-	airport_detach(priv);
+	airport_detach(dev);
 	return NULL;
 }				/* airport_attach */
 
@@ -265,9 +268,10 @@ failed:
   ======================================================================*/
 
 static void
-airport_detach(struct orinoco_private *priv)
+airport_detach(struct net_device *dev)
 {
-	struct airport* card = (struct airport *)priv->card;
+	struct orinoco_private *priv = dev->priv;
+	struct airport *card = priv->card;
 
 	/* Unregister proc entry */
 	orinoco_proc_dev_cleanup(priv);
@@ -276,16 +280,18 @@ airport_detach(struct orinoco_private *priv)
 	pmu_unregister_sleep_notifier(&airport_sleep_notifier);
 #endif
 	if (card->ndev_registered)
-		unregister_netdev(&priv->ndev);
+		unregister_netdev(dev);
 	card->ndev_registered = 0;
 	
 	if (card->irq_requested)
-		free_irq(priv->ndev.irq, priv);
+		free_irq(dev->irq, priv);
 	card->irq_requested = 0;
 
-	if (priv->ndev.base_addr)
-		iounmap((void *)(priv->ndev.base_addr + (unsigned long)_IO_BASE));
-	priv->ndev.base_addr = 0;
+	if (card->vaddr)
+		iounmap(card->vaddr);
+	card->vaddr = 0;
+	
+	dev->base_addr = 0;
 
 	release_OF_resource(card->node, 0);
 	
@@ -293,7 +299,7 @@ airport_detach(struct orinoco_private *priv)
 	current->state = TASK_UNINTERRUPTIBLE;
 	schedule_timeout(HZ);
 	
-	kfree(card);
+	kfree(dev);
 }				/* airport_detach */
 
 static int __init

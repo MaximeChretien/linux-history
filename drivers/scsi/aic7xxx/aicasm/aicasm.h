@@ -37,7 +37,7 @@
  * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGES.
  *
- * $Id: //depot/aic7xxx/aic7xxx/aicasm/aicasm.h#7 $
+ * $Id: //depot/aic7xxx/aic7xxx/aicasm/aicasm.h#9 $
  *
  * $FreeBSD: src/sys/dev/aic7xxx/aicasm/aicasm.h,v 1.11 2000/09/22 22:19:54 gibbs Exp $
  */
@@ -78,10 +78,15 @@ extern int includes_search_curdir;		/* False if we've seen -I- */
 extern char *appname;
 extern int yylineno;
 extern char *yyfilename;
+extern char *patch_arg_list;
 extern char *versions;
+extern int   src_mode;
+extern int   dst_mode;
+struct symbol;
 
 void stop(const char *errstring, int err_code);
 void include_file(char *file_name, include_type type);
+void expand_macro(struct symbol *macro_symbol);
 struct instruction *seq_alloc(void);
 struct critical_section *cs_alloc(void);
 struct scope *scope_alloc(void);

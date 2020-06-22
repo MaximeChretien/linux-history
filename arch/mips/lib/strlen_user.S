@@ -1,5 +1,4 @@
-/* $Id: strlen_user.S,v 1.3 1999/08/21 22:19:11 ralf Exp $
- *
+/*
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
@@ -35,7 +34,7 @@ EXPORT(__strlen_user_nocheck_asm)
 	bnez	t0, 1b
 	subu	v0, a0
 	jr	ra
-	END(__strlen_user_nocheck_asm)
+	END(__strlen_user_asm)
 
 	.section __ex_table,"a"
 	PTR	1b, fault

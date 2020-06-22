@@ -106,6 +106,7 @@ EXPORT_SYMBOL(acpi_hw_obtain_sleep_type_register_data);
 EXPORT_SYMBOL(acpi_enter_sleep_state);
 EXPORT_SYMBOL(acpi_get_system_info);
 EXPORT_SYMBOL(acpi_leave_sleep_state);
+EXPORT_SYMBOL(acpi_walk_namespace);
 /*EXPORT_SYMBOL(acpi_save_state_mem);*/
 /*EXPORT_SYMBOL(acpi_save_state_disk);*/
 EXPORT_SYMBOL(acpi_hw_register_read);

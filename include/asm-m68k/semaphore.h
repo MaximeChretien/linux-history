@@ -9,7 +9,6 @@
 #include <linux/wait.h>
 #include <linux/spinlock.h>
 #include <linux/rwsem.h>
-#include <linux/stringify.h>
 
 #include <asm/system.h>
 #include <asm/atomic.h>
@@ -95,14 +94,10 @@ extern inline void down(struct semaphore * sem)
 		"subql #1,%0@\n\t"
 		"jmi 2f\n\t"
 		"1:\n"
-		".subsection 1\n"
-		".even\n"
-		".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n"
-		"_text_lock_" __stringify(KBUILD_BASENAME) ":\n"
-		".endif\n"
+		LOCK_SECTION_START(".even\n\t")
 		"2:\tpea 1b\n\t"
 		"jbra __down_failed\n"
-		".subsection 0\n"
+		LOCK_SECTION_END
 		: /* no outputs */
 		: "a" (sem1)
 		: "memory");
@@ -123,14 +118,10 @@ extern inline int down_interruptible(struct semaphore * sem)
 		"jmi 2f\n\t"
 		"clrl %0\n"
 		"1:\n"
-		".subsection 1\n"
-		".even\n"
-		".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n"
-		"_text_lock_" __stringify(KBUILD_BASENAME) ":\n"
-		".endif\n"
+		LOCK_SECTION_START(".even\n\t")
 		"2:\tpea 1b\n\t"
 		"jbra __down_failed_interruptible\n"
-		".subsection 0\n"
+		LOCK_SECTION_END
 		: "=d" (result)
 		: "a" (sem1)
 		: "memory");
@@ -152,14 +143,10 @@ extern inline int down_trylock(struct semaphore * sem)
 		"jmi 2f\n\t"
 		"clrl %0\n"
 		"1:\n"
-		".subsection 1\n"
-		".even\n"
-		".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n"
-		"_text_lock_" __stringify(KBUILD_BASENAME) ":\n"
-		".endif\n"
+		LOCK_SECTION_START(".even\n\t")
 		"2:\tpea 1b\n\t"
 		"jbra __down_failed_trylock\n"
-		".subsection 0\n"
+		LOCK_SECTION_END
 		: "=d" (result)
 		: "a" (sem1)
 		: "memory");
@@ -185,15 +172,11 @@ extern inline void up(struct semaphore * sem)
 		"addql #1,%0@\n\t"
 		"jle 2f\n"
 		"1:\n"
-		".subsection 1\n"
-		".even\n"
-		".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n"
-		"_text_lock_" __stringify(KBUILD_BASENAME) ":\n"
-		".endif\n"
+		LOCK_SECTION_START(".even\n\t")
 		"2:\t"
 		"pea 1b\n\t"
 		"jbra __up_wakeup\n"
-		".subsection 0\n"
+		LOCK_SECTION_END
 		: /* no outputs */
 		: "a" (sem1)
 		: "memory");

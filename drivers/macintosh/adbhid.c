@@ -96,6 +96,11 @@ static struct adb_ids keyboard_ids;
 static struct adb_ids mouse_ids;
 static struct adb_ids buttons_ids;
 
+#ifdef CONFIG_PMAC_BACKLIGHT
+/* Exported to via-pmu.c */
+int disable_kernel_backlight = 0;
+#endif /* CONFIG_PMAC_BACKLIGHT */
+
 /* Kind of keyboard, see Apple technote 1152  */
 #define ADB_KEYBOARD_UNKNOWN	0
 #define ADB_KEYBOARD_ANSI	0x0100
@@ -284,44 +289,48 @@ adbhid_buttons_input(unsigned char *data, int nb, struct pt_regs *regs, int auto
 
 		switch (data[1] & 0x0f) {
 		case 0x8:	/* mute */
-			input_report_key(&adbhid[id]->input, KEY_MUTE,
-				data[1] == (data[1] & 0xf));
+			input_report_key(&adbhid[id]->input, KEY_MUTE, down);
 			break;
 
 		case 0x7:	/* volume decrease */
-			input_report_key(&adbhid[id]->input, KEY_VOLUMEDOWN,
-				data[1] == (data[1] & 0xf));
+			input_report_key(&adbhid[id]->input, KEY_VOLUMEDOWN, down);
 			break;
 
 		case 0x6:	/* volume increase */
-			input_report_key(&adbhid[id]->input, KEY_VOLUMEUP,
-				data[1] == (data[1] & 0xf));
+			input_report_key(&adbhid[id]->input, KEY_VOLUMEUP, down);
  			break;
 
 		case 0xb:	/* eject */
-			input_report_key(&adbhid[id]->input, KEY_EJECTCD,
-				data[1] == (data[1] & 0xf));
+			input_report_key(&adbhid[id]->input, KEY_EJECTCD, down);
 			break;
-
-#ifdef CONFIG_PMAC_BACKLIGHT
 		case 0xa:	/* brightness decrease */
-			if (!down || backlight < 0)
+#ifdef CONFIG_PMAC_BACKLIGHT
+			if (!disable_kernel_backlight) {
+				if (!down || backlight < 0)
+					break;
+				if (backlight > BACKLIGHT_OFF)
+					set_backlight_level(backlight-1);
+				else
+					set_backlight_level(BACKLIGHT_OFF);
 				break;
-			if (backlight > BACKLIGHT_OFF)
-				set_backlight_level(backlight-1);
-			else
-				set_backlight_level(BACKLIGHT_OFF);
-			break;
-
-		case 0x9:	/* brightness increase */
-			if (!down || backlight < 0)
-				break;
-			if (backlight < BACKLIGHT_MAX)
-				set_backlight_level(backlight+1);
-			else 
-				set_backlight_level(BACKLIGHT_MAX);
-			break;
+			}
 #endif /* CONFIG_PMAC_BACKLIGHT */
+			input_report_key(&adbhid[id]->input, KEY_BRIGHTNESSDOWN, down);
+			break;
+		case 0x9:	/* brightness increase */
+#ifdef CONFIG_PMAC_BACKLIGHT
+			if (!disable_kernel_backlight) {
+				if (!down || backlight < 0)
+					break;
+				if (backlight < BACKLIGHT_MAX)
+					set_backlight_level(backlight+1);
+				else 
+					set_backlight_level(BACKLIGHT_MAX);
+				break;
+			}
+#endif /* CONFIG_PMAC_BACKLIGHT */
+			input_report_key(&adbhid[id]->input, KEY_BRIGHTNESSUP, down);
+			break;
 		}
 	  }
 	  break;
@@ -521,6 +530,8 @@ adbhid_input_register(int id, int default_id, int original_handler_id,
 			set_bit(KEY_MUTE, adbhid[id]->input.keybit);
 			set_bit(KEY_VOLUMEUP, adbhid[id]->input.keybit);
 			set_bit(KEY_VOLUMEDOWN, adbhid[id]->input.keybit);
+			set_bit(KEY_BRIGHTNESSUP, adbhid[id]->input.keybit);
+			set_bit(KEY_BRIGHTNESSDOWN, adbhid[id]->input.keybit);
 			set_bit(KEY_EJECTCD, adbhid[id]->input.keybit);
 			break;
 		}
@@ -900,8 +911,10 @@ init_ms_a3(int id)
 
 static int __init adbhid_init(void)
 {
+#ifndef CONFIG_MAC
 	if ( (_machine != _MACH_chrp) && (_machine != _MACH_Pmac) )
 	    return 0;
+#endif
 
 	led_request.complete = 1;
 

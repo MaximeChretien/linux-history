@@ -151,9 +151,6 @@ extern inline void pgd_set(pgd_t * pgdp, pmd_t * pmdp)
 #define pgd_bad(pgd)		((pgd_val(pgd) & _DESCTYPE_MASK) != _PAGE_TABLE)
 #define pgd_present(pgd)	(pgd_val(pgd) & _PAGE_TABLE)
 #define pgd_clear(pgdp)		({ pgd_val(*pgdp) = 0; })
-/* Permanent address of a page. */
-#define page_address(page)	({ if (!(page)->virtual) BUG(); (page)->virtual; })
-#define __page_address(page)	(PAGE_OFFSET + (((page) - mem_map) << PAGE_SHIFT))
 #define pte_page(pte)		(mem_map+pte_pagenr(pte))
 
 #define pte_ERROR(e) \

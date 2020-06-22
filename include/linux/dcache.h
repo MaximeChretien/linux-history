@@ -244,7 +244,7 @@ static __inline__ struct dentry * dget(struct dentry *dentry)
 {
 	if (dentry) {
 		if (!atomic_read(&dentry->d_count))
-			BUG();
+			out_of_line_bug();
 		atomic_inc(&dentry->d_count);
 	}
 	return dentry;

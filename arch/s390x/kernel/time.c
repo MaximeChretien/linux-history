@@ -55,7 +55,7 @@ static inline unsigned long do_gettimeoffset(void)
 {
 	__u64 now;
 
-	asm ("STCK %0" : "=m" (now));
+	asm ("STCK 0(%0)" : : "a" (&now) : "memory", "cc");
         now = (now - init_timer_cc) >> 12;
 	/* We require the offset from the latest update of xtime */
 	now -= (__u64) wall_jiffies*USECS_PER_JIFFY;
@@ -173,9 +173,10 @@ void __init time_init(void)
 	int cc;
 
         /* kick the TOD clock */
-        asm volatile ("STCK %1\n\t"
+        asm volatile ("STCK 0(%1)\n\t"
                       "IPM  %0\n\t"
-                      "SRL  %0,28" : "=r" (cc), "=m" (init_timer_cc));
+                      "SRL  %0,28" : "=r" (cc) : "a" (&init_timer_cc) 
+				   : "memory", "cc");
         switch (cc) {
         case 0: /* clock in set state: all is fine */
                 break;

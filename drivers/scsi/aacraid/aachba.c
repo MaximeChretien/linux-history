@@ -494,8 +494,9 @@ static void read_callback(void *context, struct fib * fibptr)
 			scsicmd->use_sg,
 			scsi_to_pci_dma_dir(scsicmd->sc_data_direction));
 	else if(scsicmd->request_bufflen)
-		pci_unmap_single(dev->pdev, (u32)scsicmd->SCp.ptr, scsicmd->request_bufflen,
-				scsi_to_pci_dma_dir(scsicmd->sc_data_direction));
+		pci_unmap_single(dev->pdev, (dma_addr_t)(long)scsicmd->SCp.ptr,
+				 scsicmd->request_bufflen,
+				 scsi_to_pci_dma_dir(scsicmd->sc_data_direction));
 	readreply = (struct aac_read_reply *)fib_data(fibptr);
 	if (le32_to_cpu(readreply->status) == ST_OK)
 		scsicmd->result = DID_OK << 16 | COMMAND_COMPLETE << 8 | GOOD;
@@ -537,8 +538,9 @@ static void write_callback(void *context, struct fib * fibptr)
 			scsicmd->use_sg,
 			scsi_to_pci_dma_dir(scsicmd->sc_data_direction));
 	else if(scsicmd->request_bufflen)
-		pci_unmap_single(dev->pdev, (u32)scsicmd->SCp.ptr, scsicmd->request_bufflen,
-			scsi_to_pci_dma_dir(scsicmd->sc_data_direction));
+		pci_unmap_single(dev->pdev, (dma_addr_t)(long)scsicmd->SCp.ptr,
+				 scsicmd->request_bufflen,
+				 scsi_to_pci_dma_dir(scsicmd->sc_data_direction));
 
 	writereply = (struct aac_write_reply *) fib_data(fibptr);
 	if (le32_to_cpu(writereply->status) == ST_OK)
@@ -641,10 +643,10 @@ int aac_read(Scsi_Cmnd * scsicmd, int cid)
 	}
 	else if(scsicmd->request_bufflen)
 	{
-		u32 addr;
+		dma_addr_t addr;
 		addr = pci_map_single(dev->pdev, scsicmd->request_buffer,
 				scsicmd->request_bufflen, scsi_to_pci_dma_dir(scsicmd->sc_data_direction));
-		scsicmd->SCp.ptr = (void *)addr;
+		scsicmd->SCp.ptr = (void *)(long)addr;
 		readcmd->sg.sg[0].addr = cpu_to_le32(addr);
 		readcmd->sg.sg[0].count = cpu_to_le32(scsicmd->request_bufflen);
 
@@ -763,14 +765,14 @@ static int aac_write(Scsi_Cmnd * scsicmd, int cid)
 	}
 	else if(scsicmd->request_bufflen)
 	{
-		u32 addr; 
+		dma_addr_t addr; 
 		addr = pci_map_single(dev->pdev,
 				scsicmd->request_buffer,
 				scsicmd->request_bufflen,
 				scsi_to_pci_dma_dir(scsicmd->sc_data_direction));
 		writecmd->sg.sg[0].addr = cpu_to_le32(addr);
 		writecmd->sg.sg[0].count = cpu_to_le32(scsicmd->request_bufflen);  
-		scsicmd->SCp.ptr = (void *)addr;
+		scsicmd->SCp.ptr = (void *)(long)addr;
 		byte_count = scsicmd->request_bufflen;
 
 		if (byte_count > (64 * 1024))

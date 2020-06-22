@@ -59,60 +59,6 @@ BUILD_SMP_INTERRUPT(mtrr_interrupt)
 BUILD_SMP_INTERRUPT(spurious_interrupt)
 #endif
 
-#if 0
-int get_irq_list(char *buf)
-{
-	int i, j;
-	struct irqaction * action;
-	char *p = buf;
-
-	p += sprintf(p, "           ");
-
-	for (j=0; j<smp_num_cpus; j++)
-		p += sprintf(p, "CPU%d       ",j);
-
-	*p++ = '\n';
-
-	for (i = 0 ; i < NR_IRQS ; i++)
-	{
-		if (ioinfo[i] == INVALID_STORAGE_AREA)
-			continue;
-
-		action = ioinfo[i]->irq_desc.action;
-		
-  		if (!action)
-			continue;
-
-		p += sprintf(p, "%3d: ",i);
-#ifndef CONFIG_SMP
-		p += sprintf(p, "%10u ", kstat_irqs(i));
-#else
-		for (j=0; j<smp_num_cpus; j++)
-			p += sprintf( p, "%10u ",
-			              kstat.irqs[cpu_logical_map(j)][i]);
-#endif
-		p += sprintf(p, " %14s", ioinfo[i]->irq_desc.handler->typename);
-		p += sprintf(p, "  %s", action->name);
-
-		for (action=action->next; action; action = action->next)
-		{
-			p += sprintf(p, ", %s", action->name);
-
-		} /* endfor */
-
-		*p++ = '\n';
-	
-	} /* endfor */
-
-	p += sprintf(p, "NMI: %10u\n", nmi_counter);
-#ifdef CONFIG_SMP
-	p += sprintf(p, "IPI: %10u\n", atomic_read(&ipi_count));
-#endif
-
-	return p - buf;
-}
-#endif
-
 /*
  * Global interrupt locks for SMP. Allow interrupts to come in on any
  * CPU, yet make cli/sti act globally to protect critical regions..

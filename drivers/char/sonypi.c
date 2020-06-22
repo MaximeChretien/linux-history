@@ -50,6 +50,7 @@ static int verbose; /* = 0 */
 static int fnkeyinit; /* = 0 */
 static int camera; /* = 0 */
 static int compat; /* = 0 */
+static int nojogdial; /* = 0 */
 
 /* Inits the queue */
 static inline void sonypi_initq(void) {
@@ -310,24 +311,28 @@ void sonypi_irq(int irq, void *dev_id, struct pt_regs *regs) {
 	int i;
 	u8 sonypi_jogger_ev, sonypi_fnkey_ev;
 	u8 sonypi_capture_ev, sonypi_bluetooth_ev;
+	u8 sonypi_pkey_ev;
 
 	if (sonypi_device.model == SONYPI_DEVICE_MODEL_TYPE2) {
 		sonypi_jogger_ev = SONYPI_TYPE2_JOGGER_EV;
 		sonypi_fnkey_ev = SONYPI_TYPE2_FNKEY_EV;
 		sonypi_capture_ev = SONYPI_TYPE2_CAPTURE_EV;
 		sonypi_bluetooth_ev = SONYPI_TYPE2_BLUETOOTH_EV;
+		sonypi_pkey_ev = nojogdial ? SONYPI_TYPE2_PKEY_EV 
+					   : SONYPI_TYPE1_PKEY_EV;
 	}
 	else {
 		sonypi_jogger_ev = SONYPI_TYPE1_JOGGER_EV;
 		sonypi_fnkey_ev = SONYPI_TYPE1_FNKEY_EV;
 		sonypi_capture_ev = SONYPI_TYPE1_CAPTURE_EV;
 		sonypi_bluetooth_ev = SONYPI_TYPE1_BLUETOOTH_EV;
+		sonypi_pkey_ev = SONYPI_TYPE1_PKEY_EV;
 	}
 
 	v1 = inb_p(sonypi_device.ioport1);
 	v2 = inb_p(sonypi_device.ioport2);
 
-	if ((v2 & SONYPI_TYPE1_PKEY_EV) == SONYPI_TYPE1_PKEY_EV) {
+	if ((v2 & sonypi_pkey_ev) == sonypi_pkey_ev) {
 		for (i = 0; sonypi_pkeyev[i].event; i++)
 			if (sonypi_pkeyev[i].data == v1) {
 				event = sonypi_pkeyev[i].event;
@@ -480,12 +485,10 @@ static int sonypi_misc_release(struct inode * inode, struct file * file) {
 
 static int sonypi_misc_open(struct inode * inode, struct file * file) {
 	down(&sonypi_device.lock);
-	if (sonypi_device.open_count)
-		goto out;
+	/* Flush input queue on first open */
+	if (!sonypi_device.open_count)
+		sonypi_initq();
 	sonypi_device.open_count++;
-	/* Flush input queue */
-	sonypi_initq();
-out:
 	up(&sonypi_device.lock);
 	return 0;
 }
@@ -713,11 +716,15 @@ static int __devinit sonypi_probe(struct pci_dev *pcidev) {
 	       SONYPI_DRIVER_MAJORVERSION,
 	       SONYPI_DRIVER_MINORVERSION);
 	printk(KERN_INFO "sonypi: detected %s model, "
-	       "camera = %s, compat = %s\n",
+	       "verbose = %s, fnkeyinit = %s, camera = %s, "
+	       "compat = %s, nojogdial = %s\n",
 	       (sonypi_device.model == SONYPI_DEVICE_MODEL_TYPE1) ?
 			"type1" : "type2",
+	       verbose ? "on" : "off",
+	       fnkeyinit ? "on" : "off",
 	       camera ? "on" : "off",
-	       compat ? "on" : "off");
+	       compat ? "on" : "off",
+	       nojogdial ? "on" : "off");
 	printk(KERN_INFO "sonypi: enabled at irq=%d, port1=0x%x, port2=0x%x\n",
 	       sonypi_device.irq, 
 	       sonypi_device.ioport1, sonypi_device.ioport2);
@@ -773,7 +780,7 @@ static void __exit sonypi_cleanup_module(void) {
 
 #ifndef MODULE
 static int __init sonypi_setup(char *str)  {
-	int ints[6];
+	int ints[7];
 
 	str = get_options(str, ARRAY_SIZE(ints), ints);
 	if (ints[0] <= 0) 
@@ -791,6 +798,9 @@ static int __init sonypi_setup(char *str)  {
 	if (ints[0] == 4)
 		goto out;
 	compat = ints[5];
+	if (ints[0] == 5)
+		goto out;
+	nojogdial = ints[6];
 out:
 	return 1;
 }
@@ -817,5 +827,7 @@ MODULE_PARM(camera,"i");
 MODULE_PARM_DESC(camera, "set this if you have a MotionEye camera (PictureBook series)");
 MODULE_PARM(compat,"i");
 MODULE_PARM_DESC(compat, "set this if you want to enable backward compatibility mode");
+MODULE_PARM(nojogdial, "i");
+MODULE_PARM_DESC(nojogdial, "set this if you have a Vaio without a jogdial (like the fx series)");
 
 EXPORT_SYMBOL(sonypi_camera_command);

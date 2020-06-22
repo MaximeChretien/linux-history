@@ -682,7 +682,7 @@ struct aac_dev
 	unsigned long		fsrev;		/* Main driver's revision number */
 	
 	struct aac_init		*init;		/* Holds initialization info to communicate with adapter */
-	void *			init_pa; 	/* Holds physical address of the init struct */
+	dma_addr_t		init_pa; 	/* Holds physical address of the init struct */
 	
 	struct pci_dev		*pdev;		/* Our PCI interface */
 	void *			printfbuf;	/* pointer to buffer used for printf's from the adapter */
@@ -1168,7 +1168,17 @@ struct aac_adapter_info
 	u32	options;
 	u32	OEM;
 };
-	
+
+static inline u32 fib2addr(struct hw_fib *hw)
+{
+	return (u32)hw;
+}
+
+static inline struct hw_fib *addr2fib(u32 addr)
+{
+	return (struct hw_fib *)addr;
+}
+
 const char *aac_driverinfo(struct Scsi_Host *);
 struct fib *fib_alloc(struct aac_dev *dev);
 int fib_setup(struct aac_dev *dev);

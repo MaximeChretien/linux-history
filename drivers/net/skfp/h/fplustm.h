@@ -50,38 +50,82 @@ struct err_st {
 	u_long err_tkerr ;		/* token error */
 } ;
 
+#define SK_XD_ALIGN     (size_t) 32
+
 /*
  *	Transmit Descriptor struct
  */
+struct s_dummy_txd {
+        u_int txd_tbctrl ;              /* transmit buffer control */
+        u_int txd_txdscr ;              /* transmit frame status word */
+        u_int txd_tbadr ;               /* physical tx buffer address */
+        u_int txd_ntdadr ;              /* physical pointer to the next TxD */
+#ifdef  ENA_64BIT_SUP
+        u_int txd_tbadr_hi ;            /* physical tx buffer addr(high dword)*/
+#endif 
+        caddr_t txd_virt ;              /* virtual pointer to the data frag */
+                                        /* virt pointer to the next TxD */
+        struct s_smt_fp_txd volatile far *txd_next ;
+        struct s_txd_os txd_os ;        /* OS - specific struct */ 
+	/* No padding here! */
+} ;
+
+#define SK_DUMMY_TXD	sizeof(struct s_dummy_txd)
+#define SK_TXD_PAD	(((SK_DUMMY_TXD+SK_XD_ALIGN-1) \
+				& ~(SK_XD_ALIGN-1))-SK_DUMMY_TXD)
 struct s_smt_fp_txd {
 	u_int txd_tbctrl ;		/* transmit buffer control */
 	u_int txd_txdscr ;		/* transmit frame status word */
 	u_int txd_tbadr ;		/* physical tx buffer address */
 	u_int txd_ntdadr ;		/* physical pointer to the next TxD */
 #ifdef	ENA_64BIT_SUP
-	u_int txd_tbadr_hi ;		/* physical tx buffer addr (high dword)*/
+	u_int txd_tbadr_hi ;		/* physical tx buffer addr(high dword)*/
 #endif
-	char far *txd_virt ;		/* virtual pointer to the data frag */
+	caddr_t txd_virt ;		/* virtual pointer to the data frag */
 					/* virt pointer to the next TxD */
 	struct s_smt_fp_txd volatile far *txd_next ;
 	struct s_txd_os txd_os ;	/* OS - specific struct */
+	char padding[SK_TXD_PAD];	/* padding */
 } ;
+
+
 
 /*
  *	Receive Descriptor struct
  */
+
+struct s_dummy_rxd {
+        u_int rxd_rbctrl ;              /* receive buffer control */
+        u_int rxd_rfsw ;                /* receive frame status word */
+        u_int rxd_rbadr ;               /* physical rx buffer address */
+        u_int rxd_nrdadr ;              /* physical pointer to the next RxD */
+#ifdef  ENA_64BIT_SUP
+        u_int rxd_rbadr_hi ;            /* physical tx buffer addr(high dword)*/
+#endif
+        caddr_t rxd_virt ;              /* virtual pointer to the data frag */
+                                        /* virt pointer to the next RxD */
+        struct s_smt_fp_rxd volatile far *rxd_next ;
+        struct s_rxd_os rxd_os ;        /* OS - specific struct */
+        /* No padding here! */
+} ;
+
+#define SK_DUMMY_RXD	sizeof(struct s_dummy_rxd)
+#define SK_RXD_PAD	(((SK_DUMMY_RXD+SK_XD_ALIGN-1) \
+				& ~(SK_XD_ALIGN-1))-SK_DUMMY_RXD)
+
 struct s_smt_fp_rxd {
 	u_int rxd_rbctrl ;		/* receive buffer control */
 	u_int rxd_rfsw ;		/* receive frame status word */
 	u_int rxd_rbadr ;		/* physical rx buffer address */
 	u_int rxd_nrdadr ;		/* physical pointer to the next RxD */
 #ifdef	ENA_64BIT_SUP
-	u_int rxd_rbadr_hi ;		/* physical tx buffer addr (high dword)*/
+	u_int rxd_rbadr_hi ;		/* physical tx buffer addr(high dword)*/
 #endif
-	char far *rxd_virt ;		/* virtual pointer to the data frag */
+	caddr_t rxd_virt ;		/* virtual pointer to the data frag */
 					/* virt pointer to the next RxD */
 	struct s_smt_fp_rxd volatile far *rxd_next ;
 	struct s_rxd_os rxd_os ;	/* OS - specific struct */
+	char padding[SK_RXD_PAD] ;
 } ;
 
 /*

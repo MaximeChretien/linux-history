@@ -5,7 +5,7 @@
 include $(TOPDIR)/Rules.make
 
 vmlinux.gz: $(TOPDIR)/vmlinux
-	$(OBJCOPY) -S -O binary $(TOPDIR)/vmlinux vmlinux
+	$(OBJCOPY) --strip-all -S -O binary $(TOPDIR)/vmlinux vmlinux
 	gzip -vf9 vmlinux
 
 clean:

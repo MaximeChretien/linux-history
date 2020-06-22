@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: super.c,v 1.48 2001/10/02 09:16:23 dwmw2 Exp $
+ * $Id: super.c,v 1.48.2.2 2002/03/12 15:36:43 dwmw2 Exp $
  *
  */
 
@@ -249,6 +249,7 @@ static struct super_block *jffs2_read_super(struct super_block *sb, void *data, 
 		D1(printk(KERN_DEBUG "build_fs failed\n"));
 		goto out_nodes;
 	}
+
 	sb->s_op = &jffs2_super_operations;
 
 	D1(printk(KERN_DEBUG "jffs2_read_super(): Getting root inode\n"));

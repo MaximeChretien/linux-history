@@ -101,6 +101,9 @@
 #ifndef PCI_DEVICE_ID_INTEL_ICH3
 #define PCI_DEVICE_ID_INTEL_ICH3	0x2485
 #endif
+#ifndef PCI_DEVICE_ID_INTEL_ICH4
+#define PCI_DEVICE_ID_INTEL_ICH4	0x24c5
+#endif
 #ifndef PCI_DEVICE_ID_INTEL_440MX
 #define PCI_DEVICE_ID_INTEL_440MX	0x7195
 #endif
@@ -109,6 +112,9 @@
 #endif
 #ifndef PCI_DEVICE_ID_NVIDIA_MCP1_AUDIO
 #define PCI_DEVICE_ID_NVIDIA_MCP1_AUDIO	0x01b1
+#endif
+#ifndef PCI_DEVICE_ID_AMD_768_AUDIO
+#define PCI_DEVICE_ID_AMD_768_AUDIO	0x7445
 #endif
 
 static int ftsodell=0;
@@ -230,8 +236,10 @@ enum {
 	INTEL440MX,
 	INTELICH2,
 	INTELICH3,
+	INTELICH4,
 	SI7012,
-	NVIDIA_NFORCE
+	NVIDIA_NFORCE,
+	AMD768
 };
 
 static char * card_names[] = {
@@ -240,8 +248,10 @@ static char * card_names[] = {
 	"Intel 440MX",
 	"Intel ICH2",
 	"Intel ICH3",
+	"Intel ICH4",
 	"SiS 7012",
-	"NVIDIA nForce Audio"
+	"NVIDIA nForce Audio",
+	"AMD 768"
 };
 
 static struct pci_device_id i810_pci_tbl [] __initdata = {
@@ -255,10 +265,14 @@ static struct pci_device_id i810_pci_tbl [] __initdata = {
 	 PCI_ANY_ID, PCI_ANY_ID, 0, 0, INTELICH2},
 	{PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_ICH3,
 	 PCI_ANY_ID, PCI_ANY_ID, 0, 0, INTELICH3},
+	{PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_ICH4,
+	 PCI_ANY_ID, PCI_ANY_ID, 0, 0, INTELICH4},
 	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_7012,
 	 PCI_ANY_ID, PCI_ANY_ID, 0, 0, SI7012},
 	{PCI_VENDOR_ID_NVIDIA, PCI_DEVICE_ID_NVIDIA_MCP1_AUDIO,
 	 PCI_ANY_ID, PCI_ANY_ID, 0, 0, NVIDIA_NFORCE},
+	{PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_768_AUDIO,
+	 PCI_ANY_ID, PCI_ANY_ID, 0, 0, AMD768},
 	{0,}
 };
 
@@ -2015,7 +2029,7 @@ static int i810_ioctl(struct inode *inode, struct file *file, unsigned int cmd, 
 		printk("SNDCTL_DSP_GETOPTR %d, %d, %d, %d\n", cinfo.bytes,
 			cinfo.blocks, cinfo.ptr, dmabuf->count);
 #endif
-		return copy_to_user((void *)arg, &cinfo, sizeof(cinfo));
+		return copy_to_user((void *)arg, &cinfo, sizeof(cinfo)) ? -EFAULT : 0;
 
 	case SNDCTL_DSP_GETISPACE:
 		if (!(file->f_mode & FMODE_READ))
@@ -2054,7 +2068,7 @@ static int i810_ioctl(struct inode *inode, struct file *file, unsigned int cmd, 
 		printk("SNDCTL_DSP_GETIPTR %d, %d, %d, %d\n", cinfo.bytes,
 			cinfo.blocks, cinfo.ptr, dmabuf->count);
 #endif
-		return copy_to_user((void *)arg, &cinfo, sizeof(cinfo));
+		return copy_to_user((void *)arg, &cinfo, sizeof(cinfo)) ? -EFAULT : 0;
 
 	case SNDCTL_DSP_NONBLOCK:
 #ifdef DEBUG
@@ -2662,7 +2676,7 @@ static int __init i810_ac97_init(struct i810_card *card)
 		codec->codec_write = i810_ac97_set;
 	
 		if(!i810_ac97_probe_and_powerup(card,codec)) {
-			printk("i810_audio: timed out waiting for codec %d analog ready", num_ac97);
+			printk("i810_audio: timed out waiting for codec %d analog ready.\n", num_ac97);
 			kfree(codec);
 			break;	/* it didn't work */
 		}
@@ -2679,6 +2693,14 @@ static int __init i810_ac97_init(struct i810_card *card)
 			break;
 		}
 		
+		codec->codec_write(codec, AC97_EXTENDED_MODEM_ID, 0L);
+		if(codec->codec_read(codec, AC97_EXTENDED_MODEM_ID))
+		{
+			printk(KERN_WARNING "i810_audio: codec %d is a softmodem - skipping.\n", num_ac97);
+			kfree(codec);
+			continue;
+		}
+	
 		card->ac97_features = eid;
 				
 		/* Now check the codec for useful features to make up for

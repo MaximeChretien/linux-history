@@ -191,7 +191,8 @@ void machine_restart(char * __unused)
 {
         if (smp_processor_id() != 0) {
                 smp_ext_bitcall(0, ec_restart);
-                for (;;);
+		for (;;)
+			enabled_wait();
         } else
                 do_machine_restart();
 }
@@ -208,7 +209,8 @@ void machine_halt(void)
 {
         if (smp_processor_id() != 0) {
                 smp_ext_bitcall(0, ec_halt);
-                for (;;);
+		for (;;)
+			enabled_wait();
         } else
                 do_machine_halt();
 }
@@ -225,7 +227,8 @@ void machine_power_off(void)
 {
         if (smp_processor_id() != 0) {
                 smp_ext_bitcall(0, ec_power_off);
-                for (;;);
+		for (;;)
+			enabled_wait();
         } else
                 do_machine_power_off();
 }
@@ -267,7 +270,7 @@ void do_ext_call_interrupt(struct pt_regs *regs, __u16 code)
  */
 static sigp_ccode smp_ext_bitcall(int cpu, ec_bit_sig sig)
 {
-        struct _lowcore *lowcore = &get_cpu_lowcore(cpu);
+        struct _lowcore *lowcore = get_cpu_lowcore(cpu);
         sigp_ccode ccode;
 
         /*
@@ -291,12 +294,13 @@ static void smp_ext_bitcall_others(ec_bit_sig sig)
         for (i = 0; i < smp_num_cpus; i++) {
                 if (smp_processor_id() == i)
                         continue;
-                lowcore = &get_cpu_lowcore(i);
+                lowcore = get_cpu_lowcore(i);
                 /*
                  * Set signaling bit in lowcore of target cpu and kick it
                  */
                 atomic_set_mask(1<<sig, &lowcore->ext_call_fast);
-                ccode = signal_processor(i, sigp_external_call);
+                while (signal_processor(i, sigp_external_call) == sigp_busy)
+			udelay(10);
         }
 }
 
@@ -313,7 +317,7 @@ void smp_send_stop(void)
 
         /* write magic number to zero page (absolute 0) */
 
-        get_cpu_lowcore(smp_processor_id()).panic_magic = __PANIC_MAGIC;
+        get_cpu_lowcore(smp_processor_id())->panic_magic = __PANIC_MAGIC;
 
         /* stop all processors */
 
@@ -335,7 +339,7 @@ void smp_send_stop(void)
         for (i =  0; i < smp_num_cpus; i++) {
                 if (smp_processor_id() != i) {
                         int ccode;
-                        low_core_addr = (unsigned long)&get_cpu_lowcore(i);
+                        low_core_addr = (unsigned long)get_cpu_lowcore(i);
                         do {
                                 ccode = signal_processor_ps(
                                    &dummy,
@@ -479,7 +483,7 @@ int __init start_secondary(void *cpuvoid)
         /* Setup the cpu */
         cpu_init();
         /* Print info about this processor */
-        print_cpu_info(&safe_get_cpu_lowcore(smp_processor_id()).cpu_data);
+        print_cpu_info(&safe_get_cpu_lowcore(smp_processor_id())->cpu_data);
         /* Wait for completion of smp startup */
         while (!atomic_read(&smp_commenced))
                 /* nothing */ ;
@@ -535,7 +539,7 @@ static void __init do_boot_cpu(int cpu)
         unhash_process(idle);
         init_tasks[cpu] = idle;
 
-        cpu_lowcore=&get_cpu_lowcore(cpu);
+        cpu_lowcore = get_cpu_lowcore(cpu);
 	cpu_lowcore->save_area[15] = idle->thread.ksp;
 	cpu_lowcore->kernel_stack = (__u32) idle + 8192;
         __asm__ __volatile__("la    1,%0\n\t"
@@ -589,7 +593,7 @@ void __init smp_boot_cpus(void)
         /*
          *      Initialize the logical to physical CPU number mapping
          */
-        print_cpu_info(&safe_get_cpu_lowcore(0).cpu_data);
+        print_cpu_info(&safe_get_cpu_lowcore(0)->cpu_data);
 
         for(i = 0; i < smp_num_cpus; i++)
         {
@@ -642,3 +646,4 @@ EXPORT_SYMBOL(kernel_flag);
 EXPORT_SYMBOL(smp_ctl_set_bit);
 EXPORT_SYMBOL(smp_ctl_clear_bit);
 EXPORT_SYMBOL(smp_num_cpus);
+EXPORT_SYMBOL(smp_call_function);

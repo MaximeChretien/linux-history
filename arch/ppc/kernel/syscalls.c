@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.syscalls.c 1.11 10/16/01 15:58:42 trini
+ * BK Id: SCCS/s.syscalls.c 1.13 03/13/02 09:12:22 trini
  */
 /*
  * linux/arch/ppc/kernel/sys_ppc.c
@@ -223,11 +223,12 @@ unsigned long sys_mmap(unsigned long addr, size_t len,
 		       unsigned long fd, off_t offset)
 {
 	int err = -EINVAL;
+	unsigned long off = offset;
 
 	if (offset & ~PAGE_MASK)
 		goto out;
 
-	err = do_mmap2(addr, len, prot, flags, fd, offset >> PAGE_SHIFT);
+	err = do_mmap2(addr, len, prot, flags, fd, off >> PAGE_SHIFT);
 out:
 	return err;
 }

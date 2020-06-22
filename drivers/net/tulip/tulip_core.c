@@ -2,7 +2,7 @@
 
 /*
 	Maintained by Jeff Garzik <jgarzik@mandrakesoft.com>
-	Copyright 2000,2001  The Linux Kernel Team
+	Copyright 2000-2002  The Linux Kernel Team
 	Written/copyright 1994-2001 by Donald Becker.
 
 	This software may be used and distributed according to the terms
@@ -15,8 +15,8 @@
 */
 
 #define DRV_NAME	"tulip"
-#define DRV_VERSION	"0.9.15-pre9"
-#define DRV_RELDATE	"Nov 6, 2001"
+#define DRV_VERSION	"0.9.15-pre11"
+#define DRV_RELDATE	"May 11, 2002"
 
 #include <linux/config.h>
 #include <linux/module.h>
@@ -27,6 +27,7 @@
 #include <linux/delay.h>
 #include <linux/mii.h>
 #include <linux/ethtool.h>
+#include <linux/crc32.h>
 #include <asm/unaligned.h>
 #include <asm/uaccess.h>
 
@@ -93,6 +94,8 @@ static int csr0 = 0x01A00000 | 0x8000;
 static int csr0 = 0x01A00000 | 0x9000;
 #elif defined(__arm__) || defined(__sh__)
 static int csr0 = 0x01A00000 | 0x4800;
+#elif defined(__mips__)
+static int csr0 = 0x00200000 | 0x4000;
 #else
 #warning Processor architecture undefined!
 static int csr0 = 0x00A00000 | 0x4800;
@@ -205,6 +208,7 @@ static struct pci_device_id tulip_pci_tbl[] __devinitdata = {
 	{ 0x1317, 0x0981, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x1317, 0x0985, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x1317, 0x1985, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
+	{ 0x1317, 0x9511, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x13D1, 0xAB02, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x13D1, 0xAB03, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x13D1, 0xAB08, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
@@ -1036,41 +1040,6 @@ static int private_ioctl (struct net_device *dev, struct ifreq *rq, int cmd)
    new frame, not around filling tp->setup_frame.  This is non-deterministic
    when re-entered but still correct. */
 
-/* The little-endian AUTODIN32 ethernet CRC calculation.
-   N.B. Do not use for bulk data, use a table-based routine instead.
-   This is common code and should be moved to net/core/crc.c */
-static unsigned const ethernet_polynomial_le = 0xedb88320U;
-static inline u32 ether_crc_le(int length, unsigned char *data)
-{
-	u32 crc = 0xffffffff;	/* Initial value. */
-	while(--length >= 0) {
-		unsigned char current_octet = *data++;
-		int bit;
-		for (bit = 8; --bit >= 0; current_octet >>= 1) {
-			if ((crc ^ current_octet) & 1) {
-				crc >>= 1;
-				crc ^= ethernet_polynomial_le;
-			} else
-				crc >>= 1;
-		}
-	}
-	return crc;
-}
-static unsigned const ethernet_polynomial = 0x04c11db7U;
-static inline u32 ether_crc(int length, unsigned char *data)
-{
-    int crc = -1;
-
-    while(--length >= 0) {
-		unsigned char current_octet = *data++;
-		int bit;
-		for (bit = 0; bit < 8; bit++, current_octet >>= 1)
-			crc = (crc << 1) ^
-				((crc < 0) ^ (current_octet & 1) ? ethernet_polynomial : 0);
-    }
-    return crc;
-}
-
 #undef set_bit_le
 #define set_bit_le(i,p) do { ((char *)(p))[(i)/8] |= (1<<((i)%8)); } while(0)
 
@@ -1263,31 +1232,13 @@ static void __devinit tulip_mwi_config (struct pci_dev *pdev,
 {
 	struct tulip_private *tp = dev->priv;
 	u8 cache;
-	u16 pci_command, new_command;
+	u16 pci_command;
 	u32 csr0;
 
 	if (tulip_debug > 3)
 		printk(KERN_DEBUG "%s: tulip_mwi_config()\n", pdev->slot_name);
 
 	tp->csr0 = csr0 = 0;
-
-	/* check for sane cache line size. from acenic.c. */
-	pci_read_config_byte(pdev, PCI_CACHE_LINE_SIZE, &cache);
-	if ((cache << 2) != SMP_CACHE_BYTES) {
-		printk(KERN_WARNING "%s: PCI cache line size set incorrectly "
-		       "(%i bytes) by BIOS/FW, correcting to %i\n",
-		       pdev->slot_name, (cache << 2), SMP_CACHE_BYTES);
-		pci_write_config_byte(pdev, PCI_CACHE_LINE_SIZE,
-				      SMP_CACHE_BYTES >> 2);
-		udelay(5);
-	}
-
-	/* read cache line size again, hardware may not have accepted
-	 * our cache line size change
-	 */
-	pci_read_config_byte(pdev, PCI_CACHE_LINE_SIZE, &cache);
-	if (!cache)
-		goto out;
 
 	/* if we have any cache line size at all, we can do MRM */
 	csr0 |= MRM;
@@ -1299,15 +1250,19 @@ static void __devinit tulip_mwi_config (struct pci_dev *pdev,
 	/* set or disable MWI in the standard PCI command bit.
 	 * Check for the case where  mwi is desired but not available
 	 */
+	if (csr0 & MWI)	pci_set_mwi(pdev);
+	else		pci_clear_mwi(pdev);
+
+	/* read result from hardware (in case bit refused to enable) */
 	pci_read_config_word(pdev, PCI_COMMAND, &pci_command);
-	if (csr0 & MWI)	new_command = pci_command | PCI_COMMAND_INVALIDATE;
-	else		new_command = pci_command & ~PCI_COMMAND_INVALIDATE;
-	if (new_command != pci_command) {
-		pci_write_config_word(pdev, PCI_COMMAND, new_command);
-		udelay(5);
-		pci_read_config_word(pdev, PCI_COMMAND, &pci_command);
-		if ((csr0 & MWI) && (!(pci_command & PCI_COMMAND_INVALIDATE)))
-			csr0 &= ~MWI;
+	if ((csr0 & MWI) && (!(pci_command & PCI_COMMAND_INVALIDATE)))
+		csr0 &= ~MWI;
+
+	/* if cache line size hardwired to zero, no MWI */
+	pci_read_config_byte(pdev, PCI_CACHE_LINE_SIZE, &cache);
+	if ((csr0 & MWI) && (cache == 0)) {
+		csr0 &= ~MWI;
+		pci_clear_mwi(pdev);
 	}
 
 	/* assign per-cacheline-size cache alignment and
@@ -1324,20 +1279,29 @@ static void __devinit tulip_mwi_config (struct pci_dev *pdev,
 		csr0 |= MRL | (3 << CALShift) | (32 << BurstLenShift);
 		break;
 	default:
-		goto out;
+		cache = 0;
+		break;
 	}
 
-	tp->csr0 = csr0;
-	goto out;
+	/* if we have a good cache line size, we by now have a good
+	 * csr0, so save it and exit
+	 */
+	if (cache)
+		goto out;
 
+	/* we don't have a good csr0 or cache line size, disable MWI */
 	if (csr0 & MWI) {
-		pci_command &= ~PCI_COMMAND_INVALIDATE;
-		pci_write_config_word(pdev, PCI_COMMAND, pci_command);
+		pci_clear_mwi(pdev);
 		csr0 &= ~MWI;
 	}
-	tp->csr0 = csr0 | (8 << BurstLenShift) | (1 << CALShift);
+
+	/* sane defaults for burst length and cache alignment
+	 * originally from de4x5 driver
+	 */
+	csr0 |= (8 << BurstLenShift) | (1 << CALShift);
 
 out:
+	tp->csr0 = csr0;
 	if (tulip_debug > 2)
 		printk(KERN_DEBUG "%s: MWI config cacheline=%d, csr0=%08x\n",
 		       pdev->slot_name, cache, csr0);
@@ -1599,6 +1563,16 @@ static int __devinit tulip_init_one (struct pci_dev *pdev,
 #ifdef CONFIG_DDB5477
                if ((pdev->bus->number == 0) && (PCI_SLOT(pdev->devfn) == 4)) {
                        /* DDB5477 MAC address in first EEPROM locations. */
+                       sa_offset = 0;
+                       /* No media table either */
+                       tp->flags &= ~HAS_MEDIA_TABLE;
+               }
+#endif
+#ifdef CONFIG_MIPS_COBALT
+               if ((pdev->bus->number == 0) && 
+                   ((PCI_SLOT(pdev->devfn) == 7) ||
+                    (PCI_SLOT(pdev->devfn) == 12))) {
+                       /* Cobalt MAC address in first EEPROM locations. */
                        sa_offset = 0;
                        /* No media table either */
                        tp->flags &= ~HAS_MEDIA_TABLE;

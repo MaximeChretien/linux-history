@@ -8,7 +8,7 @@
  *		as published by the Free Software Foundation; either version
  *		2 of the License, or (at your option) any later version.
  *
- * Version:	$Id: af_unix.c,v 1.126.2.4 2002/01/14 07:07:41 davem Exp $
+ * Version:	$Id: af_unix.c,v 1.126.2.5 2002/03/05 12:47:34 davem Exp $
  *
  * Fixes:
  *		Linus Torvalds	:	Assorted bug cures.
@@ -1752,7 +1752,7 @@ static int unix_read_proc(char *buffer, char **start, off_t offset,
 	{
 		unix_state_rlock(s);
 
-		len+=sprintf(buffer+len,"%p: %08X %08X %08X %04X %02X %5ld",
+		len+=sprintf(buffer+len,"%p: %08X %08X %08X %04X %02X %5lu",
 			s,
 			atomic_read(&s->refcnt),
 			0,

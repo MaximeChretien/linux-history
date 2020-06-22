@@ -3,7 +3,7 @@
  *
  * Copyright (C) 2001 Sistina Software
  *
- * January,February 2001
+ * January-April 2001
  *
  * LVM driver is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,7 +36,6 @@
 
 #include <linux/config.h>
 #include <linux/version.h>
-#include <linux/module.h>
 
 #include <linux/kernel.h>
 #include <linux/vmalloc.h>
@@ -65,7 +64,9 @@ static int _pv_info(pv_t *pv_ptr, char *buf);
 
 static void _show_uuid(const char *src, char *b, char *e);
 
+#if 0
 static devfs_handle_t lvm_devfs_handle;
+#endif
 static devfs_handle_t vg_devfs_handle[MAX_VG];
 static devfs_handle_t ch_devfs_handle[MAX_VG];
 static devfs_handle_t lv_devfs_handle[MAX_LV];
@@ -79,12 +80,13 @@ static struct proc_dir_entry *lvm_proc_vg_subdir = NULL;
 void __init lvm_init_fs() {
 	struct proc_dir_entry *pde;
 
-	/*  Must create device node. Think about "devfs=only" situation  */
+/* User-space has already registered this */
+#if 0
 	lvm_devfs_handle = devfs_register(
 		0 , "lvm", 0, LVM_CHAR_MAJOR, 0,
 		S_IFCHR | S_IRUSR | S_IWUSR | S_IRGRP,
 		&lvm_chr_fops, NULL);
-
+#endif
 	lvm_proc_dir = create_proc_entry(LVM_DIR, S_IFDIR, &proc_root);
 	if (lvm_proc_dir) {
 		lvm_proc_vg_subdir = create_proc_entry(LVM_VG_SUBDIR, S_IFDIR,
@@ -95,8 +97,9 @@ void __init lvm_init_fs() {
 }
 
 void lvm_fin_fs() {
+#if 0
 	devfs_unregister (lvm_devfs_handle);
-
+#endif
 	remove_proc_entry(LVM_GLOBAL, lvm_proc_dir);
 	remove_proc_entry(LVM_VG_SUBDIR, lvm_proc_dir);
 	remove_proc_entry(LVM_DIR, &proc_root);
@@ -135,13 +138,14 @@ void lvm_fs_remove_vg(vg_t *vg_ptr) {
 	devfs_unregister(ch_devfs_handle[vg_ptr->vg_number]);
 	ch_devfs_handle[vg_ptr->vg_number] = NULL;
 
+	/* remove pv's */
+	for(i = 0; i < vg_ptr->pv_max; i++)
+		if(vg_ptr->pv[i]) lvm_fs_remove_pv(vg_ptr, vg_ptr->pv[i]);
+
 	/* remove lv's */
 	for(i = 0; i < vg_ptr->lv_max; i++)
 		if(vg_ptr->lv[i]) lvm_fs_remove_lv(vg_ptr, vg_ptr->lv[i]);
 
-	/* remove pv's */
-	for(i = 0; i < vg_ptr->pv_max; i++)
-		if(vg_ptr->pv[i]) lvm_fs_remove_pv(vg_ptr, vg_ptr->pv[i]);
 
 	/* must not remove directory before leaf nodes */
 	devfs_unregister(vg_devfs_handle[vg_ptr->vg_number]);
@@ -276,12 +280,12 @@ static int _proc_read_lv(char *page, char **start, off_t off,
 	sz += sprintf(page + sz, "number:       %u\n", lv->lv_number);
 	sz += sprintf(page + sz, "open:         %u\n", lv->lv_open);
 	sz += sprintf(page + sz, "allocation:   %u\n", lv->lv_allocation);
-       if(lv->lv_stripes > 1) {
-               sz += sprintf(page + sz, "stripes:      %u\n",
-                             lv->lv_stripes);
-               sz += sprintf(page + sz, "stripesize:   %u\n",
-                             lv->lv_stripesize);
-       }
+	if(lv->lv_stripes > 1) {
+		sz += sprintf(page + sz, "stripes:      %u\n",
+			      lv->lv_stripes);
+		sz += sprintf(page + sz, "stripesize:   %u\n",
+			      lv->lv_stripesize);
+	}
 	sz += sprintf(page + sz, "device:       %02u:%02u\n",
 		      MAJOR(lv->lv_dev), MINOR(lv->lv_dev));
 
@@ -620,4 +624,3 @@ static void _show_uuid(const char *src, char *b, char *e) {
 	}
 	*b = '\0';
 }
-MODULE_LICENSE("GPL");

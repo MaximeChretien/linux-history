@@ -394,6 +394,7 @@ asmlinkage void do_rt_sigreturn32(struct pt_regs *regs)
 	struct rt_signal_frame32 *sf;
 	unsigned int psr;
 	unsigned pc, npc, fpu_save;
+	mm_segment_t old_fs;
 	sigset_t set;
 	sigset_t32 seta;
 	stack_t st;
@@ -451,7 +452,10 @@ asmlinkage void do_rt_sigreturn32(struct pt_regs *regs)
 		
 	/* It is more difficult to avoid calling this function than to
 	   call it and ignore errors.  */
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
 	do_sigaltstack(&st, NULL, (unsigned long)sf);
+	set_fs(old_fs);
 	
 	switch (_NSIG_WORDS) {
 		case 4: set.sig[3] = seta.sig[6] + (((long)seta.sig[7]) << 32);
@@ -757,6 +761,7 @@ static inline void new_setup_frame32(struct k_sigaction *ka, struct pt_regs *reg
 	regs->u_regs[UREG_FP] = (unsigned long) sf;
 	regs->u_regs[UREG_I0] = signo;
 	regs->u_regs[UREG_I1] = (unsigned long) &sf->info;
+	regs->u_regs[UREG_I2] = (unsigned long) &sf->info;
 
 	/* 4. signal handler */
 	regs->tpc = (unsigned long) ka->sa.sa_handler;
@@ -1024,6 +1029,7 @@ asmlinkage int svr4_setcontext(svr4_ucontext_t *c, struct pt_regs *regs)
 {
 	struct thread_struct *tp = &current->thread;
 	svr4_gregset_t  *gr;
+	mm_segment_t old_fs;
 	u32 pc, npc, psr;
 	sigset_t set;
 	svr4_sigset_t setv;
@@ -1077,7 +1083,10 @@ asmlinkage int svr4_setcontext(svr4_ucontext_t *c, struct pt_regs *regs)
 		
 	/* It is more difficult to avoid calling this function than to
 	   call it and ignore errors.  */
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
 	do_sigaltstack(&st, NULL, regs->u_regs[UREG_I6]);
+	set_fs(old_fs);
 	
 	sigdelsetmask(&set, ~_BLOCKABLE);
 	spin_lock_irq(&current->sigmask_lock);
@@ -1203,6 +1212,7 @@ static inline void setup_rt_frame32(struct k_sigaction *ka, struct pt_regs *regs
 	regs->u_regs[UREG_FP] = (unsigned long) sf;
 	regs->u_regs[UREG_I0] = signr;
 	regs->u_regs[UREG_I1] = (unsigned long) &sf->info;
+	regs->u_regs[UREG_I2] = (unsigned long) &sf->regs;
 
 	/* 4. signal handler */
 	regs->tpc = (unsigned long) ka->sa.sa_handler;
@@ -1370,9 +1380,23 @@ asmlinkage int do_signal32(sigset_t *oldset, struct pt_regs * regs,
 		signr = dequeue_signal(&current->blocked, &info);
 		spin_unlock_irq(&current->sigmask_lock);
 		
-		if (!signr) break;
+		if (!signr)
+			break;
 
 		if ((current->ptrace & PT_PTRACED) && signr != SIGKILL) {
+			/* Do the syscall restart before we let the debugger
+			 * look at the child registers.
+			 */
+			if (restart_syscall &&
+			    (regs->u_regs[UREG_I0] == ERESTARTNOHAND ||
+			     regs->u_regs[UREG_I0] == ERESTARTSYS ||
+			     regs->u_regs[UREG_I0] == ERESTARTNOINTR)) {
+				regs->u_regs[UREG_I0] = orig_i0;
+				regs->tpc -= 4;
+				regs->tnpc -= 4;
+				restart_syscall = 0;
+			}
+
 			current->exit_code = signr;
 			current->state = TASK_STOPPED;
 			notify_parent(current, SIGCHLD);
@@ -1401,8 +1425,8 @@ asmlinkage int do_signal32(sigset_t *oldset, struct pt_regs * regs,
 		
 		ka = &current->sig->action[signr-1];
 		
-		if(ka->sa.sa_handler == SIG_IGN) {
-			if(signr != SIGCHLD)
+		if (ka->sa.sa_handler == SIG_IGN) {
+			if (signr != SIGCHLD)
 				continue;
 
 			/* sys_wait4() grabs the master kernel lock, so
@@ -1410,16 +1434,16 @@ asmlinkage int do_signal32(sigset_t *oldset, struct pt_regs * regs,
 			 * threaded and would not be that difficult to
 			 * do anyways.
 			 */
-			while(sys_wait4(-1, NULL, WNOHANG, NULL) > 0)
+			while (sys_wait4(-1, NULL, WNOHANG, NULL) > 0)
 				;
 			continue;
 		}
-		if(ka->sa.sa_handler == SIG_DFL) {
+		if (ka->sa.sa_handler == SIG_DFL) {
 			unsigned long exit_code = signr;
 			
-			if(current->pid == 1)
+			if (current->pid == 1)
 				continue;
-			switch(signr) {
+			switch (signr) {
 			case SIGCONT: case SIGCHLD: case SIGWINCH:
 				continue;
 
@@ -1432,8 +1456,8 @@ asmlinkage int do_signal32(sigset_t *oldset, struct pt_regs * regs,
 					continue;
 				current->state = TASK_STOPPED;
 				current->exit_code = signr;
-				if(!(current->p_pptr->sig->action[SIGCHLD-1].sa.sa_flags &
-				     SA_NOCLDSTOP))
+				if (!(current->p_pptr->sig->action[SIGCHLD-1].sa.sa_flags &
+				      SA_NOCLDSTOP))
 					notify_parent(current, SIGCHLD);
 				schedule();
 				continue;
@@ -1463,8 +1487,8 @@ asmlinkage int do_signal32(sigset_t *oldset, struct pt_regs * regs,
 					struct reg_window32 *rw = (struct reg_window32 *)(regs->u_regs[UREG_FP] & 0xffffffff);
 					unsigned int ins[8];
 
-					while(rw &&
-					      !(((unsigned long) rw) & 0x3)) {
+					while (rw &&
+					       !(((unsigned long) rw) & 0x3)) {
 						copy_from_user(ins, &rw->ins[0], sizeof(ins));
 						printk("Caller[%08x](%08x,%08x,%08x,%08x,%08x,%08x)\n", ins[7], ins[0], ins[1], ins[2], ins[3], ins[4], ins[5]);
 						rw = (struct reg_window32 *)(unsigned long)ins[6];
@@ -1478,22 +1502,19 @@ asmlinkage int do_signal32(sigset_t *oldset, struct pt_regs * regs,
 #endif
 				/* fall through */
 			default:
-				sigaddset(&current->pending.signal, signr);
-				recalc_sigpending(current);
-				current->flags |= PF_SIGNALED;
-				do_exit(exit_code);
+				sig_exit(signr, exit_code, &info);
 				/* NOT REACHED */
 			}
 		}
-		if(restart_syscall)
+		if (restart_syscall)
 			syscall_restart32(orig_i0, regs, &ka->sa);
 		handle_signal32(signr, ka, &info, oldset, regs, svr4_signal);
 		return 1;
 	}
-	if(restart_syscall &&
-	   (regs->u_regs[UREG_I0] == ERESTARTNOHAND ||
-	    regs->u_regs[UREG_I0] == ERESTARTSYS ||
-	    regs->u_regs[UREG_I0] == ERESTARTNOINTR)) {
+	if (restart_syscall &&
+	    (regs->u_regs[UREG_I0] == ERESTARTNOHAND ||
+	     regs->u_regs[UREG_I0] == ERESTARTSYS ||
+	     regs->u_regs[UREG_I0] == ERESTARTNOINTR)) {
 		/* replay the system call when we are done */
 		regs->u_regs[UREG_I0] = orig_i0;
 		regs->tpc -= 4;

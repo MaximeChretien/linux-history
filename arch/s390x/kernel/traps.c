@@ -52,7 +52,10 @@ int sysctl_userprocess_debug = 0;
 #endif
 #endif
 
-extern pgm_check_handler_t do_page_fault;
+extern pgm_check_handler_t do_protection_exception;
+extern pgm_check_handler_t do_segment_exception;
+extern pgm_check_handler_t do_region_exception;
+extern pgm_check_handler_t do_page_exception;
 #ifdef CONFIG_PFAULT
 extern int pfault_init(void);
 extern void pfault_fini(void);
@@ -270,23 +273,6 @@ void die(const char * str, struct pt_regs * regs, long err)
         do_exit(SIGSEGV);
 }
 
-#define DO_ERROR(signr, str, name) \
-asmlinkage void name(struct pt_regs * regs, long interruption_code) \
-{ \
-	do_trap(interruption_code, signr, str, regs, NULL); \
-}
-
-#define DO_ERROR_INFO(signr, str, name, sicode, siaddr) \
-asmlinkage void name(struct pt_regs * regs, long interruption_code) \
-{ \
-        siginfo_t info; \
-        info.si_signo = signr; \
-        info.si_errno = 0; \
-        info.si_code = sicode; \
-        info.si_addr = (void *)siaddr; \
-        do_trap(interruption_code, signr, str, regs, &info); \
-}
-
 static void inline do_trap(long interruption_code, int signr, char *str,
                            struct pt_regs *regs, siginfo_t *info)
 {
@@ -299,7 +285,7 @@ static void inline do_trap(long interruption_code, int signr, char *str,
 
         if (regs->psw.mask & PSW_PROBLEM_STATE) {
                 struct task_struct *tsk = current;
-                tsk->thread.trap_no = interruption_code;
+                tsk->thread.trap_no = interruption_code & 0xffff;
 		if (info)
 			force_sig_info(signr, info, tsk);
 		else
@@ -326,6 +312,11 @@ static void inline do_trap(long interruption_code, int signr, char *str,
         }
 }
 
+static inline void *get_check_address(struct pt_regs *regs)
+{
+	return (void *) ADDR_BITS_REMOVE(regs->psw.addr-S390_lowcore.pgm_ilc);
+}
+
 int do_debugger_trap(struct pt_regs *regs,int signal)
 {
 	if(regs->psw.mask&PSW_PROBLEM_STATE)
@@ -349,15 +340,70 @@ int do_debugger_trap(struct pt_regs *regs,int signal)
 	return 0;
 }
 
+#define DO_ERROR(signr, str, name) \
+asmlinkage void name(struct pt_regs * regs, long interruption_code) \
+{ \
+	do_trap(interruption_code, signr, str, regs, NULL); \
+}
+
+#define DO_ERROR_INFO(signr, str, name, sicode, siaddr) \
+asmlinkage void name(struct pt_regs * regs, long interruption_code) \
+{ \
+        siginfo_t info; \
+        info.si_signo = signr; \
+        info.si_errno = 0; \
+        info.si_code = sicode; \
+        info.si_addr = (void *)siaddr; \
+        do_trap(interruption_code, signr, str, regs, &info); \
+}
+
 DO_ERROR(SIGSEGV, "Unknown program exception", default_trap_handler)
-DO_ERROR(SIGILL,  "privileged operation", privileged_op)
-DO_ERROR(SIGILL,  "execute exception", execute_exception)
-DO_ERROR(SIGSEGV, "addressing exception", addressing_exception)
-DO_ERROR(SIGFPE,  "fixpoint divide exception", divide_exception)
-DO_ERROR(SIGILL,  "translation exception", translation_exception)
-DO_ERROR(SIGILL,  "special operand exception", special_op_exception)
-DO_ERROR(SIGILL,  "operand exception", operand_exception)
-DO_ERROR(SIGILL,  "specification exception", specification_exception);
+
+DO_ERROR_INFO(SIGBUS, "addressing exception", addressing_exception,
+	      BUS_ADRERR, get_check_address(regs))
+DO_ERROR_INFO(SIGILL,  "execute exception", execute_exception,
+	      ILL_ILLOPN, get_check_address(regs))
+DO_ERROR_INFO(SIGFPE,  "fixpoint divide exception", divide_exception,
+	      FPE_INTDIV, get_check_address(regs))
+DO_ERROR_INFO(SIGILL,  "operand exception", operand_exception,
+	      ILL_ILLOPN, get_check_address(regs))
+DO_ERROR_INFO(SIGILL,  "privileged operation", privileged_op,
+	      ILL_PRVOPC, get_check_address(regs))
+DO_ERROR_INFO(SIGILL,  "special operation exception", special_op_exception,
+	      ILL_ILLOPN, get_check_address(regs))
+DO_ERROR_INFO(SIGILL,  "specification exception", specification_exception,
+	      ILL_ILLOPN, get_check_address(regs))
+DO_ERROR_INFO(SIGILL,  "translation exception", translation_exception,
+	      ILL_ILLOPN, get_check_address(regs))
+
+static inline void
+do_fp_trap(struct pt_regs *regs, void *location,
+           int fpc, long interruption_code)
+{
+	siginfo_t si;
+
+	si.si_signo = SIGFPE;
+	si.si_errno = 0;
+	si.si_addr = location;
+	si.si_code = 0;
+	/* FPC[2] is Data Exception Code */
+	if ((fpc & 0x00000300) == 0) {
+		/* bits 6 and 7 of DXC are 0 iff IEEE exception */
+		if (fpc & 0x8000) /* invalid fp operation */
+			si.si_code = FPE_FLTINV;
+		else if (fpc & 0x4000) /* div by 0 */
+			si.si_code = FPE_FLTDIV;
+		else if (fpc & 0x2000) /* overflow */
+			si.si_code = FPE_FLTOVF;
+		else if (fpc & 0x1000) /* underflow */
+			si.si_code = FPE_FLTUND;
+		else if (fpc & 0x0800) /* inexact */
+			si.si_code = FPE_FLTRES;
+	}
+	current->thread.ieee_instruction_pointer = (addr_t) location;
+	do_trap(interruption_code, SIGFPE,
+		"floating point exception", regs, &si);
+}
 
 asmlinkage void illegal_op(struct pt_regs * regs, long interruption_code)
 {
@@ -365,7 +411,7 @@ asmlinkage void illegal_op(struct pt_regs * regs, long interruption_code)
 	__u16 *location;
 	int do_sig = 0;
 
-	location = (__u16 *)(regs->psw.addr-S390_lowcore.pgm_ilc);
+	location = (__u16 *) get_check_address(regs);
 
 	/*
 	 * We got all needed information from the lowcore and can
@@ -390,15 +436,15 @@ asmlinkage void illegal_op(struct pt_regs * regs, long interruption_code)
 	else
 		do_sig = 1;
 	if (do_sig)
-		do_trap(interruption_code, SIGILL, "illegal operation", regs, NULL);
+		do_trap(interruption_code, SIGILL,
+			"illegal operation", regs, NULL);
 }
 
 asmlinkage void data_exception(struct pt_regs * regs, long interruption_code)
 {
 	__u16 *location;
-	int do_sig = 0;
 
-	location = (__u16 *)(regs->psw.addr-S390_lowcore.pgm_ilc);
+	location = (__u16 *) get_check_address(regs);
 
 	/*
 	 * We got all needed information from the lowcore and can
@@ -409,17 +455,19 @@ asmlinkage void data_exception(struct pt_regs * regs, long interruption_code)
 
 	__asm__ volatile ("stfpc %0\n\t" 
 			  : "=m" (current->thread.fp_regs.fpc));
-	/* Same code should work when we implement fpu emulation */
-	/* provided we call data exception from the fpu emulator */
-	if(current->thread.fp_regs.fpc&FPC_DXC_MASK)
-	{
-		current->thread.ieee_instruction_pointer=(addr_t)location;
-		force_sig(SIGFPE, current);
+
+	if (current->thread.fp_regs.fpc & FPC_DXC_MASK)
+		do_fp_trap(regs, location,
+                           current->thread.fp_regs.fpc, interruption_code);
+        else {
+		siginfo_t info;
+		info.si_signo = SIGILL;
+		info.si_errno = 0;
+		info.si_code = ILL_ILLOPN;
+		info.si_addr = location;
+		do_trap(interruption_code, SIGILL, 
+			"data exception", regs, &info);
 	}
-	else
-		do_sig = 1;
-        if (do_sig)
-                do_trap(interruption_code, SIGILL, "data exception", regs, NULL);
 }
 
 
@@ -435,6 +483,7 @@ void __init trap_init(void)
         pgm_check_table[1] = &illegal_op;
         pgm_check_table[2] = &privileged_op;
         pgm_check_table[3] = &execute_exception;
+        pgm_check_table[4] = &do_protection_exception;
         pgm_check_table[5] = &addressing_exception;
         pgm_check_table[6] = &specification_exception;
         pgm_check_table[7] = &data_exception;
@@ -442,12 +491,11 @@ void __init trap_init(void)
         pgm_check_table[0x12] = &translation_exception;
         pgm_check_table[0x13] = &special_op_exception;
         pgm_check_table[0x15] = &operand_exception;
-        pgm_check_table[4] = &do_page_fault;
-        pgm_check_table[0x10] = &do_page_fault;
-        pgm_check_table[0x11] = &do_page_fault;
+        pgm_check_table[0x10] = &do_segment_exception;
+        pgm_check_table[0x11] = &do_page_exception;
         pgm_check_table[0x1C] = &privileged_op;
         pgm_check_table[0x38] = &addressing_exception;
-        pgm_check_table[0x3B] = &do_page_fault;
+        pgm_check_table[0x3B] = &do_region_exception;
 #ifdef CONFIG_PFAULT
 	if (MACHINE_IS_VM) {
 		/* request the 0x2603 external interrupt */

@@ -10,7 +10,7 @@
  */
 
 
-#define RTC_DEF_DIVIDER		32768 - 1
+#define RTC_DEF_DIVIDER		(32768 - 1)
 #define RTC_DEF_TRIM            0
 
 static unsigned long __init sa1100_get_rtc_time(void)

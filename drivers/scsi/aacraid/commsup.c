@@ -445,13 +445,18 @@ int fib_send(u16 command, struct fib * fibptr, unsigned long size,  int priority
 		fib->header.XferState |= cpu_to_le32(ResponseExpected);
 		FIB_COUNTER_INCREMENT(aac_config.NormalSent);
 	} 
-	fib->header.SenderData = (unsigned long)fibptr;	/* for callback */
+	/*
+	 *	Map the fib into 32bits by using the fib number
+	 */
+	fib->header.SenderData = fibptr-&dev->fibs[0];	/* for callback */
 	/*
 	 *	Set FIB state to indicate where it came from and if we want a
 	 *	response from the adapter. Also load the command from the
 	 *	caller.
+	 *
+	 *	Map the hw fib pointer as a 32bit value
 	 */
-	fib->header.SenderFibAddress = cpu_to_le32((u32)fib);
+	fib->header.SenderFibAddress = fib2addr(fib);
 	fib->header.Command = cpu_to_le16(command);
 	fib->header.XferState |= cpu_to_le32(SentFromHost);
 	fibptr->fib->header.Flags = 0;				/* Zero the flags field - its internal only...	 */
@@ -756,9 +761,9 @@ void aac_printf(struct aac_dev *dev, u32 val)
 	if (cp[length] != 0)
 		cp[length] = 0;
 	if (level == LOG_HIGH_ERROR)
-		printk(KERN_WARNING "aacraid:%s.\n", cp);
+		printk(KERN_WARNING "aacraid:%s", cp);
 	else
-		printk(KERN_INFO "aacraid:%s.\n", cp);
+		printk(KERN_INFO "aacraid:%s", cp);
 	memset(cp, 0,  256);
 }
 

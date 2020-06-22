@@ -7,8 +7,8 @@ define_bool CONFIG_ISA n
 define_bool CONFIG_EISA n
 define_bool CONFIG_MCA n
 define_bool CONFIG_UID16 y
-define_bool CONFIG_RWSEM_GENERIC_SPINLOCK y
-define_bool CONFIG_RWSEM_XCHGADD_ALGORITHM n
+define_bool CONFIG_RWSEM_GENERIC_SPINLOCK n
+define_bool CONFIG_RWSEM_XCHGADD_ALGORITHM y
 define_bool CONFIG_GENERIC_BUST_SPINLOCK n
 
 mainmenu_name "Linux Kernel Configuration"
@@ -37,6 +37,8 @@ endmenu
 mainmenu_option next_comment
 comment 'General setup'
 bool 'Fast IRQ handling' CONFIG_FAST_IRQ
+bool 'Process warning machine checks' CONFIG_MACHCHK_WARNING
+bool 'Use chscs for Common I/O' CONFIG_CHSC
 bool 'Builtin IPL record support' CONFIG_IPL
 if [ "$CONFIG_IPL" = "y" ]; then
   choice 'IPL method generated into head.S' \

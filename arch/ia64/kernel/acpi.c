@@ -401,7 +401,7 @@ acpi20_parse (acpi20_rsdp_t *rsdp20)
 # ifdef CONFIG_ACPI
 	acpi_xsdt_t *xsdt;
 	acpi_desc_table_hdr_t *hdrp;
-	acpi_madt_t *madt;
+	acpi_madt_t *madt = NULL;
 	int tables, i;
 
 	if (strncmp(rsdp20->signature, ACPI_RSDP_SIG, ACPI_RSDP_SIG_LEN)) {

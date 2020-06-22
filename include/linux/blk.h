@@ -59,8 +59,6 @@ extern void set_device_ro(kdev_t dev,int flag);
 void add_blkdev_randomness(int major);
 
 extern int floppy_init(void);
-extern void rd_load(void);
-extern int rd_init(void);
 extern int rd_doload;		/* 1 = load ramdisk, 0 = don't load */
 extern int rd_prompt;		/* 1 = prompt for ramdisk, 0 = don't prompt */
 extern int rd_image_start;	/* starting block # of image */
@@ -70,7 +68,6 @@ extern int rd_image_start;	/* starting block # of image */
 #define INITRD_MINOR 250 /* shouldn't collide with /dev/ram* too soon ... */
 
 extern unsigned long initrd_start,initrd_end;
-extern int mount_initrd; /* zero if initrd should not be mounted */
 extern int initrd_below_start_ok; /* 1 if it is not an error if initrd_start < memory_start */
 void initrd_init(void);
 

@@ -61,6 +61,4 @@
 #define ADS_DCR		(*((volatile u_char *) ADS_p2v(_ADS_DCR)))
 #endif
 
-#define	SA1111_BASE	(0x18000000)
-
-#include "SA-1111.h"
+#define ADS_SA1111_BASE		(0x18000000)

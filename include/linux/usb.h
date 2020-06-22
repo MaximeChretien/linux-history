@@ -429,6 +429,8 @@ struct usb_driver {
 #define USB_QUEUE_BULK          0x0010
 #define USB_NO_FSBR		0x0020
 #define USB_ZERO_PACKET         0x0040  // Finish bulk OUTs always with zero length packet
+#define URB_NO_INTERRUPT	0x0080	/* HINT: no non-error interrupt needed */
+					/* ... less overhead for QUEUE_BULK */
 #define USB_TIMEOUT_KILLED	0x1000	// only set by HCD!
 
 typedef struct
@@ -733,6 +735,22 @@ struct usb_bus {
 	atomic_t refcnt;
 };
 
+/*
+ * As of USB 2.0, full/low speed devices are segregated into trees.
+ * One type grows from USB 1.1 host controllers (OHCI, UHCI etc).
+ * The other type grows from high speed hubs when they connect to
+ * full/low speed devices using "Transaction Translators" (TTs).
+ *
+ * TTs should only be known to the hub driver, and high speed bus
+ * drivers (only EHCI for now).  They affect periodic scheduling and
+ * sometimes control/bulk error recovery.
+ */
+struct usb_tt {
+	struct usb_device	*hub;	/* upstream highspeed hub */
+	int			multi;	/* true means one TT per port */
+};
+
+
 /* This is arbitrary.
  * From USB 2.0 spec Table 11-13, offset 7, a hub can
  * have up to 255 ports. The most yet reported is 10.
@@ -748,8 +766,8 @@ struct usb_device {
 		USB_SPEED_HIGH				/* usb 2.0 */
 	} speed;
 
-	struct usb_device *tt;		/* usb1.1 device on usb2.0 bus */
-	int ttport;			/* device/hub port on that tt */
+	struct usb_tt	*tt; 		/* low/full speed dev, highspeed hub */
+	int		ttport;		/* device port on that tt hub */
 
 	atomic_t refcnt;		/* Reference count */
 	struct semaphore serialize;

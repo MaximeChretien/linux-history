@@ -19,13 +19,14 @@
     Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
-#include <asm/system.h>
-
 #include "fpa11.h"
+
 #include "fpopcode.h"
 
 #include "fpmodule.h"
 #include "fpmodule.inl"
+
+#include <asm/system.h>
 
 /* forward declarations */
 unsigned int EmulateCPDO(const unsigned int);
@@ -56,6 +57,7 @@ void resetFPA11(void)
 void SetRoundingMode(const unsigned int opcode)
 {
 #if MAINTAIN_FPCR
+   FPA11 *fpa11 = GET_FPA11();
    fpa11->fpcr &= ~MASK_ROUNDING_MODE;
 #endif   
    switch (opcode & MASK_ROUNDING_MODE)
@@ -94,6 +96,7 @@ void SetRoundingMode(const unsigned int opcode)
 void SetRoundingPrecision(const unsigned int opcode)
 {
 #if MAINTAIN_FPCR
+   FPA11 *fpa11 = GET_FPA11();
    fpa11->fpcr &= ~MASK_ROUNDING_PRECISION;
 #endif   
    switch (opcode & MASK_ROUNDING_PRECISION)

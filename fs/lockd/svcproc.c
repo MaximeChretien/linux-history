@@ -282,6 +282,8 @@ nlmsvc_proc_test_msg(struct svc_rqst *rqstp, struct nlm_args *argp,
 
 	dprintk("lockd: TEST_MSG      called\n");
 
+	memset(&res, 0, sizeof(res));
+
 	if ((stat = nlmsvc_proc_test(rqstp, argp, &res)) == 0)
 		stat = nlmsvc_callback(rqstp, NLMPROC_TEST_RES, &res);
 	return stat;
@@ -474,12 +476,14 @@ nlmsvc_proc_sm_notify(struct svc_rqst *rqstp, struct nlm_reboot *argp,
 	/* If we run on an NFS server, delete all locks held by the client */
 	if (nlmsvc_ops != NULL) {
 		struct svc_client	*clnt;
-		saddr.sin_addr.s_addr = argp->addr;	
+		saddr.sin_addr.s_addr = argp->addr;
+		nlmsvc_ops->exp_readlock();
 		if ((clnt = nlmsvc_ops->exp_getclient(&saddr)) != NULL 
 		 && (host = nlm_lookup_host(clnt, &saddr, 0, 0)) != NULL) {
 			nlmsvc_free_host_resources(host);
 		}
 		nlm_release_host(host);
+		nlmsvc_ops->exp_unlock();
 	}
 
 	return rpc_success;

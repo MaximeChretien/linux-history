@@ -21,7 +21,6 @@
 #include <linux/stat.h>
 #include <linux/ctype.h>
 #include <asm/bitops.h>
-#include <asm/segment.h>
 #include <asm/uaccess.h>
 #include <linux/utsname.h>
 #define __NO_VERSION__
@@ -51,7 +50,6 @@ static struct ctl_table_header *fs_table_header;
 
 static ctl_table coda_table[] = {
 	{CODA_DEBUG, "debug", &coda_debug, sizeof(int), 0644, NULL, &proc_dointvec},
-	{CODA_ENTRY, "printentry", &coda_print_entry, sizeof(int), 0644, NULL, &proc_dointvec},
  	{CODA_MC, "accesscache", &coda_access_cache, sizeof(int), 0644, NULL, &proc_dointvec}, 
  	{CODA_TIMEOUT, "timeout", &coda_timeout, sizeof(int), 0644, NULL, &proc_dointvec},
  	{CODA_HARD, "hard", &coda_hard, sizeof(int), 0644, NULL, &proc_dointvec},

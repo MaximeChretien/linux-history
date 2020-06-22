@@ -340,7 +340,7 @@ static int reiserfs_find_entry (struct inode * dir, const char * name, int namel
 static struct dentry * reiserfs_lookup (struct inode * dir, struct dentry * dentry)
 {
     int retval;
-    struct inode * inode = 0;
+    struct inode * inode = NULL;
     struct reiserfs_dir_entry de;
     INITIALIZE_PATH (path_to_entry);
 
@@ -357,6 +357,9 @@ static struct dentry * reiserfs_lookup (struct inode * dir, struct dentry * dent
 	if (!inode || IS_ERR(inode)) {
 	    return ERR_PTR(-EACCES);
         }
+    }
+    if ( retval == IO_ERROR ) {
+	return ERR_PTR(-EIO);
     }
 
     d_add(dentry, inode);
@@ -443,6 +446,10 @@ static int reiserfs_add_entry (struct reiserfs_transaction_handle *th, struct in
 	    reiserfs_kfree (buffer, buflen, dir->i_sb);
 	pathrelse (&path);
 
+	if ( retval == IO_ERROR ) {
+	    return -EIO;
+	}
+
         if (retval != NAME_FOUND) {
 	    reiserfs_warning ("zam-7002:" __FUNCTION__ ": \"reiserfs_find_entry\" has returned"
                               " unexpected value (%d)\n", retval);
@@ -470,7 +477,7 @@ static int reiserfs_add_entry (struct reiserfs_transaction_handle *th, struct in
     if (gen_number != 0) {	/* we need to re-search for the insertion point */
       if (search_by_entry_key (dir->i_sb, &entry_key, &path, &de) != NAME_NOT_FOUND) {
             reiserfs_warning ("vs-7032: reiserfs_add_entry: "
-                            "entry with this key (%k) already exists\n", &entry_key);
+                            "entry with this key (%K) already exists\n", &entry_key);
 
 	    if (buffer != small_buf)
 		reiserfs_kfree (buffer, buflen, dir->i_sb);
@@ -715,10 +722,14 @@ static int reiserfs_rmdir (struct inode * dir, struct dentry *dentry)
     windex = push_journal_writer("reiserfs_rmdir") ;
 
     de.de_gen_number_bit_string = 0;
-    if (reiserfs_find_entry (dir, dentry->d_name.name, dentry->d_name.len, &path, &de) == NAME_NOT_FOUND) {
+    if ( (retval = reiserfs_find_entry (dir, dentry->d_name.name, dentry->d_name.len, &path, &de)) == NAME_NOT_FOUND) {
 	retval = -ENOENT;
 	goto end_rmdir;
+    } else if ( retval == IO_ERROR) {
+	retval = -EIO;
+	goto end_rmdir;
     }
+
     inode = dentry->d_inode;
 
     reiserfs_update_inode_transaction(inode) ;
@@ -800,8 +811,11 @@ static int reiserfs_unlink (struct inode * dir, struct dentry *dentry)
     windex = push_journal_writer("reiserfs_unlink") ;
 	
     de.de_gen_number_bit_string = 0;
-    if (reiserfs_find_entry (dir, dentry->d_name.name, dentry->d_name.len, &path, &de) == NAME_NOT_FOUND) {
+    if ( (retval = reiserfs_find_entry (dir, dentry->d_name.name, dentry->d_name.len, &path, &de)) == NAME_NOT_FOUND) {
 	retval = -ENOENT;
+	goto end_unlink;
+    } else if (retval == IO_ERROR) {
+	retval = -EIO;
 	goto end_unlink;
     }
 
@@ -881,7 +895,7 @@ static int reiserfs_symlink (struct inode * dir, struct dentry * dentry, const c
 	return -ENAMETOOLONG;
     }
   
-    name = kmalloc (item_len, GFP_NOFS);
+    name = reiserfs_kmalloc (item_len, GFP_NOFS, dir->i_sb);
     if (!name) {
 	iput(inode) ;
 	return -ENOMEM;
@@ -894,7 +908,7 @@ static int reiserfs_symlink (struct inode * dir, struct dentry * dentry, const c
 
     inode = reiserfs_new_inode (&th, dir, S_IFLNK | S_IRWXUGO, name, strlen (symname), dentry,
 				inode, &retval);
-    kfree (name);
+    reiserfs_kfree (name, item_len, dir->i_sb);
     if (inode == 0) { /* reiserfs_new_inode iputs for us */
 	pop_journal_writer(windex) ;
 	journal_end(&th, dir->i_sb, jbegin_count) ;
@@ -1065,8 +1079,10 @@ static int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
     retval = reiserfs_find_entry (old_dir, old_dentry->d_name.name, old_dentry->d_name.len,
 				  &old_entry_path, &old_de);
     pathrelse (&old_entry_path);
+    if (retval == IO_ERROR)
+	return -EIO;
+
     if (retval != NAME_FOUND || old_de.de_objectid != old_inode->i_ino) {
-	// FIXME: IO error is possible here
 	return -ENOENT;
     }
 
@@ -1138,6 +1154,8 @@ static int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
 	new_de.de_gen_number_bit_string = 0;
 	retval = reiserfs_find_entry (new_dir, new_dentry->d_name.name, new_dentry->d_name.len, 
 				      &new_entry_path, &new_de);
+	// reiserfs_add_entry should not return IO_ERROR, because it is called with essentially same parameters from
+        // reiserfs_add_entry above, and we'll catch any i/o errors before we get here.
 	if (retval != NAME_FOUND_INVISIBLE && retval != NAME_FOUND)
 	    BUG ();
 

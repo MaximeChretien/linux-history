@@ -22,6 +22,7 @@
 #include <asm/hardware.h>
 #include <asm/io.h>
 #include <asm/dma.h>
+#include <asm/hardware/sa1111.h>
 
 // #define DEBUG
 #ifdef DEBUG

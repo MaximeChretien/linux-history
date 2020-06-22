@@ -18,6 +18,7 @@
 #include <asm/smp.h>
 #include <asm/ptrace.h>
 
+#include "asm-offsets.h"
 
 /*
  * Stack layout for the system_call stack entry.
@@ -45,41 +46,7 @@ SP_AREGS     =  STACK_FRAME_OVERHEAD + PT_ACR0
 SP_ORIG_R2   =  STACK_FRAME_OVERHEAD + PT_ORIGGPR2
 /* Now the additional entries */
 SP_TRAP      =  (SP_ORIG_R2+GPR_SIZE)
-#if CONFIG_REMOTE_DEBUG
-SP_CRREGS    =  (SP_TRAP+4)
-/* fpu registers are saved & restored by the gdb stub itself */
-SP_FPC       =  (SP_CRREGS+(NUM_CRS*CR_SIZE))
-SP_FPRS      =  (SP_FPC+FPC_SIZE+FPC_PAD_SIZE)
-SP_PGM_OLD_ILC= (SP_FPRS+(NUM_FPRS*FPR_SIZE))
-#else
-SP_PGM_OLD_ILC= (SP_TRAP+4)
-#endif
-SP_SIZE      =  (SP_PGM_OLD_ILC+4)
-/*
- * these defines are offsets into the thread_struct
- */
-_TSS_PTREGS  = 0
-_TSS_FPRS    = (_TSS_PTREGS+8)
-_TSS_AR2     = (_TSS_FPRS+136)
-_TSS_AR4     = (_TSS_AR2+4)
-_TSS_KSP     = (_TSS_AR4+4)
-_TSS_USERSEG = (_TSS_KSP+8)
-_TSS_PROT    = (_TSS_USERSEG+8)
-_TSS_ERROR   = (_TSS_PROT+8)
-_TSS_TRAP    = (_TSS_ERROR+4)
-_TSS_PER     = (_TSS_TRAP+4)
-_TSS_IEEE    = (_TSS_PER+72)
-_TSS_FLAGS   = (_TSS_IEEE+8)
-
-/*
- * these are offsets into the task-struct.
- */
-state        =  0
-flags        =  8
-sigpending   = 16
-need_resched = 32
-tsk_ptrace   = 40
-processor    = 88
+SP_SIZE      =  (SP_TRAP+4)
 
 /*
  * Register usage in interrupt handlers:
@@ -136,37 +103,31 @@ processor    = 88
 
 /*
  * Scheduler resume function, called by switch_to
- *  grp2 = (thread_struct *) prev->tss
- *  grp3 = (thread_struct *) next->tss
+ *  gpr2 = (task_struct *) prev
+ *  gpr3 = (task_struct *) next
  * Returns:
  *  gpr2 = prev
  */
         .globl  resume
 resume:
-        lg      %r4,_TSS_PTREGS(%r3)
-        tm      SP_PSW-SP_PTREGS(%r4),0x40 # is the new process using per ?
-        jz      resume_noper            # if not we're fine
+	tm	__THREAD_per+4(%r3),0xe8	# is the new process using per ?
+	jz	resume_noper		# if not we're fine
         stctg   %c9,%c11,48(%r15)       # We are using per stuff
-        clc     _TSS_PER(24,%r3),48(%r15)
+        clc     __THREAD_per(24,%r3),48(%r15)
         je      resume_noper            # we got away without bashing TLB's
-        lctlg   %c9,%c11,_TSS_PER(%r3)  # Nope we didn't
+        lctlg   %c9,%c11,__THREAD_per(%r3)	# Nope we didn't
 resume_noper:
         stmg    %r6,%r15,48(%r15)       # store resume registers of prev task
-        stg     %r15,_TSS_KSP(%r2) # store kernel stack ptr to prev->tss.ksp
-        lghi    %r0,-16384
-        ngr     %r0,%r15
-        lg      %r15,_TSS_KSP(%r3) # load kernel stack ptr from next->tss.ksp
-        lghi    %r1,16383
-        ogr     %r1,%r15
-        aghi    %r1,1
-        stg     %r1,__LC_KERNEL_STACK   # __LC_KERNEL_STACK = new kernel stack
-        stam    %a2,%a2,_TSS_AR2(%r2)   # store kernel access reg. 2
-        stam    %a4,%a4,_TSS_AR4(%r2)   # store kernel access reg. 4
-        lam     %a2,%a2,_TSS_AR2(%r3)   # load kernel access reg. 2
-        lam     %a4,%a4,_TSS_AR4(%r3)   # load kernel access reg. 4
-        lgr     %r2,%r0                 # return task_struct of last task
+	stg	%r15,__THREAD_ksp(%r2)	# store kernel stack to prev->tss.ksp
+	lg	%r15,__THREAD_ksp(%r3)	# load kernel stack from next->tss.ksp
+        stam    %a2,%a2,__THREAD_ar2(%r2)	# store kernel access reg. 2
+        stam    %a4,%a4,__THREAD_ar4(%r2)	# store kernel access reg. 4
+        lam     %a2,%a2,__THREAD_ar2(%r3)	# load kernel access reg. 2
+        lam     %a4,%a4,__THREAD_ar4(%r3)	# load kernel access reg. 4
         lmg     %r6,%r15,48(%r15)       # load resume registers of next task
-        br      %r14
+	aghi	%r3,16384
+	stg	%r3,__LC_KERNEL_STACK	# __LC_KERNEL_STACK = new kernel stack
+	br	%r14
 
 /*
  * do_softirq calling function. We want to run the softirq functions on the
@@ -195,19 +156,17 @@ do_call_softirq:
 	.globl  system_call
 system_call:
         SAVE_ALL __LC_SVC_OLD_PSW,1
-	mvi     SP_PGM_OLD_ILC(%r15),1  # mark PGM_OLD_ILC as invalid
-pgm_system_call:
-        GET_CURRENT               # load pointer to task_struct to R9
 	larl    %r7,sys_call_table
-	llgc    %r8,__LC_SVC_INT_CODE+1 # get svc number from lowcore
-	stosm   48(%r15),0x03     # reenable interrupts
+	llgh    %r8,__LC_SVC_INT_CODE # get svc number from lowcore
         sll     %r8,3
+        GET_CURRENT               # load pointer to task_struct to R9
+	stosm   48(%r15),0x03     # reenable interrupts
         tm      SP_PSW+3(%r15),0x01  # are we running in 31 bit mode ?
         jo      sysc_noemu
 	la      %r8,4(%r8)        # use 31 bit emulation system calls
 sysc_noemu:
         lgf     %r8,0(%r8,%r7)    # load address of system call routine
-        tm      tsk_ptrace+7(%r9),0x02 # PT_TRACESYS
+        tm      __TASK_ptrace+7(%r9),0x02 # PT_TRACESYS
         jnz     sysc_tracesys
         basr    %r14,%r8          # call sys_xxxx
         stg     %r2,SP_R2(%r15)   # store return value (change R2 on stack)
@@ -220,14 +179,12 @@ sysc_return:
 #
 # check, if reschedule is needed
 #
-	lg      %r0,need_resched(%r9) # get need_resched from task_struct
+	lg      %r0,__TASK_need_resched(%r9)
 	ltgr    %r0,%r0
         jnz     sysc_reschedule
-        icm     %r0,15,sigpending(%r9)     # get sigpending from task_struct
+        icm     %r0,15,__TASK_sigpending(%r9)
         jnz     sysc_signal_return
 sysc_leave:
-        tm      SP_PGM_OLD_ILC(%r15),0xff
-        jz      pgm_svcret
 	stnsm   48(%r15),0xfc         # disable I/O and ext. interrupts
         RESTORE_ALL 1
 
@@ -241,36 +198,42 @@ sysc_signal_return:
 	jg      do_signal           # return point is sysc_leave
 
 #
-# call trace before and after sys_call
-#
-sysc_tracesys:
-	lghi    %r2,-ENOSYS
-	stg     %r2,SP_R2(%r15)     # give sysc_trace an -ENOSYS retval
-        brasl   %r14,syscall_trace
-	lg      %r2,SP_R2(%r15)
-	cghi    %r2,-ENOSYS
-	je      sysc_tracesys_dn1   
-	sllg    %r2,%r2,56          # strace wants to change the syscall
-	srlg    %r2,%r2,53          # zap unused bits & multiply by 8
-	tm      SP_PSW+3(%r15),0x01 # are we running in 31 bit mode ?
-        jo      sysc_tracesys_noemu
-	la      %r2,4(%r2)          # use 31 bit emulation system calls
-sysc_tracesys_noemu:
-	lgf	%r8,0(%r2,%r7)      # load address of system call routine
-sysc_tracesys_dn1:	
-	lmg     %r3,%r6,SP_R3(%r15)
-	lg      %r2,SP_ORIG_R2(%r15)
-        basr    %r14,%r8            # call sys_xxx
-        stg     %r2,SP_R2(%r15)     # store return value
-	larl    %r14,sysc_return
-        jg      syscall_trace       # return point is sysc_return
-
-#
 # call schedule with sysc_return as return-address
 #
 sysc_reschedule:        
 	larl    %r14,sysc_return
         jg      schedule            # return point is sysc_return
+#
+# call trace before and after sys_call
+#
+sysc_tracesys:
+	larl	%r12,sysc_return
+
+#
+# call syscall_trace before and after system call
+# special linkage: %r12 contains the return address for trace_svc
+#
+trace_svc:
+	lghi    %r7,-ENOSYS
+	stg     %r7,SP_R2(%r15)     # give sysc_trace an -ENOSYS retval
+        brasl   %r14,syscall_trace
+	lg      %r2,SP_R2(%r15)
+	cghi    %r2,-ENOSYS
+	je      trace_svc_go
+	sllg    %r2,%r2,56          # strace wants to change the syscall
+	srlg    %r2,%r2,53          # zap unused bits & multiply by 8
+	tm      SP_PSW+3(%r15),0x01 # are we running in 31 bit mode ?
+        jo      trace_svc_noemu
+	la      %r2,4(%r2)          # use 31 bit emulation system calls
+trace_svc_noemu:
+	lgf	%r8,0(%r2,%r7)      # load address of system call routine
+trace_svc_go:	
+	lmg     %r3,%r6,SP_R3(%r15)
+	lg      %r2,SP_ORIG_R2(%r15)
+        basr    %r14,%r8            # call sys_xxx
+        stg     %r2,SP_R2(%r15)     # store return value
+	lgr	%r14,%r12	    # return point is in %r12
+        jg      syscall_trace       # return point is sysc_return
 
 #
 # a new process exits the kernel with ret_from_fork
@@ -280,12 +243,8 @@ ret_from_fork:
         GET_CURRENT               # load pointer to task_struct to R9
         stosm   48(%r15),0x03     # reenable interrupts
 	xc      SP_R2(8,%r15),SP_R2(%r15) # child returns 0
-#ifdef CONFIG_SMP
 	larl    %r14,sysc_return
         jg      schedule_tail     # return to sysc_return
-#else
-        j       sysc_return
-#endif
 
 #
 # clone, fork, vfork, exec and sigreturn need glue,
@@ -630,10 +589,23 @@ sys_call_table:
         .long  SYSCALL(sys_madvise,sys32_madvise_wrapper)
 	.long  SYSCALL(sys_getdents64,sys32_getdents64_wrapper)/* 220 */
 	.long  SYSCALL(sys_ni_syscall,sys32_fcntl64_wrapper)
-	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 222 - reserved for posix_acl */
-	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 223 - reserved for posix_acl */
-	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 224 - reserved for posix_acl */
-        .rept  255-224
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall)
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall)
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 224 - reserved for setxattr  */
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 225 - reserved for lsetxattr */
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 226 - reserved for fsetxattr */
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 227 - reserved for getxattr  */
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 228 - reserved for lgetxattr */
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 229 - reserved for fgetxattr */
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 230 - reserved for listxattr */
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 231 - reserved for llistxattr */
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 232 - reserved for flistxattr */
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 233 - reserved for removexattr */
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 234 - reserved for lremovexattr */
+	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 235 - reserved for fremovexattr */
+	.long  SYSCALL(sys_gettid,sys_gettid)
+	.long  SYSCALL(sys_tkill,sys_tkill)
+	.rept  255-237
 	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall)
 	.endr
 
@@ -657,51 +629,91 @@ pgm_check_handler:
  * for LPSW?).
  */
         tm      __LC_PGM_INT_CODE+1,0x80 # check whether we got a per exception
-        jz      pgm_sv                   # skip if not
+        jnz     pgm_per                  # got per exception -> special case
+	SAVE_ALL __LC_PGM_OLD_PSW,1
+	llgh    %r8,__LC_PGM_INT_CODE
+        sll     %r8,3
+	GET_CURRENT
+        larl    %r1,pgm_check_table
+        lg      %r1,0(%r8,%r1)		 # load address of handler routine
+        la      %r2,SP_PTREGS(%r15)	 # address of register-save area
+	lgf     %r3,__LC_PGM_ILC	 # load program interruption code
+	larl	%r14,sysc_return
+        br      %r1			 # branch to interrupt-handler
+
+#
+# handle per exception
+#
+pgm_per:
         tm      __LC_PGM_OLD_PSW,0x40    # test if per event recording is on
-        jnz     pgm_sv                   # skip if it is
+        jnz     pgm_per_std              # ok, normal per event from user space
 # ok its one of the special cases, now we need to find out which one
         clc     __LC_PGM_OLD_PSW(16),__LC_SVC_NEW_PSW
         je      pgm_svcper
 # no interesting special case, ignore PER event
 	lpswe   __LC_PGM_OLD_PSW
+
+#
+# Normal per exception
+#
+pgm_per_std:
+	SAVE_ALL __LC_PGM_OLD_PSW,1
+	GET_CURRENT
+	lghi    %r4,0x7f
+	lgf     %r3,__LC_PGM_ILC	 # load program interruption code
+        nr      %r4,%r3			 # clear per-event-bit and ilc
+        je      pgm_per_only		 # only per of per+check ?
+        sll     %r4,3
+        larl    %r1,pgm_check_table
+        lg      %r1,0(%r4,%r1)		 # load address of handler routine
+        la      %r2,SP_PTREGS(%r15)	 # address of register-save area
+        basr    %r14,%r1		 # branch to interrupt-handler
+pgm_per_only:
+        la      %r2,SP_PTREGS(15)	 # address of register-save area
+        larl    %r14,sysc_return	 # load adr. of system return
+        jg      handle_per_exception
+
+#
 # it was a single stepped SVC that is causing all the trouble
+#
 pgm_svcper:
 	SAVE_ALL __LC_SVC_OLD_PSW,1
-        mvc     SP_PGM_OLD_ILC(4,%r15),__LC_PGM_ILC # save program check information
-        j       pgm_system_call          # now do the svc
+	larl    %r7,sys_call_table
+	llgh    %r8,__LC_SVC_INT_CODE # get svc number from lowcore
+        sll     %r8,3
+        GET_CURRENT               # load pointer to task_struct to R9
+	stosm   48(%r15),0x03     # reenable interrupts
+        tm      SP_PSW+3(%r15),0x01  # are we running in 31 bit mode ?
+        jo      pgm_svcper_noemu
+	la      %r8,4(%r8)        # use 31 bit emulation system calls
+pgm_svcper_noemu:
+        lgf     %r8,0(%r8,%r7)    # load address of system call routine
+        tm      __TASK_ptrace+7(%r9),0x02 # PT_TRACESYS
+        jnz     pgm_tracesys
+        basr    %r14,%r8          # call sys_xxxx
+        stg     %r2,SP_R2(%r15)   # store return value (change R2 on stack)
+                                  # ATTENTION: check sys_execve_glue before
+                                  # changing anything here !!
+
 pgm_svcret:
+        icm     %r0,15,__TASK_sigpending(%r9)
+        jz      pgm_svcper_nosig
+        la      %r2,SP_PTREGS(%r15) # load pt_regs
+        sgr     %r3,%r3             # clear *oldset
+	brasl	%r14,do_signal
+	
+pgm_svcper_nosig:
 	lhi     %r0,__LC_PGM_OLD_PSW     # set trap indication back to pgm_chk
 	st      %r0,SP_TRAP(%r15)
-        llgh    %r7,SP_PGM_OLD_ILC(%r15) # get ilc from stack
-        mvi     SP_PGM_OLD_ILC(%r15),1   # mark PGM_OLD_ILC as invalid
-	j       pgm_no_sv
-pgm_sv:
-	SAVE_ALL __LC_PGM_OLD_PSW,1
-        mvi     SP_PGM_OLD_ILC(%r15),1   # mark PGM_OLD_ILC as invalid
-        llgh    %r7,__LC_PGM_ILC         # load instruction length
-	GET_CURRENT
-pgm_no_sv:
-        llgh    %r8,__LC_PGM_INT_CODE  # N.B. saved int code used later KEEP it
-	lghi    %r3,0x7f
-        nr      %r3,%r8           # clear per-event-bit & move to r3
-        je      pgm_dn            # none of Martins exceptions occurred bypass
-        sll     %r3,3
-        larl    %r1,pgm_check_table
-        lg      %r1,0(%r3,%r1)    # load address of handler routine
-        srl     %r3,3
-        la      %r2,SP_PTREGS(%r15) # address of register-save area
-        chi     %r3,0x4           # protection-exception ?
-        jne     pgm_go            # if not,
-        lg      %r5,SP_PSW+8(15)  # load psw addr
-        slgr    %r5,%r7           # substract ilc from psw
-        stg     %r5,SP_PSW+8(15)  # store corrected psw addr
-pgm_go: basr    %r14,%r1          # branch to interrupt-handler
-pgm_dn: nill    %r8,0x80          # check for per exception
-        je      sysc_return
         la      %r2,SP_PTREGS(15) # address of register-save area
         larl    %r14,sysc_return  # load adr. of system return
         jg      handle_per_exception
+#
+# call trace before and after sys_call
+#
+pgm_tracesys:
+	larl	%r12,pgm_svcret
+	j	trace_svc
 
 /*
  * IO interrupt handler routine
@@ -720,7 +732,7 @@ io_return:
 #
 # check, if bottom-half has to be done
 #
-	lgf     %r1,processor(%r9)    # get cpu number from task struture
+	lgf     %r1,__TASK_processor(%r9)
 	larl    %r2,irq_stat
 	sll     %r1,L1_CACHE_SHIFT
 	la      %r1,0(%r1,%r2)
@@ -734,10 +746,10 @@ io_return_bh:
 #
 # check, if reschedule is needed
 #
-	lg      %r0,need_resched(%r9)  # get need_resched from task_struct
+	lg      %r0,__TASK_need_resched(%r9)
 	ltgr    %r0,%r0
         jnz     io_reschedule
-        icm     %r0,15,sigpending(%r9) # get sigpending from task_struct
+        icm     %r0,15,__TASK_sigpending(%r9)
         jnz     io_signal_return
 io_leave:
         stnsm   48(%r15),0xfc          # disable I/O and ext. interrupts

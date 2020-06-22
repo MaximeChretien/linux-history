@@ -351,25 +351,18 @@ static struct super_block *qnx4_read_super(struct super_block *s,
 	s->s_blocksize = QNX4_BLOCK_SIZE;
 	s->s_blocksize_bits = QNX4_BLOCK_SIZE_BITS;
 
-	/* Check the boot signature. Since the qnx4 code is
+	/* Check the superblock signature. Since the qnx4 code is
 	   dangerous, we should leave as quickly as possible
 	   if we don't belong here... */
-	bh = sb_bread(s, 0);
-	if (!bh) {
-		printk("qnx4: unable to read the boot sector\n");
-		goto outnobh;
-	}
-	if ( memcmp( (char*)bh->b_data + 4, "QNX4FS", 6 ) ) {
-		if (!silent)
-			printk("qnx4: wrong fsid in boot sector.\n");
-		goto out;
-	}
-	brelse(bh);
-
 	bh = sb_bread(s, 1);
 	if (!bh) {
 		printk("qnx4: unable to read the superblock\n");
 		goto outnobh;
+	}
+	if ( le32_to_cpu( *(__u32*)bh->b_data ) != QNX4_SUPER_MAGIC ) {
+		if (!silent)
+			printk("qnx4: wrong fsid in superblock sector.\n");
+		goto out;
 	}
 	s->s_op = &qnx4_sops;
 	s->s_magic = QNX4_SUPER_MAGIC;

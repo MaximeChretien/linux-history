@@ -80,8 +80,10 @@
 #include "NCR5380.h"
 #include "constants.h"
 
+/* #define OLDDMA */
+
 #define USE_WRAPPER
-#define RESET_BOOT
+/*#define RESET_BOOT */
 #define DRIVER_SETUP
 
 #define NDEBUG 0
@@ -94,7 +96,7 @@
 #undef DRIVER_SETUP
 #endif
 
-#undef SUPPORT_TAGS
+/* #define SUPPORT_TAGS */
 
 #define	ENABLE_IRQ()	enable_irq( IRQ_SUN3_SCSI ); 
 
@@ -126,7 +128,9 @@ static Scsi_Cmnd *sun3_dma_setup_done = NULL;
 
 static volatile unsigned char *sun3_scsi_regp;
 static volatile struct sun3_dma_regs *dregs;
+#ifdef OLDDMA
 static unsigned char *dmabuf = NULL; /* dma memory buffer */
+#endif
 static struct sun3_udc_regs *udc_regs = NULL;
 static unsigned char *sun3_dma_orig_addr = NULL;
 static unsigned long sun3_dma_orig_count = 0;
@@ -260,7 +264,7 @@ int sun3scsi_detect(Scsi_Host_Template * tpnt)
 #endif
 #ifdef SUPPORT_TAGS
 	if (setup_use_tagged_queuing < 0)
-		setup_use_tagged_queuing = DEFAULT_USE_TAGGED_QUEUING;
+		setup_use_tagged_queuing = USE_TAGGED_QUEUING;
 #endif
 
 	instance = scsi_register (tpnt, sizeof(struct NCR5380_hostdata));
@@ -310,6 +314,11 @@ int sun3scsi_detect(Scsi_Host_Template * tpnt)
 	dregs->fifo_count = 0;
 
 	called = 1;
+
+#ifdef RESET_BOOT
+	sun3_scsi_reset_boot(instance);
+#endif
+
 	return 1;
 }
 
@@ -341,7 +350,7 @@ static void sun3_scsi_reset_boot(struct Scsi_Host *instance)
 	printk( "Sun3 SCSI: resetting the SCSI bus..." );
 
 	/* switch off SCSI IRQ - catch an interrupt without IRQ bit set else */
-       	sun3_disable_irq( IRQ_SUN3_SCSI );
+//       	sun3_disable_irq( IRQ_SUN3_SCSI );
 
 	/* get in phase */
 	NCR5380_write( TARGET_COMMAND_REG,
@@ -361,7 +370,7 @@ static void sun3_scsi_reset_boot(struct Scsi_Host *instance)
 		barrier();
 
 	/* switch on SCSI IRQ again */
-       	sun3_enable_irq( IRQ_SUN3_SCSI );
+//       	sun3_enable_irq( IRQ_SUN3_SCSI );
 
 	printk( " done\n" );
 }
@@ -427,8 +436,12 @@ static unsigned long sun3scsi_dma_setup(void *data, unsigned long count, int wri
 #else
 	void *addr;
 
+	if(sun3_dma_orig_addr != NULL)
+		dvma_unmap(sun3_dma_orig_addr);
+
 //	addr = sun3_dvma_page((unsigned long)data, (unsigned long)dmabuf);
 	addr = (void *)dvma_map((unsigned long) data, count);
+		
 	sun3_dma_orig_addr = addr;
 	sun3_dma_orig_count = count;
 #endif
@@ -454,7 +467,6 @@ static unsigned long sun3scsi_dma_setup(void *data, unsigned long count, int wri
 	dregs->csr &= ~CSR_FIFO;
 	dregs->csr |= CSR_FIFO;
 	
-
 	if(dregs->fifo_count != count) { 
 		printk("scsi%d: fifo_mismatch %04x not %04x\n",
 		       default_instance->host_no, dregs->fifo_count,
@@ -533,10 +545,10 @@ static int sun3scsi_dma_finish(int write_flag)
 	int ret = 0;
 	
 	sun3_dma_active = 0;
-
+#if 1
 	// check to empty the fifo on a read
 	if(!write_flag) {
-		int tmo = 200000; /* 2 sec */
+		int tmo = 20000; /* .2 sec */
 		
 		while(1) {
 			if(dregs->csr & CSR_FIFO_EMPTY)
@@ -549,6 +561,7 @@ static int sun3scsi_dma_finish(int write_flag)
 		}
 	}
 		
+#endif
 
 	count = sun3scsi_dma_count(default_instance);
 #ifdef OLDDMA
@@ -588,6 +601,7 @@ static int sun3scsi_dma_finish(int write_flag)
 	}
 
 	dvma_unmap(sun3_dma_orig_addr);
+	sun3_dma_orig_addr = NULL;
 #endif
 	sun3_udc_write(UDC_RESET, UDC_CSR);
 	dregs->fifo_count = 0;
@@ -609,3 +623,4 @@ static Scsi_Host_Template driver_template = SUN3_NCR5380;
 
 #include "scsi_module.c"
 
+MODULE_LICENSE("GPL");

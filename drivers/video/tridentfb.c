@@ -1,24 +1,18 @@
 /*
  * Frame buffer driver for Trident Blade and Image series
  *
- * Copyright 2001,2002 - Jani Monoses   <jani@astechnix.ro>
+ * Copyright 2001,2002 - Jani Monoses   <jani@iv.ro>
  *
- * $Id: tridentfb.c,v 1.2 2002/02/13 17:44:14 marcelo Exp $
  *
  * CREDITS:(in order of appearance)
  * 	skeletonfb.c by Geert Uytterhoeven and other fb code in drivers/video
  * 	Special thanks ;) to Mattia Crivellini <tia@mclink.it>
- * 	much inspired by the XFree86 4.1.0 Trident driver sources by Alan Hourihane
+ * 	much inspired by the XFree86 4.x Trident driver sources by Alan Hourihane
  * 	the FreeVGA project
  *	Francesco Salvestrini <salvestrini@users.sf.net> XP support,code,suggestions
- * NOTES:
- * 	Tested on Compaq Presario 12XL300 with CyberBladei1
- * 	Tested on Toshiba 1800-514 with CyberBladeXPAi1
- * 	No monitors were harmed during the writing of this driver
  * TODO:
  * 	timing value tweaking so it looks good on every monitor in every mode
- * 	test text acceleration for the Image series
- *	test DPMS stuff
+ *	TGUI acceleration	
  */
 
 #include <linux/config.h>
@@ -35,7 +29,7 @@
 
 #include "tridentfb.h"
 
-#define VERSION		"0.6.8"
+#define VERSION		"0.7.5"
 
 struct tridentfb_par {
 	struct fb_var_screeninfo var;
@@ -69,6 +63,7 @@ struct tridentfb_info {
 	unsigned int io_virt;		//iospace virtual memory address
 	unsigned int nativex;		//flat panel xres
 	struct tridentfb_par currentmode;
+	unsigned char eng_oper;		//engine operation...
 };
 
 static struct fb_ops tridentfb_ops;
@@ -82,14 +77,12 @@ static struct fb_var_screeninfo default_var;
 
 static char * tridentfb_name = "Trident";
 
-static int family;
-static int pci_id;
+static int chip_id;
 
 static int defaultaccel;
 static int displaytype;
 
 static int pseudo_pal[16];
-
 
 /* defaults which are normally overriden by user values */
 
@@ -98,7 +91,6 @@ static char * mode = "640x480";
 static int bpp = 8;
 
 static int noaccel;
-static int accel;
 
 static int center;
 static int stretch;
@@ -116,14 +108,25 @@ MODULE_PARM(bpp,"i");
 MODULE_PARM(center,"i");
 MODULE_PARM(stretch,"i");
 MODULE_PARM(noaccel,"i");
-MODULE_PARM(accel,"i");
 MODULE_PARM(memsize,"i");
 MODULE_PARM(memdiff,"i");
 MODULE_PARM(nativex,"i");
 MODULE_PARM(fp,"i");
 MODULE_PARM(crt,"i");
 
-
+static int chip3D;
+int is3Dchip(int id)
+{
+	return 	((id == BLADE3D) || (id == CYBERBLADEE4) ||
+		 (id == CYBERBLADEi7) || (id == CYBERBLADEi7D) ||
+		 (id == CYBER9397) || (id == CYBER9397DVD) ||
+		 (id == CYBER9520) || (id == CYBER9525DVD) ||
+		 (id == IMAGE975) || (id == IMAGE985) ||
+		 (id == CYBERBLADEi1) || (id == CYBERBLADEi1D) ||
+		 (id ==	CYBERBLADEAi1) || (id == CYBERBLADEAi1D) ||
+		 (id ==	CYBERBLADEXPm8) || (id == CYBERBLADEXPm16) ||
+		 (id ==	CYBERBLADEXPAi1));
+}
 
 #define CRT 0x3D0		//CRTC registers offset for color display
 
@@ -150,9 +153,10 @@ static struct accel_switch {
 #define writemmr(r,v)	writel(v, fb_info.io_virt + r)
 #define readmmr(r)	readl(fb_info.io_virt + r)
 
+
+
 /*
- * Blade specific acceleration.Not XP's though those are
- * unaccelerated.
+ * Blade specific acceleration.
  */
 
 #define point(x,y) ((y)<<16|(x))
@@ -215,7 +219,7 @@ static void blade_copy_rect(int x1,int y1,int x2,int y2,int w,int h)
 	d1 = point(x2,y2);
 	d2 = point(x2+w-1,y2+h-1);
 
-	if ((y1 > y2) || ((y1 == y2) && (x1 >x2)))
+	if ((y1 > y2) || ((y1 == y2) && (x1 > x2)))
 			direction = 0;
 
 
@@ -234,6 +238,130 @@ static struct accel_switch accel_blade = {
 	blade_fill_rect,
 	blade_copy_rect,
 };
+
+
+/*
+ * BladeXP specific acceleration functions
+ */
+
+#define ROP_P 0xF0
+#define masked_point(x,y) ((y & 0xffff)<<16|(x & 0xffff))
+
+static void xp_init_accel(int pitch,int bpp)
+{
+	int tmp = 0,v1;
+	unsigned char x = 0;
+
+	switch (bpp) {
+		case 8:  x = 0; break;
+		case 16: x = 1; break;
+		case 24: x = 3; break;
+		case 32: x = 2; break;
+	}
+
+	switch (pitch << (bpp >> 3)) {
+		case 8192:
+		case 512:  x |= 0x00; break;
+		case 1024: x |= 0x04; break;
+		case 2048: x |= 0x08; break;
+		case 4096: x |= 0x0C; break;
+	}
+
+	t_outb(x,0x2125);
+
+	fb_info.eng_oper = x | 0x40;
+
+	switch (bpp) {
+		case 8:  tmp = 18; break;
+		case 15:
+		case 16: tmp = 19; break;
+		case 24:
+		case 32: tmp = 20; break;
+	}
+
+	v1 = pitch << tmp;
+
+	writemmr(0x2154,v1);
+	writemmr(0x2150,v1);
+	t_outb(3,0x2126);
+}
+
+static void xp_wait_engine(void)
+{
+	int busy;
+	int count, timeout;
+
+	count = 0;
+	timeout = 0;
+	for (;;) {
+		busy = t_inb(STA) & 0x80;
+		if (busy != 0x80)
+			return;
+		count++;
+		if (count == 10000000) {
+			/* Timeout */
+			count = 9990000;
+			timeout++;
+			if (timeout == 8) {
+				/* Reset engine */
+				t_outb(0x00, 0x2120);
+				return;
+			}
+		}
+	}
+}
+
+static void xp_fill_rect(int x,int y,int w,int h,int c)
+{
+	writemmr(0x2127,ROP_P);
+	writemmr(0x2158,c);
+	writemmr(0x2128,0x4000);
+	writemmr(0x2140,masked_point(h,w));
+	writemmr(0x2138,masked_point(y,x));
+	t_outb(0x01,0x2124);
+        t_outb(fb_info.eng_oper,0x2125);
+}
+
+static void xp_copy_rect(int x1,int y1,int x2,int y2,int w,int h)
+{
+	int direction;
+	int x1_tmp, x2_tmp, y1_tmp, y2_tmp;
+
+	direction = 0x0004;
+	
+	if ((x1 < x2) && (y1 == y2)) {
+		direction |= 0x0200;
+		x1_tmp = x1 + w - 1;
+		x2_tmp = x2 + w - 1;
+	} else {
+		x1_tmp = x1;
+		x2_tmp = x2;
+	}
+  
+	if (y1 < y2) {
+		direction |= 0x0100;
+		y1_tmp = y1 + h - 1;
+		y2_tmp = y2 + h - 1;
+  	} else {
+		y1_tmp = y1;
+		y2_tmp = y2;
+	}
+
+	writemmr(0x2128,direction);	
+	t_outb(ROP_S,0x2127);
+	writemmr(0x213C,masked_point(y1_tmp,x1_tmp));
+	writemmr(0x2138,masked_point(y2_tmp,x2_tmp));
+	writemmr(0x2140,masked_point(h,w));
+	t_outb(0x01,0x2124);
+}
+
+static struct accel_switch accel_xp = {
+  	xp_init_accel,
+	xp_wait_engine,
+	xp_fill_rect,
+	xp_copy_rect,
+};
+
 
 /*
  * Image specific acceleration functions
@@ -255,7 +383,7 @@ static void image_init_accel(int pitch,int bpp)
 	writemmr(0x2148, 0x00000000);
 	writemmr(0x2150, 0x00000000);
 	writemmr(0x2154, 0x00000000);
-	writemmr(0x2120, 0x60000000 |(pitch<<16) |pitch);
+	writemmr(0x2120, 0x60000000|(pitch<<16) |pitch);
 	writemmr(0x216C, 0x00000000);
 	writemmr(0x2170, 0x00000000);
 	writemmr(0x217C, 0x00000000);
@@ -457,11 +585,30 @@ static inline void write3CE(int reg, unsigned char val)
 	t_outb(val, 0x3CF);
 }
 
-#define unprotect_all()	write3C4(Protection, 0x92);unprotect()
-#define unprotect()	write3C4(NewMode1,0xC2)
 #define bios_reg(reg) 	write3CE(BiosReg, reg)
-#define enable_mmio()	outb(PCIReg, 0x3D4); \
-			outb(inb(0x3D5) | 0x01, 0x3D5)
+#if 0
+static inline void unprotect_all(void)
+{
+	outb(Protection, 0x3C4);
+	outb(0x92, 0x3C5);
+}
+#endif
+static inline void enable_mmio(void)
+{
+	/* Goto New Mode */
+	outb(0x0B, 0x3C4);
+	inb(0x3C5);
+
+	/* Unprotect registers */
+	outb(NewMode1, 0x3C4);
+	outb(0x80, 0x3C5);
+  
+	/* Enable MMIO */
+	outb(PCIReg, 0x3D4); 
+	outb(inb(0x3D5) | 0x01, 0x3D5);
+}
+
+
 #define crtc_unlock()	write3X4(CRTVSyncEnd, read3X4(CRTVSyncEnd) & 0x7F)
 
 /*  Return flat panel's maximum x resolution */
@@ -474,15 +621,13 @@ static int __init get_nativex(void)
 
        	tmp = (read3CE(VertStretch) >> 4) & 3;
 
-	/* detection broken on XPAi ??? misdetects 1024 for 800 */
-	if (pci_id == CYBERBLADEXPAi1 && tmp == 3)
-		tmp = 2;
-
 	switch (tmp) {
-		case 0:x = 1280;y = 1024;break;
-		case 1:x = 640;y = 480;break;
-		case 2:x = 1024;y = 768;break;
-		default:x = 800;y = 600;break;
+		case 0: x = 1280; y = 1024; break;
+		case 2: x = 1024; y = 768;  break;
+		case 3: x = 800;  y = 600;  break; 
+		case 4: x = 1400; y = 1050; break;
+		case 1: 
+		default:x = 640;  y = 480;  break;
 	}
 
 	output("%dx%d flat panel found\n", x, y);
@@ -515,14 +660,13 @@ static void screen_center(void)
 static void set_screen_start(int base)
 {
 	write3X4(StartAddrLow, base & 0xFF);
-	write3X4(StartAddrHigh, (base & 0xFF00) >>8);
-	write3X4(CRTCModuleTest, (read3X4(CRTCModuleTest) & 0xDF) | ((base & 0x10000) >>11));
-	write3X4(CRTHiOrd, (read3X4(CRTHiOrd) & 0xF8) | (base & 0xE0000) >> 17);
+	write3X4(StartAddrHigh, (base & 0xFF00) >> 8);
+	write3X4(CRTCModuleTest, (read3X4(CRTCModuleTest) & 0xDF) | ((base & 0x10000) >> 11));
+	write3X4(CRTHiOrd, (read3X4(CRTHiOrd) & 0xF8) | ((base & 0xE0000) >> 17));
 }
 
-
-#error "Floating point maths. This needs fixing before the driver is safe"
-#define calc_freq(n,m,k) ((NTSC * (n+8))/((m+2)*(1<<k)))
+/* Use 20.12 fixed-point for NTSC value and frequency calculation */
+#define calc_freq(n,m,k)  ( ((unsigned long)0xE517 * (n+8) / ((m+2)*(1<<k))) >> 12 )
 
 /* Set dotclock frequency */
 static void set_vclk(int freq)
@@ -543,8 +687,13 @@ static void set_vclk(int freq)
 			hi = (k<<6) | m;
 		}
 	}
-	write3C4(ClockHigh,hi);
-	write3C4(ClockLow,lo);
+	if (chip3D) {
+		write3C4(ClockHigh,hi);
+		write3C4(ClockLow,lo);
+	} else {
+		outb(lo,0x43C8);
+		outb(hi,0x43C9);
+	}
 	debug("VCLK = %X %X\n",hi,lo);
 }
 
@@ -577,26 +726,42 @@ static unsigned int __init get_displaytype(void)
 /* Try detecting the video memory size */
 static unsigned int __init get_memsize(void)
 {
-	unsigned char tmp;
+	unsigned char tmp, tmp2;
 	unsigned int k;
 
 	/* If memory size provided by user */
 	if (memsize)
 		k = memsize * Kb;
 	else
-	switch (pci_id) {
-		case CYBER9525DVD:k = 2560 * Kb;break;
-		case CYBERBLADEXPAi1:k = 16 * Mb;break;
-		case CYBERBLADEXPm16:k = 16 * Mb;break;
-		case CYBERBLADEXPm8:k = 8 * Mb;break;
+	switch (chip_id) {
+		case CYBER9525DVD:    k = 2560 * Kb; break;
 		default:
 			tmp = read3X4(SPR) & 0x0F;
 			switch (tmp) {
-				case 3:k = 1 * Mb;break;
-				case 7:k = 2 * Mb;break;
-				case 15:k = 4 * Mb;break;
-				case 4:k = 8 * Mb;break;
-				default:k = 1 * Mb;
+
+				case 0x01: k = 512;     break;
+				case 0x02: k = 6 * Mb;  break; /* XP */
+				case 0x03: k = 1 * Mb;  break;
+				case 0x04: k = 8 * Mb;  break;
+				case 0x06: k = 10 * Mb; break; /* XP */
+				case 0x07: k = 2 * Mb;  break;
+				case 0x08: k = 12 * Mb; break; /* XP */
+				case 0x0A: k = 14 * Mb; break; /* XP */
+				case 0x0C: k = 16 * Mb; break; /* XP */
+				case 0x0E:                     /* XP */
+  
+					tmp2 = read3C4(0xC1);
+					switch (tmp2) {
+						case 0x00: k = 20 * Mb; break;
+						case 0x01: k = 24 * Mb; break;
+						case 0x10: k = 28 * Mb; break;
+						case 0x11: k = 32 * Mb; break;
+						default:   k = 1 * Mb;  break;
+					}
+				break;
+	
+				case 0x0F: k = 4 * Mb; break;
+				default:   k = 1 * Mb;
 			}
 	}
 
@@ -604,7 +769,6 @@ static unsigned int __init get_memsize(void)
 	output("framebuffer size = %d Kb\n", k/Kb);
 	return k;
 }
-
 
 /* Fill in fix */
 static int trident_encode_fix(struct fb_fix_screeninfo *fix,
@@ -794,9 +958,8 @@ static void trident_set_par(const void *par, struct fb_info_gen *info)
 	debug("enter\n");
 
 	i->currentmode = *p;
-	unprotect_all();
-	crtc_unlock();
 	enable_mmio();
+	crtc_unlock();
 
 	write3CE(CyberControl,8);
 	if (flatpanel && p->hres < i->nativex) {
@@ -807,7 +970,7 @@ static void trident_set_par(const void *par, struct fb_info_gen *info)
 		 */
 		t_outb(0xEB,0x3C2);
 		write3CE(CyberControl,0x81);
-		if (center) //|| (p->bpp==32 && pci_id == CYBERBLADEi1D))
+		if (center) 
 			screen_center();
 		else if (stretch)
 			screen_stretch();
@@ -1036,8 +1199,8 @@ static int trident_blank(int blank_mode, struct fb_info_gen *info)
     	}
 
 	write3CE(PowerStatus,DPMSCont);
-    	t_outb(4,0x83C8);
-    	t_outb(PMCont,0x83C6);
+	t_outb(4,0x83C8);
+	t_outb(PMCont,0x83C6);
 
 	debug("exit\n");
 	return 0;
@@ -1098,81 +1261,75 @@ static struct fbgen_hwswitch trident_hwswitch = {
 	trident_set_disp
 };
 
-/* List of boards that we are trying to support */
-static struct almost_supported_board {
-	int pci_id;
-	int family;
-	struct accel_switch * acc;
-	char* board_name;
-	int accel;
-} asb[] __initdata = {
-	{ BLADE3D,		BLADE,	&accel_blade, "Blade3D",	ACCEL	},
-	{ CYBERBLADEi7,	BLADE,	&accel_blade, "CyberBladei7",	ACCEL	},
-	{ CYBERBLADEi7D,	BLADE,	&accel_blade, "CyberBladei7D",	ACCEL	},
-	{ CYBERBLADEi1,	BLADE,	&accel_blade, "CyberBladei1",	ACCEL	},
-	{ CYBERBLADEi1D,	BLADE,	&accel_blade, "CyberBladei1D",	ACCEL	},
-	{ CYBERBLADEAi1,	BLADE,	&accel_blade, "CyberBladeAi1",	ACCEL	},
-	{ CYBERBLADEAi1D,	BLADE,	&accel_blade, "CyberBladeAi1D",	ACCEL	},
-	{ CYBERBLADEE4,	BLADE,	&accel_blade, "CyberBladeE4",	ACCEL	},
+static int trident_iosize;
 
-	{ IMAGE975,	IMAGE,	&accel_image,	"IMAGE975",	NOACCEL	},
-	{ IMAGE985,	IMAGE,	&accel_image,	"IMAGE985",	NOACCEL	},
-	{ CYBER9320,	IMAGE,	&accel_image,	"Cyber9320",	NOACCEL	},
-	{ CYBER9388,	IMAGE,	&accel_image,	"Cyber9388",	NOACCEL	},
-	{ CYBER9520,	IMAGE,	&accel_image,	"Cyber9520",	NOACCEL	},
-	{ CYBER9525DVD,	IMAGE,	&accel_image,	"Cyber9525DVD",	NOACCEL	},
-	{ CYBER9397,	IMAGE,	&accel_image,	"Cyber9397",	NOACCEL	},
-	{ CYBER9397DVD,	IMAGE,	&accel_image,	"Cyber9397DVD",	NOACCEL	},
-
-	{ CYBERBLADEXPAi1,	XP,	&accel_blade,	"CyberBladeXPAi1",	NOACCEL },
-	{ CYBERBLADEXPm8,	XP,	&accel_blade,	"CyberBladeXPm8",	NOACCEL },
-	{ CYBERBLADEXPm16,	XP,	&accel_blade,	"CyberBladeXPm16",	NOACCEL },
-};
-
-static __init int trident_find_board(void)
+static int __devinit trident_pci_probe(struct pci_dev * dev, const struct pci_device_id * id)
 {
-	int i;
-	struct pci_dev * board;
+	int err;
+	unsigned char revision;
 
-	for (i = 0;i < ARRAY_SIZE(asb);i++) {
-      		if ((board = pci_find_device(PCI_VENDOR_ID_TRIDENT,
-				   asb[i].pci_id,
-				   NULL))) {
-	 		family = asb[i].family;
-	 		acc = asb[i].acc;
-	 		pci_id = asb[i].pci_id;
-	 		defaultaccel = asb[i].accel;
+	err = pci_enable_device(dev);
+	if (err)
+		return err;
 
-			fb_info.io = pci_resource_start(board,1);
-			fb_info.fbmem = pci_resource_start(board,0);
-	 		output("%s board found\n", asb[i].board_name);
-	 		return 1;
-      		}
-   	}
-	output("No Trident board found\n");
-	return 0;
-}
+	chip_id = id->device;
 
-int __init tridentfb_init(void)
-{
+	/* If PCI id is 0x9660 then further detect chip type */
+	
+	if (chip_id == TGUI9660) {
+		outb(RevisionID,0x3C4);
+		revision = inb(0x3C5);	
+	
+		switch (revision) {
+			case 0x22:
+			case 0x23: chip_id = CYBER9397;break;
+			case 0x2A: chip_id = CYBER9397DVD;break;
+			case 0x30:
+			case 0x33:
+			case 0x34:
+			case 0x35:
+			case 0x38:
+			case 0x3A:
+			case 0xB3: chip_id = CYBER9385;break;
+			case 0x40 ... 0x43: chip_id = CYBER9382;break;
+			case 0x4A: chip_id = CYBER9388;break;
+			default:break;	
+		}
+	}
 
-	output("Trident framebuffer  %s initializing\n", VERSION);
+	chip3D = is3Dchip(chip_id);
 
-	if (!trident_find_board())
-     		return -1;
+	if (is_xp(chip_id)) {
+		acc = &accel_xp;
+	} else 
+	if (is_blade(chip_id)) {
+		acc = &accel_blade;
+	} else {
+		acc = &accel_image;
+	}
 
-	if (!request_mem_region(fb_info.io, TRIDENT_IOSIZE, "tridentfb")) {
+	/* acceleration is on by default for 3D chips */
+	defaultaccel = chip3D && !noaccel;
+
+	fb_info.io = pci_resource_start(dev,1);
+	fb_info.fbmem = pci_resource_start(dev,0);
+
+	trident_iosize = chip3D ? 0x20000:0x10000;
+
+	if (!request_mem_region(fb_info.io, trident_iosize, "tridentfb")) {
 		debug("request_region failed!\n");
 		return -1;
-	};
+	}
 
-	fb_info.io_virt = (unsigned int)ioremap_nocache(fb_info.io, TRIDENT_IOSIZE);
+	fb_info.io_virt = (unsigned int)ioremap_nocache(fb_info.io, trident_iosize);
 
 	if (!fb_info.io_virt) {
-		release_region(fb_info.io, TRIDENT_IOSIZE);
+		release_region(fb_info.io, trident_iosize);
 		debug("ioremap failed\n");
 		return -1;
 	}
+
+	enable_mmio();
 
 	fb_info.memsize = get_memsize();
 	if (!request_mem_region(fb_info.fbmem, fb_info.memsize, "tridentfb")) {
@@ -1188,6 +1345,7 @@ int __init tridentfb_init(void)
 		return -1;
 	}
 
+	output("%s board found\n", dev->name);
 	debug("Trident board found : mem = %X,io = %X, mem_v = %X, io_v = %X\n",
 		fb_info.fbmem, fb_info.io, fb_info.fbmem_virt, fb_info.io_virt);
 
@@ -1196,8 +1354,10 @@ int __init tridentfb_init(void)
 
 	strcpy(fb_info.gen.info.modename, tridentfb_name);
 	displaytype = get_displaytype();
+
 	if(flatpanel)
 		fb_info.nativex = get_nativex();
+
 	fb_info.gen.info.changevar = NULL;
 	fb_info.gen.info.node = NODEV;
 	fb_info.gen.info.fbops = &tridentfb_ops;
@@ -1213,16 +1373,8 @@ int __init tridentfb_init(void)
 
 	/* This should give a reasonable default video mode */
 	fb_find_mode(&default_var,&fb_info.gen.info,mode,NULL,0,NULL,bpp);
-	/*
-	 * Unless user explicitly requires accel/noaccel use
-	 * per chip defaults.Accel has priority over noaccel.
-	 */
-	if (accel)
-		defaultaccel = ACCEL;
-	else if (noaccel)
-		defaultaccel = NOACCEL;
 
-	if (defaultaccel == ACCEL)
+	if (defaultaccel && acc)
 		default_var.accel_flags |= FB_ACCELF_TEXT;
 	else
 		default_var.accel_flags &= ~FB_ACCELF_TEXT;
@@ -1243,12 +1395,60 @@ int __init tridentfb_init(void)
 	return 0;
 }
 
-void __exit tridentfb_exit(void)
+static void __devexit trident_pci_remove(struct pci_dev * dev)
 {
 	unregister_framebuffer(&fb_info.gen.info);
 	iounmap((void *)fb_info.io_virt);
 	iounmap((void *)fb_info.fbmem_virt);
+	release_mem_region(fb_info.fbmem, fb_info.memsize);
+	release_region(fb_info.io, trident_iosize);
 }
+
+/* List of boards that we are trying to support */
+static struct pci_device_id trident_devices[] __devinitdata = {
+	{PCI_VENDOR_ID_TRIDENT,	BLADE3D, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBERBLADEi7, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBERBLADEi7D, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBERBLADEi1, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBERBLADEi1D, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBERBLADEAi1, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBERBLADEAi1D, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBERBLADEE4, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	TGUI9660, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	IMAGE975, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	IMAGE985, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBER9320, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBER9388, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBER9520, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBER9525DVD, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBER9397, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBER9397DVD, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBERBLADEXPAi1, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBERBLADEXPm8, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{PCI_VENDOR_ID_TRIDENT,	CYBERBLADEXPm16, PCI_ANY_ID,PCI_ANY_ID,0,0,0},
+	{0,}
+};	
+	
+MODULE_DEVICE_TABLE(pci,trident_devices); 
+
+static struct pci_driver tridentfb_pci_driver = {
+	name:"tridentfb",
+	id_table:trident_devices,
+	probe:trident_pci_probe,
+	remove:__devexit_p(trident_pci_remove),
+};
+
+int __init tridentfb_init(void)
+{
+	output("Trident framebuffer %s initializing\n", VERSION);
+	return pci_module_init(&tridentfb_pci_driver);
+}
+
+void __exit tridentfb_exit(void)
+{
+	pci_unregister_driver(&tridentfb_pci_driver);
+}
+
 
 /*
  * Parse user specified options (`video=trident:')
@@ -1260,12 +1460,10 @@ int tridentfb_setup(char *options)
 	char * opt;
 	if (!options || !*options)
 		return 0;
-	for(opt = strtok(options,",");opt;opt = strtok(NULL,",")){
-		if (!opt) continue;
+	while((opt = strsep(&options,",")) != NULL ) {
+		if (!*opt) continue;
 		if (!strncmp(opt,"noaccel",7))
 			noaccel = 1;
-		else if (!strncmp(opt,"accel",5))
-			accel = 1;
 		else if (!strncmp(opt,"fp",2))
 			displaytype = DISPLAY_FP;
 		else if (!strncmp(opt,"crt",3))
@@ -1302,6 +1500,7 @@ module_init(tridentfb_init);
 #endif
 module_exit(tridentfb_exit);
 
-MODULE_AUTHOR("Jani Monoses <jani@astechnix.ro>");
+MODULE_AUTHOR("Jani Monoses <jani@iv.ro>");
 MODULE_DESCRIPTION("Framebuffer driver for Trident cards");
 MODULE_LICENSE("GPL");
+

@@ -1,4 +1,4 @@
-/* $Id: time.c,v 1.41.2.1 2002/01/23 14:35:45 davem Exp $
+/* $Id: time.c,v 1.41.2.2 2002/03/03 04:08:10 davem Exp $
  * time.c: UltraSparc timer and TOD clock support.
  *
  * Copyright (C) 1997 David S. Miller (davem@caip.rutgers.edu)
@@ -62,7 +62,7 @@ unsigned long timer_ticks_per_usec_quotient;
 static __inline__ void timer_check_rtc(void)
 {
 	/* last time the cmos clock got updated */
-	static long last_rtc_update=0;
+	static long last_rtc_update;
 
 	/* Determine when to update the Mostek clock. */
 	if ((time_status & STA_UNSYNC) == 0 &&
@@ -405,11 +405,12 @@ void __init clock_probe(void)
 	char model[128];
 	int node, busnd = -1, err;
 	unsigned long flags;
+	struct linux_central *cbus;
 #ifdef CONFIG_PCI
 	struct linux_ebus *ebus = NULL;
 	struct isa_bridge *isa_br = NULL;
 #endif
-	static int invoked = 0;
+	static int invoked;
 
 	if (invoked)
 		return;
@@ -431,21 +432,30 @@ void __init clock_probe(void)
 
 	__save_and_cli(flags);
 
-	if(central_bus != NULL) {
+	cbus = central_bus;
+	if (cbus != NULL)
 		busnd = central_bus->child->prom_node;
-	}
+
+	/* Check FHC Central then EBUSs then ISA bridges then SBUSs.
+	 * That way we handle the presence of multiple properly.
+	 *
+	 * As a special case, machines with Central must provide the
+	 * timer chip there.
+	 */
 #ifdef CONFIG_PCI
-	else if (ebus_chain != NULL) {
+	if (ebus_chain != NULL) {
 		ebus = ebus_chain;
-		busnd = ebus->prom_node;
-	} else if (isa_chain != NULL) {
+		if (busnd == -1)
+			busnd = ebus->prom_node;
+	}
+	if (isa_chain != NULL) {
 		isa_br = isa_chain;
-		busnd = isa_br->prom_node;
+		if (busnd == -1)
+			busnd = isa_br->prom_node;
 	}
 #endif
-	else if (sbus_root != NULL) {
+	if (sbus_root != NULL && busnd == -1)
 		busnd = sbus_root->prom_node;
-	}
 
 	if (busnd == -1) {
 		prom_printf("clock_probe: problem, cannot find bus to search.\n");
@@ -464,7 +474,12 @@ void __init clock_probe(void)
 		    strcmp(model, "mk48t59") &&
 		    strcmp(model, "m5819") &&
 		    strcmp(model, "ds1287")) {
-		   	if (node)
+			if (cbus != NULL) {
+				prom_printf("clock_probe: Central bus lacks timer chip.\n");
+				prom_halt();
+			}
+
+		   	if (node != 0)
 				node = prom_getsibling(node);
 #ifdef CONFIG_PCI
 			while ((node == 0) && ebus != NULL) {
@@ -496,12 +511,12 @@ void __init clock_probe(void)
 			prom_halt();
 		}
 
-		if(central_bus) {
+		if (cbus != NULL) {
 			apply_fhc_ranges(central_bus->child, clk_reg, 1);
 			apply_central_ranges(central_bus, clk_reg, 1);
 		}
 #ifdef CONFIG_PCI
-		else if (ebus_chain != NULL) {
+		else if (ebus != NULL) {
 			struct linux_ebus_device *edev;
 
 			for_each_ebusdev(edev, ebus)
@@ -523,7 +538,8 @@ void __init clock_probe(void)
 				mstk48t02_regs = mstk48t59_regs + MOSTEK_48T59_48T02;
 			}
 			break;
-		} else if (isa_chain != NULL) {
+		}
+		else if (isa_br != NULL) {
 			struct isa_device *isadev;
 
 try_isa_clock:

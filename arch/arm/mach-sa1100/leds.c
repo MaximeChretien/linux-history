@@ -5,7 +5,6 @@
  * 
  * Copyright (C) 2001 Nicolas Pitre
  */
-#include <linux/config.h>
 #include <linux/init.h>
 
 #include <asm/leds.h>
@@ -16,24 +15,30 @@
 static int __init
 sa1100_leds_init(void)
 {
+	if (machine_is_adsbitsy())
+		leds_event = adsbitsy_leds_event;
 	if (machine_is_assabet())
 		leds_event = assabet_leds_event;
+ 	if (machine_is_consus())
+ 	        leds_event = consus_leds_event;
 	if (machine_is_brutus())
 		leds_event = brutus_leds_event;
 	if (machine_is_cerf())
 		leds_event = cerf_leds_event;
 	if (machine_is_flexanet())
 		leds_event = flexanet_leds_event;
+	if (machine_is_frodo())
+		leds_event = frodo_leds_event;
 	if (machine_is_graphicsclient())
 		leds_event = graphicsclient_leds_event;
+	if (machine_is_graphicsmaster())
+		leds_event = graphicsmaster_leds_event;
 	if (machine_is_lart())
 		leds_event = lart_leds_event;
 	if (machine_is_pfs168())
 		leds_event = pfs168_leds_event;
-	if (machine_is_graphicsmaster())
-		leds_event = graphicsmaster_leds_event;
-	if (machine_is_adsbitsy())
-		leds_event = adsbitsy_leds_event;
+	if (machine_is_pt_system3())
+		leds_event = system3_leds_event;
 
 	leds_event(led_start);
 	return 0;

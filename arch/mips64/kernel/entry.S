@@ -9,8 +9,6 @@
  * Copyright (C) 1999, 2000 Silicon Graphics
  * Copyright (C) 2001 MIPS Technologies, Inc.
  */
-#include <linux/config.h>
-
 #include <asm/asm.h>
 #include <asm/regdef.h>
 #include <asm/mipsregs.h>
@@ -37,7 +35,7 @@ tracesys_exit:
 
 EXPORT(ret_from_irq)
 EXPORT(ret_from_exception)
-		lw	t0, PT_STATUS(sp)	# returning to kernel mode?
+		ld	t0, PT_STATUS(sp)	# returning to kernel mode?
 		andi	t0, t0, KU_USER
 		bnez	t0, ret_from_sys_call
 		j	restore_all
@@ -81,9 +79,10 @@ LEAF(spurious_interrupt)
 		 * Someone tried to fool us by sending an interrupt but we
 		 * couldn't find a cause for it.
 		 */
-		lui     t1,%hi(spurious_count)
-		lw      t0,%lo(spurious_count)(t1)
-		addiu   t0,1
-		sw      t0,%lo(spurious_count)(t1)
+		lui     t1, %hi(irq_err_count)
+1:		ll      t0, %lo(irq_err_count)(t1)
+		addiu   t0, 1
+		sc      t0, %lo(irq_err_count)(t1)
+		beqz	t0, 1b
 		j	ret_from_irq
 		END(spurious_interrupt)

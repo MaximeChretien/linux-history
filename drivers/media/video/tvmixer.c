@@ -8,8 +8,9 @@
 #include <linux/slab.h>
 #include <linux/i2c.h>
 #include <linux/videodev.h>
-#include <asm/semaphore.h>
 #include <linux/init.h>
+#include <linux/kdev_t.h>
+#include <asm/semaphore.h>
 
 #include <linux/sound.h>
 #include <linux/soundcard.h>
@@ -177,7 +178,7 @@ static int tvmixer_ioctl(struct inode *inode, struct file *file, unsigned int cm
 
 static int tvmixer_open(struct inode *inode, struct file *file)
 {
-        int i, minor = MINOR(inode->i_rdev);
+        int i, minor = minor(inode->i_rdev);
         struct TVMIXER *mix = NULL;
 	struct i2c_client *client = NULL;
 
@@ -320,7 +321,7 @@ static int tvmixer_clients(struct i2c_client *client)
 
 /* ----------------------------------------------------------------------- */
 
-int tvmixer_init_module(void)
+static int tvmixer_init_module(void)
 {
 	int i;
 	
@@ -330,7 +331,7 @@ int tvmixer_init_module(void)
 	return 0;
 }
 
-void tvmixer_cleanup_module(void)
+static void tvmixer_cleanup_module(void)
 {
 	int i;
 	

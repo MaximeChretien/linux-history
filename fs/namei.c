@@ -435,6 +435,8 @@ static inline void follow_dotdot(struct nameidata *nd)
 		mntput(nd->mnt);
 		nd->mnt = parent;
 	}
+	while (d_mountpoint(nd->dentry) && __follow_down(&nd->mnt, &nd->dentry))
+		;
 }
 
 /*
@@ -455,7 +457,7 @@ int link_path_walk(const char * name, struct nameidata *nd)
 	while (*name=='/')
 		name++;
 	if (!*name)
-		goto return_base;
+		goto return_reval;
 
 	inode = nd->dentry->d_inode;
 	if (current->link_count)
@@ -574,7 +576,7 @@ last_component:
 				inode = nd->dentry->d_inode;
 				/* fallthrough */
 			case 1:
-				goto return_base;
+				goto return_reval;
 		}
 		if (nd->dentry->d_op && nd->dentry->d_op->d_hash) {
 			err = nd->dentry->d_op->d_hash(nd->dentry, &this);
@@ -625,6 +627,19 @@ lookup_parent:
 			nd->last_type = LAST_DOT;
 		else if (this.len == 2 && this.name[1] == '.')
 			nd->last_type = LAST_DOTDOT;
+return_reval:
+		/*
+		 * We bypassed the ordinary revalidation routines.
+		 * Check the cached dentry for staleness.
+		 */
+		dentry = nd->dentry;
+		if (dentry && dentry->d_op && dentry->d_op->d_revalidate) {
+			err = -ESTALE;
+			if (!dentry->d_op->d_revalidate(dentry, 0)) {
+				d_invalidate(dentry);
+				break;
+			}
+		}
 return_base:
 		return 0;
 out_dput:
@@ -888,6 +903,8 @@ static inline int may_delete(struct inode *dir,struct dentry *victim, int isdir)
 			return -EBUSY;
 	} else if (S_ISDIR(victim->d_inode->i_mode))
 		return -EISDIR;
+	if (IS_DEADDIR(dir))
+		return -ENOENT;
 	return 0;
 }
 
@@ -1355,14 +1372,18 @@ out:
 static void d_unhash(struct dentry *dentry)
 {
 	dget(dentry);
+	spin_lock(&dcache_lock);
 	switch (atomic_read(&dentry->d_count)) {
 	default:
+		spin_unlock(&dcache_lock);
 		shrink_dcache_parent(dentry);
+		spin_lock(&dcache_lock);
 		if (atomic_read(&dentry->d_count) != 2)
 			break;
 	case 2:
-		d_drop(dentry);
+		list_del_init(&dentry->d_hash);
 	}
+	spin_unlock(&dcache_lock);
 }
 
 int vfs_rmdir(struct inode *dir, struct dentry *dentry)
@@ -1380,9 +1401,7 @@ int vfs_rmdir(struct inode *dir, struct dentry *dentry)
 
 	double_down(&dir->i_zombie, &dentry->d_inode->i_zombie);
 	d_unhash(dentry);
-	if (IS_DEADDIR(dir))
-		error = -ENOENT;
-	else if (d_mountpoint(dentry))
+	if (d_mountpoint(dentry))
 		error = -EBUSY;
 	else {
 		lock_kernel();
@@ -1748,9 +1767,7 @@ int vfs_rename_dir(struct inode *old_dir, struct dentry *old_dentry,
 	} else
 		double_down(&old_dir->i_zombie,
 			    &new_dir->i_zombie);
-	if (IS_DEADDIR(old_dir)||IS_DEADDIR(new_dir))
-		error = -ENOENT;
-	else if (d_mountpoint(old_dentry)||d_mountpoint(new_dentry))
+	if (d_mountpoint(old_dentry)||d_mountpoint(new_dentry))
 		error = -EBUSY;
 	else 
 		error = old_dir->i_op->rename(old_dir, old_dentry, new_dir, new_dentry);

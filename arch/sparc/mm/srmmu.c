@@ -394,7 +394,6 @@ static pte_t *srmmu_pte_alloc_one_fast(struct mm_struct *mm, unsigned long addre
 
 static pte_t *srmmu_pte_alloc_one(struct mm_struct *mm, unsigned long address)
 {
-	BUG();
 	return NULL;
 }
 
@@ -1733,7 +1732,7 @@ static void __init init_tsunami(void)
 static void __init poke_viking(void)
 {
 	unsigned long mreg = srmmu_get_mmureg();
-	static int smp_catch = 0;
+	static int smp_catch;
 
 	if(viking_mxcc_present) {
 		unsigned long mxcc_control = mxcc_get_creg();

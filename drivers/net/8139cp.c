@@ -1,7 +1,8 @@
 /* 8139cp.c: A Linux PCI Ethernet driver for the RealTek 8139C+ chips. */
 /*
-	Copyright 2001 Jeff Garzik <jgarzik@mandrakesoft.com>
+	Copyright 2001,2002 Jeff Garzik <jgarzik@mandrakesoft.com>
 
+	Copyright (C) 2001, 2002 David S. Miller (davem@redhat.com) [tg3.c]
 	Copyright (C) 2000, 2001 David S. Miller (davem@redhat.com) [sungem.c]
 	Copyright 2001 Manfred Spraul				    [natsemi.c]
 	Copyright 1999-2001 by Donald Becker.			    [natsemi.c]
@@ -29,26 +30,29 @@
 	* Consider Rx interrupt mitigation using TimerIntr
 	* Implement 8139C+ statistics dump; maybe not...
 	  h/w stats can be reset only by software reset
-	* Rx checksumming
 	* Tx checksumming
+	* Handle netif_rx return value
 	* ETHTOOL_GREGS, ETHTOOL_[GS]WOL,
-	* Jumbo frames / dev->change_mtu
 	* Investigate using skb->priority with h/w VLAN priority
 	* Investigate using High Priority Tx Queue with skb->priority
 	* Adjust Rx FIFO threshold and Max Rx DMA burst on Rx FIFO error
 	* Adjust Tx FIFO threshold and Max Tx DMA burst on Tx FIFO error
-        * Implement Tx software interrupt mitigation via
-	          Tx descriptor bit
+	* Implement Tx software interrupt mitigation via
+	  Tx descriptor bit
+	* The real minimum of CP_MIN_MTU is 4 bytes.  However,
+	  for this to be supported, one must(?) turn on packet padding.
 
  */
 
 #define DRV_NAME		"8139cp"
-#define DRV_VERSION		"0.0.6"
-#define DRV_RELDATE		"Nov 19, 2001"
+#define DRV_VERSION		"0.0.7"
+#define DRV_RELDATE		"Feb 27, 2002"
 
 
+#include <linux/config.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/compiler.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/init.h>
@@ -56,8 +60,20 @@
 #include <linux/delay.h>
 #include <linux/ethtool.h>
 #include <linux/mii.h>
+#include <linux/if_vlan.h>
+#include <linux/crc32.h>
 #include <asm/io.h>
 #include <asm/uaccess.h>
+
+#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+#define CP_VLAN_TAG_USED 1
+#define CP_VLAN_TX_TAG(tx_desc,vlan_tag_value) \
+	do { (tx_desc)->opts2 = (vlan_tag_value); } while (0)
+#else
+#define CP_VLAN_TAG_USED 0
+#define CP_VLAN_TX_TAG(tx_desc,vlan_tag_value) \
+	do { (tx_desc)->opts2 = 0; } while (0)
+#endif
 
 /* These identify the driver base version and may not be removed. */
 static char version[] __devinitdata =
@@ -106,8 +122,11 @@ MODULE_PARM_DESC (multicast_filter_limit, "8139cp maximum number of filtered mul
 #define TX_EARLY_THRESH		256	/* Early Tx threshold, in bytes */
 
 /* Time in jiffies before concluding the transmitter is hung. */
-#define TX_TIMEOUT  (6*HZ)
+#define TX_TIMEOUT		(6*HZ)
 
+/* hardware minimum and maximum for a single frame's data payload */
+#define CP_MIN_MTU		60	/* TODO: allow lower, but pad */
+#define CP_MAX_MTU		4096
 
 enum {
 	/* NIC register offsets */
@@ -149,12 +168,17 @@ enum {
 	IPCS		= (1 << 18), /* Calculate IP checksum */
 	UDPCS		= (1 << 17), /* Calculate UDP/IP checksum */
 	TCPCS		= (1 << 16), /* Calculate TCP/IP checksum */
+	TxVlanTag	= (1 << 17), /* Add VLAN tag */
+	RxVlanTagged	= (1 << 16), /* Rx VLAN tag available */
 	IPFail		= (1 << 15), /* IP checksum failed */
 	UDPFail		= (1 << 14), /* UDP/IP checksum failed */
 	TCPFail		= (1 << 13), /* TCP/IP checksum failed */
 	NormalTxPoll	= (1 << 6),  /* One or more normal Tx packets to send */
 	PID1		= (1 << 17), /* 2 protocol id bits:  0==non-IP, */
 	PID0		= (1 << 16), /* 1==UDP/IP, 2==TCP/IP, 3==IP */
+	RxProtoTCP	= 2,
+	RxProtoUDP	= 1,
+	RxProtoIP	= 3,
 	TxFIFOUnder	= (1 << 25), /* Tx FIFO underrun */
 	TxOWC		= (1 << 22), /* Tx Out-of-window collision */
 	TxLinkFail	= (1 << 21), /* Link failed during Tx of packet */
@@ -204,6 +228,7 @@ enum {
 	TxOn		= (1 << 2),  /* Tx mode enable */
 
 	/* C+ mode command register */
+	RxVlanOn	= (1 << 6),  /* Rx VLAN de-tagging enable */
 	RxChkSum	= (1 << 5),  /* Rx checksum offload enable */
 	PCIMulRW	= (1 << 3),  /* Enable PCI read/write multiple */
 	CpRxOn		= (1 << 1),  /* Rx mode enable */
@@ -274,6 +299,10 @@ struct cp_private {
 	unsigned		rx_buf_sz;
 	dma_addr_t		ring_dma;
 
+#if CP_VLAN_TAG_USED
+	struct vlan_group	*vlgrp;
+#endif
+
 	u32			msg_enable;
 
 	struct net_device_stats net_stats;
@@ -320,14 +349,32 @@ static struct pci_device_id cp_pci_tbl[] __devinitdata = {
 };
 MODULE_DEVICE_TABLE(pci, cp_pci_tbl);
 
-static inline void cp_rx_skb (struct cp_private *cp, struct sk_buff *skb)
+static inline void cp_set_rxbufsize (struct cp_private *cp)
+{
+	unsigned int mtu = cp->dev->mtu;
+	
+	if (mtu > ETH_DATA_LEN)
+		/* MTU + ethernet header + FCS + optional VLAN tag */
+		cp->rx_buf_sz = mtu + ETH_HLEN + 8;
+	else
+		cp->rx_buf_sz = PKT_BUF_SZ;
+}
+
+static inline void cp_rx_skb (struct cp_private *cp, struct sk_buff *skb,
+			      struct cp_desc *desc)
 {
 	skb->protocol = eth_type_trans (skb, cp->dev);
 
 	cp->net_stats.rx_packets++;
 	cp->net_stats.rx_bytes += skb->len;
 	cp->dev->last_rx = jiffies;
-	netif_rx (skb);
+
+#if CP_VLAN_TAG_USED
+	if (cp->vlgrp && (desc->opts2 & RxVlanTagged)) {
+		vlan_hwaccel_rx(skb, cp->vlgrp, desc->opts2 & 0xffff);
+	} else
+#endif
+		netif_rx(skb);
 }
 
 static void cp_rx_err_acct (struct cp_private *cp, unsigned rx_tail,
@@ -410,11 +457,24 @@ drop_frag:
 			cp_rx_err_acct(cp, rx_tail, status, len);
 			dev_kfree_skb_irq(copy_skb);
 		} else
-			cp_rx_skb(cp, copy_skb);
+			cp_rx_skb(cp, copy_skb, &cp->rx_ring[rx_tail]);
 		cp->frag_skb = NULL;
 	} else {
 		cp->frag_skb = copy_skb;
 	}
+}
+
+static inline unsigned int cp_rx_csum_ok (u32 status)
+{
+	unsigned int protocol = (status >> 16) & 0x3;
+	
+	if (likely((protocol == RxProtoTCP) && (!(status & TCPFail))))
+		return 1;
+	else if ((protocol == RxProtoUDP) && (!(status & UDPFail)))
+		return 1;
+	else if ((protocol == RxProtoIP) && (!(status & IPFail)))
+		return 1;
+	return 0;
 }
 
 static void cp_rx (struct cp_private *cp)
@@ -426,13 +486,15 @@ static void cp_rx (struct cp_private *cp)
 		u32 status, len;
 		dma_addr_t mapping;
 		struct sk_buff *skb, *new_skb;
+		struct cp_desc *desc;
 		unsigned buflen;
 
 		skb = cp->rx_skb[rx_tail].skb;
 		if (!skb)
 			BUG();
-		rmb();
-		status = le32_to_cpu(cp->rx_ring[rx_tail].opts1);
+
+		desc = &cp->rx_ring[rx_tail];
+		status = le32_to_cpu(desc->opts1);
 		if (status & DescOwn)
 			break;
 
@@ -465,7 +527,13 @@ static void cp_rx (struct cp_private *cp)
 
 		pci_unmap_single(cp->pdev, mapping,
 				 buflen, PCI_DMA_FROMDEVICE);
-		skb->ip_summed = CHECKSUM_NONE;
+
+		/* Handle checksum offloading for incoming packets. */
+		if (cp_rx_csum_ok(status))
+			skb->ip_summed = CHECKSUM_UNNECESSARY;
+		else
+			skb->ip_summed = CHECKSUM_NONE;
+
 		skb_put(skb, len);
 
 		mapping =
@@ -474,15 +542,14 @@ static void cp_rx (struct cp_private *cp)
 				       buflen, PCI_DMA_FROMDEVICE);
 		cp->rx_skb[rx_tail].skb = new_skb;
 
-		cp_rx_skb(cp, skb);
+		cp_rx_skb(cp, skb, desc);
 
 rx_next:
 		if (rx_tail == (CP_RX_RING_SIZE - 1))
-			cp->rx_ring[rx_tail].opts1 =
-				cpu_to_le32(DescOwn | RingEnd | cp->rx_buf_sz);
+			desc->opts1 = cpu_to_le32(DescOwn | RingEnd |
+						  cp->rx_buf_sz);
 		else
-			cp->rx_ring[rx_tail].opts1 =
-				cpu_to_le32(DescOwn | cp->rx_buf_sz);
+			desc->opts1 = cpu_to_le32(DescOwn | cp->rx_buf_sz);
 		cp->rx_ring[rx_tail].opts2 = 0;
 		cp->rx_ring[rx_tail].addr_lo = cpu_to_le32(mapping);
 		rx_tail = NEXT_RX(rx_tail);
@@ -582,7 +649,7 @@ static void cp_tx (struct cp_private *cp)
 
 	cp->tx_tail = tx_tail;
 
-	if (netif_queue_stopped(cp->dev) && (TX_BUFFS_AVAIL(cp) > 1))
+	if (netif_queue_stopped(cp->dev) && (TX_BUFFS_AVAIL(cp) > (MAX_SKB_FRAGS + 1)))
 		netif_wake_queue(cp->dev);
 }
 
@@ -591,14 +658,25 @@ static int cp_start_xmit (struct sk_buff *skb, struct net_device *dev)
 	struct cp_private *cp = dev->priv;
 	unsigned entry;
 	u32 eor;
+#if CP_VLAN_TAG_USED
+	u32 vlan_tag = 0;
+#endif
 
 	spin_lock_irq(&cp->lock);
 
+	/* This is a hard error, log it. */
 	if (TX_BUFFS_AVAIL(cp) <= (skb_shinfo(skb)->nr_frags + 1)) {
 		netif_stop_queue(dev);
 		spin_unlock_irq(&cp->lock);
+		printk(KERN_ERR PFX "%s: BUG! Tx Ring full when queue awake!\n",
+		       dev->name);
 		return 1;
 	}
+
+#if CP_VLAN_TAG_USED
+	if (cp->vlgrp && vlan_tx_tag_present(skb))
+		vlan_tag = TxVlanTag | vlan_tx_tag_get(skb);
+#endif
 
 	entry = cp->tx_head;
 	eor = (entry == (CP_TX_RING_SIZE - 1)) ? RingEnd : 0;
@@ -609,7 +687,7 @@ static int cp_start_xmit (struct sk_buff *skb, struct net_device *dev)
 		len = skb->len;
 		mapping = pci_map_single(cp->pdev, skb->data, len, PCI_DMA_TODEVICE);
 		eor = (entry == (CP_TX_RING_SIZE - 1)) ? RingEnd : 0;
-		txd->opts2 = 0;
+		CP_VLAN_TX_TAG(txd, vlan_tag);
 		txd->addr_lo = cpu_to_le32(mapping);
 		wmb();
 
@@ -662,7 +740,7 @@ static int cp_start_xmit (struct sk_buff *skb, struct net_device *dev)
 				ctrl |= LastFrag;
 
 			txd = &cp->tx_ring[entry];
-			txd->opts2 = 0;
+			CP_VLAN_TX_TAG(txd, vlan_tag);
 			txd->addr_lo = cpu_to_le32(mapping);
 			wmb();
 
@@ -676,7 +754,7 @@ static int cp_start_xmit (struct sk_buff *skb, struct net_device *dev)
 		}
 
 		txd = &cp->tx_ring[first_entry];
-		txd->opts2 = 0;
+		CP_VLAN_TX_TAG(txd, vlan_tag);
 		txd->addr_lo = cpu_to_le32(first_mapping);
 		wmb();
 
@@ -691,9 +769,7 @@ static int cp_start_xmit (struct sk_buff *skb, struct net_device *dev)
 	if (netif_msg_tx_queued(cp))
 		printk(KERN_DEBUG "%s: tx queued, slot %d, skblen %d\n",
 		       dev->name, entry, skb->len);
-	if (TX_BUFFS_AVAIL(cp) < 0)
-		BUG();
-	if (TX_BUFFS_AVAIL(cp) == 0)
+	if (TX_BUFFS_AVAIL(cp) <= (MAX_SKB_FRAGS + 1))
 		netif_stop_queue(dev);
 
 	spin_unlock_irq(&cp->lock);
@@ -706,22 +782,6 @@ static int cp_start_xmit (struct sk_buff *skb, struct net_device *dev)
 
 /* Set or clear the multicast filter for this adaptor.
    This routine is not state sensitive and need not be SMP locked. */
-
-static unsigned const ethernet_polynomial = 0x04c11db7U;
-static inline u32 ether_crc (int length, unsigned char *data)
-{
-	int crc = -1;
-
-	while (--length >= 0) {
-		unsigned char current_octet = *data++;
-		int bit;
-		for (bit = 0; bit < 8; bit++, current_octet >>= 1)
-			crc = (crc << 1) ^ ((crc < 0) ^ (current_octet & 1) ?
-			     ethernet_polynomial : 0);
-	}
-
-	return crc;
-}
 
 static void __cp_set_rx_mode (struct net_device *dev)
 {
@@ -752,7 +812,7 @@ static void __cp_set_rx_mode (struct net_device *dev)
 		     i++, mclist = mclist->next) {
 			int bit_nr = ether_crc(ETH_ALEN, mclist->dmi_addr) >> 26;
 
-			mc_filter[bit_nr >> 5] |= cpu_to_le32(1 << (bit_nr & 31));
+			mc_filter[bit_nr >> 5] |= 1 << (bit_nr & 31);
 			rx_mode |= AcceptMulticast;
 		}
 	}
@@ -827,6 +887,12 @@ static void cp_reset_hw (struct cp_private *cp)
 	printk(KERN_ERR "%s: hardware reset timeout\n", cp->dev->name);
 }
 
+static inline void cp_start_hw (struct cp_private *cp)
+{
+	cpw8(Cmd, RxOn | TxOn);
+	cpw16(CpCmd, PCIMulRW | RxChkSum | CpRxOn | CpTxOn);
+}
+
 static void cp_init_hw (struct cp_private *cp)
 {
 	struct net_device *dev = cp->dev;
@@ -839,8 +905,7 @@ static void cp_init_hw (struct cp_private *cp)
 	cpw32_f (MAC0 + 0, cpu_to_le32 (*(u32 *) (dev->dev_addr + 0)));
 	cpw32_f (MAC0 + 4, cpu_to_le32 (*(u32 *) (dev->dev_addr + 4)));
 
-	cpw8(Cmd, RxOn | TxOn);
-	cpw16(CpCmd, PCIMulRW | CpRxOn | CpTxOn);
+	cp_start_hw(cp);
 	cpw8(TxThresh, 0x06); /* XXX convert magic num to a constant */
 
 	__cp_set_rx_mode(dev);
@@ -972,8 +1037,6 @@ static int cp_open (struct net_device *dev)
 	if (netif_msg_ifup(cp))
 		printk(KERN_DEBUG "%s: enabling interface\n", dev->name);
 
-	cp->rx_buf_sz = (dev->mtu <= 1500 ? PKT_BUF_SZ : dev->mtu + 32);
-
 	rc = cp_alloc_rings(cp);
 	if (rc)
 		return rc;
@@ -1006,6 +1069,38 @@ static int cp_close (struct net_device *dev)
 	free_irq(dev->irq, dev);
 	cp_free_rings(cp);
 	return 0;
+}
+
+static int cp_change_mtu(struct net_device *dev, int new_mtu)
+{
+	struct cp_private *cp = dev->priv;
+	int rc;
+
+	/* check for invalid MTU, according to hardware limits */
+	if (new_mtu < CP_MIN_MTU || new_mtu > CP_MAX_MTU)
+		return -EINVAL;
+
+	/* if network interface not up, no need for complexity */
+	if (!netif_running(dev)) {
+		dev->mtu = new_mtu;
+		cp_set_rxbufsize(cp);	/* set new rx buf size */
+		return 0;
+	}
+
+	spin_lock_irq(&cp->lock);
+
+	cp_stop_hw(cp);			/* stop h/w and free rings */
+	cp_clean_rings(cp);
+
+	dev->mtu = new_mtu;
+	cp_set_rxbufsize(cp);		/* set new rx buf size */
+
+	rc = cp_init_rings(cp);		/* realloc and restart h/w */
+	cp_start_hw(cp);
+
+	spin_unlock_irq(&cp->lock);
+
+	return rc;
 }
 
 static char mii_2_8139_map[8] = {
@@ -1142,7 +1237,28 @@ static int cp_ioctl (struct net_device *dev, struct ifreq *rq, int cmd)
 	return rc;
 }
 
+#if CP_VLAN_TAG_USED
+static void cp_vlan_rx_register(struct net_device *dev, struct vlan_group *grp)
+{
+	struct cp_private *cp = dev->priv;
 
+	spin_lock_irq(&cp->lock);
+	cp->vlgrp = grp;
+	cpw16(CpCmd, cpr16(CpCmd) | RxVlanOn);
+	spin_unlock_irq(&cp->lock);
+}
+
+static void cp_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
+{
+	struct cp_private *cp = dev->priv;
+
+	spin_lock_irq(&cp->lock);
+	cpw16(CpCmd, cpr16(CpCmd) & ~RxVlanOn);
+	if (cp->vlgrp)
+		cp->vlgrp->vlan_devices[vid] = NULL;
+	spin_unlock_irq(&cp->lock);
+}
+#endif
 
 /* Serial EEPROM section. */
 
@@ -1246,6 +1362,7 @@ static int __devinit cp_init_one (struct pci_dev *pdev,
 	cp->mii_if.mdio_read = mdio_read;
 	cp->mii_if.mdio_write = mdio_write;
 	cp->mii_if.phy_id = CP_INTERNAL_PHY;
+	cp_set_rxbufsize(cp);
 
 	rc = pci_enable_device(pdev);
 	if (rc)
@@ -1299,12 +1416,18 @@ static int __devinit cp_init_one (struct pci_dev *pdev,
 	dev->hard_start_xmit = cp_start_xmit;
 	dev->get_stats = cp_get_stats;
 	dev->do_ioctl = cp_ioctl;
+	dev->change_mtu = cp_change_mtu;
 #if 0
 	dev->tx_timeout = cp_tx_timeout;
 	dev->watchdog_timeo = TX_TIMEOUT;
 #endif
 #ifdef CP_TX_CHECKSUM
 	dev->features |= NETIF_F_SG | NETIF_F_IP_CSUM;
+#endif
+#if CP_VLAN_TAG_USED
+	dev->features |= NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX;
+	dev->vlan_rx_register = cp_vlan_rx_register;
+	dev->vlan_rx_kill_vid = cp_vlan_rx_kill_vid;
 #endif
 
 	dev->irq = pdev->irq;

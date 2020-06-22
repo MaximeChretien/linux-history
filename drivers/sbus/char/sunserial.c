@@ -139,7 +139,7 @@ struct sunkbd_operations kbd_ops = {
 	nop_getkeycode
 };
 
-#ifdef CONFIG_USB
+#if defined(CONFIG_USB) || defined(CONFIG_USB_MODULE)
 extern void pci_compute_shiftstate(void);
 extern int pci_setkeycode(unsigned int, unsigned int);
 extern int pci_getkeycode(unsigned int);
@@ -158,7 +158,7 @@ int kbd_init(void)
 		err = init->init();
 		init = init->next;
 	}
-#ifdef CONFIG_USB
+#if defined(CONFIG_USB) || defined(CONFIG_USB_MODULE)
 	if (!serial_console &&
 	    kbd_ops.compute_shiftstate == nop_compute_shiftstate) {
 		printk("kbd_init: Assuming USB keyboard.\n");

@@ -77,9 +77,9 @@ unsigned int aac_response_normal(struct aac_queue * q)
 		int fast;
 
 		fast = (int) (entry->addr & 0x01);
-		fib = (struct hw_fib *) (entry->addr & ~0x01);
+		fib = addr2fib(entry->addr & ~0x01);
 		aac_consumer_free(dev, q, HostNormRespQueue);
-		fibctx = (struct fib *)fib->header.SenderData;
+		fibctx = &dev->fibs[fib->header.SenderData];
 		/*
 		 *	Remove this fibctx from the Outstanding I/O queue.
 		 *	But only if it has not already been timed out.
@@ -172,7 +172,7 @@ unsigned int aac_command_normal(struct aac_queue *q)
 	while(aac_consumer_get(dev, q, &entry))
 	{
 		struct hw_fib * fib;
-		fib = (struct hw_fib *)entry->addr;
+		fib = addr2fib(entry->addr);
 
 		if (dev->aif_thread) {
 		        list_add_tail(&fib->header.FibLinks, &q->cmdq);

@@ -288,6 +288,21 @@ static inline long put_it32(struct itimerval32 *o, struct itimerval *i)
 
 struct msgbuf32 { s32 mtype; char mtext[1]; };
 
+struct ipc64_perm_ds32
+{
+        __kernel_key_t          key;
+        __kernel_uid32_t        uid;
+        __kernel_gid32_t        gid;
+        __kernel_uid32_t        cuid;
+        __kernel_gid32_t        cgid;
+        __kernel_mode_t32       mode;
+        unsigned short          __pad1;
+        unsigned short          seq;
+        unsigned short          __pad2;
+        unsigned int            __unused1;
+        unsigned int            __unused2;
+};
+
 struct ipc_perm32
 {
 	key_t    	  key;
@@ -311,7 +326,7 @@ struct semid_ds32 {
 };
 
 struct semid64_ds32 {
-	struct ipc64_perm sem_perm;		  /* this structure is the same on sparc32 and sparc64 */
+	struct ipc64_perm_ds32 sem_perm;
 	unsigned int	  __pad1;
 	__kernel_time_t32 sem_otime;
 	unsigned int	  __pad2;
@@ -339,7 +354,7 @@ struct msqid_ds32
 };
 
 struct msqid64_ds32 {
-	struct ipc64_perm msg_perm;
+	struct ipc64_perm_ds32 msg_perm;
 	unsigned int   __pad1;
 	__kernel_time_t32 msg_stime;
 	unsigned int   __pad2;
@@ -368,7 +383,7 @@ struct shmid_ds32 {
 };
 
 struct shmid64_ds32 {
-	struct ipc64_perm	shm_perm;
+	struct ipc64_perm_ds32	shm_perm;
 	unsigned int		__pad1;
 	__kernel_time_t32	shm_atime;
 	unsigned int		__pad2;
@@ -1390,7 +1405,7 @@ asmlinkage int sys32_select(int n, u32 *inp, u32 *outp, u32 *exp, u32 tvp_x)
 
 	timeout = MAX_SCHEDULE_TIMEOUT;
 	if (tvp) {
-		time_t sec, usec;
+		int sec, usec;
 
 		if ((ret = verify_area(VERIFY_READ, tvp, sizeof(*tvp)))
 		    || (ret = __get_user(sec, &tvp->tv_sec))
@@ -1442,7 +1457,7 @@ asmlinkage int sys32_select(int n, u32 *inp, u32 *outp, u32 *exp, u32 tvp_x)
 	ret = do_select(n, &fds, &timeout);
 
 	if (tvp && !(current->personality & STICKY_TIMEOUTS)) {
-		time_t sec = 0, usec = 0;
+		int sec = 0, usec = 0;
 		if (timeout) {
 			sec = timeout / HZ;
 			usec = timeout % HZ;

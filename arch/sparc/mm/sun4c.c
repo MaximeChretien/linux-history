@@ -1902,19 +1902,6 @@ static void sun4c_flush_tlb_page_sw(struct vm_area_struct *vma, unsigned long pa
 	}
 }
 
-static void sun4c_set_pte(pte_t *ptep, pte_t pte)
-{
-	*ptep = pte;
-}
-
-static void sun4c_pgd_set(pgd_t * pgdp, pmd_t * pmdp)
-{
-}
-
-static void sun4c_pmd_set(pmd_t * pmdp, pte_t * ptep)
-{
-}
-
 void sun4c_mapioaddr(unsigned long physaddr, unsigned long virt_addr,
 		     int bus_type, int rdonly)
 {
@@ -2092,6 +2079,20 @@ static void sun4c_mmu_info(struct seq_file *m)
 #define PGD_ACCESSED 0x020
 #define PGD_DIRTY    0x040
 #define PGD_TABLE    (PGD_PRESENT | PGD_RW | PGD_USER | PGD_ACCESSED | PGD_DIRTY)
+
+static void sun4c_set_pte(pte_t *ptep, pte_t pte)
+{
+	*ptep = pte;
+}
+
+static void sun4c_pgd_set(pgd_t * pgdp, pmd_t * pmdp)
+{
+}
+
+static void sun4c_pmd_set(pmd_t * pmdp, pte_t * ptep)
+{
+	*pmdp = (PGD_TABLE | (unsigned long) ptep);
+}
 
 static int sun4c_pte_present(pte_t pte)
 {
@@ -2508,6 +2509,7 @@ void __init ld_mmu_sun4c(void)
 #else
 	BTFIXUPSET_CALL(pmd_page, sun4c_pmd_page, BTFIXUPCALL_NORM);
 #endif
+	BTFIXUPSET_CALL(pmd_set, sun4c_pmd_set, BTFIXUPCALL_NORM);
 
 	BTFIXUPSET_CALL(pte_present, sun4c_pte_present, BTFIXUPCALL_NORM);
 	BTFIXUPSET_CALL(pte_clear, sun4c_pte_clear, BTFIXUPCALL_STG0O0);
@@ -2568,5 +2570,4 @@ void __init ld_mmu_sun4c(void)
 	/* These should _never_ get called with two level tables. */
 	BTFIXUPSET_CALL(pgd_set, sun4c_pgd_set, BTFIXUPCALL_NOP);
 	BTFIXUPSET_CALL(pgd_page, sun4c_pgd_page, BTFIXUPCALL_RETO0);
-	BTFIXUPSET_CALL(pmd_set, sun4c_pmd_set, BTFIXUPCALL_NOP);
 }

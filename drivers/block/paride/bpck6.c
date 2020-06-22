@@ -17,13 +17,15 @@
    Version 2.0.0 is the first to have source released 
    Version 2.0.1 is the "Cox-ified" source code 
    Version 2.0.2 - fixed version string usage, and made ppc functions static 
+   Version 2.0.2ac - additional cleanup (privptr now not private to fix 64bit
+   		   platforms), use memset, rename clashing PPC define.
 */
 
 
 /* PARAMETERS */
 int verbose=0; /* set this to 1 to see debugging messages and whatnot */
 
-#define BACKPACK_VERSION "2.0.2"
+#define BACKPACK_VERSION "2.0.2ac"
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -40,7 +42,7 @@ int verbose=0; /* set this to 1 to see debugging messages and whatnot */
 
  
 
-#define PPCSTRUCT(pi) ((PPC *)(pi->private))
+#define PPCSTRUCT(pi) ((PPC_STORAGE *)(pi->privptr))
 
 /****************************************************************/
 /*
@@ -223,12 +225,10 @@ static void bpck6_log_adapter( PIA *pi, char * scratch, int verbose )
 
 static void bpck6_init_proto(PIA *pi)
 {
-	int i;
-
 	/* allocate a state structure for this item */
-	pi->private=(int)kmalloc(sizeof(PPC),GFP_KERNEL);
+	pi->privptr=kmalloc(sizeof(PPC_STORAGE),GFP_KERNEL);
 
-	if(pi->private==(int)NULL)
+	if(pi->privptr==NULL)
 	{
 		printk(KERN_ERR "%s: ERROR COULDN'T ALLOCATE MEMORY\n",pi->device); 
 		return;
@@ -238,10 +238,7 @@ static void bpck6_init_proto(PIA *pi)
 		MOD_INC_USE_COUNT; 
 	}
 
-	for(i=0;i<sizeof(PPC);i++)
-	{
-		((unsigned char *)(pi->private))[i]=0;
-	}
+	memset(pi->privptr, 0, sizeof(PPC_STORAGE));
 }
 
 static void bpck6_release_proto(PIA *pi)
@@ -249,7 +246,7 @@ static void bpck6_release_proto(PIA *pi)
 	MOD_DEC_USE_COUNT;
 	/* free after use count decremented so that we aren't using it
 		when it is decremented */
-	kfree((void *)(pi->private)); 
+	kfree(pi->privptr); 
 }
 
 struct pi_protocol bpck6 = { "bpck6", /* name for proto*/
@@ -290,7 +287,7 @@ EXPORT_SYMBOL(bpck6_release_proto);
 #ifdef MODULE
 /*module information*/
 
-static int init_module(void)
+int init_module(void)
 {
 	printk(KERN_INFO "bpck6: BACKPACK Protocol Driver V"BACKPACK_VERSION"\n");
 	printk(KERN_INFO "bpck6: Copyright 2001 by Micro Solutions, Inc., DeKalb IL. USA\n");
@@ -303,7 +300,7 @@ static int init_module(void)
 	return pi_register(&bpck6) - 1;  
 }
 
-void    cleanup_module(void)
+void cleanup_module(void)
 {
 	pi_unregister(&bpck6);
 }

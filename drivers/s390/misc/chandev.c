@@ -902,25 +902,6 @@ void chandev_add_parms(chandev_type chan_type,u16 lo_devno,u16 hi_devno,char *pa
 		       (int)lo_devno,(int)hi_devno);
 		return;
 	}
-	chandev_lock();
-	for_each(parms,chandev_parms_head)
-	{
-		if(chan_type&(parms->chan_type))
-		{
-			u16 lomax=MAX(parms->lo_devno,lo_devno),
-				himin=MIN(parms->hi_devno,lo_devno);
-			if(lomax<=himin)
-			{
-				chandev_unlock();
-				printk("chandev_add_parms detected overlapping "
-				       "parameter definitions for chan_type=0x%02x"
-				       " lo_devno=0x%04x  hi_devno=0x%04x\n,"
-				       " do a del_parms.",chan_type,(int)lo_devno,(int)hi_devno);
-				return;
-			}
-		}
-	}
-	chandev_unlock();
 	if((parms=chandev_allocstr(parmstr,offsetof(chandev_parms,parmstr))))
 	{
 		parms->chan_type=chan_type;
@@ -1727,8 +1708,16 @@ chandev *write,chandev *data)
 				   read->sch.devno>=curr_parms->lo_devno&&
 					read->sch.devno<=curr_parms->hi_devno)
 				{
-					probeinfo.parmstr=curr_parms->parmstr;
-					break;
+					if (!probeinfo.parmstr) {
+						probeinfo.parmstr = vmalloc(sizeof(curr_parms->parmstr)+1);
+						strcpy(probeinfo.parmstr, curr_parms->parmstr);
+					} else {
+						char *buf;
+
+						buf = vmalloc(strlen(probeinfo.parmstr)+strlen(curr_parms->parmstr)+2);
+						sprintf(buf, "%s,%s",probeinfo.parmstr, curr_parms->parmstr);
+						probeinfo.parmstr=buf;
+					}
 				}
 			}
 			if(force)
@@ -2024,7 +2013,7 @@ void chandev_probe(void)
 		/* This is required because the device can go & come back */
                 /* even before we realize it is gone owing to the waits in our kernel threads */
 		/* & the device will be marked as not owned but its status will be good */
-                /* & an attempt to accidently reprobe it may be done. */ 
+                /* & an attempt to accidentally reprobe it may be done. */ 
 		remove:
 		chandev_remove(chandev_get_by_irq(curr_irqinfo->sch.irq));
 		

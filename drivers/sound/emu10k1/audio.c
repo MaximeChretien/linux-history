@@ -1365,6 +1365,13 @@ static void calculate_ofrag(struct woinst *woinst)
 
 	buffer->fragment_size = 1 << buffer->ossfragshift;
 
+	while (buffer->fragment_size * WAVEOUT_MINFRAGS > WAVEOUT_MAXBUFSIZE)
+		buffer->fragment_size >>= 1;
+
+	/* now we are sure that:
+	 (2^WAVEOUT_MINFRAGSHIFT) <= (fragment_size = 2^n) <= (WAVEOUT_MAXBUFSIZE / WAVEOUT_MINFRAGS)
+	*/
+
 	if (!buffer->numfrags) {
 		u32 numfrags;
 
@@ -1379,19 +1386,14 @@ static void calculate_ofrag(struct woinst *woinst)
 		}
 	}
 
-	if (buffer->numfrags < MINFRAGS)
-		buffer->numfrags = MINFRAGS;
+	if (buffer->numfrags < WAVEOUT_MINFRAGS)
+		buffer->numfrags = WAVEOUT_MINFRAGS;
 
-	if (buffer->numfrags * buffer->fragment_size > WAVEOUT_MAXBUFSIZE) {
+	if (buffer->numfrags * buffer->fragment_size > WAVEOUT_MAXBUFSIZE)
 		buffer->numfrags = WAVEOUT_MAXBUFSIZE / buffer->fragment_size;
 
-		if (buffer->numfrags < MINFRAGS) {
-			buffer->numfrags = MINFRAGS;
-			buffer->fragment_size = WAVEOUT_MAXBUFSIZE / MINFRAGS;
-		}
-
-	} else if (buffer->numfrags * buffer->fragment_size < WAVEOUT_MINBUFSIZE)
-		buffer->numfrags = WAVEOUT_MINBUFSIZE / buffer->fragment_size;
+	if (buffer->numfrags < WAVEOUT_MINFRAGS)
+		BUG();
 
 	buffer->size = buffer->fragment_size * buffer->numfrags;
 	buffer->pages = buffer->size / PAGE_SIZE + ((buffer->size % PAGE_SIZE) ? 1 : 0);
@@ -1425,24 +1427,29 @@ static void calculate_ifrag(struct wiinst *wiinst)
 
 	buffer->fragment_size = 1 << buffer->ossfragshift;
 
+	while (buffer->fragment_size * WAVEIN_MINFRAGS > WAVEIN_MAXBUFSIZE)
+		buffer->fragment_size >>= 1;
+
+	/* now we are sure that:
+	   (2^WAVEIN_MINFRAGSHIFT) <= (fragment_size = 2^n) <= (WAVEIN_MAXBUFSIZE / WAVEIN_MINFRAGS)
+        */
+
+
 	if (!buffer->numfrags)
 		buffer->numfrags = (wiinst->format.bytespersec * WAVEIN_DEFAULTBUFLEN) / (buffer->fragment_size * 1000) - 1;
 
-	if (buffer->numfrags < MINFRAGS)
-		buffer->numfrags = MINFRAGS;
+	if (buffer->numfrags < WAVEIN_MINFRAGS)
+		buffer->numfrags = WAVEIN_MINFRAGS;
 
-	if (buffer->numfrags * buffer->fragment_size > WAVEIN_MAXBUFSIZE) {
+	if (buffer->numfrags * buffer->fragment_size > WAVEIN_MAXBUFSIZE)
 		buffer->numfrags = WAVEIN_MAXBUFSIZE / buffer->fragment_size;
 
-		if (buffer->numfrags < MINFRAGS) {
-			buffer->numfrags = MINFRAGS;
-			buffer->fragment_size = WAVEIN_MAXBUFSIZE / MINFRAGS;
-		}
-	} else if (buffer->numfrags * buffer->fragment_size < WAVEIN_MINBUFSIZE)
-		buffer->numfrags = WAVEIN_MINBUFSIZE / buffer->fragment_size;
+	if (buffer->numfrags < WAVEIN_MINFRAGS)
+		BUG();
 
 	bufsize = buffer->fragment_size * buffer->numfrags;
 
+	/* the buffer size for recording is restricted to certain values, adjust it now */
 	if (bufsize >= 0x10000) {
 		buffer->size = 0x10000;
 		buffer->sizeregval = 0x1f;
@@ -1468,10 +1475,12 @@ static void calculate_ifrag(struct wiinst *wiinst)
 		}
 	}
 
+	/* adjust the fragment size so that buffer size is an integer multiple */
+	while (buffer->size % buffer->fragment_size)
+		buffer->fragment_size >>= 1;
+
 	buffer->numfrags = buffer->size / buffer->fragment_size;
 	buffer->pages =  buffer->size / PAGE_SIZE + ((buffer->size % PAGE_SIZE) ? 1 : 0);
-	if (buffer->size % buffer->fragment_size)
-		BUG();
 
 	DPD(2, " calculated recording fragment_size -> %d\n", buffer->fragment_size);
 	DPD(2, " calculated recording numfrags -> %d\n", buffer->numfrags);

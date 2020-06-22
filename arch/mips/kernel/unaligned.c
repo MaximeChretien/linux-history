@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 1996, 1998 by Ralf Baechle
+ * Copyright (C) 1996, 1998, 2002 by Ralf Baechle
  * Copyright (C) 1999 Silicon Graphics, Inc.
  *
  * This file contains exception handler for address error exception with the
@@ -96,13 +96,12 @@
 	if ((long)(~(pc) & ((a) | ((a)+(s)))) < 0)	\
 		goto sigbus;
 
-static inline void
-emulate_load_store_insn(struct pt_regs *regs,
-                        unsigned long addr,
-                        unsigned long pc)
+static inline int emulate_load_store_insn(struct pt_regs *regs,
+	unsigned long addr, unsigned long pc)
 {
 	union mips_instruction insn;
 	unsigned long value, fixup;
+	unsigned int res;
 
 	regs->regs[0] = 0;
 	/*
@@ -145,116 +144,96 @@ emulate_load_store_insn(struct pt_regs *regs,
 	 */
 	case lh_op:
 		check_axs(pc, addr, 2);
-		__asm__(
-			".set\tnoat\n"
+		__asm__(".set\tnoat\n"
 #ifdef __BIG_ENDIAN
-			"1:\tlb\t%0,0(%1)\n"
-			"2:\tlbu\t$1,1(%1)\n\t"
+			"1:\tlb\t%0, 0(%2)\n"
+			"2:\tlbu\t$1, 1(%2)\n\t"
 #endif
 #ifdef __LITTLE_ENDIAN
-			"1:\tlb\t%0,1(%1)\n"
-			"2:\tlbu\t$1,0(%1)\n\t"
+			"1:\tlb\t%0, 1(%2)\n"
+			"2:\tlbu\t$1, 0(%2)\n\t"
 #endif
-			"sll\t%0,0x8\n\t"
-			"or\t%0,$1\n\t"
-			".set\tat\n\t"
+			"sll\t%0, 0x8\n\t"
+			"or\t%0, $1\n\t"
+			"li\t%1, 0\n"
+			"3:\t.set\tat\n\t"
+			".section\t.fixup,\"ax\"\n\t"
+			"4:\tli\t%1, %3\n\t"
+			"j\t3b\n\t"
+			".previous\n\t"
 			".section\t__ex_table,\"a\"\n\t"
-			STR(PTR)"\t1b,%2\n\t"
-			STR(PTR)"\t2b,%2\n\t"
+			STR(PTR)"\t1b, 4b\n\t"
+			STR(PTR)"\t2b, 4b\n\t"
 			".previous"
-			:"=&r" (value)
-			:"r" (addr), "i" (&&fault)
-			:"$1");
+			: "=&r" (value), "=r" (res)
+			: "r" (addr), "i" (-EFAULT));
+		if (res)
+			goto fault;
 		regs->regs[insn.i_format.rt] = value;
-		return;
+		return 0;
 
 	case lw_op:
 		check_axs(pc, addr, 4);
 		__asm__(
 #ifdef __BIG_ENDIAN
-			"1:\tlwl\t%0,(%1)\n"
-			"2:\tlwr\t%0,3(%1)\n\t"
+			"1:\tlwl\t%0, (%2)\n"
+			"2:\tlwr\t%0, 3(%2)\n\t"
 #endif
 #ifdef __LITTLE_ENDIAN
-			"1:\tlwl\t%0,3(%1)\n"
-			"2:\tlwr\t%0,(%1)\n\t"
+			"1:\tlwl\t%0, 3(%2)\n"
+			"2:\tlwr\t%0, (%2)\n\t"
 #endif
+			"li\t%1, 0\n"
+			"3:\t.section\t.fixup,\"ax\"\n\t"
+			"4:\tli\t%1, %3\n\t"
+			"j\t3b\n\t"
+			".previous\n\t"
 			".section\t__ex_table,\"a\"\n\t"
-			STR(PTR)"\t1b,%2\n\t"
-			STR(PTR)"\t2b,%2\n\t"
+			STR(PTR)"\t1b, 4b\n\t"
+			STR(PTR)"\t2b, 4b\n\t"
 			".previous"
-			:"=&r" (value)
-			:"r" (addr), "i" (&&fault));
-			regs->regs[insn.i_format.rt] = value;
-			return;
+			: "=&r" (value), "=r" (res)
+			: "r" (addr), "i" (-EFAULT));
+		if (res)
+			goto fault;
+		regs->regs[insn.i_format.rt] = value;
+		return 0;
 
 	case lhu_op:
 		check_axs(pc, addr, 2);
 		__asm__(
 			".set\tnoat\n"
 #ifdef __BIG_ENDIAN
-			"1:\tlbu\t%0,0(%1)\n"
-			"2:\tlbu\t$1,1(%1)\n\t"
+			"1:\tlbu\t%0, 0(%2)\n"
+			"2:\tlbu\t$1, 1(%2)\n\t"
 #endif
 #ifdef __LITTLE_ENDIAN
-			"1:\tlbu\t%0,1(%1)\n"
-			"2:\tlbu\t$1,0(%1)\n\t"
+			"1:\tlbu\t%0, 1(%2)\n"
+			"2:\tlbu\t$1, 0(%2)\n\t"
 #endif
-			"sll\t%0,0x8\n\t"
-			"or\t%0,$1\n\t"
-			".set\tat\n\t"
+			"sll\t%0, 0x8\n\t"
+			"or\t%0, $1\n\t"
+			"li\t%1, 0\n"
+			"3:\t.set\tat\n\t"
+			".section\t.fixup,\"ax\"\n\t"
+			"4:\tli\t%1, %3\n\t"
+			"j\t3b\n\t"
+			".previous\n\t"
 			".section\t__ex_table,\"a\"\n\t"
-			STR(PTR)"\t1b,%2\n\t"
-			STR(PTR)"\t2b,%2\n\t"
+			STR(PTR)"\t1b, 4b\n\t"
+			STR(PTR)"\t2b, 4b\n\t"
 			".previous"
-			:"=&r" (value)
-			:"r" (addr), "i" (&&fault)
-			:"$1");
+			: "=&r" (value), "=r" (res)
+			: "r" (addr), "i" (-EFAULT));
+		if (res)
+			goto fault;
 		regs->regs[insn.i_format.rt] = value;
-		return;
+		return 0;
 
 	case lwu_op:
-		check_axs(pc, addr, 4);
-		__asm__(
-#ifdef __BIG_ENDIAN
-			"1:\tlwl\t%0,(%1)\n"
-			"2:\tlwr\t%0,3(%1)\n\t"
-#endif
-#ifdef __LITTLE_ENDIAN
-			"1:\tlwl\t%0,3(%1)\n"
-			"2:\tlwr\t%0,(%1)\n\t"
-#endif
-			".section\t__ex_table,\"a\"\n\t"
-			STR(PTR)"\t1b,%2\n\t"
-			STR(PTR)"\t2b,%2\n\t"
-			".previous"
-			:"=&r" (value)
-			:"r" (addr), "i" (&&fault));
-		value &= 0xffffffff;
-		regs->regs[insn.i_format.rt] = value;
-		return;
-
 	case ld_op:
-		check_axs(pc, addr, 8);
-		__asm__(
-			".set\tmips3\n"
-#ifdef __BIG_ENDIAN
-			"1:\tldl\t%0,(%1)\n"
-			"2:\tldr\t%0,7(%1)\n\t"
-#endif
-#ifdef __LITTLE_ENDIAN
-			"1:\tldl\t%0,7(%1)\n"
-			"2:\tldr\t%0,(%1)\n\t"
-#endif
-			".set\tmips0\n\t"
-			".section\t__ex_table,\"a\"\n\t"
-			STR(PTR)"\t1b,%2\n\t"
-			STR(PTR)"\t2b,%2\n\t"
-			".previous"
-			:"=&r" (value)
-			:"r" (addr), "i" (&&fault));
-		regs->regs[insn.i_format.rt] = value;
-		return;
+		/* Cannot handle 64-bit instructions in 32-bit kernel */
+		goto sigill;
 
 	case sh_op:
 		check_axs(pc, addr, 2);
@@ -262,68 +241,65 @@ emulate_load_store_insn(struct pt_regs *regs,
 		__asm__(
 #ifdef __BIG_ENDIAN
 			".set\tnoat\n"
-			"1:\tsb\t%0,1(%1)\n\t"
-			"srl\t$1,%0,0x8\n"
-			"2:\tsb\t$1,0(%1)\n\t"
+			"1:\tsb\t%1, 1(%2)\n\t"
+			"srl\t$1, %1, 0x8\n"
+			"2:\tsb\t$1, 0(%2)\n\t"
 			".set\tat\n\t"
 #endif
 #ifdef __LITTLE_ENDIAN
 			".set\tnoat\n"
-			"1:\tsb\t%0,0(%1)\n\t"
-			"srl\t$1,%0,0x8\n"
-			"2:\tsb\t$1,1(%1)\n\t"
+			"1:\tsb\t%1, 0(%2)\n\t"
+			"srl\t$1,%1, 0x8\n"
+			"2:\tsb\t$1, 1(%2)\n\t"
 			".set\tat\n\t"
 #endif
+			"li\t%0, 0\n"
+			"3:\n\t"
+			".section\t.fixup,\"ax\"\n\t"
+			"4:\tli\t%0, %3\n\t"
+			"j\t3b\n\t"
+			".previous\n\t"
 			".section\t__ex_table,\"a\"\n\t"
-			STR(PTR)"\t1b,%2\n\t"
-			STR(PTR)"\t2b,%2\n\t"
+			STR(PTR)"\t1b, 4b\n\t"
+			STR(PTR)"\t2b, 4b\n\t"
 			".previous"
-			: /* no outputs */
-			:"r" (value), "r" (addr), "i" (&&fault)
-			:"$1");
-		return;
+			: "=r" (res)
+			: "r" (value), "r" (addr), "i" (-EFAULT));
+		if (res)
+			goto fault;
+		return 0;
 
 	case sw_op:
 		check_axs(pc, addr, 4);
 		value = regs->regs[insn.i_format.rt];
 		__asm__(
 #ifdef __BIG_ENDIAN
-			"1:\tswl\t%0,(%1)\n"
-			"2:\tswr\t%0,3(%1)\n\t"
+			"1:\tswl\t%1,(%2)\n"
+			"2:\tswr\t%1, 3(%2)\n\t"
 #endif
 #ifdef __LITTLE_ENDIAN
-			"1:\tswl\t%0,3(%1)\n"
-			"2:\tswr\t%0,(%1)\n\t"
+			"1:\tswl\t%1, 3(%2)\n"
+			"2:\tswr\t%1, (%2)\n\t"
 #endif
+			"li\t%0, 0\n"
+			"3:\n\t"
+			".section\t.fixup,\"ax\"\n\t"
+			"4:\tli\t%0, %3\n\t"
+			"j\t3b\n\t"
+			".previous\n\t"
 			".section\t__ex_table,\"a\"\n\t"
-			STR(PTR)"\t1b,%2\n\t"
-			STR(PTR)"\t2b,%2\n\t"
+			STR(PTR)"\t1b, 4b\n\t"
+			STR(PTR)"\t2b, 4b\n\t"
 			".previous"
-			: /* no outputs */
-			:"r" (value), "r" (addr), "i" (&&fault));
-		return;
+		: "=r" (res)
+		: "r" (value), "r" (addr), "i" (-EFAULT));
+		if (res)
+			goto fault;
+		return 0;
 
 	case sd_op:
-		check_axs(pc, addr, 8);
-		value = regs->regs[insn.i_format.rt];
-		__asm__(
-			".set\tmips3\n"
-#ifdef __BIG_ENDIAN
-			"1:\tsdl\t%0,(%1)\n"
-			"2:\tsdr\t%0,7(%1)\n\t"
-#endif
-#ifdef __LITTLE_ENDIAN
-			"1:\tsdl\t%0,7(%1)\n"
-			"2:\tsdr\t%0,(%1)\n\t"
-#endif
-			".set\tmips0\n\t"
-			".section\t__ex_table,\"a\"\n\t"
-			STR(PTR)"\t1b,%2\n\t"
-			STR(PTR)"\t2b,%2\n\t"
-			".previous"
-			: /* no outputs */
-			:"r" (value), "r" (addr), "i" (&&fault));
-		return;
+		/* Cannot handle 64-bit instructions in 32-bit kernel */
+		goto sigill;
 
 	case lwc1_op:
 	case ldc1_op:
@@ -352,31 +328,35 @@ emulate_load_store_insn(struct pt_regs *regs,
 		 */
 		goto sigill;
 	}
-	return;
+	return 0;
 
 fault:
 	/* Did we have an exception handler installed? */
-	fixup = search_exception_table(regs->cp0_epc);
+	fixup = search_exception_table(exception_epc(regs));
 	if (fixup) {
 		long new_epc;
 		new_epc = fixup_exception(dpf_reg, fixup, regs->cp0_epc);
 		printk(KERN_DEBUG "%s: Forwarding exception at [<%lx>] (%lx)\n",
 		       current->comm, regs->cp0_epc, new_epc);
 		regs->cp0_epc = new_epc;
-		return;
+		return 1;
 	}
 
 	die_if_kernel ("Unhandled kernel unaligned access", regs);
 	send_sig(SIGSEGV, current, 1);
-	return;
+
+	return 0;
+
 sigbus:
-	die_if_kernel ("Unhandled kernel unaligned access", regs);
+	die_if_kernel("Unhandled kernel unaligned access", regs);
 	send_sig(SIGBUS, current, 1);
-	return;
+
+	return 0;
+
 sigill:
-	die_if_kernel ("Unhandled kernel unaligned access or invalid instruction", regs);
+	die_if_kernel("Unhandled kernel unaligned access or invalid instruction", regs);
 	send_sig(SIGILL, current, 1);
-	return;
+	return 0;
 }
 
 #ifdef CONFIG_PROC_FS
@@ -394,11 +374,11 @@ asmlinkage void do_ade(struct pt_regs *regs)
 	 * of the CPU after executing the instruction
 	 * in the delay slot of an emulated branch.
 	 */
-
-	if ((unsigned long)regs->cp0_epc == current->thread.dsemul_aerpc) {
-		do_dsemulret(regs);
+	/* Terminate if exception was recognized as a delay slot return */
+	if (do_dsemulret(regs))
 		return;
-	}
+
+	/* Otherwise handle as normal */
 
 	/*
 	 * Did we catch a fault trying to load an instruction?
@@ -409,12 +389,16 @@ asmlinkage void do_ade(struct pt_regs *regs)
 		goto sigbus;
 
 	pc = regs->cp0_epc + ((regs->cp0_cause & CAUSEF_BD) ? 4 : 0);
-	if (compute_return_epc(regs))
-		return;
 	if ((current->thread.mflags & MF_FIXADE) == 0)
 		goto sigbus;
 
-	emulate_load_store_insn(regs, regs->cp0_badvaddr, pc);
+	/*
+	 * Do branch emulation only if we didn't forward the exception.
+	 * This is all so but ugly ...
+	 */
+	if (!emulate_load_store_insn(regs, regs->cp0_badvaddr, pc))
+		compute_return_epc(regs);
+
 #ifdef CONFIG_PROC_FS
 	unaligned_instructions++;
 #endif
@@ -422,8 +406,12 @@ asmlinkage void do_ade(struct pt_regs *regs)
 	return;
 
 sigbus:
-	die_if_kernel ("Kernel unaligned instruction access", regs);
+	die_if_kernel("Kernel unaligned instruction access", regs);
 	force_sig(SIGBUS, current);
+
+	/*
+	 * XXX On return from the signal handler we should advance the epc
+	 */
 
 	return;
 }

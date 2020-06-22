@@ -13,13 +13,13 @@
 #include <asm/atomic.h>
 #include <asm/hardirq.h>
 
-extern inline void cpu_bh_disable(int cpu)
+static inline void cpu_bh_disable(int cpu)
 {
 	local_bh_count(cpu)++;
 	barrier();
 }
  
-extern inline void __cpu_bh_enable(int cpu)
+static inline void __cpu_bh_enable(int cpu)
 {
 	barrier();
 	local_bh_count(cpu)--;
@@ -38,20 +38,5 @@ do {								\
 } while (0)
 
 #define in_softirq() (local_bh_count(smp_processor_id()) != 0)
-
-extern inline void __cpu_raise_softirq(int cpu, int nr)
-{
-	unsigned int *m = (unsigned int *) &softirq_pending(cpu);
-	unsigned int temp;
-
-	__asm__ __volatile__(
-		"1:\tll\t%0, %1\t\t\t# __cpu_raise_softirq\n\t"
-		"or\t%0, %2\n\t"
-		"sc\t%0, %1\n\t"
-		"beqz\t%0, 1b"
-		: "=&r" (temp), "=m" (*m)
-		: "ir" (1UL << nr), "m" (*m)
-		: "memory");
-}
 
 #endif /* _ASM_SOFTIRQ_H */

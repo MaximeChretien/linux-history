@@ -58,6 +58,12 @@ void __init proc_root_init(void)
 #ifdef CONFIG_PROC_DEVICETREE
 	proc_device_tree_init();
 #endif
+#ifdef CONFIG_PPC_ISERIES
+	iSeries_proc_create();
+#endif
+#ifdef CONFIG_PPC64
+	proc_ppc64_init(); 
+#endif
 #ifdef CONFIG_PPC_RTAS
 	proc_rtas_init();
 #endif

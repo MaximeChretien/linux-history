@@ -56,10 +56,6 @@ LIST_HEAD(isapnp_devices);
 #define ISAPNP_DEBUG
 #endif
 
-struct resource *pidxr_res;
-struct resource *pnpwrp_res;
-struct resource *isapnp_rdp_res;
-
 int isapnp_disable;			/* Disable ISA PnP */
 int isapnp_rdp;				/* Read Data Port */
 int isapnp_reset = 1;			/* reset all PnP cards (deactivate) */
@@ -2142,19 +2138,13 @@ static void isapnp_free_card(struct pci_bus *card)
 	kfree(card);
 }
 
-#endif /* MODULE */
-
 static void isapnp_free_all_resources(void)
 {
 #ifdef ISAPNP_REGION_OK
-	if (pidxr_res)
-		release_resource(pidxr_res);
+	release_region(_PIDXR, 1);
 #endif
-	if (pnpwrp_res)
-		release_resource(pnpwrp_res);
-	if (isapnp_rdp >= 0x203 && isapnp_rdp <= 0x3ff && isapnp_rdp_res)
-		release_resource(isapnp_rdp_res);
-#ifdef MODULE
+	release_region(_PNPWRP, 1);
+	release_region(isapnp_rdp, 1);
 #ifdef CONFIG_PROC_FS
 	isapnp_proc_done();
 #endif
@@ -2163,8 +2153,9 @@ static void isapnp_free_all_resources(void)
 		list_del(list);
 		isapnp_free_card(pci_bus_b(list));
 	}
-#endif
 }
+
+#endif /* MODULE */
 
 static int isapnp_announce_device(struct isapnp_driver *drv, 
 				  struct pci_dev *dev)
@@ -2284,14 +2275,12 @@ int __init isapnp_init(void)
 		return 0;
 	}
 #ifdef ISAPNP_REGION_OK
-	pidxr_res=request_region(_PIDXR, 1, "isapnp index");
-	if(!pidxr_res) {
+	if (!request_region(_PIDXR, 1, "isapnp index")) {
 		printk(KERN_ERR "isapnp: Index Register 0x%x already used\n", _PIDXR);
 		return -EBUSY;
 	}
 #endif
-	pnpwrp_res=request_region(_PNPWRP, 1, "isapnp write");
-	if(!pnpwrp_res) {
+	if (!request_region(_PNPWRP, 1, "isapnp write")) {
 		printk(KERN_ERR "isapnp: Write Data Register 0x%x already used\n", _PNPWRP);
 #ifdef ISAPNP_REGION_OK
 		release_region(_PIDXR, 1);
@@ -2307,13 +2296,12 @@ int __init isapnp_init(void)
 	printk(KERN_INFO "isapnp: Scanning for PnP cards...\n");
 	if (isapnp_rdp >= 0x203 && isapnp_rdp <= 0x3ff) {
 		isapnp_rdp |= 3;
-		isapnp_rdp_res=request_region(isapnp_rdp, 1, "isapnp read");
-		if(!isapnp_rdp_res) {
+		if (!request_region(isapnp_rdp, 1, "isapnp read")) {
 			printk(KERN_ERR "isapnp: Read Data Register 0x%x already used\n", isapnp_rdp);
 #ifdef ISAPNP_REGION_OK
 			release_region(_PIDXR, 1);
 #endif
-			release_region(isapnp_rdp, 1);
+			release_region(_PNPWRP, 1);
 			return -EBUSY;
 		}
 		isapnp_set_rdp();
@@ -2323,12 +2311,15 @@ int __init isapnp_init(void)
 		cards = isapnp_isolate();
 		if (cards < 0 || 
 		    (isapnp_rdp < 0x203 || isapnp_rdp > 0x3ff)) {
-			isapnp_free_all_resources();
+#ifdef ISAPNP_REGION_OK
+			release_region(_PIDXR, 1);
+#endif
+			release_region(_PNPWRP, 1);
 			isapnp_detected = 0;
 			printk(KERN_INFO "isapnp: No Plug & Play device found\n");
 			return 0;
 		}
-		isapnp_rdp_res=request_region(isapnp_rdp, 1, "isapnp read");
+		request_region(isapnp_rdp, 1, "isapnp read");
 	}
 	isapnp_build_device_list();
 	cards = 0;

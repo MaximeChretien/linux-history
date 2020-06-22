@@ -846,7 +846,6 @@ static int sgivwfb_mmap(struct fb_info *info, struct file *file,
     return -EINVAL;
   offset += sgivwfb_mem_phys;
   pgprot_val(vma->vm_page_prot) = pgprot_val(vma->vm_page_prot) | _PAGE_PCD;
-  vma->vm_flags |= VM_IO;
   if (remap_page_range(vma->vm_start, offset, size, vma->vm_page_prot))
     return -EAGAIN;
   vma->vm_file = file;

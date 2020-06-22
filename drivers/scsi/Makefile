@@ -69,7 +69,7 @@ ifeq ($(CONFIG_SCSI_AACRAID),y)
   obj-$(CONFIG_SCSI_AACRAID)	+= aacraid/aacraid.o
 endif
 ifeq ($(CONFIG_SCSI_AIC7XXX),y)
-obj-$(CONFIG_SCSI_AIC7XXX)	+= aic7xxx/aic7xxx_drv.o
+  obj-$(CONFIG_SCSI_AIC7XXX)	+= aic7xxx/aic7xxx.o
 endif
 obj-$(CONFIG_SCSI_AIC7XXX_OLD)	+= aic7xxx_old.o
 obj-$(CONFIG_SCSI_IPS)		+= ips.o

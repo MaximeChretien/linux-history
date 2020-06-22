@@ -408,5 +408,11 @@ extern void __ia64_memset_c_io (unsigned long, unsigned long, long);
 #define memset_io(addr,c,len) \
   __ia64_memset_c_io((unsigned long)(addr),0x0101010101010101UL*(u8)(c),(len))
 
+
+#define dma_cache_inv(_start,_size)             do { } while (0)
+#define dma_cache_wback(_start,_size)           do { } while (0)
+#define dma_cache_wback_inv(_start,_size)       do { } while (0)
+
 # endif /* __KERNEL__ */
+
 #endif /* _ASM_IA64_IO_H */

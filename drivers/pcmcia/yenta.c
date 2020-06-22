@@ -286,6 +286,9 @@ static int yenta_set_socket(pci_socket_t *socket, socket_state_t *state)
 		}
 		exca_writeb(socket, I365_CSCINT, reg);
 		exca_readb(socket, I365_CSC);
+	
+		if(socket->zoom_video)
+			socket->zoom_video(socket, state->flags & SS_ZVCARD);
 	}
 	config_writew(socket, CB_BRIDGE_CONTROL, bridge);
 	/* Socket event mask: get card insert/remove events.. */

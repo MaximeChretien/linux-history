@@ -1,7 +1,7 @@
 /*
  * Architecture-specific signal handling support.
  *
- * Copyright (C) 1999-2001 Hewlett-Packard Co
+ * Copyright (C) 1999-2002 Hewlett-Packard Co
  *	David Mosberger-Tang <davidm@hpl.hp.com>
  *
  * Derived from i386 and Alpha versions.
@@ -160,6 +160,7 @@ copy_siginfo_to_user (siginfo_t *to, siginfo_t *from)
 		err |= __put_user((short)from->si_code, &to->si_code);
 		switch (from->si_code >> 16) {
 		      case __SI_FAULT >> 16:
+			err |= __put_user(from->si_flags, &to->si_flags);
 			err |= __put_user(from->si_isr, &to->si_isr);
 		      case __SI_POLL >> 16:
 			err |= __put_user(from->si_addr, &to->si_addr);
@@ -172,7 +173,12 @@ copy_siginfo_to_user (siginfo_t *to, siginfo_t *from)
 		      case __SI_PROF >> 16:
 			err |= __put_user(from->si_uid, &to->si_uid);
 			err |= __put_user(from->si_pid, &to->si_pid);
-			err |= __put_user(from->si_pfm_ovfl, &to->si_pfm_ovfl);
+			if (from->si_code == PROF_OVFL) {
+				err |= __put_user(from->si_pfm_ovfl[0], &to->si_pfm_ovfl[0]);
+				err |= __put_user(from->si_pfm_ovfl[1], &to->si_pfm_ovfl[1]);
+				err |= __put_user(from->si_pfm_ovfl[2], &to->si_pfm_ovfl[2]);
+				err |= __put_user(from->si_pfm_ovfl[3], &to->si_pfm_ovfl[3]);
+			}
 			break;
 		      default:
 			err |= __put_user(from->si_uid, &to->si_uid);
@@ -578,10 +584,7 @@ ia64_do_signal (sigset_t *oldset, struct sigscratch *scr, long in_syscall)
 				/* FALLTHRU */
 
 			      default:
-				sigaddset(&current->pending.signal, signr);
-				recalc_sigpending(current);
-				current->flags |= PF_SIGNALED;
-				do_exit(exit_code);
+				sig_exit(signr, exit_code, &info);
 				/* NOTREACHED */
 			}
 		}

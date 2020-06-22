@@ -11,7 +11,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/time.h>
-
+#include <linux/rtc.h>
 #include <linux/mm.h>
 
 #include <linux/adb.h>
@@ -595,7 +595,7 @@ void mac_gettod(int *yearp, int *monp, int *dayp,
  * Read/write the hardware clock.
  */
 
-int mac_hwclk(int op, struct hwclk_time *t)
+int mac_hwclk(int op, struct rtc_time *t)
 {
 	unsigned long now;
 
@@ -613,19 +613,19 @@ int mac_hwclk(int op, struct hwclk_time *t)
 			now = 0;
 		}
 
-		t->wday = 0;
+		t->tm_wday = 0;
 		unmktime(now, 0,
-			 &t->year, &t->mon, &t->day,
-			 &t->hour, &t->min, &t->sec);
+			 &t->tm_year, &t->tm_mon, &t->tm_mday,
+			 &t->tm_hour, &t->tm_min, &t->tm_sec);
 		printk("mac_hwclk: read %04d-%02d-%-2d %02d:%02d:%02d\n",
-			t->year + 1900, t->mon + 1, t->day, t->hour, t->min, t->sec);
+			t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
 	} else { /* write */
 		printk("mac_hwclk: tried to write %04d-%02d-%-2d %02d:%02d:%02d\n",
-			t->year + 1900, t->mon + 1, t->day, t->hour, t->min, t->sec);
+			t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
 
 #if 0	/* it trashes my rtc */
-		now = mktime(t->year + 1900, t->mon + 1, t->day,
-			     t->hour, t->min, t->sec);
+		now = mktime(t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+			     t->tm_hour, t->tm_min, t->tm_sec);
 
 		if (macintosh_config->adb_type == MAC_ADB_II) {
 			via_write_time(now);
@@ -648,11 +648,11 @@ int mac_hwclk(int op, struct hwclk_time *t)
 
 int mac_set_clock_mmss (unsigned long nowtime)
 {
-	struct hwclk_time now;
+	struct rtc_time now;
 
 	mac_hwclk(0, &now);
-	now.sec = nowtime % 60;
-	now.min = (nowtime / 60) % 60;
+	now.tm_sec = nowtime % 60;
+	now.tm_min = (nowtime / 60) % 60;
 	mac_hwclk(1, &now);
 
 	return 0;

@@ -20,6 +20,7 @@ struct file_operations reiserfs_dir_operations = {
     read:	generic_read_dir,
     readdir:	reiserfs_readdir,
     fsync:	reiserfs_dir_fsync,
+    ioctl:	reiserfs_ioctl,
 };
 
 int reiserfs_dir_fsync(struct file *filp, struct dentry *dentry, int datasync) {
@@ -76,7 +77,7 @@ static int reiserfs_readdir (struct file * filp, void * dirent, filldir_t filldi
 		
 	/* we must have found item, that is item of this directory, */
 	RFALSE( COMP_SHORT_KEYS (&(ih->ih_key), &pos_key),
-		"vs-9000: found item %h does not match to dir we readdir %k",
+		"vs-9000: found item %h does not match to dir we readdir %K",
 		ih, &pos_key);
 	RFALSE( item_num > B_NR_ITEMS (bh) - 1,
 		"vs-9005 item_num == %d, item amount == %d", 
@@ -115,13 +116,13 @@ static int reiserfs_readdir (struct file * filp, void * dirent, filldir_t filldi
 		if (d_reclen <= 32) {
 		  local_buf = small_buf ;
 		} else {
-		    local_buf = kmalloc(d_reclen, GFP_NOFS) ;
+		    local_buf = reiserfs_kmalloc(d_reclen, GFP_NOFS, inode->i_sb) ;
 		    if (!local_buf) {
 			pathrelse (&path_to_entry);
 			return -ENOMEM ;
 		    }
 		    if (item_moved (&tmp_ih, &path_to_entry)) {
-			kfree(local_buf) ;
+			reiserfs_kfree(local_buf, d_reclen, inode->i_sb) ;
 			goto research;
 		    }
 		}
@@ -133,12 +134,12 @@ static int reiserfs_readdir (struct file * filp, void * dirent, filldir_t filldi
 		if (filldir (dirent, local_buf, d_reclen, d_off, d_ino, 
 		             DT_UNKNOWN) < 0) {
 		    if (local_buf != small_buf) {
-			kfree(local_buf) ;
+			reiserfs_kfree(local_buf, d_reclen, inode->i_sb) ;
 		    }
 		    goto end;
 		}
 		if (local_buf != small_buf) {
-		    kfree(local_buf) ;
+		    reiserfs_kfree(local_buf, d_reclen, inode->i_sb) ;
 		}
 
 		// next entry should be looked for with such offset
@@ -180,6 +181,7 @@ static int reiserfs_readdir (struct file * filp, void * dirent, filldir_t filldi
     filp->f_pos = next_pos;
     pathrelse (&path_to_entry);
     reiserfs_check_path(&path_to_entry) ;
+    UPDATE_ATIME(inode) ;
     return 0;
 }
 

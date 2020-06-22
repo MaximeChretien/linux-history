@@ -136,6 +136,7 @@ int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags)
 	register long retval __asm__ ("d0");
 	register long clone_arg __asm__ ("d1") = flags | CLONE_VM;
 
+	retval = __NR_clone;
 	__asm__ __volatile__
 	  ("clrl %%d2\n\t"
 	   "trap #0\n\t"		/* Linux/m68k system call */
@@ -145,14 +146,15 @@ int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags)
 	   "movel %3,%%sp@-\n\t"	/* push argument */
 	   "jsr %4@\n\t"		/* call fn */
 	   "movel %0,%%d1\n\t"		/* pass exit value */
-	   "movel %2,%0\n\t"		/* exit */
+	   "movel %2,%%d0\n\t"		/* exit */
 	   "trap #0\n"
 	   "1:"
-	   : "=d" (retval)
-	   : "0" (__NR_clone), "i" (__NR_exit),
+	   : "+d" (retval)
+	   : "i" (__NR_clone), "i" (__NR_exit),
 	     "r" (arg), "a" (fn), "d" (clone_arg), "r" (current),
 	     "i" (-KTHREAD_SIZE)
-	   : "d0", "d2");
+	   : "d2");
+
 	pid = retval;
 	}
 

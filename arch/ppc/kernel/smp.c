@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.smp.c 1.37 11/23/01 16:38:30 paulus
+ * BK Id: SCCS/s.smp.c 1.40 03/28/02 16:54:23 hozer
  */
 /*
  * Smp support for ppc.
@@ -65,7 +65,6 @@ volatile unsigned long __initdata tb_offset = 0;
 int start_secondary(void *);
 extern int cpu_idle(void *unused);
 void smp_call_function_interrupt(void);
-void smp_message_pass(int target, int msg, unsigned long data, int wait);
 
 /* Since OpenPIC has only 4 IPIs, we use slightly different message numbers.
  * 
@@ -76,11 +75,14 @@ void smp_message_pass(int target, int msg, unsigned long data, int wait);
 #define PPC_MSG_INVALIDATE_TLB	2
 #define PPC_MSG_XMON_BREAK	3
 
-#define smp_message_pass(t,m,d,w) \
-    do { if (smp_ops) \
-	     atomic_inc(&ipi_sent); \
-	     smp_ops->message_pass((t),(m),(d),(w)); \
-       } while(0)
+static inline void 
+smp_message_pass(int target, int msg, unsigned long data, int wait)
+{
+	if (smp_ops){
+		atomic_inc(&ipi_sent);
+		smp_ops->message_pass(target,msg,data,wait);
+	}
+}
 
 /* 
  * Common functions
@@ -121,16 +123,18 @@ void smp_message_recv(int msg, struct pt_regs *regs)
 	}
 }
 
+#ifdef CONFIG_750_SMP
 /*
  * 750's don't broadcast tlb invalidates so
  * we have to emulate that behavior.
  *   -- Cort
  */
-void smp_send_tlb_invalidate(int cpu)
+void smp_ppc750_send_tlb_invalidate(int cpu)
 {
 	if ( PVR_VER(mfspr(PVR)) == 8 )
 		smp_message_pass(MSG_ALL_BUT_SELF, PPC_MSG_INVALIDATE_TLB, 0, 0);
 }
+#endif
 
 void smp_send_reschedule(int cpu)
 {
@@ -308,6 +312,20 @@ void __init smp_boot_cpus(void)
 		printk("SMP not supported on this machine.\n");
 		return;
 	}
+
+#ifndef CONFIG_750_SMP
+	/* check for 750's, they just don't work with linux SMP.
+	 * If you actually have 750 SMP hardware and want to try to get
+	 * it to work, send me a patch to make it work and
+	 * I'll make CONFIG_750_SMP a config option.  -- Troy (hozer@drgw.net)
+	 */
+	if ( PVR_VER(mfspr(PVR)) == 8 ){
+		printk("SMP not supported on 750 cpus. %s line %d\n",
+				__FILE__, __LINE__);
+		return;
+	}
+#endif
+
 
 	/* Probe arch for CPUs */
 	cpu_nr = smp_ops->probe();

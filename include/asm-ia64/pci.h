@@ -47,18 +47,12 @@ pcibios_penalize_isa_irq (int irq)
 #define sg_dma_address			platform_pci_dma_address
 
 /* pci_unmap_{single,page} is not a nop, thus... */
-#define DECLARE_PCI_UNMAP_ADDR(ADDR_NAME)	\
-	dma_addr_t ADDR_NAME;
-#define DECLARE_PCI_UNMAP_LEN(LEN_NAME)		\
-	__u32 LEN_NAME;
-#define pci_unmap_addr(PTR, ADDR_NAME)			\
-	((PTR)->ADDR_NAME)
-#define pci_unmap_addr_set(PTR, ADDR_NAME, VAL)		\
-	(((PTR)->ADDR_NAME) = (VAL))
-#define pci_unmap_len(PTR, LEN_NAME)			\
-	((PTR)->LEN_NAME)
-#define pci_unmap_len_set(PTR, LEN_NAME, VAL)		\
-	(((PTR)->LEN_NAME) = (VAL))
+#define DECLARE_PCI_UNMAP_ADDR(addr_name)	dma_addr_t addr_name;
+#define DECLARE_PCI_UNMAP_LEN(len_name)		__u32 len_name;
+#define pci_unmap_addr(ptr, addr_name)		((ptr)->addr_name)
+#define pci_unmap_addr_set(ptr, addr_name, val)	(((ptr)->addr_name) = (val))
+#define pci_unmap_len(ptr, len_name)		((ptr)->len_name)
+#define pci_unmap_len_set(ptr, len_name, val)	(((ptr)->len_name) = (val))
 
 /*
  * Return whether the given PCI device DMA address mask can be supported properly.  For

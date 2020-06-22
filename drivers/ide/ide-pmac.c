@@ -26,11 +26,14 @@
 #include <linux/ide.h>
 #include <linux/notifier.h>
 #include <linux/reboot.h>
+#include <linux/pci.h>
+
 #include <asm/prom.h>
 #include <asm/io.h>
 #include <asm/dbdma.h>
 #include <asm/ide.h>
 #include <asm/mediabay.h>
+#include <asm/pci-bridge.h>
 #include <asm/machdep.h>
 #include <asm/pmac_feature.h>
 #include <asm/sections.h>
@@ -55,11 +58,18 @@ struct pmac_ide_hwif {
 	int				aapl_bus_id;
 	struct device_node*		node;
 	u32				timings[2];
-	struct resource*		reg_resource;
 #ifdef CONFIG_BLK_DEV_IDEDMA_PMAC
+	/* Those fields are duplicating what is in hwif. We currently
+	 * can't use the hwif ones because of some assumptions that are
+	 * beeing done by the generic code about the kind of dma controller
+	 * and format of the dma table. This will have to be fixed though.
+	 */
 	volatile struct dbdma_regs*	dma_regs;
-	struct dbdma_cmd*		dma_table;
-	struct resource*		dma_resource;
+	struct dbdma_cmd*		dma_table_cpu;
+	dma_addr_t			dma_table_dma;
+	struct scatterlist*		sg_table;
+	int				sg_nents;
+	int				sg_dma_direction;
 #endif
 	
 } pmac_ide[MAX_HWIFS] __pmacdata;
@@ -308,7 +318,7 @@ pmac_ide_init_hwif_ports(hw_regs_t *hw,
 	ide_hwifs[ix].tuneproc = pmac_ide_tuneproc;
 	ide_hwifs[ix].selectproc = pmac_ide_selectproc;
 	ide_hwifs[ix].speedproc = &pmac_ide_tune_chipset;
-	if (pmac_ide[ix].dma_regs && pmac_ide[ix].dma_table) {
+	if (pmac_ide[ix].dma_regs && pmac_ide[ix].dma_table_cpu) {
 		ide_hwifs[ix].dmaproc = &pmac_ide_dmaproc;
 #ifdef CONFIG_BLK_DEV_IDEDMA_PMAC_AUTO
 		if (!noautodma)
@@ -823,6 +833,8 @@ pmac_ide_probe(void)
 		struct pmac_ide_hwif* pmhw;
 		int *bidp;
 		int in_bay = 0;
+		u8 pbus, pid;
+		struct pci_dev *pdev = NULL;
 
 		/*
 		 * If this node is not under a mac-io or dbdma node,
@@ -840,6 +852,15 @@ pmac_ide_probe(void)
 			       np->full_name);
 			continue;
 		}
+
+		/* We need to find the pci_dev of the mac-io holding the
+		 * IDE interface
+		 */
+		if (pci_device_from_OF_node(tp, &pbus, &pid) == 0)
+			pdev = pci_find_slot(pbus, pid);
+		if (pdev == NULL)
+			printk(KERN_WARNING "ide: no PCI host for device %s, DMA disabled\n",
+			       np->full_name);
 
 		/*
 		 * If this slot is taken (e.g. by ide-pci.c) try the next one.
@@ -860,8 +881,7 @@ pmac_ide_probe(void)
 		if (np->n_addrs > 1 && np->addrs[1].size > 0x100)
 			np->addrs[1].size = 0x100;
 
-		pmhw->reg_resource = request_OF_resource(np, 0, "  (mac-io IDE IO)");
-		if (!pmhw->reg_resource) {
+		if (request_OF_resource(np, 0, "  (mac-io IDE IO)") == NULL) {
 			printk(KERN_ERR "ide-pmac(%s): can't request IO resource !\n", np->name);
 			continue;
 		}
@@ -935,6 +955,7 @@ pmac_ide_probe(void)
 		hwif->chipset = ide_pmac;
 		hwif->noprobe = !hwif->io_ports[IDE_DATA_OFFSET] || in_bay;
 		hwif->udma_four = (pmhw->kind == controller_kl_ata4_80);
+		hwif->pci_dev = pdev;
 #ifdef CONFIG_PMAC_PBOOK
 		if (in_bay && check_media_bay_by_base(base, MB_CD) == 0)
 			hwif->noprobe = 0;
@@ -964,13 +985,14 @@ pmac_ide_probe(void)
 static void __init 
 pmac_ide_setup_dma(struct device_node *np, int ix)
 {
-	pmac_ide[ix].dma_resource = request_OF_resource(np, 1, " (mac-io IDE DMA)");
-	if (!pmac_ide[ix].dma_resource) {
+	struct pmac_ide_hwif *pmif = &pmac_ide[ix];
+
+	if (request_OF_resource(np, 1, " (mac-io IDE DMA)") == NULL) {
 		printk(KERN_ERR "ide-pmac(%s): can't request DMA resource !\n", np->name);
 		return;
 	}
 
-	pmac_ide[ix].dma_regs =
+	pmif->dma_regs =
 		(volatile struct dbdma_regs*)ioremap(np->addrs[1].address, 0x200);
 
 	/*
@@ -978,14 +1000,24 @@ pmac_ide_setup_dma(struct device_node *np, int ix)
 	 * The +2 is +1 for the stop command and +1 to allow for
 	 * aligning the start address to a multiple of 16 bytes.
 	 */
-	pmac_ide[ix].dma_table = (struct dbdma_cmd*)
-	       kmalloc((MAX_DCMDS + 2) * sizeof(struct dbdma_cmd), GFP_KERNEL);
-	if (pmac_ide[ix].dma_table == 0) {
+	pmif->dma_table_cpu = (struct dbdma_cmd*)pci_alloc_consistent(
+		ide_hwifs[ix].pci_dev,
+		(MAX_DCMDS + 2) * sizeof(struct dbdma_cmd),
+		&pmif->dma_table_dma);
+	if (pmif->dma_table_cpu == NULL) {
 		printk(KERN_ERR "%s: unable to allocate DMA command list\n",
 		       ide_hwifs[ix].name);
 		return;
 	}
 
+	pmif->sg_table = kmalloc(sizeof(struct scatterlist) * MAX_DCMDS,
+				 GFP_KERNEL);
+	if (pmif->sg_table == NULL) {
+		pci_free_consistent(	ide_hwifs[ix].pci_dev,
+					(MAX_DCMDS + 2) * sizeof(struct dbdma_cmd),
+				    	pmif->dma_table_cpu, pmif->dma_table_dma);
+		return;
+	}
 	ide_hwifs[ix].dmaproc = &pmac_ide_dmaproc;
 #ifdef CONFIG_BLK_DEV_IDEDMA_PMAC_AUTO
 	if (!noautodma)
@@ -993,65 +1025,118 @@ pmac_ide_setup_dma(struct device_node *np, int ix)
 #endif
 }
 
+static int
+pmac_ide_build_sglist (int ix, struct request *rq)
+{
+	ide_hwif_t *hwif = &ide_hwifs[ix];
+	struct pmac_ide_hwif *pmif = &pmac_ide[ix];
+	struct buffer_head *bh;
+	struct scatterlist *sg = pmif->sg_table;
+	int nents = 0;
+
+	if (hwif->sg_dma_active)
+		BUG();
+		
+	if (rq->cmd == READ)
+		pmif->sg_dma_direction = PCI_DMA_FROMDEVICE;
+	else
+		pmif->sg_dma_direction = PCI_DMA_TODEVICE;
+	bh = rq->bh;
+	do {
+		unsigned char *virt_addr = bh->b_data;
+		unsigned int size = bh->b_size;
+
+		if (nents >= MAX_DCMDS)
+			return 0;
+
+		while ((bh = bh->b_reqnext) != NULL) {
+			if ((virt_addr + size) != (unsigned char *) bh->b_data)
+				break;
+			size += bh->b_size;
+		}
+		memset(&sg[nents], 0, sizeof(*sg));
+		sg[nents].address = virt_addr;
+		sg[nents].length = size;
+		nents++;
+	} while (bh != NULL);
+
+	return pci_map_sg(hwif->pci_dev, sg, nents, pmif->sg_dma_direction);
+}
+
+static int
+pmac_ide_raw_build_sglist (int ix, struct request *rq)
+{
+	ide_hwif_t *hwif = &ide_hwifs[ix];
+	struct pmac_ide_hwif *pmif = &pmac_ide[ix];
+	struct scatterlist *sg = hwif->sg_table;
+	int nents = 0;
+	ide_task_t *args = rq->special;
+	unsigned char *virt_addr = rq->buffer;
+	int sector_count = rq->nr_sectors;
+
+//	if ((args->tfRegister[IDE_COMMAND_OFFSET] == WIN_WRITEDMA) ||
+//	    (args->tfRegister[IDE_COMMAND_OFFSET] == WIN_WRITEDMA_EXT))
+	if (args->command_type == IDE_DRIVE_TASK_RAW_WRITE)
+		pmif->sg_dma_direction = PCI_DMA_TODEVICE;
+	else
+		pmif->sg_dma_direction = PCI_DMA_FROMDEVICE;
+	
+	if (sector_count > 128) {
+		memset(&sg[nents], 0, sizeof(*sg));
+		sg[nents].address = virt_addr;
+		sg[nents].length = 128  * SECTOR_SIZE;
+		nents++;
+		virt_addr = virt_addr + (128 * SECTOR_SIZE);
+		sector_count -= 128;
+	}
+	memset(&sg[nents], 0, sizeof(*sg));
+	sg[nents].address = virt_addr;
+	sg[nents].length =  sector_count  * SECTOR_SIZE;
+	nents++;
+   
+	return pci_map_sg(hwif->pci_dev, sg, nents, pmif->sg_dma_direction);
+}
+
 /*
  * pmac_ide_build_dmatable builds the DBDMA command list
  * for a transfer and sets the DBDMA channel to point to it.
  */
-static int __pmac
+static int
 pmac_ide_build_dmatable(ide_drive_t *drive, int ix, int wr)
 {
-	struct dbdma_cmd *table, *tstart;
-	int count = 0;
+	struct dbdma_cmd *table;
+	int i, count = 0;
 	struct request *rq = HWGROUP(drive)->rq;
-	struct buffer_head *bh = rq->bh;
-	unsigned int size, addr;
 	volatile struct dbdma_regs *dma = pmac_ide[ix].dma_regs;
+	struct scatterlist *sg;
 
-	table = tstart = (struct dbdma_cmd *) DBDMA_ALIGN(pmac_ide[ix].dma_table);
+	/* DMA table is already aligned */
+	table = (struct dbdma_cmd *) pmac_ide[ix].dma_table_cpu;
 
-#ifdef IDE_PMAC_DEBUG
-	if (in_le32(&dma->status) & (RUN|ACTIVE))
-		printk("ide-pmac: channel status not stopped ! (%x)\n",
-			in_le32(&dma->status));
-#endif	
-	/* Make sure channel is stopped and all error conditions are clear */
+	/* Make sure DMA controller is stopped (necessary ?) */
 	out_le32(&dma->control, (RUN|PAUSE|FLUSH|WAKE|DEAD) << 16);
 	while (in_le32(&dma->status) & RUN)
 		udelay(1);
 
-	do {
-		/*
-		 * Determine addr and size of next buffer area.  We assume that
-		 * individual virtual buffers are always composed linearly in
-		 * physical memory.  For example, we assume that any 8kB buffer
-		 * is always composed of two adjacent physical 4kB pages rather
-		 * than two possibly non-adjacent physical 4kB pages.
-		 */
-		if (bh == NULL) {  /* paging requests have (rq->bh == NULL) */
-			addr = virt_to_bus(rq->buffer);
-			size = rq->nr_sectors << 9;
-		} else {
-			/* group sequential buffers into one large buffer */
-			addr = virt_to_bus(bh->b_data);
-			size = bh->b_size;
-			while ((bh = bh->b_reqnext) != NULL) {
-				if ((addr + size) != virt_to_bus(bh->b_data))
-					break;
-				size += bh->b_size;
-			}
-		}
+	/* Build sglist */
+	if (HWGROUP(drive)->rq->cmd == IDE_DRIVE_TASKFILE)
+		pmac_ide[ix].sg_nents = i = pmac_ide_raw_build_sglist(ix, rq);
+	else
+		pmac_ide[ix].sg_nents = i = pmac_ide_build_sglist(ix, rq);
+	if (!i)
+		return 0;
 
-		/*
-		 * Fill in the next DBDMA command block.
-		 * Note that one DBDMA command can transfer
-		 * at most 65535 bytes.
-		 */
-#ifdef IDE_PMAC_DEBUG
-		if (size & 0x01)
-			printk("ide-pmac: odd size transfer ! (%d)\n", size);
-#endif			
-		while (size) {
-			unsigned int tc = (size < 0xfe00)? size: 0xfe00;
+	/* Build DBDMA commands list */
+	sg = pmac_ide[ix].sg_table;
+	while (i) {
+		u32 cur_addr;
+		u32 cur_len;
+
+		cur_addr = sg_dma_address(sg);
+		cur_len = sg_dma_len(sg);
+
+		while (cur_len) {
+			unsigned int tc = (cur_len < 0xfe00)? cur_len: 0xfe00;
 
 			if (++count >= MAX_DCMDS) {
 				printk(KERN_WARNING "%s: DMA table too small\n",
@@ -1060,15 +1145,17 @@ pmac_ide_build_dmatable(ide_drive_t *drive, int ix, int wr)
 			}
 			st_le16(&table->command, wr? OUTPUT_MORE: INPUT_MORE);
 			st_le16(&table->req_count, tc);
-			st_le32(&table->phy_addr, addr);
+			st_le32(&table->phy_addr, cur_addr);
 			table->cmd_dep = 0;
 			table->xfer_status = 0;
 			table->res_count = 0;
-			addr += tc;
-			size -= tc;
+			cur_addr += tc;
+			cur_len -= tc;
 			++table;
 		}
-	} while (bh != NULL);
+		sg++;
+		i--;
+	}
 
 	/* convert the last command to an input/output last command */
 	if (count)
@@ -1080,10 +1167,23 @@ pmac_ide_build_dmatable(ide_drive_t *drive, int ix, int wr)
 	memset(table, 0, sizeof(struct dbdma_cmd));
 	out_le16(&table->command, DBDMA_STOP);
 
-	out_le32(&dma->cmdptr, virt_to_bus(tstart));
+	out_le32(&dma->cmdptr, pmac_ide[ix].dma_table_dma);
 	return 1;
 }
 
+/* Teardown mappings after DMA has completed.  */
+static void
+pmac_ide_destroy_dmatable (ide_drive_t *drive, int ix)
+{
+	struct pci_dev *dev = HWIF(drive)->pci_dev;
+	struct scatterlist *sg = pmac_ide[ix].sg_table;
+	int nents = pmac_ide[ix].sg_nents;
+
+	if (nents) {
+		pci_unmap_sg(dev, sg, nents, pmac_ide[ix].sg_dma_direction);
+		pmac_ide[ix].sg_nents = 0;
+	}
+}
 
 static __inline__ unsigned char
 dma_bits_to_command(unsigned char bits)
@@ -1237,6 +1337,7 @@ pmac_ide_dmaproc(ide_dma_action_t func, ide_drive_t *drive)
 	volatile struct dbdma_regs *dma;
 	byte unit = (drive->select.b.unit & 0x01);
 	byte ata4;
+	int reading = 0;
 
 	/* Can we stuff a pointer to our intf structure in config_data
 	 * or select_data in hwif ?
@@ -1259,22 +1360,31 @@ pmac_ide_dmaproc(ide_dma_action_t func, ide_drive_t *drive)
 		pmac_ide_check_dma(drive);
 		break;
 	case ide_dma_read:
+		reading = 1;
 	case ide_dma_write:
-		if (!pmac_ide_build_dmatable(drive, ix, func==ide_dma_write))
+		SELECT_READ_WRITE(HWIF(drive),drive,func);
+		if (!pmac_ide_build_dmatable(drive, ix, !reading))
 			return 1;
 		/* Apple adds 60ns to wrDataSetup on reads */
 		if (ata4 && (pmac_ide[ix].timings[unit] & TR_66_UDMA_EN)) {
 			out_le32((unsigned *)(IDE_DATA_REG + IDE_TIMING_CONFIG + _IO_BASE),
 				pmac_ide[ix].timings[unit] + 
-				((func == ide_dma_read) ? 0x00800000UL : 0));
+				(reading ? 0x00800000UL : 0));
 			(void)in_le32((unsigned *)(IDE_DATA_REG + IDE_TIMING_CONFIG + _IO_BASE));
 		}
 		drive->waiting_for_dma = 1;
 		if (drive->media != ide_disk)
 			return 0;
 		ide_set_handler(drive, &ide_dma_intr, WAIT_CMD, NULL);
-		OUT_BYTE(func==ide_dma_write? WIN_WRITEDMA: WIN_READDMA,
-			 IDE_COMMAND_REG);
+		if ((HWGROUP(drive)->rq->cmd == IDE_DRIVE_TASKFILE) &&
+		    (drive->addressing == 1)) {
+			ide_task_t *args = HWGROUP(drive)->rq->special;
+			OUT_BYTE(args->tfRegister[IDE_COMMAND_OFFSET], IDE_COMMAND_REG);
+		} else if (drive->addressing) {
+			OUT_BYTE(reading ? WIN_READDMA_EXT : WIN_WRITEDMA_EXT, IDE_COMMAND_REG);
+		} else {
+			OUT_BYTE(reading ? WIN_READDMA : WIN_WRITEDMA, IDE_COMMAND_REG);
+		}
 	case ide_dma_begin:
 		out_le32(&dma->control, (RUN << 16) | RUN);
 		/* Make sure it gets to the controller right now */
@@ -1284,6 +1394,7 @@ pmac_ide_dmaproc(ide_dma_action_t func, ide_drive_t *drive)
 		drive->waiting_for_dma = 0;
 		dstat = in_le32(&dma->status);
 		out_le32(&dma->control, ((RUN|WAKE|DEAD) << 16));
+		pmac_ide_destroy_dmatable(drive, ix);
 		/* verify good dma status */
 		return (dstat & (RUN|DEAD|ACTIVE)) != RUN;
 	case ide_dma_test_irq: /* returns 1 if dma irq issued, 0 otherwise */

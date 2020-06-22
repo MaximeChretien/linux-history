@@ -1,5 +1,5 @@
 /*
- * $Id: mtdcore.c,v 1.31 2001/10/02 15:05:11 dwmw2 Exp $
+ * $Id: mtdcore.c,v 1.32 2002/03/07 18:38:10 joern Exp $
  *
  * Core registration and callback routines for MTD
  * drivers and users.
@@ -296,7 +296,7 @@ done:
 	up(&mtd_table_mutex);
         if (off >= len+begin)
                 return 0;
-        *start = page + (begin-off);
+        *start = page + (off-begin);
         return ((count < begin+len-off) ? count : begin+len-off);
 }
 

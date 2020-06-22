@@ -39,13 +39,13 @@
 
 /* setting this to other than a power of two may break some applications */
 #define WAVEOUT_MAXBUFSIZE	MAXBUFSIZE
-#define WAVEOUT_MINBUFSIZE	64
 
 #define WAVEOUT_DEFAULTFRAGLEN	20 /* Time to play a fragment in ms (latency) */
 #define WAVEOUT_DEFAULTBUFLEN	500 /* Time to play the entire buffer in ms */
 
-#define WAVEOUT_MINFRAGSHIFT	6
-#define WAVEOUT_MAXVOICES 6
+#define WAVEOUT_MINFRAGSHIFT	6 /* Minimum fragment size in bytes is 2^6 */
+#define WAVEOUT_MINFRAGS	3 /* _don't_ go bellow 3, it would break silence filling */
+#define WAVEOUT_MAXVOICES	6
 
 struct waveout_buffer {
 	u16 ossfragshift;

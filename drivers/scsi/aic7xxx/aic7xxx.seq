@@ -37,10 +37,11 @@
  * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGES.
  *
- * $FreeBSD: src/sys/dev/aic7xxx/aic7xxx.seq,v 1.106 2000/11/12 05:19:46 gibbs Exp $
+ * $FreeBSD: src/sys/dev/aic7xxx/aic7xxx.seq,v 1.94.2.16 2002/04/29 19:36:30 gibbs Exp $
  */
 
-VERSION = "$Id: //depot/aic7xxx/aic7xxx/aic7xxx.seq#37 $"
+VERSION = "$Id: //depot/aic7xxx/aic7xxx/aic7xxx.seq#43 $"
+PATCH_ARG_LIST = "struct ahc_softc *ahc"
 
 #include "aic7xxx.reg"
 #include "scsi_message.h"
@@ -89,7 +90,7 @@ poll_for_work_loop:
 	test	SSTAT0, SELDO|SELDI	jnz selection;
 test_queue:
 	/* Has the driver posted any work for us? */
-BEGIN_CRITICAL
+BEGIN_CRITICAL;
 	if ((ahc->features & AHC_QUEUE_REGS) != 0) {
 		test	QOFF_CTLSTA, SCB_AVAIL jz poll_for_work_loop;
 	} else {
@@ -110,7 +111,7 @@ BEGIN_CRITICAL
 		mov	SCBPTR, ARG_1;
 	}
 	or	SEQ_FLAGS2, SCB_DMA;
-END_CRITICAL
+END_CRITICAL;
 dma_queued_scb:
 	/*
 	 * DMA the SCB from host ram into the current SCB location.
@@ -124,7 +125,7 @@ dma_queued_scb:
 	 * value.
 	 */
 	mov	A, ARG_1;
-BEGIN_CRITICAL
+BEGIN_CRITICAL;
 	cmp	NEXT_QUEUED_SCB, A jne abort_qinscb;
 	if ((ahc->flags & AHC_SEQUENCER_DEBUG) != 0) {
 		cmp	SCB_TAG, A je . + 2;
@@ -139,7 +140,7 @@ BEGIN_CRITICAL
 		inc	QINPOS;
 	}
 	and	SEQ_FLAGS2, ~SCB_DMA;
-END_CRITICAL
+END_CRITICAL;
 start_waiting:
 	/*
 	 * Start the first entry on the waiting SCB list.
@@ -437,7 +438,6 @@ target_inb:
 select_out:
 	/* Turn off the selection hardware */
 	and	SCSISEQ, TEMODE|ENSELI|ENRSELI|ENAUTOATNP, SCSISEQ;
-	mvi	CLRSINT0, CLRSELDO;
 	mov	SCBPTR, WAITING_SCBH;
 	mov	WAITING_SCBH,SCB_NEXT;
 	mov	SAVED_SCSIID, SCB_SCSIID;
@@ -452,6 +452,7 @@ select_out:
 		 * sending our identify messages.
 		 */
 		mvi	P_MESGIN|BSYO call change_phase;
+		mvi	CLRSINT0, CLRSELDO;
 
 		/*
 		 * Start out with a simple identify message.
@@ -498,6 +499,7 @@ target_ITloop:
 		}
 		mvi	DMAPARAMS, HDMAEN|DIRECTION|FIFORESET;
 		mov	SCB_TAG	 call dma_scb;
+		call	set_transfer_settings;
 		jmp	target_synccmd;
 
 target_mesgout:
@@ -641,6 +643,7 @@ initiator_select:
 	 */
 	mvi	MSG_OUT, MSG_IDENTIFYFLAG;
 	or	SEQ_FLAGS, IDENTIFY_SEEN;
+	mvi	CLRSINT0, CLRSELDO;
 
 	/*
 	 * Main loop for information transfer phases.  Wait for the
@@ -968,12 +971,12 @@ ultra2_dmafinish:
 ultra2_ensure_sg:
 		test	SG_CACHE_SHADOW, LAST_SEG jz ultra2_shvalid;
 		/* Record if we've consumed all S/G entries */
-		test    SSTAT2, SHVALID	jnz residuals_correct;
+		test	SSTAT2, SHVALID	jnz residuals_correct;
 		or	SCB_RESIDUAL_SGPTR[0], SG_LIST_NULL;
 		jmp	residuals_correct;
 
 ultra2_shvalid:
-                test    SSTAT2, SHVALID	jnz sgptr_fixup;
+		test	SSTAT2, SHVALID	jnz sgptr_fixup;
 		call	idle_loop;
 		jmp	ultra2_ensure_sg;
 
@@ -1397,7 +1400,7 @@ p_command_embedded:
 	 * The data fifo seems to require 4 byte aligned
 	 * transfers from the sequencer.  Force this to
 	 * be the case by clearing HADDR[0] even though
-	 * we aren't going to touch host memeory.
+	 * we aren't going to touch host memory.
 	 */
 	clr	HADDR[0];
 	if ((ahc->features & AHC_ULTRA2) != 0) {
@@ -2003,7 +2006,7 @@ target_outb:
  * removal of the found SCB from the disconnected list.
  */
 if ((ahc->flags & AHC_PAGESCBS) != 0) {
-BEGIN_CRITICAL
+BEGIN_CRITICAL;
 findSCB:
 	mov	A, SINDEX;			/* Tag passed in SINDEX */
 	cmp	DISCONNECTED_SCBH, SCB_LIST_NULL je findSCB_notFound;
@@ -2025,7 +2028,7 @@ rem_scb_from_disc_list:
 	mov	SCBPTR, SINDEX ret;
 rHead:
 	mov	DISCONNECTED_SCBH,SCB_NEXT ret;
-END_CRITICAL
+END_CRITICAL;
 findSCB_notFound:
 	/*
 	 * We didn't find it.  Page in the SCB.
@@ -2150,7 +2153,7 @@ set_1byte_addr:
 	adc	DINDIR, A, SINDIR ret;
 
 /*
- * Either post or fetch and SCB from host memory based on the
+ * Either post or fetch an SCB from host memory based on the
  * DIRECTION bit in DMAPARAMS. The host SCB index is in SINDEX.
  */
 dma_scb:
@@ -2308,11 +2311,11 @@ cleanup_scb:
 	}
 add_scb_to_free_list:
 	if ((ahc->flags & AHC_PAGESCBS) != 0) {
-BEGIN_CRITICAL
+BEGIN_CRITICAL;
 		mov	SCB_NEXT, FREE_SCBH;
 		mvi	SCB_TAG, SCB_LIST_NULL;
 		mov	FREE_SCBH, SCBPTR ret;
-END_CRITICAL
+END_CRITICAL;
 	} else {
 		mvi	SCB_TAG, SCB_LIST_NULL ret;
 	}
@@ -2326,7 +2329,7 @@ set_hhaddr:
 
 if ((ahc->flags & AHC_PAGESCBS) != 0) {
 get_free_or_disc_scb:
-BEGIN_CRITICAL
+BEGIN_CRITICAL;
 	cmp	FREE_SCBH, SCB_LIST_NULL jne dequeue_free_scb;
 	cmp	DISCONNECTED_SCBH, SCB_LIST_NULL jne dequeue_disc_scb;
 return_error:
@@ -2335,14 +2338,14 @@ return_error:
 dequeue_disc_scb:
 	mov	SCBPTR, DISCONNECTED_SCBH;
 	mov	DISCONNECTED_SCBH, SCB_NEXT;
-END_CRITICAL
+END_CRITICAL;
 	mvi	DMAPARAMS, FIFORESET;
 	mov	SCB_TAG	jmp dma_scb;
-BEGIN_CRITICAL
+BEGIN_CRITICAL;
 dequeue_free_scb:
 	mov	SCBPTR, FREE_SCBH;
 	mov	FREE_SCBH, SCB_NEXT ret;
-END_CRITICAL
+END_CRITICAL;
 
 add_scb_to_disc_list:
 /*
@@ -2350,10 +2353,10 @@ add_scb_to_disc_list:
  * candidates for paging out an SCB if one is needed for a new command.
  * Modifying the disconnected list is a critical(pause dissabled) section.
  */
-BEGIN_CRITICAL
+BEGIN_CRITICAL;
 	mov	SCB_NEXT, DISCONNECTED_SCBH;
 	mov	DISCONNECTED_SCBH, SCBPTR ret;
-END_CRITICAL
+END_CRITICAL;
 }
 set_seqint:
 	mov	INTSTAT, SINDEX;

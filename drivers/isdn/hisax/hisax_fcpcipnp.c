@@ -32,6 +32,9 @@
 #include <linux/slab.h>
 #include <linux/skbuff.h>
 #include <linux/netdevice.h>
+
+#include <asm/io.h>
+
 #include "hisax_fcpcipnp.h"
 
 // debugging cruft
@@ -65,6 +68,7 @@ MODULE_DEVICE_TABLE(isapnp, fcpnp_ids);
 
 static int protocol = 2;       /* EURO-ISDN Default */
 MODULE_PARM(protocol, "i");
+MODULE_LICENSE("GPL");
 
 // ----------------------------------------------------------------------
 

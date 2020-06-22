@@ -357,9 +357,10 @@ asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
 
 	case PTRACE_PEEKUSR_AREA:
 	case PTRACE_POKEUSR_AREA:
-		if((ret=copy_from_user(&parea,(void *)addr,sizeof(parea)))==0)  
-		   ret=copy_user(child,parea.kernel_addr,parea.process_addr,
+		if(copy_from_user(&parea,(void *)addr,sizeof(parea)) == 0)  
+			ret=copy_user(child,parea.kernel_addr,parea.process_addr,
 				 parea.len,1,(request==PTRACE_POKEUSR_AREA));
+		else ret = -EFAULT;
 		break;
 	default:
 		ret = -EIO;

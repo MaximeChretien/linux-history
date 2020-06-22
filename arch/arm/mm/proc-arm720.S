@@ -111,6 +111,9 @@ ENTRY(cpu_arm720_tlb_invalidate_page)
  *         : r3 = saved SPSR
  *
  * Purpose : obtain information about current aborted instruction
+ * Note: we read user space.  This means we might cause a data
+ * abort here if the I-TLB and D-TLB aren't seeing the same
+ * picture.  Unfortunately, this does happen.  We live with it.
  *
  * Returns : r0 = address of abort
  *	   : r1 != 0 if writing

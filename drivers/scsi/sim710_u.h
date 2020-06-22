@@ -1,3 +1,4 @@
+#undef A_did_reject
 #undef A_dsa_cmnd
 #undef A_dsa_datain
 #undef A_dsa_dataout
@@ -14,12 +15,6 @@
 #undef A_had_msgout
 #undef A_had_select
 #undef A_had_status
-#undef A_int_bad_extmsg1a
-#undef A_int_bad_extmsg1b
-#undef A_int_bad_extmsg2a
-#undef A_int_bad_extmsg2b
-#undef A_int_bad_extmsg3a
-#undef A_int_bad_extmsg3b
 #undef A_int_bad_msg1
 #undef A_int_bad_msg2
 #undef A_int_bad_msg3
@@ -43,8 +38,12 @@
 #undef A_int_sel_not_cmd
 #undef A_int_selected
 #undef A_int_status_not_msgin
+#undef A_int_test1
+#undef A_msg_reject
 #undef A_msgin_buf
 #undef A_reselected_identify
+#undef A_test1_dst
+#undef A_test1_src
 #undef Ent_do_select
 #undef Ent_done_ident
 #undef Ent_end_data_trans
@@ -61,6 +60,7 @@
 #undef Ent_resume_msgin3b
 #undef Ent_resume_pmm
 #undef Ent_resume_rej_ident
+#undef Ent_test1
 #undef Ent_wait_disc1
 #undef Ent_wait_disc2
 #undef Ent_wait_disc3

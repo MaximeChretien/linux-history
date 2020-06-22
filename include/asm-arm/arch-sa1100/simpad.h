@@ -39,7 +39,6 @@
 
 #define IRQ_GPIO_UCB1300_IRQ IRQ_GPIO22 
 
-
 /*---  PCMCIA  ---*/
 #define GPIO_CF_CD              GPIO_GPIO24
 #define GPIO_CF_IRQ             GPIO_GPIO1          

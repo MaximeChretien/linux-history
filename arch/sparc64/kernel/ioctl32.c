@@ -1,4 +1,4 @@
-/* $Id: ioctl32.c,v 1.133.2.2 2002/01/14 09:49:29 davem Exp $
+/* $Id: ioctl32.c,v 1.133.2.5 2002/03/01 08:52:38 davem Exp $
  * ioctl32.c: Conversion between 32bit and 64bit native ioctls.
  *
  * Copyright (C) 1997-2000  Jakub Jelinek  (jakub@redhat.com)
@@ -32,6 +32,7 @@
 #include <linux/ppp_defs.h>
 #include <linux/if_ppp.h>
 #include <linux/if_pppox.h>
+#include <linux/if_tun.h>
 #include <linux/mtio.h>
 #include <linux/cdrom.h>
 #include <linux/loop.h>
@@ -76,6 +77,7 @@
 #include <asm/watchdog.h>
 #include <asm/module.h>
 #include <linux/soundcard.h>
+#include <linux/lp.h>
 
 #include <linux/atm.h>
 #include <linux/atmarp.h>
@@ -96,6 +98,7 @@
 #include <linux/usb.h>
 #include <linux/usbdevice_fs.h>
 #include <linux/nbd.h>
+#include <linux/random.h>
 
 /* Use this to get at 32-bit user passed pointers. 
    See sys_sparc32.c for description about these. */
@@ -1059,7 +1062,7 @@ static int fb_ioctl_trans(unsigned int fd, unsigned int cmd, unsigned long arg)
 		break;
 	default:
 		do {
-			static int count = 0;
+			static int count;
 			if (++count <= 20)
 				printk("%s: Unknown fb ioctl cmd fd(%d) "
 				       "cmd(%08x) arg(%08lx)\n",
@@ -1712,7 +1715,7 @@ static int ppp_ioctl_trans(unsigned int fd, unsigned int cmd, unsigned long arg)
 		break;
 	default:
 		do {
-			static int count = 0;
+			static int count;
 			if (++count <= 20)
 				printk("ppp_ioctl: Unknown cmd fd(%d) "
 				       "cmd(%08x) arg(%08x)\n",
@@ -1822,7 +1825,7 @@ static int mt_ioctl_trans(unsigned int fd, unsigned int cmd, unsigned long arg)
 		break;
 	default:
 		do {
-			static int count = 0;
+			static int count;
 			if (++count <= 20)
 				printk("mt_ioctl: Unknown cmd fd(%d) "
 				       "cmd(%08x) arg(%08x)\n",
@@ -1940,7 +1943,7 @@ static int cdrom_ioctl_trans(unsigned int fd, unsigned int cmd, unsigned long ar
 		break;
 	default:
 		do {
-			static int count = 0;
+			static int count;
 			if (++count <= 20)
 				printk("cdrom_ioctl: Unknown cmd fd(%d) "
 				       "cmd(%08x) arg(%08x)\n",
@@ -2027,7 +2030,7 @@ static int loop_status(unsigned int fd, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	default: {
-		static int count = 0;
+		static int count;
 		if (++count <= 20)
 			printk("%s: Unknown loop ioctl cmd, fd(%d) "
 			       "cmd(%08x) arg(%08lx)\n",
@@ -3906,6 +3909,8 @@ COMPATIBLE_IOCTL(TCSETS)
 COMPATIBLE_IOCTL(TCSETSW)
 COMPATIBLE_IOCTL(TCSETSF)
 COMPATIBLE_IOCTL(TIOCLINUX)
+COMPATIBLE_IOCTL(TIOCSTART)
+COMPATIBLE_IOCTL(TIOCSTOP)
 /* Little t */
 COMPATIBLE_IOCTL(TIOCGETD)
 COMPATIBLE_IOCTL(TIOCSETD)
@@ -3932,6 +3937,7 @@ COMPATIBLE_IOCTL(TIOCSPTLCK)
 COMPATIBLE_IOCTL(TIOCGSERIAL)
 COMPATIBLE_IOCTL(TIOCSSERIAL)
 COMPATIBLE_IOCTL(TIOCSERGETLSR)
+COMPATIBLE_IOCTL(TIOCSLTC)
 /* Big F */
 COMPATIBLE_IOCTL(FBIOGTYPE)
 COMPATIBLE_IOCTL(FBIOSATTR)
@@ -4071,6 +4077,8 @@ COMPATIBLE_IOCTL(KIOCSRATE)
 COMPATIBLE_IOCTL(KIOCGRATE)
 /* Big S */
 COMPATIBLE_IOCTL(SCSI_IOCTL_GET_IDLUN)
+COMPATIBLE_IOCTL(SCSI_IOCTL_PROBE_HOST)
+COMPATIBLE_IOCTL(SCSI_IOCTL_GET_PCI)
 COMPATIBLE_IOCTL(SCSI_IOCTL_DOORLOCK)
 COMPATIBLE_IOCTL(SCSI_IOCTL_DOORUNLOCK)
 COMPATIBLE_IOCTL(SCSI_IOCTL_TEST_UNIT_READY)
@@ -4078,6 +4086,12 @@ COMPATIBLE_IOCTL(SCSI_IOCTL_TAGGED_ENABLE)
 COMPATIBLE_IOCTL(SCSI_IOCTL_TAGGED_DISABLE)
 COMPATIBLE_IOCTL(SCSI_IOCTL_GET_BUS_NUMBER)
 COMPATIBLE_IOCTL(SCSI_IOCTL_SEND_COMMAND)
+/* Big T */
+COMPATIBLE_IOCTL(TUNSETNOCSUM)
+COMPATIBLE_IOCTL(TUNSETDEBUG)
+COMPATIBLE_IOCTL(TUNSETIFF)
+COMPATIBLE_IOCTL(TUNSETPERSIST)
+COMPATIBLE_IOCTL(TUNSETOWNER)
 /* Big V */
 COMPATIBLE_IOCTL(VT_SETMODE)
 COMPATIBLE_IOCTL(VT_GETMODE)
@@ -4191,6 +4205,8 @@ COMPATIBLE_IOCTL(SIOCDELDLCI)
 COMPATIBLE_IOCTL(SIOCGMIIPHY)
 COMPATIBLE_IOCTL(SIOCGMIIREG)
 COMPATIBLE_IOCTL(SIOCSMIIREG)
+COMPATIBLE_IOCTL(SIOCGIFVLAN)
+COMPATIBLE_IOCTL(SIOCSIFVLAN)
 /* SG stuff */
 COMPATIBLE_IOCTL(SG_SET_TIMEOUT)
 COMPATIBLE_IOCTL(SG_GET_TIMEOUT)
@@ -4227,6 +4243,7 @@ COMPATIBLE_IOCTL(PPPIOCGMRU)
 COMPATIBLE_IOCTL(PPPIOCSMRU)
 COMPATIBLE_IOCTL(PPPIOCSMAXCID)
 COMPATIBLE_IOCTL(PPPIOCGXASYNCMAP)
+COMPATIBLE_IOCTL(LPGETSTATUS)
 COMPATIBLE_IOCTL(PPPIOCSXASYNCMAP)
 COMPATIBLE_IOCTL(PPPIOCXFERUNIT)
 COMPATIBLE_IOCTL(PPPIOCGNPMODE)
@@ -4242,8 +4259,8 @@ COMPATIBLE_IOCTL(PPPIOCDISCONN)
 COMPATIBLE_IOCTL(PPPIOCATTCHAN)
 COMPATIBLE_IOCTL(PPPIOCGCHAN)
 /* PPPOX */
-COMPATIBLE_IOCTL(PPPOEIOCSFWD);
-COMPATIBLE_IOCTL(PPPOEIOCDFWD);
+COMPATIBLE_IOCTL(PPPOEIOCSFWD)
+COMPATIBLE_IOCTL(PPPOEIOCDFWD)
 /* CDROM stuff */
 COMPATIBLE_IOCTL(CDROMPAUSE)
 COMPATIBLE_IOCTL(CDROMRESUME)
@@ -4529,16 +4546,31 @@ COMPATIBLE_IOCTL(WDIOC_KEEPALIVE)
 COMPATIBLE_IOCTL(WIOCSTART)
 COMPATIBLE_IOCTL(WIOCSTOP)
 COMPATIBLE_IOCTL(WIOCGSTAT)
+/* Big R */
+COMPATIBLE_IOCTL(RNDGETENTCNT)
+COMPATIBLE_IOCTL(RNDADDTOENTCNT)
+COMPATIBLE_IOCTL(RNDGETPOOL)
+COMPATIBLE_IOCTL(RNDADDENTROPY)
+COMPATIBLE_IOCTL(RNDZAPENTCNT)
+COMPATIBLE_IOCTL(RNDCLEARPOOL)
 /* Bluetooth ioctls */
 COMPATIBLE_IOCTL(HCIDEVUP)
 COMPATIBLE_IOCTL(HCIDEVDOWN)
 COMPATIBLE_IOCTL(HCIDEVRESET)
-COMPATIBLE_IOCTL(HCIRESETSTAT)
-COMPATIBLE_IOCTL(HCIGETINFO)
+COMPATIBLE_IOCTL(HCIDEVRESTAT)
 COMPATIBLE_IOCTL(HCIGETDEVLIST)
+COMPATIBLE_IOCTL(HCIGETDEVINFO)
+COMPATIBLE_IOCTL(HCIGETCONNLIST)
+COMPATIBLE_IOCTL(HCIGETCONNINFO)
 COMPATIBLE_IOCTL(HCISETRAW)
 COMPATIBLE_IOCTL(HCISETSCAN)
 COMPATIBLE_IOCTL(HCISETAUTH)
+COMPATIBLE_IOCTL(HCISETENCRYPT)
+COMPATIBLE_IOCTL(HCISETPTYPE)
+COMPATIBLE_IOCTL(HCISETLINKPOL)
+COMPATIBLE_IOCTL(HCISETLINKMODE)
+COMPATIBLE_IOCTL(HCISETACLMTU)
+COMPATIBLE_IOCTL(HCISETSCOMTU)
 COMPATIBLE_IOCTL(HCIINQUIRY)
 /* Misc. */
 COMPATIBLE_IOCTL(0x41545900)		/* ATYIO_CLKR */
@@ -4734,15 +4766,15 @@ HANDLE_IOCTL(PV_CHANGE, do_lvm_ioctl)
 HANDLE_IOCTL(PV_STATUS, do_lvm_ioctl)
 #endif /* LVM */
 #if defined(CONFIG_DRM) || defined(CONFIG_DRM_MODULE)
-HANDLE_IOCTL(DRM32_IOCTL_VERSION, drm32_version);
-HANDLE_IOCTL(DRM32_IOCTL_GET_UNIQUE, drm32_getsetunique);
-HANDLE_IOCTL(DRM32_IOCTL_SET_UNIQUE, drm32_getsetunique);
-HANDLE_IOCTL(DRM32_IOCTL_ADD_MAP, drm32_addmap);
-HANDLE_IOCTL(DRM32_IOCTL_INFO_BUFS, drm32_info_bufs);
-HANDLE_IOCTL(DRM32_IOCTL_FREE_BUFS, drm32_free_bufs);
-HANDLE_IOCTL(DRM32_IOCTL_MAP_BUFS, drm32_map_bufs);
-HANDLE_IOCTL(DRM32_IOCTL_DMA, drm32_dma);
-HANDLE_IOCTL(DRM32_IOCTL_RES_CTX, drm32_res_ctx);
+HANDLE_IOCTL(DRM32_IOCTL_VERSION, drm32_version)
+HANDLE_IOCTL(DRM32_IOCTL_GET_UNIQUE, drm32_getsetunique)
+HANDLE_IOCTL(DRM32_IOCTL_SET_UNIQUE, drm32_getsetunique)
+HANDLE_IOCTL(DRM32_IOCTL_ADD_MAP, drm32_addmap)
+HANDLE_IOCTL(DRM32_IOCTL_INFO_BUFS, drm32_info_bufs)
+HANDLE_IOCTL(DRM32_IOCTL_FREE_BUFS, drm32_free_bufs)
+HANDLE_IOCTL(DRM32_IOCTL_MAP_BUFS, drm32_map_bufs)
+HANDLE_IOCTL(DRM32_IOCTL_DMA, drm32_dma)
+HANDLE_IOCTL(DRM32_IOCTL_RES_CTX, drm32_res_ctx)
 #endif /* DRM */
 #if 0
 HANDLE_IOCTL(RTC32_IRQP_READ, do_rtc_ioctl)
@@ -4870,7 +4902,7 @@ asmlinkage int sys32_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 		handler = (void *)(long)t->handler;
 		error = handler(fd, cmd, arg, filp);
 	} else {
-		static int count = 0;
+		static int count;
 		if (++count <= 20)
 			printk("sys32_ioctl(%s:%d): Unknown cmd fd(%d) "
 			       "cmd(%08x) arg(%08x)\n",

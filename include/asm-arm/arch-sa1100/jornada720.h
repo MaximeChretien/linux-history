@@ -11,7 +11,7 @@
 #error "include <asm/hardware.h> instead"
 #endif
 
-#define SA1111_BASE             (0x40000000)
+#define JORNADA720_SA1111_BASE		(0x40000000)
 
 #define GPIO_JORNADA720_KEYBOARD	GPIO_GPIO(0)
 #define GPIO_JORNADA720_MOUSE		GPIO_GPIO(9)

@@ -42,18 +42,18 @@ static inline void switch_mm(struct mm_struct *prev, struct mm_struct *next, str
 		set_bit(cpu, &next->cpu_vm_mask);
 		set_bit(cpu, &next->context.cpuvalid);
 		/* Re-load page tables */
-		asm volatile("movl %0,%%cr3": :"r" (__pa(next->pgd)));
+		load_cr3(next->pgd);
 	}
 #ifdef CONFIG_SMP
 	else {
 		cpu_tlbstate[cpu].state = TLBSTATE_OK;
 		if(cpu_tlbstate[cpu].active_mm != next)
-			BUG();
+			out_of_line_bug();
 		if(!test_and_set_bit(cpu, &next->cpu_vm_mask)) {
 			/* We were in lazy tlb mode and leave_mm disabled 
-			 * tlb flush IPI delivery. We must flush our tlb.
+			 * tlb flush IPI delivery. We must reload %cr3.
 			 */
-			local_flush_tlb();
+			load_cr3(next->pgd);
 		}
 		if (!test_and_set_bit(cpu, &next->context.cpuvalid))
 			load_LDT(next);

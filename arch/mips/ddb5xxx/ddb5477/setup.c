@@ -10,10 +10,7 @@
  * under  the terms of  the GNU General  Public License as published by the
  * Free Software Foundation;  either version 2 of the  License, or (at your
  * option) any later version.
- *
- ***********************************************************************
  */
-
 #include <linux/config.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -27,18 +24,21 @@
 #include <linux/ioport.h>
 #include <linux/param.h>	/* for HZ */
 
+#include <asm/bootinfo.h>
 #include <asm/addrspace.h>
 #include <asm/time.h>
 #include <asm/bcache.h>
 #include <asm/irq.h>
 #include <asm/reboot.h>
 #include <asm/gdb-stub.h>
+#include <asm/debug.h>
 
 #include <asm/ddb5xxx/ddb5xxx.h>
 
+#include "lcd44780.h"
 
 
-#define	USE_CPU_COUNTER_TIMER	/* whether we use cpu counter */
+// #define	USE_CPU_COUNTER_TIMER	/* whether we use cpu counter */
 
 #ifdef USE_CPU_COUNTER_TIMER
 #define	CPU_COUNTER_FREQUENCY		83000000
@@ -60,7 +60,7 @@ static void ddb_machine_restart(char *command)
 
 	/* CPU cold reset */
 	t = ddb_in32(DDB_CPUSTAT);
-	MIPS_ASSERT((t&1));
+	db_assert((t&1));
 	ddb_out32(DDB_CPUSTAT, t);
 
 	/* Call the PROM */
@@ -87,12 +87,12 @@ static void __init ddb_time_init(void)
 #endif
 
 	/* we have ds1396 RTC chip */
-	rtc_ds1386_init(KSEG1ADDR(DDB_LCS1_BASE));
+	if (mips_machtype == MACH_NEC_ROCKHOPPER) {
+		rtc_ds1386_init(KSEG1ADDR(DDB_LCS2_BASE));
+	} else {
+		rtc_ds1386_init(KSEG1ADDR(DDB_LCS1_BASE));
+	}
 }
-
-#if defined(CONFIG_LL_DEBUG)
-int  board_init_done_flag = 0;
-#endif
 
 extern int setup_irq(unsigned int irq, struct irqaction *irqaction);
 static void __init ddb_timer_setup(struct irqaction *irq)
@@ -115,9 +115,6 @@ static void __init ddb_timer_setup(struct irqaction *irq)
 	setup_irq(SP_TIMER_IRQ, irq);
 
 #endif
-	
-	/* this is the last board dependent code */
-	MIPS_DEBUG(board_init_done_flag = 1);
 }
 
 static void ddb5477_board_init(void);
@@ -132,7 +129,7 @@ void __init ddb_setup(void)
 	extern int panic_timeout;
 
 	irq_setup = ddb5477_irq_setup;
-	mips_io_port_base = KSEG1ADDR(DDB_PCI_IO_BASE);
+	set_io_port_base(KSEG1ADDR(DDB_PCI_IO_BASE));
 
 	board_time_init = ddb_time_init;
 	board_timer_setup = ddb_timer_setup;
@@ -148,6 +145,10 @@ void __init ddb_setup(void)
 	/* Reboot on panic */
 	panic_timeout = 180;
 
+#ifdef CONFIG_FB
+	conswitchp = &dummy_con;
+#endif
+
 	/* initialize board - we don't trust the loader */
 	ddb5477_board_init();
 
@@ -156,7 +157,6 @@ void __init ddb_setup(void)
 	initrd_start = (unsigned long)&__rd_start;
 	initrd_end = (unsigned long)&__rd_end;
 #endif
-
 }
 
 static void __init ddb5477_board_init()
@@ -164,27 +164,41 @@ static void __init ddb5477_board_init()
 	/* ----------- setup PDARs ------------ */
 
 	/* SDRAM should have been set */
-	MIPS_ASSERT(ddb_in32(DDB_SDRAM0) == 
-		    ddb_calc_pdar(DDB_SDRAM_BASE, DDB_SDRAM_SIZE, 32, 0, 1));
+	db_assert(ddb_in32(DDB_SDRAM0) == 
+		    ddb_calc_pdar(DDB_SDRAM_BASE, board_ram_size, 32, 0, 1));
 
 	/* SDRAM1 should be turned off.  What is this for anyway ? */
-	MIPS_ASSERT( (ddb_in32(DDB_SDRAM1) & 0xf) == 0);
+	db_assert( (ddb_in32(DDB_SDRAM1) & 0xf) == 0);
 
-	/* Set LDCSs */
-	/* flash */
+	/* Setup local bus. */
+
+	/* Flash U12 PDAR and timing. */
 	ddb_set_pdar(DDB_LCS0, DDB_LCS0_BASE, DDB_LCS0_SIZE, 16, 0, 0);
-	/* misc */
-	ddb_set_pdar(DDB_LCS1, DDB_LCS1_BASE, DDB_LCS1_SIZE, 8, 0, 0);
-	/* mezzanie (?) */
-	ddb_set_pdar(DDB_LCS2, DDB_LCS2_BASE, DDB_LCS2_SIZE, 16, 0, 0);
+	ddb_out32(DDB_LCST0, 0x00090842);
+
+	/* We need to setup LCS1 and LCS2 differently based on the
+	   board_version */
+	if (mips_machtype == MACH_NEC_ROCKHOPPER) {
+		/* Flash U13 PDAR and timing. */
+		ddb_set_pdar(DDB_LCS1, DDB_LCS1_BASE, DDB_LCS1_SIZE, 16, 0, 0);
+		ddb_out32(DDB_LCST1, 0x00090842);
+
+		/* EPLD (NVRAM, switch, LCD, and mezzanie). */
+		ddb_set_pdar(DDB_LCS2, DDB_LCS2_BASE, DDB_LCS2_SIZE, 8, 0, 0);
+	} else {
+		/* misc */
+		ddb_set_pdar(DDB_LCS1, DDB_LCS1_BASE, DDB_LCS1_SIZE, 8, 0, 0);
+		/* mezzanie (?) */
+		ddb_set_pdar(DDB_LCS2, DDB_LCS2_BASE, DDB_LCS2_SIZE, 16, 0, 0);
+	}
 
 	/* verify VRC5477 base addr */
-	MIPS_ASSERT(ddb_in32(DDB_VRC5477) == 
-		    ddb_calc_pdar(DDB_VRC5477_BASE, DDB_VRC5477_SIZE, 32, 0, 1));
+	db_assert(ddb_in32(DDB_VRC5477) == 
+		  ddb_calc_pdar(DDB_VRC5477_BASE, DDB_VRC5477_SIZE, 32, 0, 1));
 	
 	/* verify BOOT ROM addr */
-	MIPS_ASSERT(ddb_in32(DDB_BOOTCS) == 
-		    ddb_calc_pdar(DDB_BOOTCS_BASE, DDB_BOOTCS_SIZE, 8, 0, 0));
+	db_assert(ddb_in32(DDB_BOOTCS) == 
+		  ddb_calc_pdar(DDB_BOOTCS_BASE, DDB_BOOTCS_SIZE, 8, 0, 0));
 
 	/* setup PCI windows - window0 for MEM/config, window1 for IO */
 	ddb_set_pdar(DDB_PCIW0, DDB_PCI0_MEM_BASE, DDB_PCI0_MEM_SIZE, 32, 0, 1);
@@ -248,4 +262,10 @@ static void __init ddb5477_board_init()
 	/* For dual-function pins, make them all non-GPIO */
 	ddb_out32(DDB_GIUFUNSEL, 0x0);
 	// ddb_out32(DDB_GIUFUNSEL, 0xfe0fcfff);  /* NEC recommanded value */
+
+	if (mips_machtype == MACH_NEC_ROCKHOPPER) {
+		printk("lcd44780: initializing\n");
+		lcd44780_init();
+		lcd44780_puts("Linux/MIPS rolls");
+	}
 }

@@ -143,6 +143,7 @@ if [ "$CONFIG_ETRAX_AXISFLASHMAP" = "y" ]; then
 	define_bool CONFIG_MTD_CFI_INTELEXT n
 	define_bool CONFIG_MTD_CFI_AMDSTD y
 
+	define_bool CONFIG_MTD_OBSOLETE_CHIPS y
 	define_bool CONFIG_MTD_AMDSTD y
 
 	define_bool CONFIG_MTD_CHAR y
@@ -178,7 +179,7 @@ fi
 bool 'ARTPEC-1 support' CONFIG_JULIETTE
 
 if [ "$CONFIG_JULIETTE" = "y" ]; then
-   source arch/cris/drivers/juliette/Config.in
+
 fi
 
 bool 'USB host' CONFIG_ETRAX_USB_HOST

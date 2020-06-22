@@ -48,7 +48,7 @@ unsigned int console_mode = 0;
 unsigned int console_device = -1;
 unsigned long memory_size = 0;
 unsigned long machine_flags = 0;
-struct { unsigned long addr, size, type; } memory_chunk[16];
+struct { unsigned long addr, size, type; } memory_chunk[16] = { { 0 } };
 #define CHUNK_READ_WRITE 0
 #define CHUNK_READ_ONLY 1
 __u16 boot_cpu_addr;
@@ -283,8 +283,8 @@ void __init setup_arch(char **cmdline_p)
          * print what head.S has found out about the machine 
          */
 	printk((MACHINE_IS_VM) ?
-	       "We are running under VM\n" :
-	       "We are running native\n");
+	       "We are running under VM (64 bit mode)\n" :
+	       "We are running native (64 bit mode)\n");
 
         ROOT_DEV = to_kdev_t(0x0100);
         memory_start = (unsigned long) &_end;    /* fixit if use $CODELO etc*/
@@ -485,7 +485,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 				(loops_per_jiffy/(5000/HZ))%100);
 	}
 	if (cpu_online_map & (1 << n)) {
-		cpuinfo = &safe_get_cpu_lowcore(n).cpu_data;
+		cpuinfo = &safe_get_cpu_lowcore(n)->cpu_data;
 		seq_printf(m, "processor %i: "
 				"version = %02X,  "
 				"identification = %06X,  "

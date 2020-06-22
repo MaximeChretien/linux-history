@@ -436,15 +436,18 @@ static int apm_emu_get_info(char *buf, char **start, off_t fpos, int length)
 	int		percentage     = -1;
 	int             time_units     = -1;
 	int		real_count     = 0;
+	int		charge         = -1;
+	int		current        = 0;
 	int		i;
 	char *		p = buf;
+	char		charging       = 0;
 
 	ac_line_status = ((pmu_power_flags & PMU_PWR_AC_PRESENT) != 0);
 	for (i=0; i<pmu_battery_count; i++) {
 		if (percentage < 0)
 			percentage = 0;
-		if (time_units < 0)
-			time_units = 0;
+		if (charge < 0)
+			charge = 0;
 		if (pmu_batteries[i].flags & PMU_BATT_PRESENT) {
 			percentage += (pmu_batteries[i].charge * 100) /
 				pmu_batteries[i].max_charge;
@@ -452,14 +455,19 @@ static int apm_emu_get_info(char *buf, char **start, off_t fpos, int length)
 			 * time when AC is plugged ? If yes, just remove
 			 * that test --BenH
 			 */
-			if (!ac_line_status)
-				time_units += pmu_batteries[i].time_remaining / 60;
+			if (!ac_line_status) {
+				charge += pmu_batteries[i].charge;
+				current += pmu_batteries[i].current;
+			}
 			real_count++;
-			if (!(pmu_batteries[i].flags & PMU_BATT_CHARGING))
-				battery_flag &= ~0x08;
+			if ((pmu_batteries[i].flags & PMU_BATT_CHARGING))
+				charging++;
 		}
 	}
 	if (real_count) {
+		time_units = (charge * 59) / (current * -1);
+		if(!charging)
+			battery_flag &= ~0x08;
 		percentage /= real_count;
 		if (battery_flag & 0x08) {
 			battery_status = 0x03;

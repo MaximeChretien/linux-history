@@ -40,7 +40,6 @@
 #include <asm/atomic.h>
 #include <linux/wait.h>
 #include <linux/rwsem.h>
-#include <linux/stringify.h>
 
 struct semaphore {
 	atomic_t count;
@@ -123,13 +122,10 @@ static inline void down(struct semaphore * sem)
 		LOCK "decl %0\n\t"     /* --sem->count */
 		"js 2f\n"
 		"1:\n"
-		".subsection 1\n"
-		".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n"
-		"_text_lock_" __stringify(KBUILD_BASENAME) ":\n"
-		".endif\n"
+		LOCK_SECTION_START("")
 		"2:\tcall __down_failed\n\t"
 		"jmp 1b\n"
-		".subsection 0\n"
+		LOCK_SECTION_END
 		:"=m" (sem->count)
 		:"c" (sem)
 		:"memory");
@@ -153,13 +149,10 @@ static inline int down_interruptible(struct semaphore * sem)
 		"js 2f\n\t"
 		"xorl %0,%0\n"
 		"1:\n"
-		".subsection 1\n"
-		".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n"
-		"_text_lock_" __stringify(KBUILD_BASENAME) ":\n"
-		".endif\n"
+		LOCK_SECTION_START("")
 		"2:\tcall __down_failed_interruptible\n\t"
 		"jmp 1b\n"
-		".subsection 0\n"
+		LOCK_SECTION_END
 		:"=a" (result), "=m" (sem->count)
 		:"c" (sem)
 		:"memory");
@@ -184,13 +177,10 @@ static inline int down_trylock(struct semaphore * sem)
 		"js 2f\n\t"
 		"xorl %0,%0\n"
 		"1:\n"
-		".subsection 1\n"
-		".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n"
-		"_text_lock_" __stringify(KBUILD_BASENAME) ":\n"
-		".endif\n"
+		LOCK_SECTION_START("")
 		"2:\tcall __down_failed_trylock\n\t"
 		"jmp 1b\n"
-		".subsection 0\n"
+		LOCK_SECTION_END
 		:"=a" (result), "=m" (sem->count)
 		:"c" (sem)
 		:"memory");
@@ -213,12 +203,10 @@ static inline void up(struct semaphore * sem)
 		LOCK "incl %0\n\t"     /* ++sem->count */
 		"jle 2f\n"
 		"1:\n"
-		".subsection 1\n"
-		".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n"
-		"_text_lock_" __stringify(KBUILD_BASENAME) ":\n"
-		".endif\n"
+		LOCK_SECTION_START("")
 		"2:\tcall __up_wakeup\n\t"
 		"jmp 1b\n"
+		LOCK_SECTION_END
 		".subsection 0\n"
 		:"=m" (sem->count)
 		:"c" (sem)

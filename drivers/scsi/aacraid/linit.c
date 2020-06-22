@@ -35,7 +35,7 @@
  *	
  */
 
-#define AAC_DRIVER_VERSION		"0.9.9ac2-rel"
+#define AAC_DRIVER_VERSION		"0.9.9ac4-rel"
 #define AAC_DRIVER_BUILD_DATE		__DATE__
 
 #include <linux/module.h>

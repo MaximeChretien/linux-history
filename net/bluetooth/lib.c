@@ -25,7 +25,7 @@
 /*
  * BlueZ kernel library.
  *
- * $Id: lib.c,v 1.3 2001/06/22 23:14:23 maxk Exp $
+ * $Id: lib.c,v 1.2 2002/06/20 19:55:08 maxk Exp $
  */
 
 #include <linux/kernel.h>
@@ -105,7 +105,7 @@ int bterr(__u16 code)
 		return EACCES;
 
 	case 0x06:
-		return EINVAL;
+		return EBADE;
 
 	case 0x07:
 		return ENOMEM;

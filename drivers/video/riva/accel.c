@@ -67,6 +67,8 @@ static void fbcon_riva_bmove(struct display *p, int sy, int sx, int dy, int dx,
 	rinfo->riva.Blt->TopLeftSrc  = (sy << 16) | sx;
 	rinfo->riva.Blt->TopLeftDst  = (dy << 16) | dx;
 	rinfo->riva.Blt->WidthHeight = (height  << 16) | width;
+
+	wait_for_idle(rinfo);
 }
 
 static void riva_clear_margins(struct vc_data *conp, struct display *p,
@@ -108,9 +110,9 @@ static u8 byte_rev[256] = {
 static inline void fbcon_reverse_order(u32 *l)
 {
 	u8 *a = (u8 *)l;
-	*a++ = byte_rev[*a];
-/*	*a++ = byte_rev[*a];
-	*a++ = byte_rev[*a];*/
+	*a = byte_rev[*a], a++;
+/*	*a = byte_rev[*a], a++;
+	*a = byte_rev[*a], a++;*/
 	*a = byte_rev[*a];
 }
 

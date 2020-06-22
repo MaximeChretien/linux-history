@@ -38,6 +38,7 @@
 #include <linux/unistd.h>
 #include <linux/stddef.h>
 #include <linux/highuid.h>
+#include <linux/personality.h>
 
 #include <asm/setup.h>
 #include <asm/uaccess.h>
@@ -1118,14 +1119,17 @@ asmlinkage int do_signal(sigset_t *oldset, struct pt_regs *regs)
 					continue;
 				/* FALLTHRU */
 
-			case SIGSTOP:
+			case SIGSTOP: {
+				struct signal_struct *sig;
 				current->state = TASK_STOPPED;
 				current->exit_code = signr;
-				if (!(current->p_pptr->sig->action[SIGCHLD-1]
-				      .sa.sa_flags & SA_NOCLDSTOP))
-					notify_parent(current, SIGCHLD);
+                                sig = current->p_pptr->sig;
+                                if (sig && !(sig->action[SIGCHLD-1].sa.sa_flags 
+& SA_NOCLDSTOP))
+                                        notify_parent(current, SIGCHLD);
 				schedule();
 				continue;
+			}
 
 			case SIGQUIT: case SIGILL: case SIGTRAP:
 			case SIGIOT: case SIGFPE: case SIGSEGV:
@@ -1135,10 +1139,7 @@ asmlinkage int do_signal(sigset_t *oldset, struct pt_regs *regs)
 				/* FALLTHRU */
 
 			default:
-				sigaddset(&current->pending.signal, signr);
-				recalc_sigpending(current);
-				current->flags |= PF_SIGNALED;
-				do_exit(exit_code);
+				sig_exit(signr, exit_code, &info);
 				/* NOTREACHED */
 			}
 		}
