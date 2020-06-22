@@ -170,7 +170,7 @@ int ip_call_ra_chain(struct sk_buff *skb)
 		    && ((sk->bound_dev_if == 0) 
 			|| (sk->bound_dev_if == skb->dev->ifindex))) {
 			if (skb->nh.iph->frag_off & htons(IP_MF|IP_OFFSET)) {
-				skb = ip_defrag(skb);
+				skb = ip_defrag(skb, IP_DEFRAG_CALL_RA_CHAIN);
 				if (skb == NULL) {
 					read_unlock(&ip_ra_lock);
 					return 1;
@@ -291,7 +291,7 @@ int ip_local_deliver(struct sk_buff *skb)
 	 */
 
 	if (skb->nh.iph->frag_off & htons(IP_MF|IP_OFFSET)) {
-		skb = ip_defrag(skb);
+		skb = ip_defrag(skb, IP_DEFRAG_LOCAL_DELIVER);
 		if (!skb)
 			return 0;
 	}

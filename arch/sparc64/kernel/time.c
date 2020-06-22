@@ -770,6 +770,7 @@ void __init clock_probe(void)
 		    strcmp(model, "mk48t59") &&
 		    strcmp(model, "m5819") &&
 		    strcmp(model, "m5819p") &&
+		    strcmp(model, "m5823") &&
 		    strcmp(model, "ds1287")) {
 			if (cbus != NULL) {
 				prom_printf("clock_probe: Central bus lacks timer chip.\n");
@@ -829,7 +830,8 @@ void __init clock_probe(void)
 
 			if (!strcmp(model, "ds1287") ||
 			    !strcmp(model, "m5819") ||
-			    !strcmp(model, "m5819p")) {
+			    !strcmp(model, "m5819p") ||
+			    !strcmp(model, "m5823")) {
 				ds1287_regs = edev->resource[0].start;
 			} else {
 				mstk48t59_regs = edev->resource[0].start;
@@ -850,7 +852,8 @@ try_isa_clock:
 			}
 			if (!strcmp(model, "ds1287") ||
 			    !strcmp(model, "m5819") ||
-			    !strcmp(model, "m5819p")) {
+			    !strcmp(model, "m5819p") ||
+			    !strcmp(model, "m5823")) {
 				ds1287_regs = isadev->resource.start;
 			} else {
 				mstk48t59_regs = isadev->resource.start;

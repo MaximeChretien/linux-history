@@ -268,6 +268,9 @@ ctl_table ipv4_table[] = {
  	{NET_TCP_MODERATE_RCVBUF, "tcp_moderate_rcvbuf",
 	 &sysctl_tcp_moderate_rcvbuf, sizeof(int), 0644, NULL,
 	 &proc_dointvec},
+	{NET_TCP_BIC_BETA, "tcp_bic_beta",
+	 &sysctl_tcp_bic_beta, sizeof(int), 0644, NULL,
+	 &proc_dointvec},
 	{0}
 };
 

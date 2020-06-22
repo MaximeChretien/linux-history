@@ -20,8 +20,8 @@
 
 #include <linux/config.h>
 #include <linux/module.h>
-#include "tulip.h"
 #include <linux/pci.h>
+#include "tulip.h"
 #include <linux/init.h>
 #include <linux/etherdevice.h>
 #include <linux/delay.h>

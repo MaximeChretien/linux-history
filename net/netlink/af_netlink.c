@@ -327,10 +327,11 @@ static void netlink_remove(struct sock *sk)
 	struct sock **skp;
 	struct netlink_table *table = &nl_table[sk->protocol];
 	struct nl_pid_hash *hash = &table->hash;
+	u32 pid = nlk_sk(sk)->pid;
 
 	netlink_table_grab();
 	hash->entries--;
-	for (skp = hash->table; *skp; skp = &((*skp)->next)) {
+	for (skp = nl_pid_hashfn(hash, pid); *skp; skp = &((*skp)->next)) {
 		if (*skp == sk) {
 			*skp = sk->next;
 			__sock_put(sk);
@@ -339,9 +340,9 @@ static void netlink_remove(struct sock *sk)
 	}
 	if (!nlk_sk(sk)->groups)
 		goto out;
-	for (skp = &table->mc_list; *skp; skp = &((*skp)->next)) {
+	for (skp = &table->mc_list; *skp; skp = &((*skp)->bind_next)) {
 		if (*skp == sk) {
-			*skp = sk->next;
+			*skp = sk->bind_next;
 			break;
 		}
 	}
@@ -449,7 +450,6 @@ retry:
 	err = netlink_insert(sk, pid);
 	if (err == -EADDRINUSE)
 		goto retry;
-	sk->protinfo.af_netlink->groups = 0;
 	return 0;
 }
 

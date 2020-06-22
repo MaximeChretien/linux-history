@@ -1191,8 +1191,7 @@ static unsigned int pdc20621_prog_dimm_global(struct ata_probe_ent *pe)
 	   		error = 0;
 	   		break;     
 		}
-		set_current_state(TASK_UNINTERRUPTIBLE);
-		schedule_timeout((i * 100) * HZ / 1000 + 1);
+		msleep(i*100);
    	}
    	return error;
 }
@@ -1225,8 +1224,7 @@ static unsigned int pdc20621_dimm_init(struct ata_probe_ent *pe)
 	readl(mmio + PDC_TIME_CONTROL);
 
 	/* Wait 3 seconds */
-	set_current_state(TASK_UNINTERRUPTIBLE);
-	schedule_timeout(3 * HZ);
+	msleep(3000);
 
 	/* 
 	   When timer is enabled, counter is decreased every internal
@@ -1369,6 +1367,7 @@ static int pdc_sata_init_one (struct pci_dev *pdev, const struct pci_device_id *
 	void *mmio_base, *dimm_mmio = NULL;
 	struct pdc_host_priv *hpriv = NULL;
 	unsigned int board_idx = (unsigned int) ent->driver_data;
+	int pci_dev_busy = 0;
 	int rc;
 
 	if (!printed_version++)
@@ -1383,8 +1382,10 @@ static int pdc_sata_init_one (struct pci_dev *pdev, const struct pci_device_id *
 		return rc;
 
 	rc = pci_request_regions(pdev, DRV_NAME);
-	if (rc)
+	if (rc) {
+		pci_dev_busy = 1;
 		goto err_out;
+	}
 
 	rc = pci_set_dma_mask(pdev, ATA_DMA_MASK);
 	if (rc)
@@ -1469,7 +1470,8 @@ err_out_free_ent:
 err_out_regions:
 	pci_release_regions(pdev);
 err_out:
-	pci_disable_device(pdev);
+	if (!pci_dev_busy)
+		pci_disable_device(pdev);
 	return rc;
 }
 

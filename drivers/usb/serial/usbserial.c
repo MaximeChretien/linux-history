@@ -715,6 +715,9 @@ static int serial_write (struct tty_struct * tty, int from_user, const unsigned 
 	struct usb_serial_port *port = (struct usb_serial_port *) tty->driver_data;
 	int rc;
 
+	if (!port)
+		return -ENODEV;
+
 	if (!in_interrupt()) {
 		/*
 		 * Run post_list to reduce a possiblity of reordered writes.

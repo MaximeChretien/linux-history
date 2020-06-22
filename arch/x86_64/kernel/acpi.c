@@ -53,6 +53,7 @@ int acpi_strict;
 
 acpi_interrupt_flags acpi_sci_flags __initdata;
 int acpi_sci_override_gsi __initdata;
+int acpi_skip_timer_override __initdata;
 /* --------------------------------------------------------------------------
                               Boot-time Configuration
    -------------------------------------------------------------------------- */
@@ -330,6 +331,12 @@ acpi_parse_int_src_ovr (
 	if (intsrc->bus_irq == acpi_fadt.sci_int) {
 		acpi_sci_ioapic_setup(intsrc->global_irq,
 			intsrc->flags.polarity, intsrc->flags.trigger);
+		return 0;
+	}
+
+	if (acpi_skip_timer_override &&
+		intsrc->bus_irq == 0 && intsrc->global_irq == 2) {
+		printk(PREFIX "BIOS IRQ0 pin2 override ignored.\n");
 		return 0;
 	}
 

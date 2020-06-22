@@ -1064,18 +1064,31 @@ static int hid_submit_out(struct hid_device *hid)
 static void hid_ctrl(struct urb *urb)
 {
 	struct hid_device *hid = urb->context;
+	unsigned long flags;
 
 	if (urb->status)
 		warn("ctrl urb status %d received", urb->status);
 
+	spin_lock_irqsave(&hid->outlock, flags);
+
 	hid->outtail = (hid->outtail + 1) & (HID_CONTROL_FIFO_SIZE - 1);
 
-	if (hid->outhead != hid->outtail)
-		hid_submit_out(hid);
+	if (hid->outhead != hid->outtail) {
+		if (hid_submit_out(hid)) {
+			clear_bit(HID_OUT_RUNNING, &hid->iofl);
+		}
+		spin_unlock_irqrestore(&hid->outlock, flags);
+		return;
+	}
+
+	clear_bit(HID_OUT_RUNNING, &hid->iofl);
+	spin_unlock_irqrestore(&hid->outlock, flags);
 }
 
 void hid_write_report(struct hid_device *hid, struct hid_report *report)
 {
+	unsigned long flags;
+
 	if (hid->report_enum[report->type].numbered) {
 		hid->out[hid->outhead].buffer[0] = report->id;
 		hid_output_report(report, hid->out[hid->outhead].buffer + 1);
@@ -1087,13 +1100,18 @@ void hid_write_report(struct hid_device *hid, struct hid_report *report)
 
 	hid->out[hid->outhead].dr.wValue = cpu_to_le16(((report->type + 1) << 8) | report->id);
 
+	spin_lock_irqsave(&hid->outlock, flags);
+
 	hid->outhead = (hid->outhead + 1) & (HID_CONTROL_FIFO_SIZE - 1);
 
 	if (hid->outhead == hid->outtail)
 		hid->outtail = (hid->outtail + 1) & (HID_CONTROL_FIFO_SIZE - 1);
 
-	if (hid->urbout.status != -EINPROGRESS)
-		hid_submit_out(hid);
+	if (!test_and_set_bit(HID_OUT_RUNNING, &hid->iofl))
+		if (hid_submit_out(hid))
+			clear_bit(HID_OUT_RUNNING, &hid->iofl);
+
+	spin_unlock_irqrestore(&hid->outlock, flags);
 }
 
 int hid_open(struct hid_device *hid)
@@ -1332,6 +1350,8 @@ static struct hid_device *usb_hid_configure(struct usb_device *dev, int ifnum)
 		hid_free_device(hid);
 		return NULL;
 	}
+
+	spin_lock_init(&hid->outlock);
 
 	hid->version = hdesc->bcdHID;
 	hid->country = hdesc->bCountryCode;

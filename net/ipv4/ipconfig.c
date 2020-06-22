@@ -1162,7 +1162,7 @@ u32 __init root_nfs_parse_addr(char *name)
 		if (*cp == ':')
 			*cp++ = '\0';
 		addr = in_aton(name);
-		strcpy(name, cp);
+		memmove(name, cp, strlen(cp) + 1);
 	} else
 		addr = INADDR_NONE;
 

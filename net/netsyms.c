@@ -287,7 +287,6 @@ EXPORT_SYMBOL(ip_dev_find);
 EXPORT_SYMBOL(inetdev_by_index);
 EXPORT_SYMBOL(in_dev_finish_destroy);
 EXPORT_SYMBOL(ip_defrag);
-EXPORT_SYMBOL(ipfrag_flush);
 
 /* Route manipulation */
 EXPORT_SYMBOL(ip_rt_ioctl);

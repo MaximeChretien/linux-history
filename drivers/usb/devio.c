@@ -1132,6 +1132,8 @@ static int proc_ioctl (struct dev_state *ps, void *arg)
 			/* ifno might usefully be passed ... */
                        retval = driver->ioctl (ps->dev, ctrl.ioctl_code, buf);
 			/* size = min_t(int, size, retval)? */
+			if (retval == -ENOIOCTLCMD)
+				retval = -ENOTTY;
                }
 	}
 
@@ -1146,24 +1148,10 @@ static int proc_ioctl (struct dev_state *ps, void *arg)
 	return retval;
 }
 
-static int usbdev_ioctl(struct inode *inode, struct file *file, unsigned int cmd, unsigned long arg)
+static int usbdev_ioctl_exclusive(struct dev_state *ps, struct inode *inode,
+				  unsigned int cmd, unsigned long arg)
 {
-	struct dev_state *ps = (struct dev_state *)file->private_data;
-	int ret = -ENOIOCTLCMD;
-
-	if (!(file->f_mode & FMODE_WRITE))
-		return -EPERM;
-	down_read(&ps->devsem);
-	if (!ps->dev) {
-		up_read(&ps->devsem);
-		return -ENODEV;
-	}
-
-	/*
-	 * grab device's exclusive_access mutex to prevent its driver from
-	 * using this device while it is being accessed by us.
-	 */
-	down(&ps->dev->exclusive_access);
+	int ret;
 
 	switch (cmd) {
 	case USBDEVFS_CONTROL:
@@ -1194,14 +1182,6 @@ static int usbdev_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 			inode->i_mtime = CURRENT_TIME;
 		break;
 
-	case USBDEVFS_GETDRIVER:
-		ret = proc_getdriver(ps, (void *)arg);
-		break;
-
-	case USBDEVFS_CONNECTINFO:
-		ret = proc_connectinfo(ps, (void *)arg);
-		break;
-
 	case USBDEVFS_SETINTERFACE:
 		ret = proc_setintf(ps, (void *)arg);
 		break;
@@ -1220,6 +1200,53 @@ static int usbdev_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 		ret = proc_unlinkurb(ps, (void *)arg);
 		break;
 
+	case USBDEVFS_CLAIMINTERFACE:
+		ret = proc_claiminterface(ps, (void *)arg);
+		break;
+
+	case USBDEVFS_RELEASEINTERFACE:
+		ret = proc_releaseinterface(ps, (void *)arg);
+		break;
+
+	case USBDEVFS_IOCTL:
+		ret = proc_ioctl(ps, (void *) arg);
+		break;
+
+	default:
+		ret = -ENOTTY;
+	}
+	return ret;
+}
+
+static int usbdev_ioctl(struct inode *inode, struct file *file,
+			unsigned int cmd, unsigned long arg)
+{
+	struct dev_state *ps = file->private_data;
+	int ret;
+
+	if (!(file->f_mode & FMODE_WRITE))
+		return -EPERM;
+	down_read(&ps->devsem);
+	if (!ps->dev) {
+		up_read(&ps->devsem);
+		return -ENODEV;
+	}
+
+	/*
+	 * Some ioctls don't touch the device and can be called without
+	 * grabbing its exclusive_access mutex; they are handled in this
+	 * switch.  Other ioctls which need exclusive_access are handled in
+	 * usbdev_ioctl_exclusive().
+	 */
+	switch (cmd) {
+	case USBDEVFS_GETDRIVER:
+		ret = proc_getdriver(ps, (void *)arg);
+		break;
+
+	case USBDEVFS_CONNECTINFO:
+		ret = proc_connectinfo(ps, (void *)arg);
+		break;
+
 	case USBDEVFS_REAPURB:
 		ret = proc_reapurb(ps, (void *)arg);
 		break;
@@ -1232,19 +1259,28 @@ static int usbdev_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 		ret = proc_disconnectsignal(ps, (void *)arg);
 		break;
 
+	case USBDEVFS_CONTROL:
+	case USBDEVFS_BULK:
+	case USBDEVFS_RESETEP:
+	case USBDEVFS_RESET:
+	case USBDEVFS_CLEAR_HALT:
+	case USBDEVFS_SETINTERFACE:
+	case USBDEVFS_SETCONFIGURATION:
+	case USBDEVFS_SUBMITURB:
+	case USBDEVFS_DISCARDURB:
 	case USBDEVFS_CLAIMINTERFACE:
-		ret = proc_claiminterface(ps, (void *)arg);
-		break;
-
 	case USBDEVFS_RELEASEINTERFACE:
-		ret = proc_releaseinterface(ps, (void *)arg);
+	case USBDEVFS_IOCTL:
+		ret = -ERESTARTSYS;
+		if (down_interruptible(&ps->dev->exclusive_access) == 0) {
+			ret = usbdev_ioctl_exclusive(ps, inode, cmd, arg);
+			up(&ps->dev->exclusive_access);
+		}
 		break;
 
-	case USBDEVFS_IOCTL:
-		ret = proc_ioctl(ps, (void *) arg);
-		break;
+	default:
+		ret = -ENOTTY;
 	}
-	up(&ps->dev->exclusive_access);
 	up_read(&ps->devsem);
 	if (ret >= 0)
 		inode->i_atime = CURRENT_TIME;

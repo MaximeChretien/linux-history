@@ -505,25 +505,32 @@ out:
 	return err;
 }
 
-static int do_sys32_msgsnd (int first, int second, int third, void *uptr)
+static int do_sys32_msgsnd(int first, int second, int third, void *uptr)
 {
-	struct msgbuf *p = kmalloc (second + sizeof (struct msgbuf), GFP_USER);
-	struct msgbuf32 *up = (struct msgbuf32 *)uptr;
+	struct msgbuf *p;
+	struct msgbuf32 *up;
 	mm_segment_t old_fs;
 	int err;
 
+	if (second < 0)
+		return -EINVAL;
+
+	p = kmalloc(second + sizeof (struct msgbuf), GFP_USER);
 	if (!p)
 		return -ENOMEM;
+
+	up = (struct msgbuf32 *)uptr;
 	err = -EFAULT;
-	if (get_user (p->mtype, &up->mtype) ||
-	    __copy_from_user (p->mtext, &up->mtext, second))
+	if (get_user(p->mtype, &up->mtype) ||
+	    __copy_from_user(p->mtext, up->mtext, second))
 		goto out;
-	old_fs = get_fs ();
-	set_fs (KERNEL_DS);
-	err = sys_msgsnd (first, p, second, third);
-	set_fs (old_fs);
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+	err = sys_msgsnd(first, p, second, third);
+	set_fs(old_fs);
 out:
-	kfree (p);
+	kfree(p);
 	return err;
 }
 
@@ -534,6 +541,9 @@ static int do_sys32_msgrcv (int first, int second, int msgtyp, int third,
 	struct msgbuf *p;
 	mm_segment_t old_fs;
 	int err;
+
+	if (second < 0)
+		return -EINVAL;
 
 	if (!version) {
 		struct ipc_kludge *uipck = (struct ipc_kludge *)uptr;
@@ -560,7 +570,7 @@ static int do_sys32_msgrcv (int first, int second, int msgtyp, int third,
 		goto free_then_out;
 	up = (struct msgbuf32 *)uptr;
 	if (put_user (p->mtype, &up->mtype) ||
-	    __copy_to_user (&up->mtext, p->mtext, err))
+	    __copy_to_user (up->mtext, p->mtext, err))
 		err = -EFAULT;
 free_then_out:
 	kfree (p);
@@ -647,18 +657,18 @@ out:
 	return err;
 }
 
-static int do_sys32_shmat (int first, int second, int third, int version, void *uptr)
+static int do_sys32_shmat(int first, int second, u32 third, int version, void *uptr)
 {
 	unsigned long raddr;
-	u32 *uaddr = (u32 *)A((u32)third);
+	u32 *uaddr = (u32 *)A(third);
 	int err = -EINVAL;
 
 	if (version == 1)
 		goto out;
-	err = sys_shmat (first, uptr, second, &raddr);
+	err = sys_shmat(first, uptr, second, &raddr);
 	if (err)
 		goto out;
-	err = put_user (raddr, uaddr);
+	err = put_user(raddr, uaddr);
 out:
 	return err;
 }
@@ -770,6 +780,8 @@ static __inline__ void *alloc_user_space(long len)
 
 	if (!(current->thread.flags & SPARC_FLAG_32BIT))
 		usp += STACK_BIAS;
+	else
+		usp &= 0xffffffffUL;
 
 	return (void *) (usp - len);
 }
@@ -795,9 +807,11 @@ static int sys32_semtimedop(int semid, struct sembuf *tsems, int nsems,
 	return sys_semtimedop(semid, tsems, nsems, t64);
 }
 
-asmlinkage int sys32_ipc (u32 call, int first, int second, int third, u32 ptr, u32 fifth)
+asmlinkage int sys32_ipc (u32 call, u32 first, u32 second, u32 third, s32 __ptr, s32 __fifth)
 {
 	int version, err;
+	u32 ptr = (u32) __ptr;
+	u32 fifth = (u32) __fifth;
 
 	version = call >> 16; /* hack for backward compatibility */
 	call &= 0xffff;
@@ -806,15 +820,23 @@ asmlinkage int sys32_ipc (u32 call, int first, int second, int third, u32 ptr, u
 		switch (call) {
 		case SEMOP:
 			/* struct sembuf is the same on 32 and 64bit :)) */
-			err = sys_semtimedop (first, (struct sembuf *)AA(ptr), second, NULL);
+			err = sys_semtimedop((int)first,
+					     (struct sembuf *)A(ptr),
+					     second, NULL);
 			goto out;
 		case SEMTIMEDOP:
-			err = sys32_semtimedop (first, (struct sembuf *)AA(ptr), second, (const struct timespec32 *) AA(fifth));
+			err = sys32_semtimedop((int)first,
+					       (struct sembuf *)A(ptr),
+					       second,
+					       (const struct timespec32 *)
+					       A(fifth));
 		case SEMGET:
-			err = sys_semget (first, second, third);
+			err = sys_semget((key_t)first, (int)second,
+					 (int)third);
 			goto out;
 		case SEMCTL:
-			err = do_sys32_semctl (first, second, third, (void *)AA(ptr));
+			err = do_sys32_semctl((int)first, (int)second,
+					      (int)third, (void *) A(ptr));
 			goto out;
 		default:
 			err = -ENOSYS;
@@ -823,17 +845,20 @@ asmlinkage int sys32_ipc (u32 call, int first, int second, int third, u32 ptr, u
 	if (call <= MSGCTL) 
 		switch (call) {
 		case MSGSND:
-			err = do_sys32_msgsnd (first, second, third, (void *)AA(ptr));
+			err = do_sys32_msgsnd((int)first, (int)second,
+					      (int)third, (void *)A(ptr));
 			goto out;
 		case MSGRCV:
-			err = do_sys32_msgrcv (first, second, fifth, third,
-					       version, (void *)AA(ptr));
+			err = do_sys32_msgrcv((int)first, (int)second,
+					      (int)fifth, (int)third,
+					      version, (void *)A(ptr));
 			goto out;
 		case MSGGET:
-			err = sys_msgget ((key_t) first, second);
+			err = sys_msgget((key_t)first, (int)second);
 			goto out;
 		case MSGCTL:
-			err = do_sys32_msgctl (first, second, (void *)AA(ptr));
+			err = do_sys32_msgctl((int)first, (int)second,
+					      (void *)A(ptr));
 			goto out;
 		default:
 			err = -ENOSYS;
@@ -842,17 +867,18 @@ asmlinkage int sys32_ipc (u32 call, int first, int second, int third, u32 ptr, u
 	if (call <= SHMCTL) 
 		switch (call) {
 		case SHMAT:
-			err = do_sys32_shmat (first, second, third,
-					      version, (void *)AA(ptr));
+			err = do_sys32_shmat((int)first, (int)second, third,
+					     version, (void *)A(ptr));
 			goto out;
 		case SHMDT: 
-			err = sys_shmdt ((char *)AA(ptr));
+			err = sys_shmdt((char *)A(ptr));
 			goto out;
 		case SHMGET:
-			err = sys_shmget (first, second, third);
+			err = sys_shmget((key_t)first, second, (int)third);
 			goto out;
 		case SHMCTL:
-			err = do_sys32_shmctl (first, second, (void *)AA(ptr));
+			err = do_sys32_shmctl((int)first, (int)second,
+					      (void *)A(ptr));
 			goto out;
 		default:
 			err = -ENOSYS;
@@ -1093,7 +1119,6 @@ static long do_readv_writev32(int type, struct file *file,
 	__kernel_ssize_t32 tot_len;
 	struct iovec iovstack[UIO_FASTIOV];
 	struct iovec *iov=iovstack, *ivp;
-	struct inode *inode;
 	long retval, i;
 	io_fn_t fn;
 	iov_fn_t fnv;
@@ -1140,11 +1165,9 @@ static long do_readv_writev32(int type, struct file *file,
 		i--;
 	}
 
-	inode = file->f_dentry->d_inode;
 	/* VERIFY_WRITE actually means a read, as we write to user space */
-	retval = locks_verify_area((type == VERIFY_WRITE
-				    ? FLOCK_VERIFY_READ : FLOCK_VERIFY_WRITE),
-				   inode, file, file->f_pos, tot_len);
+	retval = rw_verify_area((type == VERIFY_WRITE ? READ : WRITE),
+				   file, &file->f_pos, tot_len);
 	if (retval)
 		goto out;
 
@@ -2160,9 +2183,6 @@ sys32_rt_sigtimedwait(sigset_t32 *uthese, siginfo_t32 *uinfo,
 			timeout = (timespec_to_jiffies(&ts)
 				   + (ts.tv_sec || ts.tv_nsec));
 
-		current->state = TASK_INTERRUPTIBLE;
-		timeout = schedule_timeout(timeout);
-
 		if (timeout) {
 			/* None ready -- temporarily unblock those we're
 			 * interested while we are sleeping in so that we'll
@@ -2648,7 +2668,8 @@ static void scm_detach_fds32(struct msghdr *kmsg, struct scm_cookie *scm)
  *		IPV6_RTHDR	ipv6 routing exthdr	32-bit clean
  *		IPV6_AUTHHDR	ipv6 auth exthdr	32-bit clean
  */
-static void cmsg32_recvmsg_fixup(struct msghdr *kmsg, unsigned long orig_cmsg_uptr)
+static void cmsg32_recvmsg_fixup(struct msghdr *kmsg,
+		unsigned long orig_cmsg_uptr, __kernel_size_t orig_cmsg_len)
 {
 	unsigned char *workbuf, *wp;
 	unsigned long bufsz, space_avail;
@@ -2679,6 +2700,9 @@ static void cmsg32_recvmsg_fixup(struct msghdr *kmsg, unsigned long orig_cmsg_up
 		__get_user(kcmsg32->cmsg_type, &ucmsg->cmsg_type);
 
 		clen64 = kcmsg32->cmsg_len;
+		if ((clen64 < CMSG_ALIGN(sizeof(*ucmsg))) ||
+				(clen64 > (orig_cmsg_len + wp - workbuf)))
+			break;
 		if (kcmsg32->cmsg_level == SOL_SOCKET &&
 			kcmsg32->cmsg_type == SO_TIMESTAMP) {
 			struct timeval tv;
@@ -2782,6 +2806,7 @@ asmlinkage int sys32_recvmsg(int fd, struct msghdr32 *user_msg, unsigned int use
 	struct sockaddr *uaddr;
 	int *uaddr_len;
 	unsigned long cmsg_ptr;
+	__kernel_size_t cmsg_len;
 	int err, total_len, len = 0;
 
 	if(msghdr_from_user32_to_kern(&kern_msg, user_msg))
@@ -2797,6 +2822,7 @@ asmlinkage int sys32_recvmsg(int fd, struct msghdr32 *user_msg, unsigned int use
 	total_len = err;
 
 	cmsg_ptr = (unsigned long) kern_msg.msg_control;
+	cmsg_len = kern_msg.msg_controllen;
 	kern_msg.msg_flags = 0;
 
 	sock = sockfd_lookup(fd, &err);
@@ -2822,7 +2848,8 @@ asmlinkage int sys32_recvmsg(int fd, struct msghdr32 *user_msg, unsigned int use
 				 * to fix it up before we tack on more stuff.
 				 */
 				if((unsigned long) kern_msg.msg_control != cmsg_ptr)
-					cmsg32_recvmsg_fixup(&kern_msg, cmsg_ptr);
+					cmsg32_recvmsg_fixup(&kern_msg,
+							cmsg_ptr, cmsg_len);
 
 				/* Wheee... */
 				if(sock->passcred)

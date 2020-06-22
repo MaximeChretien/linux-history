@@ -1,19 +1,22 @@
 #ifndef __LIBATA_COMPAT_H__
 #define __LIBATA_COMPAT_H__
 
+#include <linux/types.h>
 #include <linux/delay.h>
 #include <linux/pci.h>
+#include <linux/slab.h>
+
+typedef u32 __le32;
+typedef u64 __le64;
+
+#define DMA_64BIT_MASK 0xffffffffffffffffULL
+#define DMA_32BIT_MASK 0x00000000ffffffffULL
 
 #define MODULE_VERSION(ver_str)
 
 struct device {
 	struct pci_dev pdev;
 };
-
-static inline void libata_msleep(unsigned long msecs)
-{
-	msleep(msecs);
-}
 
 static inline struct pci_dev *to_pci_dev(struct device *dev)
 {
@@ -46,5 +49,14 @@ static inline struct pci_dev *to_pci_dev(struct device *dev)
 	pci_get_drvdata(to_pci_dev(dev))
 #define dev_set_drvdata(dev,ptr) \
 	pci_set_drvdata(to_pci_dev(dev),(ptr))
+
+static inline void *kcalloc(size_t nmemb, size_t size, int flags)
+{
+	size_t total = nmemb * size;
+	void *mem = kmalloc(total, flags);
+	if (mem)
+		memset(mem, 0, total);
+	return mem;
+}
 
 #endif /* __LIBATA_COMPAT_H__ */

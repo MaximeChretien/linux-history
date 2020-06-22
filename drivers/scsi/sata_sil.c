@@ -71,12 +71,14 @@ static struct pci_device_id sil_pci_tbl[] = {
 	{ 0x1095, 0x0240, PCI_ANY_ID, PCI_ANY_ID, 0, 0, sil_3112 },
 	{ 0x1095, 0x3512, PCI_ANY_ID, PCI_ANY_ID, 0, 0, sil_3112 },
 	{ 0x1095, 0x3114, PCI_ANY_ID, PCI_ANY_ID, 0, 0, sil_3114 },
+	{ 0x1002, 0x436e, PCI_ANY_ID, PCI_ANY_ID, 0, 0, sil_3112 },
+	{ 0x1002, 0x4379, PCI_ANY_ID, PCI_ANY_ID, 0, 0, sil_3112 },
 	{ }	/* terminate list */
 };
 
 
 /* TODO firmware versions should be added - eric */
-struct sil_drivelist {
+static const struct sil_drivelist {
 	const char * product;
 	unsigned int quirk;
 } sil_blacklist [] = {
@@ -84,10 +86,12 @@ struct sil_drivelist {
 	{ "ST330013AS",		SIL_QUIRK_MOD15WRITE },
 	{ "ST340017AS",		SIL_QUIRK_MOD15WRITE },
 	{ "ST360015AS",		SIL_QUIRK_MOD15WRITE },
+	{ "ST380013AS",		SIL_QUIRK_MOD15WRITE },
 	{ "ST380023AS",		SIL_QUIRK_MOD15WRITE },
 	{ "ST3120023AS",	SIL_QUIRK_MOD15WRITE },
 	{ "ST3160023AS",	SIL_QUIRK_MOD15WRITE },
 	{ "ST3120026AS",	SIL_QUIRK_MOD15WRITE },
+	{ "ST3200822AS",	SIL_QUIRK_MOD15WRITE },
 	{ "ST340014ASL",	SIL_QUIRK_MOD15WRITE },
 	{ "ST360014ASL",	SIL_QUIRK_MOD15WRITE },
 	{ "ST380011ASL",	SIL_QUIRK_MOD15WRITE },
@@ -136,6 +140,8 @@ static struct ata_port_operations sil_ops = {
 	.post_set_mode		= sil_post_set_mode,
 	.bmdma_setup            = ata_bmdma_setup,
 	.bmdma_start            = ata_bmdma_start,
+	.bmdma_stop		= ata_bmdma_stop,
+	.bmdma_status		= ata_bmdma_status,
 	.qc_prep		= ata_qc_prep,
 	.qc_issue		= ata_qc_issue_prot,
 	.eng_timeout		= ata_eng_timeout,
@@ -333,6 +339,7 @@ static int sil_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 	void *mmio_base;
 	int rc;
 	unsigned int i;
+	int pci_dev_busy = 0;
 	u32 tmp, irq_mask;
 
 	if (!printed_version++)
@@ -347,8 +354,10 @@ static int sil_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 		return rc;
 
 	rc = pci_request_regions(pdev, DRV_NAME);
-	if (rc)
+	if (rc) {
+		pci_dev_busy = 1;
 		goto err_out;
+	}
 
 	rc = pci_set_dma_mask(pdev, ATA_DMA_MASK);
 	if (rc)
@@ -430,7 +439,8 @@ err_out_free_ent:
 err_out_regions:
 	pci_release_regions(pdev);
 err_out:
-	pci_disable_device(pdev);
+	if (!pci_dev_busy)
+		pci_disable_device(pdev);
 	return rc;
 }
 

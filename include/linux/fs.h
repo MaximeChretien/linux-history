@@ -576,6 +576,7 @@ struct file {
 	unsigned int		f_uid, f_gid;
 	int			f_error;
 
+	size_t			f_maxcount;
 	unsigned long		f_version;
 
 	/* needed for tty driver, and maybe others */
@@ -1056,14 +1057,7 @@ static inline int locks_verify_locked(struct inode *inode)
 	return 0;
 }
 
-static inline int locks_verify_area(int read_write, struct inode *inode,
-				    struct file *filp, loff_t offset,
-				    size_t count)
-{
-	if (inode->i_flock && MANDATORY_LOCK(inode))
-		return locks_mandatory_area(read_write, inode, filp, offset, count);
-	return 0;
-}
+extern int rw_verify_area(int, struct file *, loff_t *, size_t);
 
 static inline int locks_verify_truncate(struct inode *inode,
 				    struct file *filp,

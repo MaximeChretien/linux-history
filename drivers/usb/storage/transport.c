@@ -1181,6 +1181,13 @@ int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 
 	/* if the command transfered well, then we go to the data stage */
 	if (result == 0) {
+
+		/* Genesys Logic interface chips need a 100us delay between
+		 * the command phase and the data phase.  Some systems need
+		 * even more, probably because of clock rate inaccuracies. */
+		if (us->pusb_dev->descriptor.idVendor == USB_VENDOR_ID_GENESYS)
+			udelay(110);
+
 		/* send/receive data payload, if there is any */
 		if (bcb->DataTransferLength) {
 			usb_stor_transfer(srb, us);

@@ -506,7 +506,7 @@ static int ip_vs_out_icmp(struct sk_buff **skb_p)
 
 	/* reassemble IP fragments, but will it happen in ICMP packets?? */
 	if (skb->nh.iph->frag_off & __constant_htons(IP_MF|IP_OFFSET)) {
-		skb = ip_defrag(skb);
+		skb = ip_defrag(skb, IP_DEFRAG_VS_OUT);
 		if (!skb)
 			return NF_STOLEN;
 		*skb_p = skb;
@@ -658,7 +658,7 @@ static unsigned int ip_vs_out(unsigned int hooknum,
 
 	/* reassemble IP fragments */
 	if (iph->frag_off & __constant_htons(IP_MF|IP_OFFSET)) {
-		skb = ip_defrag(skb);
+		skb = ip_defrag(skb, IP_DEFRAG_VS_OUT);
 		if (!skb)
 			return NF_STOLEN;
 		iph = skb->nh.iph;
@@ -1106,7 +1106,7 @@ static unsigned int ip_vs_in(unsigned int hooknum,
 
 	/* Check the server status */
 	if (cp->dest && !(cp->dest->flags & IP_VS_DEST_F_AVAILABLE)) {
-		/* the destination server is not availabe */
+		/* the destination server is not available */
 
 		if (sysctl_ip_vs_expire_nodest_conn) {
 			/* try to expire the connection immediately */
@@ -1164,7 +1164,7 @@ static unsigned int ip_vs_forward_icmp(unsigned int hooknum,
 		return NF_ACCEPT;
 
 	if (iph->frag_off & __constant_htons(IP_MF|IP_OFFSET)) {
-		skb = ip_defrag(skb);
+		skb = ip_defrag(skb, IP_DEFRAG_VS_FWD);
 		if (!skb)
 			return NF_STOLEN;
 		*skb_p = skb;

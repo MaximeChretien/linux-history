@@ -6,7 +6,7 @@
 
 
 #define MEGARAID_VERSION	\
-	"v2.10.3 (Release Date: Thu Apr  8 16:16:05 EDT 2004)\n"
+	"v2.10.8.2 (Release Date: Mon Jul 26 12:15:51 EDT 2004)\n"
 
 /*
  * Driver features - change the values to enable or disable features in the
@@ -82,6 +82,7 @@
 #define LSI_SUBSYS_VID			0x1000
 #define INTEL_SUBSYS_VID		0x8086
 #define FSC_SUBSYS_VID			0x1734
+#define ACER_SUBSYS_VID			0x1025
 
 #define HBA_SIGNATURE	      		0x3344
 #define HBA_SIGNATURE_471	  	0xCCCC
@@ -978,6 +979,15 @@ typedef struct {
 						 cmds */
 
 	int	has_cluster;	/* cluster support on this HBA */
+
+#define INT_MEMBLK_SZ		(28*1024)
+	mega_passthru		*int_pthru;		/*internal pthru*/
+	dma_addr_t		int_pthru_dma_hndl;
+	caddr_t			int_data;		/*internal data*/
+	dma_addr_t		int_data_dma_hndl;
+
+	int			hw_error;
+
 }adapter_t;
 
 
@@ -1085,18 +1095,21 @@ typedef enum { LOCK_INT, LOCK_EXT } lockscope_t;
 
 #define MBOX_ABORT_SLEEP	60
 #define MBOX_RESET_SLEEP	30
+#define MBOX_RESET_WAIT		180
 
 const char *megaraid_info (struct Scsi_Host *);
 
 static int megaraid_detect(Scsi_Host_Template *);
 static void mega_find_card(Scsi_Host_Template *, u16, u16);
 static int mega_query_adapter(adapter_t *);
-static int issue_scb(adapter_t *, scb_t *);
+static inline int issue_scb(adapter_t *, scb_t *);
 static int mega_setup_mailbox(adapter_t *);
 
 static int megaraid_queue (Scsi_Cmnd *, void (*)(Scsi_Cmnd *));
 static scb_t * mega_build_cmd(adapter_t *, Scsi_Cmnd *, int *);
+static inline scb_t *mega_allocate_scb(adapter_t *, Scsi_Cmnd *);
 static void __mega_runpendq(adapter_t *);
+static inline void mega_runpendq(adapter_t *);
 static int issue_scb_block(adapter_t *, u_char *);
 
 static void megaraid_isr_memmapped(int, void *, struct pt_regs *);
@@ -1113,6 +1126,7 @@ static int megaraid_reset(Scsi_Cmnd *);
 
 static int mega_build_sglist (adapter_t *adapter, scb_t *scb,
 			      u32 *buffer, u32 *length);
+static inline int mega_busywait_mbox (adapter_t *);
 static int __mega_busywait_mbox (adapter_t *);
 static void mega_cmd_done(adapter_t *, u8 [], int, int);
 static inline void mega_free_sgl (adapter_t *adapter);
@@ -1123,15 +1137,13 @@ static int megaraid_reboot_notify (struct notifier_block *,
 				   unsigned long, void *);
 static int megadev_open (struct inode *, struct file *);
 
-#if defined(CONFIG_COMPAT) || defined( __x86_64__) || defined(IA32_EMULATION)
-#define LSI_CONFIG_COMPAT
-#endif
-
-#ifdef LSI_CONFIG_COMPAT
+#if defined(__x86_64__)
 static int megadev_compat_ioctl(unsigned int, unsigned int, unsigned long,
 	struct file *);
 #endif
 
+static int megadev_ioctl_entry (struct inode *, struct file *, unsigned int,
+		unsigned long);
 static int megadev_ioctl (struct inode *, struct file *, unsigned int,
 		unsigned long);
 static int mega_m_to_n(void *, nitioctl_t *);
@@ -1164,6 +1176,8 @@ static int proc_rdrv(adapter_t *, char *, int, int);
 
 static int mega_adapinq(adapter_t *, dma_addr_t);
 static int mega_internal_dev_inquiry(adapter_t *, u8, u8, dma_addr_t);
+static inline caddr_t mega_allocate_inquiry(dma_addr_t *, struct pci_dev *);
+static inline void mega_free_inquiry(caddr_t, dma_addr_t, struct pci_dev *);
 static int mega_print_inquiry(char *, char *);
 #endif
 
@@ -1174,6 +1188,7 @@ static mega_ext_passthru* mega_prepare_extpassthru(adapter_t *,
 		scb_t *, Scsi_Cmnd *, int, int);
 static void mega_enum_raid_scsi(adapter_t *);
 static void mega_get_boot_drv(adapter_t *);
+static inline int mega_get_ldrv_num(adapter_t *, Scsi_Cmnd *, int);
 static int mega_support_random_del(adapter_t *);
 static int mega_del_logdrv(adapter_t *, int);
 static int mega_do_del_logdrv(adapter_t *, int);

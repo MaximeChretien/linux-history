@@ -58,6 +58,7 @@ do {								\
 #endif
 #define SMP_ALIGN(x) (((x) + SMP_CACHE_BYTES-1) & ~(SMP_CACHE_BYTES-1))
 
+static DECLARE_MUTEX(ip6t_mutex);
 
 /* Must have mutex */
 #define ASSERT_READ_LOCK(x) IP_NF_ASSERT(down_trylock(&ip6t_mutex) != 0)
@@ -225,7 +226,7 @@ ip6_packet_match(const struct sk_buff *skb,
 			 * we will change the return 0 to 1*/
 			if ((currenthdr == IPPROTO_NONE) || 
 				(currenthdr == IPPROTO_ESP))
-				return 0;
+				break;
 
 	                hdrptr = (struct ipv6_opt_hdr *)(skb->data + ptr);
 

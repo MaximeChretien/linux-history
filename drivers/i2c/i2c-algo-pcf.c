@@ -32,14 +32,12 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/init.h>
-#include <asm/uaccess.h>
-#include <linux/ioport.h>
 #include <linux/errno.h>
 #include <linux/sched.h>
-
 #include <linux/i2c.h>
 #include <linux/i2c-algo-pcf.h>
 #include "i2c-pcf8584.h"
+
 
 /* ----- global defines ----------------------------------------------- */
 #define DEB(x) if (i2c_debug>=1) x
@@ -435,8 +433,8 @@ static int algo_control(struct i2c_adapter *adapter,
 
 static u32 pcf_func(struct i2c_adapter *adap)
 {
-	return I2C_FUNC_SMBUS_EMUL | I2C_FUNC_10BIT_ADDR | 
-	       I2C_FUNC_PROTOCOL_MANGLING; 
+	return I2C_FUNC_I2C | I2C_FUNC_SMBUS_EMUL |
+	       I2C_FUNC_10BIT_ADDR | I2C_FUNC_PROTOCOL_MANGLING;
 }
 
 /* -----exported algorithm data: -------------------------------------	*/

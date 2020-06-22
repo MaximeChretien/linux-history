@@ -328,6 +328,7 @@ static ssize_t hiddev_read(struct file * file, char * buffer, size_t count,
 				}
 				
 				schedule();
+				set_current_state(TASK_INTERRUPTIBLE);
 			}
 
 			set_current_state(TASK_RUNNING);

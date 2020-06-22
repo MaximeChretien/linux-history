@@ -1,5 +1,5 @@
 /*
- * $Id: synclinkmp.c,v 3.23 2004/08/24 19:49:48 paulkf Exp $
+ * $Id: synclinkmp.c,v 3.27 2005/02/15 21:29:09 paulkf Exp $
  *
  * Device driver for Microgate SyncLink Multiport
  * high speed multiprotocol serial adapter.
@@ -504,7 +504,7 @@ MODULE_PARM(maxframe,"1-" __MODULE_STRING(MAX_DEVICES) "i");
 MODULE_PARM(dosyncppp,"1-" __MODULE_STRING(MAX_DEVICES) "i");
 
 static char *driver_name = "SyncLink MultiPort driver";
-static char *driver_version = "$Revision: 3.23 $";
+static char *driver_version = "$Revision: 3.27 $";
 
 static int __devinit synclinkmp_init_one(struct pci_dev *dev,const struct pci_device_id *ent);
 static void __devexit synclinkmp_remove_one(struct pci_dev *dev);
@@ -4482,7 +4482,7 @@ void async_mode(SLMP_INFO *info)
 	 * 07..05  Reserved, must be 0
 	 * 04..00  RRC<4..0> Rx FIFO trigger active 0x00 = 1 byte
 	 */
-	write_reg(info, TRC0, 0x00);
+	write_reg(info, RRC, 0x00);
 
 	/* TRC0 Transmit Ready Control 0
 	 *

@@ -65,19 +65,19 @@ static int num_serial = 2; /* sun4/sun4c/sun4m - Two chips on board. */
 
 /* On 32-bit sparcs we need to delay after register accesses
  * to accomodate sun4 systems, but we do not need to flush writes.
- * On 64-bit sparc we only need to flush single writes to ensure
+ * On 64-bit and sun4d we need to flush single writes to ensure
  * completion.
  */
 #ifndef __sparc_v9__
 #define ZSDELAY()		udelay(5)
 #define ZSDELAY_LONG()		udelay(20)
-#define ZS_WSYNC(channel)	do { } while(0)
 #else
 #define ZSDELAY()
 #define ZSDELAY_LONG()
+#endif
+
 #define ZS_WSYNC(__channel) \
 	sbus_readb(&((__channel)->control))
-#endif
 
 struct sun_zslayout **zs_chips;
 struct sun_zschannel **zs_channels;

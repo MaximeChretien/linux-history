@@ -1641,7 +1641,7 @@ static long read_tape(Scsi_Tape *STp, long count, Scsi_Request ** aSRpnt)
 							if (STps->drv_block >= 0)
 								STps->drv_block += 1;
 							(STp->buffer)->buffer_bytes = 0;
-							return (-EIO);
+							return (-ENOMEM);
 						}
 						(STp->buffer)->buffer_bytes = bytes - transfer;
 					} else {
@@ -3778,7 +3778,6 @@ static struct file_operations st_fops =
 	read:		st_read,
 	write:		st_write,
 	ioctl:		st_ioctl,
-	llseek:		no_llseek,
 	open:		st_open,
 	flush:		st_flush,
 	release:	st_release,

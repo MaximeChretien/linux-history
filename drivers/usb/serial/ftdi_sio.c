@@ -737,8 +737,6 @@ static struct usb_serial_device_type ftdi_HE_TIRA1_device = {
 };
 
 
-
-
 static struct usb_serial_device_type ftdi_userdev_device = {
 	.owner =		THIS_MODULE,
 	.name =			"FTDI SIO compatible",
@@ -1240,15 +1238,6 @@ static int ftdi_HE_TIRA1_startup (struct usb_serial *serial)
 } /* ftdi_HE_TIRA1_startup */
 
 
-/* ftdi_shutdown is called from usbserial:usb_serial_disconnect 
- *   it is called when the usb device is disconnected
- *
- *   usbserial:usb_serial_disconnect
- *      calls __serial_close for each open of the port
- *      shutdown is called then (ie ftdi_shutdown)
- */
-
-
 /* Startup for the 8U232AM chip */
 static int ftdi_userdev_startup (struct usb_serial *serial)
 {
@@ -1272,6 +1261,14 @@ static int ftdi_userdev_startup (struct usb_serial *serial)
 	return (0);
 }
 
+
+/* ftdi_shutdown is called from usbserial:usb_serial_disconnect 
+ *   it is called when the usb device is disconnected
+ *
+ *   usbserial:usb_serial_disconnect
+ *      calls __serial_close for each open of the port
+ *      shutdown is called then (ie ftdi_shutdown)
+ */
 
 static void ftdi_shutdown (struct usb_serial *serial)
 { /* ftdi_shutdown */
@@ -1382,6 +1379,7 @@ static void ftdi_close (struct usb_serial_port *port, struct file *filp)
 	struct usb_serial *serial;
 	unsigned int c_cflag = port->tty->termios->c_cflag;
 	char buf[1];
+	int err;
 
 	dbg("%s", __FUNCTION__);
 
@@ -1412,8 +1410,9 @@ static void ftdi_close (struct usb_serial_port *port, struct file *filp)
 
 		/* shutdown our bulk read */
 		if (port->read_urb) {
-			if(usb_unlink_urb (port->read_urb)<0)
-				err("Error unlinking urb");
+			err = usb_unlink_urb (port->read_urb);
+			if (err < 0 && err != -ENODEV)
+				err("Error unlinking urb (%d)", err);
 		}
 		/* unlink the running write urbs */
 

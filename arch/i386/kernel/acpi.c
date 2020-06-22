@@ -55,6 +55,7 @@ int acpi_strict;
 
 acpi_interrupt_flags acpi_sci_flags __initdata;
 int acpi_sci_override_gsi __initdata;
+int acpi_skip_timer_override __initdata;
 /* --------------------------------------------------------------------------
                               Boot-time Configuration
    -------------------------------------------------------------------------- */
@@ -320,6 +321,12 @@ acpi_parse_int_src_ovr (
 		return 0;
 	}
 
+	if (acpi_skip_timer_override &&
+		intsrc->bus_irq == 0 && intsrc->global_irq == 2) {
+		printk(PREFIX "BIOS IRQ0 pin2 override ignored.\n");
+		return 0;
+	}
+
 	mp_override_legacy_irq (
 		intsrc->bus_irq,
 		intsrc->flags.polarity,
@@ -433,6 +440,10 @@ acpi_boot_init (void)
 		return result;
 	}
 
+#ifdef CONFIG_X86_IOAPIC
+	check_acpi_pci();
+#endif
+	
 	result = acpi_blacklisted();
 	if (result) {
 		printk(KERN_NOTICE PREFIX "BIOS listed in blacklist, disabling ACPI support\n");

@@ -9345,6 +9345,11 @@ CONFIG_SCSI_SATA_PROMISE
 
   If unsure, say N.
 
+CONFIG_SCSI_SATA_QSTOR
+  This option enables support for Pacific Digital Serial ATA QStor.
+
+  If unsure, say N.
+
 CONFIG_SCSI_SATA_SX4
   This option enables support for Promise Serial ATA SX4.
 

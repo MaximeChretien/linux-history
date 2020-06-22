@@ -180,6 +180,7 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	if (q->loss && q->loss >= get_crandom(&q->loss_cor)) {
 		pr_debug("netem_enqueue: random loss\n");
 		sch->stats.drops++;
+		kfree_skb(skb);
 		return 0;	/* lie about loss so TCP doesn't know */
 	}
 

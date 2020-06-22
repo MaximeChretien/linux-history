@@ -996,6 +996,15 @@ static void * storage_probe(struct usb_device *dev, unsigned int ifnum,
 		 */
 		ss->htmplt.proc_dir = (void *)ss; 
 
+		/* According to the technical support people at Genesys Logic,
+		 * devices using their chips have problems transferring more
+		 * than 32 KB at a time.  In practice people have found that
+		 * 64 KB works okay and that's what Windows does.  But we'll
+		 * be conservative.
+		 */
+		if (ss->pusb_dev->descriptor.idVendor == USB_VENDOR_ID_GENESYS)
+			ss->htmplt.max_sectors = 64;
+
 		/* Just before we start our control thread, initialize
 		 * the device if it needs initialization */
 		if (unusual_dev && unusual_dev->initFunction)

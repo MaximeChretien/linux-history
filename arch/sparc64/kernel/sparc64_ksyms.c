@@ -173,18 +173,21 @@ EXPORT_SYMBOL(__down_interruptible);
 EXPORT_SYMBOL(__up);
 
 /* Atomic counter implementation. */
-EXPORT_SYMBOL(__atomic_add);
-EXPORT_SYMBOL(__atomic_sub);
+EXPORT_SYMBOL(atomic_add);
+EXPORT_SYMBOL(atomic_add_ret);
+EXPORT_SYMBOL(atomic_sub);
+EXPORT_SYMBOL(atomic_sub_ret);
 #ifdef CONFIG_SMP
 EXPORT_SYMBOL(atomic_dec_and_lock);
 #endif
 
 /* Atomic bit operations. */
-EXPORT_SYMBOL(___test_and_set_bit);
-EXPORT_SYMBOL(___test_and_clear_bit);
-EXPORT_SYMBOL(___test_and_change_bit);
-EXPORT_SYMBOL(___test_and_set_le_bit);
-EXPORT_SYMBOL(___test_and_clear_le_bit);
+EXPORT_SYMBOL(test_and_set_bit);
+EXPORT_SYMBOL(test_and_clear_bit);
+EXPORT_SYMBOL(test_and_change_bit);
+EXPORT_SYMBOL(set_bit);
+EXPORT_SYMBOL(clear_bit);
+EXPORT_SYMBOL(change_bit);
 
 EXPORT_SYMBOL(ivector_table);
 EXPORT_SYMBOL(enable_irq);

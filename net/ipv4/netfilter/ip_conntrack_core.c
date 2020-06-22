@@ -64,6 +64,7 @@ int ip_conntrack_max = 0;
 static atomic_t ip_conntrack_count = ATOMIC_INIT(0);
 struct list_head *ip_conntrack_hash;
 static kmem_cache_t *ip_conntrack_cachep;
+static LIST_HEAD(unconfirmed);
 
 extern struct ip_conntrack_protocol ip_conntrack_generic_protocol;
 
@@ -329,6 +330,12 @@ destroy_conntrack(struct nf_conntrack *nfct)
 	if (ct->expecting)
 		remove_expectations(ct, 1);
 
+	/* We overload first tuple to link into unconfirmed list. */
+	if (!is_confirmed(ct)) {
+		BUG_ON(list_empty(&ct->tuplehash[IP_CT_DIR_ORIGINAL].list));
+		list_del(&ct->tuplehash[IP_CT_DIR_ORIGINAL].list);
+	}
+
 	/* Delete our master expectation */
 	if (ct->master) {
 		if (ct->master->expectant) {
@@ -463,6 +470,9 @@ __ip_conntrack_confirm(struct nf_ct_info *nfct)
 			  conntrack_tuple_cmp,
 			  struct ip_conntrack_tuple_hash *,
 			  &ct->tuplehash[IP_CT_DIR_REPLY].tuple, NULL)) {
+		/* Remove from unconfirmed list */
+		list_del(&ct->tuplehash[IP_CT_DIR_ORIGINAL].list);
+
 		list_prepend(&ip_conntrack_hash[hash],
 			     &ct->tuplehash[IP_CT_DIR_ORIGINAL]);
 		list_prepend(&ip_conntrack_hash[repl_hash],
@@ -736,6 +746,10 @@ init_conntrack(const struct ip_conntrack_tuple *tuple,
 		expected->expectant->expecting--;
 		nf_conntrack_get(&master_ct(conntrack)->infos[0]);
 	}
+	/* Overload tuple linked list to put us in unconfirmed list. */
+	list_add(&conntrack->tuplehash[IP_CT_DIR_ORIGINAL].list,
+	         &unconfirmed);
+
 	atomic_inc(&ip_conntrack_count);
 	WRITE_UNLOCK(&ip_conntrack_lock);
 
@@ -834,7 +848,10 @@ unsigned int ip_conntrack_in(unsigned int hooknum,
 
 	/* Gather fragments. */
 	if ((*pskb)->nh.iph->frag_off & htons(IP_MF|IP_OFFSET)) {
-		*pskb = ip_ct_gather_frags(*pskb);
+		*pskb = ip_ct_gather_frags(*pskb,
+		                           hooknum == NF_IP_PRE_ROUTING ?
+		                           IP_DEFRAG_CONNTRACK_IN :
+		                           IP_DEFRAG_CONNTRACK_OUT);
 		if (!*pskb)
 			return NF_STOLEN;
 	}
@@ -956,7 +973,8 @@ int ip_conntrack_expect_related(struct ip_conntrack *related_to,
 		   pointing into the payload - otherwise we should have to copy 
 		   the data filled out by the helper over the old one */
 		DEBUGP("expect_related: resent packet\n");
-		if (related_to->helper->timeout) {
+		if (old->expectant == related_to &&
+		    related_to->helper->timeout) {
 			if (!del_timer(&old->timeout)) {
 				/* expectation is dying. Fall through */
 				old = NULL;
@@ -1152,6 +1170,7 @@ void ip_conntrack_helper_unregister(struct ip_conntrack_helper *me)
 	LIST_DELETE(&helpers, me);
 
 	/* Get rid of expecteds, set helpers to NULL. */
+	LIST_FIND_W(&unconfirmed, unhelp, struct ip_conntrack_tuple_hash*, me);
 	for (i = 0; i < ip_conntrack_htable_size; i++)
 		LIST_FIND_W(&ip_conntrack_hash[i], unhelp,
 			    struct ip_conntrack_tuple_hash *, me);
@@ -1183,21 +1202,14 @@ void ip_ct_refresh(struct ip_conntrack *ct, unsigned long extra_jiffies)
 	WRITE_UNLOCK(&ip_conntrack_lock);
 }
 
-int ip_ct_no_defrag;
-
 /* Returns new sk_buff, or NULL */
 struct sk_buff *
-ip_ct_gather_frags(struct sk_buff *skb)
+ip_ct_gather_frags(struct sk_buff *skb, u_int32_t user)
 {
 	struct sock *sk = skb->sk;
 #ifdef CONFIG_NETFILTER_DEBUG
 	unsigned int olddebug = skb->nf_debug;
 #endif
-
-	if (unlikely(ip_ct_no_defrag)) {
-		kfree_skb(skb);
-		return NULL;
-	}
 
 	if (sk) {
 		sock_hold(sk);
@@ -1205,7 +1217,7 @@ ip_ct_gather_frags(struct sk_buff *skb)
 	}
 
 	local_bh_disable(); 
-	skb = ip_defrag(skb);
+	skb = ip_defrag(skb, user);
 	local_bh_enable();
 
 	if (!skb) {
@@ -1252,40 +1264,44 @@ static void ip_conntrack_attach(struct sk_buff *nskb, struct nf_ct_info *nfct)
 }
 
 static inline int
-do_kill(const struct ip_conntrack_tuple_hash *i,
-	int (*kill)(const struct ip_conntrack *i, void *data),
+do_iter(const struct ip_conntrack_tuple_hash *i,
+        int (*iter)(struct ip_conntrack *i, void *data),
 	void *data)
 {
-	return kill(i->ctrack, data);
+	return iter(i->ctrack, data);
 }
 
 /* Bring out ya dead! */
 static struct ip_conntrack_tuple_hash *
-get_next_corpse(int (*kill)(const struct ip_conntrack *i, void *data),
+get_next_corpse(int (*iter)(struct ip_conntrack *i, void *data),
 		void *data, unsigned int *bucket)
 {
 	struct ip_conntrack_tuple_hash *h = NULL;
 
-	READ_LOCK(&ip_conntrack_lock);
-	for (; !h && *bucket < ip_conntrack_htable_size; (*bucket)++) {
-		h = LIST_FIND(&ip_conntrack_hash[*bucket], do_kill,
-			      struct ip_conntrack_tuple_hash *, kill, data);
+	WRITE_LOCK(&ip_conntrack_lock);
+	for (; *bucket < ip_conntrack_htable_size; (*bucket)++) {
+		h = LIST_FIND_W(&ip_conntrack_hash[*bucket], do_iter,
+		                struct ip_conntrack_tuple_hash *, iter, data);
+		if (h)
+			break;
 	}
+	if (!h)
+		h = LIST_FIND_W(&unconfirmed, do_iter,
+		                struct ip_conntrack_tuple_hash *, iter, data);
 	if (h)
 		atomic_inc(&h->ctrack->ct_general.use);
-	READ_UNLOCK(&ip_conntrack_lock);
+	WRITE_UNLOCK(&ip_conntrack_lock);
 
 	return h;
 }
 
 void
-ip_ct_selective_cleanup(int (*kill)(const struct ip_conntrack *i, void *data),
-			void *data)
+ip_ct_iterate_cleanup(int (*iter)(struct ip_conntrack *i, void *), void *data)
 {
 	struct ip_conntrack_tuple_hash *h;
 	unsigned int bucket = 0;
 
-	while ((h = get_next_corpse(kill, data, &bucket)) != NULL) {
+	while ((h = get_next_corpse(iter, data, &bucket)) != NULL) {
 		/* Time to push up daises... */
 		if (del_timer(&h->ctrack->timeout))
 			death_by_timeout((unsigned long)h->ctrack);
@@ -1354,7 +1370,7 @@ static struct nf_sockopt_ops so_getorigdst
     SO_ORIGINAL_DST, SO_ORIGINAL_DST+1, &getorigdst,
     0, NULL };
 
-static int kill_all(const struct ip_conntrack *i, void *data)
+static int kill_all(struct ip_conntrack *i, void *data)
 {
 	return 1;
 }
@@ -1371,7 +1387,7 @@ void ip_conntrack_cleanup(void)
 	br_write_unlock_bh(BR_NETPROTO_LOCK);
  
  i_see_dead_people:
-	ip_ct_selective_cleanup(kill_all, NULL);
+	ip_ct_iterate_cleanup(kill_all, NULL);
 	if (atomic_read(&ip_conntrack_count) != 0) {
 		schedule();
 		goto i_see_dead_people;

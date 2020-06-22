@@ -45,6 +45,7 @@ LIBS := $(TOPDIR)/lib/lib.a $(LIBS) $(TOPDIR)/arch/sparc/prom/promlib.a \
 	$(TOPDIR)/arch/sparc/lib/lib.a
 
 # This one has to come last
+_dir_arch/sparc/boot : $(patsubst %, _dir_%, $(SUBDIRS))
 SUBDIRS += arch/sparc/boot
 CORE_FILES_NO_BTFIX := $(CORE_FILES)
 CORE_FILES += arch/sparc/boot/btfix.o

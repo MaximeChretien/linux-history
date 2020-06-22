@@ -119,7 +119,6 @@ static inline lv_block_exception_t *lvm_find_exception_table(kdev_t
 	unsigned long mask = lv->lv_snapshot_hash_mask;
 	int chunk_size = lv->lv_chunk_size;
 	lv_block_exception_t *ret;
-	int i = 0;
 
 	hash_table =
 	    &hash_table[hashfn(org_dev, org_start, mask, chunk_size)];
@@ -132,15 +131,9 @@ static inline lv_block_exception_t *lvm_find_exception_table(kdev_t
 		exception = list_entry(next, lv_block_exception_t, hash);
 		if (exception->rsector_org == org_start &&
 		    exception->rdev_org == org_dev) {
-			if (i) {
-				/* fun, isn't it? :) */
-				list_del(next);
-				list_add(next, hash_table);
-			}
 			ret = exception;
 			break;
 		}
-		i++;
 	}
 	return ret;
 }

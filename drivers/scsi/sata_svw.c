@@ -156,7 +156,7 @@ static void k2_sata_tf_read(struct ata_port *ap, struct ata_taskfile *tf)
  *	spin_lock_irqsave(host_set lock)
  */
 
-void k2_bmdma_setup_mmio (struct ata_queued_cmd *qc)
+static void k2_bmdma_setup_mmio (struct ata_queued_cmd *qc)
 {
 	struct ata_port *ap = qc->ap;
 	unsigned int rw = (qc->tf.flags & ATA_TFLAG_WRITE);
@@ -186,7 +186,7 @@ void k2_bmdma_setup_mmio (struct ata_queued_cmd *qc)
  *	spin_lock_irqsave(host_set lock)
  */
 
-void k2_bmdma_start_mmio (struct ata_queued_cmd *qc)
+static void k2_bmdma_start_mmio (struct ata_queued_cmd *qc)
 {
 	struct ata_port *ap = qc->ap;
 	void *mmio = (void *) ap->ioaddr.bmdma_addr;
@@ -302,6 +302,8 @@ static struct ata_port_operations k2_sata_ops = {
 	.phy_reset		= sata_phy_reset,
 	.bmdma_setup		= k2_bmdma_setup_mmio,
 	.bmdma_start		= k2_bmdma_start_mmio,
+	.bmdma_stop		= ata_bmdma_stop,
+	.bmdma_status		= ata_bmdma_status,
 	.qc_prep		= ata_qc_prep,
 	.qc_issue		= ata_qc_issue_prot,
 	.eng_timeout		= ata_eng_timeout,
@@ -339,6 +341,7 @@ static int k2_sata_init_one (struct pci_dev *pdev, const struct pci_device_id *e
 	struct ata_probe_ent *probe_ent = NULL;
 	unsigned long base;
 	void *mmio_base;
+	int pci_dev_busy = 0;
 	int rc;
 
 	if (!printed_version++)
@@ -360,8 +363,10 @@ static int k2_sata_init_one (struct pci_dev *pdev, const struct pci_device_id *e
 
 	/* Request PCI regions */
 	rc = pci_request_regions(pdev, DRV_NAME);
-	if (rc)
+	if (rc) {
+		pci_dev_busy = 1;
 		goto err_out;
+	}
 
 	rc = pci_set_dma_mask(pdev, ATA_DMA_MASK);
 	if (rc)
@@ -429,7 +434,8 @@ err_out_free_ent:
 err_out_regions:
 	pci_release_regions(pdev);
 err_out:
-	pci_disable_device(pdev);
+	if (!pci_dev_busy)
+		pci_disable_device(pdev);
 	return rc;
 }
 

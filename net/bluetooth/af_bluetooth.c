@@ -62,7 +62,7 @@ static struct net_proto_family *bluez_proto[BLUEZ_MAX_PROTO];
 
 int bluez_sock_register(int proto, struct net_proto_family *ops)
 {
-	if (proto >= BLUEZ_MAX_PROTO)
+	if (proto < 0 || proto >= BLUEZ_MAX_PROTO)
 		return -EINVAL;
 
 	if (bluez_proto[proto])
@@ -74,7 +74,7 @@ int bluez_sock_register(int proto, struct net_proto_family *ops)
 
 int bluez_sock_unregister(int proto)
 {
-	if (proto >= BLUEZ_MAX_PROTO)
+	if (proto < 0 || proto >= BLUEZ_MAX_PROTO)
 		return -EINVAL;
 
 	if (!bluez_proto[proto])
@@ -86,7 +86,7 @@ int bluez_sock_unregister(int proto)
 
 static int bluez_sock_create(struct socket *sock, int proto)
 {
-	if (proto >= BLUEZ_MAX_PROTO)
+	if (proto < 0 || proto >= BLUEZ_MAX_PROTO)
 		return -EINVAL;
 
 #if defined(CONFIG_KMOD)

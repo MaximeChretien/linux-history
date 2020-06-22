@@ -193,4 +193,7 @@ extern struct usb_driver usb_storage_driver;
 /* Function to fill an inquiry response. See usb.c for details */
 extern void fill_inquiry_response(struct us_data *us,
 	unsigned char *data, unsigned int data_len);
+
+/* Vendor ID list for devices that require special handling */
+#define USB_VENDOR_ID_GENESYS		0x05e3	/* Genesys Logic */
 #endif

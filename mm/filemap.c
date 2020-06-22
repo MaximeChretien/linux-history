@@ -1870,7 +1870,7 @@ static ssize_t common_sendfile(int out_fd, int in_fd, loff_t *offset, size_t cou
 		goto fput_in;
 	if (!in_inode->i_mapping->a_ops->readpage)
 		goto fput_in;
-	retval = locks_verify_area(FLOCK_VERIFY_READ, in_inode, in_file, in_file->f_pos, count);
+	retval = rw_verify_area(READ, in_file, &in_file->f_pos, count);
 	if (retval)
 		goto fput_in;
 
@@ -1887,7 +1887,7 @@ static ssize_t common_sendfile(int out_fd, int in_fd, loff_t *offset, size_t cou
 	if (!out_file->f_op || !out_file->f_op->write)
 		goto fput_out;
 	out_inode = out_file->f_dentry->d_inode;
-	retval = locks_verify_area(FLOCK_VERIFY_WRITE, out_inode, out_file, out_file->f_pos, count);
+	retval = rw_verify_area(WRITE, out_file, &out_file->f_pos, count);
 	if (retval)
 		goto fput_out;
 
@@ -2589,7 +2589,7 @@ static long madvise_willneed(struct vm_area_struct * vma,
 	long error = -EBADF;
 	struct file * file;
 	struct inode * inode;
-	unsigned long size, rlim_rss;
+	unsigned long size;
 
 	/* Doesn't work if there's no mapped file. */
 	if (!vma->vm_file)
@@ -2604,13 +2604,6 @@ static long madvise_willneed(struct vm_area_struct * vma,
 	if (end > vma->vm_end)
 		end = vma->vm_end;
 	end = ((end - vma->vm_start) >> PAGE_SHIFT) + vma->vm_pgoff;
-
-	/* Make sure this doesn't exceed the process's max rss. */
-	error = -EIO;
-	rlim_rss = current->rlim ?  current->rlim[RLIMIT_RSS].rlim_cur :
-				LONG_MAX; /* default: see resource.h */
-	if ((vma->vm_mm->rss + (end - start)) > rlim_rss)
-		return error;
 
 	/* round to cluster boundaries if this isn't a "random" area. */
 	if (!VM_RandomReadHint(vma)) {

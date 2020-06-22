@@ -5505,7 +5505,6 @@ static struct file_operations osst_fops = {
 	read:		osst_read,
 	write:		osst_write,
 	ioctl:		osst_ioctl,
-	llseek:		no_llseek,
 	open:		os_scsi_tape_open,
 	flush:		os_scsi_tape_flush,
 	release:	os_scsi_tape_close,

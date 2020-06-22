@@ -466,6 +466,8 @@ nfsd_open(struct svc_rqst *rqstp, struct svc_fh *fhp, int type,
 	atomic_set(&filp->f_count, 1);
 	filp->f_dentry = dentry;
 	filp->f_vfsmnt = fhp->fh_export->ex_mnt;
+	filp->f_maxcount = INT_MAX;
+
 	if (access & MAY_WRITE) {
 		filp->f_flags = O_WRONLY|O_LARGEFILE;
 		filp->f_mode  = FMODE_WRITE;

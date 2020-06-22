@@ -1170,14 +1170,14 @@ static aper_size_info_fixed intel_i830_sizes[] =
 	{128, 32768, 5},
 	/* The 64M mode still requires a 128k gatt */
 	{64, 16384, 5},
-	/* For I915G */
+	/* For I915G/I915GM */
 	{256, 65536, 6}
 };
 
 static struct _intel_i830_private {
 	struct pci_dev *i830_dev;   /* device one */
 	volatile u8 *registers;
-	volatile u32 *gtt;	/* I915G */
+	volatile u32 *gtt;	/* I915G/I915GM */
 	int gtt_entries;
 } intel_i830_private;
 
@@ -1220,14 +1220,16 @@ static void intel_i830_init_gtt_entries(void)
 			break;
 		case I915_GMCH_GMS_STOLEN_48M:
 			/* Check it's really I915 */
-			if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0)
+			if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0 ||
+			    agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_GM_0)
 				gtt_entries = MB(48) - KB(size);
 			else
 				gtt_entries = 0;
 			break;
 		case I915_GMCH_GMS_STOLEN_64M:
 			/* Check it's really I915 */
-			if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0)
+			if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0 ||
+			    agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_GM_0)
 				gtt_entries = MB(64) - KB(size);
 			else
 				gtt_entries = 0;
@@ -1287,7 +1289,8 @@ static int intel_i830_create_gatt_table(void)
 	num_entries = size->num_entries;
 	agp_bridge.gatt_table_real = 0;
 
-	if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0) {
+	if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0 ||
+	    agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_GM_0) {
 		pci_read_config_dword(intel_i830_private.i830_dev,
 							I915_MMADDR,&temp);
 		pci_read_config_dword(intel_i830_private.i830_dev,
@@ -1331,7 +1334,8 @@ static int intel_i830_fetch_size(void)
 
 	values = A_SIZE_FIX(agp_bridge.aperture_sizes);
 
-	if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0) {
+	if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0 ||
+	    agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_GM_0) {
 		u32 temp, offset = 0;
 		pci_read_config_dword(intel_i830_private.i830_dev,
 							I915_GMADDR,&temp);
@@ -1375,7 +1379,8 @@ static int intel_i830_configure(void)
 
 	current_size = A_SIZE_FIX(agp_bridge.current_size);
 
-	if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0)
+	if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0 ||
+	    agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_GM_0)
 		pci_read_config_dword(intel_i830_private.i830_dev,
 							I915_GMADDR,&temp);
 	else
@@ -1392,7 +1397,8 @@ static int intel_i830_configure(void)
 	CACHE_FLUSH();
 
 	if (agp_bridge.needs_scratch_page == TRUE) {
-		if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0) {
+		if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0 ||
+		    agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_GM_0) {
 			for (i = intel_i830_private.gtt_entries; i < current_size->num_entries; i++)
 				OUTREG32(intel_i830_private.gtt, i, agp_bridge.scratch_page);
 		} else {
@@ -1406,7 +1412,8 @@ static int intel_i830_configure(void)
 
 static void intel_i830_cleanup(void)
 {
-	if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0)
+	if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0 ||
+	    agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_GM_0)
 		iounmap((void *)intel_i830_private.gtt);
 
 	iounmap((void *) intel_i830_private.registers);
@@ -1441,7 +1448,8 @@ static int intel_i830_insert_entries(agp_memory *mem,off_t pg_start,int type)
 
 	CACHE_FLUSH();
 
-	if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0) {
+	if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0 ||
+	    agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_GM_0) {
 		for (i = 0, j = pg_start; i < mem->page_count; i++, j++)
 			OUTREG32(intel_i830_private.gtt, j, agp_bridge.mask_memory(mem->memory[i], mem->type));
 	} else {
@@ -1467,7 +1475,8 @@ static int intel_i830_remove_entries(agp_memory *mem,off_t pg_start,int type)
 		return (-EINVAL);
 	}
 
-	if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0) {
+	if (agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_G_0 ||
+	    agp_bridge.dev->device == PCI_DEVICE_ID_INTEL_915_GM_0) {
 		for (i = pg_start; i < (mem->page_count + pg_start); i++)
 			OUTREG32(intel_i830_private.gtt, i, agp_bridge.scratch_page);
 	} else {
@@ -6270,6 +6279,13 @@ static struct {
 		"915G",
 		 intel_845_setup },
 
+	{ PCI_DEVICE_ID_INTEL_915_GM_0,
+		PCI_VENDOR_ID_INTEL,
+		INTEL_I915_GM,
+		"Intel(R)",
+		"915GM",
+		 intel_845_setup },
+
 	{ PCI_DEVICE_ID_INTEL_840_0,
 		PCI_VENDOR_ID_INTEL,
 		INTEL_I840,
@@ -7018,6 +7034,33 @@ static int __init agp_init_one(struct pci_dev *dev)
 			}
 			printk(KERN_INFO PFX "Detected an Intel(R) "
 				   "915G Chipset.\n");
+			agp_bridge.type = INTEL_I810;
+			return intel_i830_setup(i810_dev);
+
+		case PCI_DEVICE_ID_INTEL_915_GM_0:
+			i810_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
+					PCI_DEVICE_ID_INTEL_915_GM_1, NULL);
+			if(i810_dev && PCI_FUNC(i810_dev->devfn) != 0) {
+				i810_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
+					PCI_DEVICE_ID_INTEL_915_GM_1, i810_dev);
+			}
+
+			if (i810_dev == NULL) {
+                                /* 
+                                 * We probably have a 915GM chipset
+                                 * with an external graphics
+                                 * card. It will be initialized later 
+                                 */
+				printk(KERN_ERR PFX "Detected an "
+				       "Intel(R) 915GM, but could not"
+				       " find the"
+				       " secondary device. Assuming a "
+				       "non-integrated video card.\n");
+				agp_bridge.type = INTEL_I915_GM;
+				break;
+			}
+			printk(KERN_INFO PFX "Detected an Intel(R) "
+				   "915GM Chipset.\n");
 			agp_bridge.type = INTEL_I810;
 			return intel_i830_setup(i810_dev);
 

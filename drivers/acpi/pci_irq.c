@@ -335,6 +335,7 @@ acpi_pci_irq_enable (
 {
 	int			irq = 0;
 	u8			pin = 0;
+	extern int via_interrupt_line_quirk;
 
 	ACPI_FUNCTION_TRACE("acpi_pci_irq_enable");
 
@@ -382,6 +383,9 @@ acpi_pci_irq_enable (
 			return_VALUE(0);
 		}
  	}
+
+	if (via_interrupt_line_quirk)
+		pci_write_config_byte(dev, PCI_INTERRUPT_LINE, irq & 15);
 
 	dev->irq = irq;
 

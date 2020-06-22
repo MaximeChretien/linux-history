@@ -1686,8 +1686,13 @@ static int unix_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 			}
 
 			spin_lock(&sk->receive_queue.lock);
-			if((skb=skb_peek(&sk->receive_queue))!=NULL)
-				amount=skb->len;
+			if (sk->type == SOCK_STREAM) {
+				skb_queue_walk(&sk->receive_queue, skb)
+					amount += skb->len;
+			} else {
+				if((skb=skb_peek(&sk->receive_queue))!=NULL)
+					amount=skb->len;
+			}
 			spin_unlock(&sk->receive_queue.lock);
 			err = put_user(amount, (int *)arg);
 			break;

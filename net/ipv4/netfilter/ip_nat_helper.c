@@ -520,7 +520,7 @@ int ip_nat_helper_register(struct ip_nat_helper *me)
 }
 
 static int
-kill_helper(const struct ip_conntrack *i, void *helper)
+kill_helper(struct ip_conntrack *i, void *helper)
 {
 	int ret;
 
@@ -554,7 +554,7 @@ void ip_nat_helper_unregister(struct ip_nat_helper *me)
 	   forces admins to gen fake RSTs or bounce box, either of
 	   which is just a long-winded way of making things
 	   worse. --RR */
-	ip_ct_selective_cleanup(kill_helper, me);
+	ip_ct_iterate_cleanup(kill_helper, me);
 
 	if (found)
 		MOD_DEC_USE_COUNT;

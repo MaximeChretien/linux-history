@@ -891,6 +891,8 @@ static int raid1_diskop(mddev_t *mddev, mdp_disk_t **d, int state)
 	mdp_disk_t *failed_desc, *spare_desc, *added_desc;
 	mdk_rdev_t *spare_rdev, *failed_rdev;
 
+	if (conf->resync_mirrors)
+		return 1; /* Cannot do any diskops during a resync */
 
 	switch (state) {
 	case DISKOP_SPARE_ACTIVE:
@@ -1333,6 +1335,8 @@ static void raid1syncd (void *data)
 
 	up(&mddev->recovery_sem);
 	raid1_shrink_buffers(conf);
+
+	md_recover_arrays(); /* incase we are degraded and a spare is available */
 }
 
 /*
@@ -1741,10 +1745,6 @@ static int raid1_run (mddev_t *mddev)
 	conf->last_used = j;
 
 
-	if (conf->working_disks != sb->raid_disks) {
-		printk(KERN_ALERT "raid1: md%d, not all disks are operational -- trying to recover array\n", mdidx(mddev));
-		start_recovery = 1;
-	}
 
 	{
 		const char * name = "raid1d";
@@ -1756,7 +1756,7 @@ static int raid1_run (mddev_t *mddev)
 		}
 	}
 
-	if (!start_recovery && !(sb->state & (1 << MD_SB_CLEAN)) &&
+	if (!(sb->state & (1 << MD_SB_CLEAN)) &&
 	    (conf->working_disks > 1)) {
 		const char * name = "raid1syncd";
 
@@ -1769,6 +1769,9 @@ static int raid1_run (mddev_t *mddev)
 		printk(START_RESYNC, mdidx(mddev));
 		conf->resync_mirrors = 1;
 		md_wakeup_thread(conf->resync_thread);
+	} else if (conf->working_disks != sb->raid_disks) {
+		printk(KERN_ALERT "raid1: md%d, not all disks are operational -- trying to recover array\n", mdidx(mddev));
+		start_recovery = 1;
 	}
 
 	/*

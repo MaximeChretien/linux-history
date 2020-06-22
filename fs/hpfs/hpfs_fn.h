@@ -58,13 +58,13 @@ typedef void nonconst; /* What this is for ? */
  * local time (HPFS) to GMT (Unix)
  */
 
-extern inline time_t local_to_gmt(struct super_block *s, time_t t)
+extern inline time_t local_to_gmt(struct super_block *s, time32_t t)
 {
 	extern struct timezone sys_tz;
 	return t + sys_tz.tz_minuteswest * 60 + s->s_hpfs_timeshift;
 }
 
-extern inline time_t gmt_to_local(struct super_block *s, time_t t)
+extern inline time32_t gmt_to_local(struct super_block *s, time_t t)
 {
 	extern struct timezone sys_tz;
 	return t - sys_tz.tz_minuteswest * 60 - s->s_hpfs_timeshift;

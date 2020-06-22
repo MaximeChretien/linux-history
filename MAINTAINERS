@@ -531,11 +531,10 @@ W:	http://developer.axis.com
 S:	Maintained
 
 CRYPTO API
-P:	James Morris
-M:	jmorris@intercode.com.au
+P:	Herbert Xu
+M:	herbert@gondor.apana.org.au
 P:	David S. Miller
 M:	davem@davemloft.net
-W	http://samba.org/~jamesm/crypto/
 L:	linux-kernel@vger.kernel.org
 S:	Maintained
 
@@ -1058,8 +1057,8 @@ S:	Maintained
 JFS FILESYSTEM
 P:	Dave Kleikamp
 M:	shaggy@austin.ibm.com
-L:	jfs-discussion@oss.software.ibm.com
-W:	http://oss.software.ibm.com/developerworks/opensource/jfs/
+L:	jfs-discussion@lists.sourceforge.net
+W:	http://jfs.sourceforge.net/
 S:	Supported
 
 JOYSTICK DRIVER
@@ -1532,7 +1531,7 @@ S:	Maintained
 
 PPP OVER ETHERNET
 P:	Michal Ostrowski
-M:	mostrows@styx.uwaterloo.ca
+M:	mostrows@speakeasy.net
 S:	Maintained
 
 PRISM54 WIRELESS DRIVER

@@ -39,7 +39,7 @@
 
 MODULE_LICENSE("GPL");
 
-static int kill_proto(const struct ip_conntrack *i, void *data)
+static int kill_proto(struct ip_conntrack *i, void *data)
 {
 	return (i->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum == 
 			*((u_int8_t *) data));
@@ -393,13 +393,6 @@ static int init_or_cleanup(int init)
  cleanup_inandlocalops:
 	nf_unregister_hook(&ip_conntrack_local_out_ops);
  cleanup_inops:
-	/* Frag queues may hold fragments with skb->dst == NULL */
-	ip_ct_no_defrag = 1;
-	local_bh_disable();
-	br_write_lock(BR_NETPROTO_LOCK);
-	br_write_unlock(BR_NETPROTO_LOCK);
-	ipfrag_flush();
-	local_bh_enable();
 	nf_unregister_hook(&ip_conntrack_in_ops);
  cleanup_proc:
 	proc_net_remove("ip_conntrack");
@@ -447,7 +440,7 @@ void ip_conntrack_protocol_unregister(struct ip_conntrack_protocol *proto)
 	br_write_unlock_bh(BR_NETPROTO_LOCK);
 
 	/* Remove all contrack entries for this protocol */
-	ip_ct_selective_cleanup(kill_proto, &proto->proto);
+	ip_ct_iterate_cleanup(kill_proto, &proto->proto);
 
 	MOD_DEC_USE_COUNT;
 }
@@ -474,7 +467,7 @@ EXPORT_SYMBOL(ip_conntrack_destroyed);
 EXPORT_SYMBOL(ip_conntrack_get);
 EXPORT_SYMBOL(ip_conntrack_helper_register);
 EXPORT_SYMBOL(ip_conntrack_helper_unregister);
-EXPORT_SYMBOL(ip_ct_selective_cleanup);
+EXPORT_SYMBOL(ip_ct_iterate_cleanup);
 EXPORT_SYMBOL(ip_ct_refresh);
 EXPORT_SYMBOL(ip_ct_find_proto);
 EXPORT_SYMBOL(__ip_ct_find_proto);

@@ -106,9 +106,9 @@ extern void __global_restore_flags(unsigned long flags);
 
 #define nop() 		__asm__ __volatile__ ("nop")
 
-#define membar(type)	__asm__ __volatile__ ("membar " type : : : "memory");
+#define membar(type)	__asm__ __volatile__ ("membar " type : : : "memory")
 #define mb()		\
-	membar("#LoadLoad | #LoadStore | #StoreStore | #StoreLoad");
+	membar("#LoadLoad | #LoadStore | #StoreStore | #StoreLoad")
 #define rmb()		membar("#LoadLoad")
 #define wmb()		membar("#StoreStore")
 #define set_mb(__var, __value) \
@@ -121,9 +121,9 @@ extern void __global_restore_flags(unsigned long flags);
 #define smp_rmb()	rmb()
 #define smp_wmb()	wmb()
 #else
-#define smp_mb()	__asm__ __volatile__("":::"memory");
-#define smp_rmb()	__asm__ __volatile__("":::"memory");
-#define smp_wmb()	__asm__ __volatile__("":::"memory");
+#define smp_mb()	__asm__ __volatile__("":::"memory")
+#define smp_rmb()	__asm__ __volatile__("":::"memory")
+#define smp_wmb()	__asm__ __volatile__("":::"memory")
 #endif
 
 #define flushi(addr)	__asm__ __volatile__ ("flush %0" : : "r" (addr) : "memory")
@@ -246,6 +246,7 @@ do {	CHECK_LOCKS(prev);							\
 extern __inline__ unsigned long xchg32(__volatile__ unsigned int *m, unsigned int val)
 {
 	__asm__ __volatile__(
+"	membar		#StoreLoad | #LoadLoad\n"
 "	mov		%0, %%g5\n"
 "1:	lduw		[%2], %%g7\n"
 "	cas		[%2], %%g7, %0\n"
@@ -262,6 +263,7 @@ extern __inline__ unsigned long xchg32(__volatile__ unsigned int *m, unsigned in
 extern __inline__ unsigned long xchg64(__volatile__ unsigned long *m, unsigned long val)
 {
 	__asm__ __volatile__(
+"	membar		#StoreLoad | #LoadLoad\n"
 "	mov		%0, %%g5\n"
 "1:	ldx		[%2], %%g7\n"
 "	casx		[%2], %%g7, %0\n"
@@ -306,7 +308,8 @@ extern void die_if_kernel(char *str, struct pt_regs *regs) __attribute__ ((noret
 extern __inline__ unsigned long
 __cmpxchg_u32(volatile int *m, int old, int new)
 {
-	__asm__ __volatile__("cas [%2], %3, %0\n\t"
+	__asm__ __volatile__("membar #StoreLoad | #LoadLoad\n"
+			     "cas [%2], %3, %0\n\t"
 			     "membar #StoreLoad | #StoreStore"
 			     : "=&r" (new)
 			     : "0" (new), "r" (m), "r" (old)
@@ -318,7 +321,8 @@ __cmpxchg_u32(volatile int *m, int old, int new)
 extern __inline__ unsigned long
 __cmpxchg_u64(volatile long *m, unsigned long old, unsigned long new)
 {
-	__asm__ __volatile__("casx [%2], %3, %0\n\t"
+	__asm__ __volatile__("membar #StoreLoad | #LoadLoad\n"
+			     "casx [%2], %3, %0\n\t"
 			     "membar #StoreLoad | #StoreStore"
 			     : "=&r" (new)
 			     : "0" (new), "r" (m), "r" (old)

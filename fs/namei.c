@@ -540,8 +540,10 @@ int fastcall link_path_walk(const char * name, struct nameidata *nd)
 			goto out_dput;
 
 		if (inode->i_op->follow_link) {
+			struct vfsmount *mnt = mntget(nd->mnt);
 			err = do_follow_link(dentry, nd);
 			dput(dentry);
+			mntput(mnt);
 			if (err)
 				goto return_err;
 			err = -ENOENT;
@@ -595,8 +597,10 @@ last_component:
 		inode = dentry->d_inode;
 		if ((lookup_flags & LOOKUP_FOLLOW)
 		    && inode && inode->i_op && inode->i_op->follow_link) {
+			struct vfsmount *mnt = mntget(nd->mnt);
 			err = do_follow_link(dentry, nd);
 			dput(dentry);
+			mntput(mnt);
 			if (err)
 				goto return_err;
 			inode = nd->dentry->d_inode;
@@ -1003,6 +1007,7 @@ int open_namei(const char * pathname, int flag, int mode, struct nameidata *nd)
 	int acc_mode, error = 0;
 	struct inode *inode;
 	struct dentry *dentry;
+	struct vfsmount *mnt;
 	struct dentry *dir;
 	int count = 0;
 
@@ -1185,8 +1190,10 @@ do_link:
 	 * are done. Procfs-like symlinks just set LAST_BIND.
 	 */
 	UPDATE_ATIME(dentry->d_inode);
+	mnt = mntget(nd->mnt);
 	error = dentry->d_inode->i_op->follow_link(dentry, nd);
 	dput(dentry);
+	mntput(mnt);
 	if (error)
 		return error;
 	if (nd->last_type == LAST_BIND) {

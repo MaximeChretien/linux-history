@@ -42,8 +42,6 @@
 #define DRV_NAME	"sata_promise"
 #define DRV_VERSION	"1.01"
 
-#define msleep libata_msleep	/* 2.4-specific */
-
 enum {
 	PDC_PKT_SUBMIT		= 0x40, /* Command packet pointer addr */
 	PDC_INT_SEQMASK		= 0x40,	/* Mask of asserted SEQ INTs */
@@ -158,10 +156,18 @@ static struct pci_device_id pdc_ata_pci_tbl[] = {
 	  board_2037x },
 	{ PCI_VENDOR_ID_PROMISE, 0x3376, PCI_ANY_ID, PCI_ANY_ID, 0, 0,
 	  board_2037x },
+	{ PCI_VENDOR_ID_PROMISE, 0x3574, PCI_ANY_ID, PCI_ANY_ID, 0, 0,
+	  board_2037x },
+	{ PCI_VENDOR_ID_PROMISE, 0x3d75, PCI_ANY_ID, PCI_ANY_ID, 0, 0,
+	  board_2037x },
+
 	{ PCI_VENDOR_ID_PROMISE, 0x3318, PCI_ANY_ID, PCI_ANY_ID, 0, 0,
 	  board_20319 },
 	{ PCI_VENDOR_ID_PROMISE, 0x3319, PCI_ANY_ID, PCI_ANY_ID, 0, 0,
 	  board_20319 },
+	{ PCI_VENDOR_ID_PROMISE, 0x3d18, PCI_ANY_ID, PCI_ANY_ID, 0, 0,
+	  board_20319 },
+
 	{ }	/* terminate list */
 };
 
@@ -408,9 +414,11 @@ static irqreturn_t pdc_interrupt (int irq, void *dev_instance, struct pt_regs *r
 		return IRQ_NONE;
 	}
 
-        spin_lock(&host_set->lock);
+	spin_lock(&host_set->lock);
 
-        for (i = 0; i < host_set->n_ports; i++) {
+	writel(mask, mmio_base + PDC_INT_SEQMASK);
+
+	for (i = 0; i < host_set->n_ports; i++) {
 		VPRINTK("port %u\n", i);
 		ap = host_set->ports[i];
 		tmp = mask & (1 << (i + 1));
@@ -548,6 +556,7 @@ static int pdc_ata_init_one (struct pci_dev *pdev, const struct pci_device_id *e
 	unsigned long base;
 	void *mmio_base;
 	unsigned int board_idx = (unsigned int) ent->driver_data;
+	int pci_dev_busy = 0;
 	int rc;
 
 	if (!printed_version++)
@@ -562,8 +571,10 @@ static int pdc_ata_init_one (struct pci_dev *pdev, const struct pci_device_id *e
 		return rc;
 
 	rc = pci_request_regions(pdev, DRV_NAME);
-	if (rc)
+	if (rc) {
+		pci_dev_busy = 1;
 		goto err_out;
+	}
 
 	rc = pci_set_dma_mask(pdev, ATA_DMA_MASK);
 	if (rc)
@@ -637,7 +648,8 @@ err_out_free_ent:
 err_out_regions:
 	pci_release_regions(pdev);
 err_out:
-	pci_disable_device(pdev);
+	if (!pci_dev_busy)
+		pci_disable_device(pdev);
 	return rc;
 }
 

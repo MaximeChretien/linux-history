@@ -46,6 +46,7 @@ struct file * get_empty_filp(void)
 		f->f_version = ++event;
 		f->f_uid = current->fsuid;
 		f->f_gid = current->fsgid;
+		f->f_maxcount = INT_MAX;
 		list_add(&f->f_list, &anon_list);
 		file_list_unlock();
 		return f;
@@ -91,6 +92,8 @@ int init_private_file(struct file *filp, struct dentry *dentry, int mode)
 	filp->f_uid    = current->fsuid;
 	filp->f_gid    = current->fsgid;
 	filp->f_op     = dentry->d_inode->i_fop;
+	filp->f_maxcount = INT_MAX;
+
 	if (filp->f_op->open)
 		return filp->f_op->open(dentry->d_inode, filp);
 	else

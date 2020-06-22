@@ -562,6 +562,8 @@ static __inline__ void *alloc_user_space(long len)
 
 	if (!(current->thread.flags & SPARC_FLAG_32BIT))
 		usp += STACK_BIAS;
+	else
+		usp &= 0xffffffffUL;
 
 	return (void *) (usp - len);
 }
@@ -696,6 +698,7 @@ static int dev_ifsioc(unsigned int fd, unsigned int cmd, unsigned long arg)
 	set_fs (old_fs);
 	if (!err) {
 		switch (cmd) {
+		case TUNSETIFF:
 		case SIOCGIFFLAGS:
 		case SIOCGIFMETRIC:
 		case SIOCGIFMTU:

@@ -14,6 +14,7 @@
 #include <linux/netdevice.h>
 #include <linux/rtnetlink.h>
 #include <linux/netfilter_ipv4.h>
+#include <linux/netfilter_ipv6.h>
 #include <linux/netfilter.h>
 #include <linux/smp.h>
 #include <net/pkt_sched.h>
@@ -241,6 +242,15 @@ static struct nf_hook_ops ing_ops =
 	NF_IP_PRI_FILTER + 1
 };
 
+static struct nf_hook_ops ing6_ops =
+{
+	{ NULL, NULL},
+	ing_hook,
+	PF_INET6,
+	NF_IP6_PRE_ROUTING,
+	NF_IP6_PRI_FILTER + 1
+};
+
 int ingress_init(struct Qdisc *sch,struct rtattr *opt)
 {
 	struct ingress_qdisc_data *p = PRIV(sch);
@@ -249,8 +259,13 @@ int ingress_init(struct Qdisc *sch,struct rtattr *opt)
 		if (nf_register_hook(&ing_ops) < 0) {
 			printk("ingress qdisc registration error \n");
 			goto error;
-			}
+		}
 		nf_registered++;
+		if (nf_register_hook(&ing6_ops) < 0) {
+			printk("IPv6 ingress qdisc registration error, " \
+			    "disabling IPv6 support.\n");
+		} else
+			nf_registered++;
 	}
 
 	DPRINTK("ingress_init(sch %p,[qdisc %p],opt %p)\n",sch,p,opt);
@@ -374,8 +389,11 @@ int init_module(void)
 void cleanup_module(void) 
 {
 	unregister_qdisc(&ingress_qdisc_ops);
-	if (nf_registered)
+	if (nf_registered) {
 		nf_unregister_hook(&ing_ops);
+		if (nf_registered > 1)
+			nf_unregister_hook(&ing6_ops);
+	}
 }
 #endif
 MODULE_LICENSE("GPL");

@@ -72,6 +72,7 @@ struct ipfrag_skb_cb
 struct ipq {
 	struct ipq	*next;		/* linked list pointers			*/
 	struct list_head lru_list;	/* lru list member 			*/
+	u32		user;
 	u32		saddr;
 	u32		daddr;
 	u16		id;
@@ -242,13 +243,13 @@ static __inline__ void ipq_kill(struct ipq *ipq)
 /* Memory limiting on fragments.  Evictor trashes the oldest 
  * fragment queue until we are back under the threshold.
  */
-static void __ip_evictor(int threshold)
+static void ip_evictor(void)
 {
 	struct ipq *qp;
 	struct list_head *tmp;
 	int work;
 
-	work = atomic_read(&ip_frag_mem) - threshold;
+	work = atomic_read(&ip_frag_mem) - sysctl_ipfrag_low_thresh;
 	if (work <= 0)
 		return;
 
@@ -271,11 +272,6 @@ static void __ip_evictor(int threshold)
 		ipq_put(qp, &work);
 		IP_INC_STATS_BH(IpReasmFails);
 	}
-}
-
-static inline void ip_evictor(void)
-{
-	__ip_evictor(sysctl_ipfrag_low_thresh);
 }
 
 /*
@@ -324,7 +320,8 @@ static struct ipq *ip_frag_intern(unsigned int hash, struct ipq *qp_in)
 		if(qp->id == qp_in->id		&&
 		   qp->saddr == qp_in->saddr	&&
 		   qp->daddr == qp_in->daddr	&&
-		   qp->protocol == qp_in->protocol) {
+		   qp->protocol == qp_in->protocol &&
+		   qp->user == qp_in->user) {
 			atomic_inc(&qp->refcnt);
 			write_unlock(&ipfrag_lock);
 			qp_in->last_in |= COMPLETE;
@@ -351,7 +348,7 @@ static struct ipq *ip_frag_intern(unsigned int hash, struct ipq *qp_in)
 }
 
 /* Add an entry to the 'ipq' queue for a newly received IP datagram. */
-static struct ipq *ip_frag_create(unsigned hash, struct iphdr *iph)
+static struct ipq *ip_frag_create(unsigned hash, struct iphdr *iph, u32 user)
 {
 	struct ipq *qp;
 
@@ -363,6 +360,7 @@ static struct ipq *ip_frag_create(unsigned hash, struct iphdr *iph)
 	qp->id = iph->id;
 	qp->saddr = iph->saddr;
 	qp->daddr = iph->daddr;
+	qp->user = user;
 	qp->len = 0;
 	qp->meat = 0;
 	qp->fragments = NULL;
@@ -385,7 +383,7 @@ out_nomem:
 /* Find the correct entry in the "incomplete datagrams" queue for
  * this IP datagram, and create new one, if nothing is found.
  */
-static inline struct ipq *ip_find(struct iphdr *iph)
+static inline struct ipq *ip_find(struct iphdr *iph, u32 user)
 {
 	__u16 id = iph->id;
 	__u32 saddr = iph->saddr;
@@ -399,7 +397,8 @@ static inline struct ipq *ip_find(struct iphdr *iph)
 		if(qp->id == id		&&
 		   qp->saddr == saddr	&&
 		   qp->daddr == daddr	&&
-		   qp->protocol == protocol) {
+		   qp->protocol == protocol &&
+		   qp->user == user) {
 			atomic_inc(&qp->refcnt);
 			read_unlock(&ipfrag_lock);
 			return qp;
@@ -407,7 +406,7 @@ static inline struct ipq *ip_find(struct iphdr *iph)
 	}
 	read_unlock(&ipfrag_lock);
 
-	return ip_frag_create(hash, iph);
+	return ip_frag_create(hash, iph, user);
 }
 
 /* Add new segment to existing queue. */
@@ -641,7 +640,7 @@ out_fail:
 }
 
 /* Process an incoming IP datagram fragment. */
-struct sk_buff *ip_defrag(struct sk_buff *skb)
+struct sk_buff *ip_defrag(struct sk_buff *skb, u32 user)
 {
 	struct iphdr *iph = skb->nh.iph;
 	struct ipq *qp;
@@ -656,7 +655,7 @@ struct sk_buff *ip_defrag(struct sk_buff *skb)
 	dev = skb->dev;
 
 	/* Lookup (or create) queue header */
-	if ((qp = ip_find(iph)) != NULL) {
+	if ((qp = ip_find(iph, user)) != NULL) {
 		struct sk_buff *ret = NULL;
 
 		spin_lock(&qp->lock);
@@ -686,9 +685,4 @@ void ipfrag_init(void)
 	ipfrag_secret_timer.function = ipfrag_secret_rebuild;
 	ipfrag_secret_timer.expires = jiffies + sysctl_ipfrag_secret_interval;
 	add_timer(&ipfrag_secret_timer);
-}
-
-void ipfrag_flush(void)
-{
-	__ip_evictor(0);
 }
