@@ -262,10 +262,10 @@ endmenu
 
 mainmenu_option next_comment
 comment 'XFree86 DRI support'
-bool 'Direct Rendering Manager (XFree86 DRI support)' CONFIG_DRM
-dep_tristate '  Creator/Creator3D' CONFIG_DRM_FFB $CONFIG_DRM
-dep_tristate '  3dfx Banshee/Voodoo3+' CONFIG_DRM_TDFX $CONFIG_DRM
-dep_tristate '  ATI Rage 128' CONFIG_DRM_R128 $CONFIG_DRM
+bool 'Direct Rendering Manager (XFree86 DRI support)' CONFIG_DRM_NEW
+dep_tristate '  Creator/Creator3D' CONFIG_DRM_FFB $CONFIG_DRM_NEW
+dep_tristate '  3dfx Banshee/Voodoo3+' CONFIG_DRM_TDFX $CONFIG_DRM_NEW
+dep_tristate '  ATI Rage 128' CONFIG_DRM_R128 $CONFIG_DRM_NEW
 endmenu
 
 source drivers/input/Config.in
@@ -308,3 +308,5 @@ if [ "$CONFIG_STACK_DEBUG" = "y" ] ; then
 fi
 
 endmenu
+
+source lib/Config.in

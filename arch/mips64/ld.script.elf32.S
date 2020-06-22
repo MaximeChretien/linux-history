@@ -102,7 +102,7 @@ SECTIONS
   }
 
   /* Sections to be discarded */
-  /DISCARD/ : 
+  /DISCARD/ :
   {
         *(.text.exit)
         *(.data.exit)

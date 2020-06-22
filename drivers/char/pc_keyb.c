@@ -69,6 +69,9 @@ static void __aux_write_ack(int val);
 static int aux_reconnect = 0;
 #endif
 
+#ifndef kbd_controller_present
+#define kbd_controller_present()	1
+#endif
 static spinlock_t kbd_controller_lock = SPIN_LOCK_UNLOCKED;
 static unsigned char handle_kbd_event(void);
 
@@ -895,6 +898,11 @@ static char * __init initialize_kbd(void)
 
 void __init pckbd_init_hw(void)
 {
+	if (!kbd_controller_present()) {
+		kbd_exists = 0;
+		return;
+	}
+
 	kbd_request_region();
 
 	/* Flush any pending input. */

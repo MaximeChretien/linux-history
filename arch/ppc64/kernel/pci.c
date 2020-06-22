@@ -74,7 +74,7 @@ long   Pci_Cfg_Read_Count = 0;
 long   Pci_Cfg_Write_Count= 0;
 long   Pci_Error_Count    = 0;
 
-int    Pci_Retry_Max      = 3;	/* Only retry 3 times  */	
+int    Pci_Retry_Max      = 7;	/* Retry set to 7 times  */	
 int    Pci_Error_Flag     = 1;	/* Set Retry Error on. */
 int    Pci_Trace_Flag     = 0;
 
@@ -180,7 +180,8 @@ pcibios_fixup_resources(struct pci_dev* dev)
  * which might have be mirrored at 0x0100-0x03ff..
  */
 void
-pcibios_align_resource(void *data, struct resource *res, unsigned long size)
+pcibios_align_resource(void *data, struct resource *res, unsigned long size,
+		       unsigned long align)
 {
 	struct pci_dev *dev = data;
 
@@ -364,7 +365,7 @@ pcibios_assign_resources(void)
 
 
 int
-pcibios_enable_resources(struct pci_dev *dev)
+pcibios_enable_resources(struct pci_dev *dev, int mask)
 {
 	u16 cmd, old_cmd;
 	int idx;
@@ -373,6 +374,8 @@ pcibios_enable_resources(struct pci_dev *dev)
 	pci_read_config_word(dev, PCI_COMMAND, &cmd);
 	old_cmd = cmd;
 	for(idx=0; idx<6; idx++) {
+		if(!(mask & (1<<idx)))
+			continue;
 		r = &dev->resource[idx];
 		if (!r->start && r->end) {
 			printk(KERN_ERR "PCI: Device %s not available because of resource collisions\n", dev->slot_name);
@@ -452,9 +455,9 @@ pcibios_init(void)
 	iSeries_pcibios_init(); 
 #endif
 
+	ppc64_boot_msg(0x40, "PCI Probe");
 	printk("PCI: Probing PCI hardware\n");
 	PPCDBG(PPCDBG_BUSWALK,"PCI: Probing PCI hardware\n");
-				
 
 	/* Scan all of the recorded PCI controllers.  */
 	for (next_busno = 0, hose = hose_head; hose; hose = hose->next) {
@@ -489,11 +492,13 @@ pcibios_init(void)
 #endif
 
 	/* Cache the location of the ISA bridge (if we have one) */
-	if (ppc64_isabridge_dev = pci_find_class(PCI_CLASS_BRIDGE_ISA << 8, NULL))
+	ppc64_isabridge_dev = pci_find_class(PCI_CLASS_BRIDGE_ISA << 8, NULL);
+	if (ppc64_isabridge_dev != NULL )
 		printk("ISA bridge at %s\n", ppc64_isabridge_dev->slot_name);
 
 	printk("PCI: Probing PCI hardware done\n");
 	PPCDBG(PPCDBG_BUSWALK,"PCI: Probing PCI hardware done.\n");
+	ppc64_boot_msg(0x41, "PCI Done");
 
 }
 
@@ -511,11 +516,11 @@ unsigned long resource_fixup(struct pci_dev * dev, struct resource * res,
 
 void __init pcibios_fixup_bus(struct pci_bus *bus)
 {
+#ifndef CONFIG_PPC_ISERIES
 	struct pci_controller *phb = PCI_GET_PHB_PTR(bus);
 	struct resource *res;
 	int i;
 
-#ifndef CONFIG_PPC_ISERIES
 	if (bus->parent == NULL) {
 		/* This is a host bridge - fill in its resources */
 		phb->bus = bus;
@@ -573,7 +578,7 @@ char __init *pcibios_setup(char *str)
 	return str;
 }
 
-int pcibios_enable_device(struct pci_dev *dev)
+int pcibios_enable_device(struct pci_dev *dev, int mask)
 {
 	u16 cmd, old_cmd;
 	int idx;

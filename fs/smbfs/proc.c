@@ -33,9 +33,6 @@
    config option. */
 #define SMBFS_POSIX_UNLINK 1
 
-/* Allow smb_retry to be interrupted. */
-#define SMB_RETRY_INTR
-
 #define SMB_VWV(packet)  ((packet) + SMB_HEADER_LEN)
 #define SMB_CMD(packet)  (*(packet+8))
 #define SMB_WCT(packet)  (*(packet+SMB_HEADER_LEN - 1))
@@ -715,28 +712,11 @@ smb_retry(struct smb_sb_info *server)
 	/*
 	 * Wait for the new connection.
 	 */
-#ifdef SMB_RETRY_INTR
 	smb_unlock_server(server);
-	interruptible_sleep_on_timeout(&server->wait,  30*HZ);
+	interruptible_sleep_on_timeout(&server->wait, server->mnt->timeo*HZ);
 	smb_lock_server(server);
 	if (signal_pending(current))
 		printk(KERN_INFO "smb_retry: caught signal\n");
-#else
-	/*
-	 * We don't want to be interrupted. For example, what if 'current'
-	 * already has received a signal? sleep_on would terminate immediately
-	 * and smbmount would not be able to re-establish connection.
-	 *
-	 * smbmount should be able to reconnect later, but it can't because
-	 * it will get an -EIO on attempts to open the mountpoint!
-	 *
-	 * FIXME: go back to the interruptable version now that smbmount
-	 * can avoid -EIO on the mountpoint when reconnecting?
-	 */
-	smb_unlock_server(server);
-	sleep_on_timeout(&server->wait, 30*HZ);
-	smb_lock_server(server);
-#endif
 
 	/*
 	 * Check for a valid connection.
@@ -895,11 +875,7 @@ out_putf:
 int
 smb_wakeup(struct smb_sb_info *server)
 {
-#ifdef SMB_RETRY_INTR
 	wake_up_interruptible(&server->wait);
-#else
-	wake_up(&server->wait);
-#endif
 	return 0;
 }
 

@@ -65,6 +65,17 @@ UNUSUAL_DEV(  0x03f0, 0x0307, 0x0001, 0x0001,
 		US_SC_8070, US_PR_SCM_ATAPI, init_8200e, 0), 
 #endif
 
+/* Deduced by Jonathan Woithe <jwoithe@physics.adelaide.edu.au>
+ * Entry needed for flags: US_FL_FIX_INQUIRY because initial inquiry message
+ * always fails and confuses drive; without US_FL_START_STOP, drive accesses
+ * (read or write) all fail.
+ */
+UNUSUAL_DEV(  0x0411, 0x001c, 0x0113, 0x0113,
+		"Buffalo",
+		"DUB-P40G HDD",
+		US_SC_SCSI, US_PR_BULK, NULL,
+		US_FL_FIX_INQUIRY | US_FL_START_STOP),
+
 #ifdef CONFIG_USB_STORAGE_DPCM
 UNUSUAL_DEV(  0x0436, 0x0005, 0x0100, 0x0100,
 		"Microtech",
@@ -292,6 +303,13 @@ UNUSUAL_DEV(  0x05dc, 0x0001, 0x0000, 0x0001,
 		US_FL_MODE_XLATE ),
 #endif
 
+/* Reported by Blake Matheny <bmatheny@purdue.edu> */
+UNUSUAL_DEV(  0x05dc, 0xb002, 0x0000, 0x0113,
+		"Lexar",
+		"USB CF Reader",
+		US_SC_SCSI, US_PR_BULK, NULL,
+		US_FL_FIX_INQUIRY ),
+
 /* Reported by Carlos Villegas <cav@uniscope.co.jp>
  * This device needs an INQUIRY of exactly 36-bytes to function.
  * That is the only reason this entry is needed.
@@ -306,8 +324,10 @@ UNUSUAL_DEV(  0x05e3, 0x0700, 0x0000, 0xffff,
  * Like the SIIG unit above, this unit needs an INQUIRY to ask for exactly
  * 36 bytes of data.  No more, no less. That is the only reason this entry
  * is needed.
- */
-UNUSUAL_DEV(  0x05e3, 0x0702, 0x0000, 0xffff,
+ *
+ * ST818 slim drives (rev 0.02) don't need special care.
+*/
+UNUSUAL_DEV(  0x05e3, 0x0702, 0x0000, 0x0001,
 		"EagleTec",
 		"External Hard Disk",
 		US_SC_SCSI, US_PR_BULK, NULL,
@@ -341,6 +361,12 @@ UNUSUAL_DEV( 0x0686, 0x4007, 0x0001, 0x0001,
                 "Dimage S304",
                 US_SC_SCSI, US_PR_BULK, NULL,
                 US_FL_START_STOP ),
+
+UNUSUAL_DEV( 0x0686, 0x400b, 0x0001, 0x0001, 
+		"Minolta", 
+		"Dimage 7i", 
+		US_SC_SCSI, US_PR_BULK, NULL, 
+		US_FL_START_STOP ),
 
 UNUSUAL_DEV(  0x0693, 0x0002, 0x0100, 0x0100, 
 		"Hagiwara",
@@ -488,9 +514,14 @@ UNUSUAL_DEV(  0x0bf6, 0xa001, 0x0100, 0x0110,
                 0 ),
 #endif
 
-/* Submitted by Brian Hall <brihall@bigfoot.com>
+/* Submitted by Brian Hall <brihall@pcisys.net>
  * Needed for START_STOP flag */
 UNUSUAL_DEV(  0x0c76, 0x0003, 0x0100, 0x0100,
+		"JMTek",
+		"USBDrive",
+		US_SC_SCSI, US_PR_BULK, NULL,
+		US_FL_START_STOP ),
+UNUSUAL_DEV(  0x0c76, 0x0005, 0x0100, 0x0100,
 		"JMTek",
 		"USBDrive",
 		US_SC_SCSI, US_PR_BULK, NULL,
@@ -498,7 +529,7 @@ UNUSUAL_DEV(  0x0c76, 0x0003, 0x0100, 0x0100,
 
 /* Reported by Dan Pilone <pilone@slac.com>
  * The device needs the flags only.
- * Also reported by Brian Hall <brihall@bigfoot.com>, again for flags.
+ * Also reported by Brian Hall <brihall@pcisys.net>, again for flags.
  * I also suspect this device may have a broken serial number.
  */
 UNUSUAL_DEV(  0x1065, 0x2136, 0x0000, 0x9999,
@@ -506,3 +537,11 @@ UNUSUAL_DEV(  0x1065, 0x2136, 0x0000, 0x9999,
 		"EasyDisk Portable Device",
 		US_SC_SCSI, US_PR_BULK, NULL,
 		US_FL_MODE_XLATE | US_FL_START_STOP),
+
+#ifdef CONFIG_USB_STORAGE_SDDR55
+UNUSUAL_DEV(  0x55aa, 0xa103, 0x0000, 0x9999, 
+		"Sandisk",
+		"ImageMate SDDR55",
+		US_SC_SCSI, US_PR_SDDR55, NULL,
+		US_FL_SINGLE_LUN),
+#endif

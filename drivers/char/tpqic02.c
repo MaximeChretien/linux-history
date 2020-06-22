@@ -1815,7 +1815,6 @@ static void qic02_tape_interrupt(int irq, void *dev_id,
 static ssize_t qic02_tape_read(struct file *filp, char *buf, size_t count,
 			       loff_t * ppos)
 {
-	int err;
 	kdev_t dev = filp->f_dentry->d_inode->i_rdev;
 	unsigned short flags = filp->f_flags;
 	unsigned long bytes_todo, bytes_done, total_bytes_done = 0;
@@ -2009,7 +2008,6 @@ static ssize_t qic02_tape_read(struct file *filp, char *buf, size_t count,
 static ssize_t qic02_tape_write(struct file *filp, const char *buf,
 				size_t count, loff_t * ppos)
 {
-	int err;
 	kdev_t dev = filp->f_dentry->d_inode->i_rdev;
 	unsigned short flags = filp->f_flags;
 	unsigned long bytes_todo, bytes_done, total_bytes_done = 0;

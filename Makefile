@@ -1,6 +1,6 @@
 VERSION = 2
 PATCHLEVEL = 4
-SUBLEVEL = 19
+SUBLEVEL = 20
 EXTRAVERSION =
 
 KERNELRELEASE=$(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION)
@@ -170,7 +170,7 @@ DRIVERS-$(CONFIG_DIO) += drivers/dio/dio.a
 DRIVERS-$(CONFIG_SBUS) += drivers/sbus/sbus_all.o
 DRIVERS-$(CONFIG_ZORRO) += drivers/zorro/driver.o
 DRIVERS-$(CONFIG_FC4) += drivers/fc4/fc4.a
-DRIVERS-$(CONFIG_PPC) += drivers/macintosh/macintosh.o
+DRIVERS-$(CONFIG_PPC32) += drivers/macintosh/macintosh.o
 DRIVERS-$(CONFIG_MAC) += drivers/macintosh/macintosh.o
 DRIVERS-$(CONFIG_ISAPNP) += drivers/pnp/pnp.o
 DRIVERS-$(CONFIG_SGI_IP22) += drivers/sgi/sgi.a
@@ -180,11 +180,13 @@ DRIVERS-$(CONFIG_HAMRADIO) += drivers/net/hamradio/hamradio.o
 DRIVERS-$(CONFIG_TC) += drivers/tc/tc.a
 DRIVERS-$(CONFIG_USB) += drivers/usb/usbdrv.o
 DRIVERS-$(CONFIG_INPUT) += drivers/input/inputdrv.o
+DRIVERS-$(CONFIG_HIL) += drivers/hil/hil.o
 DRIVERS-$(CONFIG_I2O) += drivers/message/i2o/i2o.o
 DRIVERS-$(CONFIG_IRDA) += drivers/net/irda/irda.o
 DRIVERS-$(CONFIG_I2C) += drivers/i2c/i2c.o
 DRIVERS-$(CONFIG_PHONE) += drivers/telephony/telephony.o
 DRIVERS-$(CONFIG_MD) += drivers/md/mddev.o
+DRIVERS-$(CONFIG_GSC) += drivers/gsc/gscbus.o
 DRIVERS-$(CONFIG_BLUEZ) += drivers/bluetooth/bluetooth.o
 DRIVERS-$(CONFIG_HOTPLUG_PCI) += drivers/hotplug/vmlinux-obj.o
 DRIVERS-$(CONFIG_ISDN_BOOL) += drivers/isdn/vmlinux-obj.o
@@ -258,7 +260,7 @@ include arch/$(ARCH)/Makefile
 # 'kbuild_2_4_nostdinc :=' or -I/usr/include for kernel code and you are not UML
 # then your code is broken!  KAO.
 
-kbuild_2_4_nostdinc	:= -nostdinc $(shell $(CC) -print-search-dirs | sed -ne 's/install: \(.*\)/-I \1include/gp')
+kbuild_2_4_nostdinc	:= -nostdinc -iwithprefix include
 export kbuild_2_4_nostdinc
 
 export	CPPFLAGS CFLAGS CFLAGS_KERNEL AFLAGS AFLAGS_KERNEL
@@ -369,7 +371,7 @@ fs lib mm ipc kernel drivers net: dummy
 TAGS: dummy
 	{ find include/asm-${ARCH} -name '*.h' -print ; \
 	find include -type d \( -name "asm-*" -o -name config \) -prune -o -name '*.h' -print ; \
-	find $(SUBDIRS) init arch/${ARCH} -name '*.[chS]' ; } | grep -v SCCS | etags -
+	find $(SUBDIRS) init arch/${ARCH} -name '*.[chS]' ; } | grep -v SCCS | grep -v '\.svn' | etags -
 
 # Exuberant ctags works better with -I
 tags: dummy
@@ -487,7 +489,7 @@ sums:
 
 dep-files: scripts/mkdep archdep include/linux/version.h
 	scripts/mkdep -- init/*.c > .depend
-	scripts/mkdep -- `find $(FINDHPATH) -name SCCS -prune -o -follow -name \*.h ! -name modversions.h -print` > .hdepend
+	scripts/mkdep -- `find $(FINDHPATH) \( -name SCCS -o -name .svn \) -prune -o -follow -name \*.h ! -name modversions.h -print` > .hdepend
 	$(MAKE) $(patsubst %,_sfdep_%,$(SUBDIRS)) _FASTDEP_ALL_SUB_DIRS="$(SUBDIRS)"
 ifdef CONFIG_MODVERSIONS
 	$(MAKE) update-modverfile

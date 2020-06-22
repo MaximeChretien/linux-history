@@ -273,8 +273,8 @@ extern int  nfs_scan_lru_read_timeout(struct nfs_server *, struct list_head *);
  * linux/fs/mount_clnt.c
  * (Used only by nfsroot module)
  */
-extern int  nfs_mount(struct sockaddr_in *, char *, struct nfs_fh *);
-extern int  nfs3_mount(struct sockaddr_in *, char *, struct nfs_fh *);
+extern int  nfsroot_mount(struct sockaddr_in *, char *, struct nfs_fh *,
+		int, int);
 
 /* linux/net/ipv4/ipconfig.c: trims ip addr off front of name, too. */
 extern u32 root_nfs_parse_addr(char *name); /*__init*/

@@ -88,7 +88,7 @@ symbol		=	value
 #define	PANIC(msg)                                      \
 		.set	push;				\
 		.set	reorder;                        \
-		la	a0,8f;                          \
+		PTR_LA	a0,8f;                          \
 		jal	panic;                          \
 9:		b	9b;                             \
 		.set	pop;				\
@@ -100,7 +100,7 @@ symbol		=	value
 #define PRINT(string)                                   \
 		.set	push;				\
 		.set	reorder;                        \
-		la	a0,8f;                          \
+		PTR_LA	a0,8f;                          \
 		jal	printk;                         \
 		.set	pop;				\
 		TEXT(string)
@@ -165,7 +165,7 @@ symbol		=	value
 		.set	push;				\
 		.set	reorder;			\
 		bnez	rt,9f;                          \
-		move	rd,rt;                          \
+		move	rd,rs;                          \
 		.set	pop;				\
 9:
 #endif /* _MIPS_ISA == _MIPS_ISA_MIPS1 */

@@ -39,7 +39,8 @@ extern int ibmphp_debug;
 #else
 	#define MY_NAME THIS_MODULE->name
 #endif
-#define debug(fmt, arg...) do { if (ibmphp_debug) printk(KERN_DEBUG "%s: " fmt , MY_NAME , ## arg); } while (0)
+#define debug(fmt, arg...) do { if (ibmphp_debug == 1) printk(KERN_DEBUG "%s: " fmt , MY_NAME , ## arg); } while (0)
+#define debug_pci(fmt, arg...) do { if (ibmphp_debug) printk(KERN_DEBUG "%s: " fmt , MY_NAME , ## arg); } while (0)
 #define err(format, arg...) printk(KERN_ERR "%s: " format , MY_NAME , ## arg)
 #define info(format, arg...) printk(KERN_INFO "%s: " format , MY_NAME , ## arg)
 #define warn(format, arg...) printk(KERN_WARNING "%s: " format , MY_NAME , ## arg)
@@ -121,6 +122,7 @@ struct scal_detail {
 	u8 port1_port_connect;
 	u8 port2_node_connect;
 	u8 port2_port_connect;
+	u8 chassis_num;
 //	struct list_head scal_detail_list;
 };
 
@@ -139,9 +141,27 @@ struct rio_detail {
 	u8 port1_port_connect;
 	u8 first_slot_num;
 	u8 status;
-//	struct list_head rio_detail_list;
+	u8 wpindex;
+	u8 chassis_num;
+	struct list_head rio_detail_list;
 };
 
+struct opt_rio {
+	u8 rio_type;
+	u8 chassis_num;
+	u8 first_slot_num;
+	u8 middle_num;
+	struct list_head opt_rio_list;
+};	
+
+struct opt_rio_lo {
+	u8 rio_type;
+	u8 chassis_num;
+	u8 first_slot_num;
+	u8 middle_num;
+	u8 pack_count;
+	struct list_head opt_rio_lo_list;
+};	
 
 /****************************************************************
 *  HPC DESCRIPTOR NODE                                          *
@@ -153,7 +173,6 @@ struct ebda_hpc_list {
 	short phys_addr;
 //      struct list_head ebda_hpc_list;
 };
-
 /*****************************************************************
 *   IN HPC DATA STRUCTURE, THE ASSOCIATED SLOT AND BUS           *
 *   STRUCTURE                                                    *
@@ -168,13 +187,11 @@ struct ebda_hpc_slot {
 
 struct ebda_hpc_bus {
 	u32 bus_num;
-/*
 	u8 slots_at_33_conv;
 	u8 slots_at_66_conv;
 	u8 slots_at_66_pcix;
 	u8 slots_at_100_pcix;
 	u8 slots_at_133_pcix;
-*/
 };
 
 
@@ -197,6 +214,9 @@ struct wpeg_i2c_ctlr_access {
 	u8 i2c_addr;
 };
 
+#define HPC_DEVICE_ID		0x0246
+#define HPC_SUBSYSTEM_ID	0x0247
+#define HPC_PCI_OFFSET		0x40
 /*************************************************************************
 *   RSTC DESCRIPTOR NODE                                                 *
 *************************************************************************/
@@ -217,8 +237,9 @@ struct ebda_pci_rsrc {
 	u8 rsrc_type;
 	u8 bus_num;
 	u8 dev_fun;
-	ulong start_addr;
-	ulong end_addr;
+	u32 start_addr;
+	u32 end_addr;
+	u8 marked;	/* for NVRAM */
 	struct list_head ebda_pci_rsrc_list;
 };
 
@@ -232,12 +253,15 @@ struct bus_info {
 	u8 slot_max;
 	u8 slot_count;
 	u8 busno;
-	u8 current_speed;
-	u8 supported_speed;
 	u8 controller_id;
-	u8 supported_bus_mode;
+	u8 current_speed;
 	u8 current_bus_mode;
 	u8 index;
+	u8 slots_at_33_conv;
+	u8 slots_at_66_conv;
+	u8 slots_at_66_pcix;
+	u8 slots_at_100_pcix;
+	u8 slots_at_133_pcix;
 	struct list_head bus_info_list;
 };
 
@@ -247,7 +271,7 @@ struct bus_info {
 ***********************************************************/
 extern struct list_head ibmphp_ebda_pci_rsrc_head;
 extern struct list_head ibmphp_slot_head;
-
+extern struct list_head ibmphp_res_head;
 /***********************************************************
 * FUNCTION PROTOTYPES                                      *
 ***********************************************************/
@@ -262,6 +286,7 @@ extern void ibmphp_free_ebda_pci_rsrc_queue (void);
 extern struct bus_info *ibmphp_find_same_bus_num (u32);
 extern int ibmphp_get_bus_index (u8);
 extern u16 ibmphp_get_total_controllers (void);
+extern int ibmphp_register_pci (void);
 
 /* passed parameters */
 #define MEM		0
@@ -690,8 +715,11 @@ struct slot {
 	u8 bus;
 	u8 device;
 	u8 number;
+	u8 real_physical_slot_num;
 	char name[100];
 	u32 capabilities;
+	u8 supported_speed;
+	u8 supported_bus_mode;
 	struct hotplug_slot *hotplug_slot;
 	struct controller *ctrl;
 	struct pci_func *func;
@@ -709,10 +737,13 @@ struct slot {
 struct controller {
 	struct ebda_hpc_slot *slots;
 	struct ebda_hpc_bus *buses;
+	struct pci_dev *ctrl_dev; /* in case where controller is PCI */
+	u8 starting_slot_num;	/* starting and ending slot #'s this ctrl controls*/
+	u8 ending_slot_num;
 	u8 revision;
 	u8 options;		/* which options HPC supports */
 	u8 status;
-	u8 ctlr_id;		/* TONI */
+	u8 ctlr_id;
 	u8 slot_count;
 	u8 bus_count;
 	u8 ctlr_relative_id;

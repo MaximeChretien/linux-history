@@ -43,35 +43,18 @@
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/gameport.h>
+#include <linux/pci_gameport.h>
 
 #define PCI_VENDOR_ID_AUREAL	0x12eb
 
 #define PCIGAME_DATA_WAIT	20	/* 20 ms */
 
-#define PCIGAME_4DWAVE		0
-#define PCIGAME_VORTEX		1
-#define PCIGAME_VORTEX2		2
 
-struct pcigame_data {
-	int gcr;	/* Gameport control register */
-	int legacy;	/* Legacy port location */
-	int axes;	/* Axes start */
-	int axsize;	/* Axis field size */
-	int axmax;	/* Axis field max value */
-	int adcmode;	/* Value to enable ADC mode in GCR */
-};
-
-static struct pcigame_data pcigame_data[] __devinitdata =
-{{ 0x00030, 0x00031, 0x00034, 2, 0xffff, 0x80 },
- { 0x1100c, 0x11008, 0x11010, 4, 0x1fff, 0x40 },
- { 0x2880c, 0x28808, 0x28810, 4, 0x1fff, 0x40 },
- { 0 }};
-
-struct pcigame {
-	struct gameport gameport;
-	struct pci_dev *dev;
-        unsigned char *base;
-	struct pcigame_data *data;
+static struct pcigame_data pcigame_data[] __devinitdata = {
+	{ 0x00030, 0x00031, 0x00034, 2, 0xffff, 0x80 },
+	{ 0x1100c, 0x11008, 0x11010, 4, 0x1fff, 0x40 },
+	{ 0x2880c, 0x28808, 0x28810, 4, 0x1fff, 0x40 },
+	{ 0 }
 };
 
 static unsigned char pcigame_read(struct gameport *gameport)
@@ -120,20 +103,19 @@ static int pcigame_open(struct gameport *gameport, int mode)
 	return 0;
 }
 
-static int __devinit pcigame_probe(struct pci_dev *dev, const struct pci_device_id *id)
+struct pcigame *pcigame_attach(struct pci_dev *dev, int type)
 {
 	struct pcigame *pcigame;
 	int i;
 
 	if (!(pcigame = kmalloc(sizeof(struct pcigame), GFP_KERNEL)))
-		return -1;
+		return NULL;
         memset(pcigame, 0, sizeof(struct pcigame));
 
 
-	pcigame->data = pcigame_data + id->driver_data;
+	pcigame->data = pcigame_data + type;
 
 	pcigame->dev = dev;
-	pci_set_drvdata(dev, pcigame);
 
 	pcigame->gameport.driver = pcigame;
 	pcigame->gameport.fuzz = 64;
@@ -146,6 +128,8 @@ static int __devinit pcigame_probe(struct pci_dev *dev, const struct pci_device_
 	for (i = 0; i < 6; i++)
 		if (~pci_resource_flags(dev, i) & IORESOURCE_IO)
 			break;
+	if(i==6)
+		return NULL;
 
 	pci_enable_device(dev);
 
@@ -158,20 +142,46 @@ static int __devinit pcigame_probe(struct pci_dev *dev, const struct pci_device_
 		pcigame->gameport.number, dev->name, dev->bus->number,
 			PCI_SLOT(dev->devfn), PCI_FUNC(dev->devfn), pcigame->gameport.speed);
 
+	return pcigame;
+}
+
+EXPORT_SYMBOL_GPL(pcigame_attach);
+
+
+void pcigame_detach(struct pcigame *game)
+{
+	gameport_unregister_port(&game->gameport);
+	iounmap(game->base);
+	kfree(game);
+}
+
+EXPORT_SYMBOL_GPL(pcigame_detach);
+
+static __devinit int pcigame_probe(struct pci_dev *dev, const struct pci_device_id *id)
+{
+	struct pcigame *r = pcigame_attach(dev, id->driver_data);
+	if(r == NULL)
+		return -1;
+	pci_set_drvdata(dev, r);
 	return 0;
 }
 
 static void __devexit pcigame_remove(struct pci_dev *dev)
 {
 	struct pcigame *pcigame = pci_get_drvdata(dev);
-	gameport_unregister_port(&pcigame->gameport);
-	iounmap(pcigame->base);
-	kfree(pcigame);
+	pcigame_detach(pcigame);
 }
 
+
 static struct pci_device_id pcigame_id_table[] __devinitdata =
-{{ PCI_VENDOR_ID_TRIDENT, 0x2000, PCI_ANY_ID, PCI_ANY_ID, 0, 0, PCIGAME_4DWAVE  },
+{
+/* If the trident is configured in audio grabs it and we get called by
+   that */
+#if !defined(CONFIG_SOUND_TRIDENT) && !defined(CONFIG_SOUND_TRIDENT_MODULE)
+ { PCI_VENDOR_ID_TRIDENT, 0x2000, PCI_ANY_ID, PCI_ANY_ID, 0, 0, PCIGAME_4DWAVE  },
  { PCI_VENDOR_ID_TRIDENT, 0x2001, PCI_ANY_ID, PCI_ANY_ID, 0, 0, PCIGAME_4DWAVE  },
+ { PCI_VENDOR_ID_AL,      0x5451, PCI_ANY_ID, PCI_ANY_ID, 0, 0, PCIGAME_4DWAVE  },
+#endif 
  { PCI_VENDOR_ID_AUREAL,  0x0001, PCI_ANY_ID, PCI_ANY_ID, 0, 0, PCIGAME_VORTEX  },
  { PCI_VENDOR_ID_AUREAL,  0x0002, PCI_ANY_ID, PCI_ANY_ID, 0, 0, PCIGAME_VORTEX2 },
  { 0 }};
@@ -185,7 +195,9 @@ static struct pci_driver pcigame_driver = {
 
 int __init pcigame_init(void)
 {
-	return pci_module_init(&pcigame_driver);
+	pci_module_init(&pcigame_driver);
+	/* Needed by other modules */
+	return 0;
 }
 
 void __exit pcigame_exit(void)

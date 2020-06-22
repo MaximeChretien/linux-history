@@ -2,7 +2,7 @@
  * BK Id: SCCS/s.head.S 1.13 01/11/02 10:46:07 trini
  */
 
-#include "ppc_asm.h"
+#include <asm/ppc_asm.h>
 #include <asm/processor.h>
 #include <asm/cache.h>
 

@@ -84,8 +84,7 @@ struct paca_struct {
 	u8 xSegments[STAB_CACHE_SIZE];	/* Cache of used stab entries		0x68,0x70 */
 	u8 xProcEnabled;		/* 1=soft enabled			0x78 */
 	u8 xHrdIntCount;		/* Count of active hardware interrupts  0x79  */
-	u8 prof_enabled;		/* 1=iSeries profiling enabled          0x7A */
-	u8 resv1[5];			/*					0x7B-0x7F */
+	u8 resv1[6];			/*					0x7B-0x7F */
 
 /*=====================================================================================
  * CACHE_LINE_2 0x0080 - 0x00FF
@@ -97,13 +96,7 @@ struct paca_struct {
 	u64 pgtable_cache_sz;		/*					0x18 */
 	u64 next_jiffy_update_tb;	/* TB value for next jiffy update	0x20 */
 	u32 lpEvent_count;		/* lpEvents processed			0x28 */
-	u32 prof_multiplier;		/*					0x2C */
-	u32 prof_counter;		/*					0x30 */
-	u32 prof_shift;			/* iSeries shift for profile bucket size0x34 */
-	u32 *prof_buffer;		/* iSeries profiling buffer		0x38 */
-	u32 *prof_stext;		/* iSeries start of kernel text		0x40 */
-	u32 prof_len;			/* iSeries length of profile buffer -1	0x48 */
-	u8  rsvd2[128-76];		/*					0x4C */
+	u8  rsvd2[128-5*8-1*4];		/*					0x68 */
 
 /*=====================================================================================
  * CACHE_LINE_3 0x0100 - 0x017F
@@ -135,10 +128,29 @@ struct paca_struct {
 	u8 rsvd5[256-16-sizeof(struct rtas_args)];
 
 /*=====================================================================================
- * CACHE_LINE_19-30 0x0800 - 0x0EFF Reserved
+ * CACHE_LINE_19 - 20 Profile Data
  *=====================================================================================
  */
-	u8 rsvd6[0x600];
+	u32 pmc[12];                    /* Default pmc value		*/	
+	u64 pmcc[8];                    /* Cumulative pmc counts        */
+	u64 rsvd5a[2];
+
+	u32 prof_multiplier;		/*					 */
+	u32 prof_shift;			/* iSeries shift for profile bucket size */
+	u32 *prof_buffer;		/* iSeries profiling buffer		 */
+	u32 *prof_stext;		/* iSeries start of kernel text		 */
+	u32 *prof_etext;		/* iSeries start of kernel text		 */
+	u32 prof_len;			/* iSeries length of profile buffer -1	 */
+	u8  prof_mode;                  /* */
+	u8  rsvv5b[3];
+	u64 prof_counter;		/*					 */
+	u8  rsvd5c[128-8*6];
+
+/*=====================================================================================
+ * CACHE_LINE_20-30
+ *=====================================================================================
+ */
+	u8 rsvd6[0x500];
 
 /*=====================================================================================
  * CACHE_LINE_31 0x0F00 - 0x0F7F Exception stack

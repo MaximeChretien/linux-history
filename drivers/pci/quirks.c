@@ -471,6 +471,29 @@ static void __init quirk_dunord ( struct pci_dev * dev )
 	r -> end = 0xffffff;
 }
 
+static void __init quirk_transparent_bridge(struct pci_dev *dev)
+{
+	dev->transparent = 1;
+}
+
+/*
+ * Common misconfiguration of the MediaGX/Geode PCI master that will
+ * reduce PCI bandwidth from 70MB/s to 25MB/s.  See the GXM/GXLV/GX1
+ * datasheets found at http://www.national.com/ds/GX for info on what
+ * these bits do.  <christer@weinigel.se>
+ */
+ 
+static void __init quirk_mediagx_master(struct pci_dev *dev)
+{
+	u8 reg;
+	pci_read_config_byte(dev, 0x41, &reg);
+	if (reg & 2) {
+		reg &= ~2;
+		printk(KERN_INFO "PCI: Fixup for MediaGX/Geode Slave Disconnect Boundary (0x41=0x%02x)\n", reg);
+                pci_write_config_byte(dev, 0x41, reg);
+	}
+}
+
 /*
  *  The main table of quirks.
  */
@@ -525,6 +548,15 @@ static struct pci_fixup pci_fixups[] __initdata = {
 
 	{ PCI_FIXUP_FINAL, 	PCI_VENDOR_ID_AMD,	PCI_DEVICE_ID_AMD_VIPER_7410,	quirk_amd_ioapic },
 	{ PCI_FIXUP_FINAL,	PCI_VENDOR_ID_AMD,	PCI_DEVICE_ID_AMD_FE_GATE_700C, quirk_amd_ordering },
+	/*
+	 * i82380FB mobile docking controller: its PCI-to-PCI bridge
+	 * is subtractive decoding (transparent), and does indicate this
+	 * in the ProgIf. Unfortunately, the ProgIf value is wrong - 0x80
+	 * instead of 0x01.
+	 */
+	{ PCI_FIXUP_HEADER,	PCI_VENDOR_ID_INTEL,	PCI_DEVICE_ID_INTEL_82380FB,	quirk_transparent_bridge },
+
+	{ PCI_FIXUP_FINAL,	PCI_VENDOR_ID_CYRIX,	PCI_DEVICE_ID_CYRIX_PCI_MASTER, quirk_mediagx_master },
 
 	{ 0 }
 };

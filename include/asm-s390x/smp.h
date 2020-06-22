@@ -64,7 +64,5 @@ extern __inline__ __u16 hard_smp_processor_id(void)
 
 #define cpu_logical_map(cpu) (cpu)
 
-void smp_local_timer_interrupt(struct pt_regs * regs);
-
 #endif
 #endif

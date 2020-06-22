@@ -20,6 +20,8 @@
  *
  *	(c) Copyright 1995    Alan Cox <alan@redhat.com>
  *
+ *	14-Dec-2001 Matt Domsch <Matt_Domsch@dell.com>
+ *	    Added nowayout module option to override CONFIG_WATCHDOG_NOWAYOUT
  */
 
 #include <linux/config.h>
@@ -56,6 +58,15 @@ static int wdt_stop = 0x443;
 static int wdt_start = 0x443;
 
 static int wd_margin = 60; /* 60 sec default timeout */
+
+#ifdef CONFIG_WATCHDOG_NOWAYOUT
+static int nowayout = 1;
+#else
+static int nowayout = 0;
+#endif
+
+MODULE_PARM(nowayout,"i");
+MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default=CONFIG_WATCHDOG_NOWAYOUT)");
 
 /*
  *	Kernel methods.
@@ -108,17 +119,20 @@ advwdt_write(struct file *file, const char *buf, size_t count, loff_t *ppos)
 		return -ESPIPE;
 
 	if (count) {
-#ifndef CONFIG_WATCHDOG_NOWAYOUT
-		size_t i;
+		if (!nowayout) {
+			size_t i;
 
-		adv_expect_close = 0;
-
-		for (i = 0; i != count; i++) {
-			if (buf[i] == 'V')
-				adv_expect_close = 42;
+			adv_expect_close = 0;
+	
+			for (i = 0; i != count; i++) {
+				char c;
+				if(get_user(c, buf+i))
+					return -EFAULT;
+				if (c == 'V')
+					adv_expect_close = 42;
+			}
 		}
-#endif
-		advwdt_ping();
+			advwdt_ping();
 	}
 	return count;
 }
@@ -129,7 +143,7 @@ advwdt_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 {
 	int new_margin;
 	static struct watchdog_info ident = {
-		options:		WDIOF_KEEPALIVEPING | WDIOF_SETTIMEOUT,
+		options:		WDIOF_KEEPALIVEPING | WDIOF_SETTIMEOUT | WDIOF_MAGICCLOSE,
 		firmware_version:	0,
 		identity:		"Advantech WDT"
 	};

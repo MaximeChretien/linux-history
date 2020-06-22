@@ -66,15 +66,6 @@ unsigned int csum_tcpudp_nofold(unsigned long saddr,
 extern unsigned long do_csum (const unsigned char *, long);
 
 /*
- *	This is a version of ip_compute_csum() optimized for IP headers,
- *	which always checksum on 4 octet boundaries.
- */
-unsigned short ip_fast_csum(unsigned char * iph, unsigned int ihl)
-{
-	return ~do_csum(iph, ihl*4);
-}
-
-/*
  * computes the checksum of a memory block at buff, length len,
  * and adds in "sum" (32-bit)
  *

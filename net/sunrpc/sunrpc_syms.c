@@ -50,6 +50,7 @@ EXPORT_SYMBOL(rpc_clnt_sigmask);
 EXPORT_SYMBOL(rpc_clnt_sigunmask);
 EXPORT_SYMBOL(rpc_delay);
 EXPORT_SYMBOL(rpc_restart_call);
+EXPORT_SYMBOL(rpc_setbufsize);
 
 /* Client transport */
 EXPORT_SYMBOL(xprt_create_proto);
@@ -77,6 +78,7 @@ EXPORT_SYMBOL(svc_process);
 EXPORT_SYMBOL(svc_recv);
 EXPORT_SYMBOL(svc_wake_up);
 EXPORT_SYMBOL(svc_makesock);
+EXPORT_SYMBOL(svc_reserve);
 
 /* RPC statistics */
 #ifdef CONFIG_PROC_FS
@@ -95,8 +97,9 @@ EXPORT_SYMBOL(xdr_decode_string);
 EXPORT_SYMBOL(xdr_decode_string_inplace);
 EXPORT_SYMBOL(xdr_decode_netobj);
 EXPORT_SYMBOL(xdr_encode_netobj);
-EXPORT_SYMBOL(xdr_shift_iovec);
-EXPORT_SYMBOL(xdr_zero_iovec);
+EXPORT_SYMBOL(xdr_encode_pages);
+EXPORT_SYMBOL(xdr_inline_pages);
+EXPORT_SYMBOL(xdr_shift_buf);
 
 /* Debugging symbols */
 #ifdef RPC_DEBUG

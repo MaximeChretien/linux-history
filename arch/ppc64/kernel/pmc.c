@@ -31,7 +31,7 @@
 
 #include <linux/proc_fs.h>
 #include <linux/spinlock.h>
-#include <linux/malloc.h>
+#include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <asm/pmc.h>
 #include <asm/uaccess.h>
@@ -39,6 +39,10 @@
 #include <asm/pgalloc.h>
 #include <asm/pgtable.h>
 #include <asm/mmu_context.h>
+#include <asm/page.h>
+#include <asm/machdep.h>
+#include <asm/lmb.h>
+#include <asm/abs_addr.h>
 #include <asm/ppcdebug.h>
 
 struct _pmc_sw pmc_sw_system = {
@@ -68,6 +72,8 @@ pgd_t *bolted_pgd  = (pgd_t *)&bolted_dir;
 struct vm_struct *btmlist = NULL;
 struct mm_struct btmalloc_mm = {pgd             : bolted_dir,
                                 page_table_lock : SPIN_LOCK_UNLOCKED};
+
+extern spinlock_t hash_table_lock;
 
 char *
 ppc64_pmc_stab(int file)
@@ -204,15 +210,16 @@ ppc64_pmc_hw(int file)
 void* btmalloc (unsigned long size) {
 	pgd_t *pgdp;
 	pmd_t *pmdp;
-	pte_t *ptep;
-	unsigned long ea_base, ea;
+	pte_t *ptep, pte;
+	unsigned long ea_base, ea, hpteflags;
 	struct vm_struct *area;
-	unsigned long pa, pg_count, page, vsid;
+	unsigned long pa, pg_count, page, vsid, slot, va, arpn, vpn;
   
 	size = PAGE_ALIGN(size);
 	if (!size || (size >> PAGE_SHIFT) > num_physpages) return NULL;
 
 	spin_lock(&btmalloc_mm.page_table_lock);
+	spin_lock(&hash_table_lock);
 
 	/* Get a virtual address region in the bolted space */
 	area = get_btm_area(size, 0);
@@ -228,6 +235,10 @@ void* btmalloc (unsigned long size) {
 	for(page = 0; page < pg_count; page++) {
 		pa = get_free_page(GFP_KERNEL) - PAGE_OFFSET; 
 		ea = ea_base + (page * PAGE_SIZE);
+		vsid = get_kernel_vsid(ea);
+		va = ( vsid << 28 ) | ( pa & 0xfffffff );
+		vpn = va >> PAGE_SHIFT;
+		arpn = ((unsigned long)__v2a(ea)) >> PAGE_SHIFT;
 
 		/* Get a pointer to the linux page table entry for this page
 		 * allocating pmd or pte pages along the way as needed.  Note
@@ -236,15 +247,23 @@ void* btmalloc (unsigned long size) {
 		pgdp = pgd_offset_b(ea);
 		pmdp = pmd_alloc(&btmalloc_mm, pgdp, ea);
 		ptep = pte_alloc(&btmalloc_mm, pmdp, ea);
+		pte = *ptep;
 
 		/* Clear any old hpte and set the new linux pte */
 		set_pte(ptep, mk_pte_phys(pa & PAGE_MASK, PAGE_KERNEL));
 
-		vsid = get_kernel_vsid(ea);
-		build_valid_hpte(vsid, ea, pa, ptep, 
-				  _PAGE_ACCESSED|_PAGE_COHERENT|PP_RWXX, 1);
+		hpteflags = _PAGE_ACCESSED|_PAGE_COHERENT|PP_RWXX;
+
+		pte_val(pte) &= ~_PAGE_HPTEFLAGS;
+		pte_val(pte) |= _PAGE_HASHPTE;
+
+		slot = ppc_md.hpte_insert(vpn, arpn, hpteflags, 1, 0);  
+
+		pte_val(pte) |= ((slot<<12) & 
+				 (_PAGE_GROUP_IX | _PAGE_SECONDARY));
 	}
 
+	spin_unlock(&hash_table_lock);
 	spin_unlock(&btmalloc_mm.page_table_lock);
 	return (void*)ea_base;
 }

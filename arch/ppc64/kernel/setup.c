@@ -21,6 +21,8 @@
 #include <linux/ide.h>
 #include <linux/seq_file.h>
 #include <linux/ioport.h>
+#include <linux/console.h>
+#include <linux/version.h>
 #include <asm/init.h>
 #include <asm/io.h>
 #include <asm/prom.h>
@@ -40,6 +42,7 @@ extern unsigned long klimit;
 /* extern void *stab; */
 extern HTAB htab_data;
 extern unsigned long loops_per_jiffy;
+extern int preferred_console;	/* from kernel/printk.c */
 
 extern unsigned long embedded_sysmap_start;
 extern unsigned long embedded_sysmap_end;
@@ -66,6 +69,10 @@ unsigned long decr_overclock_proc0_set = 0;
 
 #ifdef CONFIG_XMON
 extern void xmon_map_scc(void);
+#endif
+
+#ifdef CONFIG_KDB
+extern void kdb_map_scc(void);
 #endif
 
 char saved_command_line[256];
@@ -109,15 +116,12 @@ int dcache_bsize;
 int icache_bsize;
 int ucache_bsize;
 
-/*
- * Initialize the PPCDBG state.  Called before relocation has been enabled.
- */
-void ppcdbg_initialize(void) {
-	unsigned long offset = reloc_offset();
-	struct naca_struct *_naca = RELOC(naca);
-
-	_naca->debug_switch = PPC_DEBUG_DEFAULT; /* | PPCDBG_BUSWALK | PPCDBG_PHBINIT | PPCDBG_MM | PPCDBG_MMINIT | PPCDBG_TCEINIT | PPCDBG_TCE */;
-}
+static struct console udbg_console = {
+	name:	"udbg",
+	write:	udbg_console_write,
+	flags:	CON_PRINTBUFFER,
+	index:	-1,
+};
 
 /*
  * Do some initial setup of the system.  The paramters are those which 
@@ -157,66 +161,29 @@ void setup_system(unsigned long r3, unsigned long r4, unsigned long r5,
 #endif
 	}
 
-	udbg_puts("\n-----------------------------------------------------\n");
-	udbg_puts("Naca Info...\n\n");
-	udbg_puts("naca                       = 0x");
-	udbg_puthex((unsigned long)naca);
-	udbg_putc('\n');
+	if (naca->platform & PLATFORM_PSERIES) {
+		register_console(&udbg_console);
+		preferred_console = -1;
+	}
 
-	udbg_puts("naca->processorCount       = 0x");
-	udbg_puthex(naca->processorCount);
-	udbg_putc('\n');
+	printk("Starting Linux PPC64 %s\n", UTS_RELEASE);
 
-	udbg_puts("naca->physicalMemorySize   = 0x");
-	udbg_puthex(naca->physicalMemorySize);
-	udbg_putc('\n');
-
-	udbg_puts("naca->dCacheL1LineSize     = 0x");
-	udbg_puthex(naca->dCacheL1LineSize);
-	udbg_putc('\n');
-
-	udbg_puts("naca->dCacheL1LogLineSize  = 0x");
-	udbg_puthex(naca->dCacheL1LogLineSize);
-	udbg_putc('\n');
-
-	udbg_puts("naca->dCacheL1LinesPerPage = 0x");
-	udbg_puthex(naca->dCacheL1LinesPerPage);
-	udbg_putc('\n');
-
-	udbg_puts("naca->iCacheL1LineSize     = 0x");
-	udbg_puthex(naca->iCacheL1LineSize);
-	udbg_putc('\n');
-
-	udbg_puts("naca->iCacheL1LogLineSize  = 0x");
-	udbg_puthex(naca->iCacheL1LogLineSize);
-	udbg_putc('\n');
-
-	udbg_puts("naca->iCacheL1LinesPerPage = 0x");
-	udbg_puthex(naca->iCacheL1LinesPerPage);
-	udbg_putc('\n');
-
-	udbg_puts("naca->pftSize              = 0x");
-	udbg_puthex(naca->pftSize);
-	udbg_putc('\n');
-
-	udbg_puts("naca->serialPortAddr       = 0x");
-	udbg_puthex(naca->serialPortAddr);
-	udbg_putc('\n');
-
-	udbg_puts("naca->interrupt_controller = 0x");
-	udbg_puthex(naca->interrupt_controller);
-	udbg_putc('\n');
-
-	udbg_printf("\nHTAB Info ...\n\n"); 
-	udbg_puts("htab_data.htab             = 0x");
-	udbg_puthex((unsigned long)htab_data.htab);
-	udbg_putc('\n');
-	udbg_puts("htab_data.num_ptegs        = 0x");
-	udbg_puthex(htab_data.htab_num_ptegs);
-	udbg_putc('\n');
-
-	udbg_puts("\n-----------------------------------------------------\n");
-
+	printk("-----------------------------------------------------\n");
+	printk("naca                       = 0x%p\n", naca);
+	printk("naca->processorCount       = 0x%x\n", naca->processorCount);
+	printk("naca->physicalMemorySize   = 0x%lx\n", naca->physicalMemorySize);
+	printk("naca->dCacheL1LineSize     = 0x%x\n", naca->dCacheL1LineSize);
+	printk("naca->dCacheL1LogLineSize  = 0x%x\n", naca->dCacheL1LogLineSize);
+	printk("naca->dCacheL1LinesPerPage = 0x%x\n", naca->dCacheL1LinesPerPage);
+	printk("naca->iCacheL1LineSize     = 0x%x\n", naca->iCacheL1LineSize);
+	printk("naca->iCacheL1LogLineSize  = 0x%x\n", naca->iCacheL1LogLineSize);
+	printk("naca->iCacheL1LinesPerPage = 0x%x\n", naca->iCacheL1LinesPerPage);
+	printk("naca->pftSize              = 0x%lx\n", naca->pftSize);
+	printk("naca->debug_switch         = 0x%lx\n", naca->debug_switch);
+	printk("naca->interrupt_controller = 0x%lx\n", naca->interrupt_controller);
+	printk("htab_data.htab             = 0x%p\n", htab_data.htab);
+	printk("htab_data.num_ptegs        = 0x%lx\n", htab_data.htab_num_ptegs);
+	printk("-----------------------------------------------------\n");
 
 	if (naca->platform & PLATFORM_PSERIES) {
 		finish_device_tree();
@@ -226,13 +193,27 @@ void setup_system(unsigned long r3, unsigned long r4, unsigned long r5,
 	mm_init_ppc64();
 
 	switch (naca->platform) {
-	case PLATFORM_ISERIES_LPAR:
+	    case PLATFORM_ISERIES_LPAR:
 		iSeries_init();
 		break;
-	default:
+	    default:
 		/* The following relies on the device tree being */
 		/* fully configured.                             */
 		parse_cmd_line(r3, r4, r5, r6, r7);
+	}
+	ppc64_boot_msg(0x10, "Setup System");
+}
+
+/* This is called just before console_init().
+ * It will be obsolete when Linux gets real early console support (2.5?)
+ * We need to hack preferred_console to retain the correct behavior
+ */
+void setup_before_console_init(void)
+{
+	if (naca->platform & PLATFORM_PSERIES) {
+		int save = preferred_console;
+		unregister_console(&udbg_console);
+		preferred_console = save;
 	}
 }
 
@@ -284,6 +265,9 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	pvr = paca[cpu_id].pvr;
 
 	switch (PVR_VER(pvr)) {
+	case PV_NORTHSTAR:
+		seq_printf(m, "RS64-II (northstar)\n");
+		break;
 	case PV_PULSAR:
 		seq_printf(m, "RS64-III (pulsar)\n");
 		break;
@@ -301,6 +285,9 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 		break;
 	case PV_630p:
 		seq_printf(m, "POWER3 (630+)\n");
+		break;
+	case PV_POWER4p:
+		seq_printf(m, "POWER4+ (gq)\n");
 		break;
 	default:
 		seq_printf(m, "Unknown (%08x)\n", pvr);
@@ -328,7 +315,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	if (ppc_md.setup_residual != NULL)
 		ppc_md.setup_residual(m, cpu_id);
 
-	seq_printf(m, "revision\t: %hd.%hd\n", maj, min);
+	seq_printf(m, "revision\t: %hd.%hd\n\n", maj, min);
 	
 	return 0;
 }
@@ -369,18 +356,9 @@ void parse_cmd_line(unsigned long r3, unsigned long r4, unsigned long r5,
 	}
 #endif
 
-	cmd_line[0] = 0;
-	chosen = find_devices("chosen");
-	if (chosen != NULL) {
-		p = get_property(chosen, "bootargs", NULL);
-		if (p != NULL)
-			strncpy(cmd_line, p, sizeof(cmd_line));
-	}
-	cmd_line[sizeof(cmd_line) - 1] = 0;
-
 	/* Look for mem= option on command line */
 	if (strstr(cmd_line, "mem=")) {
-		char *p, *q;
+		char *q;
 		unsigned long maxmem = 0;
 		extern unsigned long __max_memory;
 
@@ -399,7 +377,6 @@ void parse_cmd_line(unsigned long r3, unsigned long r4, unsigned long r5,
 		}
 		__max_memory = maxmem;
 	}
-	ppc_md.progress("id mach: done", 0x200);
 }
 
 
@@ -477,7 +454,6 @@ void __init ppc64_calibrate_delay(void)
 	printk("Calibrating delay loop... %lu.%02lu BogoMips\n",
 			       loops_per_jiffy/(500000/HZ),
 			       loops_per_jiffy/(5000/HZ) % 100);
-
 }	
 
 extern void (*calibrate_delay)(void);
@@ -495,15 +471,18 @@ void __init setup_arch(char **cmdline_p)
 
 	calibrate_delay = ppc64_calibrate_delay;
 
+	ppc64_boot_msg(0x12, "Setup Arch");
 #ifdef CONFIG_XMON
 	xmon_map_scc();
 	if (strstr(cmd_line, "xmon"))
 		xmon(0);
 #endif /* CONFIG_XMON */
+
 #ifdef CONFIG_KDB
-	xmon_map_scc();	/* in kdb/start.c --need to rename TAI */
+	kdb_map_scc();	
+	if (strstr(cmd_line, "kdb=early"))
+		kdb(KDB_REASON_CALL,0,0);
 #endif
-	ppc_md.progress("setup_arch:enter", 0x3eab);
 
 #if defined(CONFIG_KGDB)
 	kgdb_map_scc();
@@ -532,12 +511,11 @@ void __init setup_arch(char **cmdline_p)
 
 	/* set up the bootmem stuff with available memory */
 	do_init_bootmem();
-	ppc_md.progress("setup_arch:bootmem", 0x3eab);
 
 	ppc_md.setup_arch();
 
 	paging_init();
-	ppc_md.progress("setup_arch: exit", 0x3eab);
+	ppc64_boot_msg(0x15, "Setup Done");
 }
 
 #ifdef CONFIG_IDE
@@ -637,6 +615,53 @@ void ppc64_ide_fix_driveid(struct hd_driveid *id)
 	id->integrity_word=__le16_to_cpu(id->integrity_word);
 }
 #endif
+
+/* ToDo: do something useful if ppc_md is not yet setup. */
+#define PPC64_LINUX_FUNCTION 0x0f000000
+#define PPC64_IPL_MESSAGE 0xc0000000
+#define PPC64_TERM_MESSAGE 0xb0000000
+#define PPC64_ATTN_MESSAGE 0xa0000000
+#define PPC64_DUMP_MESSAGE 0xd0000000
+
+static void ppc64_do_msg(unsigned int src, const char *msg)
+{
+	if (ppc_md.progress) {
+		char buf[32];
+
+		sprintf(buf, "%08x        \n", src);
+		ppc_md.progress(buf, 0);
+		sprintf(buf, "%-16s", msg);
+		ppc_md.progress(buf, 0);
+	}
+}
+
+/* Print a boot progress message. */
+void ppc64_boot_msg(unsigned int src, const char *msg)
+{
+	ppc64_do_msg(PPC64_LINUX_FUNCTION|PPC64_IPL_MESSAGE|src, msg);
+	printk("[boot]%04x %s\n", src, msg);
+}
+
+/* Print a termination message (print only -- does not stop the kernel) */
+void ppc64_terminate_msg(unsigned int src, const char *msg)
+{
+	ppc64_do_msg(PPC64_LINUX_FUNCTION|PPC64_TERM_MESSAGE|src, msg);
+	printk("[terminate]%04x %s\n", src, msg);
+}
+
+/* Print something that needs attention (device error, etc) */
+void ppc64_attention_msg(unsigned int src, const char *msg)
+{
+	ppc64_do_msg(PPC64_LINUX_FUNCTION|PPC64_ATTN_MESSAGE|src, msg);
+	printk("[attention]%04x %s\n", src, msg);
+}
+
+/* Print a dump progress message. */
+void ppc64_dump_msg(unsigned int src, const char *msg)
+{
+	ppc64_do_msg(PPC64_LINUX_FUNCTION|PPC64_DUMP_MESSAGE|src, msg);
+	printk("[dump]%04x %s\n", src, msg);
+}
 
 
 void exception_trace(unsigned long trap)

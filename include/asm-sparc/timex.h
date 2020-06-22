@@ -17,4 +17,7 @@ typedef unsigned long cycles_t;
 extern cycles_t cacheflush_time;
 #define get_cycles()	(0)
 
+#define vxtime_lock()		do {} while (0)
+#define vxtime_unlock()		do {} while (0)
+
 #endif

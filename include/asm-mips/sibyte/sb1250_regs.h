@@ -1,23 +1,23 @@
 /*  *********************************************************************
     *  SB1250 Board Support Package
-    *  
+    *
     *  Register Definitions                     File: sb1250_regs.h
-    *  
+    *
     *  This module contains the addresses of the on-chip peripherals
     *  on the SB1250.
-    *  
-    *  SB1250 specification level:  0.2
-    *  
-    *  Author:  Mitch Lichtenberg (mitch@sibyte.com)
-    *  
-    *********************************************************************  
+    *
+    *  SB1250 specification level:  01/02/2002
+    *
+    *  Author:  Mitch Lichtenberg (mpl@broadcom.com)
+    *
+    *********************************************************************
     *
     *  Copyright 2000,2001
     *  Broadcom Corporation. All rights reserved.
-    *  
-    *  This program is free software; you can redistribute it and/or 
-    *  modify it under the terms of the GNU General Public License as 
-    *  published by the Free Software Foundation; either version 2 of 
+    *
+    *  This program is free software; you can redistribute it and/or
+    *  modify it under the terms of the GNU General Public License as
+    *  published by the Free Software Foundation; either version 2 of
     *  the License, or (at your option) any later version.
     *
     *  This program is distributed in the hope that it will be useful,
@@ -27,7 +27,7 @@
     *
     *  You should have received a copy of the GNU General Public License
     *  along with this program; if not, write to the Free Software
-    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, 
+    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston,
     *  MA 02111-1307 USA
     ********************************************************************* */
 
@@ -40,20 +40,20 @@
 
 /*  *********************************************************************
     *  Some general notes:
-    *  
+    *
     *  For the most part, when there is more than one peripheral
     *  of the same type on the SOC, the constants below will be
     *  offsets from the base of each peripheral.  For example,
     *  the MAC registers are described as offsets from the first
     *  MAC register, and there will be a MAC_REGISTER() macro
-    *  to calculate the base address of a given MAC.  
-    *  
+    *  to calculate the base address of a given MAC.
+    *
     *  The information in this file is based on the SB1250 SOC
     *  manual version 0.2, July 2000.
     ********************************************************************* */
 
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * Memory Controller Registers
     ********************************************************************* */
 
@@ -97,7 +97,7 @@
 #define R_MC_TEST_ECC               0x0000000420
 #define R_MC_MCLK_CFG               0x0000000500
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * L2 Cache Control Registers
     ********************************************************************* */
 
@@ -107,7 +107,12 @@
 #define A_L2_MAKEDISABLE(x)         (A_L2_WAY_DISABLE | (((~(x))&0x0F) << 8))
 #define A_L2_MGMT_TAG_BASE          0x00D0000000
 
-/*  ********************************************************************* 
+#define A_L2_CACHE_DISABLE	   0x0010042000	/* PASS2 */
+#define A_L2_MAKECACHEDISABLE(x)   (A_L2_CACHE_DISABLE | (((x)&0x0F) << 8))	/* PASS2 */
+#define A_L2_MISC_CONFIG	   0x0010043000	/* PASS2 */
+
+
+/*  *********************************************************************
     * PCI Interface Registers
     ********************************************************************* */
 
@@ -115,7 +120,7 @@
 #define A_PCI_TYPE01_HEADER         0x00DE000800
 
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * Ethernet DMA and MACs
     ********************************************************************* */
 
@@ -162,7 +167,7 @@
             (R_MAC_DMA_CHANNEL_BASE(txrx,chan) +    \
             (reg))
 
-/* 
+/*
  * DMA channel registers, relative to A_MAC_DMA_CHANNEL_BASE
  */
 
@@ -220,6 +225,7 @@
 #define R_MAC_INT_MASK                  0x00000410
 #define R_MAC_TXD_CTL                   0x00000420
 #define R_MAC_MDIO                      0x00000428
+#define R_MAC_STATUS1		        0x00000430	/* PASS2 */
 #define R_MAC_DEBUG_STATUS              0x00000448
 
 #define MAC_HASH_COUNT			8
@@ -227,7 +233,7 @@
 #define MAC_CHMAP_COUNT			4
 
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * DUART Registers
     ********************************************************************* */
 
@@ -249,6 +255,11 @@
 #define R_DUART_CMD                 0x150
 #define R_DUART_RX_HOLD             0x160
 #define R_DUART_TX_HOLD             0x170
+
+#define R_DUART_FULL_CTL	    0x140	/* PASS2 */
+#define R_DUART_OPCR_X		    0x180	/* PASS2 */
+#define R_DUART_AUXCTL_X	    0x190	/* PASS2 */
+
 
 /*
  * The IMR and ISR can't be addressed with A_DUART_CHANREG,
@@ -310,7 +321,16 @@
 #define A_DUART_INPORT_CHNG_A       0x00100603D0
 #define A_DUART_INPORT_CHNG_B       0x00100603E0
 
-/*  ********************************************************************* 
+#define A_DUART_FULL_CTL_A	    0x0010060140	/* PASS2 */
+#define A_DUART_FULL_CTL_B	    0x0010060240	/* PASS2 */
+
+#define A_DUART_OPCR_A	  	    0x0010060180	/* PASS2 */
+#define A_DUART_OPCR_B	  	    0x0010060280	/* PASS2 */
+
+#define A_DUART_INPORT_CHNG_DEBUG   0x00100603F0	/* PASS2 */
+
+
+/*  *********************************************************************
     * Synchronous Serial Registers
     ********************************************************************* */
 
@@ -344,7 +364,7 @@
             (reg))
 
 
-/* 
+/*
  * DMA channel registers, relative to A_SER_DMA_CHANNEL_BASE
  */
 
@@ -404,7 +424,7 @@
 #define R_SER_RMON_RX_ERRORS        0x000001F0
 #define R_SER_RMON_RX_BADADDR       0x000001F8
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * Generic Bus Registers
     ********************************************************************* */
 
@@ -456,7 +476,7 @@
 #define R_IO_PCMCIA_CFG             0x0A60
 #define R_IO_PCMCIA_STATUS          0x0A70
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * GPIO Registers
     ********************************************************************* */
 
@@ -480,7 +500,7 @@
 #define R_GPIO_PIN_CLR              0x30
 #define R_GPIO_PIN_SET              0x38
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * SMBus Registers
     ********************************************************************* */
 
@@ -516,7 +536,7 @@
 #define R_SMB_CONTROL               0x0000000060
 #define R_SMB_PEC                   0x0000000070
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * Timer Registers
     ********************************************************************* */
 
@@ -575,16 +595,21 @@
 #define A_SCD_TIMER_CNT_3           0x0010020188
 #define A_SCD_TIMER_CFG_3           0x0010020198
 
-/*  ********************************************************************* 
+#define A_SCD_SCRATCH		   0x0010020C10		/* PASS2 */
+
+#define A_SCD_ZBBUS_CYCLE_COUNT	   0x0010030000		/* PASS2 */
+#define A_SCD_ZBBUS_CYCLE_CP0	   0x0010020C00		/* PASS2 */
+#define A_SCD_ZBBUS_CYCLE_CP1	   0x0010020C08		/* PASS2 */
+
+
+/*  *********************************************************************
     * System Control Registers
     ********************************************************************* */
 
 #define A_SCD_SYSTEM_REVISION       0x0010020000
 #define A_SCD_SYSTEM_CFG            0x0010020008
 
-#define A_SCD_SCRATCH		    0x0010020C10	/* PASS2 */
-
-/*  ********************************************************************* 
+/*  *********************************************************************
     * System Address Trap Registers
     ********************************************************************* */
 
@@ -602,9 +627,10 @@
 #define A_ADDR_TRAP_CFG_1           0x0010020448
 #define A_ADDR_TRAP_CFG_2           0x0010020450
 #define A_ADDR_TRAP_CFG_3           0x0010020458
+#define A_ADDR_TRAP_REG_DEBUG	    0x0010020460	/* PASS2 */
 
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * System Interrupt Mapper Registers
     ********************************************************************* */
 
@@ -632,7 +658,7 @@
 #define R_IMR_INTERRUPT_MAP_BASE        0x0200
 #define R_IMR_INTERRUPT_MAP_COUNT       64
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * System Performance Counter Registers
     ********************************************************************* */
 
@@ -642,11 +668,12 @@
 #define A_SCD_PERF_CNT_2            0x00100204E0
 #define A_SCD_PERF_CNT_3            0x00100204E8
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * System Bus Watcher Registers
     ********************************************************************* */
 
 #define A_SCD_BUS_ERR_STATUS        0x0010020880
+#define A_SCD_BUS_ERR_STATUS_DEBUG  0x00100208D0	/* PASS2 */
 #define A_BUS_ERR_DATA_0            0x00100208A0
 #define A_BUS_ERR_DATA_1            0x00100208A8
 #define A_BUS_ERR_DATA_2            0x00100208B0
@@ -654,13 +681,13 @@
 #define A_BUS_L2_ERRORS             0x00100208C0
 #define A_BUS_MEM_IO_ERRORS         0x00100208C8
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * System Debug Controller Registers
     ********************************************************************* */
 
 #define A_SCD_JTAG_BASE             0x0010000000
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * System Trace Buffer Registers
     ********************************************************************* */
 
@@ -683,7 +710,7 @@
 #define A_SCD_TRACE_SEQUENCE_6      0x0010020A90
 #define A_SCD_TRACE_SEQUENCE_7      0x0010020A98
 
-/*  ********************************************************************* 
+/*  *********************************************************************
     * System Generic DMA Registers
     ********************************************************************* */
 

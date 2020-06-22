@@ -57,7 +57,7 @@ acpi_ut_init_stack_ptr_trace (
 	u32                 current_sp;
 
 
-	acpi_gbl_entry_stack_pointer = (u32) &current_sp;
+	acpi_gbl_entry_stack_pointer = (unsigned long) &current_sp;
 }
 
 

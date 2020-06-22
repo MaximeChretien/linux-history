@@ -119,12 +119,11 @@ void local_flush_tlb_range(struct mm_struct *mm, unsigned long start,
 				idx = get_index();
 				set_entrylo0(0);
 				set_entrylo1(0);
-				set_entryhi(KSEG0);
 				if (idx < 0)
 					continue;
-				BARRIER;
 				/* Make sure all entries differ. */
-				set_entryhi(KSEG0+idx*0x2000);
+				set_entryhi(KSEG0 + idx*0x2000);
+				BARRIER;
 				tlb_write_indexed();
 				BARRIER;
 			}
@@ -271,19 +270,19 @@ void __init add_wired_entry(unsigned long entrylo0, unsigned long entrylo1,
 	wired = get_wired();
 	set_wired(wired + 1);
 	set_index(wired);
-	BARRIER;    
+	BARRIER;
 	set_pagemask(pagemask);
 	set_entryhi(entryhi);
 	set_entrylo0(entrylo0);
 	set_entrylo1(entrylo1);
-	BARRIER;    
+	BARRIER;
 	tlb_write_indexed();
-	BARRIER;    
-    
+	BARRIER;
+
 	set_entryhi(old_ctx);
-	BARRIER;    
+	BARRIER;
 	set_pagemask(old_pagemask);
-	local_flush_tlb_all();    
+	local_flush_tlb_all();
 	__restore_flags(flags);
 }
 
@@ -316,17 +315,17 @@ __init int add_temporary_entry(unsigned long entrylo0, unsigned long entrylo1,
 	}
 
 	set_index(temp_tlb_entry);
-	BARRIER;    
+	BARRIER;
 	set_pagemask(pagemask);
 	set_entryhi(entryhi);
 	set_entrylo0(entrylo0);
 	set_entrylo1(entrylo1);
-	BARRIER;    
+	BARRIER;
 	tlb_write_indexed();
-	BARRIER;    
-    
+	BARRIER;
+
 	set_entryhi(old_ctx);
-	BARRIER;    
+	BARRIER;
 	set_pagemask(old_pagemask);
 out:
 	__restore_flags(flags);
@@ -339,11 +338,11 @@ static void __init probe_tlb(unsigned long config)
 
 	prid = read_32bit_cp0_register(CP0_PRID) & 0xff00;
 	if (prid == PRID_IMP_RM7000 || !(config & (1 << 31)))
-		/* 
+		/*
 		 * Not a MIPS32 complianant CPU.  Config 1 register not
 		 * supported, we assume R4k style.  Cpu probing already figured
 		 * out the number of tlb entries.
-		 */  
+		 */
 		return;
 
 	config1 = read_mips32_cp0_config1();

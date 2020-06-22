@@ -1,21 +1,29 @@
-/* hardirq.h: 32-bit Sparc hard IRQ support.
+/* hardirq.h: PA-RISC hard IRQ support.
  *
- * Copyright (C) 1997 David S. Miller (davem@caip.rutgers.edu)
- * Copyright (C) 1998-99 Anton Blanchard (anton@progsoc.uts.edu.au)
+ * Copyright (C) 2001 Matthew Wilcox <matthew@wil.cx>
+ *
+ * The locking is really quite interesting.  There's a cpu-local
+ * count of how many interrupts are being handled, and a global
+ * lock.  An interrupt can only be serviced if the global lock
+ * is free.  You can't be sure no more interrupts are being
+ * serviced until you've acquired the lock and then checked
+ * all the per-cpu interrupt counts are all zero.  It's a specialised
+ * br_lock, and that's exactly how Sparc does it.  We don't because
+ * it's more locking for us.  This way is lock-free in the interrupt path.
  */
 
-#ifndef __PARISC_HARDIRQ_H
-#define __PARISC_HARDIRQ_H
+#ifndef _PARISC_HARDIRQ_H
+#define _PARISC_HARDIRQ_H
 
 #include <linux/config.h>
 #include <linux/threads.h>
 
 typedef struct {
-	unsigned int __softirq_active;
-	unsigned int __softirq_mask;
+	unsigned long __softirq_pending; /* set_bit is used on this */
 	unsigned int __local_irq_count;
 	unsigned int __local_bh_count;
 	unsigned int __syscall_count;
+	struct task_struct * __ksoftirqd_task;
 } ____cacheline_aligned irq_cpustat_t;
 
 #include <linux/irq_cpustat.h>	/* Standard mappings for irq_cpustat_t above */
@@ -42,14 +50,24 @@ typedef struct {
 
 #else
 
+#include <asm/system.h>
 #include <asm/atomic.h>
 #include <linux/spinlock.h>
-#include <asm/system.h>
 #include <asm/smp.h>
 
-extern unsigned char global_irq_holder;
+extern int global_irq_holder;
 extern spinlock_t global_irq_lock;
-extern atomic_t global_irq_count;
+
+static inline int irqs_running (void)
+{
+	int i;
+
+	for (i = 0; i < smp_num_cpus; i++)
+		if (local_irq_count(i))
+			return 1;
+	return 0;
+}
+
 
 static inline void release_irqlock(int cpu)
 {
@@ -60,22 +78,22 @@ static inline void release_irqlock(int cpu)
 	}
 }
 
-static inline void irq_enter(int cpu)
+static inline void irq_enter(int cpu, int irq)
 {
 	++local_irq_count(cpu);
-	atomic_inc(&global_irq_count);
+
+	while (spin_is_locked(&global_irq_lock))
+		barrier();
 }
 
-static inline void irq_exit(int cpu)
+static inline void irq_exit(int cpu, int irq)
 {
-	atomic_dec(&global_irq_count);
 	--local_irq_count(cpu);
 }
 
 static inline int hardirq_trylock(int cpu)
 {
-	return (! atomic_read(&global_irq_count) &&
-		! spin_is_locked (&global_irq_lock));
+	return !local_irq_count(cpu) && !spin_is_locked (&global_irq_lock);
 }
 
 #define hardirq_endlock(cpu)	do { } while (0)
@@ -84,4 +102,4 @@ extern void synchronize_irq(void);
 
 #endif /* CONFIG_SMP */
 
-#endif /* __PARISC_HARDIRQ_H */
+#endif /* _PARISC_HARDIRQ_H */

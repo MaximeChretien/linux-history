@@ -182,6 +182,12 @@ extern inline void up(struct semaphore * sem)
 		: "memory");
 }
 
+
+static inline int sem_getcount(struct semaphore *sem)
+{
+	return atomic_read(&sem->count);
+}
+
 #endif /* __ASSEMBLY__ */
 
 #endif

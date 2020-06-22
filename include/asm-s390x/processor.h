@@ -16,6 +16,7 @@
 #include <asm/page.h>
 #include <asm/ptrace.h>
 
+#ifdef __KERNEL__
 /*
  * Default implementation of macro that returns current
  * instruction pointer ("program counter").
@@ -59,7 +60,7 @@ extern struct task_struct *last_task_used_math;
 /*
  * User space process size: 4TB (default).
  */
-#define TASK_SIZE       (0x40000000000UL)
+#define TASK_SIZE       (0x20000000000UL)
 #define TASK31_SIZE     (0x80000000UL)
 
 /* This decides where the kernel will search for a free chunk of vm
@@ -155,13 +156,9 @@ unsigned long get_wchan(struct task_struct *p);
 #define KSTK_ESP(tsk)	(__KSTK_PTREGS(tsk)->gprs[15])
 
 /* Allocation and freeing of basic task resources. */
-/*
- * NOTE! The task struct and the stack go together
- */
-#define alloc_task_struct() \
-        ((struct task_struct *) __get_free_pages(GFP_KERNEL,2))
-#define free_task_struct(p)     free_pages((unsigned long)(p),2)
-#define get_task_struct(tsk)      atomic_inc(&virt_to_page(tsk)->count)
+extern struct task_struct *alloc_task_struct(void);
+extern void free_task_struct(struct task_struct *tsk);
+extern void get_task_struct(struct task_struct *tsk);
 
 #define init_task       (init_task_union.task)
 #define init_stack      (init_task_union.stack)
@@ -266,6 +263,8 @@ static inline void disabled_wait(addr_t code)
                       "    lpswe 0(%0)"
                       : : "a" (dw_psw), "a" (&ctl_buf) : "cc", "0", "1");
 }
+
+#endif
 
 #endif                                 /* __ASM_S390_PROCESSOR_H           */
 

@@ -1,8 +1,8 @@
 /*
- * BK Id: SCCS/s.prep_nvram.c 1.12 09/08/01 15:47:42 paulus
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
- *  linux/arch/ppc/kernel/prep_nvram.c
+ *  arch/ppc/platforms/prep_nvram.c
  *
  *  Copyright (C) 1998  Corey Minyard
  *

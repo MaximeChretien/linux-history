@@ -147,7 +147,7 @@ void enable_irq(unsigned int irq)
 	if (imap == 0UL)
 		return;
 
-	if (tlb_type == cheetah) {
+	if (tlb_type == cheetah || tlb_type == cheetah_plus) {
 		/* We set it to our Safari AID. */
 		__asm__ __volatile__("ldxa [%%g0] %1, %0"
 				     : "=r" (tid)
@@ -1139,7 +1139,7 @@ static int retarget_one_irq(struct irqaction *p, int goal_cpu)
 	unsigned long imap = bucket->imap;
 	unsigned int tid;
 
-	if (tlb_type == cheetah) {
+	if (tlb_type == cheetah || tlb_type == cheetah_plus) {
 		tid = __cpu_logical_map[goal_cpu] << 26;
 		tid &= IMAP_AID_SAFARI;
 	} else if (this_is_starfire == 0) {

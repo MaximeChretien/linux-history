@@ -4,7 +4,7 @@
 
 O_TARGET := video.o
 
-mod-subdirs	:= matrox
+mod-subdirs	:= matrox sti
 
 # All of the (potential) objects that export symbols.
 # This list comes from 'grep -l EXPORT_SYMBOL *.[hc]'.
@@ -22,7 +22,6 @@ export-objs    := fbmem.o fbcmap.o fbcon.o fbmon.o modedb.o \
 obj-$(CONFIG_DUMMY_CONSOLE)       += dummycon.o
 obj-$(CONFIG_SGI_NEWPORT_CONSOLE) += newport_con.o
 obj-$(CONFIG_PROM_CONSOLE)        += promcon.o promcon_tbl.o
-obj-$(CONFIG_STI_CONSOLE)         += sticon.o sticon-bmode.o sticore.o
 obj-$(CONFIG_VGA_CONSOLE)         += vgacon.o
 obj-$(CONFIG_MDA_CONSOLE)         += mdacon.o
 
@@ -82,12 +81,21 @@ obj-$(CONFIG_FB_TCX)              += tcxfb.o sbusfb.o
 obj-$(CONFIG_FB_CGFOURTEEN)       += cgfourteenfb.o sbusfb.o
 obj-$(CONFIG_FB_P9100)            += p9100fb.o sbusfb.o
 obj-$(CONFIG_FB_LEO)              += leofb.o sbusfb.o
-obj-$(CONFIG_FB_STI)	          += stifb.o sticore.o fbgen.o
 obj-$(CONFIG_FB_PMAG_BA)          += pmag-ba-fb.o
 obj-$(CONFIG_FB_PMAGB_B)          += pmagb-b-fb.o
 obj-$(CONFIG_FB_MAXINE)           += maxinefb.o
 obj-$(CONFIG_FB_TX3912)           += tx3912fb.o
+obj-$(CONFIG_FB_AU1100)		  += au1100fb.o fbgen.o
 
+subdir-$(CONFIG_STI_CONSOLE)      += sti
+ifeq ($(CONFIG_STI_CONSOLE),y)
+obj-y                             += sti/sti.o fonts.o
+endif
+
+subdir-$(CONFIG_FB_STI)           += sti
+ifeq ($(CONFIG_FB_STI),y)
+obj-y                             += sti/sti.o fbgen.o
+endif
 
 subdir-$(CONFIG_FB_MATROX)	  += matrox
 ifeq ($(CONFIG_FB_MATROX),y)

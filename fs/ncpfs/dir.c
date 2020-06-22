@@ -74,9 +74,16 @@ static int ncp_hash_dentry(struct dentry *, struct qstr *);
 static int ncp_compare_dentry (struct dentry *, struct qstr *, struct qstr *);
 static int ncp_delete_dentry(struct dentry *);
 
-struct dentry_operations ncp_dentry_operations =
+static struct dentry_operations ncp_dentry_operations =
 {
 	d_revalidate:	ncp_lookup_validate,
+	d_hash:		ncp_hash_dentry,
+	d_compare:	ncp_compare_dentry,
+	d_delete:	ncp_delete_dentry,
+};
+
+struct dentry_operations ncp_root_dentry_operations =
+{
 	d_hash:		ncp_hash_dentry,
 	d_compare:	ncp_compare_dentry,
 	d_delete:	ncp_delete_dentry,
@@ -839,7 +846,7 @@ int ncp_create_new(struct inode *dir, struct dentry *dentry, int mode,
 	if (S_ISREG(mode) && 
 	    (server->m.flags & NCP_MOUNT_EXTRAS) && 
 	    (mode & S_IXUGO))
-		attributes |= aSYSTEM;
+		attributes |= aSYSTEM | aSHARED;
 	
 	result = ncp_open_create_file_or_subdir(server, dir, __name,
 				OC_MODE_CREATE | OC_MODE_OPEN | OC_MODE_REPLACE,

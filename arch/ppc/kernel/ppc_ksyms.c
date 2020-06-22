@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.ppc_ksyms.c 1.63 01/20/02 23:53:11 benh
+ * BK Id: %F% %I% %G% %U% %#%
  */
 #include <linux/config.h>
 #include <linux/module.h>
@@ -17,13 +17,13 @@
 #include <linux/irq.h>
 #include <linux/pci.h>
 #include <linux/delay.h>
+#include <linux/ide.h>
 
 #include <asm/page.h>
 #include <asm/semaphore.h>
 #include <asm/processor.h>
 #include <asm/uaccess.h>
 #include <asm/io.h>
-#include <linux/ide.h>
 #include <asm/ide.h>
 #include <asm/atomic.h>
 #include <asm/bitops.h>
@@ -167,8 +167,11 @@ EXPORT_SYMBOL(iounmap);
 EXPORT_SYMBOL(iopa);
 EXPORT_SYMBOL(mm_ptov);
 
+#if defined(CONFIG_BLK_DEV_IDE) || defined(CONFIG_BLK_DEV_IDE_MODULE) \
+	|| defined(CONFIG_USB_STORAGE) || defined(CONFIG_USB_STORAGE_MODULE)
 EXPORT_SYMBOL(ppc_ide_md);
 EXPORT_SYMBOL(ppc_generic_ide_fix_driveid);
+#endif
 
 #ifdef CONFIG_PCI
 EXPORT_SYMBOL_NOVERS(isa_io_base);
@@ -205,7 +208,7 @@ EXPORT_SYMBOL(__global_cli);
 EXPORT_SYMBOL(__global_sti);
 EXPORT_SYMBOL(__global_save_flags);
 EXPORT_SYMBOL(__global_restore_flags);
-#ifdef SPINLOCK_DEBUG
+#if SPINLOCK_DEBUG
 EXPORT_SYMBOL(_spin_lock);
 EXPORT_SYMBOL(_spin_unlock);
 EXPORT_SYMBOL(spin_trylock);
@@ -246,6 +249,7 @@ EXPORT_SYMBOL(find_devices);
 EXPORT_SYMBOL(find_type_devices);
 EXPORT_SYMBOL(find_compatible_devices);
 EXPORT_SYMBOL(find_path_device);
+EXPORT_SYMBOL(find_phandle);
 EXPORT_SYMBOL(device_is_compatible);
 EXPORT_SYMBOL(machine_is_compatible);
 EXPORT_SYMBOL(find_all_nodes);
@@ -262,6 +266,10 @@ EXPORT_SYMBOL(pci_resource_to_bus);
 EXPORT_SYMBOL(pci_phys_to_bus);
 EXPORT_SYMBOL(pci_bus_to_phys);
 EXPORT_SYMBOL(pmac_newworld);
+EXPORT_SYMBOL(nvram_read_byte);
+EXPORT_SYMBOL(nvram_write_byte);
+EXPORT_SYMBOL(pmac_xpram_read);
+EXPORT_SYMBOL(pmac_xpram_write);
 #endif /* defined(CONFIG_ALL_PPC) */
 #if defined(CONFIG_BOOTX_TEXT)
 EXPORT_SYMBOL(btext_update_display);
@@ -272,12 +280,6 @@ EXPORT_SYMBOL(note_scsi_host);
 #ifdef CONFIG_VT
 EXPORT_SYMBOL(kd_mksound);
 #endif
-#ifdef CONFIG_NVRAM
-EXPORT_SYMBOL(nvram_read_byte);
-EXPORT_SYMBOL(nvram_write_byte);
-EXPORT_SYMBOL(pmac_xpram_read);
-EXPORT_SYMBOL(pmac_xpram_write);
-#endif /* CONFIG_NVRAM */
 EXPORT_SYMBOL(to_tm);
 
 EXPORT_SYMBOL_NOVERS(__ashrdi3);

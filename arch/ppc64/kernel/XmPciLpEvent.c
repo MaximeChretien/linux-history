@@ -14,22 +14,32 @@
 #include <linux/bootmem.h>
 #include <linux/blk.h>
 #include <linux/ide.h>
+#include <linux/rtc.h>
+#include <linux/time.h>
 
 #include <asm/iSeries/HvTypes.h>
 #include <asm/iSeries/HvLpEvent.h>
 #include <asm/iSeries/HvCallPci.h>
 #include <asm/iSeries/XmPciLpEvent.h>
 #include <asm/ppcdebug.h>
+#include <asm/time.h>
+#include <asm/flight_recorder.h>
+
+extern struct flightRecorder* PciFr;
+
 
 long Pci_Interrupt_Count = 0;
 long Pci_Event_Count     = 0;
 
 enum XmPciLpEvent_Subtype {
 	XmPciLpEvent_BusCreated	   = 0,		// PHB has been created
-	XmPciLpEvent_BusFailed	   = 1,		// PHB has failed
-	XmPciLpEvent_BusRecovered  = 12,	// PHB has been recovered
+	XmPciLpEvent_BusError	   = 1,		// PHB has failed
+	XmPciLpEvent_BusFailed	   = 2,		// Msg to Seconday, Primary failed bus
 	XmPciLpEvent_NodeFailed	   = 4,		// Multi-adapter bridge has failed
 	XmPciLpEvent_NodeRecovered = 5,		// Multi-adapter bridge has recovered
+	XmPciLpEvent_BusRecovered  = 12,	// PHB has been recovered
+	XmPciLpEvent_UnQuiesceBus  = 18,	// Secondary bus unqiescing
+	XmPciLpEvent_BridgeError   = 21,	// Bridge Error
 	XmPciLpEvent_SlotInterrupt = 22		// Slot interrupt
 };
 
@@ -69,6 +79,7 @@ struct XmPciLpEvent {
 };
 
 static void intReceived(struct XmPciLpEvent* eventParm, struct pt_regs* regsParm);
+static void logXmEvent( char* ErrorText, int busNumber);
 
 static void XmPciLpEvent_handler( struct HvLpEvent* eventParm, struct pt_regs* regsParm)
 {
@@ -81,10 +92,10 @@ static void XmPciLpEvent_handler( struct HvLpEvent* eventParm, struct pt_regs* r
 			intReceived( (struct XmPciLpEvent*)eventParm, regsParm );
 			break;
 		case HvLpEvent_Function_Ack:
-			printk(KERN_ERR "XmPciLpEvent.c: unexpected ack received\n");
+			printk(KERN_ERR "XmPciLpEvent.c: Unexpected ack received\n");
 			break;
 		default:
-			printk(KERN_ERR "XmPciLpEvent.c: unexpected event function %d\n",(int)eventParm->xFlags.xFunction);
+			printk(KERN_ERR "XmPciLpEvent.c: Unexpected event function %d\n",(int)eventParm->xFlags.xFunction);
 			break;
 		}
 	}
@@ -114,23 +125,25 @@ static void intReceived(struct XmPciLpEvent* eventParm, struct pt_regs* regsParm
 		break;
 		/* Ignore error recovery events for now */
 	case XmPciLpEvent_BusCreated:
-		printk(KERN_INFO "XmPciLpEvent.c: system bus %d created\n", eventParm->eventData.busCreated.busNumber);
+	        logXmEvent("System bus created.",eventParm->eventData.busCreated.busNumber);
 		break;
+	case XmPciLpEvent_BusError:
 	case XmPciLpEvent_BusFailed:
-		printk(KERN_INFO "XmPciLpEvent.c: system bus %d failed\n", eventParm->eventData.busFailed.busNumber);
+		logXmEvent("System bus failed.", eventParm->eventData.busFailed.busNumber);
 		break;
 	case XmPciLpEvent_BusRecovered:
-		printk(KERN_INFO "XmPciLpEvent.c: system bus %d recovered\n", eventParm->eventData.busRecovered.busNumber);
+	case XmPciLpEvent_UnQuiesceBus:
+		logXmEvent("System bus recovered.",eventParm->eventData.busRecovered.busNumber);
 		break;
 	case XmPciLpEvent_NodeFailed:
-		printk(KERN_INFO "XmPciLpEvent.c: multi-adapter bridge %d/%d/%d failed\n", eventParm->eventData.nodeFailed.busNumber, eventParm->eventData.nodeFailed.subBusNumber, eventParm->eventData.nodeFailed.deviceId);
-		break;
+	case XmPciLpEvent_BridgeError:
+	        logXmEvent("Multi-adapter bridge failed.",eventParm->eventData.nodeFailed.busNumber);
+	        break;
 	case XmPciLpEvent_NodeRecovered:
-		printk(KERN_INFO "XmPciLpEvent.c: multi-adapter bridge %d/%d/%d recovered\n", eventParm->eventData.nodeRecovered.busNumber, eventParm->eventData.nodeRecovered.subBusNumber, eventParm->eventData.nodeRecovered.deviceId);
+		logXmEvent("Multi-adapter bridge recovered",eventParm->eventData.nodeRecovered.busNumber);
 		break;
 	default:
-		printk(KERN_ERR "XmPciLpEvent.c: unrecognized event subtype 0x%x\n",
-		       eventParm->hvLpEvent.xSubtype);
+	        logXmEvent("Unrecognized event subtype.",eventParm->hvLpEvent.xSubtype);
 		break;
 	};
 }
@@ -153,5 +166,26 @@ int XmPciLpEvent_init()
 		printk(KERN_ERR "XmPciLpEvent.c: register handler failed with rc 0x%x\n", xRc);
     	}
     return xRc;
+}
+/***********************************************************************/
+/* printk                                                              */
+/*   XmPciLpEvent: System bus failed, bus 0x4A. Time:128-16.10.44      */
+/* pcifr                                                               */
+/*  0045. XmPciLpEvent: System bus failed, bus 0x4A. Time:128-16.10.44 */
+/***********************************************************************/
+static void logXmEvent( char* ErrorText, int busNumber) {
+	struct  timeval  TimeClock;
+	struct  rtc_time CurTime;
+
+	do_gettimeofday(&TimeClock);
+	to_tm(TimeClock.tv_sec, &CurTime);
+	char    EventLog[128];
+
+	sprintf(EventLog,"XmPciLpEvent: %s, Bus:0x%03X.  Time:%02d.%02d.%02d",
+		ErrorText,busNumber,
+		CurTime.tm_hour,CurTime.tm_min,CurTime.tm_sec);
+
+	fr_Log_Entry(PciFr,EventLog);
+	printk(KERN_INFO "%s\n",EventLog);
 }
 

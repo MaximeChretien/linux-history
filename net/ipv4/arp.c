@@ -513,7 +513,7 @@ void arp_send(int type, int ptype, u32 dest_ip,
 	skb->nh.raw = skb->data;
 	arp = (struct arphdr *) skb_put(skb,sizeof(struct arphdr) + 2*(dev->addr_len+4));
 	skb->dev = dev;
-	skb->protocol = __constant_htons (ETH_P_ARP);
+	skb->protocol = htons (ETH_P_ARP);
 	if (src_hw == NULL)
 		src_hw = dev->dev_addr;
 	if (dest_hw == NULL)
@@ -539,33 +539,33 @@ void arp_send(int type, int ptype, u32 dest_ip,
 	switch (dev->type) {
 	default:
 		arp->ar_hrd = htons(dev->type);
-		arp->ar_pro = __constant_htons(ETH_P_IP);
+		arp->ar_pro = htons(ETH_P_IP);
 		break;
 
 #if defined(CONFIG_AX25) || defined(CONFIG_AX25_MODULE)
 	case ARPHRD_AX25:
-		arp->ar_hrd = __constant_htons(ARPHRD_AX25);
-		arp->ar_pro = __constant_htons(AX25_P_IP);
+		arp->ar_hrd = htons(ARPHRD_AX25);
+		arp->ar_pro = htons(AX25_P_IP);
 		break;
 
 #if defined(CONFIG_NETROM) || defined(CONFIG_NETROM_MODULE)
 	case ARPHRD_NETROM:
-		arp->ar_hrd = __constant_htons(ARPHRD_NETROM);
-		arp->ar_pro = __constant_htons(AX25_P_IP);
+		arp->ar_hrd = htons(ARPHRD_NETROM);
+		arp->ar_pro = htons(AX25_P_IP);
 		break;
 #endif
 #endif
 
 #ifdef CONFIG_FDDI
 	case ARPHRD_FDDI:
-		arp->ar_hrd = __constant_htons(ARPHRD_ETHER);
-		arp->ar_pro = __constant_htons(ETH_P_IP);
+		arp->ar_hrd = htons(ARPHRD_ETHER);
+		arp->ar_pro = htons(ETH_P_IP);
 		break;
 #endif
 #ifdef CONFIG_TR
 	case ARPHRD_IEEE802_TR:
-		arp->ar_hrd = __constant_htons(ARPHRD_IEEE802);
-		arp->ar_pro = __constant_htons(ETH_P_IP);
+		arp->ar_hrd = htons(ARPHRD_IEEE802);
+		arp->ar_pro = htons(ETH_P_IP);
 		break;
 #endif
 	}
@@ -629,7 +629,7 @@ int arp_process(struct sk_buff *skb)
 
 	switch (dev_type) {
 	default:	
-		if (arp->ar_pro != __constant_htons(ETH_P_IP))
+		if (arp->ar_pro != htons(ETH_P_IP))
 			goto out;
 		if (htons(dev_type) != arp->ar_hrd)
 			goto out;
@@ -640,10 +640,10 @@ int arp_process(struct sk_buff *skb)
 		 * ETHERNET devices will accept ARP hardware types of either
 		 * 1 (Ethernet) or 6 (IEEE 802.2).
 		 */
-		if (arp->ar_hrd != __constant_htons(ARPHRD_ETHER) &&
-		    arp->ar_hrd != __constant_htons(ARPHRD_IEEE802))
+		if (arp->ar_hrd != htons(ARPHRD_ETHER) &&
+		    arp->ar_hrd != htons(ARPHRD_IEEE802))
 			goto out;
-		if (arp->ar_pro != __constant_htons(ETH_P_IP))
+		if (arp->ar_pro != htons(ETH_P_IP))
 			goto out;
 		break;
 #endif
@@ -653,10 +653,10 @@ int arp_process(struct sk_buff *skb)
 		 * Token ring devices will accept ARP hardware types of either
 		 * 1 (Ethernet) or 6 (IEEE 802.2).
 		 */
-		if (arp->ar_hrd != __constant_htons(ARPHRD_ETHER) &&
-		    arp->ar_hrd != __constant_htons(ARPHRD_IEEE802))
+		if (arp->ar_hrd != htons(ARPHRD_ETHER) &&
+		    arp->ar_hrd != htons(ARPHRD_IEEE802))
 			goto out;
-		if (arp->ar_pro != __constant_htons(ETH_P_IP))
+		if (arp->ar_pro != htons(ETH_P_IP))
 			goto out;
 		break;
 #endif
@@ -667,10 +667,10 @@ int arp_process(struct sk_buff *skb)
 		 * of 1 (Ethernet).  However, to be more robust, we'll accept hardware
 		 * types of either 1 (Ethernet) or 6 (IEEE 802.2).
 		 */
-		if (arp->ar_hrd != __constant_htons(ARPHRD_ETHER) &&
-		    arp->ar_hrd != __constant_htons(ARPHRD_IEEE802))
+		if (arp->ar_hrd != htons(ARPHRD_ETHER) &&
+		    arp->ar_hrd != htons(ARPHRD_IEEE802))
 			goto out;
-		if (arp->ar_pro != __constant_htons(ETH_P_IP))
+		if (arp->ar_pro != htons(ETH_P_IP))
 			goto out;
 		break;
 #endif
@@ -681,25 +681,25 @@ int arp_process(struct sk_buff *skb)
 		 * 802 devices) should accept ARP hardware types of 6 (IEEE 802)
 		 * and 1 (Ethernet).
 		 */
-		if (arp->ar_hrd != __constant_htons(ARPHRD_ETHER) &&
-		    arp->ar_hrd != __constant_htons(ARPHRD_IEEE802))
+		if (arp->ar_hrd != htons(ARPHRD_ETHER) &&
+		    arp->ar_hrd != htons(ARPHRD_IEEE802))
 			goto out;
-		if (arp->ar_pro != __constant_htons(ETH_P_IP))
+		if (arp->ar_pro != htons(ETH_P_IP))
 			goto out;
 		break;
 #endif
 #if defined(CONFIG_AX25) || defined(CONFIG_AX25_MODULE)
 	case ARPHRD_AX25:
-		if (arp->ar_pro != __constant_htons(AX25_P_IP))
+		if (arp->ar_pro != htons(AX25_P_IP))
 			goto out;
-		if (arp->ar_hrd != __constant_htons(ARPHRD_AX25))
+		if (arp->ar_hrd != htons(ARPHRD_AX25))
 			goto out;
 		break;
 #if defined(CONFIG_NETROM) || defined(CONFIG_NETROM_MODULE)
 	case ARPHRD_NETROM:
-		if (arp->ar_pro != __constant_htons(AX25_P_IP))
+		if (arp->ar_pro != htons(AX25_P_IP))
 			goto out;
-		if (arp->ar_hrd != __constant_htons(ARPHRD_NETROM))
+		if (arp->ar_hrd != htons(ARPHRD_NETROM))
 			goto out;
 		break;
 #endif
@@ -708,8 +708,8 @@ int arp_process(struct sk_buff *skb)
 
 	/* Understand only these message types */
 
-	if (arp->ar_op != __constant_htons(ARPOP_REPLY) &&
-	    arp->ar_op != __constant_htons(ARPOP_REQUEST))
+	if (arp->ar_op != htons(ARPOP_REPLY) &&
+	    arp->ar_op != htons(ARPOP_REQUEST))
 		goto out;
 
 /*
@@ -754,13 +754,13 @@ int arp_process(struct sk_buff *skb)
 
 	/* Special case: IPv4 duplicate address detection packet (RFC2131) */
 	if (sip == 0) {
-		if (arp->ar_op == __constant_htons(ARPOP_REQUEST) &&
+		if (arp->ar_op == htons(ARPOP_REQUEST) &&
 		    inet_addr_type(tip) == RTN_LOCAL)
 			arp_send(ARPOP_REPLY,ETH_P_ARP,tip,dev,tip,sha,dev->dev_addr,dev->dev_addr);
 		goto out;
 	}
 
-	if (arp->ar_op == __constant_htons(ARPOP_REQUEST) &&
+	if (arp->ar_op == htons(ARPOP_REQUEST) &&
 	    ip_route_input(skb, tip, sip, 0, dev) == 0) {
 
 		rt = (struct rtable*)skb->dst;
@@ -810,7 +810,7 @@ int arp_process(struct sk_buff *skb)
 	   devices (strip is candidate)
 	 */
 	if (n == NULL &&
-	    arp->ar_op == __constant_htons(ARPOP_REPLY) &&
+	    arp->ar_op == htons(ARPOP_REPLY) &&
 	    inet_addr_type(sip) == RTN_UNICAST)
 		n = __neigh_lookup(&arp_tbl, &sip, dev, -1);
 #endif
@@ -830,7 +830,7 @@ int arp_process(struct sk_buff *skb)
 		/* Broadcast replies and request packets
 		   do not assert neighbour reachability.
 		 */
-		if (arp->ar_op != __constant_htons(ARPOP_REPLY) ||
+		if (arp->ar_op != htons(ARPOP_REPLY) ||
 		    skb->pkt_type != PACKET_HOST)
 			state = NUD_STALE;
 		neigh_update(n, sha, state, override, 1);
@@ -1050,7 +1050,7 @@ int arp_ioctl(unsigned int cmd, void *arg)
 	    (r.arp_flags & (ATF_NETMASK|ATF_DONTPUB)))
 		return -EINVAL;
 	if (!(r.arp_flags & ATF_NETMASK))
-		((struct sockaddr_in *)&r.arp_netmask)->sin_addr.s_addr=__constant_htonl(0xFFFFFFFFUL);
+		((struct sockaddr_in *)&r.arp_netmask)->sin_addr.s_addr=htonl(0xFFFFFFFFUL);
 
 	rtnl_lock();
 	if (r.arp_dev[0]) {

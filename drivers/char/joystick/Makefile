@@ -6,7 +6,7 @@ O_TARGET	:= js.o
 
 # Objects that export symbols.
 
-export-objs	:= serio.o gameport.o
+export-objs	:= serio.o gameport.o pcigame.o
 
 # I-Force may need both USB and RS-232
 

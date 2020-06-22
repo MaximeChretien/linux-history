@@ -42,7 +42,7 @@
 #include <acpi.h>
 
 #ifdef CONFIG_ACPI_EFI
-#include <asm/efi.h>
+#include <linux/efi.h>
 #endif
 
 #ifdef _IA64
@@ -361,7 +361,7 @@ acpi_os_read_memory(
 acpi_status
 acpi_os_write_memory(
 	ACPI_PHYSICAL_ADDRESS	phys_addr,
-	u32			value,
+	NATIVE_UINT		value,
 	u32			width)
 {
 	switch (width)
@@ -421,7 +421,7 @@ acpi_os_read_pci_configuration (
 	return (result ? AE_ERROR : AE_OK);
 }
 
-acpi_status
+ACPI_STATUS
 acpi_os_write_pci_configuration (
 	acpi_pci_id             *pci_id,
 	u32                     reg,
@@ -491,7 +491,7 @@ acpi_status
 acpi_os_write_pci_configuration (
 	acpi_pci_id	*pci_id,
 	u32		reg,
-	u32		value,
+	NATIVE_UINT	value,
 	u32		width)
 {
 	int devfn = PCI_DEVFN(pci_id->device, pci_id->function);

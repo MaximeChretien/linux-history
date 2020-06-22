@@ -55,14 +55,14 @@
                 srl     k0, k0, 23;                      \
 		sll     k0, k0, 2;                       \
                 addu    k1, k0;                          \
-                lw      k1, %lo(kernelsp)(k1);        
+                lw      k1, %lo(kernelsp)(k1);
 
 #else
 #  define GET_SAVED_SP                                   \
 		lui	k1, %hi(kernelsp);               \
-		lw	k1, %lo(kernelsp)(k1);           
+		lw	k1, %lo(kernelsp)(k1);
 #endif
- 
+
 #define SAVE_SOME                                        \
 		.set	push;                            \
 		.set	reorder;                         \

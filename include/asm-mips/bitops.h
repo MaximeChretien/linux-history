@@ -159,7 +159,7 @@ extern __inline__ void __change_bit(int nr, volatile void * addr)
  * @nr: Bit to set
  * @addr: Address to count from
  *
- * This operation is atomic and cannot be reordered.  
+ * This operation is atomic and cannot be reordered.
  * It also implies a memory barrier.
  */
 extern __inline__ int
@@ -191,7 +191,7 @@ test_and_set_bit(int nr, volatile void *addr)
  * @nr: Bit to set
  * @addr: Address to count from
  *
- * This operation is non-atomic and can be reordered.  
+ * This operation is non-atomic and can be reordered.
  * If two examples of this operation race, one can appear to succeed
  * but actually fail.  You must protect multiple accesses with a lock.
  */
@@ -213,7 +213,7 @@ extern __inline__ int __test_and_set_bit(int nr, volatile void * addr)
  * @nr: Bit to set
  * @addr: Address to count from
  *
- * This operation is atomic and cannot be reordered.  
+ * This operation is atomic and cannot be reordered.
  * It also implies a memory barrier.
  */
 extern __inline__ int
@@ -246,7 +246,7 @@ test_and_clear_bit(int nr, volatile void *addr)
  * @nr: Bit to set
  * @addr: Address to count from
  *
- * This operation is non-atomic and can be reordered.  
+ * This operation is non-atomic and can be reordered.
  * If two examples of this operation race, one can appear to succeed
  * but actually fail.  You must protect multiple accesses with a lock.
  */
@@ -268,7 +268,7 @@ extern __inline__ int __test_and_clear_bit(int nr, volatile void * addr)
  * @nr: Bit to set
  * @addr: Address to count from
  *
- * This operation is atomic and cannot be reordered.  
+ * This operation is atomic and cannot be reordered.
  * It also implies a memory barrier.
  */
 extern __inline__ int
@@ -300,7 +300,7 @@ test_and_change_bit(int nr, volatile void *addr)
  * @nr: Bit to set
  * @addr: Address to count from
  *
- * This operation is non-atomic and can be reordered.  
+ * This operation is non-atomic and can be reordered.
  * If two examples of this operation race, one can appear to succeed
  * but actually fail.  You must protect multiple accesses with a lock.
  */
@@ -427,7 +427,7 @@ extern __inline__ void __change_bit(int nr, volatile void * addr)
  * @nr: Bit to set
  * @addr: Address to count from
  *
- * This operation is atomic and cannot be reordered.  
+ * This operation is atomic and cannot be reordered.
  * It also implies a memory barrier.
  */
 extern __inline__ int test_and_set_bit(int nr, volatile void * addr)
@@ -451,7 +451,7 @@ extern __inline__ int test_and_set_bit(int nr, volatile void * addr)
  * @nr: Bit to set
  * @addr: Address to count from
  *
- * This operation is non-atomic and can be reordered.  
+ * This operation is non-atomic and can be reordered.
  * If two examples of this operation race, one can appear to succeed
  * but actually fail.  You must protect multiple accesses with a lock.
  */
@@ -473,7 +473,7 @@ extern __inline__ int __test_and_set_bit(int nr, volatile void * addr)
  * @nr: Bit to set
  * @addr: Address to count from
  *
- * This operation is atomic and cannot be reordered.  
+ * This operation is atomic and cannot be reordered.
  * It also implies a memory barrier.
  */
 extern __inline__ int test_and_clear_bit(int nr, volatile void * addr)
@@ -497,7 +497,7 @@ extern __inline__ int test_and_clear_bit(int nr, volatile void * addr)
  * @nr: Bit to set
  * @addr: Address to count from
  *
- * This operation is non-atomic and can be reordered.  
+ * This operation is non-atomic and can be reordered.
  * If two examples of this operation race, one can appear to succeed
  * but actually fail.  You must protect multiple accesses with a lock.
  */
@@ -519,7 +519,7 @@ extern __inline__ int __test_and_clear_bit(int nr, volatile void * addr)
  * @nr: Bit to set
  * @addr: Address to count from
  *
- * This operation is atomic and cannot be reordered.  
+ * This operation is atomic and cannot be reordered.
  * It also implies a memory barrier.
  */
 extern __inline__ int test_and_change_bit(int nr, volatile void * addr)
@@ -543,7 +543,7 @@ extern __inline__ int test_and_change_bit(int nr, volatile void * addr)
  * @nr: Bit to set
  * @addr: Address to count from
  *
- * This operation is non-atomic and can be reordered.  
+ * This operation is non-atomic and can be reordered.
  * If two examples of this operation race, one can appear to succeed
  * but actually fail.  You must protect multiple accesses with a lock.
  */
@@ -644,7 +644,7 @@ extern __inline__ int find_next_zero_bit (void * addr, int size, int offset)
 	unsigned int *p = ((unsigned int *) addr) + (offset >> 5);
 	int set = 0, bit = offset & 31, res;
 	unsigned long dummy;
-	
+
 	if (bit) {
 		/*
 		 * Look for zero in first byte
@@ -891,7 +891,7 @@ found_middle:
 #define ext2_find_first_zero_bit(addr, size) find_first_zero_bit((addr), (size))
 #define ext2_find_next_zero_bit(addr, size, offset) \
                 find_next_zero_bit((addr), (size), (offset))
- 
+
 #endif /* !(__MIPSEB__) */
 
 /*

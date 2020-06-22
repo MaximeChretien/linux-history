@@ -165,15 +165,15 @@ __setup("condev=", condev_setup);
 static int __init conmode_setup(char *str)
 {
 #if defined(CONFIG_HWC_CONSOLE)
-	if (strncmp(str, "hwc", 4) == 0 && !MACHINE_IS_P390)
+	if (strncmp(str, "hwc", 4) == 0)
                 SET_CONSOLE_HWC;
 #endif
 #if defined(CONFIG_TN3215_CONSOLE)
-	if (strncmp(str, "3215", 5) == 0 && (MACHINE_IS_VM || MACHINE_IS_P390))
+	if (strncmp(str, "3215", 5) == 0)
 		SET_CONSOLE_3215;
 #endif
 #if defined(CONFIG_TN3270_CONSOLE)
-	if (strncmp(str, "3270", 5) == 0 && (MACHINE_IS_VM || MACHINE_IS_P390))
+	if (strncmp(str, "3270", 5) == 0)
 		SET_CONSOLE_3270;
 #endif
         return 1;
@@ -233,30 +233,61 @@ static void __init conmode_default(void)
 	}
 }
 
+#ifdef CONFIG_SMP
+extern void machine_restart_smp(char *);
+extern void machine_halt_smp(void);
+extern void machine_power_off_smp(void);
+
+void (*_machine_restart)(char *command) = machine_restart_smp;
+void (*_machine_halt)(void) = machine_halt_smp;
+void (*_machine_power_off)(void) = machine_power_off_smp;
+#else
 /*
  * Reboot, halt and power_off routines for non SMP.
  */
-
-#ifndef CONFIG_SMP
-void machine_restart(char * __unused)
+static void do_machine_restart_nonsmp(char * __unused)
 {
 	reipl(S390_lowcore.ipl_device);
 }
 
-void machine_halt(void)
+static void do_machine_halt_nonsmp(void)
 {
         if (MACHINE_IS_VM && strlen(vmhalt_cmd) > 0)
                 cpcmd(vmhalt_cmd, NULL, 0);
         signal_processor(smp_processor_id(), sigp_stop_and_store_status);
 }
 
-void machine_power_off(void)
+static void do_machine_power_off_nonsmp(void)
 {
         if (MACHINE_IS_VM && strlen(vmpoff_cmd) > 0)
                 cpcmd(vmpoff_cmd, NULL, 0);
         signal_processor(smp_processor_id(), sigp_stop_and_store_status);
 }
+
+void (*_machine_restart)(char *command) = do_machine_restart_nonsmp;
+void (*_machine_halt)(void) = do_machine_halt_nonsmp;
+void (*_machine_power_off)(void) = do_machine_power_off_nonsmp;
 #endif
+
+/*
+ * Reboot, halt and power_off stubs. They just call _machine_restart,
+ * _machine_halt or _machine_power_off. 
+ */
+
+void machine_restart(char *command)
+{
+	_machine_restart(command);
+}
+
+void machine_halt(void)
+{
+	_machine_halt();
+}
+
+void machine_power_off(void)
+{
+	_machine_power_off();
+}
 
 /*
  * Setup function called from init/main.c just after the banner
@@ -497,7 +528,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	}
 	if (cpu_online_map & (1 << n)) {
 		cpuinfo = &safe_get_cpu_lowcore(n)->cpu_data;
-		seq_printf(m, "processor %i: "
+		seq_printf(m, "processor %li: "
 			       "version = %02X,  "
 			       "identification = %06X,  "
 			       "machine = %04X\n",

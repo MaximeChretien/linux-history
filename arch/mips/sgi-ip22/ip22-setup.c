@@ -28,6 +28,7 @@
 #include <asm/sgi/sgint23.h>
 #include <asm/time.h>
 #include <asm/gdb-stub.h>
+#include <asm/io.h>
 #include <asm/traps.h>
 
 #ifdef CONFIG_REMOTE_DEBUG
@@ -133,9 +134,7 @@ struct kbd_ops sgi_kbd_ops = {
 
 void __init ip22_setup(void)
 {
-#ifdef CONFIG_SERIAL_CONSOLE
 	char *ctype;
-#endif
 #ifdef CONFIG_REMOTE_DEBUG
 	char *kgdb_ttyd;
 #endif
@@ -155,19 +154,27 @@ void __init ip22_setup(void)
 #endif
 	conswitchp = NULL;
 
-#ifdef CONFIG_SERIAL_CONSOLE
+	/* Set the IO space to some sane value */
+	set_io_port_base (KSEG1ADDR (0x00080000));
+
 	/* ARCS console environment variable is set to "g?" for
 	 * graphics console, it is set to "d" for the first serial
 	 * line and "d2" for the second serial line.
 	 */
 	ctype = ArcGetEnvironmentVariable("console");
-	if(*ctype == 'd') {
-		if(*(ctype+1)=='2')
-			console_setup ("ttyS1");
+	if (*ctype == 'd') {
+#ifdef CONFIG_SERIAL_CONSOLE
+		if(*(ctype + 1) == '2')
+			console_setup("ttyS1");
 		else
-			console_setup ("ttyS0");
-	}
+			console_setup("ttyS0");
 #endif
+	} else {
+#ifdef CONFIG_ARC_CONSOLE
+		prom_flags &= PROM_FLAG_USE_AS_CONSOLE;
+		console_setup("ttyS0");
+#endif
+	}
 
 #ifdef CONFIG_REMOTE_DEBUG
 	kgdb_ttyd = prom_getcmdline();
@@ -190,20 +197,19 @@ void __init ip22_setup(void)
 	}
 #endif
 
-#ifdef CONFIG_ARC_CONSOLE
-	console_setup("ttyS0");
-#endif
- 
 	sgi_volume_set(simple_strtoul(ArcGetEnvironmentVariable("volume"), NULL, 10));
 
-	{
-	  unsigned long *gfxinfo;
-	  long (*__vec)(void) = (void *) *(long *)((PROMBLOCK)->pvector + 0x20);
-	  gfxinfo = (unsigned long *)__vec();
-	  sgi_gfxaddr = gfxinfo[1] >= 0xa0000000 && gfxinfo[1] <= 0xc0000000 ? gfxinfo[1] - 0xa0000000 : 0;
-	}
 #ifdef CONFIG_VT
 #ifdef CONFIG_SGI_NEWPORT_CONSOLE
+	{
+		unsigned long *gfxinfo;
+		long (*__vec)(void) = (void *) *(long *)((PROMBLOCK)->pvector + 0x20);
+
+		gfxinfo = (unsigned long *)__vec();
+		sgi_gfxaddr = ((gfxinfo[1] >= 0xa0000000
+			       && gfxinfo[1] <= 0xc0000000)
+			       ? gfxinfo[1] - 0xa0000000 : 0);
+	}
 	/* newport addresses? */
 	if (sgi_gfxaddr == 0x1f0f0000 || sgi_gfxaddr == 0x1f4f0000) {
 		conswitchp = &newport_con;
@@ -223,7 +229,9 @@ void __init ip22_setup(void)
 		conswitchp = &dummy_con;
 	}
 #else
+#ifdef CONFIG_DUMMY_CONSOLE
 	conswitchp = &dummy_con;
+#endif
 #endif
 #endif
 

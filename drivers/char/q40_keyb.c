@@ -427,7 +427,7 @@ static void __init kbd_clear_input(void)
 }
 
 
-void __init q40kbd_init_hw(void)
+int __init q40kbd_init_hw(void)
 {
 
 	/* Flush any pending input. */
@@ -438,5 +438,6 @@ void __init q40kbd_init_hw(void)
 	master_outb(-1,KEYBOARD_UNLOCK_REG);
 	master_outb(1,KEY_IRQ_ENABLE_REG);
 
+	return 0;
 }
 

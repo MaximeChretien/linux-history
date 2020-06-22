@@ -37,19 +37,11 @@ struct kiobuf
 	int		offset;		/* Offset to start of valid data */
 	int		length;		/* Number of valid bytes of data */
 
-	/* Keep separate track of the physical addresses and page
-	 * structs involved.  If we do IO to a memory-mapped device
-	 * region, there won't necessarily be page structs defined for
-	 * every address. */
-
-	struct page **	maplist;
-
 	unsigned int	locked : 1;	/* If set, pages has been locked */
-	
-	/* Always embed enough struct pages for atomic IO */
-	struct page *	map_array[KIO_STATIC_PAGES];
-	struct buffer_head * bh[KIO_MAX_SECTORS];
-	unsigned long blocks[KIO_MAX_SECTORS];
+
+	struct page **  maplist;
+	struct buffer_head ** bh;
+	unsigned long * blocks;
 
 	/* Dynamic state for IO completion: */
 	atomic_t	io_count;	/* IOs still in progress */

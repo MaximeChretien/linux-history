@@ -89,6 +89,8 @@
 #define SEND_VOLUME_TAG       0xb6
 #define WRITE_LONG_2          0xea
 
+#define SCSI_RETRY_10(c) ((c) == READ_6 || (c) == WRITE_6 || (c) == SEEK_6)
+
 /*
  *  Status codes
  */

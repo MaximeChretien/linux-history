@@ -59,9 +59,6 @@ typedef enum
 typedef enum
 {
 	ec_schedule=0,
-        ec_restart,
-        ec_halt,
-        ec_power_off,
 	ec_call_function,
 	ec_bit_last
 } ec_bit_sig;

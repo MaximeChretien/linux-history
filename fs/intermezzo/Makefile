@@ -4,8 +4,11 @@
 
 O_TARGET := intermezzo.o
 
-obj-y :=  journal_reiserfs.o cache.o  journal.o presto.o vfs.o psdev.o upcall.o methods.o sysctl.o dcache.o  dir.o  super.o journal_ext2.o journal_ext3.o journal_xfs.o  inode.o  file.o journal_obdfs.o
-
+obj-y :=  cache.o dcache.o dir.o ext_attr.o file.o fileset.o inode.o \
+	  journal.o journal_ext2.o journal_ext3.o journal_obdfs.o \
+          journal_reiserfs.o journal_tmpfs.o journal_xfs.o kml_reint.o \
+          kml_unpack.o methods.o presto.o psdev.o replicator.o super.o \
+          sysctl.o upcall.o vfs.o
 
 obj-m := $(O_TARGET)
 

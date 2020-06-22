@@ -861,7 +861,7 @@ static void meye_irq(int irq, void *dev_id, struct pt_regs *regs) {
 
 		mchip_free_frame();
 	}
-out:
+out: ;
 }
 
 /****************************************************************************/

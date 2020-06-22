@@ -1,5 +1,5 @@
 /*
- * Copyright 2000 by Hans Reiser, licensing governed by reiserfs/README
+ * Copyright 2000-2002 by Hans Reiser, licensing governed by reiserfs/README
  */
 
 #include <linux/config.h>
@@ -106,7 +106,7 @@ static int reiserfs_readdir (struct file * filp, void * dirent, filldir_t filldi
 		if (!d_name[d_reclen - 1])
 		    d_reclen = strlen (d_name);
 	
-		if (d_reclen > REISERFS_MAX_NAME_LEN(inode->i_sb->s_blocksize)){
+		if (d_reclen > REISERFS_MAX_NAME(inode->i_sb->s_blocksize)){
 		    /* too big to send back to VFS */
 		    continue ;
 		}
@@ -177,7 +177,7 @@ static int reiserfs_readdir (struct file * filp, void * dirent, filldir_t filldi
 
 
  end:
-    // FIXME: ext2_readdir does not reset f_pos
+
     filp->f_pos = next_pos;
     pathrelse (&path_to_entry);
     reiserfs_check_path(&path_to_entry) ;

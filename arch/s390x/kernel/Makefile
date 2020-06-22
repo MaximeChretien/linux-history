@@ -34,6 +34,7 @@ obj-$(CONFIG_BINFMT_ELF32)	+= binfmt_elf32.o
 
 .PHONY: asm-offsets.h
 
+entry.S: asm-offsets.h
 #
 # This is just to get the dependencies...
 #

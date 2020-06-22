@@ -10,8 +10,8 @@
  * Copyright (C) 2001 Liam Davies (ldavies@agile.tv)
  *
  */
-#ifndef __ASM_MIPS_COBALT_H 
-#define __ASM_MIPS_COBALT_H 
+#ifndef __ASM_MIPS_COBALT_H
+#define __ASM_MIPS_COBALT_H
 
 /*
  * COBALT interrupt enable bits
@@ -46,6 +46,8 @@
 #define COBALT_PARALLEL_IRQ    5
 #define COBALT_FLOPPY_IRQ      6 /* needs to be consistent with floppy driver! */
 #define COBALT_SCSI_IRQ        7
+#define COBALT_SERIAL_IRQ      7
+#define COBALT_RAQ_SCSI_IRQ    4
 
 /*
  * PCI configuration space manifest constants.  These are wired into
@@ -63,32 +65,6 @@
 #define COBALT_PCICONF_PCISLOT  0x0A
 #define COBALT_PCICONF_ETH1     0x0C
 
-/*
- * Handling the VIA ISA host bridge.
- */
-
-#define        VIA_DELAY()                                             \
-{                                                              \
-       unsigned char ctr;                                      \
-       for (ctr=0;ctr<1;ctr++);                                \
-}
-
-#define VIA_PORT_WRITE(x,y)                                    \
-{                                                              \
-       *((volatile unsigned char *) (0xb0000000 | x)) = y;     \
-       VIA_DELAY();                                            \
-}
-
-#define VIA_PORT_READ(x)       (*((unsigned char *) (0xB0000000 | (x))))
-
-#define RESET_VIA_TIMER()                                      \
-       asm("sb\t%1,0x70(%0)\n\t"                               \
-           "lb\$0,0x71(%0)"                                    \
-           : /* No outputs */                                  \
-           : "r" (0xb0000000), "i" (0x0c));
-
-#define VIA_CMOS_ADDR 0x70
-#define VIA_CMOS_DATA 0x71
 
 /*
  * The Cobalt board id information.  The boards have an ID number wired

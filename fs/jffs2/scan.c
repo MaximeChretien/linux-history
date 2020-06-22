@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: scan.c,v 1.51.2.2 2002/02/23 13:34:31 dwmw2 Exp $
+ * $Id: scan.c,v 1.51.2.3 2002/07/25 20:49:06 dwmw2 Exp $
  *
  */
 #include <linux/kernel.h>
@@ -256,6 +256,16 @@ static int jffs2_scan_eraseblock (struct jffs2_sb_info *c, struct jffs2_eraseblo
 		if (hdr_crc != node.hdr_crc) {
 			noisy_printk(&noise, "jffs2_scan_eraseblock(): Node at 0x%08x {0x%04x, 0x%04x, 0x%08x) has invalid CRC 0x%08x (calculated 0x%08x)\n",
 				     ofs, node.magic, node.nodetype, node.totlen, node.hdr_crc, hdr_crc);
+			DIRTY_SPACE(4);
+			ofs += 4;
+			continue;
+		}
+
+		if (ofs + node.totlen > jeb->offset + c->sector_size) {
+			/* Eep. Node goes over the end of the erase block. */
+			printk(KERN_WARNING "Node at 0x%08x with length 0x%08x would run over the end of the erase block\n",
+			       ofs, node.totlen);
+			printk(KERN_WARNING "Perhaps the file system was created with the wrong erase size?\n");
 			DIRTY_SPACE(4);
 			ofs += 4;
 			continue;

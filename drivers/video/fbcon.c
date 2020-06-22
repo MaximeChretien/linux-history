@@ -637,7 +637,7 @@ static void fbcon_setup(int con, int init, int logo)
     }
     
     if (!fontwidthvalid(p,fontwidth(p))) {
-#ifdef CONFIG_MAC
+#if defined(CONFIG_FBCON_MAC) && defined(CONFIG_MAC)
 	if (MACH_IS_MAC)
 	    /* ++Geert: hack to make 6x11 fonts work on mac */
 	    p->dispsw = &fbcon_mac;
@@ -1571,10 +1571,6 @@ static int fbcon_blank(struct vc_data *conp, int blank)
 
     if (blank < 0)	/* Entering graphics mode */
 	return 0;
-#ifdef CONFIG_PM
-    if (fbcon_sleeping)
-    	return 0;
-#endif /* CONFIG_PM */
 
     fbcon_cursor(p->conp, blank ? CM_ERASE : CM_DRAW);
 

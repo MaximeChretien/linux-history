@@ -11,7 +11,7 @@
 
     Copyright (C) 1999 David A. Hinds -- dahinds@users.sourceforge.net
 
-    pcnet_cs.c 1.144 2001/11/07 04:06:56
+    pcnet_cs.c 1.149 2002/06/29 06:27:37
     
     The network driver code is based on Donald Becker's NE2000 code:
 
@@ -37,9 +37,11 @@
 #include <linux/string.h>
 #include <linux/timer.h>
 #include <linux/delay.h>
+#include <linux/ethtool.h>
 #include <asm/io.h>
 #include <asm/system.h>
 #include <asm/byteorder.h>
+#include <asm/uaccess.h>
 
 #include <linux/netdevice.h>
 #include <../drivers/net/8390.h>
@@ -64,7 +66,7 @@
 #define SOCKET_START_PG	0x01
 #define SOCKET_STOP_PG	0xff
 
-#define PCNET_RDC_TIMEOUT 0x02	/* Max wait in jiffies for Tx RDC */
+#define PCNET_RDC_TIMEOUT (2*HZ/100)	/* Max wait in jiffies for Tx RDC */
 
 static char *if_names[] = { "auto", "10baseT", "10base2"};
 
@@ -73,7 +75,7 @@ static int pc_debug = PCMCIA_DEBUG;
 MODULE_PARM(pc_debug, "i");
 #define DEBUG(n, args...) if (pc_debug>(n)) printk(KERN_DEBUG args)
 static char *version =
-"pcnet_cs.c 1.144 2001/11/07 04:06:56 (David Hinds)";
+"pcnet_cs.c 1.149 2002/06/29 06:27:37 (David Hinds)";
 #else
 #define DEBUG(n, args...)
 #endif
@@ -115,6 +117,7 @@ static int pcnet_event(event_t event, int priority,
 static int pcnet_open(struct net_device *dev);
 static int pcnet_close(struct net_device *dev);
 static int ei_ioctl(struct net_device *dev, struct ifreq *rq, int cmd);
+static int do_ioctl_light(struct net_device *dev, struct ifreq *rq, int cmd);
 static void ei_irq_wrapper(int irq, void *dev_id, struct pt_regs *regs);
 static void ei_watchdog(u_long arg);
 static void pcnet_reset_8390(struct net_device *dev);
@@ -762,18 +765,21 @@ static void pcnet_config(dev_link_t *link)
 
     strcpy(info->node.dev_name, dev->name);
     link->dev = &info->node;
-    link->state &= ~DEV_CONFIG_PENDING;
 
     if (info->flags & (IS_DL10019|IS_DL10022)) {
 	u_char id = inb(dev->base_addr + 0x1a);
 	dev->do_ioctl = &ei_ioctl;
 	mii_phy_probe(dev);
+	if ((id == 0x30) && !info->pna_phy && (info->eth_phy == 4))
+	    info->eth_phy = 0;
 	printk(KERN_INFO "%s: NE2000 (DL100%d rev %02x): ",
 	       dev->name, ((info->flags & IS_DL10022) ? 22 : 19), id);
 	if (info->pna_phy)
 	    printk("PNA, ");
-    } else
+    } else {
 	printk(KERN_INFO "%s: NE2000 Compatible: ", dev->name);
+ 	dev->do_ioctl = &do_ioctl_light;	
+    }
     printk("io %#3lx, irq %d,", dev->base_addr, dev->irq);
     if (info->flags & USE_SHMEM)
 	printk (" mem %#5lx,", dev->mem_start);
@@ -782,12 +788,14 @@ static void pcnet_config(dev_link_t *link)
     printk(" hw_addr ");
     for (i = 0; i < 6; i++)
 	printk("%02X%s", dev->dev_addr[i], ((i<5) ? ":" : "\n"));
+    link->state &= ~DEV_CONFIG_PENDING;
     return;
 
 cs_failed:
     cs_error(link->handle, last_fn, last_ret);
 failed:
     pcnet_release((u_long)link);
+    link->state &= ~DEV_CONFIG_PENDING;
     return;
 } /* pcnet_config */
 
@@ -851,7 +859,7 @@ static int pcnet_event(event_t event, int priority,
 	}
 	break;
     case CS_EVENT_CARD_INSERTION:
-	link->state |= DEV_PRESENT;
+	link->state |= DEV_PRESENT | DEV_CONFIG_PENDING;
 	pcnet_config(link);
 	break;
     case CS_EVENT_PM_SUSPEND:
@@ -1046,6 +1054,7 @@ static int pcnet_close(struct net_device *dev)
 
     DEBUG(2, "pcnet_close('%s')\n", dev->name);
 
+    ei_close(dev);
     free_irq(dev->irq, dev);
     
     link->open--;
@@ -1183,7 +1192,7 @@ static void ei_watchdog(u_long arg)
 	}
 	info->link_status = link;
     }
-    if (info->pna_phy && (jiffies - info->mii_reset > 6*HZ)) {
+    if (info->pna_phy && time_after(jiffies, info->mii_reset + 6*HZ)) {
 	link = mdio_read(mii_addr, info->eth_phy, 1) & 0x0004;
 	if (((info->phy_id == info->pna_phy) && link) ||
 	    ((info->phy_id != info->pna_phy) && !link)) {
@@ -1206,12 +1215,37 @@ reschedule:
 
 /*====================================================================*/
 
+static int netdev_ethtool_ioctl(struct net_device *dev, void *useraddr)
+{
+	u32 ethcmd;
+	
+	if (copy_from_user(&ethcmd, useraddr, sizeof(ethcmd)))
+		return -EFAULT;
+	
+	switch (ethcmd) {
+	case ETHTOOL_GDRVINFO: {
+		struct ethtool_drvinfo info = {ETHTOOL_GDRVINFO};
+		strncpy(info.driver, "pcnet_cs", sizeof(info.driver)-1);
+		if (copy_to_user(useraddr, &info, sizeof(info)))
+			return -EFAULT;
+		return 0;
+	}
+	}
+	
+	return -EOPNOTSUPP;
+}
+
+/*====================================================================*/
+
+
 static int ei_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 {
     pcnet_dev_t *info = (pcnet_dev_t *)dev;
     u16 *data = (u16 *)&rq->ifr_data;
     ioaddr_t mii_addr = dev->base_addr + DLINK_GPIO;
     switch (cmd) {
+    case SIOCETHTOOL:
+        return netdev_ethtool_ioctl(dev, (void *) rq->ifr_data);
     case SIOCDEVPRIVATE:
 	data[0] = info->phy_id;
     case SIOCDEVPRIVATE+1:
@@ -1224,6 +1258,17 @@ static int ei_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 	return 0;
     }
     return -EOPNOTSUPP;
+}
+
+/*====================================================================*/
+
+static int do_ioctl_light(struct net_device *dev, struct ifreq *rq, int cmd)
+{
+    switch (cmd) {
+        case SIOCETHTOOL:
+            return netdev_ethtool_ioctl(dev, (void *) rq->ifr_data);
+    }	    
+    return -EOPNOTSUPP;    
 }
 
 /*====================================================================*/
@@ -1385,7 +1430,7 @@ static void dma_block_output(struct net_device *dev, int count,
 #endif
 
     while ((inb_p(nic_base + EN0_ISR) & ENISR_RDC) == 0)
-	if (jiffies - dma_start > PCNET_RDC_TIMEOUT) {
+	if (time_after(jiffies, dma_start + PCNET_RDC_TIMEOUT)) {
 	    printk(KERN_NOTICE "%s: timeout waiting for Tx RDC.\n",
 		   dev->name);
 	    pcnet_reset_8390(dev);
@@ -1579,7 +1624,7 @@ static int __init init_pcnet_cs(void)
     if (serv.Revision != CS_RELEASE_CODE) {
 	printk(KERN_NOTICE "pcnet_cs: Card Services release "
 	       "does not match!\n");
-	return -1;
+	return -EINVAL;
     }
     register_pccard_driver(&dev_info, &pcnet_attach, &pcnet_detach);
     return 0;

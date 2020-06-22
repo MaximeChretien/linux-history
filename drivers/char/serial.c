@@ -3326,8 +3326,8 @@ static inline int line_info(char *buf, struct serial_state *state)
 	return ret;
 }
 
-int rs_read_proc(char *page, char **start, off_t off, int count,
-		 int *eof, void *data)
+static int rs_read_proc(char *page, char **start, off_t off, int count,
+			int *eof, void *data)
 {
 	int i, len = 0, l;
 	off_t	begin = 0;
@@ -5237,7 +5237,7 @@ static struct pnp_board pnp_devices[] __devinitdata = {
 	{	0, }
 };
 
-static void inline avoid_irq_share(struct pci_dev *dev)
+static inline void avoid_irq_share(struct pci_dev *dev)
 {
 	int i, map = 0x1FF8;
 	struct serial_state *state = rs_table;
@@ -5274,7 +5274,7 @@ static int __devinit check_name(char *name)
        return 0;
 }
 
-static int inline check_compatible_id(struct pci_dev *dev)
+static inline int check_compatible_id(struct pci_dev *dev)
 {
        int i;
        for (i = 0; i < DEVICE_COUNT_COMPATIBLE; i++)

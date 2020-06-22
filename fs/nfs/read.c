@@ -42,6 +42,7 @@ struct nfs_read_data {
 	struct nfs_readres	res;	/* ... and result struct */
 	struct nfs_fattr	fattr;	/* fattr storage */
 	struct list_head	pages;	/* Coalesced read requests */
+	struct page		*pagevec[NFS_READ_MAXIOV];
 };
 
 /*
@@ -63,6 +64,7 @@ static __inline__ struct nfs_read_data *nfs_readdata_alloc(void)
 	if (p) {
 		memset(p, 0, sizeof(*p));
 		INIT_LIST_HEAD(&p->pages);
+		p->args.pages = p->pagevec;
 	}
 	return p;
 }
@@ -86,8 +88,7 @@ nfs_readpage_sync(struct file *file, struct inode *inode, struct page *page)
 {
 	struct rpc_cred	*cred = NULL;
 	struct nfs_fattr fattr;
-	loff_t		offset = page_offset(page);
-	char		*buffer;
+	unsigned int	offset = 0;
 	int		rsize = NFS_SERVER(inode)->rsize;
 	int		result;
 	int		count = PAGE_CACHE_SIZE;
@@ -103,19 +104,18 @@ nfs_readpage_sync(struct file *file, struct inode *inode, struct page *page)
 	 * This works now because the socket layer never tries to DMA
 	 * into this buffer directly.
 	 */
-	buffer = kmap(page);
 	do {
 		if (count < rsize)
 			rsize = count;
 
-		dprintk("NFS: nfs_proc_read(%s, (%x/%Ld), %Ld, %d, %p)\n",
+		dprintk("NFS: nfs_proc_read(%s, (%x/%Ld), %u, %u, %p)\n",
 			NFS_SERVER(inode)->hostname,
 			inode->i_dev, (long long)NFS_FILEID(inode),
-			(long long)offset, rsize, buffer);
+			offset, rsize, page);
 
 		lock_kernel();
 		result = NFS_PROTO(inode)->read(inode, cred, &fattr, flags,
-						offset, rsize, buffer, &eof);
+						offset, rsize, page, &eof);
 		nfs_refresh_inode(inode, &fattr);
 		unlock_kernel();
 
@@ -130,12 +130,15 @@ nfs_readpage_sync(struct file *file, struct inode *inode, struct page *page)
 		}
 		count  -= result;
 		offset += result;
-		buffer += result;
 		if (result < rsize)	/* NFSv2ism */
 			break;
 	} while (count);
 
-	memset(buffer, 0, count);
+	if (count) {
+		char *kaddr = kmap(page);
+		memset(kaddr + offset, 0, count);
+		kunmap(page);
+	}
 	flush_dcache_page(page);
 	SetPageUptodate(page);
 	if (PageError(page))
@@ -143,7 +146,6 @@ nfs_readpage_sync(struct file *file, struct inode *inode, struct page *page)
 	result = 0;
 
 io_error:
-	kunmap(page);
 	UnlockPage(page);
 	return result;
 }
@@ -186,26 +188,24 @@ static void
 nfs_read_rpcsetup(struct list_head *head, struct nfs_read_data *data)
 {
 	struct nfs_page		*req;
-	struct iovec		*iov;
+	struct page		**pages;
 	unsigned int		count;
 
-	iov = data->args.iov;
+	pages = data->args.pages;
 	count = 0;
 	while (!list_empty(head)) {
 		struct nfs_page *req = nfs_list_entry(head->next);
 		nfs_list_remove_request(req);
 		nfs_list_add_request(req, &data->pages);
-		iov->iov_base = kmap(req->wb_page) + req->wb_offset;
-		iov->iov_len = req->wb_bytes;
+		*pages++ = req->wb_page;
 		count += req->wb_bytes;
-		iov++;
-		data->args.nriov++;
 	}
 	req = nfs_list_entry(data->pages.next);
 	data->inode	  = req->wb_inode;
 	data->cred	  = req->wb_cred;
 	data->args.fh     = NFS_FH(req->wb_inode);
 	data->args.offset = page_offset(req->wb_page) + req->wb_offset;
+	data->args.pgbase = req->wb_offset;
 	data->args.count  = count;
 	data->res.fattr   = &data->fattr;
 	data->res.count   = count;
@@ -266,10 +266,10 @@ nfs_pagein_one(struct list_head *head, struct inode *inode)
 	msg.rpc_cred = data->cred;
 
 	/* Start the async call */
-	dprintk("NFS: %4d initiated read call (req %x/%Ld count %d nriov %d.\n",
+	dprintk("NFS: %4d initiated read call (req %x/%Ld count %u.\n",
 		task->tk_pid,
 		inode->i_dev, (long long)NFS_FILEID(inode),
-		data->args.count, data->args.nriov);
+		data->args.count);
 
 	rpc_clnt_sigmask(clnt, &oldset);
 	rpc_call_setup(task, &msg, 0);
@@ -418,13 +418,17 @@ nfs_readpage_result(struct rpc_task *task)
 				memset(p + count, 0, PAGE_CACHE_SIZE - count);
 				kunmap(page);
 				count = 0;
-			} else
+				if (data->res.eof)
+					SetPageUptodate(page);
+				else
+					SetPageError(page);
+			} else {
 				count -= PAGE_CACHE_SIZE;
-			SetPageUptodate(page);
+				SetPageUptodate(page);
+			}
 		} else
 			SetPageError(page);
 		flush_dcache_page(page);
-		kunmap(page);
 		UnlockPage(page);
 
 		dprintk("NFS: read (%x/%Ld %d@%Ld)\n",

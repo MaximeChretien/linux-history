@@ -17,14 +17,14 @@
 #include <linux/signal.h>
 #include <linux/errno.h>
 #include <linux/wait.h>
-#include <linux/ptrace.h>
 #include <linux/unistd.h>
 
 #include <asm/asm.h>
 #include <asm/bitops.h>
 #include <asm/cpu.h>
+#include <asm/offset.h>
 #include <asm/pgalloc.h>
-#include <asm/stackframe.h>
+#include <asm/ptrace.h>
 #include <asm/uaccess.h>
 #include <asm/ucontext.h>
 
@@ -190,7 +190,7 @@ static inline int restore_thread_fp_context(struct sigcontext *sc)
 	u64 *pfreg = &current->thread.fpu.soft.regs[0];
 	int err = 0;
 
-	/* 
+	/*
 	 * Copy all 32 64-bit values, for two reasons.  First, the R3000 and
 	 * R4000/MIPS32 kernels use the thread FP register storage differently,
 	 * such that a full copy is essentially necessary to support both.
@@ -416,15 +416,15 @@ static int inline setup_sigcontext(struct pt_regs *regs, struct sigcontext *sc)
 		goto out;
 
 	/* There exists FP thread state that may be trashed by signal */
-	if (owned_fp) {	
+	if (owned_fp) {
 		/* fp is active.  Save context from FPU */
 		err |= save_fp_context(sc);
 		goto out;
 	}
 
-	/* 
-	 * Someone else has FPU. 
-	 * Copy Thread context into signal context 
+	/*
+	 * Someone else has FPU.
+	 * Copy Thread context into signal context
 	 */
 	err |= save_thread_fp_context(sc);
 
@@ -443,7 +443,7 @@ static inline void * get_sigframe(struct k_sigaction *ka, struct pt_regs *regs,
 	/* Default to using normal stack */
 	sp = regs->regs[29];
 
-	/* 
+	/*
  	 * FPU emulator may have it's own trampoline active just
  	 * above the user stack, 16-bytes before the next lowest
  	 * 16 byte boundary.  Try to avoid trashing it.
@@ -508,8 +508,9 @@ static void inline setup_frame(struct k_sigaction * ka, struct pt_regs *regs,
 	regs->cp0_epc = regs->regs[25] = (unsigned long) ka->sa.sa_handler;
 
 #if DEBUG_SIG
-	printk("SIG deliver (%s:%d): sp=0x%p pc=0x%p ra=0x%p\n",
-	       current->comm, current->pid, frame, regs->cp0_epc, frame->code);
+	printk("SIG deliver (%s:%d): sp=0x%p pc=0x%lx ra=0x%p\n",
+	       current->comm, current->pid,
+	       frame, regs->cp0_epc, frame->sf_code);
 #endif
         return;
 
@@ -583,8 +584,9 @@ static void inline setup_rt_frame(struct k_sigaction * ka, struct pt_regs *regs,
 	regs->cp0_epc = regs->regs[25] = (unsigned long) ka->sa.sa_handler;
 
 #if DEBUG_SIG
-	printk("SIG deliver (%s:%d): sp=0x%p pc=0x%p ra=0x%p\n",
-	       current->comm, current->pid, frame, regs->cp0_epc, frame->code);
+	printk("SIG deliver (%s:%d): sp=0x%p pc=0x%lx ra=0x%p\n",
+	       current->comm, current->pid,
+	       frame, regs->cp0_epc, frame->rs_code);
 #endif
 	return;
 
@@ -708,7 +710,7 @@ asmlinkage int do_signal(sigset_t *oldset, struct pt_regs *regs)
 				continue;
 
 			switch (signr) {
-			case SIGCONT: case SIGCHLD: case SIGWINCH:
+			case SIGCONT: case SIGCHLD: case SIGWINCH: case SIGURG:
 				continue;
 
 			case SIGTSTP: case SIGTTIN: case SIGTTOU:
@@ -732,10 +734,7 @@ asmlinkage int do_signal(sigset_t *oldset, struct pt_regs *regs)
 				/* FALLTHRU */
 
 			default:
-				sigaddset(&current->pending.signal, signr);
-				recalc_sigpending(current);
-				current->flags |= PF_SIGNALED;
-				do_exit(exit_code);
+				sig_exit(signr, exit_code, &info);
 				/* NOTREACHED */
 			}
 		}

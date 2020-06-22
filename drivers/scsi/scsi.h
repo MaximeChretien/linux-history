@@ -48,7 +48,7 @@
 #if ((SCSI_DATA_UNKNOWN == PCI_DMA_BIDIRECTIONAL) && (SCSI_DATA_WRITE == PCI_DMA_TODEVICE) && (SCSI_DATA_READ == PCI_DMA_FROMDEVICE) && (SCSI_DATA_NONE == PCI_DMA_NONE))
 #define scsi_to_pci_dma_dir(scsi_dir)	((int)(scsi_dir))
 #else
-extern __inline__ int scsi_to_pci_dma_dir(unsigned char scsi_dir)
+static inline int scsi_to_pci_dma_dir(unsigned char scsi_dir)
 {
         if (scsi_dir == SCSI_DATA_UNKNOWN)
                 return PCI_DMA_BIDIRECTIONAL;
@@ -66,7 +66,7 @@ extern __inline__ int scsi_to_pci_dma_dir(unsigned char scsi_dir)
 #if ((SCSI_DATA_UNKNOWN == SBUS_DMA_BIDIRECTIONAL) && (SCSI_DATA_WRITE == SBUS_DMA_TODEVICE) && (SCSI_DATA_READ == SBUS_DMA_FROMDEVICE) && (SCSI_DATA_NONE == SBUS_DMA_NONE))
 #define scsi_to_sbus_dma_dir(scsi_dir)	((int)(scsi_dir))
 #else
-extern __inline__ int scsi_to_sbus_dma_dir(unsigned char scsi_dir)
+static inline int scsi_to_sbus_dma_dir(unsigned char scsi_dir)
 {
         if (scsi_dir == SCSI_DATA_UNKNOWN)
                 return SBUS_DMA_BIDIRECTIONAL;
@@ -386,15 +386,6 @@ extern const char *const scsi_device_types[MAX_SCSI_DEVICE_CODE];
 #define ASKED_FOR_SENSE 0x20
 #define SYNC_RESET      0x40
 
-#if defined(__mc68000__) || defined(CONFIG_APUS)
-#include <asm/pgtable.h>
-#define CONTIGUOUS_BUFFERS(X,Y) \
-	(virt_to_phys((X)->b_data+(X)->b_size-1)+1==virt_to_phys((Y)->b_data))
-#else
-#define CONTIGUOUS_BUFFERS(X,Y) ((X->b_data+X->b_size) == Y->b_data)
-#endif
-
-
 /*
  * This is the crap from the old error handling code.  We have it in a special
  * place so that we can more easily delete it later on.
@@ -633,7 +624,7 @@ typedef struct scsi_pointer {
 	struct scatterlist *buffer;	/* which buffer */
 	int buffers_residual;	/* how many buffers left */
 
-        dma_addr_t dma_handle;
+	dma_addr_t dma_handle;
 
 	volatile int Status;
 	volatile int Message;

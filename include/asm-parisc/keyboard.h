@@ -1,4 +1,13 @@
 /*
+ *  WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
+ *  ---------------------------------------------------------------
+ *  This file will be removed as soon as we have converted
+ *  hp_psaux.c and hp_keyb.c to the input layer !
+ *  
+ */
+
+
+/*
  *  linux/include/asm-parisc/keyboard.h
  *
  *  Original by Geert Uytterhoeven
@@ -20,6 +29,9 @@
 
 #ifdef __KERNEL__
 #ifdef CONFIG_VT
+
+#include <linux/kernel.h>
+#include <linux/kd.h>
 
 /*  These are basically the generic functions / variables.  The only
  *  unexpected detail is the initialization sequence for the keyboard
@@ -58,6 +70,7 @@ extern struct kbd_ops {
 #define	kbd_sysrq_xlate		(kbd_ops->sysrq_xlate)
 extern unsigned char hp_ps2kbd_sysrq_xlate[128]; 	/* from drivers/char/hp_keyb.c */
 
+extern void unregister_kbd_ops(void);
 extern void register_kbd_ops(struct kbd_ops *ops);
 
 #endif /* CONFIG_VT */

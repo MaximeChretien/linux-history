@@ -88,6 +88,7 @@
 
 static int timeout_val;
 static int timeout = 2;
+static int expect_close = 0;
 
 MODULE_PARM (timeout, "i");
 MODULE_PARM_DESC (timeout, "Watchdog timeout in seconds (default=2)");
@@ -213,7 +214,7 @@ pcwd_get_stat_reva (int reset_boot)
 	spin_unlock (&io_lock);
 
 	/* Transform the card register to the ioctl bits we use internally */
-	retval = 0;
+	retval = WDIOF_MAGICCLOSE;
 	if (status & WD_WDRST)
 		retval |= WDIOF_CARDRESET;
 	if (status & WD_T110)
@@ -385,6 +386,20 @@ pcwd_write (struct file *file, const char *buf, size_t len, loff_t * ppos)
 		return -ESPIPE;
 
 	if (len) {
+		if (!nowayout) {
+			size_t i;
+
+			/* In case it was set long ago */
+			expect_close = 0;
+
+			for (i = 0; i != len; i++) {
+				char c;
+				if (get_user(c, buf + i))
+					return -EFAULT;
+				if (c == 'V')
+					expect_close = 1;
+			}
+		}
 		pcwd_info.card_info->wd_tickle ();
 		return 1;
 	}
@@ -450,7 +465,7 @@ pcwd_close (struct inode *ino, struct file *filep)
 {
 	switch (MINOR (ino->i_rdev)) {
 	case WATCHDOG_MINOR:
-		if (!nowayout)
+		if (expect_close)
 			pcwd_info.card_info->enable_card (0);
 
 		atomic_inc (&pcwd_info.open_allowed);

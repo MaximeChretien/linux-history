@@ -1,5 +1,5 @@
 /*
- * Copyright 2000 by Hans Reiser, licensing governed by reiserfs/README
+ * Copyright 2000-2002 by Hans Reiser, licensing governed by reiserfs/README
  */
 
 #include <linux/fs.h>
@@ -31,8 +31,12 @@ int reiserfs_ioctl (struct inode * inode, struct file * filp, unsigned int cmd,
 				return 0;
 		} else
 			return -ENOTTY;
-	/* following two cases are taken from fs/ext2/ioctl.c by Remy
-	   Card (card@masi.ibp.fr) */
+	/*
+	 * Following {G,S}ETFLAGS, and {G,S}ETVERSION are providing ext2
+	 * binary compatible interface (used by lsattr(1), and chattr(1)) and
+	 * are * thus conceptually similar to appropriate pieces of
+	 * fs/ext2/ioctl.c
+	 */
 	case REISERFS_IOC_GETFLAGS:
 		flags = inode -> u.reiserfs_i.i_attrs;
 		i_attrs_to_sd_attrs( inode, ( __u16 * ) &flags );

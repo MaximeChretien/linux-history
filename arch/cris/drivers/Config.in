@@ -23,8 +23,7 @@ fi
 
 bool 'Serial-port support' CONFIG_ETRAX_SERIAL
 if [ "$CONFIG_ETRAX_SERIAL" = "y" ]; then
-#  bool '  Use fast timers for DMA flush and RS-485 timing' CONFIG_ETRAX_SERIAL_FAST_TIMER n
-  define_bool CONFIG_ETRAX_SERIAL_FAST_TIMER n
+  bool '  Use fast timers for serial DMA flush (experimental)' CONFIG_ETRAX_SERIAL_FAST_TIMER
   if [ "$CONFIG_ETRAX_SERIAL_FAST_TIMER" = "n" ]; then
     bool '  Fast serial port DMA flush' CONFIG_ETRAX_SERIAL_FLUSH_DMA_FAST
     if [ "$CONFIG_ETRAX100_SERIAL_FLUSH_DMA_FAST" = "n" ]; then
@@ -156,6 +155,11 @@ if [ "$CONFIG_ETRAX_I2C" = "y" ]; then
 # this is true for most products since PB-I2C seems to be somewhat
 # flawed.. 
 	bool 'I2C uses PB not PB-I2C' CONFIG_ETRAX_I2C_USES_PB_NOT_PB_I2C
+
+	if [ "$CONFIG_ETRAX_I2C_USES_PB_NOT_PB_I2C" = "y" ]; then
+          int '  I2C SDA bit number' CONFIG_ETRAX_I2C_DATA_PORT 0
+          int '  I2C SCL bit number' CONFIG_ETRAX_I2C_CLK_PORT 1
+	fi
 fi
 
 bool 'I2C EEPROM (non-volatile RAM) support' CONFIG_ETRAX_I2C_EEPROM
@@ -182,6 +186,8 @@ if [ "$CONFIG_JULIETTE" = "y" ]; then
 
 fi
 
+bool 'VIRTEX FPGA support' CONFIG_ETRAX_VIRTEX_FPGA
+
 bool 'USB host' CONFIG_ETRAX_USB_HOST
 if [ "$CONFIG_ETRAX_USB_HOST" = "y" ]; then
 	define_bool CONFIG_USB y
@@ -191,7 +197,13 @@ else
 	define_bool CONFIG_USB n
 fi
 
-bool 'DS1302 Real Time Clock support' CONFIG_ETRAX_DS1302
+bool 'Real Time Clock support' CONFIG_ETRAX_RTC
+if [ "$CONFIG_ETRAX_RTC" = "y" ]; then
+  choice '  RTC chip' \
+    "DS1302 CONFIG_ETRAX_DS1302 \
+     PCF8563  CONFIG_ETRAX_PCF8563" DS1302
+fi
+
 if [ "$CONFIG_ETRAX_DS1302" = "y" ]; then
   bool '  DS1302 RST on Generic Port' CONFIG_ETRAX_DS1302_RST_ON_GENERIC_PORT
   int '  DS1302 RST bit number' CONFIG_ETRAX_DS1302_RSTBIT 2

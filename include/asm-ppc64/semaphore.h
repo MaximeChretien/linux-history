@@ -2,14 +2,8 @@
 #define _PPC64_SEMAPHORE_H
 
 /*
- * Swiped from asm-sparc/semaphore.h and modified
- * -- Cort (cort@cs.nmt.edu)
- *
- * Stole some rw spinlock-based semaphore stuff from asm-alpha/semaphore.h
- * -- Ani Joshi (ajoshi@unixbox.com)
- *
  * Remove spinlock-based RW semaphores; RW semaphore definitions are
- * now in rwsem.h and we use the the generic lib/rwsem.c implementation.
+ * now in rwsem.h and we use the generic lib/rwsem.c implementation.
  * Rework semaphores to use atomic_dec_if_positive.
  * -- Paul Mackerras (paulus@samba.org)
  */
@@ -78,7 +72,7 @@ extern void __down(struct semaphore * sem);
 extern int  __down_interruptible(struct semaphore * sem);
 extern void __up(struct semaphore * sem);
 
-extern inline void down(struct semaphore * sem)
+static inline void down(struct semaphore * sem)
 {
 #if WAITQUEUE_DEBUG
 	CHECK_MAGIC(sem->__magic);
@@ -92,7 +86,7 @@ extern inline void down(struct semaphore * sem)
 	smp_wmb();
 }
 
-extern inline int down_interruptible(struct semaphore * sem)
+static inline int down_interruptible(struct semaphore * sem)
 {
 	int ret = 0;
 
@@ -106,7 +100,7 @@ extern inline int down_interruptible(struct semaphore * sem)
 	return ret;
 }
 
-extern inline int down_trylock(struct semaphore * sem)
+static inline int down_trylock(struct semaphore * sem)
 {
 	int ret;
 
@@ -119,7 +113,7 @@ extern inline int down_trylock(struct semaphore * sem)
 	return ret;
 }
 
-extern inline void up(struct semaphore * sem)
+static inline void up(struct semaphore * sem)
 {
 #if WAITQUEUE_DEBUG
 	CHECK_MAGIC(sem->__magic);
@@ -128,6 +122,11 @@ extern inline void up(struct semaphore * sem)
 	smp_wmb();
 	if (atomic_inc_return(&sem->count) <= 0)
 		__up(sem);
+}
+
+static inline int sem_getcount(struct semaphore *sem)
+{
+	return atomic_read(&sem->count);
 }
 
 #endif /* __KERNEL__ */

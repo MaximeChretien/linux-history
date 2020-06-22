@@ -35,6 +35,10 @@
 		 */
 		.fill	0x400
 
+		/* The following two symbols are used for kernel profiling. */
+		EXPORT(stext)
+		EXPORT(_stext)
+
 		__INIT
 
 		/* Cache Error */
@@ -81,7 +85,7 @@
 		 * The EJTAG debug exception entry point is 0xbfc00480, which
 		 * normally is in the boot PROM, so the boot PROM must do a
 		 * unconditional jump to this vector.
-		 */	
+		 */
 		NESTED(except_vec_ejtag_debug, 0, sp)
 		j	ejtag_debug_handler
 		 nop
@@ -94,7 +98,7 @@
 		.set	noat
 		.set	noreorder
 		mtc0	k0, CP0_DESAVE
-		mfc0	k0, CP0_DEBUG	
+		mfc0	k0, CP0_DEBUG
 
 		sll	k0, k0, 30	# Check for SDBBP.
 		bgez	k0, ejtag_return
@@ -106,15 +110,15 @@
 		 move	a0, sp
 		RESTORE_ALL
 		la	k0, ejtag_debug_buffer
-		lw	k1, 0(k0)	
+		lw	k1, 0(k0)
 
 ejtag_return:
-		mfc0	k0, CP0_DESAVE	
+		mfc0	k0, CP0_DESAVE
 		.word	0x4200001f     # DERET, return from EJTAG debug exception.
 		 nop
 		.set	at
 		END(ejtag_debug_handler)
-	
+
 		/*
 		* NMI debug exception handler for MIPS reference boards.
 		* The NMI debug exception entry point is 0xbfc00000, which
@@ -137,16 +141,13 @@ ejtag_return:
 		eret
 		.set    at
 		.set    mips0
-		END(nmi_handler)	
+		END(nmi_handler)
 
 		/*
 		 * Kernel entry point
 		 */
 		NESTED(kernel_entry, 16, sp)
 		.set	noreorder
-		/* The following two symbols are used for kernel profiling. */
-		EXPORT(stext)
-		EXPORT(_stext)
 
 		/*
 		 * Stack for kernel and init, current variable
@@ -178,7 +179,7 @@ ejtag_return:
 
 /*
  * SMP slave cpus entry point.  Board specific code for bootstrap calls this
- * function after setting up the stack and gp registers. 
+ * function after setting up the stack and gp registers.
  */
 		LEAF(smp_bootstrap)
 		.set push
@@ -198,13 +199,13 @@ ejtag_return:
 		__FINIT
 
 		/*
-		 * This buffer is reserved for the use of the EJTAG debug 
+		 * This buffer is reserved for the use of the EJTAG debug
 		 * handler.
 		 */
 		.data
 		EXPORT(ejtag_debug_buffer)
 		.fill	4
-	
+
 		.comm	kernelsp,    NR_CPUS * 8, 8
 		.comm	pgd_current, NR_CPUS * 8, 8
 

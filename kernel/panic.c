@@ -96,7 +96,7 @@ NORET_TYPE void panic(const char * fmt, ...)
 #endif
 	sti();
 	for(;;) {
-#if defined(__i386__) && defined(CONFIG_VT) 
+#if defined(CONFIG_X86) && defined(CONFIG_VT) 
 		extern void panic_blink(void);
 		panic_blink(); 
 #endif

@@ -18,9 +18,9 @@
 #include <linux/smp_lock.h>
 #include <linux/stddef.h>
 #include <linux/unistd.h>
+#include <linux/efi.h>
 
 #include <asm/delay.h>
-#include <asm/efi.h>
 #include <asm/perfmon.h>
 #include <asm/pgtable.h>
 #include <asm/processor.h>
@@ -174,8 +174,10 @@ ia64_save_extra (struct task_struct *task)
 # endif
 #endif
 
+#ifdef CONFIG_IA32_SUPPORT
 	if (IS_IA32_PROCESS(ia64_task_regs(task)))
 		ia32_save_state(task);
+#endif
 }
 
 void
@@ -194,8 +196,10 @@ ia64_load_extra (struct task_struct *task)
 # endif
 #endif
 
+#ifdef CONFIG_IA32_SUPPORT
 	if (IS_IA32_PROCESS(ia64_task_regs(task)))
 		ia32_load_state(task);
+#endif
 }
 
 /*
@@ -297,21 +301,24 @@ copy_thread (int nr, unsigned long clone_flags,
 
 	/* copy parts of thread_struct: */
 	p->thread.ksp = (unsigned long) child_stack - 16;
+
+	/* stop some PSR bits from being inherited: */
+	child_ptregs->cr_ipsr =  ((child_ptregs->cr_ipsr | IA64_PSR_BITS_TO_SET)
+				  & ~IA64_PSR_BITS_TO_CLEAR);
+
 	/*
-	 * NOTE: The calling convention considers all floating point
-	 * registers in the high partition (fph) to be scratch.  Since
-	 * the only way to get to this point is through a system call,
-	 * we know that the values in fph are all dead.  Hence, there
-	 * is no need to inherit the fph state from the parent to the
-	 * child and all we have to do is to make sure that
-	 * IA64_THREAD_FPH_VALID is cleared in the child.
+	 * NOTE: The calling convention considers all floating point registers in the high
+	 * partition (fph) to be scratch.  Since the only way to get to this point is
+	 * through a system call, we know that the values in fph are all dead.  Hence,
+	 * there is no need to inherit the fph state from the parent to the child and all
+	 * we have to do is to make sure that IA64_THREAD_FPH_VALID is cleared in the
+	 * child.
 	 *
-	 * XXX We could push this optimization a bit further by
-	 * clearing IA64_THREAD_FPH_VALID on ANY system call.
-	 * However, it's not clear this is worth doing.  Also, it
-	 * would be a slight deviation from the normal Linux system
-	 * call behavior where scratch registers are preserved across
-	 * system calls (unless used by the system call itself).
+	 * XXX We could push this optimization a bit further by clearing
+	 * IA64_THREAD_FPH_VALID on ANY system call.  However, it's not clear this is
+	 * worth doing.  Also, it would be a slight deviation from the normal Linux system
+	 * call behavior where scratch registers are preserved across system calls (unless
+	 * used by the system call itself).
 	 */
 #	define THREAD_FLAGS_TO_CLEAR	(IA64_THREAD_FPH_VALID | IA64_THREAD_DBG_VALID \
 					 | IA64_THREAD_PM_VALID)
@@ -333,8 +340,11 @@ copy_thread (int nr, unsigned long clone_flags,
 	 */
 	atomic_set(&p->thread.pfm_notifiers_check, 0);
 	atomic_set(&p->thread.pfm_owners_check, 0);
+	/* clear list of sampling buffer to free for new task */
+	p->thread.pfm_smpl_buf_list = NULL;
 
-	if (current->thread.pfm_context) retval = pfm_inherit(p, child_ptregs);
+	if (current->thread.pfm_context)
+		retval = pfm_inherit(p, child_ptregs);
 #endif
 	return retval;
 }
@@ -537,14 +547,13 @@ exit_thread (void)
 		ia64_set_fpu_owner(0);
 #endif
 #ifdef CONFIG_PERFMON
-       /* if needed, stop monitoring and flush state to perfmon context */
-	if (current->thread.pfm_context) 
+       /* stop monitoring */
+	if (current->thread.pfm_context)
 		pfm_flush_regs(current);
 
 	/* free debug register resources */
-	if ((current->thread.flags & IA64_THREAD_DBG_VALID) != 0) {
+	if (current->thread.flags & IA64_THREAD_DBG_VALID)
 		pfm_release_debug_registers(current);
-	}
 #endif
 }
 

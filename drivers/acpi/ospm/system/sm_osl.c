@@ -685,6 +685,9 @@ sm_osl_suspend(u32 state)
 	 */
 	if (state == ACPI_S2 || state == ACPI_S3) {
 #ifdef DONT_USE_UNTIL_LOWLEVEL_CODE_EXISTS
+		/* That && trick is *not going to work*. Read gcc
+		   specs. That explicitely says: jumping from other
+		   function is *not allowed*. */ 
 		wakeup_address = acpi_save_state_mem((unsigned long)&&acpi_sleep_done);
 
 		if (!wakeup_address) goto acpi_sleep_done;

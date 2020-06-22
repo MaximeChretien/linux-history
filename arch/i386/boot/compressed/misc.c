@@ -9,6 +9,8 @@
  * High loaded stuff by Hans Lermen & Werner Almesberger, Feb. 1996
  */
 
+#define STANDALONE
+
 #include <linux/linkage.h>
 #include <linux/vmalloc.h>
 #include <linux/tty.h>
@@ -123,10 +125,6 @@ static uch *high_buffer_start /* = (uch *)(((ulg)&end) + HEAP_SIZE)*/;
 static char *vidmem = (char *)0xb8000;
 static int vidport;
 static int lines, cols;
-
-#ifdef CONFIG_MULTIQUAD
-static void * const xquad_portio = NULL;
-#endif
 
 #include "../../../../lib/inflate.c"
 

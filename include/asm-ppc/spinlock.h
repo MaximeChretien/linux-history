@@ -1,12 +1,16 @@
 /*
- * BK Id: SCCS/s.spinlock.h 1.9 08/21/01 16:07:48 trini
+ * BK Id: %F% %I% %G% %U% %#%
  */
 #ifndef __ASM_SPINLOCK_H
 #define __ASM_SPINLOCK_H
 
 #include <asm/system.h>
 
-#undef SPINLOCK_DEBUG
+#if defined(CONFIG_DEBUG_SPINLOCK)
+#define SPINLOCK_DEBUG 1
+#else
+#define SPINLOCK_DEBUG 0
+#endif
 
 /*
  * Simple spin lock operations.
@@ -14,7 +18,7 @@
 
 typedef struct {
 	volatile unsigned long lock;
-#ifdef SPINLOCK_DEBUG
+#if SPINLOCK_DEBUG
 	volatile unsigned long owner_pc;
 	volatile unsigned long owner_cpu;
 #endif
@@ -33,7 +37,17 @@ typedef struct {
 #define spin_is_locked(x)	((x)->lock != 0)
 #define spin_unlock_wait(x)	do { barrier(); } while(spin_is_locked(x))
 
-#ifndef SPINLOCK_DEBUG
+#if SPINLOCK_DEBUG
+
+extern void _spin_lock(spinlock_t *lock);
+extern void _spin_unlock(spinlock_t *lock);
+extern int spin_trylock(spinlock_t *lock);
+extern unsigned long __spin_trylock(volatile unsigned long *lock);
+
+#define spin_lock(lp)			_spin_lock(lp)
+#define spin_unlock(lp)			_spin_unlock(lp)
+
+#else /* ! SPINLOCK_DEBUG */
 
 static inline void spin_lock(spinlock_t *lock)
 {
@@ -63,16 +77,6 @@ static inline void spin_unlock(spinlock_t *lock)
 
 #define spin_trylock(lock) (!test_and_set_bit(0,(lock)))
 
-#else
-
-extern void _spin_lock(spinlock_t *lock);
-extern void _spin_unlock(spinlock_t *lock);
-extern int spin_trylock(spinlock_t *lock);
-extern unsigned long __spin_trylock(volatile unsigned long *lock);
-
-#define spin_lock(lp)			_spin_lock(lp)
-#define spin_unlock(lp)			_spin_unlock(lp)
-
 #endif
 
 /*
@@ -87,7 +91,7 @@ extern unsigned long __spin_trylock(volatile unsigned long *lock);
  */
 typedef struct {
 	volatile unsigned long lock;
-#ifdef SPINLOCK_DEBUG
+#if SPINLOCK_DEBUG
 	volatile unsigned long owner_pc;
 #endif
 } rwlock_t;
@@ -101,7 +105,19 @@ typedef struct {
 #define RW_LOCK_UNLOCKED (rwlock_t) { 0 RWLOCK_DEBUG_INIT }
 #define rwlock_init(lp) do { *(lp) = RW_LOCK_UNLOCKED; } while(0)
 
-#ifndef SPINLOCK_DEBUG
+#if SPINLOCK_DEBUG
+
+extern void _read_lock(rwlock_t *rw);
+extern void _read_unlock(rwlock_t *rw);
+extern void _write_lock(rwlock_t *rw);
+extern void _write_unlock(rwlock_t *rw);
+
+#define read_lock(rw)		_read_lock(rw)
+#define write_lock(rw)		_write_lock(rw)
+#define write_unlock(rw)	_write_unlock(rw)
+#define read_unlock(rw)		_read_unlock(rw)
+
+#else /* ! SPINLOCK_DEBUG */
 
 static __inline__ void read_lock(rwlock_t *rw)
 {
@@ -163,18 +179,6 @@ static __inline__ void write_unlock(rwlock_t *rw)
 	__asm__ __volatile__("eieio		# write_unlock": : :"memory");
 	rw->lock = 0;
 }
-
-#else
-
-extern void _read_lock(rwlock_t *rw);
-extern void _read_unlock(rwlock_t *rw);
-extern void _write_lock(rwlock_t *rw);
-extern void _write_unlock(rwlock_t *rw);
-
-#define read_lock(rw)		_read_lock(rw)
-#define write_lock(rw)		_write_lock(rw)
-#define write_unlock(rw)	_write_unlock(rw)
-#define read_unlock(rw)		_read_unlock(rw)
 
 #endif
 

@@ -158,20 +158,9 @@ static inline int has_stopped_jobs(int pgrp)
  */
 static inline void forget_original_parent(struct task_struct * father)
 {
-	struct task_struct * p, *reaper;
+	struct task_struct * p;
 
 	read_lock(&tasklist_lock);
-
-	/* Next in our thread group, if they're not already exiting */
-	reaper = father;
-	do {
-		reaper = next_thread(reaper);
-		if (!(reaper->flags & PF_EXITING))
-			break;
-	} while (reaper != father);
-
-	if (reaper == father)
-		reaper = child_reaper;
 
 	for_each_task(p) {
 		if (p->p_opptr == father) {
@@ -180,10 +169,7 @@ static inline void forget_original_parent(struct task_struct * father)
 			p->self_exec_id++;
 
 			/* Make sure we're not reparenting to ourselves */
-			if (p == reaper)
-				p->p_opptr = child_reaper;
-			else
-				p->p_opptr = reaper;
+			p->p_opptr = child_reaper;
 
 			if (p->pdeath_signal) send_sig(p->pdeath_signal, p, 0);
 		}

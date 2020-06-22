@@ -104,7 +104,7 @@ ec_io_wait (
 acpi_status
 ec_io_read (
 	EC_CONTEXT              *ec,
-	ACPI_IO_ADDRESS         io_port,
+	u32		        io_port,
 	u8                      *data,
 	EC_EVENT                wait_event)
 {
@@ -139,7 +139,7 @@ ec_io_read (
 acpi_status
 ec_io_write (
 	EC_CONTEXT              *ec,
-	ACPI_IO_ADDRESS         io_port,
+	u32		       io_port,
 	u8                      data,
 	EC_EVENT                wait_event)
 {

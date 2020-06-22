@@ -2,6 +2,8 @@
 /* ips.h -- driver for the IBM ServeRAID controller                          */
 /*                                                                           */
 /* Written By: Keith Mitchell, IBM Corporation                               */
+/*             Jack Hammer, Adaptec, Inc.                                    */
+/*             David Jeffery, Adaptec, Inc.                                  */
 /*                                                                           */
 /* Copyright (C) 1999 IBM Corporation                                        */
 /*                                                                           */
@@ -40,7 +42,7 @@
 /* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 /*                                                                           */
 /* Bugs/Comments/Suggestions should be mailed to:                            */
-/*      ipslinux@us.ibm.com                                                  */
+/*      ipslinux@adaptec.com     	                                         */
 /*                                                                           */
 /*****************************************************************************/
 
@@ -168,12 +170,14 @@
    #define IPS_CMD_WRITE_SG             0x83
    #define IPS_CMD_DCDB                 0x04
    #define IPS_CMD_DCDB_SG              0x84
+   #define IPS_CMD_EXTENDED_DCDB 	    0x95
+	#define IPS_CMD_EXTENDED_DCDB_SG		 0x96
    #define IPS_CMD_CONFIG_SYNC          0x58
    #define IPS_CMD_ERROR_TABLE          0x17
    #define IPS_CMD_DOWNLOAD             0x20
    #define IPS_CMD_RW_BIOSFW            0x22
    #define IPS_CMD_GET_VERSION_INFO     0xC6
-   #define IPS_CMD_RESET_CHANNEL        0x1A
+   #define IPS_CMD_RESET_CHANNEL        0x1A  
 
    /*
     * Adapter Equates
@@ -199,7 +203,6 @@
    #define IPS_GOOD_POST_STATUS         0x80
    #define IPS_SEM_TIMEOUT              2000
    #define IPS_IOCTL_COMMAND            0x0D
-   #define IPS_IOCTL_NEW_COMMAND        0x81
    #define IPS_INTR_ON                  0
    #define IPS_INTR_IORL                1
    #define IPS_FFDC                     99
@@ -704,6 +707,21 @@ typedef struct {
    uint8_t   reserved2[3];
 } IPS_DCDB_TABLE, *PIPS_DCDB_TABLE;
 
+typedef struct {
+   uint8_t   device_address;
+   uint8_t   cmd_attribute;
+   uint8_t   cdb_length;
+   uint8_t   reserved_for_LUN; 	 
+   uint32_t  transfer_length;
+   uint32_t  buffer_pointer;
+   uint16_t  sg_count;
+   uint8_t   sense_length;
+   uint8_t   scsi_status;
+   uint32_t  reserved;
+   uint8_t   scsi_cdb[16];
+   uint8_t   sense_info[56];
+} IPS_DCDB_TABLE_TAPE, *PIPS_DCDB_TABLE_TAPE;
+
 typedef union {
    struct {
       volatile uint8_t  reserved;
@@ -1206,39 +1224,42 @@ typedef struct {
 *
 *************************************************************************/
 
-#define IPS_VER_MAJOR 4
-#define IPS_VER_MAJOR_STRING "4"
-#define IPS_VER_MINOR 90
-#define IPS_VER_MINOR_STRING "90"
-#define IPS_VER_BUILD_STRING "18"
-#define IPS_VER_STRING "4.90.18"
+#define IPS_VER_MAJOR 5
+#define IPS_VER_MAJOR_STRING "5"
+#define IPS_VER_MINOR 10
+#define IPS_VER_MINOR_STRING "10"
+#define IPS_VER_BUILD 21
+#define IPS_VER_BUILD_STRING "21"
+#define IPS_VER_STRING "5.10.21"
 #define IPS_LEGALCOPYRIGHT_STRING "(C) Copyright IBM Corp. 1994, 2002. All Rights Reserved."
+#define IPS_ADAPTECCOPYRIGHT_STRING "(c) Copyright Adaptec, Inc. 2002 to present. All Rights Reserved."
 #define IPS_NT_LEGALCOPYRIGHT_STRING "(C) Copyright IBM Corp. 1994, 2002."
 
 /* Version numbers for various adapters */
 #define IPS_VER_SERVERAID1 "2.25.01"
 #define IPS_VER_SERVERAID2 "2.88.13"
 #define IPS_VER_NAVAJO "2.88.13"
-#define IPS_VER_SERVERAID3 "3.84.01"
-#define IPS_VER_SERVERAID4H "4.84.01"
-#define IPS_VER_SERVERAID4MLx "4.90.18"
-#define IPS_VER_SARASOTA "0.00.00"
+#define IPS_VER_SERVERAID3 "5.10.21"
+#define IPS_VER_SERVERAID4H "5.10.21"
+#define IPS_VER_SERVERAID4MLx "5.10.21"
+#define IPS_VER_SARASOTA "5.10.21"
 
 /* Compatability IDs for various adapters */
 #define IPS_COMPAT_UNKNOWN ""
+#define IPS_COMPAT_CURRENT "SA510"
 #define IPS_COMPAT_SERVERAID1 "2.25.01"
 #define IPS_COMPAT_SERVERAID2 "2.88.13"
 #define IPS_COMPAT_NAVAJO  "2.88.13"
 #define IPS_COMPAT_KIOWA "2.88.13"
-#define IPS_COMPAT_SERVERAID3H  "3.84.01"
-#define IPS_COMPAT_SERVERAID3L  "3.84.01"
-#define IPS_COMPAT_SERVERAID4H  "4.84.01"
-#define IPS_COMPAT_SERVERAID4M  "MA490"
-#define IPS_COMPAT_SERVERAID4L  "MA490"
-#define IPS_COMPAT_SERVERAID4Mx "MA490"
-#define IPS_COMPAT_SERVERAID4Lx "MA490"
-#define IPS_COMPAT_SARASOTA     "XXXXX"
-#define IPS_COMPAT_BIOS "MA490"
+#define IPS_COMPAT_SERVERAID3H  "SA510"
+#define IPS_COMPAT_SERVERAID3L  "SA510"
+#define IPS_COMPAT_SERVERAID4H  "SA510"
+#define IPS_COMPAT_SERVERAID4M  "SA510"
+#define IPS_COMPAT_SERVERAID4L  "SA510"
+#define IPS_COMPAT_SERVERAID4Mx "SA510"
+#define IPS_COMPAT_SERVERAID4Lx "SA510"
+#define IPS_COMPAT_SARASOTA     "SA510"
+#define IPS_COMPAT_BIOS "SA510"
 
 #define IPS_COMPAT_MAX_ADAPTER_TYPE 14
 #define IPS_COMPAT_ID_LENGTH 8

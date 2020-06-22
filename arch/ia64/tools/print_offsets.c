@@ -58,7 +58,8 @@ tab[] =
     { "IA64_TASK_THREAD_OFFSET",	offsetof (struct task_struct, thread) },
     { "IA64_TASK_THREAD_KSP_OFFSET",	offsetof (struct task_struct, thread.ksp) },
 #ifdef CONFIG_PERFMON
-    { "IA64_TASK_PFM_OVFL_BLOCK_RESET_OFFSET",offsetof(struct task_struct, thread.pfm_ovfl_block_reset) },
+    { "IA64_TASK_PFM_OVFL_BLOCK_RESET_OFFSET",
+					offsetof(struct task_struct, thread.pfm_ovfl_block_reset) },
 #endif
     { "IA64_TASK_PID_OFFSET",		offsetof (struct task_struct, pid) },
     { "IA64_TASK_MM_OFFSET",		offsetof (struct task_struct, mm) },
@@ -152,6 +153,7 @@ tab[] =
     { "IA64_SWITCH_STACK_AR_RNAT_OFFSET",	offsetof (struct switch_stack, ar_rnat) },
     { "IA64_SWITCH_STACK_AR_BSPSTORE_OFFSET",	offsetof (struct switch_stack, ar_bspstore) },
     { "IA64_SWITCH_STACK_PR_OFFSET",	offsetof (struct switch_stack, pr) },
+    { "IA64_SIGCONTEXT_IP_OFFSET",	offsetof (struct sigcontext, sc_ip) },
     { "IA64_SIGCONTEXT_AR_BSP_OFFSET",	offsetof (struct sigcontext, sc_ar_bsp) },
     { "IA64_SIGCONTEXT_AR_FPSR_OFFSET", offsetof (struct sigcontext, sc_ar_fpsr) },
     { "IA64_SIGCONTEXT_AR_RNAT_OFFSET",	offsetof (struct sigcontext, sc_ar_rnat) },

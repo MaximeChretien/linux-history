@@ -55,7 +55,8 @@
 	present: 0,		/* number of 7xxx's present   */\
 	unchecked_isa_dma: 0,	/* no memory DMA restrictions */\
 	use_clustering: ENABLE_CLUSTERING,			\
-	use_new_eh_code: 0					\
+	use_new_eh_code: 0,					\
+	highmem_io: 1						\
 }
 
 extern int aic7xxx_queue(Scsi_Cmnd *, void (*)(Scsi_Cmnd *));

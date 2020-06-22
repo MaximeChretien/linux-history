@@ -39,6 +39,8 @@ if [ "$CONFIG_ETRAX_WATCHDOG" = "y" ]; then
 	bool 'Disable watchdog during Oops printouts' CONFIG_ETRAX_WATCHDOG_NICE_DOGGY
 fi
 
+bool 'Enable ETRAX fast timer API' CONFIG_ETRAX_FAST_TIMER
+
 endmenu
 
 mainmenu_option next_comment
@@ -253,4 +255,6 @@ bool 'Kernel profiling support' CONFIG_PROFILE
 if [ "$CONFIG_PROFILE" = "y" ]; then
   int ' Profile shift count' CONFIG_PROFILE_SHIFT 2
 fi
+
+source lib/Config.in
 endmenu

@@ -248,7 +248,8 @@ static int rt_cache_get_info(char *buffer, char **start, off_t offset,
 				r->u.dst.__use,
 				0,
 				(unsigned long)r->rt_src,
-				(int)r->u.dst.advmss + 40,
+				(r->u.dst.advmss ?
+				 (int) r->u.dst.advmss + 40 : 0),
 				r->u.dst.window,
 				(int)((r->u.dst.rtt >> 3) + r->u.dst.rttvar),
 				r->key.tos,
@@ -1246,7 +1247,7 @@ static int ip_route_input_mc(struct sk_buff *skb, u32 daddr, u32 saddr,
 		return -EINVAL;
 
 	if (MULTICAST(saddr) || BADCLASS(saddr) || LOOPBACK(saddr) ||
-	    skb->protocol != __constant_htons(ETH_P_IP))
+	    skb->protocol != htons(ETH_P_IP))
 		goto e_inval;
 
 	if (ZERONET(saddr)) {
@@ -1457,7 +1458,7 @@ int ip_route_input_slow(struct sk_buff *skb, u32 daddr, u32 saddr,
 	     inet_addr_onlink(out_dev, saddr, FIB_RES_GW(res))))
 		flags |= RTCF_DOREDIRECT;
 
-	if (skb->protocol != __constant_htons(ETH_P_IP)) {
+	if (skb->protocol != htons(ETH_P_IP)) {
 		/* Not IP (i.e. ARP). Do not create route, if it is
 		 * invalid for proxy arp. DNAT routes are always valid.
 		 */
@@ -1522,7 +1523,7 @@ done:
 out:	return err;
 
 brd_input:
-	if (skb->protocol != __constant_htons(ETH_P_IP))
+	if (skb->protocol != htons(ETH_P_IP))
 		goto e_inval;
 
 	if (ZERONET(saddr))
@@ -2156,7 +2157,7 @@ int inet_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr* nlh, void *arg)
 		err = -ENODEV;
 		if (!dev)
 			goto out;
-		skb->protocol	= __constant_htons(ETH_P_IP);
+		skb->protocol	= htons(ETH_P_IP);
 		skb->dev	= dev;
 		local_bh_disable();
 		err = ip_route_input(skb, dst, src, rtm->rtm_tos, dev);
@@ -2418,10 +2419,15 @@ ctl_table ipv4_route_table[] = {
 #ifdef CONFIG_NET_CLS_ROUTE
 struct ip_rt_acct *ip_rt_acct;
 
+/* This code sucks.  But you should have seen it before! --RR */
+
+/* IP route accounting ptr for this logical cpu number. */
+#define IP_RT_ACCT_CPU(i) (ip_rt_acct + cpu_logical_map(i) * 256)
+
 static int ip_rt_acct_read(char *buffer, char **start, off_t offset,
 			   int length, int *eof, void *data)
 {
-	*start = buffer;
+	unsigned int i;
 
 	if ((offset & 3) || (length & 3))
 		return -EIO;
@@ -2435,35 +2441,18 @@ static int ip_rt_acct_read(char *buffer, char **start, off_t offset,
 		length = sizeof(struct ip_rt_acct) * 256 - offset;
 		*eof = 1;
 	}
-	if (length > 0) {
-		u32 *dst = (u32*)buffer;
-		u32 *src = (u32*)(((u8*)ip_rt_acct) + offset);
 
-		memcpy(dst, src, length);
+	/* Copy first cpu. */
+	*start = buffer;
+	memcpy(buffer, IP_RT_ACCT_CPU(0), length);
 
-#ifdef CONFIG_SMP
-		if (smp_num_cpus > 1 || cpu_logical_map(0) != 0) {
-			int i;
-			int cnt = length / 4;
-
-			for (i = 0; i < smp_num_cpus; i++) {
-				int cpu = cpu_logical_map(i);
-				int k;
-
-				if (cpu == 0)
-					continue;
-
-				src = (u32*)(((u8*)ip_rt_acct) + offset +
-					cpu * 256 * sizeof(struct ip_rt_acct));
-
-				for (k = 0; k < cnt; k++)
-					dst[k] += src[k];
-			}
-		}
-#endif
-		return length;
+	/* Add the other cpus in, one int at a time */
+	for (i = 1; i < smp_num_cpus; i++) {
+		unsigned int j;
+		for (j = 0; j < length/4; j++)
+			((u32*)buffer)[j] += ((u32*)IP_RT_ACCT_CPU(i))[j];
 	}
-	return 0;
+	return length;
 }
 #endif
 

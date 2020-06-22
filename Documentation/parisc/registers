@@ -25,8 +25,8 @@ CR26 (TR 2)			not used
 CR27 (TR 3)			Thread descriptor pointer
 CR28 (TR 4)			not used
 CR29 (TR 5)			not used
-CR30 (TR 6)			current / 0
-CR31 (TR 7)			Temporary register, used in various places
+CR30 (TR 6)			current
+CR31 (TR 7)			interrupt stack base
 
 	Space Registers (kernel mode)
 

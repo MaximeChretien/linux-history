@@ -23,13 +23,13 @@
 #include <linux/smp.h>
 #include <linux/smp_lock.h>
 #include <linux/spinlock.h>
+#include <linux/efi.h>
 
 #include <asm/atomic.h>
 #include <asm/bitops.h>
 #include <asm/cache.h>
 #include <asm/current.h>
 #include <asm/delay.h>
-#include <asm/efi.h>
 #include <asm/io.h>
 #include <asm/irq.h>
 #include <asm/machvec.h>
@@ -68,6 +68,7 @@ static volatile unsigned long go[SLAVE + 1];
 
 extern void __init calibrate_delay(void);
 extern void start_ap(void);
+extern unsigned long ia64_iobase;
 
 int cpucount;
 
@@ -344,6 +345,11 @@ smp_callin (void)
 	 */
 	ia64_init_itm();
 
+	/*
+	 * Set I/O port base per CPU
+	 */
+	ia64_set_kr(IA64_KR_IO_BASE, __pa(ia64_iobase));
+
 #ifdef CONFIG_IA64_MCA
 	ia64_mca_cmc_vector_setup();	/* Setup vector on AP & enable */
 	ia64_mca_check_errors();	/* For post-failure MCA error logging */
@@ -528,11 +534,11 @@ smp_boot_cpus (void)
 
 		printk("Before bogomips.\n");
 		if (!cpucount) {
-			printk(KERN_ERR "Error: only one processor found.\n");
+			printk(KERN_WARNING "Warning: only one processor found.\n");
 		} else {
 			unsigned long bogosum = 0;
   			for (cpu = 0; cpu < NR_CPUS; cpu++)
-				if (cpu_online_map & (1<<cpu))
+				if (cpu_online_map & (1UL << cpu))
 					bogosum += cpu_data(cpu)->loops_per_jiffy;
 
 			printk(KERN_INFO"Total of %d processors activated (%lu.%02lu BogoMIPS).\n",

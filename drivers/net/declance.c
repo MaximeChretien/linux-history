@@ -43,8 +43,10 @@
  */
 
 #include <linux/config.h>
+#include <linux/crc32.h>
 #include <linux/delay.h>
 #include <linux/errno.h>
+#include <linux/if_ether.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -60,7 +62,7 @@
 #include <asm/dec/kn01.h>
 #include <asm/dec/machtype.h>
 #include <asm/dec/tc.h>
-#include <asm/wbflush.h>
+#include <asm/system.h>
 
 static char version[] __devinitdata =
 "declance.c: v0.009 by Linux MIPS DECstation task force\n";
@@ -80,9 +82,6 @@ MODULE_LICENSE("GPL");
 unsigned long system_base;
 unsigned long dmaptr;
 #endif
-
-#define CRC_POLYNOMIAL_BE 0x04c11db7UL	/* Ethernet CRC, big endian */
-#define CRC_POLYNOMIAL_LE 0xedb88320UL	/* Ethernet CRC, little endian */
 
 #define LE_CSR0 0
 #define LE_CSR1 1
@@ -290,7 +289,7 @@ static struct net_device *root_lance_dev;
 static inline void writereg(volatile unsigned short *regptr, short value)
 {
 	*regptr = value;
-	wbflush();
+	iob();
 }
 
 /* Load the CSR registers */
@@ -370,7 +369,7 @@ void cp_to_buf(const int type, void *to, const void *from, int len)
 		}
 	}
 
-	wbflush();
+	iob();
 }
 
 void cp_from_buf(const int type, void *to, const void *from, int len)
@@ -498,7 +497,7 @@ static void lance_init_ring(struct net_device *dev)
 		if (i < 3 && ZERO)
 			printk("%d: 0x%8.8x(0x%8.8x)\n", i, leptr, (int) lp->rx_buf_ptr_cpu[i]);
 	}
-	wbflush();
+	iob();
 }
 
 static int init_restart_lance(struct lance_private *lp)
@@ -795,7 +794,7 @@ static int lance_open(struct net_device *dev)
 			return -EAGAIN;
 		}
 		/* Enable I/O ASIC LANCE DMA.  */
-		wbflush();
+		fast_wmb();
 		ioasic_write(SSR, ioasic_read(SSR) | LANCE_DMA_EN);
 	}
 
@@ -824,7 +823,7 @@ static int lance_close(struct net_device *dev)
 	if (lp->dma_irq >= 0) {
 		/* Disable I/O ASIC LANCE DMA.  */
 		ioasic_write(SSR, ioasic_read(SSR) & ~LANCE_DMA_EN);
-		wbflush();
+		fast_iob();
 		free_irq(lp->dma_irq, dev);
 	}
 	free_irq(dev->irq, dev);
@@ -921,7 +920,7 @@ static void lance_load_multicast(struct net_device *dev)
 	struct dev_mc_list *dmi = dev->mc_list;
 	char *addrs;
 	int i, j, bit, byte;
-	u32 crc, poly = CRC_POLYNOMIAL_LE;
+	u32 crc;
 
 	/* set all multicast bits */
 	if (dev->flags & IFF_ALLMULTI) {
@@ -946,19 +945,7 @@ static void lance_load_multicast(struct net_device *dev)
 		if (!(*addrs & 1))
 			continue;
 
-		crc = 0xffffffff;
-		for (byte = 0; byte < 6; byte++)
-			for (bit = *addrs++, j = 0; j < 8; j++, bit >>= 1) {
-				int test;
-
-				test = ((bit ^ crc) & 0x01);
-				crc >>= 1;
-
-				if (test) {
-					crc = crc ^ poly;
-				}
-			}
-
+		crc = ether_crc_le(ETH_ALEN, addrs);
 		crc = crc >> 26;
 		mcast_table[2 * (crc >> 4)] |= 1 << (crc & 0xf);
 	}

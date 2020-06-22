@@ -239,106 +239,99 @@ static int proc_read_sysinfo(char *page, char **start,
 
 	level = stsi_0 ();
 
-	if (level < 1)
-		goto out;
-	if (stsi_1_1_1 (&info->sysinfo_1_1_1))
-		goto out;
-
-	len += sprintf (page+len, "Manufacturer:         %-16.16s\n",
-			info->sysinfo_1_1_1.manufacturer);
-	len += sprintf (page+len, "Type:                 %-4.4s\n",
-			info->sysinfo_1_1_1.type);
-	len += sprintf (page+len, "Model:                %-16.16s\n",
-			info->sysinfo_1_1_1.model);
-	len += sprintf (page+len, "Sequence Code:        %-16.16s\n",
-			info->sysinfo_1_1_1.sequence);
-	len += sprintf (page+len, "Plant:                %-4.4s\n",
-			info->sysinfo_1_1_1.plant);
-
-	if (stsi_1_2_2 (&info->sysinfo_1_2_2))
-		goto out;
-
-	len += sprintf (page+len, "\n");
-	len += sprintf (page+len, "CPUs Total:           %d\n",
-			info->sysinfo_1_2_2.cpus_total);
-	len += sprintf (page+len, "CPUs Configured:      %d\n",
-			info->sysinfo_1_2_2.cpus_configured);
-	len += sprintf (page+len, "CPUs Standby:         %d\n",
-			info->sysinfo_1_2_2.cpus_standby);
-	len += sprintf (page+len, "CPUs Reserved:        %d\n",
-			info->sysinfo_1_2_2.cpus_reserved);
-
-	len += sprintf (page+len, "Capability:           %d\n",
-			info->sysinfo_1_2_2.capability);
-
-	for (i = 2; i <= info->sysinfo_1_2_2.cpus_total; i++)
-		len += sprintf (page+len, "Adjustment %02d-way:    %d\n",
-				i, info->sysinfo_1_2_2.adjustment[i-2]);
-			
-	if (level < 2)
-		goto out;
-	if (stsi_2_2_2 (&info->sysinfo_2_2_2))
-		goto out;
-
-	len += sprintf (page+len, "\n");
-	len += sprintf (page+len, "LPAR Number:          %d\n",
-			info->sysinfo_2_2_2.lpar_number);
-
-	len += sprintf (page+len, "LPAR Characteristics: ");
-	if (info->sysinfo_2_2_2.characteristics & LPAR_CHAR_DEDICATED)
-		len += sprintf (page+len, "Dedicated ");
-	if (info->sysinfo_2_2_2.characteristics & LPAR_CHAR_SHARED)
-		len += sprintf (page+len, "Shared ");
-	if (info->sysinfo_2_2_2.characteristics & LPAR_CHAR_LIMITED)
-		len += sprintf (page+len, "Limited ");
-	len += sprintf (page+len, "\n");
-
-	len += sprintf (page+len, "LPAR Name:            %-8.8s\n",
-			info->sysinfo_2_2_2.name);
-
-	len += sprintf (page+len, "LPAR Adjustment:      %d\n",
-			info->sysinfo_2_2_2.caf);
-
-	len += sprintf (page+len, "LPAR CPUs Total:      %d\n",
-			info->sysinfo_2_2_2.cpus_total);
-	len += sprintf (page+len, "LPAR CPUs Configured: %d\n",
-			info->sysinfo_2_2_2.cpus_configured);
-	len += sprintf (page+len, "LPAR CPUs Standby:    %d\n",
-			info->sysinfo_2_2_2.cpus_standby);
-	len += sprintf (page+len, "LPAR CPUs Reserved:   %d\n",
-			info->sysinfo_2_2_2.cpus_reserved);
-	len += sprintf (page+len, "LPAR CPUs Dedicated:  %d\n",
-			info->sysinfo_2_2_2.cpus_dedicated);
-	len += sprintf (page+len, "LPAR CPUs Shared:     %d\n",
-			info->sysinfo_2_2_2.cpus_shared);
-
-	if (level < 3)
-		goto out;
-	if (stsi_3_2_2 (&info->sysinfo_3_2_2))
-		goto out;
-
-	for (i = 0; i < info->sysinfo_3_2_2.count; i++)
+	if (level >= 1 && stsi_1_1_1 (&info->sysinfo_1_1_1) == 0)
 	{
-		len += sprintf (page+len, "\n");
-		len += sprintf (page+len, "VM%02d Name:            %-8.8s\n",
-				i, info->sysinfo_3_2_2.vm[i].name);
-		len += sprintf (page+len, "VM%02d Control Program: %-16.16s\n",
-				i, info->sysinfo_3_2_2.vm[i].cpi);
-
-		len += sprintf (page+len, "VM%02d Adjustment:      %d\n",
-				i, info->sysinfo_3_2_2.vm[i].caf);
-
-		len += sprintf (page+len, "VM%02d CPUs Total:      %d\n",
-				i, info->sysinfo_3_2_2.vm[i].cpus_total);
-		len += sprintf (page+len, "VM%02d CPUs Configured: %d\n",
-				i, info->sysinfo_3_2_2.vm[i].cpus_configured);
-		len += sprintf (page+len, "VM%02d CPUs Standby:    %d\n",
-				i, info->sysinfo_3_2_2.vm[i].cpus_standby);
-		len += sprintf (page+len, "VM%02d CPUs Reserved:   %d\n",
-				i, info->sysinfo_3_2_2.vm[i].cpus_reserved);
+		len += sprintf (page+len, "Manufacturer:         %-16.16s\n",
+				info->sysinfo_1_1_1.manufacturer);
+		len += sprintf (page+len, "Type:                 %-4.4s\n",
+				info->sysinfo_1_1_1.type);
+		len += sprintf (page+len, "Model:                %-16.16s\n",
+				info->sysinfo_1_1_1.model);
+		len += sprintf (page+len, "Sequence Code:        %-16.16s\n",
+				info->sysinfo_1_1_1.sequence);
+		len += sprintf (page+len, "Plant:                %-4.4s\n",
+				info->sysinfo_1_1_1.plant);
 	}
 
-out:
+	if (level >= 1 && stsi_1_2_2 (&info->sysinfo_1_2_2) == 0)
+	{
+		len += sprintf (page+len, "\n");
+		len += sprintf (page+len, "CPUs Total:           %d\n",
+				info->sysinfo_1_2_2.cpus_total);
+		len += sprintf (page+len, "CPUs Configured:      %d\n",
+				info->sysinfo_1_2_2.cpus_configured);
+		len += sprintf (page+len, "CPUs Standby:         %d\n",
+				info->sysinfo_1_2_2.cpus_standby);
+		len += sprintf (page+len, "CPUs Reserved:        %d\n",
+				info->sysinfo_1_2_2.cpus_reserved);
+	
+		len += sprintf (page+len, "Capability:           %d\n",
+				info->sysinfo_1_2_2.capability);
+
+		for (i = 2; i <= info->sysinfo_1_2_2.cpus_total; i++)
+			len += sprintf (page+len, "Adjustment %02d-way:    %d\n",
+					i, info->sysinfo_1_2_2.adjustment[i-2]);
+	}
+
+	if (level >= 2 && stsi_2_2_2 (&info->sysinfo_2_2_2) == 0)
+	{
+		len += sprintf (page+len, "\n");
+		len += sprintf (page+len, "LPAR Number:          %d\n",
+				info->sysinfo_2_2_2.lpar_number);
+
+		len += sprintf (page+len, "LPAR Characteristics: ");
+		if (info->sysinfo_2_2_2.characteristics & LPAR_CHAR_DEDICATED)
+			len += sprintf (page+len, "Dedicated ");
+		if (info->sysinfo_2_2_2.characteristics & LPAR_CHAR_SHARED)
+			len += sprintf (page+len, "Shared ");
+		if (info->sysinfo_2_2_2.characteristics & LPAR_CHAR_LIMITED)
+			len += sprintf (page+len, "Limited ");
+		len += sprintf (page+len, "\n");
+	
+		len += sprintf (page+len, "LPAR Name:            %-8.8s\n",
+				info->sysinfo_2_2_2.name);
+	
+		len += sprintf (page+len, "LPAR Adjustment:      %d\n",
+				info->sysinfo_2_2_2.caf);
+	
+		len += sprintf (page+len, "LPAR CPUs Total:      %d\n",
+				info->sysinfo_2_2_2.cpus_total);
+		len += sprintf (page+len, "LPAR CPUs Configured: %d\n",
+				info->sysinfo_2_2_2.cpus_configured);
+		len += sprintf (page+len, "LPAR CPUs Standby:    %d\n",
+				info->sysinfo_2_2_2.cpus_standby);
+		len += sprintf (page+len, "LPAR CPUs Reserved:   %d\n",
+				info->sysinfo_2_2_2.cpus_reserved);
+		len += sprintf (page+len, "LPAR CPUs Dedicated:  %d\n",
+				info->sysinfo_2_2_2.cpus_dedicated);
+		len += sprintf (page+len, "LPAR CPUs Shared:     %d\n",
+				info->sysinfo_2_2_2.cpus_shared);
+	}
+
+	if (level >= 3 && stsi_3_2_2 (&info->sysinfo_3_2_2) == 0)
+	{
+		for (i = 0; i < info->sysinfo_3_2_2.count; i++)
+		{
+			len += sprintf (page+len, "\n");
+			len += sprintf (page+len, "VM%02d Name:            %-8.8s\n",
+					i, info->sysinfo_3_2_2.vm[i].name);
+			len += sprintf (page+len, "VM%02d Control Program: %-16.16s\n",
+					i, info->sysinfo_3_2_2.vm[i].cpi);
+	
+			len += sprintf (page+len, "VM%02d Adjustment:      %d\n",
+					i, info->sysinfo_3_2_2.vm[i].caf);
+	
+			len += sprintf (page+len, "VM%02d CPUs Total:      %d\n",
+					i, info->sysinfo_3_2_2.vm[i].cpus_total);
+			len += sprintf (page+len, "VM%02d CPUs Configured: %d\n",
+					i, info->sysinfo_3_2_2.vm[i].cpus_configured);
+			len += sprintf (page+len, "VM%02d CPUs Standby:    %d\n",
+					i, info->sysinfo_3_2_2.vm[i].cpus_standby);
+			len += sprintf (page+len, "VM%02d CPUs Reserved:   %d\n",
+					i, info->sysinfo_3_2_2.vm[i].cpus_reserved);
+		}
+	}
+
 	free_page (info_page);
         return len;
 }

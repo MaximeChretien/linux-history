@@ -29,7 +29,6 @@
  *
  */
 
-#define __NO_VERSION__
 #include "gamma.h"
 #include "drmP.h"
 #include "gamma_drv.h"

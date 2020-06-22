@@ -183,6 +183,43 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long new_stackp,
         return 0;
 }
 
+/* 
+ * Allocation and freeing of basic task resources. 
+ * The task struct and the stack go together.
+ *
+ * NOTE: An order-2 allocation can easily fail.  If this
+ *       happens we fall back to using vmalloc ...
+ */
+
+struct task_struct *alloc_task_struct(void)
+{
+	struct task_struct *tsk = __get_free_pages(GFP_KERNEL, 2);
+	if (!tsk)
+		tsk = vmalloc(16384);
+	if (!tsk)
+		return NULL;
+
+        atomic_set((atomic_t *)(tsk + 1), 1);
+        return tsk;
+}
+
+void free_task_struct(struct task_struct *tsk)
+{
+	if (atomic_dec_and_test((atomic_t *)(tsk + 1)))
+	{
+		if ((unsigned long)tsk < VMALLOC_START)
+			free_pages((unsigned long)tsk, 2);
+		else
+			vfree(tsk);
+	}
+}
+
+void get_task_struct(struct task_struct *tsk)
+{
+	atomic_inc((atomic_t *)(tsk + 1));
+}
+
+
 asmlinkage int sys_fork(struct pt_regs regs)
 {
         return do_fork(SIGCHLD, regs.gprs[15], &regs, 0);

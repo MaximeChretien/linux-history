@@ -3,6 +3,7 @@
 #
 CONFIG_MIPS=y
 CONFIG_MIPS32=y
+# CONFIG_MIPS64 is not set
 
 #
 # Code maturity level options
@@ -21,6 +22,7 @@ CONFIG_MODULES=y
 #
 # CONFIG_ACER_PICA_61 is not set
 # CONFIG_MIPS_PB1000 is not set
+# CONFIG_MIPS_PB1100 is not set
 # CONFIG_MIPS_PB1500 is not set
 # CONFIG_ALGOR_P4032 is not set
 # CONFIG_BAGET_MIPS is not set
@@ -34,17 +36,23 @@ CONFIG_MIPS_EV96100=y
 # CONFIG_MIPS_ATLAS is not set
 # CONFIG_MIPS_MAGNUM_4000 is not set
 # CONFIG_MIPS_MALTA is not set
+# CONFIG_MIPS_SEAD is not set
 # CONFIG_MOMENCO_OCELOT is not set
+# CONFIG_MOMENCO_OCELOT_G is not set
 # CONFIG_DDB5074 is not set
 # CONFIG_DDB5476 is not set
 # CONFIG_DDB5477 is not set
 # CONFIG_NEC_OSPREY is not set
+# CONFIG_NEC_EAGLE is not set
 # CONFIG_OLIVETTI_M700 is not set
 # CONFIG_NINO is not set
 # CONFIG_SGI_IP22 is not set
-# CONFIG_SIBYTE_SB1250 is not set
+# CONFIG_SGI_IP27 is not set
+# CONFIG_SGI_IP32 is not set
+# CONFIG_SIBYTE_SB1xxx_SOC is not set
 # CONFIG_SNI_RM200_PCI is not set
 # CONFIG_TOSHIBA_JMR3927 is not set
+# CONFIG_ZAO_CAPCELLA is not set
 # CONFIG_HIGHMEM is not set
 CONFIG_RWSEM_GENERIC_SPINLOCK=y
 # CONFIG_RWSEM_XCHGADD_ALGORITHM is not set
@@ -60,27 +68,29 @@ CONFIG_SWAP_IO_SPACE=y
 #
 # CPU selection
 #
+# CONFIG_CPU_MIPS32 is not set
+# CONFIG_CPU_MIPS64 is not set
 # CONFIG_CPU_R3000 is not set
 # CONFIG_CPU_TX39XX is not set
-# CONFIG_CPU_R6000 is not set
 # CONFIG_CPU_VR41XX is not set
 # CONFIG_CPU_R4300 is not set
 # CONFIG_CPU_R4X00 is not set
 # CONFIG_CPU_TX49XX is not set
 # CONFIG_CPU_R5000 is not set
 # CONFIG_CPU_R5432 is not set
-CONFIG_CPU_RM7000=y
+# CONFIG_CPU_R6000 is not set
 # CONFIG_CPU_NEVADA is not set
+# CONFIG_CPU_R8000 is not set
 # CONFIG_CPU_R10000 is not set
+CONFIG_CPU_RM7000=y
 # CONFIG_CPU_SB1 is not set
-# CONFIG_CPU_MIPS32 is not set
-# CONFIG_CPU_MIPS64 is not set
 CONFIG_CPU_HAS_PREFETCH=y
 # CONFIG_64BIT_PHYS_ADDR is not set
 # CONFIG_CPU_ADVANCED is not set
 CONFIG_CPU_HAS_LLSC=y
 CONFIG_CPU_HAS_LLDSCD=y
 # CONFIG_CPU_HAS_WB is not set
+CONFIG_CPU_HAS_SYNC=y
 
 #
 # General setup
@@ -105,6 +115,8 @@ CONFIG_KCORE_ELF=y
 # CONFIG_KCORE_AOUT is not set
 # CONFIG_BINFMT_AOUT is not set
 CONFIG_BINFMT_ELF=y
+# CONFIG_MIPS32_COMPAT is not set
+# CONFIG_BINFMT_ELF32 is not set
 # CONFIG_BINFMT_MISC is not set
 # CONFIG_PM is not set
 
@@ -139,6 +151,7 @@ CONFIG_BINFMT_ELF=y
 # CONFIG_BLK_DEV_NBD is not set
 # CONFIG_BLK_DEV_RAM is not set
 # CONFIG_BLK_DEV_INITRD is not set
+# CONFIG_BLK_STATS is not set
 
 #
 # Multi-device support (RAID and LVM)
@@ -274,13 +287,13 @@ CONFIG_NET_PCI=y
 # CONFIG_APRICOT is not set
 # CONFIG_CS89x0 is not set
 CONFIG_TULIP=y
-# CONFIG_TC35815 is not set
 # CONFIG_TULIP_MWI is not set
 # CONFIG_TULIP_MMIO is not set
 # CONFIG_DE4X5 is not set
 # CONFIG_DGRS is not set
 # CONFIG_DM9102 is not set
 # CONFIG_EEPRO100 is not set
+# CONFIG_E100 is not set
 # CONFIG_LNE390 is not set
 # CONFIG_FEALNX is not set
 # CONFIG_NATSEMI is not set
@@ -292,11 +305,12 @@ CONFIG_TULIP=y
 # CONFIG_8139TOO_PIO is not set
 # CONFIG_8139TOO_TUNE_TWISTER is not set
 # CONFIG_8139TOO_8129 is not set
-# CONFIG_8139_NEW_RX_RESET is not set
+# CONFIG_8139_OLD_RX_RESET is not set
 # CONFIG_SIS900 is not set
 # CONFIG_EPIC100 is not set
 # CONFIG_SUNDANCE is not set
 # CONFIG_TLAN is not set
+# CONFIG_TC35815 is not set
 # CONFIG_VIA_RHINE is not set
 # CONFIG_VIA_RHINE_MMIO is not set
 # CONFIG_WINBOND_840 is not set
@@ -308,6 +322,7 @@ CONFIG_TULIP=y
 #
 # CONFIG_ACENIC is not set
 # CONFIG_DL2K is not set
+# CONFIG_E1000 is not set
 # CONFIG_MYRI_SBUS is not set
 # CONFIG_NS83820 is not set
 # CONFIG_HAMACHI is not set
@@ -352,6 +367,15 @@ CONFIG_TULIP=y
 # ISDN subsystem
 #
 # CONFIG_ISDN is not set
+
+#
+# Input core support
+#
+# CONFIG_INPUT is not set
+# CONFIG_INPUT_KEYBDEV is not set
+# CONFIG_INPUT_MOUSEDEV is not set
+# CONFIG_INPUT_JOYDEV is not set
+# CONFIG_INPUT_EVDEV is not set
 
 #
 # Character devices
@@ -407,11 +431,6 @@ CONFIG_UNIX98_PTY_COUNT=256
 # CONFIG_DRM is not set
 
 #
-# Multimedia devices
-#
-# CONFIG_VIDEO_DEV is not set
-
-#
 # File systems
 #
 # CONFIG_QUOTA is not set
@@ -424,6 +443,8 @@ CONFIG_UNIX98_PTY_COUNT=256
 # CONFIG_ADFS_FS_RW is not set
 # CONFIG_AFFS_FS is not set
 # CONFIG_HFS_FS is not set
+# CONFIG_BEFS_FS is not set
+# CONFIG_BEFS_DEBUG is not set
 # CONFIG_BFS_FS is not set
 # CONFIG_EXT3_FS is not set
 # CONFIG_JBD is not set
@@ -441,6 +462,9 @@ CONFIG_RAMFS=y
 # CONFIG_ISO9660_FS is not set
 # CONFIG_JOLIET is not set
 # CONFIG_ZISOFS is not set
+# CONFIG_JFS_FS is not set
+# CONFIG_JFS_DEBUG is not set
+# CONFIG_JFS_STATISTICS is not set
 # CONFIG_MINIX_FS is not set
 # CONFIG_VXFS_FS is not set
 # CONFIG_NTFS_FS is not set
@@ -471,6 +495,7 @@ CONFIG_NFS_FS=y
 CONFIG_ROOT_NFS=y
 # CONFIG_NFSD is not set
 # CONFIG_NFSD_V3 is not set
+# CONFIG_NFSD_TCP is not set
 CONFIG_SUNRPC=y
 CONFIG_LOCKD=y
 # CONFIG_SMB_FS is not set
@@ -484,7 +509,6 @@ CONFIG_LOCKD=y
 # CONFIG_NCPFS_NLS is not set
 # CONFIG_NCPFS_EXTRAS is not set
 # CONFIG_ZISOFS_FS is not set
-# CONFIG_ZLIB_FS_INFLATE is not set
 
 #
 # Partition Types
@@ -493,6 +517,11 @@ CONFIG_LOCKD=y
 CONFIG_MSDOS_PARTITION=y
 # CONFIG_SMB_NLS is not set
 # CONFIG_NLS is not set
+
+#
+# Multimedia devices
+#
+# CONFIG_VIDEO_DEV is not set
 
 #
 # Sound
@@ -510,15 +539,6 @@ CONFIG_MSDOS_PARTITION=y
 # CONFIG_BLUEZ is not set
 
 #
-# Input core support
-#
-# CONFIG_INPUT is not set
-# CONFIG_INPUT_KEYBDEV is not set
-# CONFIG_INPUT_MOUSEDEV is not set
-# CONFIG_INPUT_JOYDEV is not set
-# CONFIG_INPUT_EVDEV is not set
-
-#
 # Kernel hacking
 #
 CONFIG_CROSSCOMPILE=y
@@ -527,3 +547,9 @@ CONFIG_CROSSCOMPILE=y
 # CONFIG_DEBUG is not set
 # CONFIG_MAGIC_SYSRQ is not set
 # CONFIG_MIPS_UNCACHED is not set
+
+#
+# Library routines
+#
+# CONFIG_ZLIB_INFLATE is not set
+# CONFIG_ZLIB_DEFLATE is not set

@@ -27,10 +27,13 @@
  *
  * Version 0.4 (99/11/15):
  *		- support for one more type board
+ *
+ * Version 0.5 (2001/12/14) Matt Domsch <Matt_Domsch@dell.com>
+ * 		- added nowayout module option to override CONFIG_WATCHDOG_NOWAYOUT
  *	
  */
 
-#define VERSION "0.4" 
+#define VERSION "0.5" 
   
 #include <linux/module.h>
 #include <linux/config.h>
@@ -58,10 +61,18 @@ static long mixcomwd_opened; /* long req'd for setbit --RR */
 
 static int watchdog_port;
 
-#ifndef CONFIG_WATCHDOG_NOWAYOUT
 static int mixcomwd_timer_alive;
 static struct timer_list mixcomwd_timer;
+static int expect_close = 0;
+
+#ifdef CONFIG_WATCHDOG_NOWAYOUT
+static int nowayout = 1;
+#else
+static int nowayout = 0;
 #endif
+
+MODULE_PARM(nowayout,"i");
+MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default=CONFIG_WATCHDOG_NOWAYOUT)");
 
 static void mixcomwd_ping(void)
 {
@@ -69,14 +80,12 @@ static void mixcomwd_ping(void)
 	return;
 }
 
-#ifndef CONFIG_WATCHDOG_NOWAYOUT
 static void mixcomwd_timerfun(unsigned long d)
 {
 	mixcomwd_ping();
 	
 	mod_timer(&mixcomwd_timer,jiffies+ 5*HZ);
 }
-#endif
 
 /*
  *	Allow only one person to hold it open
@@ -89,12 +98,13 @@ static int mixcomwd_open(struct inode *inode, struct file *file)
 	}
 	mixcomwd_ping();
 	
-#ifndef CONFIG_WATCHDOG_NOWAYOUT
+	if (nowayout) {
+		MOD_INC_USE_COUNT;
+	}
 	if(mixcomwd_timer_alive) {
 		del_timer(&mixcomwd_timer);
 		mixcomwd_timer_alive=0;
 	} 
-#endif
 	return 0;
 }
 
@@ -102,19 +112,21 @@ static int mixcomwd_release(struct inode *inode, struct file *file)
 {
 
 	lock_kernel();
-#ifndef CONFIG_WATCHDOG_NOWAYOUT
-	if(mixcomwd_timer_alive) {
-		printk(KERN_ERR "mixcomwd: release called while internal timer alive");
-		unlock_kernel();
-		return -EBUSY;
+	if (expect_close) {
+		if(mixcomwd_timer_alive) {
+			printk(KERN_ERR "mixcomwd: release called while internal timer alive");
+			unlock_kernel();
+			return -EBUSY;
+		}
+		init_timer(&mixcomwd_timer);
+		mixcomwd_timer.expires=jiffies + 5 * HZ;
+		mixcomwd_timer.function=mixcomwd_timerfun;
+		mixcomwd_timer.data=0;
+		mixcomwd_timer_alive=1;
+		add_timer(&mixcomwd_timer);
+	} else {
+		printk(KERN_CRIT "mixcomwd: WDT device closed unexpectedly.  WDT will not stop!\n");
 	}
-	init_timer(&mixcomwd_timer);
-	mixcomwd_timer.expires=jiffies + 5 * HZ;
-	mixcomwd_timer.function=mixcomwd_timerfun;
-	mixcomwd_timer.data=0;
-	mixcomwd_timer_alive=1;
-	add_timer(&mixcomwd_timer);
-#endif
 
 	clear_bit(0,&mixcomwd_opened);
 	unlock_kernel();
@@ -130,6 +142,20 @@ static ssize_t mixcomwd_write(struct file *file, const char *data, size_t len, l
 
 	if(len)
 	{
+		if (!nowayout) {
+			size_t i;
+
+			/* In case it was set long ago */
+			expect_close = 0;
+
+			for (i = 0; i != len; i++) {
+				char c;
+				if (get_user(c, data + i))
+					return -EFAULT;
+				if (c == 'V')
+					expect_close = 1;
+			}
+		}
 		mixcomwd_ping();
 		return 1;
 	}
@@ -141,16 +167,17 @@ static int mixcomwd_ioctl(struct inode *inode, struct file *file,
 {
 	int status;
         static struct watchdog_info ident = {
-		WDIOF_KEEPALIVEPING, 1, "MixCOM watchdog"
+		WDIOF_KEEPALIVEPING | WDIOF_MAGICCLOSE,
+		1, "MixCOM watchdog"
 	};
                                         
 	switch(cmd)
 	{
 		case WDIOC_GETSTATUS:
 			status=mixcomwd_opened;
-#ifndef CONFIG_WATCHDOG_NOWAYOUT
-			status|=mixcomwd_timer_alive;
-#endif
+			if (!nowayout) {
+				status|=mixcomwd_timer_alive;
+			}
 			if (copy_to_user((int *)arg, &status, sizeof(int))) {
 				return -EFAULT;
 			}
@@ -255,14 +282,14 @@ static int __init mixcomwd_init(void)
 
 static void __exit mixcomwd_exit(void)
 {
-#ifndef CONFIG_WATCHDOG_NOWAYOUT
-	if(mixcomwd_timer_alive) {
-		printk(KERN_WARNING "mixcomwd: I quit now, hardware will"
-			" probably reboot!\n");
-		del_timer(&mixcomwd_timer);
-		mixcomwd_timer_alive=0;
+	if (!nowayout) {
+		if(mixcomwd_timer_alive) {
+			printk(KERN_WARNING "mixcomwd: I quit now, hardware will"
+				" probably reboot!\n");
+			del_timer(&mixcomwd_timer);
+			mixcomwd_timer_alive=0;
+		}
 	}
-#endif
 	release_region(watchdog_port,1);
 	misc_deregister(&mixcomwd_miscdev);
 }

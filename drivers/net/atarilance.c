@@ -920,7 +920,7 @@ static void lance_interrupt( int irq, void *dev_id, struct pt_regs *fp)
 #ifndef final_version
 			if (lp->cur_tx - dirty_tx >= TX_RING_SIZE) {
 				DPRINTK( 0, ( "out-of-sync dirty pointer,"
-							  " %d vs. %d, full=%d.\n",
+							  " %d vs. %d, full=%ld.\n",
 							  dirty_tx, lp->cur_tx, lp->tx_full ));
 				dirty_tx += TX_RING_SIZE;
 			}

@@ -74,6 +74,7 @@ extern void (*cpu_wait)(void);
 extern void r3081_wait(void);
 extern void r39xx_wait(void);
 extern void r4k_wait(void);
+extern void au1k_wait(void);
 
 extern unsigned int vced_count, vcei_count;
 extern struct cpuinfo_mips cpu_data[];
@@ -86,12 +87,13 @@ extern struct cpuinfo_mips cpu_data[];
 
 /*
  * Bus types (default is ISA, but people can check others with these..)
- * MCA_bus hardcoded to 0 for now.
- *
- * This needs to be extended since MIPS systems are being delivered with
- * numerous different types of bus systems.
  */
+#ifdef CONFIG_EISA
 extern int EISA_bus;
+#else
+#define EISA_bus (0)
+#endif
+
 #define MCA_bus 0
 #define MCA_bus__is_a_macro /* for versions in ksyms.c */
 

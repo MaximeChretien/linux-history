@@ -114,7 +114,7 @@ GLOBAL_ENTRY(ia64_pal_call_stacked)
 	;;
 	rsm psr.i
 	mov b7 = loc2
-	;; 
+	;;
 	br.call.sptk.many rp=b7		// now make the call
 .ret0:	mov psr.l  = loc3
 	mov ar.pfs = loc1
@@ -161,7 +161,7 @@ GLOBAL_ENTRY(ia64_pal_call_phys_static)
 	;;
 	mov loc3 = psr			// save psr
 	adds r8  = 1f-1b,r8		// calculate return address for call
-	;; 
+	;;
 	mov loc4=ar.rsc			// save RSE configuration
 	dep.z loc2=loc2,0,61		// convert pal entry point to physical
 	dep.z r8=r8,0,61		// convert rp to physical
@@ -216,7 +216,7 @@ GLOBAL_ENTRY(ia64_pal_call_phys_stacked)
 	mov out3 = in3		// copy arg3
 	;;
 	mov loc3 = psr		// save psr
-	;; 
+	;;
 	mov loc4=ar.rsc			// save RSE configuration
 	dep.z loc2=loc2,0,61		// convert pal entry point to physical
 	;;

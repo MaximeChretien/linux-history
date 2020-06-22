@@ -49,7 +49,7 @@
 #define MACH_OLIVETTI_M700      2	/* Olivetti M700-10 (-15 ??)    */
 
 /*
- * Valid machtype for group DEC 
+ * Valid machtype for group DEC
  */
 #define MACH_DSUNKNOWN		0
 #define MACH_DS23100		1	/* DECstation 2100 or 3100	*/
@@ -96,10 +96,11 @@
 /*
  * Valid machtype for group NEC DDB
  */
-#define MACH_NEC_DDB5074	 0	/* NEC DDB Vrc-5074 */
-#define MACH_NEC_DDB5476         1      /* NEC DDB Vrc-5476 */
-#define MACH_NEC_DDB5477         2      /* NEC DDB Vrc-5477 */
-#define MACH_NEC_ROCKHOPPER      3      /* Rockhopper base board */
+#define MACH_NEC_DDB5074	0	/* NEC DDB Vrc-5074 */
+#define MACH_NEC_DDB5476	1	/* NEC DDB Vrc-5476 */
+#define MACH_NEC_DDB5477	2	/* NEC DDB Vrc-5477 */
+#define MACH_NEC_ROCKHOPPER	3	/* Rockhopper base board */
+#define MACH_NEC_ROCKHOPPERII	4	/* Rockhopper II base board */
 
 /*
  * Valid machtype for group BAGET
@@ -121,17 +122,18 @@
 /*
  * Valid machtype for group MOMENCO
  */
-#define MACH_MOMENCO_OCELOT	0
- 
+#define MACH_MOMENCO_OCELOT		0
+#define MACH_MOMENCO_OCELOT_G		1
+
 /*
  * Valid machtype for group ITE
  */
 #define MACH_QED_4N_S01B	0	/* ITE8172 based eval board */
- 
+
 /*
  * Valid machtype for group Globespan
  */
-#define MACH_IVR       0                  /* IVR eval board */
+#define MACH_IVR		0	/* IVR eval board */
 
 /*
  * Valid machtype for group PHILIPS
@@ -150,18 +152,21 @@
 #define MACH_PALLAS		0
 #define MACH_TOPAS		1
 #define MACH_JMR		2
-#define MACH_TOSHIBA_JMR3927    3      /* JMR-TX3927 CPU/IO board */
+#define MACH_TOSHIBA_JMR3927	3	/* JMR-TX3927 CPU/IO board */
 
 /*
  * Valid machtype for group Alchemy
  */
-#define MACH_PB1000	0	         /* Au1000-based eval board */
-#define MACH_PB1500	1	         /* Au1500-based eval board */
- 
+#define MACH_PB1000		0	/* Au1000-based eval board */
+#define MACH_PB1100		1	/* Au1100-based eval board */
+#define MACH_PB1500		2	/* Au1500-based eval board */
+
 /*
  * Valid machtype for group NEC_VR41XX
  */
-#define MACH_NEC_OSPREY                0       /* Osprey eval board */
+#define MACH_NEC_OSPREY		0	/* Osprey eval board */
+#define MACH_NEC_EAGLE		1	/* NEC Eagle/Hawk board */
+#define MACH_ZAO_CAPCELLA	2	/* ZAO Networks Capcella */
 
 #define CL_SIZE			(256)
 

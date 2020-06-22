@@ -25,7 +25,7 @@ CROSS_COMPILE	= $(tool-prefix)
 endif
 
 #
-# The ELF GCC uses -G0 -mabicalls -fpic as default.  We don't need PIC
+# The ELF GCC uses -G 0 -mabicalls -fpic as default.  We don't need PIC
 # code in the kernel since it only slows down the whole thing.  For the
 # old GCC these options are just the defaults.  At some point we might
 # make use of global pointer optimizations.
@@ -67,10 +67,10 @@ endif
 ifdef CONFIG_CPU_SB1
 GCCFLAGS	+= -mcpu=r8000 -mips4
 endif
-
-AFLAGS		+= $(GCCFLAGS)
-CFLAGS		+= $(GCCFLAGS)
-
+ifdef CONFIG_CPU_MIPS64
+#CFLAGS		+= -mips64	# Should be used then we get a MIPS64 compiler
+CFLAGS		+= -mcpu=r8000 -mips4
+endif
 
 #
 # We unconditionally build the math emulator
@@ -104,12 +104,22 @@ LOADADDR	:= 0x80100000
 endif
 
 #
+# MIPS SEAD board
+#
+ifdef CONFIG_MIPS_SEAD
+LIBS		+= arch/mips/mips-boards/sead/sead.o \
+		   arch/mips/mips-boards/generic/mipsboards.o
+SUBDIRS		+= arch/mips/mips-boards/generic arch/mips/mips-boards/sead
+LOADADDR	:= 0x80100000
+endif
+
+#
 # SGI IP22 (Indy/Indigo2)
 #
 ifdef CONFIG_SGI_IP22
 CORE_FILES	+= arch/mips/sgi-ip22/ip22-kern.o
-LIBS		+= arch/mips64/arc/arclib.a 
-SUBDIRS		+= arch/mips/sgi-ip22 arch/mips64/arc
+LIBS		+= arch/mips/arc/arclib.a
+SUBDIRS		+= arch/mips/sgi-ip22 arch/mips/arc
 #
 # Set LOADADDR to >= 0x88069000 if you want to leave space for symmon,
 # 0x88004000 for production kernels.  Note that the value must be
@@ -122,9 +132,9 @@ endif
 # SGI-IP27 (Origin200/2000)
 #
 ifdef CONFIG_SGI_IP27
-CORE_FILES	+= arch/mips64/sgi-ip27/ip27.o
-LIBS		+= arch/mips64/arc/arclib.a
-SUBDIRS		+= arch/mips64/sgi-ip27 arch/mips64/arc
+CORE_FILES	+= arch/mips/sgi-ip27/ip27.o
+LIBS		+= arch/mips/arc/arclib.a
+SUBDIRS		+= arch/mips/sgi-ip27 arch/mips/arc
 #
 # Set LOADADDR to >= 0xc000000000300000 if you want to leave space for
 # symmon, 0xc00000000001c000 for production kernels.  Note that the value
@@ -142,9 +152,9 @@ endif
 # SGI-IP32 (O2)
 #
 ifdef CONFIG_SGI_IP32
-CORE_FILES	+= arch/mips64/sgi-ip32/ip32-kern.a
-LIBS		+= arch/mips64/arc/arclib.a
-SUBDIRS		+= arch/mips64/sgi-ip32 arch/mips64/arc
+CORE_FILES	+= arch/mips/sgi-ip32/ip32-kern.a
+LIBS		+= arch/mips/arc/arclib.a
+SUBDIRS		+= arch/mips/sgi-ip32 arch/mips/arc
 #
 # Set LOADADDR to >= 0x????????? if you want to leave space for symmon,
 # 0x80002000 for production kernels.  Note that the value must be
@@ -174,6 +184,14 @@ LOADADDR	:= 0x80100000
 endif
 
 #
+# Sibyte CFE firmware
+#
+ifdef CONFIG_SIBYTE_CFE
+LIBS		+= arch/mips/sibyte/cfe/cfe.a
+SUBDIRS		+= arch/mips/sibyte/cfe
+endif
+
+#
 # SB1 Cache Error handler
 #
 ifdef CONFIG_SB1_CACHE_ERROR
@@ -188,8 +206,7 @@ endif
 # convert to ECOFF using elf2ecoff.
 #
 ifdef CONFIG_BOOT_ELF32
-CFLAGS += -Wa,-32
-AFLAGS += -Wa,-32
+GCCFLAGS += -Wa,-32
 LINKFLAGS += -T arch/mips64/ld.script.elf32
 endif
 #
@@ -197,19 +214,23 @@ endif
 # ELF files from 32-bit files by conversion.
 #
 ifdef CONFIG_BOOT_ELF64
-CFLAGS += -Wa,-32
-AFLAGS += -Wa,-32
+GCCFLAGS += -Wa,-32
 LINKFLAGS += -T arch/mips64/ld.script.elf32
 #AS += -64
 #LD += -m elf64bmip
 #LINKFLAGS += -T arch/mips64/ld.script.elf64
 endif
 
+
+AFLAGS		+= $(GCCFLAGS)
+CFLAGS		+= $(GCCFLAGS)
+
+
 LINKFLAGS += -Ttext $(LOADADDR)
 
 HEAD := arch/mips64/kernel/head.o arch/mips64/kernel/init_task.o
 
-SUBDIRS := $(addprefix arch/mips64/, tools) $(SUBDIRS) $(addprefix arch/mips64/, kernel mm lib)
+SUBDIRS := $(addprefix arch/mips/, tools) $(SUBDIRS) $(addprefix arch/mips64/, kernel mm lib)
 CORE_FILES := arch/mips64/kernel/kernel.o arch/mips64/mm/mm.o $(CORE_FILES)
 LIBS := arch/mips64/lib/lib.a $(LIBS)
 
@@ -243,12 +264,12 @@ zdisk: vmlinux
 
 archclean:
 	@$(MAKEBOOT) clean
-	$(MAKE) -C arch/$(ARCH)/tools clean
+	$(MAKE) -C arch/mips/tools clean
 	rm -f vmlinux.64 arch/$(ARCH)/ld.script.elf32
 
 archmrproper:
 	@$(MAKEBOOT) mrproper
-	$(MAKE) -C arch/$(ARCH)/tools mrproper
+	$(MAKE) -C arch/mips/tools mrproper
 
 archdep:
 	if [ ! -f $(TOPDIR)/include/asm-$(ARCH)/offset.h ]; then \

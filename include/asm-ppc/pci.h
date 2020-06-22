@@ -12,8 +12,13 @@
 #define IOBASE_ISA_IO		3
 #define IOBASE_ISA_MEM		4
 
+/*
+ * Set this to 1 if you want the kernel to re-assign all PCI
+ * bus numbers
+ */
+extern int pci_assign_all_busses;
 
-extern int pcibios_assign_all_busses(void);
+#define pcibios_assign_all_busses()	(pci_assign_all_busses)
 
 #define PCIBIOS_MIN_IO		0x1000
 #define PCIBIOS_MIN_MEM		0x10000000

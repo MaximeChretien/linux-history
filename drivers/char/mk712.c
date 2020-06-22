@@ -439,7 +439,7 @@ int __init mk712_init(void)
                 mk712_irq = irq;
 #endif
 
-	if(request_region(mk712_io, 8, "mk712_touchscreen"))
+	if(!request_region(mk712_io, 8, "mk712_touchscreen"))
 	{
 		printk("mk712: unable to get IO region\n");
 		return -ENODEV;

@@ -107,7 +107,7 @@ typedef struct {
 	unsigned long avpn:57; /* vsid | api == avpn  */
 	unsigned long :     2; /* Software use */
 	unsigned long bolted: 1; /* HPTE is "bolted" */
-	unsigned long :     1; /* Software use */
+	unsigned long lock: 1; /* lock on pSeries SMP */
 	unsigned long l:    1; /* Virtual page is large (L=1) or 4 KB (L=0) */
 	unsigned long h:    1; /* Hash function identifier */
 	unsigned long v:    1; /* Valid (v=1) or invalid (v=0) */
@@ -128,7 +128,7 @@ typedef struct {
 
 typedef struct {
 	unsigned long pp0:  1; /* Page protection bit 0 */
-	unsigned long :     1; /* Reserved */
+	unsigned long ts:   1; /* Tag set bit */
 	unsigned long rpn: 50; /* Real page number */
 	unsigned long :     2; /* Reserved */
 	unsigned long ac:   1; /* Address compare */ 
@@ -156,21 +156,8 @@ typedef struct _HPTE {
 
 	union {
 		unsigned long dword1;
-		struct {
-			unsigned long pp0:  1; /* Page protection bit 0 */
-			unsigned long ts:   1; /* Tag set bit */ 
-			unsigned long rpn: 50; /* Real page number */
-			unsigned long :     2; /* Unused */
-			unsigned long ac:   1; /* Address compare bit */
-			unsigned long r:    1; /* Referenced */
-			unsigned long c:    1; /* Changed */
-			unsigned long w:    1; /* Write-thru cache mode */
-			unsigned long i:    1; /* Cache inhibited */
-			unsigned long m:    1; /* Memory coherence */
-			unsigned long g:    1; /* Guarded */
-			unsigned long n:    1; /* No-execute page if N=1 */
-			unsigned long pp:   2; /* Page protection bit 1:2 */
-		} dw1;
+		Hpte_dword1 dw1;
+		Hpte_dword1_flags flags;
 	} dw1;
 } HPTE; 
 
@@ -204,6 +191,8 @@ void create_valid_hpte( unsigned long slot, unsigned long vpn,
 #define PT_SHIFT (12)			/* Page Table */
 #define PT_MASK  0x02FF
 
+#define LARGE_PAGE_SHIFT 24
+
 static inline unsigned long hpt_hash(unsigned long vpn, int large)
 {
 	unsigned long vsid;
@@ -222,16 +211,24 @@ static inline unsigned long hpt_hash(unsigned long vpn, int large)
 
 #define PG_SHIFT (12)			/* Page Entry */
 
-extern __inline__ void _tlbie( unsigned long va )
+/*
+ * Invalidate a TLB entry.  Assumes a context syncronizing 
+ * instruction preceeded this call (for example taking the
+ * TLB lock).
+ */
+static inline void _tlbie(unsigned long va, int large)
 {
-	__asm__ __volatile__ ( " \n\
-		clrldi	%0,%0,16 \n\
-		ptesync		 \n\
-		tlbie	%0	 \n\
-		eieio		 \n\
-		tlbsync		 \n\
-		ptesync"
-		: : "r" (va) : "memory" );
+	asm volatile("ptesync": : :"memory");
+
+	if (large) {
+		asm volatile("clrldi	%0,%0,16\n\
+			      tlbie	%0,1" : : "r"(va) : "memory");
+	} else {
+		asm volatile("clrldi	%0,%0,16\n\
+			      tlbie	%0,0" : : "r"(va) : "memory");
+	}
+
+	asm volatile("eieio; tlbsync; ptesync": : :"memory");
 }
  
 #endif /* __ASSEMBLY__ */

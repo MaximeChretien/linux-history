@@ -1,13 +1,13 @@
 /* -*- linux-c -*- */
 
 /* 
- * Driver for USB Scanners (linux-2.4.12)
+ * Driver for USB Scanners (linux-2.4.18)
  *
- * Copyright (C) 1999, 2000, 2001 David E. Nelson
+ * Copyright (C) 1999, 2000, 2001, 2002 David E. Nelson
  *
  * Portions may be copyright Brad Keryan and Michael Gee.
  *
- * David E. Nelson (dnelson@jump.net)
+ * Brian Beattie <beattie@beattie-home.net>
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -300,11 +300,24 @@
  *      Frank Zago <fzago@greshamstorage.com> and
  *      Oliver Neukum <520047054719-0001@t-online.de> for reviewing/testing.
  *
+ * 0.4.8  5/30/2002
+ *    - Added Mustek BearPaw 2400 TA.  Thanks to Sergey
+ *      Vlasov <vsu@mivlgu.murom.ru>.
+ *    - Added Mustek 1200UB Plus and Mustek BearPaw 1200 CU ID's.  These use
+ *      the Grandtech GT-6801 chip. Thanks to Henning
+ *      Meier-Geinitz <henning@meier-geinitz.de>.
+ *    - Increased Epson timeout to 60 secs as requested from 
+ *      Karl Heinz Kremer <khk@khk.net>.
+ *    - Changed maintainership from David E. Nelson to Brian
+ *      Beattie <beattie@beattie-home.net>.
+ *
  * TODO
+ *    - Remove the 2/3 endpoint limitation
  *    - Performance
  *    - Select/poll methods
  *    - More testing
  *    - Proper registry/assignment for LM9830 ioctl's
+ *    - More general usage ioctl's
  *
  *
  *  Thanks to:
@@ -320,6 +333,8 @@
  *    - All the folks who chimed in with reports and suggestions.
  *    - All the developers that are working on USB SANE backends or other
  *      applications to use USB scanners.
+ *    - Thanks to Greg KH <greg@kroah.com> for setting up Brian Beattie
+ *      to be the new USB Scanner maintainer.
  *
  *  Performance:
  *
@@ -747,7 +762,7 @@ ioctl_scanner(struct inode *inode, struct file *file,
  	case SCANNER_IOCTL_CTRLMSG:
  	{
  		struct ctrlmsg_ioctl {
- 			devrequest	req;
+ 			struct usb_ctrlrequest	req;
  			void		*data;
  		} cmsg;
  		int pipe, nb, ret;
@@ -756,12 +771,12 @@ ioctl_scanner(struct inode *inode, struct file *file,
  		if (copy_from_user(&cmsg, (void *)arg, sizeof(cmsg)))
  			return -EFAULT;
 
- 		nb = le16_to_cpup(&cmsg.req.length);
+ 		nb = cmsg.req.wLength;
 
  		if (nb > sizeof(buf))
  			return -EINVAL;
 
- 		if ((cmsg.req.requesttype & 0x80) == 0) {
+ 		if ((cmsg.req.bRequestType & 0x80) == 0) {
  			pipe = usb_sndctrlpipe(dev, 0);
  			if (nb > 0 && copy_from_user(buf, cmsg.data, nb))
  				return -EFAULT;
@@ -769,10 +784,10 @@ ioctl_scanner(struct inode *inode, struct file *file,
  			pipe = usb_rcvctrlpipe(dev, 0);
 		}
 
- 		ret = usb_control_msg(dev, pipe, cmsg.req.request,
- 				      cmsg.req.requesttype,
- 				      le16_to_cpup(&cmsg.req.value),
- 				      le16_to_cpup(&cmsg.req.index),
+ 		ret = usb_control_msg(dev, pipe, cmsg.req.bRequest,
+ 				      cmsg.req.bRequestType,
+ 				      cmsg.req.wValue,
+ 				      cmsg.req.wIndex,
  				      buf, nb, HZ);
 
  		if (ret < 0) {
@@ -780,7 +795,7 @@ ioctl_scanner(struct inode *inode, struct file *file,
  			return -EIO;
  		}
 
- 		if (nb > 0 && (cmsg.req.requesttype & 0x80) && copy_to_user(cmsg.data, buf, nb))
+ 		if (nb > 0 && (cmsg.req.bRequestType & 0x80) && copy_to_user(cmsg.data, buf, nb))
  			return -EFAULT;
 
  		return 0;
@@ -1017,7 +1032,7 @@ probe_scanner(struct usb_device *dev, unsigned int ifnum,
 
 	switch (dev->descriptor.idVendor) { /* Scanner specific read timeout parameters */
 	case 0x04b8:		/* Seiko/Epson */
-		scn->rd_nak_timeout = HZ * 40;
+		scn->rd_nak_timeout = HZ * 60;
 		break;
 	case 0x055f:		/* Mustek */
 	case 0x0400:		/* Another Mustek */

@@ -21,4 +21,7 @@ get_cycles (void)
 	return ret;
 }
 
+#define vxtime_lock()		do {} while (0)
+#define vxtime_unlock()		do {} while (0)
+
 #endif /* _ASM_IA64_TIMEX_H */

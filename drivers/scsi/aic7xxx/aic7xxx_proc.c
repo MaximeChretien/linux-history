@@ -54,6 +54,44 @@ static void	ahc_dump_device_state(struct info_str *info,
 				      struct ahc_linux_device *dev);
 static int	ahc_proc_write_seeprom(struct ahc_softc *ahc,
 				       char *buffer, int length);
+				       
+
+int
+ahc_acquire_seeprom(struct ahc_softc *ahc, struct seeprom_descriptor *sd)
+{
+	int wait;
+
+	if ((ahc->features & AHC_SPIOCAP) != 0
+	 && (ahc_inb(ahc, SPIOCAP) & SEEPROM) == 0)
+		return (0);
+
+	/*
+	 * Request access of the memory port.  When access is
+	 * granted, SEERDY will go high.  We use a 1 second
+	 * timeout which should be near 1 second more than
+	 * is needed.  Reason: after the chip reset, there
+	 * should be no contention.
+	 */
+	SEEPROM_OUTB(sd, sd->sd_MS);
+	wait = 1000;  /* 1 second timeout in msec */
+	while (--wait && ((SEEPROM_STATUS_INB(sd) & sd->sd_RDY) == 0)) {
+		ahc_delay(1000);  /* delay 1 msec */
+	}
+	if ((SEEPROM_STATUS_INB(sd) & sd->sd_RDY) == 0) {
+		SEEPROM_OUTB(sd, 0); 
+		return (0);
+	}
+	return(1);
+}
+
+
+void
+ahc_release_seeprom(struct seeprom_descriptor *sd)
+{
+	/* Release access to the memory port and the serial EEPROM. */
+	SEEPROM_OUTB(sd, 0);
+}
+
 
 static void
 copy_mem_info(struct info_str *info, char *data, int len)

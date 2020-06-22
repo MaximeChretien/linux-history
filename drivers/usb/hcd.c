@@ -56,7 +56,8 @@
  * USB Host Controller Driver framework
  *
  * Plugs into usbcore (usb_bus) and lets HCDs share code, minimizing
- * HCD-specific behaviors/bugs.
+ * HCD-specific behaviors/bugs.  Think of it as the "upper level" of
+ * some drivers, where the "lower level" is hardware-specific.
  *
  * This does error checks, tracks devices and urbs, and delegates to a
  * "hc_driver" only for code (and data) that really needs to know about
@@ -78,6 +79,9 @@
  * Roman Weissgaerber, Rory Bolt, ...
  *
  * HISTORY:
+ * 2002-sept	Merge some 2.5 updates so we can share hardware level HCD
+ * 	code between the 2.4.20+ and 2.5 trees.
+ * 2002-feb	merge to 2.4.19
  * 2001-12-12	Initial patch version for Linux 2.5.1 kernel.
  */
 
@@ -316,16 +320,16 @@ static int rh_string (
 /* Root hub control transfers execute synchronously */
 static int rh_call_control (struct usb_hcd *hcd, struct urb *urb)
 {
-	devrequest	*cmd = (devrequest *) urb->setup_packet;
+	struct usb_ctrlrequest *cmd = (struct usb_ctrlrequest *) urb->setup_packet;
  	u16		typeReq, wValue, wIndex, wLength;
 	const u8	*bufp = 0;
 	u8		*ubuf = urb->transfer_buffer;
 	int		len = 0;
 
-	typeReq  = (cmd->requesttype << 8) | cmd->request;
-	wValue   = le16_to_cpu (cmd->value);
-	wIndex   = le16_to_cpu (cmd->index);
-	wLength  = le16_to_cpu (cmd->length);
+	typeReq  = (cmd->bRequestType << 8) | cmd->bRequest;
+	wValue   = le16_to_cpu (cmd->wValue);
+	wIndex   = le16_to_cpu (cmd->wIndex);
+	wLength  = le16_to_cpu (cmd->wLength);
 
 	if (wLength > urb->transfer_buffer_length)
 		goto error;
@@ -583,7 +587,6 @@ int usb_hcd_pci_probe (struct pci_dev *dev, const struct pci_device_id *id)
 	struct hc_driver	*driver;
 	unsigned long		resource, len;
 	void			*base;
-	u8			latency, limit;
 	struct usb_bus		*bus;
 	struct usb_hcd		*hcd;
 	int			retval, region;
@@ -662,15 +665,6 @@ clean_2:
 	hcd->pdev = dev;
 	info ("%s @ %s, %s", hcd->description,  dev->slot_name, dev->name);
 
-	pci_read_config_byte (dev, PCI_LATENCY_TIMER, &latency);
-	if (latency) {
-		pci_read_config_byte (dev, PCI_MAX_LAT, &limit);
-		if (limit && limit < latency) {
-			dbg ("PCI latency reduced to max %d", limit);
-			pci_write_config_byte (dev, PCI_LATENCY_TIMER, limit);
-		}
-	}
-
 #ifndef __sparc__
 	sprintf (buf, "%d", dev->irq);
 #else
@@ -701,7 +695,8 @@ clean_3:
 		goto clean_3;
 	}
 	hcd->bus = bus;
-	hcd->bus_name = dev->slot_name;
+	hcd->bus_name = dev->slot_name;		/* prefer bus->bus_name */
+	bus->bus_name = dev->slot_name;
 	hcd->product_desc = dev->name;
 	bus->hcpriv = (void *) hcd;
 
@@ -1071,6 +1066,8 @@ static int hcd_submit_urb (struct urb *urb)
 	/* the I/O buffer must usually be mapped/unmapped */
 	if (urb->transfer_buffer_length < 0)
 		return -EINVAL;
+
+	// FIXME set urb->transfer_dma and/or setup_dma 
 
 	if (urb->next) {
 		warn ("use explicit queuing not urb->next");
@@ -1462,6 +1459,8 @@ void usb_hcd_giveback_urb (struct usb_hcd *hcd, struct urb *urb)
 	if (urb->status)
 		dbg ("giveback urb %p status %d len %d",
 			urb, urb->status, urb->actual_length);
+
+	// FIXME unmap urb->transfer_dma and/or setup_dma 
 
 	/* pass ownership to the completion handler */
 	urb->complete (urb);

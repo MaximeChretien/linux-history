@@ -2315,7 +2315,6 @@ static inline int stl_initeio(stlbrd_t *brdp)
 	stlpanel_t	*panelp;
 	unsigned int	status;
 	char		*name;
-	int		rc;
 
 #if DEBUG
 	printk("stl_initeio(brdp=%x)\n", (int) brdp);
@@ -2436,10 +2435,10 @@ static inline int stl_initeio(stlbrd_t *brdp)
 	if (request_irq(brdp->irq, stl_intr, SA_SHIRQ, name, brdp) != 0) {
 		printk("STALLION: failed to register interrupt "
 		       "routine for %s irq=%d\n", name, brdp->irq);
-		rc = -ENODEV;
+		return -ENODEV;
 	}
 
-	return(rc);
+	return 0;
 }
 
 /*****************************************************************************/

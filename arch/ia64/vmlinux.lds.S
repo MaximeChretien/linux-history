@@ -1,5 +1,6 @@
 #include <linux/config.h>
 
+#include <asm/cache.h>
 #include <asm/page.h>
 #include <asm/system.h>
 
@@ -27,11 +28,6 @@ SECTIONS
   .text : AT(ADDR(.text) - PAGE_OFFSET)
     {
 	*(.text.ivt)
-	/* these are not really text pages, but they need to be page aligned: */
-	*(__special_page_section)
-	__start_gate_section = .;
-	*(.text.gate)
-	__stop_gate_section = .;
 	*(.text)
     }
   .text2 : AT(ADDR(.text2) - PAGE_OFFSET)
@@ -43,8 +39,6 @@ SECTIONS
   _etext = .;
 
   /* Read-only data */
-
-  __gp = ALIGN(16) + 0x200000;	/* gp must be 16-byte aligned for exc. table */
 
   /* Global data */
   _data = .;
@@ -117,9 +111,13 @@ SECTIONS
 	{ *(init_task) }
 
   .data.page_aligned : AT(ADDR(.data.page_aligned) - PAGE_OFFSET)
-        { *(.data.idt) }
+        { *(__special_page_section)
+	  __start_gate_section = .;
+	  *(.text.gate)
+	  __stop_gate_section = .;
+	}
 
-  . = ALIGN(64);
+  . = ALIGN(SMP_CACHE_BYTES);
   .data.cacheline_aligned : AT(ADDR(.data.cacheline_aligned) - PAGE_OFFSET)
         { *(.data.cacheline_aligned) }
 
@@ -129,6 +127,10 @@ SECTIONS
 
   .data : AT(ADDR(.data) - PAGE_OFFSET)
 	{ *(.data) *(.gnu.linkonce.d*) CONSTRUCTORS }
+
+
+  . = ALIGN(16);
+  __gp = . + 0x200000;	/* gp must be 16-byte aligned for exc. table */
 
   .got : AT(ADDR(.got) - PAGE_OFFSET)
 	{ *(.got.plt) *(.got) }

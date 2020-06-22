@@ -55,7 +55,7 @@ struct hci_usb {
 
 	__u8			intr_ep;
 	__u8			intr_interval;
-	purb_t			intr_urb;
+	struct urb		*intr_urb;
 	struct sk_buff *	intr_skb;
 
 	rwlock_t		completion_lock;

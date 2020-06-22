@@ -22,7 +22,8 @@ endif
 LINKFLAGS	= -T arch/ppc64/vmlinux.lds -Bstatic \
 		-e $(KERNELLOAD) -Ttext $(KERNELLOAD)
 CFLAGS		:= $(CFLAGS) -fsigned-char -msoft-float -pipe \
-		-Wno-uninitialized -mminimal-toc -fno-builtin
+		-Wno-uninitialized -mminimal-toc -fno-builtin \
+		-mtraceback=full
 CPP		= $(CC) -E $(CFLAGS)
 
 

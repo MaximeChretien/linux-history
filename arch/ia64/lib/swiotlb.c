@@ -277,8 +277,11 @@ swiotlb_alloc_consistent (struct pci_dev *hwdev, size_t size, dma_addr_t *dma_ha
 	int gfp = GFP_ATOMIC;
 	void *ret;
 
-	if (!hwdev || hwdev->dma_mask <= 0xffffffff)
-		gfp |= GFP_DMA; /* XXX fix me: should change this to GFP_32BIT or ZONE_32BIT */
+	/*
+	 * Alloc_consistent() is defined to return memory < 4GB, no matter what the DMA
+	 * mask says.
+	 */
+	gfp |= GFP_DMA;	/* XXX fix me: should change this to GFP_32BIT or ZONE_32BIT */
 	ret = (void *)__get_free_pages(gfp, get_order(size));
 	if (!ret)
 		return NULL;
@@ -486,6 +489,17 @@ swiotlb_dma_address (struct scatterlist *sg)
 	return SG_ENT_PHYS_ADDRESS(sg);
 }
 
+/*
+ * Return whether the given PCI device DMA address mask can be supported properly.  For
+ * example, if your device can only drive the low 24-bits during PCI bus mastering, then
+ * you would pass 0x00ffffff as the mask to this function.
+ */
+int
+swiotlb_pci_dma_supported (struct pci_dev *hwdev, u64 mask)
+{
+	return 1;
+}
+
 EXPORT_SYMBOL(swiotlb_init);
 EXPORT_SYMBOL(swiotlb_map_single);
 EXPORT_SYMBOL(swiotlb_unmap_single);
@@ -496,3 +510,4 @@ EXPORT_SYMBOL(swiotlb_sync_sg);
 EXPORT_SYMBOL(swiotlb_dma_address);
 EXPORT_SYMBOL(swiotlb_alloc_consistent);
 EXPORT_SYMBOL(swiotlb_free_consistent);
+EXPORT_SYMBOL(swiotlb_pci_dma_supported);

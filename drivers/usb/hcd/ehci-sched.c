@@ -881,7 +881,7 @@ itd_complete (
 	unsigned long	flags
 ) {
 	struct urb				*urb = itd->urb;
-	iso_packet_descriptor_t			*desc;
+	struct iso_packet_descriptor		*desc;
 	u32					t;
 
 	/* update status for this uframe's transfers */
@@ -919,17 +919,9 @@ itd_complete (
 		return flags;
 
 	/*
-	 * For now, always give the urb back to the driver ... expect it
-	 * to submit a new urb (or resubmit this), and to have another
-	 * already queued when un-interrupted transfers are needed.
-	 * No, that's not what OHCI or UHCI are now doing.
-	 *
-	 * FIXME Revisit the ISO URB model.  It's cleaner not to have all
-	 * the special case magic, but it'd be faster to reuse existing
-	 * ITD/DMA setup and schedule state.  Easy to dma_sync/complete(),
-	 * then either reschedule or, if unlinking, free and giveback().
-	 * But we can't overcommit like the full and low speed HCs do, and
-	 * there's no clean way to report an error when rescheduling...
+	 * Always give the urb back to the driver ... expect it to submit
+	 * a new urb (or resubmit this), and to have another already queued
+	 * when un-interrupted transfers are needed.
 	 *
 	 * NOTE that for now we don't accelerate ISO unlinks; they just
 	 * happen according to the current schedule.  Means a delay of
@@ -964,15 +956,6 @@ static int itd_submit (struct ehci_hcd *ehci, struct urb *urb, int mem_flags)
 	if (urb->iso_frame_desc [0].offset != 0)
 		return -EINVAL;
 	
-	/*
-	 * NOTE doing this for now, anticipating periodic URB models
-	 * get updated to be "explicit resubmit".
-	 */
-	if (urb->next) {
-		dbg ("use explicit resubmit for ISO");
-		return -EINVAL;
-	}
-
 	/* allocate ITDs w/o locking anything */
 	status = itd_urb_transaction (ehci, urb, mem_flags);
 	if (status < 0)

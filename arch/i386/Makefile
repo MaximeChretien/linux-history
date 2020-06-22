@@ -83,7 +83,7 @@ CFLAGS += -march=i586
 endif
 
 ifdef CONFIG_MCYRIXIII
-CFLAGS += -march=i586
+CFLAGS += -march=i486 -malign-functions=0 -malign-jumps=0 -malign-loops=0
 endif
 
 HEAD := arch/i386/kernel/head.o arch/i386/kernel/init_task.o

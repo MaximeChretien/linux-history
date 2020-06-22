@@ -61,13 +61,13 @@ _sys_sysmips(int cmd, int arg1, int arg2, int arg3)
 		name = (char *) arg1;
 
 		len = strncpy_from_user(nodename, name, sizeof(nodename));
-		if (len < 0) 
+		if (len < 0)
 			return -EFAULT;
 
 		down_write(&uts_sem);
 		strncpy(system_utsname.nodename, name, len);
+		system_utsname.nodename[len] = '\0';
 		up_write(&uts_sem);
-		system_utsname.nodename[len] = '\0'; 
 		return 0;
 	}
 

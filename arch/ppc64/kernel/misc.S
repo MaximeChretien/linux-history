@@ -745,7 +745,8 @@ _GLOBAL(sys_call_table32)
 	.llong .sys_fremovexattr	/* 220 */
 	.llong .sys_futex
 #endif
-	.rept NR_syscalls-221
+	.llong .sys_perfmonctl   /* Put this here for now ... */
+	.rept NR_syscalls-222
 		.llong .sys_ni_syscall
 	.endr
 #endif
@@ -975,6 +976,7 @@ _GLOBAL(sys_call_table)
 	.llong .sys_fremovexattr	/* 220 */
 	.llong .sys_futex
 #endif
-	.rept NR_syscalls-221
+	.llong .sys_perfmonctl   /* Put this here for now ... */
+	.rept NR_syscalls-222
 	.llong .sys_ni_syscall
 	.endr

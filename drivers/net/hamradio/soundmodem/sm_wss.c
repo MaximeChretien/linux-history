@@ -45,37 +45,7 @@
  * This will go in 2.2
  */
 #include <linux/version.h>
-
-#if LINUX_VERSION_CODE >= 0x20100
 #include <asm/uaccess.h>
-#else
-#include <asm/segment.h>
-#include <linux/mm.h>
-
-#undef put_user
-#undef get_user
-
-#define put_user(x,ptr) ({ __put_user((unsigned long)(x),(ptr),sizeof(*(ptr))); 0; })
-#define get_user(x,ptr) ({ x = ((__typeof__(*(ptr)))__get_user((ptr),sizeof(*(ptr)))); 0; })
-
-static inline int copy_from_user(void *to, const void *from, unsigned long n)
-{
-        int i = verify_area(VERIFY_READ, from, n);
-        if (i)
-                return i;
-        memcpy_fromfs(to, from, n);
-        return 0;
-}
-
-static inline int copy_to_user(void *to, const void *from, unsigned long n)
-{
-        int i = verify_area(VERIFY_WRITE, to, n);
-        if (i)
-                return i;
-        memcpy_tofs(to, from, n);
-        return 0;
-}
-#endif
 
 /* --------------------------------------------------------------------- */
 

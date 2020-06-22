@@ -36,8 +36,8 @@
 /*
  * The second extended file system version
  */
-#define EXT3FS_DATE		"10 Jan 2002"
-#define EXT3FS_VERSION		"2.4-0.9.17"
+#define EXT3FS_DATE		"19 August 2002"
+#define EXT3FS_VERSION		"2.4-0.9.19"
 
 /*
  * Debug code

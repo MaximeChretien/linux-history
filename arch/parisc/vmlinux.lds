@@ -1,21 +1,14 @@
 /* ld script to make hppa Linux kernel */
-OUTPUT_FORMAT("elf32-hppa")
 OUTPUT_ARCH(hppa)
 ENTRY(_stext)
 SECTIONS
 {
 
-/* right now use 0x10000/0x11000, later when we don't use Console and
- * Boot-Device IODC, we will change this to 0x8000 !!!
- */
-
-  . = 0xc0100000;   
-/*	. = 0x10000;  */
+  . = 0x10100000;
 
   _text = .;			/* Text and read-only data */
   .text BLOCK(16) : {
 	*(.text*)
-	*(.PARISC.unwind)
 	*(.fixup)
 	*(.lock.text)		/* out-of-line lock text */
 	*(.gnu.warning)
@@ -57,12 +50,14 @@ SECTIONS
 
 
   init_task BLOCK(16384) : { *(init_task) }  /* The initial task and kernel stack */
+  init_istack BLOCK(32768) : { *(init_istack) }  /* The initial interrupt stack */
 
   _edata = .;			/* End of data section */
 
 
   .bss : { *(.bss) *(COMMON) }		/* BSS */
 
+  .PARISC.unwind : { *(.PARISC.unwind) }
 
   _end = . ;
 

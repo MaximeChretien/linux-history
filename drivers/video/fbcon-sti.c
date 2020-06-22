@@ -17,12 +17,13 @@
 #include <linux/string.h>
 #include <linux/fb.h>
 #include <linux/delay.h>
+#include <asm/gsc.h>		/* for gsc_read/write */
 #include <asm/types.h>
 
 #include <video/fbcon.h>
 #include <video/fbcon-mfb.h>
 
-#include "sti.h"
+#include "sti/sticore.h"
 
 /* Translate an address as it would be found in a 2048x2048x1 bit frame
  * buffer into a logical address Artist actually expects.  Addresses fed
@@ -39,10 +40,13 @@
 static inline u32
 ram2log(void * addr)
 {
+#if 1
+	return (unsigned long) addr;
+#else	
 	u32 a = (unsigned long) addr;
 	u32 r;
 
-#if 0
+#if 1 
 	r  =   a & 0xff000000;		/* fixed part */
 	r += ((a & 0x000000ff) << 5);
 	r += ((a & 0x00ffff00) << 3);
@@ -53,6 +57,7 @@ ram2log(void * addr)
 #endif
 
 	return r;
+#endif
 }
 
 /* All those functions need better names. */
@@ -74,30 +79,6 @@ memcpy_fromhp_tohp(void *dest, void *src, int count)
 	}
 }
 
-static void
-memcpy_tohp(void *dest, void *src, int count)
-{
-	unsigned long d = (unsigned long) dest;
-	u32 *s = (u32 *)src;
-
-	count += 3;
-	count &= ~3; /* XXX */
-
-	d = ram2log(dest);
-
-	while(count) {
-		count--;
-		gsc_writel(*s++, d);
-		d += 32*4;
-	}
-}
-
-static void
-memcopy_fromhp(void *dest, void *src, int count)
-{
-	/* FIXME */
-	printk("uhm ...\n");
-}
 
 static void
 memset_tohp(void *dest, u32 word, int count)
@@ -152,7 +133,7 @@ fbcon_sti_bmove(struct display *p, int sy, int sx,
 		int height, int width)
 {
 #if 0 /* Unfortunately, still broken */
-	sti_bmove(&default_sti /* FIXME */, sy, sx, dy, dx, height, width);
+	sti_bmove(default_sti /* FIXME */, sy, sx, dy, dx, height, width);
 #else
 	u8 *src, *dest;
 	u_int rows;

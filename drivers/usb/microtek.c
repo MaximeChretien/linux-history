@@ -117,6 +117,8 @@
  *	20010320 Version 0.4.3
  *	20010408 Identify version on module load.
  *	20011003 Fix multiple requests
+ *	20020618 Version 0.4.4
+ *	20020618 Confirm to utterly stupid rules about io_request_lock
  */
 
 #include <linux/module.h>
@@ -144,7 +146,7 @@
 /*
  * Version Information
  */
-#define DRIVER_VERSION "v0.4.3"
+#define DRIVER_VERSION "v0.4.4"
 #define DRIVER_AUTHOR "John Fremlin <vii@penguinpowered.com>, Oliver Neukum <Oliver.Neukum@lrz.uni-muenchen.de>"
 #define DRIVER_DESC "Microtek Scanmaker X6 USB scanner driver"
 
@@ -326,10 +328,12 @@ static inline void mts_debug_dump(struct mts_desc* dummy)
 }  */
 
 static inline void mts_urb_abort(struct mts_desc* desc) {
+	spin_unlock_irq(&io_request_lock);
 	MTS_DEBUG_GOT_HERE();
 	mts_debug_dump(desc);
 
 	usb_unlink_urb( &desc->urb );
+	spin_lock_irq(&io_request_lock);
 }
 
 static struct mts_desc * mts_list; /* list of active scanners */
@@ -414,12 +418,14 @@ static int mts_scsi_abort (Scsi_Cmnd *srb)
 
 static int mts_scsi_host_reset (Scsi_Cmnd *srb)
 {
-	struct mts_desc* desc = (struct mts_desc*)(srb->host->hostdata[0]);
 
+	struct mts_desc* desc = (struct mts_desc*)(srb->host->hostdata[0]);
+	spin_unlock_irq(&io_request_lock);
 	MTS_DEBUG_GOT_HERE();
 	mts_debug_dump(desc);
 
 	usb_reset_device(desc->usb_dev); /*FIXME: untested on new reset code */
+	spin_lock_irq(&io_request_lock);
 	return 0;  /* RANT why here 0 and not SUCCESS */
 }
 
@@ -435,6 +441,7 @@ static int mts_scsi_detect (struct SHT * sht)
 	/* What a hideous hack! */
 
 	char local_name[48];
+	spin_unlock_irq(&io_request_lock);
 
 	MTS_DEBUG_GOT_HERE();
 
@@ -445,6 +452,7 @@ static int mts_scsi_detect (struct SHT * sht)
 
 	if (!sht->proc_name) {
 		MTS_ERROR( "unable to allocate memory for proc interface!!\n" );
+		spin_lock_irq(&io_request_lock);
 		return 0;
 	}
 
@@ -457,11 +465,12 @@ static int mts_scsi_detect (struct SHT * sht)
 	if (desc->host == NULL) {
 		MTS_ERROR("Cannot register due to low memory");
 		kfree(sht->proc_name);
+		spin_lock_irq(&io_request_lock);
 		return 0;
 	}
 	desc->host->hostdata[0] = (unsigned long)desc;
 /* FIXME: what if sizeof(void*) != sizeof(unsigned long)? */
-
+	spin_lock_irq(&io_request_lock);
 	return 1;
 }
 

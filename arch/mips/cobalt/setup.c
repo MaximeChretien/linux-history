@@ -35,7 +35,17 @@ extern struct rtc_ops std_rtc_ops;
 extern struct ide_ops std_ide_ops;
 
 
-char arcs_cmdline[CL_SIZE] = { "console=ttyS0,115200 root=/dev/hda1" };
+char arcs_cmdline[CL_SIZE] = {
+ "console=ttyS0,115200 "
+#ifdef CONFIG_IP_PNP
+ "ip=on "
+#endif
+#ifdef CONFIG_ROOT_NFS
+ "root=/dev/nfs "
+#else
+ "root=/dev/hda1 "
+#endif
+ };
 
 const char *get_system_type(void)
 {
@@ -63,22 +73,18 @@ static void __init cobalt_timer_setup(struct irqaction *irq)
 	*timer_reg = 500000;
 
 	/* Register our timer interrupt */
-	setup_irq(0, irq);
+	setup_irq(COBALT_TIMER_IRQ, irq);
 
 	/* Enable timer ints */
-	*((volatile unsigned long *) GALILEO_TIMER_CTRL) = 
+	*((volatile unsigned long *) GALILEO_TIMER_CTRL) =
 			(unsigned long) (GALILEO_ENTC0 | GALILEO_SELTC0);
 	/* Unmask timer int */
-	*((volatile unsigned long *) GALILEO_CPU_MASK) = (unsigned long) 0x00000100; 
+	*((volatile unsigned long *) GALILEO_CPU_MASK) = (unsigned long) 0x00000100;
 }
 
 
 void __init bus_error_init(void) { /* nothing */ }
 
-
-int cobalt_serial_present;
-int cobalt_serial_type;
-int cobalt_is_raq;
 
 void __init cobalt_setup(void)
 {
@@ -95,21 +101,13 @@ void __init cobalt_setup(void)
 #endif
         set_io_port_base(0xb0000000);
 
-	/* 
+	/*
 	 * This is a prom style console. We just poke at the
 	 *  UART to make it talk.
 	 * Only use this console if you really screw up and can't
 	 *  get to the stage of setting up a real serial console.
 	 */
 	/*ns16550_setup_console();*/
-
-	/* We have to do this early, here, before the value could
-	 * possibly be overwritten by the bootup sequence.
-	 */
-	cobalt_serial_present = *((unsigned long *) 0xa020001c);
-	cobalt_serial_type    = *((unsigned long *) 0xa0200020);
-	cobalt_is_raq         = (cobalt_serial_present != 0x0
-				 && cobalt_serial_type == 0x1);
 }
 
 /* Prom init. We read our one and only communication with the
@@ -117,7 +115,7 @@ void __init cobalt_setup(void)
 void __init prom_init(int argc)
 {
 	mips_machgroup = MACH_GROUP_COBALT;
-	
+
 	add_memory_region(0x0, argc & 0x7fffffff, BOOT_MEM_RAM);
 }
 

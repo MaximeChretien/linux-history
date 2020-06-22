@@ -12,6 +12,10 @@
 #ifndef LINUX_NUBUS_H
 #define LINUX_NUBUS_H
 
+#ifdef __KERNEL__
+#include <asm/nubus.h>
+#endif
+
 enum nubus_category {
 	NUBUS_CAT_BOARD          = 0x0001,
 	NUBUS_CAT_DISPLAY        = 0x0003,

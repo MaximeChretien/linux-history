@@ -9,8 +9,8 @@
 
 #include <asm/cache.h>
 
-/* Assigned Company values for bits 23:16 of the PRId Register  
-   (CP0 register 15, select 0).  As of the MIPS32 and MIPS64 specs from 
+/* Assigned Company values for bits 23:16 of the PRId Register
+   (CP0 register 15, select 0).  As of the MIPS32 and MIPS64 specs from
    MTI, the PRId register is defined in this (backwards compatible)
    way:
 
@@ -21,7 +21,7 @@
 
    I don't have docs for all the previous processors, but my impression is
    that bits 16-23 have been 0 for all MIPS processors before the MIPS32/64
-   spec.  
+   spec.
 */
 
 #define PRID_COMP_LEGACY       0x000000
@@ -87,6 +87,12 @@
 #define PRID_REV_TX3912 	0x0010
 #define PRID_REV_TX3922 	0x0030
 #define PRID_REV_TX3927 	0x0040
+#define PRID_REV_VR4111		0x0050
+#define PRID_REV_VR4181		0x0050	/* Same as VR4111 */
+#define PRID_REV_VR4121		0x0060
+#define PRID_REV_VR4122		0x0070
+#define PRID_REV_VR4181A	0x0070	/* Same as VR4122 */
+#define PRID_REV_VR4131		0x0080
 
 /*
  * FPU implementation/revision register (CP1 control register 0).
@@ -100,6 +106,10 @@
 #define FPIR_IMP_NONE		0x0000
 
 #ifndef __ASSEMBLY__
+
+extern void cpu_probe(void);
+extern void cpu_report(void);
+
 /*
  * Capability and feature descriptor structure for MIPS CPU
  */
@@ -128,7 +138,8 @@ enum cputype {
 	CPU_RM7000, CPU_R5432, CPU_4KC, CPU_5KC, CPU_R4310, CPU_SB1,
 	CPU_TX3912, CPU_TX3922, CPU_TX3927, CPU_AU1000, CPU_4KEC, CPU_4KSC,
 	CPU_VR41XX, CPU_R5500, CPU_TX49XX, CPU_TX39XX, CPU_AU1500, CPU_20KC,
-	CPU_LAST
+	CPU_VR4111, CPU_VR4121, CPU_VR4122, CPU_VR4131, CPU_VR4181, CPU_VR4181A,
+	CPU_AU1100, CPU_LAST
 };
 
 #endif /* !__ASSEMBLY__ */

@@ -26,6 +26,7 @@
 #include <linux/init.h>
 #include <linux/version.h>
 #include <linux/elf.h>
+#include <linux/personality.h>
 
 #include <asm/machdep.h>
 #include <asm/offset.h>
@@ -36,19 +37,12 @@
 #include <asm/gsc.h>
 #include <asm/processor.h>
 
-spinlock_t semaphore_wake_lock = SPIN_LOCK_UNLOCKED;
+int hlt_counter;
 
-#ifdef __LP64__
-/* The 64-bit code should work equally well in 32-bit land but I didn't
- * want to take the time to confirm that.  -PB
- */
-extern unsigned int ret_from_kernel_thread;
-#else
-asmlinkage void ret_from_kernel_thread(void) __asm__("ret_from_kernel_thread");
-#endif
-
-
-int hlt_counter=0;
+/*
+ * Power off function, if any
+ */ 
+void (*pm_power_off)(void);
 
 void disable_hlt(void)
 {
@@ -81,35 +75,86 @@ void cpu_idle(void)
 	}
 }
 
-void __init reboot_setup(char *str, int *ints)
-{
-}
 
-struct notifier_block *mach_notifier;
+#ifdef __LP64__
+#define COMMAND_GLOBAL  0xfffffffffffe0030UL
+#else
+#define COMMAND_GLOBAL  0xfffe0030
+#endif
 
-void machine_restart(char *ptr)
+#define CMD_RESET       5       /* reset any module */
+
+/*
+** The Wright Brothers and Gecko systems have a H/W problem
+** (Lasi...'nuf said) may cause a broadcast reset to lockup
+** the system. An HVERSION dependent PDC call was developed
+** to perform a "safe", platform specific broadcast reset instead
+** of kludging up all the code.
+**
+** Older machines which do not implement PDC_BROADCAST_RESET will
+** return (with an error) and the regular broadcast reset can be
+** issued. Obviously, if the PDC does implement PDC_BROADCAST_RESET
+** the PDC call will not return (the system will be reset).
+*/
+void machine_restart(char *cmd)
 {
-	notifier_call_chain(&mach_notifier, MACH_RESTART, ptr);
+#ifdef FASTBOOT_SELFTEST_SUPPORT
+	/*
+	 ** If user has modified the Firmware Selftest Bitmap,
+	 ** run the tests specified in the bitmap after the
+	 ** system is rebooted w/PDC_DO_RESET.
+	 **
+	 ** ftc_bitmap = 0x1AUL "Skip destructive memory tests"
+	 **
+	 ** Using "directed resets" at each processor with the MEM_TOC
+	 ** vector cleared will also avoid running destructive
+	 ** memory self tests. (Not implemented yet)
+	 */
+	if (ftc_bitmap) {
+		pdc_do_firm_test_reset(ftc_bitmap);
+	}
+#endif
+
+	/* "Normal" system reset */
+	pdc_do_reset();
+
+	/* Nope...box should reset with just CMD_RESET now */
+	gsc_writel(CMD_RESET, COMMAND_GLOBAL);
+
+	/* Wait for RESET to lay us to rest. */
+	while (1) ;
+
 }
 
 void machine_halt(void)
 {
-	notifier_call_chain(&mach_notifier, MACH_HALT, NULL);
+	/*
+	** The LED/ChassisCodes are updated by the led_halt()
+	** function, called by the reboot notifier chain.
+	*/
 }
 
-void machine_power_on(void)
-{
-	notifier_call_chain(&mach_notifier, MACH_POWER_ON, NULL);
-}
 
+/*
+ * This routine is called from sys_reboot to actually turn off the
+ * machine 
+ */
 void machine_power_off(void)
 {
-	notifier_call_chain(&mach_notifier, MACH_POWER_OFF, NULL);
-}
+	/* If there is a registered power off handler, call it. */
+	if(pm_power_off)
+		pm_power_off();
 
+	/* Put the soft power button back under hardware control.
+	 * If the user had already pressed the power button, the
+	 * following call will immediately power off. */
+	pdc_soft_power_button(0);
 
-void machine_heartbeat(void)
-{
+	/* It seems we have no way to power the system off via
+	 * software. The user has to press the button himself. */
+
+	printk(KERN_EMERG "System shut down completed.\n"
+	       KERN_EMERG "Please power this system off now.");
 }
 
 
@@ -138,6 +183,9 @@ void exit_thread(void)
 
 void flush_thread(void)
 {
+	/* Only needs to handle fpu stuff or perf monitors.
+	** REVISIT: several arches implement a "lazy fpu state".
+	*/
 	set_fs(USER_DS);
 }
 
@@ -148,6 +196,7 @@ void release_thread(struct task_struct *dead_task)
 /*
  * Fill in the FPU structure for a core dump.
  */
+
 int dump_fpu (struct pt_regs * regs, elf_fpregset_t *r)
 {
 	memcpy(r, regs->fr, sizeof *r);
@@ -176,7 +225,13 @@ copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
 	    struct task_struct * p, struct pt_regs * pregs)
 {
 	struct pt_regs * cregs = &(p->thread.regs);
-	long ksp;
+	
+	/* We have to use void * instead of a function pointer, because
+	 * function pointers aren't a pointer to the function on 64-bit.
+	 * Make them const so the compiler knows they live in .text */
+	extern void * const ret_from_kernel_thread;
+	extern void * const child_return;
+	extern void * const hpux_child_return;
 
 	*cregs = *pregs;
 
@@ -193,34 +248,37 @@ copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
 	 * in zero for usp.
 	 */
 	if (usp == 0) {
-		/* Kernel Thread */
-		ksp = (((unsigned long)(p)) + TASK_SZ_ALGN);
-		cregs->ksp = ksp;	    /* always return to kernel */
-#ifdef __LP64__
+		/* kernel thread */
+		cregs->ksp = (((unsigned long)(p)) + TASK_SZ_ALGN);
+		/* Must exit via ret_from_kernel_thread in order
+		 * to call schedule_tail()
+		 */
 		cregs->kpc = (unsigned long) &ret_from_kernel_thread;
-#else
-		cregs->kpc = (unsigned long) ret_from_kernel_thread;
-#endif
-
 		/*
 		 * Copy function and argument to be called from
 		 * ret_from_kernel_thread.
 		 */
+#ifdef __LP64__
+		cregs->gr[27] = pregs->gr[27];
+#endif
 		cregs->gr[26] = pregs->gr[26];
 		cregs->gr[25] = pregs->gr[25];
-
 	} else {
-		/* User Thread:
-		 *
-		 * Use same stack depth as parent when in wrapper
-		 *
+		/* user thread */
+		/*
 		 * Note that the fork wrappers are responsible
-		 * for setting gr[20] and gr[21].
+		 * for setting gr[21].
 		 */
 
+		/* Use same stack depth as parent */
 		cregs->ksp = ((unsigned long)(p))
-			+ (pregs->gr[20] & (INIT_TASK_SIZE - 1));
-		cregs->kpc = pregs->gr[21];
+			+ (pregs->gr[21] & (INIT_TASK_SIZE - 1));
+		cregs->gr[30] = usp;
+		if (p->personality == PER_HPUX) {
+			cregs->kpc = (unsigned long) &hpux_child_return;
+		} else {
+			cregs->kpc = (unsigned long) &child_return;
+		}
 	}
 
 	return 0;

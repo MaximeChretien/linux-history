@@ -12,13 +12,12 @@ all:	kernel.o head.o init_task.o
 
 O_TARGET := kernel.o
 
-export-objs			= irq.o pci-dma.o setup.o smp.o mips_ksyms.o \
-				  old-irq.o
+export-objs	= irq.o pci-dma.o setup.o smp.o mips_ksyms.o old-irq.o
 
-obj-y				+= branch.o process.o signal.o entry.o \
-				   traps.o ptrace.o vm86.o ioport.o reset.o \
-				   semaphore.o setup.o syscall.o sysmips.o \
-				   ipc.o scall_o32.o unaligned.o
+obj-y		+= branch.o cpu-probe.o process.o signal.o entry.o traps.o \
+		   ptrace.o vm86.o ioport.o reset.o semaphore.o setup.o \
+		   syscall.o sysmips.o ipc.o scall_o32.o unaligned.o
+
 obj-$(CONFIG_MODULES)		+= mips_ksyms.o
 
 obj-$(CONFIG_CPU_R3000)		+= r2300_fpu.o r2300_switch.o
@@ -54,14 +53,14 @@ obj-$(CONFIG_NEW_TIME_C)	+= time.o
 
 obj-$(CONFIG_BINFMT_IRIX)	+= irixelf.o irixioctl.o irixsig.o sysirix.o \
 				   irixinv.o
-obj-$(CONFIG_REMOTE_DEBUG)	+= gdb-low.o gdb-stub.o 
+obj-$(CONFIG_REMOTE_DEBUG)	+= gdb-low.o gdb-stub.o
 obj-$(CONFIG_PROC_FS)		+= proc.o
 
 obj-$(CONFIG_NEW_PCI)		+= pci.o
+obj-$(CONFIG_PCI_AUTO)		+= pci_auto.o
 ifndef CONFIG_MAPPED_PCI_IO
 obj-y				+= pci-dma.o
 endif
-obj-$(CONFIG_PCI_AUTO)		+= pci_auto.o
 
 entry.o: entry.S
 head.o: head.S

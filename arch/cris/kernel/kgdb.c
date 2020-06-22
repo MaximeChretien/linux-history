@@ -18,6 +18,9 @@
 *! Jul 21 1999  Bjorn Wesen     eLinux port
 *!
 *! $Log: kgdb.c,v $
+*! Revision 1.7  2002/07/12 09:14:56  bjornw
+*! Corrected typo
+*!
 *! Revision 1.6  2001/10/09 13:10:03  matsfg
 *! Added $ on registers and removed some underscores
 *!
@@ -55,7 +58,7 @@
 *!
 *!---------------------------------------------------------------------------
 *!
-*! $Id: kgdb.c,v 1.6 2001/10/09 13:10:03 matsfg Exp $
+*! $Id: kgdb.c,v 1.7 2002/07/12 09:14:56 bjornw Exp $
 *!
 *! (C) Copyright 1999, Axis Communications AB, LUND, SWEDEN
 *!
@@ -1064,7 +1067,7 @@ handle_exception (int sigval)
 					int regno = gdb_cris_strtol (&remcomInBuffer[1], &suffix, 16);
 					int status;
 #ifdef PROCESS_SUPPORT
-					if (current_thread_g =! executing_task)
+					if (current_thread_g != executing_task)
 						status = write_stack_register (current_thread_g, regno, suffix+1);
 					else
 #endif

@@ -1,4 +1,4 @@
-/* $Id: serial.c,v 1.32 2002/05/22 13:58:00 johana Exp $
+/* $Id: serial.c,v 1.37 2002/08/13 13:02:37 bjornw Exp $
  *
  * Serial port driver for the ETRAX 100LX chip
  *
@@ -7,6 +7,24 @@
  *      Many, many authors. Based once upon a time on serial.c for 16x50.
  *
  * $Log: serial.c,v $
+ * Revision 1.37  2002/08/13 13:02:37  bjornw
+ * Removed some warnings because of unused code
+ *
+ * Revision 1.36  2002/08/08 12:50:01  starvik
+ * Serial interrupt is shared with synchronous serial port driver
+ *
+ * Revision 1.35  2002/06/03 10:40:49  starvik
+ * Increased RS-485 RTS toggle timer to 2 characters
+ *
+ * Revision 1.34  2002/05/28 18:59:36  johana
+ * Whitespace and comment fixing to be more like etrax100ser.c 1.71.
+ *
+ * Revision 1.33  2002/05/28 17:55:43  johana
+ * RS-485 uses FAST_TIMER if enabled, and starts a short (one char time)
+ * timer from tranismit_chars (interrupt context).
+ * The timer toggles RTS in interrupt context when expired giving minimum
+ * latencies.
+ *
  * Revision 1.32  2002/05/22 13:58:00  johana
  * Renamed rs_write() to raw_write() and made it inline.
  * New rs_write() handles RS-485 if configured and enabled
@@ -303,7 +321,7 @@
  *
  */
 
-static char *serial_version = "$Revision: 1.32 $";
+static char *serial_version = "$Revision: 1.37 $";
 
 #include <linux/config.h>
 #include <linux/version.h>
@@ -342,7 +360,16 @@ static char *serial_version = "$Revision: 1.32 $";
 #include <linux/serial.h>
 /* while we keep our own stuff (struct e100_serial) in a local .h file */
 #include "serial.h"
+#include <asm/fasttimer.h>
 
+#ifdef CONFIG_ETRAX_SERIAL_FAST_TIMER
+#ifdef CONFIG_ETRAX_SERIAL_FLUSH_DMA_FAST
+#error "Disable SERIAL_FLUSH_DMA_FAST to use SERIAL_FAST_TIMER"
+#endif
+#ifndef CONFIG_ETRAX_FAST_TIMER
+#error "Enable FAST_TIMER to use SERIAL_FAST_TIMER"
+#endif
+#endif
 /*
  * All of the compatibilty code so we can compile serial.c against
  * older kernels is hidden in serial_compat.h
@@ -404,8 +431,10 @@ static int rs_write(struct tty_struct * tty, int from_user,
                     const unsigned char *buf, int count);
 static inline int raw_write(struct tty_struct * tty, int from_user,
                             const unsigned char *buf, int count);
+#ifdef CONFIG_ETRAX_RS485
 static int e100_write_rs485(struct tty_struct * tty, int from_user,
                             const unsigned char *buf, int count);
+#endif
 static int 
 get_lsr_info(struct e100_serial * info, unsigned int *value);
 
@@ -519,6 +548,9 @@ static struct e100_serial rs_table[] = {
 static struct tty_struct *serial_table[NR_PORTS]; 
 static struct termios *serial_termios[NR_PORTS];
 static struct termios *serial_termios_locked[NR_PORTS];
+#ifdef CONFIG_ETRAX_SERIAL_FAST_TIMER
+static struct fast_timer fast_timers[NR_PORTS];
+#endif
 
 #ifdef CONFIG_ETRAX_SERIAL_PROC_ENTRY
 #define PROCSTAT(x) x
@@ -538,7 +570,7 @@ struct ser_statistics_type {
 
 static struct ser_statistics_type ser_stat[NR_PORTS];
 
-#else 
+#else
 
 #define PROCSTAT(x)
 
@@ -546,6 +578,9 @@ static struct ser_statistics_type ser_stat[NR_PORTS];
 
 /* RS-485 */
 #if defined(CONFIG_ETRAX_RS485)
+#ifdef CONFIG_ETRAX_FAST_TIMER
+static struct fast_timer fast_timers_rs485[NR_PORTS];
+#endif
 #if defined(CONFIG_ETRAX_RS485_ON_PA)
 static int rs485_pa_bit = CONFIG_ETRAX_RS485_ON_PA_BIT;
 #endif
@@ -578,7 +613,7 @@ struct control_pins
 	volatile unsigned char *port;
 	volatile unsigned char *shadow;
 	volatile unsigned char *dir_shadow;
-	
+
 	unsigned char dtr_bit;
 	unsigned char ri_bit;
 	unsigned char dsr_bit;
@@ -872,11 +907,6 @@ e100_ri_out(struct e100_serial *info, int set)
 		*e100_modem_pins[info->line].port = *e100_modem_pins[info->line].shadow;
 		restore_flags(flags);
 	}
-#if 0
-	REG_SHADOW_SET(e100_modem_pins[info->line].port,
-		       *e100_modem_pins[info->line].shadow,
-		       e100_modem_pins[info->line].ri_bit, !set);
-#endif
 #endif
 }
 static inline void 
@@ -895,11 +925,6 @@ e100_cd_out(struct e100_serial *info, int set)
 		*e100_modem_pins[info->line].port = *e100_modem_pins[info->line].shadow;
 		restore_flags(flags);
 	}
-#if 0
-	REG_SHADOW_SET(e100_modem_pins[info->line].port,
-		       *e100_modem_pins[info->line].shadow,
-		       e100_modem_pins[info->line].cd_bit, !set);
-#endif
 #endif
 }
 
@@ -1014,7 +1039,7 @@ e100_enable_rs485(struct tty_struct *tty,struct rs485_control *r)
 }
 
 static int
-e100_write_rs485(struct tty_struct *tty, int from_user, 
+e100_write_rs485(struct tty_struct *tty, int from_user,
                  const unsigned char *buf, int count)
 {
 	struct e100_serial * info = (struct e100_serial *)tty->driver_data;
@@ -1031,7 +1056,22 @@ e100_write_rs485(struct tty_struct *tty, int from_user,
 	info->rs485.enabled = old_enabled;
 	return count;
 }
+
+#ifdef CONFIG_ETRAX_FAST_TIMER
+/* Timer function to toggle RTS when using FAST_TIMER */
+static void rs485_toggle_rts_timer_function(unsigned long data)
+{
+	struct e100_serial *info = (struct e100_serial *)data;
+
+	fast_timers_rs485[info->line].function = NULL;
+	e100_rts(info, info->rs485.rts_after_sent);
+#if defined(CONFIG_ETRAX_RS485_DISABLE_RECEIVER)
+	e100_enable_rx(info);
+	e100_enable_rxdma_irq(info);
 #endif
+}
+#endif
+#endif /* CONFIG_ETRAX_RS485 */
 
 /*
  * ------------------------------------------------------------
@@ -1174,6 +1214,16 @@ transmit_chars(struct e100_serial *info)
 		/* our job here is done, don't schedule any new DMA transfer */
 		info->tr_running = 0;
 
+#if defined(CONFIG_ETRAX_RS485) && defined(CONFIG_ETRAX_FAST_TIMER)
+		if (info->rs485.enabled) {
+			/* Set a short timer to toggle RTS */
+			start_one_shot_timer(&fast_timers_rs485[info->line],
+			                     rs485_toggle_rts_timer_function,
+			                     (unsigned long)info,
+			                     info->char_time_usec*2,
+			                     "RS-485");
+		}
+#endif /* RS485 */
 		return;
 	}
 
@@ -1189,7 +1239,7 @@ transmit_chars(struct e100_serial *info)
 	*info->ocmdadr = 1;       /* dma command start -> R_DMAx_CMD */
 	
 	/* DMA is now running (hopefully) */
-}
+} /* transmit_chars */
 
 static void 
 start_transmit(struct e100_serial *info)
@@ -1205,7 +1255,7 @@ start_transmit(struct e100_serial *info)
 	info->tr_running = 1;
 
 	transmit_chars(info);
-}
+} /* start_transmit */
 
 #ifdef CONFIG_ETRAX_SERIAL_FAST_TIMER
 static int serial_fast_timer_started = 0;
@@ -1461,7 +1511,7 @@ start_receive(struct e100_serial *info)
 #endif
 
 	/* reset the input dma channel to be sure it works */
-	
+
 	*info->icmdadr = IO_STATE(R_DMA_CH6_CMD, cmd, reset);
 	while (IO_EXTRACT(R_DMA_CH6_CMD, cmd, *info->icmdadr) ==
 	       IO_STATE_VALUE(R_DMA_CH6_CMD, cmd, reset));
@@ -1636,7 +1686,7 @@ flush_to_flip_buffer(struct e100_serial *info)
 	cli();
 
 	length = tty->flip.count;
-	
+
 	while ((buffer = info->first_recv_buffer) && length < TTY_FLIPBUF_SIZE) {
 		unsigned int count = buffer->length;
 
@@ -1889,7 +1939,7 @@ static void _INLINE_ handle_ser_interrupt(struct e100_serial *info)
 			}
 			info->break_detected_cnt = 0;
 			DEBUG_LOG(info->line, "#iERR s d %04X\n",
-				  ((rstat & SER_ERROR_MASK) << 8) | data);
+			          ((rstat & SER_ERROR_MASK) << 8) | data);
 		}
 		PROCSTAT(ser_stat[info->line].early_errors_cnt++);
 	} else { /* It was a valid byte, now let the DMA do the rest */
@@ -1903,8 +1953,8 @@ static void _INLINE_ handle_ser_interrupt(struct e100_serial *info)
 			 * previous interrupt we should discard it.
 			 */
 			long elapsed_usec = 
-				(curr_time - info->last_rx_active) * (1000000/HZ) + 
-				curr_time_u - info->last_rx_active_usec;
+			  (curr_time - info->last_rx_active) * (1000000/HZ) + 
+			  curr_time_u - info->last_rx_active_usec;
 			if (elapsed_usec < 2*info->char_time_usec) {
 				DEBUG_LOG(info->line, "FBRK %i\n", info->line);
 				/* Report as BREAK (error) and let
@@ -1942,7 +1992,7 @@ ser_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 	for (i = 0; i < NR_PORTS; i++) {
 		info = rs_table + i;
 
-		if (!info->uses_dma) 
+		if (!info->enabled || !info->uses_dma) 
 			continue; 
 
 		/* Which line caused the irq? */
@@ -1992,28 +2042,6 @@ do_softint(void *private_)
 	}
 }
 
-/*
- * This routine is called from the scheduler tqueue when the interrupt
- * routine has signalled that a hangup has occurred.  The path of
- * hangup processing is:
- *
- * 	serial interrupt routine -> (scheduler tqueue) ->
- * 	do_serial_hangup() -> tty->hangup() -> rs_hangup()
- * 
- */
-static void 
-do_serial_hangup(void *private_)
-{
-	struct e100_serial	*info = (struct e100_serial *) private_;
-	struct tty_struct	*tty;
-
-	tty = info->tty;
-	if (!tty)
-		return;
-	
-	tty_hangup(tty);
-}
-
 static int 
 startup(struct e100_serial * info)
 {
@@ -2025,7 +2053,8 @@ startup(struct e100_serial * info)
 	if (!xmit_page)
 		return -ENOMEM;
 
-	save_flags(flags); cli();
+	save_flags(flags); 
+	cli();
 
 	/* if it was already initialized, skip this */
 
@@ -2322,7 +2351,7 @@ rs_flush_chars(struct tty_struct *tty)
 
 static inline int 
 raw_write(struct tty_struct * tty, int from_user,
-	 const unsigned char *buf, int count)
+	  const unsigned char *buf, int count)
 {
 	int	c, ret = 0;
 	struct e100_serial *info = (struct e100_serial *)tty->driver_data;
@@ -2435,6 +2464,11 @@ rs_write(struct tty_struct * tty, int from_user,
 		/* If we are in RS-485 mode, we need to toggle RTS and disable
 		 * the receiver before initiating a DMA transfer
 		 */
+#ifdef CONFIG_ETRAX_FAST_TIMER
+		/* Abort any started timer */
+		fast_timers_rs485[info->line].function = NULL;
+		del_fast_timer(&fast_timers_rs485[info->line]);
+#endif
 		e100_rts(info, info->rs485.rts_on_send);
 #if defined(CONFIG_ETRAX_RS485_DISABLE_RECEIVER)
 		e100_disable_rx(info);
@@ -2482,7 +2516,7 @@ rs_write(struct tty_struct * tty, int from_user,
 #endif /* CONFIG_ETRAX_RS485 */
 
 	return count;
-}
+} /* rs_write */
 
 
 /* how much space is available in the xmit buffer? */
@@ -2563,16 +2597,16 @@ rs_throttle(struct tty_struct * tty)
 	unsigned long flags;
 #ifdef SERIAL_DEBUG_THROTTLE
 	char	buf[64];
-	
+
 	printk("throttle %s: %d....\n", _tty_name(tty, buf),
 	       tty->ldisc.chars_in_buffer(tty));
 #endif
-	
+
 	if (I_IXOFF(tty))
 		info->x_char = STOP_CHAR(tty);
-	
+
 	/* Turn off RTS line (do this atomic) should here be an else ?? */
-	
+
 	save_flags(flags); 
 	cli();
 	e100_rts(info, 0);
@@ -2586,20 +2620,20 @@ rs_unthrottle(struct tty_struct * tty)
 	unsigned long flags;
 #ifdef SERIAL_DEBUG_THROTTLE
 	char	buf[64];
-	
+
 	printk("unthrottle %s: %d....\n", _tty_name(tty, buf),
 	       tty->ldisc.chars_in_buffer(tty));
 #endif
-	
+
 	if (I_IXOFF(tty)) {
 		if (info->x_char)
 			info->x_char = 0;
 		else
 			info->x_char = START_CHAR(tty);
 	}
-	
+
 	/* Assert RTS line (do this atomic) */
-	
+
 	save_flags(flags); 
 	cli();
 	e100_rts(info, 1);
@@ -2722,8 +2756,8 @@ get_lsr_info(struct e100_serial * info, unsigned int *value)
 #ifdef SERIAL_DEBUG_IO 
 struct state_str
 {
-  int state;
-  const char *str;
+	int state;
+	const char *str;
 };
 
 const struct state_str control_state_str[] = {
@@ -3678,6 +3712,15 @@ rs_init(void)
 			       serial_driver.name, info->line, (unsigned int)info->port);
 		}
 	}
+#ifdef CONFIG_ETRAX_FAST_TIMER
+#ifdef CONFIG_ETRAX_SERIAL_FAST_TIMER
+	memset(fast_timers, 0, sizeof(fast_timers));
+#endif
+#ifdef CONFIG_ETRAX_RS485
+	memset(fast_timers_rs485, 0, sizeof(fast_timers_rs485));
+#endif
+	fast_timer_init();
+#endif
 
 #ifndef CONFIG_SVINTO_SIM
 	/* Not needed in simulator.  May only complicate stuff. */
@@ -3689,7 +3732,7 @@ rs_init(void)
 		panic("irq23");
 #endif
 #ifdef SERIAL_HANDLE_EARLY_ERRORS
-	if (request_irq(SERIAL_IRQ_NBR, ser_interrupt, SA_INTERRUPT, "serial ", NULL))
+	if (request_irq(SERIAL_IRQ_NBR, ser_interrupt, SA_SHIRQ | SA_INTERRUPT, "serial ", NULL))
 		panic("irq8");
 #endif
 #ifdef CONFIG_ETRAX_SERIAL_PORT1

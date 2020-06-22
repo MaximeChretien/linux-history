@@ -57,11 +57,6 @@ typedef struct {
 
 #ifdef __KERNEL__
 
-struct my_sg {
-	int size;
-	char *start_addr;
-};
-
 struct ctlr_info;
 typedef struct ctlr_info ctlr_info_t;
 

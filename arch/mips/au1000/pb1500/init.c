@@ -34,7 +34,6 @@
 #include <linux/bootmem.h>
 #include <asm/addrspace.h>
 #include <asm/bootinfo.h>
-#include <linux/config.h>
 #include <linux/string.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
@@ -59,7 +58,7 @@ int __init prom_init(int argc, char **argv, char **envp, int *prom_vec)
 	prom_envp = envp;
 
 	mips_machgroup = MACH_GROUP_ALCHEMY;
-	mips_machtype = MACH_PB1500;  
+	mips_machtype = MACH_PB1500;
 
 	prom_init_cmdline();
 	memsize_str = prom_getenv("memsize");

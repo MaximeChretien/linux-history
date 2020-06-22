@@ -4773,21 +4773,16 @@ awe_detect_base(int addr)
 }
 	
 #if defined CONFIG_ISAPNP || defined CONFIG_ISAPNP_MODULE
-static struct {
-	unsigned short card_vendor, card_device;
-	unsigned short vendor;
-	unsigned short function;
-	char *name;
-} isapnp_awe_list[] __initdata = {
+static struct isapnp_device_id isapnp_awe_list[] __initdata = {
 	{	ISAPNP_ANY_ID, ISAPNP_ANY_ID,
 		ISAPNP_VENDOR('C','T','L'), ISAPNP_FUNCTION(0x0021),
-		"AWE32 WaveTable" },
+		(unsigned long)"AWE32 WaveTable" },
 	{	ISAPNP_ANY_ID, ISAPNP_ANY_ID,
 		ISAPNP_VENDOR('C','T','L'), ISAPNP_FUNCTION(0x0022),
-		"AWE64 WaveTable" },
+		(unsigned long)"AWE64 WaveTable" },
 	{	ISAPNP_ANY_ID, ISAPNP_ANY_ID,
 		ISAPNP_VENDOR('C','T','L'), ISAPNP_FUNCTION(0x0023),
-		"AWE64 Gold WaveTable" },
+		(unsigned long)"AWE64 Gold WaveTable" },
 	{0}
 };
 
@@ -4818,7 +4813,7 @@ static int __init awe_probe_isapnp(int *port)
 		if (!idev)
 			continue;
 		printk(KERN_INFO "ISAPnP reports %s at i/o %#x\n",
-		       isapnp_awe_list[i].name, *port);
+		       (char*)isapnp_awe_list[i].driver_data, *port);
 		return 0;
 	}
 	return -ENODEV;

@@ -556,7 +556,7 @@ nlmsvc_callback_exit(struct rpc_task *task)
 
 struct nlm_void			{ int dummy; };
 
-#define PROC(name, xargt, xrest, argt, rest)	\
+#define PROC(name, xargt, xrest, argt, rest, respsize)	\
  { (svc_procfunc) nlmsvc_proc_##name,	\
    (kxdrproc_t) nlmsvc_decode_##xargt,	\
    (kxdrproc_t) nlmsvc_encode_##xrest,	\
@@ -564,33 +564,40 @@ struct nlm_void			{ int dummy; };
    sizeof(struct nlm_##argt),		\
    sizeof(struct nlm_##rest),		\
    0,					\
-   0					\
+   0,					\
+   respsize,				\
  }
+
+#define	Ck	(1+8)	/* cookie */
+#define	St	1	/* status */
+#define	No	(1+1024/4) /* Net Obj */
+#define	Rg	2	/* range - offset + size */
+
 struct svc_procedure		nlmsvc_procedures[] = {
-  PROC(null,		void,		void,		void,	void),
-  PROC(test,		testargs,	testres,	args,	res),
-  PROC(lock,		lockargs,	res,		args,	res),
-  PROC(cancel,		cancargs,	res,		args,	res),
-  PROC(unlock,		unlockargs,	res,		args,	res),
-  PROC(granted,		testargs,	res,		args,	res),
-  PROC(test_msg,	testargs,	norep,		args,	void),
-  PROC(lock_msg,	lockargs,	norep,		args,	void),
-  PROC(cancel_msg,	cancargs,	norep,		args,	void),
-  PROC(unlock_msg,	unlockargs,	norep,		args,	void),
-  PROC(granted_msg,	testargs,	norep,		args,	void),
-  PROC(test_res,	testres,	norep,		res,	void),
-  PROC(lock_res,	lockres,	norep,		res,	void),
-  PROC(cancel_res,	cancelres,	norep,		res,	void),
-  PROC(unlock_res,	unlockres,	norep,		res,	void),
-  PROC(granted_res,	grantedres,	norep,		res,	void),
+  PROC(null,		void,		void,		void,	void, 1),
+  PROC(test,		testargs,	testres,	args,	res, Ck+St+2+No+Rg),
+  PROC(lock,		lockargs,	res,		args,	res, Ck+St),
+  PROC(cancel,		cancargs,	res,		args,	res, Ck+St),
+  PROC(unlock,		unlockargs,	res,		args,	res, Ck+St),
+  PROC(granted,		testargs,	res,		args,	res, Ck+St),
+  PROC(test_msg,	testargs,	norep,		args,	void, 1),
+  PROC(lock_msg,	lockargs,	norep,		args,	void, 1),
+  PROC(cancel_msg,	cancargs,	norep,		args,	void, 1),
+  PROC(unlock_msg,	unlockargs,	norep,		args,	void, 1),
+  PROC(granted_msg,	testargs,	norep,		args,	void, 1),
+  PROC(test_res,	testres,	norep,		res,	void, 1),
+  PROC(lock_res,	lockres,	norep,		res,	void, 1),
+  PROC(cancel_res,	cancelres,	norep,		res,	void, 1),
+  PROC(unlock_res,	unlockres,	norep,		res,	void, 1),
+  PROC(granted_res,	grantedres,	norep,		res,	void, 1),
   /* statd callback */
-  PROC(sm_notify,	reboot,		void,		reboot,	void),
-  PROC(none,		void,		void,		void,	void),
-  PROC(none,		void,		void,		void,	void),
-  PROC(none,		void,		void,		void,	void),
-  PROC(share,		shareargs,	shareres,	args,	res),
-  PROC(unshare,		shareargs,	shareres,	args,	res),
-  PROC(nm_lock,		lockargs,	res,		args,	res),
-  PROC(free_all,	notify,		void,		args,	void),
+  PROC(sm_notify,	reboot,		void,		reboot,	void, 1),
+  PROC(none,		void,		void,		void,	void, 1),
+  PROC(none,		void,		void,		void,	void, 1),
+  PROC(none,		void,		void,		void,	void, 1),
+  PROC(share,		shareargs,	shareres,	args,	res, Ck+St+1),
+  PROC(unshare,		shareargs,	shareres,	args,	res, Ck+St+1),
+  PROC(nm_lock,		lockargs,	res,		args,	res, Ck+St),
+  PROC(free_all,	notify,		void,		args,	void, 0),
 
 };

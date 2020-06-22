@@ -125,4 +125,9 @@ static inline void up(struct semaphore * sem)
 	__up_op(sem, __up_wakeup);
 }
 
+static inline int sem_getcount(struct semaphore *sem)
+{
+	return atomic_read(&sem->count);
+}
+
 #endif

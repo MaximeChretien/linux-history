@@ -225,8 +225,7 @@ survive:
 	 * If we are out of memory for pid1,
 	 * sleep for a while and retry
 	 */
-	tsk->policy |= SCHED_YIELD;
-	schedule();
+	yield();
 	goto survive;
 
 check_stack:

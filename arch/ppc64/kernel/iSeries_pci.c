@@ -4,7 +4,7 @@
  * Copyright (C) 2001 Allan Trautman, IBM Corporation
  *
  * iSeries specific routines for PCI.
- * 
+ * /
  * Based on code from pci.c and iSeries_pci.c 32bit
  *
  * This program is free software; you can redistribute it and/or modify
@@ -28,6 +28,8 @@
 #include <linux/init.h>
 #include <linux/ide.h>
 #include <linux/pci.h>
+#include <linux/rtc.h>
+#include <linux/time.h>
 
 #include <asm/io.h>
 #include <asm/irq.h>
@@ -37,6 +39,8 @@
 #include <asm/ppcdebug.h>
 #include <asm/naca.h>
 #include <asm/flight_recorder.h>
+#include <asm/hardirq.h>
+#include <asm/time.h>
 #include <asm/pci_dma.h>
 
 #include <asm/iSeries/HvCallPci.h>
@@ -75,9 +79,6 @@ extern long   Pci_Error_Count;
 extern int    Pci_Retry_Max;	
 extern int    Pci_Error_Flag;
 extern int    Pci_Trace_Flag;
-
-extern void iSeries_MmIoTest(void);
-
 
 /*******************************************************************
  * Forward declares of prototypes. 
@@ -379,7 +380,10 @@ void  iSeries_Scan_PHBs_Slots(struct pci_controller* Phb)
 			if(DevInfo->deviceType == HvCallPci_NodeDevice) {
 				iSeries_Scan_EADs_Bridge(Bus, SubBus, IdSel);
 			}
-			else printk("PCI: Invalid System Configuration(0x%02X.\n",DevInfo->deviceType);
+			else {
+				printk("PCI: Invalid System Configuration(0x%02X).\n",DevInfo->deviceType);
+				PCIFR(      "Invalid System Configuration(0x%02X).",  DevInfo->deviceType);
+			}
 		}
 		else pci_Log_Error("getDeviceInfo",Bus, SubBus, IdSel,HvRc);
 	}
@@ -511,7 +515,7 @@ int iSeries_Scan_Bridge_Slot(HvBusNumber Bus, struct HvCallPci_BridgeInfo* Bridg
 /* I/0 Memory copy MUST use mmio commands on iSeries                    */
 /* To do; For performance, include the hv call directly                 */
 /************************************************************************/
-void* iSeries_memset(void* dest, char c, size_t Count)
+void* iSeries_memset_io(void* dest, char c, size_t Count)
 {
 	u8    ByteValue     = c;
 	long  NumberOfBytes = Count;
@@ -580,6 +584,18 @@ struct iSeries_Device_Node* get_Device_Node(struct pci_dev* PciDev)
 	}
 	return Node;
 }
+/******************************************************************/
+/* Set and reset Device Node Lock                                 */
+/******************************************************************/
+#define setIoLock() \
+    unsigned long IrqFlags; \
+    spin_lock_irqsave(&DevNode->IoLock, IrqFlags ); 
+
+#define resetIoLock() \
+    int RtnCode = DevNode->ReturnCode; \
+    spin_unlock_irqrestore( &DevNode->IoLock, IrqFlags ); \
+    return RtnCode;
+
 /**********************************************************************************
  *
  * Read PCI Config Space Code 
@@ -588,8 +604,8 @@ struct iSeries_Device_Node* get_Device_Node(struct pci_dev* PciDev)
 /** BYTE  *************************************************************************/
 int iSeries_Node_read_config_byte(struct iSeries_Device_Node* DevNode, int Offset, u8* ReadValue)
 {
-	u8  ReadData; 
-	if(DevNode == NULL) { return 0x301; } 
+	u8  ReadData;
+	setIoLock();
 	++Pci_Cfg_Read_Count;
 	DevNode->ReturnCode = HvCallPci_configLoad8(ISERIES_BUS(DevNode),ISERIES_SUBBUS(DevNode),0x10,
 	                                                Offset,&ReadData);
@@ -600,14 +616,14 @@ int iSeries_Node_read_config_byte(struct iSeries_Device_Node* DevNode, int Offse
 		printk("PCI: RCB: 0x%04X.%02X  Error: 0x%04X\n",ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->ReturnCode);
 		PCIFR(      "RCB: 0x%04X.%02X  Error: 0x%04X",  ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->ReturnCode);
 	}
-	*ReadValue = ReadData; 
- 	return DevNode->ReturnCode;
+	*ReadValue = ReadData;
+	resetIoLock();
 }
 /** WORD  *************************************************************************/
 int iSeries_Node_read_config_word(struct iSeries_Device_Node* DevNode, int Offset, u16* ReadValue)
 {
 	u16  ReadData; 
-	if(DevNode == NULL) { return 0x301; } 
+	setIoLock();
 	++Pci_Cfg_Read_Count;
 	DevNode->ReturnCode = HvCallPci_configLoad16(ISERIES_BUS(DevNode),ISERIES_SUBBUS(DevNode),0x10,
 	                                                Offset,&ReadData);
@@ -619,14 +635,14 @@ int iSeries_Node_read_config_word(struct iSeries_Device_Node* DevNode, int Offse
 		PCIFR(      "RCW: 0x%04X.%02X  Error: 0x%04X",  ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->ReturnCode);
 
 	}
-	*ReadValue = ReadData; 
- 	return DevNode->ReturnCode;
+	*ReadValue = ReadData;
+	resetIoLock();
 }
 /** DWORD *************************************************************************/
 int iSeries_Node_read_config_dword(struct iSeries_Device_Node* DevNode, int Offset, u32* ReadValue)
 {
  	u32  ReadData; 
-	if(DevNode == NULL) { return 0x301; } 
+	setIoLock();
 	++Pci_Cfg_Read_Count;
 	DevNode->ReturnCode = HvCallPci_configLoad32(ISERIES_BUS(DevNode),ISERIES_SUBBUS(DevNode),0x10,
 	                                                Offset,&ReadData);
@@ -637,8 +653,8 @@ int iSeries_Node_read_config_dword(struct iSeries_Device_Node* DevNode, int Offs
 		printk("PCI: RCL: 0x%04X.%02X  Error: 0x%04X\n",ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->ReturnCode);
 		PCIFR(      "RCL: 0x%04X.%02X  Error: 0x%04X",  ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->ReturnCode);
 	}
-	*ReadValue = ReadData; 
- 	return DevNode->ReturnCode;
+	*ReadValue = ReadData;
+	resetIoLock();
 }
 int iSeries_pci_read_config_byte(struct pci_dev* PciDev, int Offset, u8* ReadValue) { 
 	struct iSeries_Device_Node* DevNode = get_Device_Node(PciDev);
@@ -662,6 +678,7 @@ int iSeries_pci_read_config_dword(struct pci_dev* PciDev, int Offset, u32* ReadV
 /** BYTE  *************************************************************************/
 int iSeries_Node_write_config_byte(struct iSeries_Device_Node* DevNode, int Offset, u8 WriteData)
 {
+	setIoLock();
 	++Pci_Cfg_Write_Count;
 	DevNode->ReturnCode = HvCallPci_configStore8(ISERIES_BUS(DevNode),ISERIES_SUBBUS(DevNode),0x10,
 	                                                  Offset,WriteData);
@@ -672,11 +689,12 @@ int iSeries_Node_write_config_byte(struct iSeries_Device_Node* DevNode, int Offs
 		printk("PCI: WCB: 0x%04X.%02X  Error: 0x%04X\n",ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->ReturnCode);
 		PCIFR(      "WCB: 0x%04X.%02X  Error: 0x%04X",  ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->ReturnCode);
 	}
- 	return DevNode->ReturnCode;
+	resetIoLock();
 }
 /** WORD  *************************************************************************/
 int iSeries_Node_write_config_word(struct iSeries_Device_Node* DevNode, int Offset, u16 WriteData)
 {
+	setIoLock();
 	++Pci_Cfg_Write_Count;
 	DevNode->ReturnCode = HvCallPci_configStore16(ISERIES_BUS(DevNode),ISERIES_SUBBUS(DevNode),0x10,
 	                                                  Offset,WriteData);
@@ -687,11 +705,12 @@ int iSeries_Node_write_config_word(struct iSeries_Device_Node* DevNode, int Offs
 		printk("PCI: WCW: 0x%04X.%02X  Error: 0x%04X\n",ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->ReturnCode);
 		PCIFR(      "WCW: 0x%04X.%02X  Error: 0x%04X",  ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->ReturnCode);
 	}
- 	return DevNode->ReturnCode;
+	resetIoLock();
 }
 /** DWORD *************************************************************************/
 int iSeries_Node_write_config_dword(struct iSeries_Device_Node* DevNode, int Offset, u32 WriteData)
 {
+	setIoLock();
 	++Pci_Cfg_Write_Count;
 	DevNode->ReturnCode = HvCallPci_configStore32(ISERIES_BUS(DevNode),ISERIES_SUBBUS(DevNode),0x10,
 	                                                  Offset,WriteData);
@@ -702,7 +721,7 @@ int iSeries_Node_write_config_dword(struct iSeries_Device_Node* DevNode, int Off
 		printk("PCI: WCL: 0x%04X.%02X  Error: 0x%04X\n",ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->ReturnCode);
 		PCIFR(      "WCL: 0x%04X.%02X  Error: 0x%04X",  ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->ReturnCode);
 	}
-	return DevNode->ReturnCode;
+	resetIoLock();
 }
 int iSeries_pci_write_config_byte( struct pci_dev* PciDev,int Offset, u8 WriteValue)
 {
@@ -736,69 +755,93 @@ struct pci_ops iSeries_pci_ops = {
 };
 
 /************************************************************************
- * Check Return Code
+ * Log Pci Error and check Retry Count 
  * -> On Failure, print and log information.
  *    Increment Retry Count, if exceeds max, panic partition.
- * -> If in retry, print and log success 
- ************************************************************************
- * PCI: Device 23.90 ReadL I/O Error( 0): 0x1234
- * PCI: Device 23.90 ReadL Retry( 1)
- * PCI: Device 23.90 ReadL Retry Successful(1)
+ * -> If in retry, print and log success
  ************************************************************************/
-int  CheckReturnCode(char* TextHdr, struct iSeries_Device_Node* DevNode, u64 RtnCode)
+void logPciError(char* ErrorTxt, void* IoAddress, struct iSeries_Device_Node* DevNode, u64 RtnCode)
 {
-	if(RtnCode != 0)  {
-		++Pci_Error_Count;
-		++DevNode->IoRetry;
-		PCIFR(      "%s: Device 0x%04X:%02X  I/O Error(%2d): 0x%04X",
-			    TextHdr,ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->IoRetry,(int)RtnCode);
-		printk("PCI: %s: Device 0x%04X:%02X  I/O Error(%2d): 0x%04X\n",
-		            TextHdr,ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->IoRetry,(int)RtnCode);
-		/*******************************************************/
-		/* Bump the retry and check for retry count exceeded.  */
-		/* If, Exceeded, panic the system.                     */           
-		/*******************************************************/
-		if(DevNode->IoRetry > Pci_Retry_Max && Pci_Error_Flag > 0 ) {
-			mf_displaySrc(0xB6000103);
-			panic_timeout = 0; 
-			panic("PCI: Hardware I/O Error, SRC B6000103, Automatic Reboot Disabled.\n");
-		}
-		return -1;	/* Retry Try */
+	++DevNode->IoRetry;
+	++Pci_Error_Count;
+
+	PCIFR("%s: I/O Error(%1d/%1d):0x%04X  IoAddress:0x%p  Device:0x%04X:%02X",  
+	      ErrorTxt, DevNode->IoRetry, in_interrupt(), RtnCode, IoAddress, ISERIES_BUS(DevNode),DevNode->AgentId);
+	/*******************************************************/
+	/* Filter out EADs freeze and alignment errors         */
+	/*******************************************************/
+	if(RtnCode == 0x0102) {
+		PCIFR("EADS Freeze error.......Panic........");
+		mf_displaySrc(0xB6000103);
+		panic_timeout = 0; 
+		panic("PCI: EADs Freeze error SRC B6000103\n");
 	}
-	/********************************************************************
-	* If retry was in progress, log success and rest retry count        *
-	*********************************************************************/
-	else if(DevNode->IoRetry > 0) {
-		PCIFR("%s: Device 0x%04X:%02X Retry Successful(%2d).",
-		      TextHdr,ISERIES_BUS(DevNode),DevNode->DevFn,DevNode->IoRetry);
-		DevNode->IoRetry = 0;
-		return 0; 
+	else if(RtnCode == 0x0241) {
+		PCIFR("MMIO Alignment error: 0x%p",IoAddress);
+		mf_displaySrc(0xB6000103);
+		panic_timeout = 0; 
+		panic("PCI: MMIO Alignment error. SRC B6000103\n");
 	}
-	return 0; 
+	/*******************************************************/
+	/* Bump the retry and check for retry count exceeded.  */
+	/* If, Exceeded, panic the system.                     */           
+	/*******************************************************/
+	if(DevNode->IoRetry > Pci_Retry_Max && Pci_Error_Flag != 0 ) {
+		mf_displaySrc(0xB6000103);
+		panic_timeout = 0; 
+		panic("PCI: Hardware I/O Error, SRC B6000103, Automatic Reboot Disabled.\n");
+	}
+	/**************************************************************/
+	/* Wait x ms before retrying I/O to give I/O time to recover. */
+	/* Retry wait delay logic.                                    */
+	/* - On first retry, no delay, maybe just glitch.             */
+	/* - On successify retries, vary the delay to avoid being in a*/
+        /*   repetitive timing window.                                */ 
+	/**************************************************************/
+	if(DevNode->IoRetry > 0) {
+		udelay(DevNode->IoRetry * 50);
+	}
 }
+
+/************************************************************************
+ * Retry was successful
+ ************************************************************************/
+void  pciRetrySuccessful(struct iSeries_Device_Node* DevNode)
+{
+	struct  timeval  TimeClock;
+	struct  rtc_time CurTime;
+	do_gettimeofday(&TimeClock);
+	to_tm(TimeClock.tv_sec, &CurTime);
+
+	PCIFR("Retry Successful(%2d) on Device 0x%04X:%02X at %02d.%02d.%02d",
+	      DevNode->IoRetry,ISERIES_BUS(DevNode),DevNode->AgentId,
+	      CurTime.tm_hour,CurTime.tm_min,CurTime.tm_sec);
+
+	DevNode->IoRetry = 0;
+}
+
 /************************************************************************/
 /* Translate the I/O Address into a device node, bar, and bar offset.   */
 /* Note: Make sure the passed variable end up on the stack to avoid     */
 /* the exposure of being device global.                                 */
+/* The Device Node is Lock to block other I/O to device.                */
 /************************************************************************/
-static inline struct iSeries_Device_Node* xlateIoMmAddress(void* IoAddress,
-							    union HvDsaMap* DsaPtr,
-							   u64* BarOffsetPtr) {
-
-	unsigned long BaseIoAddr = (unsigned long)IoAddress-iSeries_Base_Io_Memory;
-	long          TableIndex = BaseIoAddr/iSeries_IoMmTable_Entry_Size;
-	struct iSeries_Device_Node* DevNode = *(iSeries_IoMmTable +TableIndex);
-	if(DevNode != NULL) {
-		DsaPtr->DsaAddr       = ISERIES_DSA(DevNode);
-		DsaPtr->Dsa.barNumber = *(iSeries_IoBarTable+TableIndex);
-		*BarOffsetPtr         = BaseIoAddr % iSeries_IoMmTable_Entry_Size;
-	}
-	else {
-		panic("PCI: Invalid PCI IoAddress detected!\n");
-	}
-	return DevNode;
-}
-
+#define setUpMmIo(IoAddress,Type) \
+unsigned long   IrqFlags; \
+struct HvCallPci_LoadReturn Return; \
+union HvDsaMap  DsaData;  \
+u64             BarOffset;\
+unsigned long BaseIoAddr = (unsigned long)IoAddress-iSeries_Base_Io_Memory; \
+long          TableIndex = (BaseIoAddr/iSeries_IoMmTable_Entry_Size);       \
+struct iSeries_Device_Node* DevNode = *(iSeries_IoMmTable+TableIndex);      \
+if(DevNode != NULL) { \
+    DsaData.DsaAddr       = ISERIES_DSA(DevNode); \
+    DsaData.Dsa.barNumber = *(iSeries_IoBarTable+TableIndex); \
+    BarOffset             = BaseIoAddr % iSeries_IoMmTable_Entry_Size; \
+    ++Pci_Io_##Type##_Count; \
+    spin_lock_irqsave(&DevNode->IoLock, IrqFlags ); \
+} \
+else panic("PCI: Invalid PCI IoAddress detected 0x%p!\n",IoAddress);
 /************************************************************************/
 /* Read MM I/O Instructions for the iSeries                             */
 /* On MM I/O error, all ones are returned and iSeries_pci_IoError is cal*/
@@ -810,47 +853,53 @@ static inline struct iSeries_Device_Node* xlateIoMmAddress(void* IoAddress,
 /************************************************************************/
 u8  iSeries_Read_Byte(void* IoAddress)
 {
-	u64    BarOffset;
-	union  HvDsaMap DsaData;
-	struct HvCallPci_LoadReturn Return;
-	struct iSeries_Device_Node* DevNode = xlateIoMmAddress(IoAddress,&DsaData,&BarOffset);
-
+	setUpMmIo(IoAddress,Read);
 	do {
-		++Pci_Io_Read_Count;
 		HvCall3Ret16(HvCallPciBarLoad8, &Return, DsaData.DsaAddr,BarOffset, 0);
-	} while (CheckReturnCode("RDB",DevNode, Return.rc) != 0);
-
-	if(Pci_Trace_Flag == 1)	PCIFR("RDB: IoAddress 0x%p = 0x%02X",IoAddress, (u8)Return.value); 
+		if(Return.rc != 0 ) {
+			logPciError("RDB",IoAddress, DevNode, Return.rc);
+		}
+		else if ( DevNode->IoRetry > 0) {
+			pciRetrySuccessful(DevNode);
+		}
+	} while (Return.rc != 0);
+	spin_unlock_irqrestore(&DevNode->IoLock, IrqFlags ); 
+	if(Pci_Trace_Flag == 1 ) PCIFR("RDB: IoAddress 0x%p = 0x%02X",IoAddress, (u8)Return.value);
 	return (u8)Return.value;
 }
+int Retry_Test = 0;
 u16  iSeries_Read_Word(void* IoAddress)
 {
-	u64    BarOffset;
-	union  HvDsaMap DsaData;
-	struct HvCallPci_LoadReturn Return;
-	struct iSeries_Device_Node* DevNode = xlateIoMmAddress(IoAddress,&DsaData,&BarOffset);
-
+	setUpMmIo(IoAddress,Read);
 	do {
-		++Pci_Io_Read_Count;
 		HvCall3Ret16(HvCallPciBarLoad16,&Return, DsaData.DsaAddr,BarOffset, 0);
-	} while (CheckReturnCode("RDW",DevNode, Return.rc) != 0);
 
-	if(Pci_Trace_Flag == 1) PCIFR("RDW: IoAddress 0x%p = 0x%04X",IoAddress, swab16((u16)Return.value));
+		if(Return.rc != 0 ) {
+			logPciError("RDW",IoAddress, DevNode, Return.rc);
+		}
+		else if ( DevNode->IoRetry > 0) {
+			pciRetrySuccessful(DevNode);
+		}
+	} while (Return.rc != 0);
+	spin_unlock_irqrestore(&DevNode->IoLock, IrqFlags ); 
+	if(Pci_Trace_Flag == 1 ) PCIFR("RDW: IoAddress 0x%p = 0x%04X",IoAddress, (u16)Return.value);
 	return swab16((u16)Return.value);
 }
 u32  iSeries_Read_Long(void* IoAddress)
 {
-	u64    BarOffset;
-	union  HvDsaMap DsaData;
-	struct HvCallPci_LoadReturn Return;
-	struct iSeries_Device_Node* DevNode = xlateIoMmAddress(IoAddress,&DsaData,&BarOffset);
-
+	setUpMmIo(IoAddress,Read);
 	do {
-		++Pci_Io_Read_Count;
 		HvCall3Ret16(HvCallPciBarLoad32,&Return, DsaData.DsaAddr,BarOffset, 0);
-	} while (CheckReturnCode("RDL",DevNode, Return.rc) != 0);
 
-	if(Pci_Trace_Flag == 1) PCIFR("RDL: IoAddress 0x%p = 0x%04X",IoAddress, swab32((u32)Return.value));
+		if(Return.rc != 0 ) {
+			logPciError("RDL",IoAddress, DevNode, Return.rc);
+		}
+		else if ( DevNode->IoRetry > 0) {
+			pciRetrySuccessful(DevNode);
+		}
+	} while (Return.rc != 0);
+	spin_unlock_irqrestore(&DevNode->IoLock, IrqFlags ); 
+	if(Pci_Trace_Flag == 1 ) PCIFR("RDL: IoAddress 0x%p = 0x%08X",IoAddress, swab32((u32)Return.value));
 	return swab32((u32)Return.value);
 }
 /************************************************************************/
@@ -862,41 +911,47 @@ u32  iSeries_Read_Long(void* IoAddress)
 /************************************************************************/
 void iSeries_Write_Byte(u8 Data, void* IoAddress)
 {
-	u64    BarOffset;
-	union  HvDsaMap DsaData;
-	struct HvCallPci_LoadReturn Return;
-	struct iSeries_Device_Node* DevNode = xlateIoMmAddress(IoAddress,&DsaData,&BarOffset);
-
+	setUpMmIo(IoAddress,Write);
 	do {
-		++Pci_Io_Write_Count;
 		Return.rc = HvCall4(HvCallPciBarStore8, DsaData.DsaAddr,BarOffset, Data, 0);
-	} while (CheckReturnCode("WWB",DevNode, Return.rc) != 0);
+		if(Return.rc != 0 ) {
+			logPciError("WWB",IoAddress, DevNode, Return.rc);
+		}
+		else if ( DevNode->IoRetry > 0) {
+			pciRetrySuccessful(DevNode);
+		}
+	} while (Return.rc != 0);
+	spin_unlock_irqrestore(&DevNode->IoLock, IrqFlags ); 
 	if(Pci_Trace_Flag == 1) PCIFR("WWB: IoAddress 0x%p = 0x%02X",IoAddress,Data);
 }
 void iSeries_Write_Word(u16 Data, void* IoAddress)
 {
-	u64    BarOffset;
-	union  HvDsaMap DsaData;
-	struct HvCallPci_LoadReturn Return;
-	struct iSeries_Device_Node* DevNode = xlateIoMmAddress(IoAddress,&DsaData,&BarOffset);
-
+	setUpMmIo(IoAddress,Write);
 	do {
-		++Pci_Io_Write_Count;
 		Return.rc = HvCall4(HvCallPciBarStore16,DsaData.DsaAddr,BarOffset, swab16(Data), 0);
-	} while (CheckReturnCode("WWW",DevNode, Return.rc) != 0);
+		if(Return.rc != 0 ) {
+			logPciError("WWW",IoAddress, DevNode, Return.rc);
+		}
+		else if ( DevNode->IoRetry > 0) {
+			pciRetrySuccessful(DevNode);
+		}
+	} while (Return.rc != 0);
+	spin_unlock_irqrestore(&DevNode->IoLock, IrqFlags ); 
 	if(Pci_Trace_Flag == 1) PCIFR("WWW: IoAddress 0x%p = 0x%04X",IoAddress,Data);
 }
 void iSeries_Write_Long(u32 Data, void* IoAddress)
 {
-	u64    BarOffset;
-	union  HvDsaMap DsaData;
-	struct HvCallPci_LoadReturn Return;
-	struct iSeries_Device_Node* DevNode = xlateIoMmAddress(IoAddress,&DsaData,&BarOffset);
-
+	setUpMmIo(IoAddress,Write);
 	do {
-		++Pci_Io_Write_Count;
 		Return.rc = HvCall4(HvCallPciBarStore32,DsaData.DsaAddr,BarOffset, swab32(Data), 0);
-	} while (CheckReturnCode("WWL",DevNode, Return.rc) != 0);
+		if(Return.rc != 0 ) {
+			logPciError("WWL",IoAddress, DevNode, Return.rc);
+		}
+		else if ( DevNode->IoRetry > 0) {
+			pciRetrySuccessful(DevNode);
+		}
+	} while (Return.rc != 0);
+	spin_unlock_irqrestore(&DevNode->IoLock, IrqFlags ); 
 	if(Pci_Trace_Flag == 1) PCIFR("WWL: IoAddress 0x%p = 0x%08X",IoAddress, Data);
 }
 /*

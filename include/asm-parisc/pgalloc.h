@@ -11,395 +11,293 @@
 #include <asm/pgtable.h>
 #include <asm/cache.h>
 
+#define flush_kernel_dcache_range(start,size) \
+	flush_kernel_dcache_range_asm((start), (start)+(size));
 
-/* Internal use D/I cache flushing routines... */
-/* XXX: these functions must not access memory between f[di]ce instructions. */
-
-static inline void __flush_dcache_range(unsigned long start, unsigned long size)
+static inline void
+flush_page_to_ram(struct page *page)
 {
-#if 0
-	register unsigned long count = (size / L1_CACHE_BYTES);
-	register unsigned long loop = cache_info.dc_loop;
-	register unsigned long i, j;
-
-	if (size > 64 * 1024) {
-		/* Just punt and clear the whole damn thing */
-		flush_data_cache();
-		return;
-	}
-
-	for(i = 0; i <= count; i++, start += L1_CACHE_BYTES)
-		for(j = 0; j < loop; j++)
-			fdce(start);
-#else
-	flush_data_cache();
-#endif
 }
 
+extern void flush_cache_all_local(void);
 
-static inline void __flush_icache_range(unsigned long start, unsigned long size)
+#ifdef CONFIG_SMP
+static inline void flush_cache_all(void)
 {
-#if 0
-	register unsigned long count = (size / L1_CACHE_BYTES);
-	register unsigned long loop = cache_info.ic_loop;
-	register unsigned long i, j;
-
-	if (size > 64 * 1024) {
-		/* Just punt and clear the whole damn thing */
-		flush_instruction_cache();
-		return;
-	}
-
-	for(i = 0; i <= count; i++, start += L1_CACHE_BYTES)
-		for(j = 0; j < loop; j++)
-			fice(start);
+	smp_call_function((void (*)(void *))flush_cache_all_local, NULL, 1, 1);
+	flush_cache_all_local();
+}
 #else
-	flush_instruction_cache();
+#define flush_cache_all flush_cache_all_local
+#endif
+
+#ifdef CONFIG_SMP
+#define flush_cache_mm(mm) flush_cache_all()
+#else
+#define flush_cache_mm(mm) flush_cache_all_local()
+#endif
+
+/* The following value needs to be tuned and probably scaled with the
+ * cache size.
+ */
+
+#define FLUSH_THRESHOLD 0x80000
+
+static inline void
+flush_user_dcache_range(unsigned long start, unsigned long end)
+{
+#ifdef CONFIG_SMP
+	flush_user_dcache_range_asm(start,end);
+#else
+	if ((end - start) < FLUSH_THRESHOLD)
+		flush_user_dcache_range_asm(start,end);
+	else
+		flush_data_cache();
 #endif
 }
 
 static inline void
-flush_kernel_dcache_range(unsigned long start, unsigned long size)
+flush_user_icache_range(unsigned long start, unsigned long end)
 {
-	register unsigned long end = start + size;
-	register unsigned long i;
-
-	start &= ~(L1_CACHE_BYTES - 1);
-	for (i = start; i < end; i += L1_CACHE_BYTES) {
-		kernel_fdc(i);
-	}
-	asm volatile("sync" : : );
-	asm volatile("syncdma" : : );
-}
-
-extern void __flush_page_to_ram(unsigned long address);
-
-#define flush_cache_all()			flush_all_caches()
-#define flush_cache_mm(foo)			flush_all_caches()
-
-#if 0
-/* This is how I think the cache flushing should be done -- mrw */
-extern inline void flush_cache_mm(struct mm_struct *mm) {
-	if (mm == current->mm) {
-		flush_user_dcache_range(mm->start_data, mm->end_data);
-		flush_user_icache_range(mm->start_code, mm->end_code);
-	} else {
-		flush_other_dcache_range(mm->context, mm->start_data, mm->end_data);
-		flush_other_icache_range(mm->context, mm->start_code, mm->end_code);
-	}
-}
+#ifdef CONFIG_SMP
+	flush_user_icache_range_asm(start,end);
+#else
+	if ((end - start) < FLUSH_THRESHOLD)
+		flush_user_icache_range_asm(start,end);
+	else
+		flush_instruction_cache();
 #endif
+}
 
-#define flush_cache_range(mm, start, end) do { \
-                __flush_dcache_range(start, (unsigned long)end - (unsigned long)start); \
-                __flush_icache_range(start, (unsigned long)end - (unsigned long)start); \
-} while(0)
+static inline void
+flush_cache_range(struct mm_struct *mm, unsigned long start, unsigned long end)
+{
+	int sr3;
 
-#define flush_cache_page(vma, vmaddr) do { \
-                __flush_dcache_range(vmaddr, PAGE_SIZE); \
-                __flush_icache_range(vmaddr, PAGE_SIZE); \
-} while(0)
+	if (!mm->context) {
+		BUG();
+		return;
+	}
 
-#define flush_page_to_ram(page)	\
-        __flush_page_to_ram((unsigned long)page_address(page))
+	sr3 = mfsp(3);
+	if (mm->context == sr3) {
+		flush_user_dcache_range(start,end);
+		flush_user_icache_range(start,end);
+	} else {
+		flush_cache_all();
+	}
+}
 
-#define flush_icache_range(start, end) \
-        __flush_icache_range(start, end - start)
+static inline void
+flush_cache_page(struct vm_area_struct *vma, unsigned long vmaddr)
+{
+	int sr3;
 
-#define flush_icache_user_range(vma, page, addr, len) \
-	flush_icache_page((vma), (page))
+	if (!vma->vm_mm->context) {
+		BUG();
+		return;
+	}
 
-#define flush_icache_page(vma, page) \
-	__flush_icache_range(page_address(page), PAGE_SIZE)
+	sr3 = mfsp(3);
+	if (vma->vm_mm->context == sr3) {
+		flush_user_dcache_range(vmaddr,vmaddr + PAGE_SIZE);
+		if (vma->vm_flags & VM_EXEC)
+			flush_user_icache_range(vmaddr,vmaddr + PAGE_SIZE);
+	} else {
+		if (vma->vm_flags & VM_EXEC)
+			flush_cache_all();
+		else
+			flush_data_cache();
+	}
+}
 
-#define flush_dcache_page(page) \
-	__flush_dcache_range(page_address(page), PAGE_SIZE)
+static inline void flush_dcache_page(struct page *page)
+{
+	if (page->mapping && !page->mapping->i_mmap &&
+			!page->mapping->i_mmap_shared) {
+		set_bit(PG_dcache_dirty, &page->flags);
+	} else {
+		flush_kernel_dcache_page(page_address(page));
+	}
+}
+
+#define flush_icache_page(vma,page)	do { flush_kernel_dcache_page(page_address(page)); flush_kernel_icache_page(page_address(page)); } while (0)
+
+#define flush_icache_range(s,e)		do { flush_kernel_dcache_range_asm(s,e); flush_kernel_icache_range_asm(s,e); } while (0)
 
 /* TLB flushing routines.... */
 
-extern void flush_data_tlb(void);
-extern void flush_instruction_tlb(void);
+extern void flush_tlb_all(void);
 
-#define flush_tlb() do { \
-        flush_data_tlb(); \
-	flush_instruction_tlb(); \
-} while(0);
+static inline void load_context(mm_context_t context)
+{
+	mtsp(context, 3);
+#if SPACEID_SHIFT == 0
+	mtctl(context << 1,8);
+#else
+	mtctl(context >> (SPACEID_SHIFT - 1),8);
+#endif
+}
 
-#define flush_tlb_all() 	flush_tlb()	/* XXX p[id]tlb */
+/*
+ * flush_tlb_mm()
+ *
+ * XXX This code is NOT valid for HP-UX compatibility processes,
+ * (although it will probably work 99% of the time). HP-UX
+ * processes are free to play with the space id's and save them
+ * over long periods of time, etc. so we have to preserve the
+ * space and just flush the entire tlb. We need to check the
+ * personality in order to do that, but the personality is not
+ * currently being set correctly.
+ *
+ * Of course, Linux processes could do the same thing, but
+ * we don't support that (and the compilers, dynamic linker,
+ * etc. do not do that).
+ */
+
+static inline void flush_tlb_mm(struct mm_struct *mm)
+{
+	if (mm == &init_mm) BUG(); /* Should never happen */
+
+#ifdef CONFIG_SMP
+	flush_tlb_all();
+#else
+	if (mm) {
+		if (mm->context != 0)
+			free_sid(mm->context);
+		mm->context = alloc_sid();
+		if (mm == current->active_mm)
+			load_context(mm->context);
+	}
+#endif
+}
 
 extern __inline__ void flush_tlb_pgtables(struct mm_struct *mm, unsigned long start, unsigned long end)
 {
 }
  
-static inline void flush_instruction_tlb_range(unsigned long start,
-					unsigned long size)
-{
-#if 0
-	register unsigned long count = (size / PAGE_SIZE);
-	register unsigned long loop = cache_info.it_loop;
-	register unsigned long i, j;
-	
-	for(i = 0; i <= count; i++, start += PAGE_SIZE)
-		for(j = 0; j < loop; j++)
-			pitlbe(start);
-#else
-	flush_instruction_tlb();
-#endif
-}
-
-static inline void flush_data_tlb_range(unsigned long start,
-					unsigned long size)
-{
-#if 0
-	register unsigned long count = (size / PAGE_SIZE);
-	register unsigned long loop = cache_info.dt_loop;
-	register unsigned long i, j;
-	
-	for(i = 0; i <= count; i++, start += PAGE_SIZE)
-		for(j = 0; j < loop; j++)
-			pdtlbe(start);
-#else
-	flush_data_tlb();
-#endif
-}
-
-
-
-static inline void __flush_tlb_range(unsigned long space, unsigned long start,
-		       unsigned long size)
-{
-	unsigned long old_sr1;
-
-	if(!size)
-		return;
-
-	old_sr1 = mfsp(1);
-	mtsp(space, 1);
-	
-	flush_data_tlb_range(start, size);
-	flush_instruction_tlb_range(start, size);
-
-	mtsp(old_sr1, 1);
-}
-
-extern void __flush_tlb_space(unsigned long space);
-
-static inline void flush_tlb_mm(struct mm_struct *mm)
-{
-#if 0
-	__flush_tlb_space(mm->context);
-#else
-	flush_tlb();
-#endif
-}
-
 static inline void flush_tlb_page(struct vm_area_struct *vma,
 	unsigned long addr)
 {
-	__flush_tlb_range(vma->vm_mm->context, addr, PAGE_SIZE);
-		
+	/* For one page, it's not worth testing the split_tlb variable */
+
+	mtsp(vma->vm_mm->context,1);
+	pdtlb(addr);
+	pitlb(addr);
 }
 
 static inline void flush_tlb_range(struct mm_struct *mm,
 	unsigned long start, unsigned long end)
 {
-	__flush_tlb_range(mm->context, start, end - start);
-}
+	unsigned long npages;
 
-/*
- * NOTE: Many of the below macros use PT_NLEVELS because
- *       it is convenient that PT_NLEVELS == LOG2(pte size in bytes),
- *       i.e. we use 3 level page tables when we use 8 byte pte's
- *       (for 64 bit) and 2 level page tables when we use 4 byte pte's
- */
+	npages = ((end - (start & PAGE_MASK)) + (PAGE_SIZE - 1)) >> PAGE_SHIFT;
+	if (npages >= 512)  /* XXX arbitrary, should be tuned */
+		flush_tlb_all();
+	else {
 
-#ifdef __LP64__
-#define PT_NLEVELS 3
-#define PT_INITIAL 4 /* Number of initial page tables */
-#else
-#define PT_NLEVELS 2
-#define PT_INITIAL 2 /* Number of initial page tables */
-#endif
-
-/* Definitions for 1st level */
-
-#define PGDIR_SHIFT  (PAGE_SHIFT + (PT_NLEVELS - 1)*(PAGE_SHIFT - PT_NLEVELS))
-#define PGDIR_SIZE	(1UL << PGDIR_SHIFT)
-#define PGDIR_MASK	(~(PGDIR_SIZE-1))
-#define PTRS_PER_PGD    (1UL << (PAGE_SHIFT - PT_NLEVELS))
-#define USER_PTRS_PER_PGD	(TASK_SIZE/PGDIR_SIZE)
-
-/* Definitions for 2nd level */
-
-#define PMD_SHIFT       (PAGE_SHIFT + (PAGE_SHIFT - PT_NLEVELS))
-#define PMD_SIZE	(1UL << PMD_SHIFT)
-#define PMD_MASK	(~(PMD_SIZE-1))
-#if PT_NLEVELS == 3
-#define PTRS_PER_PMD    (1UL << (PAGE_SHIFT - PT_NLEVELS))
-#else
-#define PTRS_PER_PMD    1
-#endif
-
-/* Definitions for 3rd level */
-
-#define PTRS_PER_PTE    (1UL << (PAGE_SHIFT - PT_NLEVELS))
-
-
-#define get_pgd_fast get_pgd_slow
-#define free_pgd_fast free_pgd_slow
-
-extern __inline__ pgd_t *get_pgd_slow(void)
-{
-	extern unsigned long gateway_pgd_offset;
-	extern unsigned long gateway_pgd_entry;
-	pgd_t *ret = (pgd_t *)__get_free_page(GFP_KERNEL);
-
-	if (ret) {
-	    memset (ret, 0, PTRS_PER_PGD * sizeof(pgd_t));
-
-	    /* Install HP-UX and Linux gateway page translations */
-
-	    pgd_val(*(ret + gateway_pgd_offset)) = gateway_pgd_entry;
+		mtsp(mm->context,1);
+		if (split_tlb) {
+			while (npages--) {
+				pdtlb(start);
+				pitlb(start);
+				start += PAGE_SIZE;
+			}
+		} else {
+			while (npages--) {
+				pdtlb(start);
+				start += PAGE_SIZE;
+			}
+		}
 	}
-	return ret;
 }
 
-extern __inline__ void free_pgd_slow(pgd_t *pgd)
+static inline pgd_t *pgd_alloc_one_fast (void)
+{
+	return NULL; /* not implemented */
+}
+
+static inline pgd_t *pgd_alloc (struct mm_struct *mm)
+{
+	/* the VM system never calls pgd_alloc_one_fast(), so we do it here. */
+	pgd_t *pgd = pgd_alloc_one_fast();
+	if (!pgd) {
+		pgd = (pgd_t *)__get_free_page(GFP_KERNEL);
+		if (pgd)
+			clear_page(pgd);
+	}
+	return pgd;
+}
+
+static inline void pgd_free(pgd_t *pgd)
 {
 	free_page((unsigned long)pgd);
 }
 
-#if PT_NLEVELS == 3
+#ifdef __LP64__
 
 /* Three Level Page Table Support for pmd's */
 
-extern __inline__ pmd_t *get_pmd_fast(void)
+static inline void pgd_populate(struct mm_struct *mm, pgd_t *pgd, pmd_t *pmd)
+{
+	pgd_val(*pgd) = _PAGE_TABLE + __pa((unsigned long)pmd);
+}
+
+static inline pmd_t *pmd_alloc_one_fast(struct mm_struct *mm, unsigned long address)
 {
 	return NULL; /* la la */
 }
 
-#if 0
-extern __inline__ void free_pmd_fast(pmd_t *pmd)
-{
-}
-#else
-#define free_pmd_fast free_pmd_slow
-#endif
-
-extern __inline__ pmd_t *get_pmd_slow(void)
+static inline pmd_t *pmd_alloc_one(struct mm_struct *mm, unsigned long address)
 {
 	pmd_t *pmd = (pmd_t *) __get_free_page(GFP_KERNEL);
-
 	if (pmd)
 		clear_page(pmd);
 	return pmd;
 }
 
-extern __inline__ void free_pmd_slow(pmd_t *pmd)
+static inline void pmd_free(pmd_t *pmd)
 {
 	free_page((unsigned long)pmd);
-}
-
-extern void __bad_pgd(pgd_t *pgd);
-
-extern inline pmd_t * pmd_alloc(pgd_t *pgd, unsigned long address)
-{
-	address = (address >> PMD_SHIFT) & (PTRS_PER_PMD - 1);
-
-	if (pgd_none(*pgd))
-		goto getnew;
-	if (pgd_bad(*pgd))
-		goto fix;
-	return (pmd_t *) pgd_page(*pgd) + address;
-getnew:
-{
-	pmd_t *page = get_pmd_fast();
-	
-	if (!page)
-		page = get_pmd_slow();
-	if (page) {
-		if (pgd_none(*pgd)) {
-		    pgd_val(*pgd) = _PAGE_TABLE + __pa((unsigned long)page);
-		    return page + address;
-		}
-		else
-		    free_pmd_fast(page);
-	}
-	else {
-		return NULL;
-	}
-}
-fix:
-	__bad_pgd(pgd);
-	return NULL;
 }
 
 #else
 
 /* Two Level Page Table Support for pmd's */
 
-extern inline pmd_t * pmd_alloc(pgd_t * pgd, unsigned long address)
-{
-	return (pmd_t *) pgd;
-}
+/*
+ * allocating and freeing a pmd is trivial: the 1-entry pmd is
+ * inside the pgd, so has no extra memory associated with it.
+ */
 
-extern inline void free_pmd_fast(pmd_t * pmd)
-{
-}
+#define pmd_alloc_one_fast(mm, addr)	({ BUG(); ((pmd_t *)1); })
+#define pmd_alloc_one(mm, addr)		({ BUG(); ((pmd_t *)2); })
+#define pmd_free(x)			do { } while (0)
+#define pgd_populate(mm, pmd, pte)	BUG()
 
 #endif
 
-extern __inline__ pte_t *get_pte_fast(void)
+static inline void pmd_populate (struct mm_struct *mm, pmd_t *pmd_entry, pte_t *pte)
+{
+	pmd_val(*pmd_entry) = _PAGE_TABLE + __pa((unsigned long)pte);
+}
+
+static inline pte_t *pte_alloc_one_fast(struct mm_struct *mm, unsigned long address)
 {
 	return NULL; /* la la */
 }
 
-#if 0
-extern __inline__ void free_pte_fast(pte_t *pte)
+static inline pte_t *pte_alloc_one(struct mm_struct *mm, unsigned long address)
 {
+	pte_t *pte = (pte_t *) __get_free_page(GFP_KERNEL);
+	if (pte)
+		clear_page(pte);
+	return pte;
 }
-#else
-#define free_pte_fast free_pte_slow
-#endif
 
-extern pte_t *get_pte_slow(pmd_t *pmd, unsigned long address_preadjusted);
-
-extern __inline__ void free_pte_slow(pte_t *pte)
+static inline void pte_free(pte_t *pte)
 {
 	free_page((unsigned long)pte);
-}
-
-#define pmd_alloc_kernel	pmd_alloc
-#define pte_alloc_kernel	pte_alloc
-
-#define pte_free(pte)		free_pte_fast(pte)
-#define pmd_free(pmd)           free_pmd_fast(pmd)
-#define pgd_free(pgd)		free_pgd_fast(pgd)
-#define pgd_alloc(mm)		get_pgd_fast()
-
-extern void __bad_pmd(pmd_t *pmd);
-
-extern inline pte_t * pte_alloc(pmd_t * pmd, unsigned long address)
-{
-	address = (address >> PAGE_SHIFT) & (PTRS_PER_PTE - 1);
-
-	if (pmd_none(*pmd))
-		goto getnew;
-	if (pmd_bad(*pmd))
-		goto fix;
-	return (pte_t *) pmd_page(*pmd) + address;
-getnew:
-{
-	pte_t *page = get_pte_fast();
-	
-	if (!page)
-		return get_pte_slow(pmd, address);
-	pmd_val(*pmd) = _PAGE_TABLE + __pa((unsigned long)page);
-	return page + address;
-}
-fix:
-	__bad_pmd(pmd);
-	return NULL;
 }
 
 extern int do_check_pgt_cache(int, int);

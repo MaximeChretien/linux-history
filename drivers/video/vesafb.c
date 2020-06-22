@@ -109,6 +109,7 @@ static struct display_switch vesafb_sw;
 static int vesafb_pan_display(struct fb_var_screeninfo *var, int con,
                               struct fb_info *info)
 {
+#ifdef __i386__
 	int offset;
 
 	if (!ypan)
@@ -130,6 +131,7 @@ static int vesafb_pan_display(struct fb_var_screeninfo *var, int con,
                   "c" (offset),         /* ECX */
                   "d" (offset >> 16),   /* EDX */
                   "D" (&pmi_start));    /* EDI */
+#endif
 	return 0;
 }
 
@@ -302,6 +304,7 @@ static int vesa_getcolreg(unsigned regno, unsigned *red, unsigned *green,
 
 static void vesa_setpalette(int regno, unsigned red, unsigned green, unsigned blue)
 {
+#ifdef i386
 	struct { u_char blue, green, red, pad; } entry;
 
 	if (pmi_setpal) {
@@ -325,6 +328,8 @@ static void vesa_setpalette(int regno, unsigned red, unsigned green, unsigned bl
 		outb_p(green >> 10, dac_val);
 		outb_p(blue  >> 10, dac_val);
 	}
+#endif
+
 }
 
 #endif
@@ -518,6 +523,10 @@ int __init vesafb_init(void)
 	video_size          = screen_info.lfb_size * 65536;
 	video_visual = (video_bpp == 8) ?
 		FB_VISUAL_PSEUDOCOLOR : FB_VISUAL_TRUECOLOR;
+
+#ifndef __i386__
+	screen_info.vesapm_seg = 0;
+#endif
 
 	if (!request_mem_region(video_base, video_size, "vesafb")) {
 		printk(KERN_WARNING

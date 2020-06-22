@@ -8,7 +8,7 @@
  * Copyright (C) 2001 Jan-Benedict Glaw <jbglaw@lug-owl.de>
  *
  */
- 
+
 #include <linux/init.h>
 #include <linux/version.h>
 

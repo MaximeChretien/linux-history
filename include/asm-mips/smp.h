@@ -10,11 +10,11 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- */ 
+ */
 
 #ifndef __ASM_MIPS_SMP_H
 #define __ASM_MIPS_SMP_H
@@ -63,8 +63,8 @@ typedef unsigned long   cpumask_t;
 
 #define CPUMASK_CLRALL(p)	(p) = 0
 #define CPUMASK_SETB(p, bit)	(p) |= 1 << (bit)
-#define CPUMASK_CLRB(p, bit)	(p) &= ~(1ULL << (bit))
-#define CPUMASK_TSTB(p, bit)	((p) & (1ULL << (bit)))
+#define CPUMASK_CLRB(p, bit)	(p) &= ~(1UL << (bit))
+#define CPUMASK_TSTB(p, bit)	((p) & (1UL << (bit)))
 
 #elif (NR_CPUS <= 128)
 
@@ -81,11 +81,11 @@ typedef struct {
 
 #define	CPUMASK_CLRALL(p)	(p)._bits[0] = 0, (p)._bits[1] = 0
 #define CPUMASK_SETB(p, bit)	(p)._bits[CPUMASK_INDEX(bit)] |= \
-					(1ULL << CPUMASK_SHFT(bit))
+					(1UL << CPUMASK_SHFT(bit))
 #define CPUMASK_CLRB(p, bit)	(p)._bits[CPUMASK_INDEX(bit)] &= \
-					~(1ULL << CPUMASK_SHFT(bit))
+					~(1UL << CPUMASK_SHFT(bit))
 #define CPUMASK_TSTB(p, bit)	((p)._bits[CPUMASK_INDEX(bit)] & \
-					(1ULL << CPUMASK_SHFT(bit)))
+					(1UL << CPUMASK_SHFT(bit)))
 
 #else
 #error cpumask macros only defined for 128p kernels

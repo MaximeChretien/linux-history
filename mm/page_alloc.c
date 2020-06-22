@@ -29,7 +29,12 @@ LIST_HEAD(inactive_list);
 LIST_HEAD(active_list);
 pg_data_t *pgdat_list;
 
-/* Used to look up the address of the struct zone encoded in page->zone */
+/*
+ *
+ * The zone_table array is used to look up the address of the
+ * struct zone corresponding to a given zone number (ZONE_DMA,
+ * ZONE_NORMAL, or ZONE_HIGHMEM).
+ */
 zone_t *zone_table[MAX_NR_ZONES*MAX_NR_NODES];
 EXPORT_SYMBOL(zone_table);
 
@@ -50,8 +55,10 @@ static int zone_balance_max[MAX_NR_ZONES] __initdata = { 255 , 255, 255, };
 
 /*
  * Freeing function for a buddy system allocator.
+ * Contrary to prior comments, this is *NOT* hairy, and there
+ * is no reason for anyone not to understand it.
  *
- * The concept of a buddy system is to maintain direct-mapped table
+ * The concept of a buddy system is to maintain direct-mapped tables
  * (containing bit values) for memory blocks of various "orders".
  * The bottom level table contains the map for the smallest allocatable
  * units of memory (here, pages), and each level above it describes
@@ -79,11 +86,15 @@ static void __free_pages_ok (struct page *page, unsigned int order)
 	struct page *base;
 	zone_t *zone;
 
-	/* Yes, think what happens when other parts of the kernel take 
+	/*
+	 * Yes, think what happens when other parts of the kernel take 
 	 * a reference to a page in order to pin it for io. -ben
 	 */
-	if (PageLRU(page))
+	if (PageLRU(page)) {
+		if (unlikely(in_interrupt()))
+			BUG();
 		lru_cache_del(page);
+	}
 
 	if (page->buffers)
 		BUG();
@@ -252,7 +263,7 @@ static struct page * balance_classzone(zone_t * classzone, unsigned int gfp_mask
 	current->allocation_order = order;
 	current->flags |= PF_MEMALLOC | PF_FREE_PAGES;
 
-	__freed = try_to_free_pages(classzone, gfp_mask, order);
+	__freed = try_to_free_pages_zone(classzone, gfp_mask);
 
 	current->flags &= ~(PF_MEMALLOC | PF_FREE_PAGES);
 
@@ -407,9 +418,7 @@ rebalance:
 		return NULL;
 
 	/* Yield for kswapd, and try again */
-	current->policy |= SCHED_YIELD;
-	__set_current_state(TASK_RUNNING);
-	schedule();
+	yield();
 	goto rebalance;
 }
 
@@ -456,16 +465,12 @@ void free_pages(unsigned long addr, unsigned int order)
  */
 unsigned int nr_free_pages (void)
 {
-	unsigned int sum;
+	unsigned int sum = 0;
 	zone_t *zone;
-	pg_data_t *pgdat = pgdat_list;
 
-	sum = 0;
-	while (pgdat) {
-		for (zone = pgdat->node_zones; zone < pgdat->node_zones + MAX_NR_ZONES; zone++)
-			sum += zone->free_pages;
-		pgdat = pgdat->node_next;
-	}
+	for_each_zone(zone)
+		sum += zone->free_pages;
+
 	return sum;
 }
 
@@ -474,10 +479,10 @@ unsigned int nr_free_pages (void)
  */
 unsigned int nr_free_buffer_pages (void)
 {
-	pg_data_t *pgdat = pgdat_list;
+	pg_data_t *pgdat;
 	unsigned int sum = 0;
 
-	do {
+	for_each_pgdat(pgdat) {
 		zonelist_t *zonelist = pgdat->node_zonelists + (GFP_USER & GFP_ZONEMASK);
 		zone_t **zonep = zonelist->zones;
 		zone_t *zone;
@@ -488,9 +493,7 @@ unsigned int nr_free_buffer_pages (void)
 			if (size > high)
 				sum += size - high;
 		}
-
-		pgdat = pgdat->node_next;
-	} while (pgdat);
+	}
 
 	return sum;
 }
@@ -498,13 +501,12 @@ unsigned int nr_free_buffer_pages (void)
 #if CONFIG_HIGHMEM
 unsigned int nr_free_highpages (void)
 {
-	pg_data_t *pgdat = pgdat_list;
+	pg_data_t *pgdat;
 	unsigned int pages = 0;
 
-	while (pgdat) {
+	for_each_pgdat(pgdat)
 		pages += pgdat->node_zones[ZONE_HIGHMEM].free_pages;
-		pgdat = pgdat->node_next;
-	}
+
 	return pages;
 }
 #endif

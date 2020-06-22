@@ -117,7 +117,8 @@ void delete_from_swap_cache(struct page *page)
 	if (!PageLocked(page))
 		BUG();
 
-	block_flushpage(page, 0);
+	if (unlikely(!block_flushpage(page, 0)))
+		BUG();	/* an anonymous page cannot have page->buffers set */
 
 	entry.val = page->index;
 

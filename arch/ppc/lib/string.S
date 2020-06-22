@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.string.S 1.11 05/21/02 21:44:32 paulus
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
  * String handling functions for PowerPC.
@@ -11,11 +11,11 @@
  * as published by the Free Software Foundation; either version
  * 2 of the License, or (at your option) any later version.
  */
-#include "../kernel/ppc_asm.tmpl"
 #include <linux/config.h>
 #include <asm/processor.h>
 #include <asm/cache.h>
 #include <asm/errno.h>
+#include <asm/ppc_asm.h>
 
 #define COPY_16_BYTES		\
 	lwz	r7,4(r4);	\

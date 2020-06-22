@@ -1,6 +1,4 @@
 /*
- *  
- *
  *  PowerPC version 
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
  *
@@ -214,7 +212,7 @@ __ioremap(unsigned long addr, unsigned long size, unsigned long flags)
 	else {
 		ea = ioremap_bot;
 		ioremap_bot += size;
-        }
+	}
 
 	if ((flags & _PAGE_PRESENT) == 0)
 		flags |= pgprot_val(PAGE_KERNEL);
@@ -231,9 +229,9 @@ __ioremap(unsigned long addr, unsigned long size, unsigned long flags)
 void iounmap(void *addr) 
 {
 #ifdef CONFIG_PPC_ISERIES
-     /* iSeries I/O Remap is a noop              */
+	/* iSeries I/O Remap is a noop              */
 	return;
-#else 
+#else
 	/* DRENG / PPPBBB todo */
 	return;
 #endif
@@ -264,7 +262,7 @@ static void map_io_page(unsigned long ea, unsigned long pa, int flags)
 		/* If the mm subsystem is not fully up, we cannot create a
 		 * linux page table entry for this mapping.  Simply bolt an
 		 * entry in the hardware page table. 
- 		 */
+		 */
 		vsid = get_kernel_vsid(ea);
 		make_pte(htab_data.htab,
 			(vsid << 28) | (ea & 0xFFFFFFF), // va (NOT the ea)
@@ -434,12 +432,11 @@ void free_initrd_mem(unsigned long start, unsigned long end)
 }
 #endif
 
-
-
 /*
  * Do very early mm setup.
  */
-void __init mm_init_ppc64(void) {
+void __init mm_init_ppc64(void)
+{
 	struct paca_struct *lpaca;
 	unsigned long guard_page, index;
 
@@ -467,8 +464,6 @@ void __init mm_init_ppc64(void) {
 	ppc_md.progress("MM:exit", 0x211);
 }
 
-
-
 /*
  * Initialize the bootmem system and give it all the memory we
  * have available.
@@ -488,7 +483,7 @@ void __init do_init_bootmem(void)
 	bootmap_pages = bootmem_bootmap_pages(total_pages);
 
 	start = (unsigned long)__a2p(lmb_alloc(bootmap_pages<<PAGE_SHIFT, PAGE_SIZE));
-	if( start == 0 ) {
+	if (start == 0) {
 		udbg_printf("do_init_bootmem: failed to allocate a bitmap.\n");
 		udbg_printf("\tbootmap_pages = 0x%lx.\n", bootmap_pages);
 		PPCDBG_ENTER_DEBUGGER(); 
@@ -502,7 +497,7 @@ void __init do_init_bootmem(void)
 	PPCDBG(PPCDBG_MMINIT, "\tboot_mapsize        = 0x%lx\n", boot_mapsize);
 
 	/* add all physical memory to the bootmem map */
-	for (i=0; i < lmb.memory.cnt ;i++) {
+	for (i=0; i < lmb.memory.cnt; i++) {
 		unsigned long physbase, size;
 		unsigned long type = lmb.memory.region[i].type;
 
@@ -514,7 +509,7 @@ void __init do_init_bootmem(void)
 		free_bootmem(physbase, size);
 	}
 	/* reserve the sections we're already using */
-	for (i=0; i < lmb.reserved.cnt ;i++) {
+	for (i=0; i < lmb.reserved.cnt; i++) {
 		unsigned long physbase = lmb.reserved.region[i].physbase;
 		unsigned long size = lmb.reserved.region[i].size;
 #if 0 /* PPPBBB */
@@ -538,18 +533,11 @@ void __init paging_init(void)
 	/*
 	 * All pages are DMA-able so we put them all in the DMA zone.
 	 */
-	zones_size[0] = lmb_end_of_DRAM() >> PAGE_SHIFT;
+	zones_size[ZONE_DMA] = lmb_end_of_DRAM() >> PAGE_SHIFT;
 	for (i = 1; i < MAX_NR_ZONES; i++)
 		zones_size[i] = 0;
 	free_area_init(zones_size);
 }
-
-extern unsigned long prof_shift;
-extern unsigned long prof_len;
-extern unsigned int * prof_buffer;
-extern unsigned long dprof_shift;
-extern unsigned long dprof_len;
-extern unsigned int * dprof_buffer;
 
 void initialize_paca_hardware_interrupt_stack(void);
 
@@ -609,10 +597,6 @@ void __init mem_init(void)
 
 #ifdef CONFIG_PPC_ISERIES
 	create_virtual_bus_tce_table();
-	/* HACK HACK This allows the iSeries profiling to use /proc/profile */
-	prof_shift = dprof_shift;
-	prof_len = dprof_len;
-	prof_buffer = dprof_buffer;
 #endif
 }
 

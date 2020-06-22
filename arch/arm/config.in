@@ -417,7 +417,7 @@ if [ "$CONFIG_ARCH_SA1100" = "y" -o \
 fi
 
 source drivers/pci/Config.in
-bool 'Support hot-pluggable devices' CONFIG_HOTPLUG
+bool 'Support for hot-pluggable devices' CONFIG_HOTPLUG
 if [ "$CONFIG_HOTPLUG" = "y" ]; then
    source drivers/pcmcia/Config.in
 else
@@ -503,7 +503,7 @@ if [ "$CONFIG_NET" = "y" ]; then
    mainmenu_option next_comment
    comment 'Network device support'
 
-   bool 'Network device support?' CONFIG_NETDEVICES
+   bool 'Network device support' CONFIG_NETDEVICES
    if [ "$CONFIG_NETDEVICES" = "y" ]; then
       source drivers/net/Config.in
    fi
@@ -530,7 +530,7 @@ endmenu
 mainmenu_option next_comment
 comment 'SCSI support'
 
-tristate 'SCSI support?' CONFIG_SCSI
+tristate 'SCSI support' CONFIG_SCSI
 
 if [ "$CONFIG_SCSI" != "n" ]; then
    source drivers/scsi/Config.in
@@ -618,7 +618,7 @@ if [ "$CONFIG_ARCH_ACORN" = "y" -o \
    mainmenu_option next_comment
    comment 'Sound'
 
-   tristate 'Sound support' CONFIG_SOUND
+   tristate 'Sound card support' CONFIG_SOUND
    if [ "$CONFIG_SOUND" != "n" ]; then
       source drivers/sound/Config.in
    fi
@@ -655,3 +655,5 @@ dep_bool '  Kernel low-level debugging functions' CONFIG_DEBUG_LL $CONFIG_DEBUG_
 dep_bool '    Kernel low-level debugging messages via footbridge serial port' CONFIG_DEBUG_DC21285_PORT $CONFIG_DEBUG_LL $CONFIG_FOOTBRIDGE
 dep_bool '    Kernel low-level debugging messages via UART2' CONFIG_DEBUG_CLPS711X_UART2 $CONFIG_DEBUG_LL $CONFIG_ARCH_CLPS711X
 endmenu
+
+source lib/Config.in

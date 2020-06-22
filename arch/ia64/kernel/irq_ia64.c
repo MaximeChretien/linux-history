@@ -36,6 +36,10 @@
 #include <asm/pgtable.h>
 #include <asm/system.h>
 
+#ifdef CONFIG_PERFMON
+# include <asm/perfmon.h>
+#endif
+
 #define IRQ_DEBUG	0
 
 /* default base addr of IPI table */
@@ -51,14 +55,14 @@ __u8 isa_irq_to_vector_map[16] = {
 };
 
 int
-ia64_alloc_irq (void)
+ia64_alloc_vector (void)
 {
-	static int next_irq = IA64_FIRST_DEVICE_VECTOR;
+	static int next_vector = IA64_FIRST_DEVICE_VECTOR;
 
-	if (next_irq > IA64_LAST_DEVICE_VECTOR)
+	if (next_vector > IA64_LAST_DEVICE_VECTOR)
 		/* XXX could look for sharable vectors instead of panic'ing... */
-		panic("ia64_alloc_irq: out of interrupt vectors!");
-	return next_irq++;
+		panic("%s: out of interrupt vectors!", __FUNCTION__);
+	return next_vector++;
 }
 
 extern unsigned int do_IRQ(unsigned long irq, struct pt_regs *regs);
@@ -172,6 +176,9 @@ init_IRQ (void)
 	register_percpu_irq(IA64_SPURIOUS_INT_VECTOR, NULL);
 #ifdef CONFIG_SMP
 	register_percpu_irq(IA64_IPI_VECTOR, &ipi_irqaction);
+#endif
+#ifdef CONFIG_PERFMON
+	perfmon_init_percpu();
 #endif
 	platform_irq_init();
 }

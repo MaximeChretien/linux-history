@@ -1,7 +1,8 @@
 BOOKS	:= wanbook.sgml z8530book.sgml mcabook.sgml videobook.sgml \
 	   kernel-api.sgml parportbook.sgml kernel-hacking.sgml \
 	   kernel-locking.sgml via-audio.sgml mousedrivers.sgml sis900.sgml \
-	   deviceiobook.sgml procfs-guide.sgml tulip-user.sgml
+	   deviceiobook.sgml procfs-guide.sgml tulip-user.sgml \
+	   journal-api.sgml
 
 PS	:=	$(patsubst %.sgml, %.ps, $(BOOKS))
 PDF	:=	$(patsubst %.sgml, %.pdf, $(BOOKS))
@@ -137,6 +138,17 @@ parportbook parportbook.pdf: $(PNG-parportbook)
 parportbook.ps: $(EPS-parportbook)
 parportbook.sgml: parportbook.tmpl $(TOPDIR)/drivers/parport/init.c
 	$(TOPDIR)/scripts/docgen $(TOPDIR)/drivers/parport/init.c <$< >$@
+
+
+JBDSOURCES :=  $(TOPDIR)/include/linux/jbd.h \
+	       $(TOPDIR)/fs/jbd/journal.c \
+	       $(TOPDIR)/fs/jbd/recovery.c \
+	       $(TOPDIR)/fs/jbd/transaction.c
+
+journal-api.sgml: journal-api.tmpl $(JBDSOURCES)
+	$(TOPDIR)/scripts/docgen   $(JBDSOURCES) \
+		<journal-api.tmpl >journal-api.sgml
+
 
 DVI	:=	$(patsubst %.sgml, %.dvi, $(BOOKS))
 AUX	:=	$(patsubst %.sgml, %.aux, $(BOOKS))

@@ -79,6 +79,31 @@ static inline void __down_read(struct rw_semaphore *sem)
 		: "g5", "g7", "memory", "cc");
 }
 
+static __inline__ int __down_read_trylock(struct rw_semaphore *sem)
+{
+	int result;
+
+	__asm__ __volatile__(
+		"! beginning __down_read_trylock\n"
+		"1:\tlduw	[%1], %%g5\n\t"
+		"add		%%g5, 1, %%g7\n\t"
+		"cmp		%%g7, 0\n\t"
+		"bl,pn		%%icc, 2f\n\t"
+		" mov		0, %0\n\t"
+		"cas		[%1], %%g5, %%g7\n\t"
+		"cmp		%%g5, %%g7\n\t"
+		"bne,pn		%%icc, 1b\n\t"
+		" mov		1, %0\n\t"
+		"membar		#StoreLoad | #StoreStore\n"
+		"2:\n\t"
+		"! ending __down_read_trylock"
+		: "=&r" (result)
+                : "r" (sem)
+		: "g5", "g7", "memory", "cc");
+
+	return result;
+}
+
 static inline void __down_write(struct rw_semaphore *sem)
 {
 	__asm__ __volatile__(
@@ -109,6 +134,33 @@ static inline void __down_write(struct rw_semaphore *sem)
 		: : "r" (sem), "i" (rwsem_down_write_failed),
 		    "i" (RWSEM_ACTIVE_WRITE_BIAS)
 		: "g1", "g5", "g7", "memory", "cc");
+}
+
+static __inline__ int __down_write_trylock(struct rw_semaphore *sem)
+{
+	int result;
+
+	__asm__ __volatile__(
+		"! beginning __down_write_trylock\n\t"
+		"sethi		%%hi(%2), %%g1\n\t"
+		"or		%%g1, %%lo(%2), %%g1\n"
+		"1:\tlduw	[%1], %%g5\n\t"
+		"cmp		%%g5, 0\n\t"
+		"bne,pn		%%icc, 2f\n\t"
+		" mov		0, %0\n\t"
+		"add		%%g5, %%g1, %%g7\n\t"
+		"cas		[%1], %%g5, %%g7\n\t"
+		"cmp		%%g5, %%g7\n\t"
+		"bne,pn		%%icc, 1b\n\t"
+		" mov		1, %0\n\t"
+		"membar		#StoreLoad | #StoreStore\n"
+		"2:\n\t"
+		"! ending __down_write_trylock"
+		: "=&r" (result)
+		: "r" (sem), "i" (RWSEM_ACTIVE_WRITE_BIAS)
+		: "g1", "g5", "g7", "memory", "cc");
+
+	return result;
 }
 
 static inline void __up_read(struct rw_semaphore *sem)

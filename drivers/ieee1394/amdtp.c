@@ -46,8 +46,6 @@
  *
  * - Fix DMA stop after bus reset!
  *
- * - Implement poll.
- *
  * - Clean up iso context handling in ohci1394.
  *
  *
@@ -75,6 +73,7 @@
 #include <linux/wait.h>
 #include <linux/pci.h>
 #include <linux/interrupt.h>
+#include <linux/poll.h>
 #include <asm/uaccess.h>
 #include <asm/atomic.h>
 
@@ -121,17 +120,40 @@ struct packet {
 	dma_addr_t payload_bus;
 };
 
-#ifdef __BIG_ENDIAN_BITFIELD
+#include <asm/byteorder.h>
 
-#error Big endian bitfields not tested
+#if defined __BIG_ENDIAN_BITFIELD
 
-#else
+struct iso_packet {
+	/* First quadlet */
+	unsigned int dbs      : 8;
+	unsigned int eoh0     : 2;
+	unsigned int sid      : 6;
+
+	unsigned int dbc      : 8;
+	unsigned int fn       : 2;
+	unsigned int qpc      : 3;
+	unsigned int sph      : 1;
+	unsigned int reserved : 2;
+
+	/* Second quadlet */
+	unsigned int fdf      : 8;
+	unsigned int eoh1     : 2;
+	unsigned int fmt      : 6;
+
+	unsigned int syt      : 16;
+
+        quadlet_t data[0];
+};
+
+#elif defined __LITTLE_ENDIAN_BITFIELD
 
 struct iso_packet {
 	/* First quadlet */
 	unsigned int sid      : 6;
 	unsigned int eoh0     : 2;
 	unsigned int dbs      : 8;
+
 	unsigned int reserved : 2;
 	unsigned int sph      : 1;
 	unsigned int qpc      : 3;
@@ -142,10 +164,15 @@ struct iso_packet {
 	unsigned int fmt      : 6;
 	unsigned int eoh1     : 2;
 	unsigned int fdf      : 8;
+
 	unsigned int syt      : 16;
 
 	quadlet_t data[0];
 };
+
+#else
+
+#error Unknown bitfield type
 
 #endif
 
@@ -169,7 +196,7 @@ struct packet_list {
 /* This implements a circular buffer for incoming samples. */
 
 struct buffer {
-	int head, tail, length, size;
+	size_t head, tail, length, size;
 	unsigned char data[0];
 };
 
@@ -224,7 +251,7 @@ struct stream {
 	struct list_head free_packet_lists;
         wait_queue_head_t packet_list_wait;
 	spinlock_t packet_list_lock;
-	int iso_context;
+	struct ohci1394_iso_tasklet iso_tasklet;
 	struct pci_pool *descriptor_pool, *packet_pool;
 
 	/* Streams at a host controller are chained through this field. */
@@ -251,23 +278,6 @@ static spinlock_t host_list_lock = SPIN_LOCK_UNLOCKED;
 #define OHCI1394_CONTEXT_WAKE        0x00001000
 #define OHCI1394_CONTEXT_DEAD        0x00000800
 #define OHCI1394_CONTEXT_ACTIVE      0x00000400
-
-static inline int ohci1394_alloc_it_ctx(struct ti_ohci *ohci)
-{
-	int i;
-
-	for (i = 0; i < ohci->nb_iso_xmit_ctx; i++)
-		if (!test_and_set_bit(i, &ohci->it_ctx_usage))
-			return i;
-
-	return -EBUSY;
-}
-	
-static inline void ohci1394_free_it_ctx(struct ti_ohci *ohci, int ctx)
-{
-	clear_bit(ctx, &ohci->it_ctx_usage);
-}
-
 
 void ohci1394_start_it_ctx(struct ti_ohci *ohci, int ctx,
 			   dma_addr_t first_cmd, int z, int cycle_match)
@@ -347,7 +357,7 @@ static void stream_start_dma(struct stream *s, struct packet_list *pl)
 	if ((start_cycle & 0x1fff) >= 8000)
 		start_cycle = start_cycle - 8000 + 0x2000;
 
-	ohci1394_start_it_ctx(s->host->ohci, s->iso_context,
+	ohci1394_start_it_ctx(s->host->ohci, s->iso_tasklet.context,
 			      pl->packets[0].db_bus, 3,
 			      start_cycle & 0x7fff);
 }
@@ -370,14 +380,16 @@ static void stream_put_dma_packet_list(struct stream *s,
 	if (pl->link.prev != &s->dma_packet_lists) {
 		struct packet *last = &prev->packets[PACKET_LIST_SIZE - 1];
 		last->db->payload_desc.branch = pl->packets[0].db_bus | 3;
-		ohci1394_wake_it_ctx(s->host->ohci, s->iso_context);
+		last->db->header_desc.skip = pl->packets[0].db_bus | 3;
+		ohci1394_wake_it_ctx(s->host->ohci, s->iso_tasklet.context);
 	}
 	else
 		stream_start_dma(s, pl);
 }
 
-static void stream_shift_packet_lists(struct stream *s)
+static void stream_shift_packet_lists(unsigned long l)
 {
+	struct stream *s = (struct stream *) l;
 	struct packet_list *pl;
 	struct packet *last;
 	int diff;
@@ -511,25 +523,6 @@ static __inline__ int fraction_ceil(struct fraction *frac)
 	return frac->integer + (frac->numerator > 0 ? 1 : 0);
 }
 
-static void amdtp_irq_handler(int card, quadlet_t isoRecvIntEvent,
-			      quadlet_t isoXmitIntEvent, void *data)
-{
-	struct amdtp_host *host = data;
-	struct list_head *lh;
-	struct stream *s = NULL;
-
-	spin_lock(&host->stream_list_lock);
-	list_for_each(lh, &host->stream_list) {
-		s = list_entry(lh, struct stream, link);
-		if (isoXmitIntEvent & (1 << s->iso_context))
-			break;
-	}
-	spin_unlock(&host->stream_list_lock);
-
-	if (s != NULL)
-		stream_shift_packet_lists(s);
-}
-
 void packet_initialize(struct packet *p, struct packet *next)
 {
 	/* Here we initialize the dma descriptor block for
@@ -541,18 +534,19 @@ void packet_initialize(struct packet *p, struct packet *next)
 
 	p->db->header_desc.control =
 		DMA_CTL_OUTPUT_MORE | DMA_CTL_IMMEDIATE | 8;
-	p->db->header_desc.skip = 0;
 
 	if (next) {
 		p->db->payload_desc.control = 
 			DMA_CTL_OUTPUT_LAST | DMA_CTL_BRANCH;
 		p->db->payload_desc.branch = next->db_bus | 3;
+		p->db->header_desc.skip = next->db_bus | 3;
 	}
 	else {
 		p->db->payload_desc.control = 
 			DMA_CTL_OUTPUT_LAST | DMA_CTL_BRANCH |
 			DMA_CTL_UPDATE | DMA_CTL_IRQ;
 		p->db->payload_desc.branch = 0;
+		p->db->header_desc.skip = 0;
 	}
 	p->db->payload_desc.data_address = p->payload_bus;
 	p->db->payload_desc.status = 0;
@@ -629,9 +623,9 @@ static unsigned char *buffer_get_bytes(struct buffer *buffer, int size)
 }
 
 static unsigned char *buffer_put_bytes(struct buffer *buffer,
-				       int max, int *actual)
+				       size_t max, size_t *actual)
 {
-	int length;
+	size_t length;
 	unsigned char *p;
 
 	p = &buffer->data[buffer->tail];
@@ -889,7 +883,7 @@ static void plug_update(struct cmp_pcr *plug, void *data)
 		stream_start_dma(s, pl);
 	}
 	else {
-		ohci1394_stop_it_ctx(s->host->ohci, s->iso_context, 0);
+		ohci1394_stop_it_ctx(s->host->ohci, s->iso_tasklet.context, 0);
 	}
 }
 
@@ -1039,8 +1033,11 @@ struct stream *stream_alloc(struct amdtp_host *host)
         init_waitqueue_head(&s->packet_list_wait);
         spin_lock_init(&s->packet_list_lock);
 
-	s->iso_context = ohci1394_alloc_it_ctx(host->ohci);
-	if (s->iso_context < 0) {
+	ohci1394_init_iso_tasklet(&s->iso_tasklet, OHCI_ISO_TRANSMIT,
+				  stream_shift_packet_lists,
+				  (unsigned long) s);
+
+	if (ohci1394_register_iso_tasklet(host->ohci, &s->iso_tasklet) < 0) {
 		pci_pool_destroy(s->descriptor_pool);
 		kfree(s->input);
 		kfree(s);
@@ -1067,8 +1064,8 @@ void stream_free(struct stream *s)
 	wait_event_interruptible(s->packet_list_wait, 
 				 list_empty(&s->dma_packet_lists));
 
-	ohci1394_stop_it_ctx(s->host->ohci, s->iso_context, 1);
-	ohci1394_free_it_ctx(s->host->ohci, s->iso_context);
+	ohci1394_stop_it_ctx(s->host->ohci, s->iso_tasklet.context, 1);
+	ohci1394_unregister_iso_tasklet(s->host->ohci, &s->iso_tasklet);
 
 	if (s->opcr != NULL)
 		cmp_unregister_opcr(s->host->host, s->opcr);
@@ -1092,7 +1089,8 @@ static ssize_t amdtp_write(struct file *file, const char *buffer, size_t count,
 {
 	struct stream *s = file->private_data;
 	unsigned char *p;
-	int i, length;
+	int i;
+	size_t length;
 	
 	if (s->packet_pool == NULL)
 		return -EBADFD;
@@ -1116,8 +1114,13 @@ static ssize_t amdtp_write(struct file *file, const char *buffer, size_t count,
 		
 		stream_flush(s);
 		
-		if (s->current_packet_list == NULL &&
-		    wait_event_interruptible(s->packet_list_wait, 
+		if (s->current_packet_list != NULL)
+			continue;
+
+		if (file->f_flags & O_NONBLOCK)
+			return i + length > 0 ? i + length : -EAGAIN;
+
+		if (wait_event_interruptible(s->packet_list_wait, 
 					     !list_empty(&s->free_packet_lists)))
 			return -EINTR;
 	}
@@ -1130,7 +1133,6 @@ static int amdtp_ioctl(struct inode *inode, struct file *file,
 {
 	struct stream *s = file->private_data;
 	struct amdtp_ioctl cfg;
-	int new;
 
 	switch(cmd)
 	{
@@ -1141,21 +1143,21 @@ static int amdtp_ioctl(struct inode *inode, struct file *file,
 		else 
 			return stream_configure(s, cmd, &cfg);
 
-	case AMDTP_IOC_PING:
-		HPSB_INFO("ping: offsetting timpestamps %ld ticks", arg);
-		new = s->cycle_offset.integer + arg;
-		s->cycle_offset.integer = new % 3072;
-		atomic_add(new / 3072, &s->cycle_count);
-		return 0;
-
-	case AMDTP_IOC_ZAP:
-		while (MOD_IN_USE)
-			MOD_DEC_USE_COUNT;
-		return 0;
-
 	default:
 		return -EINVAL;
 	}
+}
+
+static unsigned int amdtp_poll(struct file *file, poll_table *pt)
+{
+	struct stream *s = file->private_data;
+
+	poll_wait(file, &s->packet_list_wait, pt);
+
+	if (!list_empty(&s->free_packet_lists))
+		return POLLOUT | POLLWRNORM;
+	else
+		return 0;
 }
 
 static int amdtp_open(struct inode *inode, struct file *file)
@@ -1193,6 +1195,7 @@ static struct file_operations amdtp_fops =
 {
 	.owner =	THIS_MODULE,
 	.write =	amdtp_write,
+	.poll =		amdtp_poll,
 	.ioctl =	amdtp_ioctl,
 	.open =		amdtp_open,
 	.release =	amdtp_release
@@ -1204,7 +1207,8 @@ static void amdtp_add_host(struct hpsb_host *host)
 {
 	struct amdtp_host *ah;
 
-	/* FIXME: check it's an ohci host. */
+	if (strcmp(host->driver->name, OHCI1394_DRIVER_NAME) != 0)
+		return;
 
 	ah = kmalloc(sizeof *ah, SLAB_KERNEL);
 	ah->host = host;
@@ -1215,8 +1219,6 @@ static void amdtp_add_host(struct hpsb_host *host)
 	spin_lock_irq(&host_list_lock);
 	list_add_tail(&ah->link, &host_list);
 	spin_unlock_irq(&host_list_lock);
-
-	ohci1394_hook_irq(ah->ohci, amdtp_irq_handler, ah);
 }
 
 static void amdtp_remove_host(struct hpsb_host *host)
@@ -1235,7 +1237,6 @@ static void amdtp_remove_host(struct hpsb_host *host)
 	
 	if (lh != &host_list) {
 		ah = list_entry(lh, struct amdtp_host, link);
-		ohci1394_unhook_irq(ah->ohci, amdtp_irq_handler, ah);
 		kfree(ah);
 	}
 	else

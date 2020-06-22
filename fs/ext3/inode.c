@@ -412,6 +412,7 @@ static Indirect *ext3_get_branch(struct inode *inode, int depth, int *offsets,
 	return NULL;
 
 changed:
+	brelse(bh);
 	*err = -EAGAIN;
 	goto no_block;
 failure:
@@ -948,11 +949,13 @@ struct buffer_head *ext3_bread(handle_t *handle, struct inode * inode,
 }
 
 static int walk_page_buffers(	handle_t *handle,
+				struct inode *inode,
 				struct buffer_head *head,
 				unsigned from,
 				unsigned to,
 				int *partial,
 				int (*fn)(	handle_t *handle,
+						struct inode *inode,
 						struct buffer_head *bh))
 {
 	struct buffer_head *bh;
@@ -970,7 +973,7 @@ static int walk_page_buffers(	handle_t *handle,
 				*partial = 1;
 			continue;
 		}
-		err = (*fn)(handle, bh);
+		err = (*fn)(handle, inode, bh);
 		if (!ret)
 			ret = err;
 	}
@@ -1003,7 +1006,7 @@ static int walk_page_buffers(	handle_t *handle,
  * write.  
  */
 
-static int do_journal_get_write_access(handle_t *handle, 
+static int do_journal_get_write_access(handle_t *handle, struct inode *inode,
 				       struct buffer_head *bh)
 {
 	return ext3_journal_get_write_access(handle, bh);
@@ -1029,7 +1032,7 @@ static int ext3_prepare_write(struct file *file, struct page *page,
 		goto prepare_write_failed;
 
 	if (ext3_should_journal_data(inode)) {
-		ret = walk_page_buffers(handle, page->buffers,
+		ret = walk_page_buffers(handle, inode, page->buffers,
 				from, to, NULL, do_journal_get_write_access);
 		if (ret) {
 			/*
@@ -1050,24 +1053,30 @@ out:
 	return ret;
 }
 
-static int journal_dirty_sync_data(handle_t *handle, struct buffer_head *bh)
+static int journal_dirty_sync_data(handle_t *handle, struct inode *inode,
+				   struct buffer_head *bh)
 {
-	return ext3_journal_dirty_data(handle, bh, 0);
+	int ret = ext3_journal_dirty_data(handle, bh, 0);
+	buffer_insert_inode_data_queue(bh, inode);
+	return ret;
 }
 
 /*
  * For ext3_writepage().  We also brelse() the buffer to account for
  * the bget() which ext3_writepage() performs.
  */
-static int journal_dirty_async_data(handle_t *handle, struct buffer_head *bh)
+static int journal_dirty_async_data(handle_t *handle, struct inode *inode, 
+				    struct buffer_head *bh)
 {
 	int ret = ext3_journal_dirty_data(handle, bh, 1);
+	buffer_insert_inode_data_queue(bh, inode);
 	__brelse(bh);
 	return ret;
 }
 
 /* For commit_write() in data=journal mode */
-static int commit_write_fn(handle_t *handle, struct buffer_head *bh)
+static int commit_write_fn(handle_t *handle, struct inode *inode, 
+			   struct buffer_head *bh)
 {
 	set_bit(BH_Uptodate, &bh->b_state);
 	return ext3_journal_dirty_metadata(handle, bh);
@@ -1102,7 +1111,7 @@ static int ext3_commit_write(struct file *file, struct page *page,
 		int partial = 0;
 		loff_t pos = ((loff_t)page->index << PAGE_CACHE_SHIFT) + to;
 
-		ret = walk_page_buffers(handle, page->buffers,
+		ret = walk_page_buffers(handle, inode, page->buffers,
 			from, to, &partial, commit_write_fn);
 		if (!partial)
 			SetPageUptodate(page);
@@ -1112,7 +1121,7 @@ static int ext3_commit_write(struct file *file, struct page *page,
 		EXT3_I(inode)->i_state |= EXT3_STATE_JDATA;
 	} else {
 		if (ext3_should_order_data(inode)) {
-			ret = walk_page_buffers(handle, page->buffers,
+			ret = walk_page_buffers(handle, inode, page->buffers,
 				from, to, NULL, journal_dirty_sync_data);
 		}
 		/* Be careful here if generic_commit_write becomes a
@@ -1194,7 +1203,8 @@ static int ext3_bmap(struct address_space *mapping, long block)
 	return generic_block_bmap(mapping,block,ext3_get_block);
 }
 
-static int bget_one(handle_t *handle, struct buffer_head *bh)
+static int bget_one(handle_t *handle, struct inode *inode, 
+		    struct buffer_head *bh)
 {
 	atomic_inc(&bh->b_count);
 	return 0;
@@ -1293,7 +1303,7 @@ static int ext3_writepage(struct page *page)
 			create_empty_buffers(page,
 				inode->i_dev, inode->i_sb->s_blocksize);
 		page_buffers = page->buffers;
-		walk_page_buffers(handle, page_buffers, 0,
+		walk_page_buffers(handle, inode, page_buffers, 0,
 				PAGE_CACHE_SIZE, NULL, bget_one);
 	}
 
@@ -1311,7 +1321,7 @@ static int ext3_writepage(struct page *page)
 
 	/* And attach them to the current transaction */
 	if (order_data) {
-		err = walk_page_buffers(handle, page_buffers,
+		err = walk_page_buffers(handle, inode, page_buffers,
 			0, PAGE_CACHE_SIZE, NULL, journal_dirty_async_data);
 		if (!ret)
 			ret = err;
@@ -1579,8 +1589,10 @@ ext3_clear_blocks(handle_t *handle, struct inode *inode, struct buffer_head *bh,
 		}
 		ext3_mark_inode_dirty(handle, inode);
 		ext3_journal_test_restart(handle, inode);
-		BUFFER_TRACE(bh, "get_write_access");
-		ext3_journal_get_write_access(handle, bh);
+		if (bh) {
+			BUFFER_TRACE(bh, "retaking write access");
+			ext3_journal_get_write_access(handle, bh);
+		}
 	}
 
 	/*
@@ -2459,7 +2471,7 @@ ext3_mark_iloc_dirty(handle_t *handle,
 		/* ext3_do_update_inode() does journal_dirty_metadata */
 		brelse(iloc->bh);
 	} else {
-		printk(KERN_EMERG __FUNCTION__ ": called with no handle!\n");
+		printk(KERN_EMERG "%s: called with no handle!\n", __FUNCTION__);
 	}
 	return err;
 }
@@ -2547,7 +2559,8 @@ void ext3_dirty_inode(struct inode *inode)
 	if (current_handle &&
 		current_handle->h_transaction != handle->h_transaction) {
 		/* This task has a transaction open against a different fs */
-		printk(KERN_EMERG __FUNCTION__": transactions do not match!\n");
+		printk(KERN_EMERG "%s: transactions do not match!\n",
+			__FUNCTION__);
 	} else {
 		jbd_debug(5, "marking dirty.  outer handle=%p\n",
 				current_handle);

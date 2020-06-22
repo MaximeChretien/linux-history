@@ -35,7 +35,9 @@
 #else
 #define RS_TABLE_SIZE
 #endif
-	
+
+#define MCA_COM_FLAGS  STD_COM_FLAGS
+
 /*
  * The following define the access methods for the HUB6 card. All
  * access is through two ports for all 24 possible chips. The card is
@@ -60,16 +62,16 @@
 	{ 0, BASE_BAUD, 0x2E8, 3, STD_COM4_FLAGS },	/* ttyS3 */
 
 /*
- * HCDP_SERIAL_PORT_DEFNS should be placed in exactly the same slot
- * in rs_table as defined by HCDP_SERIAL_CONSOLE_PORT in
+ * HCDP_SERIAL_PORT_DEFNS should be placed in exactly the same slot 
+ * in rs_table as defined by HCDP_SERIAL_CONSOLE_PORT in 
  * include/linux/serial.h
  */
-#define HCDP_SERIAL_PORT_DEFNS			\
+#define HCDP_SERIAL_PORT_DEFNS	\
 	{ 0, BASE_BAUD, -1, 0, STD_COM_FLAGS},		/* ttySx device
 							   in comments sucks.
 							   You add an entry
-							   and you get to edit
-							   boatloads of these
+							   and you get to edit 
+							   boatloads of these 
 							   comments. Not worth
 							   it */
 
@@ -131,12 +133,12 @@
 
 #ifdef CONFIG_MCA
 #define MCA_SERIAL_PORT_DFNS			\
-	{ 0, BASE_BAUD, 0x3220, 3, STD_COM_FLAGS },	\
-	{ 0, BASE_BAUD, 0x3228, 3, STD_COM_FLAGS },	\
-	{ 0, BASE_BAUD, 0x4220, 3, STD_COM_FLAGS },	\
-	{ 0, BASE_BAUD, 0x4228, 3, STD_COM_FLAGS },	\
-	{ 0, BASE_BAUD, 0x5220, 3, STD_COM_FLAGS },	\
-	{ 0, BASE_BAUD, 0x5228, 3, STD_COM_FLAGS },
+	{ 0, BASE_BAUD, 0x3220, 3, MCA_COM_FLAGS },	\
+	{ 0, BASE_BAUD, 0x3228, 3, MCA_COM_FLAGS },	\
+	{ 0, BASE_BAUD, 0x4220, 3, MCA_COM_FLAGS },	\
+	{ 0, BASE_BAUD, 0x4228, 3, MCA_COM_FLAGS },	\
+	{ 0, BASE_BAUD, 0x5220, 3, MCA_COM_FLAGS },	\
+	{ 0, BASE_BAUD, 0x5228, 3, MCA_COM_FLAGS },
 #else
 #define MCA_SERIAL_PORT_DFNS
 #endif

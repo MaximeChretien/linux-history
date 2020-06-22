@@ -222,7 +222,7 @@ int emu10k1_waveout_open(struct emu10k1_wavedevice *wave_dev)
 	struct woinst *woinst = wave_dev->woinst;
 	struct waveout_buffer *buffer = &woinst->buffer;
 	unsigned int voicenum;
-	u32 delay;
+	u16 delay;
 
 	DPF(2, "emu10k1_waveout_open()\n");
 
@@ -296,7 +296,7 @@ int emu10k1_waveout_setformat(struct emu10k1_wavedevice *wave_dev, struct wave_f
 	struct emu10k1_card *card = wave_dev->card;
 	struct woinst *woinst = wave_dev->woinst;
 	unsigned int voicenum;
-	u32 delay;
+	u16 delay;
 
 	DPF(2, "emu10k1_waveout_setformat()\n");
 

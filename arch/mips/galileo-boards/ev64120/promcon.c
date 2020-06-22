@@ -5,7 +5,7 @@
  * Copyright (c) 1999 Ulf Carlsson
  *
  * Derived from DECstation promcon.c
- * Copyright (c) 1998 Harald Koerfgen 
+ * Copyright (c) 1998 Harald Koerfgen
  */
 #include <linux/tty.h>
 #include <linux/major.h>
@@ -51,8 +51,8 @@ static struct console sercons = {
 
 void gal_serial_console_init(void)
 {
-	//  serial_init(); 
-	//serial_set(115200); 
+	//  serial_init();
+	//serial_set(115200);
 
 	register_console(&sercons);
 }

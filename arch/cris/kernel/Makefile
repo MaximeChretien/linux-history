@@ -1,4 +1,4 @@
-# $Id: Makefile,v 1.9 2001/10/22 13:10:21 pkj Exp $
+# $Id: Makefile,v 1.10 2002/05/27 15:41:40 johana Exp $
 #
 # Makefile for the linux kernel.
 #
@@ -25,6 +25,7 @@ obj-y   := process.o signal.o entry.o traps.o irq.o \
 
 obj-$(CONFIG_MODULES)    += ksyms.o
 obj-$(CONFIG_ETRAX_KGDB) += kgdb.o
+obj-$(CONFIG_ETRAX_FAST_TIMER) += fasttimer.o
 
 # This dependency isn't caught by mkdep.  See entry.S.
 entry.o: entryoffsets.s

@@ -13,7 +13,8 @@ SUB_DIRS     :=
 MOD_SUB_DIRS := $(SUB_DIRS)
 ALL_SUB_DIRS := $(SUB_DIRS)
 
-L_OBJS   := dio.o
 L_TARGET := dio.a
+
+obj-$(CONFIG_DIO)   += dio.o
 
 include $(TOPDIR)/Rules.make

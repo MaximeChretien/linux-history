@@ -18,7 +18,6 @@ struct elevator_s
 	int write_latency;
 
 	elevator_merge_fn *elevator_merge_fn;
-	elevator_merge_cleanup_fn *elevator_merge_cleanup_fn;
 	elevator_merge_req_fn *elevator_merge_req_fn;
 
 	unsigned int queue_ID;
@@ -81,23 +80,23 @@ static inline int elevator_request_latency(elevator_t * elevator, int rw)
 	return latency;
 }
 
+#define ELV_LINUS_SEEK_COST	16
+
 #define ELEVATOR_NOOP							\
 ((elevator_t) {								\
 	0,				/* read_latency */		\
 	0,				/* write_latency */		\
 									\
 	elevator_noop_merge,		/* elevator_merge_fn */		\
-	elevator_noop_merge_cleanup,	/* elevator_merge_cleanup_fn */	\
 	elevator_noop_merge_req,	/* elevator_merge_req_fn */	\
 	})
 
 #define ELEVATOR_LINUS							\
 ((elevator_t) {								\
-	8192,				/* read passovers */		\
-	16384,				/* write passovers */		\
+	2048,				/* read passovers */		\
+	8192,				/* write passovers */		\
 									\
 	elevator_linus_merge,		/* elevator_merge_fn */		\
-	elevator_linus_merge_cleanup,	/* elevator_merge_cleanup_fn */	\
 	elevator_linus_merge_req,	/* elevator_merge_req_fn */	\
 	})
 

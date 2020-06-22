@@ -29,6 +29,7 @@
  * Version 1.10		request queue changes, Ultra DMA 100
  * Version 1.11		added 48-bit lba
  * Version 1.12		adding taskfile io access method
+ *			Highmem I/O support, Jens Axboe <axboe@suse.de>
  */
 
 #define IDEDISK_VERSION	"1.12"
@@ -158,7 +159,9 @@ static ide_startstop_t read_intr (ide_drive_t *drive)
 	byte stat;
 	int i;
 	unsigned int msect, nsect;
+	unsigned long flags;
 	struct request *rq;
+	char *to;
 
 	/* new way for dealing with premature shared PCI interrupts */
 	if (!OK_STAT(stat=GET_STAT(),DATA_READY,BAD_R_STAT)) {
@@ -169,8 +172,8 @@ static ide_startstop_t read_intr (ide_drive_t *drive)
 		ide_set_handler(drive, &read_intr, WAIT_CMD, NULL);
 		return ide_started;
 	}
+
 	msect = drive->mult_count;
-	
 read_next:
 	rq = HWGROUP(drive)->rq;
 	if (msect) {
@@ -179,14 +182,15 @@ read_next:
 		msect -= nsect;
 	} else
 		nsect = 1;
-	idedisk_input_data(drive, rq->buffer, nsect * SECTOR_WORDS);
+	to = ide_map_buffer(rq, &flags);
+	idedisk_input_data(drive, to, nsect * SECTOR_WORDS);
 #ifdef DEBUG
 	printk("%s:  read: sectors(%ld-%ld), buffer=0x%08lx, remaining=%ld\n",
 		drive->name, rq->sector, rq->sector+nsect-1,
 		(unsigned long) rq->buffer+(nsect<<9), rq->nr_sectors-nsect);
 #endif
+	ide_unmap_buffer(to, &flags);
 	rq->sector += nsect;
-	rq->buffer += nsect<<9;
 	rq->errors = 0;
 	i = (rq->nr_sectors -= nsect);
 	if (((long)(rq->current_nr_sectors -= nsect)) <= 0)
@@ -220,14 +224,16 @@ static ide_startstop_t write_intr (ide_drive_t *drive)
 #endif
 		if ((rq->nr_sectors == 1) ^ ((stat & DRQ_STAT) != 0)) {
 			rq->sector++;
-			rq->buffer += 512;
 			rq->errors = 0;
 			i = --rq->nr_sectors;
 			--rq->current_nr_sectors;
 			if (((long)rq->current_nr_sectors) <= 0)
 				ide_end_request(1, hwgroup);
 			if (i > 0) {
-				idedisk_output_data (drive, rq->buffer, SECTOR_WORDS);
+				unsigned long flags;
+				char *to = ide_map_buffer(rq, &flags);
+				idedisk_output_data (drive, to, SECTOR_WORDS);
+				ide_unmap_buffer(to, &flags);
 				ide_set_handler (drive, &write_intr, WAIT_CMD, NULL);
                                 return ide_started;
 			}
@@ -257,14 +263,14 @@ int ide_multwrite (ide_drive_t *drive, unsigned int mcount)
   	do {
   		char *buffer;
   		int nsect = rq->current_nr_sectors;
- 
+		unsigned long flags;
+
 		if (nsect > mcount)
 			nsect = mcount;
 		mcount -= nsect;
-		buffer = rq->buffer;
 
+		buffer = ide_map_buffer(rq, &flags);
 		rq->sector += nsect;
-		rq->buffer += nsect << 9;
 		rq->nr_sectors -= nsect;
 		rq->current_nr_sectors -= nsect;
 
@@ -278,7 +284,7 @@ int ide_multwrite (ide_drive_t *drive, unsigned int mcount)
 			} else {
 				rq->bh = bh;
 				rq->current_nr_sectors = bh->b_size >> 9;
-				rq->buffer             = bh->b_data;
+				rq->hard_cur_sectors = rq->current_nr_sectors;
 			}
 		}
 
@@ -287,6 +293,7 @@ int ide_multwrite (ide_drive_t *drive, unsigned int mcount)
 		 * re-entering us on the last transfer.
 		 */
 		idedisk_output_data(drive, buffer, nsect<<7);
+		ide_unmap_buffer(buffer, &flags);
 	} while (mcount);
 
         return 0;
@@ -695,8 +702,11 @@ static ide_startstop_t do_rw_disk (ide_drive_t *drive, struct request *rq, unsig
 				return ide_stopped;
 			}
 		} else {
+			unsigned long flags;
+			char *buffer = ide_map_buffer(rq, &flags);
 			ide_set_handler (drive, &write_intr, WAIT_CMD, NULL);
-			idedisk_output_data(drive, rq->buffer, SECTOR_WORDS);
+			idedisk_output_data(drive, buffer, SECTOR_WORDS);
+			ide_unmap_buffer(buffer, &flags);
 		}
 		return ide_started;
 	}

@@ -45,7 +45,7 @@
 /* fmt 4 */
 #define STV_VIDEO_PALETTE       VIDEO_PALETTE_RGB24
 
-static __devinitdata struct usb_device_id device_table[] = {
+static struct usb_device_id device_table[] = {
 	{USB_DEVICE (USB_PENCAM_VENDOR_ID, USB_PENCAM_PRODUCT_ID)},
 	{}
 };
@@ -118,7 +118,7 @@ struct usb_stv {
 	int removed;		/* device disconnected */
 	int streaming;		/* Are we streaming video? */
 	char *fbuf;		/* Videodev buffer area */
-	urb_t *urb[STV680_NUMSBUF];	/* # of queued bulk transfers */
+	struct urb *urb[STV680_NUMSBUF];	/* # of queued bulk transfers */
 	int curframe;		/* Current receiving frame */
 	struct stv680_frame frame[STV680_NUMFRAMES];	/* # frames supported by v4l part */
 	int readcount;

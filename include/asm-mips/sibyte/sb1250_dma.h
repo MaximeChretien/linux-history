@@ -1,24 +1,24 @@
 /*  *********************************************************************
     *  SB1250 Board Support Package
-    *  
+    *
     *  DMA definitions				File: sb1250_dma.h
-    *  
+    *
     *  This module contains constants and macros useful for
     *  programming the SB1250's DMA controllers, both the data mover
     *  and the Ethernet DMA.
-    *  
-    *  SB1250 specification level:  0.2
-    *  
-    *  Author:  Mitch Lichtenberg (mitch@sibyte.com)
-    *  
-    *********************************************************************  
+    *
+    *  SB1250 specification level:  User's manual 1/02/02
+    *
+    *  Author:  Mitch Lichtenberg (mpl@broadcom.com)
+    *
+    *********************************************************************
     *
     *  Copyright 2000,2001
     *  Broadcom Corporation. All rights reserved.
-    *  
-    *  This program is free software; you can redistribute it and/or 
-    *  modify it under the terms of the GNU General Public License as 
-    *  published by the Free Software Foundation; either version 2 of 
+    *
+    *  This program is free software; you can redistribute it and/or
+    *  modify it under the terms of the GNU General Public License as
+    *  published by the Free Software Foundation; either version 2 of
     *  the License, or (at your option) any later version.
     *
     *  This program is distributed in the hope that it will be useful,
@@ -28,7 +28,7 @@
     *
     *  You should have received a copy of the GNU General Public License
     *  along with this program; if not, write to the Free Software
-    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, 
+    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston,
     *  MA 02111-1307 USA
     ********************************************************************* */
 
@@ -43,9 +43,9 @@
     *  DMA Registers
     ********************************************************************* */
 
-/* 
+/*
  * Ethernet and Serial DMA Configuration Register 0  (Table 7-4)
- * Registers: DMA_CONFIG0_MAC_x_RX_CH_0 
+ * Registers: DMA_CONFIG0_MAC_x_RX_CH_0
  * Registers: DMA_CONFIG0_MAC_x_TX_CH_0
  * Registers: DMA_CONFIG0_SER_x_RX
  * Registers: DMA_CONFIG0_SER_x_TX
@@ -83,7 +83,7 @@
 
 /*
  * Ethernet and Serial DMA Configuration Register 2 (Table 7-5)
- * Registers: DMA_CONFIG1_MAC_x_RX_CH_0 
+ * Registers: DMA_CONFIG1_MAC_x_RX_CH_0
  * Registers: DMA_CONFIG1_DMA_x_TX_CH_0
  * Registers: DMA_CONFIG1_SER_x_RX
  * Registers: DMA_CONFIG1_SER_x_TX
@@ -131,11 +131,11 @@
 /*
  * DMA Descriptor Count Registers (Table 7-8)
  */
- 
+
 /* No bitfields */
 
 
-/* 
+/*
  * Current Descriptor Address Register (Table 7-11)
  */
 
@@ -202,12 +202,15 @@
 #define V_DMA_DSCRB_PKT_SIZE(x)     _SB_MAKEVALUE(x,S_DMA_DSCRB_PKT_SIZE)
 #define G_DMA_DSCRB_PKT_SIZE(x)     _SB_GETVALUE(x,S_DMA_DSCRB_PKT_SIZE,M_DMA_DSCRB_PKT_SIZE)
 
-/* 
+/*
  * Ethernet Descriptor Status Bits (Table 7-15)
  */
 
 #define M_DMA_ETHRX_BADIP4CS        _SB_MAKEMASK1(51)
 #define M_DMA_ETHRX_DSCRERR	    _SB_MAKEMASK1(52)
+
+/* Note: BADTCPCS is actually in DSCR_A */
+#define M_DMA_ETHRX_BADTCPCS	_SB_MAKEMASK1(0)	/* PASS2 */
 
 #define S_DMA_ETHRX_RXCH            53
 #define M_DMA_ETHRX_RXCH            _SB_MAKEMASK(2,S_DMA_ETHRX_RXCH)
@@ -241,7 +244,7 @@
 
 #define M_DMA_ETHTX_SOP	    	    _SB_MAKEMASK1(63)
 
-/* 
+/*
  * Ethernet Transmit Options (Table 7-17)
  */
 
@@ -294,7 +297,7 @@
     *  Data Mover Registers
     ********************************************************************* */
 
-/* 
+/*
  * Data Mover Descriptor Base Address Register (Table 7-22)
  * Register: DM_DSCR_BASE_0
  * Register: DM_DSCR_BASE_1
@@ -302,10 +305,10 @@
  * Register: DM_DSCR_BASE_3
  */
 
-#define M_DM_DSCR_BASE_MBZ          _SB_MAKEMASK(3,0)
+#define M_DM_DSCR_BASE_MBZ          _SB_MAKEMASK(4,0)
 
 /*  Note: Just mask the base address and then OR it in. */
-#define S_DM_DSCR_BASE_ADDR         _SB_MAKE64(3)
+#define S_DM_DSCR_BASE_ADDR         _SB_MAKE64(4)
 #define M_DM_DSCR_BASE_ADDR         _SB_MAKEMASK(36,S_DM_DSCR_BASE_ADDR)
 
 #define S_DM_DSCR_BASE_RINGSZ       _SB_MAKE64(40)
@@ -331,7 +334,7 @@
 #define M_DM_DSCR_BASE_ABORT        _SB_MAKEMASK1(62)
 #define M_DM_DSCR_BASE_ENABL        _SB_MAKEMASK1(63)
 
-/* 
+/*
  * Data Mover Descriptor Count Register (Table 7-25)
  */
 
@@ -364,7 +367,10 @@
 #define M_DM_DSCRA_UN_DEST          _SB_MAKEMASK1(40)
 #define M_DM_DSCRA_UN_SRC           _SB_MAKEMASK1(41)
 #define M_DM_DSCRA_INTERRUPT        _SB_MAKEMASK1(42)
-#define M_DM_DSCRA_THROTTLE         _SB_MAKEMASK1(43)
+/*#define M_DM_DSCRA_THROTTLE         _SB_MAKEMASK1(43) */ /* REMOVED PASS2 */
+
+#define M_DM_DSCRA_RD_BKOFF	    _SB_MAKEMASK1(52)		/* PASS2 */
+#define M_DM_DSCRA_WR_BKOFF	    _SB_MAKEMASK1(53)		/* PASS2 */
 
 #define S_DM_DSCRA_DIR_DEST         _SB_MAKE64(44)
 #define M_DM_DSCRA_DIR_DEST         _SB_MAKEMASK(2,S_DM_DSCRA_DIR_DEST)
@@ -398,7 +404,7 @@
 #define M_DM_DSCRA_L2C_DEST         _SB_MAKEMASK1(50)
 #define M_DM_DSCRA_L2C_SRC          _SB_MAKEMASK1(51)
 
-#define M_DM_DSCRA_RESERVED2        _SB_MAKEMASK(12,52)
+#define M_DM_DSCRA_RESERVED2        _SB_MAKEMASK(10,54)
 
 /*
  * Data Mover Descriptor Doubleword "B"  (Table 7-25)

@@ -364,14 +364,33 @@ static int check_revision(struct aac_dev *dev, void *arg)
 	struct revision response;
 
 	response.compat = 1;
-	response.version = 0x03000400;
-	response.build = 0x5125;
+	response.version = dev->adapter_info.kernelrev;
+	response.build = dev->adapter_info.kernelbuild;
 
 	if (copy_to_user(arg, &response, sizeof(response)))
 		return -EFAULT;
 	return 0;
 }
 
+
+struct aac_pci_info {
+        u32 bus;
+        u32 slot;
+};
+
+
+int aac_get_pci_info(struct aac_dev* dev, void* arg)
+{
+        struct aac_pci_info pci_info;
+
+	pci_info.bus = dev->pdev->bus->number;
+	pci_info.slot = PCI_SLOT(dev->pdev->devfn);
+
+       if(copy_to_user( arg, (void*)&pci_info, sizeof(struct aac_pci_info)))
+               return -EFAULT;
+        return 0;
+ }
+ 
 
 int aac_do_ioctl(struct aac_dev * dev, int cmd, void *arg)
 {
@@ -400,6 +419,9 @@ int aac_do_ioctl(struct aac_dev * dev, int cmd, void *arg)
 		break;
 	case FSACTL_CLOSE_GET_ADAPTER_FIB:
 		status = close_getadapter_fib(dev, arg);
+		break;
+	case FSACTL_GET_PCI_INFO:
+		status = aac_get_pci_info(dev,arg);
 		break;
 	default:
 		status = -ENOTTY;

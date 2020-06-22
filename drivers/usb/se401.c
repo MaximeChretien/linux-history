@@ -41,18 +41,12 @@ static const char version[] = "0.23";
 #include <asm/semaphore.h>
 #include <linux/wrapper.h>
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 3, 0)
-#define virt_to_page(arg)	MAP_NR(arg)
-#define vmalloc_32		vmalloc
-#endif
-
 #include "se401.h"
 
 static int flickerless=0;
 static int video_nr = -1;
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2, 3, 0)
-static __devinitdata struct usb_device_id device_table [] = {
+static struct usb_device_id device_table [] = {
 	{ USB_DEVICE(0x03e8, 0x0004) },/* Endpoints/Aox SE401 */
 	{ USB_DEVICE(0x0471, 0x030b) },/* Philips PCVC665K */
 	{ USB_DEVICE(0x047d, 0x5001) },/* Kensington 67014 */
@@ -62,7 +56,6 @@ static __devinitdata struct usb_device_id device_table [] = {
 };
 
 MODULE_DEVICE_TABLE(usb, device_table);
-#endif
 
 MODULE_AUTHOR("Jeroen Vreeken <pe1rxq@amsat.org>");
 MODULE_DESCRIPTION("SE401 USB Camera Driver");
@@ -80,54 +73,17 @@ static struct usb_driver se401_driver;
  *
  * Memory management
  *
- * This is a shameless copy from the USB-cpia driver (linux kernel
- * version 2.3.29 or so, I have no idea what this code actually does ;).
- * Actually it seems to be a copy of a shameless copy of the bttv-driver.
- * Or that is a copy of a shameless copy of ... (To the powers: is there
- * no generic kernel-function to do this sort of stuff?)
- *
- * Yes, it was a shameless copy from the bttv-driver. IIRC, Alan says
- * there will be one, but apparentely not yet -jerdfelt
- *
- * So I copied it again for the ov511 driver -claudio
- *
- * Same for the se401 driver -Jeroen
  **********************************************************************/
 
-/* Given PGD from the address space's page table, return the kernel
- * virtual mapping of the physical memory mapped at ADR.
- */
-static inline unsigned long uvirt_to_kva(pgd_t *pgd, unsigned long adr)
-{
-	unsigned long ret = 0UL;
-	pmd_t *pmd;
-	pte_t *ptep, pte;
-
-	if (!pgd_none(*pgd)) {
-		pmd = pmd_offset(pgd, adr);
-		if (!pmd_none(*pmd)) {
-			ptep = pte_offset(pmd, adr);
-			pte = *ptep;
-			if (pte_present(pte)) {
-				ret = (unsigned long) page_address(pte_page(pte));
-				ret |= (adr & (PAGE_SIZE - 1));
-			}
-		}
-	}
-
-	return ret;
-}
-
 /* Here we want the physical address of the memory.
- * This is used when initializing the contents of the
- * area and marking the pages as reserved.
+ * This is used when initializing the contents of the area.
  */
 static inline unsigned long kvirt_to_pa(unsigned long adr)
 {
-	unsigned long va, kva, ret;
+	unsigned long kva, ret;
 
-	va = VMALLOC_VMADDR(adr);
-	kva = uvirt_to_kva(pgd_offset_k(va), va);
+	kva = (unsigned long) page_address(vmalloc_to_page((void *)adr));
+	kva |= adr & (PAGE_SIZE-1); /* restore the offset */
 	ret = __pa(kva);
 	return ret;
 }
@@ -135,12 +91,9 @@ static inline unsigned long kvirt_to_pa(unsigned long adr)
 static void *rvmalloc(unsigned long size)
 {
 	void *mem;
-	unsigned long adr, page;
+	unsigned long adr;
 
-	/* Round it off to PAGE_SIZE */
-	size += (PAGE_SIZE - 1);
-	size &= ~(PAGE_SIZE - 1);
-
+	size = PAGE_ALIGN(size);
 	mem = vmalloc_32(size);
 	if (!mem)
 		return NULL;
@@ -148,13 +101,9 @@ static void *rvmalloc(unsigned long size)
 	memset(mem, 0, size); /* Clear the ram out, no junk to the user */
 	adr = (unsigned long) mem;
 	while (size > 0) {
-		page = kvirt_to_pa(adr);
-		mem_map_reserve(virt_to_page(__va(page)));
+		mem_map_reserve(vmalloc_to_page((void *)adr));
 		adr += PAGE_SIZE;
-		if (size > PAGE_SIZE)
-			size -= PAGE_SIZE;
-		else
-			size = 0;
+		size -= PAGE_SIZE;
 	}
 
 	return mem;
@@ -162,23 +111,16 @@ static void *rvmalloc(unsigned long size)
 
 static void rvfree(void *mem, unsigned long size)
 {
-	unsigned long adr, page;
+	unsigned long adr;
 
 	if (!mem)
 		return;
 
-	size += (PAGE_SIZE - 1);
-	size &= ~(PAGE_SIZE - 1);
-
-	adr=(unsigned long) mem;
-	while (size > 0) {
-		page = kvirt_to_pa(adr);
-		mem_map_unreserve(virt_to_page(__va(page)));
+	adr = (unsigned long) mem;
+	while ((long) size > 0) {
+		mem_map_unreserve(vmalloc_to_page((void *)adr));
 		adr += PAGE_SIZE;
-		if (size > PAGE_SIZE)
-			size -= PAGE_SIZE;
-		else
-			size = 0;
+		size -= PAGE_SIZE;
 	}
 	vfree(mem);
 }
@@ -610,7 +552,7 @@ static void se401_send_size(struct usb_se401 *se401, int width, int height)
 */
 static int se401_start_stream(struct usb_se401 *se401)
 {
-	urb_t *urb;
+	struct urb *urb;
 	int err=0, i;
 	se401->streaming=1;
 
@@ -704,7 +646,7 @@ static int se401_set_size(struct usb_se401 *se401, int width, int height)
 		return 0;
 
 	/* Check for a valid mode */
-	if (!width || !height)
+	if (width <= 0 || height <= 0)
 		return 1;
 	if ((width & 1) || (height & 1))
 		return 1;
@@ -738,7 +680,8 @@ static int se401_set_size(struct usb_se401 *se401, int width, int height)
 static inline void enhance_picture(unsigned char *frame, int len)
 {
 	while (len--) {
-		*frame++=(((*frame^255)*(*frame^255))/255)^255;
+		*frame=(((*frame^255)*(*frame^255))/255)^255;
+		frame++;
 	}
 }
 
@@ -972,7 +915,8 @@ static inline void decode_bayer (struct usb_se401 *se401, struct se401_scratch *
 		/* Fix the top line */
 		framedata+=linelength;
 		for (i=0; i<linelength; i++) {
-			*--framedata=*(framedata+linelength);
+			framedata--;
+			*framedata=*(framedata+linelength);
 		}
 		/* Fix the left side (green is already present) */
 		for (i=0; i<se401->cheight; i++) {
@@ -1425,7 +1369,13 @@ static int se401_init(struct usb_se401 *se401)
 
 	se401->sizes=cp[4]+cp[5]*256;
 	se401->width=kmalloc(se401->sizes*sizeof(int), GFP_KERNEL);
+	if (!se401->width)
+		return 1;
 	se401->height=kmalloc(se401->sizes*sizeof(int), GFP_KERNEL);
+	if (!se401->height) {
+		kfree(se401->width);
+		return 1;
+	}
 	for (i=0; i<se401->sizes; i++) {
 		    se401->width[i]=cp[6+i*4+0]+cp[6+i*4+1]*256;
 		    se401->height[i]=cp[6+i*4+2]+cp[6+i*4+3]*256;
@@ -1491,12 +1441,8 @@ static int se401_init(struct usb_se401 *se401)
         return 0;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 3, 0)
-static void* se401_probe(struct usb_device *dev, unsigned int ifnum)
-#else
-static void* __devinit se401_probe(struct usb_device *dev, unsigned int ifnum,
+static void* se401_probe(struct usb_device *dev, unsigned int ifnum,
 	const struct usb_device_id *id)
-#endif
 {
         struct usb_interface_descriptor *interface;
         struct usb_se401 *se401;
@@ -1625,9 +1571,7 @@ static inline void usb_se401_remove_disconnected (struct usb_se401 *se401)
 
 static struct usb_driver se401_driver = {
         name:		"se401",
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2, 3, 0)
         id_table:	device_table,
-#endif
 	probe:		se401_probe,
         disconnect:	se401_disconnect
 };

@@ -472,7 +472,8 @@ nfs_read_super(struct super_block *sb, void *raw_data, int silent)
 		goto failure_kill_reqlist;
 	}
 
-	/* We're airborne */
+	/* We're airborne Set socket buffersize */
+	rpc_setbufsize(clnt, server->wsize + 100, server->rsize + 100);
 
 	/* Check whether to start the lockd process */
 	if (!(server->flags & NFS_MOUNT_NONLM))

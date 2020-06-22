@@ -2128,7 +2128,7 @@ static int __init scc_init_driver (void)
 
 static void __exit scc_cleanup_driver(void)
 {
-	long flags;
+	unsigned long flags;
 	io_port ctrl;
 	int k;
 	struct scc_channel *scc;

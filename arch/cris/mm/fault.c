@@ -6,6 +6,9 @@
  *  Authors:  Bjorn Wesen 
  * 
  *  $Log: fault.c,v $
+ *  Revision 1.21  2002/05/28 14:24:56  bjornw
+ *  Corrected typo
+ *
  *  Revision 1.20  2001/11/22 13:34:06  bjornw
  *  * Bug workaround (LX TR89): force a rerun of the whole of an interrupted
  *    unaligned write, because the second half of the write will be corrupted

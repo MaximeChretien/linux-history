@@ -180,7 +180,8 @@ static STT pd_stt[7] = {{"drive0",8,drive0},
 
 void pd_setup( char *str, int *ints)
 
-{	generic_setup(pd_stt,7,str);
+{
+	generic_setup(pd_stt,7,str);
 }
 
 #endif
@@ -299,6 +300,7 @@ struct pd_unit {
 	int heads;                	/* physical geometry */
 	int sectors;
 	int cylinders;
+        int can_lba;
 	int drive;			/* master=0 slave=1 */
 	int changed;			/* Have we seen a disk change ? */
 	int removable;			/* removable media device  ?  */
@@ -306,7 +308,7 @@ struct pd_unit {
 	int alt_geom;
 	int present;
 	char name[PD_NAMELEN];		/* pda, pdb, etc ... */
-	};
+};
 
 struct pd_unit pd[PD_UNITS];
 
@@ -656,14 +658,20 @@ static void pd_ide_command( int unit, int func, int block, int count )
 
 /* Don't use this call if the capacity is zero. */
 
-{       int c1, c0, h, s;
-
-        s  = ( block % PD.sectors) + 1;
-        h  = ( block / PD.sectors) % PD.heads;
-        c0 = ( block / (PD.sectors*PD.heads)) % 256;
-        c1 = ( block / (PD.sectors*PD.heads*256));
-
-        pd_send_command(unit,count,s,h,c0,c1,func);
+{
+       int c1, c0, h, s;
+       if (PD.can_lba) {
+               s = block & 255;
+               c0 = (block >>= 8) & 255;
+               c1 = (block >>= 8) & 255;
+               h = ((block >>= 8) & 15) + 0x40;
+       } else {
+               s  = ( block % PD.sectors) + 1;
+               h  = ( block /= PD.sectors) % PD.heads;
+               c0 = ( block /= PD.heads) % 256;
+               c1 = (block >>= 8);
+       }
+       pd_send_command(unit,count,s,h,c0,c1,func);
 }
 
 /* According to the ATA standard, the default CHS geometry should be
@@ -762,10 +770,14 @@ static int pd_identify( int unit )
         }
         pi_read_block(PI,pd_scratch,512);
         pi_disconnect(PI);
-        PD.sectors = word_val(6);
-        PD.heads = word_val(3);
-        PD.cylinders  = word_val(1);
-        PD.capacity = PD.sectors*PD.heads*PD.cylinders;
+	PD.can_lba = pd_scratch[99] & 2;
+	PD.sectors = le16_to_cpu(*(u16*)(pd_scratch+12));
+	PD.heads = le16_to_cpu(*(u16*)(pd_scratch+6));
+	PD.cylinders  = le16_to_cpu(*(u16*)(pd_scratch+2));
+	if (PD.can_lba)
+	  PD.capacity = le32_to_cpu(*(u32*)(pd_scratch + 120));
+	else
+	  PD.capacity = PD.sectors*PD.heads*PD.cylinders;
 
         for(j=0;j<PD_ID_LEN;j++) id[j^1] = pd_scratch[j+PD_ID_OFF];
         j = PD_ID_LEN-1;
@@ -888,7 +900,7 @@ repeat:
 
 static void pd_next_buf( int unit )
 
-{	long	saved_flags;
+{	unsigned long	saved_flags;
 
 	spin_lock_irqsave(&io_request_lock,saved_flags);
 	end_request(1);
@@ -919,7 +931,7 @@ static void do_pd_read( void )
 static void do_pd_read_start( void )
  
 {       int	unit = pd_unit;
-	long    saved_flags;
+	unsigned long    saved_flags;
 
 	pd_busy = 1;
 
@@ -945,7 +957,7 @@ static void do_pd_read_start( void )
 static void do_pd_read_drq( void )
 
 {       int	unit = pd_unit;
-	long    saved_flags;
+	unsigned long    saved_flags;
 
 	while (1) {
             if (pd_wait_for(unit,STAT_DRQ,"do_pd_read_drq") & STAT_ERR) {
@@ -985,7 +997,7 @@ static void do_pd_write( void )
 static void do_pd_write_start( void )
 
 {       int 	unit = pd_unit;
-	long    saved_flags;
+	unsigned long    saved_flags;
 
 	pd_busy = 1;
 
@@ -1033,7 +1045,7 @@ static void do_pd_write_start( void )
 static void do_pd_write_done( void )
 
 {       int	unit = pd_unit;
-	long    saved_flags;
+	unsigned long    saved_flags;
 
         if (pd_wait_for(unit,STAT_READY,"do_pd_write_done") & STAT_ERR) {
                 pi_disconnect(PI);

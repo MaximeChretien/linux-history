@@ -1,9 +1,9 @@
 /*
    The compile-time configurable defaults for the Linux SCSI tape driver.
 
-   Copyright 1995-2000 Kai Makisara.
+   Copyright 1995-2002 Kai Makisara.
 
-   Last modified: Sat Apr 22 14:47:02 2000 by makisara@kai.makisara.local
+   Last modified: Wed May  1 11:06:47 2002 by makisara
 */
 
 #ifndef _ST_OPTIONS_H
@@ -98,6 +98,13 @@
 /* If ST_SYSV is non-zero, the tape behaves according to the SYS V semantics.
    The default is BSD semantics. */
 #define ST_SYSV 0
+
+/* Open without O_NONBLOCK blocks if the drive is not ready (blocking times out
+   after 2 minutes) */
+#define ST_BLOCKING_OPEN 0
+
+/* Time to wait for the drive to become ready if blocking open */
+#define ST_BLOCK_SECONDS     120
 
 
 #endif

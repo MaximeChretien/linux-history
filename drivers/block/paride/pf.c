@@ -930,7 +930,7 @@ repeat:
 
 static void pf_next_buf( int unit )
 
-{	long	saved_flags;
+{	unsigned long	saved_flags;
 
 	spin_lock_irqsave(&io_request_lock,saved_flags);
 	end_request(1);
@@ -963,7 +963,7 @@ static void do_pf_read( void )
 static void do_pf_read_start( void )
 
 {       int	unit = pf_unit;
-	long	saved_flags;
+	unsigned long	saved_flags;
 
 	pf_busy = 1;
 
@@ -988,7 +988,7 @@ static void do_pf_read_start( void )
 static void do_pf_read_drq( void )
 
 {       int	unit = pf_unit;
-	long	saved_flags;
+	unsigned long	saved_flags;
 	
 	while (1) {
             if (pf_wait(unit,STAT_BUSY,STAT_DRQ|STAT_ERR,
@@ -1030,7 +1030,7 @@ static void do_pf_write( void )
 static void do_pf_write_start( void )
 
 {       int	unit = pf_unit;
-	long	saved_flags;
+	unsigned long	saved_flags;
 
 	pf_busy = 1;
 
@@ -1079,7 +1079,7 @@ static void do_pf_write_start( void )
 static void do_pf_write_done( void )
 
 {       int	unit = pf_unit;
-	long	saved_flags;
+	unsigned long	saved_flags;
 
         if (pf_wait(unit,STAT_BUSY,0,"write block","done") & STAT_ERR) {
                 pi_disconnect(PI);

@@ -141,7 +141,7 @@ if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
    fi
    dep_tristate '  Parallel printer support' CONFIG_PRINTER $CONFIG_PARPORT
    if [ "$CONFIG_PRINTER" != "n" ]; then
-      bool '    Support IEEE1284 status readback' CONFIG_PARPORT_1284
+      bool '    IEEE 1284 transfer modes' CONFIG_PARPORT_1284
    fi
 fi
 
@@ -376,6 +376,11 @@ fi
 mainmenu_option next_comment
 comment 'Character devices'
  
+bool 'Virtual terminal' CONFIG_VT
+if [ "$CONFIG_VT" = "y" ]; then
+   bool 'Support for console on virtual terminal' CONFIG_VT_CONSOLE
+fi
+
 if [ "$CONFIG_Q40" = "y" ]; then
    tristate 'Q40 Standard/generic serial support' CONFIG_SERIAL
 fi
@@ -391,13 +396,6 @@ if [ "$CONFIG_SERIAL_EXTENDED" = "y" ]; then
    bool '    Support the Bell Technologies HUB6 card' CONFIG_HUB6
 fi
 
-if [ "$CONFIG_VME" = "n" ]; then
-   define_bool CONFIG_VT y
-   if [ "$CONFIG_VT" = "y" ]; then
-      bool 'Support for console on virtual terminal' CONFIG_VT_CONSOLE
-   fi
-fi
-
 if [ "$CONFIG_ATARI" = "y" ]; then
    define_bool CONFIG_NVRAM y
 fi
@@ -408,7 +406,7 @@ if [ "$CONFIG_AMIGA" = "y" ]; then
       define_bool CONFIG_BUSMOUSE y
    fi
 fi
-if [ "$CONFIG_ATARI" = "y" ]; then
+if [ "$CONFIG_ATARI" = "y" -a "$CONFIG_VT" = "y" ]; then
    tristate 'Atari mouse support' CONFIG_ATARIMOUSE
    if [ "$CONFIG_ATARIMOUSE" != "n" ]; then
       define_bool CONFIG_BUSMOUSE y
@@ -430,16 +428,16 @@ if [ "$CONFIG_AMIGA" = "y" ]; then
    if [ "$CONFIG_AMIGA_PCMCIA" = "y" ]; then
       tristate 'Hisoft Whippet PCMCIA serial support' CONFIG_WHIPPET_SERIAL
    fi
+   tristate 'Multiface Card III serial support' CONFIG_MULTIFACE_III_TTY
+   if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
+      tristate 'Commodore A2232 serial support (EXPERIMENTAL)' CONFIG_A2232
+   fi
 fi
 if [ "$CONFIG_PARPORT" = "n" ]; then
    if [ "$CONFIG_ZORRO" = "y" ]; then
       tristate 'GVP IO-Extender support' CONFIG_GVPIOEXT
       dep_tristate '  GVP IO-Extender parallel printer support' CONFIG_GVPIOEXT_LP $CONFIG_GVPIOEXT
       dep_tristate '  GVP IO-Extender PLIP support' CONFIG_GVPIOEXT_PLIP $CONFIG_GVPIOEXT
-      tristate 'Multiface Card III serial support' CONFIG_MULTIFACE_III_TTY
-      if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
-        tristate 'Commodore A2232 serial support (EXPERIMENTAL)' CONFIG_A2232
-      fi
    fi
 fi
 if [ "$CONFIG_MAC" = "y" ]; then
@@ -464,6 +462,20 @@ fi
 if [ "$CONFIG_HP300" = "y" -a "$CONFIG_DIO" = "y" ]; then
    tristate 'HP DCA serial support' CONFIG_HPDCA
 fi
+if [ "$CONFIG_MVME147" = "y" ]; then
+   bool 'SCC support for MVME147 serial ports' CONFIG_MVME147_SCC
+fi
+if [ "$CONFIG_MVME16x" = "y" ]; then
+   bool 'CD2401 support for MVME166/7 serial ports' CONFIG_SERIAL167
+   bool 'SCC support for MVME162 serial ports' CONFIG_MVME162_SCC
+fi
+if [ "$CONFIG_BVME6000" = "y" ]; then
+   bool 'SCC support for BVME6000 serial ports' CONFIG_BVME6000_SCC
+fi
+if [ "$CONFIG_APOLLO" = "y" ]; then
+   bool 'Support for DN serial port (dummy)' CONFIG_DN_SERIAL
+   define_tristate CONFIG_SERIAL $CONFIG_DN_SERIAL
+fi 
 
 if [ "$CONFIG_SUN3" = "y" -o "$CONFIG_SUN3X" = "y" ]; then
    bool 'Sun3/3x builtin serial support' CONFIG_SUN3X_ZS
@@ -483,37 +495,16 @@ else
    define_bool CONFIG_SBUS n
 fi
 
-if [ "$CONFIG_AMIGA" = "y" -o "$CONFIG_ATARI" = "y" -o \
-     "$CONFIG_MAC" = "y" -o "$CONFIG_HP300" = "y" -o \
-     "$CONFIG_SUN3" = "y" -o "$CONFIG_SUN3X" = "y" ]; then
-   if [ "$CONFIG_ATARI_MFPSER" = "y" -o "$CONFIG_ATARI_SCC" = "y" -o \
-        "$CONFIG_ATARI_MIDI" = "y" -o "$CONFIG_MAC_SCC" = "y" -o \
-        "$CONFIG_AMIGA_BUILTIN_SERIAL" = "y" -o \
-        "$CONFIG_GVPIOEXT" = "y" -o "$CONFIG_MULTIFACE_III_TTY" = "y" -o \
-        "$CONFIG_HPDCA" = "y" -o "$CONFIG_SUN3X_ZS" = "y" -o \
-	"$CONFIG_SERIAL" = "y" ]; then
-      bool 'Support for serial port console' CONFIG_SERIAL_CONSOLE
-   fi
-fi
-if [ "$CONFIG_VME" = "y" ]; then
-   define_bool CONFIG_SERIAL_CONSOLE y
-   if [ "$CONFIG_MVME147" = "y" ]; then
-      bool 'SCC support for MVME147 serial ports' CONFIG_MVME147_SCC
-   fi
-   if [ "$CONFIG_MVME16x" = "y" ]; then
-      bool 'CD2401 support for MVME166/7 serial ports' CONFIG_SERIAL167
-      bool 'SCC support for MVME162 serial ports' CONFIG_MVME162_SCC
-   fi
-   if [ "$CONFIG_BVME6000" = "y" ]; then
-      bool 'SCC support for BVME6000 serial ports' CONFIG_BVME6000_SCC
-   fi
-fi
-if [ "$CONFIG_APOLLO" = "y" ]; then
-   bool 'Support for DN serial port (dummy)' CONFIG_DN_SERIAL
+if [ "$CONFIG_ATARI_MFPSER" = "y" -o "$CONFIG_ATARI_SCC" = "y" -o \
+     "$CONFIG_ATARI_MIDI" = "y" -o "$CONFIG_MAC_SCC" = "y" -o \
+     "$CONFIG_AMIGA_BUILTIN_SERIAL" = "y" -o "$CONFIG_GVPIOEXT" = "y" -o \
+     "$CONFIG_MULTIFACE_III_TTY" = "y" -o "$CONFIG_HPDCA" = "y" -o \
+     "$CONFIG_SUN3X_ZS" = "y" -o "$CONFIG_SERIAL" = "y" -o \
+     "$CONFIG_MVME147_SCC" -o "$CONFIG_SERIAL167" = "y" -o \
+     "$CONFIG_MVME162_SCC" -o "$CONFIG_BVME6000_SCC" = "y" -o \
+     "$CONFIG_DN_SERIAL" -o ]; then
    bool 'Support for serial port console' CONFIG_SERIAL_CONSOLE
-
-   define_tristate CONFIG_SERIAL $CONFIG_DN_SERIAL
-fi 
+fi
 bool 'Support for user serial device modules' CONFIG_USERIAL
 bool 'Watchdog Timer Support'	CONFIG_WATCHDOG
 if [ "$CONFIG_WATCHDOG" != "n" ]; then
@@ -539,7 +530,7 @@ endmenu
 mainmenu_option next_comment
 comment 'Sound support'
 
-tristate 'Sound support' CONFIG_SOUND
+tristate 'Sound card support' CONFIG_SOUND
 if [ "$CONFIG_SOUND" != "n" ]; then
    source drivers/sound/dmasound/Config.in
 fi
@@ -547,7 +538,7 @@ endmenu
 
 source fs/Config.in
 
-if [ "$CONFIG_VME" = "n" ]; then
+if [ "$CONFIG_VT" = "y" ]; then
    mainmenu_option next_comment
    comment 'Console drivers'
    source drivers/video/Config.in
@@ -565,3 +556,5 @@ if [ "$CONFIG_DEBUG_KERNEL" != "n" ]; then
 fi
 
 endmenu
+
+source lib/Config.in

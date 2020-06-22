@@ -341,9 +341,7 @@ static void mm_start_io(struct cardinfo *card)
 	offset = ((char*)desc) - ((char*)page->desc);
 	writel(cpu_to_le32((page->page_dma+offset)&0xffffffff),
 	       card->csr_remap + DMA_DESCRIPTOR_ADDR);
-	/* Force the valiue to u64 before shifting otherwise >> 32 is undefined C
-	   and on some ports will do nothing ! */
-	writel(((u64)cpu_to_le32((page->page_dma)>>32)),
+	writel(cpu_to_le32((page->page_dma)>>31>>1),
 	       card->csr_remap + DMA_DESCRIPTOR_ADDR + 4);
 
 	/* Go, go, go */
@@ -1373,8 +1371,7 @@ int __init mm_init(void)
 	mm_gendisk.part      = mm_partitions;
 	mm_gendisk.nr_real   = num_cards;
 
-	mm_gendisk.next   = gendisk_head;
-	gendisk_head = &mm_gendisk;
+	add_gendisk(&mm_gendisk);
 
 	blk_queue_make_request(BLK_DEFAULT_QUEUE(MAJOR_NR),
 			       mm_make_request);

@@ -100,7 +100,8 @@ enum radeon_chips {
 	RADEON_QW,	/* Radeon RV200 (7500) */
 	RADEON_LW,	/* Radeon Mobility M7 */
 	RADEON_LY,	/* Radeon Mobility M6 */
-	RADEON_LZ	/* Radeon Mobility M6 */
+	RADEON_LZ,	/* Radeon Mobility M6 */
+	RADEON_PM	/* Radeon Mobility P/M */
 };
 
 
@@ -127,6 +128,7 @@ static struct pci_device_id radeonfb_pci_table[] __devinitdata = {
 	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_RADEON_LW, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_LW},
 	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_RADEON_LY, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_LY},
 	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_RADEON_LZ, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_LZ},
+	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_RADEON_PM, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RADEON_PM},
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, radeonfb_pci_table);
@@ -258,8 +260,8 @@ struct radeonfb_info {
 	u32 mmio_base_phys;
 	u32 fb_base_phys;
 
-	u32 mmio_base;
-	u32 fb_base;
+	unsigned long mmio_base;
+	unsigned long fb_base;
 
 	struct pci_dev *pdev;
 
@@ -361,7 +363,7 @@ static struct fb_var_screeninfo radeonfb_default_var = {
 	} while (0)
 
 
-static __inline__ u32 _INPLL(struct radeonfb_info *rinfo, u32 addr)
+static __inline__ u32 _INPLL(struct radeonfb_info *rinfo, unsigned long addr)
 {
 	OUTREG8(CLOCK_CNTL_INDEX, addr & 0x0000001f);
 	return (INREG(CLOCK_CNTL_DATA));
@@ -800,7 +802,7 @@ static int radeonfb_pci_register (struct pci_dev *pdev,
 	}
 
 	/* map the regions */
-	rinfo->mmio_base = (u32) ioremap (rinfo->mmio_base_phys,
+	rinfo->mmio_base = (unsigned long)ioremap (rinfo->mmio_base_phys,
 				    		    RADEON_REGSIZE);
 	if (!rinfo->mmio_base) {
 		printk ("radeonfb: cannot map MMIO\n");
@@ -856,6 +858,9 @@ static int radeonfb_pci_register (struct pci_dev *pdev,
 			strcpy(rinfo->name, "Radeon M6 LZ ");
 			rinfo->hasCRTC2 = 1;
 			break;
+	        case PCI_DEVICE_ID_RADEON_PM:
+			strcpy(rinfo->name, "Radeon P/M ");
+			rinfo->hasCRTC2 = 1;
 		default:
 			return -ENODEV;
 	}
@@ -924,6 +929,7 @@ static int radeonfb_pci_register (struct pci_dev *pdev,
 		case PCI_DEVICE_ID_RADEON_LW:
 		case PCI_DEVICE_ID_RADEON_LY:
 		case PCI_DEVICE_ID_RADEON_LZ:
+		case PCI_DEVICE_ID_RADEON_PM:
 			rinfo->dviDisp_type = MT_LCD;
 			break;
 		default:
@@ -947,7 +953,7 @@ static int radeonfb_pci_register (struct pci_dev *pdev,
 		}
 	}
 
-	rinfo->fb_base = (u32) ioremap (rinfo->fb_base_phys,
+	rinfo->fb_base = (unsigned long) ioremap (rinfo->fb_base_phys,
 				  		  rinfo->video_ram);
 	if (!rinfo->fb_base) {
 		printk ("radeonfb: cannot map FB\n");
@@ -2864,6 +2870,7 @@ int radeon_sleep_notify(struct pmu_sleep_notifier *self, int when)
 			case PCI_DEVICE_ID_RADEON_LW:
 			case PCI_DEVICE_ID_RADEON_LY:
 			case PCI_DEVICE_ID_RADEON_LZ:
+			case PCI_DEVICE_ID_RADEON_PM:
 				break;
 			default:
 				return PBOOK_SLEEP_REFUSE;

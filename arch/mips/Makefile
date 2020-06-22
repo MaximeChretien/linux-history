@@ -27,7 +27,7 @@ CROSS_COMPILE	= $(tool-prefix)
 endif
 
 #
-# GCC uses -G0 -mabicalls -fpic as default.  We don't want PIC in the kernel
+# GCC uses -G 0 -mabicalls -fpic as default.  We don't want PIC in the kernel
 # code since it only slows down the whole thing.  At some point we might make
 # use of global pointer optimizations but their use of $28 conflicts with
 # the current pointer optimization.
@@ -141,7 +141,17 @@ LOADADDR	:= 0x80100000
 endif
 
 #
-# Au1000 (Alchemy Semi PB1500) eval board
+# Au1100 (Alchemy Semi PB1100) eval board
+#
+ifdef CONFIG_MIPS_PB1100
+LIBS          += arch/mips/au1000/pb1100/pb1100.o \
+                 arch/mips/au1000/common/au1000.o
+SUBDIRS       += arch/mips/au1000/pb1100 arch/mips/au1000/common
+LOADADDR      += 0x80100000
+endif
+
+#
+# Au1500 (Alchemy Semi PB1500) eval board
 #
 ifdef CONFIG_MIPS_PB1500
 LIBS		+= arch/mips/au1000/pb1500/pb1500.o \
@@ -257,6 +267,16 @@ LOADADDR	:= 0x80100000
 endif
 
 #
+# MIPS SEAD board
+#
+ifdef CONFIG_MIPS_SEAD
+LIBS		+= arch/mips/mips-boards/sead/sead.o \
+		   arch/mips/mips-boards/generic/mipsboards.o
+SUBDIRS		+= arch/mips/mips-boards/generic arch/mips/mips-boards/sead
+LOADADDR	:= 0x80100000
+endif
+
+#
 # Momentum Ocelot board
 #
 ifdef CONFIG_MOMENCO_OCELOT
@@ -269,11 +289,22 @@ LOADADDR	:= 0x80100000
 endif
 
 #
+# Momentum Ocelot-G board
+#
+ifdef CONFIG_MOMENCO_OCELOT_G
+# The Ocelot-G setup.o must be linked early - it does the ioremap() for the
+# mips_io_port_base.
+CORE_FILES	+= arch/mips/momentum/ocelot_g/ocelot_g.o
+SUBDIRS		+= arch/mips/momentum/ocelot_g
+LOADADDR	:= 0x80100000
+endif
+
+#
 # NEC DDB Vrc-5074
 #
 ifdef CONFIG_DDB5074
-SUBDIRS		+= arch/mips/ddb5074
-LIBS		+= arch/mips/ddb5074/ddb5074.a
+SUBDIRS		+= arch/mips/ddb5xxx/common arch/mips/ddb5xxx/ddb5074
+LIBS		+= arch/mips/ddb5xxx/common/ddb5xxx.o arch/mips/ddb5xxx/ddb5074/ddb5074.o
 LOADADDR	:= 0x80080000
 endif
 
@@ -294,7 +325,7 @@ ifdef CONFIG_DDB5477
 SUBDIRS		+= arch/mips/ddb5xxx/common arch/mips/ddb5xxx/ddb5477
 LIBS		+= arch/mips/ddb5xxx/common/ddb5xxx.o \
 		   arch/mips/ddb5xxx/ddb5477/ddb5477.o
-LOADADDR	:= 0x80080000
+LOADADDR	:= 0x80100000
 endif
 
 #
@@ -305,6 +336,28 @@ SUBDIRS		+= arch/mips/vr4181/common arch/mips/vr4181/osprey
 LIBS		+= arch/mips/vr4181/common/vr4181.o \
 		   arch/mips/vr4181/osprey/osprey.o
 LOADADDR	:= 0x80002000
+endif
+
+#
+# NEC Eagle/Hawk (VR4122/VR4131) board
+#
+ifdef CONFIG_NEC_EAGLE
+SUBDIRS		+= arch/mips/vr41xx/common \
+		   arch/mips/vr41xx/nec-eagle
+LIBS		+= arch/mips/vr41xx/common/vr41xx.o \
+		   arch/mips/vr41xx/nec-eagle/eagle.o
+LOADADDR	:= 0x80000000
+endif
+
+#
+# ZAO Networks Capcella (VR4131)
+#
+ifdef CONFIG_ZAO_CAPCELLA
+SUBDIRS		+= arch/mips/vr41xx/common \
+		   arch/mips/vr41xx/zao-capcella
+LIBS		+= arch/mips/vr41xx/common/vr41xx.o \
+		   arch/mips/vr41xx/zao-capcella/capcella.o
+LOADADDR	:= 0x80000000
 endif
 
 #
@@ -349,6 +402,14 @@ ifdef CONFIG_SIBYTE_SWARM
 LIBS		+= arch/mips/sibyte/swarm/sbswarm.a
 SUBDIRS		+= arch/mips/sibyte/swarm
 LOADADDR	:= 0x80100000
+endif
+
+#
+# Sibyte CFE firmware
+#
+ifdef CONFIG_SIBYTE_CFE
+LIBS		+= arch/mips/sibyte/cfe/cfe.a
+SUBDIRS		+= arch/mips/sibyte/cfe
 endif
 
 #

@@ -486,6 +486,9 @@ struct super_block * ext2_read_super (struct super_block * sb, void * data,
 		       bdevname(dev), i);
 		goto failed_mount;
 	}
+	if (EXT2_HAS_COMPAT_FEATURE(sb, EXT3_FEATURE_COMPAT_HAS_JOURNAL))
+		ext2_warning(sb, __FUNCTION__,
+			"mounting ext3 filesystem as ext2\n");
 	sb->s_blocksize_bits =
 		le32_to_cpu(EXT2_SB(sb)->s_es->s_log_block_size) + 10;
 	sb->s_blocksize = 1 << sb->s_blocksize_bits;

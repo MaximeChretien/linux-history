@@ -402,7 +402,7 @@ static __inline__ u16 tcp_v6_check(struct tcphdr *th, int len,
 
 static __u32 tcp_v6_init_sequence(struct sock *sk, struct sk_buff *skb)
 {
-	if (skb->protocol == __constant_htons(ETH_P_IPV6)) {
+	if (skb->protocol == htons(ETH_P_IPV6)) {
 		return secure_tcpv6_sequence_number(skb->nh.ipv6h->daddr.s6_addr32,
 						    skb->nh.ipv6h->saddr.s6_addr32,
 						    skb->h.th->dest,
@@ -617,9 +617,9 @@ static int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 			sk->backlog_rcv = tcp_v6_do_rcv;
 			goto failure;
 		} else {
-			ipv6_addr_set(&np->saddr, 0, 0, __constant_htonl(0x0000FFFF),
+			ipv6_addr_set(&np->saddr, 0, 0, htonl(0x0000FFFF),
 				      sk->saddr);
-			ipv6_addr_set(&np->rcv_saddr, 0, 0, __constant_htonl(0x0000FFFF),
+			ipv6_addr_set(&np->rcv_saddr, 0, 0, htonl(0x0000FFFF),
 				      sk->rcv_saddr);
 		}
 
@@ -1031,10 +1031,10 @@ static void tcp_v6_send_ack(struct sk_buff *skb, u32 seq, u32 ack, u32 win, u32 
 	
 	if (ts) {
 		u32 *ptr = (u32*)(t1 + 1);
-		*ptr++ = __constant_htonl((TCPOPT_NOP << 24) |
-					  (TCPOPT_NOP << 16) |
-					  (TCPOPT_TIMESTAMP << 8) |
-					  TCPOLEN_TIMESTAMP);
+		*ptr++ = htonl((TCPOPT_NOP << 24) |
+			       (TCPOPT_NOP << 16) |
+			       (TCPOPT_TIMESTAMP << 8) |
+			       TCPOLEN_TIMESTAMP);
 		*ptr++ = htonl(tcp_time_stamp);
 		*ptr = htonl(ts);
 	}
@@ -1145,7 +1145,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	struct open_request *req = NULL;
 	__u32 isn = TCP_SKB_CB(skb)->when;
 
-	if (skb->protocol == __constant_htons(ETH_P_IP))
+	if (skb->protocol == htons(ETH_P_IP))
 		return tcp_v4_conn_request(sk, skb);
 
 	/* FIXME: do the same check for anycast */
@@ -1224,7 +1224,7 @@ static struct sock * tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	struct sock *newsk;
 	struct ipv6_txoptions *opt;
 
-	if (skb->protocol == __constant_htons(ETH_P_IP)) {
+	if (skb->protocol == htons(ETH_P_IP)) {
 		/*
 		 *	v6 mapped
 		 */
@@ -1236,10 +1236,10 @@ static struct sock * tcp_v6_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 
 		np = &newsk->net_pinfo.af_inet6;
 
-		ipv6_addr_set(&np->daddr, 0, 0, __constant_htonl(0x0000FFFF),
+		ipv6_addr_set(&np->daddr, 0, 0, htonl(0x0000FFFF),
 			      newsk->daddr);
 
-		ipv6_addr_set(&np->saddr, 0, 0, __constant_htonl(0x0000FFFF),
+		ipv6_addr_set(&np->saddr, 0, 0, htonl(0x0000FFFF),
 			      newsk->saddr);
 
 		ipv6_addr_copy(&np->rcv_saddr, &np->saddr);
@@ -1425,7 +1425,7 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 	   tcp_v6_hnd_req and tcp_v6_send_reset().   --ANK
 	 */
 
-	if (skb->protocol == __constant_htons(ETH_P_IP))
+	if (skb->protocol == htons(ETH_P_IP))
 		return tcp_v4_do_rcv(sk, skb);
 
 #ifdef CONFIG_FILTER

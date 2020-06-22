@@ -15,6 +15,26 @@
 #define rwlock_init(x) do { *(x) = RW_LOCK_UNLOCKED; } while(0)
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,0)
+#define SET_NICE(current,x)	do {(current)->nice = (x);} while (0)
+#else
+#define SET_NICE(current,x)
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,0)
+#define pci_enable_device(pdev)	(0)
+#define SCSI_DATA_UNKNOWN	0
+#define SCSI_DATA_WRITE		1
+#define SCSI_DATA_READ		2
+#define SCSI_DATA_NONE		3
+#endif
+
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,4)
+#define pci_set_dma_mask(pdev, mask)	(0)
+#define scsi_set_pci_device(sh, pdev)	(0)
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,3,0)
 #	if LINUX_VERSION_CODE < KERNEL_VERSION(2,2,18)
 		typedef unsigned int dma_addr_t;
@@ -55,11 +75,11 @@ typedef int (*__init_module_func_t)(void);
 typedef void (*__cleanup_module_func_t)(void);
 #define module_init(x) \
 	int init_module(void) __attribute__((alias(#x))); \
-	static inline __init_module_func_t __init_module_inline(void) \
+	extern inline __init_module_func_t __init_module_inline(void) \
 	{ return x; }
 #define module_exit(x) \
 	void cleanup_module(void) __attribute__((alias(#x))); \
-	static inline __cleanup_module_func_t __cleanup_module_inline(void) \
+	extern inline __cleanup_module_func_t __cleanup_module_inline(void) \
 	{ return x; }
 
 #else
@@ -210,6 +230,27 @@ static __inline__ int __get_order(unsigned long size)
 /*}-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 #endif /* PCI_DMA_BIDIRECTIONAL */
 
+/*
+ *  With the new command queuing code in the SCSI mid-layer we no longer have
+ *  to hold the io_request_lock spin lock when calling the scsi_done routine.
+ *  For now we only do this with the 2.5.1 kernel or newer.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,1)
+        #define MPT_HOST_LOCK(flags)
+        #define MPT_HOST_UNLOCK(flags)
+#else
+        #define MPT_HOST_LOCK(flags) \
+                spin_lock_irqsave(&io_request_lock, flags)
+        #define MPT_HOST_UNLOCK(flags) \
+                spin_unlock_irqrestore(&io_request_lock, flags)
+#endif
+
+/*
+ *  We use our new error handling code if the kernel version is 2.5.1 or newer.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,1)
+        #define MPT_SCSI_USE_NEW_EH
+#endif
 
 /*}-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 #endif /* _LINUX_COMPAT_H */

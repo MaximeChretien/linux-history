@@ -1,5 +1,5 @@
 /*
- * Copyright 1996, 1997, 1998 Hans Reiser, see reiserfs/README for licensing and copyright details
+ * Copyright 1996-2002 Hans Reiser, see reiserfs/README for licensing and copyright details
  */
 
 				/* this file has an amazingly stupid
@@ -55,7 +55,8 @@
 #define USE_INODE_GENERATION_COUNTER
 
 #define REISERFS_PREALLOCATE
-#define PREALLOCATION_SIZE 8
+#define DISPLACE_NEW_PACKING_LOCALITIES
+#define PREALLOCATION_SIZE 9
 
 /* n must be power of 2 */
 #define _ROUND_UP(x,n) (((x)+(n)-1u) & ~((n)-1u))
@@ -75,9 +76,9 @@
 /** always check a condition and panic if it's false. */
 #define RASSERT( cond, format, args... )					\
 if( !( cond ) ) 								\
-  reiserfs_panic( 0, "reiserfs[%i]: assertion " #cond " failed at "		\
-		  __FILE__ ":%i:" __FUNCTION__ ": " format "\n",		\
-		  in_interrupt() ? -1 : current -> pid, __LINE__ , ##args )
+  reiserfs_panic( 0, "reiserfs[%i]: assertion " #cond " failed at "	\
+		  __FILE__ ":%i:%s: " format "\n",		\
+		  in_interrupt() ? -1 : current -> pid, __LINE__ , __FUNCTION__ , ##args )
 
 #if defined( CONFIG_REISERFS_CHECK )
 #define RFALSE( cond, format, args... ) RASSERT( !( cond ), format, ##args )
@@ -184,7 +185,7 @@ struct unfm_nodeinfo {
    time cost for a 4 block file and saves an amount of space that is
    less significant as a percentage of space, or so goes the hypothesis.
    -Hans */
-#define STORE_TAIL_IN_UNFM(n_file_size,n_tail_size,n_block_size) \
+#define STORE_TAIL_IN_UNFM_S1(n_file_size,n_tail_size,n_block_size) \
 (\
   (!(n_tail_size)) || \
   (((n_tail_size) > MAX_DIRECT_ITEM_LEN(n_block_size)) || \
@@ -196,6 +197,18 @@ struct unfm_nodeinfo {
    ( ( (n_file_size) >= (n_block_size) ) && \
      ( (n_tail_size) >=   (MAX_DIRECT_ITEM_LEN(n_block_size) * 3)/4) ) ) \
 )
+
+/* Another strategy for tails, this one means only create a tail if all the
+   file would fit into one DIRECT item.
+   Primary intention for this one is to increase performance by decreasing
+   seeking.
+*/   
+#define STORE_TAIL_IN_UNFM_S2(n_file_size,n_tail_size,n_block_size) \
+(\
+  (!(n_tail_size)) || \
+  (((n_file_size) > MAX_DIRECT_ITEM_LEN(n_block_size)) ) \
+)
+
 
 
 /*
@@ -953,9 +966,7 @@ static inline int entry_length (const struct buffer_head * bh,
 #define B_I_E_NAME(bh,ih,entry_num) ((char *)(bh->b_data + ih_location(ih) + deh_location(B_I_DEH(bh,ih)+(entry_num))))
 
 // two entries per block (at least)
-//#define REISERFS_MAX_NAME_LEN(block_size) 
-//((block_size - BLKH_SIZE - IH_SIZE - DEH_SIZE * 2) / 2)
-#define REISERFS_MAX_NAME_LEN(block_size) 255
+#define REISERFS_MAX_NAME(block_size) 255
 
 
 /* this structure is used for operations on directory entries. It is
@@ -1325,6 +1336,10 @@ struct tree_balance
 
   int fs_gen;                  /* saved value of `reiserfs_generation' counter
 			          see FILESYSTEM_CHANGED() macro in reiserfs_fs.h */
+#ifdef DISPLACE_NEW_PACKING_LOCALITIES
+  struct key  key;	      /* key pointer, to pass to block allocator or
+				 another low-level subsystem */
+#endif
 } ;
 
 /* These are modes of balancing */
@@ -1530,6 +1545,8 @@ extern wait_queue_head_t reiserfs_commit_thread_wait ;
 /* After several hours of tedious analysis, the following hash
  * function won.  Do not mess with it... -DaveM
  */
+/* The two definitions below were borrowed from fs/buffer.c file of Linux kernel
+ * sources and are not licensed by Namesys to its non-GPL license customers */
 #define _jhashfn(dev,block)	\
 	((((dev)<<(JBH_HASH_SHIFT - 6)) ^ ((dev)<<(JBH_HASH_SHIFT - 9))) ^ \
 	 (((block)<<(JBH_HASH_SHIFT - 6)) ^ ((block) >> 13) ^ ((block) << (JBH_HASH_SHIFT - 12))))
@@ -1558,7 +1575,7 @@ int journal_mark_freed(struct reiserfs_transaction_handle *, struct super_block 
 int push_journal_writer(char *w) ;
 int pop_journal_writer(int windex) ;
 int journal_transaction_should_end(struct reiserfs_transaction_handle *, int) ;
-int reiserfs_in_journal(struct super_block *p_s_sb, kdev_t dev, unsigned long bl, int size, int searchall, unsigned long *next) ;
+int reiserfs_in_journal(struct super_block *p_s_sb, kdev_t dev, int bmap_nr, int bit_nr, int size, int searchall, unsigned int *next) ;
 int journal_begin(struct reiserfs_transaction_handle *, struct super_block *p_s_sb, unsigned long) ;
 struct super_block *reiserfs_get_super(kdev_t dev) ;
 void flush_async_commits(struct super_block *p_s_sb) ;
@@ -1576,7 +1593,7 @@ int reiserfs_allocate_list_bitmaps(struct super_block *s, struct reiserfs_list_b
 
 				/* why is this kerplunked right here? */
 static inline int reiserfs_buffer_prepared(const struct buffer_head *bh) {
-  if (bh && test_bit(BH_JPrepared, ( struct buffer_head * ) &bh->b_state))
+  if (bh && test_bit(BH_JPrepared, &( (struct buffer_head *)bh)->b_state))
     return 1 ;
   else
     return 0 ;
@@ -1585,7 +1602,7 @@ static inline int reiserfs_buffer_prepared(const struct buffer_head *bh) {
 /* buffer was journaled, waiting to get to disk */
 static inline int buffer_journal_dirty(const struct buffer_head *bh) {
   if (bh)
-    return test_bit(BH_JDirty_wait, ( struct buffer_head * ) &bh->b_state) ;
+    return test_bit(BH_JDirty_wait, &( (struct buffer_head *)bh)->b_state) ;
   else
     return 0 ;
 }
@@ -1706,8 +1723,8 @@ void reiserfs_do_truncate (struct reiserfs_transaction_handle *th,
 #define file_size(inode) ((inode)->i_size)
 #define tail_size(inode) (file_size (inode) & (block_size (inode) - 1))
 
-#define tail_has_to_be_packed(inode) (!dont_have_tails ((inode)->i_sb) &&\
-!STORE_TAIL_IN_UNFM(file_size (inode), tail_size(inode), block_size (inode)))
+#define tail_has_to_be_packed(inode) (have_large_tails ((inode)->i_sb)?\
+!STORE_TAIL_IN_UNFM_S1(file_size (inode), tail_size(inode), block_size (inode)):have_small_tails ((inode)->i_sb)?!STORE_TAIL_IN_UNFM_S2(file_size (inode), tail_size(inode), block_size (inode)):0 )
 
 void padd_item (char * item, int total_length, int length);
 
@@ -1733,7 +1750,7 @@ struct inode * reiserfs_iget (struct super_block * s,
 
 
 struct inode * reiserfs_new_inode (struct reiserfs_transaction_handle *th, 
-				   const struct inode * dir, int mode, 
+				   struct inode * dir, int mode, 
 				   const char * symname, int item_len,
 				   struct dentry *dentry, struct inode *inode, int * err);
 int reiserfs_sync_inode (struct reiserfs_transaction_handle *th, struct inode * inode);
@@ -1909,22 +1926,88 @@ void make_empty_node (struct buffer_info *);
 struct buffer_head * get_FEB (struct tree_balance *);
 
 /* bitmap.c */
+
+/* structure contains hints for block allocator, and it is a container for
+ * arguments, such as node, search path, transaction_handle, etc. */
+ struct __reiserfs_blocknr_hint {
+     struct inode * inode;		/* inode passed to allocator, if we allocate unf. nodes */
+     long block;			/* file offset, in blocks */
+     struct key key;
+     struct path * path;		/* search path, used by allocator to deternine search_start by
+					 * various ways */
+     struct reiserfs_transaction_handle * th; /* transaction handle is needed to log super blocks and
+					       * bitmap blocks changes  */
+     b_blocknr_t beg, end;
+     b_blocknr_t search_start;		/* a field used to transfer search start value (block number)
+					 * between different block allocator procedures
+					 * (determine_search_start() and others) */
+    int prealloc_size;			/* is set in determine_prealloc_size() function, used by underlayed
+					 * function that do actual allocation */
+
+    int formatted_node:1;		/* the allocator uses different polices for getting disk space for
+					 * formatted/unformatted blocks with/without preallocation */
+    int preallocate:1;
+};
+
+typedef struct __reiserfs_blocknr_hint reiserfs_blocknr_hint_t;
+
+int reiserfs_parse_alloc_options (struct super_block *, char *);
 int is_reusable (struct super_block * s, unsigned long block, int bit_value);
 void reiserfs_free_block (struct reiserfs_transaction_handle *th, unsigned long);
-int reiserfs_new_blocknrs (struct reiserfs_transaction_handle *th,
-			   unsigned long * pblocknrs, unsigned long start_from, int amount_needed);
-int reiserfs_new_unf_blocknrs (struct reiserfs_transaction_handle *th,
-			       unsigned long * pblocknr, unsigned long start_from);
+int reiserfs_allocate_blocknrs(reiserfs_blocknr_hint_t *, b_blocknr_t * , int, int);
+extern inline int reiserfs_new_form_blocknrs (struct tree_balance * tb,
+					      b_blocknr_t *new_blocknrs, int amount_needed)
+{
+    reiserfs_blocknr_hint_t hint = {
+	th:tb->transaction_handle,
+	path: tb->tb_path,
+	inode: NULL,
+	key: tb->key,
+	block: 0,
+	formatted_node:1
+    };
+    return reiserfs_allocate_blocknrs(&hint, new_blocknrs, amount_needed, 0);
+}
+
+extern inline int reiserfs_new_unf_blocknrs (struct reiserfs_transaction_handle *th,
+					     struct inode *inode,
+					     b_blocknr_t *new_blocknrs,
+					     struct path * path, long block)
+{
+    reiserfs_blocknr_hint_t hint = {
+	th: th,
+	path: path,
+	inode: inode,
+	block: block,
+	formatted_node: 0,
+	preallocate: 0
+    };
+    return reiserfs_allocate_blocknrs(&hint, new_blocknrs, 1, 0);
+}
+
 #ifdef REISERFS_PREALLOCATE
-int reiserfs_new_unf_blocknrs2 (struct reiserfs_transaction_handle *th, 
-				struct inode * inode,
-				unsigned long * pblocknr, 
-				unsigned long start_from);
+extern inline int reiserfs_new_unf_blocknrs2(struct reiserfs_transaction_handle *th,
+					     struct inode * inode,
+					     b_blocknr_t *new_blocknrs,
+					     struct path * path, long block)
+{
+    reiserfs_blocknr_hint_t hint = {
+	th: th,
+	path: path,
+	inode: inode,
+	block: block,
+	formatted_node: 0,
+	preallocate: 1
+    };
+    return reiserfs_allocate_blocknrs(&hint, new_blocknrs, 1, 0);
+}
 
 void reiserfs_discard_prealloc (struct reiserfs_transaction_handle *th, 
 				struct inode * inode);
 void reiserfs_discard_all_prealloc (struct reiserfs_transaction_handle *th);
 #endif
+void reiserfs_claim_blocks_to_be_allocated( struct super_block *sb, int blocks);
+void reiserfs_release_claimed_blocks( struct super_block *sb, int blocks);
 
 /* hashes.c */
 __u32 keyed_hash (const signed char *msg, int len);

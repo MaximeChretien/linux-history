@@ -23,6 +23,8 @@
  *
  */
 
+#include <asm/pgtable.h>
+
 extern void mapin_ram(void);
 extern void bat_mapin_ram(unsigned long bat2, unsigned long bat3);
 extern void adjust_total_lowmem(void);

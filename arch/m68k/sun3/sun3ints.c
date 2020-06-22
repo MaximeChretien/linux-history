@@ -99,7 +99,7 @@ static void (*sun3_inthandler[SYS_IRQS])(int, void *, struct pt_regs *) = {
 };
 static void (*sun3_vechandler[192])(int, void *, struct pt_regs *);
 static void *vec_ids[192];
-static char *vec_names[192];
+static const char *vec_names[192];
 
 static void sun3_inthandle(int irq, void *dev_id, struct pt_regs *fp)
 {
@@ -122,8 +122,8 @@ void (*sun3_default_handler[SYS_IRQS])(int, void *, struct pt_regs *) = {
 	sun3_inthandle, sun3_int5, sun3_inthandle, sun3_int7
 };
 
-static char *dev_names[SYS_IRQS] = { NULL, NULL, NULL, NULL, 
-				     NULL, "timer", NULL, NULL };
+static const char *dev_names[SYS_IRQS] = { NULL, NULL, NULL, NULL,
+					   NULL, "timer", NULL, NULL };
 
 void sun3_init_IRQ(void)
 {

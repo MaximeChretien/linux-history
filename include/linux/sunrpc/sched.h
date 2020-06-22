@@ -34,13 +34,11 @@ struct rpc_message {
  * This is the RPC task struct
  */
 struct rpc_task {
-	struct rpc_task *	tk_prev;	/* wait queue links */
-	struct rpc_task *	tk_next;
+	struct list_head	tk_list;	/* wait queue links */
 #ifdef RPC_DEBUG
 	unsigned long		tk_magic;	/* 0xf00baa */
 #endif
-	struct rpc_task *	tk_next_task;	/* global list of tasks */
-	struct rpc_task *	tk_prev_task;	/* global list of tasks */
+	struct list_head	tk_task;	/* global list of tasks */
 	struct rpc_clnt *	tk_client;	/* RPC client */
 	struct rpc_rqst *	tk_rqstp;	/* RPC request */
 	int			tk_status;	/* result of last operation */
@@ -77,9 +75,7 @@ struct rpc_task {
 	wait_queue_head_t	tk_wait;	/* sync: sleep on this q */
 	unsigned long		tk_timeout;	/* timeout for rpc_sleep() */
 	unsigned short		tk_flags;	/* misc flags */
-	unsigned short		tk_lock;	/* Task lock counter */
-	unsigned char		tk_active   : 1,/* Task has been activated */
-				tk_wakeup   : 1;/* Task waiting to wake up */
+	unsigned char		tk_active   : 1;/* Task has been activated */
 	unsigned long		tk_runstate;	/* Task run status */
 #ifdef RPC_DEBUG
 	unsigned short		tk_pid;		/* debugging aid */
@@ -87,6 +83,20 @@ struct rpc_task {
 };
 #define tk_auth			tk_client->cl_auth
 #define tk_xprt			tk_client->cl_xprt
+
+/* support walking a list of tasks on a wait queue */
+#define	task_for_each(task, pos, head) \
+	list_for_each(pos, head) \
+		if ((task=list_entry(pos, struct rpc_task, tk_list)),1)
+
+#define	task_for_first(task, head) \
+	if (!list_empty(head) &&  \
+	    ((task=list_entry((head)->next, struct rpc_task, tk_list)),1))
+
+/* .. and walking list of all tasks */
+#define	alltask_for_each(task, pos, head) \
+	list_for_each(pos, head) \
+		if ((task=list_entry(pos, struct rpc_task, tk_task)),1)
 
 typedef void			(*rpc_action)(struct rpc_task *);
 
@@ -133,16 +143,24 @@ typedef void			(*rpc_action)(struct rpc_task *);
  * RPC synchronization objects
  */
 struct rpc_wait_queue {
-	struct rpc_task *	task;
+	struct list_head	tasks;
 #ifdef RPC_DEBUG
 	char *			name;
 #endif
 };
 
 #ifndef RPC_DEBUG
-# define RPC_INIT_WAITQ(name)	((struct rpc_wait_queue) { NULL })
+# define RPC_WAITQ_INIT(var,qname) ((struct rpc_wait_queue) {LIST_HEAD_INIT(var)})
+# define RPC_WAITQ(var,qname)      struct rpc_wait_queue var = RPC_WAITQ_INIT(var.tasks,qname)
+# define INIT_RPC_WAITQ(ptr,qname) do { \
+	INIT_LIST_HEAD(&(ptr)->tasks); \
+	} while(0)
 #else
-# define RPC_INIT_WAITQ(name)	((struct rpc_wait_queue) { NULL, name })
+# define RPC_WAITQ_INIT(var,qname) ((struct rpc_wait_queue) {LIST_HEAD_INIT(var.tasks), qname})
+# define RPC_WAITQ(var,qname)      struct rpc_wait_queue var = RPC_WAITQ_INIT(var,qname)
+# define INIT_RPC_WAITQ(ptr,qname) do { \
+	INIT_LIST_HEAD(&(ptr)->tasks); (ptr)->name = qname; \
+	} while(0)
 #endif
 
 /*
@@ -161,15 +179,11 @@ int		rpc_add_wait_queue(struct rpc_wait_queue *, struct rpc_task *);
 void		rpc_remove_wait_queue(struct rpc_task *);
 void		rpc_sleep_on(struct rpc_wait_queue *, struct rpc_task *,
 					rpc_action action, rpc_action timer);
-void		rpc_sleep_locked(struct rpc_wait_queue *, struct rpc_task *,
-				 rpc_action action, rpc_action timer);
 void		rpc_add_timer(struct rpc_task *, rpc_action);
 void		rpc_wake_up_task(struct rpc_task *);
 void		rpc_wake_up(struct rpc_wait_queue *);
 struct rpc_task *rpc_wake_up_next(struct rpc_wait_queue *);
 void		rpc_wake_up_status(struct rpc_wait_queue *, int);
-int		__rpc_lock_task(struct rpc_task *);
-void		rpc_unlock_task(struct rpc_task *);
 void		rpc_delay(struct rpc_task *, unsigned long);
 void *		rpc_allocate(unsigned int flags, unsigned int);
 void		rpc_free(void *);

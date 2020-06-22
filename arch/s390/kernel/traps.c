@@ -58,6 +58,7 @@ extern pgm_check_handler_t do_pseudo_page_fault;
 extern int pfault_init(void);
 extern void pfault_fini(void);
 extern void pfault_interrupt(struct pt_regs *regs, __u16 error_code);
+static ext_int_info_t ext_int_pfault;
 #endif
 
 int kstack_depth_to_print = 12;
@@ -646,7 +647,8 @@ void __init trap_init(void)
 #ifdef CONFIG_PFAULT
 	if (MACHINE_IS_VM) {
 		/* request the 0x2603 external interrupt */
-		if (register_external_interrupt(0x2603, pfault_interrupt) != 0)
+		if (register_early_external_interrupt(0x2603, pfault_interrupt,
+						      &ext_int_pfault) != 0)
 			panic("Couldn't request external interrupt 0x2603");
 		/*
 		 * First try to get pfault pseudo page faults going.
@@ -654,8 +656,9 @@ void __init trap_init(void)
 		 */
 		if (pfault_init() != 0) {
 			/* Tough luck, no pfault. */
-			unregister_external_interrupt(0x2603,
-						      pfault_interrupt);
+			unregister_early_external_interrupt(0x2603,
+							    pfault_interrupt,
+							    &ext_int_pfault);
 			cpcmd("SET PAGEX ON", NULL, 0);
 		}
 	}

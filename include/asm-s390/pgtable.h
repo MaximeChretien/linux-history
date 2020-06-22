@@ -156,7 +156,8 @@ extern char empty_zero_page[PAGE_SIZE];
 
 /* Bits in the page table entry */
 #define _PAGE_PRESENT   0x001          /* Software                         */
-#define _PAGE_MKCLEAR   0x002          /* Software                         */
+#define _PAGE_MKCLEAN   0x002          /* Software                         */
+#define _PAGE_ISCLEAN   0x004	       /* Software			   */
 #define _PAGE_RO        0x200          /* HW read-only                     */
 #define _PAGE_INVALID   0x400          /* HW invalid                       */
 
@@ -189,12 +190,14 @@ extern char empty_zero_page[PAGE_SIZE];
 /*
  * No mapping available
  */
-#define PAGE_INVALID  __pgprot(_PAGE_INVALID)
-#define PAGE_NONE     __pgprot(_PAGE_PRESENT | _PAGE_INVALID)
-#define PAGE_COPY     __pgprot(_PAGE_PRESENT | _PAGE_RO)
-#define PAGE_READONLY __pgprot(_PAGE_PRESENT | _PAGE_RO)
-#define PAGE_SHARED   __pgprot(_PAGE_PRESENT)
-#define PAGE_KERNEL   __pgprot(_PAGE_PRESENT)
+#define PAGE_INVALID	  __pgprot(_PAGE_INVALID)
+#define PAGE_NONE_SHARED  __pgprot(_PAGE_PRESENT|_PAGE_INVALID)
+#define PAGE_NONE_PRIVATE __pgprot(_PAGE_PRESENT|_PAGE_INVALID|_PAGE_ISCLEAN)
+#define PAGE_RO_SHARED	  __pgprot(_PAGE_PRESENT|_PAGE_RO)
+#define PAGE_RO_PRIVATE	  __pgprot(_PAGE_PRESENT|_PAGE_RO|_PAGE_ISCLEAN)
+#define PAGE_COPY	  __pgprot(_PAGE_PRESENT|_PAGE_RO|_PAGE_ISCLEAN)
+#define PAGE_SHARED	  __pgprot(_PAGE_PRESENT)
+#define PAGE_KERNEL	  __pgprot(_PAGE_PRESENT)
 
 /*
  * The S390 can't do page protection for execute, and considers that the
@@ -202,21 +205,21 @@ extern char empty_zero_page[PAGE_SIZE];
  * the closest we can get..
  */
          /*xwr*/
-#define __P000  PAGE_NONE
-#define __P001  PAGE_READONLY
+#define __P000  PAGE_NONE_PRIVATE
+#define __P001  PAGE_RO_PRIVATE
 #define __P010  PAGE_COPY
 #define __P011  PAGE_COPY
-#define __P100  PAGE_READONLY
-#define __P101  PAGE_READONLY
+#define __P100  PAGE_RO_PRIVATE
+#define __P101  PAGE_RO_PRIVATE
 #define __P110  PAGE_COPY
 #define __P111  PAGE_COPY
 
-#define __S000  PAGE_NONE
-#define __S001  PAGE_READONLY
+#define __S000  PAGE_NONE_SHARED
+#define __S001  PAGE_RO_SHARED
 #define __S010  PAGE_SHARED
 #define __S011  PAGE_SHARED
-#define __S100  PAGE_READONLY
-#define __S101  PAGE_READONLY
+#define __S100  PAGE_RO_SHARED
+#define __S101  PAGE_RO_SHARED
 #define __S110  PAGE_SHARED
 #define __S111  PAGE_SHARED
 
@@ -227,10 +230,10 @@ extern char empty_zero_page[PAGE_SIZE];
  */
 extern inline void set_pte(pte_t *pteptr, pte_t pteval)
 {
-	if ((pte_val(pteval) & (_PAGE_MKCLEAR|_PAGE_INVALID))
-	    == _PAGE_MKCLEAR) 
+	if ((pte_val(pteval) & (_PAGE_MKCLEAN|_PAGE_INVALID))
+	    == _PAGE_MKCLEAN) 
 	{
-		pte_val(pteval) &= ~_PAGE_MKCLEAR;
+		pte_val(pteval) &= ~_PAGE_MKCLEAN;
                
 		asm volatile ("sske %0,%1" 
 				: : "d" (0), "a" (pte_val(pteval)));
@@ -277,6 +280,8 @@ extern inline int pte_dirty(pte_t pte)
 {
 	int skey;
 
+	if (pte_val(pte) & _PAGE_ISCLEAN)
+		return 0;
 	asm volatile ("iske %0,%1" : "=d" (skey) : "a" (pte_val(pte)));
 	return skey & _PAGE_CHANGED;
 }
@@ -315,7 +320,8 @@ extern inline void pte_clear(pte_t *ptep)
  */
 extern inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
 {
-	pte_val(pte) = (pte_val(pte) & PAGE_MASK) | pgprot_val(newprot);
+	pte_val(pte) &= PAGE_MASK | _PAGE_ISCLEAN;
+	pte_val(pte) |= pgprot_val(newprot) & ~_PAGE_ISCLEAN;
 	return pte;
 }
 
@@ -342,13 +348,11 @@ extern inline pte_t pte_mkclean(pte_t pte)
 
 extern inline pte_t pte_mkdirty(pte_t pte)
 {
-	/* We can't set the changed bit atomically. For now we
-         * set (!) the page referenced bit. */
-	asm volatile ("sske %0,%1" 
-	              : : "d" (_PAGE_CHANGED|_PAGE_REFERENCED),
-		          "a" (pte_val(pte)));
-
-	pte_val(pte) &= ~_PAGE_MKCLEAR;
+	/* We do not explicitly set the dirty bit because the
+	 * sske instruction is slow. It is faster to let the
+	 * next instruction set the dirty bit.
+	 */
+	pte_val(pte) &= ~(_PAGE_MKCLEAN | _PAGE_ISCLEAN);
 	return pte;
 }
 
@@ -382,6 +386,8 @@ static inline int ptep_test_and_clear_dirty(pte_t *ptep)
 {
 	int skey;
 
+	if (pte_val(*ptep) & _PAGE_ISCLEAN)
+		return 0;
 	asm volatile ("iske %0,%1" : "=d" (skey) : "a" (*ptep));
 	if ((skey & _PAGE_CHANGED) == 0)
 		return 0;
@@ -414,7 +420,7 @@ static inline void ptep_mkdirty(pte_t *ptep)
  * Conversion functions: convert a page and protection to a page entry,
  * and a page entry and page directory to the page they refer to.
  */
-extern inline pte_t mk_pte_phys(unsigned long physpage, pgprot_t pgprot)
+static inline pte_t mk_pte_phys(unsigned long physpage, pgprot_t pgprot)
 {
 	pte_t __pte;
 	pte_val(__pte) = physpage + pgprot_val(pgprot);
@@ -424,17 +430,15 @@ extern inline pte_t mk_pte_phys(unsigned long physpage, pgprot_t pgprot)
 #define mk_pte(pg, pgprot)                                                \
 ({                                                                        \
 	struct page *__page = (pg);                                       \
+	pgprot_t __pgprot = (pgprot);					  \
 	unsigned long __physpage = __pa((__page-mem_map) << PAGE_SHIFT);  \
-	pte_t __pte = mk_pte_phys(__physpage, (pgprot));                  \
+	pte_t __pte = mk_pte_phys(__physpage, __pgprot);                  \
 	                                                                  \
-	if (__page != ZERO_PAGE(__physpage)) {                            \
-		int __users = page_count(__page);                         \
-		__users -= !!__page->buffers + !!__page->mapping;         \
-	                                                                  \
-		if (__users == 1)                                         \
-			pte_val(__pte) |= _PAGE_MKCLEAR;                  \
-        }                                                                 \
-	                                                                  \
+	if (!(pgprot_val(__pgprot) & _PAGE_ISCLEAN)) {			  \
+		int __users = !!__page->buffers + !!__page->mapping;      \
+		if (__users + page_count(__page) == 1)                    \
+			pte_val(__pte) |= _PAGE_MKCLEAN;                  \
+	}								  \
 	__pte;                                                            \
 })
 

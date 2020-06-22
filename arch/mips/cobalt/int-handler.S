@@ -26,8 +26,8 @@
 		SAVE_ALL
 		CLI
 		.set	at
-	
-		/* 
+
+		/*
 		 * Get pending Interrupts
 		 */
 		mfc0	s0,CP0_CAUSE	# get irq mask
@@ -52,30 +52,30 @@
 		j	ret_from_irq
 		 nop
 
-1:	
+1:
 		beq	a0,zero,1f		/* Check IP3 */
 		 andi	a0,s0,CAUSEF_IP4
 
 		/* Ethernet 0 interrupt */
-		li	a0,4
+		li	a0,COBALT_RAQ_ETH0_IRQ
 		jal     do_IRQ
 		 move	a1,sp
 
 		j	ret_from_irq
 		 nop
 
-1:	
+1:
 		beq	a0,zero,1f		/* Check IP4 */
 		 andi	a0,s0,CAUSEF_IP5
 
 		/* Ethernet 1 interrupt */
-		li	a0,13
+		li	a0,COBALT_RAQ_ETH1_IRQ
 		jal     do_IRQ
 		 move	a1,sp
 
 		j	ret_from_irq
 		 nop
-1:	
+1:
 		beq	a0,zero,1f		/* Check IP5 */
 		 andi	a0,s0,CAUSEF_IP7
 
@@ -86,7 +86,7 @@
 
 		j	ret_from_irq
 		 nop
-1:	
+1:
 		beq	a0,zero,1f		/* Check IP7 */
 		  nop
 
@@ -100,4 +100,4 @@
 		 nop
 
 		END(cobalt_handle_int)
-	
+

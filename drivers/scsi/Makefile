@@ -118,6 +118,7 @@ obj-$(CONFIG_SCSI_MAC53C94)	+= mac53c94.o
 obj-$(CONFIG_SCSI_PLUTO)	+= pluto.o
 obj-$(CONFIG_SCSI_DECNCR)	+= NCR53C9x.o	dec_esp.o
 obj-$(CONFIG_BLK_DEV_3W_XXXX_RAID) += 3w-xxxx.o
+obj-$(CONFIG_SCSI_ZALON)	+= zalon7xx_mod.o
 obj-$(CONFIG_SCSI_PPA)		+= ppa.o
 obj-$(CONFIG_SCSI_IMM)		+= imm.o
 obj-$(CONFIG_JAZZ_ESP)		+= NCR53C9x.o	jazz_esp.o
@@ -136,7 +137,8 @@ obj-$(CONFIG_BLK_DEV_SD)	+= sd_mod.o
 obj-$(CONFIG_BLK_DEV_SR)	+= sr_mod.o
 obj-$(CONFIG_CHR_DEV_SG)	+= sg.o
 
-list-multi	:= scsi_mod.o sd_mod.o sr_mod.o initio.o a100u2w.o cpqfc.o
+list-multi	:= scsi_mod.o sd_mod.o sr_mod.o initio.o a100u2w.o cpqfc.o \
+			zalon7xx_mod.o
 scsi_mod-objs	:= scsi.o hosts.o scsi_ioctl.o constants.o \
 			scsicam.o scsi_proc.o scsi_error.o \
 			scsi_obsolete.o scsi_queue.o scsi_lib.o \
@@ -146,6 +148,7 @@ sd_mod-objs	:= sd.o
 sr_mod-objs	:= sr.o sr_ioctl.o sr_vendor.o
 initio-objs	:= ini9100u.o i91uscsi.o
 a100u2w-objs	:= inia100.o i60uscsi.o
+zalon7xx_mod-objs := zalon7xx.o ncr53c8xx.o
 cpqfc-objs	:= cpqfcTSinit.o cpqfcTScontrol.o cpqfcTSi2c.o \
 		   cpqfcTSworker.o cpqfcTStrigger.o
 
@@ -167,6 +170,9 @@ initio.o: $(initio-objs)
 a100u2w.o: $(a100u2w-objs)
 	$(LD) -r -o $@ $(a100u2w-objs)
 
+zalon7xx_mod.o: $(zalon7xx_mod-objs)
+	$(LD) -r -o $@ $(zalon7xx_mod-objs)
+
 cpqfc.o: $(cpqfc-objs)
 	$(LD) -r -o $@ $(cpqfc-objs)
 
@@ -183,7 +189,7 @@ cpqfc.o: $(cpqfc-objs)
 
 53c7xx_d.h: 53c7xx.scr script_asm.pl
 	ln -sf 53c7xx.scr fake7.c
-	$(CPP) $(CPPFLAGS) -traditional -DCHIP=710 fake7.c | grep -v '^#' | $(PERL) -s script_asm.pl -ncr7x0_family
+	$(CPP) $(CPPFLAGS) -traditional -DCHIP=710 fake7.c | grep -v '^#' | $(PERL) -s script_asm.pl -ncr710
 	mv script.h 53c7xx_d.h
 	mv scriptu.h 53c7xx_u.h
 	rm fake7.c
@@ -194,7 +200,7 @@ cpqfc.o: $(cpqfc-objs)
 
 sim710_d.h: sim710.scr script_asm.pl
 	ln -sf sim710.scr fake7.c
-	$(CPP) $(CPPFLAGS) -traditional -DCHIP=710 fake7.c | grep -v '^#' | $(PERL) -s script_asm.pl -ncr7x0_family
+	$(CPP) $(CPPFLAGS) -traditional -DCHIP=710 fake7.c | grep -v '^#' | $(PERL) -s script_asm.pl -ncr710
 	mv script.h sim710_d.h
 	mv scriptu.h sim710_u.h
 	rm fake7.c

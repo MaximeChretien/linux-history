@@ -2,18 +2,9 @@
  * Copyright (c) 1999-2002 Petko Manolov - Petkan (petkan@users.sourceforge.net)
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * it under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
 
@@ -99,7 +90,7 @@ typedef struct pegasus {
 	int			dev_index;
 	int			intr_interval;
 	struct urb		*ctrl_urb, *rx_urb, *tx_urb, *intr_urb;
-	devrequest		dr;
+	struct usb_ctrlrequest	dr;
 	wait_queue_head_t	ctrl_wait;
 	struct semaphore	sem;
 	unsigned char		rx_buff[PEGASUS_MAX_MTU];
@@ -122,6 +113,7 @@ struct usb_eth_dev {
 #define	VENDOR_ABOCOM		0x07b8
 #define	VENDOR_ACCTON		0x083a
 #define	VENDOR_ADMTEK		0x07a6
+#define	VENDOR_AEILAB		0x3334
 #define	VENDOR_ALLIEDTEL	0x07c9
 #define	VENDOR_BELKIN		0x050d
 #define	VENDOR_BILLIONTON	0x08dd
@@ -177,6 +169,8 @@ PEGASUS_DEV( "ADMtek AN986 \"Pegasus\" USB Ethernet (eval. board)",
 		DEFAULT_GPIO_RESET | HAS_HOME_PNA )
 PEGASUS_DEV( "ADMtek AN986A USB MAC", VENDOR_ADMTEK, 0x1986,
 		DEFAULT_GPIO_RESET | PEGASUS_II )
+PEGASUS_DEV( "AEI USB Fast Ethernet Adapter", VENDOR_AEILAB, 0x1701,
+		DEFAULT_GPIO_RESET | PEGASUS_II )
 PEGASUS_DEV( "Allied Telesyn Int. AT-USB100", VENDOR_ALLIEDTEL, 0xb100,
 		DEFAULT_GPIO_RESET | PEGASUS_II )
 PEGASUS_DEV( "Belkin F5D5050 USB Ethernet", VENDOR_BELKIN, 0x0121,
@@ -193,6 +187,8 @@ PEGASUS_DEV( "Billionton USBE-100", VENDOR_BILLIONTON, 0x8511,
 		DEFAULT_GPIO_RESET | PEGASUS_II )
 PEGASUS_DEV( "Corega FEter USB-TX", VENDOR_COREGA, 0x0004,
 		DEFAULT_GPIO_RESET )
+PEGASUS_DEV( "Corega FEter", VENDOR_COREGA, 0x000d,
+		DEFAULT_GPIO_RESET | PEGASUS_II )
 PEGASUS_DEV( "D-Link DSB-650TX", VENDOR_DLINK, 0x4001,
 		LINKSYS_GPIO_RESET )
 PEGASUS_DEV( "D-Link DSB-650TX", VENDOR_DLINK, 0x4002,
@@ -207,7 +203,7 @@ PEGASUS_DEV( "D-Link DSB-650TX(PNA)", VENDOR_DLINK, 0x4003,
 		DEFAULT_GPIO_RESET | HAS_HOME_PNA )
 PEGASUS_DEV( "D-Link DSB-650", VENDOR_DLINK, 0xabc1,
 		DEFAULT_GPIO_RESET )
-PEGASUS_DEV( "ELCON EPLC10Mi USB to Powerline Adapter", VENDOR_ELCON, 0x0002,
+PEGASUS_DEV( "GOLDPFEIL USB Adapter", VENDOR_ELCON, 0x0002,
 		DEFAULT_GPIO_RESET | PEGASUS_II | HAS_HOME_PNA )
 PEGASUS_DEV( "Elsa Micolink USB2Ethernet", VENDOR_ELSA, 0x3000,
 		DEFAULT_GPIO_RESET )
@@ -256,6 +252,6 @@ PEGASUS_DEV( "SOHOware NUB100 Ethernet", VENDOR_SOHOWARE, 0x9100,
 PEGASUS_DEV( "SOHOware NUB110 Ethernet", VENDOR_SOHOWARE, 0x9110,
 		DEFAULT_GPIO_RESET | PEGASUS_II )
 PEGASUS_DEV( "SpeedStream USB 10/100 Ethernet", VENDOR_SIEMENS, 0x1001,
-		DEFAULT_GPIO_RESET )
+		DEFAULT_GPIO_RESET | PEGASUS_II )
 
 #endif	/* PEGASUS_DEV */

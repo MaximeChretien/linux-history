@@ -26,7 +26,7 @@
  *  Copyright (c) 2000-2002 LSI Logic Corporation
  *  Originally By: Noah Romer
  *
- *  $Id: mptlan.c,v 1.51 2002/02/11 14:40:55 sralston Exp $
+ *  $Id: mptlan.c,v 1.52 2002/05/06 13:45:07 sshirron Exp $
  */
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
@@ -669,7 +669,7 @@ mpt_lan_send_reply(struct net_device *dev, LANSendReply_t *pSendRep)
 
 	/* Add check for Loginfo Flag in IOCStatus */
 
-	switch (le16_to_cpu(pSendRep->IOCStatus)) {
+	switch (le16_to_cpu(pSendRep->IOCStatus) & MPI_IOCSTATUS_MASK) {
 	case MPI_IOCSTATUS_SUCCESS:
 		priv->stats.tx_packets += count;
 		break;
@@ -1045,7 +1045,8 @@ mpt_lan_receive_post_reply(struct net_device *dev,
 	dioprintk((KERN_INFO MYNAM ": receive_post_reply: IOCStatus: %04x\n",
 		 le16_to_cpu(pRecvRep->IOCStatus)));
 
-	if (le16_to_cpu(pRecvRep->IOCStatus) & MPI_IOCSTATUS_LAN_CANCELED)
+	if ((le16_to_cpu(pRecvRep->IOCStatus) & MPI_IOCSTATUS_MASK) ==
+						MPI_IOCSTATUS_LAN_CANCELED)
 		return mpt_lan_receive_post_free(dev, pRecvRep);
 
 	len = le32_to_cpu(pRecvRep->PacketLength);
@@ -1436,7 +1437,7 @@ mpt_lan_init (void)
 {
 	struct net_device *dev;
 	MPT_ADAPTER *curadapter;
-	int i = 0, j;
+	int i, j;
 
 	show_mptmod_ver(LANAME, LANVER);
 
@@ -1468,7 +1469,6 @@ mpt_lan_init (void)
 	for (j = 0; j < MPT_MAX_ADAPTERS; j++) {
 		mpt_landev[j] = NULL;
 	}
-	j = 0;
 
 	curadapter = mpt_adapter_find_first();
 	while (curadapter != NULL) {
@@ -1492,11 +1492,11 @@ mpt_lan_init (void)
 //					printk (KERN_INFO MYNAM ": %s/%s: Max_TX_outstanding = %d\n",
 //							IOC_AND_NETDEV_NAMES_s_s(dev),
 //							NETDEV_TO_LANPRIV_PTR(dev)->tx_max_out);
+					j = curadapter->id;
 					mpt_landev[j] = dev;
 					dlprintk((KERN_INFO MYNAM "/init: dev_addr=%p, mpt_landev[%d]=%p\n",
 							dev, j,  mpt_landev[j]));
 
-					j++;
 				} else {
 					printk (KERN_ERR MYNAM ": %s: Unable to register port%d as a LAN device\n",
 							curadapter->name,

@@ -18,7 +18,7 @@
 struct sbus_dma *dma_chain;
 
 /* Print out the current values in the DMA control registers */
-extern __inline__ void dump_dma_regs(unsigned long dregs)
+static inline void dump_dma_regs(unsigned long dregs)
 {
 	printk("DMA CONTROL<%08x> ADDR<%08x> CNT<%08x> TEST<%08x>\n",
 	       sbus_readl(dregs + DMA_CSR), sbus_readl(dregs + DMA_ADDR),

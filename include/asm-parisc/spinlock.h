@@ -3,23 +3,33 @@
 
 #include <asm/system.h>
 
-/* we seem to be the only architecture that uses 0 to mean locked - but we
- * have to.  prumpf */
+/* Note that PA-RISC has to use `1' to mean unlocked and `0' to mean locked
+ * since it only has load-and-zero.
+ */
 
 #undef SPIN_LOCK_UNLOCKED
 #define SPIN_LOCK_UNLOCKED (spinlock_t) { 1 }
 
 #define spin_lock_init(x)	do { (x)->lock = 1; } while(0)
 
-#define spin_unlock_wait(x)	do { barrier(); } while(((volatile spinlock_t *)(x))->lock == 1)
+#define spin_is_locked(x) ((x)->lock == 0)
 
+#define spin_unlock_wait(x)	do { barrier(); } while(((volatile spinlock_t *)(x))->lock == 0)
+
+#if 1
+#define spin_lock(x) do { \
+	while (__ldcw (&(x)->lock) == 0) \
+		while (((x)->lock) == 0) ; } while (0)
+
+#else
 #define spin_lock(x) \
 	do { while(__ldcw(&(x)->lock) == 0); } while(0)
+#endif
 	
 #define spin_unlock(x) \
 	do { (x)->lock = 1; } while(0)
 
-#define spin_trylock(x) (__ldcw(&(x)->lock) == 1)
+#define spin_trylock(x) (__ldcw(&(x)->lock) != 0)
 
 /*
  * Read-write spinlocks, allowing multiple readers
@@ -31,6 +41,8 @@ typedef struct {
 } rwlock_t;
 
 #define RW_LOCK_UNLOCKED (rwlock_t) { SPIN_LOCK_UNLOCKED, 0 }
+
+#define rwlock_init(lp)	do { *(lp) = RW_LOCK_UNLOCKED; } while (0)
 
 /* read_lock, read_unlock are pretty straightforward.  Of course it somehow
  * sucks we end up saving/restoring flags twice for read_lock_irqsave aso. */

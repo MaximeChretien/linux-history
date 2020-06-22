@@ -38,7 +38,7 @@ NESTED(handle_sys, PT_SIZE, sp)
 	sll	t0, v0, 2
 	lw	t2, sys_call_table(t0)	# syscall routine
 	lbu	t3, sys_narg_table(v0)	# number of arguments
-	beqz	t2, illegal_syscall;
+	beqz	t2, illegal_syscall
 
 	subu	t0, t3, 5		# 5 or more arguments?
 	sw	a3, PT_R26(sp)		# save a3 for syscall restarting
@@ -47,7 +47,7 @@ NESTED(handle_sys, PT_SIZE, sp)
 stack_done:
         sw      a3, PT_R26(sp)          # save for syscall restart
 	lw	t0, TASK_PTRACE($28)	# syscall tracing enabled?
-	andi	t0, PT_TRACESYS
+	andi	t0, _PT_TRACESYS
 	bnez	t0, trace_a_syscall
 
 	jalr	t2			# Do The Real Thing (TM)
@@ -61,19 +61,40 @@ stack_done:
 	sw	v0, PT_R0(sp)		# set flag for syscall restarting
 1:	sw	v0, PT_R2(sp)		# result
 
-EXPORT(o32_ret_from_sys_call)
+fast_ret_from_sys_call:
+ret_from_schedule:
 	mfc0	t0, CP0_STATUS		# need_resched and signals atomic test
 	ori	t0, t0, 1
 	xori	t0, t0, 1
 	mtc0	t0, CP0_STATUS
+	SSNOP; SSNOP; SSNOP
 
 	lw	t2, TASK_NEED_RESCHED($28)
-	bnez	t2, o32_reschedule
 	lw	v0, TASK_SIGPENDING($28)
+	bnez	t2, reschedule
 	bnez	v0, signal_return
 restore_all:
 	RESTORE_SOME
 	RESTORE_SP_AND_RET
+
+/* ------------------------------------------------------------------------ */
+
+FEXPORT(ret_from_fork)
+	move	a0, v0			# prev
+	jal	schedule_tail
+	lw	t0, TASK_PTRACE($28)	# syscall tracing enabled?
+	andi	t0, _PT_TRACESYS
+	bnez	t0, tracesys_exit
+
+static_ret_from_sys_call:
+	RESTORE_STATIC
+	j	fast_ret_from_sys_call
+
+/* ------------------------------------------------------------------------ */
+
+/* ret_from_sys_call should be here but is in entry.S.  */
+
+/* ------------------------------------------------------------------------ */
 
 /* Put this behind restore_all for the sake of the branch prediction.  */
 signal_return:
@@ -87,11 +108,14 @@ signal_return:
 	move	a0, zero
 	move	a1, sp
 	jal	do_signal
+	RESTORE_STATIC
 	b	restore_all
 
-o32_reschedule:
+/* ------------------------------------------------------------------------ */
+
+reschedule:
 	jal	schedule
-	b	o32_ret_from_sys_call
+	b	ret_from_schedule
 
 /* ------------------------------------------------------------------------ */
 
@@ -116,8 +140,9 @@ trace_a_syscall:
 	sw	v0, PT_R0(sp)		# set flag for syscall restarting
 1:	sw	v0, PT_R2(sp)		# result
 
+tracesys_exit:
 	jal	syscall_trace
-	j	ret_from_sys_call
+	j	static_ret_from_sys_call
 
 /* ------------------------------------------------------------------------ */
 
@@ -136,7 +161,7 @@ stackargs:
 	bltz	t0, bad_stack		# -> sp is bad
 
 	lw	t0, PT_R29(sp)		# get old user stack pointer
-	la	t1, 3f			# copy 1 to 2 arguments
+	PTR_LA	t1, 3f			# copy 1 to 2 arguments
 	sll	t3, t3, 4
 	subu	t1, t3
 	jr	t1
@@ -150,6 +175,7 @@ stackargs:
 	 */
 	.set    push
 	.set    noreorder
+	.set	nomacro
 1:	lw	t1, 20(t0)		# argument #6 from usp
 	nop
 	sw	t1, 20(sp)
@@ -158,43 +184,58 @@ stackargs:
 	nop
 	sw	t1, 16(sp)
 	nop
-	.set	pop
+3:	.set	pop
 
-3:	j	stack_done		# go back
+	j	stack_done		# go back
 
 	.section __ex_table,"a"
 	PTR	1b,bad_stack
 	PTR	2b,bad_stack
 	.previous
 
+/* ------------------------------------------------------------------------ */
+
 	/*
 	 * The stackpointer for a call with more than 4 arguments is bad.
 	 * We probably should handle this case a bit more drastic.
 	 */
 bad_stack:
-	negu	v0				# error
+	negu	v0			# error
 	sw	v0, PT_R0(sp)
 	sw	v0, PT_R2(sp)
-	li	t0, 1				# set error flag
+	li	t0, 1			# set error flag
 	sw	t0, PT_R7(sp)
-	j	ret_from_sys_call
+	j	fast_ret_from_sys_call
+
+/* ------------------------------------------------------------------------ */
 
 	/*
 	 * The system call does not exist in this kernel
 	 */
 illegal_syscall:
-	li	v0, ENOSYS			# error
-	sw	v0, PT_R2(sp)
-	li	t0, 1				# set error flag
-	sw	t0, PT_R7(sp)
-	j	ret_from_sys_call
-	END(handle_sys)
+	lw	t0, TASK_PTRACE($28)	# syscall tracing enabled?
+	andi	t0, _PT_TRACESYS
+	beqz	t0, 1f
 
-	LEAF(mips_atomic_set)
-	andi	v0, a1, 3			# must be word aligned
+	SAVE_STATIC
+	jal	syscall_trace
+	li	t0, _PT_TRACESYS
+
+1:	li	v0, ENOSYS		# error
+	sw	v0, PT_R0(sp)		# set flag for syscall restarting
+	sw	v0, PT_R2(sp)
+	li	t1, 1			# set error flag
+	sw	t1, PT_R7(sp)
+	bnez	t0, tracesys_exit
+
+	j	fast_ret_from_sys_call
+END(handle_sys)
+
+LEAF(mips_atomic_set)
+	andi	v0, a1, 3		# must be word aligned
 	bnez	v0, bad_alignment
 
-	lw	v1, THREAD_CURDS($28)		# in legal address range?
+	lw	v1, THREAD_CURDS($28)	# in legal address range?
 	addiu	a0, a1, 4
 	or	a0, a0, a1
 	and	a0, a0, v1
@@ -236,19 +277,17 @@ illegal_syscall:
 	.previous
 #endif
 
+	sw	zero, PT_R7(sp)		# success
 	sw	v0, PT_R2(sp)		# result
-1:
 
 	/* Success, so skip usual error handling garbage.  */
 	lw	t0, TASK_PTRACE($28)	# syscall tracing enabled?
-	andi	t0, PT_TRACESYS
-	bnez	t0, 1f
-	b	o32_ret_from_sys_call
+	andi	t0, _PT_TRACESYS
+	beqz	t0, fast_ret_from_sys_call
 
-1:	SAVE_STATIC
+	SAVE_STATIC
 	jal	syscall_trace
-	li	a3, 0			# success
-	j	ret_from_sys_call
+	j	static_ret_from_sys_call
 
 no_mem:	li	v0, -ENOMEM
 	jr	ra
@@ -260,40 +299,40 @@ bad_address:
 bad_alignment:
 	li	v0, -EINVAL
 	jr	ra
-	END(mips_atomic_set)	
+END(mips_atomic_set)
 
-	LEAF(sys_sysmips)
+LEAF(sys_sysmips)
 	beq	a0, MIPS_ATOMIC_SET, mips_atomic_set
 	j	_sys_sysmips
-	END(sys_sysmips)
+END(sys_sysmips)
 
-	LEAF(sys_syscall)
-	lw	t0, PT_R29(sp)			# user sp
+LEAF(sys_syscall)
+	lw	t0, PT_R29(sp)		# user sp
 
 	sltu	v0, a0, __NR_Linux + __NR_Linux_syscalls + 1
 	beqz	v0, enosys
 
-	sll	v0, t1, 2
+	sll	v0, a0, 2
 	la	v1, sys_syscall
-	lw	t2, sys_call_table(v0)		# function pointer
-	lbu	t4, sys_narg_table(t1)		# number of arguments
+	lw	t2, sys_call_table(v0)	# function pointer
+	lbu	t4, sys_narg_table(a0)	# number of arguments
 
 	li	v0, -EINVAL
-	beq	t2, v1, out			# do not recurse
+	beq	t2, v1, out		# do not recurse
 
-	beqz	t2, enosys			# null function pointer?
+	beqz	t2, enosys		# null function pointer?
 
-	andi	v0, t0, 0x3			# unaligned stack pointer?
+	andi	v0, t0, 0x3		# unaligned stack pointer?
 	bnez	v0, sigsegv
 
-	addu	v0, t0, 16			# v0 = usp + 16
-	addu	t1, v0, 12			# 3 32-bit arguments
+	addu	v0, t0, 16		# v0 = usp + 16
+	addu	t1, v0, 12		# 3 32-bit arguments
 	lw	v1, THREAD_CURDS($28)
 	or	v0, v0, t1
 	and	v1, v1, v0
 	bltz	v1, efault
 
-	move	a0, a1				# shit argument registers
+	move	a0, a1			# shift argument registers
 	move	a1, a2
 	move	a2, a3
 
@@ -307,11 +346,11 @@ bad_alignment:
 	.word	3b, efault
 	.previous
 
-	sw	t3, 16(sp)			# put into new stackframe
+	sw	t3, 16(sp)		# put into new stackframe
 	sw	t4, 20(sp)
 
-	bnez	t4, 1f				# zero arguments?
-	addu	a0, sp, 32			# then pass sp in a0
+	bnez	t4, 1f			# zero arguments?
+	addu	a0, sp, 32		# then pass sp in a0
 1:
 
 	sw	t3, 16(sp)
@@ -331,4 +370,4 @@ sigsegv:
 efault:	li	v0, -EFAULT
 
 out:	jr	ra
-	END(sys_syscall)
+END(sys_syscall)

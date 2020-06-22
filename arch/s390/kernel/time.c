@@ -39,6 +39,7 @@
 
 #define TICK_SIZE tick
 
+static ext_int_info_t ext_int_info_timer;
 static uint64_t init_timer_cc;
 
 extern rwlock_t xtime_lock;
@@ -224,7 +225,8 @@ void __init time_init(void)
         tod_to_timeval(set_time_cc, &xtime);
 
         /* request the 0x1004 external interrupt */
-        if (register_external_interrupt(0x1004, do_comparator_interrupt) != 0)
+        if (register_early_external_interrupt(0x1004, do_comparator_interrupt,
+					      &ext_int_info_timer) != 0)
                 panic("Couldn't request external interrupt 0x1004");
 
         /* init CPU timer */

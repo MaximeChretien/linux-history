@@ -35,6 +35,7 @@
 #include <asm/hardirq.h>
 #include <asm/div64.h>
 #include <asm/cpu.h>
+#include <asm/time.h>
 
 #include <linux/interrupt.h>
 #include <linux/mc146818rtc.h>
@@ -46,8 +47,6 @@
 static unsigned int r4k_offset; /* Amount to increment compare reg each time */
 static unsigned int r4k_cur;    /* What counter should be at next timer irq */
 
-extern unsigned int mips_counter_frequency;
-
 #define ALLINTS (IE_IRQ0 | IE_IRQ1 | IE_IRQ2 | IE_IRQ3 | IE_IRQ4 | IE_IRQ5)
 
 #if defined(CONFIG_MIPS_ATLAS)
@@ -57,7 +56,7 @@ static char display_string[] = "        LINUX ON ATLAS       ";
 static char display_string[] = "        LINUX ON MALTA       ";
 #endif
 static unsigned int display_count = 0;
-#define MAX_DISPLAY_COUNT (sizeof(display_string) - 8) 
+#define MAX_DISPLAY_COUNT (sizeof(display_string) - 8)
 
 #define MIPS_CPU_TIMER_IRQ 7
 
@@ -71,13 +70,6 @@ static inline void ack_r4ktimer(unsigned int newval)
 
 void mips_timer_interrupt(struct pt_regs *regs)
 {
-	int cpu = smp_processor_id();
-	int irq = MIPS_CPU_TIMER_IRQ;
-
-	irq_enter(cpu, irq);
-	kstat.irqs[cpu][irq]++;
-	timer_interrupt(irq, NULL, regs);
-
 	if ((timer_tick_count++ % HZ) == 0) {
 		mips_display_message(&display_string[display_count++]);
 		if (display_count == MAX_DISPLAY_COUNT)
@@ -85,15 +77,12 @@ void mips_timer_interrupt(struct pt_regs *regs)
 
 	}
 
-	irq_exit(cpu, irq);
-
-	if (softirq_pending(cpu))
-		do_softirq();
+	ll_timer_interrupt(MIPS_CPU_TIMER_IRQ, regs);
 }
 
-/* 
+/*
  * Figure out the r4k offset, the amount to increment the compare
- * register for each time tick. 
+ * register for each time tick.
  * Use the RTC to calculate offset.
  */
 static unsigned int __init cal_r4koff(void)
@@ -141,7 +130,7 @@ unsigned long __init mips_rtc_get_time(void)
 		if ((hour & 0xf) == 0xc)
 		        hour &= 0x80;
 	        if (hour & 0x80)
-		        hour = (hour & 0xf) + 12;     
+		        hour = (hour & 0xf) + 12;
 	}
 	day = CMOS_READ(RTC_DAY_OF_MONTH);
 	mon = CMOS_READ(RTC_MONTH);
@@ -162,14 +151,14 @@ void __init mips_time_init(void)
 
 	__save_and_cli(flags);
 
-        /* Set Data mode - binary. */ 
+        /* Set Data mode - binary. */
         CMOS_WRITE(CMOS_READ(RTC_CONTROL) | RTC_DM_BINARY, RTC_CONTROL);
 
 	printk("calculating r4koff... ");
 	r4k_offset = cal_r4koff();
 	printk("%08x(%d)\n", r4k_offset, r4k_offset);
 
-        if ((read_32bit_cp0_register(CP0_PRID) & 0xffff00) == 
+        if ((read_32bit_cp0_register(CP0_PRID) & 0xffff00) ==
 	    (PRID_COMP_MIPS | PRID_IMP_20KC))
 		est_freq = r4k_offset*HZ;
 	else
@@ -177,7 +166,7 @@ void __init mips_time_init(void)
 
 	est_freq += 5000;    /* round */
 	est_freq -= est_freq%10000;
-	printk("CPU frequency %d.%02d MHz\n", est_freq/1000000, 
+	printk("CPU frequency %d.%02d MHz\n", est_freq/1000000,
 	       (est_freq%1000000)*100/1000000);
 
 	__restore_flags(flags);

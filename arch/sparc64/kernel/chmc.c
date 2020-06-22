@@ -420,7 +420,7 @@ static int __init chmc_init(void)
 	int index;
 
 	/* This driver is only for cheetah platforms. */
-	if (tlb_type != cheetah)
+	if (tlb_type != cheetah && tlb_type != cheetah_plus)
 		return -ENODEV;
 
 	index = probe_for_string("memory-controller", 0);

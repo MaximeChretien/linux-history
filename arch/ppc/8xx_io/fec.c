@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.fec.c 1.20 10/11/01 11:55:47 trini
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
  * Fast Ethernet Controller (FEC) driver for Motorola MPC8xx.
@@ -33,6 +33,8 @@
 #undef	CONFIG_FEC_LXT970
 #define	CONFIG_FEC_LXT971
 #undef	CONFIG_FEC_QS6612
+#undef	CONFIG_FEC_DP83843
+#undef	CONFIG_FEC_DP83846A
 
 #include <linux/config.h>
 #include <linux/kernel.h>
@@ -50,9 +52,8 @@
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
 #include <linux/spinlock.h>
-#ifdef CONFIG_FEC_PACKETHOOK
-#include <linux/pkthook.h>
-#endif
+#include <linux/mii.h>
+#include <linux/ethtool.h>
 
 #include <asm/8xx_immap.h>
 #include <asm/pgtable.h>
@@ -68,7 +69,7 @@
 
 typedef struct {
 	uint mii_data;
-	void (*funct)(uint mii_reg, struct net_device *dev);
+	void (*funct)(uint mii_reg, struct net_device *dev, uint data);
 } phy_cmd_t;
 
 typedef struct {
@@ -179,20 +180,14 @@ struct fec_enet_private {
 	uint	sequence_done;
 
 	uint	phy_addr;
+
+	struct timer_list phy_timer_list;
+	u16 old_status;
 #endif	/* CONFIG_USE_MDIO */
 
 	int	link;
 	int	old_link;
 	int	full_duplex;
-
-#ifdef CONFIG_FEC_PACKETHOOK
-	unsigned long	ph_lock;
-	fec_ph_func	*ph_rxhandler;
-	fec_ph_func	*ph_txhandler;
-	__u16		ph_proto;
-	volatile __u32	*ph_regaddr;
-	void 		*ph_priv;
-#endif
 };
 
 static int fec_enet_open(struct net_device *dev);
@@ -201,13 +196,8 @@ static int fec_enet_start_xmit(struct sk_buff *skb, struct net_device *dev);
 static void fec_enet_mii(struct net_device *dev);
 #endif	/* CONFIG_USE_MDIO */
 static void fec_enet_interrupt(int irq, void * dev_id, struct pt_regs * regs);
-#ifdef CONFIG_FEC_PACKETHOOK
-static void  fec_enet_tx(struct net_device *dev, __u32 regval);
-static void  fec_enet_rx(struct net_device *dev, __u32 regval);
-#else
 static void  fec_enet_tx(struct net_device *dev);
 static void  fec_enet_rx(struct net_device *dev);
-#endif
 static int fec_enet_close(struct net_device *dev);
 static struct net_device_stats *fec_enet_get_stats(struct net_device *dev);
 static void set_multicast_list(struct net_device *dev);
@@ -216,14 +206,25 @@ static void fec_stop(struct net_device *dev);
 static	ushort	my_enet_addr[3];
 
 #ifdef	CONFIG_USE_MDIO
+static int fec_enet_ioctl(struct net_device *dev, struct ifreq *rq, int cmd);
+static int netdev_ethtool_ioctl(struct net_device *dev, void *useraddr);
+
+static void mdio_callback(uint regval, struct net_device *dev, uint data);
+static int mdio_read(struct net_device *dev, int phy_id, int location);
+
+#if defined(CONFIG_FEC_DP83846A)
+static void mdio_timer_callback(unsigned long data);
+#endif /* CONFIG_FEC_DP83846A */
+
 /* MII processing.  We keep this as simple as possible.  Requests are
  * placed on the list (if there is room).  When the request is finished
  * by the MII, an optional function may be called.
  */
 typedef struct mii_list {
 	uint	mii_regval;
-	void	(*mii_func)(uint val, struct net_device *dev);
+	void	(*mii_func)(uint val, struct net_device *dev, uint data);
 	struct	mii_list *mii_next;
+	uint	mii_data;
 } mii_list_t;
 
 #define		NMII	20
@@ -232,8 +233,14 @@ mii_list_t	*mii_free;
 mii_list_t	*mii_head;
 mii_list_t	*mii_tail;
 
+typedef struct mdio_read_data {
+	u16 regval;
+	struct task_struct *sleeping_task;
+} mdio_read_data_t;
+
 static int	mii_queue(struct net_device *dev, int request,
-				void (*func)(uint, struct net_device *));
+				void (*func)(uint, struct net_device *, uint), uint data);
+static void mii_queue_relink(uint mii_reg, struct net_device *dev, uint data);
 
 /* Make MII read/write commands for the FEC.
 */
@@ -280,65 +287,6 @@ static int	mii_queue(struct net_device *dev, int request,
 #define PHY_STAT_100HDX	0x4000  /* 100 Mbit half duplex selected */
 #define PHY_STAT_100FDX	0x8000  /* 100 Mbit full duplex selected */
 #endif	/* CONFIG_USE_MDIO */
-
-#ifdef CONFIG_FEC_PACKETHOOK
-int
-fec_register_ph(struct net_device *dev, fec_ph_func *rxfun, fec_ph_func *txfun,
-		__u16 proto, volatile __u32 *regaddr, void *priv)
-{
-	struct fec_enet_private *fep;
-	int retval = 0;
-
-	fep = dev->priv;
-
-	if (test_and_set_bit(0, (void*)&fep->ph_lock) != 0) {
-		/* Someone is messing with the packet hook */
-		return -EAGAIN;
-	}
-	if (fep->ph_rxhandler != NULL || fep->ph_txhandler != NULL) {
-		retval = -EBUSY;
-		goto out;
-	}
-	fep->ph_rxhandler = rxfun;
-	fep->ph_txhandler = txfun;
-	fep->ph_proto = proto;
-	fep->ph_regaddr = regaddr;
-	fep->ph_priv = priv;
-
-	out:
-	fep->ph_lock = 0;
-
-	return retval;
-}
-
-
-int
-fec_unregister_ph(struct net_device *dev)
-{
-	struct fec_enet_private *fep;
-	int retval = 0;
-
-	fep = dev->priv;
-
-	if (test_and_set_bit(0, (void*)&fep->ph_lock) != 0) {
-		/* Someone is messing with the packet hook */
-		return -EAGAIN;
-	}
-
-	fep->ph_rxhandler = fep->ph_txhandler = NULL;
-	fep->ph_proto = 0;
-	fep->ph_regaddr = NULL;
-	fep->ph_priv = NULL;
-
-	fep->ph_lock = 0;
-
-	return retval;
-}
-
-EXPORT_SYMBOL(fec_register_ph);
-EXPORT_SYMBOL(fec_unregister_ph);
-
-#endif /* CONFIG_FEC_PACKETHOOK */
 
 static int
 fec_enet_start_xmit(struct sk_buff *skb, struct net_device *dev)
@@ -477,12 +425,6 @@ fec_enet_interrupt(int irq, void * dev_id, struct pt_regs * regs)
 	struct	net_device *dev = dev_id;
 	volatile fec_t	*fecp;
 	uint	int_events;
-#ifdef CONFIG_FEC_PACKETHOOK
-	struct	fec_enet_private *fep = dev->priv;
-	__u32 regval;
-
-	if (fep->ph_regaddr) regval = *fep->ph_regaddr;
-#endif
 	fecp = (volatile fec_t*)dev->base_addr;
 
 	/* Get the interrupt events that caused us to be here.
@@ -496,25 +438,15 @@ fec_enet_interrupt(int irq, void * dev_id, struct pt_regs * regs)
 
 		/* Handle receive event in its own function.
 		 */
-		if (int_events & FEC_ENET_RXF) {
-#ifdef CONFIG_FEC_PACKETHOOK
-			fec_enet_rx(dev, regval);
-#else
+		if (int_events & FEC_ENET_RXF)
 			fec_enet_rx(dev);
-#endif
-		}
 
 		/* Transmit OK, or non-fatal error. Update the buffer
 		   descriptors. FEC handles all errors, we just discover
 		   them as part of the transmit process.
 		*/
-		if (int_events & FEC_ENET_TXF) {
-#ifdef CONFIG_FEC_PACKETHOOK
-			fec_enet_tx(dev, regval);
-#else
+		if (int_events & FEC_ENET_TXF)
 			fec_enet_tx(dev);
-#endif
-		}
 
 		if (int_events & FEC_ENET_MII) {
 #ifdef	CONFIG_USE_MDIO
@@ -529,11 +461,7 @@ printk("%s[%d] %s: unexpected FEC_ENET_MII event\n", __FILE__,__LINE__,__FUNCTIO
 
 
 static void
-#ifdef CONFIG_FEC_PACKETHOOK
-fec_enet_tx(struct net_device *dev, __u32 regval)
-#else
 fec_enet_tx(struct net_device *dev)
-#endif
 {
 	struct	fec_enet_private *fep;
 	volatile cbd_t	*bdp;
@@ -562,18 +490,8 @@ fec_enet_tx(struct net_device *dev)
 				fep->stats.tx_fifo_errors++;
 			if (bdp->cbd_sc & BD_ENET_TX_CSL) /* Carrier lost */
 				fep->stats.tx_carrier_errors++;
-		} else {
-#ifdef CONFIG_FEC_PACKETHOOK
-			/* Packet hook ... */
-			if (fep->ph_txhandler &&
-			    ((struct ethhdr *)skb->data)->h_proto
-			    == fep->ph_proto) {
-				fep->ph_txhandler((__u8*)skb->data, skb->len,
-						  regval, fep->ph_priv);
-			}
-#endif
+		} else
 			fep->stats.tx_packets++;
-		}
 
 #ifndef final_version
 		if (bdp->cbd_sc & BD_ENET_TX_READY)
@@ -609,11 +527,6 @@ printk("TXI: %x %x %x\n", bdp, skb, fep->skb_dirty);
 			if (netif_queue_stopped(dev))
 				netif_wake_queue(dev);
 		}
-#ifdef CONFIG_FEC_PACKETHOOK
-		/* Re-read register. Not exactly guaranteed to be correct,
-		   but... */
-		if (fep->ph_regaddr) regval = *fep->ph_regaddr;
-#endif
 	}
 	fep->dirty_tx = (cbd_t *)bdp;
 	spin_unlock(&fep->lock);
@@ -626,11 +539,7 @@ printk("TXI: %x %x %x\n", bdp, skb, fep->skb_dirty);
  * effectively tossing the packet.
  */
 static void
-#ifdef CONFIG_FEC_PACKETHOOK
-fec_enet_rx(struct net_device *dev, __u32 regval)
-#else
 fec_enet_rx(struct net_device *dev)
-#endif
 {
 	struct	fec_enet_private *fep;
 	volatile fec_t	*fecp;
@@ -690,27 +599,6 @@ while (!(bdp->cbd_sc & BD_ENET_RX_EMPTY)) {
 	fep->stats.rx_bytes += pkt_len;
 	data = (__u8*)__va(bdp->cbd_bufaddr);
 
-#ifdef CONFIG_FEC_PACKETHOOK
-	/* Packet hook ... */
-	if (fep->ph_rxhandler) {
-		if (((struct ethhdr *)data)->h_proto == fep->ph_proto) {
-			switch (fep->ph_rxhandler(data, pkt_len, regval,
-						  fep->ph_priv)) {
-			case 1:
-				goto rx_processing_done;
-				break;
-			case 0:
-				break;
-			default:
-				fep->stats.rx_errors++;
-				goto rx_processing_done;
-			}
-		}
-	}
-
-	/* If it wasn't filtered - copy it to an sk buffer. */
-#endif
-
 	/* This does 16 byte alignment, exactly what we need.
 	 * The packet length includes FCS, but we don't want to
 	 * include that when passing upstream as it messes up
@@ -754,11 +642,6 @@ while (!(bdp->cbd_sc & BD_ENET_RX_EMPTY)) {
 	 */
 	fecp->fec_r_des_active = 0x01000000;
 #endif
-#ifdef CONFIG_FEC_PACKETHOOK
-	/* Re-read register. Not exactly guaranteed to be correct,
-	   but... */
-	if (fep->ph_regaddr) regval = *fep->ph_regaddr;
-#endif
    } /* while (!(bdp->cbd_sc & BD_ENET_RX_EMPTY)) */
 	fep->cur_rx = (cbd_t *)bdp;
 
@@ -794,7 +677,7 @@ fec_enet_mii(struct net_device *dev)
 	}
 
 	if (mip->mii_func != NULL)
-		(*(mip->mii_func))(mii_reg, dev);
+		(*(mip->mii_func))(mii_reg, dev, mip->mii_data);
 
 	mii_head = mip->mii_next;
 	mip->mii_next = mii_free;
@@ -806,7 +689,7 @@ fec_enet_mii(struct net_device *dev)
 }
 
 static int
-mii_queue(struct net_device *dev, int regval, void (*func)(uint, struct net_device *))
+mii_queue(struct net_device *dev, int regval, void (*func)(uint, struct net_device *, uint), uint data)
 {
 	struct fec_enet_private *fep;
 	unsigned long	flags;
@@ -828,6 +711,7 @@ mii_queue(struct net_device *dev, int regval, void (*func)(uint, struct net_devi
 		mip->mii_regval = regval;
 		mip->mii_func = func;
 		mip->mii_next = NULL;
+		mip->mii_data = data;
 		if (mii_head) {
 			mii_tail->mii_next = mip;
 			mii_tail = mip;
@@ -852,10 +736,10 @@ static void mii_do_cmd(struct net_device *dev, const phy_cmd_t *c)
 		return;
 
 	for(k = 0; (c+k)->mii_data != mk_mii_end; k++)
-		mii_queue(dev, (c+k)->mii_data, (c+k)->funct);
+		mii_queue(dev, (c+k)->mii_data, (c+k)->funct, 0);
 }
 
-static void mii_parse_sr(uint mii_reg, struct net_device *dev)
+static void mii_parse_sr(uint mii_reg, struct net_device *dev, uint data)
 {
 	struct fec_enet_private *fep = dev->priv;
 	volatile uint *s = &(fep->phy_status);
@@ -872,7 +756,7 @@ static void mii_parse_sr(uint mii_reg, struct net_device *dev)
 	fep->link = (*s & PHY_STAT_LINK) ? 1 : 0;
 }
 
-static void mii_parse_cr(uint mii_reg, struct net_device *dev)
+static void mii_parse_cr(uint mii_reg, struct net_device *dev, uint data)
 {
 	struct fec_enet_private *fep = dev->priv;
 	volatile uint *s = &(fep->phy_status);
@@ -885,7 +769,7 @@ static void mii_parse_cr(uint mii_reg, struct net_device *dev)
 		*s |= PHY_CONF_LOOP;
 }
 
-static void mii_parse_anar(uint mii_reg, struct net_device *dev)
+static void mii_parse_anar(uint mii_reg, struct net_device *dev, uint data)
 {
 	struct fec_enet_private *fep = dev->priv;
 	volatile uint *s = &(fep->phy_status);
@@ -919,7 +803,7 @@ static void mii_disp_reg(uint mii_reg, struct net_device *dev)
 #define MII_LXT970_CONFIG    19  /* Configuration Register    */
 #define MII_LXT970_CSR       20  /* Chip Status Register      */
 
-static void mii_parse_lxt970_csr(uint mii_reg, struct net_device *dev)
+static void mii_parse_lxt970_csr(uint mii_reg, struct net_device *dev, uint data)
 {
 	struct fec_enet_private *fep = dev->priv;
 	volatile uint *s = &(fep->phy_status);
@@ -1001,7 +885,7 @@ static phy_info_t phy_info_lxt970 = {
  * weird, so 2.5 MHz ought to be enough for anyone...
  */
 
-static void mii_parse_lxt971_sr2(uint mii_reg, struct net_device *dev)
+static void mii_parse_lxt971_sr2(uint mii_reg, struct net_device *dev, uint data)
 {
 	struct fec_enet_private *fep = dev->priv;
 	volatile uint *s = &(fep->phy_status);
@@ -1079,7 +963,7 @@ static phy_info_t phy_info_lxt971 = {
 #define MII_QS6612_IMR       30  /* Interrupt Mask Register    */
 #define MII_QS6612_PCR       31  /* 100BaseTx PHY Control Reg. */
 
-static void mii_parse_qs6612_pcr(uint mii_reg, struct net_device *dev)
+static void mii_parse_qs6612_pcr(uint mii_reg, struct net_device *dev, uint data)
 {
 	struct fec_enet_private *fep = dev->priv;
 	volatile uint *s = &(fep->phy_status);
@@ -1141,6 +1025,144 @@ static phy_info_t phy_info_qs6612 = {
 #endif /* CONFIG_FEC_QS6612 */
 
 
+/* -------------------------------------------------------------------- */
+/* The National Semiconductor DP83843BVJE is used on a Mediatrix board  */
+/* -------------------------------------------------------------------- */
+
+#ifdef CONFIG_FEC_DP83843
+
+/* Register definitions */
+#define MII_DP83843_PHYSTS 0x10  /* PHY Status Register */
+#define MII_DP83843_MIPSCR 0x11  /* Specific Status Register */
+#define MII_DP83843_MIPGSR 0x12  /* Generic Status Register */
+
+static void mii_parse_dp83843_physts(uint mii_reg, struct net_device *dev, uint data)
+{
+	struct fec_enet_private *fep = dev->priv;
+	volatile uint *s = &(fep->phy_status);
+
+	*s &= ~(PHY_STAT_SPMASK);
+
+	if (mii_reg & 0x0002)
+	{
+		if (mii_reg & 0x0004)
+			*s |= PHY_STAT_10FDX;
+		else
+			*s |= PHY_STAT_10HDX;
+	}
+	else
+	{
+		if (mii_reg & 0x0004)
+			*s |= PHY_STAT_100FDX;
+		else
+			*s |= PHY_STAT_100HDX;
+	}
+}
+
+static phy_info_t phy_info_dp83843 = {
+	0x020005c1,
+	"DP83843BVJE",
+
+	(const phy_cmd_t []) {  /* config */  
+		{ mk_mii_write(MII_REG_ANAR, 0x01E1), NULL  }, /* Auto-Negociation Register Control set to    */
+		                                               /* auto-negociate 10/100MBps, Half/Full duplex */
+		{ mk_mii_read(MII_REG_CR),   mii_parse_cr   },
+		{ mk_mii_read(MII_REG_ANAR), mii_parse_anar },
+		{ mk_mii_end, }
+	},
+	(const phy_cmd_t []) {  /* startup */
+		{ mk_mii_write(MII_DP83843_MIPSCR, 0x0002), NULL }, /* Enable interrupts */
+		{ mk_mii_write(MII_REG_CR, 0x1200), NULL         }, /* Enable and Restart Auto-Negotiation */
+		{ mk_mii_read(MII_REG_SR), mii_parse_sr	         },
+		{ mk_mii_read(MII_REG_CR), mii_parse_cr },
+		{ mk_mii_read(MII_DP83843_PHYSTS), mii_parse_dp83843_physts },
+		{ mk_mii_end, }
+	},
+	(const phy_cmd_t []) { /* ack_int */
+		{ mk_mii_read(MII_DP83843_MIPGSR), NULL },  /* Acknowledge interrupts */
+		{ mk_mii_read(MII_REG_SR), mii_parse_sr },  /* Find out the current status */
+		{ mk_mii_read(MII_REG_CR), mii_parse_cr },
+		{ mk_mii_read(MII_DP83843_PHYSTS), mii_parse_dp83843_physts },
+		{ mk_mii_end, }
+	},
+	(const phy_cmd_t []) {  /* shutdown - disable interrupts */
+		{ mk_mii_end, }
+	}
+};
+
+#endif /* CONFIG_FEC_DP83843 */
+
+
+/* ----------------------------------------------------------------- */
+/* The National Semiconductor DP83846A is used on a Mediatrix board  */
+/* ----------------------------------------------------------------- */
+
+#ifdef CONFIG_FEC_DP83846A
+
+/* Register definitions */
+#define MII_DP83846A_PHYSTS 0x10  /* PHY Status Register */
+
+static void mii_parse_dp83846a_physts(uint mii_reg, struct net_device *dev, uint data)
+{
+	struct fec_enet_private *fep = (struct fec_enet_private *)dev->priv;
+	volatile uint *s = &(fep->phy_status);
+	int link_change_mask;
+
+	*s &= ~(PHY_STAT_SPMASK);
+
+	if (mii_reg & 0x0002) {
+		if (mii_reg & 0x0004)
+			*s |= PHY_STAT_10FDX;
+		else
+			*s |= PHY_STAT_10HDX;
+	}
+	else {
+		if (mii_reg & 0x0004)
+			*s |= PHY_STAT_100FDX;
+		else
+			*s |= PHY_STAT_100HDX;
+	}
+
+	link_change_mask = PHY_STAT_LINK | PHY_STAT_10FDX | PHY_STAT_10HDX | PHY_STAT_100FDX | PHY_STAT_100HDX;
+	if(fep->old_status != (link_change_mask & *s))
+	{
+		fep->old_status = (link_change_mask & *s);
+		mii_queue_relink(mii_reg, dev, 0);
+	}
+}
+
+static phy_info_t phy_info_dp83846a = {
+	0x020005c2,
+	"DP83846A",
+
+	(const phy_cmd_t []) {  /* config */  
+		{ mk_mii_write(MII_REG_ANAR, 0x01E1), NULL  }, /* Auto-Negociation Register Control set to    */
+		                                               /* auto-negociate 10/100MBps, Half/Full duplex */
+		{ mk_mii_read(MII_REG_CR),   mii_parse_cr   },
+		{ mk_mii_read(MII_REG_ANAR), mii_parse_anar },
+		{ mk_mii_end, }
+	},
+	(const phy_cmd_t []) {  /* startup */
+		{ mk_mii_write(MII_REG_CR, 0x1200), NULL }, /* Enable and Restart Auto-Negotiation */
+		{ mk_mii_read(MII_REG_SR), mii_parse_sr },
+		{ mk_mii_read(MII_REG_CR), mii_parse_cr   },
+		{ mk_mii_read(MII_DP83846A_PHYSTS), mii_parse_dp83846a_physts },
+		{ mk_mii_end, }
+	},
+	(const phy_cmd_t []) { /* ack_int */
+		{ mk_mii_read(MII_REG_SR), mii_parse_sr },
+		{ mk_mii_read(MII_REG_CR), mii_parse_cr   },
+		{ mk_mii_read(MII_DP83846A_PHYSTS), mii_parse_dp83846a_physts },
+		{ mk_mii_end, }
+	},
+	(const phy_cmd_t []) {  /* shutdown - disable interrupts */
+		{ mk_mii_end, }
+	}
+};
+
+#endif /* CONFIG_FEC_DP83846A */
+
+
 static phy_info_t *phy_info[] = {
 
 #ifdef CONFIG_FEC_LXT970
@@ -1154,6 +1176,14 @@ static phy_info_t *phy_info[] = {
 #ifdef CONFIG_FEC_QS6612
 	&phy_info_qs6612,
 #endif /* CONFIG_FEC_LXT971 */
+
+#ifdef CONFIG_FEC_DP83843
+	&phy_info_dp83843,
+#endif /* CONFIG_FEC_DP83843 */
+
+#ifdef CONFIG_FEC_DP83846A
+	&phy_info_dp83846a,
+#endif /* CONFIG_FEC_DP83846A */
 
 	NULL
 };
@@ -1250,7 +1280,7 @@ static void mii_relink(struct net_device *dev)
 
 }
 
-static void mii_queue_relink(uint mii_reg, struct net_device *dev)
+static void mii_queue_relink(uint mii_reg, struct net_device *dev, uint data)
 {
 	struct fec_enet_private *fep = dev->priv;
 
@@ -1259,7 +1289,7 @@ static void mii_queue_relink(uint mii_reg, struct net_device *dev)
 	schedule_task(&fep->phy_task);
 }
 
-static void mii_queue_config(uint mii_reg, struct net_device *dev)
+static void mii_queue_config(uint mii_reg, struct net_device *dev, uint data)
 {
 	struct fec_enet_private *fep = dev->priv;
 
@@ -1280,7 +1310,7 @@ phy_cmd_t phy_cmd_config[] = { { mk_mii_read(MII_REG_CR), mii_queue_config },
 /* Read remainder of PHY ID.
 */
 static void
-mii_discover_phy3(uint mii_reg, struct net_device *dev)
+mii_discover_phy3(uint mii_reg, struct net_device *dev, uint data)
 {
 	struct fec_enet_private *fep;
 	int	i;
@@ -1307,7 +1337,7 @@ mii_discover_phy3(uint mii_reg, struct net_device *dev)
  * with a valid ID.  This usually happens quickly.
  */
 static void
-mii_discover_phy(uint mii_reg, struct net_device *dev)
+mii_discover_phy(uint mii_reg, struct net_device *dev, uint data)
 {
 	struct fec_enet_private *fep;
 	uint	phytype;
@@ -1319,12 +1349,12 @@ mii_discover_phy(uint mii_reg, struct net_device *dev)
 		/* Got first part of ID, now get remainder.
 		*/
 		fep->phy_id = phytype << 16;
-		mii_queue(dev, mk_mii_read(MII_REG_PHYIR2), mii_discover_phy3);
+		mii_queue(dev, mk_mii_read(MII_REG_PHYIR2), mii_discover_phy3, 0);
 	} else {
 		fep->phy_addr++;
 		if (fep->phy_addr < 32) {
 			mii_queue(dev, mk_mii_read(MII_REG_PHYIR1),
-							mii_discover_phy);
+							mii_discover_phy, 0);
 		} else {
 			printk("fec: No PHY device found.\n");
 		}
@@ -1387,13 +1417,40 @@ fec_enet_open(struct net_device *dev)
 	fep->link = 0;
 
 	if (fep->phy) {
-		mii_do_cmd(dev, fep->phy->ack_int);
 		mii_do_cmd(dev, fep->phy->config);
 		mii_do_cmd(dev, phy_cmd_config);  /* display configuration */
 		while(!fep->sequence_done)
 			schedule();
 
 		mii_do_cmd(dev, fep->phy->startup);
+
+#if defined(CONFIG_USE_MDIO) && defined(CONFIG_FEC_DP83846A)
+		if(fep->phy == &phy_info_dp83846a)
+		{
+			/* Initializing timers
+			 */
+			init_timer( &fep->phy_timer_list ); 
+
+			/* Starting timer for periodic link status check
+			 * After 100 milli-seconds, mdio_timer_callback function is called.
+			 */
+			fep->phy_timer_list.expires  = jiffies + (100 * HZ / 1000);
+			fep->phy_timer_list.data     = (unsigned long)dev;
+			fep->phy_timer_list.function = mdio_timer_callback;
+			add_timer( &fep->phy_timer_list );
+		}
+
+#if defined(CONFIG_IP_PNP)
+        printk("%s: Waiting for the link to be up...\n", dev->name);
+
+        while(fep->link == 0 || ((((volatile fec_t*)dev->base_addr)->fec_ecntrl & FEC_ECNTRL_ETHER_EN) == 0))
+        {
+            schedule();
+        }
+#endif /* CONFIG_IP_PNP */
+
+#endif /* CONFIG_USE_MDIO && CONFIG_FEC_DP83846A */
+
 		netif_start_queue(dev);
 		return 0;		/* Success */
 	}
@@ -1423,6 +1480,139 @@ static struct net_device_stats *fec_enet_get_stats(struct net_device *dev)
 
 	return &fep->stats;
 }
+
+#ifdef CONFIG_USE_MDIO
+
+#if defined(CONFIG_FEC_DP83846A)
+/* Execute the ack_int command set and schedules next timer call back.  */
+static void mdio_timer_callback(unsigned long data)
+{
+	struct net_device *dev = (struct net_device *)data;
+	struct fec_enet_private *fep = (struct fec_enet_private *)(dev->priv);
+	mii_do_cmd(dev, fep->phy->ack_int);
+
+	if(fep->link == 0)
+	{
+		fep->phy_timer_list.expires  = jiffies + (100 * HZ / 1000); /* Sleep for 100ms */
+	}
+	else
+	{
+		fep->phy_timer_list.expires  = jiffies + (1 * HZ); /* Sleep for 1 sec. */
+	}
+	add_timer( &fep->phy_timer_list ); 
+}
+#endif /* CONFIG_FEC_DP83846A */
+
+static void mdio_callback(uint regval, struct net_device *dev, uint data)
+{
+	mdio_read_data_t* mrd = (mdio_read_data_t *)data;
+	mrd->regval = 0xFFFF & regval;
+	wake_up_process(mrd->sleeping_task);
+}
+
+static int mdio_read(struct net_device *dev, int phy_id, int location)
+{
+	uint retval;
+	mdio_read_data_t* mrd = (mdio_read_data_t *)kmalloc(sizeof(*mrd), GFP_KERNEL);
+
+	mrd->sleeping_task = current;
+	set_current_state(TASK_INTERRUPTIBLE);
+	mii_queue(dev, mk_mii_read(location), mdio_callback, (unsigned int) mrd);
+	schedule();
+
+	retval = mrd->regval;
+
+	kfree(mrd);
+
+	return retval;
+}
+
+void mdio_write(struct net_device *dev, int phy_id, int location, int value)
+{
+	mii_queue(dev, mk_mii_write(location, value), NULL, 0);
+}
+
+static int fec_enet_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
+{
+	struct fec_enet_private *cep = (struct fec_enet_private *)dev->priv;
+	struct mii_ioctl_data *data = (struct mii_ioctl_data *)&rq->ifr_data;
+
+	int phy = cep->phy_addr & 0x1f;
+	int retval;
+
+	if (data == NULL)
+	{
+		retval = -EINVAL;
+	}
+	else
+	{
+		switch(cmd)
+		{						
+		case SIOCETHTOOL:
+			return netdev_ethtool_ioctl(dev, (void*)rq->ifr_data);
+			break;
+
+		case SIOCGMIIPHY:			/* Get address of MII PHY in use. */
+		case SIOCDEVPRIVATE:		/* for binary compat, remove in 2.5 */
+			data->phy_id = phy;
+
+		case SIOCGMIIREG:			/* Read MII PHY register.	*/
+		case SIOCDEVPRIVATE+1:		/* for binary compat, remove in 2.5 */
+			data->val_out = mdio_read(dev, data->phy_id & 0x1f, data->reg_num & 0x1f);
+			retval = 0;
+			break;
+
+		case SIOCSMIIREG:			/* Write MII PHY register.	*/
+		case SIOCDEVPRIVATE+2:		/* for binary compat, remove in 2.5 */
+			if (!capable(CAP_NET_ADMIN))
+			{
+				retval = -EPERM;
+			}
+			else
+			{
+				mdio_write(dev, data->phy_id & 0x1f, data->reg_num & 0x1f, data->val_in);
+				retval = 0;
+			}
+			break;
+
+		default:
+			retval = -EOPNOTSUPP;
+			break;
+		}		
+	}
+	return retval;
+}
+
+
+static int netdev_ethtool_ioctl (struct net_device *dev, void *useraddr)
+{
+	u32 ethcmd;
+
+	/* dev_ioctl() in ../../net/core/dev.c has already checked
+	   capable(CAP_NET_ADMIN), so don't bother with that here.  */
+
+	if (copy_from_user (&ethcmd, useraddr, sizeof (ethcmd)))
+		return -EFAULT;
+
+	switch (ethcmd) {
+	case ETHTOOL_GDRVINFO:
+		{
+			struct ethtool_drvinfo info = { ETHTOOL_GDRVINFO };
+			strcpy (info.driver, dev->name);
+			strcpy (info.version, "0.2");
+			strcpy (info.bus_info, "");
+			if (copy_to_user (useraddr, &info, sizeof (info)))
+				return -EFAULT;
+			return 0;
+		}
+	default:
+		break;
+	}
+
+	return -EOPNOTSUPP;
+}
+
+#endif	/* CONFIG_USE_MDIO */
 
 /* Set or clear the multicast filter for this adaptor.
  * Skeleton taken from sunlance driver.
@@ -1624,16 +1814,7 @@ int __init fec_enet_init(void)
 	bdp--;
 	bdp->cbd_sc |= BD_SC_WRAP;
 
-#ifdef CONFIG_FEC_PACKETHOOK
-	fep->ph_lock = 0;
-	fep->ph_rxhandler = fep->ph_txhandler = NULL;
-	fep->ph_proto = 0;
-	fep->ph_regaddr = NULL;
-	fep->ph_priv = NULL;
-#endif
-
-	/* Install our interrupt handler.
-	*/
+	/* Install our interrupt handler. */
 	if (request_8xxirq(FEC_INTERRUPT, fec_enet_interrupt, 0, "fec", dev) != 0)
 		panic("Could not allocate FEC IRQ!");
 
@@ -1672,6 +1853,8 @@ int __init fec_enet_init(void)
 	dev->set_multicast_list = set_multicast_list;
 
 #ifdef	CONFIG_USE_MDIO
+	dev->do_ioctl = fec_enet_ioctl;
+
 	for (i=0; i<NMII-1; i++)
 		mii_cmds[i].mii_next = &mii_cmds[i+1];
 	mii_free = mii_cmds;
@@ -1722,8 +1905,10 @@ int __init fec_enet_init(void)
 	 */
 	fep->phy_id_done = 0;
 	fep->phy_addr = 0;
-	mii_queue(dev, mk_mii_read(MII_REG_PHYIR1), mii_discover_phy);
+	mii_queue(dev, mk_mii_read(MII_REG_PHYIR1), mii_discover_phy, 0);
 #endif	/* CONFIG_USE_MDIO */
+
+	fep->old_status = 0;
 
 	return 0;
 }
@@ -1862,6 +2047,13 @@ fec_restart(struct net_device *dev, int duplex)
 	*/
 	fecp->fec_ecntrl = FEC_ECNTRL_PINMUX | FEC_ECNTRL_ETHER_EN;
 	fecp->fec_r_des_active = 0x01000000;
+
+	/* The tx ring is no longer full. */
+	if(fep->tx_full)
+	{
+		fep->tx_full = 0;
+		netif_wake_queue(dev);
+	}
 }
 
 static void

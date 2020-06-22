@@ -1,23 +1,23 @@
 /*  *********************************************************************
     *  SB1250 Board Support Package
-    *  
+    *
     *  MAC constants and macros			File: sb1250_mac.h
-    *  
+    *
     *  This module contains constants and macros for the SB1250's
     *  ethernet controllers.
-    *  
-    *  SB1250 specification level:  0.2 plus errata as of 4/10/2001
-    *  
-    *  Author:  Mitch Lichtenberg (mitch@sibyte.com)
-    *  
-    *********************************************************************  
+    *
+    *  SB1250 specification level:  User's manual 1/02/02
+    *
+    *  Author:  Mitch Lichtenberg (mpl@broadcom.com)
+    *
+    *********************************************************************
     *
     *  Copyright 2000,2001
     *  Broadcom Corporation. All rights reserved.
-    *  
-    *  This program is free software; you can redistribute it and/or 
-    *  modify it under the terms of the GNU General Public License as 
-    *  published by the Free Software Foundation; either version 2 of 
+    *
+    *  This program is free software; you can redistribute it and/or
+    *  modify it under the terms of the GNU General Public License as
+    *  published by the Free Software Foundation; either version 2 of
     *  the License, or (at your option) any later version.
     *
     *  This program is distributed in the hope that it will be useful,
@@ -27,7 +27,7 @@
     *
     *  You should have received a copy of the GNU General Public License
     *  along with this program; if not, write to the Free Software
-    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, 
+    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston,
     *  MA 02111-1307 USA
     ********************************************************************* */
 
@@ -48,8 +48,6 @@
  * Register: MAC_CFG_2
  */
 
-
-/* Updated to spec 0.2 */
 
 #define M_MAC_RESERVED0             _SB_MAKEMASK1(0)
 #define M_MAC_TX_HOLD_SOP_EN        _SB_MAKEMASK1(1)
@@ -130,7 +128,7 @@
 #define M_MAC_BYPASS_16             _SB_MAKEMASK1(42)
 #define M_MAC_BYPASS_FCS_CHK	    _SB_MAKEMASK1(43)
 
-#define M_MAC_RESERVED4	    	    _SB_MAKEMASK(2,44)
+#define M_MAC_RX_CH_SEL_MSB	    _SB_MAKEMASK1(44)		/* PASS2 */
 
 #define S_MAC_BYPASS_IFG            _SB_MAKE64(46)
 #define M_MAC_BYPASS_IFG            _SB_MAKEMASK(8,S_MAC_BYPASS_IFG)
@@ -202,12 +200,14 @@
  */
 
 #define S_MAC_TX_WR_THRSH           _SB_MAKE64(0)
-#define M_MAC_TX_WR_THRSH           _SB_MAKEMASK(6,S_MAC_TX_WR_THRSH)
+/* #define M_MAC_TX_WR_THRSH           _SB_MAKEMASK(6,S_MAC_TX_WR_THRSH) */ /* PASS1 */
+#define M_MAC_TX_WR_THRSH           _SB_MAKEMASK(7,S_MAC_TX_WR_THRSH)	    /* PASS2 */
 #define V_MAC_TX_WR_THRSH(x)        _SB_MAKEVALUE(x,S_MAC_TX_WR_THRSH)
 #define G_MAC_TX_WR_THRSH(x)        _SB_GETVALUE(x,S_MAC_TX_WR_THRSH,M_MAC_TX_WR_THRSH)
 
 #define S_MAC_TX_RD_THRSH           _SB_MAKE64(8)
-#define M_MAC_TX_RD_THRSH           _SB_MAKEMASK(6,S_MAC_TX_RD_THRSH)
+/* #define M_MAC_TX_RD_THRSH           _SB_MAKEMASK(6,S_MAC_TX_RD_THRSH) */ /* PASS1 */
+#define M_MAC_TX_RD_THRSH           _SB_MAKEMASK(7,S_MAC_TX_RD_THRSH)	    /* PASS2 */
 #define V_MAC_TX_RD_THRSH(x)        _SB_MAKEVALUE(x,S_MAC_TX_RD_THRSH)
 #define G_MAC_TX_RD_THRSH(x)        _SB_GETVALUE(x,S_MAC_TX_RD_THRSH,M_MAC_TX_RD_THRSH)
 
@@ -230,6 +230,11 @@
 #define M_MAC_RX_RL_THRSH           _SB_MAKEMASK(6,S_MAC_RX_RL_THRSH)
 #define V_MAC_RX_RL_THRSH(x)        _SB_MAKEVALUE(x,S_MAC_RX_RL_THRSH)
 #define G_MAC_RX_RL_THRSH(x)        _SB_GETVALUE(x,S_MAC_RX_RL_THRSH,M_MAC_RX_RL_THRSH)
+
+#define S_MAC_ENC_FC_THRSH           _SB_MAKE64(56)			/* PASS2 */
+#define M_MAC_ENC_FC_THRSH           _SB_MAKEMASK(6,S_MAC_ENC_FC_THRSH)	/* PASS2 */
+#define V_MAC_ENC_FC_THRSH(x)        _SB_MAKEVALUE(x,S_MAC_ENC_FC_THRSH) /* PASS2 */
+#define G_MAC_ENC_FC_THRSH(x)        _SB_GETVALUE(x,S_MAC_ENC_FC_THRSH,M_MAC_ENC_FC_THRSH) /* PASS2 */
 
 /*
  * MAC Frame Configuration Registers (Table 9-15)
@@ -280,20 +285,20 @@
 
 /*
  * These constants are used to configure the fields within the Frame
- * Configuration Register.  
+ * Configuration Register.
  */
 
-#define K_MAC_IFG_RX_10             _SB_MAKE64(18)
-#define K_MAC_IFG_RX_100            _SB_MAKE64(18)
-#define K_MAC_IFG_RX_1000           _SB_MAKE64(6)
+#define K_MAC_IFG_RX_10             _SB_MAKE64(0)	/* See table 176, not used */
+#define K_MAC_IFG_RX_100            _SB_MAKE64(0)
+#define K_MAC_IFG_RX_1000           _SB_MAKE64(0)
 
 #define K_MAC_IFG_TX_10             _SB_MAKE64(20)
 #define K_MAC_IFG_TX_100            _SB_MAKE64(20)
 #define K_MAC_IFG_TX_1000           _SB_MAKE64(8)
 
-#define K_MAC_IFG_THRSH_10          _SB_MAKE64(12)
-#define K_MAC_IFG_THRSH_100         _SB_MAKE64(12)
-#define K_MAC_IFG_THRSH_1000        _SB_MAKE64(4)
+#define K_MAC_IFG_THRSH_10          _SB_MAKE64(4)
+#define K_MAC_IFG_THRSH_100         _SB_MAKE64(4)
+#define K_MAC_IFG_THRSH_1000        _SB_MAKE64(0)
 
 #define K_MAC_SLOT_SIZE_10          _SB_MAKE64(0)
 #define K_MAC_SLOT_SIZE_100         _SB_MAKE64(0)
@@ -317,9 +322,11 @@
 
 #define K_MAC_MIN_FRAMESZ_DEFAULT   _SB_MAKE64(64)
 #define K_MAC_MAX_FRAMESZ_DEFAULT   _SB_MAKE64(1518)
+#define K_MAC_MAX_FRAMESZ_JUMBO     _SB_MAKE64(9216)
 
 #define V_MAC_MIN_FRAMESZ_DEFAULT   V_MAC_MIN_FRAMESZ(K_MAC_MIN_FRAMESZ_DEFAULT)
 #define V_MAC_MAX_FRAMESZ_DEFAULT   V_MAC_MAX_FRAMESZ(K_MAC_MAX_FRAMESZ_DEFAULT)
+#define V_MAC_MAX_FRAMESZ_JUMBO     V_MAC_MAX_FRAMESZ(K_MAC_MAX_FRAMESZ_JUMBO)
 
 /*
  * MAC VLAN Tag Registers (Table 9-16)
@@ -341,7 +348,7 @@
  * Register: MAC_INT_MASK_2
  */
 
-/* 
+/*
  * Use these constants to shift the appropriate channel
  * into the CH0 position so the same tests can be used
  * on each channel.
@@ -378,6 +385,7 @@
 #define M_MAC_LTCOL_ERR             _SB_MAKEMASK1(44)
 #define M_MAC_EXCOL_ERR             _SB_MAKEMASK1(45)
 #define M_MAC_CNTR_OVRFL_ERR        _SB_MAKEMASK1(46)
+#define M_MAC_SPLIT_EN		    _SB_MAKEMASK1(47) 	/* interrupt mask only */ /* PASS2 */
 
 #define S_MAC_COUNTER_ADDR          _SB_MAKE64(47)
 #define M_MAC_COUNTER_ADDR          _SB_MAKEMASK(5,S_MAC_COUNTER_ADDR)
@@ -498,6 +506,7 @@
 #define M_MAC_MCAST_INV         _SB_MAKEMASK1(4)
 #define M_MAC_BCAST_EN          _SB_MAKEMASK1(5)
 #define M_MAC_DIRECT_INV        _SB_MAKEMASK1(6)
+#define M_MAC_ALLMCAST_EN	_SB_MAKEMASK1(7)	/* PASS2 */
 
 #define S_MAC_IPHDR_OFFSET      _SB_MAKE64(8)
 #define M_MAC_IPHDR_OFFSET      _SB_MAKEMASK(8,S_MAC_IPHDR_OFFSET)

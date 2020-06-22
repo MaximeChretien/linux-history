@@ -57,7 +57,7 @@ struct serial_struct {
 /*
  * Definitions for ZILOG_struct (and serial_struct) flags field
  */
-#define ZILOG_HUP_NOTIFY 0x0001 /* Notify getty on hangups and closes 
+#define ZILOG_HUP_NOTIFY 0x0001 /* Notify getty on hangups and closes
 				   on the callout port */
 #define ZILOG_FOURPORT  0x0002	/* Set OU1, OUT2 per AST Fourport settings */
 #define ZILOG_SAK	0x0004	/* Secure Attention Key (Orange book) */
@@ -93,7 +93,7 @@ struct serial_struct {
 #ifdef __KERNEL__
 /*
  * This is our internal structure for each serial port's state.
- * 
+ *
  * Many fields are paralleled by the structure used by the serial_struct
  * structure.
  *
@@ -406,7 +406,7 @@ struct sgi_serial {
 /* Read Register 15 (value of WR 15) */
 
 /* Misc inlines */
-extern inline void ZS_CLEARERR(struct sgi_zschannel *channel)
+static inline void ZS_CLEARERR(struct sgi_zschannel *channel)
 {
 	volatile unsigned char junk;
 
@@ -416,7 +416,7 @@ extern inline void ZS_CLEARERR(struct sgi_zschannel *channel)
 		junk = ioc_icontrol->istat0;
 }
 
-extern inline void ZS_CLEARFIFO(struct sgi_zschannel *channel)
+static inline void ZS_CLEARFIFO(struct sgi_zschannel *channel)
 {
 	volatile unsigned char junk;
 

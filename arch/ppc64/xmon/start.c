@@ -9,6 +9,7 @@
 #include <linux/string.h>
 #include <linux/kernel.h>
 #include <linux/sysrq.h>
+#include <linux/fs.h>
 #include <asm/machdep.h>
 #include <asm/io.h>
 #include <asm/page.h>

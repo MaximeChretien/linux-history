@@ -63,7 +63,9 @@ OLDESP		= 0x34
 OLDSS		= 0x38
 
 CF_MASK		= 0x00000001
+TF_MASK		= 0x00000100
 IF_MASK		= 0x00000200
+DF_MASK		= 0x00000400
 NT_MASK		= 0x00004000
 VM_MASK		= 0x00020000
 
@@ -140,6 +142,9 @@ ENTRY(lcall7)
 	movl CS(%esp),%edx	# this is eip..
 	movl EFLAGS(%esp),%ecx	# and this is cs..
 	movl %eax,EFLAGS(%esp)	#
+	andl $~(NT_MASK|TF_MASK|DF_MASK), %eax
+	pushl %eax
+	popfl
 	movl %edx,EIP(%esp)	# Now we move them to their "normal" places
 	movl %ecx,CS(%esp)	#
 	movl %esp,%ebx
@@ -161,6 +166,9 @@ ENTRY(lcall27)
 	movl CS(%esp),%edx	# this is eip..
 	movl EFLAGS(%esp),%ecx	# and this is cs..
 	movl %eax,EFLAGS(%esp)	#
+	andl $~(NT_MASK|TF_MASK|DF_MASK), %eax
+	pushl %eax
+	popfl
 	movl %edx,EIP(%esp)	# Now we move them to their "normal" places
 	movl %ecx,CS(%esp)	#
 	movl %esp,%ebx
@@ -622,23 +630,33 @@ ENTRY(sys_call_table)
 	.long SYMBOL_NAME(sys_ni_syscall)	/* Reserved for Security */
 	.long SYMBOL_NAME(sys_gettid)
 	.long SYMBOL_NAME(sys_readahead)	/* 225 */
-	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for setxattr */
-	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for lsetxattr */
-	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for fsetxattr */
-	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for getxattr */
-	.long SYMBOL_NAME(sys_ni_syscall)	/* 230 reserved for lgetxattr */
-	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for fgetxattr */
-	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for listxattr */
-	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for llistxattr */
-	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for flistxattr */
-	.long SYMBOL_NAME(sys_ni_syscall)	/* 235 reserved for removexattr */
-	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for lremovexattr */
-	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for fremovexattr */
+	.long SYMBOL_NAME(sys_setxattr)
+	.long SYMBOL_NAME(sys_lsetxattr)
+	.long SYMBOL_NAME(sys_fsetxattr)
+	.long SYMBOL_NAME(sys_getxattr)
+	.long SYMBOL_NAME(sys_lgetxattr)	/* 230 */
+	.long SYMBOL_NAME(sys_fgetxattr)
+	.long SYMBOL_NAME(sys_listxattr)
+	.long SYMBOL_NAME(sys_llistxattr)
+	.long SYMBOL_NAME(sys_flistxattr)
+	.long SYMBOL_NAME(sys_removexattr)	/* 235 */
+	.long SYMBOL_NAME(sys_lremovexattr)
+	.long SYMBOL_NAME(sys_fremovexattr)
  	.long SYMBOL_NAME(sys_tkill)
 	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for sendfile64 */
 	.long SYMBOL_NAME(sys_ni_syscall)	/* 240 reserved for futex */
 	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for sched_setaffinity */
 	.long SYMBOL_NAME(sys_ni_syscall)	/* reserved for sched_getaffinity */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_set_thread_area */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_get_thread_area */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* 245 sys_io_setup */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_io_destroy */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_io_getevents */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_io_submit */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_io_cancel */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* 250 sys_alloc_hugepages */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_free_hugepages */
+	.long SYMBOL_NAME(sys_ni_syscall)	/* sys_exit_group */
 
 	.rept NR_syscalls-(.-sys_call_table)/4
 		.long SYMBOL_NAME(sys_ni_syscall)

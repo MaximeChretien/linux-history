@@ -707,7 +707,7 @@ int do_fork(unsigned long clone_flags, unsigned long stack_start,
 
 	/*
 	 * "share" dynamic priority between parent and child, thus the
-	 * total amount of dynamic priorities in the system doesnt change,
+	 * total amount of dynamic priorities in the system doesn't change,
 	 * more scheduling fairness. This is only important in the first
 	 * timeslice, on the long run the scheduling behaviour is unchanged.
 	 */

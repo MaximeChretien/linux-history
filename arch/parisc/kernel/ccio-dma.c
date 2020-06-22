@@ -38,16 +38,19 @@
 #include <linux/spinlock.h>
 #include <linux/slab.h>
 #include <linux/string.h>
+#define PCI_DEBUG
 #include <linux/pci.h>
+#undef PCI_DEBUG
 
 #include <asm/byteorder.h>
 #include <asm/cache.h>		/* for L1_CACHE_BYTES */
 #include <asm/uaccess.h>
 #include <asm/pgalloc.h>
 #include <asm/page.h>
-
+#include <asm/dma.h>
 #include <asm/io.h>
 #include <asm/gsc.h>		/* for gsc_writeN()... */
+#include <asm/hardware.h>       /* for register_module() */
 
 /* 
 ** Choose "ccio" since that's what HP-UX calls it.
@@ -55,12 +58,10 @@
 */
 #define MODULE_NAME "ccio"
 
-/*
-#define DEBUG_CCIO_RES
-#define DEBUG_CCIO_RUN
-#define DEBUG_CCIO_INIT
-#define DUMP_RESMAP
-*/
+#undef DEBUG_CCIO_RES
+#undef DEBUG_CCIO_RUN
+#undef DEBUG_CCIO_INIT
+#undef DEBUG_CCIO_RUN_SG
 
 #include <linux/proc_fs.h>
 #include <asm/runway.h>		/* for proc_runway_root */
@@ -83,68 +84,20 @@
 #define DBG_RES(x...)
 #endif
 
+#ifdef DEBUG_CCIO_RUN_SG
+#define DBG_RUN_SG(x...) printk(x)
+#else
+#define DBG_RUN_SG(x...)
+#endif
+
 #define CCIO_INLINE	/* inline */
-#define WRITE_U32(value, addr) gsc_writel(value, (u32 *) (addr))
+#define WRITE_U32(value, addr) gsc_writel(value, (u32 *)(addr))
+#define READ_U32(addr) gsc_readl((u32 *)(addr))
 
 #define U2_IOA_RUNWAY 0x580
 #define U2_BC_GSC     0x501
 #define UTURN_IOA_RUNWAY 0x581
 #define UTURN_BC_GSC     0x502
-/* We *can't* support JAVA (T600). Venture there at your own risk. */
-
-static void dump_resmap(void);
-
-static int ccio_driver_callback(struct hp_device *, struct pa_iodc_driver *);
-
-static struct pa_iodc_driver ccio_drivers_for[] = {
-
-   {HPHW_IOA, U2_IOA_RUNWAY, 0x0, 0xb, 0, 0x10,
-		DRIVER_CHECK_HVERSION +
-		DRIVER_CHECK_SVERSION + DRIVER_CHECK_HWTYPE,
-                MODULE_NAME, "U2 I/O MMU", (void *) ccio_driver_callback},
-
-   {HPHW_IOA, UTURN_IOA_RUNWAY, 0x0, 0xb, 0, 0x10,
-		DRIVER_CHECK_HVERSION +
-		DRIVER_CHECK_SVERSION + DRIVER_CHECK_HWTYPE,
-                MODULE_NAME, "Uturn I/O MMU", (void *) ccio_driver_callback},
-
-/*
-** FIXME: The following claims the GSC bus port, not the IOA.
-**        And there are two busses below a single I/O TLB.
-**
-** These should go away once we have a real PA bus walk.
-** Firmware wants to tell the PA bus walk code about the GSC ports
-** since they are not "architected" PA I/O devices. Ie a PA bus walk
-** wouldn't discover them. But the PA bus walk code could check
-** the "fixed module table" to add such devices to an I/O Tree
-** and proceed with the recursive, depth first bus walk.
-*/
-   {HPHW_BCPORT, U2_BC_GSC, 0x0, 0xc, 0, 0x10,
-		DRIVER_CHECK_HVERSION +
-		DRIVER_CHECK_SVERSION + DRIVER_CHECK_HWTYPE,
-                MODULE_NAME, "U2 GSC+ BC", (void *) ccio_driver_callback},
-
-   {HPHW_BCPORT, UTURN_BC_GSC, 0x0, 0xc, 0, 0x10,
-		DRIVER_CHECK_HVERSION +
-		DRIVER_CHECK_SVERSION + DRIVER_CHECK_HWTYPE,
-                MODULE_NAME, "Uturn GSC+ BC", (void *) ccio_driver_callback},
-
-   {0,0,0,0,0,0,
-   0,
-   (char *) NULL, (char *) NULL, (void *) NULL }
-};
-
-
-#define IS_U2(id) ( \
-    (((id)->hw_type == HPHW_IOA) && ((id)->hversion == U2_IOA_RUNWAY)) || \
-    (((id)->hw_type == HPHW_BCPORT) && ((id)->hversion == U2_BC_GSC))  \
-)
-
-#define IS_UTURN(id) ( \
-    (((id)->hw_type == HPHW_IOA) && ((id)->hversion == UTURN_IOA_RUNWAY)) || \
-    (((id)->hw_type == HPHW_BCPORT) && ((id)->hversion == UTURN_BC_GSC))  \
-)
-
 
 #define IOA_NORMAL_MODE      0x00020080 /* IO_CONTROL to turn on CCIO        */
 #define CMD_TLB_DIRECT_WRITE 35         /* IO_COMMAND for I/O TLB Writes     */
@@ -176,41 +129,46 @@ struct ioa_registers {
         volatile uint32_t   io_io_high;             /* Offset 15 */
 };
 
+struct ioc {
+	struct ioa_registers *ioc_hpa;  /* I/O MMU base address */
+	u8  *res_map;	                /* resource map, bit == pdir entry */
+	u64 *pdir_base;	                /* physical base address */
+	u32 res_hint;	                /* next available IOVP - 
+					   circular search */
+	u32 res_size;		    	/* size of resource map in bytes */
+	spinlock_t res_lock;
 
-struct ccio_device {
-	struct ccio_device    *next;  /* list of LBA's in system */
-	struct hp_device      *iodc;  /* data about dev from firmware */
-	spinlock_t            ccio_lock;
+#ifdef CONFIG_PROC_FS
+#define CCIO_SEARCH_SAMPLE 0x100
+	unsigned long avg_search[CCIO_SEARCH_SAMPLE];
+	unsigned long avg_idx;		  /* current index into avg_search */
+	unsigned long used_pages;
+	unsigned long msingle_calls;
+	unsigned long msingle_pages;
+	unsigned long msg_calls;
+	unsigned long msg_pages;
+	unsigned long usingle_calls;
+	unsigned long usingle_pages;
+	unsigned long usg_calls;
+	unsigned long usg_pages;
 
-	struct ioa_registers   *ccio_hpa; /* base address */
-	u64   *pdir_base;   /* physical base address */
-	char  *res_map;     /* resource map, bit == pdir entry */
-
-	int   res_hint;	/* next available IOVP - circular search */
-	int   res_size;	/* size of resource map in bytes */
-	int   chainid_shift; /* specify bit location of chain_id */
-	int   flags;         /* state/functionality enabled */
-#ifdef DELAYED_RESOURCE_CNT
-	dma_addr_t res_delay[DELAYED_RESOURCE_CNT];
+	unsigned short cujo20_bug;
 #endif
 
 	/* STUFF We don't need in performance path */
-	int  pdir_size;     /* in bytes, determined by IOV Space size */
-	int  hw_rev;        /* HW revision of chip */
+	u32 pdir_size; 			/* in bytes, determined by IOV Space size */
+	u32 chainid_shift; 		/* specify bit location of chain_id */
+	struct ioc *next;		/* Linked list of discovered iocs */
+	const char *name;		/* device name from firmware */
+	unsigned int hw_path;           /* the hardware path this ioc is associatd with */
+	struct pci_dev *fake_pci_dev;   /* the fake pci_dev for non-pci devs */
+	struct resource mmio_region[2]; /* The "routed" MMIO regions */
 };
-
 
 /* Ratio of Host MEM to IOV Space size */
 static unsigned long ccio_mem_ratio = 4;
-static struct ccio_device *ccio_list = NULL;
-
-static int ccio_proc_info(char *buffer, char **start, off_t offset, int length);
-static unsigned long ccio_used_bytes = 0;
-static unsigned long ccio_used_pages = 0;
-static int ccio_cujo_bug = 0;
-
-static unsigned long ccio_alloc_size = 0;
-static unsigned long ccio_free_size = 0;
+static struct ioc *ioc_list;
+static int ioc_count;
 
 /**************************************************************
 *
@@ -227,55 +185,41 @@ static unsigned long ccio_free_size = 0;
 *   match the I/O TLB replacement policy.
 *
 ***************************************************************/
-#define PAGES_PER_RANGE 1	/* could increase this to 4 or 8 if needed */
 #define IOVP_SIZE PAGE_SIZE
 #define IOVP_SHIFT PAGE_SHIFT
 #define IOVP_MASK PAGE_MASK
 
 /* Convert from IOVP to IOVA and vice versa. */
 #define CCIO_IOVA(iovp,offset) ((iovp) | (offset))
-#define CCIO_IOVP(iova) ((iova) & ~(IOVP_SIZE-1) )
+#define CCIO_IOVP(iova) ((iova) & IOVP_MASK)
 
 #define PDIR_INDEX(iovp)    ((iovp)>>IOVP_SHIFT)
 #define MKIOVP(pdir_idx)    ((long)(pdir_idx) << IOVP_SHIFT)
 #define MKIOVA(iovp,offset) (dma_addr_t)((long)iovp | (long)offset)
-
-/* CUJO20 KLUDGE start */
-#define CUJO_20_BITMASK    0x0ffff000	/* upper nibble is a don't care   */
-#define CUJO_20_STEP       0x10000000	/* inc upper nibble */
-#define CUJO_20_BADPAGE1   0x01003000	/* pages that hpmc on raven U+    */
-#define CUJO_20_BADPAGE2   0x01607000	/* pages that hpmc on firehawk U+ */
-#define CUJO_20_BADHVERS   0x6821	/* low nibble 1 is cujo rev 2.0 */
-#define CUJO_RAVEN_LOC     0xf1000000UL	/* cujo location on raven U+ */
-#define CUJO_FIREHAWK_LOC  0xf1604000UL	/* cujo location on firehawk U+ */
-/* CUJO20 KLUDGE end */
+#define ROUNDUP(x,y) ((x + ((y)-1)) & ~((y)-1))
 
 /*
 ** Don't worry about the 150% average search length on a miss.
 ** If the search wraps around, and passes the res_hint, it will
 ** cause the kernel to panic anyhow.
 */
-
-/* ioa->res_hint = idx + (size >> 3); \ */
-
-#define CCIO_SEARCH_LOOP(ioa, idx, mask, size)  \
-       for(; res_ptr < res_end; ++res_ptr) \
-       { \
-               if(0 == ((*res_ptr) & mask)) { \
-                       *res_ptr |= mask; \
-                       idx = (int)((unsigned long)res_ptr - (unsigned long)ioa->res_map); \
-                       ioa->res_hint = 0;\
+#define CCIO_SEARCH_LOOP(ioc, res_idx, mask_ptr, size)  \
+       for(; res_ptr < res_end; ++res_ptr) { \
+               if(0 == (*res_ptr & *mask_ptr)) { \
+                       *res_ptr |= *mask_ptr; \
+                       res_idx = (int)((unsigned long)res_ptr - (unsigned long)ioc->res_map); \
+                       ioc->res_hint = res_idx + (size >> 3); \
                        goto resource_found; \
                } \
        }
 
-#define CCIO_FIND_FREE_MAPPING(ioa, idx, mask, size)  { \
-       u##size *res_ptr = (u##size *)&((ioa)->res_map[ioa->res_hint & ~((size >> 3) - 1)]); \
-       u##size *res_end = (u##size *)&(ioa)->res_map[ioa->res_size]; \
-       CCIO_SEARCH_LOOP(ioa, idx, mask, size); \
-       res_ptr = (u##size *)&(ioa)->res_map[0]; \
-       CCIO_SEARCH_LOOP(ioa, idx, mask, size); \
-}
+#define CCIO_FIND_FREE_MAPPING(ioa, res_idx, mask, size) \
+       u##size *res_ptr = (u##size *)&((ioc)->res_map[ioa->res_hint & ~((size >> 3) - 1)]); \
+       u##size *res_end = (u##size *)&(ioc)->res_map[ioa->res_size]; \
+       u##size *mask_ptr = (u##size *)&mask; \
+       CCIO_SEARCH_LOOP(ioc, res_idx, mask_ptr, size); \
+       res_ptr = (u##size *)&(ioc)->res_map[0]; \
+       CCIO_SEARCH_LOOP(ioa, res_idx, mask_ptr, size);
 
 /*
 ** Find available bit in this ioa's resource map.
@@ -290,122 +234,131 @@ static unsigned long ccio_free_size = 0;
 ** o use different search for "large" (eg > 4 pages) or "very large"
 **   (eg > 16 pages) mappings.
 */
+
+/**
+ * ccio_alloc_range - Allocate pages in the ioc's resource map.
+ * @ioc: The I/O Controller.
+ * @pages_needed: The requested number of pages to be mapped into the
+ * I/O Pdir...
+ *
+ * This function searches the resource map of the ioc to locate a range
+ * of available pages for the requested size.
+ */
 static int
-ccio_alloc_range(struct ccio_device *ioa, size_t size)
+ccio_alloc_range(struct ioc *ioc, unsigned long pages_needed)
 {
 	int res_idx;
-	unsigned long mask, flags;
-	unsigned int pages_needed = size >> PAGE_SHIFT;
-
+	unsigned long mask;
+#ifdef CONFIG_PROC_FS
+	unsigned long cr_start = mfctl(16);
+#endif
+	
 	ASSERT(pages_needed);
-	ASSERT((pages_needed * IOVP_SIZE) < DMA_CHUNK_SIZE);
-	ASSERT(pages_needed < (BITS_PER_LONG - IOVP_SHIFT));
+	ASSERT((pages_needed * IOVP_SIZE) <= DMA_CHUNK_SIZE);
+	ASSERT(pages_needed <= BITS_PER_LONG);
 
-	mask = (unsigned long) -1L;
- 	mask >>= BITS_PER_LONG - pages_needed;
-
-	DBG_RES(__FUNCTION__ " size: %d pages_needed %d pages_mask 0x%08lx\n", 
-		size, pages_needed, mask);
-
-	spin_lock_irqsave(&ioa->ccio_lock, flags);
+	mask = ~(~0UL >> pages_needed);
+     
+	DBG_RES("%s() size: %d pages_needed %d mask 0x%08lx\n", 
+		__FUNCTION__, size, pages_needed, mask);
 
 	/*
 	** "seek and ye shall find"...praying never hurts either...
-	** ggg sacrafices another 710 to the computer gods.
+	** ggg sacrifices another 710 to the computer gods.
 	*/
 
 	if(pages_needed <= 8) {
-		CCIO_FIND_FREE_MAPPING(ioa, res_idx, mask, 8);
+		CCIO_FIND_FREE_MAPPING(ioc, res_idx, mask, 8);
 	} else if(pages_needed <= 16) {
-		CCIO_FIND_FREE_MAPPING(ioa, res_idx, mask, 16);
+		CCIO_FIND_FREE_MAPPING(ioc, res_idx, mask, 16);
 	} else if(pages_needed <= 32) {
-		CCIO_FIND_FREE_MAPPING(ioa, res_idx, mask, 32);
+		CCIO_FIND_FREE_MAPPING(ioc, res_idx, mask, 32);
 #ifdef __LP64__
 	} else if(pages_needed <= 64) {
-		CCIO_FIND_FREE_MAPPING(ioa, res_idx, mask, 64)
+		CCIO_FIND_FREE_MAPPING(ioc, res_idx, mask, 64);
 #endif
 	} else {
-		panic(__FILE__ ":" __FUNCTION__ "() Too many pages to map.\n");
+		panic(__FILE__ ": %s() Too many pages to map. pages_needed: %ld\n", 
+		      __FUNCTION__, pages_needed);
 	}
 
-#ifdef DUMP_RESMAP
-	dump_resmap();
-#endif
-	panic(__FILE__ ":" __FUNCTION__ "() I/O MMU is out of mapping resources\n");
+	panic(__FILE__ ": %s() I/O MMU is out of mapping resources.\n", 
+	      __FUNCTION__);
 	
 resource_found:
 	
-	DBG_RES(__FUNCTION__ " res_idx %d mask 0x%08lx res_hint: %d\n",
-		res_idx, mask, ioa->res_hint);
+	DBG_RES("%s() res_idx %d mask 0x%08lx res_hint: %d\n",
+		__FUNCTION__, res_idx, mask, ioc->res_hint);
 
-	ccio_used_pages += pages_needed;
-	ccio_used_bytes += ((pages_needed >> 3) ? (pages_needed >> 3) : 1);
+#ifdef CONFIG_PROC_FS
+	{
+		unsigned long cr_end = mfctl(16);
+		unsigned long tmp = cr_end - cr_start;
+		/* check for roll over */
+		cr_start = (cr_end < cr_start) ?  -(tmp) : (tmp);
+	}
+	ioc->avg_search[ioc->avg_idx++] = cr_start;
+	ioc->avg_idx &= CCIO_SEARCH_SAMPLE - 1;
 
-	spin_unlock_irqrestore(&ioa->ccio_lock, flags);
-
-#ifdef DUMP_RESMAP
-	dump_resmap();
+	ioc->used_pages += pages_needed;
 #endif
 
 	/* 
-	** return the bit address (convert from byte to bit).
+	** return the bit address.
 	*/
-	return (res_idx << 3);
+	return res_idx << 3;
 }
 
+#define CCIO_FREE_MAPPINGS(ioc, res_idx, mask, size) \
+        u##size *res_ptr = (u##size *)&((ioc)->res_map[res_idx]); \
+	u##size *mask_ptr = (u##size *)&mask; \
+        ASSERT((*res_ptr & *mask_ptr) == *mask_ptr); \
+        *res_ptr &= ~(*mask_ptr);
 
-#define CCIO_FREE_MAPPINGS(ioa, idx, mask, size) \
-        u##size *res_ptr = (u##size *)&((ioa)->res_map[idx + (((size >> 3) - 1) & ~((size >> 3) - 1))]); \
-        ASSERT((*res_ptr & mask) == mask); \
-        *res_ptr &= ~mask;
-
-/*
-** clear bits in the ioa's resource map
-*/
+/**
+ * ccio_free_range - Free pages from the ioc's resource map.
+ * @ioc: The I/O Controller.
+ * @iova: The I/O Virtual Address.
+ * @pages_mapped: The requested number of pages to be freed from the
+ * I/O Pdir.
+ *
+ * This function frees the resouces allocated for the iova.
+ */
 static void
-ccio_free_range(struct ccio_device *ioa, dma_addr_t iova, size_t size)
+ccio_free_range(struct ioc *ioc, dma_addr_t iova, unsigned long pages_mapped)
 {
-	unsigned long mask, flags;
+	unsigned long mask;
 	unsigned long iovp = CCIO_IOVP(iova);
-	unsigned int res_idx = PDIR_INDEX(iovp)>>3;
-	unsigned int pages_mapped = (size >> IOVP_SHIFT) + !!(size & ~IOVP_MASK);
+	unsigned int res_idx = PDIR_INDEX(iovp) >> 3;
 
-	ASSERT(pages_needed);
-	ASSERT((pages_needed * IOVP_SIZE) < DMA_CHUNK_SIZE);
-	ASSERT(pages_needed < (BITS_PER_LONG - IOVP_SHIFT));
+	ASSERT(pages_mapped);
+	ASSERT((pages_mapped * IOVP_SIZE) <= DMA_CHUNK_SIZE);
+	ASSERT(pages_mapped <= BITS_PER_LONG);
 
-	mask = (unsigned long) -1L;
- 	mask >>= BITS_PER_LONG - pages_mapped;
+	mask = ~(~0UL >> pages_mapped);
 
-	DBG_RES(__FUNCTION__ " res_idx: %d size: %d pages_mapped %d mask 0x%08lx\n", 
-		res_idx, size, pages_mapped, mask);
+	DBG_RES("%s():  res_idx: %d pages_mapped %d mask 0x%08lx\n", 
+		__FUNCTION__, res_idx, pages_mapped, mask);
 
-	spin_lock_irqsave(&ioa->ccio_lock, flags);
+#ifdef CONFIG_PROC_FS
+	ioc->used_pages -= pages_mapped;
+#endif
 
 	if(pages_mapped <= 8) {
-		CCIO_FREE_MAPPINGS(ioa, res_idx, mask, 8);
+		CCIO_FREE_MAPPINGS(ioc, res_idx, mask, 8);
 	} else if(pages_mapped <= 16) {
-		CCIO_FREE_MAPPINGS(ioa, res_idx, mask, 16);
+		CCIO_FREE_MAPPINGS(ioc, res_idx, mask, 16);
 	} else if(pages_mapped <= 32) {
-		CCIO_FREE_MAPPINGS(ioa, res_idx, mask, 32);
+		CCIO_FREE_MAPPINGS(ioc, res_idx, mask, 32);
 #ifdef __LP64__
 	} else if(pages_mapped <= 64) {
-		CCIO_FREE_MAPPINGS(ioa, res_idx, mask, 64);
+		CCIO_FREE_MAPPINGS(ioc, res_idx, mask, 64);
 #endif
 	} else {
-		panic(__FILE__ ":" __FUNCTION__ "() Too many pages to unmap.\n");
+		panic(__FILE__ ":%s() Too many pages to unmap.\n", 
+		      __FUNCTION__);
 	}
-	
-	ccio_used_pages -= (pages_mapped ? pages_mapped : 1);
-	ccio_used_bytes -= ((pages_mapped >> 3) ? (pages_mapped >> 3) : 1);
-
-	spin_unlock_irqrestore(&ioa->ccio_lock, flags);
-
-#ifdef DUMP_RESMAP
-	dump_resmap();
-#endif
 }
-
 
 /****************************************************************
 **
@@ -415,7 +368,6 @@ ccio_free_range(struct ccio_device *ioa, dma_addr_t iova, size_t size)
 
 typedef unsigned long space_t;
 #define KERNEL_SPACE 0
-
 
 /*
 ** DMA "Page Type" and Hints 
@@ -466,32 +418,35 @@ static u32 hint_lookup[] = {
 	[PCI_DMA_NONE]           0,            /* not valid */
 };
 
-/*
-** Initialize an I/O Pdir entry
-**
-** Given a virtual address (vba, arg2) and space id, (sid, arg1),
-** load the I/O PDIR entry pointed to by pdir_ptr (arg0). Each IO Pdir
-** entry consists of 8 bytes as shown below (MSB == bit 0):
-**
-**
-** WORD 0:
-** +------+----------------+-----------------------------------------------+
-** | Phys | Virtual Index  |               Phys                            |
-** | 0:3  |     0:11       |               4:19                            |
-** |4 bits|   12 bits      |              16 bits                          |
-** +------+----------------+-----------------------------------------------+
-** WORD 1:
-** +-----------------------+-----------------------------------------------+
-** |      Phys    |  Rsvd  | Prefetch |Update |Rsvd  |Lock  |Safe  |Valid  |
-** |     20:39    |        | Enable   |Enable |      |Enable|DMA   |       |
-** |    20 bits   | 5 bits | 1 bit    |1 bit  |2 bits|1 bit |1 bit |1 bit  |
-** +-----------------------+-----------------------------------------------+
-**
-** The virtual index field is filled with the results of the LCI
-** (Load Coherence Index) instruction.  The 8 bits used for the virtual
-** index are bits 12:19 of the value returned by LCI.
-*/
-
+/**
+ * ccio_io_pdir_entry - Initialize an I/O Pdir.
+ * @pdir_ptr: A pointer into I/O Pdir.
+ * @sid: The Space Identifier.
+ * @vba: The virtual address.
+ * @hints: The DMA Hint.
+ *
+ * Given a virtual address (vba, arg2) and space id, (sid, arg1),
+ * load the I/O PDIR entry pointed to by pdir_ptr (arg0). Each IO Pdir
+ * entry consists of 8 bytes as shown below (MSB == bit 0):
+ *
+ *
+ * WORD 0:
+ * +------+----------------+-----------------------------------------------+
+ * | Phys | Virtual Index  |               Phys                            |
+ * | 0:3  |     0:11       |               4:19                            |
+ * |4 bits|   12 bits      |              16 bits                          |
+ * +------+----------------+-----------------------------------------------+
+ * WORD 1:
+ * +-----------------------+-----------------------------------------------+
+ * |      Phys    |  Rsvd  | Prefetch |Update |Rsvd  |Lock  |Safe  |Valid  |
+ * |     20:39    |        | Enable   |Enable |      |Enable|DMA   |       |
+ * |    20 bits   | 5 bits | 1 bit    |1 bit  |2 bits|1 bit |1 bit |1 bit  |
+ * +-----------------------+-----------------------------------------------+
+ *
+ * The virtual index field is filled with the results of the LCI
+ * (Load Coherence Index) instruction.  The 8 bits used for the virtual
+ * index are bits 12:19 of the value returned by LCI.
+ */ 
 void CCIO_INLINE
 ccio_io_pdir_entry(u64 *pdir_ptr, space_t sid, void * vba, unsigned long hints)
 {
@@ -499,8 +454,7 @@ ccio_io_pdir_entry(u64 *pdir_ptr, space_t sid, void * vba, unsigned long hints)
 	register unsigned long ci; /* coherent index */
 
 	/* We currently only support kernel addresses */
-	ASSERT(sid == 0);
-	ASSERT(((unsigned long) vba & 0xf0000000UL) == 0xc0000000UL);
+	ASSERT(sid == KERNEL_SPACE);
 
 	mtsp(sid,1);
 
@@ -524,7 +478,7 @@ ccio_io_pdir_entry(u64 *pdir_ptr, space_t sid, void * vba, unsigned long hints)
 	** and deposit them
 	*/
 	asm volatile ("extrd,u %1,15,4,%0" : "=r" (ci) : "r" (pa));
-	asm volatile ("extrd,u %1,31,16,%0" : "+r" (ci) : "r" (ci));
+	asm volatile ("extrd,u %1,31,16,%0" : "+r" (pa) : "r" (pa));
 	asm volatile ("depd  %1,35,4,%0" : "+r" (pa) : "r" (ci));
 #else
 	pa = 0;
@@ -556,31 +510,39 @@ ccio_io_pdir_entry(u64 *pdir_ptr, space_t sid, void * vba, unsigned long hints)
 	asm volatile("sync");
 }
 
-
-/*
-** Remove stale entries from the I/O TLB.
-** Need to do this whenever an entry in the PDIR is marked invalid.
-*/
+/**
+ * ccio_clear_io_tlb - Remove stale entries from the I/O TLB.
+ * @ioc: The I/O Controller.
+ * @iovp: The I/O Virtual Page.
+ * @byte_cnt: The requested number of bytes to be freed from the I/O Pdir.
+ *
+ * Purge invalid I/O PDIR entries from the I/O TLB.
+ *
+ * FIXME: Can we change the byte_cnt to pages_mapped?
+ */
 static CCIO_INLINE void
-ccio_clear_io_tlb( struct ccio_device *d, dma_addr_t iovp, size_t byte_cnt)
+ccio_clear_io_tlb(struct ioc *ioc, dma_addr_t iovp, size_t byte_cnt)
 {
-	u32 chain_size = 1 << d->chainid_shift;
+	u32 chain_size = 1 << ioc->chainid_shift;
 
-	iovp &= ~(IOVP_SIZE-1);	/* clear offset bits, just want pagenum */
+	iovp &= IOVP_MASK;	/* clear offset bits, just want pagenum */
 	byte_cnt += chain_size;
 
-        while (byte_cnt > chain_size) {
-		WRITE_U32(CMD_TLB_PURGE | iovp, &d->ccio_hpa->io_command);
-                iovp += chain_size;
+	while(byte_cnt > chain_size) {
+		WRITE_U32(CMD_TLB_PURGE | iovp, &ioc->ioc_hpa->io_command);
+		iovp += chain_size;
 		byte_cnt -= chain_size;
-        }
+      }
 }
 
-
-/***********************************************************
+/**
+ * ccio_mark_invalid - Mark the I/O Pdir entries invalid.
+ * @ioc: The I/O Controller.
+ * @iova: The I/O Virtual Address.
+ * @byte_cnt: The requested number of bytes to be freed from the I/O Pdir.
  *
- * Mark the I/O Pdir entries invalid and blow away the
- * corresponding I/O TLB entries.
+ * Mark the I/O Pdir entries invalid and blow away the corresponding I/O
+ * TLB entries.
  *
  * FIXME: at some threshhold it might be "cheaper" to just blow
  *        away the entire I/O TLB instead of individual entries.
@@ -588,25 +550,25 @@ ccio_clear_io_tlb( struct ccio_device *d, dma_addr_t iovp, size_t byte_cnt)
  * FIXME: Uturn has 256 TLB entries. We don't need to purge every
  *        PDIR entry - just once for each possible TLB entry.
  *        (We do need to maker I/O PDIR entries invalid regardless).
- ***********************************************************/
+ *
+ * FIXME: Can we change byte_cnt to pages_mapped?
+ */ 
 static CCIO_INLINE void
-ccio_mark_invalid(struct ccio_device *d, dma_addr_t iova, size_t byte_cnt)
+ccio_mark_invalid(struct ioc *ioc, dma_addr_t iova, size_t byte_cnt)
 {
-	u32 iovp = (u32) CCIO_IOVP(iova);
+	u32 iovp = (u32)CCIO_IOVP(iova);
 	size_t saved_byte_cnt;
 
 	/* round up to nearest page size */
-	saved_byte_cnt = byte_cnt = (byte_cnt + IOVP_SIZE - 1) & IOVP_MASK;
+	saved_byte_cnt = byte_cnt = ROUNDUP(byte_cnt, IOVP_SIZE);
 
-	while (byte_cnt > 0) {
+	while(byte_cnt > 0) {
 		/* invalidate one page at a time */
 		unsigned int idx = PDIR_INDEX(iovp);
-		char *pdir_ptr = (char *) &(d->pdir_base[idx]);
+		char *pdir_ptr = (char *) &(ioc->pdir_base[idx]);
 
-		ASSERT( idx < (d->pdir_size/sizeof(u64)));
-
-		pdir_ptr[7] = 0;	/* clear only VALID bit */
-
+		ASSERT(idx < (ioc->pdir_size / sizeof(u64)));
+		pdir_ptr[7] = 0;	/* clear only VALID bit */ 
 		/*
 		** FIXME: PCX_W platforms don't need FDC/SYNC. (eg C360)
 		**   PCX-U/U+ do. (eg C200/C240)
@@ -622,9 +584,8 @@ ccio_mark_invalid(struct ccio_device *d, dma_addr_t iova, size_t byte_cnt)
 	}
 
 	asm volatile("sync");
-	ccio_clear_io_tlb(d, CCIO_IOVP(iova), saved_byte_cnt);
+	ccio_clear_io_tlb(ioc, CCIO_IOVP(iova), saved_byte_cnt);
 }
-
 
 /****************************************************************
 **
@@ -632,222 +593,476 @@ ccio_mark_invalid(struct ccio_device *d, dma_addr_t iova, size_t byte_cnt)
 **
 *****************************************************************/
 
-void __init ccio_init(void)
+/**
+ * ccio_dma_supported - Verify the IOMMU supports the DMA address range.
+ * @dev: The PCI device.
+ * @mask: A bit mask describing the DMA address range of the device.
+ *
+ * This function implements the pci_dma_supported function.
+ */
+static int 
+ccio_dma_supported(struct pci_dev *dev, u64 mask)
 {
-	register_driver(ccio_drivers_for);
-}
-
-
-static int ccio_dma_supported( struct pci_dev *dev, u64 mask)
-{
-	if (dev == NULL) {
-		printk(MODULE_NAME ": EISA/ISA/et al not supported\n");
+	if(dev == NULL) {
+		printk(KERN_ERR MODULE_NAME ": EISA/ISA/et al not supported\n");
 		BUG();
-		return(0);
+		return 0;
 	}
 
 	dev->dma_mask = mask;   /* save it */
 
 	/* only support 32-bit devices (ie PCI/GSC) */
-	return((int) (mask >= 0xffffffffUL));
+	return (int)(mask == 0xffffffffUL);
 }
 
-/*
-** Dump a hex representation of the resource map.
-*/
-
-#ifdef DUMP_RESMAP
-static 
-void dump_resmap()
+/**
+ * ccio_map_single - Map an address range into the IOMMU.
+ * @dev: The PCI device.
+ * @addr: The start address of the DMA region.
+ * @size: The length of the DMA region.
+ * @direction: The direction of the DMA transaction (to/from device).
+ *
+ * This function implements the pci_map_single function.
+ */
+static dma_addr_t 
+ccio_map_single(struct pci_dev *dev, void *addr, size_t size, int direction)
 {
-	struct ccio_device *ioa = ccio_list;
-	unsigned long *res_ptr = (unsigned long *)ioa->res_map;
-	unsigned long i = 0;
-
-	printk("res_map: ");
-	for(; i < (ioa->res_size / sizeof(unsigned long)); ++i, ++res_ptr)
-		printk("%08lx ", *res_ptr);
-
-	printk("\n");
-}
-#endif
-
-/*
-** map_single returns a fully formed IOVA
-*/
-static dma_addr_t ccio_map_single(struct pci_dev *dev, void *addr, size_t size, int direction)
-{
-	struct ccio_device *ioa = ccio_list;  /* FIXME : see Multi-IOC below */
+	int idx;
+	struct ioc *ioc;
+	unsigned long flags;
 	dma_addr_t iovp;
 	dma_addr_t offset;
 	u64 *pdir_start;
 	unsigned long hint = hint_lookup[direction];
-	int idx;
+
+	ASSERT(dev);
+	ASSERT(dev->sysdata);
+	ASSERT(HBA_DATA(dev->sysdata)->iommu);
+	ioc = GET_IOC(dev);
 
 	ASSERT(size > 0);
 
 	/* save offset bits */
-	offset = ((dma_addr_t) addr) & ~IOVP_MASK;
+	offset = ((unsigned long) addr) & ~IOVP_MASK;
 
 	/* round up to nearest IOVP_SIZE */
-	size = (size + offset + IOVP_SIZE - 1) & IOVP_MASK;
+	size = ROUNDUP(size + offset, IOVP_SIZE);
+	spin_lock_irqsave(&ioc->res_lock, flags);
 
-	idx = ccio_alloc_range(ioa, size);
-	iovp = (dma_addr_t) MKIOVP(idx);
+#ifdef CONFIG_PROC_FS
+	ioc->msingle_calls++;
+	ioc->msingle_pages += size >> IOVP_SHIFT;
+#endif
 
-	DBG_RUN(__FUNCTION__ " 0x%p -> 0x%lx", addr, (long) iovp | offset);
+	idx = ccio_alloc_range(ioc, (size >> IOVP_SHIFT));
+	iovp = (dma_addr_t)MKIOVP(idx);
 
-	pdir_start = &(ioa->pdir_base[idx]);
+	pdir_start = &(ioc->pdir_base[idx]);
+
+	DBG_RUN("%s() 0x%p -> 0x%lx size: %0x%x\n",
+		__FUNCTION__, addr, (long)iovp | offset, size);
 
 	/* If not cacheline aligned, force SAFE_DMA on the whole mess */
-	if ((size % L1_CACHE_BYTES) || ((unsigned long) addr % L1_CACHE_BYTES))
+	if((size % L1_CACHE_BYTES) || ((unsigned long)addr % L1_CACHE_BYTES))
 		hint |= HINT_SAFE_DMA;
 
-	/* round up to nearest IOVP_SIZE */
-	size = (size + IOVP_SIZE - 1) & IOVP_MASK;
-
-	while (size > 0) {
-
+	while(size > 0) {
 		ccio_io_pdir_entry(pdir_start, KERNEL_SPACE, addr, hint);
 
 		DBG_RUN(" pdir %p %08x%08x\n",
 			pdir_start,
 			(u32) (((u32 *) pdir_start)[0]),
-			(u32) (((u32 *) pdir_start)[1])
-			);
+			(u32) (((u32 *) pdir_start)[1]));
+		++pdir_start;
 		addr += IOVP_SIZE;
 		size -= IOVP_SIZE;
-		pdir_start++;
 	}
+
+	spin_unlock_irqrestore(&ioc->res_lock, flags);
+
 	/* form complete address */
 	return CCIO_IOVA(iovp, offset);
 }
 
-
-static void ccio_unmap_single(struct pci_dev *dev, dma_addr_t iova, size_t size, int direction)
+/**
+ * ccio_unmap_single - Unmap an address range from the IOMMU.
+ * @dev: The PCI device.
+ * @addr: The start address of the DMA region.
+ * @size: The length of the DMA region.
+ * @direction: The direction of the DMA transaction (to/from device).
+ *
+ * This function implements the pci_unmap_single function.
+ */
+static void 
+ccio_unmap_single(struct pci_dev *dev, dma_addr_t iova, size_t size, 
+		  int direction)
 {
-#ifdef FIXME
-/* Multi-IOC (ie N-class) :  need to lookup IOC from dev
-** o If we can't know about lba PCI data structs, that eliminates ->sysdata.
-** o walking up pcidev->parent dead ends at elroy too
-** o leaves hashing dev->bus->number into some lookup.
-**   (may only work for N-class)
-*/
-	struct ccio_device *ioa = dev->sysdata
-#else
-	struct ccio_device *ioa = ccio_list;
-#endif
-	dma_addr_t offset;
+	struct ioc *ioc;
+	unsigned long flags; 
+	dma_addr_t offset = iova & ~IOVP_MASK;
 	
-	offset = iova & ~IOVP_MASK;
+	ASSERT(dev);
+	ASSERT(dev->sysdata);
+	ASSERT(HBA_DATA(dev->sysdata)->iommu);
+	ioc = GET_IOC(dev);
 
-	/* round up to nearest IOVP_SIZE */
-	size = (size + offset + IOVP_SIZE - 1) & IOVP_MASK;
+	DBG_RUN("%s() iovp 0x%lx/%x\n",
+		__FUNCTION__, (long)iova, size);
 
-	/* Mask off offset */
-	iova &= IOVP_MASK;
+	iova ^= offset;        /* clear offset bits */
+	size += offset;
+	size = ROUNDUP(size, IOVP_SIZE);
 
-	DBG_RUN(__FUNCTION__ " iovp 0x%lx\n", (long) iova);
+	spin_lock_irqsave(&ioc->res_lock, flags);
 
-#ifdef DELAYED_RESOURCE_CNT
-	if (ioa->saved_cnt < DELAYED_RESOURCE_CNT) {
-		ioa->saved_iova[ioa->saved_cnt] = iova;
-		ioa->saved_size[ioa->saved_cnt] = size;
-		ccio_saved_cnt++;
-	} else {
-		do {
+#ifdef CONFIG_PROC_FS
+	ioc->usingle_calls++;
+	ioc->usingle_pages += size >> IOVP_SHIFT;
 #endif
-			ccio_mark_invalid(ioa, iova, size);
-			ccio_free_range(ioa, iova, size);
 
-#ifdef DELAYED_RESOURCE_CNT
-			d->saved_cnt--;
-			iova = ioa->saved_iova[ioa->saved_cnt];
-			size = ioa->saved_size[ioa->saved_cnt];
-		} while (ioa->saved_cnt)
-	}
-#endif
+	ccio_mark_invalid(ioc, iova, size);
+	ccio_free_range(ioc, iova, (size >> IOVP_SHIFT));
+	spin_unlock_irqrestore(&ioc->res_lock, flags);
 }
 
-
-static void * ccio_alloc_consistent (struct pci_dev *hwdev, size_t size, dma_addr_t *dma_handle)
+/**
+ * ccio_alloc_consistent - Allocate a consistent DMA mapping.
+ * @dev: The PCI device.
+ * @size: The length of the DMA region.
+ * @dma_handle: The DMA address handed back to the device (not the cpu).
+ *
+ * This function implements the pci_alloc_consistent function.
+ */
+static void * 
+ccio_alloc_consistent(struct pci_dev *dev, size_t size, dma_addr_t *dma_handle)
 {
-	void *ret;
-	unsigned long flags;
-	struct ccio_device *ioa = ccio_list;
-
-	DBG_RUN(__FUNCTION__ " size 0x%x\n",  size);
-
+      void *ret;
 #if 0
 /* GRANT Need to establish hierarchy for non-PCI devs as well
 ** and then provide matching gsc_map_xxx() functions for them as well.
 */
-	if (!hwdev) {
+	if(!hwdev) {
 		/* only support PCI */
 		*dma_handle = 0;
 		return 0;
 	}
 #endif
-	spin_lock_irqsave(&ioa->ccio_lock, flags);
-	ccio_alloc_size += get_order(size);
-	spin_unlock_irqrestore(&ioa->ccio_lock, flags);
-
         ret = (void *) __get_free_pages(GFP_ATOMIC, get_order(size));
 
 	if (ret) {
 		memset(ret, 0, size);
-		*dma_handle = ccio_map_single(hwdev, ret, size, PCI_DMA_BIDIRECTIONAL);
+		*dma_handle = ccio_map_single(dev, ret, size, PCI_DMA_BIDIRECTIONAL);
 	}
-	DBG_RUN(__FUNCTION__ " ret %p\n",  ret);
 
 	return ret;
 }
 
-
-static void ccio_free_consistent (struct pci_dev *hwdev, size_t size, void *vaddr, dma_addr_t dma_handle)
+/**
+ * ccio_free_consistent - Free a consistent DMA mapping.
+ * @dev: The PCI device.
+ * @size: The length of the DMA region.
+ * @cpu_addr: The cpu address returned from the ccio_alloc_consistent.
+ * @dma_handle: The device address returned from the ccio_alloc_consistent.
+ *
+ * This function implements the pci_free_consistent function.
+ */
+static void 
+ccio_free_consistent(struct pci_dev *dev, size_t size, void *cpu_addr, 
+		     dma_addr_t dma_handle)
 {
+	ccio_unmap_single(dev, dma_handle, size, 0);
+	free_pages((unsigned long)cpu_addr, get_order(size));
+}
+
+/*
+** Since 0 is a valid pdir_base index value, can't use that
+** to determine if a value is valid or not. Use a flag to indicate
+** the SG list entry contains a valid pdir index.
+*/
+#define PIDE_FLAG 0x80000000UL
+
+/**
+ * ccio_fill_pdir - Insert coalesced scatter/gather chunks into the I/O Pdir.
+ * @ioc: The I/O Controller.
+ * @startsg: The scatter/gather list of coalesced chunks.
+ * @nents: The number of entries in the scatter/gather list.
+ * @hint: The DMA Hint.
+ *
+ * This function inserts the coalesced scatter/gather list chunks into the
+ * I/O Controller's I/O Pdir.
+ */ 
+static CCIO_INLINE int
+ccio_fill_pdir(struct ioc *ioc, struct scatterlist *startsg, int nents, 
+	       unsigned long hint)
+{
+	struct scatterlist *dma_sg = startsg;	/* pointer to current DMA */
+	int n_mappings = 0;
+	u64 *pdirp = 0;
+	unsigned long dma_offset = 0;
+
+	dma_sg--;
+	while (nents-- > 0) {
+		int cnt = sg_dma_len(startsg);
+		sg_dma_len(startsg) = 0;
+
+		DBG_RUN_SG(" %d : %08lx/%05x %p/%05x\n", nents,
+			   (unsigned long)sg_dma_address(startsg), cnt,
+			   startsg->address, startsg->length
+		);
+
+		/*
+		** Look for the start of a new DMA stream
+		*/
+		if(sg_dma_address(startsg) & PIDE_FLAG) {
+			u32 pide = sg_dma_address(startsg) & ~PIDE_FLAG;
+			dma_offset = (unsigned long) pide & ~IOVP_MASK;
+			sg_dma_address(startsg) = 0;
+			dma_sg++;
+			sg_dma_address(dma_sg) = pide;
+			pdirp = &(ioc->pdir_base[pide >> IOVP_SHIFT]);
+			n_mappings++;
+		}
+
+		/*
+		** Look for a VCONTIG chunk
+		*/
+		if (cnt) {
+			unsigned long vaddr = (unsigned long)startsg->address;
+			ASSERT(pdirp);
+
+			/* Since multiple Vcontig blocks could make up
+			** one DMA stream, *add* cnt to dma_len.
+			*/
+			sg_dma_len(dma_sg) += cnt;
+			cnt += dma_offset;
+			dma_offset=0;	/* only want offset on first chunk */
+			cnt = ROUNDUP(cnt, IOVP_SIZE);
+#ifdef CONFIG_PROC_FS
+			ioc->msg_pages += cnt >> IOVP_SHIFT;
+#endif
+			do {
+				ccio_io_pdir_entry(pdirp, KERNEL_SPACE, 
+						   (void *)vaddr, hint);
+				vaddr += IOVP_SIZE;
+				cnt -= IOVP_SIZE;
+				pdirp++;
+			} while (cnt > 0);
+		}
+		startsg++;
+	}
+	return(n_mappings);
+}
+
+/*
+** First pass is to walk the SG list and determine where the breaks are
+** in the DMA stream. Allocates PDIR entries but does not fill them.
+** Returns the number of DMA chunks.
+**
+** Doing the fill seperate from the coalescing/allocation keeps the
+** code simpler. Future enhancement could make one pass through
+** the sglist do both.
+*/
+
+static CCIO_INLINE int
+ccio_coalesce_chunks(struct ioc *ioc, struct scatterlist *startsg, int nents)
+{
+	struct scatterlist *vcontig_sg;    /* VCONTIG chunk head */
+	unsigned long vcontig_len;         /* len of VCONTIG chunk */
+	unsigned long vcontig_end;
+	struct scatterlist *dma_sg;        /* next DMA stream head */
+	unsigned long dma_offset, dma_len; /* start/len of DMA stream */
+	int n_mappings = 0;
+
+	while (nents > 0) {
+
+		/*
+		** Prepare for first/next DMA stream
+		*/
+		dma_sg = vcontig_sg = startsg;
+		dma_len = vcontig_len = vcontig_end = startsg->length;
+		vcontig_end += (unsigned long) startsg->address;
+		dma_offset = (unsigned long) startsg->address & ~IOVP_MASK;
+
+		/* PARANOID: clear entries */
+		sg_dma_address(startsg) = 0;
+		sg_dma_len(startsg) = 0;
+
+		/*
+		** This loop terminates one iteration "early" since
+		** it's always looking one "ahead".
+		*/
+		while(--nents > 0) {
+			unsigned long startsg_end;
+
+			startsg++;
+			startsg_end = (unsigned long)startsg->address + 
+				startsg->length;
+
+			/* PARANOID: clear entries */
+			sg_dma_address(startsg) = 0;
+			sg_dma_len(startsg) = 0;
+
+			/*
+			** First make sure current dma stream won't
+			** exceed DMA_CHUNK_SIZE if we coalesce the
+			** next entry.
+			*/   
+			if(ROUNDUP(dma_len + dma_offset + startsg->length,
+				   IOVP_SIZE) > DMA_CHUNK_SIZE)
+				break;
+
+			/*
+			** Append the next transaction?
+			*/
+			if(vcontig_end == (unsigned long) startsg->address) {
+				vcontig_len += startsg->length;
+				vcontig_end += startsg->length;
+				dma_len     += startsg->length;
+				continue;
+			}
+
+			/*
+			** Not virtually contigous.
+			** Terminate prev chunk.
+			** Start a new chunk.
+			**
+			** Once we start a new VCONTIG chunk, dma_offset
+			** can't change. And we need the offset from the first
+			** chunk - not the last one. Ergo Successive chunks
+			** must start on page boundaries and dove tail
+			** with it's predecessor.
+			*/
+			sg_dma_len(vcontig_sg) = vcontig_len;
+
+			vcontig_sg = startsg;
+			vcontig_len = startsg->length;
+			break;
+		}
+
+		/*
+		** End of DMA Stream
+		** Terminate last VCONTIG block.
+		** Allocate space for DMA stream.
+		*/
+		sg_dma_len(vcontig_sg) = vcontig_len;
+		dma_len = ROUNDUP(dma_len + dma_offset, IOVP_SIZE);
+		sg_dma_address(dma_sg) =
+			PIDE_FLAG 
+			| (ccio_alloc_range(ioc, (dma_len >> IOVP_SHIFT)) << IOVP_SHIFT)
+			| dma_offset;
+		n_mappings++;
+	}
+
+	return n_mappings;
+}
+
+/**
+ * ccio_map_sg - Map the scatter/gather list into the IOMMU.
+ * @dev: The PCI device.
+ * @sglist: The scatter/gather list to be mapped in the IOMMU.
+ * @nents: The number of entries in the scatter/gather list.
+ * @direction: The direction of the DMA transaction (to/from device).
+ *
+ * This function implements the pci_map_sg function.
+ */
+static int
+ccio_map_sg(struct pci_dev *dev, struct scatterlist *sglist, int nents, 
+	    int direction)
+{
+	struct ioc *ioc;
+	int coalesced, filled = 0;
 	unsigned long flags;
-	struct ccio_device *ioa = ccio_list;
+	unsigned long hint = hint_lookup[direction];
+	
+	ASSERT(dev);
+	ASSERT(dev->sysdata);
+	ASSERT(HBA_DATA(dev->sysdata)->iommu);
+	ioc = GET_IOC(dev);
+	
+	DBG_RUN_SG("%s() START %d entries\n", __FUNCTION__, nents);
 
-	spin_lock_irqsave(&ioa->ccio_lock, flags);
-	ccio_free_size += get_order(size);
-	spin_unlock_irqrestore(&ioa->ccio_lock, flags);
+	/* Fast path single entry scatterlists. */
+	if(nents == 1) {
+		sg_dma_address(sglist)= ccio_map_single(dev, sglist->address,
+							sglist->length, 
+							direction);
+		sg_dma_len(sglist)= sglist->length;
+		return 1;
+	}
+	
+	spin_lock_irqsave(&ioc->res_lock, flags);
 
-	ccio_unmap_single(hwdev, dma_handle, size, 0);
-	free_pages((unsigned long) vaddr, get_order(size));
+#ifdef CONFIG_PROC_FS
+	ioc->msg_calls++;
+#endif
+
+	/*
+	** First coalesce the chunks and allocate I/O pdir space
+	**
+	** If this is one DMA stream, we can properly map using the
+	** correct virtual address associated with each DMA page.
+	** w/o this association, we wouldn't have coherent DMA!
+	** Access to the virtual address is what forces a two pass algorithm.
+	*/
+	coalesced = ccio_coalesce_chunks(ioc, sglist, nents);
+
+	/*
+	** Program the I/O Pdir
+	**
+	** map the virtual addresses to the I/O Pdir
+	** o dma_address will contain the pdir index
+	** o dma_len will contain the number of bytes to map 
+	** o address contains the virtual address.
+	*/
+	filled = ccio_fill_pdir(ioc, sglist, nents, hint);
+
+	spin_unlock_irqrestore(&ioc->res_lock, flags);
+
+	ASSERT(coalesced == filled);
+	DBG_RUN_SG("%s() DONE %d mappings\n", __FUNCTION__, filled);
+
+	return filled;
 }
 
-
-static int ccio_map_sg(struct pci_dev *dev, struct scatterlist *sglist, int nents, int direction)
+/**
+ * ccio_unmap_sg - Unmap the scatter/gather list from the IOMMU.
+ * @dev: The PCI device.
+ * @sglist: The scatter/gather list to be unmapped from the IOMMU.
+ * @nents: The number of entries in the scatter/gather list.
+ * @direction: The direction of the DMA transaction (to/from device).
+ *
+ * This function implements the pci_unmap_sg function.
+ */
+static void 
+ccio_unmap_sg(struct pci_dev *dev, struct scatterlist *sglist, int nents, 
+	      int direction)
 {
-	int tmp = nents;
+	struct ioc *ioc;
 
-	DBG_RUN(KERN_WARNING __FUNCTION__ " START\n");
+	ASSERT(dev);
+	ASSERT(dev->sysdata);
+	ASSERT(HBA_DATA(dev->sysdata)->iommu);
+	ioc = GET_IOC(dev);
 
-        /* KISS: map each buffer seperately. */
-	while (nents) {
-		sg_dma_address(sglist) = ccio_map_single(dev, sglist->address, sglist->length, direction);
-		sg_dma_len(sglist) = sglist->length;
-		nents--;
-		sglist++;
+	DBG_RUN_SG("%s() START %d entries,  %p,%x\n",
+		__FUNCTION__, nents, sglist->address, sglist->length);
+
+#ifdef CONFIG_PROC_FS
+	ioc->usg_calls++;
+#endif
+
+	while(sg_dma_len(sglist) && nents--) {
+
+#ifdef CONFIG_PROC_FS
+		ioc->usg_pages += sg_dma_len(sglist) >> PAGE_SHIFT;
+#endif
+		ccio_unmap_single(dev, sg_dma_address(sglist),
+				  sg_dma_len(sglist), direction);
+		++sglist;
 	}
 
-	DBG_RUN(KERN_WARNING __FUNCTION__ " DONE\n");
-	return tmp;
+	DBG_RUN_SG("%s() DONE (nents %d)\n", __FUNCTION__, nents);
 }
-
-
-static void ccio_unmap_sg(struct pci_dev *dev, struct scatterlist *sglist, int nents, int direction)
-{
-	DBG_RUN(KERN_WARNING __FUNCTION__ " : unmapping %d entries\n", nents);
-	while (nents) {
-		ccio_unmap_single(dev, sg_dma_address(sglist), sg_dma_len(sglist), direction);
-		nents--;
-		sglist++;
-	}
-	return;
-}
-
 
 static struct pci_dma_ops ccio_ops = {
 	ccio_dma_supported,
@@ -860,6 +1075,201 @@ static struct pci_dma_ops ccio_ops = {
 	NULL,                   /* dma_sync_single : NOP for U2/Uturn */
 	NULL,                   /* dma_sync_sg     : ditto */
 };
+
+#ifdef CONFIG_PROC_FS
+static int proc_append(char *src, int len, char **dst, off_t *offset, int *max)
+{
+	if (len < *offset) {
+		*offset -= len;
+		return 0;
+	}
+	if (*offset > 0) {
+		src += *offset;
+		len -= *offset;
+		*offset = 0;
+	}
+	if (len > *max) {
+		len = *max;
+	}
+	memcpy(*dst, src, len);
+	*dst += len;
+	*max -= len;
+	return (*max == 0);
+}
+
+static int ccio_proc_info(char *buf, char **start, off_t offset, int count,
+			  int *eof, void *data)
+{
+	int max = count;
+	char tmp[80]; /* width of an ANSI-standard terminal */
+	struct ioc *ioc = ioc_list;
+
+	while (ioc != NULL) {
+		unsigned int total_pages = ioc->res_size << 3;
+		unsigned long avg = 0, min, max;
+		int j, len;
+
+		len = sprintf(tmp, "%s\n", ioc->name);
+		if (proc_append(tmp, len, &buf, &offset, &count))
+			break;
+		
+		len = sprintf(tmp, "Cujo 2.0 bug    : %s\n",
+			      (ioc->cujo20_bug ? "yes" : "no"));
+		if (proc_append(tmp, len, &buf, &offset, &count))
+			break;
+		
+		len = sprintf(tmp, "IO PDIR size    : %d bytes (%d entries)\n",
+			      total_pages * 8, total_pages);
+		if (proc_append(tmp, len, &buf, &offset, &count))
+			break;
+		
+		len = sprintf(tmp, "IO PDIR entries : %ld free  %ld used (%d%%)\n",
+			      total_pages - ioc->used_pages, ioc->used_pages,
+			      (int)(ioc->used_pages * 100 / total_pages));
+		if (proc_append(tmp, len, &buf, &offset, &count))
+			break;
+		
+		len = sprintf(tmp, "Resource bitmap : %d bytes (%d pages)\n", 
+			ioc->res_size, total_pages);
+		if (proc_append(tmp, len, &buf, &offset, &count))
+			break;
+		
+		min = max = ioc->avg_search[0];
+		for(j = 0; j < CCIO_SEARCH_SAMPLE; ++j) {
+			avg += ioc->avg_search[j];
+			if(ioc->avg_search[j] > max) 
+				max = ioc->avg_search[j];
+			if(ioc->avg_search[j] < min) 
+				min = ioc->avg_search[j];
+		}
+		avg /= CCIO_SEARCH_SAMPLE;
+		len = sprintf(tmp, "  Bitmap search : %ld/%ld/%ld (min/avg/max CPU Cycles)\n",
+			      min, avg, max);
+		if (proc_append(tmp, len, &buf, &offset, &count))
+			break;
+
+		len = sprintf(tmp, "pci_map_single(): %8ld calls  %8ld pages (avg %d/1000)\n",
+			      ioc->msingle_calls, ioc->msingle_pages,
+			      (int)((ioc->msingle_pages * 1000)/ioc->msingle_calls));
+		if (proc_append(tmp, len, &buf, &offset, &count))
+			break;
+		
+
+		/* KLUGE - unmap_sg calls unmap_single for each mapped page */
+		min = ioc->usingle_calls - ioc->usg_calls;
+		max = ioc->usingle_pages - ioc->usg_pages;
+		len = sprintf(tmp, "pci_unmap_single: %8ld calls  %8ld pages (avg %d/1000)\n",
+			      min, max, (int)((max * 1000)/min));
+		if (proc_append(tmp, len, &buf, &offset, &count))
+			break;
+ 
+		len = sprintf(tmp, "pci_map_sg()    : %8ld calls  %8ld pages (avg %d/1000)\n",
+			      ioc->msg_calls, ioc->msg_pages,
+			      (int)((ioc->msg_pages * 1000)/ioc->msg_calls));
+		if (proc_append(tmp, len, &buf, &offset, &count))
+			break;
+		len = sprintf(tmp, "pci_unmap_sg()  : %8ld calls  %8ld pages (avg %d/1000)\n\n\n",
+			      ioc->usg_calls, ioc->usg_pages,
+			      (int)((ioc->usg_pages * 1000)/ioc->usg_calls));
+		if (proc_append(tmp, len, &buf, &offset, &count))
+			break;
+
+		ioc = ioc->next;
+	}
+
+	if (count == 0) {
+		*eof = 1;
+	}
+	return (max - count);
+}
+
+static int ccio_resource_map(char *buf, char **start, off_t offset, int len,
+			     int *eof, void *data)
+{
+	struct ioc *ioc = ioc_list;
+
+	buf[0] = '\0';
+	while (ioc != NULL) {
+		u32 *res_ptr = (u32 *)ioc->res_map;
+		int j;
+
+		for (j = 0; j < (ioc->res_size / sizeof(u32)); j++) {
+			if ((j & 7) == 0)
+				strcat(buf,"\n   ");
+			sprintf(buf, "%s %08x", buf, *res_ptr);
+			res_ptr++;
+		}
+		strcat(buf, "\n\n");
+		ioc = ioc->next;
+		break; /* XXX - remove me */
+	}
+
+	return strlen(buf);
+}
+#endif
+
+/**
+ * ccio_find_ioc - Find the ioc in the ioc_list
+ * @hw_path: The hardware path of the ioc.
+ *
+ * This function searches the ioc_list for an ioc that matches
+ * the provide hardware path.
+ */
+static struct ioc * ccio_find_ioc(int hw_path)
+{
+	int i;
+	struct ioc *ioc;
+
+	ioc = ioc_list;
+	for (i = 0; i < ioc_count; i++) {
+		if (ioc->hw_path == hw_path)
+			return ioc;
+
+		ioc = ioc->next;
+	}
+
+	return NULL;
+}
+
+/**
+ * ccio_get_iommu - Find the iommu which controls this device
+ * @dev: The parisc device.
+ *
+ * This function searches through the registerd IOMMU's and returns the
+ * appropriate IOMMU for the device based upon the devices hardware path.
+ */
+void * ccio_get_iommu(const struct parisc_device *dev)
+{
+	dev = find_pa_parent_type(dev, HPHW_IOA);
+	if (!dev)
+		return NULL;
+
+	return ccio_find_ioc(dev->hw_path);
+}
+
+#define CUJO_20_STEP       0x10000000	/* inc upper nibble */
+
+/* Cujo 2.0 has a bug which will silently corrupt data being transferred
+ * to/from certain pages.  To avoid this happening, we mark these pages
+ * as `used', and ensure that nothing will try to allocate from them.
+ */
+void ccio_cujo20_fixup(struct parisc_device *dev, u32 iovp)
+{
+	unsigned int idx;
+	struct ioc *ioc = ccio_get_iommu(dev);
+	u8 *res_ptr;
+
+#ifdef CONFIG_PROC_FS
+	ioc->cujo20_bug = 1;
+#endif
+	res_ptr = ioc->res_map;
+	idx = PDIR_INDEX(iovp) >> 3;
+
+	while (idx < ioc->res_size) {
+ 		res_ptr[idx] |= 0xff;
+		idx += PDIR_INDEX(CUJO_20_STEP) >> 3;
+	}
+}
 
 #if 0
 /* GRANT -  is this needed for U2 or not? */
@@ -875,38 +1285,37 @@ static struct pci_dma_ops ccio_ops = {
 ** I think only Java (K/D/R-class too?) systems don't do this.
 */
 static int
-ccio_get_iotlb_size(struct hp_device *d)
+ccio_get_iotlb_size(struct parisc_device *dev)
 {
-	if(d->spa_shift == 0) {
-		panic(__FUNCTION__ ": Can't determine I/O TLB size.\n");
+	if (dev->spa_shift == 0) {
+		panic("%s() : Can't determine I/O TLB size.\n", __FUNCTION__);
 	}
-	return(1 << d->spa_shift);
+	return (1 << dev->spa_shift);
 }
 #else
 
 /* Uturn supports 256 TLB entries */
 #define CCIO_CHAINID_SHIFT	8
 #define CCIO_CHAINID_MASK	0xff
-
 #endif /* 0 */
 
-
-/*
-** Figure out how big the I/O PDIR should be and alloc it.
-** Also sets variables which depend on pdir size.
-*/
+/**
+ * ccio_ioc_init - Initalize the I/O Controller
+ * @ioc: The I/O Controller.
+ *
+ * Initalize the I/O Controller which includes setting up the
+ * I/O Page Directory, the resource map, and initalizing the
+ * U2/Uturn chip into virtual mode.
+ */
 static void
-ccio_alloc_pdir(struct ccio_device *ioa)
+ccio_ioc_init(struct ioc *ioc)
 {
-	extern unsigned long mem_max;          /* arch.../setup.c */
-
-	u32 iova_space_size = 0;
-	void * pdir_base;
-	int pdir_size, iov_order;
+	int i, iov_order;
+	u32 iova_space_size;
+	unsigned long physmem;
 
 	/*
 	** Determine IOVA Space size from memory size.
-	** Using "mem_max" is a kluge.
 	**
 	** Ideally, PCI drivers would register the maximum number
 	** of DMA they can have outstanding for each device they
@@ -915,15 +1324,18 @@ ccio_alloc_pdir(struct ccio_device *ioa)
 	** methods still require some "extra" to support PCI
 	** Hot-Plug/Removal of PCI cards. (aka PCI OLARD).
 	*/
+
 	/* limit IOVA space size to 1MB-1GB */
-	if (mem_max < (ccio_mem_ratio*1024*1024)) {
-		iova_space_size = 1024*1024;
+
+	physmem = num_physpages << PAGE_SHIFT;
+	if(physmem < (ccio_mem_ratio * 1024 * 1024)) {
+		iova_space_size = 1024 * 1024;
 #ifdef __LP64__
-	} else if (mem_max > (ccio_mem_ratio*512*1024*1024)) {
-		iova_space_size = 512*1024*1024;
+	} else if(physmem > (ccio_mem_ratio * 512 * 1024 * 1024)) {
+		iova_space_size = 512 * 1024 * 1024;
 #endif
 	} else {
-		iova_space_size = (u32) (mem_max/ccio_mem_ratio);
+		iova_space_size = (u32)(physmem / ccio_mem_ratio);
 	}
 
 	/*
@@ -933,277 +1345,271 @@ ccio_alloc_pdir(struct ccio_device *ioa)
 
 	/* We could use larger page sizes in order to *decrease* the number
 	** of mappings needed.  (ie 8k pages means 1/2 the mappings).
-        **
+	**
 	** Note: Grant Grunder says "Using 8k I/O pages isn't trivial either
 	**   since the pages must also be physically contiguous - typically
 	**   this is the case under linux."
 	*/
 
-	iov_order = get_order(iova_space_size);
+	iov_order = get_order(iova_space_size) >> (IOVP_SHIFT - PAGE_SHIFT);
 	ASSERT(iov_order <= (30 - IOVP_SHIFT));   /* iova_space_size <= 1GB */
 	ASSERT(iov_order >= (20 - IOVP_SHIFT));   /* iova_space_size >= 1MB */
 	iova_space_size = 1 << (iov_order + IOVP_SHIFT);
 
-	ioa->pdir_size = pdir_size = (iova_space_size/IOVP_SIZE) * sizeof(u64);
+	ioc->pdir_size = (iova_space_size / IOVP_SIZE) * sizeof(u64);
 
-	ASSERT(pdir_size < 4*1024*1024);   /* max pdir size < 4MB */
+	ASSERT(ioc->pdir_size < 4 * 1024 * 1024);   /* max pdir size < 4MB */
 
 	/* Verify it's a power of two */
-	ASSERT((1 << get_order(pdir_size)) == (pdir_size >> PAGE_SHIFT));
+	ASSERT((1 << get_order(ioc->pdir_size)) == (ioc->pdir_size >> PAGE_SHIFT));
 
-	DBG_INIT(__FUNCTION__ " hpa 0x%p mem %dMB IOV %dMB (%d bits)\n    PDIR size 0x%0x",
-		ioa->ccio_hpa, (int) (mem_max>>20), iova_space_size>>20,
-		iov_order + PAGE_SHIFT, pdir_size);
+	DBG_INIT("%s() hpa 0x%p mem %luMB IOV %dMB (%d bits) PDIR size 0x%0x",
+		__FUNCTION__, ioc->ioc_hpa, physmem>>20, iova_space_size>>20,
+		 iov_order + PAGE_SHIFT, ioc->pdir_size);
 
-	ioa->pdir_base =
-	pdir_base = (void *) __get_free_pages(GFP_KERNEL, get_order(pdir_size));
-	if (NULL == pdir_base)
-	{
-		panic(__FILE__ ":" __FUNCTION__ "() could not allocate I/O Page Table\n");
+	ioc->pdir_base = (u64 *)__get_free_pages(GFP_KERNEL, 
+						 get_order(ioc->pdir_size));
+	if(NULL == ioc->pdir_base) {
+		panic(__FILE__ ":%s() could not allocate I/O Page Table\n", __FUNCTION__);
 	}
-	memset(pdir_base, 0, pdir_size);
+	memset(ioc->pdir_base, 0, ioc->pdir_size);
 
-	ASSERT((((unsigned long) pdir_base) & PAGE_MASK) == (unsigned long) pdir_base);
+	ASSERT((((unsigned long)ioc->pdir_base) & PAGE_MASK) == (unsigned long)ioc->pdir_base);
+	DBG_INIT(" base %p", ioc->pdir_base);
 
-	DBG_INIT(" base %p", pdir_base);
+	/* resource map size dictated by pdir_size */
+ 	ioc->res_size = (ioc->pdir_size / sizeof(u64)) >> 3;
+	DBG_INIT("%s() res_size 0x%x\n", __FUNCTION__, ioc->res_size);
+	
+	ioc->res_map = (u8 *)__get_free_pages(GFP_KERNEL, 
+					      get_order(ioc->res_size));
+	if(NULL == ioc->res_map) {
+		panic(__FILE__ ":%s() could not allocate resource map\n", __FUNCTION__);
+	}
+	memset(ioc->res_map, 0, ioc->res_size);
+
+	/* Initialize the res_hint to 16 */
+	ioc->res_hint = 16;
+
+	/* Initialize the spinlock */
+	spin_lock_init(&ioc->res_lock);
 
 	/*
 	** Chainid is the upper most bits of an IOVP used to determine
 	** which TLB entry an IOVP will use.
 	*/
-	ioa->chainid_shift = get_order(iova_space_size)+PAGE_SHIFT-CCIO_CHAINID_SHIFT;
-
-	DBG_INIT(" chainid_shift 0x%x\n", ioa->chainid_shift);
-}
-
-
-static void
-ccio_hw_init(struct ccio_device *ioa)
-{
-	int i;
+	ioc->chainid_shift = get_order(iova_space_size) + PAGE_SHIFT - CCIO_CHAINID_SHIFT;
+	DBG_INIT(" chainid_shift 0x%x\n", ioc->chainid_shift);
 
 	/*
 	** Initialize IOA hardware
 	*/
-	WRITE_U32(CCIO_CHAINID_MASK << ioa->chainid_shift, &ioa->ccio_hpa->io_chain_id_mask);
-	WRITE_U32(virt_to_phys(ioa->pdir_base), &ioa->ccio_hpa->io_pdir_base);
+	WRITE_U32(CCIO_CHAINID_MASK << ioc->chainid_shift, 
+		  &ioc->ioc_hpa->io_chain_id_mask);
 
+	WRITE_U32(virt_to_phys(ioc->pdir_base), 
+		  &ioc->ioc_hpa->io_pdir_base);
 
 	/*
 	** Go to "Virtual Mode"
 	*/
-	WRITE_U32(IOA_NORMAL_MODE, &ioa->ccio_hpa->io_control);
+	WRITE_U32(IOA_NORMAL_MODE, &ioc->ioc_hpa->io_control);
 
 	/*
 	** Initialize all I/O TLB entries to 0 (Valid bit off).
 	*/
-	WRITE_U32(0, &ioa->ccio_hpa->io_tlb_entry_m);
-	WRITE_U32(0, &ioa->ccio_hpa->io_tlb_entry_l);
+	WRITE_U32(0, &ioc->ioc_hpa->io_tlb_entry_m);
+	WRITE_U32(0, &ioc->ioc_hpa->io_tlb_entry_l);
 
-	for (i = 1 << CCIO_CHAINID_SHIFT; i ; i--) {
-		WRITE_U32((CMD_TLB_DIRECT_WRITE | (i << ioa->chainid_shift)),
-					&ioa->ccio_hpa->io_command);
+	for(i = 1 << CCIO_CHAINID_SHIFT; i ; i--) {
+		WRITE_U32((CMD_TLB_DIRECT_WRITE | (i << ioc->chainid_shift)),
+			  &ioc->ioc_hpa->io_command);
 	}
-
 }
 
-
 static void
-ccio_resmap_init(struct ccio_device *ioa)
+ccio_init_resource(struct resource *res, char *name, unsigned long ioaddr)
 {
-	u32 res_size;
+	int result;
 
-	/*
-	** Ok...we do more than just init resource map
-	*/
-	ioa->ccio_lock = SPIN_LOCK_UNLOCKED;
-
-	ioa->res_hint = 16;    /* next available IOVP - circular search */
-
-	/* resource map size dictated by pdir_size */
-	res_size = ioa->pdir_size/sizeof(u64); /* entries */
-	res_size >>= 3;	/* convert bit count to byte count */
-	DBG_INIT(__FUNCTION__ "() res_size 0x%x\n", res_size);
-
-	ioa->res_size = res_size;
-	ioa->res_map = (char *) __get_free_pages(GFP_KERNEL, get_order(res_size));
-	if (NULL == ioa->res_map)
-	{
-		panic(__FILE__ ":" __FUNCTION__ "() could not allocate resource map\n");
+	res->flags = IORESOURCE_MEM;
+	res->start = (unsigned long)(signed) __raw_readl(ioaddr) << 16;
+	res->end = (unsigned long)(signed) (__raw_readl(ioaddr + 4) << 16) - 1;
+	if (res->end + 1 == res->start)
+		return;
+	res->name = name;
+	result = request_resource(&iomem_resource, res);
+	if (result < 0) {
+		printk(KERN_ERR 
+		       "%s: failed to claim CCIO bus address space (%p,%p)\n", 
+		       __FILE__, res->start, res->end);
 	}
-	memset(ioa->res_map, 0, res_size);
 }
 
-/* CUJO20 KLUDGE start */
-static struct {
-		u16 hversion;
-		u8  spa;
-		u8  type;
-		u32     foo[3];	/* 16 bytes total */
-} cujo_iodc __attribute__ ((aligned (64)));
-static unsigned long cujo_result[32] __attribute__ ((aligned (16))) = {0,0,0,0};
-
-/*
-** CUJO 2.0 incorrectly decodes a memory access for specific
-** pages (every page at specific iotlb locations dependent
-** upon where the cujo is flexed - diff on raven/firehawk.
-** resulting in an hpmc and/or silent data corruption.
-** Workaround is to prevent use of those I/O TLB entries
-** by marking the suspect bitmap range entries as busy.
-*/
-static void
-ccio_cujo20_hack(struct ccio_device *ioa)
+static void __init ccio_init_resources(struct ioc *ioc)
 {
-	unsigned long status;
-	unsigned int idx;
-	u8 *res_ptr = ioa->res_map;
-	u32 iovp=0x0;
-	unsigned long mask;
+	struct resource *res = ioc->mmio_region;
+	char *name = kmalloc(14, GFP_KERNEL);
 
-	status = pdc_iodc_read( &cujo_result, (void *) CUJO_RAVEN_LOC, 0, &cujo_iodc, 16);
-	if (status == 0) {
-		if (cujo_iodc.hversion==CUJO_20_BADHVERS)
-			iovp = CUJO_20_BADPAGE1;
+	sprintf(name, "GSC Bus [%d/]", ioc->hw_path);
+
+	ccio_init_resource(res, name, (unsigned long)&ioc->ioc_hpa->io_io_low);
+	ccio_init_resource(res + 1, name,
+			(unsigned long)&ioc->ioc_hpa->io_io_low_hv);
+}
+
+static void expand_ioc_area(struct ioc *ioc, unsigned long size,
+		unsigned long min, unsigned long max, unsigned long align)
+{
+#ifdef NASTY_HACK_FOR_K_CLASS
+	__raw_writel(0xfffff600, (unsigned long)&(ioc->ioc_hpa->io_io_high));
+	ioc->mmio_region[0].end = 0xf5ffffff;
+#endif
+}
+
+static struct resource *ccio_get_resource(struct ioc* ioc,
+		const struct parisc_device *dev)
+{
+	if (!ioc) {
+		return &iomem_resource;
+	} else if ((ioc->mmio_region->start <= dev->hpa) &&
+			(dev->hpa < ioc->mmio_region->end)) {
+		return ioc->mmio_region;
+	} else if (((ioc->mmio_region + 1)->start <= dev->hpa) &&
+			(dev->hpa < (ioc->mmio_region + 1)->end)) {
+		return ioc->mmio_region + 1;
 	} else {
-		status = pdc_iodc_read( &cujo_result, (void *) CUJO_FIREHAWK_LOC, 0, &cujo_iodc, 16);
-		if (status == 0) {
-			if (cujo_iodc.hversion==CUJO_20_BADHVERS)
-				iovp = CUJO_20_BADPAGE2;
-		} else {
-			/* not a defective system */
-			return;
-		}
-	}
-
-	printk(MODULE_NAME ": Cujo 2.0 bug needs a work around\n");
-	ccio_cujo_bug = 1;
-
-	/*
-	** mark bit entries that match "bad page"
-	*/
-	idx = PDIR_INDEX(iovp)>>3;
-	mask = 0xff;
-	
-	while(idx * sizeof(u8) < ioa->res_size) {
-		res_ptr[idx] |= mask;
-		idx += (PDIR_INDEX(CUJO_20_STEP)>>3);
-		ccio_used_pages += 8;
-		ccio_used_bytes += 1;
+		return NULL;
 	}
 }
-/* CUJO20 KLUDGE end */
 
-#ifdef CONFIG_PROC_FS
-static int ccio_proc_info(char *buf, char **start, off_t offset, int len)
+int ccio_allocate_resource(const struct parisc_device *dev,
+		struct resource *res, unsigned long size,
+		unsigned long min, unsigned long max, unsigned long align,
+		void (*alignf)(void *, struct resource *, unsigned long),
+		void *alignf_data)
 {
-	unsigned long i = 0;
-	struct ccio_device *ioa = ccio_list;
-	unsigned long *res_ptr = (unsigned long *)ioa->res_map;
-	unsigned long total_pages = ioa->res_size << 3;            /* 8 bits per byte */
+	struct ioc *ioc = ccio_get_iommu(dev);
+	struct resource *parent = ccio_get_resource(ioc, dev);
+	if (!parent)
+		return -EBUSY;
 
-	sprintf(buf, "%s\nCujo 2.0 bug    : %s\n",
-		parisc_getHWdescription(ioa->iodc->hw_type, ioa->iodc->hversion,
-					ioa->iodc->sversion),
-		(ccio_cujo_bug ? "yes" : "no"));
+	if (!allocate_resource(parent, res, size, min, max, align, alignf,
+			alignf_data))
+		return 0;
 
-	sprintf(buf, "%sIO pdir size    : %d bytes (%d entries)\n",
-		buf, ((ioa->res_size << 3) * sizeof(u64)), /* 8 bits per byte */
-		ioa->res_size << 3);                       /* 8 bits per byte */
-	
-	sprintf(buf, "%sResource bitmap : %d bytes (%d pages)\n", 
-		buf, ioa->res_size, ioa->res_size << 3);   /* 8 bits per byte */
-
-	strcat(buf,  "     	  total:    free:    used:   % used:\n");
-	sprintf(buf, "%sblocks  %8d %8ld %8ld %8ld%%\n", buf, ioa->res_size,
-		ioa->res_size - ccio_used_bytes, ccio_used_bytes,
-		(ccio_used_bytes * 100) / ioa->res_size);
-
-	sprintf(buf, "%spages   %8ld %8ld %8ld %8ld%%\n", buf, total_pages,
-		total_pages - ccio_used_pages, ccio_used_pages,
-		(ccio_used_pages * 100 / total_pages));
-
-	sprintf(buf, "%sconsistent       %8ld %8ld\n", buf,
-		ccio_alloc_size, ccio_free_size);
- 
-	strcat(buf, "\nResource bitmap:\n");
-
-	for(; i < (ioa->res_size / sizeof(unsigned long)); ++i, ++res_ptr)
-		len += sprintf(buf, "%s%08lx ", buf, *res_ptr);
-
-	strcat(buf, "\n");
-	return strlen(buf);
+	expand_ioc_area(ioc, size, min, max, align);
+	return allocate_resource(parent, res, size, min, max, align, alignf,
+			alignf_data);
 }
-#endif
 
-/*
-** Determine if ccio should claim this chip (return 0) or not (return 1).
-** If so, initialize the chip and tell other partners in crime they
-** have work to do.
-*/
-static int
-ccio_driver_callback(struct hp_device *d, struct pa_iodc_driver *dri)
+int ccio_request_resource(const struct parisc_device *dev,
+		struct resource *res)
 {
-	struct ccio_device *ioa;
+	struct ioc *ioc = ccio_get_iommu(dev);
+	struct resource *parent = ccio_get_resource(ioc, dev);
 
-	printk("%s found %s at 0x%p\n", dri->name, dri->version, d->hpa);
-
-	if (ccio_list) {
-		printk(MODULE_NAME ": already initialized one device\n");
-		return(0);
+	return request_resource(parent, res);
+}
+/**
+ * ccio_probe - Determine if ccio should claim this device.
+ * @dev: The device which has been found
+ *
+ * Determine if ccio should claim this chip (return 0) or not (return 1).
+ * If so, initialize the chip and tell other partners in crime they
+ * have work to do.
+ */
+static int ccio_probe(struct parisc_device *dev)
+{
+	int i;
+	struct ioc *ioc, **ioc_p = &ioc_list;
+	
+	ioc = kmalloc(sizeof(struct ioc), GFP_KERNEL);
+	if (ioc == NULL) {
+		printk(KERN_ERR MODULE_NAME ": memory allocation failure\n");
+		return 1;
 	}
+	memset(ioc, 0, sizeof(struct ioc));
 
-	ioa = kmalloc(sizeof(struct ccio_device), GFP_KERNEL);
-	if (NULL == ioa)
-	{
-		printk(MODULE_NAME " - couldn't alloc ccio_device\n");
-		return(1);
+	ioc->name = dev->id.hversion == U2_IOA_RUNWAY ? "U2" : "UTurn";
+
+	printk(KERN_INFO "Found %s at 0x%lx\n", ioc->name, dev->hpa);
+
+	for (i = 0; i < ioc_count; i++) {
+		ioc_p = &(*ioc_p)->next;
 	}
-	memset(ioa, 0, sizeof(struct ccio_device));
+	*ioc_p = ioc;
 
-	/*
-	** ccio list is used mainly as a kluge to support a single instance. 
-	** Eventually, with core dumps, it'll be useful for debugging.
-	*/
-	ccio_list = ioa;
-	ioa->iodc = d;
-
-#if 1
-/* KLUGE: determine IOA hpa based on GSC port value.
-** Needed until we have a PA bus walk. Can only discover IOA via
-** walking the architected PA MMIO space as described by the I/O ACD.
-** "Legacy" PA Firmware only tells us about unarchitected devices
-** that can't be detected by PA/EISA/PCI bus walks.
-*/
-	switch((long) d->hpa) {
-	case 0xf3fbf000L:       /* C110 IOA0 LBC (aka GSC port) */
-		/* ccio_hpa same as C200 IOA0 */
-	case 0xf203f000L:       /* C180/C200/240/C360 IOA0 LBC (aka GSC port) */
-		ioa->ccio_hpa = (struct ioa_registers *) 0xfff88000L;
-		break;
-	case 0xf103f000L:       /* C180/C200/240/C360 IOA1 LBC (aka GSC port) */
-		ioa->ccio_hpa = (struct ioa_registers *) 0xfff8A000L;
-		break;
-	default:
-		panic("ccio-dma.c doesn't know this GSC port Address!\n");
-		break;
-	};
-#else
-	ioa->ccio_hpa = d->hpa;
-#endif
-
-	ccio_alloc_pdir(ioa);
-	ccio_hw_init(ioa);
-	ccio_resmap_init(ioa);
-
-	/* CUJO20 KLUDGE start */
-	ccio_cujo20_hack(ioa);
-	/* CUJO20 KLUDGE end */
-
+	ioc->hw_path = dev->hw_path;
+	ioc->ioc_hpa = (struct ioa_registers *)dev->hpa;
+	ccio_ioc_init(ioc);
+	ccio_init_resources(ioc);
 	hppa_dma_ops = &ccio_ops;
 
-	create_proc_info_entry(MODULE_NAME, 0, proc_runway_root, ccio_proc_info);
-	return(0);
+	if (ioc_count == 0) {
+		/* XXX: Create separate entries for each ioc */
+		create_proc_read_entry(MODULE_NAME, S_IRWXU, proc_runway_root,
+				       ccio_proc_info, NULL);
+		create_proc_read_entry(MODULE_NAME"-bitmap", S_IRWXU,
+				       proc_runway_root, ccio_resource_map, NULL);
+	}
+
+	ioc_count++;
+	return 0;
 }
 
+struct pci_dev * ccio_get_fake(const struct parisc_device *dev)
+{
+	struct ioc *ioc;
 
+	dev = find_pa_parent_type(dev, HPHW_IOA);
+	if(!dev)
+		return NULL;
+
+	ioc = ccio_find_ioc(dev->hw_path);
+	if(!ioc)
+		return NULL;
+
+	if(ioc->fake_pci_dev)
+		return ioc->fake_pci_dev;
+
+	ioc->fake_pci_dev = kmalloc(sizeof(struct pci_dev), GFP_KERNEL);
+	if(ioc->fake_pci_dev == NULL) {
+		printk(KERN_ERR MODULE_NAME ": memory allocation failure\n");
+		return NULL;
+	}
+	memset(ioc->fake_pci_dev, 0, sizeof(struct pci_dev));
+
+	ioc->fake_pci_dev->sysdata = kmalloc(sizeof(struct pci_hba_data), GFP_KERNEL);
+	if(ioc->fake_pci_dev->sysdata == NULL) {
+		printk(KERN_ERR MODULE_NAME ": memory allocation failure\n");
+		return NULL;
+	}
+
+	HBA_DATA(ioc->fake_pci_dev->sysdata)->iommu = ioc;
+	return ioc->fake_pci_dev;
+}
+
+/* We *can't* support JAVA (T600). Venture there at your own risk. */
+static struct parisc_device_id ccio_tbl[] = {
+	{ HPHW_IOA, HVERSION_REV_ANY_ID, U2_IOA_RUNWAY, 0xb }, /* U2 */
+	{ HPHW_IOA, HVERSION_REV_ANY_ID, UTURN_IOA_RUNWAY, 0xb }, /* UTurn */
+	{ 0, }
+};
+
+static struct parisc_driver ccio_driver = {
+	name:		"U2/Uturn",
+	id_table:	ccio_tbl,
+	probe:		ccio_probe,
+};
+
+/**
+ * ccio_init - ccio initalization procedure.
+ *
+ * Register this driver.
+ */
+void __init ccio_init(void)
+{
+	register_parisc_driver(&ccio_driver);
+}
 

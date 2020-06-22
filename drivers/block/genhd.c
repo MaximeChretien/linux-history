@@ -22,9 +22,8 @@
 #include <linux/blk.h>
 #include <linux/init.h>
 #include <linux/spinlock.h>
+#include <linux/seq_file.h>
 
-
-static rwlock_t gendisk_lock;
 
 /*
  * Global kernel list of partitioning information.
@@ -34,6 +33,7 @@ static rwlock_t gendisk_lock;
  */
 /*static*/ struct gendisk *gendisk_head;
 static struct gendisk *gendisk_array[MAX_BLKDEV];
+static rwlock_t gendisk_lock = RW_LOCK_UNLOCKED;
 
 EXPORT_SYMBOL(gendisk_head);
 
@@ -153,46 +153,82 @@ walk_gendisk(int (*walk)(struct gendisk *, void *), void *data)
 	return error;
 }
 
-
 #ifdef CONFIG_PROC_FS
-int
-get_partition_list(char *page, char **start, off_t offset, int count)
+/* iterator */
+static void *part_start(struct seq_file *s, loff_t *ppos)
 {
 	struct gendisk *gp;
-	struct hd_struct *hd;
-	char buf[64];
-	int len, n;
+	loff_t pos = *ppos;
 
-	len = sprintf(page, "major minor  #blocks  name\n\n");
-		
 	read_lock(&gendisk_lock);
-	for (gp = gendisk_head; gp; gp = gp->next) {
-		for (n = 0; n < (gp->nr_real << gp->minor_shift); n++) {
-			if (gp->part[n].nr_sects == 0)
-				continue;
+	for (gp = gendisk_head; gp; gp = gp->next)
+		if (!pos--)
+			return gp;
+	return NULL;
+}
 
-			hd = &gp->part[n]; disk_round_stats(hd);
-			len += sprintf(page + len,
-				"%4d  %4d %10d %s\n", gp->major,
-				n, gp->sizes[n], disk_name(gp, n, buf));
+static void *part_next(struct seq_file *s, void *v, loff_t *pos)
+{
+	++*pos;
+	return ((struct gendisk *)v)->next;
+}
 
-			if (len < offset)
-				offset -= len, len = 0;
-			else if (len >= offset + count)
-				goto out;
+static void part_stop(struct seq_file *s, void *v)
+{
+	read_unlock(&gendisk_lock);
+}
+
+static int part_show(struct seq_file *s, void *v)
+{
+	struct gendisk *gp = v;
+	char buf[64];
+	int n;
+
+	if (gp == gendisk_head) {
+		seq_puts(s, "major minor  #blocks  name"
+#ifdef CONFIG_BLK_STATS
+			    "     rio rmerge rsect ruse wio wmerge "
+			    "wsect wuse running use aveq"
+#endif
+			   "\n\n");
+	}
+
+	/* show the full disk and all non-0 size partitions of it */
+	for (n = 0; n < (gp->nr_real << gp->minor_shift); n++) {
+		if (gp->part[n].nr_sects) {
+#ifdef CONFIG_BLK_STATS
+			struct hd_struct *hd = &gp->part[n];
+
+			disk_round_stats(hd);
+			seq_printf(s, "%4d  %4d %10d %s "
+				      "%d %d %d %d %d %d %d %d %d %d %d\n",
+				      gp->major, n, gp->sizes[n],
+				      disk_name(gp, n, buf),
+				      hd->rd_ios, hd->rd_merges,
+#define MSEC(x) ((x) * 1000 / HZ)
+				      hd->rd_sectors, MSEC(hd->rd_ticks),
+				      hd->wr_ios, hd->wr_merges,
+				      hd->wr_sectors, MSEC(hd->wr_ticks),
+				      hd->ios_in_flight, MSEC(hd->io_ticks),
+				      MSEC(hd->aveq));
+#else
+			seq_printf(s, "%4d  %4d %10d %s\n",
+				   gp->major, n, gp->sizes[n],
+				   disk_name(gp, n, buf));
+#endif /* CONFIG_BLK_STATS */
 		}
 	}
 
-out:
-	read_unlock(&gendisk_lock);
-	*start = page + offset;
-	len -= offset;
-	if (len < 0)
-		len = 0;
-	return len > count ? count : len;
+	return 0;
 }
-#endif
 
+struct seq_operations partitions_op = {
+	.start		= part_start,
+	.next		= part_next,
+	.stop		= part_stop,
+	.show		= part_show,
+};
+#endif
 
 extern int blk_dev_init(void);
 extern int net_dev_init(void);
@@ -201,7 +237,6 @@ extern int atmdev_init(void);
 
 int __init device_init(void)
 {
-	rwlock_init(&gendisk_lock);
 	blk_dev_init();
 	sti();
 #ifdef CONFIG_NET

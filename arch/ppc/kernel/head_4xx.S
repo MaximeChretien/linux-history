@@ -34,7 +34,8 @@
 #include <asm/pgtable.h>
 #include <asm/mmu.h>
 
-#include "ppc_asm.h"
+#include <asm/ppc_asm.h>
+#include "ppc_defs.h"
 
 
 /* Preprocessor Defines */

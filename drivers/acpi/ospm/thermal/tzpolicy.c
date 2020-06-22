@@ -413,7 +413,7 @@ tz_policy_check (
 		if (timer_pending(&(policy->timer)))
 			mod_timer(&(policy->timer), (HZ*sleep_time)/1000);
 		else {
-			policy->timer.data = (u32)tz;
+			policy->timer.data = (unsigned long)tz;
 			policy->timer.function = tz_policy_run;
 			policy->timer.expires = jiffies + (HZ*sleep_time)/1000;
 			add_timer(&(policy->timer));

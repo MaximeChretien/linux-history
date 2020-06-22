@@ -628,6 +628,7 @@ struct super_block *usbdevfs_read_super(struct super_block *s, void *data, int s
         s->s_root = d_alloc_root(root_inode);
         if (!s->s_root)
                 goto out_no_root;
+	lock_kernel();
 	list_add_tail(&s->u.usbdevfs_sb.slist, &superlist);
 	for (i = 0; i < NRSPECIAL; i++) {
 		if (!(inode = iget(s, IROOT+1+i)))
@@ -646,6 +647,7 @@ struct super_block *usbdevfs_read_super(struct super_block *s, void *data, int s
 		recurse_new_dev_inode(bus->root_hub, s);
 	}
 	up (&usb_bus_list_lock);
+	unlock_kernel();
         return s;
 
  out_no_root:

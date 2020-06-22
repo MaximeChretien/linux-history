@@ -23,7 +23,7 @@
 */
 
 /* 
- * $Id: hci_core.h,v 1.4 2002/06/25 22:04:43 maxk Exp $ 
+ * $Id: hci_core.h,v 1.5 2002/06/27 04:56:30 maxk Exp $ 
  */
 
 #ifndef __HCI_CORE_H
@@ -149,7 +149,7 @@ struct hci_conn {
 
 extern struct hci_proto *hci_proto[];
 extern struct list_head hdev_list;
-extern spinlock_t hdev_list_lock;
+extern rwlock_t hdev_list_lock;
 
 /* ----- Inquiry cache ----- */
 #define INQUIRY_CACHE_AGE_MAX   (HZ*30)   // 30 seconds

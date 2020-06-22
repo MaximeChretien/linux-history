@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.setup.c 1.75 04/16/02 20:08:22 paulus
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
  * Common prep/pmac/chrp boot and setup code.
@@ -29,17 +29,6 @@
 #include <asm/smp.h>
 #include <asm/elf.h>
 #include <asm/cputable.h>
-#ifdef CONFIG_8xx
-#include <asm/mpc8xx.h>
-#include <asm/8xx_immap.h>
-#endif
-#ifdef CONFIG_8260
-#include <asm/mpc8260.h>
-#include <asm/immap_8260.h>
-#endif
-#ifdef CONFIG_4xx
-#include <asm/ppc4xx.h>
-#endif
 #include <asm/bootx.h>
 #include <asm/btext.h>
 #include <asm/machdep.h>
@@ -68,9 +57,7 @@ unsigned long sysmap_size;
 
 /* Used with the BI_MEMSIZE bootinfo parameter to store the memory
    size value reported by the boot loader. */ 
-unsigned int boot_mem_size;
-
-int parse_bootinfo(void);
+unsigned long boot_mem_size;
 
 unsigned long ISA_DMA_THRESHOLD;
 unsigned long DMA_MODE_READ, DMA_MODE_WRITE;
@@ -350,6 +337,8 @@ platform_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	}
 #endif	
 
+	parse_bootinfo(find_bootinfo());
+
 	/* if we didn't get any bootinfo telling us what we are... */
 	if (_machine == 0) {
 		/* prep boot loader tells us if we're prep or not */
@@ -439,7 +428,8 @@ platform_init(unsigned long r3, unsigned long r4, unsigned long r5,
 }
 #endif /* CONFIG_ALL_PPC */
 
-int parse_bootinfo(void)
+#ifndef CONFIG_APUS
+struct bi_record *find_bootinfo(void)
 {
 	struct bi_record *rec;
 	extern char __bss_start[];
@@ -453,15 +443,21 @@ int parse_bootinfo(void)
 		 */
 		rec = (struct bi_record *)_ALIGN((ulong)__bss_start+0x10000+(1<<20)-1,(1<<20));
 		if ( rec->tag != BI_FIRST )
-			return -1;
+			return NULL;
 	}
-	for ( ; rec->tag != BI_LAST ;
-	      rec = (struct bi_record *)((ulong)rec + rec->size) )
-	{
+	return rec;
+}
+
+void parse_bootinfo(struct bi_record *rec)
+{
+	if (rec == NULL || rec->tag != BI_FIRST)
+		return;
+	while (rec->tag != BI_LAST) {
 		ulong *data = rec->data;
 		switch (rec->tag) {
 		case BI_CMD_LINE:
-			memcpy(cmd_line, (void *)data, rec->size);
+			memcpy(cmd_line, (void *)data, rec->size - 
+					sizeof(struct bi_record));
 			break;
 		case BI_SYSMAP:
 			sysmap = (char *)((data[0] >= (KERNELBASE)) ? data[0] :
@@ -483,10 +479,10 @@ int parse_bootinfo(void)
 			boot_mem_size = data[0];
 			break;
 		}
+		rec = (struct bi_record *)((ulong)rec + rec->size);
 	}
-
-	return 0;
 }
+#endif /* CONFIG_APUS */
 
 /*
  * Find out what kind of machine we're on and save any data we need
@@ -501,8 +497,6 @@ machine_init(unsigned long r3, unsigned long r4, unsigned long r5,
 #ifdef CONFIG_CMDLINE
 	strcpy(cmd_line, CONFIG_CMDLINE);
 #endif /* CONFIG_CMDLINE */
-
-	parse_bootinfo();
 
 	platform_init(r3, r4, r5, r6, r7);
 
@@ -603,24 +597,6 @@ void __init setup_arch(char **cmdline_p)
 	ppc_md.setup_arch();
 	if ( ppc_md.progress ) ppc_md.progress("arch: exit", 0x3eab);
 
-#if defined(CONFIG_PCI) && defined(CONFIG_ALL_PPC)
-	/* We create the "pci-OF-bus-map" property now so it appear in the
-	 * /proc device tree
-	 */
-	if (have_of) {
-		struct property* of_prop;
-		
-		of_prop = (struct property*)alloc_bootmem(sizeof(struct property) + 256);
-		if (of_prop && find_path_device("/")) {
-			memset(of_prop, -1, sizeof(struct property) + 256);
-			of_prop->name = "pci-OF-bus-map";
-			of_prop->length = 256;
-			of_prop->value = (unsigned char *)&of_prop[1];
-			prom_add_property(find_path_device("/"), of_prop);
-		}
-	}
-#endif /* CONFIG_PCI && CONFIG_ALL_PPC */
-
 	paging_init();
 	sort_exception_table();
 
@@ -628,6 +604,8 @@ void __init setup_arch(char **cmdline_p)
 	ppc_md.ppc_machine = _machine;
 }
 
+#if defined(CONFIG_BLK_DEV_IDE) || defined(CONFIG_BLK_DEV_IDE_MODULE) \
+	|| defined(CONFIG_USB_STORAGE) || defined(CONFIG_USB_STORAGE_MODULE)
 /* Convert the shorts/longs in hd_driveid from little to big endian;
  * chars are endian independant, of course, but strings need to be flipped.
  * (Despite what it says in drivers/block/ide.h, they come up as little
@@ -722,3 +700,4 @@ void ppc_generic_ide_fix_driveid(struct hd_driveid *id)
 		id->words206_254[i] = __le16_to_cpu(id->words206_254[i]);
 	id->integrity_word  = __le16_to_cpu(id->integrity_word);
 }
+#endif

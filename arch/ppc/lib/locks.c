@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.locks.c 1.11 08/19/01 22:27:32 paulus
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
  * Locks for smp ppc 
@@ -16,7 +16,7 @@
 #include <asm/system.h>
 #include <asm/io.h>
 
-#ifdef SPINLOCK_DEBUG
+#if SPINLOCK_DEBUG
 
 #undef INIT_STUCK
 #define INIT_STUCK 200000000 /*0xffffffff*/

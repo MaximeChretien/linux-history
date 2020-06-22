@@ -1,13 +1,25 @@
 /*
- * This file is subject to the terms and conditions of the GNU General Public
- * License.  See the file "COPYING" in the main directory of this archive
- * for more details.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  *
  * Copyright (C) 2000, 2001 Kanoj Sarcar
  * Copyright (C) 2000, 2001 Ralf Baechle
  * Copyright (C) 2000, 2001 Silicon Graphics, Inc.
+ * Copyright (C) 2000, 2001 Broadcom Corporation
  */
 #include <linux/config.h>
+#include <linux/cache.h>
 #include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -17,7 +29,6 @@
 #include <linux/time.h>
 #include <linux/timex.h>
 #include <linux/sched.h>
-#include <linux/cache.h>
 
 #include <asm/atomic.h>
 #include <asm/cpu.h>
@@ -26,14 +37,13 @@
 #include <asm/hardirq.h>
 #include <asm/softirq.h>
 #include <asm/mmu_context.h>
-#include <asm/irq.h>
+#include <asm/smp.h>
 
 /* The 'big kernel lock' */
 spinlock_t kernel_flag __cacheline_aligned_in_smp = SPIN_LOCK_UNLOCKED;
 int smp_threads_ready;	/* Not used */
 atomic_t smp_commenced = ATOMIC_INIT(0);
 struct cpuinfo_mips cpu_data[NR_CPUS];
-void (*volatile smp_cpu0_finalize)(void);
 
 // static atomic_t cpus_booted = ATOMIC_INIT(0);
 atomic_t cpus_booted = ATOMIC_INIT(0);
@@ -44,8 +54,36 @@ int __cpu_number_map[NR_CPUS];
 int __cpu_logical_map[NR_CPUS];
 cycles_t cacheflush_time;
 
-// static void smp_tune_scheduling (void)
-void smp_tune_scheduling (void)
+/* These are defined by the board-specific code. */
+
+/*
+ * Cause the function described by call_data to be executed on the passed
+ * cpu.  When the function has finished, increment the finished field of
+ * call_data.
+ */
+void core_send_ipi(int cpu, unsigned int action);
+
+/*
+ * Clear all undefined state in the cpu, set up sp and gp to the passed
+ * values, and kick the cpu into smp_bootstrap();
+ */
+void prom_boot_secondary(int cpu, unsigned long sp, unsigned long gp);
+
+/*
+ *  After we've done initial boot, this function is called to allow the
+ *  board code to clean up state, if needed
+ */
+void prom_init_secondary(void);
+
+/*
+ * Do whatever setup needs to be done for SMP at the board level.  Return
+ * the number of cpus in the system, including this one
+ */
+int prom_setup_smp(void);
+
+void prom_smp_finish(void);
+
+static void smp_tune_scheduling(void)
 {
 }
 
@@ -100,12 +138,6 @@ void smp_send_reschedule(int cpu)
 	core_send_ipi(cpu, SMP_RESCHEDULE_YOURSELF);
 }
 
-/* Not really SMP stuff ... */
-int setup_profiling_timer(unsigned int multiplier)
-{
-	return 0;
-}
-
 static spinlock_t call_lock = SPIN_LOCK_UNLOCKED;
 
 struct call_data_struct *call_data;
@@ -121,8 +153,7 @@ struct call_data_struct *call_data;
  * Does not return until remote CPUs are nearly ready to execute <func>
  * or are or have executed.
  */
-
-int smp_call_function (void (*func) (void *info), void *info, int retry, 
+int smp_call_function (void (*func) (void *info), void *info, int retry,
 								int wait)
 {
 	struct call_data_struct data;
@@ -188,19 +219,30 @@ void smp_call_function_interrupt(void)
 
 static void stop_this_cpu(void *dummy)
 {
-	int cpu = smp_processor_id();
-	if (cpu)
-		for (;;);		/* XXX Use halt like i386 */
-
-	/* XXXKW this isn't quite there yet */
-	while (!smp_cpu0_finalize) ;
-	smp_cpu0_finalize();
+	/*
+	 * Remove this CPU:
+	 */
+	clear_bit(smp_processor_id(), &cpu_online_map);
+	/* May need to service _machine_restart IPI */
+	__sti();
+	/* XXXKW wait if available? */
+	for (;;);
 }
 
 void smp_send_stop(void)
 {
 	smp_call_function(stop_this_cpu, NULL, 1, 0);
+	/*
+	 * Fix me: this prevents future IPIs, for example that would
+	 * cause a restart to happen on CPU0.
+	 */
 	smp_num_cpus = 1;
+}
+
+/* Not really SMP stuff ... */
+int setup_profiling_timer(unsigned int multiplier)
+{
+	return 0;
 }
 
 static void flush_tlb_all_ipi(void *info)
@@ -220,11 +262,11 @@ static void flush_tlb_mm_ipi(void *mm)
 }
 
 /*
- * The following tlb flush calls are invoked when old translations are 
+ * The following tlb flush calls are invoked when old translations are
  * being torn down, or pte attributes are changing. For single threaded
  * address spaces, a new context is obtained on the current cpu, and tlb
  * context on other cpus are invalidated to force a new context allocation
- * at switch_mm time, should the mm ever be used on other cpus. For 
+ * at switch_mm time, should the mm ever be used on other cpus. For
  * multithreaded address spaces, intercpu interrupts have to be sent.
  * Another case where intercpu interrupts are required is when the target
  * mm might be active on another cpu (eg debuggers doing the flushes on

@@ -1,9 +1,9 @@
 /*
  * drivers/char/shwdt.c
  *
- * Watchdog driver for integrated watchdog in the SuperH 3/4 processors.
+ * Watchdog driver for integrated watchdog in the SuperH processors.
  *
- * Copyright (C) 2001 Paul Mundt <lethal@chaoticdreams.org>
+ * Copyright (C) 2001, 2002 Paul Mundt <lethal@0xd6.org>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -30,14 +30,17 @@
 #include <asm/io.h>
 #include <asm/uaccess.h>
 
-#if defined(CONFIG_CPU_SH4)
+#if defined(CONFIG_CPU_SH5)
+  #define WTCNT		CPRC_BASE + 0x10
+  #define WTCSR		CPRC_BASE + 0x18
+#elif defined(CONFIG_CPU_SH4)
   #define WTCNT		0xffc00008
   #define WTCSR		0xffc0000c
 #elif defined(CONFIG_CPU_SH3)
   #define WTCNT		0xffffff84
   #define WTCSR		0xffffff86
 #else
-  #error "Can't use SH 3/4 watchdog on non-SH 3/4 processor."
+  #error "Can't use SuperH watchdog on this platform"
 #endif
 
 #define WTCNT_HIGH	0x5a00
@@ -237,7 +240,10 @@ static ssize_t sh_wdt_write(struct file *file, const char *buf,
 		shwdt_expect_close = 0;
 
 		for (i = 0; i != count; i++) {
-			if (buf[i] == 'V')
+			char c;
+			if (get_user(c, buf + i))
+				return -EFAULT;
+			if (c == 'V')
 				shwdt_expect_close = 42;
 		}
 		next_heartbeat = jiffies + (sh_heartbeat * HZ);
@@ -344,7 +350,7 @@ static struct file_operations sh_wdt_fops = {
 };
 
 static struct watchdog_info sh_wdt_info = {
-	options:		WDIOF_KEEPALIVEPING | WDIOF_SETTIMEOUT,
+	options:		WDIOF_KEEPALIVEPING | WDIOF_SETTIMEOUT | WDIOF_MAGICCLOSE,
 	firmware_version:	0,
 	identity:		"SH WDT",
 };
@@ -423,8 +429,8 @@ MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default=CON
 MODULE_PARM(clock_division_ratio, "i");
 MODULE_PARM_DESC(clock_division_ratio, "Clock division ratio. Valid ranges are from 0x5 (1.31ms) to 0x7 (5.25ms). Defaults to 0x7.");
 
-MODULE_AUTHOR("Paul Mundt <lethal@chaoticdreams.org>");
-MODULE_DESCRIPTION("SH 3/4 watchdog driver");
+MODULE_AUTHOR("Paul Mundt <lethal@0xd6.org>");
+MODULE_DESCRIPTION("SuperH watchdog driver");
 MODULE_LICENSE("GPL");
 
 module_init(sh_wdt_init);

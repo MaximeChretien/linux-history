@@ -1,3 +1,4 @@
+	
 	List of maintainers and how to submit kernel changes
 
 Please try to follow the guidelines below.  This will make things
@@ -241,6 +242,12 @@ L:	linux-hams@vger.kernel.org
 W:	http://www.ife.ee.ethz.ch/~sailer/ham/ham.html
 S:	Maintained
 
+BEFS FILE SYSTEM
+P:	Will Dyson
+M:	will@cs.earlham.edu
+W:	http://cs.earlham.edu/~will/software/linux/kernel/BeFS.html
+S:	Maintained
+
 BERKSHIRE PRODUCTS PC WATCHDOG DRIVER
 P:	Kenji Hollis
 M:	kenji@bitgate.com
@@ -264,6 +271,12 @@ BLUETOOTH SUBSYSTEM (BlueZ)
 P:	Maxim Krasnyansky
 M:	maxk@qualcomm.com
 W:	http://bluez.sf.net
+S:	Maintained
+
+BLUETOOTH SUBSYSTEM (PC Card Drivers)
+P:	Marcel Holtmann
+M:	marcel@holtmann.org
+W:	http://www.holtmann.org/linux/bluetooth/
 S:	Maintained
 
 BTTV VIDEO4LINUX DRIVER
@@ -529,8 +542,8 @@ S:	Maintained
 EMU10K1 SOUND DRIVER
 P:	Rui Sousa	
 M:	rui.p.m.sousa@clix.pt	
-L:	emu10k1-devel@opensource.creative.com
-W:	http://opensource.creative.com/
+L:	emu10k1-devel@lists.sourceforge.net
+W:	http://sourceforge.net/projects/emu10k1/
 S:	Maintained
 
 ETHEREXPRESS-16 NETWORK DRIVER
@@ -626,8 +639,8 @@ W:	http://www.nyx.net/~arobinso
 S:	Maintained
 
 HFS FILESYSTEM
-P:      Adrian Sun
-M:      asun@cobaltnet.com
+P:      Oliver Neukum
+M:      oliver@neukum.org
 L:      linux-kernel@vger.kernel.org
 S:      Maintained
 
@@ -704,8 +717,10 @@ W:	http://www.uni-mainz.de/~langm000/linux.html
 S:	Maintained
 
 IBM ServeRAID RAID DRIVER
-P:      Keith Mitchell
-M:      ipslinux@us.ibm.com
+P:      Jack Hammer
+M:      ipslinux@adaptec.com
+P:      David Jeffery
+M:      ipslinux@adaptec.com
 W:      http://www.developer.ibm.com/welcome/netfinity/serveraid.html
 S:      Supported 
 
@@ -796,7 +811,7 @@ S:      Maintained
 IOC3 DRIVER
 P:	Ralf Baechle
 M:	ralf@oss.sgi.com
-L:	linux-mips@oss.sgi.com
+L:	linux-mips@linux-mips.org
 S:	Maintained
 
 IP MASQUERADING:
@@ -851,6 +866,13 @@ M:	dwmw2@infradead.org
 L:	jffs-dev@axis.com
 W:	http://sources.redhat.com/jffs2/
 S:	Maintained
+
+JFS FILESYSTEM
+P:	Dave Kleikamp
+M:	shaggy@austin.ibm.com
+L:	jfs-discussion@oss.software.ibm.com
+W:	http://oss.software.ibm.com/developerworks/opensource/jfs/
+S:	Supported
 
 JOYSTICK DRIVER
 P:	Vojtech Pavlik
@@ -1001,7 +1023,7 @@ MIPS
 P:	Ralf Baechle
 M:	ralf@gnu.org
 W:	http://oss.sgi.com/mips/mips-howto.html
-L:	linux-mips@oss.sgi.com
+L:	linux-mips@linux-mips.org
 S:	Maintained
 
 MISCELLANEOUS MCA-SUPPORT
@@ -1056,20 +1078,17 @@ M:	James.Bottomley@HansenPartnership.com
 L:	linux-scsi@vger.kernel.org
 S:	Maintained
 
-NETFILTER
+NETFILTER/IPTABLES
 P:	Rusty Russell
-M:	rusty@rustcorp.com.au
 P:	Marc Boucher
-M:	marc@mbsi.ca
 P:	James Morris
-M:	jamesm@intercode.com.au
 P:	Harald Welte
-M:	laforge@gnumonks.org
 P:	Jozsef Kadlecsik
-M:	kadlec@blackhole.kfki.hu
+M:	coreteam@netfilter.org
 W:	http://www.netfilter.org/
 W:	http://www.iptables.org/
-L:	netfilter@lists.samba.org
+L:	netfilter@lists.netfilter.org
+L:	netfilter-devel@lists.netfilter.org
 S:	Supported
 
 NETROM NETWORK LAYER
@@ -1095,14 +1114,11 @@ NETWORKING [GENERAL]
 P:	Networking Team
 M:	netdev@oss.sgi.com
 L:	linux-net@vger.kernel.org
-W:	http://www.uk.linux.org/NetNews.html (2.0 only)
 S:	Maintained
 
 NETWORKING [IPv4/IPv6]
 P:	David S. Miller
 M:	davem@redhat.com
-P:	Andi Kleen
-M:	ak@muc.de
 P:	Alexey Kuznetsov
 M:	kuznet@ms2.inr.ac.ru
 P:	Pekka Savola (ipv6)
@@ -1236,7 +1252,7 @@ S:	Maintained
 
 PCMCIA SUBSYSTEM
 P:	David Hinds
-M:	dhinds@zen.stanford.edu
+M:	dahinds@users.sourceforge.net
 L:	linux-kernel@vger.kernel.org
 W:	http://pcmcia-cs.sourceforge.net
 S:	Maintained
@@ -1257,7 +1273,7 @@ S:	Maintained
 PHILIPS NINO PALM PC
 P:	Steven Hill
 M:	sjhill@realitydiluted.com
-L:	linux-mips@oss.sgi.com
+L:	linux-mips@linux-mips.org
 W:	http://www.realitydiluted.com/projects/nino
 S:	Maintained
 
@@ -1267,6 +1283,15 @@ M:	tom@lpsg.demon.co.uk
 L:	pnp-users@ferret.lmh.ox.ac.uk
 L:	pnp-devel@ferret.lmh.ox.ac.uk
 W:	http://www-jcr.lmh.ox.ac.uk/~pnp/
+S:	Maintained
+
+POWERVR2 FRAMEBUFFER DRIVER
+P:	M. R. Brown
+M:	mrbrown@0xd6.org
+P:	Paul Mundt
+M:	lethal@0xd6.org
+L:	linux-fbdev-devel@lists.sourceforge.net
+W:	http://www.linuxdc.org
 S:	Maintained
 
 PPP PROTOCOL DRIVERS AND COMPRESSORS
@@ -1353,10 +1378,10 @@ L:	linux-kernel@vger.kernel.org
 S:	Maintained
 
 RME96XX MULTICHANNEL SOUND DRIVER
-P:      Guenter Geiger
-M:      geiger@epy.co.at  
-L:      linux-kernel@vger.kernel.org
-S:      Maintained
+P:	Guenter Geiger
+M:	geiger@epy.co.at  
+L:	linux-kernel@vger.kernel.org
+S:	Maintained
 
 RTLINUX  REALTIME  LINUX
 P:	Victor Yodaiken
@@ -1530,6 +1555,13 @@ W:	http://www.m17n.org/linux-sh/
 W:	http://www.rr.iij4u.or.jp/~kkojima/linux-sh4.html
 S:	Maintained
 
+SUPERH WATCHDOG
+P:	Paul Mundt
+M:	lethal@0xd6.org
+L:	linuxsh-dev@lists.sourceforge.net
+W:	http://www.linuxsh.org
+S:	Maintained
+
 SVGA HANDLING
 P:	Martin Mares
 M:	mj@ucw.cz
@@ -1539,6 +1571,20 @@ S:	Maintained
 SYSV FILESYSTEM
 P:	Christoph Hellwig
 M:	hch@infradead.org
+S:	Maintained
+
+TI GRAPH LINK USB (SilverLink) CABLE DRIVER
+P:      Romain Lievin
+M:      roms@lpg.ticalc.org
+P:      Julien Blache
+M:      jb@technologeek.org
+S:      Maintained
+
+TIEMAN VOYAGER USB BRAILLE DISPLAY DRIVER
+P:	Stephane Dalton
+M:	sdalton@videotron.ca
+P:	Stéphane Doyon
+M:	s.doyon@videotron.ca
 S:	Maintained
 
 TIEMAN VOYAGER USB BRAILLE DISPLAY DRIVER
@@ -1635,7 +1681,7 @@ S:	Maintained
 
 USB AUERSWALD DRIVER
 P:	Wolfgang Muees
-M:	wmues@nexgo.de
+M:	wolfgang@iksw-muees.de
 L:	linux-usb-users@lists.sourceforge.net
 L:	linux-usb-devel@lists.sourceforge.net
 S:	Maintained
@@ -1854,6 +1900,13 @@ S:	Maintained
 X86 3-LEVEL PAGING (PAE) SUPPORT
 P:	Ingo Molnar
 M:	mingo@redhat.com
+S:	Maintained
+
+X86-64 port
+P:	Andi Kleen
+M:	ak@suse.de
+L:	discuss@x86-64.org
+W:	http://www.x86-64.org
 S:	Maintained
 
 YAM DRIVER FOR AX.25

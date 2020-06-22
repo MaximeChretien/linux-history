@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.irq.h 1.9 05/17/01 18:14:24 cort
+ * BK Id: %F% %I% %G% %U% %#%
  */
 #ifdef __KERNEL__
 #ifndef _ASM_IRQ_H
@@ -124,48 +124,6 @@ static __inline__ int irq_cannonicalize(int irq)
 }
 
 #else /* CONFIG_4xx + CONFIG_8xx */
-
-#if defined(CONFIG_APUS)
-/*
- * This structure is used to chain together the ISRs for a particular
- * interrupt source (if it supports chaining).
- */
-typedef struct irq_node {
-	void		(*handler)(int, void *, struct pt_regs *);
-	unsigned long	flags;
-	void		*dev_id;
-	const char	*devname;
-	struct irq_node *next;
-} irq_node_t;
-
-/*
- * This structure has only 4 elements for speed reasons
- */
-typedef struct irq_handler {
-	void		(*handler)(int, void *, struct pt_regs *);
-	unsigned long	flags;
-	void		*dev_id;
-	const char	*devname;
-} irq_handler_t;
-
-/* count of spurious interrupts */
-extern volatile unsigned int num_spurious;
-
-extern int sys_request_irq(unsigned int, 
-	void (*)(int, void *, struct pt_regs *), 
-	unsigned long, const char *, void *);
-extern void sys_free_irq(unsigned int, void *);
-
-/*
- * This function returns a new irq_node_t
- */
-extern irq_node_t *new_irq_node(void);
-
-/* Number of m68k interrupts */
-#define SYS_IRQS 8
-
-#endif /* CONFIG_APUS */
-
 /*
  * this is the # irq's for all ppc arch's (pmac/chrp/prep)
  * so it is the max of them all
@@ -211,19 +169,14 @@ extern irq_node_t *new_irq_node(void);
 static __inline__ int irq_cannonicalize(int irq)
 {
 	if (ppc_md.irq_cannonicalize)
-	{
 		return ppc_md.irq_cannonicalize(irq);
-	}
-	else
-	{
-		return irq;
-	}
+	return irq;
 }
 
 #endif
 
 #define NR_MASK_WORDS	((NR_IRQS + 31) / 32)
-/* pendatic: these are long because they are used with set_bit --RR */
+/* pedantic: these are long because they are used with set_bit --RR */
 extern unsigned long ppc_cached_irq_mask[NR_MASK_WORDS];
 extern unsigned long ppc_lost_interrupts[NR_MASK_WORDS];
 extern atomic_t ppc_n_lost_interrupts;

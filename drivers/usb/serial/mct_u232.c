@@ -61,18 +61,15 @@
 
 #include <linux/config.h>
 #include <linux/kernel.h>
-#include <linux/sched.h>
-#include <linux/signal.h>
 #include <linux/errno.h>
-#include <linux/poll.h>
 #include <linux/init.h>
 #include <linux/slab.h>
-#include <linux/fcntl.h>
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
 #include <linux/tty_flip.h>
 #include <linux/module.h>
 #include <linux/spinlock.h>
+#include <asm/uaccess.h>
 #include <linux/usb.h>
 
 #ifdef CONFIG_USB_SERIAL_DEBUG
@@ -132,7 +129,7 @@ static void mct_u232_break_ctl	         (struct usb_serial_port *port,
 /*
  * All of the device info needed for the MCT USB-RS232 converter.
  */
-static __devinitdata struct usb_device_id id_table_combined [] = {
+static struct usb_device_id id_table_combined [] = {
 	{ USB_DEVICE(MCT_U232_VID, MCT_U232_PID) },
 	{ USB_DEVICE(MCT_U232_VID, MCT_U232_SITECOM_PID) },
 	{ USB_DEVICE(MCT_U232_VID, MCT_U232_DU_H3SP_PID) },
@@ -140,98 +137,30 @@ static __devinitdata struct usb_device_id id_table_combined [] = {
 	{ }		/* Terminating entry */
 };
 
-static __devinitdata struct usb_device_id mct_u232_table [] = {
-        { USB_DEVICE(MCT_U232_VID, MCT_U232_PID) },
-	{ USB_DEVICE(MCT_U232_BELKIN_F5U109_VID, MCT_U232_BELKIN_F5U109_PID) },
-        { }                        /* Terminating entry */
-};
-
-static __devinitdata struct usb_device_id mct_u232_sitecom_table [] = {
-        { USB_DEVICE(MCT_U232_VID, MCT_U232_SITECOM_PID) },
-        { }                        /* Terminating entry */
-};
-
-static __devinitdata struct usb_device_id mct_u232_du_h3sp_table [] = {
-        { USB_DEVICE(MCT_U232_VID, MCT_U232_DU_H3SP_PID) },
-        { }                        /* Terminating entry */
-};
-
 MODULE_DEVICE_TABLE (usb, id_table_combined);
 
 
 static struct usb_serial_device_type mct_u232_device = {
-	name:		     "Magic Control Technology USB-RS232",
-	id_table:	     mct_u232_table,
-	needs_interrupt_in:  MUST_HAVE,	 /* 2 interrupt-in endpoints */
-	needs_bulk_in:	     MUST_HAVE_NOT,   /* no bulk-in endpoint */
-	needs_bulk_out:	     MUST_HAVE,	      /* 1 bulk-out endpoint */
-	num_interrupt_in:    2,
-	num_bulk_in:	     0,
-	num_bulk_out:	     1,
-	num_ports:	     1,
-	open:		     mct_u232_open,
-	close:		     mct_u232_close,
+	.owner =	     THIS_MODULE,
+	.name =		     "Magic Control Technology USB-RS232",
+	.id_table =	     id_table_combined,
+	.num_interrupt_in =  2,
+	.num_bulk_in =	     0,
+	.num_bulk_out =	     1,
+	.num_ports =	     1,
+	.open =		     mct_u232_open,
+	.close =	     mct_u232_close,
 #ifdef FIX_WRITE_RETURN_CODE_PROBLEM
-	write:		     mct_u232_write,
-	write_bulk_callback: mct_u232_write_bulk_callback,
+	.write =	     mct_u232_write,
+	.write_bulk_callback = mct_u232_write_bulk_callback,
 #endif
-	read_int_callback:   mct_u232_read_int_callback,
-	ioctl:		     mct_u232_ioctl,
-	set_termios:	     mct_u232_set_termios,
-	break_ctl:	     mct_u232_break_ctl,
-	startup:	     mct_u232_startup,
-	shutdown:	     mct_u232_shutdown,
+	.read_int_callback = mct_u232_read_int_callback,
+	.ioctl =	     mct_u232_ioctl,
+	.set_termios =	     mct_u232_set_termios,
+	.break_ctl =	     mct_u232_break_ctl,
+	.startup =	     mct_u232_startup,
+	.shutdown =	     mct_u232_shutdown,
 };
-
-static struct usb_serial_device_type mct_u232_sitecom_device = {
-	name:		     "MCT/Sitecom USB-RS232",
-	id_table:	     mct_u232_sitecom_table,
-	needs_interrupt_in:  MUST_HAVE,	 /* 2 interrupt-in endpoints */
-	needs_bulk_in:	     MUST_HAVE_NOT,   /* no bulk-in endpoint */
-	needs_bulk_out:	     MUST_HAVE,	      /* 1 bulk-out endpoint */
-	num_interrupt_in:    2,
-	num_bulk_in:	     0,
-	num_bulk_out:	     1,
-	num_ports:	     1,
-	open:		     mct_u232_open,
-	close:		     mct_u232_close,
-#ifdef FIX_WRITE_RETURN_CODE_PROBLEM
-	write:		     mct_u232_write,
-	write_bulk_callback: mct_u232_write_bulk_callback,
-#endif
-	read_int_callback:   mct_u232_read_int_callback,
-	ioctl:		     mct_u232_ioctl,
-	set_termios:	     mct_u232_set_termios,
-	break_ctl:	     mct_u232_break_ctl,
-	startup:	     mct_u232_startup,
-	shutdown:	     mct_u232_shutdown,
-};
-
-static struct usb_serial_device_type mct_u232_du_h3sp_device = {
-        name:                "MCT/D-Link DU-H3SP USB BAY",
-        id_table:            mct_u232_du_h3sp_table,
-        needs_interrupt_in:  MUST_HAVE,  /* 2 interrupt-in endpoints */
-        needs_bulk_in:       MUST_HAVE_NOT,   /* no bulk-in endpoint */
-        needs_bulk_out:      MUST_HAVE,       /* 1 bulk-out endpoint */
-        num_interrupt_in:    2,
-        num_bulk_in:         0,
-        num_bulk_out:        1,
-        num_ports:           1,
-        open:                mct_u232_open,
-        close:               mct_u232_close,
-#ifdef FIX_WRITE_RETURN_CODE_PROBLEM
-        write:               mct_u232_write,
-        write_bulk_callback: mct_u232_write_bulk_callback,
-#endif
-        read_int_callback:   mct_u232_read_int_callback,
-        ioctl:               mct_u232_ioctl,
-        set_termios:         mct_u232_set_termios,
-        break_ctl:           mct_u232_break_ctl,
-        startup:             mct_u232_startup,
-        shutdown:            mct_u232_shutdown,
-};
-
-
 
 
 struct mct_u232_private {
@@ -388,13 +317,10 @@ static void mct_u232_shutdown (struct usb_serial *serial)
 {
 	int i;
 	
-	dbg (__FUNCTION__);
+	dbg("%s", __FUNCTION__);
 
 	/* stop reads and writes on all ports */
 	for (i=0; i < serial->num_ports; ++i) {
-		while (serial->port[i].open_count > 0) {
-			mct_u232_close (&serial->port[i], NULL);
-		}
 		/* My special items, the standard routines free my urbs */
 		if (serial->port[i].private)
 			kfree(serial->port[i].private);
@@ -407,94 +333,72 @@ static int  mct_u232_open (struct usb_serial_port *port, struct file *filp)
 	struct mct_u232_private *priv = (struct mct_u232_private *)port->private;
 	int retval = 0;
 
-	dbg(__FUNCTION__" port %d", port->number);
+	dbg("%s port %d", __FUNCTION__, port->number);
 
-	down (&port->sem);
+	/* Compensate for a hardware bug: although the Sitecom U232-P25
+	 * device reports a maximum output packet size of 32 bytes,
+	 * it seems to be able to accept only 16 bytes (and that's what
+	 * SniffUSB says too...)
+	 */
+	if (serial->dev->descriptor.idProduct == MCT_U232_SITECOM_PID)
+		port->bulk_out_size = 16;
+
+	/* Do a defined restart: the normal serial device seems to 
+	 * always turn on DTR and RTS here, so do the same. I'm not
+	 * sure if this is really necessary. But it should not harm
+	 * either.
+	 */
+	if (port->tty->termios->c_cflag & CBAUD)
+		priv->control_state = TIOCM_DTR | TIOCM_RTS;
+	else
+		priv->control_state = 0;
+	mct_u232_set_modem_ctrl(serial, priv->control_state);
 	
-	++port->open_count;
-	MOD_INC_USE_COUNT;
+	priv->last_lcr = (MCT_U232_DATA_BITS_8 | 
+			  MCT_U232_PARITY_NONE |
+			  MCT_U232_STOP_BITS_1);
+	mct_u232_set_line_ctrl(serial, priv->last_lcr);
 
-	if (!port->active) {
-		port->active = 1;
+	/* Read modem status and update control state */
+	mct_u232_get_modem_stat(serial, &priv->last_msr);
+	mct_u232_msr_to_state(&priv->control_state, priv->last_msr);
 
-		/* Compensate for a hardware bug: although the Sitecom U232-P25
-		 * device reports a maximum output packet size of 32 bytes,
-		 * it seems to be able to accept only 16 bytes (and that's what
-		 * SniffUSB says too...)
-		 */
-		if (serial->dev->descriptor.idProduct == MCT_U232_SITECOM_PID)
-			port->bulk_out_size = 16;
-
-		/* Do a defined restart: the normal serial device seems to 
-		 * always turn on DTR and RTS here, so do the same. I'm not
-		 * sure if this is really necessary. But it should not harm
-		 * either.
-		 */
-		if (port->tty->termios->c_cflag & CBAUD)
-			priv->control_state = TIOCM_DTR | TIOCM_RTS;
-		else
-			priv->control_state = 0;
-		mct_u232_set_modem_ctrl(serial, priv->control_state);
-		
-		priv->last_lcr = (MCT_U232_DATA_BITS_8 | 
-				  MCT_U232_PARITY_NONE |
-				  MCT_U232_STOP_BITS_1);
-		mct_u232_set_line_ctrl(serial, priv->last_lcr);
-
-		/* Read modem status and update control state */
-		mct_u232_get_modem_stat(serial, &priv->last_msr);
-		mct_u232_msr_to_state(&priv->control_state, priv->last_msr);
-
-		{
-			/* Puh, that's dirty */
-			struct usb_serial_port *rport;	
-			rport = &serial->port[1];
-			rport->tty = port->tty;
-			rport->private = port->private;
-			port->read_urb = rport->interrupt_in_urb;
-		}
-
-		port->read_urb->dev = port->serial->dev;
-		retval = usb_submit_urb(port->read_urb);
-		if (retval) {
-			err("usb_submit_urb(read bulk) failed");
-			goto exit;
-		}
-
-		port->interrupt_in_urb->dev = port->serial->dev;
-		retval = usb_submit_urb(port->interrupt_in_urb);
-		if (retval)
-			err(" usb_submit_urb(read int) failed");
-
+	{
+		/* Puh, that's dirty */
+		struct usb_serial_port *rport;	
+		rport = &serial->port[1];
+		rport->tty = port->tty;
+		rport->private = port->private;
+		port->read_urb = rport->interrupt_in_urb;
 	}
 
+	port->read_urb->dev = port->serial->dev;
+	retval = usb_submit_urb(port->read_urb);
+	if (retval) {
+		err("usb_submit_urb(read bulk) failed");
+		goto exit;
+	}
+
+	port->interrupt_in_urb->dev = port->serial->dev;
+	retval = usb_submit_urb(port->interrupt_in_urb);
+	if (retval)
+		err(" usb_submit_urb(read int) failed");
+
 exit:
-	up (&port->sem);
-	
 	return 0;
 } /* mct_u232_open */
 
 
 static void mct_u232_close (struct usb_serial_port *port, struct file *filp)
 {
-	dbg(__FUNCTION__" port %d", port->number);
+	dbg("%s port %d", __FUNCTION__, port->number);
 
-	down (&port->sem);
-
-	--port->open_count;
-
-	if (port->open_count <= 0) {
-		if (port->serial->dev) {
-			/* shutdown our urbs */
-			usb_unlink_urb (port->write_urb);
-			usb_unlink_urb (port->read_urb);
-			usb_unlink_urb (port->interrupt_in_urb);
-		}
-		port->active = 0;
+	if (port->serial->dev) {
+		/* shutdown our urbs */
+		usb_unlink_urb (port->write_urb);
+		usb_unlink_urb (port->read_urb);
+		usb_unlink_urb (port->interrupt_in_urb);
 	}
-	
-	up (&port->sem);
-	MOD_DEC_USE_COUNT;
 } /* mct_u232_close */
 
 
@@ -507,10 +411,10 @@ static int mct_u232_write (struct usb_serial_port *port, int from_user,
 	struct usb_serial *serial = port->serial;
 	int result, bytes_sent, size;
 
-	dbg(__FUNCTION__ " - port %d", port->number);
+	dbg("%s - port %d", __FUNCTION__, port->number);
 
 	if (count == 0) {
-		dbg(__FUNCTION__ " - write request of 0 bytes");
+		dbg("%s - write request of 0 bytes", __FUNCTION__);
 		return (0);
 	}
 
@@ -520,22 +424,18 @@ static int mct_u232_write (struct usb_serial_port *port, int from_user,
 	
 	/* another write is still pending? */
 	if (port->write_urb->status == -EINPROGRESS) {
-		dbg (__FUNCTION__ " - already writing");
+		dbg("%s - already writing", __FUNCTION__);
 		return (0);
 	}
 		
 	bytes_sent = 0;
 	while (count > 0) {
-		
-		down (&port->sem);
-		
 		size = (count > port->bulk_out_size) ? port->bulk_out_size : count;
 		
 		usb_serial_debug_data (__FILE__, __FUNCTION__, size, buf);
 		
 		if (from_user) {
 			if (copy_from_user(port->write_urb->transfer_buffer, buf, size)) {
-				up (&port->sem);
 				return -EFAULT;
 			}
 		}
@@ -556,13 +456,9 @@ static int mct_u232_write (struct usb_serial_port *port, int from_user,
 		/* send the data out the bulk port */
 		result = usb_submit_urb(port->write_urb);
 		if (result) {
-			err(__FUNCTION__
-			    " - failed submitting write urb, error %d", result);
-			up (&port->sem);
+			err("%s - failed submitting write urb, error %d", __FUNCTION__, result);
 			return result;
 		}
-
-		up (&port->sem);
 
 		bytes_sent += size;
 		if (write_blocking)
@@ -583,15 +479,15 @@ static void mct_u232_write_bulk_callback (struct urb *urb)
 	struct usb_serial *serial = port->serial;
        	struct tty_struct *tty = port->tty;
 
-	dbg(__FUNCTION__ " - port %d", port->number);
+	dbg("%s - port %d", __FUNCTION__, port->number);
 	
 	if (!serial) {
-		dbg(__FUNCTION__ " - bad serial pointer, exiting");
+		dbg("%s - bad serial pointer, exiting", __FUNCTION__);
 		return;
 	}
 
 	if (urb->status) {
-		dbg(__FUNCTION__ " - nonzero write bulk status received: %d",
+		dbg("%s - nonzero write bulk status received: %d", __FUNCTION__,
 		    urb->status);
 		return;
 	}
@@ -621,16 +517,16 @@ static void mct_u232_read_int_callback (struct urb *urb)
 	struct tty_struct *tty;
 	unsigned char *data = urb->transfer_buffer;
 
-        dbg(__FUNCTION__ " - port %d", port->number);
+        dbg("%s - port %d", __FUNCTION__, port->number);
 
 	/* The urb might have been killed. */
         if (urb->status) {
-                dbg(__FUNCTION__ " - nonzero read bulk status received: %d",
+                dbg("%s - nonzero read bulk status received: %d", __FUNCTION__,
 		    urb->status);
                 return;
         }
 	if (!serial) {
-		dbg(__FUNCTION__ " - bad serial pointer, exiting");
+		dbg("%s - bad serial pointer, exiting", __FUNCTION__);
 		return;
 	}
 	
@@ -707,7 +603,7 @@ static void mct_u232_set_termios (struct usb_serial_port *port,
 	if( (cflag & CBAUD) != (old_cflag & CBAUD) ) {
 	        /* reassert DTR and (maybe) RTS on transition from B0 */
 		if( (old_cflag & CBAUD) == B0 ) {
-			dbg(__FUNCTION__ ": baud was B0");
+			dbg("%s: baud was B0", __FUNCTION__);
 			priv->control_state |= TIOCM_DTR;
 			/* don't set RTS if using hardware flow control */
 			if (!(old_cflag & CRTSCTS)) {
@@ -743,7 +639,7 @@ static void mct_u232_set_termios (struct usb_serial_port *port,
 			mct_u232_set_baud_rate(serial, 9600); break;
 		}
 		if ((cflag & CBAUD) == B0 ) {
-			dbg(__FUNCTION__ ": baud is B0");
+			dbg("%s: baud is B0", __FUNCTION__);
 			/* Drop RTS and DTR */
 			priv->control_state &= ~(TIOCM_DTR | TIOCM_RTS);
         		mct_u232_set_modem_ctrl(serial, priv->control_state);
@@ -814,7 +710,7 @@ static void mct_u232_break_ctl( struct usb_serial_port *port, int break_state )
 	struct mct_u232_private *priv = (struct mct_u232_private *)port->private;
 	unsigned char lcr = priv->last_lcr;
 
-	dbg (__FUNCTION__ "state=%d", break_state);
+	dbg("%sstate=%d", __FUNCTION__, break_state);
 
 	if (break_state)
 		lcr |= MCT_U232_SET_BREAK;
@@ -830,7 +726,7 @@ static int mct_u232_ioctl (struct usb_serial_port *port, struct file * file,
 	struct mct_u232_private *priv = (struct mct_u232_private *)port->private;
 	int mask;
 	
-	dbg (__FUNCTION__ "cmd=0x%x", cmd);
+	dbg("%scmd=0x%x", __FUNCTION__, cmd);
 
 	/* Based on code from acm.c and others */
 	switch (cmd) {
@@ -875,7 +771,7 @@ static int mct_u232_ioctl (struct usb_serial_port *port, struct file * file,
 		return 0;
 
 	default:
-		dbg(__FUNCTION__ ": arg not supported - 0x%04x",cmd);
+		dbg("%s: arg not supported - 0x%04x", __FUNCTION__,cmd);
 		return(-ENOIOCTLCMD);
 		break;
 	}
@@ -886,9 +782,7 @@ static int mct_u232_ioctl (struct usb_serial_port *port, struct file * file,
 static int __init mct_u232_init (void)
 {
 	usb_serial_register (&mct_u232_device);
-	usb_serial_register (&mct_u232_sitecom_device);
-	usb_serial_register (&mct_u232_du_h3sp_device);
-	info(DRIVER_VERSION ":" DRIVER_DESC);
+	info(DRIVER_DESC " " DRIVER_VERSION);
 	return 0;
 }
 
@@ -896,8 +790,6 @@ static int __init mct_u232_init (void)
 static void __exit mct_u232_exit (void)
 {
 	usb_serial_deregister (&mct_u232_device);
-	usb_serial_deregister (&mct_u232_sitecom_device);
-	usb_serial_deregister (&mct_u232_du_h3sp_device);
 }
 
 

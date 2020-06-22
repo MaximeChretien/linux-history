@@ -66,25 +66,14 @@
 #include <linux/types.h>
 #include <linux/agp_backend.h>
 #endif
-#if LINUX_VERSION_CODE >= 0x020100 /* KERNEL_VERSION(2,1,0) */
 #include <linux/tqueue.h>
 #include <linux/poll.h>
-#endif
-#if LINUX_VERSION_CODE < 0x020400
-#include "compat-pre24.h"
-#endif
 #include <asm/pgalloc.h>
 #include "drm.h"
 
 /* page_to_bus for earlier kernels, not optimal in all cases */
 #ifndef page_to_bus
 #define page_to_bus(page)	((unsigned int)(virt_to_bus(page_address(page))))
-#endif
-
-/* We just use virt_to_bus for pci_map_single on older kernels */
-#if LINUX_VERSION_CODE < 0x020400
-#define pci_map_single(hwdev, ptr, size, direction)	virt_to_bus(ptr)
-#define pci_unmap_single(hwdev, dma_addr, size, direction)
 #endif
 
 /* DRM template customization defaults
@@ -119,87 +108,6 @@
 #define __REALLY_HAVE_MTRR	(__HAVE_MTRR && defined(CONFIG_MTRR))
 
 
-/* Begin the DRM...
- */
-
-#define DRM_DEBUG_CODE 2	  /* Include debugging code (if > 1, then
-				     also include looping detection. */
-
-#define DRM_HASH_SIZE	      16 /* Size of key hash table		  */
-#define DRM_KERNEL_CONTEXT    0	 /* Change drm_resctx if changed	  */
-#define DRM_RESERVED_CONTEXTS 1	 /* Change drm_resctx if changed	  */
-#define DRM_LOOPING_LIMIT     5000000
-#define DRM_BSZ		      1024 /* Buffer size for /dev/drm? output	  */
-#define DRM_TIME_SLICE	      (HZ/20)  /* Time slice for GLXContexts	  */
-#define DRM_LOCK_SLICE	      1	/* Time slice for lock, in jiffies	  */
-
-#define DRM_FLAG_DEBUG	  0x01
-#define DRM_FLAG_NOCTX	  0x02
-
-#define DRM_MEM_DMA	   0
-#define DRM_MEM_SAREA	   1
-#define DRM_MEM_DRIVER	   2
-#define DRM_MEM_MAGIC	   3
-#define DRM_MEM_IOCTLS	   4
-#define DRM_MEM_MAPS	   5
-#define DRM_MEM_VMAS	   6
-#define DRM_MEM_BUFS	   7
-#define DRM_MEM_SEGS	   8
-#define DRM_MEM_PAGES	   9
-#define DRM_MEM_FILES	  10
-#define DRM_MEM_QUEUES	  11
-#define DRM_MEM_CMDS	  12
-#define DRM_MEM_MAPPINGS  13
-#define DRM_MEM_BUFLISTS  14
-#define DRM_MEM_AGPLISTS  15
-#define DRM_MEM_TOTALAGP  16
-#define DRM_MEM_BOUNDAGP  17
-#define DRM_MEM_CTXBITMAP 18
-#define DRM_MEM_STUB      19
-#define DRM_MEM_SGLISTS   20
-
-#define DRM_MAX_CTXBITMAP (PAGE_SIZE * 8)
-
-				/* Backward compatibility section */
-				/* _PAGE_WT changed to _PAGE_PWT in 2.2.6 */
-#ifndef _PAGE_PWT
-#define _PAGE_PWT _PAGE_WT
-#endif
-				/* Wait queue declarations changed in 2.3.1 */
-#ifndef DECLARE_WAITQUEUE
-#define DECLARE_WAITQUEUE(w,c) struct wait_queue w = { c, NULL }
-typedef struct wait_queue *wait_queue_head_t;
-#define init_waitqueue_head(q) *q = NULL;
-#endif
-
-				/* _PAGE_4M changed to _PAGE_PSE in 2.3.23 */
-#ifndef _PAGE_PSE
-#define _PAGE_PSE _PAGE_4M
-#endif
-
-				/* vm_offset changed to vm_pgoff in 2.3.25 */
-#if LINUX_VERSION_CODE < 0x020319
-#define VM_OFFSET(vma) ((vma)->vm_offset)
-#else
-#define VM_OFFSET(vma) ((vma)->vm_pgoff << PAGE_SHIFT)
-#endif
-
-				/* *_nopage return values defined in 2.3.26 */
-#ifndef NOPAGE_SIGBUS
-#define NOPAGE_SIGBUS 0
-#endif
-#ifndef NOPAGE_OOM
-#define NOPAGE_OOM 0
-#endif
-
-				/* module_init/module_exit added in 2.3.13 */
-#ifndef module_init
-#define module_init(x)  int init_module(void) { return x(); }
-#endif
-#ifndef module_exit
-#define module_exit(x)  void cleanup_module(void) { x(); }
-#endif
-
 				/* Generic cmpxchg added in 2.3.x */
 #ifndef __HAVE_ARCH_CMPXCHG
 				/* Include this here so that driver can be
@@ -211,7 +119,7 @@ __cmpxchg_u32(volatile int *m, int old, int new)
 	unsigned long prev, cmp;
 
 	__asm__ __volatile__(
-	"1:	ldl_l %0,%5\n"
+	"1:	ldl_l %0,%2\n"
 	"	cmpeq %0,%3,%1\n"
 	"	beq %1,2f\n"
 	"	mov %4,%1\n"
@@ -222,8 +130,7 @@ __cmpxchg_u32(volatile int *m, int old, int new)
 	"3:	br 1b\n"
 	".previous"
 	: "=&r"(prev), "=&r"(cmp), "=m"(*m)
-	: "r"((long) old), "r"(new), "m"(*m)
-	: "memory" );
+	: "r"((long) old), "r"(new), "m"(*m));
 
 	return prev;
 }
@@ -234,7 +141,7 @@ __cmpxchg_u64(volatile long *m, unsigned long old, unsigned long new)
 	unsigned long prev, cmp;
 
 	__asm__ __volatile__(
-	"1:	ldq_l %0,%5\n"
+	"1:	ldq_l %0,%2\n"
 	"	cmpeq %0,%3,%1\n"
 	"	beq %1,2f\n"
 	"	mov %4,%1\n"
@@ -245,8 +152,7 @@ __cmpxchg_u64(volatile long *m, unsigned long old, unsigned long new)
 	"3:	br 1b\n"
 	".previous"
 	: "=&r"(prev), "=&r"(cmp), "=m"(*m)
-	: "r"((long) old), "r"(new), "m"(*m)
-	: "memory" );
+	: "r"((long) old), "r"(new), "m"(*m));
 
 	return prev;
 }
@@ -298,42 +204,82 @@ static inline unsigned long __cmpxchg(volatile void *ptr, unsigned long old,
 	return old;
 }
 
-#elif defined(__powerpc__)
-extern void __cmpxchg_called_with_bad_pointer(void);
-static inline unsigned long __cmpxchg(volatile void *ptr, unsigned long old,
-                                      unsigned long new, int size)
-{
-	unsigned long prev;
-
-	switch (size) {
-	case 4:
-		__asm__ __volatile__(
-			"sync;"
-			"0:    lwarx %0,0,%1 ;"
-			"      cmpl 0,%0,%3;"
-			"      bne 1f;"
-			"      stwcx. %2,0,%1;"
-			"      bne- 0b;"
-			"1:    "
-			"sync;"
-			: "=&r"(prev)
-			: "r"(ptr), "r"(new), "r"(old)
-			: "cr0", "memory");
-		return prev;
-	}
-	__cmpxchg_called_with_bad_pointer();
-	return old;
-}
-
-#endif /* i386, powerpc & alpha */
-
-#ifndef __alpha__
 #define cmpxchg(ptr,o,n)						\
   ((__typeof__(*(ptr)))__cmpxchg((ptr),(unsigned long)(o),		\
 				 (unsigned long)(n),sizeof(*(ptr))))
+#endif /* i386 & alpha */
 #endif
 
-#endif /* !__HAVE_ARCH_CMPXCHG */
+/* Begin the DRM...
+ */
+
+#define DRM_DEBUG_CODE 2	  /* Include debugging code (if > 1, then
+				     also include looping detection. */
+
+#define DRM_HASH_SIZE	      16 /* Size of key hash table		  */
+#define DRM_KERNEL_CONTEXT    0	 /* Change drm_resctx if changed	  */
+#define DRM_RESERVED_CONTEXTS 1	 /* Change drm_resctx if changed	  */
+#define DRM_LOOPING_LIMIT     5000000
+#define DRM_BSZ		      1024 /* Buffer size for /dev/drm? output	  */
+#define DRM_TIME_SLICE	      (HZ/20)  /* Time slice for GLXContexts	  */
+#define DRM_LOCK_SLICE	      1	/* Time slice for lock, in jiffies	  */
+
+#define DRM_FLAG_DEBUG	  0x01
+#define DRM_FLAG_NOCTX	  0x02
+
+#define DRM_MEM_DMA	   0
+#define DRM_MEM_SAREA	   1
+#define DRM_MEM_DRIVER	   2
+#define DRM_MEM_MAGIC	   3
+#define DRM_MEM_IOCTLS	   4
+#define DRM_MEM_MAPS	   5
+#define DRM_MEM_VMAS	   6
+#define DRM_MEM_BUFS	   7
+#define DRM_MEM_SEGS	   8
+#define DRM_MEM_PAGES	   9
+#define DRM_MEM_FILES	  10
+#define DRM_MEM_QUEUES	  11
+#define DRM_MEM_CMDS	  12
+#define DRM_MEM_MAPPINGS  13
+#define DRM_MEM_BUFLISTS  14
+#define DRM_MEM_AGPLISTS  15
+#define DRM_MEM_TOTALAGP  16
+#define DRM_MEM_BOUNDAGP  17
+#define DRM_MEM_CTXBITMAP 18
+#define DRM_MEM_STUB      19
+#define DRM_MEM_SGLISTS   20
+
+#define DRM_MAX_CTXBITMAP (PAGE_SIZE * 8)
+
+#define VM_OFFSET(vma) ((vma)->vm_pgoff << PAGE_SHIFT)
+
+/* Macros to make printk easier */
+
+#if ( __GNUC__ > 2 )
+
+#define DRM_ERROR(fmt, arg...) \
+	printk(KERN_ERR "[" DRM_NAME ":%s] *ERROR* " fmt , __FUNCTION__, ##arg)
+#define DRM_MEM_ERROR(area, fmt, arg...) \
+	printk(KERN_ERR "[" DRM_NAME ":%s:%s] *ERROR* " fmt , __FUNCTION__, \
+	       DRM(mem_stats)[area].name , ##arg)
+#define DRM_INFO(fmt, arg...)  printk(KERN_INFO "[" DRM_NAME "] " fmt , ##arg)
+
+#if DRM_DEBUG_CODE
+#define DRM_DEBUG(fmt, arg...)						\
+	do {								\
+		if ( DRM(flags) & DRM_FLAG_DEBUG )			\
+			printk(KERN_DEBUG				\
+			       "[" DRM_NAME ":%s] " fmt ,		\
+			       __FUNCTION__,				\
+			       ##arg);					\
+	} while (0)
+#else
+#define DRM_DEBUG(fmt, arg...)		 do { } while (0)
+#endif
+
+#else	/* Gcc 2.x */
+
+/* Work around a C preprocessor bug */
 
 				/* Macros to make printk easier */
 #define DRM_ERROR(fmt, arg...) \
@@ -354,6 +300,9 @@ static inline unsigned long __cmpxchg(volatile void *ptr, unsigned long old,
 #else
 #define DRM_DEBUG(fmt, arg...)		 do { } while (0)
 #endif
+
+#endif	/* Gcc 2.x */
+
 
 #define DRM_PROC_LIMIT (PAGE_SIZE-80)
 
@@ -730,11 +679,7 @@ typedef struct drm_device {
 #endif
 	struct pci_dev *pdev;
 #ifdef __alpha__
-#if LINUX_VERSION_CODE < 0x020403
-	struct pci_controler *hose;
-#else
 	struct pci_controller *hose;
-#endif
 #endif
 	drm_sg_mem_t      *sg;  /* Scatter gather memory */
 	unsigned long     *ctx_bitmap;
@@ -778,21 +723,6 @@ extern unsigned int  DRM(poll)(struct file *filp,
 			       struct poll_table_struct *wait);
 
 				/* Mapping support (drm_vm.h) */
-#if LINUX_VERSION_CODE < 0x020317
-extern unsigned long DRM(vm_nopage)(struct vm_area_struct *vma,
-				    unsigned long address,
-				    int unused);
-extern unsigned long DRM(vm_shm_nopage)(struct vm_area_struct *vma,
-					unsigned long address,
-					int unused);
-extern unsigned long DRM(vm_dma_nopage)(struct vm_area_struct *vma,
-					unsigned long address,
-					int unused);
-extern unsigned long DRM(vm_sg_nopage)(struct vm_area_struct *vma,
-				       unsigned long address,
-				       int unused);
-#else
-				/* Return type changed in 2.3.23 */
 extern struct page *DRM(vm_nopage)(struct vm_area_struct *vma,
 				   unsigned long address,
 				   int unused);
@@ -805,7 +735,6 @@ extern struct page *DRM(vm_dma_nopage)(struct vm_area_struct *vma,
 extern struct page *DRM(vm_sg_nopage)(struct vm_area_struct *vma,
 				      unsigned long address,
 				      int unused);
-#endif
 extern void	     DRM(vm_open)(struct vm_area_struct *vma);
 extern void	     DRM(vm_close)(struct vm_area_struct *vma);
 extern void	     DRM(vm_shm_close)(struct vm_area_struct *vma);

@@ -17,15 +17,6 @@
 #include <asm/machvec.h>
 #include <asm/sn/intr.h>
 
-/*
- * other stuff (more to be added later, cleanup then)
- */
-EXPORT_SYMBOL(sn_pci_map_sg);
-EXPORT_SYMBOL(sn_pci_unmap_sg);
-EXPORT_SYMBOL(sn_pci_alloc_consistent);
-EXPORT_SYMBOL(sn_pci_free_consistent);
-EXPORT_SYMBOL(sn_dma_address);
-
 #include <linux/mm.h>
 #include <linux/devfs_fs_kernel.h>
 extern devfs_handle_t          base_io_scsi_ctlr_vhdl[];
@@ -62,6 +53,4 @@ EXPORT_SYMBOL(__va_debug);
 EXPORT_SYMBOL(sn_send_IPI_phys);
 
 #include <linux/mmzone.h>
-EXPORT_SYMBOL(sn_pci_unmap_single);
-EXPORT_SYMBOL(sn_pci_map_single);
-EXPORT_SYMBOL(sn_pci_dma_sync_single);
+

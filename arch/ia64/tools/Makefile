@@ -2,9 +2,9 @@ CFLAGS	= -g -O2 -Wall $(CPPFLAGS)
 
 TARGET	= $(TOPDIR)/include/asm-ia64/offsets.h
 
-all: 
+all:
 
-mrproper:
+mrproper: clean
 
 clean:
 	rm -f print_offsets.s print_offsets offsets.h

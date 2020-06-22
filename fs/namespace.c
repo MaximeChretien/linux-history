@@ -29,6 +29,8 @@ static struct list_head *mount_hashtable;
 static int hash_mask, hash_bits;
 static kmem_cache_t *mnt_cache; 
 
+extern void init_rootfs(void);
+
 static inline unsigned long hash(struct vfsmount *mnt, struct dentry *dentry)
 {
 	unsigned long tmp = ((unsigned long) mnt / L1_CACHE_BYTES);
@@ -359,17 +361,9 @@ static int do_umount(struct vfsmount *mnt, int flags)
 asmlinkage long sys_umount(char * name, int flags)
 {
 	struct nameidata nd;
-	char *kname;
 	int retval;
 
-	kname = getname(name);
-	retval = PTR_ERR(kname);
-	if (IS_ERR(kname))
-		goto out;
-	retval = 0;
-	if (path_init(kname, LOOKUP_POSITIVE|LOOKUP_FOLLOW, &nd))
-		retval = path_walk(kname, &nd);
-	putname(kname);
+	retval = __user_walk(name, LOOKUP_POSITIVE|LOOKUP_FOLLOW, &nd);
 	if (retval)
 		goto out;
 	retval = -EINVAL;
@@ -496,8 +490,7 @@ static int do_loopback(struct nameidata *nd, char *old_name, int recurse)
 		return err;
 	if (!old_name || !*old_name)
 		return -EINVAL;
-	if (path_init(old_name, LOOKUP_POSITIVE|LOOKUP_FOLLOW, &old_nd))
-		err = path_walk(old_name, &old_nd);
+	err = path_lookup(old_name, LOOKUP_POSITIVE|LOOKUP_FOLLOW, &old_nd);
 	if (err)
 		return err;
 
@@ -563,8 +556,7 @@ static int do_move_mount(struct nameidata *nd, char *old_name)
 		return -EPERM;
 	if (!old_name || !*old_name)
 		return -EINVAL;
-	if (path_init(old_name, LOOKUP_POSITIVE|LOOKUP_FOLLOW, &old_nd))
-		err = path_walk(old_name, &old_nd);
+	err = path_lookup(old_name, LOOKUP_POSITIVE|LOOKUP_FOLLOW, &old_nd);
 	if (err)
 		return err;
 
@@ -730,8 +722,7 @@ long do_mount(char * dev_name, char * dir_name, char *type_page,
 	flags &= ~(MS_NOSUID|MS_NOEXEC|MS_NODEV);
 
 	/* ... and get the mountpoint */
-	if (path_init(dir_name, LOOKUP_FOLLOW|LOOKUP_POSITIVE, &nd))
-		retval = path_walk(dir_name, &nd);
+	retval = path_lookup(dir_name, LOOKUP_FOLLOW|LOOKUP_POSITIVE, &nd);
 	if (retval)
 		return retval;
 
@@ -910,7 +901,6 @@ asmlinkage long sys_pivot_root(const char *new_root, const char *put_old)
 {
 	struct vfsmount *tmp;
 	struct nameidata new_nd, old_nd, parent_nd, root_parent, user_nd;
-	char *name;
 	int error;
 
 	if (!capable(CAP_SYS_ADMIN))
@@ -918,28 +908,14 @@ asmlinkage long sys_pivot_root(const char *new_root, const char *put_old)
 
 	lock_kernel();
 
-	name = getname(new_root);
-	error = PTR_ERR(name);
-	if (IS_ERR(name))
-		goto out0;
-	error = 0;
-	if (path_init(name, LOOKUP_POSITIVE|LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &new_nd))
-		error = path_walk(name, &new_nd);
-	putname(name);
+	error = __user_walk(new_root, LOOKUP_POSITIVE|LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &new_nd);
 	if (error)
 		goto out0;
 	error = -EINVAL;
 	if (!check_mnt(new_nd.mnt))
 		goto out1;
 
-	name = getname(put_old);
-	error = PTR_ERR(name);
-	if (IS_ERR(name))
-		goto out1;
-	error = 0;
-	if (path_init(name, LOOKUP_POSITIVE|LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &old_nd))
-		error = path_walk(name, &old_nd);
-	putname(name);
+	error = __user_walk(put_old, LOOKUP_POSITIVE|LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &old_nd);
 	if (error)
 		goto out1;
 

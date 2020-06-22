@@ -121,7 +121,7 @@ static int __init cpu_init(void)
 	cpu_freq_khz = vco_to_freq(vco, 1);
 
 #ifdef CONFIG_CPU_FREQ
-	cpufreq_init(cpu_freq_khz);
+	cpufreq_init(cpu_freq_khz, 1000, 0);
 	cpufreq_setfunctions(integrator_validatespeed, integrator_setspeed);
 #endif
 

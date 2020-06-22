@@ -33,8 +33,7 @@
  * is sufficient (the IDE driver will autodetect the drive geometry).
  */
 char drive_info[4*16];
-
-unsigned char aux_device_present = 0xaa;	/* XXX remove this when legacy I/O is gone */
+extern int pcat_compat;
 
 void __init
 dig_setup (char **cmdline_p)
@@ -81,13 +80,7 @@ dig_setup (char **cmdline_p)
 	screen_info.orig_video_ega_bx = 3;	/* XXX fake */
 }
 
-void
+void __init
 dig_irq_init (void)
 {
-	/*
-	 * Disable the compatibility mode interrupts (8259 style), needs IN/OUT support
-	 * enabled.
-	 */
-	outb(0xff, 0xA1);
-	outb(0xff, 0x21);
 }

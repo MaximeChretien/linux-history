@@ -3,13 +3,14 @@
  * kernel/lvm.h
  * tools/lib/lvm.h
  *
- * Copyright (C) 1997 - 2001  Heinz Mauelshagen, Sistina Software
+ * Copyright (C) 1997 - 2002  Heinz Mauelshagen, Sistina Software
  *
  * February-November 1997
  * May-July 1998
  * January-March,July,September,October,Dezember 1999
  * January,February,July,November 2000
  * January-March,June,July 2001
+ * May 2002
  *
  * lvm is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -79,8 +80,8 @@
 #ifndef _LVM_H_INCLUDE
 #define _LVM_H_INCLUDE
 
-#define LVM_RELEASE_NAME "1.0.3"
-#define LVM_RELEASE_DATE "19/02/2002"
+#define LVM_RELEASE_NAME "1.0.5+"
+#define LVM_RELEASE_DATE "22/07/2002"
 
 #define	_LVM_KERNEL_H_VERSION	"LVM "LVM_RELEASE_NAME" ("LVM_RELEASE_DATE")"
 
@@ -208,39 +209,34 @@ struct list_head {
 /*
  * VGDA: default disk spaces and offsets
  *
- *   There's space after the structures for later extensions.
- *   The physical volume structure holds offset and size definitions
- *   for itself (well, kind of redundant ;-) and all other structure{s| arrays};
+ *   there's space after the structures for later extensions.
  *
- *   In recent versions since LVM 0.9.1 we align to 4k offsets in order to ease
- *   future kernel reads of the metadata.
+ *   offset            what                                size
+ *   ---------------   ----------------------------------  ------------
+ *   0                 physical volume structure           ~500 byte
  *
- *   offset               what                               size
- *   ---------------      --------------------------------   ------------
- *   0                    physical volume structure          pv->pv_on_disk.size
- *                                                           (~500 byte)
- *   pv->vg_on_disk.base  volume group structure             pv->vg_on_disk.size
+ *   1K                volume group structure              ~200 byte
  *
- *   pv->uuidlist_on_disk.base                               128 byte each
- *                        uuidlist of physical volumes
- *                        holding one uuid per physical volume
+ *   6K                namelist of physical volumes        128 byte each
  *
- *   pv->lv_on_disk.base  logical volume structures;         pv->lv_on_disk.size
- *                        one structure per logical volume   (~300 byte each)
+ *   6k + n * ~300byte n logical volume structures         ~300 byte each
  *
- *   pv->pe_on_disk.base  physical extent alloc. structs     pv->pe_on_disk.size
- *                        one strcuture per physical extent  (4 byte each)
+ *   + m * 4byte       m physical extent alloc. structs    4 byte each
  *
- *   End of disk -        first physical extent              default 4 megabyte
+ *   End of disk -     first physical extent               typically 4 megabyte
  *   PE total *
  *   PE size
- *   (rounded to 64k offset today)
  *
- *   pv->pe_on_disk.base + pv->pe_on_disk.size == start of first physical extent
  *
  */
 
 /* DONT TOUCH THESE !!! */
+
+
+
+
+
+
 
 /*
  * LVM_PE_T_MAX corresponds to:
@@ -253,7 +249,7 @@ struct list_head {
  *
  * Maximum PE size of 16GB gives a maximum logical volume size of 1024 TB.
  *
- * AFAIK, the actual kernels limit this to 2 TB.
+ * AFAIK, the actual kernels limit this to 1 TB.
  *
  * Should be a sufficient spectrum ;*)
  */
@@ -273,7 +269,7 @@ struct list_head {
 #define	LVM_MAX_MIRRORS    	2	/* future use */
 #define	LVM_MIN_READ_AHEAD	0	/* minimum read ahead sectors */
 #define	LVM_DEFAULT_READ_AHEAD	1024	/* sectors for 512k scsi segments */
-#define	LVM_MAX_READ_AHEAD	10000	/* maximum read ahead sectors */
+#define	LVM_MAX_READ_AHEAD	1024	/* maximum read ahead sectors */
 #define	LVM_MAX_LV_IO_TIMEOUT	60	/* seconds I/O timeout (future use) */
 #define	LVM_PARTITION           0xfe	/* LVM partition id */
 #define	LVM_NEW_PARTITION       0x8e	/* new LVM partition id (10/09/1999) */

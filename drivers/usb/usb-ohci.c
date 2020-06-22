@@ -78,6 +78,7 @@
 
 #include "usb-ohci.h"
 
+#include "hcd.h"
 
 #ifdef CONFIG_PMAC_PBOOK
 #include <asm/machdep.h>
@@ -178,7 +179,7 @@ static void urb_free_priv (struct ohci *hc, urb_priv_t * urb_priv)
 	kfree (urb_priv);
 }
  
-static void urb_rm_priv_locked (urb_t * urb) 
+static void urb_rm_priv_locked (struct urb * urb) 
 {
 	urb_priv_t * urb_priv = urb->hcpriv;
 	
@@ -212,7 +213,7 @@ static void urb_rm_priv_locked (urb_t * urb)
 	}
 }
 
-static void urb_rm_priv (urb_t * urb)
+static void urb_rm_priv (struct urb * urb)
 {
 	unsigned long flags;
 
@@ -229,7 +230,7 @@ static int sohci_get_current_frame_number (struct usb_device * dev);
 /* debug| print the main components of an URB     
  * small: 0) header + data packets 1) just header */
  
-static void urb_print (urb_t * urb, char * str, int small)
+static void urb_print (struct urb * urb, char * str, int small)
 {
 	unsigned int pipe= urb->pipe;
 	
@@ -384,6 +385,8 @@ static void ohci_dump_roothub (ohci_t *controller, int verbose)
 	__u32			temp, ndp, i;
 
 	temp = roothub_a (controller);
+	if (temp == ~(u32)0)
+		return;
 	ndp = (temp & RH_A_NDP);
 
 	if (verbose) {
@@ -458,10 +461,10 @@ static void ohci_dump (ohci_t *controller, int verbose)
 
 /* return a request to the completion handler */
  
-static int sohci_return_urb (struct ohci *hc, urb_t * urb)
+static int sohci_return_urb (struct ohci *hc, struct urb * urb)
 {
 	urb_priv_t * urb_priv = urb->hcpriv;
-	urb_t * urbt;
+	struct urb * urbt;
 	unsigned long flags;
 	int i;
 	
@@ -536,7 +539,7 @@ static int sohci_return_urb (struct ohci *hc, urb_t * urb)
 
 /* get a transfer request */
  
-static int sohci_submit_urb (urb_t * urb)
+static int sohci_submit_urb (struct urb * urb)
 {
 	ohci_t * ohci;
 	ed_t * ed;
@@ -720,7 +723,7 @@ static int sohci_submit_urb (urb_t * urb)
 /* deactivate all TDs and remove the private part of the URB */
 /* interrupt callers must use async unlink mode */
 
-static int sohci_unlink_urb (urb_t * urb)
+static int sohci_unlink_urb (struct urb * urb)
 {
 	unsigned long flags;
 	ohci_t * ohci;
@@ -1295,7 +1298,7 @@ static void ep_rm_ed (struct usb_device * usb_dev, ed_t * ed)
 static void
 td_fill (ohci_t * ohci, unsigned int info,
 	dma_addr_t data, int len,
-	urb_t * urb, int index)
+	struct urb * urb, int index)
 {
 	volatile td_t  * td, * td_pt;
 	urb_priv_t * urb_priv = urb->hcpriv;
@@ -1344,7 +1347,7 @@ td_fill (ohci_t * ohci, unsigned int info,
  
 /* prepare all TDs of a transfer */
 
-static void td_submit_urb (urb_t * urb)
+static void td_submit_urb (struct urb * urb)
 { 
 	urb_priv_t * urb_priv = urb->hcpriv;
 	ohci_t * ohci = (ohci_t *) urb->dev->bus->hcpriv;
@@ -1457,7 +1460,7 @@ static void dl_transfer_length(td_t * td)
 {
 	__u32 tdINFO, tdBE, tdCBP;
  	__u16 tdPSW;
- 	urb_t * urb = td->urb;
+ 	struct urb * urb = td->urb;
  	urb_priv_t * urb_priv = urb->hcpriv;
 	int dlen = 0;
 	int cc = 0;
@@ -1498,7 +1501,7 @@ static void dl_transfer_length(td_t * td)
 
 /* handle an urb that is being unlinked */
 
-static void dl_del_urb (urb_t * urb)
+static void dl_del_urb (struct urb * urb)
 {
 	wait_queue_head_t * wait_head = ((urb_priv_t *)(urb->hcpriv))->wait;
 
@@ -1510,6 +1513,8 @@ static void dl_del_urb (urb_t * urb)
 			urb->complete (urb);
 	} else {
 		urb->status = -ENOENT;
+		if (urb->complete)
+			urb->complete (urb);
 
 		/* unblock sohci_unlink_urb */
 		if (wait_head)
@@ -1587,7 +1592,7 @@ static void dl_del_list (ohci_t  * ohci, unsigned int frame)
 		td_p = &ed->hwHeadP;
 
 		for (td = tdHeadP; td != tdTailP; td = td_next) { 
-			urb_t * urb = td->urb;
+			struct urb * urb = td->urb;
 			urb_priv_t * urb_priv = td->urb->hcpriv;
 			
 			td_next = dma_to_td (ohci, le32_to_cpup (&td->hwNextTD) & 0xfffffff0);
@@ -1626,11 +1631,6 @@ static void dl_del_list (ohci_t  * ohci, unsigned int frame)
 			if (tdHeadP == tdTailP) {
 				if (ed->state == ED_OPER)
 					ep_unlink(ohci, ed);
-				td_free (ohci, tdTailP);
-				ed->hwINFO = cpu_to_le32 (OHCI_ED_SKIP);
-				ed->state = ED_NEW;
-				hash_free_ed(ohci, ed);
-				--(usb_to_ohci (ohci->dev[edINFO & 0x7F]))->ed_cnt;
 			} else
    	 			ed->hwINFO &= ~cpu_to_le32 (OHCI_ED_SKIP);
    	 	}
@@ -1675,7 +1675,7 @@ static void dl_done_list (ohci_t * ohci, td_t * td_list)
   	td_t * td_list_next = NULL;
 	ed_t * ed;
 	int cc = 0;
-	urb_t * urb;
+	struct urb * urb;
 	urb_priv_t * urb_priv;
  	__u32 tdINFO, edHeadP, edTailP;
  	
@@ -1851,7 +1851,7 @@ static void rh_int_timer_do (unsigned long ptr)
 {
 	int len; 
 
-	urb_t * urb = (urb_t *) ptr;
+	struct urb * urb = (struct urb *) ptr;
 	ohci_t * ohci = urb->dev->bus->hcpriv;
 
 	if (ohci->disabled)
@@ -1880,7 +1880,7 @@ static void rh_int_timer_do (unsigned long ptr)
 
 /* Root Hub INTs are polled by this timer */
 
-static int rh_init_int_timer (urb_t * urb) 
+static int rh_init_int_timer (struct urb * urb) 
 {
 	ohci_t * ohci = urb->dev->bus->hcpriv;
 
@@ -1905,12 +1905,12 @@ static int rh_init_int_timer (urb_t * urb)
 
 /* request to virtual root hub */
 
-static int rh_submit_urb (urb_t * urb)
+static int rh_submit_urb (struct urb * urb)
 {
 	struct usb_device * usb_dev = urb->dev;
 	ohci_t * ohci = usb_dev->bus->hcpriv;
 	unsigned int pipe = urb->pipe;
-	devrequest * cmd = (devrequest *) urb->setup_packet;
+	struct usb_ctrlrequest * cmd = (struct usb_ctrlrequest *) urb->setup_packet;
 	void * data = urb->transfer_buffer;
 	int leni = urb->transfer_buffer_length;
 	int len = 0;
@@ -1934,10 +1934,10 @@ static int rh_submit_urb (urb_t * urb)
 		return 0;
 	}
 
-	bmRType_bReq  = cmd->requesttype | (cmd->request << 8);
-	wValue        = le16_to_cpu (cmd->value);
-	wIndex        = le16_to_cpu (cmd->index);
-	wLength       = le16_to_cpu (cmd->length);
+	bmRType_bReq  = cmd->bRequestType | (cmd->bRequest << 8);
+	wValue        = le16_to_cpu (cmd->wValue);
+	wIndex        = le16_to_cpu (cmd->wIndex);
+	wLength       = le16_to_cpu (cmd->wLength);
 
 	switch (bmRType_bReq) {
 	/* Request Destination:
@@ -2111,7 +2111,7 @@ static int rh_submit_urb (urb_t * urb)
 
 /*-------------------------------------------------------------------------*/
 
-static int rh_unlink_urb (urb_t * urb)
+static int rh_unlink_urb (struct urb * urb)
 {
 	ohci_t * ohci = urb->dev->bus->hcpriv;
  
@@ -2144,6 +2144,8 @@ static int hc_reset (ohci_t * ohci)
 	int timeout = 30;
 	int smm_timeout = 50; /* 0,5 sec */
 	 	
+#ifndef __hppa__
+	/* PA-RISC doesn't have SMM, but PDC might leave IR set */
 	if (readl (&ohci->regs->control) & OHCI_CTRL_IR) { /* SMM owns the HC */
 		writel (OHCI_OCR, &ohci->regs->cmdstatus); /* request ownership */
 		dbg("USB HC TakeOver from SMM");
@@ -2154,7 +2156,8 @@ static int hc_reset (ohci_t * ohci)
 				return -1;
 			}
 		}
-	}	
+	}
+#endif	
 		
 	/* Disable HC interrupts */
 	writel (OHCI_INTR_MIE, &ohci->regs->intrdisable);
@@ -2218,9 +2221,19 @@ static int hc_start (ohci_t * ohci)
 	writel (mask, &ohci->regs->intrstatus);
 
 #ifdef	OHCI_USE_NPS
-	/* required for AMD-756 and some Mac platforms */
-	writel ((roothub_a (ohci) | RH_A_NPS) & ~RH_A_PSM,
-		&ohci->regs->roothub.a);
+	if(ohci->flags & OHCI_QUIRK_SUCKYIO)
+	{
+		/* NSC 87560 at least requires different setup .. */
+		writel ((roothub_a (ohci) | RH_A_NOCP) &
+			~(RH_A_OCPM | RH_A_POTPGT | RH_A_PSM | RH_A_NPS),
+			&ohci->regs->roothub.a);
+	}
+	else
+	{
+		/* required for AMD-756 and some Mac platforms */
+		writel ((roothub_a (ohci) | RH_A_NPS) & ~RH_A_PSM,
+			&ohci->regs->roothub.a);
+	}
 	writel (RH_HS_LPSC, &ohci->regs->roothub.status);
 #endif	/* OHCI_USE_NPS */
 
@@ -2288,9 +2301,19 @@ static void hc_interrupt (int irq, void * __ohci, struct pt_regs * r)
 	struct ohci_regs * regs = ohci->regs;
  	int ints; 
 
-	if ((ohci->hcca->done_head != 0) && !(le32_to_cpup (&ohci->hcca->done_head) & 0x01)) {
+	/* avoid (slow) readl if only WDH happened */
+	if ((ohci->hcca->done_head != 0)
+			&& !(le32_to_cpup (&ohci->hcca->done_head) & 0x01)) {
 		ints =  OHCI_INTR_WDH;
-	} else if ((ints = (readl (&regs->intrstatus) & readl (&regs->intrenable))) == 0) {
+
+	/* cardbus/... hardware gone before remove() */
+	} else if ((ints = readl (&regs->intrstatus)) == ~(u32)0) {
+		ohci->disabled++;
+		err ("%s device removed!", ohci->ohci_dev->slot_name);
+		return;
+
+	/* interrupt for some other device? */
+	} else if ((ints &= readl (&regs->intrenable)) == 0) {
 		return;
 	} 
 
@@ -2391,6 +2414,7 @@ static ohci_t * __devinit hc_alloc_ohci (struct pci_dev *dev, void * mem_base)
 		kfree (ohci);
 		return NULL;
 	}
+	ohci->bus->bus_name = dev->slot_name;
 	ohci->bus->hcpriv = (void *) ohci;
 
 	return ohci;
@@ -2418,8 +2442,9 @@ static void hc_release_ohci (ohci_t * ohci)
 	}
 	pci_set_drvdata(ohci->ohci_dev, NULL);
 	if (ohci->bus) {
-		if (ohci->bus->busnum)
+		if (ohci->bus->busnum != -1)
 			usb_deregister_bus (ohci->bus);
+
 		usb_free_bus (ohci->bus);
 	}
 
@@ -2448,7 +2473,6 @@ hc_found_ohci (struct pci_dev *dev, int irq,
 	void *mem_base, const struct pci_device_id *id)
 {
 	ohci_t * ohci;
-	u8 latency, limit;
 	char buf[8], *bufp = buf;
 	int ret;
 
@@ -2470,22 +2494,23 @@ hc_found_ohci (struct pci_dev *dev, int irq,
 		return ret;
 	}
 	ohci->flags = id->driver_data;
+	
+	/* Check for NSC87560. We have to look at the bridge (fn1) to identify
+	   the USB (fn2). This quirk might apply to more or even all NSC stuff
+	   I don't know.. */
+	   
+	if(dev->vendor == PCI_VENDOR_ID_NS)
+	{
+		struct pci_dev *fn1  = pci_find_slot(dev->bus->number, PCI_DEVFN(PCI_SLOT(dev->devfn), 1));
+		if(fn1 && fn1->vendor == PCI_VENDOR_ID_NS && fn1->device == PCI_DEVICE_ID_NS_87560_LIO)
+			ohci->flags |= OHCI_QUIRK_SUCKYIO;
+		
+	}
+	
+	if (ohci->flags & OHCI_QUIRK_SUCKYIO)
+		printk (KERN_INFO __FILE__ ": Using NSC SuperIO setup\n");
 	if (ohci->flags & OHCI_QUIRK_AMD756)
 		printk (KERN_INFO __FILE__ ": AMD756 erratum 4 workaround\n");
-
-	/* bad pci latencies can contribute to overruns */ 
-	pci_read_config_byte (dev, PCI_LATENCY_TIMER, &latency);
-	if (latency) {
-		pci_read_config_byte (dev, PCI_MAX_LAT, &limit);
-		if (limit && limit < latency) {
-			dbg ("PCI latency reduced to max %d", limit);
-			pci_write_config_byte (dev, PCI_LATENCY_TIMER, limit);
-			ohci->pci_latency = limit;
-		} else {
-			/* it might already have been reduced */
-			ohci->pci_latency = latency;
-		}
-	}
 
 	if (hc_reset (ohci) < 0) {
 		hc_release_ohci (ohci);

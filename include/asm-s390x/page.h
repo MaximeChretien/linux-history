@@ -91,13 +91,22 @@ typedef struct {
         unsigned long pmd0;
         unsigned long pmd1; 
         } pmd_t;
-typedef struct { unsigned long pgd; } pgd_t;
+typedef unsigned int pgd_t;
 typedef struct { unsigned long pgprot; } pgprot_t;
 
 #define pte_val(x)      ((x).pte)
 #define pmd_val(x)      ((x).pmd0)
 #define pmd_val1(x)     ((x).pmd1)
-#define pgd_val(x)      ((x).pgd)
+
+static inline unsigned long __pgd_val(pgd_t *pgdp)
+{
+	unsigned long addr = (unsigned long) pgdp;
+	unsigned long *pgd_slot = (unsigned long *) (addr & -8);
+
+	return *pgd_slot + ((addr & 4) << 11);
+}
+#define pgd_val(pgd) __pgd_val(&(pgd))
+
 #define pgprot_val(x)   ((x).pgprot)
 
 #define __pte(x)        ((pte_t) { (x) } )

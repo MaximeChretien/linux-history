@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.m8260_setup.c 1.30 11/13/01 21:26:07 paulus
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
  *  linux/arch/ppc/kernel/setup.c
@@ -45,8 +45,9 @@
 #include <asm/mpc8260.h>
 #include <asm/immap_8260.h>
 #include <asm/machdep.h>
-
+#include <asm/bootinfo.h>
 #include <asm/time.h>
+
 #include "ppc8260_pic.h"
 
 static int m8260_set_rtc_time(unsigned long time);
@@ -219,6 +220,7 @@ void __init
 platform_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	      unsigned long r6, unsigned long r7)
 {
+	parse_bootinfo(find_bootinfo());
 
 	if ( r3 )
 		memcpy( (void *)__res,(void *)(r3+KERNELBASE), sizeof(bd_t) );

@@ -148,9 +148,12 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum)
 	memcpy (cmd_line, cmd_preset, sizeof(cmd_preset));
 	while ( *cp ) putc(*cp++);
 
-#ifndef CONFIG_GEMINI
-	/* Val Henson has requested that Gemini doesn't wait for the
-	 * user to edit the cmdline or not. */
+#if (defined(CONFIG_SERIAL_CONSOLE) || defined(CONFIG_VGA_CONSOLE)) \
+	&& !defined(CONFIG_GEMINI)
+	/*
+	 * If they have a console, allow them to edit the command line.
+	 * Otherwise, don't bother wasting the five seconds.
+	 */
 	while (timer++ < 5*1000) {
 		if (tstc()) {
 			while ((ch = getc()) != '\n' && ch != '\r') {

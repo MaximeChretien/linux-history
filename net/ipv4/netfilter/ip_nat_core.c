@@ -21,10 +21,14 @@
 #define ASSERT_READ_LOCK(x) MUST_BE_READ_LOCKED(&ip_nat_lock)
 #define ASSERT_WRITE_LOCK(x) MUST_BE_WRITE_LOCKED(&ip_nat_lock)
 
+#include <linux/netfilter_ipv4/ip_conntrack.h>
+#include <linux/netfilter_ipv4/ip_conntrack_core.h>
+#include <linux/netfilter_ipv4/ip_conntrack_protocol.h>
 #include <linux/netfilter_ipv4/ip_nat.h>
 #include <linux/netfilter_ipv4/ip_nat_protocol.h>
 #include <linux/netfilter_ipv4/ip_nat_core.h>
 #include <linux/netfilter_ipv4/ip_nat_helper.h>
+#include <linux/netfilter_ipv4/ip_conntrack_helper.h>
 #include <linux/netfilter_ipv4/listhelp.h>
 
 #if 0
@@ -34,6 +38,7 @@
 #endif
 
 DECLARE_RWLOCK(ip_nat_lock);
+DECLARE_RWLOCK_EXTERN(ip_conntrack_lock);
 
 /* Calculated at init based on memory size */
 static unsigned int ip_nat_htable_size;
@@ -198,6 +203,7 @@ find_appropriate_src(const struct ip_conntrack_tuple *tuple,
 		return NULL;
 }
 
+#ifdef CONFIG_IP_NF_NAT_LOCAL
 /* If it's really a local destination manip, it may need to do a
    source manip too. */
 static int
@@ -216,6 +222,7 @@ do_extra_mangle(u_int32_t var_ip, u_int32_t *other_ipp)
 	ip_rt_put(rt);
 	return 1;
 }
+#endif
 
 /* Simple way to iterate through all. */
 static inline int fake_cmp(const struct ip_nat_hash *i,
@@ -628,8 +635,9 @@ ip_nat_setup_info(struct ip_conntrack *conntrack,
 	}
 
 	/* If there's a helper, assign it; based on new tuple. */
-	info->helper = LIST_FIND(&helpers, helper_cmp, struct ip_nat_helper *,
-				 &reply);
+	if (!conntrack->master)
+		info->helper = LIST_FIND(&helpers, helper_cmp, struct ip_nat_helper *,
+					 &reply);
 
 	/* It's done. */
 	info->initialized |= (1 << HOOK2MANIP(hooknum));
@@ -724,6 +732,20 @@ manip_pkt(u_int16_t proto, struct iphdr *iph, size_t len,
 #endif
 }
 
+static inline int exp_for_packet(struct ip_conntrack_expect *exp,
+			         struct sk_buff **pskb)
+{
+	struct ip_conntrack_protocol *proto;
+	int ret = 1;
+
+	MUST_BE_READ_LOCKED(&ip_conntrack_lock);
+	proto = __ip_ct_find_proto((*pskb)->nh.iph->protocol);
+	if (proto->exp_matches_pkt)
+		ret = proto->exp_matches_pkt(exp, pskb);
+
+	return ret;
+}
+
 /* Do packet manipulations according to binding. */
 unsigned int
 do_bindings(struct ip_conntrack *ct,
@@ -735,6 +757,7 @@ do_bindings(struct ip_conntrack *ct,
 	unsigned int i;
 	struct ip_nat_helper *helper;
 	enum ip_conntrack_dir dir = CTINFO2DIR(ctinfo);
+	int is_tcp = (*pskb)->nh.iph->protocol == IPPROTO_TCP;
 
 	/* Need nat lock to protect against modification, but neither
 	   conntrack (referenced) and helper (deleted with
@@ -773,11 +796,66 @@ do_bindings(struct ip_conntrack *ct,
 	READ_UNLOCK(&ip_nat_lock);
 
 	if (helper) {
+		struct ip_conntrack_expect *exp = NULL;
+		struct list_head *cur_item;
+		int ret = NF_ACCEPT;
+
+		DEBUGP("do_bindings: helper existing for (%p)\n", ct);
+
 		/* Always defragged for helpers */
 		IP_NF_ASSERT(!((*pskb)->nh.iph->frag_off
-			       & __constant_htons(IP_MF|IP_OFFSET)));
-		return helper->help(ct, info, ctinfo, hooknum, pskb);
-	} else return NF_ACCEPT;
+			       & htons(IP_MF|IP_OFFSET)));
+
+		/* Have to grab read lock before sibling_list traversal */
+		READ_LOCK(&ip_conntrack_lock);
+		list_for_each(cur_item, &ct->sibling_list) { 
+			exp = list_entry(cur_item, struct ip_conntrack_expect, 
+					 expected_list);
+					 
+			/* if this expectation is already established, skip */
+			if (exp->sibling)
+				continue;
+
+			if (exp_for_packet(exp, pskb)) {
+				/* FIXME: May be true multiple times in the case of UDP!! */
+				DEBUGP("calling nat helper (exp=%p) for packet\n",
+					exp);
+				ret = helper->help(ct, exp, info, ctinfo, 
+						   hooknum, pskb);
+				if (ret != NF_ACCEPT) {
+					READ_UNLOCK(&ip_conntrack_lock);
+					return ret;
+				}
+			}
+		}
+		/* Helper might want to manip the packet even when there is no expectation */
+		if (!exp && helper->flags & IP_NAT_HELPER_F_ALWAYS) {
+			DEBUGP("calling nat helper for packet without expectation\n");
+			ret = helper->help(ct, NULL, info, ctinfo, 
+					   hooknum, pskb);
+			if (ret != NF_ACCEPT) {
+				READ_UNLOCK(&ip_conntrack_lock);
+				return ret;
+			}
+		}
+		READ_UNLOCK(&ip_conntrack_lock);
+		
+		/* Adjust sequence number only once per packet 
+		 * (helper is called at all hooks) */
+		if (is_tcp && (hooknum == NF_IP_POST_ROUTING
+			       || hooknum == NF_IP_LOCAL_IN)) {
+			DEBUGP("ip_nat_core: adjusting sequence number\n");
+			/* future: put this in a l4-proto specific function,
+			 * and call this function here. */
+			ip_nat_seq_adjust(*pskb, ct, ctinfo);
+		}
+
+		return ret;
+
+	} else 
+		return NF_ACCEPT;
+
+	/* not reached */
 }
 
 unsigned int
@@ -816,7 +894,7 @@ icmp_reply_translation(struct sk_buff *skb,
 	/* Note: May not be from a NAT'd host, but probably safest to
 	   do translation always as if it came from the host itself
 	   (even though a "host unreachable" coming from the host
-	   itself is a bit wierd).
+	   itself is a bit weird).
 
 	   More explanation: some people use NAT for anonymizing.
 	   Also, CERT recommends dropping all packets from private IP
@@ -920,4 +998,5 @@ void ip_nat_cleanup(void)
 {
 	ip_ct_selective_cleanup(&clean_nat, NULL);
 	ip_conntrack_destroyed = NULL;
+	vfree(bysource);
 }

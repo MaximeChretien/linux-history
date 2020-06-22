@@ -41,6 +41,8 @@
 #include <asm/pmc.h>
 #include <asm/uaccess.h>
 #include <asm/naca.h>
+#include <asm/rtas.h>
+#include <asm/perfmon.h>
 
 /* pci Flight Recorder AHT */
 extern void proc_pciFr_init(struct proc_dir_entry *proc_ppc64_root);
@@ -63,6 +65,10 @@ int proc_ppc64_pmc_stab_read(char *page, char **start, off_t off,
 			     int count, int *eof, void *data);
 int proc_ppc64_pmc_htab_read(char *page, char **start, off_t off,
 			     int count, int *eof, void *data);
+int proc_ppc64_pmc_profile_read(char *page, char **start, off_t off,
+				int count, int *eof, void *data);
+int proc_ppc64_pmc_profile_read(char *page, char **start, off_t off,
+				int count, int *eof, void *data);
 int proc_ppc64_pmc_hw_read(char *page, char **start, off_t off, 
 			   int count, int *eof, void *data);
 
@@ -88,6 +94,34 @@ int proc_pmc_set_pmc6(  struct file *file, const char *buffer, unsigned long cou
 int proc_pmc_set_pmc7(  struct file *file, const char *buffer, unsigned long count, void *data);
 int proc_pmc_set_pmc8(  struct file *file, const char *buffer, unsigned long count, void *data);
 
+static loff_t  nacamap_seek( struct file *file, loff_t off, int whence);
+static ssize_t nacamap_read( struct file *file, char *buf, size_t nbytes, loff_t *ppos);
+static int     nacamap_mmap( struct file *file, struct vm_area_struct *vma );
+
+static struct file_operations nacamap_fops = {
+	llseek:	nacamap_seek,
+	read:	nacamap_read,
+	mmap:	nacamap_mmap
+};
+
+static ssize_t read_profile(struct file *file, char *buf, size_t count, loff_t *ppos);
+static ssize_t write_profile(struct file * file, const char * buf,
+			     size_t count, loff_t *ppos);
+static ssize_t read_trace(struct file *file, char *buf, size_t count, loff_t *ppos);
+static ssize_t write_trace(struct file * file, const char * buf,
+			     size_t count, loff_t *ppos);
+
+static struct file_operations proc_profile_operations = {
+	read:		read_profile,
+	write:		write_profile,
+};
+
+static struct file_operations proc_trace_operations = {
+	read:		read_trace,
+	write:		write_trace,
+};
+
+extern struct perfmon_base_struct perfmon_base;
 
 void proc_ppc64_init(void)
 {
@@ -107,14 +141,23 @@ void proc_ppc64_init(void)
 	if (!proc_ppc64_root) return;
 	spin_unlock(&proc_ppc64_lock);
 
-	/* /proc/ppc64/naca -- raw naca contents.  Only readable to root */
-	create_proc_read_entry("naca", S_IRUSR, proc_ppc64_root, proc_ppc64_page_read, naca);
+	ent = create_proc_entry("naca", S_IFREG|S_IRUGO, proc_ppc64_root);
+	if ( ent ) {
+		ent->nlink = 1;
+		ent->data = 0;
+		ent->size = 4096;
+		ent->proc_fops = &nacamap_fops;
+	}
+
 	/* /proc/ppc64/paca/XX -- raw paca contents.  Only readable to root */
 	ent = proc_mkdir("paca", proc_ppc64_root);
 	if (ent) {
 		for (i = 0; i < naca->processorCount; i++)
 			proc_ppc64_create_paca(i, ent);
 	}
+
+	/* Placeholder for rtas interfaces. */
+	rtas_proc_dir = proc_mkdir("rtas", proc_ppc64_root);
 
 	/* Create the /proc/ppc64/pcifr for the Pci Flight Recorder.	 */
 	proc_pciFr_init(proc_ppc64_root);
@@ -165,6 +208,20 @@ void proc_ppc64_init(void)
 		ent->data = (void *)proc_ppc64_pmc_system_root;
 		ent->read_proc = (void *)proc_ppc64_pmc_htab_read;
 		ent->write_proc = (void *)proc_ppc64_pmc_htab_read;
+	}
+
+	ent = create_proc_entry("profile", S_IWUSR | S_IRUGO, proc_ppc64_pmc_system_root);
+	if (ent) {
+		ent->nlink = 1;
+		ent->proc_fops = &proc_profile_operations;
+		/* ent->size = (1+prof_len) * sizeof(unsigned int); */
+	}
+
+	ent = create_proc_entry("trace", S_IWUSR | S_IRUGO, proc_ppc64_pmc_system_root);
+	if (ent) {
+		ent->nlink = 1;
+		ent->proc_fops = &proc_trace_operations;
+		/* ent->size = (1+prof_len) * sizeof(unsigned int); */
 	}
 
 	/* Create directories for the hardware counters. */
@@ -336,6 +393,60 @@ proc_ppc64_pmc_htab_read(char *page, char **start, off_t off,
 	return n;
 }
 
+static ssize_t read_profile(struct file *file, char *buf,
+			    size_t count, loff_t *ppos)
+{
+	unsigned long p = *ppos;
+	ssize_t read;
+	char * pnt;
+	unsigned int sample_step = 4;
+
+	if (p >= (perfmon_base.profile_length+1)) return 0;
+	if (count > (perfmon_base.profile_length+1) - p)
+		count = (perfmon_base.profile_length+1) - p;
+	read = 0;
+
+	while (p < sizeof(unsigned int) && count > 0) {
+		put_user(*((char *)(&sample_step)+p),buf);
+		buf++; p++; count--; read++;
+	}
+	pnt = (char *)(perfmon_base.profile_buffer) + p - sizeof(unsigned int);
+	copy_to_user(buf,(void *)pnt,count);
+	read += count;
+	*ppos += read;
+	return read;
+}
+
+static ssize_t read_trace(struct file *file, char *buf,
+			    size_t count, loff_t *ppos)
+{
+	unsigned long p = *ppos;
+	ssize_t read;
+	char * pnt;
+	unsigned int sample_step = 4;
+
+	if (p >= (perfmon_base.trace_length)) return 0;
+	if (count > (perfmon_base.trace_length) - p)
+		count = (perfmon_base.trace_length) - p;
+	read = 0;
+
+	pnt = (char *)(perfmon_base.trace_buffer) + p; //  - sizeof(unsigned int);
+	copy_to_user(buf,(void *)pnt,count);
+	read += count;
+	*ppos += read;
+	return read;
+}
+
+static ssize_t write_trace(struct file * file, const char * buf,
+			     size_t count, loff_t *ppos)
+{
+}
+
+static ssize_t write_profile(struct file * file, const char * buf,
+			     size_t count, loff_t *ppos)
+{
+}
+
 int 
 proc_ppc64_pmc_hw_read(char *page, char **start, off_t off, 
 			     int count, int *eof, void *data)
@@ -377,6 +488,7 @@ void pmc_proc_init(struct proc_dir_entry *iSeries_proc)
     if (!ent) return;
     ent->nlink = 1;
     ent->data = (void *)0;
+    ent->size = 0;
     ent->read_proc = proc_get_titanTod;
     ent->write_proc = NULL;
 
@@ -836,5 +948,75 @@ int proc_pmc_set_pmc8( struct file *file, const char *buffer, unsigned long coun
 	mtspr( PMC8, v );
 
 	return count;
+}
+
+static loff_t nacamap_seek( struct file *file, loff_t off, int whence)
+{
+	loff_t new;
+	struct proc_dir_entry *dp;
+
+	dp = file->f_dentry->d_inode->u.generic_ip;
+
+	switch(whence) {
+	case 0:
+		new = off;
+		break;
+	case 1:
+		new = file->f_pos + off;
+		break;
+	case 2:
+		new = dp->size + off;
+		break;
+	default:
+		return -EINVAL;
+	}
+	if ( new < 0 || new > dp->size )
+		return -EINVAL;
+	return (file->f_pos = new);
+}
+
+static ssize_t nacamap_read( struct file *file, char *buf, size_t nbytes, loff_t *ppos)
+{
+	unsigned pos = *ppos;
+	unsigned size;
+	char * fromaddr;
+	struct proc_dir_entry *dp;
+
+	dp = file->f_dentry->d_inode->u.generic_ip;
+
+	size = dp->size;
+	if ( pos >= size )
+		return 0;
+	if ( nbytes >= size )
+		nbytes = size;
+	if ( pos + nbytes > size )
+		nbytes = size - pos;
+	fromaddr = (char *)(KERNELBASE + 0x4000 + pos);
+
+	copy_to_user( buf, fromaddr, nbytes );
+	*ppos = pos + nbytes;
+	return nbytes;
+}
+
+static int nacamap_mmap( struct file *file, struct vm_area_struct *vma )
+{
+	unsigned long pa;
+	long size;
+	long fsize;
+	struct proc_dir_entry *dp;
+
+	dp = file->f_dentry->d_inode->u.generic_ip;
+
+	pa = 0x4000;
+	fsize = 4096;
+
+	vma->vm_flags |= VM_SHM | VM_LOCKED;
+
+	size = vma->vm_end - vma->vm_start;
+	if ( size != 4096 )
+		return -EINVAL;
+
+	remap_page_range( vma->vm_start, pa, 4096, vma->vm_page_prot );
+	return 0;
 }
 

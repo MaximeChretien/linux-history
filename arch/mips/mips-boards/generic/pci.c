@@ -72,12 +72,12 @@ mips_pcibios_config_access(unsigned char access_type, struct pci_dev *dev,
 
 		/* Clear cause register bits */
 		GT_READ(GT_INTRCAUSE_OFS, intr);
-		GT_WRITE(GT_INTRCAUSE_OFS, intr & 
-			 ~(GT_INTRCAUSE_MASABORT0_BIT | 
+		GT_WRITE(GT_INTRCAUSE_OFS, intr &
+			 ~(GT_INTRCAUSE_MASABORT0_BIT |
 			   GT_INTRCAUSE_TARABORT0_BIT));
 
 		/* Setup address */
-		GT_WRITE(GT_PCI0_CFGADDR_OFS, 
+		GT_WRITE(GT_PCI0_CFGADDR_OFS,
 			 (bus         << GT_PCI0_CFGADDR_BUSNUM_SHF)   |
 			 (dev_fn      << GT_PCI0_CFGADDR_FUNCTNUM_SHF) |
 			 ((where / 4) << GT_PCI0_CFGADDR_REGNUM_SHF)   |
@@ -85,9 +85,9 @@ mips_pcibios_config_access(unsigned char access_type, struct pci_dev *dev,
 
 		if (access_type == PCI_ACCESS_WRITE) {
 			if (bus == 0 && dev_fn == 0) {
-				/* 
-				 * The Galileo system controller is acting 
-				 * differently than other devices. 
+				/*
+				 * The Galileo system controller is acting
+				 * differently than other devices.
 				 */
 				GT_WRITE(GT_PCI0_CFGDATA_OFS, *data);
 			} else {
@@ -95,9 +95,9 @@ mips_pcibios_config_access(unsigned char access_type, struct pci_dev *dev,
 			}
 		} else {
 			if (bus == 0 && dev_fn == 0) {
-				/* 
-				 * The Galileo system controller is acting 
-				 * differently than other devices. 
+				/*
+				 * The Galileo system controller is acting
+				 * differently than other devices.
 				 */
 				GT_READ(GT_PCI0_CFGDATA_OFS, *data);
 			} else {
@@ -108,15 +108,15 @@ mips_pcibios_config_access(unsigned char access_type, struct pci_dev *dev,
 		/* Check for master or target abort */
 		GT_READ(GT_INTRCAUSE_OFS, intr);
 
-		if (intr & (GT_INTRCAUSE_MASABORT0_BIT | 
+		if (intr & (GT_INTRCAUSE_MASABORT0_BIT |
 			    GT_INTRCAUSE_TARABORT0_BIT))
 		{
 			/* Error occured */
 
 			/* Clear bits */
 			GT_READ(GT_INTRCAUSE_OFS, intr);
-			GT_WRITE(GT_INTRCAUSE_OFS, intr & 
-				 ~(GT_INTRCAUSE_MASABORT0_BIT | 
+			GT_WRITE(GT_INTRCAUSE_OFS, intr &
+				 ~(GT_INTRCAUSE_MASABORT0_BIT |
 				   GT_INTRCAUSE_TARABORT0_BIT));
 
 			return -1;
@@ -133,12 +133,12 @@ mips_pcibios_config_access(unsigned char access_type, struct pci_dev *dev,
 		}
 
 		/* Clear cause register bits */
-		BONITO_PCICMD |= (BONITO_PCICMD_MABORT_CLR | 
+		BONITO_PCICMD |= (BONITO_PCICMD_MABORT_CLR |
 				  BONITO_PCICMD_MTABORT_CLR);
 
-		/* 
-		 * Setup pattern to be used as PCI "address" for 
-		 * Type 0 cycle 
+		/*
+		 * Setup pattern to be used as PCI "address" for
+		 * Type 0 cycle
 		 */
 		if (bus == 0) {
 		        /* IDSEL */
@@ -153,10 +153,10 @@ mips_pcibios_config_access(unsigned char access_type, struct pci_dev *dev,
 
 		/* Function (same for Type 0/1) */
 		pci_addr |= PCI_FUNC(dev_fn) << PCI_CFG_TYPE0_FUNC_SHF;
-		
+
 		/* Register number (same for Type 0/1) */
 		pci_addr |= (where & ~0x3) << PCI_CFG_TYPE0_REG_SHF;
-		
+
 		if (bus == 0) {
 		        /* Type 0 */
 		        BONITO_PCIMAP_CFG = pci_addr >> 16;
@@ -164,7 +164,7 @@ mips_pcibios_config_access(unsigned char access_type, struct pci_dev *dev,
 		        /* Type 1 */
 		        BONITO_PCIMAP_CFG = (pci_addr >> 16) | 0x10000;
 		}
-	  
+
 		/* Flush Bonito register block */
 		dummy = BONITO_PCIMAP_CFG;
 		__asm__ __volatile__(
@@ -176,28 +176,28 @@ mips_pcibios_config_access(unsigned char access_type, struct pci_dev *dev,
 
 		/* Perform access */
 		if (access_type == PCI_ACCESS_WRITE) {
-		        *(volatile u32 *)(KSEG1ADDR(BONITO_PCICFG_BASE + 
+		        *(volatile u32 *)(KSEG1ADDR(BONITO_PCICFG_BASE +
 					  (pci_addr & 0xffff))) = *(u32 *)data;
 
 			/* Wait till done */
 			while (BONITO_PCIMSTAT & 0xF)
 			        ;
 		} else {
-		        *(u32 *)data = 
-			  *(volatile u32 *)(KSEG1ADDR(BONITO_PCICFG_BASE + 
+		        *(u32 *)data =
+			  *(volatile u32 *)(KSEG1ADDR(BONITO_PCICFG_BASE +
 					    (pci_addr & 0xffff)));
 		}
 
 		/* Detect Master/Target abort */
-		if (BONITO_PCICMD & (BONITO_PCICMD_MABORT_CLR | 
+		if (BONITO_PCICMD & (BONITO_PCICMD_MABORT_CLR |
 				     BONITO_PCICMD_MTABORT_CLR) )
 		{
 		        /* Error occurred */
 
 		        /* Clear bits */
-		        BONITO_PCICMD |= (BONITO_PCICMD_MABORT_CLR | 
+		        BONITO_PCICMD |= (BONITO_PCICMD_MABORT_CLR |
 					  BONITO_PCICMD_MTABORT_CLR);
-    
+
 			return -1;
 		}
 	        break;
@@ -210,8 +210,8 @@ mips_pcibios_config_access(unsigned char access_type, struct pci_dev *dev,
 		}
 
 		/* Clear status register bits. */
-		MSC_WRITE(MSC01_PCI_INTSTAT, 
-			  (MSC01_PCI_INTCFG_MA_BIT | 
+		MSC_WRITE(MSC01_PCI_INTSTAT,
+			  (MSC01_PCI_INTCFG_MA_BIT |
 			   MSC01_PCI_INTCFG_TA_BIT));
 
 		/* Setup address */
@@ -236,7 +236,7 @@ mips_pcibios_config_access(unsigned char access_type, struct pci_dev *dev,
 
 		/* Detect Master/Target abort */
 		MSC_READ(MSC01_PCI_INTSTAT, intr);
-		if (intr & (MSC01_PCI_INTCFG_MA_BIT | 
+		if (intr & (MSC01_PCI_INTCFG_MA_BIT |
 			    MSC01_PCI_INTCFG_TA_BIT))
 		{
 		        /* Error occurred */
@@ -244,7 +244,7 @@ mips_pcibios_config_access(unsigned char access_type, struct pci_dev *dev,
 		        /* Clear bits */
 			MSC_READ(MSC01_PCI_INTSTAT, intr);
 			MSC_WRITE(MSC01_PCI_INTSTAT,
-				  (MSC01_PCI_INTCFG_MA_BIT | 
+				  (MSC01_PCI_INTCFG_MA_BIT |
 				   MSC01_PCI_INTCFG_TA_BIT));
 
 			return -1;
@@ -300,7 +300,7 @@ mips_pcibios_read_config_dword (struct pci_dev *dev, int where, u32 *val)
 
 	if (where & 3)
 		return PCIBIOS_BAD_REGISTER_NUMBER;
-	
+
 	if (mips_pcibios_config_access(PCI_ACCESS_READ, dev, where, &data))
 		return -1;
 
@@ -314,7 +314,7 @@ static int
 mips_pcibios_write_config_byte (struct pci_dev *dev, int where, u8 val)
 {
 	u32 data = 0;
-       
+
 	if (mips_pcibios_config_access(PCI_ACCESS_READ, dev, where, &data))
 		return -1;
 
@@ -334,11 +334,11 @@ mips_pcibios_write_config_word (struct pci_dev *dev, int where, u16 val)
 
 	if (where & 1)
 		return PCIBIOS_BAD_REGISTER_NUMBER;
-       
+
         if (mips_pcibios_config_access(PCI_ACCESS_READ, dev, where, &data))
 	       return -1;
 
-	data = (data & ~(0xffff << ((where & 3) << 3))) | 
+	data = (data & ~(0xffff << ((where & 3) << 3))) |
 	       (val << ((where & 3) << 3));
 
 	if (mips_pcibios_config_access(PCI_ACCESS_WRITE, dev, where, &data))
@@ -369,6 +369,55 @@ struct pci_ops mips_pci_ops = {
 	mips_pcibios_write_config_dword
 };
 
+int mips_pcibios_iack(void)
+{
+	int irq;
+        u32 dummy;
+
+	/*
+	 * Determine highest priority pending interrupt by performing
+	 * a PCI Interrupt Acknowledge cycle.
+	 */
+	switch(mips_revision_corid) {
+	case MIPS_REVISION_CORID_QED_RM5261:
+	case MIPS_REVISION_CORID_CORE_LV:
+	case MIPS_REVISION_CORID_CORE_FPGA:
+	case MIPS_REVISION_CORID_CORE_MSC:
+		if (mips_revision_corid == MIPS_REVISION_CORID_CORE_MSC)
+			MSC_READ(MSC01_PCI_IACK, irq);
+		else
+			GT_READ(GT_PCI0_IACK_OFS, irq);
+		irq &= 0xff;
+		break;
+	case MIPS_REVISION_CORID_BONITO64:
+	case MIPS_REVISION_CORID_CORE_20K:
+		/* The following will generate a PCI IACK cycle on the
+		 * Bonito controller. It's a little bit kludgy, but it
+		 * was the easiest way to implement it in hardware at
+		 * the given time.
+		 */
+		BONITO_PCIMAP_CFG = 0x20000;
+
+		/* Flush Bonito register block */
+		dummy = BONITO_PCIMAP_CFG;
+		__asm__ __volatile__(
+			".set\tnoreorder\n\t"
+			".set\tnoat\n\t"
+			"sync\n\t"
+			".set\tat\n\t"
+			".set\treorder");
+
+		irq = *(volatile u32 *)(KSEG1ADDR(BONITO_PCICFG_BASE));
+		irq &= 0xff;
+		BONITO_PCIMAP_CFG = 0;
+		break;
+	default:
+	        printk("Unknown Core card, don't know the system controller.\n");
+		return -1;
+	}
+	return irq;
+}
+
 void __init pcibios_init(void)
 {
 #ifdef CONFIG_MIPS_MALTA
@@ -383,11 +432,11 @@ void __init pcibios_init(void)
 	case MIPS_REVISION_CORID_QED_RM5261:
 	case MIPS_REVISION_CORID_CORE_LV:
 	case MIPS_REVISION_CORID_CORE_FPGA:
-		/* 
-		 * Due to a bug in the Galileo system controller, we need 
+		/*
+		 * Due to a bug in the Galileo system controller, we need
 		 * to setup the PCI BAR for the Galileo internal registers.
-		 * This should be done in the bios/bootprom and will be 
-		 * fixed in a later revision of YAMON (the MIPS boards 
+		 * This should be done in the bios/bootprom and will be
+		 * fixed in a later revision of YAMON (the MIPS boards
 		 * boot prom).
 		 */
 		GT_WRITE(GT_PCI0_CFGADDR_OFS,
@@ -398,7 +447,7 @@ void __init pcibios_init(void)
 			 GT_PCI0_CFGADDR_CONFIGEN_BIT );
 
 		/* Perform the write */
-		GT_WRITE( GT_PCI0_CFGDATA_OFS, PHYSADDR(MIPS_GT_BASE)); 
+		GT_WRITE( GT_PCI0_CFGDATA_OFS, PHYSADDR(MIPS_GT_BASE));
 		break;
 	}
 
@@ -428,15 +477,15 @@ void __init pcibios_init(void)
 		}
 	}
 
-	/* 
-	 * Activate Floppy Controller in the SMSC FDC37M817 Super I/O 
+	/*
+	 * Activate Floppy Controller in the SMSC FDC37M817 Super I/O
 	 * Controller.
 	 * This should be done in the bios/bootprom and will be fixed in
          * a later revision of YAMON (the MIPS boards boot prom).
 	 */
 	/* Entering config state. */
-	SMSC_WRITE(SMSC_CONFIG_ENTER, SMSC_CONFIG_REG); 
-       
+	SMSC_WRITE(SMSC_CONFIG_ENTER, SMSC_CONFIG_REG);
+
 	/* Activate floppy controller. */
 	SMSC_WRITE(SMSC_CONFIG_DEVNUM, SMSC_CONFIG_REG);
 	SMSC_WRITE(SMSC_CONFIG_DEVNUM_FLOPPY, SMSC_DATA_REG);
@@ -456,7 +505,8 @@ pcibios_enable_device(struct pci_dev *dev)
 }
 
 void __init
-pcibios_align_resource(void *data, struct resource *res, unsigned long size)
+pcibios_align_resource(void *data, struct resource *res, unsigned long size,
+		       unsigned long align)
 {
 }
 

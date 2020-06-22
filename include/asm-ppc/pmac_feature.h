@@ -87,7 +87,12 @@
 #define PMAC_TYPE_TITANIUM		0x47	/* Titanium PowerBook */
 #define PMAC_TYPE_TITANIUM2		0x48	/* Titanium II PowerBook */
 #define PMAC_TYPE_TITANIUM3		0x49	/* Titanium III PowerBook (with L3) */
+#define PMAC_TYPE_EMAC			0x50	/* eMac */
 #define PMAC_TYPE_UNKNOWN_CORE99	0x5f
+
+/* MacRisc2 with UniNorth 2.0 */
+#define PMAC_TYPE_RACKMAC		0x80	/* XServe */
+#define PMAC_TYPE_WINDTUNNEL		0x81	
 
 /* MacRISC2 machines based on the Pangea chipset
  */
@@ -102,6 +107,7 @@
 
 #define PMAC_MB_CAN_SLEEP		0x00000001
 #define PMAC_MB_HAS_FW_POWER		0x00000002
+#define PMAC_MB_OLD_CORE99		0x00000004
 
 /*
  * Feature calls supported on pmac

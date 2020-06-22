@@ -122,10 +122,11 @@ void * __ioremap(phys_t phys_addr, phys_t size, unsigned long flags)
 		return NULL;
 
 	/*
-	 * Map objects in the low 512mb of address space using KSEG1, otherwise
-	 * map using page tables.
+	 * Map uncached objects in the low 512mb of address space using KSEG1,
+	 * otherwise map using page tables.
 	 */
-	if (IS_LOW512(phys_addr) && IS_LOW512(last_addr))
+	if (IS_LOW512(phys_addr) && IS_LOW512(last_addr) &&
+	    flags == _CACHE_UNCACHED)
 		return (void *) KSEG1ADDR(phys_addr);
 
 	/*
@@ -137,7 +138,7 @@ void * __ioremap(phys_t phys_addr, phys_t size, unsigned long flags)
 
 		t_addr = __va(phys_addr);
 		t_end = t_addr + (size - 1);
-	   
+
 		for(page = virt_to_page(t_addr); page <= virt_to_page(t_end); page++)
 			if(!PageReserved(page))
 				return NULL;

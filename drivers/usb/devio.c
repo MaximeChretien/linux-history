@@ -52,7 +52,7 @@ struct async {
 	unsigned int signr;
 	void *userbuffer;
         void *userurb;
-        urb_t urb;
+        struct urb urb;
 };
 
 static loff_t usbdev_lseek(struct file *file, loff_t offset, int orig)
@@ -138,7 +138,7 @@ err:
 	return ret;
 }
 
-extern inline unsigned int ld2(unsigned int x)
+static inline unsigned int ld2(unsigned int x)
 {
         unsigned int r = 0;
         
@@ -169,7 +169,7 @@ extern inline unsigned int ld2(unsigned int x)
 
 static struct async *alloc_async(unsigned int numisoframes)
 {
-        unsigned int assize = sizeof(struct async) + numisoframes * sizeof(iso_packet_descriptor_t);
+        unsigned int assize = sizeof(struct async) + numisoframes * sizeof(struct iso_packet_descriptor);
         struct async *as = kmalloc(assize, GFP_KERNEL);
         if (!as)
                 return NULL;
@@ -188,7 +188,7 @@ static void free_async(struct async *as)
         kfree(as);
 }
 
-extern __inline__ void async_newpending(struct async *as)
+static inline void async_newpending(struct async *as)
 {
         struct dev_state *ps = as->ps;
         unsigned long flags;
@@ -198,7 +198,7 @@ extern __inline__ void async_newpending(struct async *as)
         spin_unlock_irqrestore(&ps->lock, flags);
 }
 
-extern __inline__ void async_removepending(struct async *as)
+static inline void async_removepending(struct async *as)
 {
         struct dev_state *ps = as->ps;
         unsigned long flags;
@@ -209,7 +209,7 @@ extern __inline__ void async_removepending(struct async *as)
         spin_unlock_irqrestore(&ps->lock, flags);
 }
 
-extern __inline__ struct async *async_getcompleted(struct dev_state *ps)
+static inline struct async *async_getcompleted(struct dev_state *ps)
 {
         unsigned long flags;
         struct async *as = NULL;
@@ -224,7 +224,7 @@ extern __inline__ struct async *async_getcompleted(struct dev_state *ps)
         return as;
 }
 
-extern __inline__ struct async *async_getpending(struct dev_state *ps, void *userurb)
+static inline struct async *async_getpending(struct dev_state *ps, void *userurb)
 {
         unsigned long flags;
         struct async *as;
@@ -245,7 +245,7 @@ extern __inline__ struct async *async_getpending(struct dev_state *ps, void *use
         return NULL;
 }
 
-static void async_completed(purb_t urb)
+static void async_completed(struct urb *urb)
 {
         struct async *as = (struct async *)urb->context;
         struct dev_state *ps = as->ps;
@@ -772,7 +772,7 @@ static int proc_submiturb(struct dev_state *ps, void *arg)
 	struct usbdevfs_iso_packet_desc *isopkt = NULL;
 	struct usb_endpoint_descriptor *ep_desc;
 	struct async *as;
-	devrequest *dr = NULL;
+	struct usb_ctrlrequest *dr = NULL;
 	unsigned int u, totlen, isofrmlen;
 	int ret;
 
@@ -802,23 +802,23 @@ static int proc_submiturb(struct dev_state *ps, void *arg)
 		/* min 8 byte setup packet, max arbitrary */
 		if (uurb.buffer_length < 8 || uurb.buffer_length > PAGE_SIZE)
 			return -EINVAL;
-		if (!(dr = kmalloc(sizeof(devrequest), GFP_KERNEL)))
+		if (!(dr = kmalloc(sizeof(struct usb_ctrlrequest), GFP_KERNEL)))
 			return -ENOMEM;
 		if (copy_from_user(dr, (unsigned char*)uurb.buffer, 8)) {
 			kfree(dr);
 			return -EFAULT;
 		}
-		if (uurb.buffer_length < (le16_to_cpup(&dr->length) + 8)) {
+		if (uurb.buffer_length < (le16_to_cpup(&dr->wLength) + 8)) {
 			kfree(dr);
 			return -EINVAL;
 		}
-		if ((ret = check_ctrlrecip(ps, dr->requesttype, le16_to_cpup(&dr->index)))) {
+		if ((ret = check_ctrlrecip(ps, dr->bRequestType, le16_to_cpup(&dr->wIndex)))) {
 			kfree(dr);
 			return ret;
 		}
-		uurb.endpoint = (uurb.endpoint & ~USB_ENDPOINT_DIR_MASK) | (dr->requesttype & USB_ENDPOINT_DIR_MASK);
+		uurb.endpoint = (uurb.endpoint & ~USB_ENDPOINT_DIR_MASK) | (dr->bRequestType & USB_ENDPOINT_DIR_MASK);
 		uurb.number_of_packets = 0;
-		uurb.buffer_length = le16_to_cpup(&dr->length);
+		uurb.buffer_length = le16_to_cpup(&dr->wLength);
 		uurb.buffer += 8;
 		if (!access_ok((uurb.endpoint & USB_DIR_IN) ?  VERIFY_WRITE : VERIFY_READ, uurb.buffer, uurb.buffer_length)) {
 			kfree(dr);

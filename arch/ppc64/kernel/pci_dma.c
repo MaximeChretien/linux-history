@@ -1389,10 +1389,11 @@ void pci_unmap_sg( struct pci_dev *hwdev, struct scatterlist *sg, int nelms, int
 	PPCDBG(PPCDBG_TCE, "pci_unmap_sg:\n");
 	PPCDBG(PPCDBG_TCE, "\thwdev = 0x%16.16lx, sg = 0x%16.16lx, direction = 0x%16.16lx, nelms = 0x%16.16lx\n", hwdev, sg, direction, nelms);	
 
-	if ( direction == PCI_DMA_NONE )
+	if ( direction == PCI_DMA_NONE || nelms == 0 )
 		BUG();
 
 	dma_start_page = sg->dma_address & PAGE_MASK;
+ 	dma_end_page   = 0;
 	for ( i=nelms; i>0; --i ) {
 		unsigned k = i - 1;
 		if ( sg[k].dma_length ) {
@@ -1408,6 +1409,7 @@ void pci_unmap_sg( struct pci_dev *hwdev, struct scatterlist *sg, int nelms, int
  	/* Client asked for way to much space.  This is checked later anyway */
 	/* It is easier to debug here for the drivers than in the tce tables.*/
  	if(order >= NUM_TCE_LEVELS) {
+		printk("PCI_DMA: dma_start_page:0x%lx  dma_end_page:0x%lx\n",dma_start_page,dma_end_page);
 		printk("PCI_DMA: pci_unmap_sg size to large: 0x%x \n",(numTces << PAGE_SHIFT));
  		return;
  	}

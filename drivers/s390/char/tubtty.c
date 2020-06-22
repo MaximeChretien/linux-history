@@ -214,8 +214,10 @@ tty3270_open(struct tty_struct *tty, struct file *filp)
 	tubp->tty = tty;
 	tubp->lnopen = 1;
 	tty->driver_data = tubp;
-	tty->winsize.ws_row = tubp->geom_rows;
+	tty->winsize.ws_row = tubp->geom_rows - 2;
 	tty->winsize.ws_col = tubp->geom_cols;
+	if (tubp->tty_input == NULL)
+		tubp->tty_input = kmalloc(GEOM_INPLEN, GFP_KERNEL|GFP_DMA);
 	tubp->tty_inattr = TF_INPUT;
 	tubp->cmd = cmd;
 	tty3270_build(tubp);
@@ -471,11 +473,11 @@ tty3270_read_proc(char *buf, char **start, off_t off, int count,
 			tubp = (*tubminors)[i];
 #ifdef CONFIG_TN3270_CONSOLE
 			if (CONSOLE_IS_3270 && tubp == tub3270_con_tubp)
-				len += sprintf(buf + len, "%.3x CONSOLE %d\n",
+				len += sprintf(buf + len, "%.4x CONSOLE %d\n",
 					       tubp->devno, i);
 			else
 #endif
-				len += sprintf(buf + len, "%.3x %d %d\n",
+				len += sprintf(buf + len, "%.4x %d %d\n",
 					       tubp->devno, tty3270_major, i);
 			if (begin + len > off + count)
 				break;
@@ -799,7 +801,9 @@ tty3270_try_logging(tub_t *tubp)
 static void
 tty3270_start_input(tub_t *tubp)
 {
-	tubp->ttyccw.cda = virt_to_phys(&tubp->tty_input);
+	if (tubp->tty_input == NULL)
+		return;
+	tubp->ttyccw.cda = virt_to_phys(tubp->tty_input);
 	tubp->ttyccw.cmd_code = TC_READMOD;
 	tubp->ttyccw.count = GEOM_INPLEN;
 	tubp->ttyccw.flags = CCW_FLAG_SLI;
@@ -816,7 +820,8 @@ tty3270_do_input(tub_t *tubp)
 	char *aidstring;
 
 	count = GEOM_INPLEN - tubp->cswl;
-	in = tubp->tty_input;
+	if ((in = tubp->tty_input) == NULL)
+		goto do_build;
 	tty3270_aid_get(tubp, in[0], &aidflags, &aidstring);
 
 	if (aidflags & TA_CLEARKEY) {

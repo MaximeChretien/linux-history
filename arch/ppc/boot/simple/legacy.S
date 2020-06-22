@@ -6,7 +6,7 @@
  * This will go and setup ISA_io to 0x8000000 and return.
  */
 
-#include "ppc_asm.h"
+#include <asm/ppc_asm.h>
 
 	.text
 

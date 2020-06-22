@@ -2,7 +2,7 @@
 /*
  *      auerswald.c  --  Auerswald PBX/System Telephone usb driver.
  *
- *      Copyright (C) 2001  Wolfgang Mües (wmues@nexgo.de)
+ *      Copyright (C) 2001  Wolfgang Mües (wolfgang@iksw-muees.de)
  *
  *      Very much code of this driver is borrowed from dabusb.c (Deti Fliegl)
  *      and from the USB Skeleton driver (Greg Kroah-Hartman). Thank you.
@@ -50,7 +50,7 @@ do {			\
 /*-------------------------------------------------------------------*/
 /* Version Information */
 #define DRIVER_VERSION "0.9.11"
-#define DRIVER_AUTHOR  "Wolfgang Mües <wmues@nexgo.de>"
+#define DRIVER_AUTHOR  "Wolfgang Mües <wolfgang@iksw-muees.de>"
 #define DRIVER_DESC    "Auerswald PBX/System Telephone usb driver"
 
 /*-------------------------------------------------------------------*/
@@ -176,7 +176,7 @@ struct  auerchain;                      /* forward for circular reference */
 typedef struct
 {
         struct auerchain *chain;        /* pointer to the chain to which this element belongs */
-        urb_t * urbp;                   /* pointer to attached urb */
+        struct urb * urbp;                   /* pointer to attached urb */
         void *context;                  /* saved URB context */
         usb_complete_t complete;        /* saved URB completion function */
         struct list_head list;          /* to include element into a list */
@@ -206,8 +206,8 @@ typedef struct
         char *bufp;                     /* reference to allocated data buffer */
         unsigned int len;               /* number of characters in data buffer */
 	unsigned int retries;		/* for urb retries */
-        devrequest *dr;                 /* for setup data in control messages */
-        urb_t * urbp;                   /* USB urb */
+        struct usb_ctrlrequest *dr;                 /* for setup data in control messages */
+        struct urb * urbp;                   /* USB urb */
         struct auerbufctl *list;        /* pointer to list */
         struct list_head buff_list;     /* reference to next buffer in list */
 } auerbuf_t,*pauerbuf_t;
@@ -244,7 +244,7 @@ typedef struct
 	int			open_count;	    /* count the number of open character channels */
         char 			dev_desc[AUSI_DLEN];/* for storing a textual description */
         unsigned int 		maxControlLength;   /* max. Length of control paket (without header) */
-        urb_t * 		inturbp;            /* interrupt urb */
+        struct urb * 		inturbp;            /* interrupt urb */
         char *			intbufp;            /* data buffer for interrupt urb */
 	unsigned int 		irqsize;	    /* size of interrupt endpoint 1 */
         struct auerchain 	controlchain;  	    /* for chaining of control messages */
@@ -281,7 +281,7 @@ typedef struct
 
 /*-------------------------------------------------------------------*/
 /* Forwards */
-static void auerswald_ctrlread_complete (urb_t * urb);
+static void auerswald_ctrlread_complete (struct urb * urb);
 static void auerswald_removeservice (pauerswald_t cp, pauerscon_t scp);
 
 
@@ -290,7 +290,7 @@ static void auerswald_removeservice (pauerswald_t cp, pauerscon_t scp);
 /* --------------------------                                        */
 
 /* completion function for chained urbs */
-static void auerchain_complete (urb_t * urb)
+static void auerchain_complete (struct urb * urb)
 {
 	unsigned long flags;
         int result;
@@ -357,7 +357,7 @@ static void auerchain_complete (urb_t * urb)
    this function may be called from completion context or from user space!
    early = 1 -> submit in front of chain
 */
-static int auerchain_submit_urb_list (pauerchain_t acp, urb_t * urb, int early)
+static int auerchain_submit_urb_list (pauerchain_t acp, struct urb * urb, int early)
 {
         int result;
         unsigned long flags;
@@ -431,7 +431,7 @@ static int auerchain_submit_urb_list (pauerchain_t acp, urb_t * urb, int early)
 /* submit function for chained urbs
    this function may be called from completion context or from user space!
 */
-static int auerchain_submit_urb (pauerchain_t acp, urb_t * urb)
+static int auerchain_submit_urb (pauerchain_t acp, struct urb * urb)
 {
 	return auerchain_submit_urb_list (acp, urb, 0);
 }
@@ -440,10 +440,10 @@ static int auerchain_submit_urb (pauerchain_t acp, urb_t * urb)
    the result is 0 if the urb is cancelled, or -EINPROGRESS if
    USB_ASYNC_UNLINK is set and the function is successfully started.
 */
-static int auerchain_unlink_urb (pauerchain_t acp, urb_t * urb)
+static int auerchain_unlink_urb (pauerchain_t acp, struct urb * urb)
 {
 	unsigned long flags;
-        urb_t * urbp;
+        struct urb * urbp;
         pauerchainelement_t acep;
         struct list_head *tmp;
 
@@ -499,7 +499,7 @@ static int auerchain_unlink_urb (pauerchain_t acp, urb_t * urb)
 static void auerchain_unlink_all (pauerchain_t acp)
 {
 	unsigned long flags;
-        urb_t * urbp;
+        struct urb * urbp;
         pauerchainelement_t acep;
 
         dbg ("auerchain_unlink_all called");
@@ -605,7 +605,7 @@ ac_fail:/* free the elements */
 
 
 /* completion handler for synchronous chained URBs */
-static void auerchain_blocking_completion (urb_t *urb)
+static void auerchain_blocking_completion (struct urb *urb)
 {
 	pauerchain_chs_t pchs = (pauerchain_chs_t)urb->context;
 	pchs->done = 1;
@@ -615,7 +615,7 @@ static void auerchain_blocking_completion (urb_t *urb)
 
 
 /* Starts chained urb and waits for completion or timeout */
-static int auerchain_start_wait_urb (pauerchain_t acp, urb_t *urb, int timeout, int* actual_length)
+static int auerchain_start_wait_urb (pauerchain_t acp, struct urb *urb, int timeout, int* actual_length)
 {
 	DECLARE_WAITQUEUE (wait, current);
 	auerchain_chs_t chs;
@@ -690,12 +690,12 @@ static int auerchain_control_msg (pauerchain_t acp, struct usb_device *dev, unsi
 			          __u16 value, __u16 index, void *data, __u16 size, int timeout)
 {
 	int ret;
-	devrequest *dr;
-	urb_t *urb;
+	struct usb_ctrlrequest *dr;
+	struct urb *urb;
         int length;
 
         dbg ("auerchain_control_msg");
-        dr = kmalloc (sizeof (devrequest), GFP_KERNEL);
+        dr = kmalloc (sizeof (struct usb_ctrlrequest), GFP_KERNEL);
 	if (!dr)
 		return -ENOMEM;
 	urb = usb_alloc_urb (0);
@@ -704,11 +704,11 @@ static int auerchain_control_msg (pauerchain_t acp, struct usb_device *dev, unsi
 		return -ENOMEM;
         }
 
-	dr->requesttype = requesttype;
-	dr->request = request;
-	dr->value  = cpu_to_le16 (value);
-	dr->index  = cpu_to_le16 (index);
-	dr->length = cpu_to_le16 (size);
+	dr->bRequestType = requesttype;
+	dr->bRequest = request;
+	dr->wValue  = cpu_to_le16 (value);
+	dr->wIndex  = cpu_to_le16 (index);
+	dr->wLength = cpu_to_le16 (size);
 
 	FILL_CONTROL_URB (urb, dev, pipe, (unsigned char*)dr, data, size,    /* build urb */
 		          (usb_complete_t)auerchain_blocking_completion,0);
@@ -799,7 +799,7 @@ static int auerbuf_setup (pauerbufctl_t bcp, unsigned int numElements, unsigned 
                 INIT_LIST_HEAD (&bep->buff_list);
                 bep->bufp = (char *) kmalloc (bufsize, GFP_KERNEL);
                 if (!bep->bufp) goto bl_fail;
-                bep->dr = (devrequest *) kmalloc (sizeof (devrequest), GFP_KERNEL);
+                bep->dr = (struct usb_ctrlrequest *) kmalloc (sizeof (struct usb_ctrlrequest), GFP_KERNEL);
                 if (!bep->dr) goto bl_fail;
                 bep->urbp = usb_alloc_urb (0);
                 if (!bep->urbp) goto bl_fail;
@@ -874,7 +874,7 @@ static int auerswald_status_retry (int status)
 }
 
 /* Completion of asynchronous write block */
-static void auerchar_ctrlwrite_complete (urb_t * urb)
+static void auerchar_ctrlwrite_complete (struct urb * urb)
 {
 	pauerbuf_t bp = (pauerbuf_t) urb->context;
 	pauerswald_t cp = ((pauerswald_t)((char *)(bp->list)-(unsigned long)(&((pauerswald_t)0)->bufctl)));
@@ -887,7 +887,7 @@ static void auerchar_ctrlwrite_complete (urb_t * urb)
 }
 
 /* Completion handler for dummy retry packet */
-static void auerswald_ctrlread_wretcomplete (urb_t * urb)
+static void auerswald_ctrlread_wretcomplete (struct urb * urb)
 {
         pauerbuf_t bp = (pauerbuf_t) urb->context;
         pauerswald_t cp;
@@ -907,13 +907,13 @@ static void auerswald_ctrlread_wretcomplete (urb_t * urb)
 	}
 
 	/* fill the control message */
-	bp->dr->requesttype = AUT_RREQ;
-	bp->dr->request     = AUV_RBLOCK;
-	bp->dr->length      = bp->dr->value;	/* temporary stored */
-	bp->dr->value       = cpu_to_le16 (1);	/* Retry Flag */
+	bp->dr->bRequestType = AUT_RREQ;
+	bp->dr->bRequest     = AUV_RBLOCK;
+	bp->dr->wLength      = bp->dr->wValue;	/* temporary stored */
+	bp->dr->wValue       = cpu_to_le16 (1);	/* Retry Flag */
 	/* bp->dr->index    = channel id;          remains */
 	FILL_CONTROL_URB (bp->urbp, cp->usbdev, usb_rcvctrlpipe (cp->usbdev, 0),
-                          (unsigned char*)bp->dr, bp->bufp, le16_to_cpu (bp->dr->length),
+                          (unsigned char*)bp->dr, bp->bufp, le16_to_cpu (bp->dr->wLength),
 		          (usb_complete_t)auerswald_ctrlread_complete,bp);
 
 	/* submit the control msg as next paket */
@@ -926,7 +926,7 @@ static void auerswald_ctrlread_wretcomplete (urb_t * urb)
 }
 
 /* completion handler for receiving of control messages */
-static void auerswald_ctrlread_complete (urb_t * urb)
+static void auerswald_ctrlread_complete (struct urb * urb)
 {
         unsigned int  serviceid;
         pauerswald_t  cp;
@@ -955,11 +955,11 @@ static void auerswald_ctrlread_complete (urb_t * urb)
 		bp->retries++;
 		dbg ("Retry count = %d", bp->retries);
 		/* send a long dummy control-write-message to allow device firmware to react */
-		bp->dr->requesttype = AUT_WREQ;
-		bp->dr->request     = AUV_DUMMY;
-		bp->dr->value       = bp->dr->length; /* temporary storage */
+		bp->dr->bRequestType = AUT_WREQ;
+		bp->dr->bRequest     = AUV_DUMMY;
+		bp->dr->wValue       = bp->dr->wLength; /* temporary storage */
 		// bp->dr->index    channel ID remains
-		bp->dr->length      = cpu_to_le16 (32); /* >= 8 bytes */
+		bp->dr->wLength      = cpu_to_le16 (32); /* >= 8 bytes */
 		FILL_CONTROL_URB (bp->urbp, cp->usbdev, usb_sndctrlpipe (cp->usbdev, 0),
   			(unsigned char*)bp->dr, bp->bufp, 32,
 	   		(usb_complete_t)auerswald_ctrlread_wretcomplete,bp);
@@ -972,7 +972,7 @@ static void auerswald_ctrlread_complete (urb_t * urb)
                		auerswald_ctrlread_wretcomplete (bp->urbp);
 		}
                 return;
-        }
+	} 
 
         /* get the actual bytecount (incl. headerbyte) */
         bp->len = urb->actual_length;
@@ -998,7 +998,7 @@ static void auerswald_ctrlread_complete (urb_t * urb)
    messages from the USB device.
 */
 /* int completion handler. */
-static void auerswald_int_complete (urb_t * urb)
+static void auerswald_int_complete (struct urb * urb)
 {
         unsigned long flags;
         unsigned  int channelid;
@@ -1074,11 +1074,11 @@ static void auerswald_int_complete (urb_t * urb)
         }
 
 	/* fill the control message */
-        bp->dr->requesttype = AUT_RREQ;
-	bp->dr->request     = AUV_RBLOCK;
-	bp->dr->value       = cpu_to_le16 (0);
-	bp->dr->index       = cpu_to_le16 (channelid | AUH_DIRECT | AUH_UNSPLIT);
-	bp->dr->length      = cpu_to_le16 (bytecount);
+        bp->dr->bRequestType = AUT_RREQ;
+	bp->dr->bRequest     = AUV_RBLOCK;
+	bp->dr->wValue       = cpu_to_le16 (0);
+	bp->dr->wIndex       = cpu_to_le16 (channelid | AUH_DIRECT | AUH_UNSPLIT);
+	bp->dr->wLength      = cpu_to_le16 (bytecount);
 	FILL_CONTROL_URB (bp->urbp, cp->usbdev, usb_rcvctrlpipe (cp->usbdev, 0),
                           (unsigned char*)bp->dr, bp->bufp, bytecount,
 		          (usb_complete_t)auerswald_ctrlread_complete,bp);
@@ -1327,7 +1327,7 @@ static int auerswald_addservice (pauerswald_t cp, pauerscon_t scp)
 }
 
 
-/* remove a service from the the device
+/* remove a service from the device
    scp->id must be set! */
 static void auerswald_removeservice (pauerswald_t cp, pauerscon_t scp)
 {
@@ -1813,11 +1813,11 @@ write_again:
 
 	/* Set the transfer Parameters */
 	bp->len = len+AUH_SIZE;
-        bp->dr->requesttype = AUT_WREQ;
-	bp->dr->request     = AUV_WBLOCK;
-	bp->dr->value       = cpu_to_le16 (0);
-	bp->dr->index       = cpu_to_le16 (ccp->scontext.id | AUH_DIRECT | AUH_UNSPLIT);
-	bp->dr->length      = cpu_to_le16 (len+AUH_SIZE);
+        bp->dr->bRequestType = AUT_WREQ;
+	bp->dr->bRequest     = AUV_WBLOCK;
+	bp->dr->wValue       = cpu_to_le16 (0);
+	bp->dr->wIndex       = cpu_to_le16 (ccp->scontext.id | AUH_DIRECT | AUH_UNSPLIT);
+	bp->dr->wLength      = cpu_to_le16 (len+AUH_SIZE);
 	FILL_CONTROL_URB (bp->urbp, cp->usbdev, usb_sndctrlpipe (cp->usbdev, 0),
                    (unsigned char*)bp->dr, bp->bufp, len+AUH_SIZE,
 		    auerchar_ctrlwrite_complete, bp);

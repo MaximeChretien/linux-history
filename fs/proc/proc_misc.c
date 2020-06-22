@@ -55,7 +55,6 @@ extern int get_stram_list(char *);
 extern int get_module_list(char *);
 #endif
 extern int get_device_list(char *);
-extern int get_partition_list(char *, char **, off_t, int);
 extern int get_filesystem_list(char *);
 extern int get_exec_domain_list(char *);
 extern int get_irq_list(char *);
@@ -254,6 +253,18 @@ static int stram_read_proc(char *page, char **start, off_t off,
 }
 #endif
 
+extern struct seq_operations partitions_op;
+static int partitions_open(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &partitions_op);
+}
+static struct file_operations proc_partitions_operations = {
+	open:		partitions_open,
+	read:		seq_read,
+	llseek:		seq_lseek,
+	release:	seq_release,
+};
+
 #ifdef CONFIG_MODULES
 static int modules_read_proc(char *page, char **start, off_t off,
 				 int count, int *eof, void *data)
@@ -375,14 +386,6 @@ static int devices_read_proc(char *page, char **start, off_t off,
 {
 	int len = get_device_list(page);
 	return proc_calc_metrics(page, start, off, count, eof, len);
-}
-
-static int partitions_read_proc(char *page, char **start, off_t off,
-				 int count, int *eof, void *data)
-{
-	int len = get_partition_list(page, start, off, count);
-	if (len < count) *eof = 1;
-	return len;
 }
 
 #if !defined(CONFIG_ARCH_S390)
@@ -561,7 +564,6 @@ void __init proc_misc_init(void)
 #endif
 		{"stat",	kstat_read_proc},
 		{"devices",	devices_read_proc},
-		{"partitions",	partitions_read_proc},
 #if !defined(CONFIG_ARCH_S390)
 		{"interrupts",	interrupts_read_proc},
 #endif
@@ -588,6 +590,7 @@ void __init proc_misc_init(void)
 	if (entry)
 		entry->proc_fops = &proc_kmsg_operations;
 	create_seq_entry("cpuinfo", 0, &proc_cpuinfo_operations);
+	create_seq_entry("partitions", 0, &proc_partitions_operations);
 	create_seq_entry("slabinfo",S_IWUSR|S_IRUGO,&proc_slabinfo_operations);
 #ifdef CONFIG_MODULES
 	create_seq_entry("ksyms", 0, &proc_ksyms_operations);

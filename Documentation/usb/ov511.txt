@@ -128,16 +128,6 @@ MODULE PARAMETERS:
         programs that expect RGB data (e.g. gqcam) to work with this driver. If
         your colors look VERY wrong, you may want to change this.
 
-  NAME: buf_timeout
-  TYPE: integer
-  DEFAULT: 5 (seconds)
-  DESC: Number of seconds before unused frame buffers are deallocated.
-        Previously, memory was allocated upon open() and deallocated upon
-        close(). Deallocation now occurs only if the driver is closed and this
-        timeout is reached. If you are capturing frames less frequently than
-        the default timeout, increase this. This will not make any difference
-        with programs that capture multiple frames during an open/close cycle.
-
   NAME: cams
   TYPE: integer (1-4 for OV511, 1-31 for OV511+)
   DEFAULT: 1
@@ -161,13 +151,6 @@ MODULE PARAMETERS:
   DESC: This configures the camera's sensor to transmit a colored test-pattern
         instead of an image. This does not work correctly yet.
 
-  NAME: sensor_gbr (*** TEMPORARILY DISABLED ***)
-  TYPE: integer (Boolean)
-  DEFAULT: 0
-  DESC: This makes the sensor output GBR422 instead of YUV420. This saves the
-        driver the trouble of converting YUV to RGB, but it currently does not
-        work very well (the colors are not quite right)
-
   NAME: dumppix
   TYPE: integer (0-2)
   DEFAULT: 0
@@ -182,9 +165,9 @@ MODULE PARAMETERS:
   DEFAULT: 1 (Always on)
   DESC: Controls whether the LED (the little light) on the front of the camera
 	is always off (0), always on (1), or only on when driver is open (2).
-	This is only supported with the OV511+ chipset, and even then only on
-	some cameras (ones that actually have the LED wired to the control pin,
-	and not just hardwired to be on all the time).
+	This is not supported with the OV511, and might only work with certain
+	cameras (ones that actually have the LED wired to the control pin, and
+	not just hard-wired to be on all the time).
 
   NAME: dump_bridge
   TYPE: integer (Boolean)
@@ -259,14 +242,6 @@ MODULE PARAMETERS:
 		13  VIDEO_PALETTE_YUV422P   (YUV 4:2:2 Planar)
 		15  VIDEO_PALETTE_YUV420P   (YUV 4:2:0 Planar, same as 10)
 
-  NAME: tuner
-  TYPE: integer
-  DEFAULT: -1 (autodetect)
-  DESC: This sets the exact type of the tuner module in a device. This is set
-	automatically based on the custom ID of the OV511 device. In cases
-	where this fails, you can override this auto-detection. Please see
-	linux/drivers/media/video/tuner.h for a complete list.
-
   NAME: backlight
   TYPE: integer (Boolean)
   DEFAULT: 0 (off)
@@ -293,7 +268,14 @@ MODULE PARAMETERS:
 	will compensate for the blocks of corruption that can appear when the
 	camera cannot keep up with the speed of the USB bus (eg. at low frame
 	resolutions). This feature is always enabled when compression is on.
- 
+
+  NAME: mirror
+  TYPE: integer (Boolean)
+  DEFAULT: 0 (off)
+  DESC: Setting this to 1 will reverse ("mirror") the image horizontally. This
+	might be necessary if your camera has a custom lens assembly. This has
+	no effect with video capture devices.
+
 WORKING FEATURES:
  o Color streaming/capture at most widths and heights that are multiples of 8.
  o RGB24, RGB565, YUV420/YUV420P, YUV422/YUYV, and YUV422P color
@@ -304,22 +286,9 @@ WORKING FEATURES:
  o SAA7111A video capture support at 320x240 and 640x480
  o Compression support
 
-EXPERIMENTAL FEATURES:
- o OV6630 sensor support
- o Banding filter
- o SMP compatibility
-
-TO-DO:
- o V4L2 support (This will be done after the next kernel patch release)
- o Setting of hue not working with OV7620
- o Setting of contrast and hue not working with OV7620AE
- o OV8600 sensor support (Not used in anything yet)
- o OV518/OV518+ support (all that's needed is the decompressor)
- o cams >= 3 not working
-
 HOW TO CONTACT ME:
 
-You can email me at mmcclell@bigfoot.com . Please prefix the subject line
+You can email me at mark@alpha.dyndns.org . Please prefix the subject line
 with "OV511: " so that I am certain to notice your message.
 
 CREDITS:

@@ -109,7 +109,7 @@ asmlinkage int irix_prctl(struct pt_regs *regs)
 		if (error)
 			error = (task->run_list.next != NULL);
 		read_unlock(&tasklist_lock);
-		/* Can _your_ OS find this out that fast? */ 
+		/* Can _your_ OS find this out that fast? */
 		break;
 	}
 
@@ -332,7 +332,7 @@ asmlinkage int irix_syssgi(struct pt_regs *regs)
 		       current->comm, current->pid, name, value, retval);
 /*		if (retval == PROM_ENOENT)
 		  	retval = -ENOENT; */
-		break;				   
+		break;
 	}
 #endif
 
@@ -505,7 +505,7 @@ asmlinkage int irix_syssgi(struct pt_regs *regs)
 		}
 		break;
 	}
-	
+
 	default:
 		printk("irix_syssgi: Unsupported command %d\n", (int)cmd);
 		retval = -EINVAL;
@@ -1071,7 +1071,7 @@ asmlinkage unsigned long irix_mmap32(unsigned long addr, size_t len, int prot,
 		if (flags & IRIX_MAP_AUTOGROW) {
 			unsigned long old_pos;
 			long max_size = offset + len;
-			
+
 			if (max_size > file->f_dentry->d_inode->i_size) {
 				old_pos = sys_lseek (fd, max_size - 1, 0);
 				sys_write (fd, "", 1);

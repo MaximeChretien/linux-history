@@ -1,5 +1,7 @@
 /*
-** Dynamic DMA mapping support.
+** PARISC 1.1 Dynamic DMA mapping support.
+** This implementation is for PA-RISC platforms that do not support
+** I/O TLBs (aka DMA address translation hardware).
 ** See Documentation/DMA-mapping.txt for interface definitions.
 **
 **      (c) Copyright 1999,2000 Hewlett-Packard Company
@@ -7,15 +9,10 @@
 **	(c) Copyright 2000 Philipp Rumpf <prumpf@tux.org>
 **      (c) Copyright 2000 John Marvin
 **
-** This implementation is for PA-RISC platforms that do not support
-** I/O TLBs (aka DMA address translation hardware).
-**
 ** "leveraged" from 2.3.47: arch/ia64/kernel/pci-dma.c.
 ** (I assume it's from David Mosberger-Tang but there was no Copyright)
 **
 ** AFAIK, all PA7100LC and PA7300LC platforms can use this code.
-** All PA2.0 machines but V-class can alias xxx_alloc_consistent()
-** to use regular cacheable memory.
 **
 ** - ggg
 */
@@ -117,7 +114,7 @@ static inline int map_pmd_uncached(pmd_t * pmd, unsigned long vaddr,
 	if (end > PGDIR_SIZE)
 		end = PGDIR_SIZE;
 	do {
-		pte_t * pte = pte_alloc_kernel(pmd, vaddr);
+		pte_t * pte = pte_alloc(NULL, pmd, vaddr);
 		if (!pte)
 			return -ENOMEM;
 		if (map_pte_uncached(pte, orig_vaddr, end - vaddr, paddr_ptr))
@@ -139,7 +136,7 @@ static inline int map_uncached_pages(unsigned long vaddr, unsigned long size,
 	do {
 		pmd_t *pmd;
 		
-		pmd = pmd_alloc_kernel(dir, vaddr);
+		pmd = pmd_alloc(NULL, dir, vaddr);
 		if (!pmd)
 			return -ENOMEM;
 		if (map_pmd_uncached(pmd, vaddr, end - vaddr, &paddr))
@@ -510,7 +507,6 @@ struct pci_dma_ops pcx_dma_ops = {
 	pa11_dma_sync_sg			/* dma_sync_sg */
 };
 
-struct pci_dma_ops *hppa_dma_ops;
 
 static int pcxl_proc_info(char *buf, char **start, off_t offset, int len)
 {

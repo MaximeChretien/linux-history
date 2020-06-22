@@ -1,7 +1,7 @@
 /*
  * USB Serial Converter driver
  *
- *	Copyright (C) 1999 - 2001
+ *	Copyright (C) 1999 - 2002
  *	    Greg Kroah-Hartman (greg@kroah.com)
  *
  *	This program is free software; you can redistribute it and/or modify
@@ -10,6 +10,10 @@
  *	(at your option) any later version.
  *
  * See Documentation/usb/usb-serial.txt for more information on using this driver
+ *
+ * (12/03/2001) gkh
+ *	removed active from the port structure.
+ *	added documentation to the usb_serial_device_type structure
  *
  * (10/10/2001) gkh
  *	added vendor and product to serial structure.  Needed to determine device
@@ -59,13 +63,41 @@
 /* parity check flag */
 #define RELEVANT_IFLAG(iflag)	(iflag & (IGNBRK|BRKINT|IGNPAR|PARMRK|INPCK))
 
-
+/**
+ * usb_serial_port: structure for the specific ports of a device.
+ * @magic: magic number for internal validity of this pointer.
+ * @serial: pointer back to the struct usb_serial owner of this port.
+ * @tty: pointer to the coresponding tty for this port.
+ * @number: the number of the port (the minor number).
+ * @interrupt_in_buffer: pointer to the interrupt in buffer for this port.
+ * @interrupt_in_urb: pointer to the interrupt in struct urb for this port.
+ * @interrupt_in_endpointAddress: endpoint address for the interrupt in pipe
+ *	for this port.
+ * @bulk_in_buffer: pointer to the bulk in buffer for this port.
+ * @read_urb: pointer to the bulk in struct urb for this port.
+ * @bulk_in_endpointAddress: endpoint address for the bulk in pipe for this
+ *	port.
+ * @bulk_out_buffer: pointer to the bulk out buffer for this port.
+ * @bulk_out_size: the size of the bulk_out_buffer, in bytes.
+ * @write_urb: pointer to the bulk out struct urb for this port.
+ * @bulk_out_endpointAddress: endpoint address for the bulk out pipe for this
+ *	port.
+ * @write_wait: a wait_queue_head_t used by the port.
+ * @tqueue: task queue for the line discipline waking up.
+ * @open_count: number of times this port has been opened.
+ * @sem: struct semaphore used to lock this structure.
+ * @private: place to put any driver specific information that is needed.  The
+ *	usb-serial driver is required to manage this data, the usb-serial core
+ *	will not touch this.
+ *
+ * This structure is used by the usb-serial core and drivers for the specific
+ * ports of a device.
+ */
 struct usb_serial_port {
 	int			magic;
-	struct usb_serial	*serial;	/* pointer back to the owner of this port */
-	struct tty_struct *	tty;		/* the coresponding tty for this port */
+	struct usb_serial	*serial;
+	struct tty_struct *	tty;
 	unsigned char		number;
-	char			active;		/* someone has this device open */
 
 	unsigned char *		interrupt_in_buffer;
 	struct urb *		interrupt_in_urb;
@@ -81,63 +113,92 @@ struct usb_serial_port {
 	__u8			bulk_out_endpointAddress;
 
 	wait_queue_head_t	write_wait;
-
-	struct tq_struct	tqueue;		/* task queue for line discipline waking up */
-	int			open_count;	/* number of times this port has been opened */
-	struct semaphore	sem;		/* locks this structure */
-	
-	void *			private;	/* data private to the specific port */
+	struct tq_struct	tqueue;
+	int			open_count;
+	struct semaphore	sem;
+	void *			private;
 };
 
+/**
+ * usb_serial - structure used by the usb-serial core for a device
+ * @magic: magic number for internal validity of this pointer.
+ * @dev: pointer to the struct usb_device for this device
+ * @type: pointer to the struct usb_serial_device_type for this device
+ * @interface: pointer to the struct usb_interface for this device
+ * @minor: the starting minor number for this device
+ * @num_ports: the number of ports this device has
+ * @num_interrupt_in: number of interrupt in endpoints we have
+ * @num_bulk_in: number of bulk in endpoints we have
+ * @num_bulk_out: number of bulk out endpoints we have
+ * @vendor: vendor id of this device
+ * @product: product id of this device
+ * @port: array of struct usb_serial_port structures for the different ports.
+ * @private: place to put any driver specific information that is needed.  The
+ *	usb-serial driver is required to manage this data, the usb-serial core
+ *	will not touch this.
+ */
 struct usb_serial {
 	int				magic;
 	struct usb_device *		dev;
-	struct usb_serial_device_type *	type;			/* the type of usb serial device this is */
-	struct usb_interface *		interface;		/* the interface for this device */
-	struct tty_driver *		tty_driver;		/* the tty_driver for this device */
-	unsigned char			minor;			/* the starting minor number for this device */
-	unsigned char			num_ports;		/* the number of ports this device has */
-	char				num_interrupt_in;	/* number of interrupt in endpoints we have */
-	char				num_bulk_in;		/* number of bulk in endpoints we have */
-	char				num_bulk_out;		/* number of bulk out endpoints we have */
-	__u16				vendor;			/* vendor id of this device */
-	__u16				product;		/* product id of this device */
+	struct usb_serial_device_type *	type;
+	struct usb_interface *		interface;
+	unsigned char			minor;
+	unsigned char			num_ports;
+	char				num_interrupt_in;
+	char				num_bulk_in;
+	char				num_bulk_out;
+	__u16				vendor;
+	__u16				product;
 	struct usb_serial_port		port[MAX_NUM_PORTS];
-
-	void *			private;		/* data private to the specific driver */
+	void *				private;
 };
 
-
-#define MUST_HAVE_NOT	0x01
-#define MUST_HAVE	0x02
-#define DONT_CARE	0x03
-
-#define	HAS		0x02
-#define HAS_NOT		0x01
 
 #define NUM_DONT_CARE	(-1)
 
 
-/* This structure defines the individual serial converter. */
+/**
+ * usb_serial_device_type - a structure that defines a usb serial device
+ * @owner: pointer to the module that owns this device.
+ * @name: pointer to a string that describes this device.  This string used
+ *	in the syslog messages when a device is inserted or removed.
+ * @id_table: pointer to a list of usb_device_id structures that define all
+ *	of the devices this structure can support.
+ * @num_interrupt_in: the number of interrupt in endpoints this device will
+ *	have.
+ * @num_bulk_in: the number of bulk in endpoints this device will have.
+ * @num_bulk_out: the number of bulk out endpoints this device will have.
+ * @num_ports: the number of different ports this device will have.
+ * @calc_num_ports: pointer to a function to determine how many ports this
+ *	device has dynamically.  It will be called after the probe()
+ *	callback is called, but before attach()
+ * @startup: pointer to the driver's startup function.
+ *	This will be called when the device is inserted into the system,
+ *	but before the device has been fully initialized by the usb_serial
+ *	subsystem.  Use this function to download any firmware to the device,
+ *	or any other early initialization that might be needed.
+ *	Return 0 to continue on with the initialization sequence.  Anything 
+ *	else will abort it.
+ * @shutdown: pointer to the driver's shutdown function.  This will be
+ *	called when the device is removed from the system.
+ *
+ * This structure is defines a USB Serial device.  It provides all of
+ * the information that the USB serial core code needs.  If the function
+ * pointers are defined, then the USB serial core code will call them when
+ * the corresponding tty port functions are called.  If they are not
+ * called, the generic serial function will be used instead.
+ */
 struct usb_serial_device_type {
+	struct module *owner;
 	char	*name;
 	const struct usb_device_id *id_table;
-	char	needs_interrupt_in;
-	char	needs_bulk_in;
-	char	needs_bulk_out;
 	char	num_interrupt_in;
 	char	num_bulk_in;
 	char	num_bulk_out;
-	char	num_ports;		/* number of serial ports this device has */
+	char	num_ports;
 
 	struct list_head	driver_list;
 	
-	/* function call to make before accepting driver
-	 * return 0 to continue initialization,
-	 * < 0 aborts startup,
-	 * > 0 does not set up anything else and is useful for devices that have
-	 * downloaded firmware, and will reset themselves shortly.
-	 */
 	int (*startup) (struct usb_serial *serial);
 	
 	void (*shutdown) (struct usb_serial *serial);

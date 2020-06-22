@@ -1,6 +1,6 @@
 /*
  * USB Host-to-Host Links
- * Copyright (C) 2000-2001 by David Brownell <dbrownell@users.sourceforge.net>
+ * Copyright (C) 2000-2002 by David Brownell <dbrownell@users.sourceforge.net>
  */
 
 /*
@@ -16,6 +16,7 @@
  *
  *	- AnchorChip 2720
  *	- Belkin, eTEK (interops with Win32 drivers)
+ *	- EPSON USB clients
  *	- GeneSys GL620USB-A
  *	- "Linux Devices" (like iPaq and similar SA-1100 based PDAs)
  *	- NetChip 1080 (interoperates with NetChip Win32 drivers)
@@ -23,33 +24,41 @@
  *
  * USB devices can implement their side of this protocol at the cost
  * of two bulk endpoints; it's not restricted to "cable" applications.
- * See the LINUXDEV support.
+ * See the LINUXDEV or EPSON device/client support.
  *
  * 
- * TODO:
+ * Status:
  *
- * This needs to be retested for bulk queuing problems ... earlier versions
- * seemed to find different types of problems in each HCD.  Once they're fixed,
- * re-enable queues to get higher bandwidth utilization (without needing
- * to tweak MTU for larger packets).
+ * - AN2720 ... not widely available, but reportedly works well
  *
- * Add support for more "network cable" chips; interop with their Win32
- * drivers may be a good thing.  Test the AnchorChip 2720 support..
- * Figure out the initialization protocol used by the Prolific chips,
- * for better robustness ... there's some powerup/reset handshake that's
- * needed when only one end reboots.
+ * - Belkin/eTEK ... no known issues
  *
- * Use interrupt on PL230x to detect peer connect/disconnect, and call
- * netif_carrier_{on,off} (?) appropriately.  For Net1080, detect peer
- * connect/disconnect with async control messages.
+ * - Both GeneSys and PL-230x use interrupt transfers for driver-to-driver
+ *   handshaking; it'd be worth implementing those as "carrier detect".
+ *   Prefer generic hooks, not minidriver-specific hacks.
  *
- * Find some way to report "peer connected" network hotplug events; it'll
- * likely mean updating the networking layer.  (This has been discussed
- * on the netdev list...)
+ * - Linux devices ... the www.handhelds.org SA-1100 support works nicely,
+ *   but the Sharp Zaurus uses an incompatible protocol (extra checksums).
+ *   No reason not to merge the Zaurus protocol here too (got patch? :)
  *
- * Craft smarter hotplug policy scripts ... ones that know how to arrange
+ * - For Netchip, should use keventd to poll via control requests to detect
+ *   hardware level "carrier detect". 
+ *
+ * - PL-230x ... the initialization protocol doesn't seem to match chip data
+ *   sheets, sometimes it's not needed and sometimes it hangs.  Prolific has
+ *   not responded to repeated support/information requests.
+ *
+ * Interop with more Win32 drivers may be a good thing.
+ *
+ * Seems like reporting "peer connected" (carrier present) events may end
+ * up going through the netlink event system, not hotplug ... that may be
+ * awkward in terms of automatic configuration though.
+ *
+ * There are reports that bridging gives lower-than-usual throughput.
+ *
+ * Need smarter hotplug policy scripts ... ones that know how to arrange
  * bridging with "brctl", and can handle static and dynamic ("pump") setups.
- * Use those "peer connected" events.
+ * Use those eventual "peer connected" events, and zeroconf.
  *
  *
  * CHANGELOG:
@@ -62,6 +71,7 @@
  * 18-dec-2000	(db) tx watchdog, "net1080" renaming to "usbnet", device_info
  *		and prolific support, isolate net1080-specific bits, cleanup.
  *		fix unlink_urbs oops in D3 PM resume code path.
+ *
  * 02-feb-2001	(db) fix tx skb sharing, packet length, match_flags, ...
  * 08-feb-2001	stubbed in "linuxdev", maybe the SA-1100 folk can use it;
  *		AnchorChips 2720 support (from spec) for testing;
@@ -83,6 +93,14 @@
  *		tie mostly to (sub)driver info.  Workaround some PL-2302
  *		chips that seem to reject SET_INTERFACE requests.
  *
+ * 06-apr-2002	Added ethtool support, based on a patch from Brad Hards.
+ *		Level of diagnostics is more configurable; they use device
+ *		location (usb_device->devpath) instead of address (2.5).
+ *		For tx_fixup, memflags can't be NOIO.
+ * 07-may-2002	Generalize/cleanup keventd support, handling rx stalls (mostly
+ *		for USB 2.0 TTs) and memory shortages (potential) too. (db)
+ *		Use "locally assigned" IEEE802 address space. (Brad Hards)
+ *
  *-------------------------------------------------------------------------*/
 
 #include <linux/config.h>
@@ -93,6 +111,9 @@
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/random.h>
+#include <linux/ethtool.h>
+#include <linux/tqueue.h>
+#include <asm/uaccess.h>
 #include <asm/unaligned.h>
 
 // #define	DEBUG			// error path messages, extra info
@@ -104,14 +125,26 @@
 #endif
 #include <linux/usb.h>
 
+/* in 2.5 these standard usb ops take mem_flags */
+#define ALLOC_URB(n,flags)	usb_alloc_urb(n)
+#define SUBMIT_URB(u,flags)	usb_submit_urb(u)
 
+/* and these got renamed (may move to usb.h) */
+#define usb_get_dev		usb_inc_dev_use
+#define usb_put_dev		usb_dec_dev_use
+
+
+/* minidrivers _could_ be individually configured */
 #define	CONFIG_USB_AN2720
 #define	CONFIG_USB_BELKIN
+#define	CONFIG_USB_EPSON2888
 #define	CONFIG_USB_GENESYS
 #define	CONFIG_USB_LINUXDEV
 #define	CONFIG_USB_NET1080
 #define	CONFIG_USB_PL2301
 
+
+#define DRIVER_VERSION		"17-Jul-2002"
 
 /*-------------------------------------------------------------------------*/
 
@@ -164,6 +197,7 @@ struct usbnet {
 	// protocol/interface state
 	struct net_device	net;
 	struct net_device_stats	stats;
+	int			msg_level;
 
 #ifdef CONFIG_USB_NET1080
 	u16			packet_id;
@@ -174,7 +208,12 @@ struct usbnet {
 	struct sk_buff_head	txq;
 	struct sk_buff_head	done;
 	struct tasklet_struct	bh;
-	struct tq_struct	ctrl_task;
+
+	struct tq_struct	kevent;
+	unsigned long		flags;
+#		define EVENT_TX_HALT	0
+#		define EVENT_RX_HALT	1
+#		define EVENT_RX_MEMORY	2
 };
 
 // device-specific info used by the driver
@@ -224,6 +263,13 @@ struct skb_data {	// skb->cb is one of these
 	size_t			length;
 };
 
+static const char driver_name [] = "usbnet";
+
+/* use ethtool to change the level for any given device */
+static int msg_level = 1;
+MODULE_PARM (msg_level, "i");
+MODULE_PARM_DESC (msg_level, "Initial message level (default = 1)");
+
 
 #define	mutex_lock(x)	down(x)
 #define	mutex_unlock(x)	up(x)
@@ -241,7 +287,9 @@ struct skb_data {	// skb->cb is one of these
 #endif
 
 #define devinfo(usbnet, fmt, arg...) \
-	printk(KERN_INFO "%s: " fmt "\n" , (usbnet)->net.name, ## arg)
+	do { if ((usbnet)->msg_level >= 1) \
+	printk(KERN_INFO "%s: " fmt "\n" , (usbnet)->net.name, ## arg); \
+	} while (0)
 
 
 #ifdef	CONFIG_USB_AN2720
@@ -258,12 +306,12 @@ struct skb_data {	// skb->cb is one of these
  *-------------------------------------------------------------------------*/
 
 static const struct driver_info	an2720_info = {
-	description:	"AnchorChips/Cypress 2720",
+	.description =	"AnchorChips/Cypress 2720",
 	// no reset available!
 	// no check_connect available!
 
-	in: 2, out: 2,		// direction distinguishes these
-	epsize:	64,
+	.in = 2, .out = 2,		// direction distinguishes these
+	.epsize =64,
 };
 
 #endif	/* CONFIG_USB_AN2720 */
@@ -281,14 +329,37 @@ static const struct driver_info	an2720_info = {
  *-------------------------------------------------------------------------*/
 
 static const struct driver_info	belkin_info = {
-	description:	"Belkin, eTEK, or compatible",
+	.description =	"Belkin, eTEK, or compatible",
 
-	in: 1, out: 1,		// direction distinguishes these
-	epsize:	64,
+	.in = 1, .out = 1,		// direction distinguishes these
+	.epsize =64,
 };
 
 #endif	/* CONFIG_USB_BELKIN */
 
+
+
+#ifdef	CONFIG_USB_EPSON2888
+
+/*-------------------------------------------------------------------------
+ *
+ * EPSON USB clients
+ *
+ * This is the same idea as "linuxdev" (below) except the firmware in the
+ * device might not be Tux-powered.  Epson provides reference firmware that
+ * implements this interface.  Product developers can reuse or modify that
+ * code, such as by using their own product and vendor codes.
+ *
+ *-------------------------------------------------------------------------*/
+
+static const struct driver_info	epson2888_info = {
+	.description =	"Epson USB Device",
+
+	.in = 4, .out = 3,
+	.epsize = 64,
+};
+
+#endif	/* CONFIG_USB_EPSON2888 */
 
 
 #ifdef CONFIG_USB_GENESYS
@@ -299,6 +370,15 @@ static const struct driver_info	belkin_info = {
  *
  * ... should partially interop with the Win32 driver for this hardware
  * The GeneSys docs imply there's some NDIS issue motivating this framing.
+ *
+ * Some info from GeneSys:
+ *  - GL620USB-A is full duplex; GL620USB is only half duplex for bulk.
+ *    (Some cables, like the BAFO-100c, use the half duplex version.)
+ *  - For the full duplex model, the low bit of the version code says
+ *    which side is which ("left/right").
+ *  - For the half duplex type, a control/interrupt handshake settles
+ *    the transfer direction.  (That's disabled here, partially coded.)
+ *    A control URB would block until other side writes an interrupt.
  *
  *-------------------------------------------------------------------------*/
 
@@ -373,7 +453,7 @@ static int gl_interrupt_read (struct usbnet *dev)
 	// issue usb interrupt read
 	if (priv && priv->irq_urb) {
 		// submit urb
-		if ((retval = usb_submit_urb (priv->irq_urb)) != 0)
+		if ((retval = SUBMIT_URB (priv->irq_urb, GFP_KERNEL)) != 0)
 			dbg ("gl_interrupt_read: submit fail - %X...", retval);
 		else
 			dbg ("gl_interrupt_read: submit success...");
@@ -420,7 +500,7 @@ static int genelink_init (struct usbnet *dev)
 	}
 
 	// allocate irq urb
-	if ((priv->irq_urb = usb_alloc_urb (0)) == 0) {
+	if ((priv->irq_urb = ALLOC_URB (0, GFP_KERNEL)) == 0) {
 		dbg ("%s: cannot allocate private irq urb per device",
 			dev->net.name);
 		kfree (priv);
@@ -464,22 +544,7 @@ static int genelink_free (struct usbnet *dev)
 	return 0;
 }
 
-#else
-
-static int genelink_check_connect (struct usbnet *dev)
-{
-	dbg ("%s: assuming peer is connected", dev->net.name);
-	return 0;
-}
-
 #endif
-
-// reset the device status
-static int genelink_reset (struct usbnet *dev)
-{
-	// we don't need to reset, just return 0
-	return 0;
-}
 
 static int genelink_rx_fixup (struct usbnet *dev, struct sk_buff *skb)
 {
@@ -600,15 +665,17 @@ genelink_tx_fixup (struct usbnet *dev, struct sk_buff *skb, int flags)
 }
 
 static const struct driver_info	genelink_info = {
-	description:	"Genesys GeneLink",
-	flags:		FLAG_FRAMING_GL | FLAG_NO_SETINT,
-	reset:		genelink_reset,
-	check_connect:	genelink_check_connect,
-	rx_fixup:	genelink_rx_fixup,
-	tx_fixup:	genelink_tx_fixup,
+	.description =	"Genesys GeneLink",
+	.flags =	FLAG_FRAMING_GL | FLAG_NO_SETINT,
+	.rx_fixup =	genelink_rx_fixup,
+	.tx_fixup =	genelink_tx_fixup,
 
-	in: 1, out: 2,
-	epsize:	64,
+	.in = 1, .out = 2,
+	.epsize =64,
+
+#ifdef	GENELINK_ACK
+	.check_connect =genelink_check_connect,
+#endif
 };
 
 #endif /* CONFIG_USB_GENESYS */
@@ -629,20 +696,18 @@ static const struct driver_info	genelink_info = {
  *
  * One example is Intel's SA-1100 chip, which integrates basic USB
  * support (arch/arm/sa1100/usb-eth.c); it's used in the iPaq PDA.
+ * And others too, like the Yopy.
  *
  *-------------------------------------------------------------------------*/
 
-
 static const struct driver_info	linuxdev_info = {
-	description:	"Linux Device",
-	// no reset defined (yet?)
-	// no check_connect needed!
-	in: 2, out: 1,
-	epsize:	64,
+	.description =	"Linux Device",
+
+	.in = 2, .out = 1,
+	.epsize = 64,
 };
 
 #endif	/* CONFIG_USB_LINUXDEV */
-
 
 
 #ifdef	CONFIG_USB_NET1080
@@ -814,10 +879,10 @@ static void nc_dump_registers (struct usbnet *dev)
 static inline void nc_dump_usbctl (struct usbnet *dev, u16 usbctl)
 {
 #ifdef DEBUG
-	devdbg (dev, "net1080 %03d/%03d usbctl 0x%x:%s%s%s%s%s;"
+	devdbg (dev, "net1080 %s-%s usbctl 0x%x:%s%s%s%s%s;"
 			" this%s%s;"
 			" other%s%s; r/o 0x%x",
-		dev->udev->bus->busnum, dev->udev->devnum,
+		dev->udev->bus->bus_name, dev->udev->devpath,
 		usbctl,
 		(usbctl & USBCTL_ENABLE_LANG) ? " lang" : "",
 		(usbctl & USBCTL_ENABLE_MFGR) ? " mfgr" : "",
@@ -859,10 +924,10 @@ static inline void nc_dump_usbctl (struct usbnet *dev, u16 usbctl)
 static inline void nc_dump_status (struct usbnet *dev, u16 status)
 {
 #ifdef DEBUG
-	devdbg (dev, "net1080 %03d/%03d status 0x%x:"
+	devdbg (dev, "net1080 %s-%s status 0x%x:"
 			" this (%c) PKT=%d%s%s%s;"
 			" other PKT=%d%s%s%s; unspec 0x%x",
-		dev->udev->bus->busnum, dev->udev->devnum,
+		dev->udev->bus->bus_name, dev->udev->devpath,
 		status,
 
 		// XXX the packet counts don't seem right
@@ -897,8 +962,8 @@ static inline void nc_dump_status (struct usbnet *dev, u16 status)
 static inline void nc_dump_ttl (struct usbnet *dev, u16 ttl)
 {
 #ifdef DEBUG
-	devdbg (dev, "net1080 %03d/%03d ttl 0x%x this = %d, other = %d",
-		dev->udev->bus->busnum, dev->udev->devnum,
+	devdbg (dev, "net1080 %s-%s ttl 0x%x this = %d, other = %d",
+		dev->udev->bus->bus_name, dev->udev->devpath,
 		ttl,
 
 		TTL_THIS (ttl),
@@ -921,7 +986,8 @@ static int net1080_reset (struct usbnet *dev)
 	// nc_dump_registers (dev);
 
 	if ((retval = nc_register_read (dev, REG_STATUS, vp)) < 0) {
-		dbg ("can't read dev %d status: %d", dev->udev->devnum, retval);
+		dbg ("can't read %s-%s status: %d",
+			dev->udev->bus->bus_name, dev->udev->devpath, retval);
 		goto done;
 	}
 	status = *vp;
@@ -948,10 +1014,11 @@ static int net1080_reset (struct usbnet *dev)
 			MK_TTL (NC_READ_TTL_MS, TTL_OTHER (ttl)) );
 	dbg ("%s: assigned TTL, %d ms", dev->net.name, NC_READ_TTL_MS);
 
-	devdbg (dev, "port %c, peer %sconnected",
-		(status & STATUS_PORT_A) ? 'A' : 'B',
-		(status & STATUS_CONN_OTHER) ? "" : "dis"
-		);
+	if (dev->msg_level >= 2)
+		devinfo (dev, "port %c, peer %sconnected",
+			(status & STATUS_PORT_A) ? 'A' : 'B',
+			(status & STATUS_CONN_OTHER) ? "" : "dis"
+			);
 	retval = 0;
 
 done:
@@ -1079,15 +1146,15 @@ net1080_tx_fixup (struct usbnet *dev, struct sk_buff *skb, int flags)
 }
 
 static const struct driver_info	net1080_info = {
-	description:	"NetChip TurboCONNECT",
-	flags:		FLAG_FRAMING_NC,
-	reset:		net1080_reset,
-	check_connect:	net1080_check_connect,
-	rx_fixup:	net1080_rx_fixup,
-	tx_fixup:	net1080_tx_fixup,
+	.description =	"NetChip TurboCONNECT",
+	.flags =	FLAG_FRAMING_NC,
+	.reset =	net1080_reset,
+	.check_connect =net1080_check_connect,
+	.rx_fixup =	net1080_rx_fixup,
+	.tx_fixup =	net1080_tx_fixup,
 
-	in: 1, out: 1,		// direction distinguishes these
-	epsize:	64,
+	.in = 1, .out = 1,		// direction distinguishes these
+	.epsize =64,
 };
 
 #endif /* CONFIG_USB_NET1080 */
@@ -1147,24 +1214,14 @@ static int pl_reset (struct usbnet *dev)
 		PL_S_EN|PL_RESET_OUT|PL_RESET_IN|PL_PEER_E);
 }
 
-static int pl_check_connect (struct usbnet *dev)
-{
-	// FIXME test interrupt data PL_PEER_E bit
-	// plus, there's some handshake done by
-	// the prolific win32 driver... 
-	dbg ("%s: assuming peer is connected", dev->net.name);
-	return 0;
-}
-
 static const struct driver_info	prolific_info = {
-	description:	"Prolific PL-2301/PL-2302",
-	flags:		FLAG_NO_SETINT,
+	.description =	"Prolific PL-2301/PL-2302",
+	.flags =	FLAG_NO_SETINT,
 		/* some PL-2302 versions seem to fail usb_set_interface() */
-	reset:		pl_reset,
-	check_connect:	pl_check_connect,
+	.reset =	pl_reset,
 
-	in: 3, out: 2,
-	epsize:	64,
+	.in = 3, .out = 2,
+	.epsize =64,
 };
 
 #endif /* CONFIG_USB_PL2301 */
@@ -1227,6 +1284,21 @@ static void defer_bh (struct usbnet *dev, struct sk_buff *skb)
 	spin_unlock_irqrestore (&dev->done.lock, flags);
 }
 
+/* some work can't be done in tasklets, so we use keventd
+ *
+ * NOTE:  annoying asymmetry:  if it's active, schedule_task() fails,
+ * but tasklet_schedule() doesn't.  hope the failure is rare.
+ */
+static void defer_kevent (struct usbnet *dev, int work)
+{
+	set_bit (work, &dev->flags);
+	if (!schedule_task (&dev->kevent))
+		err ("%s: kevent %d may have been dropped",
+			dev->net.name, work);
+	else
+		dbg ("%s: kevent %d scheduled", dev->net.name, work);
+}
+
 /*-------------------------------------------------------------------------*/
 
 static void rx_complete (struct urb *urb);
@@ -1253,7 +1325,7 @@ static void rx_submit (struct usbnet *dev, struct urb *urb, int flags)
 
 	if ((skb = alloc_skb (size, flags)) == 0) {
 		dbg ("no rx skb");
-		tasklet_schedule (&dev->bh);
+		defer_kevent (dev, EVENT_RX_MEMORY);
 		usb_free_urb (urb);
 		return;
 	}
@@ -1268,9 +1340,6 @@ static void rx_submit (struct usbnet *dev, struct urb *urb, int flags)
 		usb_rcvbulkpipe (dev->udev, dev->driver_info->in),
 		skb->data, size, rx_complete, skb);
 	urb->transfer_flags |= USB_ASYNC_UNLINK;
-#ifdef	REALLY_QUEUE
-	urb->transfer_flags |= USB_QUEUE_BULK;
-#endif
 #if 0
 	// Idle-but-posted reads with UHCI really chew up
 	// PCI bandwidth unless FSBR is disabled
@@ -1279,11 +1348,20 @@ static void rx_submit (struct usbnet *dev, struct urb *urb, int flags)
 
 	spin_lock_irqsave (&dev->rxq.lock, lockflags);
 
-	if (netif_running (&dev->net)) {
-		if ((retval = usb_submit_urb (urb)) != 0) {
+	if (netif_running (&dev->net)
+			&& !test_bit (EVENT_RX_HALT, &dev->flags)) {
+		switch (retval = SUBMIT_URB (urb, GFP_ATOMIC)){ 
+		case -EPIPE:
+			defer_kevent (dev, EVENT_RX_HALT);
+			break;
+		case -ENOMEM:
+			defer_kevent (dev, EVENT_RX_MEMORY);
+			break;
+		default:
 			dbg ("%s rx submit, %d", dev->net.name, retval);
 			tasklet_schedule (&dev->bh);
-		} else {
+			break;
+		case 0:
 			__skb_queue_tail (&dev->rxq, skb);
 		}
 	} else {
@@ -1357,12 +1435,20 @@ static void rx_complete (struct urb *urb)
 		}
 		break;
 
+	    // stalls need manual reset. this is rare ... except that
+	    // when going through USB 2.0 TTs, unplug appears this way.
+	    // we avoid the highspeed version of the ETIMEOUT/EILSEQ
+	    // storm, recovering as needed.
+	    case -EPIPE:
+		defer_kevent (dev, EVENT_RX_HALT);
+		// FALLTHROUGH
+
 	    // software-driven interface shutdown
-	    case -ECONNRESET:		// usb-ohci, usb-uhci
-	    case -ECONNABORTED:		// uhci ... for usb-uhci, INTR
-		dbg ("%s shutdown, code %d", dev->net.name, urb_status);
+	    case -ECONNRESET:		// according to API spec
+	    case -ECONNABORTED:		// some (now fixed?) UHCI bugs
+		dbg ("%s rx shutdown, code %d", dev->net.name, urb_status);
 		entry->state = rx_cleanup;
-		// do urb frees only in the tasklet
+		// do urb frees only in the tasklet (UHCI has oopsed ...)
 		entry->urb = urb;
 		urb = 0;
 		break;
@@ -1373,8 +1459,9 @@ static void rx_complete (struct urb *urb)
 		// FALLTHROUGH
 	    
 	    default:
-		// on unplug we'll get a burst of ETIMEDOUT/EILSEQ
-		// till the khubd gets and handles its interrupt.
+		// on unplug we get ETIMEDOUT (ohci) or EILSEQ (uhci)
+		// until khubd sees its interrupt and disconnects us.
+		// that can easily be hundreds of passes through here.
 		entry->state = rx_cleanup;
 		dev->stats.rx_errors++;
 		dbg ("%s rx: status %d", dev->net.name, urb_status);
@@ -1384,10 +1471,12 @@ static void rx_complete (struct urb *urb)
 	defer_bh (dev, skb);
 
 	if (urb) {
-		if (netif_running (&dev->net)) {
+		if (netif_running (&dev->net)
+				&& !test_bit (EVENT_RX_HALT, &dev->flags)) {
 			rx_submit (dev, urb, GFP_ATOMIC);
 			return;
 		}
+		usb_free_urb (urb);
 	}
 #ifdef	VERBOSE
 	dbg ("no read resubmitted");
@@ -1417,7 +1506,7 @@ static int unlink_urbs (struct sk_buff_head *q)
 		// during some PM-driven resume scenarios,
 		// these (async) unlinks complete immediately
 		retval = usb_unlink_urb (urb);
-		if (retval < 0)
+		if (retval != -EINPROGRESS && retval != 0)
 			dbg ("unlink urb err, %d", retval);
 		else
 			count++;
@@ -1441,10 +1530,11 @@ static int usbnet_stop (struct net_device *net)
 	mutex_lock (&dev->mutex);
 	netif_stop_queue (net);
 
-	devdbg (dev, "stop stats: rx/tx %ld/%ld, errs %ld/%ld",
-		dev->stats.rx_packets, dev->stats.tx_packets, 
-		dev->stats.rx_errors, dev->stats.tx_errors
-		);
+	if (dev->msg_level >= 2)
+		devinfo (dev, "stop stats: rx/tx %ld/%ld, errs %ld/%ld",
+			dev->stats.rx_packets, dev->stats.tx_packets, 
+			dev->stats.rx_errors, dev->stats.tx_errors
+			);
 
 	// ensure there are no more active urbs
 	add_wait_queue (&unlink_wakeup, &wait);
@@ -1482,9 +1572,9 @@ static int usbnet_open (struct net_device *net)
 
 	// put into "known safe" state
 	if (info->reset && (retval = info->reset (dev)) < 0) {
-		devinfo (dev, "open reset fail (%d) usbnet %03d/%03d, %s",
+		devinfo (dev, "open reset fail (%d) usbnet usb-%s-%s, %s",
 			retval,
-			dev->udev->bus->busnum, dev->udev->devnum,
+			dev->udev->bus->bus_name, dev->udev->devpath,
 			info->description);
 		goto done;
 	}
@@ -1496,14 +1586,16 @@ static int usbnet_open (struct net_device *net)
 	}
 
 	netif_start_queue (net);
-	devdbg (dev, "open: enable queueing (rx %d, tx %d) mtu %d %s framing",
-		RX_QLEN, TX_QLEN, dev->net.mtu,
-		(info->flags & (FLAG_FRAMING_NC | FLAG_FRAMING_GL))
-		    ? ((info->flags & FLAG_FRAMING_NC)
-			? "NetChip"
-			: "GeneSys")
-		    : "raw"
-		);
+	if (dev->msg_level >= 2)
+		devinfo (dev, "open: enable queueing "
+				"(rx %d, tx %d) mtu %d %s framing",
+			RX_QLEN, TX_QLEN, dev->net.mtu,
+			(info->flags & (FLAG_FRAMING_NC | FLAG_FRAMING_GL))
+			    ? ((info->flags & FLAG_FRAMING_NC)
+				? "NetChip"
+				: "GeneSys")
+			    : "raw"
+			);
 
 	// delay posting reads until we're fully open
 	tasklet_schedule (&dev->bh);
@@ -1514,16 +1606,134 @@ done:
 
 /*-------------------------------------------------------------------------*/
 
-/* usb_clear_halt cannot be called in interrupt context */
+static int usbnet_ethtool_ioctl (struct net_device *net, void *useraddr)
+{
+	struct usbnet	*dev = (struct usbnet *) net->priv;
+	u32		cmd;
 
+	if (get_user (cmd, (u32 *)useraddr))
+		return -EFAULT;
+	switch (cmd) {
+
+	case ETHTOOL_GDRVINFO: {	/* get driver info */
+		struct ethtool_drvinfo		info;
+
+		memset (&info, 0, sizeof info);
+		info.cmd = ETHTOOL_GDRVINFO;
+		strncpy (info.driver, driver_name, sizeof info.driver);
+		strncpy (info.version, DRIVER_VERSION, sizeof info.version);
+		strncpy (info.fw_version, dev->driver_info->description,
+			sizeof info.fw_version);
+		usb_make_path (dev->udev, info.bus_info, sizeof info.bus_info);
+		if (copy_to_user (useraddr, &info, sizeof (info)))
+			return -EFAULT;
+		return 0;
+		}
+
+	case ETHTOOL_GLINK: 		/* get link status */
+		if (dev->driver_info->check_connect) {
+			struct ethtool_value	edata = { ETHTOOL_GLINK };
+
+			edata.data = dev->driver_info->check_connect (dev) == 0;
+			if (copy_to_user (useraddr, &edata, sizeof (edata)))
+				return -EFAULT;
+			return 0;
+		}
+		break;
+
+	case ETHTOOL_GMSGLVL: {		/* get message-level */
+		struct ethtool_value	edata = {ETHTOOL_GMSGLVL};
+
+		edata.data = dev->msg_level;
+		if (copy_to_user (useraddr, &edata, sizeof (edata)))
+			return -EFAULT;
+		return 0;
+		}
+
+	case ETHTOOL_SMSGLVL: {		/* set message-level */
+		struct ethtool_value	edata;
+
+		if (copy_from_user (&edata, useraddr, sizeof (edata)))
+			return -EFAULT;
+		dev->msg_level = edata.data;
+		return 0;
+		}
+	
+	/* could also map RINGPARAM to RX/TX QLEN */
+
+	}
+        /* Note that the ethtool user space code requires EOPNOTSUPP */
+	return -EOPNOTSUPP;
+}
+
+static int usbnet_ioctl (struct net_device *net, struct ifreq *rq, int cmd)
+{
+	switch (cmd) {
+	case SIOCETHTOOL:
+		return usbnet_ethtool_ioctl (net, (void *)rq->ifr_data);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
+/*-------------------------------------------------------------------------*/
+
+/* work that cannot be done in interrupt context uses keventd.
+ *
+ * NOTE:  "uhci" and "usb-uhci" may have trouble with this since they don't
+ * queue control transfers to individual devices, and other threads could
+ * trigger control requests concurrently.  hope that's rare.
+ */
 static void
-tx_clear_halt (void *data)
+kevent (void *data)
 {
 	struct usbnet		*dev = data;
+	int			status;
 
-	usb_clear_halt (dev->udev,
-		usb_sndbulkpipe (dev->udev, dev->driver_info->out));
-	netif_wake_queue (&dev->net);
+	/* usb_clear_halt() needs a thread context */
+	if (test_bit (EVENT_TX_HALT, &dev->flags)) {
+		unlink_urbs (&dev->txq);
+		status = usb_clear_halt (dev->udev,
+			usb_sndbulkpipe (dev->udev, dev->driver_info->out));
+		if (status < 0)
+			err ("%s: can't clear tx halt, status %d",
+				dev->net.name, status);
+		else {
+			clear_bit (EVENT_TX_HALT, &dev->flags);
+			netif_wake_queue (&dev->net);
+		}
+	}
+	if (test_bit (EVENT_RX_HALT, &dev->flags)) {
+		unlink_urbs (&dev->rxq);
+		status = usb_clear_halt (dev->udev,
+			usb_rcvbulkpipe (dev->udev, dev->driver_info->in));
+		if (status < 0)
+			err ("%s: can't clear rx halt, status %d",
+				dev->net.name, status);
+		else {
+			clear_bit (EVENT_RX_HALT, &dev->flags);
+			tasklet_schedule (&dev->bh);
+		}
+	}
+
+	/* tasklet could resubmit itself forever if memory is tight */
+	if (test_bit (EVENT_RX_MEMORY, &dev->flags)) {
+		struct urb	*urb = 0;
+
+		if (netif_running (&dev->net))
+			urb = ALLOC_URB (0, GFP_KERNEL);
+		else
+			clear_bit (EVENT_RX_MEMORY, &dev->flags);
+		if (urb != 0) {
+			clear_bit (EVENT_RX_MEMORY, &dev->flags);
+			rx_submit (dev, urb, GFP_KERNEL);
+			tasklet_schedule (&dev->bh);
+		}
+	}
+
+	if (dev->flags)
+		dbg ("%s: kevent done, flags = 0x%lx",
+			dev->net.name, dev->flags);
 }
 
 /*-------------------------------------------------------------------------*/
@@ -1534,15 +1744,8 @@ static void tx_complete (struct urb *urb)
 	struct skb_data		*entry = (struct skb_data *) skb->cb;
 	struct usbnet		*dev = entry->dev;
 
-	if (urb->status == USB_ST_STALL) {
-		if (dev->ctrl_task.sync == 0) {
-			dev->ctrl_task.routine = tx_clear_halt;
-			dev->ctrl_task.data = dev;
-			schedule_task (&dev->ctrl_task);
-		} else {
-			dbg ("Cannot clear TX stall");
-		}
-	}
+	if (urb->status == -EPIPE)
+		defer_kevent (dev, EVENT_TX_HALT);
 	urb->dev = 0;
 	entry->state = tx_done;
 	defer_bh (dev, skb);
@@ -1576,19 +1779,17 @@ static int usbnet_start_xmit (struct sk_buff *skb, struct net_device *net)
 	struct nc_trailer	*trailer = 0;
 #endif	/* CONFIG_USB_NET1080 */
 
-	flags = in_interrupt () ? GFP_ATOMIC : GFP_NOIO; /* might be used for nfs */
-
 	// some devices want funky USB-level framing, for
 	// win32 driver (usually) and/or hardware quirks
 	if (info->tx_fixup) {
-		skb = info->tx_fixup (dev, skb, flags);
+		skb = info->tx_fixup (dev, skb, GFP_ATOMIC);
 		if (!skb) {
 			dbg ("can't tx_fixup skb");
 			goto drop;
 		}
 	}
 
-	if (!(urb = usb_alloc_urb (0))) {
+	if (!(urb = ALLOC_URB (0, GFP_ATOMIC))) {
 		dbg ("no urb");
 		goto drop;
 	}
@@ -1621,9 +1822,6 @@ static int usbnet_start_xmit (struct sk_buff *skb, struct net_device *net)
 			usb_sndbulkpipe (dev->udev, info->out),
 			skb->data, skb->len, tx_complete, skb);
 	urb->transfer_flags |= USB_ASYNC_UNLINK;
-#ifdef	REALLY_QUEUE
-	urb->transfer_flags |= USB_QUEUE_BULK;
-#endif
 	// FIXME urb->timeout = ... jiffies ... ;
 
 	spin_lock_irqsave (&dev->txq.lock, flags);
@@ -1640,15 +1838,19 @@ static int usbnet_start_xmit (struct sk_buff *skb, struct net_device *net)
 	}
 #endif	/* CONFIG_USB_NET1080 */
 
-	netif_stop_queue (net);
-	if ((retval = usb_submit_urb (urb)) != 0) {
-		netif_start_queue (net);
+	switch ((retval = SUBMIT_URB (urb, GFP_ATOMIC))) {
+	case -EPIPE:
+		netif_stop_queue (net);
+		defer_kevent (dev, EVENT_TX_HALT);
+		break;
+	default:
 		dbg ("%s tx: submit urb err %d", net->name, retval);
-	} else {
+		break;
+	case 0:
 		net->trans_start = jiffies;
 		__skb_queue_tail (&dev->txq, skb);
-		if (dev->txq.qlen < TX_QLEN)
-			netif_start_queue (net);
+		if (dev->txq.qlen >= TX_QLEN)
+			netif_stop_queue (net);
 	}
 	spin_unlock_irqrestore (&dev->txq.lock, flags);
 
@@ -1715,14 +1917,15 @@ static void usbnet_bh (unsigned long param)
 		}
 
 	// or are we maybe short a few urbs?
-	} else if (netif_running (&dev->net)) {
+	} else if (netif_running (&dev->net)
+			&& !test_bit (EVENT_RX_HALT, &dev->flags)) {
 		int	temp = dev->rxq.qlen;
 
 		if (temp < RX_QLEN) {
 			struct urb	*urb;
 			int		i;
 			for (i = 0; i < 3 && dev->rxq.qlen < RX_QLEN; i++) {
-				if ((urb = usb_alloc_urb (0)) != 0)
+				if ((urb = ALLOC_URB (0, GFP_ATOMIC)) != 0)
 					rx_submit (dev, urb, GFP_ATOMIC);
 			}
 			if (temp != dev->rxq.qlen)
@@ -1750,8 +1953,8 @@ static void usbnet_disconnect (struct usb_device *udev, void *ptr)
 {
 	struct usbnet	*dev = (struct usbnet *) ptr;
 
-	devinfo (dev, "unregister usbnet %03d/%03d, %s",
-		udev->bus->busnum, udev->devnum,
+	devinfo (dev, "unregister usbnet usb-%s-%s, %s",
+		udev->bus->bus_name, udev->devpath,
 		dev->driver_info->description);
 	
 	unregister_netdev (&dev->net);
@@ -1761,8 +1964,11 @@ static void usbnet_disconnect (struct usb_device *udev, void *ptr)
 	list_del (&dev->dev_list);
 	mutex_unlock (&usbnet_mutex);
 
+	// assuming we used keventd, it must quiesce too
+	flush_scheduled_tasks ();
+
 	kfree (dev);
-	usb_dec_dev_use (udev);
+	usb_put_dev (udev);
 }
 
 
@@ -1808,15 +2014,17 @@ usbnet_probe (struct usb_device *udev, unsigned ifnum,
 	memset (dev, 0, sizeof *dev);
 
 	init_MUTEX_LOCKED (&dev->mutex);
-	usb_inc_dev_use (udev);
+	usb_get_dev (udev);
 	dev->udev = udev;
 	dev->driver_info = info;
+	dev->msg_level = msg_level;
 	INIT_LIST_HEAD (&dev->dev_list);
 	skb_queue_head_init (&dev->rxq);
 	skb_queue_head_init (&dev->txq);
 	skb_queue_head_init (&dev->done);
 	dev->bh.func = usbnet_bh;
 	dev->bh.data = (unsigned long) dev;
+	INIT_TQUEUE (&dev->kevent, kevent, dev);
 
 	// set up network interface records
 	net = &dev->net;
@@ -1836,10 +2044,11 @@ usbnet_probe (struct usb_device *udev, unsigned ifnum,
 	net->stop = usbnet_stop;
 	net->watchdog_timeo = TX_TIMEOUT_JIFFIES;
 	net->tx_timeout = usbnet_tx_timeout;
+	net->do_ioctl = usbnet_ioctl;
 
 	register_netdev (&dev->net);
-	devinfo (dev, "register usbnet %03d/%03d, %s",
-		udev->bus->busnum, udev->devnum,
+	devinfo (dev, "register usbnet usb-%s-%s, %s",
+		udev->bus->bus_name, udev->devpath,
 		dev->driver_info->description);
 
 	// ok, it's ready to go.
@@ -1867,33 +2076,41 @@ static const struct usb_device_id	products [] = {
 #ifdef	CONFIG_USB_AN2720
 {
 	USB_DEVICE (0x0547, 0x2720),	// AnchorChips defaults
-	driver_info:	(unsigned long) &an2720_info,
-},
-
-{
+	.driver_info =	(unsigned long) &an2720_info,
+}, {
 	USB_DEVICE (0x0547, 0x2727),	// Xircom PGUNET
-	driver_info:	(unsigned long) &an2720_info,
+	.driver_info =	(unsigned long) &an2720_info,
 },
 #endif
 
 #ifdef	CONFIG_USB_BELKIN
 {
 	USB_DEVICE (0x050d, 0x0004),	// Belkin
-	driver_info:	(unsigned long) &belkin_info,
+	.driver_info =	(unsigned long) &belkin_info,
 }, {
 	USB_DEVICE (0x056c, 0x8100),	// eTEK
-	driver_info:	(unsigned long) &belkin_info,
+	.driver_info =	(unsigned long) &belkin_info,
 }, {
 	USB_DEVICE (0x0525, 0x9901),	// Advance USBNET (eTEK)
-	driver_info:	(unsigned long) &belkin_info,
+	.driver_info =	(unsigned long) &belkin_info,
+},
+#endif
+
+#ifdef	CONFIG_USB_EPSON2888
+{
+	USB_DEVICE (0x0525, 0x2888),	// EPSON USB client
+	driver_info:	(unsigned long) &epson2888_info,
 },
 #endif
 
 #ifdef	CONFIG_USB_GENESYS
 {
 	USB_DEVICE (0x05e3, 0x0502),	// GL620USB-A
-	driver_info:	(unsigned long) &genelink_info,
+	.driver_info =	(unsigned long) &genelink_info,
 },
+	/* NOT: USB_DEVICE (0x05e3, 0x0501),	// GL620USB
+	 * that's half duplex, not currently supported
+	 */
 #endif
 
 #ifdef	CONFIG_USB_LINUXDEV
@@ -1904,28 +2121,32 @@ static const struct usb_device_id	products [] = {
 {
 	// 1183 = 0x049F, both used as hex values?
 	USB_DEVICE (0x049F, 0x505A),	// Compaq "Itsy"
-	driver_info:	(unsigned long) &linuxdev_info,
+	.driver_info =	(unsigned long) &linuxdev_info,
+}, {
+	USB_DEVICE (0x0E7E, 0x1001),	// G.Mate "Yopy"
+	.driver_info =	(unsigned long) &linuxdev_info,
 },
+	// NOTE:  the Sharp Zaurus uses a modified version of
+	// this driver, which is not interoperable with this.
 #endif
 
 #ifdef	CONFIG_USB_NET1080
 {
 	USB_DEVICE (0x0525, 0x1080),	// NetChip ref design
-	driver_info:	(unsigned long) &net1080_info,
-},
-{
+	.driver_info =	(unsigned long) &net1080_info,
+}, {
 	USB_DEVICE (0x06D0, 0x0622),	// Laplink Gold
-	driver_info:	(unsigned long) &net1080_info,
+	.driver_info =	(unsigned long) &net1080_info,
 },
 #endif
 
 #ifdef CONFIG_USB_PL2301
 {
 	USB_DEVICE (0x067b, 0x0000),	// PL-2301
-	driver_info:	(unsigned long) &prolific_info,
+	.driver_info =	(unsigned long) &prolific_info,
 }, {
 	USB_DEVICE (0x067b, 0x0001),	// PL-2302
-	driver_info:	(unsigned long) &prolific_info,
+	.driver_info =	(unsigned long) &prolific_info,
 },
 #endif
 
@@ -1936,10 +2157,10 @@ static const struct usb_device_id	products [] = {
 MODULE_DEVICE_TABLE (usb, products);
 
 static struct usb_driver usbnet_driver = {
-	name:		"usbnet",
-	id_table:	products,
-	probe:		usbnet_probe,
-	disconnect:	usbnet_disconnect,
+	.name =		driver_name,
+	.id_table =	products,
+	.probe =	usbnet_probe,
+	.disconnect =	usbnet_disconnect,
 };
 
 /*-------------------------------------------------------------------------*/
@@ -1952,6 +2173,7 @@ static int __init usbnet_init (void)
 
 	get_random_bytes (node_id, sizeof node_id);
 	node_id [0] &= 0xfe;	// clear multicast bit
+	node_id [0] |= 0x02;    // set local assignment bit (IEEE802)
 
  	if (usb_register (&usbnet_driver) < 0)
  		return -1;

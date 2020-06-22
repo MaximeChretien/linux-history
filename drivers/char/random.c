@@ -412,13 +412,13 @@ static void sysctl_init_random(struct entropy_store *random_state);
  * deal with a variable rotate of x bits.  So we use a bit of asm magic.
  */
 #if (!defined (__i386__))
-extern inline __u32 rotate_left(int i, __u32 word)
+static inline __u32 rotate_left(int i, __u32 word)
 {
 	return (word << i) | (word >> (32 - i));
 	
 }
 #else
-extern inline __u32 rotate_left(int i, __u32 word)
+static inline __u32 rotate_left(int i, __u32 word)
 {
 	__asm__("roll %%cl,%0"
 		:"=r" (word)
@@ -735,7 +735,7 @@ static void add_timer_randomness(struct timer_rand_state *state, unsigned num)
 	int		entropy = 0;
 
 #if defined (__i386__)
-	if ( test_bit(X86_FEATURE_TSC, &boot_cpu_data.x86_capability) ) {
+	if (cpu_has_tsc) {
 		__u32 high;
 		rdtsc(time, high);
 		num ^= high;
@@ -1643,7 +1643,7 @@ random_ioctl(struct inode * inode, struct file * file,
 			return -EINVAL;
 		if (size > random_state->poolinfo.poolwords)
 			size = random_state->poolinfo.poolwords;
-		if (copy_to_user(p, random_state->pool, size * 4))
+		if (copy_to_user(p, random_state->pool, size * sizeof(__u32)))
 			return -EFAULT;
 		return 0;
 	case RNDADDENTROPY:

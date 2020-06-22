@@ -123,7 +123,7 @@
  * Bufctl's are used for linking objs within a slab
  * linked offsets.
  *
- * This implementaion relies on "struct page" for locating the cache &
+ * This implementation relies on "struct page" for locating the cache &
  * slab an object belongs to.
  * This allows the bufctl structure to be small (one int), but limits
  * the number of objects a slab (not a cache) can contain when off-slab
@@ -970,8 +970,6 @@ int kmem_cache_shrink(kmem_cache_t *cachep)
 	if (!cachep || in_interrupt() || !is_chained_kmem_cache(cachep))
 		BUG();
 
-	drain_cpu_caches(cachep);
-  
 	spin_lock_irq(&cachep->spinlock);
 	ret = __kmem_cache_shrink_locked(cachep);
 	spin_unlock_irq(&cachep->spinlock);
@@ -1606,6 +1604,15 @@ void kfree (const void *objp)
 	c = GET_PAGE_CACHE(virt_to_page(objp));
 	__kmem_cache_free(c, (void*)objp);
 	local_irq_restore(flags);
+}
+
+unsigned int kmem_cache_size(kmem_cache_t *cachep)
+{
+#if DEBUG
+	if (cachep->flags & SLAB_RED_ZONE)
+		return (cachep->objsize - 2*BYTES_PER_WORD);
+#endif
+	return cachep->objsize;
 }
 
 kmem_cache_t * kmem_find_general_cachep (size_t size, int gfpflags)

@@ -52,4 +52,7 @@ static inline cycles_t get_cycles (void)
 
 extern unsigned long cpu_khz;
 
+#define vxtime_lock()		do {} while (0)
+#define vxtime_unlock()		do {} while (0)
+
 #endif

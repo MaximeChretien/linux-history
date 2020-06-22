@@ -83,7 +83,7 @@
 	*(volatile unsigned int *)(virt + outring) = n;			\
 	outring += 4;							\
 	outring &= ringmask;						\
-} while (0);
+} while (0)
 
 static inline void i810_print_status_page(drm_device_t *dev)
 {
@@ -279,7 +279,7 @@ static unsigned long i810_alloc_page(drm_device_t *dev)
 	address = __get_free_page(GFP_KERNEL);
 	if(address == 0UL) 
 		return 0;
-	
+
 	get_page(virt_to_page(address));
 	LockPage(virt_to_page(address));
    

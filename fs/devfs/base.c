@@ -620,6 +620,15 @@
 	       Protected <scan_dir_for_removable> and <get_removable_partition>
 	       from changing directory contents.
   v1.12a
+    20020721   Richard Gooch <rgooch@atnf.csiro.au>
+	       Switched to ISO C structure field initialisers.
+	       Switch to set_current_state() and move before add_wait_queue().
+    20020722   Richard Gooch <rgooch@atnf.csiro.au>
+	       Fixed devfs entry leak in <devfs_readdir> when *readdir fails.
+  v1.12b
+    20020818   Richard Gooch <rgooch@atnf.csiro.au>
+	       Fixed module unload race in <devfs_open>.
+  v1.12c
 */
 #include <linux/types.h>
 #include <linux/errno.h>
@@ -652,7 +661,7 @@
 #include <asm/bitops.h>
 #include <asm/atomic.h>
 
-#define DEVFS_VERSION            "1.12a (20020514)"
+#define DEVFS_VERSION            "1.12c (20020818)"
 
 #define DEVFS_NAME "devfs"
 
@@ -864,7 +873,7 @@ static ssize_t stat_read (struct file *file, char *buf, size_t len,
 			  loff_t *ppos);
 static struct file_operations stat_fops =
 {
-    read:    stat_read,
+    .read    = stat_read,
 };
 #endif
 
@@ -872,9 +881,9 @@ static struct file_operations stat_fops =
 /*  Devfs daemon file operations  */
 static struct file_operations devfsd_fops =
 {
-    read:    devfsd_read,
-    ioctl:   devfsd_ioctl,
-    release: devfsd_close,
+    .read    = devfsd_read,
+    .ioctl   = devfsd_ioctl,
+    .release = devfsd_close,
 };
 
 
@@ -1441,12 +1450,12 @@ static int wait_for_devfsd_finished (struct fs_info *fs_info)
     if (fs_info->devfsd_task == NULL) return (TRUE);
     if (devfsd_queue_empty (fs_info) && fs_info->devfsd_sleeping) return TRUE;
     if ( is_devfsd_or_child (fs_info) ) return (FALSE);
+    set_current_state (TASK_UNINTERRUPTIBLE);
     add_wait_queue (&fs_info->revalidate_wait_queue, &wait);
-    current->state = TASK_UNINTERRUPTIBLE;
     if (!devfsd_queue_empty (fs_info) || !fs_info->devfsd_sleeping)
 	if (fs_info->devfsd_task) schedule ();
     remove_wait_queue (&fs_info->revalidate_wait_queue, &wait);
-    current->state = TASK_RUNNING;
+    __set_current_state (TASK_RUNNING);
     return (TRUE);
 }   /*  End Function wait_for_devfsd_finished  */
 
@@ -2592,9 +2601,9 @@ static void devfs_clear_inode (struct inode *inode)
 
 static struct super_operations devfs_sops =
 { 
-    put_inode:     force_delete,
-    clear_inode:   devfs_clear_inode,
-    statfs:        devfs_statfs,
+    .put_inode     = force_delete,
+    .clear_inode   = devfs_clear_inode,
+    .statfs        = devfs_statfs,
 };
 
 
@@ -2740,19 +2749,20 @@ static int devfs_readdir (struct file *file, void *dirent, filldir_t filldir)
 	    {
 		err = (*filldir) (dirent, de->name, de->namelen,
 				  file->f_pos, de->inode.ino, de->mode >> 12);
-		if (err >= 0)
+		if (err < 0) devfs_put (de);
+		else
 		{
 		    file->f_pos++;
 		    ++stored;
 		}
 	    }
+	    if (err == -EINVAL) break;
+	    if (err < 0) return err;
 	    read_lock (&parent->u.dir.lock);
 	    next = devfs_get (de->next);
 	    read_unlock (&parent->u.dir.lock);
 	    devfs_put (de);
 	    de = next;
-	    if (err == -EINVAL) break;
-	    if (err < 0) return err;
 	}
 	break;
     }
@@ -2765,21 +2775,24 @@ static int devfs_open (struct inode *inode, struct file *file)
     struct fcb_type *df;
     struct devfs_entry *de;
     struct fs_info *fs_info = inode->i_sb->u.generic_sbp;
+    void *ops;
 
     de = get_devfs_entry_from_vfs_inode (inode);
     if (de == NULL) return -ENODEV;
     if ( S_ISDIR (de->mode) ) return 0;
     df = &de->u.fcb;
     file->private_data = de->info;
+    ops = devfs_get_ops (de);  /*  Now have module refcount  */
     if ( S_ISBLK (inode->i_mode) )
     {
 	file->f_op = &def_blk_fops;
-	if (df->ops) inode->i_bdev->bd_op = df->ops;
-	err = def_blk_fops.open (inode, file);
+	if (ops) inode->i_bdev->bd_op = ops;
+	err = def_blk_fops.open (inode, file); /* This bumps module refcount */
+	devfs_put_ops (de);                    /* So drop my refcount        */
     }
     else
     {
-	file->f_op = fops_get ( (struct file_operations *) df->ops );
+	file->f_op = ops;
 	if (file->f_op)
 	{
 	    lock_kernel ();
@@ -2787,7 +2800,7 @@ static int devfs_open (struct inode *inode, struct file *file)
 	    unlock_kernel ();
 	}
 	else
-	{   /*  Fallback to legacy scheme  */
+	{   /*  Fallback to legacy scheme (I don't have a module refcount)  */
 	    if ( S_ISCHR (inode->i_mode) ) err = chrdev_open (inode, file);
 	    else err = -ENODEV;
 	}
@@ -2811,14 +2824,14 @@ static int devfs_open (struct inode *inode, struct file *file)
 
 static struct file_operations devfs_fops =
 {
-    open:    devfs_open,
+    .open    = devfs_open,
 };
 
 static struct file_operations devfs_dir_fops =
 {
-    read:    generic_read_dir,
-    readdir: devfs_readdir,
-    open:    devfs_open,
+    .read    = generic_read_dir,
+    .readdir = devfs_readdir,
+    .open    = devfs_open,
 };
 
 
@@ -2860,19 +2873,19 @@ static int devfs_d_delete (struct dentry *dentry);
 
 static struct dentry_operations devfs_dops =
 {
-    d_delete:     devfs_d_delete,
-    d_release:    devfs_d_release,
-    d_iput:       devfs_d_iput,
+    .d_delete     = devfs_d_delete,
+    .d_release    = devfs_d_release,
+    .d_iput       = devfs_d_iput,
 };
 
 static int devfs_d_revalidate_wait (struct dentry *dentry, int flags);
 
 static struct dentry_operations devfs_wait_dops =
 {
-    d_delete:     devfs_d_delete,
-    d_release:    devfs_d_release,
-    d_iput:       devfs_d_iput,
-    d_revalidate: devfs_d_revalidate_wait,
+    .d_delete     = devfs_d_delete,
+    .d_release    = devfs_d_release,
+    .d_iput       = devfs_d_iput,
+    .d_revalidate = devfs_d_revalidate_wait,
 };
 
 /**
@@ -2959,8 +2972,8 @@ static int devfs_d_revalidate_wait (struct dentry *dentry, int flags)
     read_lock (&parent->u.dir.lock);
     if (dentry->d_fsdata)
     {
+	set_current_state (TASK_UNINTERRUPTIBLE);
 	add_wait_queue (&lookup_info->wait_queue, &wait);
-	current->state = TASK_UNINTERRUPTIBLE;
 	read_unlock (&parent->u.dir.lock);
 	schedule ();
     }
@@ -3239,25 +3252,25 @@ static int devfs_follow_link (struct dentry *dentry, struct nameidata *nd)
 
 static struct inode_operations devfs_iops =
 {
-    setattr:        devfs_notify_change,
+    .setattr        = devfs_notify_change,
 };
 
 static struct inode_operations devfs_dir_iops =
 {
-    lookup:         devfs_lookup,
-    unlink:         devfs_unlink,
-    symlink:        devfs_symlink,
-    mkdir:          devfs_mkdir,
-    rmdir:          devfs_rmdir,
-    mknod:          devfs_mknod,
-    setattr:        devfs_notify_change,
+    .lookup         = devfs_lookup,
+    .unlink         = devfs_unlink,
+    .symlink        = devfs_symlink,
+    .mkdir          = devfs_mkdir,
+    .rmdir          = devfs_rmdir,
+    .mknod          = devfs_mknod,
+    .setattr        = devfs_notify_change,
 };
 
 static struct inode_operations devfs_symlink_iops =
 {
-    readlink:       devfs_readlink,
-    follow_link:    devfs_follow_link,
-    setattr:        devfs_notify_change,
+    .readlink       = devfs_readlink,
+    .follow_link    = devfs_follow_link,
+    .setattr        = devfs_notify_change,
 };
 
 static struct super_block *devfs_read_super (struct super_block *sb,
@@ -3313,8 +3326,8 @@ static ssize_t devfsd_read (struct file *file, char *buf, size_t len,
     info->major = 0;
     info->minor = 0;
     /*  Block for a new entry  */
+    set_current_state (TASK_INTERRUPTIBLE);
     add_wait_queue (&fs_info->devfsd_wait_queue, &wait);
-    current->state = TASK_INTERRUPTIBLE;
     while ( devfsd_queue_empty (fs_info) )
     {
 	fs_info->devfsd_sleeping = TRUE;
@@ -3324,13 +3337,13 @@ static ssize_t devfsd_read (struct file *file, char *buf, size_t len,
 	if ( signal_pending (current) )
 	{
 	    remove_wait_queue (&fs_info->devfsd_wait_queue, &wait);
-	    current->state = TASK_RUNNING;
+	    __set_current_state (TASK_RUNNING);
 	    return -EINTR;
 	}
 	set_current_state (TASK_INTERRUPTIBLE);
     }
     remove_wait_queue (&fs_info->devfsd_wait_queue, &wait);
-    current->state = TASK_RUNNING;
+    __set_current_state (TASK_RUNNING);
     /*  Now play with the data  */
     ival = atomic_read (&fs_info->devfsd_overrun_count);
     info->overrun_count = ival;

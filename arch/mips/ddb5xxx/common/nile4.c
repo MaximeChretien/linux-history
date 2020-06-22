@@ -16,14 +16,13 @@
  ***********************************************************************
  */
 
-#include <linux/config.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
 
 #include <asm/ddb5xxx/ddb5xxx.h>
 
 u32
-ddb_calc_pdar(u32 phys, u32 size, int width, 
+ddb_calc_pdar(u32 phys, u32 size, int width,
 	      int on_memory_bus, int pci_visible)
 {
         u32 maskbits;

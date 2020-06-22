@@ -310,8 +310,11 @@
 .globl SYMBOL_NAME(mvme_bdid)
 #endif
 #ifdef CONFIG_Q40
-.globl SYMBOL_NAME(q40_mem_cptr)	
-#endif		
+.globl SYMBOL_NAME(q40_mem_cptr)
+#endif
+#ifdef CONFIG_HP300
+.globl SYMBOL_NAME(hp300_phys_ram_base)
+#endif
 
 CPUTYPE_040	= 1	/* indicates an 040 */
 CPUTYPE_060	= 2	/* indicates an 060 */
@@ -596,6 +599,64 @@ ENTRY(_start)
 __INIT
 ENTRY(__start)
 
+#ifdef CONFIG_HP300
+/* This is a hack.  The HP NetBSD bootloader loads us at an arbitrary
+   address (apparently 0xff002000 in practice) which is not good if we need
+   to be able to map this to VA 0x1000.  We could do it with pagetables but
+   a better solution seems to be to relocate the kernel in physical memory
+   before we start.  
+	
+   So, we copy the entire kernel image (code+data+bss) down to the 16MB
+   boundary that marks the start of RAM.  This is slightly tricky because
+   we must not overwrite the copying code itself. :-)  */
+
+/* 15/5/98.  The start address of physical RAM changes depending on how much
+   RAM is present.  This is actually a blessing in disguise as it provides
+   a way for us to work out the RAM size rather than hardwiring it.  */
+
+	lea	%pc@(_start),%a0
+	movel	%a0,%d6
+	and	#0xffff0000, %d6
+	lea	%pc@(SYMBOL_NAME(hp300_phys_ram_base)),%a0
+	movel	%d6, %a0@
+	movel	%pc@(L(custom)),%a3
+	moveb	#0xfe,%d7
+	moveb	%d7,%a3@(0x1ffff)
+	lea	%pc@(Lcopystart),%a0
+	lea	%pc@(Lcopyend),%a1
+	movel	%d6,%a2			/* Start of physical RAM */
+1:	moveb	%a0@+,%d0
+	moveb	%d0,%a2@+
+	cmpl	%a0,%a1
+	jbne	1b
+	movel	%d6,%a2
+	moveb	#0xfd,%d7
+	moveb	%d7,%a3@(0x1ffff)
+	lea	%pc@(_stext),%a0
+	lea	%pc@(_end),%a1
+	jmp	%a2@
+
+Lcopystart:
+	moveb	#0xf7,%d7
+	moveb	%d7,%a3@(0x1ffff)
+	movel	%d6,%a2	/* Start of kernel */
+	add	#0x1000,%a2
+1:	moveb	%a0@+,%d0
+	moveb	%d0,%a2@+
+	cmpl	%a0,%a1
+	jbne	1b
+	moveb	#0,%d7
+	moveb	%d7,%a3@(0x1ffff)
+	movel	%d6,%a0
+	addl	#Lstart1,%a0
+	jmp	%a0@
+Lcopyend:	
+
+Lstart1:
+	moveb	#0x3f,%d7
+	moveb	%d7,%a3@(0x1ffff)
+#endif /* CONFIG_HP300 */
+
 /*
  * Setup initial stack pointer
  */
@@ -605,6 +666,7 @@ ENTRY(__start)
  * Record the CPU and machine type.
  */
 
+#ifndef CONFIG_HP300
 	get_bi_record	BI_MACHTYPE
 	lea	%pc@(SYMBOL_NAME(m68k_machtype)),%a1
 	movel	%a0@,%a1@
@@ -620,6 +682,23 @@ ENTRY(__start)
 	get_bi_record	BI_CPUTYPE
 	lea	%pc@(SYMBOL_NAME(m68k_cputype)),%a1
 	movel	%a0@,%a1@
+#else /* CONFIG_HP300 */
+	/* FIXME HP300 doesn't use bootinfo yet */
+	movel	#MACH_HP300,%d4
+	lea	%pc@(SYMBOL_NAME(m68k_machtype)),%a0
+	movel	%d4,%a0@
+	movel	#FPU_68881,%d0
+	lea	%pc@(SYMBOL_NAME(m68k_fputype)),%a0
+	movel	%d0,%a0@
+	movel	#MMU_68030,%d0
+	lea	%pc@(SYMBOL_NAME(m68k_mmutype)),%a0
+	movel	%d0,%a0@
+	movel	#CPU_68030,%d0
+	lea	%pc@(SYMBOL_NAME(m68k_cputype)),%a0
+	movel	%d0,%a0@
+
+	leds(0x1)
+#endif /* CONFIG_HP300 */
 
 #ifdef CONFIG_MAC
 /*
@@ -893,6 +972,9 @@ L(nocon):
 
 	putc	'\n'
 	putc	'A'
+#ifdef CONFIG_HP300
+	leds(0x2)
+#endif /* CONFIG_HP300 */
 	dputn	%pc@(L(cputype))
 	dputn	%pc@(SYMBOL_NAME(m68k_supervisor_cachemode))
 	dputn	%pc@(SYMBOL_NAME(m68k_pgtable_cachemode))
@@ -1490,6 +1572,7 @@ func_start	get_bi_record,%d1
 
 	movel	ARG1,%d0
 	lea	%pc@(SYMBOL_NAME(_end)),%a0
+#ifndef CONFIG_HP300
 1:	tstw	%a0@(BIR_TAG)
 	jeq	3f
 	cmpw	%a0@(BIR_TAG),%d0
@@ -1503,6 +1586,7 @@ func_start	get_bi_record,%d1
 3:	moveq	#-1,%d0
 	lea	%a0@(BIR_SIZE),%a0
 4:
+#endif /* CONFIG_HP300 */
 func_return	get_bi_record
 
 
@@ -3286,14 +3370,16 @@ console_clear_loop:
 
 	/* Calculate font size */
 
-#if   defined(FONT_8x8)
+#if   defined(FONT_8x8) && defined(CONFIG_FONT_8x8)
 	lea	%pc@(SYMBOL_NAME(font_vga_8x8)), %a0
-#elif defined(FONT_8x16)
+#elif defined(FONT_8x16) && defined(CONFIG_FONT_8x16)
 	lea	%pc@(SYMBOL_NAME(font_vga_8x16)),%a0
-#elif defined(FONT_6x11)
+#elif defined(FONT_6x11) && defined(CONFIG_FONT_6x11)
 	lea	%pc@(SYMBOL_NAME(font_vga_6x11)),%a0
-#else	/*   (FONT_8x8) default */
+#elif defined(CONFIG_FONT_8x8) /* default *
 	lea	%pc@(SYMBOL_NAME(font_vga_8x8)), %a0
+#else /* no compiled-in font */
+	lea	0,%a0
 #endif
 
 	/*
@@ -3302,6 +3388,8 @@ console_clear_loop:
 	 */
 	lea	%pc@(L(console_font)),%a1
 	movel	%a0,%a1@	/* store pointer to struct fbcon_font_desc in Lconsole_font */
+	tstl	%a0
+	jeq	1f
 
 	/*
 	 *	Calculate global maxs
@@ -3329,7 +3417,7 @@ console_clear_loop:
 	/*
 	 * Initialization is complete
 	 */
-	moveml	%sp@+,%a0-%a4/%d0-%d7
+1:	moveml	%sp@+,%a0-%a4/%d0-%d7
 	rts
 
 L(console_put_stats):
@@ -3415,6 +3503,8 @@ console_scroll:
 	lea	%pc@(L(mac_rowbytes)),%a0
 	movel	%a0@,%d5
 	movel	%pc@(L(console_font)),%a0
+	tstl	%a0
+	jeq	1f
 	mulul	%a0@(FBCON_FONT_DESC_HEIGHT),%d5	/* account for # scan lines per character */
 	addal	%d5,%a2
 
@@ -3469,13 +3559,15 @@ console_scroll_clear_loop:
 	movel	%d0,%a1@+
 	dbra	%d6,console_scroll_clear_loop
 
-	moveml	%sp@+,%a0-%a4/%d0-%d7
+1:	moveml	%sp@+,%a0-%a4/%d0-%d7
 	rts
 
 
 func_start	console_putc,%a0/%a1/%d0-%d7
 
 	is_not_mac(console_exit)
+	tstl	%pc@(L(console_font))
+	jeq	console_exit
 
 	/* Output character in d7 on console.
 	 */
@@ -3747,7 +3839,12 @@ L(showtest):
 __INITDATA
 	.align	4
 
-#if defined(CONFIG_ATARI) || defined(CONFIG_AMIGA) || defined(CONFIG_HP300)
+#ifdef CONFIG_HP300
+SYMBOL_NAME_LABEL(hp300_phys_ram_base)
+#endif
+
+#if defined(CONFIG_ATARI) || defined(CONFIG_AMIGA) || \
+    defined(CONFIG_HP300) || defined(CONFIG_APOLLO)
 L(custom):
 L(iobase):
 	.long 0
@@ -3838,8 +3935,6 @@ L(mac_sccbase):
 LSRB0        = 0x10412
 LTHRB0       = 0x10416
 LCPUCTRL     = 0x10100
-L(iobase):
-        .long 0
 #endif
 
 __FINIT

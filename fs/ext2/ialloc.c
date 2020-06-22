@@ -386,7 +386,7 @@ repeat:
 	inode->i_blocks = 0;
 	inode->i_mtime = inode->i_atime = inode->i_ctime = CURRENT_TIME;
 	inode->u.ext2_i.i_new_inode = 1;
-	inode->u.ext2_i.i_flags = dir->u.ext2_i.i_flags;
+	inode->u.ext2_i.i_flags = dir->u.ext2_i.i_flags & ~EXT2_BTREE_FL;
 	if (S_ISLNK(mode))
 		inode->u.ext2_i.i_flags &= ~(EXT2_IMMUTABLE_FL|EXT2_APPEND_FL);
 	inode->u.ext2_i.i_block_group = group;

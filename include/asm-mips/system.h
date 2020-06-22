@@ -8,7 +8,7 @@
  * Copyright (C) 1994 - 1999 by Ralf Baechle
  *
  * Changed set_except_vector declaration to allow return of previous
- * vector address value - necessary for "borrowing" vectors. 
+ * vector address value - necessary for "borrowing" vectors.
  *
  * Kevin D. Kissell, kevink@mips.org and Carsten Langgaard, carstenl@mips.com
  * Copyright (C) 2000 MIPS Technologies, Inc.
@@ -18,8 +18,11 @@
 
 #include <linux/config.h>
 #include <asm/sgidefs.h>
-#include <asm/ptrace.h>
+
 #include <linux/kernel.h>
+
+#include <asm/addrspace.h>
+#include <asm/ptrace.h>
 
 __asm__ (
 	".macro\t__sti\n\t"
@@ -101,7 +104,7 @@ __asm__ (
 	"sll\t$0, $0, 1\t\t\t# nop\n\t"
 	"sll\t$0, $0, 1\t\t\t# nop\n\t"
 	"sll\t$0, $0, 1\t\t\t# nop\n\t"
-	".set\tpop\n\t"	
+	".set\tpop\n\t"
 	".endm");
 
 #define __save_and_cli(x)						\
@@ -145,7 +148,7 @@ extern void __global_cli(void);
 extern unsigned long __global_save_flags(void);
 extern void __global_restore_flags(unsigned long);
 #  define sti() __global_sti()
-#  define cli() __global_cli() 
+#  define cli() __global_cli()
 #  define save_flags(x) do { x = __global_save_flags(); } while (0)
 #  define restore_flags(x) __global_restore_flags(x)
 #  define save_and_cli(x) do { save_flags(x); cli(); } while(0)
@@ -166,32 +169,58 @@ extern void __global_restore_flags(unsigned long);
 #define local_irq_disable()	__cli()
 #define local_irq_enable()	__sti()
 
-/*
- * These are probably defined overly paranoid ...
- */
+#ifdef CONFIG_CPU_HAS_SYNC
+#define __sync()				\
+	__asm__ __volatile__(			\
+		".set	push\n\t"		\
+		".set	noreorder\n\t"		\
+		".set	mips2\n\t"		\
+		"sync\n\t"			\
+		".set	pop"			\
+		: /* no output */		\
+		: /* no input */		\
+		: "memory")
+#else
+#define __sync()	do { } while(0)
+#endif
+
+#define __fast_iob()				\
+	__asm__ __volatile__(			\
+		".set	push\n\t"		\
+		".set	noreorder\n\t"		\
+		"lw	$0,%0\n\t"		\
+		"nop\n\t"			\
+		".set	pop"			\
+		: /* no output */		\
+		: "m" (*(int *)KSEG1)		\
+		: "memory")
+
+#define fast_wmb()	__sync()
+#define fast_rmb()	__sync()
+#define fast_mb()	__sync()
+#define fast_iob()				\
+	do {					\
+		__sync();			\
+		__fast_iob();			\
+	} while (0)
+
 #ifdef CONFIG_CPU_HAS_WB
 
 #include <asm/wbflush.h>
-#define rmb()	do { } while(0)
-#define wmb()	wbflush()
-#define mb()	wbflush()
 
-#else /* CONFIG_CPU_HAS_WB  */
+#define wmb()		fast_wmb()
+#define rmb()		fast_rmb()
+#define mb()		wbflush();
+#define iob()		wbflush();
 
-#define mb()						\
-__asm__ __volatile__(					\
-	"# prevent instructions being moved around\n\t"	\
-	".set\tnoreorder\n\t"				\
-	"# 8 nops to fool the R4400 pipeline\n\t"	\
-	"nop;nop;nop;nop;nop;nop;nop;nop\n\t"		\
-	".set\treorder"					\
-	: /* no output */				\
-	: /* no input */				\
-	: "memory")
-#define rmb() mb()
-#define wmb() mb()
+#else /* !CONFIG_CPU_HAS_WB */
 
-#endif /* CONFIG_CPU_HAS_WB  */
+#define wmb()		fast_wmb()
+#define rmb()		fast_rmb()
+#define mb()		fast_mb()
+#define iob()		fast_iob()
+
+#endif /* !CONFIG_CPU_HAS_WB */
 
 #ifdef CONFIG_SMP
 #define smp_mb()	mb()
@@ -218,6 +247,14 @@ extern asmlinkage void *resume(void *last, void *next);
 #endif /* !__ASSEMBLY__ */
 
 #define prepare_to_switch()	do { } while(0)
+
+struct task_struct;
+
+extern asmlinkage void lazy_fpu_switch(void *);
+extern asmlinkage void init_fpu(void);
+extern asmlinkage void save_fp(struct task_struct *);
+extern asmlinkage void restore_fp(struct task_struct *);
+
 #define switch_to(prev,next,last) \
 do { \
 	(last) = resume(prev, next); \
@@ -275,14 +312,14 @@ __xchg(unsigned long x, volatile void * ptr, int size)
 
 extern void *set_except_vector(int n, void *addr);
 
-extern void __die(const char *, struct pt_regs *, const char *where,
-	unsigned long line) __attribute__((noreturn));
-extern void __die_if_kernel(const char *, struct pt_regs *, const char *where,
-	unsigned long line);
+extern void __die(const char *, struct pt_regs *, const char *file,
+	const char *func, unsigned long line) __attribute__((noreturn));
+extern void __die_if_kernel(const char *, struct pt_regs *, const char *file,
+	const char *func, unsigned long line);
 
 #define die(msg, regs)							\
-	__die(msg, regs, __FILE__ ":"__FUNCTION__, __LINE__)
+	__die(msg, regs, __FILE__ ":", __FUNCTION__, __LINE__)
 #define die_if_kernel(msg, regs)					\
-	__die_if_kernel(msg, regs, __FILE__ ":"__FUNCTION__, __LINE__)
+	__die_if_kernel(msg, regs, __FILE__ ":", __FUNCTION__, __LINE__)
 
 #endif /* _ASM_SYSTEM_H */

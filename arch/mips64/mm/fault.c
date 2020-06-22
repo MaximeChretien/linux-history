@@ -126,7 +126,7 @@ asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long write,
 	 * If we're in an interrupt or have no user
 	 * context, we must not take the fault..
 	 */
-	if (in_interrupt() || mm == &init_mm)
+	if (in_interrupt() || !mm)
 		goto no_context;
 
 	down_read(&mm->mmap_sem);
@@ -229,20 +229,18 @@ no_context:
 	printk(KERN_ALERT "Cpu %d Unable to handle kernel paging request at "
 	       "address %016lx, epc == %016lx, ra == %016lx\n",
 	       smp_processor_id(), address, regs->cp0_epc, regs->regs[31]);
-	die("Oops", regs, write);
+	die("Oops", regs);
 
 /*
  * We ran out of memory, or some other thing happened to us that made
  * us unable to handle the page fault gracefully.
  */
 out_of_memory:
-	up_read(&mm->mmap_sem);
 	if (tsk->pid == 1) {
-		tsk->policy |= SCHED_YIELD;
-		schedule();
-		down_read(&mm->mmap_sem);
+		yield();
 		goto survive;
 	}
+	up_read(&mm->mmap_sem);
 	printk(KERN_NOTICE "VM: killing process %s\n", tsk->comm);
 	if (user_mode(regs))
 		do_exit(SIGKILL);

@@ -115,8 +115,12 @@ We'll describe the loopback device method:
  1) make sure loopback block devices are configured into the kernel
  2) create an empty file system of the appropriate size, e.g.
     # dd if=/dev/zero of=initrd bs=300k count=1
-    # mke2fs -F -m0 initrd
+    # mke2fs -F -m0 -b 1024 initrd
     (if space is critical, you may want to use the Minix FS instead of Ext2)
+    (Note that due to a problem elsewhere in the kernel, you _must_ use a
+     1024-byte blocksize when creating your file system.  If any other
+     value is used, the kernel will be unable to mount the initrd at boot
+     time, causing a kernel panic.)
  3) mount the file system, e.g.
     # mount -t ext2 -o loop initrd /mnt
  4) create the console device (not necessary if using devfs, but it can't

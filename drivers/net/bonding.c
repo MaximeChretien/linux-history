@@ -176,6 +176,21 @@
  *              Steve Mead <steve.mead at comdev dot cc>
  *     - Port Gleb Natapov's multicast support patchs from 2.4.12
  *       to 2.4.18 adding support for multicast.
+ *
+ * 2002/06/17 - Tony Cureington <tony.cureington * hp_com>
+ *     - corrected uninitialized pointer (ifr.ifr_data) in bond_check_dev_link;
+ *       actually changed function to use ETHTOOL, then MIIPHY, and finally
+ *       MIIREG to determine the link status
+ *     - fixed bad ifr_data pointer assignments in bond_ioctl
+ *     - corrected mode 1 being reported as active-backup in bond_get_info;
+ *       also added text to distinguish type of load balancing (rr or xor)
+ *     - change arp_ip_target module param from "1-12s" (array of 12 ptrs)
+ *       to "s" (a single ptr)
+ *
+ * 2002/09/18 - Jay Vosburgh <fubar at us dot ibm dot com>
+ *     - Fixed up bond_check_dev_link() (and callers): removed some magic
+ *	 numbers, banished local MII_ defines, wrapped ioctl calls to
+ *	 prevent EFAULT errors
  */
 
 #include <linux/config.h>
@@ -210,20 +225,14 @@
 #include <linux/smp.h>
 #include <linux/if_ether.h>
 #include <linux/if_arp.h>
+#include <linux/mii.h>
+#include <linux/ethtool.h>
+
 
 /* monitor all links that often (in milliseconds). <=0 disables monitoring */
 #ifndef BOND_LINK_MON_INTERV
 #define BOND_LINK_MON_INTERV	0
 #endif
-
-#undef  MII_LINK_UP
-#define MII_LINK_UP	0x04
-
-#undef  MII_ENDOF_NWAY
-#define MII_ENDOF_NWAY	0x20
-
-#undef  MII_LINK_READY
-#define MII_LINK_READY	(MII_LINK_UP)
 
 #ifndef BOND_LINK_ARP_INTERV
 #define BOND_LINK_ARP_INTERV	0
@@ -253,7 +262,7 @@ MODULE_PARM_DESC(miimon, "Link check interval in milliseconds");
 MODULE_PARM(mode, "i");
 MODULE_PARM(arp_interval, "i");
 MODULE_PARM_DESC(arp_interval, "arp interval in milliseconds");
-MODULE_PARM(arp_ip_target, "1-12s");
+MODULE_PARM(arp_ip_target, "s");
 MODULE_PARM_DESC(arp_ip_target, "arp target in n.n.n.n form");
 MODULE_PARM_DESC(mode, "Mode of operation : 0 for round robin, 1 for active-backup, 2 for xor");
 MODULE_PARM(updelay, "i");
@@ -374,33 +383,75 @@ static slave_t *bond_detach_slave(bonding_t *bond, slave_t *slave)
 	return slave;
 }
 
+/*
+ * Less bad way to call ioctl from within the kernel; this needs to be
+ * done some other way to get the call out of interrupt context.
+ * Needs "ioctl" variable to be supplied by calling context.
+ */
+#define IOCTL(dev, arg, cmd) ({		\
+	int ret;			\
+	mm_segment_t fs = get_fs();	\
+	set_fs(get_ds());		\
+	ret = ioctl(dev, arg, cmd);	\
+	set_fs(fs);			\
+	ret; })
+
 /* 
- * if <dev> supports MII link status reporting, check its link
- * and report it as a bit field in a short int :
- *   - 0x04 means link is up,
- *   - 0x20 means end of autonegociation
- * If the device doesn't support MII, then we only report 0x24,
- * meaning that the link is up and running since we can't check it.
+ * if <dev> supports MII link status reporting, check its link status.
+ *
+ * Return either BMSR_LSTATUS, meaning that the link is up (or we
+ * can't tell and just pretend it is), or 0, meaning that the link is
+ * down.
  */
 static u16 bond_check_dev_link(struct net_device *dev)
 {
 	static int (* ioctl)(struct net_device *, struct ifreq *, int);
 	struct ifreq ifr;
-	u16 *data = (u16 *)&ifr.ifr_data;
-		
-	/* data[0] automagically filled by the ioctl */
-	data[1] = 1; /* MII location 1 reports Link Status */
+	struct mii_ioctl_data *mii;
+	struct ethtool_value etool;
 
-	if (((ioctl = dev->do_ioctl) != NULL) &&  /* ioctl to access MII */
-	    (ioctl(dev, &ifr, SIOCGMIIPHY) == 0)) {
-		/* now, data[3] contains info about link status :
-		   - data[3] & 0x04 means link up
-		   - data[3] & 0x20 means end of auto-negociation
-		*/
-		return data[3];
-	} else {
-		return MII_LINK_READY;  /* spoof link up ( we can't check it) */
+	ioctl = dev->do_ioctl;
+	if (ioctl) {
+		/* TODO: set pointer to correct ioctl on a per team member */
+		/*       bases to make this more efficient. that is, once  */
+		/*       we determine the correct ioctl, we will always    */
+		/*       call it and not the others for that team          */
+		/*       member.                                           */
+
+		/* try SOICETHTOOL ioctl, some drivers cache ETHTOOL_GLINK */
+		/* for a period of time; we need to encourage link status  */
+		/* be reported by network drivers in real time; if the     */
+		/* value is cached, the mmimon module parm may have no     */
+		/* effect...                                               */
+	        etool.cmd = ETHTOOL_GLINK;
+	        ifr.ifr_data = (char*)&etool;
+		if (IOCTL(dev, &ifr, SIOCETHTOOL) == 0) {
+			if (etool.data == 1) {
+				return BMSR_LSTATUS;
+			} 
+			else { 
+				return(0);
+			} 
+		}
+
+		/*
+		 * We cannot assume that SIOCGMIIPHY will also read a
+		 * register; not all network drivers support that.
+		 */
+
+		/* Yes, the mii is overlaid on the ifreq.ifr_ifru */
+		mii = (struct mii_ioctl_data *)&ifr.ifr_data;
+		if (IOCTL(dev, &ifr, SIOCGMIIPHY) != 0) {
+			return BMSR_LSTATUS;	 /* can't tell */
+		}
+
+		mii->reg_num = MII_BMSR;
+		if (IOCTL(dev, &ifr, SIOCGMIIREG) == 0) {
+			return mii->val_out & BMSR_LSTATUS;
+		}
+
 	}
+	return BMSR_LSTATUS;  /* spoof link up ( we can't check it) */
 }
 
 static u16 bond_check_mii_link(bonding_t *bond)
@@ -414,7 +465,7 @@ static u16 bond_check_mii_link(bonding_t *bond)
 	read_unlock(&bond->ptrlock);
 	read_unlock_irqrestore(&bond->lock, flags);
 
-	return (has_active_interface ? MII_LINK_READY : 0);
+	return (has_active_interface ? BMSR_LSTATUS : 0);
 }
 
 static int bond_open(struct net_device *dev)
@@ -598,12 +649,6 @@ static void set_multicast_list(struct net_device *master)
 	 */
 	write_lock_irqsave(&bond->lock, flags);
 
-	/*
-	 * Lock the master device so that noone trys to transmit
-	 * while we're changing things
-	 */
-	spin_lock_bh(&master->xmit_lock);
-
 	/* set promiscuity flag to slaves */
 	if ( (master->flags & IFF_PROMISC) && !(bond->flags & IFF_PROMISC) )
 		bond_set_promiscuity(bond, 1); 
@@ -637,7 +682,6 @@ static void set_multicast_list(struct net_device *master)
 	bond_mc_list_destroy (bond);
 	bond_mc_list_copy (master->mc_list, bond, GFP_KERNEL);
 
-	spin_unlock_bh(&master->xmit_lock);
 	write_unlock_irqrestore(&bond->lock, flags);
 }
 
@@ -759,8 +803,8 @@ static int bond_enslave(struct net_device *master_dev,
 	new_slave->link_failure_count = 0;
 
 	/* check for initial state */
-	if ((miimon <= 0) || ((bond_check_dev_link(slave_dev) & MII_LINK_READY)
-		 == MII_LINK_READY)) {
+	if ((miimon <= 0) ||
+	    (bond_check_dev_link(slave_dev) == BMSR_LSTATUS)) {
 #ifdef BONDING_DEBUG
 		printk(KERN_CRIT "Initial state of slave_dev is BOND_LINK_UP\n");
 #endif
@@ -1182,7 +1226,7 @@ static void bond_mii_monitor(struct net_device *master)
 
 		switch (slave->link) {
 		case BOND_LINK_UP:	/* the link was up */
-			if ((link_state & MII_LINK_UP) == MII_LINK_UP) {
+			if (link_state == BMSR_LSTATUS) {
 				/* link stays up, tell that this one
 				   is immediately available */
 				if (IS_UP(dev) && (mindelay > -2)) {
@@ -1218,7 +1262,7 @@ static void bond_mii_monitor(struct net_device *master)
 			   ensure proper action to be taken
 			*/
 		case BOND_LINK_FAIL:	/* the link has just gone down */
-			if ((link_state & MII_LINK_UP) == 0) {
+			if (link_state != BMSR_LSTATUS) {
 				/* link stays down */
 				if (slave->delay <= 0) {
 					/* link down for too long time */
@@ -1247,7 +1291,7 @@ static void bond_mii_monitor(struct net_device *master)
 				} else {
 					slave->delay--;
 				}
-			} else if ((link_state & MII_LINK_READY) == MII_LINK_READY) {
+			} else {
 				/* link up again */
 				slave->link  = BOND_LINK_UP;
 				printk(KERN_INFO
@@ -1266,7 +1310,7 @@ static void bond_mii_monitor(struct net_device *master)
 			}
 			break;
 		case BOND_LINK_DOWN:	/* the link was down */
-			if ((link_state & MII_LINK_READY) != MII_LINK_READY) {
+			if (link_state != BMSR_LSTATUS) {
 				/* the link stays down, nothing more to do */
 				break;
 			} else {	/* link going up */
@@ -1288,7 +1332,7 @@ static void bond_mii_monitor(struct net_device *master)
 			   case there's something to do.
 			*/
 		case BOND_LINK_BACK:	/* the link has just come back */
-			if ((link_state & MII_LINK_UP) == 0) {
+			if (link_state != BMSR_LSTATUS) {
 				/* link down again */
 				slave->link  = BOND_LINK_DOWN;
 				printk(KERN_INFO
@@ -1297,8 +1341,7 @@ static void bond_mii_monitor(struct net_device *master)
 					master->name,
 					(updelay - slave->delay) * miimon,
 					dev->name);
-			}
-			else if ((link_state & MII_LINK_READY) == MII_LINK_READY) {
+			} else {
 				/* link stays up */
 				if (slave->delay == 0) {
 					/* now the link has been up for long time enough */
@@ -1707,7 +1750,7 @@ static int bond_ioctl(struct net_device *master_dev, struct ifreq *ifr, int cmd)
 
 	switch (cmd) {
 	case SIOCGMIIPHY:
-		data = (u16 *)&ifr->ifr_data;
+		data = (u16 *)ifr->ifr_data;
 		if (data == NULL) {
 			return -EINVAL;
 		}
@@ -1718,7 +1761,7 @@ static int bond_ioctl(struct net_device *master_dev, struct ifreq *ifr, int cmd)
 		 * We do this again just in case we were called by SIOCGMIIREG
 		 * instead of SIOCGMIIPHY.
 		 */
-		data = (u16 *)&ifr->ifr_data;
+		data = (u16 *)ifr->ifr_data;
 		if (data == NULL) {
 			return -EINVAL;
 		}
@@ -2035,7 +2078,28 @@ static int bond_get_info(char *buf, char **start, off_t offset, int length)
 		link = bond_check_mii_link(bond);
 
 		len += sprintf(buf + len, "Bonding Mode: ");
-		len += sprintf(buf + len, "%s\n", mode ? "active-backup" : "load balancing");
+
+		switch (mode) {
+			case BOND_MODE_ACTIVEBACKUP:
+				len += sprintf(buf + len, "%s\n", 
+						"active-backup");
+			break;
+
+			case BOND_MODE_ROUNDROBIN:
+				len += sprintf(buf + len, "%s\n", 
+						"load balancing (round-robin)");
+			break;
+
+			case BOND_MODE_XOR:
+				len += sprintf(buf + len, "%s\n", 
+						"load balancing (xor)");
+			break;
+
+			default:
+				len += sprintf(buf + len, "%s\n", 
+						"unknown");
+			break;
+		}
 
 		if (mode == BOND_MODE_ACTIVEBACKUP) {
 			read_lock_irqsave(&bond->lock, flags);
@@ -2051,7 +2115,7 @@ static int bond_get_info(char *buf, char **start, off_t offset, int length)
 
 		len += sprintf(buf + len, "MII Status: ");
 		len += sprintf(buf + len, 
-				link == MII_LINK_READY ? "up\n" : "down\n");
+				link == BMSR_LSTATUS ? "up\n" : "down\n");
 		len += sprintf(buf + len, "MII Polling Interval (ms): %d\n", 
 				miimon);
 		len += sprintf(buf + len, "Up Delay (ms): %d\n", updelay);
@@ -2282,7 +2346,32 @@ static int __init bonding_init(void)
 	}
 	memset(dev_bonds, 0, max_bonds*sizeof(struct net_device));
 
+	if (updelay < 0) {
+		printk(KERN_WARNING 
+		       "bonding_init(): updelay module parameter (%d), "
+		       "not in range 0-%d, so it was reset to 0\n",
+		       updelay, INT_MAX);
+		updelay = 0;
+	}
+
+	if (downdelay < 0) {
+		printk(KERN_WARNING 
+		       "bonding_init(): downdelay module parameter (%d), "
+		       "not in range 0-%d, so it was reset to 0\n",
+		       downdelay, INT_MAX);
+		downdelay = 0;
+	}
+
+	if (arp_interval < 0) {
+		printk(KERN_WARNING 
+		       "bonding_init(): arp_interval module parameter (%d), "
+		       "not in range 0-%d, so it was reset to %d\n",
+		       arp_interval, INT_MAX, BOND_LINK_ARP_INTERV);
+		arp_interval = BOND_LINK_ARP_INTERV;
+	}
+
 	if (arp_ip_target) {
+		/* TODO: check and log bad ip address */
 		if (my_inet_aton(arp_ip_target, &arp_target) == 0)  {
 			arp_interval = 0;
 		}

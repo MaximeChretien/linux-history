@@ -97,7 +97,15 @@ static inline void wait_on_page(struct page * page)
 		___wait_on_page(page);
 }
 
-extern struct page * grab_cache_page (struct address_space *, unsigned long);
+/*
+ * Returns locked page at given index in given cache, creating it if needed.
+ */
+static inline struct page *grab_cache_page(struct address_space *mapping, unsigned long index)
+{
+	return find_or_create_page(mapping, index, mapping->gfp_mask);
+}
+
+
 extern struct page * grab_cache_page_nowait (struct address_space *, unsigned long);
 
 typedef int filler_t(void *, struct page*);

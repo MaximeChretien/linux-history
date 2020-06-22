@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.hardirq.h 1.12 07/10/01 11:26:58 trini
+ * BK Id: %F% %I% %G% %U% %#%
  */
 #ifdef __KERNEL__
 #ifndef __ASM_HARDIRQ_H
@@ -21,11 +21,15 @@ typedef struct {
 	unsigned int __syscall_count;
 	struct task_struct * __ksoftirqd_task;
 	unsigned int __last_jiffy_stamp;
+	unsigned int __heartbeat_count;
+	unsigned int __heartbeat_reset;
 } ____cacheline_aligned irq_cpustat_t;
 
 #include <linux/irq_cpustat.h>	/* Standard mappings for irq_cpustat_t above */
 
 #define last_jiffy_stamp(cpu) __IRQ_STAT((cpu), __last_jiffy_stamp)
+#define heartbeat_count(cpu) __IRQ_STAT((cpu), __heartbeat_count)
+#define heartbeat_reset(cpu) __IRQ_STAT((cpu), __heartbeat_reset)
 /*
  * Are we in an interrupt context? Either doing bottom half
  * or hardware interrupt processing?

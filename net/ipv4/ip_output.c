@@ -186,7 +186,7 @@ __inline__ int ip_finish_output(struct sk_buff *skb)
 	struct net_device *dev = skb->dst->dev;
 
 	skb->dev = dev;
-	skb->protocol = __constant_htons(ETH_P_IP);
+	skb->protocol = htons(ETH_P_IP);
 
 	return NF_HOOK(PF_INET, NF_IP_POST_ROUTING, skb, NULL, dev,
 		       ip_finish_output2);
@@ -208,7 +208,7 @@ int ip_mc_output(struct sk_buff *skb)
 #endif
 
 	skb->dev = dev;
-	skb->protocol = __constant_htons(ETH_P_IP);
+	skb->protocol = htons(ETH_P_IP);
 
 	/*
 	 *	Multicasts are looped back for other local users
@@ -382,7 +382,7 @@ packet_routed:
 	*((__u16 *)iph)	= htons((4 << 12) | (5 << 8) | (sk->protinfo.af_inet.tos & 0xff));
 	iph->tot_len = htons(skb->len);
 	if (ip_dont_fragment(sk, &rt->u.dst))
-		iph->frag_off = __constant_htons(IP_DF);
+		iph->frag_off = htons(IP_DF);
 	else
 		iph->frag_off = 0;
 	iph->ttl      = sk->protinfo.af_inet.ttl;
@@ -520,8 +520,18 @@ static int ip_build_xmit_slow(struct sock *sk,
 		/*
 		 *	Get the memory we require with some space left for alignment.
 		 */
-
-		skb = sock_alloc_send_skb(sk, fraglen+hh_len+15, flags&MSG_DONTWAIT, &err);
+		if (!(flags & MSG_DONTWAIT) || nfrags == 0) {
+			skb = sock_alloc_send_skb(sk, fraglen + hh_len + 15,
+						  (flags & MSG_DONTWAIT), &err);
+		} else {
+			/* On a non-blocking write, we check for send buffer
+			 * usage on the first fragment only.
+			 */
+			skb = sock_wmalloc(sk, fraglen + hh_len + 15, 1,
+					   sk->allocation);
+			if (!skb)
+				err = -ENOBUFS;
+		}
 		if (skb == NULL)
 			goto error;
 

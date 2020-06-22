@@ -32,6 +32,7 @@
 #define			SET_APIC_LOGICAL_ID(x)	(((x)<<24))
 #define			APIC_ALL_CPUS		0xFF
 #define		APIC_DFR	0xE0
+#define			APIC_DFR_FLAT		0xFFFFFFFFul	/* Flat mode */
 #define		APIC_SPIV	0xF0
 #define			APIC_SPIV_FOCUS_DISABLED	(1<<9)
 #define			APIC_SPIV_APIC_ENABLED		(1<<8)
@@ -108,6 +109,11 @@
 #define APIC_BASE (fix_to_virt(FIX_APIC_BASE))
 
 #define MAX_IO_APICS 8
+
+/*
+ * The broadcast ID is 0xF for old APICs.
+ */
+#define APIC_BROADCAST_ID_APIC  (0x0F)
 
 /*
  * the local APIC register structure, memory mapped. Not terribly well

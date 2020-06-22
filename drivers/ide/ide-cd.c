@@ -2194,6 +2194,8 @@ static int ide_cdrom_packet(struct cdrom_device_info *cdi,
 	   layer. the packet must be complete, as we do not
 	   touch it at all. */
 	memset(&pc, 0, sizeof(pc));
+	if (cgc->sense)
+		memset(cgc->sense, 0, sizeof(struct request_sense));
 	memcpy(pc.c, cgc->cmd, CDROM_PACKET_SIZE);
 	pc.buffer = cgc->buffer;
 	pc.buflen = cgc->buflen;

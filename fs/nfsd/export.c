@@ -50,6 +50,7 @@ static int		exp_verify_string(char *cp, int max);
 		((((a)>>24) ^ ((a)>>16) ^ ((a)>>8) ^(a)) & CLIENT_HASHMASK)
 /* XXX: is this adequate for 32bit kdev_t ? */
 #define EXPORT_HASH(dev)	((dev) & (NFSCLNT_EXPMAX - 1))
+#define EXPORT_FSID_HASH(fsid)	((fsid) & (NFSCLNT_EXPMAX - 1))
 
 struct svc_clnthash {
 	struct svc_clnthash *	h_next;
@@ -58,7 +59,6 @@ struct svc_clnthash {
 };
 static struct svc_clnthash *	clnt_hash[CLIENT_HASHMAX];
 static svc_client *		clients;
-static int			initialized;
 
 static int			hash_lock;
 static int			want_lock;
@@ -83,6 +83,26 @@ exp_get(svc_client *clp, kdev_t dev, ino_t ino)
 			return exp;
 	}
 
+	return NULL;
+}
+
+/*
+ * Find the client's export entry matching fsid
+ */
+svc_export *
+exp_get_fsid(svc_client *clp, int fsid)
+{
+	struct list_head *head, *p;
+
+	if (!clp)
+		return NULL;
+
+	head = &clp->cl_expfsid[EXPORT_FSID_HASH(fsid)];
+	list_for_each(p, head) {
+		svc_export *exp = list_entry(p, svc_export, ex_fsid_hash);
+		if (exp->ex_fsid == fsid)
+			return exp;
+	}
 	return NULL;
 }
 
@@ -138,6 +158,25 @@ static void exp_change_parents(svc_client *clp, svc_export *old, svc_export *new
 	}
 }
 
+static void exp_fsid_unhash(struct svc_export *exp)
+{
+
+	if ((exp->ex_flags & NFSEXP_FSID) == 0)
+		return;
+
+	list_del_init(&exp->ex_fsid_hash);
+}
+
+static void exp_fsid_hash(struct svc_client *clp, struct svc_export *exp)
+{
+	struct list_head *head;
+
+	if ((exp->ex_flags & NFSEXP_FSID) == 0)
+		return;
+	head = clp->cl_expfsid + EXPORT_FSID_HASH(exp->ex_fsid);
+	list_add(&exp->ex_fsid_hash, head);
+}
+
 /*
  * Export a file system.
  */
@@ -145,7 +184,8 @@ int
 exp_export(struct nfsctl_export *nxp)
 {
 	svc_client	*clp;
-	svc_export	*exp, *parent;
+	svc_export	*exp = NULL, *parent;
+	svc_export	*fsid_exp;
 	struct nameidata nd;
 	struct inode	*inode = NULL;
 	int		err;
@@ -161,8 +201,6 @@ exp_export(struct nfsctl_export *nxp)
 	dprintk("exp_export called for %s:%s (%x/%ld fl %x).\n",
 			nxp->ex_client, nxp->ex_path,
 			nxp->ex_dev, (long) nxp->ex_ino, nxp->ex_flags);
-	dev = to_kdev_t(nxp->ex_dev);
-	ino = nxp->ex_ino;
 
 	/* Try to lock the export table for update */
 	if ((err = exp_writelock()) < 0)
@@ -173,17 +211,6 @@ exp_export(struct nfsctl_export *nxp)
 	if (!(clp = exp_getclientbyname(nxp->ex_client)))
 		goto out_unlock;
 
-	/*
-	 * If there's already an export for this file, assume this
-	 * is just a flag update.
-	 */
-	if ((exp = exp_get(clp, dev, ino)) != NULL) {
-		exp->ex_flags    = nxp->ex_flags;
-		exp->ex_anon_uid = nxp->ex_anon_uid;
-		exp->ex_anon_gid = nxp->ex_anon_gid;
-		err = 0;
-		goto out_unlock;
-	}
 
 	/* Look up the dentry */
 	err = 0;
@@ -193,11 +220,28 @@ exp_export(struct nfsctl_export *nxp)
 		goto out_unlock;
 
 	inode = nd.dentry->d_inode;
+	dev = inode->i_dev;
+	ino = inode->i_ino;
 	err = -EINVAL;
-	if (inode->i_dev != dev || inode->i_ino != nxp->ex_ino) {
-		printk(KERN_DEBUG "exp_export: i_dev = %x, dev = %x\n",
-			inode->i_dev, dev); 
-		/* I'm just being paranoid... */
+
+	exp = exp_get(clp, dev, ino);
+
+	/* must make sure there wont be an ex_fsid clash */
+	if ((nxp->ex_flags & NFSEXP_FSID) &&
+	    (fsid_exp = exp_get_fsid(clp, nxp->ex_dev)) &&
+	    fsid_exp != exp)
+		goto finish;
+
+	if (exp != NULL) {
+		/* just a flags/id/fsid update */
+
+		exp_fsid_unhash(exp);
+		exp->ex_flags    = nxp->ex_flags;
+		exp->ex_anon_uid = nxp->ex_anon_uid;
+		exp->ex_anon_gid = nxp->ex_anon_gid;
+		exp->ex_fsid     = nxp->ex_dev;
+		exp_fsid_hash(clp, exp);
+		err = 0;
 		goto finish;
 	}
 
@@ -209,7 +253,17 @@ exp_export(struct nfsctl_export *nxp)
 		goto finish;
 
 	err = -EINVAL;
-	if (!(inode->i_sb->s_type->fs_flags & FS_REQUIRES_DEV) ||
+	/* There are two requirements on a filesystem to be exportable.
+	 * 1:  We must be able to identify the filesystem from a number.
+	 *       either a device number (so FS_REQUIRES_DEV needed)
+	 *       or an FSID number (so NFSEXP_FSID needed).
+	 * 2:  We must be able to find an inode from a filehandle.
+	 *       either using fh_to_dentry (prefered)
+	 *       or using read_inode (the hack).
+	 */
+	if (!((inode->i_sb->s_type->fs_flags & FS_REQUIRES_DEV)
+	      || (nxp->ex_flags & NFSEXP_FSID))
+	    ||
 	    (inode->i_sb->s_op->read_inode == NULL
 	     && inode->i_sb->s_op->fh_to_dentry == NULL)) {
 		dprintk("exp_export: export of invalid fs type.\n");
@@ -241,6 +295,8 @@ exp_export(struct nfsctl_export *nxp)
 	exp->ex_ino = ino;
 	exp->ex_anon_uid = nxp->ex_anon_uid;
 	exp->ex_anon_gid = nxp->ex_anon_gid;
+	exp->ex_fsid = nxp->ex_dev;
+
 
 	/* Update parent pointers of all exports */
 	if (parent)
@@ -248,6 +304,8 @@ exp_export(struct nfsctl_export *nxp)
 
 	list_add(&exp->ex_hash, clp->cl_export + EXPORT_HASH(dev));
 	list_add_tail(&exp->ex_list, &clp->cl_list);
+
+	exp_fsid_hash(clp, exp);
 
 	err = 0;
 
@@ -272,6 +330,7 @@ exp_do_unexport(svc_export *unexp)
 
 	list_del(&unexp->ex_hash);
 	list_del(&unexp->ex_list);
+	exp_fsid_unhash(unexp);
 
 	exp_change_parents(unexp->ex_client, unexp, unexp->ex_parent);
 
@@ -470,9 +529,6 @@ exp_getclient(struct sockaddr_in *sin)
 	struct svc_clnthash	**hp, **head, *tmp;
 	unsigned long		addr = sin->sin_addr.s_addr;
 
-	if (!initialized)
-		return NULL;
-
 	head = &clnt_hash[CLIENT_HASH(addr)];
 
 	for (hp = head; (tmp = *hp) != NULL; hp = &(tmp->h_next)) {
@@ -590,7 +646,7 @@ struct flags {
 	{ 0, {"", ""}}
 };
 
-static void exp_flags(struct seq_file *m, int flag)
+static void exp_flags(struct seq_file *m, int flag, int fsid)
 {
 	int first = 0;
 	struct flags *flg;
@@ -600,6 +656,8 @@ static void exp_flags(struct seq_file *m, int flag)
 		if (*flg->name[state])
 			seq_printf(m, "%s%s", first++?",":"", flg->name[state]);
 	}
+	if (flag & NFSEXP_FSID)
+		seq_printf(m, "%sfsid=%d", first++?",":"", fsid);
 }
 
 static inline void mangle(struct seq_file *m, const char *s)
@@ -625,7 +683,7 @@ static int e_show(struct seq_file *m, void *p)
 	seq_putc(m, '\t');
 	mangle(m, clp->cl_ident);
 	seq_putc(m, '(');
-	exp_flags(m, exp->ex_flags);
+	exp_flags(m, exp->ex_flags, exp->ex_fsid);
 	seq_puts(m, ") # ");
 	for (j = 0; j < clp->cl_naddr; j++) {
 		struct svc_clnthash **hp, **head, *tmp;
@@ -696,8 +754,10 @@ exp_addclient(struct nfsctl_client *ncp)
 		if (!(clp = kmalloc(sizeof(*clp), GFP_KERNEL)))
 			goto out_unlock;
 		memset(clp, 0, sizeof(*clp));
-		for (i = 0; i < NFSCLNT_EXPMAX; i++)
+		for (i = 0; i < NFSCLNT_EXPMAX; i++) {
 			INIT_LIST_HEAD(&clp->cl_export[i]);
+			INIT_LIST_HEAD(&clp->cl_expfsid[i]);
+		}
 		INIT_LIST_HEAD(&clp->cl_list);
 
 		dprintk("created client %s (%p)\n", ncp->cl_ident, clp);
@@ -869,13 +929,11 @@ nfsd_export_init(void)
 	int		i;
 
 	dprintk("nfsd: initializing export module.\n");
-	if (initialized)
-		return;
+
 	for (i = 0; i < CLIENT_HASHMAX; i++)
 		clnt_hash[i] = NULL;
 	clients = NULL;
 
-	initialized = 1;
 }
 
 /*
@@ -887,8 +945,7 @@ nfsd_export_shutdown(void)
 	int	i;
 
 	dprintk("nfsd: shutting down export module.\n");
-	if (!initialized)
-		return;
+
 	if (exp_writelock() < 0) {
 		printk(KERN_WARNING "Weird: hashtable locked in exp_shutdown");
 		return;

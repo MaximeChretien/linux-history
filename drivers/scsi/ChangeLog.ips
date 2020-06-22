@@ -1,6 +1,10 @@
 IBM ServeRAID driver Change Log
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+        5.00.01  - Sarasota ( 5i ) adapters must always be scanned first  
+                 - Get rid on IOCTL_NEW_COMMAND code  
+                 - Add Extended DCDB Commands for Tape Support in 5I                  
+        
         4.90.11  - Don't actually RESET unless it's physically required
                  - Remove unused compile options
         
@@ -116,4 +120,3 @@ IBM ServeRAID driver Change Log
                 - Fixed read/write errors when the adapter is using an
                   8K stripe size.
 
-

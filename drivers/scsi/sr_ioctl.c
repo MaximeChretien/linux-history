@@ -158,13 +158,11 @@ int sr_do_ioctl(int target, unsigned char *sr_cmd, void *buffer, unsigned buflen
 			if (!quiet)
 				printk(KERN_ERR "sr%d: CDROM (ioctl) reports ILLEGAL "
 				       "REQUEST.\n", target);
+			err = -EIO;
 			if (SRpnt->sr_sense_buffer[12] == 0x20 &&
-			    SRpnt->sr_sense_buffer[13] == 0x00) {
+			    SRpnt->sr_sense_buffer[13] == 0x00)
 				/* sense: Invalid command operation code */
 				err = -EDRIVE_CANT_DO_THIS;
-			} else {
-				err = -EINVAL;
-			}
 #ifdef DEBUG
 			print_command(sr_cmd);
 			print_req_sense("sr", SRpnt);

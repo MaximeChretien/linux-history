@@ -352,7 +352,7 @@ static void r5432_flush_page_to_ram_d32(struct page *page)
 	blast_dcache32_page((unsigned long)page_address(page));
 }
 
-static void 
+static void
 r5432_flush_icache_range(unsigned long start, unsigned long end)
 {
 	r5432_flush_cache_all_d32i32();
@@ -455,7 +455,7 @@ void __init ld_mmu_r5432(void)
 {
 	unsigned long config = read_32bit_cp0_register(CP0_CONFIG);
 
-	change_cp0_config(CONF_CM_CMASK, CONF_CM_CACHABLE_NONCOHERENT);
+	change_cp0_config(CONF_CM_CMASK, CONF_CM_DEFAULT);
 
 	probe_icache(config);
 	probe_dcache(config);

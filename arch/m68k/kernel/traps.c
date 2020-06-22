@@ -816,8 +816,9 @@ extern struct module kernel_module;
 
 static inline int kernel_text_address(unsigned long addr)
 {
+#ifdef CONFIG_MODULES
 	struct module *mod;
-	int retval = 0;
+#endif
 	extern char _stext, _etext;
 
 	if (addr >= (unsigned long) &_stext &&
@@ -829,14 +830,12 @@ static inline int kernel_text_address(unsigned long addr)
 		/* mod_bound tests for addr being inside the vmalloc'ed
 		 * module area. Of course it'd be better to test only
 		 * for the .text subset... */
-		if (mod_bound(addr, 0, mod)) {
-			retval = 1;
-			break;
-		}
+		if (mod_bound(addr, 0, mod))
+			return 1;
 	}
 #endif
 
-	return retval;
+	return 0;
 }
 
 void show_trace(unsigned long *stack)
@@ -874,10 +873,13 @@ void show_trace_task(struct task_struct *tsk)
 	show_trace((unsigned long *)tsk->thread.esp0);
 }
 
-static void dump_stack(struct frame *fp)
+static void show_stack(struct frame *fp)
 {
 	unsigned long *stack, *endstack, addr;
 	int i;
+
+	if (fp == NULL)
+	    fp = (struct frame *)&fp;
 
 	addr = (unsigned long)&fp->un;
 	printk("Frame format=%X ", fp->ptregs.format);
@@ -950,6 +952,14 @@ static void dump_stack(struct frame *fp)
 	for (i = 0; i < 10; i++)
 		printk("%04x ", 0xffff & ((short *) fp->ptregs.pc)[i]);
 	printk ("\n");
+}
+
+/*
+ * The architecture-independent backtrace generator
+ */
+void dump_stack(void)
+{
+	show_stack(0);
 }
 
 void bad_super_trap (struct frame *fp)
@@ -1122,7 +1132,7 @@ void die_if_kernel (char *str, struct pt_regs *fp, int nr)
 
 	printk("Process %s (pid: %d, stackpage=%08lx)\n",
 		current->comm, current->pid, PAGE_SIZE+(unsigned long)current);
-	dump_stack((struct frame *)fp);
+	show_stack((struct frame *)fp);
 	do_exit(SIGSEGV);
 }
 

@@ -13,6 +13,7 @@
 
 #define virt_to_bus virt_to_phys
 #define bus_to_virt phys_to_virt
+#define page_to_phys(page)     ((((page) - mem_map) << PAGE_SHIFT)+phys_base)
 
 static __inline__ u32 flip_dword (u32 d)
 {

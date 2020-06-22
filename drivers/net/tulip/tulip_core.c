@@ -15,8 +15,8 @@
 */
 
 #define DRV_NAME	"tulip"
-#define DRV_VERSION	"0.9.15-pre11"
-#define DRV_RELDATE	"May 11, 2002"
+#define DRV_VERSION	"0.9.15-pre12"
+#define DRV_RELDATE	"Aug 9, 2002"
 
 #include <linux/config.h>
 #include <linux/module.h>
@@ -191,6 +191,10 @@ struct tulip_chip_table tulip_tbl[] = {
   { "Davicom DM9102/DM9102A", 128, 0x0001ebef,
 	HAS_MII | HAS_MEDIA_TABLE | CSR12_IN_SROM | HAS_ACPI,
 	tulip_timer },
+
+  /* CONEXANT */
+  {	"Conexant LANfinity", 256, 0x0001ebef,
+	HAS_MII, tulip_timer },
 };
 
 
@@ -214,6 +218,7 @@ static struct pci_device_id tulip_pci_tbl[] __devinitdata = {
 	{ 0x13D1, 0xAB08, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x104A, 0x0981, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x104A, 0x2774, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
+	{ 0x1259, 0xa120, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x11F6, 0x9881, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMPEX9881 },
 	{ 0x8086, 0x0039, PCI_ANY_ID, PCI_ANY_ID, 0, 0, I21145 },
 	{ 0x1282, 0x9100, PCI_ANY_ID, PCI_ANY_ID, 0, 0, DM910X },
@@ -221,6 +226,10 @@ static struct pci_device_id tulip_pci_tbl[] __devinitdata = {
 	{ 0x1113, 0x1216, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x1113, 0x1217, PCI_ANY_ID, PCI_ANY_ID, 0, 0, MX98715 },
 	{ 0x1113, 0x9511, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
+	{ 0x1186, 0x1561, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
+	{ 0x1626, 0x8410, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
+	{ 0x1737, 0xAB09, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
+	{ 0x14f1, 0x1803, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CONEXANT },
 	{ } /* terminate list */
 };
 MODULE_DEVICE_TABLE(pci, tulip_pci_tbl);
@@ -453,7 +462,7 @@ media_picked:
 		tp->csr6 = 0x01a80200;
 		outl(0x0f370000 | inw(ioaddr + 0x80), ioaddr + 0x80);
 		outl(0x11000 | inw(ioaddr + 0xa0), ioaddr + 0xa0);
-	} else if (tp->chip_id == COMET) {
+	} else if (tp->chip_id == COMET || tp->chip_id == CONEXANT) {
 		/* Enable automatic Tx underrun recovery. */
 		outl(inl(ioaddr + 0x88) | 1, ioaddr + 0x88);
 		dev->if_port = tp->mii_cnt ? 11 : 0;
@@ -1474,7 +1483,6 @@ static int __devinit tulip_init_one (struct pci_dev *pdev,
 	tp->timer.function = tulip_tbl[tp->chip_id].media_timer;
 
 	dev->base_addr = ioaddr;
-	dev->irq = irq;
 
 #ifdef CONFIG_TULIP_MWI
 	if (!force_csr0 && (tp->flags & HAS_PCI_MWI))
@@ -1548,7 +1556,13 @@ static int __devinit tulip_init_one (struct pci_dev *pdev,
 		for (i = 0; i < 8; i ++)
 			if (ee_data[i] != ee_data[16+i])
 				sa_offset = 20;
-		if (ee_data[0] == 0xff  &&  ee_data[1] == 0xff &&  ee_data[2] == 0) {
+		if (chip_idx == CONEXANT) {
+		    /* Check that the tuple type and length is correct. */
+			if (ee_data[0x198] == 0x04  &&  ee_data[0x199] == 6)
+			    sa_offset = 0x19A;
+		}
+		if (ee_data[0] == 0xff && ee_data[1] == 0xff &&
+		    ee_data[2] == 0) {
 			sa_offset = 2;		/* Grrr, damn Matrox boards. */
 			multiport_cnt = 4;
 		}
@@ -1577,6 +1591,25 @@ static int __devinit tulip_init_one (struct pci_dev *pdev,
                        /* No media table either */
                        tp->flags &= ~HAS_MEDIA_TABLE;
                }
+#endif
+#ifdef __hppa__
+		/* 3x5 HSC (J3514A) has a broken srom */
+		if(ee_data[0] == 0x61 && ee_data[1] == 0x10) {
+			/* pci_vendor_id and subsystem_id are swapped */
+			ee_data[0] = ee_data[2];
+			ee_data[1] = ee_data[3];
+			ee_data[2] = 0x61;
+			ee_data[3] = 0x10;
+
+			/* srom need to be byte-swaped and shifted up 1 word.  
+			 * This shift needs to happen at the end of the MAC
+			 * first because of the 2 byte overlap.
+			 */
+			for(i = 4; i >= 0; i -= 2) {
+				ee_data[17 + i + 3] = ee_data[17 + i];
+				ee_data[16 + i + 5] = ee_data[16 + i];
+			}
+		}
 #endif
 		for (i = 0; i < 6; i ++) {
 			dev->dev_addr[i] = ee_data[i + sa_offset];
@@ -1622,6 +1655,7 @@ static int __devinit tulip_init_one (struct pci_dev *pdev,
 	for (i = 0; i < 6; i++)
 		last_phys_addr[i] = dev->dev_addr[i];
 	last_irq = irq;
+	dev->irq = irq;
 
 	/* The lower four bits are the media type. */
 	if (board_idx >= 0  &&  board_idx < MAX_UNITS) {

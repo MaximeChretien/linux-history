@@ -9,7 +9,6 @@
  * Author: Jun Sun, jsun@mvista.com or jsun@junsun.net
  *
  */
-#include <linux/config.h>
 #include <linux/init.h>
 #include <linux/sched.h>
 #include <linux/types.h>
@@ -46,9 +45,9 @@ static void m1543_irq_setup(void)
 	 *
 	 *      IRQ1  - keyboard (default set by M1543)
 	 *      IRQ3  - reserved for UART B (default set by M1543) (note that
-	 *              the schematics for the DDB Vrc-5476 board seem to 
-	 *              indicate that IRQ3 is connected to the DS1386 
-	 *              watchdog timer interrupt output so we might have 
+	 *              the schematics for the DDB Vrc-5476 board seem to
+	 *              indicate that IRQ3 is connected to the DS1386
+	 *              watchdog timer interrupt output so we might have
 	 *              a conflict)
 	 *      IRQ4  - reserved for UART A (default set by M1543)
 	 *      IRQ5  - parallel (default set by M1543)
@@ -60,7 +59,7 @@ static void m1543_irq_setup(void)
 	 */
 
 	/*
-	 *  Assing mouse interrupt to IRQ12 
+	 *  Assing mouse interrupt to IRQ12
 	 */
 
 	/* Enter configuration mode */

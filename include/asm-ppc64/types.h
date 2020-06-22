@@ -62,6 +62,7 @@ typedef __vector128 vector128;
 /* PCI dma addresses are 32-bits wide.  Ignore PCI64 for now, since
    we'll typically be sending it all through iommu tables anyway.  */
 typedef u32 dma_addr_t;
+typedef u64 dma64_addr_t;
 
 #endif /* __KERNEL__ */
 #endif /* __ASSEMBLY__ */

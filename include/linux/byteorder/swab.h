@@ -26,6 +26,15 @@
 		(((__u16)(__x) & (__u16)0xff00U) >> 8) )); \
 })
 
+#define ___swab24(x) \
+({ \
+	__u32 __x = (x); \
+	((__u32)( \
+		((__x & (__u32)0x000000ffUL) << 16) | \
+		 (__x & (__u32)0x0000ff00UL)        | \
+		((__x & (__u32)0x00ff0000UL) >> 16) )); \
+})
+
 #define ___swab32(x) \
 ({ \
 	__u32 __x = (x); \
@@ -54,6 +63,11 @@
 	((__u16)( \
 		(((__u16)(x) & (__u16)0x00ffU) << 8) | \
 		(((__u16)(x) & (__u16)0xff00U) >> 8) ))
+#define ___constant_swab24(x) \
+	((__u32)( \
+		(((__u32)(x) & (__u32)0x000000ffU) << 16) | \
+		(((__u32)(x) & (__u32)0x0000ff00U)	  | \
+		(((__u32)(x) & (__u32)0x00ff0000U) >> 16) ))
 #define ___constant_swab32(x) \
 	((__u32)( \
 		(((__u32)(x) & (__u32)0x000000ffUL) << 24) | \
@@ -77,6 +91,9 @@
 #ifndef __arch__swab16
 #  define __arch__swab16(x) ({ __u16 __tmp = (x) ; ___swab16(__tmp); })
 #endif
+#ifndef __arch__swab24
+#  define __arch__swab24(x) ({ __u32 __tmp = (x) ; ___swab24(__tmp); })
+#endif
 #ifndef __arch__swab32
 #  define __arch__swab32(x) ({ __u32 __tmp = (x) ; ___swab32(__tmp); })
 #endif
@@ -87,6 +104,9 @@
 #ifndef __arch__swab16p
 #  define __arch__swab16p(x) __arch__swab16(*(x))
 #endif
+#ifndef __arch__swab24p
+#  define __arch__swab24p(x) __arch__swab24(*(x))
+#endif
 #ifndef __arch__swab32p
 #  define __arch__swab32p(x) __arch__swab32(*(x))
 #endif
@@ -96,6 +116,9 @@
 
 #ifndef __arch__swab16s
 #  define __arch__swab16s(x) do { *(x) = __arch__swab16p((x)); } while (0)
+#endif
+#ifndef __arch__swab24s
+#  define __arch__swab24s(x) do { *(x) = __arch__swab24p((x)); } while (0)
 #endif
 #ifndef __arch__swab32s
 #  define __arch__swab32s(x) do { *(x) = __arch__swab32p((x)); } while (0)
@@ -113,6 +136,10 @@
 (__builtin_constant_p((__u16)(x)) ? \
  ___swab16((x)) : \
  __fswab16((x)))
+#  define __swab24(x) \
+(__builtin_constant_p((__u32)(x)) ? \
+ ___swab24((x)) : \
+ __fswab24((x)))
 #  define __swab32(x) \
 (__builtin_constant_p((__u32)(x)) ? \
  ___swab32((x)) : \
@@ -123,6 +150,7 @@
  __fswab64((x)))
 #else
 #  define __swab16(x) __fswab16(x)
+#  define __swab24(x) __fswab24(x)
 #  define __swab32(x) __fswab32(x)
 #  define __swab64(x) __fswab64(x)
 #endif /* OPTIMIZE */
@@ -139,6 +167,19 @@ static __inline__ __u16 __swab16p(__u16 *x)
 static __inline__ void __swab16s(__u16 *addr)
 {
 	__arch__swab16s(addr);
+}
+
+static __inline__ __const__ __u32 __fswab24(__u32 x)
+{
+	return __arch__swab24(x);
+}
+static __inline__ __u32 __swab24p(__u32 *x)
+{
+	return __arch__swab24p(x);
+}
+static __inline__ void __swab24s(__u32 *addr)
+{
+	__arch__swab24s(addr);
 }
 
 static __inline__ __const__ __u32 __fswab32(__u32 x)
@@ -177,12 +218,15 @@ static __inline__ void __swab64s(__u64 *addr)
 
 #if defined(__KERNEL__)
 #define swab16 __swab16
+#define swab24 __swab24
 #define swab32 __swab32
 #define swab64 __swab64
 #define swab16p __swab16p
+#define swab24p __swab24p
 #define swab32p __swab32p
 #define swab64p __swab64p
 #define swab16s __swab16s
+#define swab24s __swab24s
 #define swab32s __swab32s
 #define swab64s __swab64s
 #endif

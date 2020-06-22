@@ -107,8 +107,65 @@ etrap_irq:	rdpr	%tstate, %g1						! Single 	Group
 		 stb	%g0, [%l4 + %l3]					! Store		Group
 		nop
 
-etraptl1:	rdpr	%tstate, %g1						! Single	Group+4bubbles
-		sub	%sp, REGWIN_SZ + TRACEREG_SZ - STACK_BIAS, %g2		! IEU1
+etraptl1:	/* Save tstate/tpc/tnpc of TL 1-->4 and the tl register itself.
+		 * We place this right after pt_regs on the trap stack.  The layout
+		 * is:
+		 *	0x00	TL1's TSTATE
+		 *	0x08	TL1's TPC
+		 *	0x10	TL1's TNPC
+		 *	0x18	TL1's TT
+		 *	 ...
+		 *	0x58	TL4's TT
+		 *	0x60	TL
+		 */
+		sub	%sp, ((4 * 8) * 4) + 8, %g2
+		rdpr	%tl, %g1
+
+		wrpr	%g0, 1, %tl
+		rdpr	%tstate, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x00]
+		rdpr	%tpc, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x08]
+		rdpr	%tnpc, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x10]
+		rdpr	%tt, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x18]
+
+		wrpr	%g0, 2, %tl
+		rdpr	%tstate, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x20]
+		rdpr	%tpc, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x28]
+		rdpr	%tnpc, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x30]
+		rdpr	%tt, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x38]
+
+		wrpr	%g0, 3, %tl
+		rdpr	%tstate, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x40]
+		rdpr	%tpc, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x48]
+		rdpr	%tnpc, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x50]
+		rdpr	%tt, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x58]
+
+		wrpr	%g0, 4, %tl
+		rdpr	%tstate, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x60]
+		rdpr	%tpc, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x68]
+		rdpr	%tnpc, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x70]
+		rdpr	%tt, %g3
+		stx	%g3, [%g2 + STACK_BIAS + 0x78]
+
+		wrpr	%g1, %tl
+		stx	%g1, [%g2 + STACK_BIAS + 0x80]
+
+		rdpr	%tstate, %g1						! Single	Group+4bubbles
+		sub	%g2, REGWIN_SZ + TRACEREG_SZ - STACK_BIAS, %g2		! IEU1
 		ba,pt	%xcc, 1b						! CTI		Group
 		 andcc	%g1, TSTATE_PRIV, %g0					! IEU0
 

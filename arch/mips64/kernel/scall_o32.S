@@ -16,16 +16,11 @@
 #include <linux/errno.h>
 #include <asm/current.h>
 #include <asm/mipsregs.h>
+#include <asm/offset.h>
 #include <asm/regdef.h>
 #include <asm/stackframe.h>
 #include <asm/unistd.h>
 #include <asm/sysmips.h>
-
-/* This duplicates the definition from <linux/sched.h> */
-#define PT_TRACESYS	0x00000002	/* tracing system calls */
-
-/* This duplicates the definition from <asm/signal.h> */
-#define SIGILL		4		/* Illegal instruction (ANSI).  */
 
 /* Highest syscall used of any syscall flavour */
 #define MAX_SYSCALL_NO	__NR_Linux32 + __NR_Linux32_syscalls
@@ -61,7 +56,7 @@ NESTED(handle_sys, PT_SIZE, sp)
 
 stack_done:
 		ld	t0, TASK_PTRACE($28)	# syscall tracing enabled?
-		andi	t0, PT_TRACESYS
+		andi	t0, _PT_TRACESYS
 		bnez	t0, trace_a_syscall
 
 		jalr	t2			# Do The Real Thing (TM)
@@ -80,6 +75,7 @@ FEXPORT(o32_ret_from_sys_call)
 		ori	t0, t0, 1
 		xori	t0, t0, 1
 		mtc0	t0, CP0_STATUS
+		SSNOP; SSNOP; SSNOP
 
 		ld	t2, TASK_NEED_RESCHED($28)
 		bnez	t2, o32_reschedule
@@ -156,16 +152,20 @@ stackargs:
 	bltz	t0, bad_stack		# -> sp is bad
 
 	ld	t0, PT_R29(sp)		# get old user stack pointer
-	la	t1, 3f			# copy 1 to 2 arguments
+	PTR_LA	t1, 3f			# copy 1 to 2 arguments
 	sll	t3, t3, 2
 	subu	t1, t3
 	jr	t1
 
 	/* Ok, copy the args from the luser stack to the kernel stack */
+	.set	push
+	.set	noreorder
+	.set	nomacro
 1:	lw	a5, 20(t0)		# argument #6 from usp
 2:	lw	a4, 16(t0)		# argument #5 from usp
+3:	.set	pop
 
-3:	j	stack_done		# go back
+	j	stack_done		# go back
 
 	.section __ex_table,"a"
 	PTR	1b, bad_stack
@@ -222,7 +222,7 @@ illegal_syscall:
 
 	/* Success, so skip usual error handling garbage.  */
 	ld	t0, TASK_PTRACE($28)	# syscall tracing enabled?
-	andi	t0, PT_TRACESYS
+	andi	t0, _PT_TRACESYS
 	bnez	t0, 1f
 	b	o32_ret_from_sys_call
 
@@ -245,8 +245,74 @@ bad_alignment:
 	j	sys_sysmips
 	END(sys32_sysmips)
 
+	LEAF(sys32_syscall)
+	ld	t0, PT_R29(sp)		# user sp
+
+	sltu	v0, a0, __NR_Linux + __NR_Linux_syscalls + 1
+	beqz	v0, enosys
+
+	dsll	v0, a0, 3
+	dla	v1, sys32_syscall
+	ld	t2, (sys_call_table - (__NR_Linux32 * 8))(v0)	# function pointer
+	lbu	t3, (sys_narg_table - __NR_Linux32)(a0)	# number of arguments
+
+	li	v0, -EINVAL
+	beq	t2, v1, out		# do not recurse
+
+	beqz	t2, enosys		# null function pointer?
+
+	andi	v0, t0, 0x3		# unaligned stack pointer?
+	bnez	v0, sigsegv
+
+	daddiu	v0, t0, 16		# v0 = usp + 16
+	daddu	t1, v0, 12		# 3 32-bit arguments
+	ld	v1, THREAD_CURDS($28)
+	or	v0, v0, t1
+	and	v1, v1, v0
+	bltz	v1, efault
+
+	move	a0, a1			# shift argument registers
+	move	a1, a2
+	move	a2, a3
+
+1:	lw	a3, 16(t0)
+2:	lw	t3, 20(t0)
+3:	lw	t1, 24(t0)
+
+	.section __ex_table,"a"
+	PTR	1b, efault
+	PTR	2b, efault
+	PTR	3b, efault
+	.previous
+
+	sw	t3, 16(sp)		# put into new stackframe
+	sw	t1, 20(sp)
+
+	bnez	t1, 1f			# zero arguments?
+	daddu	a0, sp, 32		# then pass sp in a0
+1:
+
+	sw	t3, 16(sp)
+	sw	v1, 20(sp)
+	jr	t2
+	/* Unreached */
+
+enosys:	li	v0, -ENOSYS
+	b	out
+
+sigsegv:
+	li	a0, _SIGSEGV
+	move	a1, $28
+	jal	force_sig
+	/* Fall through */
+
+efault:	li	v0, -EFAULT
+
+out:	jr	ra
+	END(sys32_syscall)
+
 	.macro	syscalltable
-	sys	sys_syscall	0			/* 4000 */
+	sys	sys32_syscall	0			/* 4000 */
 	sys	sys_exit	1
 	sys	sys_fork	0
 	sys	sys_read	3
@@ -453,7 +519,7 @@ bad_alignment:
 	sys	sys_capget	2
 	sys	sys_capset	2			/* 4205 */
 	sys	sys32_sigaltstack	0
-	sys	sys_sendfile	3
+	sys	sys_sendfile	4
 	sys	sys_ni_syscall	0
 	sys	sys_ni_syscall	0
 	sys	sys_mmap2	6			/* 4210 */
@@ -470,18 +536,18 @@ bad_alignment:
 	sys	sys_ni_syscall	0
 	sys	sys_gettid	0
 	sys	sys32_readahead	5
-	sys	sys_ni_syscall	0		/* reserved for setxattr */
-	sys	sys_ni_syscall	0		/* 4225 res. for lsetxattr */
-	sys	sys_ni_syscall	0		/* reserved for fsetxattr */
-	sys	sys_ni_syscall	0		/* reserved for getxattr */
-	sys	sys_ni_syscall	0		/* reserved for lgetxattr */
-	sys	sys_ni_syscall	0		/* reserved for fgetxattr */
-	sys	sys_ni_syscall	0		/* 4230 res. for listxattr */
-	sys	sys_ni_syscall	0		/* reserved for llistxattr */
-	sys	sys_ni_syscall	0		/* reserved for flistxattr */
-	sys	sys_ni_syscall	0		/* reserved for removexattr */
-	sys	sys_ni_syscall	0		/* reserved for lremovexattr */
-	sys	sys_ni_syscall	0		/* 4235 res. for fremovexattr */
+	sys	sys_setxattr	5
+	sys	sys_lsetxattr	5		/* 4225 */
+	sys	sys_fsetxattr	5
+	sys	sys_getxattr	4
+	sys	sys_lgetxattr	4
+	sys	sys_fgetxattr	4
+	sys	sys_listxattr	3		/* 4230 */
+	sys	sys_llistxattr	3
+	sys	sys_flistxattr	3
+	sys	sys_removexattr	2
+	sys	sys_lremovexattr 2
+	sys	sys_fremovexattr 2		/* 4235 */
 	sys	sys_tkill, 2
 	sys	sys_ni_syscall, 0		/* res. for sendfile64 */
 	sys	sys_ni_syscall, 0		/* res. for futex */
@@ -494,6 +560,7 @@ bad_alignment:
 	PTR	\function
 	.endm
 
+	.align	3
 sys_call_table:
 	syscalltable
 

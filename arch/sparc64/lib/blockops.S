@@ -8,6 +8,8 @@
 #include "VIS.h"
 #include <asm/visasm.h>
 #include <asm/page.h>
+#include <asm/dcu.h>
+#include <asm/spitfire.h>
 #include <asm/pgtable.h>
 #include <asm/asm_offsets.h>
 
@@ -64,14 +66,14 @@ cheetah_patch_1:
 	ldub		[%g6 + AOFF_task_thread + AOFF_thread_use_blkcommit], %g3
 
 	/* Spitfire Errata #32 workaround */
-	mov		0x8, %o4
+	mov		PRIMARY_CONTEXT, %o4
 	stxa		%g0, [%o4] ASI_DMMU
 	membar		#Sync
 
 	ldxa		[%o3] ASI_DTLB_TAG_READ, %o4
 
 	/* Spitfire Errata #32 workaround */
-	mov		0x8, %o5
+	mov		PRIMARY_CONTEXT, %o5
 	stxa		%g0, [%o5] ASI_DMMU
 	membar		#Sync
 
@@ -83,14 +85,14 @@ cheetah_patch_1:
 	add		%o3, (TLBTEMP_ENTSZ), %o3
 
 	/* Spitfire Errata #32 workaround */
-	mov		0x8, %g5
+	mov		PRIMARY_CONTEXT, %g5
 	stxa		%g0, [%g5] ASI_DMMU
 	membar		#Sync
 
 	ldxa		[%o3] ASI_DTLB_TAG_READ, %g5
 
 	/* Spitfire Errata #32 workaround */
-	mov		0x8, %g7
+	mov		PRIMARY_CONTEXT, %g7
 	stxa		%g0, [%g7] ASI_DMMU
 	membar		#Sync
 
@@ -104,14 +106,20 @@ cheetah_patch_1:
 	bne,pn		%xcc, copy_page_using_blkcommit
 	 nop
 
-	rdpr		%ver, %g3
-	sllx		%g3, 16, %g3
-	srlx		%g3, 32 + 16, %g3
-	cmp		%g3, 0x14
-	bne,pt		%icc, spitfire_copy_user_page
+	BRANCH_IF_ANY_CHEETAH(g3,o2,cheetah_copy_user_page)
+	ba,pt		%xcc, spitfire_copy_user_page
 	 nop
 
 cheetah_copy_user_page:
+	.globl		cheetah_copy_user_page_nop_1_6
+cheetah_copy_user_page_nop_1_6:
+	ldxa		[%g0] ASI_DCU_CONTROL_REG, %g3
+	sethi		%uhi(DCU_PE), %o2
+	sllx		%o2, 32, %o2
+	or		%g3, %o2, %o2
+	stxa		%o2, [%g0] ASI_DCU_CONTROL_REG	! Enable P-cache
+	membar		#Sync
+
 	sethi		%hi((PAGE_SIZE/64)-7), %o2	! A0 Group
 	prefetch	[%o1 + 0x000], #one_read	! MS
 	or		%o2, %lo((PAGE_SIZE/64)-7), %o2	! A1 Group
@@ -203,6 +211,11 @@ cheetah_copy_user_page:
 	fmovd		%f12, %f44			! FGA Group
 	fmovd		%f14, %f46			! FGA Group
 	stda		%f32, [%o0] ASI_BLK_P		! MS
+	.globl		cheetah_copy_user_page_nop_2_3
+cheetah_copy_user_page_nop_2_3:
+	mov		PRIMARY_CONTEXT, %o2
+	stxa		%g0, [%o2] ASI_DMMU		! Flush P-cache
+	stxa		%g3, [%g0] ASI_DCU_CONTROL_REG	! Disable P-cache
 	ba,a,pt		%xcc, copy_user_page_continue
 
 spitfire_copy_user_page:
@@ -353,14 +366,14 @@ cheetah_patch_2:
 	wrpr		%g3, PSTATE_IE, %pstate
 
 	/* Spitfire Errata #32 workaround */
-	mov		0x8, %g5
+	mov		PRIMARY_CONTEXT, %g5
 	stxa		%g0, [%g5] ASI_DMMU
 	membar		#Sync
 
 	ldxa		[%o3] ASI_DTLB_TAG_READ, %g5
 
 	/* Spitfire Errata #32 workaround */
-	mov		0x8, %g7
+	mov		PRIMARY_CONTEXT, %g7
 	stxa		%g0, [%g7] ASI_DMMU
 	membar		#Sync
 
@@ -405,7 +418,8 @@ clear_page_common:
 	retl
 	 nop
 
-1:	stxa		%g5, [%o2] ASI_DMMU
+1:
+	stxa		%g5, [%o2] ASI_DMMU
 	stxa		%g7, [%o3] ASI_DTLB_DATA_ACCESS
 	membar		#Sync
 	jmpl		%o7 + 0x8, %g0

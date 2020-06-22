@@ -67,6 +67,27 @@
 irq_desc_t _irq_desc[NR_IRQS] __cacheline_aligned =
 	{ [0 ... NR_IRQS-1] = { IRQ_DISABLED, &no_irq_type, NULL, 0, SPIN_LOCK_UNLOCKED}};
 
+#ifdef CONFIG_IA64_GENERIC
+struct irq_desc *
+__ia64_irq_desc (unsigned int irq)
+{
+	return _irq_desc + irq;
+}
+
+ia64_vector
+__ia64_irq_to_vector (unsigned int irq)
+{
+	return (ia64_vector) irq;
+}
+
+unsigned int
+__ia64_local_vector_to_irq (ia64_vector vec)
+{
+	return (unsigned int) vec;
+}
+
+#endif
+
 static void register_irq_proc (unsigned int irq);
 
 /*
@@ -1144,7 +1165,7 @@ static int irq_affinity_write_proc (struct file *file, const char *buffer,
 	if (!(new_value & cpu_online_map))
 		return -EINVAL;
 
-	irq_desc(irq)->handler->set_affinity(irq | (redir?(1<<31):0), new_value);
+	irq_desc(irq)->handler->set_affinity(irq | (redir? IA64_IRQ_REDIRECTED :0), new_value);
 
 	return full_count;
 }
@@ -1180,7 +1201,7 @@ static void register_irq_proc (unsigned int irq)
 {
 	char name [MAX_NAMELEN];
 
-	if (!root_irq_dir || (irq_desc(irq)->handler == &no_irq_type))
+	if (!root_irq_dir || (irq_desc(irq)->handler == &no_irq_type) || irq_dir[irq])
 		return;
 
 	memset(name, 0, MAX_NAMELEN);

@@ -34,7 +34,7 @@ static struct smatch sgi_cputable[] = {
 
 static int __init string_to_cpu(char *s)
 {
-	long cnt;
+	ULONG cnt;
 	char c;
 	int i;
 
@@ -57,7 +57,7 @@ void __init sgi_sysinit(void)
 {
 	pcomponent *p, *toplev, *cpup = 0;
 	int cputype = -1;
-	long cnt;
+	ULONG cnt;
 	char c;
 
 
@@ -79,9 +79,9 @@ void __init sgi_sysinit(void)
 				ArcRead(0, &c, 1, &cnt);
 				ArcEnterInteractiveMode();
 			}
-			printk("CPU: %s ", p->iname);
+			printk("CPU: %s ", (char *)p->iname);
 			cpup = p;
-			cputype = string_to_cpu(cpup->iname);
+			cputype = string_to_cpu((char *)cpup->iname);
 		}
 		p = ArcGetPeer(p);
 	}
@@ -97,7 +97,7 @@ void __init sgi_sysinit(void)
 		case processor:
 			switch(p->type) {
 			case Fpu:
-				printk("FPU<%s> ", p->iname);
+				printk("FPU<%s> ", (char *)p->iname);
 				break;
 
 			default:

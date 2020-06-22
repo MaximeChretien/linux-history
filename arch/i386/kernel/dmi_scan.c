@@ -31,7 +31,7 @@ static char * __init dmi_string(struct dmi_header *dm, u8 s)
 	if(!s)
 		return "";
 	s--;
-	while(s>0)
+	while(s>0 && *bp)
 	{
 		bp+=strlen(bp);
 		bp++;
@@ -50,7 +50,7 @@ static int __init dmi_table(u32 base, int len, int num, void (*decode)(struct dm
 	u8 *buf;
 	struct dmi_header *dm;
 	u8 *data;
-	int i=1;
+	int i=0;
 		
 	buf = bt_ioremap(base, len);
 	if(buf==NULL)
@@ -59,28 +59,23 @@ static int __init dmi_table(u32 base, int len, int num, void (*decode)(struct dm
 	data = buf;
 
 	/*
- 	 *	Stop when we see al the items the table claimed to have
+ 	 *	Stop when we see all the items the table claimed to have
  	 *	OR we run off the end of the table (also happens)
  	 */
  
-	while(i<num && (data - buf) < len)
+	while(i<num && data-buf+sizeof(struct dmi_header)<=len)
 	{
 		dm=(struct dmi_header *)data;
-	
 		/*
-		 *	Avoid misparsing crud if the length of the last
-	 	 *	record is crap 
+		 *  We want to know the total length (formated area and strings)
+		 *  before decoding to make sure we won't run off the table in
+		 *  dmi_decode or dmi_string
 		 */
-		if((data-buf+dm->length) >= len)
-			break;
-		decode(dm);		
 		data+=dm->length;
-		/*
-		 *	Don't go off the end of the data if there is
-	 	 *	stuff looking like string fill past the end
-	 	 */
-		while((data-buf) < len && (*data || data[1]))
+		while(data-buf<len-1 && (data[0] || data[1]))
 			data++;
+		if(data-buf<len-1)
+			decode(dm);
 		data+=2;
 		i++;
 	}
@@ -89,11 +84,20 @@ static int __init dmi_table(u32 base, int len, int num, void (*decode)(struct dm
 }
 
 
+inline static int __init dmi_checksum(u8 *buf)
+{
+	u8 sum=0;
+	int a;
+	
+	for(a=0; a<15; a++)
+		sum+=buf[a];
+	return (sum==0);
+}
+
 static int __init dmi_iterate(void (*decode)(struct dmi_header *))
 {
-	unsigned char buf[20];
-	long fp=0xE0000L;
-	fp -= 16;
+	u8 buf[15];
+	u32 fp=0xF0000;
 
 #ifdef CONFIG_SIMNOW
 	/*
@@ -105,24 +109,30 @@ static int __init dmi_iterate(void (*decode)(struct dmi_header *))
  	
 	while( fp < 0xFFFFF)
 	{
-		fp+=16;
-		isa_memcpy_fromio(buf, fp, 20);
-		if(memcmp(buf, "_DMI_", 5)==0)
+		isa_memcpy_fromio(buf, fp, 15);
+		if(memcmp(buf, "_DMI_", 5)==0 && dmi_checksum(buf))
 		{
 			u16 num=buf[13]<<8|buf[12];
 			u16 len=buf[7]<<8|buf[6];
 			u32 base=buf[11]<<24|buf[10]<<16|buf[9]<<8|buf[8];
 
-			dmi_printk((KERN_INFO "DMI %d.%d present.\n",
-				buf[14]>>4, buf[14]&0x0F));
+			/*
+			 * DMI version 0.0 means that the real version is taken from
+			 * the SMBIOS version, which we don't know at this point.
+			 */
+			if(buf[14]!=0)
+				dmi_printk((KERN_INFO "DMI %d.%d present.\n",
+					buf[14]>>4, buf[14]&0x0F));
+			else
+				dmi_printk((KERN_INFO "DMI present.\n"));
 			dmi_printk((KERN_INFO "%d structures occupying %d bytes.\n",
-				buf[13]<<8|buf[12],
-				buf[7]<<8|buf[6]));
+				num, len));
 			dmi_printk((KERN_INFO "DMI table at 0x%08X.\n",
-				buf[11]<<24|buf[10]<<16|buf[9]<<8|buf[8]));
+				base));
 			if(dmi_table(base,len, num, decode)==0)
 				return 0;
 		}
+		fp+=16;
 	}
 	return -1;
 }
@@ -190,7 +200,6 @@ struct dmi_blacklist
  *	KT7 series. On these it seems the newer BIOS has fixed them. The
  *	rule needs to be improved to match specific BIOS revisions with
  *	corruption problems
- */ 
  
 static __init int disable_ide_dma(struct dmi_blacklist *d)
 {
@@ -204,6 +213,7 @@ static __init int disable_ide_dma(struct dmi_blacklist *d)
 #endif	
 	return 0;
 }
+ */ 
 
 /* 
  * Reboot options and system auto-detection code provided by
@@ -475,6 +485,22 @@ static __init int broken_ps2_resume(struct dmi_blacklist *d)
 	return 0;
 }
 
+/*
+ * Work around broken HP Pavilion Notebooks which assign USB to
+ * IRQ 9 even though it is actually wired to IRQ 11
+ */
+static __init int fix_broken_hp_bios_irq9(struct dmi_blacklist *d)
+{
+#ifdef CONFIG_PCI
+	extern int broken_hp_bios_irq9;
+	if (broken_hp_bios_irq9 == 0)
+	{
+		broken_hp_bios_irq9 = 1;
+		printk(KERN_INFO "%s detected - fixing broken IRQ routing\n", d->ident);
+	}
+#endif
+	return 0;
+}
 
 /*
  *	Simple "print if true" callback
@@ -564,6 +590,17 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 			MATCH(DMI_BIOS_VERSION, "Version1.01"),
 			NO_MATCH, NO_MATCH,
 			} },
+	{ apm_is_horked, "Intel D850MD", { /* APM crashes */
+			MATCH(DMI_BIOS_VENDOR, "Intel Corp."),
+			MATCH(DMI_BIOS_VERSION, "MV85010A.86A.0016.P07.0201251536"),
+			NO_MATCH, NO_MATCH,
+			} },
+	{ apm_is_horked, "Dell XPS-Z", { /* APM crashes */
+			MATCH(DMI_BIOS_VENDOR, "Intel Corp."),
+			MATCH(DMI_BIOS_VERSION, "A11"),
+			MATCH(DMI_PRODUCT_NAME, "XPS-Z"),
+			NO_MATCH,
+			} },
 	{ apm_is_horked, "Sharp PC-PJ/AX", { /* APM crashes */
 			MATCH(DMI_SYS_VENDOR, "SHARP"),
 			MATCH(DMI_PRODUCT_NAME, "PC-PJ/AX"),
@@ -633,6 +670,12 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 			MATCH(DMI_BIOS_VENDOR, "Phoenix Technologies LTD"),
 			MATCH(DMI_BIOS_VERSION, "R0209Z3"),
 			MATCH(DMI_BIOS_DATE, "05/12/01"), NO_MATCH
+			} },
+	
+	{ swab_apm_power_in_minutes, "Sony VAIO", {	/* Handle problems with APM on Sony Vaio PCG-Z505LS (with updated BIOS) */
+			MATCH(DMI_BIOS_VENDOR, "Phoenix Technologies LTD"),
+			MATCH(DMI_BIOS_VERSION, "WXP01Z3"),
+			MATCH(DMI_BIOS_DATE, "10/26/01"), NO_MATCH
 			} },
 	
 	{ swab_apm_power_in_minutes, "Sony VAIO", {	/* Handle problems with APM on Sony Vaio PCG-F104K */
@@ -738,7 +781,14 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 			NO_MATCH, NO_MATCH
 			} },
 	 
-			
+	{ fix_broken_hp_bios_irq9, "HP Pavilion N5400 Series Laptop", {
+			MATCH(DMI_SYS_VENDOR, "Hewlett-Packard"),
+			MATCH(DMI_BIOS_VERSION, "GE.M1.03"),
+			MATCH(DMI_PRODUCT_VERSION, "HP Pavilion Notebook Model GE"),
+			MATCH(DMI_BOARD_VERSION, "OmniBook N32N-736")
+			} },
+ 
+
 	/*
 	 *	Generic per vendor APM settings
 	 */
@@ -793,59 +843,43 @@ fail:
 static void __init dmi_decode(struct dmi_header *dm)
 {
 	u8 *data = (u8 *)dm;
-	char *p;
 	
 	switch(dm->type)
 	{
 		case  0:
-			p=dmi_string(dm,data[4]);
-			if(*p)
-			{
-				dmi_printk(("BIOS Vendor: %s\n", p));
-				dmi_save_ident(dm, DMI_BIOS_VENDOR, 4);
-				dmi_printk(("BIOS Version: %s\n", 
-					dmi_string(dm, data[5])));
-				dmi_save_ident(dm, DMI_BIOS_VERSION, 5);
-				dmi_printk(("BIOS Release: %s\n",
-					dmi_string(dm, data[8])));
-				dmi_save_ident(dm, DMI_BIOS_DATE, 8);
-			}
+			dmi_printk(("BIOS Vendor: %s\n",
+				dmi_string(dm, data[4])));
+			dmi_save_ident(dm, DMI_BIOS_VENDOR, 4);
+			dmi_printk(("BIOS Version: %s\n", 
+				dmi_string(dm, data[5])));
+			dmi_save_ident(dm, DMI_BIOS_VERSION, 5);
+			dmi_printk(("BIOS Release: %s\n",
+				dmi_string(dm, data[8])));
+			dmi_save_ident(dm, DMI_BIOS_DATE, 8);
 			break;
-			
 		case 1:
-			p=dmi_string(dm,data[4]);
-			if(*p)
-			{
-				dmi_printk(("System Vendor: %s.\n",p));
-				dmi_save_ident(dm, DMI_SYS_VENDOR, 4);
-				dmi_printk(("Product Name: %s.\n",
-					dmi_string(dm, data[5])));
-				dmi_save_ident(dm, DMI_PRODUCT_NAME, 5);
-				dmi_printk(("Version %s.\n",
-					dmi_string(dm, data[6])));
-				dmi_save_ident(dm, DMI_PRODUCT_VERSION, 6);
-				dmi_printk(("Serial Number %s.\n",
-					dmi_string(dm, data[7])));
-			}
+			dmi_printk(("System Vendor: %s\n",
+				dmi_string(dm, data[4])));
+			dmi_save_ident(dm, DMI_SYS_VENDOR, 4);
+			dmi_printk(("Product Name: %s\n",
+				dmi_string(dm, data[5])));
+			dmi_save_ident(dm, DMI_PRODUCT_NAME, 5);
+			dmi_printk(("Version: %s\n",
+				dmi_string(dm, data[6])));
+			dmi_save_ident(dm, DMI_PRODUCT_VERSION, 6);
+			dmi_printk(("Serial Number: %s\n",
+				dmi_string(dm, data[7])));
 			break;
 		case 2:
-			p=dmi_string(dm,data[4]);
-			if(*p)
-			{
-				dmi_printk(("Board Vendor: %s.\n",p));
-				dmi_save_ident(dm, DMI_BOARD_VENDOR, 4);
-				dmi_printk(("Board Name: %s.\n",
-					dmi_string(dm, data[5])));
-				dmi_save_ident(dm, DMI_BOARD_NAME, 5);
-				dmi_printk(("Board Version: %s.\n",
-					dmi_string(dm, data[6])));
-				dmi_save_ident(dm, DMI_BOARD_VERSION, 6);
-			}
-			break;
-		case 3:
-			p=dmi_string(dm,data[8]);
-			if(*p && *p!=' ')
-				dmi_printk(("Asset Tag: %s.\n", p));
+			dmi_printk(("Board Vendor: %s\n",
+				dmi_string(dm, data[4])));
+			dmi_save_ident(dm, DMI_BOARD_VENDOR, 4);
+			dmi_printk(("Board Name: %s\n",
+				dmi_string(dm, data[5])));
+			dmi_save_ident(dm, DMI_BOARD_NAME, 5);
+			dmi_printk(("Board Version: %s\n",
+				dmi_string(dm, data[6])));
+			dmi_save_ident(dm, DMI_BOARD_VERSION, 6);
 			break;
 	}
 }

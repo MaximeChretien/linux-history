@@ -226,7 +226,7 @@ acpi_ns_dump_one_object (
 			ACPI_DEBUG_PRINT_RAW ((ACPI_DB_TABLES, " ID %d Addr %.4X Len %.4X\n",
 					 obj_desc->processor.proc_id,
 					 obj_desc->processor.address,
-					 obj_desc->processor.length));
+					 (unsigned)obj_desc->processor.length));
 			break;
 
 		case ACPI_TYPE_DEVICE:

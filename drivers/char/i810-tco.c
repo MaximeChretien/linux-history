@@ -223,7 +223,10 @@ static ssize_t i810tco_write (struct file *file, const char *data,
 
 		/* scan to see wether or not we got the magic character */
 		for (i = 0; i != len; i++) {
-			if (data[i] == 'V')
+			u8 c;
+			if(get_user(c, data+i))
+				return -EFAULT;
+			if (c == 'V')
 				tco_expect_close = 42;
 		}
 
@@ -241,7 +244,9 @@ static int i810tco_ioctl (struct inode *inode, struct file *file,
 	int options, retval = -EINVAL;
 
 	static struct watchdog_info ident = {
-		options:		WDIOF_SETTIMEOUT | WDIOF_KEEPALIVEPING,
+		options:		WDIOF_SETTIMEOUT |
+					WDIOF_KEEPALIVEPING |
+					WDIOF_MAGICCLOSE,
 		firmware_version:	0,
 		identity:		"i810 TCO timer",
 	};

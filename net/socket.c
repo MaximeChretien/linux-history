@@ -147,8 +147,7 @@ static void net_family_write_lock(void)
 	while (atomic_read(&net_family_lockct) != 0) {
 		spin_unlock(&net_family_lock);
 
-		current->policy |= SCHED_YIELD;
-		schedule();
+		yield();
 
 		spin_lock(&net_family_lock);
 	}
@@ -743,11 +742,13 @@ static int sock_fasync(int fd, struct file *filp, int on)
 			return -ENOMEM;
 	}
 
-
 	sock = socki_lookup(filp->f_dentry->d_inode);
 	
-	if ((sk=sock->sk) == NULL)
+	if ((sk=sock->sk) == NULL) {
+		if (fna)
+			kfree(fna);
 		return -EINVAL;
+	}
 
 	lock_sock(sk);
 

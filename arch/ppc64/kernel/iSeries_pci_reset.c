@@ -78,7 +78,7 @@ int  iSeries_Device_ToggleReset(struct pci_dev* PciDev, int AssertTime, int Dela
 		schedule_timeout(WaitDelay);
 	}
 	if (DeviceNode->ReturnCode == 0) {
-		PCIFR("Slot 0x%04X.%02 Reset\n",ISERIES_BUS(DeviceNode),DeviceNode->AgentId );
+		PCIFR("Slot 0x%04X.%02X Reset\n",ISERIES_BUS(DeviceNode),DeviceNode->AgentId );
 	} 
 	else {
 		printk("PCI: Slot 0x%04X.%02X Reset Failed, RCode: %04X\n",ISERIES_BUS(DeviceNode),DeviceNode->AgentId,DeviceNode->ReturnCode);

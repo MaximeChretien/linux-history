@@ -6,7 +6,7 @@
  *
  * DECstation changes
  * Copyright (C) 1998-2000 Harald Koerfgen
- * Copyright (C) 2000,2001 Maciej W. Rozycki <macro@ds2.pg.gda.pl>
+ * Copyright (C) 2000, 2001, 2002  Maciej W. Rozycki <macro@ds2.pg.gda.pl>
  *
  * For the rest of the code the original Copyright applies:
  * Copyright (C) 1996 Paul Mackerras (Paul.Mackerras@cs.anu.edu.au)
@@ -67,7 +67,6 @@
 #include <asm/segment.h>
 #include <asm/bitops.h>
 #include <asm/uaccess.h>
-#include <asm/wbflush.h>
 #include <asm/bootinfo.h>
 #ifdef CONFIG_DECSTATION
 #include <asm/dec/interrupts.h>
@@ -96,7 +95,7 @@ unsigned long system_base;
 #define NUM_SERIAL	2		/* Max number of ZS chips supported */
 #define NUM_CHANNELS	(NUM_SERIAL * 2)	/* 2 channels per chip */
 #define CHANNEL_A_NR  (zs_parms->channel_a_offset > zs_parms->channel_b_offset)
-                                        /* Number of channel A in the chip */ 
+                                        /* Number of channel A in the chip */
 #define ZS_CHAN_IO_SIZE 8
 #define ZS_CLOCK        7372800 	/* Z8530 RTxC input clock rate */
 
@@ -107,7 +106,8 @@ struct zs_parms {
 	unsigned long scc1;
 	int channel_a_offset;
 	int channel_b_offset;
-	int irq;
+	int irq0;
+	int irq1;
 	int clock;
 };
 
@@ -119,7 +119,8 @@ static struct zs_parms ds_parms = {
 	scc1 : SCC1,
 	channel_a_offset : 1,
 	channel_b_offset : 9,
-	irq : SERIAL,
+	irq0 : -1,
+	irq1 : -1,
 	clock : ZS_CLOCK
 };
 #endif
@@ -129,7 +130,8 @@ static struct zs_parms baget_parms = {
 	scc1 : UNI_SCC1,
 	channel_a_offset : 9,
 	channel_b_offset : 1,
-	irq : BAGET_SCC_IRQ,
+	irq0 : BAGET_SCC_IRQ,
+	irq1 : BAGET_SCC_IRQ,
 	clock : 14745000
 };
 #endif
@@ -263,7 +265,7 @@ static int baud_table[] = {
 	0, 50, 75, 110, 134, 150, 200, 300, 600, 1200, 1800, 2400, 4800,
 	9600, 19200, 38400, 57600, 115200, 0 };
 
-/* 
+/*
  * Reading and writing Z8530 registers.
  */
 static inline unsigned char read_zsreg(struct dec_zschannel *channel,
@@ -273,7 +275,7 @@ static inline unsigned char read_zsreg(struct dec_zschannel *channel,
 
 	if (reg != 0) {
 		*channel->control = reg & 0xf;
-		wbflush(); RECOVERY_DELAY;
+		fast_iob(); RECOVERY_DELAY;
 	}
 	retval = *channel->control;
 	RECOVERY_DELAY;
@@ -285,10 +287,10 @@ static inline void write_zsreg(struct dec_zschannel *channel,
 {
 	if (reg != 0) {
 		*channel->control = reg & 0xf;
-		wbflush(); RECOVERY_DELAY;
+		fast_iob(); RECOVERY_DELAY;
 	}
 	*channel->control = value;
-	wbflush(); RECOVERY_DELAY;
+	fast_iob(); RECOVERY_DELAY;
 	return;
 }
 
@@ -305,7 +307,7 @@ static inline void write_zsdata(struct dec_zschannel *channel,
 				unsigned char value)
 {
 	*channel->data = value;
-	wbflush(); RECOVERY_DELAY;
+	fast_iob(); RECOVERY_DELAY;
 	return;
 }
 
@@ -409,7 +411,7 @@ static _INLINE_ void receive_chars(struct dec_serial *info,
 		stat = read_zsreg(info->zs_channel, R1);
 		ch = read_zsdata(info->zs_channel);
 
-		if (!tty && !info->hook && !info->hook->rx_char)
+		if (!tty && (!info->hook || !info->hook->rx_char))
 			continue;
 
 		if (tty_break) {
@@ -456,7 +458,7 @@ static _INLINE_ void receive_chars(struct dec_serial *info,
 			(*info->hook->rx_char)(ch, flag);
 			return;
   		}
-		
+
 		if (tty->flip.count >= TTY_FLIPBUF_SIZE) {
 			static int flip_buf_ovf;
 			++flip_buf_ovf;
@@ -471,7 +473,9 @@ static _INLINE_ void receive_chars(struct dec_serial *info,
 
 		*tty->flip.flag_buf_ptr++ = flag;
 		*tty->flip.char_buf_ptr++ = ch;
+#if defined(CONFIG_SERIAL_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ) && !defined(MODULE)
 	ignore_char:
+#endif
 	}
 	if (tty)
 		tty_flip_buffer_push(tty);
@@ -522,9 +526,9 @@ static _INLINE_ void status_handle(struct dec_serial *info)
 
 	if (info->zs_channel != info->zs_chan_a) {
 
-		/* FIXEM: Check for DCD transitions */
-		if (((stat ^ info->read_reg_zero) & DCD) != 0
-		    && info->tty && !C_CLOCAL(info->tty)) {
+		/* Check for DCD transitions */
+		if (info->tty && !C_CLOCAL(info->tty) &&
+		    ((stat ^ info->read_reg_zero) & DCD) != 0 ) {
 			if (stat & DCD) {
 				wake_up_interruptible(&info->open_wait);
 			} else if (!(info->flags & ZILOG_CALLOUT_ACTIVE)) {
@@ -575,7 +579,7 @@ void rs_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 		shift = 0;	/* Channel B */
 
 	for (;;) {
-		zs_intreg = read_zsreg(info->zs_chan_a, R3) >> shift; 
+		zs_intreg = read_zsreg(info->zs_chan_a, R3) >> shift;
 		if ((zs_intreg & CHAN_IRQMASK) == 0)
 			break;
 
@@ -589,7 +593,7 @@ void rs_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 			status_handle(info);
 		}
 	}
-	
+
 	/* Why do we need this ? */
 	write_zsreg(info->zs_channel, 0, RES_H_IUS);
 }
@@ -598,14 +602,14 @@ void rs_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 void zs_dump (void) {
 	int i, j;
 	for (i = 0; i < zs_channels_found; i++) {
-		struct dec_zschannel *ch = &zs_channels[i]; 
+		struct dec_zschannel *ch = &zs_channels[i];
 		if ((long)ch->control == UNI_IO_BASE+UNI_SCC1A_CTRL) {
 			for (j = 0; j < 15; j++) {
-				printk("W%d = 0x%x\t", 
+				printk("W%d = 0x%x\t",
 				       j, (int)ch->curregs[j]);
 			}
 			for (j = 0; j < 15; j++) {
-				printk("R%d = 0x%x\t", 
+				printk("R%d = 0x%x\t",
 				       j, (int)read_zsreg(ch,j));
 			}
 			printk("\n\n");
@@ -634,7 +638,7 @@ static void rs_stop(struct tty_struct *tty)
 
 	if (serial_paranoia_check(info, tty->device, "rs_stop"))
 		return;
-	
+
 #if 1
 	save_flags(flags); cli();
 	if (info->zs_channel->curregs[5] & TxENAB) {
@@ -649,10 +653,10 @@ static void rs_start(struct tty_struct *tty)
 {
 	struct dec_serial *info = (struct dec_serial *)tty->driver_data;
 	unsigned long flags;
-	
+
 	if (serial_paranoia_check(info, tty->device, "rs_start"))
 		return;
-	
+
 	save_flags(flags); cli();
 #if 1
 	if (info->xmit_cnt && info->xmit_buf && !(info->zs_channel->curregs[5] & TxENAB)) {
@@ -685,7 +689,7 @@ static void do_softint(void *private_)
 {
 	struct dec_serial	*info = (struct dec_serial *) private_;
 	struct tty_struct	*tty;
-	
+
 	tty = info->tty;
 	if (!tty)
 		return;
@@ -786,9 +790,9 @@ static void shutdown(struct dec_serial * info)
 	printk("Shutting down serial port %d (irq %d)....", info->line,
 	       info->irq);
 #endif
-	
+
 	save_flags(flags); cli(); /* Disable interrupts */
-	
+
 	if (info->xmit_buf) {
 		free_page((unsigned long) info->xmit_buf);
 		info->xmit_buf = 0;
@@ -854,7 +858,7 @@ static void change_speed(struct dec_serial *info)
 		brg = BPS_TO_BRG(info->zs_baud, zs_parms->clock/info->clk_divisor);
 		info->zs_channel->curregs[12] = (brg & 255);
 		info->zs_channel->curregs[13] = ((brg >> 8) & 255);
-		zs_rtsdtr(info, DTR, 1); 
+		zs_rtsdtr(info, DTR, 1);
 	} else {
 		zs_rtsdtr(info, RTS | DTR, 0);
 		return;
@@ -957,7 +961,7 @@ static int rs_write(struct tty_struct * tty, int from_user,
 
 	save_flags(flags);
 	while (1) {
-		cli();		
+		cli();
 		c = MIN(count, MIN(SERIAL_XMIT_SIZE - info->xmit_cnt - 1,
 				   SERIAL_XMIT_SIZE - info->xmit_head));
 		if (c <= 0)
@@ -991,7 +995,7 @@ static int rs_write_room(struct tty_struct *tty)
 {
 	struct dec_serial *info = (struct dec_serial *)tty->driver_data;
 	int	ret;
-				
+
 	if (serial_paranoia_check(info, tty->device, "rs_write_room"))
 		return 0;
 	ret = SERIAL_XMIT_SIZE - info->xmit_cnt - 1;
@@ -1003,7 +1007,7 @@ static int rs_write_room(struct tty_struct *tty)
 static int rs_chars_in_buffer(struct tty_struct *tty)
 {
 	struct dec_serial *info = (struct dec_serial *)tty->driver_data;
-			
+
 	if (serial_paranoia_check(info, tty->device, "rs_chars_in_buffer"))
 		return 0;
 	return info->xmit_cnt;
@@ -1012,7 +1016,7 @@ static int rs_chars_in_buffer(struct tty_struct *tty)
 static void rs_flush_buffer(struct tty_struct *tty)
 {
 	struct dec_serial *info = (struct dec_serial *)tty->driver_data;
-				
+
 	if (serial_paranoia_check(info, tty->device, "rs_flush_buffer"))
 		return;
 	cli();
@@ -1027,7 +1031,7 @@ static void rs_flush_buffer(struct tty_struct *tty)
 /*
  * ------------------------------------------------------------
  * rs_throttle()
- * 
+ *
  * This routine is called by the upper-layer tty layer to signal that
  * incoming characters should be throttled.
  * ------------------------------------------------------------
@@ -1039,14 +1043,14 @@ static void rs_throttle(struct tty_struct * tty)
 
 #ifdef SERIAL_DEBUG_THROTTLE
 	char	buf[64];
-	
+
 	printk("throttle %s: %d....\n", _tty_name(tty, buf),
 	       tty->ldisc.chars_in_buffer(tty));
 #endif
 
 	if (serial_paranoia_check(info, tty->device, "rs_throttle"))
 		return;
-	
+
 	if (I_IXOFF(tty)) {
 		save_flags(flags); cli();
 		info->x_char = STOP_CHAR(tty);
@@ -1067,14 +1071,14 @@ static void rs_unthrottle(struct tty_struct * tty)
 
 #ifdef SERIAL_DEBUG_THROTTLE
 	char	buf[64];
-	
+
 	printk("unthrottle %s: %d....\n", _tty_name(tty, buf),
 	       tty->ldisc.chars_in_buffer(tty));
 #endif
 
 	if (serial_paranoia_check(info, tty->device, "rs_unthrottle"))
 		return;
-	
+
 	if (I_IXOFF(tty)) {
 		save_flags(flags); cli();
 		if (info->x_char)
@@ -1171,7 +1175,7 @@ check_and_exit:
  * 	    release the bus after transmitting. This must be done when
  * 	    the transmit shift register is empty, not be done when the
  * 	    transmit holding register is empty.  This functionality
- * 	    allows an RS485 driver to be written in user space. 
+ * 	    allows an RS485 driver to be written in user space.
  */
 static int get_lsr_info(struct dec_serial * info, unsigned int *value)
 {
@@ -1232,7 +1236,7 @@ static int set_modem_info(struct dec_serial *info, unsigned int cmd,
 		info->zs_chan_a->curregs[5] &= ~bits;
 		break;
 	case TIOCMSET:
-		info->zs_chan_a->curregs[5] = 
+		info->zs_chan_a->curregs[5] =
 			(info->zs_chan_a->curregs[5] & ~(DTR | RTS)) | bits;
 		break;
 	default:
@@ -1284,7 +1288,7 @@ static int rs_ioctl(struct tty_struct *tty, struct file * file,
 		if (tty->flags & (1 << TTY_IO_ERROR))
 		    return -EIO;
 	}
-	
+
 	switch (cmd) {
 		case TIOCMGET:
 			error = verify_area(VERIFY_WRITE, (void *) arg,
@@ -1322,7 +1326,7 @@ static int rs_ioctl(struct tty_struct *tty, struct file * file,
 			copy_from_user((struct dec_serial *) arg,
 				       info, sizeof(struct dec_serial));
 			return 0;
-			
+
 		default:
 			return -ENOIOCTLCMD;
 		}
@@ -1347,7 +1351,7 @@ static void rs_set_termios(struct tty_struct *tty, struct termios *old_termios)
 /*
  * ------------------------------------------------------------
  * rs_close()
- * 
+ *
  * This routine is called when the serial port gets closed.
  * Wait for the last remaining data to be sent.
  * ------------------------------------------------------------
@@ -1359,14 +1363,14 @@ static void rs_close(struct tty_struct *tty, struct file * filp)
 
 	if (!info || serial_paranoia_check(info, tty->device, "rs_close"))
 		return;
-	
+
 	save_flags(flags); cli();
-	
+
 	if (tty_hung_up_p(filp)) {
 		restore_flags(flags);
 		return;
 	}
-	
+
 #ifdef SERIAL_DEBUG_OPEN
 	printk("rs_close ttyS%02d, count = %d\n", info->line, info->count);
 #endif
@@ -1401,7 +1405,7 @@ static void rs_close(struct tty_struct *tty, struct file * filp)
 	if (info->flags & ZILOG_CALLOUT_ACTIVE)
 		info->callout_termios = *tty->termios;
 	/*
-	 * Now we wait for the transmit buffer to clear; and we notify 
+	 * Now we wait for the transmit buffer to clear; and we notify
 	 * the line discipline to only process XON/XOFF characters.
 	 */
 	tty->closing = 1;
@@ -1542,7 +1546,7 @@ static int block_til_ready(struct tty_struct *tty, struct file * filp,
 		info->flags |= ZILOG_CALLOUT_ACTIVE;
 		return 0;
 	}
-	
+
 	/*
 	 * If non-blocking mode is set, or the port is not enabled,
 	 * then make the check up front and then exit.
@@ -1562,7 +1566,7 @@ static int block_til_ready(struct tty_struct *tty, struct file * filp,
 		if (tty->termios->c_cflag & CLOCAL)
 			do_clocal = 1;
 	}
-	
+
 	/*
 	 * Block waiting for the carrier detect and the line to become
 	 * free (i.e., not in use by the callout).  While we are in
@@ -1577,7 +1581,7 @@ static int block_til_ready(struct tty_struct *tty, struct file * filp,
 	       info->line, info->count);
 #endif
 	cli();
-	if (!tty_hung_up_p(filp)) 
+	if (!tty_hung_up_p(filp))
 		info->count--;
 	sti();
 	info->blocked_open++;
@@ -1594,7 +1598,7 @@ static int block_til_ready(struct tty_struct *tty, struct file * filp,
 			if (info->flags & ZILOG_HUP_NOTIFY)
 				retval = -EAGAIN;
 			else
-				retval = -ERESTARTSYS;	
+				retval = -ERESTARTSYS;
 #else
 			retval = -EAGAIN;
 #endif
@@ -1627,7 +1631,7 @@ static int block_til_ready(struct tty_struct *tty, struct file * filp,
 		return retval;
 	info->flags |= ZILOG_NORMAL_ACTIVE;
 	return 0;
-}	
+}
 
 /*
  * This routine is called whenever a serial port is opened.  It
@@ -1693,7 +1697,7 @@ int rs_open(struct tty_struct *tty, struct file * filp)
 	if ((info->count == 1) && (info->flags & ZILOG_SPLIT_TERMIOS)) {
 		if (tty->driver.subtype == SERIAL_TYPE_NORMAL)
 			*tty->termios = info->normal_termios;
-		else 
+		else
 			*tty->termios = info->callout_termios;
 		change_speed(info);
 	}
@@ -1719,7 +1723,7 @@ int rs_open(struct tty_struct *tty, struct file * filp)
 
 static void __init show_serial_version(void)
 {
-	printk("DECstation Z8530 serial driver version 0.05\n");
+	printk("DECstation Z8530 serial driver version 0.07\n");
 }
 
 /*  Initialize Z8530s zs_channels
@@ -1737,7 +1741,7 @@ static void __init probe_sccs(void)
 		printk("Not on JUNKIO machine, skipping probe_sccs\n");
 		return;
 	}
-	
+
 	/*
 	 * When serial console is activated, tc_init has not been called yet
 	 * and system_base is undefined. Unfortunately we have to hardcode
@@ -1749,16 +1753,21 @@ static void __init probe_sccs(void)
 		system_base = 0xbf800000;
 		n_chips = 2;
 		zs_parms = &ds_parms;
+		zs_parms->irq0 = dec_interrupt[DEC_IRQ_SCC0];
+		zs_parms->irq1 = dec_interrupt[DEC_IRQ_SCC1];
 		break;
 	case MACH_DS5000_1XX:
 		system_base = 0xbc000000;
 		n_chips = 2;
 		zs_parms = &ds_parms;
+		zs_parms->irq0 = dec_interrupt[DEC_IRQ_SCC0];
+		zs_parms->irq1 = dec_interrupt[DEC_IRQ_SCC1];
 		break;
 	case MACH_DS5000_XX:
 		system_base = 0xbc000000;
 		n_chips = 1;
 		zs_parms = &ds_parms;
+		zs_parms->irq0 = dec_interrupt[DEC_IRQ_SCC0];
 		break;
 #endif
 #ifdef CONFIG_BAGET_MIPS
@@ -1784,12 +1793,12 @@ static void __init probe_sccs(void)
 			/*
 			 * The sccs reside on the high byte of the 16 bit IOBUS
 			 */
-			zs_channels[n_channels].control = 
-				(volatile unsigned char *)system_base + 
-			  (0 == chip ? zs_parms->scc0 : zs_parms->scc1) + 
-			  (0 == channel ? zs_parms->channel_a_offset : 
+			zs_channels[n_channels].control =
+				(volatile unsigned char *)system_base +
+			  (0 == chip ? zs_parms->scc0 : zs_parms->scc1) +
+			  (0 == channel ? zs_parms->channel_a_offset :
 			                  zs_parms->channel_b_offset);
-			zs_channels[n_channels].data = 
+			zs_channels[n_channels].data =
 				zs_channels[n_channels].control + 4;
 
 #ifndef CONFIG_SERIAL_CONSOLE
@@ -1807,20 +1816,24 @@ static void __init probe_sccs(void)
 				       ZS_CHAN_IO_SIZE, "SCC");
 #endif
 			zs_soft[n_channels].zs_channel = &zs_channels[n_channels];
-			zs_soft[n_channels].irq = zs_parms->irq;
+			/* HACK alert! */
+			if (!(chip & 1))
+				zs_soft[n_channels].irq = zs_parms->irq0;
+			else
+				zs_soft[n_channels].irq = zs_parms->irq1;
 
-			/* 
+			/*
 			 *  Identification of channel A. Location of channel A
                          *  inside chip depends on mapping of internal address
 			 *  the chip decodes channels by.
-			 *  CHANNEL_A_NR returns either 0 (in case of 
+			 *  CHANNEL_A_NR returns either 0 (in case of
 			 *  DECstations) or 1 (in case of Baget).
 			 */
 			if (CHANNEL_A_NR == channel)
-				zs_soft[n_channels].zs_chan_a = 
+				zs_soft[n_channels].zs_chan_a =
 				    &zs_channels[n_channels+1-2*CHANNEL_A_NR];
 			else
-				zs_soft[n_channels].zs_chan_a = 
+				zs_soft[n_channels].zs_chan_a =
 				    &zs_channels[n_channels];
 
 			*pp = &zs_soft[n_channels];
@@ -1846,7 +1859,7 @@ static void __init probe_sccs(void)
 			write_zsreg(zs_soft[n].zs_chan_a, R9, 0);
 		}
 		load_zsregs(zs_soft[n].zs_channel, zs_soft[n].zs_channel->curregs);
-	} 
+	}
 	restore_flags(flags); */
 }
 
@@ -1932,34 +1945,30 @@ int __init zs_init(void)
 	save_flags(flags); cli();
 
 	for (channel = 0; channel < zs_channels_found; ++channel) {
-		if (zs_soft[channel].hook &&
-		    zs_soft[channel].hook->init_channel)
-			(*zs_soft[channel].hook->init_channel)
-				(&zs_soft[channel]);
+		if (request_irq(zs_soft[channel].irq, rs_interrupt, SA_SHIRQ,
+				"scc", &zs_soft[channel]))
+			printk(KERN_ERR "decserial: can't get irq %d\n",
+			       zs_soft[channel].irq);
 
 		zs_soft[channel].clk_divisor = 16;
 		zs_soft[channel].zs_baud = get_zsbaud(&zs_soft[channel]);
-
-		if (request_irq(zs_parms->irq, rs_interrupt, SA_SHIRQ,
-				"SCC", &zs_soft[channel]))
-			printk(KERN_ERR "decserial: can't get irq %d\n",
-			       zs_parms->irq);
 	}
 
-	for (info = zs_chain, i = 0; info; info = info->zs_next, i++)
-	{
-		if (info->hook && info->hook->init_info) {
-			(*info->hook->init_info)(info);
+	for (info = zs_chain, i = 0; info; info = info->zs_next, i++) {
+
+		/* Needed before interrupts are enabled. */
+		info->tty = 0;
+		info->x_char = 0;
+
+		if (info->hook && info->hook->init_info)
 			continue;
-		}
+
 		info->magic = SERIAL_MAGIC;
 		info->port = (int) info->zs_channel->control;
 		info->line = i;
-		info->tty = 0;
 		info->custom_divisor = 16;
 		info->close_delay = 50;
 		info->closing_wait = 3000;
-		info->x_char = 0;
 		info->event = 0;
 		info->count = 0;
 		info->blocked_open = 0;
@@ -1969,7 +1978,7 @@ int __init zs_init(void)
 		info->normal_termios = serial_driver.init_termios;
 		init_waitqueue_head(&info->open_wait);
 		init_waitqueue_head(&info->close_wait);
-		printk("ttyS%02d at 0x%08x (irq = %d)", info->line, 
+		printk("ttyS%02d at 0x%08x (irq = %d)", info->line,
 		       info->port, info->irq);
 		printk(" is a Z85C30 SCC\n");
 		tty_register_devfs(&serial_driver, 0,
@@ -1980,6 +1989,18 @@ int __init zs_init(void)
 	}
 
 	restore_flags(flags);
+
+	for (channel = 0; channel < zs_channels_found; ++channel) {
+		if (zs_soft[channel].hook &&
+		    zs_soft[channel].hook->init_channel)
+			(*zs_soft[channel].hook->init_channel)
+				(&zs_soft[channel]);
+	}
+
+	for (info = zs_chain, i = 0; info; info = info->zs_next, i++) {
+		if (info->hook && info->hook->init_info)
+			(*info->hook->init_info)(info);
+	}
 
 	return 0;
 }
@@ -2010,32 +2031,19 @@ zs_poll_tx_char(struct dec_serial *info, unsigned char ch)
 
 	if(chan) {
 		int loops = 10000;
-//		int nine = read_zsreg(chan, R9);
 
-		RECOVERY_DELAY;
-//        	write_zsreg(chan, R9, nine & ~MIE);
-               	wbflush();
-		RECOVERY_DELAY;
+		while (loops && !(read_zsreg(chan, 0) & Tx_BUF_EMP))
+			loops--;
 
-        	while (!(*(chan->control) & Tx_BUF_EMP) && --loops)
-	        	RECOVERY_DELAY;
+		if (loops) {
+			write_zsdata(chan, ch);
+			ret = 0;
+		} else
+			ret = -EAGAIN;
 
-                if (loops) {
-                        ret = 0;
-        	        *(chan->data) = ch;
-                	wbflush();
-			RECOVERY_DELAY;
-                } else
-                        ret = -EAGAIN;
-
-//        	write_zsreg(chan, R9, nine);
-               	wbflush();
-		RECOVERY_DELAY;
-
-                return ret;
-        }
-
-	return -ENODEV;
+		return ret;
+	} else
+		return -ENODEV;
 }
 
 static int
@@ -2047,17 +2055,17 @@ zs_poll_rx_char(struct dec_serial *info)
 	if(chan) {
                 int loops = 10000;
 
-                while((read_zsreg(chan, 0) & Rx_CH_AV) == 0)
-		        loops--;
+		while (loops && !(read_zsreg(chan, 0) & Rx_CH_AV))
+			loops--;
 
                 if (loops)
                         ret = read_zsdata(chan);
                 else
                         ret = -EAGAIN;
 
-                return ret;
-        } else
-                return -ENODEV;
+		return ret;
+	} else
+		return -ENODEV;
 }
 
 unsigned int register_zs_hook(unsigned int channel, struct zs_hook *hook)
@@ -2215,7 +2223,7 @@ static int __init serial_console_setup(struct console *co, char *options)
 		break;
 	}
 	co->cflag = cflag;
-#if 1 
+#if 1
 	save_and_cli(flags);
 
 	/*
@@ -2321,7 +2329,7 @@ void kgdb_interruptible(int yes)
 	write_zsreg(chan, 9, nine);
 }
 
-static int kgdbhook_init_channel(struct dec_serial* info) 
+static int kgdbhook_init_channel(struct dec_serial* info)
 {
 	return 0;
 }
@@ -2330,7 +2338,7 @@ static void kgdbhook_init_info(struct dec_serial* info)
 {
 }
 
-static void kgdbhook_rx_char(struct dec_serial* info, 
+static void kgdbhook_rx_char(struct dec_serial* info,
 			     unsigned char ch, unsigned char stat)
 {
 	if (ch == 0x03 || ch == '$')

@@ -355,7 +355,7 @@ static void fd_select_side( int side );
 static void fd_select_drive( int drive );
 static void fd_deselect( void );
 static void fd_motor_off_timer( unsigned long dummy );
-static void check_change( void );
+static void check_change( unsigned long dummy );
 static __inline__ void set_head_settle_flag( void );
 static __inline__ int get_head_settle_flag( void );
 static void floppy_irq (int irq, void *dummy, struct pt_regs *fp);
@@ -536,7 +536,7 @@ static void fd_motor_off_timer( unsigned long dummy )
  * as possible) and keep track of the current state of the write protection.
  */
 
-static void check_change( void )
+static void check_change( unsigned long dummy )
 {
 	static int    drive = 0;
 

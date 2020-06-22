@@ -130,7 +130,7 @@ int get_irq_list(char *buf)
 
 	for (i = 0 ; i < 32 ; i++) {
 		action = irq_action[i];
-		if (!action) 
+		if (!action)
 			continue;
 		len += sprintf(buf+len, "%2d: %8d %c %s",
 			i, kstat.irqs[0][i],
@@ -286,7 +286,7 @@ int i8259_setup_irq(int irq, struct irqaction * new)
  * specific variants.  For now we still use this as broken as it is because
  * it used to work ...
  */
-int request_irq(unsigned int irq, 
+int request_irq(unsigned int irq,
 		void (*handler)(int, void *, struct pt_regs *),
 		unsigned long irqflags, const char * devname, void *dev_id)
 {
@@ -315,7 +315,7 @@ int request_irq(unsigned int irq,
 		kfree(action);
 	return retval;
 }
-		
+
 void free_irq(unsigned int irq, void *dev_id)
 {
 	struct irqaction * action, **p;
@@ -386,7 +386,7 @@ void __init i8259_init(void)
 	outb(0x04, 0x21); /* edge tiggered, Cascade (slave) on IRQ2 */
 	outb(0x01, 0x21); /* Select 8086 mode */
 	outb(0xff, 0x21); /* Mask all */
-        
+
 	/* Init slave interrupt controller */
 	outb(0x11, 0xa0); /* Start init sequence */
 	outb(0x08, 0xa1); /* Vector base */

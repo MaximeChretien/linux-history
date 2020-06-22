@@ -739,7 +739,7 @@ static inline struct buffer_head *idescsi_dma_bh (ide_drive_t *drive, idescsi_pc
 	int segments = pc->scsi_cmd->use_sg;
 	struct scatterlist *sg = pc->scsi_cmd->request_buffer;
 
-	if (!drive->using_dma || !pc->request_transfer || pc->request_transfer % 1024)
+	if (!drive->using_dma || !pc->request_transfer || pc->request_transfer & 1023)
 		return NULL;
 	if (idescsi_set_direction(pc))
 		return NULL;
@@ -750,12 +750,22 @@ static inline struct buffer_head *idescsi_dma_bh (ide_drive_t *drive, idescsi_pc
 		printk ("ide-scsi: %s: building DMA table, %d segments, %dkB total\n", drive->name, segments, pc->request_transfer >> 10);
 #endif /* IDESCSI_DEBUG_LOG */
 		while (segments--) {
-			bh->b_data = sg->address;
+			if (sg->address) {
+				bh->b_page = virt_to_page(sg->address);
+				bh->b_data = (char *) ((unsigned long) sg->address & ~PAGE_MASK);
+			} else if (sg->page) {
+				bh->b_page = sg->page;
+				bh->b_data = (char *) sg->offset;
+			}
+
 			bh->b_size = sg->length;
 			bh = bh->b_reqnext;
 			sg++;
 		}
 	} else {
+		/*
+		 * non-sg requests are guarenteed not to reside in highmem /jens
+		 */
 		if ((first_bh = bh = idescsi_kmalloc_bh (1)) == NULL)
 			return NULL;
 #if IDESCSI_DEBUG_LOG

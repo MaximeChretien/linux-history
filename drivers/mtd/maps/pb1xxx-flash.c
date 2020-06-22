@@ -3,7 +3,7 @@
  * 
  * (C) 2001 Pete Popov <ppopov@mvista.com>
  * 
- * $Id: pb1xxx-flash.c,v 1.2 2002/02/14 19:36:45 ppopov Exp $
+ * $Id: pb1xxx-flash.c,v 1.5 2002/02/01 23:08:50 ppopov Exp $
  */
 
 #include <linux/config.h>
@@ -127,7 +127,7 @@ static struct mtd_partition pb1xxx_partitions[] = {
         }
 };
 
-#elif defined(CONFIG_MIPS_PB1500)
+#elif defined(CONFIG_MIPS_PB1500) || defined(CONFIG_MIPS_PB1100)
 
 static unsigned char flash_buswidth = 4;
 #if defined(CONFIG_MTD_PB1500_BOOT) && defined(CONFIG_MTD_PB1500_USER)

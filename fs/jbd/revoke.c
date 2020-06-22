@@ -137,8 +137,7 @@ oom:
 	if (!journal_oom_retry)
 		return -ENOMEM;
 	jbd_debug(1, "ENOMEM in " __FUNCTION__ ", retrying.\n");
-	current->policy |= SCHED_YIELD;
-	schedule();
+	yield();
 	goto repeat;
 }
 

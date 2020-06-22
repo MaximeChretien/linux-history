@@ -10,12 +10,18 @@
 #include <linux/config.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
-#include <linux/fs.h>
 #include <linux/sched.h>
+#include <linux/if.h>
 #include <linux/mm.h>
 #include <linux/mtio.h>
 #include <linux/init.h>
 #include <linux/file.h>
+#include <linux/fs.h>
+#include <linux/ppp_defs.h>
+#include <linux/if_ppp.h>
+#include <linux/if_pppox.h>
+#include <linux/cdrom.h>
+#include <linux/loop.h>
 #include <linux/vt.h>
 #include <linux/kd.h>
 #include <linux/netdevice.h>
@@ -27,12 +33,15 @@
 #include <linux/auto_fs.h>
 #include <linux/ext2_fs.h>
 #include <linux/raid/md_u.h>
+
 #include <scsi/scsi.h>
 #undef __KERNEL__		/* This file was born to be ugly ...  */
 #include <scsi/scsi_ioctl.h>
 #define __KERNEL__
 #include <asm/types.h>
 #include <asm/uaccess.h>
+
+#include <linux/rtc.h>
 
 long sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg);
 
@@ -41,7 +50,7 @@ static int w_long(unsigned int fd, unsigned int cmd, unsigned long arg)
 	mm_segment_t old_fs = get_fs();
 	int err;
 	unsigned long val;
-	
+
 	set_fs (KERNEL_DS);
 	err = sys_ioctl(fd, cmd, (unsigned long)&val);
 	set_fs (old_fs);
@@ -197,7 +206,7 @@ static inline int dev_ifconf(unsigned int fd, unsigned int cmd,
 
 	old_fs = get_fs();
 	set_fs (KERNEL_DS);
-	err = sys_ioctl (fd, SIOCGIFCONF, (unsigned long)&ifc);	
+	err = sys_ioctl (fd, SIOCGIFCONF, (unsigned long)&ifc);
 	set_fs (old_fs);
 	if (err)
 		goto out;
@@ -224,28 +233,26 @@ out:
 	return err;
 }
 
-static inline int dev_ifsioc(unsigned int fd, unsigned int cmd,
-			     unsigned long arg)
+static int dev_ifsioc(unsigned int fd, unsigned int cmd, unsigned long arg)
 {
-	struct ifreq32 *uifr = (struct ifreq32 *)arg;
 	struct ifreq ifr;
 	mm_segment_t old_fs;
 	int err;
 	
 	switch (cmd) {
 	case SIOCSIFMAP:
-		err = copy_from_user(&ifr, uifr, sizeof(ifr.ifr_name));
-		err |= __get_user(ifr.ifr_map.mem_start, &(uifr->ifr_ifru.ifru_map.mem_start));
-		err |= __get_user(ifr.ifr_map.mem_end, &(uifr->ifr_ifru.ifru_map.mem_end));
-		err |= __get_user(ifr.ifr_map.base_addr, &(uifr->ifr_ifru.ifru_map.base_addr));
-		err |= __get_user(ifr.ifr_map.irq, &(uifr->ifr_ifru.ifru_map.irq));
-		err |= __get_user(ifr.ifr_map.dma, &(uifr->ifr_ifru.ifru_map.dma));
-		err |= __get_user(ifr.ifr_map.port, &(uifr->ifr_ifru.ifru_map.port));
+		err = copy_from_user(&ifr, (struct ifreq32 *)arg, sizeof(ifr.ifr_name));
+		err |= __get_user(ifr.ifr_map.mem_start, &(((struct ifreq32 *)arg)->ifr_ifru.ifru_map.mem_start));
+		err |= __get_user(ifr.ifr_map.mem_end, &(((struct ifreq32 *)arg)->ifr_ifru.ifru_map.mem_end));
+		err |= __get_user(ifr.ifr_map.base_addr, &(((struct ifreq32 *)arg)->ifr_ifru.ifru_map.base_addr));
+		err |= __get_user(ifr.ifr_map.irq, &(((struct ifreq32 *)arg)->ifr_ifru.ifru_map.irq));
+		err |= __get_user(ifr.ifr_map.dma, &(((struct ifreq32 *)arg)->ifr_ifru.ifru_map.dma));
+		err |= __get_user(ifr.ifr_map.port, &(((struct ifreq32 *)arg)->ifr_ifru.ifru_map.port));
 		if (err)
 			return -EFAULT;
 		break;
 	default:
-		if (copy_from_user(&ifr, uifr, sizeof(struct ifreq32)))
+		if (copy_from_user(&ifr, (struct ifreq32 *)arg, sizeof(struct ifreq32)))
 			return -EFAULT;
 		break;
 	}
@@ -266,17 +273,17 @@ static inline int dev_ifsioc(unsigned int fd, unsigned int cmd,
 		case SIOCGIFDSTADDR:
 		case SIOCGIFNETMASK:
 		case SIOCGIFTXQLEN:
-			if (copy_to_user(uifr, &ifr, sizeof(struct ifreq32)))
+			if (copy_to_user((struct ifreq32 *)arg, &ifr, sizeof(struct ifreq32)))
 				return -EFAULT;
 			break;
 		case SIOCGIFMAP:
-			err = copy_to_user(uifr, &ifr, sizeof(ifr.ifr_name));
-			err |= __put_user(ifr.ifr_map.mem_start, &(uifr->ifr_ifru.ifru_map.mem_start));
-			err |= __put_user(ifr.ifr_map.mem_end, &(uifr->ifr_ifru.ifru_map.mem_end));
-			err |= __put_user(ifr.ifr_map.base_addr, &(uifr->ifr_ifru.ifru_map.base_addr));
-			err |= __put_user(ifr.ifr_map.irq, &(uifr->ifr_ifru.ifru_map.irq));
-			err |= __put_user(ifr.ifr_map.dma, &(uifr->ifr_ifru.ifru_map.dma));
-			err |= __put_user(ifr.ifr_map.port, &(uifr->ifr_ifru.ifru_map.port));
+			err = copy_to_user((struct ifreq32 *)arg, &ifr, sizeof(ifr.ifr_name));
+			err |= __put_user(ifr.ifr_map.mem_start, &(((struct ifreq32 *)arg)->ifr_ifru.ifru_map.mem_start));
+			err |= __put_user(ifr.ifr_map.mem_end, &(((struct ifreq32 *)arg)->ifr_ifru.ifru_map.mem_end));
+			err |= __put_user(ifr.ifr_map.base_addr, &(((struct ifreq32 *)arg)->ifr_ifru.ifru_map.base_addr));
+			err |= __put_user(ifr.ifr_map.irq, &(((struct ifreq32 *)arg)->ifr_ifru.ifru_map.irq));
+			err |= __put_user(ifr.ifr_map.dma, &(((struct ifreq32 *)arg)->ifr_ifru.ifru_map.dma));
+			err |= __put_user(ifr.ifr_map.port, &(((struct ifreq32 *)arg)->ifr_ifru.ifru_map.port));
 			if (err)
 				err = -EFAULT;
 			break;
@@ -313,7 +320,7 @@ static inline int routing_ioctl(unsigned int fd, unsigned int cmd, unsigned long
 	u32 rtdev;
 	int ret;
 	mm_segment_t old_fs = get_fs();
-	
+
 	ret = copy_from_user (&r.rt_dst, &(ur->rt_dst), 3 * sizeof(struct sockaddr));
 	ret |= __get_user (r.rt_flags, &(ur->rt_flags));
 	ret |= __get_user (r.rt_metric, &(ur->rt_metric));
@@ -411,7 +418,7 @@ static int blkpg_ioctl_trans(unsigned int fd, unsigned int cmd,
 	struct blkpg_partition p;
 	int err;
 	mm_segment_t old_fs = get_fs();
-	
+
 	err = get_user(a.op, &arg->op);
 	err |= __get_user(a.flags, &arg->flags);
 	err |= __get_user(a.datalen, &arg->datalen);
@@ -430,7 +437,7 @@ static int blkpg_ioctl_trans(unsigned int fd, unsigned int cmd,
 		set_fs (old_fs);
 	default:
 		return -EINVAL;
-	}                                        
+	}
 	return err;
 }
 
@@ -699,7 +706,95 @@ static struct ioctl32_list ioctl32_handler_table[] = {
 	IOCTL32_DEFAULT(SIOCDRARP),
 	IOCTL32_DEFAULT(SIOCADDDLCI),
 	IOCTL32_DEFAULT(SIOCDELDLCI),
+	/* SG stuff */
+	IOCTL32_DEFAULT(SG_SET_TIMEOUT),
+	IOCTL32_DEFAULT(SG_GET_TIMEOUT),
+	IOCTL32_DEFAULT(SG_EMULATED_HOST),
+	IOCTL32_DEFAULT(SG_SET_TRANSFORM),
+	IOCTL32_DEFAULT(SG_GET_TRANSFORM),
+	IOCTL32_DEFAULT(SG_SET_RESERVED_SIZE),
+	IOCTL32_DEFAULT(SG_GET_RESERVED_SIZE),
+	IOCTL32_DEFAULT(SG_GET_SCSI_ID),
+	IOCTL32_DEFAULT(SG_SET_FORCE_LOW_DMA),
+	IOCTL32_DEFAULT(SG_GET_LOW_DMA),
+	IOCTL32_DEFAULT(SG_SET_FORCE_PACK_ID),
+	IOCTL32_DEFAULT(SG_GET_PACK_ID),
+	IOCTL32_DEFAULT(SG_GET_NUM_WAITING),
+	IOCTL32_DEFAULT(SG_SET_DEBUG),
+	IOCTL32_DEFAULT(SG_GET_SG_TABLESIZE),
+	IOCTL32_DEFAULT(SG_GET_COMMAND_Q),
+	IOCTL32_DEFAULT(SG_SET_COMMAND_Q),
+	IOCTL32_DEFAULT(SG_GET_VERSION_NUM),
+	IOCTL32_DEFAULT(SG_NEXT_CMD_LEN),
+	IOCTL32_DEFAULT(SG_SCSI_RESET),
+	IOCTL32_DEFAULT(SG_IO),
+	IOCTL32_DEFAULT(SG_GET_REQUEST_TABLE),
+	IOCTL32_DEFAULT(SG_SET_KEEP_ORPHAN),
+	IOCTL32_DEFAULT(SG_GET_KEEP_ORPHAN),
+	/* PPP stuff */
+	IOCTL32_DEFAULT(PPPIOCGFLAGS),
+	IOCTL32_DEFAULT(PPPIOCSFLAGS),
+	IOCTL32_DEFAULT(PPPIOCGASYNCMAP),
+	IOCTL32_DEFAULT(PPPIOCSASYNCMAP),
+	IOCTL32_DEFAULT(PPPIOCGUNIT),
+	IOCTL32_DEFAULT(PPPIOCGRASYNCMAP),
+	IOCTL32_DEFAULT(PPPIOCSRASYNCMAP),
+	IOCTL32_DEFAULT(PPPIOCGMRU),
+	IOCTL32_DEFAULT(PPPIOCSMRU),
+	IOCTL32_DEFAULT(PPPIOCSMAXCID),
+	IOCTL32_DEFAULT(PPPIOCGXASYNCMAP),
+	IOCTL32_DEFAULT(PPPIOCSXASYNCMAP),
+	IOCTL32_DEFAULT(PPPIOCXFERUNIT),
+	IOCTL32_DEFAULT(PPPIOCGNPMODE),
+	IOCTL32_DEFAULT(PPPIOCSNPMODE),
+	IOCTL32_DEFAULT(PPPIOCGDEBUG),
+	IOCTL32_DEFAULT(PPPIOCSDEBUG),
+	IOCTL32_DEFAULT(PPPIOCNEWUNIT),
+	IOCTL32_DEFAULT(PPPIOCATTACH),
+	IOCTL32_DEFAULT(PPPIOCGCHAN),
+	/* PPPOX */
+	IOCTL32_DEFAULT(PPPOEIOCSFWD),
+	IOCTL32_DEFAULT(PPPOEIOCDFWD),
+	/* CDROM stuff */
+	IOCTL32_DEFAULT(CDROMPAUSE),
+	IOCTL32_DEFAULT(CDROMRESUME),
+	IOCTL32_DEFAULT(CDROMPLAYMSF),
+	IOCTL32_DEFAULT(CDROMPLAYTRKIND),
+	IOCTL32_DEFAULT(CDROMREADTOCHDR),
+	IOCTL32_DEFAULT(CDROMREADTOCENTRY),
+	IOCTL32_DEFAULT(CDROMSTOP),
+	IOCTL32_DEFAULT(CDROMSTART),
+	IOCTL32_DEFAULT(CDROMEJECT),
+	IOCTL32_DEFAULT(CDROMVOLCTRL),
+	IOCTL32_DEFAULT(CDROMSUBCHNL),
+	IOCTL32_DEFAULT(CDROMEJECT_SW),
+	IOCTL32_DEFAULT(CDROMMULTISESSION),
+	IOCTL32_DEFAULT(CDROM_GET_MCN),
+	IOCTL32_DEFAULT(CDROMRESET),
+	IOCTL32_DEFAULT(CDROMVOLREAD),
+	IOCTL32_DEFAULT(CDROMSEEK),
+	IOCTL32_DEFAULT(CDROMPLAYBLK),
+	IOCTL32_DEFAULT(CDROMCLOSETRAY),
+	IOCTL32_DEFAULT(CDROM_SET_OPTIONS),
+	IOCTL32_DEFAULT(CDROM_CLEAR_OPTIONS),
+	IOCTL32_DEFAULT(CDROM_SELECT_SPEED),
+	IOCTL32_DEFAULT(CDROM_SELECT_DISC),
+	IOCTL32_DEFAULT(CDROM_MEDIA_CHANGED),
+	IOCTL32_DEFAULT(CDROM_DRIVE_STATUS),
+	IOCTL32_DEFAULT(CDROM_DISC_STATUS),
+	IOCTL32_DEFAULT(CDROM_CHANGER_NSLOTS),
+	IOCTL32_DEFAULT(CDROM_LOCKDOOR),
+	IOCTL32_DEFAULT(CDROM_DEBUG),
+	IOCTL32_DEFAULT(CDROM_GET_CAPABILITY),
+	/* DVD ioctls */
+	IOCTL32_DEFAULT(DVD_READ_STRUCT),
+	IOCTL32_DEFAULT(DVD_WRITE_STRUCT),
+	IOCTL32_DEFAULT(DVD_AUTH),
+	/* Big L */
+	IOCTL32_DEFAULT(LOOP_SET_FD),
+	IOCTL32_DEFAULT(LOOP_CLR_FD),
 
+	/* And these ioctls need translation */
 	IOCTL32_HANDLER(SIOCGIFNAME, dev_ifname32),
 	IOCTL32_HANDLER(SIOCGIFCONF, dev_ifconf),
 	IOCTL32_HANDLER(SIOCGIFFLAGS, dev_ifsioc),
@@ -727,6 +822,9 @@ static struct ioctl32_list ioctl32_handler_table[] = {
 	IOCTL32_HANDLER(SIOCSIFNETMASK, dev_ifsioc),
 	IOCTL32_HANDLER(SIOCSIFPFLAGS, dev_ifsioc),
 	IOCTL32_HANDLER(SIOCGIFPFLAGS, dev_ifsioc),
+	IOCTL32_HANDLER(SIOCGPPPSTATS, dev_ifsioc),
+	IOCTL32_HANDLER(SIOCGPPPCSTATS, dev_ifsioc),
+	IOCTL32_HANDLER(SIOCGPPPVER, dev_ifsioc),
 	IOCTL32_HANDLER(SIOCGIFTXQLEN, dev_ifsioc),
 	IOCTL32_HANDLER(SIOCSIFTXQLEN, dev_ifsioc),
 	IOCTL32_HANDLER(SIOCADDRT, routing_ioctl),
@@ -834,7 +932,25 @@ static struct ioctl32_list ioctl32_handler_table[] = {
 	IOCTL32_DEFAULT(AUTOFS_IOC_CATATONIC),
 	IOCTL32_DEFAULT(AUTOFS_IOC_PROTOVER),
 	IOCTL32_HANDLER(AUTOFS_IOC_SETTIMEOUT32, ioc_settimeout),
-	IOCTL32_DEFAULT(AUTOFS_IOC_EXPIRE)
+	IOCTL32_DEFAULT(AUTOFS_IOC_EXPIRE),
+
+	/* Little p (/dev/rtc, /dev/envctrl, etc.) */
+	IOCTL32_DEFAULT(_IOR('p', 20, int[7])), /* RTCGET */
+	IOCTL32_DEFAULT(_IOW('p', 21, int[7])), /* RTCSET */
+	IOCTL32_DEFAULT(RTC_AIE_ON),
+	IOCTL32_DEFAULT(RTC_AIE_OFF),
+	IOCTL32_DEFAULT(RTC_UIE_ON),
+	IOCTL32_DEFAULT(RTC_UIE_OFF),
+	IOCTL32_DEFAULT(RTC_PIE_ON),
+	IOCTL32_DEFAULT(RTC_PIE_OFF),
+	IOCTL32_DEFAULT(RTC_WIE_ON),
+	IOCTL32_DEFAULT(RTC_WIE_OFF),
+	IOCTL32_DEFAULT(RTC_ALM_SET),
+	IOCTL32_DEFAULT(RTC_ALM_READ),
+	IOCTL32_DEFAULT(RTC_RD_TIME),
+	IOCTL32_DEFAULT(RTC_SET_TIME),
+	IOCTL32_DEFAULT(RTC_WKALM_SET),
+	IOCTL32_DEFAULT(RTC_WKALM_RD)
 };
 
 #define NR_IOCTL32_HANDLERS	(sizeof(ioctl32_handler_table) /	\

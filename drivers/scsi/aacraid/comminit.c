@@ -38,6 +38,7 @@
 #include <linux/spinlock.h>
 #include <linux/slab.h>
 #include <linux/blk.h>
+#include <linux/completion.h>
 #include <asm/semaphore.h>
 #include "scsi.h"
 #include "hosts.h"
@@ -57,6 +58,7 @@ static int aac_alloc_comm(struct aac_dev *dev, void **commaddr, unsigned long co
 	struct aac_init *init;
 	dma_addr_t phys;
 
+	/* FIXME: Adaptec add 128 bytes to this value - WHY ?? */
 	size = fibsize + sizeof(struct aac_init) + commsize + commalign + printfbufsiz;
 
 	base = pci_alloc_consistent(dev->pdev, size, &phys);
@@ -72,6 +74,14 @@ static int aac_alloc_comm(struct aac_dev *dev, void **commaddr, unsigned long co
 	dev->init = (struct aac_init *)(base + fibsize);
 	dev->init_pa = phys + fibsize;
 
+	/*
+	 *	Cache the upper bits of the virtual mapping for 64bit boxes
+	 *	FIXME: this crap should be rewritten
+	 */
+#if BITS_PER_LONG >= 64 
+	dev->fib_base_va = ((ulong)base & 0xffffffff00000000);
+#endif
+
 	init = dev->init;
 
 	init->InitStructRevision = cpu_to_le32(ADAPTER_INIT_STRUCT_REVISION);
@@ -82,7 +92,7 @@ static int aac_alloc_comm(struct aac_dev *dev, void **commaddr, unsigned long co
 	 *	Adapter Fibs are the first thing allocated so that they
 	 *	start page aligned
 	 */
-	init->AdapterFibsVirtualAddress = cpu_to_le32((long)base);
+	init->AdapterFibsVirtualAddress = cpu_to_le32((u32)base);
 	init->AdapterFibsPhysicalAddress = cpu_to_le32(phys);
 	init->AdapterFibsSize = cpu_to_le32(fibsize);
 	init->AdapterFibAlign = cpu_to_le32(sizeof(struct hw_fib));
@@ -238,7 +248,7 @@ int aac_comm_init(struct aac_dev * dev)
 
 	queues = (struct aac_entry *)((unsigned char *)headers + hdrsize);
 
-	/* Adapter to Host normal priority Command queue */ 
+	/* Adapter to Host normal proirity Command queue */ 
 	comm->queue[HostNormCmdQueue].base = queues;
 	aac_queue_init(dev, &comm->queue[HostNormCmdQueue], headers, HOST_NORM_CMD_ENTRIES);
 	queues += HOST_NORM_CMD_ENTRIES;
@@ -319,7 +329,6 @@ struct aac_dev *aac_init_adapter(struct aac_dev *dev)
 		return NULL;
 		
 	INIT_LIST_HEAD(&dev->fib_list);
-	spin_lock_init(&dev->fib_lock);
 	init_completion(&dev->aif_completion);
 	/*
 	 *	Add this adapter in to our dev List.

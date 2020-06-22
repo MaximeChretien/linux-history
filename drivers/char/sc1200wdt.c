@@ -22,6 +22,8 @@
  *		 <rob@osinvestor.com>	Return proper status instead of temperature warning
  *					Add WDIOC_GETBOOTSTATUS and WDIOC_SETOPTIONS ioctls
  *					Fix CONFIG_WATCHDOG_NOWAYOUT
+ *	20020530 Joel Becker		Add Matt Domsch's nowayout
+ *					module option
  */
 
 #include <linux/config.h>
@@ -86,6 +88,14 @@ MODULE_PARM_DESC(io, "io port");
 MODULE_PARM(timeout, "i");
 MODULE_PARM_DESC(timeout, "range is 0-255 minutes, default is 1");
 
+#ifdef CONFIG_WATCHDOG_NOWAYOUT
+static int nowayout = 1;
+#else
+static int nowayout = 0;
+#endif
+
+MODULE_PARM(nowayout,"i");
+MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default=CONFIG_WATCHDOG_NOWAYOUT)");
 
 
 /* Read from Data Register */
@@ -161,7 +171,7 @@ static int sc1200wdt_ioctl(struct inode *inode, struct file *file, unsigned int 
 {
 	int new_timeout;
 	static struct watchdog_info ident = {
-		options:		WDIOF_KEEPALIVEPING | WDIOF_SETTIMEOUT,
+		options:		WDIOF_KEEPALIVEPING | WDIOF_SETTIMEOUT | WDIOF_MAGICCLOSE,
 		firmware_version:	0,
 		identity:		"PC87307/PC97307"
 	};
@@ -246,17 +256,20 @@ static ssize_t sc1200wdt_write(struct file *file, const char *data, size_t len, 
 		return -ESPIPE;
 	
 	if (len) {
-#ifndef CONFIG_WATCHDOG_NOWAYOUT
-		size_t i;
+		if (!nowayout) {
+			size_t i;
 
-		expect_close = 0;
+			expect_close = 0;
 
-		for (i = 0; i != len; i++)
-		{
-			if (data[i] == 'V')
-				expect_close = 42;
+			for (i = 0; i != len; i++)
+			{
+				char c;
+				if(get_user(c, data+i))
+					return -EFAULT;
+				if (c == 'V')
+					expect_close = 42;
+			}
 		}
-#endif
 		sc1200wdt_write_data(WDTO, timeout);
 		return len;
 	}

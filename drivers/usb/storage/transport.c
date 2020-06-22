@@ -346,7 +346,7 @@ unsigned int usb_stor_transfer_length(Scsi_Cmnd *srb)
 /* This is the completion handler which will wake us up when an URB
  * completes.
  */
-static void usb_stor_blocking_completion(urb_t *urb)
+static void usb_stor_blocking_completion(struct urb *urb)
 {
 	struct completion *urb_done_ptr = (struct completion *)urb->context;
 
@@ -360,24 +360,23 @@ int usb_stor_control_msg(struct us_data *us, unsigned int pipe,
 			 u8 request, u8 requesttype, u16 value, u16 index, 
 			 void *data, u16 size)
 {
-	struct completion urb_done;
 	int status;
-	devrequest *dr;
+	struct usb_ctrlrequest *dr;
 
 	/* allocate the device request structure */
-	dr = kmalloc(sizeof(devrequest), GFP_NOIO);
+	dr = kmalloc(sizeof(struct usb_ctrlrequest), GFP_NOIO);
 	if (!dr)
 		return -ENOMEM;
 
 	/* fill in the structure */
-	dr->requesttype = requesttype;
-	dr->request = request;
-	dr->value = cpu_to_le16(value);
-	dr->index = cpu_to_le16(index);
-	dr->length = cpu_to_le16(size);
+	dr->bRequestType = requesttype;
+	dr->bRequest = request;
+	dr->wValue = cpu_to_le16(value);
+	dr->wIndex = cpu_to_le16(index);
+	dr->wLength = cpu_to_le16(size);
 
 	/* set up data structures for the wakeup system */
-	init_completion(&urb_done);
+	init_completion(&us->current_done);
 
 	/* lock the URB */
 	down(&(us->current_urb_sem));
@@ -385,7 +384,7 @@ int usb_stor_control_msg(struct us_data *us, unsigned int pipe,
 	/* fill the URB */
 	FILL_CONTROL_URB(us->current_urb, us->pusb_dev, pipe, 
 			 (unsigned char*) dr, data, size, 
-			 usb_stor_blocking_completion, &urb_done);
+			 usb_stor_blocking_completion, &us->current_done);
 	us->current_urb->actual_length = 0;
 	us->current_urb->error_count = 0;
 	us->current_urb->transfer_flags = USB_ASYNC_UNLINK;
@@ -401,7 +400,7 @@ int usb_stor_control_msg(struct us_data *us, unsigned int pipe,
 
 	/* wait for the completion of the URB */
 	up(&(us->current_urb_sem));
-	wait_for_completion(&urb_done);
+	wait_for_completion(&us->current_done);
 	down(&(us->current_urb_sem));
 
 	/* return the actual length of the data transferred if no error*/
@@ -421,18 +420,17 @@ int usb_stor_control_msg(struct us_data *us, unsigned int pipe,
 int usb_stor_bulk_msg(struct us_data *us, void *data, int pipe,
 		      unsigned int len, unsigned int *act_len)
 {
-	struct completion urb_done;
 	int status;
 
 	/* set up data structures for the wakeup system */
-	init_completion(&urb_done);
+	init_completion(&us->current_done);
 
 	/* lock the URB */
 	down(&(us->current_urb_sem));
 
 	/* fill the URB */
 	FILL_BULK_URB(us->current_urb, us->pusb_dev, pipe, data, len,
-		      usb_stor_blocking_completion, &urb_done);
+		      usb_stor_blocking_completion, &us->current_done);
 	us->current_urb->actual_length = 0;
 	us->current_urb->error_count = 0;
 	us->current_urb->transfer_flags = USB_ASYNC_UNLINK;
@@ -447,7 +445,7 @@ int usb_stor_bulk_msg(struct us_data *us, void *data, int pipe,
 
 	/* wait for the completion of the URB */
 	up(&(us->current_urb_sem));
-	wait_for_completion(&urb_done);
+	wait_for_completion(&us->current_done);
 	down(&(us->current_urb_sem));
 
 	/* return the actual length of the data transferred */
@@ -1040,9 +1038,14 @@ int usb_stor_CB_transport(Scsi_Cmnd *srb, struct us_data *us)
 /* Determine what the maximum LUN supported is */
 int usb_stor_Bulk_max_lun(struct us_data *us)
 {
-	unsigned char data;
+	unsigned char *data;
 	int result;
 	int pipe;
+
+	data = kmalloc(sizeof *data, GFP_KERNEL);
+	if (!data) {
+		return 0;
+	}
 
 	/* issue the command -- use usb_control_msg() because
 	 *  the state machine is not yet alive */
@@ -1051,14 +1054,19 @@ int usb_stor_Bulk_max_lun(struct us_data *us)
 				 US_BULK_GET_MAX_LUN, 
 				 USB_DIR_IN | USB_TYPE_CLASS | 
 				 USB_RECIP_INTERFACE,
-				 0, us->ifnum, &data, sizeof(data), HZ);
+				 0, us->ifnum, data, sizeof(data), HZ);
 
 	US_DEBUGP("GetMaxLUN command result is %d, data is %d\n", 
-		  result, data);
+		  result, *data);
 
 	/* if we have a successful request, return the result */
-	if (result == 1)
-		return data;
+	if (result == 1) {
+		result = *data;
+		kfree(data);
+		return result;
+	} else {
+		kfree(data);
+	}
 
 	/* if we get a STALL, clear the stall */
 	if (result == -EPIPE) {
@@ -1077,41 +1085,54 @@ int usb_stor_Bulk_reset(struct us_data *us);
 
 int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 {
-	struct bulk_cb_wrap bcb;
-	struct bulk_cs_wrap bcs;
+	struct bulk_cb_wrap *bcb;
+	struct bulk_cs_wrap *bcs;
 	int result;
 	int pipe;
 	int partial;
+	int ret = USB_STOR_TRANSPORT_ERROR;
+
+	bcb = kmalloc(sizeof *bcb, in_interrupt() ? GFP_ATOMIC : GFP_NOIO);
+	if (!bcb) {
+		return USB_STOR_TRANSPORT_ERROR;
+	}
+	bcs = kmalloc(sizeof *bcs, in_interrupt() ? GFP_ATOMIC : GFP_NOIO);
+	if (!bcs) {
+		kfree(bcb);
+		return USB_STOR_TRANSPORT_ERROR;
+	}
 
 	/* set up the command wrapper */
-	bcb.Signature = cpu_to_le32(US_BULK_CB_SIGN);
-	bcb.DataTransferLength = cpu_to_le32(usb_stor_transfer_length(srb));
-	bcb.Flags = srb->sc_data_direction == SCSI_DATA_READ ? 1 << 7 : 0;
-	bcb.Tag = srb->serial_number;
-	bcb.Lun = srb->cmnd[1] >> 5;
+	bcb->Signature = cpu_to_le32(US_BULK_CB_SIGN);
+	bcb->DataTransferLength = cpu_to_le32(usb_stor_transfer_length(srb));
+	bcb->Flags = srb->sc_data_direction == SCSI_DATA_READ ? 1 << 7 : 0;
+	bcb->Tag = srb->serial_number;
+	bcb->Lun = srb->cmnd[1] >> 5;
 	if (us->flags & US_FL_SCM_MULT_TARG)
-		bcb.Lun |= srb->target << 4;
-	bcb.Length = srb->cmd_len;
+		bcb->Lun |= srb->target << 4;
+	bcb->Length = srb->cmd_len;
 
 	/* construct the pipe handle */
 	pipe = usb_sndbulkpipe(us->pusb_dev, us->ep_out);
 
 	/* copy the command payload */
-	memset(bcb.CDB, 0, sizeof(bcb.CDB));
-	memcpy(bcb.CDB, srb->cmnd, bcb.Length);
+	memset(bcb->CDB, 0, sizeof(bcb->CDB));
+	memcpy(bcb->CDB, srb->cmnd, bcb->Length);
 
 	/* send it to out endpoint */
 	US_DEBUGP("Bulk command S 0x%x T 0x%x Trg %d LUN %d L %d F %d CL %d\n",
-		  le32_to_cpu(bcb.Signature), bcb.Tag,
-		  (bcb.Lun >> 4), (bcb.Lun & 0x0F), 
-		  bcb.DataTransferLength, bcb.Flags, bcb.Length);
-	result = usb_stor_bulk_msg(us, &bcb, pipe, US_BULK_CB_WRAP_LEN, 
+		  le32_to_cpu(bcb->Signature), bcb->Tag,
+		  (bcb->Lun >> 4), (bcb->Lun & 0x0F), 
+		  bcb->DataTransferLength, bcb->Flags, bcb->Length);
+	result = usb_stor_bulk_msg(us, bcb, pipe, US_BULK_CB_WRAP_LEN, 
 				   &partial);
 	US_DEBUGP("Bulk command transfer result=%d\n", result);
 
 	/* if the command was aborted, indicate that */
-	if (result == -ENOENT)
-		return USB_STOR_TRANSPORT_ABORTED;
+	if (result == -ENOENT) {
+		ret = USB_STOR_TRANSPORT_ABORTED;
+		goto out;
+	}
 
 	/* if we stall, we need to clear it before we go on */
 	if (result == -EPIPE) {
@@ -1119,25 +1140,30 @@ int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 		result = usb_stor_clear_halt(us, pipe);
 
 		/* if the command was aborted, indicate that */
-		if (result == -ENOENT)
-			return USB_STOR_TRANSPORT_ABORTED;
+		if (result == -ENOENT) {
+			ret = USB_STOR_TRANSPORT_ABORTED;
+			goto out;
+		}
 		result = -EPIPE;
 	} else if (result) {
 		/* unknown error -- we've got a problem */
-		return USB_STOR_TRANSPORT_ERROR;
+		ret = USB_STOR_TRANSPORT_ERROR;
+		goto out;
 	}
 
 	/* if the command transfered well, then we go to the data stage */
 	if (result == 0) {
 		/* send/receive data payload, if there is any */
-		if (bcb.DataTransferLength) {
+		if (bcb->DataTransferLength) {
 			usb_stor_transfer(srb, us);
 			result = srb->result;
 			US_DEBUGP("Bulk data transfer result 0x%x\n", result);
 
 			/* if it was aborted, we need to indicate that */
-			if (result == US_BULK_TRANSFER_ABORTED)
-				return USB_STOR_TRANSPORT_ABORTED;
+			if (result == US_BULK_TRANSFER_ABORTED) {
+				ret = USB_STOR_TRANSPORT_ABORTED;
+				goto out;
+			}
 		}
 	}
 
@@ -1150,12 +1176,14 @@ int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 
 	/* get CSW for device status */
 	US_DEBUGP("Attempting to get CSW...\n");
-	result = usb_stor_bulk_msg(us, &bcs, pipe, US_BULK_CS_WRAP_LEN, 
+	result = usb_stor_bulk_msg(us, bcs, pipe, US_BULK_CS_WRAP_LEN, 
 				   &partial);
 
 	/* if the command was aborted, indicate that */
-	if (result == -ENOENT)
-		return USB_STOR_TRANSPORT_ABORTED;
+	if (result == -ENOENT) {
+		ret = USB_STOR_TRANSPORT_ABORTED;
+		goto out;
+	}
 
 	/* did the attempt to read the CSW fail? */
 	if (result == -EPIPE) {
@@ -1163,17 +1191,21 @@ int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 		result = usb_stor_clear_halt(us, pipe);
 
 		/* if the command was aborted, indicate that */
-		if (result == -ENOENT)
-			return USB_STOR_TRANSPORT_ABORTED;
+		if (result == -ENOENT) {
+			ret = USB_STOR_TRANSPORT_ABORTED;
+			goto out;
+		}
 
 		/* get the status again */
 		US_DEBUGP("Attempting to get CSW (2nd try)...\n");
-		result = usb_stor_bulk_msg(us, &bcs, pipe,
+		result = usb_stor_bulk_msg(us, bcs, pipe,
 					   US_BULK_CS_WRAP_LEN, &partial);
 
 		/* if the command was aborted, indicate that */
-		if (result == -ENOENT)
-			return USB_STOR_TRANSPORT_ABORTED;
+		if (result == -ENOENT) {
+			ret = USB_STOR_TRANSPORT_ABORTED;
+			goto out;
+		}
 
 		/* if it fails again, we need a reset and return an error*/
 		if (result == -EPIPE) {
@@ -1181,48 +1213,60 @@ int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 			result = usb_stor_clear_halt(us, pipe);
 
 			/* if the command was aborted, indicate that */
-			if (result == -ENOENT)
-				return USB_STOR_TRANSPORT_ABORTED;
-			return USB_STOR_TRANSPORT_ERROR;
+			if (result == -ENOENT) {
+				ret = USB_STOR_TRANSPORT_ABORTED;
+			} else {
+				ret = USB_STOR_TRANSPORT_ERROR;
+			}
+			goto out;
 		}
 	}
 
 	/* if we still have a failure at this point, we're in trouble */
 	US_DEBUGP("Bulk status result = %d\n", result);
 	if (result) {
-		return USB_STOR_TRANSPORT_ERROR;
+		ret = USB_STOR_TRANSPORT_ERROR;
+		goto out;
 	}
 
 	/* check bulk status */
 	US_DEBUGP("Bulk status Sig 0x%x T 0x%x R %d Stat 0x%x\n",
-		  le32_to_cpu(bcs.Signature), bcs.Tag, 
-		  bcs.Residue, bcs.Status);
-	if (bcs.Signature != cpu_to_le32(US_BULK_CS_SIGN) || 
-	    bcs.Tag != bcb.Tag || 
-	    bcs.Status > US_BULK_STAT_PHASE || partial != 13) {
+		  le32_to_cpu(bcs->Signature), bcs->Tag, 
+		  bcs->Residue, bcs->Status);
+	if (bcs->Signature != cpu_to_le32(US_BULK_CS_SIGN) || 
+	    bcs->Tag != bcb->Tag || 
+	    bcs->Status > US_BULK_STAT_PHASE || partial != 13) {
 		US_DEBUGP("Bulk logical error\n");
-		return USB_STOR_TRANSPORT_ERROR;
+		ret = USB_STOR_TRANSPORT_ERROR;
+		goto out;
 	}
 
 	/* based on the status code, we report good or bad */
-	switch (bcs.Status) {
+	switch (bcs->Status) {
 		case US_BULK_STAT_OK:
 			/* command good -- note that data could be short */
-			return USB_STOR_TRANSPORT_GOOD;
+			ret = USB_STOR_TRANSPORT_GOOD;
+			goto out;
 
 		case US_BULK_STAT_FAIL:
 			/* command failed */
-			return USB_STOR_TRANSPORT_FAILED;
+			ret = USB_STOR_TRANSPORT_FAILED;
+			goto out;
 
 		case US_BULK_STAT_PHASE:
 			/* phase error -- note that a transport reset will be
 			 * invoked by the invoke_transport() function
 			 */
-			return USB_STOR_TRANSPORT_ERROR;
+			ret = USB_STOR_TRANSPORT_ERROR;
+			goto out;
 	}
 
 	/* we should never get here, but if we do, we're in trouble */
-	return USB_STOR_TRANSPORT_ERROR;
+
+ out:
+	kfree(bcb);
+	kfree(bcs);
+	return ret;
 }
 
 /***********************************************************************

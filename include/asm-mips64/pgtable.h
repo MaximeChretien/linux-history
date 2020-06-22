@@ -57,8 +57,8 @@ extern void (*_flush_cache_l1)(void);
  * routines are not needed. Only the icache on a processor is not
  * coherent with the dcache of the _same_ processor, so we must flush
  * the icache so that it does not contain stale contents of physical
- * memory. No flushes are needed for dma coherency, since the o200s 
- * are io coherent. The only place where we might be overoptimizing 
+ * memory. No flushes are needed for dma coherency, since the o200s
+ * are io coherent. The only place where we might be overoptimizing
  * out icache flushes are from mprotect (when PROT_EXEC is added).
  */
 extern void andes_flush_icache_page(unsigned long);
@@ -77,10 +77,6 @@ do {									\
 
 #else
 
-extern void (*_flush_icache_all)(void);
-extern void (*_flush_icache_range)(unsigned long start, unsigned long end);
-extern void (*_flush_icache_page)(struct vm_area_struct *vma, struct page *page);
-
 #define flush_cache_mm(mm)		_flush_cache_mm(mm)
 #define flush_cache_range(mm,start,end)	_flush_cache_range(mm,start,end)
 #define flush_cache_page(vma,page)	_flush_cache_page(vma, page)
@@ -89,12 +85,6 @@ extern void (*_flush_icache_page)(struct vm_area_struct *vma, struct page *page)
 #define flush_icache_user_range(vma, page, addr, len) \
 	flush_icache_page((vma), (page))
 #define flush_icache_page(vma, page)	_flush_icache_page(vma, page)
-#ifdef CONFIG_VTAG_ICACHE
-#define flush_icache_all()		_flush_icache_all()
-#else
-#define flush_icache_all()		do { } while(0)
-#endif
-
 
 #endif /* !CONFIG_CPU_R10000 */
 
@@ -114,17 +104,17 @@ extern void (*_flush_icache_page)(struct vm_area_struct *vma, struct page *page)
  * pair of 4K pages, giving 1024 (== PTRS_PER_PMD) 8 byte pointers to
  * page tables. Each page table is a single 4K page, giving 512 (==
  * PTRS_PER_PTE) 8 byte ptes. Each pgde is initialized to point to
- * invalid_pmd_table, each pmde is initialized to point to 
+ * invalid_pmd_table, each pmde is initialized to point to
  * invalid_pte_table, each pte is initialized to 0. When memory is low,
  * and a pmd table or a page table allocation fails, empty_bad_pmd_table
  * and empty_bad_page_table is returned back to higher layer code, so
- * that the failure is recognized later on. Linux does not seem to 
+ * that the failure is recognized later on. Linux does not seem to
  * handle these failures very well though. The empty_bad_page_table has
  * invalid pte entries in it, to force page faults.
- * Vmalloc handling: vmalloc uses swapper_pg_dir[0] (returned by 
- * pgd_offset_k), which is initalized to point to kpmdtbl. kpmdtbl is 
- * the only single page pmd in the system. kpmdtbl entries point into 
- * kptbl[] array. We reserve 1<<KPTBL_PAGE_ORDER pages to hold the
+ * Vmalloc handling: vmalloc uses swapper_pg_dir[0] (returned by
+ * pgd_offset_k), which is initalized to point to kpmdtbl. kpmdtbl is
+ * the only single page pmd in the system. kpmdtbl entries point into
+ * kptbl[] array. We reserve 1 << PGD_ORDER pages to hold the
  * vmalloc range translations, which the fault handler looks at.
  */
 
@@ -145,72 +135,19 @@ extern void (*_flush_icache_page)(struct vm_area_struct *vma, struct page *page)
 #define PTRS_PER_PGD	1024
 #define PTRS_PER_PMD	1024
 #define PTRS_PER_PTE	512
-#define USER_PTRS_PER_PGD	(TASK_SIZE/PGDIR_SIZE)
+#define PGD_ORDER		1
+
+#define USER_PTRS_PER_PGD	(TASK_SIZE / PGDIR_SIZE)
 #define FIRST_USER_PGD_NR	0
 
-#define KPTBL_PAGE_ORDER  1
-#define VMALLOC_START     XKSEG
-#define VMALLOC_VMADDR(x) ((unsigned long)(x))
-#define VMALLOC_END       \
-	(VMALLOC_START + ((1 << KPTBL_PAGE_ORDER) * PTRS_PER_PTE * PAGE_SIZE))
+#define VMALLOC_START		XKSEG
+#define VMALLOC_VMADDR(x)	((unsigned long)(x))
+#define VMALLOC_END	\
+	(VMALLOC_START + ((1 << PGD_ORDER) * PTRS_PER_PTE * PAGE_SIZE))
 
-/* Note that we shift the lower 32bits of each EntryLo[01] entry
- * 6 bits to the left. That way we can convert the PFN into the
- * physical address by a single 'and' operation and gain 6 additional
- * bits for storing information which isn't present in a normal
- * MIPS page table.
- *
- * Similar to the Alpha port, we need to keep track of the ref
- * and mod bits in software.  We have a software "yeah you can read
- * from this page" bit, and a hardware one which actually lets the
- * process read from the page.  On the same token we have a software
- * writable bit and the real hardware one which actually lets the
- * process write to the page, this keeps a mod bit via the hardware
- * dirty bit.
- *
- * Certain revisions of the R4000 and R5000 have a bug where if a
- * certain sequence occurs in the last 3 instructions of an executable
- * page, and the following page is not mapped, the cpu can do
- * unpredictable things.  The code (when it is written) to deal with
- * this problem will be in the update_mmu_cache() code for the r4k.
- */
-#define _PAGE_PRESENT               (1<<0)  /* implemented in software */
-#define _PAGE_READ                  (1<<1)  /* implemented in software */
-#define _PAGE_WRITE                 (1<<2)  /* implemented in software */
-#define _PAGE_ACCESSED              (1<<3)  /* implemented in software */
-#define _PAGE_MODIFIED              (1<<4)  /* implemented in software */
-#define _PAGE_R4KBUG                (1<<5)  /* workaround for r4k bug  */
-#define _PAGE_GLOBAL                (1<<6)
-#define _PAGE_VALID                 (1<<7)
-#define _PAGE_SILENT_READ           (1<<7)  /* synonym                 */
-#define _PAGE_DIRTY                 (1<<8)  /* The MIPS dirty bit      */
-#define _PAGE_SILENT_WRITE          (1<<8)
-#define _CACHE_CACHABLE_NO_WA       (0<<9)  /* R4600 only              */
-#define _CACHE_CACHABLE_WA          (1<<9)  /* R4600 only              */
-#define _CACHE_UNCACHED             (2<<9)  /* R4[0246]00              */
-#define _CACHE_CACHABLE_NONCOHERENT (3<<9)  /* R4[0246]00              */
-#define _CACHE_CACHABLE_CE          (4<<9)  /* R4[04]00 only           */
-#define _CACHE_CACHABLE_COW         (5<<9)  /* R4[04]00 only           */
-#define _CACHE_CACHABLE_CUW         (6<<9)  /* R4[04]00 only           */
-#define _CACHE_UNCACHED_ACCELERATED (7<<9)  /* R10000 only             */
-#define _CACHE_MASK                 (7<<9)
+#include <asm/pgtable-bits.h>
 
-#define __READABLE	(_PAGE_READ | _PAGE_SILENT_READ | _PAGE_ACCESSED)
-#define __WRITEABLE	(_PAGE_WRITE | _PAGE_SILENT_WRITE | _PAGE_MODIFIED)
-
-#define _PAGE_CHG_MASK  (PAGE_MASK | _PAGE_ACCESSED | _PAGE_MODIFIED | _CACHE_MASK)
-
-#ifdef CONFIG_MIPS_UNCACHED
-#define PAGE_CACHABLE_DEFAULT _CACHE_UNCACHED
-#else /* ! UNCACHED */
-#ifdef CONFIG_SGI_IP22
-#define PAGE_CACHABLE_DEFAULT _CACHE_CACHABLE_NONCOHERENT
-#else /* ! IP22 */
-#define PAGE_CACHABLE_DEFAULT _CACHE_CACHABLE_COW
-#endif /* IP22 */
-#endif /* UNCACHED */
-
-#define PAGE_NONE	__pgprot(_PAGE_PRESENT | PAGE_CACHABLE_DEFAULT)
+#define PAGE_NONE	__pgprot(_PAGE_PRESENT | _CACHE_CACHABLE_NONCOHERENT)
 #define PAGE_SHARED     __pgprot(_PAGE_PRESENT | _PAGE_READ | _PAGE_WRITE | \
 			PAGE_CACHABLE_DEFAULT)
 #define PAGE_COPY       __pgprot(_PAGE_PRESENT | _PAGE_READ | \
@@ -220,7 +157,7 @@ extern void (*_flush_icache_page)(struct vm_area_struct *vma, struct page *page)
 #define PAGE_KERNEL	__pgprot(_PAGE_PRESENT | __READABLE | __WRITEABLE | \
 			_PAGE_GLOBAL | PAGE_CACHABLE_DEFAULT)
 #define PAGE_USERIO     __pgprot(_PAGE_PRESENT | _PAGE_READ | _PAGE_WRITE | \
-			_CACHE_UNCACHED)
+			PAGE_CACHABLE_DEFAULT)
 #define PAGE_KERNEL_UNCACHED __pgprot(_PAGE_PRESENT | __READABLE | \
 			__WRITEABLE | _PAGE_GLOBAL | _CACHE_UNCACHED)
 
@@ -298,7 +235,7 @@ static inline void pgd_set(pgd_t * pgdp, pmd_t * pmdp)
 
 static inline int pte_none(pte_t pte)
 {
-	return !pte_val(pte);
+	return !(pte_val(pte) & ~_PAGE_GLOBAL);
 }
 
 static inline int pte_present(pte_t pte)
@@ -314,15 +251,32 @@ static inline int pte_present(pte_t pte)
 static inline void set_pte(pte_t *ptep, pte_t pteval)
 {
 	*ptep = pteval;
+#if !defined(CONFIG_CPU_R3000) && !defined(CONFIG_CPU_TX39XX)
+	if (pte_val(pteval) & _PAGE_GLOBAL) {
+		pte_t *buddy = ptep_buddy(ptep);
+		/*
+		 * Make sure the buddy is global too (if it's !none,
+		 * it better already be global)
+		 */
+		if (pte_none(*buddy))
+			pte_val(*buddy) = pte_val(*buddy) | _PAGE_GLOBAL;
+	}
+#endif
 }
 
 static inline void pte_clear(pte_t *ptep)
 {
-	set_pte(ptep, __pte(0));
+#if !defined(CONFIG_CPU_R3000) && !defined(CONFIG_CPU_TX39XX)
+	/* Preserve global status for the pair */
+	if (pte_val(*ptep_buddy(ptep)) & _PAGE_GLOBAL)
+		set_pte(ptep, __pte(_PAGE_GLOBAL));
+	else
+#endif
+		set_pte(ptep, __pte(0));
 }
 
 /*
- * (pmds are folded into pgds so this doesnt get actually called,
+ * (pmds are folded into pgds so this doesn't get actually called,
  * but the define is needed for a generic inline function.)
  */
 #define set_pmd(pmdptr, pmdval) (*(pmdptr) = pmdval)
@@ -531,7 +485,7 @@ static inline pmd_t * pmd_offset(pgd_t * dir, unsigned long address)
 	       ((address >> PMD_SHIFT) & (PTRS_PER_PMD - 1));
 }
 
-/* Find an entry in the third-level page table.. */ 
+/* Find an entry in the third-level page table.. */
 static inline pte_t *pte_offset(pmd_t * dir, unsigned long address)
 {
 	return (pte_t *) (pmd_page(*dir)) +
@@ -582,6 +536,8 @@ static inline pte_t mk_swap_pte(unsigned long type, unsigned long offset)
  * constraints placed on us by the cache architecture.
  */
 #define HAVE_ARCH_UNMAPPED_AREA
+
+#define io_remap_page_range remap_page_range
 
 #endif /* !__ASSEMBLY__ */
 

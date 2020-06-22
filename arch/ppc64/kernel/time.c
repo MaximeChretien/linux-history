@@ -47,6 +47,7 @@
 #include <linux/time.h>
 #include <linux/init.h>
 
+#include <asm/naca.h>
 #include <asm/segment.h>
 #include <asm/io.h>
 #include <asm/processor.h>
@@ -63,6 +64,8 @@
 #include <asm/ppcdebug.h>
 
 void smp_local_timer_interrupt(struct pt_regs *);
+
+extern void setup_before_console_init();
 
 /* keep track of when we need to update the rtc */
 time_t last_rtc_update;
@@ -83,11 +86,8 @@ unsigned long tb_ticks_per_sec;
 unsigned long next_xtime_sync_tb;
 unsigned long xtime_sync_interval;
 unsigned long tb_to_xs;
-unsigned      tb_to_us;
 unsigned long processor_freq;
 spinlock_t rtc_lock = SPIN_LOCK_UNLOCKED;
-
-struct gettimeofday_struct do_gtod;
 
 extern unsigned long wall_jiffies;
 extern unsigned long lpEvent_count;
@@ -99,15 +99,14 @@ extern unsigned long prof_len;
 extern unsigned long prof_shift;
 extern char _stext;
 
+extern struct timezone sys_tz;
+
 void ppc_adjtimex(void);
 
 static unsigned adjusting_time = 0;
 
-static inline void ppc_do_profile (unsigned long nip)
+static void ppc_do_profile (unsigned long nip)
 {
-	if (!prof_buffer)
-		return;
-
 	/*
 	 * Only measure the CPUs specified by /proc/irq/prof_cpu_mask.
 	 * (default is all CPUs.)
@@ -181,9 +180,9 @@ static __inline__ void timer_sync_xtime( unsigned long cur_tb )
 #ifdef CONFIG_PPC_ISERIES
 
 /* 
- * This function recalibrates the timebase based on the 49-bit time-of-day value in the Titan chip.
- * The Titan is much more accurate than the value returned by the service processor for the
- * timebase frequency.  
+ * This function recalibrates the timebase based on the 49-bit time-of-day
+ * value in the Titan chip.  The Titan is much more accurate than the value
+ * returned by the service processor for the timebase frequency.  
  */
 
 static void iSeries_tb_recal(void)
@@ -213,9 +212,9 @@ static void iSeries_tb_recal(void)
 				tb_ticks_per_jiffy = new_tb_ticks_per_jiffy;
 				tb_ticks_per_sec   = new_tb_ticks_per_sec;
 				div128_by_32( XSEC_PER_SEC, 0, tb_ticks_per_sec, &divres );
-				do_gtod.tb_ticks_per_sec = tb_ticks_per_sec;
+				naca->tb_ticks_per_sec = tb_ticks_per_sec;
 				tb_to_xs = divres.result_low;
-				do_gtod.varp->tb_to_xs = tb_to_xs;
+				naca->tb_to_xs = tb_to_xs;
 			}
 			else {
 				printk( "Titan recalibrate: FAILED (difference > 4 percent)\n"
@@ -256,10 +255,8 @@ int timer_interrupt(struct pt_regs * regs)
 
 	irq_enter(cpu);
 
-#ifndef CONFIG_PPC_ISERIES
-	if (!user_mode(regs))
+	if ((!user_mode(regs)) && (prof_buffer))
 		ppc_do_profile(instruction_pointer(regs));
-#endif
 
 	lpaca->xLpPaca.xIntDword.xFields.xDecrInt = 0;
 
@@ -306,17 +303,62 @@ void do_gettimeofday(struct timeval *tv)
 {
         unsigned long sec, usec, tb_ticks;
 	unsigned long xsec, tb_xsec;
-	struct gettimeofday_vars * temp_varp;
 	unsigned long temp_tb_to_xs, temp_stamp_xsec;
+	unsigned long tb_count_1, tb_count_2;
+	unsigned long always_zero;
+	struct naca_struct *gtdp;
+	
+	gtdp = (struct naca_struct *)0xC000000000004000;
+	/* 
+	 * The following loop guarantees that we see a consistent view of the
+	 * tb_to_xs and stamp_xsec variables.  These two variables can change
+	 * (eg. when xntpd adjusts the clock frequency) and an inconsistent
+	 * view (one variable changed, the other not) could result in a wildly
+	 * wrong result for do_gettimeofday. 
+	 *
+	 * The code which updates these variables (ppc_adjtimex below)
+	 * increments tb_update_count, then updates the two variables and then
+	 * increments tb_update_count again.  This code reads tb_update_count,
+	 * reads the two variables and then reads tb_update_count again.  It
+	 * loops doing this until the two reads of tb_update_count yield the
+	 * same value and that value is even.  This ensures a consistent view
+	 * of the two variables.
+	 *
+	 * The strange looking assembler code below causes the hardware to
+	 * think that reading the two variables is dependent on the first read
+	 * of tb_update_count and that the second reading of tb_update_count is
+	 * dependent on reading the two variables.  This assures ordering
+	 * without the need for a lwsync, which is much more expensive.
+	 */
+	do {
+		tb_ticks = get_tb() - gtdp->tb_orig_stamp;
+
+		tb_count_1 = gtdp->tb_update_count;
+
+		__asm__ __volatile__ (
+"		andc 	%0,%2,%2\n\
+		add	%1,%3,%0\n\
+"		: "=&r"(always_zero), "=r"(gtdp)
+		: "r"(tb_count_1), "r"(gtdp) );
+
+		temp_tb_to_xs = gtdp->tb_to_xs;
+		temp_stamp_xsec = gtdp->stamp_xsec;
+
+		__asm__ __volatile__ (
+"		add	%0,%2,%3\n\
+		andc	%0,%0,%0\n\
+		add	%1,%4,%0\n\
+"		: "=&r"(always_zero), "=r"(gtdp)
+		: "r"(temp_stamp_xsec), "r"(temp_tb_to_xs), "r"(gtdp) );
+
+		tb_count_2 = gtdp->tb_update_count;
+
+	} while ( tb_count_2 - ( tb_count_1 & 0xfffffffffffffffe ) ); 
 
 	/* These calculations are faster (gets rid of divides)
 	 * if done in units of 1/2^20 rather than microseconds.
 	 * The conversion to microseconds at the end is done
 	 * without a divide (and in fact, without a multiply) */
-	tb_ticks = get_tb() - do_gtod.tb_orig_stamp;
-	temp_varp = do_gtod.varp;
-	temp_tb_to_xs = temp_varp->tb_to_xs;
-	temp_stamp_xsec = temp_varp->stamp_xsec;
 	tb_xsec = mulhdu( tb_ticks, temp_tb_to_xs );
 	xsec = temp_stamp_xsec + tb_xsec;
 	sec = xsec / XSEC_PER_SEC;
@@ -370,20 +412,23 @@ void do_settimeofday(struct timeval *tv)
 	time_maxerror = NTP_PHASE_LIMIT;
 	time_esterror = NTP_PHASE_LIMIT;
 
-	delta_xsec = mulhdu( (tb_last_stamp-do_gtod.tb_orig_stamp), do_gtod.varp->tb_to_xs );
+	delta_xsec = mulhdu( (tb_last_stamp-naca->tb_orig_stamp), naca->tb_to_xs );
 	new_xsec = (new_usec * XSEC_PER_SEC) / USEC_PER_SEC;
 	new_xsec += new_sec * XSEC_PER_SEC;
 	if ( new_xsec > delta_xsec ) {
-		do_gtod.varp->stamp_xsec = new_xsec - delta_xsec;
+		naca->stamp_xsec = new_xsec - delta_xsec;
 	}
 	else {
 		/* This is only for the case where the user is setting the time
 		 * way back to a time such that the boot time would have been
-		 * before 1970 ... eg. we booted ten days ago, and we are setting
-		 * the time to Jan 5, 1970 */
-		do_gtod.varp->stamp_xsec = new_xsec;
-		do_gtod.tb_orig_stamp = tb_last_stamp;
+		 * before 1970 ... eg. we booted ten days ago, and we are
+		 * setting the time to Jan 5, 1970 */
+		naca->stamp_xsec = new_xsec;
+		naca->tb_orig_stamp = tb_last_stamp;
 	}
+
+	naca->tz_minuteswest = sys_tz.tz_minuteswest;
+	naca->tz_dsttime = sys_tz.tz_dsttime;
 
 	write_unlock_irqrestore(&xtime_lock, flags);
 }
@@ -453,13 +498,11 @@ void __init time_init(void)
 	xtime.tv_sec = mktime(tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
 			      tm.tm_hour, tm.tm_min, tm.tm_sec);
 	tb_last_stamp = get_tb();
-	do_gtod.tb_orig_stamp = tb_last_stamp;
-	do_gtod.varp = &do_gtod.vars[0];
-	do_gtod.var_idx = 0;
-	do_gtod.varp->stamp_xsec = xtime.tv_sec * XSEC_PER_SEC;
-	do_gtod.tb_ticks_per_sec = tb_ticks_per_sec;
-	do_gtod.varp->tb_to_xs = tb_to_xs;
-	do_gtod.tb_to_us = tb_to_us;
+	naca->tb_orig_stamp = tb_last_stamp;
+	naca->tb_update_count = 0;
+	naca->tb_ticks_per_sec = tb_ticks_per_sec;
+	naca->stamp_xsec = xtime.tv_sec * XSEC_PER_SEC;
+	naca->tb_to_xs = tb_to_xs;
 
 	xtime_sync_interval = tb_ticks_per_sec - (tb_ticks_per_sec/8);
 	next_xtime_sync_tb = tb_last_stamp + xtime_sync_interval;
@@ -470,23 +513,21 @@ void __init time_init(void)
 	last_rtc_update = xtime.tv_sec;
 	write_unlock_irqrestore(&xtime_lock, flags);
 
-#ifdef CONFIG_PPC_ISERIES
-	/* HACK HACK This allows the iSeries profiling to use /proc/profile */
-	prof_shift = 0;
-#endif
-
 	/* Not exact, but the timer interrupt takes care of this */
 	set_dec(tb_ticks_per_jiffy);
+
+	/* This horrible hack gives setup a hook just before console_init */
+	setup_before_console_init();
 }
 
 /* 
  * After adjtimex is called, adjust the conversion of tb ticks
  * to microseconds to keep do_gettimeofday synchronized 
  * with ntpd.
-
+ *
  * Use the time_adjust, time_freq and time_offset computed by adjtimex to 
  * adjust the frequency.
-*/
+ */
 
 /* #define DEBUG_PPC_ADJTIMEX 1 */
 
@@ -497,8 +538,6 @@ void ppc_adjtimex(void)
 	long delta_freq, ltemp;
 	struct div_result divres; 
 	unsigned long flags;
-	struct gettimeofday_vars * temp_varp;
-	unsigned temp_idx;
 	long singleshot_ppm = 0;
 
 	/* Compute parts per million frequency adjustment to accomplish the time adjustment
@@ -529,8 +568,11 @@ void ppc_adjtimex(void)
 		
 		/* Compute parts per million frequency adjustment to match time_adjust */
 		singleshot_ppm = tickadj * HZ;	
-		/* The adjustment should be tickadj*HZ to match the code in linux/kernel/timer.c, but
-		   experiments show that this is too large. 3/4 of tickadj*HZ seems about right */
+		/*
+		 * The adjustment should be tickadj*HZ to match the code in
+		 * linux/kernel/timer.c, but experiments show that this is too
+		 * large. 3/4 of tickadj*HZ seems about right
+		 */
 		singleshot_ppm -= singleshot_ppm / 4;
 		/* Use SHIFT_USEC to get it into the same units as time_freq */	
 		singleshot_ppm <<= SHIFT_USEC;
@@ -564,36 +606,38 @@ void ppc_adjtimex(void)
 	printk("ppc_adjtimex: tb_ticks_per_sec - base = %ld  new = %ld\n", tb_ticks_per_sec, new_tb_ticks_per_sec);
 #endif
 				
-	/* Compute a new value of tb_to_xs (used to convert tb to microseconds and a new value of 
-	   stamp_xsec which is the time (in 1/2^20 second units) corresponding to tb_orig_stamp.  This 
-	   new value of stamp_xsec compensates for the change in frequency (implied by the new tb_to_xs)
-	   which guarantees that the current time remains the same */ 
-	tb_ticks = get_tb() - do_gtod.tb_orig_stamp;
+	/*
+	 * Compute a new value of tb_to_xs (used to convert tb to microseconds
+	 * and a new value of stamp_xsec which is the time (in 1/2^20 second
+	 * units) corresponding to tb_orig_stamp.  This new value of stamp_xsec
+	 * compensates for the change in frequency (implied by the new
+	 * tb_to_xs) and so guarantees that the current time remains the same
+	 *
+	 */ 
+	tb_ticks = get_tb() - naca->tb_orig_stamp;
 	div128_by_32( 1024*1024, 0, new_tb_ticks_per_sec, &divres );
 	new_tb_to_xs = divres.result_low;
 	new_xsec = mulhdu( tb_ticks, new_tb_to_xs );
 
 	write_lock_irqsave( &xtime_lock, flags );
-	old_xsec = mulhdu( tb_ticks, do_gtod.varp->tb_to_xs );
-	new_stamp_xsec = do_gtod.varp->stamp_xsec + old_xsec - new_xsec;
+	old_xsec = mulhdu( tb_ticks, naca->tb_to_xs );
+	new_stamp_xsec = naca->stamp_xsec + old_xsec - new_xsec;
 
-	/* There are two copies of tb_to_xs and stamp_xsec so that no lock is needed to access and use these
-	   values in do_gettimeofday.  We alternate the copies and as long as a reasonable time elapses between
-	   changes, there will never be inconsistent values.  ntpd has a minimum of one minute between updates */
-
-	if (do_gtod.var_idx == 0) {
-		temp_varp = &do_gtod.vars[1];
-		temp_idx  = 1;
-	}
-	else {
-		temp_varp = &do_gtod.vars[0];
-		temp_idx  = 0;
-	}
-	temp_varp->tb_to_xs = new_tb_to_xs;
-	temp_varp->stamp_xsec = new_stamp_xsec;
-	mb();
-	do_gtod.varp = temp_varp;
-	do_gtod.var_idx = temp_idx;
+	/*
+	 * tb_update_count is used to allow the problem state gettimeofday code
+	 * to assure itself that it sees a consistent view of the tb_to_xs and
+	 * stamp_xsec variables.  It reads the tb_update_count, then reads
+	 * tb_to_xs and stamp_xsec and then reads tb_update_count again.  If
+	 * the two values of tb_update_count match and are even then the
+	 * tb_to_xs and stamp_xsec values are consistent.  If not, then it
+	 * loops back and reads them again until this criteria is met.
+	 */
+	++(naca->tb_update_count);
+	wmb();
+	naca->tb_to_xs = new_tb_to_xs;
+	naca->stamp_xsec = new_stamp_xsec;
+	wmb();
+	++(naca->tb_update_count);
 
 	write_unlock_irqrestore( &xtime_lock, flags );
 
@@ -691,6 +735,7 @@ void to_tm(int tim, struct rtc_time * tm)
 	GregorianDay(tm);
 }
 
+#if 0
 /* Auxiliary function to compute scaling factors */
 /* Actually the choice of a timebase running at 1/4 the of the bus
  * frequency giving resolution of a few tens of nanoseconds is quite nice.
@@ -720,6 +765,7 @@ unsigned mulhwu_scale_factor(unsigned inscale, unsigned outscale) {
         if (err <= inscale/2) mlt++;
         return mlt;
   }
+#endif
 
 /*
  * Divide a 128-bit dividend by a 32-bit divisor, leaving a 128 bit

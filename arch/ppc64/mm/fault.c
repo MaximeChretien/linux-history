@@ -38,7 +38,11 @@
 
 #include <asm/ppcdebug.h>
 
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
+#if defined(CONFIG_KDB)
+#include <linux/kdb.h>
+#endif
+	
+#if defined(CONFIG_XMON) || defined(CONFIG_KGDB) || defined(CONFIG_KDB)
 extern void (*debugger)(struct pt_regs *);
 extern void (*debugger_fault_handler)(struct pt_regs *);
 extern int (*debugger_dabr_match)(struct pt_regs *);
@@ -118,7 +122,7 @@ void do_page_fault(struct pt_regs *regs, unsigned long address,
 
 good_area:
 	code = SEGV_ACCERR;
-	
+
 	/* a write */
 	if (is_write) {
 		if (!(vma->vm_flags & VM_WRITE))
@@ -159,7 +163,7 @@ good_area:
 
 bad_area:
 	up_read(&mm->mmap_sem);
-	
+
 	/* User mode accesses cause a SIGSEGV */
 	if (user_mode(regs)) {
 		info.si_signo = SIGSEGV;
@@ -224,8 +228,10 @@ bad_page_fault(struct pt_regs *regs, unsigned long address)
 	if (debugger_kernel_faults)
 		debugger(regs);
 #endif
+#if defined(CONFIG_KDB)
+	kdb(KDB_REASON_FAULT, regs->trap, regs);
+#endif	
 	print_backtrace( (unsigned long *)regs->gpr[1] );
 	panic("kernel access of bad area pc %lx lr %lx address %lX tsk %s/%d",
 	      regs->nip,regs->link,address,current->comm,current->pid);
 }
-

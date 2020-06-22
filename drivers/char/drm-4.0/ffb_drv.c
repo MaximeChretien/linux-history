@@ -710,8 +710,7 @@ static int ffb_lock(struct inode *inode, struct file *filp, unsigned int cmd, un
 		/* Contention */
 		atomic_inc(&dev->total_sleeps);
 		current->state = TASK_INTERRUPTIBLE;
-		current->policy |= SCHED_YIELD;
-		schedule();
+		yield();
 		if (signal_pending(current)) {
 			ret = -ERESTARTSYS;
 			break;

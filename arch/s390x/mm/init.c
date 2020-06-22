@@ -44,6 +44,74 @@ static unsigned long totalram_pages;
 pgd_t swapper_pg_dir[PTRS_PER_PGD] __attribute__((__aligned__(PAGE_SIZE)));
 char  empty_zero_page[PAGE_SIZE] __attribute__((__aligned__(PAGE_SIZE)));
 
+pmd_t *pgd_populate(struct mm_struct *mm, pgd_t *pgd, pmd_t *pmd)
+{
+        unsigned long addr = (unsigned long) pgd;
+        unsigned long *pgd_slot =  (unsigned long *) (addr & -8);
+        unsigned long offset = addr & 4;
+	pmd_t *new, *pmd2;
+	int i;
+ 
+        if (offset == 0 && 
+	    ((*pgd_slot & _PGD_ENTRY_INV) != 0 ||
+	     (*pgd_slot & _PGD_ENTRY_LEN(2)) == 0)) {
+                /* Set lower pmd, upper pmd is empty. */
+                *pgd_slot = __pa(pmd) | _PGD_ENTRY_MASK |
+                                _PGD_ENTRY_OFF(0) | _PGD_ENTRY_LEN(1);
+                return pmd;
+        }
+        if (offset == 4 &&
+	    ((*pgd_slot & _PGD_ENTRY_INV) != 0 ||
+	     (*pgd_slot & _PGD_ENTRY_OFF(2)) != 0)) {
+                /* Lower pmd empty, set upper pmd. */
+                *pgd_slot = (__pa(pmd) - 0x2000) | _PGD_ENTRY_MASK |
+                                _PGD_ENTRY_OFF(2) | _PGD_ENTRY_LEN(3);
+                return pmd;
+        }
+        /* We have to enlarge the pmd to 16K if we arrive here. */
+	new = (pmd_t *) __get_free_pages(GFP_KERNEL, 2);
+	if (new == NULL) {
+		pmd_free(pmd);
+		return NULL;
+	}
+	/* Set the PG_arch_1 bit on the first and the third pmd page
+           so that pmd_free_fast can recognize pmds that have been
+           allocated with an order 2 allocation.  */
+	set_bit(PG_arch_1, &virt_to_page(new)->flags);
+	set_bit(PG_arch_1, &virt_to_page(new+PTRS_PER_PMD)->flags);
+	/* Now copy the two pmds to the new memory area. */
+	if (offset == 0) {
+		pmd2 = (pmd_t *)(*pgd_slot & PAGE_MASK) + PTRS_PER_PMD;
+		memcpy(new, pmd, sizeof(pmd_t)*PTRS_PER_PMD);
+		memcpy(new + PTRS_PER_PMD, pmd2, sizeof(pmd_t)*PTRS_PER_PMD);
+	} else {
+		pmd2 = (pmd_t *)(*pgd_slot & PAGE_MASK);
+		memcpy(new, pmd2, sizeof(pmd_t)*PTRS_PER_PMD);
+		memcpy(new + PTRS_PER_PMD, pmd, sizeof(pmd_t)*PTRS_PER_PMD);
+	}
+	*pgd_slot = __pa(new) | _PGD_ENTRY_MASK |
+			_PGD_ENTRY_OFF(0) | _PGD_ENTRY_LEN(3);
+	for (i = 0; i < PTRS_PER_PMD; i++) {
+		pmd_clear(pmd + i);
+		pmd_clear(pmd2 + i);
+	}
+	pmd_free(pmd);
+	pmd_free(pmd2);
+	return new;
+}
+
+void pmd_free_order2(pmd_t *pmd)
+{
+	pmd_t *pmd2 = (pmd_t *) ((unsigned long) pmd ^ 8192);
+
+	clear_bit(PG_arch_1, &virt_to_page(pmd)->flags);
+	if (test_bit(PG_arch_1, &virt_to_page(pmd2)->flags) == 0) {
+		/* The other pmd of the order 2 allocation has already
+		   been freed. Now we can release the order 2 allocation.  */
+		free_pages((unsigned long) pmd & ~8192, 2);
+	}
+}
+
 int do_check_pgt_cache(int low, int high)
 {
         int freed = 0;
@@ -51,11 +119,11 @@ int do_check_pgt_cache(int low, int high)
                 do {
                         if(pgd_quicklist) {
 				free_pgd_slow(get_pgd_fast());
-				freed += 4;
+				freed += 2;
 			}
                         if(pmd_quicklist) {
 				pmd_free_slow(pmd_alloc_one_fast(NULL, 0));
-				freed += 4;
+				freed += 2;
 			}
                         if(pte_quicklist) {
 				pte_free_slow(pte_alloc_one_fast(NULL, 0));
@@ -111,51 +179,45 @@ unsigned long last_valid_pfn;
 
 void __init paging_init(void)
 {
-        pgd_t * pg_dir;
-	pmd_t * pm_dir;
-        pte_t * pt_dir;
-        pte_t   pte;
-	int     i,j,k;
-        unsigned long address=0;
-        unsigned long pgdir_k = (__pa(swapper_pg_dir) & PAGE_MASK) |
-          _KERN_REGION_TABLE;
-	unsigned long end_mem = (unsigned long) __va(max_low_pfn*PAGE_SIZE);
-	static const int ssm_mask = 0x04000000L;
-
 	unsigned long zones_size[MAX_NR_ZONES] = {0, 0, 0};
-	unsigned long dma_pfn, high_pfn;
+	static const int ssm_mask = 0x04000000L;
+	unsigned long dma_pfn, address, end_mem;
+        pgd_t * pg_dir;
+	int     i,j,k;
 
 	dma_pfn = MAX_DMA_ADDRESS >> PAGE_SHIFT;
-	high_pfn = max_low_pfn;
 
-	if (dma_pfn > high_pfn)
-		zones_size[ZONE_DMA] = high_pfn;
+	if (dma_pfn > max_low_pfn)
+		zones_size[ZONE_DMA] = max_low_pfn;
 	else {
 		zones_size[ZONE_DMA] = dma_pfn;
-		zones_size[ZONE_NORMAL] = high_pfn - dma_pfn;
+		zones_size[ZONE_NORMAL] = max_low_pfn - dma_pfn;
 	}
 
 	/* Initialize mem_map[].  */
 	free_area_init(zones_size);
 
-
 	/*
 	 * map whole physical memory to virtual memory (identity mapping) 
 	 */
-
         pg_dir = swapper_pg_dir;
-	
-        for (i = 0 ; i < PTRS_PER_PGD ; i++,pg_dir++) {
+	address = 0;
+	end_mem = (unsigned long) __va(max_low_pfn*PAGE_SIZE);
+        for (i = 0 ; i < PTRS_PER_PGD/2 ; i++, pg_dir += 2) {
+		pmd_t *pm_dir;
 
                 if (address >= end_mem) {
                         pgd_clear(pg_dir);
                         continue;
-                }          
+                }
         
 	        pm_dir = (pmd_t *) alloc_bootmem_low_pages(PAGE_SIZE*4);
-                pgd_populate(&init_mm, pg_dir, pm_dir);
+		*((unsigned long *) pg_dir) = __pa(pm_dir) | _PGD_ENTRY_MASK |
+			_PGD_ENTRY_LEN(3) | _PGD_ENTRY_OFF(0);
 
-                for (j = 0 ; j < PTRS_PER_PMD ; j++,pm_dir++) {
+                for (j = 0 ; j < PTRS_PER_PMD*2 ; j++, pm_dir++) {
+			pte_t *pt_dir;
+
                         if (address >= end_mem) {
                                 pmd_clear(pm_dir);
                                 continue; 
@@ -165,7 +227,7 @@ void __init paging_init(void)
                         pmd_populate(&init_mm, pm_dir, pt_dir);
 	
                         for (k = 0 ; k < PTRS_PER_PTE ; k++,pt_dir++) {
-                                pte = mk_pte_phys(address, PAGE_KERNEL);
+                                pte_t pte = mk_pte_phys(address, PAGE_KERNEL);
                                 if (address >= end_mem) {
                                         pte_clear(&pte); 
                                         continue;
@@ -181,8 +243,8 @@ void __init paging_init(void)
                              "lctlg 7,7,%0\n\t"
                              "lctlg 13,13,%0\n\t"
                              "ssm   %1"
-			     : :"m" (pgdir_k), "m" (ssm_mask));
-
+			     : :"m" (__pa(swapper_pg_dir) | _KERN_REGION_TABLE),
+			        "m" (ssm_mask));
         local_flush_tlb();
 
         return;

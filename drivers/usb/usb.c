@@ -38,6 +38,8 @@
 #endif
 #include <linux/usb.h>
 
+#include "hcd.h"
+
 static const int usb_bandwidth_option =
 #ifdef CONFIG_USB_BANDWIDTH
 				1;
@@ -218,41 +220,50 @@ struct usb_endpoint_descriptor *usb_epnum_to_ep_desc(struct usb_device *dev, uns
 }
 
 /*
- * usb_calc_bus_time:
+ * usb_calc_bus_time - approximate periodic transaction time in nanoseconds
+ * @speed: from dev->speed; USB_SPEED_{LOW,FULL,HIGH}
+ * @is_input: true iff the transaction sends data to the host
+ * @isoc: true for isochronous transactions, false for interrupt ones
+ * @bytecount: how many bytes in the transaction.
  *
- * returns (approximate) USB bus time in nanoseconds for a USB transaction.
+ * Returns approximate bus time in nanoseconds for a periodic transaction.
+ * See USB 2.0 spec section 5.11.3; only periodic transfers need to be
+ * scheduled in software, this function is only used for such scheduling.
  */
-static long usb_calc_bus_time (int low_speed, int input_dir, int isoc, int bytecount)
+long usb_calc_bus_time (int speed, int is_input, int isoc, int bytecount)
 {
 	unsigned long	tmp;
 
-	if (low_speed)		/* no isoc. here */
-	{
-		if (input_dir)
-		{
+	switch (speed) {
+	case USB_SPEED_LOW: 	/* INTR only */
+		if (is_input) {
 			tmp = (67667L * (31L + 10L * BitTime (bytecount))) / 1000L;
 			return (64060L + (2 * BW_HUB_LS_SETUP) + BW_HOST_DELAY + tmp);
-		}
-		else
-		{
+		} else {
 			tmp = (66700L * (31L + 10L * BitTime (bytecount))) / 1000L;
 			return (64107L + (2 * BW_HUB_LS_SETUP) + BW_HOST_DELAY + tmp);
 		}
+	case USB_SPEED_FULL:	/* ISOC or INTR */
+		if (isoc) {
+			tmp = (8354L * (31L + 10L * BitTime (bytecount))) / 1000L;
+			return (((is_input) ? 7268L : 6265L) + BW_HOST_DELAY + tmp);
+		} else {
+			tmp = (8354L * (31L + 10L * BitTime (bytecount))) / 1000L;
+			return (9107L + BW_HOST_DELAY + tmp);
+		}
+	case USB_SPEED_HIGH:	/* ISOC or INTR */
+		// FIXME adjust for input vs output
+		if (isoc)
+			tmp = HS_USECS (bytecount);
+		else
+			tmp = HS_USECS_ISO (bytecount);
+		return tmp;
+	default:
+		dbg ("bogus device speed!");
+		return -1;
 	}
-
-	/* for full-speed: */
-
-	if (!isoc)		/* Input or Output */
-	{
-		tmp = (8354L * (31L + 10L * BitTime (bytecount))) / 1000L;
-		return (9107L + BW_HOST_DELAY + tmp);
-	} /* end not Isoc */
-
-	/* for isoc: */
-
-	tmp = (8354L * (31L + 10L * BitTime (bytecount))) / 1000L;
-	return (((input_dir) ? 7268L : 6265L) + BW_HOST_DELAY + tmp);
 }
+
 
 /*
  * usb_check_bandwidth():
@@ -285,7 +296,7 @@ int usb_check_bandwidth (struct usb_device *dev, struct urb *urb)
 	unsigned int	pipe = urb->pipe;
 	long		bustime;
 
-	bustime = usb_calc_bus_time (usb_pipeslow(pipe), usb_pipein(pipe),
+	bustime = usb_calc_bus_time (dev->speed, usb_pipein(pipe),
 			usb_pipeisoc(pipe), usb_maxpacket(dev, pipe, usb_pipeout(pipe)));
 	if (usb_pipeisoc(pipe))
 		bustime = NS_TO_US(bustime) / urb->number_of_packets;
@@ -457,11 +468,10 @@ void usb_deregister_bus(struct usb_bus *bus)
 	 */
 	down (&usb_bus_list_lock);
 	list_del(&bus->bus_list);
+	clear_bit(bus->busnum, busmap.busmap);
 	up (&usb_bus_list_lock);
 
 	usbdevfs_remove_bus(bus);
-
-	clear_bit(bus->busnum, busmap.busmap);
 
 	usb_bus_put(bus);
 }
@@ -939,6 +949,9 @@ struct usb_device *usb_alloc_dev(struct usb_device *parent, struct usb_bus *bus)
 
 	usb_bus_get(bus);
 
+	if (!parent)
+		dev->devpath [0] = '0';
+
 	dev->bus = bus;
 	dev->parent = parent;
 	atomic_set(&dev->refcnt, 1);
@@ -985,11 +998,11 @@ void usb_inc_dev_use(struct usb_device *dev)
  *
  *	The driver should call usb_free_urb() when it is finished with the urb.
  */
-urb_t *usb_alloc_urb(int iso_packets)
+struct urb *usb_alloc_urb(int iso_packets)
 {
-	urb_t *urb;
+	struct urb *urb;
 
-	urb = (urb_t *)kmalloc(sizeof(urb_t) + iso_packets * sizeof(iso_packet_descriptor_t),
+	urb = (struct urb *)kmalloc(sizeof(struct urb) + iso_packets * sizeof(struct iso_packet_descriptor),
 	      in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
 	if (!urb) {
 		err("alloc_urb: kmalloc failed");
@@ -1011,13 +1024,13 @@ urb_t *usb_alloc_urb(int iso_packets)
  *	cleaned up with a call to usb_free_urb() when the driver is finished
  *	with it.
  */
-void usb_free_urb(urb_t* urb)
+void usb_free_urb(struct urb* urb)
 {
 	if (urb)
 		kfree(urb);
 }
 /*-------------------------------------------------------------------*/
-int usb_submit_urb(urb_t *urb)
+int usb_submit_urb(struct urb *urb)
 {
 	if (urb && urb->dev && urb->dev->bus && urb->dev->bus->op)
 		return urb->dev->bus->op->submit_urb(urb);
@@ -1026,7 +1039,7 @@ int usb_submit_urb(urb_t *urb)
 }
 
 /*-------------------------------------------------------------------*/
-int usb_unlink_urb(urb_t *urb)
+int usb_unlink_urb(struct urb *urb)
 {
 	if (urb && urb->dev && urb->dev->bus && urb->dev->bus->op)
 		return urb->dev->bus->op->unlink_urb(urb);
@@ -1040,7 +1053,7 @@ int usb_unlink_urb(urb_t *urb)
 /*-------------------------------------------------------------------*
  * completion handler for compatibility wrappers (sync control/bulk) *
  *-------------------------------------------------------------------*/
-static void usb_api_blocking_completion(urb_t *urb)
+static void usb_api_blocking_completion(struct urb *urb)
 {
 	struct usb_api_data *awd = (struct usb_api_data *)urb->context;
 
@@ -1054,7 +1067,7 @@ static void usb_api_blocking_completion(urb_t *urb)
  *-------------------------------------------------------------------*/
 
 // Starts urb and waits for completion or timeout
-static int usb_start_wait_urb(urb_t *urb, int timeout, int* actual_length)
+static int usb_start_wait_urb(struct urb *urb, int timeout, int* actual_length)
 { 
 	DECLARE_WAITQUEUE(wait, current);
 	struct usb_api_data awd;
@@ -1110,9 +1123,9 @@ static int usb_start_wait_urb(urb_t *urb, int timeout, int* actual_length)
 /*-------------------------------------------------------------------*/
 // returns status (negative) or length (positive)
 int usb_internal_control_msg(struct usb_device *usb_dev, unsigned int pipe, 
-			    devrequest *cmd,  void *data, int len, int timeout)
+			    struct usb_ctrlrequest *cmd,  void *data, int len, int timeout)
 {
-	urb_t *urb;
+	struct urb *urb;
 	int retv;
 	int length;
 
@@ -1145,7 +1158,8 @@ int usb_internal_control_msg(struct usb_device *usb_dev, unsigned int pipe,
  *	This function sends a simple control message to a specified endpoint
  *	and waits for the message to complete, or timeout.
  *	
- *	If successful, it returns 0, othwise a negative error number.
+ *	If successful, it returns the number of bytes transferred; 
+ *	otherwise, it returns a negative error number.
  *
  *	Don't use this function from within an interrupt context, like a
  *	bottom half handler.  If you need a asyncronous message, or need to send
@@ -1154,17 +1168,17 @@ int usb_internal_control_msg(struct usb_device *usb_dev, unsigned int pipe,
 int usb_control_msg(struct usb_device *dev, unsigned int pipe, __u8 request, __u8 requesttype,
 			 __u16 value, __u16 index, void *data, __u16 size, int timeout)
 {
-	devrequest *dr = kmalloc(sizeof(devrequest), GFP_KERNEL);
+	struct usb_ctrlrequest *dr = kmalloc(sizeof(struct usb_ctrlrequest), GFP_KERNEL);
 	int ret;
 	
 	if (!dr)
 		return -ENOMEM;
 
-	dr->requesttype = requesttype;
-	dr->request = request;
-	dr->value = cpu_to_le16p(&value);
-	dr->index = cpu_to_le16p(&index);
-	dr->length = cpu_to_le16p(&size);
+	dr->bRequestType = requesttype;
+	dr->bRequest = request;
+	dr->wValue = cpu_to_le16p(&value);
+	dr->wIndex = cpu_to_le16p(&index);
+	dr->wLength = cpu_to_le16p(&size);
 
 	//dbg("usb_control_msg");	
 
@@ -1188,9 +1202,9 @@ int usb_control_msg(struct usb_device *dev, unsigned int pipe, __u8 request, __u
  *	This function sends a simple bulk message to a specified endpoint
  *	and waits for the message to complete, or timeout.
  *	
- *	If successful, it returns 0, othwise a negative error number.
- *	The number of actual bytes transferred will be plaed in the 
- *	actual_timeout paramater.
+ *	If successful, it returns 0, otherwise a negative error number.
+ *	The number of actual bytes transferred will be stored in the 
+ *	actual_length paramater.
  *
  *	Don't use this function from within an interrupt context, like a
  *	bottom half handler.  If you need a asyncronous message, or need to
@@ -1199,7 +1213,7 @@ int usb_control_msg(struct usb_device *dev, unsigned int pipe, __u8 request, __u
 int usb_bulk_msg(struct usb_device *usb_dev, unsigned int pipe, 
 			void *data, int len, int *actual_length, int timeout)
 {
-	urb_t *urb;
+	struct urb *urb;
 
 	if (len < 0)
 		return -EINVAL;
@@ -1698,7 +1712,8 @@ void usb_disconnect(struct usb_device **pdev)
 
 	*pdev = NULL;
 
-	info("USB disconnect on device %d", dev->devnum);
+	info("USB disconnect on device %s-%s address %d",
+			dev->bus->bus_name, dev->devpath, dev->devnum);
 
 	if (dev->actconfig) {
 		for (i = 0; i < dev->actconfig->bNumInterfaces; i++) {
@@ -2392,6 +2407,7 @@ EXPORT_SYMBOL(usb_reset_device);
 EXPORT_SYMBOL(usb_connect);
 EXPORT_SYMBOL(usb_disconnect);
 
+EXPORT_SYMBOL(usb_calc_bus_time);
 EXPORT_SYMBOL(usb_check_bandwidth);
 EXPORT_SYMBOL(usb_claim_bandwidth);
 EXPORT_SYMBOL(usb_release_bandwidth);

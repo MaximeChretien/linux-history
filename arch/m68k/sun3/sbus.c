@@ -16,9 +16,9 @@ extern void rs_init(void);
 
 void __init sbus_init(void)
 {
-
+#ifdef CONFIG_SUN3X_ZS
 	rs_init();
-
+#endif
 }
 
 void *sparc_alloc_io (u32 address, void *virtual, int len, char *name,

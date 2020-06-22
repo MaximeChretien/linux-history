@@ -2911,7 +2911,7 @@ static void ScsiReportLunsDone(Scsi_Cmnd *Cmnd)
     }
   }
 
-Done:  
+Done:  ;
 }
 
 static void 
@@ -3028,7 +3028,7 @@ static void IssueReportLunsCommand(
 
 
 
-Done:
+Done: ;
 
 }
 

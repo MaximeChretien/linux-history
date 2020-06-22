@@ -22,13 +22,11 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-#include <linux/config.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
 #include <linux/delay.h>
 #include <linux/string.h>
 #include <linux/init.h>
-#include <linux/ide.h>
 #include <linux/bootmem.h>
 
 #include <asm/io.h>
@@ -80,14 +78,12 @@ rtas_read_config_##size(struct device_node *dn, int offset, type val) {  \
 	 \
 	if (dn == NULL) { \
 		ret = -2; \
-	} else if (dn->status) { \
-		ret = -1; \
 	} else { \
 		addr = (dn->busno << 16) | (dn->devfn << 8) | offset; \
 		buid = dn->phb->buid; \
 		if (buid) { \
 			ret = rtas_call(ibm_read_pci_config, 4, 2, &returnval, addr, buid >> 32, buid & 0xffffffff, nbytes); \
-                        if (ret < 0) \
+                        if (ret < 0 || (returnval == 0xffffffff)) \
                                ret = rtas_fake_read(dn, offset, nbytes, &returnval); \
 		} else { \
 			ret = rtas_call(read_pci_config, 2, 2, &returnval, addr, nbytes); \
@@ -113,8 +109,6 @@ rtas_write_config_##size(struct device_node *dn, int offset, type val) { \
 	 \
 	if (dn == NULL) { \
 		ret = -2; \
-	} else if (dn->status) { \
-		ret = -1; \
 	} else { \
 		buid = dn->phb->buid; \
 		addr = (dn->busno << 16) | (dn->devfn << 8) | offset; \
@@ -491,7 +485,7 @@ alloc_phb(struct device_node *dev, char *model, unsigned int addr_size_words)
 					 0x100000); 
 
 		/* 
-		 * Firmware doesnt always clear this bit which is critical
+		 * Firmware doesn't always clear this bit which is critical
 		 * for good performance - Anton
 		 */
 		{
@@ -659,13 +653,20 @@ fixup_resources(struct pci_dev *dev)
 			continue;
 		}
 
+		if (dev->resource[i].start > dev->resource[i].end) {
+			/* Bogus resource.  Just clear it out. */
+			dev->resource[i].start = dev->resource[i].end = 0;
+			continue;
+		}
+
+
 		if (dev->resource[i].flags & IORESOURCE_IO) {
 			if (is_eeh_implemented()) {
 				unsigned int busno = dev->bus ? dev->bus->number : 0;
 				unsigned long size = dev->resource[i].end - dev->resource[i].start;
 				unsigned long addr = (unsigned long)__ioremap(dev->resource[i].start + phb->io_base_phys, size, _PAGE_NO_CACHE);
 				if (!addr)
-					panic("fixup_resources: ioremap failed!\n");
+					panic("fixup_resources: io ioremap failed!\n");
 				dev->resource[i].start = eeh_token(phb->global_number, busno, dev->devfn, addr) | eeh_disable_bit;
 				dev->resource[i].end = dev->resource[i].start + size;
 			} else {
@@ -685,7 +686,7 @@ fixup_resources(struct pci_dev *dev)
 					unsigned long size = dev->resource[i].end - dev->resource[i].start;
 					unsigned long addr = (unsigned long)__ioremap(dev->resource[i].start + phb->pci_mem_offset, size, _PAGE_NO_CACHE);
 					if (!addr)
-						panic("fixup_resources: ioremap failed!\n");
+						panic("fixup_resources: mem ioremap failed!\n");
 					dev->resource[i].start = eeh_token(phb->global_number, busno, dev->devfn, addr) | eeh_disable_bit;
 					dev->resource[i].end = dev->resource[i].start + size;
 				} else {

@@ -20,7 +20,7 @@
 #include <linux/config.h>
 #include <asm/processor.h>
 #include <asm/cache.h>
-#include "ppc_asm.h"
+#include <asm/ppc_asm.h>
 
 #define GETSYM(reg, sym)	\
 	lis	reg, sym@h; ori	reg, reg, sym@l	

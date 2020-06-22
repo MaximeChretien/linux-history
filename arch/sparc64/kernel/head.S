@@ -78,25 +78,28 @@ sparc_ramdisk_size:
 	 * PROM entry point is on %o4
 	 */
 sparc64_boot:
-	rdpr	%ver, %g1
-	sethi	%hi(0x003e0014), %g5
-	srlx	%g1, 32, %g1
-	or	%g5, %lo(0x003e0014), %g5
-	cmp	%g1, %g5
-	bne,pt	%icc, spitfire_boot
+	BRANCH_IF_CHEETAH_BASE(g1,g5,cheetah_boot)
+	BRANCH_IF_CHEETAH_PLUS_OR_FOLLOWON(g1,g5,cheetah_plus_boot)
+	ba,pt	%xcc, spitfire_boot
+	 nop
+
+cheetah_plus_boot:
+	/* Preserve OBP choosen DCU and DCR register settings.  */
+	ba,pt	%xcc, cheetah_generic_boot
 	 nop
 
 cheetah_boot:
 	mov	DCR_BPE | DCR_RPE | DCR_SI | DCR_IFPOE | DCR_MS, %g1
 	wr	%g1, %asr18
 
-	sethi	%uhi(DCU_ME | DCU_RE | /*DCU_PE |*/ DCU_HPE | DCU_SPE | DCU_SL | DCU_WE), %g5
-	or	%g5, %ulo(DCU_ME | DCU_RE | /*DCU_PE |*/ DCU_HPE | DCU_SPE | DCU_SL | DCU_WE), %g5
+	sethi	%uhi(DCU_ME|DCU_RE|DCU_HPE|DCU_SPE|DCU_SL|DCU_WE), %g5
+	or	%g5, %ulo(DCU_ME|DCU_RE|DCU_HPE|DCU_SPE|DCU_SL|DCU_WE), %g5
 	sllx	%g5, 32, %g5
 	or	%g5, DCU_DM | DCU_IM | DCU_DC | DCU_IC, %g5
 	stxa	%g5, [%g0] ASI_DCU_CONTROL_REG
 	membar	#Sync
 
+cheetah_generic_boot:
 	mov	TSB_EXTENSION_P, %g3
 	stxa	%g0, [%g3] ASI_DMMU
 	stxa	%g0, [%g3] ASI_IMMU
@@ -149,6 +152,7 @@ cheetah_boot:
 	 add	%l0, (1 << 3), %l0
 
 cheetah_got_tlbentry:
+	ldxa	[%l0] ASI_ITLB_DATA_ACCESS, %g0
 	ldxa	[%l0] ASI_ITLB_DATA_ACCESS, %g1
 	membar	#Sync
 	and	%g1, %g3, %g1
@@ -199,6 +203,32 @@ cheetah_got_tlbentry:
 	cmp	%g1, (511 << 3)
 	blu,pt	%xcc, 1b
 	 add	%l0, (1 << 3), %l0
+
+	/* On Cheetah+, have to check second DTLB.  */
+	BRANCH_IF_CHEETAH_PLUS_OR_FOLLOWON(g1,l0,2f)
+	ba,pt	%xcc, 9f
+	 nop
+
+2:	set	3 << 16, %l0
+1:	ldxa	[%l0] ASI_DTLB_TAG_READ, %g1
+	membar	#Sync
+	andn	%g1, %l2, %g1
+	cmp	%g1, %g3
+	blu,pn	%xcc, 2f
+	 cmp	%g1, %g7
+	bgeu,pn	%xcc, 2f
+	 nop
+	stxa	%g0, [%l7] ASI_DMMU
+	membar	#Sync
+	stxa	%g0, [%l0] ASI_DTLB_DATA_ACCESS
+	membar	#Sync
+	
+2:	and	%l0, (511 << 3), %g1
+	cmp	%g1, (511 << 3)
+	blu,pt	%xcc, 1b
+	 add	%l0, (1 << 3), %l0
+
+9:
 
 	/* Now lock the TTE we created into ITLB-0 and DTLB-0,
 	 * entry 15 (and maybe 14 too).
@@ -431,21 +461,20 @@ sun4u_init:
 	stxa	%g3, [%g2] ASI_DMMU
 	membar	#Sync
 
-	rdpr	%ver, %g1
-	sethi	%hi(0x003e0014), %g5
-	srlx	%g1, 32, %g1
-	or	%g5, %lo(0x003e0014), %g5
-	cmp	%g1, %g5
-	bne,pt	%icc, spitfire_tlb_fixup
+	BRANCH_IF_ANY_CHEETAH(g1,g5,cheetah_tlb_fixup)
+
+	ba,pt	%xcc, spitfire_tlb_fixup
 	 nop
 
 cheetah_tlb_fixup:
 	set	(0 << 16) | (15 << 3), %g7
+	ldxa	[%g7] ASI_ITLB_DATA_ACCESS, %g0
 	ldxa	[%g7] ASI_ITLB_DATA_ACCESS, %g1
 	andn	%g1, (_PAGE_G), %g1
 	stxa	%g1, [%g7] ASI_ITLB_DATA_ACCESS
 	membar	#Sync
 
+	ldxa	[%g7] ASI_DTLB_DATA_ACCESS, %g0
 	ldxa	[%g7] ASI_DTLB_DATA_ACCESS, %g1
 	andn	%g1, (_PAGE_G), %g1
 	stxa	%g1, [%g7] ASI_DTLB_DATA_ACCESS
@@ -455,15 +484,20 @@ cheetah_tlb_fixup:
 	flush	%g3
 	membar	#Sync
 
-	/* Set TLB type to cheetah. */
-	mov	1, %g2
-	sethi	%hi(tlb_type), %g5
+	mov	2, %g2		/* Set TLB type to cheetah+. */
+	BRANCH_IF_CHEETAH_PLUS_OR_FOLLOWON(g5,g7,1f)
+
+	mov	1, %g2		/* Set TLB type to cheetah. */
+
+1:	sethi	%hi(tlb_type), %g5
 	stw	%g2, [%g5 + %lo(tlb_type)]
 
 	/* Patch copy/page operations to cheetah optimized versions. */
 	call	cheetah_patch_copyops
 	 nop
 	call	cheetah_patch_pgcopyops
+	 nop
+	call	cheetah_patch_cachetlbops
 	 nop
 
 	ba,pt	%xcc, tlb_fixup_done
@@ -576,19 +610,17 @@ setup_tba:	/* i0 = is_starfire */
 	sllx	%g2, 32, %g2
 	or	%g2, KERN_LOWBITS, %g2
 
-	rdpr		%ver, %g3
-	sethi		%hi(0x003e0014), %g7
-	srlx		%g3, 32, %g3
-	or		%g7, %lo(0x003e0014), %g7
-	cmp		%g3, %g7
-	bne,pt		%icc, 1f
+	BRANCH_IF_ANY_CHEETAH(g3,g7,cheetah_vpte_base)
+	ba,pt	%xcc, spitfire_vpte_base
 	 nop
 
+cheetah_vpte_base:
 	sethi		%uhi(VPTE_BASE_CHEETAH), %g3
 	or		%g3, %ulo(VPTE_BASE_CHEETAH), %g3
 	ba,pt		%xcc, 2f
 	 sllx		%g3, 32, %g3
-1:
+
+spitfire_vpte_base:
 	sethi		%uhi(VPTE_BASE_SPITFIRE), %g3
 	or		%g3, %ulo(VPTE_BASE_SPITFIRE), %g3
 	sllx		%g3, 32, %g3
@@ -615,14 +647,12 @@ setup_tba:	/* i0 = is_starfire */
 	 nop
 
 not_starfire:
-	rdpr		%ver, %g1
-	sethi		%hi(0x003e0014), %g5
-	srlx		%g1, 32, %g1
-	or		%g7, %lo(0x003e0014), %g5
-	cmp		%g1, %g5
-	bne,pt		%icc, not_cheetah
+	BRANCH_IF_ANY_CHEETAH(g1,g5,is_cheetah)
+
+	ba,pt	%xcc, not_cheetah
 	 nop
 
+is_cheetah:
 	ldxa		[%g0] ASI_SAFARI_CONFIG, %g1
 	srlx		%g1, 17, %g1
 	ba,pt		%xcc, set_worklist
@@ -645,23 +675,21 @@ set_worklist:
 	/* Kill PROM timer */
 	wr	%g0, 0, %tick_cmpr
 
-	rdpr		%ver, %g1
-	sethi		%hi(0x003e0014), %g5
-	srlx		%g1, 32, %g1
-	or		%g7, %lo(0x003e0014), %g5
-	cmp		%g1, %g5
-	bne,pt		%icc, 1f
+	BRANCH_IF_ANY_CHEETAH(g1,g5,1f)
+
+	ba,pt	%xcc, 2f
 	 nop
 
 	/* Disable STICK_INT interrupts. */
-	sethi		%hi(0x80000000), %g1
-	sllx		%g1, 32, %g1
-	wr		%g1, %asr25
+1:
+	sethi	%hi(0x80000000), %g1
+	sllx	%g1, 32, %g1
+	wr	%g1, %asr25
 
 	/* Ok, we're done setting up all the state our trap mechanims needs,
 	 * now get back into normal globals and let the PROM know what is up.
 	 */
-1:
+2:
 	wrpr	%g0, %g0, %wstate
 	wrpr	%o1, PSTATE_IE, %pstate
 

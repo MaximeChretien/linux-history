@@ -90,6 +90,7 @@
 #define BTTV_SENSORAY311    0x49
 #define BTTV_RV605          0x4a
 #define BTTV_WINDVR         0x4c
+#define BTTV_HAUPPAUGEPVR   0x50
 
 /* i2c address list */
 #define I2C_TSA5522        0xc2
@@ -174,6 +175,7 @@ extern int bttv_handle_chipset(struct bttv *btv);
    returns negative value if error occurred 
 */
 extern int bttv_get_cardinfo(unsigned int card, int *type, int *cardid);
+extern struct pci_dev* bttv_get_pcidev(unsigned int card);
 
 /* obsolete, use bttv_get_cardinfo instead */
 extern int bttv_get_id(unsigned int card);
@@ -207,6 +209,11 @@ extern int bttv_write_gpio(unsigned int card,
    process data ASAP
 */
 extern wait_queue_head_t* bttv_get_gpio_queue(unsigned int card);
+
+/* call i2c clients
+*/
+extern void bttv_i2c_call(unsigned int card, unsigned int cmd, void *arg);
+
 
 /* i2c */
 #define I2C_CLIENTS_MAX 16

@@ -49,7 +49,7 @@
  *  (mailto:sjralston1@netscape.net)
  *  (mailto:Pam.Delaney@lsil.com)
  *
- *  $Id: mptbase.c,v 1.110 2002/02/27 18:44:20 sralston Exp $
+ *  $Id: mptbase.c,v 1.121 2002/07/23 18:56:59 pdelaney Exp $
  */
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
@@ -437,13 +437,14 @@ mpt_interrupt(int irq, void *bus_id, struct pt_regs *r)
 			pa = 0;					/* No reply flush! */
 		}
 
+#ifdef MPT_DEBUG_IRQ
 		if ((int)ioc->chip_type > (int)FC929) {
-			/* Verify mf, mf are reasonable.
+			/* Verify mf, mr are reasonable.
 			 */
 			if ((mf) && ((mf >= MPT_INDEX_2_MFPTR(ioc, ioc->req_depth))
 				|| (mf < ioc->req_frames)) ) {
 				printk(MYIOC_s_WARN_FMT 
-					"mpt_interrupt: Invalid mf (%p) req_idx (%d)!\n", ioc->name, mf, req_idx);
+					"mpt_interrupt: Invalid mf (%p) req_idx (%d)!\n", ioc->name, (void *)mf, req_idx);
 				cb_idx = 0;
 				pa = 0;
 				freeme = 0;
@@ -451,7 +452,7 @@ mpt_interrupt(int irq, void *bus_id, struct pt_regs *r)
 			if ((pa) && (mr) && ((mr >= MPT_INDEX_2_RFPTR(ioc, ioc->req_depth))
 				|| (mr < ioc->reply_frames)) ) {
 				printk(MYIOC_s_WARN_FMT 
-					"mpt_interrupt: Invalid rf (%p)!\n", ioc->name, mr);
+					"mpt_interrupt: Invalid rf (%p)!\n", ioc->name, (void *)mr);
 				cb_idx = 0;
 				pa = 0;
 				freeme = 0;
@@ -464,6 +465,7 @@ mpt_interrupt(int irq, void *bus_id, struct pt_regs *r)
 				freeme = 0;
 			}
 		}
+#endif
 
 		/*  Check for (valid) IO callback!  */
 		if (cb_idx) {
@@ -525,7 +527,7 @@ mpt_base_reply(MPT_ADAPTER *ioc, MPT_FRAME_HDR *mf, MPT_FRAME_HDR *reply)
 	if ((mf == NULL) ||
 	    (mf >= MPT_INDEX_2_MFPTR(ioc, ioc->req_depth))) {
 		printk(MYIOC_s_ERR_FMT "NULL or BAD request frame ptr! (=%p)\n",
-				ioc->name, mf);
+				ioc->name, (void *)mf);
 		return 1;
 	}
 
@@ -938,6 +940,70 @@ mpt_free_msg_frame(int handle, int iocid, MPT_FRAME_HDR *mf)
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /**
+ *	mpt_add_sge - Place a simple SGE at address pAddr.
+ *	@pAddr: virtual address for SGE
+ *	@flagslength: SGE flags and data transfer length
+ *	@dma_addr: Physical address 
+ *
+ *	This routine places a MPT request frame back on the MPT adapter's
+ *	FreeQ.
+ */
+void
+mpt_add_sge(char *pAddr, u32 flagslength, dma_addr_t dma_addr)
+{
+	if (sizeof(dma_addr_t) == sizeof(u64)) {
+		SGESimple64_t *pSge = (SGESimple64_t *) pAddr;
+		u32 tmp = dma_addr & 0xFFFFFFFF;
+
+		pSge->FlagsLength = cpu_to_le32(flagslength);
+		pSge->Address.Low = cpu_to_le32(tmp);
+		tmp = (u32) ((u64)dma_addr >> 32);
+		pSge->Address.High = cpu_to_le32(tmp);
+
+	} else {
+		SGESimple32_t *pSge = (SGESimple32_t *) pAddr;
+		pSge->FlagsLength = cpu_to_le32(flagslength);
+		pSge->Address = cpu_to_le32(dma_addr);
+	}
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+/**
+ *	mpt_add_chain - Place a chain SGE at address pAddr.
+ *	@pAddr: virtual address for SGE
+ *	@next: nextChainOffset value (u32's)
+ *	@length: length of next SGL segment
+ *	@dma_addr: Physical address 
+ *
+ *	This routine places a MPT request frame back on the MPT adapter's
+ *	FreeQ.
+ */
+void
+mpt_add_chain(char *pAddr, u8 next, u16 length, dma_addr_t dma_addr)
+{
+	if (sizeof(dma_addr_t) == sizeof(u64)) {
+		SGEChain64_t *pChain = (SGEChain64_t *) pAddr;
+		u32 tmp = dma_addr & 0xFFFFFFFF;
+
+		pChain->Length = cpu_to_le16(length);
+		pChain->Flags = MPI_SGE_FLAGS_CHAIN_ELEMENT | mpt_addr_size(); 
+
+		pChain->NextChainOffset = next;
+
+		pChain->Address.Low = cpu_to_le32(tmp);
+		tmp = (u32) ((u64)dma_addr >> 32);
+		pChain->Address.High = cpu_to_le32(tmp);
+	} else {
+		SGEChain32_t *pChain = (SGEChain32_t *) pAddr;
+		pChain->Length = cpu_to_le16(length);
+		pChain->Flags = MPI_SGE_FLAGS_CHAIN_ELEMENT | mpt_addr_size();
+		pChain->NextChainOffset = next;
+		pChain->Address = cpu_to_le32(dma_addr);
+	}
+}
+
+/*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
+/**
  *	mpt_send_handshake_request - Send MPT request via doorbell
  *	handshake method.
  *	@handle: Handle of registered MPT protocol driver
@@ -1023,7 +1089,7 @@ mpt_send_handshake_request(int handle, int iocid, int reqBytes, u32 *req, int sl
 			}
 		}
 
-		if ((r = WaitForDoorbellInt(iocp, 10, sleepFlag)) >= 0)
+		if (r >= 0 && WaitForDoorbellInt(iocp, 10, sleepFlag) >= 0)
 			r = 0;
 		else
 			r = -4;
@@ -1090,7 +1156,7 @@ mpt_pci_scan(void)
 	dprintk((KERN_INFO MYNAM ": Checking for MPT adapters...\n"));
 
 	/*
-	 *  NOTE: The 929 and 1030 will appear as 2 separate PCI devices,
+	 *  NOTE: The 929, 929X and 1030 will appear as 2 separate PCI devices,
 	 *  one for each channel.
 	 */
 	pci_for_each_dev(pdev) {
@@ -1101,6 +1167,8 @@ mpt_pci_scan(void)
 		if ((pdev->device != MPI_MANUFACTPAGE_DEVICEID_FC909) &&
 		    (pdev->device != MPI_MANUFACTPAGE_DEVICEID_FC929) &&
 		    (pdev->device != MPI_MANUFACTPAGE_DEVICEID_FC919) &&
+		    (pdev->device != MPI_MANUFACTPAGE_DEVICEID_FC929X) &&
+		    (pdev->device != MPI_MANUFACTPAGE_DEVICEID_FC919X) &&
 		    (pdev->device != MPI_MANUFACTPAGE_DEVID_53C1030) &&
 #if 0
 		    /* FIXME! C103x family */
@@ -1113,7 +1181,7 @@ mpt_pci_scan(void)
 		}
 
 		/* GRRRRR
-		 * dual function devices (929, 1030) may be presented in Func 1,0 order,
+		 * dual function devices (929, 929X, 1030) may be presented in Func 1,0 order,
 		 * but we'd really really rather have them in Func 0,1 order.
 		 * Do some kind of look ahead here...
 		 */
@@ -1206,7 +1274,6 @@ static int __init
 mpt_adapter_install(struct pci_dev *pdev)
 {
 	MPT_ADAPTER	*ioc;
-	char		*myname;
 	u8		*mem;
 	unsigned long	 mem_phys;
 	unsigned long	 port;
@@ -1214,9 +1281,20 @@ mpt_adapter_install(struct pci_dev *pdev)
 	u32		 psize;
 	int		 ii;
 	int		 r = -ENODEV;
-	int		 len;
+	u64		 mask = 0xffffffffffffffff;
 
-	ioc = kmalloc(sizeof(MPT_ADAPTER), GFP_KERNEL);
+	if (pci_enable_device(pdev))
+		return r;
+
+	if (!pci_set_dma_mask(pdev, mask)) {
+		dprintk((KERN_INFO MYNAM 
+			": 64 BIT PCI BUS DMA ADDRESSING SUPPORTED\n"));
+	} else if (pci_set_dma_mask(pdev, (u64) 0xffffffff)) {
+		printk(KERN_WARNING MYNAM ": 32 BIT PCI BUS DMA ADDRESSING NOT SUPPORTED\n");
+		return r;
+	}
+
+	ioc = kmalloc(sizeof(MPT_ADAPTER), GFP_ATOMIC);
 	if (ioc == NULL) {
 		printk(KERN_ERR MYNAM ": ERROR - Insufficient memory to add adapter!\n");
 		return -ENOMEM;
@@ -1241,10 +1319,7 @@ mpt_adapter_install(struct pci_dev *pdev)
 	ioc->mfcnt = 0;
 #endif
 
-	/* Initialize the FW and Data image pointers.
-	 */
-	ioc->FWImage = NULL;
-	ioc->FWImage_dma = 0;
+	ioc->cached_fw = NULL;
 
 	/* Initilize SCSI Config Data structure
 	 */
@@ -1338,6 +1413,14 @@ mpt_adapter_install(struct pci_dev *pdev)
 		ioc->chip_type = FC919;
 		ioc->prod_name = "LSIFC919";
 	}
+	else if (pdev->device == MPI_MANUFACTPAGE_DEVICEID_FC929X) {
+		ioc->chip_type = FC929X;
+		ioc->prod_name = "LSIFC929X";
+	}
+	else if (pdev->device == MPI_MANUFACTPAGE_DEVICEID_FC919X) {
+		ioc->chip_type = FC919X;
+		ioc->prod_name = "LSIFC919X";
+	}
 	else if (pdev->device == MPI_MANUFACTPAGE_DEVID_53C1030) {
 		ioc->chip_type = C1030;
 		ioc->prod_name = "LSI53C1030";
@@ -1352,10 +1435,7 @@ mpt_adapter_install(struct pci_dev *pdev)
 		}
 	}
 
-	myname = "iocN";
-	len = strlen(myname);
-	memcpy(ioc->name, myname, len+1);
-	ioc->name[len-1] = '0' + ioc->id;
+	sprintf(ioc->name, "ioc%d", ioc->id);
 
 	Q_INIT(&ioc->FreeQ, MPT_FRAME_HDR);
 	spin_lock_init(&ioc->FreeQlock);
@@ -1400,9 +1480,9 @@ mpt_adapter_install(struct pci_dev *pdev)
 	mpt_adapters[ioc->id] = ioc;
 
 	/* NEW!  20010220 -sralston
-	 * Check for "bound ports" (929, 1030) to reduce redundant resets.
+	 * Check for "bound ports" (929, 929X, 1030) to reduce redundant resets.
 	 */
-	if ((ioc->chip_type == FC929) || (ioc->chip_type == C1030))
+	if ((ioc->chip_type == FC929) || (ioc->chip_type == C1030) || (ioc->chip_type == FC929X))
 		mpt_detect_bound_ports(ioc, pdev);
 
 	if ((r = mpt_do_ioc_recovery(ioc, MPT_HOSTEVENT_IOC_BRINGUP, CAN_SLEEP)) != 0) {
@@ -1523,15 +1603,15 @@ mpt_do_ioc_recovery(MPT_ADAPTER *ioc, u32 reason, int sleepFlag)
 	}
 
 	if (reason == MPT_HOSTEVENT_IOC_BRINGUP){
-		if (ioc->facts.Flags & MPI_IOCFACTS_FLAGS_FW_DOWNLOAD_BOOT) {
-			dprintk((MYIOC_s_INFO_FMT
+		if (ioc->upload_fw) {
+			ddlprintk((MYIOC_s_INFO_FMT
 				"firmware upload required!\n", ioc->name));
 
 			r = mpt_do_upload(ioc, sleepFlag);
 			if (r != 0)
 				printk(KERN_WARNING MYNAM ": firmware upload failure!\n");
 			/* Handle the alt IOC too */
-			if (alt_ioc_ready){
+			if ((alt_ioc_ready) && (ioc->alt_ioc->upload_fw)){
 				r = mpt_do_upload(ioc->alt_ioc, sleepFlag);
 				if (r != 0)
 					printk(KERN_WARNING MYNAM ": firmware upload failure!\n");
@@ -1645,8 +1725,8 @@ mpt_do_ioc_recovery(MPT_ADAPTER *ioc, u32 reason, int sleepFlag)
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
  *	mpt_detect_bound_ports - Search for PCI bus/dev_function
- *	which matches PCI bus/dev_function (+/-1) for newly discovered 929
- *	or 1030.
+ *	which matches PCI bus/dev_function (+/-1) for newly discovered 929,
+ *	929X or 1030.
  *	@ioc: Pointer to MPT adapter structure
  *	@pdev: Pointer to (struct pci_dev) structure
  *
@@ -1710,6 +1790,16 @@ mpt_adapter_disable(MPT_ADAPTER *this, int freeup)
 				(void) KickStart(this, 1, NO_SLEEP);
 		}
 
+		if (this->cached_fw != NULL) {
+			ddlprintk((KERN_INFO MYNAM ": Pushing FW onto adapter\n"));
+
+			if ((state = mpt_downloadboot(this, NO_SLEEP)) < 0) {
+				printk(KERN_WARNING MYNAM 
+					": firmware downloadboot failure (%d)!\n", state);
+			}
+		}
+
+
 		/* Disable adapter interrupts! */
 		CHIPREG_WRITE32(&this->chip->IntMask, 0xFFFFFFFF);
 		this->active = 0;
@@ -1753,11 +1843,26 @@ mpt_adapter_disable(MPT_ADAPTER *this, int freeup)
 			this->alloc_total -= sz;
 		}
 
-		if (freeup && this->FWImage != NULL) {
-			sz = this->facts.FWImageSize;
-			pci_free_consistent(this->pcidev, sz,
-					this->FWImage, this->FWImage_dma);
-			this->FWImage = NULL;
+		if (freeup && this->cached_fw != NULL) {
+			int ii = 0;
+
+			while ((ii < this->num_fw_frags) && (this->cached_fw[ii]!= NULL)) {
+				sz = this->cached_fw[ii]->size;
+				pci_free_consistent(this->pcidev, sz,
+					this->cached_fw[ii]->fw, this->cached_fw[ii]->fw_dma);
+				this->cached_fw[ii]->fw = NULL;
+				this->alloc_total -= sz;
+
+				kfree(this->cached_fw[ii]);
+				this->cached_fw[ii] = NULL;
+				this->alloc_total -= sizeof(fw_image_t);
+
+				ii++;
+			}
+
+			kfree(this->cached_fw);
+			this->cached_fw = NULL;
+			sz = this->num_fw_frags * sizeof(void *);
 			this->alloc_total -= sz;
 		}
 
@@ -2151,7 +2256,7 @@ GetIocFacts(MPT_ADAPTER *ioc, int sleepFlag, int reason)
 			 * and request & reply queue depths...
 			 */
 			ioc->req_sz = MIN(MPT_DEFAULT_FRAME_SIZE, facts->RequestFrameSize * 4);
-			ioc->req_depth = MIN(MPT_DEFAULT_REQ_DEPTH, facts->GlobalCredits);
+			ioc->req_depth = MIN(MPT_MAX_REQ_DEPTH, facts->GlobalCredits);
 			ioc->reply_sz = ioc->req_sz;
 			ioc->reply_depth = MIN(MPT_DEFAULT_REPLY_DEPTH, facts->ReplyQueueDepth);
 
@@ -2271,10 +2376,24 @@ SendIocInit(MPT_ADAPTER *ioc, int sleepFlag)
 	ioc_init.Function = MPI_FUNCTION_IOC_INIT;
 /*	ioc_init.Flags = 0;				*/
 
+	/* If we are in a recovery mode and we uploaded the FW image,
+	 * then this pointer is not NULL. Skip the upload a second time.
+	 * Set this flag if cached_fw set for either IOC.
+	 */
+	ioc->upload_fw = 0;
+	ioc_init.Flags = 0;
+	if (ioc->facts.Flags & MPI_IOCFACTS_FLAGS_FW_DOWNLOAD_BOOT) {
+		if ((ioc->cached_fw) || (ioc->alt_ioc && ioc->alt_ioc->cached_fw))
+			ioc_init.Flags = MPI_IOCINIT_FLAGS_DISCARD_FW_IMAGE;
+		else 
+			ioc->upload_fw = 1;
+	}
+	ddlprintk((MYIOC_s_INFO_FMT "flags %d, upload_fw %d \n", 
+		   ioc->name, ioc_init.Flags, ioc->upload_fw));
+
 	if ((int)ioc->chip_type <= (int)FC929) {
 		ioc_init.MaxDevices = MPT_MAX_FC_DEVICES;
-	}
-	else {
+	} else {
 		ioc_init.MaxDevices = MPT_MAX_SCSI_DEVICES;
 	}
 	ioc_init.MaxBuses = MPT_MAX_BUS;
@@ -2283,17 +2402,17 @@ SendIocInit(MPT_ADAPTER *ioc, int sleepFlag)
 /*	ioc_init.MsgContext = cpu_to_le32(0x00000000);	*/
 	ioc_init.ReplyFrameSize = cpu_to_le16(ioc->reply_sz);	/* in BYTES */
 
-#ifdef __ia64__
-	/* Save the upper 32-bits of the request
-	 * (reply) and sense buffers.
-	 */
-	ioc_init.HostMfaHighAddr = cpu_to_le32((u32)(ioc->req_frames_dma >> 32));
-	ioc_init.SenseBufferHighAddr = cpu_to_le32((u32)(ioc->sense_buf_pool_dma >> 32));
-#else
-	/* Force 32-bit addressing */
-	ioc_init.HostMfaHighAddr = cpu_to_le32(0);
-	ioc_init.SenseBufferHighAddr = cpu_to_le32(0);
-#endif
+	if (sizeof(dma_addr_t) == sizeof(u64)) {
+		/* Save the upper 32-bits of the request
+		 * (reply) and sense buffers.
+		 */
+		ioc_init.HostMfaHighAddr = cpu_to_le32((u32)((u64)ioc->req_frames_dma >> 32));
+		ioc_init.SenseBufferHighAddr = cpu_to_le32((u32)((u64)ioc->sense_buf_pool_dma >> 32));
+	} else {
+		/* Force 32-bit addressing */
+		ioc_init.HostMfaHighAddr = cpu_to_le32(0);
+		ioc_init.SenseBufferHighAddr = cpu_to_le32(0);
+	}
 
 	dprintk((MYIOC_s_INFO_FMT "Sending IOCInit (req @ %p)\n",
 			ioc->name, &ioc_init));
@@ -2398,6 +2517,142 @@ SendPortEnable(MPT_ADAPTER *ioc, int portnum, int sleepFlag)
 	return 0;
 }
 
+/*
+ * Inputs: size - total FW bytes
+ * Outputs: frags - number of fragments needed
+ * Return NULL if failed.
+ */
+void * 
+mpt_alloc_fw_memory(MPT_ADAPTER *ioc, int size, int *frags, int *alloc_sz) 
+{
+	fw_image_t	**cached_fw = NULL;
+	u8		*mem = NULL;
+	dma_addr_t	fw_dma;
+	int		alloc_total = 0;
+	int		bytes_left, bytes, num_frags;
+	int		sz, ii;
+
+	/* cached_fw 
+	 */
+	sz = ioc->num_fw_frags * sizeof(void *);
+	mem = kmalloc(sz, GFP_ATOMIC);
+	if (mem == NULL)
+		return NULL;
+
+	memset(mem, 0, sz);
+	cached_fw = (fw_image_t **)mem;
+	alloc_total += sz;
+
+	/* malloc fragment memory
+	 * fw_image_t struct and dma for fw data
+	 */
+	bytes_left = size;
+	ii = 0;
+	num_frags = 0;
+	bytes = bytes_left;
+	while((bytes_left) && (num_frags < ioc->num_fw_frags)) {
+		if (cached_fw[ii] == NULL) {
+			mem = kmalloc(sizeof(fw_image_t), GFP_ATOMIC);
+			if (mem == NULL)
+				break;
+
+			memset(mem, 0, sizeof(fw_image_t));
+			cached_fw[ii] = (fw_image_t *)mem;
+			alloc_total += sizeof(fw_image_t);
+		}
+
+		mem = pci_alloc_consistent(ioc->pcidev, bytes, &fw_dma);
+		if (mem == NULL) {
+			if (bytes > 0x10000)
+				bytes = 0x10000;
+			else if (bytes > 0x8000)
+				bytes = 0x8000;
+			else if (bytes > 0x4000)
+				bytes = 0x4000;
+			else if (bytes > 0x2000)
+				bytes = 0x2000;
+			else if (bytes > 0x1000)
+				bytes = 0x1000;
+			else
+				break;
+
+			continue;
+		}
+
+		cached_fw[ii]->fw = mem;
+		cached_fw[ii]->fw_dma = fw_dma;
+		cached_fw[ii]->size = bytes;
+		memset(mem, 0, bytes);
+		alloc_total += bytes;
+
+		bytes_left -= bytes;
+
+		num_frags++;
+		ii++;
+	}
+
+	if (bytes_left ) {
+		/* Major Failure.
+		 */
+		mpt_free_fw_memory(ioc, cached_fw);
+		return NULL;
+	}
+
+	*frags = num_frags;
+	*alloc_sz = alloc_total;
+
+	return (void *) cached_fw;
+}
+
+/*
+ * If alt_img is NULL, delete from ioc structure.
+ * Else, delete a secondary image in same format.
+ */
+void
+mpt_free_fw_memory(MPT_ADAPTER *ioc, fw_image_t **alt_img)
+{
+	fw_image_t **cached_fw;
+	int ii;
+	int sz;
+	int alloc_freed = 0;
+
+	if (alt_img != NULL)
+		cached_fw = alt_img;
+	else
+		cached_fw = ioc->cached_fw;
+
+	if (cached_fw == NULL)
+		return;
+
+	ii = 0;
+	while ((ii < ioc->num_fw_frags) && (cached_fw[ii]!= NULL)) {
+		sz = cached_fw[ii]->size;
+		if (sz > 0) {
+			pci_free_consistent(ioc->pcidev, sz,
+						cached_fw[ii]->fw, cached_fw[ii]->fw_dma);
+		}
+		cached_fw[ii]->fw = NULL;
+		alloc_freed += sz;
+
+		kfree(cached_fw[ii]);
+		cached_fw[ii] = NULL;
+		alloc_freed += sizeof(fw_image_t);
+
+		ii++;
+	}
+
+	kfree(cached_fw);
+	cached_fw = NULL;
+	sz = ioc->num_fw_frags * sizeof(void *);
+	alloc_freed += sz;
+
+	if (alt_img == NULL)
+		ioc->alloc_total -= alloc_freed;
+
+	return;
+}
+
+
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
  *	mpt_do_upload - Construct and Send FWUpload request to MPT adapter port.
@@ -2415,45 +2670,46 @@ SendPortEnable(MPT_ADAPTER *ioc, int portnum, int sleepFlag)
 static int
 mpt_do_upload(MPT_ADAPTER *ioc, int sleepFlag)
 {
-	u8			 request[sizeof(FWUpload_t) +  24];
+	u8			 request[ioc->req_sz];
 	u8			 reply[sizeof(FWUploadReply_t)];
 	FWUpload_t		*prequest;
 	FWUploadReply_t		*preply;
 	FWUploadTCSGE_t		*ptcsge = NULL;
-	MptSge_t		*psge;
-	u8			*mem;
-	dma_addr_t		 dma_addr;
 	int			 sgeoffset;
-	int			 i, sz, req_sz, reply_sz;
+	int			 ii, sz, reply_sz;
 	int			 cmdStatus, freeMem = 0;
+	int			 num_frags, alloc_sz;
 
 	/* If the image size is 0 or if the pointer is
 	 * not NULL (error), we are done.
 	 */
-	if (((sz = ioc->facts.FWImageSize) == 0) || ioc->FWImage)
+	if (((sz = ioc->facts.FWImageSize) == 0) || ioc->cached_fw)
 		return 0;
 
-	/* Allocate memory
-	 */
-	mem = pci_alloc_consistent(ioc->pcidev, sz, &ioc->FWImage_dma);
-	if (mem == NULL)
-		return -1;
+	ioc->num_fw_frags = ioc->req_sz - sizeof(FWUpload_t) + sizeof(dma_addr_t) + sizeof(u32) -1;
+	ioc->num_fw_frags /= sizeof(dma_addr_t) + sizeof(u32);
 
-	memset(mem, 0, sz);
-	ioc->alloc_total += sz;
-	ioc->FWImage = mem;
-	dprintk((KERN_INFO MYNAM ": FW Image  @ %p[%p], sz=%d bytes\n",
-			mem, (void *)(ulong)ioc->FWImage_dma, sz));
+	ioc->cached_fw = (fw_image_t **) mpt_alloc_fw_memory(ioc, 
+			ioc->facts.FWImageSize, &num_frags, &alloc_sz); 
 
-	dma_addr = ioc->FWImage_dma;
+	if (ioc->cached_fw == NULL) {
+		/* Major Failure.
+		 */
+		mpt_free_fw_memory(ioc, NULL);
+		ioc->cached_fw = NULL;
+		
+		return -ENOMEM;
+	}
+	ioc->alloc_total += alloc_sz;
+
+	ddlprintk((KERN_INFO MYNAM ": FW Image  @ %p, sz=%d bytes\n",
+		 (void *)(ulong)ioc->cached_fw, ioc->facts.FWImageSize));
 
 	prequest = (FWUpload_t *)&request;
 	preply = (FWUploadReply_t *)&reply;
 
 	/*  Destination...  */
-	req_sz = sizeof(FWUpload_t) - sizeof(SGE_MPI_UNION)
-			+ sizeof(FWUploadTCSGE_t) + sizeof(MptSge_t);
-	memset(prequest, 0, req_sz);
+	memset(prequest, 0, ioc->req_sz);
 
 	reply_sz = sizeof(reply);
 	memset(preply, 0, reply_sz);
@@ -2472,19 +2728,29 @@ mpt_do_upload(MPT_ADAPTER *ioc, int sleepFlag)
 	ptcsge->ImageSize = cpu_to_le32(sz);
 
 	sgeoffset = sizeof(FWUpload_t) - sizeof(SGE_MPI_UNION) + sizeof(FWUploadTCSGE_t);
-	psge = (MptSge_t *) &request[sgeoffset];
-	psge->FlagsLength = cpu_to_le32(MPT_SGE_FLAGS_SSIMPLE_READ | (u32) sz);
 
-	cpu_to_leXX(dma_addr, psge->Address);
+	for (ii = 0; ii < (num_frags-1); ii++) {
+		mpt_add_sge(&request[sgeoffset], MPT_SGE_FLAGS_SIMPLE_ELEMENT |	
+			MPT_SGE_FLAGS_ADDRESSING | MPT_TRANSFER_IOC_TO_HOST |
+			(u32) ioc->cached_fw[ii]->size, ioc->cached_fw[ii]->fw_dma);
 
-	dprintk((MYIOC_s_INFO_FMT "Sending FW Upload (req @ %p)\n",
-			ioc->name, prequest));
+		sgeoffset += sizeof(u32) + sizeof(dma_addr_t);
+	}
 
-	i = mpt_handshake_req_reply_wait(ioc, req_sz, (u32*)prequest,
+	mpt_add_sge(&request[sgeoffset], 
+			MPT_SGE_FLAGS_SSIMPLE_READ |(u32) ioc->cached_fw[ii]->size, 
+			ioc->cached_fw[ii]->fw_dma);
+
+	sgeoffset += sizeof(u32) + sizeof(dma_addr_t);
+
+	dprintk((MYIOC_s_INFO_FMT "Sending FW Upload (req @ %p) size %d \n",
+			ioc->name, prequest, sgeoffset));
+
+	ii = mpt_handshake_req_reply_wait(ioc, sgeoffset, (u32*)prequest,
 				reply_sz, (u16*)preply, 65 /*seconds*/, sleepFlag);
 
 	cmdStatus = -EFAULT;
-	if (i == 0) {
+	if (ii == 0) {
 		/* Handshake transfer was complete and successful.
 		 * Check the Reply Frame.
 		 */
@@ -2496,14 +2762,15 @@ mpt_do_upload(MPT_ADAPTER *ioc, int sleepFlag)
 				cmdStatus = 0;
 		}
 	}
-	dprintk((MYIOC_s_INFO_FMT ": do_upload status %d \n",
+	ddlprintk((MYIOC_s_INFO_FMT ": do_upload status %d \n",
 			ioc->name, cmdStatus));
 
 	/* Check to see if we have a copy of this image in
 	 * host memory already.
 	 */
 	if (cmdStatus == 0) {
-		if (ioc->alt_ioc && ioc->alt_ioc->FWImage)
+		ioc->upload_fw = 0;
+		if (ioc->alt_ioc && ioc->alt_ioc->cached_fw)
 			freeMem = 1;
 	}
 
@@ -2512,13 +2779,11 @@ mpt_do_upload(MPT_ADAPTER *ioc, int sleepFlag)
 	 * failed (i != 0) or the command did not complete successfully.
 	 */
 	if (cmdStatus || freeMem) {
-		dprintk((MYIOC_s_INFO_FMT ": do_upload freeing %s image \n",
-			ioc->name, cmdStatus ? "incomplete" : "duplicate"));
 
-		pci_free_consistent(ioc->pcidev, sz,
-					ioc->FWImage, ioc->FWImage_dma);
-		ioc->FWImage = NULL;
-		ioc->alloc_total -= sz;
+		ddlprintk((MYIOC_s_INFO_FMT ": do_upload freeing %s image \n",
+			ioc->name, cmdStatus ? "incomplete" : "duplicate"));
+		mpt_free_fw_memory(ioc, NULL);
+		ioc->cached_fw = NULL;
 	}
 
 	return cmdStatus;
@@ -2535,7 +2800,7 @@ mpt_do_upload(MPT_ADAPTER *ioc, int sleepFlag)
  *
  *	Returns 0 for success
  *		-1 FW Image size is 0
- *		-2 No valid FWImage Pointer
+ *		-2 No valid cached_fw Pointer
  *		<0 for fw upload failure.
  */
 static int
@@ -2543,6 +2808,7 @@ mpt_downloadboot(MPT_ADAPTER *ioc, int sleepFlag)
 {
 	MpiFwHeader_t		*FwHdr = NULL;
 	MpiExtImageHeader_t 	*ExtHdr;
+	fw_image_t		**pCached = NULL;
 	int			 fw_sz;
 	u32			 diag0val;
 #ifdef MPT_DEBUG
@@ -2552,22 +2818,26 @@ mpt_downloadboot(MPT_ADAPTER *ioc, int sleepFlag)
 	u32			*ptru32 = NULL;
 	u32			 diagRwData;
 	u32			 nextImage;
+	u32			 ext_offset;
+	u32			 load_addr;
+	int			 max_idx, fw_idx, ext_idx;
+	int			 left_u32s;
 
-	dprintk((MYIOC_s_INFO_FMT "DbGb0: downloadboot entered.\n",
+	ddlprintk((MYIOC_s_INFO_FMT "DbGb0: downloadboot entered.\n",
 				ioc->name));
 #ifdef MPT_DEBUG
 	diag0val = CHIPREG_READ32(&ioc->chip->Diagnostic);
 	if (ioc->alt_ioc)
 		diag1val = CHIPREG_READ32(&ioc->alt_ioc->chip->Diagnostic);
-	dprintk((MYIOC_s_INFO_FMT "DbGb1: diag0=%08x, diag1=%08x\n",
+	ddlprintk((MYIOC_s_INFO_FMT "DbGb1: diag0=%08x, diag1=%08x\n",
 				ioc->name, diag0val, diag1val));
 #endif
 
-	dprintk((MYIOC_s_INFO_FMT "fw size 0x%x, ioc FW Ptr %p\n",
-				ioc->name, ioc->facts.FWImageSize, ioc->FWImage));
+	ddlprintk((MYIOC_s_INFO_FMT "fw size 0x%x, ioc FW Ptr %p\n",
+				ioc->name, ioc->facts.FWImageSize, ioc->cached_fw));
 	if (ioc->alt_ioc)
-		dprintk((MYIOC_s_INFO_FMT "alt ioc FW Ptr %p\n",
-				ioc->name, ioc->alt_ioc->FWImage));
+		ddlprintk((MYIOC_s_INFO_FMT "alt ioc FW Ptr %p\n",
+				ioc->name, ioc->alt_ioc->cached_fw));
 
 	/* Get dma_addr and data transfer size.
 	 */
@@ -2575,15 +2845,14 @@ mpt_downloadboot(MPT_ADAPTER *ioc, int sleepFlag)
 		return -1;
 
 	/* Get the DMA from ioc or ioc->alt_ioc */
-	if (ioc->FWImage)
-		FwHdr = (MpiFwHeader_t *)ioc->FWImage;
-	else if (ioc->alt_ioc && ioc->alt_ioc->FWImage)
-		FwHdr = (MpiFwHeader_t *)ioc->alt_ioc->FWImage;
+	if (ioc->cached_fw != NULL)
+		pCached = (fw_image_t **)ioc->cached_fw;
+	else if (ioc->alt_ioc && (ioc->alt_ioc->cached_fw != NULL))
+		pCached = (fw_image_t **)ioc->alt_ioc->cached_fw;
 
-	dprintk((MYIOC_s_INFO_FMT "DbGb2: FW Image @ %p\n",
-			ioc->name, FwHdr));
-
-	if (!FwHdr)
+	ddlprintk((MYIOC_s_INFO_FMT "DbGb2: FW Image @ %p\n",
+			ioc->name, pCached));
+	if (!pCached)
 		return -2;
 
 	/* Write magic sequence to WriteSequence register
@@ -2617,10 +2886,10 @@ mpt_downloadboot(MPT_ADAPTER *ioc, int sleepFlag)
 #ifdef MPT_DEBUG
 		if (ioc->alt_ioc)
 			diag1val = CHIPREG_READ32(&ioc->alt_ioc->chip->Diagnostic);
-		dprintk((MYIOC_s_INFO_FMT "DbGb3: diag0=%08x, diag1=%08x\n",
+		ddlprintk((MYIOC_s_INFO_FMT "DbGb3: diag0=%08x, diag1=%08x\n",
 				ioc->name, diag0val, diag1val));
 #endif
-		dprintk((MYIOC_s_INFO_FMT "Wrote magic DiagWriteEn sequence (%x)\n",
+		ddlprintk((MYIOC_s_INFO_FMT "Wrote magic DiagWriteEn sequence (%x)\n",
 				ioc->name, diag0val));
 	}
 
@@ -2631,60 +2900,145 @@ mpt_downloadboot(MPT_ADAPTER *ioc, int sleepFlag)
 #ifdef MPT_DEBUG
 	if (ioc->alt_ioc)
 		diag1val = CHIPREG_READ32(&ioc->alt_ioc->chip->Diagnostic);
-	dprintk((MYIOC_s_INFO_FMT "DbGb3: diag0=%08x, diag1=%08x\n",
+
+	ddlprintk((MYIOC_s_INFO_FMT "DbGb3: diag0=%08x, diag1=%08x\n",
 			ioc->name, diag0val, diag1val));
 #endif
+
+	/* max_idx = 1 + maximum valid buffer index
+	 */
+	max_idx = 0;
+	while (pCached[max_idx])
+		max_idx++;
+
+	fw_idx = 0;
+	FwHdr = (MpiFwHeader_t *) pCached[fw_idx]->fw;
+	ptru32 = (u32 *) FwHdr;
+	count = (FwHdr->ImageSize + 3)/4;
+	nextImage = FwHdr->NextImageHeaderOffset;
 
 	/* Write the LoadStartAddress to the DiagRw Address Register
 	 * using Programmed IO
 	 */
-
 	CHIPREG_PIO_WRITE32(&ioc->pio_chip->DiagRwAddress, FwHdr->LoadStartAddress);
-	dprintk((MYIOC_s_INFO_FMT "LoadStart addr written 0x%x \n",
+	ddlprintk((MYIOC_s_INFO_FMT "LoadStart addr written 0x%x \n",
 		ioc->name, FwHdr->LoadStartAddress));
 
-	nextImage = FwHdr->NextImageHeaderOffset;
-
-	/* round up count to a 32bit alignment */
-	ptru32 = (u32 *) FwHdr;
-	count = (FwHdr->ImageSize + 3)/4;
-
-	dprintk((MYIOC_s_INFO_FMT "Write FW Image: 0x%x u32's @ %p\n",
+	ddlprintk((MYIOC_s_INFO_FMT "Write FW Image: 0x%x u32's @ %p\n",
 				ioc->name, count, ptru32));
-	while (count-- ) {
+	left_u32s = pCached[fw_idx]->size/4;
+	while (count--) {
+		if (left_u32s == 0) {
+			fw_idx++;
+			if (fw_idx >= max_idx) {
+				/* FIXME
+				ERROR CASE
+				*/
+				;
+			}
+			ptru32 = (u32 *) pCached[fw_idx]->fw;
+			left_u32s = pCached[fw_idx]->size / 4;
+		}
+		left_u32s--;
 		CHIPREG_PIO_WRITE32(&ioc->pio_chip->DiagRwData, *ptru32);
 		ptru32++;
 	}
 
-	dprintk((MYIOC_s_INFO_FMT "FW Image done! \n", ioc->name));
-		
+	/* left_u32s, fw_idx and ptru32 are all valid
+	 */
 	while (nextImage) {
+		ext_idx = 0;
+		ext_offset = nextImage;
+		while (ext_offset > pCached[ext_idx]->size) {
+			ext_idx++;
+			if (ext_idx >= max_idx) {
+				/* FIXME
+				ERROR CASE
+				*/
+				;
+			}
+			ext_offset -= pCached[ext_idx]->size;
+		}
+		ptru32 = (u32 *) ((char *)pCached[ext_idx]->fw + ext_offset);
+		left_u32s = pCached[ext_idx]->size - ext_offset;
 
-		/* Set the pointer to the extended image
-		 */
-		ExtHdr = (MpiExtImageHeader_t *) ((char *) FwHdr + nextImage);
+		if ((left_u32s * 4) >= sizeof(MpiExtImageHeader_t)) {
+			ExtHdr = (MpiExtImageHeader_t *) ptru32;
+			count = (ExtHdr->ImageSize + 3 )/4;
+			nextImage = ExtHdr->NextImageHeaderOffset;
+			load_addr = ExtHdr->LoadStartAddress;
+		} else {
+			u32 * ptmp = (u32 *)pCached[ext_idx+1]->fw;
 
-		CHIPREG_PIO_WRITE32(&ioc->pio_chip->DiagRwAddress, ExtHdr->LoadStartAddress);
+			switch (left_u32s) {
+			case 5:
+				count = *(ptru32 + 2);
+				nextImage = *(ptru32 + 3);
+				load_addr = *(ptru32 + 4);
+				break;
+			case 4:
+				count = *(ptru32 + 2);
+				nextImage = *(ptru32 + 3);
+				load_addr = *ptmp;
+				break;
+			case 3:
+				count = *(ptru32 + 2);
+				nextImage = *ptmp;
+				load_addr = *(ptmp + 1);
+				break;
+			case 2:
+				count = *ptmp;
+				nextImage = *(ptmp + 1);
+				load_addr = *(ptmp + 2);
+				break;
 
-		count = (ExtHdr->ImageSize + 3 )/4;
+			case 1:
+				count = *(ptmp + 1);
+				nextImage = *(ptmp + 2);
+				load_addr = *(ptmp + 3);
+				break;
 
-		ptru32 = (u32 *) ExtHdr;
-		dprintk((MYIOC_s_INFO_FMT "Write Ext Image: 0x%x u32's @ %p\n",
-				ioc->name, count, ptru32));
-		while (count-- ) {
+			default:
+				count = 0;
+				nextImage = 0;
+				load_addr = 0;
+				/* FIXME
+				ERROR CASE
+				*/
+				;
+
+			}
+			count = (count +3)/4;
+		}
+
+		ddlprintk((MYIOC_s_INFO_FMT "Write Ext Image: 0x%x u32's @ %p\n",
+						ioc->name, count, ptru32));
+		CHIPREG_PIO_WRITE32(&ioc->pio_chip->DiagRwAddress, load_addr);
+
+		while (count--) {
+			if (left_u32s == 0) {
+				fw_idx++;
+				if (fw_idx >= max_idx) {
+					/* FIXME
+					ERROR CASE
+					*/
+					;
+				}
+				ptru32 = (u32 *) pCached[fw_idx]->fw;
+				left_u32s = pCached[fw_idx]->size / 4;
+			}
+			left_u32s--;
 			CHIPREG_PIO_WRITE32(&ioc->pio_chip->DiagRwData, *ptru32);
 			ptru32++;
 		}
-		nextImage = ExtHdr->NextImageHeaderOffset;
 	}
 
-
 	/* Write the IopResetVectorRegAddr */
-	dprintk((MYIOC_s_INFO_FMT "Write IopResetVector Addr! \n", ioc->name));
+	ddlprintk((MYIOC_s_INFO_FMT "Write IopResetVector Addr! \n", ioc->name));
 	CHIPREG_PIO_WRITE32(&ioc->pio_chip->DiagRwAddress, FwHdr->IopResetRegAddr);
 
 	/* Write the IopResetVectorValue */
-	dprintk((MYIOC_s_INFO_FMT "Write IopResetVector Value! \n", ioc->name));
+	ddlprintk((MYIOC_s_INFO_FMT "Write IopResetVector Value! \n", ioc->name));
 	CHIPREG_PIO_WRITE32(&ioc->pio_chip->DiagRwData, FwHdr->IopResetVectorValue);
 
 	/* Clear the internal flash bad bit - autoincrementing register,
@@ -3182,15 +3536,14 @@ PrimeIocFifos(MPT_ADAPTER *ioc)
 
 		ioc->req_frames_low_dma = (u32) (ioc->req_frames_dma & 0xFFFFFFFF);
 
-#ifdef __ia64__
-		/* Check: upper 32-bits of the request and reply frame
-		 * physical addresses must be the same.
-		 * ia64 check only
-		 */
-		if ((ioc->req_frames_dma >> 32) != (ioc->reply_frames_dma >> 32)){
-			goto out_fail;
+		if (sizeof(dma_addr_t) == sizeof(u64)) {
+			/* Check: upper 32-bits of the request and reply frame
+			 * physical addresses must be the same.
+			 */
+			if (((u64)ioc->req_frames_dma >> 32) != ((u64)ioc->reply_frames_dma >> 32)){
+				goto out_fail;
+			}
 		}
-#endif
 
 #if defined(CONFIG_MTRR) && 0
 		/*
@@ -3866,7 +4219,7 @@ mpt_GetScsiPortSettings(MPT_ADAPTER *ioc, int portnum)
 		int	 sz;
 		u8	*mem;
 		sz = MPT_MAX_SCSI_DEVICES * sizeof(int);
-		mem = kmalloc(sz, GFP_KERNEL);
+		mem = kmalloc(sz, GFP_ATOMIC);
 		if (mem == NULL)
 			return -EFAULT;
 
@@ -4166,7 +4519,7 @@ mpt_findImVolumes(MPT_ADAPTER *ioc)
 		cfg.physAddr = ioc3_dma;
 		cfg.action = MPI_CONFIG_ACTION_PAGE_READ_CURRENT;
 		if (mpt_config(ioc, &cfg) == 0) {
-			mem = kmalloc(iocpage3sz, GFP_KERNEL);
+			mem = kmalloc(iocpage3sz, GFP_ATOMIC);
 			if (mem) {
 				memcpy(mem, (u8 *)pIoc3, iocpage3sz);
 				ioc->spi_data.pIocPg3 = (IOCPage3_t *) mem;
@@ -4271,7 +4624,6 @@ mpt_config(MPT_ADAPTER *ioc, CONFIGPARMS *pCfg)
 {
 	Config_t	*pReq;
 	MPT_FRAME_HDR	*mf;
-	MptSge_t	*psge;
 	unsigned long	 flags;
 	int		 ii, rc;
 	int		 flagsLength;
@@ -4316,19 +4668,14 @@ mpt_config(MPT_ADAPTER *ioc, CONFIGPARMS *pCfg)
 
 	/* Add a SGE to the config request.
 	 */
-	flagsLength = ((MPI_SGE_FLAGS_LAST_ELEMENT |
-			MPI_SGE_FLAGS_END_OF_BUFFER |
-			MPI_SGE_FLAGS_END_OF_LIST |
-			MPI_SGE_FLAGS_SIMPLE_ELEMENT |
-			MPT_SGE_ADDRESS_SIZE ) << MPI_SGE_FLAGS_SHIFT) |
-			pCfg->hdr->PageLength * 4;
-
 	if (pCfg->dir)
-		flagsLength |= (MPI_SGE_FLAGS_DIRECTION << MPI_SGE_FLAGS_SHIFT);
+		flagsLength = MPT_SGE_FLAGS_SSIMPLE_WRITE;
+	else
+		flagsLength = MPT_SGE_FLAGS_SSIMPLE_READ;
 
-	psge = (MptSge_t *) &pReq->PageBufferSGE;
-	psge->FlagsLength = cpu_to_le32(flagsLength);
-	cpu_to_leXX(pCfg->physAddr, psge->Address);
+	flagsLength |= pCfg->hdr->PageLength * 4;
+
+	mpt_add_sge((char *)&pReq->PageBufferSGE, flagsLength, pCfg->physAddr);
 
 	dprintk((MYIOC_s_INFO_FMT "Sending Config request type %d, page %d and action %d\n",
 		ioc->name, pReq->Header.PageType, pReq->Header.PageNumber, pReq->Action));
@@ -4431,6 +4778,7 @@ mpt_ioc_reset(MPT_ADAPTER *ioc, int reset_phase)
 		/* Search the configQ for internal commands. 
 		 * Flush the Q, and wake up all suspended threads.
 		 */
+#if 1
 		spin_lock_irqsave(&ioc->FreeQlock, flags);
 		if (! Q_IS_EMPTY(&ioc->configQ)){
 			pCfg = (CONFIGPARMS *)ioc->configQ.head;
@@ -4447,6 +4795,23 @@ mpt_ioc_reset(MPT_ADAPTER *ioc, int reset_phase)
 			} while (pCfg != (CONFIGPARMS *)&ioc->configQ);
 		}
 		spin_unlock_irqrestore(&ioc->FreeQlock, flags);
+#else
+		while (1) {
+			spin_lock_irqsave(&ioc->FreeQlock, flags);
+			if (! Q_IS_EMPTY(&ioc->configQ)){
+				spin_unlock_irqrestore(&ioc->FreeQlock, flags);
+				break;
+			}
+			pCfg = (CONFIGPARMS *)ioc->configQ.head;
+
+			Q_DEL_ITEM(&pCfg->linkage);
+			spin_unlock_irqrestore(&ioc->FreeQlock, flags);
+
+			pCfg->status = MPT_CONFIG_ERROR;
+			pCfg->wait_done = 1;
+			wake_up(&mpt_waitq);
+		}
+#endif
 	}
 
 	return 1;		/* currently means nothing really */
@@ -4732,7 +5097,7 @@ procmpt_iocinfo_read(char *buf, char **start, off_t offset, int request, int *eo
 	len += sprintf(buf+len, "  MinBlockSize = 0x%02x bytes\n", 4*ioc->facts.BlockSize);
 
 	len += sprintf(buf+len, "  RequestFrames @ 0x%p (Dma @ 0x%p)\n",
-					ioc->req_alloc, (void *)(ulong)ioc->req_alloc_dma);
+					(void *)ioc->req_alloc, (void *)(ulong)ioc->req_alloc_dma);
 	/*
 	 *  Rounding UP to nearest 4-kB boundary here...
 	 */
@@ -4745,7 +5110,7 @@ procmpt_iocinfo_read(char *buf, char **start, off_t offset, int request, int *eo
 					ioc->facts.GlobalCredits);
 
 	len += sprintf(buf+len, "  ReplyFrames   @ 0x%p (Dma @ 0x%p)\n",
-					ioc->reply_alloc, (void *)(ulong)ioc->reply_alloc_dma);
+					(void *)ioc->reply_alloc, (void *)(ulong)ioc->reply_alloc_dma);
 	sz = (ioc->reply_sz * ioc->reply_depth) + 128;
 	len += sprintf(buf+len, "    {CurRepSz=%d} x {CurRepDepth=%d} = %d bytes ^= 0x%x\n",
 					ioc->reply_sz, ioc->reply_depth, ioc->reply_sz*ioc->reply_depth, sz);
@@ -5301,6 +5666,8 @@ EXPORT_SYMBOL(mpt_reset_deregister);
 EXPORT_SYMBOL(mpt_get_msg_frame);
 EXPORT_SYMBOL(mpt_put_msg_frame);
 EXPORT_SYMBOL(mpt_free_msg_frame);
+EXPORT_SYMBOL(mpt_add_sge);
+EXPORT_SYMBOL(mpt_add_chain);
 EXPORT_SYMBOL(mpt_send_handshake_request);
 EXPORT_SYMBOL(mpt_handshake_req_reply_wait);
 EXPORT_SYMBOL(mpt_adapter_find_first);
@@ -5312,6 +5679,8 @@ EXPORT_SYMBOL(mpt_lan_index);
 EXPORT_SYMBOL(mpt_stm_index);
 EXPORT_SYMBOL(mpt_HardResetHandler);
 EXPORT_SYMBOL(mpt_config);
+EXPORT_SYMBOL(mpt_alloc_fw_memory);
+EXPORT_SYMBOL(mpt_free_fw_memory);
 
 EXPORT_SYMBOL(mpt_register_ascqops_strings);
 EXPORT_SYMBOL(mpt_deregister_ascqops_strings);

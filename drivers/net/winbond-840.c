@@ -473,7 +473,7 @@ static int __devinit w840_probe1 (struct pci_dev *pdev,
 		np->mii_if.full_duplex = 1;
 
 	if (np->mii_if.full_duplex)
-		np->mii_if.duplex_lock = 1;
+		np->mii_if.force_media = 1;
 
 	/* The chip-specific entries in the device structure. */
 	dev->open = &netdev_open;
@@ -773,7 +773,7 @@ static int update_link(struct net_device *dev)
 		duplex = (negotiated & LPA_100FULL) || ((negotiated & 0x02C0) == LPA_10FULL);
 		fasteth = negotiated & 0x380;
 	}
-	duplex |= np->mii_if.duplex_lock;
+	duplex |= np->mii_if.force_media;
 	/* remove fastether and fullduplex */
 	result = np->csr6 & ~0x20000200;
 	if (duplex)
@@ -1078,7 +1078,7 @@ static int start_tx(struct sk_buff *skb, struct net_device *dev)
 		np->tx_ring[entry].length |= DescEndRing;
 
 	/* Now acquire the irq spinlock.
-	 * The difficult race is the the ordering between
+	 * The difficult race is the ordering between
 	 * increasing np->cur_tx and setting DescOwn:
 	 * - if np->cur_tx is increased first the interrupt
 	 *   handler could consider the packet as transmitted
@@ -1136,13 +1136,7 @@ static void netdev_tx_done(struct net_device *dev)
 			if (tx_status & 0x0002) np->stats.tx_fifo_errors++;
 			if ((tx_status & 0x0080) && np->mii_if.full_duplex == 0)
 				np->stats.tx_heartbeat_errors++;
-#ifdef ETHER_STATS
-			if (tx_status & 0x0100) np->stats.collisions16++;
-#endif
 		} else {
-#ifdef ETHER_STATS
-			if (tx_status & 0x0001) np->stats.tx_deferred++;
-#endif
 #ifndef final_version
 			if (debug > 3)
 				printk(KERN_DEBUG "%s: Transmit slot %d ok, Tx status %8.8x.\n",

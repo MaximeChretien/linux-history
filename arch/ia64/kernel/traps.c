@@ -48,10 +48,15 @@ static fpswa_interface_t *fpswa_interface;
 void __init
 trap_init (void)
 {
-	printk("fpswa interface at %lx\n", ia64_boot_param->fpswa);
-	if (ia64_boot_param->fpswa)
+	if (ia64_boot_param->fpswa) {
 		/* FPSWA fixup: make the interface pointer a kernel virtual address: */
 		fpswa_interface = __va(ia64_boot_param->fpswa);
+		printk("FPSWA interface at 0x%lx, revision %d.%d\n",
+			ia64_boot_param->fpswa,
+			fpswa_interface->revision >> 16,
+			fpswa_interface->revision & 0xffff);
+	} else
+		printk("No FPSWA interface\n");
 }
 
 /*
@@ -185,6 +190,10 @@ ia64_bad_break (unsigned long break_num, struct pt_regs *regs)
 		sig = SIGSEGV; code = __SEGV_PSTKOVF;
 		break;
 
+	      case 0x3f000 ... 0x3ffff:	/* bundle-update in progress */
+		sig = SIGILL; code = __ILL_BNDMOD;
+		break;
+
 	      default:
 		if (break_num < 0x40000 || break_num > 0x100000)
 			die_if_kernel("Bad break", regs, break_num);
@@ -213,7 +222,8 @@ ia64_ni_syscall (unsigned long arg0, unsigned long arg1, unsigned long arg2, uns
 {
 	struct pt_regs *regs = (struct pt_regs *) &stack;
 
-	printk("<sc%ld(%lx,%lx,%lx,%lx)>\n", regs->r15, arg0, arg1, arg2, arg3);
+	printk("%s(%d): <sc%ld(%lx,%lx,%lx,%lx)>\n", current->comm, current->pid,
+	       regs->r15, arg0, arg1, arg2, arg3);
 	return -ENOSYS;
 }
 
@@ -242,9 +252,9 @@ disabled_fph_fault (struct pt_regs *regs)
 		if (fpu_owner)
 			ia64_flush_fph(fpu_owner);
 
-		ia64_set_fpu_owner(current);
 	}
 #endif /* !CONFIG_SMP */
+	ia64_set_fpu_owner(current);
 	if ((current->thread.flags & IA64_THREAD_FPH_VALID) != 0) {
 		__ia64_load_fpu(current->thread.fph);
 		psr->mfh = 0;
@@ -429,7 +439,7 @@ ia64_fault (unsigned long vector, unsigned long isr, unsigned long ifa,
 	unsigned long code, error = isr;
 	struct siginfo siginfo;
 	char buf[128];
-	int result;
+	int result, sig;
 	static const char *reason[] = {
 		"IA-64 Illegal Operation fault",
 		"IA-64 Privileged Operation fault",
@@ -441,30 +451,14 @@ ia64_fault (unsigned long vector, unsigned long isr, unsigned long ifa,
 		"Unknown fault 13", "Unknown fault 14", "Unknown fault 15"
 	};
 
-#if 0
-	/* this is for minimal trust debugging; yeah this kind of stuff is useful at times... */
-
-	if (vector != 25) {
-		static unsigned long last_time;
-		static char count;
-		unsigned long n = vector;
-		char buf[32], *cp;
-
-		if (jiffies - last_time > 5*HZ)
-			count = 0;
-
-		if (count++ < 5) {
-			last_time = jiffies;
-			cp = buf + sizeof(buf);
-			*--cp = '\0';
-			while (n) {
-				*--cp = "0123456789abcdef"[n & 0xf];
-				n >>= 4;
-			}
-			printk("<0x%s>", cp);
-		}
+	if ((isr & IA64_ISR_NA) && ((isr & IA64_ISR_CODE_MASK) == IA64_ISR_CODE_LFETCH)) {
+		/*
+		 * This fault was due to lfetch.fault, set "ed" bit in the psr to cancel
+		 * the lfetch.
+		 */
+		ia64_psr(regs)->ed = 1;
+		return;
 	}
-#endif
 
 	switch (vector) {
 	      case 24: /* General Exception */
@@ -489,6 +483,30 @@ ia64_fault (unsigned long vector, unsigned long isr, unsigned long ifa,
 		break;
 
 	      case 26: /* NaT Consumption */
+		if (user_mode(regs)) {
+			if (((isr >> 4) & 0xf) == 2) {
+				/* NaT page consumption */
+				sig = SIGSEGV;
+				code = SEGV_ACCERR;
+			} else {
+				/* register NaT consumption */
+				sig = SIGILL;
+				code = ILL_ILLOPN;
+			}
+			siginfo.si_signo = sig;
+			siginfo.si_code = code;
+			siginfo.si_errno = 0;
+			siginfo.si_addr = (void *) (regs->cr_iip + ia64_psr(regs)->ri);
+			siginfo.si_imm = vector;
+			siginfo.si_flags = __ISR_VALID;
+			siginfo.si_isr = isr;
+			force_sig_info(sig, &siginfo, current);
+			return;
+		} else if (done_with_exception(regs))
+			return;
+		sprintf(buf, "NaT consumption");
+		break;
+
 	      case 31: /* Unsupported Data Reference */
 		if (user_mode(regs)) {
 			siginfo.si_signo = SIGILL;
@@ -501,7 +519,7 @@ ia64_fault (unsigned long vector, unsigned long isr, unsigned long ifa,
 			force_sig_info(SIGILL, &siginfo, current);
 			return;
 		}
-		sprintf(buf, (vector == 26) ? "NaT consumption" : "Unsupported data reference");
+		sprintf(buf, "Unsupported data reference");
 		break;
 
 	      case 29: /* Debug */
@@ -518,16 +536,15 @@ ia64_fault (unsigned long vector, unsigned long isr, unsigned long ifa,
 			if (ia64_psr(regs)->is == 0)
 			  ifa = regs->cr_iip;
 #endif
-			siginfo.si_addr = (void *) ifa;
 			break;
-		      case 35: siginfo.si_code = TRAP_BRANCH; break;
-		      case 36: siginfo.si_code = TRAP_TRACE; break;
+		      case 35: siginfo.si_code = TRAP_BRANCH; ifa = 0; break;
+		      case 36: siginfo.si_code = TRAP_TRACE; ifa = 0; break;
 		}
 		siginfo.si_signo = SIGTRAP;
 		siginfo.si_errno = 0;
 		siginfo.si_flags = 0;
 		siginfo.si_isr = 0;
-		siginfo.si_addr = 0;
+		siginfo.si_addr = (void *) ifa;
 		siginfo.si_imm = 0;
 		force_sig_info(SIGTRAP, &siginfo, current);
 		return;

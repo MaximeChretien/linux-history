@@ -14,7 +14,7 @@
  *	Additional Authors:
  *		Florian la Roche <rzsfl@rz.uni-sb.de>
  *		Alan Cox <gw4pts@gw4pts.ampr.org>
- *		David Hinds <dhinds@allegro.stanford.edu>
+ *		David Hinds <dahinds@users.sourceforge.net>
  *		Alexey Kuznetsov <kuznet@ms2.inr.ac.ru>
  *		Adam Sulmicki <adam@cfar.umd.edu>
  *              Pekka Riikonen <priikone@poesidon.pspt.fi>
@@ -700,10 +700,14 @@ int dev_open(struct net_device *dev)
 	 *	Call device private open method
 	 */
 	if (try_inc_mod_count(dev->owner)) {
+		set_bit(__LINK_STATE_START, &dev->state);
 		if (dev->open) {
 			ret = dev->open(dev);
-			if (ret != 0 && dev->owner)
-				__MOD_DEC_USE_COUNT(dev->owner);
+			if (ret != 0) {
+				clear_bit(__LINK_STATE_START, &dev->state);
+				if (dev->owner)
+					__MOD_DEC_USE_COUNT(dev->owner);
+			}
 		}
 	} else {
 		ret = -ENODEV;
@@ -719,8 +723,6 @@ int dev_open(struct net_device *dev)
 		 *	Set the flags.
 		 */
 		dev->flags |= IFF_UP;
-
-		set_bit(__LINK_STATE_START, &dev->state);
 
 		/*
 		 *	Initialize multicasting status 
@@ -797,6 +799,19 @@ int dev_close(struct net_device *dev)
 	dev_deactivate(dev);
 
 	clear_bit(__LINK_STATE_START, &dev->state);
+
+	/* Synchronize to scheduled poll. We cannot touch poll list,
+	 * it can be even on different cpu. So just clear netif_running(),
+	 * and wait when poll really will happen. Actually, the best place
+	 * for this is inside dev->stop() after device stopped its irq
+	 * engine, but this requires more changes in devices. */
+
+	smp_mb__after_clear_bit(); /* Commit netif_running(). */
+	while (test_bit(__LINK_STATE_RX_SCHED, &dev->state)) {
+		/* No hurry. */
+		current->state = TASK_INTERRUPTIBLE;
+		schedule_timeout(1);
+	}
 
 	/*
 	 *	Call the device specific close. This cannot fail.
@@ -899,7 +914,7 @@ void dev_queue_xmit_nit(struct sk_buff *skb, struct net_device *dev)
 
 			if (skb2->nh.raw < skb2->data || skb2->nh.raw > skb2->tail) {
 				if (net_ratelimit())
-					printk(KERN_DEBUG "protocol %04x is buggy, dev %s\n", skb2->protocol, dev->name);
+					printk(KERN_CRIT "protocol %04x is buggy, dev %s\n", skb2->protocol, dev->name);
 				skb2->nh.raw = skb2->data;
 			}
 
@@ -1051,13 +1066,13 @@ int dev_queue_xmit(struct sk_buff *skb)
 			dev->xmit_lock_owner = -1;
 			spin_unlock_bh(&dev->xmit_lock);
 			if (net_ratelimit())
-				printk(KERN_DEBUG "Virtual device %s asks to queue packet!\n", dev->name);
+				printk(KERN_CRIT "Virtual device %s asks to queue packet!\n", dev->name);
 			kfree_skb(skb);
 			return -ENETDOWN;
 		} else {
 			/* Recursion is detected! It is possible, unfortunately */
 			if (net_ratelimit())
-				printk(KERN_DEBUG "Dead loop on virtual device %s, fix it urgently!\n", dev->name);
+				printk(KERN_CRIT "Dead loop on virtual device %s, fix it urgently!\n", dev->name);
 		}
 	}
 	spin_unlock_bh(&dev->queue_lock);
@@ -1072,6 +1087,7 @@ int dev_queue_xmit(struct sk_buff *skb)
   =======================================================================*/
 
 int netdev_max_backlog = 300;
+int weight_p = 64;            /* old backlog weight */
 /* These numbers are selected based on intuition and some
  * experimentatiom, if you have more scientific way of doing this
  * please go ahead and fix things.
@@ -1237,13 +1253,11 @@ int netif_rx(struct sk_buff *skb)
 enqueue:
 			dev_hold(skb->dev);
 			__skb_queue_tail(&queue->input_pkt_queue,skb);
-			/* Runs from irqs or BH's, no need to wake BH */
-			cpu_raise_softirq(this_cpu, NET_RX_SOFTIRQ);
 			local_irq_restore(flags);
 #ifndef OFFLINE_SAMPLE
 			get_sample_stats(this_cpu);
 #endif
-			return softnet_data[this_cpu].cng_level;
+			return queue->cng_level;
 		}
 
 		if (queue->throttle) {
@@ -1253,6 +1267,8 @@ enqueue:
 				netdev_wakeup();
 #endif
 		}
+
+		netif_rx_schedule(&queue->blog_dev);
 		goto enqueue;
 	}
 
@@ -1308,19 +1324,12 @@ static int deliver_to_old_ones(struct packet_type *pt, struct sk_buff *skb, int 
 	return ret;
 }
 
-/* Reparent skb to master device. This function is called
- * only from net_rx_action under BR_NETPROTO_LOCK. It is misuse
- * of BR_NETPROTO_LOCK, but it is OK for now.
- */
 static __inline__ void skb_bond(struct sk_buff *skb)
 {
 	struct net_device *dev = skb->dev;
-	
-	if (dev->master) {
-		dev_hold(dev->master);
+
+	if (dev->master)
 		skb->dev = dev->master;
-		dev_put(dev);
-	}
 }
 
 static void net_tx_action(struct softirq_action *h)
@@ -1369,20 +1378,6 @@ static void net_tx_action(struct softirq_action *h)
 	}
 }
 
-/**
- *	net_call_rx_atomic
- *	@fn: function to call
- *
- *	Make a function call that is atomic with respect to the protocol
- *	layers.
- */
- 
-void net_call_rx_atomic(void (*fn)(void))
-{
-	br_write_lock_bh(BR_NETPROTO_LOCK);
-	fn();
-	br_write_unlock_bh(BR_NETPROTO_LOCK);
-}
 
 #if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
 void (*br_handle_frame_hook)(struct sk_buff *skb) = NULL;
@@ -1408,129 +1403,147 @@ static __inline__ int handle_bridge(struct sk_buff *skb,
 
 
 #ifdef CONFIG_NET_DIVERT
-static inline void handle_diverter(struct sk_buff *skb)
+static inline int handle_diverter(struct sk_buff *skb)
 {
 	/* if diversion is supported on device, then divert */
 	if (skb->dev->divert && skb->dev->divert->divert)
 		divert_frame(skb);
+	return 0;
 }
 #endif   /* CONFIG_NET_DIVERT */
 
-
-static void net_rx_action(struct softirq_action *h)
+int netif_receive_skb(struct sk_buff *skb)
 {
+	struct packet_type *ptype, *pt_prev;
+	int ret = NET_RX_DROP;
+	unsigned short type = skb->protocol;
+
+	if (skb->stamp.tv_sec == 0)
+		do_gettimeofday(&skb->stamp);
+
+	skb_bond(skb);
+
+	netdev_rx_stat[smp_processor_id()].total++;
+
+#ifdef CONFIG_NET_FASTROUTE
+	if (skb->pkt_type == PACKET_FASTROUTE) {
+		netdev_rx_stat[smp_processor_id()].fastroute_deferred_out++;
+		return dev_queue_xmit(skb);
+	}
+#endif
+
+	skb->h.raw = skb->nh.raw = skb->data;
+
+	pt_prev = NULL;
+	for (ptype = ptype_all; ptype; ptype = ptype->next) {
+		if (!ptype->dev || ptype->dev == skb->dev) {
+			if (pt_prev) {
+				if (!pt_prev->data) {
+					ret = deliver_to_old_ones(pt_prev, skb, 0);
+				} else {
+					atomic_inc(&skb->users);
+					ret = pt_prev->func(skb, skb->dev, pt_prev);
+				}
+			}
+			pt_prev = ptype;
+		}
+	}
+
+#ifdef CONFIG_NET_DIVERT
+	if (skb->dev->divert && skb->dev->divert->divert)
+		ret = handle_diverter(skb);
+#endif /* CONFIG_NET_DIVERT */
+			
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+	if (skb->dev->br_port != NULL &&
+	    br_handle_frame_hook != NULL) {
+		return handle_bridge(skb, pt_prev);
+	}
+#endif
+
+	for (ptype=ptype_base[ntohs(type)&15];ptype;ptype=ptype->next) {
+		if (ptype->type == type &&
+		    (!ptype->dev || ptype->dev == skb->dev)) {
+			if (pt_prev) {
+				if (!pt_prev->data) {
+					ret = deliver_to_old_ones(pt_prev, skb, 0);
+				} else {
+					atomic_inc(&skb->users);
+					ret = pt_prev->func(skb, skb->dev, pt_prev);
+				}
+			}
+			pt_prev = ptype;
+		}
+	}
+
+	if (pt_prev) {
+		if (!pt_prev->data) {
+			ret = deliver_to_old_ones(pt_prev, skb, 1);
+		} else {
+			ret = pt_prev->func(skb, skb->dev, pt_prev);
+		}
+	} else {
+		kfree_skb(skb);
+		/* Jamal, now you will not able to escape explaining
+		 * me how you were going to use this. :-)
+		 */
+		ret = NET_RX_DROP;
+	}
+
+	return ret;
+}
+
+static int process_backlog(struct net_device *blog_dev, int *budget)
+{
+	int work = 0;
+	int quota = min(blog_dev->quota, *budget);
 	int this_cpu = smp_processor_id();
 	struct softnet_data *queue = &softnet_data[this_cpu];
 	unsigned long start_time = jiffies;
-	int bugdet = netdev_max_backlog;
-
-	br_read_lock(BR_NETPROTO_LOCK);
 
 	for (;;) {
 		struct sk_buff *skb;
-		struct net_device *rx_dev;
+		struct net_device *dev;
 
 		local_irq_disable();
 		skb = __skb_dequeue(&queue->input_pkt_queue);
+		if (skb == NULL)
+			goto job_done;
 		local_irq_enable();
 
-		if (skb == NULL)
+		dev = skb->dev;
+
+		netif_receive_skb(skb);
+
+		dev_put(dev);
+
+		work++;
+
+		if (work >= quota || jiffies - start_time > 1)
 			break;
 
-		skb_bond(skb);
-
-		rx_dev = skb->dev;
-
-#ifdef CONFIG_NET_FASTROUTE
-		if (skb->pkt_type == PACKET_FASTROUTE) {
-			netdev_rx_stat[this_cpu].fastroute_deferred_out++;
-			dev_queue_xmit(skb);
-			dev_put(rx_dev);
-			continue;
-		}
-#endif
-		skb->h.raw = skb->nh.raw = skb->data;
-		{
-			struct packet_type *ptype, *pt_prev;
-			unsigned short type = skb->protocol;
-
-			pt_prev = NULL;
-			for (ptype = ptype_all; ptype; ptype = ptype->next) {
-				if (!ptype->dev || ptype->dev == skb->dev) {
-					if (pt_prev) {
-						if (!pt_prev->data) {
-							deliver_to_old_ones(pt_prev, skb, 0);
-						} else {
-							atomic_inc(&skb->users);
-							pt_prev->func(skb,
-								      skb->dev,
-								      pt_prev);
-						}
-					}
-					pt_prev = ptype;
-				}
-			}
-
-#ifdef CONFIG_NET_DIVERT
-			if (skb->dev->divert && skb->dev->divert->divert)
-				handle_diverter(skb);
-#endif /* CONFIG_NET_DIVERT */
-
-			
-#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
-			if (skb->dev->br_port != NULL &&
-			    br_handle_frame_hook != NULL) {
-				handle_bridge(skb, pt_prev);
-				dev_put(rx_dev);
-				continue;
-			}
-#endif
-
-			for (ptype=ptype_base[ntohs(type)&15];ptype;ptype=ptype->next) {
-				if (ptype->type == type &&
-				    (!ptype->dev || ptype->dev == skb->dev)) {
-					if (pt_prev) {
-						if (!pt_prev->data)
-							deliver_to_old_ones(pt_prev, skb, 0);
-						else {
-							atomic_inc(&skb->users);
-							pt_prev->func(skb,
-								      skb->dev,
-								      pt_prev);
-						}
-					}
-					pt_prev = ptype;
-				}
-			}
-
-			if (pt_prev) {
-				if (!pt_prev->data)
-					deliver_to_old_ones(pt_prev, skb, 1);
-				else
-					pt_prev->func(skb, skb->dev, pt_prev);
-			} else
-				kfree_skb(skb);
-		}
-
-		dev_put(rx_dev);
-
-		if (bugdet-- < 0 || jiffies - start_time > 1)
-			goto softnet_break;
-
 #ifdef CONFIG_NET_HW_FLOWCONTROL
-	if (queue->throttle && queue->input_pkt_queue.qlen < no_cong_thresh ) {
-		if (atomic_dec_and_test(&netdev_dropping)) {
-			queue->throttle = 0;
-			netdev_wakeup();
-			goto softnet_break;
+		if (queue->throttle && queue->input_pkt_queue.qlen < no_cong_thresh ) {
+			if (atomic_dec_and_test(&netdev_dropping)) {
+				queue->throttle = 0;
+				netdev_wakeup();
+				break;
+			}
 		}
-	}
 #endif
-
 	}
-	br_read_unlock(BR_NETPROTO_LOCK);
 
-	local_irq_disable();
+	blog_dev->quota -= work;
+	*budget -= work;
+	return -1;
+
+job_done:
+	blog_dev->quota -= work;
+	*budget -= work;
+
+	list_del(&blog_dev->poll_list);
+	clear_bit(__LINK_STATE_RX_SCHED, &blog_dev->state);
+
 	if (queue->throttle) {
 		queue->throttle = 0;
 #ifdef CONFIG_NET_HW_FLOWCONTROL
@@ -1539,21 +1552,53 @@ static void net_rx_action(struct softirq_action *h)
 #endif
 	}
 	local_irq_enable();
+	return 0;
+}
 
-	NET_PROFILE_LEAVE(softnet_process);
+static void net_rx_action(struct softirq_action *h)
+{
+	int this_cpu = smp_processor_id();
+	struct softnet_data *queue = &softnet_data[this_cpu];
+	unsigned long start_time = jiffies;
+	int budget = netdev_max_backlog;
+
+	br_read_lock(BR_NETPROTO_LOCK);
+	local_irq_disable();
+
+	while (!list_empty(&queue->poll_list)) {
+		struct net_device *dev;
+
+		if (budget <= 0 || jiffies - start_time > 1)
+			goto softnet_break;
+
+		local_irq_enable();
+
+		dev = list_entry(queue->poll_list.next, struct net_device, poll_list);
+
+		if (dev->quota <= 0 || dev->poll(dev, &budget)) {
+			local_irq_disable();
+			list_del(&dev->poll_list);
+			list_add_tail(&dev->poll_list, &queue->poll_list);
+			if (dev->quota < 0)
+				dev->quota += dev->weight;
+			else
+				dev->quota = dev->weight;
+		} else {
+			dev_put(dev);
+			local_irq_disable();
+		}
+	}
+
+	local_irq_enable();
+	br_read_unlock(BR_NETPROTO_LOCK);
 	return;
 
 softnet_break:
-	br_read_unlock(BR_NETPROTO_LOCK);
-
-	local_irq_disable();
 	netdev_rx_stat[this_cpu].time_squeeze++;
-	/* This already runs in BH context, no need to wake up BH's */
-	cpu_raise_softirq(this_cpu, NET_RX_SOFTIRQ);
-	local_irq_enable();
+	__cpu_raise_softirq(this_cpu, NET_RX_SOFTIRQ);
 
-	NET_PROFILE_LEAVE(softnet_process);
-	return;
+	local_irq_enable();
+	br_read_unlock(BR_NETPROTO_LOCK);
 }
 
 static gifconf_func_t * gifconf_list [NPROTO];
@@ -2607,6 +2652,7 @@ int unregister_netdevice(struct net_device *dev)
 
 extern void net_device_init(void);
 extern void ip_auto_config(void);
+struct proc_dir_entry *proc_net_drivers;
 #ifdef CONFIG_NET_DIVERT
 extern void dv_init(void);
 #endif /* CONFIG_NET_DIVERT */
@@ -2623,6 +2669,7 @@ int __init net_dev_init(void)
 
 	if (!dev_boot_phase)
 		return 0;
+
 
 #ifdef CONFIG_NET_DIVERT
 	dv_init();
@@ -2641,8 +2688,13 @@ int __init net_dev_init(void)
 		queue->cng_level = 0;
 		queue->avg_blog = 10; /* arbitrary non-zero */
 		queue->completion_queue = NULL;
+		INIT_LIST_HEAD(&queue->poll_list);
+		set_bit(__LINK_STATE_START, &queue->blog_dev.state);
+		queue->blog_dev.weight = weight_p;
+		queue->blog_dev.poll = process_backlog;
+		atomic_set(&queue->blog_dev.refcnt, 1);
 	}
-	
+
 #ifdef CONFIG_NET_PROFILE
 	net_profile_init();
 	NET_PROFILE_REGISTER(dev_queue_xmit);
@@ -2725,6 +2777,7 @@ int __init net_dev_init(void)
 #ifdef CONFIG_PROC_FS
 	proc_net_create("dev", 0, dev_get_info);
 	create_proc_read_entry("net/softnet_stat", 0, 0, dev_proc_stats, NULL);
+	proc_net_drivers = proc_mkdir("net/drivers", 0);
 #ifdef WIRELESS_EXT
 	/* Available in net/core/wireless.c */
 	proc_net_create("wireless", 0, dev_get_wireless_info);
@@ -2742,7 +2795,6 @@ int __init net_dev_init(void)
 #ifdef CONFIG_NET_SCHED
 	pktsched_init();
 #endif
-
 	/*
 	 *	Initialise network devices
 	 */

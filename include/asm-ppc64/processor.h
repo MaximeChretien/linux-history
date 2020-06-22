@@ -18,6 +18,7 @@
 #endif
 #include <asm/ptrace.h>
 #include <asm/types.h>
+#include <asm/delay.h>
 
 /*
  * Default implementation of macro that returns current
@@ -97,7 +98,7 @@
 #define FPSCR_VX	0x20000000	/* Invalid operation summary */
 #define FPSCR_OX	0x10000000	/* Overflow exception summary */
 #define FPSCR_UX	0x08000000	/* Underflow exception summary */
-#define FPSCR_ZX	0x04000000	/* Zero-devide exception summary */
+#define FPSCR_ZX	0x04000000	/* Zero-divide exception summary */
 #define FPSCR_XX	0x02000000	/* Inexact exception summary */
 #define FPSCR_VXSNAN	0x01000000	/* Invalid op for SNaN */
 #define FPSCR_VXISI	0x00800000	/* Invalid op for Inv - Inv */
@@ -247,8 +248,6 @@
 #define	SPRN_IMMR	0x27E  	/* Internal Memory Map Register */
 #define	SPRN_L2CR	0x3F9	/* Level 2 Cache Control Regsiter */
 #define	SPRN_LR		0x008	/* Link Register */
-#define	SPRN_MMCR0	0x3B8	/* Monitor Mode Control Register 0 */
-#define	SPRN_MMCR1	0x3BC	/* Monitor Mode Control Register 1 */
 #define	SPRN_PBL1	0x3FC	/* Protection Bound Lower 1 */
 #define	SPRN_PBL2	0x3FE	/* Protection Bound Lower 2 */
 #define	SPRN_PBU1	0x3FD	/* Protection Bound Upper 1 */
@@ -256,18 +255,12 @@
 #define	SPRN_PID	0x3B1	/* Process ID */
 #define	SPRN_PIR	0x3FF	/* Processor Identification Register */
 #define	SPRN_PIT	0x3DB	/* Programmable Interval Timer */
-#define	SPRN_PMC1	0x3B9	/* Performance Counter Register 1 */
-#define	SPRN_PMC2	0x3BA	/* Performance Counter Register 2 */
-#define	SPRN_PMC3	0x3BD	/* Performance Counter Register 3 */
-#define	SPRN_PMC4	0x3BE	/* Performance Counter Register 4 */
 #define	SPRN_PVR	0x11F	/* Processor Version Register */
 #define	SPRN_RPA	0x3D6	/* Required Physical Address Register */
-#define	SPRN_SDA	0x3BF	/* Sampled Data Address Register */
 #define	SPRN_SDR1	0x019	/* MMU Hash Base Register */
 #define	SPRN_SGR	0x3B9	/* Storage Guarded Register */
 #define	  SGR_NORMAL		0
 #define	  SGR_GUARDED		1
-#define	SPRN_SIA	0x3BB	/* Sampled Instruction Address Register */
 #define	SPRN_SPRG0	0x110	/* Special Purpose Register General 0 */
 #define	SPRN_SPRG1	0x111	/* Special Purpose Register General 1 */
 #define	SPRN_SPRG2	0x112	/* Special Purpose Register General 2 */
@@ -324,13 +317,6 @@
 #define	    WRS_SYSTEM		3		/* WDT forced system reset */
 #define	  TSR_PIS		0x08000000	/* PIT Interrupt Status */
 #define	  TSR_FIS		0x04000000	/* FIT Interrupt Status */
-#define	SPRN_UMMCR0	0x3A8	/* User Monitor Mode Control Register 0 */
-#define	SPRN_UMMCR1	0x3AC	/* User Monitor Mode Control Register 0 */
-#define	SPRN_UPMC1	0x3A9	/* User Performance Counter Register 1 */
-#define	SPRN_UPMC2	0x3AA	/* User Performance Counter Register 2 */
-#define	SPRN_UPMC3	0x3AD	/* User Performance Counter Register 3 */
-#define	SPRN_UPMC4	0x3AE	/* User Performance Counter Register 4 */
-#define	SPRN_USIA	0x3AB	/* User Sampled Instruction Address Register */
 #define	SPRN_XER	0x001	/* Fixed Point Exception Register */
 #define	SPRN_ZPR	0x3B0	/* Zone Protection Register */
 
@@ -396,7 +382,19 @@
 #define	THRM2	SPRN_THRM2	/* Thermal Management Register 2 */
 #define	THRM3	SPRN_THRM3	/* Thermal Management Register 3 */
 #define	XER	SPRN_XER
-
+#define PMC1	0x313
+#define PMC2	0x314
+#define PMC3	0x315
+#define PMC4	0x316
+#define PMC5	0x317
+#define PMC6	0x318
+#define PMC7	0x319
+#define PMC8	0x31a
+#define MMCR0	0x31b
+#define MMCR1	0x31e
+#define MMCRA	0x312
+#define SIAR	0x30c
+#define SDAR	0x30d
 
 /* Device Control Registers */
 
@@ -483,10 +481,12 @@
 #define	PVR_REV(pvr)  (((pvr) >>   0) & 0xFFFF)	/* Revison field */
 
 /* Processor Version Numbers */
+#define	PV_NORTHSTAR	0x0033
 #define	PV_PULSAR	0x0034
 #define	PV_POWER4	0x0035
 #define	PV_ICESTAR	0x0036
 #define	PV_SSTAR	0x0037
+#define	PV_POWER4p	0x0038
 #define	PV_630        	0x0040
 #define	PV_630p	        0x0041
 
@@ -717,7 +717,7 @@ void free_task_struct(struct task_struct *);
 #define init_task	(init_task_union.task)
 #define init_stack	(init_task_union.stack)
 
-#define cpu_relax()     do { } while (0)
+#define cpu_relax()     udelay(1)
 
 /*
  * Prefetch macros.
@@ -726,17 +726,29 @@ void free_task_struct(struct task_struct *);
 #define ARCH_HAS_PREFETCHW
 #define ARCH_HAS_SPINLOCK_PREFETCH
 
-extern inline void prefetch(const void *x)
+static inline void prefetch(const void *x)
 {
 	__asm__ __volatile__ ("dcbt 0,%0" : : "r" (x));
 }
 
-extern inline void prefetchw(const void *x)
+static inline void prefetchw(const void *x)
 {
 	__asm__ __volatile__ ("dcbtst 0,%0" : : "r" (x));
 }
 
 #define spin_lock_prefetch(x)	prefetchw(x)
+
+#define cpu_has_largepage()	(__is_processor(PV_POWER4) || \
+				 __is_processor(PV_POWER4p))
+
+#define cpu_has_slb()		(__is_processor(PV_POWER4) || \
+				 __is_processor(PV_POWER4p))
+
+#define cpu_has_tlbiel()	(__is_processor(PV_POWER4) || \
+				 __is_processor(PV_POWER4p))
+
+#define cpu_has_noexecute()	(__is_processor(PV_POWER4) || \
+				 __is_processor(PV_POWER4p))
 
 #endif /* ASSEMBLY */
 

@@ -215,7 +215,6 @@ static int tvmixer_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-
 static struct i2c_driver driver = {
 	name:            "tv card mixer driver",
         id:              I2C_DRIVERID_TVMIXER,
@@ -254,7 +253,13 @@ static int tvmixer_clients(struct i2c_client *client)
 	int i,minor;
 
 	/* TV card ??? */
-	if (client->adapter->id != (I2C_ALGO_BIT | I2C_HW_B_BT848)) {
+	switch (client->adapter->id) {
+	case I2C_ALGO_BIT | I2C_HW_B_BT848:
+	case I2C_ALGO_BIT | I2C_HW_B_RIVA:
+		/* ok, have a look ... */
+		break;
+	default:
+		/* ignore that one */
 		if (debug)
 			printk("tvmixer: %s is not a tv card\n",
 			       client->adapter->name);

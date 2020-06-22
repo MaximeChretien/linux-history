@@ -3,6 +3,8 @@
  * Copyright (c) 2001   David Howells (dhowells@redhat.com).
  * - Derived partially from ideas by Andrea Arcangeli <andrea@suse.de>
  * - Derived also from comments by Linus
+ *
+ * Trylock by Brian Watson (Brian.J.Watson@compaq.com).
  */
 
 #ifndef _LINUX_RWSEM_SPINLOCK_H
@@ -54,7 +56,9 @@ struct rw_semaphore {
 
 extern void FASTCALL(init_rwsem(struct rw_semaphore *sem));
 extern void FASTCALL(__down_read(struct rw_semaphore *sem));
+extern int FASTCALL(__down_read_trylock(struct rw_semaphore *sem));
 extern void FASTCALL(__down_write(struct rw_semaphore *sem));
+extern int FASTCALL(__down_write_trylock(struct rw_semaphore *sem));
 extern void FASTCALL(__up_read(struct rw_semaphore *sem));
 extern void FASTCALL(__up_write(struct rw_semaphore *sem));
 

@@ -26,6 +26,8 @@
 
 char arcs_cmdline[CL_SIZE];
 
+void ddb5477_runtime_detection(void);
+
 const char *get_system_type(void)
 {
 	switch (mips_machtype) {
@@ -33,6 +35,8 @@ const char *get_system_type(void)
 	case MACH_NEC_DDB5476:		return "NEC DDB Vrc-5476";
 	case MACH_NEC_DDB5477:		return "NEC DDB Vrc-5477";
 	case MACH_NEC_ROCKHOPPER:	return "NEC Rockhopper";
+	case MACH_NEC_ROCKHOPPERII:	return "NEC RockhopperII";
+	default:			return "Unknown NEC board";
 	}
 }
 
@@ -92,6 +96,13 @@ void ddb5477_runtime_detection(void)
            around just after that.
          */
 
+	/* We can only use the PCI bus to distinquish between
+	   the Rockhopper and RockhopperII backplanes and this must
+	   wait until ddb5477_board_init() in setup.c after the 5477
+	   is initialized.  So, until then handle
+	   both Rockhopper and RockhopperII backplanes as Rockhopper 1
+	 */
+
         test_offset = (char *)KSEG1ADDR(DEFAULT_LCS1_BASE + 0x800);
         saved_test_byte = *test_offset;
 
@@ -119,7 +130,7 @@ void ddb5477_runtime_detection(void)
         *test_offset = saved_test_byte;
 
 	/* before we know a better way, we will trust PMON for getting
-	 * RAM size 
+	 * RAM size
 	 */
 	board_ram_size = 1 << (36 - (ddb_in32(DDB_SDRAM0) & 0xf));
 

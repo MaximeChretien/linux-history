@@ -33,10 +33,7 @@
 #include <asm/processor.h>
 #include <asm/system.h>
 #include <asm/irq.h>
-
-#include "local_irq.h"
-#include "ppc4xx_pic.h"
-
+#include <asm/ppc4xx_pic.h>
 
 /* Global Variables */
 

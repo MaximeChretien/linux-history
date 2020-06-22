@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.serial.h 1.15 10/23/01 08:09:35 trini
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
  * include/asm-ppc/serial.h
@@ -11,8 +11,10 @@
 
 #include <linux/config.h>
 
-#ifdef CONFIG_GEMINI
-#include <asm/gemini_serial.h>
+#if defined(CONFIG_GEMINI)
+#include <platforms/gemini_serial.h>
+#elif defined(CONFIG_SPRUCE)
+#include <platforms/spruce.h>
 #elif defined(CONFIG_4xx)
 #include <asm/ppc4xx_serial.h>
 #else

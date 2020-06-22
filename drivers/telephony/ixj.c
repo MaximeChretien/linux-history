@@ -2807,7 +2807,10 @@ static void ulaw2alaw(unsigned char *buff, unsigned long len)
 	};
 
 	while (len--)
-		*buff++ = table_ulaw2alaw[*(unsigned char *)buff];
+	{
+		*buff = table_ulaw2alaw[*(unsigned char *)buff];
+		buff++;
+	}
 }
 
 static void alaw2ulaw(unsigned char *buff, unsigned long len)
@@ -2849,7 +2852,10 @@ static void alaw2ulaw(unsigned char *buff, unsigned long len)
 	};
 
         while (len--)
-                *buff++ = table_alaw2ulaw[*(unsigned char *)buff];
+        {
+                *buff = table_alaw2ulaw[*(unsigned char *)buff];
+                buff++;
+	}
 }
 
 static ssize_t ixj_read(struct file * file_p, char *buf, size_t length, loff_t * ppos)
@@ -5944,7 +5950,7 @@ static int ixj_build_cadence(IXJ *j, IXJ_CADENCE * cp)
 	lcp = kmalloc(sizeof(IXJ_CADENCE), GFP_KERNEL);
 	if (lcp == NULL)
 		return -ENOMEM;
-	if (copy_from_user(lcp, (char *) cp, sizeof(IXJ_CADENCE)) || (unsigned)lcp->elements_used >= ~0U/sizeof(IXJ_CADENCE) )
+	if (copy_from_user(lcp, (char *) cp, sizeof(IXJ_CADENCE)) || (unsigned)lcp->elements_used >= ~0U/sizeof(IXJ_CADENCE_ELEMENT) )
         {
                 kfree(lcp);
                 return -EFAULT;

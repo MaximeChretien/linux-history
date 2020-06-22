@@ -15,11 +15,6 @@
 
 #define MAJOR_NR COMPAQ_CISS_MAJOR 
 
-struct my_sg {
-	int len;
-	char *start_addr;
-};
-
 struct ctlr_info;
 typedef struct ctlr_info ctlr_info_t;
 

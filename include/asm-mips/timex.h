@@ -21,7 +21,7 @@
  * Standard way to access the cycle counter.
  * Currently only used on SMP for scheduling.
  *
- * Only the low 32 bits are available as a continuously counting entity. 
+ * Only the low 32 bits are available as a continuously counting entity.
  * But this only means we'll force a reschedule every 8 seconds or so,
  * which isn't an evil thing.
  *
@@ -36,5 +36,8 @@ static inline cycles_t get_cycles (void)
 	return read_32bit_cp0_register(CP0_COUNT);
 }
 #endif /* __KERNEL__ */
+
+#define vxtime_lock()		do {} while (0)
+#define vxtime_unlock()		do {} while (0)
 
 #endif /*  __ASM_MIPS_TIMEX_H */

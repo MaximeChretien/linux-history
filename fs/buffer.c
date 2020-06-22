@@ -47,7 +47,6 @@
 #include <linux/highmem.h>
 #include <linux/module.h>
 #include <linux/completion.h>
-#include <linux/compiler.h>
 
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -210,7 +209,7 @@ static int write_some_buffers(kdev_t dev)
 		struct buffer_head * bh = next;
 		next = bh->b_next_free;
 
-		if (dev && bh->b_dev != dev)
+		if (dev != NODEV && bh->b_dev != dev)
 			continue;
 		if (test_and_set_bit(BH_Lock, &bh->b_state))
 			continue;
@@ -267,7 +266,7 @@ static int wait_for_buffers(kdev_t dev, int index, int refile)
 				__refile_buffer(bh);
 			continue;
 		}
-		if (dev && bh->b_dev != dev)
+		if (dev != NODEV && bh->b_dev != dev)
 			continue;
 
 		get_bh(bh);
@@ -730,15 +729,11 @@ void __invalidate_buffers(kdev_t dev, int destroy_dirty_buffers)
 
 static void free_more_memory(void)
 {
-	zone_t * zone = contig_page_data.node_zonelists[GFP_NOFS & GFP_ZONEMASK].zones[0];
-	
 	balance_dirty();
 	wakeup_bdflush();
-	try_to_free_pages(zone, GFP_NOFS, 0);
+	try_to_free_pages(GFP_NOIO);
 	run_task_queue(&tq_disk);
-	current->policy |= SCHED_YIELD;
-	__set_current_state(TASK_RUNNING);
-	schedule();
+	yield();
 }
 
 void init_buffer(struct buffer_head *bh, bh_end_io_t *handler, void *private)
@@ -754,6 +749,7 @@ static void end_buffer_io_async(struct buffer_head * bh, int uptodate)
 	unsigned long flags;
 	struct buffer_head *tmp;
 	struct page *page;
+	int fullup = 1;
 
 	mark_buffer_uptodate(bh, uptodate);
 
@@ -780,8 +776,11 @@ static void end_buffer_io_async(struct buffer_head * bh, int uptodate)
 	unlock_buffer(bh);
 	tmp = bh->b_this_page;
 	while (tmp != bh) {
-		if (buffer_async(tmp) && buffer_locked(tmp))
-			goto still_busy;
+		if (buffer_locked(tmp)) {
+			if (buffer_async(tmp))
+				goto still_busy;
+		} else if (!buffer_uptodate(tmp))
+			fullup = 0;
 		tmp = tmp->b_this_page;
 	}
 
@@ -789,10 +788,10 @@ static void end_buffer_io_async(struct buffer_head * bh, int uptodate)
 	spin_unlock_irqrestore(&page_uptodate_lock, flags);
 
 	/*
-	 * if none of the buffers had errors then we can set the
-	 * page uptodate:
+	 * If none of the buffers had errors and all were uptodate
+	 * then we can set the page uptodate:
 	 */
-	if (!PageError(page))
+	if (fullup && !PageError(page))
 		SetPageUptodate(page);
 
 	UnlockPage(page);
@@ -958,8 +957,10 @@ struct buffer_head * getblk(kdev_t dev, int block, int size)
 		struct buffer_head * bh;
 
 		bh = get_hash_table(dev, block, size);
-		if (bh)
+		if (bh) {
+			touch_buffer(bh);
 			return bh;
+		}
 
 		if (!grow_buffers(dev, block, size))
 			free_more_memory();
@@ -1122,7 +1123,6 @@ struct buffer_head * bread(kdev_t dev, int block, int size)
 	struct buffer_head * bh;
 
 	bh = getblk(dev, block, size);
-	touch_buffer(bh);
 	if (buffer_uptodate(bh))
 		return bh;
 	ll_rw_block(READ, 1, &bh);
@@ -1211,16 +1211,14 @@ EXPORT_SYMBOL(get_unused_buffer_head);
 
 void set_bh_page (struct buffer_head *bh, struct page *page, unsigned long offset)
 {
-	bh->b_page = page;
 	if (offset >= PAGE_SIZE)
 		BUG();
-	if (PageHighMem(page))
-		/*
-		 * This catches illegal uses and preserves the offset:
-		 */
-		bh->b_data = (char *)(0 + offset);
-	else
-		bh->b_data = page_address(page) + offset;
+
+	/*
+	 * page_address will return NULL anyways for highmem pages
+	 */
+	bh->b_data = page_address(page) + offset;
+	bh->b_page = page;
 }
 EXPORT_SYMBOL(set_bh_page);
 
@@ -1619,8 +1617,20 @@ out:
 	 * Zero out any newly allocated blocks to avoid exposing stale
 	 * data.  If BH_New is set, we know that the block was newly
 	 * allocated in the above loop.
+	 *
+	 * Details the buffer can be new and uptodate because:
+	 * 1) hole in uptodate page, get_block(create) allocate the block,
+	 *    so the buffer is new and additionally we also mark it uptodate
+	 * 2) The buffer is not mapped and uptodate due a previous partial read.
+	 *
+	 * We can always ignore uptodate buffers here, if you mark a buffer
+	 * uptodate you must make sure it contains the right data first.
+	 *
+	 * We must stop the "undo/clear" fixup pass not at the caller "to"
+	 * but at the last block that we successfully arrived in the main loop.
 	 */
 	bh = head;
+	to = block_start; /* stop at the last successfully handled block */
 	block_start = 0;
 	do {
 		block_end = block_start+blocksize;
@@ -1628,10 +1638,9 @@ out:
 			goto next_bh;
 		if (block_start >= to)
 			break;
-		if (buffer_new(bh)) {
-			if (buffer_uptodate(bh))
-				printk(KERN_ERR "%s: zeroing uptodate buffer!\n", __FUNCTION__);
+		if (buffer_new(bh) && !buffer_uptodate(bh)) {
 			memset(kaddr+block_start, 0, bh->b_size);
+			flush_dcache_page(page);
 			set_bit(BH_Uptodate, &bh->b_state);
 			mark_buffer_dirty(bh);
 		}
@@ -1754,9 +1763,14 @@ int block_read_full_page(struct page *page, get_block_t *get_block)
 	}
 
 	/* Stage 3: start the IO */
-	for (i = 0; i < nr; i++)
-		submit_bh(READ, arr[i]);
-
+	for (i = 0; i < nr; i++) {
+		struct buffer_head * bh = arr[i];
+		if (buffer_uptodate(bh))
+			end_buffer_io_async(bh, 1);
+		else
+			submit_bh(READ, bh);
+	}
+	
 	return 0;
 }
 
@@ -1991,7 +2005,12 @@ int block_truncate_page(struct address_space *mapping, loff_t from, get_block_t 
 	flush_dcache_page(page);
 	kunmap(page);
 
-	__mark_buffer_dirty(bh);
+	if (!atomic_set_buffer_dirty(bh)) {
+		__mark_dirty(bh);
+		buffer_insert_inode_data_queue(bh, inode);
+		balance_dirty();
+	}
+
 	err = 0;
 
 unlock:

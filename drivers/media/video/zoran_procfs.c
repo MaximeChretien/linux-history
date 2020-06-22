@@ -110,6 +110,9 @@ static int zoran_write_proc(struct file *file, const char *buffer, unsigned long
 	struct zoran *zr;
 
 	zr = (struct zoran *) data;
+	
+	if(count > 32768)		/* Stupidity filter */
+		count = 32768;
 
 	string = sp = vmalloc(count + 1);
 	if (!string) {

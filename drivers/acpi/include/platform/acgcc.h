@@ -92,8 +92,7 @@
 /*! [End] no source code translation !*/
 
 
-#else /* DO IA32 */
-
+#elif __i386__ /* DO IA32 */
 #define COMPILER_DEPENDENT_UINT64   unsigned long long
 #define ACPI_ASM_MACROS
 #define causeinterrupt(level)
@@ -138,31 +137,60 @@
 			"andl   $0x1,%%eax" \
 			:"=a"(Acq),"=c"(dummy):"c"(GLptr),"i"(~3L):"dx"); \
 	} while(0)
+#elif __x86_64__ 
+#define COMPILER_DEPENDENT_UINT64   unsigned long long
+#define ACPI_ASM_MACROS
+#define causeinterrupt(level)
+#define BREAKPOINT3
+#define disable() __cli()
+#define enable()  __sti()
+#define halt()    __asm__ __volatile__ ("sti; hlt":::"memory")
 
-
-/*
- * Math helper asm macros
+/*! [Begin] no source code translation
+ *
+ * A brief explanation as GNU inline assembly is a bit hairy
+ *  %0 is the output parameter in RAX ("=a")
+ *  %1 and %2 are the input parameters in RCX ("c")
+ *  and an immediate value ("i") respectively
+ *  All actual register references are preceded with "%%" as in "%%edx"
+ *  Immediate values in the assembly are preceded by "$" as in "$0x1"
+ *  The final asm parameter are the operation altered non-output registers.
  */
-#define ACPI_DIV_64_BY_32(n_hi, n_lo, d32, q32, r32) \
-		asm("divl %2;"        \
-		:"=a"(q32), "=d"(r32) \
-		:"r"(d32),            \
-		"0"(n_lo), "1"(n_hi))
+#define ACPI_ACQUIRE_GLOBAL_LOCK(GLptr, Acq) \
+	do { \
+		unsigned long dummy; \
+		asm("1:     movl (%2),%%eax;" \
+			"movl   %%eax,%%edx;" \
+			"andq   %2,%%rdx;" \
+			"btsl   $0x1,%%edx;" \
+			"adcl   $0x0,%%edx;" \
+			"lock;  cmpxchgl %%edx,(%1);" \
+			"jnz    1b;" \
+			"cmpb   $0x3,%%dl;" \
+			"sbbl   %%eax,%%eax" \
+			:"=a"(Acq),"=c"(dummy):"c"(GLptr),"i"(~1L):"dx"); \
+	} while(0)
 
-
-#define ACPI_SHIFT_RIGHT_64(n_hi, n_lo) \
-	asm("shrl   $1,%2;"             \
-	    "rcrl   $1,%3;"             \
-	    :"=r"(n_hi), "=r"(n_lo)     \
-	    :"0"(n_hi), "1"(n_lo))
+#define ACPI_RELEASE_GLOBAL_LOCK(GLptr, Acq) \
+	do { \
+		unsigned long dummy; \
+		asm("1:     movl (%2),%%eax;" \
+			"movl   %%eax,%%edx;" \
+			"andq   %2,%%rdx;" \
+			"lock;  cmpxchgl %%edx,(%1);" \
+			"jnz    1b;" \
+			"andl   $0x1,%%eax" \
+			:"=a"(Acq),"=c"(dummy):"c"(GLptr),"i"(~3L):"dx"); \
+	} while(0)
 
 /*! [End] no source code translation !*/
 
-#endif /* IA 32 */
+#endif
 
 /* This macro is used to tag functions as "printf-like" because
  * some compilers (like GCC) can catch printf format string problems.
  */
 #define ACPI_PRINTF_LIKE_FUNC __attribute__ ((__format__ (__printf__, 4, 5)))
+
 
 #endif /* __ACGCC_H__ */

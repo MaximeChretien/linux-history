@@ -1,4 +1,4 @@
-/*
+/* - undefined for user space
  * 
  *
  * Procedures for interfacing to Open Firmware.
@@ -217,7 +217,10 @@ extern void enter_prom(void *dummy,...);
 
 void cacheable_memzero(void *, unsigned int);
 
-extern char cmd_line[512];	/* XXX */
+#ifndef CONFIG_CMDLINE
+#define CONFIG_CMDLINE ""
+#endif
+char cmd_line[512] = CONFIG_CMDLINE;
 unsigned long dev_tree_size;
 
 #ifdef CONFIG_HMT
@@ -340,6 +343,7 @@ prom_initialize_naca(unsigned long mem)
 	struct prom_t *_prom = PTRRELOC(&prom);
         struct naca_struct *_naca = RELOC(naca);
 
+	/* NOTE: _naca->debug_switch is already initialized. */
 #ifdef DEBUG_PROM
 	prom_print(RELOC("prom_initialize_naca: start...\n"));
 #endif
@@ -358,23 +362,43 @@ prom_initialize_naca(unsigned long mem)
 			 * d-cache and i-cache sizes... -Peter
 			 */
 			if ( num_cpus == 1 ) {
-				u32 size;
+				u32 size, lsize, sets;
+
+				call_prom(RELOC("getprop"), 4, 1, node,
+					  RELOC("d-cache-size"),
+					  &size, sizeof(size));
 
 				call_prom(RELOC("getprop"), 4, 1, node,
 					  RELOC("d-cache-line-size"),
-					  &size, sizeof(size));
+					  &lsize, sizeof(lsize));
 
-				_naca->dCacheL1LineSize     = size;
-				_naca->dCacheL1LogLineSize  = __ilog2(size);
-				_naca->dCacheL1LinesPerPage = PAGE_SIZE / size;
+				call_prom(RELOC("getprop"), 4, 1, node,
+					  RELOC("d-cache-sets"),
+					  &sets, sizeof(sets));
+
+				_naca->dCacheL1Size         = size;
+				_naca->dCacheL1LineSize     = lsize;
+				_naca->dCacheL1LogLineSize  = __ilog2(lsize);
+				_naca->dCacheL1LinesPerPage = PAGE_SIZE/lsize;
+				_naca->dCacheL1Assoc = size / lsize / sets;
 
 				call_prom(RELOC("getprop"), 4, 1, node,
 					  RELOC("i-cache-line-size"),
 					  &size, sizeof(size));
 
-				_naca->iCacheL1LineSize     = size;
-				_naca->iCacheL1LogLineSize  = __ilog2(size);
-				_naca->iCacheL1LinesPerPage = PAGE_SIZE / size;
+				call_prom(RELOC("getprop"), 4, 1, node,
+					  RELOC("i-cache-line-size"),
+					  &lsize, sizeof(lsize));
+
+				call_prom(RELOC("getprop"), 4, 1, node,
+					  RELOC("i-cache-sets"),
+					  &sets, sizeof(sets));
+
+				_naca->iCacheL1Size         = size;
+				_naca->iCacheL1LineSize     = lsize;
+				_naca->iCacheL1LogLineSize  = __ilog2(lsize);
+				_naca->iCacheL1LinesPerPage = PAGE_SIZE/lsize;
+				_naca->iCacheL1Assoc = size / lsize / sets;
 
 				if (_naca->platform == PLATFORM_PSERIES_LPAR) {
 					u32 pft_size[2];
@@ -476,6 +500,11 @@ prom_initialize_naca(unsigned long mem)
 	 * entry.  At least in Condor and earlier.  DRENG 
 	 */
 	_naca->slb_size = 64;
+
+	/* Add an eye catcher and the naca layout version number */
+	strcpy(_naca->eye_catcher, RELOC("PPC64"));
+	_naca->version     = 1;
+	_naca->processor   = _get_PVR() >> 16;
 
 #ifdef DEBUG_PROM
         prom_print(RELOC("naca->processorCount       = 0x"));
@@ -620,8 +649,8 @@ prom_initialize_lmb(unsigned long mem)
 }
 
 
-static unsigned long __init
-prom_instantiate_rtas(unsigned long mem)
+static void __init
+prom_instantiate_rtas(void)
 {
 	unsigned long offset = reloc_offset();
 	struct prom_t *_prom = PTRRELOC(&prom);
@@ -654,16 +683,18 @@ prom_instantiate_rtas(unsigned long mem)
 	        _rtas->size = getprop_rval;
 		prom_print(RELOC("instantiating rtas"));
 		if (_rtas->size != 0) {
-			/*
-			 * Ask OF for some space for RTAS.
-			 * Actually OF has bugs so we just arbitrarily
-			 * use memory at the 6MB point.
-			 */
-			// The new code...
-			mem = PAGE_ALIGN(mem);
-			_rtas->base = mem + offset - KERNELBASE;
+			unsigned long rtas_region = RTAS_INSTANTIATE_MAX;
 
-			mem += _rtas->size;
+			/* Grab some space within the first RTAS_INSTANTIATE_MAX bytes
+			 * of physical memory (or within the RMO region) because RTAS
+			 * runs in 32-bit mode and relocate off.
+			 */
+			if ( _naca->platform == PLATFORM_PSERIES_LPAR ) {
+				struct lmb *_lmb  = PTRRELOC(&lmb);
+				rtas_region = min(_lmb->rmo_size, RTAS_INSTANTIATE_MAX);
+			}
+			_rtas->base = lmb_alloc_base(_rtas->size, PAGE_SIZE, rtas_region);
+
 			prom_print(RELOC(" at 0x"));
 			prom_print_hex(_rtas->base);
 
@@ -700,8 +731,6 @@ prom_instantiate_rtas(unsigned long mem)
 #ifdef DEBUG_PROM
 	prom_print(RELOC("prom_instantiate_rtas: end...\n"));
 #endif
-
-	return mem;
 }
 
 unsigned long prom_strtoul(const char *cp)
@@ -912,8 +941,6 @@ prom_initialize_tce_table(void)
 			    (strstr(model, RELOC("peedwagon")) == NULL) &&
 			    (strstr(model, RELOC("innipeg")) == NULL))
 				continue;
-		} else {
-			prom_print(RELOC("No known I/O bridge chip found.\n"));
 		}
 
 		if ((type[0] == 0) || (strstr(type, RELOC("pci")) == NULL)) {
@@ -1231,6 +1258,110 @@ prom_hold_cpus(unsigned long mem)
 #endif
 }
 
+#ifdef CONFIG_PPCDBG
+extern char *trace_names[];	/* defined in udbg.c -- need a better interface */
+
+static void parse_ppcdbg_optionlist(const char *cmd,
+				    const char *cmdend)
+{
+	unsigned long offset = reloc_offset();
+	char **_trace_names = PTRRELOC(&trace_names[0]);
+	const char *all = RELOC("all");
+        struct naca_struct *_naca = RELOC(naca);
+	const char *p, *pend;
+	int onoff, i, cmdidx;
+	unsigned long mask;
+	char cmdbuf[30];
+
+	for (p = cmd, pend = strchr(p, ',');
+	     p < cmdend;
+	     pend = strchr(p, ',')) {
+		if (pend == NULL || pend > cmdend)
+			pend = cmdend;
+		onoff = 1;	/* default */
+		if (*p == '+' || *p == '-') {
+			/* explicit on or off */
+			onoff = (*p == '+');
+			p++;
+		}
+		/* parse out p..pend here */
+		if (pend - p < sizeof(cmdbuf)) {
+			strncpy(cmdbuf, p, pend - p);
+			cmdbuf[pend - p] = '\0';
+			for (cmdidx = -1, i = 0; i < PPCDBG_NUM_FLAGS; i++) {
+				if (_trace_names[i] &&
+				    (strcmp(PTRRELOC(_trace_names[i]), cmdbuf) == 0)) {
+					cmdidx = i;
+					break;
+				}
+			}
+			mask = 0;
+			if (cmdidx >= 0) {
+				mask = (1 << cmdidx);
+			} else if (strcmp(cmdbuf, all) == 0) {
+				mask = PPCDBG_ALL;
+			} else {
+				prom_print(RELOC("ppcdbg: unknown debug: "));
+				prom_print(cmdbuf);
+				prom_print_nl();
+			}
+			if (mask) {
+				if (onoff)
+					_naca->debug_switch |= mask;
+				else
+					_naca->debug_switch &= ~mask;
+			}
+		}
+		p = pend+1;
+	}
+}
+
+/*
+ * Parse ppcdbg= cmdline option.
+ *
+ * Option names are listed in <asm/ppcdebug.h> in the trace_names
+ * table.  Multiple names may be listed separated by commas (no whitespace),
+ * and each option may be preceeded by a + or - to force on or off state.
+ * The special option "all" may also be used.  They are processed strictly
+ * left to right.  Multiple ppcdbg= options are the command line are treated
+ * as a single option list.
+ *
+ * Examples:  ppcdbg=phb_init,buswalk
+ *            ppcdbg=all,-mm,-tce
+ *
+ * ToDo: add "group" names that map to common combinations of flags.
+ */
+void parse_ppcdbg_cmd_line(const char *line)
+{
+	unsigned long offset = reloc_offset();
+	const char *ppcdbgopt = RELOC("ppcdbg=");
+	struct naca_struct *_naca = RELOC(naca);
+	const char *cmd, *end;
+
+	_naca->debug_switch = PPC_DEBUG_DEFAULT; /* | PPCDBG_BUSWALK | PPCDBG_PHBINIT | PPCDBG_MM | PPCDBG_MMINIT | PPCDBG_TCEINIT | PPCDBG_TCE */
+	cmd = line;
+	while (cmd && (cmd = strstr(cmd, ppcdbgopt)) != NULL) {
+		cmd += 7;	/* skip ppcdbg= */
+		for (end = cmd;
+		     *end != '\0' && *end != '\t' && *end != ' ';
+		     end++)
+			; /* scan to whitespace or end */
+		parse_ppcdbg_optionlist(cmd, end);
+	}
+}
+#endif /* CONFIG_PPCDBG */
+
+
+/*
+ * Do minimal cmd_line parsing for early boot options.
+ */
+static void __init
+prom_parse_cmd_line(char *line)
+{
+#ifdef CONFIG_PPCDBG
+	parse_ppcdbg_cmd_line(line);
+#endif
+}
 
 /*
  * We enter here early on, when the Open Firmware prom is still
@@ -1246,13 +1377,14 @@ prom_init(unsigned long r3, unsigned long r4, unsigned long pp,
 	ihandle prom_mmu, prom_op, prom_root, prom_cpu;
 	phandle cpu_pkg;
 	unsigned long offset = reloc_offset();
-	long l;
+	long l, sz;
 	char *p, *d;
  	unsigned long phys;
         u32 getprop_rval;
         struct naca_struct   *_naca = RELOC(naca);
 	struct paca_struct *_xPaca = PTRRELOC(&paca[0]);
 	struct prom_t *_prom = PTRRELOC(&prom);
+	char *_cmd_line = PTRRELOC(&cmd_line[0]);
 
 	/* Default machine type. */
 	_naca->platform = PLATFORM_PSERIES;
@@ -1337,6 +1469,15 @@ prom_init(unsigned long r3, unsigned long r4, unsigned long pp,
 	}
 	_prom->encode_phys_size = (getprop_rval==1) ? 32 : 64;
 
+	/* Fetch the cmd_line */
+	sz = (long)call_prom(RELOC("getprop"), 4, 1, _prom->chosen,
+			    RELOC("bootargs"), _cmd_line,
+			    sizeof(cmd_line)-1);
+	if (sz > 0)
+		_cmd_line[sz] = '\0';
+
+	prom_parse_cmd_line(_cmd_line);
+
 #ifdef DEBUG_PROM
 	prom_print(RELOC("DRENG:    Detect OF version...\n"));
 #endif
@@ -1344,7 +1485,6 @@ prom_init(unsigned long r3, unsigned long r4, unsigned long pp,
 	prom_op = (ihandle)call_prom(RELOC("finddevice"), 1, 1, RELOC("/openprom"));
 	if (prom_op != (ihandle)-1) {
 		char model[64];
-		long sz;
 		sz = (long)call_prom(RELOC("getprop"), 4, 1, prom_op,
 				    RELOC("model"), model, 64);
 		if (sz > 0) {
@@ -1404,7 +1544,7 @@ prom_init(unsigned long r3, unsigned long r4, unsigned long pp,
 
 	mem = prom_bi_rec_reserve(mem);
 
-	mem = prom_instantiate_rtas(mem);
+	prom_instantiate_rtas();
         
         /* Initialize some system info into the Naca early... */
         mem = prom_initialize_naca(mem);

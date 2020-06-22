@@ -20,16 +20,17 @@
 
 extern int get_filesystem_list(char * buf);
 
-asmlinkage long sys_mount(char *dev_name, char *dir_name, char *type,
+extern asmlinkage long sys_mount(char *dev_name, char *dir_name, char *type,
 	 unsigned long flags, void *data);
-asmlinkage long sys_mkdir(char *name, int mode);
-asmlinkage long sys_chdir(char *name);
-asmlinkage long sys_chroot(char *name);
-asmlinkage long sys_unlink(char *name);
-asmlinkage long sys_symlink(char *old, char *new);
-asmlinkage long sys_mknod(char *name, int mode, dev_t dev);
-asmlinkage long sys_umount(char *name, int flags);
-asmlinkage long sys_ioctl(int fd, int cmd, unsigned long arg);
+extern asmlinkage long sys_mkdir(const char *name, int mode);
+extern asmlinkage long sys_chdir(const char *name);
+extern asmlinkage long sys_fchdir(int fd);
+extern asmlinkage long sys_chroot(const char *name);
+extern asmlinkage long sys_unlink(const char *name);
+extern asmlinkage long sys_symlink(const char *old, const char *new);
+extern asmlinkage long sys_mknod(const char *name, int mode, dev_t dev);
+extern asmlinkage long sys_umount(char *name, int flags);
+extern asmlinkage long sys_ioctl(int fd, int cmd, unsigned long arg);
 
 #ifdef CONFIG_BLK_DEV_INITRD
 unsigned int real_root_dev;	/* do_proc_dointvec cannot handle kdev_t */
@@ -180,6 +181,13 @@ static struct dev_name_struct {
 	{ "ida/c0d13p",0x48D0 },
 	{ "ida/c0d14p",0x48E0 },
 	{ "ida/c0d15p",0x48F0 },
+	{ "ida/c1d0p",0x4900 },
+	{ "ida/c2d0p",0x4A00 },
+	{ "ida/c3d0p",0x4B00 },
+	{ "ida/c4d0p",0x4C00 },
+	{ "ida/c5d0p",0x4D00 },
+	{ "ida/c6d0p",0x4E00 },
+	{ "ida/c7d0p",0x4F00 }, 
 #endif
 #if defined(CONFIG_BLK_CPQ_CISS_DA) || defined(CONFIG_BLK_CPQ_CISS_DA_MODULE)
 	{ "cciss/c0d0p",0x6800 },
@@ -198,6 +206,13 @@ static struct dev_name_struct {
 	{ "cciss/c0d13p",0x68D0 },
 	{ "cciss/c0d14p",0x68E0 },
 	{ "cciss/c0d15p",0x68F0 },
+	{ "cciss/c1d0p",0x6900 },
+	{ "cciss/c2d0p",0x6A00 },
+	{ "cciss/c3d0p",0x6B00 },
+	{ "cciss/c4d0p",0x6C00 },
+	{ "cciss/c5d0p",0x6D00 },
+	{ "cciss/c6d0p",0x6E00 },
+	{ "cciss/c7d0p",0x6F00 },
 #endif
 	{ "ataraid/d0p",0x7200 },
 	{ "ataraid/d1p",0x7210 },
@@ -229,7 +244,8 @@ static struct dev_name_struct {
 
 kdev_t __init name_to_kdev_t(char *line)
 {
-	int base = 0;
+	int base = 0, offs;
+	char *end;
 
 	if (strncmp(line,"/dev/",5) == 0) {
 		struct dev_name_struct *dev = root_dev_names;
@@ -244,7 +260,10 @@ kdev_t __init name_to_kdev_t(char *line)
 			dev++;
 		} while (dev->name);
 	}
-	return to_kdev_t(base + simple_strtoul(line,NULL,base?10:16));
+	offs = simple_strtoul(line, &end, base?10:16);
+	if (*end)
+		offs = 0;
+	return to_kdev_t(base + offs);
 }
 
 static int __init root_dev_setup(char *line)
@@ -530,7 +549,8 @@ static int __init rd_load_image(char *from)
 
 #ifdef CONFIG_BLK_DEV_RAM
 	int in_fd, out_fd;
-	int nblocks, rd_blocks, devblocks, i;
+	unsigned long rd_blocks, devblocks;
+	int nblocks, i;
 	char *buf;
 	unsigned short rotate = 0;
 #if !defined(CONFIG_ARCH_S390) && !defined(CONFIG_PPC_ISERIES)
@@ -741,18 +761,17 @@ static void __init mount_root(void)
 }
 
 #ifdef CONFIG_BLK_DEV_INITRD
+static int old_fd, root_fd;
 static int do_linuxrc(void * shell)
 {
 	static char *argv[] = { "linuxrc", NULL, };
 	extern char * envp_init[];
 
-	sys_chdir("/root");
-	sys_mount(".", "/", NULL, MS_MOVE, NULL);
-	sys_chroot(".");
-
-	mount_devfs_fs ();
-
-	close(0);close(1);close(2);
+	close(old_fd);
+	close(root_fd);
+	close(0);
+	close(1);
+	close(2);
 	setsid();
 	(void) open("/dev/console",O_RDWR,0);
 	(void) dup(0);
@@ -770,19 +789,29 @@ static void __init handle_initrd(void)
 	int i, pid;
 
 	create_dev("/dev/root.old", ram0, NULL);
+	/* mount initrd on rootfs' /root */
 	mount_block_root("/dev/root.old", root_mountflags & ~MS_RDONLY);
 	sys_mkdir("/old", 0700);
-	sys_chdir("/old");
+	root_fd = open("/", 0, 0);
+	old_fd = open("/old", 0, 0);
+	/* move initrd over / and chdir/chroot in initrd root */
+	sys_chdir("/root");
+	sys_mount(".", "/", NULL, MS_MOVE, NULL);
+	sys_chroot(".");
+	mount_devfs_fs ();
 
 	pid = kernel_thread(do_linuxrc, "/linuxrc", SIGCHLD);
 	if (pid > 0) {
-		while (pid != wait(&i)) {
-			current->policy |= SCHED_YIELD;
-			schedule();
-		}
+		while (pid != wait(&i))
+			yield();
 	}
 
-	sys_mount("..", ".", NULL, MS_MOVE, NULL);
+	/* move initrd to rootfs' /old */
+	sys_fchdir(old_fd);
+	sys_mount("/", ".", NULL, MS_MOVE, NULL);
+	/* switch root and cwd back to / of rootfs */
+	sys_fchdir(root_fd);
+	sys_chroot(".");
 	sys_umount("/old/dev", 0);
 
 	if (real_root_dev == ram0) {
@@ -862,7 +891,7 @@ out:
 	mount_devfs_fs ();
 }
 
-#ifdef BUILD_CRAMDISK
+#if defined(BUILD_CRAMDISK) && defined(CONFIG_BLK_DEV_RAM)
 
 /*
  * gzip declarations
@@ -1007,4 +1036,4 @@ static int __init crd_load(int in_fd, int out_fd)
 	return result;
 }
 
-#endif  /* BUILD_CRAMDISK */
+#endif  /* BUILD_CRAMDISK && CONFIG_BLK_DEV_RAM */

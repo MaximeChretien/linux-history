@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.indirect_pci.c 1.10 09/08/01 15:47:42 paulus
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
  * Support for indirect PCI bridges.
@@ -23,8 +23,6 @@
 #include <asm/prom.h>
 #include <asm/pci-bridge.h>
 #include <asm/machdep.h>
-
-#include "pci.h"
 
 #define cfg_read(val, addr, type, op)	*val = op((type)(addr))
 #define cfg_write(val, addr, type, op)	op((type *)(addr), (val))

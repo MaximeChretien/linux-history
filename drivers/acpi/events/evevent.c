@@ -683,7 +683,7 @@ static void
 acpi_ev_asynch_execute_gpe_method (
 	void                    *context)
 {
-	u32                     gpe_number = (u32) context;
+	unsigned long           gpe_number = (unsigned long) context;
 	acpi_gpe_level_info     gpe_info;
 
 
@@ -800,7 +800,7 @@ acpi_ev_gpe_dispatch (
 	 */
 	else if (gpe_info.method_handle) {
 		if (ACPI_FAILURE(acpi_os_queue_for_execution (OSD_PRIORITY_GPE,
-			acpi_ev_asynch_execute_gpe_method, (void*) gpe_number))) {
+			acpi_ev_asynch_execute_gpe_method, (void*) (u64)gpe_number))) {
 			/*
 			 * Shoudn't occur, but if it does report an error. Note that
 			 * the GPE will remain disabled until the ACPI Core Subsystem

@@ -16,6 +16,7 @@
 
 
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/delay.h>
@@ -182,7 +183,6 @@ static void mace_dma_off(struct net_device *dev)
 int mace_probe(struct net_device *unused)
 {
 	int j;
-	static int once;
 	struct mace_data *mp;
 	unsigned char *addr;
 	struct net_device *dev;
@@ -447,7 +447,7 @@ static void mace_set_multicast(struct net_device *dev)
 {
 	struct mace_data *mp = (struct mace_data *) dev->priv;
 	volatile struct mace *mb = mp->mace;
-	int i, j, k, b;
+	int i, j;
 	u32 crc;
 	u8 maccc;
 

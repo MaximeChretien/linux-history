@@ -374,7 +374,9 @@ static int acsi_revalidate (dev_t);
 /************************* End of Prototypes **************************/
 
 
-struct timer_list acsi_timer = { NULL, NULL, 0, 0, acsi_times_out };
+struct timer_list acsi_timer = {
+    function:	acsi_times_out
+};
 
 
 #ifdef CONFIG_ATARI_SLM

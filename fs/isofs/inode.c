@@ -1283,6 +1283,15 @@ static void isofs_read_inode(struct inode * inode)
 	/* get the volume sequence number */
 	volume_seq_no = isonum_723 (de->volume_sequence_number) ;
 
+    /*
+     * Multi volume means tagging a group of CDs with info in their headers.
+     * All CDs of a group must share the same vol set name and vol set size
+     * and have different vol set seq num. Deciding that data is wrong based
+     * in that three fields is wrong. The fields are informative, for
+     * cataloging purposes in a big jukebox, ie. Read sections 4.17, 4.18, 6.6
+     * of ftp://ftp.ecma.ch/ecma-st/Ecma-119.pdf (ECMA 119 2nd Ed = ISO 9660)
+     */
+#ifndef IGNORE_WRONG_MULTI_VOLUME_SPECS
 	/*
 	 * Disable checking if we see any volume number other than 0 or 1.
 	 * We could use the cruft option, but that has multiple purposes, one
@@ -1296,6 +1305,7 @@ static void isofs_read_inode(struct inode * inode)
 		       "Enabling \"cruft\" mount option.\n", volume_seq_no);
 		inode->i_sb->u.isofs_sb.s_cruft = 'y';
 	}
+#endif /*IGNORE_WRONG_MULTI_VOLUME_SPECS */
 
 	/* Install the inode operations vector */
 #ifndef IGNORE_WRONG_MULTI_VOLUME_SPECS

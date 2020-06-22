@@ -230,7 +230,6 @@ static int
 maciisi_send_request(struct adb_request* req, int sync)
 {
 	int i;
-	int count;
 
 #ifdef DEBUG_MACIISI_ADB
 	static int dump_packet = 0;

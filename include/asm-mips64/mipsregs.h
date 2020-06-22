@@ -77,7 +77,7 @@
 #define CP0_IWATCH $18
 #define CP0_DWATCH $19
 
-/* 
+/*
  * Coprocessor 0 Set 1 register names
  */
 #define CP0_S1_DERRADDR0  $26
@@ -374,8 +374,10 @@
 #define CONF_CM_CACHABLE_CUW		6
 #define CONF_CM_CACHABLE_ACCELERATED	7
 #define CONF_CM_CMASK			7
+#define CONF_CU				(1 <<  3)
 #define CONF_DB				(1 <<  4)
 #define CONF_IB				(1 <<  5)
+#define CONF_SE				(1 << 12)
 #define CONF_SC				(1 << 17)
 #define CONF_AC                         (1 << 23)
 #define CONF_HALT                       (1 << 25)
@@ -504,8 +506,8 @@
         ".set\tmips0"                                           \
         : : "r" (value))
 
-/* 
- * This should be changed when we get a compiler that support the MIPS32 ISA. 
+/*
+ * This should be changed when we get a compiler that support the MIPS32 ISA.
  */
 #define read_mips32_cp0_config1()                               \
 ({ int __res;                                                   \
@@ -597,7 +599,7 @@ static inline unsigned long get_entrylo0(void)
 {
 	unsigned long val;
 
-	__asm__ __volatile__(	
+	__asm__ __volatile__(
 		".set noreorder\n\t"
 		"dmfc0 %0, $2\n\t"
 		".set reorder"

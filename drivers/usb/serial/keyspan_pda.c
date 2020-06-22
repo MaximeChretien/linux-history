@@ -68,19 +68,16 @@
 
 #include <linux/config.h>
 #include <linux/kernel.h>
-#include <linux/sched.h>
-#include <linux/signal.h>
 #include <linux/errno.h>
-#include <linux/poll.h>
 #include <linux/init.h>
 #include <linux/slab.h>
-#include <linux/fcntl.h>
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
 #include <linux/tty_flip.h>
 #include <linux/module.h>
 #include <linux/spinlock.h>
 #include <linux/tqueue.h>
+#include <asm/uaccess.h>
 #include <linux/usb.h>
 
 #ifdef CONFIG_USB_SERIAL_DEBUG
@@ -157,25 +154,21 @@ static __devinitdata struct usb_device_id id_table_combined [] = {
 
 MODULE_DEVICE_TABLE (usb, id_table_combined);
 
-static __devinitdata struct usb_device_id id_table_std [] = {
+static struct usb_device_id id_table_std [] = {
 	{ USB_DEVICE(KEYSPAN_VENDOR_ID, KEYSPAN_PDA_ID) },
 	{ }						/* Terminating entry */
 };
 
 #ifdef KEYSPAN
-static __devinitdata struct usb_device_id id_table_fake [] = {
+static struct usb_device_id id_table_fake [] = {
 	{ USB_DEVICE(KEYSPAN_VENDOR_ID, KEYSPAN_PDA_FAKE_ID) },
 	{ }						/* Terminating entry */
 };
 #endif
 
 #ifdef XIRCOM
-static __devinitdata struct usb_device_id id_table_fake_xircom [] = {
+static struct usb_device_id id_table_fake_xircom [] = {
         { USB_DEVICE(XIRCOM_VENDOR_ID, XIRCOM_FAKE_ID) },
-        { }                                             
-};
-
-static __devinitdata struct usb_device_id id_table_fake_entregra [] = {
         { USB_DEVICE(ENTREGRA_VENDOR_ID, ENTREGRA_FAKE_ID) },
         { }                                             
 };
@@ -197,26 +190,28 @@ static void keyspan_pda_wakeup_write( struct usb_serial_port *port )
 	/* wake up other tty processes */
 	wake_up_interruptible( &tty->write_wait );
 	/* For 2.2.16 backport -- wake_up_interruptible( &tty->poll_wait ); */
-	MOD_DEC_USE_COUNT;
 }
 
 static void keyspan_pda_request_unthrottle( struct usb_serial *serial )
 {
+	int result;
 
 	dbg(" request_unthrottle");
 	/* ask the device to tell us when the tx buffer becomes
 	   sufficiently empty */
-	usb_control_msg(serial->dev, 
-			     usb_sndctrlpipe(serial->dev, 0),
-			     7, /* request_unthrottle */
-			     USB_TYPE_VENDOR | USB_RECIP_INTERFACE
-			     | USB_DIR_OUT,
-			     16, /* value: threshold */
-			     0, /* index */
-			     NULL,
-			     0,
-			     2*HZ);
-	MOD_DEC_USE_COUNT;
+	result = usb_control_msg(serial->dev, 
+				 usb_sndctrlpipe(serial->dev, 0),
+				 7, /* request_unthrottle */
+				 USB_TYPE_VENDOR | USB_RECIP_INTERFACE
+				 | USB_DIR_OUT,
+				 16, /* value: threshold */
+				 0, /* index */
+				 NULL,
+				 0,
+				 2*HZ);
+	if (result < 0)
+		dbg("%s - error %d from usb_control_msg", 
+		    __FUNCTION__, result);
 }
 
 
@@ -265,9 +260,7 @@ static void keyspan_pda_rx_interrupt (struct urb *urb)
 			tty = serial->port[0].tty;
 			priv->tx_throttled = 0;
 			/* queue up a wakeup at scheduler time */
-			MOD_INC_USE_COUNT;
-			if (schedule_task(&priv->wakeup_task) == 0)
-				MOD_DEC_USE_COUNT;
+			schedule_task(&priv->wakeup_task);
 			break;
 		default:
 			break;
@@ -345,14 +338,19 @@ static void keyspan_pda_break_ctl (struct usb_serial_port *port, int break_state
 {
 	struct usb_serial *serial = port->serial;
 	int value;
+	int result;
+
 	if (break_state == -1)
 		value = 1; /* start break */
 	else
 		value = 0; /* clear break */
-	usb_control_msg(serial->dev, usb_sndctrlpipe(serial->dev, 0),
-			4, /* set break */
-			USB_TYPE_VENDOR | USB_RECIP_INTERFACE | USB_DIR_OUT,
-			value, 0, NULL, 0, 2*HZ);
+	result = usb_control_msg(serial->dev, usb_sndctrlpipe(serial->dev, 0),
+				4, /* set break */
+				USB_TYPE_VENDOR | USB_RECIP_INTERFACE | USB_DIR_OUT,
+				value, 0, NULL, 0, 2*HZ);
+	if (result < 0)
+		dbg("%s - error %d from usb_control_msg", 
+		    __FUNCTION__, result);
 	/* there is something funky about this.. the TCSBRK that 'cu' performs
 	   ought to translate into a break_ctl(-1),break_ctl(0) pair HZ/4
 	   seconds apart, but it feels like the break sent isn't as long as it
@@ -606,9 +604,7 @@ static int keyspan_pda_write(struct usb_serial_port *port, int from_user,
 
 	if (request_unthrottle) {
 		priv->tx_throttled = 1; /* block writers */
-		MOD_INC_USE_COUNT;
-		if (schedule_task(&priv->unthrottle_task) == 0)
-			MOD_DEC_USE_COUNT;
+		schedule_task(&priv->unthrottle_task);
 	}
 
 	rc = count;
@@ -635,9 +631,7 @@ static void keyspan_pda_write_bulk_callback (struct urb *urb)
 	}
 	
 	/* queue up a wakeup at scheduler time */
-	MOD_INC_USE_COUNT;
-	if (schedule_task(&priv->wakeup_task) == 0)
-		MOD_DEC_USE_COUNT;
+	schedule_task(&priv->wakeup_task);
 }
 
 
@@ -674,62 +668,45 @@ static int keyspan_pda_open (struct usb_serial_port *port, struct file *filp)
 	int rc = 0;
 	struct keyspan_pda_private *priv;
 
-	down (&port->sem);
+	/* find out how much room is in the Tx ring */
+	rc = usb_control_msg(serial->dev, usb_rcvctrlpipe(serial->dev, 0),
+			     6, /* write_room */
+			     USB_TYPE_VENDOR | USB_RECIP_INTERFACE
+			     | USB_DIR_IN,
+			     0, /* value */
+			     0, /* index */
+			     &room,
+			     1,
+			     2*HZ);
+	if (rc < 0) {
+		dbg("%s - roomquery failed", __FUNCTION__);
+		goto error;
+	}
+	if (rc == 0) {
+		dbg("%s - roomquery returned 0 bytes", __FUNCTION__);
+		rc = -EIO;
+		goto error;
+	}
+	priv = (struct keyspan_pda_private *)(port->private);
+	priv->tx_room = room;
+	priv->tx_throttled = room ? 0 : 1;
 
-	MOD_INC_USE_COUNT;
-	++port->open_count;
+	/* the normal serial device seems to always turn on DTR and RTS here,
+	   so do the same */
+	if (port->tty->termios->c_cflag & CBAUD)
+		keyspan_pda_set_modem_info(serial, (1<<7) | (1<<2) );
+	else
+		keyspan_pda_set_modem_info(serial, 0);
 
-	if (!port->active) {
-		port->active = 1;
- 
-		/* find out how much room is in the Tx ring */
-		rc = usb_control_msg(serial->dev, usb_rcvctrlpipe(serial->dev, 0),
-				     6, /* write_room */
-				     USB_TYPE_VENDOR | USB_RECIP_INTERFACE
-				     | USB_DIR_IN,
-				     0, /* value */
-				     0, /* index */
-				     &room,
-				     1,
-				     2*HZ);
-		if (rc < 0) {
-			dbg(__FUNCTION__" - roomquery failed");
-			goto error;
-		}
-		if (rc == 0) {
-			dbg(__FUNCTION__" - roomquery returned 0 bytes");
-			rc = -EIO;
-			goto error;
-		}
-		priv = (struct keyspan_pda_private *)(port->private);
-		priv->tx_room = room;
-		priv->tx_throttled = room ? 0 : 1;
-
-		/* the normal serial device seems to always turn on DTR and RTS here,
-		   so do the same */
-		if (port->tty->termios->c_cflag & CBAUD)
-			keyspan_pda_set_modem_info(serial, (1<<7) | (1<<2) );
-		else
-			keyspan_pda_set_modem_info(serial, 0);
-
-		/*Start reading from the device*/
-		port->interrupt_in_urb->dev = serial->dev;
-		rc = usb_submit_urb(port->interrupt_in_urb);
-		if (rc) {
-			dbg(__FUNCTION__" - usb_submit_urb(read int) failed");
-			goto error;
-		}
-
+	/*Start reading from the device*/
+	port->interrupt_in_urb->dev = serial->dev;
+	rc = usb_submit_urb(port->interrupt_in_urb);
+	if (rc) {
+		dbg("%s - usb_submit_urb(read int) failed", __FUNCTION__);
+		goto error;
 	}
 
-
-	up (&port->sem);
-	return rc;
 error:
-	--port->open_count;
-	port->active = 0;
-	MOD_DEC_USE_COUNT;
-	up (&port->sem);
 	return rc;
 }
 
@@ -738,26 +715,15 @@ static void keyspan_pda_close(struct usb_serial_port *port, struct file *filp)
 {
 	struct usb_serial *serial = port->serial;
 
-	down (&port->sem);
+	if (serial->dev) {
+		/* the normal serial device seems to always shut off DTR and RTS now */
+		if (port->tty->termios->c_cflag & HUPCL)
+			keyspan_pda_set_modem_info(serial, 0);
 
-	--port->open_count;
-
-	if (port->open_count <= 0) {
-		if (serial->dev) {
-			/* the normal serial device seems to always shut off DTR and RTS now */
-			if (port->tty->termios->c_cflag & HUPCL)
-				keyspan_pda_set_modem_info(serial, 0);
-
-			/* shutdown our bulk reads and writes */
-			usb_unlink_urb (port->write_urb);
-			usb_unlink_urb (port->interrupt_in_urb);
-		}
-		port->active = 0;
-		port->open_count = 0;
+		/* shutdown our bulk reads and writes */
+		usb_unlink_urb (port->write_urb);
+		usb_unlink_urb (port->interrupt_in_urb);
 	}
-
-	up (&port->sem);
-	MOD_DEC_USE_COUNT;
 }
 
 
@@ -780,7 +746,7 @@ static int keyspan_pda_fake_startup (struct usb_serial *serial)
 		record = &xircom_pgs_firmware[0];
 #endif
 	if (record == NULL) {
-		err(__FUNCTION__": unknown vendor, aborting.");
+		err("%s: unknown vendor, aborting.", __FUNCTION__);
 		return -ENODEV;
 	}
 
@@ -831,81 +797,59 @@ static int keyspan_pda_startup (struct usb_serial *serial)
 
 static void keyspan_pda_shutdown (struct usb_serial *serial)
 {
-	dbg (__FUNCTION__);
+	dbg("%s", __FUNCTION__);
 	
-	while (serial->port[0].open_count > 0) {
-		keyspan_pda_close (&serial->port[0], NULL);
-	}
 	kfree(serial->port[0].private);
 }
 
 #ifdef KEYSPAN
 static struct usb_serial_device_type keyspan_pda_fake_device = {
-	name:			"Keyspan PDA - (prerenumeration)",
-	id_table:		id_table_fake,
-	needs_interrupt_in:	DONT_CARE,
-	needs_bulk_in:		DONT_CARE,
-	needs_bulk_out:		DONT_CARE,
-	num_interrupt_in:	NUM_DONT_CARE,
-	num_bulk_in:		NUM_DONT_CARE,
-	num_bulk_out:		NUM_DONT_CARE,
-	num_ports:		1,
-	startup:		keyspan_pda_fake_startup,
+	.owner =		THIS_MODULE,
+	.name =			"Keyspan PDA - (prerenumeration)",
+	.id_table =		id_table_fake,
+	.num_interrupt_in =	NUM_DONT_CARE,
+	.num_bulk_in =		NUM_DONT_CARE,
+	.num_bulk_out =		NUM_DONT_CARE,
+	.num_ports =		1,
+	.startup =		keyspan_pda_fake_startup,
 };
 #endif
 
 #ifdef XIRCOM
 static struct usb_serial_device_type xircom_pgs_fake_device = {
-        name:                   "Xircom PGS - (prerenumeration)",
-        id_table:               id_table_fake_xircom,
-        needs_interrupt_in:     DONT_CARE,
-        needs_bulk_in:          DONT_CARE,
-        needs_bulk_out:         DONT_CARE,
-        num_interrupt_in:       NUM_DONT_CARE,
-        num_bulk_in:            NUM_DONT_CARE,
-        num_bulk_out:           NUM_DONT_CARE,
-        num_ports:              1,
-        startup:                keyspan_pda_fake_startup,
-};
-
-static struct usb_serial_device_type entregra_pgs_fake_device = {
-        name:                   "Entregra PGS - (prerenumeration)",
-        id_table:               id_table_fake_entregra,
-        needs_interrupt_in:     DONT_CARE,
-        needs_bulk_in:          DONT_CARE,
-        needs_bulk_out:         DONT_CARE,
-        num_interrupt_in:       NUM_DONT_CARE,
-        num_bulk_in:            NUM_DONT_CARE,
-        num_bulk_out:           NUM_DONT_CARE,
-        num_ports:              1,
-        startup:                keyspan_pda_fake_startup,
+	.owner =		THIS_MODULE,
+	.name =			"Xircom / Entregra PGS - (prerenumeration)",
+	.id_table =		id_table_fake_xircom,
+	.num_interrupt_in =	NUM_DONT_CARE,
+	.num_bulk_in =		NUM_DONT_CARE,
+	.num_bulk_out =		NUM_DONT_CARE,
+	.num_ports =		1,
+	.startup =		keyspan_pda_fake_startup,
 };
 #endif
 
 static struct usb_serial_device_type keyspan_pda_device = {
-	name:			"Keyspan PDA",
-	id_table:		id_table_std,
-	needs_interrupt_in:	MUST_HAVE,
-	needs_bulk_in:		DONT_CARE,
-	needs_bulk_out:		MUST_HAVE,
-	num_interrupt_in:	1,
-	num_bulk_in:		0,
-	num_bulk_out:		1,
-	num_ports:		1,
-	open:			keyspan_pda_open,
-	close:			keyspan_pda_close,
-	write:			keyspan_pda_write,
-	write_room:		keyspan_pda_write_room,
-	write_bulk_callback: 	keyspan_pda_write_bulk_callback,
-	read_int_callback:	keyspan_pda_rx_interrupt,
-	chars_in_buffer:	keyspan_pda_chars_in_buffer,
-	throttle:		keyspan_pda_rx_throttle,
-	unthrottle:		keyspan_pda_rx_unthrottle,
-	ioctl:			keyspan_pda_ioctl,
-	set_termios:		keyspan_pda_set_termios,
-	break_ctl:		keyspan_pda_break_ctl,
-	startup:		keyspan_pda_startup,
-	shutdown:		keyspan_pda_shutdown,
+	.owner =		THIS_MODULE,
+	.name =			"Keyspan PDA",
+	.id_table =		id_table_std,
+	.num_interrupt_in =	1,
+	.num_bulk_in =		0,
+	.num_bulk_out =		1,
+	.num_ports =		1,
+	.open =			keyspan_pda_open,
+	.close =		keyspan_pda_close,
+	.write =		keyspan_pda_write,
+	.write_room =		keyspan_pda_write_room,
+	.write_bulk_callback = 	keyspan_pda_write_bulk_callback,
+	.read_int_callback =	keyspan_pda_rx_interrupt,
+	.chars_in_buffer =	keyspan_pda_chars_in_buffer,
+	.throttle =		keyspan_pda_rx_throttle,
+	.unthrottle =		keyspan_pda_rx_unthrottle,
+	.ioctl =		keyspan_pda_ioctl,
+	.set_termios =		keyspan_pda_set_termios,
+	.break_ctl =		keyspan_pda_break_ctl,
+	.startup =		keyspan_pda_startup,
+	.shutdown =		keyspan_pda_shutdown,
 };
 
 
@@ -917,7 +861,6 @@ static int __init keyspan_pda_init (void)
 #endif
 #ifdef XIRCOM
 	usb_serial_register (&xircom_pgs_fake_device);
-	usb_serial_register (&entregra_pgs_fake_device);
 #endif
 	info(DRIVER_DESC " " DRIVER_VERSION);
 	return 0;
@@ -931,7 +874,6 @@ static void __exit keyspan_pda_exit (void)
 	usb_serial_deregister (&keyspan_pda_fake_device);
 #endif
 #ifdef XIRCOM
-	usb_serial_deregister (&entregra_pgs_fake_device);
 	usb_serial_deregister (&xircom_pgs_fake_device);
 #endif
 }

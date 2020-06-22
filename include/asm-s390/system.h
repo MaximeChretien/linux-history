@@ -249,6 +249,11 @@ extern int save_fp_regs1(s390_fp_regs *fpregs);
 extern void save_fp_regs(s390_fp_regs *fpregs);
 extern int restore_fp_regs1(s390_fp_regs *fpregs);
 extern void restore_fp_regs(s390_fp_regs *fpregs);
+
+extern void (*_machine_restart)(char *command);
+extern void (*_machine_halt)(void);
+extern void (*_machine_power_off)(void);
+
 #endif
 
 #endif

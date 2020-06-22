@@ -6,6 +6,7 @@
 
 # Prompt user for primary drivers.
 
+dep_tristate '  ALi5455 audio support' CONFIG_SOUND_ALI5455 $CONFIG_SOUND $CONFIG_PCI
 dep_tristate '  BT878 audio dma' CONFIG_SOUND_BT878 $CONFIG_SOUND $CONFIG_PCI
 dep_tristate '  C-Media PCI (CMI8338/8738)' CONFIG_SOUND_CMPCI $CONFIG_SOUND $CONFIG_PCI
 if [ "$CONFIG_SOUND_CMPCI" = "y" -o "$CONFIG_SOUND_CMPCI" = "m" ]; then
@@ -42,7 +43,11 @@ dep_tristate '  Creative Ensoniq AudioPCI 97 (ES1371)' CONFIG_SOUND_ES1371 $CONF
 dep_tristate '  ESS Technology Solo1' CONFIG_SOUND_ESSSOLO1 $CONFIG_SOUND $CONFIG_PCI
 dep_tristate '  ESS Maestro, Maestro2, Maestro2E driver' CONFIG_SOUND_MAESTRO $CONFIG_SOUND $CONFIG_PCI
 dep_tristate '  ESS Maestro3/Allegro driver (EXPERIMENTAL)' CONFIG_SOUND_MAESTRO3 $CONFIG_SOUND $CONFIG_PCI $CONFIG_EXPERIMENTAL
-dep_tristate '  Intel ICH (i8xx), SiS 7012, NVidia nForce Audio or AMD 768' CONFIG_SOUND_ICH $CONFIG_PCI
+dep_tristate '  ForteMedia FM801 driver (EXPERIMENTAL)' CONFIG_SOUND_FORTE $CONFIG_SOUND $CONFIG_PCI $CONFIG_EXPERIMENTAL
+dep_tristate '  Intel ICH (i8xx), SiS 7012, NVidia nForce Audio or AMD 768/811x' CONFIG_SOUND_ICH $CONFIG_PCI
+if [ "$CONFIG_GSC_LASI" = "y" ]; then
+   dep_tristate '  PA Harmony audio driver' CONFIG_SOUND_HARMONY $CONFIG_SOUND
+fi
 if [ "$CONFIG_MIPS_ITE8172" = "y" -o "$CONFIG_MIPS_IVR" = "y" ]; then
     dep_tristate '  IT8172G Sound' CONFIG_SOUND_IT8172 $CONFIG_SOUND
 fi
@@ -207,7 +212,7 @@ if [ "$CONFIG_SOUND_OSS" = "y" -o "$CONFIG_SOUND_OSS" = "m" ]; then
          bool '      Audio Excel DSP 16 (MPU401 emulation)' CONFIG_AEDSP16_MPU401
       fi
    fi
-	 
+
    if [ "$CONFIG_ARM" = "y" ]; then
       if [ "$CONFIG_ARCH_ACORN" = "y" -o "$CONFIG_ARCH_CLPS7500" = "y" ]; then
          dep_tristate '    VIDC 16-bit sound' CONFIG_SOUND_VIDC $CONFIG_SOUND_OSS

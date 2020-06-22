@@ -79,11 +79,33 @@ main(void)
 	DEFINE(PACAPROCENABLED, offsetof(struct paca_struct, xProcEnabled));
 	DEFINE(PACAHRDWINTCOUNT, offsetof(struct paca_struct, xHrdIntCount));
 	DEFINE(PACADEFAULTDECR, offsetof(struct paca_struct, default_decr));
-	DEFINE(PACAPROFENABLED, offsetof(struct paca_struct, prof_enabled));
+
+	DEFINE(PACAPROFMODE, offsetof(struct paca_struct, prof_mode));
 	DEFINE(PACAPROFLEN, offsetof(struct paca_struct, prof_len));
 	DEFINE(PACAPROFSHIFT, offsetof(struct paca_struct, prof_shift));
 	DEFINE(PACAPROFBUFFER, offsetof(struct paca_struct, prof_buffer));
 	DEFINE(PACAPROFSTEXT, offsetof(struct paca_struct, prof_stext));
+	DEFINE(PACAPROFETEXT, offsetof(struct paca_struct, prof_etext));
+	DEFINE(PACAPMC1, offsetof(struct paca_struct, pmc[0]));
+	DEFINE(PACAPMC2, offsetof(struct paca_struct, pmc[1]));
+	DEFINE(PACAPMC3, offsetof(struct paca_struct, pmc[2]));
+	DEFINE(PACAPMC4, offsetof(struct paca_struct, pmc[3]));
+	DEFINE(PACAPMC5, offsetof(struct paca_struct, pmc[4]));
+	DEFINE(PACAPMC6, offsetof(struct paca_struct, pmc[5]));
+	DEFINE(PACAPMC7, offsetof(struct paca_struct, pmc[6]));
+	DEFINE(PACAPMC8, offsetof(struct paca_struct, pmc[7]));
+	DEFINE(PACAMMCR0, offsetof(struct paca_struct, pmc[8]));
+	DEFINE(PACAMMCR1, offsetof(struct paca_struct, pmc[9]));
+	DEFINE(PACAMMCRA, offsetof(struct paca_struct, pmc[10]));
+	DEFINE(PACAPMCC1, offsetof(struct paca_struct, pmcc[0]));
+	DEFINE(PACAPMCC2, offsetof(struct paca_struct, pmcc[1]));
+	DEFINE(PACAPMCC3, offsetof(struct paca_struct, pmcc[2]));
+	DEFINE(PACAPMCC4, offsetof(struct paca_struct, pmcc[3]));
+	DEFINE(PACAPMCC5, offsetof(struct paca_struct, pmcc[4]));
+	DEFINE(PACAPMCC6, offsetof(struct paca_struct, pmcc[5]));
+	DEFINE(PACAPMCC7, offsetof(struct paca_struct, pmcc[6]));
+	DEFINE(PACAPMCC8, offsetof(struct paca_struct, pmcc[7]));
+
 	DEFINE(PACALPPACA, offsetof(struct paca_struct, xLpPaca));
         DEFINE(LPPACA, offsetof(struct paca_struct, xLpPaca));
         DEFINE(PACAREGSAV, offsetof(struct paca_struct, xRegSav));
@@ -93,6 +115,7 @@ main(void)
         DEFINE(LPPACASRR1, offsetof(struct ItLpPaca, xSavedSrr1));
 	DEFINE(LPPACAANYINT, offsetof(struct ItLpPaca, xIntDword.xAnyInt));
 	DEFINE(LPPACADECRINT, offsetof(struct ItLpPaca, xIntDword.xFields.xDecrInt));
+	DEFINE(LPPACAPDCINT, offsetof(struct ItLpPaca, xIntDword.xFields.xPdcInt));
         DEFINE(LPQCUREVENTPTR, offsetof(struct ItLpQueue, xSlicCurEventPtr));
         DEFINE(LPQOVERFLOW, offsetof(struct ItLpQueue, xPlicOverflowIntPending));
         DEFINE(LPEVENTFLAGS, offsetof(struct HvLpEvent, xFlags));

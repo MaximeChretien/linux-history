@@ -362,7 +362,7 @@ static void fmvj18x_detach(dev_link_t *link)
     if (*linkp == NULL)
 	return;
 
-    del_timer(&link->release);
+    del_timer_sync(&link->release);
     if (link->state & DEV_CONFIG) {
 	fmvj18x_release((u_long)link);
 	if (link->state & DEV_STALE_CONFIG) {
@@ -571,8 +571,7 @@ req_irq:
     case XXX10304:
 	/* Read MACID from Buggy CIS */
 	if (fmvj18x_get_hwinfo(link, tuple.TupleData) == -1) {
-	    printk(KERN_NOTICE "fmvj18x_cs: unable to read hardware net 
-		address.");
+	    printk(KERN_NOTICE "fmvj18x_cs: unable to read hardware net address.\n");
 	    unregister_netdev(dev);
 	    goto failed;
 	}
@@ -1254,7 +1253,7 @@ static void set_rx_mode(struct net_device *dev)
     ioaddr_t ioaddr = dev->base_addr;
     struct local_info_t *lp = (struct local_info_t *)dev->priv;
     unsigned char mc_filter[8];		 /* Multicast hash filter */
-    long flags;
+    unsigned long flags;
     int i;
     
     if (dev->flags & IFF_PROMISC) {

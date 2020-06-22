@@ -14,4 +14,7 @@ extern int 	sysctl_khttpd_sloppymime;
 extern int 	sysctl_khttpd_threads;
 extern int	sysctl_khttpd_maxconnect;
 
+/* incremented each time sysctl_khttpd_stop goes nonzero */
+extern atomic_t	khttpd_stopCount;
+
 #endif

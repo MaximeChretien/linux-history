@@ -280,6 +280,7 @@ static const struct {
 	{ BT_ALPINE, NULL, PCI_DEVICE_ID_CIRRUS_5434_4 },
 	{ BT_ALPINE, NULL, PCI_DEVICE_ID_CIRRUS_5430 }, /* GD-5440 has identical id */
 	{ BT_ALPINE, NULL, PCI_DEVICE_ID_CIRRUS_7543 },
+	{ BT_ALPINE, NULL, PCI_DEVICE_ID_CIRRUS_7548 },
 	{ BT_GD5480, NULL, PCI_DEVICE_ID_CIRRUS_5480 }, /* MacPicasso probably */
 	{ BT_PICASSO4, NULL, PCI_DEVICE_ID_CIRRUS_5446 }, /* Picasso 4 is a GD5446 */
 	{ BT_LAGUNA, "CL Laguna", PCI_DEVICE_ID_CIRRUS_5462 },
@@ -3089,7 +3090,7 @@ static void RClut (struct clgenfb_info *fb_info, unsigned char regnum, unsigned 
 *********************************************************************/
 
 /* FIXME: use interrupts instead */
-extern inline void clgen_WaitBLT (caddr_t regbase)
+static inline void clgen_WaitBLT (caddr_t regbase)
 {
 	/* now busy-wait until we're done */
 	while (vga_rgfx (regbase, CL_GR31) & 0x08)

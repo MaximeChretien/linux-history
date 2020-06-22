@@ -18,6 +18,16 @@
 #include <asm/pgtable-bits.h>
 #include <asm/byteorder.h>
 
+#ifdef CONFIG_SGI_IP27
+extern unsigned long bus_to_baddr[256];
+
+#define bus_to_baddr(hwdev, addr) (bus_to_baddr[(hwdev)->bus->number] + (addr))
+#define baddr_to_bus(hwdev, addr) ((addr) - bus_to_baddr[(hwdev)->bus->number])
+#else
+#define bus_to_baddr(hwdev, addr) (addr)
+#define baddr_to_bus(hwdev, addr) (addr)
+#endif
+
 /*
  * Slowdown I/O port space accesses for antique hardware.
  */
@@ -30,7 +40,13 @@
 #if defined(CONFIG_SWAP_IO_SPACE) && defined(__MIPSEB__)
 
 #define __ioswab8(x) (x)
+#ifdef CONFIG_SGI_IP22
+/* IP22 seems braindead enough to swap 16bits values in hardware, but
+   not 32bits.  Go figure... Can't tell without documentation. */
+#define __ioswab16(x) (x)
+#else
 #define __ioswab16(x) swab16(x)
+#endif
 #define __ioswab32(x) swab32(x)
 
 #else
@@ -44,7 +60,7 @@
 /*
  * <Bacchus> Historically I wrote this stuff the same way as Linus did
  * because I was young and clueless.  And now it's so jucky that I
- * don't want to put my eyes on it again to get rid of it :-) 
+ * don't want to put my eyes on it again to get rid of it :-)
  *
  * I'll do it then, because this code offends both me and my compiler
  * - particularly the bits of inline asm which end up doing crap like
@@ -99,7 +115,7 @@ extern const unsigned long mips_io_port_base;
  *
  *     The returned physical address is the physical (CPU) mapping for
  *     the memory address given. It is only valid to use this function on
- *     addresses directly mapped or allocated via kmalloc. 
+ *     addresses directly mapped or allocated via kmalloc.
  *
  *     This function does not give bus mappings for DMA transfers. In
  *     almost all conceivable cases a device driver should not be using
@@ -171,7 +187,7 @@ extern void * __ioremap(phys_t offset, phys_t size, unsigned long flags);
  *     make bus memory CPU accessible via the readb/readw/readl/writeb/
  *     writew/writel functions and the other mmio helpers. The returned
  *     address is not guaranteed to be usable directly as a virtual
- *     address. 
+ *     address.
  */
 
 #define ioremap(offset, size)						\
@@ -186,11 +202,11 @@ extern void * __ioremap(phys_t offset, phys_t size, unsigned long flags);
  *     make bus memory CPU accessible via the readb/readw/readl/writeb/
  *     writew/writel functions and the other mmio helpers. The returned
  *     address is not guaranteed to be usable directly as a virtual
- *     address. 
+ *     address.
  *
  *     This version of ioremap ensures that the memory is marked uncachable
  *     on the CPU as well as honouring existing caching rules from things like
- *     the PCI bus. Note that there are other caches and buffers on many 
+ *     the PCI bus. Note that there are other caches and buffers on many
  *     busses. In paticular driver authors should read up on PCI writes
  *
  *     It's useful if some control registers are in such an area and
@@ -259,7 +275,7 @@ extern void iounmap(void *addr);
 
 /*
  *     check_signature         -       find BIOS signatures
- *     @io_addr: mmio address to check 
+ *     @io_addr: mmio address to check
  *     @signature:  signature block
  *     @length: length of signature
  *
@@ -285,7 +301,7 @@ out:
 
 /*
  *     isa_check_signature             -       find BIOS signatures
- *     @io_addr: mmio address to check 
+ *     @io_addr: mmio address to check
  *     @signature:  signature block
  *     @length: length of signature
  *

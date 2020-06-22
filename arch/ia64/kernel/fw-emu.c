@@ -13,14 +13,16 @@
 # include <linux/pci.h>
 #endif
 
-#include <asm/efi.h>
+#include <linux/efi.h>
 #include <asm/io.h>
 #include <asm/pal.h>
 #include <asm/sal.h>
 
 #define MB	(1024*1024UL)
+#define GB	(1024*MB)
+#define TB	(1024*GB)
 
-#define NUM_MEM_DESCS	3
+#define NUM_MEM_DESCS	4
 
 static char fw_mem[(  sizeof(struct ia64_boot_param)
 		    + sizeof(efi_system_table_t)
@@ -471,7 +473,7 @@ sys_fw_init (const char *args, int arglen)
 	md->phys_addr = 0*MB;
 	md->virt_addr = 0;
 	md->num_pages = (1*MB) >> 12;	/* 1MB (in 4KB pages) */
-	md->attribute = EFI_MEMORY_WB;
+	md->attribute = EFI_MEMORY_WB | EFI_MEMORY_WC | EFI_MEMORY_UC;
 
 	/* fill in a memory descriptor: */
 	md = &efi_memmap[1];
@@ -489,23 +491,16 @@ sys_fw_init (const char *args, int arglen)
 	md->phys_addr = 1*MB;
 	md->virt_addr = 1*MB;
 	md->num_pages = (1*MB) >> 12;	/* 1MB (in 4KB pages) */
-	md->attribute = EFI_MEMORY_WB;
+	md->attribute = EFI_MEMORY_WB | EFI_MEMORY_WC | EFI_MEMORY_UC;
 
-#if 0
-	/*
-	 * XXX bootmem is broken for now... (remember to NUM_MEM_DESCS
-	 * if you re-enable this!)
-	 */
-
-	/* descriptor for high memory (>4GB): */
+	/* descriptor for high memory (>4TB): */
 	md = &efi_memmap[3];
 	md->type = EFI_CONVENTIONAL_MEMORY;
 	md->pad = 0;
-	md->phys_addr = 4096*MB;
+	md->phys_addr = 4*TB;
 	md->virt_addr = 0;
-	md->num_pages = (32*MB) >> 12;	/* 32MB (in 4KB pages) */
+	md->num_pages = (64*MB) >> 12;	/* 64MB (in 4KB pages) */
 	md->attribute = EFI_MEMORY_WB;
-#endif
 
 	bp->efi_systab = __pa(&fw_mem);
 	bp->efi_memmap = __pa(efi_memmap);

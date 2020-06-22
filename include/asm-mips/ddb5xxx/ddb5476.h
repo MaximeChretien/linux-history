@@ -27,7 +27,7 @@
 #define	DDB_DCS2_BASE		0x05000000	/* flash 2 */
 #define	DDB_DCS2_SIZE		0x01000000	/* 16MB */
 
-#define DDB_PCI_IO_BASE		0x06000000      
+#define DDB_PCI_IO_BASE		0x06000000
 #define DDB_PCI_IO_SIZE		0x02000000      /* 32 MB */
 
 #define	DDB_PCI_MEM_BASE	0x08000000
@@ -70,7 +70,7 @@
  *  All PCI irq but INTC are active low.
  */
 
-/* 
+/*
  * irq number block assignment
  */
 
@@ -108,7 +108,7 @@
 /*
  * i2859 irq assignment
  */
-#define I8259_IRQ_RESERVED_0	0	
+#define I8259_IRQ_RESERVED_0	0
 #define I8259_IRQ_KEYBOARD	1	/* M1543 default */
 #define I8259_IRQ_CASCADE	2
 #define I8259_IRQ_UART_B	3	/* M1543 default, may conflict with RTC according to schematic diagram  */
@@ -139,7 +139,7 @@
 /*
  * low-level irq functions
  */
-#ifndef _LANGUAGE_ASSEMBLY
+#ifndef __ASSEMBLY__
 extern void nile4_map_irq(int nile4_irq, int cpu_irq);
 extern void nile4_map_irq_all(int cpu_irq);
 extern void nile4_enable_irq(int nile4_irq);
@@ -154,4 +154,4 @@ extern void nile4_clear_irq(int nile4_irq);
 extern void nile4_clear_irq_mask(u32 mask);
 extern u8 nile4_i8259_iack(void);
 extern void nile4_dump_irq_status(void);        /* Debug */
-#endif
+#endif /* !__ASSEMBLY__ */

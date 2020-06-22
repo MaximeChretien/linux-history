@@ -31,6 +31,9 @@
  *	Added soft_noboot; Allows testing the softdog trigger without 
  *	requiring a recompile.
  *	Added WDIOC_GETTIMEOUT and WDIOC_SETTIMOUT.
+ *
+ *  20020530 Joel Becker <joel.becker@oracle.com>
+ *  	Added Matt Domsch's nowayout module option.
  */
  
 #include <linux/module.h>
@@ -48,6 +51,7 @@
 
 #define TIMER_MARGIN	60		/* (secs) Default is 1 minute */
 
+static int expect_close = 0;
 static int soft_margin = TIMER_MARGIN;	/* in seconds */
 #ifdef ONLY_TESTING
 static int soft_noboot = 1;
@@ -58,6 +62,15 @@ static int soft_noboot = 0;
 MODULE_PARM(soft_margin,"i");
 MODULE_PARM(soft_noboot,"i");
 MODULE_LICENSE("GPL");
+
+#ifdef CONFIG_WATCHDOG_NOWAYOUT
+static int nowayout = 1;
+#else
+static int nowayout = 0;
+#endif
+
+MODULE_PARM(nowayout,"i");
+MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default=CONFIG_WATCHDOG_NOWAYOUT)");
 
 /*
  *	Our timer
@@ -95,9 +108,9 @@ static int softdog_open(struct inode *inode, struct file *file)
 {
 	if(test_and_set_bit(0, &timer_alive))
 		return -EBUSY;
-#ifdef CONFIG_WATCHDOG_NOWAYOUT	 
-	MOD_INC_USE_COUNT;
-#endif	
+	if (nowayout) {
+		MOD_INC_USE_COUNT;
+	}
 	/*
 	 *	Activate timer
 	 */
@@ -109,11 +122,13 @@ static int softdog_release(struct inode *inode, struct file *file)
 {
 	/*
 	 *	Shut off the timer.
-	 * 	Lock it in if it's a module and we defined ...NOWAYOUT
+	 * 	Lock it in if it's a module and we set nowayout
 	 */
-#ifndef CONFIG_WATCHDOG_NOWAYOUT	 
-	del_timer(&watchdog_ticktock);
-#endif	
+	if (expect_close) {
+		del_timer(&watchdog_ticktock);
+	} else {
+		printk(KERN_CRIT "SOFTDOG: WDT device closed unexpectedly.  WDT will not stop!\n");
+	}
 	clear_bit(0, &timer_alive);
 	return 0;
 }
@@ -128,6 +143,20 @@ static ssize_t softdog_write(struct file *file, const char *data, size_t len, lo
 	 *	Refresh the timer.
 	 */
 	if(len) {
+		if (!nowayout) {
+			size_t i;
+
+			/* In case it was set long ago */
+			expect_close = 0;
+
+			for (i = 0; i != len; i++) {
+				char c;
+				if (get_user(c, data + i))
+					return -EFAULT;
+				if (c == 'V')
+					expect_close = 1;
+			}
+		}
 		mod_timer(&watchdog_ticktock, jiffies+(soft_margin*HZ));
 		return 1;
 	}
@@ -139,7 +168,7 @@ static int softdog_ioctl(struct inode *inode, struct file *file,
 {
 	int new_margin;
 	static struct watchdog_info ident = {
-		WDIOF_SETTIMEOUT,
+		WDIOF_SETTIMEOUT | WDIOF_MAGICCLOSE,
 		0,
 		"Software Watchdog"
 	};

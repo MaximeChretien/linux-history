@@ -355,7 +355,7 @@ static void outl_CSR6(u32 newcsr6, long ioaddr)
 	const int strict_bits =
 		TxThresh10 | TxStoreForw | TxThreshMask | EnableTxRx | FullDuplexBit;
     int csr5, csr5_22_20, csr5_19_17, currcsr6, attempts = 200;
-    long flags;
+    unsigned long flags;
     save_flags(flags);
     cli();
 	/* mask out the reserved bits that always read 0 on the Xircom cards */
@@ -1105,9 +1105,6 @@ static void xircom_interrupt(int irq, void *dev_instance, struct pt_regs *regs)
 					tp->stats.tx_errors++;
 					if (status & Tx0ManyColl) {
 						tp->stats.tx_aborted_errors++;
-#ifdef ETHER_STATS
-						tp->stats.collisions16++;
-#endif
 					}
 					if (status & Tx0NoCarrier) tp->stats.tx_carrier_errors++;
 					if (status & Tx0LateColl) tp->stats.tx_window_errors++;
@@ -1464,7 +1461,7 @@ static int xircom_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 	struct xircom_private *tp = dev->priv;
 	u16 *data = (u16 *)&rq->ifr_data;
 	int phy = tp->phys[0] & 0x1f;
-	long flags;
+	unsigned long flags;
 
 	switch(cmd) {
 	case SIOCETHTOOL:

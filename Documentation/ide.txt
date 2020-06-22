@@ -306,6 +306,9 @@ Summary of ide driver parameters for kernel "command line":
  "idex=serialize"	: do not overlap operations on idex and ide(x^1)
  "idex=reset"		: reset interface after probe
  "idex=dma"		: automatically configure/use DMA if possible.
+ "idex=nohighio"	: don't use i/o to high memory addresses on this
+			 	interface. i/o to memory locations higher
+				than ~860MiB will be bounced.
 
  The following are valid ONLY on ide0,
  and the defaults for the base,ctl ports must not be altered.

@@ -12,6 +12,10 @@
 *!                                 don't use PB_I2C if DS1302 uses same bits,
 *!                                 use PB.
 *! $Log: i2c.c,v $
+*! Revision 1.8  2002/08/13 06:31:53  starvik
+*! Made SDA and SCL line configurable
+*! Modified i2c_inbyte to work with PCF8563
+*!
 *! Revision 1.7  2001/04/04 13:11:36  markusl
 *! Updated according to review remarks
 *!
@@ -40,10 +44,10 @@
 *!
 *! ---------------------------------------------------------------------------
 *!
-*! (C) Copyright 1999, 2000, 2001 Axis Communications AB, LUND, SWEDEN
+*! (C) Copyright 1999-2002 Axis Communications AB, LUND, SWEDEN
 *!
 *!***************************************************************************/
-/* $Id: i2c.c,v 1.7 2001/04/04 13:11:36 markusl Exp $ */
+/* $Id: i2c.c,v 1.8 2002/08/13 06:31:53 starvik Exp $ */
 /****************** INCLUDE FILES SECTION ***********************************/
 
 #include <linux/module.h>
@@ -93,8 +97,15 @@ static const char i2c_name[] = "i2c";
 
 #ifdef CONFIG_ETRAX_I2C_USES_PB_NOT_PB_I2C
 /* Use PB and not PB_I2C */
-#define SDABIT 0
-#define SCLBIT 1
+#ifndef CONFIG_ETRAX_I2C_DATA_PORT
+#define CONFIG_ETRAX_I2C_DATA_PORT 0
+#endif
+#ifndef CONFIG_ETRAX_I2C_CLK_PORT
+#define CONFIG_ETRAX_I2C_CLK_PORT 1
+#endif
+
+#define SDABIT CONFIG_ETRAX_I2C_DATA_PORT
+#define SCLBIT CONFIG_ETRAX_I2C_CLK_PORT
 #define i2c_enable() 
 #define i2c_disable() 
 
@@ -114,7 +125,7 @@ static const char i2c_name[] = "i2c";
 
 /* read a bit from the i2c interface */
 
-#define i2c_getbit() (*R_PORT_PB_READ & (1 << SDABIT))
+#define i2c_getbit() (((*R_PORT_PB_READ & (1 << SDABIT))) >> SDABIT)
 
 #else
 /* enable or disable the i2c interface */
@@ -206,7 +217,7 @@ void
 i2c_outbyte(unsigned char x)
 {
 	int i;
-	
+
 	i2c_dir_out();
 
 	for (i = 0; i < 8; i++) {
@@ -238,65 +249,44 @@ i2c_inbyte(void)
 {
 	unsigned char aBitByte = 0;
 	int i;
-	int iaa;
 
-	/*
-	 * enable output
-	 */
-	i2c_dir_out();
-	/*
-	 * Release data bus by setting
-	 * data high
-	 */
-	i2c_data(I2C_DATA_HIGH);
-	/*
-	 * enable input
-	 */
+	/* Switch off I2C to get bit */
+	i2c_disable();
 	i2c_dir_in();
-	/*
-	 * Use PORT PB instead of I2C
-	 * for input. (I2C not working)
-	 */
-	i2c_clk(1);
-	i2c_data(1);
-	/*
-	 * get bits
-	 */
-	for (i = 0; i < 8; i++) {
-		i2c_delay(CLOCK_LOW_TIME/2);
-		/*
-		 * low clock period
-		 */
+	i2c_delay(CLOCK_HIGH_TIME/2);
+
+	/* Get bit */
+	aBitByte |= i2c_getbit();
+
+	/* Enable I2C */
+	i2c_enable();
+	i2c_dir_out();
+	i2c_delay(CLOCK_LOW_TIME/2);
+
+	for (i = 1; i < 8; i++) {
+		aBitByte <<= 1;
+		/* Clock pulse */
 		i2c_clk(I2C_CLOCK_HIGH);
-		/*
-		 * switch off I2C
-		 */
-		i2c_data(1);
+		i2c_delay(CLOCK_HIGH_TIME);
+		i2c_clk(I2C_CLOCK_LOW);
+		i2c_delay(CLOCK_LOW_TIME);
+
+		/* Switch off I2C to get bit */
 		i2c_disable();
 		i2c_dir_in();
-		/*
-		 * wait before getting bit
-		 */
 		i2c_delay(CLOCK_HIGH_TIME/2);
-		aBitByte = (aBitByte << 1);
-		iaa = i2c_getbit();
-		aBitByte = aBitByte | iaa ;
-		/*
-		 * wait
-		 */
-		i2c_delay(CLOCK_HIGH_TIME/2);
-		/*
-		 * end clock puls
-		 */
+
+		/* Get bit */
+		aBitByte |= i2c_getbit();
+
+		/* Enable I2C */
 		i2c_enable();
 		i2c_dir_out();
-		i2c_clk(I2C_CLOCK_LOW);
-		/*
-		 * low clock period
-		 */
 		i2c_delay(CLOCK_LOW_TIME/2);
 	}
-	i2c_dir_out();
+	i2c_clk(I2C_CLOCK_HIGH);
+	i2c_delay(CLOCK_HIGH_TIME);
+	i2c_clk(I2C_CLOCK_LOW);
 	return aBitByte;
 }
 
@@ -421,7 +411,7 @@ i2c_sendack(void)
 *#
 *#--------------------------------------------------------------------------*/
 int
-i2c_writereg(unsigned char theSlave, unsigned char theReg,
+i2c_writereg(unsigned char theSlave, unsigned char theReg, 
 	     unsigned char theValue)
 {
 	int error, cntr = 3;
@@ -434,31 +424,12 @@ i2c_writereg(unsigned char theSlave, unsigned char theReg,
 		 */
 		save_flags(flags);
 		cli();
-		/*
-		 * generate start condition
-		 */
-		i2c_start();
-		/*
-		 * dummy preamble
-		 */
-		i2c_outbyte(0x01);
-		i2c_data(I2C_DATA_HIGH);
-		i2c_clk(I2C_CLOCK_HIGH);
-		i2c_delay(CLOCK_HIGH_TIME); /* Dummy Acknowledge */
-		i2c_clk(I2C_CLOCK_LOW);
-		i2c_delay(CLOCK_LOW_TIME);
-		i2c_clk(I2C_CLOCK_HIGH);
-		i2c_delay(CLOCK_LOW_TIME); /* Repeated Start Condition */
-		i2c_data(I2C_DATA_LOW);
-		i2c_delay(CLOCK_HIGH_TIME);
-		i2c_clk(I2C_CLOCK_LOW);
-		i2c_delay(CLOCK_LOW_TIME);
 
 		i2c_start();
 		/*
 		 * send slave address
 		 */
-		i2c_outbyte(theSlave);
+		i2c_outbyte((theSlave & 0xfe));
 		/*
 		 * wait for ack
 		 */
@@ -493,7 +464,7 @@ i2c_writereg(unsigned char theSlave, unsigned char theReg,
 		restore_flags(flags);
 		
 	} while(error && cntr--);
-	
+
 	i2c_delay(CLOCK_LOW_TIME);
 	
 	return -error;
@@ -512,7 +483,7 @@ i2c_readreg(unsigned char theSlave, unsigned char theReg)
 	unsigned char b = 0;
 	int error, cntr = 3;
 	unsigned long flags;
-		
+
 	do {
 		error = 0;
 		/*
@@ -524,28 +495,11 @@ i2c_readreg(unsigned char theSlave, unsigned char theReg)
 		 * generate start condition
 		 */
 		i2c_start();
-		/*
-		 * dummy preamble
-		 */
-		i2c_outbyte(0x01);
-		i2c_data(I2C_DATA_HIGH);
-		i2c_clk(I2C_CLOCK_HIGH);
-		i2c_delay(CLOCK_HIGH_TIME); /* Dummy Acknowledge */
-		i2c_clk(I2C_CLOCK_LOW);
-		i2c_delay(CLOCK_LOW_TIME);
-		i2c_clk(I2C_CLOCK_HIGH);
-		i2c_delay(CLOCK_LOW_TIME); /* Repeated Start Condition */
-		i2c_data(I2C_DATA_LOW);
-		i2c_delay(CLOCK_HIGH_TIME);
-		i2c_clk(I2C_CLOCK_LOW);
-		i2c_delay(CLOCK_LOW_TIME);
-    
-		i2c_start();
     
 		/*
 		 * send slave address
 		 */
-		i2c_outbyte(theSlave);
+		i2c_outbyte((theSlave & 0xfe));
 		/*
 		 * wait for ack
 		 */

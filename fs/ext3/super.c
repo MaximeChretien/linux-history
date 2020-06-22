@@ -646,6 +646,11 @@ static int parse_options (char * options, unsigned long * sb_block,
 				*mount_options &= ~EXT3_MOUNT_DATA_FLAGS;
 				*mount_options |= data_opt;
 			}
+		} else if (!strcmp (this_char, "commit")) {
+			unsigned long v;
+			if (want_numeric(value, "commit", &v))
+				return 0;
+			sbi->s_commit_interval = (HZ * v);
 		} else {
 			printk (KERN_ERR 
 				"EXT3-fs: Unrecognized mount option %s\n",
@@ -838,17 +843,16 @@ static void ext3_orphan_cleanup (struct super_block * sb,
 
 		list_add(&EXT3_I(inode)->i_orphan, &EXT3_SB(sb)->s_orphan);
 		if (inode->i_nlink) {
-			printk(KERN_DEBUG __FUNCTION__
-				": truncating inode %ld to %Ld bytes\n",
-				inode->i_ino, inode->i_size);
+			printk(KERN_DEBUG "%s: truncating inode %ld to %Ld "
+				"bytes\n", __FUNCTION__, inode->i_ino,
+				inode->i_size);
 			jbd_debug(2, "truncating inode %ld to %Ld bytes\n",
 				  inode->i_ino, inode->i_size);
 			ext3_truncate(inode);
 			nr_truncates++;
 		} else {
-			printk(KERN_DEBUG __FUNCTION__
-				": deleting unreferenced inode %ld\n",
-				inode->i_ino);
+			printk(KERN_DEBUG "%s: deleting unreferenced "
+				"inode %ld\n", __FUNCTION__, inode->i_ino);
 			jbd_debug(2, "deleting unreferenced inode %ld\n",
 				  inode->i_ino);
 			nr_orphans++;
@@ -1229,6 +1233,22 @@ out_fail:
 	return NULL;
 }
 
+/*
+ * Setup any per-fs journal parameters now.  We'll do this both on
+ * initial mount, once the journal has been initialised but before we've
+ * done any recovery; and again on any subsequent remount. 
+ */
+static void ext3_init_journal_params(struct ext3_sb_info *sbi, 
+				     journal_t *journal)
+{
+	if (sbi->s_commit_interval)
+		journal->j_commit_interval = sbi->s_commit_interval;
+	/* We could also set up an ext3-specific default for the commit
+	 * interval here, but for now we'll just fall back to the jbd
+	 * default. */
+}
+
+
 static journal_t *ext3_get_journal(struct super_block *sb, int journal_inum)
 {
 	struct inode *journal_inode;
@@ -1263,7 +1283,7 @@ static journal_t *ext3_get_journal(struct super_block *sb, int journal_inum)
 		printk(KERN_ERR "EXT3-fs: Could not load journal inode\n");
 		iput(journal_inode);
 	}
-	
+	ext3_init_journal_params(EXT3_SB(sb), journal);
 	return journal;
 }
 
@@ -1341,6 +1361,7 @@ static journal_t *ext3_get_dev_journal(struct super_block *sb,
 		goto out_journal;
 	}
 	EXT3_SB(sb)->journal_bdev = bdev;
+	ext3_init_journal_params(EXT3_SB(sb), journal);
 	return journal;
 out_journal:
 	journal_destroy(journal);
@@ -1589,8 +1610,10 @@ void ext3_write_super_lockfs(struct super_block *sb)
 		journal_t *journal = EXT3_SB(sb)->s_journal;
 
 		/* Now we set up the journal barrier. */
+		unlock_super(sb);
 		journal_lock_updates(journal);
 		journal_flush(journal);
+		lock_super(sb);
 
 		/* Journal blocked and flushed, clear needs_recovery flag. */
 		EXT3_CLEAR_INCOMPAT_FEATURE(sb, EXT3_FEATURE_INCOMPAT_RECOVER);
@@ -1636,6 +1659,8 @@ int ext3_remount (struct super_block * sb, int * flags, char * data)
 
 	es = sbi->s_es;
 
+	ext3_init_journal_params(sbi, sbi->s_journal);
+	
 	if ((*flags & MS_RDONLY) != (sb->s_flags & MS_RDONLY)) {
 		if (sbi->s_mount_opt & EXT3_MOUNT_ABORT)
 			return -EROFS;

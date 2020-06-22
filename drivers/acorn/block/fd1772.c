@@ -1567,6 +1567,7 @@ static struct block_device_operations floppy_fops =
 
 int fd1772_init(void)
 {
+	int err;
 	int i;
 
 	if (!machine_is_archimedes())
@@ -1584,24 +1585,28 @@ int fd1772_init(void)
 
 	if (request_dma(FIQ_FD1772, "fd1772 end")) {
 		printk("Unable to grab DMA%d for the floppy (1772) driver\n", FIQ_FD1772);
-		free_dma(FLOPPY_DMA);
-		return 1;
+		err = 1; /* XXX */
+		goto cleanup_dma;
 	};
-	enable_dma(FIQ_FD1772);	/* This inserts a call to our command end routine */
 
 	/* initialize variables */
+	err = -ENOMEM;
 	SelectedDrive = -1;
 #ifdef TRACKBUFFER
 	BufferDrive = BufferSide = BufferTrack = -1;
 	/* Atari uses 512 - I want to eventually cope with 1K sectors */
 	DMABuffer = (char *)kmalloc((FD1772_MAX_SECTORS+1)*512,GFP_KERNEL);
+	if (DMABuffer == NULL)
+		goto cleanup_dma;
 	TrackBuffer = DMABuffer + 512;
 #else
 	/* Allocate memory for the DMAbuffer - on the Atari this takes it
 	   out of some special memory... */
 	DMABuffer = (char *) kmalloc(2048);	/* Copes with pretty large sectors */
+	if (DMABuffer == NULL)
+		goto cleanup_dma;
 #endif
-
+	enable_dma(FIQ_FD1772);	/* This inserts a call to our command end routine */
 	for (i = 0; i < FD_MAX_UNITS; i++) {
 		unit[i].track = -1;
 	}
@@ -1619,4 +1624,7 @@ int fd1772_init(void)
 	config_types();
 
 	return 0;
+cleanup_dma:
+	free_dma(FLOPPY_DMA);
+	return err;
 }

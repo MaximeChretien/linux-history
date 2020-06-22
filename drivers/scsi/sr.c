@@ -347,7 +347,8 @@ static int sr_scatter_pad(Scsi_Cmnd *SCpnt, int s_size)
 	}
 	if (old_sg) {
 		memcpy(sg + i, old_sg, SCpnt->use_sg * sizeof(struct scatterlist));
-		memcpy(bbpnt + i, old_bbpnt, SCpnt->use_sg * sizeof(void *));
+		if (old_bbpnt)
+			memcpy(bbpnt + i, old_bbpnt, SCpnt->use_sg * sizeof(void *));
 		scsi_free(old_sg, (((SCpnt->use_sg * sizeof(struct scatterlist)) +
 				    (SCpnt->use_sg * sizeof(void *))) + 511) & ~511);
 	} else {

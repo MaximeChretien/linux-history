@@ -4,14 +4,14 @@
 
 O_TARGET	:= vmlinux-obj.o
 
-list-multi	:= cpqphp.o pci_hotplug.o ibmphp.o pcihpacpi.o 
+list-multi	:= cpqphp.o pci_hotplug.o ibmphp.o acpiphp.o 
 
 export-objs	:= pci_hotplug_core.o pci_hotplug_util.o
 
 obj-$(CONFIG_HOTPLUG_PCI)		+= pci_hotplug.o
 obj-$(CONFIG_HOTPLUG_PCI_COMPAQ)	+= cpqphp.o
 obj-$(CONFIG_HOTPLUG_PCI_IBM)		+= ibmphp.o
-obj-$(CONFIG_HOTPLUG_PCI_ACPI)		+= pcihpacpi.o
+obj-$(CONFIG_HOTPLUG_PCI_ACPI)		+= acpiphp.o
 
 pci_hotplug-objs	:=	pci_hotplug_core.o	\
 				pci_hotplug_util.o
@@ -34,8 +34,10 @@ ifdef CONFIG_HOTPLUG_PCI_ACPI
   endif
 endif
 
-pcihp_acpi_objs		:=	pcihp_acpi.o	\
-				pcihp_acpi_glue.o
+acpiphp_objs		:=	acpiphp_core.o	\
+				acpiphp_glue.o	\
+				acpiphp_pci.o	\
+				acpiphp_res.o
 
 ifeq ($(CONFIG_HOTPLUG_PCI_COMPAQ_NVRAM),y)
 	cpqphp-objs += cpqphp_nvram.o
@@ -53,5 +55,5 @@ cpqphp.o: $(cpqphp-objs)
 ibmphp.o: $(ibmphp-objs)
 	$(LD) -r -o $@ $(ibmphp-objs)
 
-pcihpacpi.o: $(pcihp_acpi_objs)
-	$(LD) -r -o $@ $(pcihp_acpi_objs)
+acpiphp.o: $(acpiphp_objs)
+	$(LD) -r -o $@ $(acpiphp_objs)

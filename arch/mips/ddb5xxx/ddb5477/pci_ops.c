@@ -5,7 +5,7 @@
  * arch/mips/ddb5xxx/ddb5477/pci_ops.c
  *     Define the pci_ops for DB5477.
  *
- * Much of the code is derived from the original DDB5074 port by 
+ * Much of the code is derived from the original DDB5074 port by
  * Geert Uytterhoeven <geert@sonycom.com>
  *
  * This program is free software; you can redistribute  it and/or modify it
@@ -48,13 +48,13 @@ struct pci_config_swap {
  * On DDB5477, we have two sets of swap registers, for ext PCI and IOPCI.
  */
 struct pci_config_swap ext_pci_swap = {
-	DDB_PCIW0,  
+	DDB_PCIW0,
 	DDB_PCIINIT00,
 	DDB_PCI0_CONFIG_BASE,
 	DDB_PCI0_CONFIG_SIZE
 };
 struct pci_config_swap io_pci_swap = {
-	DDB_IOPCIW0,  
+	DDB_IOPCIW0,
 	DDB_PCIINIT01,
 	DDB_PCI1_CONFIG_BASE,
 	DDB_PCI1_CONFIG_SIZE
@@ -63,7 +63,7 @@ struct pci_config_swap io_pci_swap = {
 
 /*
  * access config space
- */	
+ */
 static inline u32 ddb_access_config_base(struct pci_config_swap *swap,
 					 u32 bus,/* 0 means top level bus */
 					 u32 slot_num)
@@ -91,10 +91,10 @@ static inline u32 ddb_access_config_base(struct pci_config_swap *swap,
 		     0,		/* not on local memory bus */
 		     0);	/* not visible from PCI bus (N/A) */
 
-	/* 
-	 * calcuate the absolute pci config addr; 
+	/*
+	 * calcuate the absolute pci config addr;
 	 * according to the spec, we start scanning from adr:11 (0x800)
-	 */ 
+	 */
 	if (bus == 0) {
 		/* type 0 config */
 		pci_addr = 0x800 << slot_num;
@@ -211,7 +211,7 @@ static int write_config_dword(struct pci_config_swap *swap,
 	slot_num = PCI_SLOT(dev->devfn);
 	func_num = PCI_FUNC(dev->devfn);
 	base = ddb_access_config_base(swap, bus, slot_num);
-	*(volatile u32*) (base + (func_num << 8) + where) = val; 
+	*(volatile u32*) (base + (func_num << 8) + where) = val;
 	ddb_close_config_base(swap);
 	return PCIBIOS_SUCCESSFUL;
 }
@@ -300,114 +300,3 @@ struct pci_ops ddb5477_io_pci_ops ={
 	iopci_write_config_dword
 };
 
-#if defined(CONFIG_DEBUG)
-void jsun_scan_pci_bus(void)
-{
-	struct pci_bus bus;
-	struct pci_dev dev;
-	unsigned int devfn;
-	int j;
-
-	bus.parent = NULL;	/* we scan the top level only */
-	dev.bus = &bus;
-	dev.sysdata = NULL;
-
-	/* scan ext pci bus and io pci bus*/
-	for (j=0; j< 2; j++) {
-		if (j ==  0) {
-			printk("scan ddb5477 external PCI bus:\n");
-			bus.ops = &ddb5477_ext_pci_ops;
-		} else {
-			printk("scan ddb5477 IO PCI bus:\n");
-			bus.ops = &ddb5477_io_pci_ops;
-		}
-	
-		for (devfn = 0; devfn < 0x100; devfn += 8) {
-			u32 temp;
-			u16 temp16;
-			u8 temp8;
-			int i;
-
-			dev.devfn = devfn;
-			db_verify(pci_read_config_dword(&dev, 0, &temp),
-				  == PCIBIOS_SUCCESSFUL);
-			if (temp == 0xffffffff) continue;
-
-			printk("slot %d: (addr %d) \n", devfn/8, 11+devfn/8);
-
-			/* verify read word and byte */
-			db_verify(pci_read_config_word(&dev, 2, &temp16),
-				  == PCIBIOS_SUCCESSFUL);
-			db_assert(temp16 == (temp >> 16));
-			db_verify(pci_read_config_byte(&dev, 3, &temp8),
-				  == PCIBIOS_SUCCESSFUL);
-			db_assert(temp8 == (temp >> 24));
-			db_verify(pci_read_config_byte(&dev, 1, &temp8),
-				  == PCIBIOS_SUCCESSFUL);
-			db_assert(temp8 == ((temp >> 8) & 0xff));
-
-			for (i=0; i < 16; i++) {
-				db_verify(pci_read_config_dword(&dev, i*4, &temp),
-					  == PCIBIOS_SUCCESSFUL);
-				printk("\t%08X", temp);
-				if ((i%4) == 3) printk("\n");
-			}
-		}
-	}
-}
-
-
-static void jsun_hardcode_pci_resources_eepro(void)
-{
-	struct pci_bus bus;
-	struct pci_dev dev;
-	u32 temp;
-
-	bus.parent = NULL;	/* we scan the top level only */
-	bus.ops = &ddb5477_ext_pci_ops;
-	dev.bus = &bus;
-	dev.sysdata = NULL;
-
-	/* for slot 5 (ext pci 1) eepro card */
-	dev.devfn = 5*8;
-	pci_read_config_dword(&dev, 0, &temp);
-	db_assert(temp == 0x12298086);
-
-	pci_write_config_dword(&dev, PCI_BASE_ADDRESS_0, DDB_PCI0_MEM_BASE);
-	pci_write_config_dword(&dev, PCI_BASE_ADDRESS_1, 0);
-	pci_write_config_dword(&dev, PCI_BASE_ADDRESS_2, DDB_PCI0_MEM_BASE+0x100000);
-	pci_write_config_dword(&dev, PCI_INTERRUPT_LINE, 17);
-}
-
-static void jsun_hardcode_pci_resources_onboard_tulip(void)
-{
-	struct pci_bus bus;
-	struct pci_dev dev;
-	u32 temp;
-
-	bus.parent = NULL;	/* we scan the top level only */
-	bus.ops = &ddb5477_ext_pci_ops;
-	dev.bus = &bus;
-	dev.sysdata = NULL;
-
-	/* for slot 4 on board ether chip */
-	dev.devfn = 4*8;
-	pci_read_config_dword(&dev, 0, &temp);
-	db_assert(temp == 0x00191011);
-
-	pci_write_config_dword(&dev, PCI_BASE_ADDRESS_0, 0x1000);
-	pci_write_config_dword(&dev, PCI_BASE_ADDRESS_1, DDB_PCI0_MEM_BASE);
-	pci_write_config_dword(&dev, PCI_INTERRUPT_LINE, 16);
-}
-
-static void jsun_hardcode_pci_resources(void)
-{
-	jsun_hardcode_pci_resources_onboard_tulip();
-}
-
-void jsun_assign_pci_resource(void)
-{
-	jsun_hardcode_pci_resources();
-}
-
-#endif

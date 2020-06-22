@@ -23,6 +23,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/config.h>
 #include <linux/slab.h>
 #include <linux/raid/raid1.h>
 #include <asm/atomic.h>
@@ -522,6 +523,10 @@ static int raid1_read_balance (raid1_conf_t *conf, struct buffer_head *bh)
 	if (conf->sect_count >= conf->mirrors[new_disk].sect_limit) {
 		conf->sect_count = 0;
 
+#if defined(CONFIG_SPARC64) && (__GNUC__ == 2) && (__GNUC_MINOR__ == 92)
+		/* Work around a compiler bug in egcs-2.92.11 19980921 */
+		new_disk = *(volatile int *)&new_disk;
+#endif
 		do {
 			if (new_disk<=0)
 				new_disk = conf->raid_disks;

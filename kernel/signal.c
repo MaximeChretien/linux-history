@@ -20,14 +20,6 @@
  * SLAB caches for signal bits.
  */
 
-#define DEBUG_SIG 0
-
-#if DEBUG_SIG
-#define SIG_SLAB_DEBUG	(SLAB_DEBUG_FREE | SLAB_RED_ZONE /* | SLAB_POISON */)
-#else
-#define SIG_SLAB_DEBUG	0
-#endif
-
 static kmem_cache_t *sigqueue_cachep;
 
 atomic_t nr_queued_signals;
@@ -39,7 +31,7 @@ void __init signals_init(void)
 		kmem_cache_create("sigqueue",
 				  sizeof(struct sigqueue),
 				  __alignof__(struct sigqueue),
-				  SIG_SLAB_DEBUG, NULL, NULL);
+				  0, NULL, NULL);
 	if (!sigqueue_cachep)
 		panic("signals_init(): cannot create sigqueue SLAB cache");
 }
@@ -265,11 +257,6 @@ dequeue_signal(sigset_t *mask, siginfo_t *info)
 {
 	int sig = 0;
 
-#if DEBUG_SIG
-printk("SIG dequeue (%s:%d): %d ", current->comm, current->pid,
-	signal_pending(current));
-#endif
-
 	sig = next_signal(current, mask);
 	if (sig) {
 		if (current->notifier) {
@@ -288,10 +275,6 @@ printk("SIG dequeue (%s:%d): %d ", current->comm, current->pid,
 		   we need to xchg out the timer overrun values.  */
 	}
 	recalc_sigpending(current);
-
-#if DEBUG_SIG
-printk(" %d -> %d\n", signal_pending(current), sig);
-#endif
 
 	return sig;
 }
@@ -535,11 +518,6 @@ send_sig_info(int sig, struct siginfo *info, struct task_struct *t)
 	unsigned long flags;
 	int ret;
 
-
-#if DEBUG_SIG
-printk("SIG queue (%s:%d): %d ", t->comm, t->pid, sig);
-#endif
-
 	ret = -EINVAL;
 	if (sig < 0 || sig > _NSIG)
 		goto out_nolock;
@@ -574,9 +552,6 @@ printk("SIG queue (%s:%d): %d ", t->comm, t->pid, sig);
 out:
 	spin_unlock_irqrestore(&t->sigmask_lock, flags);
 out_nolock:
-#if DEBUG_SIG
-printk(" %d -> %d\n", signal_pending(t), ret);
-#endif
 
 	return ret;
 }

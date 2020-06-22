@@ -31,12 +31,12 @@
 #include <linux/mm.h>
 #include <linux/delay.h>
 #include <linux/cache.h>
+#include <linux/efi.h>
 
 #include <asm/atomic.h>
 #include <asm/bitops.h>
 #include <asm/current.h>
 #include <asm/delay.h>
-#include <asm/efi.h>
 #include <asm/machvec.h>
 
 #include <asm/io.h>
@@ -90,7 +90,7 @@ void
 handle_IPI (int irq, void *dev_id, struct pt_regs *regs)
 {
 	int this_cpu = smp_processor_id();
-	unsigned long *pending_ipis = &local_cpu_data->ipi_operation;
+	unsigned long *pending_ipis = &local_cpu_data->ipi.operation;
 	unsigned long ops;
 
 	/* Count this now; we may make a call that never returns. */
@@ -149,7 +149,7 @@ handle_IPI (int irq, void *dev_id, struct pt_regs *regs)
 static inline void
 send_IPI_single (int dest_cpu, int op)
 {
-	set_bit(op, &cpu_data(dest_cpu)->ipi_operation);
+	set_bit(op, &cpu_data(dest_cpu)->ipi.operation);
 	platform_send_ipi(dest_cpu, IA64_IPI_VECTOR, IA64_IPI_DM_INT, 0);
 }
 
@@ -212,7 +212,7 @@ smp_call_function_single (int cpuid, void (*func) (void *info), void *info, int 
 	int cpus = 1;
 
 	if (cpuid == smp_processor_id()) {
-		printk(__FUNCTION__" trying to call self\n");
+		printk("%s: trying to call self\n", __FUNCTION__);
 		return -EBUSY;
 	}
 

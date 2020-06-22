@@ -188,6 +188,8 @@ nfsd3_proc_read(struct svc_rqst *rqstp, struct nfsd3_readargs *argp,
 	if ((avail << 2) < resp->count)
 		resp->count = avail << 2;
 
+	svc_reserve(rqstp, ((1 + NFS3_POST_OP_ATTR_WORDS + 3)<<2) + argp->count +4);
+
 	fh_copy(&resp->fh, &argp->fh);
 	nfserr = nfsd_read(rqstp, &resp->fh,
 				  argp->offset,
@@ -646,7 +648,7 @@ nfsd3_proc_commit(struct svc_rqst * rqstp, struct nfsd3_commitargs *argp,
 #define nfsd3_voidres			nfsd3_voidargs
 struct nfsd3_voidargs { int dummy; };
 
-#define PROC(name, argt, rest, relt, cache)	\
+#define PROC(name, argt, rest, relt, cache, respsize)	\
  { (svc_procfunc) nfsd3_proc_##name,		\
    (kxdrproc_t) nfs3svc_decode_##argt##args,	\
    (kxdrproc_t) nfs3svc_encode_##rest##res,	\
@@ -654,29 +656,37 @@ struct nfsd3_voidargs { int dummy; };
    sizeof(struct nfsd3_##argt##args),		\
    sizeof(struct nfsd3_##rest##res),		\
    0,						\
-   cache					\
+   cache,					\
+   respsize,					\
  }
+
+#define ST 1		/* status*/
+#define FH 17		/* filehandle with length */
+#define AT 21		/* attributes */
+#define pAT (1+AT)	/* post attributes - conditional */
+#define WC (7+pAT)	/* WCC attributes */
+
 struct svc_procedure		nfsd_procedures3[22] = {
-  PROC(null,	 void,		void,		void,	 RC_NOCACHE),
-  PROC(getattr,	 fhandle,	attrstat,	fhandle, RC_NOCACHE),
-  PROC(setattr,  sattr,		wccstat,	fhandle,  RC_REPLBUFF),
-  PROC(lookup,	 dirop,		dirop,		fhandle2, RC_NOCACHE),
-  PROC(access,	 access,	access,		fhandle,  RC_NOCACHE),
-  PROC(readlink, fhandle,	readlink,	fhandle,  RC_NOCACHE),
-  PROC(read,	 read,		read,		fhandle, RC_NOCACHE),
-  PROC(write,	 write,		write,		fhandle,  RC_REPLBUFF),
-  PROC(create,	 create,	create,		fhandle2, RC_REPLBUFF),
-  PROC(mkdir,	 mkdir,		create,		fhandle2, RC_REPLBUFF),
-  PROC(symlink,	 symlink,	create,		fhandle2, RC_REPLBUFF),
-  PROC(mknod,	 mknod,		create,		fhandle2, RC_REPLBUFF),
-  PROC(remove,	 dirop,		wccstat,	fhandle,  RC_REPLBUFF),
-  PROC(rmdir,	 dirop,		wccstat,	fhandle,  RC_REPLBUFF),
-  PROC(rename,	 rename,	rename,		fhandle2, RC_REPLBUFF),
-  PROC(link,	 link,		link,		fhandle2, RC_REPLBUFF),
-  PROC(readdir,	 readdir,	readdir,	fhandle,  RC_NOCACHE),
-  PROC(readdirplus,readdirplus,	readdir,	fhandle,  RC_NOCACHE),
-  PROC(fsstat,	 fhandle,	fsstat,		void,     RC_NOCACHE),
-  PROC(fsinfo,   fhandle,	fsinfo,		void,     RC_NOCACHE),
-  PROC(pathconf, fhandle,	pathconf,	void,     RC_NOCACHE),
-  PROC(commit,	 commit,	commit,		fhandle,  RC_NOCACHE)
+  PROC(null,	 void,		void,		void,	 RC_NOCACHE, ST),
+  PROC(getattr,	 fhandle,	attrstat,	fhandle, RC_NOCACHE, ST+AT),
+  PROC(setattr,  sattr,		wccstat,	fhandle,  RC_REPLBUFF, ST+WC),
+  PROC(lookup,	 dirop,		dirop,		fhandle2, RC_NOCACHE, ST+FH+pAT+pAT),
+  PROC(access,	 access,	access,		fhandle,  RC_NOCACHE, ST+pAT+1),
+  PROC(readlink, fhandle,	readlink,	fhandle,  RC_NOCACHE, ST+pAT+1+256),
+  PROC(read,	 read,		read,		fhandle, RC_NOCACHE, ST+pAT+4+NFSSVC_MAXBLKSIZE),
+  PROC(write,	 write,		write,		fhandle,  RC_REPLBUFF, ST+WC+4),
+  PROC(create,	 create,	create,		fhandle2, RC_REPLBUFF, ST+(1+FH+pAT)+WC),
+  PROC(mkdir,	 mkdir,		create,		fhandle2, RC_REPLBUFF, ST+(1+FH+pAT)+WC),
+  PROC(symlink,	 symlink,	create,		fhandle2, RC_REPLBUFF, ST+(1+FH+pAT)+WC),
+  PROC(mknod,	 mknod,		create,		fhandle2, RC_REPLBUFF, ST+(1+FH+pAT)+WC),
+  PROC(remove,	 dirop,		wccstat,	fhandle,  RC_REPLBUFF, ST+WC),
+  PROC(rmdir,	 dirop,		wccstat,	fhandle,  RC_REPLBUFF, ST+WC),
+  PROC(rename,	 rename,	rename,		fhandle2, RC_REPLBUFF, ST+WC+WC),
+  PROC(link,	 link,		link,		fhandle2, RC_REPLBUFF, ST+pAT+WC),
+  PROC(readdir,	 readdir,	readdir,	fhandle,  RC_NOCACHE, 0),
+  PROC(readdirplus,readdirplus,	readdir,	fhandle,  RC_NOCACHE, 0),
+  PROC(fsstat,	 fhandle,	fsstat,		void,     RC_NOCACHE, ST+pAT+2*6+1),
+  PROC(fsinfo,   fhandle,	fsinfo,		void,     RC_NOCACHE, ST+pAT+12),
+  PROC(pathconf, fhandle,	pathconf,	void,     RC_NOCACHE, ST+pAT+6),
+  PROC(commit,	 commit,	commit,		fhandle,  RC_NOCACHE, ST+WC+2),
 };

@@ -26,20 +26,24 @@
 #include <linux/unistd.h>
 #include <linux/stddef.h>
 #include <asm/ucontext.h>
+#include <asm/rt_sigframe.h>
 #include <asm/uaccess.h>
 #include <asm/pgalloc.h>
 
 #define DEBUG_SIG 0
 
+#if DEBUG_SIG
+#define DBG(x)	printk x
+#else
+#define DBG(x)
+#endif
+
 #define _BLOCKABLE (~(sigmask(SIGKILL) | sigmask(SIGSTOP)))
 
-extern long sys_wait4 (int, int *, int, struct rusage *);
 int do_signal(sigset_t *oldset, struct pt_regs *regs, int in_syscall);
 
 int copy_siginfo_to_user(siginfo_t *to, siginfo_t *from)
 {
-	if (!access_ok (VERIFY_WRITE, to, sizeof(siginfo_t)))
-		return -EFAULT;
 	if (from->si_code < 0)
 		return __copy_to_user(to, from, sizeof(siginfo_t));
 	else {
@@ -128,29 +132,14 @@ sys_rt_sigsuspend(sigset_t *unewset, size_t sigsetsize, struct pt_regs *regs)
  * Do a signal return - restore sigcontext.
  */
 
-struct rt_sigframe {
-	unsigned int tramp[4];
-	struct siginfo info;
-	struct ucontext uc;
-};
-
 /* Trampoline for calling rt_sigreturn() */
 #define INSN_LDI_R25_0	 0x34190000 /* ldi  0,%r25 (in_syscall=0) */
 #define INSN_LDI_R25_1	 0x34190002 /* ldi  1,%r25 (in_syscall=1) */
 #define INSN_LDI_R20	 0x3414015a /* ldi  __NR_rt_sigreturn,%r20 */
 #define INSN_BLE_SR2_R0  0xe4008200 /* be,l 0x100(%sr2,%r0),%sr0,%r31 */
-#define INSN_NOP	 0x80000240 /* nop */
+#define INSN_NOP	 0x08000240 /* nop */
 /* For debugging */
 #define INSN_DIE_HORRIBLY 0x68000ccc /* stw %r0,0x666(%sr0,%r0) */
-
-/*
- * The 32-bit ABI wants at least 48 bytes for a function call frame:
- * 16 bytes for arg0-arg3, and 32 bytes for magic (the only part of
- * which Linux/parisc uses is sp-20 for the saved return pointer...)
- * Then, the stack pointer must be rounded to a cache line (64 bytes).
- */
-#define PARISC_RT_SIGFRAME_SIZE					\
-	(((sizeof(struct rt_sigframe) + 48) + 63) & -64)
 
 static long
 restore_sigcontext(struct sigcontext *sc, struct pt_regs *regs)
@@ -162,10 +151,7 @@ restore_sigcontext(struct sigcontext *sc, struct pt_regs *regs)
 	err |= __copy_from_user(regs->iaoq, sc->sc_iaoq, sizeof(regs->iaoq));
 	err |= __copy_from_user(regs->iasq, sc->sc_iasq, sizeof(regs->iasq));
 	err |= __get_user(regs->sar, &sc->sc_sar);
-
-#if DEBUG_SIG
-	printk("restore_sigcontext: r28 is %ld\n", regs->gr[28]);
-#endif
+	DBG(("restore_sigcontext: r28 is %ld\n", regs->gr[28]));
 	return err;
 }
 
@@ -180,13 +166,8 @@ sys_rt_sigreturn(struct pt_regs *regs, int in_syscall)
 	/* Unwind the user stack to get the rt_sigframe structure. */
 	frame = (struct rt_sigframe *)
 		(usp - PARISC_RT_SIGFRAME_SIZE);
-#if DEBUG_SIG
-	printk("in sys_rt_sigreturn, frame is %p\n", frame);
-#endif
+	DBG(("in sys_rt_sigreturn, frame is %p\n", frame));
 
-	/* Verify that it's a good sigcontext before using it */
-	if (!access_ok(VERIFY_READ, frame, sizeof(*frame)))
-		goto give_sigsegv;
 	if (__copy_from_user(&set, &frame->uc.uc_sigmask, sizeof(set)))
 		goto give_sigsegv;
 
@@ -200,10 +181,7 @@ sys_rt_sigreturn(struct pt_regs *regs, int in_syscall)
 	if (restore_sigcontext(&frame->uc.uc_mcontext, regs))
 		goto give_sigsegv;
 
-#if DEBUG_SIG
-	printk("usp: %#08lx stack %p",
-	       usp, &frame->uc.uc_stack);
-#endif
+	DBG(("usp: %#08lx stack %p", usp, &frame->uc.uc_stack));
 
 	/* I don't know why everyone else assumes they can call this
            with a pointer to a stack_t on the kernel stack.  That
@@ -218,16 +196,14 @@ sys_rt_sigreturn(struct pt_regs *regs, int in_syscall)
 	if (in_syscall)
 		regs->gr[31] = regs->iaoq[0];
 #if DEBUG_SIG
-	printk("returning to %#lx\n", regs->iaoq[0]);
-	printk("in sys_rt_sigreturn:\n");
+	DBG(("returning to %#lx\n", regs->iaoq[0]));
+	DBG(("in sys_rt_sigreturn:\n"));
 	show_regs(regs);
 #endif
 	return;
 
 give_sigsegv:
-#if DEBUG_SIG
-	printk("fuckup in sys_rt_sigreturn, sending SIGSEGV\n");
-#endif
+	DBG(("sys_rt_sigreturn sending SIGSEGV\n"));
 	si.si_signo = SIGSEGV;
 	si.si_errno = 0;
 	si.si_code = SI_KERNEL;
@@ -246,7 +222,7 @@ static inline void *
 get_sigframe(struct k_sigaction *ka, unsigned long sp, size_t frame_size)
 {
 	if ((ka->sa.sa_flags & SA_ONSTACK) != 0 && ! on_sig_stack(sp))
-		sp = current->sas_ss_sp + current->sas_ss_size;
+		sp = current->sas_ss_sp; /* Stacks grow up! */
 
 	return (void *) sp; /* Stacks grow up.  Fun. */
 }
@@ -265,24 +241,22 @@ setup_sigcontext(struct sigcontext *sc, struct pt_regs *regs, int in_syscall)
 		/* regs->iaoq is undefined in the syscall return path */
 		err |= __put_user(regs->gr[31], &sc->sc_iaoq[0]);
 		err |= __put_user(regs->gr[31]+4, &sc->sc_iaoq[1]);
-#if DEBUG_SIG
-		printk("setup_sigcontext: iaoq %#lx/%#lx\n", regs->gr[31], regs->gr[31]);
-#endif
+		err |= __put_user(regs->sr[3], &sc->sc_iasq[0]);
+		err |= __put_user(regs->sr[3], &sc->sc_iasq[1]);
+		DBG(("setup_sigcontext: iaoq %#lx/%#lx\n",
+			regs->gr[31], regs->gr[31]));
 	} else {
 		err |= __copy_to_user(sc->sc_iaoq, regs->iaoq, sizeof(regs->iaoq));
 		err |= __copy_to_user(sc->sc_iasq, regs->iasq, sizeof(regs->iasq));
-#if DEBUG_SIG
-		printk("setup_sigcontext: iaoq %#lx/%#lx\n", regs->iaoq[0], regs->iaoq[1]);
-#endif
+		DBG(("setup_sigcontext: iaoq %#lx/%#lx\n", 
+			regs->iaoq[0], regs->iaoq[1]));
 	}
 
 	err |= __put_user(flags, &sc->sc_flags);
 	err |= __copy_to_user(sc->sc_gr, regs->gr, sizeof(regs->gr));
 	err |= __copy_to_user(sc->sc_fr, regs->fr, sizeof(regs->fr));
 	err |= __put_user(regs->sar, &sc->sc_sar);
-#if DEBUG_SIG
-	printk("setup_sigcontext: r28 is %ld\n", regs->gr[28]);
-#endif
+	DBG(("setup_sigcontext: r28 is %ld\n", regs->gr[28]));
 
 	return err;
 }
@@ -297,22 +271,9 @@ setup_rt_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
 	int err = 0;
 
 	usp = regs->gr[30];
-	/* access_ok is broken, so do a simplistic "are we stomping on
-           kernel space" assertion. */
-	if (usp > PAGE_OFFSET) {
-		printk("setup_rt_frame: called on kernel space (usp=%#lx),  NOW YOU MUST DIE!!!\n",
-		       usp);
-		show_regs(regs);
-		while(1);
-	}
-		
 	frame = get_sigframe(ka, usp, sizeof(*frame));
-	if (!access_ok(VERIFY_WRITE, frame, sizeof(*frame)))
-		goto give_sigsegv;
 
-#if DEBUG_SIG
-	printk("setup_rt_frame 1: frame %p info %p\n", frame, info);
-#endif
+	DBG(("setup_rt_frame 1: frame %p info %p\n", frame, info));
 
 	err |= __copy_to_user(&frame->info, info, sizeof(siginfo_t));
 	err |= __put_user(current->sas_ss_sp, &frame->uc.uc_stack.ss_sp);
@@ -337,8 +298,8 @@ setup_rt_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
 	{
 		int sid;
 		asm ("mfsp %%sr3,%0" : "=r" (sid));
-		printk("flushing 64 bytes at space %#x offset %p\n",
-		       sid, frame->tramp);
+		DBG(("flushing 64 bytes at space %#x offset %p\n",
+		       sid, frame->tramp));
 	}
 #endif
 
@@ -387,6 +348,7 @@ setup_rt_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
 	if (in_syscall)
 		regs->gr[31] = (HACK) haddr;
 	else {
+		regs->gr[0] = USER_PSW;
 		regs->iaoq[0] = (HACK) haddr | 3;
 		regs->iaoq[1] = regs->iaoq[0] + 4;
 	}
@@ -395,26 +357,20 @@ setup_rt_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
 	regs->gr[26] = sig;               /* signal number */
 	regs->gr[25] = (HACK) &frame->info; /* siginfo pointer */
 	regs->gr[24] = (HACK) &frame->uc;   /* ucontext pointer */
-#if DEBUG_SIG
-	printk("making sigreturn frame: %#lx + %#lx = %#lx\n",
+	DBG(("making sigreturn frame: %#lx + %#x = %#lx\n",
 	       regs->gr[30], PARISC_RT_SIGFRAME_SIZE,
-	       regs->gr[30] + PARISC_RT_SIGFRAME_SIZE);
-#endif
+	       regs->gr[30] + PARISC_RT_SIGFRAME_SIZE));
 	/* Raise the user stack pointer to make a proper call frame. */
 	regs->gr[30] = ((HACK) frame + PARISC_RT_SIGFRAME_SIZE);
 
-#if DEBUG_SIG
-	printk("SIG deliver (%s:%d): frame=0x%p sp=%#lx iaoq=%#lx/%#lx rp=%#lx\n",
+	DBG(("SIG deliver (%s:%d): frame=0x%p sp=%#lx iaoq=%#lx/%#lx rp=%#lx\n",
 	       current->comm, current->pid, frame, regs->gr[30],
-	       regs->iaoq[0], regs->iaoq[1], rp);
-#endif
+	       regs->iaoq[0], regs->iaoq[1], rp));
 
 	return 1;
 
 give_sigsegv:
-#if DEBUG_SIG
-	printk("fuckup in setup_rt_frame, sending SIGSEGV\n");
-#endif
+	DBG(("setup_rt_frame sending SIGSEGV\n"));
 	if (sig == SIGSEGV)
 		ka->sa.sa_handler = SIG_DFL;
 	si.si_signo = SIGSEGV;
@@ -436,10 +392,9 @@ handle_signal(unsigned long sig, struct k_sigaction *ka,
 	      siginfo_t *info, sigset_t *oldset,
 	      struct pt_regs *regs, int in_syscall)
 {
-#if DEBUG_SIG
-	printk("handle_signal(sig=%ld, ka=%p, info=%p, oldset=%p, regs=%p)\n",
-	       sig, ka, info, oldset, regs);
-#endif
+	DBG(("handle_signal(sig=%ld, ka=%p, info=%p, oldset=%p, regs=%p)\n",
+	       sig, ka, info, oldset, regs));
+	
 	/* Set up the stack frame */
 	if (!setup_rt_frame(sig, ka, info, oldset, regs, in_syscall))
 		return 0;
@@ -468,16 +423,16 @@ handle_signal(unsigned long sig, struct k_sigaction *ka,
  * registers).  As noted below, the syscall number gets restored for
  * us due to the magic of delayed branching.
  */
+
 asmlinkage int
 do_signal(sigset_t *oldset, struct pt_regs *regs, int in_syscall)
 {
 	siginfo_t info;
 	struct k_sigaction *ka;
 
-#if DEBUG_SIG
-	printk("do_signal(oldset=0x%p, regs=0x%p, sr7 %#lx, pending %d, in_syscall=%d\n",
-	       oldset, regs, regs->sr[7], current->sigpending, in_syscall);
-#endif
+	DBG(("do_signal(oldset=0x%p, regs=0x%p, sr7 %#lx, pending %d, in_syscall=%d\n",
+	       oldset, regs, regs->sr[7], current->sigpending, in_syscall));
+
 	/* Everyone else checks to see if they are in kernel mode at
 	   this point and exits if that's the case.  I'm not sure why
 	   we would be called in that case, but for some reason we
@@ -486,9 +441,8 @@ do_signal(sigset_t *oldset, struct pt_regs *regs, int in_syscall)
 	if (!oldset)
 		oldset = &current->blocked;
 
-#if DEBUG_SIG
-	printk("do_signal: oldset %08lx:%08lx\n", oldset->sig[0], oldset->sig[1]);
-#endif
+	DBG(("do_signal: oldset %08lx:%08lx\n", 
+		oldset->sig[0], oldset->sig[1]));
 
 	for (;;) {
 		unsigned long signr;
@@ -496,10 +450,7 @@ do_signal(sigset_t *oldset, struct pt_regs *regs, int in_syscall)
 		spin_lock_irq(&current->sigmask_lock);
 		signr = dequeue_signal(&current->blocked, &info);
 		spin_unlock_irq(&current->sigmask_lock);
-#if DEBUG_SIG
-		printk("do_signal: signr=%ld, pid=%d\n", signr, current->pid);
-#endif
-
+		DBG(("do_signal: signr=%ld, pid=%d\n", signr, current->pid));
 		if (!signr)
 			break;
 
@@ -536,10 +487,9 @@ do_signal(sigset_t *oldset, struct pt_regs *regs, int in_syscall)
 		}
 
 		ka = &current->sig->action[signr-1];
-#if DEBUG_SIG
-		printk("sa_handler is %lx\n", ka->sa.sa_handler);
-#endif
-		if ((unsigned long) ka->sa.sa_handler == (unsigned long) SIG_IGN) {
+		DBG(("sa_handler is %x\n", 
+			(unsigned int) ka->sa.sa_handler));
+		if (ka->sa.sa_handler == SIG_IGN) {
 			if (signr != SIGCHLD)
 				continue;
 			while (sys_wait4(-1, NULL, WNOHANG, NULL) > 0)
@@ -547,7 +497,7 @@ do_signal(sigset_t *oldset, struct pt_regs *regs, int in_syscall)
 			continue;
 		}
 
-		if ((unsigned long) ka->sa.sa_handler == (unsigned long) SIG_DFL) {
+		if (ka->sa.sa_handler == SIG_DFL) {
 			int exit_code = signr;
 
 			/* Init gets no signals it doesn't want.  */
@@ -591,17 +541,13 @@ do_signal(sigset_t *oldset, struct pt_regs *regs, int in_syscall)
 			/* Check the return code */
 			switch (regs->gr[28]) {
 			case -ERESTARTNOHAND:
-#if DEBUG_SIG
-				printk("ERESTARTNOHAND: returning -EINTR\n");
-#endif
+				DBG(("ERESTARTNOHAND: returning -EINTR\n"));
 				regs->gr[28] = -EINTR;
 				break;
 
 			case -ERESTARTSYS:
 				if (!(ka->sa.sa_flags & SA_RESTART)) {
-#if DEBUG_SIG
-					printk("ERESTARTSYS: putting -EINTR\n");
-#endif
+					DBG(("ERESTARTSYS: putting -EINTR\n"));
 					regs->gr[28] = -EINTR;
 					break;
 				}
@@ -620,9 +566,9 @@ do_signal(sigset_t *oldset, struct pt_regs *regs, int in_syscall)
 		   delivery failed, we need to continue to iterate in
 		   this loop so we can deliver the SIGSEGV... */
 		if (handle_signal(signr, ka, &info, oldset, regs, in_syscall)) {
-#if DEBUG_SIG
-			printk("Exiting do_signal (success), regs->gr[28] = %ld\n", regs->gr[28]);
-#endif
+			DBG((KERN_DEBUG
+				"Exiting do_signal (success), regs->gr[28] = %ld\n",
+				regs->gr[28]));
 			return 1;
 		}
 	}
@@ -642,8 +588,9 @@ do_signal(sigset_t *oldset, struct pt_regs *regs, int in_syscall)
 			regs->gr[28] = regs->orig_r28;
 		}
 	}
-#if DEBUG_SIG
-	printk("Exiting do_signal (not delivered), regs->gr[28] = %ld\n", regs->gr[28]);
-#endif
+	
+	DBG(("Exiting do_signal (not delivered), regs->gr[28] = %ld\n", 
+		regs->gr[28]));
+
 	return 0;
 }

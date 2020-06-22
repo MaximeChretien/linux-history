@@ -207,15 +207,15 @@ sysc_reschedule:
 # call trace before and after sys_call
 #
 sysc_tracesys:
-	larl	%r12,sysc_return
+	larl	%r11,sysc_return
 
 #
 # call syscall_trace before and after system call
-# special linkage: %r12 contains the return address for trace_svc
+# special linkage: %r11 contains the return address for trace_svc
 #
 trace_svc:
-	lghi    %r7,-ENOSYS
-	stg     %r7,SP_R2(%r15)     # give sysc_trace an -ENOSYS retval
+	lghi    %r0,-ENOSYS
+	stg     %r0,SP_R2(%r15)     # give sysc_trace an -ENOSYS retval
         brasl   %r14,syscall_trace
 	lg      %r2,SP_R2(%r15)
 	cghi    %r2,-ENOSYS
@@ -232,7 +232,7 @@ trace_svc_go:
 	lg      %r2,SP_ORIG_R2(%r15)
         basr    %r14,%r8            # call sys_xxx
         stg     %r2,SP_R2(%r15)     # store return value
-	lgr	%r14,%r12	    # return point is in %r12
+	lgr	%r14,%r11	    # return point is in %r11
         jg      syscall_trace       # return point is sysc_return
 
 #
@@ -712,7 +712,7 @@ pgm_svcper_nosig:
 # call trace before and after sys_call
 #
 pgm_tracesys:
-	larl	%r12,pgm_svcret
+	larl	%r11,pgm_svcret
 	j	trace_svc
 
 /*
@@ -786,26 +786,26 @@ io_signal_return:
 ext_int_handler:
         SAVE_ALL __LC_EXT_OLD_PSW,0
         GET_CURRENT                    # load pointer to task_struct to R9
-        la      %r2,SP_PTREGS(%r15)    # address of register-save area
-        llgh    %r3,__LC_EXT_INT_CODE  # error code
-        lgr     %r1,%r3                # calculate index = code & 0xff
-	nill    %r1,0xff
-        sll     %r1,3
-        larl    %r4,ext_int_hash
-        lg      %r4,0(%r1,%r4)         # get first list entry for hash value
-        ltgr    %r4,%r4                # == NULL ?
-        jz      io_return              # yes, nothing to do, exit
+	llgh	%r6,__LC_EXT_INT_CODE  # get interruption code
+	lgr	%r1,%r6		       # calculate index = code & 0xff
+	nill	%r1,0xff
+	sll	%r1,3
+	larl	%r7,ext_int_hash
+	lg	%r7,0(%r1,%r7)	       # get first list entry for hash value
+	ltgr	%r7,%r7		       # == NULL ?
+	jz	io_return	       # yes, nothing to do, exit
 ext_int_loop:
-        ch      %r3,16(%r4)            # compare external interrupt code
-        je      ext_int_found
-        lg      %r4,0(%r4)             # next list entry
-	ltgr    %r4,%r4
-        jnz     ext_int_loop
-        j       io_return
-ext_int_found:
-        lg      %r4,8(%r4)             # get handler address
-        larl    %r14,io_return
-        br      %r4                    # branch to ext call handler
+	ch	%r6,16(%r7)	       # compare external interrupt code
+	jne	ext_int_next
+	lg	%r1,8(%r7)	       # get handler address
+	la	%r2,SP_PTREGS(%r15)    # address of register-save area
+	lgr	%r3,%r6		       # interruption code
+	basr	%r14,%r1	       # call handler
+ext_int_next:
+	lg	%r7,0(%r7)	       # next list entry
+	ltgr	%r7,%r7
+	jnz	ext_int_loop
+	j	io_return
 
 /*
  * Machine check handler routines

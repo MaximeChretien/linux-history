@@ -40,15 +40,18 @@
 #include <asm/machdep.h>
 #include <asm/hw_irq.h>
 #include <asm/abs_addr.h>
-#ifdef CONFIG_SMP
 #include <asm/smplock.h>
-#endif /* CONFIG_SMP */
 #ifdef CONFIG_PPC_ISERIES
 #include <asm/iSeries/iSeries_pci.h>
 #include <asm/iSeries/iSeries_proc.h>
 #include <asm/iSeries/mf.h>
 #include <asm/iSeries/HvLpEvent.h>
 #include <asm/iSeries/HvLpConfig.h>
+#include <asm/iSeries/ItLpNaca.h>
+#include <asm/iSeries/ItExtVpdPanel.h>
+#include <asm/iSeries/LparData.h>
+#else
+#include <asm/rtas.h>
 #endif
 
 /* Tell string.h we don't want memcpy etc. as cpp defines */
@@ -61,6 +64,7 @@ extern void MachineCheckException(struct pt_regs *regs);
 extern void AlignmentException(struct pt_regs *regs);
 extern void ProgramCheckException(struct pt_regs *regs);
 extern void SingleStepException(struct pt_regs *regs);
+extern int sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg);
 extern int sys_sigreturn(struct pt_regs *regs);
 extern int do_signal(sigset_t *, struct pt_regs *);
 extern int register_ioctl32_conversion(unsigned int cmd, int (*handler)(unsigned int, unsigned int, unsigned long, struct file *));
@@ -82,6 +86,7 @@ EXPORT_SYMBOL(MachineCheckException);
 EXPORT_SYMBOL(AlignmentException);
 EXPORT_SYMBOL(ProgramCheckException);
 EXPORT_SYMBOL(SingleStepException);
+EXPORT_SYMBOL(sys_ioctl);
 EXPORT_SYMBOL(sys_sigreturn);
 EXPORT_SYMBOL(enable_irq);
 EXPORT_SYMBOL(disable_irq);
@@ -160,6 +165,8 @@ EXPORT_SYMBOL(HvLpEvent_registerHandler);
 EXPORT_SYMBOL(mf_allocateLpEvents);
 EXPORT_SYMBOL(mf_deallocateLpEvents);
 EXPORT_SYMBOL(HvLpConfig_getLpIndex_outline);
+EXPORT_SYMBOL(itLpNaca);
+EXPORT_SYMBOL(xItExtVpdPanel);
 #endif
 
 EXPORT_SYMBOL(_insb);
@@ -189,6 +196,8 @@ EXPORT_SYMBOL(iSeries_GetLocationData);
 EXPORT_SYMBOL(iSeries_Read_Long);
 EXPORT_SYMBOL(iSeries_Device_ToggleReset);
 EXPORT_SYMBOL(iSeries_Write_Word);
+EXPORT_SYMBOL(iSeries_memset_io);
+EXPORT_SYMBOL(iSeries_memcpy_toio);
 EXPORT_SYMBOL(iSeries_memcpy_fromio);
 EXPORT_SYMBOL(iSeries_Read_Word);
 EXPORT_SYMBOL(iSeries_Read_Byte);
@@ -237,6 +246,13 @@ EXPORT_SYMBOL(device_is_compatible);
 EXPORT_SYMBOL(machine_is_compatible);
 EXPORT_SYMBOL(find_all_nodes);
 EXPORT_SYMBOL(get_property);
+
+#ifdef CONFIG_PPC_PSERIES
+EXPORT_SYMBOL(rtas_proc_dir);
+EXPORT_SYMBOL(rtas_firmware_flash_list);
+EXPORT_SYMBOL(rtas_token);
+EXPORT_SYMBOL(rtas_call);
+#endif
 
 #ifndef CONFIG_PPC_ISERIES
 EXPORT_SYMBOL(kd_mksound);
@@ -288,3 +304,8 @@ EXPORT_SYMBOL(atomic_dec_and_lock);
 #endif
 
 EXPORT_SYMBOL(tb_ticks_per_usec);
+
+#if defined(CONFIG_DUMP) || defined(CONFIG_DUMP_MODULE)
+extern void dump_send_ipi(int (*dump_ipi_callback)(struct pt_regs *));
+EXPORT_SYMBOL(dump_send_ipi);
+#endif

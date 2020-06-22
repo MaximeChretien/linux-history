@@ -250,9 +250,9 @@ if [ "$CONFIG_SMP" = "y" ]; then
 fi
 
 if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
-   bool 'Discontiguous Memory Support' CONFIG_DISCONTIGMEM
+   bool 'Discontiguous Memory Support (EXPERIMENTAL)' CONFIG_DISCONTIGMEM
    if [ "$CONFIG_DISCONTIGMEM" = "y" ]; then
-      bool ' NUMA Support' CONFIG_NUMA
+      bool ' NUMA Support (EXPERIMENTAL)' CONFIG_NUMA
    fi
 fi
 
@@ -360,7 +360,7 @@ endmenu
 mainmenu_option next_comment
 comment 'Old CD-ROM drivers (not SCSI, not IDE)'
 
-bool 'Support non-SCSI/IDE/ATAPI drives' CONFIG_CD_NO_IDESCSI
+bool 'Support non-SCSI/IDE/ATAPI CDROM drives' CONFIG_CD_NO_IDESCSI
 if [ "$CONFIG_CD_NO_IDESCSI" != "n" ]; then
   source drivers/cdrom/Config.in
 fi
@@ -423,3 +423,5 @@ else
 fi
 
 endmenu
+
+source lib/Config.in

@@ -3,11 +3,16 @@
 #
 # Author: Tom Rini <trini@mvista.com>
 #
-# Copyright 2001 MontaVista Software Inc.
+# Copyright 2001-2002 MontaVista Software Inc.
 #
-# Notes: For machine targets which produce more than one image, define
+# Notes:
+# (1) For machine targets which produce more than one image, define
 # ZNETBOOT and ZNETBOOTRD to the image which should be available for
 # 'znetboot' and 'znetboot.initrd`
+# (2) For machine targets which use the mktree program, define END to be
+# the machine name you want in the image, and you can optionally set
+# ENTRYPOINT which the image should be loaded at.  The optimal setting
+# for ENTRYPOINT is the link address.
 #
 # This program is free software; you can redistribute  it and/or modify it
 # under  the terms of  the GNU General  Public License as published by the
@@ -28,8 +33,23 @@ endif
 ifeq ($(CONFIG_GEMINI),y)
 ZIMAGE				:= zImage-SMON
 ZIMAGEINITRD			:= zImage.initrd-SMON
-HEADHELP			:= direct.o
+EXTRA				:= direct.o
 TFTPIMAGE			:= /tftpboot/zImage.gemini
+endif
+ifeq ($(CONFIG_PAL4),y)
+ZIMAGE				:= zImage-PAL4
+ZIMAGEINITRD			:= zImage.initrd-PAL4
+EXTRA				:= direct.o
+TFTPIMAGE			:= /tftpboot/zImage.pal4
+endif
+ifeq ($(CONFIG_SPRUCE),y)
+ZIMAGE				:= zImage-TREE
+ZIMAGEINITRD			:= zImage.initrd-TREE
+EXTRA				:= direct.o
+ENTRYPOINT			:= 0x00800000
+MISC				:= misc-spruce.o
+END				:= spruce
+TFTPIMAGE			:= /tftpboot/zImage.$(END)
 endif
 ifeq ($(CONFIG_SMP),y)
 TFTPIMAGE			+= .smp
@@ -46,7 +66,7 @@ endif
 OBJCOPY_ARGS			:= -O elf32-powerpc
 
 # head.o and ../common/relocate.o must be at the start.
-obj-y				:= head.o ../common/relocate.o $(HEADHELP) \
+obj-y				:= head.o ../common/relocate.o $(EXTRA) \
 				$(MISC) ../common/misc-common.o \
 				../common/string.o ../common/util.o
 obj-$(CONFIG_4xx)		+= embed_config.o
@@ -68,10 +88,6 @@ LIBS				:= ../lib/zlib.a
 # Tools
 MKPREP				:= ../utils/mkprep
 MKTREE				:= ../utils/mktree
-
-AFLAGS_head.o			+= -I$(TOPDIR)/arch/$(ARCH)/kernel
-AFLAGS_../common/util.o		+= -I$(TOPDIR)/arch/$(ARCH)/kernel
-AFLAGS_../common/relocate.o	+= -I$(TOPDIR)/arch/$(ARCH)/kernel
 
 zvmlinux: $(obj-y) $(LIBS) ../ld.script ../images/vmlinux.gz ../common/dummy.o
 	$(OBJCOPY) $(OBJCOPY_ARGS) \
@@ -120,6 +136,12 @@ zImage-EMBEDDED: zvmlinux
 zImage.initrd-EMBEDDED: zvmlinux.initrd
 	mv zvmlinux.initrd ../images/zImage.initrd.embedded
 
+zImage-PAL4: zvmlinux
+	cp zvmlinux ../images/zImage.pal4
+
+zImage.initrd-PAL4: zvmlinux.initrd
+	cp zvmlinux.initrd ../images/zImage.initrd.pal4
+
 zImage-SMON: zvmlinux
 	dd if=zvmlinux of=../images/zImage.gemini skip=64 bs=1k
 
@@ -127,9 +149,9 @@ zImage.initrd-SMON: zvmlinux.initrd
 	dd if=zvmlinux.initrd of=../images/zImage.initrd.gemini skip=64 bs=1k
 
 zImage-TREE: zvmlinux
-	$(MKTREE) zvmlinux ../images/zImage.treeboot
+	$(MKTREE) zvmlinux ../images/zImage.$(END) $(ENTRYPOINT)
 
 zImage.initrd-TREE: zvmlinux.initrd
-	$(MKTREE) zvmlinux.initrd ../images/zImage.initrd.treeboot
+	$(MKTREE) zvmlinux.initrd ../images/zImage.initrd.$(END) $(ENTRYPOINT)
 
 include $(TOPDIR)/Rules.make

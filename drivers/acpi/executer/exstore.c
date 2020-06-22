@@ -181,8 +181,8 @@ acpi_ex_store (
 
 		case ACPI_TYPE_PACKAGE:
 
-			ACPI_DEBUG_PRINT_RAW ((ACPI_DB_DEBUG_OBJECT, "Elements - 0x%X\n",
-				(u32) source_desc->package.elements));
+			ACPI_DEBUG_PRINT_RAW ((ACPI_DB_DEBUG_OBJECT, "Elements - %p\n",
+				source_desc->package.elements));
 			break;
 
 

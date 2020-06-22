@@ -12,6 +12,7 @@
 #include <linux/stddef.h>
 #include <linux/types.h>
 #include <linux/compiler.h>
+#include <asm/byteorder.h>
 
 /* Optimization barrier */
 /* The "volatile" is due to gcc bugs */
@@ -107,6 +108,8 @@ extern int oops_in_progress;		/* If set, an oops, panic(), BUG() or die() is in 
 extern int tainted;
 extern const char *print_tainted(void);
 
+extern void dump_stack(void);
+
 #if DEBUG
 #define pr_debug(fmt,arg...) \
 	printk(KERN_DEBUG fmt,##arg)
@@ -128,11 +131,17 @@ extern const char *print_tainted(void);
 	((unsigned char *)&addr)[2], \
 	((unsigned char *)&addr)[3]
 
+#if defined(__LITTLE_ENDIAN)
 #define HIPQUAD(addr) \
 	((unsigned char *)&addr)[3], \
 	((unsigned char *)&addr)[2], \
 	((unsigned char *)&addr)[1], \
 	((unsigned char *)&addr)[0]
+#elif defined(__BIG_ENDIAN)
+#define HIPQUAD	NIPQUAD
+#else
+#error "Please fix asm/byteorder.h"
+#endif /* __LITTLE_ENDIAN */
 
 /*
  * min()/max() macros that also do

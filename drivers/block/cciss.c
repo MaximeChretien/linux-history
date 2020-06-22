@@ -1166,20 +1166,22 @@ static inline void complete_buffers( struct buffer_head *bh, int status)
 static inline void complete_command( CommandList_struct *cmd, int timeout)
 {
 	int status = 1;
-	int i;
+	int i, ddir;
 	u64bit temp64;
 		
 	if (timeout)
 		status = 0; 
 	/* unmap the DMA mapping for all the scatter gather elements */
+	if (cmd->Request.Type.Direction == XFER_READ)
+		ddir = PCI_DMA_FROMDEVICE;
+	else
+		ddir = PCI_DMA_TODEVICE;
 	for(i=0; i<cmd->Header.SGList; i++)
 	{
 		temp64.val32.lower = cmd->SG[i].Addr.lower;
 		temp64.val32.upper = cmd->SG[i].Addr.upper;
-		pci_unmap_single(hba[cmd->ctlr]->pdev,
-			temp64.val, cmd->SG[i].Len, 
-			(cmd->Request.Type.Direction == XFER_READ) ? 
-				PCI_DMA_FROMDEVICE : PCI_DMA_TODEVICE);
+		pci_unmap_page(hba[cmd->ctlr]->pdev,
+			temp64.val, cmd->SG[i].Len, ddir);
 	}
 
 	if(cmd->err_info->CommandStatus != 0) 
@@ -1287,7 +1289,7 @@ static inline int cpq_new_segment(request_queue_t *q, struct request *rq,
 static int cpq_back_merge_fn(request_queue_t *q, struct request *rq,
                              struct buffer_head *bh, int max_segments)
 {
-        if (rq->bhtail->b_data + rq->bhtail->b_size == bh->b_data)
+	if (blk_seg_merge_ok(rq->bhtail, bh))
                 return 1;
         return cpq_new_segment(q, rq, max_segments);
 }
@@ -1295,7 +1297,7 @@ static int cpq_back_merge_fn(request_queue_t *q, struct request *rq,
 static int cpq_front_merge_fn(request_queue_t *q, struct request *rq,
                              struct buffer_head *bh, int max_segments)
 {
-        if (bh->b_data + bh->b_size == rq->bh->b_data)
+	if (blk_seg_merge_ok(bh, rq->bh))
                 return 1;
         return cpq_new_segment(q, rq, max_segments);
 }
@@ -1305,7 +1307,7 @@ static int cpq_merge_requests_fn(request_queue_t *q, struct request *rq,
 {
         int total_segments = rq->nr_segments + nxt->nr_segments;
 
-        if (rq->bhtail->b_data + rq->bhtail->b_size == nxt->bh->b_data)
+	if (blk_seg_merge_ok(rq->bhtail, nxt->bh))
                 total_segments--;
 
         if (total_segments > MAXSGENTRIES)
@@ -1326,18 +1328,18 @@ static void do_cciss_request(request_queue_t *q)
 	ctlr_info_t *h= q->queuedata; 
 	CommandList_struct *c;
 	int log_unit, start_blk, seg;
-	char *lastdataend;
+	unsigned long long lastdataend;
 	struct buffer_head *bh;
 	struct list_head *queue_head = &q->queue_head;
 	struct request *creq;
 	u64bit temp64;
-	struct my_sg tmp_sg[MAXSGENTRIES];
-	int i;
+	struct scatterlist tmp_sg[MAXSGENTRIES];
+	int i, ddir;
 
 	if (q->plugged)
 		goto startio;
 
-queue_next:
+next:
 	if (list_empty(queue_head))
 		goto startio;
 
@@ -1363,8 +1365,8 @@ queue_next:
 	spin_unlock_irq(&io_request_lock);
 
 	c->cmd_type = CMD_RWREQ;      
-	bh = creq->bh;
 	c->rq = creq;
+	bh = creq->bh;
 	
 	/* fill in the request */ 
 	log_unit = MINOR(creq->rq_dev) >> NWD_SHIFT; 
@@ -1386,34 +1388,36 @@ queue_next:
 	printk(KERN_DEBUG "ciss: sector =%d nr_sectors=%d\n",(int) creq->sector,
 		(int) creq->nr_sectors);	
 #endif /* CCISS_DEBUG */
-	seg = 0; 
-	lastdataend = NULL;
+	seg = 0;
+	lastdataend = ~0ULL;
 	while(bh)
 	{
-		if (bh->b_data == lastdataend)
+		if (bh_phys(bh) == lastdataend)
 		{  // tack it on to the last segment 
-			tmp_sg[seg-1].len +=bh->b_size;
+			tmp_sg[seg-1].length +=bh->b_size;
 			lastdataend += bh->b_size;
 		} else
 		{
 			if (seg == MAXSGENTRIES)
 				BUG();
-			tmp_sg[seg].len = bh->b_size;
-			tmp_sg[seg].start_addr = bh->b_data;
-			lastdataend = bh->b_data + bh->b_size;
+			tmp_sg[seg].page = bh->b_page;
+			tmp_sg[seg].length = bh->b_size;
+			tmp_sg[seg].offset = bh_offset(bh);
+			lastdataend = bh_phys(bh) + bh->b_size;
 			seg++;
 		}
 		bh = bh->b_reqnext;
 	}
+
 	/* get the DMA records for the setup */ 
-	for (i=0; i<seg; i++)
-	{
-		c->SG[i].Len = tmp_sg[i].len;
-		temp64.val = (__u64) pci_map_single( h->pdev,
-			tmp_sg[i].start_addr,
-			tmp_sg[i].len,
-			(c->Request.Type.Direction == XFER_READ) ? 
-                                PCI_DMA_FROMDEVICE : PCI_DMA_TODEVICE);
+	if (c->Request.Type.Direction == XFER_READ)
+		ddir = PCI_DMA_FROMDEVICE;
+	else
+		ddir = PCI_DMA_TODEVICE;
+	for (i=0; i<seg; i++) {
+		c->SG[i].Len = tmp_sg[i].length;
+		temp64.val = pci_map_page(h->pdev, tmp_sg[i].page,
+			    tmp_sg[i].offset, tmp_sg[i].length, ddir);
 		c->SG[i].Addr.lower = temp64.val32.lower;
                 c->SG[i].Addr.upper = temp64.val32.upper;
                 c->SG[i].Ext = 0;  // we are not chaining
@@ -1423,7 +1427,7 @@ queue_next:
 		h->maxSG = seg; 
 
 #ifdef CCISS_DEBUG
-	printk(KERN_DEBUG "cciss: Submitting %d sectors in %d segments\n", creq->nr_sectors, seg);
+	printk(KERN_DEBUG "cciss: Submitting %d sectors in %d segments\n", sect, seg);
 #endif /* CCISS_DEBUG */
 
 	c->Header.SGList = c->Header.SGTotal = seg;
@@ -1444,7 +1448,8 @@ queue_next:
 	if(h->Qdepth > h->maxQsinceinit)
 		h->maxQsinceinit = h->Qdepth; 
 
-	goto queue_next;
+	goto next;
+
 startio:
 	start_io(h);
 }
@@ -1969,7 +1974,18 @@ static int __init cciss_init_one(struct pci_dev *pdev,
 	sprintf(hba[i]->devname, "cciss%d", i);
 	hba[i]->ctlr = i;
 	hba[i]->pdev = pdev;
-			
+
+	/* configure PCI DMA stuff */
+	if (!pci_set_dma_mask(pdev, (u64) 0xffffffffffffffff))
+		printk("cciss: using DAC cycles\n");
+	else if (!pci_set_dma_mask(pdev, (u64) 0xffffffff))
+		printk("cciss: not using DAC cycles\n");
+	else {
+		printk("cciss: no suitable DMA available\n");
+		free_hba(i);
+		return -ENODEV;
+	}
+		
 	if( register_blkdev(MAJOR_NR+i, hba[i]->devname, &cciss_fops))
 	{
 		printk(KERN_ERR "cciss:  Unable to get major number "
@@ -2043,9 +2059,10 @@ static int __init cciss_init_one(struct pci_dev *pdev,
 	cciss_procinit(i);
 
 	q = BLK_DEFAULT_QUEUE(MAJOR_NR + i);
-        q->queuedata = hba[i];
-        blk_init_queue(q, do_cciss_request);
-        blk_queue_headactive(q, 0);		
+	q->queuedata = hba[i];
+	blk_init_queue(q, do_cciss_request);
+	blk_queue_bounce_limit(q, hba[i]->pdev->dma_mask);
+	blk_queue_headactive(q, 0);		
 
 	/* fill in the other Kernel structs */
 	blksize_size[MAJOR_NR+i] = hba[i]->blocksizes;

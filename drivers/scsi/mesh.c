@@ -498,14 +498,11 @@ int
 mesh_abort(Scsi_Cmnd *cmd)
 {
 	struct mesh_state *ms = (struct mesh_state *) cmd->host->hostdata;
-	unsigned long flags;
 
 	printk(KERN_DEBUG "mesh_abort(%p)\n", cmd);
-	spin_lock_irqsave(&io_request_lock, flags);
 	mesh_dump_regs(ms);
 	dumplog(ms, cmd->target);
 	dumpslog(ms);
-	spin_unlock_irqrestore(&io_request_lock, flags);
 	return SCSI_ABORT_SNOOZE;
 }
 

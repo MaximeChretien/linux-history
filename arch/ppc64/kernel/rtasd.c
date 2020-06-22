@@ -98,9 +98,7 @@ static ssize_t rtas_log_read(struct file * file, char * buf,
 	rtas_log_size -= 1;
 	spin_unlock(&rtas_log_lock);
 
-	copy_to_user(buf, tmp, count);
-	error = count;
-
+	error = copy_to_user(buf, tmp, count) ? -EFAULT : count;
 out:
 	kfree(tmp);
 	return error;
@@ -624,6 +622,31 @@ static void printk_ext_log_data(int version, char *buf)
 	}
 }
 
+#define MAX_LOG_DEBUG 10
+/* Print log debug data.  This appears after the location code.
+ * We limit the number of debug logs in case the data is somehow corrupt.
+ */
+static void printk_log_debug(char *buf)
+{
+	unsigned char *p = (unsigned char *)_ALIGN((unsigned long)buf, 8);
+	int len, n, logged;
+
+	logged = 0;
+	while ((logged < MAX_LOG_DEBUG) && (len = ((p[0] << 8) | p[1])) != 2) {
+		/* len includes 2-byte length thus len == 2 is the end */
+		printk("RTAS: Log Debug: ");
+		if (len >= 4)	/* next 2 bytes are an ascii code */
+			printk("%c%c ", p[2], p[3]);
+		for (n=4; n < len; n++)
+			printk("%02x", p[n]);
+		printk("\n");
+		p += len;
+		logged++;
+	}
+	if (logged == 0)
+		printk("RTAS: no log debug data present\n");
+}
+
 
 /* Yeah, the output here is ugly, but we want a CE to be
  * able to grep RTAS /var/log/messages and see all the info
@@ -637,8 +660,11 @@ static void printk_log_rtas(char *buf)
 	if (strcmp(buf+8+40, "IBM") == 0) {
 		/* Location code follows */
 		char *loc = buf+8+40+4;
-		if (*loc >= 'A' && *loc <= 'Z')	/* Sanity check */
+		int len = strlen(loc);
+		if (len < 64) {	/* Sanity check */
 			printk(RTAS_ERR "Location Code: %s\n", loc);
+			printk_log_debug(loc+len+1);
+		}
 	}
 
 	printk(RTAS_ERR "%s: (%s) type: %s\n",

@@ -231,9 +231,9 @@ xics_get_irq(struct pt_regs *regs)
 		}
 	} else if( vec == XICS_IRQ_SPURIOUS ) {
 		irq = -1;
-		printk("spurious PPC interrupt!\n");
-	} else
+	} else {
 		irq = real_irq_to_virt(vec) + XICS_IRQ_OFFSET;
+	}
 	return irq;
 }
 
@@ -284,6 +284,8 @@ xics_init_IRQ( void )
 	unsigned long intr_size = 0;
 	struct device_node *np;
 	uint *ireg, ilen, indx=0;
+
+	ppc64_boot_msg(0x20, "XICS Init");
 
 	ibm_get_xive = rtas_token("ibm,get-xive");
 	ibm_set_xive = rtas_token("ibm,set-xive");
@@ -347,6 +349,7 @@ nextnode:
 	np = find_type_devices("interrupt-controller");
 	if (!np) {
 		printk(KERN_WARNING "xics:  no ISA Interrupt Controller\n");
+		xics_irq_8259_cascade_real = -1;
 		xics_irq_8259_cascade = -1;
 	} else {
 		ireg = (uint *) get_property(np, "interrupts", 0);
@@ -399,6 +402,7 @@ nextnode:
 	request_irq(XICS_IPI + XICS_IRQ_OFFSET, xics_ipi_action, 0, "IPI", 0);
 	irq_desc[XICS_IPI+XICS_IRQ_OFFSET].status |= IRQ_PER_CPU;
 #endif
+	ppc64_boot_msg(0x21, "XICS Done");
 }
 
 void xics_isa_init(void)

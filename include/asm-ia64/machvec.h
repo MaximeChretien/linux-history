@@ -18,11 +18,13 @@ struct pci_dev;
 struct pt_regs;
 struct scatterlist;
 struct irq_desc;
+struct page;
 
 typedef void ia64_mv_setup_t (char **);
 typedef void ia64_mv_cpu_init_t(void);
 typedef void ia64_mv_irq_init_t (void);
 typedef void ia64_mv_pci_fixup_t (int);
+typedef void ia64_mv_pci_enable_device_t (struct pci_dev *);
 typedef unsigned long ia64_mv_map_nr_t (unsigned long);
 typedef void ia64_mv_mca_init_t (void);
 typedef void ia64_mv_mca_handler_t (void);
@@ -45,6 +47,8 @@ typedef void ia64_mv_pci_unmap_sg (struct pci_dev *, struct scatterlist *, int, 
 typedef void ia64_mv_pci_dma_sync_single (struct pci_dev *, dma_addr_t, size_t, int);
 typedef void ia64_mv_pci_dma_sync_sg (struct pci_dev *, struct scatterlist *, int, int);
 typedef unsigned long ia64_mv_pci_dma_address (struct scatterlist *);
+typedef int ia64_mv_pci_dma_supported (struct pci_dev *, u64);
+
 /*
  * WARNING: The legacy I/O space is _architected_.  Platforms are
  * expected to follow this architected model (see Section 10.7 in the
@@ -67,6 +71,8 @@ extern void machvec_noop (void);
 #  include <asm/machvec_hpsim.h>
 # elif defined (CONFIG_IA64_DIG)
 #  include <asm/machvec_dig.h>
+# elif defined (CONFIG_IA64_HP_ZX1)
+#  include <asm/machvec_hpzx1.h>
 # elif defined (CONFIG_IA64_SGI_SN1)
 #  include <asm/machvec_sn1.h>
 # elif defined (CONFIG_IA64_SGI_SN2)
@@ -86,7 +92,8 @@ extern void machvec_noop (void);
 #  define platform_cmci_handler	ia64_mv.cmci_handler
 #  define platform_log_print	ia64_mv.log_print
 #  define platform_pci_fixup	ia64_mv.pci_fixup
-#  define platform_send_ipi	ia64_mv.send_ipi
+#  define platform_pci_enable_device	ia64_mv.pci_enable_device
+#  define platform_send_ipi		ia64_mv.send_ipi
 #  define platform_global_tlb_purge	ia64_mv.global_tlb_purge
 #  define platform_pci_dma_init		ia64_mv.dma_init
 #  define platform_pci_alloc_consistent	ia64_mv.alloc_consistent
@@ -98,6 +105,7 @@ extern void machvec_noop (void);
 #  define platform_pci_dma_sync_single	ia64_mv.sync_single
 #  define platform_pci_dma_sync_sg	ia64_mv.sync_sg
 #  define platform_pci_dma_address	ia64_mv.dma_address
+#  define platform_pci_dma_supported	ia64_mv.dma_supported
 #  define platform_irq_desc		ia64_mv.irq_desc
 #  define platform_irq_to_vector	ia64_mv.irq_to_vector
 #  define platform_local_vector_to_irq	ia64_mv.local_vector_to_irq
@@ -115,12 +123,14 @@ struct ia64_machine_vector {
 	ia64_mv_cpu_init_t *cpu_init;
 	ia64_mv_irq_init_t *irq_init;
 	ia64_mv_pci_fixup_t *pci_fixup;
+	ia64_mv_pci_enable_device_t *pci_enable_device;
 	ia64_mv_map_nr_t *map_nr;
 	ia64_mv_mca_init_t *mca_init;
 	ia64_mv_mca_handler_t *mca_handler;
 	ia64_mv_cmci_handler_t *cmci_handler;
 	ia64_mv_log_print_t *log_print;
 	ia64_mv_send_ipi_t *send_ipi;
+	ia64_mv_global_tlb_purge_t *global_tlb_purge;
 	ia64_mv_pci_dma_init *dma_init;
 	ia64_mv_pci_alloc_consistent *alloc_consistent;
 	ia64_mv_pci_free_consistent *free_consistent;
@@ -131,6 +141,7 @@ struct ia64_machine_vector {
 	ia64_mv_pci_dma_sync_single *sync_single;
 	ia64_mv_pci_dma_sync_sg *sync_sg;
 	ia64_mv_pci_dma_address *dma_address;
+	ia64_mv_pci_dma_supported *dma_supported;
 	ia64_mv_irq_desc *irq_desc;
 	ia64_mv_irq_to_vector *irq_to_vector;
 	ia64_mv_local_vector_to_irq *local_vector_to_irq;
@@ -146,8 +157,10 @@ struct ia64_machine_vector {
 {						\
 	#name,					\
 	platform_setup,				\
+	platform_cpu_init,			\
 	platform_irq_init,			\
 	platform_pci_fixup,			\
+	platform_pci_enable_device,		\
 	platform_map_nr,			\
 	platform_mca_init,			\
 	platform_mca_handler,			\
@@ -165,6 +178,7 @@ struct ia64_machine_vector {
 	platform_pci_dma_sync_single,		\
 	platform_pci_dma_sync_sg,		\
 	platform_pci_dma_address,		\
+	platform_pci_dma_supported,		\
 	platform_irq_desc,			\
 	platform_irq_to_vector,			\
 	platform_local_vector_to_irq,		\
@@ -196,6 +210,7 @@ extern ia64_mv_pci_unmap_sg swiotlb_unmap_sg;
 extern ia64_mv_pci_dma_sync_single swiotlb_sync_single;
 extern ia64_mv_pci_dma_sync_sg swiotlb_sync_sg;
 extern ia64_mv_pci_dma_address swiotlb_dma_address;
+extern ia64_mv_pci_dma_supported swiotlb_pci_dma_supported;
 
 /*
  * Define default versions so we can extend machvec for new platforms without having
@@ -224,6 +239,9 @@ extern ia64_mv_pci_dma_address swiotlb_dma_address;
 #endif
 #ifndef platform_pci_fixup
 # define platform_pci_fixup	((ia64_mv_pci_fixup_t *) machvec_noop)
+#endif
+#ifndef platform_pci_enable_device
+# define platform_pci_enable_device	((ia64_mv_pci_enable_device_t *) machvec_noop)
 #endif
 #ifndef platform_send_ipi
 # define platform_send_ipi	ia64_send_ipi	/* default to architected version */
@@ -260,6 +278,9 @@ extern ia64_mv_pci_dma_address swiotlb_dma_address;
 #endif
 #ifndef platform_pci_dma_address
 # define  platform_pci_dma_address	swiotlb_dma_address
+#endif
+#ifndef platform_pci_dma_supported
+# define  platform_pci_dma_supported	swiotlb_pci_dma_supported
 #endif
 #ifndef platform_irq_desc
 # define platform_irq_desc		__ia64_irq_desc

@@ -267,18 +267,18 @@ ipv4_connected:
 			return err;
 		
 		ipv6_addr_set(&np->daddr, 0, 0, 
-			      __constant_htonl(0x0000ffff),
+			      htonl(0x0000ffff),
 			      sk->daddr);
 
 		if(ipv6_addr_any(&np->saddr)) {
 			ipv6_addr_set(&np->saddr, 0, 0, 
-				      __constant_htonl(0x0000ffff),
+				      htonl(0x0000ffff),
 				      sk->saddr);
 		}
 
 		if(ipv6_addr_any(&np->rcv_saddr)) {
 			ipv6_addr_set(&np->rcv_saddr, 0, 0, 
-				      __constant_htonl(0x0000ffff),
+				      htonl(0x0000ffff),
 				      sk->rcv_saddr);
 		}
 		return 0;
@@ -420,9 +420,9 @@ int udpv6_recvmsg(struct sock *sk, struct msghdr *msg, int len,
 		sin6->sin6_flowinfo = 0;
 		sin6->sin6_scope_id = 0;
 
-		if (skb->protocol == __constant_htons(ETH_P_IP)) {
+		if (skb->protocol == htons(ETH_P_IP)) {
 			ipv6_addr_set(&sin6->sin6_addr, 0, 0,
-				      __constant_htonl(0xffff), skb->nh.iph->saddr);
+				      htonl(0xffff), skb->nh.iph->saddr);
 			if (sk->protinfo.af_inet.cmsg_flags)
 				ip_cmsg_recv(msg, skb);
 		} else {

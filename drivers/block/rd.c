@@ -217,7 +217,7 @@ static int rd_blkdev_pagecache_IO(int rw, struct buffer_head * sbh, int minor)
 		bh_kunmap(sbh);
 
 		if (rw == READ) {
-			flush_dcache_page(page);
+			flush_dcache_page(sbh->b_page);
 		} else {
 			SetPageDirty(page);
 		}

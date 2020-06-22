@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.machdep.h 1.31 03/19/02 14:19:28 benh
+ * BK Id: %F% %I% %G% %U% %#%
  */
 #ifdef __KERNEL__
 #ifndef _PPC_MACHDEP_H
@@ -43,10 +43,7 @@ struct machdep_calls {
 	int		(*set_rtc_time)(unsigned long nowtime);
 	unsigned long	(*get_rtc_time)(void);
 	void		(*calibrate_decr)(void);
-
 	void		(*heartbeat)(void);
-	unsigned long	heartbeat_reset;
-	unsigned long	heartbeat_count;
 
 	unsigned long	(*find_end_of_memory)(void);
 	void		(*setup_io_mappings)(void);

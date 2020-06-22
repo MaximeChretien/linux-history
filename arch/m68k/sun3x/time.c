@@ -62,8 +62,8 @@ void sun3x_gettod (int *yearp, int *monp, int *dayp,
 
 int sun3x_hwclk(int set, struct rtc_time *t)
 {
-	volatile struct mostek_dt *h = 
-		(unsigned char *)(SUN3X_EEPROM+M_CONTROL);
+	volatile struct mostek_dt *h =
+		(struct mostek_dt *)(SUN3X_EEPROM+M_CONTROL);
 	unsigned long flags;
 
 	save_and_cli(flags);
@@ -100,6 +100,7 @@ unsigned long sun3x_gettimeoffset (void)
     return 0L;
 }
 
+#if 0
 static void sun3x_timer_tick(int irq, void *dev_id, struct pt_regs *regs)
 {
     void (*vector)(int, void *, struct pt_regs *) = dev_id;
@@ -110,6 +111,7 @@ static void sun3x_timer_tick(int irq, void *dev_id, struct pt_regs *regs)
     
     vector(irq, NULL, regs);
 }
+#endif
 
 void __init sun3x_sched_init(void (*vector)(int, void *, struct pt_regs *))
 {

@@ -12,10 +12,8 @@
 #include <asm/asm.h>
 #include <asm/regdef.h>
 #include <asm/mipsregs.h>
+#include <asm/offset.h>
 #include <asm/stackframe.h>
-
-/* This duplicates the definition from <linux/sched.h> */
-#define PT_TRACESYS	0x00000002		/* tracing system calls */
 
 #define KU_USER 0x10
 
@@ -24,8 +22,8 @@
 FEXPORT(ret_from_fork)
 		move	a0, v0			# prev
 		jal	schedule_tail
-		lw	t0, TASK_PTRACE($28)	# syscall tracing enabled?
-		andi	t0, PT_TRACESYS
+		ld	t0, TASK_PTRACE($28)	# syscall tracing enabled?
+		andi	t0, _PT_TRACESYS
 		bnez	t0, tracesys_exit
 		j	ret_from_sys_call
 
@@ -40,13 +38,14 @@ EXPORT(ret_from_exception)
 		bnez	t0, ret_from_sys_call
 		j	restore_all
 
-reschedule:	jal	schedule 
+reschedule:	jal	schedule
 
 FEXPORT(ret_from_sys_call)
 		mfc0	t0, CP0_STATUS	# need_resched and signals atomic test
 		ori	t0, t0, 1
 		xori	t0, t0, 1
 		mtc0	t0, CP0_STATUS
+		SSNOP; SSNOP; SSNOP
 
 		ld	v0, TASK_NEED_RESCHED($28)
 		lw	v1, TASK_SIGPENDING($28)

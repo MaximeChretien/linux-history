@@ -5,12 +5,12 @@
 # This program is free software; you can distribute it and/or modify it
 # under the terms of the GNU General Public License (Version 2) as
 # published by the Free Software Foundation.
-# 
+#
 # This program is distributed in the hope it will be useful, but WITHOUT
 # ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
 # FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
 # for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 59 Temple Place - Suite 330, Boston MA 02111-1307, USA.
@@ -28,7 +28,9 @@ USE_STANDARD_AS_RULE := true
 O_TARGET := mipsboards.o
 
 obj-y				:= mipsIRQ.o reset.o display.o init.o \
-				   memory.o printf.o cmdline.o time.o
+				   memory.o printf.o cmdline.o
+obj-$(CONFIG_MIPS_ATLAS)	+= time.o
+obj-$(CONFIG_MIPS_MALTA)	+= time.o
 obj-$(CONFIG_PCI)		+= pci.o
 obj-$(CONFIG_REMOTE_DEBUG)	+= gdb_hook.o
 

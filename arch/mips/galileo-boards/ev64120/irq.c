@@ -65,7 +65,7 @@ static int max_interrupts = 0;
 /*  Duplicate interrupt handlers.  */
 /********************************************************************
  *pci_int(A/B/C/D) -
- *	
+ *
  *Calls all the handlers connected to PCI interrupt A/B/C/D
  *
  *Inputs :
@@ -175,7 +175,7 @@ struct hw_interrupt_type no_irq_type = {
 	end:no_irq_enable_disable,
 };
 
-//      ack:            no_irq_ack,                re-enable later -- SKJ  
+//      ack:            no_irq_ack,                re-enable later -- SKJ
 
 
 /*

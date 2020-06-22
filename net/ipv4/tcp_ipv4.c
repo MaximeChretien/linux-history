@@ -1210,10 +1210,10 @@ static void tcp_v4_send_ack(struct sk_buff *skb, u32 seq, u32 ack, u32 win, u32 
 	arg.iov[0].iov_len  = sizeof(rep.th);
 	arg.n_iov = 1;
 	if (ts) {
-		rep.tsopt[0] = __constant_htonl((TCPOPT_NOP << 24) |
-						(TCPOPT_NOP << 16) |
-						(TCPOPT_TIMESTAMP << 8) |
-						TCPOLEN_TIMESTAMP);
+		rep.tsopt[0] = htonl((TCPOPT_NOP << 24) |
+				     (TCPOPT_NOP << 16) |
+				     (TCPOPT_TIMESTAMP << 8) |
+				     TCPOLEN_TIMESTAMP);
 		rep.tsopt[1] = htonl(tcp_time_stamp);
 		rep.tsopt[2] = htonl(ts);
 		arg.iov[0].iov_len = sizeof(rep);

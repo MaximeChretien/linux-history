@@ -407,11 +407,11 @@ static struct real_driver sx_real_driver = {
 
 
 
-#define func_enter() sx_dprintk (SX_DEBUG_FLOW, "sx: enter " __FUNCTION__ "\n")
-#define func_exit()  sx_dprintk (SX_DEBUG_FLOW, "sx: exit  " __FUNCTION__ "\n")
+#define func_enter() sx_dprintk (SX_DEBUG_FLOW, "sx: enter %s\b",__FUNCTION__)
+#define func_exit()  sx_dprintk (SX_DEBUG_FLOW, "sx: exit  %s\n", __FUNCTION__)
 
-#define func_enter2() sx_dprintk (SX_DEBUG_FLOW, "sx: enter " __FUNCTION__ \
-                                  "(port %d)\n", port->line)
+#define func_enter2() sx_dprintk (SX_DEBUG_FLOW, "sx: enter %s (port %d)\n", \
+					__FUNCTION__, port->line)
 
 
 
@@ -2214,6 +2214,23 @@ static int probe_si (struct sx_board *board)
 				return 0;
 			}
 		}
+	}
+
+	/* Now we're pretty much convinced that there is an SI board here, 
+	   but to prevent trouble, we'd better double check that we don't
+	   have an SI1 board when we're probing for an SI2 board.... */
+
+	write_sx_byte (board, SI2_ISA_ID_BASE,0x10); 
+	if ( IS_SI1_BOARD(board)) {
+		/* This should be an SI1 board, which has this
+		   location writable... */
+		if (read_sx_byte (board, SI2_ISA_ID_BASE) != 0x10)
+			return 0; 
+	} else {
+		/* This should be an SI2 board, which has the bottom
+		   3 bits non-writable... */
+		if (read_sx_byte (board, SI2_ISA_ID_BASE) == 0x10)
+			return 0; 
 	}
 
 	printheader ();

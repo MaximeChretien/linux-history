@@ -28,9 +28,9 @@
  *    Copyright (c) 2000 Greg Kroah-Hartman        <greg@kroah.com>
  *    Copyright (c) 2000 Mark Douglas Corner       <mcorner@umich.edu>
  *
- * $Id: hci_usb.c,v 1.6 2002/04/17 17:37:20 maxk Exp $    
+ * $Id: hci_usb.c,v 1.8 2002/07/18 17:23:09 maxk Exp $    
  */
-#define VERSION "2.0"
+#define VERSION "2.1"
 
 #include <linux/config.h>
 #include <linux/module.h>
@@ -73,7 +73,7 @@
 
 static struct usb_driver hci_usb_driver; 
 
-static struct usb_device_id usb_bluetooth_ids [] = {
+static struct usb_device_id bluetooth_ids[] = {
 	/* Generic Bluetooth USB device */
 	{ USB_DEVICE_INFO(HCI_DEV_CLASS, HCI_DEV_SUBCLASS, HCI_DEV_PROTOCOL) },
 
@@ -83,16 +83,23 @@ static struct usb_device_id usb_bluetooth_ids [] = {
 	{ }	/* Terminating entry */
 };
 
-MODULE_DEVICE_TABLE (usb, usb_bluetooth_ids);
+MODULE_DEVICE_TABLE (usb, bluetooth_ids);
+
+static struct usb_device_id ignore_ids[] = {
+	/* Broadcom BCM2033 without firmware */
+	{ USB_DEVICE(0x0a5c, 0x2033) },
+
+	{ }	/* Terminating entry */
+};
 
 static void hci_usb_interrupt(struct urb *urb);
 static void hci_usb_rx_complete(struct urb *urb);
 static void hci_usb_tx_complete(struct urb *urb);
 
-static purb_t hci_usb_get_completed(struct hci_usb *husb)
+static struct urb *hci_usb_get_completed(struct hci_usb *husb)
 {
 	struct sk_buff *skb;
-	purb_t urb = NULL;
+	struct urb *urb = NULL;
 
 	skb = skb_dequeue(&husb->completed_q);
 	if (skb) {
@@ -194,12 +201,14 @@ static int hci_usb_open(struct hci_dev *hdev)
 {
 	struct hci_usb *husb = (struct hci_usb *) hdev->driver_data;
 	int i, err;
-	long flags;
+	unsigned long flags;
 
 	BT_DBG("%s", hdev->name);
 
 	if (test_and_set_bit(HCI_RUNNING, &hdev->flags))
 		return 0;
+
+	MOD_INC_USE_COUNT;
 
 	write_lock_irqsave(&husb->completion_lock, flags);
 
@@ -207,9 +216,11 @@ static int hci_usb_open(struct hci_dev *hdev)
 	if (!err) {
 		for (i = 0; i < HCI_MAX_BULK_TX; i++)
 			hci_usb_rx_submit(husb, NULL);
-	} else 
+	} else {
 		clear_bit(HCI_RUNNING, &hdev->flags);
-		
+		MOD_DEC_USE_COUNT;
+	}
+
 	write_unlock_irqrestore(&husb->completion_lock, flags);
 	return err;
 }
@@ -229,7 +240,7 @@ static int hci_usb_flush(struct hci_dev *hdev)
 static inline void hci_usb_unlink_urbs(struct hci_usb *husb)
 {
 	struct sk_buff *skb;
-	purb_t urb;
+	struct urb *urb;
 
 	BT_DBG("%s", husb->hdev.name);
 
@@ -247,7 +258,7 @@ static inline void hci_usb_unlink_urbs(struct hci_usb *husb)
 static int hci_usb_close(struct hci_dev *hdev)
 {
 	struct hci_usb *husb = (struct hci_usb *) hdev->driver_data;
-	long flags;
+	unsigned long flags;
 	
 	if (!test_and_clear_bit(HCI_RUNNING, &hdev->flags))
 		return 0;
@@ -261,14 +272,16 @@ static int hci_usb_close(struct hci_dev *hdev)
 	hci_usb_flush(hdev);
 
 	write_unlock_irqrestore(&husb->completion_lock, flags);
+
+	MOD_DEC_USE_COUNT;
 	return 0;
 }
 
 static inline int hci_usb_send_ctrl(struct hci_usb *husb, struct sk_buff *skb)
 {
 	struct hci_usb_scb *scb = (void *) skb->cb;
-	purb_t urb = hci_usb_get_completed(husb);
-	devrequest *dr;
+	struct urb *urb = hci_usb_get_completed(husb);
+	struct usb_ctrlrequest *dr;
 	int pipe, err;
 
 	if (!urb && !(urb = usb_alloc_urb(0)))
@@ -281,11 +294,11 @@ static inline int hci_usb_send_ctrl(struct hci_usb *husb, struct sk_buff *skb)
 	
 	pipe = usb_sndctrlpipe(husb->udev, 0);
 
-	dr->requesttype = HCI_CTRL_REQ;
-	dr->request = 0;
-	dr->index   = 0;
-	dr->value   = 0;
-	dr->length  = __cpu_to_le16(skb->len);
+	dr->bRequestType = HCI_CTRL_REQ;
+	dr->bRequest = 0;
+	dr->wIndex   = 0;
+	dr->wValue   = 0;
+	dr->wLength  = __cpu_to_le16(skb->len);
 
 	FILL_CONTROL_URB(urb, husb->udev, pipe, (void *) dr,
 			skb->data, skb->len, hci_usb_tx_complete, skb);
@@ -308,7 +321,7 @@ static inline int hci_usb_send_ctrl(struct hci_usb *husb, struct sk_buff *skb)
 static inline int hci_usb_send_bulk(struct hci_usb *husb, struct sk_buff *skb)
 {
 	struct hci_usb_scb *scb = (void *) skb->cb;
-	purb_t urb = hci_usb_get_completed(husb);
+	struct urb *urb = hci_usb_get_completed(husb);
 	int pipe, err;
 
 	if (!urb && !(urb = usb_alloc_urb(0)))
@@ -588,76 +601,9 @@ static void hci_usb_destruct(struct hci_dev *hdev)
 
 	husb = (struct hci_usb *) hdev->driver_data;
 	kfree(husb);
-
-	MOD_DEC_USE_COUNT;
 }
 
-#ifdef CONFIG_BLUEZ_USB_FW_LOAD
-
-/* Support for user mode Bluetooth USB firmware loader */
-
-#define FW_LOADER "/sbin/bluefw"
-static int errno;
-
-static int hci_usb_fw_exec(void *dev)
-{
-	char *envp[] = { "HOME=/", "TERM=linux", 
-			 "PATH=/sbin:/usr/sbin:/bin:/usr/bin", NULL };
-	char *argv[] = { FW_LOADER, dev, NULL };
-	int err;
-
-	err = exec_usermodehelper(FW_LOADER, argv, envp);
-	if (err)
-		BT_ERR("failed to exec %s %s", FW_LOADER, (char *)dev);
-	return err;
-}
-
-static int hci_usb_fw_load(struct usb_device *udev)
-{
-	sigset_t tmpsig;
-	char dev[16];
-	pid_t pid;
-	int result;
-
-	/* Check if root fs is mounted */
-	if (!current->fs->root) {
-		BT_ERR("root fs not mounted");
-		return -EPERM;
-	}
-
-	sprintf(dev, "%3.3d/%3.3d", udev->bus->busnum, udev->devnum);
-
-	pid = kernel_thread(hci_usb_fw_exec, (void *)dev, 0);
-	if (pid < 0) {
-		BT_ERR("fork failed, errno %d\n", -pid);
-		return pid;
-	}
-
-	/* Block signals, everything but SIGKILL/SIGSTOP */
-	spin_lock_irq(&current->sigmask_lock);
-	tmpsig = current->blocked;
-	siginitsetinv(&current->blocked, sigmask(SIGKILL) | sigmask(SIGSTOP));
-	recalc_sigpending(current);
-	spin_unlock_irq(&current->sigmask_lock);
-
-	result = waitpid(pid, NULL, __WCLONE);
-
-	/* Allow signals again */
-	spin_lock_irq(&current->sigmask_lock);
-	current->blocked = tmpsig;
-	recalc_sigpending(current);
-	spin_unlock_irq(&current->sigmask_lock);
-
-	if (result != pid) {
-		BT_ERR("waitpid failed pid %d errno %d\n", pid, -result);
-		return -result;
-	}
-	return 0;
-}
-
-#endif /* CONFIG_BLUEZ_USB_FW_LOAD */
-
-static void * hci_usb_probe(struct usb_device *udev, unsigned int ifnum, const struct usb_device_id *id)
+static void *hci_usb_probe(struct usb_device *udev, unsigned int ifnum, const struct usb_device_id *id)
 {
 	struct usb_endpoint_descriptor *bulk_out_ep[HCI_MAX_IFACE_NUM];
 	struct usb_endpoint_descriptor *isoc_out_ep[HCI_MAX_IFACE_NUM];
@@ -673,15 +619,15 @@ static void * hci_usb_probe(struct usb_device *udev, unsigned int ifnum, const s
 
 	BT_DBG("udev %p ifnum %d", udev, ifnum);
 
+	iface = &udev->actconfig->interface[0];
+
+	/* Check our black list */
+	if (usb_match_id(udev, iface, ignore_ids))
+		return NULL;
+
 	/* Check number of endpoints */
 	if (udev->actconfig->interface[ifnum].altsetting[0].bNumEndpoints < 3)
 		return NULL;
-
-	MOD_INC_USE_COUNT;
-
-#ifdef CONFIG_BLUEZ_USB_FW_LOAD
-	hci_usb_fw_load(udev);
-#endif
 
 	memset(bulk_out_ep, 0, sizeof(bulk_out_ep));
 	memset(isoc_out_ep, 0, sizeof(isoc_out_ep));
@@ -801,7 +747,6 @@ probe_error:
 	kfree(husb);
 
 done:
-	MOD_DEC_USE_COUNT;
 	return NULL;
 }
 
@@ -828,7 +773,7 @@ static struct usb_driver hci_usb_driver = {
 	name:           "hci_usb",
 	probe:          hci_usb_probe,
 	disconnect:     hci_usb_disconnect,
-	id_table:       usb_bluetooth_ids,
+	id_table:       bluetooth_ids,
 };
 
 int hci_usb_init(void)

@@ -151,17 +151,16 @@ nfs3_proc_access(struct inode *inode, int mode, int ruid)
 }
 
 static int
-nfs3_proc_readlink(struct inode *inode, void *buffer, unsigned int buflen)
+nfs3_proc_readlink(struct inode *inode, struct page *page)
 {
 	struct nfs_fattr	fattr;
-	struct nfs3_readlinkargs args = { NFS_FH(inode), buffer, buflen };
-	struct nfs3_readlinkres	res = { &fattr, buffer, buflen };
+	struct nfs3_readlinkargs args = { NFS_FH(inode), PAGE_CACHE_SIZE, &page };
 	int			status;
 
 	dprintk("NFS call  readlink\n");
 	fattr.valid = 0;
 	status = rpc_call(NFS_CLIENT(inode), NFS3PROC_READLINK,
-			  &args, &res, 0);
+			&args, &fattr, 0);
 	nfs_refresh_inode(inode, &fattr);
 	dprintk("NFS reply readlink: %d\n", status);
 	return status;
@@ -170,11 +169,12 @@ nfs3_proc_readlink(struct inode *inode, void *buffer, unsigned int buflen)
 static int
 nfs3_proc_read(struct inode *inode, struct rpc_cred *cred,
 	       struct nfs_fattr *fattr, int flags,
-	       loff_t offset, unsigned int count, void *buffer, int *eofp)
+	       unsigned int base, unsigned int count, struct page *page,
+	       int *eofp)
 {
-	struct nfs_readargs	arg = { NFS_FH(inode), offset, count, 1,
-					{{buffer, count}, {0,0}, {0,0}, {0,0},
-					 {0,0}, {0,0}, {0,0}, {0,0}} };
+	u64			offset = page_offset(page) + base;
+	struct nfs_readargs	arg = { NFS_FH(inode), offset, count,
+					base, &page };
 	struct nfs_readres	res = { fattr, count, 0 };
 	struct rpc_message	msg = { NFS3PROC_READ, &arg, &res, cred };
 	int			status;
@@ -190,13 +190,12 @@ nfs3_proc_read(struct inode *inode, struct rpc_cred *cred,
 static int
 nfs3_proc_write(struct inode *inode, struct rpc_cred *cred,
 		struct nfs_fattr *fattr, int flags,
-		loff_t offset, unsigned int count,
-		void *buffer, struct nfs_writeverf *verf)
+		unsigned int base, unsigned int count,
+		struct page *page, struct nfs_writeverf *verf)
 {
+	u64			offset = page_offset(page) + base;
 	struct nfs_writeargs	arg = { NFS_FH(inode), offset, count,
-					NFS_FILE_SYNC, 1,
-					{{buffer, count}, {0,0}, {0,0}, {0,0},
-					 {0,0}, {0,0}, {0,0}, {0,0}} };
+					NFS_FILE_SYNC, base, &page };
 	struct nfs_writeres	res = { fattr, verf, 0 };
 	struct rpc_message	msg = { NFS3PROC_WRITE, &arg, &res, cred };
 	int			status, rpcflags = 0;
@@ -434,25 +433,15 @@ nfs3_proc_rmdir(struct inode *dir, struct qstr *name)
  */
 static int
 nfs3_proc_readdir(struct inode *dir, struct rpc_cred *cred,
-		  u64 cookie, void *entry,
-		  unsigned int size, int plus)
+		  u64 cookie, struct page *page, unsigned int count, int plus)
 {
 	struct nfs_fattr	dir_attr;
-	struct nfs3_readdirargs	arg = { NFS_FH(dir), cookie, {0, 0}, 0, 0, 0 };
-	struct nfs3_readdirres	res = { &dir_attr, 0, 0, 0, 0 };
-	struct rpc_message	msg = { NFS3PROC_READDIR, &arg, &res, cred };
 	u32			*verf = NFS_COOKIEVERF(dir);
+	struct nfs3_readdirargs	arg = { NFS_FH(dir), cookie, {verf[0], verf[1]},
+	       				plus, count, &page };
+	struct nfs3_readdirres	res = { &dir_attr, verf, plus };
+	struct rpc_message	msg = { NFS3PROC_READDIR, &arg, &res, cred };
 	int			status;
-
-	arg.buffer  = entry;
-	arg.bufsiz  = size;
-	arg.verf[0] = verf[0];
-	arg.verf[1] = verf[1];
-	arg.plus    = plus;
-	res.buffer  = entry;
-	res.bufsiz  = size;
-	res.verf    = verf;
-	res.plus    = plus;
 
 	if (plus)
 		msg.rpc_proc = NFS3PROC_READDIRPLUS;

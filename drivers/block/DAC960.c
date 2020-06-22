@@ -2488,8 +2488,12 @@ static void DAC960_DetectControllers(DAC960_HardwareType_T HardwareType)
 	    DAC960_V1_QueueReadWriteCommand;
 	  break;
 	case DAC960_PD_Controller:
-	  request_region(Controller->IO_Address, 0x80,
-			 Controller->FullModelName);
+	  if (!request_region(Controller->IO_Address, 0x80,
+			      Controller->FullModelName)) {
+		DAC960_Error("IO port 0x%d busy for Controller at\n",
+			     Controller, Controller->IO_Address);
+		goto Failure;
+	  }
 	  DAC960_PD_DisableInterrupts(BaseAddress);
 	  DAC960_PD_AcknowledgeStatus(BaseAddress);
 	  udelay(1000);
@@ -2499,7 +2503,7 @@ static void DAC960_DetectControllers(DAC960_HardwareType_T HardwareType)
 					    &Parameter0, &Parameter1) &&
 		  DAC960_ReportErrorStatus(Controller, ErrorStatus,
 					   Parameter0, Parameter1))
-		goto Failure;
+		goto Failure1;
 	      udelay(10);
 	    }
 	  DAC960_PD_EnableInterrupts(Controller->BaseAddress);
@@ -2514,8 +2518,12 @@ static void DAC960_DetectControllers(DAC960_HardwareType_T HardwareType)
 	    DAC960_V1_QueueReadWriteCommand;
 	  break;
 	case DAC960_P_Controller:
-	  request_region(Controller->IO_Address, 0x80,
-			 Controller->FullModelName);
+	  if (!request_region(Controller->IO_Address, 0x80,
+			      Controller->FullModelName)){
+		DAC960_Error("IO port 0x%d busy for Controller at\n",
+		   	     Controller, Controller->IO_Address);
+		goto Failure;
+	  }
 	  DAC960_PD_DisableInterrupts(BaseAddress);
 	  DAC960_PD_AcknowledgeStatus(BaseAddress);
 	  udelay(1000);
@@ -2525,7 +2533,7 @@ static void DAC960_DetectControllers(DAC960_HardwareType_T HardwareType)
 					    &Parameter0, &Parameter1) &&
 		  DAC960_ReportErrorStatus(Controller, ErrorStatus,
 					   Parameter0, Parameter1))
-		goto Failure;
+		goto Failure1;
 	      udelay(10);
 	    }
 	  DAC960_PD_EnableInterrupts(Controller->BaseAddress);
@@ -2547,7 +2555,7 @@ static void DAC960_DetectControllers(DAC960_HardwareType_T HardwareType)
 	{
 	  DAC960_Error("IRQ Channel %d illegal for Controller at\n",
 		       Controller, IRQ_Channel);
-	  goto Failure;
+	  goto Failure1;
 	}
       strcpy(Controller->FullModelName, "DAC960");
       if (request_irq(IRQ_Channel, InterruptHandler, SA_SHIRQ,
@@ -2555,7 +2563,7 @@ static void DAC960_DetectControllers(DAC960_HardwareType_T HardwareType)
 	{
 	  DAC960_Error("Unable to acquire IRQ Channel %d for Controller at\n",
 		       Controller, IRQ_Channel);
-	  goto Failure;
+	  goto Failure1;
 	}
       Controller->IRQ_Channel = IRQ_Channel;
       DAC960_ActiveControllerCount++;
@@ -2565,6 +2573,8 @@ static void DAC960_DetectControllers(DAC960_HardwareType_T HardwareType)
       Controller->FreeCommands = &Controller->InitialCommand;
       Controller->ControllerDetectionSuccessful = true;
       continue;
+    Failure1:
+      if (Controller->IO_Address) release_region(Controller->IO_Address, 0x80);
     Failure:
       if (IO_Address == 0)
 	DAC960_Error("PCI Bus %d Device %d Function %d I/O Address N/A "
@@ -5534,7 +5544,7 @@ static int DAC960_IOCTL(Inode_T *Inode, File_T *File,
 static int DAC960_UserIOCTL(Inode_T *Inode, File_T *File,
 			    unsigned int Request, unsigned long Argument)
 {
-  int ErrorCode;
+  int ErrorCode = 0 ;
   if (!capable(CAP_SYS_ADMIN)) return -EACCES;
   switch (Request)
     {
@@ -5585,9 +5595,11 @@ static int DAC960_UserIOCTL(Inode_T *Inode, File_T *File,
 	int ControllerNumber, DataTransferLength;
 	unsigned char *DataTransferBuffer = NULL;
 	if (UserSpaceUserCommand == NULL) return -EINVAL;
-	ErrorCode = copy_from_user(&UserCommand, UserSpaceUserCommand,
-				   sizeof(DAC960_V1_UserCommand_T));
-	if (ErrorCode != 0) goto Failure1;
+	if (copy_from_user(&UserCommand, UserSpaceUserCommand,
+				   sizeof(DAC960_V1_UserCommand_T))) {
+		ErrorCode = -EFAULT;
+		goto Failure1;
+	}
 	ControllerNumber = UserCommand.ControllerNumber;
 	if (ControllerNumber < 0 ||
 	    ControllerNumber > DAC960_ControllerCount - 1)
@@ -5600,9 +5612,11 @@ static int DAC960_UserIOCTL(Inode_T *Inode, File_T *File,
 	if (CommandOpcode & 0x80) return -EINVAL;
 	if (CommandOpcode == DAC960_V1_DCDB)
 	  {
-	    ErrorCode =
-	      copy_from_user(&DCDB, UserCommand.DCDB, sizeof(DAC960_V1_DCDB_T));
-	    if (ErrorCode != 0) goto Failure1;
+	    if (copy_from_user(&DCDB, UserCommand.DCDB,
+			       sizeof(DAC960_V1_DCDB_T))) {
+		ErrorCode = -EFAULT;
+		goto Failure1;
+	    }
 	    if (DCDB.Channel >= DAC960_V1_MaxChannels) return -EINVAL;
 	    if (!((DataTransferLength == 0 &&
 		   DCDB.Direction
@@ -5628,10 +5642,12 @@ static int DAC960_UserIOCTL(Inode_T *Inode, File_T *File,
 	  {
 	    DataTransferBuffer = kmalloc(-DataTransferLength, GFP_KERNEL);
 	    if (DataTransferBuffer == NULL) return -ENOMEM;
-	    ErrorCode = copy_from_user(DataTransferBuffer,
-				       UserCommand.DataTransferBuffer,
-				       -DataTransferLength);
-	    if (ErrorCode != 0) goto Failure1;
+	    if (copy_from_user(DataTransferBuffer,
+			       UserCommand.DataTransferBuffer,
+			       -DataTransferLength)) {
+		ErrorCode = -EFAULT;
+		goto Failure1;
+	    }
 	  }
 	if (CommandOpcode == DAC960_V1_DCDB)
 	  {
@@ -5679,17 +5695,20 @@ static int DAC960_UserIOCTL(Inode_T *Inode, File_T *File,
 	DAC960_ReleaseControllerLock(Controller, &ProcessorFlags);
 	if (DataTransferLength > 0)
 	  {
-	    ErrorCode = copy_to_user(UserCommand.DataTransferBuffer,
-				     DataTransferBuffer, DataTransferLength);
-	    if (ErrorCode != 0) goto Failure1;
+	    if (copy_to_user(UserCommand.DataTransferBuffer,
+			     DataTransferBuffer, DataTransferLength))
+		ErrorCode = -EFAULT;
+		goto Failure1;
 	  }
 	if (CommandOpcode == DAC960_V1_DCDB)
 	  {
 	    Controller->V1.DirectCommandActive[DCDB.Channel]
 					      [DCDB.TargetID] = false;
-	    ErrorCode =
-	      copy_to_user(UserCommand.DCDB, &DCDB, sizeof(DAC960_V1_DCDB_T));
-	    if (ErrorCode != 0) goto Failure1;
+	    if (copy_to_user(UserCommand.DCDB, &DCDB,
+			     sizeof(DAC960_V1_DCDB_T))) {
+		ErrorCode = -EFAULT;
+		goto Failure1;
+	    }
 	  }
 	ErrorCode = CommandStatus;
       Failure1:
@@ -5712,9 +5731,11 @@ static int DAC960_UserIOCTL(Inode_T *Inode, File_T *File,
 	unsigned char *DataTransferBuffer = NULL;
 	unsigned char *RequestSenseBuffer = NULL;
 	if (UserSpaceUserCommand == NULL) return -EINVAL;
-	ErrorCode = copy_from_user(&UserCommand, UserSpaceUserCommand,
-				   sizeof(DAC960_V2_UserCommand_T));
-	if (ErrorCode != 0) goto Failure2;
+	if (copy_from_user(&UserCommand, UserSpaceUserCommand,
+			   sizeof(DAC960_V2_UserCommand_T))) {
+		ErrorCode = -EFAULT;
+		goto Failure2;
+	}
 	ControllerNumber = UserCommand.ControllerNumber;
 	if (ControllerNumber < 0 ||
 	    ControllerNumber > DAC960_ControllerCount - 1)
@@ -5733,10 +5754,12 @@ static int DAC960_UserIOCTL(Inode_T *Inode, File_T *File,
 	  {
 	    DataTransferBuffer = kmalloc(-DataTransferLength, GFP_KERNEL);
 	    if (DataTransferBuffer == NULL) return -ENOMEM;
-	    ErrorCode = copy_from_user(DataTransferBuffer,
-				       UserCommand.DataTransferBuffer,
-				       -DataTransferLength);
-	    if (ErrorCode != 0) goto Failure2;
+	    if (copy_from_user(DataTransferBuffer,
+			       UserCommand.DataTransferBuffer,
+			       -DataTransferLength)) {
+		ErrorCode = -EFAULT;
+		goto Failure2;
+	    }
 	  }
 	RequestSenseLength = UserCommand.RequestSenseLength;
 	if (RequestSenseLength > 0)
@@ -5806,25 +5829,32 @@ static int DAC960_UserIOCTL(Inode_T *Inode, File_T *File,
 	DAC960_ReleaseControllerLock(Controller, &ProcessorFlags);
 	if (RequestSenseLength > UserCommand.RequestSenseLength)
 	  RequestSenseLength = UserCommand.RequestSenseLength;
-	ErrorCode = copy_to_user(&UserSpaceUserCommand->DataTransferLength,
+	if (copy_to_user(&UserSpaceUserCommand->DataTransferLength,
 				 &DataTransferResidue,
-				 sizeof(DataTransferResidue));
-	if (ErrorCode != 0) goto Failure2;
-	ErrorCode = copy_to_user(&UserSpaceUserCommand->RequestSenseLength,
-				 &RequestSenseLength,
-				 sizeof(RequestSenseLength));
-	if (ErrorCode != 0) goto Failure2;
+				 sizeof(DataTransferResidue))) {
+		ErrorCode = -EFAULT;
+		goto Failure2;
+	}
+	if (copy_to_user(&UserSpaceUserCommand->RequestSenseLength,
+			 &RequestSenseLength, sizeof(RequestSenseLength))) {
+		ErrorCode = -EFAULT;
+		goto Failure2;
+	}
 	if (DataTransferLength > 0)
 	  {
-	    ErrorCode = copy_to_user(UserCommand.DataTransferBuffer,
-				     DataTransferBuffer, DataTransferLength);
-	    if (ErrorCode != 0) goto Failure2;
+	    if (copy_to_user(UserCommand.DataTransferBuffer,
+			     DataTransferBuffer, DataTransferLength)) {
+		ErrorCode = -EFAULT;
+		goto Failure2;
+	    }
 	  }
 	if (RequestSenseLength > 0)
 	  {
-	    ErrorCode = copy_to_user(UserCommand.RequestSenseBuffer,
-				     RequestSenseBuffer, RequestSenseLength);
-	    if (ErrorCode != 0) goto Failure2;
+	    if (copy_to_user(UserCommand.RequestSenseBuffer,
+			     RequestSenseBuffer, RequestSenseLength)) {
+		ErrorCode = -EFAULT;
+		goto Failure2;
+	    }
 	  }
 	ErrorCode = CommandStatus;
       Failure2:
@@ -5843,9 +5873,9 @@ static int DAC960_UserIOCTL(Inode_T *Inode, File_T *File,
 	DAC960_Controller_T *Controller;
 	int ControllerNumber;
 	if (UserSpaceGetHealthStatus == NULL) return -EINVAL;
-	ErrorCode = copy_from_user(&GetHealthStatus, UserSpaceGetHealthStatus,
-				   sizeof(DAC960_V2_GetHealthStatus_T));
-	if (ErrorCode != 0) return ErrorCode;
+	if (copy_from_user(&GetHealthStatus, UserSpaceGetHealthStatus,
+			   sizeof(DAC960_V2_GetHealthStatus_T)))
+		return -EFAULT;
 	ControllerNumber = GetHealthStatus.ControllerNumber;
 	if (ControllerNumber < 0 ||
 	    ControllerNumber > DAC960_ControllerCount - 1)
@@ -5853,10 +5883,10 @@ static int DAC960_UserIOCTL(Inode_T *Inode, File_T *File,
 	Controller = DAC960_Controllers[ControllerNumber];
 	if (Controller == NULL) return -ENXIO;
 	if (Controller->FirmwareType != DAC960_V2_Controller) return -EINVAL;
-	ErrorCode = copy_from_user(&HealthStatusBuffer,
-				   GetHealthStatus.HealthStatusBuffer,
-				   sizeof(DAC960_V2_HealthStatusBuffer_T));
-	if (ErrorCode != 0) return ErrorCode;
+	if (copy_from_user(&HealthStatusBuffer,
+			   GetHealthStatus.HealthStatusBuffer,
+			   sizeof(DAC960_V2_HealthStatusBuffer_T)))
+		return -EFAULT;
 	while (Controller->V2.HealthStatusBuffer->StatusChangeCounter
 	       == HealthStatusBuffer.StatusChangeCounter &&
 	       Controller->V2.HealthStatusBuffer->NextEventSequenceNumber
@@ -5866,10 +5896,11 @@ static int DAC960_UserIOCTL(Inode_T *Inode, File_T *File,
 					   DAC960_MonitoringTimerInterval);
 	    if (signal_pending(current)) return -EINTR;
 	  }
-	ErrorCode = copy_to_user(GetHealthStatus.HealthStatusBuffer,
-				 Controller->V2.HealthStatusBuffer,
-				 sizeof(DAC960_V2_HealthStatusBuffer_T));
-	return ErrorCode;
+	if (copy_to_user(GetHealthStatus.HealthStatusBuffer,
+			 Controller->V2.HealthStatusBuffer,
+			 sizeof(DAC960_V2_HealthStatusBuffer_T)))
+		return -EFAULT;
+	return 0;
       }
     }
   return -EINVAL;

@@ -87,7 +87,6 @@ extern unsigned int nr_free_pages(void);
 extern unsigned int nr_free_buffer_pages(void);
 extern int nr_active_pages;
 extern int nr_inactive_pages;
-extern atomic_t nr_async_pages;
 extern atomic_t page_cache_size;
 extern atomic_t buffermem_pages;
 
@@ -114,7 +113,8 @@ extern void swap_setup(void);
 
 /* linux/mm/vmscan.c */
 extern wait_queue_head_t kswapd_wait;
-extern int FASTCALL(try_to_free_pages(zone_t *, unsigned int, unsigned int));
+extern int FASTCALL(try_to_free_pages_zone(zone_t *, unsigned int));
+extern int FASTCALL(try_to_free_pages(unsigned int));
 
 /* linux/mm/page_io.c */
 extern void rw_swap_page(int, struct page *);

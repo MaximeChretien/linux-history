@@ -35,6 +35,7 @@
 
 static int dpt = 0;
 
+extern void i2o_sys_init(void);
 
 /**
  *	i2o_pci_dispose		-	Free bus specific resources
@@ -334,6 +335,11 @@ int __init i2o_pci_scan(void)
 			continue;
 		printk(KERN_INFO "i2o: I2O controller on bus %d at %d.\n",
 			dev->bus->number, dev->devfn);
+		if(pci_set_dma_mask(dev, 0xffffffff))
+		{
+			printk(KERN_WARNING "I2O controller on bus %d at %d : No suitable DMA available\n", dev->bus->number, dev->devfn);
+		 	continue;
+		}
 		pci_set_master(dev);
 		if(i2o_pci_install(dev)==0)
 			count++;

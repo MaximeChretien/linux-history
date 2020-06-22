@@ -908,6 +908,7 @@ no_mmaps:
 	end_index = pgd_index(last);
 	if (end_index > start_index) {
 		clear_page_tables(mm, start_index, end_index - start_index);
+		flush_tlb_pgtables(mm, first & PGDIR_MASK, last & PGDIR_MASK);
 	}
 }
 
@@ -1152,13 +1153,14 @@ void exit_mmap(struct mm_struct * mm)
 		kmem_cache_free(vm_area_cachep, mpnt);
 		mpnt = next;
 	}
-	flush_tlb_mm(mm);
 
 	/* This is just debugging */
 	if (mm->map_count)
 		BUG();
 
 	clear_page_tables(mm, FIRST_USER_PGD_NR, USER_PTRS_PER_PGD);
+
+	flush_tlb_mm(mm);
 }
 
 /* Insert vm structure into process list sorted by address

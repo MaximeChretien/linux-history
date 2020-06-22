@@ -46,6 +46,9 @@
 #include <asm/sbus.h>
 #include <asm/dma.h>
 #endif
+#ifdef CONFIG_HIGHMEM
+#include <linux/highmem.h>
+#endif
 #include <asm/a.out.h>
 #include <asm/io-unit.h>
 
@@ -202,6 +205,12 @@ EXPORT_SYMBOL(pci_free_consistent);
 EXPORT_SYMBOL(pci_map_single);
 EXPORT_SYMBOL(pci_unmap_single);
 EXPORT_SYMBOL(pci_dma_sync_single);
+#endif
+
+/* in arch/sparc/mm/highmem.c */
+#ifdef CONFIG_HIGHMEM
+EXPORT_SYMBOL(kmap_atomic);
+EXPORT_SYMBOL(kunmap_atomic);
 #endif
 
 /* Solaris/SunOS binary compatibility */

@@ -1362,7 +1362,7 @@ netiucv_buffer_write(struct file *file, const char *buf, size_t count,
 
 	privptr = (netiucv_priv *)dev->priv;
 
-	if (count >= 39)
+	if (count >= CTRL_BUFSIZE-1)
 		return -EINVAL;
 
 	if (copy_from_user(tmp, buf, count))
@@ -1459,7 +1459,7 @@ netiucv_user_write(struct file *file, const char *buf, size_t count,
 
 	privptr = (netiucv_priv *)dev->priv;
 
-	if (count >= 39)
+	if (count >= CTRL_BUFSIZE-1)
 		return -EINVAL;
 
 	if (copy_from_user(tmp, buf, count))

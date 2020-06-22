@@ -104,7 +104,7 @@ void __init malta_setup(void)
 	for (i = 0; i < STANDARD_IO_RESOURCES; i++)
 		request_resource(&ioport_resource, standard_io_resources+i);
 
-	/* 
+	/*
 	 * Enable DMA channel 4 (cascade channel) in the PIIX4 south bridge.
 	 */
 	enable_dma(4);
@@ -145,14 +145,6 @@ void __init malta_setup(void)
 	if ((argptr = strstr(argptr, "nofpu")) != NULL)
 		mips_cpu.options &= ~MIPS_CPU_FPU;
 
-        /* 
-	 * For some reason the irq probing doesn't work on the 
-	 * Bonito controller.
-	 * For now this work just fine.
-	 */
-	argptr = prom_getcmdline();
-	strcat(argptr, " ide0=0x1f0,0x3f6,14");
-		
 	rtc_ops = &malta_rtc_ops;
 
 #ifdef CONFIG_BLK_DEV_IDE

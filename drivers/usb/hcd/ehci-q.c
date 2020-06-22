@@ -368,7 +368,7 @@ qh_completions (
 		/* SETUP for control urb? */
 		if (unlikely (QTD_PID (token) == 2))
 			pci_unmap_single (ehci->hcd.pdev,
-				qtd->buf_dma, sizeof (devrequest),
+				qtd->buf_dma, sizeof (struct usb_ctrlrequest),
 				PCI_DMA_TODEVICE);
 	}
 
@@ -419,7 +419,7 @@ static void qtd_list_free (
 			 */
 			if (!unmapped++ && usb_pipecontrol (urb->pipe)) {
 				direction = PCI_DMA_TODEVICE;
-				size = sizeof (devrequest);
+				size = sizeof (struct usb_ctrlrequest);
 			} else {
 				direction = usb_pipein (urb->pipe)
 					? PCI_DMA_FROMDEVICE
@@ -470,13 +470,13 @@ qh_urb_transaction (
 		qtd->buf_dma = pci_map_single (
 					ehci->hcd.pdev,
 					urb->setup_packet,
-					sizeof (devrequest),
+					sizeof (struct usb_ctrlrequest),
 					PCI_DMA_TODEVICE);
 		if (unlikely (!qtd->buf_dma))
 			goto cleanup;
 
 		/* SETUP pid */
-		qtd_fill (qtd, qtd->buf_dma, sizeof (devrequest),
+		qtd_fill (qtd, qtd->buf_dma, sizeof (struct usb_ctrlrequest),
 			token | (2 /* "setup" */ << 8));
 
 		/* ... and always at least one more pid */
@@ -681,6 +681,8 @@ ehci_qh_make (
 	default:
 #ifdef DEBUG
 		BUG ();
+#else
+		;
 #endif
 	}
 
@@ -817,9 +819,9 @@ submit_async (
 		} else {
 			// dbg_qh ("empty qh", ehci, qh);
 
-// FIXME:  how handle usb_clear_halt() for an EP with queued URBs?
-// usbcore may not let us handle that cleanly...
-// likely must cancel them all first!
+			/* NOTE: we already canceled any queued URBs
+			 * when the endpoint halted.
+			 */
 
 			/* usb_clear_halt() means qh data toggle gets reset */
 			if (usb_pipebulk (urb->pipe)

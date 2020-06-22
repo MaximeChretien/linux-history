@@ -114,8 +114,7 @@ enum {
  *    well, despite a comment that would lead to think it has a
  *    min value of 45ns.
  * Apple also add 60ns to the write data setup (or cycle time ?) on
- * reads. I can't explain that, I tried it and it broke everything
- * here.
+ * reads.
  */
 #define TR_66_UDMA_MASK			0xfff00000
 #define TR_66_UDMA_EN			0x00100000 /* Enable Ultra mode for DMA */
@@ -401,7 +400,6 @@ static int __pmac
 pmac_ide_do_setfeature(ide_drive_t *drive, byte command)
 {
 	int result = 1;
-	unsigned long flags;
 	ide_hwif_t *hwif = HWIF(drive);
 	
 	disable_irq(hwif->irq);	/* disable_irq_nosync ?? */
@@ -420,10 +418,7 @@ pmac_ide_do_setfeature(ide_drive_t *drive, byte command)
 	OUT_BYTE(SETFEATURES_XFER, IDE_FEATURE_REG);
 	OUT_BYTE(WIN_SETFEATURES, IDE_COMMAND_REG);
 	udelay(1);
-	__save_flags(flags);	/* local CPU only */
-	ide__sti();		/* local CPU only -- for jiffies */
 	result = wait_for_ready(drive);
-	__restore_flags(flags); /* local CPU only */
 	OUT_BYTE(drive->ctl, IDE_CONTROL_REG);
 	if (result)
 		printk(KERN_ERR "pmac_ide_do_setfeature disk not ready after SET_FEATURE !\n");
@@ -956,6 +951,8 @@ pmac_ide_probe(void)
 		hwif->noprobe = !hwif->io_ports[IDE_DATA_OFFSET] || in_bay;
 		hwif->udma_four = (pmhw->kind == controller_kl_ata4_80);
 		hwif->pci_dev = pdev;
+		hwif->drives[0].unmask = 1;
+		hwif->drives[1].unmask = 1;
 #ifdef CONFIG_PMAC_PBOOK
 		if (in_bay && check_media_bay_by_base(base, MB_CD) == 0)
 			hwif->noprobe = 0;
@@ -1032,33 +1029,48 @@ pmac_ide_build_sglist (int ix, struct request *rq)
 	struct pmac_ide_hwif *pmif = &pmac_ide[ix];
 	struct buffer_head *bh;
 	struct scatterlist *sg = pmif->sg_table;
+	unsigned long lastdataend = ~0UL;
 	int nents = 0;
 
 	if (hwif->sg_dma_active)
 		BUG();
-		
+
 	if (rq->cmd == READ)
 		pmif->sg_dma_direction = PCI_DMA_FROMDEVICE;
 	else
 		pmif->sg_dma_direction = PCI_DMA_TODEVICE;
+
 	bh = rq->bh;
 	do {
-		unsigned char *virt_addr = bh->b_data;
+		struct scatterlist *sge;
 		unsigned int size = bh->b_size;
 
+		/* continue segment from before? */
+		if (bh_phys(bh) == lastdataend) {
+			sg[nents-1].length += size;
+			lastdataend += size;
+			continue;
+		}
+
+		/* start new segment */
 		if (nents >= MAX_DCMDS)
 			return 0;
 
-		while ((bh = bh->b_reqnext) != NULL) {
-			if ((virt_addr + size) != (unsigned char *) bh->b_data)
-				break;
-			size += bh->b_size;
+		sge = &sg[nents];
+		memset(sge, 0, sizeof(*sge));
+
+		if (bh->b_page) {
+			sge->page = bh->b_page;
+			sge->offset = bh_offset(bh);
+		} else {
+			if ((unsigned long)bh->b_data < PAGE_SIZE)
+				BUG();
+			sge->address = bh->b_data;
 		}
-		memset(&sg[nents], 0, sizeof(*sg));
-		sg[nents].address = virt_addr;
-		sg[nents].length = size;
+		sge->length = size;
+		lastdataend = bh_phys(bh) + size;
 		nents++;
-	} while (bh != NULL);
+	} while ((bh = bh->b_reqnext) != NULL);
 
 	return pci_map_sg(hwif->pci_dev, sg, nents, pmif->sg_dma_direction);
 }
@@ -1330,6 +1342,23 @@ pmac_ide_check_dma(ide_drive_t *drive)
 	return 0;
 }
 
+static inline void pmac_ide_toggle_bounce(ide_drive_t *drive, int on)
+{
+	dma64_addr_t addr = BLK_BOUNCE_HIGH;
+
+	if (HWIF(drive)->no_highio || HWIF(drive)->pci_dev == NULL)
+		return;
+
+	if (on && drive->media == ide_disk) {
+		if (!PCI_DMA_BUS_IS_PHYS)
+			addr = BLK_BOUNCE_ANY;
+		else
+			addr = HWIF(drive)->pci_dev->dma_mask;
+	}
+
+	blk_queue_bounce_limit(&drive->queue, addr);
+}
+
 static int __pmac
 pmac_ide_dmaproc(ide_dma_action_t func, ide_drive_t *drive)
 {
@@ -1354,10 +1383,13 @@ pmac_ide_dmaproc(ide_dma_action_t func, ide_drive_t *drive)
 		printk(KERN_INFO "%s: DMA disabled\n", drive->name);
 	case ide_dma_off_quietly:
 		drive->using_dma = 0;
+		pmac_ide_toggle_bounce(drive, 0);
 		break;
 	case ide_dma_on:
 	case ide_dma_check:
 		pmac_ide_check_dma(drive);
+		if (drive->using_dma)
+			pmac_ide_toggle_bounce(drive, 1);
 		break;
 	case ide_dma_read:
 		reading = 1;
@@ -1612,7 +1644,14 @@ idepmac_wake_drive(ide_drive_t *drive, unsigned long base)
 
 /* Note: We support only master drives for now. This will have to be
  * improved if we want to handle sleep on the iMacDV where the CD-ROM
- * is a slave
+ * is a slave.
+ * 
+ * Well, actually, that sorta works on the iBook2 when the CD-ROM is
+ * a slave, though it will fail to spin_wait_hwgroup for the slave
+ * device as it is marked busy by the master sleep code. Well, it's
+ * probably not worth fixing now as we don't have sleep code for
+ * ATAPI devices anyway. Future kernels will hopefully deal with
+ * IDE PM in a more generic way.
  */
 static int __pmac
 idepmac_notify_sleep(struct pmu_sleep_notifier *self, int when)

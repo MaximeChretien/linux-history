@@ -5,6 +5,7 @@
 
 #include <asm/atomic.h>
 #include <linux/mount.h>
+#include <linux/kernel.h>
 
 /*
  * linux/include/linux/dcache.h

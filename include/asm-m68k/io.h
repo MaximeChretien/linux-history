@@ -240,7 +240,7 @@ static inline void isa_delay(void)
 #define readb   isa_readb
 #define readw   isa_readw
 #define writeb  isa_writeb
-#define writew  isa_writeb
+#define writew  isa_writew
 #endif /* CONFIG_ISA */
 
 #if defined(CONFIG_PCI)
@@ -285,6 +285,11 @@ static inline void isa_delay(void)
 #define IOMAP_NOCACHE_SER		1
 #define IOMAP_NOCACHE_NONSER		2
 #define IOMAP_WRITETHROUGH		3
+
+/*
+ * Change "struct page" to physical address.
+ */
+#define page_to_phys(page)	((page - mem_map) << PAGE_SHIFT)
 
 extern void iounmap(void *addr);
 

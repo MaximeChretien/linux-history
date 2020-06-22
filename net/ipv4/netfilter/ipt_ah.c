@@ -91,12 +91,12 @@ checkentry(const char *tablename,
 static struct ipt_match ah_match
 = { { NULL, NULL }, "ah", &match, &checkentry, NULL, THIS_MODULE };
 
-int __init init(void)
+static int __init init(void)
 {
 	return ipt_register_match(&ah_match);
 }
 
-void __exit cleanup(void)
+static void __exit cleanup(void)
 {
 	ipt_unregister_match(&ah_match);
 }

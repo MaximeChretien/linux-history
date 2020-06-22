@@ -29,7 +29,7 @@
  *  with this program; if not, write  to the Free Software Foundation, Inc.,
  *  675 Mass Ave, Cambridge, MA 02139, USA.
  */
-
+#include <linux/config.h>
 #include <linux/init.h>
 #include <linux/pm.h>
 #include <linux/slab.h>
@@ -49,7 +49,7 @@
 #  define DPRINTK(fmt, args...)
 #endif
 
-inline void au1_wait(void);
+extern void au1k_wait(void);
 static void calibrate_delay(void);
 
 extern void set_au1000_speed(unsigned int new_freq);
@@ -81,16 +81,16 @@ int au_sleep(void)
 
 	flush_cache_all();
 	/* pin 6 is gpio */
-	writel(readl(SYS_PINSTATERD) & ~(1 << 11), SYS_PINSTATERD);
+	au_writel(au_readl(SYS_PINSTATERD) & ~(1 << 11), SYS_PINSTATERD);
 
 	/* gpio 6 can cause a wake up event */
-	wakeup = readl(SYS_WAKEMSK);
+	wakeup = au_readl(SYS_WAKEMSK);
 	wakeup &= ~(1 << 8);	/* turn off match20 wakeup */
 	wakeup |= 1 << 6;	/* turn on gpio 6 wakeup   */
-	writel(wakeup, SYS_WAKEMSK);
+	au_writel(wakeup, SYS_WAKEMSK);
 
-	writel(1, SYS_WAKESRC);	/* clear cause */
-	writel(1, SYS_SLPPWR);	/* prepare to sleep */
+	au_writel(1, SYS_WAKESRC);	/* clear cause */
+	au_writel(1, SYS_SLPPWR);	/* prepare to sleep */
 
 	__asm__("la $4, 1f\n\t"
 		"lui $5, 0xb190\n\t"
@@ -138,7 +138,7 @@ static int pm_do_suspend(ctl_table * ctl, int write, struct file *file,
 		if (retval)
 			return retval;
 		suspend_mode = 1;
-		au1_wait();
+		au1k_wait();
 		retval = pm_send_all(PM_RESUME, (void *) 0);
 	}
 	return retval;
@@ -194,22 +194,22 @@ static int pm_do_freq(ctl_table * ctl, int write, struct file *file,
 		set_au1000_speed(new_cpu_freq);
 		set_au1000_uart_baud_base(new_baud_base);
 
-		old_refresh = readl(MEM_SDREFCFG) & 0x1ffffff;
+		old_refresh = au_readl(MEM_SDREFCFG) & 0x1ffffff;
 		new_refresh =
 		    ((old_refresh * new_cpu_freq) /
-		     old_cpu_freq) | (readl(MEM_SDREFCFG) & ~0x1ffffff);
+		     old_cpu_freq) | (au_readl(MEM_SDREFCFG) & ~0x1ffffff);
 
-		writel(pll, SYS_CPUPLL);
+		au_writel(pll, SYS_CPUPLL);
 		au_sync_delay(1);
-		writel(new_refresh, MEM_SDREFCFG);
+		au_writel(new_refresh, MEM_SDREFCFG);
 		au_sync_delay(1);
 
 		for (i = 0; i < 4; i++) {
-			if (readl
+			if (au_readl
 			    (UART_BASE + UART_MOD_CNTRL +
 			     i * 0x00100000) == 3) {
 				old_clk =
-				    readl(UART_BASE + UART_CLK +
+				    au_readl(UART_BASE + UART_CLK +
 					  i * 0x00100000);
 				// baud_rate = baud_base/clk
 				baud_rate = old_baud_base / old_clk;
@@ -231,7 +231,7 @@ static int pm_do_freq(ctl_table * ctl, int write, struct file *file,
 					(baud_rate = 9600);
 				// new_clk = new_baud_base/baud_rate
 				new_clk = new_baud_base / baud_rate;
-				writel(new_clk,
+				au_writel(new_clk,
 				       UART_BASE + UART_CLK +
 				       i * 0x00100000);
 				au_sync_delay(10);
@@ -246,7 +246,7 @@ static int pm_do_freq(ctl_table * ctl, int write, struct file *file,
 	 */
 	intc0_mask = save_local_and_disable(0);
 	intc1_mask = save_local_and_disable(1);
-	local_enable_irq(AU1000_TOY_MATCH2);
+	local_enable_irq(AU1000_TOY_MATCH2_INT);
 	restore_flags(flags);
 	calibrate_delay();
 	restore_local_and_enable(0, intc0_mask);
@@ -277,13 +277,6 @@ static int __init pm_init(void)
 }
 
 __initcall(pm_init);
-
-inline void au1_wait(void)
-{
-	__asm__(".set\tmips3\n\t"
-		"wait\n\t"
-		"nop\n\t" "nop\n\t" "nop\n\t" "nop\n\t" ".set\tmips0");
-}
 
 
 /*
@@ -328,14 +321,6 @@ static void calibrate_delay(void)
 		if (jiffies != ticks)	/* longer than 1 tick */
 			loops_per_jiffy &= ~loopbit;
 	}
-}
-
-
-#else				/* CONFIG_PM */
-
-void au1_wait(void)
-{
-	__asm__("nop\n\t" "nop\n\t");
 }
 
 #endif				/* CONFIG_PM */

@@ -246,6 +246,7 @@ mii_interrupt(struct gmac *gm)
 #endif
 		    	full_duplex = ((aux_stat & MII_BCM5201_AUXCTLSTATUS_DUPLEX) != 0);
 		    	link_100 = ((aux_stat & MII_BCM5201_AUXCTLSTATUS_SPEED) != 0);
+			netif_carrier_on(gm->dev);
 		        break;
 		      case PHY_B5400:
 		      case PHY_B5401:
@@ -260,6 +261,7 @@ mii_interrupt(struct gmac *gm)
 		    	full_duplex = phy_BCM5400_link_table[link][0];
 		    	link_100 = phy_BCM5400_link_table[link][1];
 		    	gigabit = phy_BCM5400_link_table[link][2];
+			netif_carrier_on(gm->dev);
 		    	break;
 		      case PHY_LXT971:
 		    	aux_stat = mii_read(gm, gm->phy_addr, MII_LXT971_STATUS2);
@@ -269,6 +271,7 @@ mii_interrupt(struct gmac *gm)
 #endif
 		    	full_duplex = ((aux_stat & MII_LXT971_STATUS2_FULLDUPLEX) != 0);
 		    	link_100 = ((aux_stat & MII_LXT971_STATUS2_SPEED) != 0);
+			netif_carrier_on(gm->dev);
 		    	break;
 		      default:
 		    	full_duplex = (lpar_ability & MII_ANLPA_FDAM) != 0;
@@ -296,6 +299,7 @@ mii_interrupt(struct gmac *gm)
 #ifdef DEBUG_PHY
 		    printk(KERN_INFO "%s:    Link down !\n", gm->dev->name);
 #endif
+			netif_carrier_off(gm->dev);
 		}
 	}
 }
@@ -1101,7 +1105,10 @@ gmac_open(struct net_device *dev)
 	
 	/* Initialize the multicast tables & promisc mode if any */
 	gmac_set_multicast(dev);
-	
+
+	/* Initialize the carrier status */
+	netif_carrier_off(dev);
+
 	/*
 	 * Check out PHY status and start auto-poll
 	 * 

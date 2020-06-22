@@ -2,8 +2,8 @@
  * This file contains various system calls that have different calling
  * conventions on different platforms.
  *
- * Copyright (C) 1999-2000 Hewlett-Packard Co
- * Copyright (C) 1999-2000 David Mosberger-Tang <davidm@hpl.hp.com>
+ * Copyright (C) 1999-2000, 2002 Hewlett-Packard Co
+ *	David Mosberger-Tang <davidm@hpl.hp.com>
  */
 #include <linux/config.h>
 #include <linux/errno.h>
@@ -201,15 +201,13 @@ do_mmap2 (unsigned long addr, unsigned long len, int prot, int flags, int fd, un
 	if (len == 0)
 		goto out;
 
-	/* don't permit mappings into unmapped space or the virtual page table of a region: */
+	/*
+	 * Don't permit mappings into unmapped space, the virtual page table of a region,
+	 * or across a region boundary.  Note: RGN_MAP_LIMIT is equal to 2^n-PAGE_SIZE
+	 * (for some integer n <= 61) and len > 0.
+	 */
 	roff = rgn_offset(addr);
-	if ((len | roff | (roff + len)) >= RGN_MAP_LIMIT) {
-		addr = -EINVAL;
-		goto out;
-	}
-
-	/* don't permit mappings that would cross a region boundary: */
-	if (rgn_index(addr) != rgn_index(addr + len)) {
+	if ((len > RGN_MAP_LIMIT) || (roff > (RGN_MAP_LIMIT - len))) {
 		addr = -EINVAL;
 		goto out;
 	}

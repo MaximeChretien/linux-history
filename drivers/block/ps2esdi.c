@@ -466,7 +466,6 @@ static void do_ps2esdi_request(request_queue_t * q)
 	u_int block, count;
 	/* since, this routine is called with interrupts cleared - they 
 	   must be before it finishes  */
-	sti();
 
 #if 0
 	printk("%s:got request. device : %d minor : %d command : %d  sector : %ld count : %ld, buffer: %p\n",
@@ -563,6 +562,7 @@ static void ps2esdi_readwrite(int cmd, u_char drive, u_int block, u_int count)
 
 	u_short track, head, cylinder, sector;
 	u_short cmd_blk[TYPE_1_CMD_BLK_LENGTH];
+	int err;
 
 	/* do some relevant arithmatic */
 	track = block / ps2esdi_info[drive].sect;
@@ -580,9 +580,13 @@ static void ps2esdi_readwrite(int cmd, u_char drive, u_int block, u_int count)
 	     cylinder, head, sector,
 	     CURRENT->current_nr_sectors, drive);
 
+	spin_unlock_irq(&io_request_lock);
 	/* send the command block to the controller */
-	if (ps2esdi_out_cmd_blk(cmd_blk)) {
-		printk("%s: Controller failed\n", DEVICE_NAME);
+	err = ps2esdi_out_cmd_blk(cmd_blk);
+	spin_lock_irq(&io_request_lock);
+	
+	if (err) {
+		printk(KERN_ERR "%s: Controller failed\n", DEVICE_NAME);
 		if ((++CURRENT->errors) >= MAX_RETRIES)
 			end_request(FAIL);
 	}
@@ -1135,9 +1139,7 @@ static int ps2esdi_reread_partitions(kdev_t dev)
 	int start = target << ps2esdi_gendisk.minor_shift;
 	int partition;
 
-	cli();
 	ps2esdi_valid[target] = (access_count[target] != 1);
-	sti();
 	if (ps2esdi_valid[target])
 		return (-EBUSY);
 

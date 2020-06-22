@@ -22,7 +22,7 @@
  */
 
 #include <linux/config.h>
-#include "ppc_asm.h"
+#include <asm/ppc_asm.h>
 
 	.text
 

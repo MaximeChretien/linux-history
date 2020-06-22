@@ -22,6 +22,7 @@ obj-$(CONFIG_SOUND_CS4232)	+= cs4232.o ad1848.o
 
 obj-$(CONFIG_SOUND_HAL2)	+= hal2.o
 obj-$(CONFIG_SOUND_AEDSP16)	+= aedsp16.o
+obj-$(CONFIG_SOUND_ALI5455)	+= ali5455.o ac97_codec.o
 obj-$(CONFIG_SOUND_PSS)		+= pss.o ad1848.o mpu401.o
 obj-$(CONFIG_SOUND_TRIX)	+= trix.o ad1848.o sb_lib.o uart401.o
 obj-$(CONFIG_SOUND_OPL3SA1)	+= opl3sa.o ad1848.o uart401.o
@@ -70,7 +71,9 @@ obj-$(CONFIG_SOUND_ESSSOLO1)	+= esssolo1.o
 obj-$(CONFIG_SOUND_FUSION)	+= cs46xx.o ac97_codec.o
 obj-$(CONFIG_SOUND_MAESTRO)	+= maestro.o
 obj-$(CONFIG_SOUND_MAESTRO3)	+= maestro3.o ac97_codec.o
+obj-$(CONFIG_SOUND_FORTE)	+= forte.o ac97_codec.o
 obj-$(CONFIG_SOUND_TRIDENT)	+= trident.o ac97_codec.o
+obj-$(CONFIG_SOUND_HARMONY)	+= harmony.o
 obj-$(CONFIG_SOUND_EMU10K1)	+= ac97_codec.o
 obj-$(CONFIG_SOUND_BCM_CS4297A)	+= swarm_cs4297a.o
 obj-$(CONFIG_SOUND_RME96XX)     += rme96xx.o

@@ -68,9 +68,10 @@
 /*
  * Your basic spinlocks, allowing only a single CPU anywhere
  *
- * Most gcc versions have a nasty bug with empty initializers.
+ * Some older gcc versions had a nasty bug with empty initializers.
+ * (XXX: could someone please confirm whether egcs 1.1 still has this bug?)
  */
-#if (__GNUC__ > 2)
+#if (__GNUC__ > 2 || __GNUC_MINOR__ > 95)
   typedef struct { } spinlock_t;
   #define SPIN_LOCK_UNLOCKED (spinlock_t) { }
 #else
@@ -131,9 +132,10 @@ typedef struct {
  * irq-safe write-lock, but readers can get non-irqsafe
  * read-locks.
  *
- * Most gcc versions have a nasty bug with empty initializers.
+ * Some older gcc versions had a nasty bug with empty initializers.
+ * (XXX: could someone please confirm whether egcs 1.1 still has this bug?)
  */
-#if (__GNUC__ > 2)
+#if (__GNUC__ > 2 || __GNUC_MINOR__ > 91)
   typedef struct { } rwlock_t;
   #define RW_LOCK_UNLOCKED (rwlock_t) { }
 #else

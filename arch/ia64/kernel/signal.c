@@ -143,9 +143,11 @@ copy_siginfo_to_user (siginfo_t *to, siginfo_t *from)
 {
 	if (!access_ok(VERIFY_WRITE, to, sizeof(siginfo_t)))
 		return -EFAULT;
-	if (from->si_code < 0)
-		return __copy_to_user(to, from, sizeof(siginfo_t));
-	else {
+	if (from->si_code < 0) {
+		if (__copy_to_user(to, from, sizeof(siginfo_t)))
+			return -EFAULT;
+		return 0;
+	} else {
 		int err;
 
 		/*
@@ -559,7 +561,7 @@ ia64_do_signal (sigset_t *oldset, struct sigscratch *scr, long in_syscall)
 				continue;
 
 			switch (signr) {
-			      case SIGCONT: case SIGCHLD: case SIGWINCH:
+			      case SIGCONT: case SIGCHLD: case SIGWINCH: case SIGURG:
 				continue;
 
 			      case SIGTSTP: case SIGTTIN: case SIGTTOU:

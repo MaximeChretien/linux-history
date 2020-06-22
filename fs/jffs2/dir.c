@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: dir.c,v 1.45.2.6 2002/06/20 23:54:48 dwmw2 Exp $
+ * $Id: dir.c,v 1.45.2.7 2002/08/26 15:30:18 dwmw2 Exp $
  *
  */
 
@@ -404,8 +404,9 @@ static int jffs2_do_unlink(struct inode *dir_i, struct dentry *dentry, int renam
 			jffs2_mark_node_obsolete(c, fd->raw);
 			jffs2_free_full_dirent(fd);
 		}
-
-		f->inocache->nlink--;
+		/* Don't oops on unlinking a bad inode */
+		if (f->inocache)
+			f->inocache->nlink--;
 		dentry->d_inode->i_nlink--;
 		up(&f->sem);
 	}
@@ -488,6 +489,10 @@ static int jffs2_do_link (struct dentry *old_dentry, struct inode *dir_i, struct
 static int jffs2_link (struct dentry *old_dentry, struct inode *dir_i, struct dentry *dentry)
 {
 	int ret;
+
+	/* Can't link a bad inode. */
+	if (!JFFS2_INODE_INFO(old_dentry->d_inode)->inocache)
+		return -EIO;
 
 	if (S_ISDIR(old_dentry->d_inode->i_mode))
 		return -EPERM;
@@ -991,7 +996,8 @@ static int jffs2_rename (struct inode *old_dir_i, struct dentry *old_dentry,
 		/* Oh shit. We really ought to make a single node which can do both atomically */
 		struct jffs2_inode_info *f = JFFS2_INODE_INFO(old_dentry->d_inode);
 		down(&f->sem);
-		old_dentry->d_inode->i_nlink = f->inocache->nlink++;
+		if (f->inocache)
+			old_dentry->d_inode->i_nlink = f->inocache->nlink++;
 		up(&f->sem);
 		       
 		printk(KERN_NOTICE "jffs2_rename(): Link succeeded, unlink failed (err %d). You now have a hard link\n", ret);

@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.pgtable.h 1.21 03/12/02 11:49:48 paulus
+ * BK Id: %F% %I% %G% %U% %#%
  */
 #ifdef __KERNEL__
 #ifndef _PPC_PGTABLE_H
@@ -529,10 +529,10 @@ extern unsigned long mm_ptov(unsigned long addr) __attribute__ ((const));
 /* Values for nocacheflag and cmode */
 /* These are not used by the APUS kernel_map, but prevents
    compilation errors. */
-#define	KERNELMAP_FULL_CACHING		0
-#define	KERNELMAP_NOCACHE_SER		1
-#define	KERNELMAP_NOCACHE_NONSER	2
-#define	KERNELMAP_NO_COPYBACK		3
+#define	IOMAP_FULL_CACHING	0
+#define	IOMAP_NOCACHE_SER	1
+#define	IOMAP_NOCACHE_NONSER	2
+#define	IOMAP_NO_COPYBACK	3
 
 /*
  * Map some physical address range into the kernel address space.

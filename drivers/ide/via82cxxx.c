@@ -1,61 +1,24 @@
 /*
- * $Id: via82cxxx.c,v 3.34 2002/02/12 11:26:11 vojtech Exp $
+ * Version 3.35
  *
- *  Copyright (c) 2000-2001 Vojtech Pavlik
+ * VIA IDE driver for Linux. Supported southbridges:
  *
- *  Based on the work of:
+ *   vt82c576, vt82c586, vt82c586a, vt82c586b, vt82c596a, vt82c596b,
+ *   vt82c686, vt82c686a, vt82c686b, vt8231, vt8233, vt8233c, vt8233a,
+ *   vt8235
+ *
+ * Copyright (c) 2000-2002 Vojtech Pavlik
+ *
+ * Based on the work of:
  *	Michel Aubry
  *	Jeff Garzik
  *	Andre Hedrick
  */
 
 /*
- * VIA IDE driver for Linux. Supports
- *
- *   vt82c576, vt82c586, vt82c586a, vt82c586b, vt82c596a, vt82c596b,
- *   vt82c686, vt82c686a, vt82c686b, vt8231, vt8233, vt8233c, vt8233a
- *
- * southbridges, which can be found in
- *
- *  VIA Apollo Master, VP, VP2, VP2/97, VP3, VPX, VPX/97, MVP3, MVP4, P6, Pro,
- *    ProII, ProPlus, Pro133, Pro133+, Pro133A, Pro133A Dual, Pro133T, Pro133Z,
- *    PLE133, PLE133T, Pro266, Pro266T, ProP4X266, PM601, PM133, PN133, PL133T,
- *    PX266, PM266, KX133, KT133, KT133A, KT133E, KLE133, KT266, KX266, KM133,
- *    KM133A, KL133, KN133, KM266
- *  PC-Chips VXPro, VXPro+, VXTwo, TXPro-III, TXPro-AGP, AGPPro, ViaGra, BXToo,
- *    BXTel, BXpert
- *  AMD 640, 640 AGP, 750 IronGate, 760, 760MP
- *  ETEQ 6618, 6628, 6629, 6638
- *  Micron Samurai
- *
- * chipsets. Supports
- *
- *   PIO 0-5, MWDMA 0-2, SWDMA 0-2 and UDMA 0-6
- *
- * (this includes UDMA33, 66, 100 and 133) modes. UDMA66 and higher modes are
- * autoenabled only in case the BIOS has detected a 80 wire cable. To ignore
- * the BIOS data and assume the cable is present, use 'ide0=ata66' or
- * 'ide1=ata66' on the kernel command line.
- */
-
-/*
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
- *
- * Should you need to contact me, the author, you can do so either by
- * e-mail - mail your message to <vojtech@ucw.cz>, or by paper mail:
- * Vojtech Pavlik, Simunkova 1594, Prague 8, 182 00 Czech Republic
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 
 #include <linux/config.h>
@@ -92,6 +55,10 @@
 #define VIA_NO_UNMASK		0x080	/* Doesn't work with IRQ unmasking on */
 #define VIA_BAD_ID		0x100	/* Has wrong vendor ID (0x1107) */
 
+#ifndef PCI_DEVICE_ID_VIA_8235
+#define PCI_DEVICE_ID_VIA_8235 0x3177
+#endif
+
 /*
  * VIA SouthBridge chips.
  */
@@ -105,8 +72,8 @@ static struct via_isa_bridge {
 } via_isa_bridges[] = {
 #ifdef FUTURE_BRIDGES
 	{ "vt8237",	PCI_DEVICE_ID_VIA_8237,     0x00, 0x2f, VIA_UDMA_133 },
-	{ "vt8235",	PCI_DEVICE_ID_VIA_8235,     0x00, 0x2f, VIA_UDMA_133 },
 #endif
+	{ "vt8235",	PCI_DEVICE_ID_VIA_8235,     0x00, 0x2f, VIA_UDMA_133 },
 	{ "vt8233a",	PCI_DEVICE_ID_VIA_8233A,    0x00, 0x2f, VIA_UDMA_133 },
 	{ "vt8233c",	PCI_DEVICE_ID_VIA_8233C_0,  0x00, 0x2f, VIA_UDMA_100 },
 	{ "vt8233",	PCI_DEVICE_ID_VIA_8233_0,   0x00, 0x2f, VIA_UDMA_100 },
@@ -163,7 +130,7 @@ static int via_get_info(char *buffer, char **addr, off_t offset, int count)
 
 	via_print("----------VIA BusMastering IDE Configuration----------------");
 
-	via_print("Driver Version:                     3.34");
+	via_print("Driver Version:                     3.35");
 	via_print("South Bridge:                       VIA %s", via_config->name);
 
 	pci_read_config_byte(isa_dev, PCI_REVISION_ID, &t);

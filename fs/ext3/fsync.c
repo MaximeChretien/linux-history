@@ -62,7 +62,12 @@ int ext3_sync_file(struct file * file, struct dentry *dentry, int datasync)
 	 * we'll end up waiting on them in commit.
 	 */
 	ret = fsync_inode_buffers(inode);
-	ret |= fsync_inode_data_buffers(inode);
+
+	/* In writeback mode, we need to force out data buffers too.  In
+	 * the other modes, ext3_force_commit takes care of forcing out
+	 * just the right data blocks. */
+	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT3_MOUNT_WRITEBACK_DATA)
+		ret |= fsync_inode_data_buffers(inode);
 
 	ext3_force_commit(inode->i_sb);
 

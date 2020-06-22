@@ -6,6 +6,9 @@
 #include <linux/genhd.h>
 #include <linux/tqueue.h>
 #include <linux/list.h>
+#include <linux/mm.h>
+
+#include <asm/io.h>
 
 struct request_queue;
 typedef struct request_queue request_queue_t;
@@ -36,7 +39,7 @@ struct request {
 	unsigned long hard_sector, hard_nr_sectors;
 	unsigned int nr_segments;
 	unsigned int nr_hw_segments;
-	unsigned long current_nr_sectors;
+	unsigned long current_nr_sectors, hard_cur_sectors;
 	void * special;
 	char * buffer;
 	struct completion * waiting;
@@ -123,6 +126,8 @@ struct request_queue
 	 */
 	char			head_active;
 
+	unsigned long		bounce_pfn;
+
 	/*
 	 * Is meant to protect the queue in the future instead of
 	 * io_request_lock
@@ -134,6 +139,38 @@ struct request_queue
 	 */
 	wait_queue_head_t	wait_for_requests[2];
 };
+
+extern unsigned long blk_max_low_pfn, blk_max_pfn;
+
+#define BLK_BOUNCE_HIGH		(blk_max_low_pfn << PAGE_SHIFT)
+#define BLK_BOUNCE_ANY		(blk_max_pfn << PAGE_SHIFT)
+
+extern void blk_queue_bounce_limit(request_queue_t *, u64);
+
+#ifdef CONFIG_HIGHMEM
+extern struct buffer_head *create_bounce(int, struct buffer_head *);
+extern inline struct buffer_head *blk_queue_bounce(request_queue_t *q, int rw,
+						   struct buffer_head *bh)
+{
+	struct page *page = bh->b_page;
+
+#ifndef CONFIG_DISCONTIGMEM
+	if (page - mem_map <= q->bounce_pfn)
+#else
+	if ((page - page_zone(page)->zone_mem_map) + (page_zone(page)->zone_start_paddr >> PAGE_SHIFT) <= q->bounce_pfn)
+#endif
+		return bh;
+
+	return create_bounce(rw, bh);
+}
+#else
+#define blk_queue_bounce(q, rw, bh)	(bh)
+#endif
+
+#define bh_phys(bh)		(page_to_phys((bh)->b_page) + bh_offset((bh)))
+
+#define BH_CONTIG(b1, b2)	(bh_phys((b1)) + (b1)->b_size == bh_phys((b2)))
+#define BH_PHYS_4G(b1, b2)	((bh_phys((b1)) | 0xffffffff) == ((bh_phys((b2)) + (b2)->b_size - 1) | 0xffffffff))
 
 struct blk_dev_struct {
 	/*
@@ -174,6 +211,7 @@ extern void blk_cleanup_queue(request_queue_t *);
 extern void blk_queue_headactive(request_queue_t *, int);
 extern void blk_queue_make_request(request_queue_t *, make_request_fn *);
 extern void generic_unplug_device(void *);
+extern inline int blk_seg_merge_ok(struct buffer_head *, struct buffer_head *);
 
 extern int * blk_size[MAX_BLKDEV];
 

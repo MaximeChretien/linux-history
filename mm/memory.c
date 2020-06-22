@@ -146,7 +146,6 @@ int check_pgt_cache(void)
 void clear_page_tables(struct mm_struct *mm, unsigned long first, int nr)
 {
 	pgd_t * page_dir = mm->pgd;
-	unsigned long	last = first + nr;
 
 	spin_lock(&mm->page_table_lock);
 	page_dir += first;
@@ -156,8 +155,6 @@ void clear_page_tables(struct mm_struct *mm, unsigned long first, int nr)
 	} while (--nr);
 	spin_unlock(&mm->page_table_lock);
 
-	flush_tlb_pgtables(mm, first * PGDIR_SIZE, last * PGDIR_SIZE);
-	
 	/* keep the page table cache within bounds */
 	check_pgt_cache();
 }
@@ -589,6 +586,8 @@ int map_user_kiobuf(int rw, struct kiobuf *iobuf, unsigned long va, size_t len)
  * occurs, the number of bytes read into memory may be less than the
  * size of the kiobuf, so we have to stop marking pages dirty once the
  * requested byte count has been reached.
+ *
+ * Must be called from process context - set_page_dirty() takes VFS locks.
  */
 
 void mark_dirty_kiobuf(struct kiobuf *iobuf, int bytes)
@@ -606,7 +605,7 @@ void mark_dirty_kiobuf(struct kiobuf *iobuf, int bytes)
 		page = iobuf->maplist[index];
 		
 		if (!PageReserved(page))
-			SetPageDirty(page);
+			set_page_dirty(page);
 
 		remaining -= (PAGE_SIZE - offset);
 		offset = 0;

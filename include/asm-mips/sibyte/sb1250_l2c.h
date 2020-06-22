@@ -1,23 +1,23 @@
 /*  *********************************************************************
     *  SB1250 Board Support Package
-    *  
+    *
     *  L2 Cache constants and macros		File: sb1250_l2c.h
-    *  
+    *
     *  This module contains constants useful for manipulating the
     *  level 2 cache.
-    *  
-    *  SB1250 specification level:  0.2
-    *  
-    *  Author:  Mitch Lichtenberg (mitch@sibyte.com)
-    *  
-    *********************************************************************  
+    *
+    *  SB1250 specification level:  User's manual 1/02/02
+    *
+    *  Author:  Mitch Lichtenberg (mpl@broadcom.com)
+    *
+    *********************************************************************
     *
     *  Copyright 2000,2001
     *  Broadcom Corporation. All rights reserved.
-    *  
-    *  This program is free software; you can redistribute it and/or 
-    *  modify it under the terms of the GNU General Public License as 
-    *  published by the Free Software Foundation; either version 2 of 
+    *
+    *  This program is free software; you can redistribute it and/or
+    *  modify it under the terms of the GNU General Public License as
+    *  published by the Free Software Foundation; either version 2 of
     *  the License, or (at your option) any later version.
     *
     *  This program is distributed in the hope that it will be useful,
@@ -27,7 +27,7 @@
     *
     *  You should have received a copy of the GNU General Public License
     *  along with this program; if not, write to the Free Software
-    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, 
+    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston,
     *  MA 02111-1307 USA
     ********************************************************************* */
 
@@ -75,6 +75,14 @@
 #define M_L2C_MGMT_INDEX            _SB_MAKEMASK(12,S_L2C_MGMT_INDEX)
 #define V_L2C_MGMT_INDEX(x)         _SB_MAKEVALUE(x,S_L2C_MGMT_INDEX)
 #define G_L2C_MGMT_INDEX(x)         _SB_GETVALUE(x,S_L2C_MGMT_INDEX,M_L2C_MGMT_INDEX)
+
+#define S_L2C_MGMT_QUADRANT         15
+#define M_L2C_MGMT_QUADRANT         _SB_MAKEMASK(2,S_L2C_MGMT_QUADRANT)
+#define V_L2C_MGMT_QUADRANT(x)      _SB_MAKEVALUE(x,S_L2C_MGMT_QUADRANT)
+#define G_L2C_MGMT_QUADRANT(x)      _SB_GETVALUE(x,S_L2C_MGMT_QUADRANT,M_L2C_MGMT_QUADRANT)
+
+#define S_L2C_MGMT_HALF		    16
+#define M_L2C_MGMT_HALF	            _SB_MAKEMASK(1,S_L2C_MGMT_HALF)
 
 #define S_L2C_MGMT_WAY              17
 #define M_L2C_MGMT_WAY              _SB_MAKEMASK(2,S_L2C_MGMT_WAY)

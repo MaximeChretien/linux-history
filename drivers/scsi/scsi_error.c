@@ -1884,7 +1884,7 @@ void scsi_error_handler(void *data)
 	/*
 	 * Wake up the thread that created us.
 	 */
-	SCSI_LOG_ERROR_RECOVERY(3, printk("Wake up parent %d\n", host->eh_notify->count.counter));
+	SCSI_LOG_ERROR_RECOVERY(3, printk("Wake up parent %d\n", sem_getcount(host->eh_notify)));
 
 	up(host->eh_notify);
 

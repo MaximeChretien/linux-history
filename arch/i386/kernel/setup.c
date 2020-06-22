@@ -71,13 +71,6 @@
  *  CacheSize bug workaround updates for AMD, Intel & VIA Cyrix.
  *  Dave Jones <davej@suse.de>, September, October 2001.
  *
- *  Short-term fix for a conflicting cache attribute bug in the kernel
- *  that is exposed by advanced speculative caching on new AMD Athlon
- *  processors.
- *  Richard Brunner <richard.brunner@amd.com> and Mark Langsdorf
- *  <mark.langsdorf@amd.com>, June 2002 
- *  Adapted to work with uniprocessor APIC by Bryan O'Sullivan
- *  <bos@serpentine.com>, June 2002.
  */
 
 /*
@@ -171,17 +164,14 @@ extern void dmi_scan_machine(void);
 extern int root_mountflags;
 extern char _text, _etext, _edata, _end;
 
+static int have_cpuid_p(void) __init;
+
 static int disable_x86_serial_nr __initdata = 1;
-static int disable_x86_fxsr __initdata = 0;
 static int disable_x86_ht __initdata = 0;
+static u32 disabled_x86_caps[NCAPINTS] __initdata = { 0 };
+extern int blk_nohighio;
 
 int enable_acpi_smp_table;
-
-#if defined(CONFIG_AGP) || defined(CONFIG_AGP_MODULE)
-int disable_adv_spec_cache __initdata = 1;
-#else
-int disable_adv_spec_cache __initdata = 0;
-#endif /* CONFIG_AGP */
 
 /*
  * This is set up by the setup-routine at boot-time
@@ -741,41 +731,6 @@ static void __init setup_memory_region(void)
 } /* setup_memory_region */
 
 
-int __init amd_adv_spec_cache_feature(void)
-{
-	char vendor_id[16];
-	int ident;
-	int family, model;
- 
-	/* Must have CPUID */
-	if(!have_cpuid_p())
-		goto donthave;
-	if(cpuid_eax(0)<1)
-		goto donthave;
-	
-	/* Must be x86 architecture */
-	cpuid(0, &ident,  
-		(int *)&vendor_id[0],
-		(int *)&vendor_id[8],
-		(int *)&vendor_id[4]);
-
-	if (memcmp(vendor_id, "AuthenticAMD", 12)) 
-	       goto donthave;
-
-	ident = cpuid_eax(1);
-	family = (ident >> 8) & 0xf;
-	model  = (ident >> 4) & 0xf;
-	if (((family == 6)  && (model >= 6)) || (family == 15)) {
-		printk(KERN_INFO "Advanced speculative caching feature present\n");
-		return 1;
-	}
-
-donthave:
-	printk(KERN_INFO "Advanced speculative caching feature not present\n");
-	return 0;
-}
-
-
 static void __init parse_cmdline_early (char ** cmdline_p)
 {
 	char c = ' ', *to = command_line, *from = COMMAND_LINE;
@@ -802,6 +757,7 @@ static void __init parse_cmdline_early (char ** cmdline_p)
 			if (!memcmp(from+4, "nopentium", 9)) {
 				from += 9+4;
 				clear_bit(X86_FEATURE_PSE, &boot_cpu_data.x86_capability);
+				set_bit(X86_FEATURE_PSE, &disabled_x86_caps);
 			} else if (!memcmp(from+4, "exactmap", 8)) {
 				from += 8+4;
 				e820.nr_map = 0;
@@ -827,8 +783,10 @@ static void __init parse_cmdline_early (char ** cmdline_p)
 		}
 
 		/* "noht" disables HyperThreading (2 logical cpus per Xeon) */
-		else if (!memcmp(from, "noht", 4))
+		else if (!memcmp(from, "noht", 4)) { 
 			disable_x86_ht = 1;
+			set_bit(X86_FEATURE_HT, disabled_x86_caps);
+		}
 
 		/* "acpismp=force" forces parsing and use of the ACPI SMP table */
 		else if (!memcmp(from, "acpismp=force", 13))
@@ -841,17 +799,6 @@ static void __init parse_cmdline_early (char ** cmdline_p)
 		 */
 		else if (!memcmp(from, "highmem=", 8))
 			highmem_pages = memparse(from+8, &from) >> PAGE_SHIFT;
-		/*
-		 * unsafe-gart-alias overrides the short-term fix for a
-		 * conflicting cache attribute bug in the kernel that is
-		 * exposed by advanced speculative caching in newer AMD
-		 * Athlon processors.  Overriding the fix will allow
-		 * higher performance but the kernel bug can cause system
-		 * lock-ups if the system uses an AGP card.  unsafe-gart-alias
-		 * can be turned on for higher performance in servers.
-		 */
-		else if (!memcmp(from, "unsafe-gart-alias", 17))
-			disable_adv_spec_cache = 0;
 nextchar:
 		c = *(from++);
 		if (!c)
@@ -868,49 +815,6 @@ nextchar:
 	}
 }
 
-void __init setup_arch(char **cmdline_p)
-{
-	unsigned long bootmap_size, low_mem_size;
-	unsigned long start_pfn, max_pfn, max_low_pfn;
-	int i;
-
-#ifdef CONFIG_VISWS
-	visws_get_board_type_and_rev();
-#endif
-
- 	ROOT_DEV = to_kdev_t(ORIG_ROOT_DEV);
- 	drive_info = DRIVE_INFO;
- 	screen_info = SCREEN_INFO;
-	apm_info.bios = APM_BIOS_INFO;
-	if( SYS_DESC_TABLE.length != 0 ) {
-		MCA_bus = SYS_DESC_TABLE.table[3] &0x2;
-		machine_id = SYS_DESC_TABLE.table[0];
-		machine_submodel_id = SYS_DESC_TABLE.table[1];
-		BIOS_revision = SYS_DESC_TABLE.table[2];
-	}
-	aux_device_present = AUX_DEVICE_INFO;
-
-#ifdef CONFIG_BLK_DEV_RAM
-	rd_image_start = RAMDISK_FLAGS & RAMDISK_IMAGE_START_MASK;
-	rd_prompt = ((RAMDISK_FLAGS & RAMDISK_PROMPT_FLAG) != 0);
-	rd_doload = ((RAMDISK_FLAGS & RAMDISK_LOAD_FLAG) != 0);
-#endif
-	setup_memory_region();
-
-	if (!MOUNT_ROOT_RDONLY)
-		root_mountflags &= ~MS_RDONLY;
-	init_mm.start_code = (unsigned long) &_text;
-	init_mm.end_code = (unsigned long) &_etext;
-	init_mm.end_data = (unsigned long) &_edata;
-	init_mm.brk = (unsigned long) &_end;
-
-	code_resource.start = virt_to_bus(&_text);
-	code_resource.end = virt_to_bus(&_etext)-1;
-	data_resource.start = virt_to_bus(&_etext);
-	data_resource.end = virt_to_bus(&_edata)-1;
-
-	parse_cmdline_early(cmdline_p);
-
 #define PFN_UP(x)	(((x) + PAGE_SIZE-1) >> PAGE_SHIFT)
 #define PFN_DOWN(x)	((x) >> PAGE_SHIFT)
 #define PFN_PHYS(x)	((x) << PAGE_SHIFT)
@@ -921,15 +825,13 @@ void __init setup_arch(char **cmdline_p)
 #define MAXMEM_PFN	PFN_DOWN(MAXMEM)
 #define MAX_NONPAE_PFN	(1 << 20)
 
-	/*
-	 * partially used pages are not usable - thus
-	 * we are rounding upwards:
-	 */
-	start_pfn = PFN_UP(__pa(&_end));
+/*
+ * Find the highest page frame number we have available
+ */
+static void __init find_max_pfn(void)
+{
+	int i;
 
-	/*
-	 * Find the highest page frame number we have available
-	 */
 	max_pfn = 0;
 	for (i = 0; i < e820.nr_map; i++) {
 		unsigned long start, end;
@@ -943,10 +845,15 @@ void __init setup_arch(char **cmdline_p)
 		if (end > max_pfn)
 			max_pfn = end;
 	}
+}
 
-	/*
-	 * Determine low and high memory ranges:
-	 */
+/*
+ * Determine low and high memory ranges:
+ */
+static unsigned long __init find_max_low_pfn(void)
+{
+	unsigned long max_low_pfn;
+
 	max_low_pfn = max_pfn;
 	if (max_low_pfn > MAXMEM_PFN) {
 		if (highmem_pages == -1)
@@ -996,27 +903,19 @@ void __init setup_arch(char **cmdline_p)
 #endif
 	}
 
-#ifdef CONFIG_HIGHMEM
-	highstart_pfn = highend_pfn = max_pfn;
-	if (max_pfn > max_low_pfn) {
-		highstart_pfn = max_low_pfn;
-	}
-	printk(KERN_NOTICE "%ldMB HIGHMEM available.\n",
-		pages_to_mb(highend_pfn - highstart_pfn));
-#endif
-	printk(KERN_NOTICE "%ldMB LOWMEM available.\n",
-			pages_to_mb(max_low_pfn));
-	/*
-	 * Initialize the boot-time allocator (with low memory only):
-	 */
-	bootmap_size = init_bootmem(start_pfn, max_low_pfn);
+	return max_low_pfn;
+}
 
-	/*
-	 * Register fully available low RAM pages with the bootmem allocator.
-	 */
+/*
+ * Register fully available low RAM pages with the bootmem allocator.
+ */
+static void __init register_bootmem_low_pages(unsigned long max_low_pfn)
+{
+	int i;
+
 	for (i = 0; i < e820.nr_map; i++) {
 		unsigned long curr_pfn, last_pfn, size;
- 		/*
+		/*
 		 * Reserve usable low memory
 		 */
 		if (e820.map[i].type != E820_RAM)
@@ -1045,6 +944,39 @@ void __init setup_arch(char **cmdline_p)
 		size = last_pfn - curr_pfn;
 		free_bootmem(PFN_PHYS(curr_pfn), PFN_PHYS(size));
 	}
+}
+
+static unsigned long __init setup_memory(void)
+{
+	unsigned long bootmap_size, start_pfn, max_low_pfn;
+
+	/*
+	 * partially used pages are not usable - thus
+	 * we are rounding upwards:
+	 */
+	start_pfn = PFN_UP(__pa(&_end));
+
+	find_max_pfn();
+
+	max_low_pfn = find_max_low_pfn();
+
+#ifdef CONFIG_HIGHMEM
+	highstart_pfn = highend_pfn = max_pfn;
+	if (max_pfn > max_low_pfn) {
+		highstart_pfn = max_low_pfn;
+	}
+	printk(KERN_NOTICE "%ldMB HIGHMEM available.\n",
+		pages_to_mb(highend_pfn - highstart_pfn));
+#endif
+	printk(KERN_NOTICE "%ldMB LOWMEM available.\n",
+			pages_to_mb(max_low_pfn));
+	/*
+	 * Initialize the boot-time allocator (with low memory only):
+	 */
+	bootmap_size = init_bootmem(start_pfn, max_low_pfn);
+
+	register_bootmem_low_pages(max_low_pfn);
+
 	/*
 	 * Reserve the bootmem bitmap itself as well. We do this in two
 	 * steps (first step was init_bootmem()) because this catches
@@ -1093,51 +1025,18 @@ void __init setup_arch(char **cmdline_p)
 	}
 #endif
 
-	/*
-	 * If enable_acpi_smp_table and HT feature present, acpitable.c
-	 * will find all logical cpus despite disable_x86_ht: so if both
-	 * "noht" and "acpismp=force" are specified, let "noht" override
-	 * "acpismp=force" cleanly.  Why retain "acpismp=force"? because
-	 * parsing ACPI SMP table might prove useful on some non-HT cpu.
-	 */
-	if (disable_x86_ht) {
-		clear_bit(X86_FEATURE_HT, &boot_cpu_data.x86_capability[0]);
-		enable_acpi_smp_table = 0;
-	}
-	if (test_bit(X86_FEATURE_HT, &boot_cpu_data.x86_capability[0]))
-		enable_acpi_smp_table = 1;
-	
+	return max_low_pfn;
+}
+ 
+/*
+ * Request address space for all standard RAM and ROM resources
+ * and also for regions reported as reserved by the e820.
+ */
+static void __init register_memory(unsigned long max_low_pfn)
+{
+	unsigned long low_mem_size;
+	int i;
 
-	/*
-	 * NOTE: before this point _nobody_ is allowed to allocate
-	 * any memory using the bootmem allocator.
-	 */
-
-#ifdef CONFIG_SMP
-	smp_alloc_memory(); /* AP processor realmode stacks in low memory*/
-#endif
-	/*
-	 * short-term fix for a conflicting cache attribute bug in the 
-	 * kernel that is exposed by advanced speculative caching on
-	 * newer AMD Athlon processors.
-	 */
-	if (disable_adv_spec_cache && amd_adv_spec_cache_feature())
-		clear_bit(X86_FEATURE_PSE, &boot_cpu_data.x86_capability);
-
-	paging_init();
-#ifdef CONFIG_X86_LOCAL_APIC
-	/*
-	 * get boot-time SMP configuration:
-	 */
-	if (smp_found_config)
-		get_smp_config();
-#endif
-
-
-	/*
-	 * Request address space for all standard RAM and ROM resources
-	 * and also for regions reported as reserved by the e820.
-	 */
 	probe_roms();
 	for (i = 0; i < e820.nr_map; i++) {
 		struct resource *res;
@@ -1174,6 +1073,89 @@ void __init setup_arch(char **cmdline_p)
 	low_mem_size = ((max_low_pfn << PAGE_SHIFT) + 0xfffff) & ~0xfffff;
 	if (low_mem_size > pci_mem_start)
 		pci_mem_start = low_mem_size;
+}
+
+void __init setup_arch(char **cmdline_p)
+{
+	unsigned long max_low_pfn;
+
+#ifdef CONFIG_VISWS
+	visws_get_board_type_and_rev();
+#endif
+
+#ifndef CONFIG_HIGHIO
+	blk_nohighio = 1;
+#endif
+
+ 	ROOT_DEV = to_kdev_t(ORIG_ROOT_DEV);
+ 	drive_info = DRIVE_INFO;
+ 	screen_info = SCREEN_INFO;
+	apm_info.bios = APM_BIOS_INFO;
+	if( SYS_DESC_TABLE.length != 0 ) {
+		MCA_bus = SYS_DESC_TABLE.table[3] &0x2;
+		machine_id = SYS_DESC_TABLE.table[0];
+		machine_submodel_id = SYS_DESC_TABLE.table[1];
+		BIOS_revision = SYS_DESC_TABLE.table[2];
+	}
+	aux_device_present = AUX_DEVICE_INFO;
+
+#ifdef CONFIG_BLK_DEV_RAM
+	rd_image_start = RAMDISK_FLAGS & RAMDISK_IMAGE_START_MASK;
+	rd_prompt = ((RAMDISK_FLAGS & RAMDISK_PROMPT_FLAG) != 0);
+	rd_doload = ((RAMDISK_FLAGS & RAMDISK_LOAD_FLAG) != 0);
+#endif
+	setup_memory_region();
+
+	if (!MOUNT_ROOT_RDONLY)
+		root_mountflags &= ~MS_RDONLY;
+	init_mm.start_code = (unsigned long) &_text;
+	init_mm.end_code = (unsigned long) &_etext;
+	init_mm.end_data = (unsigned long) &_edata;
+	init_mm.brk = (unsigned long) &_end;
+
+	code_resource.start = virt_to_bus(&_text);
+	code_resource.end = virt_to_bus(&_etext)-1;
+	data_resource.start = virt_to_bus(&_etext);
+	data_resource.end = virt_to_bus(&_edata)-1;
+
+	parse_cmdline_early(cmdline_p);
+
+	max_low_pfn = setup_memory();
+
+	/*
+	 * If enable_acpi_smp_table and HT feature present, acpitable.c
+	 * will find all logical cpus despite disable_x86_ht: so if both
+	 * "noht" and "acpismp=force" are specified, let "noht" override
+	 * "acpismp=force" cleanly.  Why retain "acpismp=force"? because
+	 * parsing ACPI SMP table might prove useful on some non-HT cpu.
+	 */
+	if (disable_x86_ht) {
+		clear_bit(X86_FEATURE_HT, &boot_cpu_data.x86_capability[0]);
+		set_bit(X86_FEATURE_HT, disabled_x86_caps);
+		enable_acpi_smp_table = 0;
+	}
+	if (test_bit(X86_FEATURE_HT, &boot_cpu_data.x86_capability[0]))
+		enable_acpi_smp_table = 1;
+	
+
+	/*
+	 * NOTE: before this point _nobody_ is allowed to allocate
+	 * any memory using the bootmem allocator.
+	 */
+
+#ifdef CONFIG_SMP
+	smp_alloc_memory(); /* AP processor realmode stacks in low memory*/
+#endif
+	paging_init();
+#ifdef CONFIG_X86_LOCAL_APIC
+	/*
+	 * get boot-time SMP configuration:
+	 */
+	if (smp_found_config)
+		get_smp_config();
+#endif
+
+	register_memory(max_low_pfn);
 
 #ifdef CONFIG_VT
 #if defined(CONFIG_VGA_CONSOLE)
@@ -1197,14 +1179,27 @@ __setup("cachesize=", cachesize_setup);
 #ifndef CONFIG_X86_TSC
 static int tsc_disable __initdata = 0;
 
-static int __init tsc_setup(char *str)
+static int __init notsc_setup(char *str)
 {
 	tsc_disable = 1;
 	return 1;
 }
-
-__setup("notsc", tsc_setup);
+#else
+static int __init notsc_setup(char *str)
+{
+	printk("notsc: Kernel compiled with CONFIG_X86_TSC, cannot disable TSC.\n");
+	return 1;
+}
 #endif
+__setup("notsc", notsc_setup);
+
+static int __init highio_setup(char *str)
+{
+	printk("i386: disabling HIGHMEM block I/O\n");
+	blk_nohighio = 1;
+	return 1;
+}
+__setup("nohighio", highio_setup);
 
 static int __init get_model_name(struct cpuinfo_x86 *c)
 {
@@ -1291,31 +1286,6 @@ static void __init display_cacheinfo(struct cpuinfo_x86 *c)
 	printk(KERN_INFO "CPU: L2 Cache: %dK (%d bytes/line)\n",
 	       l2size, ecx & 0xFF);
 }
-
-
-/*=======================================================================
- * amd_adv_spec_cache_disable
- * Setting a special MSR big that disables a small part of advanced
- * speculative caching as part of a short-term fix for a conflicting cache
- * attribute bug in the kernel that is exposed by advanced speculative
- * caching in newer AMD Athlon processors.
- =======================================================================*/
-static void amd_adv_spec_cache_disable(void)
-{
-	printk(KERN_INFO "Disabling advanced speculative caching\n");
-
-	__asm__ __volatile__ (
-		" movl	 $0x9c5a203a,%%edi   \n" /* msr enable */
-		" movl	 $0xc0011022,%%ecx   \n" /* msr addr	 */
-		" rdmsr			     \n" /* get reg val	 */
-		" orl	 $0x00010000,%%eax   \n" /* set bit 16	 */
-		" wrmsr			     \n" /* put it back	 */
-		" xorl	%%edi, %%edi	     \n" /* clear msr enable */
-		: /* no outputs */
-		: /* no inputs, either */
-		: "%eax","%ecx","%edx","%edi" /* clobbered regs */ );
-}
-
 
 /*
  *	B step AMD K6 before B 9730xxxx have hardware bugs that can cause
@@ -1450,21 +1420,10 @@ static int __init init_amd(struct cpuinfo_x86 *c)
  			 * to enable SSE on Palomino/Morgan CPU's.
 			 * If the BIOS didn't enable it already, enable it
 			 * here.
-			 *
-			 * Avoiding the use of 4MB/2MB pages along with
-			 * setting a special MSR bit that disables a small
-			 * part of advanced speculative caching as part of a
-			 * short-term fix for a conflicting cache attribute
-			 * bug in the kernel that is exposed by advanced
-			 * speculative caching in newer AMD Atlon processors.
-			 *
-			 * If we cleared the PSE bit earlier as part
-			 * of the workaround for this problem, we need
-			 * to clear it again, as our caller may have
-			 * clobbered it if uniprocessor APIC is enabled.
 			 */
-			if (c->x86_model >= 6) {
-				if (!cpu_has_xmm) {
+			if (c->x86_model == 6 || c->x86_model == 7) {
+				if (!test_bit(X86_FEATURE_XMM,
+					      &c->x86_capability)) {
 					printk(KERN_INFO
 					       "Enabling Disabled K7/SSE Support...\n");
 					rdmsr(MSR_K7_HWCR, l, h);
@@ -1473,18 +1432,6 @@ static int __init init_amd(struct cpuinfo_x86 *c)
 					set_bit(X86_FEATURE_XMM,
                                                 &c->x86_capability);
 				}
-				if (disable_adv_spec_cache &&
-				    amd_adv_spec_cache_feature()) {
-					clear_bit(X86_FEATURE_PSE,
-						  &c->x86_capability);
-					amd_adv_spec_cache_disable();
-				}
-			}
-			break;
-		case 15: 
-			if (disable_adv_spec_cache && amd_adv_spec_cache_feature()) {
-				clear_bit(X86_FEATURE_PSE, &c->x86_capability);
-				amd_adv_spec_cache_disable();
 			}
 			break;
 
@@ -1534,7 +1481,7 @@ static void __init do_cyrix_devid(unsigned char *dir0, unsigned char *dir1)
  * Cx86_dir0_msb is a HACK needed by check_cx686_cpuid/slop in bugs.h in
  * order to identify the Cyrix CPU model after we're out of setup.c
  *
- * Actually since bugs.h doesnt even reference this perhaps someone should
+ * Actually since bugs.h doesn't even reference this perhaps someone should
  * fix the documentation ???
  */
 static unsigned char Cx86_dir0_msb __initdata = 0;
@@ -2198,6 +2145,11 @@ static void __init init_transmeta(struct cpuinfo_x86 *c)
 	wrmsr(0x80860004, ~0, uk);
 	c->x86_capability[0] = cpuid_edx(0x00000001);
 	wrmsr(0x80860004, cap_mask, uk);
+
+	/* If we can run i686 user-space code, call us an i686 */
+#define USER686 (X86_FEATURE_TSC|X86_FEATURE_CX8|X86_FEATURE_CMOV)
+	if ( c->x86 == 5 && (c->x86_capability[0] & USER686) == USER686 )
+	     c->x86 = 6;
 }
 
 
@@ -2227,31 +2179,69 @@ static void __init init_rise(struct cpuinfo_x86 *c)
 
 extern void trap_init_f00f_bug(void);
 
+#define LVL_1_INST      1
+#define LVL_1_DATA      2
+#define LVL_2           3
+#define LVL_3           4
+
+struct _cache_table
+{
+        unsigned char descriptor;
+        char cache_type;
+        short size;
+};
+
+/* all the cache descriptor types we care about (no TLB or trace cache entries) */
+static struct _cache_table cache_table[] __initdata =
+{
+	{ 0x06, LVL_1_INST, 8 },
+	{ 0x08, LVL_1_INST, 16 },
+	{ 0x0A, LVL_1_DATA, 8 },
+	{ 0x0C, LVL_1_DATA, 16 },
+	{ 0x22, LVL_3,      512 },
+	{ 0x23, LVL_3,      1024 },
+	{ 0x25, LVL_3,      2048 },
+	{ 0x29, LVL_3,      4096 },
+	{ 0x41, LVL_2,      128 },
+	{ 0x42, LVL_2,      256 },
+	{ 0x43, LVL_2,      512 },
+	{ 0x44, LVL_2,      1024 },
+	{ 0x45, LVL_2,      2048 },
+	{ 0x66, LVL_1_DATA, 8 },
+	{ 0x67, LVL_1_DATA, 16 },
+	{ 0x68, LVL_1_DATA, 32 },
+	{ 0x79, LVL_2,      128 },
+	{ 0x7A, LVL_2,      256 },
+	{ 0x7B, LVL_2,      512 },
+	{ 0x7C, LVL_2,      1024 },
+	{ 0x82, LVL_2,      256 },
+	{ 0x84, LVL_2,      1024 },
+	{ 0x85, LVL_2,      2048 },
+	{ 0x00, 0, 0}
+};
+
 static void __init init_intel(struct cpuinfo_x86 *c)
 {
-#ifndef CONFIG_M686
-	static int f00f_workaround_enabled = 0;
-#endif
-	char *p = NULL;
 	unsigned int l1i = 0, l1d = 0, l2 = 0, l3 = 0; /* Cache sizes */
+	char *p = NULL;
+#ifndef CONFIG_X86_F00F_WORKS_OK
+	static int f00f_workaround_enabled = 0;
 
-#ifndef CONFIG_M686
 	/*
 	 * All current models of Pentium and Pentium with MMX technology CPUs
 	 * have the F0 0F bug, which lets nonpriviledged users lock up the system.
 	 * Note that the workaround only should be initialized once...
 	 */
 	c->f00f_bug = 0;
-	if ( c->x86 == 5 ) {
+	if (c->x86 == 5) {
 		c->f00f_bug = 1;
-		if ( !f00f_workaround_enabled ) {
+		if (!f00f_workaround_enabled) {
 			trap_init_f00f_bug();
 			printk(KERN_NOTICE "Intel Pentium with F0 0F bug - workaround enabled.\n");
 			f00f_workaround_enabled = 1;
 		}
 	}
-#endif
-
+#endif /* CONFIG_X86_F00F_WORKS_OK */
 
 	if (c->cpuid_level > 1) {
 		/* supports eax=2  call */
@@ -2273,83 +2263,31 @@ static void __init init_intel(struct cpuinfo_x86 *c)
 			/* Byte 0 is level count, not a descriptor */
 			for ( j = 1 ; j < 16 ; j++ ) {
 				unsigned char des = dp[j];
-				unsigned char dl, dh;
-				unsigned int cs;
+				unsigned char k = 0;
 
-				dh = des >> 4;
-				dl = des & 0x0F;
-
-				/* Black magic... */
-
-				switch ( dh )
+				/* look up this descriptor in the table */
+				while (cache_table[k].descriptor != 0)
 				{
-				case 0:
-					switch ( dl ) {
-					case 6:
-						/* L1 I cache */
-						l1i += 8;
-						break;
-					case 8:
-						/* L1 I cache */
-						l1i += 16;
-						break;
-					case 10:
-						/* L1 D cache */
-						l1d += 8;
-						break;
-					case 12:
-						/* L1 D cache */
-						l1d += 16;
-						break;
-					default:;
-						/* TLB, or unknown */
-					}
-					break;
-				case 2:
-					if ( dl ) {
-						/* L3 cache */
-						cs = (dl-1) << 9;
-						l3 += cs;
-					}
-					break;
-				case 4:
-					if ( c->x86 > 6 && dl ) {
-						/* P4 family */
-						/* L3 cache */
-						cs = 128 << (dl-1);
-						l3 += cs;
+					if (cache_table[k].descriptor == des) {
+						switch (cache_table[k].cache_type) {
+						case LVL_1_INST:
+							l1i += cache_table[k].size;
+							break;
+						case LVL_1_DATA:
+							l1d += cache_table[k].size;
+							break;
+						case LVL_2:
+							l2 += cache_table[k].size;
+							break;
+						case LVL_3:
+							l3 += cache_table[k].size;
+							break;
+						}
+
 						break;
 					}
-					/* else same as 8 - fall through */
-				case 8:
-					if ( dl ) {
-						/* L2 cache */
-						cs = 128 << (dl-1);
-						l2 += cs;
-					}
-					break;
-				case 6:
-					if (dl > 5) {
-						/* L1 D cache */
-						cs = 8<<(dl-6);
-						l1d += cs;
-					}
-					break;
-				case 7:
-					if ( dl >= 8 ) 
-					{
-						/* L2 cache */
-						cs = 64<<(dl-8);
-						l2 += cs;
-					} else {
-						/* L0 I cache, count as L1 */
-						cs = dl ? (16 << (dl-1)) : 12;
-						l1i += cs;
-					}
-					break;
-				default:
-					/* TLB, or something else we don't know about */
-					break;
+
+					k++;
 				}
 			}
 		}
@@ -2426,7 +2364,7 @@ static void __init init_intel(struct cpuinfo_x86 *c)
 			if (smp_num_siblings != NR_SIBLINGS) {
 				printk(KERN_WARNING "CPU: Unsupported number of the siblings %d", smp_num_siblings);
 				smp_num_siblings = 1;
-				goto too_many_siblings;
+				return;
 			}
 			tmp = smp_num_siblings;
 			while ((tmp & 1) == 0) {
@@ -2448,7 +2386,6 @@ static void __init init_intel(struct cpuinfo_x86 *c)
 		}
 
 	}
-too_many_siblings:
 #endif
 }
 
@@ -2596,7 +2533,8 @@ __setup("serialnumber", x86_serial_nr_setup);
 
 static int __init x86_fxsr_setup(char * s)
 {
-	disable_x86_fxsr = 1;
+	set_bit(X86_FEATURE_XMM, disabled_x86_caps); 
+	set_bit(X86_FEATURE_FXSR, disabled_x86_caps);
 	return 1;
 }
 __setup("nofxsr", x86_fxsr_setup);
@@ -2749,12 +2687,6 @@ void __init identify_cpu(struct cpuinfo_x86 *c)
 			      &c->x86_capability[0]);
 			c->x86 = (tfms >> 8) & 15;
 			c->x86_model = (tfms >> 4) & 15;
-			if ( (c->x86_vendor == X86_VENDOR_AMD) &&
-				(c->x86 == 0xf)) {
-				/* AMD Extended Family and Model Values */
-				c->x86 += (tfms >> 20) & 0xff;
-				c->x86_model += (tfms >> 12) & 0xf0;
-			}
 			c->x86_mask = tfms & 15;
 		} else {
 			/* Have CPUID level 0 only - unheard of */
@@ -2777,12 +2709,6 @@ void __init identify_cpu(struct cpuinfo_x86 *c)
 				c->x86_capability[2] = cpuid_edx(0x80860001);
 		}
 	}
-
-	printk(KERN_DEBUG "CPU: Before vendor init, caps: %08x %08x %08x, vendor = %d\n",
-	       c->x86_capability[0],
-	       c->x86_capability[1],
-	       c->x86_capability[2],
-	       c->x86_vendor);
 
 	/*
 	 * Vendor-specific initialization.  In this section we
@@ -2842,12 +2768,6 @@ void __init identify_cpu(struct cpuinfo_x86 *c)
 		break;
 	}
 
-	printk(KERN_DEBUG "CPU: After vendor init, caps: %08x %08x %08x %08x\n",
-	       c->x86_capability[0],
-	       c->x86_capability[1],
-	       c->x86_capability[2],
-	       c->x86_capability[3]);
-
 	/*
 	 * The vendor-specific functions might have changed features.  Now
 	 * we do "generic changes."
@@ -2859,14 +2779,9 @@ void __init identify_cpu(struct cpuinfo_x86 *c)
 		clear_bit(X86_FEATURE_TSC, &c->x86_capability);
 #endif
 
-	/* HT disabled? */
-	if (disable_x86_ht)
-		clear_bit(X86_FEATURE_HT, &c->x86_capability);
-
-	/* FXSR disabled? */
-	if (disable_x86_fxsr) {
-		clear_bit(X86_FEATURE_FXSR, &c->x86_capability);
-		clear_bit(X86_FEATURE_XMM, &c->x86_capability);
+	/* check for caps that have been disabled earlier */ 
+	for (i = 0; i < NCAPINTS; i++) { 
+	     c->x86_capability[i] &= ~disabled_x86_caps[i];
 	}
 
 	/* Disable the PN if appropriate */

@@ -35,7 +35,7 @@ void stab_initialize(unsigned long stab)
 	esid = GET_ESID(KERNELBASE);
 	vsid = get_kernel_vsid(esid << SID_SHIFT); 
 
-	if (!__is_processor(PV_POWER4)) {
+	if (!__is_processor(PV_POWER4) && !__is_processor(PV_POWER4p)) {
                 __asm__ __volatile__("isync; slbia; isync":::"memory");
 		make_ste(stab, esid, vsid);
 	} else {
@@ -305,7 +305,7 @@ void flush_stab(void)
 	unsigned char *segments = get_paca()->xSegments;
 	unsigned long flags, i;
 
-	if(!__is_processor(PV_POWER4)) {
+	if (!__is_processor(PV_POWER4) && !__is_processor(PV_POWER4p)) {
 		unsigned long entry;
 		STE *ste;
 

@@ -71,7 +71,6 @@ extern struct ide_ops *ide_ops;
 extern struct rtc_ops pb1500_rtc_ops;
 #endif
 
-void (*__wbflush) (void);
 extern char * __init prom_getcmdline(void);
 extern void au1000_restart(char *);
 extern void au1000_halt(void);
@@ -80,17 +79,14 @@ extern struct resource ioport_resource;
 extern struct resource iomem_resource;
 
 
-void au1500_wbflush(void)
-{
-	__asm__ volatile ("sync");
-}
+void __init bus_error_init(void) { /* nothing */ }
 
 void __init au1500_setup(void)
 {
 	char *argptr;
 	u32 pin_func, static_cfg0;
 	u32 sys_freqctrl, sys_clksrc;
-	
+
 	argptr = prom_getcmdline();
 
 	/* NOTE: The memory map is established by YAMON 2.08+ */
@@ -103,19 +99,18 @@ void __init au1500_setup(void)
 		argptr = prom_getcmdline();
 		strcat(argptr, " console=ttyS0,115200");
 	}
-#endif	  
+#endif
 
 #ifdef CONFIG_SOUND_AU1000
 	strcat(argptr, " au1000_audio=vra");
 	argptr = prom_getcmdline();
 #endif
 
-        __wbflush = au1500_wbflush;
 	_machine_restart = au1000_restart;
 	_machine_halt = au1000_halt;
 	_machine_power_off = au1000_power_off;
 
-	// IO/MEM resources. 
+	// IO/MEM resources.
 	set_io_port_base(0);
 	ioport_resource.start = 0x10000000;
 	ioport_resource.end = 0xffffffff;
@@ -129,8 +124,8 @@ void __init au1500_setup(void)
 #endif
 
 	// set AUX clock to 12MHz * 8 = 96 MHz
-	writel(8, SYS_AUXPLL);
-	outl(0, SYS_PINSTATERD);
+	au_writel(8, SYS_AUXPLL);
+	au_writel(0, SYS_PINSTATERD);
 	udelay(100);
 
 #if defined (CONFIG_USB_OHCI) || defined (CONFIG_AU1000_USB_DEVICE)
@@ -146,24 +141,24 @@ void __init au1500_setup(void)
 #endif
 
 	/* zero and disable FREQ2 */
-	sys_freqctrl = readl(SYS_FREQCTRL0);
+	sys_freqctrl = au_readl(SYS_FREQCTRL0);
 	sys_freqctrl &= ~0xFFF00000;
-	writel(sys_freqctrl, SYS_FREQCTRL0);
+	au_writel(sys_freqctrl, SYS_FREQCTRL0);
 
 	/* zero and disable USBH/USBD clocks */
-	sys_clksrc = readl(SYS_CLKSRC);
+	sys_clksrc = au_readl(SYS_CLKSRC);
 	sys_clksrc &= ~0x00007FE0;
-	writel(sys_clksrc, SYS_CLKSRC);
+	au_writel(sys_clksrc, SYS_CLKSRC);
 
-	sys_freqctrl = readl(SYS_FREQCTRL0);
+	sys_freqctrl = au_readl(SYS_FREQCTRL0);
 	sys_freqctrl &= ~0xFFF00000;
 
-	sys_clksrc = readl(SYS_CLKSRC);
+	sys_clksrc = au_readl(SYS_CLKSRC);
 	sys_clksrc &= ~0x00007FE0;
 
 	// FREQ2 = aux/2 = 48 MHz
 	sys_freqctrl |= ((0<<22) | (1<<21) | (1<<20));
-	writel(sys_freqctrl, SYS_FREQCTRL0);
+	au_writel(sys_freqctrl, SYS_FREQCTRL0);
 
 	/*
 	 * Route 48MHz FREQ2 into USB Host and/or Device
@@ -174,30 +169,30 @@ void __init au1500_setup(void)
 #ifdef CONFIG_AU1000_USB_DEVICE
 	sys_clksrc |= ((4<<7) | (0<<6) | (0<<5));
 #endif
-	writel(sys_clksrc, SYS_CLKSRC);
+	au_writel(sys_clksrc, SYS_CLKSRC);
 
 
-	pin_func = readl(SYS_PINFUNC) & (u32)(~0x8000);
+	pin_func = au_readl(SYS_PINFUNC) & (u32)(~0x8000);
 #ifndef CONFIG_AU1000_USB_DEVICE
 	// 2nd USB port is USB host
 	pin_func |= 0x8000;
 #endif
-	writel(pin_func, SYS_PINFUNC);
+	au_writel(pin_func, SYS_PINFUNC);
 #endif // defined (CONFIG_USB_OHCI) || defined (CONFIG_AU1000_USB_DEVICE)
 
 
 #ifdef CONFIG_USB_OHCI
 	// enable host controller and wait for reset done
-	writel(0x08, USB_HOST_CONFIG);
+	au_writel(0x08, USB_HOST_CONFIG);
 	udelay(1000);
-	writel(0x0c, USB_HOST_CONFIG);
+	au_writel(0x0c, USB_HOST_CONFIG);
 	udelay(1000);
-	readl(USB_HOST_CONFIG);
-	while (!(readl(USB_HOST_CONFIG) & 0x10))
+	au_readl(USB_HOST_CONFIG);
+	while (!(au_readl(USB_HOST_CONFIG) & 0x10))
 	    ;
-	readl(USB_HOST_CONFIG);
+	au_readl(USB_HOST_CONFIG);
 #endif
-	
+
 #ifdef CONFIG_FB
 	conswitchp = &dummy_con;
 #endif
@@ -205,15 +200,20 @@ void __init au1500_setup(void)
 #ifdef CONFIG_FB_E1356
 	if ((argptr = strstr(argptr, "video=")) == NULL) {
 		argptr = prom_getcmdline();
-		strcat(argptr, " video=e1356fb:system:pb1500,mmunalign:1");
+		strcat(argptr, " video=e1356fb:system:pb1500");
+	}
+#elif defined (CONFIG_FB_XPERT98)
+	if ((argptr = strstr(argptr, "video=")) == NULL) {
+		argptr = prom_getcmdline();
+		strcat(argptr, " video=atyfb:1024x768-8@70");
 	}
 #endif // CONFIG_FB_E1356
 
 #ifndef CONFIG_SERIAL_NONSTANDARD
 	/* don't touch the default serial console */
-	writel(0, UART0_ADDR + UART_CLK);
+	au_writel(0, UART0_ADDR + UART_CLK);
 #endif
-	writel(0, UART3_ADDR + UART_CLK);
+	au_writel(0, UART3_ADDR + UART_CLK);
 
 #ifdef CONFIG_BLK_DEV_IDE
 	ide_ops = &std_ide_ops;
@@ -221,35 +221,40 @@ void __init au1500_setup(void)
 
 #ifdef CONFIG_PCI
 	// Setup PCI bus controller
-	writel(0, Au1500_PCI_CMEM);
-	writel(0x00003fff, Au1500_CFG_BASE);
-	writel(0xf, Au1500_PCI_CFG);
-	writel(0xf0000000, Au1500_PCI_MWMASK_DEV);
-	writel(0, Au1500_PCI_MWBASE_REV_CCL);
-	writel(0x02a00356, Au1500_PCI_STATCMD);
-	writel(0x00003c04, Au1500_PCI_HDRTYPE);	
-	writel(0x00000008, Au1500_PCI_MBAR);
+	au_writel(0, Au1500_PCI_CMEM);
+	au_writel(0x00003fff, Au1500_CFG_BASE);
+#if defined(__MIPSEB__)
+	au_writel(0xf | (2<<6) | (1<<4), Au1500_PCI_CFG);
+#else
+	au_writel(0xf, Au1500_PCI_CFG);
+#endif
+	au_writel(0xf0000000, Au1500_PCI_MWMASK_DEV);
+	au_writel(0, Au1500_PCI_MWBASE_REV_CCL);
+	au_writel(0x02a00356, Au1500_PCI_STATCMD);
+	au_writel(0x00003c04, Au1500_PCI_HDRTYPE);
+	au_writel(0x00000008, Au1500_PCI_MBAR);
 	au_sync();
 #endif
 
-	while (readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_E0S);
-	writel(SYS_CNTRL_E0 | SYS_CNTRL_EN0, SYS_COUNTER_CNTRL);
+	while (au_readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_E0S);
+	au_writel(SYS_CNTRL_E0 | SYS_CNTRL_EN0, SYS_COUNTER_CNTRL);
 	au_sync();
-	while (readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_T0S);
-	outl(0, SYS_TOYTRIM);
+	while (au_readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_T0S);
+	au_writel(0, SYS_TOYTRIM);
 
 	/* Enable BCLK switching */
-	writel(0x00000060, 0xb190003c);
+	au_writel(0x00000060, 0xb190003c);
 
 #ifdef CONFIG_RTC
 	rtc_ops = &pb1500_rtc_ops;
-	// Enable the RTC if not already enabled 
-	if (!(readb(0xac000028) & 0x20)) {
-		writeb(readb(0xac000028) | 0x20, 0xac000028);
+	// Enable the RTC if not already enabled
+	if (!(au_readl(0xac000028) & 0x20)) {
+		printk("enabling clock ...\n");
+		au_writel((au_readl(0xac000028) | 0x20), 0xac000028);
 	}
 	// Put the clock in BCD mode
-	if (readb(0xac00002C) & 0x4) { /* reg B */
-		writeb(readb(0xac00002c) & ~0x4, 0xac00002c);
+	if (readl(0xac00002C) & 0x4) { /* reg B */
+		au_writel(au_readl(0xac00002c) & ~0x4, 0xac00002c);
 		au_sync();
 	}
 #endif

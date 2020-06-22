@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.head_8xx.S 1.25 01/08/02 16:41:27 trini
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
  *  arch/ppc/kernel/except_8xx.S
@@ -21,10 +21,9 @@
  *  modify it under the terms of the GNU General Public License
  *  as published by the Free Software Foundation; either version
  *  2 of the License, or (at your option) any later version.
- *	
+ *
  */
 
-#include "ppc_asm.h"
 #include <asm/processor.h>
 #include <asm/page.h>
 #include <linux/config.h>
@@ -32,6 +31,8 @@
 #include <asm/cache.h>
 #include <asm/pgtable.h>
 #include <asm/cputable.h>
+#include <asm/ppc_asm.h>
+#include "ppc_defs.h"
 
 	.text
 	.globl	_stext
@@ -78,7 +79,7 @@ _start:
  * and the CCR at memory location 0.....Someday I'll fix this.....
  *	-- Dan
  */
-	
+
 	.globl	__start
 __start:
 	mr	r31,r3			/* save parameters */
@@ -152,22 +153,22 @@ turn_on_mmu:
 /*
  * Exception vectors.
  */
+
+#define FINISH_EXCEPTION(func)			\
+	bl	transfer_to_handler;		\
+	.long	func;				\
+	.long	ret_from_except
+
 #define STD_EXCEPTION(n, label, hdlr)		\
 	. = n;					\
 label:						\
 	EXCEPTION_PROLOG;			\
 	addi	r3,r1,STACK_FRAME_OVERHEAD;	\
 	li	r20,MSR_KERNEL;			\
-	bl	transfer_to_handler; 		\
-	.long	hdlr;				\
-	.long	ret_from_except
+	FINISH_EXCEPTION(hdlr)
 
 /* System reset */
-#ifdef CONFIG_SMP /* MVME/MTX start the secondary here */
-	STD_EXCEPTION(0x100, Reset, __secondary_start_psurge)
-#else
 	STD_EXCEPTION(0x100, Reset, UnknownException)
-#endif	
 
 /* Machine check */
 	STD_EXCEPTION(0x200, MachineCheck, MachineCheckException)
@@ -187,9 +188,7 @@ DataAccess:
 	addi	r3,r1,STACK_FRAME_OVERHEAD
 	li	r20,MSR_KERNEL
 	rlwimi	r20,r23,0,16,16		/* copy EE bit from saved MSR */
-	bl	transfer_to_handler
-	.long	do_page_fault
-	.long	ret_from_except
+	FINISH_EXCEPTION(do_page_fault)
 
 /* Instruction access exception.
  * This is "never generated" by the MPC8xx.  We jump to it for other
@@ -203,9 +202,7 @@ InstructionAccess:
 	mr	r5,r23
 	li	r20,MSR_KERNEL
 	rlwimi	r20,r23,0,16,16		/* copy EE bit from saved MSR */
-	bl	transfer_to_handler
-	.long	do_page_fault
-	.long	ret_from_except
+	FINISH_EXCEPTION(do_page_fault)
 
 /* External interrupt */
 	. = 0x500;
@@ -215,11 +212,10 @@ HardwareInterrupt:
 	li	r20,MSR_KERNEL
 	li	r4,0
 	bl	transfer_to_handler
-	.globl do_IRQ_intercept
+	.globl	do_IRQ_intercept
 do_IRQ_intercept:
 	.long	do_IRQ;
 	.long	ret_from_intercept
-	
 
 /* Alignment exception */
 	. = 0x600
@@ -232,9 +228,7 @@ Alignment:
 	addi	r3,r1,STACK_FRAME_OVERHEAD
 	li	r20,MSR_KERNEL
 	rlwimi	r20,r23,0,16,16		/* copy EE bit from saved MSR */
-	bl	transfer_to_handler
-	.long	AlignmentException
-	.long	ret_from_except
+	FINISH_EXCEPTION(AlignmentException)
 
 /* Program check exception */
 	. = 0x700
@@ -243,9 +237,7 @@ ProgramCheck:
 	addi	r3,r1,STACK_FRAME_OVERHEAD
 	li	r20,MSR_KERNEL
 	rlwimi	r20,r23,0,16,16		/* copy EE bit from saved MSR */
-	bl	transfer_to_handler
-	.long	ProgramCheckException
-	.long	ret_from_except
+	FINISH_EXCEPTION(ProgramCheckException)
 
 /* No FPU on MPC8xx.  This exception is not supposed to happen.
 */
@@ -257,7 +249,7 @@ Decrementer:
 	addi	r3,r1,STACK_FRAME_OVERHEAD
 	li	r20,MSR_KERNEL
 	bl	transfer_to_handler
-	.globl timer_interrupt_intercept
+	.globl	timer_interrupt_intercept
 timer_interrupt_intercept:
 	.long	timer_interrupt
 	.long	ret_from_intercept
@@ -272,9 +264,7 @@ SystemCall:
 	stw	r3,ORIG_GPR3(r21)
 	li	r20,MSR_KERNEL
 	rlwimi	r20,r23,0,16,16		/* copy EE bit from saved MSR */
-	bl	transfer_to_handler
-	.long	DoSyscall
-	.long	ret_from_except
+	FINISH_EXCEPTION(DoSyscall)
 
 /* Single step - not used on 601 */
 	STD_EXCEPTION(0xd00, SingleStep, SingleStepException)
@@ -776,14 +766,18 @@ start_here:
 	sync			/* wait for tlbia/tlbie to finish */
 	TLBSYNC			/* ... on all CPUs */
 
-	/* set up the PTE pointers for the Abatron bdiGDB.
-	*/
+#ifdef CONFIG_BDI_SWITCH
+	/* Add helper information for the Abatron bdiGDB debugger.
+	 * We do this here because we know the mmu is disabled, and
+	 * will be enabled for real in just a few instructions.
+	 */
 	tovirt(r6,r6)
 	lis	r5, abatron_pteptrs@h
 	ori	r5, r5, abatron_pteptrs@l
 	stw	r5, 0xf0(r0)	/* Must match your Abatron config file */
 	tophys(r5,r5)
 	stw	r6, 0(r5)
+#endif
 
 /* Now turn on the MMU for real! */
 	li	r4,MSR_KERNEL
@@ -922,7 +916,7 @@ set_dec_cpu6:
 	SYNC
 	blr
 #endif
-	
+
 /*
  * We put a few things here that have to be page-aligned.
  * This stuff goes at the beginning of the data segment,
@@ -937,25 +931,26 @@ empty_zero_page:
 
 	.globl	swapper_pg_dir
 swapper_pg_dir:
-	.space	4096	
+	.space	4096
 
 /*
  * This space gets a copy of optional info passed to us by the bootstrap
  * Used to pass parameters into the kernel like root=/dev/sda1, etc.
- */	
+ */
 	.globl	cmd_line
 cmd_line:
 	.space	512
 
+#ifdef CONFIG_BDI_SWITCH
 /* Room for two PTE table poiners, usually the kernel and current user
  * pointer to their respective root page table (pgdir).
  */
 abatron_pteptrs:
 	.space	8
+#endif
 
 #ifdef CONFIG_8xx_CPU6
 	.globl	cpu6_errata_word
 cpu6_errata_word:
 	.space	16
 #endif
-

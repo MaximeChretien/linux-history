@@ -111,7 +111,6 @@ struct wacom {
 	struct wacom_features *features;
 	int tool[2];
 	int open;
-	int x, y;
 	__u32 serial[2];
 };
 
@@ -209,16 +208,16 @@ static void wacom_graphire_irq(struct urb *urb)
 			input_report_abs(dev, ABS_DISTANCE, data[7]);
 			input_report_rel(dev, REL_WHEEL, (signed char) data[6]);
 
-			input_report_abs(dev, ABS_X, wacom->x = x);
-			input_report_abs(dev, ABS_Y, wacom->y = y);
+			input_report_abs(dev, ABS_X, x);
+			input_report_abs(dev, ABS_Y, y);
 
 			input_event(dev, EV_MSC, MSC_SERIAL, data[1] & 0x01);
 			return;
 	}
 
 	if (data[1] & 0x80) {
-		input_report_abs(dev, ABS_X, wacom->x = x);
-		input_report_abs(dev, ABS_Y, wacom->y = y);
+		input_report_abs(dev, ABS_X, x);
+		input_report_abs(dev, ABS_Y, y);
 	}
 
 	input_report_abs(dev, ABS_PRESSURE, data[6] | ((__u32)data[7] << 8));
@@ -236,7 +235,6 @@ static void wacom_intuos_irq(struct urb *urb)
 	struct input_dev *dev = &wacom->dev;
 	unsigned int t;
 	int idx;
-	int x, y; 
 
 	if (urb->status) return;
 
@@ -285,11 +283,8 @@ static void wacom_intuos_irq(struct urb *urb)
 		return;
 	}
 
-	x = ((__u32)data[2] << 8) | data[3];
-	y = ((__u32)data[4] << 8) | data[5];
-	
-	input_report_abs(dev, ABS_X, wacom->x);
-	input_report_abs(dev, ABS_Y, wacom->y);
+	input_report_abs(dev, ABS_X, ((__u32)data[2] << 8) | data[3]);
+	input_report_abs(dev, ABS_Y, ((__u32)data[4] << 8) | data[5]);
 	input_report_abs(dev, ABS_DISTANCE, data[9] >> 4);
 	
 	if ((data[1] & 0xb8) == 0xa0) {						/* general pen packet */

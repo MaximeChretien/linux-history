@@ -38,7 +38,7 @@ typedef struct drm_mga_primary_buffer {
 
 	u32 tail;
 	int space;
-	volatile int wrapped;
+	volatile long wrapped;
 
 	volatile u32 *status;
 
@@ -213,7 +213,7 @@ do {									\
 		} else if ( dev_priv->prim.space <			\
 			    dev_priv->prim.high_mark ) {		\
 			if ( MGA_DMA_DEBUG )				\
-				DRM_INFO( __FUNCTION__": wrap...\n" );	\
+				DRM_INFO( "%s: wrap...\n", __FUNCTION__ );	\
 			return -EBUSY;					\
 		}							\
 	}								\
@@ -224,7 +224,7 @@ do {									\
 	if ( test_bit( 0, &dev_priv->prim.wrapped ) ) {			\
 		if ( mga_do_wait_for_idle( dev_priv ) < 0 ) {		\
 			if ( MGA_DMA_DEBUG )				\
-				DRM_INFO( __FUNCTION__": wrap...\n" );	\
+				DRM_INFO( "%s: wrap...\n", __FUNCTION__ );	\
 			return -EBUSY;					\
 		}							\
 		mga_do_dma_wrap_end( dev_priv );			\
@@ -276,7 +276,7 @@ do {									\
 #define FLUSH_DMA()							\
 do {									\
 	if ( 0 ) {							\
-		DRM_INFO( __FUNCTION__ ":\n" );				\
+		DRM_INFO( "%s:\n" , __FUNCTION__);			\
 		DRM_INFO( "   tail=0x%06x head=0x%06lx\n",		\
 			  dev_priv->prim.tail,				\
 			  MGA_READ( MGA_PRIMADDRESS ) -			\

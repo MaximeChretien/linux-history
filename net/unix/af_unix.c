@@ -183,7 +183,7 @@ static int unix_mkname(struct sockaddr_un * sunaddr, int len, unsigned *hashp)
 		/*
 		 *	This may look like an off by one error but it is
 		 *	a bit more subtle. 108 is the longest valid AF_UNIX
-		 *	path for a binding. sun_path[108] doesnt as such
+		 *	path for a binding. sun_path[108] doesn't as such
 		 *	exist. However in kernel space we are guaranteed that
 		 *	it is a valid memory location in our kernel
 		 *	address buffer.
@@ -565,10 +565,8 @@ retry:
 				      addr->hash)) {
 		write_unlock(&unix_table_lock);
 		/* Sanity yield. It is unusual case, but yet... */
-		if (!(ordernum&0xFF)) {
-			current->policy |= SCHED_YIELD;
-			schedule();
-		}
+		if (!(ordernum&0xFF))
+			yield();
 		goto retry;
 	}
 	addr->hash ^= sk->type;
@@ -608,6 +606,9 @@ static unix_socket *unix_find_other(struct sockaddr_un *sunname, int len,
 		if (!u)
 			goto put_fail;
 
+		if (u->type == type)
+			UPDATE_ATIME(nd.dentry->d_inode);
+
 		path_release(&nd);
 
 		err=-EPROTOTYPE;
@@ -618,7 +619,12 @@ static unix_socket *unix_find_other(struct sockaddr_un *sunname, int len,
 	} else {
 		err = -ECONNREFUSED;
 		u=unix_find_socket_byname(sunname, len, type, hash);
-		if (!u)
+		if (u) {
+			struct dentry *dentry;
+			dentry = u->protinfo.af_unix.dentry;
+			if (dentry)
+				UPDATE_ATIME(dentry->d_inode);
+		} else
 			goto fail;
 	}
 	return u;
@@ -1385,7 +1391,7 @@ out_err:
 
 static void unix_copy_addr(struct msghdr *msg, struct sock *sk)
 {
-	msg->msg_namelen = sizeof(short);
+	msg->msg_namelen = 0;
 	if (sk->protinfo.af_unix.addr) {
 		msg->msg_namelen=sk->protinfo.af_unix.addr->len;
 		memcpy(msg->msg_name,
@@ -1885,8 +1891,4 @@ static void __exit af_unix_exit(void)
 module_init(af_unix_init);
 module_exit(af_unix_exit);
 
-/*
- * Local variables:
- *  compile-command: "gcc -g -D__KERNEL__ -Wall -O6 -I/usr/src/linux/include -c af_unix.c"
- * End:
- */
+MODULE_LICENSE("GPL");

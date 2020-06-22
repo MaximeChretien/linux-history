@@ -6,7 +6,7 @@ typedef struct {
   int context;
   unsigned int offset;
   unsigned int size;
-  unsigned int free;
+  unsigned long free;
 } drm_sis_mem_t;
 
 typedef struct {

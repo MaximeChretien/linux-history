@@ -148,7 +148,7 @@ goon:
 	// Give this to the USB subsystem so it can tell us 
 	// when more data arrives.
 	if ( (res = usb_submit_urb(&ether_dev->rx_urb)) ) {
-		warn( __FUNCTION__ " failed submit rx_urb %d", res);
+		warn("%s failed submit rx_urb %d", __FUNCTION__, res);
 	}
 	
 	// We are no longer busy, show us the frames!!!
@@ -379,7 +379,7 @@ static int CDCEther_open(struct net_device *net)
 
 	// Turn on the USB and let the packets flow!!!
 	if ( (res = enable_net_traffic( ether_dev )) ) {
-		err( __FUNCTION__ "can't enable_net_traffic() - %d", res );
+		err("%s can't enable_net_traffic() - %d", __FUNCTION__, res );
 		return -EIO;
 	}
 
@@ -392,7 +392,7 @@ static int CDCEther_open(struct net_device *net)
 	/* Put it out there so the device can send us stuff */
 	if ( (res = usb_submit_urb(&ether_dev->rx_urb)) ) {
 		/* Hmm...  Okay... */
-		warn( __FUNCTION__ " failed rx_urb %d", res );
+		warn( "%s failed rx_urb %d", __FUNCTION__, res );
 	}
 
 	if (ether_dev->properties & HAVE_NOTIFICATION_ELEMENT) {
@@ -406,7 +406,7 @@ static int CDCEther_open(struct net_device *net)
 			ether_dev,
 			ether_dev->intr_interval);
 		if ( (res = usb_submit_urb(&ether_dev->intr_urb)) ) {
-			warn( __FUNCTION__ " failed intr_urb %d", res );
+			warn("%s failed intr_urb %d", __FUNCTION__, res );
 		}
 	}
 
@@ -497,14 +497,14 @@ static int CDCEther_ioctl( struct net_device *net, struct ifreq *rq, int cmd )
 static void CDC_SetEthernetPacketFilter (ether_dev_t *ether_dev)
 {
 #if 0
-	devrequest *dr = &ether_dev->ctrl_dr;
+	struct usb_ctrlrequest *dr = &ether_dev->ctrl_dr;
 	int res;
 
-	dr->requesttype = USB_TYPE_CLASS | USB_DIR_OUT | USB_RECIP_INTERFACE;
-	dr->request = SET_ETHERNET_PACKET_FILTER;
-	dr->value = cpu_to_le16(ether_dev->mode_flags);
-	dr->index = cpu_to_le16((u16)ether_dev->comm_interface);
-	dr->length = 0;
+	dr->bRequestType = USB_TYPE_CLASS | USB_DIR_OUT | USB_RECIP_INTERFACE;
+	dr->bRequest = SET_ETHERNET_PACKET_FILTER;
+	dr->wValue = cpu_to_le16(ether_dev->mode_flags);
+	dr->wIndex = cpu_to_le16((u16)ether_dev->comm_interface);
+	dr->wLength = 0;
 
 	FILL_CONTROL_URB(&ether_dev->ctrl_urb,
 			ether_dev->usb,
@@ -515,7 +515,7 @@ static void CDC_SetEthernetPacketFilter (ether_dev_t *ether_dev)
 			setpktfilter_done,
 			ether_dev);
 	if ( (res = usb_submit_urb(&ether_dev->ctrl_urb)) ) {
-		warn( __FUNCTION__ " failed submit ctrl_urb %d", res);
+		warn("%s failed submit ctrl_urb %d", __FUNCTION__, res);
 	}
 #endif
 

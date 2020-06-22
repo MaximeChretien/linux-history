@@ -7,7 +7,7 @@
  * Author: MontaVista Software, Inc.
  *         	ppopov@mvista.com or source@mvista.com
  *
- * This file was derived from Carsten Langgaard's 
+ * This file was derived from Carsten Langgaard's
  * arch/mips/mips-boards/atlas/atlas_setup.c.
  *
  * Carsten Langgaard, carstenl@mips.com
@@ -52,8 +52,6 @@
 #include <asm/galileo-boards/ev96100int.h>
 
 
-void (*__wbflush) (void);
-
 #if defined(CONFIG_SERIAL_CONSOLE) || defined(CONFIG_PROM_CONSOLE)
 extern void console_setup(char *, int *);
 char serial_console[20];
@@ -64,11 +62,6 @@ extern char * __init prom_getcmdline(void);
 extern void mips_reboot_setup(void);
 extern struct rtc_ops no_rtc_ops;
 extern struct resource ioport_resource;
-
-static void rm7000_wbflush(void)
-{
-	 __asm__ __volatile__ ("sync");
-}
 
 unsigned char mac_0_1[12];
 
@@ -83,7 +76,6 @@ void __init ev96100_setup(void)
 	char *argptr;
 
 	clear_cp0_status(ST0_FR);
-        __wbflush = rm7000_wbflush;
 
         if (config & 0x8) {
             printk("Secondary cache is enabled\n");
@@ -144,7 +136,7 @@ void __init ev96100_setup(void)
 		argptr = prom_getcmdline();
 		strcat(argptr, " console=ttyS0,115200");
 	}
-#endif	  
+#endif
 
 	rtc_ops = &no_rtc_ops;
 	mips_reboot_setup();
@@ -157,15 +149,15 @@ void __init ev96100_setup(void)
 #endif
 
 
-	/* 
-	 * setup gt controller master bit so we can do config cycles 
+	/*
+	 * setup gt controller master bit so we can do config cycles
 	 */
 
 	/* Clear cause register bits */
-	GT_WRITE(GT_INTRCAUSE_OFS, ~(GT_INTRCAUSE_MASABORT0_BIT | 
+	GT_WRITE(GT_INTRCAUSE_OFS, ~(GT_INTRCAUSE_MASABORT0_BIT |
 	                             GT_INTRCAUSE_TARABORT0_BIT));
 	/* Setup address */
-	GT_WRITE(GT_PCI0_CFGADDR_OFS,  
+	GT_WRITE(GT_PCI0_CFGADDR_OFS,
 		 (0      << GT_PCI0_CFGADDR_BUSNUM_SHF)   |
 		 (0      << GT_PCI0_CFGADDR_FUNCTNUM_SHF) |
 		 ((PCI_COMMAND / 4) << GT_PCI0_CFGADDR_REGNUM_SHF)   |
@@ -174,9 +166,9 @@ void __init ev96100_setup(void)
 	udelay(2);
 	tmp = le32_to_cpu(*(volatile u32 *)(MIPS_GT_BASE+GT_PCI0_CFGDATA_OFS));
 
-	tmp |= (PCI_COMMAND_IO | PCI_COMMAND_MEMORY | 
+	tmp |= (PCI_COMMAND_IO | PCI_COMMAND_MEMORY |
 		PCI_COMMAND_MASTER | PCI_COMMAND_SERR);
-	GT_WRITE(GT_PCI0_CFGADDR_OFS,  
+	GT_WRITE(GT_PCI0_CFGADDR_OFS,
 		 (0      << GT_PCI0_CFGADDR_BUSNUM_SHF)   |
 		 (0      << GT_PCI0_CFGADDR_FUNCTNUM_SHF) |
 		 ((PCI_COMMAND / 4) << GT_PCI0_CFGADDR_REGNUM_SHF)   |
@@ -185,7 +177,7 @@ void __init ev96100_setup(void)
 	*(volatile u32 *)(MIPS_GT_BASE+GT_PCI0_CFGDATA_OFS) = cpu_to_le32(tmp);
 
 	/* Setup address */
-	GT_WRITE(GT_PCI0_CFGADDR_OFS,  
+	GT_WRITE(GT_PCI0_CFGADDR_OFS,
 		 (0      << GT_PCI0_CFGADDR_BUSNUM_SHF)   |
 		 (0      << GT_PCI0_CFGADDR_FUNCTNUM_SHF) |
 		 ((PCI_COMMAND / 4) << GT_PCI0_CFGADDR_REGNUM_SHF)   |
@@ -195,12 +187,12 @@ void __init ev96100_setup(void)
 	tmp = le32_to_cpu(*(volatile u32 *)(MIPS_GT_BASE+GT_PCI0_CFGDATA_OFS));
 }
 
-unsigned short get_gt_devid() 
+unsigned short get_gt_devid()
 {
 	u32 gt_devid;
 
 	/* Figure out if this is a gt96100 or gt96100A */
-	GT_WRITE(GT_PCI0_CFGADDR_OFS,  
+	GT_WRITE(GT_PCI0_CFGADDR_OFS,
 		 (0      << GT_PCI0_CFGADDR_BUSNUM_SHF)   |
 		 (0      << GT_PCI0_CFGADDR_FUNCTNUM_SHF) |
 		 ((PCI_VENDOR_ID / 4) << GT_PCI0_CFGADDR_REGNUM_SHF)   |

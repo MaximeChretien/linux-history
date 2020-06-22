@@ -12,11 +12,11 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- */ 
+ */
 #include <linux/config.h>
 #include <asm/mmu_context.h>
 #include <asm/bootinfo.h>
@@ -37,13 +37,13 @@ static inline void dump_cur_tlb_regs(void)
 		"     tlbr             \n"
 		"     dmfc0  $1, $10   \n"
 		"     dsrl32 %0, $1, 0 \n"
-		"     sra    %1, $1, 0 \n"
+		"     sll    %1, $1, 0 \n"
 		"     dmfc0  $1, $2    \n"
 		"     dsrl32 %2, $1, 0 \n"
-		"     sra    %3, $1, 0 \n"
+		"     sll    %3, $1, 0 \n"
 		"     dmfc0  $1, $3    \n"
 		"     dsrl32 %4, $1, 0 \n"
-		"     sra    %5, $1, 0 \n"
+		"     sll    %5, $1, 0 \n"
 		"     mfc0   %6, $5    \n"
 		".set pop              \n"
 		: "=r" (entryhihi),
@@ -62,7 +62,11 @@ static inline void dump_cur_tlb_regs(void)
 
 void sb1_dump_tlb(void)
 {
+	unsigned long old_ctx;
+	unsigned long flags;
 	int entry;
+	__save_and_cli(flags);
+	old_ctx = get_entryhi();
 	printk("Current TLB registers state:\n"
 	       "      EntryHi       EntryLo0          EntryLo1     PageMask  Index\n"
 	       "--------------------------------------------------------------------\n");
@@ -83,6 +87,8 @@ void sb1_dump_tlb(void)
 		dump_cur_tlb_regs();
 	}
 	printk("\n");
+	set_entryhi(old_ctx);
+	__restore_flags(flags);
 }
 
 void local_flush_tlb_all(void)
@@ -102,12 +108,12 @@ void local_flush_tlb_all(void)
 		tlb_write_indexed();
 	}
 	set_entryhi(old_ctx);
-	__restore_flags(flags);	
+	__restore_flags(flags);
 }
 
 
 /*
- * Use a bogus region of memory (starting at 0) to sanitize the TLB's.  
+ * Use a bogus region of memory (starting at 0) to sanitize the TLB's.
  * Use increments of the maximum page size (16MB), and check for duplicate
  * entries before doing a given write.  Then, when we're safe from collisions
  * with the firmware, go back and give all the entries invalid addresses with
@@ -209,7 +215,7 @@ void local_flush_tlb_page(struct vm_area_struct *vma, unsigned long page)
 		set_entrylo1(0);
 		if(idx < 0)
 			goto finish;
-		/* Make sure all entries differ. */  
+		/* Make sure all entries differ. */
 		set_entryhi(KSEG0+(idx<<(PAGE_SHIFT+1)));
 		tlb_write_indexed();
 	finish:
@@ -299,7 +305,7 @@ void sb1_tlb_init(void)
 	/*
 	 * We don't know what state the firmware left the TLB's in, so this is
 	 * the ultra-conservative way to flush the TLB's and avoid machine
-	 * check exceptions due to duplicate TLB entries 
+	 * check exceptions due to duplicate TLB entries
 	 */
 	sb1_sanitize_tlb();
 	_update_mmu_cache = sb1_update_mmu_cache;

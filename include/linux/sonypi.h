@@ -75,6 +75,7 @@
 #define SONYPI_EVENT_LID_OPENED			37
 #define SONYPI_EVENT_BLUETOOTH_ON		38
 #define SONYPI_EVENT_BLUETOOTH_OFF		39
+#define SONYPI_EVENT_HELP_PRESSED		40
 
 /* get/set brightness */
 #define SONYPI_IOCGBRT		_IOR('v', 0, __u8)

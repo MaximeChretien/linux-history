@@ -88,6 +88,7 @@ do_page_fault(unsigned long address, unsigned long mmcsr,
 	struct mm_struct *mm = current->mm;
 	unsigned int fixup;
 	int fault;
+	siginfo_t info;
 
 	/* As of EV6, a load into $31/$f31 is a prefetch, and never faults
 	   (or is suppressed by the PALcode).  Support that for older CPUs
@@ -107,6 +108,8 @@ do_page_fault(unsigned long address, unsigned long mmcsr,
 	   we must not take the fault.  */
 	if (!mm || in_interrupt())
 		goto no_context;
+
+	info.si_code = SEGV_MAPERR;
 
 #ifdef CONFIG_ALPHA_LARGE_VMALLOC
 	if (address >= TASK_SIZE)
@@ -128,6 +131,7 @@ do_page_fault(unsigned long address, unsigned long mmcsr,
  * we can handle it..
  */
 good_area:
+	info.si_code = SEGV_ACCERR;
 	if (cause < 0) {
 		if (!(vma->vm_flags & VM_EXEC))
 			goto bad_area;
@@ -147,13 +151,12 @@ good_area:
 	 * the fault.
 	 */
 	fault = handle_mm_fault(mm, vma, address, cause > 0);
-	up_read(&mm->mmap_sem);
-
 	if (fault < 0)
 		goto out_of_memory;
 	if (fault == 0)
 		goto do_sigbus;
 
+	up_read(&mm->mmap_sem);
 	return;
 
 /*
@@ -164,7 +167,12 @@ bad_area:
 	up_read(&mm->mmap_sem);
 
 	if (user_mode(regs)) {
-		force_sig(SIGSEGV, current);
+			
+		info.si_signo = SIGSEGV;
+		info.si_errno = 0;
+		/* info.si_code has been set above */
+		info.si_addr = (void *)address;
+		force_sig_info(SIGSEGV,&info,current);
 		return;
 	}
 
@@ -196,11 +204,10 @@ no_context:
  */
 out_of_memory:
 	if (current->pid == 1) {
-		current->policy |= SCHED_YIELD;
-		schedule();
-		down_read(&mm->mmap_sem);
+		yield();
 		goto survive;
 	}
+	up_read(&mm->mmap_sem);
 	printk(KERN_ALERT "VM: killing process %s(%d)\n",
 	       current->comm, current->pid);
 	if (!user_mode(regs))
@@ -208,11 +215,17 @@ out_of_memory:
 	do_exit(SIGKILL);
 
 do_sigbus:
+	up_read(&mm->mmap_sem);
 	/*
 	 * Send a sigbus, regardless of whether we were in kernel
 	 * or user mode.
 	 */
-	force_sig(SIGBUS, current);
+	info.si_signo = SIGBUS;
+	info.si_errno = 0;
+	/* not sure si_code value here  */
+	info.si_code =  BUS_ADRERR;
+	info.si_addr = (void *)address;
+	force_sig_info(SIGBUS,&info,current);
 	if (!user_mode(regs))
 		goto no_context;
 	return;
@@ -220,7 +233,11 @@ do_sigbus:
 #ifdef CONFIG_ALPHA_LARGE_VMALLOC
 vmalloc_fault:
 	if (user_mode(regs)) {
-		force_sig(SIGSEGV, current);
+		info.si_signo = SIGSEGV;
+		info.si_errno = 0;
+		/* info.si_code has been set above */
+		info.si_addr = (void *)address;
+		force_sig_info(SIGSEGV,&info,current);
 		return;
 	} else {
 		/* Synchronize this task's top level page-table

@@ -22,7 +22,6 @@
  *	
  */
 
-#include "ppc_asm.h"
 #include <linux/config.h>
 #include <linux/errno.h>
 #include <linux/sys.h>
@@ -31,6 +30,8 @@
 #include <asm/page.h>
 #include <asm/mmu.h>
 #include <asm/cputable.h>
+#include <asm/ppc_asm.h>
+#include "ppc_defs.h"
 
 #undef SHOW_SYSCALLS
 #undef SHOW_SYSCALLS_TASK

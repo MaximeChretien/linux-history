@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.prom.c 1.52 04/09/02 21:01:58 paulus
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
  * Procedures for interfacing to the Open Firmware PROM on
@@ -26,6 +26,7 @@
 #include <asm/page.h>
 #include <asm/processor.h>
 #include <asm/irq.h>
+#include <asm/open_pic.h>
 #include <asm/system.h>
 #include <asm/btext.h>
 #include <asm/pci-bridge.h>
@@ -72,7 +73,6 @@ extern struct device_node *allnodes;
 static unsigned long finish_node(struct device_node *, unsigned long,
 				 interpret_func *, int, int);
 static unsigned long finish_node_interrupts(struct device_node *, unsigned long);
-static struct device_node *find_phandle(phandle);
 
 extern void enter_rtas(void *);
 void phys_call_rtas(int, int, int, ...);
@@ -152,7 +152,7 @@ finish_device_tree(void)
 			   match on /chosen.interrupt_controller */
 			if ((name != NULL
 			     && strcmp(name, "interrupt-controller") == 0)
-			    || (ic != NULL && iclen == 0)) {
+			    || (ic != NULL && iclen == 0 && strcmp(name, "AppleKiwi"))) {
 				if (n == 0)
 					dflt_interrupt_controller = np;
 				++n;
@@ -898,7 +898,7 @@ find_path_device(const char *path)
 /*
  * Find the device_node with a given phandle.
  */
-static struct device_node * __init
+struct device_node * __init
 find_phandle(phandle ph)
 {
 	struct device_node *np;

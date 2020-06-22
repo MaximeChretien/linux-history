@@ -84,7 +84,7 @@ asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
 		goto out_tsk;
 
 	switch (request) {
-	case PTRACE_PEEKTEXT: /* read word at location addr. */ 
+	case PTRACE_PEEKTEXT: /* read word at location addr. */
 	case PTRACE_PEEKDATA: {
 		unsigned long tmp;
 		int copied;
@@ -119,7 +119,7 @@ asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
 			 	if(!(mips_cpu.options & MIPS_CPU_FPU)) {
 					fregs = (unsigned long long *)
 						child->thread.fpu.soft.regs;
-				} else 
+				} else
 					if (last_task_used_math == child) {
 						__enable_fpu();
 						save_fp(child);
@@ -132,11 +132,6 @@ asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
 				 * order bits of the values stored in the even
 				 * registers - unless we're using r2k_switch.S.
 				 */
-#ifdef CONFIG_CPU_R3000
-				if (mips_cpu.options & MIPS_CPU_FPU)
-					tmp = *(unsigned long *)(fregs + addr);
-				else
-#endif
 				if (addr & 1)
 					tmp = (unsigned long) (fregs[((addr & ~1) - 32)] >> 32);
 				else
@@ -258,7 +253,7 @@ asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
 			regs->lo = data;
 			break;
 		case FPC_CSR:
-			if (!(mips_cpu.options & MIPS_CPU_FPU)) 
+			if (!(mips_cpu.options & MIPS_CPU_FPU))
 				child->thread.fpu.soft.sr = data;
 			else
 				child->thread.fpu.hard.control = data;
@@ -287,8 +282,8 @@ asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
 		}
 
 	/*
-	 * make the child exit.  Best I can do is send it a sigkill. 
-	 * perhaps it should be put in the status that it wants to 
+	 * make the child exit.  Best I can do is send it a sigkill.
+	 * perhaps it should be put in the status that it wants to
 	 * exit.
 	 */
 	case PTRACE_KILL:

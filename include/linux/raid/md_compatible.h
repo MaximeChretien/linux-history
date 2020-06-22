@@ -34,7 +34,7 @@ static __inline__ int md_cpu_has_mmx(void)
 	return test_bit(X86_FEATURE_MMX,  &boot_cpu_data.x86_capability);
 }
 #else
-#define md_cpu_has_mmx(x)	(0)
+#define md_cpu_has_mmx()       (0)
 #endif
 
 /* 002 */
@@ -99,7 +99,6 @@ static inline void md_init_signals (void)
 #define md_test_and_clear_bit test_and_clear_bit
 
 /* 018 */
-#define md_atomic_read atomic_read
 #define md_atomic_set atomic_set
 
 /* 019 */

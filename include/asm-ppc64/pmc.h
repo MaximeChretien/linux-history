@@ -98,18 +98,6 @@ void btfree(void *addr);
 #define PMC_SW_SYSTEM(F)      do {;} while (0)
 #endif
 
-#define MMCR0 795
-#define MMCR1 798
-#define MMCRA 786
-#define PMC1  787
-#define PMC2  788
-#define PMC3  789
-#define PMC4  790
-#define PMC5  791
-#define PMC6  792
-#define PMC7  793
-#define PMC8  794
-
 #define PMC_CONTROL_CPI 1
 #define PMC_CONTROL_TLB 2
 

@@ -602,7 +602,11 @@ struct aha152x_scdata {
 #define SCDONE(SCpnt)		SCDATA(SCpnt)->done
 #define SCSEM(SCpnt)		SCDATA(SCpnt)->sem
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+#define SG_ADDRESS(buffer)	((buffer)->address)
+#else
 #define SG_ADDRESS(buffer)	((char *) (page_address((buffer)->page)+(buffer)->offset))
+#endif
 
 /* state handling */
 static void seldi_run(struct Scsi_Host *shpnt);
@@ -2657,7 +2661,7 @@ static void datai_run(struct Scsi_Host *shpnt)
 		 * STCNT to trigger ENSWRAP interrupt, instead of
 		 * polling for DFIFOFULL
 		 */
-		the_time=jiffies + 10*HZ;
+		the_time=jiffies + 100*HZ;
 		while(TESTLO(DMASTAT, DFIFOFULL|INTSTAT) && time_before(jiffies,the_time))
 			barrier();
 
@@ -2670,7 +2674,7 @@ static void datai_run(struct Scsi_Host *shpnt)
 		if(TESTHI(DMASTAT, DFIFOFULL)) {
 			fifodata = 128;
 		} else {
-			the_time=jiffies + 10*HZ;
+			the_time=jiffies + 100*HZ;
 			while(TESTLO(SSTAT2, SEMPTY) && time_before(jiffies,the_time))
 				barrier();
 
@@ -2826,7 +2830,7 @@ static void datao_run(struct Scsi_Host *shpnt)
 			CURRENT_SC->SCp.this_residual = CURRENT_SC->SCp.buffer->length;
 		}
 
-		the_time=jiffies + 10*HZ;
+		the_time=jiffies + 100*HZ;
 		while(TESTLO(DMASTAT, DFIFOEMP|INTSTAT) && time_before(jiffies,the_time))
 			barrier();
 

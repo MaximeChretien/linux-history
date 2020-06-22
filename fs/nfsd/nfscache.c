@@ -38,7 +38,6 @@ static struct nfscache_head *	hash_list;
 static struct svc_cacherep *	lru_head;
 static struct svc_cacherep *	lru_tail;
 static struct svc_cacherep *	nfscache;
-static int			cache_initialized;
 static int			cache_disabled = 1;
 
 static int	nfsd_cache_append(struct svc_rqst *rqstp, struct svc_buf *data);
@@ -51,8 +50,6 @@ nfsd_cache_init(void)
 	size_t			i;
 	unsigned long		order;
 
-	if (cache_initialized)
-		return;
 
 	i = CACHESIZE * sizeof (struct svc_cacherep);
 	for (order = 0; (PAGE_SIZE << order) < i; order++)
@@ -90,7 +87,6 @@ nfsd_cache_init(void)
 	lru_head->c_lru_prev = NULL;
 	lru_tail->c_lru_next = NULL;
 
-	cache_initialized = 1;
 	cache_disabled = 0;
 }
 
@@ -101,15 +97,11 @@ nfsd_cache_shutdown(void)
 	size_t			i;
 	unsigned long		order;
 
-	if (!cache_initialized)
-		return;
-
 	for (rp = lru_head; rp; rp = rp->c_lru_next) {
 		if (rp->c_state == RC_DONE && rp->c_type == RC_REPLBUFF)
 			kfree(rp->c_replbuf.buf);
 	}
 
-	cache_initialized = 0;
 	cache_disabled = 1;
 
 	i = CACHESIZE * sizeof (struct svc_cacherep);

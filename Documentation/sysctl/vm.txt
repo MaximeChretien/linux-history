@@ -1,4 +1,4 @@
-Documentation for /proc/sys/vm/*	kernel version 2.2.10
+Documentation for /proc/sys/vm/*	kernel version 2.4.19
 	(c) 1998, 1999,  Rik van Riel <riel@nl.linux.org>
 
 For general info and legal blurb, please look in README.
@@ -6,7 +6,7 @@ For general info and legal blurb, please look in README.
 ==============================================================
 
 This file contains the documentation for the sysctl files in
-/proc/sys/vm and is valid for Linux kernel version 2.2.
+/proc/sys/vm and is valid for Linux kernel version 2.4.
 
 The files in this directory can be used to tune the operation
 of the virtual memory (VM) subsystem of the Linux kernel, and
@@ -34,26 +34,27 @@ bdflush:
 This file controls the operation of the bdflush kernel
 daemon. The source code to this struct can be found in
 linux/fs/buffer.c. It currently contains 9 integer values,
-of which 4 are actually used by the kernel.
+of which 6 are actually used by the kernel.
 
 From linux/fs/buffer.c:
 --------------------------------------------------------------
 union bdflush_param {
 	struct {
-		int nfract;	/* Percentage of buffer cache dirty to 
+		int nfract;	/* Percentage of buffer cache dirty to
 				   activate bdflush */
-		int dummy1;	/* old "ndirty" */
+		int ndirty;	/* Maximum number of dirty blocks to write out per
+				   wake-cycle */
 		int dummy2;	/* old "nrefill" */
 		int dummy3;	/* unused */
 		int interval;	/* jiffies delay between kupdate flushes */
-		int age_buffer;	/* Time for normal buffer to age */
-		int nfract_sync;/* Percentage of buffer cache dirty to 
+		int age_buffer;	/* Time for normal buffer to age before we flush it */
+		int nfract_sync;/* Percentage of buffer cache dirty to
 				   activate bdflush synchronously */
-		int dummy4;	/* unused */
+		int nfract_stop_bdflush; /* Percentage of buffer cache dirty to stop bdflush */
 		int dummy5;	/* unused */
 	} b_un;
 	unsigned int data[N_PARAM];
-} bdf_prm = {{30, 64, 64, 256, 5*HZ, 30*HZ, 60, 0, 0}};
+} bdf_prm = {{30, 500, 0, 0, 5*HZ, 30*HZ, 60, 20, 0}};
 --------------------------------------------------------------
 
 int nfract:
@@ -67,6 +68,13 @@ to do a lot of I/O at once when memory becomes short. A low
 value will spread out disk I/O more evenly, at the cost of
 more frequent I/O operations.  The default value is 30%,
 the minimum is 0%, and the maximum is 100%.
+
+int ndirty:
+The second parameter (ndirty) gives the maximum number of
+dirty buffers that bdflush can write to the disk in one time.
+A high value will mean delayed, bursty I/O, while a small
+value can lead to memory shortage when bdflush isn't woken
+up often enough.
 
 int interval:
 The fifth parameter, interval, is the minimum rate at
@@ -88,7 +96,11 @@ of buffer cache that is dirty before bdflush activates
 synchronously.  This can be viewed as the hard limit before
 bdflush forces buffers to disk.  The default is 60%, the
 minimum is 0%, and the maximum is 100%.
- 
+
+int nfract_stop_bdflush:
+The eighth parameter, nfract_stop_bdflush, governs the percentage
+of buffer cache that is dirty which will stop bdflush.
+The default is 20%, the miniumum is 0%, and the maxiumum is 100%.
 ==============================================================
 buffermem:
 

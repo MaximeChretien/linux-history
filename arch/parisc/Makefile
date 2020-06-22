@@ -17,12 +17,28 @@
 # Mike Shaver, Helge Deller and Martin K. Petersen
 #
 
+ifdef CONFIG_PARISC64
+LINKFLAGS =-T $(TOPDIR)/arch/parisc/vmlinux64.lds $(LDFLAGS)
+CROSS_COMPILE := hppa64-linux-
+UTS_MACHINE := parisc64
+#CFLAGS += -b hppa64-linux
+
+else
+LINKFLAGS =-T $(TOPDIR)/arch/parisc/vmlinux.lds $(LDFLAGS)
+MACHINE	:= $(subst 64,,$(shell uname -m))
+ifneq (${MACHINE},parisc)
+# cross compilation
+CROSS_COMPILE := hppa-linux-
+endif
+endif
+
+OFFSET_H := $(TOPDIR)/include/asm-parisc/offset.h
 FINAL_LD=$(CROSS_COMPILE)ld --warn-common --warn-section-align 
 
 CPP=$(CC) -E
 OBJCOPY=$(CROSS_COMPILE)objcopy -O binary -R .note -R .comment -S
 LDFLAGS =
-LINKFLAGS =-T $(TOPDIR)/arch/parisc/vmlinux.lds $(LDFLAGS)
+
 
 CFLAGS_PIPE := -pipe
 CFLAGS_NSR  := -fno-strength-reduce
@@ -32,25 +48,48 @@ CFLAGS := $(CFLAGS) -D__linux__ $(CFLAGS_PIPE) $(CFLAGS_NSR)
 # enable them by default.
 CFLAGS += -mno-space-regs -mfast-indirect-calls
 
-# If we become able to compile for specific platforms, this should be
-# conditional on that.
-CFLAGS += -mschedule=7200
-
 # No fixed-point multiply
 CFLAGS += -mdisable-fpregs
 
-HEAD = arch/parisc/kernel/head.o 
+# Without this, "ld -r" results in .text sections that are too big
+# (> 0x40000) for branches to reach stubs.
+CFLAGS += -ffunction-sections
+
+# select which processor to optimise for
+ifdef CONFIG_PA7100
+CFLAGS += -march=1.1 -mschedule=7100
+endif
+
+ifdef CONFIG_PA7200
+CFLAGS += -march=1.1 -mschedule=7200
+endif
+
+ifdef CONFIG_PA7100LC
+CFLAGS += -march=1.1 -mschedule=7100LC
+endif
+
+ifdef CONFIG_PA8X00
+CFLAGS += -march=2.0 -mschedule=8000
+endif
+
+ASFLAGS := -D__ASSEMBLY__ -traditional
+
+HEAD := arch/parisc/kernel/head.o 
 
 SUBDIRS := $(SUBDIRS) $(addprefix arch/parisc/, tools kernel mm lib hpux)
 CORE_FILES :=  $(addprefix arch/parisc/, kernel/pdc_cons.o kernel/process.o \
 	lib/lib.a mm/mm.o kernel/kernel.o hpux/hpux.o) \
 	$(CORE_FILES) arch/parisc/kernel/init_task.o
+CLEAN_FILES := $(CLEAN_FILES) arch/parisc/tools/offset.[hs] 
+
+ifdef CONFIG_PARISC64
+HEAD := arch/parisc/kernel/head64.o
+endif
+
 LIBS := `$(CC) -print-libgcc-file-name` $(TOPDIR)/arch/parisc/lib/lib.a $(LIBS) 
 
-ifdef CONFIG_MATH_EMULATION
 SUBDIRS := $(SUBDIRS) arch/parisc/math-emu
-DRIVERS := $(DRIVERS) arch/parisc/math-emu/math.a
-endif
+DRIVERS := $(DRIVERS) arch/parisc/math-emu/math.o
 
 ifdef CONFIG_KWDB
 SUBDIRS := $(SUBDIRS) arch/parisc/kdb
@@ -67,7 +106,7 @@ arch/parisc/mm: dummy
 	$(MAKE) linuxsubdirs SUBDIRS=arch/parisc/mm
 
 palo: vmlinux
-	export TOPDIR=`pwd`; export CONFIG_STI_CONSOLE=$(CONFIG_STI_CONSOLE); \
+	export TOPDIR=`pwd`; \
 	unset STRIP LDFLAGS CPP CPPFLAGS AFLAGS CFLAGS CC LD; cd ../palo && make lifimage
 
 Image: palo
@@ -84,8 +123,14 @@ compressed: zImage
 
 install: 
 
+archmrproper:
+	rm -f $(OFFSET_H)
+
 archclean:
 
-archmrproper:
+archdep: $(OFFSET_H)
 
-archdep:
+$(OFFSET_H): include/linux/version.h
+	$(MAKE) -C $(TOPDIR)/arch/$(ARCH)/tools all
+
+.PHONY: $(OFFSET_H)

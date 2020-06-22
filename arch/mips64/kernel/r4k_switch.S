@@ -10,7 +10,6 @@
  */
 #include <asm/asm.h>
 #include <asm/cachectl.h>
-#include <asm/current.h>
 #include <asm/fpregdef.h>
 #include <asm/mipsregs.h>
 #include <asm/offset.h>
@@ -69,6 +68,7 @@ LEAF(lazy_fpu_switch)
 	li	t3, ST0_CU1
 	or	t0, t3
 	mtc0	t0, CP0_STATUS
+	FPU_ENABLE_HAZARD
 
 	beqz	a0, 2f				# Save floating point state
 	 nor	t3, zero, t3
@@ -88,11 +88,11 @@ LEAF(lazy_fpu_switch)
 
 	sll	t0, t0, 5			# load new fp state
 	bgez	t0, 1f
-	 ldc1	$f0, (THREAD_FPU + 0x00)($28)
-	fpu_restore_16odd $28
+	 ldc1	$f0, (THREAD_FPU + 0x00)(a1)
+	fpu_restore_16odd a1
 1:
 	.set	reorder
-	fpu_restore_16even $28, t0		# clobbers t0
+	fpu_restore_16even a1, t0		# clobbers t0
 3:
 	jr	ra
 	END(lazy_fpu_switch)
@@ -119,15 +119,15 @@ LEAF(save_fp)
 LEAF(restore_fp)
 	mfc0	t0, CP0_STATUS
 	sll	t1, t0, 5
-	bgez	t0, 1f				# 16 register mode?
+	bgez	t1, 1f				# 16 register mode?
 	 nop
 
-	fpu_restore_16odd $28
+	fpu_restore_16odd a0
 1:
-	.set	reorder
-	fpu_restore_16even $28, t0		# clobbers t0
+	fpu_restore_16even a0, t0		# clobbers t0
 
 	jr	ra
+	 ldc1	$f0, (THREAD_FPU + 0x00)(a0)
 	END(restore_fp)
 
 /*
@@ -145,6 +145,7 @@ LEAF(init_fpu)
 	li	t1, ST0_CU1
 	or	t0, t1
 	mtc0	t0, CP0_STATUS
+	FPU_ENABLE_HAZARD
 	sll	t0, t0, 5
 
 	li	t1, FPU_DEFAULT

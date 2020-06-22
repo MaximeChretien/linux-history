@@ -25,12 +25,12 @@
 #define	HIL_BUSY		0x02
 #define	HIL_DATA_RDY		0x01
 
-#define hil_busy()		(readb(HILBASE + HIL_CMD) & HIL_BUSY)
-#define hil_data_available()	(readb(HILBASE + HIL_CMD) & HIL_DATA_RDY)
-#define hil_status()		(readb(HILBASE + HIL_CMD))
-#define hil_command(x)		do { writeb((x), HILBASE + HIL_CMD); } while (0)
-#define hil_read_data()		(readb(HILBASE + HIL_DATA))
-#define hil_write_data(x)	do { writeb((x), HILBASE + HIL_DATA); } while (0)
+#define hil_busy()		(in_8(HILBASE + HIL_CMD) & HIL_BUSY)
+#define hil_data_available()	(in_8(HILBASE + HIL_CMD) & HIL_DATA_RDY)
+#define hil_status()		(in_8(HILBASE + HIL_CMD))
+#define hil_command(x)		out_8(HILBASE + HIL_CMD, (x))
+#define hil_read_data()		(in_8(HILBASE + HIL_DATA))
+#define hil_write_data(x)	out_8(HILBASE + HIL_DATA, (x))
 
 #define	HIL_SETARD		0xA0		/* set auto-repeat delay */
 #define	HIL_SETARR		0xA2		/* set auto-repeat rate */

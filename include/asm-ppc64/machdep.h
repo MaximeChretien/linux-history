@@ -10,7 +10,6 @@
  */
 
 #include <linux/config.h>
-#include <linux/seq_file.h>
 
 struct pt_regs;
 struct pci_bus;	
@@ -21,29 +20,24 @@ struct TceTable;
 struct rtc_time;
 
 struct machdep_calls {
-	/* High use functions in the first cachelines, low use functions
-	 * follow.  DRENG collect profile data.
-	 */
-	void            (*hpte_invalidate)(unsigned long slot);
-
-	void            (*hpte_updatepp)(long slot, 
+	void            (*hpte_invalidate)(unsigned long slot,
+					   unsigned long secondary,  
+					   unsigned long va, 
+					   int large, int local);
+	long            (*hpte_updatepp)(unsigned long slot,
+					 unsigned long secondary,  
 					 unsigned long newpp, 
-					 unsigned long va);
+					 unsigned long va,
+					 int large);
 	void            (*hpte_updateboltedpp)(unsigned long newpp, 
 					       unsigned long ea);
-	unsigned long	(*hpte_getword0)(unsigned long slot);
-
-	long		(*hpte_find)( unsigned long vpn );
-
-	long		(*hpte_selectslot)(unsigned long vpn); 
-
-	void		(*hpte_create_valid)(unsigned long slot,
-					     unsigned long vpn,
-					     unsigned long prpn,
-					     unsigned hash, 
-					     void * ptep,
-					     unsigned hpteflags, 
-					     unsigned bolted);
+	long		(*hpte_insert)(unsigned long vpn,
+				       unsigned long prpn,
+				       unsigned long hpteflags, 
+				       int bolted,
+				       int large);
+	long		(*hpte_remove)(unsigned long hpte_group);
+	
 	void		(*tce_build)(struct TceTable * tbl,
 				     long tcenum,
 				     unsigned long uaddr,
@@ -69,7 +63,6 @@ struct machdep_calls {
 	void		(*init_IRQ)(void);
 	void		(*init_ras_IRQ)(void);
 	int		(*get_irq)(struct pt_regs *);
-	void		(*post_irq)( struct pt_regs *, int );
 	
 	/* A general init function, called by ppc_init in init/main.c.
 	   May be NULL. */
@@ -86,6 +79,7 @@ struct machdep_calls {
 	void		(*calibrate_decr)(void);
 
   	void		(*progress)(char *, unsigned short);
+
 
 	unsigned char 	(*nvram_read_val)(int addr);
 	void		(*nvram_write_val)(int addr, unsigned char val);
@@ -145,6 +139,23 @@ extern struct machdep_calls ppc_md;
 extern char cmd_line[512];
 
 extern void setup_pci_ptrs(void);
+
+
+/* Functions to produce codes on the leds.
+ * The SRC code should be unique for the message category and should
+ * be limited to the lower 24 bits (the upper 8 are set by these funcs),
+ * and (for boot & dump) should be sorted numerically in the order
+ * the events occur.
+ */
+/* Print a boot progress message. */
+void ppc64_boot_msg(unsigned int src, const char *msg);
+/* Print a termination message (print only -- does not stop the kernel) */
+void ppc64_terminate_msg(unsigned int src, const char *msg);
+/* Print something that needs attention (device error, etc) */
+void ppc64_attention_msg(unsigned int src, const char *msg);
+/* Print a dump progress message. */
+void ppc64_dump_msg(unsigned int src, const char *msg);
+
 
 #endif /* _PPC_MACHDEP_H */
 #endif /* __KERNEL__ */

@@ -151,8 +151,7 @@ repeat:
   }
   bn = allocate_bitmap_node(p_s_sb) ;
   if (!bn) {
-    current->policy |= SCHED_YIELD ;
-    schedule() ;
+    yield();
     goto repeat ;
   }
   return bn ;
@@ -191,7 +190,7 @@ static int set_bit_in_list_bitmap(struct super_block *p_s_sb, int block,
   if (!jb->bitmaps[bmap_nr]) {
     jb->bitmaps[bmap_nr] = get_bitmap_node(p_s_sb) ;
   }
-  set_bit(bit_nr, jb->bitmaps[bmap_nr]->data) ;
+  set_bit(bit_nr, (unsigned long *)jb->bitmaps[bmap_nr]->data) ;
   return 0 ;
 }
 
@@ -375,7 +374,7 @@ static int clear_prepared_bits(struct buffer_head *bh) {
 /* buffer is in current transaction */
 inline int buffer_journaled(const struct buffer_head *bh) {
   if (bh)
-    return test_bit(BH_JDirty, ( struct buffer_head * ) &bh->b_state) ;
+    return test_bit(BH_JDirty, &((struct buffer_head *)bh)->b_state) ;
   else
     return 0 ;
 }
@@ -385,7 +384,7 @@ inline int buffer_journaled(const struct buffer_head *bh) {
 */ 
 inline int buffer_journal_new(const struct buffer_head *bh) {
   if (bh) 
-    return test_bit(BH_JNew, ( struct buffer_head * )&bh->b_state) ;
+    return test_bit(BH_JNew, &((struct buffer_head *)bh)->b_state) ;
   else
     return 0 ;
 }
@@ -508,14 +507,12 @@ int dump_journal_writers(void) {
 **
 */
 int reiserfs_in_journal(struct super_block *p_s_sb, kdev_t dev, 
-                        unsigned long bl, int size, int search_all, 
-			unsigned long *next_zero_bit) {
+                        int bmap_nr, int bit_nr, int size, int search_all, 
+			unsigned int *next_zero_bit) {
   struct reiserfs_journal_cnode *cn ;
   struct reiserfs_list_bitmap *jb ;
   int i ;
-  int bmap_nr = bl / (p_s_sb->s_blocksize << 3) ;
-  int bit_nr = bl % (p_s_sb->s_blocksize << 3) ;
-  int tmp_bit ;
+  unsigned long bl;
 
   *next_zero_bit = 0 ; /* always start this at zero. */
 
@@ -534,16 +531,16 @@ int reiserfs_in_journal(struct super_block *p_s_sb, kdev_t dev,
       PROC_INFO_INC( p_s_sb, journal.in_journal_bitmap );
       jb = SB_JOURNAL(p_s_sb)->j_list_bitmap + i ;
       if (jb->journal_list && jb->bitmaps[bmap_nr] &&
-          test_bit(bit_nr, jb->bitmaps[bmap_nr]->data)) {
-	tmp_bit = find_next_zero_bit((unsigned long *)
+          test_bit(bit_nr, (unsigned long *)jb->bitmaps[bmap_nr]->data)) {
+	*next_zero_bit = find_next_zero_bit((unsigned long *)
 	                             (jb->bitmaps[bmap_nr]->data),
 	                             p_s_sb->s_blocksize << 3, bit_nr+1) ; 
-	*next_zero_bit = bmap_nr * (p_s_sb->s_blocksize << 3) + tmp_bit ;
 	return 1 ;
       }
     }
   }
 
+  bl = bmap_nr * (p_s_sb->s_blocksize << 3) + bit_nr;
   /* is it in any old transactions? */
   if (search_all && (cn = get_journal_hash_dev(SB_JOURNAL(p_s_sb)->j_list_hash_table, dev,bl,size))) {
     return 1; 
@@ -1811,7 +1808,8 @@ static void reiserfs_journal_commit_task_func(struct reiserfs_journal_commit_tas
   jl = SB_JOURNAL_LIST(ct->p_s_sb) + ct->jindex ;
 
   flush_commit_list(ct->p_s_sb, SB_JOURNAL_LIST(ct->p_s_sb) + ct->jindex, 1) ; 
-  if (jl->j_len > 0 && atomic_read(&(jl->j_nonzerolen)) > 0 && 
+
+  if (jl->j_len > 0 && atomic_read(&(jl->j_nonzerolen)) > 0 &&
       atomic_read(&(jl->j_commit_left)) == 0) {
     kupdate_one_transaction(ct->p_s_sb, jl) ;
   }

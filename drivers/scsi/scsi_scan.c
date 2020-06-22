@@ -113,7 +113,6 @@ static struct dev_info device_list[] =
 	{"HP", "A6188A", "*", BLIST_SPARSELUN},			/* HP Va7100 Array */
 	{"HP", "A6189A", "*", BLIST_SPARSELUN},			/* HP Va7400 Array */
 	{"HP", "A6189B", "*", BLIST_SPARSELUN},			/* HP Va7410 Array */
-	{"HP", "OPEN-", "*", BLIST_SPARSELUN},			/* HP XP Arrays */
 	{"YAMAHA", "CDR100", "1.00", BLIST_NOLUN},		/* Locks up if polled for lun != 0 */
 	{"YAMAHA", "CDR102", "1.00", BLIST_NOLUN},		/* Locks up if polled for lun != 0  
 								 * extra reset */
@@ -163,6 +162,7 @@ static struct dev_info device_list[] =
 	{"DELL", "PV530F",    "*", BLIST_SPARSELUN | BLIST_LARGELUN}, // Dell PV 530F
 	{"EMC", "SYMMETRIX", "*", BLIST_SPARSELUN | BLIST_LARGELUN | BLIST_FORCELUN},
 	{"HP", "A6189A", "*", BLIST_SPARSELUN |  BLIST_LARGELUN}, // HP VA7400, by Alar Aun
+	{"HP", "OPEN-", "*", BLIST_SPARSELUN | BLIST_LARGELUN},			/* HP XP Arrays */
 	{"CMD", "CRA-7280", "*", BLIST_SPARSELUN | BLIST_LARGELUN},   // CMD RAID Controller
 	{"CNSI", "G7324", "*", BLIST_SPARSELUN | BLIST_LARGELUN},     // Chaparral G7324 RAID
 	{"CNSi", "G8324", "*", BLIST_SPARSELUN},     // Chaparral G8324 RAID
@@ -181,6 +181,7 @@ static struct dev_info device_list[] =
 	{"HITACHI", "DF400", "*", BLIST_SPARSELUN},
 	{"HITACHI", "DF500", "*", BLIST_SPARSELUN},
 	{"HITACHI", "DF600", "*", BLIST_SPARSELUN},
+	{"IBM", "ProFibre 4000R", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
 
 	/*
 	 * Must be at end of list...

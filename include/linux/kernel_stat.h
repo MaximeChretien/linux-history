@@ -26,7 +26,9 @@ struct kernel_stat {
 	unsigned int dk_drive_wblk[DK_MAX_MAJOR][DK_MAX_DISK];
 	unsigned int pgpgin, pgpgout;
 	unsigned int pswpin, pswpout;
-#if !defined(CONFIG_ARCH_S390)
+#if defined (__hppa__) 
+	unsigned int irqs[NR_IRQ_REGS][IRQ_PER_REGION];
+#elif !defined(CONFIG_ARCH_S390)
 	unsigned int irqs[NR_CPUS][NR_IRQS];
 #endif
 	unsigned int context_swtch;
@@ -34,11 +36,21 @@ struct kernel_stat {
 
 extern struct kernel_stat kstat;
 
-#if !defined(CONFIG_ARCH_S390)
+extern unsigned long nr_context_switches(void);
+
+#if defined (__hppa__) 
 /*
  * Number of interrupts per specific IRQ source, since bootup
  */
 static inline int kstat_irqs (int irq)
+{
+	return kstat.irqs[IRQ_REGION(irq)][IRQ_OFFSET(irq)];
+}
+#elif !defined(CONFIG_ARCH_S390)
+/*
+ * Number of interrupts per specific IRQ source, since bootup
+ */
+extern inline int kstat_irqs (int irq)
 {
 	int i, sum=0;
 

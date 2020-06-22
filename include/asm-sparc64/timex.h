@@ -20,4 +20,7 @@ typedef unsigned long cycles_t;
 	ret; \
 })
 
+#define vxtime_lock()		do {} while (0)
+#define vxtime_unlock()		do {} while (0)
+
 #endif

@@ -656,7 +656,8 @@ ssize_t i2cproc_bus_read(struct file * file, char * buf,size_t count,
 	struct inode * inode = file->f_dentry->d_inode;
 	char *kbuf;
 	struct i2c_client *client;
-	int i,j,k,order_nr,len=0,len_total;
+	int i,j,k,order_nr,len=0;
+	size_t len_total;
 	int order[I2C_CLIENT_MAX];
 
 	if (count > 4000)

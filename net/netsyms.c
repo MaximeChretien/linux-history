@@ -416,6 +416,9 @@ EXPORT_SYMBOL(netlink_unicast);
 EXPORT_SYMBOL(netlink_kernel_create);
 EXPORT_SYMBOL(netlink_dump_start);
 EXPORT_SYMBOL(netlink_ack);
+EXPORT_SYMBOL(netlink_set_nonroot);
+EXPORT_SYMBOL(netlink_register_notifier);
+EXPORT_SYMBOL(netlink_unregister_notifier);
 #if defined(CONFIG_NETLINK_DEV) || defined(CONFIG_NETLINK_DEV_MODULE)
 EXPORT_SYMBOL(netlink_attach);
 EXPORT_SYMBOL(netlink_detach);
@@ -490,6 +493,7 @@ EXPORT_SYMBOL(__kfree_skb);
 EXPORT_SYMBOL(skb_clone);
 EXPORT_SYMBOL(skb_copy);
 EXPORT_SYMBOL(netif_rx);
+EXPORT_SYMBOL(netif_receive_skb);
 EXPORT_SYMBOL(dev_add_pack);
 EXPORT_SYMBOL(dev_remove_pack);
 EXPORT_SYMBOL(dev_get);
@@ -585,7 +589,11 @@ EXPORT_SYMBOL(ip_route_me_harder);
 
 EXPORT_SYMBOL(register_gifconf);
 
-EXPORT_SYMBOL(net_call_rx_atomic);
 EXPORT_SYMBOL(softnet_data);
+
+#if defined(CONFIG_NET_RADIO) || defined(CONFIG_NET_PCMCIA_RADIO)
+#include <net/iw_handler.h>
+EXPORT_SYMBOL(wireless_send_event);
+#endif /* CONFIG_NET_RADIO || CONFIG_NET_PCMCIA_RADIO */
 
 #endif  /* CONFIG_NET */

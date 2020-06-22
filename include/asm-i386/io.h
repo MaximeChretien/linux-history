@@ -333,7 +333,7 @@ static inline void out##s(unsigned x value, unsigned short port) {
 #define __OUT2(s,s1,s2) \
 __asm__ __volatile__ ("out" #s " %" s1 "0,%" s2 "1"
 
-#ifdef CONFIG_MULTIQUAD
+#if defined (CONFIG_MULTIQUAD) && !defined(STANDALONE)
 #define __OUTQ(s,ss,x)    /* Do the equivalent of the portio op on quads */ \
 static inline void out##ss(unsigned x value, unsigned short port) { \
 	if (xquad_portio) \
@@ -361,9 +361,9 @@ static inline RETURN_TYPE in##ss##_quad(unsigned short port, int quad) { \
 	else\
 		return 0;\
 }
-#endif /* CONFIG_MULTIQUAD */
+#endif /* CONFIG_MULTIQUAD && !STANDALONE */
 
-#ifndef CONFIG_MULTIQUAD
+#if !defined(CONFIG_MULTIQUAD) || defined(STANDALONE)
 #define __OUT(s,s1,x) \
 __OUT1(s,x) __OUT2(s,s1,"w") : : "a" (value), "Nd" (port)); } \
 __OUT1(s##_p,x) __OUT2(s,s1,"w") __FULL_SLOW_DOWN_IO : : "a" (value), "Nd" (port));} 
@@ -374,7 +374,7 @@ __OUT1(s##_local,x) __OUT2(s,s1,"w") : : "a" (value), "Nd" (port)); } \
 __OUT1(s##_p_local,x) __OUT2(s,s1,"w") __FULL_SLOW_DOWN_IO : : "a" (value), "Nd" (port));} \
 __OUTQ(s,s,x) \
 __OUTQ(s,s##_p,x) 
-#endif /* CONFIG_MULTIQUAD */
+#endif /* !CONFIG_MULTIQUAD || STANDALONE */
 
 #define __IN1(s) \
 static inline RETURN_TYPE in##s(unsigned short port) { RETURN_TYPE _v;
@@ -382,7 +382,7 @@ static inline RETURN_TYPE in##s(unsigned short port) { RETURN_TYPE _v;
 #define __IN2(s,s1,s2) \
 __asm__ __volatile__ ("in" #s " %" s2 "1,%" s1 "0"
 
-#ifndef CONFIG_MULTIQUAD
+#if !defined(CONFIG_MULTIQUAD) || defined(STANDALONE)
 #define __IN(s,s1,i...) \
 __IN1(s) __IN2(s,s1,"w") : "=a" (_v) : "Nd" (port) ,##i ); return _v; } \
 __IN1(s##_p) __IN2(s,s1,"w") __FULL_SLOW_DOWN_IO : "=a" (_v) : "Nd" (port) ,##i ); return _v; } 
@@ -393,7 +393,7 @@ __IN1(s##_local) __IN2(s,s1,"w") : "=a" (_v) : "Nd" (port) ,##i ); return _v; } 
 __IN1(s##_p_local) __IN2(s,s1,"w") __FULL_SLOW_DOWN_IO : "=a" (_v) : "Nd" (port) ,##i ); return _v; } \
 __INQ(s,s) \
 __INQ(s,s##_p) 
-#endif /* CONFIG_MULTIQUAD */
+#endif /* !CONFIG_MULTIQUAD || STANDALONE */
 
 #define __INS(s) \
 static inline void ins##s(unsigned short port, void * addr, unsigned long count) \

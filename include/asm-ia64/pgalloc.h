@@ -8,13 +8,14 @@
  * This hopefully works with any (fixed) ia-64 page-size, as defined
  * in <asm/page.h> (currently 8192).
  *
- * Copyright (C) 1998-2001 Hewlett-Packard Co
+ * Copyright (C) 1998-2002 Hewlett-Packard Co
  *	David Mosberger-Tang <davidm@hpl.hp.com>
  * Copyright (C) 2000, Goutham Rao <goutham.rao@intel.com>
  */
 
 #include <linux/config.h>
 
+#include <linux/compiler.h>
 #include <linux/mm.h>
 #include <linux/threads.h>
 
@@ -194,6 +195,8 @@ flush_tlb_page (struct vm_area_struct *vma, unsigned long addr)
 #else
 	if (vma->vm_mm == current->active_mm)
 		asm volatile ("ptc.l %0,%1" :: "r"(addr), "r"(PAGE_SHIFT << 2) : "memory");
+	else
+		vma->vm_mm->context = 0;
 #endif
 }
 
@@ -204,30 +207,41 @@ flush_tlb_page (struct vm_area_struct *vma, unsigned long addr)
 static inline void
 flush_tlb_pgtables (struct mm_struct *mm, unsigned long start, unsigned long end)
 {
-	if (rgn_index(start) != rgn_index(end))
-		printk("flush_tlb_pgtables: can't flush across regions!!\n");
-	flush_tlb_range(mm, ia64_thash(start), ia64_thash(end));
+	if (unlikely(end - start >= 1024*1024*1024*1024UL
+		     || rgn_index(start) != rgn_index(end - 1)))
+		/*
+		 * This condition is very rare and normal applications shouldn't get
+		 * here. No attempt has been made to optimize for this case.
+		 */
+		flush_tlb_all();
+	else
+		flush_tlb_range(mm, ia64_thash(start), ia64_thash(end));
 }
 
 /*
- * Now for some cache flushing routines.  This is the kind of stuff
- * that can be very expensive, so try to avoid them whenever possible.
+ * Cache flushing routines.  This is the kind of stuff that can be very expensive, so try
+ * to avoid them whenever possible.
  */
 
-/* Caches aren't brain-dead on the IA-64. */
 #define flush_cache_all()			do { } while (0)
 #define flush_cache_mm(mm)			do { } while (0)
 #define flush_cache_range(mm, start, end)	do { } while (0)
 #define flush_cache_page(vma, vmaddr)		do { } while (0)
 #define flush_page_to_ram(page)			do { } while (0)
+#define flush_icache_page(vma,page)		do { } while (0)
+
+#define flush_dcache_page(page)			\
+do {						\
+	clear_bit(PG_arch_1, &(page)->flags);	\
+} while (0)
 
 extern void flush_icache_range (unsigned long start, unsigned long end);
 
-static inline void
-flush_dcache_page (struct page *page)
-{
-	clear_bit(PG_arch_1, &page->flags);
-}
+#define flush_icache_user_range(vma, page, user_addr, len)					\
+do {												\
+	unsigned long _addr = (unsigned long) page_address(page) + ((user_addr) & ~PAGE_MASK);	\
+	flush_icache_range(_addr, _addr + (len));						\
+} while (0)
 
 static inline void
 clear_user_page (void *addr, unsigned long vaddr, struct page *page)

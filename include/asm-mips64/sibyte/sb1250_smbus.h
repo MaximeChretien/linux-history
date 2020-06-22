@@ -1,23 +1,23 @@
 /*  *********************************************************************
     *  SB1250 Board Support Package
-    *  
+    *
     *  SMBUS Constants                          File: sb1250_smbus.h
-    *  
-    *  This module contains constants and macros useful for 
+    *
+    *  This module contains constants and macros useful for
     *  manipulating the SB1250's SMbus devices.
-    *  
-    *  SB1250 specification level:  0.2
-    *  
-    *  Author:  Mitch Lichtenberg (mitch@sibyte.com)
-    *  
-    *********************************************************************  
+    *
+    *  SB1250 specification level:  01/02/2002
+    *
+    *  Author:  Mitch Lichtenberg (mpl@broadcom.com)
+    *
+    *********************************************************************
     *
     *  Copyright 2000,2001
     *  Broadcom Corporation. All rights reserved.
-    *  
-    *  This program is free software; you can redistribute it and/or 
-    *  modify it under the terms of the GNU General Public License as 
-    *  published by the Free Software Foundation; either version 2 of 
+    *
+    *  This program is free software; you can redistribute it and/or
+    *  modify it under the terms of the GNU General Public License as
+    *  published by the Free Software Foundation; either version 2 of
     *  the License, or (at your option) any later version.
     *
     *  This program is distributed in the hope that it will be useful,
@@ -27,7 +27,7 @@
     *
     *  You should have received a copy of the GNU General Public License
     *  along with this program; if not, write to the Free Software
-    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, 
+    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston,
     *  MA 02111-1307 USA
     ********************************************************************* */
 
@@ -130,5 +130,45 @@
 #define S_SPEC_PEC                  0
 #define M_SPEC_PEC                  _SB_MAKEMASK(8,S_SPEC_PEC)
 #define V_SPEC_MB(x)                _SB_MAKEVALUE(x,S_SPEC_PEC)
+
+
+/*  *********************************************************************
+    *  PASS2 Extensions to SMBus
+    ********************************************************************* */
+
+/* BEGIN PASS2 */
+
+#define S_SMB_CMDH                  8
+#define M_SMB_CMDH                  _SB_MAKEMASK(8,S_SMBH_CMD)
+#define V_SMB_CMDH(x)               _SB_MAKEVALUE(x,S_SMBH_CMD)
+
+#define M_SMB_EXTEND		    _SB_MAKEMASK1(14)
+
+#define M_SMB_DIR		    _SB_MAKEMASK1(13)
+
+#define S_SMB_DFMT                  8
+#define M_SMB_DFMT                  _SB_MAKEMASK(3,S_SMB_DFMT)
+#define V_SMB_DFMT(x)               _SB_MAKEVALUE(x,S_SMB_DFMT)
+#define G_SMB_DFMT(x)               _SB_GETVALUE(x,S_SMB_DFMT,M_SMB_DFMT)
+
+#define K_SMB_DFMT_1BYTE            0
+#define K_SMB_DFMT_2BYTE            1
+#define K_SMB_DFMT_3BYTE            2
+#define K_SMB_DFMT_4BYTE            3
+#define K_SMB_DFMT_NODATA           4
+#define K_SMB_DFMT_CMD4BYTE         5
+#define K_SMB_DFMT_CMD5BYTE         6
+#define K_SMB_DFMT_RESERVED         7
+
+#define V_SMB_DFMT_1BYTE	    V_SMB_DFMT(K_SMB_DFMT_1BYTE)
+#define V_SMB_DFMT_2BYTE	    V_SMB_DFMT(K_SMB_DFMT_2BYTE)
+#define V_SMB_DFMT_3BYTE	    V_SMB_DFMT(K_SMB_DFMT_3BYTE)
+#define V_SMB_DFMT_4BYTE	    V_SMB_DFMT(K_SMB_DFMT_4BYTE)
+#define V_SMB_DFMT_NODATA	    V_SMB_DFMT(K_SMB_DFMT_NODATA)
+#define V_SMB_DFMT_CMD4BYTE	    V_SMB_DFMT(K_SMB_DFMT_CMD4BYTE)
+#define V_SMB_DFMT_CMD5BYTE	    V_SMB_DFMT(K_SMB_DFMT_CMD5BYTE)
+#define V_SMB_DFMT_RESERVED	    V_SMB_DFMT(K_SMB_DFMT_RESERVED)
+
+/* END PASS2 */
 
 #endif

@@ -21,6 +21,7 @@
 
 #include <linux/config.h>
 #include <linux/kernel.h>
+#include <linux/fs.h>
 #include <asm/processor.h>
 #include <asm/semaphore.h>
 #include <asm/mmu.h>
@@ -33,128 +34,7 @@
 #include <asm/pci_dma.h>
 #include <linux/pci.h>
 #include <asm/naca.h>
-
-/* Status return values */
-#define H_Success	0
-#define H_Busy		1	/* Hardware busy -- retry later */
-#define H_Hardware	-1	/* Hardware error */
-#define H_Function	-2	/* Function not supported */
-#define H_Privilege	-3	/* Caller not privileged */
-#define H_Parameter	-4	/* Parameter invalid, out-of-range or conflicting */
-#define H_Bad_Mode	-5	/* Illegal msr value */
-#define H_PTEG_Full	-6	/* PTEG is full */
-#define H_Not_Found	-7	/* PTE was not found" */
-#define H_Reserved_DABR	-8	/* DABR address is reserved by the hypervisor on this processor" */
-
-/* Flags */
-#define H_LARGE_PAGE		(1UL<<(63-16))
-#define H_EXACT		    (1UL<<(63-24))	/* Use exact PTE or return H_PTEG_FULL */
-#define H_R_XLATE		(1UL<<(63-25))	/* include a valid logical page num in the pte if the valid bit is set */
-#define H_READ_4		(1UL<<(63-26))	/* Return 4 PTEs */
-#define H_AVPN			(1UL<<(63-32))	/* An avpn is provided as a sanity test */
-#define H_ICACHE_INVALIDATE	(1UL<<(63-40))	/* icbi, etc.  (ignored for IO pages) */
-#define H_ICACHE_SYNCHRONIZE	(1UL<<(63-41))	/* dcbst, icbi, etc (ignored for IO pages */
-#define H_ZERO_PAGE		(1UL<<(63-48))	/* zero the page before mapping (ignored for IO pages) */
-#define H_COPY_PAGE		(1UL<<(63-49))
-#define H_N			(1UL<<(63-61))
-#define H_PP1			(1UL<<(63-62))
-#define H_PP2			(1UL<<(63-63))
-
-
-
-/* pSeries hypervisor opcodes */
-#define H_REMOVE		0x04
-#define H_ENTER			0x08
-#define H_READ			0x0c
-#define H_CLEAR_MOD		0x10
-#define H_CLEAR_REF		0x14
-#define H_PROTECT		0x18
-#define H_GET_TCE		0x1c
-#define H_PUT_TCE		0x20
-#define H_SET_SPRG0		0x24
-#define H_SET_DABR		0x28
-#define H_PAGE_INIT		0x2c
-#define H_SET_ASR		0x30
-#define H_ASR_ON		0x34
-#define H_ASR_OFF		0x38
-#define H_LOGICAL_CI_LOAD	0x3c
-#define H_LOGICAL_CI_STORE	0x40
-#define H_LOGICAL_CACHE_LOAD	0x44
-#define H_LOGICAL_CACHE_STORE	0x48
-#define H_LOGICAL_ICBI		0x4c
-#define H_LOGICAL_DCBF		0x50
-#define H_GET_TERM_CHAR		0x54
-#define H_PUT_TERM_CHAR		0x58
-#define H_REAL_TO_LOGICAL	0x5c
-#define H_HYPERVISOR_DATA	0x60
-#define H_EOI			0x64
-#define H_CPPR			0x68
-#define H_IPI			0x6c
-#define H_IPOLL			0x70
-#define H_XIRR			0x74
-
-#define HSC			".long 0x44000022\n"
-#define H_ENTER_r3		"li	3, 0x08\n"
-
-/* plpar_hcall() -- Generic call interface using above opcodes
- *
- * The actual call interface is a hypervisor call instruction with
- * the opcode in R3 and input args in R4-R7.
- * Status is returned in R3 with variable output values in R4-R11.
- * Only H_PTE_READ with H_READ_4 uses R6-R11 so we ignore it for now
- * and return only two out args which MUST ALWAYS BE PROVIDED.
- */
-long plpar_hcall(unsigned long opcode,
-		 unsigned long arg1,
-		 unsigned long arg2,
-		 unsigned long arg3,
-		 unsigned long arg4,
-		 unsigned long *out1,
-		 unsigned long *out2,
-		 unsigned long *out3);
-
-/* Same as plpar_hcall but for those opcodes that return no values
- * other than status.  Slightly more efficient.
- */
-long plpar_hcall_norets(unsigned long opcode, ...);
-
-
-long plpar_pte_enter(unsigned long flags,
-		     unsigned long ptex,
-		     unsigned long new_pteh, unsigned long new_ptel,
-		     unsigned long *old_pteh_ret, unsigned long *old_ptel_ret)
-{
-	unsigned long dummy, ret;
-	ret = plpar_hcall(H_ENTER, flags, ptex, new_pteh, new_ptel,
-			   old_pteh_ret, old_ptel_ret, &dummy);
-	return(ret);
-}
-
-long plpar_pte_remove(unsigned long flags,
-		      unsigned long ptex,
-		      unsigned long avpn,
-		      unsigned long *old_pteh_ret, unsigned long *old_ptel_ret)
-{
-	unsigned long dummy;
-	return plpar_hcall(H_REMOVE, flags, ptex, avpn, 0,
-			   old_pteh_ret, old_ptel_ret, &dummy);
-}
-
-long plpar_pte_read(unsigned long flags,
-		    unsigned long ptex,
-		    unsigned long *old_pteh_ret, unsigned long *old_ptel_ret)
-{
-	unsigned long dummy;
-	return plpar_hcall(H_READ, flags, ptex, 0, 0,
-			   old_pteh_ret, old_ptel_ret, &dummy);
-}
-
-long plpar_pte_protect(unsigned long flags,
-		       unsigned long ptex,
-		       unsigned long avpn)
-{
-	return plpar_hcall_norets(H_PROTECT, flags, ptex);
-}
+#include <asm/hvcall.h>
 
 long plpar_tce_get(unsigned long liobn,
 		   unsigned long ioba,
@@ -222,357 +102,6 @@ long plpar_ipoll(unsigned long servernum, unsigned long* xirr_ret, unsigned long
 			   xirr_ret, mfrr_ret, &dummy);
 }
 
-/*
- * The following section contains code that ultimately should
- * be put in the relavent file (htab.c, xics.c, etc).  It has
- * been put here for the time being in order to ease maintainence
- * of the pSeries LPAR code until it can all be put into CVS.
- */
-static void hpte_invalidate_pSeriesLP(unsigned long slot)
-{
-	HPTE old_pte;
-	unsigned long lpar_rc;
-	unsigned long flags = 0;
-			
-	lpar_rc = plpar_pte_remove(flags,
-				   slot,
-				   0,
-				   &old_pte.dw0.dword0, 
-				   &old_pte.dw1.dword1);
-	if (lpar_rc != H_Success) BUG();
-}
-
-/* NOTE: for updatepp ops we are fortunate that the linux "newpp" bits and
- * the low 3 bits of flags happen to line up.  So no transform is needed.
- * We can probably optimize here and assume the high bits of newpp are
- * already zero.  For now I am paranoid.
- */
-static void hpte_updatepp_pSeriesLP(long slot, unsigned long newpp, unsigned long va)
-{
-	unsigned long lpar_rc;
-	unsigned long flags;
-	flags =   newpp & 3;
-	lpar_rc = plpar_pte_protect( flags,
-				     slot,
-				     0);
-	if (lpar_rc != H_Success) {
-		udbg_printf( " bad return code from pte protect rc = %lx \n", lpar_rc); 
-		for (;;);
-	}
-}
-
-static void hpte_updateboltedpp_pSeriesLP(unsigned long newpp, unsigned long ea)
-{
-	unsigned long lpar_rc;
-	unsigned long vsid,va,vpn,flags;
-	long slot;
-
-	vsid = get_kernel_vsid( ea );
-	va = ( vsid << 28 ) | ( ea & 0x0fffffff );
-	vpn = va >> PAGE_SHIFT;
-
-	slot = ppc_md.hpte_find( vpn );
-	flags =   newpp & 3;
-	lpar_rc = plpar_pte_protect( flags,
-				     slot,
-				     0);
-	if (lpar_rc != H_Success) {
-		udbg_printf( " bad return code from pte bolted protect rc = %lx \n", lpar_rc); 
-		for (;;);
-	}
-}
-
-
-static unsigned long hpte_getword0_pSeriesLP(unsigned long slot)
-{
-	unsigned long dword0;
-	unsigned long lpar_rc;
-	unsigned long dummy_word1;
-	unsigned long flags;
-	/* Read 1 pte at a time                        */
-	/* Do not need RPN to logical page translation */
-	/* No cross CEC PFT access                     */
-	flags = 0;
-	
-	lpar_rc = plpar_pte_read(flags,
-				 slot,
-				 &dword0, &dummy_word1);
-	if (lpar_rc != H_Success) {
-		udbg_printf(" error on pte read in get_hpte0 rc = %lx \n", lpar_rc);
-		for (;;);
-	}
-
-	return(dword0);
-}
-
-static long hpte_selectslot_pSeriesLP(unsigned long vpn)
-{
-	unsigned long primary_hash;
-	unsigned long hpteg_slot;
-	unsigned i, k;
-	unsigned long flags;
-	HPTE  pte_read;
-	unsigned long lpar_rc;
-
-	/* Search the primary group for an available slot */
-	primary_hash = hpt_hash(vpn, 0);
-
-	hpteg_slot = ( primary_hash & htab_data.htab_hash_mask ) * HPTES_PER_GROUP;
-
-	/* Read 1 pte at a time                        */
-	/* Do not need RPN to logical page translation */
-	/* No cross CEC PFT access                     */
-	flags = 0;
-	for (i=0; i<HPTES_PER_GROUP; ++i) {
-		/* read the hpte entry from the slot */
-		lpar_rc = plpar_pte_read(flags,
-					 hpteg_slot + i,
-					 &pte_read.dw0.dword0, &pte_read.dw1.dword1);
-		if (lpar_rc != H_Success) {
-			udbg_printf(" read of hardware page table failed rc = %lx \n", lpar_rc); 
-			for (;;);
-		}
-		if ( pte_read.dw0.dw0.v == 0 ) {
-			/* If an available slot found, return it */
-			return hpteg_slot + i;
-		}
-
-	}
-
-
-	/* Search the secondary group for an available slot */
-	hpteg_slot = ( ~primary_hash & htab_data.htab_hash_mask ) * HPTES_PER_GROUP;
-
-
-	for (i=0; i<HPTES_PER_GROUP; ++i) {
-		/* read the hpte entry from the slot */
-		lpar_rc = plpar_pte_read(flags,
-					 hpteg_slot + i,
-					 &pte_read.dw0.dword0, &pte_read.dw1.dword1);
-		if (lpar_rc != H_Success) {
-			udbg_printf(" read of hardware page table failed2 rc = %lx  \n", lpar_rc); 
-			for (;;);
-		}
-		if ( pte_read.dw0.dw0.v == 0 ) {
-			/* If an available slot found, return it */
-			return hpteg_slot + i;
-		}
-
-	}
-
-	/* No available entry found in secondary group */
-
-
-	/* Select an entry in the primary group to replace */
-
-	hpteg_slot = ( primary_hash & htab_data.htab_hash_mask ) * HPTES_PER_GROUP;
-
-	k = htab_data.next_round_robin++ & 0x7;
-
-	for (i=0; i<HPTES_PER_GROUP; ++i) {
-		if (k == HPTES_PER_GROUP)
-			k = 0;
-
-		lpar_rc = plpar_pte_read(flags,
-					 hpteg_slot + k,
-					 &pte_read.dw0.dword0, &pte_read.dw1.dword1);
-		if (lpar_rc != H_Success) {
-			udbg_printf( " pte read failed - rc = %lx", lpar_rc); 
-			for (;;);
-		}
-		if (  ! pte_read.dw0.dw0.bolted)
-		{
-			hpteg_slot += k;
-			/* Invalidate the current entry */
-			ppc_md.hpte_invalidate(hpteg_slot); 
-			return hpteg_slot;
-		}
-		++k;
-	}
-
-	/* No non-bolted entry found in primary group - time to panic */
-	udbg_printf("select_hpte_slot - No non-bolted HPTE in group 0x%lx! \n", hpteg_slot/HPTES_PER_GROUP);
-	udbg_printf("No non-bolted HPTE in group %lx", (unsigned long)hpteg_slot/HPTES_PER_GROUP);
-	for (;;);
-
-	/* never executes - avoid compiler errors */
-	return 0;
-}
-
-
-static void hpte_create_valid_pSeriesLP(unsigned long slot, unsigned long vpn,
-					unsigned long prpn, unsigned hash, 
-					void *ptep, unsigned hpteflags, 
-					unsigned bolted)
-{
-	/* Local copy of HPTE */
-	struct {
-		/* Local copy of first doubleword of HPTE */
-		union {
-			unsigned long d;
-			Hpte_dword0   h;
-		} dw0;
-		/* Local copy of second doubleword of HPTE */
-		union {
-			unsigned long     d;
-			Hpte_dword1       h;
-			Hpte_dword1_flags f;
-		} dw1;
-	} lhpte;
-	
-	unsigned long avpn = vpn >> 11;
-	unsigned long arpn = physRpn_to_absRpn( prpn );
-
-	unsigned long lpar_rc;
-	unsigned long flags;
-	HPTE ret_hpte;
-
-	/* Fill in the local HPTE with absolute rpn, avpn and flags */
-	lhpte.dw1.d        = 0;
-	lhpte.dw1.h.rpn    = arpn;
-	lhpte.dw1.f.flags  = hpteflags;
-
-	lhpte.dw0.d        = 0;
-	lhpte.dw0.h.avpn   = avpn;
-	lhpte.dw0.h.h      = hash;
-	lhpte.dw0.h.bolted = bolted;
-	lhpte.dw0.h.v      = 1;
-
-	/* Now fill in the actual HPTE */
-	/* Set CEC cookie to 0                  */
-	/* Large page = 0                       */
-	/* Zero page = 0                        */
-	/* I-cache Invalidate = 0               */
-	/* I-cache synchronize = 0              */
-	/* Exact = 1 - only modify exact entry  */
-	flags = H_EXACT;
-
-	if (hpteflags & (_PAGE_GUARDED|_PAGE_NO_CACHE))
-		lhpte.dw1.f.flags &= ~_PAGE_COHERENT;
-#if 1
-	__asm__ __volatile__ (
-		 H_ENTER_r3
-		 "mr	4, %1\n"
-		 "mr	5, %2\n"
-		 "mr	6, %3\n"
-		 "mr	7, %4\n"
-		 HSC
-		 "mr	%0, 3\n"
-		 : "=r" (lpar_rc)
-		 : "r" (flags), "r" (slot), "r" (lhpte.dw0.d), "r" (lhpte.dw1.d)
-		 : "r3", "r4", "r5", "r6", "r7", "cc");
-#else
-	lpar_rc =  plpar_pte_enter(flags,
-				   slot,
-				   lhpte.dw0.d,
-				   lhpte.dw1.d,
-				   &ret_hpte.dw0.dword0,
-				   &ret_hpte.dw1.dword1);
-#endif
-	if (lpar_rc != H_Success) {
-		udbg_printf("error on pte enter lapar rc = %ld\n",lpar_rc);
-		udbg_printf("ent: s=%lx, dw0=%lx, dw1=%lx\n", slot, lhpte.dw0.d, lhpte.dw1.d);
-		/* xmon_backtrace("backtrace"); */
-		for (;;);
-	}
-}
-
-static long hpte_find_pSeriesLP(unsigned long vpn)
-{
-	union {
-		unsigned long d;
-		Hpte_dword0   h;
-	} hpte_dw0;
-	long slot;
-	unsigned long hash;
-	unsigned long i,j;
-
-	hash = hpt_hash(vpn, 0);
-	for ( j=0; j<2; ++j ) {
-		slot = (hash & htab_data.htab_hash_mask) * HPTES_PER_GROUP;
-		for ( i=0; i<HPTES_PER_GROUP; ++i ) {
-			hpte_dw0.d = hpte_getword0_pSeriesLP( slot );
-			if ( ( hpte_dw0.h.avpn == ( vpn >> 11 ) ) &&
-			     ( hpte_dw0.h.v ) &&
-			     ( hpte_dw0.h.h == j ) ) {
-				/* HPTE matches */
-				if ( j )
-					slot = -slot;
-				return slot;
-			}
-			++slot;
-		}
-		hash = ~hash;
-	}
-	return -1;
-} 
-
-/*
- * Create a pte - LPAR .  Used during initialization only.
- * We assume the PTE will fit in the primary PTEG.
- */
-void make_pte_LPAR(HPTE *htab,
-		   unsigned long va, unsigned long pa, int mode,
-		   unsigned long hash_mask, int large)
-{
-	HPTE  local_hpte, ret_hpte;
-	unsigned long hash, slot, flags,lpar_rc, vpn;
-
-	if (large)
-		vpn = va >> 24;
-	else
-		vpn = va >> 12;
-
-	hash = hpt_hash(vpn, large);
-
-	slot = ((hash & hash_mask)*HPTES_PER_GROUP);
-
-	local_hpte.dw1.dword1 = pa | mode;
-	local_hpte.dw0.dword0 = 0;
-	local_hpte.dw0.dw0.avpn = va >> 23;
-	local_hpte.dw0.dw0.bolted = 1;				/* bolted */
-	if (large)
-		local_hpte.dw0.dw0.l = 1;  /* large page */
-	local_hpte.dw0.dw0.v = 1;
-
-	/* Set CEC cookie to 0                   */
-	/* Zero page = 0                         */
-	/* I-cache Invalidate = 0                */
-	/* I-cache synchronize = 0               */
-	/* Exact = 0 - modify any entry in group */
-	flags = 0;
-#if 1
-	__asm__ __volatile__ (
-		 H_ENTER_r3
-		 "mr	4, %1\n"
-		 "mr	5, %2\n"
-		 "mr	6, %3\n"
-		 "mr	7, %4\n"
-		 HSC
-		 "mr	%0, 3\n"
-		 : "=r" (lpar_rc)
-		 : "r" (flags), "r" (slot), "r" (local_hpte.dw0.dword0), "r" (local_hpte.dw1.dword1)
-		 : "r3", "r4", "r5", "r6", "r7", "cc");
-#else
-	lpar_rc =  plpar_pte_enter(flags,
-				   slot,
-				   local_hpte.dw0.dword0,
-				   local_hpte.dw1.dword1,
-				   &ret_hpte.dw0.dword0,
-				   &ret_hpte.dw1.dword1);
-#endif
-#if 0 /* NOTE: we explicitly do not check return status here because it is
-       * "normal" for early boot code to map io regions for which a partition
-       * has no access.  However, we will die if we actually fault on these
-       * "permission denied" pages.
-       */
-	if (lpar_rc != H_Success) {
-		/* pSeriesLP_init_early(); */
-		udbg_printf("flags=%lx, slot=%lx, dword0=%lx, dword1=%lx, rc=%d\n", flags, slot, local_hpte.dw0.dword0,local_hpte.dw1.dword1, lpar_rc);
-		BUG();
-	}
-#endif
-}
 
 static void tce_build_pSeriesLP(struct TceTable *tbl, long tcenum, 
 				unsigned long uaddr, int direction )
@@ -746,55 +275,6 @@ static unsigned char udbg_getcLP(void)
 }
 
 
-/* This is called early in setup.c.
- * Use it to setup page table ppc_md stuff as well as udbg.
- */
-void pSeriesLP_init_early(void)
-{
-	ppc_md.hpte_invalidate   = hpte_invalidate_pSeriesLP;
-	ppc_md.hpte_updatepp     = hpte_updatepp_pSeriesLP;
-	ppc_md.hpte_updateboltedpp  = hpte_updateboltedpp_pSeriesLP;
-	ppc_md.hpte_getword0     = hpte_getword0_pSeriesLP;
-	ppc_md.hpte_selectslot   = hpte_selectslot_pSeriesLP;
-	ppc_md.hpte_create_valid = hpte_create_valid_pSeriesLP;
-	ppc_md.hpte_find	 = hpte_find_pSeriesLP;
-
-	ppc_md.tce_build	 = tce_build_pSeriesLP;
-	ppc_md.tce_free_one	 = tce_free_one_pSeriesLP;
-
-#ifdef CONFIG_SMP
-	smp_init_pSeries();
-#endif
-	pSeries_pcibios_init_early();
-
-	/* The keyboard is not useful in the LPAR environment.
-	 * Leave all the interfaces NULL.
-	 */
-
-	if (naca->serialPortAddr) {
-		void *comport = (void *)__ioremap(naca->serialPortAddr, 16, _PAGE_NO_CACHE);
-		udbg_init_uart(comport);
-		ppc_md.udbg_putc = udbg_putc;
-		ppc_md.udbg_getc = udbg_getc;
-		ppc_md.udbg_getc_poll = udbg_getc_poll;
-	} else {
-		/* lookup the first virtual terminal number in case we don't have a com port.
-		 * Zero is probably correct in case someone calls udbg before the init.
-		 * The property is a pair of numbers.  The first is the starting termno (the
-		 * one we use) and the second is the number of terminals.
-		 */
-		u32 *termno;
-		struct device_node *np = find_path_device("/rtas");
-		if (np) {
-			termno = (u32 *)get_property(np, "ibm,termno", 0);
-			if (termno)
-				vtermno = termno[0];
-		}
-		ppc_md.udbg_putc = udbg_putcLP;
-		ppc_md.udbg_getc = udbg_getcLP;
-		ppc_md.udbg_getc_poll = udbg_getc_pollLP;
-	}
-}
 
 /* Code for hvc_console.  Should move it back eventually. */
 
@@ -853,3 +333,43 @@ int hvc_count(int *start_termno)
 	}
 	return 0;
 }
+
+#ifndef CONFIG_PPC_ISERIES
+void pSeries_lpar_mm_init(void);
+
+/* This is called early in setup.c.
+ * Use it to setup page table ppc_md stuff as well as udbg.
+ */
+void pSeriesLP_init_early(void)
+{
+	pSeries_lpar_mm_init();
+
+	ppc_md.tce_build	 = tce_build_pSeriesLP;
+	ppc_md.tce_free_one	 = tce_free_one_pSeriesLP;
+
+#ifdef CONFIG_SMP
+	smp_init_pSeries();
+#endif
+	pSeries_pcibios_init_early();
+
+	/* The keyboard is not useful in the LPAR environment.
+	 * Leave all the interfaces NULL.
+	 */
+
+	/* lookup the first virtual terminal number in case we don't have a com port.
+	 * Zero is probably correct in case someone calls udbg before the init.
+	 * The property is a pair of numbers.  The first is the starting termno (the
+	 * one we use) and the second is the number of terminals.
+	 */
+	u32 *termno;
+	struct device_node *np = find_path_device("/rtas");
+	if (np) {
+		termno = (u32 *)get_property(np, "ibm,termno", 0);
+		if (termno)
+			vtermno = termno[0];
+	}
+	ppc_md.udbg_putc = udbg_putcLP;
+	ppc_md.udbg_getc = udbg_getcLP;
+	ppc_md.udbg_getc_poll = udbg_getc_pollLP;
+}
+#endif

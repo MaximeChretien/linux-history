@@ -577,7 +577,7 @@ acpi_ds_exec_end_op (
 		(walk_state->control_state->common.state ==
 			CONTROL_PREDICATE_EXECUTING) &&
 		(walk_state->control_state->control.predicate_op == op)) {
-		status = acpi_ds_get_predicate_value (walk_state, (u32) walk_state->result_obj);
+		status = acpi_ds_get_predicate_value (walk_state, !! walk_state->result_obj);
 		walk_state->result_obj = NULL;
 	}
 

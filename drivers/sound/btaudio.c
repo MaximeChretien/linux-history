@@ -144,17 +144,17 @@ struct btaudio {
 	int sampleshift;
 	int channels;
 	int analog;
+	int rate;
+};
+
+struct cardinfo {
+	char *name;
+	int rate;
 };
 
 static struct btaudio *btaudios = NULL;
-static unsigned int dsp1 = -1;
-static unsigned int dsp2 = -1;
-static unsigned int mixer = -1;
 static unsigned int debug = 0;
 static unsigned int irq_debug = 0;
-static int digital = 1;
-static int analog = 1;
-static int rate = 32000;
 
 /* -------------------------------------------------------------- */
 
@@ -657,7 +657,7 @@ static int btaudio_dsp_ioctl(struct inode *inode, struct file *file,
 		if (bta->analog) {
 			return put_user(HWBASE_AD*4/bta->decimation>>bta->sampleshift, (int*)arg);
 		} else {
-			return put_user(rate, (int*)arg);
+			return put_user(bta->rate, (int*)arg);
 		}
 
         case SNDCTL_DSP_STEREO:
@@ -870,11 +870,33 @@ static void btaudio_irq(int irq, void *dev_id, struct pt_regs * regs)
 
 /* -------------------------------------------------------------- */
 
+static unsigned int dsp1 = -1;
+static unsigned int dsp2 = -1;
+static unsigned int mixer = -1;
+static int latency = -1;
+static int digital = 1;
+static int analog = 1;
+static int rate = 0;
+
+#define BTA_OSPREY200 1
+
+static struct cardinfo cards[] = {
+	[0] = {
+		name: "default",
+		rate: 32000,
+	},
+	[BTA_OSPREY200] = {
+		name: "Osprey 200",
+		rate: 44100,
+	},
+};
+
 static int __devinit btaudio_probe(struct pci_dev *pci_dev,
 				   const struct pci_device_id *pci_id)
 {
 	struct btaudio *bta;
-	unsigned char revision,latency;
+	struct cardinfo *card = &cards[pci_id->driver_data];
+	unsigned char revision,lat;
 	int rc = -EBUSY;
 
 	if (pci_enable_device(pci_dev))
@@ -908,16 +930,27 @@ static int __devinit btaudio_probe(struct pci_dev *pci_dev,
 		bta->sampleshift = 1;
 	}
 
+	/* sample rate */
+	bta->rate = card->rate;
+	if (rate)
+		bta->rate = rate;
+	
 	init_MUTEX(&bta->lock);
         init_waitqueue_head(&bta->readq);
 
+	if (-1 != latency) {
+		printk(KERN_INFO "btaudio: setting pci latency timer to %d\n",
+		       latency);
+		pci_write_config_byte(pci_dev, PCI_LATENCY_TIMER, latency);
+	}
         pci_read_config_byte(pci_dev, PCI_CLASS_REVISION, &revision);
-        pci_read_config_byte(pci_dev, PCI_LATENCY_TIMER, &latency);
+        pci_read_config_byte(pci_dev, PCI_LATENCY_TIMER, &lat);
         printk(KERN_INFO "btaudio: Bt%x (rev %d) at %02x:%02x.%x, ",
 	       pci_dev->device,revision,pci_dev->bus->number,
 	       PCI_SLOT(pci_dev->devfn),PCI_FUNC(pci_dev->devfn));
-        printk("irq: %d, latency: %d, memory: 0x%lx\n",
-	       bta->irq, latency, bta->mem);
+        printk("irq: %d, latency: %d, mmio: 0x%lx\n",
+	       bta->irq, lat, bta->mem);
+	printk("btaudio: using card config \"%s\"\n", card->name);
 
 	/* init hw */
         btwrite(0, REG_GPIO_DMA_CTL);
@@ -926,7 +959,7 @@ static int __devinit btaudio_probe(struct pci_dev *pci_dev,
 	pci_set_master(pci_dev);
 
 	if ((rc = request_irq(bta->irq, btaudio_irq, SA_SHIRQ|SA_INTERRUPT,
-			       "btaudio",(void *)bta)) < 0) {
+			      "btaudio",(void *)bta)) < 0) {
 		printk(KERN_WARNING
 		       "btaudio: can't request irq (rc=%d)\n",rc);
 		goto fail1;
@@ -1028,11 +1061,25 @@ static void __devexit btaudio_remove(struct pci_dev *pci_dev)
 /* -------------------------------------------------------------- */
 
 static struct pci_device_id btaudio_pci_tbl[] __devinitdata = {
-        { PCI_VENDOR_ID_BROOKTREE, 0x0878,
-          PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},
-        { PCI_VENDOR_ID_BROOKTREE, 0x0879,
-          PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},
-        {0,}
+        {
+		vendor:       PCI_VENDOR_ID_BROOKTREE,
+		device:       0x0878,
+		subvendor:    0x0070,
+		subdevice:    0xff01,
+		driver_data:  BTA_OSPREY200,
+	},{
+		vendor:       PCI_VENDOR_ID_BROOKTREE,
+		device:       0x0878,
+		subvendor:    PCI_ANY_ID,
+		subdevice:    PCI_ANY_ID,
+	},{
+		vendor:       PCI_VENDOR_ID_BROOKTREE,
+		device:       0x0878,
+		subvendor:    PCI_ANY_ID,
+		subdevice:    PCI_ANY_ID,
+        },{
+		/* --- end of list --- */
+	}
 };
 
 static struct pci_driver btaudio_pci_driver = {
@@ -1044,7 +1091,7 @@ static struct pci_driver btaudio_pci_driver = {
 
 static int btaudio_init_module(void)
 {
-	printk(KERN_INFO "btaudio: driver version 0.6 loaded [%s%s%s]\n",
+	printk(KERN_INFO "btaudio: driver version 0.7 loaded [%s%s%s]\n",
 	       digital ? "digital" : "",
 	       analog && digital ? "+" : "",
 	       analog ? "analog" : "");
@@ -1068,6 +1115,8 @@ MODULE_PARM(irq_debug,"i");
 MODULE_PARM(digital,"i");
 MODULE_PARM(analog,"i");
 MODULE_PARM(rate,"i");
+MODULE_PARM(latency,"i");
+MODULE_PARM_DESC(latency,"pci latency timer");
 
 MODULE_DEVICE_TABLE(pci, btaudio_pci_tbl);
 MODULE_DESCRIPTION("bt878 audio dma driver");

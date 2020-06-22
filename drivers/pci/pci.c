@@ -358,6 +358,27 @@ pci_restore_state(struct pci_dev *dev, u32 *buffer)
 }
 
 /**
+ * pci_enable_device_bars - Initialize some of a device for use
+ * @dev: PCI device to be initialized
+ * @bars: bitmask of BAR's that must be configured
+ *
+ *  Initialize device before it's used by a driver. Ask low-level code
+ *  to enable selected I/O and memory resources. Wake up the device if it 
+ *  was suspended. Beware, this function can fail.
+ */
+ 
+int
+pci_enable_device_bars(struct pci_dev *dev, int bars)
+{
+	int err;
+
+	pci_set_power_state(dev, 0);
+	if ((err = pcibios_enable_device(dev, bars)) < 0)
+		return err;
+	return 0;
+}
+
+/**
  * pci_enable_device - Initialize device before it's used by a driver.
  * @dev: PCI device to be initialized
  *
@@ -368,12 +389,7 @@ pci_restore_state(struct pci_dev *dev, u32 *buffer)
 int
 pci_enable_device(struct pci_dev *dev)
 {
-	int err;
-
-	pci_set_power_state(dev, 0);
-	if ((err = pcibios_enable_device(dev)) < 0)
-		return err;
-	return 0;
+	return pci_enable_device_bars(dev, 0x3F);
 }
 
 /**
@@ -463,6 +479,69 @@ pci_get_interrupt_pin(struct pci_dev *dev, struct pci_dev **bridge)
 }
 
 /**
+ *	pci_release_region - Release a PCI bar
+ *	@pdev: PCI device whose resources were previously reserved by pci_request_region
+ *	@bar: BAR to release
+ *
+ *	Releases the PCI I/O and memory resources previously reserved by a
+ *	successful call to pci_request_region.  Call this function only
+ *	after all use of the PCI regions has ceased.
+ */
+void pci_release_region(struct pci_dev *pdev, int bar)
+{
+	if (pci_resource_len(pdev, bar) == 0)
+		return;
+	if (pci_resource_flags(pdev, bar) & IORESOURCE_IO)
+		release_region(pci_resource_start(pdev, bar),
+				pci_resource_len(pdev, bar));
+	else if (pci_resource_flags(pdev, bar) & IORESOURCE_MEM)
+		release_mem_region(pci_resource_start(pdev, bar),
+				pci_resource_len(pdev, bar));
+}
+
+/**
+ *	pci_request_region - Reserved PCI I/O and memory resource
+ *	@pdev: PCI device whose resources are to be reserved
+ *	@bar: BAR to be reserved
+ *	@res_name: Name to be associated with resource.
+ *
+ *	Mark the PCI region associated with PCI device @pdev BR @bar as
+ *	being reserved by owner @res_name.  Do not access any
+ *	address inside the PCI regions unless this call returns
+ *	successfully.
+ *
+ *	Returns 0 on success, or %EBUSY on error.  A warning
+ *	message is also printed on failure.
+ */
+int pci_request_region(struct pci_dev *pdev, int bar, char *res_name)
+{
+	if (pci_resource_len(pdev, bar) == 0)
+		return 0;
+		
+	if (pci_resource_flags(pdev, bar) & IORESOURCE_IO) {
+		if (!request_region(pci_resource_start(pdev, bar),
+			    pci_resource_len(pdev, bar), res_name))
+			goto err_out;
+	}
+	else if (pci_resource_flags(pdev, bar) & IORESOURCE_MEM) {
+		if (!request_mem_region(pci_resource_start(pdev, bar),
+				        pci_resource_len(pdev, bar), res_name))
+			goto err_out;
+	}
+	
+	return 0;
+
+err_out:
+	printk (KERN_WARNING "PCI: Unable to reserve %s region #%d:%lx@%lx for device %s\n",
+		pci_resource_flags(pdev, bar) & IORESOURCE_IO ? "I/O" : "mem",
+		bar + 1, /* PCI BAR # */
+		pci_resource_len(pdev, bar), pci_resource_start(pdev, bar),
+		pdev->slot_name);
+	return -EBUSY;
+}
+
+
+/**
  *	pci_release_regions - Release reserved PCI I/O and memory resources
  *	@pdev: PCI device whose resources were previously reserved by pci_request_regions
  *
@@ -470,22 +549,13 @@ pci_get_interrupt_pin(struct pci_dev *dev, struct pci_dev **bridge)
  *	successful call to pci_request_regions.  Call this function only
  *	after all use of the PCI regions has ceased.
  */
+
 void pci_release_regions(struct pci_dev *pdev)
 {
 	int i;
 	
-	for (i = 0; i < 6; i++) {
-		if (pci_resource_len(pdev, i) == 0)
-			continue;
-
-		if (pci_resource_flags(pdev, i) & IORESOURCE_IO)
-			release_region(pci_resource_start(pdev, i),
-				       pci_resource_len(pdev, i));
-
-		else if (pci_resource_flags(pdev, i) & IORESOURCE_MEM)
-			release_mem_region(pci_resource_start(pdev, i),
-					   pci_resource_len(pdev, i));
-	}
+	for (i = 0; i < 6; i++)
+		pci_release_region(pdev, i);
 }
 
 /**
@@ -505,23 +575,9 @@ int pci_request_regions(struct pci_dev *pdev, char *res_name)
 {
 	int i;
 	
-	for (i = 0; i < 6; i++) {
-		if (pci_resource_len(pdev, i) == 0)
-			continue;
-
-		if (pci_resource_flags(pdev, i) & IORESOURCE_IO) {
-			if (!request_region(pci_resource_start(pdev, i),
-					    pci_resource_len(pdev, i), res_name))
-				goto err_out;
-		}
-		
-		else if (pci_resource_flags(pdev, i) & IORESOURCE_MEM) {
-			if (!request_mem_region(pci_resource_start(pdev, i),
-					        pci_resource_len(pdev, i), res_name))
-				goto err_out;
-		}
-	}
-	
+	for (i = 0; i < 6; i++)
+		if(pci_request_region(pdev, i, res_name))
+			goto err_out;
 	return 0;
 
 err_out:
@@ -530,7 +586,9 @@ err_out:
 		i + 1, /* PCI BAR # */
 		pci_resource_len(pdev, i), pci_resource_start(pdev, i),
 		pdev->slot_name);
-	pci_release_regions(pdev);
+	while(--i >= 0)
+		pci_release_region(pdev, i);
+		
 	return -EBUSY;
 }
 
@@ -1073,6 +1131,13 @@ void __devinit pci_read_bridge_bases(struct pci_bus *child)
 	if (!dev)		/* It's a host bus, nothing to read */
 		return;
 
+	if (dev->transparent) {
+		printk("Transparent bridge - %s\n", dev->name);
+		for(i = 0; i < 4; i++)
+			child->resource[i] = child->parent->resource[i];
+		return;
+	}
+
 	for(i=0; i<3; i++)
 		child->resource[i] = &dev->resource[PCI_BRIDGE_RESOURCES+i];
 
@@ -1094,14 +1159,6 @@ void __devinit pci_read_bridge_bases(struct pci_bus *child)
 		res->flags = (io_base_lo & PCI_IO_RANGE_TYPE_MASK) | IORESOURCE_IO;
 		res->start = base;
 		res->end = limit + 0xfff;
-		res->name = child->name;
-	} else {
-		/*
-		 * Ugh. We don't know enough about this bridge. Just assume
-		 * that it's entirely transparent.
-		 */
-		printk(KERN_ERR "Unknown bridge resource %d: assuming transparent\n", 0);
-		child->resource[0] = child->parent->resource[0];
 	}
 
 	res = child->resource[1];
@@ -1113,11 +1170,6 @@ void __devinit pci_read_bridge_bases(struct pci_bus *child)
 		res->flags = (mem_base_lo & PCI_MEMORY_RANGE_TYPE_MASK) | IORESOURCE_MEM;
 		res->start = base;
 		res->end = limit + 0xfffff;
-		res->name = child->name;
-	} else {
-		/* See comment above. Same thing */
-		printk(KERN_ERR "Unknown bridge resource %d: assuming transparent\n", 1);
-		child->resource[1] = child->parent->resource[1];
 	}
 
 	res = child->resource[2];
@@ -1144,11 +1196,6 @@ void __devinit pci_read_bridge_bases(struct pci_bus *child)
 		res->flags = (mem_base_lo & PCI_MEMORY_RANGE_TYPE_MASK) | IORESOURCE_MEM | IORESOURCE_PREFETCH;
 		res->start = base;
 		res->end = limit + 0xfffff;
-		res->name = child->name;
-	} else {
-		/* See comments above */
-		printk(KERN_ERR "Unknown bridge resource %d: assuming transparent\n", 2);
-		child->resource[2] = child->parent->resource[2];
 	}
 }
 
@@ -1190,9 +1237,11 @@ struct pci_bus * __devinit pci_add_new_bus(struct pci_bus *parent, struct pci_de
 	child->primary = parent->secondary;
 	child->subordinate = 0xff;
 
-	/* Set up default resource pointers.. */
-	for (i = 0; i < 4; i++)
+	/* Set up default resource pointers and names.. */
+	for (i = 0; i < 4; i++) {
 		child->resource[i] = &dev->resource[PCI_BRIDGE_RESOURCES+i];
+		child->resource[i]->name = child->name;
+	}
 
 	return child;
 }
@@ -1334,6 +1383,10 @@ int pci_setup_device(struct pci_dev * dev)
 	case PCI_HEADER_TYPE_BRIDGE:		    /* bridge header */
 		if (class != PCI_CLASS_BRIDGE_PCI)
 			goto bad;
+		/* The PCI-to-PCI bridge spec requires that subtractive
+		   decoding (i.e. transparent) bridge must have programming
+		   interface code of 0x01. */ 
+		dev->transparent = ((dev->class & 0xff) == 1);
 		pci_read_bases(dev, 2, PCI_ROM_ADDRESS1);
 		break;
 
@@ -1642,7 +1695,7 @@ static int pci_pm_suspend(u32 state)
 	return 0;
 }
 
-static int pci_pm_resume(void)
+int pci_pm_resume(void)
 {
 	struct list_head *list;
 	struct pci_bus *bus;
@@ -1662,10 +1715,10 @@ pci_pm_callback(struct pm_dev *pm_device, pm_request_t rqst, void *data)
 
 	switch (rqst) {
 	case PM_SAVE_STATE:
-		error = pci_pm_save_state((u32)data);
+		error = pci_pm_save_state((unsigned long)data);
 		break;
 	case PM_SUSPEND:
-		error = pci_pm_suspend((u32)data);
+		error = pci_pm_suspend((unsigned long)data);
 		break;
 	case PM_RESUME:
 		error = pci_pm_resume();
@@ -2066,11 +2119,14 @@ EXPORT_SYMBOL(pci_write_config_word);
 EXPORT_SYMBOL(pci_write_config_dword);
 EXPORT_SYMBOL(pci_devices);
 EXPORT_SYMBOL(pci_root_buses);
+EXPORT_SYMBOL(pci_enable_device_bars);
 EXPORT_SYMBOL(pci_enable_device);
 EXPORT_SYMBOL(pci_disable_device);
 EXPORT_SYMBOL(pci_find_capability);
 EXPORT_SYMBOL(pci_release_regions);
 EXPORT_SYMBOL(pci_request_regions);
+EXPORT_SYMBOL(pci_release_region);
+EXPORT_SYMBOL(pci_request_region);
 EXPORT_SYMBOL(pci_find_class);
 EXPORT_SYMBOL(pci_find_device);
 EXPORT_SYMBOL(pci_find_slot);
@@ -2096,11 +2152,13 @@ EXPORT_SYMBOL(pci_announce_device_to_drivers);
 EXPORT_SYMBOL(pci_add_new_bus);
 EXPORT_SYMBOL(pci_do_scan_bus);
 EXPORT_SYMBOL(pci_scan_slot);
+EXPORT_SYMBOL(pci_scan_bus);
 #ifdef CONFIG_PROC_FS
 EXPORT_SYMBOL(pci_proc_attach_device);
 EXPORT_SYMBOL(pci_proc_detach_device);
 EXPORT_SYMBOL(pci_proc_attach_bus);
 EXPORT_SYMBOL(pci_proc_detach_bus);
+EXPORT_SYMBOL(proc_bus_pci_dir);
 #endif
 #endif
 

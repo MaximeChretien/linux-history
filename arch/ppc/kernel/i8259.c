@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.i8259.c 1.11 12/19/01 09:45:54 trini
+ * BK Id: %F% %I% %G% %U% %#%
  */
 
 #include <linux/stddef.h>
@@ -9,9 +9,9 @@
 #include <linux/sched.h>
 #include <linux/signal.h>
 #include <asm/io.h>
-#include "i8259.h"
+#include <asm/i8259.h>
 
-static volatile char *pci_intack; /* RO, gives us the irq vector */
+static volatile unsigned char *pci_intack; /* RO, gives us the irq vector */
 
 unsigned char cached_8259[2] = { 0xff, 0xff };
 #define cached_A1 (cached_8259[0])
@@ -24,13 +24,13 @@ int i8259_pic_irq_offset;
 /* Acknowledge the irq using the PCI host bridge's interrupt acknowledge
  * feature. (Polling is somehow broken on some IBM and Motorola PReP boxes.)
  */
-int i8259_irq(void)
+int i8259_irq(struct pt_regs *regs)
 {
 	int irq;
 
 	spin_lock/*_irqsave*/(&i8259_lock/*, flags*/);
 
-	irq = *pci_intack & 0xff;
+	irq = *pci_intack;
 	if (irq==7) {
 		/*
 		 * This may be a spurious interrupt.
@@ -48,7 +48,7 @@ int i8259_irq(void)
 }
 
 /* Poke the 8259's directly using poll commands. */
-int i8259_poll(void)
+int i8259_poll(struct pt_regs *regs)
 {
 	int irq;
 
@@ -171,7 +171,7 @@ static struct resource pic_edgectrl_iores = {
 	"8259 edge control", 0x4d0, 0x4d1, IORESOURCE_BUSY
 };
 
-void __init i8259_init(long intack_addr)
+void __init i8259_init(unsigned long intack_addr)
 {
 	unsigned long flags;
 
@@ -201,10 +201,11 @@ void __init i8259_init(long intack_addr)
 	/* reserve our resources */
 	request_irq( i8259_pic_irq_offset + 2, no_action, SA_INTERRUPT,
 				"82c59 secondary cascade", NULL );
+#if 0 /* Do not request these before the host bridge resource have been setup */
 	request_resource(&ioport_resource, &pic1_iores);
 	request_resource(&ioport_resource, &pic2_iores);
 	request_resource(&ioport_resource, &pic_edgectrl_iores);
-
+#endif
 	if (intack_addr)
 		pci_intack = ioremap(intack_addr, 1);
 }

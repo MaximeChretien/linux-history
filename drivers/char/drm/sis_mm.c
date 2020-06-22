@@ -28,7 +28,6 @@
  * 
  */
 
-#define __NO_VERSION__
 #include "sis.h"
 #include <linux/sisfb.h>
 #include "drmP.h"
@@ -125,7 +124,7 @@ int sis_fb_free(struct inode *inode, struct file *filp, unsigned int cmd,
   if(!del_alloc_set(fb.context, VIDEO_TYPE, fb.free))
     retval = -1;
 
-  DRM_DEBUG("free fb, offset = %d\n", fb.free);
+  DRM_DEBUG("free fb, offset = %ld\n", fb.free);
   
   return retval;
 }
@@ -183,7 +182,7 @@ int sisp_agp_alloc(struct inode *inode, struct file *filp, unsigned int cmd,
   if(block){
     /* TODO */
     agp.offset = block->ofs;
-    agp.free = (unsigned int)block;
+    agp.free = (unsigned long)block;
     if(!add_alloc_set(agp.context, AGP_TYPE, agp.free)){
       DRM_DEBUG("adding to allocation set fails\n");
       mmFreeMem((PMemBlock)agp.free);
@@ -223,7 +222,7 @@ int sisp_agp_free(struct inode *inode, struct file *filp, unsigned int cmd,
   if(!del_alloc_set(agp.context, AGP_TYPE, agp.free))
     retval = -1;
 
-  DRM_DEBUG("free agp, free = %d\n", agp.free);
+  DRM_DEBUG("free agp, free = %ld\n", agp.free);
   
   return retval;
 }

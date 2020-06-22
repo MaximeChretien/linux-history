@@ -81,17 +81,36 @@
 /*
  * BmRequestType:  0100 0000B
  * bRequest:       FTDI_SIO_SET_BAUDRATE
- * wValue:         BaudRate value - see below
+ * wValue:         BaudDivisor value - see below
  * wIndex:         Port
  * wLength:        0
  * Data:           None
+ * The BaudDivisor values are calculated as follows:
+ * - BaseClock is either 12000000 or 48000000 depending on the device. FIXME: I wish
+ *   I knew how to detect old chips to select proper base clock!
+ * - BaudDivisor is a fixed point number encoded in a funny way.
+ *   (--WRONG WAY OF THINKING--)
+ *   BaudDivisor is a fixed point number encoded with following bit weighs:
+ *   (-2)(-1)(13..0). It is a radical with a denominator of 4, so values
+ *   end with 0.0 (00...), 0.25 (10...), 0.5 (01...), and 0.75 (11...).
+ *   (--THE REALITY--)
+ *   The both-bits-set has quite different meaning from 0.75 - the chip designers
+ *   have decided it to mean 0.125 instead of 0.75.
+ *   This info looked up in FTDI application note "FT8U232 DEVICES \ Data Rates
+ *   and Flow Control Consideration for USB to RS232".
+ * - BaudDivisor = (BaseClock / 16) / BaudRate, where the (=) operation should
+ *   automagically re-encode the resulting value to take fractions into consideration.
+ * As all values are integers, some bit twiddling is in order:
+ *   BaudDivisor = (BaseClock / 16 / BaudRate) |
+ *   (((BaseClock / 2 / BaudRate) & 2) ? 0x8000 : 0) | // 0.25
+ *   (((BaseClock / 2 / BaudRate) & 4) ? 0x4000 : 0) | // 0.5
+ *   (((BaseClock / 2 / BaudRate) & 0x7) == 1 ? 0xc000) // 0.125 - this line due to funny encoding only
  */
 
 typedef enum {
-	sio = 1,
-	F8U232AM = 2,
-} ftdi_type_t;
-
+	SIO = 1,
+	FT8U232AM = 2,
+} ftdi_chip_type_t;
 
 typedef enum {
  ftdi_sio_b300 = 0, 
@@ -106,37 +125,18 @@ typedef enum {
  ftdi_sio_b115200 = 9
 } FTDI_SIO_baudrate_t ;
 
+#define FTDI_SIO_BASE_BAUD_TO_DIVISOR(base, baud) ( \
+((base/2/baud) >> 3) | \
+(((base/2/baud) & 2) ? 0x8000 : 0) | \
+(((base/2/baud) & 4) ? 0x4000 : 0) | \
+((((base/2/baud) & 0x7) == 1) ? 0xc000 : 0) )
 
-typedef enum {
-  ftdi_8U232AM_12MHz_b300 = 0x09c4,
-  ftdi_8U232AM_12MHz_b600 = 0x04E2,
-  ftdi_8U232AM_12MHz_b1200 = 0x0271,
-  ftdi_8U232AM_12MHz_b2400 = 0x4138,
-  ftdi_8U232AM_12MHz_b4800 = 0x809c,
-  ftdi_8U232AM_12MHz_b9600 = 0xc04e,
-  ftdi_8U232AM_12MHz_b19200 = 0x0027,
-  ftdi_8U232AM_12MHz_b38400 = 0x4013,
-  ftdi_8U232AM_12MHz_b57600 = 0x000d,
-  ftdi_8U232AM_12MHz_b115200 = 0x4006,
-  ftdi_8U232AM_12MHz_b230400 = 0x8003,
-} FTDI_8U232AM_12MHz_baudrate_t;
-/* Apparently all devices are 48MHz */
-typedef enum {
-  ftdi_8U232AM_48MHz_b300 = 0x2710,
-  ftdi_8U232AM_48MHz_b600 = 0x1388,
-  ftdi_8U232AM_48MHz_b1200 = 0x09c4,
-  ftdi_8U232AM_48MHz_b2400 = 0x04e2,
-  ftdi_8U232AM_48MHz_b4800 = 0x0271,
-  ftdi_8U232AM_48MHz_b9600 = 0x4138,
-  ftdi_8U232AM_48MHz_b19200 = 0x809c,
-  ftdi_8U232AM_48MHz_b38400 = 0xc04e,
-  ftdi_8U232AM_48MHz_b57600 = 0x0034,
-  ftdi_8U232AM_48MHz_b115200 = 0x001a,
-  ftdi_8U232AM_48MHz_b230400 = 0x000d,
-  ftdi_8U232AM_48MHz_b460800 = 0x4006,
-  ftdi_8U232AM_48MHz_b921600 = 0x8003,
+#define FTDI_SIO_BAUD_TO_DIVISOR(baud) FTDI_SIO_BASE_BAUD_TO_DIVISOR(48000000, baud)
 
-} FTDI_8U232AM_48MHz_baudrate_t;
+/*
+ * The ftdi_8U232AM_xxMHz_byyy constans have been removed. Their values can
+ * be calculated as follows: FTDI_SIO_BAUD_TO_DIVISOR(xx000000, yyy)
+ */
 
 #define FTDI_SIO_SET_DATA_REQUEST FTDI_SIO_SET_DATA
 #define FTDI_SIO_SET_DATA_REQUEST_TYPE 0x40
@@ -440,6 +440,11 @@ typedef enum {
  * B7	Error in RCVR FIFO
  * 
  */
+#define FTDI_RS0_CTS	(1 << 4)
+#define FTDI_RS0_DSR	(1 << 5)
+#define FTDI_RS0_RI	(1 << 6)
+#define FTDI_RS0_RLSD	(1 << 7)
+
 #define FTDI_RS_DR  1
 #define FTDI_RS_OE (1<<1)
 #define FTDI_RS_PE (1<<2)

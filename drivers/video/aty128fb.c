@@ -2080,7 +2080,7 @@ aty128_pci_register(struct pci_dev *pdev,
 					"Guessing...\n");
 	else {
 		printk(KERN_INFO "aty128fb: Rage128 BIOS located at "
-				"segment %4.4X\n", (unsigned int)bios_seg);
+				"segment %4.4lX\n", (unsigned long)bios_seg);
 		aty128_get_pllinfo(info, bios_seg);
 	}
 #endif

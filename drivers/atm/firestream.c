@@ -330,8 +330,8 @@ MODULE_PARM(fs_keystream, "i");
 #define FS_DEBUG_QSIZE   0x00001000
 
 
-#define func_enter() fs_dprintk (FS_DEBUG_FLOW, "fs: enter " __FUNCTION__ "\n")
-#define func_exit()  fs_dprintk (FS_DEBUG_FLOW, "fs: exit  " __FUNCTION__ "\n")
+#define func_enter() fs_dprintk (FS_DEBUG_FLOW, "fs: enter %s\n", __FUNCTION__)
+#define func_exit()  fs_dprintk (FS_DEBUG_FLOW, "fs: exit  %s\n", __FUNCTION__)
 
 
 struct fs_dev *fs_boards = NULL;
@@ -760,6 +760,7 @@ static void process_txdone_queue (struct fs_dev *dev, struct queue *q)
 		default:
 			/* Here we get the tx purge inhibit command ... */
 			/* Action, I believe, is "don't do anything". -- REW */
+			break;
 		}
     
 		write_fs (dev, Q_RP(q->offset), Q_INCWRAP);

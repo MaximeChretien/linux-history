@@ -24,7 +24,7 @@ obj-y	 += mem.o tty_io.o n_tty.o tty_ioctl.o raw.o pty.o misc.o random.o
 export-objs     :=	busmouse.o console.o keyboard.o sysrq.o \
 			misc.o pty.o random.o selection.o serial.o \
 			sonypi.o tty_io.o tty_ioctl.o generic_serial.o \
-			au1000_gpio.o
+			au1000_gpio.o hp_psaux.o nvram.o
 
 mod-subdirs	:=	joystick ftape drm drm-4.0 pcmcia
 
@@ -69,6 +69,21 @@ endif
 ifdef CONFIG_Q40
   KEYBD += q40_keyb.o
   SERIAL = serial.o
+endif
+
+ifdef CONFIG_APOLLO
+  KEYBD += dn_keyb.o
+endif
+
+ifeq ($(ARCH),parisc)
+   ifdef CONFIG_GSC_PS2
+      KEYBD   = hp_psaux.o hp_keyb.o
+   else
+      KEYBD   =
+   endif
+   ifdef CONFIG_PDC_CONSOLE
+      CONSOLE += pdc_console.o
+   endif
 endif
 
 ifeq ($(ARCH),arm)
@@ -150,6 +165,7 @@ else
   obj-$(CONFIG_PCI) += keyboard.o $(KEYMAP)
 endif
 
+obj-$(CONFIG_HIL) += hp_keyb.o
 obj-$(CONFIG_MAGIC_SYSRQ) += sysrq.o
 obj-$(CONFIG_ATARI_DSP56K) += dsp56k.o
 obj-$(CONFIG_ROCKETPORT) += rocket.o
@@ -166,6 +182,7 @@ obj-$(CONFIG_RISCOM8) += riscom8.o
 obj-$(CONFIG_ISI) += isicom.o
 obj-$(CONFIG_ESPSERIAL) += esp.o
 obj-$(CONFIG_SYNCLINK) += synclink.o
+obj-$(CONFIG_SYNCLINKMP) += synclinkmp.o
 obj-$(CONFIG_N_HDLC) += n_hdlc.o
 obj-$(CONFIG_SPECIALIX) += specialix.o
 obj-$(CONFIG_AMIGA_BUILTIN_SERIAL) += amiserial.o
@@ -177,6 +194,7 @@ obj-$(CONFIG_SERIAL167) += serial167.o
 obj-$(CONFIG_MVME147_SCC) += generic_serial.o vme_scc.o
 obj-$(CONFIG_MVME162_SCC) += generic_serial.o vme_scc.o
 obj-$(CONFIG_BVME6000_SCC) += generic_serial.o vme_scc.o
+obj-$(CONFIG_HVC_CONSOLE) += hvc_console.o
 obj-$(CONFIG_SERIAL_TX3912) += generic_serial.o serial_tx3912.o
 obj-$(CONFIG_TXX927_SERIAL) += serial_txx927.o
 
@@ -213,6 +231,7 @@ obj-$(CONFIG_I8K) += i8k.o
 obj-$(CONFIG_DS1620) += ds1620.o
 obj-$(CONFIG_INTEL_RNG) += i810_rng.o
 obj-$(CONFIG_AMD_RNG) += amd768_rng.o
+obj-$(CONFIG_AMD_PM768) += amd76x_pm.o
 
 obj-$(CONFIG_ITE_GPIO) += ite_gpio.o
 obj-$(CONFIG_AU1000_GPIO) += au1000_gpio.o
@@ -258,10 +277,12 @@ obj-$(CONFIG_MACHZ_WDT) += machzwd.o
 obj-$(CONFIG_SH_WDT) += shwdt.o
 obj-$(CONFIG_EUROTECH_WDT) += eurotechwdt.o
 obj-$(CONFIG_ALIM7101_WDT) += alim7101_wdt.o
+#obj-$(CONFIG_ALIM1535_WDT) += alim1535d_wdt.o
 obj-$(CONFIG_INDYDOG) += indydog.o
 obj-$(CONFIG_SC1200_WDT) += sc1200wdt.o
 obj-$(CONFIG_WAFER_WDT) += wafer5823wdt.o
 obj-$(CONFIG_SOFT_WATCHDOG) += softdog.o
+obj-$(CONFIG_AMD7XX_TCO) += amd7xx_tco.o
 
 subdir-$(CONFIG_MWAVE) += mwave
 ifeq ($(CONFIG_MWAVE),y)

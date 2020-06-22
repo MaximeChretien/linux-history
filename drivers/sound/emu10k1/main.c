@@ -78,9 +78,11 @@
  *          Cleaned up poll() functions (audio and midi). Don't start input.
  *	    Restrict DMA pages used to 512Mib range.
  *	    New AC97_BOOST mixer ioctl.
- *     0.19 Real fix for kernel with highmem support (cast dma_handle to u32)
- *	    Fix recording buffering parameters calculation
+ *     0.19 Real fix for kernel with highmem support (cast dma_handle to u32).
+ *	    Fix recording buffering parameters calculation.
  *	    Use unsigned long for variables in bit ops.
+ *     0.20 Fixed recording startup
+ *	    Fixed timer rate setting (it's a 16-bit register)
  *********************************************************************/
 
 /* These are only included once per module */
@@ -113,7 +115,7 @@
 #define SNDCARD_EMU10K1 46
 #endif
  
-#define DRIVER_VERSION "0.19"
+#define DRIVER_VERSION "0.20"
 
 /* the emu10k1 _seems_ to only supports 29 bit (512MiB) bit bus master */
 #define EMU10K1_DMA_MASK                0x1fffffff	/* DMA buffer mask for pci_alloc_consist */
@@ -1017,7 +1019,7 @@ static int __devinit emu10k1_probe(struct pci_dev *pci_dev, const struct pci_dev
 	int ret;
 
 	if (pci_set_dma_mask(pci_dev, EMU10K1_DMA_MASK)) {
-		printk(KERN_ERR "emu10k1: architecture does not support 32bit PCI busmaster DMA\n");
+		printk(KERN_ERR "emu10k1: architecture does not support 29bit PCI busmaster DMA\n");
 		return -ENODEV;
 	}
 
@@ -1056,7 +1058,7 @@ static int __devinit emu10k1_probe(struct pci_dev *pci_dev, const struct pci_dev
 	pci_read_config_byte(pci_dev, PCI_REVISION_ID, &card->chiprev);
 	pci_read_config_word(pci_dev, PCI_SUBSYSTEM_ID, &card->model);
 
-	printk(KERN_INFO "emu10k1: %s rev %d model 0x%x found, IO at 0x%04lx-0x%04lx, IRQ %d\n",
+	printk(KERN_INFO "emu10k1: %s rev %d model %#04x found, IO at %#04lx-%#04lx, IRQ %d\n",
 		card_names[pci_id->driver_data], card->chiprev, card->model, card->iobase,
 		card->iobase + card->length - 1, card->irq);
 

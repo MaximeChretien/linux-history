@@ -1,5 +1,5 @@
 /*
- * Copyright 2000 by Hans Reiser, licensing governed by reiserfs/README
+ * Copyright 2000-2002 by Hans Reiser, licensing governed by reiserfs/README
  */
 
 #include <linux/config.h>
@@ -19,10 +19,7 @@
 
 static int reiserfs_get_block (struct inode * inode, long block,
 			       struct buffer_head * bh_result, int create);
-//
-// initially this function was derived from minix or ext2's analog and
-// evolved as the prototype did
-//
+
 void reiserfs_delete_inode (struct inode * inode)
 {
     int jbegin_count = JOURNAL_PER_BALANCE_CNT * 2; 
@@ -111,8 +108,7 @@ static void add_to_flushlist(struct inode *inode, struct buffer_head *bh) {
 }
 
 //
-// FIXME: we might cache recently accessed indirect item (or at least
-// first 15 pointers just like ext2 does
+// FIXME: we might cache recently accessed indirect item
 
 // Ugh.  Not too eager for that....
 //  I cut the code until such time as I see a convincing argument (benchmark).
@@ -158,33 +154,6 @@ static inline void fix_tail_page_for_writing(struct page *page) {
 	} while (bh != head) ;
     }
 }
-
-
-
-
-/* we need to allocate a block for new unformatted node.  Try to figure out
-   what point in bitmap reiserfs_new_blocknrs should start from. */
-static b_blocknr_t find_tag (struct buffer_head * bh, struct item_head * ih,
-			     __u32 * item, int pos_in_item)
-{
-  __u32 block ;
-  if (!is_indirect_le_ih (ih))
-	 /* something more complicated could be here */
-	 return bh->b_blocknr;
-
-  /* for indirect item: go to left and look for the first non-hole entry in
-	  the indirect item */
-  if (pos_in_item == I_UNFM_NUM (ih))
-	 pos_in_item --;
-  while (pos_in_item >= 0) {
-	 block = get_block_num(item, pos_in_item) ;
-	 if (block)
-		return block ;
-	 pos_in_item --;
-  }
-  return bh->b_blocknr;
-}
-
 
 /* reiserfs_get_block does not need to allocate a block only if it has been
    done already or non-hole position has been found in the indirect item */
@@ -348,10 +317,10 @@ research:
     ** kmap schedules
     */
     if (!p) {
-    p = (char *)kmap(bh_result->b_page) ;
-    if (fs_changed (fs_gen, inode->i_sb) && item_moved (&tmp_ih, &path)) {
-        goto research;
-    }
+	p = (char *)kmap(bh_result->b_page) ;
+	if (fs_changed (fs_gen, inode->i_sb) && item_moved (&tmp_ih, &path)) {
+	    goto research;
+	}
     }
     p += offset ;
     memset (p, 0, inode->i_sb->s_blocksize);
@@ -531,29 +500,24 @@ out:
 }
 
 static inline int _allocate_block(struct reiserfs_transaction_handle *th,
+			   long block,
                            struct inode *inode, 
 			   b_blocknr_t *allocated_block_nr, 
-			   unsigned long tag,
+			   struct path * path,
 			   int flags) {
   
 #ifdef REISERFS_PREALLOCATE
     if (!(flags & GET_BLOCK_NO_ISEM)) {
-        return reiserfs_new_unf_blocknrs2(th, inode, allocated_block_nr, tag);
+        return reiserfs_new_unf_blocknrs2(th, inode, allocated_block_nr, path, block);
     }
 #endif
-    return reiserfs_new_unf_blocknrs (th, allocated_block_nr, tag);
+    return reiserfs_new_unf_blocknrs (th, inode, allocated_block_nr, path, block);
 }
-//
-// initially this function was derived from ext2's analog and evolved
-// as the prototype did.  You'll need to look at the ext2 version to
-// determine which parts are derivative, if any, understanding that
-// there are only so many ways to code to a given interface.
-//
+
 static int reiserfs_get_block (struct inode * inode, long block,
 			       struct buffer_head * bh_result, int create)
 {
     int repeat, retval;
-    unsigned long tag;
     b_blocknr_t allocated_block_nr = 0;// b_blocknr_t is unsigned long
     INITIALIZE_PATH(path);
     int pos_in_item;
@@ -632,7 +596,6 @@ static int reiserfs_get_block (struct inode * inode, long block,
 
     if (allocation_needed (retval, allocated_block_nr, ih, item, pos_in_item)) {
 	/* we have to allocate block for the unformatted node */
-	tag = find_tag (bh, ih, item, pos_in_item);
 	if (!transaction_started) {
 	    pathrelse(&path) ;
 	    journal_begin(&th, inode->i_sb, jbegin_count) ;
@@ -641,7 +604,7 @@ static int reiserfs_get_block (struct inode * inode, long block,
 	    goto research ;
 	}
 
-	repeat = _allocate_block(&th, inode, &allocated_block_nr, tag, create);
+	repeat = _allocate_block(&th, block, inode, &allocated_block_nr, &path, create);
 
 	if (repeat == NO_DISK_SPACE) {
 	    /* restart the transaction to give the journal a chance to free
@@ -649,7 +612,7 @@ static int reiserfs_get_block (struct inode * inode, long block,
 	    ** research if we succeed on the second try
 	    */
 	    restart_transaction(&th, inode, &path) ; 
-	    repeat = _allocate_block(&th, inode,&allocated_block_nr,tag,create);
+	    repeat = _allocate_block(&th, block, inode, &allocated_block_nr, NULL, create);
 
 	    if (repeat != NO_DISK_SPACE) {
 		goto research ;
@@ -800,10 +763,10 @@ static int reiserfs_get_block (struct inode * inode, long block,
 	    add_to_flushlist(inode, unbh) ;
 
 	    /* mark it dirty now to prevent commit_write from adding
-	    ** this buffer to the inode's dirty buffer list
-	    */
+	     ** this buffer to the inode's dirty buffer list
+	     */
 	    __mark_buffer_dirty(unbh) ;
-		  
+
 	    //inode->i_blocks += inode->i_sb->s_blocksize / 512;
 	    //mark_tail_converted (inode);
 	} else {
@@ -1137,15 +1100,17 @@ void reiserfs_update_sd (struct reiserfs_transaction_handle *th,
     return;
 }
 
-void reiserfs_read_inode(struct inode *inode) {
-    make_bad_inode(inode) ;
+/* We need to clear inode key in private part of inode to avoid races between
+   blocking iput, knfsd and file deletion with creating of safelinks.*/
+static void reiserfs_make_bad_inode(struct inode *inode) {
+    memset(INODE_PKEY(inode), 0, KEY_SIZE);
+    make_bad_inode(inode);
 }
 
+void reiserfs_read_inode(struct inode *inode) {
+    reiserfs_make_bad_inode(inode) ;
+}
 
-//
-// initially this function was derived from minix or ext2's analog and
-// evolved as the prototype did
-//
 
 /* looks for stat data in the tree, and fills up the fields of in-core
    inode stat data fields */
@@ -1158,7 +1123,7 @@ void reiserfs_read_inode2 (struct inode * inode, void *p)
     int retval;
 
     if (!p) {
-	make_bad_inode(inode) ;
+	reiserfs_make_bad_inode(inode) ;
 	return;
     }
 
@@ -1178,13 +1143,13 @@ void reiserfs_read_inode2 (struct inode * inode, void *p)
 	reiserfs_warning ("vs-13070: reiserfs_read_inode2: "
                     "i/o failure occurred trying to find stat data of %K\n",
                     &key);
-	make_bad_inode(inode) ;
+	reiserfs_make_bad_inode(inode) ;
 	return;
     }
     if (retval != ITEM_FOUND) {
 	/* a stale NFS handle can trigger this without it being an error */
 	pathrelse (&path_to_sd);
-	make_bad_inode(inode) ;
+	reiserfs_make_bad_inode(inode) ;
 	inode->i_nlink = 0;
 	return;
     }
@@ -1211,7 +1176,7 @@ void reiserfs_read_inode2 (struct inode * inode, void *p)
 			      "dead inode read from disk %K. "
 			      "This is likely to be race with knfsd. Ignore\n", 
 			      &key );
-	    make_bad_inode( inode );
+	    reiserfs_make_bad_inode( inode );
     }
 
     reiserfs_check_path(&path_to_sd) ; /* init inode should be relsing */
@@ -1368,10 +1333,6 @@ int reiserfs_dentry_to_fh(struct dentry *dentry, __u32 *data, int *lenp, int nee
 }
 
 
-//
-// initially this function was derived from minix or ext2's analog and
-// evolved as the prototype did
-//
 /* looks for stat data, then copies fields to it, marks the buffer
    containing stat data as dirty */
 /* reiserfs inodes are never really dirty, since the dirty inode call
@@ -1504,7 +1465,7 @@ static int reiserfs_new_symlink (struct reiserfs_transaction_handle *th,
    directory) or reiserfs_new_symlink (to insert symlink body if new
    object is symlink) or nothing (if new object is regular file) */
 struct inode * reiserfs_new_inode (struct reiserfs_transaction_handle *th,
-				   const struct inode * dir, int mode, 
+				   struct inode * dir, int mode, 
 				   const char * symname, 
 				   int i_size, /* 0 for regular, EMTRY_DIR_SIZE for dirs,
 						  strlen (symname) for symlinks)*/
@@ -1628,6 +1589,10 @@ struct inode * reiserfs_new_inode (struct reiserfs_transaction_handle *th,
 	set_inode_sd_version (inode, STAT_DATA_V2);
     
     /* insert the stat data into the tree */
+#ifdef DISPLACE_NEW_PACKING_LOCALITIES
+    if (dir->u.reiserfs_i.new_packing_locality)
+	th->displace_new_blocks = 1;
+#endif
     retval = reiserfs_insert_item (th, &path_to_key, &key, &ih, (char *)(&sd));
     if (retval) {
 	iput (inode);
@@ -1636,6 +1601,10 @@ struct inode * reiserfs_new_inode (struct reiserfs_transaction_handle *th,
 	return NULL;
     }
 
+#ifdef DISPLACE_NEW_PACKING_LOCALITIES
+    if (!th->displace_new_blocks)
+	dir->u.reiserfs_i.new_packing_locality = 0;
+#endif
     if (S_ISDIR(mode)) {
 	/* insert item with "." and ".." */
 	retval = reiserfs_new_directory (th, &ih, &path_to_key, dir);
@@ -1793,16 +1762,16 @@ void reiserfs_truncate_file(struct inode *p_s_inode, int update_timestamps) {
     reiserfs_update_inode_transaction(p_s_inode) ;
     windex = push_journal_writer("reiserfs_vfs_truncate_file") ;
     if (update_timestamps)
-           /* we are doing real truncate: if the system crashes before the last
-              transaction of truncating gets committed - on reboot the file
-              either appears truncated properly or not truncated at all */
-           add_save_link (&th, p_s_inode, 1);
+	    /* we are doing real truncate: if the system crashes before the last
+	       transaction of truncating gets committed - on reboot the file
+	       either appears truncated properly or not truncated at all */
+	add_save_link (&th, p_s_inode, 1);
     reiserfs_do_truncate (&th, p_s_inode, page, update_timestamps) ;
     pop_journal_writer(windex) ;
     journal_end(&th, p_s_inode->i_sb,  JOURNAL_PER_BALANCE_CNT * 2 + 1 ) ;
 
     if (update_timestamps)
-       remove_save_link (p_s_inode, 1/* truncate */);
+	remove_save_link (p_s_inode, 1/* truncate */);
 
     if (page) {
         length = offset & (blocksize - 1) ;
@@ -2042,18 +2011,13 @@ fail:
     return error ;
 }
 
-//
-// this is exactly what 2.3.99-pre9's ext2_readpage is
-//
+
 static int reiserfs_readpage (struct file *f, struct page * page)
 {
     return block_read_full_page (page, reiserfs_get_block);
 }
 
 
-//
-// modified from ext2_writepage is
-//
 static int reiserfs_writepage (struct page * page)
 {
     struct inode *inode = page->mapping->host ;
@@ -2062,9 +2026,6 @@ static int reiserfs_writepage (struct page * page)
 }
 
 
-//
-// from ext2_prepare_write, but modified
-//
 int reiserfs_prepare_write(struct file *f, struct page *page, 
 			   unsigned from, unsigned to) {
     struct inode *inode = page->mapping->host ;
@@ -2074,9 +2035,6 @@ int reiserfs_prepare_write(struct file *f, struct page *page,
 }
 
 
-//
-// this is exactly what 2.3.99-pre9's ext2_bmap is
-//
 static int reiserfs_aop_bmap(struct address_space *as, long block) {
   return generic_block_bmap(as, block, reiserfs_bmap) ;
 }
@@ -2095,13 +2053,13 @@ static int reiserfs_commit_write(struct file *f, struct page *page,
     */
     if (pos > inode->i_size) {
 	struct reiserfs_transaction_handle th ;
-	lock_kernel() ;
+	lock_kernel();
 	journal_begin(&th, inode->i_sb, 1) ;
 	reiserfs_update_inode_transaction(inode) ;
 	inode->i_size = pos ;
 	reiserfs_update_sd(&th, inode) ;
 	journal_end(&th, inode->i_sb, 1) ;
-	unlock_kernel() ;
+	unlock_kernel();
     }
  
     ret = generic_commit_write(f, page, from, to) ;

@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: super.c,v 1.48.2.2 2002/03/12 15:36:43 dwmw2 Exp $
+ * $Id: super.c,v 1.48.2.3 2002/10/11 09:04:44 dwmw2 Exp $
  *
  */
 
@@ -361,22 +361,35 @@ static int __init init_jffs2_fs(void)
 	}
 #endif
 
+	ret = jffs2_zlib_init();
+	if (ret) {
+		printk(KERN_ERR "JFFS2 error: Failed to initialise zlib workspaces\n");
+		goto out;
+	}
 	ret = jffs2_create_slab_caches();
 	if (ret) {
 		printk(KERN_ERR "JFFS2 error: Failed to initialise slab caches\n");
-		return ret;
+		goto out_zlib;
 	}
 	ret = register_filesystem(&jffs2_fs_type);
 	if (ret) {
 		printk(KERN_ERR "JFFS2 error: Failed to register filesystem\n");
-		jffs2_destroy_slab_caches();
+		goto out_slab;
 	}
+	return 0;
+
+ out_slab:
+	jffs2_destroy_slab_caches();
+ out_zlib:
+	jffs2_zlib_exit();
+ out:
 	return ret;
 }
 
 static void __exit exit_jffs2_fs(void)
 {
 	jffs2_destroy_slab_caches();
+	jffs2_zlib_exit();
 	unregister_filesystem(&jffs2_fs_type);
 }
 

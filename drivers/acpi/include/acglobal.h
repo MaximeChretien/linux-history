@@ -156,7 +156,7 @@ extern const predefined_names           acpi_gbl_pre_defined_names [NUM_PREDEFIN
 ACPI_EXTERN u32                         acpi_gbl_current_node_count;
 ACPI_EXTERN u32                         acpi_gbl_current_node_size;
 ACPI_EXTERN u32                         acpi_gbl_max_concurrent_node_count;
-ACPI_EXTERN u32                         acpi_gbl_entry_stack_pointer;
+ACPI_EXTERN unsigned long               acpi_gbl_entry_stack_pointer;
 ACPI_EXTERN u32                         acpi_gbl_lowest_stack_pointer;
 ACPI_EXTERN u32                         acpi_gbl_deepest_nesting;
 #endif

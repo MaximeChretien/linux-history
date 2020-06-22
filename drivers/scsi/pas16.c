@@ -311,7 +311,7 @@ static int __init pas16_hw_detect(unsigned short board_num)
  *	the passed in pas16= options
  */
 
-int __init pas16_setup(char *str, int *ints)
+int __init pas16_setup(char *str)
 {
 	static int commandline_current = 0;
 	int i;

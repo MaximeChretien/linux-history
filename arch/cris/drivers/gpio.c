@@ -1,4 +1,4 @@
-/* $Id: gpio.c,v 1.15 2002/05/06 13:19:13 johana Exp $
+/* $Id: gpio.c,v 1.17 2002/06/17 15:53:01 johana Exp $
  *
  * Etrax general port I/O device
  *
@@ -9,6 +9,18 @@
  *             Johan Adolfsson  (read/set directions, write, port G)
  *
  * $Log: gpio.c,v $
+ * Revision 1.17  2002/06/17 15:53:01  johana
+ * Added IO_READ_INBITS, IO_READ_OUTBITS, IO_SETGET_INPUT and IO_SETGET_OUTPUT
+ * that take a pointer as argument and thus can handle 32 bit ports (G)
+ * correctly.
+ * These should be used instead of IO_READBITS, IO_SETINPUT and IO_SETOUTPUT.
+ * (especially if Port G bit 31 is used)
+ *
+ * Revision 1.16  2002/06/17 09:59:51  johana
+ * Returning 32 bit values in the ioctl return value doesn't work if bit
+ * 31 is set (could happen for port G), so mask it of with 0x7FFFFFFF.
+ * A new set of ioctl's will be added.
+ *
  * Revision 1.15  2002/05/06 13:19:13  johana
  * IO_SETINPUT returns mask with bit set = inputs for PA and PB as well.
  *
@@ -330,6 +342,107 @@ gpio_release(struct inode *inode, struct file *filp)
  * set alarms to wait for using a subsequent select().
  */
 
+unsigned long inline setget_input(struct gpio_private *priv, unsigned long arg)
+{
+	/* Set direction 0=unchanged 1=input, 
+	 * return mask with 1=input 
+	 */
+	unsigned long flags;
+	if (USE_PORTS(priv)) {
+		save_flags(flags); cli();
+		*priv->dir = *priv->dir_shadow &= 
+		~((unsigned char)arg & priv->changeable_dir);
+		restore_flags(flags);
+		return ~(*priv->dir_shadow);
+	} else if (priv->minor == GPIO_MINOR_G) {
+		/* We must fiddle with R_GEN_CONFIG to change dir */
+		if (((arg & dir_g_in_bits) != arg) && 
+		    (arg & changeable_dir_g)) {
+			arg &= changeable_dir_g;
+			/* Clear bits in genconfig to set to input */
+			if (arg & (1<<0)) {
+				genconfig_shadow &= ~IO_MASK(R_GEN_CONFIG,g0dir);
+				dir_g_in_bits |= (1<<0);
+				dir_g_out_bits &= ~(1<<0);
+			}
+			if ((arg & 0x0000FF00) == 0x0000FF00) {
+				genconfig_shadow &= ~IO_MASK(R_GEN_CONFIG,g8_15dir);
+				dir_g_in_bits |= 0x0000FF00;
+				dir_g_out_bits &= ~0x0000FF00;
+			}
+			if ((arg & 0x00FF0000) == 0x00FF0000) {
+				genconfig_shadow &= ~IO_MASK(R_GEN_CONFIG,g16_23dir);
+				dir_g_in_bits |= 0x00FF0000;
+				dir_g_out_bits &= ~0x00FF0000;
+			}
+			if (arg & (1<<24)) {
+				genconfig_shadow &= ~IO_MASK(R_GEN_CONFIG,g24dir);
+				dir_g_in_bits |= (1<<24);
+				dir_g_out_bits &= ~(1<<24);
+			}
+			printk("gpio: SETINPUT on port G set "
+				"genconfig to 0x%08lX "
+				"in_bits: 0x%08lX "
+				"out_bits: 0x%08lX\n", 
+			       (unsigned long)genconfig_shadow, 
+			       dir_g_in_bits, dir_g_out_bits);
+			*R_GEN_CONFIG = genconfig_shadow;
+			/* Must be a >120 ns delay before writing this again */
+				
+		}
+		return dir_g_in_bits;
+	}
+	return 0;
+} /* setget_input */
+
+unsigned long inline setget_output(struct gpio_private *priv, unsigned long arg)
+{
+	unsigned long flags;
+	if (USE_PORTS(priv)) {
+		save_flags(flags); cli();
+		*priv->dir = *priv->dir_shadow |= 
+		  ((unsigned char)arg & priv->changeable_dir);
+		restore_flags(flags);
+		return *priv->dir_shadow;
+	} else if (priv->minor == GPIO_MINOR_G) {
+		/* We must fiddle with R_GEN_CONFIG to change dir */			
+		if (((arg & dir_g_out_bits) != arg) &&
+		    (arg & changeable_dir_g)) {
+			/* Set bits in genconfig to set to output */
+			if (arg & (1<<0)) {
+				genconfig_shadow |= IO_MASK(R_GEN_CONFIG,g0dir);
+				dir_g_out_bits |= (1<<0);
+				dir_g_in_bits &= ~(1<<0);
+			}
+			if ((arg & 0x0000FF00) == 0x0000FF00) {
+				genconfig_shadow |= IO_MASK(R_GEN_CONFIG,g8_15dir);
+				dir_g_out_bits |= 0x0000FF00;
+				dir_g_in_bits &= ~0x0000FF00;
+			}
+			if ((arg & 0x00FF0000) == 0x00FF0000) {
+				genconfig_shadow |= IO_MASK(R_GEN_CONFIG,g16_23dir);
+				dir_g_out_bits |= 0x00FF0000;
+				dir_g_in_bits &= ~0x00FF0000;
+			}
+			if (arg & (1<<24)) {
+				genconfig_shadow |= IO_MASK(R_GEN_CONFIG,g24dir);
+				dir_g_out_bits |= (1<<24);
+				dir_g_in_bits &= ~(1<<24);
+			}
+			printk("gpio: SETOUTPUT on port G set "
+				"genconfig to 0x%08lX "
+				"in_bits: 0x%08lX "
+				"out_bits: 0x%08lX\n", 
+			       (unsigned long)genconfig_shadow, 
+			       dir_g_in_bits, dir_g_out_bits);
+			*R_GEN_CONFIG = genconfig_shadow;
+			/* Must be a >120 ns delay before writing this again */
+		}
+		return dir_g_out_bits & 0x7FFFFFFF;
+	}
+	return 0;
+} /* setget_output */
+
 static int
 gpio_leds_ioctl(unsigned int cmd, unsigned long arg);
 
@@ -338,18 +451,19 @@ gpio_ioctl(struct inode *inode, struct file *file,
 	   unsigned int cmd, unsigned long arg)
 {
 	unsigned long flags;
+	unsigned long val;
 	struct gpio_private *priv = (struct gpio_private *)file->private_data;
 	if (_IOC_TYPE(cmd) != ETRAXGPIO_IOCTYPE) {
 		return -EINVAL;
 	}
 
 	switch (_IOC_NR(cmd)) {
-	case IO_READBITS:
+	case IO_READBITS: /* Use IO_READ_INBITS and IO_READ_OUTBITS instead */
 		// read the port
 		if (USE_PORTS(priv)) {
 			return *priv->port;
 		} else if (priv->minor == GPIO_MINOR_G) {
-			return *R_PORT_G_DATA;
+			return (*R_PORT_G_DATA) & 0x7FFFFFFF;
 		}
 		break;
 	case IO_SETBITS:
@@ -387,113 +501,28 @@ gpio_ioctl(struct inode *inode, struct file *file,
 		priv->highalarm &= ~arg;
 		priv->lowalarm  &= ~arg;
 		break;
-	case IO_READDIR:
+	case IO_READDIR: /* Use IO_SETGET_INPUT/OUTPUT instead! */
 		/* Read direction 0=input 1=output */
 		if (USE_PORTS(priv)) {
 			return *priv->dir_shadow;
 		} else if (priv->minor == GPIO_MINOR_G) {
 			/* Note: Some bits are both in and out,
-			 * Those that are dual is set hare as well.
+			 * Those that are dual is set here as well.
 			 */
-			return dir_g_shadow | dir_g_out_bits;
+			return (dir_g_shadow | dir_g_out_bits) & 0x7FFFFFFF;
 		}
-	case IO_SETINPUT:
+	case IO_SETINPUT: /* Use IO_SETGET_INPUT instead! */
 		/* Set direction 0=unchanged 1=input, 
 		 * return mask with 1=input 
 		 */
-		if (USE_PORTS(priv)) {
-			save_flags(flags); cli();
-			*priv->dir = *priv->dir_shadow &= 
-			~((unsigned char)arg & priv->changeable_dir);
-			restore_flags(flags);
-			return ~(*priv->dir_shadow);
-		} else if (priv->minor == GPIO_MINOR_G) {
-			/* We must fiddle with R_GEN_CONFIG to change dir */
-			if (((arg & dir_g_in_bits) != arg) && 
-			    (arg & changeable_dir_g)) {
-				arg &= changeable_dir_g;
-				/* Clear bits in genconfig to set to input */
-				if (arg & (1<<0)) {
-					genconfig_shadow &= ~IO_MASK(R_GEN_CONFIG,g0dir);
-					dir_g_in_bits |= (1<<0);
-					dir_g_out_bits &= ~(1<<0);
-				}
-				if ((arg & 0x0000FF00) == 0x0000FF00) {
-					genconfig_shadow &= ~IO_MASK(R_GEN_CONFIG,g8_15dir);
-					dir_g_in_bits |= 0x0000FF00;
-					dir_g_out_bits &= ~0x0000FF00;
-				}
-				if ((arg & 0x00FF0000) == 0x00FF0000) {
-					genconfig_shadow &= ~IO_MASK(R_GEN_CONFIG,g16_23dir);
-					dir_g_in_bits |= 0x00FF0000;
-					dir_g_out_bits &= ~0x00FF0000;
-				}
-				if (arg & (1<<24)) {
-					genconfig_shadow &= ~IO_MASK(R_GEN_CONFIG,g24dir);
-					dir_g_in_bits |= (1<<24);
-					dir_g_out_bits &= ~(1<<24);
-				}
-				printk("gpio: SETINPUT on port G set "
-					"genconfig to 0x%08lX "
-					"in_bits: 0x%08lX "
-					"out_bits: 0x%08lX\n", 
-				       (unsigned long)genconfig_shadow, 
-				       dir_g_in_bits, dir_g_out_bits);
-				*R_GEN_CONFIG = genconfig_shadow;
-				/* Must be a >120 ns delay before writing this again */
-				
-			}
-			return dir_g_in_bits;
-		}
-		return 0;
-
-	case IO_SETOUTPUT:
+		return setget_input(priv, arg) & 0x7FFFFFFF;
+		break;
+	case IO_SETOUTPUT: /* Use IO_SETGET_OUTPUT instead! */
 		/* Set direction 0=unchanged 1=output, 
 		 * return mask with 1=output 
 		 */
-		if (USE_PORTS(priv)) {
-			save_flags(flags); cli();
-			*priv->dir = *priv->dir_shadow |= 
-			  ((unsigned char)arg & priv->changeable_dir);
-			restore_flags(flags);
-			return *priv->dir_shadow;
-		} else if (priv->minor == GPIO_MINOR_G) {
-			/* We must fiddle with R_GEN_CONFIG to change dir */			
-			if (((arg & dir_g_out_bits) != arg) &&
-			    (arg & changeable_dir_g)) {
-				/* Set bits in genconfig to set to output */
-				if (arg & (1<<0)) {
-					genconfig_shadow |= IO_MASK(R_GEN_CONFIG,g0dir);
-					dir_g_out_bits |= (1<<0);
-					dir_g_in_bits &= ~(1<<0);
-				}
-				if ((arg & 0x0000FF00) == 0x0000FF00) {
-					genconfig_shadow |= IO_MASK(R_GEN_CONFIG,g8_15dir);
-					dir_g_out_bits |= 0x0000FF00;
-					dir_g_in_bits &= ~0x0000FF00;
-				}
-				if ((arg & 0x00FF0000) == 0x00FF0000) {
-					genconfig_shadow |= IO_MASK(R_GEN_CONFIG,g16_23dir);
-					dir_g_out_bits |= 0x00FF0000;
-					dir_g_in_bits &= ~0x00FF0000;
-				}
-				if (arg & (1<<24)) {
-					genconfig_shadow |= IO_MASK(R_GEN_CONFIG,g24dir);
-					dir_g_out_bits |= (1<<24);
-					dir_g_in_bits &= ~(1<<24);
-				}
-				printk("gpio: SETOUTPUT on port G set "
-					"genconfig to 0x%08lX "
-					"in_bits: 0x%08lX "
-					"out_bits: 0x%08lX\n", 
-				       (unsigned long)genconfig_shadow, 
-				       dir_g_in_bits, dir_g_out_bits);
-				*R_GEN_CONFIG = genconfig_shadow;
-				/* Must be a >120 ns delay before writing this again */
-			}
-			return dir_g_out_bits;
-		}
-		return 0;
+		return setget_output(priv, arg) & 0x7FFFFFFF;
+
 	case IO_SHUTDOWN:
 		SOFT_SHUTDOWN();
 		break;
@@ -520,6 +549,47 @@ gpio_ioctl(struct inode *inode, struct file *file,
 			priv->data_mask = 0;
 			return -EPERM;
 		}
+		break;
+	case IO_READ_INBITS: 
+		/* *arg is result of reading the input pins */
+		if (USE_PORTS(priv)) {
+			val = *priv->port;
+		} else if (priv->minor == GPIO_MINOR_G) {
+			val = *R_PORT_G_DATA;
+		}
+		if (copy_to_user((unsigned long*)arg, &val, sizeof(val)))
+			return -EFAULT;
+		return 0;
+		break;
+	case IO_READ_OUTBITS:
+		 /* *arg is result of reading the output shadow */
+		if (USE_PORTS(priv)) {
+			val = *priv->shadow;
+		} else if (priv->minor == GPIO_MINOR_G) {
+			val = port_g_data_shadow;
+		}
+		if (copy_to_user((unsigned long*)arg, &val, sizeof(val)))
+			return -EFAULT;
+		break;
+	case IO_SETGET_INPUT: 
+		/* bits set in *arg is set to input,
+		 * *arg updated with current input pins.
+		 */
+		if (copy_from_user(&val, (unsigned long*)arg, sizeof(val)))
+			return -EFAULT;
+		val = setget_input(priv, val);
+		if (copy_to_user((unsigned long*)arg, &val, sizeof(val)))
+			return -EFAULT;
+		break;
+	case IO_SETGET_OUTPUT:
+		/* bits set in *arg is set to output,
+		 * *arg updated with current output pins.
+		 */
+		if (copy_from_user(&val, (unsigned long*)arg, sizeof(val)))
+			return -EFAULT;
+		val = setget_output(priv, val);
+		if (copy_to_user((unsigned long*)arg, &val, sizeof(val)))
+			return -EFAULT;
 		break;
 	default:
 		if (priv->minor == GPIO_MINOR_LEDS)
@@ -690,7 +760,7 @@ gpio_init(void)
 
 #endif
 	gpio_init_port_g();
-	printk("ETRAX 100LX GPIO driver v2.3, (c) 2001, 2002 Axis Communications AB\n");
+	printk("ETRAX 100LX GPIO driver v2.4, (c) 2001, 2002 Axis Communications AB\n");
 
 	return res;
 }

@@ -206,6 +206,7 @@ extern void update_atime (struct inode *);
 extern void buffer_init(unsigned long);
 extern void inode_init(unsigned long);
 extern void mnt_init(unsigned long);
+extern void files_init(unsigned long mempages);
 
 /* bh state bits */
 enum bh_state_bits {
@@ -595,6 +596,7 @@ struct file_lock {
 	void (*fl_remove)(struct file_lock *);	/* lock removal callback */
 
 	struct fasync_struct *	fl_fasync; /* for lease break notifications */
+	unsigned long fl_break_time;	/* for nonblocking lease breaks */
 
 	union {
 		struct nfs_lock_info	nfs_fl;
@@ -864,6 +866,10 @@ struct inode_operations {
 	int (*revalidate) (struct dentry *);
 	int (*setattr) (struct dentry *, struct iattr *);
 	int (*getattr) (struct dentry *, struct iattr *);
+	int (*setxattr) (struct dentry *, const char *, void *, size_t, int);
+	ssize_t (*getxattr) (struct dentry *, const char *, void *, size_t);
+	ssize_t (*listxattr) (struct dentry *, char *, size_t);
+	int (*removexattr) (struct dentry *, const char *);
 };
 
 struct seq_file;
@@ -995,7 +1001,6 @@ extern int unregister_filesystem(struct file_system_type *);
 extern struct vfsmount *kern_mount(struct file_system_type *);
 extern int may_umount(struct vfsmount *);
 extern long do_mount(char *, char *, char *, unsigned long, void *);
-extern void umount_tree(struct vfsmount *);
 
 #define kern_umount mntput
 
@@ -1051,7 +1056,7 @@ static inline int locks_verify_truncate(struct inode *inode,
 
 static inline int get_lease(struct inode *inode, unsigned int mode)
 {
-	if (inode->i_flock && (inode->i_flock->fl_flags & FL_LEASE))
+	if (inode->i_flock)
 		return __get_lease(inode, mode);
 	return 0;
 }
@@ -1327,6 +1332,7 @@ extern loff_t default_llseek(struct file *file, loff_t offset, int origin);
 extern int FASTCALL(__user_walk(const char *, unsigned, struct nameidata *));
 extern int FASTCALL(path_init(const char *, unsigned, struct nameidata *));
 extern int FASTCALL(path_walk(const char *, struct nameidata *));
+extern int FASTCALL(path_lookup(const char *, unsigned, struct nameidata *));
 extern int FASTCALL(link_path_walk(const char *, struct nameidata *));
 extern void path_release(struct nameidata *);
 extern int follow_down(struct vfsmount **, struct dentry **);

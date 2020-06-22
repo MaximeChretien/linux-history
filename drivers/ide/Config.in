@@ -65,14 +65,14 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 	    dep_mbool '      ALI M15x3 WDC support (DANGEROUS)' CONFIG_WDC_ALI15X3 $CONFIG_BLK_DEV_ALI15X3
 	    dep_bool '    AMD Viper support' CONFIG_BLK_DEV_AMD74XX $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_mbool '      AMD Viper ATA-66 Override (WIP)' CONFIG_AMD74XX_OVERRIDE $CONFIG_BLK_DEV_AMD74XX $CONFIG_IDEDMA_PCI_WIP
-	    dep_bool '    CMD64X chipset support' CONFIG_BLK_DEV_CMD64X $CONFIG_BLK_DEV_IDEDMA_PCI
+	    dep_bool '    CMD64X and CMD680 chipset support' CONFIG_BLK_DEV_CMD64X $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_bool '    CMD680 chipset tuning support' CONFIG_BLK_DEV_CMD680 $CONFIG_BLK_DEV_CMD64X
 	    dep_bool '    CY82C693 chipset support' CONFIG_BLK_DEV_CY82C693 $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_bool '    Cyrix CS5530 MediaGX chipset support' CONFIG_BLK_DEV_CS5530 $CONFIG_BLK_DEV_IDEDMA_PCI
   	    dep_bool '    HPT34X chipset support' CONFIG_BLK_DEV_HPT34X $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_mbool '      HPT34X AUTODMA support (WIP)' CONFIG_HPT34X_AUTODMA $CONFIG_BLK_DEV_HPT34X $CONFIG_IDEDMA_PCI_WIP
 	    dep_bool '    HPT366/368/370 chipset support' CONFIG_BLK_DEV_HPT366 $CONFIG_BLK_DEV_IDEDMA_PCI
-	    if [ "$CONFIG_X86" = "y" -o "$CONFIG_IA64" = "y" ]; then
+	    if [ "$CONFIG_X86" = "y" -o "$CONFIG_IA64" = "y" -o "$CONFIG_MIPS" = "y" ]; then
 	       dep_mbool '    Intel PIIXn chipsets support' CONFIG_BLK_DEV_PIIX $CONFIG_BLK_DEV_IDEDMA_PCI
 	       dep_mbool '      PIIXn Tuning support' CONFIG_PIIX_TUNING $CONFIG_BLK_DEV_PIIX $CONFIG_IDEDMA_PCI_AUTO
 	    fi
@@ -108,7 +108,7 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 	 fi
       fi
       if [ "$CONFIG_SIBYTE_SWARM" = "y" ]; then
-	 bool '  SWARM onboard IDE support' CONFIG_BLK_DEV_IDE_SWARM
+	 bool '  Broadcom SiByte onboard IDE support' CONFIG_BLK_DEV_IDE_SIBYTE
       fi
       if [ "$CONFIG_ARCH_ACORN" = "y" ]; then
 	 dep_bool '    ICS IDE interface support' CONFIG_BLK_DEV_IDE_ICSIDE $CONFIG_ARCH_ACORN
@@ -144,7 +144,8 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 		 EXT_DIRECT	CONFIG_IDE_EXT_DIRECT"	8xx_PCCARD
       fi
 
-      bool '  Other IDE chipset support' CONFIG_IDE_CHIPSETS
+      # no isa -> no vlb
+      dep_bool '  Other IDE chipset support' CONFIG_IDE_CHIPSETS $CONFIG_ISA
       if [ "$CONFIG_IDE_CHIPSETS" = "y" ]; then
 	 comment 'Note: most of these also require special kernel boot parameters'
 	 bool '    Generic 4 drives/port support' CONFIG_BLK_DEV_4DRIVES
@@ -209,8 +210,8 @@ else
    define_bool CONFIG_BLK_DEV_IDE_MODES n
 fi
 
-dep_tristate 'Support for IDE Raid controllers' CONFIG_BLK_DEV_ATARAID $CONFIG_BLK_DEV_IDE $CONFIG_EXPERIMENTAL
-dep_tristate '   Support Promise software RAID (Fasttrak(tm))' CONFIG_BLK_DEV_ATARAID_PDC $CONFIG_BLK_DEV_IDE $CONFIG_EXPERIMENTAL $CONFIG_BLK_DEV_ATARAID
-dep_tristate '   Highpoint 370 software RAID' CONFIG_BLK_DEV_ATARAID_HPT $CONFIG_BLK_DEV_IDE $CONFIG_EXPERIMENTAL $CONFIG_BLK_DEV_ATARAID
+dep_tristate 'Support for IDE Raid controllers (EXPERIMENTAL)' CONFIG_BLK_DEV_ATARAID $CONFIG_BLK_DEV_IDE $CONFIG_EXPERIMENTAL
+dep_tristate '   Support Promise software RAID (Fasttrak(tm)) (EXPERIMENTAL)' CONFIG_BLK_DEV_ATARAID_PDC $CONFIG_BLK_DEV_IDE $CONFIG_EXPERIMENTAL $CONFIG_BLK_DEV_ATARAID
+dep_tristate '   Highpoint 370 software RAID (EXPERIMENTAL)' CONFIG_BLK_DEV_ATARAID_HPT $CONFIG_BLK_DEV_IDE $CONFIG_EXPERIMENTAL $CONFIG_BLK_DEV_ATARAID
 
 endmenu

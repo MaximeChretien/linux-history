@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: gc.c,v 1.52.2.3 2002/05/12 17:27:08 dwmw2 Exp $
+ * $Id: gc.c,v 1.52.2.5 2002/10/10 13:18:38 dwmw2 Exp $
  *
  */
 
@@ -134,8 +134,10 @@ int jffs2_garbage_collect_pass(struct jffs2_sb_info *c)
 
 	D1(printk(KERN_DEBUG "garbage collect from block at phys 0x%08x\n", jeb->offset));
 
-	if (!jeb->used_size)
+	if (!jeb->used_size) {
+		up(&c->alloc_sem);
 		goto eraseit;
+	}
 
 	raw = jeb->gc_node;
 			
@@ -156,6 +158,7 @@ int jffs2_garbage_collect_pass(struct jffs2_sb_info *c)
 		/* Inode-less node. Clean marker, snapshot or something like that */
 		spin_unlock_bh(&c->erase_completion_lock);
 		jffs2_mark_node_obsolete(c, raw);
+		up(&c->alloc_sem);
 		goto eraseit_lock;
 	}
 						     
@@ -170,8 +173,8 @@ int jffs2_garbage_collect_pass(struct jffs2_sb_info *c)
 	if (is_bad_inode(inode)) {
 		printk(KERN_NOTICE "Eep. read_inode() failed for ino #%u\n", inum);
 		/* NB. This will happen again. We need to do something appropriate here. */
-		iput(inode);
 		up(&c->alloc_sem);
+		iput(inode);
 		return -EIO;
 	}
 
@@ -234,6 +237,7 @@ int jffs2_garbage_collect_pass(struct jffs2_sb_info *c)
 	}
  upnout:
 	up(&f->sem);
+	up(&c->alloc_sem);
 	iput(inode);
 
  eraseit_lock:
@@ -250,7 +254,6 @@ int jffs2_garbage_collect_pass(struct jffs2_sb_info *c)
 		jffs2_erase_pending_trigger(c);
 	}
 	spin_unlock_bh(&c->erase_completion_lock);
-	up(&c->alloc_sem);
 
 	return ret;
 }
@@ -507,7 +510,7 @@ static int jffs2_garbage_collect_hole(struct jffs2_sb_info *c, struct jffs2_eras
 	 * number as before. (Except in case of error -- see 'goto fill;' 
 	 * above.)
 	 */
-	D1(if(unlikely(fn->frags <= 1)) {
+	D1(if(fn->frags <= 1) {
 		printk(KERN_WARNING "jffs2_garbage_collect_hole: Replacing fn with %d frag(s) but new ver %d != highest_version %d of ino #%d\n",
 		       fn->frags, ri.version, f->highest_version, ri.ino);
 	});

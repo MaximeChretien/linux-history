@@ -227,7 +227,7 @@ static int __init etrax_sync_serial_init(void)
 #else
 	ports[0].use_dma = 0;
 	initialize_port(0);
-	if (request_irq(8, manual_interrupt, SA_SHIRQ, "synchronous serial manual irq", &ports[0]))
+	if (request_irq(8, manual_interrupt, SA_SHIRQ | SA_INTERRUPT, "synchronous serial manual irq", &ports[0]))
 		panic("Can't allocate sync serial manual irq");
 	*R_IRQ_MASK1_SET = IO_STATE(R_IRQ_MASK1_SET, ser1_data, set);	 
 #endif
@@ -258,9 +258,9 @@ static int __init etrax_sync_serial_init(void)
 #else
 	ports[1].use_dma = 0;	
 	initialize_port(1);
-	if (port[0].use_dma) /* Port 0 uses dma, we must manual allocate IRQ */
+	if (ports[0].use_dma) /* Port 0 uses dma, we must manual allocate IRQ */
 	{
-		if (request_irq(8, manual_interrupt, SA_SHIRQ, "synchronous serial manual irq", &ports[1]))
+		if (request_irq(8, manual_interrupt, SA_SHIRQ | SA_INTERRUPT, "synchronous serial manual irq", &ports[1]))
 			panic("Can't allocate sync serial manual irq");
 	}
 	*R_IRQ_MASK1_SET = IO_STATE(R_IRQ_MASK1_SET, ser3_data, set);	 

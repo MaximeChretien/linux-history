@@ -66,7 +66,7 @@
  *	an L1cache=Writethrough or L1cache=off option.
  *
  *		B stepping CPUs may hang. There are hardware work arounds
- *	for this. We warn about it in case your board doesnt have the work
+ *	for this. We warn about it in case your board doesn't have the work
  *	arounds. Basically thats so I can tell anyone with a B stepping
  *	CPU and SMP problems "tough".
  *
@@ -115,7 +115,7 @@ struct tlb_state cpu_tlbstate[NR_CPUS] __cacheline_aligned = {[0 ... NR_CPUS-1] 
 
 static inline int __prepare_ICR (unsigned int shortcut, int vector)
 {
-	return APIC_DM_FIXED | shortcut | vector | APIC_DEST_LOGICAL;
+	return APIC_DM_FIXED | shortcut | vector | INT_DEST_ADDR_MODE;
 }
 
 static inline int __prepare_ICR2 (unsigned int mask)

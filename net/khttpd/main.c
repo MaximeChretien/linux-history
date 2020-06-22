@@ -95,11 +95,17 @@ static int MainDaemon(void *cpu_pointer)
 {
 	int CPUNR;
 	sigset_t tmpsig;
+	int old_stop_count;
 	
 	DECLARE_WAITQUEUE(main_wait,current);
 	
 	MOD_INC_USE_COUNT;
 
+	/* Remember value of stop count.  If it changes, user must have 
+	 * asked us to stop.  Sensing this is much less racy than 
+	 * directly sensing sysctl_khttpd_stop. - dank
+	 */
+	old_stop_count = atomic_read(&khttpd_stopCount);
 	
 	CPUNR=0;
 	if (cpu_pointer!=NULL)
@@ -125,11 +131,9 @@ static int MainDaemon(void *cpu_pointer)
 	atomic_inc(&DaemonCount);
 	atomic_set(&Running[CPUNR],1);
 	
-	while (sysctl_khttpd_stop==0)
+	while (old_stop_count == atomic_read(&khttpd_stopCount)) 
 	{
 		int changes = 0;
-				
-
 		
 		changes +=AcceptConnections(CPUNR,MainSocket);
 		if (ConnectionsPending(CPUNR))
@@ -194,11 +198,9 @@ static int ManagementDaemon(void *unused)
 	
 	DECLARE_WAIT_QUEUE_HEAD(WQ);
 	
-	
 	sprintf(current->comm,"khttpd manager");
 	daemonize();
 	
-
 	/* Block all signals except SIGKILL and SIGSTOP */
 	spin_lock_irq(&current->sigmask_lock);
 	tmpsig = current->blocked;
@@ -206,42 +208,35 @@ static int ManagementDaemon(void *unused)
 	recalc_sigpending(current);
 	spin_unlock_irq(&current->sigmask_lock);
 
-
 	/* main loop */
 	while (sysctl_khttpd_unload==0)
 	{
 		int I;
-		
+		int old_stop_count;
 		
 		/* First : wait for activation */
-		
-		sysctl_khttpd_start = 0;
-		
 		while ( (sysctl_khttpd_start==0) && (!signal_pending(current)) && (sysctl_khttpd_unload==0) )
 		{
 			current->state = TASK_INTERRUPTIBLE;
 			interruptible_sleep_on_timeout(&WQ,HZ); 
 		}
-		
 		if ( (signal_pending(current)) || (sysctl_khttpd_unload!=0) )
 		 	break;
+		sysctl_khttpd_stop = 0;
 		 	
 		/* Then start listening and spawn the daemons */
-		 	
 		if (StartListening(sysctl_khttpd_serverport)==0)
 		{
+			sysctl_khttpd_start = 0;
 			continue;
 		}
-		
+
 		ActualThreads = sysctl_khttpd_threads;
 		if (ActualThreads<1) 
 			ActualThreads = 1;
-			
 		if (ActualThreads>CONFIG_KHTTPD_NUMCPU) 
 			ActualThreads = CONFIG_KHTTPD_NUMCPU;
-		
 		/* Write back the actual value */
-		
 		sysctl_khttpd_threads = ActualThreads;
 		
 		InitUserspace(ActualThreads);
@@ -249,87 +244,63 @@ static int ManagementDaemon(void *unused)
 		if (InitDataSending(ActualThreads)!=0)
 		{
 			StopListening();
+			sysctl_khttpd_start = 0;
 			continue;
 		}
 		if (InitWaitHeaders(ActualThreads)!=0)
 		{
-			I=0;
-			while (I<ActualThreads)
-			{
+			for (I=0; I<ActualThreads; I++) {
 				StopDataSending(I);
-				I++;
 			}
 			StopListening();
+			sysctl_khttpd_start = 0;
 			continue;
 		}
 	
 		/* Clean all queues */
 		memset(threadinfo, 0, sizeof(struct khttpd_threadinfo));
 
-
-		 	
-		I=0;
-		while (I<ActualThreads)
-		{
+		for (I=0; I<ActualThreads; I++) {
 			atomic_set(&Running[I],1);
 			(void)kernel_thread(MainDaemon,&(CountBuf[I]), CLONE_FS | CLONE_FILES | CLONE_SIGHAND);
-			I++;
 		}
 		
 		/* Then wait for deactivation */
-		sysctl_khttpd_stop = 0;
-
-		while ( (sysctl_khttpd_stop==0) && (!signal_pending(current)) && (sysctl_khttpd_unload==0) )
+		/* Remember value of stop count.  If it changes, user must 
+		 * have asked us to stop.  Sensing this is much less racy 
+		 * than directly sensing sysctl_khttpd_stop. - dank
+		 */
+		old_stop_count = atomic_read(&khttpd_stopCount);
+		while ( ( old_stop_count == atomic_read(&khttpd_stopCount)) 
+			 && (!signal_pending(current)) 
+			 && (sysctl_khttpd_unload==0) )
 		{
-			if (atomic_read(&DaemonCount)<ActualThreads)
-			{
-				I=0;
-				while (I<ActualThreads)
-				{
-					if (atomic_read(&Running[I])==0)
-					{
-						atomic_set(&Running[I],1);
-						(void)kernel_thread(MainDaemon,&(CountBuf[I]), CLONE_FS | CLONE_FILES | CLONE_SIGHAND);
-						(void)printk(KERN_CRIT "kHTTPd: Restarting daemon %i \n",I);
-					}
-					I++;
-				}
-			}
+			/* Used to restart dead threads here, but it was buggy*/
 			interruptible_sleep_on_timeout(&WQ,HZ);
-			
-			/* reap the daemons */
+		}
+		
+		/* Wait for the daemons to stop, one second per iteration */
+		while (atomic_read(&DaemonCount)>0)
+			interruptible_sleep_on_timeout(&WQ,HZ);
+		StopListening();
+		sysctl_khttpd_start = 0;
+		/* reap the zombie-daemons */
+		do
 			waitpid_result = waitpid(-1,NULL,__WCLONE|WNOHANG);
-			
-		}
-		
-		
-		/* The user wants us to stop. So stop listening on the socket. */
-		if (sysctl_khttpd_stop!=0)	
-		{
-			/* Wait for the daemons to stop, one second per iteration */
-			while (atomic_read(&DaemonCount)>0)
-		 		interruptible_sleep_on_timeout(&WQ,HZ);
-			StopListening();
-		}
-
-		
-	
+		while (waitpid_result>0);
 	}
-	
+	sysctl_khttpd_start = 0;
 	sysctl_khttpd_stop = 1;
+	atomic_inc(&khttpd_stopCount);
 
 	/* Wait for the daemons to stop, one second per iteration */
 	while (atomic_read(&DaemonCount)>0)
  		interruptible_sleep_on_timeout(&WQ,HZ);
-		
-		
-	waitpid_result = 1;
-	/* reap the zombie-daemons */
-	while (waitpid_result>0)
-		waitpid_result = waitpid(-1,NULL,__WCLONE|WNOHANG);
-		
 	StopListening();
-	
+	/* reap the zombie-daemons */
+	do
+		waitpid_result = waitpid(-1,NULL,__WCLONE|WNOHANG);
+	while (waitpid_result>0);
 	
 	(void)printk(KERN_NOTICE "kHTTPd: Management daemon stopped. \n        You can unload the module now.\n");
 
@@ -344,16 +315,13 @@ int __init khttpd_init(void)
 
 	MOD_INC_USE_COUNT;
 	
-	I=0;
-	while (I<CONFIG_KHTTPD_NUMCPU)
-	{
+	for (I=0; I<CONFIG_KHTTPD_NUMCPU; I++) {
 		CountBuf[I]=I;
-		
-		I++;
 	}
 	
 	atomic_set(&ConnectCount,0);
 	atomic_set(&DaemonCount,0);
+	atomic_set(&khttpd_stopCount,0);
 	
 
 	/* Maybe the mime-types will be set-able through sysctl in the future */	   

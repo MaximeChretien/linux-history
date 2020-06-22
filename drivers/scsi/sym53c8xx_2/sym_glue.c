@@ -125,7 +125,7 @@ void sym_mdelay(int ms) { mdelay(ms); }
  *
  *  The whole SCSI sub-system under Linux is basically single-threaded.
  *  Everything, including low-level driver interrupt routine, happens 
- *  whith the `io_request_lock' held.
+ *  with the `io_request_lock' held.
  *  The sym53c8xx-1.x drivers series ran their interrupt code using a 
  *  spin mutex per controller. This added complexity without improving 
  *  scalability significantly. the sym-2 driver still use a spinlock 
@@ -1890,7 +1890,7 @@ static int sym_setup_bus_dma_mask(hcb_p np)
 					sym_name(np));
 		}
 		else {
-			if (!pci_set_dma_mask(np->s.device, 0xffffffffUL))
+			if (pci_set_dma_mask(np->s.device, 0xffffffffUL))
 				goto out_err32;
 		}
 	}
@@ -2140,6 +2140,7 @@ sym_attach (Scsi_Host_Template *tpnt, int unit, sym_device *dev)
 	instance->max_cmd_len	= 16;
 #endif
 	instance->select_queue_depths = sym53c8xx_select_queue_depths;
+	instance->highmem_io	= 1;
 
 	SYM_UNLOCK_HCB(np, flags);
 
@@ -2714,7 +2715,7 @@ static u_short sym_chip_ids[] __initdata	= {
  *  differ and attach them using the order in the NVRAM.
  *
  *  If no NVRAM is found or data appears invalid attach boards in 
- *  the the order they are detected.
+ *  the order they are detected.
  */
 int __init sym53c8xx_detect(Scsi_Host_Template *tpnt)
 {

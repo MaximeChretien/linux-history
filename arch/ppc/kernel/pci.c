@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.pci.c 1.43 05/08/02 15:01:15 benh
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
  * Common pmac/prep/chrp pci routines. -- Cort
@@ -21,15 +21,11 @@
 #include <asm/prom.h>
 #include <asm/sections.h>
 #include <asm/pci-bridge.h>
-#include <asm/residual.h>
 #include <asm/byteorder.h>
 #include <asm/irq.h>
-#include <asm/gg2.h>
 #include <asm/uaccess.h>
 
-#include "pci.h"
-
-#define DEBUG
+#undef DEBUG
 
 #ifdef DEBUG
 #define DBG(x...) printk(x)
@@ -184,6 +180,10 @@ pcibios_fixup_resources(struct pci_dev *dev)
 #endif
 		}
 	}
+
+	/* Call machine specific resource fixup */
+	if (ppc_md.pcibios_fixup_resources)
+		ppc_md.pcibios_fixup_resources(dev);
 }
 
 #ifdef CONFIG_ALL_PPC
@@ -237,7 +237,8 @@ pcibios_fixup_cardbus(struct pci_dev* dev)
  * which might have be mirrored at 0x0100-0x03ff..
  */
 void
-pcibios_align_resource(void *data, struct resource *res, unsigned long size)
+pcibios_align_resource(void *data, struct resource *res, unsigned long size,
+		       unsigned long align)
 {
 	struct pci_dev *dev = data;
 
@@ -795,17 +796,237 @@ pci_process_bridge_OF_ranges(struct pci_controller *hose,
 		ranges += np;
 	}
 }
+
+/* We create the "pci-OF-bus-map" property now so it appears in the
+ * /proc device tree
+ */
+void __init
+pci_create_OF_bus_map(void)
+{
+	struct property* of_prop;
+		
+	of_prop = (struct property*) alloc_bootmem(sizeof(struct property) + 256);
+	if (of_prop && find_path_device("/")) {
+		memset(of_prop, -1, sizeof(struct property) + 256);
+		of_prop->name = "pci-OF-bus-map";
+		of_prop->length = 256;
+		of_prop->value = (unsigned char *)&of_prop[1];
+		prom_add_property(find_path_device("/"), of_prop);
+	}
+}
 #endif /* CONFIG_ALL_PPC */
+
+/*
+ * This set of routines checks for PCI<->PCI bridges that have closed
+ * IO resources and have child devices. It tries to re-open an IO
+ * window on them. 
+ * 
+ * This is a _temporary_ fix to workaround a problem with Apple's OF
+ * closing IO windows on P2P bridges when the OF drivers of cards
+ * below this bridge don't claim any IO range (typically ATI or
+ * Adaptec).
+ * 
+ * A more complete fix would be to use drivers/pci/setup-bus.c, which
+ * involves a working pcibios_fixup_pbus_ranges(), some more care about
+ * ordering when creating the host bus resources, and maybe a few more
+ * minor tweaks
+ */
+
+/* Initialize bridges with base/limit values we have collected */
+static void __init
+do_update_p2p_io_resource(struct pci_bus *bus, int enable_vga)
+{
+	struct pci_dev *bridge = bus->self;
+	struct pci_controller* hose = (struct pci_controller *)bridge->sysdata;
+	u32 l;
+	u16 w;
+	struct resource res;
+	
+ 	res = *(bus->resource[0]);
+
+	DBG("Remapping Bus %d, bridge: %s\n", bus->number, bridge->name);
+	res.start -= ((unsigned long) hose->io_base_virt - isa_io_base);
+	res.end -= ((unsigned long) hose->io_base_virt - isa_io_base);
+	DBG("  IO window: %08lx-%08lx\n", res.start, res.end);
+
+	/* Set up the top and bottom of the PCI I/O segment for this bus. */
+	pci_read_config_dword(bridge, PCI_IO_BASE, &l);
+	l &= 0xffff000f;
+	l |= (res.start >> 8) & 0x00f0;
+	l |= res.end & 0xf000;
+	pci_write_config_dword(bridge, PCI_IO_BASE, l);
+
+	if ((l & PCI_IO_RANGE_TYPE_MASK) == PCI_IO_RANGE_TYPE_32) {
+		l = (res.start >> 16) | (res.end & 0xffff0000);
+		pci_write_config_dword(bridge, PCI_IO_BASE_UPPER16, l);
+	}
+
+	pci_read_config_word(bridge, PCI_COMMAND, &w);
+	w |= PCI_COMMAND_IO;
+	pci_write_config_word(bridge, PCI_COMMAND, w);
+
+#if 0 /* Enabling this causes XFree 4.2.0 to hang during PCI probe */
+	if (enable_vga) {
+		pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &w);
+		w |= PCI_BRIDGE_CTL_VGA;
+		pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, w);
+	}
+#endif
+}
+
+/* This function is pretty basic and actually quite broken for the
+ * general case, it's enough for us right now though. It's supposed
+ * to tell us if we need to open an IO range at all or not and what
+ * size.
+ */
+static int __init
+check_for_io_childs(struct pci_bus *bus, struct resource* res, int *found_vga)
+{
+	struct list_head *ln;
+	int	i;
+	int	rc = 0;
+
+#define push_end(res, size) do { unsigned long __sz = (size) ; \
+	res->end = ((res->end + __sz) / (__sz + 1)) * (__sz + 1) + __sz; \
+    } while (0)
+
+	for (ln=bus->devices.next; ln != &bus->devices; ln=ln->next) {
+		struct pci_dev *dev = pci_dev_b(ln);
+		u16 class = dev->class >> 8;
+
+		if (class == PCI_CLASS_DISPLAY_VGA || class == PCI_CLASS_NOT_DEFINED_VGA)
+			*found_vga = 1;
+		if (class >> 8 == PCI_BASE_CLASS_BRIDGE && dev->subordinate)
+			rc |= check_for_io_childs(dev->subordinate, res, found_vga);
+		if (class == PCI_CLASS_BRIDGE_CARDBUS)
+			push_end(res, 0xfff);
+
+		for (i=0; i<PCI_NUM_RESOURCES; i++) {
+			struct resource *r;
+			unsigned long r_size;
+
+			if (dev->class >> 8 == PCI_CLASS_BRIDGE_PCI && i >= PCI_BRIDGE_RESOURCES)
+				continue;
+			r = &dev->resource[i];
+			r_size = r->end - r->start;
+			if (r_size < 0xfff)
+				r_size = 0xfff;
+			if (r->flags & IORESOURCE_IO && (r_size) != 0) {
+				rc = 1;
+				push_end(res, r_size);
+			}
+		}
+	}
+
+	return rc;
+}
+
+/* Here we scan all P2P bridges of a given level that have a closed
+ * IO window. Note that the test for the presence of a VGA card should
+ * be improved to take into account already configured P2P bridges,
+ * currently, we don't see them and might end up configuring 2 bridges
+ * with VGA pass through enabled
+ */
+static void __init
+do_fixup_p2p_level(struct pci_bus *bus)
+{
+	struct list_head *ln;
+	int i;
+	int has_vga = 0;
+	
+	for (ln=bus->children.next; ln != &bus->children; ln=ln->next) {
+		struct pci_bus *b = pci_bus_b(ln);
+		struct pci_dev *d = b->self;
+		struct pci_controller* hose = (struct pci_controller *)d->sysdata;
+		struct resource *res = b->resource[0];
+		unsigned long max;
+		int found_vga = 0;
+
+		res->end = 0;
+		res->start = 0x1000;
+		
+		if (!list_empty(&b->devices) && res && res->flags == 0 && res != bus->resource[0] &&
+		    (d->class >> 8) == PCI_CLASS_BRIDGE_PCI &&
+		    check_for_io_childs(b, res, &found_vga)) {
+			u8 io_base_lo;
+
+			printk(KERN_INFO "Fixing up IO bus %s\n", b->name);
+
+			if (found_vga) {
+				if (has_vga) {
+					printk(KERN_WARNING "Skipping VGA, already active on bus segment\n");
+					found_vga = 0;
+				} else
+					has_vga = 1;
+			}
+			pci_read_config_byte(d, PCI_IO_BASE, &io_base_lo);
+
+			if ((io_base_lo & PCI_IO_RANGE_TYPE_MASK) == PCI_IO_RANGE_TYPE_32)
+				max = ((unsigned long) hose->io_base_virt - isa_io_base) + 0xffffffff;
+			else
+				max = ((unsigned long) hose->io_base_virt - isa_io_base) + 0xffff;
+			
+			res->flags = IORESOURCE_IO;
+			res->name = b->name;
+			
+			/* Find a resource in the parent where we can allocate */
+			for (i = 0 ; i < 4; i++) {
+				struct resource *r = bus->resource[i];
+				if (!r)
+					continue;
+				if ((r->flags & IORESOURCE_IO) == 0)
+					continue;
+				DBG("Trying to allocate from %08lx, size %08lx from parent res %d: %08lx -> %08lx\n",
+					res->start, res->end, i, r->start, r->end);
+				
+				if (allocate_resource(r, res, res->end + 1, res->start, max, res->end + 1, NULL, NULL) < 0) {
+					DBG("Failed !\n");
+					continue;
+				}
+				do_update_p2p_io_resource(b, found_vga);
+				break;
+			}
+		}
+		do_fixup_p2p_level(b);
+	}
+}
+
+static void
+pcibios_fixup_p2p_bridges(void)
+{
+	struct list_head *ln;
+
+	for(ln=pci_root_buses.next; ln != &pci_root_buses; ln=ln->next) {
+		struct pci_bus *b = pci_bus_b(ln);
+		do_fixup_p2p_level(b);
+	}
+}
 
 void __init
 pcibios_init(void)
 {
 	struct pci_controller *hose;
 	struct pci_bus *bus;
-	int next_busno;
+	int next_busno, bus_offset;
 
 	printk(KERN_INFO "PCI: Probing PCI hardware\n");
 
+	/* There is a problem with bus renumbering currently. If
+	 * you have 2 sibling pci<->pci bridges, and during PCI
+	 * probe, the first one gets assigned a new number equal
+	 * to the old number of the second one, you'll end up
+	 * probing that branch with 2 bridges racing on the bus
+	 * numbers.
+	 * I work around this on pmac by adding a large offset
+	 * between host bridges, though a better long term solution
+	 * will have to be found in the generic code. --BenH
+	 */
+#ifdef CONFIG_ALL_PPC
+	if (machine_is_compatible("MacRISC"))
+		bus_offset = 0x10;
+	else
+#endif
+		bus_offset = 1;
 	/* Scan all of the recorded PCI controllers.  */
 	for (next_busno = 0, hose = hose_head; hose; hose = hose->next) {
 		if (pci_assign_all_busses)
@@ -814,7 +1035,7 @@ pcibios_init(void)
 		bus = pci_scan_bus(hose->first_busno, hose->ops, hose);
 		hose->last_busno = bus->subordinate;
 		if (pci_assign_all_busses || next_busno <= hose->last_busno)
-			next_busno = hose->last_busno+1;
+			next_busno = hose->last_busno + bus_offset;
 	}
 	pci_bus_count = next_busno;
 
@@ -825,6 +1046,10 @@ pcibios_init(void)
 	if (pci_assign_all_busses && have_of)
 		pcibios_make_OF_bus_map();
 
+	/* Do machine dependent PCI interrupt routing */
+	if (ppc_md.pci_swizzle && ppc_md.pci_map_irq)
+		pci_fixup_irqs(ppc_md.pci_swizzle, ppc_md.pci_map_irq);
+
 	/* Call machine dependant fixup */
 	if (ppc_md.pcibios_fixup)
 		ppc_md.pcibios_fixup();
@@ -833,6 +1058,7 @@ pcibios_init(void)
 	pcibios_allocate_bus_resources(&pci_root_buses);
 	pcibios_allocate_resources(0);
 	pcibios_allocate_resources(1);
+	pcibios_fixup_p2p_bridges();
 	pcibios_assign_resources();
 
 	/* Call machine dependent post-init code */
@@ -840,10 +1066,23 @@ pcibios_init(void)
 		ppc_md.pcibios_after_init();
 }
 
-int __init
-pcibios_assign_all_busses(void)
+unsigned char __init
+common_swizzle(struct pci_dev *dev, unsigned char *pinp)
 {
-	return pci_assign_all_busses;
+	struct pci_controller *hose = dev->sysdata;
+
+	if (dev->bus->number != hose->first_busno) {
+		u8 pin = *pinp;
+		do {
+			pin = bridge_swizzle(pin, PCI_SLOT(dev->devfn));
+			/* Move up the chain of bridges. */
+			dev = dev->bus->self;
+		} while (dev->bus->self);
+		*pinp = pin;
+
+		/* The slot is the idsel of the last bridge. */
+	}
+	return PCI_SLOT(dev->devfn);
 }
 
 void __init
@@ -935,7 +1174,7 @@ pcibios_update_irq(struct pci_dev *dev, int irq)
 	/* XXX FIXME - update OF device tree node interrupt property */
 }
 
-int pcibios_enable_device(struct pci_dev *dev)
+int pcibios_enable_device(struct pci_dev *dev, int mask)
 {
 	u16 cmd, old_cmd;
 	int idx;
@@ -948,6 +1187,9 @@ int pcibios_enable_device(struct pci_dev *dev)
 	pci_read_config_word(dev, PCI_COMMAND, &cmd);
 	old_cmd = cmd;
 	for (idx=0; idx<6; idx++) {
+		if(!(mask & (1<<idx)))
+			continue;
+			
 		r = &dev->resource[idx];
 		if (!r->start && r->end) {
 			printk(KERN_ERR "PCI: Device %s not available because of resource collisions\n", dev->slot_name);
@@ -1236,6 +1478,19 @@ sys_pciconfig_iobase(long which, unsigned long bus, unsigned long devfn)
 	}
 
 	return result;
+}
+
+void __init
+pci_init_resource(struct resource *res, unsigned long start, unsigned long end,
+		  int flags, char *name)
+{
+	res->start = start;
+	res->end = end;
+	res->flags = flags;
+	res->name = name;
+	res->parent = NULL;
+	res->sibling = NULL;
+	res->child = NULL;
 }
 
 /*

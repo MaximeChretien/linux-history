@@ -440,7 +440,7 @@ static unsigned long copy_semid_to_user(void *buf, struct semid64_ds *in, int ve
 	}
 }
 
-int semctl_nolock(int semid, int semnum, int cmd, int version, union semun arg)
+static int semctl_nolock(int semid, int semnum, int cmd, int version, union semun arg)
 {
 	int err = -EINVAL;
 
@@ -512,7 +512,7 @@ out_unlock:
 	return err;
 }
 
-int semctl_main(int semid, int semnum, int cmd, int version, union semun arg)
+static int semctl_main(int semid, int semnum, int cmd, int version, union semun arg)
 {
 	struct sem_array *sma;
 	struct sem* curr;
@@ -699,7 +699,7 @@ static inline unsigned long copy_semid_from_user(struct sem_setbuf *out, void *b
 	}
 }
 
-int semctl_down(int semid, int semnum, int cmd, int version, union semun arg)
+static int semctl_down(int semid, int semnum, int cmd, int version, union semun arg)
 {
 	struct sem_array *sma;
 	int err;

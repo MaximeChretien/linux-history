@@ -80,6 +80,11 @@ extern int  down_trylock(struct semaphore *);
 extern void up(struct semaphore *);
 extern void __up_wakeup(struct semaphore *);
 
+static inline int sem_getcount(struct semaphore *sem)
+{
+	return atomic_read(&sem->count);
+}
+
 /*
  * Hidden out of line code is fun, but extremely messy.  Rely on newer
  * compilers to do a respectable job with this.  The contention cases

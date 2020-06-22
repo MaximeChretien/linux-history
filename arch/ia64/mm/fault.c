@@ -49,7 +49,6 @@ ia64_do_page_fault (unsigned long address, unsigned long isr, struct pt_regs *re
 	int signal = SIGSEGV, code = SEGV_MAPERR;
 	struct vm_area_struct *vma, *prev_vma;
 	struct mm_struct *mm = current->mm;
-	struct exception_fixup fix;
 	struct siginfo si;
 	unsigned long mask;
 
@@ -58,6 +57,17 @@ ia64_do_page_fault (unsigned long address, unsigned long isr, struct pt_regs *re
 	 */
 	if (in_interrupt() || !mm)
 		goto no_context;
+
+#ifdef CONFIG_VIRTUAL_MEM_MAP
+	/*
+	 * If fault is in region 5 and we are in the kernel, we may already
+         * have the mmap_sem (VALID_PAGE macro is called during mmap). There
+	 * should be no vma for region 5 addr's anyway, so skip getting the
+	 * semaphore and go directly to the code that handles a bad area.
+  	 */
+	if ((REGION_NUMBER(address) == 5) && !user_mode(regs))
+		goto bad_area_no_up;
+#endif
 
 	down_read(&mm->mmap_sem);
 
@@ -138,10 +148,16 @@ ia64_do_page_fault (unsigned long address, unsigned long isr, struct pt_regs *re
 
   bad_area:
 	up_read(&mm->mmap_sem);
-	if (isr & IA64_ISR_SP) {
+#ifdef CONFIG_VIRTUAL_MEM_MAP
+  bad_area_no_up:
+#endif
+	if ((isr & IA64_ISR_SP)
+	    || ((isr & IA64_ISR_NA) && (isr & IA64_ISR_CODE_MASK) == IA64_ISR_CODE_LFETCH))
+	{
 		/*
-		 * This fault was due to a speculative load set the "ed" bit in the psr to
-		 * ensure forward progress (target register will get a NaT).
+		 * This fault was due to a speculative load or lfetch.fault, set the "ed"
+		 * bit in the psr to ensure forward progress.  (Target register will get a
+		 * NaT for ld.s, lfetch will be canceled.)
 		 */
 		ia64_psr(regs)->ed = 1;
 		return;
@@ -167,15 +183,8 @@ ia64_do_page_fault (unsigned long address, unsigned long isr, struct pt_regs *re
 		return;
 	}
 
-#ifdef GAS_HAS_LOCAL_TAGS
-	fix = search_exception_table(regs->cr_iip + ia64_psr(regs)->ri);
-#else
-	fix = search_exception_table(regs->cr_iip);
-#endif
-	if (fix.cont) {
-		handle_exception(regs, fix);
+	if (done_with_exception(regs))
 		return;
-	}
 
 	/*
 	 * Oops. The kernel tried to access some bad page. We'll have to terminate things
@@ -194,13 +203,11 @@ ia64_do_page_fault (unsigned long address, unsigned long isr, struct pt_regs *re
 	return;
 
   out_of_memory:
-	up_read(&mm->mmap_sem);
 	if (current->pid == 1) {
-		current->policy |= SCHED_YIELD;
-		schedule();
-		down_read(&mm->mmap_sem);
+		yield();
 		goto survive;
 	}
+	up_read(&mm->mmap_sem);
 	printk("VM: killing process %s\n", current->comm);
 	if (user_mode(regs))
 		do_exit(SIGKILL);

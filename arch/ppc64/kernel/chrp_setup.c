@@ -102,6 +102,8 @@ extern unsigned long Hash_size, Hash_mask;
 extern int probingmem;
 extern unsigned long loops_per_jiffy;
 
+extern unsigned long ppc_proc_freq;
+extern unsigned long ppc_tb_freq;
 #ifdef CONFIG_BLK_DEV_RAM
 extern int rd_doload;		/* 1 = load ramdisk, 0 = don't load */
 extern int rd_prompt;		/* 1 = prompt for ramdisk, 0 = don't prompt */
@@ -113,6 +115,8 @@ chrp_get_cpuinfo(struct seq_file *m)
 {
 	struct device_node *root;
 	const char *model = "";
+
+	seq_printf(m, "timebase\t: %lu\n", ppc_tb_freq);
 
 	root = find_path_device("/");
 	if (root)
@@ -174,7 +178,6 @@ chrp_setup_arch(void)
 		for (openpic = 0; n > 0; --n)
 			openpic = (openpic << 32) + *opprop++;
 		printk(KERN_DEBUG "OpenPIC addr: %lx\n", openpic);
-		udbg_printf("OpenPIC addr: %lx\n", openpic);
 		OpenPIC_Addr = __ioremap(openpic, 0x40000, _PAGE_NO_CACHE);
 	}
 
@@ -191,7 +194,9 @@ chrp_init2(void)
 	 * -- tibit
 	 */
 	chrp_request_regions();
-	ppc_md.progress(UTS_RELEASE, 0x7777);
+	/* Manually leave the kernel version on the panel. */
+	ppc_md.progress("Linux ppc64\n", 0);
+	ppc_md.progress(UTS_RELEASE, 0);
 }
 
 /* Initialize firmware assisted non-maskable interrupts if
@@ -259,11 +264,9 @@ chrp_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	if(naca->interrupt_controller == IC_OPEN_PIC) {
 		ppc_md.init_IRQ       = openpic_init_IRQ; 
 		ppc_md.get_irq        = openpic_get_irq;
-		ppc_md.post_irq	      = NULL;
 	} else {
 		ppc_md.init_IRQ       = xics_init_IRQ;
 		ppc_md.get_irq        = xics_get_irq;
-		ppc_md.post_irq	      = NULL;
 	}
 	ppc_md.init_ras_IRQ = init_ras_IRQ;
 
@@ -301,8 +304,6 @@ chrp_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	SYSRQ_KEY = 0x63;	/* Print Screen */
 #endif
 #endif
-	
-	ppc_md.progress("Linux ppc64\n", 0x0);
 }
 
 void __chrp
@@ -314,10 +315,7 @@ chrp_progress(char *s, unsigned short hex)
 	static int display_character, set_indicator;
 	static int max_width;
 
-	if (hex)
-		udbg_printf("<chrp_progress> %s\n", s);
-
-	if (!rtas.base || (naca->platform != PLATFORM_PSERIES))
+	if (!rtas.base)
 		return;
 
 	if (max_width == 0) {
@@ -363,9 +361,6 @@ chrp_progress(char *s, unsigned short hex)
 
 extern void setup_default_decr(void);
 
-extern unsigned long ppc_proc_freq;
-extern unsigned long ppc_tb_freq;
-
 void __init pSeries_calibrate_decr(void)
 {
 	struct device_node *cpu;
@@ -401,7 +396,6 @@ void __init pSeries_calibrate_decr(void)
 	tb_ticks_per_jiffy = freq / HZ;
 	tb_ticks_per_sec = tb_ticks_per_jiffy * HZ;
 	tb_ticks_per_usec = freq / 1000000;
-	tb_to_us = mulhwu_scale_factor(freq, 1000000);
 	div128_by_32( 1024*1024, 0, tb_ticks_per_sec, &divres );
 	tb_to_xs = divres.result_low;
 

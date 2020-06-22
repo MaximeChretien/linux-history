@@ -552,6 +552,7 @@ typedef struct hwif_s {
 	unsigned	reset      : 1;	/* reset after probe */
 	unsigned	autodma    : 1;	/* automatically try to enable DMA at boot */
 	unsigned	udma_four  : 1;	/* 1=ATA-66 capable, 0=default */
+	unsigned	no_highio  : 1; /* don't trust pci dma mask, bounce */
 	byte		channel;	/* for dual-port chips: 0=primary, 1=secondary */
 #ifdef CONFIG_BLK_DEV_IDEPCI
 	struct pci_dev	*pci_dev;	/* for pci chipsets */
@@ -872,6 +873,21 @@ typedef enum {
 	ide_preempt,	/* insert rq in front of current request */
 	ide_end		/* insert rq at end of list, but don't wait for it */
 } ide_action_t;
+
+/*
+ * temporarily mapping a (possible) highmem bio
+ */
+#define ide_rq_offset(rq) (((rq)->hard_cur_sectors - (rq)->current_nr_sectors) << 9)
+
+extern inline void *ide_map_buffer(struct request *rq, unsigned long *flags)
+{
+	return bh_kmap_irq(rq->bh, flags) + ide_rq_offset(rq);
+}
+
+extern inline void ide_unmap_buffer(char *buffer, unsigned long *flags)
+{
+	bh_kunmap_irq(buffer, flags);
+}
 
 /*
  * This function issues a special IDE device request

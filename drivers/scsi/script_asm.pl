@@ -12,6 +12,7 @@
 #
 #   Support for 53c710 (via -ncr7x0_family switch) added by Richard
 #   Hirst <richard@sleepie.demon.co.uk> - 15th March 1997
+#   Renamed to -ncr7x0_family to -ncr710, and added -ncr700 - 5th May 2000.
 #
 #   This program is free software; you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -77,7 +78,7 @@ $prefix = '';		# define all arrays having this prefix so we
 # 	and = 0x04_00_00_00
 # 	add = 0x06_00_00_00
 
-if ($ncr7x0_family) {
+if ($ncr700 || $ncr710) {
   %operators = (
     '|', 0x02_00_00_00, 'OR', 0x02_00_00_00,
     '&', 0x04_00_00_00, 'AND', 0x04_00_00_00,
@@ -99,7 +100,24 @@ else {
 
 # Table of register addresses
 
-if ($ncr7x0_family) {
+if ($ncr700) {
+  %registers = (
+    'SCNTL0', 0, 'SCNTL1', 1, 'SDID', 2, 'SIEN', 3,
+    'SCID', 4, 'SXFER', 5, 'SODL', 6, 'SOCL', 7,
+    'SFBR', 8, 'SIDL', 9, 'SBDL', 10, 'SBCL', 11,
+    'DSTAT', 12, 'SSTAT0', 13, 'SSTAT1', 14, 'SSTAT2', 15,
+    'CTEST0', 20, 'CTEST1', 21, 'CTEST2', 22, 'CTEST3', 23,
+    'CTEST4', 24, 'CTEST5', 25, 'CTEST6', 26, 'CTEST7', 27,
+    'TEMP0', 28, 'TEMP1', 29, 'TEMP2', 30, 'TEMP3', 31,
+    'DFIFO', 32, 'ISTAT', 33, 'CTEST8', 34,
+    'DBC0', 36, 'DBC1', 37, 'DBC2', 38, 'DCMD', 39,
+    'DNAD0', 40, 'DNAD1', 41, 'DNAD2', 42, 'DNAD3', 43,
+    'DSP0', 44, 'DSP1', 45, 'DSP2', 46, 'DSP3', 47,
+    'DSPS0', 48, 'DSPS1', 49, 'DSPS2', 50, 'DSPS3', 51,
+    'DMODE', 52, 'DIEN', 57, 'DWT', 58, 'DCNTL', 59,
+  );
+}
+elsif ($ncr710) {
   %registers = (
     'SCNTL0', 0, 'SCNTL1', 1, 'SDID', 2, 'SIEN', 3,
     'SCID', 4, 'SXFER', 5, 'SODL', 6, 'SOCL', 7,
@@ -171,7 +189,7 @@ $register = join ('|', keys %registers);
 # be escaped, I can't use the join() trick I used for the register
 # regex
 
-if ($ncr7x0_family) {
+if ($ncr700 || $ncr710) {
   $operator = '\||OR|AND|\&|\+';
 }
 else {
@@ -468,7 +486,7 @@ print STDERR "defined external $1 to $external\n" if ($debug_external);
 # Process MOVE length, address, WITH|WHEN phase instruction
     } elsif (/^\s*MOVE\s+(.*)/i) {
 	$rest = $1;
-	if ($rest =~ /^FROM\s+($value)\s*,\s*(WITH|WHEN)\s+($phase)\s*$/i) {
+	if (!$ncr700 && ($rest =~ /^FROM\s+($value)\s*,\s*(WITH|WHEN)\s+($phase)\s*$/i)) {
 	    $transfer_addr = $1;
 	    $with_when = $2;
 	    $scsi_phase = $3;

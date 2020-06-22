@@ -2782,6 +2782,9 @@ static inline int wv_packet_write(device * dev, void *buf, short length)
 		    (unsigned char *) &nop.nop_h.ac_link,
 		    sizeof(nop.nop_h.ac_link));
 
+	/* Make sure the watchdog will keep quiet for a while */
+	dev->trans_start = jiffies;
+
 	/* Keep stats up to date. */
 	lp->stats.tx_bytes += length;
 

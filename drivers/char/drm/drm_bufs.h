@@ -29,7 +29,6 @@
  *    Gareth Hughes <gareth@valinux.com>
  */
 
-#define __NO_VERSION__
 #include <linux/vmalloc.h>
 #include "drmP.h"
 
@@ -229,11 +228,7 @@ int DRM(rmmap)(struct inode *inode, struct file *filp,
 	DRM(free)(list, sizeof(*list), DRM_MEM_MAPS);
 
 	for (pt = dev->vmalist, prev = NULL; pt; prev = pt, pt = pt->next) {
-#if LINUX_VERSION_CODE >= 0x020300
 		if (pt->vma->vm_private_data == map) found_maps++;
-#else
-		if (pt->vma->vm_pte == map) found_maps++;
-#endif
 	}
 
 	if(!found_maps) {
@@ -1063,34 +1058,18 @@ int DRM(mapbufs)( struct inode *inode, struct file *filp,
 				goto done;
 			}
 
-#if LINUX_VERSION_CODE <= 0x020402
-			down( &current->mm->mmap_sem );
-#else
 			down_write( &current->mm->mmap_sem );
-#endif
 			virtual = do_mmap( filp, 0, map->size,
 					   PROT_READ | PROT_WRITE,
 					   MAP_SHARED,
 					   (unsigned long)map->offset );
-#if LINUX_VERSION_CODE <= 0x020402
-			up( &current->mm->mmap_sem );
-#else
 			up_write( &current->mm->mmap_sem );
-#endif
 		} else {
-#if LINUX_VERSION_CODE <= 0x020402
-			down( &current->mm->mmap_sem );
-#else
 			down_write( &current->mm->mmap_sem );
-#endif
 			virtual = do_mmap( filp, 0, dma->byte_count,
 					   PROT_READ | PROT_WRITE,
 					   MAP_SHARED, 0 );
-#if LINUX_VERSION_CODE <= 0x020402
-			up( &current->mm->mmap_sem );
-#else
 			up_write( &current->mm->mmap_sem );
-#endif
 		}
 		if ( virtual > -1024UL ) {
 			/* Real error */

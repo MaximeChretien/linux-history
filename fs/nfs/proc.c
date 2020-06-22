@@ -106,15 +106,13 @@ nfs_proc_lookup(struct inode *dir, struct qstr *name,
 }
 
 static int
-nfs_proc_readlink(struct inode *inode, void *buffer, unsigned int bufsiz)
+nfs_proc_readlink(struct inode *inode, struct page *page)
 {
-	struct nfs_readlinkargs	args = { NFS_FH(inode), buffer, bufsiz };
-	struct nfs_readlinkres	res = { buffer, bufsiz };
+	struct nfs_readlinkargs	args = { NFS_FH(inode), PAGE_CACHE_SIZE, &page };
 	int			status;
 
 	dprintk("NFS call  readlink\n");
-	status = rpc_call(NFS_CLIENT(inode), NFSPROC_READLINK,
-					&args, &res, 0);
+	status = rpc_call(NFS_CLIENT(inode), NFSPROC_READLINK, &args, NULL, 0);
 	dprintk("NFS reply readlink: %d\n", status);
 	return status;
 }
@@ -122,11 +120,12 @@ nfs_proc_readlink(struct inode *inode, void *buffer, unsigned int bufsiz)
 static int
 nfs_proc_read(struct inode *inode, struct rpc_cred *cred,
 	      struct nfs_fattr *fattr, int flags,
-	      loff_t offset, unsigned int count, void *buffer, int *eofp)
+	      unsigned int base, unsigned int count,
+	      struct page *page, int *eofp)
 {
-	struct nfs_readargs	arg = { NFS_FH(inode), offset, count, 1,
-				       {{ buffer, count }, {0,0}, {0,0}, {0,0},
-					{0,0}, {0,0}, {0,0}, {0,0}} };
+	u64			offset = page_offset(page) + base;
+	struct nfs_readargs	arg = { NFS_FH(inode), offset, count,
+					base, &page };
 	struct nfs_readres	res = { fattr, count, 0};
 	struct rpc_message	msg = { NFSPROC_READ, &arg, &res, cred };
 	int			status;
@@ -143,13 +142,12 @@ nfs_proc_read(struct inode *inode, struct rpc_cred *cred,
 static int
 nfs_proc_write(struct inode *inode, struct rpc_cred *cred,
 	       struct nfs_fattr *fattr, int how,
-	       loff_t offset, unsigned int count,
-	       void *buffer, struct nfs_writeverf *verf)
+	       unsigned int base, unsigned int count,
+	       struct page *page, struct nfs_writeverf *verf)
 {
-	struct nfs_writeargs	arg = {NFS_FH(inode), offset, count,
-					NFS_FILE_SYNC, 1,
-					{{buffer, count}, {0,0}, {0,0}, {0,0},
-					 {0,0}, {0,0}, {0,0}, {0,0}}};
+	u64			offset = page_offset(page) + base;
+	struct nfs_writeargs	arg = { NFS_FH(inode), offset, count,
+					NFS_FILE_SYNC, base, &page };
 	struct nfs_writeres     res = {fattr, verf, count};
 	struct rpc_message	msg = { NFSPROC_WRITE, &arg, &res, cred };
 	int			status, flags = 0;
@@ -337,20 +335,12 @@ nfs_proc_rmdir(struct inode *dir, struct qstr *name)
  */
 static int
 nfs_proc_readdir(struct inode *dir, struct rpc_cred *cred,
-		 __u64 cookie, void *entry, 
-		 unsigned int size, int plus)
+		 __u64 cookie, struct page *page, 
+		 unsigned int count, int plus)
 {
-	struct nfs_readdirargs	arg;
-	struct nfs_readdirres	res;
-	struct rpc_message	msg = { NFSPROC_READDIR, &arg, &res, cred };
+	struct nfs_readdirargs	arg = { NFS_FH(dir), cookie, count, &page };
+	struct rpc_message	msg = { NFSPROC_READDIR, &arg, NULL, cred };
 	int			status;
-
-	arg.fh = NFS_FH(dir);
-	arg.cookie = cookie;
-	arg.buffer = entry;
-	arg.bufsiz = size;
-	res.buffer = entry;
-	res.bufsiz = size;
 
 	dprintk("NFS call  readdir %d\n", (unsigned int)cookie);
 	status = rpc_call_sync(NFS_CLIENT(dir), &msg, 0);

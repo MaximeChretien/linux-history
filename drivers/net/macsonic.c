@@ -63,8 +63,20 @@
 
 #include "sonic.h"
 
+#define SONIC_READ(reg) \
+	nubus_readl(base_addr+(reg))
+#define SONIC_WRITE(reg,val) \
+	nubus_writel((val), base_addr+(reg))
+#define sonic_read(dev, reg) \
+	nubus_readl((dev)->base_addr+(reg))
+#define sonic_write(dev, reg, val) \
+	nubus_writel((val), (dev)->base_addr+(reg))
+
+
 static int sonic_debug;
 static int sonic_version_printed;
+
+static int reg_offset;
 
 extern int macsonic_probe(struct net_device* dev);
 extern int mac_onboard_sonic_probe(struct net_device* dev);
@@ -100,7 +112,7 @@ enum macsonic_type {
    resource directories */
 #define DAYNA_SONIC_MAC_ADDR	0xffe004
 
-#define SONIC_READ_PROM(addr) readb(prom_addr+addr)
+#define SONIC_READ_PROM(addr) nubus_readb(prom_addr+addr)
 
 int __init macsonic_probe(struct net_device* dev)
 {
@@ -187,8 +199,6 @@ int __init macsonic_init(struct net_device* dev)
 	if ((lp->rba = (char *)
 	     kmalloc(SONIC_NUM_RRS * SONIC_RBSIZE, GFP_KERNEL | GFP_DMA)) == NULL) {
 		printk(KERN_ERR "%s: couldn't allocate receive buffers\n", dev->name);
-		kfree(lp->sonic_desc);
-		lp->sonic_desc = NULL;
 		return -ENOMEM;
 	}
 
@@ -297,7 +307,6 @@ int __init mac_onboard_sonic_probe(struct net_device* dev)
 {
 	/* Bwahahaha */
 	static int once_is_more_than_enough;
-	struct sonic_local* lp;
 	int i;
 	int dma_bitmode;
 	
@@ -339,7 +348,7 @@ int __init mac_onboard_sonic_probe(struct net_device* dev)
 
 	printk("yes\n");	
 
-	if (dev) 
+	if (dev) {
 		dev = init_etherdev(dev, sizeof(struct sonic_local));
 		if (!dev)
 			return -ENOMEM;
@@ -351,6 +360,7 @@ int __init mac_onboard_sonic_probe(struct net_device* dev)
 		}
 	} else {
 		dev = init_etherdev(NULL, sizeof(struct sonic_local));
+	}
 
 	if (dev == NULL)
 		return -ENOMEM;

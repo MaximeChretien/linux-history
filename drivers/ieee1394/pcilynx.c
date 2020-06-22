@@ -65,7 +65,7 @@ MODULE_PARM_DESC(skip_eeprom, "Do not try to read bus info block from serial eep
 static int skip_eeprom = 0;
 
 
-static struct hpsb_host_driver *lynx_driver;
+static struct hpsb_host_driver lynx_driver;
 static unsigned int card_id;
 
 
@@ -466,7 +466,7 @@ static void send_next(struct ti_lynx *lynx, int what)
         struct hpsb_packet *packet;
 
         d = (what == hpsb_iso ? &lynx->iso_send : &lynx->async);
-        packet = d->queue;
+        packet = driver_packet(d->queue.next);
 
         d->header_dma = pci_map_single(lynx->dev, packet->header,
                                        packet->header_size, PCI_DMA_TODEVICE);
@@ -538,7 +538,6 @@ static int lynx_transmit(struct hpsb_host *host, struct hpsb_packet *packet)
                 return 0;
         }
 
-        packet->xnext = NULL;
         if (packet->tcode == TCODE_WRITEQ
             || packet->tcode == TCODE_READQ_RESPONSE) {
                 cpu_to_be32s(&packet->header[3]);
@@ -546,14 +545,9 @@ static int lynx_transmit(struct hpsb_host *host, struct hpsb_packet *packet)
 
         spin_lock_irqsave(&d->queue_lock, flags);
 
-        if (d->queue == NULL) {
-                d->queue = packet;
-                d->queue_last = packet;
+	list_add_tail(&packet->driver_list, &d->queue);
+	if (d->queue.next == &packet->driver_list)
                 send_next(lynx, packet->type);
-        } else {
-                d->queue_last->xnext = packet;
-                d->queue_last = packet;
-        }
 
         spin_unlock_irqrestore(&d->queue_lock, flags);
 
@@ -566,7 +560,8 @@ static int lynx_devctl(struct hpsb_host *host, enum devctl_cmd cmd, int arg)
 {
         struct ti_lynx *lynx = host->hostdata;
         int retval = 0;
-        struct hpsb_packet *packet, *lastpacket;
+        struct hpsb_packet *packet;
+	LIST_HEAD(packet_list);
         unsigned long flags;
 
         switch (cmd) {
@@ -620,16 +615,16 @@ static int lynx_devctl(struct hpsb_host *host, enum devctl_cmd cmd, int arg)
                 spin_lock_irqsave(&lynx->async.queue_lock, flags);
 
                 reg_write(lynx, DMA_CHAN_CTRL(CHANNEL_ASYNC_SEND), 0);
-                packet = lynx->async.queue;
-                lynx->async.queue = NULL;
+		list_splice(&lynx->async.queue, &packet_list);
+		INIT_LIST_HEAD(&lynx->async.queue);
 
                 spin_unlock_irqrestore(&lynx->async.queue_lock, flags);
 
-                while (packet != NULL) {
-                        lastpacket = packet;
-                        packet = packet->xnext;
-                        hpsb_packet_sent(host, lastpacket, ACKX_ABORTED);
-                }
+		while (!list_empty(&packet_list)) {
+			packet = driver_packet(packet_list.next);
+			list_del(&packet->driver_list);
+			hpsb_packet_sent(host, packet, ACKX_ABORTED);
+		}
 
                 break;
 
@@ -892,10 +887,17 @@ static ssize_t mem_read(struct file *file, char *buffer, size_t count,
         struct memdata *md = (struct memdata *)file->private_data;
         ssize_t bcount;
         size_t alignfix;
-        int off = (int)*offset; /* avoid useless 64bit-arithmetic */
+	loff_t off = *offset; /* avoid useless 64bit-arithmetic */
         ssize_t retval;
         void *membase;
 
+	if (*offset != off)	/* Check for EOF before we trust wrap */
+		return 0;
+	
+	/* FIXME: Signed wrap is undefined in C - wants fixing up */
+	if (off + count > off)
+		return 0;
+		
         if ((off + count) > PCILYNX_MAX_MEMORY + 1) {
                 count = PCILYNX_MAX_MEMORY + 1 - off;
         }
@@ -1122,8 +1124,9 @@ static void lynx_irq_handler(int irq, void *dev_id,
                 spin_lock(&lynx->async.queue_lock);
 
                 ack = reg_read(lynx, DMA_CHAN_STAT(CHANNEL_ASYNC_SEND));
-                packet = lynx->async.queue;
-                lynx->async.queue = packet->xnext;
+
+		packet = driver_packet(lynx->async.queue.next);
+		list_del(&packet->driver_list);
 
                 pci_unmap_single(lynx->dev, lynx->async.header_dma,
                                  packet->header_size, PCI_DMA_TODEVICE);
@@ -1132,7 +1135,7 @@ static void lynx_irq_handler(int irq, void *dev_id,
                                          packet->data_size, PCI_DMA_TODEVICE);
                 }
 
-                if (lynx->async.queue != NULL) {
+                if (!list_empty(&lynx->async.queue)) {
                         send_next(lynx, hpsb_async);
                 }
 
@@ -1154,8 +1157,8 @@ static void lynx_irq_handler(int irq, void *dev_id,
 
                 spin_lock(&lynx->iso_send.queue_lock);
 
-                packet = lynx->iso_send.queue;
-                lynx->iso_send.queue = packet->xnext;
+		packet = driver_packet(lynx->iso_send.queue.next);
+		list_del(&packet->driver_list);
 
                 pci_unmap_single(lynx->dev, lynx->iso_send.header_dma,
                                  packet->header_size, PCI_DMA_TODEVICE);
@@ -1164,7 +1167,7 @@ static void lynx_irq_handler(int irq, void *dev_id,
                                          packet->data_size, PCI_DMA_TODEVICE);
                 }
 
-                if (lynx->iso_send.queue != NULL) {
+                if (!list_empty(&lynx->iso_send.queue)) {
                         send_next(lynx, hpsb_iso);
                 }
 
@@ -1327,7 +1330,7 @@ static int __devinit add_card(struct pci_dev *dev,
 
         error = -ENOMEM;
 
-	host = hpsb_alloc_host(lynx_driver, sizeof(struct ti_lynx));
+	host = hpsb_alloc_host(&lynx_driver, sizeof(struct ti_lynx));
         if (!host) FAIL("failed to allocate control structure memory");
 
         lynx = host->hostdata;
@@ -1471,7 +1474,8 @@ static int __devinit add_card(struct pci_dev *dev,
         lynx->selfid_size = -1;
         lynx->phy_reg0 = -1;
 
-        lynx->async.queue = NULL;
+	INIT_LIST_HEAD(&lynx->async.queue);
+	INIT_LIST_HEAD(&lynx->iso_send.queue);
 
         pcl.next = pcl_bus(lynx, lynx->rcv_pcl);
         put_pcl(lynx, lynx->rcv_pcl_start, &pcl);
@@ -1697,7 +1701,8 @@ static struct pci_driver lynx_pci_driver = {
         .remove =   __devexit_p(remove_card),
 };
 
-static struct hpsb_host_operations lynx_ops = {
+static struct hpsb_host_driver lynx_driver = {
+	.name =		   PCILYNX_DRIVER_NAME,
         .get_rom =         get_lynx_rom,
         .transmit_packet = lynx_transmit,
         .devctl =          lynx_devctl,
@@ -1721,22 +1726,14 @@ static int __init pcilynx_init(void)
         }
 #endif
 
-        lynx_driver = hpsb_register_lowlevel(&lynx_ops, PCILYNX_DRIVER_NAME);
-        if (!lynx_driver) {
-                ret = -ENOMEM;
-                goto free_char_dev;
-        }
-
         ret = pci_module_init(&lynx_pci_driver);
         if (ret < 0) {
                 PRINT_G(KERN_ERR, "PCI module init failed");
-                goto unregister_lowlevel;
+                goto free_char_dev;
         }
 
         return 0;
 
- unregister_lowlevel:
-        hpsb_unregister_lowlevel(lynx_driver);
  free_char_dev:
 #ifdef CONFIG_IEEE1394_PCILYNX_PORTS
         unregister_chrdev(PCILYNX_MAJOR, PCILYNX_DRIVER_NAME);
@@ -1748,7 +1745,6 @@ static int __init pcilynx_init(void)
 static void __exit pcilynx_cleanup(void)
 {
         pci_unregister_driver(&lynx_pci_driver);
-        hpsb_unregister_lowlevel(lynx_driver);
 
 #ifdef CONFIG_IEEE1394_PCILYNX_PORTS
         unregister_chrdev(PCILYNX_MAJOR, PCILYNX_DRIVER_NAME);

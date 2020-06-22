@@ -71,7 +71,7 @@ void pi_read_block( PIA *pi, char * buf, int count)
 static void pi_wake_up( void *p)
 
 {       PIA  *pi = (PIA *) p;
-	long flags;
+	unsigned long flags;
 	void (*cont)(void) = NULL;
 
 	spin_lock_irqsave(&pi_spinlock,flags);
@@ -95,7 +95,7 @@ void pi_do_claimed( PIA *pi, void(*cont)(void))
 
 #ifdef CONFIG_PARPORT
 
-{	long flags;
+{	unsigned long flags;
 
 	spin_lock_irqsave(&pi_spinlock,flags); 
 

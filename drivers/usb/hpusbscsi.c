@@ -1,3 +1,51 @@
+/*
+ * hpusbscsi
+ * (C) Copyright 2001 Oliver Neukum 
+ * Sponsored by the Linux Usb Project
+ * Large parts based on or taken from code by John Fremlin and Matt Dharm
+ * 
+ * This driver is known to work with the following scanners (VID, PID)
+ *    (0x03f0, 0x0701)  HP 53xx 
+ *    (0x03f0, 0x0801)  HP 7400 
+ *    (0x0638, 0x026a)  Minolta Scan Dual II
+ *    (0x0686, 0x4004)  Minolta Elite II
+ * To load with full debugging load with "insmod hpusbscsi debug=2"
+ * 
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
+ * Contributors:
+ *   Oliver Neukum
+ *   John Fremlin
+ *   Matt Dharm
+ *   .
+ *   .
+ *   Timothy Jedlicka <bonzo@lucent.com>
+ *
+ * History
+ *
+ * 22-Apr-2002
+ *
+ * - Added Elite II scanner - bonzo
+ * - Cleaned up the debug statements and made them optional at load time - bonzo
+ *
+ * 20020618
+ *
+ * - Confirm to stupid 2.4 rules on io_request_lock
+ *
+ */
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
@@ -16,12 +64,28 @@
 
 #include "hpusbscsi.h"
 
-#define DEBUG(x...) \
-	printk( KERN_DEBUG x )
-
 static char *states[]={"FREE", "BEGINNING", "WORKING", "ERROR", "WAIT", "PREMATURE"};
 
-#define TRACE_STATE printk(KERN_DEBUG"hpusbscsi->state = %s at line %d\n", states[hpusbscsi->state], __LINE__)
+/* DEBUG related parts */
+#define HPUSBSCSI_DEBUG
+
+#ifdef HPUSBSCSI_DEBUG
+#  define PDEBUG(level, fmt, args...) \
+          if (debug >= (level)) info("[" __PRETTY_FUNCTION__ ":%d] " fmt, __LINE__ , \
+                 ## args)
+#else
+#  define PDEBUG(level, fmt, args...) do {} while(0)
+#endif
+
+
+/* 0=no debug messages
+ * 1=everything but trace states
+ * 2=trace states
+ */
+static int debug; /* = 0 */
+
+MODULE_PARM(debug, "i");
+MODULE_PARM_DESC(debug, "Debug level: 0=none, 1=no trace states, 2=trace states");
 
 /* global variables */
 
@@ -54,7 +118,7 @@ hpusbscsi_usb_probe (struct usb_device *dev, unsigned int interface,
 					      GFP_KERNEL);
 	if (new == NULL)
 		return NULL;
-	DEBUG ("Allocated memory\n");
+	PDEBUG (1, "Allocated memory");
 	memset (new, 0, sizeof (struct hpusbscsi));
 	spin_lock_init (&new->dataurb.lock);
 	spin_lock_init (&new->controlurb.lock);
@@ -136,14 +200,26 @@ hpusbscsi_usb_probe (struct usb_device *dev, unsigned int interface,
 static void
 hpusbscsi_usb_disconnect (struct usb_device *dev, void *ptr)
 {
-                 usb_unlink_urb(&(((struct hpusbscsi *) ptr)->controlurb));
-	((struct hpusbscsi *) ptr)->dev = NULL;
+	struct hpusbscsi *hp = (struct hpusbscsi *)ptr;
+
+	usb_unlink_urb(&hp->controlurb);
+	usb_unlink_urb(&hp->dataurb);
+
+	spin_lock_irq(&io_request_lock);
+	hp->dev = NULL;
+	spin_unlock_irq(&io_request_lock);
 }
 
 static struct usb_device_id hpusbscsi_usb_ids[] = {
 	{USB_DEVICE (0x03f0, 0x0701)},	/* HP 53xx */
 	{USB_DEVICE (0x03f0, 0x0801)},	/* HP 7400 */
+	{USB_DEVICE (0x0638, 0x0268)},  /*iVina 1200U */
 	{USB_DEVICE (0x0638, 0x026a)},	/*Scan Dual II */
+	{USB_DEVICE (0x0638, 0x0A13)},  /*Avision AV600U */
+	{USB_DEVICE (0x0638, 0x0A16)},  /*Avision DS610CU Scancopier */
+	{USB_DEVICE (0x0638, 0x0A18)},  /*Avision AV600U Plus */
+	{USB_DEVICE (0x0638, 0x0A23)},  /*Avision AV220 */
+	{USB_DEVICE (0x0638, 0x0A24)},  /*Avision AV210 */
 	{USB_DEVICE (0x0686, 0x4004)},  /*Minolta Elite II */
 	{}			/* Terminating entry */
 };
@@ -167,7 +243,8 @@ hpusbscsi_init (void)
 	int result;
 
 	INIT_LIST_HEAD (&hpusbscsi_devices);
-
+	PDEBUG(0, "driver loaded, DebugLvel=%d", debug);
+ 
 	if ((result = usb_register (&hpusbscsi_usb_driver)) < 0) {
 		printk (KERN_ERR "hpusbscsi: driver registration failed\n");
 		return -1;
@@ -210,6 +287,7 @@ hpusbscsi_scsi_detect (struct SHT *sht)
 	/* What a hideous hack! */
 
 	char local_name[48];
+	spin_unlock_irq(&io_request_lock);
 
 
 	/* set up the name of our subdirectory under /proc/scsi/ */
@@ -218,6 +296,7 @@ hpusbscsi_scsi_detect (struct SHT *sht)
 	/* FIXME: where is this freed ? */
 
 	if (!sht->proc_name) {
+		spin_lock_irq(&io_request_lock);
 		return 0;
 	}
 
@@ -238,6 +317,7 @@ hpusbscsi_scsi_detect (struct SHT *sht)
 
 	if ( 0  >  usb_submit_urb(&desc->controlurb)) {
 		kfree(sht->proc_name);
+		spin_lock_irq(&io_request_lock);
 		return 0;
 	}
 
@@ -246,10 +326,11 @@ hpusbscsi_scsi_detect (struct SHT *sht)
 	if (desc->host == NULL) {
 		kfree (sht->proc_name);
 		usb_unlink_urb(&desc->controlurb);
+		spin_lock_irq(&io_request_lock);
 		return 0;
 	}
 	desc->host->hostdata[0] = (unsigned long) desc;
-
+	spin_lock_irq(&io_request_lock);
 
 	return 1;
 }
@@ -260,15 +341,13 @@ static int hpusbscsi_scsi_queuecommand (Scsi_Cmnd *srb, scsi_callback callback)
 	usb_urb_callback usb_callback;
 	int res;
 
-	hpusbscsi->use_count++;
+	spin_unlock_irq(&io_request_lock);
 
 	/* we don't answer for anything but our single device on any faked host controller */
 	if ( srb->device->lun || srb->device->id || srb->device->channel ) {
-		if (callback) {
-			srb->result = DID_BAD_TARGET;
-			callback(srb);
-		}
-                	goto out;
+		srb->result = DID_BAD_TARGET;
+		callback(srb);
+		goto out;
 	}
 
 	/* Now we need to decide which callback to give to the urb we send the command with */
@@ -297,7 +376,7 @@ static int hpusbscsi_scsi_queuecommand (Scsi_Cmnd *srb, scsi_callback callback)
 	}
 
 
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 	if (hpusbscsi->state != HP_STATE_FREE) {
 		printk(KERN_CRIT"hpusbscsi - Ouch: queueing violation!\n");
 		return 1; /* This must not happen */
@@ -307,7 +386,7 @@ static int hpusbscsi_scsi_queuecommand (Scsi_Cmnd *srb, scsi_callback callback)
         memset(srb->sense_buffer, 0, SCSI_SENSE_BUFFERSIZE);
 
 	hpusbscsi->state = HP_STATE_BEGINNING;
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 
 	/* We prepare the urb for writing out the scsi command */
 	FILL_BULK_URB(
@@ -321,19 +400,24 @@ static int hpusbscsi_scsi_queuecommand (Scsi_Cmnd *srb, scsi_callback callback)
 	);
 	hpusbscsi->scallback = callback;
 	hpusbscsi->srb = srb;
+	
+	if (hpusbscsi->dev == NULL) {
+		srb->result = DID_ERROR;
+		callback(srb);
+		goto out;
+	}
 
 	res = usb_submit_urb(&hpusbscsi->dataurb);
 	if (res) {
 		hpusbscsi->state = HP_STATE_FREE;
-		TRACE_STATE;
-		if (callback) {
-			srb->result = DID_ERROR;
-			callback(srb);
-		}
+		PDEBUG(2, "state= %s", states[hpusbscsi->state]);
+		srb->result = DID_ERROR;
+		callback(srb);
+
 	}
 
 out:
-	hpusbscsi->use_count--;
+	spin_lock_irq(&io_request_lock);
 	return 0;
 }
 
@@ -341,9 +425,9 @@ static int hpusbscsi_scsi_host_reset (Scsi_Cmnd *srb)
 {
 	struct hpusbscsi* hpusbscsi = (struct hpusbscsi*)(srb->host->hostdata[0]);
 
-	printk(KERN_DEBUG"SCSI reset requested.\n");
+	PDEBUG(1, "SCSI reset requested");
 	//usb_reset_device(hpusbscsi->dev);
-	//printk(KERN_DEBUG"SCSI reset completed.\n");
+	//PDEBUG(1, "SCSI reset completed");
 	hpusbscsi->state = HP_STATE_FREE;
 
 	return 0;
@@ -352,10 +436,13 @@ static int hpusbscsi_scsi_host_reset (Scsi_Cmnd *srb)
 static int hpusbscsi_scsi_abort (Scsi_Cmnd *srb)
 {
 	struct hpusbscsi* hpusbscsi = (struct hpusbscsi*)(srb->host->hostdata[0]);
-	printk(KERN_DEBUG"Request is canceled.\n");
+	PDEBUG(1, "Request is canceled");
 
+	spin_unlock_irq(&io_request_lock);
 	usb_unlink_urb(&hpusbscsi->dataurb);
 	hpusbscsi->state = HP_STATE_FREE;
+
+	spin_lock_irq(&io_request_lock);
 
 	return SCSI_ABORT_PENDING;
 }
@@ -376,7 +463,7 @@ static void  control_interrupt_callback (struct urb *u)
 	struct hpusbscsi * hpusbscsi = (struct hpusbscsi *)u->context;
 	u8 scsi_state;
 
-DEBUG("Getting status byte %d \n",hpusbscsi->scsi_state_byte);
+	PDEBUG(1, "Getting status byte %d",hpusbscsi->scsi_state_byte);
 	if(u->status < 0) {
                 if (hpusbscsi->state != HP_STATE_FREE)
                         handle_usb_error(hpusbscsi);
@@ -402,24 +489,24 @@ DEBUG("Getting status byte %d \n",hpusbscsi->scsi_state_byte);
 		/* we do a callback to the scsi layer if and only if all data has been transfered */
 		hpusbscsi->scallback(hpusbscsi->srb);
 
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 	switch (hpusbscsi->state) {
 	case HP_STATE_WAIT:
 		hpusbscsi->state = HP_STATE_FREE;
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 		break;
 	case HP_STATE_WORKING:
 	case HP_STATE_BEGINNING:
 		hpusbscsi->state = HP_STATE_PREMATURE;
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 		break;
 	case HP_STATE_ERROR:
 		break;
 	default:
 		printk(KERN_ERR"hpusbscsi: Unexpected status report.\n");
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 		hpusbscsi->state = HP_STATE_FREE;
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 		break;
 	}
 }
@@ -431,15 +518,15 @@ static void simple_command_callback(struct urb *u)
 		handle_usb_error(hpusbscsi);
 		return;
         }
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 	if (hpusbscsi->state != HP_STATE_PREMATURE) {
-	        TRACE_STATE;
+	        PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 		hpusbscsi->state = HP_STATE_WAIT;
 	} else {
 		if (hpusbscsi->scallback != NULL)
 			hpusbscsi->scallback(hpusbscsi->srb);
 		hpusbscsi->state = HP_STATE_FREE;
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 	}
 }
 
@@ -450,7 +537,7 @@ static void scatter_gather_callback(struct urb *u)
         usb_urb_callback callback;
         int res;
 
-        DEBUG("Going through scatter/gather\n");
+        PDEBUG(1, "Going through scatter/gather"); // bonzo - this gets hit a lot - maybe make it a 2
         if (u->status < 0) {
                 handle_usb_error(hpusbscsi);
                 return;
@@ -461,10 +548,10 @@ static void scatter_gather_callback(struct urb *u)
         else
                 callback = simple_done;
 
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
         if (hpusbscsi->state != HP_STATE_PREMATURE)
 		hpusbscsi->state = HP_STATE_WORKING;
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 
         FILL_BULK_URB(
                 u,
@@ -479,7 +566,7 @@ static void scatter_gather_callback(struct urb *u)
         res = usb_submit_urb(u);
         if (res)
         	handle_usb_error(hpusbscsi);
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 }
 
 static void simple_done (struct urb *u)
@@ -490,8 +577,8 @@ static void simple_done (struct urb *u)
                 handle_usb_error(hpusbscsi);
                 return;
         }
-        DEBUG("Data transfer done\n");
-	TRACE_STATE;
+	PDEBUG(1, "Data transfer done");
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 	if (hpusbscsi->state != HP_STATE_PREMATURE) {
 		if (u->status < 0) {
 			handle_usb_error(hpusbscsi);
@@ -501,7 +588,7 @@ static void simple_done (struct urb *u)
 			} else {
 				issue_request_sense(hpusbscsi);
 			}
-		TRACE_STATE;
+		PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 		}
 	} else {
 		if (hpusbscsi->scallback != NULL)
@@ -535,10 +622,10 @@ static void simple_payload_callback (struct urb *u)
                 handle_usb_error(hpusbscsi);
 		return;
         }
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 	if (hpusbscsi->state != HP_STATE_PREMATURE) {
 		hpusbscsi->state = HP_STATE_WORKING;
-	TRACE_STATE;
+	PDEBUG(2, "state= %s", states[hpusbscsi->state]);
 	}
 }
 

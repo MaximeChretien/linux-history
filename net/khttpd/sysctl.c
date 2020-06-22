@@ -64,6 +64,7 @@ int 	sysctl_khttpd_sloppymime= 0;
 int	sysctl_khttpd_threads	= 2;
 int	sysctl_khttpd_maxconnect = 1000;
 
+atomic_t        khttpd_stopCount;
 
 static struct ctl_table_header *khttpd_table_header;
 
@@ -71,6 +72,8 @@ static int sysctl_SecureString(ctl_table *table, int *name, int nlen,
 		  void *oldval, size_t *oldlenp,
 		  void *newval, size_t newlen, void **context);
 static int proc_dosecurestring(ctl_table *table, int write, struct file *filp,
+		  void *buffer, size_t *lenp);
+static int khttpd_stop_wrap_proc_dointvec(ctl_table *table, int write, struct file *filp,
 		  void *buffer, size_t *lenp);
 
 
@@ -93,7 +96,7 @@ static ctl_table khttpd_table[] = {
 		sizeof(int),
 		0644,
 		NULL,
-		proc_dointvec,
+		khttpd_stop_wrap_proc_dointvec,
 		&sysctl_intvec,
 		NULL,
 		NULL,
@@ -306,6 +309,24 @@ static int proc_dosecurestring(ctl_table *table, int write, struct file *filp,
 	}
 	return 0;
 }
+
+/* A wrapper around proc_dointvec that computes
+ * khttpd_stopCount = # of times sysctl_khttpd_stop has gone true
+ * Sensing sysctl_khttpd_stop in other threads is racy;
+ * sensing khttpd_stopCount in other threads is not.
+ */
+static int khttpd_stop_wrap_proc_dointvec(ctl_table *table, int write, struct file *filp,
+		  void *buffer, size_t *lenp)
+{
+	int rv;
+	int oldstop = sysctl_khttpd_stop;
+	rv = proc_dointvec(table, write, filp, buffer, lenp);
+	if (sysctl_khttpd_stop && !oldstop)
+		atomic_inc(&khttpd_stopCount);
+
+	return rv;
+}
+		
 
 static int sysctl_SecureString (/*@unused@*/ctl_table *table, 
 				/*@unused@*/int *name, 

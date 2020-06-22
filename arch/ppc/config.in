@@ -1,4 +1,4 @@
-# BK Id: SCCS/s.config.in 1.51 03/07/02 13:36:31 trini
+# BK Id: %F% %I% %G% %U% %#%
 #
 # For a description of the syntax of this configuration file,
 # see Documentation/kbuild/config-language.txt.
@@ -42,6 +42,7 @@ fi
 if [ "$CONFIG_POWER3" = "y" -o "$CONFIG_POWER4" = "y" ]; then
   define_bool CONFIG_PPC64BRIDGE y
   define_bool CONFIG_ALL_PPC y
+  define_bool CONFIG_PPC_ISATIMER y
 fi
 
 if [ "$CONFIG_6xx" = "y" -o "$CONFIG_POWER3" = "y" -o \
@@ -97,6 +98,8 @@ if [ "$CONFIG_6xx" = "y" -a "$CONFIG_8260" = "n" ]; then
   choice 'Machine Type'		\
 	"CHRP/PowerMac/PReP	CONFIG_ALL_PPC		\
   	 Amiga-APUS		CONFIG_APUS		\
+	 IBM-Spruce		CONFIG_SPRUCE		\
+	 SBS-Palomar4		CONFIG_PAL4		\
 	 Synergy-Gemini        	CONFIG_GEMINI"		CHRP/PowerMac/PReP
 fi
 
@@ -116,6 +119,7 @@ if [ "$CONFIG_6xx" = "y" -a "$CONFIG_8260" = "n" ];then
     bool '    Interrupt driven TAU driver (DANGEROUS)' CONFIG_TAU_INT
     bool '    Average high and low temp' CONFIG_TAU_AVERAGE
   fi
+  define_bool CONFIG_PPC_ISATIMER y
 fi
 
 if [ "$CONFIG_4xx" = "y" -o "$CONFIG_8xx" = "y" ]; then
@@ -395,10 +399,29 @@ source drivers/usb/Config.in
 
 source net/bluetooth/Config.in
 
+source lib/Config.in
+
 mainmenu_option next_comment
 comment 'Kernel hacking'
 
-bool 'Magic SysRq key' CONFIG_MAGIC_SYSRQ
-bool 'Include kgdb kernel debugger' CONFIG_KGDB
-bool 'Include xmon kernel debugger' CONFIG_XMON
+bool 'Kernel debugging' CONFIG_DEBUG_KERNEL
+if [ "$CONFIG_DEBUG_KERNEL" = "y" ]; then
+  bool '  Magic SysRq key' CONFIG_MAGIC_SYSRQ
+  bool '  Debug high memory support' CONFIG_DEBUG_HIGHMEM
+  bool '  Debug memory allocations' CONFIG_DEBUG_SLAB
+  if [ "$CONFIG_SMP" = "y" ]; then
+    bool '  Spinlock debugging' CONFIG_DEBUG_SPINLOCK
+  fi
+  bool '  Wait queue debugging' CONFIG_DEBUG_WAITQ
+  bool '  Include kgdb kernel debugger' CONFIG_KGDB
+  bool '  Include xmon kernel debugger' CONFIG_XMON
+  bool '  Include BDI-2000 user context switcher' CONFIG_BDI_SWITCH
+  if [ "$CONFIG_KGDB" = "y" -o "$CONFIG_XMON" = "y" \
+	-o "$CONFIG_BDI_SWITCH" = "y" ]; then
+    bool '    Add any additional compile options' CONFIG_MORE_COMPILE_OPTIONS
+    if [ "$CONFIG_MORE_COMPILE_OPTIONS" = "y" ]; then
+      string '    Additional compile arguments' CONFIG_COMPILE_OPTIONS "-g -ggdb"
+    fi
+  fi
+fi
 endmenu

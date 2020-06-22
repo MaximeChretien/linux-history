@@ -2,7 +2,7 @@
  * kernel/lvm-snap.c
  *
  * Copyright (C) 2000 Andrea Arcangeli <andrea@suse.de> SuSE
- *               2000 - 2001 Heinz Mauelshagen, Sistina Software
+ *               2000 - 2002 Heinz Mauelshagen, Sistina Software
  *
  * LVM snapshot driver is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,6 +41,7 @@
  *                 lvm_snapshot_fill_COW_table has a return value too.
  *    15/10/2001 - fix snapshot alignment problem [CM]
  *               - fix snapshot full oops (always check lv_block_exception) [CM]
+ *    26/06/2002 - support for new list_move macro [patch@luckynet.dynu.com]
  *
  */
 
@@ -125,8 +126,12 @@ lvm_find_exception_table(kdev_t org_dev, unsigned long org_start, lv_t * lv)
 			if (i)
 			{
 				/* fun, isn't it? :) */
+#ifdef	list_move
+				list_move(next, hash_table);
+#else
 				list_del(next);
 				list_add(next, hash_table);
+#endif
 			}
 			ret = exception;
 			break;

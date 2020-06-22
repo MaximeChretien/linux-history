@@ -183,7 +183,7 @@ void hiddev_hid_event(struct hid_device *, unsigned int usage, int value);
 int __init hiddev_init(void);
 void __exit hiddev_exit(void);
 #else
-static inline void *hiddev_connect(struct hid_device *hid) { return NULL; }
+static inline int hiddev_connect(struct hid_device *hid) { return -1; }
 static inline void hiddev_disconnect(struct hid_device *hid) { }
 static inline void hiddev_hid_event(struct hid_device *hid, unsigned int usage, int value) { }
 static inline int hiddev_init(void) { return 0; }

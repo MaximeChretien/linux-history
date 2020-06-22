@@ -278,87 +278,45 @@ void start_thread(struct pt_regs *regs, unsigned long fdptr, unsigned long sp)
 	current->thread.fpscr = 0;
 }
 
-asmlinkage int sys_clone(int p1, int p2, int p3, int p4, int p5, int p6,
-			 struct pt_regs *regs)
+int sys_clone(int p1, int p2, int p3, int p4, int p5, int p6,
+	      struct pt_regs *regs)
 {
-	unsigned long clone_flags = p1;
-	int res;
-
-	PPCDBG(PPCDBG_SYS64, "sys_clone - entered - pid=%ld current=%lx comm=%s \n", current->pid, current, current->comm);
-
-	res = do_fork(clone_flags, regs->gpr[1], regs, 0);
-#ifdef CONFIG_SMP
-	/* When we clone the idle task we keep the same pid but
-	 * the return value of 0 for both causes problems.
-	 * -- Cort
-	 */
-	if ((current->pid == 0) && (current == &init_task))
-		res = 1;
-#endif /* CONFIG_SMP */
-
-	PPCDBG(PPCDBG_SYS64, "sys_clone - exited - pid=%ld current=%lx comm=%s \n", current->pid, current, current->comm);
-
-	return res;
+	return do_fork(p1, regs->gpr[1], regs, 0);
 }
 
-asmlinkage int sys_fork(int p1, int p2, int p3, int p4, int p5, int p6,
-			struct pt_regs *regs)
+int sys_fork(int p1, int p2, int p3, int p4, int p5, int p6,
+	     struct pt_regs *regs)
 {
-	int res;
-	
-	PPCDBG(PPCDBG_SYS64, "sys_fork - entered - pid=%ld comm=%s \n", current->pid, current->comm);
-
-	res = do_fork(SIGCHLD, regs->gpr[1], regs, 0);
-
-#ifdef CONFIG_SMP
-	/* When we clone the idle task we keep the same pid but
-	 * the return value of 0 for both causes problems.
-	 * -- Cort
-	 */
-	if ((current->pid == 0) && (current == &init_task))
-		res = 1;
-#endif /* CONFIG_SMP */
-	
-	PPCDBG(PPCDBG_SYS64, "sys_fork - exited - pid=%ld comm=%s \n", current->pid, current->comm);
-
-	return res;
+	return do_fork(SIGCHLD, regs->gpr[1], regs, 0);
 }
 
-asmlinkage int sys_vfork(int p1, int p2, int p3, int p4, int p5, int p6,
+int sys_vfork(int p1, int p2, int p3, int p4, int p5, int p6,
 			 struct pt_regs *regs)
 {
-  	PPCDBG(PPCDBG_SYS64, "sys_vfork - running - pid=%ld current=%lx comm=%s \n", current->pid, current, current->comm);
-
 	return do_fork(CLONE_VFORK | CLONE_VM | SIGCHLD, regs->gpr[1], regs, 0);
 }
 
-asmlinkage int sys_execve(unsigned long a0, unsigned long a1, unsigned long a2,
-			  unsigned long a3, unsigned long a4, unsigned long a5,
-			  struct pt_regs *regs)
+int sys_execve(unsigned long a0, unsigned long a1, unsigned long a2,
+	       unsigned long a3, unsigned long a4, unsigned long a5,
+	       struct pt_regs *regs)
 {
 	int error;
 	char * filename;
-
-	PPCDBG(PPCDBG_SYS64, "sys_execve - entered - pid=%ld current=%lx comm=%s \n", current->pid, current, current->comm);
-
+	
 	filename = getname((char *) a0);
 	error = PTR_ERR(filename);
 	if (IS_ERR(filename))
 		goto out;
 	if (regs->msr & MSR_FP)
 		giveup_fpu(current);
-
-	PPCDBG(PPCDBG_SYS64, "sys_execve - before do_execve : filename = %s\n", filename);
-
+  
 	error = do_execve(filename, (char **) a1, (char **) a2, regs);
-
+  
 	if (error == 0)
 		current->ptrace &= ~PT_DTRACE;
 	putname(filename);
 
-  out:
-	PPCDBG(PPCDBG_SYS64, "sys_execve - exited - pid=%ld current=%lx comm=%s error = %lx\n", current->pid, current, current->comm, error);
-
+out:
 	return error;
 }
 
@@ -405,7 +363,7 @@ void initialize_paca_hardware_interrupt_stack(void)
 	 * __get_free_pages() might give us a page > KERNBASE+256M which
 	 * is mapped with large ptes so we can't set up the guard page.
 	 */
-	if (__is_processor(PV_POWER4))
+	if (__is_processor(PV_POWER4) || __is_processor(PV_POWER4p))
 		return;
 
 	for (i=0; i < naca->processorCount; i++) {
@@ -469,10 +427,10 @@ print_backtrace(unsigned long *sp)
 
 	printk("Call backtrace: \n");
 	while (sp) {
-		if (__get_user( i, &sp[2] ))
+		if (__get_user(i, &sp[2]))
 			break;
 		printk("%016lX ", i);
-		printk("%s\n", ppc_find_proc_name( (unsigned *)i, name_buf, 256 ));
+		printk("%s\n", ppc_find_proc_name((unsigned *)i, name_buf, 256));
 		if (cnt > 32) break;
 		if (__get_user(sp, (unsigned long **)sp))
 			break;
@@ -499,7 +457,7 @@ unsigned long get_wchan(struct task_struct *p)
 	do {
 		sp = *(unsigned long *)sp;
 		if (sp < (stack_page + (2 * PAGE_SIZE)) ||
-		    sp >= (stack_page + (THREAD_SIZE * PAGE_SIZE)))
+		    sp >= (stack_page + THREAD_SIZE))
 			return 0;
 		if (count > 0) {
 			ip = *(unsigned long *)(sp + 16);
@@ -524,7 +482,7 @@ void show_trace_task(struct task_struct *p)
 	do {
 		sp = *(unsigned long *)sp;
 		if (sp < (stack_page + (2 * PAGE_SIZE)) ||
-		    sp >= (stack_page + (THREAD_SIZE * PAGE_SIZE)))
+		    sp >= (stack_page + THREAD_SIZE))
 			break;
 		if (count > 0) {
 			ip = *(unsigned long *)(sp + 16);

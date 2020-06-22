@@ -434,10 +434,6 @@ static void ehci_tasklet (unsigned long param)
 	scan_async (ehci);
 	if (ehci->next_uframe != -1)
 		scan_periodic (ehci);
-
-	// FIXME:  when nothing is connected to the root hub,
-	// turn off the RUN bit so the host can enter C3 "sleep" power
-	// saving mode; make root hub code scan memory less often.
 }
 
 /*-------------------------------------------------------------------------*/
@@ -582,7 +578,10 @@ dbg ("wait for dequeue: state %d, reclaim %p, hcd state %d",
 		return 0;
 
 	case PIPE_INTERRUPT:
-		intr_deschedule (ehci, urb->start_frame, qh, urb->interval);
+		intr_deschedule (ehci, urb->start_frame, qh,
+			(urb->dev->speed == USB_SPEED_HIGH)
+			    ? urb->interval
+			    : (urb->interval << 3));
 		if (ehci->hcd.state == USB_STATE_HALT)
 			urb->status = -ESHUTDOWN;
 		qh_completions (ehci, qh, 1);

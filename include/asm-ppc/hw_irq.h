@@ -10,7 +10,8 @@
 
 extern unsigned long timer_interrupt_intercept;
 extern unsigned long do_IRQ_intercept;
-int timer_interrupt(struct pt_regs *);
+extern int timer_interrupt(struct pt_regs *);
+extern void ppc_irq_dispatch_handler(struct pt_regs *regs, int irq);
 
 extern void __sti(void);
 extern void __cli(void);

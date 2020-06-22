@@ -58,6 +58,9 @@ Insmod-options:	list of all insmod options available for bttv and
 		the helper modules.
 MAKEDEV:	a script to create the special files for v4l
 CARDLIST:	List of all supported cards
+Cards:		more detailed descriptions of known TV cards:
+		OEM name variants, used i2c chips, ...
+		also includes non-bttv cards.
 
 Loading just the bttv modules isn't enouth for most cards.  The
 drivers for the i2c tuner/sound chips must also be loaded.  bttv tries
@@ -72,6 +75,12 @@ The most important insmod option for bttv is "card=n" to select the
 correct card type in case the autodetection does'nt work. If you get
 video but no sound you've very likely specified the wrong (or no)
 card type.  A list of supported cards is in CARDLIST.
+
+For the WinTV/PVR you need one firmware file from the driver CD:
+hcwamc.rbf.  The file is in the pvr45xxx.exe archive (self-extracting
+zip file, unzip can unpack it).  Put it into the /etc/pvr directory or
+use the firm_altera=<path> insmod option to point the driver to the
+location of the file.
 
 If your card isn't listed in CARDLIST or if you have trouble making
 audio work, you should read the Sound-FAQ.

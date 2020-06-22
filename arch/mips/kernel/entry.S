@@ -26,48 +26,29 @@
 #include <asm/unistd.h>
 #include <asm/isadep.h>
 
-/* This duplicates the definition from <linux/sched.h> */
-#define PT_TRACESYS	0x00000002		/* tracing system calls */
-
 
 		.text
 		.align 4
 		.set	push
 		.set	reorder
-EXPORT(ret_from_fork)
-		move	a0, v0			# prev
-		jal	schedule_tail
-		lw	t0, TASK_PTRACE($28)	# syscall tracing enabled?
-		andi	t0, PT_TRACESYS
-		bnez	t0, tracesys_exit
-		j	ret_from_sys_call
-
-tracesys_exit:	jal	syscall_trace
-		b	ret_from_sys_call
-
-EXPORT(ret_from_irq)
-EXPORT(ret_from_exception)
+FEXPORT(ret_from_irq)
+FEXPORT(ret_from_exception)
 		lw	t0, PT_STATUS(sp)	# returning to kernel mode?
 		andi	t0, t0, KU_USER
-		bnez	t0, ret_from_sys_call
-		j	restore_all
+		beqz	t0, restore_all
 
-reschedule:	jal	schedule 
-
-EXPORT(ret_from_sys_call)
-		.type	ret_from_irq,@function
-
+FEXPORT(ret_from_sys_call)		# here to prevent code duplication
+ret_from_schedule:
 		mfc0	t0, CP0_STATUS	# need_resched and signals atomic test
 		ori	t0, t0, 1
 		xori	t0, t0, 1
 		mtc0	t0, CP0_STATUS
-		nop; nop; nop
+		SSNOP; SSNOP; SSNOP
 
 		lw	v0, TASK_NEED_RESCHED($28)
 		lw	v1, TASK_SIGPENDING($28)
 		bnez	v0, reschedule
 		bnez	v1, signal_return
-		FEXPORT(restore_all)
 restore_all:	.set	noat
 		RESTORE_ALL_AND_RET
 		.set	at
@@ -85,6 +66,10 @@ signal_return:
 		jal	do_signal
 		b	restore_all
 
+reschedule:
+		jal	schedule
+		b	ret_from_schedule
+
 /*
  * Common spurious interrupt handler.
  */
@@ -100,35 +85,38 @@ LEAF(spurious_interrupt)
 		addiu   t0,1
 		sw      t0,%lo(irq_err_count)(t1)
 		j	ret_from_irq
-		END(spurious_interrupt)
+END(spurious_interrupt)
 
 		__INIT
 
 		.set	reorder
 
-		NESTED(except_vec1_generic, 0, sp)
+NESTED(except_vec1_generic, 0, sp)
 		PANIC("Exception vector 1 called")
-		END(except_vec1_generic)
+END(except_vec1_generic)
 
 		/*
 		 * General exception vector.  Used for all CPUs except R4000
 		 * and R4400 SC and MC versions.
 		 */
-		NESTED(except_vec3_generic, 0, sp)
+NESTED(except_vec3_generic, 0, sp)
 		mfc0	k1, CP0_CAUSE
 		la	k0, exception_handlers
 		andi	k1, k1, 0x7c
 		addu	k0, k0, k1
 		lw	k0, (k0)
 		jr	k0
-		END(except_vec3_generic)
+END(except_vec3_generic)
 		.set	at
 
 		/* General exception vector R4000 version. */
-		NESTED(except_vec3_r4000, 0, sp)
+NESTED(except_vec3_r4000, 0, sp)
 		.set	push
 		.set    mips3
 		.set	noat
+#if defined(R5432_CP0_INTERRUPT_WAR)
+		mfc0	k0, CP0_INDEX
+#endif
 		mfc0	k1, CP0_CAUSE
 		li	k0, 31<<2
 		andi	k1, k1, 0x7c
@@ -174,7 +162,7 @@ handle_vcei:
 #endif
 		eret
 		.set    pop
-		END(except_vec3_r4000)
+END(except_vec3_r4000)
 
 		__FINIT
 
@@ -221,10 +209,10 @@ EXPORT(exception_count_##exception);                                    \
 		.previous;
 #define BUILD_HANDLER(exception,handler,clear,verbose)                  \
 		.align	5;                                              \
-		NESTED(handle_##exception, PT_SIZE, sp);                \
+NESTED(handle_##exception, PT_SIZE, sp);		                \
 		.set	noat;                                           \
 		SAVE_ALL;                                               \
-		FEXPORT(handle_##exception##_int);			\
+FEXPORT(handle_##exception##_int);					\
 		__BUILD_clear_##clear(exception);                       \
 		.set	at;                                             \
 		__BUILD_##verbose(exception);                           \
@@ -232,7 +220,7 @@ EXPORT(exception_count_##exception);                                    \
 		 move	a0, sp;                                         \
 		j	ret_from_exception;                             \
 		 nop;                                                   \
-		END(handle_##exception)
+END(handle_##exception)
 
 		BUILD_HANDLER(adel,ade,ade,silent)		/* #4  */
 		BUILD_HANDLER(ades,ade,ade,silent)		/* #5  */

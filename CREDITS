@@ -704,6 +704,11 @@ S: 3000 FORE Drive
 S: Warrendale, Pennsylvania 15086
 S: USA
 
+N: Martin Devera
+E: devik@cdi.cz
+W: http://luxik.cdi.cz/~devik/qos/
+D: HTB qdisc and random networking hacks
+
 N: Alex deVries
 E: adevries@thepuffingroup.com
 D: Various SGI parts, bits of HAL2 and Newport, PA-RISC Linux.
@@ -1258,7 +1263,7 @@ S: 14059 Berlin
 S: Germany
 
 N: David Hinds
-E: dhinds@zen.stanford.edu
+E: dahinds@users.sourceforge.net
 W: http://tao.stanford.edu/~dhinds
 D: PCMCIA and CardBus stuff, PCMCIA-HOWTO, PCMCIA client drivers
 S: 2019 W. Middlefield Rd #1
@@ -1328,6 +1333,12 @@ S: Holtron Internetics, Inc.
 S: 998 East 900 South, Suite 26
 S: Provo, Utah 84606-5607
 S: USA
+
+N: Marcel Holtmann
+E: marcel@holtmann.org
+W: http://www.holtmann.org
+D: Author of the Linux Bluetooth Subsystem PC Card drivers
+S: Germany
 
 N: Rob W. W. Hooft
 E: hooft@EMBL-Heidelberg.DE
@@ -2154,7 +2165,7 @@ S: Fullarton 5063
 S: South Australia
 
 N. Wolfgang Muees
-E: wmues@nexgo.de
+E: wolfgang@iksw-muees.de
 D: Auerswald USB driver
 
 N: Ian A. Murdock
@@ -2335,8 +2346,8 @@ D: implemented kmod
 D: modularized BSD Unix domain sockets
 
 N: Martin Kasper Petersen
-E: mkp@linuxcare.com
 E: mkp@mkp.net
+D: forte FM801 audio driver
 D: PA-RISC port
 D: XFS file system
 D: kiobuf based block I/O work
@@ -3311,14 +3322,10 @@ S: D-73732 Esslingen
 S: Germany
 
 N: Leonard N. Zubkoff
-E: lnz@dandelion.com
 W: http://www.dandelion.com/Linux/
 D: BusLogic SCSI driver
 D: Mylex DAC960 PCI RAID driver
 D: Miscellaneous kernel fixes
-S: 3078 Sulphur Spring Court
-S: San Jose, California 95148
-S: USA
 
 N: Alessandro Zummo
 E: azummo@ita.flashnet.it

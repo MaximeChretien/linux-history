@@ -785,6 +785,7 @@ static void init_gendisk (ide_hwif_t *hwif)
 	gd        = kmalloc (sizeof(struct gendisk), GFP_KERNEL);
 	if (!gd)
 		goto err_kmalloc_gd;
+	memset (gd, 0, sizeof(struct gendisk));
 	gd->sizes = kmalloc (minors * sizeof(int), GFP_KERNEL);
 	if (!gd->sizes)
 		goto err_kmalloc_gd_sizes;

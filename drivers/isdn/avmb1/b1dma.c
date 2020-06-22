@@ -28,10 +28,6 @@
 #include "capicmd.h"
 #include "capiutil.h"
 
-#if BITS_PER_LONG != 32
-#error FIXME: driver requires 32-bit platform
-#endif
-
 static char *revision = "$Revision: 1.1.4.1 $";
 
 /* ------------------------------------------------------------- */
@@ -855,7 +851,7 @@ int b1dmactl_read_proc(char *page, char **start, off_t off,
 	__u8 flag;
 	int len = 0;
 	char *s;
-	__u32 txaddr, txlen, rxaddr, rxlen, csr;
+	u_long txaddr, txlen, rxaddr, rxlen, csr;
 
 	len += sprintf(page+len, "%-16s %s\n", "name", card->name);
 	len += sprintf(page+len, "%-16s 0x%x\n", "io", card->port);
@@ -911,12 +907,12 @@ int b1dmactl_read_proc(char *page, char **start, off_t off,
 	save_flags(flags);
 	cli();
 
-	txaddr = (__u32)phys_to_virt(b1dmainmeml(card->mbase+0x2c));
-	txaddr -= (__u32)card->dma->sendbuf;
+	txaddr = (u_long)phys_to_virt(b1dmainmeml(card->mbase+0x2c));
+	txaddr -= (u_long)card->dma->sendbuf;
 	txlen  = b1dmainmeml(card->mbase+0x30);
 
-	rxaddr = (__u32)phys_to_virt(b1dmainmeml(card->mbase+0x24));
-	rxaddr -= (__u32)card->dma->recvbuf;
+	rxaddr = (u_long)phys_to_virt(b1dmainmeml(card->mbase+0x24));
+	rxaddr -= (u_long)card->dma->recvbuf;
 	rxlen  = b1dmainmeml(card->mbase+0x28);
 
 	csr  = b1dmainmeml(card->mbase+AMCC_INTCSR);

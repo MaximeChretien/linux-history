@@ -28,6 +28,8 @@
  *  2001-11-07  Added isapnp_{,un}register_driver calls along the lines
  *              of the pci driver interface
  *              Kai Germaschewski <kai.germaschewski@gmx.de>
+ *  2002-06-06  Made the use of dma channel 0 configurable 
+ *              Gerald Teschl <gerald.teschl@univie.ac.at>
  */
 
 #include <linux/config.h>
@@ -59,6 +61,7 @@ LIST_HEAD(isapnp_devices);
 int isapnp_disable;			/* Disable ISA PnP */
 int isapnp_rdp;				/* Read Data Port */
 int isapnp_reset = 1;			/* reset all PnP cards (deactivate) */
+int isapnp_allow_dma0 = -1;		/* allow dma 0 during auto activation: -1=off (:default), 0=off (set by user), 1=on */
 int isapnp_skip_pci_scan;		/* skip PCI resource scanning */
 int isapnp_verbose = 1;			/* verbose mode */
 int isapnp_reserve_irq[16] = { [0 ... 15] = -1 };	/* reserve (don't use) some IRQ */
@@ -74,6 +77,8 @@ MODULE_PARM(isapnp_rdp, "i");
 MODULE_PARM_DESC(isapnp_rdp, "ISA Plug & Play read data port");
 MODULE_PARM(isapnp_reset, "i");
 MODULE_PARM_DESC(isapnp_reset, "ISA Plug & Play reset all cards");
+MODULE_PARM(isapnp_allow_dma0, "i");
+MODULE_PARM_DESC(isapnp_allow_dma0, "Allow dma value 0 during auto activation");
 MODULE_PARM(isapnp_skip_pci_scan, "i");
 MODULE_PARM_DESC(isapnp_skip_pci_scan, "ISA Plug & Play skip PCI resource scanning");
 MODULE_PARM(isapnp_verbose, "i");
@@ -1750,13 +1755,14 @@ static int isapnp_valid_irq(struct isapnp_cfgtmp *cfg, int idx)
 
 static int isapnp_check_dma(struct isapnp_cfgtmp *cfg, int dma, int idx)
 {
-	int i;
+	int i, mindma =1;
 	struct pci_dev *dev;
 
 	/* Some machines allow DMA 0, but others don't. In fact on some 
 	   boxes DMA 0 is the memory refresh. Play safe */
-	   
-	if (dma < 1 || dma == 4 || dma > 7)
+	if (isapnp_allow_dma0 == 1)
+		mindma = 0;
+	if (dma < mindma || dma == 4 || dma > 7)
 		return 1;
 	for (i = 0; i < 8; i++) {
 		if (isapnp_reserve_dma[i] == dma)

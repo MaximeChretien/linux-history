@@ -1,5 +1,5 @@
 #
-# Makefile for the kernel character device drivers.
+# Makefile for the video capture/playback device drivers.
 #
 # Note! Dependencies are done automagically by 'make dep', which also
 # removes any old dependencies. DON'T put your own dependencies here

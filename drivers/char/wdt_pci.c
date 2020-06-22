@@ -32,6 +32,7 @@
  *		Tigran Aivazian	:	Restructured wdtpci_init_one() to handle failures
  *		Joel Becker	:	Added WDIOC_GET/SETTIMEOUT
  *		Zwane Mwaikambo :	Magic char closing, locking changes, cleanups
+ *		Matt Domsch	:	nowayout module option
  */
 
 #include <linux/config.h>
@@ -86,6 +87,15 @@ static int irq;
 #define WD_TIMO_MAX (WD_TIMO*60)	/* 1 hour(?) */
 
 static int wd_margin = WD_TIMO;
+
+#ifdef CONFIG_WATCHDOG_NOWAYOUT
+static int nowayout = 1;
+#else
+static int nowayout = 0;
+#endif
+
+MODULE_PARM(nowayout,"i");
+MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default=CONFIG_WATCHDOG_NOWAYOUT)");
 
 /*
  *	Programming support
@@ -231,16 +241,19 @@ static ssize_t wdtpci_write(struct file *file, const char *buf, size_t count, lo
 		return -ESPIPE;
 
 	if (count) {
-#ifndef CONFIG_WATCHDOG_NOWAYOUT
-		size_t i;
+		if (!nowayout) {
+			size_t i;
 
-		expect_close = 0;
+			expect_close = 0;
 
-		for (i = 0; i != count; i++) {
-			if (buf[i] == 'V')
-				expect_close = 1;
+			for (i = 0; i != count; i++) {
+				char c;
+				if(get_user(c, buf+i))
+					return -EFAULT;
+				if (c == 'V')
+					expect_close = 1;
+			}
 		}
-#endif
 		wdtpci_ping();
 	}
 
@@ -301,7 +314,7 @@ static int wdtpci_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 	{
 		WDIOF_OVERHEAT|WDIOF_POWERUNDER|WDIOF_POWEROVER
 			|WDIOF_EXTERN1|WDIOF_EXTERN2|WDIOF_FANFAULT
-			|WDIOF_SETTIMEOUT,
+			|WDIOF_SETTIMEOUT|WDIOF_MAGICCLOSE,
 		1,
 		"WDT500/501PCI"
 	};
@@ -355,12 +368,12 @@ static int wdtpci_open(struct inode *inode, struct file *file)
 	switch(MINOR(inode->i_rdev))
 	{
 		case WATCHDOG_MINOR:
-			 if (down_trylock(&open_sem))
-                        	return -EBUSY;
+			if (down_trylock(&open_sem))
+				return -EBUSY;
 
-#ifdef CONFIG_WATCHDOG_NOWAYOUT	
-			MOD_INC_USE_COUNT;
-#endif
+			if (nowayout) {
+				MOD_INC_USE_COUNT;
+			}
 			/*
 			 *	Activate 
 			 */
@@ -415,7 +428,6 @@ static int wdtpci_release(struct inode *inode, struct file *file)
 {
 
 	if (MINOR(inode->i_rdev)==WATCHDOG_MINOR) {
-#ifndef CONFIG_WATCHDOG_NOWAYOUT
 		unsigned long flags;
 		if (expect_close) {
 			spin_lock_irqsave(&wdtpci_lock, flags);
@@ -426,7 +438,6 @@ static int wdtpci_release(struct inode *inode, struct file *file)
 			printk(KERN_CRIT PFX "Unexpected close, not stopping timer!");
 			wdtpci_ping();
 		}
-#endif		
 		up(&open_sem);
 	}
 	return 0;

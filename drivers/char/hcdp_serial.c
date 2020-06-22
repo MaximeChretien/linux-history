@@ -15,9 +15,9 @@
 #include <linux/init.h>
 #include <linux/serial.h>
 #include <linux/serialP.h>
+#include <linux/efi.h>
 #include <asm/serial.h>
 #include <asm/io.h>
-#include <asm/efi.h>
 #include <linux/hcdp_serial.h>
 
 #undef SERIAL_DEBUG_HCDP

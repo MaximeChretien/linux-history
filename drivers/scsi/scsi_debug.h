@@ -4,24 +4,22 @@
 #include <linux/kdev_t.h>
 
 static int scsi_debug_detect(Scsi_Host_Template *);
+static int scsi_debug_release(struct Scsi_Host *);
 /* static int scsi_debug_command(Scsi_Cmnd *); */
 static int scsi_debug_queuecommand(Scsi_Cmnd *, void (*done) (Scsi_Cmnd *));
-static int scsi_debug_abort(Scsi_Cmnd *);
+static int scsi_debug_ioctl(Scsi_Device *, int, void *);
 static int scsi_debug_biosparam(Disk *, kdev_t, int[]);
+static int scsi_debug_abort(Scsi_Cmnd *);
 static int scsi_debug_bus_reset(Scsi_Cmnd *);
 static int scsi_debug_device_reset(Scsi_Cmnd *);
 static int scsi_debug_host_reset(Scsi_Cmnd *);
 static int scsi_debug_proc_info(char *, char **, off_t, int, int, int);
 static const char * scsi_debug_info(struct Scsi_Host *);
 
-#ifndef NULL
-#define NULL 0
-#endif
-
 /*
  * This driver is written for the lk 2.4 series
  */
-#define SCSI_DEBUG_CANQUEUE  255
+#define SCSI_DEBUG_CANQUEUE  255 	/* needs to be >= 1 */
 
 #define SCSI_DEBUG_MAX_CMD_LEN 16
 

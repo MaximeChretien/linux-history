@@ -880,22 +880,22 @@ static int mgsl_loopmode_send_done( struct mgsl_struct * info );
  * Global linked list of SyncLink devices
  */
 struct mgsl_struct *mgsl_device_list;
-int mgsl_device_count;
+static int mgsl_device_count;
 
 /*
  * Set this param to non-zero to load eax with the
  * .text section address and breakpoint on module load.
  * This is useful for use with gdb and add-symbol-file command.
  */
-int break_on_load;
+static int break_on_load;
 
 /*
  * Driver major number, defaults to zero to get auto
  * assigned major number. May be forced as module parameter.
  */
-int ttymajor;
+static int ttymajor;
 
-int cuamajor;
+static int cuamajor;
 
 /*
  * Array of user specified options for ISA adapters.
@@ -8016,7 +8016,7 @@ int mgsl_sppp_open(struct net_device *d)
 {
 	struct mgsl_struct *info = d->priv;
 	int err;
-	long flags;
+	unsigned long flags;
 
 	if (debug_level >= DEBUG_LEVEL_INFO)
 		printk("mgsl_sppp_open(%s)\n",info->netname);	
@@ -8059,7 +8059,7 @@ open_fail:
 void mgsl_sppp_tx_timeout(struct net_device *dev)
 {
 	struct mgsl_struct *info = dev->priv;
-	long flags;
+	unsigned long flags;
 
 	if (debug_level >= DEBUG_LEVEL_INFO)
 		printk("mgsl_sppp_tx_timeout(%s)\n",info->netname);	

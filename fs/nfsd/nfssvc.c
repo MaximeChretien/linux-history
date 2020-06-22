@@ -95,7 +95,7 @@ nfsd_svc(unsigned short port, int nrservs)
 		if (error < 0)
 			goto failure;
 
-#if 0	/* Don't even pretend that TCP works. It doesn't. */
+#if CONFIG_NFSD_TCP
 		error = svc_makesock(nfsd_serv, IPPROTO_TCP, port);
 		if (error < 0)
 			goto failure;
@@ -189,7 +189,7 @@ nfsd(struct svc_rqst *rqstp)
 		 * recvfrom routine.
 		 */
 		while ((err = svc_recv(serv, rqstp,
-				       MAX_SCHEDULE_TIMEOUT)) == -EAGAIN)
+				       5*60*HZ)) == -EAGAIN)
 		    ;
 		if (err < 0)
 			break;

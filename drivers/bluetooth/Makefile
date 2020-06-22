@@ -14,6 +14,8 @@ uart-y				:= hci_ldisc.o
 uart-$(CONFIG_BLUEZ_HCIUART_H4)	+= hci_h4.o
 
 obj-$(CONFIG_BLUEZ_HCIDTL1)	+= dtl1_cs.o
+obj-$(CONFIG_BLUEZ_HCIBT3C)	+= bt3c_cs.o
+obj-$(CONFIG_BLUEZ_HCIBLUECARD)	+= bluecard_cs.o
 
 include $(TOPDIR)/Rules.make
 

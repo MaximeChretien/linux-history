@@ -13,7 +13,7 @@
 /*
  * Almost all MIPS CPUs define 8 interrupt sources.  They are typically
  * level triggered (i.e., cannot be cleared from CPU; must be cleared from
- * device).  The first two are software interrupts.  The last one is 
+ * device).  The first two are software interrupts.  The last one is
  * usually the CPU timer interrupt if counter register is present or, for
  * CPUs with an external FPU, by convention it's the FPU exception interrupt.
  *

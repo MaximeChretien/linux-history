@@ -9,7 +9,7 @@ if [ "$CONFIG_INPUT" != "n" ]; then
    dep_tristate 'Game port support' CONFIG_INPUT_GAMEPORT $CONFIG_INPUT
       dep_tristate '  Classic ISA/PnP gameports' CONFIG_INPUT_NS558 $CONFIG_INPUT_GAMEPORT
       dep_tristate '  PDPI Lightning 4 gamecard' CONFIG_INPUT_LIGHTNING $CONFIG_INPUT_GAMEPORT
-      dep_tristate '  Aureal Vortex and Trident 4DWave gameports' CONFIG_INPUT_PCIGAME $CONFIG_INPUT_GAMEPORT
+      dep_tristate '  Aureal Vortex, Trident 4DWave, and ALi 5451 gameports' CONFIG_INPUT_PCIGAME $CONFIG_INPUT_GAMEPORT
       dep_tristate '  Crystal SoundFusion gameports' CONFIG_INPUT_CS461X  $CONFIG_INPUT_GAMEPORT
       dep_tristate '  SoundBlaster Live! gameports' CONFIG_INPUT_EMU10K1 $CONFIG_INPUT_GAMEPORT
    tristate 'Serial port device support' CONFIG_INPUT_SERIO

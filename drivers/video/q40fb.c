@@ -187,8 +187,7 @@ static int q40_getcolreg(unsigned regno, unsigned *red, unsigned *green,
 }
 
 static int q40_setcolreg(unsigned regno, unsigned red, unsigned green,
-			 unsigned blue, unsigned transp,
-			 const struct fb_info *info)
+			 unsigned blue, unsigned transp, struct fb_info *info)
 {
     /*
      *  Set a single color register. The values supplied have a 16 bit
@@ -293,7 +292,7 @@ static void q40fb_set_disp(int con, struct fb_info *info)
 
   if (con<0) con=0;
 
-   display->screen_base = fix.smem_start;
+   display->screen_base = (char *)fix.smem_start;
    display->visual = fix.visual;
    display->type = fix.type;
    display->type_aux = fix.type_aux;

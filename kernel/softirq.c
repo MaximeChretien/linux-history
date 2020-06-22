@@ -40,7 +40,7 @@
    - Bottom halves: globally serialized, grr...
  */
 
-irq_cpustat_t irq_stat[NR_CPUS];
+irq_cpustat_t irq_stat[NR_CPUS] ____cacheline_aligned;
 
 static struct softirq_action softirq_vec[32] __cacheline_aligned;
 
@@ -260,8 +260,7 @@ void tasklet_kill(struct tasklet_struct *t)
 	while (test_and_set_bit(TASKLET_STATE_SCHED, &t->state)) {
 		current->state = TASK_RUNNING;
 		do {
-			current->policy |= SCHED_YIELD;
-			schedule();
+			yield();
 		} while (test_bit(TASKLET_STATE_SCHED, &t->state));
 	}
 	tasklet_unlock_wait(t);
@@ -405,10 +404,8 @@ static __init int spawn_ksoftirqd(void)
 				  CLONE_FS | CLONE_FILES | CLONE_SIGNAL) < 0)
 			printk("spawn_ksoftirqd() failed for cpu %d\n", cpu);
 		else {
-			while (!ksoftirqd_task(cpu_logical_map(cpu))) {
-				current->policy |= SCHED_YIELD;
-				schedule();
-			}
+			while (!ksoftirqd_task(cpu_logical_map(cpu)))
+				yield();
 		}
 	}
 

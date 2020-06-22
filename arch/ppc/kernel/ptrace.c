@@ -16,8 +16,7 @@
  * and Paul Mackerras (paulus@linuxcare.com.au).
  *
  * This file is subject to the terms and conditions of the GNU General
- * Public License.  See the file README.legal in the main directory of
- * this archive for more details.
+ * Public License.  Please read the COPYING file for all license details.
  */
 
 #include <linux/kernel.h>

@@ -83,7 +83,7 @@ static int dabusb_add_buf_tail (pdabusb_t s, struct list_head *dst, struct list_
 }
 /*-------------------------------------------------------------------*/
 #ifdef DEBUG 
-static void dump_urb (purb_t purb)
+static void dump_urb (struct urb *purb)
 {
 	dbg("urb                   :%p", purb);
 	dbg("next                  :%p", purb->next);
@@ -167,7 +167,7 @@ static int dabusb_free_buffers (pdabusb_t s)
 	return 0;
 }
 /*-------------------------------------------------------------------*/
-static void dabusb_iso_complete (purb_t purb)
+static void dabusb_iso_complete (struct urb *purb)
 {
 	pbuff_t b = purb->context;
 	pdabusb_t s = b->s;
@@ -482,7 +482,7 @@ static ssize_t dabusb_read (struct file *file, char *buf, size_t count, loff_t *
 	int rem;
 	int cnt;
 	pbuff_t b;
-	purb_t purb = NULL;
+	struct urb *purb = NULL;
 
 	dbg("dabusb_read");
 
@@ -605,6 +605,7 @@ static int dabusb_open (struct inode *inode, struct file *file)
 	}
 	if (usb_set_interface (s->usbdev, _DABUSB_IF, 1) < 0) {
 		err("set_interface failed");
+		up(&s->mutex);
 		return -EINVAL;
 	}
 	s->opened = 1;

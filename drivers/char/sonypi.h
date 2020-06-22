@@ -214,6 +214,7 @@ static struct sonypi_event sonypi_blueev[] = {
 /* The set of possible back button events */
 static struct sonypi_event sonypi_backev[] = {
 	{ 0x20, SONYPI_EVENT_BACK_PRESSED },
+	{ 0x3b, SONYPI_EVENT_HELP_PRESSED },
 	{ 0x00, 0x00 }
 };
 
@@ -258,7 +259,7 @@ struct sonypi_device {
 	while (--n && (command)) \
 		udelay(1); \
 	if (!n && (verbose || !quiet)) \
-		printk(KERN_WARNING "sonypi command failed at " __FILE__ " : " __FUNCTION__ "(line %d)\n", __LINE__); \
+		printk(KERN_WARNING "sonypi command failed at " __FILE__ " : %s (line %d)\n", __FUNCTION__, __LINE__); \
 }
 
 #endif /* __KERNEL__ */

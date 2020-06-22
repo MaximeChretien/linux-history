@@ -25,7 +25,7 @@
 /*
  * BlueZ HCI socket layer.
  *
- * $Id: hci_sock.c,v 1.4 2002/04/18 22:26:14 maxk Exp $
+ * $Id: hci_sock.c,v 1.5 2002/07/22 20:32:54 maxk Exp $
  */
 
 #include <linux/config.h>
@@ -129,7 +129,6 @@ void hci_send_to_sock(struct hci_dev *hdev, struct sk_buff *skb)
 
 		if (sock_queue_rcv_skb(sk, nskb))
 			kfree_skb(nskb);
-		
 	}
 	read_unlock(&hci_sk_list.lock);
 }

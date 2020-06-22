@@ -114,7 +114,11 @@
 #  define RD_BUFF_FRONT		  0		/* read buff select (front) */
 #  define RD_BUFF_BACK		  (1 << 6)	/* back */
 #  define EN_PXL_PIPELINE	  BIT(8)	/* pixel pipeline (clip..)*/
+#  define LFB_WORD_SWIZZLE_WR	  BIT(11)	/* enable write-wordswap (big-endian) */
+#  define LFB_BYTE_SWIZZLE_WR	  BIT(12)	/* enable write-byteswap (big-endian) */
 #  define LFB_INVERT_Y		  BIT(13)	/* invert Y origin (LFB) */
+#  define LFB_WORD_SWIZZLE_RD	  BIT(15)	/* enable read-wordswap (big-endian) */
+#  define LFB_BYTE_SWIZZLE_RD	  BIT(16)	/* enable read-byteswap (big-endian) */
 #define CLIP_LEFT_RIGHT		0x0118
 #define CLIP_LOWY_HIGHY		0x011c
 #define NOPCMD			0x0120

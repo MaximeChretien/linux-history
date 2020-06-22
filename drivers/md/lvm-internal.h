@@ -49,6 +49,10 @@ extern uint vg_count;
 extern vg_t *vg[];
 extern struct file_operations lvm_chr_fops;
 
+#ifndef	uchar
+typedef	unsigned char	uchar;
+#endif
+
 extern struct block_device_operations lvm_blk_dops;
 
 #define lvm_sectsize(dev) get_hardsect_size(dev)

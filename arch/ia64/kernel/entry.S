@@ -3,7 +3,7 @@
  *
  * Kernel entry points.
  *
- * Copyright (C) 1998-2001 Hewlett-Packard Co
+ * Copyright (C) 1998-2002 Hewlett-Packard Co
  *	David Mosberger-Tang <davidm@hpl.hp.com>
  * Copyright (C) 1999 VA Linux Systems
  * Copyright (C) 1999 Walt Drummond <drummond@valinux.com>
@@ -667,23 +667,38 @@ dont_preserve_current_frame:
 	/*
 	 * To prevent leaking bits between the kernel and user-space,
 	 * we must clear the stacked registers in the "invalid" partition here.
-	 * Not pretty, but at least it's fast (3.34 registers/cycle).
-	 * Architecturally, this loop could go at 4.67 registers/cycle, but that would
-	 * oversubscribe Itanium.
+	 * Not pretty, but at least it's fast (3.34 registers/cycle on Itanium,
+	 * 5 registers/cycle on McKinley).
 	 */
 #	define pRecurse	p6
 #	define pReturn	p7
+#ifdef CONFIG_ITANIUM
 #	define Nregs	10
+#else
+#	define Nregs	14
+#endif
 	alloc loc0=ar.pfs,2,Nregs-2,2,0
 	shr.u loc1=r18,9		// RNaTslots <= dirtySize / (64*8) + 1
 	sub r17=r17,r18			// r17 = (physStackedSize + 8) - dirtySize
 	;;
+#if 1
+	.align 32		// see comment below about gas bug...
+#endif
 	mov ar.rsc=r19			// load ar.rsc to be used for "loadrs"
 	shladd in0=loc1,3,r17
 	mov in1=0
+#if 0
+	// gas-2.11.90 is unable to generate a stop bit after .align, which is bad,
+	// because alloc must be at the beginning of an insn-group.
+	.align 32
+#else
+	nop 0
+	nop 0
+	nop 0
+#endif
 	;;
-//	.align 32	// gas-2.11.90 is unable to generate a stop bit after .align
 rse_clear_invalid:
+#ifdef CONFIG_ITANIUM
 	// cycle 0
  { .mii
 	alloc loc0=ar.pfs,2,Nregs-2,2,0
@@ -712,9 +727,31 @@ rse_clear_invalid:
 	mov loc7=0
 (pReturn) br.ret.sptk.many b6
 }
+#else /* !CONFIG_ITANIUM */
+	alloc loc0=ar.pfs,2,Nregs-2,2,0
+	cmp.lt pRecurse,p0=Nregs*8,in0	// if more than Nregs regs left to clear, (re)curse
+	add out0=-Nregs*8,in0
+	add out1=1,in1			// increment recursion count
+	mov loc1=0
+	mov loc2=0
+	;;
+	mov loc3=0
+	mov loc4=0
+	mov loc9=0
+	mov loc5=0
+	mov loc6=0
+(pRecurse) br.call.sptk.many b6=rse_clear_invalid
+	;;
+	mov loc7=0
+	mov loc8=0
+	cmp.ne pReturn,p0=r0,in1	// if recursion count != 0, we need to do a br.ret
+	mov loc10=0
+	mov loc11=0
+(pReturn) br.ret.sptk.many b6
+#endif /* !CONFIG_ITANIUM */
 #	undef pRecurse
 #	undef pReturn
-
+	;;
 	alloc r17=ar.pfs,0,0,0,0	// drop current register frame
 	;;
 	loadrs

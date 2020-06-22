@@ -61,6 +61,8 @@
 #include <linux/usbdevice_fs.h>
 #include <asm/uaccess.h>
 
+#include "hcd.h"
+
 #define MAX_TOPO_LEVEL		6
 
 /* Define ALLOW_SERIAL_NUMBER if you want to see the serial number of devices */

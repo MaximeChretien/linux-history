@@ -97,7 +97,8 @@ int sym53c8xx_release(struct Scsi_Host *);
 			sg_tablesize:   SCSI_NCR_SG_TABLESIZE,	\
 			cmd_per_lun:    SCSI_NCR_CMD_PER_LUN,	\
 			max_sectors:    MAX_SEGMENTS*8,		\
-			use_clustering: DISABLE_CLUSTERING} 
+			use_clustering: DISABLE_CLUSTERING,	\
+			highmem_io:	1}
 
 #else
 

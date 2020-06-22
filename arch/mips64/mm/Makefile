@@ -11,11 +11,15 @@ obj-y				:= extable.o init.o fault.o loadmmu.o
 
 obj-$(CONFIG_CPU_R4300)		+= r4xx0.o tlbex-r4k.o tlb-glue-r4k.o
 obj-$(CONFIG_CPU_R4X00)		+= r4xx0.o tlbex-r4k.o tlb-glue-r4k.o
-obj-$(CONFIG_CPU_R5000)		+= r4xx0.o tlbex-r4k.o tlb-glue-r4k.o
-obj-$(CONFIG_CPU_NEVADA)	+= r4xx0.o tlbex-r4k.o tlb-glue-r4k.o
+obj-$(CONFIG_CPU_R5000)		+= r4xx0.o tlbex-r4k.o tlb-glue-r4k.o \
+				   r5k-sc.o
+obj-$(CONFIG_CPU_NEVADA)	+= r4xx0.o tlbex-r4k.o tlb-glue-r4k.o \
+				   r5k-sc.o
 obj-$(CONFIG_CPU_R10000)	+= andes.o tlbex-r4k.o tlb-glue-r4k.o
 obj-$(CONFIG_CPU_SB1)		+= pg-sb1.o c-sb1.o tlb-sb1.o tlbex-r4k.o \
 				   tlb-glue-r4k.o
+obj-$(CONFIG_CPU_MIPS64)	+= pg-mips64.o c-mips64.o tlb-r4k.o \
+				   tlbex-r4k.o tlb-glue-r4k.o
 
 #
 # Debug TLB exception handler, currently unused
@@ -24,6 +28,6 @@ obj-$(CONFIG_CPU_SB1)		+= pg-sb1.o c-sb1.o tlb-sb1.o tlbex-r4k.o \
 
 obj-$(CONFIG_SGI_IP22)		+= umap.o
 
-CFLAGS_tlb-glue-r4k.o := -P
+AFLAGS_tlb-glue-r4k.o := -P
 
 include $(TOPDIR)/Rules.make

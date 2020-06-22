@@ -102,8 +102,6 @@ static U32 DriverControlWord;
 
 static void rc_timer (unsigned long);
 
-static int RCinit (struct net_device *);
-
 static int RCopen (struct net_device *);
 static int RC_xmit_packet (struct sk_buff *, struct net_device *);
 static void RCinterrupt (int, void *, struct pt_regs *);
@@ -167,7 +165,7 @@ rcpci45_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * API private area, which requires a minimum of 16KB.  The top 
 	 * of the allocated area will be assigned to struct net_device; 
 	 * the next chunk will be assigned to DPA; and finally, the rest 
-	 * will be assigned to the the LAN API layer.
+	 * will be assigned to the LAN API layer.
 	 */
 
 	dev = init_etherdev (NULL, sizeof (*pDpa));
@@ -188,7 +186,7 @@ rcpci45_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 	error = -ENOMEM;
 	pci_start = pci_resource_start (pdev, 0);
 	pci_len = pci_resource_len (pdev, 0);
-	printk("pci_start %x pci_len %x\n", pci_start, pci_len);
+	printk("pci_start %lx pci_len %lx\n", pci_start, pci_len);
 
 	pci_set_drvdata (pdev, dev);
 

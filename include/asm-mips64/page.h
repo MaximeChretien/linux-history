@@ -32,6 +32,10 @@ void sb1_copy_page(void * to, void * from);
 
 extern void (*_clear_page)(void * page);
 extern void (*_copy_page)(void * to, void * from);
+extern void mips64_clear_page_dc(unsigned long page);
+extern void mips64_clear_page_sc(unsigned long page);
+extern void mips64_copy_page_dc(unsigned long to, unsigned long from);
+extern void mips64_copy_page_sc(unsigned long to, unsigned long from);
 
 #define clear_page(page)	_clear_page(page)
 #define copy_page(to, from)	_copy_page(to, from)
@@ -50,6 +54,8 @@ typedef struct { unsigned long pgprot; } pgprot_t;
 #define pmd_val(x)	((x).pmd)
 #define pgd_val(x)	((x).pgd)
 #define pgprot_val(x)	((x).pgprot)
+
+#define ptep_buddy(x)	((pte_t *)((unsigned long)(x) ^ sizeof(pte_t)))
 
 #define __pte(x)	((pte_t) { (x) } )
 #define __pmd(x)	((pmd_t) { (x) } )
@@ -83,12 +89,15 @@ extern __inline__ int get_order(unsigned long size)
 #if defined(CONFIG_SGI_IP22) || defined(CONFIG_MIPS_ATLAS) || \
     defined(CONFIG_MIPS_MALTA)
 #define PAGE_OFFSET	0xffffffff80000000UL
+#define UNCAC_BASE	0xffffffffa0000000UL
 #endif
 #if defined(CONFIG_SGI_IP32)
 #define PAGE_OFFSET	0x9800000000000000UL
+#define UNCAC_BASE	0x9000000000000000UL
 #endif
 #if defined(CONFIG_SGI_IP27)
 #define PAGE_OFFSET	0xa800000000000000UL
+#define UNCAC_BASE	0x9000000000000000UL
 #endif
 #if defined(CONFIG_SIBYTE_SB1250)
 #define PAGE_OFFSET	0xa800000000000000UL
@@ -100,6 +109,9 @@ extern __inline__ int get_order(unsigned long size)
 #define virt_to_page(kaddr)	(mem_map + (__pa(kaddr) >> PAGE_SHIFT))
 #define VALID_PAGE(page)	((page - mem_map) < max_mapnr)
 #endif
+
+#define UNCAC_ADDR(addr)	((addr) - PAGE_OFFSET + UNCAC_BASE)
+#define CAC_ADDR(addr)		((addr) - UNCAC_BASE + PAGE_OFFSET)
 
 #define VM_DATA_DEFAULT_FLAGS	(VM_READ | VM_WRITE | VM_EXEC | \
 				 VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC)

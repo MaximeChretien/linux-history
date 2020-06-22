@@ -22,22 +22,22 @@
 #ifndef __ASSEMBLY__
 
 #if defined(CONFIG_OAK)
-#include <asm/oak.h>
+#include <platforms/oak.h>
 #endif
 
 #if defined(CONFIG_WALNUT)
-#include <asm/walnut.h>
+#include <platforms/walnut.h>
 #endif
 
 /* IO_BASE is for PCI I/O.
  * ISA not supported, just here to resolve copilation.
  */
 
+#ifndef _IO_BASE
 #define _IO_BASE	0xe8000000	/* The PCI address window */
 #define _ISA_MEM_BASE	0
 #define PCI_DRAM_OFFSET	0
-
-extern unsigned long isa_io_base;
+#endif
 
 /*
  * The "residual" board information structure the boot loader passes

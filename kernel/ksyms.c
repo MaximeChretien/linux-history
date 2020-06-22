@@ -47,6 +47,7 @@
 #include <linux/in6.h>
 #include <linux/completion.h>
 #include <linux/seq_file.h>
+#include <linux/dnotify.h>
 #include <asm/checksum.h>
 
 #if defined(CONFIG_PROC_FS)
@@ -104,6 +105,7 @@ EXPORT_SYMBOL(kmem_cache_destroy);
 EXPORT_SYMBOL(kmem_cache_shrink);
 EXPORT_SYMBOL(kmem_cache_alloc);
 EXPORT_SYMBOL(kmem_cache_free);
+EXPORT_SYMBOL(kmem_cache_size);
 EXPORT_SYMBOL(kmalloc);
 EXPORT_SYMBOL(kfree);
 EXPORT_SYMBOL(vfree);
@@ -122,6 +124,8 @@ EXPORT_SYMBOL(kmap_high);
 EXPORT_SYMBOL(kunmap_high);
 EXPORT_SYMBOL(highmem_start_page);
 EXPORT_SYMBOL(create_bounce);
+EXPORT_SYMBOL(kmap_prot);
+EXPORT_SYMBOL(kmap_pte);
 #endif
 
 /* filesystem internal functions */
@@ -258,7 +262,7 @@ EXPORT_SYMBOL(poll_freewait);
 EXPORT_SYMBOL(ROOT_DEV);
 EXPORT_SYMBOL(__find_get_page);
 EXPORT_SYMBOL(__find_lock_page);
-EXPORT_SYMBOL(grab_cache_page);
+EXPORT_SYMBOL(find_or_create_page);
 EXPORT_SYMBOL(grab_cache_page_nowait);
 EXPORT_SYMBOL(read_cache_page);
 EXPORT_SYMBOL(set_page_dirty);
@@ -447,7 +451,8 @@ EXPORT_SYMBOL(interruptible_sleep_on);
 EXPORT_SYMBOL(interruptible_sleep_on_timeout);
 EXPORT_SYMBOL(schedule);
 EXPORT_SYMBOL(schedule_timeout);
-EXPORT_SYMBOL(sys_sched_yield);
+EXPORT_SYMBOL(yield);
+EXPORT_SYMBOL(__cond_resched);
 EXPORT_SYMBOL(jiffies);
 EXPORT_SYMBOL(xtime);
 EXPORT_SYMBOL(do_gettimeofday);
@@ -527,6 +532,7 @@ EXPORT_SYMBOL(make_bad_inode);
 EXPORT_SYMBOL(is_bad_inode);
 EXPORT_SYMBOL(event);
 EXPORT_SYMBOL(brw_page);
+EXPORT_SYMBOL(__inode_dir_notify);
 
 #ifdef CONFIG_UID16
 EXPORT_SYMBOL(overflowuid);
@@ -570,3 +576,6 @@ EXPORT_SYMBOL(init_task_union);
 
 EXPORT_SYMBOL(tasklist_lock);
 EXPORT_SYMBOL(pidhash);
+
+/* debug */
+EXPORT_SYMBOL(dump_stack);

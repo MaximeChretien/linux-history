@@ -9,11 +9,15 @@ bool 'Wan interfaces support' CONFIG_WAN
 if [ "$CONFIG_WAN" = "y" ]; then
 # There is no way to detect a comtrol sv11 - force it modular for now.
 
+if [ "$CONFIG_ISA" = "y" ]; then
+
    dep_tristate '  Comtrol Hostess SV-11 support' CONFIG_HOSTESS_SV11 m
 
 # The COSA/SRP driver has not been tested as non-modular yet.
 
    dep_tristate '  COSA/SRP sync serial boards support' CONFIG_COSA m
+
+fi
 
 #
 # COMX drivers
@@ -95,9 +99,9 @@ if [ "$CONFIG_WAN" = "y" ]; then
 	    bool '      WANPIPE Multi-Port PPP support' CONFIG_WANPIPE_MULTPPP
 	 fi
 	 if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
-	    dep_tristate '    Cyclom 2X(tm) cards (EXPERIMENTAL)' CONFIG_CYCLADES_SYNC $CONFIG_WAN_ROUTER_DRIVERS
+	    dep_tristate '    Cyclom 2X(tm) cards (EXPERIMENTAL)' CONFIG_CYCLADES_SYNC $CONFIG_WAN_ROUTER_DRIVERS $CONFIG_ISA
 	    if [ "$CONFIG_CYCLADES_SYNC" != "n" ]; then
-	       bool '      Cyclom 2X X.25 support' CONFIG_CYCLOMX_X25
+	       bool '      Cyclom 2X X.25 support (EXPERIMENTAL)' CONFIG_CYCLOMX_X25
 	    fi
 	 fi
       fi

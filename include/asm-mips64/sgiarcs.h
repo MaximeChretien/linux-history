@@ -13,6 +13,7 @@
 #define _ASM_SGIARCS_H
 
 #include <linux/config.h>
+#include <asm/types.h>
 #include <asm/arc/types.h>
 
 /* Various ARCS error codes. */
@@ -115,7 +116,7 @@ enum arc_memtypes {
 	arc_prog,    /* A loaded program resides here */
 	arc_atmp,    /* temporary storage area */
 	arc_aperm,   /* permanent storage */
-	arc_fcontig, /* Contiguous and free */    
+	arc_fcontig, /* Contiguous and free */
 };
 
 union linux_memtypes {
@@ -164,11 +165,11 @@ enum linux_mountops {
 /* This prom has a bolixed design. */
 struct linux_bigint {
 #ifdef __MIPSEL__
-	unsigned long lo;
-	long hi;
+	u32 lo;
+	s32 hi;
 #else /* !(__MIPSEL__) */
-	long hi;
-	unsigned long lo;
+	s32 hi;
+	u32 lo;
 #endif
 };
 

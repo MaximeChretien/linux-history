@@ -38,7 +38,7 @@
 #define __access_ok(addr,size) (__kernel_ok || __user_ok((addr),(size)))
 #define access_ok(type,addr,size) __access_ok((unsigned long)(addr),(size))
 
-extern inline int verify_area(int type, const void * addr, unsigned long size)
+static inline int verify_area(int type, const void * addr, unsigned long size)
 {
 	return access_ok(type,addr,size) ? 0 : -EFAULT;
 }
@@ -124,9 +124,6 @@ do {								\
 	}							\
 } while (0)
 
-struct __large_struct { unsigned long buf[100]; };
-#define __m(x) (*(struct __large_struct *)(x))
-
 /*
  * We don't tell gcc that we are accessing memory, but this is OK
  * because we do not write to any memory gcc knows about, so there
@@ -200,7 +197,7 @@ do {								\
 
 extern unsigned long __copy_tofrom_user(void *to, const void *from, unsigned long size);
 
-extern inline unsigned long
+static inline unsigned long
 copy_from_user(void *to, const void *from, unsigned long n)
 {
 	unsigned long over;
@@ -214,7 +211,7 @@ copy_from_user(void *to, const void *from, unsigned long n)
 	return n;
 }
 
-extern inline unsigned long
+static inline unsigned long
 copy_to_user(void *to, const void *from, unsigned long n)
 {
 	unsigned long over;
@@ -235,17 +232,21 @@ copy_to_user(void *to, const void *from, unsigned long n)
 
 extern unsigned long __clear_user(void *addr, unsigned long size);
 
-extern inline unsigned long
+static inline unsigned long
 clear_user(void *addr, unsigned long size)
 {
 	if (access_ok(VERIFY_WRITE, addr, size))
 		return __clear_user(addr, size);
-	return size? -EFAULT: 0;
+	if ((unsigned long)addr < TASK_SIZE) {
+		unsigned long over = (unsigned long)addr + size - TASK_SIZE;
+		return __clear_user(addr, size - over) + over;
+	}
+	return size;
 }
 
 extern int __strncpy_from_user(char *dst, const char *src, long count);
 
-extern inline long
+static inline long
 strncpy_from_user(char *dst, const char *src, long count)
 {
 	if (access_ok(VERIFY_READ, src, 1))
@@ -269,7 +270,7 @@ extern int __strnlen_user(const char *str, long len, unsigned long top);
  * The `top' parameter to __strnlen_user is to make sure that
  * we can never overflow from the user area into kernel space.
  */
-extern __inline__ int strnlen_user(const char *str, long len)
+static inline int strnlen_user(const char *str, long len)
 {
 	unsigned long top = __kernel_ok? ~0UL: TASK_SIZE - 1;
 

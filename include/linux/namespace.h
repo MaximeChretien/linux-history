@@ -9,6 +9,8 @@ struct namespace {
 	struct rw_semaphore	sem;
 };
 
+extern void umount_tree(struct vfsmount *);
+
 static inline void put_namespace(struct namespace *namespace)
 {
 	if (atomic_dec_and_test(&namespace->count)) {

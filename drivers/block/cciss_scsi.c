@@ -233,8 +233,8 @@ scsi_cmd_stack_free(int ctlr)
 		printk( "cciss: %d scsi commands are still outstanding.\n",
 			CMD_STACK_SIZE - stk->top);
 		// BUG();
-		printk("WE HAVE A BUG HERE!!! stk=0x%08x\n",
-			(unsigned int) stk);
+		printk("WE HAVE A BUG HERE!!! stk=%p\n",
+			stk);
 	}
 	size = sizeof(struct cciss_scsi_cmd_stack_elem_t) * CMD_STACK_SIZE;
 
@@ -1578,7 +1578,7 @@ static void
 cciss_proc_tape_report(int ctlr, unsigned char *buffer, off_t *pos, off_t *len)
 {
 	int size;
-	unsigned int flags;
+	unsigned long flags;
 
 	*pos = *pos -1; *len = *len - 1; // cut off the last trailing newline
 

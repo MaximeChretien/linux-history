@@ -32,7 +32,7 @@
  * for us during initialization.  I have the necessary docs -- any takers?  -ml
  */
 /*
- * I did this, but it doesnt work - there is no reasonable way to find the
+ * I did this, but it doesn't work - there is no reasonable way to find the
  * correspondence between the BIOS numbering of the disks and the Linux
  * numbering. -aeb
  *

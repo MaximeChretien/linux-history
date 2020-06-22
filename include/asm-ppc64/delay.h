@@ -13,6 +13,7 @@
  * Anton Blanchard.
  */
 
+#ifndef __ASSEMBLY__
 extern unsigned long tb_ticks_per_usec;
 
 /* define these here to prevent circular dependencies */ 
@@ -42,5 +43,6 @@ static inline void udelay(unsigned long usecs)
 	__delay(loops);
 	__HMT_medium();
 }
+#endif /* !__ASSEMBLY__ */
 
 #endif /* _PPC64_DELAY_H */

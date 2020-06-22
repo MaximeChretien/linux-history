@@ -57,6 +57,8 @@
 
 #include <linux/pm.h>
 
+#include "hcd.h"
+
 /*
  * Version Information
  */
@@ -100,6 +102,11 @@ static void wakeup_hc(struct uhci *uhci);
 #define IDLE_TIMEOUT	(HZ / 20)	/* 50 ms */
 #define FSBR_DELAY	(HZ / 20)	/* 50 ms */
 
+/* When we timeout an idle transfer for FSBR, we'll switch it over to */
+/* depth first traversal. We'll do it in groups of this number of TD's */
+/* to make sure it doesn't hog all of the bandwidth */
+#define DEPTH_INTERVAL	5
+
 #define MAX_URB_LOOP	2048		/* Maximum number of linked URB's */
 
 /*
@@ -115,12 +122,20 @@ static int uhci_free_dev(struct usb_device *dev)
 	return 0;
 }
 
+/*
+ * Technically, updating td->status here is a race, but it's not really a
+ * problem. The worst that can happen is that we set the IOC bit again
+ * generating a spurios interrupt. We could fix this by creating another
+ * QH and leaving the IOC bit always set, but then we would have to play
+ * games with the FSBR code to make sure we get the correct order in all
+ * the cases. I don't think it's worth the effort
+ */
 static inline void uhci_set_next_interrupt(struct uhci *uhci)
 {
 	unsigned long flags;
 
 	spin_lock_irqsave(&uhci->frame_list_lock, flags);
-	set_bit(TD_CTRL_IOC_BIT, &uhci->skel_term_td->status);
+	uhci->skel_term_td->status |= TD_CTRL_IOC;
 	spin_unlock_irqrestore(&uhci->frame_list_lock, flags);
 }
 
@@ -129,7 +144,7 @@ static inline void uhci_clear_next_interrupt(struct uhci *uhci)
 	unsigned long flags;
 
 	spin_lock_irqsave(&uhci->frame_list_lock, flags);
-	clear_bit(TD_CTRL_IOC_BIT, &uhci->skel_term_td->status);
+	uhci->skel_term_td->status &= ~TD_CTRL_IOC;
 	spin_unlock_irqrestore(&uhci->frame_list_lock, flags);
 }
 
@@ -474,9 +489,9 @@ static int uhci_fixup_toggle(struct urb *urb, unsigned int toggle)
 		tmp = tmp->next;
 
 		if (toggle)
-			set_bit(TD_TOKEN_TOGGLE, &td->info);
+			td->info |= TD_TOKEN_TOGGLE;
 		else
-			clear_bit(TD_TOKEN_TOGGLE, &td->info);
+			td->info &= ~TD_TOKEN_TOGGLE;
 
 		toggle ^= 1;
 	}
@@ -649,7 +664,7 @@ static struct urb_priv *uhci_alloc_urb_priv(struct uhci *uhci, struct urb *urb)
 
 		if (usb_pipetype(urb->pipe) == PIPE_CONTROL && urb->setup_packet) {
 			urbp->setup_packet_dma_handle = pci_map_single(uhci->dev,
-				urb->setup_packet, sizeof(devrequest),
+				urb->setup_packet, sizeof(struct usb_ctrlrequest),
 				PCI_DMA_TODEVICE);
 			if (!urbp->setup_packet_dma_handle)
 				return NULL;
@@ -724,7 +739,7 @@ static void uhci_destroy_urb_priv(struct urb *urb)
 
 	if (urbp->setup_packet_dma_handle) {
 		pci_unmap_single(uhci->dev, urbp->setup_packet_dma_handle,
-			sizeof(devrequest), PCI_DMA_TODEVICE);
+			sizeof(struct usb_ctrlrequest), PCI_DMA_TODEVICE);
 		urbp->setup_packet_dma_handle = 0;
 	}
 
@@ -857,7 +872,7 @@ static int uhci_submit_control(struct urb *urb)
 			return -ENOMEM;
 
 		/* Alternate Data0/1 (start with Data1) */
-		destination ^= 1 << TD_TOKEN_TOGGLE;
+		destination ^= TD_TOKEN_TOGGLE;
 	
 		uhci_add_td_to_urb(urb, td);
 		uhci_fill_td(td, status, destination | ((pktsze - 1) << 21),
@@ -884,7 +899,7 @@ static int uhci_submit_control(struct urb *urb)
 	else
 		destination |= USB_PID_OUT;
 
-	destination |= 1 << TD_TOKEN_TOGGLE;		/* End in Data1 */
+	destination |= TD_TOKEN_TOGGLE;		/* End in Data1 */
 
 	status &= ~TD_CTRL_SPD;
 
@@ -952,14 +967,6 @@ static int uhci_result_control(struct urb *urb)
 		td = list_entry(tmp, struct uhci_td, list);
 
 		tmp = tmp->next;
-
-		if (urbp->fsbr_timeout && (td->status & TD_CTRL_IOC) &&
-		    !(td->status & TD_CTRL_ACTIVE)) {
-			uhci_inc_fsbr(urb->dev->bus->hcpriv, urb);
-			urbp->fsbr_timeout = 0;
-			urbp->fsbrtime = jiffies;
-			clear_bit(TD_CTRL_IOC_BIT, &td->status);
-		}
 
 		status = uhci_status_bits(td->status);
 		if (status & TD_CTRL_ACTIVE)
@@ -1097,7 +1104,7 @@ static int uhci_submit_interrupt(struct urb *urb)
 	if (!td)
 		return -ENOMEM;
 
-	destination |= (usb_gettoggle(urb->dev, usb_pipeendpoint(urb->pipe), usb_pipeout(urb->pipe)) << TD_TOKEN_TOGGLE);
+	destination |= (usb_gettoggle(urb->dev, usb_pipeendpoint(urb->pipe), usb_pipeout(urb->pipe)) << TD_TOKEN_TOGGLE_SHIFT);
 	destination |= ((urb->transfer_buffer_length - 1) << 21);
 
 	usb_dotoggle(urb->dev, usb_pipeendpoint(urb->pipe), usb_pipeout(urb->pipe));
@@ -1126,14 +1133,6 @@ static int uhci_result_interrupt(struct urb *urb)
 		td = list_entry(tmp, struct uhci_td, list);
 
 		tmp = tmp->next;
-
-		if (urbp->fsbr_timeout && (td->status & TD_CTRL_IOC) &&
-		    !(td->status & TD_CTRL_ACTIVE)) {
-			uhci_inc_fsbr(urb->dev->bus->hcpriv, urb);
-			urbp->fsbr_timeout = 0;
-			urbp->fsbrtime = jiffies;
-			clear_bit(TD_CTRL_IOC_BIT, &td->status);
-		}
 
 		status = uhci_status_bits(td->status);
 		if (status & TD_CTRL_ACTIVE)
@@ -1198,8 +1197,8 @@ static void uhci_reset_interrupt(struct urb *urb)
 	td = list_entry(urbp->td_list.next, struct uhci_td, list);
 
 	td->status = (td->status & 0x2F000000) | TD_CTRL_ACTIVE | TD_CTRL_IOC;
-	td->info &= ~(1 << TD_TOKEN_TOGGLE);
-	td->info |= (usb_gettoggle(urb->dev, usb_pipeendpoint(urb->pipe), usb_pipeout(urb->pipe)) << TD_TOKEN_TOGGLE);
+	td->info &= ~TD_TOKEN_TOGGLE;
+	td->info |= (usb_gettoggle(urb->dev, usb_pipeendpoint(urb->pipe), usb_pipeout(urb->pipe)) << TD_TOKEN_TOGGLE_SHIFT);
 	usb_dotoggle(urb->dev, usb_pipeendpoint(urb->pipe), usb_pipeout(urb->pipe));
 
 out:
@@ -1255,7 +1254,7 @@ static int uhci_submit_bulk(struct urb *urb, struct urb *eurb)
 		uhci_fill_td(td, status, destination |
 			(((pktsze - 1) & UHCI_NULL_DATA_SIZE) << 21) |
 			(usb_gettoggle(urb->dev, usb_pipeendpoint(urb->pipe),
-			 usb_pipeout(urb->pipe)) << TD_TOKEN_TOGGLE),
+			 usb_pipeout(urb->pipe)) << TD_TOKEN_TOGGLE_SHIFT),
 			data);
 
 		data += pktsze;
@@ -1283,7 +1282,7 @@ static int uhci_submit_bulk(struct urb *urb, struct urb *eurb)
 		uhci_fill_td(td, status, destination |
 			(UHCI_NULL_DATA_SIZE << 21) |
 			(usb_gettoggle(urb->dev, usb_pipeendpoint(urb->pipe),
-			 usb_pipeout(urb->pipe)) << TD_TOKEN_TOGGLE),
+			 usb_pipeout(urb->pipe)) << TD_TOKEN_TOGGLE_SHIFT),
 			data);
 
 		usb_dotoggle(urb->dev, usb_pipeendpoint(urb->pipe),
@@ -1830,10 +1829,17 @@ static int uhci_fsbr_timeout(struct uhci *uhci, struct urb *urb)
 {
 	struct urb_priv *urbp = (struct urb_priv *)urb->hcpriv;
 	struct list_head *head, *tmp;
+	int count = 0;
 
 	uhci_dec_fsbr(uhci, urb);
 
 	urbp->fsbr_timeout = 1;
+
+	/*
+	 * Ideally we would want to fix qh->element as well, but it's
+	 * read/write by the HC, so that can introduce a race. It's not
+	 * really worth the hassle
+	 */
 
 	head = &urbp->td_list;
 	tmp = head->next;
@@ -1842,10 +1848,15 @@ static int uhci_fsbr_timeout(struct uhci *uhci, struct urb *urb)
 
 		tmp = tmp->next;
 
-		if (td->status & TD_CTRL_ACTIVE) {
-			set_bit(TD_CTRL_IOC_BIT, &td->status);
-			break;
-		}
+		/*
+		 * Make sure we don't do the last one (since it'll have the
+		 * TERM bit set) as well as we skip every so many TD's to
+		 * make sure it doesn't hog the bandwidth
+		 */
+		if (tmp != head && (count % DEPTH_INTERVAL) == (DEPTH_INTERVAL - 1))
+			td->link |= UHCI_PTR_DEPTH;
+
+		count++;
 	}
 
 	return 0;
@@ -2073,7 +2084,7 @@ static int rh_submit_urb(struct urb *urb)
 {
 	struct uhci *uhci = (struct uhci *)urb->dev->bus->hcpriv;
 	unsigned int pipe = urb->pipe;
-	devrequest *cmd = (devrequest *)urb->setup_packet;
+	struct usb_ctrlrequest *cmd = (struct usb_ctrlrequest *)urb->setup_packet;
 	void *data = urb->transfer_buffer;
 	int leni = urb->transfer_buffer_length;
 	int len = 0;
@@ -2096,10 +2107,10 @@ static int rh_submit_urb(struct urb *urb)
 		return -EINPROGRESS;
 	}
 
-	bmRType_bReq = cmd->requesttype | cmd->request << 8;
-	wValue = le16_to_cpu(cmd->value);
-	wIndex = le16_to_cpu(cmd->index);
-	wLength = le16_to_cpu(cmd->length);
+	bmRType_bReq = cmd->bRequestType | cmd->bRequest << 8;
+	wValue = le16_to_cpu(cmd->wValue);
+	wIndex = le16_to_cpu(cmd->wIndex);
+	wLength = le16_to_cpu(cmd->wLength);
 
 	for (i = 0; i < 8; i++)
 		uhci->rh.c_p_r[i] = 0;
@@ -2340,7 +2351,7 @@ static void uhci_call_completion(struct urb *urb)
 
 	if (urbp->setup_packet_dma_handle)
 		pci_dma_sync_single(uhci->dev, urbp->setup_packet_dma_handle,
-			sizeof(devrequest), PCI_DMA_TODEVICE);
+			sizeof(struct usb_ctrlrequest), PCI_DMA_TODEVICE);
 
 	status = urbp->status;
 	if (!resubmit_interrupt || killed)
@@ -2788,6 +2799,7 @@ static int alloc_uhci(struct pci_dev *dev, unsigned int io_addr, unsigned int io
 	}
 
 	uhci->bus = bus;
+	bus->bus_name = dev->slot_name;
 	bus->hcpriv = uhci;
 
 	usb_register_bus(uhci->bus);

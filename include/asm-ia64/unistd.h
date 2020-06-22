@@ -206,7 +206,12 @@
 #define __NR_getdents64			1214
 #define __NR_getunwind			1215
 #define __NR_readahead			1216
+/*
+ * 1217-1228: reserved for xattr
+ * 1230-1232: reserved for futex and sched_[sg]etaffinity.
+ */
 #define __NR_tkill			1229
+#define __NR_security			1233 /* syscall for security modules */
 
 #if !defined(__ASSEMBLY__) && !defined(ASSEMBLER)
 

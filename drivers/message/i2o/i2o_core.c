@@ -3390,8 +3390,9 @@ static int i2o_reboot_event(struct notifier_block *n, unsigned long code, void
 	{
 		if(i2o_quiesce_controller(c))
 		{
-			printk(KERN_WARNING "i2o: Could not quiesce %s."  "
-				Verify setup on next system power up.\n", c->name);
+			printk(KERN_WARNING "i2o: Could not quiesce %s.\n"
+			       "Verify setup on next system power up.\n",
+			       c->name);
 		}
 	}
 

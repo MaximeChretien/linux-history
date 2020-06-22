@@ -125,7 +125,7 @@ int xicor_set_time(unsigned long t)
 	/* trivial ones */
 	BIN_TO_BCD(tm.tm_sec);
 	xicor_write(X1241REG_SC, tm.tm_sec);
-	
+
 	BIN_TO_BCD(tm.tm_min);
 	xicor_write(X1241REG_MN, tm.tm_min);
 
@@ -189,7 +189,7 @@ unsigned long xicor_get_time(void)
 	mon = xicor_read(X1241REG_MO);
 	year = xicor_read(X1241REG_YR);
 	y2k = xicor_read(X1241REG_Y2K);
- 
+
 	BCD_TO_BIN(day);
 	BCD_TO_BIN(mon);
 	BCD_TO_BIN(year);

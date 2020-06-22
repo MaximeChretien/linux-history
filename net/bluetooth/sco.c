@@ -25,9 +25,9 @@
 /*
  * BlueZ SCO sockets.
  *
- * $Id: sco.c,v 1.3 2002/04/17 17:37:16 maxk Exp $
+ * $Id: sco.c,v 1.4 2002/07/22 20:32:54 maxk Exp $
  */
-#define VERSION "0.2"
+#define VERSION "0.3"
 
 #include <linux/config.h>
 #include <linux/module.h>
@@ -464,19 +464,17 @@ static int sco_sock_bind(struct socket *sock, struct sockaddr *addr, int addr_le
 		goto done;
 	}
 
-	write_lock(&sco_sk_list.lock);
+	write_lock_bh(&sco_sk_list.lock);
 
 	if (bacmp(src, BDADDR_ANY) && __sco_get_sock_by_addr(src)) {
 		err = -EADDRINUSE;
-		goto unlock;
+	} else {
+		/* Save source address */
+		bacpy(&bluez_pi(sk)->src, &sa->sco_bdaddr);
+		sk->state = BT_BOUND;
 	}
 
-	/* Save source address */
-	bacpy(&bluez_pi(sk)->src, &sa->sco_bdaddr);
-	sk->state = BT_BOUND;
-
-unlock:
-	write_unlock(&sco_sk_list.lock);
+	write_unlock_bh(&sco_sk_list.lock);
 
 done:
 	release_sock(sk);
@@ -897,7 +895,7 @@ static int sco_sock_dump(char *buf, struct bluez_sock_list *list)
 	struct sock *sk;
 	char *ptr = buf;
 
-	write_lock(&list->lock);
+	write_lock_bh(&list->lock);
 
 	for (sk = list->head; sk; sk = sk->next) {
 		pi = sco_pi(sk);
@@ -906,7 +904,7 @@ static int sco_sock_dump(char *buf, struct bluez_sock_list *list)
 				sk->state); 
 	}
 
-	write_unlock(&list->lock);
+	write_unlock_bh(&list->lock);
 
 	ptr += sprintf(ptr, "\n");
 

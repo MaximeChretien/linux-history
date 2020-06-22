@@ -110,7 +110,7 @@ static char capi_manufakturer[64] = "AVM Berlin";
 
 #define VALID_CARD(c)	   ((c) > 0 && (c) <= CAPI_MAXCONTR)
 #define CARD(c)		   (&cards[(c)-1])
-#define CARDNR(cp)	   (((cp)-cards)+1)
+#define CARDNR(cp)	   ((((cp)-cards)+1) & 0xff)
 
 static struct capi_appl applications[CAPI_MAXAPPL];
 static struct capi_ctr cards[CAPI_MAXCONTR];

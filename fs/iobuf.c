@@ -10,6 +10,9 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 
+
+static kmem_cache_t *kiobuf_cachep;
+
 void end_kio_request(struct kiobuf *kiobuf, int uptodate)
 {
 	if ((!uptodate) && !kiobuf->errno)
@@ -22,39 +25,67 @@ void end_kio_request(struct kiobuf *kiobuf, int uptodate)
 	}
 }
 
-static void kiobuf_init(struct kiobuf *iobuf)
+static int kiobuf_init(struct kiobuf *iobuf)
 {
 	init_waitqueue_head(&iobuf->wait_queue);
-	iobuf->array_len = KIO_STATIC_PAGES;
-	iobuf->maplist = iobuf->map_array;
+	iobuf->array_len = 0;
 	iobuf->nr_pages = 0;
 	iobuf->locked = 0;
+	iobuf->bh = NULL;
+	iobuf->blocks = NULL;
 	atomic_set(&iobuf->io_count, 0);
 	iobuf->end_io = NULL;
+	return expand_kiobuf(iobuf, KIO_STATIC_PAGES);
 }
 
 int alloc_kiobuf_bhs(struct kiobuf * kiobuf)
 {
 	int i;
 
-	for (i = 0; i < KIO_MAX_SECTORS; i++)
-		if (!(kiobuf->bh[i] = kmem_cache_alloc(bh_cachep, SLAB_KERNEL))) {
-			while (i--) {
-				kmem_cache_free(bh_cachep, kiobuf->bh[i]);
-				kiobuf->bh[i] = NULL;
-			}
-			return -ENOMEM;
-		}
+	kiobuf->blocks =
+		kmalloc(sizeof(*kiobuf->blocks) * KIO_MAX_SECTORS, GFP_KERNEL);
+	if (unlikely(!kiobuf->blocks))
+		goto nomem;
+	kiobuf->bh =
+		kmalloc(sizeof(*kiobuf->bh) * KIO_MAX_SECTORS, GFP_KERNEL);
+	if (unlikely(!kiobuf->bh))
+		goto nomem;
+
+	for (i = 0; i < KIO_MAX_SECTORS; i++) {
+		kiobuf->bh[i] = kmem_cache_alloc(bh_cachep, GFP_KERNEL);
+		if (unlikely(!kiobuf->bh[i]))
+			goto nomem2;
+	}
+
 	return 0;
+
+nomem2:
+	while (i--) {
+		kmem_cache_free(bh_cachep, kiobuf->bh[i]);
+		kiobuf->bh[i] = NULL;
+	}
+	memset(kiobuf->bh, 0, sizeof(*kiobuf->bh) * KIO_MAX_SECTORS);
+
+nomem:
+	free_kiobuf_bhs(kiobuf);
+	return -ENOMEM;
 }
 
 void free_kiobuf_bhs(struct kiobuf * kiobuf)
 {
 	int i;
 
-	for (i = 0; i < KIO_MAX_SECTORS; i++) {
-		kmem_cache_free(bh_cachep, kiobuf->bh[i]);
-		kiobuf->bh[i] = NULL;
+	if (kiobuf->bh) {
+		for (i = 0; i < KIO_MAX_SECTORS; i++)
+			if (kiobuf->bh[i])
+				kmem_cache_free(bh_cachep, kiobuf->bh[i]);
+		kfree(kiobuf->bh);
+		kiobuf->bh = NULL;
+	}
+
+	if (kiobuf->blocks) {
+		kfree(kiobuf->blocks);
+		kiobuf->blocks = NULL;
 	}
 }
 
@@ -64,21 +95,23 @@ int alloc_kiovec(int nr, struct kiobuf **bufp)
 	struct kiobuf *iobuf;
 	
 	for (i = 0; i < nr; i++) {
-		iobuf = vmalloc(sizeof(struct kiobuf));
-		if (!iobuf) {
-			free_kiovec(i, bufp);
-			return -ENOMEM;
-		}
-		kiobuf_init(iobuf);
- 		if (alloc_kiobuf_bhs(iobuf)) {
-			vfree(iobuf);
- 			free_kiovec(i, bufp);
- 			return -ENOMEM;
- 		}
+		iobuf = kmem_cache_alloc(kiobuf_cachep, GFP_KERNEL);
+		if (unlikely(!iobuf))
+			goto nomem;
+		if (unlikely(kiobuf_init(iobuf)))
+			goto nomem2;
+ 		if (unlikely(alloc_kiobuf_bhs(iobuf)))
+			goto nomem2;
 		bufp[i] = iobuf;
 	}
 	
 	return 0;
+
+nomem2:
+	kmem_cache_free(kiobuf_cachep, iobuf);
+nomem:
+	free_kiovec(i, bufp);
+	return -ENOMEM;
 }
 
 void free_kiovec(int nr, struct kiobuf **bufp) 
@@ -90,10 +123,9 @@ void free_kiovec(int nr, struct kiobuf **bufp)
 		iobuf = bufp[i];
 		if (iobuf->locked)
 			unlock_kiovec(1, &iobuf);
-		if (iobuf->array_len > KIO_STATIC_PAGES)
-			kfree (iobuf->maplist);
+		kfree(iobuf->maplist);
 		free_kiobuf_bhs(iobuf);
-		vfree(bufp[i]);
+		kmem_cache_free(kiobuf_cachep, bufp[i]);
 	}
 }
 
@@ -104,27 +136,25 @@ int expand_kiobuf(struct kiobuf *iobuf, int wanted)
 	if (iobuf->array_len >= wanted)
 		return 0;
 	
-	maplist = (struct page **) 
-		kmalloc(wanted * sizeof(struct page **), GFP_KERNEL);
-	if (!maplist)
+	maplist = kmalloc(wanted * sizeof(struct page **), GFP_KERNEL);
+	if (unlikely(!maplist))
 		return -ENOMEM;
 
 	/* Did it grow while we waited? */
-	if (iobuf->array_len >= wanted) {
+	if (unlikely(iobuf->array_len >= wanted)) {
 		kfree(maplist);
 		return 0;
 	}
-	
-	memcpy (maplist, iobuf->maplist, iobuf->array_len * sizeof(struct page **));
 
-	if (iobuf->array_len > KIO_STATIC_PAGES)
-		kfree (iobuf->maplist);
+	if (iobuf->array_len) {
+		memcpy(maplist, iobuf->maplist, iobuf->array_len * sizeof(*maplist));
+		kfree(iobuf->maplist);
+	}
 	
 	iobuf->maplist   = maplist;
 	iobuf->array_len = wanted;
 	return 0;
 }
-
 
 void kiobuf_wait_for_io(struct kiobuf *kiobuf)
 {
@@ -147,5 +177,10 @@ repeat:
 	remove_wait_queue(&kiobuf->wait_queue, &wait);
 }
 
-
-
+void __init iobuf_cache_init(void)
+{
+	kiobuf_cachep = kmem_cache_create("kiobuf", sizeof(struct kiobuf),
+					  0, SLAB_HWCACHE_ALIGN, NULL, NULL);
+	if (!kiobuf_cachep)
+		panic("Cannot create kiobuf SLAB cache");
+}

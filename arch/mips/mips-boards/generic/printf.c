@@ -32,20 +32,20 @@
 #include <asm/serial.h>
 
 
-#ifdef CONFIG_MIPS_ATLAS 
-/* 
- * Atlas registers are memory mapped on 64-bit aligned boundaries and 
+#if defined(CONFIG_MIPS_ATLAS) || defined(CONFIG_MIPS_SEAD)
+/*
+ * Atlas registers are memory mapped on 64-bit aligned boundaries and
  * only word access are allowed.
  * When reading the UART 8 bit registers only the LSB are valid.
  */
 unsigned int atlas_serial_in(struct async_struct *info, int offset)
 {
-	return inl(info->port + offset*8) & 0xff;
+	return (*(volatile unsigned int *)(info->port + mips_io_port_base + offset*8) & 0xff);
 }
 
 void atlas_serial_out(struct async_struct *info, int offset, int value)
 {
-	outl(value, info->port + offset*8);
+	*(volatile unsigned int *)(info->port + mips_io_port_base + offset*8) = value;
 }
 
 #define serial_in  atlas_serial_in
@@ -70,8 +70,8 @@ static struct serial_state rs_table[] = {
 };
 
 /*
- * Hooks to fake "prom" console I/O before devices 
- * are fully initialized. 
+ * Hooks to fake "prom" console I/O before devices
+ * are fully initialized.
  */
 static struct async_struct prom_port_info = {0};
 

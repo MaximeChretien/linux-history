@@ -489,7 +489,7 @@ static void putc_apollofb(struct vc_data *conp, struct display *p, int c, int yy
 	fbcon_mfb_putc(conp,p,c,yy,xx);
 }
 
-static void putcs_apollofb(struct vc_data *conp, struct display *p, const char *s,
+static void putcs_apollofb(struct vc_data *conp, struct display *p, const unsigned short *s,
 		      int count, int yy, int xx)
 {
 	fbcon_mfb_putcs(conp,p,s,count,yy,xx);

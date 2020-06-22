@@ -72,11 +72,6 @@ static int rw_swap_page_base(int rw, swp_entry_t entry, struct page *page)
 
  	/* block_size == PAGE_SIZE/zones_used */
  	brw_page(rw, page, dev, zones, block_size);
-
- 	/* Note! For consistency we do all of the logic,
- 	 * decrementing the page count, and unlocking the page in the
- 	 * swap lock map - in the IO completion handler.
- 	 */
 	return 1;
 }
 

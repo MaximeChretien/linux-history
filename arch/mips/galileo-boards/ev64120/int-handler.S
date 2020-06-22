@@ -21,11 +21,11 @@
 		SAVE_ALL
 		CLI
 		.set	at
-		mfc0	t0,CP0_CAUSE  
+		mfc0	t0,CP0_CAUSE
 		mfc0	t2,CP0_STATUS
 
 		and	t0,t2
-        
+
 		andi	t1,t0,STATUSF_IP4 /* int2 hardware line (timer) */
 		bnez	t1,ll_galileo_irq
 		andi	t1,t0,STATUSF_IP2 /* int0 hardware line */
@@ -42,7 +42,7 @@
 		j	spurious_interrupt
 		nop
 		END(galileo_handle_int)
-	
+
 
 		.align	5
 		.set	reorder
@@ -57,7 +57,7 @@ ll_galileo_irq:
 		.align	5
 		.set	reorder
 ll_compare_irq:
-		li 	a0,7	
+		li 	a0,7
 		move	a1,sp
 		jal	do_IRQ
 		nop
@@ -76,7 +76,7 @@ ll_pci_intA:
 #if 0
 		.align	5
 		.set	reorder
-ll_pci_intB:	
+ll_pci_intB:
 		move 	a0,sp
 		jal	pci_intB
 		nop
@@ -85,14 +85,14 @@ ll_pci_intB:
 
 		.align	5
 		.set	reorder
-ll_pci_intC:	
+ll_pci_intC:
 		move 	a0,sp
 		jal	pci_intC
 		nop
 		j	ret_from_irq
 		nop
 #endif
-        
+
 		.align	5
 		.set	reorder
 ll_pci_intD:
@@ -101,10 +101,10 @@ ll_pci_intD:
 		nop
 		j	ret_from_irq
 		nop
-	
+
 		.align	5
 		.set	reorder
-ll_serial_irq:	
+ll_serial_irq:
 		li	a0,6
 		move	a1,sp
 		jal	do_IRQ

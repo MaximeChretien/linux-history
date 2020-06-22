@@ -14,17 +14,11 @@
  */
 #include <linux/config.h>
 
+#include <asm/kregs.h>
 #include <asm/page.h>
+#include <asm/pal.h>
 
 #define KERNEL_START		(PAGE_OFFSET + 68*1024*1024)
-
-/*
- * The following #defines must match with vmlinux.lds.S:
- */
-#define IVT_ADDR		(KERNEL_START)
-#define IVT_END_ADDR		(KERNEL_START + 0x8000)
-#define ZERO_PAGE_ADDR		PAGE_ALIGN(IVT_END_ADDR)
-#define SWAPPER_PGD_ADDR	(ZERO_PAGE_ADDR + 1*PAGE_SIZE)
 
 #define GATE_ADDR		(0xa000000000000000 + PAGE_SIZE)
 #define PERCPU_ADDR		(0xa000000000000000 + 2*PAGE_SIZE)
@@ -35,10 +29,11 @@
 #include <linux/types.h>
 
 struct pci_vector_struct {
+	__u16 segment;	/* PCI Segment number */
 	__u16 bus;	/* PCI Bus number */
 	__u32 pci_id;	/* ACPI split 16 bits device, 16 bits function (see section 6.1.1) */
 	__u8 pin;	/* PCI PIN (0 = A, 1 = B, 2 = C, 3 = D) */
-	__u8 irq;	/* IRQ assigned */
+	__u32 irq;	/* IRQ assigned */
 };
 
 extern struct ia64_boot_param {
@@ -109,6 +104,8 @@ ia64_insn_group_barrier (void)
 #define set_mb(var, value)	do { (var) = (value); mb(); } while (0)
 #define set_wmb(var, value)	do { (var) = (value); mb(); } while (0)
 
+#define safe_halt()         ia64_pal_halt(1)                /* PAL_HALT */
+
 /*
  * The group barrier in front of the rsm & ssm are necessary to ensure
  * that none of the previous instructions in the same group are
@@ -143,16 +140,21 @@ do {											\
 	}										\
 } while (0)
 
-# define local_irq_restore(x)						 \
-do {									 \
-	unsigned long ip, old_psr, psr = (x);				 \
-									 \
-	__asm__ __volatile__ (";;mov %0=psr; mov psr.l=%1;; srlz.d"	 \
-			      : "=&r" (old_psr) : "r" (psr) : "memory"); \
-	if ((old_psr & (1UL << 14)) && !(psr & (1UL << 14))) {		 \
-		__asm__ ("mov %0=ip" : "=r"(ip));			 \
-		last_cli_ip = ip;					 \
-	}								 \
+# define local_irq_restore(x)							\
+do {										\
+	unsigned long ip, old_psr, psr = (x);					\
+										\
+	__asm__ __volatile__ ("mov %0=psr;"					\
+			      "cmp.ne p6,p7=%1,r0;;"				\
+			      "(p6) ssm psr.i;"					\
+			      "(p7) rsm psr.i;;"				\
+			      "srlz.d"						\
+			      : "=&r" (old_psr) : "r"((psr) & IA64_PSR_I)	\
+			      : "p6", "p7", "memory");				\
+	if ((old_psr & IA64_PSR_I) && !(psr & IA64_PSR_I)) {			\
+		__asm__ ("mov %0=ip" : "=r"(ip));				\
+		last_cli_ip = ip;						\
+	}									\
 } while (0)
 
 #else /* !CONFIG_IA64_DEBUG_IRQ */
@@ -161,8 +163,12 @@ do {									 \
 						      : "=r" (x) :: "memory")
 # define local_irq_disable()	__asm__ __volatile__ (";; rsm psr.i;;" ::: "memory")
 /* (potentially) setting psr.i requires data serialization: */
-# define local_irq_restore(x)	__asm__ __volatile__ (";; mov psr.l=%0;; srlz.d"	\
-						      :: "r" (x) : "memory")
+# define local_irq_restore(x)	__asm__ __volatile__ ("cmp.ne p6,p7=%0,r0;;"		\
+						      "(p6) ssm psr.i;"			\
+						      "(p7) rsm psr.i;;"		\
+						      "srlz.d"				\
+						      :: "r"((x) & IA64_PSR_I)		\
+						      : "p6", "p7", "memory")
 #endif /* !CONFIG_IA64_DEBUG_IRQ */
 
 #define local_irq_enable()	__asm__ __volatile__ (";; ssm psr.i;; srlz.d" ::: "memory")
@@ -395,26 +401,39 @@ extern void ia64_load_extra (struct task_struct *task);
 } while (0)
 
 #ifdef CONFIG_SMP
-  /*
-   * In the SMP case, we save the fph state when context-switching
-   * away from a thread that modified fph.  This way, when the thread
-   * gets scheduled on another CPU, the CPU can pick up the state from
-   * task->thread.fph, avoiding the complication of having to fetch
-   * the latest fph state from another CPU.
-   */
-# define switch_to(prev,next,last) do {						\
-	if (ia64_psr(ia64_task_regs(prev))->mfh) {				\
-		ia64_psr(ia64_task_regs(prev))->mfh = 0;			\
-		(prev)->thread.flags |= IA64_THREAD_FPH_VALID;			\
-		__ia64_save_fpu((prev)->thread.fph);				\
-	}									\
-	ia64_psr(ia64_task_regs(prev))->dfh = 1;				\
-	__switch_to(prev,next,last);						\
+
+/* Return true if this CPU can call the console drivers in printk() */
+#define arch_consoles_callable() (cpu_online_map & (1UL << smp_processor_id()))
+
+/*
+ * In the SMP case, we save the fph state when context-switching
+ * away from a thread that modified fph.  This way, when the thread
+ * gets scheduled on another CPU, the CPU can pick up the state from
+ * task->thread.fph, avoiding the complication of having to fetch
+ * the latest fph state from another CPU.
+ */
+# define switch_to(prev,next,last) do {					\
+	if (ia64_psr(ia64_task_regs(prev))->mfh) {			\
+		ia64_psr(ia64_task_regs(prev))->mfh = 0;		\
+		(prev)->thread.flags |= IA64_THREAD_FPH_VALID;		\
+		__ia64_save_fpu((prev)->thread.fph);			\
+		(prev)->thread.last_fph_cpu = smp_processor_id();	\
+	}								\
+	if ((next)->thread.flags & IA64_THREAD_FPH_VALID) {		\
+		if (((next)->thread.last_fph_cpu == smp_processor_id()) \
+		    && (ia64_get_fpu_owner() == next)) {		\
+			ia64_psr(ia64_task_regs(next))->dfh = 0;	\
+			ia64_psr(ia64_task_regs(next))->mfh = 0;	\
+		} else {						\
+			ia64_psr(ia64_task_regs(next))->dfh = 1;	\
+		}							\
+	}								\
+	__switch_to(prev,next,last);					\
   } while (0)
 #else
-# define switch_to(prev,next,last) do {						\
+# define switch_to(prev,next,last) do {					\
 	ia64_psr(ia64_task_regs(next))->dfh = (ia64_get_fpu_owner() != (next));	\
-	__switch_to(prev,next,last);						\
+	__switch_to(prev,next,last);					\
 } while (0)
 #endif
 

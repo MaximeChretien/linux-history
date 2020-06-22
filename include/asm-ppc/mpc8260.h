@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.mpc8260.h 1.5 05/17/01 18:14:25 cort
+ * BK Id: %F% %I% %G% %U% %#%
  */
 
 /* This is the single file included by all MPC8260 build options.
@@ -17,7 +17,7 @@
 #ifdef CONFIG_8260
 
 #ifdef CONFIG_EST8260
-#include <asm/est8260.h>
+#include <platforms/est8260.h>
 #endif
 
 /* I don't yet have the ISA or PCI stuff done....no 8260 with
@@ -43,5 +43,5 @@ extern int request_8xxirq(unsigned int irq,
 		       void *dev_id);
 
 #endif /* CONFIG_8260 */
-#endif
+#endif /* !__CONFIG_8260_DEFS */
 #endif /* __KERNEL__ */

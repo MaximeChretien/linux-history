@@ -32,12 +32,17 @@
 #include <asm/io.h>
 #include <asm/smp.h>
 #include <asm/desc.h>
+#include <asm/smpboot.h>
 
 #undef APIC_LOCKUP_DEBUG
 
 #define APIC_LOCKUP_DEBUG
 
 static spinlock_t ioapic_lock = SPIN_LOCK_UNLOCKED;
+
+unsigned int int_dest_addr_mode = APIC_DEST_LOGICAL;
+unsigned char int_delivery_mode = dest_LowestPrio;
+
 
 /*
  * # of IRQ routing registers
@@ -625,10 +630,10 @@ void __init setup_IO_APIC_irqs(void)
 		 */
 		memset(&entry,0,sizeof(entry));
 
-		entry.delivery_mode = dest_LowestPrio;
-		entry.dest_mode = INT_DELIVERY_MODE;
+		entry.delivery_mode = INT_DELIVERY_MODE;
+		entry.dest_mode = (INT_DEST_ADDR_MODE != 0);
 		entry.mask = 0;				/* enable IRQ */
-		entry.dest.logical.logical_dest = TARGET_CPUS;
+		entry.dest.logical.logical_dest = target_cpus();
 
 		idx = find_irq_entry(apic,pin,mp_INT);
 		if (idx == -1) {
@@ -646,7 +651,6 @@ void __init setup_IO_APIC_irqs(void)
 		if (irq_trigger(idx)) {
 			entry.trigger = 1;
 			entry.mask = 1;
-			entry.dest.logical.logical_dest = TARGET_CPUS;
 		}
 
 		irq = pin_2_irq(idx, apic, pin);
@@ -654,7 +658,8 @@ void __init setup_IO_APIC_irqs(void)
 		 * skip adding the timer int on secondary nodes, which causes
 		 * a small but painful rift in the time-space continuum
 		 */
-		if (clustered_apic_mode && (apic != 0) && (irq == 0))
+		if ((clustered_apic_mode == CLUSTERED_APIC_NUMAQ) 
+			&& (apic != 0) && (irq == 0))
 			continue;
 		else
 			add_pin_to_irq(irq, apic, pin);
@@ -707,16 +712,16 @@ void __init setup_ExtINT_IRQ0_pin(unsigned int pin, int vector)
 	 * We use logical delivery to get the timer IRQ
 	 * to the first CPU.
 	 */
-	entry.dest_mode = INT_DELIVERY_MODE;
+	entry.dest_mode = (INT_DEST_ADDR_MODE != 0);
 	entry.mask = 0;					/* unmask IRQ now */
-	entry.dest.logical.logical_dest = TARGET_CPUS;
-	entry.delivery_mode = dest_LowestPrio;
+	entry.dest.logical.logical_dest = target_cpus();
+	entry.delivery_mode = INT_DELIVERY_MODE;
 	entry.polarity = 0;
 	entry.trigger = 0;
 	entry.vector = vector;
 
 	/*
-	 * The timer IRQ doesnt have to know that behind the
+	 * The timer IRQ doesn't have to know that behind the
 	 * scene we have a 8259A-master in AEOI mode ...
 	 */
 	irq_desc[0].handler = &ioapic_edge_irq_type;
@@ -1586,7 +1591,7 @@ static inline void check_timer(void)
 	printk(" failed.\n");
 
 	if (nmi_watchdog) {
-		printk(KERN_WARNING "timer doesnt work through the IO-APIC - disabling NMI Watchdog!\n");
+		printk(KERN_WARNING "timer doesn't work through the IO-APIC - disabling NMI Watchdog!\n");
 		nmi_watchdog = 0;
 	}
 

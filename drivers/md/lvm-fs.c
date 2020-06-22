@@ -1,9 +1,10 @@
 /*
  * kernel/lvm-fs.c
  *
- * Copyright (C) 2001 Sistina Software
+ * Copyright (C) 2001-2002 Sistina Software
  *
- * January-April 2001
+ * January-May,December 2001
+ * May 2002
  *
  * LVM driver is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -108,6 +109,9 @@ void lvm_fin_fs() {
 void lvm_fs_create_vg(vg_t *vg_ptr) {
 	struct proc_dir_entry *pde;
 
+	if (!vg_ptr)
+		return;
+
 	vg_devfs_handle[vg_ptr->vg_number] =
 		devfs_mk_dir(0, vg_ptr->vg_name, NULL);
 
@@ -135,21 +139,23 @@ void lvm_fs_create_vg(vg_t *vg_ptr) {
 void lvm_fs_remove_vg(vg_t *vg_ptr) {
 	int i;
 
+	if (!vg_ptr)
+		return;
+
 	devfs_unregister(ch_devfs_handle[vg_ptr->vg_number]);
 	ch_devfs_handle[vg_ptr->vg_number] = NULL;
-
-	/* remove pv's */
-	for(i = 0; i < vg_ptr->pv_max; i++)
-		if(vg_ptr->pv[i]) lvm_fs_remove_pv(vg_ptr, vg_ptr->pv[i]);
 
 	/* remove lv's */
 	for(i = 0; i < vg_ptr->lv_max; i++)
 		if(vg_ptr->lv[i]) lvm_fs_remove_lv(vg_ptr, vg_ptr->lv[i]);
 
-
 	/* must not remove directory before leaf nodes */
 	devfs_unregister(vg_devfs_handle[vg_ptr->vg_number]);
 	vg_devfs_handle[vg_ptr->vg_number] = NULL;
+
+	/* remove pv's */
+	for(i = 0; i < vg_ptr->pv_max; i++)
+		if(vg_ptr->pv[i]) lvm_fs_remove_pv(vg_ptr, vg_ptr->pv[i]);
 
 	if(vg_ptr->vg_dir_pde) {
 		remove_proc_entry(LVM_LV_SUBDIR, vg_ptr->vg_dir_pde);
@@ -174,7 +180,12 @@ static inline const char *_basename(const char *str) {
 
 devfs_handle_t lvm_fs_create_lv(vg_t *vg_ptr, lv_t *lv) {
 	struct proc_dir_entry *pde;
-	const char *name = _basename(lv->lv_name);
+	const char *name;
+
+	if (!vg_ptr || !lv)
+		return NULL;
+
+	name = _basename(lv->lv_name);
 
 	lv_devfs_handle[MINOR(lv->lv_dev)] = devfs_register(
 		vg_devfs_handle[vg_ptr->vg_number], name,
@@ -191,6 +202,10 @@ devfs_handle_t lvm_fs_create_lv(vg_t *vg_ptr, lv_t *lv) {
 }
 
 void lvm_fs_remove_lv(vg_t *vg_ptr, lv_t *lv) {
+
+	if (!vg_ptr || !lv)
+		return;
+
 	devfs_unregister(lv_devfs_handle[MINOR(lv->lv_dev)]);
 	lv_devfs_handle[MINOR(lv->lv_dev)] = NULL;
 
@@ -219,6 +234,9 @@ void lvm_fs_create_pv(vg_t *vg_ptr, pv_t *pv) {
 	struct proc_dir_entry *pde;
 	char name[NAME_LEN];
 
+	if (!vg_ptr || !pv)
+		return;
+
 	if(!vg_ptr->pv_subdir_pde)
 		return;
 
@@ -231,6 +249,9 @@ void lvm_fs_create_pv(vg_t *vg_ptr, pv_t *pv) {
 
 void lvm_fs_remove_pv(vg_t *vg_ptr, pv_t *pv) {
 	char name[NAME_LEN];
+
+	if (!vg_ptr || !pv)
+		return;
 
 	if(!vg_ptr->pv_subdir_pde)
 		return;

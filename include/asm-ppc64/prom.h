@@ -128,7 +128,6 @@ struct device_node {
 	int	busno;			/* for pci devices */
 	int	devfn;			/* for pci devices */
 	struct  pci_controller *phb;	/* for pci devices */
-	int	status;			/* current status of device */
 	struct	TceTable *tce_table;	/* for phb's or bridges */
 #define DN_STATUS_BIST_FAILED (1<<0)
 	struct	property *properties;
@@ -195,8 +194,5 @@ extern void print_properties(struct device_node *node);
 extern int prom_n_addr_cells(struct device_node* np);
 extern int prom_n_size_cells(struct device_node* np);
 extern void prom_get_irq_senses(unsigned char *senses, int off, int max);
-extern void prom_drawstring(const char *c);
-extern void prom_drawhex(unsigned long v);
-extern void prom_drawchar(char c);
 
 #endif /* _PPC64_PROM_H */

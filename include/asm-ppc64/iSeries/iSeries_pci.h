@@ -89,7 +89,8 @@ struct iSeries_Device_Node {
 	int              Flags;          /* Possible flags(disable/bist)*/
 	u16              Vendor;         /* Vendor ID                   */
 	u8               LogicalSlot;    /* Hv Slot Index for Tces      */
-	struct TceTable* DevTceTable;    /* Device TCE Table            */ 
+	struct TceTable* DevTceTable;    /* Device TCE Table            */
+	spinlock_t       IoLock;	 /* Lock to single thread device*/
 	u8               PhbId;          /* Phb Card is on.             */
 	u16              Board;          /* Board Number                */
 	u8               FrameId;	 /* iSeries spcn Frame Id       */

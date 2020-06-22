@@ -26,32 +26,11 @@ extern unsigned long tb_ticks_per_jiffy;
 extern unsigned long tb_ticks_per_usec;
 extern unsigned long tb_ticks_per_sec;
 extern unsigned long tb_to_xs;
-extern unsigned      tb_to_us;
 extern unsigned long tb_last_stamp;
 
 struct rtc_time;
 extern void to_tm(int tim, struct rtc_time * tm);
 extern time_t last_rtc_update;
-
-/*
- * By putting all of this stuff into a single struct we 
- * reduce the number of cache lines touched by do_gettimeofday.
- * Both by collecting all of the data in one cache line and
- * by touching only one TOC entry
- */
-struct gettimeofday_vars {
-	unsigned long tb_to_xs;
-	unsigned long stamp_xsec;
-};
-
-struct gettimeofday_struct {
-	unsigned long tb_orig_stamp;
-	unsigned long tb_ticks_per_sec;
-	struct gettimeofday_vars vars[2];
-	struct gettimeofday_vars * volatile varp;
-	unsigned      var_idx;
-	unsigned      tb_to_us;
-};
 
 struct div_result {
 	unsigned long result_high;
@@ -73,30 +52,28 @@ static __inline__ unsigned int get_dec(void)
 
 static __inline__ void set_dec(int val)
 {
+#ifdef CONFIG_PPC_ISERIES
 	struct paca_struct *lpaca = get_paca();
 	int cur_dec;
 
-	if ( lpaca->xLpPaca.xSharedProc ) {
+	if (lpaca->xLpPaca.xSharedProc) {
 		lpaca->xLpPaca.xVirtualDecr = val;
 		cur_dec = get_dec();
-		if ( cur_dec > val )
+		if (cur_dec > val)
 			HvCall_setVirtualDecr();
-	} else {
+	} else
+#endif
 		mtspr(SPRN_DEC, val);
-	}
 }
 
-extern __inline__ unsigned long tb_ticks_since(unsigned long tstamp) {
+static inline unsigned long tb_ticks_since(unsigned long tstamp)
+{
 	return get_tb() - tstamp;
 }
 
-#define mulhwu(x,y) \
-({unsigned z; asm ("mulhwu %0,%1,%2" : "=r" (z) : "r" (x), "r" (y)); z;})
 #define mulhdu(x,y) \
 ({unsigned long z; asm ("mulhdu %0,%1,%2" : "=r" (z) : "r" (x), "r" (y)); z;})
 
-
-unsigned mulhwu_scale_factor(unsigned, unsigned);
 void div128_by_32( unsigned long dividend_high, unsigned long dividend_low,
 		   unsigned divisor, struct div_result *dr );
 #endif /* __KERNEL__ */

@@ -10,8 +10,8 @@
  * are by courtesy of Chris Fraser.
  * Copyright (C) 2002  Maciej W. Rozycki
  */
-#ifndef __ASM_MIPS_DEC_KN02_H 
-#define __ASM_MIPS_DEC_KN02_H 
+#ifndef __ASM_MIPS_DEC_KN02_H
+#define __ASM_MIPS_DEC_KN02_H
 
 #ifndef __ASSEMBLY__
 #include <linux/spinlock.h>
@@ -29,6 +29,8 @@
 /*
  * Some port addresses...
  */
+#define KN02_SLOT_SIZE	0x00080000
+
 #define KN02_RTC_BASE	KSEG1ADDR(0x1fe80000)
 #define KN02_DZ11_BASE	KSEG1ADDR(0x1fe00000)
 

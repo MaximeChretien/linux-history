@@ -49,6 +49,7 @@
 #include <asm/iSeries/IoHriMainStore.h>
 #include <asm/iSeries/iSeries_proc.h>
 #include <asm/proc_pmc.h>
+#include <asm/perfmon.h>
 #include <asm/iSeries/mf.h>
 
 /* Function Prototypes */
@@ -59,13 +60,10 @@ static void build_iSeries_Memory_Map( void );
 static void setup_iSeries_cache_sizes( void );
 static void iSeries_bolt_kernel(unsigned long saddr, unsigned long eaddr);
 #endif
-void build_valid_hpte( unsigned long vsid, unsigned long ea, unsigned long pa,
-		       pte_t * ptep, unsigned hpteflags, unsigned bolted );
 extern void ppcdbg_initialize(void);
 extern void iSeries_pcibios_init(void);
 extern void iSeries_pcibios_fixup(void);
 extern void iSeries_pcibios_fixup_bus(int);
-static void iSeries_setup_dprofile(void);
 
 /* Global Variables */
 
@@ -76,10 +74,6 @@ static unsigned long procFreqMhzHundreths = 0;
 static unsigned long tbFreqHz = 0;
 static unsigned long tbFreqMhz = 0;
 static unsigned long tbFreqMhzHundreths = 0;
-
-unsigned long dprof_shift = 0;
-unsigned long dprof_len = 0;
-unsigned int * dprof_buffer = NULL;
 
 int piranha_simulator = 0;
 
@@ -257,7 +251,7 @@ unsigned long iSeries_process_mainstore_vpd( struct MemoryBlock *mb_array, unsig
 {
 	unsigned long i;
 	unsigned long mem_blocks = 0;
-	if ( __is_processor( PV_POWER4 ) )
+	if (__is_processor(PV_POWER4) || __is_processor(PV_POWER4p))
 		mem_blocks = iSeries_process_Regatta_mainstore_vpd( mb_array, max_entries );
 	else
 		mem_blocks = iSeries_process_Condor_mainstore_vpd( mb_array, max_entries );
@@ -283,8 +277,6 @@ void __init
 iSeries_init_early(void)
 {
 #ifdef CONFIG_PPC_ISERIES
-	ppcdbg_initialize();
-	
 #if defined(CONFIG_BLK_DEV_INITRD)
 	/*
 	 * If the init RAM disk has been configured and there is
@@ -396,28 +388,6 @@ iSeries_init(unsigned long r3, unsigned long r4, unsigned long r5,
 		if ( p < q )
 			*(p+1) = 0;
 	}
-
-        if (strstr(cmd_line, "dprofile=")) {
-                char *p, *q;
-
-                for (q = cmd_line; (p = strstr(q, "dprofile=")) != 0; ) {
-			unsigned long size, new_klimit;
-                        q = p + 9;
-                        if (p > cmd_line && p[-1] != ' ')
-                                continue;
-                        dprof_shift = simple_strtoul(q, &q, 0);
-			dprof_len = (unsigned long)&_etext - (unsigned long)&_stext;
-			dprof_len >>= dprof_shift;
-			size = ((dprof_len * sizeof(unsigned int)) + (PAGE_SIZE-1)) & PAGE_MASK;
-			dprof_buffer = (unsigned int *)((klimit + (PAGE_SIZE-1)) & PAGE_MASK);
-			new_klimit = ((unsigned long)dprof_buffer) + size;
-			lmb_reserve( __pa(klimit), (new_klimit-klimit));
-			klimit = new_klimit;
-			memset( dprof_buffer, 0, size );
-                }
-        }
-
-	iSeries_setup_dprofile();
 
 	iSeries_proc_early_init();	
 	mf_init();
@@ -631,7 +601,6 @@ static void __init setup_iSeries_cache_sizes(void)
 /*
  * Bolt the kernel addr space into the HPT
  */
-
 static void __init iSeries_bolt_kernel(unsigned long saddr, unsigned long eaddr)
 {
 	unsigned long pa;
@@ -644,12 +613,13 @@ static void __init iSeries_bolt_kernel(unsigned long saddr, unsigned long eaddr)
 		unsigned long va = ( vsid << 28 ) | ( pa & 0xfffffff );
 		unsigned long vpn = va >> PAGE_SHIFT;
 		unsigned long slot = HvCallHpt_findValid( &hpte, vpn );
-		if ( hpte.dw0.dw0.v ) {
+		if (hpte.dw0.dw0.v) {
 			/* HPTE exists, so just bolt it */
-			HvCallHpt_setSwBits( slot, 0x10, 0 );
+			HvCallHpt_setSwBits(slot, 0x10, 0);
 		} else {
 			/* No HPTE exists, so create a new bolted one */
-			build_valid_hpte(vsid, ea, pa, NULL, mode_rw, 1);
+			make_pte(NULL, va, (unsigned long)__v2a(ea), 
+				 mode_rw, 0, 0);
 		}
 	}
 }
@@ -852,7 +822,6 @@ iSeries_calibrate_decr(void)
 	 */
 	tb_ticks_per_sec   = tb_ticks_per_jiffy * HZ;
 	tb_ticks_per_usec = cyclesPerUsec;
-	tb_to_us = mulhwu_scale_factor(ppc_tb_freq, 1000000);
 	div128_by_32( 1024*1024, 0, tb_ticks_per_sec, &divres );
 	tb_to_xs = divres.result_low;
 	setup_default_decr();
@@ -884,17 +853,3 @@ void iSeries_fixup_klimit(void)
 	}
 }
 
-static void iSeries_setup_dprofile(void)
-{
-	if ( dprof_buffer ) {
-		unsigned i;
-		for (i=0; i<MAX_PACAS; ++i) {
-			paca[i].prof_shift = dprof_shift;
-			paca[i].prof_len = dprof_len-1;
-			paca[i].prof_buffer = dprof_buffer;
-			paca[i].prof_stext = (unsigned *)&_stext;
-			mb();
-			paca[i].prof_enabled = 1;
-		}
-	}
-}

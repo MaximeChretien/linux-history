@@ -291,13 +291,11 @@ no_context:
  * us unable to handle the page fault gracefully.
 */
 out_of_memory:
-	up_read(&mm->mmap_sem);
 	if (tsk->pid == 1) {
-		tsk->policy |= SCHED_YIELD;
-		schedule();
-		down_read(&mm->mmap_sem);
+		yield();
 		goto survive;
 	}
+	up_read(&mm->mmap_sem);
 	printk("VM: killing process %s\n", tsk->comm);
 	if (regs->psw.mask & PSW_PROBLEM_STATE)
 		do_exit(SIGKILL);

@@ -33,7 +33,6 @@ void* OpenPIC_Addr;
 static volatile struct OpenPIC *OpenPIC = NULL;
 u_int OpenPIC_NumInitSenses __initdata = 0;
 u_char *OpenPIC_InitSenses __initdata = NULL;
-extern int use_of_interrupt_tree;
 
 void find_ISUs(void);
 
@@ -47,7 +46,6 @@ static int broken_ipi_registers;
 OpenPIC_SourcePtr ISU[OPENPIC_MAX_ISU];
 
 static void openpic_end_irq(unsigned int irq_nr);
-static void openpic_ack_irq(unsigned int irq_nr);
 static void openpic_set_affinity(unsigned int irq_nr, unsigned long cpumask);
 
 struct hw_interrupt_type open_pic = {
@@ -56,14 +54,13 @@ struct hw_interrupt_type open_pic = {
 	NULL,
 	openpic_enable_irq,
 	openpic_disable_irq,
-	openpic_ack_irq,
+	NULL,
 	openpic_end_irq,
 	openpic_set_affinity
 };
 
 #ifdef CONFIG_SMP
 static void openpic_end_ipi(unsigned int irq_nr);
-static void openpic_ack_ipi(unsigned int irq_nr);
 static void openpic_enable_ipi(unsigned int irq_nr);
 static void openpic_disable_ipi(unsigned int irq_nr);
 
@@ -73,9 +70,9 @@ struct hw_interrupt_type open_pic_ipi = {
 	NULL,
 	openpic_enable_ipi,
 	openpic_disable_ipi,
-	openpic_ack_ipi,
+	NULL,
 	openpic_end_ipi,
-	0
+	NULL
 };
 #endif /* CONFIG_SMP */
 
@@ -293,7 +290,7 @@ void __init openpic_init(int main_pic, int offset, unsigned char* chrp_ack,
 	}
 	OpenPIC = (volatile struct OpenPIC *)OpenPIC_Addr;
 
-	ppc_md.progress("openpic enter",0x122);
+	ppc64_boot_msg(0x20, "OpenPic Init");
 
 	t = openpic_read(&OpenPIC->Global.Feature_Reporting0);
 	switch (t & OPENPIC_FEATURE_VERSION_MASK) {
@@ -330,7 +327,7 @@ void __init openpic_init(int main_pic, int offset, unsigned char* chrp_ack,
 	find_ISUs();
 
 	/* Initialize timer interrupts */
-	ppc_md.progress("openpic timer",0x3ba);
+	ppc64_boot_msg(0x21, "OpenPic Timer");
 	for (i = 0; i < OPENPIC_NUM_TIMERS; i++) {
 		/* Disabled, Priority 0 */
 		openpic_inittimer(i, 0, openpic_vec_timer+i);
@@ -340,7 +337,7 @@ void __init openpic_init(int main_pic, int offset, unsigned char* chrp_ack,
 
 #ifdef CONFIG_SMP
 	/* Initialize IPI interrupts */
-	ppc_md.progress("openpic ipi",0x3bb);
+	ppc64_boot_msg(0x22, "OpenPic IPI");
 	openpic_test_broken_IPI();
 	for (i = 0; i < OPENPIC_NUM_IPI; i++) {
 		/* Disabled, Priority 10..13 */
@@ -352,7 +349,7 @@ void __init openpic_init(int main_pic, int offset, unsigned char* chrp_ack,
 #endif
 
 	/* Initialize external interrupts */
-	ppc_md.progress("openpic ext",0x3bc);
+	ppc64_boot_msg(0x23, "OpenPic Ext");
 
 	openpic_set_priority(0xf);
 
@@ -385,7 +382,7 @@ void __init openpic_init(int main_pic, int offset, unsigned char* chrp_ack,
 		irq_desc[i].handler = &open_pic;
 
 	/* Initialize the spurious interrupt */
-	ppc_md.progress("openpic spurious",0x3bd);
+	ppc64_boot_msg(0x24, "OpenPic Spurious");
 	openpic_set_spurious(openpic_vec_spurious);
 
 	/* Initialize the cascade */
@@ -397,7 +394,7 @@ void __init openpic_init(int main_pic, int offset, unsigned char* chrp_ack,
 	openpic_set_priority(0);
 	openpic_disable_8259_pass_through();
 
-	ppc_md.progress("openpic exit",0x222);
+	ppc64_boot_msg(0x25, "OpenPic Done");
 }
 
 void openpic_setup_ISU(int isu_num, unsigned long addr)
@@ -756,13 +753,6 @@ static inline void openpic_set_sense(u_int irq, int sense)
 				(sense ? OPENPIC_SENSE_LEVEL : 0));
 }
 
-/* No spinlocks, should not be necessary with the OpenPIC
- * (1 register = 1 interrupt and we have the desc lock).
- */
-static void openpic_ack_irq(unsigned int irq_nr)
-{
-}
-
 static void openpic_end_irq(unsigned int irq_nr)
 {
 	if ((irq_desc[irq_nr].status & IRQ_LEVEL) != 0)
@@ -775,10 +765,6 @@ static void openpic_set_affinity(unsigned int irq_nr, unsigned long cpumask)
 }
 
 #ifdef CONFIG_SMP
-static void openpic_ack_ipi(unsigned int irq_nr)
-{
-}
-
 static void openpic_end_ipi(unsigned int irq_nr)
 {
 	/* IPIs are marked IRQ_PER_CPU. This has the side effect of
@@ -825,4 +811,3 @@ int openpic_get_irq(struct pt_regs *regs)
 		irq = -1;
 	return irq;
 }
-

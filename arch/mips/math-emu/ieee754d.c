@@ -20,7 +20,7 @@
  *  59 Temple Place - Suite 330, Boston MA 02111-1307, USA.
  *
  *  Nov 7, 2000
- *  Modified to build and operate in Linux kernel environment. 
+ *  Modified to build and operate in Linux kernel environment.
  *
  *  Kevin D. Kissell, kevink@mips.com and Carsten Langgaard, carstenl@mips.com
  *  Copyright (C) 2000 MIPS Technologies, Inc. All rights reserved.
@@ -39,12 +39,12 @@
 #define SP_EMAX		127
 #define SP_FBITS	23
 
-#define DP_MBIT(x)	((unsigned long long)1 << (x))
+#define DP_MBIT(x)	((u64)1 << (x))
 #define DP_HIDDEN_BIT	DP_MBIT(DP_FBITS)
 #define DP_SIGN_BIT	DP_MBIT(63)
 
 
-#define SP_MBIT(x)	((unsigned long)1 << (x))
+#define SP_MBIT(x)	((u32)1 << (x))
 #define SP_HIDDEN_BIT	SP_MBIT(SP_FBITS)
 #define SP_SIGN_BIT	SP_MBIT(31)
 

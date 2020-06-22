@@ -2013,7 +2013,7 @@ void chandev_probe(void)
 		/* This is required because the device can go & come back */
                 /* even before we realize it is gone owing to the waits in our kernel threads */
 		/* & the device will be marked as not owned but its status will be good */
-                /* & an attempt to accidentally reprobe it may be done. */ 
+                /* & an attempt to accidently reprobe it may be done. */ 
 		remove:
 		chandev_remove(chandev_get_by_irq(curr_irqinfo->sch.irq));
 		
@@ -3140,6 +3140,9 @@ static int chandev_write_proc(struct file *file, const char *buffer,
 	int         rc;
 	char        *buff;
 	
+	if(count > 65536)
+		count = 65536;
+		
 	buff=vmalloc(count+1);
 	if(buff)
 	{

@@ -55,7 +55,7 @@ extern void copy_page (void *to, void *from);
 #ifdef CONFIG_IA64_GENERIC
 # include <asm/machvec.h>
 # define virt_to_page(kaddr)	(mem_map + platform_map_nr(kaddr))
-# define page_to_phys(page)	XXX fix me
+# define page_to_phys(page)	((page - mem_map) << PAGE_SHIFT)
 #elif defined (CONFIG_IA64_SGI_SN1)
 # ifndef CONFIG_DISCONTIGMEM
 #  define virt_to_page(kaddr)	(mem_map + MAP_NR_DENSE(kaddr))
@@ -65,7 +65,13 @@ extern void copy_page (void *to, void *from);
 # define virt_to_page(kaddr)	(mem_map + MAP_NR_DENSE(kaddr))
 # define page_to_phys(page)	((page - mem_map) << PAGE_SHIFT)
 #endif
-#define VALID_PAGE(page)	((page - mem_map) < max_mapnr)
+#ifdef CONFIG_VIRTUAL_MEM_MAP
+  struct page;
+  extern int ia64_page_valid (struct page *);
+# define VALID_PAGE(page)	(((page - mem_map) < max_mapnr) && ia64_page_valid(page))
+#else
+# define VALID_PAGE(page)	((page - mem_map) < max_mapnr)
+#endif
 
 typedef union ia64_va {
 	struct {

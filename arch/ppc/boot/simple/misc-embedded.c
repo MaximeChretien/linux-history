@@ -59,7 +59,7 @@ char *bootrom_cmdline = "";
 char compiled_string[] = CONFIG_CMDLINE;
 #endif
 char ramroot_string[] = "root=/dev/ram";
-char netroot_string[] = "root=/dev/nfs rw ip=auto";
+char netroot_string[] = "root=/dev/nfs rw ip=on";
 
 /* Serial port to use. */
 unsigned long com_port;
@@ -172,6 +172,11 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum, b
 #endif
 	while ( *cp )
 		putc(*cp++);
+#if defined(CONFIG_SERIAL_CONSOLE) || defined(CONFIG_VGA_CONSOLE)
+	/*
+	 * If they have a console, allow them to edit the command line.
+	 * Otherwise, don't bother wasting the five seconds.
+	 */
 	while (timer++ < 5*1000) {
 		if (tstc()) {
 			while ((ch = getc()) != '\n' && ch != '\r') {
@@ -195,6 +200,7 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum, b
 		}
 		udelay(1000);  /* 1 msec */
 	}
+#endif
 	*cp = 0;
 	puts("\nUncompressing Linux...");
 

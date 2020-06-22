@@ -63,7 +63,7 @@ extern char empty_zero_page[PAGE_SIZE];
 #define PMD_MASK        (~(PMD_SIZE-1))
 
 /* PGDIR_SHIFT determines what a third-level page table entry can map */
-#define PGDIR_SHIFT     31
+#define PGDIR_SHIFT     30
 #define PGDIR_SIZE      (1UL << PGDIR_SHIFT)
 #define PGDIR_MASK      (~(PGDIR_SIZE-1))
 
@@ -72,7 +72,7 @@ extern char empty_zero_page[PAGE_SIZE];
  * currently we use a 3 level lookup
  */
 #define PTRS_PER_PTE    512
-#define PTRS_PER_PMD    1024
+#define PTRS_PER_PMD    512
 #define PTRS_PER_PGD    2048
 
 /*
@@ -103,7 +103,7 @@ extern char empty_zero_page[PAGE_SIZE];
 #define VMALLOC_START   (((unsigned long) high_memory + VMALLOC_OFFSET) \
                          & ~(VMALLOC_OFFSET-1))
 #define VMALLOC_VMADDR(x) ((unsigned long)(x))
-#define VMALLOC_END     (0x40000000000L)
+#define VMALLOC_END     (0x20000000000L)
 
 
 /*
@@ -158,23 +158,26 @@ extern char empty_zero_page[PAGE_SIZE];
 
 /* Bits in the page table entry */
 #define _PAGE_PRESENT   0x001          /* Software                         */
-#define _PAGE_MKCLEAR   0x002          /* Software                         */
+#define _PAGE_MKCLEAN   0x002          /* Software                         */
+#define _PAGE_ISCLEAN   0x004          /* Software                         */
 #define _PAGE_RO        0x200          /* HW read-only                     */
 #define _PAGE_INVALID   0x400          /* HW invalid                       */
 
 /* Bits in the segment table entry */
-#define _PMD_ENTRY_INV   0x20          /* invalid segment table entry      */
-#define _PMD_ENTRY       0x00        
+#define _PMD_ENTRY_INV	0x20		/* invalid segment table entry      */
+#define _PMD_ENTRY	0x00        
 
 /* Bits in the region third table entry */
-#define _PGD_ENTRY_INV   0x20          /* invalid region table entry       */
-#define _PGD_ENTRY       0x07
+#define _PGD_ENTRY_INV	0x20		/* region table entry invalid bit  */
+#define _PGD_ENTRY_MASK 0x04		/* region third table entry mask   */
+#define _PGD_ENTRY_LEN(x) ((x)&3)       /* region table length bits        */
+#define _PGD_ENTRY_OFF(x) (((x)&3)<<6)  /* region table offset bits        */
 
 /*
  * User and kernel page directory
  */
 #define _REGION_THIRD       0x4
-#define _REGION_THIRD_LEN   0x3 
+#define _REGION_THIRD_LEN   0x1 
 #define _REGION_TABLE       (_REGION_THIRD|_REGION_THIRD_LEN|0x40|0x100)
 #define _KERN_REGION_TABLE  (_REGION_THIRD|_REGION_THIRD_LEN)
 
@@ -185,33 +188,35 @@ extern char empty_zero_page[PAGE_SIZE];
 /*
  * No mapping available
  */
-#define PAGE_INVALID    __pgprot(_PAGE_INVALID)
-#define PAGE_NONE       __pgprot(_PAGE_PRESENT | _PAGE_INVALID)
-#define PAGE_COPY       __pgprot(_PAGE_PRESENT | _PAGE_RO)
-#define PAGE_READONLY   __pgprot(_PAGE_PRESENT | _PAGE_RO)
-#define PAGE_SHARED     __pgprot(_PAGE_PRESENT )
-#define PAGE_KERNEL     __pgprot(_PAGE_PRESENT )
+#define PAGE_INVALID	  __pgprot(_PAGE_INVALID)
+#define PAGE_NONE_SHARED  __pgprot(_PAGE_PRESENT|_PAGE_INVALID)
+#define PAGE_NONE_PRIVATE __pgprot(_PAGE_PRESENT|_PAGE_INVALID|_PAGE_ISCLEAN)
+#define PAGE_RO_SHARED	  __pgprot(_PAGE_PRESENT|_PAGE_RO)
+#define PAGE_RO_PRIVATE	  __pgprot(_PAGE_PRESENT|_PAGE_RO|_PAGE_ISCLEAN)
+#define PAGE_COPY	  __pgprot(_PAGE_PRESENT|_PAGE_RO|_PAGE_ISCLEAN)
+#define PAGE_SHARED	  __pgprot(_PAGE_PRESENT)
+#define PAGE_KERNEL	  __pgprot(_PAGE_PRESENT)
 
 /*
  * The S390 can't do page protection for execute, and considers that the
  * same are read. Also, write permissions imply read permissions. This is
  * the closest we can get..
  */
-#define __P000  PAGE_NONE
-#define __P001  PAGE_READONLY
+#define __P000  PAGE_NONE_PRIVATE
+#define __P001  PAGE_RO_PRIVATE
 #define __P010  PAGE_COPY
 #define __P011  PAGE_COPY
-#define __P100  PAGE_READONLY
-#define __P101  PAGE_READONLY
+#define __P100  PAGE_RO_PRIVATE
+#define __P101  PAGE_RO_PRIVATE
 #define __P110  PAGE_COPY
 #define __P111  PAGE_COPY
 
-#define __S000  PAGE_NONE
-#define __S001  PAGE_READONLY
+#define __S000  PAGE_NONE_SHARED
+#define __S001  PAGE_RO_SHARED
 #define __S010  PAGE_SHARED
 #define __S011  PAGE_SHARED
-#define __S100  PAGE_READONLY
-#define __S101  PAGE_READONLY
+#define __S100  PAGE_RO_SHARED
+#define __S101  PAGE_RO_SHARED
 #define __S110  PAGE_SHARED
 #define __S111  PAGE_SHARED
 
@@ -222,10 +227,10 @@ extern char empty_zero_page[PAGE_SIZE];
  */
 extern inline void set_pte(pte_t *pteptr, pte_t pteval)
 {
-	if ((pte_val(pteval) & (_PAGE_MKCLEAR|_PAGE_INVALID))
-	    == _PAGE_MKCLEAR) 
+	if ((pte_val(pteval) & (_PAGE_MKCLEAN|_PAGE_INVALID))
+	    == _PAGE_MKCLEAN) 
 	{
-		pte_val(pteval) &= ~_PAGE_MKCLEAR;
+		pte_val(pteval) &= ~_PAGE_MKCLEAN;
                
 		asm volatile ("sske %0,%1" 
 				: : "d" (0), "a" (pte_val(pteval)));
@@ -239,20 +244,37 @@ extern inline void set_pte(pte_t *pteptr, pte_t pteval)
 /*
  * pgd/pmd/pte query functions
  */
-extern inline int pgd_present(pgd_t pgd)
+extern inline int __pgd_present(pgd_t *pgd)
 {
-	return (pgd_val(pgd) & ~PAGE_MASK) == _PGD_ENTRY;
-}
+	unsigned long addr = (unsigned long) pgd;
+	unsigned long *pgd_slot = (unsigned long *) (addr & -8);
+	unsigned long offset = (addr & 4) >> 1;
 
-extern inline int pgd_none(pgd_t pgd)
-{
-	return pgd_val(pgd) & _PGD_ENTRY_INV;
+	if (*pgd_slot & _PGD_ENTRY_INV)
+		return 0;
+	if ((*pgd_slot & _PGD_ENTRY_OFF(3)) > _PGD_ENTRY_OFF(offset))
+		return 0;
+	if ((*pgd_slot & _PGD_ENTRY_LEN(3)) < _PGD_ENTRY_LEN(offset))
+		return 0;
+	return 1;
 }
+#define pgd_present(pgd) __pgd_present(&(pgd))
 
-extern inline int pgd_bad(pgd_t pgd)
+extern inline int __pgd_none(pgd_t *pgd)
 {
-	return (pgd_val(pgd) & (~PAGE_MASK & ~_PGD_ENTRY_INV)) != _PGD_ENTRY;
+	return !__pgd_present(pgd);
 }
+#define pgd_none(pgd) __pgd_none(&(pgd))
+
+extern inline int __pgd_bad(pgd_t *pgd)
+{
+	unsigned long addr = (unsigned long) pgd;
+	unsigned long *pgd_slot = (unsigned long *) (addr & -8);
+
+	return (*pgd_slot & (~PAGE_MASK & ~_PGD_ENTRY_INV & ~_PGD_ENTRY_MASK &
+		             ~_PGD_ENTRY_LEN(3) & ~_PGD_ENTRY_OFF(3))) != 0;
+}
+#define pgd_bad(pgd) __pgd_bad(&(pgd))
 
 extern inline int pmd_present(pmd_t pmd)
 {
@@ -295,6 +317,8 @@ extern inline int pte_dirty(pte_t pte)
 {
 	int skey;
 
+	if (pte_val(pte) & _PAGE_ISCLEAN)
+		return 0;
 	asm volatile ("iske %0,%1" : "=d" (skey) : "a" (pte_val(pte)));
 	return skey & _PAGE_CHANGED;
 }
@@ -312,7 +336,27 @@ extern inline int pte_young(pte_t pte)
  */
 extern inline void pgd_clear(pgd_t * pgdp)
 {
-	pgd_val(*pgdp) = _PGD_ENTRY_INV | _PGD_ENTRY;
+	unsigned long addr = (unsigned long) pgdp;
+	unsigned long *pgd_slot = (unsigned long *) (addr & -8);
+	unsigned long offset = addr & 4;
+
+	if (*pgd_slot & _PGD_ENTRY_INV) {
+		*pgd_slot = _PGD_ENTRY_INV;
+		return;
+	}
+	if (offset == 0 && (*pgd_slot & _PGD_ENTRY_LEN(2)) != 0) {
+		/* Clear lower pmd, upper pmd still used. */
+		*pgd_slot = (*pgd_slot & PAGE_MASK) | _PGD_ENTRY_MASK |
+			    _PGD_ENTRY_OFF(2) | _PGD_ENTRY_LEN(3);
+		return;
+	}
+	if (offset == 4 && (*pgd_slot & _PGD_ENTRY_OFF(2)) == 0) {
+		/* Clear upped pmd, lower pmd still used. */
+		*pgd_slot = (*pgd_slot & PAGE_MASK) | _PGD_ENTRY_MASK |
+			    _PGD_ENTRY_OFF(0) | _PGD_ENTRY_LEN(1);
+		return;
+	}
+	*pgd_slot = _PGD_ENTRY_INV;
 }
 
 extern inline void pmd_clear(pmd_t * pmdp)
@@ -334,7 +378,8 @@ extern inline void pte_clear(pte_t *ptep)
  */
 extern inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
 {
-	pte_val(pte) = (pte_val(pte) & PAGE_MASK) | pgprot_val(newprot);
+	pte_val(pte) &= PAGE_MASK | _PAGE_ISCLEAN;
+	pte_val(pte) |= pgprot_val(newprot) & ~_PAGE_ISCLEAN;
 	return pte; 
 }
 
@@ -361,13 +406,11 @@ extern inline pte_t pte_mkclean(pte_t pte)
 
 extern inline pte_t pte_mkdirty(pte_t pte)
 { 
-	/* We can't set the changed bit atomically either. For now we
-         * set (!) the page referenced bit. */
-	asm volatile ("sske %0,%1" 
-	              : : "d" (_PAGE_CHANGED|_PAGE_REFERENCED),
-		          "a" (pte_val(pte)));
-
-	pte_val(pte) &= ~_PAGE_MKCLEAR;
+	/* We do not explicitly set the dirty bit because the
+	 * sske instruction is slow. It is faster to let the
+	 * next instruction set the dirty bit.
+	 */
+	pte_val(pte) &= ~(_PAGE_MKCLEAN | _PAGE_ISCLEAN);
 	return pte;
 }
 
@@ -401,6 +444,8 @@ static inline int ptep_test_and_clear_dirty(pte_t *ptep)
 {
 	int skey;
 
+	if (pte_val(*ptep) & _PAGE_ISCLEAN)
+		return 0;
 	asm volatile ("iske %0,%1" : "=d" (skey) : "a" (*ptep));
 	if ((skey & _PAGE_CHANGED) == 0)
 		return 0;
@@ -443,17 +488,15 @@ extern inline pte_t mk_pte_phys(unsigned long physpage, pgprot_t pgprot)
 #define mk_pte(pg, pgprot)                                                \
 ({                                                                        \
 	struct page *__page = (pg);                                       \
+	pgprot_t __pgprot = (pgprot);					  \
 	unsigned long __physpage = __pa((__page-mem_map) << PAGE_SHIFT);  \
-	pte_t __pte = mk_pte_phys(__physpage, (pgprot));                  \
-	                                                                  \
-	if (__page != ZERO_PAGE(__physpage)) {                            \
-		int __users = page_count(__page);                         \
-		__users -= !!__page->buffers + !!__page->mapping;         \
-	                                                                  \
-		if (__users == 1)                                         \
-			pte_val(__pte) |= _PAGE_MKCLEAR;                  \
-        }                                                                 \
-	                                                                  \
+	pte_t __pte = mk_pte_phys(__physpage, __pgprot);                  \
+ 	                                                                  \
+	if (!(pgprot_val(__pgprot) & _PAGE_ISCLEAN)) {			  \
+		int __users = !!__page->buffers + !!__page->mapping;      \
+		if (__users + page_count(__page) == 1)                    \
+			pte_val(__pte) |= _PAGE_MKCLEAN;                  \
+	}								  \
 	__pte;                                                            \
 })
 
@@ -466,15 +509,15 @@ extern inline pte_t mk_pte_phys(unsigned long physpage, pgprot_t pgprot)
 #define pgd_index(address) ((address >> PGDIR_SHIFT) & (PTRS_PER_PGD-1))
 #define pgd_offset(mm, address) ((mm)->pgd+pgd_index(address))
 
-#define pgd_page(pmd) \
-        ((unsigned long) __va(pgd_val(pmd) & PAGE_MASK))
+#define pgd_page(pgd) \
+        ((unsigned long) __va(__pgd_val(pgd) & PAGE_MASK))
 
 /* to find an entry in a kernel page-table-directory */
 #define pgd_offset_k(address) pgd_offset(&init_mm, address)
 
 /* Find an entry in the second-level page table.. */
 #define pmd_offset(dir,addr) \
-	((pmd_t *) pgd_page(*(dir)) + (((addr) >> PMD_SHIFT) & (PTRS_PER_PMD - 1)))
+	((pmd_t *) pgd_page(dir) + (((addr) >> PMD_SHIFT) & (PTRS_PER_PMD - 1)))
 
 /* Find an entry in the third-level page table.. */
 #define pte_offset(dir,addr) \

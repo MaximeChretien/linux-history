@@ -123,6 +123,14 @@ extern void xmon(struct pt_regs *excp);
 	printk("kernel BUG at %s:%d!\n", __FILE__, __LINE__); \
 	xmon(0); \
 } while (0)
+#elif defined(CONFIG_KDB)
+#include <asm/ptrace.h>
+#include <linux/kdb.h>
+/* extern void kdb(kdb_reason_t reason, int error, kdb_eframe_t ef); */
+#define BUG() do { \
+      printk("kernel BUG at %s:%d!\n", __FILE__, __LINE__); \
+      kdb(KDB_REASON_OOPS, 0, (kdb_eframe_t) 0); \
+} while (0)
 #else
 #define BUG() do { \
 	printk("kernel BUG at %s:%d!\n", __FILE__, __LINE__); \
@@ -132,15 +140,8 @@ extern void xmon(struct pt_regs *excp);
 
 #define PAGE_BUG(page) do { BUG(); } while (0)
 
-/*
- * XXX A bug in the current ppc64 compiler prevents an optimisation
- * where a divide is replaced by a multiply by shifted inverse. For
- * the moment use page->virtaul
- */
-#define WANT_PAGE_VIRTUAL 1
-
 /* Pure 2^n version of get_order */
-extern __inline__ int get_order(unsigned long size)
+static inline int get_order(unsigned long size)
 {
 	int order;
 

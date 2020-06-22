@@ -1,5 +1,5 @@
 /*
- *  linux/arch/ppc/kernel/ptrace32.c
+ *  linux/arch/ppc64/kernel/ptrace32.c
  *
  *  PowerPC version
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
@@ -86,8 +86,8 @@ clear_single_step(struct task_struct *task)
 int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 {
 	struct task_struct *child;
-	int ret  = -EPERM;
-  
+	int ret = -EPERM;
+
 	lock_kernel();
 	if (request == PTRACE_TRACEME) {
 		/* are we already being traced? */
@@ -115,18 +115,12 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 		ret = ptrace_attach(child);
 		goto out_tsk;
 	}
-	ret = -ESRCH;
-	if (!(child->ptrace & PT_PTRACED))
-		goto out_tsk;
-	if (child->state != TASK_STOPPED) {
-		if (request != PTRACE_KILL)
-			goto out_tsk;
-	}
-	if (child->p_pptr != current)
+
+	ret = ptrace_check_attach(child, request == PTRACE_KILL);
+	if (ret < 0)
 		goto out_tsk;
 
-	switch (request)
-	{
+	switch (request) {
 	/* Read word at location ADDR */
 	/* when I and D space are separate, these will need to be fixed. */
 	case PTRACE_PEEKTEXT: /* read word at location addr. */ 
@@ -143,11 +137,15 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 		break;
 	}
 
-	/* Read 4 bytes of the other process' storage */
-	/*  data is a pointer specifying where the user wants the 4 bytes copied into */
-	/*  addr is a pointer in the user's storage that contains an 8 byte address in the other process of the 4 bytes that is to be read */
-	/* (this is run in a 32-bit process looking at a 64-bit process) */
-	/* when I and D space are separate, these will need to be fixed. */
+	/*
+	 * Read 4 bytes of the other process' storage
+	 *  data is a pointer specifying where the user wants the
+	 *	4 bytes copied into
+	 *  addr is a pointer in the user's storage that contains an 8 byte
+	 *	address in the other process of the 4 bytes that is to be read
+	 * (this is run in a 32-bit process looking at a 64-bit process)
+	 * when I and D space are separate, these will need to be fixed.
+	 */
 	case PPC_PTRACE_PEEKTEXT_3264:
 	case PPC_PTRACE_PEEKDATA_3264: 
 	{
@@ -158,7 +156,7 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 		ret = -EIO;
 
 		/* Get the addr in the other process that we want to read */
-		if (get_user(addrOthers,(u32**)addr) != 0)
+		if (get_user(addrOthers, (u32**)addr) != 0)
 			break;
 
 		copied = access_process_vm(child, (u64)addrOthers, &tmp_mem_value, sizeof(tmp_mem_value), 0);
@@ -177,7 +175,7 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 		ret = -EIO;
 		/* convert to index and check */
 		index = (unsigned long) addr >> 2;
-		if ((addr & 3) || index > PT_FPSCR32)
+		if ((addr & 3) || (index > PT_FPSCR32))
 			break;
 
 		if (index < PT_FPR0) {
@@ -185,9 +183,10 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 		} else {
 			if (child->thread.regs->msr & MSR_FP)
 				giveup_fpu(child);
-			/* the user space code considers the floating point to be 
-			 *   an array of unsigned int (32 bits) - the index passed 
-			 *   in is based on this assumption.
+			/*
+			 * the user space code considers the floating point
+			 * to be an array of unsigned int (32 bits) - the
+			 * index passed in is based on this assumption.
 			 */
 			tmp_reg_value = ((unsigned int *)child->thread.fpr)[index - PT_FPR0];
 		}
@@ -196,12 +195,15 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 		break;
 	}
   
-	/* Read 4 bytes out of the other process' pt_regs area */
-	/*  data is a pointer specifying where the user wants the 4 bytes copied into */
-	/*  addr is the offset into the other process' pt_regs structure that is to be read */
-	/* (this is run in a 32-bit process looking at a 64-bit process) */
-	case PPC_PTRACE_PEEKUSR_3264:
-	{
+	/*
+	 * Read 4 bytes out of the other process' pt_regs area
+	 *  data is a pointer specifying where the user wants the
+	 *	4 bytes copied into
+	 *  addr is the offset into the other process' pt_regs structure
+	 *	that is to be read
+	 * (this is run in a 32-bit process looking at a 64-bit process)
+	 */
+	case PPC_PTRACE_PEEKUSR_3264: {
 		u32 index;
 		u32 reg32bits;
 		u64 tmp_reg_value;
@@ -222,8 +224,7 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 		if ((addr & 3) || numReg > PT_FPSCR)
 			break;
 
-		if (numReg >= PT_FPR0)
-		{
+		if (numReg >= PT_FPR0) {
 			if (child->thread.regs->msr & MSR_FP)
 				giveup_fpu(child);
 		        if (numReg == PT_FPSCR) 
@@ -251,11 +252,15 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 		break;
 	}
 
-	/* Write 4 bytes into the other process' storage */
-	/*  data is the 4 bytes that the user wants written */
-	/*  addr is a pointer in the user's storage that contains an 8 byte address in the other process where the 4 bytes that is to be written */
-	/* (this is run in a 32-bit process looking at a 64-bit process) */
-	/* when I and D space are separate, these will need to be fixed. */
+	/*
+	 * Write 4 bytes into the other process' storage
+	 *  data is the 4 bytes that the user wants written
+	 *  addr is a pointer in the user's storage that contains an
+	 *	8 byte address in the other process where the 4 bytes
+	 *	that is to be written
+	 * (this is run in a 32-bit process looking at a 64-bit process)
+	 * when I and D space are separate, these will need to be fixed.
+	 */
 	case PPC_PTRACE_POKETEXT_3264:
 	case PPC_PTRACE_POKEDATA_3264:
 	{
@@ -267,7 +272,6 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 		ret = -EIO;
 		if (get_user(addrOthers,(u32**)addr) != 0)
 			break;
-
 		ret = 0;
 		bytesWritten = access_process_vm(child, (u64)addrOthers, &tmp_value_to_write, sizeof(tmp_value_to_write), 1);
 		if (bytesWritten == sizeof(tmp_value_to_write))
@@ -281,63 +285,61 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 		unsigned long index;
 
 		ret = -EIO;
-
 		/* convert to index and check */
 		index = (unsigned long) addr >> 2;
-		if ((addr & 3) || index > PT_FPSCR32)
+		if ((addr & 3) || (index > PT_FPSCR32))
 			break;
 
 		if (index == PT_ORIG_R3)
 			break;
-
-
 		if (index < PT_FPR0) {
 			ret = put_reg(child, index, data);
 		} else {
 			if (child->thread.regs->msr & MSR_FP)
 				giveup_fpu(child);
-      /* the user space code considers the floating point to be 
-       *   an array of unsigned int (32 bits) - the index passed 
-       *   in is based on this assumption.
-       */
-
+			/*
+			 * the user space code considers the floating point
+			 * to be an array of unsigned int (32 bits) - the
+			 * index passed in is based on this assumption.
+			 */
 			((unsigned int *)child->thread.fpr)[index - PT_FPR0] = data;
 			ret = 0;
 		}
 		break;
 	}
 
-	/* Write 4 bytes into the other process' pt_regs area */
-	/*  data is the 4 bytes that the user wants written */
-	/*  addr is the offset into the other process' pt_regs structure that is to be written into */
-	/* (this is run in a 32-bit process looking at a 64-bit process) */
-	case PPC_PTRACE_POKEUSR_3264:
-	{
+	/*
+	 * Write 4 bytes into the other process' pt_regs area
+	 *  data is the 4 bytes that the user wants written
+	 *  addr is the offset into the other process' pt_regs structure
+	 *	that is to be written into
+	 * (this is run in a 32-bit process looking at a 64-bit process)
+	 */
+	case PPC_PTRACE_POKEUSR_3264: {
 		u32 index;
 		u32 numReg;
 
 		ret = -EIO;
-
 		/* Determine which register the user wants */
 		index = (u64)addr >> 2;  /* Divide addr by 4 */
 		numReg = index / 2;
-
-		/* Validate the input - check to see if address is on the wrong boundary or beyond the end of the user area */
-		if ((addr & 3) || numReg > PT_FPSCR)
+		/*
+		 * Validate the input - check to see if address is on the
+		 * wrong boundary or beyond the end of the user area
+		 */
+		if ((addr & 3) || (numReg > PT_FPSCR))
 			break;
 		/* Insure it is a register we let them change */
-		if ((numReg == PT_ORIG_R3) || ((numReg > PT_CCR) && (numReg < PT_FPR0)))
+		if ((numReg == PT_ORIG_R3)
+				|| ((numReg > PT_CCR) && (numReg < PT_FPR0)))
 			break;
-
-		if (numReg >= PT_FPR0)
-		{
+		if (numReg >= PT_FPR0) {
 			if (child->thread.regs->msr & MSR_FP)
 				giveup_fpu(child);
 		}
-
 		if (numReg == PT_MSR)
-			data = (data & MSR_DEBUGCHANGE) | (child->thread.regs->msr & ~MSR_DEBUGCHANGE);
-
+			data = (data & MSR_DEBUGCHANGE)
+				| (child->thread.regs->msr & ~MSR_DEBUGCHANGE);
 		((u32*)child->thread.regs)[index] = data;
 		ret = 0;
 		break;
@@ -361,8 +363,8 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 	}
 
 	/*
-	 * make the child exit.  Best I can do is send it a sigkill. 
-	 * perhaps it should be put in the status that it wants to 
+	 * make the child exit.  Best I can do is send it a sigkill.
+	 * perhaps it should be put in the status that it wants to
 	 * exit.
 	 */
 	case PTRACE_KILL: {
@@ -403,4 +405,3 @@ out:
 	unlock_kernel();
 	return ret;
 }
-

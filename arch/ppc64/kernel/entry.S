@@ -305,9 +305,7 @@ _GLOBAL(ret_from_except)
 	cmpdi	0,r5,0
 	beq	4f
 irq_recheck:
-	/*
-	 * Check for pending interrupts (iSeries)
-	 */
+	/* Check for pending interrupts (iSeries) */
 	CHECKANYINT(r3,r4)
 	beq+	4f	/* skip do_IRQ if no interrupts */
 
@@ -346,6 +344,7 @@ restore:
 	mtlr	r0
 	ld	r3,_XER(r1)
 	mtspr	XER,r3
+
 	REST_8GPRS(5, r1)
 	REST_10GPRS(14, r1)
 	REST_8GPRS(24, r1)

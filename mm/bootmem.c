@@ -26,6 +26,7 @@
  */
 unsigned long max_low_pfn;
 unsigned long min_low_pfn;
+unsigned long max_pfn;
 
 /* return the number of _pages_ that will be allocated for the boot bitmap */
 unsigned long __init bootmem_bootmap_pages (unsigned long pages)
@@ -324,15 +325,14 @@ unsigned long __init free_all_bootmem (void)
 
 void * __init __alloc_bootmem (unsigned long size, unsigned long align, unsigned long goal)
 {
-	pg_data_t *pgdat = pgdat_list;
+	pg_data_t *pgdat;
 	void *ptr;
 
-	while (pgdat) {
+	for_each_pgdat(pgdat)
 		if ((ptr = __alloc_bootmem_core(pgdat->bdata, size,
 						align, goal)))
 			return(ptr);
-		pgdat = pgdat->node_next;
-	}
+
 	/*
 	 * Whoops, we cannot satisfy the allocation request.
 	 */

@@ -56,11 +56,11 @@ struct tridentfb_par {
 
 struct tridentfb_info {
 	struct fb_info_gen gen;
-	unsigned int fbmem_virt;	//framebuffer virtual memory address
-	unsigned int fbmem;		//framebuffer physical memory address
+	unsigned long fbmem_virt;	//framebuffer virtual memory address
+	unsigned long fbmem;		//framebuffer physical memory address
 	unsigned int memsize;		//size of fbmem
-	unsigned int io;		//io space address
-	unsigned int io_virt;		//iospace virtual memory address
+	unsigned long io;		//io space address
+	unsigned long io_virt;		//iospace virtual memory address
 	unsigned int nativex;		//flat panel xres
 	struct tridentfb_par currentmode;
 	unsigned char eng_oper;		//engine operation...
@@ -1321,7 +1321,7 @@ static int __devinit trident_pci_probe(struct pci_dev * dev, const struct pci_de
 		return -1;
 	}
 
-	fb_info.io_virt = (unsigned int)ioremap_nocache(fb_info.io, trident_iosize);
+	fb_info.io_virt = (unsigned long)ioremap_nocache(fb_info.io, trident_iosize);
 
 	if (!fb_info.io_virt) {
 		release_region(fb_info.io, trident_iosize);
@@ -1337,7 +1337,7 @@ static int __devinit trident_pci_probe(struct pci_dev * dev, const struct pci_de
 		return -1;
 	}
 
-	fb_info.fbmem_virt = (unsigned int)ioremap_nocache(fb_info.fbmem, fb_info.memsize);
+	fb_info.fbmem_virt = (unsigned long)ioremap_nocache(fb_info.fbmem, fb_info.memsize);
 
 	if (!fb_info.fbmem_virt) {
 		release_mem_region(fb_info.fbmem, fb_info.memsize);

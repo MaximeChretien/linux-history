@@ -25,9 +25,9 @@
 /*
  * BlueZ Bluetooth address family and sockets.
  *
- * $Id: af_bluetooth.c,v 1.6 2002/06/25 22:03:39 maxk Exp $
+ * $Id: af_bluetooth.c,v 1.8 2002/07/22 20:32:54 maxk Exp $
  */
-#define VERSION "2.1"
+#define VERSION "2.2"
 
 #include <linux/config.h>
 #include <linux/module.h>
@@ -111,18 +111,18 @@ void bluez_sock_init(struct socket *sock, struct sock *sk)
 
 void bluez_sock_link(struct bluez_sock_list *l, struct sock *sk)
 {
-	write_lock(&l->lock);
+	write_lock_bh(&l->lock);
 	sk->next = l->head;
 	l->head = sk;
 	sock_hold(sk);
-	write_unlock(&l->lock);
+	write_unlock_bh(&l->lock);
 }
 
 void bluez_sock_unlink(struct bluez_sock_list *l, struct sock *sk)
 {
 	struct sock **skp;
 
-	write_lock(&l->lock);
+	write_lock_bh(&l->lock);
 	for (skp = &l->head; *skp; skp = &((*skp)->next)) {
 		if (*skp == sk) {
 			*skp = sk->next;
@@ -130,7 +130,7 @@ void bluez_sock_unlink(struct bluez_sock_list *l, struct sock *sk)
 			break;
 		}
 	}
-	write_unlock(&l->lock);
+	write_unlock_bh(&l->lock);
 }
 
 void bluez_accept_enqueue(struct sock *parent, struct sock *sk)
@@ -242,6 +242,9 @@ unsigned int bluez_sock_poll(struct file * file, struct socket *sock, poll_table
 	if (sk->state == BT_CLOSED)
 		mask |= POLLHUP;
 
+	if (sk->state == BT_CONNECT || sk->state == BT_CONNECT2)
+		return mask;
+	
 	if (sock_writeable(sk))
 		mask |= POLLOUT | POLLWRNORM | POLLWRBAND;
 	else

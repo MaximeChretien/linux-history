@@ -7,8 +7,6 @@
 #define _ASM_PCI_H
 
 #include <linux/config.h>
-#include <linux/types.h>
-#include <asm/io.h>			/* for virt_to_bus()  */
 
 #ifdef __KERNEL__
 
@@ -40,7 +38,6 @@ static inline void pcibios_penalize_isa_irq(int irq)
  * MIPS has everything mapped statically.
  */
 
-#include <linux/config.h>
 #include <linux/types.h>
 #include <linux/slab.h>
 #include <asm/scatterlist.h>
@@ -55,6 +52,13 @@ static inline void pcibios_penalize_isa_irq(int irq)
 #endif
 
 struct pci_dev;
+
+/*
+ * The PCI address space does equal the physical memory address space.  The
+ * networking and block device layers use this boolean for bounce buffer
+ * decisions.
+ */
+#define PCI_DMA_BUS_IS_PHYS	(1)
 
 /*
  * Allocate and map kernel buffer using consistent mode DMA for a device.
@@ -89,14 +93,14 @@ extern void pci_free_consistent(struct pci_dev *hwdev, size_t size,
 static inline dma_addr_t pci_map_single(struct pci_dev *hwdev, void *ptr,
 					size_t size, int direction)
 {
+	unsigned long addr = (unsigned long) ptr;
+
 	if (direction == PCI_DMA_NONE)
 		out_of_line_bug();
 
-#ifdef CONFIG_NONCOHERENT_IO
-	dma_cache_wback_inv((unsigned long)ptr, size);
-#endif
+	dma_cache_wback_inv(addr, size);
 
-	return virt_to_bus(ptr);
+	return bus_to_baddr(hwdev->bus->number, __pa(ptr));
 }
 
 /*
@@ -113,7 +117,12 @@ static inline void pci_unmap_single(struct pci_dev *hwdev, dma_addr_t dma_addr,
 	if (direction == PCI_DMA_NONE)
 		out_of_line_bug();
 
-	/* Nothing to do */
+	if (direction != PCI_DMA_TODEVICE) {
+		unsigned long addr;
+
+		addr = baddr_to_bus(hwdev, dma_addr) + PAGE_OFFSET;
+		dma_cache_wback_inv(addr, size);
+	}
 }
 
 /*
@@ -129,13 +138,10 @@ static inline dma_addr_t pci_map_page(struct pci_dev *hwdev, struct page *page,
 	if (direction == PCI_DMA_NONE)
 		out_of_line_bug();
 
-	addr = (unsigned long) page_address(page);
-	addr += offset;
-#ifdef CONFIG_NONCOHERENT_IO
+	addr = (unsigned long) page_address(page) + offset;
 	dma_cache_wback_inv(addr, size);
-#endif
 
-	return virt_to_bus((void *)addr);
+	return bus_to_baddr(hwdev, page_to_phys(page) + offset);
 }
 
 static inline void pci_unmap_page(struct pci_dev *hwdev, dma_addr_t dma_address,
@@ -143,7 +149,13 @@ static inline void pci_unmap_page(struct pci_dev *hwdev, dma_addr_t dma_address,
 {
 	if (direction == PCI_DMA_NONE)
 		out_of_line_bug();
-	/* Nothing to do */
+
+	if (direction != PCI_DMA_TODEVICE) {
+		unsigned long addr;
+
+		addr = baddr_to_bus(hwdev, dma_address) + PAGE_OFFSET;
+		dma_cache_wback_inv(addr, size);
+	}
 }
 
 /* pci_unmap_{page,single} is a nop so... */
@@ -173,18 +185,25 @@ static inline void pci_unmap_page(struct pci_dev *hwdev, dma_addr_t dma_address,
 static inline int pci_map_sg(struct pci_dev *hwdev, struct scatterlist *sg,
 			     int nents, int direction)
 {
-#ifdef CONFIG_NONCOHERENT_IO
 	int i;
-#endif
 
 	if (direction == PCI_DMA_NONE)
 		out_of_line_bug();
 
-#ifdef CONFIG_NONCOHERENT_IO
-	/* Make sure that gcc doesn't leave the empty loop body.  */
-	for (i = 0; i < nents; i++, sg++)
-		dma_cache_wback_inv((unsigned long)sg->address, sg->length);
-#endif
+	for (i = 0; i < nents; i++, sg++) {
+		if (sg->address && sg->page)
+			out_of_line_bug();
+		else if (!sg->address && !sg->page)
+			out_of_line_bug();
+
+		if (sg->address) {
+			dma_cache_wback_inv((unsigned long)sg->address,
+			                    sg->length);
+			sg->dma_address = bus_to_baddr(hwdev, __pa(sg->address));
+		} else
+			sg->dma_address = page_to_bus(sg->page) +
+			                  sg->offset;
+	}
 
 	return nents;
 }
@@ -197,10 +216,24 @@ static inline int pci_map_sg(struct pci_dev *hwdev, struct scatterlist *sg,
 static inline void pci_unmap_sg(struct pci_dev *hwdev, struct scatterlist *sg,
 				int nents, int direction)
 {
+	int i;
+
 	if (direction == PCI_DMA_NONE)
 		out_of_line_bug();
 
-	/* Nothing to do */
+	if (direction == PCI_DMA_TODEVICE)
+		return;
+
+	for (i = 0; i < nents; i++, sg++) {
+		if (sg->address && sg->page)
+			out_of_line_bug();
+		else if (!sg->address && !sg->page)
+			out_of_line_bug();
+
+		if (!sg->address)
+			continue;
+		dma_cache_wback_inv((unsigned long)sg->address, sg->length);
+	}
 }
 
 /*
@@ -217,12 +250,13 @@ static inline void pci_dma_sync_single(struct pci_dev *hwdev,
 				       dma_addr_t dma_handle,
 				       size_t size, int direction)
 {
+	unsigned long addr;
+
 	if (direction == PCI_DMA_NONE)
 		out_of_line_bug();
 
-#ifdef CONFIG_NONCOHERENT_IO
-	dma_cache_wback_inv((unsigned long)bus_to_virt(dma_handle), size);
-#endif
+	addr = baddr_to_bus(hwdev, dma_handle) + PAGE_OFFSET;
+	dma_cache_wback_inv(addr, size);
 }
 
 /*
@@ -250,7 +284,8 @@ static inline void pci_dma_sync_sg(struct pci_dev *hwdev,
 #endif
 }
 
-/* Return whether the given PCI device DMA address mask can
+/*
+ * Return whether the given PCI device DMA address mask can
  * be supported properly.  For example, if your device can
  * only drive the low 24-bits during PCI bus mastering, then
  * you would pass 0x00ffffff as the mask to this function.
@@ -262,47 +297,54 @@ static inline int pci_dma_supported(struct pci_dev *hwdev, u64 mask)
 	 * so we can't guarantee allocations that must be
 	 * within a tighter range than GFP_DMA..
 	 */
-	if (mask < 0x1fffffff)
+#ifdef CONFIG_ISA
+	if (mask < 0x00ffffff)
 		return 0;
+#endif
 
 	return 1;
 }
 
 /* This is always fine. */
-/* Well ...  this actually needs more thought ...  */
-#define pci_dac_dma_supported(pci_dev, mask)	(0)
+#define pci_dac_dma_supported(pci_dev, mask)	(1)
 
-#if 0
-static __inline__ dma64_addr_t
-pci_dac_page_to_dma(struct pci_dev *pdev, struct page *page, unsigned long offset, int direction)
+static inline dma64_addr_t pci_dac_page_to_dma(struct pci_dev *pdev,
+	struct page *page, unsigned long offset, int direction)
 {
-	return ((dma64_addr_t) page_to_bus(page) +
-		(dma64_addr_t) offset);
+	dma64_addr_t addr = page_to_phys(page) + offset;
+
+	return (dma64_addr_t) bus_to_baddr(hwdev->bus->number, addr);
 }
 
-static __inline__ struct page *
-pci_dac_dma_to_page(struct pci_dev *pdev, dma64_addr_t dma_addr)
+static inline struct page *pci_dac_dma_to_page(struct pci_dev *pdev,
+	dma64_addr_t dma_addr)
 {
-	unsigned long poff = (dma_addr >> PAGE_SHIFT);
+	unsigned long poff = baddr_to_bus(hwdev, dma_addr) >> PAGE_SHIFT;
 
 	return mem_map + poff;
 }
 
-static __inline__ unsigned long
-pci_dac_dma_to_offset(struct pci_dev *pdev, dma64_addr_t dma_addr)
+static inline unsigned long pci_dac_dma_to_offset(struct pci_dev *pdev,
+	dma64_addr_t dma_addr)
 {
-	return (dma_addr & ~PAGE_MASK);
+	return dma_addr & ~PAGE_MASK;
 }
 
-static __inline__ void
-pci_dac_dma_sync_single(struct pci_dev *pdev, dma64_addr_t dma_addr,
-                        size_t len, int direction)
+static inline void pci_dac_dma_sync_single(struct pci_dev *pdev,
+	dma64_addr_t dma_addr, size_t len, int direction)
 {
-	/* Nothing to do. */
-}
-#endif
+	unsigned long addr;
 
-/* Return the index of the PCI controller for device. */
+	if (direction == PCI_DMA_NONE)
+		BUG();
+
+	addr = baddr_to_bus(hwdev->bus->number, dma_addr) + PAGE_OFFSET;
+	dma_cache_wback_inv(addr, len);
+}
+
+/*
+ * Return the index of the PCI controller for device.
+ */
 #define pci_controller_num(pdev)	(0)
 
 /*
@@ -312,7 +354,7 @@ pci_dac_dma_sync_single(struct pci_dev *pdev, dma64_addr_t dma_addr,
  * returns, or alternatively stop on the first sg_dma_len(sg) which
  * is 0.
  */
-#define sg_dma_address(sg)	(virt_to_bus((sg)->address))
+#define sg_dma_address(sg)	((sg)->dma_address)
 #define sg_dma_len(sg)		((sg)->length)
 
 #endif /* __KERNEL__ */

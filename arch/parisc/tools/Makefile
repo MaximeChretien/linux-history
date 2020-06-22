@@ -22,7 +22,4 @@ offset.h: offset.s
 
 offset.s: offset.c
 
-clean:
-	rm -f offset.[hs] $(TARGET).new
-
 include $(TOPDIR)/Rules.make

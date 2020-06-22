@@ -176,7 +176,7 @@ static unsigned char keycode_translate[256] =
 /* 30 */  K_NONE, K_N   , K_B   , K_H   , K_G   , K_Y   , K_6   , K_NONE,
 /* 38 */  K_NONE, K_NONE, K_M   , K_J   , K_U   , K_7   , K_8   , K_NONE,
 /* 40 */  K_NONE, K_COMA, K_K   , K_I   , K_O   , K_0   , K_9   , K_NONE,
-/* 48 */  K_NONE, K_DOT , K_FSLH, K_L   , K_SEMI, K_P   , K_MINS, K_NONE,
+/* 48 */  K_PGUP, K_DOT , K_FSLH, K_L   , K_SEMI, K_P   , K_MINS, K_NONE,
 /* 50 */  K_NONE, K_NONE, K_SQOT, K_NONE, K_LSBK, K_EQLS, K_NONE, K_NONE,
 /* 58 */  K_CAPS, K_RSFT, K_ENTR, K_RSBK, K_NONE, K_BSLH, K_NONE, K_NONE,
 /* 60 */  K_NONE, K_HASH, K_NONE, K_NONE, K_NONE, K_NONE, K_BKSP, K_NONE,
@@ -267,6 +267,12 @@ unsigned char hp_ps2kbd_sysrq_xlate[128] =
 #define FOCUS_PF12 123
 
 #define JAP_86     124
+
+/* On one Compaq UK keyboard, at least, bar/backslash generates scancode
+ * 0x7f.  0x7f generated on some .de and .no keyboards also.
+ */
+#define UK_86	   86
+
 /* tfj@olivia.ping.dk:
  * The four keys are located over the numeric keypad, and are
  * labelled A1-A4. It's an rc930 keyboard, from
@@ -284,7 +290,7 @@ static unsigned char high_keys[128 - SC_LIM] = {
   0, 0, 0, 0, 0, FOCUS_PF11, 0, FOCUS_PF12,          /* 0x68-0x6f */
   0, 0, 0, FOCUS_PF2, FOCUS_PF9, 0, 0, FOCUS_PF3,    /* 0x70-0x77 */
   FOCUS_PF4, FOCUS_PF5, FOCUS_PF6, FOCUS_PF7,        /* 0x78-0x7b */
-  FOCUS_PF8, JAP_86, FOCUS_PF10, 0                   /* 0x7c-0x7f */
+  FOCUS_PF8, JAP_86, FOCUS_PF10, UK_86               /* 0x7c-0x7f */
 };
 
 /* BTC */
@@ -327,7 +333,7 @@ static unsigned char e0_keys[128] = {
   0, 0, 0, 0, 0, 0, 0, 0,			      /* 0x60-0x67 */
   0, 0, 0, 0, 0, 0, 0, E0_MACRO,		      /* 0x68-0x6f */
   0, 0, 0, 0, 0, 0, 0, 0,			      /* 0x70-0x77 */
-  0, 0, 0, 0, 0, 0, 0, 0			      /* 0x78-0x7f */
+  0, 0, 0, 0, 0, 0, 0, E0_MSLW			      /* 0x78-0x7f */
 };
 
 int pckbd_setkeycode(unsigned int scancode, unsigned int keycode)

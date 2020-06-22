@@ -153,6 +153,7 @@ extern void usb_hcd_giveback_urb (struct usb_hcd *hcd, struct urb *urb);
 
 #ifdef CONFIG_PCI
 
+struct pci_device_id;
 extern int usb_hcd_pci_probe (struct pci_dev *dev,
 				const struct pci_device_id *id);
 extern void usb_hcd_pci_remove (struct pci_dev *dev);
@@ -206,6 +207,54 @@ extern int usb_hcd_pci_resume (struct pci_dev *dev);
 
 /*-------------------------------------------------------------------------*/
 
+/*
+ * Generic bandwidth allocation constants/support
+ */
+#define FRAME_TIME_USECS	1000L
+#define BitTime(bytecount)  (7 * 8 * bytecount / 6)  /* with integer truncation */
+		/* Trying not to use worst-case bit-stuffing
+                   of (7/6 * 8 * bytecount) = 9.33 * bytecount */
+		/* bytecount = data payload byte count */
+
+#define NS_TO_US(ns)	((ns + 500L) / 1000L)
+			/* convert & round nanoseconds to microseconds */
+
+extern void usb_claim_bandwidth (struct usb_device *dev, struct urb *urb,
+		int bustime, int isoc);
+extern void usb_release_bandwidth (struct usb_device *dev, struct urb *urb,
+		int isoc);
+
+/*
+ * Full/low speed bandwidth allocation constants/support.
+ */
+#define BW_HOST_DELAY	1000L		/* nanoseconds */
+#define BW_HUB_LS_SETUP	333L		/* nanoseconds */
+                        /* 4 full-speed bit times (est.) */
+
+#define FRAME_TIME_BITS         12000L		/* frame = 1 millisecond */
+#define FRAME_TIME_MAX_BITS_ALLOC	(90L * FRAME_TIME_BITS / 100L)
+#define FRAME_TIME_MAX_USECS_ALLOC	(90L * FRAME_TIME_USECS / 100L)
+
+extern int usb_check_bandwidth (struct usb_device *dev, struct urb *urb);
+
+/*
+ * Ceiling microseconds (typical) for that many bytes at high speed
+ * ISO is a bit less, no ACK ... from USB 2.0 spec, 5.11.3 (and needed
+ * to preallocate bandwidth)
+ */
+#define USB2_HOST_DELAY	5	/* nsec, guess */
+#define HS_USECS(bytes) NS_TO_US ( ((55 * 8 * 2083)/1000) \
+	+ ((2083UL * (3167 + BitTime (bytes)))/1000) \
+	+ USB2_HOST_DELAY)
+#define HS_USECS_ISO(bytes) NS_TO_US ( ((long)(38 * 8 * 2.083)) \
+	+ ((2083UL * (3167 + BitTime (bytes)))/1000) \
+	+ USB2_HOST_DELAY)
+
+extern long usb_calc_bus_time (int speed, int is_input,
+			int isoc, int bytecount);
+
+/*-------------------------------------------------------------------------*/
+
 /* hub.h ... DeviceRemovable in 2.4.2-ac11, gone in 2.4.10 */
 // bleech -- resurfaced in 2.4.11 or 2.4.12
 #define bitmap 	DeviceRemovable
@@ -217,3 +266,20 @@ extern int usb_hcd_pci_resume (struct pci_dev *dev);
 
 #define	RUN_CONTEXT (in_irq () ? "in_irq" \
 		: (in_interrupt () ? "in_interrupt" : "can sleep"))
+
+/* 2.5 changes ... */
+
+#ifndef container_of
+#define	container_of	list_entry
+#endif
+
+#define usb_get_urb(x) (x)
+#define usb_put_urb(x)
+
+static inline struct usb_bus *hcd_to_bus (struct usb_hcd *hcd)
+	{ return hcd->bus; }
+
+static inline void
+usb_hub_tt_clear_buffer (struct usb_device *dev, int pipe)
+	{ }
+

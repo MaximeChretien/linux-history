@@ -7,6 +7,9 @@
 *! Functions exported: ds1302_readreg, ds1302_writereg, ds1302_init, get_rtc_status
 *!
 *! $Log: ds1302.c,v $
+*! Revision 1.13  2002/05/29 15:16:08  johana
+*! Removed unused variables.
+*!
 *! Revision 1.12  2002/04/10 15:35:25  johana
 *! Moved probe function closer to init function and marked it __init.
 *!
@@ -85,7 +88,7 @@
 *!
 *! (C) Copyright 1999, 2000, 2001  Axis Communications AB, LUND, SWEDEN
 *!
-*! $Id: ds1302.c,v 1.12 2002/04/10 15:35:25 johana Exp $
+*! $Id: ds1302.c,v 1.13 2002/05/29 15:16:08 johana Exp $
 *!
 *!***************************************************************************/
 
@@ -322,7 +325,6 @@ rtc_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 		{
 			struct rtc_time rtc_tm;
 			unsigned char mon, day, hrs, min, sec, leap_yr;
-			unsigned char save_control, save_freq_select;
 			unsigned int yrs;
 
 			if (!capable(CAP_SYS_TIME))
@@ -386,7 +388,6 @@ rtc_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 		case RTC_SET_CHARGE: /* set the RTC TRICKLE CHARGE register */
 		{
 			int tcs_val;                        
-			unsigned char save_control, save_freq_select;
 
 			if (!capable(CAP_SYS_TIME))
 				return -EPERM;

@@ -61,19 +61,52 @@ static int ext3_open_file (struct inode * inode, struct file * filp)
 static ssize_t
 ext3_file_write(struct file *file, const char *buf, size_t count, loff_t *ppos)
 {
+	int ret, err;
 	struct inode *inode = file->f_dentry->d_inode;
 
-	/*
-	 * Nasty: if the file is subject to synchronous writes then we need
-	 * to force generic_osync_inode() to call ext3_write_inode().
-	 * We do that by marking the inode dirty.  This adds much more
-	 * computational expense than we need, but we're going to sync
-	 * anyway.
-	 */
-	if (IS_SYNC(inode) || (file->f_flags & O_SYNC))
-		mark_inode_dirty(inode);
+	ret = generic_file_write(file, buf, count, ppos);
 
-	return generic_file_write(file, buf, count, ppos);
+	/* Skip file flushing code if there was an error, or if nothing
+	   was written. */
+	if (ret <= 0)
+		return ret;
+	
+	/* If the inode is IS_SYNC, or is O_SYNC and we are doing
+           data-journaling, then we need to make sure that we force the
+           transaction to disk to keep all metadata uptodate
+           synchronously. */
+
+	if (file->f_flags & O_SYNC) {
+		/* If we are non-data-journaled, then the dirty data has
+                   already been flushed to backing store by
+                   generic_osync_inode, and the inode has been flushed
+                   too if there have been any modifications other than
+                   mere timestamp updates.
+		   
+		   Open question --- do we care about flushing
+		   timestamps too if the inode is IS_SYNC? */
+		if (!ext3_should_journal_data(inode))
+			return ret;
+
+		goto force_commit;
+	}
+
+	/* So we know that there has been no forced data flush.  If the
+           inode is marked IS_SYNC, we need to force one ourselves. */
+	if (!IS_SYNC(inode))
+		return ret;
+	
+	/* Open question #2 --- should we force data to disk here too?
+           If we don't, the only impact is that data=writeback
+           filesystems won't flush data to disk automatically on
+           IS_SYNC, only metadata (but historically, that is what ext2
+           has done.) */
+	
+force_commit:
+	err = ext3_force_commit(inode->i_sb);
+	if (err) 
+		return err;
+	return ret;
 }
 
 struct file_operations ext3_file_operations = {

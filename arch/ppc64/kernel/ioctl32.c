@@ -44,6 +44,7 @@
 #include <linux/ppp_defs.h>
 #include <linux/if_ppp.h>
 #include <linux/if_pppox.h>
+#include <linux/if_tun.h>
 #include <linux/mtio.h>
 #include <linux/cdrom.h>
 #include <linux/loop.h>
@@ -102,6 +103,7 @@
 #include <linux/usb.h>
 #include <linux/usbdevice_fs.h>
 #include <linux/nbd.h>
+#include <linux/random.h>
 #include <asm/ppc32.h>
 #include <asm/ppcdebug.h>
 
@@ -469,6 +471,7 @@ static int dev_ifname32(unsigned int fd, unsigned int cmd, unsigned long arg)
 		return -ENODEV;
 
 	strcpy(ifr32.ifr_name, dev->name);
+	dev_put(dev);
 
 	err = copy_to_user((struct ifreq32 *)arg, &ifr32, sizeof(struct ifreq32));
 	return (err ? -EFAULT : 0);
@@ -753,6 +756,11 @@ struct in6_rtmsg32 {
 
 extern struct socket *sockfd_lookup(int fd, int *err);
 
+extern __inline__ void sockfd_put(struct socket *sock)
+{
+	fput(sock->file);
+}
+
 static int routing_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 {
 	int ret;
@@ -800,6 +808,9 @@ static int routing_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 	set_fs (KERNEL_DS);
 	ret = sys_ioctl (fd, cmd, (long) r);
 	set_fs (old_fs);
+
+	if (mysock)
+		sockfd_put(mysock);
 
 	return ret;
 }
@@ -1154,6 +1165,234 @@ static int fd_ioctl_trans(unsigned int fd, unsigned int cmd, unsigned long arg)
 		err = -EFAULT;
 
 out:	if (karg) kfree(karg);
+	return err;
+}
+
+typedef struct sg_io_hdr32 {
+	s32 interface_id;	/* [i] 'S' for SCSI generic (required) */
+	s32 dxfer_direction;	/* [i] data transfer direction  */
+	u8  cmd_len;		/* [i] SCSI command length ( <= 16 bytes) */
+	u8  mx_sb_len;		/* [i] max length to write to sbp */
+	u16 iovec_count;	/* [i] 0 implies no scatter gather */
+	u32 dxfer_len;		/* [i] byte count of data transfer */
+	u32 dxferp;		/* [i], [*io] points to data transfer memory
+					      or scatter gather list */
+	u32 cmdp;		/* [i], [*i] points to command to perform */
+	u32 sbp;		/* [i], [*o] points to sense_buffer memory */
+	u32 timeout;		/* [i] MAX_UINT->no timeout (unit: millisec) */
+	u32 flags;		/* [i] 0 -> default, see SG_FLAG... */
+	s32 pack_id;		/* [i->o] unused internally (normally) */
+	u32 usr_ptr;		/* [i->o] unused internally */
+	u8  status;		/* [o] scsi status */
+	u8  masked_status;	/* [o] shifted, masked scsi status */
+	u8  msg_status;		/* [o] messaging level data (optional) */
+	u8  sb_len_wr;		/* [o] byte count actually written to sbp */
+	u16 host_status;	/* [o] errors from host adapter */
+	u16 driver_status;	/* [o] errors from software driver */
+	s32 resid;		/* [o] dxfer_len - actual_transferred */
+	u32 duration;		/* [o] time taken by cmd (unit: millisec) */
+	u32 info;		/* [o] auxiliary information */
+} sg_io_hdr32_t;  /* 64 bytes long (on sparc32) */
+
+typedef struct sg_iovec32 {
+	u32 iov_base;
+	u32 iov_len;
+} sg_iovec32_t;
+
+static int alloc_sg_iovec(sg_io_hdr_t *sgp, u32 uptr32)
+{
+	sg_iovec32_t *uiov = (sg_iovec32_t *) A(uptr32);
+	sg_iovec_t *kiov;
+	int i;
+
+	sgp->dxferp = kmalloc(sgp->iovec_count *
+			      sizeof(sg_iovec_t), GFP_KERNEL);
+	if (!sgp->dxferp)
+		return -ENOMEM;
+	memset(sgp->dxferp, 0,
+	       sgp->iovec_count * sizeof(sg_iovec_t));
+
+	kiov = (sg_iovec_t *) sgp->dxferp;
+	for (i = 0; i < sgp->iovec_count; i++) {
+		u32 iov_base32;
+		if (__get_user(iov_base32, &uiov->iov_base) ||
+		    __get_user(kiov->iov_len, &uiov->iov_len))
+			return -EFAULT;
+
+		kiov->iov_base = kmalloc(kiov->iov_len, GFP_KERNEL);
+		if (!kiov->iov_base)
+			return -ENOMEM;
+		if (copy_from_user(kiov->iov_base,
+				   (void *) A(iov_base32),
+				   kiov->iov_len))
+			return -EFAULT;
+
+		uiov++;
+		kiov++;
+	}
+
+	return 0;
+}
+
+static int copy_back_sg_iovec(sg_io_hdr_t *sgp, u32 uptr32)
+{
+	sg_iovec32_t *uiov = (sg_iovec32_t *) A(uptr32);
+	sg_iovec_t *kiov = (sg_iovec_t *) sgp->dxferp;
+	int i;
+
+	for (i = 0; i < sgp->iovec_count; i++) {
+		u32 iov_base32;
+
+		if (__get_user(iov_base32, &uiov->iov_base))
+			return -EFAULT;
+
+		if (copy_to_user((void *) A(iov_base32),
+				 kiov->iov_base,
+				 kiov->iov_len))
+			return -EFAULT;
+
+		uiov++;
+		kiov++;
+	}
+
+	return 0;
+}
+
+static void free_sg_iovec(sg_io_hdr_t *sgp)
+{
+	sg_iovec_t *kiov = (sg_iovec_t *) sgp->dxferp;
+	int i;
+
+	for (i = 0; i < sgp->iovec_count; i++) {
+		if (kiov->iov_base) {
+			kfree(kiov->iov_base);
+			kiov->iov_base = NULL;
+		}
+		kiov++;
+	}
+	kfree(sgp->dxferp);
+	sgp->dxferp = NULL;
+}
+
+static int sg_ioctl_trans(unsigned int fd, unsigned int cmd, unsigned long arg)
+{
+	sg_io_hdr32_t *sg_io32;
+	sg_io_hdr_t sg_io64;
+	u32 dxferp32, cmdp32, sbp32;
+	mm_segment_t old_fs;
+	int err = 0;
+
+	sg_io32 = (sg_io_hdr32_t *)arg;
+	err = __get_user(sg_io64.interface_id, &sg_io32->interface_id);
+	err |= __get_user(sg_io64.dxfer_direction, &sg_io32->dxfer_direction);
+	err |= __get_user(sg_io64.cmd_len, &sg_io32->cmd_len);
+	err |= __get_user(sg_io64.mx_sb_len, &sg_io32->mx_sb_len);
+	err |= __get_user(sg_io64.iovec_count, &sg_io32->iovec_count);
+	err |= __get_user(sg_io64.dxfer_len, &sg_io32->dxfer_len);
+	err |= __get_user(sg_io64.timeout, &sg_io32->timeout);
+	err |= __get_user(sg_io64.flags, &sg_io32->flags);
+	err |= __get_user(sg_io64.pack_id, &sg_io32->pack_id);
+
+	sg_io64.dxferp = NULL;
+	sg_io64.cmdp = NULL;
+	sg_io64.sbp = NULL;
+
+	err |= __get_user(cmdp32, &sg_io32->cmdp);
+	sg_io64.cmdp = kmalloc(sg_io64.cmd_len, GFP_KERNEL);
+	if (!sg_io64.cmdp) {
+		err = -ENOMEM;
+		goto out;
+	}
+	if (copy_from_user(sg_io64.cmdp,
+			   (void *) A(cmdp32),
+			   sg_io64.cmd_len)) {
+		err = -EFAULT;
+		goto out;
+	}
+
+	err |= __get_user(sbp32, &sg_io32->sbp);
+	sg_io64.sbp = kmalloc(sg_io64.mx_sb_len, GFP_KERNEL);
+	if (!sg_io64.sbp) {
+		err = -ENOMEM;
+		goto out;
+	}
+	if (copy_from_user(sg_io64.sbp,
+			   (void *) A(sbp32),
+			   sg_io64.mx_sb_len)) {
+		err = -EFAULT;
+		goto out;
+	}
+
+	err |= __get_user(dxferp32, &sg_io32->dxferp);
+	if (sg_io64.iovec_count) {
+		int ret;
+
+		if ((ret = alloc_sg_iovec(&sg_io64, dxferp32))) {
+			err = ret;
+			goto out;
+		}
+	} else {
+		sg_io64.dxferp = kmalloc(sg_io64.dxfer_len, GFP_KERNEL);
+		if (!sg_io64.dxferp) {
+			err = -ENOMEM;
+			goto out;
+		}
+		if (copy_from_user(sg_io64.dxferp,
+				   (void *) A(dxferp32),
+				   sg_io64.dxfer_len)) {
+			err = -EFAULT;
+			goto out;
+		}
+	}
+
+	/* Unused internally, do not even bother to copy it over. */
+	sg_io64.usr_ptr = NULL;
+
+	if (err)
+		return -EFAULT;
+
+	old_fs = get_fs();
+	set_fs (KERNEL_DS);
+	err = sys_ioctl (fd, cmd, (unsigned long) &sg_io64);
+	set_fs (old_fs);
+
+	if (err < 0)
+		goto out;
+
+	err = __put_user(sg_io64.pack_id, &sg_io32->pack_id);
+	err |= __put_user(sg_io64.status, &sg_io32->status);
+	err |= __put_user(sg_io64.masked_status, &sg_io32->masked_status);
+	err |= __put_user(sg_io64.msg_status, &sg_io32->msg_status);
+	err |= __put_user(sg_io64.sb_len_wr, &sg_io32->sb_len_wr);
+	err |= __put_user(sg_io64.host_status, &sg_io32->host_status);
+	err |= __put_user(sg_io64.driver_status, &sg_io32->driver_status);
+	err |= __put_user(sg_io64.resid, &sg_io32->resid);
+	err |= __put_user(sg_io64.duration, &sg_io32->duration);
+	err |= __put_user(sg_io64.info, &sg_io32->info);
+	err |= copy_to_user((void *)A(sbp32), sg_io64.sbp, sg_io64.mx_sb_len);
+	if (sg_io64.dxferp) {
+		if (sg_io64.iovec_count)
+			err |= copy_back_sg_iovec(&sg_io64, dxferp32);
+		else
+			err |= copy_to_user((void *)A(dxferp32),
+					    sg_io64.dxferp,
+					    sg_io64.dxfer_len);
+	}
+	if (err)
+		err = -EFAULT;
+
+out:
+	if (sg_io64.cmdp)
+		kfree(sg_io64.cmdp);
+	if (sg_io64.sbp)
+		kfree(sg_io64.sbp);
+	if (sg_io64.dxferp) {
+		if (sg_io64.iovec_count) {
+			free_sg_iovec(&sg_io64);
+		} else {
+			kfree(sg_io64.dxferp);
+		}
+	}
 	return err;
 }
 
@@ -2161,12 +2400,11 @@ static lv_t *get_lv_t(u32 p, int *errp)
 		if (l->lv_block_exception) {
 			lbe32 = (lv_block_exception32_t *)A(ptr2);
 			memset(lbe, 0, size);
-                       for (i = 0; i < l->lv_remap_end; i++, lbe++, lbe32++) {
-                               err |= get_user(lbe->rsector_org, &lbe32->rsector_org);
-                               err |= __get_user(lbe->rdev_org, &lbe32->rdev_org);
-                               err |= __get_user(lbe->rsector_new, &lbe32->rsector_new);
-                               err |= __get_user(lbe->rdev_new, &lbe32->rdev_new);
-
+			for (i = 0; i < l->lv_remap_end; i++, lbe++, lbe32++) {
+				err |= get_user(lbe->rsector_org, &lbe32->rsector_org);
+				err |= __get_user(lbe->rdev_org, &lbe32->rdev_org);
+				err |= __get_user(lbe->rsector_new, &lbe32->rsector_new);
+				err |= __get_user(lbe->rdev_new, &lbe32->rdev_new);
 			}
 		}
 	}
@@ -2222,16 +2460,17 @@ static int do_lvm_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case VG_STATUS:
 		v = kmalloc(sizeof(vg_t), GFP_KERNEL);
-		if (!v) return -ENOMEM;
+		if (!v)
+			return -ENOMEM;
 		karg = v;
 		break;
 
 	case VG_CREATE_OLD:
 	case VG_CREATE:
 		v = kmalloc(sizeof(vg_t), GFP_KERNEL);
-		if (!v) return -ENOMEM;
-		if (copy_from_user(v, (void *)arg, (long)&((vg32_t *)0)->proc) ||
-		    __get_user(v->proc, &((vg32_t *)arg)->proc)) {
+		if (!v)
+			return -ENOMEM;
+		if (copy_from_user(v, (void *)arg, (long)&((vg32_t *)0)->proc)) {
 			kfree(v);
 			return -EFAULT;
 		}
@@ -2248,39 +2487,46 @@ static int do_lvm_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 			return -EPERM;
 		for (i = 0; i < v->pv_max; i++) {
 			err = __get_user(ptr, &((vg32_t *)arg)->pv[i]);
-			if (err) break;
+			if (err)
+				break;
 			if (ptr) {
 				v->pv[i] = kmalloc(sizeof(pv_t), GFP_KERNEL);
 				if (!v->pv[i]) {
 					err = -ENOMEM;
 					break;
 				}
-				err = copy_from_user(v->pv[i], (void *)A(ptr), sizeof(pv32_t) - 8 - UUID_LEN+1);
+				err = copy_from_user(v->pv[i], (void *)A(ptr),
+						     sizeof(pv32_t) - 8 - UUID_LEN+1);
 				if (err) {
 					err = -EFAULT;
 					break;
 				}
-				err = copy_from_user(v->pv[i]->pv_uuid, ((pv32_t *)A(ptr))->pv_uuid, UUID_LEN+1);
+				err = copy_from_user(v->pv[i]->pv_uuid,
+						     ((pv32_t *)A(ptr))->pv_uuid,
+						     UUID_LEN+1);
 				if (err) {
 				        err = -EFAULT;
 					break;
 				}
 
-				
-				v->pv[i]->pe = NULL; v->pv[i]->inode = NULL;
+				v->pv[i]->pe = NULL;
+				v->pv[i]->bd = NULL;
 			}
 		}
 		if (!err) {
 			for (i = 0; i < v->lv_max; i++) {
 				err = __get_user(ptr, &((vg32_t *)arg)->lv[i]);
-				if (err) break;
+				if (err)
+					break;
 				if (ptr) {
 					v->lv[i] = get_lv_t(ptr, &err);
-					if (err) break;
+					if (err)
+						break;
 				}
 			}
 		}
 		break;
+
 	case LV_CREATE:
 	case LV_EXTEND:
 	case LV_REDUCE:
@@ -2288,54 +2534,70 @@ static int do_lvm_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 	case LV_RENAME:
 	case LV_STATUS_BYNAME:
 	        err = copy_from_user(&u.pv_status, arg, sizeof(u.pv_status.pv_name));
-		if (err) return -EFAULT;
+		if (err)
+			return -EFAULT;
 		if (cmd != LV_REMOVE) {
 			err = __get_user(ptr, &((lv_req32_t *)arg)->lv);
-			if (err) return err;
+			if (err)
+				return err;
 			u.lv_req.lv = get_lv_t(ptr, &err);
 		} else
 			u.lv_req.lv = NULL;
 		break;
 
-
 	case LV_STATUS_BYINDEX:
-		err = get_user(u.lv_byindex.lv_index, &((lv_status_byindex_req32_t *)arg)->lv_index);
+		err = get_user(u.lv_byindex.lv_index,
+			       &((lv_status_byindex_req32_t *)arg)->lv_index);
 		err |= __get_user(ptr, &((lv_status_byindex_req32_t *)arg)->lv);
-		if (err) return err;
+		if (err)
+			return err;
 		u.lv_byindex.lv = get_lv_t(ptr, &err);
 		break;
+
 	case LV_STATUS_BYDEV:
 	        err = get_user(u.lv_bydev.dev, &((lv_status_bydev_req32_t *)arg)->dev);
+		err |= __get_user(ptr, &((lv_status_bydev_req32_t *)arg)->lv);
+		if (err)
+			return err;
 		u.lv_bydev.lv = get_lv_t(ptr, &err);
-		if (err) return err;
-		u.lv_bydev.lv = &p;
-		p.pe = NULL; p.inode = NULL;		
-		break;		
+		break;
+
 	case VG_EXTEND:
 		err = copy_from_user(&p, (void *)arg, sizeof(pv32_t) - 8 - UUID_LEN+1);
-		if (err) return -EFAULT;
+		if (err)
+			return -EFAULT;
 		err = copy_from_user(p.pv_uuid, ((pv32_t *)arg)->pv_uuid, UUID_LEN+1);
-		if (err) return -EFAULT;
-		p.pe = NULL; p.inode = NULL;
+		if (err)
+			return -EFAULT;
+		p.pe = NULL;
+		p.bd = NULL;
 		karg = &p;
 		break;
+
 	case PV_CHANGE:
 	case PV_STATUS:
 		err = copy_from_user(&u.pv_status, arg, sizeof(u.lv_req.lv_name));
-		if (err) return -EFAULT;
+		if (err)
+			return -EFAULT;
 		err = __get_user(ptr, &((pv_status_req32_t *)arg)->pv);
-		if (err) return err;
+		if (err)
+			return err;
 		u.pv_status.pv = &p;
 		if (cmd == PV_CHANGE) {
-			err = copy_from_user(&p, (void *)A(ptr), sizeof(pv32_t) - 8 - UUID_LEN+1);
-			if (err) return -EFAULT;
-			p.pe = NULL; p.inode = NULL;
+			err = copy_from_user(&p, (void *)A(ptr),
+					     sizeof(pv32_t) - 8 - UUID_LEN+1);
+			if (err)
+				return -EFAULT;
+			p.pe = NULL;
+			p.bd = NULL;
 		}
 		break;
-	}
+	};
+
         old_fs = get_fs(); set_fs (KERNEL_DS);
         err = sys_ioctl (fd, cmd, (unsigned long)karg);
         set_fs (old_fs);
+
 	switch (cmd) {
 	case VG_STATUS:
 		if (!err) {
@@ -2361,17 +2623,23 @@ static int do_lvm_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 		}
 		kfree(v);
 		break;
+
 	case LV_STATUS_BYNAME:
-		if (!err && u.lv_req.lv) err = copy_lv_t(ptr, u.lv_req.lv);
+		if (!err && u.lv_req.lv)
+			err = copy_lv_t(ptr, u.lv_req.lv);
 		/* Fall through */
+
         case LV_CREATE:
 	case LV_EXTEND:
 	case LV_REDUCE:
-		if (u.lv_req.lv) put_lv_t(u.lv_req.lv);
+		if (u.lv_req.lv)
+			put_lv_t(u.lv_req.lv);
 		break;
+
 	case LV_STATUS_BYINDEX:
 		if (u.lv_byindex.lv) {
-			if (!err) err = copy_lv_t(ptr, u.lv_byindex.lv);
+			if (!err)
+				err = copy_lv_t(ptr, u.lv_byindex.lv);
 			put_lv_t(u.lv_byindex.lv);
 		}
 		break;
@@ -2387,9 +2655,11 @@ static int do_lvm_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 	case PV_STATUS:
 		if (!err) {
 			err = copy_to_user((void *)A(ptr), &p, sizeof(pv32_t) - 8 - UUID_LEN+1);
-			if (err) return -EFAULT;
+			if (err)
+				return -EFAULT;
 			err = copy_to_user(((pv_t *)A(ptr))->pv_uuid, p.pv_uuid, UUID_LEN + 1);
-			if (err) return -EFAULT;
+			if (err)
+				return -EFAULT;
 		}
 		break;
 	};
@@ -2977,6 +3247,7 @@ static int blkpg_ioctl_trans(unsigned int fd, unsigned int cmd, struct blkpg_ioc
 		set_fs (KERNEL_DS);
 		err = sys_ioctl(fd, cmd, (unsigned long)&a);
 		set_fs (old_fs);
+		break;
 	default:
 		return -EINVAL;
 	}                                        
@@ -3435,119 +3706,6 @@ mtd_rw_oob(unsigned int fd, unsigned int cmd, unsigned long arg)
 	return ((0 == ret) ? 0 : -EFAULT);
 }	
 
-struct sg_io_hdr_32
-{
-	int interface_id;
-	int dxfer_direction;
-	unsigned char cmd_len;
-	unsigned char mx_sb_len;
-	unsigned short iovec_count;
-	unsigned int dxfer_len;
-	u32 dxferp;
-	u32 cmdp;
-	u32 sbp;
-	unsigned int timeout;
-	unsigned int flags;
-	int pack_id;
-	u32 usr_ptr;
-	unsigned char status;
-	unsigned char masked_status;
-	unsigned char msg_status;
-	unsigned char sb_len_wr;
-	unsigned short host_status;
-	unsigned short driver_status;
-	int resid;
-	unsigned int duration;
-	unsigned int info;
-};
-
-static int do_sg_io(unsigned int fd, unsigned int cmd, unsigned long arg)
-{
-	struct sg_io_hdr *sg = kmalloc(sizeof(struct sg_io_hdr), GFP_KERNEL);
-	struct sg_io_hdr_32 *sg_32 = (struct sg_io_hdr_32 *)arg;
-	u32 dxferp_32;
-	u32 cmdp_32;
-	u32 sbp_32;
-	u32 usr_ptr_32;
-	int ret = -EFAULT;
-	int err;
-	mm_segment_t old_fs = get_fs();
-
-	if (!sg)
-		return -ENOMEM;
-
-	memset(sg, 0, sizeof(*sg));
-
-	err = copy_from_user(sg, sg_32, offsetof(struct sg_io_hdr, dxferp));
-	err |= __get_user(dxferp_32, &sg_32->dxferp);
-	err |= __get_user(cmdp_32, &sg_32->cmdp);
-	err |= __get_user(sbp_32, &sg_32->sbp);
-
-	if (err)
-		goto error;
-
-	sg->dxferp = (void *)A(dxferp_32);
-	sg->cmdp = (void *)A(cmdp_32);
-	sg->sbp = (void *)A(sbp_32);
-
-	err = __copy_from_user(&sg->timeout, &sg_32->timeout,
-			       (long)&sg->usr_ptr - (long)&sg->timeout);
-
-	err |= __get_user(usr_ptr_32, &sg_32->usr_ptr);
-
-	if (err)
-		goto error;
-
-	sg->usr_ptr = (void *)A(usr_ptr_32);
-
-	err = __copy_from_user(&sg->status, &sg_32->status,
-			       sizeof(struct sg_io_hdr) -
-			       offsetof(struct sg_io_hdr, status));
-
-	if (err)
-		goto error;
-
-	set_fs(KERNEL_DS);
-	ret = sys_ioctl(fd, cmd, (unsigned long)sg);
-	set_fs(old_fs);
-
-	err = copy_to_user(sg_32, sg, offsetof(struct sg_io_hdr, dxferp));
-
-	dxferp_32 = (unsigned long)sg->dxferp;
-	cmdp_32 = (unsigned long)sg->cmdp;
-	sbp_32 = (unsigned long)sg->sbp;
-	err |= __put_user(dxferp_32, &sg_32->dxferp);
-	err |= __put_user(cmdp_32, &sg_32->cmdp);
-	err |= __put_user(sbp_32, &sg_32->sbp);
-
-	if (err) {
-		ret = -EFAULT;
-		goto error;
-	}
-
-	err = __copy_to_user(&sg_32->timeout, &sg->timeout,
-			     (long)&sg->usr_ptr - (long)&sg->timeout);
-
-	usr_ptr_32 = (unsigned long)sg->usr_ptr;
-	err |= __put_user(usr_ptr_32, &sg_32->usr_ptr);
-
-	if (err) {
-		ret = -EFAULT;
-		goto error;
-	}
-
-	err = __copy_to_user(&sg_32->status, &sg->status,
-			      sizeof(struct sg_io_hdr) -
-			      offsetof(struct sg_io_hdr, status));
-
-	if (err)
-		ret = -EFAULT;
-
-error:
-	kfree(sg);
-	return ret;
-}
-
 struct ioctl_trans {
 	unsigned long cmd;
 	unsigned long handler;
@@ -3736,6 +3894,12 @@ COMPATIBLE_IOCTL(SCSI_IOCTL_TAGGED_ENABLE),
 COMPATIBLE_IOCTL(SCSI_IOCTL_TAGGED_DISABLE),
 COMPATIBLE_IOCTL(SCSI_IOCTL_GET_BUS_NUMBER),
 COMPATIBLE_IOCTL(SCSI_IOCTL_SEND_COMMAND),
+/* Big T */
+COMPATIBLE_IOCTL(TUNSETNOCSUM),
+COMPATIBLE_IOCTL(TUNSETDEBUG),
+COMPATIBLE_IOCTL(TUNSETIFF),
+COMPATIBLE_IOCTL(TUNSETPERSIST),
+COMPATIBLE_IOCTL(TUNSETOWNER),
 /* Big V */
 COMPATIBLE_IOCTL(VT_SETMODE),
 COMPATIBLE_IOCTL(VT_GETMODE),
@@ -3812,6 +3976,8 @@ COMPATIBLE_IOCTL(SIOCGRARP),
 COMPATIBLE_IOCTL(SIOCDRARP),
 COMPATIBLE_IOCTL(SIOCADDDLCI),
 COMPATIBLE_IOCTL(SIOCDELDLCI),
+COMPATIBLE_IOCTL(SIOCGIFVLAN),
+COMPATIBLE_IOCTL(SIOCSIFVLAN),
 /* SG stuff */
 COMPATIBLE_IOCTL(SG_SET_TIMEOUT),
 COMPATIBLE_IOCTL(SG_GET_TIMEOUT),
@@ -4145,10 +4311,19 @@ COMPATIBLE_IOCTL(WDIOC_GETBOOTSTATUS),
 COMPATIBLE_IOCTL(WDIOC_GETTEMP),
 COMPATIBLE_IOCTL(WDIOC_SETOPTIONS),
 COMPATIBLE_IOCTL(WDIOC_KEEPALIVE),
+/* Big R */
+COMPATIBLE_IOCTL(RNDGETENTCNT),
+COMPATIBLE_IOCTL(RNDADDTOENTCNT),
+COMPATIBLE_IOCTL(RNDGETPOOL),
+COMPATIBLE_IOCTL(RNDADDENTROPY),
+COMPATIBLE_IOCTL(RNDZAPENTCNT),
+COMPATIBLE_IOCTL(RNDCLEARPOOL),
 /* Bluetooth ioctls */
 COMPATIBLE_IOCTL(HCIDEVUP),
 COMPATIBLE_IOCTL(HCIDEVDOWN),
 COMPATIBLE_IOCTL(HCIDEVRESET),
+COMPATIBLE_IOCTL(HCIDEVRESTAT),
+COMPATIBLE_IOCTL(HCIGETDEVINFO),
 COMPATIBLE_IOCTL(HCIGETDEVLIST),
 COMPATIBLE_IOCTL(HCISETRAW),
 COMPATIBLE_IOCTL(HCISETSCAN),
@@ -4264,6 +4439,7 @@ HANDLE_IOCTL(FDGETDRVSTAT32, fd_ioctl_trans),
 HANDLE_IOCTL(FDPOLLDRVSTAT32, fd_ioctl_trans),
 HANDLE_IOCTL(FDGETFDCSTAT32, fd_ioctl_trans),
 HANDLE_IOCTL(FDWERRORGET32, fd_ioctl_trans),
+HANDLE_IOCTL(SG_IO,sg_ioctl_trans),
 HANDLE_IOCTL(PPPIOCGIDLE32, ppp_ioctl_trans),
 HANDLE_IOCTL(PPPIOCSCOMPRESS32, ppp_ioctl_trans),
 HANDLE_IOCTL(MTIOCGET32, mt_ioctl_trans),
@@ -4358,7 +4534,6 @@ HANDLE_IOCTL(USBDEVFS_BULK32, do_usbdevfs_bulk),
 HANDLE_IOCTL(USBDEVFS_REAPURB32, do_usbdevfs_reapurb),
 HANDLE_IOCTL(USBDEVFS_REAPURBNDELAY32, do_usbdevfs_reapurb),
 HANDLE_IOCTL(USBDEVFS_DISCSIGNAL32, do_usbdevfs_discsignal),
-HANDLE_IOCTL(SG_IO, do_sg_io),
 };
 
 unsigned long ioctl32_hash_table[1024];

@@ -332,7 +332,7 @@ struct page *alloc_bounce_page (void)
 	if (page)
 		return page;
 	/*
-	 * No luck. First, kick the VM so it doesnt idle around while
+	 * No luck. First, kick the VM so it doesn't idle around while
 	 * we are using up our emergency rations.
 	 */
 	wakeup_bdflush();
@@ -355,9 +355,7 @@ repeat_alloc:
 	/* we need to wait I/O completion */
 	run_task_queue(&tq_disk);
 
-	current->policy |= SCHED_YIELD;
-	__set_current_state(TASK_RUNNING);
-	schedule();
+	yield();
 	goto repeat_alloc;
 }
 
@@ -370,7 +368,7 @@ struct buffer_head *alloc_bounce_bh (void)
 	if (bh)
 		return bh;
 	/*
-	 * No luck. First, kick the VM so it doesnt idle around while
+	 * No luck. First, kick the VM so it doesn't idle around while
 	 * we are using up our emergency rations.
 	 */
 	wakeup_bdflush();
@@ -393,9 +391,7 @@ repeat_alloc:
 	/* we need to wait I/O completion */
 	run_task_queue(&tq_disk);
 
-	current->policy |= SCHED_YIELD;
-	__set_current_state(TASK_RUNNING);
-	schedule();
+	yield();
 	goto repeat_alloc;
 }
 

@@ -58,6 +58,7 @@ EXPORT_SYMBOL(journal_sync_buffer);
 #endif
 EXPORT_SYMBOL(journal_flush);
 EXPORT_SYMBOL(journal_revoke);
+EXPORT_SYMBOL(journal_callback_set);
 
 EXPORT_SYMBOL(journal_init_dev);
 EXPORT_SYMBOL(journal_init_inode);
@@ -459,11 +460,10 @@ int journal_write_metadata_buffer(transaction_t *transaction,
 	do {
 		new_bh = get_unused_buffer_head(0);
 		if (!new_bh) {
-			printk (KERN_NOTICE __FUNCTION__
-				": ENOMEM at get_unused_buffer_head, "
-				"trying again.\n");
-			current->policy |= SCHED_YIELD;
-			schedule();
+			printk (KERN_NOTICE "%s: ENOMEM at "
+				"get_unused_buffer_head, trying again.\n",
+				__FUNCTION__);
+			yield();
 		}
 	} while (!new_bh);
 	/* keep subsequent assertions sane */
@@ -588,9 +588,8 @@ void log_wait_commit (journal_t *journal, tid_t tid)
 #ifdef CONFIG_JBD_DEBUG
 	lock_journal(journal);
 	if (!tid_geq(journal->j_commit_request, tid)) {
-		printk(KERN_EMERG __FUNCTION__
-			": error: j_commit_request=%d, tid=%d\n",
-			journal->j_commit_request, tid);
+		printk(KERN_EMERG "%s: error: j_commit_request=%d, tid=%d\n",
+			__FUNCTION__, journal->j_commit_request, tid);
 	}
 	unlock_journal(journal);
 #endif
@@ -639,9 +638,8 @@ int journal_bmap(journal_t *journal, unsigned long blocknr,
 		if (ret)
 			*retp = ret;
 		else {
-			printk (KERN_ALERT __FUNCTION__ 
-				": journal block not found "
-				"at offset %lu on %s\n",
+			printk (KERN_ALERT "%s: journal block not found "
+				"at offset %lu on %s\n", __FUNCTION__,
 				blocknr, bdevname(journal->j_dev));
 			err = -EIO;
 			__journal_abort_soft(journal, err);
@@ -788,8 +786,8 @@ journal_t * journal_init_inode (struct inode *inode)
 	err = journal_bmap(journal, 0, &blocknr);
 	/* If that failed, give up */
 	if (err) {
-		printk(KERN_ERR __FUNCTION__ ": Cannnot locate journal "
-		       "superblock\n");
+		printk(KERN_ERR "%s: Cannnot locate journal superblock\n",
+			__FUNCTION__);
 		kfree(journal);
 		return NULL;
 	}
@@ -875,8 +873,8 @@ int journal_create (journal_t *journal)
 		/*
 		 * We don't know what block to start at!
 		 */
-		printk(KERN_EMERG __FUNCTION__
-			": creation of journal on external device!\n");
+		printk(KERN_EMERG "%s: creation of journal on external "
+			"device!\n", __FUNCTION__);
 		BUG();
 	}
 
@@ -1488,6 +1486,49 @@ void journal_ack_err (journal_t *journal)
 	unlock_journal(journal);
 }
 
+
+/*
+ * Report any unexpected dirty buffers which turn up.  Normally those
+ * indicate an error, but they can occur if the user is running (say)
+ * tune2fs to modify the live filesystem, so we need the option of
+ * continuing as gracefully as possible.  #
+ *
+ * The caller should already hold the journal lock and
+ * journal_datalist_lock spinlock: most callers will need those anyway
+ * in order to probe the buffer's journaling state safely.
+ */
+void __jbd_unexpected_dirty_buffer(char *function, int line, 
+				 struct journal_head *jh)
+{
+	struct buffer_head *bh = jh2bh(jh);
+	int jlist;
+	
+	if (buffer_dirty(bh)) {
+		printk ("%sUnexpected dirty buffer encountered at "
+			"%s:%d (%s blocknr %lu)\n",
+			KERN_WARNING, function, line,
+			kdevname(bh->b_dev), bh->b_blocknr);
+#ifdef JBD_PARANOID_WRITES
+		J_ASSERT_BH (bh, !buffer_dirty(bh));
+#endif	
+		
+		/* If this buffer is one which might reasonably be dirty
+		 * --- ie. data, or not part of this journal --- then
+		 * we're OK to leave it alone, but otherwise we need to
+		 * move the dirty bit to the journal's own internal
+		 * JBDDirty bit. */
+		jlist = jh->b_jlist;
+		
+		if (jlist == BJ_Metadata || jlist == BJ_Reserved || 
+		    jlist == BJ_Shadow || jlist == BJ_Forget) {
+			if (atomic_set_buffer_clean(jh2bh(jh))) {
+				set_bit(BH_JBDDirty, &jh2bh(jh)->b_state);
+			}
+		}
+	}
+}
+
+
 int journal_blocks_per_page(struct inode *inode)
 {
 	return 1 << (PAGE_CACHE_SHIFT - inode->i_sb->s_blocksize_bits);
@@ -1543,8 +1584,7 @@ void * __jbd_kmalloc (char *where, size_t size, int flags, int retry)
 			last_warning = jiffies;
 		}
 		
-		current->policy |= SCHED_YIELD;
-		schedule();
+		yield();
 	}
 }
 
@@ -1597,13 +1637,12 @@ static struct journal_head *journal_alloc_journal_head(void)
 	if (ret == 0) {
 		jbd_debug(1, "out of memory for journal_head\n");
 		if (time_after(jiffies, last_warning + 5*HZ)) {
-			printk(KERN_NOTICE "ENOMEM in " __FUNCTION__
-			       ", retrying.\n");
+			printk(KERN_NOTICE "ENOMEM in %s, retrying.\n",
+				__FUNCTION__);
 			last_warning = jiffies;
 		}
 		while (ret == 0) {
-			current->policy |= SCHED_YIELD;
-			schedule();
+			yield();
 			ret = kmem_cache_alloc(journal_head_cache, GFP_NOFS);
 		}
 	}

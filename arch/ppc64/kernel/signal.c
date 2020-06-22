@@ -1,8 +1,6 @@
 /*
  *  linux/arch/ppc64/kernel/signal.c
  *
- *  
- *
  *  PowerPC version 
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
  *
@@ -637,11 +635,6 @@ int do_signal(sigset_t *oldset, struct pt_regs *regs)
 	 */
 	if (current->thread.flags & PPC_FLAG_32BIT)
 		return do_signal32(oldset, regs);
-  
-        PPCDBG(PPCDBG_SIGNAL, "do_signal - running - pid=%ld current=%lx comm=%s \n", 
-               current->pid, current, current->comm);
-
-  
 
         if (!oldset)
 		oldset = &current->blocked;
@@ -716,7 +709,7 @@ int do_signal(sigset_t *oldset, struct pt_regs *regs)
 				continue;
 
 			switch (signr) {
-			case SIGCONT: case SIGCHLD: case SIGWINCH:
+			case SIGCONT: case SIGCHLD: case SIGWINCH: case SIGURG:
 				continue;
 
 			case SIGTSTP: case SIGTTIN: case SIGTTOU:
@@ -724,13 +717,16 @@ int do_signal(sigset_t *oldset, struct pt_regs *regs)
 					continue;
 				/* FALLTHRU */
 
-			case SIGSTOP:
+			case SIGSTOP: {
+				struct signal_struct *sig;
 				current->state = TASK_STOPPED;
 				current->exit_code = signr;
-				if (!(current->p_pptr->sig->action[SIGCHLD-1].sa.sa_flags & SA_NOCLDSTOP))
+				sig = current->p_pptr->sig;
+				if (sig && !(sig->action[SIGCHLD-1].sa.sa_flags & SA_NOCLDSTOP))
 					notify_parent(current, SIGCHLD);
 				schedule();
 				continue;
+			}
 
 			case SIGQUIT: case SIGILL: case SIGTRAP:
 			case SIGABRT: case SIGFPE: case SIGSEGV:
@@ -740,10 +736,7 @@ int do_signal(sigset_t *oldset, struct pt_regs *regs)
 				/* FALLTHRU */
 
 			default:
-				sigaddset(&current->pending.signal, signr);
-				recalc_sigpending(current);
-				current->flags |= PF_SIGNALED;
-				do_exit(exit_code);
+				sig_exit(signr, exit_code, &info);
 				/* NOTREACHED */
 			}
 		}

@@ -46,7 +46,7 @@
 
 struct cpia_sbuf {
 	char *data;
-	urb_t *urb;
+	struct urb *urb;
 };
 
 #define FRAMEBUF_LEN (CPIA_MAX_FRAME_SIZE+100)
@@ -168,7 +168,7 @@ static void cpia_usb_complete(struct urb *urb)
 static int cpia_usb_open(void *privdata)
 {
 	struct usb_cpia *ucpia = (struct usb_cpia *) privdata;
-	urb_t *urb;
+	struct urb *urb;
 	int ret, retval = 0, fx, err;
   
 	if (!ucpia)
@@ -266,14 +266,16 @@ static int cpia_usb_open(void *privdata)
 
 error_urb1:		/* free urb 1 */
 	usb_free_urb(ucpia->sbuf[1].urb);
-
+	ucpia->sbuf[1].urb = NULL;
 error_urb0:		/* free urb 0 */
 	usb_free_urb(ucpia->sbuf[0].urb);
-
+	ucpia->sbuf[0].urb = NULL;
 error_1:
 	kfree (ucpia->sbuf[1].data);
+	ucpia->sbuf[1].data = NULL;
 error_0:
 	kfree (ucpia->sbuf[0].data);
+	ucpia->sbuf[0].data = NULL;
 	
 	return retval;
 }
@@ -620,8 +622,10 @@ static void cpia_disconnect(struct usb_device *udev, void *ptr)
 		ucpia->buffers[0] = NULL;
 	}
 
-	if (!ucpia->open)
+	if (!ucpia->open) {
 		kfree(ucpia);
+		cam->lowlevel_data = NULL;
+	}
 }
 
 static int __init usb_cpia_init(void)

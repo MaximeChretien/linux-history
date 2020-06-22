@@ -217,11 +217,6 @@ char *pdma_base = 0;
 unsigned long pdma_areasize;
 
 /* Common routines to all controller types on the Sparc. */
-static __inline__ void virtual_dma_init(void)
-{
-	/* nothing... */
-}
-
 static __inline__ void sun_fd_disable_dma(void)
 {
 	doing_pdma = 0;

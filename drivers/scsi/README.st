@@ -2,7 +2,7 @@ This file contains brief information about the SCSI tape driver.
 The driver is currently maintained by Kai Mäkisara (email
 Kai.Makisara@metla.fi)
 
-Last modified: Tue Feb  5 21:33:23 2002 by makisara
+Last modified: Tue Apr 16 22:32:10 2002 by makisara
 
 
 BASICS
@@ -188,6 +188,8 @@ write_threshold_kbs=xxx    the write threshold in kilobytes set to xxx
 max_buffers=xxx            the maximum number of tape buffer set to xxx
 max_sg_segs=xxx		   the maximum number of scatter/gather
 			   segments
+blocking_open=xxx	   block in open() if drive not ready, O_NONBLOCK
+			   not used, and blocking_open non-zero
 
 Note that if the buffer size is changed but the write threshold is not
 set, the write threshold is set to the new buffer size - 2 kB.
@@ -394,6 +396,11 @@ MISCELLANEOUS COMPILE OPTIONS
 
 The recovered write errors are considered fatal if ST_RECOVERED_WRITE_FATAL
 is defined.
+
+By default, open() does not block if the drive is not ready. The
+behaviour can be changed by setting ST_BLOCKING_OPEN to one. The
+behaviour can be changed also with the boot/module option
+blocking_open. The blocking open times out after ST_BLOCK_SECONDS.
 
 The maximum number of tape devices is determined by the define
 ST_MAX_TAPES. If more tapes are detected at driver initialization, the

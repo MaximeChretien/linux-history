@@ -1,23 +1,23 @@
 /*  *********************************************************************
     *  SB1250 Board Support Package
-    *  
+    *
     *  SCD Constants and Macros			File: sb1250_scd.h
-    *  
+    *
     *  This module contains constants and macros useful for
     *  manipulating the System Control and Debug module on the 1250.
-    *  
-    *  SB1250 specification level:  0.2  plus errata as of 11/7/2000
-    *  
-    *  Author:  Mitch Lichtenberg (mitch@sibyte.com)
-    *  
-    *********************************************************************  
+    *
+    *  SB1250 specification level:  User's manual 1/02/02
+    *
+    *  Author:  Mitch Lichtenberg (mpl@broadcom.com)
+    *
+    *********************************************************************
     *
     *  Copyright 2000,2001
     *  Broadcom Corporation. All rights reserved.
-    *  
-    *  This program is free software; you can redistribute it and/or 
-    *  modify it under the terms of the GNU General Public License as 
-    *  published by the Free Software Foundation; either version 2 of 
+    *
+    *  This program is free software; you can redistribute it and/or
+    *  modify it under the terms of the GNU General Public License as
+    *  published by the Free Software Foundation; either version 2 of
     *  the License, or (at your option) any later version.
     *
     *  This program is distributed in the hope that it will be useful,
@@ -27,7 +27,7 @@
     *
     *  You should have received a copy of the GNU General Public License
     *  along with this program; if not, write to the Free Software
-    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, 
+    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston,
     *  MA 02111-1307 USA
     ********************************************************************* */
 
@@ -53,7 +53,8 @@
 
 #define K_SYS_REVISION_PASS1	    1
 #define K_SYS_REVISION_PASS2	    3
-#define K_SYS_REVISION_PASS3	    4 /* XXX Unknown */
+#define K_SYS_REVISION_PASS2_2	    16
+#define K_SYS_REVISION_PASS3	    32
 
 #define S_SYS_PART                  _SB_MAKE64(16)
 #define M_SYS_PART                  _SB_MAKEMASK(16,S_SYS_PART)
@@ -61,7 +62,7 @@
 #define G_SYS_PART(x)               _SB_GETVALUE(x,S_SYS_PART,M_SYS_PART)
 
 #define K_SYS_PART_SB1250           0x1250
-#define K_SYS_PART_SB1125           0x1125 
+#define K_SYS_PART_SB1125           0x1125
 
 #define S_SYS_WID                   _SB_MAKE64(32)
 #define M_SYS_WID                   _SB_MAKEMASK(32,S_SYS_WID)
@@ -152,6 +153,9 @@
 
 #define M_SYS_MISR_MODE             _SB_MAKEMASK1(61)
 #define M_SYS_MISR_RESET            _SB_MAKEMASK1(62)
+
+#define M_SYS_SW_FLAG		    _SB_MAKEMASK1(63)	/* PASS2 */
+
 
 /*
  * Mailbox Registers (Table 4-3)
@@ -346,6 +350,7 @@
 #define M_SCD_TRACE_CFG_FREEZE_FULL     _SB_MAKEMASK1(5)
 #define M_SCD_TRACE_CFG_DEBUG_FULL      _SB_MAKEMASK1(6)
 #define M_SCD_TRACE_CFG_FULL            _SB_MAKEMASK1(7)
+#define M_SCD_TRACE_CFG_FORCECNT        _SB_MAKEMASK1(8)	/* PASS2 */
 
 #define S_SCD_TRACE_CFG_CUR_ADDR        10
 #define M_SCD_TRACE_CFG_CUR_ADDR        _SB_MAKEMASK(8,S_SCD_TRACE_CFG_CUR_ADDR)

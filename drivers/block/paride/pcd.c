@@ -810,7 +810,7 @@ static void pcd_start( void )
 {	int	unit = pcd_unit;
 	int	b, i;
 	char	rd_cmd[12] = {0xa8,0,0,0,0,0,0,0,0,1,0,0};
-	long    saved_flags;
+	unsigned long    saved_flags;
 
 	pcd_bufblk = pcd_sector / 4;
         b = pcd_bufblk;
@@ -839,7 +839,7 @@ static void do_pcd_read( void )
 
 
 {	int	unit = pcd_unit;
-	long    saved_flags;
+	unsigned long    saved_flags;
 
 	pcd_busy = 1;
 	pcd_retries = 0;
@@ -859,7 +859,7 @@ static void do_pcd_read( void )
 static void do_pcd_read_drq( void )
 
 {	int	unit = pcd_unit;
-	long    saved_flags;
+	unsigned long    saved_flags;
 
 	if (pcd_completion(unit,pcd_buffer,"read block")) {
                 if (pcd_retries < PCD_RETRIES) {

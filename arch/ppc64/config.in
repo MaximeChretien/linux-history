@@ -37,6 +37,7 @@ if [ "$CONFIG_PPC_ISERIES" = "y" ]; then
    define_bool CONFIG_MSCHUNKS y
 else
 bool 'MsChunks Physical to Absolute address translation support' CONFIG_MSCHUNKS
+tristate 'Firmware flash interface' CONFIG_RTAS_FLASH
 fi
 
 
@@ -59,6 +60,7 @@ define_bool CONFIG_SBUS n
 define_bool CONFIG_MCA n
 define_bool CONFIG_EISA n
 define_bool CONFIG_PCI y
+define_bool CONFIG_PCMCIA n
 
 bool 'Networking support' CONFIG_NET
 bool 'Sysctl support' CONFIG_SYSCTL
@@ -70,21 +72,15 @@ if [ "$CONFIG_PROC_FS" = "y" ]; then
    define_bool CONFIG_KCORE_ELF y
 fi
 
-bool 'Kernel Support for 64 bit ELF binaries' CONFIG_BINFMT_ELF
+bool 'Kernel support for 64 bit ELF binaries' CONFIG_BINFMT_ELF
 
-tristate 'Kernel support for 32 bit binaries' CONFIG_BINFMT_ELF32
+tristate 'Kernel support for 32 bit ELF binaries' CONFIG_BINFMT_ELF32
 
 tristate 'Kernel support for MISC binaries' CONFIG_BINFMT_MISC
 
 source drivers/pci/Config.in
 
 bool 'Support for hot-pluggable devices' CONFIG_HOTPLUG
-
-if [ "$CONFIG_HOTPLUG" = "y" ]; then
-   source drivers/pcmcia/Config.in
-else
-   define_bool CONFIG_PCMCIA n
-fi
 
 source drivers/parport/Config.in
 
@@ -93,12 +89,15 @@ if [ "$CONFIG_PPC_ISERIES" != "y" ]; then
    bool 'Support for frame buffer devices' CONFIG_FB
 
    bool 'Support for Open Firmware device tree in /proc' CONFIG_PROC_DEVICETREE
+
+   bool 'Default bootloader kernel arguments' CONFIG_CMDLINE_BOOL
+   if [ "$CONFIG_CMDLINE_BOOL" = "y" ] ; then
+     string 'Initial kernel command string' CONFIG_CMDLINE "console=ttyS0,9600 console=tty0 root=/dev/sda2"
+   fi
 fi
 
 endmenu
 
-source drivers/mtd/Config.in
-source drivers/pnp/Config.in
 source drivers/block/Config.in
 source drivers/md/Config.in
 
@@ -145,8 +144,6 @@ fi
 
 source net/ax25/Config.in
 
-source net/irda/Config.in
-
 mainmenu_option next_comment
 comment 'ISDN subsystem'
 
@@ -165,12 +162,14 @@ if [ "$CONFIG_CD_NO_IDESCSI" != "n" ]; then
 fi
 endmenu
 
+if [ "$CONFIG_PPC_ISERIES" != "y" ]; then
 mainmenu_option next_comment
 comment 'Console drivers'
 source drivers/video/Config.in
 endmenu
 
 source drivers/input/Config.in
+fi
 
 if [ "$CONFIG_PPC_ISERIES" = "y" ]; then
 mainmenu_option next_comment
@@ -214,6 +213,7 @@ fi
 source drivers/char/Config.in
 source fs/Config.in
 
+if [ "$CONFIG_PPC_ISERIES" != "y" ]; then
 mainmenu_option next_comment
 comment 'Sound'
 tristate 'Sound card support' CONFIG_SOUND
@@ -224,7 +224,9 @@ fi
 
 endmenu
 
+source drivers/media/Config.in
 source drivers/usb/Config.in
+fi
 
 mainmenu_option next_comment
 comment 'Kernel hacking'
@@ -232,10 +234,21 @@ comment 'Kernel hacking'
 bool 'Magic SysRq key' CONFIG_MAGIC_SYSRQ
 bool 'Include kgdb kernel debugger' CONFIG_KGDB
 bool 'Include xmon kernel debugger' CONFIG_XMON
-#bool 'Include kdb kernel debugger' CONFIG_KDB
-#if [ "$CONFIG_KDB" = "y" ]; then
-#  bool '  KDB off by default' CONFIG_KDB_OFF
-#  define_bool CONFIG_KALLSYMS y
-#fi
+bool 'Include kdb kernel debugger' CONFIG_KDB
+if [ "$CONFIG_KDB" = "y" ]; then
+  bool '  KDB off by default' CONFIG_KDB_OFF
+  define_bool CONFIG_KALLSYMS y
+  define_bool CONFIG_XMON n
+fi
+if [ "$CONFIG_XMON" = "y" ]; then
+  define_bool CONFIG_KDB n
+  define_bool CONFIG_KALLSYMS n
+fi
 bool 'Include PPCDBG realtime debugging' CONFIG_PPCDBG
+
+tristate 'Linux Kernel Crash Dump (LKCD) Support' CONFIG_DUMP
+if [ "$CONFIG_DUMP" = "y" -o "$CONFIG_DUMP" = "m" ]; then
+   dep_bool '  LKCD RLE compression' CONFIG_DUMP_COMPRESS_RLE $CONFIG_DUMP
+   dep_bool '  LKCD GZIP compression' CONFIG_DUMP_COMPRESS_GZIP $CONFIG_DUMP
+fi
 endmenu

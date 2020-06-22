@@ -1,5 +1,5 @@
 /*
- * 
+ *
  * Copyright (C) 2001 MontaVista Software, ppopov@mvista.com
  * Copied and modified Carsten Langgaard's time.c
  *
@@ -123,13 +123,13 @@ void counter0_irq(int irq, void *dev_id, struct pt_regs *regs)
 	static int jiffie_drift = 0;
 
 	kstat.irqs[0][irq]++;
-	if (readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_M20) {
+	if (au_readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_M20) {
 		/* should never happen! */
 		printk(KERN_WARNING "counter 0 w status eror\n");
 		return;
 	}
 
-	pc0 = inl(SYS_TOYREAD);
+	pc0 = au_readl(SYS_TOYREAD);
 	if (pc0 < last_match20) {
 		/* counter overflowed */
 		time_elapsed = (0xffffffff - last_match20) + pc0;
@@ -146,13 +146,13 @@ void counter0_irq(int irq, void *dev_id, struct pt_regs *regs)
 	}
 
 	last_pc0 = pc0;
-	outl(last_match20 + MATCH20_INC, SYS_TOYMATCH2);
+	au_writel(last_match20 + MATCH20_INC, SYS_TOYMATCH2);
 	au_sync();
 
 	/* our counter ticks at 10.009765625 ms/tick, we we're running
 	 * almost 10uS too slow per tick.
 	 */
-	 
+
 	if (jiffie_drift >= 999) {
 		jiffie_drift -= 999;
 		do_timer(regs); /* increment jiffies by one */
@@ -160,9 +160,9 @@ void counter0_irq(int irq, void *dev_id, struct pt_regs *regs)
 }
 #endif
 
-/* 
+/*
  * Figure out the r4k offset, the amount to increment the compare
- * register for each time tick. 
+ * register for each time tick.
  * Use the Programmable Counter 1 to do this.
  */
 unsigned long cal_r4koff(void)
@@ -176,27 +176,27 @@ unsigned long cal_r4koff(void)
 
 	save_and_cli(flags);
 
-	counter = inl(SYS_COUNTER_CNTRL);
-	outl(counter | SYS_CNTRL_EN1, SYS_COUNTER_CNTRL);
+	counter = au_readl(SYS_COUNTER_CNTRL);
+	au_writel(counter | SYS_CNTRL_EN1, SYS_COUNTER_CNTRL);
 
-	while (inl(SYS_COUNTER_CNTRL) & SYS_CNTRL_T1S);
-	outl(trim_divide-1, SYS_RTCTRIM); /* RTC now ticks at 32.768/16 kHz */
-	while (inl(SYS_COUNTER_CNTRL) & SYS_CNTRL_T1S);
+	while (au_readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_T1S);
+	au_writel(trim_divide-1, SYS_RTCTRIM); /* RTC now ticks at 32.768/16 kHz */
+	while (au_readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_T1S);
 
-	while (inl(SYS_COUNTER_CNTRL) & SYS_CNTRL_C1S);
-	outl (0, SYS_TOYWRITE);
-	while (inl(SYS_COUNTER_CNTRL) & SYS_CNTRL_C1S);
+	while (au_readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_C1S);
+	au_writel (0, SYS_TOYWRITE);
+	while (au_readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_C1S);
 
-	start = inl(SYS_RTCREAD);
+	start = au_readl(SYS_RTCREAD);
 	start += 2;
 	/* wait for the beginning of a new tick */
-	while (inl(SYS_RTCREAD) < start);
+	while (au_readl(SYS_RTCREAD) < start);
 
 	/* Start r4k counter. */
 	write_32bit_cp0_register(CP0_COUNT, 0);
 	end = start + (32768 / trim_divide)/2; /* wait 0.5 seconds */
 
-	while (end > inl(SYS_RTCREAD));
+	while (end > au_readl(SYS_RTCREAD));
 
 	count = read_32bit_cp0_register(CP0_COUNT);
 	cpu_speed = count * 2;
@@ -215,11 +215,11 @@ void __init time_init(void)
 	r4k_offset = cal_r4koff();
 	printk("%08lx(%d)\n", r4k_offset, (int) r4k_offset);
 
-	//est_freq = 2*r4k_offset*HZ;	
-	est_freq = r4k_offset*HZ;	
+	//est_freq = 2*r4k_offset*HZ;
+	est_freq = r4k_offset*HZ;
 	est_freq += 5000;    /* round */
 	est_freq -= est_freq%10000;
-	printk("CPU frequency %d.%02d MHz\n", est_freq/1000000, 
+	printk("CPU frequency %d.%02d MHz\n", est_freq/1000000,
 	       (est_freq%1000000)*100/1000000);
 	set_au1000_speed(est_freq);
 	set_au1000_lcd_clock(); // program the LCD clock
@@ -241,20 +241,20 @@ void __init time_init(void)
 	 * counter 0 interrupt as a special irq and it doesn't show
 	 * up under /proc/interrupts.
 	 */
-	while (readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_C0S);
-	writel(0, SYS_TOYWRITE);
-	while (readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_C0S);
+	while (au_readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_C0S);
+	au_writel(0, SYS_TOYWRITE);
+	while (au_readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_C0S);
 
-	writel(readl(SYS_WAKEMSK) | (1<<8), SYS_WAKEMSK);
-	writel(~0, SYS_WAKESRC);
+	au_writel(au_readl(SYS_WAKEMSK) | (1<<8), SYS_WAKEMSK);
+	au_writel(~0, SYS_WAKESRC);
 	au_sync();
-	while (readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_M20);
+	while (au_readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_M20);
 
 	/* setup match20 to interrupt once every 10ms */
-	last_pc0 = last_match20 = readl(SYS_TOYREAD);
-	writel(last_match20 + MATCH20_INC, SYS_TOYMATCH2);
+	last_pc0 = last_match20 = au_readl(SYS_TOYREAD);
+	au_writel(last_match20 + MATCH20_INC, SYS_TOYMATCH2);
 	au_sync();
-	while (readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_M20);
+	while (au_readl(SYS_COUNTER_CNTRL) & SYS_CNTRL_M20);
 	startup_match20_interrupt();
 #endif
 
@@ -282,7 +282,7 @@ static unsigned long do_fast_gettimeoffset(void)
 	unsigned long pc0;
 	unsigned long offset;
 
-	pc0 = readl(SYS_TOYREAD);
+	pc0 = au_readl(SYS_TOYREAD);
 	if (pc0 < last_pc0) {
 		offset = 0xffffffff - last_pc0 + pc0;
 		printk("offset over: %x\n", (unsigned)offset);
@@ -291,8 +291,8 @@ static unsigned long do_fast_gettimeoffset(void)
 		offset = (unsigned long)(((pc0 - last_pc0) * 305) / 10);
 	}
 	if ((pc0-last_pc0) > 2*MATCH20_INC) {
-		printk("huge offset %x, last_pc0 %x last_match20 %x pc0 %x\n", 
-				(unsigned)offset, (unsigned)last_pc0, 
+		printk("huge offset %x, last_pc0 %x last_match20 %x pc0 %x\n",
+				(unsigned)offset, (unsigned)last_pc0,
 				(unsigned)last_match20, (unsigned)pc0);
 	}
 	au_sync();
@@ -338,7 +338,7 @@ static unsigned long do_fast_gettimeoffset(void)
 		 "r" (quotient));
 
 	/*
- 	 * Due to possible jiffies inconsistencies, we need to check 
+ 	 * Due to possible jiffies inconsistencies, we need to check
 	 * the result so that we'll get a timer that is monotonic.
 	 */
 	if (res >= USECS_PER_JIFFY)

@@ -31,7 +31,7 @@
 #include <asm/page.h>
 #include <linux/config.h>
 #include <asm/mmu.h>
-// #include <asm/paca.h>
+#include <asm/perfmon.h>
 
 #ifdef CONFIG_PPC_ISERIES
 #define DO_SOFT_DISABLE
@@ -154,12 +154,13 @@ _GLOBAL(__secondary_hold)
  */
 
 /*
- * We make as much of the exception code common between native Pseries
- * and Iseries LPAR implementations as possible.
+ * We make as much of the exception code common between native
+ * exception handlers (including pSeries LPAR) and iSeries LPAR
+ * implementations as possible.
  */
 
 /*
- * This is the start of the interrupt handlers for Pseries
+ * This is the start of the interrupt handlers for pSeries
  * This code runs with relocation off.
  */
 #define EX_SRR0		0
@@ -200,13 +201,13 @@ _GLOBAL(__secondary_hold)
 	rfid
 
 /*
- * This is the start of the interrupt handlers for i_series
+ * This is the start of the interrupt handlers for iSeries
  * This code runs with relocation on.
  */
 #define EXCEPTION_PROLOG_ISERIES(n)	                                      \
 	mtspr	SPRG2,r20;		    /* use SPRG2 as scratch reg    */ \
 	mtspr   SPRG1,r21;                  /* save r21                    */ \
-	mfspr	r20,SPRG3;		    /* get Paca                    */ \
+	mfspr	r20,SPRG3;		    /* get paca                    */ \
 	ld      r21,PACAEXCSP(r20);         /* get exception stack ptr     */ \
 	addi    r21,r21,EXC_FRAME_SIZE;     /* make exception frame        */ \
 	std	r22,EX_R22(r21);	    /* save r22 on exception frame */ \
@@ -302,9 +303,9 @@ label##_Iseries:				\
 	.globl label##_Iseries;			\
 label##_Iseries:				\
 	EXCEPTION_PROLOG_ISERIES( n );		\
-	lbz	r22,PACAPROFENABLED(r20);	\
-	cmpi	0,r22,0;			\
-	bne-	label##_Iseries_profile;	\
+	lbz	r22,PACAPROFMODE(r20);		\
+	cmpi	0,r22,PMC_STATE_DECR_PROFILE;	\
+	beq-	label##_Iseries_profile;	\
 label##_Iseries_prof_ret:			\
 	lbz	r22,PACAPROCENABLED(r20);	\
 	cmpi	0,r22,0;			\
@@ -359,7 +360,7 @@ __start_interupts:
 
 	/* Space for the naca.  Architected to be located at real address
 	 * 0x4000.  Various tools rely on this location being fixed.
-	 * The first dword of the Naca is required by iSeries LPAR to
+	 * The first dword of the naca is required by iSeries LPAR to
 	 * point to itVpdAreas.  On pSeries native, this value is not used.
 	 */
 	. = 0x4000
@@ -430,7 +431,7 @@ __end_stab:
 	STD_EXCEPTION_ISERIES( 0xc00, SystemCall )
 	STD_EXCEPTION_ISERIES( 0xd00, SingleStep )
 	STD_EXCEPTION_ISERIES( 0xe00, Trap_0e )
-	STD_EXCEPTION_ISERIES( 0xf00, PerformanceMonitor )
+	MASKABLE_EXCEPTION_ISERIES( 0xf00, PerformanceMonitor )
 
 	.globl SystemReset_Iseries
 SystemReset_Iseries:
@@ -484,6 +485,12 @@ iseries_secondary_smp_loop:
 HardwareInterrupt_Iseries_masked:
 	b	maskable_exception_exit
 
+	.globl PerformanceMonitor_Iseries_masked
+PerformanceMonitor_Iseries_masked:
+	li	r22,1
+	stb	r22,PACALPPACA+LPPACAPDCINT(r20)
+	b	maskable_exception_exit
+
 	.globl Decrementer_Iseries_masked
 Decrementer_Iseries_masked:
 	li	r22,1
@@ -529,7 +536,6 @@ MachineCheck_FWNMI:
 	STD_EXCEPTION_COMMON( 0xb00, Trap_0b, .UnknownException )
 	STD_EXCEPTION_COMMON( 0xd00, SingleStep, .SingleStepException )
 	STD_EXCEPTION_COMMON( 0xe00, Trap_0e, .UnknownException )
-	STD_EXCEPTION_COMMON( 0xf00, PerformanceMonitor, .PerformanceMonitorException )
 	STD_EXCEPTION_COMMON(0x1300, InstructionBreakpoint, .InstructionBreakpointException )
 
 /*
@@ -583,7 +589,8 @@ stab_bolted_user_return:
 	bl	.do_stab_SI
 	b	1f
 
-2:	bl	.do_hash_page_DSI 	/* Try to handle as hpte fault */
+2:	li	r5,0x300
+	bl	.do_hash_page_DSI 	/* Try to handle as hpte fault */
 1:
 	ld      r4,_DAR(r1)
 	ld      r5,_DSISR(r1)
@@ -668,7 +675,7 @@ InstructionAccessSLB_common:
 #else
 	rldicl	r20,r23,49,63   	/* copy EE bit from saved MSR */
 #endif
-	li	r6,0x380
+	li	r6,0x480
 	bl      .save_remaining_regs
 	bl      .do_page_fault
 	b       .ret_from_except
@@ -787,6 +794,150 @@ SystemCall_common:
 	bl      .DoSyscall
 	b       .ret_from_except
 
+	.globl PerformanceMonitor_common
+PerformanceMonitor_common:	
+	EXCEPTION_PROLOG_COMMON
+	bl	.PerformanceMonitorException
+	b	fast_exception_return
+	
+_GLOBAL(PerformanceMonitorException)
+	mfspr	r7,SPRG3
+	lbz	r8,PACAPROFMODE(r7)
+	cmpi	0,r8,PMC_STATE_PROFILE_KERN
+	beq 	5f
+	cmpi	0,r8,PMC_STATE_TRACE_KERN
+	beq 	6f
+	cmpi	0,r8,PMC_STATE_TRACE_USER
+	beq 	9f
+	blr
+
+	/* PMC Profile Kernel */
+5:	mfspr   r9,SIAR	
+	srdi    r8,r9,60
+	cmpi    0,r8,0xc
+	beq     3f
+	li	r9,0xc
+	sldi	r9,r9,60
+3:      ld	r8,PACAPROFSTEXT(r7)	/* _stext */
+	subf	r9,r8,r9		/* offset into kernel */
+	lwz	r8,PACAPROFSHIFT(r7)
+	srd	r9,r9,r8
+	lwz	r8,PACAPROFLEN(r7)	/* length of profile table (-1) */
+	srdi	r8,r8,2
+	cmpd	r9,r8		/* off end? */
+	ble	1f
+	mr	r9,r8			/* force into last entry */
+	srdi	r9,r9,2
+1:	sldi	r9,r9,2		/* convert to offset into buffer */
+	ld	r8,PACAPROFBUFFER(r7)	/* profile buffer */
+	add	r8,r8,r9
+2:	lwarx	r9,0,r8		/* atomically increment */
+	addi	r9,r9,1
+	stwcx.	r9,0,r8
+	bne-	2b
+	addi	r10,r7,PACAPMC1
+	addi	r7,r7,PACAPMCC1
+	b	7f
+
+	/* PMC Trace Kernel */
+6:	LOADADDR(r11, perfmon_base)
+  	addi	r8,r11,32
+	ld	r12,24(r11)
+	subi	r12,r12,1
+8:	ldarx	r10,0,r8
+	addi	r9,r10,16
+	and	r9,r9,r12
+	stdcx.	r9,0,r8
+	bne-	8b
+	ld	r9,16(r11)	/* profile buffer */
+	add	r8,r9,r10
+  	mfspr   r9,SIAR	
+	std	r9,0(r8)
+	mfspr   r9,SDAR	
+	std	r9,8(r8)
+	addi	r10,r7,PACAPMC1
+	addi	r7,r7,PACAPMCC1
+	b	7f
+
+	/* PMC Trace User */
+9:	LOADADDR(r11, perfmon_base)
+#if 0
+  	addi	r8,r11,32
+	ld	r12,24(r11)
+	subi	r12,r12,1
+8:	ldarx	r10,0,r8
+	addi	r9,r10,16
+	and	r9,r9,r12
+	stdcx.	r9,0,r8
+	bne-	8b
+	ld	r9,16(r11)	/* profile buffer */
+	add	r8,r9,r10
+  	mfspr   r9,SIAR	
+	std	r9,0(r8)
+	mfspr   r9,SDAR	
+	std	r9,8(r8)
+	addi	r10,r13,THREAD+THREAD_PMC1
+	addi	r7,r13,THREAD+THREAD_PMCC1
+#endif
+	/* Accumulate counter values for kernel traces */
+7:	ld	r9,0(r7)
+	mfspr   r8,PMC1	
+	add	r9,r9,r8
+	std	r9,0(r7)
+	ld	r9,8(r7)
+	mfspr	r8,PMC2
+	add	r9,r9,r8
+	std	r9,8(r7)
+	ld	r9,16(r7)
+	mfspr	r8,PMC3
+	add	r9,r9,r8
+	std	r9,16(r7)
+	ld	r9,24(r7)
+	mfspr	r8,PMC4
+	add	r9,r9,r8
+	std	r9,24(r7)
+	ld	r9,32(r7)
+	mfspr	r8,PMC5
+	add	r9,r9,r8
+	std	r9,32(r7)
+	ld	r9,40(r7)
+	mfspr	r8,PMC6
+	add	r9,r9,r8
+	std	r9,40(r7)
+	ld	r9,48(r7)
+	mfspr	r8,PMC7
+	add	r9,r9,r8
+	std	r9,48(r7)
+	ld	r9,56(r7)
+	mfspr	r8,PMC8
+	add	r9,r9,r8
+	std	r9,56(r7)
+
+	/* Reset all counters for kernel traces */
+	lwz	r9,0(r10)
+	mtspr	PMC1,r9
+	lwz	r9,4(r10)
+	mtspr	PMC2,r9
+	lwz	r9,8(r10)
+	mtspr	PMC3,r9
+	lwz	r9,12(r10)
+	mtspr	PMC4,r9
+	lwz	r9,16(r10)
+	mtspr	PMC5,r9
+	lwz	r9,20(r10)
+	mtspr	PMC6,r9
+	lwz	r9,24(r10)
+	mtspr	PMC7,r9
+	lwz	r9,28(r10)
+	mtspr	PMC8,r9
+	lwz	r9,32(r10)
+	mtspr	MMCR0,r9
+	lwz	r9,36(r10)
+	mtspr	MMCR1,r9
+	lwz	r9,40(r10)
+	mtspr	MMCRA,r9
+	blr
+
 _GLOBAL(do_hash_page_ISI)
 	li	r4,0
 _GLOBAL(do_hash_page_DSI)
@@ -812,6 +963,7 @@ _GLOBAL(do_hash_page_DSI)
 	/*
 	 * r3 contains the faulting address
 	 * r4 contains the required access permissions
+	 * r5 contains the trap number
 	 *
 	 * at return r3 = 0 for success
 	 */
@@ -1029,6 +1181,13 @@ SLB_NUM_ENTRIES = 64
 	ori	r20,r20,256    /* map kernel region with large ptes */
 #endif
 	
+	/* Invalidate the old entry */
+	slbmfee	r21,r22
+	lis	r23,-2049
+	ori	r23,r23,65535
+	and	r21,r21,r23
+	slbie	r21
+
 	/* Put together the esid portion of the entry. */
 	mfspr	r21,DAR        /* Get the new esid                     */
 	rldicl  r21,r21,36,28  /* Permits a full 36b of ESID           */
@@ -1104,7 +1263,7 @@ _GLOBAL(save_remaining_regs)
 
 	/*
 	 * Indicate that r1 contains the kernel stack and
-	 * get the Kernel TOC and CURRENT pointers from the Paca
+	 * get the Kernel TOC and CURRENT pointers from the paca
 	 */
 	mfspr	r23,SPRG3		/* Get PACA */
 	std	r22,PACAKSAVE(r23)	/* r1 is now kernel sp */
@@ -1129,7 +1288,9 @@ _GLOBAL(save_remaining_regs)
 	mtmsrd  r22
 	blr
 
-
+/*
+ * Kernel profiling with soft disable on iSeries
+ */
 do_profile:
 	ld	r22,8(r21)		/* Get SRR1 */
 	andi.	r22,r22,MSR_PR		/* Test if in kernel */
@@ -1163,7 +1324,7 @@ _GLOBAL(pseries_secondary_smp_init)
 	bl	.enable_64b_mode
 	isync
 
-	/* Set up a Paca value for this processor. */
+	/* Set up a paca value for this processor. */
 	LOADADDR(r24, paca) 		 /* Get base vaddr of Paca array  */
 	mulli	r25,r3,PACA_SIZE	 /* Calculate vaddr of right Paca */
 	add	r25,r25,r24              /* for this processor.           */
@@ -1208,7 +1369,7 @@ _GLOBAL(__start_initialization_iSeries)
 	std	r4,0(r9)		/* set the naca pointer */
 
 	/* Get the pointer to the segment table */
-	ld	r6,PACA(r4)             /* Get the base Paca pointer       */
+	ld	r6,PACA(r4)             /* Get the base paca pointer       */
 	ld	r4,PACASTABVIRT(r6)
 
 	bl      .iSeries_fixup_klimit
@@ -1316,17 +1477,10 @@ _STATIC(__after_prom_start)
 					/* executed here.                 */
 
         LOADADDR(r0, 4f)                /* Jump to the copy of this code  */
-	mtctr	r0			/* that we just made              */
+	mtctr	r0			/* that we just made/relocated    */
 	bctr
 
-4:	LOADADDR(r9,rtas)
-	sub	r9,r9,r26
-	ld	r5,RTASBASE(r9)		/* get the value of rtas->base */
-	ld	r9,RTASSIZE(r9)		/* get the value of rtas->size */
-	bl	.copy_and_flush		/* copy upto rtas->base */
-	add     r6,r6,r9		/* then skip over rtas->size bytes */
-
-	LOADADDR(r5,klimit)
+4:	LOADADDR(r5,klimit)
 	sub	r5,r5,r26
 	ld	r5,0(r5)		/* get the value of klimit */
 	sub	r5,r5,r27
@@ -1470,15 +1624,15 @@ _GLOBAL(giveup_fpu)
 /*
  * This function is called after the master CPU has released the
  * secondary processors.  The execution environment is relocation off.
- * The Paca for this processor has the following fields initialized at
+ * The paca for this processor has the following fields initialized at
  * this point:
  *   1. Processor number
  *   2. Segment table pointer (virtual address)
  * On entry the following are set:
  *   r1    = stack pointer.  vaddr for iSeries, raddr (temp stack) for pSeries
  *   r24   = cpu# (in Linux terms)
- *   r25   = Paca virtual address
- *   SPRG3 = Paca virtual address
+ *   r25   = paca virtual address
+ *   SPRG3 = paca virtual address
  */
 _GLOBAL(__secondary_start)
 
@@ -1523,15 +1677,19 @@ _GLOBAL(__secondary_start)
 	sc				/* HvCall_setASR */
 #else
 	/* set the ASR */
-	addi  r3,0,0x4000     /* r3 = ptr to naca */
-	lhz   r3,PLATFORM(r3) /* r3 = platform flags */
-	cmpldi r3,PLATFORM_PSERIES_LPAR
-	bne   98f
-	li	r3,H_SET_ASR  /* hcall = H_SET_ASR */
-	HSC     			    /* Invoking hcall */
-	b     99f
-98:             /* This is not a hypervisor machine */
-	mtasr	r4			/* set the stab location            */
+	addi	r3,0,0x4000     /* r3 = ptr to naca */
+	lhz   	r3,PLATFORM(r3) /* r3 = platform flags */
+	cmpldi 	r3,PLATFORM_PSERIES_LPAR
+	bne   	98f
+	mfspr	r3,PVR
+	srwi	r3,r3,16
+	cmpwi	r3,0x37         /* SStar */
+	bne	98f
+	li	r3,H_SET_ASR    /* hcall = H_SET_ASR */
+	HSC     		/* Invoking hcall */
+	b	99f
+98:                             /* !(rpa hypervisor) || !(sstar) */
+	mtasr	r4	        /* set the stab location         */
 99:
 #endif
 	li	r7,0
@@ -1651,9 +1809,6 @@ _STATIC(start_here_pSeries)
 	addi    r2,r2,0x4000
 	sub	r2,r2,r26
 
-	/* Init naca->debug_switch so it can be used in stab & htab init.  */
-	bl	.ppcdbg_initialize
-
 	/* Get the pointer to the segment table which is used by           */
 	/* stab_initialize                                                 */
 	li	r27,0x4000
@@ -1662,15 +1817,19 @@ _STATIC(start_here_pSeries)
 	mtspr	SPRG3,r6		/* PPPBBB: Temp... -Peter */
 	ld	r3,PACASTABREAL(r6)
 	ori	r4,r3,1			/* turn on valid bit                */
-	
+
 	/* set the ASR */
-	addi  r3,0,0x4000     /* r3 = ptr to naca */
-	lhz   r3,PLATFORM(r3) /* r3 = platform flags */
-	cmpldi r3,PLATFORM_PSERIES_LPAR
-	bne   98f
-	li	r3,H_SET_ASR  /* hcall = H_SET_ASR */
-	HSC     			    /* Invoking hcall */
-	b     99f
+	addi	r3,0,0x4000     /* r3 = ptr to naca */
+	lhz   	r3,PLATFORM(r3) /* r3 = platform flags */
+	cmpldi 	r3,PLATFORM_PSERIES_LPAR
+	bne   	98f
+	mfspr	r3,PVR
+	srwi	r3,r3,16
+	cmpwi	r3,0x37         /* SStar */
+	bne	98f
+	li	r3,H_SET_ASR    /* hcall = H_SET_ASR */
+	HSC     	        /* Invoking hcall */
+	b     	99f
 98:                 /* This is not a hypervisor machine */
 	mtasr	r4			/* set the stab location            */
 99:
@@ -1681,11 +1840,15 @@ _STATIC(start_here_pSeries)
 	bl	.stab_initialize
 	bl	.htab_initialize
 
-	LOADADDR(r6,_SDR1)
+	addi  r3,0,0x4000     /* r3 = ptr to naca */
+	lhz   r3,PLATFORM(r3) /* r3 = platform flags */
+	cmpldi r3,PLATFORM_PSERIES
+	bne    98f
+	LOADADDR(r6,_SDR1)		/* Only if NOT LPAR */
 	sub	r6,r6,r26
 	ld	r6,0(r6)		/* get the value of _SDR1 */
 	mtspr	SDR1,r6			/* set the htab location  */
-
+98: 
 	LOADADDR(r3,.start_here_common)
 	SET_REG_TO_CONST(r4, MSR_KERNEL)
 	mtspr	SRR0,r3
@@ -1735,9 +1898,9 @@ _STATIC(start_here_common)
 	addi	r8,r8,0x4000
 	std	r8,0(r9)		/* set the value of the naca ptr  */
 
-	LOADADDR(r4,naca)               /* Get Naca ptr address           */
+	LOADADDR(r4,naca)               /* Get naca ptr address           */
 	ld	r4,0(r4)                /* Get the location of the naca   */
-	ld	r4,PACA(r4)             /* Get the base Paca pointer      */
+	ld	r4,PACA(r4)             /* Get the base paca pointer      */
 	mtspr	SPRG3,r4
 
 	/* ptr to current */
@@ -1887,11 +2050,3 @@ hardware_int_paca0:
 	.globl	stab_array
 stab_array:
         .space	4096 * (48 - 1)
-	
-/*
- * This space gets a copy of optional info passed to us by the bootstrap
- * Used to pass parameters into the kernel like root=/dev/sda1, etc.
- */
-	.globl	cmd_line
-cmd_line:
-	.space	512

@@ -158,7 +158,7 @@ int __init probe_cs4232(struct address_info *hw_config, int isapnp_configured)
 	 * method conflicts with possible PnP support in the OS. For this reason 
 	 * driver is just a temporary kludge.
 	 *
-	 * Also the Cirrus/Crystal method doesnt always work. Try ISA PnP first ;)
+	 * Also the Cirrus/Crystal method doesn't always work. Try ISA PnP first ;)
 	 */
 
 	/*
@@ -444,6 +444,7 @@ int cs4232_isapnp_probe(struct pci_dev *dev, const struct isapnp_device_id *id)
 	isapnpcfg->io_base	= dev->resource[0].start;
 	if (probe_cs4232(isapnpcfg,TRUE) == 0) {
 		printk(KERN_ERR "cs4232: ISA PnP card found, but not detected?\n");
+		kfree(isapnpcfg);
 		return -ENODEV;
 	}
 	attach_cs4232(isapnpcfg);

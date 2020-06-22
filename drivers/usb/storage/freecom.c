@@ -34,7 +34,7 @@
 #include "usb.h"
 #include "debug.h"
 #include "freecom.h"
-#include "linux/hdreg.h"
+#include <linux/hdreg.h>
 
 #ifdef CONFIG_USB_STORAGE_DEBUG
 static void pdump (void *, int);

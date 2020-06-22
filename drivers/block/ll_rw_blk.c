@@ -23,6 +23,7 @@
 #include <linux/init.h>
 #include <linux/smp_lock.h>
 #include <linux/completion.h>
+#include <linux/bootmem.h>
 
 #include <asm/system.h>
 #include <asm/io.h>
@@ -116,6 +117,9 @@ int * max_readahead[MAX_BLKDEV];
  * Max number of sectors per request
  */
 int * max_sectors[MAX_BLKDEV];
+
+unsigned long blk_max_low_pfn, blk_max_pfn;
+int blk_nohighio = 0;
 
 static inline int get_max_sectors(kdev_t dev)
 {
@@ -238,6 +242,55 @@ void blk_queue_make_request(request_queue_t * q, make_request_fn * mfn)
 	q->make_request_fn = mfn;
 }
 
+/**
+ * blk_queue_bounce_limit - set bounce buffer limit for queue
+ * @q:  the request queue for the device
+ * @dma_addr:   bus address limit
+ *
+ * Description:
+ *    Different hardware can have different requirements as to what pages
+ *    it can do I/O directly to. A low level driver can call
+ *    blk_queue_bounce_limit to have lower memory pages allocated as bounce
+ *    buffers for doing I/O to pages residing above @page. By default
+ *    the block layer sets this to the highest numbered "low" memory page.
+ **/
+void blk_queue_bounce_limit(request_queue_t *q, u64 dma_addr)
+{
+	unsigned long bounce_pfn = dma_addr >> PAGE_SHIFT;
+	unsigned long mb = dma_addr >> 20;
+	static request_queue_t *old_q;
+
+	/*
+	 * keep this for debugging for now...
+	 */
+	if (dma_addr != BLK_BOUNCE_HIGH && q != old_q) {
+		old_q = q;
+		printk("blk: queue %p, ", q);
+		if (dma_addr == BLK_BOUNCE_ANY)
+			printk("no I/O memory limit\n");
+		else
+			printk("I/O limit %luMb (mask 0x%Lx)\n", mb,
+			       (long long) dma_addr);
+	}
+
+	q->bounce_pfn = bounce_pfn;
+}
+
+
+/*
+ * can we merge the two segments, or do we need to start a new one?
+ */
+inline int blk_seg_merge_ok(struct buffer_head *bh, struct buffer_head *nxt)
+{
+	/*
+	 * if bh and nxt are contigous and don't cross a 4g boundary, it's ok
+	 */
+	if (BH_CONTIG(bh, nxt) && BH_PHYS_4G(bh, nxt))
+		return 1;
+
+	return 0;
+}
+
 static inline int ll_new_segment(request_queue_t *q, struct request *req, int max_segments)
 {
 	if (req->nr_segments < max_segments) {
@@ -250,16 +303,18 @@ static inline int ll_new_segment(request_queue_t *q, struct request *req, int ma
 static int ll_back_merge_fn(request_queue_t *q, struct request *req, 
 			    struct buffer_head *bh, int max_segments)
 {
-	if (req->bhtail->b_data + req->bhtail->b_size == bh->b_data)
+	if (blk_seg_merge_ok(req->bhtail, bh))
 		return 1;
+
 	return ll_new_segment(q, req, max_segments);
 }
 
 static int ll_front_merge_fn(request_queue_t *q, struct request *req, 
 			     struct buffer_head *bh, int max_segments)
 {
-	if (bh->b_data + bh->b_size == req->bh->b_data)
+	if (blk_seg_merge_ok(bh, req->bh))
 		return 1;
+
 	return ll_new_segment(q, req, max_segments);
 }
 
@@ -268,9 +323,9 @@ static int ll_merge_requests_fn(request_queue_t *q, struct request *req,
 {
 	int total_segments = req->nr_segments + next->nr_segments;
 
-	if (req->bhtail->b_data + req->bhtail->b_size == next->bh->b_data)
+	if (blk_seg_merge_ok(req->bhtail, next->bh))
 		total_segments--;
-    
+
 	if (total_segments > max_segments)
 		return 0;
 
@@ -444,6 +499,8 @@ void blk_init_queue(request_queue_t * q, request_fn_proc * rfn)
 	 */
 	q->plug_device_fn 	= generic_plug_device;
 	q->head_active    	= 1;
+
+	blk_queue_bounce_limit(q, BLK_BOUNCE_HIGH);
 }
 
 #define blkdev_free_rq(list) list_entry((list)->next, struct request, queue);
@@ -540,7 +597,7 @@ static struct request *__get_request_wait(request_queue_t *q, int rw)
 		if (q->rq[rw].count == 0)
 			schedule();
 		spin_lock_irq(&io_request_lock);
-		rq = get_request(q,rw);
+		rq = get_request(q, rw);
 		spin_unlock_irq(&io_request_lock);
 	} while (rq == NULL);
 	remove_wait_queue(&q->wait_for_requests[rw], &wait);
@@ -594,9 +651,14 @@ inline void drive_stat_acct (kdev_t dev, int rw,
 		printk(KERN_ERR "drive_stat_acct: cmd not R/W?\n");
 }
 
-/* Return up to two hd_structs on which to do IO accounting for a given
- * request.  On a partitioned device, we want to account both against
- * the partition and against the whole disk.  */
+#ifdef CONFIG_BLK_STATS
+/*
+ * Return up to two hd_structs on which to do IO accounting for a given
+ * request.
+ *
+ * On a partitioned device, we want to account both against the partition
+ * and against the whole disk.
+ */
 static void locate_hd_struct(struct request *req, 
 			     struct hd_struct **hd1,
 			     struct hd_struct **hd2)
@@ -611,22 +673,26 @@ static void locate_hd_struct(struct request *req,
 		/* Mask out the partition bits: account for the entire disk */
 		int devnr = MINOR(req->rq_dev) >> gd->minor_shift;
 		int whole_minor = devnr << gd->minor_shift;
+
 		*hd1 = &gd->part[whole_minor];
 		if (whole_minor != MINOR(req->rq_dev))
 			*hd2= &gd->part[MINOR(req->rq_dev)];
 	}
 }
 
-/* Round off the performance stats on an hd_struct.  The average IO
- * queue length and utilisation statistics are maintained by observing
- * the current state of the queue length and the amount of time it has
- * been in this state for.  Normally, that accounting is done on IO
- * completion, but that can result in more than a second's worth of IO
- * being accounted for within any one second, leading to >100%
- * utilisation.  To deal with that, we do a round-off before returning
- * the results when reading /proc/partitions, accounting immediately for
- * all queue usage up to the current jiffies and restarting the counters
- * again. */
+/*
+ * Round off the performance stats on an hd_struct.
+ *
+ * The average IO queue length and utilisation statistics are maintained
+ * by observing the current state of the queue length and the amount of
+ * time it has been in this state for.
+ * Normally, that accounting is done on IO completion, but that can result
+ * in more than a second's worth of IO being accounted for within any one
+ * second, leading to >100% utilisation.  To deal with that, we do a
+ * round-off before returning the results when reading /proc/partitions,
+ * accounting immediately for all queue usage up to the current jiffies and
+ * restarting the counters again.
+ */
 void disk_round_stats(struct hd_struct *hd)
 {
 	unsigned long now = jiffies;
@@ -638,7 +704,6 @@ void disk_round_stats(struct hd_struct *hd)
 		hd->io_ticks += (now - hd->last_idle_time);
 	hd->last_idle_time = now;	
 }
-
 
 static inline void down_ios(struct hd_struct *hd)
 {
@@ -690,6 +755,7 @@ static void account_io_end(struct hd_struct *hd, struct request *req)
 void req_new_io(struct request *req, int merge, int sectors)
 {
 	struct hd_struct *hd1, *hd2;
+
 	locate_hd_struct(req, &hd1, &hd2);
 	if (hd1)
 		account_io_start(hd1, req, merge, sectors);
@@ -697,15 +763,29 @@ void req_new_io(struct request *req, int merge, int sectors)
 		account_io_start(hd2, req, merge, sectors);
 }
 
+void req_merged_io(struct request *req)
+{
+	struct hd_struct *hd1, *hd2;
+
+	locate_hd_struct(req, &hd1, &hd2);
+	if (hd1)
+		down_ios(hd1);
+	if (hd2)	
+		down_ios(hd2);
+}
+
 void req_finished_io(struct request *req)
 {
 	struct hd_struct *hd1, *hd2;
+
 	locate_hd_struct(req, &hd1, &hd2);
 	if (hd1)
 		account_io_end(hd1, req);
 	if (hd2)	
 		account_io_end(hd2, req);
 }
+EXPORT_SYMBOL(req_finished_io);
+#endif /* CONFIG_BLK_STATS */
 
 /*
  * add-request adds a request to the linked list.
@@ -764,7 +844,6 @@ static void attempt_merge(request_queue_t * q,
 			  int max_segments)
 {
 	struct request *next;
-	struct hd_struct *hd1, *hd2;
   
 	next = blkdev_next_request(req);
 	if (req->sector + req->nr_sectors != next->sector)
@@ -791,12 +870,8 @@ static void attempt_merge(request_queue_t * q,
 
 	/* One last thing: we have removed a request, so we now have one
 	   less expected IO to complete for accounting purposes. */
+	req_merged_io(req);
 
-	locate_hd_struct(req, &hd1, &hd2);
-	if (hd1)
-		down_ios(hd1);
-	if (hd2)	
-		down_ios(hd2);
 	blkdev_release_request(next);
 }
 
@@ -866,9 +941,7 @@ static int __make_request(request_queue_t * q, int rw,
 	 * driver. Create a bounce buffer if the buffer data points into
 	 * high memory - keep the original buffer otherwise.
 	 */
-#if CONFIG_HIGHMEM
-	bh = create_bounce(rw, bh);
-#endif
+	bh = blk_queue_bounce(q, rw, bh);
 
 /* look for a free request. */
 	/*
@@ -900,7 +973,6 @@ again:
 				insert_here = &req->queue;
 				break;
 			}
-			elevator->elevator_merge_cleanup_fn(q, req, count);
 			req->bhtail->b_reqnext = bh;
 			req->bhtail = bh;
 			req->nr_sectors = req->hard_nr_sectors += count;
@@ -915,11 +987,15 @@ again:
 				insert_here = req->queue.prev;
 				break;
 			}
-			elevator->elevator_merge_cleanup_fn(q, req, count);
 			bh->b_reqnext = req->bh;
 			req->bh = bh;
+			/*
+			 * may not be valid, but queues not having bounce
+			 * enabled for highmem pages must not look at
+			 * ->buffer anyway
+			 */
 			req->buffer = bh->b_data;
-			req->current_nr_sectors = count;
+			req->current_nr_sectors = req->hard_cur_sectors = count;
 			req->sector = req->hard_sector = sector;
 			req->nr_sectors = req->hard_nr_sectors += count;
 			blk_started_io(count);
@@ -978,7 +1054,7 @@ get_rq:
 	req->errors = 0;
 	req->hard_sector = req->sector = sector;
 	req->hard_nr_sectors = req->nr_sectors = count;
-	req->current_nr_sectors = count;
+	req->current_nr_sectors = req->hard_cur_sectors = count;
 	req->nr_segments = 1; /* Always 1 for a new request. */
 	req->nr_hw_segments = 1; /* Always 1 for a new request. */
 	req->buffer = bh->b_data;
@@ -1286,6 +1362,7 @@ int end_that_request_first (struct request *req, int uptodate, char *name)
 			req->nr_sectors = req->hard_nr_sectors;
 
 			req->current_nr_sectors = bh->b_size >> 9;
+			req->hard_cur_sectors = req->current_nr_sectors;
 			if (req->nr_sectors < req->current_nr_sectors) {
 				req->nr_sectors = req->current_nr_sectors;
 				printk("end_request: buffer-list destroyed\n");
@@ -1323,6 +1400,9 @@ int __init blk_dev_init(void)
 	memset(ro_bits,0,sizeof(ro_bits));
 	memset(max_readahead, 0, sizeof(max_readahead));
 	memset(max_sectors, 0, sizeof(max_sectors));
+
+	blk_max_low_pfn = max_low_pfn - 1;
+	blk_max_pfn = max_pfn - 1;
 
 #ifdef CONFIG_AMIGA_Z2RAM
 	z2_init();
@@ -1439,5 +1519,9 @@ EXPORT_SYMBOL(blk_queue_headactive);
 EXPORT_SYMBOL(blk_queue_make_request);
 EXPORT_SYMBOL(generic_make_request);
 EXPORT_SYMBOL(blkdev_release_request);
-EXPORT_SYMBOL(req_finished_io);
 EXPORT_SYMBOL(generic_unplug_device);
+EXPORT_SYMBOL(blk_queue_bounce_limit);
+EXPORT_SYMBOL(blk_max_low_pfn);
+EXPORT_SYMBOL(blk_max_pfn);
+EXPORT_SYMBOL(blk_seg_merge_ok);
+EXPORT_SYMBOL(blk_nohighio);

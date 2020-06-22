@@ -11,6 +11,8 @@
  * 04/2001 Paul Mundt      <lethal@chaoticdreams.org>
  * 05/2001 Urs Ganse       <ursg@uni.de>
  *     (initial work on voodoo2 port, interlace)
+ * 09/2002 Helge Deller    <deller@gmx.de>
+ *     (enable driver on big-endian machines (hppa), ioctl fixes)
  *
  *
  * $Id: sstfb.c,v 1.26.4.1 2001/08/29 01:30:37 ghoz Exp $
@@ -30,8 +32,6 @@
 -ASK: I can choose different ordering for the color bitfields (rgba argb ...)
       wich one should i use ? is there any preferred one ? It seems ARGB is
       the one ...
--ASK: later: how to cope with endianness ? the fbi chip has builtin functions
-      to do byte swizling /swapping, maybe use that ...
 -TODO: check the error paths . if something get wrong, the error doesn't seem
       to be very well handled...if handled at all.. not good.
 -TODO: in  set_var check the validity of timings (hsync vsync)...
@@ -107,6 +107,7 @@
 
 #include <asm/io.h>
 #include <asm/ioctl.h>
+#include <asm/uaccess.h>
 
 #include <video/fbcon.h>
 #include <video/fbcon-cfb16.h>
@@ -774,11 +775,17 @@ static int sstfb_get_fix(struct fb_fix_screeninfo *fix,
 {
 #define sst_info	((struct sstfb_info *) info)
 
-	struct fb_var_screeninfo *var;
+  	struct fb_var_screeninfo *var;
+ 	struct fb_var_screeninfo var2;
 
 	f_dprintk("sstfb_get_fix(con: %d)\n",con);
+	memset(fix, 0, sizeof(struct fb_fix_screeninfo));
+	
 	if (con == -1)
-		sstfb_encode_var(var, &sst_info->current_par, sst_info);
+	{
+		sstfb_encode_var(&var2, &sst_info->current_par, sst_info);
+		var = &var2;
+	}
 	else
 		var = &fb_display[con].var;
 
@@ -789,6 +796,7 @@ static int sstfb_get_fix(struct fb_fix_screeninfo *fix,
 
 	fix->type        = FB_TYPE_PACKED_PIXELS;
 	fix->visual      = FB_VISUAL_TRUECOLOR;
+	fix->accel       = FB_ACCEL_NONE;
 	/*
 	 *   According to the specs, the linelength must be of 1024 *pixels*.
 	 * and the 24bpp mode is in fact a 32 bpp mode.
@@ -969,7 +977,7 @@ static int sstfb_ioctl(struct inode *inode, struct file *file,
 #if (SST_DEBUG_IOCTL >0)
 	int i;
 	u_long p;
-	u32 tmp;
+	u32 tmp, val;
 	u32 fbiinit0;
 	struct pci_dev * sst_dev = sst_info->dev;
 #endif
@@ -988,20 +996,24 @@ static int sstfb_ioctl(struct inode *inode, struct file *file,
 #  endif /* (SST_DEBUG_VAR >0) */
 /* fills the lfb up to *(u32*)arg */
 	case _IOW('F', 0xdc, u32):	/* 0x46dc */
-		if (*(u32*)arg > 0x400000 )
-			*(u32*) arg = 0x400000;
-		f_dprintk("filling %#x \n", *(u32*)arg);
-		for (p = 0 ; p < *(u32*)arg; p+=2)
+		if (copy_from_user(&val, (void *) arg, sizeof(val)))
+			return -EFAULT;
+		if (val > 0x400000 )
+			val = 0x400000;
+		f_dprintk("filling %#x \n", val);
+		for (p = 0 ; p < val; p+=2)
 			writew( p >> 6 , sst_info->video.vbase + p);
 		return 0;
 /* change VGA pass_through */
 	case _IOW('F', 0xdd, u32):	/* 0x46dd */
+		if (copy_from_user(&val, (void *) arg, sizeof(val)))
+			return -EFAULT;
 		f_dprintk("switch VGA pass-through\n");
 		pci_read_config_dword(sst_dev, PCI_INIT_ENABLE, &tmp);
 		pci_write_config_dword(sst_dev, PCI_INIT_ENABLE,
 				       tmp | PCI_EN_INIT_WR );
 		fbiinit0 = sst_read (FBIINIT0);
-		if (* (u32*)arg) {
+		if (val) {
 			sst_write(FBIINIT0, fbiinit0 & ~EN_VGA_PASSTHROUGH);
 			iprintk ( "Disabling VGA pass-through\n");
 		} else {
@@ -1494,7 +1506,7 @@ static int sstfb_set_par(const struct sstfb_par * par, struct sstfb_info * sst_i
 	pci_write_config_dword(sst_dev, PCI_INIT_ENABLE, PCI_EN_FIFO_WR);
 
 	/* set lfbmode : set mode + front buffer for reads/writes
-	   + disable pipeline + disable byte swapping */
+	   + disable pipeline */
 	switch(par->bpp) {
 	case 16:
 		lfbmode = LFB_565;
@@ -1514,6 +1526,12 @@ static int sstfb_set_par(const struct sstfb_par * par, struct sstfb_info * sst_i
 		break;
 	}
 
+#if defined(__BIG_ENDIAN)
+	/* enable byte-swizzle functionality in hardware */
+	lfbmode |= ( LFB_WORD_SWIZZLE_WR | LFB_BYTE_SWIZZLE_WR |
+		     LFB_WORD_SWIZZLE_RD | LFB_BYTE_SWIZZLE_RD );
+#endif
+	
 	if (clipping) {
 		sst_write(LFBMODE, lfbmode | EN_PXL_PIPELINE);
 	/*

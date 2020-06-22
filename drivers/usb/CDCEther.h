@@ -75,7 +75,7 @@ typedef struct _ether_dev_t {
 	__u8			bNumberPowerFilters;
 	__u16			mode_flags;
 	int			intr_interval;
-	devrequest		ctrl_dr;
+	struct usb_ctrlrequest	ctrl_dr;
 	struct urb		rx_urb, tx_urb, intr_urb, ctrl_urb;
 	unsigned char		rx_buff[CDC_ETHER_MAX_MTU] __attribute__((aligned(L1_CACHE_BYTES)));
 	unsigned char		tx_buff[CDC_ETHER_MAX_MTU] __attribute__((aligned(L1_CACHE_BYTES)));

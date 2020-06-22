@@ -4,7 +4,7 @@
 mainmenu_option next_comment
 comment 'Block devices'
 
-tristate 'Normal PC floppy disk support' CONFIG_BLK_DEV_FD
+tristate 'Normal floppy disk support' CONFIG_BLK_DEV_FD
 if [ "$CONFIG_AMIGA" = "y" ]; then
    tristate 'Amiga floppy support' CONFIG_AMIGA_FLOPPY
 fi
@@ -37,7 +37,7 @@ dep_tristate 'Compaq SMART2 support' CONFIG_BLK_CPQ_DA $CONFIG_PCI
 dep_tristate 'Compaq Smart Array 5xxx support' CONFIG_BLK_CPQ_CISS_DA $CONFIG_PCI 
 dep_mbool '       SCSI tape drive support for Smart Array 5xxx' CONFIG_CISS_SCSI_TAPE $CONFIG_BLK_CPQ_CISS_DA $CONFIG_SCSI
 dep_tristate 'Mylex DAC960/DAC1100 PCI RAID Controller support' CONFIG_BLK_DEV_DAC960 $CONFIG_PCI
-dep_tristate 'Micro Memory MM5415 Battery Backed RAM support' CONFIG_BLK_DEV_UMEM $CONFIG_PCI $CONFIG_EXPERIMENTAL
+dep_tristate 'Micro Memory MM5415 Battery Backed RAM support (EXPERIMENTAL)' CONFIG_BLK_DEV_UMEM $CONFIG_PCI $CONFIG_EXPERIMENTAL
 
 tristate 'Loopback device support' CONFIG_BLK_DEV_LOOP
 dep_tristate 'Network block device support' CONFIG_BLK_DEV_NBD $CONFIG_NET
@@ -47,5 +47,7 @@ if [ "$CONFIG_BLK_DEV_RAM" = "y" -o "$CONFIG_BLK_DEV_RAM" = "m" ]; then
    int '  Default RAM disk size' CONFIG_BLK_DEV_RAM_SIZE 4096
 fi
 dep_bool '  Initial RAM disk (initrd) support' CONFIG_BLK_DEV_INITRD $CONFIG_BLK_DEV_RAM
+
+bool 'Per partition statistics in /proc/partitions' CONFIG_BLK_STATS
 
 endmenu

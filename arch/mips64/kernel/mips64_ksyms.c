@@ -39,7 +39,10 @@ extern long __strnlen_user_nocheck_asm(const char *s);
 extern long __strnlen_user_asm(const char *s);
 
 EXPORT_SYMBOL(mips_machtype);
+
+#ifdef CONFIG_EISA
 EXPORT_SYMBOL(EISA_bus);
+#endif
 
 /*
  * String functions
@@ -90,20 +93,10 @@ EXPORT_SYMBOL(_dma_cache_inv);
 EXPORT_SYMBOL(invalid_pte_table);
 
 /*
- * Base address of ports for Intel style I/O.
- */
-#if defined (CONFIG_PCI) || defined (CONFIG_ISA)
-EXPORT_SYMBOL(mips_io_port_base);
-#endif
-
-/*
  * Kernel hacking ...
  */
 #include <asm/branch.h>
 #include <linux/sched.h>
-
-int register_fpe(void (*handler)(struct pt_regs *regs, unsigned int fcr31));
-int unregister_fpe(void (*handler)(struct pt_regs *regs, unsigned int fcr31));
 
 #ifdef CONFIG_VT
 EXPORT_SYMBOL(screen_info);

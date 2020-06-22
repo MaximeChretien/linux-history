@@ -29,6 +29,8 @@
 #include <linux/interrupt.h>
 #include <linux/config.h>
 #include <linux/init.h>
+#include <asm/iSeries/HvCall.h>
+#include <asm/iSeries/HvCallCfg.h>
 
 #ifdef CONFIG_KDB
 #include <linux/kdb.h>
@@ -71,8 +73,23 @@ int (*debugger_sstep)(struct pt_regs *regs);
 int (*debugger_iabr_match)(struct pt_regs *regs);
 int (*debugger_dabr_match)(struct pt_regs *regs);
 void (*debugger_fault_handler)(struct pt_regs *regs);
-#endif
-#endif
+#else
+#ifdef CONFIG_KDB
+/* kdb has different call parms */
+/* ... */
+void (*debugger)(struct pt_regs *regs) = kdb;
+int (*debugger_bpt)(struct pt_regs *regs);
+int (*debugger_sstep)(struct pt_regs *regs);
+int (*debugger_iabr_match)(struct pt_regs *regs);
+int (*debugger_dabr_match)(struct pt_regs *regs);
+/* - only defined during (xmon) mread */
+void (*debugger_fault_handler)(struct pt_regs *regs);
+#endif /* kdb */
+#endif /* kgdb */
+#endif /* xmon */
+
+void set_local_DABR(void *valp);
+
 /*
  * Trap & Exception support
  */
@@ -151,7 +168,16 @@ SystemResetException(struct pt_regs *regs)
 	xmon(regs);
 	udbg_printf("leaving xmon...\n");
 #endif
+#if defined(CONFIG_KDB)
+	kdb(KDB_REASON_ENTER, regs->trap, (kdb_eframe_t) regs);
+	udbg_printf("leaving kdb...\n");
+#endif
+
+/*
+allow system to resume after reset.
 	for(;;);
+*/
+
 }
 
 
@@ -272,14 +298,6 @@ SingleStepException(struct pt_regs *regs)
 	_exception(SIGTRAP, regs);	
 }
 
-/* Dummy handler for Performance Monitor */
-
-void
-PerformanceMonitorException(struct pt_regs *regs)
-{
-	_exception(SIGTRAP, regs);
-}
-
 void
 AlignmentException(struct pt_regs *regs)
 {
@@ -306,4 +324,21 @@ AlignmentException(struct pt_regs *regs)
 
 void __init trap_init(void)
 {
+}
+
+/*
+ * Set the DABR on all processors in the system.  The value is defined as:
+ * DAB(0:60), Break Translate(61), Write(62), Read(63)
+ */
+void
+set_all_DABR(unsigned long val) {
+	set_local_DABR(&val); 
+	smp_call_function(set_local_DABR, &val, 0, 0);
+}
+
+void
+set_local_DABR(void *valp) {
+	unsigned long val = *((unsigned long *)valp); 
+
+	HvCall_setDABR(val);
 }

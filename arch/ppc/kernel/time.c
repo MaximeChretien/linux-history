@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.time.c 1.29 12/11/01 11:40:45 trini
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
  * Common time routines among all ppc machines.
@@ -157,7 +157,12 @@ int timer_interrupt(struct pt_regs * regs)
 		jiffy_stamp += tb_ticks_per_jiffy;
 		if (!user_mode(regs))
 			ppc_do_profile(instruction_pointer(regs));
-	  	if (smp_processor_id())
+		if (unlikely(!heartbeat_count(cpu)--) 
+				&& heartbeat_reset(cpu)) {
+			ppc_md.heartbeat();
+			heartbeat_count(cpu) = heartbeat_reset(cpu);
+		}
+	  	if (cpu)
 			continue;
 
 		/* We are in an interrupt, no need to save/restore flags */
@@ -192,17 +197,16 @@ int timer_interrupt(struct pt_regs * regs)
 				last_rtc_update += 60;
 		}
 		write_unlock(&xtime_lock);
+		
+
 	}
-	if ( !disarm_decr[smp_processor_id()] )
+	if (!disarm_decr[cpu])
 		set_dec(next_dec);
 	last_jiffy_stamp(cpu) = jiffy_stamp;
 
 #ifdef CONFIG_SMP
 	smp_local_timer_interrupt(regs);
 #endif /* CONFIG_SMP */
-
-	if (ppc_md.heartbeat && !ppc_md.heartbeat_count--)
-		ppc_md.heartbeat();
 
 	hardirq_exit(cpu);
 

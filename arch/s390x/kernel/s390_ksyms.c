@@ -12,6 +12,7 @@
 #include <asm/delay.h>
 #include <asm/pgalloc.h>
 #include <asm/setup.h>
+#include <asm/softirq.h>
 #if CONFIG_IP_MULTICAST
 #include <net/arp.h>
 #endif

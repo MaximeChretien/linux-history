@@ -1283,4 +1283,4 @@ do { \
     } \
 } while (0)
 
-#endif PM3FB_H
+#endif /* PM3FB_H */

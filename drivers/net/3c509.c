@@ -49,11 +49,13 @@
 			- Power Management support
                 v1.18c 1Mar2002 David Ruggiero <jdr@farfalle.com>
                         - Full duplex support
-*/
+		v1.19  16Oct2002 Zwane Mwaikambo <zwane@linuxpower.ca>
+			- Additional ethtool features
+  */
 
 #define DRV_NAME	"3c509"
-#define DRV_VERSION	"1.18c"
-#define DRV_RELDATE	"1Mar2002"
+#define DRV_VERSION	"1.19"
+#define DRV_RELDATE	"16Oct2002"
 
 /* A few values that may be tweaked. */
 
@@ -140,9 +142,11 @@ enum RxFilter {
 #define TX_STATUS 	0x0B
 #define TX_FREE		0x0C		/* Remaining free bytes in Tx buffer. */
 
+#define WN0_CONF_CTRL	0x04		/* Window 0: Configuration control register */
+#define WN0_ADDR_CONF	0x06		/* Window 0: Address configuration register */
 #define WN0_IRQ		0x08		/* Window 0: Set IRQ line in bits 12-15. */
 #define WN4_MEDIA	0x0A		/* Window 4: Various transcvr/media bits. */
-#define  MEDIA_TP	0x00C0		/* Enable link beat and jabber for 10baseT. */
+#define	MEDIA_TP	0x00C0		/* Enable link beat and jabber for 10baseT. */
 #define WN4_NETDIAG	0x06		/* Window 4: Net diagnostic */
 #define FD_ENABLE	0x8000		/* Enable full-duplex ("external loopback") */  
 
@@ -230,12 +234,10 @@ static struct isapnp_device_id el3_isapnp_adapters[] __initdata = {
 };
 
 MODULE_DEVICE_TABLE(isapnp, el3_isapnp_adapters);
-MODULE_LICENSE("GPL");
-
 
 static u16 el3_isapnp_phys_addr[8][3];
-#endif /* CONFIG_ISAPNP || CONFIG_ISAPNP_MODULE */
 static int nopnp;
+#endif /* CONFIG_ISAPNP || CONFIG_ISAPNP_MODULE */
 
 int __init el3_probe(struct net_device *dev, int card_idx)
 {
@@ -696,7 +698,7 @@ el3_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	outw(0x00, ioaddr + TX_FIFO);
 	/* ... and the packet rounded to a doubleword. */
 #ifdef  __powerpc__
-	outsl_unswapped(ioaddr + TX_FIFO, skb->data, (skb->len + 3) >> 2);
+	outsl_ns(ioaddr + TX_FIFO, skb->data, (skb->len + 3) >> 2);
 #else
 	outsl(ioaddr + TX_FIFO, skb->data, (skb->len + 3) >> 2);
 #endif
@@ -907,7 +909,7 @@ el3_rx(struct net_device *dev)
 
 				/* 'skb->data' points to the start of sk_buff data area. */
 #ifdef  __powerpc__
-				insl_unswapped(ioaddr+RX_FIFO, skb_put(skb,pkt_len),
+				insl_ns(ioaddr+RX_FIFO, skb_put(skb,pkt_len),
 							   (pkt_len + 3) >> 2);
 #else
 				insl(ioaddr + RX_FIFO, skb_put(skb,pkt_len),
@@ -985,6 +987,119 @@ el3_close(struct net_device *dev)
 	return 0;
 }
 
+static int 
+el3_link_ok(struct net_device *dev)
+{
+	int ioaddr = dev->base_addr;
+	u16 tmp;
+
+	EL3WINDOW(4);
+	tmp = inw(ioaddr + WN4_MEDIA);
+	EL3WINDOW(1);
+	return tmp & (1<<11);
+}
+
+static int
+el3_netdev_get_ecmd(struct net_device *dev, struct ethtool_cmd *ecmd)
+{
+	u16 tmp;
+	int ioaddr = dev->base_addr;
+	
+	EL3WINDOW(0);
+	/* obtain current tranceiver via WN4_MEDIA? */	
+	tmp = inw(ioaddr + WN0_ADDR_CONF);
+	ecmd->transceiver = XCVR_INTERNAL;
+	switch (tmp >> 14) {
+	case 0:
+		ecmd->port = PORT_TP;
+		break;
+	case 1:
+		ecmd->port = PORT_AUI;
+		ecmd->transceiver = XCVR_EXTERNAL;
+		break;
+	case 3:
+		ecmd->port = PORT_BNC;
+	default:
+		break;
+	}
+
+	ecmd->duplex = DUPLEX_HALF;
+	ecmd->supported = 0;
+	tmp = inw(ioaddr + WN0_CONF_CTRL);
+	if (tmp & (1<<13))
+		ecmd->supported |= SUPPORTED_AUI;
+	if (tmp & (1<<12))
+		ecmd->supported |= SUPPORTED_BNC;
+	if (tmp & (1<<9)) {
+		ecmd->supported |= SUPPORTED_TP | SUPPORTED_10baseT_Half |
+				SUPPORTED_10baseT_Full;	/* hmm... */
+		EL3WINDOW(4);
+		tmp = inw(ioaddr + WN4_NETDIAG);
+		if (tmp & FD_ENABLE)
+			ecmd->duplex = DUPLEX_FULL;
+	}
+
+	ecmd->speed = SPEED_10;
+	EL3WINDOW(1);
+	return 0;
+}
+
+static int
+el3_netdev_set_ecmd(struct net_device *dev, struct ethtool_cmd *ecmd)
+{
+	u16 tmp;
+	int ioaddr = dev->base_addr;
+
+	if (ecmd->speed != SPEED_10)
+		return -EINVAL;
+	if ((ecmd->duplex != DUPLEX_HALF) && (ecmd->duplex != DUPLEX_FULL))
+		return -EINVAL;
+	if ((ecmd->transceiver != XCVR_INTERNAL) && (ecmd->transceiver != XCVR_EXTERNAL))
+		return -EINVAL;
+
+	/* change XCVR type */
+	EL3WINDOW(0);
+	tmp = inw(ioaddr + WN0_ADDR_CONF);
+	switch (ecmd->port) {
+	case PORT_TP:
+		tmp &= ~(3<<14);
+		dev->if_port = 0;
+		break;
+	case PORT_AUI:
+		tmp |= (1<<14);
+		dev->if_port = 1;
+		break;
+	case PORT_BNC:
+		tmp |= (3<<14);
+		dev->if_port = 3;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	outw(tmp, ioaddr + WN0_ADDR_CONF);
+	if (dev->if_port == 3) {
+		/* fire up the DC-DC convertor if BNC gets enabled */
+		tmp = inw(ioaddr + WN0_ADDR_CONF);
+		if (tmp & (3 << 14)) {
+			outw(StartCoax, ioaddr + EL3_CMD);
+			udelay(800);
+		} else
+			return -EIO;
+	}
+
+	EL3WINDOW(4);
+	tmp = inw(ioaddr + WN4_NETDIAG);
+	if (ecmd->duplex == DUPLEX_FULL)
+		tmp |= FD_ENABLE;
+	else
+		tmp &= ~FD_ENABLE;
+	outw(tmp, ioaddr + WN4_NETDIAG);
+	EL3WINDOW(1);
+
+	return 0;
+}
+
 /**
  * netdev_ethtool_ioctl: Handle network interface SIOCETHTOOL ioctls
  * @dev: network interface on which out-of-band action is to be performed
@@ -993,9 +1108,11 @@ el3_close(struct net_device *dev)
  * Process the various commands of the SIOCETHTOOL interface.
  */
 
-static int netdev_ethtool_ioctl (struct net_device *dev, void *useraddr)
+static int
+netdev_ethtool_ioctl (struct net_device *dev, void *useraddr)
 {
 	u32 ethcmd;
+	struct el3_private *lp = dev->priv;
 
 	/* dev_ioctl() in ../../net/core/dev.c has already checked
 	   capable(CAP_NET_ADMIN), so don't bother with that here.  */
@@ -1010,6 +1127,41 @@ static int netdev_ethtool_ioctl (struct net_device *dev, void *useraddr)
 		strcpy (info.driver, DRV_NAME);
 		strcpy (info.version, DRV_VERSION);
 		if (copy_to_user (useraddr, &info, sizeof (info)))
+			return -EFAULT;
+		return 0;
+	}
+
+	/* get settings */
+	case ETHTOOL_GSET: {
+		int ret;
+		struct ethtool_cmd ecmd = { ETHTOOL_GSET };
+		spin_lock_irq(&lp->lock);
+		ret = el3_netdev_get_ecmd(dev, &ecmd);
+		spin_unlock_irq(&lp->lock);
+		if (copy_to_user(useraddr, &ecmd, sizeof(ecmd)))
+			return -EFAULT;
+		return ret;
+	}
+
+	/* set settings */
+	case ETHTOOL_SSET: {
+		int ret;
+		struct ethtool_cmd ecmd;
+		if (copy_from_user(&ecmd, useraddr, sizeof(ecmd)))
+			return -EFAULT;
+		spin_lock_irq(&lp->lock);
+		ret = el3_netdev_set_ecmd(dev, &ecmd);
+		spin_unlock_irq(&lp->lock);
+		return ret;
+	}
+
+	/* get link status */
+	case ETHTOOL_GLINK: {
+		struct ethtool_value edata = { ETHTOOL_GLINK };
+		spin_lock_irq(&lp->lock);
+		edata.data = el3_link_ok(dev);
+		spin_unlock_irq(&lp->lock);
+		if (copy_to_user(useraddr, &edata, sizeof(edata)))
 			return -EFAULT;
 		return 0;
 	}
@@ -1047,7 +1199,8 @@ static int netdev_ethtool_ioctl (struct net_device *dev, void *useraddr)
  * Process the various out-of-band ioctls passed to this driver.
  */
 
-static int netdev_ioctl (struct net_device *dev, struct ifreq *rq, int cmd)
+static int
+netdev_ioctl (struct net_device *dev, struct ifreq *rq, int cmd)
 {
 	int rc = 0;
 
@@ -1064,7 +1217,8 @@ static int netdev_ioctl (struct net_device *dev, struct ifreq *rq, int cmd)
 	return rc;
 }
 
-static void el3_down(struct net_device *dev)
+static void
+el3_down(struct net_device *dev)
 {
 	int ioaddr = dev->base_addr;
 
@@ -1081,7 +1235,7 @@ static void el3_down(struct net_device *dev)
 		/* Turn off thinnet power.  Green! */
 		outw(StopCoax, ioaddr + EL3_CMD);
 	else if (dev->if_port == 0) {
-		/* Disable link beat and jabber, if_port may change ere next open(). */
+		/* Disable link beat and jabber, if_port may change here next open(). */
 		EL3WINDOW(4);
 		outw(inw(ioaddr + WN4_MEDIA) & ~MEDIA_TP, ioaddr + WN4_MEDIA);
 	}
@@ -1091,7 +1245,8 @@ static void el3_down(struct net_device *dev)
 	update_stats(dev);
 }
 
-static void el3_up(struct net_device *dev)
+static void
+el3_up(struct net_device *dev)
 {
 	int i, sw_info, net_diag;
 	int ioaddr = dev->base_addr;
@@ -1180,7 +1335,8 @@ static void el3_up(struct net_device *dev)
 /* Power Management support functions */
 #ifdef CONFIG_PM
 
-static int el3_suspend(struct pm_dev *pdev)
+static int
+el3_suspend(struct pm_dev *pdev)
 {
 	unsigned long flags;
 	struct net_device *dev;
@@ -1206,7 +1362,8 @@ static int el3_suspend(struct pm_dev *pdev)
 	return 0;
 }
 
-static int el3_resume(struct pm_dev *pdev)
+static int
+el3_resume(struct pm_dev *pdev)
 {
 	unsigned long flags;
 	struct net_device *dev;
@@ -1232,7 +1389,8 @@ static int el3_resume(struct pm_dev *pdev)
 	return 0;
 }
 
-static int el3_pm_callback(struct pm_dev *pdev, pm_request_t rqst, void *data)
+static int
+el3_pm_callback(struct pm_dev *pdev, pm_request_t rqst, void *data)
 {
 	switch (rqst) {
 		case PM_SUSPEND:
@@ -1265,6 +1423,7 @@ MODULE_PARM(nopnp, "i");
 MODULE_PARM_DESC(nopnp, "disable ISA PnP support (0-1)");
 #endif	/* CONFIG_ISAPNP */
 MODULE_DESCRIPTION("3Com Etherlink III (3c509, 3c509B) ISA/PnP ethernet driver");
+MODULE_LICENSE("GPL");
 
 int
 init_module(void)

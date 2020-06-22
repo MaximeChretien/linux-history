@@ -11,9 +11,12 @@ Original driver (sg.h):
 Version 2 and 3 extensions to driver:
 *       Copyright (C) 1998 - 2002 Douglas Gilbert
 
-    Version: 3.1.23 (20020318)
+    Version: 3.1.24 (20020505)
     This version is for 2.4 series kernels.
 
+    Changes since 3.1.23 (20020318)
+	- off by one fix for last scatter gather element
+	- zero buffer obtained for non-root users
     Changes since 3.1.22 (20011208)
 	- change EACCES to EPERM when O_RDONLY is insufficient
 	- suppress newlines in host string ( /proc/scsi/sg/host_strs output)

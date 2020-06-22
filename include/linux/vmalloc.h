@@ -5,6 +5,7 @@
 #include <linux/mm.h>
 #include <linux/spinlock.h>
 
+#include <linux/highmem.h>	/* several arch define VMALLOC_END via PKMAP_BASE */
 #include <asm/pgtable.h>
 
 /* bits in vm_struct->flags */

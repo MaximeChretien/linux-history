@@ -12,11 +12,6 @@
 #include <asm/page.h>
 #endif /* __ASSEMBLY__ */
 
-/* Certain architectures need to do special things when pte's
- * within a page table are directly modified.  Thus, the following
- * hook is made available.
- */
-
 /* PMD_SHIFT determines what a second-level page table entry can map */
 #define PMD_SHIFT	(PAGE_SHIFT + PAGE_SHIFT - 3)
 #define PMD_SIZE	(1UL << PMD_SHIFT)
@@ -232,47 +227,41 @@ extern unsigned long empty_zero_page[PAGE_SIZE/sizeof(unsigned long)];
 /* to find an entry in the ioremap page-table-directory */
 #define pgd_offset_i(address) (ioremap_pgd + pgd_index(address))
 
-/*
- * Given a pointer to an mem_map[] entry, return the kernel virtual
- * address corresponding to that page.
- */
-#define page_address(page) ((page)->virtual)
-
 #define pages_to_mb(x)		((x) >> (20-PAGE_SHIFT))
 
 /*
  * The following only work if pte_present() is true.
  * Undefined behaviour if not..
  */
-extern inline int pte_read(pte_t pte)  { return pte_val(pte) & _PAGE_USER;}
-extern inline int pte_write(pte_t pte) { return pte_val(pte) & _PAGE_RW;}
-extern inline int pte_exec(pte_t pte)  { return pte_val(pte) & _PAGE_EXEC;}
-extern inline int pte_dirty(pte_t pte) { return pte_val(pte) & _PAGE_DIRTY;}
-extern inline int pte_young(pte_t pte) { return pte_val(pte) & _PAGE_ACCESSED;}
+static inline int pte_read(pte_t pte)  { return pte_val(pte) & _PAGE_USER;}
+static inline int pte_write(pte_t pte) { return pte_val(pte) & _PAGE_RW;}
+static inline int pte_exec(pte_t pte)  { return pte_val(pte) & _PAGE_EXEC;}
+static inline int pte_dirty(pte_t pte) { return pte_val(pte) & _PAGE_DIRTY;}
+static inline int pte_young(pte_t pte) { return pte_val(pte) & _PAGE_ACCESSED;}
 
-extern inline void pte_uncache(pte_t pte) { pte_val(pte) |= _PAGE_NO_CACHE; }
-extern inline void pte_cache(pte_t pte)   { pte_val(pte) &= ~_PAGE_NO_CACHE; }
+static inline void pte_uncache(pte_t pte) { pte_val(pte) |= _PAGE_NO_CACHE; }
+static inline void pte_cache(pte_t pte)   { pte_val(pte) &= ~_PAGE_NO_CACHE; }
 
-extern inline pte_t pte_rdprotect(pte_t pte) {
+static inline pte_t pte_rdprotect(pte_t pte) {
 	pte_val(pte) &= ~_PAGE_USER; return pte; }
-extern inline pte_t pte_exprotect(pte_t pte) {
+static inline pte_t pte_exprotect(pte_t pte) {
 	pte_val(pte) &= ~_PAGE_EXEC; return pte; }
-extern inline pte_t pte_wrprotect(pte_t pte) {
+static inline pte_t pte_wrprotect(pte_t pte) {
 	pte_val(pte) &= ~(_PAGE_RW); return pte; }
-extern inline pte_t pte_mkclean(pte_t pte) {
+static inline pte_t pte_mkclean(pte_t pte) {
 	pte_val(pte) &= ~(_PAGE_DIRTY); return pte; }
-extern inline pte_t pte_mkold(pte_t pte) {
+static inline pte_t pte_mkold(pte_t pte) {
 	pte_val(pte) &= ~_PAGE_ACCESSED; return pte; }
 
-extern inline pte_t pte_mkread(pte_t pte) {
+static inline pte_t pte_mkread(pte_t pte) {
 	pte_val(pte) |= _PAGE_USER; return pte; }
-extern inline pte_t pte_mkexec(pte_t pte) {
+static inline pte_t pte_mkexec(pte_t pte) {
 	pte_val(pte) |= _PAGE_USER | _PAGE_EXEC; return pte; }
-extern inline pte_t pte_mkwrite(pte_t pte) {
+static inline pte_t pte_mkwrite(pte_t pte) {
 	pte_val(pte) |= _PAGE_RW; return pte; }
-extern inline pte_t pte_mkdirty(pte_t pte) {
+static inline pte_t pte_mkdirty(pte_t pte) {
 	pte_val(pte) |= _PAGE_DIRTY; return pte; }
-extern inline pte_t pte_mkyoung(pte_t pte) {
+static inline pte_t pte_mkyoung(pte_t pte) {
 	pte_val(pte) |= _PAGE_ACCESSED; return pte; }
 
 /* Atomic PTE updates */
@@ -349,8 +338,8 @@ extern void local_flush_tlb_range(struct mm_struct *mm, unsigned long start,
 #define flush_tlb_page local_flush_tlb_page
 #define flush_tlb_range local_flush_tlb_range
 
-extern inline void flush_tlb_pgtables(struct mm_struct *mm,
-				unsigned long start, unsigned long end)
+static inline void flush_tlb_pgtables(struct mm_struct *mm,
+				      unsigned long start, unsigned long end)
 {
 	/* PPC has hw page tables. */
 }

@@ -47,6 +47,7 @@
  *                                       flushing the Jumbo ring.
  *   Hans Grobler <grobh@sun.ac.za>:     Memory leak fixes in the
  *                                       driver init path.
+ *   Grant Grundler <grundler@cup.hp.com>: PCI write posting fixes.
  */
 
 #include <linux/config.h>
@@ -123,7 +124,6 @@
 #ifndef PCI_DEVICE_ID_FARALLON_PN9100T
 #define PCI_DEVICE_ID_FARALLON_PN9100T  0xfa
 #endif
-
 #ifndef PCI_VENDOR_ID_SGI
 #define PCI_VENDOR_ID_SGI		0x10a9
 #endif
@@ -144,13 +144,13 @@ static struct pci_device_id acenic_pci_tbl[] __initdata = {
 	{ PCI_VENDOR_ID_NETGEAR, PCI_DEVICE_ID_NETGEAR_GA620T,
 	  PCI_ANY_ID, PCI_ANY_ID, PCI_CLASS_NETWORK_ETHERNET << 8, 0xffff00, },
 	/*
-	 * Farallon used the DEC vendor ID on their cards incorrectly.
+	 * Farallon used the DEC vendor ID on their cards incorrectly,
+	 * then later Alteon's ID.
 	 */
 	{ PCI_VENDOR_ID_DEC, PCI_DEVICE_ID_FARALLON_PN9000SX,
 	  PCI_ANY_ID, PCI_ANY_ID, PCI_CLASS_NETWORK_ETHERNET << 8, 0xffff00, },
 	{ PCI_VENDOR_ID_ALTEON, PCI_DEVICE_ID_FARALLON_PN9100T,
 	  PCI_ANY_ID, PCI_ANY_ID, PCI_CLASS_NETWORK_ETHERNET << 8, 0xffff00, },
-
 	{ PCI_VENDOR_ID_SGI, PCI_DEVICE_ID_SGI_ACENIC,
 	  PCI_ANY_ID, PCI_ANY_ID, PCI_CLASS_NETWORK_ETHERNET << 8, 0xffff00, },
 	{ }
@@ -180,14 +180,20 @@ MODULE_DEVICE_TABLE(pci, acenic_pci_tbl);
 #endif
 
 #ifndef SET_MODULE_OWNER
-#define SET_MODULE_OWNER(dev)		{do{} while(0);}
+#define SET_MODULE_OWNER(dev)		do{} while(0)
 #define ACE_MOD_INC_USE_COUNT		MOD_INC_USE_COUNT
 #define ACE_MOD_DEC_USE_COUNT		MOD_DEC_USE_COUNT
 #else
-#define ACE_MOD_INC_USE_COUNT		{do{} while(0);}
-#define ACE_MOD_DEC_USE_COUNT		{do{} while(0);}
+#define ACE_MOD_INC_USE_COUNT		do{} while(0)
+#define ACE_MOD_DEC_USE_COUNT		do{} while(0)
 #endif
 
+
+#if LINUX_VERSION_CODE >= 0x2051c
+#define ace_sync_irq(irq)	synchronize_irq(irq)
+#else
+#define ace_sync_irq(irq)	synchronize_irq()
+#endif
 
 #if (LINUX_VERSION_CODE < 0x02030d)
 #define pci_resource_start(dev, bar)	dev->base_address[bar]
@@ -198,6 +204,7 @@ MODULE_DEVICE_TABLE(pci, acenic_pci_tbl);
 #if (LINUX_VERSION_CODE < 0x02030e)
 #define net_device device
 #endif
+
 
 #if (LINUX_VERSION_CODE < 0x02032a)
 typedef u32 dma_addr_t;
@@ -222,8 +229,6 @@ static inline void *pci_alloc_consistent(struct pci_dev *hwdev, size_t size,
 	(((u64)(mask) & 0xffffffff00000000) == 0 ? 0 : -EIO)
 #define pci_dma_supported(dev, mask)		\
 	(((u64)(mask) & 0xffffffff00000000) == 0 ? 1 : 0)
-#define DECLARE_PCI_UNMAP_ADDR(ADDR_NAME)
-#define DECLARE_PCI_UNMAP_LEN(LEN_NAME)
 
 #elif (LINUX_VERSION_CODE < 0x02040d)
 
@@ -247,8 +252,15 @@ pci_map_page(struct pci_dev *cookie, struct page *page, unsigned long off,
 }
 #define pci_unmap_page(cookie, dma_addr, size, dir)	\
 	pci_unmap_single(cookie, dma_addr, size, dir)
+#endif
+
+#if (LINUX_VERSION_CODE < 0x020412)
 #define DECLARE_PCI_UNMAP_ADDR(ADDR_NAME)
 #define DECLARE_PCI_UNMAP_LEN(LEN_NAME)
+#define pci_unmap_addr(PTR, ADDR_NAME)		0
+#define pci_unmap_addr_set(PTR, ADDR_NAME, VAL)	do{} while(0)
+#define pci_unmap_len(PTR, LEN_NAME)		0
+#define pci_unmap_len_set(PTR, LEN_NAME, VAL)	do{} while(0)
 #endif
 
 
@@ -266,7 +278,7 @@ pci_map_page(struct pci_dev *cookie, struct page *page, unsigned long off,
 #define dev_kfree_skb_irq(a)			dev_kfree_skb(a)
 #define netif_wake_queue(dev)			clear_bit(0, &dev->tbusy)
 #define netif_stop_queue(dev)			set_bit(0, &dev->tbusy)
-#define late_stop_netif_stop_queue(dev)		{do{} while(0);}
+#define late_stop_netif_stop_queue(dev)		do{} while(0)
 #define early_stop_netif_stop_queue(dev)	test_and_set_bit(0,&dev->tbusy)
 #define early_stop_netif_wake_queue(dev)	netif_wake_queue(dev)
 
@@ -280,7 +292,7 @@ static inline void netif_start_queue(struct net_device *dev)
 #define ace_mark_net_bh()			mark_bh(NET_BH)
 #define netif_queue_stopped(dev)		dev->tbusy
 #define netif_running(dev)			dev->start
-#define ace_if_down(dev)			{do{dev->start = 0;} while(0);}
+#define ace_if_down(dev)			do{dev->start = 0;} while(0)
 
 #define tasklet_struct				tq_struct
 static inline void tasklet_schedule(struct tasklet_struct *tasklet)
@@ -298,13 +310,13 @@ static inline void tasklet_init(struct tasklet_struct *tasklet,
 	tasklet->routine = (void (*)(void *))func;
 	tasklet->data = (void *)data;
 }
-#define tasklet_kill(tasklet)			{do{} while(0);}
+#define tasklet_kill(tasklet)			do{} while(0)
 #else
 #define late_stop_netif_stop_queue(dev)		netif_stop_queue(dev)
 #define early_stop_netif_stop_queue(dev)	0
-#define early_stop_netif_wake_queue(dev)	{do{} while(0);}
-#define ace_mark_net_bh()			{do{} while(0);}
-#define ace_if_down(dev)			{do{} while(0);}
+#define early_stop_netif_wake_queue(dev)	do{} while(0)
+#define ace_mark_net_bh()			do{} while(0)
+#define ace_if_down(dev)			do{} while(0)
 #endif
 
 #if (LINUX_VERSION_CODE >= 0x02031b)
@@ -320,7 +332,7 @@ static inline void tasklet_init(struct tasklet_struct *tasklet,
 
 #ifndef ARCH_HAS_PREFETCHW
 #ifndef prefetchw
-#define prefetchw(x)				{do{} while(0);}
+#define prefetchw(x)				do{} while(0)
 #endif
 #endif
 
@@ -575,7 +587,7 @@ static int tx_ratio[ACE_MAX_MOD_PARMS];
 static int dis_pci_mem_inval[ACE_MAX_MOD_PARMS] = {1, 1, 1, 1, 1, 1, 1, 1};
 
 static char version[] __initdata = 
-  "acenic.c: v0.89 03/15/2002  Jes Sorensen, linux-acenic@SunSITE.dk\n"
+  "acenic.c: v0.92 08/05/2002  Jes Sorensen, linux-acenic@SunSITE.dk\n"
   "                            http://home.cern.ch/~jes/gige/acenic.html\n";
 
 static struct net_device *root_dev;
@@ -673,6 +685,11 @@ int __devinit acenic_probe (ACE_PROBE_ARG)
 			printk(version);
 		}
 
+		if (pci_enable_device(pdev)) {
+			kfree(dev);
+			continue;
+		}
+
 		/*
 		 * Enable master mode before we start playing with the
 		 * pci_command word since pci_set_master() will modify
@@ -722,11 +739,12 @@ int __devinit acenic_probe (ACE_PROBE_ARG)
 					"Gigabit Ethernet", sizeof (ap->name));
 				printk(KERN_INFO "%s: Farallon PN9100-T ",
 				       dev->name);
-				break;
+			} else {
+				strncpy(ap->name, "AceNIC Gigabit Ethernet",
+					sizeof (ap->name));
+				printk(KERN_INFO "%s: Alteon AceNIC ",
+				       dev->name);
 			}
-			strncpy(ap->name, "AceNIC Gigabit Ethernet",
-				sizeof (ap->name));
-			printk(KERN_INFO "%s: Alteon AceNIC ", dev->name);
 			break;
 		case PCI_VENDOR_ID_3COM:
 			strncpy(ap->name, "3Com 3C985 Gigabit Ethernet",
@@ -862,6 +880,7 @@ static void __exit ace_module_cleanup(void)
 		 * This clears any pending interrupts
 		 */
 		writel(1, &regs->Mb0Lo);
+		readl(&regs->CpuCtrl);	/* flush */
 
 		/*
 		 * Make sure no other CPUs are processing interrupts
@@ -872,7 +891,7 @@ static void __exit ace_module_cleanup(void)
 		 * Then release the RX buffers - jumbo buffers were
 		 * already released in ace_close().
 		 */
-		synchronize_irq();
+		ace_sync_irq(root_dev->irq);
 
 		for (i = 0; i < RX_STD_RING_ENTRIES; i++) {
 			struct sk_buff *skb = ap->skb->rx_std_skbuff[i].skb;
@@ -1154,34 +1173,30 @@ static int __init ace_init(struct net_device *dev)
 	 * to any crashes involving the NIC
 	 */
 	writel(HW_RESET | (HW_RESET << 24), &regs->HostCtrl);
-	wmb();
+	readl(&regs->HostCtrl);		/* PCI write posting */
+	udelay(5);
 
 	/*
-	 * Don't access any other registes before this point!
+	 * Don't access any other registers before this point!
 	 */
 #ifdef __BIG_ENDIAN
 	/*
 	 * This will most likely need BYTE_SWAP once we switch
 	 * to using __raw_writel()
 	 */
-#ifdef __parisc__
-	writel((WORD_SWAP | BYTE_SWAP | CLR_INT |
-		((WORD_SWAP | BYTE_SWAP | CLR_INT) << 24)),
-	       &regs->HostCtrl);
-#else
 	writel((WORD_SWAP | CLR_INT | ((WORD_SWAP | CLR_INT) << 24)),
 	       &regs->HostCtrl);
-#endif
 #else
 	writel((CLR_INT | WORD_SWAP | ((CLR_INT | WORD_SWAP) << 24)),
 	       &regs->HostCtrl);
 #endif
-	mb();
+	readl(&regs->HostCtrl);		/* PCI write posting */
 
 	/*
 	 * Stop the NIC CPU and clear pending interrupts
 	 */
 	writel(readl(&regs->CpuCtrl) | CPU_HALT, &regs->CpuCtrl);
+	readl(&regs->CpuCtrl);		/* PCI write posting */
 	writel(0, &regs->Mb0Lo);
 
 	tig_ver = readl(&regs->HostCtrl) >> 28;
@@ -1202,6 +1217,7 @@ static int __init ace_init(struct net_device *dev)
 		       tig_ver, tigon2FwReleaseMajor, tigon2FwReleaseMinor,
 		       tigon2FwReleaseFix);
 		writel(readl(&regs->CpuBCtrl) | CPU_HALT, &regs->CpuBCtrl);
+		readl(&regs->CpuBCtrl);		/* PCI write posting */
 		/*
 		 * The SRAM bank size does _not_ indicate the amount
 		 * of memory on the card, it controls the _bank_ size!
@@ -1233,7 +1249,7 @@ static int __init ace_init(struct net_device *dev)
 	writel(ACE_BYTE_SWAP_DMA | ACE_WARN | ACE_FATAL |
 	       ACE_WORD_SWAP_BD | ACE_NO_JUMBO_FRAG, &regs->ModeStat);
 #endif
-	mb();
+	readl(&regs->ModeStat);		/* PCI write posting */
 
 	mac1 = 0;
 	for(i = 0; i < 4; i++) {
@@ -1371,7 +1387,7 @@ static int __init ace_init(struct net_device *dev)
 	tmp &= ~DMA_READ_WRITE_MASK;
 	tmp |= DMA_READ_MAX_128;
 	/*
-	 * All the docs sy MUST NOT. Well, I did.
+	 * All the docs say MUST NOT. Well, I did.
 	 * Nothing terrible happens, if we load wrong size.
 	 * Bit w&i still works better!
 	 */
@@ -1380,6 +1396,13 @@ static int __init ace_init(struct net_device *dev)
 	writel(tmp, &regs->PciState);
 
 #if 0
+	/*
+	 * The Host PCI bus controller driver has to set FBB.
+	 * If all devices on that PCI bus support FBB, then the controller
+	 * can enable FBB support in the Host PCI Bus controller (or on
+	 * the PCI-PCI bridge if that applies).
+	 * -ggg
+	 */
 	/*
 	 * I have received reports from people having problems when this
 	 * bit is enabled.
@@ -1461,9 +1484,9 @@ static int __init ace_init(struct net_device *dev)
 	set_aceaddr(&info->evt_ctrl.rngptr, ap->evt_ring_dma);
 	info->evt_ctrl.flags = 0;
 
-	set_aceaddr(&info->evt_prd_ptr, ap->evt_prd_dma);
 	*(ap->evt_prd) = 0;
 	wmb();
+	set_aceaddr(&info->evt_prd_ptr, ap->evt_prd_dma);
 	writel(0, &regs->EvtCsm);
 
 	set_aceaddr(&info->cmd_ctrl.rngptr, 0x100);
@@ -1595,7 +1618,13 @@ static int __init ace_init(struct net_device *dev)
 
 	writel(0, &regs->MaskInt);
 	writel(1, &regs->IfIdx);
+#if 0
+	/*
+	 * McKinley boxes do not like us fiddling with AssistState
+	 * this early
+	 */
 	writel(1, &regs->AssistState);
+#endif
 
 	writel(DEF_STAT, &regs->TuneStatTicks);
 	writel(DEF_TRACE, &regs->TuneTrace);
@@ -1705,10 +1734,19 @@ static int __init ace_init(struct net_device *dev)
 	 */
 	memset(&ap->stats, 0, sizeof(ap->stats));
 
+       /*
+	* Enable DMA engine now.
+	* If we do this sooner, Mckinley box pukes.
+	* I assume it's because Tigon II DMA engine wants to check
+	* *something* even before the CPU is started.
+	*/
+       writel(1, &regs->AssistState);  /* enable DMA */
+
 	/*
 	 * Start the NIC CPU
 	 */
 	writel(readl(&regs->CpuCtrl) & ~(CPU_HALT|CPU_TRACE), &regs->CpuCtrl);
+	readl(&regs->CpuCtrl);
 
 	/*
 	 * Wait for the firmware to spin up - max 3 seconds.
@@ -1721,6 +1759,7 @@ static int __init ace_init(struct net_device *dev)
 
 		ace_dump_trace(ap);
 		writel(readl(&regs->CpuCtrl) | CPU_HALT, &regs->CpuCtrl);
+		readl(&regs->CpuCtrl);
 
 		/* aman@sgi.com - account for badly behaving firmware/NIC:
 		 * - have observed that the NIC may continue to generate
@@ -1735,6 +1774,7 @@ static int __init ace_init(struct net_device *dev)
 			writel(readl(&regs->CpuBCtrl) | CPU_HALT,
 			       &regs->CpuBCtrl);
 		writel(0, &regs->Mb0Lo);
+		readl(&regs->Mb0Lo);
 
 		ecode = -EBUSY;
 		goto init_error;
@@ -2409,6 +2449,7 @@ static void ace_interrupt(int irq, void *dev_id, struct pt_regs *ptregs)
 	 * threads and it is wrong even for that case.
 	 */
 	writel(0, &regs->Mb0Lo);
+	readl(&regs->Mb0Lo);
 
 	/*
 	 * There is no conflict between transmit handling in
@@ -2512,12 +2553,13 @@ static void ace_vlan_rx_register(struct net_device *dev, struct vlan_group *grp)
 	struct ace_private *ap = dev->priv;
 	unsigned long flags;
 
-	save_flags(flags);
-	cli();
+	local_irq_save(flags);
+	ace_mask_irq(dev);
 
 	ap->vlgrp = grp;
 
-	restore_flags(flags);
+	ace_unmask_irq(dev);
+	local_irq_restore(flags);
 }
 
 
@@ -2526,13 +2568,14 @@ static void ace_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
 	struct ace_private *ap = dev->priv;
 	unsigned long flags;
 
-	save_flags(flags);
-	cli();
+	local_irq_save(flags);
+	ace_mask_irq(dev);
 
 	if (ap->vlgrp)
 		ap->vlgrp->vlan_devices[vid] = NULL;
 
-	restore_flags(flags);
+	ace_unmask_irq(dev);
+	local_irq_restore(flags);
 }
 #endif /* ACENIC_DO_VLAN */
 
@@ -2636,8 +2679,9 @@ static int ace_close(struct net_device *dev)
 	 * Make sure one CPU is not processing packets while
 	 * buffers are being released by another.
 	 */
-	save_flags(flags);
-	cli();
+
+	local_irq_save(flags);
+	ace_mask_irq(dev);
 
 	for (i = 0; i < ACE_TX_RING_ENTRIES(ap); i++) {
 		struct sk_buff *skb;
@@ -2674,7 +2718,8 @@ static int ace_close(struct net_device *dev)
 		ace_issue_cmd(regs, &cmd);
 	}
 
-	restore_flags(flags);
+	ace_unmask_irq(dev);
+	local_irq_restore(flags);
 
 	ACE_MOD_DEC_USE_COUNT;
 	return 0;
@@ -2893,7 +2938,7 @@ static int ace_change_mtu(struct net_device *dev, int new_mtu)
 		}
 	} else {
 		while (test_and_set_bit(0, &ap->jumbo_refill_busy));
-		synchronize_irq();
+		ace_sync_irq(dev->irq);
 		ace_set_rxtx_parms(dev, 0);
 		if (ap->jumbo) {
 			struct cmd cmd;
@@ -3275,22 +3320,27 @@ static void __init eeprom_start(struct ace_regs *regs)
 {
 	u32 local;
 
+	readl(&regs->LocalCtrl);
 	udelay(ACE_SHORT_DELAY);
 	local = readl(&regs->LocalCtrl);
 	local |= EEPROM_DATA_OUT | EEPROM_WRITE_ENABLE;
 	writel(local, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 	udelay(ACE_SHORT_DELAY);
 	local |= EEPROM_CLK_OUT;
 	writel(local, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 	udelay(ACE_SHORT_DELAY);
 	local &= ~EEPROM_DATA_OUT;
 	writel(local, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 	udelay(ACE_SHORT_DELAY);
 	local &= ~EEPROM_CLK_OUT;
 	writel(local, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 }
 
@@ -3305,6 +3355,7 @@ static void __init eeprom_prep(struct ace_regs *regs, u8 magic)
 	local &= ~EEPROM_DATA_OUT;
 	local |= EEPROM_WRITE_ENABLE;
 	writel(local, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 
 	for (i = 0; i < 8; i++, magic <<= 1) {
@@ -3314,15 +3365,18 @@ static void __init eeprom_prep(struct ace_regs *regs, u8 magic)
 		else
 			local &= ~EEPROM_DATA_OUT;
 		writel(local, &regs->LocalCtrl);
+		readl(&regs->LocalCtrl);
 		mb();
 
 		udelay(ACE_SHORT_DELAY);
 		local |= EEPROM_CLK_OUT;
 		writel(local, &regs->LocalCtrl);
+		readl(&regs->LocalCtrl);
 		mb();
 		udelay(ACE_SHORT_DELAY);
 		local &= ~(EEPROM_CLK_OUT | EEPROM_DATA_OUT);
 		writel(local, &regs->LocalCtrl);
+		readl(&regs->LocalCtrl);
 		mb();
 	}
 }
@@ -3336,10 +3390,12 @@ static int __init eeprom_check_ack(struct ace_regs *regs)
 	local = readl(&regs->LocalCtrl);
 	local &= ~EEPROM_WRITE_ENABLE;
 	writel(local, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 	udelay(ACE_LONG_DELAY);
 	local |= EEPROM_CLK_OUT;
 	writel(local, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 	udelay(ACE_SHORT_DELAY);
 	/* sample data in middle of high clk */
@@ -3347,6 +3403,7 @@ static int __init eeprom_check_ack(struct ace_regs *regs)
 	udelay(ACE_SHORT_DELAY);
 	mb();
 	writel(readl(&regs->LocalCtrl) & ~EEPROM_CLK_OUT, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 
 	return state;
@@ -3361,18 +3418,22 @@ static void __init eeprom_stop(struct ace_regs *regs)
 	local = readl(&regs->LocalCtrl);
 	local |= EEPROM_WRITE_ENABLE;
 	writel(local, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 	udelay(ACE_SHORT_DELAY);
 	local &= ~EEPROM_DATA_OUT;
 	writel(local, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 	udelay(ACE_SHORT_DELAY);
 	local |= EEPROM_CLK_OUT;
 	writel(local, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 	udelay(ACE_SHORT_DELAY);
 	local |= EEPROM_DATA_OUT;
 	writel(local, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 	udelay(ACE_LONG_DELAY);
 	local &= ~EEPROM_CLK_OUT;
@@ -3405,14 +3466,13 @@ static int __init read_eeprom_byte(struct net_device *dev,
 	 * Don't take interrupts on this CPU will bit banging
 	 * the %#%#@$ I2C device
 	 */
-	__save_flags(flags);
-	__cli();
+	local_irq_save(flags);
 
 	eeprom_start(regs);
 
 	eeprom_prep(regs, EEPROM_WRITE_SELECT);
 	if (eeprom_check_ack(regs)) {
-		__restore_flags(flags);
+		local_irq_restore(flags);
 		printk(KERN_ERR "%s: Unable to sync eeprom\n", dev->name);
 		result = -EIO;
 		goto eeprom_read_error;
@@ -3420,7 +3480,7 @@ static int __init read_eeprom_byte(struct net_device *dev,
 
 	eeprom_prep(regs, (offset >> 8) & 0xff);
 	if (eeprom_check_ack(regs)) {
-		__restore_flags(flags);
+		local_irq_restore(flags);
 		printk(KERN_ERR "%s: Unable to set address byte 0\n",
 		       dev->name);
 		result = -EIO;
@@ -3429,7 +3489,7 @@ static int __init read_eeprom_byte(struct net_device *dev,
 
 	eeprom_prep(regs, offset & 0xff);
 	if (eeprom_check_ack(regs)) {
-		__restore_flags(flags);
+		local_irq_restore(flags);
 		printk(KERN_ERR "%s: Unable to set address byte 1\n",
 		       dev->name);
 		result = -EIO;
@@ -3439,7 +3499,7 @@ static int __init read_eeprom_byte(struct net_device *dev,
 	eeprom_start(regs);
 	eeprom_prep(regs, EEPROM_READ_SELECT);
 	if (eeprom_check_ack(regs)) {
-		__restore_flags(flags);
+		local_irq_restore(flags);
 		printk(KERN_ERR "%s: Unable to set READ_SELECT\n",
 		       dev->name);
 		result = -EIO;
@@ -3450,10 +3510,12 @@ static int __init read_eeprom_byte(struct net_device *dev,
 		local = readl(&regs->LocalCtrl);
 		local &= ~EEPROM_WRITE_ENABLE;
 		writel(local, &regs->LocalCtrl);
+		readl(&regs->LocalCtrl);
 		udelay(ACE_LONG_DELAY);
 		mb();
 		local |= EEPROM_CLK_OUT;
 		writel(local, &regs->LocalCtrl);
+		readl(&regs->LocalCtrl);
 		mb();
 		udelay(ACE_SHORT_DELAY);
 		/* sample data mid high clk */
@@ -3464,11 +3526,13 @@ static int __init read_eeprom_byte(struct net_device *dev,
 		local = readl(&regs->LocalCtrl);
 		local &= ~EEPROM_CLK_OUT;
 		writel(local, &regs->LocalCtrl);
+		readl(&regs->LocalCtrl);
 		udelay(ACE_SHORT_DELAY);
 		mb();
 		if (i == 7) {
 			local |= EEPROM_WRITE_ENABLE;
 			writel(local, &regs->LocalCtrl);
+			readl(&regs->LocalCtrl);
 			mb();
 			udelay(ACE_SHORT_DELAY);
 		}
@@ -3476,16 +3540,19 @@ static int __init read_eeprom_byte(struct net_device *dev,
 
 	local |= EEPROM_DATA_OUT;
 	writel(local, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 	udelay(ACE_SHORT_DELAY);
 	writel(readl(&regs->LocalCtrl) | EEPROM_CLK_OUT, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	udelay(ACE_LONG_DELAY);
 	writel(readl(&regs->LocalCtrl) & ~EEPROM_CLK_OUT, &regs->LocalCtrl);
+	readl(&regs->LocalCtrl);
 	mb();
 	udelay(ACE_SHORT_DELAY);
 	eeprom_stop(regs);
 
-	__restore_flags(flags);
+	local_irq_restore(flags);
  out:
 	return result;
 

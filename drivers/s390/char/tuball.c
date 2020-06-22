@@ -222,6 +222,16 @@ tub_dec_use_count(void)
 	MOD_DEC_USE_COUNT;
 }
 
+static int
+tub3270_is_ours(s390_dev_info_t *dp)
+{
+	if ((dp->sid_data.cu_type & 0xfff0) == 0x3270)
+		return 1;
+	if (dp->sid_data.cu_type == 0x3174)
+		return 1;
+	return 0;
+}
+
 /*
  * tub3270_init() called by kernel or module initialization
  */
@@ -277,7 +287,7 @@ tub3270_init(void)
 		}
 #endif /* LINUX_VERSION_CODE */
 #endif /* CONFIG_TN3270_CONSOLE */
-		if ((d.sid_data.cu_type & 0xfff0) != 0x3270)
+		if (!tub3270_is_ours(&d))
 			continue;
 
 		rc = tubmakemin(i, &d);
@@ -450,6 +460,8 @@ tubmakemin(int irq, s390_dev_info_t *dp)
 			tubp->cmd = TBC_CONOPEN;
 			tubp->flags |= TUB_OPEN_STET | TUB_INPUT_HACK;
 			tty3270_size(tubp, &flags);
+			tubp->tty_input = kmalloc(GEOM_INPLEN,
+				GFP_KERNEL|GFP_DMA);
 			tty3270_aid_init(tubp);
 			tty3270_scl_init(tubp);
 			tub3270_con_irq = tubp->irq;
@@ -491,6 +503,10 @@ tubfiniminors(void)
 			tubdelbyirq(tubp, tubp->irq);
 			tty3270_rcl_fini(tubp);
 			kfree(tubp->tty_bcb.bc_buf);
+			if (tubp->tty_input) {
+				kfree(tubp->tty_input);
+				tubp->tty_input = NULL;
+			}
 			tubp->tty_bcb.bc_buf = NULL;
 			tubp->ttyscreen = NULL;
 			kfree(tubp);

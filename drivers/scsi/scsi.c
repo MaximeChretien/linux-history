@@ -191,10 +191,13 @@ extern int scsi_new_reset(Scsi_Cmnd *SCpnt, unsigned int flag);
  *              handler in the list - ultimately they call scsi_request_fn
  *              to do the dirty deed.
  */
-void  scsi_initialize_queue(Scsi_Device * SDpnt, struct Scsi_Host * SHpnt) {
-	blk_init_queue(&SDpnt->request_queue, scsi_request_fn);
-        blk_queue_headactive(&SDpnt->request_queue, 0);
-        SDpnt->request_queue.queuedata = (void *) SDpnt;
+void  scsi_initialize_queue(Scsi_Device * SDpnt, struct Scsi_Host * SHpnt)
+{
+	request_queue_t *q = &SDpnt->request_queue;
+
+	blk_init_queue(q, scsi_request_fn);
+	blk_queue_headactive(q, 0);
+	q->queuedata = (void *) SDpnt;
 }
 
 #ifdef MODULE

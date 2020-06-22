@@ -1,5 +1,5 @@
 /* 
- * Copyright 2000 by Hans Reiser, licensing governed by reiserfs/README
+ * Copyright 2000-2002 by Hans Reiser, licensing governed by reiserfs/README
  */
  
 /* 
@@ -19,7 +19,8 @@
 int reiserfs_resize (struct super_block * s, unsigned long block_count_new)
 {
 	struct reiserfs_super_block * sb;
-	struct buffer_head ** bitmap, * bh;
+        struct reiserfs_bitmap_info *bitmap;
+	struct buffer_head * bh;
 	struct reiserfs_transaction_handle th;
 	unsigned int bmap_nr_new, bmap_nr;
 	unsigned int block_r_new, block_r;
@@ -103,7 +104,7 @@ int reiserfs_resize (struct super_block * s, unsigned long block_count_new)
 	
 	    /* allocate additional bitmap blocks, reallocate array of bitmap
 	     * block pointers */
-	    bitmap = reiserfs_kmalloc(sizeof(struct buffer_head *) * bmap_nr_new, GFP_KERNEL, s);
+	    bitmap = vmalloc(sizeof(struct reiserfs_bitmap_info) * bmap_nr_new);
 	    if (!bitmap) {
 		printk("reiserfs_resize: unable to allocate memory.\n");
 		return -ENOMEM;
@@ -111,18 +112,20 @@ int reiserfs_resize (struct super_block * s, unsigned long block_count_new)
 	    for (i = 0; i < bmap_nr; i++)
 		bitmap[i] = SB_AP_BITMAP(s)[i];
 	    for (i = bmap_nr; i < bmap_nr_new; i++) {
-		bitmap[i] = getblk(s->s_dev, i * s->s_blocksize * 8, s->s_blocksize);
-		memset(bitmap[i]->b_data, 0, sb->s_blocksize);
-		reiserfs_test_and_set_le_bit(0, bitmap[i]->b_data);
+		bitmap[i].bh = sb_getblk(s, i * s->s_blocksize * 8);
+		memset(bitmap[i].bh->b_data, 0, sb->s_blocksize);
+		reiserfs_test_and_set_le_bit(0, bitmap[i].bh->b_data);
 
-		mark_buffer_dirty(bitmap[i]) ;
-		mark_buffer_uptodate(bitmap[i], 1);
-		ll_rw_block(WRITE, 1, bitmap + i);
-		wait_on_buffer(bitmap[i]);
+		mark_buffer_dirty(bitmap[i].bh) ;
+		mark_buffer_uptodate(bitmap[i].bh, 1);
+		ll_rw_block(WRITE, 1, &bitmap[i].bh);
+		wait_on_buffer(bitmap[i].bh);
+		bitmap[i].first_zero_hint=1;
+		bitmap[i].free_count = s->s_blocksize * 8 - 1;
 	    }	
 	    /* free old bitmap blocks array */
-	    reiserfs_kfree(SB_AP_BITMAP(s), 
-			   sizeof(struct buffer_head *) * bmap_nr, s);
+	    vfree(SB_AP_BITMAP(s)); 
+			   
 	    SB_AP_BITMAP(s) = bitmap;
 	}
 	
@@ -130,18 +133,25 @@ int reiserfs_resize (struct super_block * s, unsigned long block_count_new)
 	journal_begin(&th, s, 10);
 
 	/* correct last bitmap blocks in old and new disk layout */
-	reiserfs_prepare_for_journal(s, SB_AP_BITMAP(s)[bmap_nr - 1], 1);
+	reiserfs_prepare_for_journal(s, SB_AP_BITMAP(s)[bmap_nr - 1].bh, 1);
 	for (i = block_r; i < s->s_blocksize * 8; i++)
 	    reiserfs_test_and_clear_le_bit(i, 
-					   SB_AP_BITMAP(s)[bmap_nr - 1]->b_data);
-	journal_mark_dirty(&th, s, SB_AP_BITMAP(s)[bmap_nr - 1]);
+					   SB_AP_BITMAP(s)[bmap_nr - 1].bh->b_data);
+	SB_AP_BITMAP(s)[bmap_nr - 1].free_count += s->s_blocksize * 8 - block_r;
+	if ( !SB_AP_BITMAP(s)[bmap_nr - 1].first_zero_hint)
+	    SB_AP_BITMAP(s)[bmap_nr - 1].first_zero_hint = block_r;
+	journal_mark_dirty(&th, s, SB_AP_BITMAP(s)[bmap_nr - 1].bh);
 
-	reiserfs_prepare_for_journal(s, SB_AP_BITMAP(s)[bmap_nr_new - 1], 1);
+	reiserfs_prepare_for_journal(s, SB_AP_BITMAP(s)[bmap_nr_new - 1].bh, 1);
 	for (i = block_r_new; i < s->s_blocksize * 8; i++)
 	    reiserfs_test_and_set_le_bit(i,
-					 SB_AP_BITMAP(s)[bmap_nr_new - 1]->b_data);
-	journal_mark_dirty(&th, s, SB_AP_BITMAP(s)[bmap_nr_new - 1]);
- 
+					 SB_AP_BITMAP(s)[bmap_nr_new - 1].bh->b_data);
+	journal_mark_dirty(&th, s, SB_AP_BITMAP(s)[bmap_nr_new - 1].bh);
+
+	SB_AP_BITMAP(s)[bmap_nr_new - 1].free_count -= s->s_blocksize * 8 - block_r_new;
+	/* Extreme case where last bitmap is the only valid block in itself. */
+	if ( !SB_AP_BITMAP(s)[bmap_nr_new - 1].free_count )
+	    SB_AP_BITMAP(s)[bmap_nr_new - 1].first_zero_hint = 0;
  	/* update super */
 	reiserfs_prepare_for_journal(s, SB_BUFFER_WITH_SB(s), 1) ;
 	free_blocks = SB_FREE_BLOCKS(s);

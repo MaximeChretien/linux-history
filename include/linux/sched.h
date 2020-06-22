@@ -458,8 +458,7 @@ struct task_struct {
 #define MAX_COUNTER	(20*HZ/100)
 #define DEF_NICE	(0)
 
-asmlinkage long sys_sched_yield(void);
-#define yield()	sys_sched_yield()
+extern void yield(void);
 
 /*
  * The default (Linux) execution domain.
@@ -611,7 +610,7 @@ extern int FASTCALL(wake_up_process(struct task_struct * tsk));
 #define wake_up_interruptible_nr(x, nr)	__wake_up((x),TASK_INTERRUPTIBLE, nr)
 #define wake_up_interruptible_all(x)	__wake_up((x),TASK_INTERRUPTIBLE, 0)
 #define wake_up_interruptible_sync(x)	__wake_up_sync((x),TASK_INTERRUPTIBLE, 1)
-#define wake_up_interruptible_sync_nr(x) __wake_up_sync((x),TASK_INTERRUPTIBLE,  nr)
+#define wake_up_interruptible_sync_nr(x, nr) __wake_up_sync((x),TASK_INTERRUPTIBLE,  nr)
 asmlinkage long sys_wait4(pid_t pid,unsigned int * stat_addr, int options, struct rusage * ru);
 
 extern int in_group_p(gid_t);
@@ -944,6 +943,17 @@ static inline char * d_path(struct dentry *dentry, struct vfsmount *vfsmnt,
 	return res;
 }
 
-#endif /* __KERNEL__ */
+static inline int need_resched(void)
+{
+	return (unlikely(current->need_resched));
+}
 
+extern void __cond_resched(void);
+static inline void cond_resched(void)
+{
+	if (need_resched())
+		__cond_resched();
+}
+
+#endif /* __KERNEL__ */
 #endif

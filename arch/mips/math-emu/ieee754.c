@@ -3,7 +3,7 @@
  *
  * BUGS
  * not much dp done
- * doesnt generate IEEE754_INEXACT
+ * doesn't generate IEEE754_INEXACT
  *
  */
 /*
@@ -50,7 +50,7 @@ const char *const ieee754_cname[] = {
 	"SNaN",
 };
 
-/* the control status register 
+/* the control status register
 */
 struct ieee754_csr ieee754_csr;
 
@@ -123,7 +123,7 @@ int ieee754si_xcpt(int r, const char *op, ...)
 	return ax.rv.si;
 }
 
-long long ieee754di_xcpt(long long r, const char *op, ...)
+s64 ieee754di_xcpt(s64 r, const char *op, ...)
 {
 	struct ieee754xctx ax;
 

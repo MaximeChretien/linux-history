@@ -311,9 +311,11 @@ int __init adb_init(void)
 #ifdef CONFIG_PMAC_PBOOK
 		pmu_register_sleep_notifier(&adb_sleep_notifier);
 #endif /* CONFIG_PMAC_PBOOK */
+#ifdef CONFIG_PPC
 		if (machine_is_compatible("AAPL,PowerBook1998") ||
 			machine_is_compatible("PowerBook1,1"))
 			sleepy_trackpad = 1;
+#endif /* CONFIG_PPC */
 		init_completion(&adb_probe_task_comp);
 		adbdev_init();
 		adb_reset_bus();
@@ -769,24 +771,24 @@ static ssize_t adb_write(struct file *file, const char *buf,
 
 	/* If a probe is in progress or we are sleeping, wait for it to complete */
 	down(&adb_probe_mutex);
-	up(&adb_probe_mutex);
 
 	/* Special case for ADB_BUSRESET request, all others are sent to
 	   the controller */
 	if ((req->data[0] == ADB_PACKET)&&(count > 1)
 		&&(req->data[1] == ADB_BUSRESET)) {
 		ret = do_adb_reset_bus();
+		up(&adb_probe_mutex);
 		atomic_dec(&state->n_pending);
 		if (ret == 0)
 			ret = count;
 		goto out;
 	} else {	
 		req->reply_expected = ((req->data[1] & 0xc) == 0xc);
-
 		if (adb_controller && adb_controller->send_request)
 			ret = adb_controller->send_request(req, 0);
 		else
 			ret = -ENXIO;
+		up(&adb_probe_mutex);
 	}
 
 	if (ret != 0) {

@@ -1010,8 +1010,7 @@ void tcp_send_fin(struct sock *sk)
 			skb = alloc_skb(MAX_TCP_HEADER, GFP_KERNEL);
 			if (skb)
 				break;
-			current->policy |= SCHED_YIELD;
-			schedule();
+			yield();
 		}
 
 		/* Reserve space for headers and prepare control bits. */

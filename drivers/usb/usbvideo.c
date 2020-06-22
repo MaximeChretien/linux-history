@@ -58,57 +58,26 @@ static int usbvideo_default_procfs_write_proc(
 /* Memory management functions */
 /*******************************/
 
-#define MDEBUG(x)	do { } while(0)		/* Debug memory management */
-
-/* Given PGD from the address space's page table, return the kernel
- * virtual mapping of the physical memory mapped at ADR.
- */
-unsigned long usbvideo_uvirt_to_kva(pgd_t *pgd, unsigned long adr)
-{
-	unsigned long ret = 0UL;
-	pmd_t *pmd;
-	pte_t *ptep, pte;
-
-	if (!pgd_none(*pgd)) {
-		pmd = pmd_offset(pgd, adr);
-		if (!pmd_none(*pmd)) {
-			ptep = pte_offset(pmd, adr);
-			pte = *ptep;
-			if (pte_present(pte)) {
-				ret = (unsigned long) page_address(pte_page(pte));
-				ret |= (adr & (PAGE_SIZE-1));
-			}
-		}
-	}
-	MDEBUG(printk("uv2kva(%lx-->%lx)", adr, ret));
-	return ret;
-}
-
 /*
  * Here we want the physical address of the memory.
- * This is used when initializing the contents of the
- * area and marking the pages as reserved.
+ * This is used when initializing the contents of the area.
  */
 unsigned long usbvideo_kvirt_to_pa(unsigned long adr)
 {
-	unsigned long va, kva, ret;
+	unsigned long kva, ret;
 
-	va = VMALLOC_VMADDR(adr);
-	kva = usbvideo_uvirt_to_kva(pgd_offset_k(va), va);
+	kva = (unsigned long) page_address(vmalloc_to_page((void *)adr));
+	kva |= adr & (PAGE_SIZE-1); /* restore the offset */
 	ret = __pa(kva);
-	MDEBUG(printk("kv2pa(%lx-->%lx)", adr, ret));
 	return ret;
 }
 
 void *usbvideo_rvmalloc(unsigned long size)
 {
 	void *mem;
-	unsigned long adr, page;
+	unsigned long adr;
 
-	/* Round it off to PAGE_SIZE */
-	size += (PAGE_SIZE - 1);
-	size &= ~(PAGE_SIZE - 1);
-
+	size = PAGE_ALIGN(size);
 	mem = vmalloc_32(size);
 	if (!mem)
 		return NULL;
@@ -116,13 +85,9 @@ void *usbvideo_rvmalloc(unsigned long size)
 	memset(mem, 0, size); /* Clear the ram out, no junk to the user */
 	adr = (unsigned long) mem;
 	while (size > 0) {
-		page = usbvideo_kvirt_to_pa(adr);
-		mem_map_reserve(virt_to_page(__va(page)));
+		mem_map_reserve(vmalloc_to_page((void *)adr));
 		adr += PAGE_SIZE;
-		if (size > PAGE_SIZE)
-			size -= PAGE_SIZE;
-		else
-			size = 0;
+		size -= PAGE_SIZE;
 	}
 
 	return mem;
@@ -130,23 +95,16 @@ void *usbvideo_rvmalloc(unsigned long size)
 
 void usbvideo_rvfree(void *mem, unsigned long size)
 {
-	unsigned long adr, page;
+	unsigned long adr;
 
 	if (!mem)
 		return;
 
-	size += (PAGE_SIZE - 1);
-	size &= ~(PAGE_SIZE - 1);
-
-	adr=(unsigned long) mem;
-	while (size > 0) {
-		page = usbvideo_kvirt_to_pa(adr);
-		mem_map_unreserve(virt_to_page(__va(page)));
+	adr = (unsigned long) mem;
+	while ((long) size > 0) {
+		mem_map_unreserve(vmalloc_to_page((void *)adr));
 		adr += PAGE_SIZE;
-		if (size > PAGE_SIZE)
-			size -= PAGE_SIZE;
-		else
-			size = 0;
+		size -= PAGE_SIZE;
 	}
 	vfree(mem);
 }
@@ -1782,7 +1740,7 @@ read_done:
 /*
  * Make all of the blocks of data contiguous
  */
-static int usbvideo_CompressIsochronous(uvd_t *uvd, urb_t *urb)
+static int usbvideo_CompressIsochronous(uvd_t *uvd, struct urb *urb)
 {
 	char *cdata;
 	int i, totlen = 0;
@@ -1897,7 +1855,7 @@ int usbvideo_StartDataPump(uvd_t *uvd)
 	/* We double buffer the Iso lists */
 	for (i=0; i < USBVIDEO_NUMSBUF; i++) {
 		int j, k;
-		urb_t *urb = uvd->sbuf[i].urb;
+		struct urb *urb = uvd->sbuf[i].urb;
 		urb->dev = dev;
 		urb->context = uvd;
 		urb->pipe = usb_rcvisocpipe(dev, uvd->video_endp);

@@ -1,5 +1,5 @@
 /*
- * $Id: hw_settings.S,v 1.3 2001/04/21 17:02:46 bjornw Exp $
+ * $Id: hw_settings.S,v 1.4 2002/07/04 16:58:56 pkj Exp $
  * 
  * This table is used by some tools to extract hardware parameters.
  * The table should be included in the kernel and the decompressor.
@@ -16,8 +16,8 @@
 		(CONFIG_ETRAX_DEF_R_PORT_PB_DIR << 8) | \
 		(CONFIG_ETRAX_DEF_R_PORT_PB_DATA))
 	
-	.ascii "HW_PARAM_MAGIC" ; Magic number
-	.dword 0xc0004000	; Kernel start address
+	.ascii "HW_PARAM_MAGIC"					; Magic number
+	.dword CONFIG_ETRAX_DRAM_VIRTUAL_BASE | 0x80004000	; Kernel start address
 
 	; Debug port
 #ifdef CONFIG_ETRAX_DEBUG_PORT0

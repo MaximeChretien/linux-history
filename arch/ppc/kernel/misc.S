@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.misc.S 1.44 06/25/02 17:24:30 benh
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
  * This file contains miscellaneous low-level functions.
@@ -23,7 +23,9 @@
 #include <asm/page.h>
 #include <asm/cache.h>
 #include <asm/cputable.h>
-#include "ppc_asm.h"
+#include <asm/mmu.h>
+#include <asm/ppc_asm.h>
+#include "ppc_defs.h"
 
 	.text
 
@@ -184,8 +186,10 @@ _GLOBAL(do_cpu_ftr_fixups)
  * call_setup_cpu - call the setup_cpu function for this cpu
  * r3 = data offset, r24 = cpu number
  *
- * Don't change register layout, the setup function may rely
- * on r5 containing a relocated pointer to the current cpu spec.
+ * Setup function is called with:
+ *   r3 = data offset
+ *   r4 = CPU number
+ *   r5 = ptr to CPU spec (relocated)
  */
 _GLOBAL(call_setup_cpu)
 	addis	r5,r3,cur_cpu_spec@ha
@@ -196,7 +200,7 @@ _GLOBAL(call_setup_cpu)
 	lwz	r6,CPU_SPEC_SETUP(r5)
 	add	r6,r6,r3
 	mtctr	r6
-	mr	r3,r24
+	mr	r4,r24
 	bctr
 
 /* void __save_flags_ptr(unsigned long *flags) */
@@ -1157,6 +1161,30 @@ _GLOBAL(sys_call_table)
 	.long sys_mincore
 	.long sys_gettid
 	.long sys_tkill
+	.long sys_setxattr
+	.long sys_lsetxattr	/* 210 */
+	.long sys_fsetxattr
+	.long sys_getxattr
+	.long sys_lgetxattr
+	.long sys_fgetxattr
+	.long sys_listxattr	/* 215 */
+	.long sys_llistxattr
+	.long sys_flistxattr
+	.long sys_removexattr
+	.long sys_lremovexattr
+	.long sys_fremovexattr	/* 220  */
+	.long sys_ni_syscall 	/*	reserved for sys_futex */
+	.long sys_ni_syscall 	/*	reserved for sys_sched_setaffinity */
+	.long sys_ni_syscall 	/*	reserved for sys_sched_getaffinity */
+	.long sys_ni_syscall 	/*	reserved for sys_security */
+	.long sys_ni_syscall 	/* 225	reserved for Tux */
+	.long sys_ni_syscall 	/*	reserved for sys_sendfile64 */
+	.long sys_ni_syscall 	/*	reserved for sys_io_setup */
+	.long sys_ni_syscall 	/*	reserved for sys_io_destroy */
+	.long sys_ni_syscall 	/*	reserved for sys_io_getevents */
+	.long sys_ni_syscall 	/* 230	reserved for sys_io_submit */
+	.long sys_ni_syscall 	/*	reserved for sys_io_cancel */
+
 	.rept NR_syscalls-(.-sys_call_table)/4
 		.long sys_ni_syscall
 	.endr

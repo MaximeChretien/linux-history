@@ -1,4 +1,4 @@
-/* $Id: etraxgpio.h,v 1.7 2002/04/10 11:55:50 johana Exp $ */
+/* $Id: etraxgpio.h,v 1.8 2002/06/17 15:53:07 johana Exp $ */
 /*
  * The following devices are accessable using this driver using
  * GPIO_MAJOR (120) and a couple of minor numbers:
@@ -25,7 +25,7 @@
 
 /* supported ioctl _IOC_NR's */
 
-#define IO_READBITS  0x1  /* read and return current port bits */
+#define IO_READBITS  0x1  /* read and return current port bits (obsolete) */
 #define IO_SETBITS   0x2  /* set the bits marked by 1 in the argument */
 #define IO_CLRBITS   0x3  /* clear the bits marked by 1 in the argument */
 
@@ -40,11 +40,11 @@
                               * 0=off, 1=green, 2=red, 3=yellow */
 
 /* GPIO direction ioctl's */
-#define IO_READDIR    0x8  /* Read direction 0=input 1=output */
+#define IO_READDIR    0x8  /* Read direction 0=input 1=output  (obsolete) */
 #define IO_SETINPUT   0x9  /* Set direction for bits set, 0=unchanged 1=input, 
-                              returns mask with current inputs */
+                              returns mask with current inputs (obsolete) */
 #define IO_SETOUTPUT  0xA  /* Set direction for bits set, 0=unchanged 1=output,
-                              returns mask with current outputs */
+                              returns mask with current outputs (obsolete)*/
 
 /* LED ioctl extended */
 #define IO_LED_SETBIT 0xB
@@ -62,6 +62,20 @@
 #define IO_CFG_WRITE_MODE 0xF 
 #define IO_CFG_WRITE_MODE_VALUE(msb, data_mask, clk_mask) \
   ( (((msb)&1) << 16) | (((data_mask) &0xFF) << 8) | ((clk_mask) & 0xFF) )
+
+/* The following 4 ioctl's take a pointer as argument and handles
+ * 32 bit ports (port G) properly.
+ * These replaces IO_READBITS,IO_SETINPUT AND IO_SETOUTPUT
+ */
+#define IO_READ_INBITS   0x10 /* *arg is result of reading the input pins */
+#define IO_READ_OUTBITS  0x11 /* *arg is result of reading the output shadow */
+#define IO_SETGET_INPUT  0x12 /* bits set in *arg is set to input,
+                               * *arg updated with current input pins.
+                               */
+#define IO_SETGET_OUTPUT 0x13 /* bits set in *arg is set to output,
+                               * *arg updated with current output pins.
+                               */
+
 
 
 #endif

@@ -129,8 +129,8 @@ unsigned long __init prom_probe_memory (void)
 	return tally;
 }
 
-void unhandled_fault(unsigned long address, struct task_struct *tsk,
-                     struct pt_regs *regs)
+static void unhandled_fault(unsigned long address, struct task_struct *tsk,
+			    struct pt_regs *regs)
 {
 	if ((unsigned long) address < PAGE_SIZE) {
 		printk(KERN_ALERT "Unable to handle kernel NULL "
@@ -145,6 +145,19 @@ void unhandled_fault(unsigned long address, struct task_struct *tsk,
 	       (tsk->mm ? (unsigned long) tsk->mm->pgd :
 		          (unsigned long) tsk->active_mm->pgd));
 	die_if_kernel("Oops", regs);
+}
+
+extern void show_trace_raw(struct task_struct *, unsigned long);
+
+static void bad_kernel_pc(struct pt_regs *regs)
+{
+	unsigned long ksp;
+
+	printk(KERN_CRIT "OOPS: Bogus kernel PC [%016lx] in fault handler\n",
+	       regs->tpc);
+	__asm__("mov %%sp, %0" : "=r" (ksp));
+	show_trace_raw(current, ksp);
+	unhandled_fault(regs->tpc, current, regs);
 }
 
 /*
@@ -211,7 +224,7 @@ static inline unsigned int get_fault_insn(struct pt_regs *regs, unsigned int ins
 		if (!regs->tpc || (regs->tpc & 0x3))
 			return 0;
 		if (regs->tstate & TSTATE_PRIV) {
-			insn = *(unsigned int *)regs->tpc;
+			insn = *(unsigned int *) regs->tpc;
 		} else {
 			insn = get_user_insn(regs->tpc);
 		}
@@ -301,6 +314,20 @@ asmlinkage void do_sparc64_fault(struct pt_regs *regs)
 	if ((fault_code & FAULT_CODE_ITLB) &&
 	    (fault_code & FAULT_CODE_DTLB))
 		BUG();
+
+	if (regs->tstate & TSTATE_PRIV) {
+		unsigned long tpc = regs->tpc;
+		extern unsigned int _etext;
+
+		/* Sanity check the PC. */
+		if ((tpc >= KERNBASE && tpc < (unsigned long) &_etext) ||
+		    (tpc >= MODULES_VADDR && tpc < MODULES_END)) {
+			/* Valid, no problems... */
+		} else {
+			bad_kernel_pc(regs);
+			return;
+		}
+	}
 
 	/*
 	 * If we're in an interrupt or have no user

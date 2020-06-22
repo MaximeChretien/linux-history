@@ -645,6 +645,18 @@ SYMBOL_NAME_LABEL(sys_call_table)
 	.long SYMBOL_NAME(sys_getdents64)	/* 220 */
 	.long SYMBOL_NAME(sys_gettid)
 	.long SYMBOL_NAME(sys_tkill)
+	.long SYMBOL_NAME(sys_setxattr)
+	.long SYMBOL_NAME(sys_lsetxattr)
+	.long SYMBOL_NAME(sys_fsetxattr)	/* 225 */
+	.long SYMBOL_NAME(sys_getxattr)
+	.long SYMBOL_NAME(sys_lgetxattr)
+	.long SYMBOL_NAME(sys_fgetxattr)
+	.long SYMBOL_NAME(sys_listxattr)
+	.long SYMBOL_NAME(sys_llistxattr)	/* 230 */
+	.long SYMBOL_NAME(sys_flistxattr)
+	.long SYMBOL_NAME(sys_removexattr)
+	.long SYMBOL_NAME(sys_lremovexattr)
+	.long SYMBOL_NAME(sys_fremovexattr)
 
 	.rept NR_syscalls-(.-SYMBOL_NAME(sys_call_table))/4
 		.long SYMBOL_NAME(sys_ni_syscall)

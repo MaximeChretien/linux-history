@@ -77,6 +77,7 @@ struct nfs_write_data {
 	struct nfs_fattr	fattr;
 	struct nfs_writeverf	verf;
 	struct list_head	pages;		/* Coalesced requests we wish to flush */
+	struct page		*pagevec[NFS_WRITE_MAXIOV];
 };
 
 /*
@@ -105,6 +106,7 @@ static __inline__ struct nfs_write_data *nfs_writedata_alloc(void)
 	if (p) {
 		memset(p, 0, sizeof(*p));
 		INIT_LIST_HEAD(&p->pages);
+		p->args.pages = p->pagevec;
 	}
 	return p;
 }
@@ -163,7 +165,6 @@ nfs_writepage_sync(struct file *file, struct inode *inode, struct page *page,
 		inode->i_dev, (long long)NFS_FILEID(inode),
 		count, (long long)(page_offset(page) + offset));
 
-	buffer = kmap(page) + offset;
 	base = page_offset(page) + offset;
 
 	flags = ((IS_SWAPFILE(inode)) ? NFS_RW_SWAP : 0) | NFS_RW_SYNC;
@@ -173,7 +174,7 @@ nfs_writepage_sync(struct file *file, struct inode *inode, struct page *page,
 			wsize = count;
 
 		result = NFS_PROTO(inode)->write(inode, cred, &fattr, flags,
-						 base, wsize, buffer, &verf);
+						 offset, wsize, page, &verf);
 		nfs_write_attributes(inode, &fattr);
 
 		if (result < 0) {
@@ -186,7 +187,8 @@ nfs_writepage_sync(struct file *file, struct inode *inode, struct page *page,
 			wsize, result);
 		refresh = 1;
 		buffer  += wsize;
-	        base    += wsize;
+		base    += wsize;
+	        offset  += wsize;
 		written += wsize;
 		count   -= wsize;
 		/*
@@ -201,7 +203,6 @@ nfs_writepage_sync(struct file *file, struct inode *inode, struct page *page,
 		ClearPageError(page);
 
 io_error:
-	kunmap(page);
 	if (cred)
 		put_rpccred(cred);
 
@@ -861,29 +862,27 @@ static void
 nfs_write_rpcsetup(struct list_head *head, struct nfs_write_data *data)
 {
 	struct nfs_page		*req;
-	struct iovec		*iov;
+	struct page		**pages;
 	unsigned int		count;
 
 	/* Set up the RPC argument and reply structs
 	 * NB: take care not to mess about with data->commit et al. */
 
-	iov = data->args.iov;
+	pages = data->args.pages;
 	count = 0;
 	while (!list_empty(head)) {
 		struct nfs_page *req = nfs_list_entry(head->next);
 		nfs_list_remove_request(req);
 		nfs_list_add_request(req, &data->pages);
-		iov->iov_base = kmap(req->wb_page) + req->wb_offset;
-		iov->iov_len = req->wb_bytes;
+		*pages++ = req->wb_page;
 		count += req->wb_bytes;
-		iov++;
-		data->args.nriov++;
 	}
 	req = nfs_list_entry(data->pages.next);
 	data->inode = req->wb_inode;
 	data->cred = req->wb_cred;
 	data->args.fh     = NFS_FH(req->wb_inode);
 	data->args.offset = page_offset(req->wb_page) + req->wb_offset;
+	data->args.pgbase = req->wb_offset;
 	data->args.count  = count;
 	data->res.fattr   = &data->fattr;
 	data->res.count   = count;
@@ -948,11 +947,11 @@ nfs_flush_one(struct list_head *head, struct inode *inode, int how)
 	msg.rpc_resp = &data->res;
 	msg.rpc_cred = data->cred;
 
-	dprintk("NFS: %4d initiated write call (req %x/%Ld count %d nriov %d)\n",
+	dprintk("NFS: %4d initiated write call (req %x/%Ld count %u)\n",
 		task->tk_pid, 
 		inode->i_dev,
 		(long long)NFS_FILEID(inode),
-		data->args.count, data->args.nriov);
+		data->args.count);
 
 	rpc_clnt_sigmask(clnt, &oldset);
 	rpc_call_setup(task, &msg, 0);
@@ -1063,8 +1062,6 @@ nfs_writeback_done(struct rpc_task *task)
 		req = nfs_list_entry(data->pages.next);
 		nfs_list_remove_request(req);
 		page = req->wb_page;
-
-		kunmap(page);
 
 		dprintk("NFS: write (%x/%Ld %d@%Ld)",
 			req->wb_inode->i_dev,

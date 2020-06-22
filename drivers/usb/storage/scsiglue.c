@@ -190,7 +190,7 @@ static int command_abort( Scsi_Cmnd *srb )
 	}
 
 	/* if we have an urb pending, let's wake the control thread up */
-	if (us->current_urb->status == -EINPROGRESS) {
+	if (!us->current_done.done) {
 		/* cancel the URB -- this will automatically wake the thread */
 		usb_unlink_urb(us->current_urb);
 

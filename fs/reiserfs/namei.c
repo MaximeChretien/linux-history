@@ -1,14 +1,5 @@
 /*
- * Copyright 2000 by Hans Reiser, licensing governed by reiserfs/README
- *
- * Trivial changes by Alan Cox to remove EHASHCOLLISION for compatibility
- *
- * Trivial Changes:
- * Rights granted to Hans Reiser to redistribute under other terms providing
- * he accepts all liability including but not limited to patent, fitness
- * for purpose, and direct or indirect claims arising from failure to perform.
- *
- * NO WARRANTY
+ * Copyright 2000-2002 by Hans Reiser, licensing governed by reiserfs/README
  */
 
 #include <linux/config.h>
@@ -195,13 +186,6 @@ static __u32 get_third_component (struct super_block * s,
 }
 
 
-//
-// a portion of this function, particularly the VFS interface portion,
-// was derived from minix or ext2's analog and evolved as the
-// prototype did. You should be able to tell which portion by looking
-// at the ext2 code and comparing. It's subfunctions contain no code
-// used as a template unless they are so labeled.
-//
 static int reiserfs_match (struct reiserfs_dir_entry * de, 
 			   const char * name, int namelen)
 {
@@ -248,7 +232,7 @@ static int linear_search_in_dir_item (struct cpu_key * key, struct reiserfs_dir_
    
 	/* mark, that this generation number is used */
 	if (de->de_gen_number_bit_string)
-	    set_bit (GET_GENERATION_NUMBER (deh_offset (deh)), de->de_gen_number_bit_string);
+	    set_bit (GET_GENERATION_NUMBER (deh_offset (deh)), (unsigned long *)de->de_gen_number_bit_string);
 
 	// calculate pointer to name and namelen
 	de->de_entry_num = i;
@@ -284,13 +268,6 @@ static int linear_search_in_dir_item (struct cpu_key * key, struct reiserfs_dir_
 }
 
 
-//
-// a portion of this function, particularly the VFS interface portion,
-// was derived from minix or ext2's analog and evolved as the
-// prototype did. You should be able to tell which portion by looking
-// at the ext2 code and comparing. It's subfunctions contain no code
-// used as a template unless they are so labeled.
-//
 // may return NAME_FOUND, NAME_FOUND_INVISIBLE, NAME_NOT_FOUND
 // FIXME: should add something like IOERROR
 static int reiserfs_find_entry (struct inode * dir, const char * name, int namelen, 
@@ -300,7 +277,7 @@ static int reiserfs_find_entry (struct inode * dir, const char * name, int namel
     int retval;
 
 
-    if (namelen > REISERFS_MAX_NAME_LEN (dir->i_sb->s_blocksize))
+    if (namelen > REISERFS_MAX_NAME (dir->i_sb->s_blocksize))
 	return NAME_NOT_FOUND;
 
     /* we will search for this key in the tree */
@@ -310,7 +287,7 @@ static int reiserfs_find_entry (struct inode * dir, const char * name, int namel
     while (1) {
 	retval = search_by_entry_key (dir->i_sb, &key_to_search, path_to_entry, de);
 	if (retval == IO_ERROR) {
-	    reiserfs_warning ("zam-7001: io error in " __FUNCTION__ "\n");
+	    reiserfs_warning ("zam-7001: io error in %s\n", __FUNCTION__);
 	    return IO_ERROR;
 	}
 
@@ -330,13 +307,6 @@ static int reiserfs_find_entry (struct inode * dir, const char * name, int namel
 }
 
 
-//
-// a portion of this function, particularly the VFS interface portion,
-// was derived from minix or ext2's analog and evolved as the
-// prototype did. You should be able to tell which portion by looking
-// at the ext2 code and comparing. It's subfunctions contain no code
-// used as a template unless they are so labeled.
-//
 static struct dentry * reiserfs_lookup (struct inode * dir, struct dentry * dentry)
 {
     int retval;
@@ -346,7 +316,7 @@ static struct dentry * reiserfs_lookup (struct inode * dir, struct dentry * dent
 
     reiserfs_check_lock_depth("lookup") ;
 
-    if (dentry->d_name.len > REISERFS_MAX_NAME_LEN (dir->i_sb->s_blocksize))
+    if (REISERFS_MAX_NAME (dir->i_sb->s_blocksize) < dentry->d_name.len)
 	return ERR_PTR(-ENAMETOOLONG);
 
     de.de_gen_number_bit_string = 0;
@@ -365,14 +335,6 @@ static struct dentry * reiserfs_lookup (struct inode * dir, struct dentry * dent
     d_add(dentry, inode);
     return NULL;
 }
-
-//
-// a portion of this function, particularly the VFS interface portion,
-// was derived from minix or ext2's analog and evolved as the
-// prototype did. You should be able to tell which portion by looking
-// at the ext2 code and comparing. It's subfunctions contain no code
-// used as a template unless they are so labeled.
-//
 
 /* add entry to the directory (entry can be hidden). 
 
@@ -401,7 +363,7 @@ static int reiserfs_add_entry (struct reiserfs_transaction_handle *th, struct in
     if (!namelen)
 	return -EINVAL;
 
-    if (namelen > REISERFS_MAX_NAME_LEN (dir->i_sb->s_blocksize))
+    if (namelen > REISERFS_MAX_NAME (dir->i_sb->s_blocksize))
 	return -ENAMETOOLONG;
 
     /* each entry has unique key. compose it */
@@ -417,7 +379,7 @@ static int reiserfs_add_entry (struct reiserfs_transaction_handle *th, struct in
     } else
 	buffer = small_buf;
 
-    paste_size = (old_format_only (dir->i_sb)) ? (DEH_SIZE + namelen) : buflen;
+    paste_size = (get_inode_sd_version (dir) == STAT_DATA_V1) ? (DEH_SIZE + namelen) : buflen;
 
     /* fill buffer : directory entry head, name[, dir objectid | , stat data | ,stat data, dir objectid ] */
     deh = (struct reiserfs_de_head *)buffer;
@@ -451,21 +413,36 @@ static int reiserfs_add_entry (struct reiserfs_transaction_handle *th, struct in
 	}
 
         if (retval != NAME_FOUND) {
-	    reiserfs_warning ("zam-7002:" __FUNCTION__ ": \"reiserfs_find_entry\" has returned"
-                              " unexpected value (%d)\n", retval);
+	    reiserfs_warning ("zam-7002:%s: \"reiserfs_find_entry\" has returned"
+                              " unexpected value (%d)\n", __FUNCTION__, retval);
        }
 
 	return -EEXIST;
     }
 
-    gen_number = find_first_zero_bit (bit_string, MAX_GENERATION_NUMBER + 1);
+    gen_number = find_first_zero_bit ((unsigned long *)bit_string, MAX_GENERATION_NUMBER + 1);
     if (gen_number > MAX_GENERATION_NUMBER) {
       /* there is no free generation number */
       reiserfs_warning ("reiserfs_add_entry: Congratulations! we have got hash function screwed up\n");
       if (buffer != small_buf)
           reiserfs_kfree (buffer, buflen, dir->i_sb);
       pathrelse (&path);
+/*
+ * Trivial changes by Alan Cox to remove EHASHCOLLISION for compatibility
+ *
+ * Trivial Changes:
+ * Rights granted to Hans Reiser to redistribute under other terms providing
+ * he accepts all liability including but not limited to patent, fitness
+ * for purpose, and direct or indirect claims arising from failure to perform.
+ *
+ * NO WARRANTY
+ * This is one of two lines that this fix consist of.
+ */
       return -EBUSY;
+      /* I think it was better to have an error code with a name that says
+	 what it means, but I choose not to fight over it.  Persons porting to
+	 other operating systems should consider keeping it as it was
+	 (return -EHASHCOLLISION;). -Hans */
     }
     /* adjust offset of directory enrty */
     put_deh_offset(deh, SET_GENERATION_NUMBER(deh_offset(deh), gen_number));
@@ -482,7 +459,12 @@ static int reiserfs_add_entry (struct reiserfs_transaction_handle *th, struct in
 	    if (buffer != small_buf)
 		reiserfs_kfree (buffer, buflen, dir->i_sb);
 	    pathrelse (&path);
+	    /* Following line is 2nd line touched by Alan Cox' trivial fix */
 	    return -EBUSY;
+      /* I think it was better to have an error code with a name that says
+	 what it means, but I choose not to fight over it.  Persons porting to
+	 other operating systems should consider keeping it as it was
+	 (return -EHASHCOLLISION;). -Hans */
 	}
     }
   
@@ -507,13 +489,6 @@ static int reiserfs_add_entry (struct reiserfs_transaction_handle *th, struct in
 }
 
 
-//
-// a portion of this function, particularly the VFS interface portion,
-// was derived from minix or ext2's analog and evolved as the
-// prototype did. You should be able to tell which portion by looking
-// at the ext2 code and comparing. It's subfunctions contain no code
-// used as a template unless they are so labeled.
-//
 static int reiserfs_create (struct inode * dir, struct dentry *dentry, int mode)
 {
     int retval;
@@ -523,8 +498,7 @@ static int reiserfs_create (struct inode * dir, struct dentry *dentry, int mode)
     struct reiserfs_transaction_handle th ;
 
 
-    inode = new_inode(dir->i_sb) ;
-    if (!inode) {
+    if (!(inode = new_inode(dir->i_sb))) {
 	return -ENOMEM ;
     }
     journal_begin(&th, dir->i_sb, jbegin_count) ;
@@ -563,13 +537,6 @@ static int reiserfs_create (struct inode * dir, struct dentry *dentry, int mode)
 }
 
 
-//
-// a portion of this function, particularly the VFS interface portion,
-// was derived from minix or ext2's analog and evolved as the
-// prototype did. You should be able to tell which portion by looking
-// at the ext2 code and comparing. It's subfunctions contain no code
-// used as a template unless they are so labeled.
-//
 static int reiserfs_mknod (struct inode * dir, struct dentry *dentry, int mode, int rdev)
 {
     int retval;
@@ -578,8 +545,7 @@ static int reiserfs_mknod (struct inode * dir, struct dentry *dentry, int mode, 
     struct reiserfs_transaction_handle th ;
     int jbegin_count = JOURNAL_PER_BALANCE_CNT * 3; 
 
-    inode = new_inode(dir->i_sb) ;
-    if (!inode) {
+    if (!(inode = new_inode(dir->i_sb))) {
 	return -ENOMEM ;
     }
     journal_begin(&th, dir->i_sb, jbegin_count) ;
@@ -618,13 +584,6 @@ static int reiserfs_mknod (struct inode * dir, struct dentry *dentry, int mode, 
 }
 
 
-//
-// a portion of this function, particularly the VFS interface portion,
-// was derived from minix or ext2's analog and evolved as the
-// prototype did. You should be able to tell which portion by looking
-// at the ext2 code and comparing. It's subfunctions contain no code
-// used as a template unless they are so labeled.
-//
 static int reiserfs_mkdir (struct inode * dir, struct dentry *dentry, int mode)
 {
     int retval;
@@ -633,8 +592,7 @@ static int reiserfs_mkdir (struct inode * dir, struct dentry *dentry, int mode)
     struct reiserfs_transaction_handle th ;
     int jbegin_count = JOURNAL_PER_BALANCE_CNT * 3; 
 
-    inode = new_inode(dir->i_sb) ;
-    if (!inode) {
+    if (!(inode = new_inode(dir->i_sb))) {
 	return -ENOMEM ;
     }
     journal_begin(&th, dir->i_sb, jbegin_count) ;
@@ -645,6 +603,10 @@ static int reiserfs_mkdir (struct inode * dir, struct dentry *dentry, int mode)
     */
     INC_DIR_INODE_NLINK(dir)
 
+#ifdef DISPLACE_NEW_PACKING_LOCALITIES
+    /* set flag that new packing locality created and new blocks for the content     * of that directory are not displaced yet */
+    dir->u.reiserfs_i.new_packing_locality = 1;
+#endif
     mode = S_IFDIR | mode;
     inode = reiserfs_new_inode (&th, dir, mode, 0/*symlink*/,
 				old_format_only (dir->i_sb) ? EMPTY_DIR_SIZE_V1 : EMPTY_DIR_SIZE,
@@ -697,13 +659,6 @@ static inline int reiserfs_empty_dir(struct inode *inode) {
 }
 
 
-//
-// a portion of this function, particularly the VFS interface portion,
-// was derived from minix or ext2's analog and evolved as the
-// prototype did. You should be able to tell which portion by looking
-// at the ext2 code and comparing. It's subfunctions contain no code
-// used as a template unless they are so labeled.
-//
 static int reiserfs_rmdir (struct inode * dir, struct dentry *dentry)
 {
     int retval;
@@ -784,13 +739,6 @@ static int reiserfs_rmdir (struct inode * dir, struct dentry *dentry)
 }
 
 
-//
-// a portion of this function, particularly the VFS interface portion,
-// was derived from minix or ext2's analog and evolved as the
-// prototype did. You should be able to tell which portion by looking
-// at the ext2 code and comparing. It's subfunctions contain no code
-// used as a template unless they are so labeled.
-//
 static int reiserfs_unlink (struct inode * dir, struct dentry *dentry)
 {
     int retval;
@@ -866,14 +814,7 @@ static int reiserfs_unlink (struct inode * dir, struct dentry *dentry)
 }
 
 
-//
-// a portion of this function, particularly the VFS interface portion,
-// was derived from minix or ext2's analog and evolved as the
-// prototype did. You should be able to tell which portion by looking
-// at the ext2 code and comparing. It's subfunctions contain no code
-// used as a template unless they are so labeled.
-//
-static int reiserfs_symlink (struct inode * dir, struct dentry * dentry, const char * symname)
+static int reiserfs_symlink (struct inode * parent_dir, struct dentry * dentry, const char * symname)
 {
     int retval;
     struct inode * inode;
@@ -884,18 +825,17 @@ static int reiserfs_symlink (struct inode * dir, struct dentry * dentry, const c
     int jbegin_count = JOURNAL_PER_BALANCE_CNT * 3; 
 
 
-    inode = new_inode(dir->i_sb) ;
-    if (!inode) {
-	return -ENOMEM ;
+    if (!(inode = new_inode(parent_dir->i_sb))) {
+  	return -ENOMEM ;
     }
 
     item_len = ROUND_UP (strlen (symname));
-    if (item_len > MAX_DIRECT_ITEM_LEN (dir->i_sb->s_blocksize)) {
+    if (item_len > MAX_DIRECT_ITEM_LEN (parent_dir->i_sb->s_blocksize)) {
 	iput(inode) ;
 	return -ENAMETOOLONG;
     }
   
-    name = reiserfs_kmalloc (item_len, GFP_NOFS, dir->i_sb);
+    name = reiserfs_kmalloc (item_len, GFP_NOFS, parent_dir->i_sb);
     if (!name) {
 	iput(inode) ;
 	return -ENOMEM;
@@ -903,20 +843,20 @@ static int reiserfs_symlink (struct inode * dir, struct dentry * dentry, const c
     memcpy (name, symname, strlen (symname));
     padd_item (name, item_len, strlen (symname));
 
-    journal_begin(&th, dir->i_sb, jbegin_count) ;
+    journal_begin(&th, parent_dir->i_sb, jbegin_count) ;
     windex = push_journal_writer("reiserfs_symlink") ;
 
-    inode = reiserfs_new_inode (&th, dir, S_IFLNK | S_IRWXUGO, name, strlen (symname), dentry,
+    inode = reiserfs_new_inode (&th, parent_dir, S_IFLNK | S_IRWXUGO, name, strlen (symname), dentry,
 				inode, &retval);
-    reiserfs_kfree (name, item_len, dir->i_sb);
+    reiserfs_kfree (name, item_len, parent_dir->i_sb);
     if (inode == 0) { /* reiserfs_new_inode iputs for us */
 	pop_journal_writer(windex) ;
-	journal_end(&th, dir->i_sb, jbegin_count) ;
+	journal_end(&th, parent_dir->i_sb, jbegin_count) ;
 	return retval;
     }
 
     reiserfs_update_inode_transaction(inode) ;
-    reiserfs_update_inode_transaction(dir) ;
+    reiserfs_update_inode_transaction(parent_dir) ;
 
     inode->i_op = &page_symlink_inode_operations;
     inode->i_mapping->a_ops = &reiserfs_address_space_operations;
@@ -925,31 +865,24 @@ static int reiserfs_symlink (struct inode * dir, struct dentry * dentry, const c
     //
     //reiserfs_update_sd (&th, inode, READ_BLOCKS);
 
-    retval = reiserfs_add_entry (&th, dir, dentry->d_name.name, dentry->d_name.len, 
+    retval = reiserfs_add_entry (&th, parent_dir, dentry->d_name.name, dentry->d_name.len, 
 				 inode, 1/*visible*/);
     if (retval) {
 	inode->i_nlink--;
 	reiserfs_update_sd (&th, inode);
 	pop_journal_writer(windex) ;
-	journal_end(&th, dir->i_sb, jbegin_count) ;
+	journal_end(&th, parent_dir->i_sb, jbegin_count) ;
 	iput (inode);
 	return retval;
     }
 
     d_instantiate(dentry, inode);
     pop_journal_writer(windex) ;
-    journal_end(&th, dir->i_sb, jbegin_count) ;
+    journal_end(&th, parent_dir->i_sb, jbegin_count) ;
     return 0;
 }
 
 
-//
-// a portion of this function, particularly the VFS interface portion,
-// was derived from minix or ext2's analog and evolved as the
-// prototype did. You should be able to tell which portion by looking
-// at the ext2 code and comparing. It's subfunctions contain no code
-// used as a template unless they are so labeled.
-//
 static int reiserfs_link (struct dentry * old_dentry, struct inode * dir, struct dentry * dentry)
 {
     int retval;
@@ -957,6 +890,7 @@ static int reiserfs_link (struct dentry * old_dentry, struct inode * dir, struct
     int windex ;
     struct reiserfs_transaction_handle th ;
     int jbegin_count = JOURNAL_PER_BALANCE_CNT * 3; 
+    time_t ctime;
 
 
     if (S_ISDIR(inode->i_mode))
@@ -984,7 +918,8 @@ static int reiserfs_link (struct dentry * old_dentry, struct inode * dir, struct
     }
 
     inode->i_nlink++;
-    inode->i_ctime = CURRENT_TIME;
+    ctime = CURRENT_TIME;
+    inode->i_ctime = ctime;
     reiserfs_update_sd (&th, inode);
 
     atomic_inc(&inode->i_count) ;
@@ -1037,14 +972,6 @@ static void set_ino_in_dir_entry (struct reiserfs_dir_entry * de, struct key * k
 }
 
 
-//
-// a portion of this function, particularly the VFS interface portion,
-// was derived from minix or ext2's analog and evolved as the
-// prototype did. You should be able to tell which portion by looking
-// at the ext2 code and comparing. It's subfunctions contain no code
-// used as a template unless they are so labeled.
-//
-
 /* 
  * process, that is going to call fix_nodes/do_balance must hold only
  * one path. If it holds 2 or more, it can get into endless waiting in
@@ -1059,10 +986,12 @@ static int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
     INITIALIZE_PATH (dot_dot_entry_path);
     struct item_head new_entry_ih, old_entry_ih, dot_dot_ih ;
     struct reiserfs_dir_entry old_de, new_de, dot_dot_de;
-    struct inode * old_inode, * new_inode;
+    struct inode * old_inode, * new_dentry_inode;
     int windex ;
     struct reiserfs_transaction_handle th ;
     int jbegin_count ; 
+    umode_t old_inode_mode;
+    time_t ctime;
 
 
     /* two balancings: old name removal, new name insertion or "save" link,
@@ -1071,7 +1000,7 @@ static int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
     jbegin_count = JOURNAL_PER_BALANCE_CNT * 3 + 3;
 
     old_inode = old_dentry->d_inode;
-    new_inode = new_dentry->d_inode;
+    new_dentry_inode = new_dentry->d_inode;
 
     // make sure, that oldname still exists and points to an object we
     // are going to rename
@@ -1086,13 +1015,14 @@ static int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
 	return -ENOENT;
     }
 
-    if (S_ISDIR(old_inode->i_mode)) {
+    old_inode_mode = old_inode->i_mode;
+    if (S_ISDIR(old_inode_mode)) {
 	// make sure, that directory being renamed has correct ".." 
 	// and that its new parent directory has not too many links
 	// already
 
-	if (new_inode) {
-	    if (!reiserfs_empty_dir(new_inode)) {
+	if (new_dentry_inode) {
+	    if (!reiserfs_empty_dir(new_dentry_inode)) {
 		return -ENOTEMPTY;
 	    }
 	}
@@ -1118,9 +1048,7 @@ static int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
     retval = reiserfs_add_entry (&th, new_dir, new_dentry->d_name.name, new_dentry->d_name.len, 
 				 old_inode, 0);
     if (retval == -EEXIST) {
-	// FIXME: is it possible, that new_inode == 0 here? If yes, it
-	// is not clear how does ext2 handle that
-	if (!new_inode) {
+	if (!new_dentry_inode) {
 	    reiserfs_panic (old_dir->i_sb,
 			    "vs-7050: new entry is found, new inode == 0\n");
 	}
@@ -1138,8 +1066,8 @@ static int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
     */
     reiserfs_update_inode_transaction(old_inode) ;
 
-    if (new_inode) 
-	reiserfs_update_inode_transaction(new_inode) ;
+    if (new_dentry_inode) 
+	reiserfs_update_inode_transaction(new_dentry_inode) ;
 
     while (1) {
 	// look for old name using corresponding entry key (found by reiserfs_find_entry)
@@ -1186,18 +1114,18 @@ static int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
 	if (item_moved(&new_entry_ih, &new_entry_path) ||
 	    !entry_points_to_object(new_dentry->d_name.name, 
 	                            new_dentry->d_name.len,
-				    &new_de, new_inode) ||
+				    &new_de, new_dentry_inode) ||
 	    item_moved(&old_entry_ih, &old_entry_path) || 
 	    !entry_points_to_object (old_dentry->d_name.name, 
 	                             old_dentry->d_name.len,
 				     &old_de, old_inode)) {
 	    reiserfs_restore_prepared_buffer (old_inode->i_sb, new_de.de_bh);
 	    reiserfs_restore_prepared_buffer (old_inode->i_sb, old_de.de_bh);
-	    if (S_ISDIR(old_inode->i_mode))
+	    if (S_ISDIR(old_inode_mode))
 		reiserfs_restore_prepared_buffer (old_inode->i_sb, dot_dot_de.de_bh);
 	    continue;
 	}
-	if (S_ISDIR(old_inode->i_mode)) {
+	if (S_ISDIR(old_inode_mode)) {
 	    if ( item_moved(&dot_dot_ih, &dot_dot_entry_path) ||
 		 !entry_points_to_object ( "..", 2, &dot_dot_de, old_dir) ) {
 		reiserfs_restore_prepared_buffer (old_inode->i_sb, old_de.de_bh);
@@ -1208,7 +1136,7 @@ static int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
 	}
 
 
-	RFALSE( S_ISDIR(old_inode->i_mode) && 
+	RFALSE( S_ISDIR(old_inode_mode) && 
 		!reiserfs_buffer_prepared(dot_dot_de.de_bh), "" );
 
 	break;
@@ -1226,22 +1154,23 @@ static int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
     old_dir->i_ctime = old_dir->i_mtime = CURRENT_TIME;
     new_dir->i_ctime = new_dir->i_mtime = CURRENT_TIME;
 
-    if (new_inode) {
+    if (new_dentry_inode) {
 	// adjust link number of the victim
-	if (S_ISDIR(new_inode->i_mode)) {
-	    new_inode->i_nlink  = 0;
+	if (S_ISDIR(new_dentry_inode->i_mode)) {
+	    new_dentry_inode->i_nlink  = 0;
 	} else {
-	    new_inode->i_nlink--;
+	    new_dentry_inode->i_nlink--;
 	}
-	new_inode->i_ctime = CURRENT_TIME;
+	ctime = CURRENT_TIME;
+	new_dentry_inode->i_ctime = ctime;
     }
 
-    if (S_ISDIR(old_inode->i_mode)) {
+    if (S_ISDIR(old_inode_mode)) {
 	// adjust ".." of renamed directory 
 	set_ino_in_dir_entry (&dot_dot_de, INODE_PKEY (new_dir));
 	journal_mark_dirty (&th, new_dir->i_sb, dot_dot_de.de_bh);
 	
-        if (!new_inode)
+        if (!new_dentry_inode)
 	    /* there (in new_dir) was no directory, so it got new link
 	       (".."  of renamed directory) */
 	    INC_DIR_INODE_NLINK(new_dir);
@@ -1266,10 +1195,10 @@ static int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
     reiserfs_update_sd (&th, old_dir);
     reiserfs_update_sd (&th, new_dir);
 
-    if (new_inode) {
-	if (new_inode->i_nlink == 0)
-	    add_save_link (&th, new_inode, 0/* not truncate */);
-	reiserfs_update_sd (&th, new_inode);
+    if (new_dentry_inode) {
+	if (new_dentry_inode->i_nlink == 0)
+	    add_save_link (&th, new_dentry_inode, 0/* not truncate */);
+	reiserfs_update_sd (&th, new_dentry_inode);
     }
 
     pop_journal_writer(windex) ;

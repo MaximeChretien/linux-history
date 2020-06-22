@@ -33,11 +33,6 @@
 				            "floppy", NULL)
 #define fd_free_irq()           free_irq(FLOPPY_IRQ, NULL);
 
-__inline__ void virtual_dma_init(void)
-{
-	/* Nothing to do on PowerPC */
-}
-
 static int FDC1 = 0x3f0;
 static int FDC2 = -1;
 

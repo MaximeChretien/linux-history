@@ -18,6 +18,7 @@
  * This file exports one function:
  *	vrc5477_irq_init(u32 irq_base);
  */
+
 #include <linux/interrupt.h>
 #include <linux/types.h>
 #include <linux/ptrace.h>
@@ -32,7 +33,7 @@
 static int vrc5477_irq_base = -1;
 
 
-static void 
+static void
 vrc5477_irq_enable(unsigned int irq)
 {
 	db_assert(vrc5477_irq_base != -1);
@@ -42,7 +43,7 @@ vrc5477_irq_enable(unsigned int irq)
 	ll_vrc5477_irq_enable(irq - vrc5477_irq_base);
 }
 
-static void 
+static void
 vrc5477_irq_disable(unsigned int irq)
 {
 	db_assert(vrc5477_irq_base != -1);
@@ -99,7 +100,7 @@ hw_irq_controller vrc5477_irq_controller = {
 	NULL			/* no affinity stuff for UP */
 };
 
-void 
+void
 vrc5477_irq_init(u32 irq_base)
 {
 	extern irq_desc_t irq_desc[];
@@ -111,17 +112,8 @@ vrc5477_irq_init(u32 irq_base)
 		irq_desc[i].depth = 1;
 		irq_desc[i].handler = &vrc5477_irq_controller;
 	}
-	
+
 	vrc5477_irq_base = irq_base;
-}
-
-
-int vrc5477_irq_to_irq(int irq)
-{
-	db_assert(irq >= 0);
-	db_assert(irq < NUM_5477_IRQ);
-
-	return irq + vrc5477_irq_base;
 }
 
 void ll_vrc5477_irq_route(int vrc5477_irq, int ip)

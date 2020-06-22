@@ -45,12 +45,14 @@ static int nfs_link(struct dentry *, struct inode *, struct dentry *);
 static int nfs_mknod(struct inode *, struct dentry *, int, int);
 static int nfs_rename(struct inode *, struct dentry *,
 		      struct inode *, struct dentry *);
+static int nfs_fsync_dir(struct file *, struct dentry *, int);
 
 struct file_operations nfs_dir_operations = {
 	read:		generic_read_dir,
 	readdir:	nfs_readdir,
 	open:		nfs_open,
 	release:	nfs_release,
+	fsync:		nfs_fsync_dir
 };
 
 struct inode_operations nfs_dir_inode_operations = {
@@ -99,13 +101,12 @@ int nfs_readdir_filler(nfs_readdir_descriptor_t *desc, struct page *page)
 	struct file	*file = desc->file;
 	struct inode	*inode = file->f_dentry->d_inode;
 	struct rpc_cred	*cred = nfs_file_cred(file);
-	void		*buffer = kmap(page);
 	int		error;
 
 	dfprintk(VFS, "NFS: nfs_readdir_filler() reading cookie %Lu into page %lu.\n", (long long)desc->entry->cookie, page->index);
 
  again:
-	error = NFS_PROTO(inode)->readdir(inode, cred, desc->entry->cookie, buffer,
+	error = NFS_PROTO(inode)->readdir(inode, cred, desc->entry->cookie, page,
 					  NFS_SERVER(inode)->dtsize, desc->plus);
 	/* We requested READDIRPLUS, but the server doesn't grok it */
 	if (desc->plus && error == -ENOTSUPP) {
@@ -116,7 +117,6 @@ int nfs_readdir_filler(nfs_readdir_descriptor_t *desc, struct page *page)
 	if (error < 0)
 		goto error;
 	SetPageUptodate(page);
-	kunmap(page);
 	/* Ensure consistent page alignment of the data.
 	 * Note: assumes we have exclusive access to this mapping either
 	 *	 throught inode->i_sem or some other mechanism.
@@ -127,7 +127,6 @@ int nfs_readdir_filler(nfs_readdir_descriptor_t *desc, struct page *page)
 	return 0;
  error:
 	SetPageError(page);
-	kunmap(page);
 	UnlockPage(page);
 	invalidate_inode_pages(inode);
 	desc->error = error;
@@ -315,12 +314,12 @@ int uncached_readdir(nfs_readdir_descriptor_t *desc, void *dirent,
 		status = -ENOMEM;
 		goto out;
 	}
-	desc->page = page;
-	desc->ptr = kmap(page);
 	desc->error = NFS_PROTO(inode)->readdir(inode, cred, desc->target,
-						desc->ptr,
+						page,
 						NFS_SERVER(inode)->dtsize,
 						desc->plus);
+	desc->page = page;
+	desc->ptr = kmap(page);
 	if (desc->error >= 0) {
 		if ((status = dir_decode(desc)) == 0)
 			desc->entry->prev_cookie = desc->target;
@@ -398,6 +397,15 @@ static int nfs_readdir(struct file *filp, void *dirent, filldir_t filldir)
 		return desc->error;
 	if (res < 0)
 		return res;
+	return 0;
+}
+
+/*
+ * All directory operations under NFS are synchronous, so fsync()
+ * is a dummy operation.
+ */
+int nfs_fsync_dir(struct file *filp, struct dentry *dentry, int datasync)
+{
 	return 0;
 }
 

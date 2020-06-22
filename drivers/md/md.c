@@ -724,9 +724,9 @@ static void free_mddev(mddev_t *mddev)
 	 * Make sure nobody else is using this mddev
 	 * (careful, we rely on the global kernel lock here)
 	 */
-	while (md_atomic_read(&mddev->resync_sem.count) != 1)
+	while (sem_getcount(&mddev->resync_sem) != 1)
 		schedule();
-	while (md_atomic_read(&mddev->recovery_sem.count) != 1)
+	while (sem_getcount(&mddev->recovery_sem) != 1)
 		schedule();
 
 	del_mddev_mapping(mddev, MKDEV(MD_MAJOR, mdidx(mddev)));
@@ -3219,7 +3219,7 @@ static int md_status_read_proc(char *page, char **start, off_t off,
 		if (mddev->curr_resync) {
 			sz += status_resync (page+sz, mddev);
 		} else {
-			if (md_atomic_read(&mddev->resync_sem.count) != 1)
+			if (sem_getcount(&mddev->resync_sem) != 1)
 				sz += sprintf(page + sz, "	resync=DELAYED");
 		}
 		sz += sprintf(page + sz, "\n");
@@ -3712,7 +3712,7 @@ struct {
  * Searches all registered partitions for autorun RAID arrays
  * at boot time.
  */
-static int detected_devices[128];
+static kdev_t detected_devices[128];
 static int dev_cnt;
 
 void md_autodetect_dev(kdev_t dev)

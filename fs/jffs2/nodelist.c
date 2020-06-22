@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: nodelist.c,v 1.30.2.4 2002/05/10 18:30:33 dwmw2 Exp $
+ * $Id: nodelist.c,v 1.30.2.5 2002/08/20 21:02:00 dwmw2 Exp $
  *
  */
 
@@ -202,9 +202,9 @@ int jffs2_get_inode_nodes(struct jffs2_sb_info *c, ino_t ino, struct jffs2_inode
 				err = -EIO;
 				goto free_out;
 			}
-			if (node.d.version > *highest_version)
+			if (node.i.version > *highest_version)
 				*highest_version = node.i.version;
-			D1(printk(KERN_DEBUG "version %d, highest_version now %d\n", node.d.version, *highest_version));
+			D1(printk(KERN_DEBUG "version %d, highest_version now %d\n", node.i.version, *highest_version));
 
 			if (ref->flash_offset & 1) {
 				D1(printk(KERN_DEBUG "obsoleted\n"));

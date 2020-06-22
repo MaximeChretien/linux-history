@@ -32,6 +32,7 @@
 #include <asm/io.h>
 #include <asm/siginfo.h>
 #include <asm/watch.h>
+#include <asm/types.h>
 #include <asm/system.h>
 #include <asm/traps.h>
 #include <asm/uaccess.h>
@@ -64,7 +65,8 @@ extern asmlinkage void handle_watch(void);
 extern asmlinkage void handle_mcheck(void);
 extern asmlinkage void handle_reserved(void);
 
-extern int fpu_emulator_cop1Handler(struct pt_regs *);
+extern int fpu_emulator_cop1Handler(int xcptno, struct pt_regs *xcp,
+	struct mips_fpu_soft_struct *ctx);
 
 char watch_available = 0;
 
@@ -180,61 +182,95 @@ static inline void simulate_sc(struct pt_regs *regp, unsigned int opcode)
 }
 
 /*
+ * If the address is either in the .text section of the
+ * kernel, or in the vmalloc'ed module regions, it *may*
+ * be the address of a calling routine
+ */
+
+#ifdef CONFIG_MODULES
+
+extern struct module *module_list;
+extern struct module kernel_module;
+
+static inline int kernel_text_address(long addr)
+{
+	extern char _stext, _etext;
+	int retval = 0;
+	struct module *mod;
+
+	if (addr >= (long) &_stext && addr <= (long) &_etext)
+		return 1;
+
+	for (mod = module_list; mod != &kernel_module; mod = mod->next) {
+		/* mod_bound tests for addr being inside the vmalloc'ed
+		 * module area. Of course it'd be better to test only
+		 * for the .text subset... */
+		if (mod_bound(addr, 0, mod)) {
+			retval = 1;
+			break;
+		}
+	}
+
+	return retval;
+}
+
+#else
+
+static inline int kernel_text_address(long addr)
+{
+	extern char _stext, _etext;
+
+	return (addr >= (long) &_stext && addr <= (long) &_etext);
+}
+
+#endif
+
+/*
  * This routine abuses get_user()/put_user() to reference pointers
  * with at least a bit of error checking ...
  */
-void show_stack(unsigned int *sp)
+void show_stack(long *sp)
 {
 	int i;
-	unsigned int *stack;
+	long stackdata;
 
-	stack = sp ? sp : (unsigned int *)&sp;
-	i = 0;
+	sp = sp ? sp : (long *)&sp;
 
-	printk("Stack:");
-	while ((unsigned long) stack & (PAGE_SIZE - 1)) {
-		unsigned long stackdata;
+	printk("Stack:   ");
+	i = 1;
+	while ((long) sp & (PAGE_SIZE - 1)) {
+		if (i && ((i % 8) == 0))
+			printk("\n");
+		if (i > 40) {
+			printk(" ...");
+			break;
+		}
 
-		if (__get_user(stackdata, stack++)) {
+		if (__get_user(stackdata, sp++)) {
 			printk(" (Bad stack address)");
 			break;
 		}
 
 		printk(" %08lx", stackdata);
-
-		if (++i > 40) {
-			printk(" ...");
-			break;
-		}
-
-		if (i % 8 == 0)
-			printk("\n      ");
+		i++;
 	}
+	printk("\n");
 }
 
-void show_trace(unsigned int *sp)
+void show_trace(long *sp)
 {
 	int i;
-	int column = 0;
-	unsigned int *stack;
-	unsigned long kernel_start, kernel_end;
-	unsigned long module_start, module_end;
-	extern char _stext, _etext;
+	long addr;
 
-	stack = sp ? sp : (unsigned int *) &sp;
-	i = 0;
+	sp = sp ? sp : (long *) &sp;
 
-	kernel_start = (unsigned long) &_stext;
-	kernel_end = (unsigned long) &_etext;
-	module_start = VMALLOC_START;
-	module_end = module_start + MODULE_RANGE;
+	printk("Call Trace:  ");
+	i = 1;
+	while ((long) sp & (PAGE_SIZE - 1)) {
 
-	printk("\nCall Trace:");
-
-	while ((unsigned long) stack & (PAGE_SIZE -1)) {
-		unsigned long addr;
-
-		if (__get_user(addr, stack++)) {
+		if (__get_user(addr, sp++)) {
+			if (i && ((i % 6) == 0))
+				printk("\n");
 			printk(" (Bad stack address)\n");
 			break;
 		}
@@ -248,27 +284,24 @@ void show_trace(unsigned int *sp)
 		 * out the call path that was taken.
 		 */
 
-		if ((addr >= kernel_start && addr < kernel_end) ||
-		    (addr >= module_start && addr < module_end)) { 
-
-			printk(" [<%08lx>]", addr);
-			if (column++ == 5) {
+		if (kernel_text_address(addr)) {
+			if (i && ((i % 6) == 0))
 				printk("\n");
-				column = 0;
-			}
-			if (++i > 40) {
+			if (i > 40) {
 				printk(" ...");
 				break;
 			}
+
+			printk(" [<%08lx>]", addr);
+			i++;
 		}
 	}
-	if (column != 0)
-		printk("\n");
+	printk("\n");
 }
 
 void show_trace_task(struct task_struct *tsk)
 {
-	show_trace((unsigned int *)tsk->thread.reg29);
+	show_trace((long *)tsk->thread.reg29);
 }
 
 void show_code(unsigned int *pc)
@@ -320,33 +353,33 @@ void show_registers(struct pt_regs *regs)
 	show_regs(regs);
 	printk("Process %s (pid: %d, stackpage=%08lx)\n",
 		current->comm, current->pid, (unsigned long) current);
-	show_stack((unsigned int *) regs->regs[29]);
-	show_trace((unsigned int *) regs->regs[29]);
+	show_stack((long *) regs->regs[29]);
+	show_trace((long *) regs->regs[29]);
 	show_code((unsigned int *) regs->cp0_epc);
 	printk("\n");
 }
 
 static spinlock_t die_lock = SPIN_LOCK_UNLOCKED;
 
-void __die(const char * str, struct pt_regs * regs, const char *where,
-           unsigned long line)
+void __die(const char * str, struct pt_regs * regs, const char * file,
+	   const char * func, unsigned long line)
 {
 	console_verbose();
 	spin_lock_irq(&die_lock);
 	printk("%s", str);
-	if (where)
-		printk(" in %s, line %ld", where, line);
+	if (file && func)
+		printk(" in %s:%s, line %ld", file, func, line);
 	printk(":\n");
 	show_registers(regs);
 	spin_unlock_irq(&die_lock);
 	do_exit(SIGSEGV);
 }
 
-void __die_if_kernel(const char * str, struct pt_regs * regs, const char *where,
-	unsigned long line)
+void __die_if_kernel(const char * str, struct pt_regs * regs,
+		     const char * file, const char * func, unsigned long line)
 {
 	if (!user_mode(regs))
-		__die(str, regs, where, line);
+		__die(str, regs, file, func, line);
 }
 
 extern const struct exception_table_entry __start___dbe_table[];
@@ -461,10 +494,16 @@ asmlinkage void do_be(struct pt_regs *regs)
 
 asmlinkage void do_ov(struct pt_regs *regs)
 {
+	siginfo_t info;
+
 	if (compute_return_epc(regs))
 		return;
 
-	force_sig(SIGFPE, current);
+	info.si_code = FPE_INTOVF;
+	info.si_signo = SIGFPE;
+	info.si_errno = 0;
+	info.si_addr = (void *)regs->cp0_epc;
+	force_sig_info(SIGFPE, &info, current);
 }
 
 /*
@@ -473,27 +512,26 @@ asmlinkage void do_ov(struct pt_regs *regs)
 asmlinkage void do_fpe(struct pt_regs *regs, unsigned long fcr31)
 {
 	if (fcr31 & FPU_CSR_UNI_X) {
-		extern void save_fp(struct task_struct *);
-		extern void restore_fp(struct task_struct *);
 		int sig;
+
 		/*
-	 	 * Unimplemented operation exception.  If we've got the
-	 	 * full software emulator on-board, let's use it...
+	 	 * Unimplemented operation exception.  If we've got the full
+		 * software emulator on-board, let's use it...
 		 *
-		 * Force FPU to dump state into task/thread context.
-		 * We're moving a lot of data here for what is probably
-		 * a single instruction, but the alternative is to 
-		 * pre-decode the FP register operands before invoking
-		 * the emulator, which seems a bit extreme for what
-		 * should be an infrequent event.
+		 * Force FPU to dump state into task/thread context.  We're
+		 * moving a lot of data here for what is probably a single
+		 * instruction, but the alternative is to pre-decode the FP
+		 * register operands before invoking the emulator, which seems
+		 * a bit extreme for what should be an infrequent event.
 		 */
 		save_fp(current);
-	
-		/* Run the emulator */
-		sig = fpu_emulator_cop1Handler(regs);
 
-		/* 
-		 * We can't allow the emulated instruction to leave any of 
+		/* Run the emulator */
+		sig = fpu_emulator_cop1Handler (0, regs,
+			&current->thread.fpu.soft);
+
+		/*
+		 * We can't allow the emulated instruction to leave any of
 		 * the cause bit set in $fcr31.
 		 */
 		current->thread.fpu.soft.sr &= ~FPU_CSR_ALL_X;
@@ -504,8 +542,8 @@ asmlinkage void do_fpe(struct pt_regs *regs, unsigned long fcr31)
 		/* If something went wrong, signal */
 		if (sig)
 		{
-			/* 
-			 * Return EPC is not calculated in the FPU emulator, 
+			/*
+			 * Return EPC is not calculated in the FPU emulator,
 			 * if a signal is being send. So we calculate it here.
 			 */
 			compute_return_epc(regs);
@@ -522,9 +560,9 @@ asmlinkage void do_fpe(struct pt_regs *regs, unsigned long fcr31)
 
 static inline int get_insn_opcode(struct pt_regs *regs, unsigned int *opcode)
 {
-	unsigned int *epc;
+	unsigned long *epc;
 
-	epc = (unsigned int *) regs->cp0_epc +
+	epc = (unsigned long *) regs->cp0_epc +
 	      ((regs->cp0_cause & CAUSEF_BD) != 0);
 	if (!get_user(*opcode, epc))
 		return 0;
@@ -535,14 +573,11 @@ static inline int get_insn_opcode(struct pt_regs *regs, unsigned int *opcode)
 
 asmlinkage void do_bp(struct pt_regs *regs)
 {
-	siginfo_t info;
 	unsigned int opcode, bcode;
-	unsigned int *epc;
+	siginfo_t info;
 
-	epc = (unsigned int *) regs->cp0_epc +
-	      ((regs->cp0_cause & CAUSEF_BD) != 0);
-	if (get_user(opcode, epc))
-		goto sigsegv;
+	if (get_insn_opcode(regs, &opcode))
+		return;
 
 	/*
 	 * There is the ancient bug in the MIPS assemblers that the break
@@ -572,35 +607,30 @@ asmlinkage void do_bp(struct pt_regs *regs)
 	default:
 		force_sig(SIGTRAP, current);
 	}
-	return;
-
-sigsegv:
-	force_sig(SIGSEGV, current);
 }
 
 asmlinkage void do_tr(struct pt_regs *regs)
 {
 	siginfo_t info;
-	unsigned int opcode, bcode;
-	unsigned *epc;
+	unsigned int opcode, tcode = 0;
 
-	epc = (unsigned int *) regs->cp0_epc +
-	      ((regs->cp0_cause & CAUSEF_BD) != 0);
-	if (get_user(opcode, epc))
-		goto sigsegv;
+	if (get_insn_opcode(regs, &opcode))
+		return;
 
-	bcode = ((opcode >> 6) & ((1 << 20) - 1));
+	/* Immediate versions don't provide a code.  */
+	if (!(opcode & OPCODE))
+		tcode = ((opcode >> 6) & ((1 << 20) - 1));
 
 	/*
-	 * (A short test says that IRIX 5.3 sends SIGTRAP for all break
-	 * insns, even for break codes that indicate arithmetic failures.
+	 * (A short test says that IRIX 5.3 sends SIGTRAP for all trap
+	 * insns, even for trap codes that indicate arithmetic failures.
 	 * Weird ...)
 	 * But should we continue the brokenness???  --macro
 	 */
-	switch (bcode) {
+	switch (tcode) {
 	case 6:
 	case 7:
-		if (bcode == 7)
+		if (tcode == 7)
 			info.si_code = FPE_INTDIV;
 		else
 			info.si_code = FPE_INTOVF;
@@ -612,10 +642,6 @@ asmlinkage void do_tr(struct pt_regs *regs)
 	default:
 		force_sig(SIGTRAP, current);
 	}
-	return;
-
-sigsegv:
-	force_sig(SIGSEGV, current);
 }
 
 /*
@@ -627,8 +653,7 @@ sigsegv:
  */
 asmlinkage void do_ri(struct pt_regs *regs)
 {
-	if (!user_mode(regs))
-		BUG();
+	die_if_kernel("Reserved instruction in kernel code", regs);
 
 #ifndef CONFIG_CPU_HAS_LLSC
 
@@ -660,9 +685,6 @@ asmlinkage void do_ri(struct pt_regs *regs)
 asmlinkage void do_cpu(struct pt_regs *regs)
 {
 	unsigned int cpid;
-	extern void lazy_fpu_switch(void *);
-	extern void save_fp(struct task_struct *);
-	extern void init_fpu(void);
 	void fpu_emulator_init_fpu(void);
 	int sig;
 
@@ -696,12 +718,11 @@ fp_emul:
 			current->used_math = 1;
 		}
 	}
-	sig = fpu_emulator_cop1Handler(regs);
+	sig = fpu_emulator_cop1Handler(0, regs, &current->thread.fpu.soft);
 	last_task_used_math = current;
-	if (sig)
-	{
-		/* 
-		 * Return EPC is not calculated in the FPU emulator, if 
+	if (sig) {
+		/*
+		 * Return EPC is not calculated in the FPU emulator, if
 		 * a signal is being send. So we calculate it here.
 		 */
 		compute_return_epc(regs);
@@ -738,8 +759,14 @@ asmlinkage void do_watch(struct pt_regs *regs)
 asmlinkage void do_mcheck(struct pt_regs *regs)
 {
 	show_regs(regs);
-	panic("Caught Machine Check exception - probably caused by multiple "
-	      "matching entries in the TLB.");
+	dump_tlb_all();
+	/*
+	 * Some chips may have other causes of machine check (e.g. SB1
+	 * graduation timer)
+	 */
+	panic("Caught Machine Check exception - %scaused by multiple "
+	      "matching entries in the TLB.",
+	      (regs->cp0_status & ST0_TS) ? "" : "not ");
 }
 
 asmlinkage void do_reserved(struct pt_regs *regs)
@@ -774,7 +801,7 @@ static inline void parity_protection_init(void)
 		       "MIPS 5KC CPUs.\n");
 		write_32bit_cp0_register(CP0_ECC,
 		                         read_32bit_cp0_register(CP0_ECC)
-		                         | 0x80000000); 
+		                         | 0x80000000);
 		break;
 	default:
 		break;
@@ -827,9 +854,9 @@ void ejtag_exception_handler(struct pt_regs *regs)
         printk("SDBBP EJTAG debug exception - not handled yet, just ignored!\n");
         depc = read_32bit_cp0_register(CP0_DEPC);
         debug = read_32bit_cp0_register(CP0_DEBUG);
-        printk("DEPC = %08x, DEBUG = %08x\n", depc, debug); 
+        printk("DEPC = %08x, DEBUG = %08x\n", depc, debug);
         if (debug & 0x80000000) {
-                /* 
+                /*
                  * In branch delay slot.
                  * We cheat a little bit here and use EPC to calculate the
                  * debug return address (DEPC). EPC is restored after the
@@ -869,10 +896,10 @@ unsigned long exception_handlers[32];
  */
 void *set_except_vector(int n, void *addr)
 {
-	unsigned handler = (unsigned long) addr;
-	unsigned old_handler = exception_handlers[n];
-	exception_handlers[n] = handler;
+	unsigned long handler = (unsigned long) addr;
+	unsigned long old_handler = exception_handlers[n];
 
+	exception_handlers[n] = handler;
 	if (n == 0 && mips_cpu.options & MIPS_CPU_DIVEC) {
 		*(volatile u32 *)(KSEG0+0x200) = 0x08000000 |
 		                                 (0x03ffffff & (handler >> 2));
@@ -928,8 +955,8 @@ void __init trap_init(void)
 	for (i = 0; i <= 31; i++)
 		set_except_vector(i, handle_reserved);
 
-	/* 
-	 * Copy the EJTAG debug exception vector handler code to it's final 
+	/*
+	 * Copy the EJTAG debug exception vector handler code to it's final
 	 * destination.
 	 */
 	if (mips_cpu.options & MIPS_CPU_EJTAG)

@@ -152,12 +152,6 @@ lasi700_driver_callback(struct parisc_device *dev)
 		return 1;
 	}
 	memset(hostdata, 0, sizeof(struct NCR_700_Host_Parameters));
-	if(request_mem_region(base, 64, driver_name) == NULL) {
-		printk(KERN_ERR "%s: Failed to claim memory region\n",
-		       driver_name);
-		kfree(hostdata);
-		return 1;
-	}
 	hostdata->base = base;
 	hostdata->differential = 0;
 	if(dev->id.sversion == LASI_700_SVERSION) {
@@ -172,7 +166,6 @@ lasi700_driver_callback(struct parisc_device *dev)
 	hostdata->pci_dev = ccio_get_fake(dev);
 	if((host = NCR_700_detect(host_tpnt, hostdata)) == NULL) {
 		kfree(hostdata);
-		release_mem_region(host->base, 64);
 		return 1;
 	}
 	host->irq = dev->irq;
@@ -196,7 +189,6 @@ lasi700_release(struct Scsi_Host *host)
 	NCR_700_release(host);
 	kfree(hostdata);
 	free_irq(host->irq, host);
-	release_mem_region(host->base, 64);
 	unregister_parisc_driver(&lasi700_driver);
 	return 1;
 }

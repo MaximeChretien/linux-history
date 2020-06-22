@@ -1150,12 +1150,6 @@ r4k_dma_cache_inv_sc(unsigned long addr, unsigned long size)
 	}
 }
 
-static void
-r4k_dma_cache_wback(unsigned long addr, unsigned long size)
-{
-	panic("r4k_dma_cache called - should not happen.");
-}
-
 /*
  * While we're protected against bad userland addresses we don't care
  * very much about what happens in that case.  Usually a segmentation
@@ -1200,6 +1194,12 @@ static void __init probe_icache(unsigned long config)
 {
         switch (mips_cpu.cputype) {
         case CPU_VR41XX:
+        case CPU_VR4111:
+        case CPU_VR4121:
+        case CPU_VR4122:
+        case CPU_VR4131:
+        case CPU_VR4181:
+        case CPU_VR4181A:
                 icache_size = 1 << (10 + ((config >> 9) & 7));
                 break;
         default:
@@ -1216,6 +1216,12 @@ static void __init probe_dcache(unsigned long config)
 {
         switch (mips_cpu.cputype) {
         case CPU_VR41XX:
+        case CPU_VR4111:
+        case CPU_VR4121:
+        case CPU_VR4122:
+        case CPU_VR4131:
+        case CPU_VR4181:
+        case CPU_VR4181A:
                 dcache_size = 1 << (10 + ((config >> 6) & 7));
                 break;
         default:
@@ -1358,7 +1364,7 @@ static void __init setup_noscache_funcs(void)
 	_flush_icache_page = r4k_flush_icache_page_p;
 
 	_dma_cache_wback_inv = r4k_dma_cache_wback_inv_pc;
-	_dma_cache_wback = r4k_dma_cache_wback;
+	_dma_cache_wback = r4k_dma_cache_wback_inv_pc;
 	_dma_cache_inv = r4k_dma_cache_inv_pc;
 }
 
@@ -1441,7 +1447,7 @@ static void __init setup_scache_funcs(void)
 	___flush_cache_all = _flush_cache_all;
 	_flush_icache_page = r4k_flush_icache_page_s;
 	_dma_cache_wback_inv = r4k_dma_cache_wback_inv_sc;
-	_dma_cache_wback = r4k_dma_cache_wback;
+	_dma_cache_wback = r4k_dma_cache_wback_inv_sc;
 	_dma_cache_inv = r4k_dma_cache_inv_sc;
 }
 
@@ -1456,23 +1462,31 @@ static inline void __init setup_scache(unsigned int config)
 	probe_scache_kseg1 = (probe_func_t) (KSEG1ADDR(&probe_scache));
 	sc_present = probe_scache_kseg1(config);
 
-	if (sc_present) {
-		setup_scache_funcs();
+	if (!sc_present) {
+		setup_noscache_funcs();
 		return;
 	}
 
-	setup_noscache_funcs();
+	switch(mips_cpu.cputype) {
+	case CPU_R5000:
+	case CPU_NEVADA:
+			setup_noscache_funcs();
+#if defined(CONFIG_CPU_R5000) || defined(CONFIG_CPU_NEVADA)
+			r5k_sc_init();
+#endif
+			break;
+	default:
+			setup_scache_funcs();
+	}
+
+
 }
 
 void __init ld_mmu_r4xx0(void)
 {
 	unsigned long config = read_32bit_cp0_register(CP0_CONFIG);
 
-#ifdef CONFIG_MIPS_UNCACHED
-	change_cp0_config(CONF_CM_CMASK, CONF_CM_UNCACHED);
-#else
-	change_cp0_config(CONF_CM_CMASK, CONF_CM_CACHABLE_NONCOHERENT);
-#endif
+	change_cp0_config(CONF_CM_CMASK | CONF_CU, CONF_CM_DEFAULT);
 
 	probe_icache(config);
 	probe_dcache(config);

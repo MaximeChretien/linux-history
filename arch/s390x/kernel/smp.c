@@ -176,61 +176,137 @@ int smp_call_function (void (*func) (void *info), void *info, int nonatomic,
 	return 0;
 }
 
+static inline void do_send_stop(void)
+{
+        u32 dummy;
+        int i;
+
+        /* stop all processors */
+        for (i =  0; i < smp_num_cpus; i++) {
+                if (smp_processor_id() != i) {
+                        int ccode;
+                        do {
+                                ccode = signal_processor_ps(
+                                   &dummy,
+                                   0,
+                                   i,
+                                   sigp_stop);
+                        } while(ccode == sigp_busy);
+                }
+        }
+}
+
+static inline void do_store_status(void)
+{
+        unsigned long low_core_addr;
+        u32 dummy;
+        int i;
+
+        /* store status of all processors in their lowcores (real 0) */
+        for (i =  0; i < smp_num_cpus; i++) {
+                if (smp_processor_id() != i) {
+                        int ccode;
+                        low_core_addr = (unsigned long)get_cpu_lowcore(i);
+                        do {
+                                ccode = signal_processor_ps(
+                                   &dummy,
+                                   low_core_addr,
+                                   i,
+                                   sigp_store_status_at_address);
+                        } while(ccode == sigp_busy);
+                }
+        }
+}
 
 /*
- * Various special callbacks
+ * this function sends a 'stop' sigp to all other CPUs in the system.
+ * it goes straight through.
  */
-
-void do_machine_restart(void)
+void smp_send_stop(void)
 {
-        smp_send_stop();
-	reipl(S390_lowcore.ipl_device);
+        int i;
+        u32 dummy;
+        unsigned long low_core_addr;
+
+        /* write magic number to zero page (absolute 0) */
+        get_cpu_lowcore(smp_processor_id())->panic_magic = __PANIC_MAGIC;
+
+	/* stop other processors. */
+	do_send_stop();
+
+	/* store status of other processors. */
+	do_store_status();
 }
 
-void machine_restart(char * __unused) 
+
+/*
+ * Reboot, halt and power_off routines for SMP.
+ */
+static volatile unsigned long cpu_restart_map;
+
+static void do_machine_restart(void * __unused)
 {
-        if (smp_processor_id() != 0) {
-                smp_ext_bitcall(0, ec_restart);
-		for (;;)
-			enabled_wait();
-        } else
-                do_machine_restart();
+	clear_bit(smp_processor_id(), &cpu_restart_map);
+	if (smp_processor_id() == 0) {
+		/* Wait for all other cpus to enter do_machine_restart. */
+		while (cpu_restart_map != 0);
+		/* Store status of other cpus. */
+		do_store_status();
+		/*
+		 * Finally call reipl. Because we waited for all other
+		 * cpus to enter this function we know that they do
+		 * not hold any s390irq-locks (the cpus have been
+		 * interrupted by an external interrupt and s390irq
+		 * locks are always held disabled).
+		 */
+		reipl(S390_lowcore.ipl_device);
+	}
+	signal_processor(smp_processor_id(), sigp_stop);
 }
 
-void do_machine_halt(void)
+void machine_restart_smp(char * __unused) 
 {
-        smp_send_stop();
-        if (MACHINE_IS_VM && strlen(vmhalt_cmd) > 0)
-                cpcmd(vmhalt_cmd, NULL, 0);
-        signal_processor(smp_processor_id(), sigp_stop_and_store_status);
+	cpu_restart_map = cpu_online_map;
+        smp_call_function(do_machine_restart, NULL, 0, 0);
+	do_machine_restart(NULL);
 }
 
-void machine_halt(void)
+static void do_machine_halt(void * __unused)
 {
-        if (smp_processor_id() != 0) {
-                smp_ext_bitcall(0, ec_halt);
-		for (;;)
-			enabled_wait();
-        } else
-                do_machine_halt();
+	if (smp_processor_id() == 0) {
+		smp_send_stop();
+		if (MACHINE_IS_VM && strlen(vmhalt_cmd) > 0)
+			cpcmd(vmhalt_cmd, NULL, 0);
+		signal_processor(smp_processor_id(),
+				 sigp_stop_and_store_status);
+	}
+	for (;;)
+		enabled_wait();
 }
 
-void do_machine_power_off(void)
+void machine_halt_smp(void)
 {
-        smp_send_stop();
-        if (MACHINE_IS_VM && strlen(vmpoff_cmd) > 0)
-                cpcmd(vmpoff_cmd, NULL, 0);
-        signal_processor(smp_processor_id(), sigp_stop_and_store_status);
+        smp_call_function(do_machine_halt, NULL, 0, 0);
+	do_machine_halt(NULL);
 }
 
-void machine_power_off(void)
+static void do_machine_power_off(void * __unused)
 {
-        if (smp_processor_id() != 0) {
-                smp_ext_bitcall(0, ec_power_off);
-		for (;;)
-			enabled_wait();
-        } else
-                do_machine_power_off();
+	if (smp_processor_id() == 0) {
+		smp_send_stop();
+		if (MACHINE_IS_VM && strlen(vmpoff_cmd) > 0)
+			cpcmd(vmpoff_cmd, NULL, 0);
+		signal_processor(smp_processor_id(),
+				 sigp_stop_and_store_status);
+	}
+	for (;;)
+		enabled_wait();
+}
+
+void machine_power_off_smp(void)
+{
+        smp_call_function(do_machine_power_off, NULL, 0, 0);
+	do_machine_power_off(NULL);
 }
 
 /*
@@ -247,17 +323,9 @@ void do_ext_call_interrupt(struct pt_regs *regs, __u16 code)
          *
          * For the ec_schedule signal we have to do nothing. All the work
          * is done automatically when we return from the interrupt.
-	 * For the ec_restart, ec_halt and ec_power_off we call the
-         * appropriate routine.
          */
 	bits = xchg(&S390_lowcore.ext_call_fast, 0);
 
-        if (test_bit(ec_restart, &bits))
-		do_machine_restart();
-        if (test_bit(ec_halt, &bits))
-		do_machine_halt();
-        if (test_bit(ec_power_off, &bits))
-		do_machine_power_off();
         if (test_bit(ec_call_function, &bits))
 		do_call_function();
 }
@@ -296,53 +364,6 @@ static void smp_ext_bitcall_others(ec_bit_sig sig)
 		set_bit(sig, &(get_cpu_lowcore(i)->ext_call_fast));
                 while (signal_processor(i, sigp_external_call) == sigp_busy)
 			udelay(10);
-        }
-}
-
-/*
- * this function sends a 'stop' sigp to all other CPUs in the system.
- * it goes straight through.
- */
-
-void smp_send_stop(void)
-{
-        int i;
-        u32 dummy;
-        unsigned long low_core_addr;
-
-        /* write magic number to zero page (absolute 0) */
-
-        get_cpu_lowcore(smp_processor_id())->panic_magic = __PANIC_MAGIC;
-
-        /* stop all processors */
-
-        for (i =  0; i < smp_num_cpus; i++) {
-                if (smp_processor_id() != i) {
-                        int ccode;
-                        do {
-                                ccode = signal_processor_ps(
-                                   &dummy,
-                                   0,
-                                   i,
-                                   sigp_stop);
-                        } while(ccode == sigp_busy);
-                }
-        }
-
-        /* store status of all processors in their lowcores (real 0) */
-
-        for (i =  0; i < smp_num_cpus; i++) {
-                if (smp_processor_id() != i) {
-                        int ccode;
-                        low_core_addr = (unsigned long)get_cpu_lowcore(i);
-                        do {
-                                ccode = signal_processor_ps(
-                                   &dummy,
-                                   low_core_addr,
-                                   i,
-                                   sigp_store_status_at_address);
-                        } while(ccode == sigp_busy);
-                }
         }
 }
 

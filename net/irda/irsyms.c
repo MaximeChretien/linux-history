@@ -171,7 +171,7 @@ EXPORT_SYMBOL(irtty_set_packet_mode);
 
 int __init irda_init(void)
 {
-	IRDA_DEBUG(0, __FUNCTION__ "()\n");
+	IRDA_DEBUG(0, "%s()\n", __FUNCTION__);
 
  	irlmp_init();
 	irlap_init();

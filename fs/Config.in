@@ -9,15 +9,18 @@ tristate 'Kernel automounter support' CONFIG_AUTOFS_FS
 tristate 'Kernel automounter version 4 support (also supports v3)' CONFIG_AUTOFS4_FS
 
 tristate 'Reiserfs support' CONFIG_REISERFS_FS
-dep_mbool '  Have reiserfs do extra internal checking' CONFIG_REISERFS_CHECK $CONFIG_REISERFS_FS
+dep_mbool '  Enable reiserfs debug mode' CONFIG_REISERFS_CHECK $CONFIG_REISERFS_FS
 dep_mbool '  Stats in /proc/fs/reiserfs' CONFIG_REISERFS_PROC_INFO $CONFIG_REISERFS_FS
 
-dep_tristate 'ADFS file system support' CONFIG_ADFS_FS $CONFIG_EXPERIMENTAL
+dep_tristate 'ADFS file system support (EXPERIMENTAL)' CONFIG_ADFS_FS $CONFIG_EXPERIMENTAL
 dep_mbool '  ADFS write support (DANGEROUS)' CONFIG_ADFS_FS_RW $CONFIG_ADFS_FS $CONFIG_EXPERIMENTAL
 
 dep_tristate 'Amiga FFS file system support (EXPERIMENTAL)' CONFIG_AFFS_FS $CONFIG_EXPERIMENTAL
 
 dep_tristate 'Apple Macintosh file system support (EXPERIMENTAL)' CONFIG_HFS_FS $CONFIG_EXPERIMENTAL
+
+dep_tristate 'BeOS file systemv(BeFS) support (read only) (EXPERIMENTAL)' CONFIG_BEFS_FS $CONFIG_EXPERIMENTAL
+dep_mbool '  Debug Befs' CONFIG_BEFS_DEBUG $CONFIG_BEFS_FS
 
 dep_tristate 'BFS file system support (EXPERIMENTAL)' CONFIG_BFS_FS $CONFIG_EXPERIMENTAL
 
@@ -50,6 +53,10 @@ define_bool CONFIG_RAMFS y
 tristate 'ISO 9660 CDROM file system support' CONFIG_ISO9660_FS
 dep_mbool '  Microsoft Joliet CDROM extensions' CONFIG_JOLIET $CONFIG_ISO9660_FS
 dep_mbool '  Transparent decompression extension' CONFIG_ZISOFS $CONFIG_ISO9660_FS
+
+tristate 'JFS filesystem support' CONFIG_JFS_FS
+dep_mbool '  JFS debugging' CONFIG_JFS_DEBUG $CONFIG_JFS_FS
+dep_mbool '  JFS statistics' CONFIG_JFS_STATISTICS $CONFIG_JFS_FS
 
 tristate 'Minix fs support' CONFIG_MINIX_FS
 
@@ -92,13 +99,14 @@ if [ "$CONFIG_NET" = "y" ]; then
    comment 'Network File Systems'
 
    dep_tristate 'Coda file system support (advanced network fs)' CONFIG_CODA_FS $CONFIG_INET
-   dep_tristate 'InterMezzo file system support (experimental, replicating fs)' CONFIG_INTERMEZZO_FS $CONFIG_INET $CONFIG_EXPERIMENTAL
+   dep_tristate 'InterMezzo file system support (replicating fs) (EXPERIMENTAL)' CONFIG_INTERMEZZO_FS $CONFIG_INET $CONFIG_EXPERIMENTAL
    dep_tristate 'NFS file system support' CONFIG_NFS_FS $CONFIG_INET
    dep_mbool '  Provide NFSv3 client support' CONFIG_NFS_V3 $CONFIG_NFS_FS
    dep_bool '  Root file system on NFS' CONFIG_ROOT_NFS $CONFIG_NFS_FS $CONFIG_IP_PNP
 
    dep_tristate 'NFS server support' CONFIG_NFSD $CONFIG_INET
    dep_mbool '  Provide NFSv3 server support' CONFIG_NFSD_V3 $CONFIG_NFSD
+   dep_mbool '  Provide NFS server over TCP support (EXPERIMENTAL)' CONFIG_NFSD_TCP $CONFIG_NFSD $CONFIG_EXPERIMENTAL
 
    if [ "$CONFIG_NFS_FS" = "y" -o "$CONFIG_NFSD" = "y" ]; then
       define_tristate CONFIG_SUNRPC y
@@ -145,15 +153,6 @@ if [ "$CONFIG_ZISOFS" = "y" ]; then
    define_tristate CONFIG_ZISOFS_FS $CONFIG_ISO9660_FS
 else
    define_tristate CONFIG_ZISOFS_FS n
-fi
-if [ "$CONFIG_CRAMFS" = "y" -o "$CONFIG_ZISOFS_FS" = "y" ]; then
-   define_tristate CONFIG_ZLIB_FS_INFLATE y
-else
-  if [ "$CONFIG_CRAMFS" = "m" -o "$CONFIG_ZISOFS_FS" = "m" ]; then
-     define_tristate CONFIG_ZLIB_FS_INFLATE m
-  else
-     define_tristate CONFIG_ZLIB_FS_INFLATE n
-  fi
 fi
 
 mainmenu_option next_comment

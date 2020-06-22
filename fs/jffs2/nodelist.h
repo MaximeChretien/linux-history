@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: nodelist.h,v 1.46.2.1 2002/02/23 14:04:44 dwmw2 Exp $
+ * $Id: nodelist.h,v 1.46.2.3 2002/10/11 09:04:44 dwmw2 Exp $
  *
  */
 
@@ -163,7 +163,6 @@ struct jffs2_node_frag
 	struct jffs2_full_dnode *node; /* NULL for holes */
 	__u32 size;
 	__u32 ofs; /* Don't really need this, but optimisation */
-	__u32 node_ofs; /* offset within the physical node */
 };
 
 struct jffs2_eraseblock
@@ -349,3 +348,7 @@ void jffs2_erase_block(struct jffs2_sb_info *c, struct jffs2_eraseblock *jeb);
 void jffs2_erase_pending_blocks(struct jffs2_sb_info *c);
 void jffs2_mark_erased_blocks(struct jffs2_sb_info *c);
 void jffs2_erase_pending_trigger(struct jffs2_sb_info *c);
+
+/* compr_zlib.c */
+int jffs2_zlib_init(void);
+void jffs2_zlib_exit(void);

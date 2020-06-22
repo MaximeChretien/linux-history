@@ -1,3 +1,6 @@
+/*
+ * Copyright 2000-2002 by Hans Reiser, licensing governed by reiserfs/README
+ */
 #ifndef _REISER_FS_I
 #define _REISER_FS_I
 
@@ -41,6 +44,10 @@ struct reiserfs_inode_info {
     struct list_head i_prealloc_list;	/* per-transaction list of inodes which
 					 * have preallocated blocks */
   
+    int new_packing_locality:1;		/* new_packig_locality is created; new blocks
+					 * for the contents of this directory should be
+					 * displaced */
+
     /* we use these for fsync or O_SYNC to decide which transaction
     ** needs to be committed in order for this inode to be properly
     ** flushed */

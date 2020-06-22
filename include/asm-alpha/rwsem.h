@@ -87,6 +87,24 @@ static inline void __down_read(struct rw_semaphore *sem)
 		rwsem_down_read_failed(sem);
 }
 
+/*
+ * trylock for reading -- returns 1 if successful, 0 if contention
+ */
+static inline int __down_read_trylock(struct rw_semaphore *sem)
+{
+	long old, new, res;
+
+	res = sem->count;
+	do {
+		new = res + RWSEM_ACTIVE_READ_BIAS;
+		if (new <= 0)
+			break;
+		old = res;
+		res = cmpxchg(&sem->count, old, new);
+	} while (res != old);
+	return res >= 0 ? 1 : 0;
+}
+
 static inline void __down_write(struct rw_semaphore *sem)
 {
 	long oldcount;
@@ -109,6 +127,18 @@ static inline void __down_write(struct rw_semaphore *sem)
 #endif
 	if (__builtin_expect(oldcount, 0))
 		rwsem_down_write_failed(sem);
+}
+
+/*
+ * trylock for writing -- returns 1 if successful, 0 if contention
+ */
+static inline int __down_write_trylock(struct rw_semaphore *sem)
+{
+	long ret = cmpxchg(&sem->count, RWSEM_UNLOCKED_VALUE,
+			   RWSEM_ACTIVE_WRITE_BIAS);
+	if (ret == RWSEM_UNLOCKED_VALUE)
+		return 1;
+	return 0;
 }
 
 static inline void __up_read(struct rw_semaphore *sem)

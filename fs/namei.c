@@ -739,6 +739,16 @@ walk_init_root(const char *name, struct nameidata *nd)
 }
 
 /* SMP-safe */
+int path_lookup(const char *path, unsigned flags, struct nameidata *nd)
+{
+	int error = 0;
+	if (path_init(path, flags, nd))
+		error = path_walk(path, nd);
+	return error;
+}
+
+
+/* SMP-safe */
 int path_init(const char *name, unsigned int flags, struct nameidata *nd)
 {
 	nd->last_type = LAST_ROOT; /* if there are only slashes... */
@@ -844,8 +854,7 @@ int __user_walk(const char *name, unsigned flags, struct nameidata *nd)
 	err = PTR_ERR(tmp);
 	if (!IS_ERR(tmp)) {
 		err = 0;
-		if (path_init(tmp, flags, nd))
-			err = path_walk(tmp, nd);
+		err = path_lookup(tmp, flags, nd);
 		putname(tmp);
 	}
 	return err;
@@ -1001,8 +1010,7 @@ int open_namei(const char * pathname, int flag, int mode, struct nameidata *nd)
 	 * The simplest case - just a plain lookup.
 	 */
 	if (!(flag & O_CREAT)) {
-		if (path_init(pathname, lookup_flags(flag), nd))
-			error = path_walk(pathname, nd);
+		error = path_lookup(pathname, lookup_flags(flag), nd);
 		if (error)
 			return error;
 		dentry = nd->dentry;
@@ -1012,8 +1020,7 @@ int open_namei(const char * pathname, int flag, int mode, struct nameidata *nd)
 	/*
 	 * Create - we need to know the parent.
 	 */
-	if (path_init(pathname, LOOKUP_PARENT, nd))
-		error = path_walk(pathname, nd);
+	error = path_lookup(pathname, LOOKUP_PARENT, nd);
 	if (error)
 		return error;
 
@@ -1265,8 +1272,7 @@ asmlinkage long sys_mknod(const char * filename, int mode, dev_t dev)
 	if (IS_ERR(tmp))
 		return PTR_ERR(tmp);
 
-	if (path_init(tmp, LOOKUP_PARENT, &nd))
-		error = path_walk(tmp, &nd);
+	error = path_lookup(tmp, LOOKUP_PARENT, &nd);
 	if (error)
 		goto out;
 	dentry = lookup_create(&nd, 0);
@@ -1334,8 +1340,7 @@ asmlinkage long sys_mkdir(const char * pathname, int mode)
 		struct dentry *dentry;
 		struct nameidata nd;
 
-		if (path_init(tmp, LOOKUP_PARENT, &nd))
-			error = path_walk(tmp, &nd);
+		error = path_lookup(tmp, LOOKUP_PARENT, &nd);
 		if (error)
 			goto out;
 		dentry = lookup_create(&nd, 1);
@@ -1431,8 +1436,7 @@ asmlinkage long sys_rmdir(const char * pathname)
 	if(IS_ERR(name))
 		return PTR_ERR(name);
 
-	if (path_init(name, LOOKUP_PARENT, &nd))
-		error = path_walk(name, &nd);
+	error = path_lookup(name, LOOKUP_PARENT, &nd);
 	if (error)
 		goto exit;
 
@@ -1500,8 +1504,7 @@ asmlinkage long sys_unlink(const char * pathname)
 	if(IS_ERR(name))
 		return PTR_ERR(name);
 
-	if (path_init(name, LOOKUP_PARENT, &nd))
-		error = path_walk(name, &nd);
+	error = path_lookup(name, LOOKUP_PARENT, &nd);
 	if (error)
 		goto exit;
 	error = -EISDIR;
@@ -1572,8 +1575,7 @@ asmlinkage long sys_symlink(const char * oldname, const char * newname)
 		struct dentry *dentry;
 		struct nameidata nd;
 
-		if (path_init(to, LOOKUP_PARENT, &nd))
-			error = path_walk(to, &nd);
+		error = path_lookup(to, LOOKUP_PARENT, &nd);
 		if (error)
 			goto out;
 		dentry = lookup_create(&nd, 0);
@@ -1643,25 +1645,18 @@ exit_lock:
 asmlinkage long sys_link(const char * oldname, const char * newname)
 {
 	int error;
-	char * from;
 	char * to;
 
-	from = getname(oldname);
-	if(IS_ERR(from))
-		return PTR_ERR(from);
 	to = getname(newname);
 	error = PTR_ERR(to);
 	if (!IS_ERR(to)) {
 		struct dentry *new_dentry;
 		struct nameidata nd, old_nd;
 
-		error = 0;
-		if (path_init(from, LOOKUP_POSITIVE, &old_nd))
-			error = path_walk(from, &old_nd);
+		error = __user_walk(oldname, LOOKUP_POSITIVE, &old_nd);
 		if (error)
 			goto exit;
-		if (path_init(to, LOOKUP_PARENT, &nd))
-			error = path_walk(to, &nd);
+		error = path_lookup(to, LOOKUP_PARENT, &nd);
 		if (error)
 			goto out;
 		error = -EXDEV;
@@ -1681,8 +1676,6 @@ out:
 exit:
 		putname(to);
 	}
-	putname(from);
-
 	return error;
 }
 
@@ -1859,14 +1852,11 @@ static inline int do_rename(const char * oldname, const char * newname)
 	struct dentry * old_dentry, *new_dentry;
 	struct nameidata oldnd, newnd;
 
-	if (path_init(oldname, LOOKUP_PARENT, &oldnd))
-		error = path_walk(oldname, &oldnd);
-
+	error = path_lookup(oldname, LOOKUP_PARENT, &oldnd);
 	if (error)
 		goto exit;
 
-	if (path_init(newname, LOOKUP_PARENT, &newnd))
-		error = path_walk(newname, &newnd);
+	error = path_lookup(newname, LOOKUP_PARENT, &newnd);
 	if (error)
 		goto exit1;
 

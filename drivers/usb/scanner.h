@@ -1,9 +1,9 @@
 /*
- * Driver for USB Scanners (linux-2.4.12)
+ * Driver for USB Scanners (linux-2.4.18)
  *
- * Copyright (C) 1999, 2000, 2001 David E. Nelson
+ * Copyright (C) 1999, 2000, 2001, 2002 David E. Nelson
  *
- * David E. Nelson (dnelson@jump.net)
+ * Brian Beattie <beattie@beattie-home.net>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -48,7 +48,7 @@
 
 static __s32 vendor=-1, product=-1, read_timeout=0;
 
-MODULE_AUTHOR("David E. Nelson, dnelson@jump.net, http://www.jump.net/~dnelson");
+MODULE_AUTHOR("Brian Beattie, beattie@beattie-home.net");
 MODULE_DESCRIPTION(DRIVER_DESC" "DRIVER_VERSION);
 MODULE_LICENSE("GPL");
 
@@ -90,9 +90,12 @@ static struct usb_device_id scanner_device_ids [] = {
 	{ USB_DEVICE(0x06bd, 0x2097) }, /* SnapScan e26 */
 	{ USB_DEVICE(0x06bd, 0x208d) }, /* Snapscan e40 */
 	/* Canon */
-	{ USB_DEVICE(0x04a9, 0x2202) }, /* FB620U */
+	{ USB_DEVICE(0x04a9, 0x2202) }, /* CanoScan FB620U */
+	{ USB_DEVICE(0x04a9, 0x2204) }, /* CanoScan FB630U/FB636U */
+	{ USB_DEVICE(0x04a9, 0x2206) }, /* CanoScan N650U/N656U */
+	{ USB_DEVICE(0x04a9, 0x2207) }, /* CanoScan N1220U */
+	{ USB_DEVICE(0x04a9, 0x2208) }, /* CanoScan D660U */ 
 	{ USB_DEVICE(0x04a9, 0x220b) }, /* D646U */
-	{ USB_DEVICE(0x04a9, 0x2207) }, /* 1220U */
 	/* Colorado -- See Primax/Colorado below */
 	/* Epson -- See Seiko/Epson below */
 	/* Genius */
@@ -110,6 +113,7 @@ static struct usb_device_id scanner_device_ids [] = {
 	{ USB_DEVICE(0x03f0, 0x0105) },	/* 4200C */
 	{ USB_DEVICE(0x03f0, 0x0305) }, /* 4300C */
 	{ USB_DEVICE(0x03f0, 0x0102) },	/* PhotoSmart S20 */
+	{ USB_DEVICE(0x03f0, 0x0705) }, /* 4400C */
 	{ USB_DEVICE(0x03f0, 0x0401) },	/* 5200C */
 	//	{ USB_DEVICE(0x03f0, 0x0701) },	/* 5300C - NOT SUPPORTED - see http://www.neatech.nl/oss/HP5300C/ */
 	{ USB_DEVICE(0x03f0, 0x0201) },	/* 6200C */
@@ -141,6 +145,8 @@ static struct usb_device_id scanner_device_ids [] = {
 	{ USB_DEVICE(0x0400, 0x1001) }, /* BearPaw 2400 */
 	{ USB_DEVICE(0x055f, 0x0008) }, /* 1200 CU Plus */
 	{ USB_DEVICE(0x0ff5, 0x0010) }, /* BearPaw 1200F */
+	{ USB_DEVICE(0x055f, 0x0218) }, /* BearPaw 2400 TA */
+	{ USB_DEVICE(0x05d8, 0x4002) }, /* 1200 CU and 1200 UB Plus */
 	/* Plustek */
 	{ USB_DEVICE(0x07b3, 0x0017) }, /* OpticPro UT12 */
 	{ USB_DEVICE(0x07b3, 0x0011) }, /* OpticPro UT24 */
@@ -179,8 +185,12 @@ static struct usb_device_id scanner_device_ids [] = {
 	{ USB_DEVICE(0x04b8, 0x010b) }, /* Perfection 1240U */
 	{ USB_DEVICE(0x04b8, 0x010c) }, /* Perfection 640U */
 	{ USB_DEVICE(0x04b8, 0x010e) }, /* Expression 1680 */
+	{ USB_DEVICE(0x04b8, 0x010f) }, /* Perfection 1250U */
 	{ USB_DEVICE(0x04b8, 0x0110) }, /* Perfection 1650 */
 	{ USB_DEVICE(0x04b8, 0x0112) }, /* Perfection 2450 - GT-9700 for the Japanese mkt */
+	{ USB_DEVICE(0x04b8, 0x0114) }, /* Perfection 660 */
+	{ USB_DEVICE(0x04b8, 0x011b) }, /* Perfection 2400 Photo */
+	{ USB_DEVICE(0x04b8, 0x011e) }, /* Perfection 1660 Photo */
 	/* Umax */
 	{ USB_DEVICE(0x1606, 0x0010) },	/* Astra 1220U */
 	{ USB_DEVICE(0x1606, 0x0030) },	/* Astra 2000U */
@@ -230,7 +240,7 @@ MODULE_DEVICE_TABLE (usb, scanner_device_ids);
 #define SCANNER_IOCTL_VENDOR _IOR('U', 0x20, int)
 #define SCANNER_IOCTL_PRODUCT _IOR('U', 0x21, int)
 /* send/recv a control message to the scanner */
-#define SCANNER_IOCTL_CTRLMSG _IOWR('U', 0x22, devrequest )
+#define SCANNER_IOCTL_CTRLMSG _IOWR('U', 0x22, struct usb_ctrlrequest )
 
 
 #define SCN_MAX_MNR 16		/* We're allocated 16 minors */

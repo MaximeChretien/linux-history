@@ -40,7 +40,7 @@ extern int have_print;
 #define writeb(data, addr)	iSeries_Write_Byte(data,((void*)(addr)))
 #define writew(data, addr)	iSeries_Write_Word(data,((void*)(addr)))
 #define writel(data, addr)	iSeries_Write_Long(data,((void*)(addr)))
-#define memset_io(a,b,c)	iSeries_memset((void *)(a),(b),(c))
+#define memset_io(a,b,c)	iSeries_memset_io((void *)(a),(b),(c))
 #define memcpy_fromio(a,b,c)	iSeries_memcpy_fromio((void *)(a), (void *)(b), (c))
 #define memcpy_toio(a,b,c)	iSeries_memcpy_toio((void *)(a), (void *)(b), (c))
 #define inb(addr)		readb(((unsigned long)(addr)))  
@@ -57,7 +57,7 @@ extern int have_print;
 #define writeb(data, addr)	eeh_writeb((data), ((void*)(addr)))
 #define writew(data, addr)	eeh_writew((data), ((void*)(addr)))
 #define writel(data, addr)	eeh_writel((data), ((void*)(addr)))
-#define memset_io(a,b,c)	eeh_memset((void *)(a),(b),(c))
+#define memset_io(a,b,c)	eeh_memset_io((void *)(a),(b),(c))
 #define memcpy_fromio(a,b,c)	eeh_memcpy_fromio((a),(void *)(b),(c))
 #define memcpy_toio(a,b,c)	eeh_memcpy_toio((void *)(a),(b),(c))
 #define inb(port)		_inb((unsigned long)port)
@@ -66,6 +66,18 @@ extern int have_print;
 #define outw(val, port)		_outw(val, (unsigned long)port)
 #define inl(port)		_inl((unsigned long)port)
 #define outl(val, port)		_outl(val, (unsigned long)port)
+
+/*
+ * The insw/outsw/insl/outsl macros don't do byte-swapping.
+ * They are only used in practice for transferring buffers which
+ * are arrays of bytes, and byte-swapping is not appropriate in
+ * that case.  - paulus */
+#define insb(port, buf, ns)	eeh_insb((u8 *)(port), (buf), (ns))
+#define outsb(port, buf, ns)	eeh_outsb((u8 *)(port), (buf), (ns))
+#define insw(port, buf, ns)	eeh_insw_ns((u16 *)(port), (buf), (ns))
+#define outsw(port, buf, ns)	eeh_outsw_ns((u16 *)(port), (buf), (ns))
+#define insl(port, buf, nl)	eeh_insl_ns((u32 *)(port), (buf), (nl))
+#define outsl(port, buf, nl)	eeh_outsl_ns((u32 *)(port), (buf), (nl))
 #endif
 
 
@@ -80,18 +92,6 @@ extern int have_print;
 #define inl_p(port)             inl(port)
 #define outl_p(val, port)       (udelay(1), outl((val, (port)))
 
-/*
- * The insw/outsw/insl/outsl macros don't do byte-swapping.
- * They are only used in practice for transferring buffers which
- * are arrays of bytes, and byte-swapping is not appropriate in
- * that case.  - paulus */
-#define _IOMAP_VADDR(port) (IS_MAPPED_VADDR(port) ? (port) : (port)+_IO_BASE)
-#define insb(port, buf, ns)	_insb((u8 *)(_IOMAP_VADDR(port)), (buf), (ns))
-#define outsb(port, buf, ns)	_outsb((u8 *)(_IOMAP_VADDR(port)), (buf), (ns))
-#define insw(port, buf, ns)	_insw_ns((u16 *)(_IOMAP_VADDR(port)), (buf), (ns))
-#define outsw(port, buf, ns)	_outsw_ns((u16 *)(_IOMAP_VADDR(port)), (buf), (ns))
-#define insl(port, buf, nl)	_insl_ns((u32 *)(_IOMAP_VADDR(port)), (buf), (nl))
-#define outsl(port, buf, nl)	_outsl_ns((u32 *)(_IOMAP_VADDR(port)), (buf), (nl))
 
 extern void _insb(volatile u8 *port, void *buf, int ns);
 extern void _outsb(volatile u8 *port, const void *buf, int ns);
@@ -109,10 +109,10 @@ extern void _outsl_ns(volatile u32 *port, const void *buf, int nl);
  * Neither do the standard versions now, these are just here
  * for older code.
  */
-#define insw_ns(port, buf, ns)	_insw_ns((u16 *)(_IOMAP_VADDR(port)), (buf), (ns))
-#define outsw_ns(port, buf, ns)	_outsw_ns((u16 *)(_IOMAP_VADDR(port)), (buf), (ns))
-#define insl_ns(port, buf, nl)	_insl_ns((u32 *)(_IOMAP_VADDR(port)), (buf), (nl))
-#define outsl_ns(port, buf, nl)	_outsl_ns((u32 *)(_IOMAP_VADDR(port)), (buf), (nl))
+#define insw_ns(port, buf, ns)	insw(port, buf, ns)
+#define outsw_ns(port, buf, ns)	outsw(port, buf, ns)
+#define insl_ns(port, buf, nl)	insl(port, buf, nl)
+#define outsl_ns(port, buf, nl)	outsl(port, buf, nl)
 
 
 #define IO_SPACE_LIMIT ~(0UL)
@@ -134,7 +134,7 @@ extern void iounmap(void *addr);
  * Change virtual addresses to physical addresses and vv, for
  * addresses in the area where the kernel has the RAM mapped.
  */
-extern inline unsigned long virt_to_phys(volatile void * address)
+static inline unsigned long virt_to_phys(volatile void * address)
 {
 #ifdef __IO_DEBUG
 	printk("virt_to_phys: 0x%08lx -> 0x%08lx\n", 
@@ -144,17 +144,22 @@ extern inline unsigned long virt_to_phys(volatile void * address)
 	return __pa((unsigned long)address);
 }
 
-extern inline void * phys_to_virt(unsigned long address)
+static inline void * phys_to_virt(unsigned long address)
 {
 #ifdef __IO_DEBUG
 	printk("phys_to_virt: 0x%08lx -> 0x%08lx\n", address, __va(address));
 #endif
 	return (void *) __va(address);
 }
+ 
+/*
+ * Change "struct page" to physical address.
+ */
+#define page_to_phys(page)	((page - mem_map) << PAGE_SHIFT)
 
 #endif /* __KERNEL__ */
 
-extern inline void iosync(void)
+static inline void iosync(void)
 {
         __asm__ __volatile__ ("sync" : : : "memory");
 }
@@ -172,7 +177,7 @@ extern inline void iosync(void)
  * excess of syncs before the MMIO operations will make things work.  On 
  * sstar, sync time is << than mmio time, so this should not be a big impact.
  */
-extern inline int in_8(volatile unsigned char *addr)
+static inline int in_8(volatile unsigned char *addr)
 {
 	int ret;
 
@@ -180,12 +185,12 @@ extern inline int in_8(volatile unsigned char *addr)
 	return ret;
 }
 
-extern inline void out_8(volatile unsigned char *addr, int val)
+static inline void out_8(volatile unsigned char *addr, int val)
 {
 	__asm__ __volatile__("sync; stb%U0%X0 %1,%0; sync" : "=m" (*addr) : "r" (val));
 }
 
-extern inline int in_le16(volatile unsigned short *addr)
+static inline int in_le16(volatile unsigned short *addr)
 {
 	int ret;
 
@@ -194,7 +199,7 @@ extern inline int in_le16(volatile unsigned short *addr)
 	return ret;
 }
 
-extern inline int in_be16(volatile unsigned short *addr)
+static inline int in_be16(volatile unsigned short *addr)
 {
 	int ret;
 
@@ -202,18 +207,18 @@ extern inline int in_be16(volatile unsigned short *addr)
 	return ret;
 }
 
-extern inline void out_le16(volatile unsigned short *addr, int val)
+static inline void out_le16(volatile unsigned short *addr, int val)
 {
 	__asm__ __volatile__("sync; sthbrx %1,0,%2; sync" : "=m" (*addr) :
 			      "r" (val), "r" (addr));
 }
 
-extern inline void out_be16(volatile unsigned short *addr, int val)
+static inline void out_be16(volatile unsigned short *addr, int val)
 {
 	__asm__ __volatile__("sync; sth%U0%X0 %1,%0; sync" : "=m" (*addr) : "r" (val));
 }
 
-extern inline unsigned in_le32(volatile unsigned *addr)
+static inline unsigned in_le32(volatile unsigned *addr)
 {
 	unsigned ret;
 
@@ -222,7 +227,7 @@ extern inline unsigned in_le32(volatile unsigned *addr)
 	return ret;
 }
 
-extern inline unsigned in_be32(volatile unsigned *addr)
+static inline unsigned in_be32(volatile unsigned *addr)
 {
 	unsigned ret;
 
@@ -230,13 +235,13 @@ extern inline unsigned in_be32(volatile unsigned *addr)
 	return ret;
 }
 
-extern inline void out_le32(volatile unsigned *addr, int val)
+static inline void out_le32(volatile unsigned *addr, int val)
 {
 	__asm__ __volatile__("sync; stwbrx %1,0,%2; sync" : "=m" (*addr) :
 			     "r" (val), "r" (addr));
 }
 
-extern inline void out_be32(volatile unsigned *addr, int val)
+static inline void out_be32(volatile unsigned *addr, int val)
 {
 	__asm__ __volatile__("sync; stw%U0%X0 %1,%0; sync" : "=m" (*addr) : "r" (val));
 }

@@ -14,7 +14,7 @@ export-objs := sunrpc_syms.o
 obj-y    := clnt.o xprt.o sched.o \
 	    auth.o auth_null.o auth_unix.o \
 	    svc.o svcsock.o svcauth.o \
-	    pmap_clnt.o xdr.o sunrpc_syms.o
+	    pmap_clnt.o timer.o xdr.o sunrpc_syms.o
 
 obj-$(CONFIG_PROC_FS) += stats.o
 obj-$(CONFIG_SYSCTL) += sysctl.o

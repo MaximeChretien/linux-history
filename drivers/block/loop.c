@@ -154,7 +154,7 @@ struct loop_func_table *xfer_funcs[MAX_LO_CRYPT] = {
 
 #define MAX_DISK_SIZE 1024*1024*1024
 
-static unsigned long compute_loop_size(struct loop_device *lo, struct dentry * lo_dentry, kdev_t lodev)
+static int compute_loop_size(struct loop_device *lo, struct dentry * lo_dentry, kdev_t lodev)
 {
 	if (S_ISREG(lo_dentry->d_inode->i_mode))
 		return (lo_dentry->d_inode->i_size - lo->lo_offset) >> BLOCK_SIZE_BITS;
@@ -483,9 +483,7 @@ static int loop_make_request(request_queue_t *q, int rw, struct buffer_head *rbh
 		goto err;
 	}
 
-#if CONFIG_HIGHMEM
-	rbh = create_bounce(rw, rbh);
-#endif
+	rbh = blk_queue_bounce(q, rw, rbh);
 
 	/*
 	 * file backed, queue for loop_thread to handle

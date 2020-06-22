@@ -469,7 +469,7 @@ do {									\
 		DRM_ERROR( "ring space check failed!\n" );		\
 		return -EBUSY;						\
 	}								\
- __ring_space_done:							\
+ __ring_space_done: ;							\
 } while (0)
 
 #define VB_AGE_TEST_WITH_RETURN( dev_priv )				\

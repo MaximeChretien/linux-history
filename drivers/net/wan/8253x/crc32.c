@@ -46,13 +46,13 @@ pragma Off(cross_jump);
 
 #if defined(AMD29K)
 pragma Data (Export,"fastbss");
-#endif defined(AMD29K)
+#endif // defined(AMD29K)
 
 unsigned int gg_a_crc_table[k_crc_table_size];
 
 #if defined(AMD29K)
 pragma Data;
-#endif defined(AMD29K)
+#endif // defined(AMD29K)
 
 
 /****************************************************/

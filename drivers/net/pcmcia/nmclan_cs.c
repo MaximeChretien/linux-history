@@ -437,8 +437,8 @@ static void mace_interrupt(int irq, void *dev_id, struct pt_regs *regs);
 static struct net_device_stats *mace_get_stats(struct net_device *dev);
 static int mace_rx(struct net_device *dev, unsigned char RxCnt);
 static void restore_multicast_list(struct net_device *dev);
-
 static void set_multicast_list(struct net_device *dev);
+static int mace_ioctl(struct net_device *dev, struct ifreq *rq, int cmd);
 
 static dev_link_t *nmclan_attach(void);
 static void nmclan_detach(dev_link_t *);
@@ -520,6 +520,7 @@ static dev_link_t *nmclan_attach(void)
     dev->set_config = &mace_config;
     dev->get_stats = &mace_get_stats;
     dev->set_multicast_list = &set_multicast_list;
+    dev->do_ioctl = &mace_ioctl;
     ether_setup(dev);
     dev->open = &mace_open;
     dev->stop = &mace_close;
@@ -1057,7 +1058,7 @@ static int netdev_ethtool_ioctl (struct net_device *dev, void *useraddr)
 	return -EOPNOTSUPP;
 }
 
-static int smc91c92_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
+static int mace_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 {
 	switch (cmd) {
 	case SIOCETHTOOL:

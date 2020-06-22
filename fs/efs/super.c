@@ -141,7 +141,13 @@ struct super_block *efs_read_super(struct super_block *s, void *d, int silent) {
 	s->s_magic		= EFS_SUPER_MAGIC;
 	s->s_blocksize		= EFS_BLOCKSIZE;
 	s->s_blocksize_bits	= EFS_BLOCKSIZE_BITS;
-	set_blocksize(dev, EFS_BLOCKSIZE);
+	
+	if( set_blocksize(dev, EFS_BLOCKSIZE) < 0)
+	{
+		printk(KERN_ERR "EFS: device does not support %d byte blocks\n",
+			EFS_BLOCKSIZE);
+		goto out_no_fs_ul;
+	}
   
 	/* read the vh (volume header) block */
 	bh = sb_bread(s, 0);

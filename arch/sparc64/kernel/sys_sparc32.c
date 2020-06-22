@@ -512,9 +512,9 @@ static int do_sys32_msgsnd (int first, int second, int third, void *uptr)
 
 	if (!p)
 		return -ENOMEM;
-	err = get_user (p->mtype, &up->mtype);
-	err |= __copy_from_user (p->mtext, &up->mtext, second);
-	if (err)
+	err = -EFAULT;
+	if (get_user (p->mtype, &up->mtype) ||
+	    __copy_from_user (p->mtext, &up->mtext, second))
 		goto out;
 	old_fs = get_fs ();
 	set_fs (KERNEL_DS);
@@ -1056,7 +1056,7 @@ typedef ssize_t (*iov_fn_t)(struct file *, const struct iovec *, unsigned long, 
 static long do_readv_writev32(int type, struct file *file,
 			      const struct iovec32 *vector, u32 count)
 {
-	unsigned long tot_len;
+	__kernel_ssize_t32 tot_len;
 	struct iovec iovstack[UIO_FASTIOV];
 	struct iovec *iov=iovstack, *ivp;
 	struct inode *inode;
@@ -1086,13 +1086,19 @@ static long do_readv_writev32(int type, struct file *file,
 	tot_len = 0;
 	i = count;
 	ivp = iov;
+	retval = -EINVAL;
 	while(i > 0) {
-		u32 len;
+		__kernel_ssize_t32 tmp = tot_len;
+		__kernel_ssize_t32 len;
 		u32 buf;
 
 		__get_user(len, &vector->iov_len);
 		__get_user(buf, &vector->iov_base);
+		if (len < 0)	/* size_t not fittina an ssize_t32 .. */
+			goto out;
 		tot_len += len;
+		if (tot_len < tmp) /* maths overflow on the ssize_t32 */
+			goto out;
 		ivp->iov_base = (void *)A(buf);
 		ivp->iov_len = (__kernel_size_t) len;
 		vector++;
@@ -1610,7 +1616,7 @@ asmlinkage int sys32_sysfs(int option, u32 arg1, u32 arg2)
 	return sys_sysfs(option, arg1, arg2);
 }
 
-struct ncp_mount_data32 {
+struct ncp_mount_data32_v3 {
         int version;
         unsigned int ncp_fd;
         __kernel_uid_t32 mounted_uid;
@@ -1625,19 +1631,69 @@ struct ncp_mount_data32 {
         __kernel_mode_t32 dir_mode;
 };
 
+struct ncp_mount_data32_v4 {
+	int version;
+	/* all members below are "long" in ABI ... i.e. 32bit on sparc32, while 64bits on sparc64 */
+	unsigned int flags;
+	unsigned int mounted_uid;
+	int wdog_pid;
+
+	unsigned int ncp_fd;
+	unsigned int time_out;
+	unsigned int retry_count;
+
+	unsigned int uid;
+	unsigned int gid;
+	unsigned int file_mode;
+	unsigned int dir_mode;
+};
+
 static void *do_ncp_super_data_conv(void *raw_data)
 {
-	struct ncp_mount_data news, *n = &news; 
-	struct ncp_mount_data32 *n32 = (struct ncp_mount_data32 *)raw_data;
+	switch (*(int*)raw_data) {
+		case NCP_MOUNT_VERSION:
+			{
+				struct ncp_mount_data news, *n = &news; 
+				struct ncp_mount_data32_v3 *n32 = (struct ncp_mount_data32_v3 *)raw_data;
 
-	n->dir_mode = n32->dir_mode;
-	n->file_mode = n32->file_mode;
-	n->gid = low2highgid(n32->gid);
-	n->uid = low2highuid(n32->uid);
-	memmove (n->mounted_vol, n32->mounted_vol, (sizeof (n32->mounted_vol) + 3 * sizeof (unsigned int)));
-	n->wdog_pid = n32->wdog_pid;
-	n->mounted_uid = low2highuid(n32->mounted_uid);
-	memcpy(raw_data, n, sizeof(struct ncp_mount_data)); 
+				n->version = n32->version;
+				n->ncp_fd = n32->ncp_fd;
+				n->mounted_uid = low2highuid(n32->mounted_uid);
+				n->wdog_pid = n32->wdog_pid;
+				memmove (n->mounted_vol, n32->mounted_vol, sizeof (n32->mounted_vol));
+				n->time_out = n32->time_out;
+				n->retry_count = n32->retry_count;
+				n->flags = n32->flags;
+				n->uid = low2highuid(n32->uid);
+				n->gid = low2highgid(n32->gid);
+				n->file_mode = n32->file_mode;
+				n->dir_mode = n32->dir_mode;
+				memcpy(raw_data, n, sizeof(*n)); 
+			}
+			break;
+		case NCP_MOUNT_VERSION_V4:
+			{
+				struct ncp_mount_data_v4 news, *n = &news; 
+				struct ncp_mount_data32_v4 *n32 = (struct ncp_mount_data32_v4 *)raw_data;
+
+				n->version = n32->version;
+				n->flags = n32->flags;
+				n->mounted_uid = n32->mounted_uid;
+				n->wdog_pid = n32->wdog_pid;
+				n->ncp_fd = n32->ncp_fd;
+				n->time_out = n32->time_out;
+				n->retry_count = n32->retry_count;
+				n->uid = n32->uid;
+				n->gid = n32->gid;
+				n->file_mode = n32->file_mode;
+				n->dir_mode = n32->dir_mode;
+				memcpy(raw_data, n, sizeof(*n)); 
+			}
+			break;
+		default:
+			/* do not touch unknown structures */
+			break;
+	}
 	return raw_data;
 }
 
@@ -2791,17 +2847,76 @@ static int do_set_icmpv6_filter(int fd, int level, int optname,
 	return ret;
 }
 
+static int do_set_sock_timeout(int fd, int level, int optname, char *optval, int optlen)
+{
+	struct timeval32 *up = (struct timeval32 *) optval;
+	struct timeval ktime;
+	mm_segment_t old_fs;
+	int err;
+
+	if (optlen < sizeof(*up))
+		return -EINVAL;
+	if (get_user(ktime.tv_sec, &up->tv_sec) ||
+	    __get_user(ktime.tv_usec, &up->tv_usec))
+		return -EFAULT;
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+	err = sys_setsockopt(fd, level, optname, (char *) &ktime, sizeof(ktime));
+	set_fs(old_fs);
+
+	return err;
+}
+
 asmlinkage int sys32_setsockopt(int fd, int level, int optname,
 				char *optval, int optlen)
 {
 	if (optname == SO_ATTACH_FILTER)
 		return do_set_attach_filter(fd, level, optname,
 					    optval, optlen);
+	if (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO)
+		return do_set_sock_timeout(fd, level, optname, optval, optlen);
 	if (level == SOL_ICMPV6 && optname == ICMPV6_FILTER)
 		return do_set_icmpv6_filter(fd, level, optname,
 					    optval, optlen);
 
 	return sys_setsockopt(fd, level, optname, optval, optlen);
+}
+
+extern asmlinkage long sys_getsockopt(int fd, int level, int optname,
+				      char *optval, int *optlen);
+
+static int do_get_sock_timeout(int fd, int level, int optname, char *optval, int *optlen)
+{
+	struct timeval32 *up = (struct timeval32 *) optval;
+	struct timeval ktime;
+	mm_segment_t old_fs;
+	int len, err;
+
+	if (get_user(len, optlen))
+		return -EFAULT;
+	if (len < sizeof(*up))
+		return -EINVAL;
+	len = sizeof(ktime);
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+	err = sys_getsockopt(fd, level, optname, (char *) &ktime, &len);
+	set_fs(old_fs);
+
+	if (!err) {
+		if (put_user(sizeof(*up), optlen) ||
+		    put_user(ktime.tv_sec, &up->tv_sec) ||
+		    __put_user(ktime.tv_usec, &up->tv_usec))
+			err = -EFAULT;
+	}
+	return err;
+}
+
+asmlinkage int sys32_getsockopt(int fd, int level, int optname,
+				char *optval, int *optlen)
+{
+	if (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO)
+		return do_get_sock_timeout(fd, level, optname, optval, optlen);
+	return sys_getsockopt(fd, level, optname, optval, optlen);
 }
 
 extern void check_pending(int signum);
@@ -2887,6 +3002,8 @@ sys32_rt_sigaction(int sig, struct sigaction32 *act, struct sigaction32 *oact,
 		ret |= __copy_to_user(&oact->sa_mask, &set32, sizeof(sigset_t32));
 		ret |= __put_user(old_ka.sa.sa_flags, &oact->sa_flags);
 		ret |= __put_user((long)old_ka.sa.sa_restorer, &oact->sa_restorer);
+		if (ret)
+			ret = -EFAULT;
         }
 
         return ret;
@@ -3613,7 +3730,7 @@ static int nfs_clnt32_trans(struct nfsctl_arg *karg, struct nfsctl_arg32 *arg32)
 	err |= copy_from_user(&karg->ca_client.cl_fhkey[0],
 			  &arg32->ca32_client.cl32_fhkey[0],
 			  NFSCLNT_KEYMAX);
-	return err;
+	return (err ? -EFAULT : 0);
 }
 
 static int nfs_exp32_trans(struct nfsctl_arg *karg, struct nfsctl_arg32 *arg32)
@@ -3639,7 +3756,7 @@ static int nfs_exp32_trans(struct nfsctl_arg *karg, struct nfsctl_arg32 *arg32)
 		      &arg32->ca32_export.ex32_anon_gid);
 	karg->ca_export.ex_anon_uid = high2lowuid(karg->ca_export.ex_anon_uid);
 	karg->ca_export.ex_anon_gid = high2lowgid(karg->ca_export.ex_anon_gid);
-	return err;
+	return (err ? -EFAULT : 0);
 }
 
 static int nfs_uud32_trans(struct nfsctl_arg *karg, struct nfsctl_arg32 *arg32)
@@ -3687,7 +3804,7 @@ static int nfs_uud32_trans(struct nfsctl_arg *karg, struct nfsctl_arg32 *arg32)
 		err |= __get_user(karg->ca_umap.ug_gdimap[i],
 			      &(((__kernel_gid_t32 *)A(uaddr))[i]));
 
-	return err;
+	return (err ? -EFAULT : 0);
 }
 
 static int nfs_getfh32_trans(struct nfsctl_arg *karg, struct nfsctl_arg32 *arg32)
@@ -3704,7 +3821,7 @@ static int nfs_getfh32_trans(struct nfsctl_arg *karg, struct nfsctl_arg32 *arg32
 		      &arg32->ca32_getfh.gf32_ino);
 	err |= __get_user(karg->ca_getfh.gf_version,
 		      &arg32->ca32_getfh.gf32_version);
-	return err;
+	return (err ? -EFAULT : 0);
 }
 
 static int nfs_getfd32_trans(struct nfsctl_arg *karg, struct nfsctl_arg32 *arg32)
@@ -3720,7 +3837,7 @@ static int nfs_getfd32_trans(struct nfsctl_arg *karg, struct nfsctl_arg32 *arg32
 			  (NFS_MAXPATHLEN+1));
 	err |= __get_user(karg->ca_getfd.gd_version,
 		      &arg32->ca32_getfd.gd32_version);
-	return err;
+	return (err ? -EFAULT : 0);
 }
 
 static int nfs_getfs32_trans(struct nfsctl_arg *karg, struct nfsctl_arg32 *arg32)
@@ -3736,7 +3853,7 @@ static int nfs_getfs32_trans(struct nfsctl_arg *karg, struct nfsctl_arg32 *arg32
 			  (NFS_MAXPATHLEN+1));
 	err |= __get_user(karg->ca_getfs.gd_maxlen,
 		      &arg32->ca32_getfs.gd32_maxlen);
-	return err;
+	return (err ? -EFAULT : 0);
 }
 
 /* This really doesn't need translations, we are only passing
@@ -3744,7 +3861,7 @@ static int nfs_getfs32_trans(struct nfsctl_arg *karg, struct nfsctl_arg32 *arg32
  */
 static int nfs_getfh32_res_trans(union nfsctl_res *kres, union nfsctl_res32 *res32)
 {
-	return copy_to_user(res32, kres, sizeof(*res32));
+	return (copy_to_user(res32, kres, sizeof(*res32)) ? -EFAULT : 0);
 }
 
 int asmlinkage sys32_nfsservctl(int cmd, struct nfsctl_arg32 *arg32, union nfsctl_res32 *res32)

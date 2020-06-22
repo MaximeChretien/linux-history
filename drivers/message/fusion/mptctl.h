@@ -20,7 +20,7 @@
  *  (mailto:sjralston1@netscape.net)
  *  (mailto:Pam.Delaney@lsil.com)
  *
- *  $Id: mptctl.h,v 1.9 2002/02/27 18:44:26 sralston Exp $
+ *  $Id: mptctl.h,v 1.10 2002/05/28 15:57:16 pdelaney Exp $
  */
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
@@ -122,7 +122,6 @@ struct mpt_fw_xfer32 {
 };
 #endif	/*}*/
 
-
 /*
  *  IOCTL header structure.
  *  iocnum - must be defined.
@@ -150,6 +149,20 @@ struct mpt_ioctl_diag_reset {
 
 
 /*
+ *  PCI bus/device/function information structure.
+ */
+struct mpt_ioctl_pci_info {
+	union {
+		struct {
+			unsigned long  deviceNumber   :  5;
+			unsigned long  functionNumber :  3;
+			unsigned long  busNumber      : 24;
+		} bits;
+		unsigned long  asUlong;
+	} u;
+};
+
+/*
  *  Adapter Information Page
  *  Read only.
  *  Data starts at offset 0xC
@@ -173,6 +186,7 @@ struct mpt_ioctl_iocinfo {
 	char		 busChangeEvent;
 	char		 hostId;
 	char		 rsvd[2];
+	struct mpt_ioctl_pci_info  pciInfo; /* Added Rev 1 */
 };
 
 /*

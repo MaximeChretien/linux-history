@@ -14,13 +14,28 @@
 #ifndef _IP_CONNTRACK_IRC_H
 #define _IP_CONNTRACK_IRC_H
 
-#ifndef __KERNEL__
-#error Only in kernel.
-#endif
+/* We record seq number and length of irc ip/port text here: all in
+   host order. */
+
+/* This structure is per expected connection */
+struct ip_ct_irc_expect
+{
+	/* length of IP address */
+	u_int32_t len;
+	/* Port that was to be used */
+	u_int16_t port;
+};
+
+/* This structure exists only once per master */
+struct ip_ct_irc_master {
+};
+
+
+#ifdef __KERNEL__
 
 #include <linux/netfilter_ipv4/lockhelp.h>
 
-#define IP_CONNTR_IRC	2
+#define IRC_PORT	6667
 
 struct dccproto {
 	char* match;
@@ -30,18 +45,6 @@ struct dccproto {
 /* Protects irc part of conntracks */
 DECLARE_LOCK_EXTERN(ip_irc_lock);
 
-/* We record seq number and length of irc ip/port text here: all in
-   host order. */
-struct ip_ct_irc
-{
-	/* This tells NAT that this is an IRC connection */
-	int is_irc;
-	/* sequence number where address part of DCC command begins */
-	u_int32_t seq;
-	/* 0 means not found yet */
-	u_int32_t len;
-	/* Port that was to be used */
-	u_int16_t port;
-};
+#endif /* __KERNEL__ */
 
 #endif /* _IP_CONNTRACK_IRC_H */

@@ -76,11 +76,6 @@ alpha_fd_dma_setup(char *addr, unsigned long size, int mode, int io)
 
 #endif /* CONFIG_PCI */
 
-__inline__ void virtual_dma_init(void)
-{
-	/* Nothing to do on an Alpha */
-}
-
 static int FDC1 = 0x3f0;
 static int FDC2 = -1;
 

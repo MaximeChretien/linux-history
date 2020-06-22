@@ -52,6 +52,14 @@
 #include <asm/ppcdebug.h>
 #include "open_pic.h"
 #include <asm/machdep.h>
+#if defined(CONFIG_DUMP) || defined(CONFIG_DUMP_MODULE)
+int (*dump_ipi_function_ptr)(struct pt_regs *);
+#include <linux/dump.h>
+#endif
+
+#ifdef CONFIG_KDB
+#include <linux/kdb.h>
+#endif
 
 int smp_threads_ready = 0;
 volatile int smp_commenced = 0;
@@ -93,9 +101,21 @@ volatile unsigned long xics_ipi_message[NR_CPUS] = {0};
        } while(0)
 
 #ifdef CONFIG_KDB
+/* save regs here before calling kdb_ipi */
+struct pt_regs *kdb_smp_regs[NR_CPUS]; 
+
+/* called for each processor.. drop each into kdb. */
+void smp_kdb_stop_proc(void)
+{
+    kdb_ipi(kdb_smp_regs[smp_processor_id()], NULL);
+}
+
 void smp_kdb_stop(void)
 {
+  int ret=0;
+  ret =    smp_call_function(smp_kdb_stop_proc, NULL, 1, 0);
 }
+
 #endif
 
 static inline void set_tb(unsigned int upper, unsigned int lower)
@@ -161,7 +181,7 @@ static int smp_iSeries_probe(void)
 			paca[i].next_jiffy_update_tb = paca[0].next_jiffy_update_tb;
 		}
 	}
-	
+
 	smp_tb_synchronized = 1;
 	return np;
 }
@@ -263,8 +283,6 @@ smp_kick_cpu(int nr)
 	paca[nr].xProcStart = 1;
 }
 
-extern struct gettimeofday_struct do_gtod;
-
 static void smp_space_timers( unsigned nr )
 {
 	unsigned long offset, i;
@@ -285,8 +303,8 @@ smp_chrp_setup_cpu(int cpu_nr)
 		/* timebases already synced under the hypervisor. */
 		paca[cpu_nr].next_jiffy_update_tb = tb_last_stamp = get_tb();
 		if (cpu_nr == 0) {
-			do_gtod.tb_orig_stamp = tb_last_stamp;
-			/* Should update do_gtod.stamp_xsec.
+			naca->tb_orig_stamp = tb_last_stamp;
+			/* Should update naca->stamp_xsec.
 			 * For now we leave it which means the time can be some
 			 * number of msecs off until someone does a settimeofday()
 			 */
@@ -312,7 +330,7 @@ smp_chrp_setup_cpu(int cpu_nr)
 			mb();
 			frozen = 0;
 			tb_last_stamp = get_tb();
-			do_gtod.tb_orig_stamp = tb_last_stamp;
+			naca->tb_orig_stamp = tb_last_stamp;
 			smp_tb_synchronized = 1;
 		} else {
 			atomic_inc(&ready);
@@ -346,7 +364,7 @@ smp_xics_message_pass(int target, int msg, unsigned long data, int wait)
 			set_bit(msg, &xics_ipi_message[i]);
 			mb();
 			xics_cause_IPI(i);
-			}
+		}
 	}
 }
 
@@ -387,6 +405,9 @@ void smp_message_recv(int msg, struct pt_regs *regs)
 	
 	switch( msg ) {
 	case PPC_MSG_CALL_FUNCTION:
+#ifdef CONFIG_KDB
+		kdb_smp_regs[smp_processor_id()]=regs;
+#endif
 		smp_call_function_interrupt();
 		break;
 	case PPC_MSG_RESCHEDULE: 
@@ -394,15 +415,16 @@ void smp_message_recv(int msg, struct pt_regs *regs)
 		break;
 #ifdef CONFIG_XMON
 	case PPC_MSG_XMON_BREAK:
-		xmon(regs);
+	        /* ToDo: need a nmi way to handle this.  Soft disable? */
+#if defined(CONFIG_DUMP) || defined(CONFIG_DUMP_MODULE)
+	        if (dump_ipi_function_ptr) {
+			printk(KERN_ALERT "got dump ipi...\n");
+			dump_ipi_function_ptr(regs);
+		} else
+#endif
+			xmon(regs);
 		break;
 #endif /* CONFIG_XMON */
-#ifdef CONFIG_KDB
-	case PPC_MSG_XMON_BREAK:
-	        /* This isn't finished yet, obviously -TAI */
-		kdb(KDB_REASON_KEYBOARD,0, (kdb_eframe_t) regs);
-		break;
-#endif
 	default:
 		printk("SMP %d: smp_message_recv(): unknown msg %d\n",
 		       smp_processor_id(), msg);
@@ -421,6 +443,18 @@ void smp_send_xmon_break(int cpu)
 	smp_message_pass(cpu, PPC_MSG_XMON_BREAK, 0, 0);
 }
 #endif /* CONFIG_XMON */
+
+#if defined(CONFIG_DUMP) || defined(CONFIG_DUMP_MODULE)
+void dump_send_ipi(int (*dump_ipi_callback)(struct pt_regs *))
+{
+	dump_ipi_function_ptr = dump_ipi_callback;
+	if (dump_ipi_callback) {
+		printk(KERN_ALERT "dump_send_ipi...\n");
+		mb();
+		smp_message_pass(MSG_ALL_BUT_SELF, PPC_MSG_XMON_BREAK, 0, 0);
+	}
+}
+#endif
 
 static void stop_this_cpu(void *dummy)
 {
@@ -463,7 +497,7 @@ static struct call_data_struct {
  * remote CPUs are nearly ready to execute <<func>> or are or have executed.
  *
  * You must not call this function with disabled interrupts or from a
- * hardware interrupt handler, you may call it from a bottom half handler.
+ * hardware interrupt handler or from a bottom half handler.
  */
 int smp_call_function (void (*func) (void *info), void *info, int nonatomic,
 			int wait)
@@ -498,6 +532,10 @@ int smp_call_function (void (*func) (void *info), void *info, int nonatomic,
 #ifdef CONFIG_XMON
                         xmon(0);
 #endif
+#ifdef CONFIG_KDB
+			kdb(KDB_REASON_CALL,0, (kdb_eframe_t) 0);
+#endif
+
 #ifdef CONFIG_PPC_ISERIES
 			HvCall_terminateMachineSrc();
 #endif
@@ -550,6 +588,7 @@ void smp_call_function_interrupt(void)
 		atomic_inc(&call_data->finished);
 }
 
+
 extern unsigned long decr_overclock;
 
 void __init smp_boot_cpus(void)
@@ -577,7 +616,7 @@ void __init smp_boot_cpus(void)
 	init_idle();
 
 	for (i = 0; i < NR_CPUS; i++) {
-		paca[i].prof_counter=1;
+		paca[i].prof_counter = 1;
 		paca[i].prof_multiplier = 1;
 		if(i != 0) {
 		        /*
@@ -611,7 +650,7 @@ void __init smp_boot_cpus(void)
 	if (cpu_nr > max_cpus)
 		cpu_nr = max_cpus;
 
-#ifdef CONFIG_ISERIES
+#ifdef CONFIG_PPC_ISERIES
 	smp_space_timers( cpu_nr );
 #endif
 
@@ -742,7 +781,7 @@ void __init smp_setup(char *str, int *ints)
 {
 }
 
-int __init setup_profiling_timer(unsigned int multiplier)
+int setup_profiling_timer(unsigned int multiplier)
 {
 	return 0;
 }

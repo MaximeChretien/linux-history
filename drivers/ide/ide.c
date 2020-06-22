@@ -3418,7 +3418,7 @@ int __init ide_setup (char *s)
 		const char *ide_words[] = {
 			"noprobe", "serialize", "autotune", "noautotune", "reset", "dma", "ata66",
 			"minus8", "minus9", "minus10",
-			"four", "qd65xx", "ht6560b", "cmd640_vlb", "dtc2278", "umc8672", "ali14xx", "dc4030", NULL };
+			"four", "qd65xx", "ht6560b", "cmd640_vlb", "dtc2278", "umc8672", "ali14xx", "dc4030", "nohighio", NULL };
 		hw = s[3] - '0';
 		hwif = &ide_hwifs[hw];
 		i = match_parm(&s[4], ide_words, vals, 3);
@@ -3437,6 +3437,10 @@ int __init ide_setup (char *s)
 		}
 
 		switch (i) {
+			case -19: /* nohighio */
+				hwif->no_highio = 1;
+				printk("%s: disabled high i/o capability\n", hwif->name);
+				goto done;
 #ifdef CONFIG_BLK_DEV_PDC4030
 			case -18: /* "dc4030" */
 			{
@@ -3616,12 +3620,12 @@ static void __init probe_for_hwifs (void)
 		pmac_ide_probe();
 	}
 #endif /* CONFIG_BLK_DEV_IDE_PMAC */
-#ifdef CONFIG_BLK_DEV_IDE_SWARM
+#ifdef CONFIG_BLK_DEV_IDE_SIBYTE
 	{
-		extern void swarm_ide_probe(void);
-		swarm_ide_probe();
+		extern void sibyte_ide_probe(void);
+		sibyte_ide_probe();
 	}
-#endif /* CONFIG_BLK_DEV_IDE_SWARM */
+#endif /* CONFIG_BLK_DEV_IDE_SIBYTE */
 #ifdef CONFIG_BLK_DEV_IDE_ICSIDE
 	{
 		extern void icside_init(void);

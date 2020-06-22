@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.signal.c 1.10 11/23/01 16:38:30 paulus
+ * BK Id: %F% %I% %G% %U% %#%
  */
 /*
  *  linux/arch/ppc/kernel/signal.c
@@ -108,7 +108,9 @@ sys_sigsuspend(old_sigset_t mask, int p2, int p3, int p4, int p6, int p7,
 	recalc_sigpending(current);
 	spin_unlock_irq(&current->sigmask_lock);
 
-	regs->gpr[3] = -EINTR;
+	regs->result = -EINTR;
+	regs->gpr[3] = EINTR;
+	regs->ccr |= 0x10000000;
 	while (1) {
 		current->state = TASK_INTERRUPTIBLE;
 		schedule();
@@ -145,7 +147,9 @@ sys_rt_sigsuspend(sigset_t *unewset, size_t sigsetsize, int p3, int p4, int p6,
 	recalc_sigpending(current);
 	spin_unlock_irq(&current->sigmask_lock);
 
-	regs->gpr[3] = -EINTR;
+	regs->result = -EINTR;
+	regs->gpr[3] = EINTR;
+	regs->ccr |= 0x10000000;
 	while (1) {
 		current->state = TASK_INTERRUPTIBLE;
 		schedule();
@@ -621,7 +625,7 @@ int do_signal(sigset_t *oldset, struct pt_regs *regs)
 				continue;
 
 			switch (signr) {
-			case SIGCONT: case SIGCHLD: case SIGWINCH:
+			case SIGCONT: case SIGCHLD: case SIGWINCH: case SIGURG:
 				continue;
 
 			case SIGTSTP: case SIGTTIN: case SIGTTOU:

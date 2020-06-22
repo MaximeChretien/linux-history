@@ -36,7 +36,7 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
 	 bool '    Use AAUI port instead of TP by default' CONFIG_MACE_AAUI_PORT
       fi
       dep_tristate '  BMAC (G3 ethernet) support' CONFIG_BMAC $CONFIG_ALL_PPC
-      dep_tristate '  GMAC (G4/iBook ethernet) support' CONFIG_GMAC $CONFIG_ALL_PPC
+      dep_tristate '  GMAC (G4/iBook ethernet) support (OBSOLETE, use Sun GEM)' CONFIG_GMAC $CONFIG_ALL_PPC
       if [ "$CONFIG_4xx" = "y" ]; then
          if [ "$CONFIG_STB03xxx" = "y" -o "$CONFIG_403GCX" = "y" ]; then
 	    tristate '  National DP83902AV (Oak ethernet) support' CONFIG_OAKNET
@@ -67,6 +67,9 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
    if [ "$CONFIG_SGI_IP27" = "y" ]; then
       bool '  SGI IOC3 Ethernet' CONFIG_SGI_IOC3_ETH
    fi
+   if [ "$CONFIG_SGI_IP32" = "y" ]; then
+      tristate '  SGI O2 MACE Fast Ethernet support' CONFIG_SGI_O2MACE_ETH
+   fi
    if [ "$CONFIG_IA64_SGI_SN1" = "y" ]; then
       bool '  SGI IOC3 Ethernet' CONFIG_SGI_IOC3_ETH
    fi
@@ -79,7 +82,7 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
    fi
    dep_tristate '  Sun BigMAC 10/100baseT support (EXPERIMENTAL)' CONFIG_SUNBMAC $CONFIG_SBUS $CONFIG_EXPERIMENTAL
    dep_tristate '  Sun QuadEthernet support' CONFIG_SUNQE $CONFIG_SBUS
-   dep_tristate '  Sun GEM support' CONFIG_SUNGEM $CONFIG_PCI
+   dep_tristate '  Sun GEM & Apple GMAC support' CONFIG_SUNGEM $CONFIG_PCI
    bool '  3COM cards' CONFIG_NET_VENDOR_3COM
    if [ "$CONFIG_NET_VENDOR_3COM" = "y" ]; then
       dep_tristate '    3c501 "EtherLink" support' CONFIG_EL1 $CONFIG_ISA
@@ -129,7 +132,7 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
       tristate '    EtherExpress 16 support' CONFIG_EEXPRESS
       tristate '    EtherExpressPro support/EtherExpress 10 (i82595) support' CONFIG_EEXPRESS_PRO
       if [ "$CONFIG_OBSOLETE" = "y" ]; then
-         tristate '    FMV-181/182/183/184 support' CONFIG_FMV18X
+         tristate '    FMV-181/182/183/184 support (OBSOLETE)' CONFIG_FMV18X
       fi
       tristate '    HP PCLAN+ (27247B and 27252A) support' CONFIG_HPLAN_PLUS
       tristate '    HP PCLAN (27245 and other 27xxx series) support' CONFIG_HPLAN
@@ -149,9 +152,9 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
       tristate '  IBM LAN Adapter/A support' CONFIG_IBMLANA
    fi
    if [ "$CONFIG_ISA" = "y" -o "$CONFIG_EISA" = "y" -o "$CONFIG_PCI" = "y" ]; then
-     bool '  EISA, VLB, PCI and on board controllers' CONFIG_NET_PCI
+      bool '  EISA, VLB, PCI and on board controllers' CONFIG_NET_PCI
    else
-     define_bool CONFIG_NET_PCI n
+      define_bool CONFIG_NET_PCI n
    fi
    if [ "$CONFIG_NET_PCI" = "y" ]; then
       dep_tristate '    AMD PCnet32 PCI support' CONFIG_PCNET32 $CONFIG_PCI
@@ -163,7 +166,6 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
       dep_tristate '    Apricot Xen-II on board Ethernet' CONFIG_APRICOT $CONFIG_ISA
       dep_tristate '    CS89x0 support' CONFIG_CS89x0 $CONFIG_ISA
       dep_tristate '    DECchip Tulip (dc21x4x) PCI support' CONFIG_TULIP $CONFIG_PCI
-      dep_tristate '    TOSHIBA TC35815 Ethernet support' CONFIG_TC35815 $CONFIG_PCI
       if [ "$CONFIG_TULIP" = "y" -o "$CONFIG_TULIP" = "m" ]; then
          dep_bool '      New bus configuration (EXPERIMENTAL)' CONFIG_TULIP_MWI $CONFIG_EXPERIMENTAL
          bool '      Use PCI shared mem for NIC registers' CONFIG_TULIP_MMIO
@@ -173,33 +175,33 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
          tristate '    Digi Intl. RightSwitch SE-X support' CONFIG_DGRS
       fi
       dep_tristate '    Davicom DM910x/DM980x support' CONFIG_DM9102 $CONFIG_PCI
-      dep_tristate '    EtherExpressPro/100 support' CONFIG_EEPRO100 $CONFIG_PCI
+      dep_tristate '    EtherExpressPro/100 support (eepro100, original Becker driver)' CONFIG_EEPRO100 $CONFIG_PCI
+      dep_tristate '    EtherExpressPro/100 support (e100, Alternate Intel driver)' CONFIG_E100 $CONFIG_PCI
       dep_tristate '    Mylex EISA LNE390A/B support (EXPERIMENTAL)' CONFIG_LNE390 $CONFIG_EISA $CONFIG_EXPERIMENTAL
       dep_tristate '    Myson MTD-8xx PCI Ethernet support' CONFIG_FEALNX $CONFIG_PCI
       dep_tristate '    National Semiconductor DP8381x series PCI Ethernet support' CONFIG_NATSEMI $CONFIG_PCI
-      if [ "$CONFIG_NATSEMI" = "y" -o "$CONFIG_NATSEMI" = "m" ]; then
-        bool       '      NatSemi workaround for high errors' CONFIG_NATSEMI_CABLE_MAGIC
-      fi
       dep_tristate '    PCI NE2000 and clones support (see help)' CONFIG_NE2K_PCI $CONFIG_PCI
       dep_tristate '    Novell/Eagle/Microdyne NE3210 EISA support (EXPERIMENTAL)' CONFIG_NE3210 $CONFIG_EISA $CONFIG_EXPERIMENTAL
       dep_tristate '    Racal-Interlan EISA ES3210 support (EXPERIMENTAL)' CONFIG_ES3210 $CONFIG_EISA $CONFIG_EXPERIMENTAL
       dep_tristate '    RealTek RTL-8139 C+ PCI Fast Ethernet Adapter support (EXPERIMENTAL)' CONFIG_8139CP $CONFIG_PCI $CONFIG_EXPERIMENTAL
       dep_tristate '    RealTek RTL-8139 PCI Fast Ethernet Adapter support' CONFIG_8139TOO $CONFIG_PCI
       dep_mbool '      Use PIO instead of MMIO' CONFIG_8139TOO_PIO $CONFIG_8139TOO
-      dep_mbool '      Support for automatic channel equalization (EXPERIMENTAL)' CONFIG_8139TOO_TUNE_TWISTER $CONFIG_8139TOO $CONFIG_EXPERIMENTAL
+      dep_mbool '      Support for uncommon RTL-8139 rev. K (automatic channel equalization)' CONFIG_8139TOO_TUNE_TWISTER $CONFIG_8139TOO
       dep_mbool '      Support for older RTL-8129/8130 boards' CONFIG_8139TOO_8129 $CONFIG_8139TOO
-      dep_mbool '      Experiment for better RX reset (EXPERIMENTAL)' CONFIG_8139_NEW_RX_RESET $CONFIG_8139TOO $CONFIG_EXPERIMENTAL
+      dep_mbool '      Use older RX-reset method' CONFIG_8139_OLD_RX_RESET $CONFIG_8139TOO
       dep_tristate '    SiS 900/7016 PCI Fast Ethernet Adapter support' CONFIG_SIS900 $CONFIG_PCI
       dep_tristate '    SMC EtherPower II' CONFIG_EPIC100 $CONFIG_PCI
       dep_tristate '    Sundance Alta support' CONFIG_SUNDANCE $CONFIG_PCI
+      dep_mbool '      Use MMIO instead of PIO' CONFIG_SUNDANCE_MMIO $CONFIG_SUNDANCE
       if [ "$CONFIG_PCI" = "y" -o "$CONFIG_EISA" = "y" ]; then
          tristate '    TI ThunderLAN support' CONFIG_TLAN
       fi
+      dep_tristate '    TOSHIBA TC35815 Ethernet support' CONFIG_TC35815 $CONFIG_PCI
       dep_tristate '    VIA Rhine support' CONFIG_VIA_RHINE $CONFIG_PCI
       dep_mbool '      Use MMIO instead of PIO (EXPERIMENTAL)' CONFIG_VIA_RHINE_MMIO $CONFIG_VIA_RHINE $CONFIG_EXPERIMENTAL
       dep_tristate '    Winbond W89c840 Ethernet support' CONFIG_WINBOND_840 $CONFIG_PCI
       if [ "$CONFIG_OBSOLETE" = "y" ]; then
-	 dep_bool '    Zenith Z-Note support (EXPERIMENTAL)' CONFIG_ZNET $CONFIG_ISA
+	 dep_bool '    Zenith Z-Note support (OBSOLETE)' CONFIG_ZNET $CONFIG_ISA
       fi
       if [ "$CONFIG_EXPERIMENTAL" = "y" -a "$CONFIG_MIPS" = "y" ]; then
 	 bool '    Philips SAA9730 Ethernet support (EXPERIMENTAL)' CONFIG_LAN_SAA9730
@@ -241,8 +243,9 @@ if [ "$CONFIG_ACENIC" != "n" ]; then
    bool '  Omit support for old Tigon I based AceNICs' CONFIG_ACENIC_OMIT_TIGON_I
 fi
 dep_tristate 'D-Link DL2000-based Gigabit Ethernet support' CONFIG_DL2K $CONFIG_PCI
+dep_tristate 'Intel(R) PRO/1000 Gigabit Ethernet support' CONFIG_E1000 $CONFIG_PCI
 dep_tristate 'MyriCOM Gigabit Ethernet support' CONFIG_MYRI_SBUS $CONFIG_SBUS
-dep_tristate 'National Semiconduct DP83820 support' CONFIG_NS83820 $CONFIG_PCI
+dep_tristate 'National Semiconductor DP83820 support' CONFIG_NS83820 $CONFIG_PCI
 dep_tristate 'Packet Engines Hamachi GNIC-II support' CONFIG_HAMACHI $CONFIG_PCI
 dep_tristate 'Packet Engines Yellowfin Gigabit-NIC support (EXPERIMENTAL)' CONFIG_YELLOWFIN $CONFIG_PCI $CONFIG_EXPERIMENTAL
 dep_tristate 'SysKonnect SK-98xx support' CONFIG_SK98LIN $CONFIG_PCI
@@ -266,9 +269,9 @@ if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
    if [ "$CONFIG_INET" = "y" ]; then
       bool 'HIPPI driver support (EXPERIMENTAL)' CONFIG_HIPPI
       if [ "$CONFIG_HIPPI" = "y" -a "$CONFIG_PCI" = "y" ]; then
-         dep_tristate '  Essential RoadRunner HIPPI PCI adapter support' CONFIG_ROADRUNNER $CONFIG_PCI
+         dep_tristate '  Essential RoadRunner HIPPI PCI adapter support (EXPERIMENTAL)' CONFIG_ROADRUNNER $CONFIG_PCI
          if [ "$CONFIG_ROADRUNNER" != "n" ]; then
-   	    bool '    Use large TX/RX rings' CONFIG_ROADRUNNER_LARGE_RINGS
+   	    bool '    Use large TX/RX rings (EXPERIMENTAL)' CONFIG_ROADRUNNER_LARGE_RINGS
          fi
       fi
    fi
@@ -306,7 +309,9 @@ bool 'Wireless LAN (non-hamradio)' CONFIG_NET_RADIO
 if [ "$CONFIG_NET_RADIO" = "y" ]; then
    dep_tristate '  STRIP (Metricom starmode radio IP)' CONFIG_STRIP $CONFIG_INET
    tristate '  AT&T WaveLAN & DEC RoamAbout DS support' CONFIG_WAVELAN
-   tristate '  Aironet Arlan 655 & IC2200 DS support' CONFIG_ARLAN
+   if [ "$CONFIG_X86_64" != "y" ]; then
+      tristate '  Aironet Arlan 655 & IC2200 DS support' CONFIG_ARLAN
+   fi
    tristate '  Aironet 4500/4800 series adapters' CONFIG_AIRONET4500
    dep_tristate '   Aironet 4500/4800 ISA/PCI/PNP/365 support ' CONFIG_AIRONET4500_NONCS $CONFIG_AIRONET4500
    if [ "$CONFIG_AIRONET4500" != "n" -a "$CONFIG_AIRONET4500_NONCS" != "n" ]; then

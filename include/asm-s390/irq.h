@@ -10,6 +10,7 @@
  */
 #define __MAX_SUBCHANNELS 65536
 #define NR_IRQS           __MAX_SUBCHANNELS
+#define NR_CHPIDS 256
 
 #define LPM_ANYPATH 0xff /* doesn't really belong here, Ingo? */
 
@@ -362,6 +363,92 @@ typedef struct {
   /* extended part */
       ciw_t    ciw[MAX_CIWS];      /* variable # of CIWs */
    }  __attribute__ ((packed,aligned(4))) senseid_t;
+/*
+ * where we put the ssd info
+ */
+typedef struct _ssd_info {
+	__u8   valid:1;
+	__u8   type:7;          /* subchannel type */
+	__u8   chpid[8];        /* chpids */
+	__u16  fla[8];          /* full link addresses */
+} __attribute__ ((packed)) ssd_info_t;
+
+/*
+ * area for store event information
+ */
+typedef struct chsc_area_t {
+	struct {
+		/* word 0 */
+		__u16 command_code1;
+		__u16 command_code2;
+		union {
+			struct {
+				/* word 1 */
+				__u32 reserved1;
+				/* word 2 */
+				__u32 reserved2;
+			} __attribute__ ((packed,aligned(8))) sei_req;
+			struct {
+				/* word 1 */
+				__u16 reserved1;
+				__u16 f_sch;     /* first subchannel */
+				/* word 2 */
+				__u16 reserved2;
+				__u16 l_sch;    /* last subchannel */
+			} __attribute__ ((packed,aligned(8))) ssd_req;
+		} request_block_data;
+		/* word 3 */
+		__u32 reserved3;
+	} __attribute__ ((packed,aligned(8))) request_block;
+	struct {
+		/* word 0 */
+		__u16 length;
+		__u16 response_code;
+		/* word 1 */
+		__u32 reserved1;
+		union {
+			struct {
+				/* word 2 */
+				__u8  flags;
+				__u8  vf;         /* validity flags */
+				__u8  rs;         /* reporting source */
+				__u8  cc;         /* content code */
+				/* word 3 */
+				__u16 fla;        /* full link address */
+				__u16 rsid;       /* reporting source id */
+				/* word 4 */
+				__u32 reserved2;
+				/* word 5 */
+				__u32 reserved3;
+				/* word 6 */
+				__u32 ccdf;       /* content-code dependent field */
+				/* word 7 */
+				__u32 reserved4;
+				/* word 8 */
+				__u32 reserved5;
+				/* word 9 */
+				__u32 reserved6;
+			} __attribute__ ((packed,aligned(8))) sei_res;
+			struct {
+				/* word 2 */
+				__u8 sch_valid : 1;
+				__u8 dev_valid : 1;
+				__u8 st        : 3; /* subchannel type */
+				__u8 zeroes    : 3;
+				__u8  unit_addr;  /* unit address */
+				__u16 devno;      /* device number */
+				/* word 3 */
+				__u8 path_mask;  
+				__u8 fla_valid_mask;
+				__u16 sch;        /* subchannel */
+				/* words 4-5 */
+				__u8 chpid[8];    /* chpids 0-7 */
+				/* words 6-9 */
+				__u16 fla[8];     /* full link addresses 0-7 */
+			} __attribute__ ((packed,aligned(8))) ssd_res;
+		} response_block_data;
+	} __attribute__ ((packed,aligned(8))) response_block;
+} __attribute__ ((packed,aligned(PAGE_SIZE))) chsc_area_t;
 
 #endif /* __KERNEL__ */
 /*
@@ -409,12 +496,14 @@ typedef struct {
 #define DEVSTAT_PCI                0x00000200
 #define DEVSTAT_SUSPENDED          0x00000400
 #define DEVSTAT_UNKNOWN_DEV        0x00000800
+#define DEVSTAT_UNFRIENDLY_DEV     0x00001000
 #define DEVSTAT_FINAL_STATUS       0x80000000
 
 #define DEVINFO_NOT_OPER           DEVSTAT_NOT_OPER
 #define DEVINFO_UNKNOWN_DEV        DEVSTAT_UNKNOWN_DEV
 #define DEVINFO_DEVICE_OWNED       DEVSTAT_DEVICE_OWNED
 #define DEVINFO_QDIO_CAPABLE       0x40000000
+#define DEVINFO_UNFRIENDLY_DEV     DEVSTAT_UNFRIENDLY_DEV
 
 #define INTPARM_STATUS_PENDING     0xFFFFFFFF
 #ifdef __KERNEL__
@@ -491,6 +580,7 @@ typedef struct {
                                         /* ... for suspended CCWs */
 #define DOIO_TIMEOUT             0x0080 /* 3 secs. timeout for sync. I/O */
 #define DOIO_DONT_CALL_INTHDLR   0x0100 /* don't call interrupt handler */
+#define DOIO_CANCEL_ON_TIMEOUT   0x0200 /* cancel I/O if it timed out */
 
 /*
  * do_IO()
@@ -561,6 +651,8 @@ int read_dev_chars( int irq, void **buffer, int length );
 int read_conf_data( int irq, void **buffer, int *length, __u8 lpm );
 
 int  s390_DevicePathVerification( int irq, __u8 domask );
+
+int s390_trigger_resense(int irq);
 
 int s390_request_irq_special( int                      irq,
                               io_handler_func_t        io_handler,
@@ -738,6 +830,21 @@ extern __inline__ int hsch(int irq)
         return ccode;
 }
 
+extern __inline__ int xsch(int irq)
+{
+	int ccode;
+	
+	__asm__ __volatile__(
+                "   lr    1,%1\n"
+                "   .insn rre,0xb2760000,%1,0\n"
+                "   ipm   %0\n"
+                "   srl   %0,28"
+                : "=d" (ccode) 
+		: "d" (irq | 0x10000L)
+                : "cc", "1" );
+	return ccode;
+}
+
 extern __inline__ int iac( void)
 {
         int ccode;
@@ -799,6 +906,20 @@ extern __inline__ int diag210( diag210_t * addr)
 		: "a" (addr)
                 : "cc" );
         return ccode;
+}
+extern __inline__ int chsc( chsc_area_t * chsc_area)
+{
+	int cc;
+	
+	__asm__ __volatile__ (
+	        ".insn	rre,0xb25f0000,%1,0	\n\t"
+		"ipm	%0	\n\t"
+		"srl	%0,28	\n\t"
+		: "=d" (cc) 
+		: "d" (chsc_area) 
+		: "cc" );
+	
+	return cc;
 }
 
 /*

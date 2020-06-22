@@ -15,9 +15,9 @@ extern int ip_conntrack_init(void);
 extern void ip_conntrack_cleanup(void);
 
 struct ip_conntrack_protocol;
-extern struct ip_conntrack_protocol *find_proto(u_int8_t protocol);
+extern struct ip_conntrack_protocol *ip_ct_find_proto(u_int8_t protocol);
 /* Like above, but you already have conntrack read lock. */
-extern struct ip_conntrack_protocol *__find_proto(u_int8_t protocol);
+extern struct ip_conntrack_protocol *__ip_ct_find_proto(u_int8_t protocol);
 extern struct list_head protocol_list;
 
 /* Returns conntrack if it dealt with ICMP, and filled in skb->nfct */
@@ -45,7 +45,7 @@ static inline int ip_conntrack_confirm(struct sk_buff *skb)
 }
 
 extern struct list_head *ip_conntrack_hash;
-extern struct list_head expect_list;
+extern struct list_head ip_conntrack_expect_list;
 DECLARE_RWLOCK_EXTERN(ip_conntrack_lock);
 #endif /* _IP_CONNTRACK_CORE_H */
 

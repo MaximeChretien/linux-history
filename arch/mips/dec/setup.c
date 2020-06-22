@@ -25,6 +25,7 @@
 #include <asm/mipsregs.h>
 #include <asm/reboot.h>
 #include <asm/traps.h>
+#include <asm/wbflush.h>
 
 #include <asm/dec/interrupts.h>
 #include <asm/dec/kn01.h>
@@ -45,10 +46,8 @@ extern void dec_intr_halt(int irq, void *dev_id, struct pt_regs *regs);
 
 extern asmlinkage void decstation_handle_int(void);
 
-
-char *dec_rtc_base = (void *) KN01_RTC_BASE; /* Assume DS2100/3100 initially */
-
 volatile u32 *ioasic_base;
+unsigned long dec_kn_slot_size;
 
 /*
  * IRQ routing and priority tables.  Priorites are set as follows:
@@ -71,7 +70,7 @@ volatile u32 *ioasic_base;
  *
  * * -- shared with SCSI
  */
- 
+
 int dec_interrupt[DEC_NR_INTS] = {
 	[0 ... DEC_NR_INTS - 1] = -1
 };
@@ -88,10 +87,6 @@ static struct irqaction fpuirq = {NULL, 0, 0, "fpu", NULL, NULL};
 
 static struct irqaction haltirq = {dec_intr_halt, 0, 0, "halt", NULL, NULL};
 
-
-extern void wbflush_setup(void);
-
-extern struct rtc_ops dec_rtc_ops;
 
 void (*board_time_init) (struct irqaction * irq);
 
@@ -208,7 +203,8 @@ static int_ptr kn01_cpu_mask_nr_tbl[][2] __initdata = {
 void __init dec_init_kn01(void)
 {
 	/* Setup some memory addresses. */
-	dec_rtc_base = (char *) KN01_RTC_BASE;
+	dec_rtc_base = (void *)KN01_RTC_BASE;
+	dec_kn_slot_size = KN01_SLOT_SIZE;
 
 	/* IRQ routing. */
 	memcpy(&dec_interrupt, &kn01_interrupt,
@@ -286,7 +282,8 @@ static int_ptr kn230_cpu_mask_nr_tbl[][2] __initdata = {
 void __init dec_init_kn230(void)
 {
 	/* Setup some memory addresses. */
-	dec_rtc_base = (char *) KN01_RTC_BASE;
+	dec_rtc_base = (void *)KN01_RTC_BASE;
+	dec_kn_slot_size = KN01_SLOT_SIZE;
 
 	/* IRQ routing. */
 	memcpy(&dec_interrupt, &kn230_interrupt,
@@ -379,7 +376,8 @@ static int_ptr kn02_asic_mask_nr_tbl[][2] __initdata = {
 void __init dec_init_kn02(void)
 {
 	/* Setup some memory addresses. */
-	dec_rtc_base = (char *) KN02_RTC_BASE;
+	dec_rtc_base = (void *)KN02_RTC_BASE;
+	dec_kn_slot_size = KN02_SLOT_SIZE;
 
 	/* IRQ routing. */
 	memcpy(&dec_interrupt, &kn02_interrupt,
@@ -426,7 +424,7 @@ static int kn02ba_interrupt[DEC_NR_INTS] __initdata = {
 	[DEC_IRQ_TC2]		= DEC_CPU_IRQ_NR(KN02BA_CPU_INR_TC2),
 	[DEC_IRQ_TIMER]		= -1,
 	[DEC_IRQ_VIDEO]		= -1,
-	[DEC_IRQ_ASC_MERR]	= IO_IRQ_NR(IO_INR_LANCE_MERR),
+	[DEC_IRQ_ASC_MERR]	= IO_IRQ_NR(IO_INR_ASC_MERR),
 	[DEC_IRQ_ASC_ERR]	= IO_IRQ_NR(IO_INR_ASC_ERR),
 	[DEC_IRQ_ASC_DMA]	= IO_IRQ_NR(IO_INR_ASC_DMA),
 	[DEC_IRQ_FLOPPY_ERR]	= -1,
@@ -483,8 +481,9 @@ static int_ptr kn02ba_asic_mask_nr_tbl[][2] __initdata = {
 void __init dec_init_kn02ba(void)
 {
 	/* Setup some memory addresses. */
-	ioasic_base = (void *) KN02BA_IOASIC_BASE;
-	dec_rtc_base = (char *) KN02BA_RTC_BASE;
+	ioasic_base = (void *)KN02BA_IOASIC_BASE;
+	dec_rtc_base = (void *)KN02BA_RTC_BASE;
+	dec_kn_slot_size = IOASIC_SLOT_SIZE;
 
 	/* IRQ routing. */
 	memcpy(&dec_interrupt, &kn02ba_interrupt,
@@ -584,8 +583,9 @@ static int_ptr kn02ca_asic_mask_nr_tbl[][2] __initdata = {
 void __init dec_init_kn02ca(void)
 {
 	/* Setup some memory addresses. */
-	ioasic_base = (void *) KN02CA_IOASIC_BASE;
-	dec_rtc_base = (char *) KN02CA_RTC_BASE;
+	ioasic_base = (void *)KN02CA_IOASIC_BASE;
+	dec_rtc_base = (void *)KN02CA_RTC_BASE;
+	dec_kn_slot_size = IOASIC_SLOT_SIZE;
 
 	/* IRQ routing. */
 	memcpy(&dec_interrupt, &kn02ca_interrupt,
@@ -659,9 +659,9 @@ static int_ptr kn03_cpu_mask_nr_tbl[][2] __initdata = {
 		{ i: DEC_CPU_IRQ_NR(KN03_CPU_INR_MEMORY) } },
 	{ { i: DEC_CPU_IRQ_MASK(KN03_CPU_INR_RTC) },
 		{ i: DEC_CPU_IRQ_NR(KN03_CPU_INR_RTC) } },
-	{ { i: DEC_CPU_IRQ_MASK(KN03_CPU_INR_CASCADE) }, 
+	{ { i: DEC_CPU_IRQ_MASK(KN03_CPU_INR_CASCADE) },
 		{ p: kn03_io_int } },
-	{ { i: DEC_CPU_IRQ_ALL }, 
+	{ { i: DEC_CPU_IRQ_ALL },
 		{ p: cpu_all_int } },
 };
 
@@ -689,12 +689,13 @@ static int_ptr kn03_asic_mask_nr_tbl[][2] __initdata = {
 void __init dec_init_kn03(void)
 {
 	/* Setup some memory addresses.  */
-	ioasic_base = (void *) KN03_IOASIC_BASE;
-	dec_rtc_base = (char *) KN03_RTC_BASE;
+	ioasic_base = (void *)KN03_IOASIC_BASE;
+	dec_rtc_base = (void *)KN03_RTC_BASE;
+	dec_kn_slot_size = IOASIC_SLOT_SIZE;
 
 	/* IRQ routing. */
 	memcpy(&dec_interrupt, &kn03_interrupt,
-		sizeof(kn03_interrupt));	
+		sizeof(kn03_interrupt));
 
 	/* CPU IRQ priorities. */
 	memcpy(&cpu_mask_nr_tbl, &kn03_cpu_mask_nr_tbl,
@@ -760,4 +761,7 @@ void __init init_IRQ(void)
 		setup_irq(dec_interrupt[DEC_IRQ_HALT], &haltirq);
 }
 
+EXPORT_SYMBOL(ioasic_base);
+EXPORT_SYMBOL(dec_rtc_base);
+EXPORT_SYMBOL(dec_kn_slot_size);
 EXPORT_SYMBOL(dec_interrupt);

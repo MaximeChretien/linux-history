@@ -443,7 +443,7 @@ static inline int cpq_new_segment(request_queue_t *q, struct request *rq,
 static int cpq_back_merge_fn(request_queue_t *q, struct request *rq,
 			     struct buffer_head *bh, int max_segments)
 {
-	if (rq->bhtail->b_data + rq->bhtail->b_size == bh->b_data)
+	if (blk_seg_merge_ok(rq->bhtail, bh))
 		return 1;
 	return cpq_new_segment(q, rq, max_segments);
 }
@@ -451,7 +451,7 @@ static int cpq_back_merge_fn(request_queue_t *q, struct request *rq,
 static int cpq_front_merge_fn(request_queue_t *q, struct request *rq,
 			     struct buffer_head *bh, int max_segments)
 {
-	if (bh->b_data + bh->b_size == rq->bh->b_data)
+	if (blk_seg_merge_ok(bh, rq->bh))
 		return 1;
 	return cpq_new_segment(q, rq, max_segments);
 }
@@ -461,7 +461,7 @@ static int cpq_merge_requests_fn(request_queue_t *q, struct request *rq,
 {
 	int total_segments = rq->nr_segments + nxt->nr_segments;
 
-	if (rq->bhtail->b_data + rq->bhtail->b_size == nxt->bh->b_data)
+	if (blk_seg_merge_ok(rq->bhtail, nxt->bh))
 		total_segments--;
 
 	if (total_segments > SG_MAX)
@@ -566,6 +566,7 @@ static int __init cpqarray_init_one( struct pci_dev *pdev,
 	q = BLK_DEFAULT_QUEUE(MAJOR_NR + i);
 	q->queuedata = hba[i];
 	blk_init_queue(q, do_ida_request);
+	blk_queue_bounce_limit(q, hba[i]->pci_dev->dma_mask);
 	blk_queue_headactive(q, 0);
 	blksize_size[MAJOR_NR+i] = hba[i]->blocksizes;
 	hardsect_size[MAJOR_NR+i] = hba[i]->hardsizes;
@@ -966,17 +967,17 @@ static void do_ida_request(request_queue_t *q)
 {
 	ctlr_info_t *h = q->queuedata;
 	cmdlist_t *c;
-	char *lastdataend;
+	unsigned long lastdataend;
 	struct list_head * queue_head = &q->queue_head;
 	struct buffer_head *bh;
 	struct request *creq;
-	struct my_sg tmp_sg[SG_MAX];
+	struct scatterlist tmp_sg[SG_MAX];
 	int i, seg;
 
 	if (q->plugged)
 		goto startio;
 
-queue_next:
+next:
 	if (list_empty(queue_head))
 		goto startio;
 
@@ -1017,17 +1018,19 @@ DBGPX(
 	
 	printk("sector=%d, nr_sectors=%d\n", creq->sector, creq->nr_sectors);
 );
-	seg = 0; lastdataend = NULL;
+	seg = 0;
+	lastdataend = ~0UL;
 	while(bh) {
-		if (bh->b_data == lastdataend) {
-			tmp_sg[seg-1].size += bh->b_size;
+		if (bh_phys(bh) == lastdataend) {
+			tmp_sg[seg-1].length += bh->b_size;
 			lastdataend += bh->b_size;
 		} else {
 			if (seg == SG_MAX)
 				BUG();
-			tmp_sg[seg].size = bh->b_size;
-			tmp_sg[seg].start_addr = bh->b_data;
-			lastdataend = bh->b_data + bh->b_size;
+			tmp_sg[seg].page = bh->b_page;
+			tmp_sg[seg].length = bh->b_size;
+			tmp_sg[seg].offset = bh_offset(bh);
+			lastdataend = bh_phys(bh) + bh->b_size;
 			seg++;
 		}
 		bh = bh->b_reqnext;
@@ -1035,10 +1038,10 @@ DBGPX(
 	/* Now do all the DMA Mappings */
 	for( i=0; i < seg; i++)
 	{
-		c->req.sg[i].size = tmp_sg[i].size;
-		c->req.sg[i].addr = (__u32) pci_map_single(
-                		h->pci_dev, tmp_sg[i].start_addr, 
-				tmp_sg[i].size,
+		c->req.sg[i].size = tmp_sg[i].length;
+		c->req.sg[i].addr = (__u32) pci_map_page(
+                		h->pci_dev, tmp_sg[i].page, tmp_sg[i].offset,
+				tmp_sg[i].length,
                                 (creq->cmd == READ) ? 
 					PCI_DMA_FROMDEVICE : PCI_DMA_TODEVICE);
 	}
@@ -1056,7 +1059,7 @@ DBGPX(	printk("Submitting %d sectors in %d segments\n", sect, seg); );
 	if (h->Qdepth > h->maxQsinceinit) 
 		h->maxQsinceinit = h->Qdepth;
 
-	goto queue_next;
+	goto next;
 
 startio:
 	start_io(h);
@@ -1132,17 +1135,14 @@ static inline void complete_command(cmdlist_t *cmd, int timeout)
 	/* unmap the DMA mapping for all the scatter gather elements */
         for(i=0; i<cmd->req.hdr.sg_cnt; i++)
         {
-                pci_unmap_single(hba[cmd->ctlr]->pci_dev,
+                pci_unmap_page(hba[cmd->ctlr]->pci_dev,
                         cmd->req.sg[i].addr, cmd->req.sg[i].size,
                         (cmd->req.hdr.cmd == IDA_READ) ? PCI_DMA_FROMDEVICE : PCI_DMA_TODEVICE);
         }
 
 	complete_buffers(cmd->rq->bh, ok);
-
 	DBGPX(printk("Done with %p\n", cmd->rq););
 	end_that_request_last(cmd->rq);
-
-
 }
 
 /*
@@ -1301,7 +1301,8 @@ static int ida_ioctl(struct inode *inode, struct file *filep, unsigned int cmd, 
 		if (error) return error;
 		error = ida_ctlr_ioctl(ctlr, dsk, &my_io);
 		if (error) return error;
-		error = copy_to_user(io, &my_io, sizeof(my_io));
+		if(copy_to_user(io, &my_io, sizeof(my_io)))
+			return -EFAULT;
 		return error;
 	case IDAGETCTLRSIG:
 		if (!arg) return -EINVAL;
@@ -1416,7 +1417,11 @@ static int ida_ctlr_ioctl(int ctlr, int dsk, ida_ioctl_t *io)
 			cmd_free(h, c, 0); 
 			return(error);
 		}
-		copy_from_user(p, (void*)io->sg[0].addr, io->sg[0].size);
+		if (copy_from_user(p, (void*)io->sg[0].addr, io->sg[0].size)) {
+			kfree(p);
+			cmd_free(h, c, 0); 
+			return -EFAULT;
+		}
 		c->req.hdr.blk = pci_map_single(h->pci_dev, &(io->c), 
 				sizeof(ida_ioctl_t), 
 				PCI_DMA_BIDIRECTIONAL);
@@ -1453,7 +1458,11 @@ static int ida_ctlr_ioctl(int ctlr, int dsk, ida_ioctl_t *io)
                         cmd_free(h, c, 0);
                         return(error);
                 }
-		copy_from_user(p, (void*)io->sg[0].addr, io->sg[0].size);
+		if (copy_from_user(p, (void*)io->sg[0].addr, io->sg[0].size)) {
+			kfree(p);
+                        cmd_free(h, c, 0);
+			return -EFAULT;
+		}
 		c->req.sg[0].size = io->sg[0].size;
 		c->req.sg[0].addr = pci_map_single(h->pci_dev, p, 
 			c->req.sg[0].size, PCI_DMA_BIDIRECTIONAL); 
@@ -1490,7 +1499,10 @@ static int ida_ctlr_ioctl(int ctlr, int dsk, ida_ioctl_t *io)
 	case DIAG_PASS_THRU:
 	case SENSE_CONTROLLER_PERFORMANCE:
 	case READ_FLASH_ROM:
-		copy_to_user((void*)io->sg[0].addr, p, io->sg[0].size);
+		if (copy_to_user((void*)io->sg[0].addr, p, io->sg[0].size)) {
+			kfree(p);
+			return -EFAULT;
+		}
 		/* fall through and free p */
 	case IDA_WRITE:
 	case IDA_WRITE_MEDIA:

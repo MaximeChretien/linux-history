@@ -15,12 +15,7 @@
 #include <asm/regdef.h>
 #include <asm/stackframe.h>
 #include <asm/unistd.h>
-
-/* This duplicates the definition from <linux/sched.h> */
-#define PT_TRACESYS	0x00000002	/* tracing system calls */
-
-/* This duplicates the definition from <asm/signal.h> */
-#define SIGILL		4		/* Illegal instruction (ANSI).  */
+#include <asm/offset.h>
 
 #ifndef CONFIG_MIPS32_COMPAT
 #define handle_sys64 handle_sys
@@ -49,7 +44,7 @@ NESTED(handle_sys64, PT_SIZE, sp)
 	sd	a3, PT_R26(sp)		# save a3 for syscall restarting
 
 	ld	t0, TASK_PTRACE($28)	# syscall tracing enabled?
-	andi	t0, PT_TRACESYS
+	andi	t0, _PT_TRACESYS
 	bnez	t0, trace_a_syscall
 
 	jalr	t2			# Do The Real Thing (TM)
@@ -65,9 +60,10 @@ NESTED(handle_sys64, PT_SIZE, sp)
 
 ret_from_sys_call:
 	mfc0	t0, CP0_STATUS
-	xori	t0, t0, 1
 	ori	t0, t0, 1
+	xori	t0, t0, 1
 	mtc0	t0, CP0_STATUS
+	SSNOP; SSNOP; SSNOP
 
 	ld	t2, TASK_NEED_RESCHED($28)
 	bnez	t2, reschedule
@@ -132,6 +128,7 @@ illegal_syscall:
 	j	ret_from_sys_call
 	END(handle_sys64)
 
+	.align	3
 sys_call_table:
 	PTR	sys_syscall				/* 5000 */
 	PTR	sys_exit
@@ -350,20 +347,20 @@ sys_call_table:
 	PTR	sys_ni_syscall
 	PTR	sys_gettid				/* 5215 */
 	PTR	sys_readahead
-	PTR	sys_ni_syscall			/* reserved for setxattr */
-	PTR	sys_ni_syscall			/* reserved for lsetxattr */
-	PTR	sys_ni_syscall			/* reserved for fsetxattr */
-	PTR	sys_ni_syscall			/* 5220 res. for getxattr */
-	PTR	sys_ni_syscall			/* reserved for lgetxattr */
-	PTR	sys_ni_syscall			/* reserved for fgetxattr */
-	PTR	sys_ni_syscall			/* reserved for listxattr */
-	PTR	sys_ni_syscall			/* reserved for llistxattr */
-	PTR	sys_ni_syscall			/* 5225 res. for flistxattr */
-	PTR	sys_ni_syscall			/* reserved for removexattr */
-	PTR	sys_ni_syscall			/* reserved for lremovexattr */
-	PTR	sys_ni_syscall			/* reserved for fremovexattr */
+	PTR	sys_setxattr
+	PTR	sys_lsetxattr
+	PTR	sys_fsetxattr
+	PTR	sys_getxattr				/* 5220 */
+	PTR	sys_lgetxattr
+	PTR	sys_fgetxattr
+	PTR	sys_listxattr
+	PTR	sys_llistxattr
+	PTR	sys_flistxattr				/* 5225 */
+	PTR	sys_removexattr
+	PTR	sys_lremovexattr
+	PTR	sys_fremovexattr
 	PTR	sys_tkill, 2
-	PTR	sys_ni_syscall, 0		/* res. for sendfile64 */
+	PTR	sys_ni_syscall, 0		/* 5230 res. for sendfile64 */
 	PTR	sys_ni_syscall, 0		/* res. for futex */
 	PTR	sys_ni_syscall, 0		/* res. for sched_setaffinity */
-	PTR	sys_ni_syscall, 0		/* 4240 res. for sched_getaffinity */
+	PTR	sys_ni_syscall, 0		/* res. for sched_getaffinity */

@@ -18,7 +18,6 @@
 
 #include <asm/ptrace.h>
 #include <asm/kregs.h>
-#include <asm/system.h>
 #include <asm/types.h>
 
 #define IA64_NUM_DBG_REGS	8
@@ -54,114 +53,6 @@
 #define MCA_bus 0
 #define MCA_bus__is_a_macro /* for versions in ksyms.c */
 
-/* Processor status register bits: */
-#define IA64_PSR_BE_BIT		1
-#define IA64_PSR_UP_BIT		2
-#define IA64_PSR_AC_BIT		3
-#define IA64_PSR_MFL_BIT	4
-#define IA64_PSR_MFH_BIT	5
-#define IA64_PSR_IC_BIT		13
-#define IA64_PSR_I_BIT		14
-#define IA64_PSR_PK_BIT		15
-#define IA64_PSR_DT_BIT		17
-#define IA64_PSR_DFL_BIT	18
-#define IA64_PSR_DFH_BIT	19
-#define IA64_PSR_SP_BIT		20
-#define IA64_PSR_PP_BIT		21
-#define IA64_PSR_DI_BIT		22
-#define IA64_PSR_SI_BIT		23
-#define IA64_PSR_DB_BIT		24
-#define IA64_PSR_LP_BIT		25
-#define IA64_PSR_TB_BIT		26
-#define IA64_PSR_RT_BIT		27
-/* The following are not affected by save_flags()/restore_flags(): */
-#define IA64_PSR_CPL0_BIT	32
-#define IA64_PSR_CPL1_BIT	33
-#define IA64_PSR_IS_BIT		34
-#define IA64_PSR_MC_BIT		35
-#define IA64_PSR_IT_BIT		36
-#define IA64_PSR_ID_BIT		37
-#define IA64_PSR_DA_BIT		38
-#define IA64_PSR_DD_BIT		39
-#define IA64_PSR_SS_BIT		40
-#define IA64_PSR_RI_BIT		41
-#define IA64_PSR_ED_BIT		43
-#define IA64_PSR_BN_BIT		44
-
-#define IA64_PSR_BE	(__IA64_UL(1) << IA64_PSR_BE_BIT)
-#define IA64_PSR_UP	(__IA64_UL(1) << IA64_PSR_UP_BIT)
-#define IA64_PSR_AC	(__IA64_UL(1) << IA64_PSR_AC_BIT)
-#define IA64_PSR_MFL	(__IA64_UL(1) << IA64_PSR_MFL_BIT)
-#define IA64_PSR_MFH	(__IA64_UL(1) << IA64_PSR_MFH_BIT)
-#define IA64_PSR_IC	(__IA64_UL(1) << IA64_PSR_IC_BIT)
-#define IA64_PSR_I	(__IA64_UL(1) << IA64_PSR_I_BIT)
-#define IA64_PSR_PK	(__IA64_UL(1) << IA64_PSR_PK_BIT)
-#define IA64_PSR_DT	(__IA64_UL(1) << IA64_PSR_DT_BIT)
-#define IA64_PSR_DFL	(__IA64_UL(1) << IA64_PSR_DFL_BIT)
-#define IA64_PSR_DFH	(__IA64_UL(1) << IA64_PSR_DFH_BIT)
-#define IA64_PSR_SP	(__IA64_UL(1) << IA64_PSR_SP_BIT)
-#define IA64_PSR_PP	(__IA64_UL(1) << IA64_PSR_PP_BIT)
-#define IA64_PSR_DI	(__IA64_UL(1) << IA64_PSR_DI_BIT)
-#define IA64_PSR_SI	(__IA64_UL(1) << IA64_PSR_SI_BIT)
-#define IA64_PSR_DB	(__IA64_UL(1) << IA64_PSR_DB_BIT)
-#define IA64_PSR_LP	(__IA64_UL(1) << IA64_PSR_LP_BIT)
-#define IA64_PSR_TB	(__IA64_UL(1) << IA64_PSR_TB_BIT)
-#define IA64_PSR_RT	(__IA64_UL(1) << IA64_PSR_RT_BIT)
-/* The following are not affected by save_flags()/restore_flags(): */
-#define IA64_PSR_IS	(__IA64_UL(1) << IA64_PSR_IS_BIT)
-#define IA64_PSR_MC	(__IA64_UL(1) << IA64_PSR_MC_BIT)
-#define IA64_PSR_IT	(__IA64_UL(1) << IA64_PSR_IT_BIT)
-#define IA64_PSR_ID	(__IA64_UL(1) << IA64_PSR_ID_BIT)
-#define IA64_PSR_DA	(__IA64_UL(1) << IA64_PSR_DA_BIT)
-#define IA64_PSR_DD	(__IA64_UL(1) << IA64_PSR_DD_BIT)
-#define IA64_PSR_SS	(__IA64_UL(1) << IA64_PSR_SS_BIT)
-#define IA64_PSR_RI	(__IA64_UL(3) << IA64_PSR_RI_BIT)
-#define IA64_PSR_ED	(__IA64_UL(1) << IA64_PSR_ED_BIT)
-#define IA64_PSR_BN	(__IA64_UL(1) << IA64_PSR_BN_BIT)
-
-/* User mask bits: */
-#define IA64_PSR_UM	(IA64_PSR_BE | IA64_PSR_UP | IA64_PSR_AC | IA64_PSR_MFL | IA64_PSR_MFH)
-
-/* Default Control Register */
-#define IA64_DCR_PP_BIT		 0	/* privileged performance monitor default */
-#define IA64_DCR_BE_BIT		 1	/* big-endian default */
-#define IA64_DCR_LC_BIT		 2	/* ia32 lock-check enable */
-#define IA64_DCR_DM_BIT		 8	/* defer TLB miss faults */
-#define IA64_DCR_DP_BIT		 9	/* defer page-not-present faults */
-#define IA64_DCR_DK_BIT		10	/* defer key miss faults */
-#define IA64_DCR_DX_BIT		11	/* defer key permission faults */
-#define IA64_DCR_DR_BIT		12	/* defer access right faults */
-#define IA64_DCR_DA_BIT		13	/* defer access bit faults */
-#define IA64_DCR_DD_BIT		14	/* defer debug faults */
-
-#define IA64_DCR_PP	(__IA64_UL(1) << IA64_DCR_PP_BIT)
-#define IA64_DCR_BE	(__IA64_UL(1) << IA64_DCR_BE_BIT)
-#define IA64_DCR_LC	(__IA64_UL(1) << IA64_DCR_LC_BIT)
-#define IA64_DCR_DM	(__IA64_UL(1) << IA64_DCR_DM_BIT)
-#define IA64_DCR_DP	(__IA64_UL(1) << IA64_DCR_DP_BIT)
-#define IA64_DCR_DK	(__IA64_UL(1) << IA64_DCR_DK_BIT)
-#define IA64_DCR_DX	(__IA64_UL(1) << IA64_DCR_DX_BIT)
-#define IA64_DCR_DR	(__IA64_UL(1) << IA64_DCR_DR_BIT)
-#define IA64_DCR_DA	(__IA64_UL(1) << IA64_DCR_DA_BIT)
-#define IA64_DCR_DD	(__IA64_UL(1) << IA64_DCR_DD_BIT)
-
-/* Interrupt Status Register */
-#define IA64_ISR_X_BIT		32	/* execute access */
-#define IA64_ISR_W_BIT		33	/* write access */
-#define IA64_ISR_R_BIT		34	/* read access */
-#define IA64_ISR_NA_BIT		35	/* non-access */
-#define IA64_ISR_SP_BIT		36	/* speculative load exception */
-#define IA64_ISR_RS_BIT		37	/* mandatory register-stack exception */
-#define IA64_ISR_IR_BIT		38	/* invalid register frame exception */
-
-#define IA64_ISR_X	(__IA64_UL(1) << IA64_ISR_X_BIT)
-#define IA64_ISR_W	(__IA64_UL(1) << IA64_ISR_W_BIT)
-#define IA64_ISR_R	(__IA64_UL(1) << IA64_ISR_R_BIT)
-#define IA64_ISR_NA	(__IA64_UL(1) << IA64_ISR_NA_BIT)
-#define IA64_ISR_SP	(__IA64_UL(1) << IA64_ISR_SP_BIT)
-#define IA64_ISR_RS	(__IA64_UL(1) << IA64_ISR_RS_BIT)
-#define IA64_ISR_IR	(__IA64_UL(1) << IA64_ISR_IR_BIT)
-
 #define IA64_THREAD_FPH_VALID	(__IA64_UL(1) << 0)	/* floating-point high state valid? */
 #define IA64_THREAD_DBG_VALID	(__IA64_UL(1) << 1)	/* debug registers valid? */
 #define IA64_THREAD_PM_VALID	(__IA64_UL(1) << 2)	/* performance registers valid? */
@@ -188,6 +79,7 @@
 #ifndef __ASSEMBLY__
 
 #include <linux/threads.h>
+#include <linux/cache.h>
 
 #include <asm/fpu.h>
 #include <asm/offsets.h>
@@ -281,10 +173,18 @@ struct cpuinfo_ia64 {
 	__u64 ipi_count;
 	__u64 prof_counter;
 	__u64 prof_multiplier;
+# ifdef CONFIG_PERFMON
 	__u32 pfm_syst_wide;
 	__u32 pfm_dcr_pp;
-	/* this is written to by *other* CPUs: */
-	__u64 ipi_operation ____cacheline_aligned;
+# endif
+	union {
+		/*
+		 *  This is written to by *other* CPUs,
+		 *  so isolate it in its own cacheline.
+		 */
+		__u64 operation;
+		char pad[SMP_CACHE_BYTES] ____cacheline_aligned;
+	} ipi;
 #endif
 #ifdef CONFIG_NUMA
 	void *node_directory;
@@ -293,7 +193,7 @@ struct cpuinfo_ia64 {
 #endif
 	/* Platform specific word.  MUST BE LAST IN STRUCT */
 	__u64 platform_specific;
-} __attribute__ ((aligned (PAGE_SIZE))) ;
+} __attribute__ ((aligned (PAGE_SIZE)));
 
 /*
  * The "local" data pointer.  It points to the per-CPU data of the currently executing
@@ -388,6 +288,7 @@ struct thread_struct {
 	__u64 dbr[IA64_NUM_DBG_REGS];
 	__u64 ibr[IA64_NUM_DBG_REGS];
 	struct ia64_fpreg fph[96];	/* saved/loaded on demand */
+	int last_fph_cpu;
 };
 
 #define INIT_THREAD {					\
@@ -405,12 +306,8 @@ struct thread_struct {
 
 #define start_thread(regs,new_ip,new_sp) do {							\
 	set_fs(USER_DS);									\
-	ia64_psr(regs)->dfh = 1;	/* disable fph */					\
-	ia64_psr(regs)->mfh = 0;	/* clear mfh */						\
-	ia64_psr(regs)->cpl = 3;	/* set user mode */					\
-	ia64_psr(regs)->ri = 0;		/* clear return slot number */				\
-	ia64_psr(regs)->is = 0;		/* IA-64 instruction set */				\
-	ia64_psr(regs)->sp = 1;		/* enforce secure perfmon */				\
+	regs->cr_ipsr = ((regs->cr_ipsr | (IA64_PSR_BITS_TO_SET | IA64_PSR_CPL | IA64_PSR_SP))	\
+			 & ~(IA64_PSR_BITS_TO_CLEAR | IA64_PSR_RI | IA64_PSR_IS));		\
 	regs->cr_iip = new_ip;									\
 	regs->ar_rsc = 0xf;		/* eager mode, privilege level 3 */			\
 	regs->ar_rnat = 0;									\
@@ -528,8 +425,6 @@ ia64_set_kr (unsigned long regnum, unsigned long r)
 	}
 }
 
-#ifndef CONFIG_SMP
-
 static inline struct task_struct *
 ia64_get_fpu_owner (void)
 {
@@ -541,8 +436,6 @@ ia64_set_fpu_owner (struct task_struct *t)
 {
 	ia64_set_kr(IA64_KR_FPU_OWNER, (unsigned long) t);
 }
-
-#endif /* !CONFIG_SMP */
 
 extern void __ia64_init_fpu (void);
 extern void __ia64_save_fpu (struct ia64_fpreg *fph);
@@ -654,9 +547,22 @@ ia64_invala (void)
  * interrupt enable bits.  Don't trigger any mandatory RSE references while this bit is
  * off!
  */
-#define ia64_clear_ic(flags)						\
-	asm volatile ("mov %0=psr;; rsm psr.i | psr.ic;; srlz.i;;"	\
-			      : "=r"(flags) :: "memory");
+static inline __u64
+ia64_clear_ic (void)
+{
+	__u64 psr;
+	asm volatile ("mov %0=psr;; rsm psr.i | psr.ic;; srlz.i;;" : "=r"(psr) :: "memory");
+	return psr;
+}
+
+/*
+ * Restore the psr.
+ */
+static inline void
+ia64_set_psr (__u64 psr)
+{
+	asm volatile (";; mov psr.l=%0;; srlz.d" :: "r" (psr) : "memory");
+}
 
 /*
  * Insert a translation into an instruction and/or data translation

@@ -695,7 +695,7 @@ static int sdla_transmit(struct sk_buff *skb, struct net_device *dev)
 					save_flags(flags); 
 					cli();
 					SDLA_WINDOW(dev, addr);
-					pbuf = (void *)(((int) dev->mem_start) + (addr & SDLA_ADDR_MASK));
+					pbuf = (void *)(((unsigned long) dev->mem_start) + (addr & SDLA_ADDR_MASK));
 						sdla_write(dev, pbuf->buf_addr, skb->data, skb->len);
 						SDLA_WINDOW(dev, addr);
 					pbuf->opp_flag = 1;

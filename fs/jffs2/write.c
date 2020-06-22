@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: write.c,v 1.30 2001/12/30 16:01:11 dwmw2 Exp $
+ * $Id: write.c,v 1.30.2.1 2002/08/08 08:36:31 dwmw2 Exp $
  *
  */
 
@@ -110,8 +110,9 @@ struct inode *jffs2_new_inode (struct inode *dir_i, int mode, struct jffs2_raw_i
 	return inode;
 }
 
-/* This ought to be in core MTD code. All registered MTD devices without writev should have
-   this put in place. Bug the MTD maintainer */
+/* This ought to be in core MTD code. All registered MTD devices
+   without writev should have this put in place. Bug the MTD
+   maintainer */
 static int mtd_fake_writev(struct mtd_info *mtd, const struct iovec *vecs, unsigned long count, loff_t to, size_t *retlen)
 {
 	unsigned long i;
@@ -119,7 +120,7 @@ static int mtd_fake_writev(struct mtd_info *mtd, const struct iovec *vecs, unsig
 	int ret = 0;
 
 	for (i=0; i<count; i++) {
-		mtd->write(mtd, to, vecs[i].iov_len, &thislen, vecs[i].iov_base);
+		ret = mtd->write(mtd, to, vecs[i].iov_len, &thislen, vecs[i].iov_base);
 		totlen += thislen;
 		if (ret || thislen != vecs[i].iov_len)
 			break;

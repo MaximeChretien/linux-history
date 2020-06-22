@@ -2054,8 +2054,8 @@ static inline int line_info(char *buf, struct serial_state *state)
 	return ret;
 }
 
-int rs_read_proc(char *page, char **start, off_t off, int count,
-		 int *eof, void *data)
+static int rs_read_proc(char *page, char **start, off_t off, int count,
+			int *eof, void *data)
 {
 	int len = 0, l;
 	off_t	begin = 0;
@@ -2306,43 +2306,17 @@ static void serial_console_write(struct console *co, const char *s,
 	custom.intena = IF_SETCLR | (intena & IF_TBE);
 }
 
-/*
- *	Receive character from the serial port
- */
-static int serial_console_wait_key(struct console *co)
-{
-	unsigned short intena = custom.intenar;
-	int ch;
-
-	custom.intena = IF_RBF;
-
-	while (!(custom.intreqr & IF_RBF))
-		barrier();
-	ch = custom.serdatr & 0xff;
-	custom.intreq = IF_RBF;
-
-	custom.intena = IF_SETCLR | (intena & IF_RBF);
-
-	return ch;
-}
-
 static kdev_t serial_console_device(struct console *c)
 {
 	return MKDEV(TTY_MAJOR, 64);
 }
 
 static struct console sercons = {
-	"ttyS",
-	serial_console_write,
-	NULL,
-	serial_console_device,
-	serial_console_wait_key,
-	NULL,
-	NULL,
-	CON_PRINTBUFFER,
-	-1,
-	0,
-	NULL
+	name:	"ttyS",
+	write:	serial_console_write,
+	device:	serial_console_device,
+	flags:	CON_PRINTBUFFER,
+	index:	-1,
 };
 
 /*

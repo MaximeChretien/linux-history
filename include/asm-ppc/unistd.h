@@ -216,6 +216,31 @@
 #define __NR_mincore		206
 #define __NR_gettid		207
 #define __NR_tkill		208
+#define __NR_setxattr		209
+#define __NR_lsetxattr		210
+#define __NR_fsetxattr		211
+#define __NR_getxattr		212
+#define __NR_lgetxattr		213
+#define __NR_fgetxattr		214
+#define __NR_listxattr		215
+#define __NR_llistxattr		216
+#define __NR_flistxattr		217
+#define __NR_removexattr	218
+#define __NR_lremovexattr	219
+#define __NR_fremovexattr	220
+#if 0
+#define __NR_futex		221
+#define __NR_sched_setaffinity	222
+#define __NR_sched_getaffinity	223
+#define __NR_security		224
+#define __NR_tuxcall		225
+#define __NR_sendfile64		226
+#define __NR_io_setup		227
+#define __NR_io_destroy		228
+#define __NR_io_getevents	229
+#define __NR_io_submit		230
+#define __NR_io_cancel		231
+#endif
 
 #define __NR(n)	#n
 

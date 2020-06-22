@@ -318,13 +318,17 @@ send_now_idle:
 /*
  * Careful!
  *
- * This has to add the process to the _beginning_ of the
- * run-queue, not the end. See the comment about "This is
- * subtle" in the scheduler proper..
+ * This has to add the process to the _end_ of the 
+ * run-queue, not the beginning. The goodness value will
+ * determine whether this process will run next. This is
+ * important to get SCHED_FIFO and SCHED_RR right, where
+ * a process that is either pre-empted or its time slice
+ * has expired, should be moved to the tail of the run 
+ * queue for its priority - Bhavesh Davda
  */
 static inline void add_to_runqueue(struct task_struct * p)
 {
-	list_add(&p->run_list, &runqueue_head);
+	list_add_tail(&p->run_list, &runqueue_head);
 	nr_running++;
 }
 
@@ -332,12 +336,6 @@ static inline void move_last_runqueue(struct task_struct * p)
 {
 	list_del(&p->run_list);
 	list_add_tail(&p->run_list, &runqueue_head);
-}
-
-static inline void move_first_runqueue(struct task_struct * p)
-{
-	list_del(&p->run_list);
-	list_add(&p->run_list, &runqueue_head);
 }
 
 /*
@@ -955,8 +953,6 @@ static int setscheduler(pid_t pid, int policy,
 	retval = 0;
 	p->policy = policy;
 	p->rt_priority = lp.sched_priority;
-	if (task_on_runqueue(p))
-		move_first_runqueue(p);
 
 	current->need_resched = 1;
 
@@ -1069,6 +1065,25 @@ asmlinkage long sys_sched_yield(void)
 		spin_unlock_irq(&runqueue_lock);
 	}
 	return 0;
+}
+
+/**
+ * yield - yield the current processor to other threads.
+ *
+ * this is a shortcut for kernel-space yielding - it marks the
+ * thread runnable and calls sys_sched_yield().
+ */
+void yield(void)
+{
+	set_current_state(TASK_RUNNING);
+	sys_sched_yield();
+	schedule();
+}
+
+void __cond_resched(void)
+{
+	set_current_state(TASK_RUNNING);
+	schedule();
 }
 
 asmlinkage long sys_sched_get_priority_max(int policy)

@@ -75,6 +75,7 @@ static void send_reset(struct sk_buff *oldskb, int local)
 #ifdef CONFIG_NETFILTER_DEBUG
 	nskb->nf_debug = 0;
 #endif
+	nskb->nfmark = 0;
 
 	tcph = (struct tcphdr *)((u_int32_t*)nskb->nh.iph + nskb->nh.iph->ihl);
 

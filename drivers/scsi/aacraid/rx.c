@@ -50,7 +50,6 @@ static void aac_rx_intr(int irq, void *dev_id, struct pt_regs *regs)
 	struct aac_dev *dev = dev_id;
 	unsigned long bellbits;
 	u8 intstat, mask;
-
 	intstat = rx_readb(dev, MUnit.OISR);
 	/*
 	 *	Read mask and invert because drawbridge is reversed.
@@ -62,28 +61,24 @@ static void aac_rx_intr(int irq, void *dev_id, struct pt_regs *regs)
 	if (intstat & mask) 
 	{
 		bellbits = rx_readl(dev, OutboundDoorbellReg);
-		if (bellbits & DoorBellPrintfReady)
-		{
+		if (bellbits & DoorBellPrintfReady) {
 			aac_printf(dev, le32_to_cpu(rx_readl (dev, IndexRegs.Mailbox[5])));
 			rx_writel(dev, MUnit.ODR,DoorBellPrintfReady);
 			rx_writel(dev, InboundDoorbellReg,DoorBellPrintfDone);
 		}
-		else if (bellbits & DoorBellAdapterNormCmdReady)
-		{
+		else if (bellbits & DoorBellAdapterNormCmdReady) {
 			aac_command_normal(&dev->queues->queue[HostNormCmdQueue]);
 			rx_writel(dev, MUnit.ODR, DoorBellAdapterNormCmdReady);
 		}
-		else if (bellbits & DoorBellAdapterNormRespReady) 
-		{
+		else if (bellbits & DoorBellAdapterNormRespReady) {
 			aac_response_normal(&dev->queues->queue[HostNormRespQueue]);
 			rx_writel(dev, MUnit.ODR,DoorBellAdapterNormRespReady);
 		}
-		else if (bellbits & DoorBellAdapterNormCmdNotFull)
-		{
+		else if (bellbits & DoorBellAdapterNormCmdNotFull) {
 			rx_writel(dev, MUnit.ODR, DoorBellAdapterNormCmdNotFull);
 		}
-		else if (bellbits & DoorBellAdapterNormRespNotFull)
-		{
+		else if (bellbits & DoorBellAdapterNormRespNotFull) {
+			rx_writel(dev, MUnit.ODR, DoorBellAdapterNormCmdNotFull);
 			rx_writel(dev, MUnit.ODR, DoorBellAdapterNormRespNotFull);
 		}
 	}
@@ -160,7 +155,7 @@ static void aac_rx_disable_interrupt(struct aac_dev *dev, u32 event)
  *	for its	completion.
  */
 
-static int rx_sync_cmd(struct aac_dev *dev, unsigned long command, unsigned long p1, unsigned long *status)
+static int rx_sync_cmd(struct aac_dev *dev, u32 command, u32 p1, u32 *status)
 {
 	unsigned long start;
 	int ok;
@@ -251,7 +246,7 @@ static int rx_sync_cmd(struct aac_dev *dev, unsigned long command, unsigned long
 
 static void aac_rx_interrupt_adapter(struct aac_dev *dev)
 {
-	unsigned long ret;
+	u32 ret;
 	rx_sync_cmd(dev, BREAKPOINT_REQUEST, 0, &ret);
 }
 
@@ -304,7 +299,7 @@ static void aac_rx_notify_adapter(struct aac_dev *dev, u32 event)
 
 static void aac_rx_start_adapter(struct aac_dev *dev)
 {
-	unsigned long status;
+	u32 status;
 	struct aac_init *init;
 
 	init = dev->init;
@@ -323,7 +318,8 @@ static void aac_rx_start_adapter(struct aac_dev *dev)
 //	rx_writeb(dev, MUnit.OIMR, ~(u8)OUTBOUND_DOORBELL_INTERRUPT_MASK);
 	rx_writeb(dev, MUnit.OIMR, 0xfb);
 
-	rx_sync_cmd(dev, INIT_STRUCT_BASE_ADDRESS, (unsigned long) dev->init_pa, &status);
+	// We can only use a 32 bit address here
+	rx_sync_cmd(dev, INIT_STRUCT_BASE_ADDRESS, (u32)(ulong)dev->init_pa, &status);
 }
 
 /**
@@ -344,7 +340,6 @@ int aac_rx_init(struct aac_dev *dev, unsigned long num)
 	const char * name;
 
 	dev->devnum = num;
-
 	instance = dev->id;
 	name     = dev->name;
 
@@ -372,11 +367,11 @@ int aac_rx_init(struct aac_dev *dev, unsigned long num)
 	}
 	start = jiffies;
 	/*
-	 *	Wait for the adapter to be up and running. Wait up to 30 seconds.
+	 *	Wait for the adapter to be up and running. Wait up to 3 minutes
 	 */
 	while (!(rx_readl(dev, IndexRegs.Mailbox[7]) & KERNEL_UP_AND_RUNNING)) 
 	{
-		if(time_after(jiffies, start+30*HZ))
+		if(time_after(jiffies, start+180*HZ))
 		{
 			status = rx_readl(dev, IndexRegs.Mailbox[7]) >> 16;
 			printk(KERN_ERR "%s%d: adapter kernel failed to start, init status = %ld.\n", dev->name, instance, status);
@@ -397,6 +392,7 @@ int aac_rx_init(struct aac_dev *dev, unsigned long num)
 	dev->a_ops.adapter_enable_int = aac_rx_enable_interrupt;
 	dev->a_ops.adapter_disable_int = aac_rx_disable_interrupt;
 	dev->a_ops.adapter_notify = aac_rx_notify_adapter;
+	dev->a_ops.adapter_sync_cmd = rx_sync_cmd;
 
 	if (aac_init_adapter(dev) == NULL)
 		return -1;

@@ -19,8 +19,10 @@
 #include <asm/cobalt/cobalt.h>
 #include <asm/pci.h>
 #include <asm/io.h>
- 
+
 #ifdef CONFIG_PCI
+
+int cobalt_board_id;
 
 static void qube_expansion_slot_bist(struct pci_dev *dev)
 {
@@ -56,6 +58,7 @@ static void qube_expansion_slot_fixup(struct pci_dev *dev)
 
 	/* Give it a working IRQ. */
 	pci_write_config_byte(dev, PCI_INTERRUPT_LINE, COBALT_QUBE_SLOT_IRQ);
+	dev->irq = COBALT_QUBE_SLOT_IRQ;
 
 	/* Fixup base addresses, we only support I/O at the moment. */
 	for(i = 0; i <= 5; i++) {
@@ -119,24 +122,22 @@ static void qube_raq_via_bmIDE_fixup(struct pci_dev *dev)
 static void qube_raq_tulip_fixup(struct pci_dev *dev)
 {
 	unsigned short pci_cmd;
-	extern int cobalt_is_raq;
 
 	/* Fixup the first tulip located at device PCICONF_ETH0 */
 	if (PCI_SLOT(dev->devfn) == COBALT_PCICONF_ETH0) {
 		/*
-		 * Now tell the Ethernet device that we expect an interrupt at
-		 * IRQ 13 and not the default 189.
-		 *
 		 * The IRQ of the first Tulip is different on Qube and RaQ
 		 */
-		if (!cobalt_is_raq) {
-			/* All Qube's route this the same way. */
-			pci_write_config_byte(dev, PCI_INTERRUPT_LINE,
-                                              COBALT_QUBE_ETH_IRQ);
-		} else {
+		if (cobalt_board_id == COBALT_BRD_ID_RAQ2) {
 			/* Setup the first Tulip on the RAQ */
 			pci_write_config_byte(dev, PCI_INTERRUPT_LINE,
-                                              COBALT_RAQ_ETH0_IRQ);
+					      COBALT_RAQ_ETH0_IRQ);
+			dev->irq = COBALT_RAQ_ETH0_IRQ;
+		} else {
+			/* All Qube's route this the same way. */
+			pci_write_config_byte(dev, PCI_INTERRUPT_LINE,
+					      COBALT_QUBE_ETH_IRQ);
+			dev->irq = COBALT_QUBE_ETH_IRQ;
 		}
 		dev->resource[0].start = 0x100000;
 		dev->resource[0].end = 0x10007f;
@@ -156,6 +157,7 @@ static void qube_raq_tulip_fixup(struct pci_dev *dev)
 		/* Give it it's IRQ. */
 		pci_write_config_byte(dev, PCI_INTERRUPT_LINE,
                                       COBALT_RAQ_ETH1_IRQ);
+		dev->irq = COBALT_RAQ_ETH1_IRQ;
 
 		/* And finally, a usable I/O space allocation, right after what
 		 * the first Tulip uses.
@@ -168,15 +170,15 @@ static void qube_raq_tulip_fixup(struct pci_dev *dev)
 static void qube_raq_scsi_fixup(struct pci_dev *dev)
 {
 	unsigned short pci_cmd;
-	extern int cobalt_is_raq;
 
         /*
          * Tell the SCSI device that we expect an interrupt at
          * IRQ 7 and not the default 0.
          */
         pci_write_config_byte(dev, PCI_INTERRUPT_LINE, COBALT_SCSI_IRQ);
+	dev->irq = COBALT_SCSI_IRQ;
 
-	if (cobalt_is_raq) {
+	if (cobalt_board_id == COBALT_BRD_ID_RAQ2) {
 
 		/* Enable the device. */
 		pci_read_config_word(dev, PCI_COMMAND, &pci_cmd);
@@ -186,7 +188,8 @@ static void qube_raq_scsi_fixup(struct pci_dev *dev)
 		pci_write_config_word(dev, PCI_COMMAND, pci_cmd);
 
 		/* Give it it's RAQ IRQ. */
-		pci_write_config_byte(dev, PCI_INTERRUPT_LINE, 4);
+		pci_write_config_byte(dev, PCI_INTERRUPT_LINE, COBALT_RAQ_SCSI_IRQ);
+		dev->irq = COBALT_RAQ_SCSI_IRQ;
 
 		/* And finally, a usable I/O space allocation, right after what
 		 * the second Tulip uses.
@@ -252,11 +255,11 @@ struct pci_fixup pcibios_fixups[] = {
 };
 
 
-static __inline__ int pci_range_ck(struct pci_dev *dev) 
+static __inline__ int pci_range_ck(struct pci_dev *dev)
 {
-       if ((dev->bus->number == 0) 
-           && ((PCI_SLOT (dev->devfn) == 0) 
-               || ((PCI_SLOT (dev->devfn) > 6) 
+       if ((dev->bus->number == 0)
+           && ((PCI_SLOT (dev->devfn) == 0)
+               || ((PCI_SLOT (dev->devfn) > 6)
                    && (PCI_SLOT (dev->devfn) <= 12))))
 		return 0;  /* OK device number  */
 
@@ -328,7 +331,7 @@ static int qube_pci_write_config_dword (struct pci_dev *dev,
 
 static int
 qube_pci_write_config_word (struct pci_dev *dev,
-                                int where, 
+                                int where,
                                u16 val)
 {
 	unsigned long tmp;
@@ -347,7 +350,7 @@ qube_pci_write_config_word (struct pci_dev *dev,
 
 static int
 qube_pci_write_config_byte (struct pci_dev *dev,
-                                int where, 
+                                int where,
                                u8 val)
 {
 	unsigned long tmp;
@@ -374,7 +377,17 @@ struct pci_ops qube_pci_ops = {
 
 void __init pcibios_init(void)
 {
+	struct pci_dev dev;
+
 	printk("PCI: Probing PCI hardware\n");
+
+	/* Read the cobalt id register out of the PCI config space */
+	dev.devfn = PCI_DEVFN(COBALT_PCICONF_VIA, 0);
+	PCI_CFG_SET(&dev, (VIA_COBALT_BRD_ID_REG & ~0x3));
+	cobalt_board_id = *PCI_CFG_DATA >> ((VIA_COBALT_BRD_ID_REG & 3) * 8);
+	cobalt_board_id = VIA_COBALT_BRD_REG_to_ID(cobalt_board_id);
+
+	printk("Cobalt Board ID: %d\n", cobalt_board_id);
 
 	ioport_resource.start = 0x00000000;
 	ioport_resource.end = 0x0fffffff;
@@ -393,7 +406,7 @@ char *pcibios_setup(char *str)
 int pcibios_enable_device(struct pci_dev *dev)
 {
 	u16 cmd, status;
-	
+
 	pci_read_config_word(dev, PCI_COMMAND, &cmd);
 	pci_read_config_word(dev, PCI_STATUS, &status);
 	printk("PCI: Enabling device %s (%04x  %04x)\n", dev->slot_name, cmd, status);
@@ -403,13 +416,13 @@ int pcibios_enable_device(struct pci_dev *dev)
 }
 
 void pcibios_align_resource(void *data, struct resource *res,
-		unsigned long size)
+		unsigned long size, unsigned long align)
 {
 
 	panic("Uhhoh called pcibios_align_resource\n");
 }
 
-void pcibios_update_resource(struct pci_dev *dev, struct resource *root, 
+void pcibios_update_resource(struct pci_dev *dev, struct resource *root,
 		struct resource *res, int resource)
 {
 

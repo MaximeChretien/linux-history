@@ -120,6 +120,8 @@ static void pmu_done(struct adb_request *req);
 static void pmu_handle_data(unsigned char *data, int len,
 			    struct pt_regs *regs);
 static void set_volume(int level);
+static void pmu_enable_backlight(int on);
+static void pmu_set_brightness(int level);
 
 struct adb_driver via_pmu_driver = {
 	"68K PMU",

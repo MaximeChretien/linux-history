@@ -847,6 +847,7 @@ recalc:
 			case 1: apm_idle_done = 1;
 				break;
 			default: /* BIOS refused */
+				break;
 			}
 		}
 		if (original_pm_idle)
@@ -861,14 +862,6 @@ recalc:
 	if (apm_idle_done)
 		apm_do_busy();
 }
-
-#ifdef CONFIG_SMP
-static int apm_magic(void * unused)
-{
-	while (1)
-		schedule();
-}
-#endif
 
 /**
  *	apm_power_off	-	ask the BIOS to power off
@@ -897,10 +890,11 @@ static void apm_power_off(void)
 	 */
 #ifdef CONFIG_SMP
 	/* Some bioses don't like being called from CPU != 0 */
-	while (cpu_number_map(smp_processor_id()) != 0) {
-		kernel_thread(apm_magic, NULL,
-			CLONE_FS | CLONE_FILES | CLONE_SIGHAND | SIGCHLD);
+	if (cpu_number_map(smp_processor_id()) != 0) {
+		current->cpus_allowed = 1;
 		schedule();
+		if (unlikely(cpu_number_map(smp_processor_id()) != 0))
+			BUG();
 	}
 #endif
 	if (apm_info.realmode_power_off)
@@ -1661,6 +1655,21 @@ static int apm(void *unused)
 	strcpy(current->comm, "kapmd");
 	sigfillset(&current->blocked);
 
+#ifdef CONFIG_SMP
+	/* 2002/08/01 - WT
+	 * This is to avoid random crashes at boot time during initialization
+	 * on SMP systems in case of "apm=power-off" mode. Seen on ASUS A7M266D.
+	 * Some bioses don't like being called from CPU != 0.
+	 * Method suggested by Ingo Molnar.
+	 */
+	if (cpu_number_map(smp_processor_id()) != 0) {
+		current->cpus_allowed = 1;
+		schedule();
+		if (unlikely(cpu_number_map(smp_processor_id()) != 0))
+			BUG();
+	}
+#endif
+	
 	if (apm_info.connection_version == 0) {
 		apm_info.connection_version = apm_info.bios.version;
 		if (apm_info.connection_version > 0x100) {
@@ -1707,7 +1716,7 @@ static int apm(void *unused)
 		}
 	}
 
-	if (debug && (smp_num_cpus == 1)) {
+	if (debug) {
 		error = apm_get_power_status(&bx, &cx, &dx);
 		if (error)
 			printk(KERN_INFO "apm: power status not available\n");

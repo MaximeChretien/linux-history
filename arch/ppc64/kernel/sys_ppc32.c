@@ -81,47 +81,6 @@ extern unsigned long wall_jiffies;
  */
 #define MSR_USERCHANGE	(MSR_FE0 | MSR_FE1)
 
-/* In order to reduce some races, while at the same time doing additional
- * checking and hopefully speeding things up, we copy filenames to the
- * kernel data space before using them..
- *
- * POSIX.1 2.4: an empty pathname is invalid (ENOENT).
- */
-static inline int do_getname32(const char *filename, char *page)
-{
-	int retval;
-
-	/* 32bit pointer will be always far below TASK_SIZE :)) */
-	retval = strncpy_from_user((char *)page, (char *)filename, PAGE_SIZE);
-	if (retval > 0) {
-		if (retval < PAGE_SIZE)
-			return 0;
-		return -ENAMETOOLONG;
-	} else if (!retval)
-		retval = -ENOENT;
-	return retval;
-}
-
-char * getname32(const char *filename)
-{
-	char *tmp, *result;
-
-	result = ERR_PTR(-ENOMEM);
-  tmp =  __getname();
-	if (tmp)  {
-		int retval = do_getname32(filename, tmp);
-
-		result = tmp;
-		if (retval < 0) {
-			putname(tmp);
-			result = ERR_PTR(retval);
-		}
-	}
-	return result;
-}
-
-
-
 extern asmlinkage long sys_utime(char * filename, struct utimbuf * times);
 
 struct utimbuf32 {
@@ -141,7 +100,7 @@ asmlinkage long sys32_utime(char * filename, struct utimbuf32 *times)
 		return sys_utime(filename, NULL);
 	if (get_user(t.actime, &times->actime) || __get_user(t.modtime, &times->modtime))
 		return -EFAULT;
-	filenam = getname32(filename);
+	filenam = getname(filename);
 
 	ret = PTR_ERR(filenam);
 	if (!IS_ERR(filenam)) {
@@ -554,7 +513,7 @@ asmlinkage long sys32_quotactl(u32 cmd_parm, const char *special, u32 id_parm, u
 		return sys_quotactl(cmd, special,
 				    id, (caddr_t)addr);
 	}
-	spec = getname32 (special);
+	spec = getname (special);
 	err = PTR_ERR(spec);
 	if (IS_ERR(spec)) return err;
 	old_fs = get_fs ();
@@ -899,15 +858,6 @@ out_nofds:
 	return ret;
 }
 
-
-
-
-/*
- * Due to some executables calling the wrong select we sometimes
- * get wrong args.  This determines how the args are being passed
- * (a single ptr to them all args passed) then calls
- * sys_select() with the appropriate args. -- Cort
- */
 /* Note: it is necessary to treat n as an unsigned int, 
  * with the corresponding cast to a signed int to insure that the 
  * proper conversion (sign extension) between the register representation of a signed int (msr in 32-bit mode)
@@ -915,13 +865,8 @@ out_nofds:
  */
 asmlinkage int ppc32_select(u32 n, u32* inp, u32* outp, u32* exp, u32 tvp_x)
 {
-	if ((unsigned int)n >= 4096)
-		panic("ppc32_select - wrong arguments were passed in \n");
-
 	return sys32_select((int)n, inp, outp, exp, tvp_x);
 }
-
-
 
 static int cp_new_stat32(struct inode *inode, struct stat32 *statbuf)
 {
@@ -1090,7 +1035,7 @@ asmlinkage long sys32_statfs(const char * path, struct statfs32 *buf)
 	
 	PPCDBG(PPCDBG_SYS32X, "sys32_statfs - entered - pid=%ld current=%lx comm=%s\n", current->pid, current, current->comm);
 	
-	pth = getname32 (path);
+	pth = getname (path);
 	ret = PTR_ERR(pth);
 	if (!IS_ERR(pth)) {
 		set_fs (KERNEL_DS);
@@ -2883,9 +2828,6 @@ do_sys32_msgctl(int first, int second, void *uptr)
 		}
 		break;
 	}
-#if 0
-	udbg_printf("  err3 = 0x%lx\n", err); 
-#endif
 	return err;
 }
 
@@ -4000,11 +3942,6 @@ asmlinkage long sys32_execve(unsigned long a0, unsigned long a1, unsigned long a
 	int error;
 	char * filename;
 	
-	ifppcdebug(PPCDBG_SYS32) {
-		udbg_printf("sys32_execve - entered - pid=%ld, comm=%s \n", current->pid, current->comm);
-		//PPCDBG(PPCDBG_SYS32NI, "               a0=%lx, a1=%lx, a2=%lx, a3=%lx, a4=%lx, a5=%lx, regs=%p \n", a0, a1, a2, a3, a4, a5, regs);
-	}
-
 	filename = getname((char *) a0);
 	error = PTR_ERR(filename);
 	if (IS_ERR(filename))
@@ -4019,10 +3956,6 @@ asmlinkage long sys32_execve(unsigned long a0, unsigned long a1, unsigned long a
 	putname(filename);
 
 out:
-	ifppcdebug(PPCDBG_SYS32) {
-		udbg_printf("sys32_execve - exited - returning %x - pid=%ld \n", error, current->pid);
-		//udbg_printf("sys32_execve - at exit - regs->gpr[1]=%lx, gpr[3]=%lx, gpr[4]=%lx, gpr[5]=%lx, gpr[6]=%lx \n", regs->gpr[1], regs->gpr[3], regs->gpr[4], regs->gpr[5], regs->gpr[6]);
-	}
 	return error;
 }
 

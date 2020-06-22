@@ -45,6 +45,10 @@ prototypes:
 	int (*revalidate) (struct dentry *);
 	int (*setattr) (struct dentry *, struct iattr *);
 	int (*getattr) (struct dentry *, struct iattr *);
+	int (*setxattr) (struct dentry *, const char *, void *, size_t, int);
+	ssize_t (*getxattr) (struct dentry *, const char *, void *, size_t);
+	ssize_t (*listxattr) (struct dentry *, char *, size_t);
+	int (*removexattr) (struct dentry *, const char *);
 
 locking rules:
 	all may block
@@ -61,9 +65,13 @@ readlink:	no	no		no
 follow_link:	no	no		no
 truncate:	yes	yes		no		(see below)
 setattr:	yes	if ATTR_SIZE	no
-permssion:	yes	no		no
+permission:	yes	no		no
 getattr:						(see below)
 revalidate:	no					(see below)
+setxattr:	yes	yes		no
+getxattr:	yes	yes		no
+listxattr:	yes	yes		no
+removexattr:	yes	yes		no
 	Additionally, ->rmdir() has i_zombie on victim and so does ->rename()
 in case when target exists and is a directory.
 	->rename() on directories has (per-superblock) ->s_vfs_rename_sem.

@@ -37,4 +37,7 @@ static inline unsigned long long get_clock (void)
 	return clock;
 }
 
+#define vxtime_lock()		do {} while (0)
+#define vxtime_unlock()		do {} while (0)
+
 #endif
