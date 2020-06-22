@@ -406,7 +406,7 @@ static void fat_read_root(struct inode *inode)
 	}
 	inode->i_blksize = 1 << sbi->cluster_bits;
 	inode->i_blocks = ((inode->i_size + inode->i_blksize - 1)
-			   & ~(inode->i_blksize - 1)) / 512;
+			   & ~(inode->i_blksize - 1)) >> 9;
 	MSDOS_I(inode)->i_logstart = 0;
 	MSDOS_I(inode)->mmu_private = inode->i_size;
 
@@ -584,7 +584,7 @@ fat_read_super(struct super_block *sb, void *data, int silent,
 
 	sb->s_blocksize = hard_blksize;
 	set_blocksize(sb->s_dev, hard_blksize);
-	bh = bread(sb->s_dev, 0, sb->s_blocksize);
+	bh = sb_bread(sb, 0);
 	if (bh == NULL) {
 		printk("FAT: unable to read boot sector\n");
 		goto out_fail;
@@ -656,7 +656,7 @@ fat_read_super(struct super_block *sb, void *data, int silent,
 			(sbi->fsinfo_sector * logical_sector_size) % hard_blksize;
 		fsinfo_bh = bh;
 		if (fsinfo_block != 0) {
-			fsinfo_bh = bread(sb->s_dev, fsinfo_block, hard_blksize);
+			fsinfo_bh = sb_bread(sb, fsinfo_block);
 			if (fsinfo_bh == NULL) {
 				printk("FAT: bread failed, FSINFO block"
 				       " (blocknr = %d)\n", fsinfo_block);
@@ -952,7 +952,7 @@ static void fat_fill_inode(struct inode *inode, struct msdos_dir_entry *de)
 	/* this is as close to the truth as we can get ... */
 	inode->i_blksize = 1 << sbi->cluster_bits;
 	inode->i_blocks = ((inode->i_size + inode->i_blksize - 1)
-			   & ~(inode->i_blksize - 1)) / 512;
+			   & ~(inode->i_blksize - 1)) >> 9;
 	inode->i_mtime = inode->i_atime =
 		date_dos2unix(CF_LE_W(de->time),CF_LE_W(de->date));
 	inode->i_ctime =

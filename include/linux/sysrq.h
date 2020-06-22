@@ -10,6 +10,8 @@
  *	overhauled to use key registration
  *	based upon discusions in irc://irc.openprojects.net/#kernelnewbies
  */
+#ifndef __LINUX_SYSRQ_H__
+#define __LINUX_SYSRQ_H__
 
 #include <linux/config.h>
 
@@ -117,3 +119,5 @@ void do_emergency_sync(void);
 #else
 #define CHECK_EMERGENCY_SYNC
 #endif
+
+#endif /* __LINUX_SYSRQ_H__ */

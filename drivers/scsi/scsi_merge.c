@@ -150,14 +150,7 @@ static void dma_exhausted(Scsi_Cmnd * SCpnt, int i)
 	panic("DMA pool exhausted");
 }
 
-/*
- * FIXME(eric) - the original disk code disabled clustering for MOD
- * devices.  I have no idea why we thought this was a good idea - my
- * guess is that it was an attempt to limit the size of requests to MOD
- * devices.
- */
-#define CLUSTERABLE_DEVICE(SH,SD) (SH->use_clustering && \
-				   SD->type != TYPE_MOD)
+#define CLUSTERABLE_DEVICE(SH,SD) (SH->use_clustering)
 
 /*
  * This entire source file deals with the new queueing code.

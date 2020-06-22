@@ -885,6 +885,12 @@ static int __devinit btaudio_probe(struct pci_dev *pci_dev,
 	}
 
 	bta = kmalloc(sizeof(*bta),GFP_ATOMIC);
+	if (!bta) {
+		printk(KERN_WARNING 
+		       "btaudio: not enough memory\n");
+		rc = -ENOMEM;
+		goto fail1;
+	}
 	memset(bta,0,sizeof(*bta));
 
 	bta->pci  = pci_dev;

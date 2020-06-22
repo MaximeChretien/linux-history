@@ -236,9 +236,9 @@ typedef union {
     __u64 linear;
 } __attribute__ ((__packed__)) offset_v2_esafe_overlay;
 
-static inline __u16 offset_v2_k_type( struct offset_v2 *v2 )
+static inline __u16 offset_v2_k_type( const struct offset_v2 *v2 )
 {
-    offset_v2_esafe_overlay tmp = *(offset_v2_esafe_overlay *)v2;
+    offset_v2_esafe_overlay tmp = *(const offset_v2_esafe_overlay *)v2;
     tmp.linear = le64_to_cpu( tmp.linear );
     return tmp.offset_v2.k_type;
 }
@@ -248,12 +248,12 @@ static inline void set_offset_v2_k_type( struct offset_v2 *v2, int type )
     offset_v2_esafe_overlay *tmp = (offset_v2_esafe_overlay *)v2;
     tmp->linear = le64_to_cpu(tmp->linear);
     tmp->offset_v2.k_type = type;
-    tmp->linear = le64_to_cpu(tmp->linear);
+    tmp->linear = cpu_to_le64(tmp->linear);
 }
  
-static inline loff_t offset_v2_k_offset( struct offset_v2 *v2 )
+static inline loff_t offset_v2_k_offset( const struct offset_v2 *v2 )
 {
-    offset_v2_esafe_overlay tmp = *(offset_v2_esafe_overlay *)v2;
+    offset_v2_esafe_overlay tmp = *(const offset_v2_esafe_overlay *)v2;
     tmp.linear = le64_to_cpu( tmp.linear );
     return tmp.offset_v2.k_offset;
 }
@@ -262,7 +262,7 @@ static inline void set_offset_v2_k_offset( struct offset_v2 *v2, loff_t offset )
     offset_v2_esafe_overlay *tmp = (offset_v2_esafe_overlay *)v2;
     tmp->linear = le64_to_cpu(tmp->linear);
     tmp->offset_v2.k_offset = offset;
-    tmp->linear = le64_to_cpu(tmp->linear);
+    tmp->linear = cpu_to_le64(tmp->linear);
 }
 #else
 # define offset_v2_k_type(v2)           ((v2)->k_type)

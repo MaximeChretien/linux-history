@@ -275,6 +275,24 @@ scsi_register_device(struct Scsi_Device_Template * sdpnt)
     return 0;
 }
 
+void
+scsi_deregister_device(struct Scsi_Device_Template * tpnt)
+{
+    struct Scsi_Device_Template *spnt;
+    struct Scsi_Device_Template *prev_spnt;
+
+    spnt = scsi_devicelist;
+    prev_spnt = NULL;
+    while (spnt != tpnt) {
+	prev_spnt = spnt;
+	spnt = spnt->next;
+    }
+    if (prev_spnt == NULL)
+        scsi_devicelist = tpnt->next;
+    else
+        prev_spnt->next = spnt->next;
+}
+
 /*
  * Overrides for Emacs so that we follow Linus's tabbing style.
  * Emacs will notice this stuff at the end of the file and automatically

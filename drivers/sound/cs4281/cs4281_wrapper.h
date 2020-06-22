@@ -1,6 +1,6 @@
 /*******************************************************************************
 *
-*      "cs4281_wrapper.c" --  Cirrus Logic-Crystal CS4281 linux audio driver.
+*      "cs4281_wrapper.h" --  Cirrus Logic-Crystal CS4281 linux audio driver.
 *
 *      Copyright (C) 2000,2001  Cirrus Logic Corp.  
 *            -- tom woller (twoller@crystal.cirrus.com) or
@@ -20,23 +20,35 @@
 *      along with this program; if not, write to the Free Software
 *      Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 *
-* 12/20/00 trw - new file. 
+* 12/22/00 trw - new file. 
+* 04/18/01 trw - rework entire wrapper logic.
 *
 *******************************************************************************/
+#ifndef __CS4281_WRAPPER_H
+#define __CS4281_WRAPPER_H
 
-#include <linux/spinlock.h>
+/* 2.4.x wrapper */
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,12)
+static int cs4281_null_suspend(struct pci_dev *pcidev, u32 unused) { return 0; }
+static int cs4281_null_resume(struct pci_dev *pcidev) { return 0; }
+#else
+#define no_llseek cs4281_llseek
+static loff_t cs4281_llseek(struct file *file, loff_t offset, int origin)
+{
+	return -ESPIPE;
+}
+void cs4281_null_suspend(struct pci_dev *pcidev) { return; }
+void cs4281_null_resume(struct pci_dev *pcidev) { return; }
+#endif
 
-void cs4281_null(struct pci_dev *pcidev) { return; }
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,3)
+/* Some versions of 2.4.2 resolve pci_set_dma_mask and some do not... 
+*  but 2.4.0 definitely does not 
+*/
+#define pci_set_dma_mask(dev,data) 0;
+#else
+#endif
 #define cs4x_mem_map_reserve(page) mem_map_reserve(page)
 #define cs4x_mem_map_unreserve(page) mem_map_unreserve(page)
 
-#define free_dmabuf(state, dmabuf) \
-	pci_free_consistent(state->pcidev, \
-			    PAGE_SIZE << (dmabuf)->buforder, \
-			    (dmabuf)->rawbuf, (dmabuf)->dmaaddr);
-#define free_dmabuf2(state, dmabuf) \
-	pci_free_consistent((state)->pcidev, \
-				    PAGE_SIZE << (state)->buforder_tmpbuff, \
-				    (state)->tmpbuff, (state)->dmaaddr_tmpbuff);
-#define cs4x_pgoff(vma) ((vma)->vm_pgoff)
-
+#endif /* #ifndef __CS4281_WRAPPER_H */

@@ -31,7 +31,7 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: readinode.c,v 1.56 2001/07/26 20:32:39 dwmw2 Exp $
+ * $Id: readinode.c,v 1.57 2001/12/27 22:49:46 dwmw2 Exp $
  *
  */
 
@@ -408,6 +408,12 @@ void jffs2_read_inode (struct inode *inode)
 
 	case S_IFLNK:
 		inode->i_op = &jffs2_symlink_inode_operations;
+		/* Hack to work around broken isize in old symlink code.
+		   Remove this when dwmw2 comes to his senses and stops
+		   symlinks from being an entirely gratuitous special
+		   case. */
+		if (!inode->i_size)
+			inode->i_size = latest_node.dsize;
 		break;
 		
 	case S_IFDIR:

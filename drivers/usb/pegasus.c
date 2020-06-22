@@ -883,6 +883,7 @@ static void * pegasus_probe( struct usb_device *dev, unsigned int ifnum,
 	if ( reset_mac(pegasus) ) {
 		err("can't reset MAC");
 		unregister_netdev( pegasus->net );
+		kfree(pegasus->net);
 		kfree(pegasus);
 		pegasus = NULL;
 		return NULL;
@@ -919,6 +920,7 @@ static void pegasus_disconnect( struct usb_device *dev, void *ptr )
 	pegasus->flags |= PEGASUS_UNPLUG;
 	unregister_netdev( pegasus->net );
 	usb_dec_dev_use( dev );
+	kfree( pegasus->net );
 	kfree( pegasus );
 	pegasus = NULL;
 }

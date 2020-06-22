@@ -472,6 +472,7 @@ static int do_one_pass(journal_t *journal,
 						goto failed;
 					}
 
+					lock_buffer(nbh);
 					memcpy(nbh->b_data, obh->b_data,
 							journal->j_blocksize);
 					if (flags & JFS_FLAG_ESCAPE) {
@@ -483,6 +484,7 @@ static int do_one_pass(journal_t *journal,
 					mark_buffer_dirty(nbh);
 					BUFFER_TRACE(nbh, "marking uptodate");
 					mark_buffer_uptodate(nbh, 1);
+					unlock_buffer(nbh);
 					++info->nr_replays;
 					/* ll_rw_block(WRITE, 1, &nbh); */
 					brelse(obh);

@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2001 Axis Communications AB.
  *
- * $Id: usb-host.c,v 1.11 2001/09/26 11:52:16 bjornw Exp $
+ * $Id: usb-host.c,v 1.13 2001/11/13 12:06:17 pkj Exp $
  *
  */
 
@@ -34,7 +34,7 @@
 #define ETRAX_USB_RX_IRQ USB_DMA_RX_IRQ_NBR
 #define ETRAX_USB_TX_IRQ USB_DMA_TX_IRQ_NBR
 
-static const char *usb_hcd_version = "$Revision: 1.11 $";
+static const char *usb_hcd_version = "$Revision: 1.13 $";
 
 #undef KERN_DEBUG
 #define KERN_DEBUG ""
@@ -78,11 +78,11 @@ static const char *usb_hcd_version = "$Revision: 1.11 $";
 #endif
 
 #ifdef USB_DEBUG_TRACE
-#define DBFENTER (printk(KERN_DEBUG __FILE__ ": Entering : " __FUNCTION__ "\n"))
-#define DBFEXIT  (printk(KERN_DEBUG __FILE__ ": Exiting  : " __FUNCTION__ "\n"))
+#define DBFENTER (printk(KERN_DEBUG __FILE__ ": Entering: " __FUNCTION__ "\n"))
+#define DBFEXIT  (printk(KERN_DEBUG __FILE__ ": Exiting:  " __FUNCTION__ "\n"))
 #else
-#define DBFENTER (NULL)
-#define DBFEXIT  (NULL)
+#define DBFENTER do {} while (0)
+#define DBFEXIT  do {} while (0)
 #endif
 
 /*-------------------------------------------------------------------
@@ -163,7 +163,7 @@ static __u8 root_hub_hub_des[] =
 #define CHECK_ALIGN(x) if (((__u32)(x)) & 0x00000003) \
 {panic("Alignment check (DWORD) failed at %s:%s:%d\n", __FILE__, __FUNCTION__, __LINE__);}
 
-static submit_urb_count = 0;
+static unsigned long submit_urb_count = 0;
 
 //#define ETRAX_USB_INTR_IRQ
 //#define ETRAX_USB_INTR_ERROR_FATAL
@@ -178,6 +178,7 @@ static submit_urb_count = 0;
 
 static __u32 ep_usage_bitmask;
 static __u32 ep_really_active;
+static __u32 ep_out_traffic;
 
 static unsigned char RxBuf[RX_BUF_SIZE];
 static USB_IN_Desc_t RxDescList[NBR_OF_RX_DESC] __attribute__ ((aligned (4)));
@@ -196,22 +197,25 @@ static urb_t *URB_List[NBR_OF_EP_DESC];
 static kmem_cache_t *usb_desc_cache;
 static struct usb_bus *etrax_usb_bus;
 
+#ifdef USB_DEBUG_DESC
 static void dump_urb (purb_t purb);
+#endif
 static void init_rx_buffers(void);
 static int etrax_rh_unlink_urb (urb_t *urb);
 static void etrax_rh_send_irq(urb_t *urb);
 static void etrax_rh_init_int_timer(urb_t *urb);
 static void etrax_rh_int_timer_do(unsigned long ptr);
 
-static void etrax_usb_setup_epid(char epid, char devnum, char endpoint,
-				 char packsize, char slow);
-static int etrax_usb_lookup_epid(unsigned char devnum, char endpoint, char slow, int maxp);
+static void etrax_usb_setup_epid(int epid, char devnum, char endpoint,
+				 char packsize, char slow, char out_traffic);
+static int etrax_usb_lookup_epid(unsigned char devnum, char endpoint,
+				 char slow, int maxp, char out_traffic);
 static int etrax_usb_allocate_epid(void);
-static void etrax_usb_free_epid(char epid);
+static void etrax_usb_free_epid(int epid);
 static void cleanup_sb(USB_SB_Desc_t *sb);
 
-static int etrax_usb_do_ctrl_hw_add(urb_t *urb, char epid, char maxlen);
-static int etrax_usb_do_bulk_hw_add(urb_t *urb, char epid, char maxlen);
+static void etrax_usb_do_ctrl_hw_add(urb_t *urb, int epid, char maxlen);
+static void etrax_usb_do_bulk_hw_add(urb_t *urb, int epid, char maxlen);
 
 static int etrax_usb_submit_ctrl_urb(urb_t *urb);
 
@@ -292,10 +296,10 @@ static void dump_ep_desc(USB_EP_Desc_t *ep)
 
 
 #else
-#define dump_urb(...)     (NULL)
-#define dump_ep_desc(...) (NULL)
-#define dump_sb_desc(...) (NULL)
-#define dump_in_desc(...) (NULL)
+#define dump_urb(...)     do {} while (0)
+#define dump_in_desc(...) do {} while (0)
+#define dump_sb_desc(...) do {} while (0)
+#define dump_ep_desc(...) do {} while (0)
 #endif
 
 static void init_rx_buffers(void)
@@ -423,24 +427,18 @@ static void init_tx_intr_ep(void)
 
 static int etrax_usb_unlink_intr_urb(urb_t *urb)
 {
-	struct usb_device *usb_dev = urb->dev;
-	etrax_hc_t *hc = usb_dev->bus->hcpriv;
-
 	USB_EP_Desc_t *tmp_ep;
 	USB_EP_Desc_t *first_ep;
 	
 	USB_EP_Desc_t *ep_desc;
-	USB_SB_Desc_t *sb_desc;
 	
-	char epid;
+	int epid;
 	char devnum;
 	char endpoint;
 	char slow;
 	int maxlen;
+	char out_traffic;
 	int i;
-	
-	etrax_urb_priv_t *urb_priv;
-	unsigned long flags;
 	
 	DBFENTER;
 
@@ -449,8 +447,9 @@ static int etrax_usb_unlink_intr_urb(urb_t *urb)
 	slow = usb_pipeslow(urb->pipe);
 	maxlen = usb_maxpacket(urb->dev, urb->pipe,
 			       usb_pipeout(urb->pipe));
+	out_traffic = usb_pipeout(urb->pipe);
 
-	epid = etrax_usb_lookup_epid(devnum, endpoint, slow, maxlen);
+	epid = etrax_usb_lookup_epid(devnum, endpoint, slow, maxlen, out_traffic);
 	if (epid == -1) {
 		err("Trying to unlink urb that is not in traffic queue!!");
 		return -1;  /* fix this */
@@ -517,18 +516,16 @@ static int etrax_usb_submit_intr_urb(urb_t *urb)
 	USB_EP_Desc_t *tmp_ep;
 	USB_EP_Desc_t *first_ep;
 	
-	USB_SB_Desc_t *sb_desc;
-	
-	char epid;
+	int epid;
 	char devnum;
 	char endpoint;
 	char maxlen;
+	char out_traffic;
 	char slow;
 	int interval;
 	int i;
 	
 	etrax_urb_priv_t *urb_priv;
-	unsigned long flags;
 	
 	DBFENTER;
 
@@ -536,6 +533,7 @@ static int etrax_usb_submit_intr_urb(urb_t *urb)
 	endpoint = usb_pipeendpoint(urb->pipe);
 	maxlen = usb_maxpacket(urb->dev, urb->pipe,
 			       usb_pipeout(urb->pipe));
+	out_traffic = usb_pipeout(urb->pipe);
 
 	slow = usb_pipeslow(urb->pipe);
 	interval = urb->interval;
@@ -543,7 +541,7 @@ static int etrax_usb_submit_intr_urb(urb_t *urb)
 	dbg_intr("Intr traffic for dev %d, endpoint %d, maxlen %d, slow %d",
 		 devnum, endpoint, maxlen, slow);
 	
-	epid = etrax_usb_lookup_epid(devnum, endpoint, slow, maxlen);
+	epid = etrax_usb_lookup_epid(devnum, endpoint, slow, maxlen, out_traffic);
 	if (epid == -1) {
 		epid = etrax_usb_allocate_epid();
 		if (epid == -1) {
@@ -552,7 +550,7 @@ static int etrax_usb_submit_intr_urb(urb_t *urb)
 			return -ENOMEM;
 		}
 		/* Now we have to fill in this ep */
-		etrax_usb_setup_epid(epid, devnum, endpoint, maxlen, slow);
+		etrax_usb_setup_epid(epid, devnum, endpoint, maxlen, slow, out_traffic);
 	}
 	/* Ok, now we got valid endpoint, lets insert some traffic */
 
@@ -641,7 +639,7 @@ static int etrax_usb_submit_intr_urb(urb_t *urb)
 }
 
 
-static int handle_intr_transfer_attn(char epid, int status)
+static void handle_intr_transfer_attn(int epid, int status)
 {
 	urb_t *old_urb;
 
@@ -782,7 +780,7 @@ static void etrax_rh_int_timer_do(unsigned long ptr)
 /*	DBFEXIT; */
 }
 
-static void etrax_usb_setup_epid(char epid, char devnum, char endpoint, char packsize, char slow)
+static void etrax_usb_setup_epid(int epid, char devnum, char endpoint, char packsize, char slow, char out_traffic)
 {
 	unsigned long flags;
 	
@@ -800,8 +798,6 @@ static void etrax_usb_setup_epid(char epid, char devnum, char endpoint, char pac
 	}
 	
 	set_bit(epid, (void *)&ep_usage_bitmask);
-	dbg_ep("Setting up ep_id %d with devnum %d, endpoint %d and max_len %d",
-	       epid, devnum, endpoint, packsize);
 	
 	*R_USB_EPT_INDEX = IO_FIELD(R_USB_EPT_INDEX, value, epid);
 	nop();
@@ -811,12 +807,20 @@ static void etrax_usb_setup_epid(char epid, char devnum, char endpoint, char pac
 		IO_FIELD(R_USB_EPT_DATA, max_len, packsize) |
 		IO_FIELD(R_USB_EPT_DATA, low_speed, slow);
 
+	if (out_traffic)
+		set_bit(epid, (void *)&ep_out_traffic);
+	else
+		clear_bit(epid, (void *)&ep_out_traffic);
+
 	restore_flags(flags);
+
+	dbg_ep("Setting up ep_id %d with devnum %d, endpoint %d and max_len %d (%s)",
+	       epid, devnum, endpoint, packsize, out_traffic ? "OUT" : "IN");
 
 	DBFEXIT;
 }
 
-static void etrax_usb_free_epid(char epid)
+static void etrax_usb_free_epid(int epid)
 {
 	unsigned long flags;
 	
@@ -846,7 +850,7 @@ static void etrax_usb_free_epid(char epid)
 }
 
 
-static int etrax_usb_lookup_epid(unsigned char devnum, char endpoint, char slow, int maxp)
+static int etrax_usb_lookup_epid(unsigned char devnum, char endpoint, char slow, int maxp, char out_traffic)
 {
 	int i;
 	unsigned long flags;
@@ -855,10 +859,12 @@ static int etrax_usb_lookup_epid(unsigned char devnum, char endpoint, char slow,
 	DBFENTER;
 
 	save_flags(flags);
-	
+	cli();
+
 	/* Skip first ep_id since it is reserved when intr. or iso traffic is used */
 	for (i = 0; i < NBR_OF_EP_DESC; i++) {
-		if (test_bit(i, (void *)&ep_usage_bitmask)) {
+		if (test_bit(i, (void *)&ep_usage_bitmask) &&
+		    test_bit(i, (void *)&ep_out_traffic) == out_traffic) {
 			*R_USB_EPT_INDEX = IO_FIELD(R_USB_EPT_INDEX, value, i);
 			nop();
 			data = *R_USB_EPT_DATA;
@@ -869,8 +875,8 @@ static int etrax_usb_lookup_epid(unsigned char devnum, char endpoint, char slow,
 			    (IO_EXTRACT(R_USB_EPT_DATA, max_len, data) == maxp)) {
 				restore_flags(flags);
 	
-				dbg_ep("Found ep_id %d for devnum %d, endpoint %d",
-				       i, devnum, endpoint);
+				dbg_ep("Found ep_id %d for devnum %d, endpoint %d (%s)",
+				       i, devnum, endpoint, out_traffic ? "OUT" : "IN");
 				DBFEXIT;
 				return i;
 			}
@@ -879,8 +885,8 @@ static int etrax_usb_lookup_epid(unsigned char devnum, char endpoint, char slow,
 
 	restore_flags(flags);
 	
-	dbg_ep("Found no ep_id for devnum %d, endpoint %d",
-	       devnum, endpoint);
+	dbg_ep("Found no ep_id for devnum %d, endpoint %d (%s)",
+	       devnum, endpoint, out_traffic ? "OUT" : "IN");
 	DBFEXIT;
 	return -1;
 }
@@ -906,15 +912,15 @@ static int etrax_usb_allocate_epid(void)
 
 static int etrax_usb_submit_bulk_urb(urb_t *urb)
 {
-	char epid;
+	int epid;
 	char devnum;
 	char endpoint;
 	char maxlen;
+	char out_traffic;
 	char slow;
 
 	urb_t *tmp_urb;
 	
-	etrax_urb_priv_t *urb_priv;
 	unsigned long flags;
 	
 	DBFENTER;
@@ -923,9 +929,10 @@ static int etrax_usb_submit_bulk_urb(urb_t *urb)
 	endpoint = usb_pipeendpoint(urb->pipe);
 	maxlen = usb_maxpacket(urb->dev, urb->pipe,
 			       usb_pipeout(urb->pipe));
+	out_traffic = usb_pipeout(urb->pipe);
 	slow = usb_pipeslow(urb->pipe);
 	
-	epid = etrax_usb_lookup_epid(devnum, endpoint, slow, maxlen);
+	epid = etrax_usb_lookup_epid(devnum, endpoint, slow, maxlen, out_traffic);
 	if (epid == -1) {
 		epid = etrax_usb_allocate_epid();
 		if (epid == -1) {
@@ -934,7 +941,7 @@ static int etrax_usb_submit_bulk_urb(urb_t *urb)
 			return -ENOMEM;
 		}
 		/* Now we have to fill in this ep */
-		etrax_usb_setup_epid(epid, devnum, endpoint, maxlen, slow);
+		etrax_usb_setup_epid(epid, devnum, endpoint, maxlen, slow, out_traffic);
 	}
 	/* Ok, now we got valid endpoint, lets insert some traffic */
 
@@ -962,14 +969,13 @@ static int etrax_usb_submit_bulk_urb(urb_t *urb)
 	return 0;
 }
 
-static int etrax_usb_do_bulk_hw_add(urb_t *urb, char epid, char maxlen)
+static void etrax_usb_do_bulk_hw_add(urb_t *urb, int epid, char maxlen)
 {
 	USB_SB_Desc_t *sb_desc_1;
 
 	etrax_urb_priv_t *urb_priv;
 
 	unsigned long flags;
-	__u32 r_usb_ept_data;
 
 	DBFENTER;
 
@@ -1078,7 +1084,7 @@ static int etrax_usb_do_bulk_hw_add(urb_t *urb, char epid, char maxlen)
 	DBFEXIT;
 }
 
-static int handle_bulk_transfer_attn(char epid, int status)
+static void handle_bulk_transfer_attn(int epid, int status)
 {
 	urb_t *old_urb;
 	etrax_urb_priv_t *hc_priv;
@@ -1129,8 +1135,9 @@ static int handle_bulk_transfer_attn(char epid, int status)
 		usb_settoggle(old_urb->dev, usb_pipeendpoint(old_urb->pipe),
 			      usb_pipeout(old_urb->pipe), toggle);
 	}
+
 	restore_flags(flags);
-	
+
 	/* If there are any more URB's in the list we'd better start sending */
 	if (URB_List[epid]) {
 		etrax_usb_do_bulk_hw_add(URB_List[epid], epid,
@@ -1161,15 +1168,15 @@ static int handle_bulk_transfer_attn(char epid, int status)
 
 static int etrax_usb_submit_ctrl_urb(urb_t *urb)
 {
-	char epid;
+	int epid;
 	char devnum;
 	char endpoint;
 	char maxlen;
+	char out_traffic;
 	char slow;
 
 	urb_t *tmp_urb;
 	
-	etrax_urb_priv_t *urb_priv;
 	unsigned long flags;
 	
 	DBFENTER;
@@ -1178,9 +1185,10 @@ static int etrax_usb_submit_ctrl_urb(urb_t *urb)
 	endpoint = usb_pipeendpoint(urb->pipe);
 	maxlen = usb_maxpacket(urb->dev, urb->pipe,
 			       usb_pipeout(urb->pipe));
+	out_traffic = usb_pipeout(urb->pipe);
 	slow = usb_pipeslow(urb->pipe);
 	
-	epid = etrax_usb_lookup_epid(devnum, endpoint, slow, maxlen);
+	epid = etrax_usb_lookup_epid(devnum, endpoint, slow, maxlen, out_traffic);
 	if (epid == -1) {
 		epid = etrax_usb_allocate_epid();
 		if (epid == -1) {
@@ -1189,7 +1197,7 @@ static int etrax_usb_submit_ctrl_urb(urb_t *urb)
 			return -ENOMEM;
 		}
 		/* Now we have to fill in this ep */
-		etrax_usb_setup_epid(epid, devnum, endpoint, maxlen, slow);
+		etrax_usb_setup_epid(epid, devnum, endpoint, maxlen, slow, out_traffic);
 	}
 	/* Ok, now we got valid endpoint, lets insert some traffic */
 
@@ -1217,7 +1225,7 @@ static int etrax_usb_submit_ctrl_urb(urb_t *urb)
 	return 0;
 }
 
-static int etrax_usb_do_ctrl_hw_add(urb_t *urb, char epid, char maxlen)
+static void etrax_usb_do_ctrl_hw_add(urb_t *urb, int epid, char maxlen)
 {
 	USB_SB_Desc_t *sb_desc_1;
 	USB_SB_Desc_t *sb_desc_2;
@@ -1226,8 +1234,6 @@ static int etrax_usb_do_ctrl_hw_add(urb_t *urb, char epid, char maxlen)
 	etrax_urb_priv_t *urb_priv;
 
 	unsigned long flags;
-	__u32 r_usb_ept_data;
-	
 
 	DBFENTER;
 
@@ -1365,6 +1371,8 @@ static int etrax_usb_submit_urb(urb_t *urb)
 	
 	DBFENTER;
 
+	urb->next = NULL;
+
 	dump_urb(urb);
 	submit_urb_count++;
 	
@@ -1407,8 +1415,7 @@ static int etrax_usb_unlink_urb(urb_t *urb)
 {
 	etrax_hc_t *hc = urb->dev->bus->hcpriv;
 	int epid;
-	int pos;
-	int devnum, endpoint, slow, maxlen;
+	int devnum, endpoint, slow, maxlen, out_traffic;
 	etrax_urb_priv_t *hc_priv;
 	unsigned long flags;
 	
@@ -1419,12 +1426,12 @@ static int etrax_usb_unlink_urb(urb_t *urb)
 	slow = usb_pipeslow(urb->pipe);
 	maxlen = usb_maxpacket(urb->dev, urb->pipe,
 			       usb_pipeout(urb->pipe));
+	out_traffic = usb_pipeout(urb->pipe);
 
-	epid = etrax_usb_lookup_epid(devnum, endpoint, slow, maxlen);
+	epid = etrax_usb_lookup_epid(devnum, endpoint, slow, maxlen, out_traffic);
 
 	if (epid == -1)
 		return 0;
-	
 	
 	if (usb_pipedevice(urb->pipe) == hc->rh.devnum) {
 		int ret;
@@ -1449,35 +1456,37 @@ static int etrax_usb_unlink_urb(urb_t *urb)
 	
 	for (epid = 0; epid < 32; epid++) {
 		urb_t *u = URB_List[epid];
-		pos = 0;
+		urb_t *prev = NULL;
+		int pos = 0;
 
 		for (; u; u = u->next) {
 			pos++;
 			if (u == urb) {
-				info("Found urb at epid %d, pos %d", epid, pos);
+				if (!prev) {
+					URB_List[epid] = u->next;
+				} else {
+					prev->next = u->next;
+				}
 
-				if (pos == 1) {
+				restore_flags(flags);
+
+				if (!prev) {
 					if (usb_pipetype(u->pipe) == PIPE_CONTROL) {
 						if (TxCtrlEPList[epid].command & IO_MASK(USB_EP_command, enable)) {
 							/* The EP was enabled, disable it and wait */
 							TxCtrlEPList[epid].command &= ~IO_MASK(USB_EP_command, enable);
 							while (*R_DMA_CH8_SUB1_EP == virt_to_phys(&TxCtrlEPList[epid]));
 						}
-						
 					} else if (usb_pipetype(u->pipe) == PIPE_BULK) {
 						if (TxBulkEPList[epid].command & IO_MASK(USB_EP_command, enable)) {
 							TxBulkEPList[epid].command &= ~IO_MASK(USB_EP_command, enable);
 							while (*R_DMA_CH8_SUB0_EP == virt_to_phys(&TxBulkEPList[epid]));
 						}
 					}
-
-					URB_List[epid] = u->next;
-				
-				} else {
-					urb_t *up;
-					for (up = URB_List[epid]; up->next != u; up = up->next);
-					up->next = u->next;
 				}
+
+				info("Found urb at epid %d, pos %d", epid, pos);
+
 				u->status = -ENOENT;
 				if (u->complete) {
 					u->complete(u);
@@ -1486,7 +1495,11 @@ static int etrax_usb_unlink_urb(urb_t *urb)
 				hc_priv = (etrax_urb_priv_t *)u->hcpriv;
 				cleanup_sb(hc_priv->first_sb);
 				kfree(hc_priv);
+
+				DBFEXIT;
+				return 0;
 			}
+			prev = u;
 		}
 	}
 
@@ -1519,13 +1532,6 @@ static int etrax_usb_deallocate_dev(struct usb_device *usb_dev)
 
 static void etrax_usb_tx_interrupt(int irq, void *vhc, struct pt_regs *regs)
 {
-	etrax_hc_t *hc = (etrax_hc_t *)vhc;
-	int epid;
-	char eol;
-	urb_t *urb;
-	USB_EP_Desc_t *tmp_ep;
-	USB_SB_Desc_t *tmp_sb;
-	
 	DBFENTER;
 
 	if (*R_IRQ_READ2 & IO_MASK(R_IRQ_READ2, dma8_sub0_descr)) {
@@ -1589,8 +1595,8 @@ static void etrax_usb_rx_interrupt(int irq, void *vhc, struct pt_regs *regs)
 			} else {
 				if ((urb_priv->rx_offset + myNextRxDesc->hw_len) >
 				    urb->transfer_buffer_length) {
-					err("Packet (epid: %d) in RX buffer was bigger "
-					    "than the URB has room for !!!", epid);
+					err("Packet (epid: %d) in RX buffer (%d) was bigger "
+					    "than the URB has room for (%d)!!!", epid, urb_priv->rx_offset + myNextRxDesc->hw_len, urb->transfer_buffer_length);
 					goto skip_out;
 				}
 				
@@ -1606,7 +1612,7 @@ static void etrax_usb_rx_interrupt(int irq, void *vhc, struct pt_regs *regs)
 			
 		} else {
 			err("This is almost fatal, inpacket for epid %d which does not exist "
-			    " or is out !!!\nURB was at 0x%08X", epid, urb);
+			    " or is out!!!\nURB was at 0x%08lX", epid, (unsigned long)urb);
 			
 			goto skip_out;
 		}
@@ -1647,7 +1653,7 @@ static void cleanup_sb(USB_SB_Desc_t *sb)
 
 }
 
-static int handle_control_transfer_attn(char epid, int status)
+static void handle_control_transfer_attn(int epid, int status)
 {
 	urb_t *old_urb;
 	etrax_urb_priv_t *hc_priv;	
@@ -1710,7 +1716,6 @@ static int handle_control_transfer_attn(char epid, int status)
 static void etrax_usb_hc_intr_bottom_half(void *data)
 {
 	struct usb_reg_context *reg = (struct usb_reg_context *)data;
-	urb_t *old_urb;
 	
 	int error_code;
 	int epid;
@@ -1804,7 +1809,7 @@ static void etrax_usb_hc_intr_bottom_half(void *data)
 
 			if (URB_List[epid] == NULL) {
 				err("R_USB_EPT_DATA is 0x%08X", r_usb_ept_data);
-				err("submit urb has been called %d times..", submit_urb_count);
+				err("submit urb has been called %lu times..", submit_urb_count);
 				err("EPID_ATTN for epid %d, with NULL entry in list", epid);
 				return;
 			}
@@ -1822,7 +1827,7 @@ static void etrax_usb_hc_intr_bottom_half(void *data)
 				if (IO_EXTRACT(R_USB_EPT_DATA, error_count_out, r_usb_ept_data) == 3 ||
 				    IO_EXTRACT(R_USB_EPT_DATA, error_count_in, r_usb_ept_data) == 3) {
 				/* Actually there were transmission errors */
-					warn("Undefined error for endpoint %d", epid);
+					warn("Undefined error for epid %d", epid);
 					if (usb_pipetype(URB_List[epid]->pipe) == PIPE_CONTROL) {
 						handle_control_transfer_attn(epid, -EPROTO);
 					} else if (usb_pipetype(URB_List[epid]->pipe) == PIPE_BULK) {
@@ -1861,7 +1866,7 @@ static void etrax_usb_hc_intr_bottom_half(void *data)
 				}
 				
 			} else if (error_code == IO_STATE_VALUE(R_USB_EPT_DATA, error_code, stall)) {
-				warn("Stall for endpoint %d", epid);
+				warn("Stall for epid %d", epid);
 				if (usb_pipetype(URB_List[epid]->pipe) == PIPE_CONTROL) {
 					handle_control_transfer_attn(epid, -EPIPE);
 				} else if (usb_pipetype(URB_List[epid]->pipe) == PIPE_BULK) {
@@ -1872,10 +1877,10 @@ static void etrax_usb_hc_intr_bottom_half(void *data)
 				
 				
 			} else if (error_code == IO_STATE_VALUE(R_USB_EPT_DATA, error_code, bus_error)) {
-				panic("USB bus error for endpoint %d\n", epid);
+				panic("USB bus error for epid %d\n", epid);
 				
 			} else if (error_code == IO_STATE_VALUE(R_USB_EPT_DATA, error_code, buffer_error)) {
-				warn("Buffer error for endpoint %d", epid);
+				warn("Buffer error for epid %d", epid);
 
 				if (usb_pipetype(URB_List[epid]->pipe) == PIPE_CONTROL) {
 					handle_control_transfer_attn(epid, -EPROTO);
@@ -1985,11 +1990,7 @@ static int etrax_rh_submit_urb(urb_t *urb)
 	void *data = urb->transfer_buffer;
 	int leni = urb->transfer_buffer_length;
 	int len = 0;
-	int status = 0;
 	int stat = 0;
-	int i;
-
-	__u16 cstatus;
 
 	__u16 bmRType_bReq;
 	__u16 wValue;
@@ -2281,7 +2282,7 @@ static int etrax_rh_submit_urb(urb_t *urb)
 						   0xff, "ETRAX 100LX",
 						   data, wLength);
 			if (len > 0) {
-				OK(min_t(int, leni, len));
+				OK(min(leni, len));
 			} else 
 				stat = -EPIPE;
 		}
@@ -2306,7 +2307,7 @@ static int etrax_rh_submit_urb(urb_t *urb)
 
 	urb->actual_length = len;
 	urb->status = stat;
-	urb->dev=NULL;
+	urb->dev = NULL;
 	if (urb->complete) {
 		urb->complete (urb);
 	}
@@ -2356,6 +2357,7 @@ static int __init etrax_usb_hc_init(void)
 	ep_usage_bitmask = 0;
 	set_bit(0, (void *)&ep_usage_bitmask);
 	ep_really_active = 0;
+	ep_out_traffic = 0;
 
 	memset(URB_List, 0, sizeof(URB_List));
 

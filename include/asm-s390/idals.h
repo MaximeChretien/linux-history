@@ -10,7 +10,7 @@
 #include <linux/config.h>
 #include <asm/irq.h>
 
-#define IDA_SIZE_LOG 12 /* 11 for 2k , 12 for 4k */
+#define IDA_SIZE_LOG 11 /* 11 for 2k , 12 for 4k */
 #define IDA_BLOCK_SIZE (1L<<IDA_SIZE_LOG)
 
 static inline addr_t *

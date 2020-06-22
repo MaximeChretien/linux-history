@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.setup.c 1.65 11/18/01 20:57:25 trini
+ * BK Id: SCCS/s.setup.c 1.67 12/01/01 20:09:07 benh
  */
 /*
  * Common prep/pmac/chrp boot and setup code.
@@ -43,9 +43,9 @@
 #include <asm/bootx.h>
 #include <asm/btext.h>
 #include <asm/machdep.h>
-#include <asm/feature.h>
 #include <asm/uaccess.h>
 #include <asm/system.h>
+#include <asm/pmac_feature.h>
 
 extern void platform_init(unsigned long r3, unsigned long r4,
 		unsigned long r5, unsigned long r6, unsigned long r7);
@@ -547,8 +547,13 @@ void __init setup_arch(char **cmdline_p)
 	loops_per_jiffy = 500000000 / HZ;
 
 #ifdef CONFIG_ALL_PPC
-	feature_init();
-#endif
+	/* This could be called "early setup arch", it must be done
+	 * now because xmon need it
+	 */
+	if (_machine == _MACH_Pmac)
+		pmac_feature_init();	/* New cool way */
+#endif /* CONFIG_ALL_PPC */
+
 #ifdef CONFIG_XMON
 	xmon_map_scc();
 	if (strstr(cmd_line, "xmon"))

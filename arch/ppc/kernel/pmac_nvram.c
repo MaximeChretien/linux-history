@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.pmac_nvram.c 1.15 09/08/01 15:47:42 paulus
+ * BK Id: SCCS/s.pmac_nvram.c 1.17 12/01/01 20:09:06 benh
  */
 /*
  * Miscellaneous procedures for dealing with the PowerMac hardware.
@@ -326,7 +326,7 @@ nvram_read_byte(int addr)
 			break;
 		while (!req.complete)
 			pmu_poll();
-		return req.reply[1];
+		return req.reply[0];
 	}
 #endif
 	case 1:

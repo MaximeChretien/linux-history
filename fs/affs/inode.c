@@ -68,7 +68,7 @@ affs_read_inode(struct inode *inode)
 	inode->i_size = 0;
 	inode->i_nlink = 1;
 	inode->i_mode = 0;
-	memset(AFFS_INODE, 0, sizeof(struct affs_inode_info));
+	memset(AFFS_INODE, 0, sizeof(*AFFS_INODE));
 	init_MUTEX(&AFFS_INODE->i_link_lock);
 	init_MUTEX(&AFFS_INODE->i_ext_lock);
 	AFFS_INODE->i_extcnt = 1;
@@ -318,7 +318,7 @@ affs_new_inode(struct inode *dir)
 	inode->i_ino     = block;
 	inode->i_nlink   = 1;
 	inode->i_mtime   = inode->i_atime = inode->i_ctime = CURRENT_TIME;
-	memset(AFFS_INODE, 0, sizeof(struct affs_inode_info));
+	memset(AFFS_INODE, 0, sizeof(*AFFS_INODE));
 	AFFS_INODE->i_extcnt = 1;
 	AFFS_INODE->i_ext_last = ~1;
 	init_MUTEX(&AFFS_INODE->i_link_lock);

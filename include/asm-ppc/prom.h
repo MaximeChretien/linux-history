@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.prom.h 1.19 08/17/01 15:23:17 paulus
+ * BK Id: SCCS/s.prom.h 1.21 12/01/01 20:09:11 benh
  */
 /*
  * Definitions for talking to the Open Firmware PROM on
@@ -85,6 +85,10 @@ extern void prom_add_property(struct device_node* np, struct property* prop);
 extern void prom_get_irq_senses(unsigned char *, int, int);
 extern int prom_n_addr_cells(struct device_node* np);
 extern int prom_n_size_cells(struct device_node* np);
+
+extern struct resource*
+request_OF_resource(struct device_node* node, int index, const char* name_postfix);
+extern int release_OF_resource(struct device_node* node, int index);
 
 extern void print_properties(struct device_node *node);
 extern int call_rtas(const char *service, int nargs, int nret,

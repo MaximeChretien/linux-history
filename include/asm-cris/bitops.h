@@ -331,6 +331,17 @@ static __inline__ int find_next_zero_bit (void * addr, int size, int offset)
 #define find_first_zero_bit(addr, size) \
         find_next_zero_bit((addr), (size), 0)
 
+/*
+ * hweightN - returns the hamming weight of a N-bit word
+ * @x: the word to weigh
+ *
+ * The Hamming Weight of a number is the total number of bits set in it.
+ */
+
+#define hweight32(x) generic_hweight32(x)
+#define hweight16(x) generic_hweight16(x)
+#define hweight8(x) generic_hweight8(x)
+
 #define ext2_set_bit                 test_and_set_bit
 #define ext2_clear_bit               test_and_clear_bit
 #define ext2_test_bit                test_bit

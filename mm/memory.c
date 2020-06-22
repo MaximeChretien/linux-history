@@ -177,7 +177,7 @@ int copy_page_range(struct mm_struct *dst, struct mm_struct *src,
 	pgd_t * src_pgd, * dst_pgd;
 	unsigned long address = vma->vm_start;
 	unsigned long end = vma->vm_end;
-	unsigned long cow = (vma->vm_flags & (VM_SHARED | VM_WRITE)) == VM_WRITE;
+	unsigned long cow = (vma->vm_flags & (VM_SHARED | VM_MAYWRITE)) == VM_MAYWRITE;
 
 	src_pgd = pgd_offset(src, address)-1;
 	dst_pgd = pgd_offset(dst, address)-1;
@@ -245,7 +245,7 @@ skip_copy_pte_range:		address = (address + PMD_SIZE) & PMD_MASK;
 					goto cont_copy_pte_range;
 
 				/* If it's a COW mapping, write protect it both in the parent and the child */
-				if (cow) {
+				if (cow && pte_write(pte)) {
 					ptep_set_wrprotect(src_pte);
 					pte = *src_pte;
 				}
@@ -442,23 +442,34 @@ static inline struct page * get_page_map(struct page *page)
 	return page;
 }
 
+/*
+ * Please read Documentation/cachetlb.txt before using this function,
+ * accessing foreign memory spaces can cause cache coherency problems.
+ *
+ * Accessing a VM_IO area is even more dangerous, therefore the function
+ * fails if pages is != NULL and a VM_IO area is found.
+ */
 int get_user_pages(struct task_struct *tsk, struct mm_struct *mm, unsigned long start,
 		int len, int write, int force, struct page **pages, struct vm_area_struct **vmas)
 {
-	int i = 0;
+	int i;
+	unsigned int flags;
+
+	/*
+	 * Require read or write permissions.
+	 * If 'force' is set, we only require the "MAY" flags.
+	 */
+	flags = write ? (VM_WRITE | VM_MAYWRITE) : (VM_READ | VM_MAYREAD);
+	flags &= force ? (VM_MAYREAD | VM_MAYWRITE) : (VM_READ | VM_WRITE);
+	i = 0;
 
 	do {
 		struct vm_area_struct *	vma;
 
 		vma = find_extend_vma(mm, start);
 
-		if ( !vma ||
-		    (!force &&
-		     	((write && (!(vma->vm_flags & VM_WRITE))) ||
-		    	 (!write && (!(vma->vm_flags & VM_READ))) ) )) {
-			if (i) return i;
-			return -EFAULT;
-		}
+		if ( !vma || (pages && vma->vm_flags & VM_IO) || !(flags & vma->vm_flags) )
+			return i ? : -EFAULT;
 
 		spin_lock(&mm->page_table_lock);
 		do {
@@ -486,8 +497,9 @@ int get_user_pages(struct task_struct *tsk, struct mm_struct *mm, unsigned long 
 				/* FIXME: call the correct function,
 				 * depending on the type of the found page
 				 */
-				if (pages[i])
-					page_cache_get(pages[i]);
+				if (!pages[i])
+					goto bad_page;
+				page_cache_get(pages[i]);
 			}
 			if (vmas)
 				vmas[i] = vma;
@@ -497,7 +509,19 @@ int get_user_pages(struct task_struct *tsk, struct mm_struct *mm, unsigned long 
 		} while(len && start < vma->vm_end);
 		spin_unlock(&mm->page_table_lock);
 	} while(len);
+out:
 	return i;
+
+	/*
+	 * We found an invalid page in the VMA.  Release all we have
+	 * so far and fail.
+	 */
+bad_page:
+	spin_unlock(&mm->page_table_lock);
+	while (i--)
+		page_cache_release(pages[i]);
+	i = -EFAULT;
+	goto out;
 }
 
 /*

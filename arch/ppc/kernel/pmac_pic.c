@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.pmac_pic.c 1.20 09/08/01 15:47:42 paulus
+ * BK Id: SCCS/s.pmac_pic.c 1.24 12/19/01 10:53:01 paulus
  */
 #include <linux/config.h>
 #include <linux/stddef.h>
@@ -18,44 +18,52 @@
 #include "pmac_pic.h"
 #include "open_pic.h"
 
-/* pmac */struct pmac_irq_hw {
-        unsigned int    flag;
+struct pmac_irq_hw {
+        unsigned int    event;
         unsigned int    enable;
         unsigned int    ack;
         unsigned int    level;
 };
 
-/* XXX these addresses should be obtained from the device tree */
-static volatile struct pmac_irq_hw *pmac_irq_hw[4] = {
+/* Default addresses */
+static volatile struct pmac_irq_hw *pmac_irq_hw[4] __pmacdata = {
         (struct pmac_irq_hw *) 0xf3000020,
         (struct pmac_irq_hw *) 0xf3000010,
         (struct pmac_irq_hw *) 0xf4000020,
         (struct pmac_irq_hw *) 0xf4000010,
 };
 
-static int max_irqs;
-static int max_real_irqs;
+#define GC_LEVEL_MASK		0x3ff00000
+#define OHARE_LEVEL_MASK	0x1ff00000
+#define HEATHROW_LEVEL_MASK	0x1ff00000
 
-static spinlock_t pmac_pic_lock = SPIN_LOCK_UNLOCKED;
+static int max_irqs __pmacdata;
+static int max_real_irqs __pmacdata;
+static u32 level_mask[4] __pmacdata;
+
+static spinlock_t pmac_pic_lock __pmacdata = SPIN_LOCK_UNLOCKED;
 
 
 #define GATWICK_IRQ_POOL_SIZE        10
-static struct interrupt_info gatwick_int_pool[GATWICK_IRQ_POOL_SIZE];
+static struct interrupt_info gatwick_int_pool[GATWICK_IRQ_POOL_SIZE] __pmacdata;
 
 /*
  * Mark an irq as "lost".  This is only used on the pmac
  * since it can lose interrupts (see pmac_set_irq_mask).
  * -- Cort
  */
-void __pmac __set_lost(unsigned long irq_nr)
+void __pmac
+__set_lost(unsigned long irq_nr, int nokick)
 {
 	if (!test_and_set_bit(irq_nr, ppc_lost_interrupts)) {
 		atomic_inc(&ppc_n_lost_interrupts);
-		set_dec(1);
+		if (!nokick)
+			set_dec(1);
 	}
 }
 
-static void __pmac pmac_mask_and_ack_irq(unsigned int irq_nr)
+static void __pmac
+pmac_mask_and_ack_irq(unsigned int irq_nr)
 {
         unsigned long bit = 1UL << (irq_nr & 0x1f);
         int i = irq_nr >> 5;
@@ -68,18 +76,18 @@ static void __pmac pmac_mask_and_ack_irq(unsigned int irq_nr)
         if (test_and_clear_bit(irq_nr, ppc_lost_interrupts))
                 atomic_dec(&ppc_n_lost_interrupts);
 	spin_lock_irqsave(&pmac_pic_lock, flags);
-        out_le32(&pmac_irq_hw[i]->ack, bit);
         out_le32(&pmac_irq_hw[i]->enable, ppc_cached_irq_mask[i]);
         out_le32(&pmac_irq_hw[i]->ack, bit);
         do {
                 /* make sure ack gets to controller before we enable
                    interrupts */
                 mb();
-        } while(in_le32(&pmac_irq_hw[i]->flag) & bit);
+        } while((in_le32(&pmac_irq_hw[i]->enable) & bit)
+                != (ppc_cached_irq_mask[i] & bit));
 	spin_unlock_irqrestore(&pmac_pic_lock, flags);
 }
 
-static void __pmac pmac_set_irq_mask(unsigned int irq_nr)
+static void __pmac pmac_set_irq_mask(unsigned int irq_nr, int nokicklost)
 {
         unsigned long bit = 1UL << (irq_nr & 0x1f);
         int i = irq_nr >> 5;
@@ -104,31 +112,29 @@ static void __pmac pmac_set_irq_mask(unsigned int irq_nr)
          * when the device interrupt is already on *doesn't* set
          * the bit in the flag register or request another interrupt.
          */
-        if ((bit & ppc_cached_irq_mask[i])
-            && (ld_le32(&pmac_irq_hw[i]->level) & bit)
-            && !(ld_le32(&pmac_irq_hw[i]->flag) & bit))
-		__set_lost((ulong)irq_nr);
+        if (bit & ppc_cached_irq_mask[i] & in_le32(&pmac_irq_hw[i]->level))
+		__set_lost((ulong)irq_nr, nokicklost);
 	spin_unlock_irqrestore(&pmac_pic_lock, flags);
 }
 
 static void __pmac pmac_mask_irq(unsigned int irq_nr)
 {
         clear_bit(irq_nr, ppc_cached_irq_mask);
-        pmac_set_irq_mask(irq_nr);
+        pmac_set_irq_mask(irq_nr, 0);
         mb();
 }
 
 static void __pmac pmac_unmask_irq(unsigned int irq_nr)
 {
         set_bit(irq_nr, ppc_cached_irq_mask);
-        pmac_set_irq_mask(irq_nr);
+        pmac_set_irq_mask(irq_nr, 0);
 }
 
 static void __pmac pmac_end_irq(unsigned int irq_nr)
 {
 	if (!(irq_desc[irq_nr].status & (IRQ_DISABLED|IRQ_INPROGRESS))) {
         	set_bit(irq_nr, ppc_cached_irq_mask);
-	        pmac_set_irq_mask(irq_nr);
+	        pmac_set_irq_mask(irq_nr, 1);
 	}
 }
 
@@ -161,8 +167,10 @@ static void gatwick_action(int cpl, void *dev_id, struct pt_regs *regs)
 	
 	for (irq = max_irqs; (irq -= 32) >= max_real_irqs; ) {
 		int i = irq >> 5;
-		bits = ld_le32(&pmac_irq_hw[i]->flag)
-			| ppc_lost_interrupts[i];
+		bits = in_le32(&pmac_irq_hw[i]->event) | ppc_lost_interrupts[i];
+		/* We must read level interrupts from the level register */
+		bits |= (in_le32(&pmac_irq_hw[i]->level) & level_mask[i]);
+		bits &= ppc_cached_irq_mask[i];
 		if (bits == 0)
 			continue;
 		irq += __ilog2(bits);
@@ -195,8 +203,10 @@ pmac_get_irq(struct pt_regs *regs)
 #endif /* CONFIG_SMP */
 	for (irq = max_real_irqs; (irq -= 32) >= 0; ) {
 		int i = irq >> 5;
-		bits = ld_le32(&pmac_irq_hw[i]->flag)
-			| ppc_lost_interrupts[i];
+		bits = in_le32(&pmac_irq_hw[i]->event) | ppc_lost_interrupts[i];
+		/* We must read level interrupts from the level register */
+		bits |= (in_le32(&pmac_irq_hw[i]->level) & level_mask[i]);
+		bits &= ppc_cached_irq_mask[i];
 		if (bits == 0)
 			continue;
 		irq += __ilog2(bits);
@@ -374,6 +384,24 @@ pmac_pic_init(void)
 		irqctrler = NULL;
 	}
 
+	/* Get the level/edge settings, assume if it's not
+	 * a Grand Central nor an OHare, then it's an Heathrow
+	 * (or Paddington).
+	 */
+	if (find_devices("gc"))
+		level_mask[0] = GC_LEVEL_MASK;
+	else if (find_devices("ohare")) {
+		level_mask[0] = OHARE_LEVEL_MASK;
+		/* We might have a second cascaded ohare */
+		level_mask[1] = OHARE_LEVEL_MASK;
+	} else {
+		level_mask[0] = HEATHROW_LEVEL_MASK;
+		level_mask[1] = 0;
+		/* We might have a second cascaded heathrow */
+		level_mask[2] = HEATHROW_LEVEL_MASK;
+		level_mask[3] = 0;
+	}
+
 	/*
 	 * G3 powermacs and 1999 G3 PowerBooks have 64 interrupts,
 	 * 1998 G3 Series PowerBooks have 128, 
@@ -433,6 +461,10 @@ pmac_pic_init(void)
 	/* disable all interrupts in all controllers */
 	for (i = 0; i * 32 < max_irqs; ++i)
 		out_le32(&pmac_irq_hw[i]->enable, 0);
+	/* mark level interrupts */
+	for (i = 0; i < max_irqs; i++)
+		if (level_mask[i >> 5] & (1UL << (i & 0x1f)))
+			irq_desc[i].status = IRQ_LEVEL;
 	
 	/* get interrupt line of secondary interrupt controller */
 	if (irq_cascade >= 0) {
@@ -474,7 +506,7 @@ pmac_sleep_save_intrs(int viaint)
 	out_le32(&pmac_irq_hw[0]->enable, ppc_cached_irq_mask[0]);
 	if (max_real_irqs > 32)
 		out_le32(&pmac_irq_hw[1]->enable, ppc_cached_irq_mask[1]);
-	(void)in_le32(&pmac_irq_hw[0]->flag);
+	(void)in_le32(&pmac_irq_hw[0]->event);
 	/* make sure mask gets to controller before we return to caller */
 	mb();
         (void)in_le32(&pmac_irq_hw[0]->enable);

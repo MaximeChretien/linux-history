@@ -1,4 +1,4 @@
-/* $Id: zs.c,v 1.68 2001/10/25 18:48:03 davem Exp $
+/* $Id: zs.c,v 1.68.2.2 2002/01/12 07:04:33 davem Exp $
  * zs.c: Zilog serial port driver for the Sparc.
  *
  * Copyright (C) 1995 David S. Miller (davem@caip.rutgers.edu)
@@ -7,6 +7,10 @@
  *
  * Fixed to use tty_get_baud_rate().
  *   Theodore Ts'o <tytso@mit.edu>, 2001-Oct-12
+ *
+ * /proc/tty/driver/serial now exists and is readable.
+ *   Alex Buell <alex.buell@tahallah.demon.co.uk>, 2001-12-23
+ *
  */
 
 #include <linux/errno.h>
@@ -486,10 +490,19 @@ extern void breakpoint(void);  /* For the KGDB frame character */
 static void receive_chars(struct sun_serial *info, struct pt_regs *regs)
 {
 	struct tty_struct *tty = info->tty;
-	unsigned char ch, stat;
-	int do_queue_task = 1;
+	int do_queue_task = 0;
 
-	do {
+	while (1) {
+		unsigned char ch, r1;
+
+		r1 = read_zsreg(info->zs_channel, R1);
+		if (r1 & (PAR_ERR | Rx_OVR | CRC_ERR)) {
+			sbus_writeb(ERR_RES, &info->zs_channel->control);
+			ZSDELAY();
+			ZS_WSYNC(info->zs_channel);
+			ZSLOG(REGCTRL, ERR_RES, 1);
+		}
+
 		ch = sbus_readb(&info->zs_channel->data);
 		ZSLOG(REGDATA, ch, 0);
 		ch &= info->parity_mask;
@@ -498,17 +511,17 @@ static void receive_chars(struct sun_serial *info, struct pt_regs *regs)
 		/* If this is the console keyboard, we need to handle
 		 * L1-A's here.
 		 */
-		if(info->cons_keyb) {
-			if(ch == SUNKBD_RESET) {
+		if (info->cons_keyb) {
+			if (ch == SUNKBD_RESET) {
 				l1a_state.kbd_id = 1;
 				l1a_state.l1_down = 0;
-			} else if(l1a_state.kbd_id) {
+			} else if (l1a_state.kbd_id) {
 				l1a_state.kbd_id = 0;
-			} else if(ch == SUNKBD_L1) {
+			} else if (ch == SUNKBD_L1) {
 				l1a_state.l1_down = 1;
-			} else if(ch == (SUNKBD_L1|SUNKBD_UP)) {
+			} else if (ch == (SUNKBD_L1|SUNKBD_UP)) {
 				l1a_state.l1_down = 0;
-			} else if(ch == SUNKBD_A && l1a_state.l1_down) {
+			} else if (ch == SUNKBD_A && l1a_state.l1_down) {
 				/* whee... */
 				batten_down_hatches();
 				/* Continue execution... */
@@ -517,16 +530,14 @@ static void receive_chars(struct sun_serial *info, struct pt_regs *regs)
 				return;
 			}
 			sunkbd_inchar(ch, regs);
-			do_queue_task = 0;
 			goto next_char;
 		}
-		if(info->cons_mouse) {
+		if (info->cons_mouse) {
 			sun_mouse_inbyte(ch, 0);
-			do_queue_task = 0;
 			goto next_char;
 		}
-		if(info->is_cons) {
-			if(ch == 0) {
+		if (info->is_cons) {
+			if (ch == 0) {
 				/* whee, break received */
 				batten_down_hatches();
 				/* Continue execution... */
@@ -540,32 +551,42 @@ static void receive_chars(struct sun_serial *info, struct pt_regs *regs)
 		 * documentation for remote target debugging and
 		 * arch/sparc/kernel/sparc-stub.c to see how all this works.
 		 */
-		if((info->kgdb_channel) && (ch =='\003')) {
+		if (info->kgdb_channel && (ch =='\003')) {
 			breakpoint();
 			return;
 		}
 #endif
-		if(!tty)
+		if (!tty)
 			return;
+
+		do_queue_task++;
 
 		if (tty->flip.count >= TTY_FLIPBUF_SIZE)
 			break;
 
 		tty->flip.count++;
-		*tty->flip.flag_buf_ptr++ = 0;
+		if (r1 & PAR_ERR)
+			*tty->flip.flag_buf_ptr++ = TTY_PARITY;
+		else if (r1 & Rx_OVR)
+			*tty->flip.flag_buf_ptr++ = TTY_OVERRUN;
+		else if (r1 & CRC_ERR)
+			*tty->flip.flag_buf_ptr++ = TTY_FRAME;
+		else
+			*tty->flip.flag_buf_ptr++ = 0;
 		*tty->flip.char_buf_ptr++ = ch;
 
 	next_char:
-		/* Check if we have another character... */
-		stat = sbus_readb(&info->zs_channel->control);
-		ZSDELAY();
-		ZSLOG(REGCTRL, stat, 0);
-		if (!(stat & Rx_CH_AV))
-			break;
+		{
+			unsigned char stat;
 
-		/* ... and see if it is clean. */
-		stat = read_zsreg(info->zs_channel, R1);
-	} while (!(stat & (PAR_ERR | Rx_OVR | CRC_ERR)));
+			/* Check if we have another character... */
+			stat = sbus_readb(&info->zs_channel->control);
+			ZSDELAY();
+			ZSLOG(REGCTRL, stat, 0);
+			if (!(stat & Rx_CH_AV))
+				break;
+		}
+	}
 
 	if (do_queue_task != 0)
 		queue_task(&tty->flip.tqueue, &tq_timer);
@@ -582,7 +603,7 @@ static void transmit_chars(struct sun_serial *info)
 		return;
 	}
 
-	if((info->xmit_cnt <= 0) || (tty != 0 && tty->stopped)) {
+	if ((info->xmit_cnt <= 0) || (tty != 0 && tty->stopped)) {
 		/* That's peculiar... */
 		sbus_writeb(RES_Tx_P, &info->zs_channel->control);
 		ZSDELAY();
@@ -599,7 +620,7 @@ static void transmit_chars(struct sun_serial *info)
 	if (info->xmit_cnt < WAKEUP_CHARS)
 		zs_sched_event(info, RS_EVENT_WRITE_WAKEUP);
 
-	if(info->xmit_cnt <= 0) {
+	if (info->xmit_cnt <= 0) {
 		sbus_writeb(RES_Tx_P, &info->zs_channel->control);
 		ZSDELAY();
 		ZS_WSYNC(info->zs_channel);
@@ -621,14 +642,14 @@ static void status_handle(struct sun_serial *info)
 	ZS_WSYNC(info->zs_channel);
 	ZSLOG(REGCTRL, RES_EXT_INT, 1);
 #if 0
-	if(status & DCD) {
-		if((info->tty->termios->c_cflag & CRTSCTS) &&
-		   ((info->curregs[3] & AUTO_ENAB)==0)) {
+	if (status & DCD) {
+		if ((info->tty->termios->c_cflag & CRTSCTS) &&
+		    ((info->curregs[3] & AUTO_ENAB)==0)) {
 			info->curregs[3] |= AUTO_ENAB;
 			write_zsreg(info->zs_channel, 3, info->curregs[3]);
 		}
 	} else {
-		if((info->curregs[3] & AUTO_ENAB)) {
+		if ((info->curregs[3] & AUTO_ENAB)) {
 			info->curregs[3] &= ~AUTO_ENAB;
 			write_zsreg(info->zs_channel, 3, info->curregs[3]);
 		}
@@ -638,7 +659,7 @@ static void status_handle(struct sun_serial *info)
 	 * 'break asserted' status change interrupt, call
 	 * the boot prom.
 	 */
-	if(status & BRK_ABRT) {
+	if (status & BRK_ABRT) {
 		if (info->break_abort)
 			batten_down_hatches();
 		if (info->cons_mouse)
@@ -651,110 +672,49 @@ static void status_handle(struct sun_serial *info)
 	return;
 }
 
-static void special_receive(struct sun_serial *info)
-{
-	struct tty_struct *tty = info->tty;
-	unsigned char ch, stat;
-
-	stat = read_zsreg(info->zs_channel, R1);
-	if (stat & (PAR_ERR | Rx_OVR | CRC_ERR)) {
-		ch = sbus_readb(&info->zs_channel->data);
-		ZSDELAY();
-		ZSLOG(REGDATA, ch, 0);
-	}
-
-	if (!tty)
-		goto clear;
-
-	if (tty->flip.count >= TTY_FLIPBUF_SIZE)
-		goto done;
-
-	tty->flip.count++;
-	if(stat & PAR_ERR)
-		*tty->flip.flag_buf_ptr++ = TTY_PARITY;
-	else if(stat & Rx_OVR)
-		*tty->flip.flag_buf_ptr++ = TTY_OVERRUN;
-	else if(stat & CRC_ERR)
-		*tty->flip.flag_buf_ptr++ = TTY_FRAME;
-
-done:
-	queue_task(&tty->flip.tqueue, &tq_timer);
-clear:
-	sbus_writeb(ERR_RES, &info->zs_channel->control);
-	ZSDELAY();
-	ZS_WSYNC(info->zs_channel);
-	ZSLOG(REGCTRL, ERR_RES, 1);
-}
-
-
 /*
  * This is the serial driver's generic interrupt routine
  */
 void zs_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 {
 	struct sun_serial *info;
-	unsigned char zs_intreg;
 	int i;
 
 	info = (struct sun_serial *)dev_id;
 	ZSLOG(REGIRQ, 0, 0);
 	for (i = 0; i < NUM_SERIAL; i++) {
-		zs_intreg = read_zsreg(info->zs_next->zs_channel, 2);
-		zs_intreg &= STATUS_MASK;
-
-		/* NOTE: The read register 2, which holds the irq status,
-		 *       does so for both channels on each chip.  Although
-		 *       the status value itself must be read from the B
-		 *       channel and is only valid when read from channel B.
-		 *       When read from channel A, read register 2 contains
-		 *       the value written to write register 2.
-		 */
+		unsigned char r3 = read_zsreg(info->zs_channel, 3);
 
 		/* Channel A -- /dev/ttya or /dev/kbd, could be the console */
-		if (zs_intreg == CHA_Rx_AVAIL) {
-			receive_chars(info, regs);
-			return;
-		}
-		if(zs_intreg == CHA_Tx_EMPTY) {
-			transmit_chars(info);
-			return;
-		}
-		if (zs_intreg == CHA_EXT_STAT) {
-			status_handle(info);
-			return;
-		}
-		if (zs_intreg == CHA_SPECIAL) {
-			special_receive(info);
-			return;
+		if (r3 & (CHAEXT | CHATxIP | CHARxIP)) {
+			sbus_writeb(RES_H_IUS, &info->zs_channel->control);
+			ZSDELAY();
+			ZS_WSYNC(info->zs_channel);
+			ZSLOG(REGCTRL, RES_H_IUS, 1);
+			if (r3 & CHARxIP)
+				receive_chars(info, regs);
+			if (r3 & CHAEXT)
+				status_handle(info);
+			if (r3 & CHATxIP)
+				transmit_chars(info);
 		}
 
 		/* Channel B -- /dev/ttyb or /dev/mouse, could be the console */
-		if(zs_intreg == CHB_Rx_AVAIL) {
-			receive_chars(info->zs_next, regs);
-			return;
-		}
-		if(zs_intreg == CHB_Tx_EMPTY) {
-			transmit_chars(info->zs_next);
-			return;
-		}
-		if (zs_intreg == CHB_EXT_STAT) {
-			status_handle(info->zs_next);
-			return;
+		info = info->zs_next;
+		if (r3 & (CHBEXT | CHBTxIP | CHBRxIP)) {
+			sbus_writeb(RES_H_IUS, &info->zs_channel->control);
+			ZSDELAY();
+			ZS_WSYNC(info->zs_channel);
+			ZSLOG(REGCTRL, RES_H_IUS, 1);
+			if (r3 & CHBRxIP)
+				receive_chars(info, regs);
+			if (r3 & CHBEXT)
+				status_handle(info);
+			if (r3 & CHBTxIP)
+				transmit_chars(info);
 		}
 
-		/* NOTE: The default value for the IRQ status in read register
-		 *       2 in channel B is CHB_SPECIAL, so we need to look at
-		 *       read register 3 in channel A to check if this is a
-		 *       real interrupt, or just the default value.
-		 *       Yes... broken hardware...
-		 */
-
-		zs_intreg = read_zsreg(info->zs_channel, 3);
-		if (zs_intreg & CHBRxIP) {
-			special_receive(info->zs_next);
-			return;
-		}
-		info = info->zs_next->zs_next;
+		info = info->zs_next;
 	}
 }
 
@@ -1699,6 +1659,81 @@ void zs_hangup(struct tty_struct *tty)
 }
 
 /*
+ *
+ * line_info - returns information about each channel
+ *
+ */
+static inline int line_info(char *buf, struct sun_serial *info)
+{
+	unsigned char status;
+	char stat_buf[30];
+	int ret;
+
+	ret = sprintf(buf, "%d: uart:Zilog8530 port:%x irq:%d",
+		info->line, info->port, info->irq);
+
+	cli();
+	status = sbus_readb(&info->zs_channel->control);
+	ZSDELAY();
+	ZSLOG(REGCTRL, status, 0);
+	sti();
+
+	stat_buf[0] = 0;
+	stat_buf[1] = 0;
+	if (info->curregs[5] & RTS)
+		strcat(stat_buf, "|RTS");
+	if (status & CTS)
+		strcat(stat_buf, "|CTS");
+	if (info->curregs[5] & DTR)
+		strcat(stat_buf, "|DTR");
+	if (status & SYNC)
+		strcat(stat_buf, "|DSR");
+	if (status & DCD)
+		strcat(stat_buf, "|CD");
+
+	ret += sprintf(buf + ret, " baud:%d %s\n", info->zs_baud, stat_buf + 1);
+	return ret;
+}
+
+/*
+ *
+ * zs_read_proc() - called when /proc/tty/driver/serial is read.
+ *
+ */
+int zs_read_proc(char *page, char **start, off_t off, int count,
+                 int *eof, void *data)
+{
+	char *revision = "$Revision: 1.68.2.2 $";
+	char *version, *p;
+	int i, len = 0, l;
+	off_t begin = 0;
+
+	version = strchr(revision, ' ');
+	p = strchr(++version, ' ');
+	*p = '\0';
+	len += sprintf(page, "serinfo:1.0 driver:%s\n", version);
+	*p = ' ';
+
+	for (i = 0; i < NUM_CHANNELS && len < 4000; i++) {
+		l = line_info(page + len, &zs_soft[i]);
+		len += l;
+		if (len+begin > off+count)
+			goto done;
+		if (len+begin < off) {
+			begin += len;
+			len = 0;
+		}
+	}
+
+	*eof = 1;
+done:
+	if (off >= len+begin)
+		return 0;
+	*start = page + (off-begin);
+	return ((count < begin+len-off) ? count : begin+len-off);
+}
+
+/*
  * ------------------------------------------------------------
  * zs_open() and friends
  * ------------------------------------------------------------
@@ -1933,7 +1968,7 @@ int zs_open(struct tty_struct *tty, struct file * filp)
 
 static void show_serial_version(void)
 {
-	char *revision = "$Revision: 1.68 $";
+	char *revision = "$Revision: 1.68.2.2 $";
 	char *version, *p;
 
 	version = strchr(revision, ' ');
@@ -2444,8 +2479,8 @@ int __init zs_init(void)
 	serial_driver.hangup = zs_hangup;
 
 	/* I'm too lazy, someone write versions of this for us. -DaveM */
-	serial_driver.read_proc = 0;
-	serial_driver.proc_entry = 0;
+	/* I just did. :-) -AIB 2001-12-23 */
+	serial_driver.read_proc = zs_read_proc;
 
 	/*
 	 * The callout device is just like normal device except for
@@ -2455,6 +2490,8 @@ int __init zs_init(void)
 	callout_driver.name = "cua/%d";
 	callout_driver.major = TTYAUX_MAJOR;
 	callout_driver.subtype = SERIAL_TYPE_CALLOUT;
+	callout_driver.read_proc = 0;
+	callout_driver.proc_entry = 0;
 
 	if (tty_register_driver(&serial_driver))
 		panic("Couldn't register serial driver\n");
@@ -2469,8 +2506,7 @@ int __init zs_init(void)
 	/* Grab IRQ line before poking the chips so we do
 	 * not lose any interrupts.
 	 */
-	if (request_irq(zilog_irq, zs_interrupt,
-			(SA_INTERRUPT | SA_STATIC_ALLOC),
+	if (request_irq(zilog_irq, zs_interrupt, SA_SHIRQ,
 			"Zilog8530", zs_chain)) {
 		prom_printf("Unable to attach zs intr\n");
 		prom_halt();

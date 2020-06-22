@@ -12,6 +12,10 @@
  *
  * See Documentation/usb/usb-serial.txt for more information on using this driver
  * 
+ * (12/18/2001) gkh
+ *	Added better Clie support for 3.5 devices.  Thanks to Geoffrey Levand
+ *	for the patch.
+ *
  * (11/11/2001) gkh
  *	Added support for the m125 devices, and added check to prevent oopses
  *	for Clié devices that lie about the number of ports they have.
@@ -145,6 +149,7 @@ static int  visor_ioctl		(struct usb_serial_port *port, struct file * file, unsi
 static void visor_set_termios	(struct usb_serial_port *port, struct termios *old_termios);
 static void visor_write_bulk_callback	(struct urb *urb);
 static void visor_read_bulk_callback	(struct urb *urb);
+static int  clie_3_5_startup	(struct usb_serial *serial);
 
 
 static __devinitdata struct usb_device_id visor_id_table [] = {
@@ -251,6 +256,7 @@ static struct usb_serial_device_type clie_3_5_device = {
 	close:			visor_close,
 	throttle:		visor_throttle,
 	unthrottle:		visor_unthrottle,
+	startup:		clie_3_5_startup,
 	ioctl:			visor_ioctl,
 	set_termios:		visor_set_termios,
 	write:			visor_write,
@@ -705,6 +711,46 @@ static int  visor_startup (struct usb_serial *serial)
 	return 0;
 }
 
+static int clie_3_5_startup (struct usb_serial *serial)
+{
+	int result;
+	u8 data;
+
+	dbg(__FUNCTION__);
+
+	/*
+	 * Note that PEG-300 series devices expect the following two calls.
+	 */
+
+	/* get the config number */
+	result = usb_control_msg (serial->dev, usb_rcvctrlpipe(serial->dev, 0),
+				  USB_REQ_GET_CONFIGURATION, USB_DIR_IN,
+				  0, 0, &data, 1, HZ * 3);
+	if (result < 0) {
+		err(__FUNCTION__ ": get config number failed: %d", result);
+		return result;
+	}
+	if (result != 1) {
+		err(__FUNCTION__ ": get config number bad return length: %d", result);
+		return -EIO;
+	}
+
+	/* get the interface number */
+	result = usb_control_msg (serial->dev, usb_rcvctrlpipe(serial->dev, 0),
+				  USB_REQ_GET_INTERFACE, 
+				  USB_DIR_IN | USB_DT_DEVICE,
+				  0, 0, &data, 1, HZ * 3);
+	if (result < 0) {
+		err(__FUNCTION__ ": get interface number failed: %d", result);
+		return result;
+	}
+	if (result != 1) {
+		err(__FUNCTION__ ": get interface number bad return length: %d", result);
+		return -EIO;
+	}
+
+	return 0;
+}
 
 static void visor_shutdown (struct usb_serial *serial)
 {

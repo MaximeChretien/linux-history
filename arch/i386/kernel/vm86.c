@@ -16,6 +16,7 @@
 #include <asm/uaccess.h>
 #include <asm/pgalloc.h>
 #include <asm/io.h>
+#include <asm/irq.h>
 
 /*
  * Known problems:
@@ -62,7 +63,7 @@
         ( (unsigned)( & (((struct kernel_vm86_regs *)0)->VM86_REGS_PART2) ) )
 #define VM86_REGS_SIZE2 (sizeof(struct kernel_vm86_regs) - VM86_REGS_SIZE1)
 
-asmlinkage struct pt_regs * FASTCALL(save_v86_state(struct kernel_vm86_regs * regs));
+struct pt_regs * FASTCALL(save_v86_state(struct kernel_vm86_regs * regs));
 struct pt_regs * save_v86_state(struct kernel_vm86_regs * regs)
 {
 	struct tss_struct *tss;
@@ -610,6 +611,14 @@ static inline int task_valid(struct task_struct *tsk)
 	}
 	read_unlock(&tasklist_lock);
 	return ret;
+}
+
+void release_x86_irqs(struct task_struct *task)
+{
+	int i;
+	for (i=3; i<16; i++)
+	    if (vm86_irqs[i].tsk == task)
+		free_vm86_irq(i);
 }
 
 static inline void handle_irq_zombies(void)

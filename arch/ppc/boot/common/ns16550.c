@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.ns16550.c 1.9 07/30/01 17:19:40 trini
+ * BK Id: SCCS/s.ns16550.c 1.12 10/08/01 17:16:50 paulus
  */
 /*
  * COM1 NS16550 support
@@ -9,6 +9,9 @@
 #include <linux/serialP.h>
 #include <linux/serial_reg.h>
 #include <asm/serial.h>
+
+/* Default serial baud rate */
+#define SERIAL_BAUD	9600
 
 extern void outb(int port, unsigned char val);
 extern unsigned char inb(int port);
@@ -46,13 +49,20 @@ unsigned long serial_init(int chan) {
 	outb(com_port + (UART_IER << shift), 0x00);
 	/* Access baud rate */
 	outb(com_port + (UART_LCR << shift), 0x80);
-#ifdef CONFIG_SERIAL_CONSOLE_NONSTD
-	/* Input clock. */
-	outb(com_port + (UART_DLL << shift), 
-			(BASE_BAUD / CONFIG_SERIAL_CONSOLE_BAUD));
-	outb(com_port + (UART_DLM << shift), 
-		(BASE_BAUD / CONFIG_SERIAL_CONSOLE_BAUD) >> 8);
-#endif
+	/*
+	 * Test if serial port is unconfigured.
+	 * We assume that no-one uses less than 110 baud or
+	 * less than 7 bits per character these days.
+	 *  -- paulus.
+	 */
+	if (inb(com_port + (UART_DLM << shift)) > 4
+	    || (inb(com_port + (UART_LCR << shift)) & 2) == 0) {
+		/* Input clock. */
+		outb(com_port + (UART_DLL << shift),
+		     (BASE_BAUD / SERIAL_BAUD));
+		outb(com_port + (UART_DLM << shift),
+		     (BASE_BAUD / SERIAL_BAUD) >> 8);
+	}
 	 /* 8 data, 1 stop, no parity */
 	outb(com_port + (UART_LCR << shift), 0x03);
 	/* RTS/DTR */

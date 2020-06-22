@@ -1344,6 +1344,7 @@ static int sg_init()
             printk(KERN_ERR "Unable to get major %d for generic SCSI device\n",
                    SCSI_GENERIC_MAJOR);
 	    write_unlock_irqrestore(&sg_dev_arr_lock, iflags);
+            sg_template.dev_noticed = 0;
             return 1;
         }
         sg_registered++;
@@ -1356,6 +1357,7 @@ static int sg_init()
     if (NULL == sg_dev_arr) {
         printk(KERN_ERR "sg_init: no space for sg_dev_arr\n");
 	write_unlock_irqrestore(&sg_dev_arr_lock, iflags);
+        sg_template.dev_noticed = 0;
         return 1;
     }
     memset(sg_dev_arr, 0, sg_template.dev_max * sizeof(Sg_device *));

@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.pmac_backlight.c 1.8 09/08/01 15:47:42 paulus
+ * BK Id: SCCS/s.pmac_backlight.c 1.10 12/01/01 20:09:06 benh
  */
 /*
  * Miscellaneous procedures for dealing with the PowerMac hardware.
@@ -78,7 +78,7 @@ register_backlight_controller(struct backlight_controller *ctrler, void *data, c
 		pmu_request(&req, NULL, 2, 0xd9, 0);
 		while (!req.complete)
 			pmu_poll();
-		backlight_level = req.reply[1] >> 4;
+		backlight_level = req.reply[0] >> 4;
 	}
 #endif
 	if (!backlighter->set_enable(1, backlight_level, data))

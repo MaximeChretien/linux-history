@@ -301,9 +301,8 @@ static inline char *journal_log_suffix(char *buf, char *log,
 	/* XXX needs to be done after reservation, 
 	   disable ths until version 1.2 */
         if ( dentry ) { 
-                s.prevrec = cpu_to_le32(rec->offset - 
-                                        presto_d2d(dentry)->dd_kml_offset);
-                presto_d2d(dentry)->dd_kml_offset = rec->offset;
+                s.prevrec = cpu_to_le32(rec->offset - dentry->d_time);
+                dentry->d_time = (unsigned long) rec->offset;
         } else { 
                 s.prevrec = -1;
         }

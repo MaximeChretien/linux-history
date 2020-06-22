@@ -90,11 +90,10 @@ static long planb_read(struct video_device *, char *, unsigned long, int);
 static int planb_open(struct video_device *, int);
 static void planb_close(struct video_device *);
 static int planb_ioctl(struct video_device *, unsigned int, void *);
-static int planb_init_done(struct video_device *);
 static int planb_mmap(struct video_device *, const char *, unsigned long);
 static void planb_irq(int, void *, struct pt_regs *);
 static void release_planb(void);
-int init_planbs(struct video_init *);
+static int init_planbs(void);
 
 /* ------------------ PlanB Internal Functions ------------------ */
 static int planb_prepare_open(struct planb *);
@@ -2079,7 +2078,6 @@ static int init_planb(struct planb *pb)
 #endif
 	pb->tab_size = PLANB_MAXLINES + 40;
 	pb->suspend = 0;
-	pb->lock = 0;
 	init_MUTEX(&pb->lock);
 	pb->ch1_cmd = 0;
 	pb->ch2_cmd = 0;

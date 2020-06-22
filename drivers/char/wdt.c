@@ -27,6 +27,7 @@
  *		Tim Hockin	:	Added insmod parameters, comment cleanup
  *					Parameterized timeout
  *		Tigran Aivazian	:	Restructured wdt_init() to handle failures
+ *		Joel Becker	:	Added WDIOC_GET/SETTIMEOUT
  */
 
 #include <linux/config.h>
@@ -60,7 +61,10 @@ static int wdt_is_open;
 static int io=0x240;
 static int irq=11;
 
+/* Default margin */
 #define WD_TIMO (100*60)		/* 1 minute */
+
+static int wd_margin = WD_TIMO;
 
 #ifndef MODULE
 
@@ -216,7 +220,7 @@ static void wdt_ping(void)
 	/* Write a watchdog value */
 	inb_p(WDT_DC);
 	wdt_ctr_mode(1,2);
-	wdt_ctr_load(1,WD_TIMO);		/* Timeout */
+	wdt_ctr_load(1,wd_margin);		/* Timeout */
 	outb_p(0, WDT_DC);
 }
 
@@ -294,10 +298,13 @@ static ssize_t wdt_read(struct file *file, char *buf, size_t count, loff_t *ptr)
 static int wdt_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 	unsigned long arg)
 {
+	int new_margin;
+
 	static struct watchdog_info ident=
 	{
 		WDIOF_OVERHEAT|WDIOF_POWERUNDER|WDIOF_POWEROVER
-			|WDIOF_EXTERN1|WDIOF_EXTERN2|WDIOF_FANFAULT,
+			|WDIOF_EXTERN1|WDIOF_EXTERN2|WDIOF_FANFAULT
+			|WDIOF_SETTIMEOUT,
 		1,
 		"WDT500/501"
 	};
@@ -317,6 +324,17 @@ static int wdt_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 		case WDIOC_KEEPALIVE:
 			wdt_ping();
 			return 0;
+		case WDIOC_SETTIMEOUT:
+			if (get_user(new_margin, (int *)arg))
+				return -EFAULT;
+			/* Arbitrary, can't find the card's limits */
+			if ((new_margin < 0) || (new_margin > 60))
+				return -EINVAL;
+			wd_margin = new_margin * 100;
+			wdt_ping();
+			/* Fall */
+		case WDIOC_GETTIMEOUT:
+			return put_user(wd_margin / 100, (int *)arg);
 	}
 }
 
@@ -349,7 +367,7 @@ static int wdt_open(struct inode *inode, struct file *file)
 			wdt_ctr_mode(1,2);
 			wdt_ctr_mode(2,0);
 			wdt_ctr_load(0, 8948);		/* count at 100Hz */
-			wdt_ctr_load(1,WD_TIMO);	/* Timeout 120 seconds */
+			wdt_ctr_load(1,wd_margin);	/* Timeout 120 seconds */
 			wdt_ctr_load(2,65535);
 			outb_p(0, WDT_DC);	/* Enable */
 			return 0;

@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.pci.c 1.35 11/13/01 08:19:57 trini
+ * BK Id: SCCS/s.pci.c 1.40 01/25/02 15:15:24 benh
  */
 /*
  * Common pmac/prep/chrp pci routines. -- Cort
@@ -19,6 +19,7 @@
 #include <asm/processor.h>
 #include <asm/io.h>
 #include <asm/prom.h>
+#include <asm/sections.h>
 #include <asm/pci-bridge.h>
 #include <asm/residual.h>
 #include <asm/byteorder.h>
@@ -66,7 +67,7 @@ struct pci_fixup pcibios_fixups[] = {
 	{ PCI_FIXUP_HEADER,	PCI_ANY_ID,		PCI_ANY_ID,			pcibios_fixup_resources },
 #ifdef CONFIG_ALL_PPC
 	/* We should add per-machine fixup support in xxx_setup.c or xxx_pci.c */
-	{ PCI_FIXUP_FINAL,	PCI_VENDOR_ID_TI,	PCI_DEVICE_ID_TI_1211,		pcibios_fixup_cardbus }, 
+	{ PCI_FIXUP_FINAL,	PCI_VENDOR_ID_TI,	PCI_ANY_ID,			pcibios_fixup_cardbus }, 
 #endif /* CONFIG_ALL_PPC */
  	{ 0 }
 };
@@ -175,18 +176,25 @@ pcibios_fixup_resources(struct pci_dev *dev)
 static void
 pcibios_fixup_cardbus(struct pci_dev* dev)
 {
+	if (_machine != _MACH_Pmac)
+		return;
 	/*
 	 * Fix the interrupt routing on the TI1211 chip on the 1999
 	 * G3 powerbook, which doesn't get initialized properly by OF.
+	 * Same problem with the 1410 of the new titanium pbook which
+	 * has the same register.
 	 */
 	if (dev->vendor == PCI_VENDOR_ID_TI
-	    && dev->device == PCI_DEVICE_ID_TI_1211) {
-		u32 val;
+	    && (dev->device == PCI_DEVICE_ID_TI_1211 ||
+	        dev->device == PCI_DEVICE_ID_TI_1410)) {
+		u8 val;
 		/* 0x8c == TI122X_IRQMUX, 2 says to route the INTA
 		   signal out the MFUNC0 pin */
-		if (pci_read_config_dword(dev, 0x8c, &val) == 0
-		    && val == 0)
-			pci_write_config_dword(dev, 0x8c, 2);
+		if (pci_read_config_byte(dev, 0x8c, &val) == 0)
+			pci_write_config_byte(dev, 0x8c, (val & ~0x0f) | 2);
+		/* Disable ISA interrupt mode */	
+		if (pci_read_config_byte(dev, 0x92, &val) == 0)
+			pci_write_config_byte(dev, 0x92, val & ~0x06);
 	}
 }
 #endif /* CONFIG_ALL_PPC */
@@ -276,9 +284,17 @@ pcibios_allocate_bus_resources(struct list_head *bus_list)
 			if (bus->parent == NULL)
 				pr = (res->flags & IORESOURCE_IO)?
 					&ioport_resource: &iomem_resource;
-			else
+			else {
 				pr = pci_find_parent_resource(bus->self, res);
-
+				if (pr == res) {
+					/* this happens when the generic PCI
+					 * code (wrongly) decides that this
+					 * bridge is transparent  -- paulus
+					 */
+					continue;
+				}
+			}
+			
 			if (pr && request_resource(pr, res) == 0)
 				continue;
 			printk(KERN_ERR "PCI: Cannot allocate resource region "
@@ -438,7 +454,7 @@ pcibios_alloc_controller(void)
 /*
  * Functions below are used on OpenFirmware machines.
  */
-static void
+static void __openfirmware
 make_one_node_map(struct device_node* node, u8 pci_bus)
 {
 	int *bus_range;
@@ -472,7 +488,7 @@ make_one_node_map(struct device_node* node, u8 pci_bus)
 	}
 }
 		
-void
+void __openfirmware
 pcibios_make_OF_bus_map(void)
 {
 	int i;
@@ -512,17 +528,17 @@ pcibios_make_OF_bus_map(void)
 #endif	
 }
 
-static struct device_node*
-scan_OF_childs_for_device(struct device_node* node, u8 bus, u8 dev_fn)
+typedef int (*pci_OF_scan_iterator)(struct device_node* node, void* data);
+
+static struct device_node* __openfirmware
+scan_OF_pci_childs(struct device_node* node, pci_OF_scan_iterator filter, void* data)
 {
 	struct device_node* sub_node;
 	
 	for (; node != 0;node = node->sibling) {
-		unsigned int *class_code, *reg;
+		unsigned int *class_code;
 		
-		reg = (unsigned int *) get_property(node, "reg", 0);
-		if (reg && ((reg[0] >> 8) & 0xff) == dev_fn
-			&& ((reg[0] >> 16) & 0xff) == bus)
+		if (filter(node, data))
 			return node;
 
 		/* For PCI<->PCI bridges or CardBus bridges, we go down
@@ -535,11 +551,32 @@ scan_OF_childs_for_device(struct device_node* node, u8 bus, u8 dev_fn)
 			(*class_code >> 8) != PCI_CLASS_BRIDGE_CARDBUS)) &&
 			strcmp(node->name, "multifunc-device"))
 			continue;
-		sub_node = scan_OF_childs_for_device(node->child, bus, dev_fn);
+		sub_node = scan_OF_pci_childs(node->child, filter, data);
 		if (sub_node)
 			return sub_node;
 	}
 	return NULL;
+}
+
+static int
+scan_OF_pci_childs_iterator(struct device_node* node, void* data)
+{
+	unsigned int *reg;
+	u8* fdata = (u8*)data;
+		
+	reg = (unsigned int *) get_property(node, "reg", 0);
+	if (reg && ((reg[0] >> 8) & 0xff) == fdata[1]
+		&& ((reg[0] >> 16) & 0xff) == fdata[0])
+		return 1;
+	return 0;
+}
+
+static struct device_node* __openfirmware
+scan_OF_childs_for_device(struct device_node* node, u8 bus, u8 dev_fn)
+{
+	u8 filter_data[2] = {bus, dev_fn};
+
+	return scan_OF_pci_childs(node, scan_OF_pci_childs_iterator, filter_data);
 }
 
 /* 
@@ -598,6 +635,12 @@ pci_find_hose_for_OF_device(struct device_node* node)
 	return NULL;
 }
 
+static int __openfirmware
+find_OF_pci_device_filter(struct device_node* node, void* data)
+{
+	return ((void *)node == data);
+}
+
 /* 
  * Returns the PCI device matching a given OF node
  */
@@ -605,21 +648,40 @@ int
 pci_device_from_OF_node(struct device_node* node, u8* bus, u8* devfn)
 {
 	unsigned int *reg;
-	int i;
+	struct pci_controller* hose;
+	struct pci_dev* dev;
 		
 	if (!have_of)
+		return -ENODEV;
+	/* Make sure it's really a PCI device */
+	hose = pci_find_hose_for_OF_device(node);
+	if (!hose || !hose->arch_data)
+		return -ENODEV;
+	if (!scan_OF_pci_childs(((struct device_node*)hose->arch_data)->child,
+			find_OF_pci_device_filter, (void *)node))
 		return -ENODEV;
 	reg = (unsigned int *) get_property(node, "reg", 0);
 	if (!reg)
 		return -ENODEV;
 	*bus = (reg[0] >> 16) & 0xff;
-	for (i=0; pci_to_OF_bus_map && i<pci_bus_count; i++)
-		if (pci_to_OF_bus_map[i] == *bus) {
-			*bus = i;
-			break;
-		}
 	*devfn = ((reg[0] >> 8) & 0xff);
-	return 0;
+
+	/* Ok, here we need some tweak. If we have already renumbered
+	 * all busses, we can't rely on the OF bus number any more.
+	 * the pci_to_OF_bus_map is not enough as several PCI busses
+	 * may match the same OF bus number.
+	 */
+	if (!pci_to_OF_bus_map)
+		return 0;
+	pci_for_each_dev(dev) {
+		if (pci_to_OF_bus_map[dev->bus->number] != *bus)
+			continue;
+		if (dev->devfn != *devfn)
+			continue;
+		*bus = dev->bus->number;
+		return 0;
+	}
+	return -ENODEV;
 }
 
 void __init

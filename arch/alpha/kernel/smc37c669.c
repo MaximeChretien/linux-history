@@ -2528,7 +2528,7 @@ SMC37c669_dump_registers(void)
  *
  * RETURNS:
  *
- *      Nothing
+ *      1 if the chip found, 0 otherwise
  *
  * ARGUMENTS:
  *
@@ -2539,7 +2539,7 @@ SMC37c669_dump_registers(void)
  *      None
  *
  */
-void __init SMC669_Init ( int index )
+int __init SMC669_Init ( int index )
 {
     SMC37c669_CONFIG_REGS *SMC_base;
     unsigned long flags;
@@ -2602,11 +2602,13 @@ void __init SMC669_Init ( int index )
 	__restore_flags(flags);
         printk( "SMC37c669 Super I/O Controller found @ 0x%lx\n",
 		(unsigned long) SMC_base );
+	return 1;
     }
     else {
 	__restore_flags(flags);
 #if SMC_DEBUG
         printk( "No SMC37c669 Super I/O Controller found\n" );
 #endif
+	return 0;
     }
 }

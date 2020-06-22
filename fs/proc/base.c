@@ -553,6 +553,7 @@ static int proc_readfd(struct file * filp, void * dirent, filldir_t filldir)
 			task_unlock(p);
 			if (!files)
 				goto out;
+			read_lock(&files->file_lock);
 			for (fd = filp->f_pos-2;
 			     fd < files->max_fds;
 			     fd++, filp->f_pos++) {
@@ -560,6 +561,7 @@ static int proc_readfd(struct file * filp, void * dirent, filldir_t filldir)
 
 				if (!fcheck_files(files, fd))
 					continue;
+				read_unlock(&files->file_lock);
 
 				j = NUMBUF;
 				i = fd;
@@ -570,9 +572,13 @@ static int proc_readfd(struct file * filp, void * dirent, filldir_t filldir)
 				} while (i);
 
 				ino = fake_ino(pid, PROC_PID_FD_DIR + fd);
-				if (filldir(dirent, buf+j, NUMBUF-j, fd+2, ino, DT_LNK) < 0)
+				if (filldir(dirent, buf+j, NUMBUF-j, fd+2, ino, DT_LNK) < 0) {
+					read_lock(&files->file_lock);
 					break;
+				}
+				read_lock(&files->file_lock);
 			}
+			read_unlock(&files->file_lock);
 			put_files_struct(files);
 	}
 out:

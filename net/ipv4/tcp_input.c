@@ -5,7 +5,7 @@
  *
  *		Implementation of the Transmission Control Protocol(TCP).
  *
- * Version:	$Id: tcp_input.c,v 1.241 2001/11/14 02:48:51 davem Exp $
+ * Version:	$Id: tcp_input.c,v 1.241.2.1 2002/02/13 05:37:15 davem Exp $
  *
  * Authors:	Ross Biro, <bir7@leland.Stanford.Edu>
  *		Fred N. van Kempen, <waltje@uWalt.NL.Mugnet.ORG>
@@ -2559,14 +2559,12 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 			__set_current_state(TASK_RUNNING);
 
 			local_bh_enable();
-			if (skb_copy_datagram_iovec(skb, 0, tp->ucopy.iov, chunk)) {
-				sk->err = EFAULT;
-				sk->error_report(sk);
+			if (!skb_copy_datagram_iovec(skb, 0, tp->ucopy.iov, chunk)) {
+				tp->ucopy.len -= chunk;
+				tp->copied_seq += chunk;
+				eaten = (chunk == skb->len && !th->fin);
 			}
 			local_bh_disable();
-			tp->ucopy.len -= chunk;
-			tp->copied_seq += chunk;
-			eaten = (chunk == skb->len && !th->fin);
 		}
 
 		if (eaten <= 0) {
@@ -3159,17 +3157,8 @@ static int tcp_copy_to_iovec(struct sock *sk, struct sk_buff *skb, int hlen)
 		err = skb_copy_and_csum_datagram_iovec(skb, hlen, tp->ucopy.iov);
 
 	if (!err) {
-update:
 		tp->ucopy.len -= chunk;
 		tp->copied_seq += chunk;
-		local_bh_disable();
-		return 0;
-	}
-
-	if (err == -EFAULT) {
-		sk->err = EFAULT;
-		sk->error_report(sk);
-		goto update;
 	}
 
 	local_bh_disable();
@@ -3308,19 +3297,16 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			    tp->copied_seq == tp->rcv_nxt &&
 			    len - tcp_header_len <= tp->ucopy.len &&
 			    sk->lock.users) {
-				eaten = 1;
-
-				NET_INC_STATS_BH(TCPHPHitsToUser);
-
 				__set_current_state(TASK_RUNNING);
 
-				if (tcp_copy_to_iovec(sk, skb, tcp_header_len))
-					goto csum_error;
-
-				__skb_pull(skb,tcp_header_len);
-
-				tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
-			} else {
+				if (!tcp_copy_to_iovec(sk, skb, tcp_header_len)) {
+					__skb_pull(skb, tcp_header_len);
+					tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
+					NET_INC_STATS_BH(TCPHPHitsToUser);
+					eaten = 1;
+				}
+			}
+			if (!eaten) {
 				if (tcp_checksum_complete_user(sk, skb))
 					goto csum_error;
 

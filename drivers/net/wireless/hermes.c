@@ -53,10 +53,12 @@
 
 #include "hermes.h"
 
-static char version[] __initdata = "hermes.c: 3 Oct 2001 David Gibson <hermes@gibson.dropbear.id.au>";
+static char version[] __initdata = "hermes.c: 16 Jan 2002 David Gibson <hermes@gibson.dropbear.id.au>";
 MODULE_DESCRIPTION("Low-level driver helper for Lucent Hermes chipset and Prism II HFA384x wireless MAC controller");
 MODULE_AUTHOR("David Gibson <hermes@gibson.dropbear.id.au>");
+#ifdef MODULE_LICENSE
 MODULE_LICENSE("Dual MPL/GPL");
+#endif
 
 /* These are maximum timeouts. Most often, card wil react much faster */
 #define CMD_BUSY_TIMEOUT (100) /* In iterations of ~1us */
@@ -75,9 +77,9 @@ MODULE_LICENSE("Dual MPL/GPL");
 #include <stdarg.h>
 
 #define DMSG(stuff...) do {printk(KERN_DEBUG "hermes @ 0x%x: " , hw->iobase); \
-			printk(#stuff);} while (0)
+			printk(stuff);} while (0)
 
-#define DEBUG(lvl, stuff...) if ( (lvl) <= HERMES_DEBUG) DMSG(#stuff)
+#define DEBUG(lvl, stuff...) if ( (lvl) <= HERMES_DEBUG) DMSG(stuff)
 
 #else /* ! HERMES_DEBUG */
 
@@ -98,10 +100,17 @@ MODULE_LICENSE("Dual MPL/GPL");
 */
 static int hermes_issue_cmd(hermes_t *hw, u16 cmd, u16 param0)
 {
+	int k = CMD_BUSY_TIMEOUT;
 	u16 reg;
 
-	/* First check that the command register is not busy */
+	/* First wait for the command register to unbusy */
 	reg = hermes_read_regn(hw, CMD);
+	while ( (reg & HERMES_CMD_BUSY) && k ) {
+		k--;
+		udelay(1);
+		reg = hermes_read_regn(hw, CMD);
+	}
+	DEBUG(3, "hermes_issue_cmd: did %d retries.\n", CMD_BUSY_TIMEOUT-k);
 	if (reg & HERMES_CMD_BUSY) {
 		return -EBUSY;
 	}
@@ -223,8 +232,8 @@ int hermes_docmd_wait(hermes_t *hw, u16 cmd, u16 parm0, hermes_response_t *resp)
 			       hw->iobase);
 			err = -ENODEV;
 		} else 
-			printk(KERN_ERR "hermes @ 0x%x: CMD register busy in hermes_issue_command().\n",
-			       hw->iobase);
+			printk(KERN_ERR "hermes @ 0x%x: Error %d issuing command.\n",
+			       hw->iobase, err);
 		goto out;
 	}
 
@@ -325,7 +334,7 @@ int hermes_bap_seek(hermes_t *hw, int bap, u16 id, u16 offset)
 
 	k = BAP_BUSY_TIMEOUT;
 	reg = hermes_read_reg(hw, oreg);
-	while ((reg & HERMES_OFFSET_BUSY) & k) {
+	while ((reg & HERMES_OFFSET_BUSY) && k) {
 		k--;
 		udelay(1);
 		reg = hermes_read_reg(hw, oreg);

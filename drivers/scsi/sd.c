@@ -1078,6 +1078,7 @@ static int sd_init()
 		for (i = 0; i < N_USED_SD_MAJORS; i++) {
 			if (devfs_register_blkdev(SD_MAJOR(i), "sd", &sd_fops)) {
 				printk("Unable to get major %d for SCSI disk\n", SD_MAJOR(i));
+				sd_template.dev_noticed = 0;
 				return 1;
 			}
 		}
@@ -1175,7 +1176,8 @@ cleanup_gendisks_de_arr:
 		kfree(sd_gendisks[i].de_arr);
 		kfree(sd_gendisks[i].flags);
 	}
-	kfree(sd_gendisks);
+	if (sd_gendisks != &sd_gendisk)
+		kfree(sd_gendisks);
 cleanup_sd_gendisks:
 	kfree(sd);
 cleanup_sd:
@@ -1188,11 +1190,13 @@ cleanup_sizes:
 	kfree(sd_sizes);
 cleanup_disks:
 	kfree(rscsi_disks);
+	rscsi_disks = NULL;
 cleanup_devfs:
 	for (i = 0; i < N_USED_SD_MAJORS; i++) {
 		devfs_unregister_blkdev(SD_MAJOR(i), "sd");
 	}
 	sd_registered--;
+	sd_template.dev_noticed = 0;
 	return 1;
 }
 
@@ -1251,7 +1255,7 @@ static int sd_attach(Scsi_Device * SDp)
 	if (SDp->type != TYPE_DISK && SDp->type != TYPE_MOD)
 		return 0;
 
-	if (sd_template.nr_dev >= sd_template.dev_max) {
+	if (sd_template.nr_dev >= sd_template.dev_max || rscsi_disks == NULL) {
 		SDp->attached--;
 		return 1;
 	}
@@ -1259,8 +1263,13 @@ static int sd_attach(Scsi_Device * SDp)
 		if (!dpnt->device)
 			break;
 
-	if (i >= sd_template.dev_max)
-		panic("scsi_devices corrupt (sd)");
+	if (i >= sd_template.dev_max) {
+		printk(KERN_WARNING "scsi_devices corrupt (sd),"
+		    " nr_dev %d dev_max %d\n",
+		    sd_template.nr_dev, sd_template.dev_max);
+		SDp->attached--;
+		return 1;
+	}
 
 	rscsi_disks[i].device = SDp;
 	rscsi_disks[i].has_part_table = 0;
@@ -1347,6 +1356,9 @@ static void sd_detach(Scsi_Device * SDp)
 	int i, j;
 	int max_p;
 	int start;
+
+	if (rscsi_disks == NULL)
+		return;
 
 	for (dpnt = rscsi_disks, i = 0; i < sd_template.dev_max; i++, dpnt++)
 		if (dpnt->device == SDp) {

@@ -173,7 +173,7 @@ void emu10k1_set_volume_gpr(struct emu10k1_card *card, int addr, s32 vol, int sc
 	unsigned long flags;
 	int muting;
 
-	const s32 log2lin[5] ={                  //  attenuation (dB)
+	static const s32 log2lin[4] ={           //  attenuation (dB)
 		0x7fffffff,                      //       0.0         
 		0x7fffffff * 0.840896415253715 , //       1.5          
 		0x7fffffff * 0.707106781186548,  //       3.0

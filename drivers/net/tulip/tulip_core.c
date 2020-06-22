@@ -207,6 +207,7 @@ static struct pci_device_id tulip_pci_tbl[] __devinitdata = {
 	{ 0x1317, 0x1985, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x13D1, 0xAB02, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x13D1, 0xAB03, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
+	{ 0x13D1, 0xAB08, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x104A, 0x0981, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x104A, 0x2774, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x11F6, 0x9881, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMPEX9881 },
@@ -701,8 +702,9 @@ tulip_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	int entry;
 	u32 flag;
 	dma_addr_t mapping;
+	unsigned long eflags;
 
-	spin_lock_irq(&tp->lock);
+	spin_lock_irqsave(&tp->lock, eflags);
 
 	/* Calculate the next Tx descriptor entry. */
 	entry = tp->cur_tx % TX_RING_SIZE;
@@ -737,7 +739,7 @@ tulip_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	/* Trigger an immediate transmit demand. */
 	outl(0, dev->base_addr + CSR1);
 
-	spin_unlock_irq(&tp->lock);
+	spin_unlock_irqrestore(&tp->lock, eflags);
 
 	dev->trans_start = jiffies;
 

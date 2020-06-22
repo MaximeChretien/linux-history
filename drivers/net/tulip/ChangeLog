@@ -1,3 +1,18 @@
+2002-02-07  Uwe Bonnes  <bon@elektron.ikp.physik.tu-darmstadt.de>
+
+	* tulip_core (tulip_pci_tbl[]):
+	Add PCI id for comet tulip clone.
+
+2001-12-19  John Zielinski
+
+	* tulip_core.c (tulip_up, tulip_init_one):
+	More places to revert PHY autoconfiguration bit removal.
+
+2001-12-16  Andrew Lambeth  <wal@vmware.com>
+
+	* tulip_core.c (tulip_start_xmit): Use the more-portable
+	spin_lock_irqsave.
+
 2001-11-13  David S. Miller  <davem@redhat.com>
 
 	* tulip_core.c (tulip_mwi_config): Kill unused label early_out.

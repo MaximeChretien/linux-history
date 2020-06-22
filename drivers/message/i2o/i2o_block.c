@@ -282,6 +282,7 @@ static int i2ob_send(u32 m, struct i2ob_device *dev, struct i2ob_request *ireq, 
 	
 	if(req->cmd == READ)
 	{
+		DEBUG("READ\n");
 		__raw_writel(I2O_CMD_BLOCK_READ<<24|HOST_TID<<12|tid, msg+4);
 		while(bh!=NULL)
 		{
@@ -321,6 +322,7 @@ static int i2ob_send(u32 m, struct i2ob_device *dev, struct i2ob_request *ireq, 
 	}
 	else if(req->cmd == WRITE)
 	{
+		DEBUG("WRITE\n");
 		__raw_writel(I2O_CMD_BLOCK_WRITE<<24|HOST_TID<<12|tid, msg+4);
 		while(bh!=NULL)
 		{
@@ -415,6 +417,7 @@ static inline void i2ob_end_request(struct request *req)
 	 * It is now ok to complete the request.
 	 */
 	end_that_request_last( req );
+	DEBUG("IO COMPLETED\n");
 }
 
 /*
@@ -493,7 +496,7 @@ static int i2ob_flush(struct i2o_controller *c, struct i2ob_device *d, int unit)
 	__raw_writel(i2ob_context|(unit<<8), msg+8);
 	__raw_writel(0, msg+12);
 	__raw_writel(60<<16, msg+16);
-	
+	DEBUG("FLUSH");
 	i2o_post_message(c,m);
 	return 0;
 }
@@ -522,6 +525,7 @@ static void i2o_block_reply(struct i2o_handler *h, struct i2o_controller *c, str
 	 */
 	if(m[0] & (1<<13))
 	{
+		DEBUG("FAIL");
 		/*
 		 * FAILed message from controller
 		 * We increment the error count and abort it
@@ -561,7 +565,7 @@ static void i2o_block_reply(struct i2o_handler *h, struct i2o_controller *c, str
 	{
 		spin_lock_irqsave(&io_request_lock, flags);
 		dev->constipated=0;
-		DEBUG(("unconstipated\n"));
+		DEBUG("unconstipated\n");
 		if(i2ob_backlog_request(c, dev)==0)
 			i2ob_request(dev->req_queue);
 		spin_unlock_irqrestore(&io_request_lock, flags);
@@ -861,7 +865,7 @@ static int i2ob_evt(void *dummy)
 			 * and tell them to fix their firmware :)
 			 */
 			default:
-				printk(KERN_INFO "%s: Received event %d we didn't register for\n"
+				printk(KERN_INFO "%s: Received event 0x%X we didn't register for\n"
 					KERN_INFO "   Blame the I2O card manufacturer 8)\n", 
 					i2ob_dev[unit].i2odev->dev_name, evt);
 				break;
@@ -1205,9 +1209,6 @@ static int i2ob_release(struct inode *inode, struct file *file)
 	if(!dev->i2odev)
 		return 0;
 
-	/* Sync the device so we don't get errors */
-	fsync_dev(inode->i_rdev);
-
 	if (dev->refcnt <= 0)
 		printk(KERN_ALERT "i2ob_release: refcount(%d) <= 0\n", dev->refcnt);
 	dev->refcnt--;
@@ -1470,19 +1471,16 @@ static int i2ob_init_iop(unsigned int unit)
 {
 	int i;
 
-	i2ob_queues[unit] = (struct i2ob_iop_queue*)
-		kmalloc(sizeof(struct i2ob_iop_queue), GFP_ATOMIC);
+	i2ob_queues[unit] = (struct i2ob_iop_queue*) kmalloc(sizeof(struct i2ob_iop_queue), GFP_ATOMIC);
 	if(!i2ob_queues[unit])
 	{
-		printk(KERN_WARNING
-			"Could not allocate request queue for I2O block device!\n");
+		printk(KERN_WARNING "Could not allocate request queue for I2O block device!\n");
 		return -1;
 	}
 
 	for(i = 0; i< MAX_I2OB_DEPTH; i++)
 	{
-		i2ob_queues[unit]->request_queue[i].next = 
-			&i2ob_queues[unit]->request_queue[i+1];
+		i2ob_queues[unit]->request_queue[i].next =  &i2ob_queues[unit]->request_queue[i+1];
 		i2ob_queues[unit]->request_queue[i].num = i;
 	}
 	
@@ -1507,7 +1505,6 @@ static int i2ob_init_iop(unsigned int unit)
 static request_queue_t* i2ob_get_queue(kdev_t dev)
 {
 	int unit = MINOR(dev)&0xF0;
-
 	return i2ob_dev[unit].req_queue;
 }
 
@@ -1530,34 +1527,34 @@ static void i2ob_scan(int bios)
 		if(c==NULL)
 			continue;
 
-	/*
-	 *    The device list connected to the I2O Controller is doubly linked
-	 * Here we traverse the end of the list , and start claiming devices
-	 * from that end. This assures that within an I2O controller atleast
-	 * the newly created volumes get claimed after the older ones, thus
-	 * mapping to same major/minor (and hence device file name) after 
-	 * every reboot.
-	 * The exception being: 
-	 * 1. If there was a TID reuse.
-	 * 2. There was more than one I2O controller. 
-	 */
+		/*
+		 *    The device list connected to the I2O Controller is doubly linked
+		 * Here we traverse the end of the list , and start claiming devices
+		 * from that end. This assures that within an I2O controller atleast
+		 * the newly created volumes get claimed after the older ones, thus
+		 * mapping to same major/minor (and hence device file name) after 
+		 * every reboot.
+		 * The exception being: 
+		 * 1. If there was a TID reuse.
+		 * 2. There was more than one I2O controller. 
+		 */
 
-	if(!bios)
-	{
-		for (d=c->devices;d!=NULL;d=d->next)
-		if(d->next == NULL)
-			b = d;
-	}
-	else
-		b = c->devices;
-
-	while(b != NULL)
-	{
-		d=b;
-		if(bios)
-			b = b->next;
+		if(!bios)
+		{
+			for (d=c->devices;d!=NULL;d=d->next)
+			if(d->next == NULL)
+				b = d;
+		}
 		else
-			b = b->prev;
+			b = c->devices;
+
+		while(b != NULL)
+		{
+			d=b;
+			if(bios)
+				b = b->next;
+			else
+				b = b->prev;
 
 			if(d->lct_data.class_id!=I2O_CLASS_RANDOM_BLOCK_STORAGE)
 				continue;

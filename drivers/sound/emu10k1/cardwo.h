@@ -47,20 +47,12 @@
 #define WAVEOUT_MINFRAGSHIFT	6
 #define WAVEOUT_MAXVOICES 6
 
-/* waveout_mem is cardwo internal */
-struct waveout_mem {
-	int emupageindex;
-	void *addr[BUFMAXPAGES];
-	dma_addr_t dma_handle[BUFMAXPAGES];
-};
-
 struct waveout_buffer {
 	u16 ossfragshift;
 	u32 numfrags;
 	u32 fragment_size;	/* in bytes units */
 	u32 size;		/* in bytes units */
 	u32 pages;		/* buffer size in page units*/
-	struct waveout_mem mem[WAVEOUT_MAXVOICES];
 	u32 silence_pos;	/* software cursor position (including silence bytes) */
 	u32 hw_pos;		/* hardware cursor position */
 	u32 free_bytes;		/* free bytes available on the buffer (not including silence bytes) */

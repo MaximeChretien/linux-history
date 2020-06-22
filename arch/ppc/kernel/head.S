@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.head.S 1.31 10/18/01 15:02:09 trini
+ * BK Id: SCCS/s.head.S 1.34 12/02/01 11:35:27 benh
  */
 /*
  *  PowerPC version 
@@ -1347,7 +1347,19 @@ _GLOBAL(__setup_cpu_7400)
 	bl	setup_750_7400_hid0
 	mtlr	r4
 	blr
+_GLOBAL(__setup_cpu_7410)
+	mflr	r4
+	bl	setup_common_caches
+	bl	setup_750_7400_hid0
+	li	r3,0
+	mtspr	SPRN_L2CR2,r3
+	mtlr	r4
+	blr
 _GLOBAL(__setup_cpu_7450)
+	mflr	r4
+	bl	setup_common_caches
+	bl	setup_7450_hid0
+	mtlr	r4
 	blr
 _GLOBAL(__setup_cpu_power3)
 	blr
@@ -1400,6 +1412,47 @@ setup_750_7400_hid0:
 	li	r3,HID0_SPD
 	andc	r11,r11,r3		/* clear SPD: enable speculative */
  	li	r3,0
+ 	mtspr	ICTC,r3			/* Instruction Cache Throttling off */
+	isync
+	mtspr	HID0,r11
+	sync
+	isync
+	blr
+
+/* 7450
+ * Enable Store Gathering (SGE), Branch Folding (FOLD)
+ * Branch History Table (BHTE), Branch Target ICache (BTIC)
+ * Dynamic Power Management (DPM), Speculative (SPD)
+ * Ensure our data cache instructions really operate.
+ * Timebase has to be running or we wouldn't have made it here,
+ * just ensure we don't disable it.
+ * Clear Instruction cache throttling (ICTC)
+ */
+setup_7450_hid0:
+	/* We check for the presence of an L3 cache setup by
+	 * the firmware. If any, we disable DOZE capability
+	 */
+	mfspr	r11,SPRN_L3CR
+	andis.	r11,r11,L3CR_L3E@h
+	beq	1f
+	li	r7,CPU_FTR_CAN_DOZE
+	lwz	r6,CPU_SPEC_FEATURES(r5)
+	andc	r6,r6,r7
+	stw	r6,CPU_SPEC_FEATURES(r5)
+1:	
+	mfspr	r11,HID0
+
+	/* All of the bits we have to set.....
+	*/
+	ori	r11,r11,HID0_SGE | HID0_FOLD | HID0_BHTE | HID0_BTIC
+	oris	r11,r11,HID0_DPM@h	/* enable dynamic power mgmt */
+
+	/* All of the bits we have to clear....
+	*/
+	li	r3,HID0_SPD | HID0_NOPDST | HID0_NOPTI
+	andc	r11,r11,r3		/* clear SPD: enable speculative */
+ 	li	r3,0
+
  	mtspr	ICTC,r3			/* Instruction Cache Throttling off */
 	isync
 	mtspr	HID0,r11

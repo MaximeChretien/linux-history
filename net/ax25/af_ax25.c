@@ -102,6 +102,7 @@
  *			Joerg(DL1BKE)		Added support for SO_BINDTODEVICE
  *			Arnaldo C. Melo		s/suser/capable(CAP_NET_ADMIN)/, some more cleanups
  *			Michal Ostrowski	Module initialization cleanup.
+ *			Jeroen(PE1RXQ)		Use sock_orphan() on release.
  */
 
 #include <linux/config.h>
@@ -1018,7 +1019,7 @@ static int ax25_release(struct socket *sock)
 				sk->state                = TCP_CLOSE;
 				sk->shutdown            |= SEND_SHUTDOWN;
 				sk->state_change(sk);
-				sk->dead                 = 1;
+				sock_orphan(sk);
 				sk->destroy              = 1;
 				break;
 
@@ -1029,7 +1030,7 @@ static int ax25_release(struct socket *sock)
 		sk->state     = TCP_CLOSE;
 		sk->shutdown |= SEND_SHUTDOWN;
 		sk->state_change(sk);
-		sk->dead      = 1;
+		sock_orphan(sk);
 		ax25_destroy_socket(sk->protinfo.ax25);
 	}
 

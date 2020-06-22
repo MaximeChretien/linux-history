@@ -585,7 +585,7 @@ dasd_eckd_do_analysis (struct dasd_device_t *device)
 	/* Free the cqr and cleanup device->sizes */
         if ( status != CQR_STATUS_DONE ) {
                 DASD_MESSAGE (KERN_WARNING,device,"%s",
-                              "volume analysis returned fatal error");
+                              "volume analysis returned unformatted disk");
                 return -EMEDIUMTYPE;
         }
 	/* Check Track 0 for Compatible Disk Layout */
@@ -1097,8 +1097,14 @@ dasd_eckd_build_cp_from_req (dasd_device_t * device, struct request *req)
                         ccw->flags |= CCW_FLAG_CC;
                         ccw->cmd_code = locate4k_set ? rw_cmd :
                                 dasd_eckd_cdl_cmd (device, recid, req->cmd);
-                        ccw->count = locate4k_set ? byt_per_blk :
-                                dasd_eckd_cdl_reclen (device, recid);
+                        ccw->count = byt_per_blk;
+                        if (!locate4k_set) {
+                                ccw->count = dasd_eckd_cdl_reclen (device,recid);
+                                if (ccw->count < byt_per_blk) {
+                                    memset (bh->b_data + size + ccw->count,
+                                            0xE5, byt_per_blk - ccw->count);
+                                }
+                        }
                         if (dasd_set_normalized_cda (ccw, __pa (bh->b_data+size), rw_cp, device)) {
                                 goto clear_rw_cp;
                         }

@@ -75,6 +75,7 @@
 #include <linux/selection.h>
 #include <linux/smp.h>
 #include <linux/init.h>
+#include <linux/pm.h>
 
 #include <asm/irq.h>
 #include <asm/system.h>
@@ -136,6 +137,12 @@ static int softback_lines;
 
 static void fbcon_free_font(struct display *);
 static int fbcon_set_origin(struct vc_data *);
+
+#ifdef CONFIG_PM
+static int pm_fbcon_request(struct pm_dev *dev, pm_request_t rqst, void *data);
+static struct pm_dev *pm_fbcon;
+static int fbcon_sleeping;
+#endif
 
 /*
  * Emmanuel: fbcon will now use a hardware cursor if the
@@ -233,6 +240,7 @@ static void cursor_timer_handler(unsigned long dev_addr);
 static struct timer_list cursor_timer = {
     function: cursor_timer_handler
 };
+static int use_timer_cursor;
 
 static void cursor_timer_handler(unsigned long dev_addr)
 {
@@ -457,10 +465,15 @@ static const char *fbcon_startup(void)
 #endif
 
     if (irqres) {
+	use_timer_cursor = 1;
 	cursor_blink_rate = DEFAULT_CURSOR_BLINK_RATE;
 	cursor_timer.expires = jiffies+HZ/50;
 	add_timer(&cursor_timer);
     }
+
+#ifdef CONFIG_PM
+    pm_fbcon = pm_register(PM_SYS_DEV, PM_SYS_VGA, pm_fbcon_request);
+#endif
 
     return display_desc;
 }
@@ -1558,6 +1571,10 @@ static int fbcon_blank(struct vc_data *conp, int blank)
 
     if (blank < 0)	/* Entering graphics mode */
 	return 0;
+#ifdef CONFIG_PM
+    if (fbcon_sleeping)
+    	return 0;
+#endif /* CONFIG_PM */
 
     fbcon_cursor(p->conp, blank ? CM_ERASE : CM_DRAW);
 
@@ -2446,6 +2463,39 @@ static int __init fbcon_show_logo( void )
 
     return done ? (LOGO_H + fontheight(p) - 1) / fontheight(p) : 0 ;
 }
+
+#ifdef CONFIG_PM
+/* console.c doesn't do enough here */
+static int
+pm_fbcon_request(struct pm_dev *dev, pm_request_t rqst, void *data)
+{
+	unsigned long flags;
+	
+	switch (rqst)
+	{
+	case PM_RESUME:
+		acquire_console_sem();
+		fbcon_sleeping = 0;
+		if (use_timer_cursor) {
+			cursor_timer.expires = jiffies+HZ/50;
+			add_timer(&cursor_timer);
+		}
+		release_console_sem();
+		break;
+	case PM_SUSPEND:
+		acquire_console_sem();
+		save_flags(flags);
+		cli();
+		if (use_timer_cursor)
+			del_timer(&cursor_timer);
+		fbcon_sleeping = 1;
+		restore_flags(flags);
+		release_console_sem();
+		break;
+	}
+	return 0;
+}
+#endif /* CONFIG_PM */
 
 /*
  *  The console `switch' structure for the frame buffer based console

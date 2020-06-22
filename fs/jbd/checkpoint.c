@@ -448,11 +448,8 @@ int __journal_clean_checkpoint_list(journal_t *journal)
 			struct journal_head *last_jh = jh->b_cpprev;
 			struct journal_head *next_jh = jh;
 			do {
-				struct buffer_head *bh;
-
 				jh = next_jh;
 				next_jh = jh->b_cpnext;
-				bh = jh2bh(jh);
 				ret += __try_to_free_cp_buf(jh);
 			} while (jh != last_jh);
 		}

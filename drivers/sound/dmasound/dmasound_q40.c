@@ -1,10 +1,16 @@
-
 /*
  *  linux/drivers/sound/dmasound/dmasound_q40.c
  *
  *  Q40 DMA Sound Driver
  *
  *  See linux/drivers/sound/dmasound/dmasound_core.c for copyright and credits
+ *  prior to 28/01/2001
+ *
+ *  28/01/2001 [0.1] Iain Sandoe
+ *		     - added versioning
+ *		     - put in and populated the hardware_afmts field.
+ *             [0.2] - put in SNDCTL_DSP_GETCAPS value.
+ *	       [0.3] - put in default hard/soft settings.
  */
 
 
@@ -18,6 +24,8 @@
 
 #include "dmasound.h"
 
+#define DMASOUND_Q40_REVISION 0
+#define DMASOUND_Q40_EDITION 3
 
 static int expand_bal;	/* Balance factor for expanding (not volume!) */
 static int expand_data;	/* Data for expanding */
@@ -216,7 +224,7 @@ static ssize_t q40_ctx_law(const u_char *userPtr, size_t userCount,
 	int bal = expand_bal;
 	int hSpeed = dmasound.hard.speed, sSpeed = dmasound.soft.speed;
 	int utotal, ftotal;
- 
+
 	ftotal = frameLeft;
 	utotal = userCount;
 	while (frameLeft) {
@@ -390,7 +398,7 @@ static void Q40PlayNextFrame(int index)
 
 	q40_pp=start;
 	q40_sc=size;
-		
+
 	write_sq.front = (write_sq.front+1) % write_sq.max_count;
 	write_sq.active++;
 
@@ -446,7 +454,7 @@ static void Q40MonoInterrupt(int irq, void *dummy, struct pt_regs *fp)
             *DAC_LEFT=*q40_pp;
 	    *DAC_RIGHT=*q40_pp++;
 	    q40_sc --;
-	    master_outb(1,SAMPLE_CLEAR_REG);	    
+	    master_outb(1,SAMPLE_CLEAR_REG);
 	}else Q40Interrupt();
 }
 static void Q40Interrupt(void)
@@ -546,6 +554,19 @@ static int Q40SetVolume(int volume)
 
 /*** Machine definitions *****************************************************/
 
+static SETTINGS def_hard = {
+	format: AFMT_U8,
+	stereo: 0,
+	size: 8,
+	speed: 10000
+} ;
+
+static SETTINGS def_soft = {
+	format: AFMT_U8,
+	stereo: 0,
+	size: 8,
+	speed: 8000
+} ;
 
 static MACHINE machQ40 = {
 	name:		"Q40",
@@ -559,10 +580,13 @@ static MACHINE machQ40 = {
 	irqcleanup:	Q40IrqCleanUp,
 #endif /* MODULE */
 	init:		Q40Init,
-	silence:	Q40Silence, 
-	setFormat:	Q40SetFormat, 
+	silence:	Q40Silence,
+	setFormat:	Q40SetFormat,
 	setVolume:	Q40SetVolume,
-	play:		Q40Play
+	play:		Q40Play,
+	version:	((DMASOUND_Q40_REVISION<<8) | DMASOUND_Q40_EDITION),
+	hardware_afmts:	AFMT_U8, /* h'ware-supported formats *only* here */
+        capabilities:	DSP_CAP_BATCH  /* As per SNDCTL_DSP_GETCAPS */
 };
 
 
@@ -573,6 +597,8 @@ int __init dmasound_q40_init(void)
 {
 	if (MACH_IS_Q40) {
 	    dmasound.mach = machQ40;
+	    dmasound.mach.default_hard = def_hard ;
+	    dmasound.mach.default_soft = def_soft ;
 	    return dmasound_init();
 	} else
 	    return -ENODEV;

@@ -36,7 +36,6 @@
 #include <asm/prom.h>
 #include <asm/smp.h>
 #include <asm/residual.h>
-#include <asm/feature.h>
 #include <asm/time.h>
 
 #include "open_pic.h"

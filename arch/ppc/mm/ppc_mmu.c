@@ -86,37 +86,16 @@ unsigned long p_mapped_by_bats(unsigned long pa)
 	return 0;
 }
 
-void __init bat_mapin_ram(void)
+void __init bat_mapin_ram(unsigned long bat2, unsigned long bat3)
 {
-	unsigned long tot, bl, done;
-	unsigned long max_size = (256<<20);
-	unsigned long align;
-
-	/* Set up BAT2 and if necessary BAT3 to cover RAM. */
-
-	/* Make sure we don't map a block larger than the
-	   smallest alignment of the physical address. */
-	/* alignment of ram_phys_base */
-	align = ~(ram_phys_base-1) & ram_phys_base;
-	/* set BAT block size to MIN(max_size, align) */
-	if (align && align < max_size)
-		max_size = align;
-
+	unsigned long tot, done;
+	
 	tot = total_lowmem;
-	for (bl = 128<<10; bl < max_size; bl <<= 1) {
-		if (bl * 2 > tot)
-			break;
-	}
-
-	setbat(2, KERNELBASE, ram_phys_base, bl, _PAGE_KERNEL);
+	setbat(2, KERNELBASE, ram_phys_base, bat2, _PAGE_KERNEL);
 	done = (unsigned long)bat_addrs[2].limit - KERNELBASE + 1;
-	if ((done < tot) && !bat_addrs[3].limit) {
-		/* use BAT3 to cover a bit more */
+	if ((done < tot) && !bat_addrs[3].limit && bat3) {
 		tot -= done;
-		for (bl = 128<<10; bl < max_size; bl <<= 1)
-			if (bl * 2 > tot)
-				break;
-		setbat(3, KERNELBASE+done, ram_phys_base+done, bl, 
+		setbat(3, KERNELBASE+done, ram_phys_base+done, bat3, 
 		       _PAGE_KERNEL);
 	}
 }

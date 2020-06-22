@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.entry.S 1.24 11/23/01 16:38:29 paulus
+ * BK Id: SCCS/s.entry.S 1.26 01/25/02 15:15:24 benh
  */
 /*
  *  PowerPC version 
@@ -338,13 +338,24 @@ END_FTR_SECTION_IFSET(CPU_FTR_ALTIVEC)
 	REST_4GPRS(3, r1)
 	REST_2GPRS(7, r1)
 
+#ifndef CONFIG_SMP
 	/* We have to "dummy" load from the context save area in case
 	 * these instructions cause an MMU fault.  If this happens
 	 * after we load SRR0/SRR1, our return context is hosed.  -- Dan
+	 * 
+	 * This workaround is not enough, we must also make sure the
+	 * actual code for this routine is in the TLB or BAT mapped.
+	 * For 6xx/Power3, we know the code is in a BAT, so this should
+	 * be enough in UP. In SMP, I limit lowmem to the amount of
+	 * RAM that can be BAT mapped. Other CPUs may need additional
+	 * tweaks, especially if used SMP or if the code for this routine
+	 * crosses page boundaries. The TLB pin down for 4xx should help
+	 * for example. --BenH.
 	 */
 	lwz	r0,GPR0(r1)
 	lwz	r0,GPR2(r1)
 	lwz	r0,GPR1(r1)
+#endif /* ndef CONFIG_SMP */
 
 	/* We re-use r3,r4 here (the load above was to cause the MMU
 	 * fault if necessary).  Using r3,r4 removes the need to "dummy"

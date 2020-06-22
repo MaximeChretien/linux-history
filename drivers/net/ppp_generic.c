@@ -166,11 +166,11 @@ struct channel {
  */
 
 /*
- * all_ppp_lock protects the all_ppp_units.
+ * all_ppp_sem protects the all_ppp_units.
  * It also ensures that finding a ppp unit in the all_ppp_units list
  * and updating its file.refcnt field is atomic.
  */
-static spinlock_t all_ppp_lock = SPIN_LOCK_UNLOCKED;
+static DECLARE_MUTEX(all_ppp_sem);
 static LIST_HEAD(all_ppp_units);
 
 /*
@@ -706,11 +706,11 @@ static int ppp_unattached_ioctl(struct ppp_file *pf, struct file *file,
 		/* Attach to an existing ppp unit */
 		if (get_user(unit, (int *) arg))
 			break;
-		spin_lock(&all_ppp_lock);
+		down(&all_ppp_sem);
 		ppp = ppp_find_unit(unit);
 		if (ppp != 0)
 			atomic_inc(&ppp->file.refcnt);
-		spin_unlock(&all_ppp_lock);
+		up(&all_ppp_sem);
 		err = -ENXIO;
 		if (ppp == 0)
 			break;
@@ -1528,6 +1528,7 @@ ppp_decompress_frame(struct ppp *ppp, struct sk_buff *skb)
 			   error indication. */
 			if (len == DECOMP_FATALERROR)
 				ppp->rstate |= SC_DC_FERROR;
+			kfree_skb(ns);
 			goto err;
 		}
 
@@ -2199,7 +2200,7 @@ ppp_create_interface(int unit, int *retp)
 	int ret = -EEXIST;
 	int i;
 
-	spin_lock(&all_ppp_lock);
+	down(&all_ppp_sem);
 	list = &all_ppp_units;
 	while ((list = list->next) != &all_ppp_units) {
 		ppp = list_entry(list, struct ppp, file.list);
@@ -2215,11 +2216,11 @@ ppp_create_interface(int unit, int *retp)
 
 	/* Create a new ppp structure and link it before `list'. */
 	ret = -ENOMEM;
-	ppp = kmalloc(sizeof(struct ppp), GFP_ATOMIC);
+	ppp = kmalloc(sizeof(struct ppp), GFP_KERNEL);
 	if (ppp == 0)
 		goto out;
 	memset(ppp, 0, sizeof(struct ppp));
-	dev = kmalloc(sizeof(struct net_device), GFP_ATOMIC);
+	dev = kmalloc(sizeof(struct net_device), GFP_KERNEL);
 	if (dev == 0) {
 		kfree(ppp);
 		goto out;
@@ -2258,7 +2259,7 @@ ppp_create_interface(int unit, int *retp)
 
 	list_add(&ppp->file.list, list->prev);
  out:
-	spin_unlock(&all_ppp_lock);
+ 	up(&all_ppp_sem);
 	*retp = ret;
 	if (ret != 0)
 		ppp = 0;
@@ -2286,7 +2287,7 @@ static void ppp_destroy_interface(struct ppp *ppp)
 	struct net_device *dev;
 	int n_channels ;
 
-	spin_lock(&all_ppp_lock);
+	down(&all_ppp_sem);
 	list_del(&ppp->file.list);
 
 	/* Last fd open to this ppp unit is being closed or detached:
@@ -2326,19 +2327,19 @@ static void ppp_destroy_interface(struct ppp *ppp)
 
 	/*
 	 * We can't acquire any new channels (since we have the
-	 * all_ppp_lock) so if n_channels is 0, we can free the
+	 * all_ppp_sem) so if n_channels is 0, we can free the
 	 * ppp structure.  Otherwise we leave it around until the
 	 * last channel disconnects from it.
 	 */
 	if (n_channels == 0) 
 		kfree(ppp);
 
-	spin_unlock(&all_ppp_lock);
+	up(&all_ppp_sem);
 }
 
 /*
  * Locate an existing ppp unit.
- * The caller should have locked the all_ppp_lock.
+ * The caller must have locked the all_ppp_sem.
  */
 static struct ppp *
 ppp_find_unit(int unit)
@@ -2384,7 +2385,7 @@ ppp_connect_channel(struct channel *pch, int unit)
 	int ret = -ENXIO;
 	int hdrlen;
 
-	spin_lock(&all_ppp_lock);
+	down(&all_ppp_sem);
 	ppp = ppp_find_unit(unit);
 	if (ppp == 0)
 		goto out;
@@ -2413,7 +2414,7 @@ ppp_connect_channel(struct channel *pch, int unit)
  outwl:
 	write_unlock_bh(&pch->upl);
  out:
-	spin_unlock(&all_ppp_lock);
+ 	up(&all_ppp_sem);
 	return ret;
 }
 

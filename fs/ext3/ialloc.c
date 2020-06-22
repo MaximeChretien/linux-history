@@ -60,8 +60,7 @@ static int read_inode_bitmap (struct super_block * sb,
 		retval = -EIO;
 		goto error_out;
 	}
-	bh = bread (sb->s_dev,
-			le32_to_cpu(gdp->bg_inode_bitmap), sb->s_blocksize);
+	bh = sb_bread(sb, le32_to_cpu(gdp->bg_inode_bitmap));
 	if (!bh) {
 		ext3_error (sb, "read_inode_bitmap",
 			    "Cannot read inode bitmap - "
@@ -506,7 +505,7 @@ repeat:
 	if (IS_SYNC(inode))
 		handle->h_sync = 1;
 	insert_inode_hash(inode);
-	inode->i_generation = event++;
+	inode->i_generation = sb->u.ext3_sb.s_next_generation++;
 
 	inode->u.ext3_i.i_state = EXT3_STATE_NEW;
 	err = ext3_mark_inode_dirty(handle, inode);

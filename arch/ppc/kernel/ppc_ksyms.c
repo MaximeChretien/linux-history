@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.ppc_ksyms.c 1.59 11/04/01 22:58:20 paulus
+ * BK Id: SCCS/s.ppc_ksyms.c 1.63 01/20/02 23:53:11 benh
  */
 #include <linux/config.h>
 #include <linux/module.h>
@@ -36,7 +36,7 @@
 #include <asm/system.h>
 #include <asm/pci-bridge.h>
 #include <asm/irq.h>
-#include <asm/feature.h>
+#include <asm/pmac_feature.h>
 #include <asm/dma.h>
 #include <asm/machdep.h>
 #include <asm/hw_irq.h>
@@ -247,6 +247,8 @@ EXPORT_SYMBOL(device_is_compatible);
 EXPORT_SYMBOL(machine_is_compatible);
 EXPORT_SYMBOL(find_all_nodes);
 EXPORT_SYMBOL(get_property);
+EXPORT_SYMBOL(request_OF_resource);
+EXPORT_SYMBOL(release_OF_resource);
 EXPORT_SYMBOL(pci_bus_io_base);
 EXPORT_SYMBOL(pci_bus_io_base_phys);
 EXPORT_SYMBOL(pci_bus_mem_base_phys);
@@ -257,16 +259,6 @@ EXPORT_SYMBOL(pci_resource_to_bus);
 EXPORT_SYMBOL(pci_phys_to_bus);
 EXPORT_SYMBOL(pci_bus_to_phys);
 EXPORT_SYMBOL(pmac_newworld);
-EXPORT_SYMBOL(feature_set);
-EXPORT_SYMBOL(feature_clear);
-EXPORT_SYMBOL(feature_test);
-EXPORT_SYMBOL(feature_set_gmac_power);
-EXPORT_SYMBOL(feature_gmac_phy_reset);
-EXPORT_SYMBOL(feature_set_usb_power);
-EXPORT_SYMBOL(feature_set_firewire_power);
-EXPORT_SYMBOL(feature_set_firewire_cable_power);
-EXPORT_SYMBOL(feature_set_modem_power);
-EXPORT_SYMBOL(feature_set_airport_power);
 #endif /* defined(CONFIG_ALL_PPC) */
 #if defined(CONFIG_BOOTX_TEXT)
 EXPORT_SYMBOL(btext_update_display);
@@ -293,6 +285,7 @@ EXPORT_SYMBOL_NOVERS(memset);
 EXPORT_SYMBOL_NOVERS(memmove);
 EXPORT_SYMBOL_NOVERS(memscan);
 EXPORT_SYMBOL_NOVERS(memcmp);
+EXPORT_SYMBOL_NOVERS(memchr);
 
 EXPORT_SYMBOL(abs);
 
@@ -319,7 +312,9 @@ EXPORT_SYMBOL(tb_ticks_per_jiffy);
 EXPORT_SYMBOL(get_wchan);
 EXPORT_SYMBOL(console_drivers);
 #ifdef CONFIG_XMON
+extern void xmon_printf(char *fmt, ...);
 EXPORT_SYMBOL(xmon);
+EXPORT_SYMBOL(xmon_printf);
 #endif
 EXPORT_SYMBOL(__up);
 EXPORT_SYMBOL(__down);
@@ -361,3 +356,8 @@ EXPORT_SYMBOL(intercept_table);
 extern long *ret_from_intercept;
 EXPORT_SYMBOL(ret_from_intercept);
 EXPORT_SYMBOL(cur_cpu_spec);
+#if defined(CONFIG_ALL_PPC)
+extern unsigned long agp_special_page;
+EXPORT_SYMBOL_NOVERS(agp_special_page);
+#endif /* defined(CONFIG_ALL_PPC) */
+

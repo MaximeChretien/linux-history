@@ -5,7 +5,7 @@
  *
  *		Implementation of the Transmission Control Protocol(TCP).
  *
- * Version:	$Id: tcp_ipv4.c,v 1.237 2001/12/05 08:54:10 davem Exp $
+ * Version:	$Id: tcp_ipv4.c,v 1.237.2.1 2002/01/15 08:49:49 davem Exp $
  *
  *		IPv4 specific functions
  *
@@ -2064,7 +2064,7 @@ int tcp_get_info(char *buffer, char **start, off_t offset, int length)
 	/* First, walk listening socket table. */
 	tcp_listen_lock();
 	for(i = 0; i < TCP_LHTABLE_SIZE; i++) {
-		struct sock *sk = tcp_listening_hash[i];
+		struct sock *sk;
 		struct tcp_listen_opt *lopt;
 		int k;
 

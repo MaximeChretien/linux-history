@@ -45,6 +45,15 @@ char cmd_buf[256];
 char *cmd_line = cmd_buf;
 
 unsigned long initrd_start = 0, initrd_end = 0;
+
+/* These values must be variables.  If not, the compiler optimizer
+ * will remove some code, causing the size of the code to vary
+ * when these values are zero.  This is bad because we first
+ * compile with these zero to determine the size and offsets
+ * in an image, than compile again with these set to the proper
+ * discovered value.
+ */
+unsigned int initrd_offset, initrd_size;
 char *zimage_start;
 int zimage_size;
 
@@ -69,7 +78,8 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum)
 	 * were relocated to.
 	 */
 	puts("loaded at:     "); puthex(load_addr);
-	puts(" "); puthex((unsigned long)(load_addr + (4*num_words))); puts("\n");
+	puts(" "); puthex((unsigned long)(load_addr + (4*num_words)));
+	puts("\n");
 	if ( (unsigned long)load_addr != (unsigned long)&start )
 	{
 		puts("relocated to:  "); puthex((unsigned long)&start);
@@ -82,44 +92,37 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum)
 	   the size of the elf header which we strip -- Cort */
 	zimage_start = (char *)(load_addr - 0x10000 + ZIMAGE_OFFSET);
 	zimage_size = ZIMAGE_SIZE;
+	initrd_offset = INITRD_OFFSET;
+	initrd_size = INITRD_SIZE;
 
-	if ( INITRD_OFFSET )
-		initrd_start = load_addr - 0x10000 + INITRD_OFFSET;
+	if ( initrd_offset )
+		initrd_start = load_addr - 0x10000 + initrd_offset;
 	else
 		initrd_start = 0;
-	initrd_end = INITRD_SIZE + initrd_start;
+	initrd_end = initrd_size + initrd_start;
 
-	/*
-	 * Find a place to stick the zimage and initrd and 
-	 * relocate them if we have to. -- Cort
-	 */
+	/* Relocate the zImage */
 	avail_ram = (char *)PAGE_ALIGN((unsigned long)_end);
 	puts("zimage at:     "); puthex((unsigned long)zimage_start);
-	puts(" "); puthex((unsigned long)(zimage_size+zimage_start)); puts("\n");
-	if ( (unsigned long)zimage_start <= 0x00800000 )
-	{
-		memcpy( (void *)avail_ram, (void *)zimage_start, zimage_size );
-		zimage_start = (char *)avail_ram;
-		puts("relocated to:  "); puthex((unsigned long)zimage_start);
-		puts(" ");
-		puthex((unsigned long)zimage_size+(unsigned long)zimage_start);
-		puts("\n");
+	puts(" "); puthex((unsigned long)(zimage_size+zimage_start));
+	puts("\n");
+	memcpy( (void *)avail_ram, (void *)zimage_start, zimage_size );
+	zimage_start = (char *)avail_ram;
+	puts("relocated to:  "); puthex((unsigned long)zimage_start);
+	puts(" ");
+	puthex((unsigned long)zimage_size+(unsigned long)zimage_start);
+	puts("\n");
 
-		/* relocate initrd */
-		if ( initrd_start )
-		{
-			puts("initrd at:     "); puthex(initrd_start);
-			puts(" "); puthex(initrd_end); puts("\n");
-			avail_ram = (char *)PAGE_ALIGN(
-				(unsigned long)zimage_size+(unsigned long)zimage_start);
-			memcpy ((void *)avail_ram, (void *)initrd_start, INITRD_SIZE );
-			initrd_start = (unsigned long)avail_ram;
-			initrd_end = initrd_start + INITRD_SIZE;
-			puts("relocated to:  "); puthex(initrd_start);
-			puts(" "); puthex(initrd_end); puts("\n");
-		}
-	} else if ( initrd_start ) {
+	if ( initrd_start ) {
 		puts("initrd at:     "); puthex(initrd_start);
+		puts(" "); puthex(initrd_end); puts("\n");
+		/* relocate initrd */
+		avail_ram = (char *)PAGE_ALIGN((unsigned long)zimage_size + 
+				(unsigned long)zimage_start);
+		memcpy( (void *)avail_ram, (void *)initrd_start, initrd_size );
+		initrd_start = (unsigned long)avail_ram;
+		initrd_end = initrd_start + initrd_size;
+		puts("relocated to:  "); puthex(initrd_start);
 		puts(" "); puthex(initrd_end); puts("\n");
 	}
 
@@ -161,11 +164,9 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum)
 	puts("\n");
 
 	/* mappings on early boot can only handle 16M */
-	if ( (int)(cmd_line[0]) > (16<<20))
+	if ( (u32)(cmd_line) > (16<<20))
 		puts("cmd_line located > 16M\n");
-	if ( initrd_start > (16<<20))
-		puts("initrd_start located > 16M\n");
-       
+
 	puts("Uncompressing Linux...");
 
 	gunzip(0, 0x400000, zimage_start, &zimage_size);

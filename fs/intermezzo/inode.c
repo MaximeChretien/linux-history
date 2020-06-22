@@ -47,6 +47,8 @@ extern void presto_free_cache(struct presto_cache *);
 void presto_set_ops(struct inode *inode, struct  filter_fs *filter)
 {
 	ENTRY; 
+        if (!inode || is_bad_inode(inode))
+                return;
 	if (inode->i_gid == presto_excluded_gid ) { 
 		EXIT;
                 CDEBUG(D_INODE, "excluded methods for %ld at %p, %p\n",

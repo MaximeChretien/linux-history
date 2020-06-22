@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.dbdma.h 1.5 05/17/01 18:14:24 cort
+ * BK Id: SCCS/s.dbdma.h 1.8 12/01/01 20:09:11 benh
  */
 /*
  * Definitions for using the Apple Descriptor-Based DMA controller
@@ -93,5 +93,13 @@ struct dbdma_cmd {
 /* Align an address for a DBDMA command structure */
 #define DBDMA_ALIGN(x)	(((unsigned)(x) + sizeof(struct dbdma_cmd) - 1) \
 			 & -sizeof(struct dbdma_cmd))
+
+/* Useful macros */
+#define DBDMA_DO_STOP(regs) do {				\
+	out_le32(&((regs)->control), (RUN|FLUSH)<<16);		\
+	while(in_le32(&((regs)->status)) & (ACTIVE|FLUSH))	\
+		;						\
+} while(0)
+
 #endif /* _ASM_DBDMA_H_ */
 #endif /* __KERNEL__ */

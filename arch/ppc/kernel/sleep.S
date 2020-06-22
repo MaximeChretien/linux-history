@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.sleep.S 1.13 08/19/01 22:23:04 paulus
+ * BK Id: SCCS/s.sleep.S 1.18 12/02/01 12:38:54 benh
  */
 /*
  * This file contains sleep low-level functions for PowerBook G3.
@@ -16,6 +16,7 @@
 #include "ppc_asm.tmpl"
 #include <asm/processor.h>
 #include <asm/page.h>
+#include <asm/cputable.h>
 
 #define MAGIC	0x4c617273	/* 'Lars' */
 
@@ -37,8 +38,15 @@
 #define SL_IBAT3	0x58
 #define SL_TB		0x60
 #define SL_HID0		0x68
-#define SL_R2		0x6c
-#define SL_R12		0x70	/* r12 to r31 */
+#define SL_HID1		0x6c
+#define SL_MSSCR0	0x70
+#define SL_MSSSR0	0x74
+#define SL_ICTRL	0x78
+#define SL_LDSTCR	0x7c
+#define SL_LDSTDB	0x80
+#define SL_R2		0x84
+#define SL_CR		0x88
+#define SL_R12		0x8c	/* r12 to r31 */
 #define SL_SIZE		(SL_R12 + 80)
 
 #define tophys(rd,rs)   addis   rd,rs,-KERNELBASE@h     
@@ -56,6 +64,8 @@ _GLOBAL(low_sleep_handler)
 	mflr	r0
 	stw	r0,4(r1)
 	stwu	r1,-SL_SIZE(r1)
+	mfcr	r0
+	stw	r0,SL_CR(r1)
 	stw	r2,SL_R2(r1)
 	stmw	r12,SL_R12(r1)
 
@@ -121,7 +131,31 @@ _GLOBAL(low_sleep_handler)
 	/* Save HID0 */
 	mfspr	r4,HID0
 	stw	r4,SL_HID0(r1)
-	
+
+	/* Save 7400/7410/7450 specific registers */
+	mfspr	r3,PVR
+	srwi	r3,r3,16
+	cmpli	cr0,r3,0x8000
+	cmpli	cr1,r3,0x000c
+	cmpli	cr2,r3,0x800c
+	cror	4*cr1+eq,4*cr1+eq,4*cr2+eq
+	cror	4*cr0+eq,4*cr0+eq,4*cr1+eq
+	bne	1f
+	mfspr	r4,SPRN_MSSCR0
+	stw	r4,SL_MSSCR0(r1)
+	mfspr	r4,SPRN_MSSSR0
+	stw	r4,SL_MSSSR0(r1)
+	/* Save 7450 specific registers */
+	beq	cr1,1f
+	mfspr	r4,HID1
+	stw	r4,SL_HID1(r1)
+	mfspr	r4,SPRN_ICTRL
+	stw	r4,SL_ICTRL(r1)
+	mfspr	r4,SPRN_LDSTCR
+	stw	r4,SL_LDSTCR(r1)
+	mfspr	r4,SPRN_LDSTDB
+	stw	r4,SL_LDSTDB(r1)
+1:
 	/* The ROM can wake us up via 2 different vectors:
 	 *  - On wallstreet & lombard, we must write a magic
 	 *    value 'Lars' at address 4 and a pointer to a
@@ -257,17 +291,10 @@ grackle_wake_up:
 	mtspr	HID0,r3
 	sync
 	
-	/* Restore the remaining bits of the HID0 register. */
-	subi	r1,r1,SL_PC
-	lwz	r3,SL_HID0(r1)
-	sync
-	isync
-	mtspr	HID0,r3
-	sync
-	isync
-
-	/* Restore the kernel's segment registers, the
-	   BATs, and SDR1.  Then we can turn on the MMU. */
+	/* Restore the kernel's segment registers before
+	 * we do any r1 memory access as we are not sure they
+	 * are in a sane state above the first 256Mb region
+	 */
 	li	r0,16		/* load up segment register values */
 	mtctr	r0		/* for context 0 */
 	lis	r3,0x2000	/* Ku = 1, VSID = 0 */
@@ -277,6 +304,61 @@ grackle_wake_up:
 	addis	r4,r4,0x1000	/* address of next segment */
 	bdnz	3b
 	
+	/* Restore the remaining bits of the HID0 register. */
+	subi	r1,r1,SL_PC
+	lwz	r3,SL_HID0(r1)
+	sync
+	isync
+	mtspr	HID0,r3
+	sync
+	isync
+
+	/* Restore 7400/7410/7450 specific registers */
+	mfspr	r3,PVR
+	srwi	r3,r3,16
+	cmpli	cr0,r3,0x8000
+	cmpli	cr1,r3,0x000c
+	cmpli	cr2,r3,0x800c
+	cror	4*cr1+eq,4*cr1+eq,4*cr2+eq
+	cror	4*cr0+eq,4*cr0+eq,4*cr1+eq
+	bne	1f
+	lwz	r4,SL_MSSCR0(r1)
+	sync
+	mtspr	SPRN_MSSCR0,r4
+	sync
+	isync
+	lwz	r4,SL_MSSSR0(r1)
+	sync
+	mtspr	SPRN_MSSSR0,r4
+	sync
+	isync
+	bne	cr2,1f
+	li	r4,0
+	mtspr	SPRN_L2CR2,r4
+	/* Restore 7450 specific registers */
+	beq	cr1,1f
+	lwz	r4,SL_HID1(r1)
+	sync
+	mtspr	HID1,r4
+	isync
+	sync
+	lwz	r4,SPRN_ICTRL(r1)
+	sync
+	mtspr	SPRN_ICTRL,r4
+	isync
+	sync
+	lwz	r4,SPRN_LDSTCR(r1)
+	sync
+	mtspr	SPRN_LDSTCR,r4
+	isync
+	sync
+	lwz	r4,SL_LDSTDB(r1)
+	sync
+	mtspr	SPRN_LDSTDB,r4
+	isync
+	sync
+1:
+	/* Restore the BATs, and SDR1.  Then we can turn on the MMU. */
 	lwz	r4,SL_SDR1(r1)
 	mtsdr1	r4
 	lwz	r4,SL_SPRG0(r1)
@@ -344,6 +426,8 @@ grackle_wake_up:
 	mttbl	r4
 
 	/* Restore the callee-saved registers and return */
+	lwz	r0,SL_CR(r1)
+	mtcr	r0
 	lwz	r2,SL_R2(r1)
 	lmw	r12,SL_R12(r1)
 	addi	r1,r1,SL_SIZE

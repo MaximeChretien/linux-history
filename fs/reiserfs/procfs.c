@@ -79,7 +79,7 @@ int reiserfs_version_in_proc( char *buffer, char **start, off_t offset,
 	struct super_block *sb;
 	char *format;
     
-	sb = procinfo_prologue( ( kdev_t ) ( int ) data );
+	sb = procinfo_prologue( ( kdev_t ) ( long ) data );
 	if( sb == NULL )
 		return -ENOENT;
 	if ( sb->u.reiserfs_sb.s_properties & (1 << REISERFS_3_6) ) {
@@ -143,7 +143,7 @@ int reiserfs_super_in_proc( char *buffer, char **start, off_t offset,
 	struct reiserfs_sb_info *r;
 	int len = 0;
     
-	sb = procinfo_prologue( ( kdev_t ) ( int ) data );
+	sb = procinfo_prologue( ( kdev_t ) ( long ) data );
 	if( sb == NULL )
 		return -ENOENT;
 	r = &sb->u.reiserfs_sb;
@@ -223,7 +223,7 @@ int reiserfs_per_level_in_proc( char *buffer, char **start, off_t offset,
 	int len = 0;
 	int level;
 	
-	sb = procinfo_prologue( ( kdev_t ) ( int ) data );
+	sb = procinfo_prologue( ( kdev_t ) ( long ) data );
 	if( sb == NULL )
 		return -ENOENT;
 	r = &sb->u.reiserfs_sb;
@@ -302,7 +302,7 @@ int reiserfs_bitmap_in_proc( char *buffer, char **start, off_t offset,
 	struct reiserfs_sb_info *r = &sb->u.reiserfs_sb;
 	int len = 0;
     
-	sb = procinfo_prologue( ( kdev_t ) ( int ) data );
+	sb = procinfo_prologue( ( kdev_t ) ( long ) data );
 	if( sb == NULL )
 		return -ENOENT;
 	r = &sb->u.reiserfs_sb;
@@ -343,7 +343,7 @@ int reiserfs_on_disk_super_in_proc( char *buffer, char **start, off_t offset,
 	int hash_code;
 	int len = 0;
     
-	sb = procinfo_prologue( ( kdev_t ) ( int ) data );
+	sb = procinfo_prologue( ( kdev_t ) ( long ) data );
 	if( sb == NULL )
 		return -ENOENT;
 	sb_info = &sb->u.reiserfs_sb;
@@ -396,7 +396,7 @@ int reiserfs_oidmap_in_proc( char *buffer, char **start, off_t offset,
 	int len = 0;
 	int exact;
     
-	sb = procinfo_prologue( ( kdev_t ) ( int ) data );
+	sb = procinfo_prologue( ( kdev_t ) ( long ) data );
 	if( sb == NULL )
 		return -ENOENT;
 	sb_info = &sb->u.reiserfs_sb;
@@ -447,7 +447,7 @@ int reiserfs_journal_in_proc( char *buffer, char **start, off_t offset,
 	struct reiserfs_super_block *rs;
 	int len = 0;
     
-	sb = procinfo_prologue( ( kdev_t ) ( int ) data );
+	sb = procinfo_prologue( ( kdev_t ) ( long ) data );
 	if( sb == NULL )
 		return -ENOENT;
 	r = &sb->u.reiserfs_sb;
@@ -464,7 +464,7 @@ int reiserfs_journal_in_proc( char *buffer, char **start, off_t offset,
 			"s_journal_max_commit_age: \t%i\n"
 			"s_journal_max_trans_age: \t%i\n"
 			/* incore fields */
-			"j_state: \t%i\n"			
+			"j_state: \t%li\n"			
 			"j_trans_id: \t%lu\n"
 			"j_mount_id: \t%lu\n"
 			"j_start: \t%lu\n"
@@ -588,7 +588,7 @@ struct proc_dir_entry *reiserfs_proc_register( struct super_block *sb,
 {
 	return ( sb->u.reiserfs_sb.procdir ) ? create_proc_read_entry
 		( name, 0, sb->u.reiserfs_sb.procdir, func, 
-		  ( void * ) ( int ) sb -> s_dev ) : NULL;
+		  ( void * ) ( long ) sb -> s_dev ) : NULL;
 }
 
 void reiserfs_proc_unregister( struct super_block *sb, const char *name )

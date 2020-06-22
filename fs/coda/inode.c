@@ -240,9 +240,11 @@ int coda_notify_change(struct dentry *de, struct iattr *iattr)
         struct coda_vattr vattr;
         int error;
 	
-        memset(&vattr, 0, sizeof(vattr)); 
+	inode->i_ctime = CURRENT_TIME;
 
+        memset(&vattr, 0, sizeof(vattr)); 
         coda_iattr_to_vattr(iattr, &vattr);
+
         vattr.va_type = C_VNON; /* cannot set type */
 	CDEBUG(D_SUPER, "vattr.va_mode %o\n", vattr.va_mode);
 

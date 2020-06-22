@@ -567,6 +567,7 @@ extern struct journal_head * journal_get_descriptor_buffer(journal_t *);
 int journal_next_log_block(journal_t *, unsigned long *);
 
 /* Commit management */
+void journal_end_buffer_io_sync(struct buffer_head *bh, int uptodate);
 extern void journal_commit_transaction(journal_t *);
 
 /* Checkpoint list management */
@@ -799,8 +800,6 @@ extern int journal_blocks_per_page(struct inode *inode);
 #define BJ_Reserved	8	/* Buffer is reserved for access by journal */
 #define BJ_Types	9
  
-extern int jbd_blocks_per_page(struct inode *inode);
-
 #ifdef __KERNEL__
 
 extern spinlock_t jh_splice_lock;

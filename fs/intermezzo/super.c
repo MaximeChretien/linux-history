@@ -319,6 +319,7 @@ struct super_block * presto_read_super(struct super_block * presto_sb,
                 goto out_err;
         }
 
+	
 	cache->cache_sb = mysb;
         ops = filter_get_filter_fs(cache_type);
 
@@ -347,7 +348,6 @@ struct super_block * presto_read_super(struct super_block * presto_sb,
                                         &presto_dentry_ops);
                 presto_sb->s_root->d_op = filter_c2udops(cache->cache_filter);
                 cache->cache_mtde = mysb->s_root;
-                presto_set_dd(mysb->s_root);
         }
 
         CDEBUG(D_MALLOC, "after mounting: kmem %ld, vmem %ld\n",
@@ -481,7 +481,6 @@ int /* __init */ init_intermezzo_fs(void)
         }
 
         presto_init_cache_hash();
-        presto_init_ddata_cache();
 
         status = register_filesystem(&presto_fs_type);
         if (status) {
@@ -513,7 +512,7 @@ void cleanup_module(void)
 
         presto_psdev_cleanup();
         cleanup_intermezzo_sysctl();
-        presto_cleanup_ddata_cache();
+
 
 #ifdef PRESTO_DEVEL
         unregister_chrdev(PRESTO_PSDEV_MAJOR, "intermezzo_psdev_devel");

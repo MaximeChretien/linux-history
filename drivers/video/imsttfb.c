@@ -371,7 +371,6 @@ enum {
 	TVP = 1
 };
 
-#define USE_NV_MODES		1
 #define INIT_BPP		8
 #define INIT_XRES		640
 #define INIT_YRES		480
@@ -384,7 +383,8 @@ static char fontname[40] __initdata = { 0 };
 static char curblink __initdata = 1;
 static char noaccel __initdata = 0;
 #if defined(CONFIG_PPC)
-static signed char init_vmode __initdata = -1, init_cmode __initdata = -1;
+static signed char init_vmode __initdata = VMODE_NVRAM;
+static signed char init_cmode __initdata = CMODE_NVRAM;
 #endif
 
 static struct imstt_regvals tvp_reg_init_2 = {
@@ -1804,20 +1804,25 @@ init_imstt(struct fb_info_imstt *p)
 		}
 	}
 
-#if USE_NV_MODES && defined(CONFIG_PPC)
+#ifdef CONFIG_ALL_PPC
 	{
 		int vmode = init_vmode, cmode = init_cmode;
 
-		if (vmode == -1) {
+#ifdef CONFIG_NVRAM
+		/* Attempt to read vmode/cmode from NVRAM */
+		if (vmode == VMODE_NVRAM)
 			vmode = nvram_read_byte(NV_VMODE);
-			if (vmode <= 0 || vmode > VMODE_MAX)
-				vmode = VMODE_640_480_67;
-		}
-		if (cmode == -1) {
+		if (cmode == CMODE_NVRAM)
 			cmode = nvram_read_byte(NV_CMODE);
-			if (cmode < CMODE_8 || cmode > CMODE_32)
-				cmode = CMODE_8;
-		}
+#endif
+		/* If we didn't get something from NVRAM, pick a
+		 * sane default.
+		 */
+		if (vmode <= 0 || vmode > VMODE_MAX)
+			vmode = VMODE_640_480_67;
+		if (cmode < CMODE_8 || cmode > CMODE_32)
+			cmode = CMODE_8;
+
 		if (mac_vmode_to_var(vmode, cmode, &p->disp.var)) {
 			p->disp.var.xres = p->disp.var.xres_virtual = INIT_XRES;
 			p->disp.var.yres = p->disp.var.yres_virtual = INIT_YRES;

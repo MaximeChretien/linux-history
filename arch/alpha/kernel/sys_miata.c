@@ -230,7 +230,15 @@ static void __init
 miata_init_pci(void)
 {
 	cia_init_pci();
-	SMC669_Init(0); /* it might be a GL (fails harmlessly if not) */
+	/* The PYXIS has data corruption problem with scatter/gather
+	   burst DMA reads crossing 8K boundary. It had been fixed
+	   with off-chip logic on all PYXIS systems except first
+	   MIATAs, so disable SG DMA on such machines. */
+	if (!SMC669_Init(0)) {	/* MIATA GL has SMC37c669 Super I/O */
+		alpha_mv.mv_pci_tbi = NULL; 
+		printk(KERN_INFO "pci: pyxis 8K boundary dma bug - "
+				 "sg dma disabled\n");
+	}
 	es1888_init();
 }
 

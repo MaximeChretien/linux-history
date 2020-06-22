@@ -273,7 +273,9 @@ research:
 	pathrelse (&path);
         if (p)
             kunmap(bh_result->b_page) ;
-	if ((args & GET_BLOCK_NO_HOLE)) {
+	// We do not return -ENOENT if there is a hole but page is uptodate, because it means
+	// That there is some MMAPED data associated with it that is yet to be written to disk.
+	if ((args & GET_BLOCK_NO_HOLE) && !Page_Uptodate(bh_result->b_page) ) {
 	    return -ENOENT ;
 	}
         return 0 ;
@@ -294,9 +296,13 @@ research:
 	    bh_result->b_dev = inode->i_dev;
 	    bh_result->b_blocknr = blocknr;
 	    bh_result->b_state |= (1UL << BH_Mapped);
-	} else if ((args & GET_BLOCK_NO_HOLE)) {
-	    ret = -ENOENT ;
-	}
+	} else
+	    // We do not return -ENOENT if there is a hole but page is uptodate, because it means
+	    // That there is some MMAPED data associated with it that is yet to be written to disk.
+	    if ((args & GET_BLOCK_NO_HOLE) && !Page_Uptodate(bh_result->b_page) ) {
+		ret = -ENOENT ;
+	    }
+
 	pathrelse (&path);
         if (p)
             kunmap(bh_result->b_page) ;
@@ -319,6 +325,16 @@ research:
     */
     if (buffer_uptodate(bh_result)) {
         goto finished ;
+    } else 
+	/*
+	** grab_tail_page can trigger calls to reiserfs_get_block on up to date
+	** pages without any buffers.  If the page is up to date, we don't want
+	** read old data off disk.  Set the up to date bit on the buffer instead
+	** and jump to the end
+	*/
+	    if (Page_Uptodate(bh_result->b_page)) {
+		mark_buffer_uptodate(bh_result, 1);
+		goto finished ;
     }
 
     // read file tail into part of page
@@ -827,7 +843,7 @@ static int reiserfs_get_block (struct inode * inode, long block,
 	}
 	if (retval == POSITION_FOUND) {
 	    reiserfs_warning ("vs-825: reiserfs_get_block: "
-			      "%k should not be found\n", &key);
+			      "%K should not be found\n", &key);
 	    retval = -EEXIST;
 	    if (allocated_block_nr)
 	        reiserfs_free_block (&th, allocated_block_nr);
@@ -915,9 +931,6 @@ static void init_inode (struct inode * inode, struct path * path)
 	// (directories and symlinks)
 	struct stat_data * sd = (struct stat_data *)B_I_PITEM (bh, ih);
 
-	/* both old and new directories have old keys */
-	//version = (S_ISDIR (sd->sd_mode) ? ITEM_VERSION_1 : ITEM_VERSION_2);
-
 	inode->i_mode   = sd_v2_mode(sd);
 	inode->i_nlink  = sd_v2_nlink(sd);
 	inode->i_uid    = sd_v2_uid(sd);
@@ -937,6 +950,8 @@ static void init_inode (struct inode * inode, struct path * path)
 	    set_inode_item_key_version (inode, KEY_FORMAT_3_5);
 	else
             set_inode_item_key_version (inode, KEY_FORMAT_3_6);
+
+        set_inode_sd_version (inode, STAT_DATA_V2);
     }
 
     /* nopack = 0, by default */
@@ -1139,6 +1154,7 @@ void reiserfs_read_inode2 (struct inode * inode, void *p)
 	/* a stale NFS handle can trigger this without it being an error */
 	pathrelse (&path_to_sd);
 	make_bad_inode(inode) ;
+	inode->i_nlink = 0;
 	return;
     }
 
@@ -1171,6 +1187,28 @@ void reiserfs_read_inode2 (struct inode * inode, void *p)
 
 }
 
+/**
+ * reiserfs_find_actor() - "find actor" reiserfs supplies to iget4().
+ *
+ * @inode:    inode from hash table to check
+ * @inode_no: inode number we are looking for
+ * @opaque:   "cookie" passed to iget4(). This is &reiserfs_iget4_args.
+ *
+ * This function is called by iget4() to distinguish reiserfs inodes
+ * having the same inode numbers. Such inodes can only exist due to some
+ * error condition. One of them should be bad. Inodes with identical
+ * inode numbers (objectids) are distinguished by parent directory ids.
+ *
+ */
+static int reiserfs_find_actor( struct inode *inode, 
+				unsigned long inode_no, void *opaque )
+{
+    struct reiserfs_iget4_args *args;
+
+    args = opaque;
+    /* args is already in CPU order */
+    return le32_to_cpu(INODE_PKEY(inode)->k_dir_id) == args -> objectid;
+}
 
 struct inode * reiserfs_iget (struct super_block * s, const struct cpu_key * key)
 {
@@ -1178,7 +1216,8 @@ struct inode * reiserfs_iget (struct super_block * s, const struct cpu_key * key
     struct reiserfs_iget4_args args ;
 
     args.objectid = key->on_disk_key.k_dir_id ;
-    inode = iget4 (s, key->on_disk_key.k_objectid, 0, (void *)(&args));
+    inode = iget4 (s, key->on_disk_key.k_objectid, 
+		   reiserfs_find_actor, (void *)(&args));
     if (!inode) 
 	return ERR_PTR(-ENOMEM) ;
 
@@ -1766,6 +1805,7 @@ static int map_block_for_writepage(struct inode *inode,
     int bytes_copied = 0 ;
     int copy_size ;
 
+    kmap(bh_result->b_page) ;
 start_over:
     lock_kernel() ;
     journal_begin(&th, inode->i_sb, jbegin_count) ;
@@ -1838,10 +1878,8 @@ out:
 
     /* this is where we fill in holes in the file. */
     if (use_get_block) {
-        kmap(bh_result->b_page) ;
 	retval = reiserfs_get_block(inode, block, bh_result, 
 	                            GET_BLOCK_CREATE | GET_BLOCK_NO_ISEM) ;
-        kunmap(bh_result->b_page) ;
 	if (!retval) {
 	    if (!buffer_mapped(bh_result) || bh_result->b_blocknr == 0) {
 	        /* get_block failed to find a mapped unformatted node. */
@@ -1850,6 +1888,7 @@ out:
 	    }
 	}
     }
+    kunmap(bh_result->b_page) ;
     return retval ;
 }
 
@@ -2026,7 +2065,7 @@ static int reiserfs_commit_write(struct file *f, struct page *page,
     /* we test for O_SYNC here so we can commit the transaction
     ** for any packed tails the file might have had
     */
-    if (f->f_flags & O_SYNC) {
+    if (f && (f->f_flags & O_SYNC)) {
 	lock_kernel() ;
  	reiserfs_commit_for_inode(inode) ;
 	unlock_kernel();

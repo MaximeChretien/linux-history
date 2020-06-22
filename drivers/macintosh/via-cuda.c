@@ -191,6 +191,8 @@ int via_cuda_start(void)
     if (via == NULL)
 	return -ENODEV;
 
+    request_OF_resource(vias, 0, NULL);
+
     if (request_irq(CUDA_IRQ, cuda_interrupt, 0, "ADB", cuda_interrupt)) {
 	printk(KERN_ERR "cuda_init: can't get irq %d\n", CUDA_IRQ);
 	return -EAGAIN;

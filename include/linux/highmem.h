@@ -56,17 +56,6 @@ static inline void clear_highpage(struct page *page)
 	kunmap(page);
 }
 
-static inline void memclear_highpage(struct page *page, unsigned int offset, unsigned int size)
-{
-	char *kaddr;
-
-	if (offset + size > PAGE_SIZE)
-		BUG();
-	kaddr = kmap(page);
-	memset(kaddr + offset, 0, size);
-	kunmap(page);
-}
-
 /*
  * Same but also flushes aliased cache contents to RAM.
  */
@@ -78,6 +67,7 @@ static inline void memclear_highpage_flush(struct page *page, unsigned int offse
 		BUG();
 	kaddr = kmap(page);
 	memset(kaddr + offset, 0, size);
+	flush_dcache_page(page);
 	flush_page_to_ram(page);
 	kunmap(page);
 }

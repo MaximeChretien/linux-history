@@ -25,7 +25,7 @@ export-objs     :=	busmouse.o console.o keyboard.o sysrq.o \
 			misc.o pty.o random.o selection.o serial.o \
 			sonypi.o tty_io.o tty_ioctl.o generic_serial.o
 
-mod-subdirs	:=	joystick ftape drm pcmcia
+mod-subdirs	:=	joystick ftape drm drm-4.0 pcmcia
 
 list-multi	:=	
 
@@ -200,7 +200,8 @@ obj-$(CONFIG_INTEL_RNG) += i810_rng.o
 obj-$(CONFIG_QIC02_TAPE) += tpqic02.o
 
 subdir-$(CONFIG_FTAPE) += ftape
-subdir-$(CONFIG_DRM) += drm
+subdir-$(CONFIG_DRM_OLD) += drm-4.0
+subdir-$(CONFIG_DRM_NEW) += drm
 subdir-$(CONFIG_PCMCIA) += pcmcia
 subdir-$(CONFIG_AGP) += agp
 

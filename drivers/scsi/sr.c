@@ -789,6 +789,7 @@ static int sr_init()
 	if (!sr_registered) {
 		if (devfs_register_blkdev(MAJOR_NR, "sr", &sr_bdops)) {
 			printk("Unable to get major %d for SCSI-CD\n", MAJOR_NR);
+			sr_template.dev_noticed = 0;
 			return 1;
 		}
 		sr_registered++;
@@ -830,8 +831,10 @@ cleanup_sizes:
 	kfree(sr_sizes);
 cleanup_cds:
 	kfree(scsi_CDs);
+	scsi_CDs = NULL;
 cleanup_devfs:
 	devfs_unregister_blkdev(MAJOR_NR, "sr");
+	sr_template.dev_noticed = 0;
 	sr_registered--;
 	return 1;
 }
@@ -905,6 +908,8 @@ static void sr_detach(Scsi_Device * SDp)
 	Scsi_CD *cpnt;
 	int i;
 
+	if (scsi_CDs == NULL)
+		return;
 	for (cpnt = scsi_CDs, i = 0; i < sr_template.dev_max; i++, cpnt++)
 		if (cpnt->device == SDp) {
 			/*

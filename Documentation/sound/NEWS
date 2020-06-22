@@ -1,6 +1,6 @@
 Linux 2.4 Sound Changes
 2000-September-25
-Christoph Hellwig, <hch@caldera.de>
+Christoph Hellwig, <hch@infradead.org>
 
 
 
@@ -9,9 +9,6 @@ Christoph Hellwig, <hch@caldera.de>
 The Linux 2.4 Kernel does have reliable in-kernel isapnp support.
 Some drivers (sb.o, ad1816.o awe_wave.o) do now support automatically
 detecting and configuring isapnp devices.
-If you have a not yet supported isapnp soundcard, mail me the content
-of '/proc/isapnp' on your system and some information about your card
-and its driver(s) so I can try to get isapnp working for it.
 
 
 

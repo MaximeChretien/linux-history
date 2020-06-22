@@ -233,7 +233,7 @@ static int eurwdt_ioctl(struct inode *inode, struct file *file,
         unsigned int cmd, unsigned long arg)
 {
    static struct watchdog_info ident = {
-      options		: WDIOF_CARDRESET,
+      options		: WDIOF_CARDRESET | WDIOF_SETTIMEOUT,
       firmware_version	: 1,
       identity		: "WDT Eurotech CPU-1220/1410"
    };
@@ -265,7 +265,10 @@ static int eurwdt_ioctl(struct inode *inode, struct file *file,
 
          eurwdt_timeout = time; 
          eurwdt_set_timeout(time); 
-         return 0;
+	 /* Fall */
+
+      case WDIOC_GETTIMEOUT:
+	 return put_user(eurwdt_timeout, (int *)arg);
    }
 }
 

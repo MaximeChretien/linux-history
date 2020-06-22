@@ -45,6 +45,8 @@
 #define __LC_CPUADDR                    0xD98
 #define __LC_IPLDEV                     0xDB8
 
+#define __LC_JIFFY_TIMER		0xDC0
+
 #define __LC_PANIC_MAGIC                0xE00
 
 #define __LC_AREGS_SAVE_AREA            0x1340
@@ -158,7 +160,7 @@ struct _lowcore
 	/* entry.S sensitive area end */
 
         /* SMP info area: defined by DJB */
-        __u64        jiffy_timer_cc;           /* 0xdc0 */
+        __u64        jiffy_timer;              /* 0xdc0 */
 	__u64        ext_call_fast;            /* 0xdc8 */
         __u8         pad12[0xe00-0xdd0];       /* 0xdd0 */
 

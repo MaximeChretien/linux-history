@@ -61,7 +61,7 @@ struct inode_operations hfs_file_inode_operations = {
 struct buffer_head *hfs_getblk(struct hfs_fork *fork, int block, int create)
 {
 	int tmp;
-	kdev_t dev = fork->entry->mdb->sys_mdb->s_dev;
+	struct super_block *sb = fork->entry->mdb->sys_mdb;
 
 	tmp = hfs_extent_map(fork, block, create);
 
@@ -71,7 +71,7 @@ struct buffer_head *hfs_getblk(struct hfs_fork *fork, int block, int create)
 		*/
 		if (tmp) {
 			hfs_cat_mark_dirty(fork->entry);
-			return getblk(dev, tmp, HFS_SECTOR_SIZE);
+			return sb_getblk(sb, tmp);
 		}
 		return NULL;
 	} else {
@@ -80,8 +80,7 @@ struct buffer_head *hfs_getblk(struct hfs_fork *fork, int block, int create)
 		   we waited on the I/O in getblk to complete.
 		*/
 		do {
-			struct buffer_head *bh =
-					getblk(dev, tmp, HFS_SECTOR_SIZE);
+			struct buffer_head *bh = sb_getblk(sb, tmp);
 			int tmp2 = hfs_extent_map(fork, block, 0);
 
 			if (tmp2 == tmp) {

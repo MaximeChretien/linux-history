@@ -1,8 +1,8 @@
 This file contains brief information about the SCSI tape driver.
-The driver is currently maintained by Kai M{kisara (email
+The driver is currently maintained by Kai Mäkisara (email
 Kai.Makisara@metla.fi)
 
-Last modified: Thu Nov  1 22:41:59 2001 by makisara@kai.makisara.local
+Last modified: Tue Feb  5 21:33:23 2002 by makisara
 
 
 BASICS
@@ -327,12 +327,19 @@ MTSETDRVBUFFER
 	   0xffffff means that the default is not used any more.
 	MT_ST_DEF_DENSITY
 	MT_ST_DEF_DRVBUFFER
+	   Used to set or clear the density (8 bits), and drive buffer
+	   state (3 bits). If the value is MT_ST_CLEAR_DEFAULT
+	   (0xfffff) the default will not be used any more. Otherwise
+	   the lowermost bits of the value contain the new value of
+	   the parameter.
 	MT_ST_DEF_COMPRESSION
-	   Used to set or clear the density (8 bits), drive buffer
-	   state (3 bits), and compression (single bit). If the value is
-	   MT_ST_CLEAR_DEFAULT (0xfffff), the default will not be used
-	   any more. Otherwise the lower-most bits of the value contain
-	   the new value of the parameter.
+	   The compression default will not be used if the value of
+	   the lowermost byte is 0xff. Otherwise the lowermost bit
+	   contains the new default. If the bits 8-15 are set to a
+	   non-zero number, and this number is not 0xff, the number is
+	   used as the compression algorithm. The value
+	   MT_ST_CLEAR_DEFAULT can be used to clear the compression
+	   default.
 	MT_ST_SET_TIMEOUT
 	   Set the normal timeout in seconds for this device. The
 	   default is 900 seconds (15 minutes). The timeout should be

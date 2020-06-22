@@ -197,7 +197,7 @@ static inline void coda_dir_changed(struct inode *dir, int link)
 	/* optimistically we can also act as if our nose bleeds. The
          * granularity of the mtime is coarse anyways so we might actually be
          * right most of the time. Note: we only do this for directories. */
-	dir->i_mtime = CURRENT_TIME;
+	dir->i_mtime = dir->i_ctime = CURRENT_TIME;
 #endif
 	if (link)
 		dir->i_nlink += link;
@@ -209,7 +209,7 @@ static int coda_create(struct inode *dir, struct dentry *de, int mode)
         int error=0;
 	const char *name=de->d_name.name;
 	int length=de->d_name.len;
-	struct inode *result = NULL;
+	struct inode *inode = NULL;
 	struct ViceFid newfid;
 	struct coda_vattr attrs;
 
@@ -230,16 +230,15 @@ static int coda_create(struct inode *dir, struct dentry *de, int mode)
 		return error;
 	}
 
-	error = coda_cnode_make(&result, &newfid, dir->i_sb);
-	if ( error ) {
+	inode = coda_iget(dir->i_sb, &newfid, &attrs);
+	if ( IS_ERR(inode) ) {
 		d_drop(de);
-		result = NULL;
-		return error;
+		return PTR_ERR(inode);
 	}
 
 	/* invalidate the directory cnode's attributes */
 	coda_dir_changed(dir, 0);
-	d_instantiate(de, result);
+	d_instantiate(de, inode);
         return 0;
 }
 
@@ -519,6 +518,7 @@ int coda_readdir(struct file *file, void *dirent,  filldir_t filldir)
 		result = vfs_readdir(file, filldir, dirent);
         }
 
+	UPDATE_ATIME(inode);
 	return result;
 }
 
@@ -657,7 +657,7 @@ static int coda_dentry_revalidate(struct dentry *de, int flags)
 		goto bad;
 
 	cii = ITOC(de->d_inode);
-	if (cii->c_flags & (C_PURGE | C_FLUSH))
+	if (!(cii->c_flags & (C_PURGE | C_FLUSH)))
 		goto out;
 
 	shrink_dcache_parent(de);

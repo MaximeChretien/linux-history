@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.init.c 1.36 09/22/01 14:03:09 paulus
+ * BK Id: SCCS/s.init.c 1.40 01/25/02 15:15:24 benh
  */
 /*
  *  PowerPC version 
@@ -49,8 +49,6 @@
 #include "mem_pieces.h"
 #include "mmu_decl.h"
 
-#define MAX_LOW_MEM	(0xF0000000UL - KERNELBASE)
-
 mmu_gather_t mmu_gathers[NR_CPUS];
 
 void *end_of_DRAM;
@@ -62,6 +60,9 @@ int init_bootmem_done;
 int boot_mapsize;
 unsigned long totalram_pages;
 unsigned long totalhigh_pages;
+#ifdef CONFIG_ALL_PPC
+unsigned long agp_special_page;
+#endif
 
 extern char _end[];
 extern char etext[], _stext[];
@@ -85,7 +86,7 @@ extern struct task_struct *current_set[NR_CPUS];
 char *klimit = _end;
 struct mem_pieces phys_avail;
 
-extern char *sysmap; 
+extern char *sysmap;
 extern unsigned long sysmap_size;
 
 /*
@@ -97,8 +98,6 @@ int __map_without_bats;
 
 /* max amount of RAM to use */
 unsigned long __max_memory;
-/* max amount of low RAM to map in */
-unsigned long __max_low_memory = MAX_LOW_MEM;
 
 int do_check_pgt_cache(int low, int high)
 {
@@ -313,12 +312,7 @@ void __init MMU_init(void)
 	if (__max_memory && total_memory > __max_memory)
 		total_memory = __max_memory;
 	total_lowmem = total_memory;
-	if (total_lowmem > __max_low_memory) {
-		total_lowmem = __max_low_memory;
-#ifndef CONFIG_HIGHMEM
-		total_memory = total_lowmem;
-#endif /* CONFIG_HIGHMEM */
-	}
+	adjust_total_lowmem();	
 	end_of_DRAM = __va(total_lowmem);
 	set_phys_avail(total_lowmem);
 
@@ -352,9 +346,10 @@ void __init MMU_init(void)
 		ppc_md.progress("MMU:exit", 0x211);
 
 #ifdef CONFIG_BOOTX_TEXT
-	/* Must be done last, or ppc_md.progress will die */
-	if (have_of)
-		map_boot_text();
+	/* By default, we are no longer mapped */
+	boot_text_mapped = 0;	
+	/* Must be done last, or ppc_md.progress will die. */
+	map_boot_text();
 #endif
 }
 
@@ -474,20 +469,22 @@ void __init mem_init(void)
 	}
 #endif /* CONFIG_BLK_DEV_INITRD */
 
-#if defined(CONFIG_ALL_PPC)	
+#if defined(CONFIG_ALL_PPC)
 	/* mark the RTAS pages as reserved */
 	if ( rtas_data )
 		for (addr = (ulong)__va(rtas_data);
 		     addr < PAGE_ALIGN((ulong)__va(rtas_data)+rtas_size) ;
 		     addr += PAGE_SIZE)
 			SetPageReserved(virt_to_page(addr));
+	if (agp_special_page)
+		SetPageReserved(virt_to_page(agp_special_page));
 #endif /* defined(CONFIG_ALL_PPC) */
 	if ( sysmap )
 		for (addr = (unsigned long)sysmap;
 		     addr < PAGE_ALIGN((unsigned long)sysmap+sysmap_size) ;
 		     addr += PAGE_SIZE)
 			SetPageReserved(virt_to_page(addr));
-	
+
 	for (addr = PAGE_OFFSET; addr < (unsigned long)end_of_DRAM;
 	     addr += PAGE_SIZE) {
 		if (!PageReserved(virt_to_page(addr)))
@@ -526,6 +523,10 @@ void __init mem_init(void)
 	if (sysmap)
 		printk("System.map loaded at 0x%08x for debugger, size: %ld bytes\n",
 			(unsigned int)sysmap, sysmap_size);
+#if defined(CONFIG_ALL_PPC)
+	if (agp_special_page)
+		printk(KERN_INFO "AGP special page: 0x%08lx\n", agp_special_page);
+#endif /* defined(CONFIG_ALL_PPC) */
 	mem_init_done = 1;
 }
 
@@ -572,6 +573,20 @@ set_phys_avail(unsigned long total_memory)
 	/* remove the sysmap pages from the available memory */
 	if (sysmap)
 		mem_pieces_remove(&phys_avail, __pa(sysmap), sysmap_size, 1);
+	/* Because of some uninorth weirdness, we need a page of
+	 * memory as high as possible (it must be outside of the
+	 * bus address seen as the AGP aperture). It will be used
+	 * by the r128 DRM driver
+	 * 
+	 * FIXME: We need to make sure that page doesn't overlap any of the\
+	 * above. This could be done by improving mem_pieces_find to be able
+	 * to do a backward search from the end of the list.
+	 */
+	if (_machine == _MACH_Pmac && find_devices("uni-north-agp")) {
+		agp_special_page = (total_memory - PAGE_SIZE);
+		mem_pieces_remove(&phys_avail, agp_special_page, PAGE_SIZE, 0);	
+		agp_special_page = (unsigned long)__va(agp_special_page);
+	}
 #endif /* CONFIG_ALL_PPC */
 }
 

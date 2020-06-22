@@ -2025,7 +2025,7 @@ int __init init_zoran(int card)
 }
 
 static
-void __exit release_zoran(int max)
+void release_zoran(int max)
 {
 	struct zoran *ztv;
 	int i;

@@ -28,7 +28,8 @@
 #include <asm/irq.h>
 #include <asm/hydra.h>
 #include <asm/processor.h>
-#include <asm/feature.h>
+#include <asm/machdep.h>
+#include <asm/pmac_feature.h>
 #ifdef CONFIG_PMAC_PBOOK
 #include <linux/adb.h>
 #include <linux/pmu.h>
@@ -155,7 +156,6 @@ struct mesh_state {
 	struct mesh_target tgts[8];
 	void	*dma_cmd_space;
 	struct device_node *ofnode;
-	u8*	mio_base;
 #ifndef MESH_NEW_STYLE_EH
 	Scsi_Cmnd *completed_q;
 	Scsi_Cmnd *completed_qtail;
@@ -258,8 +258,6 @@ mesh_detect(Scsi_Host_Template *tp)
 	if (mesh == 0)
 		mesh = find_compatible_devices("scsi", "chrp,mesh0");
 	for (; mesh != 0; mesh = mesh->next) {
-		struct device_node *mio;
-		
 		if (mesh->n_addrs != 2 || mesh->n_intrs != 2) {
 			printk(KERN_ERR "mesh: expected 2 addrs and 2 intrs"
 			       " (got %d,%d)", mesh->n_addrs, mesh->n_intrs);
@@ -325,12 +323,6 @@ mesh_detect(Scsi_Host_Template *tp)
 		if (mesh_sync_period < minper)
 			mesh_sync_period = minper;
 
-		ms->mio_base = 0;
-		for (mio = ms->ofnode->parent; mio; mio = mio->parent)
-			if (strcmp(mio->name, "mac-io") == 0 && mio->n_addrs > 0)
-				break;
-		if (mio)
-			ms->mio_base = (u8 *) ioremap(mio->addrs[0].address, 0x40);
 		set_mesh_power(ms, 1);
 
 		mesh_init(ms);
@@ -363,11 +355,9 @@ mesh_release(struct Scsi_Host *host)
 		iounmap((void *) ms->mesh);
 	if (ms->dma)
 		iounmap((void *) ms->dma);
-	if (ms->mio_base)
-		iounmap((void *) ms->mio_base);
 	kfree(ms->dma_cmd_space);
 	free_irq(ms->meshintr, ms);
-	feature_clear(ms->ofnode, FEATURE_MESH_enable);
+	pmac_call_feature(PMAC_FTR_MESH_ENABLE, ms->ofnode, 0, 0);
 	return 0;
 }
 
@@ -377,16 +367,10 @@ set_mesh_power(struct mesh_state *ms, int state)
 	if (_machine != _MACH_Pmac)
 		return;
 	if (state) {
-		feature_set(ms->ofnode, FEATURE_MESH_enable);
-		/* This seems to enable the termination power. strangely
-		   this doesn't fully agree with OF, but with MacOS */
-		if (ms->mio_base)
-			out_8(ms->mio_base + 0x36, 0x70);
+		pmac_call_feature(PMAC_FTR_MESH_ENABLE, ms->ofnode, 0, 1);
 		mdelay(200);
 	} else {
-		feature_clear(ms->ofnode, FEATURE_MESH_enable);
-		if (ms->mio_base)
-			out_8(ms->mio_base + 0x36, 0x34);
+		pmac_call_feature(PMAC_FTR_MESH_ENABLE, ms->ofnode, 0, 0);
 		mdelay(10);
 	}
 }			

@@ -246,7 +246,7 @@ static int nsc_ircc_open(int i, chipio_t *info)
 	struct net_device *dev;
 	struct nsc_ircc_cb *self;
         struct pm_dev *pmdev;
-	int ret;
+	void *ret;
 	int err;
 
 	IRDA_DEBUG(2, __FUNCTION__ "()\n");
@@ -282,15 +282,14 @@ static int nsc_ircc_open(int i, chipio_t *info)
         self->io.fifo_size = 32;
 	
 	/* Reserve the ioports that we need */
-	ret = check_region(self->io.fir_base, self->io.fir_ext);
-	if (ret < 0) { 
+	ret = request_region(self->io.fir_base, self->io.fir_ext, driver_name);
+	if (!ret) {
 		WARNING(__FUNCTION__ "(), can't get iobase of 0x%03x\n",
 			self->io.fir_base);
 		dev_self[i] = NULL;
 		kfree(self);
 		return -ENODEV;
 	}
-	request_region(self->io.fir_base, self->io.fir_ext, driver_name);
 
 	/* Initialize QoS for this device */
 	irda_init_max_qos_capabilies(&self->qos);
@@ -1164,7 +1163,7 @@ static int nsc_ircc_hard_xmit_fir(struct sk_buff *skb, struct net_device *dev)
 		mtt = irda_get_mtt(skb);
 		if (mtt) {
 			/* Check how much time we have used already */
-			get_fast_time(&self->now);
+			do_gettimeofday(&self->now);
 			diff = self->now.tv_usec - self->stamp.tv_usec;
 			if (diff < 0) 
 				diff += 1000000;
@@ -1536,7 +1535,7 @@ static int nsc_ircc_dma_receive_complete(struct nsc_ircc_cb *self, int iobase)
 			 * reduce the min turn time a bit since we will know
 			 * how much time we have used for protocol processing
 			 */
-			get_fast_time(&self->stamp);
+			do_gettimeofday(&self->stamp);
 
 			skb = dev_alloc_skb(len+1);
 			if (skb == NULL)  {

@@ -39,6 +39,10 @@ if [ "$CONFIG_I2C" != "n" ]; then
       fi
    fi
 
+   if [ "$CONFIG_ALL_PPC" = "y" ] ; then
+      dep_tristate 'Keywest I2C interface in Apple Core99 machines' CONFIG_I2C_KEYWEST $CONFIG_I2C
+   fi
+
 # This is needed for automatic patch generation: sensors code starts here
 # This is needed for automatic patch generation: sensors code ends here
 

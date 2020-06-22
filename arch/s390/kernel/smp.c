@@ -49,9 +49,6 @@ extern volatile int __cpu_logical_map[];
 static int       max_cpus = NR_CPUS;	  /* Setup configured maximum number of CPUs to activate	*/
 int              smp_num_cpus;
 struct _lowcore *lowcore_ptr[NR_CPUS];
-unsigned int     prof_multiplier[NR_CPUS];
-unsigned int     prof_old_multiplier[NR_CPUS];
-unsigned int     prof_counter[NR_CPUS];
 cycles_t         cacheflush_time=0;
 int              smp_threads_ready=0;      /* Set when the idlers are all forked. */
 static atomic_t  smp_commenced = ATOMIC_INIT(0);
@@ -473,7 +470,7 @@ void smp_count_cpus(void)
 /*
  *      Activate a secondary processor.
  */
-extern void init_100hz_timer(void);
+extern void init_cpu_timer(void);
 extern int pfault_init(void);
 extern int pfault_token(void);
 
@@ -486,8 +483,8 @@ int __init start_secondary(void *cpuvoid)
         /* Wait for completion of smp startup */
         while (!atomic_read(&smp_commenced))
                 /* nothing */ ;
-        /* init per CPU 100 hz timer */
-        init_100hz_timer();
+        /* init per CPU timer */
+        init_cpu_timer();
 #ifdef CONFIG_PFAULT
 	/* Enable pfault pseudo page faults on this cpu. */
 	pfault_init();
@@ -540,7 +537,7 @@ static void __init do_boot_cpu(int cpu)
 
         cpu_lowcore=&get_cpu_lowcore(cpu);
 	cpu_lowcore->save_area[15] = idle->thread.ksp;
-	cpu_lowcore->kernel_stack = (idle->thread.ksp | 8191) + 1;
+	cpu_lowcore->kernel_stack = (__u32) idle + 8192;
         __asm__ __volatile__("la    1,%0\n\t"
 			     "stctl 0,15,0(1)\n\t"
 			     "la    1,%1\n\t"
@@ -591,15 +588,7 @@ void __init smp_boot_cpus(void)
         
         /*
          *      Initialize the logical to physical CPU number mapping
-         *      and the per-CPU profiling counter/multiplier
          */
-        
-        for (i = 0; i < NR_CPUS; i++) {
-                prof_counter[i] = 1;
-                prof_old_multiplier[i] = 1;
-                prof_multiplier[i] = 1;
-        }
-
         print_cpu_info(&safe_get_cpu_lowcore(0).cpu_data);
 
         for(i = 0; i < smp_num_cpus; i++)
@@ -646,58 +635,6 @@ void __init smp_boot_cpus(void)
 int setup_profiling_timer(unsigned int multiplier)
 {
         return 0;
-}
-
-/*
- * Local timer interrupt handler. It does both profiling and
- * process statistics/rescheduling.
- *
- * We do profiling in every local tick, statistics/rescheduling
- * happen only every 'profiling multiplier' ticks. The default
- * multiplier is 1 and it can be changed by writing the new multiplier
- * value into /proc/profile.
- */
-
-void smp_local_timer_interrupt(struct pt_regs * regs)
-{
-	int user = (user_mode(regs) != 0);
-        int cpu = smp_processor_id();
-
-        /*
-         * The profiling function is SMP safe. (nothing can mess
-         * around with "current", and the profiling counters are
-         * updated with atomic operations). This is especially
-         * useful with a profiling multiplier != 1
-         */
-        if (!user_mode(regs))
-                s390_do_profile(regs->psw.addr);
-
-        if (!--prof_counter[cpu]) {
-
-                /*
-                 * The multiplier may have changed since the last time we got
-                 * to this point as a result of the user writing to
-                 * /proc/profile.  In this case we need to adjust the APIC
-                 * timer accordingly.
-                 *
-                 * Interrupts are already masked off at this point.
-                 */
-                prof_counter[cpu] = prof_multiplier[cpu];
-                if (prof_counter[cpu] != prof_old_multiplier[cpu]) {
-			/* FIXME setup_APIC_timer(calibration_result/prof_counter[cpu]
-			   ); */
-                  prof_old_multiplier[cpu] = prof_counter[cpu];
-                }
-
-                /*
-                 * After doing the above, we need to make like
-                 * a normal interrupt - otherwise timer interrupts
-                 * ignore the global interrupt lock, which is the
-                 * WrongThing (tm) to do.
-                 */
-
-		update_process_times(user);
-        }
 }
 
 EXPORT_SYMBOL(lowcore_ptr);

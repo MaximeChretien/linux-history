@@ -43,7 +43,8 @@
 #include <asm/prom.h>
 #include <asm/smp.h>
 #include <asm/residual.h>
-#include <asm/feature.h>
+#include <asm/machdep.h>
+#include <asm/pmac_feature.h>
 #include <asm/time.h>
 #include <asm/gemini.h>
 
@@ -442,7 +443,7 @@ smp_core99_kick_cpu(int nr)
 	flush_icache_range((unsigned long) vector, (unsigned long) vector + 4);
 	
 	/* Put some life in our friend */
-	feature_core99_kick_cpu(nr);
+	pmac_call_feature(PMAC_FTR_RESET_CPU, NULL, nr, 0);
 	
 	/* FIXME: We wait a bit for the CPU to take the exception, I should
 	 * instead wait for the entry code to set something for me. Well,

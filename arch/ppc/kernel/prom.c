@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.prom.c 1.42 09/08/01 15:47:42 paulus
+ * BK Id: SCCS/s.prom.c 1.48 12/19/01 10:50:58 paulus
  */
 /*
  * Procedures for interfacing to the Open Firmware PROM on
@@ -19,6 +19,9 @@
 #include <linux/version.h>
 #include <linux/threads.h>
 #include <linux/spinlock.h>
+#include <linux/ioport.h>
+#include <linux/pci.h>
+#include <linux/slab.h>
 
 #include <asm/sections.h>
 #include <asm/prom.h>
@@ -34,6 +37,7 @@
 #include <asm/bitops.h>
 #include <asm/bootinfo.h>
 #include <asm/btext.h>
+#include <asm/pci-bridge.h>
 #include "open_pic.h"
 
 #ifdef CONFIG_FB
@@ -371,8 +375,8 @@ bootx_init(unsigned long r4, unsigned long phys)
 		btext_drawstring(RELOC(" !!! WARNING - Incompatible version of BootX !!!\n\n\n"));
 		btext_flushscreen();
 	}
-#endif	/* CONFIG_BOOTX_TEXT */	
-		
+#endif	/* CONFIG_BOOTX_TEXT */
+
 	/* New BootX enters kernel with MMU off, i/os are not allowed
 	   here. This hack will have been done by the boostrap anyway.
 	*/
@@ -388,7 +392,7 @@ bootx_init(unsigned long r4, unsigned long phys)
 			out_le32((unsigned *)0x80880008, 1);	/* XXX */
 		}
 	}
-		
+
 	/* Move klimit to enclose device tree, args, ramdisk, etc... */
 	if (bi->version < 5) {
 		space = bi->deviceTreeOffset + bi->deviceTreeSize;
@@ -411,7 +415,7 @@ bootx_init(unsigned long r4, unsigned long phys)
 		     ptr < (unsigned long)bi + space; ptr += PAGE_SIZE)
 			x = *(volatile unsigned long *)ptr;
 	}
-		
+
 #ifdef CONFIG_BOOTX_TEXT
 	/*
 	 * Note that after we call prepare_disp_BAT, we can't do
@@ -620,7 +624,7 @@ prom_init(int r3, int r4, prom_entry pp)
 		phys = 0;
 	else {
  	    if ((int) call_prom(RELOC("getprop"), 4, 1, RELOC(prom_chosen),
-			    RELOC("mmu"), &prom_mmu, sizeof(prom_mmu)) <= 0) {	
+			    RELOC("mmu"), &prom_mmu, sizeof(prom_mmu)) <= 0) {
 		prom_print(RELOC(" no MMU found\n"));
 	    } else {
 		int nargs;
@@ -653,7 +657,8 @@ prom_init(int r3, int r4, prom_entry pp)
 	call_prom(RELOC("quiesce"), 0, 0);
 
 #ifdef CONFIG_BOOTX_TEXT
-	btext_prepare_BAT();
+	if (RELOC(prom_disp_node) != 0)
+		btext_prepare_BAT();
 #endif
 
 	prom_print(RELOC("returning "));
@@ -793,7 +798,7 @@ try_again:
 			for (i=1; i<RELOC(prom_num_displays); i++) {
 				RELOC(prom_display_paths[i-1]) = RELOC(prom_display_paths[i]);
 				RELOC(prom_display_nodes[i-1]) = RELOC(prom_display_nodes[i]);
-			}	
+			}
 			if (--RELOC(prom_num_displays) > 0)
 				RELOC(prom_disp_node) = RELOC(prom_display_nodes[0]);
 			else
@@ -880,7 +885,7 @@ setup_disp_fake_bi(ihandle dp)
 		}
 	}
 	/* kludge for valkyrie */
-	if (strcmp(name, RELOC("valkyrie")) == 0) 
+	if (strcmp(name, RELOC("valkyrie")) == 0)
 		address += 0x1000;
 
 	btext_setup_display(width, height, depth, pitch, address);
@@ -1111,10 +1116,15 @@ finish_node(struct device_node *np, unsigned long mem_start,
 	np->name = get_property(np, "name", 0);
 	np->type = get_property(np, "device_type", 0);
 
+	if (!np->name)
+		np->name = "<NULL>";
+	if (!np->type)
+		np->type = "<NULL>";
+
 	/* get the device addresses and interrupts */
-	if (ifunc != NULL) {
+	if (ifunc != NULL)
 		mem_start = ifunc(np, mem_start, naddrc, nsizec);
-	}
+
 	if (use_of_interrupt_tree)
 		mem_start = finish_node_interrupts(np, mem_start);
 
@@ -1126,11 +1136,18 @@ finish_node(struct device_node *np, unsigned long mem_start,
 	if (ip != NULL)
 		nsizec = *ip;
 
-	/* the f50 sets the name to 'display' and 'compatible' to what we
-	 * expect for the name -- Cort
+	/* 
+	 * The F50 sets the name to 'display' and 'compatible' to what we
+	 * expect for the name. -- Cort
+	 *
+	 * But sometimes you get a 'display' name for non-OF cards, and thus
+	 * no compatible property.  And very rarely we won't have a name
+	 * property either. -- Tom
 	 */
 	if (!strcmp(np->name, "display"))
 		np->name = get_property(np, "compatible", 0);
+	if (!np->name)
+		np->name = get_property(np, "name", 0);
 
 	if (np->parent == NULL)
 		ifunc = interpret_root_props;
@@ -1145,6 +1162,8 @@ finish_node(struct device_node *np, unsigned long mem_start,
 		ifunc = interpret_macio_props;
 	else if (!strcmp(np->type, "isa"))
 		ifunc = interpret_isa_props;
+	else if (!strcmp(np->name, "uni-n"))
+		ifunc = interpret_root_props;
 	else if (!((ifunc == interpret_dbdma_props
 		    || ifunc == interpret_macio_props)
 		   && (!strcmp(np->type, "escc")
@@ -1508,7 +1527,7 @@ interpret_dbdma_props(struct device_node *np, unsigned long mem_start,
 		i = 0;
 		adr = (struct address_range *) mem_start;
 		while ((l -= sizeof(struct reg_property)) >= 0) {
-			adr[i].space = 0;
+			adr[i].space = 2;
 			adr[i].address = rp[i].address + base_address;
 			adr[i].size = rp[i].size;
 			++i;
@@ -1544,14 +1563,13 @@ interpret_macio_props(struct device_node *np, unsigned long mem_start,
 	struct reg_property *rp;
 	struct address_range *adr;
 	unsigned long base_address;
-	int i, l, keylargo, *ip;
+	int i, l, *ip;
 	struct device_node *db;
 
 	base_address = 0;
 	for (db = np->parent; db != NULL; db = db->parent) {
 		if (!strcmp(db->type, "mac-io") && db->n_addrs != 0) {
 			base_address = db->addrs[0].address;
-			keylargo = device_is_compatible(db, "Keylargo");
 			break;
 		}
 	}
@@ -1561,7 +1579,7 @@ interpret_macio_props(struct device_node *np, unsigned long mem_start,
 		i = 0;
 		adr = (struct address_range *) mem_start;
 		while ((l -= sizeof(struct reg_property)) >= 0) {
-			adr[i].space = 0;
+			adr[i].space = 2;
 			adr[i].address = rp[i].address + base_address;
 			adr[i].size = rp[i].size;
 			++i;
@@ -1616,7 +1634,7 @@ interpret_isa_props(struct device_node *np, unsigned long mem_start,
 
 	if (use_of_interrupt_tree)
 		return mem_start;
- 
+
 	ip = (int *) get_property(np, "interrupts", &l);
 	if (ip != 0) {
 		np->intrs = (struct interrupt_info *) mem_start;
@@ -1645,7 +1663,7 @@ interpret_root_props(struct device_node *np, unsigned long mem_start,
 		i = 0;
 		adr = (struct address_range *) mem_start;
 		while ((l -= rpsize) >= 0) {
-			adr[i].space = (naddrc >= 2? rp[naddrc-2]: 0);
+			adr[i].space = (naddrc >= 2? rp[naddrc-2]: 2);
 			adr[i].address = rp[naddrc - 1];
 			adr[i].size = rp[naddrc + nsizec - 1];
 			++i;
@@ -1786,7 +1804,7 @@ int
 machine_is_compatible(const char *compat)
 {
 	struct device_node *root;
-	
+
 	root = find_path_device("/");
 	if (root == 0)
 		return 0;
@@ -1870,10 +1888,176 @@ prom_add_property(struct device_node* np, struct property* prop)
 {
 	struct property **next = &np->properties;
 
-	prop->next = NULL;	
+	prop->next = NULL;
 	while (*next)
 		next = &(*next)->next;
 	*next = prop;
+}
+
+/* I quickly hacked that one, check against spec ! */
+static inline unsigned long __openfirmware
+bus_space_to_resource_flags(unsigned int bus_space)
+{
+	u8 space = (bus_space >> 24) & 0xf;
+	if (space == 0)
+		space = 0x02;
+	if (space == 0x02)
+		return IORESOURCE_MEM;
+	else if (space == 0x01)
+		return IORESOURCE_IO;
+	else {
+		printk(KERN_WARNING "prom.c: bus_space_to_resource_flags(), space: %x\n",
+		    	bus_space);
+		return 0;
+	}
+}
+
+static struct resource* __openfirmware
+find_parent_pci_resource(struct pci_dev* pdev, struct address_range *range)
+{
+	unsigned long mask;
+	int i;
+	
+	/* Check this one */ 
+	mask = bus_space_to_resource_flags(range->space);
+	for (i=0; i<DEVICE_COUNT_RESOURCE; i++) {
+		if ((pdev->resource[i].flags & mask) == mask &&
+			pdev->resource[i].start <= range->address &&
+			pdev->resource[i].end > range->address) {
+				if ((range->address + range->size - 1) > pdev->resource[i].end) {
+					/* Add better message */
+					printk(KERN_WARNING "PCI/OF resource overlap !\n");
+					return NULL;
+				}
+				break;
+			}
+	}
+	if (i == DEVICE_COUNT_RESOURCE)
+		return NULL;
+	return &pdev->resource[i];
+}
+
+/*
+ * Request an OF device resource. Currently handles child of PCI devices,
+ * or other nodes attached to the root node. Ultimately, put some
+ * link to resources in the OF node.
+ * WARNING: out_resource->name should be initialized before calling this
+ * function.
+ */
+struct resource* __openfirmware
+request_OF_resource(struct device_node* node, int index, const char* name_postfix)
+{
+	struct pci_dev* pcidev;
+	u8 pci_bus, pci_devfn;
+	unsigned long iomask;
+	struct device_node* nd;
+	struct resource* parent;
+	struct resource *res = NULL;
+	int nlen, plen;
+
+	if (index >= node->n_addrs)
+		goto fail;
+
+	/* Sanity check on bus space */
+	iomask = bus_space_to_resource_flags(node->addrs[index].space);
+	if (iomask & IORESOURCE_MEM)
+		parent = &iomem_resource;
+	else if (iomask & IORESOURCE_IO)
+		parent = &ioport_resource;
+	else
+		goto fail;
+		
+	/* Find a PCI parent if any */
+	nd = node;
+	pcidev = NULL;
+	while(nd) {
+		if (!pci_device_from_OF_node(nd, &pci_bus, &pci_devfn))
+			pcidev = pci_find_slot(pci_bus, pci_devfn);
+		if (pcidev) break;
+		nd = nd->parent;
+	}
+	if (pcidev)
+		parent = find_parent_pci_resource(pcidev, &node->addrs[index]);
+	if (!parent) {
+		printk(KERN_WARNING "request_OF_resource(%s), parent not found\n",
+			node->name);
+		goto fail;
+	}
+
+	res = __request_region(parent, node->addrs[index].address, node->addrs[index].size, NULL);
+	if (!res)
+		goto fail;
+	nlen = strlen(node->name);
+	plen = name_postfix ? strlen(name_postfix) : 0;
+	res->name = (const char *)kmalloc(nlen+plen+1, GFP_KERNEL);
+	if (res->name) {
+		strcpy((char *)res->name, node->name);
+		if (plen)
+			strcpy((char *)res->name+nlen, name_postfix);
+	}
+	return res;
+fail:
+	return NULL;
+}
+
+int __openfirmware
+release_OF_resource(struct device_node* node, int index)
+{
+	struct pci_dev* pcidev;
+	u8 pci_bus, pci_devfn;
+	unsigned long iomask;
+	struct device_node* nd;
+	struct resource* parent;
+	struct resource *res = NULL;
+
+	if (index >= node->n_addrs)
+		return -EINVAL;
+
+	/* Sanity check on bus space */
+	iomask = bus_space_to_resource_flags(node->addrs[index].space);
+	if (iomask & IORESOURCE_MEM)
+		parent = &iomem_resource;
+	else if (iomask & IORESOURCE_IO)
+		parent = &ioport_resource;
+	else
+		return -EINVAL;
+		
+	/* Find a PCI parent if any */
+	nd = node;
+	pcidev = NULL;
+	while(nd) {
+		if (!pci_device_from_OF_node(nd, &pci_bus, &pci_devfn))
+			pcidev = pci_find_slot(pci_bus, pci_devfn);
+		if (pcidev) break;
+		nd = nd->parent;
+	}
+	if (pcidev)
+		parent = find_parent_pci_resource(pcidev, &node->addrs[index]);
+	if (!parent) {
+		printk(KERN_WARNING "request_OF_resource(%s), parent not found\n",
+			node->name);
+		return -ENODEV;
+	}
+
+	/* Find us in the parent */
+	res = parent->child;
+	while (res) {
+		if (res->start == node->addrs[index].address &&
+		    res->end == (res->start + node->addrs[index].size - 1))
+		    	break;
+		res = res->sibling;
+	}
+	if (!res)
+		return -ENODEV;
+
+	if (res->name) {
+		kfree(res->name);
+		res->name = NULL;
+	}
+	release_resource(res);
+	kfree(res);
+
+	return 0;
 }
 
 #if 0

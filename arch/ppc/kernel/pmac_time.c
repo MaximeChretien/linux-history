@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.pmac_time.c 1.16 09/08/01 15:47:42 paulus
+ * BK Id: SCCS/s.pmac_time.c 1.19 12/04/01 01:24:51 benh
  */
 /*
  * Support for periodic interrupts (100 per second) and for getting
@@ -110,11 +110,11 @@ pmac_get_rtc_time(void)
 			return 0;
 		while (!req.complete)
 			pmu_poll();
-		if (req.reply_len != 5)
+		if (req.reply_len != 4)
 			printk(KERN_ERR "pmac_get_rtc_time: got %d byte reply\n",
 			       req.reply_len);
-		now = (req.reply[1] << 24) + (req.reply[2] << 16)
-			+ (req.reply[3] << 8) + req.reply[4];
+		now = (req.reply[0] << 24) + (req.reply[1] << 16)
+			+ (req.reply[2] << 8) + req.reply[3];
 		return now - RTC_OFFSET;
 #endif /* CONFIG_ADB_PMU */
 	default: ;
@@ -228,10 +228,6 @@ time_sleep_notify(struct pmu_sleep_notifier *self, int when)
 	case PBOOK_WAKE:
 		write_lock_irqsave(&xtime_lock, flags);
 		xtime.tv_sec = pmac_get_rtc_time() + time_diff;
-		set_dec(tb_ticks_per_jiffy);
-		/* No currently-supported powerbook has a 601,
-		   so use get_tbl, not native  */
-		last_jiffy_stamp(0) = tb_last_stamp = get_tbl();
 		xtime.tv_usec = 0;
 		last_rtc_update = xtime.tv_sec;
 		write_unlock_irqrestore(&xtime_lock, flags);

@@ -319,7 +319,7 @@ void handle_scancode(unsigned char scancode, int down)
 			compute_shiftstate();
 			kbd->slockstate = 0; /* play it safe */
 #else
-			keysym =  U(plain_map[keycode]);
+			keysym = U(key_maps[0][keycode]);
 			type = KTYP(keysym);
 			if (type == KT_SHIFT)
 			  (*key_handler[type])(keysym & 0xff, up_flag);
@@ -750,7 +750,7 @@ void compute_shiftstate(void)
 	    k = i*BITS_PER_LONG;
 	    for(j=0; j<BITS_PER_LONG; j++,k++)
 	      if(test_bit(k, key_down)) {
-		sym = U(plain_map[k]);
+		sym = U(key_maps[0][k]);
 		if(KTYP(sym) == KT_SHIFT || KTYP(sym) == KT_SLOCK) {
 		  val = KVAL(sym);
 		  if (val == KVAL(K_CAPSSHIFT))

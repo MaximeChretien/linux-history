@@ -1465,8 +1465,8 @@ static inline unsigned long lento_waitfor_upcall(struct upc_req *req,
                                 break;
                         /* signal is present: after timeout always return
                            really smart idea, probably useless ... */
-                        if ( jiffies > req->rq_posttime +
-                             upc_comms[minor].uc_timeout * HZ )
+                        if ( time_after(jiffies, req->rq_posttime +
+                             upc_comms[minor].uc_timeout * HZ) )
                                 break;
                 }
                 schedule();

@@ -2261,7 +2261,7 @@ static int scsi_register_device_module(struct Scsi_Device_Template *tpnt)
 		for (SDpnt = shpnt->host_queue; SDpnt;
 		     SDpnt = SDpnt->next) {
 			if (tpnt->detect)
-				SDpnt->attached += (*tpnt->detect) (SDpnt);
+				SDpnt->detected = (*tpnt->detect) (SDpnt);
 		}
 	}
 
@@ -2269,9 +2269,19 @@ static int scsi_register_device_module(struct Scsi_Device_Template *tpnt)
 	 * If any of the devices would match this driver, then perform the
 	 * init function.
 	 */
-	if (tpnt->init && tpnt->dev_noticed)
-		if ((*tpnt->init) ())
+	if (tpnt->init && tpnt->dev_noticed) {
+		if ((*tpnt->init) ()) {
+			for (shpnt = scsi_hostlist; shpnt;
+			     shpnt = shpnt->next) {
+				for (SDpnt = shpnt->host_queue; SDpnt;
+				     SDpnt = SDpnt->next) {
+					SDpnt->detected = 0;
+				}
+			}
+			scsi_deregister_device(tpnt);
 			return 1;
+		}
+	}
 
 	/*
 	 * Now actually connect the devices to the new driver.
@@ -2279,6 +2289,8 @@ static int scsi_register_device_module(struct Scsi_Device_Template *tpnt)
 	for (shpnt = scsi_hostlist; shpnt; shpnt = shpnt->next) {
 		for (SDpnt = shpnt->host_queue; SDpnt;
 		     SDpnt = SDpnt->next) {
+			SDpnt->attached += SDpnt->detected;
+			SDpnt->detected = 0;
 			if (tpnt->attach)
 				(*tpnt->attach) (SDpnt);
 			/*
@@ -2314,9 +2326,7 @@ static int scsi_unregister_device(struct Scsi_Device_Template *tpnt)
 {
 	Scsi_Device *SDpnt;
 	struct Scsi_Host *shpnt;
-	struct Scsi_Device_Template *spnt;
-	struct Scsi_Device_Template *prev_spnt;
-	
+
 	lock_kernel();
 	/*
 	 * If we are busy, this is not going to fly.
@@ -2347,16 +2357,7 @@ static int scsi_unregister_device(struct Scsi_Device_Template *tpnt)
 	/*
 	 * Extract the template from the linked list.
 	 */
-	spnt = scsi_devicelist;
-	prev_spnt = NULL;
-	while (spnt != tpnt) {
-		prev_spnt = spnt;
-		spnt = spnt->next;
-	}
-	if (prev_spnt == NULL)
-		scsi_devicelist = tpnt->next;
-	else
-		prev_spnt->next = spnt->next;
+	scsi_deregister_device(tpnt);
 
 	MOD_DEC_USE_COUNT;
 	unlock_kernel();

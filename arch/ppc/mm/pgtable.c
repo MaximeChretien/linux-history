@@ -41,12 +41,21 @@ unsigned long ioremap_base;
 unsigned long ioremap_bot;
 int io_bat_index;
 
+/* Maximum 768Mb of lowmem. On SMP, this value will be
+ * trimmed down to whatever can be covered by BATs though.
+ */
+#define MAX_LOW_MEM	0x30000000
+
 #ifndef CONFIG_SMP
 struct pgtable_cache_struct quicklists;
 #endif
 
 #if defined(CONFIG_6xx) || defined(CONFIG_POWER3)
 #define HAVE_BATS	1
+#endif
+
+#ifdef HAVE_BATS
+static unsigned long __bat2, __bat3;
 #endif
 
 extern char etext[], _stext[];
@@ -186,6 +195,65 @@ map_page(unsigned long va, unsigned long pa, int flags)
 	return err;
 }
 
+void __init
+adjust_total_lowmem(void)
+{
+	unsigned long max_low_mem = MAX_LOW_MEM;
+	
+#ifdef HAVE_BATS
+	unsigned long bat_max = 0x10000000;
+	unsigned long align;
+	unsigned long ram = total_lowmem;
+	int is601 = 0;
+	
+	/* 601s have smaller BATs */
+	if (PVR_VER(mfspr(PVR)) == 1) {
+		bat_max = 0x00800000;
+		is601 = 1;
+	}
+
+	/* Make sure we don't map a block larger than the
+	   smallest alignment of the physical address. */
+	/* alignment of ram_phys_base */
+	align = ~(ram_phys_base-1) & ram_phys_base;
+	/* set BAT block size to MIN(max_size, align) */
+	if (align && align < bat_max)
+		bat_max = align;
+
+	/* Calculate BAT values */	
+	__bat2 = 1UL << __ilog2(ram);
+	if (__bat2 > bat_max)
+		__bat2 = bat_max;
+	ram -= __bat2;
+	if (ram) {
+		__bat3 = 1UL << __ilog2(ram);
+		if (__bat3 > bat_max)
+			__bat3 = bat_max;
+		ram -= __bat3;
+	}
+
+	printk(KERN_INFO "Memory BAT mapping: BAT2=%ldMb, BAT3=%ldMb, residual: %ldMb\n",
+		__bat2 >> 20, __bat3 >> 20, ram >> 20);
+
+	/* On SMP, we limit the lowmem to the area mapped with BATs.
+	 * We also assume nobody will do SMP with 601s
+	 */
+#ifdef CONFIG_SMP
+	if (!is601)
+		max_low_mem = __bat2 + __bat3;
+#endif /* CONFIG_SMP */
+
+#endif /* HAVE_BATS */
+	if (total_lowmem > max_low_mem) {
+		total_lowmem = max_low_mem;
+#ifndef CONFIG_HIGHMEM
+		printk(KERN_INFO "Warning, memory limited to %ld Mb, use CONFIG_HIGHMEM"
+			" to reach %ld Mb\n", max_low_mem >> 20, total_lowmem >> 20);
+		total_memory = total_lowmem;
+#endif /* CONFIG_HIGHMEM */
+	}
+}
+
 /*
  * Map in all of physical memory starting at KERNELBASE.
  */
@@ -195,7 +263,7 @@ void __init mapin_ram(void)
 
 #ifdef HAVE_BATS
 	if (!__map_without_bats)
-		bat_mapin_ram();
+		bat_mapin_ram(__bat2, __bat3);
 #endif /* HAVE_BATS */
 
 	v = KERNELBASE;

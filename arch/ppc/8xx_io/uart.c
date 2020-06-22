@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.uart.c 1.19 10/26/01 09:59:32 trini
+ * BK Id: SCCS/s.uart.c 1.23 12/29/01 14:50:03 trini
  */
 /*
  *  UART driver for MPC860 CPM SCC or SMC
@@ -1802,7 +1802,7 @@ static void rs_8xx_wait_until_sent(struct tty_struct *tty, int timeout)
 		schedule_timeout(char_time);
 		if (signal_pending(current))
 			break;
-		if (timeout && ((orig_jiffies + timeout) < jiffies))
+		if (timeout && time_after(jiffies, orig_jiffies + timeout))
 			break;
 
 		/* The 'tx_cur' is really the next buffer to send.  We
@@ -2529,7 +2529,11 @@ int __init rs_8xx_init(void)
 	__clear_user(&serial_driver,sizeof(struct tty_driver));
 	serial_driver.magic = TTY_DRIVER_MAGIC;
 	serial_driver.driver_name = "serial";
+#ifdef CONFIG_DEVFS_FS
+	serial_driver.name = "tts/%d";
+#else
 	serial_driver.name = "ttyS";
+#endif
 	serial_driver.major = TTY_MAJOR;
 	serial_driver.minor_start = 64;
 	serial_driver.num = NR_PORTS;
@@ -2567,7 +2571,11 @@ int __init rs_8xx_init(void)
 	 * major number and the subtype code.
 	 */
 	callout_driver = serial_driver;
+#ifdef CONFIG_DEVFS_FS
+	callout_driver.name = "cua/%d";
+#else
 	callout_driver.name = "cua";
+#endif
 	callout_driver.major = TTYAUX_MAJOR;
 	callout_driver.subtype = SERIAL_TYPE_CALLOUT;
 	callout_driver.read_proc = 0;

@@ -208,7 +208,7 @@ static spinlock_t i2o_evt_lock = SPIN_LOCK_UNLOCKED;
  
 static DECLARE_MUTEX(evt_sem);
 static DECLARE_COMPLETION(evt_dead);
-DECLARE_WAIT_QUEUE_HEAD(evt_wait);
+static DECLARE_WAIT_QUEUE_HEAD(evt_wait);
 
 static struct notifier_block i2o_reboot_notifier =
 {
@@ -1184,7 +1184,8 @@ void i2o_run_queue(struct i2o_controller *c)
 	{
 		struct i2o_handler *i;
 		/* Map the message from the page frame map to kernel virtual */
-		m=(struct i2o_message *)(mv - (unsigned long)c->page_frame_map + (unsigned long)c->page_frame);
+		/* m=(struct i2o_message *)(mv - (unsigned long)c->page_frame_map + (unsigned long)c->page_frame); */
+		m=(struct i2o_message *)bus_to_virt(mv);
 		msg=(u32*)m;
 
 		/*
@@ -2558,6 +2559,7 @@ int i2o_post_this(struct i2o_controller *c, u32 *data, int len)
 int i2o_post_wait_mem(struct i2o_controller *c, u32 *msg, int len, int timeout, void *mem1, void *mem2)
 {
 	DECLARE_WAIT_QUEUE_HEAD(wq_i2o_post);
+	DECLARE_WAITQUEUE(wait, current);
 	int complete = 0;
 	int status;
 	unsigned long flags = 0;
@@ -2598,12 +2600,19 @@ int i2o_post_wait_mem(struct i2o_controller *c, u32 *msg, int len, int timeout, 
 	 *	complete will be zero.  From the point post_this returns
 	 *	the wait_data may have been deleted.
 	 */
+
+	add_wait_queue(&wq_i2o_post, &wait);
+	set_current_state(TASK_INTERRUPTIBLE);
 	if ((status = i2o_post_this(c, msg, len))==0) {
-		sleep_on_timeout(&wq_i2o_post, HZ * timeout);
+		schedule_timeout(HZ * timeout);
 	}  
 	else
+	{
+		remove_wait_queue(&wq_i2o_post, &wait);
 		return -EIO;
-		
+	}
+	remove_wait_queue(&wq_i2o_post, &wait);
+
 	if(signal_pending(current))
 		status = -EINTR;
 		

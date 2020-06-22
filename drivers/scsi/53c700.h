@@ -210,7 +210,7 @@ struct NCR_700_command_slot {
 struct NCR_700_Host_Parameters {
 	/* These must be filled in by the calling driver */
 	int	clock;			/* board clock speed in MHz */
-	__u32	base;			/* the base for the port (copied to host) */
+	unsigned long	base;		/* the base for the port (copied to host) */
 	struct pci_dev	*pci_dev;
 	__u32	dmode_extra;	/* adjustable bus settings */
 	__u32	differential:1;	/* if we are differential */
@@ -503,7 +503,7 @@ NCR_700_readb(struct Scsi_Host *host, __u32 reg)
 static inline __u32
 NCR_700_readl(struct Scsi_Host *host, __u32 reg)
 {
-	__u32 value = readl(host->base + reg);
+	__u32 value = __raw_readl(host->base + reg);
 	const struct NCR_700_Host_Parameters *hostdata __attribute__((unused))
 		= (struct NCR_700_Host_Parameters *)host->hostdata[0];
 #if 1
@@ -536,7 +536,7 @@ NCR_700_writel(__u32 value, struct Scsi_Host *host, __u32 reg)
 		BUG();
 #endif
 
-	writel(bS_to_host(value), host->base + reg);
+	__raw_writel(bS_to_host(value), host->base + reg);
 }
 #elif defined(CONFIG_53C700_IO_MAPPED)
 static inline __u8

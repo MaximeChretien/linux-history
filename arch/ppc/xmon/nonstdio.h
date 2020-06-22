@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.nonstdio.h 1.5 05/17/01 18:14:23 cort
+ * BK Id: SCCS/s.nonstdio.h 1.8 12/01/01 20:09:07 benh
  */
 typedef int	FILE;
 extern FILE *xmon_stdin, *xmon_stdout;
@@ -21,5 +21,6 @@ extern char *fgets(char *, int, void *);
 extern void xmon_printf(const char *, ...);
 extern void xmon_fprintf(void *, const char *, ...);
 extern void xmon_sprintf(char *, const char *, ...);
+extern void xmon_puts(char*);
 
 #define perror(s)	printf("%s: no files!\n", (s))

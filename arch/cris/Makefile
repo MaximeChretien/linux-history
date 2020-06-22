@@ -1,4 +1,4 @@
-# $Id: Makefile,v 1.22 2001/10/01 14:42:38 bjornw Exp $
+# $Id: Makefile,v 1.26 2001/11/16 17:42:17 pkj Exp $
 # cris/Makefile
 #
 # This file is included by the global makefile so that you can add your own
@@ -37,10 +37,9 @@ LINKFLAGS = -mlinux -T $(LD_SCRIPT).tmp
 
 OBJCOPY := $(CROSS_COMPILE)objcopy -O binary -R .note -R .comment -S
 
-# normally, gcc on a linux box adds __linux__ but we do it "manually"
-# -mlinux enables -march=v10, -fno-underscores among others
+# -mlinux enables -march=v10, -fno-underscores, -D__linux__ among others
 
-CFLAGS := $(CFLAGS) -mlinux -fno-strict-aliasing -pipe -D__linux__
+CFLAGS := $(CFLAGS) -mlinux -pipe
 
 ifdef CONFIG_ETRAX_KGDB
 CFLAGS := $(subst -fomit-frame-pointer,,$(CFLAGS)) -g

@@ -228,8 +228,10 @@ static debug_info_t*  debug_info_alloc(char *name, int page_order,
 	strncpy(rc->name, name, MIN(strlen(name), (DEBUG_MAX_PROCF_LEN - 1)));
 	rc->name[MIN(strlen(name), (DEBUG_MAX_PROCF_LEN - 1))] = 0;
 	memset(rc->views, 0, DEBUG_MAX_VIEWS * sizeof(struct debug_view *));
+#ifdef CONFIG_PROC_FS
 	memset(rc->proc_entries, 0 ,DEBUG_MAX_VIEWS *
 		sizeof(struct proc_dir_entry*));
+#endif /* CONFIG_PROC_FS */
 	atomic_set(&(rc->ref_count), 0);
 
 	return rc;
@@ -346,8 +348,10 @@ static void debug_info_put(debug_info_t *db_info)
 	if (!db_info)
 		return;
 	if (atomic_dec_and_test(&db_info->ref_count)) {
+#ifdef DEBUG
 		printk(KERN_INFO "debug: freeing debug area %p (%s)\n",
 		       db_info, db_info->name);
+#endif
 		for (i = 0; i < DEBUG_MAX_VIEWS; i++) {
 			if (db_info->views[i] != NULL)
 				debug_delete_proc_dir_entry
@@ -541,14 +545,18 @@ static int debug_open(struct inode *inode, struct file *file)
 	debug_info_snapshot = debug_info_copy(debug_info);
 
 	if(!debug_info_snapshot){
+#ifdef DEBUG
 		printk(KERN_ERR "debug_open: debug_info_copy failed (out of mem)\n");
+#endif
 		rc = -ENOMEM;
 		goto out;
 	}
 
 	if ((file->private_data =
 	     kmalloc(sizeof(file_private_info_t), GFP_ATOMIC)) == 0) {
+#ifdef DEBUG
 		printk(KERN_ERR "debug_open: kmalloc failed\n");
+#endif
 		debug_info_free(debug_info_snapshot);	
 		rc = -ENOMEM;
 		goto out;
@@ -602,6 +610,7 @@ static struct proc_dir_entry *debug_create_proc_dir_entry
 {
 	struct proc_dir_entry *rc = NULL;
 
+#ifdef CONFIG_PROC_FS
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,3,98))
 	const char *fn = name;
 	int len;
@@ -634,6 +643,7 @@ static struct proc_dir_entry *debug_create_proc_dir_entry
 #endif
 
       out:
+#endif /* CONFIG_PROC_FS */
 	return rc;
 }
 
@@ -646,12 +656,14 @@ static void debug_delete_proc_dir_entry
     (struct proc_dir_entry *root, struct proc_dir_entry *proc_entry) 
 {
 
+#ifdef CONFIG_PROC_FS
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,3,98))
 	proc_unregister(root, proc_entry->low_ino);
 	kfree(proc_entry);
 #else
 	remove_proc_entry(proc_entry->name, root);
 #endif
+#endif /* CONFIG_PROC_FS */
 }
 
 /*
@@ -677,9 +689,11 @@ debug_info_t *debug_register
 		goto out;
 	debug_register_view(rc, &debug_level_view);
         debug_register_view(rc, &debug_flush_view);
+#ifdef DEBUG
 	printk(KERN_INFO
 	       "debug: reserved %d areas of %d pages for debugging %s\n",
 	       nr_areas, 1 << page_order, rc->name);
+#endif
       out:
         if (rc == NULL){
 		printk(KERN_ERR "debug: debug_register failed for %s\n",name);
@@ -699,7 +713,9 @@ void debug_unregister(debug_info_t * id)
 	if (!id)
 		goto out;
 	down(&debug_lock);
+#ifdef DEBUG
 	printk(KERN_INFO "debug: unregistering %s\n", id->name);
+#endif
 	debug_info_put(id);
 	up(&debug_lock);
 
@@ -906,11 +922,13 @@ int debug_init(void)
 
 	down(&debug_lock);
 	if (!initialized) {
+#ifdef CONFIG_PROC_FS
 		debug_proc_root_entry =
 		    debug_create_proc_dir_entry(&proc_root, DEBUG_DIR_ROOT,
 						S_IFDIR | S_IRUGO | S_IXUGO
 						| S_IWUSR | S_IWGRP, NULL,
 						NULL);
+#endif /* CONFIG_PROC_FS */
 		printk(KERN_INFO "debug: Initialization complete\n");
 		initialized = 1;
 	}
@@ -1271,7 +1289,9 @@ void cleanup_module(void)
 #ifdef DEBUG
 	printk("debug_cleanup_module: \n");
 #endif
+#ifdef CONFIG_PROC_FS
 	debug_delete_proc_dir_entry(&proc_root, debug_proc_root_entry);
+#endif /* CONFIG_PROC_FS */
 	return;
 }
 

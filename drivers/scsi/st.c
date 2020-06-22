@@ -9,10 +9,10 @@
    Steve Hirsch, Andreas Koppenh"ofer, Michael Leodolter, Eyal Lebedinsky,
    Michael Schaefer, J"org Weule, and Eric Youngdale.
 
-   Copyright 1992 - 2001 Kai Makisara
+   Copyright 1992 - 2002 Kai Makisara
    email Kai.Makisara@metla.fi
 
-   Last modified: Sat Nov  3 19:30:55 2001 by makisara@kai.makisara.local
+   Last modified: Tue Feb  5 21:25:55 2002 by makisara
    Some small formal changes - aeb, 950809
 
    Last modified: 18-JAN-1998 Richard Gooch <rgooch@atnf.csiro.au> Devfs support
@@ -21,7 +21,7 @@
    error handling will be discarded.
  */
 
-static char *verstr = "20011103";
+static char *verstr = "20020205";
 
 #include <linux/module.h>
 
@@ -1944,6 +1944,10 @@ static int st_set_options(Scsi_Tape *STp, long options)
 			STm->default_blksize = value;
 			printk(KERN_INFO "st%d: Default block size set to %d bytes.\n",
 			       dev, STm->default_blksize);
+			if (STp->ready == ST_READY) {
+				STp->blksize_changed = FALSE;
+				set_mode_densblk(STp, STm);
+			}
 		}
 	} else if (code == MT_ST_TIMEOUTS) {
 		value = (options & ~MT_ST_OPTIONS);
@@ -1979,6 +1983,10 @@ static int st_set_options(Scsi_Tape *STp, long options)
 				STm->default_density = value & 0xff;
 				printk(KERN_INFO "st%d: Density default set to %x\n",
 				       dev, STm->default_density);
+				if (STp->ready == ST_READY) {
+					STp->density_changed = FALSE;
+					set_mode_densblk(STp, STm);
+				}
 			}
 		} else if (code == MT_ST_DEF_DRVBUFFER) {
 			if (value == MT_ST_CLEAR_DEFAULT) {
@@ -1990,6 +1998,8 @@ static int st_set_options(Scsi_Tape *STp, long options)
 				printk(KERN_INFO
                                        "st%d: Drive buffer default set to %x\n",
 				       dev, STp->default_drvbuffer);
+				if (STp->ready == ST_READY)
+					st_int_ioctl(STp, MTSETDRVBUFFER, STp->default_drvbuffer);
 			}
 		} else if (code == MT_ST_DEF_COMPRESSION) {
 			if (value == MT_ST_CLEAR_DEFAULT) {
@@ -1997,9 +2007,20 @@ static int st_set_options(Scsi_Tape *STp, long options)
 				printk(KERN_INFO
                                        "st%d: Compression default disabled.\n", dev);
 			} else {
-				STm->default_compression = (value & 1 ? ST_YES : ST_NO);
-				printk(KERN_INFO "st%d: Compression default set to %x\n",
-				       dev, (value & 1));
+				if ((value & 0xff00) != 0) {
+					STp->c_algo = (value & 0xff00) >> 8;
+					printk(KERN_INFO "st%d: Compression algorithm set to 0x%x.\n",
+					       dev, STp->c_algo);
+				}
+				if ((value & 0xff) != 0xff) {
+					STm->default_compression = (value & 1 ? ST_YES : ST_NO);
+					printk(KERN_INFO "st%d: Compression default set to %x\n",
+					       dev, (value & 1));
+					if (STp->ready == ST_READY) {
+						STp->compression_changed = FALSE;
+						st_compression(STp, (STm->default_compression == ST_YES));
+					}
+				}
 			}
 		}
 	} else
@@ -2028,7 +2049,8 @@ static int st_set_options(Scsi_Tape *STp, long options)
 #define MODE_SELECT_PAGE_FORMAT 0x10
 
 /* Read a mode page into the tape buffer. The block descriptors are included
-   if incl_block_descs is true. */
+   if incl_block_descs is true. The page control is ored to the page number
+   parameter, if necessary. */
 static int read_mode_page(Scsi_Tape *STp, int page, int omit_block_descs)
 {
 	unsigned char cmd[MAX_COMMAND_SIZE];
@@ -2087,6 +2109,7 @@ static int write_mode_page(Scsi_Tape *STp, int page)
 #define COMPRESSION_PAGE_LENGTH 16
 
 #define CP_OFF_DCE_DCC          2
+#define CP_OFF_C_ALGO           7
 
 #define DCE_MASK  0x80
 #define DCC_MASK  0x40
@@ -2122,16 +2145,22 @@ static int st_compression(Scsi_Tape * STp, int state)
                     (b_data[mpoffs + CP_OFF_DCE_DCC] & DCE_MASK ? 1 : 0)));
 
 	/* Check if compression can be changed */
-	if ((b_data[mpoffs + 2] & DCC_MASK) == 0) {
+	if ((b_data[mpoffs + CP_OFF_DCE_DCC] & DCC_MASK) == 0) {
                 DEBC(printk(ST_DEB_MSG "st%d: Compression not supported.\n", dev));
 		return (-EIO);
 	}
 
 	/* Do the change */
-	if (state)
+	if (state) {
 		b_data[mpoffs + CP_OFF_DCE_DCC] |= DCE_MASK;
-	else
+		if (STp->c_algo != 0)
+			b_data[mpoffs + CP_OFF_C_ALGO] = STp->c_algo;
+	}
+	else {
 		b_data[mpoffs + CP_OFF_DCE_DCC] &= ~DCE_MASK;
+		if (STp->c_algo != 0)
+			b_data[mpoffs + CP_OFF_C_ALGO] = 0; /* no compression */
+	}
 
 	retval = write_mode_page(STp, COMPRESSION_PAGE);
 	if (retval) {
@@ -2171,7 +2200,7 @@ static int do_load_unload(Scsi_Tape *STp, struct file *filp, int load_code)
 	 */
 	if (load_code >= 1 + MT_ST_HPLOADER_OFFSET
 	    && load_code <= 6 + MT_ST_HPLOADER_OFFSET) {
-		DEBC(printk(ST_DEB_MSG "st%d: Enhanced %sload slot %2ld.\n",
+		DEBC(printk(ST_DEB_MSG "st%d: Enhanced %sload slot %2d.\n",
 			    dev, (cmd[4]) ? "" : "un",
 			    load_code - MT_ST_HPLOADER_OFFSET));
 		cmd[3] = load_code - MT_ST_HPLOADER_OFFSET; /* MediaID field of C1553A */
@@ -3818,6 +3847,7 @@ static int st_init()
 			write_unlock_irqrestore(&st_dev_arr_lock, flags);
 			printk(KERN_ERR "Unable to get major %d for SCSI tapes\n",
                                MAJOR_NR);
+			st_template.dev_noticed = 0;
 			return 1;
 		}
 		st_registered++;

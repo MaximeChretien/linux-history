@@ -614,38 +614,35 @@ int mxser_init(void)
 		n = (sizeof(mxser_pcibrds) / sizeof(mxser_pcibrds[0])) - 1;
 		index = 0;
 		for (b = 0; b < n; b++) {
-			pdev = pci_find_device(mxser_pcibrds[b].vendor,
-					       mxser_pcibrds[b].device, pdev);
-			if (!pdev || pci_enable_device(pdev))
-				continue;
-			hwconf.pdev = pdev;
-			printk("Found MOXA %s board(BusNo=%d,DevNo=%d)\n",
-				mxser_brdname[mxser_pcibrds[b].driver_data],
+			while (pdev = pci_find_device(mxser_pcibrds[b].vendor, mxser_pcibrds[b].device, pdev)) 
+			{
+				if (pci_enable_device(pdev))
+					continue;
+				hwconf.pdev = pdev;
+				printk("Found MOXA %s board(BusNo=%d,DevNo=%d)\n",
+					mxser_brdname[mxser_pcibrds[b].driver_data],
 				pdev->bus->number, PCI_SLOT(pdev->devfn));
-			if (m >= MXSER_BOARDS) {
-				printk("Too many Smartio family boards found (maximum %d),board not configured\n", MXSER_BOARDS);
-			} else {
-				retval = mxser_get_PCI_conf(pdev,
-				   mxser_pcibrds[b].driver_data, &hwconf);
-				if (retval < 0) {
-					if (retval == MXSER_ERR_IRQ)
-						printk("Invalid interrupt number,board not configured\n");
-					else if (retval == MXSER_ERR_IRQ_CONFLIT)
-						printk("Invalid interrupt number,board not configured\n");
-					else if (retval == MXSER_ERR_VECTOR)
-						printk("Invalid interrupt vector,board not configured\n");
-					else if (retval == MXSER_ERR_IOADDR)
-						printk("Invalid I/O address,board not configured\n");
-					continue;
-
+				if (m >= MXSER_BOARDS) {
+					printk("Too many Smartio family boards found (maximum %d),board not configured\n", MXSER_BOARDS);
+				} else {
+					retval = mxser_get_PCI_conf(pdev, mxser_pcibrds[b].driver_data, &hwconf);
+					if (retval < 0) {
+						if (retval == MXSER_ERR_IRQ)
+							printk("Invalid interrupt number,board not configured\n");
+						else if (retval == MXSER_ERR_IRQ_CONFLIT)
+							printk("Invalid interrupt number,board not configured\n");	
+						else if (retval == MXSER_ERR_VECTOR)
+							printk("Invalid interrupt vector,board not configured\n");
+						else if (retval == MXSER_ERR_IOADDR)
+							printk("Invalid I/O address,board not configured\n");
+						continue;
+					}
+					if (mxser_initbrd(m, &hwconf) < 0)
+						continue;
+					mxser_getcfg(m, &hwconf);
+					m++;
 				}
-				if (mxser_initbrd(m, &hwconf) < 0)
-					continue;
-				mxser_getcfg(m, &hwconf);
-				m++;
-
 			}
-
 		}
 	}
 #endif

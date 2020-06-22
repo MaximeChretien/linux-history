@@ -120,8 +120,8 @@ sys32_ptrace_wrapper:
 	lgfr	%r2,%r2			# long
 	lgfr	%r3,%r3			# long
 	llgtr	%r4,%r4			# long
-	lgfr	%r5,%r5			# long
-	jg	sys32_ptrace		# branch to system call
+	llgfr	%r5,%r5			# long
+	jg	sys_ptrace		# branch to system call
 
 	.globl  sys32_alarm_wrapper 
 sys32_alarm_wrapper:

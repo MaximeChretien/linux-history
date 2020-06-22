@@ -292,7 +292,7 @@ affs_init_bitmap(struct super_block *sb)
 	AFFS_SB->s_bmap_bits = sb->s_blocksize * 8 - 32;
 	AFFS_SB->s_bmap_count = (AFFS_SB->s_partition_size - AFFS_SB->s_reserved +
 				 AFFS_SB->s_bmap_bits - 1) / AFFS_SB->s_bmap_bits;
-	size = AFFS_SB->s_bmap_count * sizeof(struct affs_bm_info);
+	size = AFFS_SB->s_bmap_count * sizeof(*bm);
 	bm = AFFS_SB->s_bitmap = kmalloc(size, GFP_KERNEL);
 	if (!AFFS_SB->s_bitmap) {
 		printk(KERN_ERR "AFFS: Bitmap allocation failed\n");

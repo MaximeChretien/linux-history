@@ -45,7 +45,6 @@
 #include <net/protocol.h>
 #include <net/arp.h>
 #include <net/route.h>
-#include <net/tcp.h>
 #include <net/udp.h>
 #include <net/sock.h>
 #include <net/pkt_sched.h>

@@ -827,10 +827,8 @@ void __init setup_arch(char **cmdline_p)
 #define PFN_PHYS(x)	((x) << PAGE_SHIFT)
 
 /*
- * 128MB for vmalloc and initrd
+ * Reserved space for vmalloc and iomap - defined in asm/page.h
  */
-#define VMALLOC_RESERVE	(unsigned long)(128 << 20)
-#define MAXMEM		(unsigned long)(-PAGE_OFFSET-VMALLOC_RESERVE)
 #define MAXMEM_PFN	PFN_DOWN(MAXMEM)
 #define MAX_NONPAE_PFN	(1 << 20)
 
@@ -2234,7 +2232,7 @@ static void __init init_intel(struct cpuinfo_x86 *c)
 			 */
 #define NR_SIBLINGS	2
 			if (smp_num_siblings != NR_SIBLINGS) {
-				printk(KERN_WARNING "CPU: Unsuppored number of the siblings %d", smp_num_siblings);
+				printk(KERN_WARNING "CPU: Unsupported number of the siblings %d", smp_num_siblings);
 				smp_num_siblings = 1;
 				goto too_many_siblings;
 			}

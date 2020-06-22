@@ -181,7 +181,7 @@ static int i810tco_release (struct inode *inode, struct file *file)
 	/*
 	 *      Shut off the timer.
 	 */
-#ifdef CONFIG_WATCHDOG_NOWAYOUT
+#ifndef CONFIG_WATCHDOG_NOWAYOUT
 	tco_timer_stop ();
 	timer_alive = 0;
 #endif	
@@ -208,8 +208,10 @@ static ssize_t i810tco_write (struct file *file, const char *data,
 static int i810tco_ioctl (struct inode *inode, struct file *file,
 			  unsigned int cmd, unsigned long arg)
 {
+	int new_margin, u_margin;
+
 	static struct watchdog_info ident = {
-		0,
+		WDIOF_SETTIMEOUT | WDIOF_KEEPALIVEPING,
 		0,
 		"i810 TCO timer"
 	};
@@ -229,6 +231,19 @@ static int i810tco_ioctl (struct inode *inode, struct file *file,
 	case WDIOC_KEEPALIVE:
 		tco_timer_reload ();
 		return 0;
+	case WDIOC_SETTIMEOUT:
+		if (get_user(u_margin, (int *) arg))
+			return -EFAULT;
+		new_margin = (u_margin * 10 + 5) / 6;
+		if ((new_margin < 3) || (new_margin > 63))
+			return -EINVAL;
+		if (tco_timer_settimer((unsigned char)new_margin))
+		    return -EINVAL;
+		i810_margin = new_margin;
+		tco_timer_reload();
+		/* Fall */
+	case WDIOC_GETTIMEOUT:
+		return put_user((int)(i810_margin * 6 / 10), (int *) arg);
 	}
 }
 

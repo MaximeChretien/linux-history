@@ -1367,7 +1367,10 @@ repeat:
  * the driver.  This makes the driver much more friendlier to shared IRQs
  * than previous designs, while remaining 100% (?) SMP safe and capable.
  */
-static void ide_do_request(ide_hwgroup_t *hwgroup, int masked_irq)
+/* --BenH: made non-static as ide-pmac.c uses it to kick the hwgroup back
+ *         into life on wakeup from machine sleep.
+ */ 
+void ide_do_request(ide_hwgroup_t *hwgroup, int masked_irq)
 {
 	ide_drive_t	*drive;
 	ide_hwif_t	*hwif;
@@ -1884,7 +1887,6 @@ int ide_revalidate_disk (kdev_t i_rdev)
 		if (drive->part[p].nr_sects > 0) {
 			kdev_t devp = MKDEV(major, minor+p);
 			invalidate_device(devp, 1);
-			set_blocksize(devp, 1024);
 		}
 		drive->part[p].start_sect = 0;
 		drive->part[p].nr_sects   = 0;

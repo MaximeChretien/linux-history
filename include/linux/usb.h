@@ -470,40 +470,84 @@ typedef struct urb
 	iso_packet_descriptor_t iso_frame_desc[0];
 } urb_t, *purb_t;
 
-#define FILL_CONTROL_URB(a,aa,b,c,d,e,f,g) \
+/**
+ * FILL_CONTROL_URB - macro to help initialize a control urb
+ * @URB: pointer to the urb to initialize.
+ * @DEV: pointer to the struct usb_device for this urb.
+ * @PIPE: the endpoint pipe
+ * @SETUP_PACKET: pointer to the setup_packet buffer
+ * @TRANSFER_BUFFER: pointer to the transfer buffer
+ * @BUFFER_LENGTH: length of the transfer buffer
+ * @COMPLETE: pointer to the usb_complete_t function
+ * @CONTEXT: what to set the urb context to.
+ *
+ * Initializes a control urb with the proper information needed to submit
+ * it to a device.  This macro is depreciated, the usb_fill_control_urb()
+ * function should be used instead.
+ */
+#define FILL_CONTROL_URB(URB,DEV,PIPE,SETUP_PACKET,TRANSFER_BUFFER,BUFFER_LENGTH,COMPLETE,CONTEXT) \
     do {\
-	spin_lock_init(&(a)->lock);\
-	(a)->dev=aa;\
-	(a)->pipe=b;\
-	(a)->setup_packet=c;\
-	(a)->transfer_buffer=d;\
-	(a)->transfer_buffer_length=e;\
-	(a)->complete=f;\
-	(a)->context=g;\
+	spin_lock_init(&(URB)->lock);\
+	(URB)->dev=DEV;\
+	(URB)->pipe=PIPE;\
+	(URB)->setup_packet=SETUP_PACKET;\
+	(URB)->transfer_buffer=TRANSFER_BUFFER;\
+	(URB)->transfer_buffer_length=BUFFER_LENGTH;\
+	(URB)->complete=COMPLETE;\
+	(URB)->context=CONTEXT;\
     } while (0)
 
-#define FILL_BULK_URB(a,aa,b,c,d,e,f) \
+/**
+ * FILL_BULK_URB - macro to help initialize a bulk urb
+ * @URB: pointer to the urb to initialize.
+ * @DEV: pointer to the struct usb_device for this urb.
+ * @PIPE: the endpoint pipe
+ * @TRANSFER_BUFFER: pointer to the transfer buffer
+ * @BUFFER_LENGTH: length of the transfer buffer
+ * @COMPLETE: pointer to the usb_complete_t function
+ * @CONTEXT: what to set the urb context to.
+ *
+ * Initializes a bulk urb with the proper information needed to submit it
+ * to a device.  This macro is depreciated, the usb_fill_bulk_urb()
+ * function should be used instead.
+ */
+#define FILL_BULK_URB(URB,DEV,PIPE,TRANSFER_BUFFER,BUFFER_LENGTH,COMPLETE,CONTEXT) \
     do {\
-	spin_lock_init(&(a)->lock);\
-	(a)->dev=aa;\
-	(a)->pipe=b;\
-	(a)->transfer_buffer=c;\
-	(a)->transfer_buffer_length=d;\
-	(a)->complete=e;\
-	(a)->context=f;\
+	spin_lock_init(&(URB)->lock);\
+	(URB)->dev=DEV;\
+	(URB)->pipe=PIPE;\
+	(URB)->transfer_buffer=TRANSFER_BUFFER;\
+	(URB)->transfer_buffer_length=BUFFER_LENGTH;\
+	(URB)->complete=COMPLETE;\
+	(URB)->context=CONTEXT;\
     } while (0)
     
-#define FILL_INT_URB(a,aa,b,c,d,e,f,g) \
+/**
+ * FILL_INT_URB - macro to help initialize a interrupt urb
+ * @URB: pointer to the urb to initialize.
+ * @DEV: pointer to the struct usb_device for this urb.
+ * @PIPE: the endpoint pipe
+ * @TRANSFER_BUFFER: pointer to the transfer buffer
+ * @BUFFER_LENGTH: length of the transfer buffer
+ * @COMPLETE: pointer to the usb_complete_t function
+ * @CONTEXT: what to set the urb context to.
+ * @INTERVAL: what to set the urb interval to.
+ *
+ * Initializes a interrupt urb with the proper information needed to submit
+ * it to a device.  This macro is depreciated, the usb_fill_int_urb()
+ * function should be used instead.
+ */
+#define FILL_INT_URB(URB,DEV,PIPE,TRANSFER_BUFFER,BUFFER_LENGTH,COMPLETE,CONTEXT,INTERVAL) \
     do {\
-	spin_lock_init(&(a)->lock);\
-	(a)->dev=aa;\
-	(a)->pipe=b;\
-	(a)->transfer_buffer=c;\
-	(a)->transfer_buffer_length=d;\
-	(a)->complete=e;\
-	(a)->context=f;\
-	(a)->interval=g;\
-	(a)->start_frame=-1;\
+	spin_lock_init(&(URB)->lock);\
+	(URB)->dev=DEV;\
+	(URB)->pipe=PIPE;\
+	(URB)->transfer_buffer=TRANSFER_BUFFER;\
+	(URB)->transfer_buffer_length=BUFFER_LENGTH;\
+	(URB)->complete=COMPLETE;\
+	(URB)->context=CONTEXT;\
+	(URB)->interval=INTERVAL;\
+	(URB)->start_frame=-1;\
     } while (0)
 
 #define FILL_CONTROL_URB_TO(a,aa,b,c,d,e,f,g,h) \
@@ -530,7 +574,105 @@ typedef struct urb
 	(a)->context=f;\
 	(a)->timeout=g;\
     } while (0)
+ 
+/**
+ * usb_fill_control_urb - initializes a control urb
+ * @urb: pointer to the urb to initialize.
+ * @dev: pointer to the struct usb_device for this urb.
+ * @pipe: the endpoint pipe
+ * @setup_packet: pointer to the setup_packet buffer
+ * @transfer_buffer: pointer to the transfer buffer
+ * @buffer_length: length of the transfer buffer
+ * @complete: pointer to the usb_complete_t function
+ * @context: what to set the urb context to.
+ *
+ * Initializes a control urb with the proper information needed to submit
+ * it to a device.
+ */
+static inline void usb_fill_control_urb (struct urb *urb,
+					 struct usb_device *dev,
+					 unsigned int pipe,
+					 unsigned char *setup_packet,
+					 void *transfer_buffer,
+					 int buffer_length,
+					 usb_complete_t complete,
+					 void *context)
+{
+	spin_lock_init(&urb->lock);
+	urb->dev = dev;
+	urb->pipe = pipe;
+	urb->setup_packet = setup_packet;
+	urb->transfer_buffer = transfer_buffer;
+	urb->transfer_buffer_length = buffer_length;
+	urb->complete = complete;
+	urb->context = context;
+}
+
+/**
+ * usb_fill_bulk_urb - macro to help initialize a bulk urb
+ * @urb: pointer to the urb to initialize.
+ * @dev: pointer to the struct usb_device for this urb.
+ * @pipe: the endpoint pipe
+ * @transfer_buffer: pointer to the transfer buffer
+ * @buffer_length: length of the transfer buffer
+ * @complete: pointer to the usb_complete_t function
+ * @context: what to set the urb context to.
+ *
+ * Initializes a bulk urb with the proper information needed to submit it
+ * to a device.
+ */
+static inline void usb_fill_bulk_urb (struct urb *urb,
+				      struct usb_device *dev,
+				      unsigned int pipe,
+				      void *transfer_buffer,
+				      int buffer_length,
+				      usb_complete_t complete,
+				      void *context)
+				      
+{
+	spin_lock_init(&urb->lock);
+	urb->dev = dev;
+	urb->pipe = pipe;
+	urb->transfer_buffer = transfer_buffer;
+	urb->transfer_buffer_length = buffer_length;
+	urb->complete = complete;
+	urb->context = context;
+}
     
+/**
+ * usb_fill_int_urb - macro to help initialize a interrupt urb
+ * @urb: pointer to the urb to initialize.
+ * @dev: pointer to the struct usb_device for this urb.
+ * @pipe: the endpoint pipe
+ * @transfer_buffer: pointer to the transfer buffer
+ * @buffer_length: length of the transfer buffer
+ * @complete: pointer to the usb_complete_t function
+ * @context: what to set the urb context to.
+ * @interval: what to set the urb interval to.
+ *
+ * Initializes a interrupt urb with the proper information needed to submit
+ * it to a device.
+ */
+static inline void usb_fill_int_urb (struct urb *urb,
+				     struct usb_device *dev,
+				     unsigned int pipe,
+				     void *transfer_buffer,
+				     int buffer_length,
+				     usb_complete_t complete,
+				     void *context,
+				     int interval)
+{
+	spin_lock_init(&urb->lock);
+	urb->dev = dev;
+	urb->pipe = pipe;
+	urb->transfer_buffer = transfer_buffer;
+	urb->transfer_buffer_length = buffer_length;
+	urb->complete = complete;
+	urb->context = context;
+	urb->interval = interval;
+	urb->start_frame = -1;
+}
+
 purb_t usb_alloc_urb(int iso_packets);
 void usb_free_urb (purb_t purb);
 int usb_submit_urb(purb_t purb);

@@ -30,6 +30,7 @@
  *		Alan Cox	:	Split ISA and PCI cards into two drivers
  *		Jeff Garzik	:	PCI cleanups
  *		Tigran Aivazian	:	Restructured wdtpci_init_one() to handle failures
+ *		Joel Becker	:	Added WDIOC_GET/SETTIMEOUT
  */
 
 #include <linux/config.h>
@@ -81,7 +82,10 @@ static int wdt_is_open;
 static int io=0x240;
 static int irq=11;
 
+/* Default timeout */
 #define WD_TIMO (100*60)		/* 1 minute */
+
+static int wd_margin = WD_TIMO;
 
 #ifndef MODULE
 
@@ -232,7 +236,7 @@ static void wdtpci_ping(void)
 	/* Write a watchdog value */
 	inb_p(WDT_DC);
 	wdtpci_ctr_mode(1,2);
-	wdtpci_ctr_load(1,WD_TIMO);		/* Timeout */
+	wdtpci_ctr_load(1,wd_margin);		/* Timeout */
 	outb_p(0, WDT_DC);
 }
 
@@ -310,10 +314,12 @@ static ssize_t wdtpci_read(struct file *file, char *buf, size_t count, loff_t *p
 static int wdtpci_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 	unsigned long arg)
 {
+	int new_margin;
 	static struct watchdog_info ident=
 	{
 		WDIOF_OVERHEAT|WDIOF_POWERUNDER|WDIOF_POWEROVER
-			|WDIOF_EXTERN1|WDIOF_EXTERN2|WDIOF_FANFAULT,
+			|WDIOF_EXTERN1|WDIOF_EXTERN2|WDIOF_FANFAULT
+			|WDIOF_SETTIMEOUT,
 		1,
 		"WDT500/501PCI"
 	};
@@ -333,6 +339,17 @@ static int wdtpci_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 		case WDIOC_KEEPALIVE:
 			wdtpci_ping();
 			return 0;
+		case WDIOC_SETTIMEOUT:
+			if (get_user(new_margin, (int *)arg))
+				return -EFAULT;
+			/* Arbitrary, can't find the card's limits */
+			if ((new_margin < 0) || (new_margin > 60))
+				return -EINVAL;
+			wd_margin = new_margin * 100;
+			wdtpci_ping();
+			/* Fall */
+		case WDIOC_GETTIMEOUT:
+			return put_user(wd_margin, (int *)arg);
 	}
 }
 
@@ -385,7 +402,7 @@ static int wdtpci_open(struct inode *inode, struct file *file)
 			wdtpci_ctr_mode(1,2);
 			wdtpci_ctr_mode(2,1);
 			wdtpci_ctr_load(0,20833);	/* count at 100Hz */
-			wdtpci_ctr_load(1,WD_TIMO);/* Timeout 60 seconds */
+			wdtpci_ctr_load(1,wd_margin);/* Timeout 60 seconds */
 			/* DO NOT LOAD CTR2 on PCI card! -- JPN */
 			outb_p(0, WDT_DC);	/* Enable */
 			return 0;

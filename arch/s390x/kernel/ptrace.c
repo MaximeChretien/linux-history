@@ -41,7 +41,7 @@
 
 void FixPerRegisters(struct task_struct *task)
 {
-	struct pt_regs *regs = task->thread.regs;
+	struct pt_regs *regs = __KSTK_PTREGS(task);
 	per_struct *per_info=
 			(per_struct *)&task->thread.per_info;
 
@@ -169,7 +169,7 @@ int copy_user(struct task_struct *task,saddr_t useraddr, addr_t copyaddr,
 		mask=PSW_ADDR_MASK;
 		if(useraddr<PT_FPC)
 		{
-			realuseraddr=(addr_t)&(((u8 *)task->thread.regs)[useraddr]);
+			realuseraddr=((addr_t) __KSTK_PTREGS(task)) + useraddr;
 			if(useraddr<PT_PSWMASK)
 			{
 				copymax=PT_PSWMASK;

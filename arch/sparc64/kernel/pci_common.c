@@ -1,4 +1,4 @@
-/* $Id: pci_common.c,v 1.27 2001/08/12 13:18:22 davem Exp $
+/* $Id: pci_common.c,v 1.27.2.2 2002/02/01 00:56:44 davem Exp $
  * pci_common.c: PCI controller common support.
  *
  * Copyright (C) 1999 David S. Miller (davem@redhat.com)
@@ -183,6 +183,17 @@ static void __init pdev_cookie_fillin(struct pci_pbm_info *pbm,
 		pcp->prom_name[err] = 0;
 	else
 		pcp->prom_name[0] = 0;
+
+	err = prom_getproperty(device_prom_node,
+			       "assigned-addresses",
+			       (char *)pcp->prom_assignments,
+			       sizeof(pcp->prom_assignments));
+	if (err == 0 || err == -1)
+		pcp->num_prom_assignments = 0;
+	else
+		pcp->num_prom_assignments =
+			(err / sizeof(pcp->prom_assignments[0]));
+
 	if (strcmp(pcp->prom_name, "ebus") == 0) {
 		struct linux_prom_ebus_ranges erng[PROM_PCIRNG_MAX];
 		int iter;
@@ -208,16 +219,6 @@ static void __init pdev_cookie_fillin(struct pci_pbm_info *pbm,
 			ap->size_lo = ep->size;
 		}
 		pcp->num_prom_assignments = err;
-	} else {
-		err = prom_getproperty(device_prom_node,
-				       "assigned-addresses",
-				       (char *)pcp->prom_assignments,
-				       sizeof(pcp->prom_assignments));
-		if (err == 0 || err == -1)
-			pcp->num_prom_assignments = 0;
-		else
-			pcp->num_prom_assignments =
-				(err / sizeof(pcp->prom_assignments[0]));
 	}
 
 	fixup_obp_assignments(pdev, pcp);
@@ -668,6 +669,20 @@ static void __init pdev_fixup_irq(struct pci_dev *pdev)
 	unsigned int prom_irq;
 	int prom_node = pcp->prom_node;
 	int err;
+
+	/* If this is an empty EBUS device, sometimes OBP fails to
+	 * give it a valid fully specified interrupts property.
+	 * The EBUS hooked up to SunHME on PCI I/O boards of
+	 * Ex000 systems is one such case.
+	 *
+	 * The interrupt is not important so just ignore it.
+	 */
+	if (pdev->vendor == PCI_VENDOR_ID_SUN &&
+	    pdev->device == PCI_DEVICE_ID_SUN_EBUS &&
+	    !prom_getchild(prom_node)) {
+		pdev->irq = 0;
+		return;
+	}
 
 	err = prom_getproperty(prom_node, "interrupts",
 			       (char *)&prom_irq, sizeof(prom_irq));

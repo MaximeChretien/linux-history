@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.processor.h 1.31 10/05/01 16:26:22 paulus
+ * BK Id: SCCS/s.processor.h 1.33 12/01/01 20:09:11 benh
  */
 #ifdef __KERNEL__
 #ifndef __ASM_PPC_PROCESSOR_H
@@ -209,8 +209,11 @@
 #define	  HID0_DFCA	(1<<6)		/* Data Cache Flush Assist */
 #define   HID0_BTIC	(1<<5)		/* Branch Target Instruction Cache Enable */
 #define   HID0_ABE	(1<<3)		/* Address Broadcast Enable */
+#define   HID0_FOLD	(1<<3)		/* Branch Folding enable - 7450 */
 #define	  HID0_BHTE	(1<<2)		/* Branch History Table Enable */
 #define	  HID0_BTCD	(1<<1)		/* Branch target cache disable */
+#define	  HID0_NOPDST	(1<<1)		/* No-op dst, dstt, etc. instr. */
+#define	  HID0_NOPTI	(1<<0)		/* No-op dcbt and dcbst instr. */
 #define	SPRN_HID1	0x3F1	/* Hardware Implementation Register 1 */
 #define	SPRN_IABR	0x3F2	/* Instruction Address Breakpoint Register */
 #define	SPRN_IAC1	0x3F4	/* Instruction Address Compare 1 */
@@ -261,6 +264,14 @@
 #define L2CR_L2DF		0x00004000	/* L2 differential clock */
 #define L2CR_L2BYP		0x00002000	/* L2 DLL bypass */
 #define L2CR_L2IP		0x00000001	/* L2 GI in progress */
+#define SPRN_L2CR2      0x3f8
+#define	SPRN_L3CR	0x3FA	/* Level 3 Cache Control Regsiter (7450) */
+#define L3CR_L3E		0x80000000	/* L3 enable */
+#define SPRN_MSSCR0	0x3f6	/* Memory Subsystem Control Register 0 */
+#define SPRN_MSSSR0	0x3f7	/* Memory Subsystem Status Register 1 */
+#define SPRN_ICTRL	0x3f3	/* Instruction Cache & Interrupt control reg */
+#define SPRN_LDSTCR	0x3f8	/* Load/Store control register */
+#define SPRN_LDSTDB	0x3f4	/* */
 #define	SPRN_LR		0x008	/* Link Register */
 #define	SPRN_MMCR0	0x3B8	/* Monitor Mode Control Register 0 */
 #define	SPRN_MMCR1	0x3BC	/* Monitor Mode Control Register 1 */

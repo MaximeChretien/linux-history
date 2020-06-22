@@ -106,7 +106,7 @@ extern unsigned long est_cycle_freq;
 extern void SMC93x_Init(void);
 
 /* smc37c669.c */
-extern void SMC669_Init(int);
+extern int SMC669_Init(int);
 
 /* es1888.c */
 extern void es1888_init(void);

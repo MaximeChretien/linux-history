@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.irq.c 1.32 08/24/01 20:07:37 paulus
+ * BK Id: SCCS/s.irq.c 1.34 12/01/01 20:09:06 benh
  */
 /*
  *  arch/ppc/kernel/irq.c
@@ -537,21 +537,29 @@ out:
 int do_IRQ(struct pt_regs *regs)
 {
 	int cpu = smp_processor_id();
-	int irq;
-        hardirq_enter(cpu);
+	int irq, first = 1;
+        hardirq_enter( cpu );
 
-	/* every arch is required to have a get_irq -- Cort */
-	irq = ppc_md.get_irq(regs);
+	for (;;) {
+		/*
+		 * Every arch is required to implement ppc_md.get_irq.
+		 * This function will either return an irq number or -1 to
+		 * indicate there are no more pending.  But the first time
+		 * through the loop this means there wasn't and IRQ pending.
+		 * The value -2 is for buggy hardware and means that this IRQ
+		 * has already been handled. -- Tom
+		 */
+		irq = ppc_md.get_irq( regs );
 
-	if (irq >= 0) {
-		ppc_irq_dispatch_handler( regs, irq );
-	} else if (irq != -2) {
-		/* -2 means ignore, already handled */
-		if (ppc_spurious_interrupts < 10)
-			printk(KERN_DEBUG "Bogus interrupt %d from PC = %lx\n",
-			       irq, regs->nip);
-		/* That's not SMP safe ... but who cares ? */
-		ppc_spurious_interrupts++;
+		if (irq >= 0)
+			ppc_irq_dispatch_handler( regs, irq );
+		else {
+			if (irq != -2 && first)
+				/* That's not SMP safe ... but who cares ? */
+				ppc_spurious_interrupts++;
+			break;
+		}
+		first = 0;
 	}
         hardirq_exit( cpu );
 

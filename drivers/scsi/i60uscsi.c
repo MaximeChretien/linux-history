@@ -640,7 +640,6 @@ ORC_SCB *__orc_alloc_scb(ORC_HCS * hcsp)
 	ULONG idx;
 	UCHAR index;
 	UCHAR i;
-	ULONG flags;
 
 	Ch = hcsp->HCS_Index;
 	for (i = 0; i < 8; i++) {

@@ -36,6 +36,7 @@ coda_file_read(struct file *file, char *buf, size_t count, loff_t *ppos)
 	struct inode *inode = file->f_dentry->d_inode;
 	struct coda_inode_info *cii = ITOC(inode);
 	struct file *cfile;
+	ssize_t ret;
 
 	cfile = cii->c_container;
 	if (!cfile) BUG();
@@ -43,7 +44,12 @@ coda_file_read(struct file *file, char *buf, size_t count, loff_t *ppos)
 	if (!cfile->f_op || !cfile->f_op->read)
 		return -EINVAL;
 
-	return cfile->f_op->read(cfile, buf, count, ppos);
+	down(&inode->i_sem);
+	ret = cfile->f_op->read(cfile, buf, count, ppos);
+	UPDATE_ATIME(inode);
+	up(&inode->i_sem);
+
+	return ret;
 }
 
 static ssize_t
@@ -70,6 +76,7 @@ coda_file_write(struct file *file,const char *buf,size_t count,loff_t *ppos)
 
 	cfile->f_flags = flags;
 	inode->i_size = cinode->i_size;
+	inode->i_mtime = inode->i_ctime = CURRENT_TIME;
 	up(&inode->i_sem);
 
 	return ret;
@@ -81,6 +88,7 @@ coda_file_mmap(struct file *file, struct vm_area_struct *vma)
 	struct inode *inode = file->f_dentry->d_inode;
 	struct coda_inode_info *cii = ITOC(inode);
 	struct file *cfile;
+	int ret;
 
 	cfile = cii->c_container;
 
@@ -89,7 +97,12 @@ coda_file_mmap(struct file *file, struct vm_area_struct *vma)
 	if (!cfile->f_op || !cfile->f_op->mmap)
 		return -ENODEV;
 
-	return cfile->f_op->mmap(cfile, vma);
+	down(&inode->i_sem);
+	ret = cfile->f_op->mmap(cfile, vma);
+	UPDATE_ATIME(inode);
+	up(&inode->i_sem);
+
+	return ret;
 }
 
 int coda_open(struct inode *i, struct file *f)

@@ -379,34 +379,11 @@ extern int __get_user_bad(void);
  * access register are set up, that 4 points to secondary (user) , 2 to primary (kernel)
  */
 
-asmlinkage void __copy_from_user_fixup(void /* special calling convention */);
-asmlinkage void __copy_to_user_fixup(void /* special calling convention */);
-
-extern inline unsigned long
-__copy_to_user_asm(void* to, const void* from,  long n)
-{
-
-        __asm__ __volatile__ (  "   lr    2,%2\n"
-                                "   lr    4,%1\n"
-                                "   lr    3,%0\n"
-                                "   lr    5,3\n"
-                                "   sacf  512\n"
-                                "0: mvcle 4,2,0\n"
-                                "   jo    0b\n"
-                                "   sacf  0\n"
-                                "   lr    %0,3\n"
-				".section __ex_table,\"a\"\n"
-				"   .align 4\n"
-				"   .long  0b,__copy_to_user_fixup\n"
-				".previous"
-                                : "+&d" (n) : "d" (to), "d" (from)
-                                : "cc", "2", "3", "4", "5" );
-        return n;
-}
+extern long __copy_to_user_asm(const void *from, long n, const void *to);
 
 #define __copy_to_user(to, from, n)                             \
 ({                                                              \
-        __copy_to_user_asm(to,from,n);                          \
+        __copy_to_user_asm(from, n, to);                        \
 })
 
 #define copy_to_user(to, from, n)                               \
@@ -414,38 +391,18 @@ __copy_to_user_asm(void* to, const void* from,  long n)
         long err = 0;                                           \
         __typeof__(n) __n = (n);                                \
         if (__access_ok(to,__n)) {                              \
-                err = __copy_to_user_asm(to,from,__n);          \
+                err = __copy_to_user_asm(from, __n, to);        \
         }                                                       \
         else                                                    \
                 err = __n;                                      \
         err;                                                    \
 })
 
-extern inline unsigned long
-__copy_from_user_asm(void* to, const void* from,  long n)
-{
-        __asm__ __volatile__ (  "   lr    2,%1\n"
-                                "   lr    4,%2\n"
-                                "   lr    3,%0\n"
-                                "   lr    5,3\n"
-                                "   sacf  512\n"
-                                "0: mvcle 2,4,0\n"
-                                "   jo    0b\n"
-                                "   sacf  0\n"
-                                "   lr    %0,5\n"
-				".section __ex_table,\"a\"\n"
-				"   .align 4\n"
-				"   .long  0b,__copy_from_user_fixup\n"
-				".previous"
-                                : "+&d" (n) : "d" (to), "d" (from)
-                                : "cc", "2", "3", "4", "5" );
-        return n;
-}
-
+extern long __copy_from_user_asm(void *to, long n, const void *from);
 
 #define __copy_from_user(to, from, n)                           \
 ({                                                              \
-        __copy_from_user_asm(to,from,n);                        \
+        __copy_from_user_asm(to, n, from);                      \
 })
 
 #define copy_from_user(to, from, n)                             \
@@ -453,7 +410,7 @@ __copy_from_user_asm(void* to, const void* from,  long n)
         long err = 0;                                           \
         __typeof__(n) __n = (n);                                \
         if (__access_ok(from,__n)) {                            \
-                err = __copy_from_user_asm(to,from,__n);        \
+                err = __copy_from_user_asm(to, __n, from);      \
         }                                                       \
         else                                                    \
                 err = __n;                                      \
@@ -550,38 +507,12 @@ strnlen_user(const char * src, unsigned long n)
  * Zero Userspace
  */
 
-static inline unsigned long
-__clear_user(void *to, unsigned long n)
-{
-        __asm__ __volatile__ (  "   sacf  512\n"
-                                "   lr    4,%1\n"
-                                "   lr    5,%0\n"
-                                "   sr    2,2\n"
-                                "   sr    3,3\n"
-                                "0: mvcle 4,2,0\n"
-                                "   jo    0b\n"
-                                "   sacf  0\n"
-                                "1: lr    %0,3\n"
-                                ".section .fixup,\"ax\"\n"
-                                "2: lhi   5,-4096\n"
-                                "   n     5,0x90\n"
-                                "   sr    5,4\n"
-                                "   mvcle 4,2,0\n"
-                                "   sacf  0\n"
-                                "   basr  4,0\n"
-                                "   l     4,3f-.(4)\n"
-                                "   br    4\n"
-                                "3: .long 1b\n"
-                                ".previous\n"
-				".section __ex_table,\"a\"\n"
-				"   .align 4\n"
-				"   .long  0b,2b\n"
-				".previous"
-                                : "+&a" (n)
-                                : "a"   (to)
-                                : "cc", "2", "3", "4", "5" );
-        return n;
-}
+extern long __clear_user_asm(void *to, long n);
+
+#define __clear_user(to, n)                                     \
+({                                                              \
+        __clear_user_asm(to, n);                                \
+})
 
 static inline unsigned long
 clear_user(void *to, unsigned long n)

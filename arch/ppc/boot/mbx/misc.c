@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.misc.c 1.13 07/27/01 11:44:37 trini
+ * BK Id: SCCS/s.misc.c 1.15 10/15/01 10:53:29 trini
  */
 /*
  * Adapted for PowerPC by Gary Thomas
@@ -44,10 +44,6 @@ extern char dummy_for_rdimage;
 char *avail_ram;
 char *end_avail;
 
-/* See comment below.....
-*/
-unsigned int initrd_offset, initrd_size;
-
 /* Because of the limited amount of memory on embedded, it presents
  * loading problems.  The biggest is that we load this boot program
  * into a relatively low memory address, and the Linux kernel Bss often
@@ -75,14 +71,13 @@ bd_t hold_resid_buf;
 bd_t *hold_residual = &hold_resid_buf;
 unsigned long initrd_start = 0, initrd_end = 0;
 char *zimage_start;
-int zimage_size;
 
 extern void gunzip(void *, int, unsigned char *, int *);
 
 unsigned long
 decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum, bd_t *bp)
 {
-	int timer;
+	int timer, zimage_size = ZIMAGE_SIZE;
 	extern unsigned long start;
 	char *cp, ch;
 
@@ -92,17 +87,6 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum, b
 	embed_config(&bp);
 	serial_init(bp);
 #endif
-
-	/* These values must be variables.  If not, the compiler optimizer
-	 * will remove some code, causing the size of the code to vary
-	 * when these values are zero.  This is bad because we first
-	 * compile with these zero to determine the size and offsets
-	 * in an image, than compile again with these set to the proper
-	 * discovered value.....Ya know, we used to read these from the
-	 * header a long time ago.....
-	 */
-	initrd_offset = INITRD_OFFSET;
-	initrd_size = INITRD_SIZE;
 
 	/* Grab some space for the command line and board info.  Since
 	 * we no longer use the ELF header, but it was loaded, grab
@@ -154,13 +138,12 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum, b
 	/* we have to subtract 0x10000 here to correct for objdump including the
 	   size of the elf header which we strip -- Cort */
 	zimage_start = (char *)(load_addr - 0x10000 + ZIMAGE_OFFSET);
-	zimage_size = ZIMAGE_SIZE;
 
-	if ( initrd_offset )
-		initrd_start = load_addr - 0x10000 + initrd_offset;
+	if ( INITRD_OFFSET )
+		initrd_start = load_addr - 0x10000 + INITRD_OFFSET;
 	else
 		initrd_start = 0;
-	initrd_end = initrd_size + initrd_start;
+	initrd_end = INITRD_SIZE + initrd_start;
 
 	/*
 	 * setup avail_ram - this is the first part of ram usable
@@ -201,9 +184,9 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum, b
 		if ((unsigned long)initrd_start > 0x01000000) {
 			memcpy ((void *)PAGE_ALIGN(-PAGE_SIZE+(unsigned long)end_avail-INITRD_SIZE),
 				(void *)initrd_start,
-				initrd_size );
+				INITRD_SIZE );
 			initrd_start = PAGE_ALIGN(-PAGE_SIZE+(unsigned long)end_avail-INITRD_SIZE);
-			initrd_end = initrd_start + initrd_size;
+			initrd_end = initrd_start + INITRD_SIZE;
 			end_avail = (char *)initrd_start;
 			puts("relocated to:  "); puthex(initrd_start);
 			puts(" "); puthex(initrd_end); puts("\n");

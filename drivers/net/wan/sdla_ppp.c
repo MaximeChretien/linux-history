@@ -2473,7 +2473,7 @@ static int config508(netdevice_t *dev, sdla_t *card)
 #endif
 
 		default:
-			printk(KERN_INFO "%s: ERROR: Unsuported PPP Mode Selected\n",
+			printk(KERN_INFO "%s: ERROR: Unsupported PPP Mode Selected\n",
 					card->devname);
 			printk(KERN_INFO "%s:        PPP IP Modes: STATIC, PEER or HOST\n",
 					card->devname);	

@@ -1845,3 +1845,38 @@ Changes for patch v199.5
 - Improved debugging messages
 
 - Fixed unregister bugs in drivers/md/lvm-fs.c
+===============================================================================
+Changes for patch v199.6
+
+- Corrected (made useful) debugging message in <unregister>
+
+- Moved <kmem_cache_create> in <mount_devfs_fs> to <init_devfs_fs>
+
+- Fixed drivers/md/lvm-fs.c to create "lvm" entry
+
+- Added magic number to guard against scribbling drivers
+
+- Only return old entry in <devfs_mk_dir> if a directory
+
+- Defined macros for error and debug messages
+
+- Updated README from master HTML file
+===============================================================================
+Changes for patch v199.7
+
+- Unregister /dev/root symlink prior to creating second one (for
+  initrd)
+
+- Added support for multiple Compaq cpqarray controllers
+
+- Fixed (rare, old) race in <devfs_lookup>
+===============================================================================
+Changes for patch v199.8
+
+- Fixed deadlock bug in <devfs_d_revalidate_wait>
+
+- Tag VFS deletable in <devfs_mk_symlink> if handle ignored
+
+- Updated README from master HTML file
+
+- Fixed kdev_none macro in include/linux/kdev_t.h

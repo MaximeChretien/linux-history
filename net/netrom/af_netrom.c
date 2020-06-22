@@ -31,6 +31,7 @@
  *	NET/ROM 007	Jonathan(G4KLX)	New timer architecture.
  *					Impmented Idle timer.
  *			Arnaldo C. Melo s/suser/capable/, micro cleanups
+ *			Jeroen (PE1RXQ)	Use sock_orphan() on release.
  */
 
 #include <linux/config.h>
@@ -572,9 +573,8 @@ static int nr_release(struct socket *sock)
 			sk->state                = TCP_CLOSE;
 			sk->shutdown            |= SEND_SHUTDOWN;
 			sk->state_change(sk);
-			sk->dead                 = 1;
+			sock_orphan(sk);
 			sk->destroy              = 1;
-			sk->socket               = NULL;
 			break;
 
 		default:
@@ -838,17 +838,38 @@ int nr_rx_frame(struct sk_buff *skb, struct net_device *dev)
 	frametype          = skb->data[19] & 0x0F;
 	flags              = skb->data[19] & 0xF0;
 
+	switch (frametype) {
+	case NR_PROTOEXT:
 #ifdef CONFIG_INET
-	/*
-	 * Check for an incoming IP over NET/ROM frame.
-	 */
-	if (frametype == NR_PROTOEXT && circuit_index == NR_PROTO_IP && circuit_id == NR_PROTO_IP) {
-		skb_pull(skb, NR_NETWORK_LEN + NR_TRANSPORT_LEN);
-		skb->h.raw = skb->data;
+		/*
+		 * Check for an incoming IP over NET/ROM frame.
+		 */
+		if (circuit_index == NR_PROTO_IP && circuit_id == NR_PROTO_IP) {
+			skb_pull(skb, NR_NETWORK_LEN + NR_TRANSPORT_LEN);
+			skb->h.raw = skb->data;
 
-		return nr_rx_ip(skb, dev);
-	}
+			return nr_rx_ip(skb, dev);
+		}
 #endif
+		return 0;
+
+	case NR_CONNREQ:
+	case NR_CONNACK:
+	case NR_DISCREQ:
+	case NR_DISCACK:
+	case NR_INFO:
+	case NR_INFOACK:
+		/*
+		 * These frame types we understand.
+		 */
+		break;
+
+	default:
+		/*
+		 * Everything else is ignored.
+		 */
+		return 0;
+	}
 
 	/*
 	 * Find an existing socket connection, based on circuit ID, if it's

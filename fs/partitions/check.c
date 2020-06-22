@@ -338,7 +338,8 @@ void devfs_register_partitions (struct gendisk *dev, int minor, int unregister)
 	if (!unregister)
 		devfs_register_disc (dev, minor);
 	for (part = 1; part < dev->max_p; part++) {
-		if ( unregister || (dev->part[part + minor].nr_sects < 1) ) {
+		if ( unregister || (dev->part[minor].nr_sects < 1) ||
+		     (dev->part[part + minor].nr_sects < 1) ) {
 			devfs_unregister (dev->part[part + minor].de);
 			dev->part[part + minor].de = NULL;
 			continue;
@@ -383,6 +384,8 @@ void grok_partitions(struct gendisk *dev, int drive, unsigned minors, long size)
 
 	dev->part[first_minor].nr_sects = size;
 	/* No such device or no minors to use for partitions */
+	if ( !size && dev->flags && (dev->flags[drive] & GENHD_FL_REMOVABLE) )
+		devfs_register_partitions (dev, first_minor, 0);
 	if (!size || minors == 1)
 		return;
 

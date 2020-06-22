@@ -701,11 +701,8 @@ static void multipathd (void *data)
 		md_spin_unlock_irqrestore(&retry_list_lock, flags);
 
 		mddev = mp_bh->mddev;
-		if (mddev->sb_dirty) {
-			printk(KERN_INFO "dirty sb detected, updating.\n");
-			mddev->sb_dirty = 0;
+		if (mddev->sb_dirty)
 			md_update_sb(mddev);
-		}
 		bh = &mp_bh->bh_req;
 		dev = bh->b_dev;
 		

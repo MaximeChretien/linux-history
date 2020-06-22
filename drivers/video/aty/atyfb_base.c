@@ -350,7 +350,7 @@ static const struct {
     { 0x4751, 0x4751, 0x00, 0x00, m64n_gtc_ppl, 230, 100, M64F_GT | M64F_INTEGRATED | M64F_RESET_3D | M64F_GTB_DSP | M64F_SDRAM_MAGIC_PLL | M64F_EXTRA_BRIGHT },
 
     /* 3D RAGE XL */
-    { 0x4752, 0x4752, 0x00, 0x00, m64n_xl, 230, 120, M64F_GT | M64F_INTEGRATED | M64F_RESET_3D | M64F_GTB_DSP | M64F_SDRAM_MAGIC_PLL | M64F_EXTRA_BRIGHT | M64F_XL_DLL },
+    { 0x4752, 0x4752, 0x00, 0x00, m64n_xl, 230, 100, M64F_GT | M64F_INTEGRATED | M64F_RESET_3D | M64F_GTB_DSP | M64F_SDRAM_MAGIC_PLL | M64F_EXTRA_BRIGHT | M64F_XL_DLL },
 
     /* Mach64 LT PRO */
     { 0x4c42, 0x4c42, 0x00, 0x00, m64n_ltp_a,   230, 100, M64F_GT | M64F_INTEGRATED | M64F_RESET_3D | M64F_GTB_DSP },
@@ -366,6 +366,7 @@ static const struct {
 
 #if defined(CONFIG_FB_ATY_GX) || defined(CONFIG_FB_ATY_CT)
 static char ram_dram[] __initdata = "DRAM";
+static char ram_resv[] __initdata = "RESV";
 #endif /* CONFIG_FB_ATY_GX || CONFIG_FB_ATY_CT */
 
 #ifdef CONFIG_FB_ATY_GX
@@ -378,7 +379,6 @@ static char ram_sdram[] __initdata = "SDRAM";
 static char ram_sgram[] __initdata = "SGRAM";
 static char ram_wram[] __initdata = "WRAM";
 static char ram_off[] __initdata = "OFF";
-static char ram_resv[] __initdata = "RESV";
 #endif /* CONFIG_FB_ATY_CT */
 
 #ifdef CONFIG_FB_ATY_GX

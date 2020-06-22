@@ -575,8 +575,8 @@ struct scsi_device {
 					 * vendor-specific cmd's */
 	unsigned sector_size;	/* size in bytes */
 
-	int attached;		/* # of high level drivers attached to 
-				 * this */
+	int attached;		/* # of high level drivers attached to this */
+	int detected;		/* Delta attached - don't use in drivers! */
 	int access_count;	/* Count of open channels/mounts */
 
 	void *hostdata;		/* available to low-level driver */

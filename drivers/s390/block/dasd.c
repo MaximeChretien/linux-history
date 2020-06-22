@@ -113,6 +113,7 @@ EXPORT_SYMBOL (dasd_default_erp_action);
 EXPORT_SYMBOL (dasd_default_erp_postaction);
 EXPORT_SYMBOL (dasd_sleep_on_req);
 EXPORT_SYMBOL (dasd_set_normalized_cda);
+EXPORT_SYMBOL (dasd_device_from_kdev);
 
 /* SECTION: Constant definitions to be used within this file */
 
@@ -668,12 +669,18 @@ dasd_register_major (major_info_t * major_info)
         /* init devfs array */
 	major_info->gendisk.de_arr = (devfs_handle_t *)
 	    kmalloc (DASD_PER_MAJOR * sizeof (devfs_handle_t), GFP_KERNEL);
+	if(major_info->gendisk.de_arr == NULL)
+		goto out_gd_de_arr;
+
 	memset (major_info->gendisk.de_arr, 0,
 		DASD_PER_MAJOR * sizeof (devfs_handle_t));
 
         /* init flags */
 	major_info->gendisk.flags = (char *)
 	    kmalloc (DASD_PER_MAJOR * sizeof (char), GFP_KERNEL);
+	if(major_info->gendisk.flags == NULL)
+		goto out_gd_flags;
+
 	memset (major_info->gendisk.flags, 0, DASD_PER_MAJOR * sizeof (char));
 
         /* register blockdevice */
@@ -792,10 +799,13 @@ dasd_register_major (major_info_t * major_info)
 		major_info->flags &= ~DASD_MAJOR_INFO_REGISTERED;
 	}
 
-      out_reg_blkdev:
-        kfree (major_info->gendisk.flags);
-        kfree (major_info->gendisk.de_arr);
+out_reg_blkdev:
+	kfree (major_info->gendisk.flags);
 
+out_gd_flags:
+	kfree (major_info->gendisk.de_arr);
+
+out_gd_de_arr:
 	/* Delete the new major info from dasd_major_info if needed */
 	if (!(major_info->flags & DASD_MAJOR_INFO_IS_STATIC)) {
 		kfree (major_info);
@@ -861,7 +871,7 @@ dasd_unregister_major (major_info_t * major_info)
  * finds the device structure corresponding to the kdev supplied as argument
  * in the major_info structures and returns it or NULL when not found
  */
-static inline dasd_device_t *
+dasd_device_t *
 dasd_device_from_kdev (kdev_t kdev)
 {
 	major_info_t *major_info = NULL;
@@ -1873,15 +1883,15 @@ dasd_int_handler (int irq, void *ds, struct pt_regs *regs)
 	dasd_era_t era = dasd_era_none; /* default is everything is okay */
 	devstat_t *stat = (devstat_t *)ds;
 
+        if (stat == NULL) {
+                BUG();
+	}
         DASD_DRIVER_DEBUG_EVENT (6, dasd_int_handler,
                                  "Interrupt: IRQ %02x, stat %02x, devno %04x",
                                  irq,
                                  stat->dstat,
                                  stat->devno);
         asm volatile ("STCK %0":"=m" (now));
-        if (stat == NULL) {
-                BUG();
-	}
 
         /* first of all check for state change pending interrupt */
         if ((stat->dstat & DEV_STAT_ATTENTION ) && 
@@ -2313,6 +2323,18 @@ do_dasd_ioctl (struct inode *inp, /* unsigned */ int no, unsigned long data)
 			rc = put_user(ver, (int *) data);
 			break;
         }
+	case BLKGETSIZE:{	/* Return device size */
+			long blocks = major_info->gendisk.sizes 
+                                      [MINOR (inp->i_rdev)] << 1;
+			rc = put_user(blocks, (long *) data);
+			break;
+		}
+	case BLKGETSIZE64:{
+			u64 blocks = major_info->gendisk.sizes 
+                                      [MINOR (inp->i_rdev)];
+			rc = put_user(blocks << 10, (u64 *) data);
+			break;
+		}
 	case BLKRRPART:{
 			if (!capable (CAP_SYS_ADMIN)) {
 				rc = -EACCES;
@@ -2508,8 +2530,6 @@ do_dasd_ioctl (struct inode *inp, /* unsigned */ int no, unsigned long data)
 		break;
 		}
 #endif /* 0 */
-	case BLKGETSIZE:
-	case BLKGETSIZE64:
 	case BLKSSZGET:
 	case BLKROSET:
 	case BLKROGET:
@@ -2647,7 +2667,6 @@ dasd_release (struct inode *inp, struct file *filp)
                 invalidate_buffers (inp->i_rdev);
                 if ( device->discipline->owner )
                         __MOD_DEC_USE_COUNT(device->discipline->owner);
-                MOD_DEC_USE_COUNT;
 	} else if ( count == -1 ) { /* paranoia only */
                 atomic_set (&device->open_count,0);
                 printk (KERN_WARNING PRINTK_HEADER

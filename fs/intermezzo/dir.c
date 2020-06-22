@@ -163,20 +163,13 @@ struct dentry *presto_ilookup(struct inode *dir, struct dentry *dentry,
                 return ERR_PTR(-EPERM);
         }
         inode = iget(dir->i_sb, ino);
-        if (!inode || is_bad_inode(inode)) {
+        if (!inode || !inode->i_nlink || is_bad_inode(inode)) {
                 CDEBUG(D_PIOCTL, "fatal: invalid inode %ld (%s).\n",
                        ino, inode ? inode->i_nlink ? "bad inode" :
                        "no links" : "NULL");
                 error = -ENOENT;
                 EXIT;
                 goto cleanup_iput;
-        } else if (inode->i_nlink == 0) {
-                /* This is quite evil, but we have little choice.  If we were
-                 * to iput() again with i_nlink == 0, delete_inode would get
-                 * called again, which ext3 really Does Not Like. */
-                atomic_dec(&inode->i_count);
-                EXIT;
-                return ERR_PTR(-ENOENT);
         }
 
         /* We need to make sure we have the right inode (by checking the
@@ -216,7 +209,6 @@ struct dentry *presto_lookup(struct inode * dir, struct dentry *dentry)
         unsigned int generation;
 
         ENTRY;
-        CDEBUG(D_CACHE, "calling presto_prep on dentry %p\n", dentry);
         error = presto_prep(dentry->d_parent, &cache, &fset);
         if ( error  ) {
                 EXIT;
@@ -245,7 +237,7 @@ struct dentry *presto_lookup(struct inode * dir, struct dentry *dentry)
                 if (iops && iops->lookup) 
                         de = iops->lookup(dir, dentry);
                 else {
-		        printk("filesystem has no lookup\n");
+                        printk("filesystem has no lookup\n");
                         EXIT;
                         goto exit;
                 }
@@ -260,8 +252,6 @@ struct dentry *presto_lookup(struct inode * dir, struct dentry *dentry)
                 EXIT;
                 goto exit;
         }
-
-        presto_set_dd(dentry);
 
         /* some file systems set the methods in lookup, not in
            read_inode, as a result we should set the methods here 
@@ -704,7 +694,6 @@ inline void presto_triple_relock_other(struct inode *old_dir,
 		double_down(&old_dir->i_zombie, &new_dir->i_zombie);
 }
 
-
 // XXX this can be optimized: renamtes across filesets only require 
 //     multiple KML records, but can locally be executed normally. 
 int presto_rename(struct inode *old_dir, struct dentry *old_dentry,
@@ -724,6 +713,7 @@ int presto_rename(struct inode *old_dir, struct dentry *old_dentry,
                 EXIT;
                 return error;
         }
+
         error = presto_prep(new_parent, &new_cache, &new_fset);
         if ( error ) {
                 EXIT;

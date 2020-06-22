@@ -2773,7 +2773,9 @@ static void sbp2scsi_complete_command(struct sbp2scsi_host_info *hi, struct scsi
 	/*
 	 * Tell scsi stack that we're done with this command
 	 */
+	spin_lock_irq(&io_request_lock);
 	done (SCpnt);
+	spin_unlock_irq(&io_request_lock);
 
 	return;
 }

@@ -37,6 +37,9 @@
 /* To have statistics (just packets sent) define this */
 #undef NETWAVE_STATS
 
+#define DRV_NAME	"netwave_cs"
+#define DRV_VERSION	"0.3.0"
+
 #include <linux/config.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -51,6 +54,9 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/timer.h>
+#include <linux/ethtool.h>
+
+#include <asm/uaccess.h>
 #include <asm/system.h>
 #include <asm/bitops.h>
 #include <asm/io.h>
@@ -163,7 +169,7 @@ static int pc_debug = PCMCIA_DEBUG;
 MODULE_PARM(pc_debug, "i");
 #define DEBUG(n, args...) if (pc_debug>(n)) printk(KERN_DEBUG args)
 static char *version =
-"netwave_cs.c 0.3.0 Thu Jul 17 14:36:02 1997 (John Markus Bjørndalen)\n";
+DRV_NAME ".c " DRV_VERSION " Thu Jul 17 14:36:02 1997 (John Markus Bjørndalen)\n";
 #else
 #define DEBUG(n, args...)
 #endif
@@ -597,6 +603,53 @@ static void netwave_flush_stale_links(void)
     }
 } /* netwave_flush_stale_links */
 
+static int netdev_ethtool_ioctl (struct net_device *dev, void *useraddr)
+{
+	u32 ethcmd;
+
+	/* dev_ioctl() in ../../net/core/dev.c has already checked
+	   capable(CAP_NET_ADMIN), so don't bother with that here.  */
+
+	if (get_user(ethcmd, (u32 *)useraddr))
+		return -EFAULT;
+
+	switch (ethcmd) {
+
+	case ETHTOOL_GDRVINFO: {
+		struct ethtool_drvinfo info = { ETHTOOL_GDRVINFO };
+		strcpy (info.driver, DRV_NAME);
+		strcpy (info.version, DRV_VERSION);
+		sprintf(info.bus_info, "PCMCIA 0x%lx", dev->base_addr);
+		if (copy_to_user (useraddr, &info, sizeof (info)))
+			return -EFAULT;
+		return 0;
+	}
+
+#ifdef PCMCIA_DEBUG
+	/* get message-level */
+	case ETHTOOL_GMSGLVL: {
+		struct ethtool_value edata = {ETHTOOL_GMSGLVL};
+		edata.data = pc_debug;
+		if (copy_to_user(useraddr, &edata, sizeof(edata)))
+			return -EFAULT;
+		return 0;
+	}
+	/* set message-level */
+	case ETHTOOL_SMSGLVL: {
+		struct ethtool_value edata;
+		if (copy_from_user(&edata, useraddr, sizeof(edata)))
+			return -EFAULT;
+		pc_debug = edata.data;
+		return 0;
+	}
+#endif
+
+	default:
+		break;
+	}
+
+	return -EOPNOTSUPP;
+}
 /*
  * Function netwave_ioctl (dev, rq, cmd)
  *
@@ -619,6 +672,9 @@ static int netwave_ioctl(struct net_device *dev, /* ioctl device */
 	
     DEBUG(0, "%s: ->netwave_ioctl(cmd=0x%X)\n", dev->name, cmd);
 	
+    if (cmd == SIOCETHTOOL)
+    	return netdev_ethtool_ioctl(dev, (void *) rq->ifr_data);
+
     /* Disable interrupts & save flags */
     save_flags(flags);
     cli();

@@ -219,7 +219,18 @@ if [ "$CONFIG_AGP" != "n" ]; then
    bool '  Serverworks LE/HE support' CONFIG_AGP_SWORKS
 fi
 
-source drivers/char/drm/Config.in
+bool 'Direct Rendering Manager (XFree86 DRI support)' CONFIG_DRM
+if [ "$CONFIG_DRM" = "y" ]; then
+   bool '  Build drivers for old (XFree 4.0) DRM' CONFIG_DRM_OLD
+   if [ "$CONFIG_DRM_OLD" = "y" ]; then
+      comment 'DRM 4.0 drivers'
+      source drivers/char/drm-4.0/Config.in
+   else
+      comment 'DRM 4.1 drivers'
+      define_bool CONFIG_DRM_NEW y
+      source drivers/char/drm/Config.in
+   fi
+fi
 
 if [ "$CONFIG_HOTPLUG" = "y" -a "$CONFIG_PCMCIA" != "n" ]; then
    source drivers/char/pcmcia/Config.in

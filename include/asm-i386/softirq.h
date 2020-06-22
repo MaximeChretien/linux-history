@@ -3,6 +3,7 @@
 
 #include <asm/atomic.h>
 #include <asm/hardirq.h>
+#include <linux/stringify.h>
 
 #define __cpu_bh_enable(cpu) \
 		do { barrier(); local_bh_count(cpu)--; } while (0)
@@ -33,12 +34,15 @@ do {									\
 			"jnz 2f;"					\
 			"1:;"						\
 									\
-			".section .text.lock,\"ax\";"			\
+			".subsection 1;"				\
+			".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n"		\
+			"_text_lock_" __stringify(KBUILD_BASENAME) ":\n"		\
+			".endif\n"					\
 			"2: pushl %%eax; pushl %%ecx; pushl %%edx;"	\
 			"call %c1;"					\
 			"popl %%edx; popl %%ecx; popl %%eax;"		\
 			"jmp 1b;"					\
-			".previous;"					\
+			".subsection 0;"				\
 									\
 		: /* no output */					\
 		: "r" (ptr), "i" (do_softirq)				\

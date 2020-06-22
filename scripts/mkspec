@@ -8,7 +8,7 @@
 #
 echo "Name: kernel"
 echo "Summary: The Linux Kernel"
-echo "Version: "$VERSION.$PATCHLEVEL.$SUBLEVEL$EXTRAVERSION | sed -e "s/-//"
+echo "Version: "$VERSION.$PATCHLEVEL.$SUBLEVEL$EXTRAVERSION | sed -e "s/-//g"
 # we need to determine the NEXT version number so that uname and
 # rpm -q will agree
 echo "Release: `. scripts/mkversion`"
@@ -17,7 +17,7 @@ echo "Group: System Environment/Kernel"
 echo "Vendor: The Linux Community"
 echo "URL: http://www.kernel.org"
 echo -n "Source: kernel-$VERSION.$PATCHLEVEL.$SUBLEVEL"
-echo "$EXTRAVERSION.tar.gz" | sed -e "s/-//"
+echo "$EXTRAVERSION.tar.gz" | sed -e "s/-//g"
 echo "BuildRoot: /var/tmp/%{name}-%{PACKAGE_VERSION}-root"
 echo "%define __spec_install_post /usr/lib/rpm/brp-compress || :"
 echo ""

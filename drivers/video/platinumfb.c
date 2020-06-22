@@ -126,7 +126,9 @@ static void platinum_blank(int blank, struct fb_info *fb);
  */
 
 static void platinum_of_init(struct device_node *dp);
-static inline int platinum_vram_reqd(int video_mode, int color_mode);
+static inline int platinum_vram_reqd(const struct fb_info_platinum* info,
+					int video_mode,
+					int color_mode);
 static int read_platinum_sense(struct fb_info_platinum *info);
 static void set_platinum_clock(struct fb_info_platinum *info);
 static void platinum_set_par(const struct fb_par_platinum *par, struct fb_info_platinum *info);
@@ -443,10 +445,12 @@ static void do_install_cmap(int con, struct fb_info *info)
 	}
 }
 
-static inline int platinum_vram_reqd(int video_mode, int color_mode)
+static inline int platinum_vram_reqd(const struct fb_info_platinum *info, int video_mode, int color_mode)
 {
-	return vmode_attrs[video_mode-1].vres *
-	       (vmode_attrs[video_mode-1].hres * (1<<color_mode) + 0x20) +0x1000;
+	unsigned int pitch = 
+	       (vmode_attrs[video_mode-1].hres * (1<<color_mode) + 0x20);
+	fixup_pitch(pitch, info, color_mode);
+	return vmode_attrs[video_mode-1].vres * pitch;
 }
 
 #define STORE_D2(a, d) { \
@@ -487,7 +491,7 @@ static void platinum_set_par(const struct fb_par_platinum *par, struct fb_info_p
 	volatile struct cmap_regs	*cmap_regs = info->cmap_regs;
 	struct platinum_regvals		*init;
 	int				i;
-	int				vmode, cmode;
+	int				vmode, cmode, pitch;
 	
 	info->current_par = *par;
 
@@ -506,7 +510,9 @@ static void platinum_set_par(const struct fb_par_platinum *par, struct fb_info_p
 						init->offset[cmode] + 4 - cmode :
 						init->offset[cmode]));
 	out_be32(&platinum_regs->reg[16].r, (unsigned) info->frame_buffer_phys+init->fb_offset+0x10);
-	out_be32(&platinum_regs->reg[18].r, init->pitch[cmode]);
+	pitch = init->pitch[cmode];
+	fixup_pitch(pitch, info, cmode);
+	out_be32(&platinum_regs->reg[18].r, pitch);
 	out_be32(&platinum_regs->reg[19].r, (info->total_vram == 0x100000 ?
 					     init->mode[cmode+1] :
 					     init->mode[cmode]));
@@ -535,6 +541,7 @@ static void platinum_set_par(const struct fb_par_platinum *par, struct fb_info_p
 		display_info.depth = ( (cmode == CMODE_32) ? 32 :
 				      ((cmode == CMODE_16) ? 16 : 8));
 		display_info.pitch = vmode_attrs[vmode-1].hres * (1<<cmode) + 0x20;
+		fixup_pitch(display_info.pitch, info, cmode);
 		display_info.mode = vmode;
 		strncpy(display_info.name, "platinum",
 			sizeof(display_info.name));
@@ -558,25 +565,27 @@ static int __init init_platinum(struct fb_info_platinum *info)
 	sense = read_platinum_sense(info);
 	printk(KERN_INFO "Monitor sense value = 0x%x, ", sense);
 
+#ifdef CONFIG_NVRAM
 	if (default_vmode == VMODE_NVRAM) {
 		default_vmode = nvram_read_byte(NV_VMODE);
 		if (default_vmode <= 0 || default_vmode > VMODE_MAX ||
 		    !platinum_reg_init[default_vmode-1])
 			default_vmode = VMODE_CHOOSE;
 	}
-	if (default_vmode == VMODE_CHOOSE) {
-		default_vmode = mac_map_monitor_sense(sense);
-	}
-	if (default_vmode <= 0 || default_vmode > VMODE_MAX)
-		default_vmode = VMODE_640_480_60;
 	if (default_cmode == CMODE_NVRAM)
 		default_cmode = nvram_read_byte(NV_CMODE);
+#endif
+	if (default_vmode == VMODE_CHOOSE)
+		default_vmode = mac_map_monitor_sense(sense);
+	if (default_vmode <= 0 || default_vmode > VMODE_MAX)
+		default_vmode = VMODE_640_480_60;
 	if (default_cmode < CMODE_8 || default_cmode > CMODE_32)
 		default_cmode = CMODE_8;
 	/*
 	 * Reduce the pixel size if we don't have enough VRAM.
 	 */
-	while(default_cmode > CMODE_8 && platinum_vram_reqd(default_vmode, default_cmode) > info->total_vram)
+	while(default_cmode > CMODE_8 && platinum_vram_reqd(info, default_vmode, default_cmode)
+	    > info->total_vram)
 		default_cmode--;
 
 	printk("using video mode %d and color mode %d.\n", default_vmode, default_cmode);
@@ -782,7 +791,7 @@ static int platinum_var_to_par(const struct fb_var_screeninfo *var,
 		return -EINVAL;
 	}
 
-	if (platinum_vram_reqd(par->vmode, par->cmode) > info->total_vram) {
+	if (platinum_vram_reqd(info, par->vmode, par->cmode) > info->total_vram) {
 		printk(KERN_ERR "platinum_var_to_par, not enough ram for vmode %d, cmode %d.\n", par->vmode, par->cmode);
 		return -EINVAL;
 	}
@@ -826,7 +835,8 @@ static int platinum_encode_fix(struct fb_fix_screeninfo *fix,
 	fix->visual = (par->cmode == CMODE_8) ?
 		FB_VISUAL_PSEUDOCOLOR : FB_VISUAL_DIRECTCOLOR;
 	fix->line_length = vmode_attrs[par->vmode-1].hres * (1<<par->cmode) + 0x20;
-
+	fixup_pitch(fix->line_length, info, par->cmode);
+	
 	return 0;
 }
 

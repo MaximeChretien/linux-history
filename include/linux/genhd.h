@@ -37,6 +37,7 @@ enum {
 /* Ours is not to wonder why.. */
 	BSD_PARTITION =	FREEBSD_PARTITION,
 	MINIX_PARTITION = 0x81,  /* Minix Partition ID */
+	PLAN9_PARTITION = 0x39,  /* Plan 9 Partition ID */
 	UNIXWARE_PARTITION = 0x63,		/* Partition ID, same as */
 						/* GNU_HURD and SCO Unix */
 };

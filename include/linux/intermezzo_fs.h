@@ -135,6 +135,7 @@ struct presto_file_set {
         int fset_permit_count;
         int fset_permit_cookie;
         int fset_chunkbits; 
+        int fset_data; /* replaces the dentry d_data field for fsetroots */
 	struct  kml_fsdata *fset_kmldata;
 	loff_t  fset_file_maxio;  /* writing more than this causes a close */ 
 };
@@ -201,9 +202,6 @@ void *presto_trans_start(struct presto_file_set *fset, struct inode *inode,
 void presto_frob_dop(struct dentry *de) ;
 char * presto_path(struct dentry *dentry, struct dentry *root,
                    char *buffer, int buflen);
-void presto_set_dd(struct dentry *);
-void presto_init_ddata_cache(void);
-void presto_cleanup_ddata_cache(void);
 extern struct dentry_operations presto_dentry_ops;
 
 
@@ -231,14 +229,6 @@ struct presto_reservation_data {
 };
 
 
-struct presto_dentry_data { 
-        int dd_count; /* how mnay dentries are using this dentry */
-        struct presto_file_set *dd_fset;
-        loff_t dd_kml_offset;
-        int dd_flags;
-
-}; 
-
 struct presto_file_data { 
         int fd_do_lml;
         loff_t fd_lml_offset;
@@ -259,7 +249,6 @@ struct presto_version {
         __u64 pv_ctime;
         __u64 pv_size;
 };
-inline struct presto_dentry_data *presto_d2d(struct dentry *);
 int presto_walk(const char *name, struct nameidata *nd);
 int presto_clear_fsetroot(char *path);
 int presto_clear_all_fsetroots(char *path);

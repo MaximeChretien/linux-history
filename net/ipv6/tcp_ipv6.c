@@ -5,7 +5,7 @@
  *	Authors:
  *	Pedro Roque		<roque@di.fc.ul.pt>	
  *
- *	$Id: tcp_ipv6.c,v 1.142 2001/11/06 22:21:08 davem Exp $
+ *	$Id: tcp_ipv6.c,v 1.142.2.1 2001/12/21 05:06:08 davem Exp $
  *
  *	Based on: 
  *	linux/net/ipv4/tcp.c
@@ -1172,6 +1172,7 @@ static int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 
 	tcp_parse_options(skb, &tp, 0);
 
+	tp.tstamp_ok = tp.saw_tstamp;
 	tcp_openreq_init(req, &tp, skb);
 
 	req->class = &or_ipv6;

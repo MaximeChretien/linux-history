@@ -79,7 +79,7 @@ flags        =  4
 sigpending   =  8
 need_resched = 24
 tsk_ptrace   = 28
-processor    = 56
+processor    = 52
 
 /*
  * Base Address of this Module --- saved in __LC_ENTRY_BASE

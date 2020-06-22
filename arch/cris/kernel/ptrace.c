@@ -8,6 +8,9 @@
  * Authors:   Bjorn Wesen
  *
  * $Log: ptrace.c,v $
+ * Revision 1.8  2001/11/12 18:26:21  pkj
+ * Fixed compiler warnings.
+ *
  * Revision 1.7  2001/09/26 11:53:49  bjornw
  * PTRACE_DETACH works more simple in 2.4.10
  *
@@ -74,8 +77,6 @@ static inline long get_reg(struct task_struct *task, unsigned int regno)
 static inline int put_reg(struct task_struct *task, unsigned int regno,
 			  unsigned long data)
 {
-	unsigned long *addr;
-
 	if (regno == PT_USP)
 		task->thread.usp = data;
 	else if (regno < PT_MAX)
@@ -207,9 +208,7 @@ asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
 			break;
 
 		case PTRACE_SYSCALL: /* continue and stop at next (return from) syscall */
-		case PTRACE_CONT: { /* restart after signal. */
-			long tmp;
-
+		case PTRACE_CONT: /* restart after signal. */
 			ret = -EIO;
 			if ((unsigned long) data > _NSIG)
 				break;
@@ -222,16 +221,13 @@ asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
 			wake_up_process(child);
 			ret = 0;
 			break;
-		}
 
 /*
  * make the child exit.  Best I can do is send it a sigkill. 
  * perhaps it should be put in the status that it wants to 
  * exit.
  */
-		case PTRACE_KILL: {
-			long tmp;
-
+		case PTRACE_KILL:
 			ret = 0;
 			if (child->state == TASK_ZOMBIE) /* already dead */
 				break;
@@ -239,11 +235,8 @@ asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
 			/* TODO: make sure any pending breakpoint is killed */
 			wake_up_process(child);
 			break;
-		}
 
-		case PTRACE_SINGLESTEP: {  /* set the trap flag. */
-			long tmp;
-
+		case PTRACE_SINGLESTEP: /* set the trap flag. */
 			ret = -EIO;
 			if ((unsigned long) data > _NSIG)
 				break;
@@ -256,7 +249,6 @@ asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
 			wake_up_process(child);
 			ret = 0;
 			break;
-		}
 
 		case PTRACE_DETACH:
 			ret = ptrace_detach(child, data);

@@ -231,8 +231,8 @@ static char *serial_revdate = "2001-07-08";
 #include <asm/irq.h>
 #include <asm/bitops.h>
 
-#ifdef CONFIG_MAC_SERIAL
-#define SERIAL_DEV_OFFSET	2
+#if defined(CONFIG_MAC_SERIAL)
+#define SERIAL_DEV_OFFSET	((_machine == _MACH_prep || _machine == _MACH_chrp) ? 0 : 2)
 #else
 #define SERIAL_DEV_OFFSET	0
 #endif
@@ -5393,6 +5393,7 @@ static int __init rs_init(void)
 #endif
 	serial_driver.major = TTY_MAJOR;
 	serial_driver.minor_start = 64 + SERIAL_DEV_OFFSET;
+	serial_driver.name_base = SERIAL_DEV_OFFSET;
 	serial_driver.num = NR_PORTS;
 	serial_driver.type = TTY_DRIVER_TYPE_SERIAL;
 	serial_driver.subtype = SERIAL_TYPE_NORMAL;

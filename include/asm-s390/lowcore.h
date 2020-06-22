@@ -45,6 +45,9 @@
 #define __LC_CPUID                      0xC60
 #define __LC_CPUADDR                    0xC68
 #define __LC_IPLDEV                     0xC7C
+
+#define __LC_JIFFY_TIMER		0xC80
+
 #define __LC_PANIC_MAGIC                0xE00
 
 #define __LC_PFAULT_INTPARM             0x080
@@ -161,7 +164,7 @@ struct _lowcore
 	/* entry.S sensitive area end */
 
         /* SMP info area: defined by DJB */
-        __u64        jiffy_timer_cc;           /* 0xc80 */
+        __u64        jiffy_timer;              /* 0xc80 */
 	atomic_t     ext_call_fast;            /* 0xc88 */
         __u8         pad11[0xe00-0xc8c];       /* 0xc8c */
 

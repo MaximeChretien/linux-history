@@ -2446,6 +2446,14 @@ CONFIG_IP_NF_MATCH_LENGTH
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
 
+AH/ESP match support
+CONFIG_IP_NF_MATCH_AH_ESP
+  These two match extensions (`ah' and `esp') allow you to match a
+  range of SPIs inside AH or ESP headers of IPSec packets.
+
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  If unsure, say `N'.
+
 TOS match support
 CONFIG_IP_NF_MATCH_TOS
   TOS matching allows you to match packets based on the Type Of
@@ -2613,6 +2621,19 @@ CONFIG_IP_NF_MATCH_TCPMSS
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
 
+ULOG target support
+CONFIG_IP_NF_TARGET_ULOG
+  This option adds a `ULOG' target, which allows you to create rules in
+  any iptables table. The packet is passed to a userspace logging
+  daemon using netlink multicast sockets; unlike the LOG target
+  which can only be viewed through syslog.
+
+  The apropriate userspace logging daemon (ulogd) may be obtained from
+  http://www.gnumonks.org/projects/ulogd
+
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  If unsure, say `N'.
+
 LOG target support
 CONFIG_IP_NF_TARGET_LOG
   This option adds a `LOG' target, which allows you to create rules in
@@ -2668,6 +2689,23 @@ CONFIG_IP6_NF_MATCH_MULTIPORT
 
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
+
+IPV6 queue handler (EXPERIMENTAL)
+CONFIG_IP6_NF_QUEUE
+
+  This option adds a queue handler to the kernel for IPv6
+  packets which lets us to receive the filtered packets
+  with QUEUE target using libiptc as we can do with
+  the IPv4 now.
+
+  (C) Fernando Anton 2001
+  IPv64 Project - Work based in IPv64 draft by Arturo Azcorra.
+  Universidad Carlos III de Madrid
+  Universidad Politecnica de Alcala de Henares
+  email: fanton@it.uc3m.es
+
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt. If unsure, say `N'.
 
 Owner match support
 CONFIG_IP6_NF_MATCH_OWNER
@@ -3204,6 +3242,16 @@ CONFIG_AGP_INTEL
 
   You should say Y here if you use XFree86 3.3.6 or 4.x and want to
   use GLX or DRI.  If unsure, say N.
+
+Intel 460GX support
+CONFIG_AGP_I460
+  This option gives you AGP support for the Intel 460GX chipset.  This
+  chipset, the first to support Intel Itanium processors, is new and
+  this option is correspondingly a little experimental.
+
+  If you don't have a 460GX based machine (such as BigSur) with an AGP 
+  slot then this option isn't going to do you much good.  If you're
+  dying to do Direct Rendering on IA-64, this is what you're looking for.
 
 Intel I810/I815 DC100/I810e support
 CONFIG_AGP_I810
@@ -3813,6 +3861,7 @@ CONFIG_M386
    - "Pentium-4" for the Intel Pentium 4.
    - "K6" for the AMD K6, K6-II and K6-III (aka K6-3D).
    - "Athlon" for the AMD K7 family (Athlon/Duron/Thunderbird).
+   - "Elan" for the AMD Elan family (Elan SC400/SC410).
    - "Crusoe" for the Transmeta Crusoe series.
    - "Winchip-C6" for original IDT Winchip.
    - "Winchip-2" for IDT Winchip 2.
@@ -4062,6 +4111,19 @@ nVidia Riva support
 CONFIG_FB_RIVA
   This driver supports graphics boards with the nVidia Riva/Geforce
   chips.
+  Say Y if you have such a graphics board.
+
+  The driver is also available as a module ( = code which can be
+  inserted and removed from the running kernel whenever you want). The
+  module will be called rivafb.o. If you want to compile it as a
+  module, say M here and read <file:Documentation/modules.txt>.
+
+Trident Blade/Image support
+CONFIG_FB_TRIDENT
+  This driver is supposed to support graphics boards with the
+  Trident CyberXXXX/Image/CyberBlade chips mostly found in laptops
+  but also on some motherboards.Read <file:Documentation/fb/tridentfb.txt>
+
   Say Y if you have such a graphics board.
 
   The driver is also available as a module ( = code which can be
@@ -4350,11 +4412,9 @@ CONFIG_FB_PVR2_DEBUG
 
 Matrox unified accelerated driver
 CONFIG_FB_MATROX
-  Say Y here if you have a Matrox Millennium, Matrox Millennium II,
-  Matrox Mystique, Matrox Mystique 220, Matrox Productiva G100, Matrox
-  Mystique G200, Matrox Millennium G200, Matrox Marvel G200 video,
-  Matrox G400 or G450 card in your box. At this time, support for the
-  G100 is untested and support for G450 is highly experimental.
+  Say Y here if you have a Matrox Millennium, Millennium II, Mystique,
+  Mystique 220, Productiva G100, Mystique G200, Millennium G200,
+  Marvel G200 video, G400, G450, or G550 card in your box.
 
   This driver is also available as a module ( = code which can be
   inserted and removed from the running kernel whenever you want).
@@ -4381,18 +4441,21 @@ CONFIG_FB_MATROX_MYSTIQUE
   packed pixel and 32 bpp packed pixel. You can also use font widths
   different from 8.
 
-Matrox G100/G200/G400/G450 support
+Matrox G100/G200/G400/G450/G550 support
 CONFIG_FB_MATROX_G100
-  Say Y here if you have a Matrox G100, G200, G400 or G450 based
-  video card. If you select "Advanced lowlevel driver options", you
-  should check 8 bpp packed pixel, 16 bpp packed pixel, 24 bpp packed
-  pixel and 32 bpp packed pixel. You can also use font widths
+  Say Y here if you have a Matrox G100, G200, G400, G450, or G550
+  based video card. If you select "Advanced lowlevel driver options",
+  you should check 8 bpp packed pixel, 16 bpp packed pixel, 24 bpp
+  packed pixel and 32 bpp packed pixel. You can also use font widths
   different from 8.
 
   If you need support for G400 secondary head, you must first say Y to
   "I2C support" and "I2C bit-banging support" in the character devices
   section, and then to "Matrox I2C support" and "G400 second head
   support" here in the framebuffer section.
+
+  If you need support for G450 or G550 secondary head, say Y to
+  "Matrox G450/G550 second head support" below.
 
 Matrox I2C support
 CONFIG_FB_MATROX_I2C
@@ -4440,7 +4503,7 @@ CONFIG_FB_MATROX_MAVEN
 Matrox G450 second head support
 CONFIG_FB_MATROX_G450
   Say Y or M here if you want to use a secondary head (meaning two
-  monitors in parallel) on G450.
+  monitors in parallel) on G450 or G550.
 
   If you compile it as module, two modules are created,
   matroxfb_crtc2.o and matroxfb_g450.o. Both modules are needed if you
@@ -4451,6 +4514,9 @@ CONFIG_FB_MATROX_G450
   at <ftp://platan.vc.cvut.cz/pub/linux/matrox-latest/>) to swap
   primary and secondary head outputs.  Secondary head driver always
   start in 640x480 resolution and you must use fbset to change it.
+
+  Note on most G550 cards the analog output is the secondary head,
+  so you will need to say Y here to use it.
 
   Also do not forget that second head supports only 16 and 32 bpp
   packed pixels, so it is a good idea to compile them into the kernel
@@ -10798,6 +10864,15 @@ CONFIG_NATSEMI
   More specific information and updates are available from
   <http://www.scyld.com/network/natsemi.html>.
 
+NatSemi workaround for high errors
+CONFIG_NATSEMI_CABLE_MAGIC
+  Some systems see lots of errors with NatSemi ethernet controllers
+  on certain cables.  If you are seeing lots of errors, try turning
+  this option on.  Some boards have incorrect values for supporting
+  resistors that can cause this change to break.  If you turn this
+  option on and your network suddenly stops working, turn this
+  option off.
+
 SK_G16 support
 CONFIG_SK_G16
   If you have a network (Ethernet) card of this type, say Y and read
@@ -12908,6 +12983,17 @@ CONFIG_USB_SERIAL_VISOR
   The module will be called visor.o. If you want to compile it as a
   module, say M here and read <file:Documentation/modules.txt>.
 
+USB Compaq iPAQ Driver
+CONFIG_USB_SERIAL_IPAQ
+  Say Y here if you want to connect to your Compaq iPAQ running
+  Windows CE 3.0 using a USB autosync cable. For information on using
+  the driver, read <file:Documentation/usb/usb-serial.txt>.
+
+  This code is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called ipaq.o. If you want to compile it as a
+  module, say M here and read <file:Documentation/modules.txt>.
+
 USB IR Dongle Serial Driver
 CONFIG_USB_SERIAL_IR
   Say Y here if you want to enable simple serial support for USB IrDA
@@ -13117,6 +13203,22 @@ CONFIG_USB_SERIAL_EDGEPORT
   The module will be called io_edgeport.o.  If you want to compile it
   as a module, say M here and read <file:Documentation/modules.txt>.
 
+USB PalmConnect (and other KL5KUSB105-based) Single Port Serial Driver
+CONFIG_USB_SERIAL_KLSI
+  Say Y here if you want to use a KL5KUSB105 - based single port
+  serial adapter. The most widely known -- and currently the only
+  tested -- device in this category is the PalmConnect USB Serial
+  adapter sold by Palm Inc. for use with their Palm III and Palm V
+  series PDAs.
+
+  Please read <file:Documentation/usb/usb-serial.txt> for more
+  information.
+
+  This code is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called kl5kusb105.o. If you want to compile it as
+  a module, say M here and read <file:Documentation/modules.txt>.
+
 USB Serial Converter verbose debug
 CONFIG_USB_SERIAL_DEBUG
   Say Y here if you want verbose debug messages from the USB Serial
@@ -13222,6 +13324,54 @@ CONFIG_USB_PWC
   inserted in and removed from the running kernel whenever you want).
   The module will be called pwc.o.  If you want to compile it as a
   module, say M here and read <file:Documentation/modules.txt>.
+
+USB SE401 Camera support
+CONFIG_USB_SE401
+  Say Y here if you want to connect this type of camera to your
+  computer's USB port. See <file:Documentation/usb/se401.txt> for more
+  information and for a list of supported cameras.
+
+  This driver uses the Video For Linux API. You must say Y or M to
+  "Video For Linux" (under Multimedia Devices) to use this driver.
+  Information on this API and pointers to "v4l" programs may be found
+  on the WWW at <http://roadrunner.swansea.uk.linux.org/v4l.shtml>.
+
+  This code is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called se401.o. If you want to compile it as a
+  module, say M here and read <file:Documentation/modules.txt>.
+
+USB STV680 (Pencam) Camera support
+CONFIG_USB_STV680
+  Say Y here if you want to connect this type of camera to your
+  computer's USB port. This includes the Pencam line of cameras.
+  See <file:Documentation/usb/stv680.txt> for more information and for
+  a list of supported cameras.
+
+  This driver uses the Video For Linux API. You must say Y or M to
+  "Video For Linux" (under Multimedia Devices) to use this driver.
+  Information on this API and pointers to "v4l" programs may be found
+  on the WWW at <http://roadrunner.swansea.uk.linux.org/v4l.shtml>.
+
+  This code is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called stv680.o. If you want to compile it as a
+  module, say M here and read <file:Documentation/modules.txt>.
+
+Vicam
+CONFIG_USB_VICAM
+  Say Y here if you have 3com homeconnect camera (vicam).
+
+  This driver uses the Video For Linux API. You must say Y or M to
+  "Video For Linux" (under Multimedia Devices) to use this driver.
+  Information on this API and pointers to "v4l" programs may be found
+  on the WWW at <http://roadrunner.swansea.uk.linux.org/v4l.shtml>.
+
+  This code is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called vicam.o. If you want to compile it as a
+  module, say M here and read <file:Documentation/modules.txt>.
+
 
 Pegasus/Pegasus II based USB-Ethernet device support
 CONFIG_USB_PEGASUS
@@ -14812,6 +14962,18 @@ CONFIG_SGI_PARTITION
   Say Y here if you would like to be able to read the hard disk
   partition table format used by SGI machines.
 
+Intel EFI GUID partition support
+CONFIG_EFI_PARTITION
+  Say Y here if you would like to use hard disks under Linux which
+  were partitioned using EFI GPT.  Presently only useful on the
+  IA-64 platform.
+
+/dev/guid support (EXPERIMENTAL)
+CONFIG_DEVFS_GUID
+  Say Y here if you would like to access disks and partitions by
+  their Globally Unique Identifiers (GUIDs) which will appear as
+  symbolic links in /dev/guid.
+
 Ultrix partition table support
 CONFIG_ULTRIX_PARTITION
   Say Y here if you would like to be able to read the hard disk
@@ -15086,7 +15248,7 @@ CONFIG_NLS_DEFAULT
   Currently, the valid values are:
   big5, cp437, cp737, cp775, cp850, cp852, cp855, cp857, cp860, cp861,
   cp862, cp863, cp864, cp865, cp866, cp869, cp874, cp932, cp936,
-  cp949, cp950, cp1251, cp1255, euc-jp, euc-kr, gb2312, iso8859-1,
+  cp949, cp950, cp1250, cp1251, cp1255, euc-jp, euc-kr, gb2312, iso8859-1,
   iso8859-2, iso8859-3, iso8859-4, iso8859-5, iso8859-6, iso8859-7,
   iso8859-8, iso8859-9, iso8859-13, iso8859-14, iso8859-15,
   koi8-r, koi8-ru, koi8-u, sjis, tis-620, utf8.
@@ -15325,6 +15487,16 @@ CONFIG_NLS_CODEPAGE_950
   only, not to the file contents. You can include several codepages;
   say Y here if you want to include the DOS codepage for Traditional
   Chinese(Big5).
+
+Central European (Codepage 1250)
+CONFIG_NLS_CODEPAGE_1250
+  If you want to display filenames with native language characters
+  from the Microsoft FAT file system family or from JOLIET CDROMs
+  correctly on the screen, you need to include the appropriate
+  input/output character sets. Say Y here for the Windows CP-1250
+  character set, which works for most Latin-written Slavic and Central
+  European languages: Czech, German, Hungarian, Polish, Rumanian, Croatian,
+  Slovak, Slovene.
 
 NLS ISO 8859-1 (Latin 1; Western European Languages)
 CONFIG_NLS_ISO8859_1
@@ -15596,13 +15768,10 @@ CONFIG_ADB_CUDA
 
 Support for PMU-based PowerMacs
 CONFIG_ADB_PMU
-  On the PowerBook 3400 and 2400, the PMU is a 6805 microprocessor
-  core whose primary function is to control battery charging and
-  system power.  The PMU also controls the ADB (Apple Desktop Bus)
-  which connects to the keyboard and mouse, as well as the
-  non-volatile RAM and the RTC (real time clock) chip.  Say Y to
-  enable support for this device; you should do so if your machine
-  is one of these PowerBooks.
+  This provides support for PMU based Power Macintosh systems.  This
+  includes all PowerBooks and all AGP-based machines.
+  
+  If unsure say Y.
 
 Include MacIO ADB driver
 CONFIG_ADB_MACIO
@@ -17024,22 +17193,6 @@ CONFIG_PM
   Note that, even if you say N here, Linux on the x86 architecture
   will issue the hlt instruction if nothing is to be done, thereby
   sending the processor to sleep and saving power.
-
-USB SE401 Camera support
-CONFIG_USB_SE401
-  Say Y here if you want to connect this type of camera to your
-  computer's USB port. See <file:Documentation/usb/se401.txt> for more
-  information and for a list of supported cameras.
-
-  This driver uses the Video For Linux API. You must say Y or M to
-  "Video For Linux" (under Multimedia Devices) to use this driver.
-  Information on this API and pointers to "v4l" programs may be found
-  on the WWW at <http://roadrunner.swansea.uk.linux.org/v4l.shtml>.
-
-  This code is also available as a module ( = code which can be
-  inserted in and removed from the running kernel whenever you want).
-  The module will be called se401.o. If you want to compile it as a
-  module, say M here and read <file:Documentation/modules.txt>.
 
 ACPI support
 CONFIG_ACPI
@@ -20409,7 +20562,7 @@ CONFIG_DMASOUND_ATARI
   <file:Documentation/modules.txt>.
 
 PowerMac DMA sound support
-CONFIG_DMASOUND_AWACS
+CONFIG_DMASOUND_PMAC
   If you want to use the internal audio of your PowerMac in Linux,
   answer Y to this question. This will provide a Sun-like /dev/audio,
   compatible with the Linux/i386 sound system. Otherwise, say N.
@@ -20669,6 +20822,14 @@ CONFIG_PMAC_PBOOK
   have it autoloaded. The act of removing the module shuts down the
   sound hardware for more power savings.
 
+APM emulation
+CONFIG_PMAC_APM_EMU
+  This driver provides an emulated /dev/apm_bios and /proc/apm. The
+  first one is mostly intended for XFree to sleep & wakeup properly,
+  the second ones provides some battery informations to allow existing
+  APM utilities to work. It provides less useful informations than
+  tools specifically designed for PowerBooks or /proc/pmu/battery_x
+
 Backlight control for LCD screens
 CONFIG_PMAC_BACKLIGHT
   Say Y here to build in code to manage the LCD backlight on a
@@ -20747,7 +20908,7 @@ CONFIG_RPXLITE
     End of life: mid 2001 (?)
     URL: <http://www.tz-mikroelektronik.de/ServiceModule/index.html>
 
-  HERMES:
+  HERMES_PRO:
     Hermes-Pro ISDN/LAN router with integrated 8 x hub
     Manufacturer: Multidata Gesellschaft für Datentechnik und Informatik
       <http://www.multidata.de/>
@@ -21615,23 +21776,17 @@ CONFIG_IPL
   If you want to use the produced kernel to IPL directly from a
   device, you have to merge a bootsector specific to the device
   into the first bytes of the kernel. You will have to select the
-  IPL device.
+  IPL device on another question, that pops up, when you select
+  CONFIG_IPL.
 
-# Choice: s390_ipl
-IPL from a S/390 tape unit
+IPL from a /390 tape unit
 CONFIG_IPL_TAPE
   Select this option if you want to IPL the image from a Tape.
 
 IPL from a virtual card reader emulated by VM/ESA
-CONFIG_IPL_RDR_VM
-  Select this option if you are running under VM/ESA and want
+CONFIG_IPL_VM
+  Select this option if you are running under VM/ESA and want 
   to IPL the image from the emulated card reader.
-
-IPL from a real card reader
-CONFIG_IPL_RDR
-  Select this option if you want to IPL the image from a real
-  card reader. Maybe you still got one and want to try. We didn't
-  test.
 
 Support for DASD hard disks
 CONFIG_DASD
@@ -23628,11 +23783,22 @@ CONFIG_IA64_GENERIC
 
   HP-simulator   For the HP simulator
                  (<http://software.hp.com/ia64linux/>).
-  SN1-simulator  For the SGI SN1 simulator.
+  SN1            For SGI SN1 Platforms.
+  SN2            For SGI SN2 Platforms.
   DIG-compliant  For DIG ("Developer's Interface Guide") compliant
                  system.
 
   If you don't know what to do, choose "generic".
+
+CONFIG_IA64_SGI_SN_SIM
+  Build a kernel that runs on both the SGI simulator AND on hardware.
+  There is a very slight performance penalty on hardware for including this
+  option.
+
+CONFIG_IA64_SGI_SN_DEBUG
+  This enables addition debug code that helps isolate
+  platform/kernel bugs. There is a small but measurable performance
+  degradation when this option is enabled.
 
 # Choice: pagesize
 Kernel page size
@@ -23651,53 +23817,13 @@ CONFIG_IA64_PAGE_SIZE_4KB
 
   If you don't know what to do, choose 8KB.
 
-Enable Itanium A-step specific code
-CONFIG_ITANIUM_ASTEP_SPECIFIC
-  Select this option to build a kernel for an Itanium prototype system
-  with an A-step CPU.  You have an A-step CPU if the "revision" field
-  in /proc/cpuinfo is 0.
-
 Enable Itanium B-step specific code
 CONFIG_ITANIUM_BSTEP_SPECIFIC
   Select this option to build a kernel for an Itanium prototype system
-  with a B-step CPU.  You have a B-step CPU if the "revision" field in
-  /proc/cpuinfo has a value in the range from 1 to 4.
-
-Enable Itanium B0-step specific code
-CONFIG_ITANIUM_B0_SPECIFIC
-  Select this option to build a kernel for an Itanium prototype system
-  with a B0-step CPU.  You have a B0-step CPU if the "revision" field
-  in /proc/cpuinfo is 1.
-
-Enable Itanium C-step specific code
-CONFIG_ITANIUM_CSTEP_SPECIFIC
-  Select this option to build a kernel for an Itanium prototype system
-  with a C-step CPU.  You have a C-step CPU if the "revision" field in
-  /proc/cpuinfo is in the range of 5 to 8.
-
-Enable Itanium B1-step specific code
-CONFIG_ITANIUM_B1_SPECIFIC
-  Select this option to build a kernel for an Itanium prototype system
-  with a B1-step CPU.  You have a B1-step CPU if the "revision" field
-  in /proc/cpuinfo is 2.
-
-Enable Itanium B2-step specific code
-CONFIG_ITANIUM_B2_SPECIFIC
-  Select this option to build a kernel for an Itanium prototype system
-  with a B2-step CPU.  You have a B2-step CPU if the "revision" field
-  in /proc/cpuinfo is 3.
-
-Enable Itanium C0-step specific code
-CONFIG_ITANIUM_C0_SPECIFIC
-  Select this option to build a kernel for an Itanium prototype system
-  with a C0-step CPU.  You have a C0-step CPU if the "revision" field
-  in /proc/cpuinfo is 5.
-
-Force interrupt redirection
-CONFIG_IA64_HAVE_IRQREDIR
-  Select this option if you know that your system has the ability to
-  redirect interrupts to different CPUs.  Select N here if you're
-  unsure.
+  with a B-step CPU.  Only B3 step CPUs are supported.  You have a B3-step
+  CPU if the "revision" field in /proc/cpuinfo is equal to 4.  If the
+  "revision" field shows a number bigger than 4, you do not have to turn
+  on this option.
 
 Enable IA-64 Machine Check Abort
 CONFIG_IA64_MCA
@@ -23762,6 +23888,15 @@ CONFIG_IA64_PALINFO
   Layer) information in /proc/pal.  This contains useful information
   about the processors in your systems, such as cache and TLB sizes
   and the PAL firmware version in use.
+
+  To use this option, you have to check that the "/proc file system
+  support" (CONFIG_PROC_FS) is enabled, too.
+
+/proc/efi/vars support
+CONFIG_EFI_VARS
+  If you say Y here, you are able to get EFI (Extensible Firmware
+  Interface) variable information in /proc/efi/vars.  You may read,
+  write, create, and destroy EFI variables through this interface.
 
   To use this option, you have to check that the "/proc file system
   support" (CONFIG_PROC_FS) is enabled, too.
@@ -24236,6 +24371,16 @@ CONFIG_GDB_CONSOLE
   If you are using GDB for remote debugging over a serial port and
   would like kernel messages to be formatted into GDB $O packets so
   that GDB prints them as program output, say 'Y'.
+
+802.1Q VLAN Support
+CONFIG_VLAN_8021Q
+  Select this and you will be able to create 802.1Q VLAN interfaces on your
+  ethernet interfaces.  802.1Q VLAN supports almost everything a regular
+  ethernet interface does, including firewalling, bridging, and of course
+  IP traffic.  You will need the 'vconfig' tool from the VLAN project in
+  order to effectively use VLANs.  See the VLAN web page for more
+  information:  http://www.candelatech.com/~greear/vlan.html  If unsure,
+  you can safely say 'N'.
 
 #
 # A couple of things I keep forgetting:

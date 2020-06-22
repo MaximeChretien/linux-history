@@ -50,18 +50,16 @@ int presto_walk(const char *name, struct nameidata *nd)
         return err;
 }
 
-inline struct presto_dentry_data *presto_d2d(struct dentry *dentry)
+
+static inline int presto_dentry_is_fsetroot(struct dentry *dentry)
 {
-        return (struct presto_dentry_data *)dentry->d_fsdata;
+        return ((long) dentry->d_fsdata) & PRESTO_FSETROOT;
 }
 
 static inline struct presto_file_set *presto_dentry2fset(struct dentry *dentry)
 {
-        if (dentry->d_fsdata == NULL) {
-                printk("fucked dentry: %p\n", dentry);
-                BUG();
-        }
-        return presto_d2d(dentry)->dd_fset;
+        return (struct presto_file_set *)
+                (((long) dentry->d_fsdata) - PRESTO_FSETROOT);
 }
 
 /* find the presto minor device for this inode */
@@ -114,7 +112,7 @@ struct presto_file_set *presto_fset(struct dentry *de)
         ENTRY;
         fsde = de;
         for ( ; ; ) {
-                if ( presto_dentry2fset(fsde) ) {
+                if ( presto_dentry_is_fsetroot(fsde) ) {
                         EXIT;
                         return presto_dentry2fset(fsde);
                 }
@@ -185,21 +183,36 @@ int presto_chk(struct dentry *dentry, int flag)
                 return 1;
         }
 
+        /* if it is a fsetroot, it's stored in the fset_flags */
+        if ( fset && presto_dentry_is_fsetroot(dentry) ) {
+                EXIT;
+                return fset->fset_data & flag;
+        }
+
         EXIT;
-        return (presto_d2d(dentry)->dd_flags & flag);
+        return ((int)(long)dentry->d_fsdata & flag);
 }
 
 /* set a bit in the dentry flags */
 void presto_set(struct dentry *dentry, int flag)
 {
 
-        ENTRY;
         if ( dentry->d_inode ) {
                 CDEBUG(D_INODE, "SET ino %ld, flag %x\n",
                        dentry->d_inode->i_ino, flag);
         }
-        presto_d2d(dentry)->dd_flags |= flag;
-        EXIT;
+
+        if ( presto_dentry_is_fsetroot(dentry)) {
+                struct presto_file_set *fset = presto_dentry2fset(dentry);
+                if (fset) {
+                        fset->fset_data |= flag;
+                        CDEBUG(D_INODE, "Setting fset->fset_data: now %x\n",
+                               fset->fset_data);
+                }
+        } else {
+                CDEBUG(D_INODE, "Setting dentry->d_fsdata\n");
+                ((int)(long)dentry->d_fsdata) |= flag;
+        }
 }
 
 /* given a path: complete the closes on the fset */
@@ -451,27 +464,39 @@ int presto_mark_dentry(const char *name, int and_flag, int or_flag,
         struct dentry *dentry;
         int error;
 
+        CDEBUG(D_INODE, "name: %s, and flag %x, or flag %x\n",
+               name, and_flag, or_flag);
+
         error = presto_walk(name, &nd);
         if (error)
                 return error;
         dentry = nd.dentry;
-
-        CDEBUG(D_INODE, "name: %s, and flag %x, or flag %x, dd_flags %x\n",
-               name, and_flag, or_flag, presto_d2d(dentry)->dd_flags);
-
+        CDEBUG(D_INODE, "dentry at %p, d_fsdata %p\n", dentry, dentry->d_fsdata);
 
         error = -ENXIO;
         if ( !presto_ispresto(dentry->d_inode) )
                 goto out;
 
         error = 0;
+        if ( presto_dentry_is_fsetroot(dentry) ) {
+                struct presto_file_set *fset = presto_dentry2fset(dentry);
+                CDEBUG(D_INODE, "Setting fset fset_data: fset %p\n", fset);
+                if ( fset ) {
+                        fset->fset_data &= and_flag;
+                        fset->fset_data |= or_flag;
+                        if (res) {
+                                *res = fset->fset_data;
+                        }
+                }
+                CDEBUG(D_INODE, "fset %p, flags %x data %x\n", 
+                       fset, fset->fset_flags, fset->fset_data);
+        } else {
+                ((int)(long)dentry->d_fsdata) &= and_flag;
+                ((int)(long)dentry->d_fsdata) |= or_flag;
+                if (res) 
+                        *res = (int)(long)dentry->d_fsdata;
+        }
 
-        presto_d2d(dentry)->dd_flags  &= and_flag;
-        presto_d2d(dentry)->dd_flags  |= or_flag;
-        if (res) 
-                *res = presto_d2d(dentry)->dd_flags;
-
-        // XXX this check makes no sense as d_count can change anytime.
         /* indicate if we were the only users while changing the flag */
         if ( atomic_read(&dentry->d_count) > 1 )
                 error = -EBUSY;
@@ -810,7 +835,6 @@ int presto_set_fsetroot(char *path, char *fsetname, unsigned int fsetid,
 
         error = -EEXIST;
         CDEBUG(D_INODE, "\n");
-
         fset2 = presto_fset(dentry);
         if (fset2 && (fset2->fset_mtpt == dentry) ) { 
                 printk(KERN_ERR "Fsetroot already set (path %s)\n", path);
@@ -825,7 +849,7 @@ int presto_set_fsetroot(char *path, char *fsetname, unsigned int fsetid,
         fset->fset_flags = flags;
 	fset->fset_file_maxio = FSET_DEFAULT_MAX_FILEIO; 
 
-        presto_d2d(dentry)->dd_fset = fset;
+        dentry->d_fsdata = (void *) ( ((long)fset) + PRESTO_FSETROOT );
         list_add(&fset->fset_list, &cache->cache_fset_list);
 
         error = presto_init_kml_file(fset);
@@ -869,15 +893,15 @@ int presto_set_fsetroot(char *path, char *fsetname, unsigned int fsetid,
                 cache->cache_flags |= CACHE_FSETROOT_SET;
         }
 
-        CDEBUG(D_PIOCTL, "-------> fset at %p, dentry at %p, mtpt %p, fset %s, cache %p, presto_d2d(dentry)->dd_fset %p\n",
-               fset, dentry, fset->fset_mtpt, fset->fset_name, cache, presto_d2d(dentry)->dd_fset);
+        CDEBUG(D_PIOCTL, "-------> fset at %p, dentry at %p, mtpt %p, fset %s, cache %p, d_fsdata %p\n",
+               fset, dentry, fset->fset_mtpt, fset->fset_name, cache, dentry->d_fsdata);
 
         EXIT;
         return 0;
 
  out_list_del:
         list_del(&fset->fset_list);
-        presto_d2d(dentry)->dd_fset = NULL;
+        dentry->d_fsdata = 0;
  out_dput:
         path_release(&fset->fset_nd); 
  out_free:
@@ -907,7 +931,7 @@ int presto_get_kmlsize(char *path, size_t *size)
         }
 
         error = -EINVAL;
-        if ( ! presto_dentry2fset(dentry)) {
+        if ( ! presto_dentry_is_fsetroot(dentry)) {
                 EXIT;
                 goto kml_out;
         }
@@ -925,44 +949,12 @@ int presto_get_kmlsize(char *path, size_t *size)
         return error;
 }
 
-static void presto_cleanup_fset(struct presto_file_set *fset)
-{
-	int error;
-	struct presto_cache *cache;
-
-	ENTRY;
-#ifdef  CONFIG_KREINT
-        error = kml_cleanup (fset);
-        if ( error ) {
-                printk("InterMezzo: Closing kml for fset %s: %d\n",
-                       fset->fset_name, error);
-        }
-#endif
-
-        error = presto_close_journal_file(fset);
-        if ( error ) {
-                printk("InterMezzo: Closing journal for fset %s: %d\n",
-                       fset->fset_name, error);
-        }
-        cache = fset->fset_cache;
-        cache->cache_flags &= ~CACHE_FSETROOT_SET;
-
-        list_del(&fset->fset_list);
-
-	presto_d2d(fset->fset_mtpt)->dd_fset = NULL;
-        path_release(&fset->fset_nd);
-
-        fset->fset_mtpt = NULL;
-        PRESTO_FREE(fset->fset_name, strlen(fset->fset_name) + 1);
-        PRESTO_FREE(fset, sizeof(*fset));
-        EXIT;
-}
-
 int presto_clear_fsetroot(char *path)
 {
         struct nameidata nd;
         struct presto_file_set *fset;
         struct dentry *dentry;
+        struct presto_cache *cache;
         int error;
 
         ENTRY;
@@ -980,7 +972,7 @@ int presto_clear_fsetroot(char *path)
         }
 
         error = -EINVAL;
-        if ( ! presto_dentry2fset(dentry)) {
+        if ( ! presto_dentry_is_fsetroot(dentry)) {
                 EXIT;
                 goto put_out;
         }
@@ -991,7 +983,28 @@ int presto_clear_fsetroot(char *path)
                 goto put_out;
         }
 
-	presto_cleanup_fset(fset);
+#ifdef  CONFIG_KREINT
+        error = kml_cleanup (fset);
+        if ( error ) {
+                printk("InterMezzo: Closing kml for fset %s: %d\n",
+                       fset->fset_name, error);
+        }
+#endif
+
+        error = presto_close_journal_file(fset);
+        if ( error ) {
+                printk("InterMezzo: Closing journal for fset %s: %d\n",
+                       fset->fset_name, error);
+        }
+        cache = fset->fset_cache;
+        cache->cache_flags &= ~CACHE_FSETROOT_SET;
+
+        list_del(&fset->fset_list);
+        dentry->d_fsdata = 0;
+        path_release(&fset->fset_nd);
+        fset->fset_mtpt = NULL;
+        PRESTO_FREE(fset->fset_name, strlen(fset->fset_name) + 1);
+        PRESTO_FREE(fset, sizeof(*fset));
         EXIT;
 
 put_out:
@@ -1024,7 +1037,7 @@ int presto_clear_all_fsetroots(char *path)
         }
 
         error = -EINVAL;
-        if ( ! presto_dentry2fset(dentry)) {
+        if ( ! presto_dentry_is_fsetroot(dentry)) {
                 EXIT;
                 goto put_out;
         }
@@ -1035,18 +1048,29 @@ int presto_clear_all_fsetroots(char *path)
                 goto put_out;
         }
 
-	error = 0;
+        cache = fset->fset_cache;
         cache = fset->fset_cache;
         cache->cache_flags &= ~CACHE_FSETROOT_SET;
 
         tmp = &cache->cache_fset_list;
         tmpnext = tmp->next;
         while ( tmpnext != &cache->cache_fset_list) {
-		tmp = tmpnext;
-                tmpnext = tmp->next;
+		tmp=tmpnext;
+                tmpnext=tmp->next;
                 fset = list_entry(tmp, struct presto_file_set, fset_list);
 
-		presto_cleanup_fset(fset);
+                
+                error = presto_close_journal_file(fset);
+                if ( error ) {
+                        printk("InterMezzo: Closing journal for fset %s: %d\n",
+                               fset->fset_name, error);
+                }
+                list_del(&fset->fset_list);
+                fset->fset_mtpt->d_fsdata = 0;
+                path_release(&fset->fset_nd);
+                fset->fset_mtpt = NULL;
+                PRESTO_FREE(fset->fset_name, strlen(fset->fset_name) +1);
+                PRESTO_FREE(fset, sizeof(*fset));
         }
 
         EXIT;
@@ -1079,7 +1103,7 @@ int presto_get_lastrecno(char *path, off_t *recno)
         }
 
         error = -EINVAL;
-        if ( ! presto_dentry2fset(dentry)) {
+        if ( ! presto_dentry_is_fsetroot(dentry)) {
                 EXIT;
                 goto kml_out;
         }

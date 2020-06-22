@@ -1,5 +1,5 @@
 /*
- * $Id: netiucv.c,v 1.12 2001/09/24 10:38:02 mschwide Exp $
+ * $Id: netiucv.c,v 1.16 2001/12/03 14:28:45 felfert Exp $
  *
  * IUCV network driver
  *
@@ -28,7 +28,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * RELEASE-TAG: IUCV network driver $Revision: 1.12 $
+ * RELEASE-TAG: IUCV network driver $Revision: 1.16 $
  *
  */
 
@@ -189,7 +189,7 @@ static __inline__ int netiucv_test_and_set_busy(net_device *dev)
 static __inline__ void netiucv_clear_busy(net_device *dev)
 {
 	clear_bit(0, &(((netiucv_priv *)dev->priv)->tbusy));
-	netif_start_queue(dev);
+	netif_wake_queue(dev);
 }
 
 static __inline__ int netiucv_test_and_set_busy(net_device *dev)
@@ -548,7 +548,7 @@ netiucv_unpack_skb(iucv_connection *conn, struct sk_buff *pskb)
 		header->next -= NETIUCV_HDRLEN;
 		if (skb_tailroom(pskb) < header->next) {
 			printk(KERN_WARNING
-			       "%s: Ilegal next field in iucv header: %d > %d\n",
+			       "%s: Illegal next field in iucv header: %d > %d\n",
 			       dev->name, header->next, skb_tailroom(pskb));
 			return;
 		}
@@ -618,7 +618,8 @@ conn_action_txdone(fsm_instance *fi, int event, void *arg)
 	iucv_connection *conn = ev->conn;
 	iucv_MessageComplete *eib = (iucv_MessageComplete *)ev->data;
 	netiucv_priv *privptr = NULL;
-	struct sk_buff *skb = (struct sk_buff *)eib->ipmsgtag;
+			         /* Shut up, gcc! skb is always below 2G. */
+	struct sk_buff *skb = (struct sk_buff *)(unsigned long)eib->ipmsgtag;
 	__u32 txbytes = 0;
 	__u32 txpackets = 0;
 	__u32 stat_maxcq = 0;
@@ -638,10 +639,9 @@ conn_action_txdone(fsm_instance *fi, int event, void *arg)
 				(skb->len - NETIUCV_HDRLEN - NETIUCV_HDRLEN);
 		}
 		dev_kfree_skb_any(skb);
-	} else {
-		conn->tx_buff->data = conn->tx_buff->tail = conn->tx_buff->head;
-		conn->tx_buff->len = 0;
 	}
+	conn->tx_buff->data = conn->tx_buff->tail = conn->tx_buff->head;
+	conn->tx_buff->len = 0;
 	spin_lock_irqsave(&conn->collect_lock, saveflags);
 	while ((skb = skb_dequeue(&conn->collect_queue))) {
 		header.next = conn->tx_buff->len + skb->len + NETIUCV_HDRLEN;
@@ -768,7 +768,8 @@ conn_action_connsever(fsm_instance *fi, int event, void *arg)
 		case CONN_STATE_TX:
 			printk(KERN_INFO "%s: Remote dropped connection\n",
 			       netdev->name);
-			iucv_unregister_program(conn->handle);
+			if (conn->handle)
+				iucv_unregister_program(conn->handle);
 			conn->handle = 0;
 			fsm_newstate(fi, CONN_STATE_STOPPED);
 			fsm_event(privptr->fsm, DEV_EVENT_CONDOWN, netdev);
@@ -881,7 +882,8 @@ conn_action_stop(fsm_instance *fi, int event, void *arg)
 #endif
 	fsm_newstate(fi, CONN_STATE_STOPPED);
 	netiucv_purge_skb_queue(&conn->collect_queue);
-	iucv_unregister_program(conn->handle);
+	if (conn->handle)
+		iucv_unregister_program(conn->handle);
 	conn->handle = 0;
 	fsm_event(privptr->fsm, DEV_EVENT_CONDOWN, netdev);
 }
@@ -1127,7 +1129,10 @@ netiucv_transmit_skb(iucv_connection *conn, struct sk_buff *skb) {
 		fsm_addtimer(&conn->timer, NETIUCV_TIMEOUT_5SEC,
 			     CONN_EVENT_TIMER, conn);
 		conn->prof.send_stamp = xtime;
-		rc = iucv_send(conn->pathid, NULL, 0, 0, (__u32)nskb, 0,
+		
+		rc = iucv_send(conn->pathid, NULL, 0, 0,
+			       /* Shut up, gcc! nskb is always below 2G. */
+			       (__u32)(((unsigned long)nskb)&0xffffffff), 0,
 			       nskb->data, nskb->len);
 		conn->prof.doios_single++;
 		conn->prof.txlen += skb->len;
@@ -1167,6 +1172,7 @@ netiucv_transmit_skb(iucv_connection *conn, struct sk_buff *skb) {
 static int
 netiucv_open(net_device *dev) {
 	MOD_INC_USE_COUNT;
+	SET_DEVICE_START(dev, 1);
 	fsm_event(((netiucv_priv *)dev->priv)->fsm, DEV_EVENT_START, dev);
 	return 0;
 }
@@ -1573,9 +1579,7 @@ netiucv_stat_read(struct file *file, char *buf, size_t count, loff_t *off)
 	if (file->f_pos == 0) {
 		p += sprintf(p, "Device FSM state: %s\n",
 			     fsm_getstate_str(privptr->fsm));
-		p += sprintf(p, "RX channel FSM state: %s\n",
-			     fsm_getstate_str(privptr->conn->fsm));
-		p += sprintf(p, "TX channel FSM state: %s\n",
+		p += sprintf(p, "Connection FSM state: %s\n",
 			     fsm_getstate_str(privptr->conn->fsm));
 		p += sprintf(p, "Max. TX buffer used: %ld\n",
 			     privptr->conn->prof.maxmulti);
@@ -1970,7 +1974,6 @@ netiucv_init_netdevice(int ifno, char *username)
 	dev->addr_len            = 0;
 	dev->type                = ARPHRD_SLIP;
 	dev->tx_queue_len        = NETIUCV_QUEUELEN_DEFAULT;
-	SET_DEVICE_START(dev, 1);
 	dev_init_buffers(dev);
 	dev->flags	         = IFF_POINTOPOINT | IFF_NOARP;
 	return dev;
@@ -2002,7 +2005,7 @@ netiucv_free_netdevice(net_device *dev)
 static void
 netiucv_banner(void)
 {
-	char vbuf[] = "$Revision: 1.12 $";
+	char vbuf[] = "$Revision: 1.16 $";
 	char *version = vbuf;
 
 	if ((version = strchr(version, ':'))) {
@@ -2118,5 +2121,7 @@ netiucv_init(void)
 #ifdef MODULE
 module_init(netiucv_init);
 module_exit(netiucv_exit);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,12))
 MODULE_LICENSE("GPL");
+#endif
 #endif

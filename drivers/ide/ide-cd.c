@@ -1462,11 +1462,9 @@ int cdrom_queue_packet_command(ide_drive_t *drive, struct packet_command *pc)
 		ide_init_drive_cmd (&req);
 		req.cmd = PACKET_COMMAND;
 		req.buffer = (char *)pc;
-		if (ide_do_drive_cmd (drive, &req, ide_wait)) {
-			printk("%s: do_drive_cmd returned stat=%02x,err=%02x\n",
-				drive->name, req.buffer[0], req.buffer[1]);
-			/* FIXME: we should probably abort/retry or something */
-		}
+		ide_do_drive_cmd (drive, &req, ide_wait);
+		/* FIXME: we should probably abort/retry or something 
+		 * in case of failure */
 		if (pc->stat != 0) {
 			/* The request failed.  Retry if it was due to a unit
 			   attention status
@@ -2641,6 +2639,13 @@ int ide_cdrom_probe_capabilities (ide_drive_t *drive)
 		CDROM_CONFIG_FLAGS (drive)->audio_play = 1;
 	if (cap.mechtype == mechtype_caddy || cap.mechtype == mechtype_popup)
 		CDROM_CONFIG_FLAGS (drive)->close_tray = 0;
+
+	/* Some drives used by Apple don't advertise audio play
+	 * but they do support reading TOC & audio datas
+	 */
+	if (strcmp (drive->id->model, "MATSHITADVD-ROM SR-8187") == 0 ||
+	    strcmp (drive->id->model, "MATSHITADVD-ROM SR-8186") == 0)
+		CDROM_CONFIG_FLAGS (drive)->audio_play = 1;
 
 #if ! STANDARD_ATAPI
 	if (cdi->sanyo_slot > 0) {

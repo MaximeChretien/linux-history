@@ -71,9 +71,9 @@ mainmenu_option next_comment
 comment 'Kernel hacking'
 
 #bool 'Debug kmalloc/kfree' CONFIG_DEBUG_MALLOC
-if [ "$CONFIG_CTC" = "y" ]; then
-  bool 'Remote GDB kernel debugging' CONFIG_REMOTE_DEBUG
-fi
+#if [ "$CONFIG_CTC" = "y" ]; then
+#  bool 'Remote GDB kernel debugging' CONFIG_REMOTE_DEBUG
+#fi
 bool 'Magic SysRq key' CONFIG_MAGIC_SYSRQ
 endmenu
 

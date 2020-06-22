@@ -1,4 +1,4 @@
-/* $Id: rtrap.S,v 1.57 2001/12/06 00:16:11 davem Exp $
+/* $Id: rtrap.S,v 1.57.2.1 2001/12/24 04:32:33 davem Exp $
  * rtrap.S: Preparing for return from trap on Sparc V9.
  *
  * Copyright (C) 1997,1998 Jakub Jelinek (jj@sunsite.mff.cuni.cz)
@@ -40,8 +40,7 @@ __handle_preemption:
 __handle_user_windows:
 		call			fault_in_user_windows
 		 wrpr			%g0, RTRAP_PSTATE, %pstate
-		ba,pt			%xcc, __handle_user_windows_continue
-		 wrpr			%g0, RTRAP_PSTATE_IRQOFF, %pstate
+		wrpr			%g0, RTRAP_PSTATE_IRQOFF, %pstate
 		/* Redo sched+sig checks */
 		ldx			[%g6 + AOFF_task_need_resched], %l0
 		brz,pt			%l0, 1f

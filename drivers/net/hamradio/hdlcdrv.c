@@ -901,6 +901,7 @@ static void __exit hdlcdrv_cleanup_driver(void)
 
 MODULE_AUTHOR("Thomas M. Sailer, sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu");
 MODULE_DESCRIPTION("Packet Radio network interface HDLC encoder/decoder");
+MODULE_LICENSE("GPL");
 module_init(hdlcdrv_init_driver);
 module_exit(hdlcdrv_cleanup_driver);
 

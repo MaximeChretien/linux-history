@@ -3378,10 +3378,10 @@ static void usb_audio_featureunit(struct consmixstate *state, unsigned char *ftr
 	if (state->nrchannels > 2)
 		printk(KERN_WARNING "usbaudio: feature unit %u: OSS mixer interface does not support more than 2 channels\n", ftr[3]);
 
-		nr_logical_channels=(ftr[0]-7)/ftr[5]-1;
+	nr_logical_channels=(ftr[0]-7)/ftr[5]-1;
 
-		if (nr_logical_channels != state->nrchannels) {
-			printk(KERN_WARNING "usbaudio: warning: found %d of %d logical channels.\n", state->nrchannels,nr_logical_channels);
+	if (nr_logical_channels != state->nrchannels) {
+		printk(KERN_WARNING "usbaudio: warning: found %d of %d logical channels.\n", state->nrchannels,nr_logical_channels);
 
 		if (state->nrchannels == 1 && nr_logical_channels==0) {
 			printk(KERN_INFO "usbaudio: assuming the channel found is the master channel (got a Philips camera?). Should be fine.\n");

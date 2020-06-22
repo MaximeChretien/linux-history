@@ -21,7 +21,12 @@
  *
  *************************************************************************/
 
-static const char *version = "pcnet32.c:v1.25kf 26.9.1999 tsbogend@alpha.franken.de\n";
+#define DRV_NAME	"pcnet32"
+#define DRV_VERSION	"1.25kf"
+#define DRV_RELDATE	"17.11.2001"
+
+static const char *version =
+DRV_NAME ".c:v" DRV_VERSION " " DRV_RELDATE " tsbogend@alpha.franken.de\n";
 
 #include <linux/module.h>
 
@@ -36,9 +41,12 @@ static const char *version = "pcnet32.c:v1.25kf 26.9.1999 tsbogend@alpha.franken
 #include <linux/pci.h>
 #include <linux/delay.h>
 #include <linux/init.h>
+#include <linux/ethtool.h>
+#include <linux/mii.h>
 #include <asm/bitops.h>
 #include <asm/io.h>
 #include <asm/dma.h>
+#include <asm/uaccess.h>
 
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
@@ -64,15 +72,15 @@ static struct net_device *pcnet32_dev;
 static const int max_interrupt_work = 80;
 static const int rx_copybreak = 200;
 
-#define PORT_AUI      0x00
-#define PORT_10BT     0x01
-#define PORT_GPSI     0x02
-#define PORT_MII      0x03
+#define PCNET32_PORT_AUI      0x00
+#define PCNET32_PORT_10BT     0x01
+#define PCNET32_PORT_GPSI     0x02
+#define PCNET32_PORT_MII      0x03
 
-#define PORT_PORTSEL  0x03
-#define PORT_ASEL     0x04
-#define PORT_100      0x40
-#define PORT_FD	      0x80
+#define PCNET32_PORT_PORTSEL  0x03
+#define PCNET32_PORT_ASEL     0x04
+#define PCNET32_PORT_100      0x40
+#define PCNET32_PORT_FD	      0x80
 
 #define PCNET32_DMA_MASK 0xffffffff
 
@@ -81,22 +89,22 @@ static const int rx_copybreak = 200;
  * to internal options
  */
 static unsigned char options_mapping[] = {
-    PORT_ASEL,			   /*  0 Auto-select	  */
-    PORT_AUI,			   /*  1 BNC/AUI	  */
-    PORT_AUI,			   /*  2 AUI/BNC	  */ 
-    PORT_ASEL,			   /*  3 not supported	  */
-    PORT_10BT | PORT_FD,	   /*  4 10baseT-FD	  */
-    PORT_ASEL,			   /*  5 not supported	  */
-    PORT_ASEL,			   /*  6 not supported	  */
-    PORT_ASEL,			   /*  7 not supported	  */
-    PORT_ASEL,			   /*  8 not supported	  */
-    PORT_MII,			   /*  9 MII 10baseT	  */
-    PORT_MII | PORT_FD,		   /* 10 MII 10baseT-FD	  */
-    PORT_MII,			   /* 11 MII (autosel)	  */
-    PORT_10BT,			   /* 12 10BaseT	  */
-    PORT_MII | PORT_100,	   /* 13 MII 100BaseTx	  */
-    PORT_MII | PORT_100 | PORT_FD, /* 14 MII 100BaseTx-FD */
-    PORT_ASEL			   /* 15 not supported	  */
+    PCNET32_PORT_ASEL,			   /*  0 Auto-select	  */
+    PCNET32_PORT_AUI,			   /*  1 BNC/AUI	  */
+    PCNET32_PORT_AUI,			   /*  2 AUI/BNC	  */ 
+    PCNET32_PORT_ASEL,			   /*  3 not supported	  */
+    PCNET32_PORT_10BT | PCNET32_PORT_FD,	   /*  4 10baseT-FD	  */
+    PCNET32_PORT_ASEL,			   /*  5 not supported	  */
+    PCNET32_PORT_ASEL,			   /*  6 not supported	  */
+    PCNET32_PORT_ASEL,			   /*  7 not supported	  */
+    PCNET32_PORT_ASEL,			   /*  8 not supported	  */
+    PCNET32_PORT_MII,			   /*  9 MII 10baseT	  */
+    PCNET32_PORT_MII | PCNET32_PORT_FD,		   /* 10 MII 10baseT-FD	  */
+    PCNET32_PORT_MII,			   /* 11 MII (autosel)	  */
+    PCNET32_PORT_10BT,			   /* 12 10BaseT	  */
+    PCNET32_PORT_MII | PCNET32_PORT_100,	   /* 13 MII 100BaseTx	  */
+    PCNET32_PORT_MII | PCNET32_PORT_100 | PCNET32_PORT_FD, /* 14 MII 100BaseTx-FD */
+    PCNET32_PORT_ASEL			   /* 15 not supported	  */
 };
 
 #define MAX_UNITS 8
@@ -284,11 +292,11 @@ struct pcnet32_private {
     int	 shared_irq:1,			/* shared irq possible */
 	ltint:1,
 #ifdef DO_DXSUFLO
-	      dxsuflo:1,						    /* disable transmit stop on uflo */
+      dxsuflo:1,			    /* disable transmit stop on uflo */
 #endif
-	full_duplex:1,				/* full duplex possible */
 	mii:1;					/* mii port available */
     struct net_device *next;
+    struct mii_if_info mii_if;
 };
 
 static int  pcnet32_probe_vlbus(int cards_found);
@@ -303,9 +311,9 @@ static void pcnet32_interrupt(int, void *, struct pt_regs *);
 static int  pcnet32_close(struct net_device *);
 static struct net_device_stats *pcnet32_get_stats(struct net_device *);
 static void pcnet32_set_multicast_list(struct net_device *);
-#ifdef HAVE_PRIVATE_IOCTL
-static int  pcnet32_mii_ioctl(struct net_device *, struct ifreq *, int);
-#endif
+static int  pcnet32_ioctl(struct net_device *, struct ifreq *, int);
+static int mdio_read(struct net_device *dev, int phy_id, int reg_num);
+static void mdio_write(struct net_device *dev, int phy_id, int reg_num, int val);
 
 enum pci_flags_bit {
     PCI_USES_IO=1, PCI_USES_MEM=2, PCI_USES_MASTER=4,
@@ -648,6 +656,13 @@ pcnet32_probe1(unsigned long ioaddr, unsigned char irq_line, int shared, int car
 #if defined(__i386__)
 	    printk(KERN_WARNING "%s: Probably a Compaq, using the PROM address of", dev->name);
 	    memcpy(dev->dev_addr, promaddr, 6);
+#elif defined(__powerpc__)
+	    if (!is_valid_ether_addr(dev->dev_addr)
+		&& is_valid_ether_addr(promaddr)) {
+		    printk("\n" KERN_WARNING "%s: using PROM address:",
+			   dev->name);
+		    memcpy(dev->dev_addr, promaddr, 6);
+	    }
 #endif
 	}	    	    
     }
@@ -703,19 +718,22 @@ pcnet32_probe1(unsigned long ioaddr, unsigned char irq_line, int shared, int car
     dev->priv = lp;
     lp->name = chipname;
     lp->shared_irq = shared;
-    lp->full_duplex = fdx;
+    lp->mii_if.full_duplex = fdx;
 #ifdef DO_DXSUFLO
     lp->dxsuflo = dxsuflo;
 #endif
     lp->ltint = ltint;
     lp->mii = mii;
     if (options[card_idx] > sizeof (options_mapping))
-	lp->options = PORT_ASEL;
+	lp->options = PCNET32_PORT_ASEL;
     else
 	lp->options = options_mapping[options[card_idx]];
+    lp->mii_if.dev = dev;
+    lp->mii_if.mdio_read = mdio_read;
+    lp->mii_if.mdio_write = mdio_write;
     
-    if (fdx && !(lp->options & PORT_ASEL) && full_duplex[card_idx])
-	lp->options |= PORT_FD;
+    if (fdx && !(lp->options & PCNET32_PORT_ASEL) && full_duplex[card_idx])
+	lp->options |= PCNET32_PORT_FD;
     
     if (a == NULL) {
       printk(KERN_ERR "pcnet32: No access methods\n");
@@ -727,7 +745,7 @@ pcnet32_probe1(unsigned long ioaddr, unsigned char irq_line, int shared, int car
     
     /* detect special T1/E1 WAN card by checking for MAC address */
     if (dev->dev_addr[0] == 0x00 && dev->dev_addr[1] == 0xe0 && dev->dev_addr[2] == 0x75)
-	lp->options = PORT_FD | PORT_GPSI;
+	lp->options = PCNET32_PORT_FD | PCNET32_PORT_GPSI;
 
     lp->init_block.mode = le16_to_cpu(0x0003);	/* Disable Rx and Tx. */
     lp->init_block.tlen_rlen = le16_to_cpu(TX_RING_LEN_BITS | RX_RING_LEN_BITS); 
@@ -782,9 +800,7 @@ pcnet32_probe1(unsigned long ioaddr, unsigned char irq_line, int shared, int car
     dev->stop = &pcnet32_close;
     dev->get_stats = &pcnet32_get_stats;
     dev->set_multicast_list = &pcnet32_set_multicast_list;
-#ifdef HAVE_PRIVATE_IOCTL
-    dev->do_ioctl = &pcnet32_mii_ioctl;
-#endif
+    dev->do_ioctl = &pcnet32_ioctl;
     dev->tx_timeout = pcnet32_tx_timeout;
     dev->watchdog_timeo = (HZ >> 1);
 
@@ -830,16 +846,16 @@ pcnet32_open(struct net_device *dev)
     
     /* set/reset autoselect bit */
     val = lp->a.read_bcr (ioaddr, 2) & ~2;
-    if (lp->options & PORT_ASEL)
+    if (lp->options & PCNET32_PORT_ASEL)
 	val |= 2;
     lp->a.write_bcr (ioaddr, 2, val);
     
     /* handle full duplex setting */
-    if (lp->full_duplex) {
+    if (lp->mii_if.full_duplex) {
 	val = lp->a.read_bcr (ioaddr, 9) & ~3;
-	if (lp->options & PORT_FD) {
+	if (lp->options & PCNET32_PORT_FD) {
 	    val |= 1;
-	    if (lp->options == (PORT_FD | PORT_AUI))
+	    if (lp->options == (PCNET32_PORT_FD | PCNET32_PORT_AUI))
 		val |= 2;
 	}
 	lp->a.write_bcr (ioaddr, 9, val);
@@ -847,19 +863,19 @@ pcnet32_open(struct net_device *dev)
     
     /* set/reset GPSI bit in test register */
     val = lp->a.read_csr (ioaddr, 124) & ~0x10;
-    if ((lp->options & PORT_PORTSEL) == PORT_GPSI)
+    if ((lp->options & PCNET32_PORT_PORTSEL) == PCNET32_PORT_GPSI)
 	val |= 0x10;
     lp->a.write_csr (ioaddr, 124, val);
     
-    if (lp->mii && !(lp->options & PORT_ASEL)) {
+    if (lp->mii && !(lp->options & PCNET32_PORT_ASEL)) {
 	val = lp->a.read_bcr (ioaddr, 32) & ~0x38; /* disable Auto Negotiation, set 10Mpbs, HD */
-	if (lp->options & PORT_FD)
+	if (lp->options & PCNET32_PORT_FD)
 	    val |= 0x10;
-	if (lp->options & PORT_100)
+	if (lp->options & PCNET32_PORT_100)
 	    val |= 0x08;
 	lp->a.write_bcr (ioaddr, 32, val);
     } else {
-	if (lp->options & PORT_ASEL) {  /* enable auto negotiate, setup, disable fd */
+	if (lp->options & PCNET32_PORT_ASEL) {  /* enable auto negotiate, setup, disable fd */
 		val = lp->a.read_bcr(ioaddr, 32) & ~0x98;
 		val |= 0x20;
 		lp->a.write_bcr(ioaddr, 32, val);
@@ -879,7 +895,7 @@ pcnet32_open(struct net_device *dev)
 	lp->a.write_csr (ioaddr, 5, val);
     }
    
-    lp->init_block.mode = le16_to_cpu((lp->options & PORT_PORTSEL) << 7);
+    lp->init_block.mode = le16_to_cpu((lp->options & PCNET32_PORT_PORTSEL) << 7);
     lp->init_block.filter[0] = 0x00000000;
     lp->init_block.filter[1] = 0x00000000;
     if (pcnet32_init_ring(dev))
@@ -1478,9 +1494,9 @@ static void pcnet32_set_multicast_list(struct net_device *dev)
     if (dev->flags&IFF_PROMISC) {
 	/* Log any net taps. */
 	printk(KERN_INFO "%s: Promiscuous mode enabled.\n", dev->name);
-	lp->init_block.mode = le16_to_cpu(0x8000 | (lp->options & PORT_PORTSEL) << 7);
+	lp->init_block.mode = le16_to_cpu(0x8000 | (lp->options & PCNET32_PORT_PORTSEL) << 7);
     } else {
-	lp->init_block.mode = le16_to_cpu((lp->options & PORT_PORTSEL) << 7);
+	lp->init_block.mode = le16_to_cpu((lp->options & PCNET32_PORT_PORTSEL) << 7);
 	pcnet32_load_multicast (dev);
     }
     
@@ -1489,29 +1505,157 @@ static void pcnet32_set_multicast_list(struct net_device *dev)
     pcnet32_restart(dev, 0x0042); /*  Resume normal operation */
 }
 
-#ifdef HAVE_PRIVATE_IOCTL
-static int pcnet32_mii_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
+static int mdio_read(struct net_device *dev, int phy_id, int reg_num)
+{
+	struct pcnet32_private *lp = dev->priv;
+	unsigned long ioaddr = dev->base_addr;
+	u16 val_out;
+	int phyaddr;
+
+	if (!lp->mii)
+		return 0;
+		
+	phyaddr = lp->a.read_bcr(ioaddr, 33);
+
+	lp->a.write_bcr(ioaddr, 33, ((phy_id & 0x1f) << 5) | (reg_num & 0x1f));
+	val_out = lp->a.read_bcr(ioaddr, 34);
+	lp->a.write_bcr(ioaddr, 33, phyaddr);
+	
+	return val_out;
+}
+
+static void mdio_write(struct net_device *dev, int phy_id, int reg_num, int val)
+{
+	struct pcnet32_private *lp = dev->priv;
+	unsigned long ioaddr = dev->base_addr;
+	int phyaddr;
+
+	if (!lp->mii)
+		return;
+		
+	phyaddr = lp->a.read_bcr(ioaddr, 33);
+
+	lp->a.write_bcr(ioaddr, 33, ((phy_id & 0x1f) << 5) | (reg_num & 0x1f));
+	lp->a.write_bcr(ioaddr, 34, val);
+	lp->a.write_bcr(ioaddr, 33, phyaddr);
+}
+
+static int pcnet32_ethtool_ioctl (struct net_device *dev, void *useraddr)
+{
+	struct pcnet32_private *lp = dev->priv;
+	u32 ethcmd;
+	int phyaddr = 0;
+	int phy_id = 0;
+	unsigned long ioaddr = dev->base_addr;
+
+	if (lp->mii) {
+		phyaddr = lp->a.read_bcr (ioaddr, 33);
+		phy_id = (phyaddr >> 5) & 0x1f;
+		lp->mii_if.phy_id = phy_id;
+	}
+
+	if (copy_from_user (&ethcmd, useraddr, sizeof (ethcmd)))
+		return -EFAULT;
+
+	switch (ethcmd) {
+	case ETHTOOL_GDRVINFO: {
+		struct ethtool_drvinfo info = { ETHTOOL_GDRVINFO };
+		strcpy (info.driver, DRV_NAME);
+		strcpy (info.version, DRV_VERSION);
+		if (lp->pci_dev)
+			strcpy (info.bus_info, lp->pci_dev->slot_name);
+		else
+			sprintf(info.bus_info, "VLB 0x%lx", dev->base_addr);
+		if (copy_to_user (useraddr, &info, sizeof (info)))
+			return -EFAULT;
+		return 0;
+	}
+
+	/* get settings */
+	case ETHTOOL_GSET: {
+		struct ethtool_cmd ecmd = { ETHTOOL_GSET };
+		spin_lock_irq(&lp->lock);
+		mii_ethtool_gset(&lp->mii_if, &ecmd);
+		spin_unlock_irq(&lp->lock);
+		if (copy_to_user(useraddr, &ecmd, sizeof(ecmd)))
+			return -EFAULT;
+		return 0;
+	}
+	/* set settings */
+	case ETHTOOL_SSET: {
+		int r;
+		struct ethtool_cmd ecmd;
+		if (copy_from_user(&ecmd, useraddr, sizeof(ecmd)))
+			return -EFAULT;
+		spin_lock_irq(&lp->lock);
+		r = mii_ethtool_sset(&lp->mii_if, &ecmd);
+		spin_unlock_irq(&lp->lock);
+		return r;
+	}
+	/* restart autonegotiation */
+	case ETHTOOL_NWAY_RST: {
+		return mii_nway_restart(&lp->mii_if);
+	}
+	/* get link status */
+	case ETHTOOL_GLINK: {
+		struct ethtool_value edata = {ETHTOOL_GLINK};
+		edata.data = mii_link_ok(&lp->mii_if);
+		if (copy_to_user(useraddr, &edata, sizeof(edata)))
+			return -EFAULT;
+		return 0;
+	}
+
+	/* get message-level */
+	case ETHTOOL_GMSGLVL: {
+		struct ethtool_value edata = {ETHTOOL_GMSGLVL};
+		edata.data = pcnet32_debug;
+		if (copy_to_user(useraddr, &edata, sizeof(edata)))
+			return -EFAULT;
+		return 0;
+	}
+	/* set message-level */
+	case ETHTOOL_SMSGLVL: {
+		struct ethtool_value edata;
+		if (copy_from_user(&edata, useraddr, sizeof(edata)))
+			return -EFAULT;
+		pcnet32_debug = edata.data;
+		return 0;
+	}
+	default:
+		break;
+	}
+
+	return -EOPNOTSUPP;
+}
+
+static int pcnet32_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 {
     unsigned long ioaddr = dev->base_addr;
     struct pcnet32_private *lp = dev->priv;	 
-    u16 *data = (u16 *)&rq->ifr_data;
+    struct mii_ioctl_data *data = (struct mii_ioctl_data *)&rq->ifr_data;
     int phyaddr = lp->a.read_bcr (ioaddr, 33);
+
+    if (cmd == SIOCETHTOOL)
+	return pcnet32_ethtool_ioctl(dev, (void *) rq->ifr_data);
 
     if (lp->mii) {
 	switch(cmd) {
-	case SIOCDEVPRIVATE:		/* Get the address of the PHY in use. */
-	    data[0] = (phyaddr >> 5) & 0x1f;
+	case SIOCGMIIPHY:		/* Get address of MII PHY in use. */
+	case SIOCDEVPRIVATE:		/* for binary compat, remove in 2.5 */
+	    data->phy_id = (phyaddr >> 5) & 0x1f;
 	    /* Fall Through */
-	case SIOCDEVPRIVATE+1:		/* Read the specified MII register. */
-	    lp->a.write_bcr (ioaddr, 33, ((data[0] & 0x1f) << 5) | (data[1] & 0x1f));
-	    data[3] = lp->a.read_bcr (ioaddr, 34);
+	case SIOCGMIIREG:		/* Read MII PHY register. */
+	case SIOCDEVPRIVATE+1:		/* for binary compat, remove in 2.5 */
+	    lp->a.write_bcr (ioaddr, 33, ((data->phy_id & 0x1f) << 5) | (data->reg_num & 0x1f));
+	    data->val_out = lp->a.read_bcr (ioaddr, 34);
 	    lp->a.write_bcr (ioaddr, 33, phyaddr);
 	    return 0;
-	case SIOCDEVPRIVATE+2:		/* Write the specified MII register */
+	case SIOCSMIIREG:		/* Write MII PHY register. */
+	case SIOCDEVPRIVATE+2:		/* for binary compat, remove in 2.5 */
 	    if (!capable(CAP_NET_ADMIN))
 		return -EPERM;
-	    lp->a.write_bcr (ioaddr, 33, ((data[0] & 0x1f) << 5) | (data[1] & 0x1f));
-	    lp->a.write_bcr (ioaddr, 34, data[2]);
+	    lp->a.write_bcr (ioaddr, 33, ((data->phy_id & 0x1f) << 5) | (data->reg_num & 0x1f));
+	    lp->a.write_bcr (ioaddr, 34, data->val_in);
 	    lp->a.write_bcr (ioaddr, 33, phyaddr);
 	    return 0;
 	default:
@@ -1520,13 +1664,12 @@ static int pcnet32_mii_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
     }
     return -EOPNOTSUPP;
 }
-#endif	/* HAVE_PRIVATE_IOCTL */
 					    
 static struct pci_driver pcnet32_driver = {
-    name:  "pcnet32",
-    probe: pcnet32_probe_pci,
-    remove: NULL,
-    id_table: pcnet32_pci_tbl,
+	name:		DRV_NAME,
+	probe:		pcnet32_probe_pci,
+	remove:		NULL,
+	id_table:	pcnet32_pci_tbl,
 };
 
 MODULE_PARM(debug, "i");

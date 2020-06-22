@@ -237,8 +237,9 @@ dasd_3990_erp_examine_24 (ccw_req_t *cqr,
 	/* check for 'No Record Found' */
 	if (sense[1] & SNS1_NO_REC_FOUND) {
                 
-                DASD_MESSAGE (KERN_ERR, device, "%s",
-                              "EXAMINE 24: No Record Found detected "
+                DASD_MESSAGE (KERN_ERR, device,
+                              "EXAMINE 24: No Record Found detected %s",
+                              cqr == device->init_cqr ? " " :
                               "- fatal error");
 
                 return dasd_era_fatal;
@@ -305,8 +306,9 @@ dasd_3990_erp_examine (ccw_req_t *cqr,
                        devstat_t *stat)
 {
 
-	char       *sense = stat->ii.sense.data;
-        dasd_era_t era    = dasd_era_recover;
+	char          *sense  = stat->ii.sense.data;
+        dasd_era_t     era    = dasd_era_recover;
+        dasd_device_t *device = cqr->device;
 
 	/* check for successful execution first */
 	if (stat->cstat == 0x00                                 &&
@@ -327,7 +329,8 @@ dasd_3990_erp_examine (ccw_req_t *cqr,
 	} 
 
         /* log the erp chain if fatal error occurred */
-        if (era == dasd_era_fatal) {
+        if ((era == dasd_era_fatal  ) &&
+            (cqr != device->init_cqr)   ){
 
                 log_erp_chain (cqr, 
                                0, 

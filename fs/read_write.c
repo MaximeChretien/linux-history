@@ -163,8 +163,7 @@ asmlinkage ssize_t sys_read(unsigned int fd, char * buf, size_t count)
 			}
 		}
 		if (ret > 0)
-			inode_dir_notify(file->f_dentry->d_parent->d_inode,
-				DN_ACCESS);
+			dnotify_parent(file->f_dentry, DN_ACCESS);
 		fput(file);
 	}
 	return ret;
@@ -190,8 +189,7 @@ asmlinkage ssize_t sys_write(unsigned int fd, const char * buf, size_t count)
 			}
 		}
 		if (ret > 0)
-			inode_dir_notify(file->f_dentry->d_parent->d_inode,
-				DN_MODIFY);
+			dnotify_parent(file->f_dentry, DN_MODIFY);
 		fput(file);
 	}
 	return ret;
@@ -295,7 +293,7 @@ out:
 out_nofree:
 	/* VERIFY_WRITE actually means a read, as we write to user space */
 	if ((ret + (type == VERIFY_WRITE)) > 0)
-		inode_dir_notify(file->f_dentry->d_parent->d_inode,
+		dnotify_parent(file->f_dentry,
 			(type == VERIFY_WRITE) ? DN_MODIFY : DN_ACCESS);
 	return ret;
 }
@@ -368,7 +366,7 @@ asmlinkage ssize_t sys_pread(unsigned int fd, char * buf,
 		goto out;
 	ret = read(file, buf, count, &pos);
 	if (ret > 0)
-		inode_dir_notify(file->f_dentry->d_parent->d_inode, DN_ACCESS);
+		dnotify_parent(file->f_dentry, DN_ACCESS);
 out:
 	fput(file);
 bad_file:
@@ -400,7 +398,7 @@ asmlinkage ssize_t sys_pwrite(unsigned int fd, const char * buf,
 
 	ret = write(file, buf, count, &pos);
 	if (ret > 0)
-		inode_dir_notify(file->f_dentry->d_parent->d_inode, DN_MODIFY);
+		dnotify_parent(file->f_dentry, DN_MODIFY);
 out:
 	fput(file);
 bad_file:

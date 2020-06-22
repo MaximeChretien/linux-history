@@ -65,9 +65,7 @@ static int _pv_info(pv_t *pv_ptr, char *buf);
 
 static void _show_uuid(const char *src, char *b, char *e);
 
-#if 0
 static devfs_handle_t lvm_devfs_handle;
-#endif
 static devfs_handle_t vg_devfs_handle[MAX_VG];
 static devfs_handle_t ch_devfs_handle[MAX_VG];
 static devfs_handle_t lv_devfs_handle[MAX_LV];
@@ -81,13 +79,11 @@ static struct proc_dir_entry *lvm_proc_vg_subdir = NULL;
 void __init lvm_init_fs() {
 	struct proc_dir_entry *pde;
 
-/* User-space has already registered this */
-#if 0
+	/*  Must create device node. Think about "devfs=only" situation  */
 	lvm_devfs_handle = devfs_register(
 		0 , "lvm", 0, LVM_CHAR_MAJOR, 0,
 		S_IFCHR | S_IRUSR | S_IWUSR | S_IRGRP,
 		&lvm_chr_fops, NULL);
-#endif
 
 	lvm_proc_dir = create_proc_entry(LVM_DIR, S_IFDIR, &proc_root);
 	if (lvm_proc_dir) {
@@ -99,9 +95,7 @@ void __init lvm_init_fs() {
 }
 
 void lvm_fin_fs() {
-#if 0
 	devfs_unregister (lvm_devfs_handle);
-#endif
 
 	remove_proc_entry(LVM_GLOBAL, lvm_proc_dir);
 	remove_proc_entry(LVM_VG_SUBDIR, lvm_proc_dir);

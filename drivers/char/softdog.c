@@ -26,6 +26,11 @@
  *
  *  19980911 Alan Cox
  *	Made SMP safe for 2.3.x
+ *
+ *  20011127 Joel Becker (jlbec@evilplan.org>
+ *	Added soft_noboot; Allows testing the softdog trigger without 
+ *	requiring a recompile.
+ *	Added WDIOC_GETTIMEOUT and WDIOC_SETTIMOUT.
  */
  
 #include <linux/module.h>
@@ -44,8 +49,14 @@
 #define TIMER_MARGIN	60		/* (secs) Default is 1 minute */
 
 static int soft_margin = TIMER_MARGIN;	/* in seconds */
+#ifdef ONLY_TESTING
+static int soft_noboot = 1;
+#else
+static int soft_noboot = 0;
+#endif  /* ONLY_TESTING */
 
 MODULE_PARM(soft_margin,"i");
+MODULE_PARM(soft_noboot,"i");
 MODULE_LICENSE("GPL");
 
 /*
@@ -66,13 +77,14 @@ static int timer_alive;
  
 static void watchdog_fire(unsigned long data)
 {
-#ifdef ONLY_TESTING
-		printk(KERN_CRIT "SOFTDOG: Would Reboot.\n");
-#else
-	printk(KERN_CRIT "SOFTDOG: Initiating system reboot.\n");
-	machine_restart(NULL);
-	printk("WATCHDOG: Reboot didn't ?????\n");
-#endif
+	if (soft_noboot)
+		printk(KERN_CRIT "SOFTDOG: Triggered - Reboot ignored.\n");
+	else
+	{
+		printk(KERN_CRIT "SOFTDOG: Initiating system reboot.\n");
+		machine_restart(NULL);
+		printk("SOFTDOG: Reboot didn't ?????\n");
+	}
 }
 
 /*
@@ -128,8 +140,11 @@ static ssize_t softdog_write(struct file *file, const char *data, size_t len, lo
 static int softdog_ioctl(struct inode *inode, struct file *file,
 	unsigned int cmd, unsigned long arg)
 {
+	int new_margin;
 	static struct watchdog_info ident = {
-		identity: "Software Watchdog",
+		WDIOF_SETTIMEOUT,
+		0,
+		"Software Watchdog"
 	};
 	switch (cmd) {
 		default:
@@ -144,6 +159,16 @@ static int softdog_ioctl(struct inode *inode, struct file *file,
 		case WDIOC_KEEPALIVE:
 			mod_timer(&watchdog_ticktock, jiffies+(soft_margin*HZ));
 			return 0;
+		case WDIOC_SETTIMEOUT:
+			if (get_user(new_margin, (int *)arg))
+				return -EFAULT;
+			if (new_margin < 1)
+				return -EINVAL;
+			soft_margin = new_margin;
+			mod_timer(&watchdog_ticktock, jiffies+(soft_margin*HZ));
+			/* Fall */
+		case WDIOC_GETTIMEOUT:
+			return put_user(soft_margin, (int *)arg);
 	}
 }
 

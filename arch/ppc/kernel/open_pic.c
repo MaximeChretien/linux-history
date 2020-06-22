@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.open_pic.c 1.31 10/11/01 12:09:11 trini
+ * BK Id: SCCS/s.open_pic.c 1.33 12/19/01 09:45:54 trini
  */
 /*
  *  arch/ppc/kernel/open_pic.c -- OpenPIC Interrupt Handling
@@ -28,6 +28,7 @@
 #include "local_irq.h"
 #include "open_pic.h"
 #include "open_pic_defs.h"
+#include "i8259.h"
 
 void* OpenPIC_Addr;
 static volatile struct OpenPIC *OpenPIC = NULL;
@@ -784,9 +785,6 @@ openpic_get_irq(struct pt_regs *regs)
 /*
  * Clean up needed. -VAL
  */
-#ifndef CONFIG_GEMINI
-	extern int i8259_irq(int cpu);
-#endif
 	int irq = openpic_irq();
 
 	/* Management of the cascade should be moved out of here */
@@ -801,7 +799,7 @@ openpic_get_irq(struct pt_regs *regs)
 			irq = *chrp_int_ack_special;
 #ifndef CONFIG_GEMINI
 		else
-			irq = i8259_irq( smp_processor_id() );
+			irq = i8259_poll();
 #endif
 		openpic_eoi();
         }

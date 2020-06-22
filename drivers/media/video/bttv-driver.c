@@ -2820,7 +2820,7 @@ static void bttv_irq(int irq, void *dev_id, struct pt_regs * regs)
  *	Scan for a Bt848 card, request the irq and map the io memory 
  */
 
-static void __devexit bttv_remove(struct pci_dev *pci_dev)
+static void bttv_remove(struct pci_dev *pci_dev)
 {
         u8 command;
         int j;
@@ -3025,7 +3025,7 @@ static struct pci_driver bttv_pci_driver = {
         name:     "bttv",
         id_table: bttv_pci_tbl,
         probe:    bttv_probe,
-        remove:   __devexit_p(bttv_remove),
+        remove:   bttv_remove,
 };
 
 int bttv_init_module(void)

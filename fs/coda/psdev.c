@@ -411,7 +411,7 @@ MODULE_LICENSE("GPL");
 static int __init init_coda(void)
 {
 	int status;
-	printk(KERN_INFO "Coda Kernel/Venus communications, v5.3.15, coda@cs.cmu.edu\n");
+	printk(KERN_INFO "Coda Kernel/Venus communications, v5.3.18, coda@cs.cmu.edu\n");
 
 	status = init_coda_psdev();
 	if ( status ) {

@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.pmac_pci.c 1.27 09/08/01 15:47:42 paulus
+ * BK Id: SCCS/s.pmac_pci.c 1.31 01/20/02 23:53:11 benh
  */
 /*
  * Support for PCI bridges found on Power Macintoshes.
@@ -27,7 +27,7 @@
 #include <asm/prom.h>
 #include <asm/pci-bridge.h>
 #include <asm/machdep.h>
-#include <asm/feature.h>
+#include <asm/pmac_feature.h>
 
 #include "pci.h"
 
@@ -529,29 +529,37 @@ pmac_pci_enable_device_hook(struct pci_dev *dev, int initial)
 {
 	struct device_node* node;
 	int updatecfg = 0;
-
+	int uninorth_child;
+	
 	node = pci_device_to_OF_node(dev);
-
+	
 	/* We don't want to enable USB controllers absent from the OF tree
 	 * (iBook second controller)
 	 */
 	if (dev->vendor == PCI_VENDOR_ID_APPLE
 	    && dev->device == PCI_DEVICE_ID_APPLE_KL_USB && !node)
 		return -EINVAL;
+
+	if (!node)
+		return 0;
+		
+	uninorth_child = node->parent &&
+		device_is_compatible(node->parent, "uni-north");
 		
 	/* Firewire & GMAC were disabled after PCI probe, the driver is
 	 * claiming them, we must re-enable them now.
 	 */
-	if (node && !strcmp(node->name, "firewire") && 
+	if (uninorth_child && !strcmp(node->name, "firewire") && 
 	    (device_is_compatible(node, "pci106b,18") || 
-	     device_is_compatible(node, "pci106b,30"))) {
-		feature_set_firewire_cable_power(node, 1);
-		feature_set_firewire_power(node, 1);
+	     device_is_compatible(node, "pci106b,30") ||
+	     device_is_compatible(node, "pci11c1,5811"))) {
+		pmac_call_feature(PMAC_FTR_1394_CABLE_POWER, node, 0, 1);
+		pmac_call_feature(PMAC_FTR_1394_ENABLE, node, 0, 1);
 		updatecfg = 1;
 	}
-	if (node && !strcmp(node->name, "ethernet") && 
+	if (uninorth_child && !strcmp(node->name, "ethernet") && 
 	    device_is_compatible(node, "gmac")) {
-		feature_set_gmac_power(node, 1);
+		pmac_call_feature(PMAC_FTR_GMAC_ENABLE, node, 0, 1);
 		updatecfg = 1;
 	}
 
@@ -608,10 +616,11 @@ pmac_pcibios_after_init(void)
 	nd = find_devices("firewire");
 	while (nd) {
 		if (nd->parent && (device_is_compatible(nd, "pci106b,18") ||
-					device_is_compatible(nd, "pci106b,30"))
+				   device_is_compatible(nd, "pci106b,30") ||
+				   device_is_compatible(nd, "pci11c1,5811"))
 		    && device_is_compatible(nd->parent, "uni-north")) {
-			feature_set_firewire_power(nd, 0);
-			feature_set_firewire_cable_power(nd, 0);
+			pmac_call_feature(PMAC_FTR_1394_ENABLE, nd, 0, 0);
+			pmac_call_feature(PMAC_FTR_1394_CABLE_POWER, nd, 0, 0);
 		}
 		nd = nd->next;
 	}
@@ -619,7 +628,7 @@ pmac_pcibios_after_init(void)
 	while (nd) {
 		if (nd->parent && device_is_compatible(nd, "gmac")
 		    && device_is_compatible(nd->parent, "uni-north"))
-			feature_set_gmac_power(nd, 0);
+			pmac_call_feature(PMAC_FTR_GMAC_ENABLE, nd, 0, 0);
 		nd = nd->next;
 	}
 }

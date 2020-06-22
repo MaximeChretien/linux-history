@@ -42,6 +42,9 @@
  * if CX/DX have been changed in the e801 call and if so use AX/BX .
  * Michael Miller, April 2001 <michaelm@mjmm.org>
  *
+ * New A20 code ported from SYSLINUX by H. Peter Anvin. AMD Elan bugfixes
+ * by Robert Schwebel, December 2001 <robert@schwebel.de>
+ *
  */
 
 #include <linux/config.h>
@@ -50,7 +53,8 @@
 #include <linux/compile.h>
 #include <asm/boot.h>
 #include <asm/e820.h>
-
+#include <asm/page.h>
+	
 /* Signature words to ensure LILO loaded us right */
 #define SIG1	0xAA55
 #define SIG2	0x5A5A
@@ -79,7 +83,7 @@ start:
 # This is the setup header, and it must start at %cs:2 (old 0x9020:2)
 
 		.ascii	"HdrS"		# header signature
-		.word	0x0202		# header version number (>= 0x0105)
+		.word	0x0203		# header version number (>= 0x0105)
 					# or else old loadlin-1.5 will fail)
 realmode_swtch:	.word	0, 0		# default_switch, SETUPSEG
 start_sys_seg:	.word	SYSSEG
@@ -152,6 +156,10 @@ cmd_line_ptr:	.long 0			# (Header version 0x0202 or later)
 					# 0x90000 segment; the setup
 					# can be located anywhere in
 					# low memory 0x10000 or higher.
+
+ramdisk_max:	.long __MAXMEM-1	# (Header version 0x0203 or later)
+					# The highest safe address for
+					# the contents of an initrd
 
 trampoline:	call	start_of_setup
 		.space	1024
@@ -646,7 +654,18 @@ end_move_self:					# now we are at the right place
 #
 # Enable A20.  This is at the very best an annoying procedure.
 # A20 code ported from SYSLINUX 1.52-1.63 by H. Peter Anvin.
+# AMD Elan bug fix by Robert Schwebel.
 #
+
+#if defined(CONFIG_MELAN)
+	movb $0x02, %al			# alternate A20 gate
+	outb %al, $0x92			# this works on SC410/SC520
+a20_elan_wait:
+        call a20_test
+        jz a20_elan_wait
+	jmp a20_done
+#endif
+
 
 A20_TEST_LOOPS		=  32		# Iterations per wait
 A20_ENABLE_LOOPS	= 255		# Total loops to try		

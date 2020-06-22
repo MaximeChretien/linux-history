@@ -1203,9 +1203,11 @@ static void * usb_serial_probe(struct usb_device *dev, unsigned int ifnum,
 
 	/* if this device type has a startup function, call it */
 	if (type->startup) {
-		if (type->startup (serial)) {
+		i = type->startup (serial);
+		if (i < 0)
 			goto probe_error;
-		}
+		if (i > 0)
+			return serial;
 	}
 
 	/* set up the endpoint information */

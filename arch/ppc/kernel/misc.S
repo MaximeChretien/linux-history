@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.misc.S 1.34 11/23/01 16:38:29 paulus
+ * BK Id: SCCS/s.misc.S 1.36 12/01/01 20:09:06 benh
  */
 /*
  * This file contains miscellaneous low-level functions.
@@ -128,6 +128,9 @@ _GLOBAL(do_cpu_ftr_fixups)
 /*
  * call_setup_cpu - call the setup_cpu function for this cpu
  * r3 = data offset, r24 = cpu number
+ *
+ * Don't change register layout, the setup function may rely
+ * on r5 containing a relocated pointer to the current cpu spec.
  */
 _GLOBAL(call_setup_cpu)
 	addis	r5,r3,cur_cpu_spec@ha

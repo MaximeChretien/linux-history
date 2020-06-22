@@ -158,7 +158,7 @@ static struct platinum_regvals platinum_reg_init_14 = {
 /* 832x624, 75Hz (13) */
 static struct platinum_regvals platinum_reg_init_13 = {
 	0x70,
-	{ 864, 1680, 3360 },	/* MacOS does 1680 instead of 1696 to fit 16bpp in 1MB */
+	{ 864, 1696, 3360 },
 	{ 0xff0, 4, 0, 0, 0, 0, 0x299, 0,
 	  0, 0x21e, 0x120, 0x10, 0x23f, 0x1f, 0x25, 0x37,
 	  0x8a, 0x22a, 0x23e, 0x536, 0x534, 4, 9, 0x52,
@@ -310,6 +310,13 @@ static struct platinum_regvals platinum_reg_init_1 = {
 	{ 2, 0, 0xff }, { 0x11, 0x15, 0x19 },
 	{{ 94, 5 + DIV16 }, { 48, 7 + DIV8 }}
 };
+
+/* MacOS does 1680 instead of 1696 to fit 832x624@75-16bpp in 1MB */
+#define fixup_pitch(ll, info, cmode) \
+	do { \
+	  if ((cmode) == CMODE_16 && (ll) == 1696 && info->total_vram == 0x100000) \
+	      (ll) = 1680; \
+	} while(0)
 
 static struct platinum_regvals *platinum_reg_init[VMODE_MAX] = {
 	&platinum_reg_init_1,

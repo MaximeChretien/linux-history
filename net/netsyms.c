@@ -292,6 +292,8 @@ EXPORT_SYMBOL(icmpv6_send);
 EXPORT_SYMBOL(ndisc_mc_map);
 EXPORT_SYMBOL(register_inet6addr_notifier);
 EXPORT_SYMBOL(unregister_inet6addr_notifier);
+#include <net/ip6_route.h>
+EXPORT_SYMBOL(ip6_route_output);
 #endif
 #if defined (CONFIG_IPV6_MODULE) || defined (CONFIG_KHTTPD) || defined (CONFIG_KHTTPD_MODULE)
 /* inet functions common to v4 and v6 */
@@ -519,6 +521,10 @@ EXPORT_SYMBOL(if_port_text);
 EXPORT_SYMBOL(hippi_type_trans);
 #endif
 
+#ifdef CONFIG_NET_FASTROUTE
+EXPORT_SYMBOL(netdev_fastroute);
+#endif
+
 #ifdef CONFIG_SYSCTL
 EXPORT_SYMBOL(sysctl_wmem_max);
 EXPORT_SYMBOL(sysctl_rmem_max);
@@ -571,6 +577,10 @@ EXPORT_SYMBOL(nf_hooks);
 EXPORT_SYMBOL(nf_setsockopt);
 EXPORT_SYMBOL(nf_getsockopt);
 EXPORT_SYMBOL(ip_ct_attach);
+#ifdef CONFIG_INET
+#include <linux/netfilter_ipv4.h>
+EXPORT_SYMBOL(ip_route_me_harder);
+#endif
 #endif
 
 EXPORT_SYMBOL(register_gifconf);

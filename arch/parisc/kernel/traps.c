@@ -43,7 +43,6 @@
 
 static inline void console_verbose(void)
 {
-	extern int console_loglevel;
 	console_loglevel = 15;
 }
 

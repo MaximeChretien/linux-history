@@ -199,7 +199,7 @@ static int rx_sync_cmd(struct aac_dev *dev, unsigned long command, unsigned long
 	/*
 	 *	Wait up to 30 seconds
 	 */
-	while (time_before(start+30*HZ, jiffies)) 
+	while (time_before(jiffies, start+30*HZ)) 
 	{
 		udelay(5);	/* Delay 5 microseconds to let Mon960 get info. */
 		/*

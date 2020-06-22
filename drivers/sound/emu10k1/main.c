@@ -1,4 +1,4 @@
-/*
+ /*
  **********************************************************************
  *     main.c - Creative EMU10K1 audio driver
  *     Copyright 1999, 2000 Creative Labs, Inc.
@@ -69,6 +69,15 @@
  *     0.16 Mixer improvements, added old treble/bass support (Daniel Bertrand)
  *          Small code format cleanup.
  *          Deadlock bug fix for emu10k1_volxxx_irqhandler().
+ *     0.17 Fix for mixer SOUND_MIXER_INFO ioctl.
+ *	    Fix for HIGHMEM machines (emu10k1 can only do 31 bit bus master) 
+ *	    midi poll initial implementation.
+ *	    Small mixer fixes/cleanups.
+ *	    Improved support for 5.1 cards.
+ *     0.18 Fix for possible leak in pci_alloc_consistent()
+ *          Cleaned up poll() functions (audio and midi). Don't start input.
+ *	    Restrict DMA pages used to 512Mib range.
+ *	    New AC97_BOOST mixer ioctl.
  *
  *********************************************************************/
 
@@ -102,11 +111,10 @@
 #define SNDCARD_EMU10K1 46
 #endif
  
-#define DRIVER_VERSION "0.16"
+#define DRIVER_VERSION "0.18"
 
-/* FIXME: is this right? */
-/* does the card support 32 bit bus master?*/
-#define EMU10K1_DMA_MASK                0xffffffff	/* DMA buffer mask for pci_alloc_consist */
+/* the emu10k1 _seems_ to only supports 29 bit (512MiB) bit bus master */
+#define EMU10K1_DMA_MASK                0x1fffffff	/* DMA buffer mask for pci_alloc_consist */
 
 #ifndef PCI_VENDOR_ID_CREATIVE
 #define PCI_VENDOR_ID_CREATIVE 0x1102
@@ -211,6 +219,8 @@ static void __devinit emu10k1_audio_cleanup(struct emu10k1_card *card)
 static int __devinit emu10k1_mixer_init(struct emu10k1_card *card)
 {
 	char s[32];
+
+	struct ac97_codec *codec = &card->ac97;
 	card->ac97.dev_mixer = register_sound_mixer(&emu10k1_mixer_fops, -1);
 	if (card->ac97.dev_mixer < 0) {
 		printk(KERN_ERR "emu10k1: cannot register mixer device\n");
@@ -228,11 +238,14 @@ static int __devinit emu10k1_mixer_init(struct emu10k1_card *card)
 			printk(KERN_ERR "emu10k1: unable to probe AC97 codec\n");
 			goto err_out;
 		}
-		/* 5.1: Enable the additional AC97 Slots. If the emu10k1 version
-			does not support this, it shouldn't do any harm */
-		sblive_writeptr(card, AC97SLOT, 0, AC97SLOT_CNTR | AC97SLOT_LFE);
+		/* 5.1: Enable the additional AC97 Slots and unmute extra channels on AC97 codec */
+		if (codec->codec_read(codec, AC97_EXTENDED_ID) & 0x0080){
+			printk(KERN_INFO "emu10k1: SBLive! 5.1 card detected\n"); 
+			sblive_writeptr(card, AC97SLOT, 0, AC97SLOT_CNTR | AC97SLOT_LFE);
+			codec->codec_write(codec, AC97_SURROUND_MASTER, 0x0);
+		}
 
-		// Force 5bit
+		// Force 5bit:		    
 		//card->ac97.bit_resolution=5;
 
 		if (!proc_mkdir ("driver/emu10k1", 0)) {
@@ -586,15 +599,15 @@ static int __devinit fx_init(struct emu10k1_card *card)
 	CONNECT(PCM1_IN_R, ANALOG_REAR_R);
 
 	/* Digital In + PCM + AC97 In + MULTI_FRONT --> Digital out */
-	OP(6, 0x10b, 0x100, 0x102, 0x10c);
-	OP(6, 0x10b, 0x10b, 0x113, 0x40);
+	OP(6, 0x10a, 0x100, 0x102, 0x10c);
+	OP(6, 0x10a, 0x10a, 0x113, 0x40);
 
 	CONNECT(MULTI_FRONT_L, DIGITAL_OUT_L);
 	CONNECT(PCM_IN_L, DIGITAL_OUT_L);
 	CONNECT(AC97_IN_L, DIGITAL_OUT_L);
 	CONNECT(SPDIF_CD_L, DIGITAL_OUT_L);
 
-	OP(6, 0x10a, 0x101, 0x103, 0x10e);
+	OP(6, 0x10b, 0x101, 0x103, 0x10e);
 	OP(6, 0x10b, 0x10b, 0x114, 0x40);
 
 	CONNECT(MULTI_FRONT_R, DIGITAL_OUT_R);
@@ -768,7 +781,7 @@ static int __devinit hw_init(struct emu10k1_card *card)
 				    VTFT, 0xffff,
 				    CVCF, 0xffff,
 				    PTRX, 0,
-				    CPF, 0,
+				    //CPF, 0,
 				    CCR, 0,
 
 				    PSST, 0,
@@ -794,7 +807,9 @@ static int __devinit hw_init(struct emu10k1_card *card)
 				    ENVVOL, 0,
 				    ENVVAL, 0,
                                     TAGLIST_END);
+		sblive_writeptr(card, CPF, nCh, 0);
 	}
+	
 
 	/*
 	 ** Init to 0x02109204 :
@@ -951,8 +966,9 @@ static void __devinit emu10k1_cleanup(struct emu10k1_card *card)
 				    VTFT, 0,
 				    CVCF, 0,
 				    PTRX, 0,
-				    CPF, 0,
+				    //CPF, 0,
 				    TAGLIST_END);
+		sblive_writeptr(card, CPF, ch, 0);
 	}
 
 	/* Disable audio and lock cache */

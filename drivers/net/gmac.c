@@ -36,7 +36,8 @@
 #include <asm/prom.h>
 #include <asm/io.h>
 #include <asm/pgtable.h>
-#include <asm/feature.h>
+#include <asm/machdep.h>
+#include <asm/pmac_feature.h>
 #include <asm/keylargo.h>
 #include <asm/pci-bridge.h>
 #ifdef CONFIG_PMAC_PBOOK
@@ -296,6 +297,7 @@ mii_interrupt(struct gmac *gm)
 	}
 }
 
+#ifdef CONFIG_PMAC_PBOOK
 /* Power management: stop PHY chip for suspend mode
  * 
  * TODO: This will have to be modified is WOL is to be supported.
@@ -441,6 +443,7 @@ gmac_resume(struct gmac *gm)
 		GM_OUT(GM_RX_CONF, 0);
 	}
 }
+#endif
 
 static int
 mii_do_reset_phy(struct gmac *gm, int phy_addr)
@@ -585,8 +588,8 @@ mii_lookup_and_reset(struct gmac *gm)
 	gm->phy_type = PHY_UNKNOWN;
 
 	/* Hard reset the PHY */
-	feature_gmac_phy_reset(gm->of_node);
-	
+	pmac_call_feature(PMAC_FTR_GMAC_PHY_RESET, gm->of_node, 0, 0);
+		
 	/* Find the PHY */
 	for(i=0; i<=31; i++) {
 		mii_control = mii_read(gm, i, MII_CR);
@@ -683,7 +686,7 @@ static void
 gmac_set_power(struct gmac *gm, int power_up)
 {
 	if (power_up) {
-		feature_set_gmac_power(gm->of_node, 1);
+		pmac_call_feature(PMAC_FTR_GMAC_ENABLE, gm->of_node, 0, 1);
 		if (gm->pci_devfn != 0xff) {
 			u16 cmd;
 			
@@ -708,7 +711,7 @@ gmac_set_power(struct gmac *gm, int power_up)
 	    			PCI_CACHE_LINE_SIZE, 8);
 		}
 	} else {
-		feature_set_gmac_power(gm->of_node, 0);
+		pmac_call_feature(PMAC_FTR_GMAC_ENABLE, gm->of_node, 0, 0);
 	}
 }
 
@@ -1617,6 +1620,11 @@ gmac_probe1(struct device_node *gmac)
 	SET_MODULE_OWNER(dev);
 
 	gm = dev->priv;
+	gm->of_node = gmac;
+	if (!request_OF_resource(gmac, 0, " (gmac)")) {
+		printk(KERN_ERR "GMAC: can't request IO resource !\n");
+		goto out_unreg;
+	}
 	dev->base_addr = gmac->addrs[0].address;
 	gm->regs = (volatile unsigned int *)
 		ioremap(gmac->addrs[0].address, 0x10000);
@@ -1626,7 +1634,6 @@ gmac_probe1(struct device_node *gmac)
 	}
 	dev->irq = gmac->intrs[0].line;
 	gm->dev = dev;
-	gm->of_node = gmac;
 
 	spin_lock_init(&gm->lock);
 	
@@ -1667,6 +1674,8 @@ gmac_probe1(struct device_node *gmac)
 
 out_unreg:
 	unregister_netdev(dev);
+	if (gm->of_node)
+		release_OF_resource(gm->of_node, 0);
 	kfree(dev);
 out_rxdesc:
 	free_page(rx_descpage);
@@ -1677,6 +1686,7 @@ out_txdesc:
 MODULE_AUTHOR("Paul Mackerras/Ben Herrenschmidt");
 MODULE_DESCRIPTION("PowerMac GMAC driver.");
 MODULE_LICENSE("GPL");
+EXPORT_NO_SYMBOLS;
 
 static void __exit gmac_cleanup_module(void)
 {
@@ -1694,6 +1704,7 @@ static void __exit gmac_cleanup_module(void)
 		iounmap((void *) gm->regs);
 		free_page(gm->tx_desc_page);
 		free_page(gm->rx_desc_page);
+		release_OF_resource(gm->of_node, 0);
 		gmacs = gm->next_gmac;
 		kfree(dev);
 	}

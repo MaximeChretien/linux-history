@@ -26,15 +26,13 @@
 #include <linux/smp_lock.h>
 #include <linux/init.h>
 #include <linux/delay.h>
+#include <linux/module.h>
 
 #include <asm/system.h>
 #include <asm/uaccess.h>
 #include <asm/io.h>
 #include <asm/atomic.h>
 #include <asm/mathemu.h>
-#if CONFIG_REMOTE_DEBUG
-#include <asm/gdb-stub.h>
-#endif
 #include <asm/cpcmd.h>
 #include <asm/s390_ext.h>
 
@@ -59,6 +57,203 @@ extern int pfault_init(void);
 extern void pfault_fini(void);
 extern void pfault_interrupt(struct pt_regs *regs, __u16 error_code);
 #endif
+
+int kstack_depth_to_print = 12;
+
+/*
+ * If the address is either in the .text section of the
+ * kernel, or in the vmalloc'ed module regions, it *may* 
+ * be the address of a calling routine
+ */
+extern char _stext, _etext;
+
+#ifdef CONFIG_MODULES
+
+extern struct module *module_list;
+extern struct module kernel_module;
+
+static inline int kernel_text_address(unsigned long addr)
+{
+	int retval = 0;
+	struct module *mod;
+
+	if (addr >= (unsigned long) &_stext &&
+	    addr <= (unsigned long) &_etext)
+		return 1;
+
+	for (mod = module_list; mod != &kernel_module; mod = mod->next) {
+		/* mod_bound tests for addr being inside the vmalloc'ed
+		 * module area. Of course it'd be better to test only
+		 * for the .text subset... */
+		if (mod_bound(addr, 0, mod)) {
+			retval = 1;
+			break;
+		}
+	}
+
+	return retval;
+}
+
+#else
+
+static inline int kernel_text_address(unsigned long addr)
+{
+	return (addr >= (unsigned long) &_stext &&
+		addr <= (unsigned long) &_etext);
+}
+
+#endif
+
+void show_trace(unsigned long * stack)
+{
+	unsigned long backchain, low_addr, high_addr, ret_addr;
+	int i;
+
+	if (!stack)
+		stack = (unsigned long*)&stack;
+
+	printk("Call Trace: ");
+	low_addr = ((unsigned long) stack) & PSW_ADDR_MASK;
+	high_addr = (low_addr & (-THREAD_SIZE)) + THREAD_SIZE;
+	/* Skip the first frame (biased stack) */
+	backchain = *((unsigned long *) low_addr) & PSW_ADDR_MASK;
+	/* Print up to 8 lines */
+	for (i = 0; i < 8; i++) {
+		if (backchain < low_addr || backchain >= high_addr)
+			break;
+		ret_addr = *((unsigned long *) (backchain+56)) & PSW_ADDR_MASK;
+		if (!kernel_text_address(ret_addr))
+			break;
+		if (i && ((i % 6) == 0))
+			printk("\n   ");
+		printk("[<%08lx>] ", ret_addr);
+		low_addr = backchain;
+		backchain = *((unsigned long *) backchain) & PSW_ADDR_MASK;
+	}
+	printk("\n");
+}
+
+void show_trace_task(struct task_struct *tsk)
+{
+	/*
+	 * We can't print the backtrace of a running process. It is
+	 * unreliable at best and can cause kernel oopses.
+	 */
+	if (task_has_cpu(tsk))
+		return;
+	show_trace((unsigned long *) tsk->thread.ksp);
+}
+
+void show_stack(unsigned long *sp)
+{
+	unsigned long *stack;
+	int i;
+
+	// debugging aid: "show_stack(NULL);" prints the
+	// back trace for this cpu.
+
+	if(sp == NULL)
+		sp = (unsigned long*) &sp;
+
+	stack = sp;
+	for (i = 0; i < kstack_depth_to_print; i++) {
+		if (((addr_t) stack & (THREAD_SIZE-1)) == 0)
+			break;
+		if (i && ((i % 8) == 0))
+			printk("\n       ");
+		printk("%08lx ", *stack++);
+	}
+	printk("\n");
+	show_trace(sp);
+}
+
+void show_registers(struct pt_regs *regs)
+{
+	mm_segment_t old_fs;
+	char *mode;
+	int i;
+
+	mode = (regs->psw.mask & PSW_PROBLEM_STATE) ? "User" : "Krnl";
+	printk("%s PSW : %08lx %08lx\n",
+	       mode, (unsigned long) regs->psw.mask,
+	       (unsigned long) regs->psw.addr);
+	printk("%s GPRS: %08x %08x %08x %08x\n", mode,
+	       regs->gprs[0], regs->gprs[1], regs->gprs[2], regs->gprs[3]);
+	printk("           %08x %08x %08x %08x\n",
+	       regs->gprs[4], regs->gprs[5], regs->gprs[6], regs->gprs[7]);
+	printk("           %08x %08x %08x %08x\n",
+	       regs->gprs[8], regs->gprs[9], regs->gprs[10], regs->gprs[11]);
+	printk("           %08x %08x %08x %08x\n",
+	       regs->gprs[12], regs->gprs[13], regs->gprs[14], regs->gprs[15]);
+	printk("%s ACRS: %08x %08x %08x %08x\n", mode,
+	       regs->acrs[0], regs->acrs[1], regs->acrs[2], regs->acrs[3]);
+	printk("           %08x %08x %08x %08x\n",
+	       regs->acrs[4], regs->acrs[5], regs->acrs[6], regs->acrs[7]);
+	printk("           %08x %08x %08x %08x\n",
+	       regs->acrs[8], regs->acrs[9], regs->acrs[10], regs->acrs[11]);
+	printk("           %08x %08x %08x %08x\n",
+	       regs->acrs[12], regs->acrs[13], regs->acrs[14], regs->acrs[15]);
+
+	/*
+	 * Print the first 20 byte of the instruction stream at the
+	 * time of the fault.
+	 */
+	old_fs = get_fs();
+	if (regs->psw.mask & PSW_PROBLEM_STATE)
+		set_fs(USER_DS);
+	else
+		set_fs(KERNEL_DS);
+	printk("%s Code: ", mode);
+	for (i = 0; i < 20; i++) {
+		unsigned char c;
+		if (__get_user(c, (char *)(regs->psw.addr + i))) {
+			printk(" Bad PSW.");
+			break;
+		}
+		printk("%02x ", c);
+	}
+	set_fs(old_fs);
+
+	printk("\n");
+}	
+
+/* This is called from fs/proc/array.c */
+char *task_show_regs(struct task_struct *task, char *buffer)
+{
+	struct pt_regs *regs;
+
+	regs = __KSTK_PTREGS(task);
+	buffer += sprintf(buffer, "task: %08lx, ksp: %08x\n",
+			  (unsigned long) task, task->thread.ksp);
+	buffer += sprintf(buffer, "User PSW : %08lx %08lx\n",
+			  (unsigned long) regs->psw.mask, 
+			  (unsigned long) regs->psw.addr);
+	buffer += sprintf(buffer, "User GPRS: %08x %08x %08x %08x\n",
+			  regs->gprs[0], regs->gprs[1],
+			  regs->gprs[2], regs->gprs[3]);
+	buffer += sprintf(buffer, "           %08x %08x %08x %08x\n",
+			  regs->gprs[4], regs->gprs[5],
+			  regs->gprs[6], regs->gprs[7]);
+	buffer += sprintf(buffer, "           %08x %08x %08x %08x\n",
+			  regs->gprs[8], regs->gprs[9],
+			  regs->gprs[10], regs->gprs[11]);
+	buffer += sprintf(buffer, "           %08x %08x %08x %08x\n",
+			  regs->gprs[12], regs->gprs[13],
+			  regs->gprs[14], regs->gprs[15]);
+	buffer += sprintf(buffer, "User ACRS: %08x %08x %08x %08x\n",
+			  regs->acrs[0], regs->acrs[1],
+			  regs->acrs[2], regs->acrs[3]);
+	buffer += sprintf(buffer, "           %08x %08x %08x %08x\n",
+			  regs->acrs[4], regs->acrs[5],
+			  regs->acrs[6], regs->acrs[7]);
+	buffer += sprintf(buffer, "           %08x %08x %08x %08x\n",
+			  regs->acrs[8], regs->acrs[9],
+			  regs->acrs[10], regs->acrs[11]);
+	buffer += sprintf(buffer, "           %08x %08x %08x %08x\n",
+			  regs->acrs[12], regs->acrs[13],
+			  regs->acrs[14], regs->acrs[15]);
+	return buffer;
+}
 
 spinlock_t die_lock = SPIN_LOCK_UNLOCKED;
 
@@ -145,7 +340,7 @@ int do_debugger_trap(struct pt_regs *regs,int signal)
 #if CONFIG_REMOTE_DEBUG
 		if(gdb_stub_initialised)
 		{
-			gdb_stub_handle_exception((struct gdb_pt_regs *)regs,signal);
+			gdb_stub_handle_exception(regs, signal);
 			return 0;
 		}
 #endif

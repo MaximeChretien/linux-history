@@ -240,7 +240,7 @@ affs_read_super(struct super_block *sb, void *data, int silent)
 
 	sb->s_magic             = AFFS_SUPER_MAGIC;
 	sb->s_op                = &affs_sops;
-	memset(AFFS_SB, 0, sizeof(struct affs_sb_info));
+	memset(AFFS_SB, 0, sizeof(*AFFS_SB));
 	init_MUTEX(&AFFS_SB->s_bmlock);
 
 	if (!parse_options(data,&uid,&gid,&i,&reserved,&root_block,
@@ -332,7 +332,7 @@ got_root:
 			       blocksize == 2048 ? 11 : 12;
 
 	/* Find out which kind of FS we have */
-	boot_bh = bread(sb->s_dev, 0, sb->s_blocksize);
+	boot_bh = sb_bread(sb, 0);
 	if (!boot_bh) {
 		printk(KERN_ERR "AFFS: Cannot read boot block\n");
 		goto out_error;

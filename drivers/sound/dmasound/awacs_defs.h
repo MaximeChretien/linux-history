@@ -71,16 +71,19 @@ struct awacs_regs {
 /* ------- - --- ----- - ------ */
 #define MASK_GAINRIGHT	(0xf)		/* Gain Right Mask */
 #define MASK_GAINLEFT	(0xf << 4)	/* Gain Left Mask */
-#define MASK_GAINLINE	(0x1 << 8)	/* Change Gain for Line??? */
-#define MASK_GAINMIC	(0x0 << 8)	/* Change Gain for Mic??? */
+#define MASK_GAINLINE	(0x1 << 8)	/* Disable Mic preamp */
+#define MASK_GAINMIC	(0x0 << 8)	/* Enable Mic preamp */
 
 #define MASK_MUX_CD	(0x1 << 9)	/* Select CD in MUX */
-#define MASK_MUX_AUDIN	(0x1 << 10)	/* Select Audio In in MUX */
-#define MASK_MUX_MIC	(0x1 << 11)	/* Select Mic in MUX */
+#define MASK_MUX_MIC	(0x1 << 10)	/* Select Mic in MUX */
+#define MASK_MUX_AUDIN	(0x1 << 11)	/* Select Audio In in MUX */
 #define MASK_MUX_LINE	MASK_MUX_AUDIN
 
 #define GAINRIGHT(x)	((x) & MASK_GAINRIGHT)
 #define GAINLEFT(x)	(((x) << 4) & MASK_GAINLEFT)
+
+#define DEF_CD_GAIN 0x00bb
+#define DEF_MIC_GAIN 0x00cc
 
 /* Address 1 Bit Masks */
 /* ------- - --- ----- */
@@ -93,7 +96,10 @@ struct awacs_regs {
 #define MASK_ADDR1RES2	(0x1 << 8)	/* Reserved */
 #define MASK_AMUTE	(0x1 << 9)	/* Output A (Headphone) Mute when 1 */
 #define MASK_HDMUTE	MASK_AMUTE
-#define MASK_PAROUT	(0x3 << 10)	/* Parallel Out (???) */
+#define MASK_PAROUT0	(0x1 << 10)	/* Parallel Output 0 */
+#define MASK_PAROUT1	(0x2 << 10)	/* Parallel Output 1 */
+
+#define MASK_MIC_BOOST  (0x4)           /* screamer mic boost */
 
 #define SAMPLERATE_48000	(0x0 << 3)	/* 48 or 44.1 kHz */
 #define SAMPLERATE_32000	(0x1 << 3)	/* 32 or 29.4 kHz */

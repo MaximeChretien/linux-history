@@ -100,6 +100,20 @@ static int reiserfs_setattr(struct dentry *dentry, struct iattr *attr) {
 	if (get_inode_item_key_version(inode) == KEY_FORMAT_3_5 &&
 	    attr->ia_size > MAX_NON_LFS)
             return -EFBIG ;
+
+	/* fill in hole pointers in the expanding truncate case. */
+        if (attr->ia_size > inode->i_size) {
+	    error = generic_cont_expand(inode, attr->ia_size) ;
+	    if (inode->u.reiserfs_i.i_prealloc_count > 0) {
+		struct reiserfs_transaction_handle th ;
+		/* we're changing at most 2 bitmaps, inode + super */
+		journal_begin(&th, inode->i_sb, 4) ;
+		reiserfs_discard_prealloc (&th, inode);
+		journal_end(&th, inode->i_sb, 4) ;
+	    }
+	    if (error)
+	        return error ;
+	}
     }
 
     if ((((attr->ia_valid & ATTR_UID) && (attr->ia_uid & ~0xffff)) ||

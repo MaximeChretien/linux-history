@@ -79,7 +79,7 @@ flags        =  8
 sigpending   = 16
 need_resched = 32
 tsk_ptrace   = 40
-processor    = 92
+processor    = 88
 
 /*
  * Register usage in interrupt handlers:

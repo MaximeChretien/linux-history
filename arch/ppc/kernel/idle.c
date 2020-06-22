@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.idle.c 1.16 10/16/01 15:58:42 trini
+ * BK Id: SCCS/s.idle.c 1.18 12/01/01 20:09:06 benh
  */
 /*
  * Idle daemon for PowerPC.  Idle daemon will handle any action
@@ -58,7 +58,6 @@ int idled(void)
 	init_idle();
 	for (;;) {
 #ifdef CONFIG_SMP
-
 		if (!do_power_save) {
 			/*
 			 * Deal with another CPU just having chosen a thread to
@@ -231,6 +230,13 @@ void zero_paged(void)
 void power_save(void)
 {
 	unsigned long hid0;
+	int nap = powersave_nap;
+	
+	/* 7450 has no DOZE mode mode, we return if powersave_nap
+	 * isn't enabled
+	 */
+	if (!nap &&  cur_cpu_spec[smp_processor_id()]->cpu_features & CPU_FTR_SPEC7450)
+		return;
 	/*
 	 * Disable interrupts to prevent a lost wakeup
 	 * when going to sleep.  This is necessary even with

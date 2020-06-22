@@ -30,6 +30,10 @@
 #define DEBUG_NODIRECT 0
 #define DEBUG_FORCEDAC 0
 
+/* Most Alphas support 32-bit ISA DMA. Exceptions are XL, Ruffian and
+   Nautilus (see asm/dma.h for details). */
+#define ISA_DMA_MASK	(MAX_DMA_ADDRESS - IDENT_ADDR - 1 < 0xffffffff ? \
+			 MAX_DMA_ADDRESS - IDENT_ADDR - 1 : 0xffffffff)
 
 static inline unsigned long
 mk_iommu_pte(unsigned long paddr)
@@ -181,7 +185,7 @@ pci_map_single_1(struct pci_dev *pdev, void *cpu_addr, size_t size,
 		 int dac_allowed)
 {
 	struct pci_controller *hose = pdev ? pdev->sysdata : pci_isa_hose;
-	dma_addr_t max_dma = pdev ? pdev->dma_mask : 0x00ffffff;
+	dma_addr_t max_dma = pdev ? pdev->dma_mask : ISA_DMA_MASK;
 	struct pci_iommu_arena *arena;
 	long npages, dma_ofs, i;
 	unsigned long paddr;
@@ -220,7 +224,7 @@ pci_map_single_1(struct pci_dev *pdev, void *cpu_addr, size_t size,
 	}
 		
 	arena = hose->sg_pci;
-	if (!arena || arena->dma_base + arena->size > max_dma)
+	if (!arena || arena->dma_base + arena->size - 1 > max_dma)
 		arena = hose->sg_isa;
 
 	npages = calc_npages((paddr & ~PAGE_MASK) + size);
@@ -247,20 +251,27 @@ pci_map_single_1(struct pci_dev *pdev, void *cpu_addr, size_t size,
 dma_addr_t
 pci_map_single(struct pci_dev *pdev, void *cpu_addr, size_t size, int dir)
 {
+	int dac_allowed; 
+
 	if (dir == PCI_DMA_NONE)
 		BUG();
-	return pci_map_single_1(pdev, cpu_addr, size,
-				pdev ? (pdev->dma_mask >> 32) != 0 : 0);
+
+	dac_allowed = pdev ? pci_dac_dma_supported(pdev, pdev->dma_mask) : 0; 
+	return pci_map_single_1(pdev, cpu_addr, size, dac_allowed);
 }
 
 dma_addr_t
 pci_map_page(struct pci_dev *pdev, struct page *page, unsigned long offset,
 	     size_t size, int dir)
 {
+	int dac_allowed;
+
 	if (dir == PCI_DMA_NONE)
 		BUG();
-	return pci_map_single_1(pdev, (char *)page_address(page) + offset,
-			        size, pdev ? (pdev->dma_mask >> 32) != 0 : 0);
+
+	dac_allowed = pdev ? pci_dac_dma_supported(pdev, pdev->dma_mask) : 0; 
+	return pci_map_single_1(pdev, (char *)page_address(page) + offset, 
+				size, dac_allowed);
 }
 
 /* Unmap a single streaming mode DMA translation.  The DMA_ADDR and
@@ -558,7 +569,7 @@ pci_map_sg(struct pci_dev *pdev, struct scatterlist *sg, int nents,
 	if (direction == PCI_DMA_NONE)
 		BUG();
 
-	dac_allowed = ((pdev->dma_mask >> 32) != 0);
+	dac_allowed = pdev ? pci_dac_dma_supported(pdev, pdev->dma_mask) : 0;
 
 	/* Fast path single entry scatterlists.  */
 	if (nents == 1) {
@@ -578,9 +589,9 @@ pci_map_sg(struct pci_dev *pdev, struct scatterlist *sg, int nents,
 	/* Second, figure out where we're going to map things.  */
 	if (alpha_mv.mv_pci_tbi) {
 		hose = pdev ? pdev->sysdata : pci_isa_hose;
-		max_dma = pdev ? pdev->dma_mask : 0x00ffffff;
+		max_dma = pdev ? pdev->dma_mask : ISA_DMA_MASK;
 		arena = hose->sg_pci;
-		if (!arena || arena->dma_base + arena->size > max_dma)
+		if (!arena || arena->dma_base + arena->size - 1 > max_dma)
 			arena = hose->sg_isa;
 	} else {
 		max_dma = -1;
@@ -641,9 +652,9 @@ pci_unmap_sg(struct pci_dev *pdev, struct scatterlist *sg, int nents,
 		return;
 
 	hose = pdev ? pdev->sysdata : pci_isa_hose;
-	max_dma = pdev ? pdev->dma_mask : 0x00ffffff;
+	max_dma = pdev ? pdev->dma_mask : ISA_DMA_MASK;
 	arena = hose->sg_pci;
-	if (!arena || arena->dma_base + arena->size > max_dma)
+	if (!arena || arena->dma_base + arena->size - 1 > max_dma)
 		arena = hose->sg_isa;
 
 	fbeg = -1, fend = 0;
@@ -710,11 +721,10 @@ pci_dma_supported(struct pci_dev *pdev, u64 mask)
 	struct pci_iommu_arena *arena;
 
 	/* If there exists a direct map, and the mask fits either
-	   MAX_DMA_ADDRESS defined such that GFP_DMA does something
-	   useful, or the total system memory as shifted by the
-	   map base.  */
+	   the entire direct mapped space or the total system memory as
+	   shifted by the map base */
 	if (__direct_map_size != 0
-	    && (__direct_map_base + MAX_DMA_ADDRESS-IDENT_ADDR-1 <= mask
+	    && (__direct_map_base + __direct_map_size - 1 <= mask
 		|| __direct_map_base + (max_low_pfn<<PAGE_SHIFT)-1 <= mask))
 		return 1;
 

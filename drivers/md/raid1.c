@@ -1136,11 +1136,8 @@ static void raid1d (void *data)
 		md_spin_unlock_irqrestore(&retry_list_lock, flags);
 
 		mddev = r1_bh->mddev;
-		if (mddev->sb_dirty) {
-			printk(KERN_INFO "raid1: dirty sb detected, updating.\n");
-			mddev->sb_dirty = 0;
+		if (mddev->sb_dirty)
 			md_update_sb(mddev);
-		}
 		bh = &r1_bh->bh_req;
 		switch(r1_bh->cmd) {
 		case SPECIAL:

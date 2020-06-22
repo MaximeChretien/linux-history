@@ -1,4 +1,4 @@
-# BK Id: SCCS/s.Makefile 1.26 09/25/01 07:54:40 trini
+# BK Id: SCCS/s.Makefile 1.28 10/21/01 20:47:58 trini
 #
 # arch/ppc/boot/Makefile
 #
@@ -45,6 +45,12 @@ misc.o: misc.c
 		-DZIMAGE_SIZE=0 -c -o $@ $*.c
 
 zvmlinux.initrd: $(obj-y) $(LIBS) ../images/vmlinux.gz
+#
+# Recompile misc.oagain with more 'correct' bogus offsets
+#
+	$(CC) $(CFLAGS) -DINITRD_OFFSET=0x00138466 -DINITRD_SIZE=0x0000111a \
+		-DZIMAGE_OFFSET=0x0001b000 -DZIMAGE_SIZE=0x0011d460 \
+		-c -o misc.o misc.c
 	$(LD) $(ZLINKFLAGS) -o $@.tmp $(obj-y) $(LIBS)
 	$(OBJCOPY) $(OBJCOPY_ARGS) -R .comment \
 		--add-section=initrd=../images/ramdisk.image.gz \
@@ -60,7 +66,7 @@ zvmlinux.initrd: $(obj-y) $(LIBS) ../images/vmlinux.gz
 		--add-section=initrd=../images/ramdisk.image.gz \
 		--add-section=image=../images/vmlinux.gz \
 		$@.tmp $@
-	rm -f $@.tmp zvmlinux
+	rm -f $@.tmp
 
 zImage: zvmlinux $(MKPREP)
 	$(MKPREP) -pbp zvmlinux ../images/$@.prep
@@ -71,6 +77,12 @@ zImage.initrd: zvmlinux.initrd $(MKPREP)
 	rm -f zvmlinux.initrd
 
 zvmlinux: $(obj-y) $(LIBS) ../images/vmlinux.gz
+#
+# Recompile misc.oagain with more 'correct' bogus offsets
+#
+	$(CC) $(CFLAGS) -DINITRD_OFFSET=0 -DINITRD_SIZE=0 \
+		-DZIMAGE_OFFSET=0x0001b000 -DZIMAGE_SIZE=0x0011d460 \
+		-c -o misc.o misc.c
 #
 # build the boot loader image and then compute the offset into it
 # for the kernel image
@@ -88,7 +100,7 @@ zvmlinux: $(obj-y) $(LIBS) ../images/vmlinux.gz
 	$(LD) $(ZLINKFLAGS) -o zvmlinux.tmp $(obj-y) $(LIBS)
 	$(OBJCOPY) $(OBJCOPY_ARGS) -R .comment \
 		--add-section=image=../images/vmlinux.gz $@.tmp $@
-	rm $@.tmp
+	rm -f $@.tmp
 
 floppy: zImage
 	dd if=../images/zImage.prep of=/dev/fd0H1440 bs=64b

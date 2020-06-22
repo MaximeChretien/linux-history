@@ -161,15 +161,10 @@ static int nfs_prepare_write(struct file *file, struct page *page, unsigned offs
 static int nfs_commit_write(struct file *file, struct page *page, unsigned offset, unsigned to)
 {
 	long status;
-	loff_t pos = ((loff_t)page->index<<PAGE_CACHE_SHIFT) + to;
-	struct inode *inode = page->mapping->host;
 
 	lock_kernel();
 	status = nfs_updatepage(file, page, offset, to-offset);
 	unlock_kernel();
-	/* most likely it's already done. CHECKME */
-	if (pos > inode->i_size)
-		inode->i_size = pos;
 	return status;
 }
 
@@ -249,6 +244,7 @@ nfs_lock(struct file *filp, int cmd, struct file_lock *fl)
 {
 	struct inode * inode = filp->f_dentry->d_inode;
 	int	status = 0;
+	int	status2;
 
 	dprintk("NFS: nfs_lock(f=%4x/%ld, t=%x, fl=%x, r=%Ld:%Ld)\n",
 			inode->i_dev, inode->i_ino,
@@ -283,11 +279,15 @@ nfs_lock(struct file *filp, int cmd, struct file_lock *fl)
 	 * Flush all pending writes before doing anything
 	 * with locks..
 	 */
-	filemap_fdatasync(inode->i_mapping);
+	status = filemap_fdatasync(inode->i_mapping);
 	down(&inode->i_sem);
-	status = nfs_wb_all(inode);
+	status2 = nfs_wb_all(inode);
+	if (status2 && !status)
+		status = status2;
 	up(&inode->i_sem);
-	filemap_fdatawait(inode->i_mapping);
+	status2 = filemap_fdatawait(inode->i_mapping);
+	if (status2 && !status)
+		status = status2;
 	if (status < 0)
 		return status;
 

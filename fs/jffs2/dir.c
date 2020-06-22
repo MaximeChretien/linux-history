@@ -31,13 +31,14 @@
  * provisions above, a recipient may use your version of this file
  * under either the RHEPL or the GPL.
  *
- * $Id: dir.c,v 1.42 2001/05/24 22:24:39 dwmw2 Exp $
+ * $Id: dir.c,v 1.45 2001/12/27 22:43:20 dwmw2 Exp $
  *
  */
 
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/fs.h>
+#include <linux/mtd/compatmac.h> /* For completion */
 #include <linux/jffs2.h>
 #include <linux/jffs2_fs_i.h>
 #include <linux/jffs2_fs_sb.h>
@@ -541,7 +542,7 @@ static int jffs2_symlink (struct inode *dir_i, struct dentry *dentry, const char
 
 	f = JFFS2_INODE_INFO(inode);
 
-	ri->dsize = ri->csize = strlen(target);
+	inode->i_size = ri->isize = ri->dsize = ri->csize = strlen(target);
 	ri->totlen = sizeof(*ri) + ri->dsize;
 	ri->hdr_crc = crc32(0, ri, sizeof(struct jffs2_unknown_node)-4);
 
@@ -931,20 +932,16 @@ static int jffs2_rename (struct inode *old_dir_i, struct dentry *old_dentry,
 	ret = jffs2_do_unlink(old_dir_i, old_dentry, 1);
 	
 	if (ret) {
-		/* Try to delete the _new_ link to return a clean failure */
-		int ret2 = jffs2_do_unlink(new_dir_i, new_dentry, 1);
-		if (ret2) {
-			struct jffs2_inode_info *f = JFFS2_INODE_INFO(old_dentry->d_inode);
-			down(&f->sem);
-			old_dentry->d_inode->i_nlink = f->inocache->nlink++;
-			up(&f->sem);
+		/* Oh shit. We really ought to make a single node which can do both atomically */
+		struct jffs2_inode_info *f = JFFS2_INODE_INFO(old_dentry->d_inode);
+		down(&f->sem);
+		old_dentry->d_inode->i_nlink = f->inocache->nlink++;
+		up(&f->sem);
 		       
-			printk(KERN_NOTICE "jffs2_rename(): Link succeeded, unlink failed (old err %d, new err %d). You now have a hard link\n", ret, ret2);
-			/* Might as well let the VFS know */
-			d_instantiate(new_dentry, old_dentry->d_inode);
-			atomic_inc(&old_dentry->d_inode->i_count);
-		}
-		
+		printk(KERN_NOTICE "jffs2_rename(): Link succeeded, unlink failed (err %d). You now have a hard link\n", ret);
+		/* Might as well let the VFS know */
+		d_instantiate(new_dentry, old_dentry->d_inode);
+		atomic_inc(&old_dentry->d_inode->i_count);
 	}
 	return ret;
 }

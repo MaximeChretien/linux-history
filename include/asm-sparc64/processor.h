@@ -1,4 +1,4 @@
-/* $Id: processor.h,v 1.80 2001/11/17 00:10:48 davem Exp $
+/* $Id: processor.h,v 1.80.2.1 2002/02/02 02:11:52 kanoj Exp $
  * include/asm-sparc64/processor.h
  *
  * Copyright (C) 1996 David S. Miller (davem@caip.rutgers.edu)
@@ -21,6 +21,7 @@
 #include <asm/signal.h>
 #include <asm/segment.h>
 #include <asm/page.h>
+#include <asm/delay.h>
 
 /* Bus types */
 #define EISA_bus 0
@@ -304,7 +305,7 @@ __out:	__ret; \
 #define init_task	(init_task_union.task)
 #define init_stack	(init_task_union.stack)
 
-#define cpu_relax()	do { } while (0)
+#define cpu_relax()	udelay(1 + smp_processor_id())
 
 #endif /* __KERNEL__ */
 

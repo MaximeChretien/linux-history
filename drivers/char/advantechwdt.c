@@ -64,6 +64,7 @@ static spinlock_t advwdt_lock;
 #define WDT_START 0x443
 
 #define WD_TIMO 60		/* 1 minute */
+static int wd_margin = WD_TIMO;
 
 /*
  *	Kernel methods.
@@ -73,7 +74,7 @@ static void
 advwdt_ping(void)
 {
 	/* Write a watchdog value */
-	outb_p(WD_TIMO, WDT_START);
+	outb_p(wd_margin, WDT_START);
 }
 
 static ssize_t
@@ -100,8 +101,9 @@ static int
 advwdt_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 	  unsigned long arg)
 {
+	int new_margin;
 	static struct watchdog_info ident = {
-		WDIOF_KEEPALIVEPING, 1, "Advantech WDT"
+		WDIOF_KEEPALIVEPING | WDIOF_SETTIMEOUT, 1, "Advantech WDT"
 	};
 	
 	switch (cmd) {
@@ -117,6 +119,19 @@ advwdt_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 
 	case WDIOC_KEEPALIVE:
 	  advwdt_ping();
+	  break;
+
+	case WDIOC_SETTIMEOUT:
+	  if (get_user(new_margin, (int *)arg))
+		  return -EFAULT;
+	  if ((new_margin < 1) || (new_margin > 63))
+		  return -EINVAL;
+	  wd_margin = new_margin;
+	  advwdt_ping();
+	  /* Fall */
+
+	case WDIOC_GETTIMEOUT:
+	  return put_user(wd_margin, (int *)arg);
 	  break;
 
 	default:

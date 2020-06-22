@@ -273,26 +273,39 @@ adbhid_buttons_input(unsigned char *data, int nb, struct pt_regs *regs, int auto
 		break;
 	case 0x1f: /* Powerbook button device */
 	  {
+	  	int down = (data[1] == (data[1] & 0xf));
 #ifdef CONFIG_PMAC_BACKLIGHT
 		int backlight = get_backlight_level();
-
+#endif
 		/*
 		 * XXX: Where is the contrast control for the passive?
 		 *  -- Cort
 		 */
 
-		switch (data[1]) {
+		switch (data[1] & 0x0f) {
 		case 0x8:	/* mute */
+			input_report_key(&adbhid[id]->input, KEY_MUTE,
+				data[1] == (data[1] & 0xf));
 			break;
 
-		case 0x7:	/* contrast decrease */
+		case 0x7:	/* volume decrease */
+			input_report_key(&adbhid[id]->input, KEY_VOLUMEDOWN,
+				data[1] == (data[1] & 0xf));
 			break;
 
-		case 0x6:	/* contrast increase */
+		case 0x6:	/* volume increase */
+			input_report_key(&adbhid[id]->input, KEY_VOLUMEUP,
+				data[1] == (data[1] & 0xf));
+ 			break;
+
+		case 0xb:	/* eject */
+			input_report_key(&adbhid[id]->input, KEY_EJECTCD,
+				data[1] == (data[1] & 0xf));
 			break;
 
+#ifdef CONFIG_PMAC_BACKLIGHT
 		case 0xa:	/* brightness decrease */
-			if (backlight < 0)
+			if (!down || backlight < 0)
 				break;
 			if (backlight > BACKLIGHT_OFF)
 				set_backlight_level(backlight-1);
@@ -301,15 +314,15 @@ adbhid_buttons_input(unsigned char *data, int nb, struct pt_regs *regs, int auto
 			break;
 
 		case 0x9:	/* brightness increase */
-			if (backlight < 0)
+			if (!down || backlight < 0)
 				break;
 			if (backlight < BACKLIGHT_MAX)
 				set_backlight_level(backlight+1);
 			else 
 				set_backlight_level(BACKLIGHT_MAX);
 			break;
-		}
 #endif /* CONFIG_PMAC_BACKLIGHT */
+		}
 	  }
 	  break;
 	}
@@ -504,6 +517,11 @@ adbhid_input_register(int id, int default_id, int original_handler_id,
 		case 0x1f: /* Powerbook button device */
 			sprintf(adbhid[id]->name, "ADB Powerbook buttons on ID %d:%d.%02x",
 				id, default_id, original_handler_id);
+			adbhid[id]->input.evbit[0] = BIT(EV_KEY) | BIT(EV_REP);
+			set_bit(KEY_MUTE, adbhid[id]->input.keybit);
+			set_bit(KEY_VOLUMEUP, adbhid[id]->input.keybit);
+			set_bit(KEY_VOLUMEDOWN, adbhid[id]->input.keybit);
+			set_bit(KEY_EJECTCD, adbhid[id]->input.keybit);
 			break;
 		}
 		if (adbhid[id]->name[0])
@@ -542,16 +560,38 @@ static void adbhid_input_unregister(int id)
 }
 
 
+static u16
+adbhid_input_reregister(int id, int default_id, int org_handler_id,
+			int cur_handler_id, int mk)
+{
+	if (adbhid[id]) {
+		if (adbhid[id]->input.idproduct !=
+		    ((id << 12)|(default_id << 8)|org_handler_id)) {
+			adbhid_input_unregister(id);
+			adbhid_input_register(id, default_id, org_handler_id,
+				cur_handler_id, mk);
+		}
+	} else
+		adbhid_input_register(id, default_id, org_handler_id,
+			cur_handler_id, mk);
+	return 1<<id;
+}
+
+static void
+adbhid_input_devcleanup(u16 exist)
+{
+	int i;
+	for(i=1; i<16; i++)
+	    if (adbhid[i] && !(exist&(1<<i)))
+		adbhid_input_unregister(i);
+}
+ 
 static void
 adbhid_probe(void)
 {
 	struct adb_request req;
 	int i, default_id, org_handler_id, cur_handler_id;
-
-	for (i = 1; i < 16; i++) {
-		if (adbhid[i])
-			adbhid_input_unregister(i);
-	}
+	u16 reg = 0;
 
 	adb_register(ADB_MOUSE, 0, &mouse_ids, adbhid_mouse_input);
 	adb_register(ADB_KEYBOARD, 0, &keyboard_ids, adbhid_keyboard_input);
@@ -580,14 +620,14 @@ adbhid_probe(void)
 			printk("ADB keyboard at %d, handler 1\n", id);
 
 		adb_get_infos(id, &default_id, &cur_handler_id);
-		adbhid_input_register(id, default_id, org_handler_id, cur_handler_id, 0);
+		reg |= adbhid_input_reregister(id, default_id, org_handler_id, cur_handler_id, 0);
 	}
 
 	for (i = 0; i < buttons_ids.nids; i++) {
 		int id = buttons_ids.id[i];
 
 		adb_get_infos(id, &default_id, &org_handler_id);
-		adbhid_input_register(id, default_id, org_handler_id, org_handler_id, 0);
+		reg |= adbhid_input_reregister(id, default_id, org_handler_id, org_handler_id, 0);
 	}
 
 	/* Try to switch all mice to handler 4, or 2 for three-button
@@ -676,9 +716,10 @@ adbhid_probe(void)
 		printk("\n");
 
 		adb_get_infos(id, &default_id, &cur_handler_id);
-		adbhid_input_register(id, default_id, org_handler_id,
+		reg |= adbhid_input_reregister(id, default_id, org_handler_id,
 				      cur_handler_id, mouse_kind);
         }
+	adbhid_input_devcleanup(reg);
 }
 
 static void 

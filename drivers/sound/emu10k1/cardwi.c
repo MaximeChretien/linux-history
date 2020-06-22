@@ -96,6 +96,7 @@ void query_format(int recsrc, struct wave_format *wave_fmt)
 	wave_fmt->bytesperchannel = wave_fmt->bitsperchannel >> 3;
 	wave_fmt->bytespersample = wave_fmt->channels * wave_fmt->bytesperchannel;
 	wave_fmt->bytespersec = wave_fmt->bytespersample * wave_fmt->samplingrate;
+	wave_fmt->bytespervoicesample = wave_fmt->bytespersample;
 }
 
 static int alloc_buffer(struct emu10k1_card *card, struct wavein_buffer *buffer)

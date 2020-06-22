@@ -612,7 +612,7 @@ static int NCR5380_set_timer(struct Scsi_Host *instance)
  *	Locks: disables irqs, takes and frees io_request_lock
  */
  
-void NCR5380_timer_fn(unsigned long unused)
+static void NCR5380_timer_fn(unsigned long unused)
 {
 	struct Scsi_Host *instance;
 

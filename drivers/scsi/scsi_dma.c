@@ -259,6 +259,7 @@ void scsi_resize_dma_pool(void)
 				if (SDpnt->type == TYPE_WORM || SDpnt->type == TYPE_ROM)
 					new_dma_sectors += (2048 >> 9) * SDpnt->queue_depth;
 			} else if (SDpnt->type == TYPE_SCANNER ||
+				   SDpnt->type == TYPE_PRINTER ||
 				   SDpnt->type == TYPE_PROCESSOR ||
 				   SDpnt->type == TYPE_COMM ||
 				   SDpnt->type == TYPE_MEDIUM_CHANGER ||

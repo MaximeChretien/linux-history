@@ -132,8 +132,12 @@ struct usb_serial_device_type {
 
 	struct list_head	driver_list;
 	
-	/* function call to make before accepting driver */
-	/* return 0 to continue initialization, anything else to abort */
+	/* function call to make before accepting driver
+	 * return 0 to continue initialization,
+	 * < 0 aborts startup,
+	 * > 0 does not set up anything else and is useful for devices that have
+	 * downloaded firmware, and will reset themselves shortly.
+	 */
 	int (*startup) (struct usb_serial *serial);
 	
 	void (*shutdown) (struct usb_serial *serial);

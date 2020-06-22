@@ -3,6 +3,8 @@
 #
 ifndef TOPDIR
 TOPDIR = ../../../..
+HPATH = $(TOPDIR)/include
+export HPATH
 endif
 CC = gcc-cris -mlinux -I $(TOPDIR)/include
 CFLAGS = -O2
@@ -35,7 +37,7 @@ kimagerescue.bin: kimagerescue.o
 	dd if=kimagerescue_tmp.bin of=kimagerescue.bin bs=1 count=784
 	rm ktr.bin tmp2423 kimagerescue_tmp.bin
 
-head.o: head.S
+head.o: head.S 
 	$(CC) -D__ASSEMBLY__ -traditional -c $< -o $*.o
 
 testrescue.o: testrescue.S
@@ -52,3 +54,8 @@ fastdep:
 modules:
 
 modules-install:
+
+depend:
+	$(CC) -M *.S > .depend
+
+-include .depend

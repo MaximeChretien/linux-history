@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.xics.c 1.5 05/17/01 18:14:22 cort
+ * BK Id: SCCS/s.xics.c 1.8 12/19/01 09:48:40 trini
  */
 /*
  * arch/ppc/kernel/xics.c
@@ -157,7 +157,7 @@ xics_get_irq(struct pt_regs *regs)
 	vec &= 0x00ffffff;
 	/* for sanity, this had better be < NR_IRQS - 16 */
 	if( vec == XICS_IRQ_8259_CASCADE )
-		irq = i8259_irq(cpu);
+		irq = i8259_poll();
 	else if( vec == XICS_IRQ_SPURIOUS )
 		irq = -1;
 	else

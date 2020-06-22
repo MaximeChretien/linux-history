@@ -74,8 +74,6 @@ typedef struct {
 
 struct thread_struct
  {
-
-        struct pt_regs *regs;         /* the user registers can be found on*/
 	s390_fp_regs fp_regs;
         __u32   ar2;                   /* kernel access register 2         */
         __u32   ar4;                   /* kernel access register 4         */
@@ -95,8 +93,7 @@ struct thread_struct
 
 typedef struct thread_struct thread_struct;
 
-#define INIT_THREAD { (struct pt_regs *) 0,                       \
-                    { 0,{{0},{0},{0},{0},{0},{0},{0},{0},{0},{0}, \
+#define INIT_THREAD {{0,{{0},{0},{0},{0},{0},{0},{0},{0},{0},{0}, \
 			    {0},{0},{0},{0},{0},{0}}},            \
                      0, 0,                                        \
                     sizeof(init_stack) + (__u32) &init_stack,     \
@@ -126,16 +123,25 @@ extern int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags);
 #define release_segments(mm)            do { } while (0)
 
 /*
- * Return saved PC of a blocked thread. used in kernel/sched
+ * Return saved PC of a blocked thread. used in kernel/sched.
+ * resume in entry.S does not create a new stack frame, it
+ * just stores the registers %r6-%r15 to the frame given by
+ * schedule. We want to return the address of the caller of
+ * schedule, so we have to walk the backchain one time to
+ * find the frame schedule() store its return address.
  */
 extern inline unsigned long thread_saved_pc(struct thread_struct *t)
 {
-        return (t->regs) ? ((unsigned long)t->regs->psw.addr) : 0;
+	unsigned long bc;
+	bc = *((unsigned long *) t->ksp);
+	return *((unsigned long *) (bc+56));
 }
 
 unsigned long get_wchan(struct task_struct *p);
-#define KSTK_EIP(tsk)   ((tsk)->thread.regs->psw.addr)
-#define KSTK_ESP(tsk)   ((tsk)->thread.ksp)
+#define __KSTK_PTREGS(tsk) \
+	((struct pt_regs *)((unsigned long) tsk+THREAD_SIZE) - 1)
+#define KSTK_EIP(tsk)	(__KSTK_PTREGS(tsk)->psw.addr)
+#define KSTK_ESP(tsk)	(__KSTK_PTREGS(tsk)->gprs[15])
 
 /* Allocation and freeing of basic task resources. */
 /*

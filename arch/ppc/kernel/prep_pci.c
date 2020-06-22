@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.prep_pci.c 1.31 10/05/01 17:48:18 trini
+ * BK Id: SCCS/s.prep_pci.c 1.33 12/20/01 15:36:12 trini
  */
 /*
  * PReP pci functions.
@@ -1190,6 +1190,27 @@ prep_pcibios_fixup(void)
 }
 
 static void __init
+prep_pcibios_after_init(void)
+{
+	struct pci_dev *dev;
+	
+	/* If there is a WD 90C, reset the IO BAR to 0x0 (it started that 
+	 * way, but the PCI layer relocated it because it thought 0x0 was
+	 * invalid for a BAR).
+	 * If you don't do this, the card's VGA base will be <IO BAR>+0xc0000
+	 * instead of 0xc0000. vgacon.c (for example) is completely unaware of
+	 * this little quirk.
+	 */
+	dev = pci_find_device(PCI_VENDOR_ID_WD, PCI_DEVICE_ID_WD_90C, NULL);
+	if (dev) {
+		dev->resource[1].end -= dev->resource[1].start;
+		dev->resource[1].start = 0;
+		/* tell the hardware */
+		pci_write_config_dword(dev, PCI_BASE_ADDRESS_1, 0x0);
+	}
+}
+
+static void __init
 prep_init_resource(struct resource *res, unsigned long start,
 		   unsigned long end, int flags)
 {
@@ -1246,4 +1267,5 @@ prep_find_bridges(void)
 	}
 
 	ppc_md.pcibios_fixup = prep_pcibios_fixup;
+	ppc_md.pcibios_after_init = prep_pcibios_after_init;
 }

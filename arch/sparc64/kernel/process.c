@@ -1,4 +1,4 @@
-/*  $Id: process.c,v 1.125 2001/11/17 00:10:48 davem Exp $
+/*  $Id: process.c,v 1.125.2.1 2001/12/18 19:40:17 davem Exp $
  *  arch/sparc64/kernel/process.c
  *
  *  Copyright (C) 1995, 1996 David S. Miller (davem@caip.rutgers.edu)
@@ -471,6 +471,7 @@ static unsigned long clone_stackframe(unsigned long csp, unsigned long psp)
 		csp += STACK_BIAS;
 		psp += STACK_BIAS;
 		__get_user(fp, &(((struct reg_window *)psp)->ins[6]));
+		fp += STACK_BIAS;
 	} else
 		__get_user(fp, &(((struct reg_window32 *)psp)->ins[6]));
 

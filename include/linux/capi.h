@@ -1,4 +1,4 @@
-/* $Id: capi.h,v 1.4.6.1 2001/09/23 22:25:05 kai Exp $
+/* $Id: capi.h,v 1.1.4.1 2001/11/20 14:19:38 kai Exp $
  * 
  * CAPI 2.0 Interface for Linux
  * 

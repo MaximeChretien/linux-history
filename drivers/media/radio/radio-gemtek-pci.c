@@ -221,6 +221,7 @@ static int gemtek_pci_ioctl( struct video_device *dev, unsigned int cmd, void *a
 		case VIDIOCGTUNER:
 		{
 			struct video_tuner t;
+			int signal;
 
 			if ( copy_from_user( &t, arg, sizeof( struct video_tuner ) ) )
 				return -EFAULT;
@@ -228,11 +229,12 @@ static int gemtek_pci_ioctl( struct video_device *dev, unsigned int cmd, void *a
 			if ( t.tuner ) 
 				return -EINVAL;
 
+			signal = gemtek_pci_getsignal( card );
 			t.rangelow = GEMTEK_PCI_RANGE_LOW;
 			t.rangehigh = GEMTEK_PCI_RANGE_HIGH;
-			t.flags = VIDEO_TUNER_LOW;
+			t.flags = VIDEO_TUNER_LOW | (7 << signal) ;
 			t.mode = VIDEO_MODE_AUTO;
-			t.signal = 0xFFFF * gemtek_pci_getsignal( card );
+			t.signal = 0xFFFF * signal;
 			strcpy( t.name, "FM" );
 
 			if ( copy_to_user( arg, &t, sizeof( struct video_tuner ) ) )
@@ -282,6 +284,7 @@ static int gemtek_pci_ioctl( struct video_device *dev, unsigned int cmd, void *a
 			a.flags |= VIDEO_AUDIO_MUTABLE;
 			a.volume = 1;
 			a.step = 65535;
+                        a.mode = (1 << gemtek_pci_getsignal( card ));
 			strcpy( a.name, "Radio" );
 
 			if ( copy_to_user( arg, &a, sizeof( struct video_audio ) ) )

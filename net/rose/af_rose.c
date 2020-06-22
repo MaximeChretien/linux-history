@@ -22,6 +22,10 @@
  *					Added use count to neighbour.
  *                      Tomi(OH2BNS)    Fixed rose_getname().
  *                      Arnaldo C. Melo s/suser/capable/ + micro cleanups
+ *                      Joroen (PE1RXQ) Use sock_orphan() on release.
+ *
+ *  ROSE 0.63	Jean-Paul(F6FBB) Fixed wrong length of L3 packets
+ *					Added CLEAR_REQUEST facilities
  */
 
 #include <linux/config.h>
@@ -650,16 +654,16 @@ static int rose_release(struct socket *sock)
 			sk->state                = TCP_CLOSE;
 			sk->shutdown            |= SEND_SHUTDOWN;
 			sk->state_change(sk);
-			sk->dead                 = 1;
+			sock_orphan(sk);
 			sk->destroy              = 1;
 			break;
 
 		default:
+			sk->socket = NULL;
 			break;
 	}
 
 	sock->sk = NULL;	
-	sk->socket = NULL;	/* Not used, but we should do this. **/
 
 	return 0;
 }
@@ -1429,7 +1433,7 @@ static struct notifier_block rose_dev_notifier = {
 
 static struct net_device *dev_rose;
 
-static const char banner[] = KERN_INFO "F6FBB/G4KLX ROSE for Linux. Version 0.62 for AX25.037 Linux 2.4\n";
+static const char banner[] = KERN_INFO "F6FBB/G4KLX ROSE for Linux. Version 0.63 for AX25.037 Linux 2.4\n";
 
 static int __init rose_proto_init(void)
 {

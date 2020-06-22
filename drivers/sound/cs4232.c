@@ -277,7 +277,7 @@ void __init attach_cs4232(struct address_info *hw_config)
 	}
 }
 
-void __exit unload_cs4232(struct address_info *hw_config)
+void unload_cs4232(struct address_info *hw_config)
 {
 	int base = hw_config->io_base, irq = hw_config->irq;
 	int dma1 = hw_config->dma, dma2 = hw_config->dma2;

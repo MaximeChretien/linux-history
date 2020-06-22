@@ -4,6 +4,13 @@
 # create a compressed vmlinux image from the original vmlinux files and romfs
 #
 
+ifndef TOPDIR
+TOPDIR = ../../../..
+HPATH = $(TOPDIR)/include
+export HPATH
+endif
+
+
 CC = gcc-cris -melf -I $(TOPDIR)/include
 CFLAGS = -O2
 LD = ld-cris
@@ -37,4 +44,10 @@ piggy.img: $(SYSTEM)
 
 clean:
 	rm -f piggy.img vmlinuz vmlinuz.o
+
+depend:
+	$(CC) -M *.S *.c > .depend
+
+-include .depend
+
 

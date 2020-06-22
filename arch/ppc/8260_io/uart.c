@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.uart.c 1.6 05/17/01 18:14:20 cort
+ * BK Id: SCCS/s.uart.c 1.13 12/29/01 14:50:03 trini
  */
 /*
  *  UART driver for MPC8260 CPM SCC or SMC
@@ -1736,7 +1736,7 @@ static void rs_8xx_wait_until_sent(struct tty_struct *tty, int timeout)
 		schedule_timeout(char_time);
 		if (signal_pending(current))
 			break;
-		if (timeout && ((orig_jiffies + timeout) < jiffies))
+		if (timeout && time_after(jiffies, orig_jiffies + timeout))
 			break;
 		bdp = info->tx_cur;
 	} while (bdp->cbd_sc & BD_SC_READY);
@@ -2325,7 +2325,11 @@ int __init rs_8xx_init(void)
 	__clear_user(&serial_driver,sizeof(struct tty_driver));
 	serial_driver.magic = TTY_DRIVER_MAGIC;
 	serial_driver.driver_name = "serial";
+#ifdef CONFIG_DEVFS_FS
+	serial_driver.name = "tts/%d";
+#else
 	serial_driver.name = "ttyS";
+#endif
 	serial_driver.major = TTY_MAJOR;
 	serial_driver.minor_start = 64;
 	serial_driver.num = NR_PORTS;
@@ -2363,7 +2367,11 @@ int __init rs_8xx_init(void)
 	 * major number and the subtype code.
 	 */
 	callout_driver = serial_driver;
+#ifdef CONFIG_DEVFS_FS
+	callout_driver.name = "cua/%d";
+#else
 	callout_driver.name = "cua";
+#endif
 	callout_driver.major = TTYAUX_MAJOR;
 	callout_driver.subtype = SERIAL_TYPE_CALLOUT;
 	callout_driver.read_proc = 0;

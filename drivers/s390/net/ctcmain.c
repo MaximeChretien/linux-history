@@ -1,5 +1,5 @@
 /*
- * $Id: ctcmain.c,v 1.51 2001/09/24 10:38:02 mschwide Exp $
+ * $Id: ctcmain.c,v 1.55 2001/12/03 14:28:45 felfert Exp $
  *
  * CTC / ESCON network driver
  *
@@ -35,7 +35,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * RELEASE-TAG: CTC/ESCON network driver $Revision: 1.51 $
+ * RELEASE-TAG: CTC/ESCON network driver $Revision: 1.55 $
  *
  */
 
@@ -96,7 +96,9 @@
 #ifdef MODULE
 MODULE_AUTHOR("(C) 2000 IBM Corp. by Fritz Elfert (felfert@millenux.com)");
 MODULE_DESCRIPTION("Linux for S/390 CTC/Escon Driver");
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,12))
 MODULE_LICENSE("GPL");
+#endif
 #ifndef CTC_CHANDEV
 MODULE_PARM(ctc, "s");
 MODULE_PARM_DESC(ctc,
@@ -368,7 +370,7 @@ static __inline__ int ctc_test_and_set_busy(net_device *dev)
 static __inline__ void ctc_clear_busy(net_device *dev)
 {
 	clear_bit(0, &(((ctc_priv *)dev->priv)->tbusy));
-	netif_start_queue(dev);
+	netif_wake_queue(dev);
 }
 
 static __inline__ int ctc_test_and_set_busy(net_device *dev)
@@ -385,7 +387,7 @@ static __inline__ int ctc_test_and_set_busy(net_device *dev)
  */
 static void print_banner(void) {
 	static int printed = 0;
-	char vbuf[] = "$Revision: 1.51 $";
+	char vbuf[] = "$Revision: 1.55 $";
 	char *version = vbuf;
 
 	if (printed)
@@ -396,7 +398,16 @@ static void print_banner(void) {
 			*p = '\0';
 	} else
 		version = " ??? ";
-	printk(KERN_INFO "CTC driver Version%s initialized\n", version);
+	printk(KERN_INFO
+	       "CTC driver Version%swith"
+#ifndef CTC_CHANDEV
+	       "out"
+#endif
+	       " CHANDEV support"
+#ifdef DEBUG
+	       " (DEBUG-VERSION, " __DATE__ __TIME__ ")"
+#endif
+	       " initialized\n", version);
 	printed = 1;
 }
 
@@ -754,12 +765,13 @@ static __inline__ void ctc_unpack_skb(channel *ch, struct sk_buff *pskb)
 		pskb->protocol = ntohs(header->type);
 		header->length -= LL_HEADER_LENGTH;
 		if ((header->length == 0) ||
-		    (header->length > skb_tailroom(pskb))) {
+		    (header->length > skb_tailroom(pskb)) ||
+		    (header->length > len)) {
 			printk(KERN_WARNING
 			       "%s Illegal packet size %d "
-			       "received (MTU=%d), "
+			       "received (MTU=%d blocklen=%d), "
 			       "dropping\n", dev->name, header->length,
-			       dev->mtu);
+			       dev->mtu, len);
 #ifdef DEBUG
 			ctc_dump_skb(pskb, -6);
 #endif
@@ -929,7 +941,8 @@ static __inline__ int ctc_checkalloc_buffer(channel *ch, int warn) {
 		if (ch->trans_skb != NULL)
 			dev_kfree_skb(ch->trans_skb);
 		clear_normalized_cda(&ch->ccw[1]);
-		ch->trans_skb = dev_alloc_skb(ch->max_bufsize);
+		ch->trans_skb = __dev_alloc_skb(ch->max_bufsize,
+						GFP_ATOMIC|GFP_DMA);
 		if (ch->trans_skb == NULL) {
 			if (warn)
 				printk(KERN_WARNING
@@ -1026,7 +1039,6 @@ static void ch_action_txdone(fsm_instance *fi, int event, void *arg)
 			ch->prof.maxmulti = ch->collect_len + 2;
 		if (ch->prof.maxcqueue < skb_queue_len(&ch->collect_queue))
 			ch->prof.maxcqueue = skb_queue_len(&ch->collect_queue);
-		ch->ccw[1].count = ch->collect_len + 2;
 		*((__u16 *)skb_put(ch->trans_skb, 2)) = ch->collect_len + 2;
 		i = 0;
 		while ((skb = skb_dequeue(&ch->collect_queue))) {
@@ -1039,11 +1051,10 @@ static void ch_action_txdone(fsm_instance *fi, int event, void *arg)
 			i++;
 		}
 		ch->collect_len = 0;
+		spin_unlock(&ch->collect_lock);
+		ch->ccw[1].count = ch->trans_skb->len;
 		fsm_addtimer(&ch->timer, CTC_TIMEOUT_5SEC, CH_EVENT_TIMER, ch);
 		ch->prof.send_stamp = xtime;
-#ifdef DEBUG
-	printk(KERN_DEBUG "ccw[1].cda = %08x\n", ch->ccw[1].cda);
-#endif
 		rc = do_IO(ch->irq, &ch->ccw[0], (intparm_t)ch, 0xff, 0);
 		ch->prof.doios_multi++;
 		if (rc != 0) {
@@ -1052,10 +1063,11 @@ static void ch_action_txdone(fsm_instance *fi, int event, void *arg)
 			fsm_deltimer(&ch->timer);
 			ccw_check_return_code(ch, rc);
 		}
-	} else
+	} else {
+		spin_unlock(&ch->collect_lock);
 		fsm_newstate(fi, CH_STATE_TXIDLE);
+	}
 	ctc_clear_busy(dev);
-	spin_unlock(&ch->collect_lock);
 }
 
 /**
@@ -1146,9 +1158,6 @@ static void ch_action_rx(fsm_instance *fi, int event, void *arg)
 	if (ctc_checkalloc_buffer(ch, 1))
 		return;
 	ch->ccw[1].count = ch->max_bufsize;
-#ifdef DEBUG
-	printk(KERN_DEBUG "ccw[1].cda = %08x\n", ch->ccw[1].cda);
-#endif
 	rc = do_IO(ch->irq, &ch->ccw[0], (intparm_t)ch, 0xff, 0);
 	if (rc != 0)
 		ccw_check_return_code(ch, rc);
@@ -1203,9 +1212,6 @@ static void ch_action_firstio(fsm_instance *fi, int event, void *arg)
 	*((__u16 *)ch->trans_skb->data) = CTC_INITIAL_BLOCKLEN;
 	ch->ccw[1].count = 2; /* Transfer only length */
 
-#ifdef DEBUG
-	printk(KERN_DEBUG "ccw[1].cda = %08x\n", ch->ccw[1].cda);
-#endif
 	fsm_newstate(fi, (CHANNEL_DIRECTION(ch->flags) == READ)
 		     ? CH_STATE_RXINIT : CH_STATE_TXINIT);
 	rc = do_IO(ch->irq, &ch->ccw[0], (intparm_t)ch, 0xff, 0);
@@ -1254,9 +1260,6 @@ static void ch_action_rxidle(fsm_instance *fi, int event, void *arg)
 			return;
 		ch->ccw[1].count = ch->max_bufsize;
 		fsm_newstate(fi, CH_STATE_RXIDLE);
-#ifdef DEBUG
-	printk(KERN_DEBUG "ccw[1].cda = %08x\n", ch->ccw[1].cda);
-#endif
 		rc = do_IO(ch->irq, &ch->ccw[0], (intparm_t)ch, 0xff, 0);
 		if (rc != 0) {
 			fsm_newstate(fi, CH_STATE_RXINIT);
@@ -1716,9 +1719,6 @@ static void ch_action_txretry(fsm_instance *fi, int event, void *arg)
 			fsm_addtimer(&ch->timer, 1000, CH_EVENT_TIMER, ch);
 			if (event == CH_EVENT_TIMER)
 				s390irq_spin_lock_irqsave(ch->irq, saveflags);
-#ifdef DEBUG
-	printk(KERN_DEBUG "ccw[4].cda = %08x\n", ch->ccw[4].cda);
-#endif
 			rc = do_IO(ch->irq, &ch->ccw[3], (intparm_t)ch, 0xff, 0);
 			if (event == CH_EVENT_TIMER)
 				s390irq_spin_unlock_irqrestore(ch->irq,
@@ -2479,6 +2479,8 @@ static int transmit_skb(channel *ch, struct sk_buff *skb) {
 	} else {
 		__u16 block_len;
 		int ccw_idx;
+		struct sk_buff *nskb;
+		unsigned long hi;
 
 		/**
 		 * Protect skb against beeing free'd by upper
@@ -2493,6 +2495,28 @@ static int transmit_skb(channel *ch, struct sk_buff *skb) {
 		       LL_HEADER_LENGTH);
 		block_len = skb->len + 2;
 		*((__u16 *)skb_push(skb, 2)) = block_len;
+
+		/**
+		 * IDAL support in CTC is broken, so we have to
+		 * care about skb's above 2G ourselves.
+		 */
+		hi = ((unsigned long)skb->tail + LL_HEADER_LENGTH) >> 31;
+		if (hi) {
+			nskb = alloc_skb(skb->len, GFP_ATOMIC | GFP_DMA);
+			if (!nskb) {
+				atomic_dec(&skb->users);
+				skb_pull(skb, LL_HEADER_LENGTH + 2);
+				return -ENOMEM;
+			} else {
+				memcpy(skb_put(nskb, skb->len),
+				       skb->data, skb->len);
+				atomic_inc(&nskb->users);
+				atomic_dec(&skb->users);
+				dev_kfree_skb_irq(skb);
+				skb = nskb;
+			}
+		}
+
 		ch->ccw[4].count = block_len;
 		if (set_normalized_cda(&ch->ccw[4], virt_to_phys(skb->data))) {
 			/**
@@ -2505,6 +2529,7 @@ static int transmit_skb(channel *ch, struct sk_buff *skb) {
 				 * Remove our header. It gets added
 				 * again on retransmit.
 				 */
+				atomic_dec(&skb->users);
 				skb_pull(skb, LL_HEADER_LENGTH + 2);
 				return -EBUSY;
 			}
@@ -2522,18 +2547,11 @@ static int transmit_skb(channel *ch, struct sk_buff *skb) {
 			ccw_idx = 3;
 		}
 		ch->retry = 0;
-#ifdef DEBUG
-		ctc_dump_skb(skb, 0);
-#endif
 		fsm_newstate(ch->fsm, CH_STATE_TX);
 		fsm_addtimer(&ch->timer, CTC_TIMEOUT_5SEC,
 			     CH_EVENT_TIMER, ch);
 		s390irq_spin_lock_irqsave(ch->irq, saveflags);
 		ch->prof.send_stamp = xtime;
-#ifdef DEBUG
-	printk(KERN_DEBUG "ccw[%d].cda = %08x\n", ccw_idx+1,
-	       ch->ccw[ccw_idx+1].cda);
-#endif
 		rc = do_IO(ch->irq, &ch->ccw[ccw_idx], (intparm_t)ch, 0xff, 0);
 		s390irq_spin_unlock_irqrestore(ch->irq, saveflags);
 		if (ccw_idx == 3)

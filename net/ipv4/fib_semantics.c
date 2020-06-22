@@ -5,7 +5,7 @@
  *
  *		IPv4 Forwarding Information Base: semantics.
  *
- * Version:	$Id: fib_semantics.c,v 1.18 2001/10/31 21:55:54 davem Exp $
+ * Version:	$Id: fib_semantics.c,v 1.18.2.2 2002/01/12 07:54:15 davem Exp $
  *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
  *
@@ -134,7 +134,7 @@ void fib_release_info(struct fib_info *fi)
 	write_unlock(&fib_info_lock);
 }
 
-extern __inline__ int nh_comp(const struct fib_info *fi, const struct fib_info *ofi)
+static __inline__ int nh_comp(const struct fib_info *fi, const struct fib_info *ofi)
 {
 	const struct fib_nh *onh = ofi->fib_nh;
 
@@ -155,7 +155,7 @@ extern __inline__ int nh_comp(const struct fib_info *fi, const struct fib_info *
 	return 0;
 }
 
-extern __inline__ struct fib_info * fib_find_info(const struct fib_info *nfi)
+static __inline__ struct fib_info * fib_find_info(const struct fib_info *nfi)
 {
 	for_fib_info() {
 		if (fi->fib_nhs != nfi->fib_nhs)

@@ -197,7 +197,7 @@ int presto_settime(struct presto_file_set *fset,
 
         error = -EPERM;
         iops = filter_c2cdiops(fset->fset_cache->cache_filter); 
-        if (!iops) { 
+        if (!iops) {
                 EXIT;
                 return error;
         }
@@ -449,8 +449,17 @@ int presto_do_create(struct presto_file_set *fset, struct dentry *dir,
             dentry->d_inode->i_gid != presto_excluded_gid) {
                 struct presto_cache *cache = fset->fset_cache;
                 /* was this already done? */
-                presto_set_ops(dentry->d_inode, cache->cache_filter);
+                if ( !filter_c2cfiops(cache->cache_filter) )
+                        filter_setup_file_ops(cache->cache_filter, 
+                                              dentry->d_inode,
+                                              &presto_file_iops,
+                                              &presto_file_fops);
 
+                /* make the new inode ours */
+                dentry->d_inode->i_op = 
+                        filter_c2ufiops(cache->cache_filter);
+                dentry->d_inode->i_fop = 
+                        filter_c2uffops(cache->cache_filter);
                 filter_setup_dentry_ops(cache->cache_filter, 
                                         dentry->d_op, 
                                         &presto_dentry_ops);
@@ -480,8 +489,8 @@ int presto_do_create(struct presto_file_set *fset, struct dentry *dir,
         presto_getversion(&new_file_ver, dentry->d_inode);
         if ( presto_do_kml(info, dentry->d_inode) )
                 error = presto_journal_create(&rec, fset, dentry, &tgt_dir_ver,
-                                              &new_file_ver, 
-					      dentry->d_inode->i_mode);
+                                              &new_file_ver,
+                                              dentry->d_inode->i_mode);
 
         presto_debug_fail_blkdev(fset, PRESTO_OP_CREATE | 0x20);
         if ( presto_do_expect(info, dentry->d_inode) )
@@ -936,8 +945,15 @@ int presto_do_symlink(struct presto_file_set *fset, struct dentry *dir,
             dentry->d_inode->i_gid != presto_excluded_gid) {
                 struct presto_cache *cache = fset->fset_cache;
                 
-                presto_set_ops(dentry->d_inode, cache->cache_filter);
+                /* was this already done? */
+                if ( !filter_c2csiops(cache->cache_filter) )
+                        filter_setup_symlink_ops(cache->cache_filter, 
+                                                 dentry->d_inode,
+                                                 &presto_sym_iops,
+                                                 NULL);
 
+                /* make the new inode ours */
+                dentry->d_inode->i_op = filter_c2usiops(cache->cache_filter);
                 filter_setup_dentry_ops(cache->cache_filter, dentry->d_op, 
                                         &presto_dentry_ops);
                 dentry->d_op = filter_c2udops(cache->cache_filter);
@@ -1098,9 +1114,8 @@ int presto_do_mkdir(struct presto_file_set *fset, struct dentry *dir,
         if ( dentry->d_inode && !error && 
              dentry->d_inode->i_gid != presto_excluded_gid) {
                 struct presto_cache *cache = fset->fset_cache;
-
-                presto_set_ops(dentry->d_inode, cache->cache_filter);
-
+                /* make it ours */
+                dentry->d_inode->i_op = filter_c2udiops(cache->cache_filter);
                 filter_setup_dentry_ops(cache->cache_filter, 
                                         dentry->d_op, 
                                         &presto_dentry_ops);
@@ -1128,8 +1143,8 @@ int presto_do_mkdir(struct presto_file_set *fset, struct dentry *dir,
         presto_getversion(&new_dir_ver, dentry->d_inode);
         if ( presto_do_kml(info, dentry->d_inode) )
                 error = presto_journal_mkdir(&rec, fset, dentry, &tgt_dir_ver,
-                                             &new_dir_ver, 
-					     dentry->d_inode->i_mode);
+                                             &new_dir_ver,
+                                             dentry->d_inode->i_mode);
 
         presto_debug_fail_blkdev(fset, PRESTO_OP_MKDIR | 0x20);
         if ( presto_do_expect(info, dentry->d_inode) )
@@ -1398,12 +1413,15 @@ int presto_do_mknod(struct presto_file_set *fset, struct dentry *dir,
         }
 
         error = iops->mknod(dir->d_inode, dentry, mode, dev);
+        if (error) {
+                EXIT;
+                goto exit_commit;
+        }
         if ( dentry->d_inode &&
              dentry->d_inode->i_gid != presto_excluded_gid) {
                 struct presto_cache *cache = fset->fset_cache;
-
-                presto_set_ops(dentry->d_inode, cache->cache_filter);
-
+                /* make it ours */
+                dentry->d_inode->i_op = filter_c2udiops(cache->cache_filter);
                 filter_setup_dentry_ops(cache->cache_filter, dentry->d_op, 
                                         &presto_dentry_ops);
                 dentry->d_op = filter_c2udops(cache->cache_filter);
@@ -1429,8 +1447,8 @@ int presto_do_mknod(struct presto_file_set *fset, struct dentry *dir,
         presto_getversion(&new_node_ver, dentry->d_inode);
         if ( presto_do_kml(info, dentry->d_inode) )
                 error = presto_journal_mknod(&rec, fset, dentry, &tgt_dir_ver,
-                                             &new_node_ver, 
-					     dentry->d_inode->i_mode,
+                                             &new_node_ver,
+                                             dentry->d_inode->i_mode,
                                              MAJOR(dev), MINOR(dev) );
 
         presto_debug_fail_blkdev(fset, PRESTO_OP_MKNOD | 0x20);
@@ -1439,6 +1457,7 @@ int presto_do_mknod(struct presto_file_set *fset, struct dentry *dir,
 
         presto_debug_fail_blkdev(fset, PRESTO_OP_MKNOD | 0x30);
         EXIT;
+ exit_commit:
         presto_trans_commit(fset, handle);
  exit_lock2:
         unlock_kernel();

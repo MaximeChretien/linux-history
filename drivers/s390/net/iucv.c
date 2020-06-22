@@ -1,4 +1,4 @@
-/*
+/* 
  * $Id$
  *
  * IUCV network driver
@@ -478,7 +478,7 @@ static __inline__ ulong
 b2f0(__u32 code, void *parm)
 {
 	iucv_debug("iparml before b2f0 call:");
-	iucv_dumpit(parm, sizeof(iucv_param.param));
+	iucv_dumpit(parm, sizeof(iucv_param));
 
 	asm volatile (
 		"LRA   1,0(%1)\n\t"
@@ -490,7 +490,7 @@ b2f0(__u32 code, void *parm)
 		);
 
 	iucv_debug("iparml after b2f0 call:");
-	iucv_dumpit(parm, sizeof(iucv_param.param));
+	iucv_dumpit(parm, sizeof(iucv_param));
 
 	return (unsigned long)*((__u8 *)(parm + 3));
 }
@@ -2126,7 +2126,7 @@ iucv_do_int(iucv_GeneralInterrupt * int_buf)
 					iucv_sever (int_buf->ippathid,
 						    no_listener);
 					iucv_debug("add_pathid failed, rc = %d",
-						   (int)add_pathid_result);
+						   rc);
 				} else {
 					interrupt = h->interrupt_table;
 					if (interrupt->ConnectionPending) {
@@ -2150,8 +2150,8 @@ iucv_do_int(iucv_GeneralInterrupt * int_buf)
 						h->pgm_data);
 				else
 					iucv_debug("ConnectionComplete not called");
-			}
-			
+			} else
+				iucv_sever(int_buf->ippathid, no_listener);
 			break;
 			
 		case 0x03:		/* connection severed */

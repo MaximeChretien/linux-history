@@ -259,7 +259,6 @@ typedef ccw_req_t *(*dasd_merge_cp_fn_t)(struct dasd_device_t *);
 typedef int (*dasd_info_fn_t) (struct dasd_device_t *, dasd_information_t *);
 typedef int (*dasd_use_count_fn_t) (int);
 
-
 /*
  * the dasd_discipline_t is
  * sth like a table of virtual functions, if you think of dasd_eckd
@@ -364,6 +363,7 @@ int dasd_oper_handler (int irq, devreg_t * devreg);
 void dasd_schedule_bh (dasd_device_t *);
 int dasd_sleep_on_req(ccw_req_t*);
 int  dasd_set_normalized_cda ( ccw1_t * cp, unsigned long address, ccw_req_t* request, dasd_device_t* device );
+dasd_device_t * dasd_device_from_kdev (kdev_t kdev);
 
 extern debug_info_t *dasd_debug_area;
 extern int (*genhd_dasd_name) (char *, int, int, struct gendisk *);

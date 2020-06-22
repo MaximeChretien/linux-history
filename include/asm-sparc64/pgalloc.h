@@ -35,8 +35,10 @@ extern void __flush_icache_page(unsigned long);
 extern void flush_dcache_page_impl(struct page *page);
 #ifdef CONFIG_SMP
 extern void smp_flush_dcache_page_impl(struct page *page, int cpu);
+extern void flush_dcache_page_all(struct mm_struct *mm, struct page *page);
 #else
 #define smp_flush_dcache_page_impl(page,cpu) flush_dcache_page_impl(page)
+#define flush_dcache_page_all(mm,page) flush_dcache_page_impl(page)
 #endif
 
 extern void flush_dcache_page(struct page *page);

@@ -1,4 +1,4 @@
-# BK Id: SCCS/s.Makefile 1.7 06/05/01 20:20:05 paulus
+# BK Id: SCCS/s.Makefile 1.9 10/15/01 10:53:29 trini
 #
 #
 # arch/ppc/mbxboot/Makefile
@@ -73,6 +73,12 @@ misc.o: misc.c
 		-DZIMAGE_SIZE=0 -c -o $@ $*.c
 
 zvmlinux.initrd: $(OBJECTS) $(LIBS) ../images/vmlinux.gz
+#
+# Recompile misc.o again with more 'correct' bogus offsets
+#
+	$(CC) $(CFLAGS) -DINITRD_OFFSET=0x0008c8e3 -DINITRD_SIZE=0x0000111a \
+		-DZIMAGE_OFFSET=0x00018000 -DZIMAGE_SIZE=0x000748e2 \
+		-c -o misc.o misc.c
 	$(LD) $(ZLINKFLAGS) -o $@.tmp $(OBJECTS) $(LIBS)
 	$(OBJCOPY) $(OBJCOPY_ARGS) -R .comment \
 		--add-section=initrd=../images/ramdisk.image.gz \
@@ -88,6 +94,8 @@ zvmlinux.initrd: $(OBJECTS) $(LIBS) ../images/vmlinux.gz
 		--add-section=initrd=../images/ramdisk.image.gz \
 		--add-section=image=../images/vmlinux.gz \
 		$@.tmp ../images/$@.embedded
+# Remove zvmlinux and zvmlinux.temp, we have ../images/zvmlinux.embedded
+	rm -f $@.tmp $@
 
 zImage: zvmlinux
 ifeq ($(CONFIG_RPXCLASSIC),y)
@@ -104,6 +112,12 @@ else
 endif
 
 zvmlinux: $(OBJECTS) $(LIBS) ../images/vmlinux.gz
+#
+# Recompile misc.o again with more 'correct' bogus offsets
+#
+	$(CC) $(CFLAGS) -DINITRD_OFFSET=0 -DINITRD_SIZE=0 \
+		-DZIMAGE_OFFSET=0x00018000 -DZIMAGE_SIZE=0x000748e2 \
+		-c -o misc.o misc.c
 #
 # build the boot loader image and then compute the offset into it
 # for the kernel image

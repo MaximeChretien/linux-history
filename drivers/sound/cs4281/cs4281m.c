@@ -1,12 +1,12 @@
 /*******************************************************************************
 *
-*      "cs4281.c" --  Cirrus Logic-Crystal CS4281 linux audio driver.
+*      "cs4281m.c" --  Cirrus Logic-Crystal CS4281 linux audio driver.
 *
 *      Copyright (C) 2000,2001  Cirrus Logic Corp.  
 *            -- adapted from drivers by Thomas Sailer, 
 *            -- but don't bug him; Problems should go to:
 *            -- tom woller (twoller@crystal.cirrus.com) or
-*               (audio@crystal.cirrus.com).
+*               (pcaudio@crystal.cirrus.com).
 *
 *      This program is free software; you can redistribute it and/or modify
 *      it under the terms of the GNU General Public License as published by
@@ -51,6 +51,18 @@
 * 12/21/00 trw - added fractional "defaultorder" inputs. if >100 then use 
 *		 defaultorder-100 as power of 2 for the buffer size. example:
 *		 106 = 2^(106-100) = 2^6 = 64 bytes for the buffer size.
+* 04/02/01 trw - reworked the includes, so kgdb wouldn't get confused.
+* 04/17/01 trw - added ifdef CONFIG_PM for 2.4.x non-pm kernels. static pmprint.
+* 04/19/01 trw - reworked all of the wrapper macros to keep native 2.4.x code
+*		 predominate in the driver.
+* 07/01/01 trw - added ability to modify the record source mask to alleviate
+*		 problems with toshiba systems.  also, check for toshiba 
+*		 system to set default up properly.
+* 11/12/01 trw - removed cs4281_update_ptr() in the polling interface code.
+*		 returning with only a few bytes available in the write buffer
+*		 seems to cause some problems with some apps (xmms OSS plugin).
+*		 Also, fixed bug in cs4281_update_ptr() code to wakeup when
+*	 	 1/2 buffer is empty, not when completely full.
 *
 *******************************************************************************/
 
@@ -77,12 +89,16 @@
 #include <linux/wrapper.h>
 #include <asm/uaccess.h>
 #include <asm/hardirq.h>
-//#include "cs_dm.h"
 #include "cs4281_hwdefs.h"
-#include "cs4281pm.h"
+
+EXPORT_NO_SYMBOLS;
 
 struct cs4281_state;
-EXPORT_NO_SYMBOLS;
+int cs4281_suspend(struct cs4281_state *s);
+int cs4281_resume(struct cs4281_state *s);
+
+#include "cs4281_wrapper.h"
+#include "cs4281pm-24.h"
 
 static void stop_dac(struct cs4281_state *s);
 static void stop_adc(struct cs4281_state *s);
@@ -99,18 +115,40 @@ static void start_adc(struct cs4281_state *s);
 #define PCI_DEVICE_ID_CRYSTAL_CS4281  0x6005
 #endif
 
+#ifndef SS_ID_TOSHIBA_1640CDT
+#define SS_ID_TOSHIBA_1640CDT	0xff00
+#endif
+
+#ifndef PCI_VENDOR_ID_TOSHIBA
+#define PCI_VENDOR_ID_TOSHIBA 	0x1179
+#endif
+
 #define CS4281_MAGIC  ((PCI_DEVICE_ID_CRYSTAL_CS4281<<16) | PCI_VENDOR_ID_CIRRUS)
 #define	CS4281_CFLR_DEFAULT	0x00000001  /* CFLR must be in AC97 link mode */
+#define CS4281_BA0_CPWR_DEFAULT 0x4281
 
-// buffer order determines the size of the dma buffer for the driver.
-// under Linux, a smaller buffer allows more responsiveness from many of the 
-// applications (e.g. games).  A larger buffer allows some of the apps (esound) 
-// to not underrun the dma buffer as easily.  As default, use 32k (order=3)
-// rather than 64k as some of the games work more responsively.
-// log base 2( buff sz = 32k).
+/* buffer order determines the size of the dma buffer for the driver.
+* under Linux, a smaller buffer allows more responsiveness from many of the 
+* applications (e.g. games).  A larger buffer allows some of the apps (esound) 
+* to not underrun the dma buffer as easily.  As default, use 32k (order=3)
+* rather than 64k as some of the games work more responsively.
+* (2^N) * PAGE_SIZE = allocated buffer size
+*
+* also added fractional "defaultorder" inputs. if >100 then use 
+* defaultorder-100 as power of 2 for the buffer size. example:
+* 106 = 2^(106-100) = 2^6 = 64 bytes for the buffer size.
+* games are even MORE responsive now, but prone to underruns.
+*/
 static unsigned long defaultorder = 3;
 MODULE_PARM(defaultorder, "i");
 
+/*
+* use this module parm to invalidate recording sources 
+* as on some machines (Toshiba Satellites... again) setting to LINE
+* causes an error and some of the mixers (gmix) to not load.
+*/
+static unsigned long recsrc_invalid = 0;
+MODULE_PARM(recsrc_invalid, "i");
 //
 // Turn on/off debugging compilation by commenting out "#define CSDEBUG"
 //
@@ -172,7 +210,7 @@ MODULE_PARM(cs_debugmask, "i");
 #define FMODE_MIDI_WRITE (FMODE_WRITE << FMODE_MIDI_SHIFT)
 
 #define CS4281_MAJOR_VERSION 	1
-#define CS4281_MINOR_VERSION 	13
+#define CS4281_MINOR_VERSION 	30
 #ifdef __ia64__
 #define CS4281_ARCH	     	64	//architecture key
 #else
@@ -181,7 +219,6 @@ MODULE_PARM(cs_debugmask, "i");
 
 #define CS_TYPE_ADC 0
 #define CS_TYPE_DAC 1
-
 
 static const char invalid_magic[] =
     KERN_CRIT "cs4281: invalid magic value\n";
@@ -194,16 +231,12 @@ static const char invalid_magic[] =
         }                                         \
 })
 
-//LIST_HEAD(cs4281_devs);
 struct list_head cs4281_devs = { &cs4281_devs, &cs4281_devs };
-
-struct cs4281_state; 
-
-#include "cs4281_wrapper-24.c"
 
 struct cs4281_state {
 	// magic 
 	unsigned int magic;
+	u16 ss_id, ss_vendor;  /* subsystem and vendor IDs from pci space */
 
 	// we keep the cards in a linked list 
 	struct cs4281_state *next;
@@ -221,6 +254,7 @@ struct cs4281_state {
 	unsigned int pBA0phys, pBA1phys;
 	char *pBA0, *pBA1;
 	unsigned int irq;
+	unsigned recsrc;
 
 	// mixer registers 
 	struct {
@@ -291,11 +325,11 @@ struct cs4281_state {
 		unsigned char obuf[MIDIOUTBUF];
 	} midi;
 
+#ifndef NOT_CS4281_PM
 	struct cs4281_pm pm;
 	struct cs4281_pipeline pl[CS4281_NUMBER_OF_PIPELINES];
+#endif
 };
-
-#include "cs4281pm-24.c"
 
 #if CSDEBUG
 
@@ -527,7 +561,13 @@ static void prog_codec(struct cs4281_state *s, unsigned type);
 static void delayus(struct cs4281_state *s, u32 delay)
 {
 	u32 j;
-	if ((delay > 9999) && (s->pm.flags & CS4281_PM_IDLE)) {
+	if ((delay > 9999) 
+#ifndef NOT_CS4281_PM
+	&& (s->pm.flags & CS4281_PM_IDLE))
+#else
+	)
+#endif
+	{
 		j = (delay * HZ) / 1000000;	/* calculate delay in jiffies  */
 		if (j < 1)
 			j = 1;	/* minimum one jiffy. */
@@ -578,7 +618,7 @@ static int cs4281_read_ac97(struct cs4281_state *card, u32 offset,
 	       card->pBA0 + BA0_ACCTL);
 
 	// Wait for the read to occur.
-	for (count = 0; count < 10; count++) {
+	for (count = 0; count < 100; count++) {
 		// First, we want to wait for a short time.
 		udelay(25);
 
@@ -593,7 +633,7 @@ static int cs4281_read_ac97(struct cs4281_state *card, u32 offset,
 		return 1;
 
 	// Wait for the valid status bit to go active.
-	for (count = 0; count < 10; count++) {
+	for (count = 0; count < 100; count++) {
 		// Read the AC97 status register.
 		// ACSTS = Status Register = 464h
 		status = readl(card->pBA0 + BA0_ACSTS);
@@ -703,12 +743,26 @@ static __devinit int cs4281_hw_init(struct cs4281_state *card)
 		CS_DBGOUT(CS_INIT | CS_ERROR, 1, printk(KERN_INFO 
 			"cs4281: cs4281_hw_init() CFLR invalid - resetting from 0x%x to 0x%x\n",
 				temp2,CS4281_CFLR_DEFAULT));
+		temp2 = readl(card->pBA0 + BA0_CWPR);
+		if(temp2 != CS4281_BA0_CPWR_DEFAULT)
+		{
+			writel(CS4281_BA0_CPWR_DEFAULT, card->pBA0 + BA0_CWPR);
+			temp2 = readl(card->pBA0 + BA0_CWPR);
+			if(temp2 != CS4281_BA0_CPWR_DEFAULT)
+			{
+			  CS_DBGOUT(CS_INIT | CS_ERROR, 1, printk(KERN_INFO 
+				"cs4281: cs4281_hw_init() Invalid hardware - unable to configure CPWR (0x%x)\n",
+					temp2));
+			  return 1;
+			}
+		}
 		writel(CS4281_CFLR_DEFAULT, card->pBA0 + BA0_CFLR);
 		temp2 = readl(card->pBA0 + BA0_CFLR);
 		if(temp2 != CS4281_CFLR_DEFAULT)
 		{
 			CS_DBGOUT(CS_INIT | CS_ERROR, 1, printk(KERN_INFO 
-				"cs4281: cs4281_hw_init() Invalid hardware - unable to configure CFLR\n"));
+				"cs4281: cs4281_hw_init() Invalid hardware - unable to configure CFLR (0x%x)\n",
+					temp2));
 			return 1;
 		}
 	}
@@ -1021,15 +1075,6 @@ void cs4281_ac97_suspend(struct cs4281_state *s)
 	int Count,i;
 
 	CS_DBGOUT(CS_PM, 9, printk("cs4281: cs4281_ac97_suspend()+\n"));
-/*
-* change the state, save the current hwptr, then stop the dac/adc
-*/
-	s->pm.flags &= ~CS4281_PM_IDLE;
-	s->pm.flags |= CS4281_PM_SUSPENDING;
-	s->pm.u32hwptr_playback = readl(s->pBA0 + BA0_DCA0);
-	s->pm.u32hwptr_capture = readl(s->pBA0 + BA0_DCA1);
-	stop_dac(s);
-	stop_adc(s);
 
 	for(Count = 0x2, i=0; (Count <= CS4281_AC97_HIGHESTREGTORESTORE)
 			&& (i < CS4281_AC97_NUMBER_RESTORE_REGS); 
@@ -1268,6 +1313,14 @@ int cs4281_suspend(struct cs4281_state *s)
 	pm->u32AdcASR = readl(s->pBA0 + BA0_CASR);
 	pm->u32DacSR = readl(s->pBA0 + BA0_DACSR);
 	pm->u32AdcSR = readl(s->pBA0 + BA0_ADCSR);
+
+/*
+* save the current hwptr, then stop the dac/adc
+*/
+	pm->u32hwptr_playback = readl(s->pBA0 + BA0_DCA0);
+	pm->u32hwptr_capture = readl(s->pBA0 + BA0_DCA1);
+	stop_dac(s);
+	stop_adc(s);
 
 	//
 	// Loop through all of the PipeLines 
@@ -1582,9 +1635,9 @@ static void start_dac(struct cs4281_state *s)
 #ifndef NOT_CS4281_PM
 	&& (s->pm.flags & CS4281_PM_IDLE))
 #else
-)
+	)
 #endif
- {
+	{
 		s->ena |= FMODE_WRITE;
 		temp1 = readl(s->pBA0 + BA0_DCR0) & ~DCRn_MSK;	// Clear DMA0 channel mask.
 		writel(temp1, s->pBA0 + BA0_DCR0);	// Start DMA'ing.
@@ -1640,7 +1693,7 @@ static void start_adc(struct cs4281_state *s)
 #ifndef NOT_CS4281_PM
 	&& (s->pm.flags & CS4281_PM_IDLE))
 #else
-) 
+	) 
 #endif
 	{
 		if (s->prop_adc.fmt & AFMT_S8 || s->prop_adc.fmt & AFMT_U8) {
@@ -1689,7 +1742,7 @@ static void start_adc(struct cs4281_state *s)
 
 // --------------------------------------------------------------------- 
 
-#define DMABUF_MINORDER 1	// ==> min buffer size = 8K.
+#define DMABUF_MINORDER 0	// ==> min buffer size = 8K.
 
 
 extern void dealloc_dmabuf(struct cs4281_state *s, struct dmabuf *db)
@@ -1698,21 +1751,21 @@ extern void dealloc_dmabuf(struct cs4281_state *s, struct dmabuf *db)
 
 	if (db->rawbuf) {
 		// Undo prog_dmabuf()'s marking the pages as reserved 
-		mapend =
-		    virt_to_page(db->rawbuf + (PAGE_SIZE << db->buforder) -
-				 1);
+		mapend = virt_to_page(db->rawbuf + 
+			(PAGE_SIZE << db->buforder) - 1);
 		for (map = virt_to_page(db->rawbuf); map <= mapend; map++)
 			cs4x_mem_map_unreserve(map);
-		free_dmabuf(s, db);
+		pci_free_consistent(s->pcidev, PAGE_SIZE << db->buforder, 
+			    db->rawbuf, db->dmaaddr);
 	}
 	if (s->tmpbuff && (db->type == CS_TYPE_ADC)) {
 		// Undo prog_dmabuf()'s marking the pages as reserved 
-		mapend =
-		    virt_to_page(s->tmpbuff +
-				 (PAGE_SIZE << s->buforder_tmpbuff) - 1);
+		mapend = virt_to_page(s->tmpbuff +
+			 (PAGE_SIZE << s->buforder_tmpbuff) - 1);
 		for (map = virt_to_page(s->tmpbuff); map <= mapend; map++)
 			cs4x_mem_map_unreserve(map);
-		free_dmabuf2(s, db);
+		pci_free_consistent(s->pcidev, PAGE_SIZE << s->buforder_tmpbuff,
+				    s->tmpbuff, s->dmaaddr_tmpbuff);
 	}
 	s->tmpbuff = NULL;
 	db->rawbuf = NULL;
@@ -1735,7 +1788,7 @@ static int prog_dmabuf(struct cs4281_state *s, struct dmabuf *db)
 * check for order within limits, but do not overwrite value, check
 * later for a fractional defaultorder (i.e. 100+).
 */
-	if((defaultorder > 0) && (defaultorder < 12))
+	if((defaultorder >= 0) && (defaultorder < 12))
 		df = defaultorder;
 	else
 		df = 1;	
@@ -1744,7 +1797,7 @@ static int prog_dmabuf(struct cs4281_state *s, struct dmabuf *db)
 		db->ready = db->mapped = 0;
 		for (order = df; order >= DMABUF_MINORDER; order--)
 			if ( (db->rawbuf = (void *) pci_alloc_consistent(
-				s->pcidev, PAGE_SIZE << order, &db-> dmaaddr)))
+				s->pcidev, PAGE_SIZE << order, &db->dmaaddr)))
 				    break;
 		if (!db->rawbuf) {
 			CS_DBGOUT(CS_ERROR, 1, printk(KERN_ERR
@@ -1969,10 +2022,8 @@ static void cs4281_update_ptr(struct cs4281_state *s, int intflag)
 		if (s->dma_adc.count > s->dma_adc.dmasize)
 			s->dma_adc.count = s->dma_adc.dmasize;
 		if (s->dma_adc.mapped) {
-			if (s->dma_adc.count >=
-			    (signed) s->dma_adc.fragsize) wake_up(&s->
-								  dma_adc.
-								  wait);
+			if (s->dma_adc.count >= (signed) s->dma_adc.fragsize) 
+				wake_up(&s->dma_adc.wait);
 		} else {
 			if (s->dma_adc.count > 0)
 				wake_up(&s->dma_adc.wait);
@@ -2143,6 +2194,7 @@ static void prog_codec(struct cs4281_state *s, unsigned type)
 static int mixer_ioctl(struct cs4281_state *s, unsigned int cmd,
 		       unsigned long arg)
 {
+	int return_mask=0;
 	// Index to mixer_src[] is value of AC97 Input Mux Select Reg.
 	// Value of array member is recording source Device ID Mask.
 	static const unsigned int mixer_src[8] = {
@@ -2307,9 +2359,14 @@ static int mixer_ioctl(struct cs4281_state *s, unsigned int cmd,
 					SOUND_MASK_SPEAKER, (int *) arg);
 
 		case SOUND_MIXER_RECMASK:	// Arg contains a bit for each supported recording source 
-			return put_user(SOUND_MASK_LINE | SOUND_MASK_MIC |
+			return_mask = (((SOUND_MASK_LINE | SOUND_MASK_MIC |
 					SOUND_MASK_CD | SOUND_MASK_VOLUME |
-					SOUND_MASK_LINE1, (int *) arg);
+					SOUND_MASK_LINE1) ) & ~recsrc_invalid);
+
+			CS_DBGOUT(CS_PARMS, 6, printk(KERN_INFO
+				"cs4281: mixer_ioctl(): return_mask=0x%x recsrc_invalid=0x%x\n",
+					(unsigned)return_mask,(unsigned)recsrc_invalid));
+			return put_user(return_mask, (int *) arg);
 
 		case SOUND_MIXER_STEREODEVS:	// Mixer channels supporting stereo 
 			return put_user(SOUND_MASK_PCM | SOUND_MASK_SYNTH |
@@ -2346,6 +2403,13 @@ static int mixer_ioctl(struct cs4281_state *s, unsigned int cmd,
 		i = hweight32(val);	// i = # bits on in val.
 		if (i != 1)	// One & only 1 bit must be on.
 			return 0;
+		if(val & recsrc_invalid)
+		{
+			CS_DBGOUT(CS_ERROR, 2, printk(KERN_INFO
+				"cs4281: mixer_ioctl(): REC SOURCE select error - record source invalid on this system (0x%x)\n",
+					val));
+			return -EINVAL;
+		}
 		for (i = 0; i < sizeof(mixer_src) / sizeof(int); i++) {
 			if (val == mixer_src[i]) {
 				temp1 = (i << 8) | i;
@@ -2567,6 +2631,14 @@ static int mixer_ioctl(struct cs4281_state *s, unsigned int cmd,
 
 // --------------------------------------------------------------------- 
 
+static loff_t cs4281_llseek(struct file *file, loff_t offset, int origin)
+{
+	return -ESPIPE;
+}
+
+
+// --------------------------------------------------------------------- 
+
 static int cs4281_open_mixdev(struct inode *inode, struct file *file)
 {
 	int minor = MINOR(inode->i_rdev);
@@ -2622,7 +2694,7 @@ static int cs4281_ioctl_mixdev(struct inode *inode, struct file *file,
 //   Mixer file operations struct.
 // ******************************************************************************************
 static /*const */ struct file_operations cs4281_mixer_fops = {
-	llseek:no_llseek,
+	llseek:cs4281_llseek,
 	ioctl:cs4281_ioctl_mixdev,
 	open:cs4281_open_mixdev,
 	release:cs4281_release_mixdev,
@@ -2684,9 +2756,18 @@ static int drain_dac(struct cs4281_state *s, int nonblock)
 	int count;
 	unsigned tmo;
 
+	CS_DBGOUT(CS_FUNCTION, 2,
+		  printk(KERN_INFO "cs4281: drain_dac()+\n"));
 	if (s->dma_dac.mapped)
+	{
+		CS_DBGOUT(CS_FUNCTION, 2,
+			  printk(KERN_INFO "cs4281: drain_dac()- (mmap) 0\n"));
 		return 0;
-	add_wait_queue(&s->dma_dac.wait, &wait);
+	}
+	if (s->ena & FMODE_WRITE)
+		add_wait_queue(&s->dma_dac.wait, &wait);
+	else
+		return 0;
 	for (;;) {
 		set_current_state(TASK_INTERRUPTIBLE);
 		spin_lock_irqsave(&s->lock, flags);
@@ -2699,6 +2780,8 @@ static int drain_dac(struct cs4281_state *s, int nonblock)
 		if (nonblock) {
 			remove_wait_queue(&s->dma_dac.wait, &wait);
 			current->state = TASK_RUNNING;
+			CS_DBGOUT(CS_FUNCTION, 2,
+				  printk(KERN_INFO "cs4281: drain_dac()- -EBUSY\n"));
 			return -EBUSY;
 		}
 		tmo =
@@ -2714,7 +2797,13 @@ static int drain_dac(struct cs4281_state *s, int nonblock)
 	remove_wait_queue(&s->dma_dac.wait, &wait);
 	current->state = TASK_RUNNING;
 	if (signal_pending(current))
+	{
+		CS_DBGOUT(CS_FUNCTION, 2,
+			  printk(KERN_INFO "cs4281: drain_dac()- -ERESTARTSYS\n"));
 		return -ERESTARTSYS;
+	}
+	CS_DBGOUT(CS_FUNCTION, 2,
+		  printk(KERN_INFO "cs4281: drain_dac()- 0\n"));
 	return 0;
 }
 
@@ -3051,6 +3140,9 @@ static ssize_t cs4281_write(struct file *file, const char *buffer,
 	return ret;
 }
 
+/*
+* cs4281_poll(struct file *file, struct poll_table_struct *wait)
+*/
 
 static unsigned int cs4281_poll(struct file *file,
 				struct poll_table_struct *wait)
@@ -3061,7 +3153,7 @@ static unsigned int cs4281_poll(struct file *file,
 	unsigned int mask = 0;
 
 	CS_DBGOUT(CS_FUNCTION | CS_WAVE_WRITE | CS_WAVE_READ, 4,
-		  printk(KERN_INFO "cs4281: cs4281_poll()+\n"));
+		  printk(KERN_INFO "cs4281: cs4281_poll()+ wait=0x%x\n", (unsigned)wait));
 	VALIDATE_STATE(s);
 	if (file->f_mode & FMODE_WRITE) {
 		CS_DBGOUT(CS_FUNCTION | CS_WAVE_WRITE | CS_WAVE_READ, 4,
@@ -3070,17 +3162,17 @@ static unsigned int cs4281_poll(struct file *file,
 		if(!s->dma_dac.ready && prog_dmabuf_dac(s))
 			return 0;
 		poll_wait(file, &s->dma_dac.wait, wait);
-	}
-	if (file->f_mode & FMODE_READ) {
+
+	} else if (file->f_mode & FMODE_READ) {
 		CS_DBGOUT(CS_FUNCTION | CS_WAVE_WRITE | CS_WAVE_READ, 4,
 			  printk(KERN_INFO
 				 "cs4281: cs4281_poll() wait on FMODE_READ\n"));
-		if(!s->dma_dac.ready && prog_dmabuf_adc(s))
+		if(!s->dma_adc.ready && prog_dmabuf_adc(s))
 			return 0;
 		poll_wait(file, &s->dma_adc.wait, wait);
+
 	}
 	spin_lock_irqsave(&s->lock, flags);
-	cs4281_update_ptr(s,CS_FALSE);
 	if (file->f_mode & FMODE_WRITE) {
 		if (s->dma_dac.mapped) {
 			if (s->dma_dac.count >=
@@ -3139,7 +3231,7 @@ static int cs4281_mmap(struct file *file, struct vm_area_struct *vma)
 //
 	db = &s->dma_dac;
 
-	if (cs4x_pgoff(vma) != 0)
+	if ((vma->vm_pgoff) != 0)
 		return -EINVAL;
 	size = vma->vm_end - vma->vm_start;
 	if (size > (PAGE_SIZE << db->buforder))
@@ -3408,7 +3500,7 @@ static int cs4281_ioctl(struct inode *inode, struct file *file,
 		if (!s->dma_dac.ready && (val = prog_dmabuf_dac(s)))
 			return val;
 		spin_lock_irqsave(&s->lock, flags);
-		cs4281_update_ptr(s,CS_FALSE);
+		cs4281_update_ptr(s,CS_TRUE);
 		abinfo.fragsize = s->dma_dac.fragsize;
 		if (s->dma_dac.mapped)
 			abinfo.bytes = s->dma_dac.dmasize;
@@ -3431,7 +3523,7 @@ static int cs4281_ioctl(struct inode *inode, struct file *file,
 		if (!s->dma_adc.ready && (val = prog_dmabuf_adc(s)))
 			return val;
 		spin_lock_irqsave(&s->lock, flags);
-		cs4281_update_ptr(s,CS_FALSE);
+		cs4281_update_ptr(s,CS_TRUE);
 		if (s->conversion) {
 			abinfo.fragsize = s->dma_adc.fragsize / 2;
 			abinfo.bytes = s->dma_adc.count / 2;
@@ -3459,7 +3551,7 @@ static int cs4281_ioctl(struct inode *inode, struct file *file,
 		if(!s->dma_dac.ready && prog_dmabuf_dac(s))
 			return 0;
 		spin_lock_irqsave(&s->lock, flags);
-		cs4281_update_ptr(s,CS_FALSE);
+		cs4281_update_ptr(s,CS_TRUE);
 		val = s->dma_dac.count;
 		spin_unlock_irqrestore(&s->lock, flags);
 		return put_user(val, (int *) arg);
@@ -3470,7 +3562,7 @@ static int cs4281_ioctl(struct inode *inode, struct file *file,
 		if(!s->dma_adc.ready && prog_dmabuf_adc(s))
 			return 0;
 		spin_lock_irqsave(&s->lock, flags);
-		cs4281_update_ptr(s,CS_FALSE);
+		cs4281_update_ptr(s,CS_TRUE);
 		cinfo.bytes = s->dma_adc.total_bytes;
 		if (s->dma_adc.mapped) {
 			cinfo.blocks =
@@ -3503,7 +3595,7 @@ static int cs4281_ioctl(struct inode *inode, struct file *file,
 		if(!s->dma_dac.ready && prog_dmabuf_dac(s))
 			return 0;
 		spin_lock_irqsave(&s->lock, flags);
-		cs4281_update_ptr(s,CS_FALSE);
+		cs4281_update_ptr(s,CS_TRUE);
 		cinfo.bytes = s->dma_dac.total_bytes;
 		if (s->dma_dac.mapped) {
 			cinfo.blocks =
@@ -3538,6 +3630,10 @@ static int cs4281_ioctl(struct inode *inode, struct file *file,
 	case SNDCTL_DSP_SETFRAGMENT:
 		if (get_user(val, (int *) arg))
 			return -EFAULT;
+
+		CS_DBGOUT(CS_PARMS, 4, printk(KERN_INFO
+			"cs4281: cs4281_ioctl(): Attempt to set fragsize=%d fragnum=%d\n",
+				1 << (val & 0xffff), (val >> 16) & 0xffff  ));
 		return 0;	// Say OK, but do nothing.
 
 	case SNDCTL_DSP_SUBDIVIDE:
@@ -3739,7 +3835,7 @@ static int cs4281_open(struct inode *inode, struct file *file)
 //   Wave (audio) file operations struct.
 // ******************************************************************************************
 static /*const */ struct file_operations cs4281_audio_fops = {
-	llseek:no_llseek,
+	llseek:cs4281_llseek,
 	read:cs4281_read,
 	write:cs4281_write,
 	poll:cs4281_poll,
@@ -4088,7 +4184,7 @@ static int cs4281_midi_release(struct inode *inode, struct file *file)
 //   Midi file operations struct.
 // ******************************************************************************************
 static /*const */ struct file_operations cs4281_midi_fops = {
-	llseek:no_llseek,
+	llseek:cs4281_llseek,
 	read:cs4281_midi_read,
 	write:cs4281_midi_write,
 	poll:cs4281_midi_poll,
@@ -4263,6 +4359,35 @@ void __devinit cs4281_InitPM(struct cs4281_state *s)
 }
 #endif
 
+/*
+* ss_vendor and ss_id must be setup prior to calling this routine.
+* setup the invalid recording source bitmask,
+* and also return a valid default initialization value as
+* the return value;
+*/
+static int cs4281_setup_record_src(struct cs4281_state *s)
+{
+	if(s->ss_vendor == PCI_VENDOR_ID_TOSHIBA)
+	{
+		if(s->ss_id == SS_ID_TOSHIBA_1640CDT)
+		{
+			CS_DBGOUT(CS_PARMS, 2, printk(KERN_INFO
+			  "cs4281: cs4281_setup_record_src(): setting LINE invalid\n"));
+			recsrc_invalid |= SOUND_MASK_LINE;
+		}
+	}
+/*
+* only return a valid recsrc value here, default to something useful.
+*/
+	if(!(recsrc_invalid & SOUND_MASK_MIC))
+		return(SOUND_MASK_MIC);
+	else if(!(recsrc_invalid & SOUND_MASK_LINE))
+		return(SOUND_MASK_LINE);
+	else if(!(recsrc_invalid & SOUND_MASK_LINE1))
+		return(SOUND_MASK_LINE1);
+	return 0;
+}
+
 static int __devinit cs4281_probe(struct pci_dev *pcidev,
 				  const struct pci_device_id *pciid)
 {
@@ -4285,22 +4410,22 @@ static int __devinit cs4281_probe(struct pci_dev *pcidev,
 	}
 	if (!(pci_resource_flags(pcidev, 0) & IORESOURCE_MEM) ||
 	    !(pci_resource_flags(pcidev, 1) & IORESOURCE_MEM)) {
-		CS_DBGOUT(CS_ERROR, 1, printk(KERN_ERR
-			 "cs4281: probe()- Memory region not assigned\n"));
+ 		CS_DBGOUT(CS_ERROR, 1, printk(KERN_ERR
+ 			 "cs4281: probe()- Memory region not assigned\n"));
 		return -ENODEV;
-	}
-	if (pcidev->irq == 0) {
-		CS_DBGOUT(CS_ERROR, 1, printk(KERN_ERR
-			 "cs4281: probe() IRQ not assigned\n"));
+ 	}
+ 	if (pcidev->irq == 0) {
+ 		CS_DBGOUT(CS_ERROR, 1, printk(KERN_ERR
+ 			 "cs4281: probe() IRQ not assigned\n"));
 		return -ENODEV;
-	}
+ 	}
 	dma_mask = 0xffffffff;	/* this enables playback and recording */
 	i = pci_set_dma_mask(pcidev, dma_mask);
 	if (i) {
-		CS_DBGOUT(CS_ERROR, 1, printk(KERN_ERR
-		      "cs4281: probe() architecture does not support 32bit PCI busmaster DMA\n"));
+ 		CS_DBGOUT(CS_ERROR, 1, printk(KERN_ERR
+ 		      "cs4281: probe() architecture does not support 32bit PCI busmaster DMA\n"));
 		return i;
-	}
+ 	}
 	if (!(s = kmalloc(sizeof(struct cs4281_state), GFP_KERNEL))) {
 		CS_DBGOUT(CS_ERROR, 1, printk(KERN_ERR
 		      "cs4281: probe() no memory for state struct.\n"));
@@ -4404,10 +4529,18 @@ static int __devinit cs4281_probe(struct pci_dev *pcidev,
 #endif
 
 	pci_set_master(pcidev);	// enable bus mastering 
+	pci_read_config_word(pcidev, PCI_SUBSYSTEM_VENDOR_ID, &s->ss_vendor);
+	pci_read_config_word(pcidev, PCI_SUBSYSTEM_ID, &s->ss_id);
+	printk(KERN_INFO "cs4281: Subsystem vendor/id (%04X:%04X) IRQ %d\n",
+		s->ss_vendor, s->ss_id, s->irq);
+	
+	if(!recsrc_invalid)
+		val = cs4281_setup_record_src(s);
+	else
+		val = SOUND_MASK_MIC;
 
 	fs = get_fs();
 	set_fs(KERNEL_DS);
-	val = SOUND_MASK_LINE;
 	mixer_ioctl(s, SOUND_MIXER_WRITE_RECSRC, (unsigned long) &val);
 	for (i = 0; i < sizeof(initvol) / sizeof(initvol[0]); i++) {
 		val = initvol[i].vol;
@@ -4455,7 +4588,7 @@ static void __devinit cs4281_remove(struct pci_dev *pci_dev)
 	unregister_sound_midi(s->dev_midi);
 	iounmap(s->pBA1);
 	iounmap(s->pBA0);
-	pci_set_drvdata(pci_dev,NULL);
+	pci_set_drvdata(pci_dev, s);
 	list_del(&s->list);
 	kfree(s);
 	CS_DBGOUT(CS_INIT | CS_FUNCTION, 2, printk(KERN_INFO
@@ -4494,6 +4627,12 @@ int __init cs4281_init_module(void)
 	       CS4281_ARCH);
 	rtn = pci_module_init(&cs4281_pci_driver);
 
+	if(rtn == -ENODEV)
+	{
+		CS_DBGOUT(CS_ERROR | CS_INIT, 1, printk( 
+			"cs4281: Unable to locate any cs4281 device with valid IDs 0x%x-0x%x\n",
+				PCI_VENDOR_ID_CIRRUS, PCI_DEVICE_ID_CRYSTAL_CS4281));
+	}
 	CS_DBGOUT(CS_INIT | CS_FUNCTION, 2,
 		  printk(KERN_INFO "cs4281: cs4281_init_module()- (%d)\n",rtn));
 	return rtn;
@@ -4510,7 +4649,7 @@ void __exit cs4281_cleanup_module(void)
 }
 // --------------------------------------------------------------------- 
 
-MODULE_AUTHOR("gw boynton, audio@crystal.cirrus.com");
+MODULE_AUTHOR("gw boynton, pcaudio@crystal.cirrus.com");
 MODULE_DESCRIPTION("Cirrus Logic CS4281 Driver");
 MODULE_LICENSE("GPL");
 
@@ -4525,3 +4664,4 @@ int __init init_cs4281(void)
 	return cs4281_init_module();
 }
 #endif
+#include "cs4281pm-24.c"

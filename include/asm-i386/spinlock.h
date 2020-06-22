@@ -5,6 +5,7 @@
 #include <asm/rwlock.h>
 #include <asm/page.h>
 #include <linux/config.h>
+#include <linux/stringify.h>
 
 extern int printk(const char * fmt, ...)
 	__attribute__ ((format (printf, 1, 2)));
@@ -56,13 +57,16 @@ typedef struct {
 	"\n1:\t" \
 	"lock ; decb %0\n\t" \
 	"js 2f\n" \
-	".section .text.lock,\"ax\"\n" \
+	".subsection 1\n" \
+	".ifndef _text_lock_" __stringify(KBUILD_BASENAME) "\n" \
+	"_text_lock_" __stringify(KBUILD_BASENAME) ":\n" \
+	".endif\n" \
 	"2:\t" \
 	"cmpb $0,%0\n\t" \
 	"rep;nop\n\t" \
 	"jle 2b\n\t" \
 	"jmp 1b\n" \
-	".previous"
+	".subsection 0\n"
 
 /*
  * This works. Despite all the confusion.

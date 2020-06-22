@@ -168,19 +168,41 @@ struct pmu_sleep_notifier
 
 /* priority levels in notifiers */
 #define SLEEP_LEVEL_VIDEO	100	/* Video driver (first wake) */
-#define SLEEP_LEVEL_SOUND	90	/* Sound driver */
-#define SLEEP_LEVEL_MEDIABAY	80	/* Media bay driver */
-#define SLEEP_LEVEL_BLOCK	70	/* IDE, SCSI */
-#define SLEEP_LEVEL_NET		60	/* bmac */
-#define SLEEP_LEVEL_ADB		50	/* ADB */
-#define SLEEP_LEVEL_MISC	30	/* Anything */
-#define SLEEP_LEVEL_LAST	0	/* Reserved for apm_emu */
+#define SLEEP_LEVEL_MEDIABAY	90	/* Media bay driver */
+#define SLEEP_LEVEL_BLOCK	80	/* IDE, SCSI */
+#define SLEEP_LEVEL_NET		70	/* bmac, gmac */
+#define SLEEP_LEVEL_MISC	60	/* Anything else */
+#define SLEEP_LEVEL_USERLAND	55	/* Reserved for apm_emu */
+#define SLEEP_LEVEL_ADB		50	/* ADB (async) */
+#define SLEEP_LEVEL_SOUND	40	/* Sound driver (blocking) */
 
 /* special register notifier functions */
 int pmu_register_sleep_notifier(struct pmu_sleep_notifier* notifier);
 int pmu_unregister_sleep_notifier(struct pmu_sleep_notifier* notifier);
 
-#endif /* CONFIG_PMAC_PBOOK */
+#define PMU_MAX_BATTERIES	2
 
+/* values for pmu_power_flags */
+#define PMU_PWR_AC_PRESENT	0x00000001
+
+/* values for pmu_battery_info.flags */
+#define PMU_BATT_PRESENT	0x00000001
+#define PMU_BATT_CHARGING	0x00000002
+
+struct pmu_battery_info
+{
+	unsigned int	flags;
+	unsigned int	charge;		/* current charge */
+	unsigned int	max_charge;	/* maximum charge */
+	signed int	current;	/* current, positive if charging */
+	unsigned int	voltage;	/* voltage */
+	unsigned int	time_remaining;	/* remaining time */
+};
+
+extern int pmu_battery_count;
+extern struct pmu_battery_info pmu_batteries[PMU_MAX_BATTERIES];
+extern unsigned int pmu_power_flags;
+
+#endif /* CONFIG_PMAC_PBOOK */
 
 #endif	/* __KERNEL__ */

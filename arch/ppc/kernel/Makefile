@@ -1,4 +1,4 @@
-# BK Id: SCCS/s.Makefile 1.34 10/16/01 15:58:42 trini
+# BK Id: SCCS/s.Makefile 1.36 12/01/01 20:09:06 benh
 #
 #
 # Makefile for the linux kernel.
@@ -56,7 +56,7 @@ ifeq ($(CONFIG_APUS),y)
 obj-$(CONFIG_PCI)		+= apus_pci.o
 endif
 obj-$(CONFIG_ALL_PPC)		+= pmac_pic.o pmac_setup.o pmac_time.o prom.o \
-					feature.o pmac_pci.o chrp_setup.o \
+					pmac_feature.o pmac_pci.o chrp_setup.o \
 					chrp_time.o chrp_pci.o 	open_pic.o \
 					indirect_pci.o i8259.o prep_pci.o \
 					prep_time.o prep_nvram.o prep_setup.o

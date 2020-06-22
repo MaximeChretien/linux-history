@@ -5,7 +5,7 @@
  *
  *		ROUTE - implementation of the IP router.
  *
- * Version:	$Id: route.c,v 1.102 2001/10/31 21:55:54 davem Exp $
+ * Version:	$Id: route.c,v 1.102.2.1 2002/01/12 07:43:57 davem Exp $
  *
  * Authors:	Ross Biro, <bir7@leland.Stanford.Edu>
  *		Fred N. van Kempen, <waltje@uWalt.NL.Mugnet.ORG>
@@ -214,7 +214,7 @@ static int rt_cache_get_info(char *buffer, char **start, off_t offset,
 {
 	int len = 0;
 	off_t pos = 128;
-	char temp[129];
+	char temp[256];
 	struct rtable *r;
 	int i;
 

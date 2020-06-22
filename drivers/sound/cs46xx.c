@@ -1910,11 +1910,8 @@ static int cs_midi_release(struct inode *inode, struct file *file)
                                 break;
                         if (signal_pending(current))
                                 break;
-                        if (file->f_flags & O_NONBLOCK) {
-                                remove_wait_queue(&card->midi.owait, &wait);
-                                current->state = TASK_RUNNING;
-                                return -EBUSY;
-                        }                      
+                        if (file->f_flags & O_NONBLOCK)
+                        	break;
                         tmo = (count * HZ) / 3100;
                         if (!schedule_timeout(tmo ? : 1) && tmo)
                                 printk(KERN_DEBUG "cs46xx: midi timed out??\n");
@@ -2117,7 +2114,7 @@ static ssize_t cs_read(struct file *file, char *buffer, size_t count, loff_t *pp
 	
 	down(&state->sem);
 	if (!dmabuf->ready && (ret = __prog_dmabuf(state)))
-		goto out;
+		goto out2;
 
 	add_wait_queue(&state->dmabuf.wait, &wait);
 	while (count > 0) {
@@ -2187,8 +2184,9 @@ static ssize_t cs_read(struct file *file, char *buffer, size_t count, loff_t *pp
                 start_adc(state);
 	}
 out:
-	up(&state->sem);
 	remove_wait_queue(&state->dmabuf.wait, &wait);
+out2:
+	up(&state->sem);
 	set_current_state(TASK_RUNNING);
 	CS_DBGOUT(CS_WAVE_READ | CS_FUNCTION, 4, 
 		printk("cs46xx: cs_read()- %d\n",ret) );
@@ -2213,6 +2211,8 @@ static ssize_t cs_write(struct file *file, const char *buffer, size_t count, lof
 	state = (struct cs_state *)card->states[1];
 	if(!state)
 		return -ENODEV;
+	if (!access_ok(VERIFY_READ, buffer, count))
+		return EFAULT;
 	dmabuf = &state->dmabuf;
 
 	if (ppos != &file->f_pos)
@@ -2227,11 +2227,6 @@ static ssize_t cs_write(struct file *file, const char *buffer, size_t count, lof
 
 	if (!dmabuf->ready && (ret = __prog_dmabuf(state)))
 		goto out;
-	if (!access_ok(VERIFY_READ, buffer, count))
-	{
-	ret = -EFAULT;
-	goto out;
-	}
 	add_wait_queue(&state->dmabuf.wait, &wait);
 	ret = 0;
 /*
@@ -5249,6 +5244,8 @@ static struct cs_card_type cards[]={
 	{0x1681, 0x0052, "Hercules Game Theatre XP", amp_hercules, NULL, NULL},
 	{0x1681, 0x0053, "Hercules Game Theatre XP", amp_hercules, NULL, NULL},
 	{0x1681, 0x0054, "Hercules Game Theatre XP", amp_hercules, NULL, NULL},
+	{0x1681, 0xa010, "Hercules Fortissimo II", amp_none, NULL, NULL},
+	
 	/* Not sure if the 570 needs the clkrun hack */
 	{PCI_VENDOR_ID_IBM, 0x0132, "Thinkpad 570", amp_none, NULL, clkrun_hack},
 	{PCI_VENDOR_ID_IBM, 0x0153, "Thinkpad 600X/A20/T20", amp_none, NULL, clkrun_hack},

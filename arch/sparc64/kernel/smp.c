@@ -218,7 +218,7 @@ void __init smp_callin(void)
 	atomic_inc(&init_mm.mm_count);
 	current->active_mm = &init_mm;
 
-	while (!smp_processors_ready)
+	while (!smp_threads_ready)
 		membar("#LoadLoad");
 }
 
@@ -269,7 +269,7 @@ void __init smp_boot_cpus(void)
 			continue;
 
 		if ((cpucount + 1) == max_cpus)
-			break;
+			goto ignorecpu;
 		if (cpu_present_map & (1UL << i)) {
 			unsigned long entry = (unsigned long)(&sparc64_cpu_startup);
 			unsigned long cookie = (unsigned long)(&cpu_new_task);
@@ -314,13 +314,15 @@ void __init smp_boot_cpus(void)
 			}
 		}
 		if (!callin_flag) {
+ignorecpu:
 			cpu_present_map &= ~(1UL << i);
 			__cpu_number_map[i] = -1;
 		}
 	}
 	cpu_new_task = NULL;
 	if (cpucount == 0) {
-		printk("Error: only one processor found.\n");
+		if (max_cpus != 1)
+			printk("Error: only one processor found.\n");
 		cpu_present_map = (1UL << smp_processor_id());
 	} else {
 		unsigned long bogosum = 0;
@@ -676,6 +678,39 @@ void smp_flush_dcache_page_impl(struct page *page, int cpu)
 			atomic_inc(&dcpage_flushes_xcall);
 #endif
 		}
+	}
+}
+
+void flush_dcache_page_all(struct mm_struct *mm, struct page *page)
+{
+	if (smp_processors_ready) {
+		unsigned long mask = cpu_present_map & ~(1UL << smp_processor_id());
+		u64 data0;
+
+#ifdef CONFIG_DEBUG_DCFLUSH
+		atomic_inc(&dcpage_flushes);
+#endif
+		if (mask == 0UL)
+			goto flush_self;
+		if (tlb_type == spitfire) {
+			data0 = ((u64)&xcall_flush_dcache_page_spitfire);
+			if (page->mapping != NULL)
+				data0 |= ((u64)1 << 32);
+			spitfire_xcall_deliver(data0,
+					       __pa(page->virtual),
+					       (u64) page->virtual,
+					       mask);
+		} else {
+			data0 = ((u64)&xcall_flush_dcache_page_cheetah);
+			cheetah_xcall_deliver(data0,
+					      __pa(page->virtual),
+					      0, mask);
+		}
+#ifdef CONFIG_DEBUG_DCFLUSH
+		atomic_inc(&dcpage_flushes_xcall);
+#endif
+	flush_self:
+		__local_flush_dcache_page(page);
 	}
 }
 

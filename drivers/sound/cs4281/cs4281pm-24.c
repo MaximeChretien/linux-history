@@ -4,7 +4,7 @@
 *
 *      Copyright (C) 2000,2001  Cirrus Logic Corp.  
 *            -- tom woller (twoller@crystal.cirrus.com) or
-*               (audio@crystal.cirrus.com).
+*               (pcaudio@crystal.cirrus.com).
 *
 *      This program is free software; you can redistribute it and/or modify
 *      it under the terms of the GNU General Public License as published by
@@ -25,28 +25,44 @@
 *******************************************************************************/
 
 #ifndef NOT_CS4281_PM
-#include <linux/pm.h>
 
-#define cs_pm_register(a, b, c) pm_register((a), (b), (c));
-#define cs_pm_unregister_all(a) pm_unregister_all((a));
+#if CS4281_PCI_PM_SUPPORT_ENABLE
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,4,12)
+static int cs4281_suspend_tbl(struct pci_dev *pcidev, u32 unused)
+{
+	struct cs4281_state *s = pci_get_drvdata(pcidev);
+	cs4281_suspend(s);
+	return 0;
+}
 
-int cs4281_suspend(struct cs4281_state *s);
-int cs4281_resume(struct cs4281_state *s);
-/* 
-* for now (12/22/00) only enable the pm_register PM support.
-* allow these table entries to be null.
-#define CS4281_SUSPEND_TBL cs4281_suspend_tbl
-#define CS4281_RESUME_TBL cs4281_resume_tbl
-*/
-#define CS4281_SUSPEND_TBL cs4281_null
-#define CS4281_RESUME_TBL cs4281_null
+static int cs4281_resume_tbl(struct pci_dev *pcidev)
+{
+	struct cs4281_state *s = pci_get_drvdata(pcidev);
+	cs4281_resume(s);
+	return 0;
+}
+#else
+void cs4281_suspend_tbl(struct pci_dev *pcidev)
+{
+	struct cs4281_state *s = pci_get_drvdata(pcidev);
+	cs4281_suspend(s);
+	return;
+}
 
+void cs4281_resume_tbl(struct pci_dev *pcidev)
+{
+	struct cs4281_state *s = pci_get_drvdata(pcidev);
+	cs4281_resume(s);
+	return;
+}
+#endif
+#else
 int cs4281_pm_callback(struct pm_dev *dev, pm_request_t rqst, void *data)
 {
 	struct cs4281_state *state;
 
-	CS_DBGOUT(CS_PM, 2, printk(KERN_INFO 
-		"cs4281: cs4281_pm_callback dev=0x%x rqst=0x%x state=%d\n",
+	CS_DBGOUT(CS_PM, 2, printk(
+		"cs4281: cs4281_pm_callback()+ dev=0x%x rqst=0x%x state=%d\n",
 			(unsigned)dev,(unsigned)rqst,(unsigned)data));
 	state = (struct cs4281_state *) dev->data;
 	if (state) {
@@ -73,12 +89,13 @@ int cs4281_pm_callback(struct pm_dev *dev, pm_request_t rqst, void *data)
 				break;
 		}
 	}
+	CS_DBGOUT(CS_PM, 2, printk("cs4281: cs4281_pm_callback()- 0\n"));
 
 	return 0;
 }
+#endif //#if CS4281_PCI_PM_SUPPORT_ENABLE
 
-#else /* CS4281_PM */
-#define CS4281_SUSPEND_TBL cs4281_null
-#define CS4281_RESUME_TBL cs4281_null
-#endif /* CS4281_PM */
-
+#else /* NOT_CS4281_PM */
+#define CS4281_SUSPEND_TBL cs4281_null_suspend
+#define CS4281_RESUME_TBL cs4281_null_resume
+#endif /* NOT_CS4281_PM */

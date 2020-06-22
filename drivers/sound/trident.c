@@ -187,6 +187,7 @@
 #define TRIDENT_STATE_MAGIC	0x63657373 /* "cess" */
 
 #define TRIDENT_DMA_MASK	0x3fffffff /* DMA buffer mask for pci_alloc_consist */
+#define ALI_DMA_MASK		0xffffffff /* ALI Tridents lack the 30-bit limitation */
 
 #define NR_HW_CH		32
 
@@ -3948,13 +3949,20 @@ static int __init trident_probe(struct pci_dev *pci_dev, const struct pci_device
 	u16 temp;
 	struct pci_dev *pci_dev_m1533 = NULL;
 	int rc = -ENODEV;
+	u64 dma_mask;
 
 	if (pci_enable_device(pci_dev))
 		goto out;
 
-	if (pci_set_dma_mask(pci_dev, TRIDENT_DMA_MASK)) {
+	if (pci_dev->device == PCI_DEVICE_ID_ALI_5451)
+		dma_mask = ALI_DMA_MASK;
+	else
+		dma_mask = TRIDENT_DMA_MASK;
+	if (pci_set_dma_mask(pci_dev, dma_mask)) {
 		printk(KERN_ERR "trident: architecture does not support"
-		       " 30bit PCI busmaster DMA\n");
+		       " %s PCI busmaster DMA\n",
+		       pci_dev->device == PCI_DEVICE_ID_ALI_5451 ?
+		       "32-bit" : "30-bit");
 		goto out;
 	}
 	pci_read_config_byte(pci_dev, PCI_CLASS_REVISION, &revision);
@@ -4141,7 +4149,7 @@ out_release_region:
 	goto out;
 }
 
-static void __exit trident_remove(struct pci_dev *pci_dev)
+static void __devexit trident_remove(struct pci_dev *pci_dev)
 {
 	int i;
 	struct trident_card *card = pci_get_drvdata(pci_dev);
@@ -4194,7 +4202,7 @@ static struct pci_driver trident_pci_driver = {
 	name:		TRIDENT_MODULE_NAME,
 	id_table:	trident_pci_tbl,
 	probe:		trident_probe,
-	remove:		trident_remove,
+	remove:		__devexit_p(trident_remove),
 	suspend:	trident_suspend,
 	resume:		trident_resume
 };

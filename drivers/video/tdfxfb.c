@@ -401,7 +401,7 @@ static void tdfxfb_blank(int blank,
 /*
  *  Internal routines
  */
-static void tdfxfb_set_par(const struct tdfxfb_par* par,
+static void tdfxfb_set_par(struct tdfxfb_par* par,
 			   struct fb_info_tdfx* 
 			   info);
 static int  tdfxfb_decode_var(const struct fb_var_screeninfo *var,
@@ -1275,7 +1275,7 @@ static struct display_switch fbcon_banshee32 = {
 
 /* ------------------------------------------------------------------------- */
 
-static void tdfxfb_set_par(const struct tdfxfb_par* par,
+static void tdfxfb_set_par(struct tdfxfb_par* par,
 			   struct fb_info_tdfx*     info) {
   struct fb_info_tdfx* i = (struct fb_info_tdfx*)info;
   struct banshee_reg reg;
@@ -1290,6 +1290,28 @@ static void tdfxfb_set_par(const struct tdfxfb_par* par,
 
   cpp = (par->bpp + 7)/8;
   
+  reg.vidcfg = 
+    VIDCFG_VIDPROC_ENABLE |
+    VIDCFG_DESK_ENABLE    |
+    VIDCFG_CURS_X11 |
+    ((cpp - 1) << VIDCFG_PIXFMT_SHIFT) |
+    (cpp != 1 ? VIDCFG_CLUT_BYPASS : 0);
+
+  /* PLL settings */
+  freq = par->pixclock;
+
+  reg.dacmode = 0;
+  reg.vidcfg  &= ~VIDCFG_2X;
+
+  if(freq > i->max_pixclock/2) {
+    freq = freq > i->max_pixclock ? i->max_pixclock : freq;
+    reg.dacmode |= DACMODE_2X;
+    reg.vidcfg  |= VIDCFG_2X;
+    par->hdispend >>= 1;
+    par->hsyncsta >>= 1;
+    par->hsyncend >>= 1;
+    par->htotal   >>= 1;
+  }
   wd = (par->hdispend >> 3) - 1;
 
   hd  = (par->hdispend >> 3) - 1;
@@ -1356,9 +1378,7 @@ static void tdfxfb_set_par(const struct tdfxfb_par* par,
   reg.crt[0x02] = hbs;
   reg.crt[0x03] = 0x80 | (hbe & 0x1f);
   reg.crt[0x04] = hs;
-  reg.crt[0x05] = 
-    ((hbe & 0x20) << 2) | 
-    (he & 0x1f);
+  reg.crt[0x05] = ((hbe & 0x20) << 2) | (he & 0x1f);
   reg.crt[0x06] = vt;
   reg.crt[0x07] = 
     ((vs & 0x200) >> 2) |
@@ -1380,9 +1400,7 @@ static void tdfxfb_set_par(const struct tdfxfb_par* par,
   reg.crt[0x0e] = 0x00;
   reg.crt[0x0f] = 0x00;
   reg.crt[0x10] = vs;
-  reg.crt[0x11] = 
-    (ve & 0x0f) |
-    0x20;
+  reg.crt[0x11] = (ve & 0x0f) | 0x20;
   reg.crt[0x12] = vd;
   reg.crt[0x13] = wd;
   reg.crt[0x14] = 0x00;
@@ -1411,13 +1429,6 @@ static void tdfxfb_set_par(const struct tdfxfb_par* par,
     VGAINIT0_EXTSHIFTOUT;
   reg.vgainit1 = tdfx_inl(VGAINIT1) & 0x1fffff;
 
-  reg.vidcfg = 
-    VIDCFG_VIDPROC_ENABLE |
-    VIDCFG_DESK_ENABLE    |
-    VIDCFG_CURS_X11 |
-    ((cpp - 1) << VIDCFG_PIXFMT_SHIFT) |
-    (cpp != 1 ? VIDCFG_CLUT_BYPASS : 0);
-  
   fb_info.cursor.enable=reg.vidcfg | VIDCFG_HWCURSOR_ENABLE;
   fb_info.cursor.disable=reg.vidcfg;
    
@@ -1433,16 +1444,6 @@ static void tdfxfb_set_par(const struct tdfxfb_par* par,
   reg.srcbase   = reg.startaddr;
   reg.dstbase   = reg.startaddr;
 
-  /* PLL settings */
-  freq = par->pixclock;
-
-  reg.dacmode &= ~DACMODE_2X;
-  reg.vidcfg  &= ~VIDCFG_2X;
-  if(freq > i->max_pixclock/2) {
-    freq = freq > i->max_pixclock ? i->max_pixclock : freq;
-    reg.dacmode |= DACMODE_2X;
-    reg.vidcfg  |= VIDCFG_2X;
-  }
   reg.vidpll = do_calc_pll(freq, &fout);
 #if 0
   reg.mempll = do_calc_pll(..., &fout);
@@ -1473,9 +1474,13 @@ static void tdfxfb_set_par(const struct tdfxfb_par* par,
 #endif
 
   do_write_regs(&reg);
-
+  if (reg.vidcfg & VIDCFG_2X) {
+    par->hdispend <<= 1;
+    par->hsyncsta <<= 1;
+    par->hsyncend <<= 1;
+    par->htotal   <<= 1;
+  }
   i->current_par = *par;
-
 }
 
 static int tdfxfb_decode_var(const struct fb_var_screeninfo* var,

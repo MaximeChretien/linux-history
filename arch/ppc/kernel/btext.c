@@ -133,11 +133,16 @@ btext_prepare_BAT(void)
 {
 	unsigned long offset = reloc_offset();
 	boot_infos_t* bi = PTRRELOC(RELOC(disp_bi));
-	unsigned long addr = (unsigned long)bi->dispDeviceBase;
 	unsigned long vaddr = KERNELBASE + 0x10000000;
+	unsigned long addr;
 	unsigned long lowbits;
 
 	if (!RELOC(disp_bi)) {
+		RELOC(boot_text_mapped) = 0;
+		return;
+	}
+	addr = (unsigned long)bi->dispDeviceBase;
+	if (!addr) {
 		RELOC(boot_text_mapped) = 0;
 		return;
 	}
@@ -231,10 +236,10 @@ btext_update_display(unsigned long phys, int width, int height,
 {
 	if (disp_bi == 0)
 		return;
-	/* check it's the same frame buffer (within 64MB) */
-	if ((phys ^ (unsigned long)disp_bi->dispDeviceBase) & 0xfc000000) {
+
+	/* check it's the same frame buffer (within 256MB) */
+	if ((phys ^ (unsigned long)disp_bi->dispDeviceBase) & 0xf0000000)
 		return;
-	}
 
 	disp_bi->dispDeviceBase = (__u8 *) phys;
 	disp_bi->dispDeviceRect[0] = 0;
@@ -423,9 +428,11 @@ draw_byte(unsigned char c, long locX, long locY)
 	int rb			= bi->dispDeviceRowBytes;
 	
 	switch(bi->dispDeviceDepth) {
+	case 24:
 	case 32:
 		draw_byte_32(font, (unsigned long *)base, rb);
 		break;
+	case 15:
 	case 16:
 		draw_byte_16(font, (unsigned long *)base, rb);
 		break;

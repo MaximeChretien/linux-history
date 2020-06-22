@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.start.c 1.16 08/20/01 22:17:58 paulus
+ * BK Id: SCCS/s.start.c 1.18 12/01/01 20:09:07 benh
  */
 /*
  * Copyright (C) 1996 Paul Mackerras.
@@ -13,9 +13,11 @@
 #include <linux/pmu.h>
 #include <linux/cuda.h>
 #include <linux/kernel.h>
+#include <linux/errno.h>
 #include <asm/prom.h>
 #include <asm/bootx.h>
-#include <asm/feature.h>
+#include <asm/machdep.h>
+#include <asm/pmac_feature.h>
 #include <asm/processor.h>
 #include <asm/delay.h>
 #include <asm/btext.h>
@@ -32,7 +34,7 @@ static int console;
 static int use_screen;
 static int via_modem;
 static int xmon_use_sccb;
-static struct device_node *macio_node;
+static struct device_node *channel_node;
 
 #define TB_SPEED	25000000
 
@@ -99,6 +101,7 @@ xmon_map_scc(void)
 				np = np->sibling;
 			if (np != NULL) {
 				/* XXX should parse this properly */
+				channel_node = np;
 				slots = get_property(np, "slot-names", &l);
 				if (slots != NULL && l >= 10
 				    && strcmp(slots+4, "Modem") == 0)
@@ -126,10 +129,8 @@ xmon_map_scc(void)
 		RXRDY = 1;
 		
 		np = find_devices("mac-io");
-		if (np && np->n_addrs) {
-			macio_node = np;
+		if (np && np->n_addrs)
 			addr = np->addrs[0].address + 0x13020;
-		}
 		base = (volatile unsigned char *) ioremap(addr & PAGE_MASK, PAGE_SIZE);
 		sccc = base + (addr & ~PAGE_MASK);
 		sccd = sccc + 0x10;
@@ -349,12 +350,19 @@ xmon_init_scc()
 	{
 		int i, x;
 
-		if (macio_node != 0)
-			feature_set(macio_node, FEATURE_Serial_enable);
-		if (via_modem && macio_node != 0) {
+		if (channel_node != 0)
+			pmac_call_feature(
+				PMAC_FTR_SCC_ENABLE,
+				channel_node,
+				PMAC_SCC_ASYNC | PMAC_SCC_FLAG_XMON, 1);
+			printk(KERN_INFO "Serial port locked ON by debugger !\n");
+		if (via_modem && channel_node != 0) {
 			unsigned int t0;
 
-			feature_set(macio_node, FEATURE_Modem_power);
+			pmac_call_feature(
+				PMAC_FTR_MODEM_ENABLE,
+				channel_node, 0, 1);
+			printk(KERN_INFO "Modem powered up by debugger !\n");
 			t0 = readtb();
 			while (readtb() - t0 < 3*TB_SPEED)
 				eieio();

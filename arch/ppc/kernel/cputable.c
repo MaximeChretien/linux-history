@@ -26,6 +26,7 @@ extern void __setup_cpu_603(int cpu_nr);
 extern void __setup_cpu_604(int cpu_nr);
 extern void __setup_cpu_750(int cpu_nr);
 extern void __setup_cpu_7400(int cpu_nr);
+extern void __setup_cpu_7410(int cpu_nr);
 extern void __setup_cpu_7450(int cpu_nr);
 extern void __setup_cpu_power3(int cpu_nr);
 extern void __setup_cpu_power4(int cpu_nr);
@@ -113,10 +114,18 @@ struct cpu_spec	cpu_specs[] = {
 	32, 32,
 	__setup_cpu_604
     },
-    {	/* 750 (0x4202, don't support TAU ?) */
-    	0xffffffff, 0x00084202, "750",
+    {	/* 740/750 (0x4202, don't support TAU ?) */
+    	0xffffffff, 0x00084202, "740/750",
     	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_CAN_DOZE | CPU_FTR_USE_TB |
 	CPU_FTR_L2CR | CPU_FTR_HPTE_TABLE,
+	COMMON_PPC,
+	32, 32,
+	__setup_cpu_750
+    },
+    {	/* 745/755 */
+    	0xfffff000, 0x00083000, "745/755",
+    	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_CAN_DOZE | CPU_FTR_USE_TB |
+	CPU_FTR_L2CR | CPU_FTR_TAU | CPU_FTR_HPTE_TABLE,
 	COMMON_PPC,
 	32, 32,
 	__setup_cpu_750
@@ -159,9 +168,18 @@ struct cpu_spec	cpu_specs[] = {
 	CPU_FTR_L2CR | CPU_FTR_TAU | CPU_FTR_ALTIVEC_COMP | CPU_FTR_HPTE_TABLE,
 	COMMON_PPC | PPC_FEATURE_HAS_ALTIVEC,
 	32, 32,
-	__setup_cpu_7400
+	__setup_cpu_7410
     },
-    {	/* 7450 */
+    {	/* 7450 2.0 - no doze/nap */
+    	0xffffffff, 0x80000200, "7450",
+    	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_USE_TB |
+	CPU_FTR_L2CR | CPU_FTR_TAU | CPU_FTR_ALTIVEC_COMP |
+	CPU_FTR_HPTE_TABLE | CPU_FTR_SPEC7450,
+	COMMON_PPC | PPC_FEATURE_HAS_ALTIVEC,
+	32, 32,
+	__setup_cpu_7450
+    },
+    {	/* 7450 others */
     	0xffff0000, 0x80000000, "7450",
     	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_CAN_DOZE | CPU_FTR_USE_TB |
 	CPU_FTR_L2CR | CPU_FTR_TAU | CPU_FTR_ALTIVEC_COMP |

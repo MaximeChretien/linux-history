@@ -6,7 +6,7 @@
 # CONFIG_MCA is not set
 CONFIG_RWSEM_GENERIC_SPINLOCK=y
 # CONFIG_RWSEM_XCHGADD_ALGORITHM is not set
-CONFIG_GENERIC_BUST_SPINLOCK=n
+# CONFIG_GENERIC_BUST_SPINLOCK is not set
 CONFIG_ARCH_S390=y
 CONFIG_ARCH_S390X=y
 
@@ -103,8 +103,8 @@ CONFIG_S390_TAPE_BLOCK=y
 #
 # S/390 tape hardware support
 #
-CONFIG_S390_TAPE_3490=y
-CONFIG_S390_TAPE_3480=y
+CONFIG_S390_TAPE_3490=m
+CONFIG_S390_TAPE_3480=m
 
 #
 # Network device drivers
@@ -150,6 +150,7 @@ CONFIG_IPV6=m
 # CONFIG_IPV6_NETLINK is not set
 # CONFIG_KHTTPD is not set
 # CONFIG_ATM is not set
+# CONFIG_VLAN_8021Q is not set
 
 #
 #  
@@ -180,12 +181,12 @@ CONFIG_IPV6=m
 # CONFIG_AUTOFS4_FS is not set
 # CONFIG_REISERFS_FS is not set
 # CONFIG_REISERFS_CHECK is not set
+# CONFIG_REISERFS_PROC_INFO is not set
 # CONFIG_ADFS_FS is not set
 # CONFIG_ADFS_FS_RW is not set
 # CONFIG_AFFS_FS is not set
 # CONFIG_HFS_FS is not set
 # CONFIG_BFS_FS is not set
-# CONFIG_CMS_FS is not set
 # CONFIG_EXT3_FS is not set
 # CONFIG_JBD is not set
 # CONFIG_JBD_DEBUG is not set
@@ -203,7 +204,7 @@ CONFIG_IPV6=m
 # CONFIG_JOLIET is not set
 # CONFIG_ZISOFS is not set
 # CONFIG_MINIX_FS is not set
-# CONFIG_FREEVXFS_FS is not set
+# CONFIG_VXFS_FS is not set
 # CONFIG_NTFS_FS is not set
 # CONFIG_NTFS_RW is not set
 # CONFIG_HPFS_FS is not set

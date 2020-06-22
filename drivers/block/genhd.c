@@ -33,6 +33,7 @@ static rwlock_t gendisk_lock;
  *	the only reason this is exported is source compatiblity.
  */
 /*static*/ struct gendisk *gendisk_head;
+static struct gendisk *gendisk_array[MAX_BLKDEV];
 
 EXPORT_SYMBOL(gendisk_head);
 
@@ -65,6 +66,7 @@ add_gendisk(struct gendisk *gp)
 			goto out;
 		}
 	}
+	gendisk_array[gp->major] = gp;
 	gp->next = gendisk_head;
 	gendisk_head = gp;
 out:
@@ -87,6 +89,7 @@ del_gendisk(struct gendisk *gp)
 	struct gendisk **gpp;
 
 	write_lock(&gendisk_lock);
+	gendisk_array[gp->major] = NULL;
 	for (gpp = &gendisk_head; *gpp; gpp = &((*gpp)->next))
 		if (*gpp == gp)
 			break;
@@ -112,11 +115,15 @@ get_gendisk(kdev_t dev)
 	int maj = MAJOR(dev);
 
 	read_lock(&gendisk_lock);
+	if ((gp = gendisk_array[maj]))
+		goto out;
+
+	/* This is needed for early 2.4 source compatiblity.  --hch */
 	for (gp = gendisk_head; gp; gp = gp->next)
 		if (gp->major == maj)
 			break;
+out:
 	read_unlock(&gendisk_lock);
-
 	return gp;
 }
 

@@ -172,6 +172,8 @@ void coda_vattr_to_iattr(struct inode *inode, struct coda_vattr *attr)
 	        inode->i_mtime = attr->va_mtime.tv_sec;
         if (attr->va_ctime.tv_sec != -1)
 	        inode->i_ctime = attr->va_ctime.tv_sec;
+	if (!inode->i_ctime)
+		inode->i_ctime = inode->i_mtime;
 }
 
 

@@ -29,14 +29,15 @@
 #include <asm/prom.h>
 #include <asm/uaccess.h>
 #include <asm/mediabay.h>
-#include <asm/feature.h>
+#include <asm/machdep.h>
+#include <asm/pmac_feature.h>
 
 #define MAJOR_NR	FLOPPY_MAJOR
 #include <linux/blk.h>
 #include <linux/devfs_fs_kernel.h>
 
 static int floppy_blocksizes[2] = {512,512};
-static int floppy_sizes[2] = {2880,2880};
+static int floppy_sizes[2] = {1440,1440};
 
 #define MAX_FLOPPIES	2
 
@@ -444,9 +445,9 @@ static inline void setup_transfer(struct floppy_state *fs)
 		++cp;
 		init_dma(cp, OUTPUT_MORE, CURRENT->buffer, 512);
 		++cp;
-		init_dma(cp, OUTPUT_MORE, write_postamble, sizeof(write_postamble));
+		init_dma(cp, OUTPUT_LAST, write_postamble, sizeof(write_postamble));
 	} else {
-		init_dma(cp, INPUT_MORE, CURRENT->buffer, n * 512);
+		init_dma(cp, INPUT_LAST, CURRENT->buffer, n * 512);
 	}
 	++cp;
 	out_le16(&cp->command, DBDMA_STOP);
@@ -678,7 +679,10 @@ static void swim3_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 			break;
 		dr = fs->dma;
 		cp = fs->dma_cmd;
-		st_le32(&dr->control, RUN << 16);
+		/* We must wait a bit for dbdma to complete */
+		for (n=0; (in_le32(&dr->status) & ACTIVE) && n < 1000; n++)
+			udelay(10);
+		DBDMA_DO_STOP(dr);
 		out_8(&sw->intr_enable, 0);
 		out_8(&sw->control_bic, WRITE_SECTORS | DO_ACTION);
 		out_8(&sw->select, RELAX);
@@ -1070,9 +1074,14 @@ static int swim3_add_device(struct device_node *swim)
 		return -EINVAL;
 	}
 
+	if (!request_OF_resource(swim, 0, NULL)) {
+		printk(KERN_INFO "swim3: can't request IO resource !\n");
+		return -EINVAL;
+	}
+
 	mediabay = (strcasecmp(swim->parent->type, "media-bay") == 0) ? swim->parent : NULL;
 	if (mediabay == NULL)
-		feature_set(swim, FEATURE_SWIM3_enable);
+		pmac_call_feature(PMAC_FTR_SWIM3_ENABLE, swim, 0, 1);
 	
 	memset(fs, 0, sizeof(*fs));
 	fs->state = idle;
@@ -1094,14 +1103,14 @@ static int swim3_add_device(struct device_node *swim)
 
 	if (request_irq(fs->swim3_intr, swim3_interrupt, 0, "SWIM3", fs)) {
 		printk(KERN_ERR "Couldn't get irq %d for SWIM3\n", fs->swim3_intr);
-		feature_clear(swim, FEATURE_SWIM3_enable);
+		pmac_call_feature(PMAC_FTR_SWIM3_ENABLE, swim, 0, 0);
 		return -EBUSY;
 	}
 /*
 	if (request_irq(fs->dma_intr, fd_dma_interrupt, 0, "SWIM3-dma", fs)) {
 		printk(KERN_ERR "Couldn't get irq %d for SWIM3 DMA",
 		       fs->dma_intr);
-		feature_clear(swim, FEATURE_SWIM3_enable);
+		pmac_call_feature(PMAC_FTR_SWIM3_ENABLE, swim, 0, 0);
 		return -EBUSY;
 	}
 */

@@ -64,6 +64,7 @@ obj-$(CONFIG_FB_OF)               += offb.o
 obj-$(CONFIG_FB_IMSTT)            += imsttfb.o
 obj-$(CONFIG_FB_RETINAZ3)         += retz3fb.o
 obj-$(CONFIG_FB_CLGEN)            += clgenfb.o fbgen.o
+obj-$(CONFIG_FB_TRIDENT)          += tridentfb.o fbgen.o
 obj-$(CONFIG_FB_S3TRIO)           += S3triofb.o
 obj-$(CONFIG_FB_TGA)              += tgafb.o fbgen.o
 obj-$(CONFIG_FB_VESA)             += vesafb.o 

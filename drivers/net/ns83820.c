@@ -848,7 +848,7 @@ static void rx_irq(struct ns83820 *dev)
 			skb->protocol = eth_type_trans(skb, &dev->net_dev);
 			if (NET_RX_DROP == netif_rx(skb))
 				dev->stats.rx_dropped ++;
-#ifndef __i386__
+#if 0 //ndef __i386__
 		done:;
 #endif
 		} else {

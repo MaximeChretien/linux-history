@@ -45,7 +45,7 @@ static void *page_buf;
 static spinlock_t i2o_config_lock = SPIN_LOCK_UNLOCKED;
 struct wait_queue *i2o_wait_queue;
 
-#define MODINC(x,y) (x = x++ % y)
+#define MODINC(x,y) ((x) = ((x) + 1) % (y))
 
 struct i2o_cfg_info
 {

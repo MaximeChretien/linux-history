@@ -439,6 +439,7 @@ void __init setup_arch(char **cmdline_p)
 	lowcore->kernel_stack = ((__u32) &init_task_union) + 8192;
 	lowcore->async_stack = (__u32)
 		__alloc_bootmem(2*PAGE_SIZE, 2*PAGE_SIZE, 0) + 8192;
+	lowcore->jiffy_timer = -1LL;
 	set_prefix((__u32) lowcore);
         cpu_init();
         boot_cpu_addr = S390_lowcore.cpu_data.cpu_addr;
@@ -485,15 +486,16 @@ void print_cpu_info(struct cpuinfo_S390 *cpuinfo)
 static int show_cpuinfo(struct seq_file *m, void *v)
 {
         struct cpuinfo_S390 *cpuinfo;
-	unsigned n = v;
+	unsigned long n = (unsigned long) v - 1;
 
-	if (!n--) {
+	if (!n) {
 		seq_printf(m, "vendor_id       : IBM/S390\n"
 			       "# processors    : %i\n"
 			       "bogomips per cpu: %lu.%02lu\n",
 			       smp_num_cpus, loops_per_jiffy/(500000/HZ),
 			       (loops_per_jiffy/(5000/HZ))%100);
-	} else if (cpu_online_map & (1 << n)) {
+	} 
+	if (cpu_online_map & (1 << n)) {
 		cpuinfo = &safe_get_cpu_lowcore(n).cpu_data;
 		seq_printf(m, "processor %i: "
 			       "version = %02X,  "
@@ -508,7 +510,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 
 static void *c_start(struct seq_file *m, loff_t *pos)
 {
-	return *pos <= NR_CPUS ? (void)(*pos+1) : NULL;
+	return *pos <= NR_CPUS ? (void *)((unsigned long) *pos + 1) : NULL;
 }
 static void *c_next(struct seq_file *m, void *v, loff_t *pos)
 {

@@ -34,6 +34,7 @@
 #include <linux/wait.h>
 #include <linux/init.h>
 #include <linux/delay.h>
+#include <linux/completion.h>
 #include <asm/uaccess.h>
 #ifdef CONFIG_PPC
 #include <asm/prom.h>
@@ -78,7 +79,7 @@ static int adb_got_sleep = 0;
 static int adb_inited = 0;
 static pid_t adb_probe_task_pid;
 static int adb_probe_task_flag;
-static wait_queue_head_t adb_probe_task_wq;
+static struct completion adb_probe_task_comp;
 static int sleepy_trackpad;
 int __adb_probe_sync;
 
@@ -318,7 +319,7 @@ int __init adb_init(void)
 		if (machine_is_compatible("AAPL,PowerBook1998") ||
 			machine_is_compatible("PowerBook1,1"))
 			sleepy_trackpad = 1;
-		init_waitqueue_head(&adb_probe_task_wq);
+		init_completion(&adb_probe_task_comp);
 		adbdev_init();
 		adb_reset_bus();
 	}
@@ -435,7 +436,7 @@ adb_poll(void)
 static void
 adb_probe_wakeup(struct adb_request *req)
 {
-	wake_up(&adb_probe_task_wq);
+	complete(&adb_probe_task_comp);
 }
 
 static struct adb_request adb_sreq;
@@ -484,20 +485,11 @@ adb_request(struct adb_request *req, void (*done)(struct adb_request *),
 	if ((flags & ADBREQ_SYNC) &&
 	    (current->pid && adb_probe_task_pid &&
 	    adb_probe_task_pid == current->pid)) {
-		DECLARE_WAITQUEUE(wait, current);
 		req->done = adb_probe_wakeup;
-		add_wait_queue(&adb_probe_task_wq, &wait);
 		rc = adb_controller->send_request(req, 0);
 		if (rc || req->complete)
 			goto bail;
-		for (;;) {
-			set_current_state(TASK_UNINTERRUPTIBLE);
-			if (req->complete)
-				break;
-			schedule();
-		}
-		current->state = TASK_RUNNING;
-		remove_wait_queue(&adb_probe_task_wq, &wait);
+		wait_for_completion(&adb_probe_task_comp);
 		rc = 0;
 		goto bail;
 	}
@@ -707,17 +699,16 @@ static ssize_t adb_read(struct file *file, char *buf,
 		return ret;
 
 	req = NULL;
+	spin_lock_irqsave(&state->lock, flags);
 	add_wait_queue(&state->wait_queue, &wait);
 	current->state = TASK_INTERRUPTIBLE;
 
 	for (;;) {
-		spin_lock_irqsave(&state->lock, flags);
 		req = state->completed;
 		if (req != NULL)
 			state->completed = req->next;
 		else if (atomic_read(&state->n_pending) == 0)
 			ret = -EIO;
-		spin_unlock_irqrestore(&state->lock, flags);
 		if (req != NULL || ret != 0)
 			break;
 		
@@ -729,12 +720,15 @@ static ssize_t adb_read(struct file *file, char *buf,
 			ret = -ERESTARTSYS;
 			break;
 		}
+		spin_unlock_irqrestore(&state->lock, flags);
 		schedule();
+		spin_lock_irqsave(&state->lock, flags);
 	}
 
 	current->state = TASK_RUNNING;
 	remove_wait_queue(&state->wait_queue, &wait);
-
+	spin_unlock_irqrestore(&state->lock, flags);
+	
 	if (ret)
 		return ret;
 
@@ -757,6 +751,8 @@ static ssize_t adb_write(struct file *file, const char *buf,
 
 	if (count < 2 || count > sizeof(req->data))
 		return -EINVAL;
+	if (adb_controller == NULL)
+		return -ENXIO;
 	ret = verify_area(VERIFY_READ, buf, count);
 	if (ret)
 		return ret;
@@ -776,7 +772,10 @@ static ssize_t adb_write(struct file *file, const char *buf,
 		goto out;
 
 	atomic_inc(&state->n_pending);
-	if (adb_controller == NULL) return -ENXIO;
+
+	/* If a probe is in progress, wait for it to complete */
+	while (adb_probe_task_pid != 0 || test_bit(0, &adb_probe_task_flag))
+		schedule();
 
 	/* Special case for ADB_BUSRESET request, all others are sent to
 	   the controller */
@@ -784,6 +783,8 @@ static ssize_t adb_write(struct file *file, const char *buf,
 		&&(req->data[1] == ADB_BUSRESET)) {
 		ret = do_adb_reset_bus();
 		atomic_dec(&state->n_pending);
+		if (ret == 0)
+			ret = count;
 		goto out;
 	} else {	
 		req->reply_expected = ((req->data[1] & 0xc) == 0xc);

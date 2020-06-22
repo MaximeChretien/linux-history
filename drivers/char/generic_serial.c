@@ -143,7 +143,12 @@ int gs_write(struct tty_struct * tty, int from_user,
 		/* Can't copy more? break out! */
 		if (c <= 0) break;
 		if (from_user)
-			copy_from_user (port->xmit_buf + port->xmit_head, buf, c);
+                       if (copy_from_user (port->xmit_buf + port->xmit_head, 
+                                           buf, c)) {
+                               up (& port->port_write_sem);
+                               return -EFAULT;
+                       }
+
 		else
 			memcpy         (port->xmit_buf + port->xmit_head, buf, c);
 
@@ -214,8 +219,13 @@ int gs_write(struct tty_struct * tty, int from_user,
 		while (1) {
 			c = count;
 
-			/* This is safe because we "OWN" the "head". Noone else can 
-			   change the "head": we own the port_write_sem. */
+			/* Note: This part can be done without
+			 * interrupt routine protection since
+			 * the interrupt routines may only modify
+			 * shared variables in safe ways, in the worst
+			 * case causing us to loop twice in the code
+			 * below. See comments below. */ 
+
 			/* Don't overrun the end of the buffer */
 			t = SERIAL_XMIT_SIZE - port->xmit_head;
 			if (t < c) c = t;
@@ -506,7 +516,7 @@ void gs_start(struct tty_struct * tty)
 
 void gs_shutdown_port (struct gs_port *port)
 {
-	long flags;
+	unsigned long flags;
 
 	func_enter();
 	
@@ -589,6 +599,7 @@ int gs_block_til_ready(void *port_, struct file * filp)
 	int    do_clocal = 0;
 	int    CD;
 	struct tty_struct *tty;
+	unsigned long flags;
 
 	func_enter ();
 
@@ -604,7 +615,7 @@ int gs_block_til_ready(void *port_, struct file * filp)
 	 * until it's done, and then try again.
 	 */
 	if (tty_hung_up_p(filp) || port->flags & ASYNC_CLOSING) {
-	  interruptible_sleep_on(&port->close_wait);
+		interruptible_sleep_on(&port->close_wait);
 		if (port->flags & ASYNC_HUP_NOTIFY)
 			return -EAGAIN;
 		else
@@ -668,10 +679,11 @@ int gs_block_til_ready(void *port_, struct file * filp)
 	add_wait_queue(&port->open_wait, &wait);
 
 	gs_dprintk (GS_DEBUG_BTR, "after add waitq.\n"); 
+	save_flags(flags);
 	cli();
 	if (!tty_hung_up_p(filp))
 		port->count--;
-	sti();
+	restore_flags(flags);
 	port->blocked_open++;
 	while (1) {
 		CD = port->rd->get_CD (port);
@@ -1003,7 +1015,8 @@ int gs_setserial(struct gs_port *port, struct serial_struct *sp)
 {
 	struct serial_struct sio;
 
-	copy_from_user(&sio, sp, sizeof(struct serial_struct));
+	if (copy_from_user(&sio, sp, sizeof(struct serial_struct)))
+		return(-EFAULT);
 
 	if (!capable(CAP_SYS_ADMIN)) {
 		if ((sio.baud_base != port->baud_base) ||
@@ -1033,7 +1046,7 @@ int gs_setserial(struct gs_port *port, struct serial_struct *sp)
  *      Generate the serial struct info.
  */
 
-void gs_getserial(struct gs_port *port, struct serial_struct *sp)
+int gs_getserial(struct gs_port *port, struct serial_struct *sp)
 {
 	struct serial_struct    sio;
 
@@ -1055,7 +1068,10 @@ void gs_getserial(struct gs_port *port, struct serial_struct *sp)
 	if (port->rd->getserial)
 		port->rd->getserial (port, &sio);
 
-	copy_to_user(sp, &sio, sizeof(struct serial_struct));
+	if (copy_to_user(sp, &sio, sizeof(struct serial_struct)))
+		return -EFAULT;
+	return 0;
+
 }
 
 

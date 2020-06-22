@@ -20,7 +20,6 @@
 	TODO, in rough priority order:
 	* dev->tx_timeout
 	* LinkChg interrupt
-	* ETHTOOL_[GS]SET
 	* Support forcing media type with a module parameter,
 	  like dl2k.c/sundance.c
 	* Implement PCI suspend/resume
@@ -33,18 +32,19 @@
 	* Rx checksumming
 	* Tx checksumming
 	* ETHTOOL_GREGS, ETHTOOL_[GS]WOL,
-	  ETHTOOL_[GS]MSGLVL, ETHTOOL_NWAY_RST
 	* Jumbo frames / dev->change_mtu
 	* Investigate using skb->priority with h/w VLAN priority
 	* Investigate using High Priority Tx Queue with skb->priority
 	* Adjust Rx FIFO threshold and Max Rx DMA burst on Rx FIFO error
 	* Adjust Tx FIFO threshold and Max Tx DMA burst on Tx FIFO error
+        * Implement Tx software interrupt mitigation via
+	          Tx descriptor bit
 
  */
 
 #define DRV_NAME		"8139cp"
-#define DRV_VERSION		"0.0.5"
-#define DRV_RELDATE		"Oct 19, 2001"
+#define DRV_VERSION		"0.0.6"
+#define DRV_RELDATE		"Nov 19, 2001"
 
 
 #include <linux/module.h>
@@ -55,6 +55,7 @@
 #include <linux/pci.h>
 #include <linux/delay.h>
 #include <linux/ethtool.h>
+#include <linux/mii.h>
 #include <asm/io.h>
 #include <asm/uaccess.h>
 
@@ -76,17 +77,6 @@ static int multicast_filter_limit = 32;
 MODULE_PARM (multicast_filter_limit, "i");
 MODULE_PARM_DESC (multicast_filter_limit, "8139cp maximum number of filtered multicast addresses");
 
-/* Set the copy breakpoint for the copy-only-tiny-buffer Rx structure. */
-#if defined(__alpha__) || defined(__arm__) || defined(__hppa__) \
-        || defined(__sparc_) || defined(__ia64__) \
-        || defined(__sh__) || defined(__mips__)
-static int rx_copybreak = 1518;
-#else
-static int rx_copybreak = 100;
-#endif
-MODULE_PARM (rx_copybreak, "i");
-MODULE_PARM_DESC (rx_copybreak, "8139cp Breakpoint at which Rx packets are copied");
-
 #define PFX			DRV_NAME ": "
 
 #define CP_DEF_MSG_ENABLE	(NETIF_MSG_DRV		| \
@@ -104,10 +94,10 @@ MODULE_PARM_DESC (rx_copybreak, "8139cp Breakpoint at which Rx packets are copie
 	(((CP)->tx_tail <= (CP)->tx_head) ?			\
 	  (CP)->tx_tail + (CP_TX_RING_SIZE - 1) - (CP)->tx_head :	\
 	  (CP)->tx_tail - (CP)->tx_head - 1)
-#define CP_CHIP_VERSION		0x76
 
 #define PKT_BUF_SZ		1536	/* Size of each temporary Rx buffer.*/
 #define RX_OFFSET		2
+#define CP_INTERNAL_PHY		32
 
 /* The following settings are log_2(bytes)-4:  0 == 16 bytes .. 6==1024, 7==end of packet. */
 #define RX_FIFO_THRESH		5	/* Rx buffer level before first PCI xfer.  */
@@ -136,6 +126,11 @@ enum {
 	Config3		= 0x59, /* Config3 */
 	Config4		= 0x5A, /* Config4 */
 	MultiIntr	= 0x5C, /* Multiple interrupt select */
+	BasicModeCtrl	= 0x62,	/* MII BMCR */
+	BasicModeStatus	= 0x64, /* MII BMSR */
+	NWayAdvert	= 0x66, /* MII ADVERTISE */
+	NWayLPAR	= 0x68, /* MII LPA */
+	NWayExpansion	= 0x6A, /* MII Expansion */
 	Config5		= 0xD8,	/* Config5 */
 	TxPoll		= 0xD9,	/* Tell chip to check Tx descriptors for work */
 	CpCmd		= 0xE0, /* C+ Command register (C+ mode only) */
@@ -289,6 +284,8 @@ struct cp_private {
 
 	struct sk_buff		*frag_skb;
 	unsigned		dropping_frag : 1;
+
+	struct mii_if_info	mii_if;
 };
 
 #define cpr8(reg)	readb(cp->regs + (reg))
@@ -333,8 +330,8 @@ static inline void cp_rx_skb (struct cp_private *cp, struct sk_buff *skb)
 	netif_rx (skb);
 }
 
-static inline void cp_rx_err_acct (struct cp_private *cp, unsigned rx_tail,
-				   u32 status, u32 len)
+static void cp_rx_err_acct (struct cp_private *cp, unsigned rx_tail,
+			    u32 status, u32 len)
 {
 	if (netif_msg_rx_err (cp))
 		printk (KERN_DEBUG
@@ -428,8 +425,8 @@ static void cp_rx (struct cp_private *cp)
 	while (rx_work--) {
 		u32 status, len;
 		dma_addr_t mapping;
-		struct sk_buff *skb, *copy_skb;
-		unsigned copying_skb, buflen;
+		struct sk_buff *skb, *new_skb;
+		unsigned buflen;
 
 		skb = cp->rx_skb[rx_tail].skb;
 		if (!skb)
@@ -452,43 +449,30 @@ static void cp_rx (struct cp_private *cp)
 			goto rx_next;
 		}
 
-		copying_skb = (len <= rx_copybreak);
-
 		if (netif_msg_rx_status(cp))
-			printk(KERN_DEBUG "%s: rx slot %d status 0x%x len %d copying? %d\n",
-			       cp->dev->name, rx_tail, status, len,
-			       copying_skb);
+			printk(KERN_DEBUG "%s: rx slot %d status 0x%x len %d\n",
+			       cp->dev->name, rx_tail, status, len);
 
-		buflen = copying_skb ? len : cp->rx_buf_sz;
-		copy_skb = dev_alloc_skb (buflen + RX_OFFSET);
-		if (!copy_skb) {
+		buflen = cp->rx_buf_sz + RX_OFFSET;
+		new_skb = dev_alloc_skb (buflen);
+		if (!new_skb) {
 			cp->net_stats.rx_dropped++;
 			goto rx_next;
 		}
 
-		skb_reserve(copy_skb, RX_OFFSET);
-		copy_skb->dev = cp->dev;
+		skb_reserve(new_skb, RX_OFFSET);
+		new_skb->dev = cp->dev;
 
-		if (!copying_skb) {
-			pci_unmap_single(cp->pdev, mapping,
-					 buflen, PCI_DMA_FROMDEVICE);
-			skb->ip_summed = CHECKSUM_NONE;
-			skb_trim(skb, len);
+		pci_unmap_single(cp->pdev, mapping,
+				 buflen, PCI_DMA_FROMDEVICE);
+		skb->ip_summed = CHECKSUM_NONE;
+		skb_put(skb, len);
 
-			mapping =
-			cp->rx_skb[rx_tail].mapping =
-				pci_map_single(cp->pdev, copy_skb->data,
-					       buflen, PCI_DMA_FROMDEVICE);
-			cp->rx_skb[rx_tail].skb = copy_skb;
-			skb_put(copy_skb, buflen);
-		} else {
-			skb_put(copy_skb, len);
-			pci_dma_sync_single(cp->pdev, mapping, len, PCI_DMA_FROMDEVICE);
-			memcpy(copy_skb->data, skb->data, len);
-
-			/* We'll reuse the original ring buffer. */
-			skb = copy_skb;
-		}
+		mapping =
+		cp->rx_skb[rx_tail].mapping =
+			pci_map_single(cp->pdev, new_skb->tail,
+				       buflen, PCI_DMA_FROMDEVICE);
+		cp->rx_skb[rx_tail].skb = new_skb;
 
 		cp_rx_skb(cp, skb);
 
@@ -899,10 +883,9 @@ static int cp_refill_rx (struct cp_private *cp)
 
 		skb->dev = cp->dev;
 		skb_reserve(skb, RX_OFFSET);
-		skb_put(skb, cp->rx_buf_sz);
 
 		cp->rx_skb[i].mapping = pci_map_single(cp->pdev,
-			skb->data, cp->rx_buf_sz, PCI_DMA_FROMDEVICE);
+			skb->tail, cp->rx_buf_sz, PCI_DMA_FROMDEVICE);
 		cp->rx_skb[i].skb = skb;
 		cp->rx_skb[i].frag = 0;
 
@@ -1025,6 +1008,39 @@ static int cp_close (struct net_device *dev)
 	return 0;
 }
 
+static char mii_2_8139_map[8] = {
+	BasicModeCtrl,
+	BasicModeStatus,
+	0,
+	0,
+	NWayAdvert,
+	NWayLPAR,
+	NWayExpansion,
+	0
+};
+
+static int mdio_read(struct net_device *dev, int phy_id, int location)
+{
+	struct cp_private *cp = dev->priv;
+
+	return location < 8 && mii_2_8139_map[location] ?
+	       readw(cp->regs + mii_2_8139_map[location]) : 0;
+}
+
+
+static void mdio_write(struct net_device *dev, int phy_id, int location,
+		       int value)
+{
+	struct cp_private *cp = dev->priv;
+
+	if (location == 0) {
+		cpw8(Cfg9346, Cfg9346_Unlock);
+		cpw16(BasicModeCtrl, value);
+		cpw8(Cfg9346, Cfg9346_Lock);
+	} else if (location < 8 && mii_2_8139_map[location])
+		cpw16(mii_2_8139_map[location], value);
+}
+
 static int cp_ethtool_ioctl (struct cp_private *cp, void *useraddr)
 {
 	u32 ethcmd;
@@ -1032,21 +1048,71 @@ static int cp_ethtool_ioctl (struct cp_private *cp, void *useraddr)
 	/* dev_ioctl() in ../../net/core/dev.c has already checked
 	   capable(CAP_NET_ADMIN), so don't bother with that here.  */
 
-	if (copy_from_user (&ethcmd, useraddr, sizeof (ethcmd)))
+	if (get_user(ethcmd, (u32 *)useraddr))
 		return -EFAULT;
 
 	switch (ethcmd) {
 
-	case ETHTOOL_GDRVINFO:
-		{
-			struct ethtool_drvinfo info = { ETHTOOL_GDRVINFO };
-			strcpy (info.driver, DRV_NAME);
-			strcpy (info.version, DRV_VERSION);
-			strcpy (info.bus_info, cp->pdev->slot_name);
-			if (copy_to_user (useraddr, &info, sizeof (info)))
-				return -EFAULT;
-			return 0;
-		}
+	case ETHTOOL_GDRVINFO: {
+		struct ethtool_drvinfo info = { ETHTOOL_GDRVINFO };
+		strcpy (info.driver, DRV_NAME);
+		strcpy (info.version, DRV_VERSION);
+		strcpy (info.bus_info, cp->pdev->slot_name);
+		if (copy_to_user (useraddr, &info, sizeof (info)))
+			return -EFAULT;
+		return 0;
+	}
+
+	/* get settings */
+	case ETHTOOL_GSET: {
+		struct ethtool_cmd ecmd = { ETHTOOL_GSET };
+		spin_lock_irq(&cp->lock);
+		mii_ethtool_gset(&cp->mii_if, &ecmd);
+		spin_unlock_irq(&cp->lock);
+		if (copy_to_user(useraddr, &ecmd, sizeof(ecmd)))
+			return -EFAULT;
+		return 0;
+	}
+	/* set settings */
+	case ETHTOOL_SSET: {
+		int r;
+		struct ethtool_cmd ecmd;
+		if (copy_from_user(&ecmd, useraddr, sizeof(ecmd)))
+			return -EFAULT;
+		spin_lock_irq(&cp->lock);
+		r = mii_ethtool_sset(&cp->mii_if, &ecmd);
+		spin_unlock_irq(&cp->lock);
+		return r;
+	}
+	/* restart autonegotiation */
+	case ETHTOOL_NWAY_RST: {
+		return mii_nway_restart(&cp->mii_if);
+	}
+	/* get link status */
+	case ETHTOOL_GLINK: {
+		struct ethtool_value edata = {ETHTOOL_GLINK};
+		edata.data = mii_link_ok(&cp->mii_if);
+		if (copy_to_user(useraddr, &edata, sizeof(edata)))
+			return -EFAULT;
+		return 0;
+	}
+
+	/* get message-level */
+	case ETHTOOL_GMSGLVL: {
+		struct ethtool_value edata = {ETHTOOL_GMSGLVL};
+		edata.data = cp->msg_enable;
+		if (copy_to_user(useraddr, &edata, sizeof(edata)))
+			return -EFAULT;
+		return 0;
+	}
+	/* set message-level */
+	case ETHTOOL_SMSGLVL: {
+		struct ethtool_value edata;
+		if (copy_from_user(&edata, useraddr, sizeof(edata)))
+			return -EFAULT;
+		cp->msg_enable = edata.data;
+		return 0;
+	}
 
 	default:
 		break;
@@ -1060,6 +1126,9 @@ static int cp_ioctl (struct net_device *dev, struct ifreq *rq, int cmd)
 {
 	struct cp_private *cp = dev->priv;
 	int rc = 0;
+
+	if (!netif_running(dev))
+		return -EINVAL;
 
 	switch (cmd) {
 	case SIOCETHTOOL:
@@ -1173,6 +1242,10 @@ static int __devinit cp_init_one (struct pci_dev *pdev,
 	cp->dev = dev;
 	cp->msg_enable = (debug < 0 ? CP_DEF_MSG_ENABLE : debug);
 	spin_lock_init (&cp->lock);
+	cp->mii_if.dev = dev;
+	cp->mii_if.mdio_read = mdio_read;
+	cp->mii_if.mdio_write = mdio_write;
+	cp->mii_if.phy_id = CP_INTERNAL_PHY;
 
 	rc = pci_enable_device(pdev);
 	if (rc)

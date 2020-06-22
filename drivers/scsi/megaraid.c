@@ -1149,12 +1149,12 @@ static void mega_cmd_done (mega_host_config * megaCfg, mega_scb * pScb, int stat
 			if (mbox->cmd == MEGA_MBOXCMD_PASSTHRU) {
 				memcpy (SCpnt->sense_buffer, pthru->reqsensearea, 14);
 			} else if (mbox->cmd == MEGA_MBOXCMD_EXTPASSTHRU) {
-				SCpnt->result = (DRIVER_SENSE << 24) | (DID_OK << 16) | (CHECK_CONDITION < 1);
+				SCpnt->result = (DRIVER_SENSE << 24) | (DID_OK << 16) | (CHECK_CONDITION << 1);
 				memcpy(
 					SCpnt->sense_buffer,
 					epthru->reqsensearea, 14
 				);
-				SCpnt->result = (DRIVER_SENSE << 24) | (DID_OK << 16) | (CHECK_CONDITION < 1);
+				SCpnt->result = (DRIVER_SENSE << 24) | (DID_OK << 16) | (CHECK_CONDITION << 1);
 				/*SCpnt->result =
 					(DRIVER_SENSE << 24) |
 					(DID_ERROR << 16) | status;*/

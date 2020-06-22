@@ -1,4 +1,4 @@
-# BK Id: SCCS/s.config.in 1.45 11/08/01 07:57:40 paulus
+# BK Id: SCCS/s.config.in 1.47 12/01/01 20:09:06 benh
 #
 # For a description of the syntax of this configuration file,
 # see Documentation/kbuild/config-language.txt.
@@ -328,6 +328,10 @@ if [ "$CONFIG_ALL_PPC" = "y" ]; then
   bool 'Support for PMU  based PowerMacs' CONFIG_ADB_PMU
   if [ "$CONFIG_ADB_PMU" = "y" ]; then
     bool '   Power management support for PowerBooks' CONFIG_PMAC_PBOOK
+    if [ "$CONFIG_PMAC_PBOOK" = "y" ]; then
+      define_bool CONFIG_PM y
+      tristate '     APM emulation' CONFIG_PMAC_APM_EMU
+    fi
     # made a separate option since backlight may end up beeing used
     # on non-powerbook machines (but only on PMU based ones AFAIK)
     bool '   Backlight control for LCD screens' CONFIG_PMAC_BACKLIGHT
@@ -352,6 +356,9 @@ if [ "$CONFIG_ALL_PPC" = "y" ]; then
   # layer is used.
   if [ "$CONFIG_INPUT" != "n" ]; then
     define_bool CONFIG_MAC_HID y
+  fi
+  if [ "$CONFIG_ADB_CUDA" != "n" ]; then
+    bool 'Support for ANS LCD display' CONFIG_ANSLCD
   fi
 fi
 endmenu

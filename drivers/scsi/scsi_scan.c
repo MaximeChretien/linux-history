@@ -163,6 +163,7 @@ static struct dev_info device_list[] =
 	{"HP", "NetRAID-4M", "*", BLIST_FORCELUN},
 	{"ADAPTEC", "AACRAID", "*", BLIST_FORCELUN},
 	{"ADAPTEC", "Adaptec 5400S", "*", BLIST_FORCELUN},
+	{"COMPAQ", "MSA1000", "*", BLIST_FORCELUN},
 
 	/*
 	 * Must be at end of list...
@@ -634,6 +635,7 @@ static int scan_scsis_single(unsigned int channel, unsigned int dev,
 	switch (type = (scsi_result[0] & 0x1f)) {
 	case TYPE_TAPE:
 	case TYPE_DISK:
+	case TYPE_PRINTER:
 	case TYPE_MOD:
 	case TYPE_PROCESSOR:
 	case TYPE_SCANNER:

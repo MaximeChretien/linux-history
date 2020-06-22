@@ -5,7 +5,7 @@
  *	Authors:
  *	Lennert Buytenhek		<buytenh@gnu.org>
  *
- *	$Id: br_if.c,v 1.6 2001/11/24 17:51:03 davem Exp $
+ *	$Id: br_if.c,v 1.6.2.1 2001/12/24 00:59:27 davem Exp $
  *
  *	This program is free software; you can redistribute it and/or
  *	modify it under the terms of the GNU General Public License
@@ -225,6 +225,9 @@ int br_add_if(struct net_bridge *br, struct net_device *dev)
 
 	if (dev->flags & IFF_LOOPBACK || dev->type != ARPHRD_ETHER)
 		return -EINVAL;
+
+	if (dev->hard_start_xmit == br_dev_xmit)
+		return -ELOOP;
 
 	dev_hold(dev);
 	write_lock_bh(&br->lock);

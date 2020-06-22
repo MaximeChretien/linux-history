@@ -1,4 +1,4 @@
-# BK Id: SCCS/s.Makefile 1.14 07/27/01 20:24:17 trini
+# BK Id: SCCS/s.Makefile 1.16 09/28/01 07:39:37 trini
 #
 # Makefile for making XCOFF bootable images for booting on PowerMacs
 # using Open Firmware.
@@ -48,9 +48,9 @@ znetboot: vmlinux.coff vmlinux.elf-pmac zImage
 	cp ../images/vmlinux.coff $(TFTPIMAGE)
 	cp ../images/vmlinux.elf-pmac $(TFTPIMAGE).elf
 
-znetboot.initrd: vmlinux.coff.initrd vmlinux.initrd.elf-pmac
-	cp ../images/vmlinux.coff.initrd $(TFTPIMAGE)
-	cp ../images/vmlinux.elf-pmac.initrd $(TFTPIMAGE).elf
+znetboot.initrd: vmlinux.initrd.coff vmlinux.initrd.elf-pmac
+	cp ../images/vmlinux.initrd.coff $(TFTPIMAGE)
+	cp ../images/vmlinux.initrd.elf-pmac $(TFTPIMAGE).elf
 
 #floppy: zImage
 #	mount -t hfs /dev/fd0 /mnt
@@ -61,7 +61,7 @@ miboot.image: dummy.o ../images/vmlinux.gz
 	$(OBJCOPY) $(OBJCOPY_ARGS) --add-section=image=../images/vmlinux.gz \
 		dummy.o ../images/$@
 
-miboot.image.initrd: miboot.image ../images/ramdisk.image.gz
+miboot.initrd.image: miboot.image ../images/ramdisk.image.gz
 	$(OBJCOPY) $(OBJCOPY_ARGS) --add-section=initrd=../images/ramdisk.image.gz \
 		../images/miboot.image ../images/$@
 
@@ -83,11 +83,11 @@ vmlinux.coff: coffboot $(HACKCOFF)
 	rm -f coffboot
 	ln -sf vmlinux.coff ../images/zImage.pmac
 
-vmlinux.coff.initrd: coffboot.initrd $(HACKCOFF)
+vmlinux.initrd.coff: coffboot.initrd $(HACKCOFF)
 	$(OBJCOPY) $(OBJCOPY_ARGS) coffboot.initrd ../images/$@
 	$(HACKCOFF) ../images/$@
 	rm -f coffboot.initrd
-	ln -sf vmlinux.coff.initrd ../images/zImage.initrd.pmac
+	ln -sf vmlinux.initrd.coff ../images/zImage.initrd.pmac
 
 vmlinux.elf-pmac: $(CHRPOBJS) $(LIBS) ../common/no_initrd.o $(MKNOTE) ../images/vmlinux.gz
 	$(LD) $(CHRP_LD_ARGS) -o ../images/$@ $(CHRPOBJS) ../common/no_initrd.o $(LIBS)
@@ -110,6 +110,6 @@ vmlinux.initrd.elf-pmac: $(CHRPOBJS) $(LIBS) initrd.o $(MKNOTE) ../images/vmlinu
 
 zImage: vmlinux.coff vmlinux.elf-pmac miboot.image
 
-zImage.initrd: vmlinux.coff.initrd vmlinux.initrd.elf-pmac miboot.image.initrd
+zImage.initrd: vmlinux.initrd.coff vmlinux.initrd.elf-pmac miboot.initrd.image
 
 include $(TOPDIR)/Rules.make

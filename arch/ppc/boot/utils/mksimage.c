@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.mksimage.c 1.6 05/18/01 15:16:42 cort
+ * BK Id: SCCS/s.mksimage.c 1.7 10/11/01 11:59:05 trini
  */
 /*
  *
@@ -96,7 +96,7 @@ main(int argc, char *argv[])
 		die("can't open loader: %s", strerror(errno));
 
 	copy_blocks(fd, ofd, &ld_off, &ld_size);
-	len = sprintf(buffer, "bootloader: %x %x\n", ld_off, ld_size);
+	len = sprintf(buffer, "bootloader: %lx %lx\n", ld_off, ld_size);
 	close(fd);
 
 	fd = open(kernel, O_RDONLY);
@@ -104,7 +104,7 @@ main(int argc, char *argv[])
 		die("can't open kernel: %s", strerror(errno));
 
 	copy_blocks(fd, ofd, &kern_off, &kern_size);
-	len += sprintf(buffer+len, "zimage: %x %x\n", kern_off, kern_size);
+	len += sprintf(buffer+len, "zimage: %lx %lx\n", kern_off, kern_size);
 	close(fd);
 	
 	if (rdimage) {
@@ -116,7 +116,7 @@ main(int argc, char *argv[])
 		close(fd);
 	}
 
-	len += sprintf(buffer+len, "initrd: %x %x", rd_off, rd_size);
+	len += sprintf(buffer+len, "initrd: %lx %lx", rd_off, rd_size);
 
 	close(ofd);
 
