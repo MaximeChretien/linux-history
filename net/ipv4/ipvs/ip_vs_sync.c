@@ -808,10 +808,12 @@ int start_sync_thread(int state, char *mcast_ifn, __u8 syncid)
 
 	ip_vs_sync_state |= state;
 	if (state == IP_VS_STATE_MASTER) {
-		strcpy(ip_vs_mcast_master_ifn, mcast_ifn);
+		strncpy(ip_vs_mcast_master_ifn, mcast_ifn, sizeof(ip_vs_mcast_master_ifn));
+		ip_vs_mcast_master_ifn[sizeof(ip_vs_mcast_master_ifn) - 1] = 0;
 		ip_vs_master_syncid = syncid;
 	} else {
-		strcpy(ip_vs_mcast_backup_ifn, mcast_ifn);
+		strncpy(ip_vs_mcast_backup_ifn, mcast_ifn, sizeof(ip_vs_mcast_backup_ifn));
+		ip_vs_mcast_backup_ifn[sizeof(ip_vs_mcast_backup_ifn) - 1] = 0;
 		ip_vs_backup_syncid = syncid;
 	}
 

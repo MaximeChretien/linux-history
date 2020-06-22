@@ -625,10 +625,7 @@ fb_mmap(struct file *file, struct vm_area_struct * vma)
 
 	/* frame buffer memory */
 	start = fix.smem_start;
-	if (info->mapped_vram)
-		len = PAGE_ALIGN((start & ~PAGE_MASK) + info->mapped_vram);
-	else
-		len = PAGE_ALIGN((start & ~PAGE_MASK) + fix.smem_len);
+	len = PAGE_ALIGN((start & ~PAGE_MASK) + fix.smem_len);
 	if (off >= len) {
 		/* memory mapped io */
 		off -= len;

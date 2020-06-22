@@ -1674,6 +1674,7 @@ static ssize_t mtrr_write (struct file *file, const char *buf, size_t len,
     char *ptr;
     char line[LINE_SIZE];
 
+    if (!len) return -EINVAL;
     if ( !suser () ) return -EPERM;
     /*  Can't seek (pwrite) on this device  */
     if (ppos != &file->f_pos) return -ESPIPE;

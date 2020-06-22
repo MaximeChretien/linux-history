@@ -1842,7 +1842,8 @@ __ip_vs_get_service_entries(const struct ip_vs_get_services *get,
 			entry.addr = svc->addr;
 			entry.port = svc->port;
 			entry.fwmark = svc->fwmark;
-			strcpy(entry.sched_name, svc->scheduler->name);
+			strncpy(entry.sched_name, svc->scheduler->name, sizeof(entry.sched_name));
+			entry.sched_name[sizeof(entry.sched_name) - 1] = 0;
 			entry.flags = svc->flags;
 			entry.timeout = svc->timeout / HZ;
 			entry.netmask = svc->netmask;
@@ -1866,7 +1867,8 @@ __ip_vs_get_service_entries(const struct ip_vs_get_services *get,
 			entry.addr = svc->addr;
 			entry.port = svc->port;
 			entry.fwmark = svc->fwmark;
-			strcpy(entry.sched_name, svc->scheduler->name);
+			strncpy(entry.sched_name, svc->scheduler->name, sizeof(entry.sched_name));
+			entry.sched_name[sizeof(entry.sched_name) - 1] = 0;
 			entry.flags = svc->flags;
 			entry.timeout = svc->timeout / HZ;
 			entry.netmask = svc->netmask;
@@ -2020,7 +2022,8 @@ do_ip_vs_get_ctl(struct sock *sk, int cmd, void *user, int *len)
 			svc = __ip_vs_service_get(get.protocol,
 						  get.addr, get.port);
 		if (svc) {
-			strcpy(get.sched_name, svc->scheduler->name);
+			strncpy(get.sched_name, svc->scheduler->name, sizeof(get.sched_name));
+			get.sched_name[sizeof(get.sched_name) - 1] = 0;
 			get.flags = svc->flags;
 			get.timeout = svc->timeout / HZ;
 			get.netmask = svc->netmask;
@@ -2083,10 +2086,14 @@ do_ip_vs_get_ctl(struct sock *sk, int cmd, void *user, int *len)
 			goto out;
 		}
 		u.state = ip_vs_sync_state;
-		if (ip_vs_sync_state & IP_VS_STATE_MASTER)
-			strcpy(u.mcast_master_ifn, ip_vs_mcast_master_ifn);
-		if (ip_vs_sync_state & IP_VS_STATE_BACKUP)
-			strcpy(u.mcast_backup_ifn, ip_vs_mcast_backup_ifn);
+		if (ip_vs_sync_state & IP_VS_STATE_MASTER) {
+			strncpy(u.mcast_master_ifn, ip_vs_mcast_master_ifn, sizeof(u.mcast_master_ifn));
+			u.mcast_master_ifn[sizeof(u.mcast_master_ifn) - 1] = 0;
+		}
+		if (ip_vs_sync_state & IP_VS_STATE_BACKUP) {
+			strncpy(u.mcast_backup_ifn, ip_vs_mcast_backup_ifn, sizeof(u.mcast_backup_ifn));
+			u.mcast_backup_ifn[sizeof(u.mcast_backup_ifn) - 1] = 0;
+		}
 		if (copy_to_user(user, &u, sizeof(u)) != 0)
 			ret = -EFAULT;
 	}

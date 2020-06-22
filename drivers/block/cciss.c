@@ -975,10 +975,10 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 			{
 				kfree(buff);
 				return -EFAULT;
-			} else {
-				memset(buff, 0, iocommand.buf_size);
 			}
 		}
+		else 
+			memset(buff, 0, iocommand.buf_size);
 		if ((c = cmd_alloc(h , 0)) == NULL) {
 			kfree(buff);
 			return -ENOMEM;
@@ -1099,12 +1099,12 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 				   /* Copy the data into the buffer created */
 				   if (copy_from_user(buff[sg_used], data_ptr, 
 						buff_size[sg_used])) {
-					status = -ENOMEM;
+					status = -EFAULT;
 					goto cleanup1;			
-				   } else {
+				   }
+				   }
+				else
 					memset(buff[sg_used], 0, buff_size[sg_used]);
-				   }
-				   }
 				size_left_alloc -= buff_size[sg_used];
 				data_ptr += buff_size[sg_used];
 				sg_used++;

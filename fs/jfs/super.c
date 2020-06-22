@@ -407,7 +407,7 @@ out_no_rw:
 		jfs_err("jfs_umount failed with return code %d", rc);
 	}
 out_kfree:
-	if (sbi->nls_tab)
+	if (sbi->nls_tab && sbi->nls_tab != (void *) -1)
 		unload_nls(sbi->nls_tab);
 	kfree(sbi);
 	return NULL;

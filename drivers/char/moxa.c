@@ -294,6 +294,7 @@ static void MoxaPortSendBreak(int, int);
 static int moxa_get_serial_info(struct moxa_str *, struct serial_struct *);
 static int moxa_set_serial_info(struct moxa_str *, struct serial_struct *);
 static void MoxaSetFifo(int port, int enable);
+static unsigned long moxaIntPend[MAX_BOARDS];
 
 #ifdef MODULE
 int init_module(void)
@@ -995,7 +996,8 @@ static void moxa_poll(unsigned long ignored)
 		return;
 	}
 	for (card = 0; card < MAX_BOARDS; card++) {
-		if ((ports = MoxaPortsOfCard(card)) <= 0)
+		if ((ports = MoxaPortsOfCard(card)) <= 0
+				|| moxaIntPend[card] == 0)
 			continue;
 		ch = &moxaChannels[card * MAX_PORTS_PER_BOARD];
 		for (i = 0; i < ports; i++, ch++) {
@@ -1578,7 +1580,6 @@ typedef struct mon_str mon_st;
 
 static unsigned char moxaBuff[10240];
 static unsigned long moxaIntNdx[MAX_BOARDS];
-static unsigned long moxaIntPend[MAX_BOARDS];
 static unsigned long moxaIntTable[MAX_BOARDS];
 static char moxaChkPort[MAX_PORTS];
 static char moxaLineCtrl[MAX_PORTS];

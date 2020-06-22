@@ -2605,6 +2605,8 @@ static long madvise_willneed(struct vm_area_struct * vma,
 		end = vma->vm_end;
 	end = ((end - vma->vm_start) >> PAGE_SHIFT) + vma->vm_pgoff;
 
+	error = -EIO;
+
 	/* round to cluster boundaries if this isn't a "random" area. */
 	if (!VM_RandomReadHint(vma)) {
 		start = CLUSTER_OFFSET(start);

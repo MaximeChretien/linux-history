@@ -127,7 +127,7 @@ static inline struct rw_semaphore *rwsem_down_failed_common(struct rw_semaphore 
 	set_task_state(tsk,TASK_UNINTERRUPTIBLE);
 
 	/* set up my own style of waitqueue */
-	spin_lock(&sem->wait_lock);
+	spin_lock_irq(&sem->wait_lock);
 	waiter->task = tsk;
 	get_task_struct(tsk);
 
@@ -142,7 +142,7 @@ static inline struct rw_semaphore *rwsem_down_failed_common(struct rw_semaphore 
 	if (!(count & RWSEM_ACTIVE_MASK))
 		sem = __rwsem_do_wake(sem);
 
-	spin_unlock(&sem->wait_lock);
+	spin_unlock_irq(&sem->wait_lock);
 
 	/* wait to be given the lock */
 	for (;;) {
@@ -195,15 +195,16 @@ struct rw_semaphore fastcall *rwsem_down_write_failed(struct rw_semaphore *sem)
  */
 struct rw_semaphore fastcall *rwsem_wake(struct rw_semaphore *sem)
 {
+	unsigned long flags;
 	rwsemtrace(sem,"Entering rwsem_wake");
 
-	spin_lock(&sem->wait_lock);
+	spin_lock_irqsave(&sem->wait_lock, flags);
 
 	/* do nothing if list empty */
 	if (!list_empty(&sem->wait_list))
 		sem = __rwsem_do_wake(sem);
 
-	spin_unlock(&sem->wait_lock);
+	spin_unlock_irqrestore(&sem->wait_lock, flags);
 
 	rwsemtrace(sem,"Leaving rwsem_wake");
 

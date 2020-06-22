@@ -980,9 +980,11 @@ static int netlink_dump(struct sock *sk)
 	len = cb->dump(skb, cb);
 
 	if (len > 0) {
+		sock_hold(sk);
 		spin_unlock(&sk->protinfo.af_netlink->cb_lock);
 		skb_queue_tail(&sk->receive_queue, skb);
 		sk->data_ready(sk, len);
+		sock_put(sk);
 		return 0;
 	}
 

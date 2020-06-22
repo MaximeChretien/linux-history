@@ -185,7 +185,6 @@ int __init select_idle_routine(struct cpuinfo_x86 *c)
 		}
 		return 1;
 	}
-	pm_idle = default_idle;
 	return 1;
 }
 
