@@ -158,7 +158,15 @@
 #define Q_READ_PTR		0x85C8  /* Current read pointer (?) */
 #define Q_STATUS		0x85CC  /* queue status */
 
+#define MMIO_IN8(base, offset)  readb((base+offset))
+#define MMIO_IN16(base, offset) readw((base+offset))
+#define MMIO_IN32(base, offset) readl((base+offset))
 
+#define MMIO_OUT8(base, offset, val)  writeb((val), (base+offset))
+#define MMIO_OUT16(base, offset, val) writew((val), (base+offset))
+#define MMIO_OUT32(base, offset, val) writel((val), (base+offset))
+
+#if 0
 #define MMIO_IN8(base, offset) \
 	*(volatile u8 *)(((u8*)(base)) + (offset))
 #define MMIO_IN16(base, offset) \
@@ -171,6 +179,7 @@
 	*(volatile u16 *)(void *)(((u8*)(base)) + (offset)) = (val)
 #define MMIO_OUT32(base, offset, val) \
 	*(volatile u32 *)(void *)(((u8*)(base)) + (offset)) = (val)
+#endif
 
 /* ------------- SiS 300 series -------------- */
 

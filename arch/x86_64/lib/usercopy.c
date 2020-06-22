@@ -126,3 +126,11 @@ long strnlen_user(const char *s, long n)
 		s++;
 	}
 }
+
+unsigned long copy_in_user(void *to, const void *from, unsigned len)
+{
+	if (access_ok(VERIFY_WRITE, to, len) && access_ok(VERIFY_READ, from, len)) { 
+		return copy_user_generic(to, from, len);
+	} 
+	return len;		
+}

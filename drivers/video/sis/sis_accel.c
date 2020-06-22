@@ -77,9 +77,8 @@
 #include "sis_accel.h"
 #include "sis.h"
 
-extern struct     video_info ivideo;
-extern VGA_ENGINE sisvga_engine;
-extern int sisfb_accel;
+extern struct   video_info ivideo;
+extern int 	sisfb_accel;
 
 static const int sisALUConv[] =
 {
@@ -337,7 +336,7 @@ int sisfb_initaccel(void)
 
 void sisfb_syncaccel(void)
 {
-    if(sisvga_engine == SIS_300_VGA) {
+    if(ivideo.sisvga_engine == SIS_300_VGA) {
 #ifdef CONFIG_FB_SIS_300
     	SiS300Sync();
 #endif
@@ -357,7 +356,7 @@ int fbcon_sis_sync(struct fb_info *info)
    if(!ivideo.accel)
    	return 0;
    
-   if(sisvga_engine == SIS_300_VGA) {
+   if(ivideo.sisvga_engine == SIS_300_VGA) {
 #ifdef CONFIG_FB_SIS_300
       SiS300Sync();
 #endif
@@ -393,7 +392,7 @@ void fbcon_sis_fillrect(struct fb_info *info, const struct fb_fillrect *rect)
 		 break;
    }
 
-   if(sisvga_engine == SIS_300_VGA) {
+   if(ivideo.sisvga_engine == SIS_300_VGA) {
 #ifdef CONFIG_FB_SIS_300
       CRITBEGIN
       SiS300SetupForSolidFill(col, myrops[rect->rop], 0);
@@ -432,7 +431,7 @@ void fbcon_sis_copyarea(struct fb_info *info, const struct fb_copyarea *area)
    if(area->sy < area->dy) ydir = 0;
    else                    ydir = 1;
 
-   if(sisvga_engine == SIS_300_VGA) {
+   if(ivideo.sisvga_engine == SIS_300_VGA) {
 #ifdef CONFIG_FB_SIS_300
       CRITBEGIN
       SiS300SetupForScreenToScreenCopy(xdir, ydir, 3, 0, -1);
@@ -494,7 +493,7 @@ void fbcon_sis_bmove(struct display *p, int srcy, int srcx,
 	if(srcy < dsty) ydir = 0;
 	else            ydir = 1;
 
-	if(sisvga_engine == SIS_300_VGA) {
+	if(ivideo.sisvga_engine == SIS_300_VGA) {
 #ifdef CONFIG_FB_SIS_300
 	   CRITBEGIN
 	   SiS300SetupForScreenToScreenCopy(xdir, ydir, 3, 0, -1);
@@ -509,10 +508,6 @@ void fbcon_sis_bmove(struct display *p, int srcy, int srcx,
 	   SiS310SubsequentScreenToScreenCopy(srcx, srcy, dstx, dsty, width, height);
 	   CRITEND
 	   SiS310Sync();
-#if 0
-	   printk(KERN_INFO "sis_bmove sx %d sy %d dx %d dy %d w %d h %d\n",
-		srcx, srcy, dstx, dsty, width, height);
-#endif
 #endif
 	}
 }
@@ -527,7 +522,7 @@ static void fbcon_sis_clear(struct vc_data *conp, struct display *p,
 	width *= fontwidth(p);
 	height *= fontheight(p);
 
-	if(sisvga_engine == SIS_300_VGA) {
+	if(ivideo.sisvga_engine == SIS_300_VGA) {
 #ifdef CONFIG_FB_SIS_300
 	   CRITBEGIN
 	   SiS300SetupForSolidFill(color, 3, 0);
@@ -616,7 +611,7 @@ void fbcon_sis_revc(struct display *p, int srcx, int srcy)
 	srcx *= fontwidth(p);
 	srcy *= fontheight(p);
 
-	if(sisvga_engine == SIS_300_VGA) {
+	if(ivideo.sisvga_engine == SIS_300_VGA) {
 #ifdef CONFIG_FB_SIS_300
 	   CRITBEGIN
 	   SiS300SetupForSolidFill(0, 0x0a, 0);

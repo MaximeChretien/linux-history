@@ -44,32 +44,9 @@
 	.previous
 	.endm
 			
-	.macro ignore L=.Lignore
-30:
-	.section __ex_table,"a"
-	.align 8
-	.quad 30b,\L
-	.previous
-	.endm
-	
-				
 	.globl csum_partial_copy_generic
 	.p2align 4
 csum_partial_copy_generic:
-	cmpl	 $2*64,%edx
-	jle	 .Lignore
-
-	ignore
-	prefetch 1*64(%rdi)
-	ignore
-	prefetch 2*64(%rdi)
-	ignore
-	prefetchw (%rsi)
-	ignore
-	prefetchw 1*64(%rsi)
-	ignore
-
-.Lignore:		
 	subq  $7*8,%rsp
 	movq  %rbx,2*8(%rsp)
 	movq  %r12,3*8(%rsp)

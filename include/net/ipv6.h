@@ -104,6 +104,7 @@ struct frag_hdr {
 
 /* sysctls */
 extern int sysctl_ipv6_bindv6only;
+extern int sysctl_mld_max_msf;
 
 extern struct ipv6_mib		ipv6_statistics[NR_CPUS*2];
 #define IP6_INC_STATS(field)		SNMP_INC_STATS(ipv6_statistics, field)
@@ -320,7 +321,7 @@ extern void			ipv6_push_frag_opts(struct sk_buff *skb,
 						    struct ipv6_txoptions *opt,
 						    u8 *proto);
 
-extern int			ipv6_skip_exthdr(struct sk_buff *, int start,
+extern int			ipv6_skip_exthdr(const struct sk_buff *, int start,
 					         u8 *nexthdrp, int len);
 
 extern int 			ipv6_ext_hdr(u8 nexthdr);

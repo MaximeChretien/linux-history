@@ -54,6 +54,7 @@
 #include <linux/slab.h>
 #include <linux/in.h>
 #include <linux/random.h>	/* get_random_bytes() */
+#include <linux/crypto.h>
 #include <net/sock.h>
 #include <net/ipv6.h>
 #include <net/sctp/sctp.h>
@@ -128,15 +129,16 @@ struct sctp_endpoint *sctp_endpoint_init(struct sctp_endpoint *ep,
 	ep->timeouts[SCTP_EVENT_TIMEOUT_T1_INIT] =
 		SCTP_DEFAULT_TIMEOUT_T1_INIT;
 	ep->timeouts[SCTP_EVENT_TIMEOUT_T2_SHUTDOWN] =
-		sp->rtoinfo.srto_initial;
+		SCTP_MSECS_TO_JIFFIES(sp->rtoinfo.srto_initial);
 	ep->timeouts[SCTP_EVENT_TIMEOUT_T3_RTX] = 0;
+	ep->timeouts[SCTP_EVENT_TIMEOUT_T4_RTO] = 0;
 
 	/* sctpimpguide-05 Section 2.12.2
 	 * If the 'T5-shutdown-guard' timer is used, it SHOULD be set to the
 	 * recommended value of 5 times 'RTO.Max'.
 	 */
         ep->timeouts[SCTP_EVENT_TIMEOUT_T5_SHUTDOWN_GUARD]
-		= 5 * sp->rtoinfo.srto_max;
+		= 5 * SCTP_MSECS_TO_JIFFIES(sp->rtoinfo.srto_max);
 
 	ep->timeouts[SCTP_EVENT_TIMEOUT_HEARTBEAT] =
 		SCTP_DEFAULT_TIMEOUT_HEARTBEAT;
@@ -145,17 +147,9 @@ struct sctp_endpoint *sctp_endpoint_init(struct sctp_endpoint *ep,
 	ep->timeouts[SCTP_EVENT_TIMEOUT_AUTOCLOSE] =
 		sp->autoclose * HZ;
 
-	/* Set up the default send/receive buffer space.  */
-
-	/* FIXME - Should the min and max window size be configurable
-	 * sysctl parameters as opposed to be constants?
-	 */
-	sk->rcvbuf = SCTP_DEFAULT_MAXWINDOW;
-	sk->sndbuf = SCTP_DEFAULT_MAXWINDOW * 2;
-
 	/* Use SCTP specific send buffer space queues.  */
-	sk->write_space = sctp_write_space;
-	sk->use_write_queue = 1;
+	sk->sk_write_space = sctp_write_space;
+	sk->sk_use_write_queue = 1;
 
 	/* Initialize the secret key used with cookie. */
 	get_random_bytes(&ep->secret_key[0], SCTP_SECRET_SIZE);
@@ -176,9 +170,8 @@ void sctp_endpoint_add_asoc(struct sctp_endpoint *ep,
 	list_add_tail(&asoc->asocs, &ep->asocs);
 
 	/* Increment the backlog value for a TCP-style listening socket. */
-	if ((SCTP_SOCKET_TCP == sctp_sk(sk)->type) &&
-	    (SCTP_SS_LISTENING == sk->state))
-		sk->ack_backlog++;
+	if (sctp_style(sk, TCP) && sctp_sstate(sk, LISTENING))
+		sk->sk_ack_backlog++;
 }
 
 /* Free the endpoint structure.  Delay cleanup until
@@ -195,7 +188,7 @@ void sctp_endpoint_destroy(struct sctp_endpoint *ep)
 {
 	SCTP_ASSERT(ep->base.dead, "Endpoint is not dead", return);
 
-	ep->base.sk->state = SCTP_SS_CLOSED;
+	ep->base.sk->sk_state = SCTP_SS_CLOSED;
 
 	/* Unlink this endpoint, so we can't find it again! */
 	sctp_unhash_endpoint(ep);
@@ -313,13 +306,13 @@ int sctp_endpoint_is_peeled_off(struct sctp_endpoint *ep,
 				const union sctp_addr *paddr)
 {
 	struct list_head *pos;
-	struct sockaddr_storage_list *addr;
-	sctp_bind_addr_t *bp;
+	struct sctp_sockaddr_entry *addr;
+	struct sctp_bind_addr *bp;
 
 	sctp_read_lock(&ep->base.addr_lock);
 	bp = &ep->base.bind_addr;
 	list_for_each(pos, &bp->address_list) {
-		addr = list_entry(pos, struct sockaddr_storage_list, list);
+		addr = list_entry(pos, struct sctp_sockaddr_entry, list);
 		if (sctp_has_association(&addr->a, paddr)) {
 			sctp_read_unlock(&ep->base.addr_lock);
 			return 1;
@@ -338,7 +331,7 @@ static void sctp_endpoint_bh_rcv(struct sctp_endpoint *ep)
 	struct sctp_association *asoc;
 	struct sock *sk;
 	struct sctp_transport *transport;
-	sctp_chunk_t *chunk;
+	struct sctp_chunk *chunk;
 	struct sctp_inq *inqueue;
 	sctp_subtype_t subtype;
 	sctp_state_t state;

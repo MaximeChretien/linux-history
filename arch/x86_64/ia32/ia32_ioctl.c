@@ -1,4 +1,4 @@
-/* $Id: ia32_ioctl.c,v 1.39 2004/01/29 03:01:57 ak Exp $
+/* $Id: ia32_ioctl.c,v 1.44 2004/03/21 22:32:20 ak Exp $
  * ioctl32.c: Conversion between 32bit and 64bit native ioctls.
  *
  * Copyright (C) 1997-2000  Jakub Jelinek  (jakub@redhat.com)
@@ -1785,7 +1785,10 @@ struct cdrom_generic_command32 {
 	unsigned int		buflen;
 	int			stat;
 	__kernel_caddr_t32	sense;
-	__kernel_caddr_t32	reserved[3];
+	unsigned char		data_direction;
+	int			quiet;
+	int			timeout;
+	__kernel_caddr_t32	reserved[1];
 };
 
 static int cdrom_ioctl_trans(unsigned int fd, unsigned int cmd, unsigned long arg)
@@ -1827,17 +1830,25 @@ static int cdrom_ioctl_trans(unsigned int fd, unsigned int cmd, unsigned long ar
 			return -EFAULT;
 		cdreadaudio.buf = (void *)A(addr);
 		break;
-	case CDROM_SEND_PACKET:
+	case CDROM_SEND_PACKET: {
+		__kernel_caddr_t32 sense;
 		karg = &cgc;
 		err = copy_from_user(cgc.cmd, &((struct cdrom_generic_command32 *)arg)->cmd, sizeof(cgc.cmd));
 		err |= __get_user(addr, &((struct cdrom_generic_command32 *)arg)->buffer);
 		err |= __get_user(cgc.buflen, &((struct cdrom_generic_command32 *)arg)->buflen);
+		err |= __get_user(sense, &((struct cdrom_generic_command32 *)arg)->sense);
+		err |= __get_user(cgc.data_direction, &((struct cdrom_generic_command32 *)arg)->data_direction);
+		err |= __get_user(cgc.timeout, &((struct cdrom_generic_command32 *)arg)->timeout);
 		if (err)
 			return -EFAULT;
 		if (verify_area(VERIFY_WRITE, (void *)A(addr), cgc.buflen))
 			return -EFAULT;
+		if (sense && verify_area(VERIFY_WRITE, (void *)A(sense), sizeof(struct request_sense)))
+			return -EFAULT;
 		cgc.buffer = (void *)A(addr);
+		cgc.sense = (void *)A(sense);
 		break;
+	}
 	default:
 		do {
 			static int count;
@@ -2754,7 +2765,7 @@ static int tiocgdev(unsigned fd, unsigned cmd,  unsigned int *ptr)
 	struct file *file = fget(fd);
 	struct tty_struct *real_tty;
 
-	if (!fd)
+	if (!file)
 		return -EBADF;
 	if (file->f_op->ioctl != tty_ioctl)
 		return -EINVAL; 
@@ -3534,6 +3545,33 @@ static int do_wireless_ioctl(unsigned int fd, unsigned int cmd, unsigned long ar
 
 	return sys_ioctl(fd, cmd, (unsigned long) iwr);
 }
+
+struct compat_ctrlmsg_ioctl { 
+	struct usb_ctrlrequest req;
+	u32 data;
+}; 
+
+struct ctrlmsg_ioctl { 
+	struct usb_ctrlrequest req;
+	void *data;
+}; 
+
+#define SCANNER_IOCTL_CTRLMSG _IOWR('U', 0x22, struct usb_ctrlrequest)
+
+static int scanner_ioctl_ctrlmsg(unsigned int fd, unsigned int cmd, unsigned long arg)
+{
+	struct ctrlmsg_ioctl *c64;
+	struct compat_ctrlmsg_ioctl *c32 = (void *)arg; 
+	u32 ptr;
+
+	c64 = compat_alloc_user_space(sizeof(struct ctrlmsg_ioctl));
+
+	if (copy_in_user(&c64->req, &c32->req, sizeof(struct usb_ctrlrequest)) ||
+	    get_user(ptr, &c32->data) || 
+	    put_user((void *)(unsigned long)ptr, &c64->data))
+		return -EFAULT;
+	return sys_ioctl(fd,cmd, (unsigned long)c64); 
+} 
 
 struct ioctl_trans {
 	unsigned long cmd;
@@ -4423,6 +4461,17 @@ HANDLE_IOCTL(SIOCGIWNICKN, do_wireless_ioctl)
 HANDLE_IOCTL(SIOCSIWENCODE, do_wireless_ioctl)
 HANDLE_IOCTL(SIOCGIWENCODE, do_wireless_ioctl)
 COMPATIBLE_IOCTL(SIOCGIWNAME)
+
+COMPATIBLE_IOCTL(SIOCSIFNAME)
+/* usb scanner */
+#define SCANNER_IOCTL_VENDOR _IOR('U', 0x20, int)
+#define SCANNER_IOCTL_PRODUCT _IOR('U', 0x21, int)
+
+COMPATIBLE_IOCTL(SCANNER_IOCTL_VENDOR)
+COMPATIBLE_IOCTL(SCANNER_IOCTL_PRODUCT)
+/* USB scanner 'U' */
+HANDLE_IOCTL(SCANNER_IOCTL_CTRLMSG, scanner_ioctl_ctrlmsg)
+
 IOCTL_TABLE_END
 
 #define IOCTL_HASHSIZE 256
@@ -4602,7 +4651,9 @@ asmlinkage long sys32_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg
 		t = (struct ioctl_trans *)t->next;
 	if (t) {
 		handler = t->handler;
+		lock_kernel();
 		error = handler(fd, cmd, arg, filp);
+		unlock_kernel();
 	} else if (cmd >= SIOCDEVPRIVATE && cmd <= (SIOCDEVPRIVATE + 15)) {
 		error = siocdevprivate_ioctl(fd, cmd, arg);
 	} else {

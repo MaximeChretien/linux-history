@@ -4,7 +4,7 @@
  *      (c) Benjamin Herrenschmidt (benh@kernel.crashing.org)
  *          Mipsys - France
  *
- "          Derived from work (c) Armin Kuster akuster@pacbell.net
+ *          Derived from work (c) Armin Kuster akuster@pacbell.net
  *
  * This program is free software; you can redistribute  it and/or modify it
  *  under  the terms of  the GNU General  Public License as published by the
@@ -36,6 +36,7 @@
 #ifndef __OCP_H__
 #define __OCP_H__
 
+#include <linux/init.h>
 #include <linux/list.h>
 #include <linux/config.h>
 #include <linux/devfs_fs_kernel.h>
@@ -47,6 +48,10 @@
 
 #if defined(CONFIG_IBM_OCP)
 #include <platforms/ibm_ocp.h>
+#endif
+
+#if defined(CONFIG_MPC_OCP)
+#include <asm/mpc_ocp.h>
 #endif
 
 #define OCP_MAX_IRQS	7
@@ -115,7 +120,7 @@ struct ocp_def {
 struct ocp_device {
 	struct list_head	link;
 	char			name[80];	/* device name */
-	const struct ocp_def	*def;		/* device definition */
+	struct ocp_def		*def;		/* device definition */
 	void			*drvdata;	/* driver data for this device */
 	struct ocp_driver	*driver;
 	u32			current_state;	/* Current operating state. In ACPI-speak,
@@ -180,12 +185,23 @@ ocp_force_power_on(struct ocp_device *odev)
 extern int ocp_register_driver(struct ocp_driver *drv);
 extern void ocp_unregister_driver(struct ocp_driver *drv);
 
-/* Initialize the OCP management layer */
-extern int ocp_init(void);
+/* Build list of devices */
+extern int ocp_early_init(void) __init;
+
+/* Initialize the driver portion of OCP management layer */
+extern int ocp_driver_init(void);
 
 /* Find a device by index */
 extern struct ocp_device *ocp_find_device(unsigned int vendor, unsigned int function, int index);
 
+/* Get a def by index */
+extern struct ocp_def *ocp_get_one_device(unsigned int vendor, unsigned int function, int index);
+
+/* Add a device by index */
+extern int ocp_add_one_device(struct ocp_def *def);
+
+/* Remove a device by index */
+extern int ocp_remove_one_device(unsigned int vendor, unsigned int function, int index);
 
 #endif				/* __OCP_H__ */
 #endif				/* __KERNEL__ */

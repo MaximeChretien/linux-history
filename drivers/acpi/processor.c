@@ -69,8 +69,6 @@ MODULE_LICENSE("GPL");
 #define ACPI_PROCESSOR_MAX_THROTTLE	250	/* 25% */
 #define ACPI_PROCESSOR_MAX_DUTY_WIDTH	4
 
-const u32 POWER_OF_2[] = {1,2,4,8,16,32,64};
-
 #define ACPI_PROCESSOR_LIMIT_USER	0
 #define ACPI_PROCESSOR_LIMIT_THERMAL	1
 
@@ -1377,7 +1375,7 @@ acpi_processor_get_throttling_info (
 		return_VALUE(0);
 	}
 
-	pr->throttling.state_count = POWER_OF_2[acpi_fadt.duty_width];
+	pr->throttling.state_count = 1 << acpi_fadt.duty_width;
 
 	/*
 	 * Compute state values. Note that throttling displays a linear power/

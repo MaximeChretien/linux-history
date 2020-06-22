@@ -161,6 +161,8 @@ EXPORT_SYMBOL(_insl_ns);
 EXPORT_SYMBOL(_outsl_ns);
 EXPORT_SYMBOL(iopa);
 EXPORT_SYMBOL(mm_ptov);
+EXPORT_SYMBOL(vmalloc_start);
+EXPORT_SYMBOL(ioremap_bot);
 EXPORT_SYMBOL(ioremap);
 #ifdef CONFIG_PTE_64BIT
 EXPORT_SYMBOL(ioremap64);

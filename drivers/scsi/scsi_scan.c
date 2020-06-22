@@ -176,6 +176,7 @@ static struct dev_info device_list[] =
 	{"HP", "NetRAID-4M", "*", BLIST_FORCELUN},
 	{"ADAPTEC", "AACRAID", "*", BLIST_FORCELUN},
 	{"ADAPTEC", "Adaptec 5400S", "*", BLIST_FORCELUN},
+	{"APPLE", "Xserve", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
 	{"COMPAQ", "MSA1000", "*", BLIST_SPARSELUN | BLIST_LARGELUN | BLIST_NOSTARTONADD},
 	{"COMPAQ", "MSA1000 VOLUME", "*", BLIST_SPARSELUN | BLIST_LARGELUN | BLIST_NOSTARTONADD},
 	{"COMPAQ", "HSV110", "*", BLIST_SPARSELUN | BLIST_LARGELUN | BLIST_NOSTARTONADD},
@@ -189,6 +190,7 @@ static struct dev_info device_list[] =
 	{"HITACHI", "DF600", "*", BLIST_SPARSELUN},
 	{"IBM", "ProFibre 4000R", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
 	{"HITACHI", "OPEN-", "*", BLIST_SPARSELUN | BLIST_LARGELUN},  /* HITACHI XP Arrays */
+	{"HITACHI", "DISK-SUBSYSTEM", "*", BLIST_SPARSELUN | BLIST_LARGELUN},  /* HITACHI 9960 */
 	{"WINSYS","FLASHDISK G6", "*", BLIST_SPARSELUN},
 	{"DotHill","SANnet RAID X300", "*", BLIST_SPARSELUN},	
 	{"SUN", "T300", "*", BLIST_SPARSELUN},
@@ -221,10 +223,14 @@ static unsigned int max_scsi_luns = MAX_SCSI_LUNS;
 static unsigned int max_scsi_luns = 1;
 #endif
 
+static unsigned int scsi_allow_ghost_devices = 0;
+
 #ifdef MODULE
 
 MODULE_PARM(max_scsi_luns, "i");
 MODULE_PARM_DESC(max_scsi_luns, "last scsi LUN (should be between 1 and 2^32-1)");
+MODULE_PARM(scsi_allow_ghost_devices, "i");
+MODULE_PARM_DESC(scsi_allow_ghost_devices, "allow devices marked as being offline to be accessed anyway (0 = off, else allow ghosts on lun 0 through scsi_allow_ghost_devices - 1");
 
 #else
 
@@ -243,6 +249,21 @@ static int __init scsi_luns_setup(char *str)
 }
 
 __setup("max_scsi_luns=", scsi_luns_setup);
+
+static int __init scsi_allow_ghost_devices_setup(char *str)
+{
+	unsigned int tmp;
+
+	if (get_option(&str, &tmp) == 1) {
+		scsi_allow_ghost_devices = tmp;
+		return 1;
+	} else {
+		printk("scsi_allow_ghost_devices_setup: usage scsi_allow_ghost_devices=n (0: off else\nallow ghost devices (ghost devices are devices that report themselves as\nbeing offline but which we allow access to anyway) on lun 0 through n - 1.\n");
+		return 0;
+	}
+}
+
+__setup("scsi_allow_ghost_devices=", scsi_allow_ghost_devices_setup);
 
 #endif
 
@@ -620,6 +641,7 @@ static int scan_scsis_single(unsigned int channel, unsigned int dev,
 		} else {
 			/* assume no peripheral if any other sort of error */
 			scsi_release_request(SRpnt);
+			scsi_release_commandblocks(SDpnt);
 			return 0;
 		}
 	}
@@ -628,6 +650,24 @@ static int scan_scsis_single(unsigned int channel, unsigned int dev,
 	 * Check for SPARSELUN before checking the peripheral qualifier,
 	 * so sparse lun devices are completely scanned.
 	 */
+
+	/*
+	 * If we are offline and we are on a LUN != 0, then skip this entry.
+	 * If we are on a BLIST_FORCELUN device this will stop the scan at
+	 * the first offline LUN (typically the correct thing to do).  If
+	 * we are on a BLIST_SPARSELUN device then this won't stop the scan,
+	 * but it will keep us from having false entries in our device
+	 * array. DL
+	 *
+	 * NOTE: Need to test this to make sure it doesn't cause problems
+	 * with tape autoloaders, multidisc CD changers, and external
+	 * RAID chassis that might use sparse luns or multiluns... DL
+	 */
+	if (lun != 0 && (scsi_result[0] >> 5) == 1) {
+		scsi_release_request(SRpnt);
+		scsi_release_commandblocks(SDpnt);
+		return 0;
+	}
 
 	/*
 	 * Get any flags for this device.  
@@ -667,8 +707,11 @@ static int scan_scsis_single(unsigned int channel, unsigned int dev,
 
 	SDpnt->removable = (0x80 & scsi_result[1]) >> 7;
 	/* Use the peripheral qualifier field to determine online/offline */
-	if (((scsi_result[0] >> 5) & 7) == 1) 	SDpnt->online = FALSE;
-	else SDpnt->online = TRUE;
+	if ((((scsi_result[0] >> 5) & 7) == 1) &&
+	    (lun >= scsi_allow_ghost_devices))
+		SDpnt->online = FALSE;
+	else 
+		SDpnt->online = TRUE;
 	SDpnt->lockable = SDpnt->removable;
 	SDpnt->changed = 0;
 	SDpnt->access_count = 0;
@@ -876,11 +919,26 @@ static int scan_scsis_single(unsigned int channel, unsigned int dev,
 		 * I think we need REPORT LUNS in future to avoid scanning
 		 * of unused LUNs. But, that is another item.
 		 */
+		/*
 		if (*max_dev_lun < shpnt->max_lun)
 			*max_dev_lun = shpnt->max_lun;
 		else 	if ((max_scsi_luns >> 1) >= *max_dev_lun)
 				*max_dev_lun += shpnt->max_lun;
 			else	*max_dev_lun = max_scsi_luns;
+		*/
+		/*
+		 * Blech...the above code is broken.  When you have a device
+		 * that is present, and it is a FORCELUN device, then we
+		 * need to scan *all* the luns on that device.  Besides,
+		 * skipping the scanning of LUNs is a false optimization.
+		 * Scanning for a LUN on a present device is a very fast
+		 * operation, it's scanning for devices that don't exist that
+		 * is expensive and slow (although if you are truly scanning
+		 * through MAX_SCSI_LUNS devices that would be bad, I hope
+		 * all of the controllers out there set a reasonable value
+		 * in shpnt->max_lun).  DL
+		 */
+		*max_dev_lun = shpnt->max_lun;
 		return 1;
 	}
 	/*

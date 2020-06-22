@@ -40,6 +40,7 @@
 #ifdef CONFIG_NET
 extern __u32 sysctl_wmem_max;
 extern __u32 sysctl_rmem_max;
+extern int sysctl_optmem_max;
 #endif
 
 #ifdef CONFIG_INET
@@ -261,6 +262,8 @@ EXPORT_SYMBOL(icmp_statistics);
 EXPORT_SYMBOL(icmp_err_convert);
 EXPORT_SYMBOL(ip_options_compile);
 EXPORT_SYMBOL(ip_options_undo);
+EXPORT_SYMBOL(arp_create);
+EXPORT_SYMBOL(arp_xmit);
 EXPORT_SYMBOL(arp_send);
 EXPORT_SYMBOL(arp_broken_ops);
 EXPORT_SYMBOL(__ip_select_ident);
@@ -548,6 +551,7 @@ EXPORT_SYMBOL(netdev_fastroute);
 #ifdef CONFIG_SYSCTL
 EXPORT_SYMBOL(sysctl_wmem_max);
 EXPORT_SYMBOL(sysctl_rmem_max);
+EXPORT_SYMBOL(sysctl_optmem_max);
 #ifdef CONFIG_INET
 EXPORT_SYMBOL(sysctl_ip_default_ttl);
 #endif

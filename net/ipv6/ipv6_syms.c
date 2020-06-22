@@ -33,3 +33,5 @@ EXPORT_SYMBOL(inet6_ioctl);
 EXPORT_SYMBOL(ipv6_get_saddr);
 EXPORT_SYMBOL(ipv6_chk_addr);
 EXPORT_SYMBOL(in6_dev_finish_destroy);
+EXPORT_SYMBOL(ipv6_skip_exthdr);
+

@@ -1,7 +1,7 @@
 /*
  *	Intel CPU Microcode Update driver for Linux
  *
- *	Copyright (C) 2000 Tigran Aivazian
+ *	Copyright (C) 2000-2004 Tigran Aivazian
  *
  *	This driver allows to upgrade microcode on Intel processors
  *	belonging to IA-32 family - PentiumPro, Pentium II, 
@@ -64,6 +64,10 @@
  *		Removed ->read() method and obsoleted MICROCODE_IOCFREE ioctl
  *		because we no longer hold a copy of applied microcode 
  *		in kernel memory.
+ *	1.14	23 Feb 2004 Tigran Aivazian <tigran@veritas.com>
+ *		Restored devfs regular file entry point which was
+ *		accidentally removed when back-porting changes from the 2.6
+ *		version of the driver.
  */
 
 
@@ -73,6 +77,7 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/miscdevice.h>
+#include <linux/devfs_fs_kernel.h>
 #include <linux/spinlock.h>
 #include <linux/mm.h>
 
@@ -84,8 +89,8 @@ MODULE_DESCRIPTION("Intel CPU (IA-32) microcode update driver");
 MODULE_AUTHOR("Tigran Aivazian <tigran@veritas.com>");
 MODULE_LICENSE("GPL");
 
-#define MICROCODE_VERSION 	"1.13"
-#define MICRO_DEBUG 		1
+#define MICROCODE_VERSION 	"1.14"
+#define MICRO_DEBUG 		0
 #if MICRO_DEBUG
 #define dprintk(x...) printk(KERN_INFO x)
 #else
@@ -470,6 +475,7 @@ static int microcode_ioctl (struct inode *inode, struct file *file,
 	return -EINVAL;
 }
 
+/* shared between misc device and devfs regular file */
 static struct file_operations microcode_fops = {
 	.owner		= THIS_MODULE,
 	.write		= microcode_write,
@@ -483,29 +489,38 @@ static struct miscdevice microcode_dev = {
 	.fops		= &microcode_fops,
 };
 
+static devfs_handle_t devfs_handle;
+
 static int __init microcode_init (void)
 {
 	int error;
 
 	error = misc_register(&microcode_dev);
-	if (error) {
+	if (error)
 		printk(KERN_ERR
 			"microcode: can't misc_register on minor=%d\n",
 			MICROCODE_MINOR);
-		return error;
+	devfs_handle = devfs_register(NULL, "cpu/microcode",
+			DEVFS_FL_DEFAULT, 0, 0, S_IFREG | S_IRUSR | S_IWUSR, 
+			&microcode_fops, NULL);
+	if (devfs_handle == NULL && error) {
+		printk(KERN_ERR "microcode: failed to devfs_register()\n");
+		goto out;
 	}
-
+	error = 0;
 	printk(KERN_INFO 
-		"IA-32 Microcode Update Driver: v%s <tigran@veritas.com>\n", 
-		MICROCODE_VERSION);
-	return 0;
+		"IA-32 Microcode Update Driver: v"
+		MICROCODE_VERSION " <tigran@veritas.com>\n");
+out:
+	return error;
 }
 
 static void __exit microcode_exit (void)
 {
 	misc_deregister(&microcode_dev);
-	printk(KERN_INFO "IA-32 Microcode Update Driver v%s unregistered\n", 
-			MICROCODE_VERSION);
+	devfs_unregister(devfs_handle);
+	printk(KERN_INFO "IA-32 Microcode Update Driver v" 
+		MICROCODE_VERSION " unregistered\n");
 }
 
 module_init(microcode_init)

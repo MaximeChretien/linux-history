@@ -86,7 +86,7 @@ int dma_region_alloc(struct dma_region *dma, unsigned long n_bytes, struct pci_d
 	memset(dma->kvirt, 0, n_pages * PAGE_SIZE);
 
 	/* allocate scatter/gather list */
-	dma->sglist = kmalloc(dma->n_pages * sizeof(struct scatterlist), GFP_KERNEL);
+	dma->sglist = vmalloc(dma->n_pages * sizeof(struct scatterlist));
 	if (!dma->sglist) {
 		printk(KERN_ERR "dma_region_alloc: kmalloc(sglist) failed\n");
 		goto err;
@@ -130,7 +130,7 @@ void dma_region_free(struct dma_region *dma)
 	}
 
 	if (dma->sglist) {
-		kfree(dma->sglist);
+		vfree(dma->sglist);
 		dma->sglist = NULL;
 	}
 

@@ -196,7 +196,6 @@ extern void mp_register_lapic_address (u64 address);
 extern void mp_register_ioapic (u8 id, u32 address, u32 irq_base);
 extern void mp_override_legacy_irq (u8 bus_irq, u8 polarity, u8 trigger, u32 global_irq);
 extern void mp_config_acpi_legacy_irqs (void);
-extern void mp_config_ioapic_for_sci(int irq);
 extern void mp_parse_prt (void);
 #endif /*CONFIG_X86_IO_APIC*/
 

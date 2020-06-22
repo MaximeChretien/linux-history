@@ -546,7 +546,13 @@ static int notify_push(unsigned int cmd, __u32 controller,
 static void notify_up(__u32 contr)
 {
 	struct capi_interface_user *p;
+	__u16 appl;
 
+	for (appl = 1; appl <= CAPI_MAXAPPL; appl++) {
+		if (!VALID_APPLID(appl)) continue;
+		if (APPL(appl)->releasing) continue;
+		CARD(contr)->driver->register_appl(CARD(contr), appl, &APPL(appl)->rparam);
+	}
         printk(KERN_NOTICE "kcapi: notify up contr %d\n", contr);
 	spin_lock(&capi_users_lock);
 	for (p = capi_users; p; p = p->next) {
@@ -714,12 +720,16 @@ static void controllercb_appl_released(struct capi_ctr * card, __u16 appl)
 			nextpp = &(*pp)->next;
 		}
 	}
-	APPL(appl)->releasing--;
-	if (APPL(appl)->releasing <= 0) {
-		APPL(appl)->signal = 0;
-		APPL_MARK_FREE(appl);
-		printk(KERN_INFO "kcapi: appl %d down\n", appl);
-	}
+	if (APPL(appl)->releasing) { /* only release if the application was marked for release */
+		printk(KERN_DEBUG "kcapi: appl %d releasing(%d)\n", appl, APPL(appl)->releasing);
+		APPL(appl)->releasing--;
+		if (APPL(appl)->releasing <= 0) {
+			APPL(appl)->signal = 0;
+			APPL_MARK_FREE(appl);
+			printk(KERN_INFO "kcapi: appl %d down\n", appl);
+		}
+	} else
+		printk(KERN_WARNING "kcapi: appl %d card%d released without request\n", appl, card->cnr);
 }
 /*
  * ncci management
@@ -872,16 +882,7 @@ error:
 
 static void controllercb_ready(struct capi_ctr * card)
 {
-	__u16 appl;
-
 	card->cardstate = CARD_RUNNING;
-
-	for (appl = 1; appl <= CAPI_MAXAPPL; appl++) {
-		if (!VALID_APPLID(appl)) continue;
-		if (APPL(appl)->releasing) continue;
-		card->driver->register_appl(card, appl, &APPL(appl)->rparam);
-	}
-
         printk(KERN_NOTICE "kcapi: card %d \"%s\" ready.\n",
 		CARDNR(card), card->name);
 

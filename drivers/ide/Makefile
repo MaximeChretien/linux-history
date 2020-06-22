@@ -28,9 +28,13 @@ endif
 
 # Core IDE code - must come before legacy
 
-ide-core-objs	:= ide-iops.o ide-taskfile.o ide.o ide-lib.o ide-io.o ide-default.o ide-proc.o ide-probe.o ide-geometry.o
+ide-core-objs	:= ide-iops.o ide-taskfile.o ide.o ide-lib.o ide-io.o \
+		   ide-default.o ide-probe.o ide-geometry.o
 ide-detect-objs	:= ide-probe-mini.o
 
+ifeq ($(CONFIG_PROC_FS),y)
+ide-core-objs	+= ide-proc.o
+endif
 ifeq ($(CONFIG_BLK_DEV_IDEPCI),y)
 ide-core-objs += setup-pci.o
 endif

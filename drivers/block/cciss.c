@@ -508,12 +508,8 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 			driver_geo.heads = hba[ctlr]->drv[dsk].heads;
 			driver_geo.sectors = hba[ctlr]->drv[dsk].sectors;
 			driver_geo.cylinders = hba[ctlr]->drv[dsk].cylinders;
-		} else {
-			driver_geo.heads = 0xff;
-			driver_geo.sectors = 0x3f;
-			driver_geo.cylinders = 
-				hba[ctlr]->drv[dsk].nr_blocks / (0xff*0x3f);
-		}
+		} else 
+			return -ENXIO;
 		driver_geo.start=
 			hba[ctlr]->hd[MINOR(inode->i_rdev)].start_sect;
 		if (copy_to_user((void *) arg, &driver_geo,
@@ -528,12 +524,8 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 			driver_geo.heads = hba[ctlr]->drv[dsk].heads;
 			driver_geo.sectors = hba[ctlr]->drv[dsk].sectors;
 			driver_geo.cylinders = hba[ctlr]->drv[dsk].cylinders;
-		} else {
-			driver_geo.heads = 0xff;
-			driver_geo.sectors = 0x3f;
-			driver_geo.cylinders = 
-				hba[ctlr]->drv[dsk].nr_blocks / (0xff*0x3f);
-		}
+		} else 
+			return -ENXIO;
 		driver_geo.start= 
 		hba[ctlr]->hd[MINOR(inode->i_rdev)].start_sect;
 		if (copy_to_user((void *) arg, &driver_geo,  

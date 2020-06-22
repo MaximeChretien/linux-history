@@ -6,7 +6,7 @@
  *  Copyright (C) 2000 Karsten Keil <kkeil@suse.de>
  *  Copyright (C) 2001,2002 Andi Kleen <ak@suse.de>
  *
- *  $Id: head.S,v 1.58 2003/11/02 05:05:31 ak Exp $
+ *  $Id: head.S,v 1.59 2004/02/10 05:53:06 ak Exp $
  */
 
 
@@ -341,7 +341,7 @@ gdt32_end:
 .align 64 /* cacheline aligned, keep this synchronized with asm/desc.h */
 ENTRY(gdt_table)
 	.quad	0x0000000000000000	/* This one is magic */
-	.quad	0x00af9a000000ffff ^ (1<<21)	/* __KERNEL_COMPAT32_CS */	
+	.quad	0x008f9a000000ffff	/* __KERNEL_COMPAT32_CS */	
 	.quad	0x00af9a000000ffff	/* __KERNEL_CS */
 	.quad	0x00cf92000000ffff	/* __KERNEL_DS */
 	.quad	0x00cffe000000ffff	/* __USER32_CS */

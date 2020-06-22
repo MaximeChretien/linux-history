@@ -9,6 +9,7 @@ struct scatterlist {
 
     unsigned int length;
     dma_addr_t dma_address;
+    unsigned int dma_length;
 };
 
 #define ISA_DMA_THRESHOLD (0x00ffffff)

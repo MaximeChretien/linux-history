@@ -16,7 +16,7 @@
  *
  * This file assumes that there is a hole at the end of user address space.
  *
- * $Id: sys_ia32.c,v 1.69 2004/01/29 02:52:13 ak Exp $
+ * $Id: sys_ia32.c,v 1.70 2004/03/03 23:36:43 ak Exp $
  */
 
 #include <linux/config.h>
@@ -1802,7 +1802,7 @@ sys32_rt_sigtimedwait(sigset32_t *uthese, siginfo_t32 *uinfo,
 			return -EFAULT;
 	}
 	set_fs (KERNEL_DS);
-	ret = sys_rt_sigtimedwait(&s, &info, &t, sigsetsize);
+	ret = sys_rt_sigtimedwait(&s, &info, uts ? &t : NULL, sigsetsize);
 	set_fs (old_fs);
 	if (ret >= 0 && uinfo) {
 		if (copy_to_user (uinfo, siginfo64to32(&info32, &info),
@@ -3042,7 +3042,7 @@ struct exec_domain ia32_exec_domain = {
 
 static int __init ia32_init (void)
 {
-	printk("IA32 emulation $Id: sys_ia32.c,v 1.69 2004/01/29 02:52:13 ak Exp $\n");  
+	printk("IA32 emulation $Id: sys_ia32.c,v 1.70 2004/03/03 23:36:43 ak Exp $\n");  
 	ia32_exec_domain.signal_map = default_exec_domain.signal_map;
 	ia32_exec_domain.signal_invmap = default_exec_domain.signal_invmap;
 	register_exec_domain(&ia32_exec_domain);

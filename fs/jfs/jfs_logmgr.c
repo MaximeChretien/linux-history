@@ -185,6 +185,7 @@ static int lbmIOWait(struct lbuf * bp, int flag);
 static void lbmIODone(struct buffer_head *bh, int);
 static void lbmStartIO(struct lbuf * bp);
 static void lmGCwrite(struct jfs_log * log, int cant_block);
+static int lmLogSync(struct jfs_log * log, int nosyncwait);
 
 
 /*
@@ -799,7 +800,7 @@ static void lmGCwrite(struct jfs_log * log, int cant_write)
  * NOTE:
  *	This routine is called a interrupt time by lbmIODone
  */
-void lmPostGC(struct lbuf * bp)
+static void lmPostGC(struct lbuf * bp)
 {
 	unsigned long flags;
 	struct jfs_log *log = bp->l_log;
@@ -922,7 +923,7 @@ void lmPostGC(struct lbuf * bp)
  *			
  * serialization: LOG_LOCK() held on entry/exit
  */
-int lmLogSync(struct jfs_log * log, int nosyncwait)
+static int lmLogSync(struct jfs_log * log, int nosyncwait)
 {
 	int logsize;
 	int written;		/* written since last syncpt */
@@ -1697,7 +1698,7 @@ static int lbmLogInit(struct jfs_log * log)
 		if (lbuf == 0)
 			goto error;
 		lbuf->l_bh.b_data = lbuf->l_ldata =
-		    (char *) __get_free_page(GFP_KERNEL);
+		    (char *) get_zeroed_page(GFP_KERNEL);
 		if (lbuf->l_ldata == 0) {
 			kfree(lbuf);
 			goto error;

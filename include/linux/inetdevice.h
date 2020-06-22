@@ -18,6 +18,8 @@ struct ipv4_devconf
 	int	mc_forwarding;
 	int	tag;
 	int     arp_filter;
+	int	arp_announce;
+	int	arp_ignore;
 	int	medium_id;
 	int	force_igmp_version;
 	void	*sysctl;
@@ -69,6 +71,8 @@ struct in_device
 	  (ipv4_devconf.accept_redirects || (in_dev)->cnf.accept_redirects)))
 
 #define IN_DEV_ARPFILTER(in_dev)	(ipv4_devconf.arp_filter || (in_dev)->cnf.arp_filter)
+#define IN_DEV_ARP_ANNOUNCE(in_dev)	(max(ipv4_devconf.arp_announce, (in_dev)->cnf.arp_announce))
+#define IN_DEV_ARP_IGNORE(in_dev)	(max(ipv4_devconf.arp_ignore, (in_dev)->cnf.arp_ignore))
 
 struct in_ifaddr
 {
@@ -95,8 +99,9 @@ extern void		devinet_init(void);
 extern struct in_device *inetdev_init(struct net_device *dev);
 extern struct in_device	*inetdev_by_index(int);
 extern u32		inet_select_addr(const struct net_device *dev, u32 dst, int scope);
+extern u32		inet_confirm_addr(const struct net_device *dev, u32 dst, u32 local, int scope);
 extern struct in_ifaddr *inet_ifa_byprefix(struct in_device *in_dev, u32 prefix, u32 mask);
-extern void		inet_forward_change(void);
+extern void		inet_forward_change(int);
 
 static __inline__ int inet_ifa_match(u32 addr, struct in_ifaddr *ifa)
 {

@@ -452,10 +452,16 @@ done:
 	}
 	case MCAST_MSFILTER:
 	{
+		extern int sysctl_optmem_max;
+		extern int sysctl_mld_max_msf;
 		struct group_filter *gsf;
 
 		if (optlen < GROUP_FILTER_SIZE(0))
 			goto e_inval;
+		if (optlen > sysctl_optmem_max) {
+			retv = -ENOBUFS;
+			break;
+		}
 		gsf = (struct group_filter *)kmalloc(optlen,GFP_KERNEL);
 		if (gsf == 0) {
 			retv = -ENOBUFS;
@@ -464,6 +470,18 @@ done:
 		retv = -EFAULT;
 		if (copy_from_user(gsf, optval, optlen)) {
 			kfree(gsf);
+			break;
+		}
+		/* numsrc >= (4G-140)/128 overflow in 32 bits */
+		if (gsf->gf_numsrc >= 0x1ffffffU ||
+		    gsf->gf_numsrc > sysctl_mld_max_msf) {
+			kfree(gsf);
+			retv = -ENOBUFS;
+			break;
+		}
+		if (GROUP_FILTER_SIZE(gsf->gf_numsrc) > optlen) {
+			kfree(gsf);
+			retv = -EINVAL;
 			break;
 		}
 		retv = ip6_mc_msfilter(sk, gsf);

@@ -371,7 +371,7 @@ static int
 nfs_scan_read(struct inode *inode, struct list_head *dst, unsigned long idx_start, unsigned int npages)
 {
 	int	res;
-	res = nfs_scan_list(&inode->u.nfs_i.read, dst, NULL, idx_start, npages);
+	res = nfs_scan_list(&inode->u.nfs_i.read, dst, idx_start, npages);
 	inode->u.nfs_i.nread -= res;
 	if ((inode->u.nfs_i.nread == 0) != list_empty(&inode->u.nfs_i.read))
 		printk(KERN_ERR "NFS: desynchronized value of nfs_i.nread.\n");

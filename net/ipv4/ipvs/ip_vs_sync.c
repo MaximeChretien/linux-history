@@ -13,17 +13,9 @@
  *              through multicast
  */
 
-#define __KERNEL_SYSCALLS__             /*  for waitpid */
-
-#include <linux/config.h>
 #include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/errno.h>
 #include <linux/slab.h>
 #include <linux/net.h>
-#include <linux/sched.h>
-#include <linux/wait.h>
-#include <linux/unistd.h>
 
 #include <linux/skbuff.h>
 #include <linux/in.h>
@@ -559,8 +551,6 @@ ip_vs_receive(struct socket *sock, char *buffer, const size_t buflen)
 }
 
 
-static int errno;
-
 static DECLARE_WAIT_QUEUE_HEAD(sync_wait);
 static pid_t sync_pid = 0;
 
@@ -679,9 +669,9 @@ static int sync_thread(void *startup)
 	set_fs(KERNEL_DS);
 
 	if (ip_vs_sync_state == IP_VS_STATE_MASTER)
-		sprintf(current->comm, "ipvs syncmaster");
+		sprintf(current->comm, "ipvs_syncmaster");
 	else if (ip_vs_sync_state == IP_VS_STATE_BACKUP)
-		sprintf(current->comm, "ipvs syncbackup");
+		sprintf(current->comm, "ipvs_syncbackup");
 	else IP_VS_BUG();
 
 	spin_lock_irq(&current->sigmask_lock);
@@ -726,10 +716,19 @@ static int sync_thread(void *startup)
 
 static int fork_sync_thread(void *startup)
 {
+	pid_t pid;
+
 	/* fork the sync thread here, then the parent process of the
 	   sync thread is the init process after this thread exits. */
-	if (kernel_thread(sync_thread, startup, 0) < 0)
-		IP_VS_BUG();
+  repeat:
+	if ((pid = kernel_thread(sync_thread, startup, 0)) < 0) {
+		IP_VS_ERR("could not create sync_thread due to %d... "
+			  "retrying.\n", pid);
+		current->state = TASK_UNINTERRUPTIBLE;
+		schedule_timeout(HZ);
+		goto repeat;
+	}
+
 	return 0;
 }
 
@@ -738,7 +737,6 @@ int start_sync_thread(int state, char *mcast_ifn)
 {
 	DECLARE_COMPLETION(startup);
 	pid_t pid;
-	int waitpid_result;
 
 	if (sync_pid)
 		return -EEXIST;
@@ -750,12 +748,13 @@ int start_sync_thread(int state, char *mcast_ifn)
 	ip_vs_sync_state = state;
 	strcpy(ip_vs_mcast_ifn, mcast_ifn);
 
-	if ((pid = kernel_thread(fork_sync_thread, &startup, 0)) < 0)
-		IP_VS_BUG();
-
-	if ((waitpid_result = waitpid(pid, NULL, __WCLONE)) != pid) {
-		IP_VS_ERR("%s: waitpid(%d,...) failed, errno %d\n",
-			  __FUNCTION__, pid, -waitpid_result);
+  repeat:
+	if ((pid = kernel_thread(fork_sync_thread, &startup, 0)) < 0) {
+		IP_VS_ERR("could not create fork_sync_thread due to %d... "
+			  "retrying.\n", pid);
+		current->state = TASK_UNINTERRUPTIBLE;
+		schedule_timeout(HZ);
+		goto repeat;
 	}
 
 	wait_for_completion(&startup);

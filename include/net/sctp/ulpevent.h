@@ -40,6 +40,7 @@
  *   Jon Grimm             <jgrimm@us.ibm.com>
  *   La Monte H.P. Yarroll <piggy@acm.org>
  *   Karl Knutson          <karl@athena.chicago.il.us>
+ *   Sridhar Samudrala     <sri@us.ibm.com>
  *
  * Any bugs reported given to us we will try to fix... any fixes shared will
  * be incorporated into the next SCTP release.
@@ -47,8 +48,6 @@
 
 #ifndef __sctp_ulpevent_h__
 #define __sctp_ulpevent_h__
-
-#include <net/sctp/compat.h>
 
 /* A structure to carry information to the ULP (e.g. Sockets API) */
 /* Warning: This sits inside an skb.cb[] area.  Be very careful of
@@ -59,7 +58,6 @@ struct sctp_ulpevent {
 	int msg_flags;
 	int iif;
 };
-#define event_asoc sndrcvinfo.sinfo_assoc_id
 
 /* Retrieve the skb this event sits inside of. */
 static inline struct sk_buff *sctp_event2skb(struct sctp_ulpevent *ev)
@@ -74,9 +72,10 @@ static inline struct sctp_ulpevent *sctp_skb2event(struct sk_buff *skb)
 }
 
 struct sctp_ulpevent *sctp_ulpevent_new(int size, int flags, int gfp);
-struct sctp_ulpevent *sctp_ulpevent_init(struct sctp_ulpevent *, int flags);
+void sctp_ulpevent_init(struct sctp_ulpevent *, int flags);
 void sctp_ulpevent_free(struct sctp_ulpevent *);
 int sctp_ulpevent_is_notification(const struct sctp_ulpevent *);
+void sctp_queue_purge_ulpevents(struct sk_buff_head *list);
 
 struct sctp_ulpevent *sctp_ulpevent_make_assoc_change(
 	const struct sctp_association *asoc,

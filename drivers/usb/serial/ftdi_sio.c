@@ -17,6 +17,11 @@
  * See http://ftdi-usb-sio.sourceforge.net for upto date testing info
  *	and extra documentation
  *
+ * (09/Feb/2004) Ian Abbott
+ *      Changed full name of USB-UIRT device to avoid "/" character.
+ *      Added FTDI's alternate PID (0x6006) for FT232/245 devices.
+ *      Added PID for "ELV USB Module UO100" from Stefan Frings.
+ * 
  * (21/Oct/2003) Ian Abbott
  *      Renamed some VID/PID macros for Matrix Orbital and Perle Systems
  *      devices.  Removed Matrix Orbital and Perle Systems devices from the
@@ -272,8 +277,12 @@ static struct usb_device_id id_table_sio [] = {
 
 
 static struct usb_device_id id_table_8U232AM [] = {
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_IRTRANS_PID, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_VID, FTDI_8U232AM_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_8U232AM_ALT_PID, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_VID, FTDI_RELAIS_PID, 0, 0x3ff) },
+	{ USB_DEVICE(INTERBIOMETRICS_VID, INTERBIOMETRICS_IOBOARD_PID) },
+	{ USB_DEVICE(INTERBIOMETRICS_VID, INTERBIOMETRICS_MINI_IOBOARD_PID) },
 	{ USB_DEVICE_VER(FTDI_NF_RIC_VID, FTDI_NF_RIC_PID, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_VID, FTDI_XF_632_PID, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_VID, FTDI_XF_634_PID, 0, 0x3ff) },
@@ -337,12 +346,15 @@ static struct usb_device_id id_table_8U232AM [] = {
 	{ USB_DEVICE_VER(FTDI_VID, PROTEGO_R2X0, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_VID, PROTEGO_SPECIAL_3, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_VID, PROTEGO_SPECIAL_4, 0, 0x3ff) },
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_ELV_UO100_PID, 0, 0x3ff) },
 	{ }						/* Terminating entry */
 };
 
 
 static struct usb_device_id id_table_FT232BM [] = {
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_IRTRANS_PID, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_VID, FTDI_8U232AM_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_8U232AM_ALT_PID, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_VID, FTDI_RELAIS_PID, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_NF_RIC_VID, FTDI_NF_RIC_PID, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_VID, FTDI_XF_632_PID, 0x400, 0xffff) },
@@ -415,6 +427,7 @@ static struct usb_device_id id_table_FT232BM [] = {
 	{ USB_DEVICE_VER(FTDI_VID, PROTEGO_R2X0, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_VID, PROTEGO_SPECIAL_3, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_VID, PROTEGO_SPECIAL_4, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_ELV_UO100_PID, 0x400, 0xffff) },
 	{ }						/* Terminating entry */
 };
 
@@ -432,9 +445,13 @@ static struct usb_device_id id_table_HE_TIRA1 [] = {
 
 
 static __devinitdata struct usb_device_id id_table_combined [] = {
+	{ USB_DEVICE(FTDI_VID, FTDI_IRTRANS_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_SIO_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_8U232AM_PID) },
+	{ USB_DEVICE(FTDI_VID, FTDI_8U232AM_ALT_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_RELAIS_PID) },
+	{ USB_DEVICE(INTERBIOMETRICS_VID, INTERBIOMETRICS_IOBOARD_PID) },
+	{ USB_DEVICE(INTERBIOMETRICS_VID, INTERBIOMETRICS_MINI_IOBOARD_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_XF_632_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_XF_634_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_XF_547_PID) },
@@ -508,6 +525,7 @@ static __devinitdata struct usb_device_id id_table_combined [] = {
 	{ USB_DEVICE(FTDI_VID, PROTEGO_R2X0) },
 	{ USB_DEVICE(FTDI_VID, PROTEGO_SPECIAL_3) },
 	{ USB_DEVICE(FTDI_VID, PROTEGO_SPECIAL_4) },
+	{ USB_DEVICE(FTDI_VID, FTDI_ELV_UO100_PID) },
 	{ }						/* Terminating entry */
 };
 
@@ -652,7 +670,7 @@ static struct usb_serial_device_type ftdi_FT232BM_device = {
 
 static struct usb_serial_device_type ftdi_USB_UIRT_device = {
 	.owner =		THIS_MODULE,
-	.name =			"USB-UIRT Infrared Receiver/Transmitter",
+	.name =			"USB-UIRT Infrared Tranceiver",
 	.id_table =		id_table_USB_UIRT,
 	.num_interrupt_in =	0,
 	.num_bulk_in =		1,
@@ -1325,15 +1343,16 @@ static void ftdi_close (struct usb_serial_port *port, struct file *filp)
 			/* drop RTS */
 			if (set_rts(port, LOW) < 0) {
 				err("Error from RTS LOW urb");
-			}	
-			/* shutdown our bulk read */
-			if (port->read_urb) {
-				usb_unlink_urb (port->read_urb);	
 			}
-			/* unlink the running write urbs */
-			
-
 		} /* Note change no line is hupcl is off */
+
+		/* shutdown our bulk read */
+		if (port->read_urb) {
+			if(usb_unlink_urb (port->read_urb)<0)
+				err("Error unlinking urb");
+		}
+		/* unlink the running write urbs */
+
 	} /* if (serial->dev) */
 
 

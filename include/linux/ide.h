@@ -1102,7 +1102,6 @@ typedef struct {
 #ifdef CONFIG_PROC_FS
 extern void proc_ide_create(void);
 extern void proc_ide_destroy(void);
-extern void recreate_proc_ide_device(ide_hwif_t *, ide_drive_t *);
 extern void destroy_proc_ide_device(ide_hwif_t *, ide_drive_t *);
 extern void destroy_proc_ide_drives(ide_hwif_t *);
 extern void create_proc_ide_interfaces(void);

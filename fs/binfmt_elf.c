@@ -479,7 +479,8 @@ static int load_elf_binary(struct linux_binprm * bprm, struct pt_regs * regs)
 		goto out_free_ph;
 		
 	files = current->files;		/* Refcounted so ok */
-	if(unshare_files() < 0)
+	retval = unshare_files();
+	if (retval < 0)
 		goto out_free_ph;
 	if (files == current->files) {
 		put_files_struct(files);
@@ -820,7 +821,8 @@ out:
 	/* error cleanup */
 out_free_dentry:
 	allow_write_access(interpreter);
-	fput(interpreter);
+	if (interpreter)
+		fput(interpreter);
 out_free_interp:
 	if (elf_interpreter)
 		kfree(elf_interpreter);

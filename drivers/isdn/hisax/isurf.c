@@ -235,8 +235,18 @@ setup_isurf(struct IsdnCard *card)
 				pd->prepare(pd);
 				pd->deactivate(pd);
 				pd->activate(pd);
+				/* The ISA-PnP logic apparently
+				 * expects upper limit address to be
+				 * set. Since the isa-pnp module
+				 * doesn't do this, so we have to make
+				 * up for it.
+				 */
+				isapnp_cfg_begin(pd->bus->number, pd->devfn);
+				isapnp_write_word(ISAPNP_CFG_MEM+3, 
+					pd->resource[8].end >> 8);
+				isapnp_cfg_end();
 				cs->hw.isurf.reset = pd->resource[0].start;
-				cs->hw.isurf.phymem = pd->resource[1].start;
+				cs->hw.isurf.phymem = pd->resource[8].start;
 				cs->irq = pd->irq_resource[0].start;
 				if (!cs->irq || !cs->hw.isurf.reset || !cs->hw.isurf.phymem) {
 					printk(KERN_ERR "ISurfPnP:some resources are missing %d/%x/%lx\n",

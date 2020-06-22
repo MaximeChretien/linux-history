@@ -255,6 +255,10 @@ static struct pci_device_id rtl8139_pci_tbl[] = {
 	{0x11db, 0x1234, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RTL8139 },
 	{0x1432, 0x9130, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RTL8139 },
 	{0x02ac, 0x1012, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RTL8139 },
+	{0x018a, 0x0106, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RTL8139 },
+	{0x126c, 0x1211, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RTL8139 },
+	{0x1743, 0x8139, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RTL8139 },
+	{0x021b, 0x8139, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RTL8139 },
 
 #ifdef CONFIG_SH_SECUREEDGE5410
 	/* Bogus 8139 silicon reports 8129 without external PROM :-( */
@@ -953,12 +957,11 @@ static int __devinit rtl8139_init_one (struct pci_dev *pdev,
 	if (i < 0)
 		return i;
 
-	tp = dev->priv;
-	ioaddr = tp->mmio_addr;
-
-	assert (ioaddr != NULL);
 	assert (dev != NULL);
+	tp = dev->priv;
 	assert (tp != NULL);
+	ioaddr = tp->mmio_addr;
+	assert (ioaddr != NULL);
 
 	addr_len = read_eeprom (ioaddr, 0, 8) == 0x8129 ? 8 : 6;
 	for (i = 0; i < 3; i++)

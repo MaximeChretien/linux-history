@@ -59,6 +59,12 @@ typedef unsigned long xfs_pflags_t;
         current->flags |= PF_FSTRANS;   \
 } while (0)
 
+#define PFLAGS_CLEAR_FSTRANS(STATEP) do { \
+	*(STATEP) = current->flags;	\
+	current->flags &= ~PF_FSTRANS;	\
+} while (0)
+
+
 #define PFLAGS_RESTORE(STATEP) do {     \
 	current->flags = *(STATEP);     \
 } while (0)

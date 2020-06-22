@@ -400,13 +400,40 @@ extern inline void sync_core(void)
 } 
 
 #define ARCH_HAS_PREFETCH
-#define ARCH_HAS_PREFETCHW
 #define ARCH_HAS_SPINLOCK_PREFETCH
 
-#define prefetch(x) __builtin_prefetch((x),0)
+#ifdef CONFIG_MK8
+#define ARCH_HAS_PREFETCHW
 #define prefetchw(x) __builtin_prefetch((x),1)
 #define spin_lock_prefetch(x)  prefetchw(x)
+#else
+#define spin_lock_prefetch(x)  prefetch(x)
+#endif
+
+#define prefetch(x) __builtin_prefetch((x),0)
+
 #define cpu_relax()   rep_nop()
 
 
+static __inline__ void __monitor(const void *eax, unsigned long ecx,
+               unsigned long edx)
+{
+       /* "monitor %eax,%ecx,%edx;" */
+       asm volatile(
+               ".byte 0x0f,0x01,0xc8;"
+               : :"a" (eax), "c" (ecx), "d"(edx));
+}
+
+static __inline__ void __mwait(unsigned long eax, unsigned long ecx)
+{
+       /* "mwait %eax,%ecx;" */
+       asm volatile(
+               ".byte 0x0f,0x01,0xc9;"
+               : :"a" (eax), "c" (ecx));
+}
+
+#define ARCH_HAS_SMP_BALANCE 1
+
 #endif /* __ASM_X86_64_PROCESSOR_H */
+
+

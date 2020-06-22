@@ -603,6 +603,12 @@ void __init setup_arch(char **cmdline_p)
 	do_init_bootmem();
 	if ( ppc_md.progress ) ppc_md.progress("setup_arch: bootmem", 0x3eab);
 
+#ifdef CONFIG_PPC_OCP
+	/* Initialize OCP device list */
+	ocp_early_init();
+	if ( ppc_md.progress ) ppc_md.progress("setup_arch: ocp_early_init", 0x3eab);
+#endif
+
 	ppc_md.setup_arch();
 	if ( ppc_md.progress ) ppc_md.progress("arch: exit", 0x3eab);
 

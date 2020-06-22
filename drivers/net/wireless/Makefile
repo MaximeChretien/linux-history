@@ -12,7 +12,7 @@ obj-n		:=
 obj-		:=
 
 # Things that need to export symbols
-export-objs	:= airo.o orinoco.o hermes.o
+export-objs	:= airo.o orinoco.o hermes.o atmel.o
 
 obj-$(CONFIG_HERMES)		+= orinoco.o hermes.o
 obj-$(CONFIG_PCMCIA_HERMES)	+= orinoco_cs.o
@@ -23,5 +23,6 @@ obj-$(CONFIG_PCI_HERMES)	+= orinoco_pci.o
 
 obj-$(CONFIG_AIRO)		+= airo.o
 obj-$(CONFIG_AIRO_CS)		+= airo_cs.o airo.o
+obj-$(CONFIG_PCMCIA_ATMEL)	+= atmel_cs.o atmel.o
 
 include $(TOPDIR)/Rules.make

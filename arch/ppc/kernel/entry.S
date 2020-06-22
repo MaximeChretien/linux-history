@@ -43,6 +43,10 @@ show_syscalls_task:
  * Handle a system call.
  */
 	.text
+	.stabs	"arch/ppc/kernel/",N_SO,0,0,0f
+	.stabs	"entry.S",N_SO,0,0,0f
+0:
+
 _GLOBAL(DoSyscall)
 	stw	r0,THREAD+LAST_SYSCALL(r2)
 	lwz	r11,_CCR(r1)	/* Clear SO bit in CR */

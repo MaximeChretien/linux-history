@@ -405,6 +405,14 @@ static Scsi_Cmnd *__scsi_end_request(Scsi_Cmnd * SCpnt,
 	 */
 	if (req->bh) {
 		/*
+		 * Recount segments whether we are immediately going to
+		 * requeue the command or not, other code might requeue
+		 * it later and since we changed the segment count up above,
+		 * we need it updated.
+		 */
+		recount_segments(SCpnt);
+
+		/*
 		 * Bleah.  Leftovers again.  Stick the leftovers in
 		 * the front of the queue, and goose the queue again.
 		 */
@@ -966,15 +974,6 @@ void scsi_request_fn(request_queue_t * q)
 			 */
 			if( req->special != NULL ) {
 				SCpnt = (Scsi_Cmnd *) req->special;
-				/*
-				 * We need to recount the number of
-				 * scatter-gather segments here - the
-				 * normal case code assumes this to be
-				 * correct, as it would be a performance
-				 * lose to always recount.  Handling
-				 * errors is always unusual, of course.
-				 */
-				recount_segments(SCpnt);
 			} else {
 				SCpnt = scsi_allocate_device(SDpnt, FALSE, FALSE);
 			}

@@ -52,40 +52,35 @@
 #define ACPI_ENABLE_IRQS()  __sti()
 #define ACPI_FLUSH_CPU_CACHE()	wbinvd()
 
-/*
- * A brief explanation as GNU inline assembly is a bit hairy
- *  %0 is the output parameter in RAX ("=a")
- *  %1 and %2 are the input parameters in RCX ("c")
- *  and an immediate value ("i") respectively
- *  All actual register references are preceded with "%%" as in "%%edx"
- *  Immediate values in the assembly are preceded by "$" as in "$0x1"
- *  The final asm parameter are the operation altered non-output registers.
- */
+static inline int
+__acpi_acquire_global_lock (unsigned int *lock)
+{
+	unsigned int old, new, val;
+	do {
+		old = *lock;
+		new = (((old & ~0x3) + 2) + ((old >> 1) & 0x1));
+		val = cmpxchg(lock, old, new);
+	} while (unlikely (val != old));
+	return (new < 3) ? -1 : 0;
+}
+
+static inline int
+__acpi_release_global_lock (unsigned int *lock)
+{
+	unsigned int old, new, val;
+	do {
+		old = *lock;
+		new = old & ~0x3;
+		val = cmpxchg(lock, old, new);
+	} while (unlikely (val != old));
+	return old & 0x1;
+}
+
 #define ACPI_ACQUIRE_GLOBAL_LOCK(GLptr, Acq) \
-	do { \
-		unsigned long dummy; \
-		asm("1:     movl (%2),%%eax;" \
-			"movl   %%eax,%%edx;" \
-			"andq   %2,%%rdx;" \
-			"btsl   $0x1,%%edx;" \
-			"adcl   $0x0,%%edx;" \
-			"lock;  cmpxchgl %%edx,(%1);" \
-			"jnz    1b;" \
-			"cmpb   $0x3,%%dl;" \
-			"sbbl   %%eax,%%eax" \
-			:"=a"(Acq),"=c"(dummy):"c"(GLptr),"i"(~1L):"dx"); \
-	} while(0)
+	((Acq) = __acpi_acquire_global_lock((unsigned int *) GLptr))
+
 #define ACPI_RELEASE_GLOBAL_LOCK(GLptr, Acq) \
-	do { \
-		unsigned long dummy; \
-		asm("1:     movl (%2),%%eax;" \
-			"movl   %%eax,%%edx;" \
-			"andq   %2,%%rdx;" \
-			"lock;  cmpxchgl %%edx,(%1);" \
-			"jnz    1b;" \
-			"andl   $0x1,%%eax" \
-			:"=a"(Acq),"=c"(dummy):"c"(GLptr),"i"(~3L):"dx"); \
-	} while(0)
+	((Acq) = __acpi_release_global_lock((unsigned int *) GLptr))
 
 /*
  * Math helper asm macros
@@ -108,6 +103,10 @@
 extern int acpi_lapic;
 extern int acpi_ioapic;
 extern int acpi_noirq;
+extern int acpi_strict;
+extern int acpi_disabled;
+extern int acpi_ht;
+static inline void disable_acpi(void) { acpi_disabled = 1; acpi_ht = 0; }
 
 /* Fixmap pages to reserve for ACPI boot-time tables (see fixmap.h) */
 #define FIX_ACPI_PAGES 4
@@ -141,8 +140,6 @@ extern void acpi_reserve_bootmem(void);
 #endif /*CONFIG_ACPI_SLEEP*/
 
 #define boot_cpu_physical_apicid boot_cpu_id
-
-extern void mp_config_ioapic_for_sci(int irq);
 
 #endif /*__KERNEL__*/
 

@@ -21,9 +21,11 @@
  *			created test case so that I was able to fix nasty bug
  *		Wilfried Weissmann
  *			spotted bug in dequeue code and helped with fix
+ *		Jiri Fojtasek
+ *			fixed requeue routine
  *		and many others. thanks.
  *
- * $Id: sch_htb.c,v 1.24 2003/07/28 15:25:23 devik Exp devik $
+ * $Id: sch_htb.c,v 1.25 2003/12/07 11:08:25 devik Exp devik $
  */
 #include <linux/config.h>
 #include <linux/module.h>
@@ -75,7 +77,7 @@
 #define HTB_HYSTERESIS 1/* whether to use mode hysteresis for speedup */
 #define HTB_QLOCK(S) spin_lock_bh(&(S)->dev->queue_lock)
 #define HTB_QUNLOCK(S) spin_unlock_bh(&(S)->dev->queue_lock)
-#define HTB_VER 0x3000d	/* major must be matched with number suplied by TC as version */
+#define HTB_VER 0x30010	/* major must be matched with number suplied by TC as version */
 
 #if HTB_VER >> 16 != TC_HTB_PROTOVER
 #error "Mismatched sch_htb.c and pkt_sch.h"
@@ -304,7 +306,7 @@ static struct htb_class *htb_classify(struct sk_buff *skb, struct Qdisc *sch)
 	   rules in it */
 	if (skb->priority == sch->handle)
 		return HTB_DIRECT;  /* X:0 (direct flow) selected */
-	if ((cl = htb_find(skb->priority,sch)) != NULL) 
+	if ((cl = htb_find(skb->priority,sch)) != NULL && cl->level == 0) 
 		return cl;
 
 	tcf = q->filter_list;
@@ -433,13 +435,13 @@ static void htb_add_to_wait_tree (struct htb_sched *q,
 		cl->pq_key++;
 
 	/* update the nearest event cache */
-	if (q->near_ev_cache[cl->level] - cl->pq_key < 0x80000000)
+	if (time_after(q->near_ev_cache[cl->level], cl->pq_key))
 		q->near_ev_cache[cl->level] = cl->pq_key;
 	
 	while (*p) {
 		struct htb_class *c; parent = *p;
 		c = rb_entry(parent, struct htb_class, pq_node);
-		if (cl->pq_key - c->pq_key < 0x80000000)
+		if (time_after_eq(cl->pq_key, c->pq_key))
 			p = &parent->rb_right;
 		else 
 			p = &parent->rb_left;
@@ -717,7 +719,7 @@ static int htb_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 
     sch->q.qlen++;
     sch->stats.packets++; sch->stats.bytes += skb->len;
-    HTB_DBG(1,1,"htb_enq_ok cl=%X skb=%p\n",cl?cl->classid:0,skb);
+    HTB_DBG(1,1,"htb_enq_ok cl=%X skb=%p\n",(cl && cl != HTB_DIRECT)?cl->classid:0,skb);
     return NET_XMIT_SUCCESS;
 }
 
@@ -726,16 +728,18 @@ static int htb_requeue(struct sk_buff *skb, struct Qdisc *sch)
 {
     struct htb_sched *q = (struct htb_sched *)sch->data;
     struct htb_class *cl = htb_classify(skb,sch);
+    struct sk_buff *tskb;
 
     if (cl == HTB_DIRECT || !cl) {
 	/* enqueue to helper queue */
 	if (q->direct_queue.qlen < q->direct_qlen && cl) {
-	    __skb_queue_tail(&q->direct_queue, skb);
-	    q->direct_pkts++;
+	    __skb_queue_head(&q->direct_queue, skb);
 	} else {
-	    kfree_skb (skb);
-	    sch->stats.drops++;
-	    return NET_XMIT_DROP;
+            __skb_queue_head(&q->direct_queue, skb);
+            tskb = __skb_dequeue_tail(&q->direct_queue);
+            kfree_skb (tskb);
+            sch->stats.drops++;
+            return NET_XMIT_CN;	
 	}
     } else if (cl->un.leaf.q->ops->requeue(skb, cl->un.leaf.q) != NET_XMIT_SUCCESS) {
 	sch->stats.drops++;
@@ -745,7 +749,7 @@ static int htb_requeue(struct sk_buff *skb, struct Qdisc *sch)
 	    htb_activate (q,cl);
 
     sch->q.qlen++;
-    HTB_DBG(1,1,"htb_req_ok cl=%X skb=%p\n",cl?cl->classid:0,skb);
+    HTB_DBG(1,1,"htb_req_ok cl=%X skb=%p\n",(cl && cl != HTB_DIRECT)?cl->classid:0,skb);
     return NET_XMIT_SUCCESS;
 }
 
@@ -878,7 +882,7 @@ static long htb_do_events(struct htb_sched *q,int level)
 		while (p->rb_left) p = p->rb_left;
 
 		cl = rb_entry(p, struct htb_class, pq_node);
-		if (cl->pq_key - (q->jiffies+1) < 0x80000000) {
+		if (time_after(cl->pq_key, q->jiffies)) {
 			HTB_DBG(8,3,"htb_do_ev_ret delay=%ld\n",cl->pq_key - q->jiffies);
 			return cl->pq_key - q->jiffies;
 		}
@@ -1057,7 +1061,7 @@ static struct sk_buff *htb_dequeue(struct Qdisc *sch)
 		/* common case optimization - skip event handler quickly */
 		int m;
 		long delay;
-		if (q->jiffies - q->near_ev_cache[level] < 0x80000000 || 0) {
+		if (time_after_eq(q->jiffies, q->near_ev_cache[level])) {
 			delay = htb_do_events(q,level);
 			q->near_ev_cache[level] = q->jiffies + (delay ? delay : HZ);
 #ifdef HTB_DEBUG
@@ -1396,11 +1400,16 @@ static void htb_destroy(struct Qdisc* sch)
 #ifdef HTB_RATECM
 	del_timer_sync (&q->rttim);
 #endif
+	/* This line used to be after htb_destroy_class call below
+	   and surprisingly it worked in 2.4. But it must precede it 
+	   because filter need its target class alive to be able to call
+	   unbind_filter on it (without Oops). */
+	htb_destroy_filters(&q->filter_list);
+	
 	while (!list_empty(&q->root)) 
 		htb_destroy_class (sch,list_entry(q->root.next,
 					struct htb_class,sibling));
 
-	htb_destroy_filters(&q->filter_list);
 	__skb_queue_purge(&q->direct_queue);
 	MOD_DEC_USE_COUNT;
 }
@@ -1493,7 +1502,7 @@ static int htb_change_class(struct Qdisc *sch, u32 classid,
 		cl->magic = HTB_CMAGIC;
 #endif
 
-		/* create leaf qdisc early because it uses kmalloc(GPF_KERNEL)
+		/* create leaf qdisc early because it uses kmalloc(GFP_KERNEL)
 		   so that can't be used inside of sch_tree_lock
 		   -- thanks to Karlis Peisenieks */
 		new_q = qdisc_create_dflt(sch->dev, &pfifo_qdisc_ops);

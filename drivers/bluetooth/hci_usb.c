@@ -30,7 +30,7 @@
  *
  * $Id: hci_usb.c,v 1.8 2002/07/18 17:23:09 maxk Exp $    
  */
-#define VERSION "2.4"
+#define VERSION "2.5"
 
 #include <linux/config.h>
 #include <linux/module.h>
@@ -70,11 +70,11 @@
 static struct usb_driver hci_usb_driver; 
 
 static struct usb_device_id bluetooth_ids[] = {
-	/* Digianswer device */
-	{ USB_DEVICE(0x08fd, 0x0001), driver_info: HCI_DIGIANSWER },
-
 	/* Generic Bluetooth USB device */
 	{ USB_DEVICE_INFO(HCI_DEV_CLASS, HCI_DEV_SUBCLASS, HCI_DEV_PROTOCOL) },
+
+	/* AVM BlueFRITZ! USB v2.0 */
+	{ USB_DEVICE(0x057c, 0x3800) },
 
 	/* Ericsson with non-standard id */
 	{ USB_DEVICE(0x0bdb, 0x1002) },
@@ -90,9 +90,15 @@ static struct usb_device_id bluetooth_ids[] = {
 
 MODULE_DEVICE_TABLE (usb, bluetooth_ids);
 
-static struct usb_device_id ignore_ids[] = {
+static struct usb_device_id blacklist_ids[] = {
 	/* Broadcom BCM2033 without firmware */
-	{ USB_DEVICE(0x0a5c, 0x2033) },
+	{ USB_DEVICE(0x0a5c, 0x2033), driver_info: HCI_IGNORE },
+
+	/* Broadcom BCM2035 */
+	{ USB_DEVICE(0x0a5c, 0x200a), driver_info: HCI_RESET },
+
+	/* Digianswer device */
+	{ USB_DEVICE(0x08fd, 0x0001), driver_info: HCI_DIGIANSWER },
 
 	{ }	/* Terminating entry */
 };
@@ -648,7 +654,7 @@ static inline int __recv_frame(struct hci_usb *husb, int type, void *data, int c
 #endif
 			}
 			BT_DBG("new packet len %d", len);
-				
+
 			skb = bluez_skb_alloc(len, GFP_ATOMIC);
 			if (!skb) {
 				BT_ERR("%s no memory for the packet", husb->hdev.name);
@@ -796,8 +802,14 @@ static void *hci_usb_probe(struct usb_device *udev, unsigned int ifnum, const st
 
 	iface = &udev->actconfig->interface[0];
 
-	/* Check our black list */
-	if (usb_match_id(udev, iface, ignore_ids))
+	if (!id->driver_info) {
+		const struct usb_device_id *match;
+		match = usb_match_id(udev, iface, blacklist_ids);
+		if (match)
+			id = match;
+	}
+
+	if (id->driver_info & HCI_IGNORE)
 		return NULL;
 
 	/* Check number of endpoints */
@@ -921,6 +933,9 @@ static void *hci_usb_probe(struct usb_device *udev, unsigned int ifnum, const st
 	hdev->send  = hci_usb_send_frame;
 	hdev->destruct = hci_usb_destruct;
 
+	if (id->driver_info & HCI_RESET)
+		set_bit(HCI_QUIRK_RESET_ON_INIT, &hdev->quirks);
+
 	if (hci_register_dev(hdev) < 0) {
 		BT_ERR("Can't register HCI device");
 		goto probe_error;
@@ -983,6 +998,6 @@ void hci_usb_cleanup(void)
 module_init(hci_usb_init);
 module_exit(hci_usb_cleanup);
 
-MODULE_AUTHOR("Maxim Krasnyansky <maxk@qualcomm.com>");
+MODULE_AUTHOR("Maxim Krasnyansky <maxk@qualcomm.com>, Marcel Holtmann <marcel@holtmann.org>");
 MODULE_DESCRIPTION("BlueZ HCI USB driver ver " VERSION);
 MODULE_LICENSE("GPL");

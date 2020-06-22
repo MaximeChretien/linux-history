@@ -4,7 +4,7 @@
  * the configuration SCMR and the Power-On-Reset word.
  */
 
-#define IMAP_ADDR	((uint)0xf0000000)
+#define CPM_MAP_ADDR	((uint)0xf0000000)
 
 
 /* A Board Information structure that is given to a program when

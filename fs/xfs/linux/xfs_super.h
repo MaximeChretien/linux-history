@@ -44,6 +44,8 @@
 
 #ifdef CONFIG_XFS_QUOTA
 # define vfs_insertquota(vfs)	vfs_insertops(vfsp, &xfs_qmops)
+extern void xfs_qm_init(void);
+extern void xfs_qm_exit(void);
 # define vfs_initquota()	xfs_qm_init()
 # define vfs_exitquota()	xfs_qm_exit()
 #else
@@ -132,5 +134,8 @@ extern void xfs_flush_buftarg(struct pb_target *);
 extern int xfs_readonly_buftarg(struct pb_target *);
 extern void xfs_setsize_buftarg(struct pb_target *, unsigned int, unsigned int);
 extern unsigned int xfs_getsize_buftarg(struct pb_target *);
+
+/* matching a 2.6 kernel export, thus no xfs_ prefix */
+extern struct dentry *d_alloc_anon(struct inode *inode);
 
 #endif	/* __XFS_SUPER_H__ */

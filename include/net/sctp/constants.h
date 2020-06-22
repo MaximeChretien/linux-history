@@ -1,8 +1,8 @@
 /* SCTP kernel reference Implementation
+ * (C) Copyright IBM Corp. 2001, 2003
  * Copyright (c) 1999-2000 Cisco, Inc.
  * Copyright (c) 1999-2001 Motorola, Inc.
  * Copyright (c) 2001 Intel Corp.
- * Copyright (c) 2001-2002 International Business Machines Corp.
  *
  * This file is part of the SCTP kernel reference Implementation
  *
@@ -75,6 +75,7 @@ enum { SCTP_DEFAULT_INSTREAMS = SCTP_MAX_STREAM };
 #define SCTP_NUM_BASE_CHUNK_TYPES	(SCTP_CID_BASE_MAX + 1)
 #define SCTP_NUM_CHUNK_TYPES		(SCTP_NUM_BASE_CHUNKTYPES + 2)
 
+#define SCTP_NUM_ADDIP_CHUNK_TYPES	2
 
 /* These are the different flavours of event.  */
 typedef enum {
@@ -99,6 +100,7 @@ typedef enum {
 	SCTP_EVENT_TIMEOUT_T1_INIT,
 	SCTP_EVENT_TIMEOUT_T2_SHUTDOWN,
 	SCTP_EVENT_TIMEOUT_T3_RTX,
+	SCTP_EVENT_TIMEOUT_T4_RTO,
 	SCTP_EVENT_TIMEOUT_T5_SHUTDOWN_GUARD,
 	SCTP_EVENT_TIMEOUT_HEARTBEAT,
 	SCTP_EVENT_TIMEOUT_SACK,
@@ -122,9 +124,10 @@ typedef enum {
 	SCTP_PRIMITIVE_ABORT,
 	SCTP_PRIMITIVE_SEND,
 	SCTP_PRIMITIVE_REQUESTHEARTBEAT,
+	SCTP_PRIMITIVE_ASCONF,
 } sctp_event_primitive_t;
 
-#define SCTP_EVENT_PRIMITIVE_MAX	SCTP_PRIMITIVE_REQUESTHEARTBEAT
+#define SCTP_EVENT_PRIMITIVE_MAX	SCTP_PRIMITIVE_ASCONF
 #define SCTP_NUM_PRIMITIVE_TYPES	(SCTP_EVENT_PRIMITIVE_MAX + 1)
 
 /* We define here a utility type for manipulating subtypes.
@@ -267,7 +270,8 @@ enum { SCTP_ARBITRARY_COOKIE_ECHO_LEN = 200 };
  * nearest power of 2.
  */
 enum { SCTP_MIN_PMTU = 576 };
-enum { SCTP_MAX_DUP_TSNS = 128 };
+enum { SCTP_MAX_DUP_TSNS = 16 };
+enum { SCTP_MAX_GABS = 16 };
 
 typedef enum {
 	SCTP_COUNTER_INIT_ERROR,
@@ -319,7 +323,7 @@ typedef enum {
 #define SCTP_DEFAULT_COOKIE_LIFE_USEC	0  /* microseconds */
 
 #define SCTP_DEFAULT_MINWINDOW	1500	/* default minimum rwnd size */
-#define SCTP_DEFAULT_MAXWINDOW	32768	/* default rwnd size */
+#define SCTP_DEFAULT_MAXWINDOW	65535	/* default rwnd size */
 #define SCTP_DEFAULT_MAXSEGMENT 1500	/* MTU size, this is the limit
                                          * to which we will raise the P-MTU.
 					 */

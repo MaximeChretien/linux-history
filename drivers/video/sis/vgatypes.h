@@ -31,13 +31,10 @@
  * * 2) Redistributions in binary form must reproduce the above copyright
  * *    notice, this list of conditions and the following disclaimer in the
  * *    documentation and/or other materials provided with the distribution.
- * * 3) All advertising materials mentioning features or use of this software
- * *    must display the following acknowledgement: "This product includes
- * *    software developed by Thomas Winischhofer, Vienna, Austria."
- * * 4) The name of the author may not be used to endorse or promote products
+ * * 3) The name of the author may not be used to endorse or promote products
  * *    derived from this software without specific prior written permission.
  * *
- * * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESSED OR
  * * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
  * * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
@@ -187,6 +184,7 @@ typedef enum _SIS_LCD_TYPE {
     LCD_848x480,
     LCD_1280x800,
     LCD_1680x1050,
+    LCD_1280x720,
     LCD_CUSTOM,
     LCD_UNKNOWN
 } SIS_LCD_TYPE;
@@ -220,25 +218,27 @@ struct _SIS_HW_INFO
                                  /* of Linear VGA memory */
 
     ULONG  ulVideoMemorySize;    /* size, in bytes, of the memory on the board */
+
     SISIOADDRESS ulIOAddress;    /* base I/O address of VGA ports (0x3B0) */
+
     UCHAR  jChipType;            /* Used to Identify SiS Graphics Chip */
                                  /* defined in the data structure type  */
                                  /* "SIS_CHIP_TYPE" */
 
     UCHAR  jChipRevision;        /* Used to Identify SiS Graphics Chip Revision */
+
     UCHAR  ujVBChipID;           /* the ID of video bridge */
                                  /* defined in the data structure type */
                                  /* "SIS_VB_CHIP_TYPE" */
 #ifdef LINUX_KERNEL
     BOOLEAN Is301BDH;
+    ULONG  ulCRT2LCDType;        /* defined in the data structure type */
+                                 /* "SIS_LCD_TYPE" */
 #endif
 
     USHORT usExternalChip;       /* NO VB or other video bridge (other than  */
                                  /* SiS video bridge) */
 
-    ULONG  ulCRT2LCDType;        /* defined in the data structure type */
-                                 /* "SIS_LCD_TYPE" */
-                                     
     BOOLEAN bIntegratedMMEnabled;/* supporting integration MM enable */
                                       
     BOOLEAN bSkipDramSizing;     /* True: Skip video memory sizing. */
@@ -254,12 +254,6 @@ struct _SIS_HW_INFO
                                  /* Note : restore cR registers if  */
                                  /* bSkipDramSizing = TRUE */
 #endif
-
-    PSIS_QUERYSPACE  pQueryVGAConfigSpace; /* Get/Set VGA Configuration  */
-                                           /* space */
- 
-    PSIS_QUERYSPACE  pQueryNorthBridgeSpace;/* Get/Set North Bridge  */
-                                            /* space  */
 };
 #endif
 
@@ -275,42 +269,44 @@ struct _SIS_HW_INFO
 typedef struct _SISFB_INFO sisfb_info, *psisfb_info;
 
 struct _SISFB_INFO {
-	unsigned long sisfb_id;         /* for identifying sisfb */
+	CARD32 	sisfb_id;         	/* for identifying sisfb */
 #ifndef SISFB_ID
 #define SISFB_ID	  0x53495346    /* Identify myself with 'SISF' */
 #endif
- 	int    chip_id;			/* PCI ID of detected chip */
-	int    memory;			/* video memory in KB which sisfb manages */
-	int    heapstart;               /* heap start (= sisfb "mem" argument) in KB */
-	unsigned char fbvidmode;	/* current sisfb mode */
+ 	CARD32 	chip_id;		/* PCI ID of detected chip */
+	CARD32	memory;			/* video memory in KB which sisfb manages */
+	CARD32	heapstart;             	/* heap start (= sisfb "mem" argument) in KB */
+	CARD8 	fbvidmode;		/* current sisfb mode */
 
-	unsigned char sisfb_version;
-	unsigned char sisfb_revision;
-	unsigned char sisfb_patchlevel;
+	CARD8 	sisfb_version;
+	CARD8	sisfb_revision;
+	CARD8 	sisfb_patchlevel;
 
-	unsigned char sisfb_caps;	/* sisfb's capabilities */
+	CARD8 	sisfb_caps;		/* sisfb's capabilities */
 
-	int    sisfb_tqlen;		/* turbo queue length (in KB) */
+	CARD32 	sisfb_tqlen;		/* turbo queue length (in KB) */
 
-	unsigned int sisfb_pcibus;      /* The card's PCI ID */
-	unsigned int sisfb_pcislot;
-	unsigned int sisfb_pcifunc;
+	CARD32 	sisfb_pcibus;      	/* The card's PCI ID */
+	CARD32 	sisfb_pcislot;
+	CARD32 	sisfb_pcifunc;
 
-	unsigned char sisfb_lcdpdc;
-	
-	unsigned char sisfb_lcda;
+	CARD8 	sisfb_lcdpdc;
 
-	unsigned long sisfb_vbflags;
-	unsigned long sisfb_currentvbflags;
+	CARD8	sisfb_lcda;
 
-	int sisfb_scalelcd;
-	unsigned long sisfb_specialtiming;
+	CARD32	sisfb_vbflags;
+	CARD32	sisfb_currentvbflags;
 
-	unsigned char sisfb_haveemi;
-	unsigned char sisfb_emi30,sisfb_emi31,sisfb_emi32,sisfb_emi33;
-	unsigned char sisfb_haveemilcd;
+	CARD32 	sisfb_scalelcd;
+	CARD32 	sisfb_specialtiming;
 
-	char reserved[213]; 		/* for future use */
+	CARD8 	sisfb_haveemi;
+	CARD8 	sisfb_emi30,sisfb_emi31,sisfb_emi32,sisfb_emi33;
+	CARD8 	sisfb_haveemilcd;
+
+	CARD8 	sisfb_lcdpdca;
+
+	CARD8 reserved[212]; 		/* for future use */
 };
 #endif
 

@@ -1740,7 +1740,14 @@ void locks_remove_posix(struct file *filp, fl_owner_t owner)
 	before = &inode->i_flock;
 	while ((fl = *before) != NULL) {
 		if ((fl->fl_flags & FL_POSIX) && fl->fl_owner == owner) {
+			struct file *filp = fl->fl_file;
+			/* Note: locks_unlock_delete() can sleep, and
+			 * so we may race with the call to sys_close()
+			 * by the thread that actually owns this filp.
+			 */
+			get_file(filp);
 			locks_unlock_delete(before);
+			fput(filp);
 			before = &inode->i_flock;
 			continue;
 		}

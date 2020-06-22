@@ -209,13 +209,13 @@ extern int  nfs_updatepage(struct file *, struct page *, unsigned int, unsigned 
  * Try to write back everything synchronously (but check the
  * return value!)
  */
-extern int  nfs_sync_file(struct inode *, struct file *, unsigned long, unsigned int, int);
-extern int  nfs_flush_file(struct inode *, struct file *, unsigned long, unsigned int, int);
+extern int  nfs_sync_file(struct inode *, unsigned long, unsigned int, int);
+extern int  nfs_flush_file(struct inode *, unsigned long, unsigned int, int);
 extern int  nfs_flush_list(struct list_head *, int, int);
 extern int  nfs_scan_lru_dirty(struct nfs_server *, struct list_head *);
 extern int  nfs_scan_lru_dirty_timeout(struct nfs_server *, struct list_head *);
 #ifdef CONFIG_NFS_V3
-extern int  nfs_commit_file(struct inode *, struct file *, unsigned long, unsigned int, int);
+extern int  nfs_commit_file(struct inode *, int);
 extern int  nfs_commit_list(struct list_head *, int);
 extern int  nfs_scan_lru_commit(struct nfs_server *, struct list_head *);
 extern int  nfs_scan_lru_commit_timeout(struct nfs_server *, struct list_head *);
@@ -236,7 +236,7 @@ nfs_have_writebacks(struct inode *inode)
 static inline int
 nfs_wb_all(struct inode *inode)
 {
-	int error = nfs_sync_file(inode, 0, 0, 0, FLUSH_WAIT);
+	int error = nfs_sync_file(inode, 0, 0, FLUSH_WAIT);
 	return (error < 0) ? error : 0;
 }
 
@@ -246,17 +246,7 @@ nfs_wb_all(struct inode *inode)
 static inline int
 nfs_wb_page(struct inode *inode, struct page* page)
 {
-	int error = nfs_sync_file(inode, 0, page_index(page), 1, FLUSH_WAIT | FLUSH_STABLE);
-	return (error < 0) ? error : 0;
-}
-
-/*
- * Write back all pending writes for one user.. 
- */
-static inline int
-nfs_wb_file(struct inode *inode, struct file *file)
-{
-	int error = nfs_sync_file(inode, file, 0, 0, FLUSH_WAIT);
+	int error = nfs_sync_file(inode, page_index(page), 1, FLUSH_WAIT | FLUSH_STABLE);
 	return (error < 0) ? error : 0;
 }
 

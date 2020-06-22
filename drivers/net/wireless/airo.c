@@ -18,7 +18,6 @@
 ======================================================================*/
 
 #include <linux/config.h>
-#include <linux/version.h>
 #include <linux/init.h>
 
 #include <linux/kernel.h>
@@ -41,12 +40,11 @@
 #include <linux/skbuff.h>
 #include <linux/if_arp.h>
 #include <linux/ioport.h>
-#include <linux/config.h>
 #include <linux/pci.h>
 #include <asm/uaccess.h>
 
 #ifdef CONFIG_PCI
-static struct pci_device_id card_ids[] __devinitdata = {
+static struct pci_device_id card_ids[] = {
 	{ 0x14b9, 1, PCI_ANY_ID, PCI_ANY_ID, },
 	{ 0x14b9, 0x4500, PCI_ANY_ID, PCI_ANY_ID },
 	{ 0x14b9, 0x4800, PCI_ANY_ID, PCI_ANY_ID, },
@@ -60,10 +58,10 @@ static int airo_pci_probe(struct pci_dev *, const struct pci_device_id *);
 static void airo_pci_remove(struct pci_dev *);
 
 static struct pci_driver airo_driver = {
-	name:     "airo",
-	id_table: card_ids,
-	probe:    airo_pci_probe,
-	remove:   __devexit_p(airo_pci_remove),
+	.name     = "airo",
+	.id_table = card_ids,
+	.probe    = airo_pci_probe,
+	.remove   = __devexit_p(airo_pci_remove),
 };
 #endif /* CONFIG_PCI */
 
@@ -201,12 +199,6 @@ static char *statsLabels[] = {
 	(char*)-1 };
 #ifndef RUN_AT
 #define RUN_AT(x) (jiffies+(x))
-#endif
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,23)
-static inline struct proc_dir_entry *PDE(const struct inode *inode)
-{
-	return inode->u.generic_ip;
-}
 #endif
 
 
@@ -982,7 +974,7 @@ static u16 transmit_allocate(struct airo_info*, int lenPayload, int raw);
 static int transmit_802_3_packet(struct airo_info*, int len, char *pPacket);
 static int transmit_802_11_packet(struct airo_info*, int len, char *pPacket);
 
-static void airo_interrupt( int irq, void* dev_id, struct pt_regs
+static irqreturn_t airo_interrupt( int irq, void* dev_id, struct pt_regs
 			    *regs);
 static int airo_thread(void *data);
 static void timer_func( struct net_device *dev );
@@ -1034,6 +1026,7 @@ struct airo_info {
 #define FLAG_802_11	7
 #define FLAG_PENDING_XMIT 9
 #define FLAG_PENDING_XMIT11 10
+#define FLAG_PCI	11
 #define JOB_MASK	0x1ff0000
 #define JOB_DIE		16
 #define JOB_XMIT	17
@@ -2077,7 +2070,7 @@ void stop_airo_card( struct net_device *dev, int freeres )
 		unregister_netdev( dev );
 		if (ai->wifidev) {
 			unregister_netdev(ai->wifidev);
-			kfree(ai->wifidev);
+			free_netdev(ai->wifidev);
 			ai->wifidev = 0;
 		}
 		ai->registered = 0;
@@ -2098,7 +2091,7 @@ void stop_airo_card( struct net_device *dev, int freeres )
 		crypto_free_tfm(ai->tfm);
 #endif
 	del_airo_dev( dev );
-	kfree( dev );
+	free_netdev( dev );
 }
 
 EXPORT_SYMBOL(stop_airo_card);
@@ -2447,19 +2440,22 @@ static int airo_thread(void *data) {
 	complete_and_exit (&ai->thr_exited, 0);
 }
 
-static void airo_interrupt ( int irq, void* dev_id, struct pt_regs *regs) {
+static irqreturn_t airo_interrupt ( int irq, void* dev_id, struct pt_regs *regs) {
 	struct net_device *dev = (struct net_device *)dev_id;
 	u16 status;
 	u16 fid;
 	struct airo_info *apriv = dev->priv;
 	u16 savedInterrupts = 0;
+	int handled = 0;
 
 	if (!netif_device_present(dev))
-		return;
+		return IRQ_NONE;
 
 	for (;;) {
 		status = IN4500( apriv, EVSTAT );
 		if ( !(status & STATUS_INTS) || status == 0xffff ) break;
+
+		handled = 1;
 
 		if ( status & EV_AWAKE ) {
 			OUT4500( apriv, EVACK, EV_AWAKE );
@@ -2790,7 +2786,7 @@ exitrx:
 		OUT4500( apriv, EVINTEN, savedInterrupts );
 
 	/* done.. */
-	return;
+	return IRQ_RETVAL(handled);
 }
 
 /*
@@ -3476,56 +3472,56 @@ static int proc_config_open( struct inode *inode, struct file *file );
 static int proc_wepkey_open( struct inode *inode, struct file *file );
 
 static struct file_operations proc_statsdelta_ops = {
-	read:           proc_read,
-	open:           proc_statsdelta_open,
-	release:        proc_close
+	.read		= proc_read,
+	.open		= proc_statsdelta_open,
+	.release	= proc_close
 };
 
 static struct file_operations proc_stats_ops = {
-	read:           proc_read,
-	open:           proc_stats_open,
-	release:        proc_close
+	.read		= proc_read,
+	.open		= proc_stats_open,
+	.release	= proc_close
 };
 
 static struct file_operations proc_status_ops = {
-	read:            proc_read,
-	open:            proc_status_open,
-	release:         proc_close
+	.read		= proc_read,
+	.open		= proc_status_open,
+	.release	= proc_close
 };
 
 static struct file_operations proc_SSID_ops = {
-	read:          proc_read,
-	write:         proc_write,
-	open:          proc_SSID_open,
-	release:       proc_close
+	.read		= proc_read,
+	.write		= proc_write,
+	.open		= proc_SSID_open,
+	.release	= proc_close
 };
 
 static struct file_operations proc_BSSList_ops = {
-	read:          proc_read,
-	write:         proc_write,
-	open:          proc_BSSList_open,
-	release:       proc_close
+	.read		= proc_read,
+	.write		= proc_write,
+	.open		= proc_BSSList_open,
+	.release	= proc_close
 };
 
 static struct file_operations proc_APList_ops = {
-	read:          proc_read,
-	write:         proc_write,
-	open:          proc_APList_open,
-	release:       proc_close
+	.read		= proc_read,
+	.write		= proc_write,
+	.open		= proc_APList_open,
+	.release	= proc_close
 };
 
 static struct file_operations proc_config_ops = {
-	read:          proc_read,
-	write:         proc_write,
-	open:          proc_config_open,
-	release:       proc_close
+	.read		= proc_read,
+	.write		= proc_write,
+	.open		= proc_config_open,
+	.release	= proc_close
 };
 
 static struct file_operations proc_wepkey_ops = {
-	read:          proc_read,
-	write:         proc_write,
-	open:          proc_wepkey_open,
-	release:       proc_close
+	.read		= proc_read,
+	.write		= proc_write,
+	.open		= proc_wepkey_open,
+	.release	= proc_close
 };
 
 static struct proc_dir_entry *airo_entry = 0;
@@ -3553,6 +3549,7 @@ static int setup_proc_entry( struct net_device *dev,
 					      airo_entry);
         apriv->proc_entry->uid = proc_uid;
         apriv->proc_entry->gid = proc_gid;
+	apriv->proc_entry->owner = THIS_MODULE;
 
 	/* Setup the StatsDelta */
 	entry = create_proc_entry("StatsDelta",
@@ -3561,6 +3558,7 @@ static int setup_proc_entry( struct net_device *dev,
         entry->uid = proc_uid;
         entry->gid = proc_gid;
 	entry->data = dev;
+	entry->owner = THIS_MODULE;
 	SETPROC_OPS(entry, proc_statsdelta_ops);
 
 	/* Setup the Stats */
@@ -3570,6 +3568,7 @@ static int setup_proc_entry( struct net_device *dev,
         entry->uid = proc_uid;
         entry->gid = proc_gid;
 	entry->data = dev;
+	entry->owner = THIS_MODULE;
 	SETPROC_OPS(entry, proc_stats_ops);
 
 	/* Setup the Status */
@@ -3579,6 +3578,7 @@ static int setup_proc_entry( struct net_device *dev,
         entry->uid = proc_uid;
         entry->gid = proc_gid;
 	entry->data = dev;
+	entry->owner = THIS_MODULE;
 	SETPROC_OPS(entry, proc_status_ops);
 
 	/* Setup the Config */
@@ -3588,6 +3588,7 @@ static int setup_proc_entry( struct net_device *dev,
         entry->uid = proc_uid;
         entry->gid = proc_gid;
 	entry->data = dev;
+	entry->owner = THIS_MODULE;
 	SETPROC_OPS(entry, proc_config_ops);
 
 	/* Setup the SSID */
@@ -3597,6 +3598,7 @@ static int setup_proc_entry( struct net_device *dev,
         entry->uid = proc_uid;
         entry->gid = proc_gid;
 	entry->data = dev;
+	entry->owner = THIS_MODULE;
 	SETPROC_OPS(entry, proc_SSID_ops);
 
 	/* Setup the APList */
@@ -3606,6 +3608,7 @@ static int setup_proc_entry( struct net_device *dev,
         entry->uid = proc_uid;
         entry->gid = proc_gid;
 	entry->data = dev;
+	entry->owner = THIS_MODULE;
 	SETPROC_OPS(entry, proc_APList_ops);
 
 	/* Setup the BSSList */
@@ -3615,6 +3618,7 @@ static int setup_proc_entry( struct net_device *dev,
 	entry->uid = proc_uid;
 	entry->gid = proc_gid;
 	entry->data = dev;
+	entry->owner = THIS_MODULE;
 	SETPROC_OPS(entry, proc_BSSList_ops);
 
 	/* Setup the WepKey */
@@ -3624,6 +3628,7 @@ static int setup_proc_entry( struct net_device *dev,
         entry->uid = proc_uid;
         entry->gid = proc_gid;
 	entry->data = dev;
+	entry->owner = THIS_MODULE;
 	SETPROC_OPS(entry, proc_wepkey_ops);
 
 	return 0;
@@ -3714,8 +3719,6 @@ static int proc_status_open( struct inode *inode, struct file *file ) {
 	StatusRid status_rid;
 	int i;
 
-	MOD_INC_USE_COUNT;
-
 	if ((file->private_data = kmalloc(sizeof(struct proc_data ), GFP_KERNEL)) == NULL)
 		return -ENOMEM;
 	memset(file->private_data, 0, sizeof(struct proc_data));
@@ -3795,8 +3798,6 @@ static int proc_stats_rid_open( struct inode *inode,
 	StatsRid stats;
 	int i, j;
 	int *vals = stats.vals;
-	MOD_INC_USE_COUNT;
-
 
 	if ((file->private_data = kmalloc(sizeof(struct proc_data ), GFP_KERNEL)) == NULL)
 		return -ENOMEM;
@@ -4063,8 +4064,6 @@ static int proc_config_open( struct inode *inode, struct file *file ) {
 	struct net_device *dev = dp->data;
 	struct airo_info *ai = dev->priv;
 	int i;
-
-	MOD_INC_USE_COUNT;
 
 	if ((file->private_data = kmalloc(sizeof(struct proc_data ), GFP_KERNEL)) == NULL)
 		return -ENOMEM;
@@ -4337,8 +4336,6 @@ static int proc_wepkey_open( struct inode *inode, struct file *file ) {
 	int j=0;
 	int rc;
 
-	MOD_INC_USE_COUNT;
-
 	if ((file->private_data = kmalloc(sizeof(struct proc_data ), GFP_KERNEL)) == NULL)
 		return -ENOMEM;
 	memset(file->private_data, 0, sizeof(struct proc_data));
@@ -4387,8 +4384,6 @@ static int proc_SSID_open( struct inode *inode, struct file *file ) {
 	char *ptr;
 	SsidRid SSID_rid;
 
-	MOD_INC_USE_COUNT;
-
 	if ((file->private_data = kmalloc(sizeof(struct proc_data ), GFP_KERNEL)) == NULL)
 		return -ENOMEM;
 	memset(file->private_data, 0, sizeof(struct proc_data));
@@ -4432,8 +4427,6 @@ static int proc_APList_open( struct inode *inode, struct file *file ) {
 	int i;
 	char *ptr;
 	APListRid APList_rid;
-
-	MOD_INC_USE_COUNT;
 
 	if ((file->private_data = kmalloc(sizeof(struct proc_data ), GFP_KERNEL)) == NULL)
 		return -ENOMEM;
@@ -4484,8 +4477,6 @@ static int proc_BSSList_open( struct inode *inode, struct file *file ) {
 	int rc;
 	/* If doLoseSync is not 1, we won't do a Lose Sync */
 	int doLoseSync = -1;
-
-	MOD_INC_USE_COUNT;
 
 	if ((file->private_data = kmalloc(sizeof(struct proc_data ), GFP_KERNEL)) == NULL)
 		return -ENOMEM;
@@ -4549,7 +4540,6 @@ static int proc_close( struct inode *inode, struct file *file )
 {
 	struct proc_data *data = (struct proc_data *)file->private_data;
 	if ( data->on_close != NULL ) data->on_close( inode, file );
-	MOD_DEC_USE_COUNT;
 	if ( data->rbuffer ) kfree( data->rbuffer );
 	if ( data->wbuffer ) kfree( data->wbuffer );
 	kfree( data );
@@ -4638,6 +4628,7 @@ static int __devinit airo_pci_probe(struct pci_dev *pdev,
 		return -ENODEV;
 
 	pci_set_drvdata(pdev, dev);
+	set_bit (FLAG_PCI, &((struct airo_info *)dev->priv)->flags);
 	return 0;
 }
 
@@ -4667,7 +4658,7 @@ static int __init airo_init_module( void )
 
 #ifdef CONFIG_PCI
 	printk( KERN_INFO "airo:  Probing for PCI adapters\n" );
-	pci_register_driver(&airo_driver);
+	pci_module_init(&airo_driver);		/* FIXME: check return val */
 	printk( KERN_INFO "airo:  Finished probing for PCI adapters\n" );
 #endif
 
@@ -4679,15 +4670,22 @@ static int __init airo_init_module( void )
 
 static void __exit airo_cleanup_module( void )
 {
+	int is_pci = 0;
 	while( airo_devices ) {
 		printk( KERN_INFO "airo: Unregistering %s\n", airo_devices->dev->name );
+#ifdef CONFIG_PCI
+		if (test_bit(FLAG_PCI, &((struct airo_info *)airo_devices->dev->priv)->flags))
+			is_pci = 1;
+#endif
 		stop_airo_card( airo_devices->dev, 1 );
 	}
 	remove_proc_entry("aironet", proc_root_driver);
 
+	if (is_pci) {
 #ifdef CONFIG_PCI
-	pci_unregister_driver(&airo_driver);
+		pci_unregister_driver(&airo_driver);
 #endif
+	}
 }
 
 #ifdef WIRELESS_EXT
@@ -6183,16 +6181,17 @@ static const iw_handler		airo_private_handler[] =
 
 static const struct iw_handler_def	airo_handler_def =
 {
-	num_standard:	sizeof(airo_handler)/sizeof(iw_handler),
-	num_private:	sizeof(airo_private_handler)/sizeof(iw_handler),
-	num_private_args: sizeof(airo_private_args)/sizeof(struct iw_priv_args),
-	standard:	(iw_handler *) airo_handler,
-	private:	(iw_handler *) airo_private_handler,
-	private_args:	(struct iw_priv_args *) airo_private_args,
+	.num_standard	= sizeof(airo_handler)/sizeof(iw_handler),
+	.num_private	= sizeof(airo_private_handler)/sizeof(iw_handler),
+	.num_private_args = sizeof(airo_private_args)/sizeof(struct iw_priv_args),
+	.standard	= (iw_handler *) airo_handler,
+	.private	= (iw_handler *) airo_private_handler,
+	.private_args	= (struct iw_priv_args *) airo_private_args,
 #if WIRELESS_EXT > 15
-	spy_offset:	((void *) (&((struct airo_info *) NULL)->spy_data) -
+	.spy_offset	= ((void *) (&((struct airo_info *) NULL)->spy_data) -
 			   (void *) NULL),
 #endif /* WIRELESS_EXT > 15 */
+
 };
 
 #endif /* WIRELESS_EXT > 12 */

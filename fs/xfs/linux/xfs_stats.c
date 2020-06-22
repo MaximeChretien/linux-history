@@ -63,6 +63,7 @@ xfs_read_xfsstats(
 		{ "attr",		XFSSTAT_END_ATTRIBUTE_OPS	},
 		{ "icluster",		XFSSTAT_END_INODE_CLUSTER	},
 		{ "vnodes",		XFSSTAT_END_VNODE_OPS		},
+		{ "buf",		XFSSTAT_END_BUF			},
 	};
 
 	for (i=j=len = 0; i < sizeof(xstats)/sizeof(struct xstats_entry); i++) {

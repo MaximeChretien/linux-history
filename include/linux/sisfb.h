@@ -38,7 +38,8 @@
 #define TV_AVIDEO               0x00000100
 #define TV_SVIDEO               0x00000200
 #define TV_SCART                0x00000400
-#define VB_CONEXANT		0x00000800
+#define VB_CONEXANT		0x00000800	/* 661 series only */
+#define VB_TRUMPION		VB_CONEXANT	/* 300 series only */
 #define TV_PALM                 0x00001000
 #define TV_PALN                 0x00002000
 #define TV_NTSCJ		0x00001000
@@ -71,7 +72,8 @@
 #define TV_YPBPR525I		TV_NTSC
 #define TV_YPBPR525P		TV_PAL
 #define TV_YPBPR750P		TV_PALM
-#define TV_YPBPRALL 		(TV_YPBPR525I | TV_YPBPR525P | TV_YPBPR750P)
+#define TV_YPBPR1080I		TV_PALN
+#define TV_YPBPRALL 		(TV_YPBPR525I | TV_YPBPR525P | TV_YPBPR750P | TV_YPBPR1080I)
 
 #define VB_SISBRIDGE            (VB_301|VB_301B|VB_301C|VB_302B|VB_301LV|VB_302LV|VB_302ELV)
 #define VB_SISTVBRIDGE          (VB_301|VB_301B|VB_301C|VB_302B|VB_301LV|VB_302LV)
@@ -121,42 +123,44 @@ typedef enum _SIS_CHIP_TYPE {
 typedef struct _SISFB_INFO sisfb_info, *psisfb_info;
 
 struct _SISFB_INFO {
-	unsigned long sisfb_id;         /* for identifying sisfb */
+	u32    	sisfb_id;         	/* for identifying sisfb */
 #ifndef SISFB_ID
 #define SISFB_ID	  0x53495346    /* Identify myself with 'SISF' */
 #endif
- 	int    chip_id;			/* PCI ID of detected chip */
-	int    memory;			/* video memory in KB which sisfb manages */
-	int    heapstart;               /* heap start (= sisfb "mem" argument) in KB */
-	unsigned char fbvidmode;	/* current sisfb mode */
+ 	u32    	chip_id;		/* PCI ID of detected chip */
+	u32    	memory;			/* video memory in KB which sisfb manages */
+	u32    	heapstart;            	/* heap start (= sisfb "mem" argument) in KB */
+	u8     	fbvidmode;		/* current sisfb mode */
 
-	unsigned char sisfb_version;
-	unsigned char sisfb_revision;
-	unsigned char sisfb_patchlevel;
+	u8     	sisfb_version;
+	u8     	sisfb_revision;
+	u8 	sisfb_patchlevel;
 
-	unsigned char sisfb_caps;	/* Sisfb capabilities */
+	u8 	sisfb_caps;		/* Sisfb capabilities */
 
-	int    sisfb_tqlen;		/* turbo queue length (in KB) */
+	u32    	sisfb_tqlen;		/* turbo queue length (in KB) */
 
-	unsigned int sisfb_pcibus;      /* The card's PCI ID */
-	unsigned int sisfb_pcislot;
-	unsigned int sisfb_pcifunc;
+	u32 	sisfb_pcibus;      	/* The card's PCI ID */
+	u32 	sisfb_pcislot;
+	u32 	sisfb_pcifunc;
 
-	unsigned char sisfb_lcdpdc;	/* PanelDelayCompensation */
+	u8 	sisfb_lcdpdc;		/* PanelDelayCompensation */
 
-	unsigned char sisfb_lcda;	/* Detected status of LCDA for low res/text modes */
+	u8 	sisfb_lcda;		/* Detected status of LCDA for low res/text modes */
 
-	unsigned long sisfb_vbflags;
-	unsigned long sisfb_currentvbflags;
+	u32 	sisfb_vbflags;
+	u32 	sisfb_currentvbflags;
 
-	int sisfb_scalelcd;
-	unsigned long sisfb_specialtiming;
+	u32 	sisfb_scalelcd;
+	u32 	sisfb_specialtiming;
 
-	unsigned char sisfb_haveemi;
-	unsigned char sisfb_emi30,sisfb_emi31,sisfb_emi32,sisfb_emi33;
-	unsigned char sisfb_haveemilcd;
+	u8 	sisfb_haveemi;
+	u8 	sisfb_emi30,sisfb_emi31,sisfb_emi32,sisfb_emi33;
+	u8 	sisfb_haveemilcd;
 
-	char reserved[213]; 		/* for future use */
+	u8 	sisfb_lcdpdca;		/* PanelDelayCompensation for LCD-via-CRT1 */
+
+	u8 	reserved[212]; 		/* for future use */
 };
 
 /* For fb memory manager */
@@ -221,62 +225,84 @@ typedef enum _VGA_ENGINE {
 } VGA_ENGINE;
 
 struct video_info {
-	int           chip_id;
-	unsigned int  video_size;
-	unsigned long video_base;
-	char  *       video_vbase;
-	unsigned long mmio_base;
-	char  *       mmio_vbase;
-	unsigned long vga_base;
-	unsigned long mtrr;
-	unsigned long heapstart;
+	int           	chip_id;
+	unsigned int  	video_size;
+	unsigned long 	video_base;
+	char  *       	video_vbase;
+	unsigned long 	mmio_size;
+	unsigned long 	mmio_base;
+	char  *       	mmio_vbase;
+	unsigned long 	vga_base;
+	unsigned long 	mtrr;
+	unsigned long 	heapstart;
+	char  *	      	bios_vbase;
+	char  *	      	bios_abase;
 
-	int    video_bpp;
-	int    video_cmap_len;
-	int    video_width;
-	int    video_height;
-	int    video_vwidth;			/* DEPRECATED - use var instead */
-	int    video_vheight;			/* DEPRECATED - use var instead */
-	int    org_x;				/* DEPRECATED - use var instead */
-	int    org_y;				/* DEPRECATED - use var instead */
-	int    video_linelength;
-	unsigned int refresh_rate;
+	int    		video_bpp;
+	int    		video_cmap_len;
+	int    		video_width;
+	int    		video_height;
+	int    		video_vwidth;		/* DEPRECATED - use var instead */
+	int    		video_vheight;		/* DEPRECATED - use var instead */
+	int    		org_x;			/* DEPRECATED - use var instead */
+	int    		org_y;			/* DEPRECATED - use var instead */
+	int    		video_linelength;
+	unsigned int 	refresh_rate;
 
-	unsigned long disp_state;		/* DEPRECATED */
-	unsigned char hasVB;			/* DEPRECATED */
-	unsigned char TV_type;			/* DEPRECATED */
-	unsigned char TV_plug;			/* DEPRECATED */
+	unsigned long 	disp_state;		/* DEPRECATED */
+	unsigned char 	hasVB;			/* DEPRECATED */
+	unsigned char 	TV_type;		/* DEPRECATED */
+	unsigned char 	TV_plug;		/* DEPRECATED */
 
 	SIS_CHIP_TYPE chip;
 	unsigned char revision_id;
 
-        unsigned short DstColor;		/* For 2d acceleration */
-	unsigned long  SiS310_AccelDepth;
-	unsigned long  CommandReg;
+        unsigned short 	DstColor;		/* For 2d acceleration */
+	unsigned long  	SiS310_AccelDepth;
+	unsigned long  	CommandReg;
 
-	spinlock_t     lockaccel;		/* Do not use outside of kernel! */
+	spinlock_t     	lockaccel;		/* Do not use outside of kernel! */
 
-        unsigned int   pcibus;
-	unsigned int   pcislot;
-	unsigned int   pcifunc;
+        unsigned int   	pcibus;
+	unsigned int   	pcislot;
+	unsigned int   	pcifunc;
 
-	int 	       accel;
+	int 	       	accel;
 
-	unsigned short subsysvendor;
-	unsigned short subsysdevice;
+	unsigned short 	subsysvendor;
+	unsigned short 	subsysdevice;
 
-	unsigned long  vbflags;			/* Replacing deprecated stuff from above */
-	unsigned long  currentvbflags;
+	unsigned long  	vbflags;		/* Replacing deprecated stuff from above */
+	unsigned long  	currentvbflags;
 
-	int    current_bpp;
-	int    current_width;
-	int    current_height;
-	int    current_htotal;
-	int    current_vtotal;
-	__u32  current_pixclock;
-	int    current_refresh_rate;
+	int    		current_bpp;
+	int    		current_width;
+	int    		current_height;
+	int    		current_htotal;
+	int    		current_vtotal;
+	__u32  		current_pixclock;
+	int    		current_refresh_rate;
+	
+	u8  		mode_no;
+	u8  		rate_idx;
+	int    		modechanged;
+	unsigned char 	modeprechange;
+	
+	int  		newrom;
+	int  		registered;
+	
+	VGA_ENGINE 	sisvga_engine;
+	int 		hwcursor_size;
+	int 		CRT2_write_enable;
+	u8            	caps;
+	
+	unsigned char 	detectedpdc;
+	unsigned char 	detectedpdca;
+	unsigned char 	detectedlcda;
+	
+	unsigned long 	hwcursor_vbase;
 
-	char reserved[200];
+	char reserved[166];
 };
 
 extern struct video_info ivideo;

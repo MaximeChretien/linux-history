@@ -915,7 +915,9 @@ smb_newconn(struct smb_sb_info *server, struct smb_conn_opt *opt)
 		SB_of(server)->s_maxbytes = ~0ULL >> 1;
 		VERBOSE("LFS enabled\n");
 	}
-#ifdef CONFIG_SMB_UNIX
+#ifndef CONFIG_SMB_UNIX
+	server->opt.capabilities &= ~SMB_CAP_UNIX;
+#endif
 	if (server->opt.capabilities & SMB_CAP_UNIX) {
 		struct inode *inode;
 		VERBOSE("Using UNIX CIFS extensions\n");
@@ -924,9 +926,6 @@ smb_newconn(struct smb_sb_info *server, struct smb_conn_opt *opt)
 		if (inode)
 			inode->i_op = &smb_dir_inode_operations_unix;
 	}
-#else
-	server->opt.capabilities &= ~SMB_CAP_UNIX;
-#endif
 
 	VERBOSE("protocol=%d, max_xmit=%d, pid=%d capabilities=0x%x\n",
 		server->opt.protocol, server->opt.max_xmit, server->conn_pid,
@@ -2615,9 +2614,18 @@ smb_proc_getattr_95(struct smb_sb_info *server, struct dentry *dir,
 	struct inode *inode = dir->d_inode;
 	int result;
 
+retry:
 	result = smb_proc_getattr_trans2_std(server, dir, attr);
-	if (result < 0)
+	if (result < 0) {
+		if (server->rcls == ERRSRV && server->err == ERRerror) {
+			/* a damn Win95 bug - sometimes it clags if you 
+			   ask it too fast */
+			current->state = TASK_INTERRUPTIBLE;
+			schedule_timeout(HZ/5);
+			goto retry;
+		}
 		goto out;
+	}
 
 	/*
 	 * None of the other getattr versions here can make win9x

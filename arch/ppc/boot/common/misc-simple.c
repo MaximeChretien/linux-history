@@ -75,7 +75,7 @@ extern void serial_close(unsigned long com_port);
 extern void gunzip(void *, int, unsigned char *, int *);
 extern void serial_fixups(void);
 
-static struct bi_record *
+struct bi_record *
 decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum,
 		void *ignored)
 {

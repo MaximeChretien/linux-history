@@ -579,7 +579,7 @@ static void tulip_tx_timeout(struct net_device *dev)
 					dev->if_port = 2 - dev->if_port;
 				} else
 					dev->if_port = 0;
-			else
+			else if (dev->if_port != 0 || (csr12 & 0x0004) != 0)
 				dev->if_port = 1;
 			tulip_select_media(dev, 0);
 		}

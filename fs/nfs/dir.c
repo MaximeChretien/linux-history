@@ -545,6 +545,11 @@ static int nfs_dentry_delete(struct dentry *dentry)
 		/* Unhash it, so that ->d_iput() would be called */
 		return 1;
 	}
+	if (!(dentry->d_sb->s_flags & MS_ACTIVE)) {
+		/* Unhash it, so that ancestors of killed async unlink
+		 * files will be cleaned up during umount */
+		return 1;
+	}
 	return 0;
 
 }
@@ -1065,6 +1070,7 @@ go_ahead:
 
 	nfs_zap_caches(new_dir);
 	nfs_zap_caches(old_dir);
+	NFS_CACHEINV(old_inode);
 	error = NFS_PROTO(old_dir)->rename(old_dir, &old_dentry->d_name,
 					   new_dir, &new_dentry->d_name);
 out:

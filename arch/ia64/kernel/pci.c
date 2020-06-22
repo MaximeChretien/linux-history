@@ -386,10 +386,6 @@ pcibios_config_init (void)
 void __init
 pcibios_init (void)
 {
-#ifdef CONFIG_IA64_MCA
-	ia64_mca_check_errors();    /* For post-failure MCA error logging */
-#endif
-
 	pcibios_config_init();
 
 	platform_pci_fixup(0);	/* phase 0 fixups (before buses scanned) */

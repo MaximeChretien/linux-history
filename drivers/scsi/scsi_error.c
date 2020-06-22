@@ -110,25 +110,13 @@ void scsi_add_timer(Scsi_Cmnd * SCset,
 		    int timeout,
 		    void (*complete) (Scsi_Cmnd *))
 {
-
-	/*
-	 * If the clock was already running for this command, then
-	 * first delete the timer.  The timer handling code gets rather
-	 * confused if we don't do this.
-	 */
-	if (SCset->eh_timeout.function != NULL) {
-		del_timer(&SCset->eh_timeout);
-	}
 	SCset->eh_timeout.data = (unsigned long) SCset;
-	SCset->eh_timeout.expires = jiffies + timeout;
 	SCset->eh_timeout.function = (void (*)(unsigned long)) complete;
+	mod_timer(&SCset->eh_timeout, jiffies + timeout);
 
 	SCset->done_late = 0;
 
 	SCSI_LOG_ERROR_RECOVERY(5, printk("Adding timer for command %p at %d (%p)\n", SCset, timeout, complete));
-
-	add_timer(&SCset->eh_timeout);
-
 }
 
 /*

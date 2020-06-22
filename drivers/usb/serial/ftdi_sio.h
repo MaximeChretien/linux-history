@@ -25,10 +25,13 @@
 #define FTDI_VID	0x0403	/* Vendor Id */
 #define FTDI_SIO_PID	0x8372	/* Product Id SIO application of 8U100AX  */
 #define FTDI_8U232AM_PID 0x6001 /* Similar device to SIO above */
+#define FTDI_8U232AM_ALT_PID 0x6006 /* FTDI's alternate PID for above */
 #define FTDI_RELAIS_PID	0xFA10  /* Relais device from Rudolf Gugler */
 #define FTDI_NF_RIC_VID	0x0DCD	/* Vendor Id */
 #define FTDI_NF_RIC_PID	0x0001	/* Product Id */
 
+/* www.irtrans.de device */
+#define FTDI_IRTRANS_PID 0xFC60 /* Product Id */
 
 /* www.crystalfontz.com devices - thanx for providing free devices for evaluation ! */
 /* they use the ftdi chipset for the USB interface and the vendor id is the same */
@@ -57,6 +60,12 @@
 #define FTDI_MTXORB_4_PID      0xFA04  /* Matrix Orbital Product Id */
 #define FTDI_MTXORB_5_PID      0xFA05  /* Matrix Orbital Product Id */
 #define FTDI_MTXORB_6_PID      0xFA06  /* Matrix Orbital Product Id */
+
+/* Interbiometrics USB I/O Board */
+/* Developed for Interbiometrics by Rudolf Gugler */
+#define INTERBIOMETRICS_VID              0x1209
+#define INTERBIOMETRICS_IOBOARD_PID      0x1002
+#define INTERBIOMETRICS_MINI_IOBOARD_PID 0x1006
 
 /*
  * The following are the values for the Perle Systems
@@ -131,6 +140,9 @@
 /* USB-UIRT - An infrared receiver and transmitter using the 8U232AM chip */
 /* http://home.earthlink.net/~jrhees/USBUIRT/index.htm */
 #define FTDI_USB_UIRT_PID	0xF850	/* Product Id */
+
+/* ELV USB Module UO100 (PID sent by Stefan Frings) */
+#define FTDI_ELV_UO100_PID	0xFB58	/* Product Id */
 
 /*
  * Definitions for ID TECH (www.idt-net.com) devices

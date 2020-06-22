@@ -1804,7 +1804,8 @@ discard_and_relse:
 do_time_wait:
 	if (skb->len < (th->doff<<2) || tcp_checksum_complete(skb)) {
 		TCP_INC_STATS_BH(TcpInErrs);
-		goto discard_and_relse;
+		tcp_tw_put((struct tcp_tw_bucket *) sk);
+		goto discard_it;
 	}
 	switch(tcp_timewait_state_process((struct tcp_tw_bucket *)sk,
 					  skb, th, skb->len)) {

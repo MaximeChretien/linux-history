@@ -1,12 +1,13 @@
 /* 
  * Handle the memory map.
  * The functions here do the job until bootmem takes over.
- * $Id: e820.c,v 1.12 2004/01/13 10:13:30 ak Exp $
+ * $Id: e820.c,v 1.13 2004/03/22 00:31:08 ak Exp $
  */
 #include <linux/config.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/init.h>
+#include <linux/acpi.h>
 #include <linux/bootmem.h>
 #include <linux/ioport.h>
 #include <asm/page.h>
@@ -20,6 +21,10 @@
 
 extern unsigned long table_start, table_end;
 extern char _end[];
+
+#ifdef	CONFIG_ACPI_BOOT
+extern acpi_interrupt_flags	acpi_sci_flags;
+#endif
 
 extern struct resource code_resource, data_resource, vram_resource;
 
@@ -541,12 +546,39 @@ void __init parse_mem_cmdline (char ** cmdline_p)
 			iommu_setup(from+6); 
 		} 	
 #endif
+#ifdef	CONFIG_SMP
+		/*
+		 * If the BIOS enumerates physical processors before logical,
+		 * maxcpus=N at enumeration-time can be used to disable HT.
+		 */
+		else if (!memcmp(from, "maxcpus=", 8)) {
+			extern unsigned int max_cpus;
+
+			max_cpus = simple_strtoul(from + 8, NULL, 0);
+		}
+#endif
+
 #ifdef	CONFIG_ACPI_BOOT
  		else if (!memcmp(from, "acpi=off", 8))
-  			acpi_disabled = 1;
+  			disable_acpi();
+
+		/* acpi=strict disables out-of-spec workarounds */
+		else if (!memcmp(from, "acpi=strict", 11)) {
+			acpi_strict = 1;
+		}
+
 		else if (!memcmp(from, "pci=noacpi", 10)) {
 			acpi_noirq_set();
 		}
+
+		else if (!memcmp(from, "acpi_sci=edge", 13))
+			acpi_sci_flags.trigger =  1;
+		else if (!memcmp(from, "acpi_sci=level", 14))
+			acpi_sci_flags.trigger = 3;
+		else if (!memcmp(from, "acpi_sci=high", 13))
+			acpi_sci_flags.polarity = 1;
+		else if (!memcmp(from, "acpi_sci=low", 12))
+			acpi_sci_flags.polarity = 3;
 #endif
 		else if (!memcmp(from,"maxcpus=0",9)) {
 			disable_ioapic_setup();

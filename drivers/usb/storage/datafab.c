@@ -695,20 +695,24 @@ int datafab_transport(Scsi_Cmnd * srb, struct us_data *us)
 	}
 
 	if (srb->cmnd[0] == READ_CAPACITY) {
+		unsigned int max_sector;
+
 		info->ssize = 0x200;  // hard coded 512 byte sectors as per ATA spec
 		rc = datafab_id_device(us, info);
 		if (rc != USB_STOR_TRANSPORT_GOOD)
 			return rc;
 
-		US_DEBUGP("datafab_transport:  READ_CAPACITY:  %ld sectors, %ld bytes per sector\n",
+		US_DEBUGP("datafab_transport:  READ_CAPACITY:  "
+			  "%ld sectors, %ld bytes per sector\n",
 			  info->sectors, info->ssize);
 
 		// build the reply
 		//
-		ptr[0] = (info->sectors >> 24) & 0xFF;
-		ptr[1] = (info->sectors >> 16) & 0xFF;
-		ptr[2] = (info->sectors >> 8) & 0xFF;
-		ptr[3] = (info->sectors) & 0xFF;
+		max_sector = info->sectors - 1;
+		ptr[0] = (max_sector >> 24) & 0xFF;
+		ptr[1] = (max_sector >> 16) & 0xFF;
+		ptr[2] = (max_sector >> 8) & 0xFF;
+		ptr[3] = (max_sector) & 0xFF;
 
 		ptr[4] = (info->ssize >> 24) & 0xFF;
 		ptr[5] = (info->ssize >> 16) & 0xFF;

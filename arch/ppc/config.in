@@ -57,14 +57,30 @@ fi
 
 if [ "$CONFIG_8260" = "y" ]; then
   define_bool CONFIG_SERIAL_CONSOLE y
-  bool 'Support for EST8260' CONFIG_EST8260
+  define_bool CONFIG_CPM2 y
+  bool '  MPC8272 Family Support' CONFIG_8272
+  choice 'Machine Type'	\
+	"ADS8272	CONFIG_ADS8272	\
+	 EST8260	CONFIG_EST8260 \
+	 RPX8260	CONFIG_RPX6"	RPX8260
+fi
+
+if [ "$CONFIG_ADS8272" = "y" ]; then
+  define_bool CONFIG_PQ2ADS y
 fi
 
 if [ "$CONFIG_40x" = "y" ]; then
     choice 'Machine Type'			\
 	 "CPCI405	CONFIG_CPCI405 		\
+	 EP405/EP405PC	CONFIG_EP405 		\
+	 Redwood-5	CONFIG_REDWOOD_5 	\
+	 Redwood-6	CONFIG_REDWOOD_6 	\
 	 Oak		CONFIG_OAK		\
 	 Walnut		CONFIG_WALNUT"		Walnut
+
+   if [ "$CONFIG_EP405" = "y" ]; then
+      bool 'EP405PC Support' CONFIG_EP405PC
+   fi
 fi
 
 if [ "$CONFIG_44x" = "y" ]; then
@@ -170,11 +186,6 @@ fi
 
 if [ "$CONFIG_4xx" = "y" ]; then
 
-  bool 'PPC4xx DMA controller support' CONFIG_PPC4xx_DMA
-  if [ "$CONFIG_PPC4xx_DMA" = "y" ]; then
-    define_bool CONFIG_PPC4xx_EDMA y
-  fi
-
 #
 # Set generic PPC4xx options
 #
@@ -194,8 +205,16 @@ if [ "$CONFIG_4xx" = "y" ]; then
     define_bool CONFIG_405GP y
   fi
 
+  if [ "$CONFIG_EP405" = "y" ]; then
+    define_bool CONFIG_405GP y
+  fi
+
   if [ "$CONFIG_OAK" = "y" -o "$CONFIG_TIVO" = "y" ]; then
     define_bool CONFIG_403GCX y
+  fi
+
+  if [ "$CONFIG_REDWOOD_5" = "y" -o "$CONFIG_REDWOOD_6" = "y" ]; then
+    define_bool CONFIG_STB03xxx y
   fi
 
   if [ "$CONFIG_WALNUT" = "y" ]; then
@@ -213,19 +232,22 @@ if [ "$CONFIG_4xx" = "y" ]; then
 #
 # Set options based on processor implementation
 #
-  if [ "$CONFIG_405GP" = "y" ]; then
+  if [ "$CONFIG_405GP" = "y" -o "$CONFIG_STB03xxx" = "y" ]; then
     define_bool CONFIG_IBM_OCP y
+    define_bool CONFIG_PPC_OCP y
     define_bool CONFIG_405 y
   fi
 
   if [ "$CONFIG_440GP" = "y" ]; then
     define_bool CONFIG_IBM_OCP y
+    define_bool CONFIG_PPC_OCP y
     define_bool CONFIG_GEN550 y
     define_bool CONFIG_440 y
   fi
 
   if [ "$CONFIG_440GX" = "y" ]; then
     define_bool CONFIG_IBM_OCP y
+    define_bool CONFIG_PPC_OCP y
     define_bool CONFIG_GEN550 y
     define_bool CONFIG_IBM_EMAC4 y
     define_bool CONFIG_440A y
@@ -248,15 +270,26 @@ if [ "$CONFIG_4xx" = "y" ]; then
     define_bool CONFIG_BOOKE y
   fi
 
+  bool 'PPC4xx DMA controller support' CONFIG_PPC4xx_DMA
+  if [ "$CONFIG_PPC4xx_DMA" = "y" ]; then
+    if [ "$CONFIG_405GP" = "y" ]; then
+      define_bool CONFIG_PPC4xx_EDMA y
+    fi
+    if [ "$CONFIG_STB03xxx" = "y" ]; then
+      define_bool CONFIG_STBXXX_DMA y
+    fi
+  fi
+
 #
 # Set other board specific options
 #
   if [ "$CONFIG_OAK" = "y" -o "$CONFIG_TIVO" = "y" -o \
-  "$CONFIG_WALNUT" = "y" ]; then
+       "$CONFIG_REDWOOD_5" = "y" -o "$CONFIG_REDWOOD_6" = "y" -o \
+       "$CONFIG_WALNUT" = "y" ]; then
     define_bool CONFIG_IBM_OPENBIOS y
   fi
 
-  if [ "$CONFIG_WALNUT" = "y" ]; then
+  if [ "$CONFIG_WALNUT" = "y" -o "$CONFIG_EP405" = "y" ]; then
     define_bool CONFIG_BIOS_FIXUP y
   fi
 
@@ -572,8 +605,8 @@ if [ "$CONFIG_8xx" = "y" ]; then
 source arch/ppc/8xx_io/Config.in
 fi
 
-if [ "$CONFIG_8260" = "y" ]; then
-source arch/ppc/8260_io/Config.in
+if [ "$CONFIG_CPM2" = "y" ]; then
+source arch/ppc/cpm2_io/Config.in
 fi
 
 source drivers/usb/Config.in

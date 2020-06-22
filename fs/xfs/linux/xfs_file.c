@@ -68,17 +68,18 @@ __linvfs_read(
 {
 	struct inode	*inode = file->f_dentry->d_inode;
 	vnode_t		*vp = LINVFS_GET_VP(inode);
-	int		error;
+	size_t		rval;
 
 	if (unlikely(file->f_flags & O_DIRECT)) {
 		ioflags |= IO_ISDIRECT;
 		down_read(&inode->i_alloc_sem);
-		VOP_READ(vp, file, buf, size, offset, ioflags, NULL, error);
+		VOP_READ(vp, file, buf, size, offset, ioflags, NULL, rval);
 		up_read(&inode->i_alloc_sem);
 	} else {
-		VOP_READ(vp, file, buf, size, offset, ioflags, NULL, error);
+		VOP_READ(vp, file, buf, size, offset, ioflags, NULL, rval);
 	}
-	return error;
+
+	return rval;
 }
 
 STATIC ssize_t
@@ -113,7 +114,7 @@ __linvfs_write(
 	struct inode	*inode = file->f_dentry->d_inode;
 	vnode_t		*vp = LINVFS_GET_VP(inode);
 	loff_t		pos;
-	int		error;	/* Use negative errors in this f'n */
+	ssize_t		rval;	/* Use negative errors in this f'n */
 
 	if ((ssize_t) count < 0)
 		return -EINVAL;
@@ -125,10 +126,10 @@ __linvfs_write(
 	if (pos < 0)
 		return -EINVAL;
 
-	error = file->f_error;
-	if (error) {
+	rval = file->f_error;
+	if (rval) {
 		file->f_error = 0;
-		return error;
+		return rval;
 	}
 
 	/* We allow multiple direct writers in, there is no
@@ -137,16 +138,17 @@ __linvfs_write(
 	if (unlikely(file->f_flags & O_DIRECT)) {
 		ioflags |= IO_ISDIRECT;
 		down_read(&inode->i_alloc_sem);
-		VOP_WRITE(vp, file, buf, count, &pos, ioflags, NULL, error);
+		VOP_WRITE(vp, file, buf, count, &pos, ioflags, NULL, rval);
 		*ppos = pos;
 		up_read(&inode->i_alloc_sem);
 	} else {
 		down(&inode->i_sem);
-		VOP_WRITE(vp, file, buf, count, &pos, ioflags, NULL, error);
+		VOP_WRITE(vp, file, buf, count, &pos, ioflags, NULL, rval);
 		*ppos = pos;
 		up(&inode->i_sem);
 	}
-	return error;
+
+	return rval;
 }
 
 STATIC inline ssize_t

@@ -5551,7 +5551,7 @@ advansys_detect(Scsi_Host_Template *tpnt)
                 }
             } else {
                 ADV_CARR_T      *carrp;
-                int             req_cnt;
+                int             req_cnt = 0;
                 adv_req_t       *reqp = NULL;
                 int             sg_cnt = 0;
 
@@ -9257,8 +9257,6 @@ DvcAdvWritePCIConfigByte(
         PCI_DEVFN(ASC_PCI_ID2DEV(asc_dvc->cfg->pci_slot_info),
             ASC_PCI_ID2FUNC(asc_dvc->cfg->pci_slot_info)),
         offset, byte_data);
-#else /* CONFIG_PCI */
-    return 0;
 #endif /* CONFIG_PCI */
 }
 

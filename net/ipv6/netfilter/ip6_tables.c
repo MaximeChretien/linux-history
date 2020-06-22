@@ -1568,8 +1568,10 @@ tcp_match(const struct sk_buff *skb,
 	  u_int16_t datalen,
 	  int *hotdrop)
 {
-	const struct tcphdr *tcp = hdr;
+	const struct tcphdr *tcp;
 	const struct ip6t_tcp *tcpinfo = matchinfo;
+	int tcpoff;
+	u8 nexthdr = skb->nh.ipv6h->nexthdr;
 
 	/* To quote Alan:
 
@@ -1589,6 +1591,24 @@ tcp_match(const struct sk_buff *skb,
 		*hotdrop = 1;
 		return 0;
 	}
+
+	tcpoff = (u8*)(skb->nh.ipv6h + 1) - skb->data;
+	tcpoff = ipv6_skip_exthdr(skb, tcpoff, &nexthdr, skb->len - tcpoff);
+	if (tcpoff < 0 || tcpoff > skb->len) {
+		duprintf("tcp_match: cannot skip exthdr. Dropping.\n");
+		*hotdrop = 1;
+		return 0;
+	} else if (nexthdr == IPPROTO_FRAGMENT)
+		return 0;
+	else if (nexthdr != IPPROTO_TCP ||
+		 skb->len - tcpoff < sizeof(struct tcphdr)) {
+		/* cannot be occured */
+		duprintf("tcp_match: cannot get TCP header. Dropping.\n");
+		*hotdrop = 1;
+		return 0;
+	}
+
+	tcp = (struct tcphdr *)(skb->data + tcpoff);
 
 	/* FIXME: Try tcp doff >> packet len against various stacks --RR */
 
@@ -1640,8 +1660,10 @@ udp_match(const struct sk_buff *skb,
 	  u_int16_t datalen,
 	  int *hotdrop)
 {
-	const struct udphdr *udp = hdr;
+	const struct udphdr *udp;
 	const struct ip6t_udp *udpinfo = matchinfo;
+	int udpoff;
+	u8 nexthdr = skb->nh.ipv6h->nexthdr;
 
 	if (offset == 0 && datalen < sizeof(struct udphdr)) {
 		/* We've been asked to examine this packet, and we
@@ -1650,6 +1672,23 @@ udp_match(const struct sk_buff *skb,
 		*hotdrop = 1;
 		return 0;
 	}
+
+	udpoff = (u8*)(skb->nh.ipv6h + 1) - skb->data;
+	udpoff = ipv6_skip_exthdr(skb, udpoff, &nexthdr, skb->len - udpoff);
+	if (udpoff < 0 || udpoff > skb->len) {
+		duprintf("udp_match: cannot skip exthdr. Dropping.\n");
+		*hotdrop = 1;
+		return 0;
+	} else if (nexthdr == IPPROTO_FRAGMENT)
+		return 0;
+	else if (nexthdr != IPPROTO_UDP ||
+		 skb->len - udpoff < sizeof(struct udphdr)) {
+		duprintf("udp_match: cannot get UDP header. Dropping.\n");
+		*hotdrop = 1;
+		return 0;
+	}
+
+	udp = (struct udphdr *)(skb->data + udpoff);
 
 	/* Must not be a fragment. */
 	return !offset

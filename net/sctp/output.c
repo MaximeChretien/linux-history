@@ -1,7 +1,7 @@
 /* SCTP kernel reference Implementation
+ * (C) Copyright IBM Corp. 2001, 2004
  * Copyright (c) 1999-2000 Cisco, Inc.
  * Copyright (c) 1999-2001 Motorola, Inc.
- * Copyright (c) 2001-2003 International Business Machines, Corp.
  *
  * This file is part of the SCTP kernel reference Implementation
  *
@@ -97,6 +97,7 @@ struct sctp_packet *sctp_packet_init(struct sctp_packet *packet,
 	packet->source_port = sport;
 	packet->destination_port = dport;
 	skb_queue_head_init(&packet->chunks);
+	packet->size = SCTP_IP_OVERHEAD;
 	packet->vtag = 0;
 	packet->ecn_capable = 0;
 	packet->get_prepend_chunk = NULL;
@@ -114,7 +115,7 @@ void sctp_packet_free(struct sctp_packet *packet)
 	struct sctp_chunk *chunk;
 
         while ((chunk = (struct sctp_chunk *)__skb_dequeue(&packet->chunks)))
-		sctp_free_chunk(chunk);
+		sctp_chunk_free(chunk);
 
 	if (packet->malloced)
 		kfree(packet);
@@ -138,7 +139,7 @@ sctp_xmit_t sctp_packet_transmit_chunk(struct sctp_packet *packet,
 		if (!packet->has_cookie_echo) {
 			error = sctp_packet_transmit(packet);
 			if (error < 0)
-				chunk->skb->sk->err = -error;
+				chunk->skb->sk->sk_err = -error;
 
 			/* If we have an empty packet, then we can NOT ever
 			 * return PMTU_FULL.
@@ -219,22 +220,16 @@ sctp_xmit_t sctp_packet_append_chunk(struct sctp_packet *packet,
 		/* Both control chunks and data chunks with TSNs are
 		 * non-fragmentable.
 		 */
-		int fragmentable = sctp_chunk_is_data(chunk) &&
-			(!chunk->has_tsn);
-		if (packet_empty) {
-			if (fragmentable) {
-				retval = SCTP_XMIT_MUST_FRAG;
-				goto finish;
-			} else {
-				/* The packet is too big but we can
-				 * not fragment it--we have to just
-				 * transmit and rely on IP
-				 * fragmentation.
-				 */
-				packet->ipfragok = 1;
-				goto append;
-			}
-		} else { /* !packet_empty */
+		if (packet_empty || !sctp_chunk_is_data(chunk)) {
+			/* We no longer do re-fragmentation.
+			 * Just fragment at the IP layer, if we
+			 * actually hit this condition
+			 */
+
+			packet->ipfragok = 1;
+			goto append;
+
+		} else {
 			retval = SCTP_XMIT_PMTU_FULL;
 			goto finish;
 		}
@@ -288,20 +283,18 @@ int sctp_packet_transmit(struct sctp_packet *packet)
 	__u8 has_data = 0;
 	struct dst_entry *dst;
 
-	/* Do NOT generate a chunkless packet... */
-	if (skb_queue_empty(&packet->chunks))
+	/* Do NOT generate a chunkless packet. */
+	chunk = (struct sctp_chunk *)skb_peek(&packet->chunks);
+	if (unlikely(!chunk))
 		return err;
 
 	/* Set up convenience variables... */
-	chunk = (struct sctp_chunk *) (packet->chunks.next);
 	sk = chunk->skb->sk;
 
 	/* Allocate the new skb.  */
 	nskb = dev_alloc_skb(packet->size);
-	if (!nskb) {
-		err = -ENOMEM;
-		goto out;
-	}
+	if (!nskb)
+		goto nomem;
 
 	/* Make sure the outbound skb has enough header room reserved. */
 	skb_reserve(nskb, SCTP_IP_OVERHEAD);
@@ -326,7 +319,6 @@ int sctp_packet_transmit(struct sctp_packet *packet)
 	 */
 	sh->vtag     = htonl(packet->vtag);
 	sh->checksum = 0;
-
 
 	/* 2) Calculate the Adler-32 checksum of the whole packet,
 	 *    including the SCTP common header and all the
@@ -358,10 +350,11 @@ int sctp_packet_transmit(struct sctp_packet *packet)
 	 */
 	SCTP_DEBUG_PRINTK("***sctp_transmit_packet***\n");
 	while ((chunk = (struct sctp_chunk *)__skb_dequeue(&packet->chunks))) {
-		chunk->num_times_sent++;
-		chunk->sent_at = jiffies;
 		if (sctp_chunk_is_data(chunk)) {
-			sctp_chunk_assign_tsn(chunk);
+
+			if (!chunk->has_tsn) {
+				sctp_chunk_assign_ssn(chunk);
+				sctp_chunk_assign_tsn(chunk);
 
 			/* 6.3.1 C4) When data is in flight and when allowed
 			 * by rule C5, a new RTT measurement MUST be made each
@@ -369,23 +362,27 @@ int sctp_packet_transmit(struct sctp_packet *packet)
 			 * SHOULD be made no more than once per round-trip
 			 * for a given destination transport address.
 			 */
-			if ((1 == chunk->num_times_sent) &&
-			    (!tp->rto_pending)) {
-				chunk->rtt_in_progress = 1;
-				tp->rto_pending = 1;
-			}
+
+				if (!tp->rto_pending) {
+					chunk->rtt_in_progress = 1;
+					tp->rto_pending = 1;
+				}
+			} else
+				chunk->resent = 1;
+
+			chunk->sent_at = jiffies;
 			has_data = 1;
 		}
+
 		padding = WORD_ROUND(chunk->skb->len) - chunk->skb->len;
 		if (padding)
-			memset(skb_put(chunk->skb, padding), 0, padding);      
+			memset(skb_put(chunk->skb, padding), 0, padding);
 
 		crc32 = sctp_update_copy_cksum(skb_put(nskb, chunk->skb->len),
-					       chunk->skb->data, 
+					       chunk->skb->data,
 					       chunk->skb->len, crc32);
-		
-		SCTP_DEBUG_PRINTK("%s %p[%s] %s 0x%x, %s %d, %s %d, %s %d, "
-				  "%s %d\n",
+
+		SCTP_DEBUG_PRINTK("%s %p[%s] %s 0x%x, %s %d, %s %d, %s %d\n",
 				  "*** Chunk", chunk,
 				  sctp_cname(SCTP_ST_CHUNK(
 					  chunk->chunk_hdr->type)),
@@ -394,7 +391,6 @@ int sctp_packet_transmit(struct sctp_packet *packet)
 				  ntohl(chunk->subh.data_hdr->tsn) : 0,
 				  "length", ntohs(chunk->chunk_hdr->length),
 				  "chunk->skb->len", chunk->skb->len,
-				  "num_times_sent", chunk->num_times_sent,
 				  "rtt_in_progress", chunk->rtt_in_progress);
 
 		/*
@@ -403,7 +399,7 @@ int sctp_packet_transmit(struct sctp_packet *packet)
 		 * acknowledged or have failed.
 		 */
 		if (!sctp_chunk_is_data(chunk))
-			sctp_free_chunk(chunk);
+    			sctp_chunk_free(chunk);
 	}
 
 	/* Perform final transformation on checksum. */
@@ -420,21 +416,17 @@ int sctp_packet_transmit(struct sctp_packet *packet)
 	 *   data sender to indicate that the end-points of the
 	 *   transport protocol are ECN-capable."
 	 *
-	 * If ECN capable && negotiated && it makes sense for
-	 * this packet to support it (e.g. post ECN negotiation)
-	 * then lets set the ECT bit
+	 * Now setting the ECT bit all the time, as it should not cause
+	 * any problems protocol-wise even if our peer ignores it.
 	 *
-	 * FIXME:  Need to do something else for IPv6
+	 * Note: The works for IPv6 layer checks this bit too later
+	 * in transmission.  See IP6_ECN_flow_xmit().
 	 */
-	if (packet->ecn_capable) {
-		INET_ECN_xmit(nskb->sk);
-	} else {
-		INET_ECN_dontxmit(nskb->sk);
-	}
+	INET_ECN_xmit(nskb->sk);
 
 	/* Set up the IP options.  */
 	/* BUG: not implemented
-	 * For v4 this all lives somewhere in sk->opt...
+	 * For v4 this all lives somewhere in sk->sk_opt...
 	 */
 
 	/* Dump that on IP!  */
@@ -452,8 +444,7 @@ int sctp_packet_transmit(struct sctp_packet *packet)
 		tp->last_time_used = jiffies;
 
 		/* Restart the AUTOCLOSE timer when sending data. */
-		if ((SCTP_STATE_ESTABLISHED == asoc->state) &&
-		    (asoc->autoclose)) {
+		if (sctp_state(asoc, ESTABLISHED) && asoc->autoclose) {
 			timer = &asoc->timers[SCTP_EVENT_TIMEOUT_AUTOCLOSE];
 			timeout = asoc->timeouts[SCTP_EVENT_TIMEOUT_AUTOCLOSE];
 
@@ -474,9 +465,11 @@ int sctp_packet_transmit(struct sctp_packet *packet)
 	if (!nskb->dst)
 		goto no_route;
 
-	SCTP_DEBUG_PRINTK("***sctp_transmit_packet*** skb length %d\n",
+	SCTP_DEBUG_PRINTK("***sctp_transmit_packet*** skb len %d\n",
 			  nskb->len);
+
 	(*tp->af_specific->sctp_xmit)(nskb, tp, packet->ipfragok);
+
 out:
 	packet->size = SCTP_IP_OVERHEAD;
 	return err;
@@ -492,7 +485,20 @@ no_route:
 	 * required.
 	 */
 	 /* err = -EHOSTUNREACH; */
+err:
+	/* Control chunks are unreliable so just drop them.  DATA chunks
+	 * will get resent or dropped later.
+	 */
+
+	while ((chunk = (struct sctp_chunk *)__skb_dequeue(&packet->chunks))) {
+		if (!sctp_chunk_is_data(chunk))
+    			sctp_chunk_free(chunk);
+	}
 	goto out;
+nomem:
+	err = -ENOMEM;
+	printk("%s alloc_skb failed.\n", __FUNCTION__);
+	goto err;
 }
 
 /********************************************************************
@@ -604,7 +610,7 @@ static sctp_xmit_t sctp_packet_append_data(struct sctp_packet *packet,
 	 * unacknowledged.
 	 */
 	if (!sp->nodelay && SCTP_IP_OVERHEAD == packet->size &&
-	    q->outstanding_bytes && SCTP_STATE_ESTABLISHED == asoc->state) {
+	    q->outstanding_bytes && sctp_state(asoc, ESTABLISHED)) {
 		unsigned len = datasize + q->out_qlen;
 
 		/* Check whether this chunk and all the rest of pending
@@ -630,6 +636,8 @@ static sctp_xmit_t sctp_packet_append_data(struct sctp_packet *packet,
 		rwnd = 0;
 
 	asoc->peer.rwnd = rwnd;
+	/* Has been accepted for transmission. */
+	chunk->msg->can_expire = 0;
 
 finish:
 	return retval;

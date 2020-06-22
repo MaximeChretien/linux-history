@@ -1346,7 +1346,7 @@ static void generic_file_readahead(int reada_ok,
 	while (ahead < max_ahead) {
 		unsigned long ra_index = raend + ahead + 1;
 
-		if (ra_index > end_index)
+		if (ra_index >= end_index)
 			break;
 		if (page_cache_read(filp, ra_index) < 0)
 			break;

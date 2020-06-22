@@ -487,6 +487,12 @@ static int raid1_read_balance (raid1_conf_t *conf, struct buffer_head *bh)
 		goto rb_out;
 	
 
+#if defined(CONFIG_ALPHA) && ((__GNUC__ < 3) || \
+			      ((__GNUC__ == 3) && (__GNUC_MINOR__ < 3)))
+	/* Work around a compiler bug in older gcc */
+	new_disk = *(volatile int *)&new_disk;
+#endif
+
 	/* make sure that disk is operational */
 	while( !conf->mirrors[new_disk].operational) {
 		if (new_disk <= 0) new_disk = conf->raid_disks;
@@ -544,6 +550,11 @@ static int raid1_read_balance (raid1_conf_t *conf, struct buffer_head *bh)
 	
 	/* Find the disk which is closest */
 	
+#if defined(CONFIG_ALPHA) && ((__GNUC__ < 3) || \
+			      ((__GNUC__ == 3) && (__GNUC_MINOR__ < 3)))
+	/* Work around a compiler bug in older gcc */
+	disk = *(volatile int *)&disk;
+#endif
 	do {
 		if (disk <= 0)
 			disk = conf->raid_disks;

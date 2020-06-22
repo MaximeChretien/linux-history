@@ -136,11 +136,10 @@ unsigned csum_partial(const unsigned char *buff, unsigned len, unsigned sum)
 }
 
 /*
- * this routine is used for miscellaneous IP-like checksums, mainly
- * in icmp.c
+ * this routine is used for miscellaneous IP-like checksums.
  */
 unsigned short ip_compute_csum(unsigned char * buff, int len)
 {
-	return ~csum_partial(buff,len,0); 
+	return csum_fold(csum_partial(buff,len,0)); 
 }
 

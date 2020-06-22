@@ -24,6 +24,7 @@ if [ "$CONFIG_PCMCIA" != "n" ]; then
 
    dep_tristate '  Hermes PCMCIA card support' CONFIG_PCMCIA_HERMES $CONFIG_HERMES
    tristate '  Cisco/Aironet 34X/35X/4500/4800 PCMCIA cards' CONFIG_AIRO_CS
+   dep_tristate '  Atmel at76c502/at76c504 PCMCIA cards' CONFIG_PCMCIA_ATMEL $CONFIG_FW_LOADER
 fi
 
 # yes, this works even when no drivers are selected

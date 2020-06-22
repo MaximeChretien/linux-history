@@ -49,9 +49,7 @@ MODULE_LICENSE("GPL");
 
 #define	PREFIX			"ACPI: "
 
-extern void __init acpi_pic_sci_set_trigger(unsigned int irq);
-
-extern int			acpi_disabled;
+extern void __init acpi_pic_sci_set_trigger(unsigned int irq, u16 trigger);
 
 FADT_DESCRIPTOR			acpi_fadt;
 struct acpi_device		*acpi_root;
@@ -1877,11 +1875,23 @@ acpi_bus_init (void)
 	}
 
 #ifdef CONFIG_X86
-        /* Ensure the SCI is set to level-triggered, active-low */
-        if (acpi_ioapic)
-         	mp_config_ioapic_for_sci(acpi_fadt.sci_int);
-	else
-		acpi_pic_sci_set_trigger(acpi_fadt.sci_int);
+	if (!acpi_ioapic) {
+		extern acpi_interrupt_flags acpi_sci_flags;
+
+		/* compatible (0) means level (3) */
+		if (acpi_sci_flags.trigger == 0)
+			acpi_sci_flags.trigger = 3;
+
+		/* Set PIC-mode SCI trigger type */
+		acpi_pic_sci_set_trigger(acpi_fadt.sci_int, acpi_sci_flags.trigger);
+	} else {
+		extern int acpi_sci_override_gsi;
+		/*
+		 * now that acpi_fadt is initialized,
+		 * update it with result from INT_SRC_OVR parsing
+		 */
+		acpi_fadt.sci_int = acpi_sci_override_gsi;
+	}
 #endif
 
 	status = acpi_enable_subsystem(ACPI_FULL_INITIALIZATION);
@@ -2048,7 +2058,7 @@ acpi_init (void)
 
 	result = acpi_bus_init();
 	if (result) {
-		acpi_disabled = 1;
+		disable_acpi();
 		return_VALUE(result);
 	}
 
@@ -2074,19 +2084,3 @@ acpi_exit (void)
 	return_VOID;
 }
 
-
-int __init
-acpi_setup(char *str)
-{
-	while (str && *str) {
-		if (strncmp(str, "off", 3) == 0)
-			acpi_disabled = 1;
-		str = strchr(str, ',');
-		if (str)
-			str += strspn(str, ", \t");
-	}
-	return 1;
-}
-
-
-__setup("acpi=", acpi_setup);

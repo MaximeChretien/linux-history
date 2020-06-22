@@ -1,5 +1,6 @@
 /* SCTP kernel reference Implementation
  *
+ * (C) Copyright IBM Corp. 2004
  * Copyright (c) 2003 Hewlett-Packard Company
  * 
  * This file is part of the SCTP kernel reference Implementation
@@ -36,7 +37,7 @@
 #include <linux/seq_file.h>
 
 /*
- * The following defines are for compatibility with 2.5
+ * The following defines are for compatibility with 2.6
  */
 /*
  * container_of - cast a member of a structure out to the containing structure
@@ -54,7 +55,6 @@
 	extern type name[]
 #define SNMP_DEC_STATS(mib, field) ((mib)[2*smp_processor_id()+!in_softirq()].field--)
 
-#define sctp_sk(__sk) (&(((struct sock *)__sk)->tp_pinfo.af_sctp))
 #define inet_sk(__sk) (&(((struct sock *)__sk)->protinfo.af_inet))
 #define inet6_sk(__sk) (&(((struct sock *)__sk)->net_pinfo.af_inet6))
 
@@ -64,9 +64,37 @@
 #define __unsafe(x) MOD_INC_USE_COUNT
 #define dst_pmtu(x) ((x)->pmtu)
 
-void sctp_hash_digest(const char *key, const int in_key_len,
-		      const char *text, const int text_len,
-		      __u8 *digest);
+#define sk_family family
+#define sk_state state
+#define sk_type type
+#define sk_socket socket
+#define sk_prot prot
+#define sk_rcvbuf rcvbuf
+#define sk_sndbuf sndbuf
+#define sk_ack_backlog ack_backlog
+#define sk_max_ack_backlog max_ack_backlog
+#define sk_write_space write_space
+#define sk_use_write_queue use_write_queue
+#define sk_err err
+#define sk_err_soft err_soft
+#define sk_error_report error_report
+#define sk_error_queue error_queue
+#define sk_shutdown shutdown
+#define sk_state_change state_change
+#define sk_receive_queue receive_queue
+#define sk_data_ready data_ready
+#define sk_no_check no_check
+#define sk_reuse reuse
+#define sk_destruct destruct
+#define sk_zapped zapped
+#define sk_protocol protocol
+#define sk_backlog_rcv backlog_rcv
+#define sk_allocation allocation
+#define sk_lingertime lingertime
+#define sk_sleep sleep
+#define sk_wmem_queued wmem_queued
+#define sk_bound_dev_if bound_dev_if
+
 /*
  * find last bit set.
  */

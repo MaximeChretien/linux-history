@@ -544,9 +544,21 @@
 #define SPRN_IVOR13	0x19d	/* Interrupt Vector Offset Register 13 */
 #define SPRN_IVOR14	0x19e	/* Interrupt Vector Offset Register 14 */
 #define SPRN_IVOR15	0x19f	/* Interrupt Vector Offset Register 15 */
+#define SPRN_MCSRR0	0x23a	/* Machine Check Save and Restore Register 0 */
+#define SPRN_MCSRR1	0x23b	/* Machine Check Save and Restore Register 1 */
+#define SPRN_MCSR	0x23c	/* Machine Check Syndrom Register */
+#if defined(CONFIG_440A)
+#define  MCSR_MCS	0x80000000 /* Machine Check Summary */
+#define  MCSR_IB	0x40000000 /* Instruction PLB Error */
+#define  MCSR_DRB	0x20000000 /* Data Read PLB Error */
+#define  MCSR_DWB	0x10000000 /* Data Write PLB Error */
+#define  MCSR_TLBP	0x08000000 /* TLB Parity Error */
+#define  MCSR_ICP	0x04000000 /* I-Cache Parity Error */
+#define  MCSR_DCSP	0x02000000 /* D-Cache Search Parity Error */
+#define  MCSR_DCFP	0x01000000 /* D-Cache Flush Parity Error */
+#define  MCSR_IMPE	0x00800000 /* Imprecise Machine Check Exception */
+#endif
 #define SPRN_MMUCR	0x3b2	/* MMU Control Register */
-
-#define ESR_ST		0x00800000	/* Store Operation */
 
 /* Short-hand versions for a number of the above SPRNs */
 
@@ -664,7 +676,9 @@
 #define PVR_440GP_RB	0x40120440
 #define PVR_440GP_RC1	0x40120481
 #define PVR_440GP_RC2	0x40200481
-#define PVR_440GX_RC1	0x51b21850
+#define PVR_440GX_RA	0x51b21850
+#define PVR_440GX_RB	0x51b21851
+#define PVR_440GX_RB1	0x51b21852
 #define	PVR_601		0x00010000
 #define	PVR_602		0x00050000
 #define	PVR_603		0x00030000
@@ -714,6 +728,7 @@
 #define _CHRP_IBM      0x05  /* IBM chrp, the longtrail and longtrail 2 */
 
 #define _GLOBAL(n)\
+        .stabs __stringify(n:F-1),N_FUN,0,0,n;\
 	.globl n;\
 n:
 

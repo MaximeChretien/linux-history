@@ -2943,7 +2943,7 @@ static int w9968cf_open(struct inode* inode, struct file* filp)
 		return -ENODEV;
 	}
 
-	if (cam->users) {
+	while (cam->users) {
 		DBG(2, "%s (/dev/video%d) has been already occupied by '%s'.",
 		    symbolic(camlist, cam->id),cam->v4ldev->minor,cam->command)
 		if ((filp->f_flags & O_NONBLOCK)||(filp->f_flags & O_NDELAY)) {
@@ -3632,7 +3632,7 @@ w9968cf_v4l_ioctl(struct inode* inode, struct file* filp,
 		if (copy_from_user(&tuner, arg, sizeof(tuner)))
 			return -EFAULT;
 
-		if (tuner.tuner != 0);
+		if (tuner.tuner != 0)
 			return -EINVAL;
 
 		strcpy(tuner.name, "no_tuner");

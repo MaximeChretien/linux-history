@@ -14,7 +14,7 @@
 #endif
 #ifdef CONFIG_8260
 #include <asm/mpc8260.h>
-#include <asm/immap_8260.h>
+#include <asm/immap_cpm2.h>
 #endif
 #ifdef CONFIG_4xx
 #include <asm/io.h>
@@ -394,10 +394,10 @@ static void
 clk_8260(bd_t *bd)
 {
 	uint	scmr, vco_out, clkin;
-	uint	plldf, pllmf, busdf, brgdf, cpmdf;
-	volatile immap_t	*ip;
+	uint	plldf, pllmf, busdf, cpmdf;
+	volatile cpm2_map_t	*ip;
 
-	ip = (immap_t *)IMAP_ADDR;
+	ip = (cpm2_map_t *)CPM_MAP_ADDR;
 	scmr = ip->im_clkrst.car_scmr;
 
 	/* The clkin is always bus frequency.
@@ -502,7 +502,6 @@ void
 embed_config(bd_t **bdp)
 {
 	u_char	*cp, *keyvals;
-	int	i;
 	bd_t	*bd;
 
 	keyvals = (u_char *)*bdp;
@@ -582,7 +581,7 @@ embed_config(bd_t **bdp)
 	*/
 	bd->bi_intfreq = 200000000;
 }
-#endif /* RPX6 for testing */
+#endif /* RPX6 */
 
 #ifdef CONFIG_ADS8260
 void

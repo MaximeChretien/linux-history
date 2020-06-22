@@ -167,25 +167,23 @@ extern struct completion jfsIOwait;
 /*
  * forward references
  */
-int diLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
-	  struct tlock * tlck, struct commit * cd);
-int dataLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
-	    struct tlock * tlck);
-void dtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
-	   struct tlock * tlck);
-void inlineLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
-	       struct tlock * tlck);
-void mapLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
-	    struct tlock * tlck);
+static int diLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
+		struct tlock * tlck, struct commit * cd);
+static int dataLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
+		struct tlock * tlck);
+static void dtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
+		struct tlock * tlck);
+static void mapLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
+		struct tlock * tlck);
 static void txAbortCommit(struct commit * cd);
 static void txAllocPMap(struct inode *ip, struct maplock * maplock,
-			struct tblock * tblk);
-void txForce(struct tblock * tblk);
-static int txLog(struct jfs_log * log, struct tblock * tblk, struct commit * cd);
-int txMoreLock(void);
+		struct tblock * tblk);
+static void txForce(struct tblock * tblk);
+static int txLog(struct jfs_log * log, struct tblock * tblk,
+		struct commit * cd);
 static void txUpdateMap(struct tblock * tblk);
 static void txRelease(struct tblock * tblk);
-void xtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
+static void xtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 	   struct tlock * tlck);
 static void LogSyncRelease(struct metapage * mp);
 
@@ -1338,9 +1336,6 @@ static int txLog(struct jfs_log * log, struct tblock * tblk, struct commit * cd)
 		lrd->log.redopage.fileset = cpu_to_le32(JFS_IP(ip)->fileset);
 		lrd->log.redopage.inode = cpu_to_le32(ip->i_ino);
 
-		if (tlck->mp)
-			hold_metapage(tlck->mp, 0);
-
 		/* write log record of page from the tlock */
 		switch (tlck->type & tlckTYPE) {
 		case tlckXTREE:
@@ -1366,8 +1361,6 @@ static int txLog(struct jfs_log * log, struct tblock * tblk, struct commit * cd)
 		default:
 			jfs_err("UFO tlock:0x%p", tlck);
 		}
-		if (tlck->mp)
-			release_metapage(tlck->mp);
 	}
 
 	return rc;
@@ -1379,7 +1372,7 @@ static int txLog(struct jfs_log * log, struct tblock * tblk, struct commit * cd)
  *
  * function:    log inode tlock and format maplock to update bmap;
  */
-int diLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
+static int diLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 	  struct tlock * tlck, struct commit * cd)
 {
 	int rc = 0;
@@ -1494,7 +1487,7 @@ int diLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
  *
  * function:    log data tlock
  */
-int dataLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
+static int dataLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 	    struct tlock * tlck)
 {
 	struct metapage *mp;
@@ -1517,6 +1510,7 @@ int dataLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 		 * the last entry, so don't bother logging this
 		 */
 		mp->lid = 0;
+		hold_metapage(mp, 0);
 		atomic_dec(&mp->nohomeok);
 		discard_metapage(mp);
 		tlck->mp = 0;
@@ -1540,7 +1534,7 @@ int dataLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
  *
  * function:    log dtree tlock and format maplock to update bmap;
  */
-void dtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
+static void dtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 	   struct tlock * tlck)
 {
 	struct metapage *mp;
@@ -1645,7 +1639,7 @@ void dtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
  *
  * function:    log xtree tlock and format maplock to update bmap;
  */
-void xtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
+static void xtLog(struct jfs_log * log, struct tblock * tblk, struct lrd * lrd,
 	   struct tlock * tlck)
 {
 	struct inode *ip;
@@ -2705,7 +2699,7 @@ static void txAbortCommit(struct commit * cd)
  *	allocation maps are updated in order.  For synchronous transactions,
  *	let the user thread finish processing after txUpdateMap() is called.
  */
-void txLazyCommit(struct tblock * tblk)
+static void txLazyCommit(struct tblock * tblk)
 {
 	struct jfs_log *log;
 
@@ -2987,11 +2981,12 @@ int jfs_sync(void *arg)
 					    anon_inode_list);
 			ip = jfs_ip->inode;
 
-			/*
-			 * down_trylock returns 0 on success.  This is
-			 * inconsistent with spin_trylock.
-			 */
-			if (! down_trylock(&jfs_ip->commit_sem)) {
+			if (! igrab(ip)) {
+				/*
+				 * Inode is being freed
+				 */
+				list_del_init(&jfs_ip->anon_inode_list);
+			} else if (! down_trylock(&jfs_ip->commit_sem)) {
 				/*
 				 * inode will be removed from anonymous list
 				 * when it is committed
@@ -3001,6 +2996,8 @@ int jfs_sync(void *arg)
 				rc = txCommit(tid, 1, &ip, 0);
 				txEnd(tid);
 				up(&jfs_ip->commit_sem);
+
+				iput(ip);
 				/*
 				 * Just to be safe.  I don't know how
 				 * long we can run without blocking
@@ -3020,6 +3017,10 @@ int jfs_sync(void *arg)
 				/* Put on anon_list2 */
 				list_add(&jfs_ip->anon_inode_list,
 					 &TxAnchor.anon_list2);
+
+				TXN_UNLOCK();
+				iput(ip);
+				TXN_LOCK();
 			}
 		}
 		/* Add anon_list2 back to anon_list */

@@ -42,7 +42,7 @@ include $(TOPDIR)/Rules.make
 crc32.o: crc32table.h
 
 gen_crc32table: gen_crc32table.c
-	$(HOSTCC) $(HOSTCCFLAGS) -o $@ $<
+	$(HOSTCC) $(HOSTCFLAGS) -o $@ $<
 
 crc32table.h: gen_crc32table
 	./$< > $@

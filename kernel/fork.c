@@ -826,6 +826,8 @@ bad_fork_cleanup_namespace:
 	exit_namespace(p);
 bad_fork_cleanup_mm:
 	exit_mm(p);
+	if (p->active_mm)
+		mmdrop(p->active_mm);
 bad_fork_cleanup_sighand:
 	exit_sighand(p);
 bad_fork_cleanup_fs:

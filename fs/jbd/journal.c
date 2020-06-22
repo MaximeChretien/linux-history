@@ -671,6 +671,7 @@ struct journal_head * journal_get_descriptor_buffer(journal_t *journal)
 
 	bh = getblk(journal->j_dev, blocknr, journal->j_blocksize);
 	lock_buffer(bh);
+	memset(bh->b_data, 0, journal->j_blocksize);
 	BUFFER_TRACE(bh, "return this buffer");
 	return journal_add_journal_head(bh);
 }

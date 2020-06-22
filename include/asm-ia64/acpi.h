@@ -96,6 +96,10 @@
 		:"=r"(Acq):"r"(GLptr):"r2","r29","r30","memory"); \
 	} while (0)
 
+#define acpi_disabled 0	/* ACPI always enabled */
+#define acpi_strict 1	/* no ACPI workarounds */
+static inline void disable_acpi(void) { }
+
 const char *acpi_get_sysname (void);
 int acpi_request_vector (u32 int_type);
 int acpi_get_prt (struct pci_vector_struct **vectors, int *count);

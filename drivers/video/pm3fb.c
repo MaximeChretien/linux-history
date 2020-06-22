@@ -19,6 +19,7 @@
  *  $Header: /cvsroot/linux/drivers/video/pm3fb.c,v 1.1 2002/02/25 19:11:06 marcelo Exp $
  *
  *  CHANGELOG:
+ *  Wed Nov 13 11:19:34 MET 2002, v 1.4.11C: option flatpanel: wasn't available in module, fixed.
  *  Mon Feb 11 10:35:48 MET 2002, v 1.4.11B: Cosmetic update.
  *  Wed Jan 23 14:16:59 MET 2002, v 1.4.11: Preliminary 2.5.x support, patch for 2.5.2.
  *  Wed Nov 28 11:08:29 MET 2001, v 1.4.10: potential bug fix for SDRAM-based board, patch for 2.4.16.
@@ -3756,6 +3757,8 @@ MODULE_PARM(printtimings, "h");
 MODULE_PARM_DESC(printtimings, "print the memory timings of the card(s)");
 MODULE_PARM(forcesize, PM3_MAX_BOARD_MODULE_ARRAY_SHORT);
 MODULE_PARM_DESC(forcesize, "force specified memory size");
+MODULE_PARM(flatpanel, PM3_MAX_BOARD_MODULE_ARRAY_SHORT);
+MODULE_PARM_DESC(flatpanel, "flatpanel (LCD) support (preliminary)");
 /*
 MODULE_SUPPORTED_DEVICE("Permedia3 PCI boards")
 MODULE_GENERIC_TABLE(gtype,name)
@@ -3798,6 +3801,11 @@ void pm3fb_build_options(void)
 		if (depth[i])
 		{
 			sprintf(ts, ",depth:%d:%d", i, depth[i]);
+			strncat(g_options, ts, PM3_OPTIONS_SIZE - strlen(g_options));
+		}
+                if (flatpanel[i])
+		{
+			sprintf(ts, ",flatpanel:%d:", i);
 			strncat(g_options, ts, PM3_OPTIONS_SIZE - strlen(g_options));
 		}
 	}

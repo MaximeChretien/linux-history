@@ -116,6 +116,7 @@ enum ne2k_pci_chipsets {
 	CH_Winbond_W89C940F,
 	CH_Holtek_HT80232,
 	CH_Holtek_HT80229,
+	CH_Winbond_89C940_8c4a,
 };
 
 
@@ -133,6 +134,7 @@ static struct {
 	{"Winbond W89C940F", 0},
 	{"Holtek HT80232", ONLY_16BIT_IO | HOLTEK_FDX},
 	{"Holtek HT80229", ONLY_32BIT_IO | HOLTEK_FDX | STOP_PG_0x60 },
+	{"Winbond W89C940(misprogrammed)", 0},
 	{0,}
 };
 
@@ -148,6 +150,7 @@ static struct pci_device_id ne2k_pci_tbl[] = {
 	{ 0x1050, 0x5a5a, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_Winbond_W89C940F },
 	{ 0x12c3, 0x0058, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_Holtek_HT80232 },
 	{ 0x12c3, 0x5598, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_Holtek_HT80229 },
+	{ 0x8c4a, 0x1980, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_Winbond_89C940_8c4a },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, ne2k_pci_tbl);

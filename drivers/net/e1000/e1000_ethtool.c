@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   
-  Copyright(c) 1999 - 2003 Intel Corporation. All rights reserved.
+  Copyright(c) 1999 - 2004 Intel Corporation. All rights reserved.
   
   This program is free software; you can redistribute it and/or modify it 
   under the terms of the GNU General Public License as published by the Free 
@@ -39,6 +39,11 @@ extern int e1000_up(struct e1000_adapter *adapter);
 extern void e1000_down(struct e1000_adapter *adapter);
 extern void e1000_reset(struct e1000_adapter *adapter);
 extern int e1000_set_spd_dplx(struct e1000_adapter *adapter, uint16_t spddplx);
+extern int e1000_setup_rx_resources(struct e1000_adapter *adapter);
+extern int e1000_setup_tx_resources(struct e1000_adapter *adapter);
+extern void e1000_free_rx_resources(struct e1000_adapter *adapter);
+extern void e1000_free_tx_resources(struct e1000_adapter *adapter);
+extern void e1000_update_stats(struct e1000_adapter *adapter);
 
 struct e1000_stats {
 	char stat_string[ETH_GSTRING_LEN];
@@ -579,8 +584,8 @@ e1000_intr_test(struct e1000_adapter *adapter, uint64_t *data)
 	*data = 0;
 
 	/* Hook up test interrupt handler just for this test */
-	if(request_irq
-	   (netdev->irq, &e1000_test_intr, SA_SHIRQ, netdev->name, netdev)) {
+	if(request_irq(adapter->pdev->irq, &e1000_test_intr, SA_SHIRQ,
+	   netdev->name, netdev)) {
 		*data = 1;
 		return -1;
 	}
@@ -664,7 +669,7 @@ e1000_intr_test(struct e1000_adapter *adapter, uint64_t *data)
 	msec_delay(10);
 
 	/* Unhook test interrupt handler */
-	free_irq(netdev->irq, netdev);
+	free_irq(adapter->pdev->irq, netdev);
 
 	return *data;
 }
@@ -770,9 +775,9 @@ e1000_setup_desc_rings(struct e1000_adapter *adapter)
 				       PCI_DMA_TODEVICE);
 		tx_desc->buffer_addr = cpu_to_le64(txdr->buffer_info[i].dma);
 		tx_desc->lower.data = cpu_to_le32(skb->len);
-		tx_desc->lower.data |= E1000_TXD_CMD_EOP;
-		tx_desc->lower.data |= E1000_TXD_CMD_IFCS;
-		tx_desc->lower.data |= E1000_TXD_CMD_RPS;
+		tx_desc->lower.data |= cpu_to_le32(E1000_TXD_CMD_EOP |
+						   E1000_TXD_CMD_IFCS |
+						   E1000_TXD_CMD_RPS);
 		tx_desc->upper.data = 0;
 	}
 
@@ -1522,6 +1527,7 @@ err_geeprom_ioctl:
 		} stats = { {ETHTOOL_GSTATS, E1000_STATS_LEN} };
 		int i;
 
+		e1000_update_stats(adapter);
 		for(i = 0; i < E1000_STATS_LEN; i++)
 			stats.data[i] = (e1000_gstrings_stats[i].sizeof_stat ==
 					sizeof(uint64_t)) ?

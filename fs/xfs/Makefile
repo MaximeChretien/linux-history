@@ -108,7 +108,9 @@ obj-y				+= xfs_alloc.o \
 				   xfs_vfsops.o \
 				   xfs_vnodeops.o \
 				   xfs_refcache.o \
-				   xfs_rw.o
+				   xfs_rw.o \
+				   xfs_dmops.o \
+				   xfs_qmops.o
 
 # Objects not built in this directory
 obj-y				+= linux/linux_xfs.o \
@@ -119,15 +121,11 @@ subdir-$(CONFIG_XFS_FS)		+= linux support
 ifeq ($(CONFIG_XFS_DMAPI),y)
   subdir-$(CONFIG_XFS_FS)	+= dmapi
   obj-y				+= dmapi/xfs_dmapi.o
-else
-  obj-y				+= xfs_dmops.o
 endif
 
 ifeq ($(CONFIG_XFS_QUOTA),y)
   subdir-$(CONFIG_XFS_FS)	+= quota
   obj-y				+= quota/xfs_quota.o
-else
-  obj-y				+= xfs_qmops.o
 endif
 
 include $(TOPDIR)/Rules.make

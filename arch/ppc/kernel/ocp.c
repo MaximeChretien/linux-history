@@ -37,6 +37,7 @@
 #include <linux/types.h>
 #include <linux/init.h>
 #include <linux/pm.h>
+#include <linux/bootmem.h>
 #include <asm/io.h>
 #include <asm/ocp.h>
 #include <asm/errno.h>
@@ -45,6 +46,8 @@
 
 //#define DBG(x)	printk x
 #define DBG(x)
+
+extern int mem_init_done;
 
 extern struct ocp_def core_ocp[];	/* Static list of devices, provided by
 					   CPU core */
@@ -152,9 +155,9 @@ ocp_bind_drivers(struct ocp_driver *candidate)
  *	@drv: pointer to statically defined ocp_driver structure
  *
  *	The driver's probe() callback is called either recursively
- *	by this function or upon later call of ocp_init
+ *	by this function or upon later call of ocp_driver_init
  *
- *      NOTE: Probe is called with ocp_drivers_sem heocp_find_deviceld, it shouldn't
+ *      NOTE: Probe is called with ocp_drivers_sem held, it shouldn't
  *      call ocp_register/unregister_driver on his own code path.
  *      however, it _can_ call ocp_find_device().
  *
@@ -231,6 +234,32 @@ ocp_unregister_driver(struct ocp_driver *drv)
 	DBG(("ocp: ocp_unregister_driver(%s)... done.\n", drv->name));
 }
 
+/* Core of ocp_find_device(). Caller must hold ocp_devices_sem */
+static struct ocp_device *
+__ocp_find_device(unsigned int vendor, unsigned int function, int index)
+{
+	struct list_head	*entry;
+	struct ocp_device	*dev, *found = NULL;
+
+	DBG(("ocp: __ocp_find_device(vendor: %x, function: %x, index: %d)...\n", vendor, function, index));
+
+	list_for_each(entry, &ocp_devices) {
+		dev = list_entry(entry, struct ocp_device, link);
+		if (vendor != OCP_ANY_ID && vendor != dev->def->vendor)
+			continue;
+		if (function != OCP_ANY_ID && function != dev->def->function)
+			continue;
+		if (index != OCP_ANY_INDEX && index != dev->def->index)
+			continue;
+		found = dev;
+		break;
+	}
+
+	DBG(("ocp: __ocp_find_device(vendor: %x, function: %x, index: %d)... done\n", vendor, function, index));
+
+	return found;
+}
+
 /**
  *	ocp_find_device	-	Find a device by function & index
  *      @vendor: vendor ID of the device (or OCP_ANY_ID)
@@ -245,27 +274,40 @@ ocp_unregister_driver(struct ocp_driver *drv)
 struct ocp_device *
 ocp_find_device(unsigned int vendor, unsigned int function, int index)
 {
-	struct list_head	*entry;
-	struct ocp_device	*dev, *found = NULL;
-
-	DBG(("ocp: ocp_find_device(vendor: %x, function: %x, index: %d)...\n",
-		vendor, function, index));
+	struct ocp_device	*dev;
 
 	down_read(&ocp_devices_sem);
-	list_for_each(entry, &ocp_devices) {
-		dev = list_entry(entry, struct ocp_device, link);
-		if (vendor != OCP_ANY_ID && vendor != dev->def->vendor)
-			continue;
-		if (function != OCP_ANY_ID && function != dev->def->function)
-			continue;
-		if (index != OCP_ANY_INDEX && index != dev->def->index)
-			continue;
-		found = dev;
-		break;
-	}
+	dev = __ocp_find_device(vendor, function, index);
 	up_read(&ocp_devices_sem);
 
-	DBG(("ocp: ocp_find_device(vendor: %x, function: %x, index: %d)... done.\n",
+	return dev;
+}
+
+/**
+ *	ocp_get_one_device -	Find a def by function & index
+ *      @vendor: vendor ID of the device (or OCP_ANY_ID)
+ *	@function: function code of the device (or OCP_ANY_ID)
+ *	@idx: index of the device (or OCP_ANY_INDEX)
+ *
+ *	This function allows a lookup of a given ocp_def by it's
+ *	vendor, function, and index.  The main purpose for is to
+ *	allow modification of the def before binding to the driver
+ */
+struct ocp_def *
+ocp_get_one_device(unsigned int vendor, unsigned int function, int index)
+{
+	struct ocp_device	*dev;
+	struct ocp_def		*found = NULL;
+
+	DBG(("ocp: ocp_get_one_device(vendor: %x, function: %x, index: %d)...\n",
+		vendor, function, index));
+
+	dev = ocp_find_device(vendor, function, index);
+
+	if (dev) 
+		found = dev->def;
+
+	DBG(("ocp: ocp_get_one_device(vendor: %x, function: %x, index: %d)... done.\n",
 		vendor, function, index));
 
 	return found;
@@ -275,28 +317,80 @@ ocp_find_device(unsigned int vendor, unsigned int function, int index)
  *	ocp_add_one_device	-	Add a device
  *	@def: static device definition structure
  *
- *	This function is solely meant to be called by ocp_init
- *	to add one device from the core static list to the
- *	device list
+ *	This function adds a device definition to the
+ *	device list. It may only be called before
+ *	ocp_driver_init() and will return an error
+ *	otherwise.
  */
-static void
+int
 ocp_add_one_device(struct ocp_def *def)
 {
 	struct	ocp_device	*dev;
 
-	dev = kmalloc(sizeof(*dev), GFP_KERNEL);
+	DBG(("ocp: ocp_add_one_device(vendor: %x, function: %x, index: %d)...\n", vendor, function, index));
+
+	/* Can't be called after ocp driver init */
+	if (ocp_inited)
+		return 1;
+
+	if (mem_init_done)
+		dev = kmalloc(sizeof(*dev), GFP_KERNEL);
+	else
+		dev = alloc_bootmem(sizeof(*dev));
+
 	if (dev == NULL)
-		return;
+		return 1;
 	memset(dev, 0, sizeof(*dev));
 	dev->def = def;
 	dev->current_state = 4;
 	sprintf(dev->name, "OCP device %04x:%04x:%04x",
 		dev->def->vendor, dev->def->function, dev->def->index);
+	down_write(&ocp_devices_sem);
 	list_add_tail(&dev->link, &ocp_devices);
+	up_write(&ocp_devices_sem);
+
+	DBG(("ocp: ocp_add_one_device(vendor: %x, function: %x, index: %d)...done.\n", vendor, function, index));
+
+	return 0;
+}
+
+/**
+ *	ocp_remove_one_device -	Remove a device by function & index
+ *      @vendor: vendor ID of the device (or OCP_ANY_ID)
+ *	@function: function code of the device (or OCP_ANY_ID)
+ *	@idx: index of the device (or OCP_ANY_INDEX)
+ *
+ *	This function allows removal of a given function by its
+ *	index. It may only be called before ocp_driver_init()
+ *	and will return an error otherwise.
+ */
+int
+ocp_remove_one_device(unsigned int vendor, unsigned int function, int index)
+{
+	struct ocp_device *dev;
+	int	rc = 0;
+
+	DBG(("ocp: ocp_remove_one_device(vendor: %x, function: %x, index: %d)...\n", vendor, function, index));
+
+	/* Can't be called after ocp driver init */
+	if (ocp_inited)
+		return 1;
+
+	down_write(&ocp_devices_sem);
+	dev = __ocp_find_device(vendor, function, index);
+	if (dev != NULL)
+		list_del((struct list_head *)dev);
+	else
+		rc = 1;
+	up_write(&ocp_devices_sem);
+
+	DBG(("ocp: ocp_remove_one_device(vendor: %x, function: %x, index: %d)... done.\n", vendor, function, index));
+
+	return rc;
 }
 
 #ifdef CONFIG_PM
-/*
+/**
  * OCP Power management..
  *
  * This needs to be done centralized, so that we power manage PCI
@@ -400,35 +494,49 @@ ppc4xx_cpm_fr(u32 bits, int val)
 #endif /* CONFIG_PM */
 
 /**
- *	ocp_init	-	Init OCP device management
+ *	ocp_early_init	-	Init OCP device management
  *
- *	This function is meant to be called once, and only once to initialize
- *	the OCP device management and build the list of devices. Note that
- *	it can actually be called at any time, it's perfectly legal to
- *	register drivers before ocp_init() is called
+ *	This function builds the list of devices before setup_arch. 
+ *	This allows platform code to modify the device lists before
+ *	they are bound to drivers (changes to paddr, removing devices
+ *	etc)
  */
-int
-ocp_init(void)
+int __init
+ocp_early_init(void)
 {
 	struct ocp_def	*def;
 
-	/* ocp_init is by default an initcall. If your arch requires this to
-	 * be called earlier, then go on, ocp_init is non-static for that purpose,
-	 * and can safely be called twice
+	DBG(("ocp: ocp_early_init()...\n"));
+
+	/* Fill the devices list */
+	for (def = core_ocp; def->vendor != OCP_VENDOR_INVALID; def++)
+		ocp_add_one_device(def);
+
+	DBG(("ocp: ocp_early_init()... done.\n"));
+
+	return 0;
+}
+
+/**
+ *	ocp_driver_init	-	Init OCP device management
+ *
+ *	This function is meant to be called once, and only once to initialize
+ *	the OCP device management. Note that it can actually be called at any 
+ *	time, it's perfectly legal to register drivers before 
+ *	ocp_driver_init() is called
+ */
+int
+ocp_driver_init(void)
+{
+	/* ocp_driver_init is by default an initcall. If your arch requires 
+	 * this to be called earlier, then go on, ocp_driver_init is 
+	 * non-static for that purpose, and can safely be called twice
 	 */
 	if (ocp_inited)
 		return 0;
 	ocp_inited = 1;
 
-	DBG(("ocp: ocp_init()...\n"));
-
-	/* Fill the devices list */
-	down_write(&ocp_devices_sem);
-	for (def = core_ocp; def->vendor != OCP_VENDOR_INVALID; def++)
-		ocp_add_one_device(def);
-	up_write(&ocp_devices_sem);
-
-	DBG(("ocp: ocp_init()... added...\n"));
+	DBG(("ocp: ocp_driver_init()...\n"));
 
 	/* Call drivers probes */
 	down(&ocp_drivers_sem);
@@ -439,12 +547,13 @@ ocp_init(void)
 	pm_register(PM_SYS_DEV, 0, ocp_pm_callback);
 #endif
 
-	DBG(("ocp: ocp_init()... done.\n"));
+	DBG(("ocp: ocp_driver_init()... done.\n"));
 
 	return 0;
 }
 
-__initcall(ocp_init);
+__initcall(ocp_driver_init);
 
+EXPORT_SYMBOL(ocp_find_device);
 EXPORT_SYMBOL(ocp_register_driver);
 EXPORT_SYMBOL(ocp_unregister_driver);

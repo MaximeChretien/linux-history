@@ -25,6 +25,8 @@ extern void syscall_init(void);
 
 extern void do_softirq_thunk(void);
 
+extern void swiotlb_init(void);
+
 extern int setup_early_printk(char *); 
 extern void early_printk(const char *fmt, ...) __attribute__((format(printf,1,2)));
 
@@ -36,7 +38,10 @@ extern unsigned long numa_free_all_bootmem(void);
 extern void reserve_bootmem_generic(unsigned long phys, unsigned len);
 extern void free_bootmem_generic(unsigned long phys, unsigned len);
 
+extern void check_efer(void);
+
 extern unsigned long start_pfn, end_pfn, end_pfn_map; 
+extern int iommu_aperture;
 
 extern void show_stack(unsigned long * rsp);
 extern void show_trace(unsigned long *stack);
@@ -44,7 +49,6 @@ extern void __show_regs(struct pt_regs * regs);
 extern void show_regs(struct pt_regs * regs);
 
 extern int apic_disabled;
-extern int acpi_disabled;
 
 #define round_up(x,y) (((x) + (y) - 1) & ~((y)-1))
 #define round_down(x,y) ((x) & ~((y)-1))

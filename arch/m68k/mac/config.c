@@ -33,6 +33,7 @@
 #include <asm/pgtable.h>
 #include <asm/rtc.h>
 #include <asm/machdep.h>
+#include <asm/keyboard.h>
 
 #include <asm/macintosh.h>
 #include <asm/macints.h>

@@ -400,7 +400,7 @@ exit:
 #define KBD_NO_DATA	(-1)	/* No data */
 #define KBD_BAD_DATA	(-2)	/* Parity or other error */
 
-static int __init kbd_read_input(void)
+static int __init q40kbd_read_input(void)
 {
 	int retval = KBD_NO_DATA;
 	unsigned char status;
@@ -421,7 +421,7 @@ static void __init kbd_clear_input(void)
 	int maxread = 100;	/* Random number */
 
 	do {
-		if (kbd_read_input() == KBD_NO_DATA)
+		if (q40kbd_read_input() == KBD_NO_DATA)
 			break;
 	} while (--maxread);
 }

@@ -3,7 +3,7 @@
  * Copyright (C) 1995  Linus Torvalds
  * Copyright 2001, 2002 SuSE Labs / Andi Kleen.
  * See setup.c for older changelog.
- * $Id: setup64.c,v 1.26 2003/10/15 01:32:42 ak Exp $
+ * $Id: setup64.c,v 1.27 2004/02/27 18:30:19 ak Exp $
  */ 
 #include <linux/config.h>
 #include <linux/init.h>
@@ -160,6 +160,17 @@ void syscall_init(void)
 
 char boot_exception_stacks[N_EXCEPTION_STACKS*EXCEPTION_STKSZ];
 
+void check_efer(void)
+{
+	unsigned long efer;
+	rdmsrl(MSR_EFER, efer); 
+	if (!(efer & EFER_NX) || do_not_nx) { 
+		__supported_pte_mask &= ~_PAGE_NX; 
+	} else { 
+		__supported_pte_mask |= _PAGE_NX; 
+	} 
+}
+
 /*
  * cpu_init() initializes state that is per-CPU. Some data is already
  * initialized (naturally) in the bootstrap process, such as the GDT
@@ -175,7 +186,7 @@ void __init cpu_init (void)
 	int nr = smp_processor_id();
 #endif
 	struct tss_struct * t = &init_tss[nr];
-	unsigned long v, efer; 	
+	unsigned long v; 	
 	unsigned long estack;
 
 	/* CPU 0 is initialised in head64.c */
@@ -202,12 +213,7 @@ void __init cpu_init (void)
 
 	syscall_init();
 
-		rdmsrl(MSR_EFER, efer); 
-	if (!(efer & EFER_NX) || do_not_nx) { 
-			__supported_pte_mask &= ~_PAGE_NX; 
-	} else { 
-		__supported_pte_mask |= _PAGE_NX; 
-		} 
+	check_efer();
 
 	t->io_map_base = INVALID_IO_BITMAP_OFFSET;	
 	memset(t->io_bitmap, 0xff, sizeof(t->io_bitmap));

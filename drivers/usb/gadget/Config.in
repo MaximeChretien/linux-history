@@ -31,6 +31,9 @@ if [ "$CONFIG_USB_GADGET" = "y" -o "$CONFIG_USB_GADGET" = "m" ]; then
     define_tristate CONFIG_USB_GADGET_CONTROLLER $CONFIG_USB_GOKU
   fi
 
+  # or any other controller that supports high speed transfers ...
+  define_bool CONFIG_USB_GADGET_DUALSPEED $CONFIG_USB_GADGET_NET2280
+
   if [ "$CONFIG_USB_GADGET_CONTROLLER" = "y" -o "$CONFIG_USB_GADGET_CONTROLLER" = "m" ] ; then
 
   #

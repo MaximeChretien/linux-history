@@ -254,9 +254,9 @@ __attribute__((section(".modinfo"))) =		\
  */
 #define MODULE_GENERIC_TABLE(gtype,name)	\
 static const unsigned long __module_##gtype##_size \
-  __attribute__ ((unused)) = sizeof(struct gtype##_id); \
+  __attribute_used__ = sizeof(struct gtype##_id); \
 static const struct gtype##_id * __module_##gtype##_table \
-  __attribute__ ((unused)) = name
+  __attribute_used__ = name
 
 /*
  * The following license idents are currently accepted as indicating free
@@ -319,7 +319,7 @@ static const char __module_using_checksums[] __attribute__((section(".modinfo"))
  */
 #define MODULE_GENERIC_TABLE(gtype,name) \
 static const struct gtype##_id * __module_##gtype##_table \
-  __attribute__ ((unused, __section__(".data.exit"))) = name
+  __attribute_used__ __attribute__ ((__section__(".data.exit"))) = name
 
 #ifndef __GENKSYMS__
 

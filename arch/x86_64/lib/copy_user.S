@@ -4,6 +4,8 @@
  * Functions to copy from and to user space.		
  */		 
 
+	#include <linux/config.h>
+	
 /* #define FIX_ALIGNMENT 1 */
 
 	#include <asm/current.h>
@@ -59,8 +61,10 @@ bad_to_user:
 	.globl copy_user_generic	
 	.p2align 4
 copy_user_generic:	
-	prefetch (%rsi)
+	prefetcht0 (%rsi)
+#ifdef CONFIG_MK8
 	prefetchw (%rdi)
+#endif
 	pushq %rbx
 	xorl %eax,%eax		/*zero for the exception handler */
 

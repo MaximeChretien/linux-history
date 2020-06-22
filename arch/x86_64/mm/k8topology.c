@@ -197,7 +197,7 @@ int __init k8_scan_nodes(unsigned long start, unsigned long end)
 			continue;		
 		if ((nodes_present >> rr) == 0) 
 			rr = 0; 
-		rr = ffz(~nodes_present >> rr); 
+		rr += ffz(~nodes_present >> rr); 
 		PLAT_NODE_DATA(i) = PLAT_NODE_DATA(rr); 
 		rr++; 
 	}

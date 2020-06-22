@@ -927,24 +927,13 @@ ia64_get_dbr (__u64 regnum)
 	return retval;
 }
 
-/* XXX remove the handcoded version once we have a sufficiently clever compiler... */
-#ifdef SMART_COMPILER
-# define ia64_rotr(w,n)				\
-  ({						\
-	__u64 _w = (w), _n = (n);		\
-						\
-	(_w >> _n) | (_w << (64 - _n));		\
-  })
-#else
-# define ia64_rotr(w,n)							\
-  ({									\
-	__u64 result;							\
-	asm ("shrp %0=%1,%1,%2" : "=r"(result) : "r"(w), "i"(n));	\
-	result;								\
-  })
-#endif
+static inline __u64
+ia64_rotr (__u64 w, __u64 n)
+{
+	return (w >> n) | (w << (64 - n));
+}
 
-#define ia64_rotl(w,n)	ia64_rotr((w),(64)-(n))
+#define ia64_rotl(w,n)	ia64_rotr((w), (64) - (n))
 
 static inline __u64
 ia64_thash (__u64 addr)

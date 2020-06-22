@@ -523,13 +523,25 @@ static int capidrv_del_ack(struct capidrv_ncci *nccip, __u16 datahandle)
 
 static void send_message(capidrv_contr * card, _cmsg * cmsg)
 {
-	struct sk_buff *skb;
-	size_t len;
+	struct sk_buff	*skb;
+	size_t		len;
+	u16		err;
+
 	capi_cmsg2message(cmsg, cmsg->buf);
 	len = CAPIMSG_LEN(cmsg->buf);
 	skb = alloc_skb(len, GFP_ATOMIC);
+	if(!skb) {
+		printk(KERN_ERR "no skb len(%d) memory\n", len);
+		return;
+	}
 	memcpy(skb_put(skb, len), cmsg->buf, len);
-	(*capifuncs->capi_put_message) (global.appid, skb);
+	err = (*capifuncs->capi_put_message) (global.appid, skb);
+	if (err) {
+		printk(KERN_WARNING "%s: capi_put_message error: %04x\n",
+			__FUNCTION__, err);
+		kfree_skb(skb);
+		return;
+	}
 	global.nsentctlpkt++;
 }
 
@@ -2188,10 +2200,10 @@ static int capidrv_delcontr(__u16 contr)
 			free_ncci(card, card->bchans[card->nbchan-1].nccip);
 		if (card->bchans[card->nbchan-1].plcip)
 			free_plci(card, card->bchans[card->nbchan-1].plcip);
-		if (card->plci_list)
-			printk(KERN_ERR "capidrv: bug in free_plci()\n");
 		card->nbchan--;
 	}
+	if (card->plci_list)
+		printk(KERN_ERR "capidrv: bug in free_plci()\n");
 	kfree(card->bchans);
 	card->bchans = 0;
 

@@ -364,7 +364,6 @@ nfs_scan_lru_timeout(struct list_head *head, struct list_head *dst, int nmax)
  * nfs_scan_list - Scan a list for matching requests
  * @head: One of the NFS inode request lists
  * @dst: Destination list
- * @file: if set, ensure we match requests from this file
  * @idx_start: lower bound of page->index to scan
  * @npages: idx_start + npages sets the upper bound to scan.
  *
@@ -376,7 +375,6 @@ nfs_scan_lru_timeout(struct list_head *head, struct list_head *dst, int nmax)
  */
 int
 nfs_scan_list(struct list_head *head, struct list_head *dst,
-	      struct file *file,
 	      unsigned long idx_start, unsigned int npages)
 {
 	struct list_head	*pos, *tmp;
@@ -394,9 +392,6 @@ nfs_scan_list(struct list_head *head, struct list_head *dst,
 		unsigned long pg_idx;
 
 		req = nfs_list_entry(pos);
-
-		if (file && req->wb_file != file)
-			continue;
 
 		pg_idx = page_index(req->wb_page);
 		if (pg_idx < idx_start)

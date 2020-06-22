@@ -4,8 +4,9 @@
  * PPC44x definitions
  *
  * Matt Porter <mporter@mvista.com>
- *
  * Copyright 2002-2003 MontaVista Software Inc.
+ *
+ * Eugene Surovegin <ebs@ebshome.net>
  *
  * This program is free software; you can redistribute  it and/or modify it
  * under  the terms of  the GNU General  Public License as published by the
@@ -80,13 +81,34 @@ typedef struct board_info {
 /*
  * SPRN definitions
  */
-#define SPRN_CPC0_GPIO		0xe5/BEARLRL
+#define SPRN_CPC0_GPIO		0xe5
 
 /*
  * DCRN definitions
  */ 
 
 #ifdef CONFIG_440GX
+/* CPRs */
+#define DCRN_CPR_CONFIG_ADDR	0xc
+#define DCRN_CPR_CONFIG_DATA	0xd
+
+#define DCRN_CPR_CLKUPD		0x0020
+#define DCRN_CPR_PLLC		0x0040
+#define DCRN_CPR_PLLD		0x0060
+#define DCRN_CPR_PRIMAD		0x0080
+#define DCRN_CPR_PRIMBD		0x00a0
+#define DCRN_CPR_OPBD		0x00c0
+#define DCRN_CPR_PERD		0x00e0
+#define DCRN_CPR_MALD		0x0100
+
+/* CPRs read/write helper macros */
+#define CPR_READ(offset) ({\
+	mtdcr(DCRN_CPR_CONFIG_ADDR, offset); \
+	mfdcr(DCRN_CPR_CONFIG_DATA);})
+#define CPR_WRITE(offset, data) ({\
+	mtdcr(DCRN_CPR_CONFIG_ADDR, offset); \
+	mtdcr(DCRN_CPR_CONFIG_DATA, data);})
+
 /* SDRs */
 #define DCRN_SDR_CONFIG_ADDR 	0xe 
 #define DCRN_SDR_CONFIG_DATA	0xf
@@ -117,6 +139,8 @@ typedef struct board_info {
 #define DCRN_SDR_MFR_E3TXFH	0x00000004
 #define DCRN_SDR_MFR_E3RXFL	0x00000002
 #define DCRN_SDR_MFR_E3RXFH	0x00000001
+#define DCRN_SDR_UART0		0x0120
+#define DCRN_SDR_UART1		0x0121
 
 /* SDR read/write helper macros */
 #define SDR_READ(offset) ({\
@@ -326,6 +350,81 @@ typedef struct board_info {
 #define PPC44x_MEM_SIZE_128M		0x08000000
 #define PPC44x_MEM_SIZE_256M		0x10000000
 #define PPC44x_MEM_SIZE_512M		0x20000000
+
+#ifdef CONFIG_440GX
+/* Internal SRAM Controller */
+#define DCRN_SRAM0_SB0CR	0x020
+#define DCRN_SRAM0_SB1CR	0x021
+#define DCRN_SRAM0_SB2CR	0x022
+#define DCRN_SRAM0_SB3CR	0x023
+#define  SRAM_SBCR_BAS0		0x80000000
+#define  SRAM_SBCR_BAS1		0x80010000
+#define  SRAM_SBCR_BAS2		0x80020000
+#define  SRAM_SBCR_BAS3		0x80030000
+#define  SRAM_SBCR_BU_MASK	0x00000180
+#define  SRAM_SBCR_BS_64KB	0x00000800
+#define  SRAM_SBCR_BU_RO	0x00000080
+#define  SRAM_SBCR_BU_RW	0x00000180
+#define DCRN_SRAM0_BEAR		0x024
+#define DCRN_SRAM0_BESR0	0x025
+#define DCRN_SRAM0_BESR1	0x026
+#define DCRN_SRAM0_PMEG		0x027
+#define DCRN_SRAM0_CID		0x028
+#define DCRN_SRAM0_REVID	0x029
+#define DCRN_SRAM0_DPC		0x02a
+#define  SRAM_DPC_ENABLE	0x80000000
+
+/* L2 Cache Controller */
+#define DCRN_L2C0_CFG		0x030
+#define  L2C_CFG_L2M		0x80000000
+#define  L2C_CFG_ICU		0x40000000
+#define  L2C_CFG_DCU		0x20000000
+#define  L2C_CFG_DCW_MASK	0x1e000000
+#define  L2C_CFG_TPC		0x01000000
+#define  L2C_CFG_CPC		0x00800000
+#define  L2C_CFG_FRAN		0x00200000
+#define  L2C_CFG_SS_MASK	0x00180000
+#define  L2C_CFG_SS_256		0x00000000
+#define  L2C_CFG_CPIM		0x00040000
+#define  L2C_CFG_TPIM		0x00020000
+#define  L2C_CFG_LIM		0x00010000
+#define  L2C_CFG_PMUX_MASK	0x00007000
+#define  L2C_CFG_PMUX_SNP	0x00000000
+#define  L2C_CFG_PMUX_IF	0x00001000
+#define  L2C_CFG_PMUX_DF	0x00002000
+#define  L2C_CFG_PMUX_DS	0x00003000
+#define  L2C_CFG_PMIM		0x00000800
+#define  L2C_CFG_TPEI		0x00000400
+#define  L2C_CFG_CPEI		0x00000200
+#define  L2C_CFG_NAM		0x00000100
+#define  L2C_CFG_SMCM		0x00000080
+#define  L2C_CFG_NBRM		0x00000040
+#define DCRN_L2C0_CMD		0x031
+#define  L2C_CMD_CLR		0x80000000
+#define  L2C_CMD_DIAG		0x40000000
+#define  L2C_CMD_INV		0x20000000
+#define  L2C_CMD_CCP		0x10000000
+#define  L2C_CMD_CTE		0x08000000
+#define  L2C_CMD_STRC		0x04000000
+#define  L2C_CMD_STPC		0x02000000
+#define  L2C_CMD_RPMC		0x01000000
+#define  L2C_CMD_HCC		0x00800000
+#define DCRN_L2C0_ADDR		0x032
+#define DCRN_L2C0_DATA		0x033
+#define DCRN_L2C0_SR		0x034
+#define  L2C_SR_CC		0x80000000
+#define  L2C_SR_CPE		0x40000000
+#define  L2C_SR_TPE		0x20000000
+#define  L2C_SR_LRU		0x10000000
+#define  L2C_SR_PCS		0x08000000
+#define DCRN_L2C0_REVID		0x035
+#define DCRN_L2C0_SNP0		0x036
+#define DCRN_L2C0_SNP1		0x037
+#define  L2C_SNP_BA_MASK	0xffff0000
+#define  L2C_SNP_SSR_MASK	0x0000f000
+#define  L2C_SNP_SSR_32G	0x0000f000
+#define  L2C_SNP_ESR		0x00000800
+#endif /* CONFIG_440GX */
 
 /*
  * PCI-X definitions

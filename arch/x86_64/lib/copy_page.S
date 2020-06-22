@@ -1,5 +1,7 @@
 /* Written 2003 by Andi Kleen, based on a kernel by Evandro Menezes */
 	
+#include <linux/config.h>
+
 /* Don't use streaming store because it's better when the target
    ends up in cache. */
 	    
@@ -8,10 +10,13 @@
 	.globl copy_page
 	.p2align 4
 copy_page:
-	prefetch (%rsi) 
-	prefetch 1*64(%rsi)
+
+    prefetcht0 (%rsi) 
+    prefetcht0 1*64(%rsi)
+#ifdef CONFIG_MK8	
 	prefetchw (%rdi) 
 	prefetchw 1*64(%rdi) 
+#endif	
 
 	subq	$3*8,%rsp
 	movq	%rbx,(%rsp)
@@ -32,7 +37,7 @@ copy_page:
 	movq     48 (%rsi), %r11
 	movq     56 (%rsi), %r12
 
-	prefetch 5*64(%rsi)
+	prefetcht0 5*64(%rsi)
 
 	movq     %rax,    (%rdi)
 	movq     %rbx,  8 (%rdi)
@@ -43,7 +48,9 @@ copy_page:
 	movq     %r11, 48 (%rdi)
 	movq     %r12, 56 (%rdi)
 
+#ifdef CONFIG_MK8
 	prefetchw 5*64(%rdi)
+#endif	
 
 	leaq    64 (%rsi), %rsi
 	leaq    64 (%rdi), %rdi

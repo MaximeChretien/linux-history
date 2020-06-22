@@ -25,7 +25,7 @@
 #define PPC44x_EMAC0_MR0	0xE0000800
 
 /* Location of MAC addresses in firmware */
-#define OCOTEA_MAC_BASE		(OCOTEA_SMALL_FLASH_HIGH+0xc0500)
+#define OCOTEA_MAC_BASE		(OCOTEA_SMALL_FLASH_HIGH+0xb0500)
 #define OCOTEA_MAC_SIZE		0x200
 #define OCOTEA_MAC1_OFFSET	0x100
 
@@ -55,6 +55,9 @@
 #define UART0_IO_BASE	(u8 *) 0xE0000200
 #define UART1_IO_BASE	(u8 *) 0xE0000300
 
+/* This value is used only to fill something in STD_UART_OP definition,
+   actual value is determined in ocotea_early_serial_map.   --ebs
+*/
 #define BASE_BAUD	11059200/16
 #define STD_UART_OP(num)					\
 	{ 0, BASE_BAUD, 0, UART##num##_INT,			\

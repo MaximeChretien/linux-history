@@ -319,7 +319,8 @@ void refile_inode(struct inode *inode)
 	if (!inode)
 		return;
 	spin_lock(&inode_lock);
-	__refile_inode(inode);
+	if (!(inode->i_state & I_LOCK))
+		__refile_inode(inode);
 	spin_unlock(&inode_lock);
 }
 

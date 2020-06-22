@@ -62,6 +62,7 @@ static int pdev_is_sata(struct pci_dev *pdev)
 			return 0;
 	}
 	BUG();
+	return 0;
 }
  
 /**

@@ -73,15 +73,20 @@ running once the system is up.
 		off	Disable ACPI
 		ht	Limit ACPI to boot-time LAPIC enumeration for HT,
 			disabling the run-time AML interpreter.
+		strict	Be less tolerant of platforms that are not
+			strictly ACPI specification compliant.
 
-	acpi_pic_sci=	[HW,ACPI] ACPI System Conrol Interrupt trigger mode
-		level	Force PIC-mode SCI to Level Trigger (default)
-		edge	Force PIC-mode SCI to Edge Trigger
+	acpi_sci=	[HW,ACPI] ACPI System Control Interrupt trigger mode
+			Format: { level | edge |  high | low }
  
 	acpi_irq_balance	ACPI will balance active IRQs
 	acpi_irq_nobalance	ACPI will not move active IRQs
 	acpi_irq_pci=	If irq_balance, Clear listed IRQs for use by PCI
 	acpi_irq_isa=	If irq_balance, Mark listed IRQs used by ISA
+
+	acpi_osi=	[HW,ACPI] empty param disables _OSI
+
+	acpi_serialize	[HW,ACPI] force serialization of AML methods
 
 	ad1816=		[HW,SOUND]
 

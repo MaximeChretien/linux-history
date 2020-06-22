@@ -657,6 +657,7 @@ int udp_recvmsg(struct sock *sk, struct msghdr *msg, int len,
 	if (flags & MSG_ERRQUEUE)
 		return ip_recv_error(sk, msg, len);
 
+try_again:
 	skb = skb_recv_datagram(sk, flags, noblock, &err);
 	if (!skb)
 		goto out;
@@ -722,7 +723,9 @@ csum_copy_err:
 
 	skb_free_datagram(sk, skb);
 
-	return -EAGAIN;	
+	if (noblock)
+		return -EAGAIN;	
+	goto try_again;
 }
 
 int udp_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)

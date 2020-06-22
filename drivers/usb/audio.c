@@ -1684,12 +1684,12 @@ static int set_format_in(struct usb_audiodev *as)
 		    alts->endpoint[1].bmAttributes != 0x01 ||
 		    alts->endpoint[1].bSynchAddress != 0 ||
 		    alts->endpoint[1].bEndpointAddress != (alts->endpoint[0].bSynchAddress & 0x7f)) {
-			printk(KERN_ERR "usbaudio: device %d interface %d altsetting %d invalid synch pipe\n",
+			printk(KERN_WARNING "usbaudio: device %d interface %d altsetting %d claims adaptive in but has invalid synch pipe; treating as asynchronous in\n",
 			       dev->devnum, u->interface, fmt->altsetting);
-			return -1;
+		} else {
+			u->syncpipe = usb_sndisocpipe(dev, alts->endpoint[1].bEndpointAddress & 0xf);
+			u->syncinterval = alts->endpoint[1].bRefresh;
 		}
-		u->syncpipe = usb_sndisocpipe(dev, alts->endpoint[1].bEndpointAddress & 0xf);
-		u->syncinterval = alts->endpoint[1].bRefresh;
 	}
 	if (d->srate < fmt->sratelo)
 		d->srate = fmt->sratelo;
@@ -1779,12 +1779,12 @@ static int set_format_out(struct usb_audiodev *as)
 		    alts->endpoint[1].bmAttributes != 0x01 ||
 		    alts->endpoint[1].bSynchAddress != 0 ||
 		    alts->endpoint[1].bEndpointAddress != (alts->endpoint[0].bSynchAddress | 0x80)) {
-			printk(KERN_ERR "usbaudio: device %d interface %d altsetting %d invalid synch pipe\n",
+			printk(KERN_WARNING "usbaudio: device %d interface %d altsetting %d claims asynch out but has invalid synch pipe; treating as adaptive out\n",
 			       dev->devnum, u->interface, fmt->altsetting);
-			return -1;
+		} else {
+			u->syncpipe = usb_rcvisocpipe(dev, alts->endpoint[1].bEndpointAddress & 0xf);
+			u->syncinterval = alts->endpoint[1].bRefresh;
 		}
-		u->syncpipe = usb_rcvisocpipe(dev, alts->endpoint[1].bEndpointAddress & 0xf);
-		u->syncinterval = alts->endpoint[1].bRefresh;
 	}
 	if (d->srate < fmt->sratelo)
 		d->srate = fmt->sratelo;

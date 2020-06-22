@@ -24,12 +24,8 @@
  *
  */
 
-#include <linux/config.h>
 #include <linux/module.h>
-#include <linux/types.h>
 #include <linux/kernel.h>
-#include <linux/errno.h>
-#include <linux/compiler.h>
 #include <linux/vmalloc.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>                  /* for tcphdr */
@@ -141,25 +137,27 @@ ip_vs_conn_hashkey(unsigned proto, __u32 addr, __u16 port)
 static int ip_vs_conn_hash(struct ip_vs_conn *cp)
 {
 	unsigned hash;
-
-	if (cp->flags & IP_VS_CONN_F_HASHED) {
-		IP_VS_ERR("ip_vs_conn_hash(): request for already hashed, "
-			  "called from %p\n", __builtin_return_address(0));
-		return 0;
-	}
+	int ret;
 
 	/* Hash by protocol, client address and port */
 	hash = ip_vs_conn_hashkey(cp->protocol, cp->caddr, cp->cport);
 
 	ct_write_lock(hash);
 
-	list_add(&cp->c_list, &ip_vs_conn_tab[hash]);
-	cp->flags |= IP_VS_CONN_F_HASHED;
-	atomic_inc(&cp->refcnt);
+	if (!(cp->flags & IP_VS_CONN_F_HASHED)) {
+		list_add(&cp->c_list, &ip_vs_conn_tab[hash]);
+		cp->flags |= IP_VS_CONN_F_HASHED;
+		atomic_inc(&cp->refcnt);
+		ret = 1;
+	} else {
+		IP_VS_ERR("ip_vs_conn_hash(): request for already hashed, "
+			  "called from %p\n", __builtin_return_address(0));
+		ret = 0;
+	}
 
 	ct_write_unlock(hash);
 
-	return 1;
+	return ret;
 }
 
 
@@ -170,24 +168,23 @@ static int ip_vs_conn_hash(struct ip_vs_conn *cp)
 static int ip_vs_conn_unhash(struct ip_vs_conn *cp)
 {
 	unsigned hash;
-
-	if (!(cp->flags & IP_VS_CONN_F_HASHED)) {
-		IP_VS_ERR("ip_vs_conn_unhash(): request for unhash flagged, "
-			  "called from %p\n", __builtin_return_address(0));
-		return 0;
-	}
+	int ret;
 
 	/* unhash it and decrease its reference counter */
 	hash = ip_vs_conn_hashkey(cp->protocol, cp->caddr, cp->cport);
 	ct_write_lock(hash);
 
-	list_del(&cp->c_list);
-	cp->flags &= ~IP_VS_CONN_F_HASHED;
-	atomic_dec(&cp->refcnt);
+	if (cp->flags & IP_VS_CONN_F_HASHED) {
+		list_del(&cp->c_list);
+		cp->flags &= ~IP_VS_CONN_F_HASHED;
+		atomic_dec(&cp->refcnt);
+		ret = 1;
+	} else
+		ret = 0;
 
 	ct_write_unlock(hash);
 
-	return 1;
+	return ret;
 }
 
 
@@ -725,15 +722,20 @@ static int ip_vs_nat_xmit(struct sk_buff *skb, struct ip_vs_conn *cp)
 	/*
 	 *  Check if it is no_cport connection ...
 	 */
-	if (cp->flags & IP_VS_CONN_F_NO_CPORT) {
-		atomic_dec(&ip_vs_conn_no_cport_cnt);
-		ip_vs_conn_unhash(cp);
-		cp->flags &= ~IP_VS_CONN_F_NO_CPORT;
-		cp->cport = h.portp[0];
-		/* hash on new dport */
-		ip_vs_conn_hash(cp);
+	if (unlikely(cp->flags & IP_VS_CONN_F_NO_CPORT)) {
+		if (ip_vs_conn_unhash(cp)) {
+			spin_lock(&cp->lock);
+			if (cp->flags & IP_VS_CONN_F_NO_CPORT) {
+				atomic_dec(&ip_vs_conn_no_cport_cnt);
+				cp->flags &= ~IP_VS_CONN_F_NO_CPORT;
+				cp->cport = h.portp[0];
+				IP_VS_DBG(10, "filled cport=%d\n", ntohs(cp->dport));
+			}
+			spin_unlock(&cp->lock);
 
-		IP_VS_DBG(10, "filled cport=%d\n", ntohs(cp->dport));
+			/* hash on new dport */
+			ip_vs_conn_hash(cp);
+		}
 	}
 
 	if (!(rt = __ip_vs_get_out_rt(cp, RT_TOS(iph->tos))))
@@ -890,8 +892,6 @@ static int ip_vs_tunnel_xmit(struct sk_buff *skb, struct ip_vs_conn *cp)
 	/* update checksum because skb might be defragmented */
 	ip_send_check(old_iph);
 
-	skb->h.raw = skb->nh.raw;
-
 	/*
 	 * Okay, now see if we can stuff it in the buffer as-is.
 	 */
@@ -911,6 +911,7 @@ static int ip_vs_tunnel_xmit(struct sk_buff *skb, struct ip_vs_conn *cp)
 		old_iph = skb->nh.iph;
 	}
 
+	skb->h.raw = skb->nh.raw;
 	skb->nh.raw = skb_push(skb, sizeof(struct iphdr));
 	memset(&(IPCB(skb)->opt), 0, sizeof(IPCB(skb)->opt));
 
@@ -1142,11 +1143,14 @@ int ip_vs_check_template(struct ip_vs_conn *ct)
 		/*
 		 * Invalidate the connection template
 		 */
-		ip_vs_conn_unhash(ct);
-		ct->dport = 65535;
-		ct->vport = 65535;
-		ct->cport = 0;
-		ip_vs_conn_hash(ct);
+		if (ct->cport) {
+			if (ip_vs_conn_unhash(ct)) {
+				ct->dport = 65535;
+				ct->vport = 65535;
+				ct->cport = 0;
+				ip_vs_conn_hash(ct);
+			}
+		}
 
 		/*
 		 * Simply decrease the refcnt of the template,
@@ -1200,7 +1204,8 @@ static void ip_vs_conn_expire(unsigned long data)
 	/*
 	 *	unhash it if it is hashed in the conn table
 	 */
-	ip_vs_conn_unhash(cp);
+	if (!ip_vs_conn_unhash(cp))
+		goto expire_later;
 
 	/*
 	 *	refcnt==1 implies I'm the only one referrer

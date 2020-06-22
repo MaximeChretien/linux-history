@@ -32,7 +32,7 @@
 
 #define VER_MAJOR                 1
 #define VER_MINOR                 6
-#define VER_LEVEL                 25
+#define VER_LEVEL                 32
 
 #include "sis.h"
 
@@ -161,12 +161,12 @@
 #define MMIO_QUEUE_WRITEPORT      0x85C4
 #define MMIO_QUEUE_READPORT       0x85C8
 
-#define IND_SIS_CRT2_WRITE_ENABLE_300 0x24
-#define IND_SIS_CRT2_WRITE_ENABLE_315 0x2F
+#define SIS_CRT2_WENABLE_300 0x24
+#define SIS_CRT2_WENABLE_315 0x2F
 
 #define SIS_PASSWORD              0x86  /* SR05 */
 #define SIS_INTERLACED_MODE       0x20  /* SR06 */
-#define SIS_8BPP_COLOR_MODE       0x0 
+#define SIS_8BPP_COLOR_MODE       0x0
 #define SIS_15BPP_COLOR_MODE      0x1 
 #define SIS_16BPP_COLOR_MODE      0x2 
 #define SIS_32BPP_COLOR_MODE      0x4 
@@ -187,10 +187,10 @@
 #define SIS315_DATA_BUS_64        0x00
 #define SIS315_DATA_BUS_128       0x01
 #define SIS315_DUAL_CHANNEL_MASK  0x0C
-#define SIS315_SINGLE_CHANNEL_1_RANK  	0x0
-#define SIS315_SINGLE_CHANNEL_2_RANK  	0x1
+#define SIS315_SINGLE_CHANNEL_1_RANK  	0x00
+#define SIS315_SINGLE_CHANNEL_2_RANK  	0x01
 #define SIS315_ASYM_DDR		  	0x02
-#define SIS315_DUAL_CHANNEL_1_RANK    	0x3
+#define SIS315_DUAL_CHANNEL_1_RANK    	0x03
 
 #define SIS_SCRATCH_REG_1A_MASK   0x10
 
@@ -314,9 +314,40 @@
                                           outSISIDXREG(base,idx,__Temp); \
                                         } while (0)
 
-/* ------------------- Global Variables ----------------------------- */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+/* Offscreen layout */
+typedef struct _SIS_GLYINFO {
+	unsigned char ch;
+	int fontwidth;
+	int fontheight;
+	u8 gmask[72];
+	int ngmask;
+} SIS_GLYINFO;
 
-/* Fbcon variables */
+static char sisfb_fontname[40];
+#endif
+
+typedef struct _SIS_OH {
+	struct _SIS_OH *poh_next;
+	struct _SIS_OH *poh_prev;
+	unsigned long offset;
+	unsigned long size;
+} SIS_OH;
+
+typedef struct _SIS_OHALLOC {
+	struct _SIS_OHALLOC *poha_next;
+	SIS_OH aoh[1];
+} SIS_OHALLOC;
+
+typedef struct _SIS_HEAP {
+	SIS_OH oh_free;
+	SIS_OH oh_used;
+	SIS_OH *poh_freelist;
+	SIS_OHALLOC *poha_chain;
+	unsigned long max_freesize;
+} SIS_HEAP;
+
+/* Fbcon stuff */
 static struct fb_info *sis_fb_info;
 
 static struct fb_var_screeninfo default_var = {
@@ -384,38 +415,28 @@ static int sisfb_inverse = 0;
 static int currcon = 0;
 #endif
 
-/* global flags */
 static int sisfb_off = 0;
 static int sisfb_crt1off = 0;
 static int sisfb_forcecrt1 = -1;
-static int sisvga_enabled = 0;
+static int sisfb_crt2type  = -1;	/* CRT2 type (for overriding autodetection) */
+static int sisfb_tvplug    = -1;	/* Tv plug type (for overriding autodetection) */
 static int sisfb_userom = 1;
 static int sisfb_useoem = -1;
 static int sisfb_parm_rate = -1;
-static int sisfb_registered = 0;
 static int sisfb_mem = 0;
-static int sisfb_pdc = 0;
+static int sisfb_pdc = 0xff;
+static int sisfb_pdca = 0xff;
 static int sisfb_ypan = -1;
 static int sisfb_max = -1;
 static int sisfb_nocrt2rate = 0;
 static int sisfb_dstn = 0;
 static int sisfb_fstn = 0;
-
-VGA_ENGINE sisvga_engine = UNKNOWN_VGA;
 int 	   sisfb_accel = -1;
-
-/* These are to adapted according to VGA_ENGINE type */
-static int sisfb_hwcursor_size = 0;
-static int sisfb_CRT2_write_enable = 0;
-
-int sisfb_crt2type  = -1;	/* CRT2 type (for overriding autodetection) */
-int sisfb_tvplug    = -1;	/* Tv plug type (for overriding autodetection) */
-
-int sisfb_queuemode = -1; 	/* Use MMIO queue mode by default (315 series only) */
-
-unsigned char sisfb_detectedpdc = 0;
-
-unsigned char sisfb_detectedlcda = 0xff;
+int 	   sisfb_queuemode = -1; 	/* Use MMIO queue mode by default (315 series only) */
+#if !defined(__i386__) && !defined(__x86_64__)
+static int sisfb_resetcard = 0;
+static int sisfb_videoram = 0;
+#endif
 
 /* data for sis hardware ("par") */
 struct video_info ivideo;
@@ -429,10 +450,6 @@ SIS_HW_INFO sishw_ext;
 /* SiS private structure */
 SiS_Private  SiS_Pr;
 
-/* Card parameters */
-static unsigned long sisfb_mmio_size = 0;
-static u8            sisfb_caps = 0;
-
 typedef enum _SIS_CMDTYPE {
 	MMIO_CMD = 0,
 	AGP_CMD_QUEUE,
@@ -440,22 +457,43 @@ typedef enum _SIS_CMDTYPE {
 } SIS_CMDTYPE;
 
 /* List of supported chips */
-static struct board {
-	u16 vendor, device;
-	const char *name;
-} sisdev_list[] = {
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_300,     "SIS 300"},
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_540_VGA, "SIS 540 VGA"},
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_630_VGA, "SIS 630/730 VGA"},
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_315H,    "SIS 315H"},
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_315,     "SIS 315"},
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_315PRO,  "SIS 315PRO"},
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_550_VGA, "SIS 550 VGA"},
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_650_VGA, "SIS 65x/M65x/740 VGA"},
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_330,     "SIS 330"},
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_660_VGA, "SIS 661FX/M661FX/741/760 VGA"},
-	{0, 0, NULL}
+static struct sisfb_chip_info {
+        int 		chip;
+	VGA_ENGINE 	vgaengine;
+	int 		hwcursor_size;
+	int		CRT2_write_enable;
+	const char 	*chip_name;
+} sisfb_chip_info[] __devinitdata = {
+	{ SIS_300,    SIS_300_VGA, HW_CURSOR_AREA_SIZE_300 * 2, SIS_CRT2_WENABLE_300, "SiS 300/305" },
+	{ SIS_540,    SIS_300_VGA, HW_CURSOR_AREA_SIZE_300 * 2, SIS_CRT2_WENABLE_300, "SiS 540" },
+	{ SIS_630,    SIS_300_VGA, HW_CURSOR_AREA_SIZE_300 * 2, SIS_CRT2_WENABLE_300, "SiS 630" },
+	{ SIS_315H,   SIS_315_VGA, HW_CURSOR_AREA_SIZE_315 * 4, SIS_CRT2_WENABLE_315, "SiS 315H" },
+	{ SIS_315,    SIS_315_VGA, HW_CURSOR_AREA_SIZE_315 * 4, SIS_CRT2_WENABLE_315, "SiS 315" },
+	{ SIS_315PRO, SIS_315_VGA, HW_CURSOR_AREA_SIZE_315 * 4, SIS_CRT2_WENABLE_315, "SiS 315PRO" },
+	{ SIS_550,    SIS_315_VGA, HW_CURSOR_AREA_SIZE_315 * 4, SIS_CRT2_WENABLE_315, "SiS 55x" },
+	{ SIS_650,    SIS_315_VGA, HW_CURSOR_AREA_SIZE_315 * 4, SIS_CRT2_WENABLE_315, "SiS 65x" },
+	{ SIS_330,    SIS_315_VGA, HW_CURSOR_AREA_SIZE_315 * 4, SIS_CRT2_WENABLE_315, "SiS 330" },
+	{ SIS_660,    SIS_315_VGA, HW_CURSOR_AREA_SIZE_315 * 4, SIS_CRT2_WENABLE_315, "SiS 660" },
 };
+
+static struct pci_device_id __devinitdata sisfb_pci_table[] = {
+#ifdef CONFIG_FB_SIS_300
+	{ PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_300,     PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},
+	{ PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_540_VGA, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 1},
+	{ PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_630_VGA, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 2},
+#endif
+#ifdef CONFIG_FB_SIS_315
+	{ PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_315H,    PCI_ANY_ID, PCI_ANY_ID, 0, 0, 3},
+	{ PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_315,     PCI_ANY_ID, PCI_ANY_ID, 0, 0, 4},
+	{ PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_315PRO,  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 5},
+	{ PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_550_VGA, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 6},
+	{ PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_650_VGA, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 7},
+	{ PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_330,     PCI_ANY_ID, PCI_ANY_ID, 0, 0, 8},
+	{ PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_660_VGA, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 9},
+#endif
+	{ 0 }
+};
+MODULE_DEVICE_TABLE(pci, sisfb_pci_table);
 
 #define MD_SIS300 1
 #define MD_SIS315 2
@@ -563,7 +601,11 @@ struct _sisbios_mode {
 	{"1280x768x16",  0x24, 0x0000, 0x0000, 1280,  768, 16, 1, 160, 48, MD_SIS300|MD_SIS315},
 	{"1280x768x24",  0x25, 0x0000, 0x0000, 1280,  768, 32, 1, 160, 48, MD_SIS300|MD_SIS315},
 	{"1280x768x32",  0x25, 0x0000, 0x0000, 1280,  768, 32, 1, 160, 48, MD_SIS300|MD_SIS315},
-	{"1280x960x8",   0x7c, 0x0000, 0x0000, 1280,  960,  8, 1, 160, 60, MD_SIS300|MD_SIS315}, 
+	{"1280x800x8",   0x14, 0x0000, 0x0000, 1280,  800,  8, 1, 160, 50,           MD_SIS315},
+	{"1280x800x16",  0x15, 0x0000, 0x0000, 1280,  800, 16, 1, 160, 50,           MD_SIS315},
+	{"1280x800x24",  0x16, 0x0000, 0x0000, 1280,  800, 32, 1, 160, 50,           MD_SIS315},
+	{"1280x800x32",  0x16, 0x0000, 0x0000, 1280,  800, 32, 1, 160, 50,           MD_SIS315},
+	{"1280x960x8",   0x7c, 0x0000, 0x0000, 1280,  960,  8, 1, 160, 60, MD_SIS300|MD_SIS315},
 	{"1280x960x16",  0x7d, 0x0000, 0x0000, 1280,  960, 16, 1, 160, 60, MD_SIS300|MD_SIS315},
 	{"1280x960x24",  0x7e, 0x0000, 0x0000, 1280,  960, 32, 1, 160, 60, MD_SIS300|MD_SIS315},
 	{"1280x960x32",  0x7e, 0x0000, 0x0000, 1280,  960, 32, 1, 160, 60, MD_SIS300|MD_SIS315},
@@ -587,6 +629,10 @@ struct _sisbios_mode {
 	{"1600x1200x16", 0x3d, 0x0131, 0x011e, 1600, 1200, 16, 1, 200, 75, MD_SIS300|MD_SIS315},
 	{"1600x1200x24", 0x66, 0x013e, 0x011f, 1600, 1200, 32, 1, 200, 75, MD_SIS300|MD_SIS315},
 	{"1600x1200x32", 0x66, 0x013e, 0x011f, 1600, 1200, 32, 1, 200, 75, MD_SIS300|MD_SIS315},
+	{"1680x1050x8",  0x17, 0x0000, 0x0000, 1680, 1050,  8, 1, 210, 65,           MD_SIS315},
+	{"1680x1050x16", 0x18, 0x0000, 0x0000, 1680, 1050, 16, 1, 210, 65,           MD_SIS315},
+	{"1680x1050x24", 0x19, 0x0000, 0x0000, 1680, 1050, 32, 1, 210, 65,           MD_SIS315},
+	{"1680x1050x32", 0x19, 0x0000, 0x0000, 1680, 1050, 32, 1, 210, 65,           MD_SIS315},
 	{"1920x1440x8",  0x68, 0x013f, 0x0000, 1920, 1440,  8, 1, 240, 75, MD_SIS300|MD_SIS315},
 	{"1920x1440x16", 0x69, 0x0140, 0x0000, 1920, 1440, 16, 1, 240, 75, MD_SIS300|MD_SIS315},
 	{"1920x1440x24", 0x6b, 0x0141, 0x0000, 1920, 1440, 32, 1, 240, 75, MD_SIS300|MD_SIS315},
@@ -604,8 +650,6 @@ int sisfb_mode_idx = MODE_INDEX_NONE;  /* Don't use a mode by default if we are 
 #else
 int sisfb_mode_idx = -1;               /* Use a default mode if we are inside the kernel */
 #endif
-u8  sisfb_mode_no  = 0;
-u8  sisfb_rate_idx = 0;
 
 /* CR36 evaluation */
 const USHORT sis300paneltype[] =
@@ -620,15 +664,21 @@ const USHORT sis310paneltype[] =
       LCD_1152x768,  LCD_1400x1050, LCD_1280x768,  LCD_1600x1200,
       LCD_640x480_2, LCD_640x480_3, LCD_320x480,   LCD_1024x768 };
 
+const USHORT sis661paneltype[] =
+    { LCD_UNKNOWN,   LCD_800x600,   LCD_1024x768,  LCD_1280x1024,
+      LCD_640x480,   LCD_1024x600,  LCD_1152x864,  LCD_1280x960,
+      LCD_1152x768,  LCD_1400x1050, LCD_1280x768,  LCD_1600x1200,
+      LCD_1280x800,  LCD_1680x1050, LCD_1280x720,  LCD_1024x768 };
+
 #define FL_550_DSTN 0x01
 #define FL_550_FSTN 0x02
 
-static const struct _sis_crt2type {
+static struct _sis_crt2type {
 	char name[10];
 	int type_no;
 	int tvplug_no;
 	unsigned short flags;
-} sis_crt2type[] = {
+} sis_crt2type[] __initdata = {
 	{"NONE", 	0, 		-1,        0},
 	{"LCD",  	CRT2_LCD, 	-1,        0},
 	{"TV",   	CRT2_TV, 	-1,        0},
@@ -642,10 +692,10 @@ static const struct _sis_crt2type {
 };
 
 /* Queue mode selection for 310 series */
-static const struct _sis_queuemode {
+static struct _sis_queuemode {
 	char name[6];
 	int type_no;
-} sis_queuemode[] = {
+} sis_queuemode[] __initdata = {
 	{"AGP",  	AGP_CMD_QUEUE},
 	{"VRAM", 	VM_CMD_QUEUE},
 	{"MMIO", 	MMIO_CMD},
@@ -653,10 +703,10 @@ static const struct _sis_queuemode {
 };
 
 /* TV standard */
-static const struct _sis_tvtype {
+static struct _sis_tvtype {
 	char name[6];
 	int type_no;
-} sis_tvtype[] = {
+} sis_tvtype[] __initdata = {
 	{"PAL",  	TV_PAL},
 	{"NTSC", 	TV_NTSC},
 	{"\0",   	-1}
@@ -696,6 +746,7 @@ static const struct _sis_vrate {
 	{1, 1152,  864,  75,  TRUE}, {2, 1152,  864,  84,  TRUE},
 	{1, 1280,  720,  60,  TRUE}, {2, 1280,  720,  75,  TRUE}, {3, 1280,  720,  85,  TRUE},
 	{1, 1280,  768,  60,  TRUE},
+	{1, 1280,  800,  60,  TRUE},
 	{1, 1280,  960,  60,  TRUE}, {2, 1280,  960,  85,  TRUE},
 	{1, 1280, 1024,  43,  TRUE}, {2, 1280, 1024,  60,  TRUE}, {3, 1280, 1024,  75,  TRUE},
 	{4, 1280, 1024,  85,  TRUE},
@@ -705,6 +756,7 @@ static const struct _sis_vrate {
 	{1, 1600, 1200,  60,  TRUE}, {2, 1600, 1200,  65,  TRUE}, {3, 1600, 1200,  70,  TRUE},
 	{4, 1600, 1200,  75,  TRUE}, {5, 1600, 1200,  85,  TRUE}, {6, 1600, 1200, 100,  TRUE},
 	{7, 1600, 1200, 120,  TRUE},
+	{1, 1680, 1050,  60,  TRUE},
 	{1, 1920, 1440,  60,  TRUE}, {2, 1920, 1440,  65,  TRUE}, {3, 1920, 1440,  70,  TRUE},
 	{4, 1920, 1440,  75,  TRUE}, {5, 1920, 1440,  85,  TRUE}, {6, 1920, 1440, 100,  TRUE},
 	{1, 2048, 1536,  60,  TRUE}, {2, 2048, 1536,  65,  TRUE}, {3, 2048, 1536,  70,  TRUE},
@@ -764,18 +816,20 @@ static const struct _sisfbddcfmodes {
 static u8 sisfb_lastrates[128];
 #endif
 
-static const struct _chswtable {
+#ifdef CONFIG_FB_SIS_300
+static struct _chswtable {
     int subsysVendor;
     int subsysCard;
     char *vendorName;
     char *cardName;
-} mychswtable[] = {
+} mychswtable[] __devinitdata = {
         { 0x1631, 0x1002, "Mitachi", "0x1002" },
 	{ 0x1071, 0x7521, "Mitac"  , "7521P"  },
 	{ 0,      0,      ""       , ""       }
 };
+#endif
 
-static const struct _customttable {
+static struct _customttable {
     unsigned short chipID;
     char *biosversion;
     char *biosdate;
@@ -788,7 +842,7 @@ static const struct _customttable {
     char *cardName;
     unsigned long SpecialID;
     char *optionName;
-} mycustomttable[] = {
+} mycustomttable[] __devinitdata = {
 	{ SIS_630, "2.00.07", "09/27/2002-13:38:25",
 	  0x3240A8,
 	  { 0x220, 0x227, 0x228, 0x229, 0x0ee },
@@ -917,40 +971,7 @@ static const struct _customttable {
 	}
 };
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
-/* Offscreen layout */
-typedef struct _SIS_GLYINFO {
-	unsigned char ch;
-	int fontwidth;
-	int fontheight;
-	u8 gmask[72];
-	int ngmask;
-} SIS_GLYINFO;
 
-static char sisfb_fontname[40];
-#endif
-
-typedef struct _SIS_OH {
-	struct _SIS_OH *poh_next;
-	struct _SIS_OH *poh_prev;
-	unsigned long offset;
-	unsigned long size;
-} SIS_OH;
-
-typedef struct _SIS_OHALLOC {
-	struct _SIS_OHALLOC *poha_next;
-	SIS_OH aoh[1];
-} SIS_OHALLOC;
-
-typedef struct _SIS_HEAP {
-	SIS_OH oh_free;
-	SIS_OH oh_used;
-	SIS_OH *poh_freelist;
-	SIS_OHALLOC *poha_chain;
-	unsigned long max_freesize;
-} SIS_HEAP;
-
-static unsigned long sisfb_hwcursor_vbase;
 
 static unsigned long sisfb_heap_start;
 static unsigned long sisfb_heap_end;
@@ -1208,7 +1229,7 @@ static int      sisfb_do_set_var(struct fb_var_screeninfo *var, int isactive,
 static void     sisfb_pre_setmode(void);
 static void     sisfb_post_setmode(void);
 
-static char *   sis_find_rom(void);
+static char *   sis_find_rom(struct pci_dev *pdev);
 static BOOLEAN  sisfb_CheckVBRetrace(void);
 static BOOLEAN  sisfbcheckvretracecrt2(void);
 static BOOLEAN  sisfbcheckvretracecrt1(void);
@@ -1223,10 +1244,6 @@ static BOOLEAN  sisfb_interpret_edid(struct sisfb_monitor *monitor, unsigned cha
 void            sis_dispinfo(struct ap_data *rec);
 void            sis_malloc(struct sis_memreq *req);
 void            sis_free(unsigned long base);
-
-/* Internal hardware access routines */
-void            sisfb_set_reg4(u16 port, unsigned long data);
-u32             sisfb_get_reg3(u16 port);
 
 /* Chipset-dependent internal routines */
 #ifdef CONFIG_FB_SIS_300
@@ -1252,9 +1269,9 @@ BOOLEAN         sisfb_query_north_bridge_space(PSIS_HW_INFO psishw_ext,
 	         	unsigned long offset, unsigned long set, unsigned long *value);
 
 /* Sensing routines */
-void            SiS_Sense30x(void);
-int             SISDoSense(int tempbl, int tempbh, int tempcl, int tempch);
-void            SiS_SenseCh(void);
+static void     SiS_Sense30x(void);
+static int      SISDoSense(int tempbl, int tempbh, int tempcl, int tempch);
+static void     SiS_SenseCh(void);
 
 /* Routines from init.c/init301.c */
 extern USHORT   SiS_GetModeID(int VGAEngine, ULONG VBFlags, int HDisplay, int VDisplay, int Depth, BOOLEAN FSTN);
@@ -1267,6 +1284,8 @@ extern void 	SiSRegInit(SiS_Private *SiS_Pr, SISIOADDRESS BaseAddr);
 extern BOOLEAN  SiSSetMode(SiS_Private *SiS_Pr, PSIS_HW_INFO HwDeviceInfo, USHORT ModeNo);
 extern void     SiS_SetEnableDstn(SiS_Private *SiS_Pr, int enable);
 extern void     SiS_SetEnableFstn(SiS_Private *SiS_Pr, int enable);
+
+extern BOOLEAN  SiSDetermineROMLayout661(SiS_Private *SiS_Pr, PSIS_HW_INFO HwInfo);
 
 extern BOOLEAN  sisfb_gettotalfrommode(SiS_Private *SiS_Pr, PSIS_HW_INFO HwDeviceExtension,
 		       unsigned char modeno, int *htotal, int *vtotal, unsigned char rateindex);
@@ -1286,6 +1305,6 @@ extern void 	SiS_Chrontel701xBLOn(SiS_Private *SiS_Pr, PSIS_HW_INFO HwDeviceInfo
 extern void 	SiS_Chrontel701xBLOff(SiS_Private *SiS_Pr);
 extern void 	SiS_SiS30xBLOn(SiS_Private *SiS_Pr, PSIS_HW_INFO HwDeviceInfo);
 extern void 	SiS_SiS30xBLOff(SiS_Private *SiS_Pr, PSIS_HW_INFO HwDeviceInfo);
-
-			
 #endif
+
+

@@ -62,13 +62,14 @@
 	.text
 
 	.text
+	.stabs	"arch/ppc/lib/",N_SO,0,0,0f
+	.stabs	"string.S",N_SO,0,0,0f
 
 CACHELINE_BYTES = L1_CACHE_LINE_SIZE
 LG_CACHELINE_BYTES = LG_L1_CACHE_LINE_SIZE
 CACHELINE_MASK = (L1_CACHE_LINE_SIZE-1)
 
-	.globl	strcpy
-strcpy:
+_GLOBAL(strcpy)
 	addi	r5,r3,-1
 	addi	r4,r4,-1
 1:	lbzu	r0,1(r4)
@@ -79,8 +80,7 @@ strcpy:
 
 /* This clears out any unused part of the destination buffer,
    just as the libc version does.  -- paulus */
-	.globl	strncpy
-strncpy:
+_GLOBAL(strncpy)
 	cmpwi	0,r5,0
 	beqlr
 	mtctr	r5
@@ -98,8 +98,7 @@ strncpy:
 	bdnz	2b
 	blr
 
-	.globl	strcat
-strcat:
+_GLOBAL(strcat)
 	addi	r5,r3,-1
 	addi	r4,r4,-1
 1:	lbzu	r0,1(r5)
@@ -112,8 +111,7 @@ strcat:
 	bne	1b
 	blr
 
-	.globl	strcmp
-strcmp:
+_GLOBAL(strcmp)
 	addi	r5,r3,-1
 	addi	r4,r4,-1
 1:	lbzu	r3,1(r5)
@@ -124,8 +122,7 @@ strcmp:
 	beq	1b
 	blr
 
-	.globl	strlen
-strlen:
+_GLOBAL(strlen)
 	addi	r4,r3,-1
 1:	lbzu	r0,1(r4)
 	cmpwi	0,r0,0
@@ -138,8 +135,7 @@ strlen:
  * to set them to zero.  This requires that the destination
  * area is cacheable.  -- paulus
  */
-	.globl	cacheable_memzero
-cacheable_memzero:
+_GLOBAL(cacheable_memzero)
 	mr	r5,r4
 	li	r4,0
 	addi	r6,r3,-4
@@ -189,8 +185,7 @@ cacheable_memzero:
 	bdnz	8b
 	blr
 
-	.globl	memset
-memset:
+_GLOBAL(memset)
 	rlwimi	r4,r4,8,16,23
 	rlwimi	r4,r4,16,0,15
 	addi	r6,r3,-4
@@ -215,8 +210,7 @@ memset:
 	bdnz	8b
 	blr
 
-	.globl	bcopy
-bcopy:
+_GLOBAL(bcopy)
 	mr	r6,r3
 	mr	r3,r4
 	mr	r4,r6
@@ -229,8 +223,7 @@ bcopy:
  * We only use this version if the source and dest don't overlap.
  * -- paulus.
  */
-	.global	cacheable_memcpy
-cacheable_memcpy:
+_GLOBAL(cacheable_memcpy)
 	add	r7,r3,r5		/* test if the src & dst overlap */
 	add	r8,r4,r5
 	cmplw	0,r4,r7
@@ -304,14 +297,12 @@ cacheable_memcpy:
 	bdnz	40b
 65:	blr
 
-	.globl	memmove
-memmove:
+_GLOBAL(memmove)
 	cmplw	0,r3,r4
 	bgt	backwards_memcpy
 	/* fall through */
 
-	.globl	memcpy
-memcpy:
+_GLOBAL(memcpy)
 	srwi.	r7,r5,3
 	addi	r6,r3,-4
 	addi	r4,r4,-4
@@ -352,8 +343,7 @@ memcpy:
 	mtctr	r7
 	b	1b
 
-	.globl	backwards_memcpy
-backwards_memcpy:
+_GLOBAL(backwards_memcpy)
 	rlwinm.	r7,r5,32-3,3,31		/* r0 = r5 >> 3 */
 	add	r6,r3,r5
 	add	r4,r4,r5
@@ -389,8 +379,7 @@ backwards_memcpy:
 	mtctr	r7
 	b	1b
 
-	.globl	memcmp
-memcmp:
+_GLOBAL(memcmp)
 	cmpwi	0,r5,0
 	ble-	2f
 	mtctr	r5
@@ -404,8 +393,7 @@ memcmp:
 2:	li	r3,0
 	blr
 
-	.global	memchr
-memchr:
+_GLOBAL(memchr)
 	cmpwi	0,r5,0
 	ble-	2f
 	mtctr	r5
@@ -417,8 +405,7 @@ memchr:
 2:	li	r3,0
 	blr
 
-	.globl	__copy_tofrom_user
-__copy_tofrom_user:
+_GLOBAL(__copy_tofrom_user)
 	addi	r4,r4,-4
 	addi	r6,r3,-4
 	neg	r0,r3
@@ -443,48 +430,57 @@ __copy_tofrom_user:
 73:	stwu	r9,4(r6)
 	bdnz	72b
 
-58:	srwi.	r0,r5,LG_CACHELINE_BYTES /* # complete cachelines */
-	clrlwi	r5,r5,32-LG_CACHELINE_BYTES
-	li	r11,4
-	beq	63f
-
-#if !defined(CONFIG_8xx)
-	/* Here we decide how far ahead to prefetch the source */
-#if MAX_COPY_PREFETCH > 1
-	/* Heuristically, for large transfers we prefetch
-	   MAX_COPY_PREFETCH cachelines ahead.  For small transfers
-	   we prefetch 1 cacheline ahead. */
-	cmpwi	r0,MAX_COPY_PREFETCH
-	li	r7,1
-	li	r3,4
-	ble	111f
-	li	r7,MAX_COPY_PREFETCH
-111:	mtctr	r7
-112:	dcbt	r3,r4
-	addi	r3,r3,CACHELINE_BYTES
-	bdnz	112b
-#else /* MAX_COPY_PREFETCH == 1 */
-	li	r3,CACHELINE_BYTES + 4
-	dcbt	r11,r4
-#endif /* MAX_COPY_PREFETCH */
-#endif /* CONFIG_8xx */
-
-	mtctr	r0
-53:
-#if !defined(CONFIG_8xx)
-	dcbt	r3,r4
-54:	dcbz	r11,r6
-#endif
-/* had to move these to keep extable in order */
 	.section __ex_table,"a"
 	.align	2
 	.long	70b,100f
 	.long	71b,101f
 	.long	72b,102f
 	.long	73b,103f
-#if !defined(CONFIG_8xx)
+	.text
+
+58:	srwi.	r0,r5,LG_CACHELINE_BYTES /* # complete cachelines */
+	clrlwi	r5,r5,32-LG_CACHELINE_BYTES
+	li	r11,4
+	beq	63f
+
+#ifdef CONFIG_8xx
+	/* Don't use prefetch on 8xx */
+	mtctr	r0
+53:	COPY_16_BYTES_WITHEX(0)
+	bdnz	53b
+
+#else /* not CONFIG_8xx */
+	/* Here we decide how far ahead to prefetch the source */
+	li	r3,4
+	cmpwi	r0,1
+	li	r7,0
+	ble	114f
+	li	r7,1
+#if MAX_COPY_PREFETCH > 1
+	/* Heuristically, for large transfers we prefetch
+	   MAX_COPY_PREFETCH cachelines ahead.  For small transfers
+	   we prefetch 1 cacheline ahead. */
+	cmpwi	r0,MAX_COPY_PREFETCH
+	ble	112f
+	li	r7,MAX_COPY_PREFETCH
+112:	mtctr	r7
+111:	dcbt	r3,r4
+	addi	r3,r3,CACHELINE_BYTES
+	bdnz	111b
+#else
+	dcbt	r3,r4
+	addi	r3,r3,CACHELINE_BYTES
+#endif /* MAX_COPY_PREFETCH > 1 */
+
+114:	subf	r8,r7,r0
+	mr	r0,r7
+	mtctr	r8
+
+53:	dcbt	r3,r4
+54:	dcbz	r11,r6
+	.section __ex_table,"a"
+	.align	2
 	.long	54b,105f
-#endif
 	.text
 /* the main body of the cacheline loop */
 	COPY_16_BYTES_WITHEX(0)
@@ -502,6 +498,11 @@ __copy_tofrom_user:
 #endif
 #endif
 	bdnz	53b
+	cmpwi	r0,0
+	li	r3,4
+	li	r7,0
+	bne	114b
+#endif /* CONFIG_8xx */	
 
 63:	srwi.	r0,r5,2
 	mtctr	r0
@@ -624,8 +625,7 @@ __copy_tofrom_user:
 	.long	114b,120b
 	.text
 
-	.globl	__clear_user
-__clear_user:
+_GLOBAL(__clear_user)
 	addi	r6,r3,-4
 	li	r3,0
 	li	r5,0
@@ -668,8 +668,7 @@ __clear_user:
 	.long	8b,92b
 	.text
 
-	.globl	__strncpy_from_user
-__strncpy_from_user:
+_GLOBAL(__strncpy_from_user)
 	addi	r6,r3,-1
 	addi	r4,r4,-1
 	cmpwi	0,r5,0
@@ -692,8 +691,7 @@ __strncpy_from_user:
 	.text
 
 /* r3 = str, r4 = len (> 0), r5 = top (highest addr) */
-	.globl	__strnlen_user
-__strnlen_user:
+_GLOBAL(__strnlen_user)
 	addi	r7,r3,-1
 	subf	r6,r7,r5	/* top+1 - str */
 	cmplw	0,r4,r6

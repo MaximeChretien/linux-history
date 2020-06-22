@@ -463,6 +463,7 @@ extern int sysctl_tcp_adv_win_scale;
 extern int sysctl_tcp_tw_reuse;
 extern int sysctl_tcp_frto;
 extern int sysctl_tcp_low_latency;
+extern int sysctl_tcp_westwood;
 
 extern atomic_t tcp_memory_allocated;
 extern atomic_t tcp_sockets_allocated;
@@ -1861,6 +1862,123 @@ static inline void tcp_mib_init(void)
 	TCP_ADD_STATS_USER(TcpRtoMin, TCP_RTO_MIN*1000/HZ);
 	TCP_ADD_STATS_USER(TcpRtoMax, TCP_RTO_MAX*1000/HZ);
 	TCP_ADD_STATS_USER(TcpMaxConn, -1);
+}
+
+
+/* TCP Westwood functions and constants */
+
+#define TCP_WESTWOOD_INIT_RTT               20*HZ           /* maybe too conservative?! */
+#define TCP_WESTWOOD_RTT_MIN                HZ/20           /* 50ms */
+
+static inline void tcp_westwood_update_rtt(struct tcp_opt *tp, __u32 rtt_seq)
+{
+	if (sysctl_tcp_westwood)
+		tp->westwood.rtt = rtt_seq;
+}
+
+void __tcp_westwood_fast_bw(struct sock *, struct sk_buff *);
+void __tcp_westwood_slow_bw(struct sock *, struct sk_buff *);
+
+/*
+ * This function initializes fields used in TCP Westwood+. We can't
+ * get no information about RTTmin at this time so we simply set it to
+ * TCP_WESTWOOD_INIT_RTT. This value was chosen to be too conservative
+ * since in this way we're sure it will be updated in a consistent
+ * way as soon as possible. It will reasonably happen within the first
+ * RTT period of the connection lifetime.
+ */
+
+static inline void __tcp_init_westwood(struct sock *sk)
+{
+	struct tcp_opt *tp = &(sk->tp_pinfo.af_tcp);
+
+	tp->westwood.bw_ns_est = 0;
+	tp->westwood.bw_est = 0;
+	tp->westwood.accounted = 0;
+	tp->westwood.cumul_ack = 0;
+	tp->westwood.rtt_win_sx = tcp_time_stamp;
+	tp->westwood.rtt = TCP_WESTWOOD_INIT_RTT;
+	tp->westwood.rtt_min = TCP_WESTWOOD_INIT_RTT;
+	tp->westwood.snd_una = tp->snd_una;
+}
+
+static inline void tcp_init_westwood(struct sock *sk)
+{
+	__tcp_init_westwood(sk);
+}
+
+static inline void tcp_westwood_fast_bw(struct sock *sk, struct sk_buff *skb)
+{
+	if (sysctl_tcp_westwood)
+		__tcp_westwood_fast_bw(sk, skb);
+}
+
+static inline void tcp_westwood_slow_bw(struct sock *sk, struct sk_buff *skb)
+{
+	if (sysctl_tcp_westwood)
+		__tcp_westwood_slow_bw(sk, skb);
+}
+
+static inline __u32 __tcp_westwood_bw_rttmin(struct tcp_opt *tp)
+{
+	return (__u32) ((tp->westwood.bw_est) * (tp->westwood.rtt_min) /
+			(__u32) (tp->mss_cache));
+}
+
+static inline __u32 tcp_westwood_bw_rttmin(struct tcp_opt *tp)
+{
+	__u32 ret = 0;
+
+	if (sysctl_tcp_westwood)
+		ret = (__u32) (max(__tcp_westwood_bw_rttmin(tp), 2U));
+
+	return ret;
+}
+
+static inline int tcp_westwood_ssthresh(struct tcp_opt *tp)
+{
+	int ret = 0;
+	__u32 ssthresh;
+
+	if (sysctl_tcp_westwood) {
+		if (!(ssthresh = tcp_westwood_bw_rttmin(tp)))
+			return ret;
+
+		tp->snd_ssthresh = ssthresh;
+		ret = 1;
+	}
+
+	return ret;
+}
+
+static inline int tcp_westwood_cwnd(struct tcp_opt *tp)
+{
+	int ret = 0;
+	__u32 cwnd;
+
+	if (sysctl_tcp_westwood) {
+		if (!(cwnd = tcp_westwood_bw_rttmin(tp)))
+			return ret;
+
+		tp->snd_cwnd = cwnd;
+		ret = 1;
+	}
+
+	return ret;
+}
+
+static inline int tcp_westwood_complete_cwr(struct tcp_opt *tp) 
+{
+	int ret = 0;
+
+	if (sysctl_tcp_westwood) {
+		if (tcp_westwood_cwnd(tp)) {
+			tp->snd_ssthresh = tp->snd_cwnd;
+			ret = 1;
+		}
+	}
+
+	return ret;
 }
 
 #endif	/* _TCP_H */

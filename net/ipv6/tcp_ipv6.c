@@ -1647,7 +1647,7 @@ discard_and_relse:
 do_time_wait:
 	if (skb->len < (th->doff<<2) || tcp_checksum_complete(skb)) {
 		TCP_INC_STATS_BH(TcpInErrs);
-		sock_put(sk);
+		tcp_tw_put((struct tcp_tw_bucket *) sk);	
 		goto discard_it;
 	}
 

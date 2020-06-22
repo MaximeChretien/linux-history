@@ -62,7 +62,7 @@ mal_register_commac(struct ibm_ocp_mal *mal, struct mal_commac *commac)
 	/* Don't let multiple commacs claim the same channel */
 	if ( (mal->tx_chan_mask & commac->tx_chan_mask) ||
 	     (mal->rx_chan_mask & commac->rx_chan_mask) ) {
-	     	write_unlock(&mal_list_lock);
+	     	write_unlock_irqrestore(&mal_list_lock, flags);
 		return -EBUSY;
 	}
 

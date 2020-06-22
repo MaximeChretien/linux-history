@@ -260,6 +260,30 @@ xfs_flush_device(
 	xfs_log_force(ip->i_mount, (xfs_lsn_t)0, XFS_LOG_FORCE|XFS_LOG_SYNC);
 }
 
+struct dentry *
+d_alloc_anon(struct inode *inode)
+{
+	struct dentry *dentry;
+
+	spin_lock(&dcache_lock);
+	list_for_each_entry(dentry, &inode->i_dentry, d_alias) {
+		if (!(dentry->d_flags & DCACHE_NFSD_DISCONNECTED))
+			goto found;
+	}
+	spin_unlock(&dcache_lock);
+
+	dentry = d_alloc_root(inode);
+	if (likely(dentry != NULL))
+		dentry->d_flags |= DCACHE_NFSD_DISCONNECTED;
+	return dentry;
+ found:
+	dget_locked(dentry);
+	dentry->d_vfs_flags |= DCACHE_REFERENCED;
+	spin_unlock(&dcache_lock);
+	iput(inode);
+	return dentry;
+}
+
 /*ARGSUSED*/
 int
 xfs_blkdev_get(
@@ -484,10 +508,10 @@ syncd(void *arg)
 
 	daemonize();
 	reparent_to_init();
-	spin_lock_irq(&current->sigmask_lock);
+	sigmask_lock();
 	sigfillset(&current->blocked);
-	recalc_sigpending(current);
-	spin_unlock_irq(&current->sigmask_lock);
+	__recalc_sigpending(current);
+	sigmask_unlock();
 
 	sprintf(current->comm, "xfssyncd");
 
@@ -686,7 +710,6 @@ linvfs_fh_to_dentry(
 {
 	vnode_t			*vp;
 	struct inode		*inode = NULL;
-	struct list_head	*lp;
 	struct dentry		*result;
 	xfs_fid2_t		xfid;
 	vfs_t			*vfsp = LINVFS_GET_VFS(sb);
@@ -711,24 +734,12 @@ linvfs_fh_to_dentry(
 		return ERR_PTR(-ESTALE) ;
 
 	inode = LINVFS_GET_IP(vp);
-	spin_lock(&dcache_lock);
-	for (lp = inode->i_dentry.next; lp != &inode->i_dentry ; lp=lp->next) {
-		result = list_entry(lp,struct dentry, d_alias);
-		if (! (result->d_flags & DCACHE_NFSD_DISCONNECTED)) {
-			dget_locked(result);
-			result->d_vfs_flags |= DCACHE_REFERENCED;
-			spin_unlock(&dcache_lock);
-			iput(inode);
-			return result;
-		}
-	}
-	spin_unlock(&dcache_lock);
-	result = d_alloc_root(inode);
-	if (result == NULL) {
+
+	result = d_alloc_anon(inode);
+	if (unlikely(result == NULL)) {
 		iput(inode);
 		return ERR_PTR(-ENOMEM);
 	}
-	result->d_flags |= DCACHE_NFSD_DISCONNECTED;
 	return result;
 }
 

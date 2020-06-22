@@ -51,7 +51,7 @@
 static int smp_b_stepping;
 
 /* Setup configured maximum number of CPUs to activate */
-static int max_cpus = NR_CPUS;
+unsigned int max_cpus = NR_CPUS;
 
 /* Total count of live CPUs */
 int smp_num_cpus = 1;
@@ -77,10 +77,6 @@ int smp_threads_ready;
  *
  * Command-line option of "nosmp" or "maxcpus=0" will disable SMP
  * activation entirely (the MPS table probe still happens, though).
- *
- * Command-line option of "maxcpus=<NUM>", where <NUM> is an integer
- * greater than 0, limits the maximum number of CPUs activated in
- * SMP mode to <NUM>.
  */
 
 static int __init nosmp(char *str)
@@ -90,14 +86,6 @@ static int __init nosmp(char *str)
 }
 
 __setup("nosmp", nosmp);
-
-static int __init maxcpus(char *str)
-{
-	get_option(&str, &max_cpus);
-	return 1;
-}
-
-__setup("maxcpus=", maxcpus);
 
 /*
  * Trampoline 80x86 program as an array.
@@ -1119,8 +1107,6 @@ void __init smp_boot_cpus(void)
 			continue;
 
 		if (!(phys_cpu_present_map & apicid_to_phys_cpu_present(apicid)))
-			continue;
-		if (max_cpus <= cpucount+1)
 			continue;
 
 		do_boot_cpu(apicid);

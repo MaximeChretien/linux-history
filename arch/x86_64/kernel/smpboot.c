@@ -53,12 +53,17 @@
 #include <asm/acpi.h>
 
 /* Setup configured maximum number of CPUs to activate */
-static int max_cpus = -1;
+unsigned int max_cpus = NR_CPUS;
 
 static int cpu_mask = -1; 
 
 /* Total count of live CPUs */
 int smp_num_cpus = 1;
+
+/* Number of siblings per CPU package */
+int smp_num_siblings = 1;
+int __initdata phys_proc_id[NR_CPUS]; /* Package ID of each logical CPU */
+int cpu_sibling_map[NR_CPUS] __cacheline_aligned;
 
 /* Bitmask of currently online CPUs */
 unsigned long cpu_online_map;
@@ -84,10 +89,6 @@ extern void time_init_smp(void);
  *
  * Command-line option of "nosmp" or "maxcpus=0" will disable SMP
  * activation entirely (the MPS table probe still happens, though).
- *
- * Command-line option of "maxcpus=<NUM>", where <NUM> is an integer
- * greater than 0, limits the maximum number of CPUs activated in
- * SMP mode to <NUM>.
  */
 
 static int __init nosmp(char *str)
@@ -97,15 +98,6 @@ static int __init nosmp(char *str)
 }
 
 __setup("nosmp", nosmp);
-
-static int __init maxcpus(char *str)
-{
-	get_option(&str, &max_cpus);
-	return 1;
-}
-
-__setup("maxcpus=", maxcpus);
-
 
 static int __init cpumask(char *str)
 {
@@ -936,8 +928,6 @@ void __init smp_boot_cpus(void)
 			continue;
 		if (((1<<apicid) & cpu_mask) == 0) 
 			continue;
-		if ((max_cpus >= 0) && (max_cpus <= cpucount+1))
-			continue;
 
 		cpu = do_boot_cpu(apicid);
 
@@ -991,6 +981,34 @@ void __init smp_boot_cpus(void)
 
 	Dprintk("Boot done.\n");
 
+	/*
+	 * If Hyper-Threading is avaialble, construct cpu_sibling_map[], so
+	 * that we can tell the sibling CPU efficiently.
+	 */
+	if (test_bit(X86_FEATURE_HT, boot_cpu_data.x86_capability)
+	    && smp_num_siblings > 1) {
+		for (cpu = 0; cpu < NR_CPUS; cpu++)
+			cpu_sibling_map[cpu] = NO_PROC_ID;
+		
+		for (cpu = 0; cpu < smp_num_cpus; cpu++) {
+			int 	i;
+			
+			for (i = 0; i < smp_num_cpus; i++) {
+				if (i == cpu)
+					continue;
+				if (phys_proc_id[cpu] == phys_proc_id[i]) {
+					cpu_sibling_map[cpu] = i;
+					printk("cpu_sibling_map[%d] = %d\n", cpu, cpu_sibling_map[cpu]);
+					break;
+				}
+			}
+			if (cpu_sibling_map[cpu] == NO_PROC_ID) {
+				smp_num_siblings = 1;
+				printk(KERN_WARNING "WARNING: No sibling found for CPU %d.\n", cpu);
+			}
+		}
+	}
+	     
 	/*
 	 * Here we can be sure that there is an IO-APIC in the system. Let's
 	 * go and set it up:

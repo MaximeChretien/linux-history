@@ -1,7 +1,7 @@
 /*
  * XFS filesystem operations.
  *
- * Copyright (c) 2000-2003 Silicon Graphics, Inc.  All Rights Reserved.
+ * Copyright (c) 2000-2004 Silicon Graphics, Inc.  All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -229,7 +229,10 @@ xfs_start_flags(
 		mp->m_swidth = ap->swidth;
 	}
 
-	if (ap->logbufs != 0 && ap->logbufs != -1 &&
+	if (ap->logbufs != -1 &&
+#if defined(DEBUG) || defined(XLOG_NOLOG)
+	    ap->logbufs != 0 &&
+#endif
 	    (ap->logbufs < XLOG_MIN_ICLOGS ||
 	     ap->logbufs > XLOG_MAX_ICLOGS)) {
 		cmn_err(CE_WARN,
@@ -451,9 +454,9 @@ xfs_mount(
 	 * Setup xfs_mount function vectors from available behaviors
 	 */
 	p = vfs_bhv_lookup(vfsp, VFS_POSITION_DM);
-	mp->m_dm_ops = p ? *(xfs_dmops_t *) vfs_bhv_custom(p) : xfs_dmcore_xfs;
+	mp->m_dm_ops = p ? *(xfs_dmops_t *) vfs_bhv_custom(p) : xfs_dmcore_stub;
 	p = vfs_bhv_lookup(vfsp, VFS_POSITION_QM);
-	mp->m_qm_ops = p ? *(xfs_qmops_t *) vfs_bhv_custom(p) : xfs_qmcore_xfs;
+	mp->m_qm_ops = p ? *(xfs_qmops_t *) vfs_bhv_custom(p) : xfs_qmcore_stub;
 	p = vfs_bhv_lookup(vfsp, VFS_POSITION_IO);
 	mp->m_io_ops = p ? *(xfs_ioops_t *) vfs_bhv_custom(p) : xfs_iocore_xfs;
 
@@ -1482,8 +1485,10 @@ xfs_syncsub(
 			 */
 			if (XFS_BUF_ISPINNED(bp))
 				xfs_log_force(mp, (xfs_lsn_t)0, XFS_LOG_FORCE);
-			if (!(flags & SYNC_WAIT))
-				XFS_BUF_BFLAGS(bp) |= XFS_B_ASYNC;
+			if (flags & SYNC_WAIT)
+				XFS_BUF_UNASYNC(bp);
+			else
+				XFS_BUF_ASYNC(bp);
 			error = xfs_bwrite(mp, bp);
 		}
 		if (error) {

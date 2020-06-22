@@ -52,26 +52,17 @@
 #define OCP_FUNC_INVALID	0x0000
 
 /* system 0x0001 - 0x001F */
-#define	OCP_FUNC_UIC		0x0001
 
 /* Timers 0x0020 - 0x002F */
-#define OCP_FUNC_GPT		0x0020 	/* General purpose timers */
-#define OCP_FUNC_RTC		0x0021
 
 /* Serial 0x0030 - 0x006F*/
 #define OCP_FUNC_16550		0x0031
-#define OCP_FUNC_SSP		0x0032 /* sync serial port */
-#define OCP_FUNC_SCP		0x0033 	/* serial controller port */
-#define OCP_FUNC_SCC		0x0034 	/* serial contoller */
-#define OCP_FUNC_SCI		0x0035 	/* Smart card */
-#define OCP_FUNC_IIC		0x0040
-#define OCP_FUNC_USB		0x0050
-#define OCP_FUNC_IR		0x0060
+#define OCP_FUNC_IIC		0x0032
+#define OCP_FUNC_USB		0x0033
 
 /* Memory devices 0x0090 - 0x009F */
-#define	OCP_FUNC_SDRAM		0x0091
-#define OCP_FUNC_DMA		0x0092
-#define OCP_FUNC_MAL		0x0093
+#define OCP_FUNC_MAL		0x0090
+#define OCP_FUNC_DMA		0x0091
 
 	/* Additional data */
 	struct ocp_func_mal_data {
@@ -80,12 +71,8 @@
 	};
 
 /* Display 0x00A0 - 0x00AF */
-#define OCP_FUNC_VIDEO		0x00A0
-#define OCP_FUNC_LED		0x00A1
-#define	OCP_FUNC_LCD		0x00A2
 
 /* Sound 0x00B0 - 0x00BF */
-#define OCP_FUNC_AUDIO		0x00B0
 
 /* Mass Storage 0x00C0 - 0xxCF */
 #define OCP_FUNC_IDE		0x00C0
@@ -93,9 +80,11 @@
 /* Misc 0x00D0 - 0x00DF*/
 #define OCP_FUNC_GPIO		0x00D0
 #define OCP_FUNC_ZMII		0x00D1
+#define OCP_FUNC_PERFMON	0x00D2	/* Performance Monitor */
 
 /* Network 0x0200 - 0x02FF */
 #define OCP_FUNC_EMAC		0x0200
+#define OCP_FUNC_GFAR		0x0201	/* TSEC & FEC */
 
 	/* Additional data
 	 *
@@ -115,12 +104,6 @@
 	};
 
 /* Bridge devices 0xE00 - 0xEFF */
-#define OCP_FUNC_HOST		0x0E00
-#define OCP_FUNC_DCR		0x0E01
-#define OCP_FUNC_OPB		0x0E02
-#define OCP_FUNC_PHY		0x0E03
-#define OCP_FUNC_EXT		0x0E04
-#define	OCP_FUNC_PCI		0x0E05
-#define	OCP_FUNC_PLB		0x0E06
+#define OCP_FUNC_OPB		0x0E00
 
 #define OCP_FUNC_UNKNOWN	0xFFFF

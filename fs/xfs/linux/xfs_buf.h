@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2003 Silicon Graphics, Inc.  All Rights Reserved.
+ * Copyright (c) 2000-2004 Silicon Graphics, Inc.  All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -47,6 +47,16 @@
 #include <linux/fs.h>
 #include <linux/uio.h>
 
+/* nptl patch changes where the sigmask_lock is defined */
+#ifdef CLONE_SIGNAL /* stock */
+#define sigmask_lock()		spin_lock_irq(&current->sigmask_lock);
+#define sigmask_unlock()	spin_unlock_irq(&current->sigmask_lock);
+#define __recalc_sigpending(x)	recalc_sigpending(x)
+#else /* nptl */
+#define sigmask_lock()		spin_lock_irq(&current->sighand->siglock);
+#define sigmask_unlock()	spin_unlock_irq(&current->sighand->siglock);
+#define __recalc_sigpending(x)	recalc_sigpending()
+#endif
 /*
  *	Base types
  */
@@ -76,9 +86,6 @@ typedef enum page_buf_flags_e {		/* pb_flags values */
 	PBF_ASYNC = (1 << 4),   /* initiator will not wait for completion  */
 	PBF_NONE = (1 << 5),    /* buffer not read at all                  */
 	PBF_DELWRI = (1 << 6),  /* buffer has dirty pages                  */
-	PBF_FREED = (1 << 7),   /* buffer has been freed and is invalid    */
-	PBF_SYNC = (1 << 8),    /* force updates to disk                   */
-	PBF_MAPPABLE = (1 << 9),/* use directly-addressable pages          */
 	PBF_STALE = (1 << 10),	/* buffer has been staled, do not find it  */
 	PBF_FS_MANAGED = (1 << 11), /* filesystem controls freeing memory  */
 	PBF_FS_DATAIOD = (1 << 12), /* schedule IO completion on fs datad  */
@@ -89,7 +96,7 @@ typedef enum page_buf_flags_e {		/* pb_flags values */
 	PBF_DONT_BLOCK = (1 << 15), /* do not block in current thread	   */
 
 	/* flags used only internally */
-	_PBF_LOCKABLE = (1 << 16), /* page_buf_t may be locked		   */
+	_PBF_PAGECACHE = (1 << 16),	/* backed by pagecache		   */
 	_PBF_PRIVATE_BH = (1 << 17), /* do not use public buffer heads	   */
 	_PBF_ALL_PAGES_MAPPED = (1 << 18), /* all pages in range mapped	   */
 	_PBF_ADDR_ALLOCATED = (1 << 19), /* pb_addr space was allocated	   */
@@ -205,7 +212,7 @@ extern page_buf_t *pagebuf_lookup(
 		loff_t,			/* starting offset of range	*/
 		size_t,			/* length of range		*/
 		page_buf_flags_t);	/* PBF_READ, PBF_WRITE,		*/
-					/* PBF_FORCEIO, _PBF_LOCKABLE	*/
+					/* PBF_FORCEIO, 		*/
 
 extern page_buf_t *pagebuf_get_empty(	/* allocate pagebuf struct with	*/
 					/*  no memory or disk address	*/
@@ -270,7 +277,7 @@ extern int pagebuf_iostart(		/* start I/O on a buffer	*/
 		page_buf_t *,		/* buffer to start		*/
 		page_buf_flags_t);	/* PBF_LOCK, PBF_ASYNC,		*/
 					/* PBF_READ, PBF_WRITE,		*/
-					/* PBF_DELWRI, PBF_SYNC		*/
+					/* PBF_DELWRI			*/
 
 extern int pagebuf_iorequest(		/* start real I/O		*/
 		page_buf_t *);		/* buffer to convey to device	*/
@@ -403,7 +410,7 @@ BUFFER_FNS(Delay, delay)
 
 #define XFS_BUF_BFLAGS(x)	((x)->pb_flags)
 #define XFS_BUF_ZEROFLAGS(x)	\
-	((x)->pb_flags &= ~(PBF_READ|PBF_WRITE|PBF_ASYNC|PBF_SYNC|PBF_DELWRI))
+	((x)->pb_flags &= ~(PBF_READ|PBF_WRITE|PBF_ASYNC|PBF_DELWRI))
 
 #define XFS_BUF_STALE(x)	((x)->pb_flags |= XFS_B_STALE)
 #define XFS_BUF_UNSTALE(x)	((x)->pb_flags &= ~XFS_B_STALE)
@@ -555,17 +562,15 @@ extern inline xfs_caddr_t xfs_buf_offset(page_buf_t *bp, size_t offset)
 
 #define xfs_buf_read(target, blkno, len, flags) \
 		pagebuf_get((target), (blkno), (len), \
-			PBF_LOCK | PBF_READ | PBF_MAPPED | PBF_MAPPABLE)
+			PBF_LOCK | PBF_READ | PBF_MAPPED)
 #define xfs_buf_get(target, blkno, len, flags) \
 		pagebuf_get((target), (blkno), (len), \
-			PBF_LOCK | PBF_MAPPED | PBF_MAPPABLE)
+			PBF_LOCK | PBF_MAPPED)
 
 #define xfs_buf_read_flags(target, blkno, len, flags) \
-		pagebuf_get((target), (blkno), (len), \
-			PBF_READ | PBF_MAPPABLE | flags)
+		pagebuf_get((target), (blkno), (len), PBF_READ | (flags))
 #define xfs_buf_get_flags(target, blkno, len, flags) \
-		pagebuf_get((target), (blkno), (len), \
-			PBF_MAPPABLE | flags)
+		pagebuf_get((target), (blkno), (len), (flags))
 
 static inline int	xfs_bawrite(void *mp, page_buf_t *bp)
 {
@@ -577,7 +582,7 @@ static inline int	xfs_bawrite(void *mp, page_buf_t *bp)
 
 static inline void	xfs_buf_relse(page_buf_t *bp)
 {
-	if ((bp->pb_flags & _PBF_LOCKABLE) && !bp->pb_relse)
+	if (!bp->pb_relse)
 		pagebuf_unlock(bp);
 	pagebuf_rele(bp);
 }
@@ -608,7 +613,6 @@ static inline int	XFS_bwrite(page_buf_t *pb)
 	int	iowait = (pb->pb_flags & PBF_ASYNC) == 0;
 	int	error = 0;
 
-	pb->pb_flags |= PBF_SYNC;
 	if (!iowait)
 		pb->pb_flags |= PBF_RUN_QUEUES;
 

@@ -12,6 +12,7 @@ export-objs := ataraid.o
 obj-$(CONFIG_BLK_DEV_ATARAID)		+= ataraid.o
 obj-$(CONFIG_BLK_DEV_ATARAID_PDC)	+= pdcraid.o
 obj-$(CONFIG_BLK_DEV_ATARAID_HPT)	+= hptraid.o
+obj-$(CONFIG_BLK_DEV_ATARAID_MEDLEY)	+= medley.o
 obj-$(CONFIG_BLK_DEV_ATARAID_SII)	+= silraid.o
 
 EXTRA_CFLAGS	:= -I../

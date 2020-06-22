@@ -249,7 +249,7 @@ UNUSUAL_DEV(  0x054c, 0x0010, 0x0106, 0x0450,
 UNUSUAL_DEV(  0x054c, 0x0025, 0x0100, 0x0100, 
 		"Sony",
 		"Memorystick NW-MS7",
-		US_SC_UFI, US_PR_CB, NULL,
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_SINGLE_LUN ),
 
 #ifdef CONFIG_USB_STORAGE_ISD200
@@ -278,6 +278,13 @@ UNUSUAL_DEV(  0x054c, 0x0032, 0x0000, 0x9999,
 		"Memorystick MSC-U01N",
 		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_SINGLE_LUN ),
+
+/* Submitted by Michal Mlotek <mlotek@foobar.pl> */
+UNUSUAL_DEV(  0x054c, 0x0058, 0x0000, 0x9999,
+		"Sony",
+		"PEG N760c Memorystick",
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
+		US_FL_FIX_INQUIRY ),
 		
 UNUSUAL_DEV(  0x054c, 0x0069, 0x0000, 0x9999,
 		"Sony",
@@ -353,7 +360,7 @@ UNUSUAL_DEV(  0x05dc, 0x0001, 0x0000, 0x0001,
 UNUSUAL_DEV(  0x05dc, 0xb002, 0x0000, 0x0113,
 		"Lexar",
 		"USB CF Reader",
-		US_SC_SCSI, US_PR_BULK, NULL,
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_FIX_INQUIRY ),
 
 /* Reported by Carlos Villegas <cav@uniscope.co.jp>
@@ -370,7 +377,7 @@ UNUSUAL_DEV(  0x05e3, 0x0700, 0x0000, 0xffff,
 UNUSUAL_DEV(  0x05e3, 0x0701, 0x0000, 0xffff, 
 		"", 
 		"USB TO IDE",
-		US_SC_SCSI, US_PR_DEVICE, NULL,
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_MODE_XLATE ), 
 
 /* Reported by Peter Marks <peter.marks@turner.com>
@@ -628,6 +635,17 @@ UNUSUAL_DEV( 0x08ca, 0x2011, 0x0001, 0x0001,
 		US_SC_DEVICE, US_PR_BULK, NULL,
 		US_FL_MODE_XLATE ),
 
+/* Entry needed for flags. Moreover, all devices with this ID use
+ * bulk-only transport, but _some_ falsely report Control/Bulk instead.
+ * One example is "Trumpion Digital Research MYMP3".
+ * Submitted by Bjoern Brill <brill(at)fs.math.uni-frankfurt.de>
+ */
+UNUSUAL_DEV(  0x090a, 0x1001, 0x0100, 0x0100,
+		"Trumpion",
+		"t33520 USB Flash Card Controller",
+		US_SC_DEVICE, US_PR_BULK, NULL,
+		US_FL_MODE_XLATE),
+
 /* Trumpion Microelectronics MP3 player (felipe_alfaro@linuxmail.org) */
 UNUSUAL_DEV( 0x090a, 0x1200, 0x0000, 0x9999,
 		"Trumpion",
@@ -667,15 +685,9 @@ UNUSUAL_DEV( 0x0a17, 0x0004, 0x1000, 0x1000,
                 US_SC_DEVICE, US_PR_DEVICE, NULL,
                 US_FL_FIX_INQUIRY ),
 
-/* This entry from <matthias@ma-c.de> in the Debian mailing list */
-UNUSUAL_DEV( 0x0a17, 0x0006, 0x0000, 0xffff,
-		"Pentax",
-		"Optio 330GS",
-		US_SC_8070, US_PR_CB, NULL,
-		US_FL_MODE_XLATE | US_FL_FIX_INQUIRY ),
 
 /* Submitted by Per Winkvist <per.winkvist@uk.com> */
-UNUSUAL_DEV( 0x0a17, 0x006, 0x1000, 0x9009,
+UNUSUAL_DEV( 0x0a17, 0x006, 0x0000, 0xffff,
                 "Pentax",
                 "Optio S/S4",
                 US_SC_DEVICE, US_PR_DEVICE, NULL,

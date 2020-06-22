@@ -236,6 +236,7 @@ extern unsigned long copy_user_generic(void *to, const void *from, unsigned len)
 
 extern unsigned long copy_to_user(void *to, const void *from, unsigned len); 
 extern unsigned long copy_from_user(void *to, const void *from, unsigned len); 
+extern unsigned long copy_in_user(void *to, const void *from, unsigned len); 
 
 static inline int __copy_from_user(void *dst, const void *src, unsigned size) 
 { 

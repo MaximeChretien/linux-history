@@ -24,6 +24,8 @@ ctl_table ipv6_table[] = {
 	{NET_IPV6_ICMP, "icmp", NULL, 0, 0500, ipv6_icmp_table},
 	{NET_IPV6_BINDV6ONLY, "bindv6only",
 	 &sysctl_ipv6_bindv6only, sizeof(int), 0644, NULL, &proc_dointvec},
+	{NET_IPV6_MLD_MAX_MSF, "mld_max_msf",
+	 &sysctl_mld_max_msf, sizeof(int), 0644, NULL, &proc_dointvec},
 	{0}
 };
 

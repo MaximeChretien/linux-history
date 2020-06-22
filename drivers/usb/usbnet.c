@@ -2594,7 +2594,11 @@ static const struct usb_device_id	products [] = {
 	// Hawking UF200, TrendNet TU2-ET100
 	USB_DEVICE (0x07b8, 0x420a),
 	.driver_info =	(unsigned long) &hawking_uf200_info,
-}, 
+}, {
+	// ATEN UC210T
+	USB_DEVICE (0x0557, 0x2009),
+	.driver_info =  (unsigned long) &ax8817x_info,
+},
 #endif
 
 #ifdef	CONFIG_USB_BELKIN
@@ -2720,6 +2724,15 @@ static const struct usb_device_id	products [] = {
 			  | USB_DEVICE_ID_MATCH_DEVICE,
 	.idVendor		= 0x04DD,
 	.idProduct		= 0x9031, /* C-750 C-760 */
+	.bInterfaceClass	= 0x02,
+	.bInterfaceSubClass	= 0x0a,
+	.bInterfaceProtocol	= 0x00,
+	.driver_info =	(unsigned long) &zaurus_pxa_info,
+}, {
+	.match_flags	=   USB_DEVICE_ID_MATCH_INT_INFO
+			  | USB_DEVICE_ID_MATCH_DEVICE,
+	.idVendor		= 0x04DD,
+	.idProduct		= 0x9032, /* SL-6000 */
 	.bInterfaceClass	= 0x02,
 	.bInterfaceSubClass	= 0x0a,
 	.bInterfaceProtocol	= 0x00,

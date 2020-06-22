@@ -6992,7 +6992,7 @@ static void ncr_chip_reset (ncb_p np)
 
 static void ncr_soft_reset(ncb_p np)
 {
-	u_char istat;
+	u_char istat = 0;
 	int i;
 
 	if (!(np->features & FE_ISTAT1) || !(INB (nc_istat1) & SRUN))
@@ -11979,6 +11979,19 @@ static lcb_p ncr_setup_lcb (ncb_p np, u_char tn, u_char ln, u_char *inq_data)
 	*/
 	if (driver_setup.force_sync_nego)
 		inq_byte7 |= INQ7_SYNC;
+
+	/*
+	**	Don't do PPR negotiations on SCSI-2 devices unless
+	**	they set the DT bit (0x04) in byte 57 of the INQUIRY
+	**	return data.
+	*/
+	if (((inq_data[2] & 0x07) < 3) && (inq_data[4] < 53 ||
+					   !(inq_data[56] & 0x04))) {
+		if (tp->minsync < 10)
+			tp->minsync = 10;
+		if (tp->usrsync < 10)
+			tp->usrsync = 10;
+	}
 
 	/*
 	**	Prepare negotiation if SIP capabilities have changed.

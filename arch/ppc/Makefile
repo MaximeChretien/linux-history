@@ -72,9 +72,9 @@ SUBDIRS += arch/ppc/8xx_io
 DRIVERS += arch/ppc/8xx_io/8xx_io.o
 endif
 
-ifdef CONFIG_8260
-SUBDIRS += arch/ppc/8260_io
-DRIVERS += arch/ppc/8260_io/8260_io.o
+ifdef CONFIG_CPM2
+SUBDIRS += arch/ppc/cpm2_io
+DRIVERS += arch/ppc/cpm2_io/cpm2_io.o
 endif
 
 ifdef CONFIG_APUS

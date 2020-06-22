@@ -221,12 +221,11 @@ int bluez_sock_recvmsg(struct socket *sock, struct msghdr *msg, int len, int fla
 unsigned int bluez_sock_poll(struct file * file, struct socket *sock, poll_table *wait)
 {
 	struct sock *sk = sock->sk;
-	unsigned int mask;
+	unsigned int mask = 0;
 
 	BT_DBG("sock %p, sk %p", sock, sk);
 
 	poll_wait(file, sk->sleep, wait);
-	mask = 0;
 
 	if (sk->err || !skb_queue_empty(&sk->error_queue))
 		mask |= POLLERR;
@@ -242,9 +241,11 @@ unsigned int bluez_sock_poll(struct file * file, struct socket *sock, poll_table
 	if (sk->state == BT_CLOSED)
 		mask |= POLLHUP;
 
-	if (sk->state == BT_CONNECT || sk->state == BT_CONNECT2)
+	if (sk->state == BT_CONNECT ||
+			sk->state == BT_CONNECT2 ||
+			sk->state == BT_CONFIG)
 		return mask;
-	
+
 	if (sock_writeable(sk))
 		mask |= POLLOUT | POLLWRNORM | POLLWRBAND;
 	else

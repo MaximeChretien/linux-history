@@ -12,8 +12,16 @@
 
 #ifdef CONFIG_8260
 
+#ifdef CONFIG_RPX6
+#include <platforms/rpx8260.h>
+#endif
+
 #ifdef CONFIG_EST8260
 #include <platforms/est8260.h>
+#endif
+
+#ifdef CONFIG_PQ2ADS
+#include <platforms/pq2ads.h>
 #endif
 
 /* I don't yet have the ISA or PCI stuff done....no 8260 with

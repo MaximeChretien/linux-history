@@ -938,6 +938,9 @@ static int r128_cce_dispatch_write_span( drm_device_t *dev,
 	}
 
 	count = depth->n;
+
+	if (count > 4096 || count <= 0)
+		return -EMSGSIZE;
 	if ( copy_from_user( &x, depth->x, sizeof(x) ) ) {
 		return -EFAULT;
 	}
@@ -1047,6 +1050,9 @@ static int r128_cce_dispatch_write_pixels( drm_device_t *dev,
 	}
 
 	count = depth->n;
+
+	if (count > 4096 || count <= 0)
+		return -EMSGSIZE;
 
 	x = kmalloc( count * sizeof(*x), 0 );
 	if ( x == NULL ) {
@@ -1178,6 +1184,10 @@ static int r128_cce_dispatch_read_span( drm_device_t *dev,
 	}
 
 	count = depth->n;
+	
+	if (count > 4096 || count <= 0)
+		return -EMSGSIZE;
+
 	if ( copy_from_user( &x, depth->x, sizeof(x) ) ) {
 		return -EFAULT;
 	}
@@ -1235,6 +1245,8 @@ static int r128_cce_dispatch_read_pixels( drm_device_t *dev,
 	}
 
 	count = depth->n;
+	if (count > 4096 || count <= 0)
+		return -EMSGSIZE;
 	if ( count > dev_priv->depth_pitch ) {
 		count = dev_priv->depth_pitch;
 	}

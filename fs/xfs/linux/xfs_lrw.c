@@ -311,9 +311,10 @@ xfs_read(
 	    !(ioflags & IO_INVIS)) {
 		int error;
 		vrwlock_t locktype = VRWLOCK_READ;
+		int dmflags = FILP_DELAY_FLAG(file) | DM_SEM_FLAG_RD(ioflags);
 
 		error = XFS_SEND_DATA(mp, DM_EVENT_READ, BHV_TO_VNODE(bdp), *offset, size,
-				      FILP_DELAY_FLAG(file), &locktype);
+				      dmflags, &locktype);
 		if (error) {
 			if (!(ioflags & IO_ISLOCKED))
 				xfs_iunlock(ip, XFS_IOLOCK_SHARED);
@@ -322,9 +323,13 @@ xfs_read(
 	}
 
 	if (unlikely(ioflags & IO_ISDIRECT)) {
+		xfs_rw_enter_trace(XFS_DIORD_ENTER, &ip->i_iocore,
+					buf, size, *offset, ioflags);
 		ret = do_generic_direct_read(file, buf, size, offset);
 		UPDATE_ATIME(file->f_dentry->d_inode);
 	} else {
+		xfs_rw_enter_trace(XFS_READ_ENTER, &ip->i_iocore,
+					buf, size, *offset, ioflags);
 		ret = generic_file_read(file, buf, size, offset);
 	}
 
@@ -593,7 +598,7 @@ xfs_write(
 	if (size == 0)
 		return 0;
 
-	io = &(xip->i_iocore);
+	io = &xip->i_iocore;
 	mp = io->io_mount;
 
 	xfs_check_frozen(mp, bdp, XFS_FREEZE_WRITE);
@@ -645,11 +650,12 @@ start:
 	if ((DM_EVENT_ENABLED(vp->v_vfsp, xip, DM_EVENT_WRITE) &&
 	    !(ioflags & IO_INVIS) && !eventsent)) {
 		loff_t		savedsize = *offset;
+		int dmflags = FILP_DELAY_FLAG(file) | DM_SEM_FLAG_RD(ioflags);
 
 		xfs_iunlock(xip, XFS_ILOCK_EXCL);
 		error = XFS_SEND_DATA(xip->i_mount, DM_EVENT_WRITE, vp,
 				      *offset, size,
-				      FILP_DELAY_FLAG(file), &locktype);
+				      dmflags, &locktype);
 		if (error) {
 			if (iolock) xfs_iunlock(xip, iolock);
 			return -error;

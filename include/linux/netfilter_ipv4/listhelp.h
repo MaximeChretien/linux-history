@@ -28,7 +28,7 @@
 							\
 	ASSERT_WRITE_LOCK(head);			\
 	list_for_each(__i, (head))			\
-		if (cmpfn((const type)__i , ## args)) {	\
+		if (cmpfn((type)__i , ## args)) {	\
 			__j = __i;			\
 			break;				\
 		}					\

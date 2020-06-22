@@ -8,7 +8,7 @@
  * See Documentation/DMA-mapping.txt for the interface specification.
  * 
  * Copyright 2002 Andi Kleen, SuSE Labs.
- * $Id: pci-gart.c,v 1.30 2004/01/13 09:09:32 ak Exp $
+ * $Id: pci-gart.c,v 1.32 2004/02/27 18:30:19 ak Exp $
  */
 
 #include <linux/config.h>
@@ -220,7 +220,7 @@ void pci_free_consistent(struct pci_dev *hwdev, size_t size,
 	unsigned long iommu_page;
 
 	size = round_up(size, PAGE_SIZE); 
-	if (bus >= iommu_bus_base && bus <= iommu_bus_base + iommu_size) { 
+	if (bus >= iommu_bus_base && bus < iommu_bus_base + iommu_size) { 
 		unsigned pages = size >> PAGE_SHIFT;
 		iommu_page = (bus - iommu_bus_base) >> PAGE_SHIFT;
 		vaddr = __va(GPTE_DECODE(iommu_gatt_base[iommu_page]));
@@ -310,6 +310,12 @@ dma_addr_t pci_map_single(struct pci_dev *dev, void *addr, size_t size,
 
 	BUG_ON(dir == PCI_DMA_NONE);
 
+#ifdef CONFIG_SWIOTLB
+       if (swiotlb)
+               return swiotlb_map_single(dev,addr,size,dir);
+#endif
+
+
 	phys_mem = virt_to_phys(addr); 
 	if (!need_iommu(dev, phys_mem, size))
 		return phys_mem; 
@@ -352,8 +358,17 @@ void pci_unmap_single(struct pci_dev *hwdev, dma_addr_t dma_addr,
 {
 	unsigned long iommu_page; 
 	int npages;
+
+#ifdef CONFIG_SWIOTLB
+       if (swiotlb) {
+               swiotlb_unmap_single(hwdev,dma_addr,size,direction);
+              return;
+       }
+#endif
+
+
 	if (dma_addr < iommu_bus_base + EMERGENCY_PAGES*PAGE_SIZE || 
-	    dma_addr > iommu_bus_base + iommu_size)
+	    dma_addr >= iommu_bus_base + iommu_size)
 		return;
 	iommu_page = (dma_addr - iommu_bus_base)>>PAGE_SHIFT;	
 	npages = round_up(size + (dma_addr & ~PAGE_MASK), PAGE_SIZE) >> PAGE_SHIFT;
@@ -488,7 +503,14 @@ void __init pci_iommu_init(void)
 	no_agp = no_agp || (agp_init() < 0) || (agp_copy_info(&info) < 0); 
 #endif	
 
-	if (no_iommu || (!force_mmu && end_pfn < 0xffffffff>>PAGE_SHIFT)) { 
+	if (swiotlb) { 
+		no_iommu = 1;
+		printk(KERN_INFO "PCI-DMA: Using SWIOTLB\n"); 
+		return; 
+	} 
+
+
+	if (no_iommu || (!force_mmu && end_pfn < 0xffffffff>>PAGE_SHIFT) || !iommu_aperture) { 
 		printk(KERN_INFO "PCI-DMA: Disabling IOMMU.\n"); 
 		no_iommu = 1;
 		return;

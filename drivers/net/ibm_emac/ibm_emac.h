@@ -58,8 +58,8 @@ typedef struct emac_regs {
 	u32 em0gaht2;
 	u32 em0gaht3;
 	u32 em0gaht4;
-	u32 em0lsal;
 	u32 em0lsah;
+	u32 em0lsal;
 	u32 em0ipgvr;
 	u32 em0stacr;
 	u32 em0trtr;
@@ -99,8 +99,8 @@ typedef struct emac_regs {
 #define EMAC_M1_TX_FIFO_1K              0x00010000
 #define EMAC_M1_TX_MWSW                 0x00001000	/* 0 wait for status */
 #define EMAC_M1_JUMBO_ENABLE            0x00000800	/* Upt to 9Kr status */
-#define EMAC_M1_OPB_CLK_66              0x00000010	/* 66Mhz */
-#define EMAC_M1_OPB_CLK_83              0x00000008	/* 83hz */
+#define EMAC_M1_OPB_CLK_66              0x00000008	/* 66Mhz */
+#define EMAC_M1_OPB_CLK_83              0x00000010	/* 83Mhz */
 #define EMAC_M1_OPB_CLK_100             0x00000018	/* 100Mhz */
 #define EMAC_M1_OPB_CLK_100P            0x00000020	/* 100Mhz+ */
 #else /* CONFIG_IBM_EMAC4 */

@@ -743,19 +743,19 @@ __emac_set_multicast_list(struct net_device *dev)
 {
 	struct ocp_enet_private *fep = dev->priv;
 	volatile emac_t *emacp = fep->emacp;
-
+	u32 rmr = in_be32(&emacp->em0rmr);
+	
+	/* First clear all special bits, they can be set later */
+	rmr &= ~(EMAC_RMR_PME | EMAC_RMR_PMME | EMAC_RMR_MAE);
+	
 	if (dev->flags & IFF_PROMISC) {
-
-		/* If promiscuous mode is set then we do not need anything else */
-		out_be32(&emacp->em0rmr, EMAC_RMR_PME);
+		rmr |= EMAC_RMR_PME;
 
 	} else if (dev->flags & IFF_ALLMULTI || 32 < dev->mc_count) {
-
 		/* Must be setting up to use multicast.  Now check for promiscuous
 		 * multicast
 		 */
-		out_be32(&emacp->em0rmr,
-			 EMAC_RMR_IAE | EMAC_RMR_BAE | EMAC_RMR_PMME);
+		rmr |= EMAC_RMR_PMME;
 	} else if (dev->flags & IFF_MULTICAST && 0 < dev->mc_count) {
 
 		unsigned short em0gaht[4] = { 0, 0, 0, 0 };
@@ -777,16 +777,10 @@ __emac_set_multicast_list(struct net_device *dev)
 		emacp->em0gaht4 = em0gaht[3];
 
 		/* Turn on multicast addressing */
-		out_be32(&emacp->em0rmr,
-			 EMAC_RMR_IAE | EMAC_RMR_BAE | EMAC_RMR_MAE);
-
-	} else {
-		/* If multicast mode is not set then we are 
-		 * turning it off at this point 
-		 */
-		out_be32(&emacp->em0rmr, EMAC_RMR_IAE | EMAC_RMR_BAE);
-
+		rmr |= EMAC_RMR_MAE;
 	}
+	
+	out_be32(&emacp->em0rmr, rmr);
 }
 
 static void

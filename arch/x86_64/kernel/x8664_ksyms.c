@@ -15,6 +15,7 @@
 #include <linux/string.h>
 #include <linux/nmi.h>
 
+#include <asm/ioctl32.h>
 #include <asm/semaphore.h>
 #include <asm/processor.h>
 #include <asm/i387.h>
@@ -53,6 +54,7 @@ EXPORT_SYMBOL(probe_irq_mask);
 EXPORT_SYMBOL(kernel_thread);
 EXPORT_SYMBOL(pm_idle);
 EXPORT_SYMBOL(pm_power_off);
+EXPORT_SYMBOL(sys_ioctl);
 
 #ifdef CONFIG_IO_DEBUG
 EXPORT_SYMBOL(__io_virt_debug);

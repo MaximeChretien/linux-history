@@ -144,11 +144,14 @@ static void set_mtrr_prepare (struct set_mtrr_context *ctxt)
 	write_cr0(cr0);
 	wbinvd();
 
-	/* Disable MTRRs, and set the default type to uncached */
 	rdmsr(MSR_MTRRdefType, ctxt->deftype_lo, ctxt->deftype_hi);
-	wrmsr(MSR_MTRRdefType, ctxt->deftype_lo & 0xf300UL, ctxt->deftype_hi);
 }
 
+static void set_mtrr_disable(struct set_mtrr_context *ctxt) 
+{ 
+	/* Disable MTRRs, and set the default type to uncached */
+	wrmsr(MSR_MTRRdefType, ctxt->deftype_lo & 0xf300UL, ctxt->deftype_hi);
+} 
 
 /* Restore the processor after a set_mtrr_prepare */
 static void set_mtrr_done (struct set_mtrr_context *ctxt)
@@ -242,8 +245,10 @@ static void set_mtrr_up (unsigned int reg, u64 base,
 	u64 base64;
 	u64 size64;
 
-	if (do_safe)
+	if (do_safe) { 
 		set_mtrr_prepare (&ctxt);
+		set_mtrr_disable (&ctxt); 
+	} 
 
 	if (size == 0) {
 		/* The invalid bit is kept in the mask, so we simply clear the
@@ -430,6 +435,7 @@ static u64 __init set_mtrr_state (struct mtrr_state *state,
 
 
 static atomic_t undone_count;
+static volatile int wait_barrier_mtrr_disable = FALSE;
 static volatile int wait_barrier_execute = FALSE;
 static volatile int wait_barrier_cache_enable = FALSE;
 
@@ -451,8 +457,18 @@ static void ipi_handler (void *info)
 	set_mtrr_prepare (&ctxt);
 	/* Notify master that I've flushed and disabled my cache  */
 	atomic_dec (&undone_count);
-	while (wait_barrier_execute)
+
+	while (wait_barrier_mtrr_disable) {
+		rep_nop();
 		barrier ();
+	}	
+	set_mtrr_disable (&ctxt); 
+	/* wait again for disable confirmation*/
+	atomic_dec (&undone_count);
+	while (wait_barrier_execute) { 
+		rep_nop(); 
+		barrier(); 
+	}	
 
 	/* The master has cleared me to execute  */
 	set_mtrr_up (data->smp_reg, data->smp_base, data->smp_size,
@@ -462,8 +478,10 @@ static void ipi_handler (void *info)
 	atomic_dec (&undone_count);
 
 	/* Wait for master to clear me to enable cache and return  */
-	while (wait_barrier_cache_enable)
+	while (wait_barrier_cache_enable) {
+		rep_nop();
 		barrier ();
+	}	
 	set_mtrr_done (&ctxt);
 }
 
@@ -479,6 +497,7 @@ static void set_mtrr_smp (unsigned int reg, u64 base, u32 size, mtrr_type type)
 	data.smp_type = type;
 	wait_barrier_execute = TRUE;
 	wait_barrier_cache_enable = TRUE;
+	wait_barrier_mtrr_disable = TRUE;
 	atomic_set (&undone_count, smp_num_cpus - 1);
 
 	/*  Start the ball rolling on other CPUs  */
@@ -487,10 +506,21 @@ static void set_mtrr_smp (unsigned int reg, u64 base, u32 size, mtrr_type type)
 
 	/* Flush and disable the local CPU's cache */
 	set_mtrr_prepare (&ctxt);
+	while (atomic_read (&undone_count) > 0) { 
+		rep_nop();
+		barrier(); 
+	}
+
+	/* Set up for completion wait and then release other CPUs to change MTRRs*/
+	atomic_set (&undone_count, smp_num_cpus - 1);
+	wait_barrier_mtrr_disable = FALSE;
+	set_mtrr_disable (&ctxt);
 
 	/*  Wait for all other CPUs to flush and disable their caches  */
-	while (atomic_read (&undone_count) > 0)
+	while (atomic_read (&undone_count) > 0) { 
+		rep_nop ();
 		barrier ();
+	}	
 
 	/* Set up for completion wait and then release other CPUs to change MTRRs */
 	atomic_set (&undone_count, smp_num_cpus - 1);
@@ -498,8 +528,10 @@ static void set_mtrr_smp (unsigned int reg, u64 base, u32 size, mtrr_type type)
 	set_mtrr_up (reg, base, size, type, FALSE);
 
 	/*  Now wait for other CPUs to complete the function  */
-	while (atomic_read (&undone_count) > 0)
+	while (atomic_read (&undone_count) > 0) {
+		rep_nop();
 		barrier ();
+	} 	
 
 	/*  Now all CPUs should have finished the function. Release the barrier to
 	   allow them to re-enable their caches and return from their interrupt,
@@ -1282,6 +1314,7 @@ void __init mtrr_init_secondary_cpu (void)
 	   for this CPU while the MTRRs are changed, but changing this requires
 	   more invasive changes to the way the kernel boots  */
 	set_mtrr_prepare (&ctxt);
+	set_mtrr_disable (&ctxt);
 	mask = set_mtrr_state (&smp_mtrr_state, &ctxt);
 	set_mtrr_done (&ctxt);
 

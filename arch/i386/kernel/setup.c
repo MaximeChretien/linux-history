@@ -187,6 +187,7 @@ EXPORT_SYMBOL(acpi_disabled);
 #ifdef	CONFIG_ACPI_BOOT
 extern	int __initdata acpi_ht;
 int acpi_force __initdata = 0;
+extern acpi_interrupt_flags	acpi_sci_flags;
 #endif
 
 extern int blk_nohighio;
@@ -831,26 +832,42 @@ static void __init parse_cmdline_early (char ** cmdline_p)
 				}
 			}
 		}
+#ifdef	CONFIG_SMP
+		/*
+		 * If the BIOS enumerates physical processors before logical,
+		 * maxcpus=N at enumeration-time can be used to disable HT.
+		 */
+		else if (!memcmp(from, "maxcpus=", 8)) {
+			extern unsigned int max_cpus;
+
+			max_cpus = simple_strtoul(from + 8, NULL, 0);
+		}
+#endif
 
 #ifdef CONFIG_ACPI_BOOT
 		/* "acpi=off" disables both ACPI table parsing and interpreter */
 		else if (!memcmp(from, "acpi=off", 8)) {
-			acpi_ht = 0;
-			acpi_disabled = 1;
+			disable_acpi();
 		}
 
 		/* acpi=force to over-ride black-list */
 		else if (!memcmp(from, "acpi=force", 10)) { 
 			acpi_force = 1;
-			acpi_ht=1;
+			acpi_ht = 1;
 			acpi_disabled = 0;
 		} 
 
 		/* Limit ACPI to boot-time only, still enabled HT */
 		else if (!memcmp(from, "acpi=ht", 7)) { 
+			if (!acpi_force)
+				disable_acpi();
 			acpi_ht = 1; 
-			if (!acpi_force) acpi_disabled = 1; 
 		} 
+
+		/* acpi=strict disables out-of-spec workarounds */
+		else if (!memcmp(from, "acpi=strict", 11)) {
+			acpi_strict = 1;
+		}
 
 		else if (!memcmp(from, "pci=noacpi", 10)) { 
 			acpi_noirq_set();
@@ -859,6 +876,16 @@ static void __init parse_cmdline_early (char ** cmdline_p)
                 /* disable IO-APIC */
                 else if (!memcmp(from, "noapic", 6))
                         disable_ioapic_setup();
+
+		else if (!memcmp(from, "acpi_sci=edge", 13))
+			acpi_sci_flags.trigger =  1;
+		else if (!memcmp(from, "acpi_sci=level", 14))
+			acpi_sci_flags.trigger = 3;
+		else if (!memcmp(from, "acpi_sci=high", 13))
+			acpi_sci_flags.polarity = 1;
+		else if (!memcmp(from, "acpi_sci=low", 12))
+			acpi_sci_flags.polarity = 3;
+
 #endif
 		/*
 		 * highmem=size forces highmem to be exactly 'size' bytes.

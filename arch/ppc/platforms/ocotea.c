@@ -44,6 +44,8 @@
 #include <asm/bootinfo.h>
 #include <asm/ppc4xx_pic.h>
 
+#include <kernel/ibm440gx_common.h>
+
 extern void abort(void);
 extern int pckbd_setkeycode(unsigned int scancode, unsigned int keycode);
 extern int pckbd_getkeycode(unsigned int scancode);
@@ -79,11 +81,13 @@ ocotea_calibrate_decr(void)
 static int
 ocotea_show_cpuinfo(struct seq_file *m)
 {
+	ibm440gx_show_cpuinfo(m);
 	seq_printf(m, "vendor\t\t: IBM\n");
 	seq_printf(m, "machine\t\t: PPC440GX EVB (Ocotea)\n");
 
 	return 0;
 }
+
 static inline int
 ocotea_map_irq(struct pci_dev *dev, unsigned char idsel, unsigned char pin)
 {
@@ -147,7 +151,7 @@ ocotea_setup_pcix(void)
 	/* Setup 2GB PCI->PLB inbound memory window at 0, enable MSIs */
 	PCIX_WRITEL(0x00000000, PCIX0_PIM0LAH);
 	PCIX_WRITEL(0x00000000, PCIX0_PIM0LAL);
-	PCIX_WRITEL(0xe0000007, PCIX0_PIM0SA);
+	PCIX_WRITEL(0x80000007, PCIX0_PIM0SA);
 
 	eieio();
 }
@@ -205,14 +209,14 @@ ocotea_setup_hose(void)
 TODC_ALLOC();
 
 static void __init
-ocotea_early_serial_map(void)
+ocotea_early_serial_map(const struct ibm44x_clocks* clks)
 {
 	struct serial_struct serial_req;
 
 	/* Setup ioremapped serial port access */
 	memset(&serial_req, 0, sizeof(serial_req));
 	serial_req.line = 0;
-	serial_req.baud_base = BASE_BAUD;
+	serial_req.baud_base = clks->uart0 / 16;
 	serial_req.port = 0;
 	serial_req.irq = 0;
 	serial_req.flags = ASYNC_BOOT_AUTOCONF;
@@ -231,6 +235,7 @@ ocotea_early_serial_map(void)
 
 	/* Assume early_serial_setup() doesn't modify serial_req */
 	serial_req.line = 1;
+	serial_req.baud_base = clks->uart1 / 16;
 	serial_req.port = 1;
 	serial_req.irq = 1; 
 	serial_req.iomem_base = ioremap64(PPC440GX_UART1_ADDR, 8);
@@ -251,6 +256,7 @@ ocotea_setup_arch(void)
 	unsigned char *addr;
 	unsigned long long mac64;
 	bd_t *bip = (bd_t *) __res;
+	struct ibm44x_clocks clocks;
 
 	/* Retrieve MAC addresses from flash */
 	addr = ioremap64(OCOTEA_MAC_BASE, OCOTEA_MAC_SIZE);
@@ -271,7 +277,18 @@ ocotea_setup_arch(void)
 	 */
         mtspr(SPRN_DBCR0, (DBCR0_TDE | DBCR0_IDM));
 #endif
-
+	/*
+	 * Determine various clocks.
+	 * To be completely correct we should get SysClk
+	 * from FPGA, because it can be changed by on-board switches
+	 * --ebs
+	 */
+	ibm440gx_get_clocks(&clocks, 33333333, 6 * 1843200);
+	bip->bi_opb_busfreq = clocks.opb;
+	
+	/* Use IIC in standard (100 kHz) mode */
+	bip->bi_iic_fast[0] = bip->bi_iic_fast[1] = 0;
+	
 	/* Setup TODC access */
 	TODC_INIT(TODC_TYPE_DS1743,
 			0,
@@ -300,7 +317,7 @@ ocotea_setup_arch(void)
 	conswitchp = &dummy_con;
 #endif
 
-	ocotea_early_serial_map();
+	ocotea_early_serial_map(&clocks);
 
 	/* Identify the system */
 	printk("IBM Ocotea port (MontaVista Software, Inc. <source@mvista.com>)\n");
@@ -404,6 +421,9 @@ void __init platform_init(unsigned long r3, unsigned long r4,
 		unsigned long r5, unsigned long r6, unsigned long r7)
 {
 	parse_bootinfo(find_bootinfo());
+
+	/* Disable L2-Cache due to hardware issues */
+	ibm440gx_l2c_disable();
 
 	ppc_md.setup_arch = ocotea_setup_arch;
 	ppc_md.show_cpuinfo = ocotea_show_cpuinfo;

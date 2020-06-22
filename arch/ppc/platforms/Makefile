@@ -33,6 +33,9 @@ obj-$(CONFIG_440GP)		+= ibm440gp.o
 obj-$(CONFIG_440GX)		+= ibm440gx.o
 
 obj-$(CONFIG_CPCI405)		+= cpci405.o
+obj-$(CONFIG_EP405)		+= ep405.o
+obj-$(CONFIG_REDWOOD_5)		+= redwood5.o ibmstb4.o
+obj-$(CONFIG_REDWOOD_6)		+= redwood6.o ibmstbx25.o
 obj-$(CONFIG_EBONY)		+= ebony.o
 obj-$(CONFIG_OCOTEA)		+= ocotea.o
 obj-$(CONFIG_WALNUT)		+= walnut.o

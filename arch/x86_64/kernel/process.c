@@ -9,7 +9,7 @@
  *  X86-64 port
  *	Andi Kleen.
  * 
- *  $Id: process.c,v 1.75 2004/01/13 09:04:32 ak Exp $
+ *  $Id: process.c,v 1.77 2004/03/22 00:37:29 ak Exp $
  */
 
 /*
@@ -147,11 +147,57 @@ void cpu_idle (void)
 	}
 }
 
+/*
+ * This is a kind of hybrid between poll and halt idle routines. This uses new
+ * Monitor/Mwait instructions on P4 processors with PNI. We Monitor 
+ * need_resched and go to optimized wait state through Mwait. 
+ * Whenever someone changes need_resched, we would be woken up from Mwait 
+ * (without an IPI).
+ */
+static void mwait_idle (void)
+{
+	int oldval;
+
+	__sti();
+	/* Setting need_resched to -1 skips sending IPI during idle resched */
+	oldval = xchg(&current->need_resched, -1);
+	if (!oldval) {
+		do {
+			__monitor((void *)&current->need_resched, 0, 0);
+			if (current->need_resched != -1)
+				break;
+			__mwait(0, 0);
+		} while (current->need_resched == -1);
+	}
+}
+
+int __init select_idle_routine(struct cpuinfo_x86 *c)
+{
+	if (cpu_has(c, X86_FEATURE_MWAIT)) {
+		printk("Monitor/Mwait feature present.\n");
+		/*
+		 * Take care of system with asymmetric CPUs.
+		 * Use, mwait_idle only if all cpus support it.
+		 * If not, we fallback to default_idle()
+		 */
+		if (!pm_idle) {
+			pm_idle = mwait_idle;
+		}
+		return 1;
+	}
+	pm_idle = default_idle;
+	return 1;
+}
+
+
 static int __init idle_setup (char *str)
 {
 	if (!strncmp(str, "poll", 4)) {
 		printk("using polling idle threads.\n");
 		pm_idle = poll_idle;
+	} else if (!strncmp(str, "halt", 4)) {
+		printk("using halt in idle threads.\n");
+                pm_idle = default_idle;
 	}
 
 	return 1;
@@ -301,7 +347,7 @@ void machine_restart(char * __unused)
 			/* force cold reboot to reinit all hardware*/
 			*((unsigned short *)__va(0x472)) = 0;
 
-		__asm__ __volatile__("lidt %0": :"m" (no_idt));
+			__asm__ __volatile__("lidt (%0)": :"r" (no_idt));
 		__asm__ __volatile__("int3");
 
 			reboot_type = BOOT_KBD;

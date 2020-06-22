@@ -69,6 +69,9 @@
 #endif /* CONFIG_PPC64BRIDGE */
 
 	.text
+	.stabs	"arch/ppc/kernel/",N_SO,0,0,0f
+	.stabs	"head.S",N_SO,0,0,0f
+0:
 	.globl	_stext
 _stext:
 

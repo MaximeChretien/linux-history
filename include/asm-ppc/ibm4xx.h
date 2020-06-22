@@ -62,8 +62,20 @@ do {						\
 #include <platforms/cpci405.h>
 #endif
 
+#if defined(CONFIG_EP405)
+#include <platforms/ep405.h>
+#endif
+
 #if defined(CONFIG_OAK)
 #include <platforms/oak.h>
+#endif
+
+#if defined(CONFIG_REDWOOD_5)
+#include <platforms/redwood5.h>
+#endif
+
+#if defined(CONFIG_REDWOOD_6)
+#include <platforms/redwood6.h>
 #endif
 
 #if defined(CONFIG_WALNUT)

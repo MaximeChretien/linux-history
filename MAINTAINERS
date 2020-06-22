@@ -166,7 +166,7 @@ ACPI
 P:	Len Brown
 M:	len.brown@intel.com
 L:	acpi-devel@lists.sourceforge.net
-W:	http://sf.net/projects/acpi/
+W:	http://acpi.sourceforge.net/
 S:	Maintained
 
 AD1816 SOUND DRIVER
@@ -1081,8 +1081,8 @@ LANMEDIA WAN CARD DRIVER
 P:      Andrew Stanley-Jones
 M:      asj@lanmedia.com
 W:      http://www.lanmedia.com/
-S:      Supported
- 
+S:      Orphan
+
 LAPB module
 P:	Henner Eisen
 M:	eis@baty.hanse.de
@@ -1456,9 +1456,9 @@ S:	Maintained
 
 PERMEDIA 3 FRAMEBUFFER DRIVER
 P:	Romain Dolbeau
-M:	dolbeau@irisa.fr
+M:	dolbeau@caps-entreprise.com
 L:	linux-fbdev-devel@lists.sourceforge.net
-W:	http://www.irisa.fr/prive/dolbeau/pm3fb/pm3fb.html
+W:	http://www.caps-entreprise.com/private/dolbeau/pm3fb/pm3fb.html
 S:	Maintained
 
 PHILIPS NINO PALM PC
@@ -1625,6 +1625,12 @@ P:	Kai Mäkisara
 M:	Kai.Makisara@kolumbus.fi
 L:	linux-scsi@vger.kernel.org
 S:	Maintained
+
+SCTP PROTOCOL
+P:	Sridhar Samudrala	
+M:	sri@us.ibm.com
+L:	lksctp-developers@lists.sourceforge.net
+S:	Supported
 
 SCx200 CPU SUPPORT
 P:	Christer Weinigel
@@ -2067,8 +2073,8 @@ W:	http://www.kroah.com/linux/
 S:	Maintained
 
 USB SUBSYSTEM
-P:	Greg Kroah-Hartman
-M:	greg@kroah.com
+P:	Pete Zaitcev
+M:	zaitcev@redhat.com
 L:	linux-usb-users@lists.sourceforge.net
 L:	linux-usb-devel@lists.sourceforge.net
 W:	http://www.linux-usb.org
@@ -2104,7 +2110,6 @@ S:	Maintained
 
 VIA 82Cxxx AUDIO DRIVER
 P:	Jeff Garzik
-L:	linux-via@gtf.org
 S:	Odd fixes
 
 VIA RHINE NETWORK DRIVER

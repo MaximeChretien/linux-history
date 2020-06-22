@@ -19,7 +19,7 @@
 # 20010105  Andi Kleen, add IA32 compiler.
 #           ....and later removed it again....
 #
-# $Id: Makefile,v 1.34 2003/09/25 02:50:05 ak Exp $
+# $Id: Makefile,v 1.36 2004/02/27 18:30:19 ak Exp $
 
 #
 # early bootup linking needs 32bit. You can either use real 32bit tools
@@ -53,7 +53,15 @@ CFLAGS += -Wno-sign-compare
 ifneq ($(CONFIG_X86_REMOTE_DEBUG),y)
 CFLAGS += -fno-asynchronous-unwind-tables
 endif
+# this is needed right now for the 32bit ioctl code
 CFLAGS += $(call check_gcc,-fno-unit-at-a-time,)
+
+ifdef CONFIG_MK8
+CFLAGS += $(call check_gcc,-march=k8,)
+endif
+ifdef CONFIG_MPSC
+CFLAGS += $(call check_gcc,-march=nocona,)
+endif
 
 HEAD := arch/x86_64/kernel/head.o arch/x86_64/kernel/head64.o arch/x86_64/kernel/init_task.o
 

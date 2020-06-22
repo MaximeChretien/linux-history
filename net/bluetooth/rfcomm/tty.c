@@ -109,6 +109,13 @@ static inline void rfcomm_dev_hold(struct rfcomm_dev *dev)
 
 static inline void rfcomm_dev_put(struct rfcomm_dev *dev)
 {
+	/* The reason this isn't actually a race, as you no
+	   doubt have a little voice screaming at you in your
+	   head, is that the refcount should never actually
+	   reach zero unless the device has already been taken
+	   off the list, in rfcomm_dev_del(). And if that's not
+	   true, we'll hit the BUG() in rfcomm_dev_destruct()
+	   anyway. */
 	if (atomic_dec_and_test(&dev->refcnt))
 		rfcomm_dev_destruct(dev);
 }
@@ -132,10 +139,13 @@ static inline struct rfcomm_dev *rfcomm_dev_get(int id)
 	struct rfcomm_dev *dev;
 
 	read_lock(&rfcomm_dev_lock);
+
 	dev = __rfcomm_dev_get(id);
+	if (dev)
+		rfcomm_dev_hold(dev);
+
 	read_unlock(&rfcomm_dev_lock);
 
-	if (dev) rfcomm_dev_hold(dev);
 	return dev;
 }
 
@@ -347,7 +357,7 @@ static int rfcomm_get_dev_list(unsigned long arg)
 	struct rfcomm_dev_list_req *dl;
 	struct rfcomm_dev_info *di;
 	struct list_head *p;
-	int n = 0, size;
+	int n = 0, size, err;
 	u16 dev_num;
 
 	BT_DBG("");
@@ -355,13 +365,10 @@ static int rfcomm_get_dev_list(unsigned long arg)
 	if (get_user(dev_num, (u16 *) arg))
 		return -EFAULT;
 
-	if (!dev_num)
+	if (!dev_num || dev_num > (PAGE_SIZE * 4) / sizeof(*di))
 		return -EINVAL;
 
 	size = sizeof(*dl) + dev_num * sizeof(*di);
-
-	if (verify_area(VERIFY_WRITE, (void *)arg, size))
-		return -EFAULT;
 
 	if (!(dl = kmalloc(size, GFP_KERNEL)))
 		return -ENOMEM;
@@ -387,9 +394,10 @@ static int rfcomm_get_dev_list(unsigned long arg)
 	dl->dev_num = n;
 	size = sizeof(*dl) + n * sizeof(*di);
 
-	copy_to_user((void *) arg, dl, size);
+	err = copy_to_user((void *) arg, dl, size);
 	kfree(dl);
-	return 0;
+
+	return err ? -EFAULT : 0;
 }
 
 static int rfcomm_get_dev_info(unsigned long arg)
@@ -486,7 +494,8 @@ static void rfcomm_dev_state_change(struct rfcomm_dlc *dlc, int err)
 				rfcomm_dev_del(dev);
 
 				/* We have to drop DLC lock here, otherwise
-				 * rfcomm_dev_put() will dead lock if it's the last refference */
+				   rfcomm_dev_put() will dead lock if it's
+				   the last reference. */
 				rfcomm_dlc_unlock(dlc);
 				rfcomm_dev_put(dev);
 				rfcomm_dlc_lock(dlc);
@@ -541,6 +550,10 @@ static int rfcomm_tty_open(struct tty_struct *tty, struct file *filp)
 
 	BT_DBG("tty %p id %d", tty, id);
 
+	/* We don't leak this refcount. For reasons which are not entirely
+	   clear, the TTY layer will call our ->close() method even if the
+	   open fails. We decrease the refcount there, and decreasing it
+	   here too would cause breakage. */
 	dev = rfcomm_dev_get(id);
 	if (!dev)
 		return -ENODEV;

@@ -1201,25 +1201,27 @@ static int hcd_submit_urb (struct urb *urb)
 		return status;
 
 	// NOTE:  2.5 does this if !URB_NO_DMA_MAP transfer flag
-	if (usb_pipecontrol (urb->pipe))
-		urb->setup_dma = pci_map_single (
-				hcd->pdev,
-				urb->setup_packet,
-				sizeof (struct usb_ctrlrequest),
-				PCI_DMA_TODEVICE);
-	if (urb->transfer_buffer_length != 0)
-		urb->transfer_dma = pci_map_single (
-				hcd->pdev,
-				urb->transfer_buffer,
-				urb->transfer_buffer_length,
-				usb_pipein (urb->pipe)
-				    ? PCI_DMA_FROMDEVICE
-				    : PCI_DMA_TODEVICE);
-
-	if (urb->dev == hcd->bus->root_hub)
+	
+	/* For 2.4, don't map bounce buffer if it's a root hub operation. */
+	if (urb->dev == hcd->bus->root_hub) {
 		status = rh_urb_enqueue (hcd, urb);
-	else
+	} else {
+		if (usb_pipecontrol (urb->pipe))
+			urb->setup_dma = pci_map_single (
+					hcd->pdev,
+					urb->setup_packet,
+					sizeof (struct usb_ctrlrequest),
+					PCI_DMA_TODEVICE);
+		if (urb->transfer_buffer_length != 0)
+			urb->transfer_dma = pci_map_single (
+					hcd->pdev,
+					urb->transfer_buffer,
+					urb->transfer_buffer_length,
+					usb_pipein (urb->pipe)
+					    ? PCI_DMA_FROMDEVICE
+					    : PCI_DMA_TODEVICE);
 		status = hcd->driver->urb_enqueue (hcd, urb, mem_flags);
+	}
 	return status;
 }
 
@@ -1471,6 +1473,11 @@ static void hcd_irq (int irq, void *__hcd, struct pt_regs * r)
  */
 void usb_hcd_giveback_urb (struct usb_hcd *hcd, struct urb *urb, struct pt_regs *regs)
 {
+	int is_root_hub_operation;
+
+	/* Work this out here as urb_unlink clears urb->dev */
+	is_root_hub_operation = (urb->dev == hcd->bus->root_hub);
+
 	urb_unlink (urb);
 
 	// NOTE:  a generic device/urb monitoring hook would go here.
@@ -1480,11 +1487,14 @@ void usb_hcd_giveback_urb (struct usb_hcd *hcd, struct urb *urb, struct pt_regs 
 	// hcd_monitor_hook(MONITOR_URB_UPDATE, urb, dev)
 
 	// NOTE:  2.5 does this if !URB_NO_DMA_MAP transfer flag
-	if (usb_pipecontrol (urb->pipe))
+	
+	/* For 2.4, don't unmap bounce buffer if it's a root hub operation. */
+	if (usb_pipecontrol (urb->pipe) && !is_root_hub_operation)
 		pci_unmap_single (hcd->pdev, urb->setup_dma,
 				sizeof (struct usb_ctrlrequest),
 				PCI_DMA_TODEVICE);
-	if (urb->transfer_buffer_length != 0)
+
+	if ((urb->transfer_buffer_length != 0) && !is_root_hub_operation)
 		pci_unmap_single (hcd->pdev, urb->transfer_dma,
 				urb->transfer_buffer_length,
 				usb_pipein (urb->pipe)

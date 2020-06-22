@@ -34,6 +34,13 @@ int panic_on_timeout;
 
 int nmi_watchdog_disabled; 
 
+/* Small problem with theaw events is that they stop ticking
+   when the CPU is idling. This means you get varying NMI watchdog
+   frequencies depending on the CPU load.
+
+   I doubt it can be fixed because it's unlikely that the CPU does 
+   performance counters while being in C* states. -AK */
+
 #define K7_EVNTSEL_ENABLE	(1 << 22)
 #define K7_EVNTSEL_INT		(1 << 20)
 #define K7_EVNTSEL_OS		(1 << 17)
@@ -214,6 +221,11 @@ static void __pminit clear_msr_range(unsigned int base, unsigned int n)
 static void __pminit setup_k7_watchdog(void)
 {
 	unsigned int evntsel;
+
+#if 0
+	/* No check, so can start with slow frequency */
+	nmi_hz = 1; 
+#endif	
 
 	nmi_perfctr_msr = MSR_K7_PERFCTR0;
 

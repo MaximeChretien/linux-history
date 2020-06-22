@@ -1067,7 +1067,7 @@ short register_HBA(u32 base, struct get_conf *gc, Scsi_Host_Template * tpnt,
     char *buff = 0;
     unchar bugs = 0;
     struct Scsi_Host *sh;
-    hostdata *hd;
+    hostdata *hd = NULL;
     int x;
     
     

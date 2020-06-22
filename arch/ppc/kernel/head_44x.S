@@ -30,6 +30,16 @@
 #define STND_EXC        0
 #define CRIT_EXC        1
 
+#ifdef CONFIG_440A
+#define MCHK_EXC	2
+#define __SPRN_MCSRR0	SPRN_MCSRR0
+#define __SPRN_MCSRR1	SPRN_MCSRR1
+#else
+#define MCHK_EXC	CRIT_EXC
+#define __SPRN_MCSRR0	SPRN_CSRR0
+#define __SPRN_MCSRR1	SPRN_CSRR1
+#endif
+
 /*
  * Macros
  */
@@ -396,7 +406,25 @@ interrupt_base:
 
 	/* Machine Check Interrupt */
 	/* TODO: provide bus error register status */
-	CRIT_EXCEPTION(0x200, MachineCheck,MachineCheckException);
+	START_EXCEPTION(MachineCheck)
+	COMMON_PROLOG;
+	mfspr   r22,__SPRN_MCSRR0       /* Faulting instruction address    */
+	lis     r20,MSR_WE@h
+	mfspr   r23,__SPRN_MCSRR1       /* MSR at the time of fault        */
+	andc    r23,r23,r20             /* disable processor wait state    */
+	COMMON_EPILOG;
+#ifdef CONFIG_440A
+	lis	r20,MCSR_MCS@h
+	mfspr	r4,SPRN_MCSR		/* We may want to access original
+					   MCSR as arg2 in the future. --ebs */
+	mtspr	SPRN_MCSR,r20		/* Clear Machine Check Summary field */
+#endif	
+	mfspr	r5,SPRN_ESR		/* Grab the ESR, save it */
+	stw	r5,_ESR(r21)
+	addi	r3,r1,STACK_FRAME_OVERHEAD
+	li	r7,MCHK_EXC
+	li	r20,MSR_KERNEL
+	FINISH_EXCEPTION(0x200, MachineCheckException)
 
 	/* Data Storage Interrupt */
 	START_EXCEPTION(DataStorage)
@@ -415,7 +443,7 @@ interrupt_base:
 	 * offending address and handle it.
 	 */
 	mfspr	r20, SPRN_ESR
-	andis.	r20, r20, ESR_ST@h
+	andis.	r20, r20, ESR_DST@h
 	beq	2f
 
 	mfspr	r20, SPRN_DEAR		/* Get faulting address */
@@ -994,7 +1022,7 @@ _GLOBAL(transfer_to_handler)
 	lwz	r24,0(r23)		/* Virtual address of the handler */
 	lwz	r23,4(r23)		/* Handler return pointer */
 	cmpwi	cr0,r7,STND_EXC		/* What type of exception is this? */
-	bne	3f			/* It is a critical exception... */
+	bne	3f			/* It is a critical/machine check exception... */
 
 	/* Standard exception jump path
 	*/
@@ -1010,18 +1038,22 @@ _GLOBAL(transfer_to_handler)
 	mtspr	SPRN_SRR1,r20		/* Set up the machine state register */
 	mtlr	r23			/* Set up the return pointer */
 	SYNC
-	/* We shouldn't need a 405 erratum #77 workaround here, because we're not
-	 * actually returning to the interrupted instruction yet. */
 	rfi
 
-	/* Critical exception jump path
+	/* Critical/Machine check exception jump path
 	*/
-
-3:	mtspr	SPRN_CSRR0,r24		/* Set up the instruction pointer */
-	mtspr	SPRN_CSRR1,r20		/* Set up the machine state register */
+3:	cmpwi	r7,CRIT_EXC		/* Critical or machine check ? */
 	mtlr	r23			/* Set up the return pointer */
+	bne	4f
+	mtspr	SPRN_CSRR0,r24		/* Set up the instruction pointer */
+	mtspr	SPRN_CSRR1,r20		/* Set up the machine state register */
 	SYNC
 	rfci
+
+4:	mtspr	SPRN_MCSRR0,r24		/* Set up the instruction pointer */
+	mtspr	SPRN_MCSRR1,r20		/* Set up the machine state register */
+	SYNC	
+	RFMCI
 
 /* On kernel stack overlow, load up an initial stack pointer and call
  * StackOverflow(regs), which should NOT return.

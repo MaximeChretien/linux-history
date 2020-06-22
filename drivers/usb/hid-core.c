@@ -243,6 +243,9 @@ static int hid_add_field(struct hid_parser *parser, unsigned report_type, unsign
 	offset = report->size;
 	report->size += parser->global.report_size * parser->global.report_count;
 
+	if (usages < parser->global.report_count)
+		usages = parser->global.report_count;
+
 	if (usages == 0)
 		return 0; /* ignore padding fields */
 
@@ -254,9 +257,13 @@ static int hid_add_field(struct hid_parser *parser, unsigned report_type, unsign
 	field->application = hid_lookup_collection(parser, HID_COLLECTION_APPLICATION);
 
 	for (i = 0; i < usages; i++) {
-		field->usage[i].hid = parser->local.usage[i];
+		int j = i;
+		/* Duplicate the last usage we parsed if we have excess values */
+		if (i >= parser->local.usage_index)
+			j = parser->local.usage_index - 1;
+		field->usage[i].hid = parser->local.usage[j];
 		field->usage[i].collection_index =
-			parser->local.collection_index[i];
+			parser->local.collection_index[j];
 	}
 
 	field->maxusage = usages;
@@ -1182,7 +1189,10 @@ void hid_init_reports(struct hid_device *hid)
 #define USB_VENDOR_ID_MGE		0x0463
 #define USB_DEVICE_ID_MGE_UPS		0xffff
 #define USB_DEVICE_ID_MGE_UPS1		0x0001
- 
+
+#define USB_VENDOR_ID_NEC		0x073e
+#define USB_DEVICE_ID_NEC_USB_GAME_PAD	0x0301
+
 struct hid_blacklist {
 	__u16 idVendor;
 	__u16 idProduct;
@@ -1237,6 +1247,7 @@ struct hid_blacklist {
 	{ USB_VENDOR_ID_ESSENTIAL_REALITY, USB_DEVICE_ID_ESSENTIAL_REALITY_P5, HID_QUIRK_IGNORE },
 	{ USB_VENDOR_ID_MGE, USB_DEVICE_ID_MGE_UPS, HID_QUIRK_IGNORE },
 	{ USB_VENDOR_ID_MGE, USB_DEVICE_ID_MGE_UPS1, HID_QUIRK_IGNORE },
+	{ USB_VENDOR_ID_NEC, USB_DEVICE_ID_NEC_USB_GAME_PAD, HID_QUIRK_BADPAD },
 	{ 0, 0 }
 };
 

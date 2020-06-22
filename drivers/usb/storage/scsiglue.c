@@ -213,9 +213,14 @@ static int command_abort( Scsi_Cmnd *srb )
 static int device_reset( Scsi_Cmnd *srb )
 {
 	struct us_data *us = (struct us_data *)srb->host->hostdata[0];
+	int rc;
 
 	US_DEBUGP("device_reset() called\n" );
-	return us->transport_reset(us);
+
+	spin_unlock_irq(&io_request_lock);
+	rc = us->transport_reset(us);
+	spin_lock_irq(&io_request_lock);
+	return rc;
 }
 
 /* This resets the device port, and simulates the device

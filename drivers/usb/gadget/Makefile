@@ -16,10 +16,10 @@ controller-$(CONFIG_USB_NET2280)	+= net2280.o
 controller-$(CONFIG_USB_GOKU)		+= goku_udc.o
 
 # ... and only one of these, too; kbuild/kconfig don't help though.
-g_zero-objs			:= zero.o usbstring.o
+g_zero-objs			:= zero.o usbstring.o config.o
 obj-$(CONFIG_USB_ZERO)		+= g_zero.o
 
-g_ether-objs			:= ether.o usbstring.o
+g_ether-objs			:= ether.o usbstring.o config.o
 obj-$(CONFIG_USB_ETH)		+= g_ether.o
 
 g_file_storage-objs		:= file_storage.o usbstring.o

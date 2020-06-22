@@ -1760,7 +1760,7 @@ static int set_modem_info(struct edgeport_port *edge_port, unsigned int cmd, uns
 			if (arg & TIOCM_RTS)
 				mcr |= MCR_RTS;
 			if (arg & TIOCM_DTR)
-				mcr |= MCR_RTS;
+				mcr |= MCR_DTR;
 			if (arg & TIOCM_LOOP)
 				mcr |= MCR_LOOPBACK;
 			break;
@@ -1769,7 +1769,7 @@ static int set_modem_info(struct edgeport_port *edge_port, unsigned int cmd, uns
 			if (arg & TIOCM_RTS)
 				mcr &= ~MCR_RTS;
 			if (arg & TIOCM_DTR)
-				mcr &= ~MCR_RTS;
+				mcr &= ~MCR_DTR;
 			if (arg & TIOCM_LOOP)
 				mcr &= ~MCR_LOOPBACK;
 			break;
