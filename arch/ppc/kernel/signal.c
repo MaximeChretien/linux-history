@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.signal.c 1.7 05/17/01 18:14:22 cort
+ * BK Id: SCCS/s.signal.c 1.10 11/23/01 16:38:30 paulus
  */
 /*
  *  linux/arch/ppc/kernel/signal.c
@@ -180,7 +180,7 @@ sys_sigaction(int sig, const struct old_sigaction *act,
 		siginitset(&new_ka.sa.sa_mask, mask);
 	}
 
-	ret = do_sigaction(sig, act ? &new_ka : NULL, oact ? &old_ka : NULL);
+	ret = do_sigaction(sig, (act? &new_ka: NULL), (oact? &old_ka: NULL));
 
 	if (!ret && oact) {
 		if (verify_area(VERIFY_WRITE, oact, sizeof(*oact)) ||
@@ -254,6 +254,8 @@ int sys_rt_sigreturn(struct pt_regs *regs)
 	current->blocked = set;
 	recalc_sigpending(current);
 	spin_unlock_irq(&current->sigmask_lock);
+	if (regs->msr & MSR_FP)
+		giveup_fpu(current);
 
 	rt_sf++;			/* Look at next rt_sigframe */
 	if (rt_sf == (struct rt_sigframe *)(sigctx.regs)) {
@@ -263,8 +265,6 @@ int sys_rt_sigreturn(struct pt_regs *regs)
 		 * see handle_signal()
 		 */
 		sr = (struct sigregs *) sigctx.regs;
-		if (regs->msr & MSR_FP )
-			giveup_fpu(current);
 		if (copy_from_user(saved_regs, &sr->gp_regs,
 				   sizeof(sr->gp_regs)))
 			goto badframe;
@@ -298,6 +298,7 @@ int sys_rt_sigreturn(struct pt_regs *regs)
 		if (get_user(prevsp, &sr->gp_regs[PT_R1])
 		    || put_user(prevsp, (unsigned long *) regs->gpr[1]))
 			goto badframe;
+		current->thread.fpscr = 0;
 	}
 	return ret;
 
@@ -328,6 +329,7 @@ setup_rt_frame(struct pt_regs *regs, struct sigregs *frame,
 		goto badframe;
 	flush_icache_range((unsigned long) &frame->tramp[0],
 			   (unsigned long) &frame->tramp[2]);
+	current->thread.fpscr = 0;	/* turn off all fp exceptions */
 
 	/* Retrieve rt_sigframe from stack and
 	   set up registers for signal handler
@@ -379,13 +381,13 @@ int sys_sigreturn(struct pt_regs *regs)
 	current->blocked = set;
 	recalc_sigpending(current);
 	spin_unlock_irq(&current->sigmask_lock);
+	if (regs->msr & MSR_FP )
+		giveup_fpu(current);
 
 	sc++;			/* Look at next sigcontext */
 	if (sc == (struct sigcontext_struct *)(sigctx.regs)) {
 		/* Last stacked signal - restore registers */
 		sr = (struct sigregs *) sigctx.regs;
-		if (regs->msr & MSR_FP )
-			giveup_fpu(current);
 		if (copy_from_user(saved_regs, &sr->gp_regs,
 				   sizeof(sr->gp_regs)))
 			goto badframe;
@@ -413,6 +415,7 @@ int sys_sigreturn(struct pt_regs *regs)
 		if (get_user(prevsp, &sr->gp_regs[PT_R1])
 		    || put_user(prevsp, (unsigned long *) regs->gpr[1]))
 			goto badframe;
+		current->thread.fpscr = 0;
 	}
 	return ret;
 
@@ -431,8 +434,8 @@ setup_frame(struct pt_regs *regs, struct sigregs *frame,
 
 	if (verify_area(VERIFY_WRITE, frame, sizeof(*frame)))
 		goto badframe;
-		if (regs->msr & MSR_FP)
-			giveup_fpu(current);
+	if (regs->msr & MSR_FP)
+		giveup_fpu(current);
 	if (__copy_to_user(&frame->gp_regs, regs, GP_REGS_SIZE)
 	    || __copy_to_user(&frame->fp_regs, current->thread.fpr,
 			      ELF_NFPREG * sizeof(double))
@@ -441,6 +444,7 @@ setup_frame(struct pt_regs *regs, struct sigregs *frame,
 		goto badframe;
 	flush_icache_range((unsigned long) &frame->tramp[0],
 			   (unsigned long) &frame->tramp[2]);
+	current->thread.fpscr = 0;	/* turn off all fp exceptions */
 
 	newsp -= __SIGNAL_FRAMESIZE;
 	if (put_user(regs->gpr[1], (unsigned long *)newsp)

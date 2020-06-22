@@ -111,6 +111,10 @@ struct vm_area_struct {
 #define VM_SequentialReadHint(v)	((v)->vm_flags & VM_SEQ_READ)
 #define VM_RandomReadHint(v)		((v)->vm_flags & VM_RAND_READ)
 
+/* read ahead limits */
+extern int vm_min_readahead;
+extern int vm_max_readahead;
+
 /*
  * mapping from the currently active vm_flags protection bits (the
  * low four bits) to a page protection mask..

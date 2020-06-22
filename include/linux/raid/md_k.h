@@ -91,7 +91,7 @@ static inline mddev_t * kdev_to_mddev (kdev_t dev)
 /*
  * default readahead
  */
-#define MD_READAHEAD	MAX_READAHEAD
+#define MD_READAHEAD	vm_max_readahead
 
 static inline int disk_faulty(mdp_disk_t * d)
 {

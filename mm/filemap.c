@@ -47,6 +47,12 @@ atomic_t page_cache_size = ATOMIC_INIT(0);
 unsigned int page_hash_bits;
 struct page **page_hash_table;
 
+int vm_max_readahead = 31;
+int vm_min_readahead = 3;
+EXPORT_SYMBOL(vm_max_readahead);
+EXPORT_SYMBOL(vm_min_readahead);
+
+
 spinlock_t pagecache_lock ____cacheline_aligned_in_smp = SPIN_LOCK_UNLOCKED;
 /*
  * NOTE: to avoid deadlocking you must never acquire the pagemap_lru_lock 
@@ -1134,7 +1140,7 @@ static void profile_readahead(int async, struct file *filp)
 static inline int get_max_readahead(struct inode * inode)
 {
 	if (!inode->i_dev || !max_readahead[MAJOR(inode->i_dev)])
-		return MAX_READAHEAD;
+		return vm_max_readahead;
 	return max_readahead[MAJOR(inode->i_dev)][MINOR(inode->i_dev)];
 }
 
@@ -1317,8 +1323,8 @@ void do_generic_file_read(struct file * filp, loff_t *ppos, read_descriptor_t * 
 		if (filp->f_ramax < needed)
 			filp->f_ramax = needed;
 
-		if (reada_ok && filp->f_ramax < MIN_READAHEAD)
-				filp->f_ramax = MIN_READAHEAD;
+		if (reada_ok && filp->f_ramax < vm_min_readahead)
+				filp->f_ramax = vm_min_readahead;
 		if (filp->f_ramax > max_readahead)
 			filp->f_ramax = max_readahead;
 	}

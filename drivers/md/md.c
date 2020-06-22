@@ -3398,7 +3398,7 @@ recheck:
 	/*
 	 * Tune reconstruction:
 	 */
-	window = MAX_READAHEAD*(PAGE_SIZE/512);
+	window = vm_max_readahead*(PAGE_SIZE/512);
 	printk(KERN_INFO "md: using %dk window, over a total of %d blocks.\n",
 	       window/2,max_sectors/2);
 

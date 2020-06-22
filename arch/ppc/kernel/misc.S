@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.misc.S 1.32 10/18/01 17:29:53 trini
+ * BK Id: SCCS/s.misc.S 1.34 11/23/01 16:38:29 paulus
  */
 /*
  * This file contains miscellaneous low-level functions.
@@ -866,10 +866,8 @@ _GLOBAL(kernel_thread)
 	sc
 	cmpi	0,r3,0		/* parent or child? */
 	bnelr			/* return if parent */
-	li	r0,0		/* clear out p->thread.regs */
-	stw	r0,THREAD+PT_REGS(r2)	/* since we don't have user ctx */
-	addi	r1,r2,TASK_UNION_SIZE-STACK_FRAME_OVERHEAD
-	stw	r0,0(r1)
+	li	r0,0		/* make top-level stack frame */
+	stwu	r0,-16(r1)
 	mtlr	r6              /* fn addr in lr */
 	mr	r3,r4	        /* load arg and call fn */
 	blrl

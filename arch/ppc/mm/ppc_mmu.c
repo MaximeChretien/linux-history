@@ -304,6 +304,9 @@ void update_mmu_cache(struct vm_area_struct *vma, unsigned long address,
 
 	if (Hash == 0 || nopreload)
 		return;
+	/* We only want HPTEs for linux PTEs that have _PAGE_ACCESSED set */
+	if (!pte_young(pte))
+		return;
 	mm = (address < TASK_SIZE)? vma->vm_mm: &init_mm;
 	pmd = pmd_offset(pgd_offset(mm, address), address);
 	if (!pmd_none(*pmd)) {

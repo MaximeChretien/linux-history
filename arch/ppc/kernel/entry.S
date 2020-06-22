@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.entry.S 1.22 08/15/01 22:43:06 paulus
+ * BK Id: SCCS/s.entry.S 1.24 11/23/01 16:38:29 paulus
  */
 /*
  *  PowerPC version 
@@ -216,6 +216,7 @@ _GLOBAL(_switch)
 	SAVE_8GPRS(14, r1)
 	SAVE_10GPRS(22, r1)
 	mflr	r20		/* Return to switch caller */
+	stw	r20,INT_FRAME_SIZE+4(r1)
 	mfmsr	r22
 	li	r0,MSR_FP	/* Disable floating-point */
 #ifdef CONFIG_ALTIVEC
@@ -223,10 +224,12 @@ BEGIN_FTR_SECTION
 	oris	r0,r0,MSR_VEC@h	/* Disable altivec */
 END_FTR_SECTION_IFSET(CPU_FTR_ALTIVEC)
 #endif /* CONFIG_ALTIVEC */
+	and.	r0,r0,r22	/* FP or altivec enabled? */
+	beq+	1f
 	andc	r22,r22,r0
 	mtmsr	r22
 	isync
-	stw	r20,_NIP(r1)
+1:	stw	r20,_NIP(r1)
 	stw	r22,_MSR(r1)
 	stw	r20,_LINK(r1)
 	mfcr	r20
@@ -391,9 +394,9 @@ enter_rtas:
 	mfmsr	r9
 	stw	r9,8(r1)
 	li	r0,0
-	ori	r0,r0,MSR_EE|MSR_SE|MSR_BE
+	ori	r0,r0,MSR_EE|MSR_SE|MSR_BE|MSR_FE0|MSR_FE1
 	andc	r0,r9,r0
-	li	r10,MSR_IR|MSR_DR|MSR_FE0|MSR_FE1|MSR_FP
+	li	r10,MSR_IR|MSR_DR|MSR_FP
 	andc	r9,r0,r10
 	SYNC			/* disable interrupts so SRR0/1 */
 	mtmsr	r0		/* don't get trashed */

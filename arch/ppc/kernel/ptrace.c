@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.ptrace.c 1.8 07/07/01 17:00:08 paulus
+ * BK Id: SCCS/s.ptrace.c 1.12 11/23/01 16:38:30 paulus
  */
 /*
  *  linux/arch/ppc/kernel/ptrace.c
@@ -132,14 +132,9 @@ int sys_ptrace(long request, long pid, long addr, long data)
 		ret = ptrace_attach(child);
 		goto out_tsk;
 	}
-	ret = -ESRCH;
-	if (!(child->ptrace & PT_PTRACED))
-		goto out_tsk;
-	if (child->state != TASK_STOPPED) {
-		if (request != PTRACE_KILL)
-			goto out_tsk;
-	}
-	if (child->p_pptr != current)
+
+	ret = ptrace_check_attach(child, request == PTRACE_KILL);
+	if (ret < 0)
 		goto out_tsk;
 
 	switch (request) {

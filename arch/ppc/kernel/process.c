@@ -1,5 +1,5 @@
 /*
- * BK Id: SCCS/s.process.c 1.31 10/02/01 09:51:41 paulus
+ * BK Id: SCCS/s.process.c 1.34 11/23/01 16:38:29 paulus
  */
 /*
  *  linux/arch/ppc/kernel/process.c
@@ -336,9 +336,10 @@ copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
 		/* for kernel thread, set `current' and stackptr in new task */
 		childregs->gpr[1] = sp + sizeof(struct pt_regs);
 		childregs->gpr[2] = (unsigned long) p;
-	}
+		p->thread.regs = NULL;	/* no user register state */
+	} else
+		p->thread.regs = childregs;
 	childregs->gpr[3] = 0;  /* Result from fork() */
-	p->thread.regs = childregs;
 	sp -= STACK_FRAME_OVERHEAD;
 	childframe = sp;
 
@@ -463,6 +464,27 @@ print_backtrace(unsigned long *sp)
 			break;
 	}
 	printk("\n");
+}
+
+void show_trace_task(struct task_struct *tsk)
+{
+	unsigned long stack_top = (unsigned long) tsk + THREAD_SIZE;
+	unsigned long sp, prev_sp;
+	int count = 0;
+
+	if (tsk == NULL)
+		return;
+	sp = (unsigned long) &tsk->thread.ksp;
+	do {
+		prev_sp = sp;
+		sp = *(unsigned long *)sp;
+		if (sp <= prev_sp || sp >= stack_top || (sp & 3) != 0)
+			break;
+		if (count > 0)
+			printk("[%08lx] ", *(unsigned long *)(sp + 4));
+	} while (++count < 16);
+	if (count > 1)
+		printk("\n");
 }
 
 #if 0

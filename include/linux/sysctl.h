@@ -139,7 +139,9 @@ enum
 	VM_PAGECACHE=7,		/* struct: Set cache memory thresholds */
 	VM_PAGERDAEMON=8,	/* struct: Control kswapd behaviour */
 	VM_PGT_CACHE=9,		/* struct: Set page table cache parameters */
-	VM_PAGE_CLUSTER=10	/* int: set number of pages to swap together */
+	VM_PAGE_CLUSTER=10,	/* int: set number of pages to swap together */
+       VM_MIN_READAHEAD=12,    /* Min file readahead */
+       VM_MAX_READAHEAD=13     /* Max file readahead */
 };
 
 

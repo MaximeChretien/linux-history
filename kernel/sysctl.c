@@ -270,6 +270,10 @@ static ctl_table vm_table[] = {
 	 &pgt_cache_water, 2*sizeof(int), 0644, NULL, &proc_dointvec},
 	{VM_PAGE_CLUSTER, "page-cluster", 
 	 &page_cluster, sizeof(int), 0644, NULL, &proc_dointvec},
+	{VM_MIN_READAHEAD, "min-readahead",
+	&vm_min_readahead,sizeof(int), 0644, NULL, &proc_dointvec},
+	{VM_MAX_READAHEAD, "max-readahead",
+	&vm_max_readahead,sizeof(int), 0644, NULL, &proc_dointvec},
 	{0}
 };
 
