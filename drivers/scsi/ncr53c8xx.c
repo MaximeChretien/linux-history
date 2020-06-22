@@ -22,7 +22,7 @@
 **  This driver has been ported to Linux from the FreeBSD NCR53C8XX driver
 **  and is currently maintained by
 **
-**          Gerard Roudier              <groudier@club-internet.fr>
+**          Gerard Roudier              <groudier@free.fr>
 **
 **  Being given that this driver originates from the FreeBSD version, and
 **  in order to keep synergy on both, any suggested enhancements and corrections
@@ -63,7 +63,7 @@
 **  August 18 1997 by Cort <cort@cs.nmt.edu>:
 **     Support for Power/PC (Big Endian).
 **
-**  June 20 1998 by Gerard Roudier <groudier@club-internet.fr>:
+**  June 20 1998 by Gerard Roudier
 **     Support for up to 64 tags per lun.
 **     O(1) everywhere (C and SCRIPTS) for normal cases.
 **     Low PCI traffic for command handling when on-chip RAM is present.

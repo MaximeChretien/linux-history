@@ -359,7 +359,7 @@ static void nodemgr_call_policy(char *verb, struct unit_directory *ud)
 	kfree(buf);
 	kfree(envp);
 	if (value != 0)
-		HPSB_DEBUG("NodeMgr: hotplug policy returned 0x%x", value);
+		HPSB_DEBUG("NodeMgr: hotplug policy returned %d", value);
 }
 
 #else
@@ -369,9 +369,8 @@ nodemgr_call_policy(char *verb, struct unit_directory *ud)
 {
 #ifdef CONFIG_IEEE1394_VERBOSEDEBUG
 	HPSB_DEBUG("NodeMgr: nodemgr_call_policy(): hotplug not enabled");
-#else
-	return;
 #endif
+	return;
 } 
 
 #endif /* CONFIG_HOTPLUG */
@@ -582,13 +581,13 @@ static void nodemgr_update_node(struct node_entry *ne, quadlet_t busoptions,
                                struct hpsb_host *host, nodeid_t nodeid)
 {
 	struct list_head *lh;
+	struct unit_directory *ud;
 
-	if (ne->nodeid != nodeid)
+	if (ne->nodeid != nodeid) {
 		HPSB_DEBUG("Node " NODE_BUS_FMT " changed to " NODE_BUS_FMT,
 			   NODE_BUS_ARGS(ne->nodeid), NODE_BUS_ARGS(nodeid));
-
-	ne->host = host;
-	ne->nodeid = nodeid;
+		ne->nodeid = nodeid;
+	}
 
 	if (ne->busopt.generation != ((busoptions >> 4) & 0xf))
 		nodemgr_process_config_rom (ne, busoptions);
@@ -597,8 +596,6 @@ static void nodemgr_update_node(struct node_entry *ne, quadlet_t busoptions,
 	atomic_set(&ne->generation, get_hpsb_generation(ne->host));
 
 	list_for_each (lh, &ne->unit_directories) {
-		struct unit_directory *ud;
-
 		ud = list_entry (lh, struct unit_directory, node_list);
 		if (ud->driver != NULL && ud->driver->update != NULL)
 			ud->driver->update(ud);
@@ -679,57 +676,76 @@ static void nodemgr_remove_node(struct node_entry *ne)
 	return;
 }
 
+/* Used to schedule each nodes config rom probe */
+struct node_probe_task {
+	nodeid_t nodeid;
+	struct hpsb_host *host;
+	atomic_t *count;
+	struct tq_struct task;
+};
+
 /* This is where we probe the nodes for their information and provided
  * features.  */
-static void nodemgr_node_probe(void *data)
+static void nodemgr_node_probe_one(void *__npt)
 {
-	struct hpsb_host *host = (struct hpsb_host *)data;
-        struct selfid *sid = (struct selfid *)host->topology_map;
-	struct list_head *lh, *next;
+	struct node_probe_task *npt = (struct node_probe_task *)__npt;
 	struct node_entry *ne;
-        int nodecount = host->node_count;
-        nodeid_t nodeid = LOCAL_BUS;
 	quadlet_t buffer[5];
 	octlet_t guid;
-	unsigned long flags;
 
 	/* We need to detect when the ConfigROM's generation has changed,
 	 * so we only update the node's info when it needs to be.  */
-        for (; nodecount; nodecount--, nodeid++, sid++) {
-		/* Skip extended, and non-active node's */
-                while (sid->extended)
-			sid++;
-                if (!sid->link_active)
-			continue;
 
-		if (read_businfo_block (host, nodeid, buffer, sizeof(buffer) >> 2))
-			continue;
+	if (read_businfo_block (npt->host, npt->nodeid, buffer, sizeof(buffer) >> 2))
+		goto probe_complete;
 
-		if (buffer[1] != IEEE1394_BUSID_MAGIC) {
-			/* This isn't a 1394 device */
-			HPSB_ERR("Node " NODE_BUS_FMT " isn't an IEEE 1394 device",
-				 NODE_BUS_ARGS(nodeid));
-			continue;
-		}
+	if (buffer[1] != IEEE1394_BUSID_MAGIC) {
+		/* This isn't a 1394 device */
+		HPSB_ERR("Node " NODE_BUS_FMT " isn't an IEEE 1394 device",
+			 NODE_BUS_ARGS(npt->nodeid));
+		goto probe_complete;
+	}
 
-		guid = ((u64)buffer[3] << 32) | buffer[4];
-		ne = hpsb_guid_get_entry(guid);
+	guid = ((u64)buffer[3] << 32) | buffer[4];
+	ne = hpsb_guid_get_entry(guid);
 
-		if (!ne)
-			nodemgr_create_node(guid, buffer[2], host, nodeid);
-		else
-			nodemgr_update_node(ne, buffer[2], host, nodeid);
-        }
+	if (!ne)
+		nodemgr_create_node(guid, buffer[2], npt->host, npt->nodeid);
+	else
+		nodemgr_update_node(ne, buffer[2], npt->host, npt->nodeid);
+
+probe_complete:
+	atomic_dec(npt->count);
+
+	kfree(npt);
+
+	return;
+}
+
+static void nodemgr_node_probe_cleanup(void *__npt)
+{
+	struct node_probe_task *npt = (struct node_probe_task *)__npt;
+	unsigned long flags;
+	struct list_head *lh, *next;
+	struct node_entry *ne;
+
+	/* If things aren't done yet, reschedule ourselves. */
+        if (atomic_read(npt->count)) {
+                schedule_task(&npt->task);
+		return;
+	}
+
+	kfree(npt->count);
 
 	/* Now check to see if we have any nodes that aren't referenced
 	 * any longer.  */
-        write_lock_irqsave(&node_lock, flags);
+	write_lock_irqsave(&node_lock, flags);
 	for (lh = node_list.next; lh != &node_list; lh = next) {
 		ne = list_entry(lh, struct node_entry, list);
 		next = lh->next;
 
 		/* Only checking this host */
-		if (ne->host != host)
+		if (ne->host != npt->host)
 			continue;
 
 		/* If the generation didn't get updated, then either the
@@ -741,9 +757,70 @@ static void nodemgr_node_probe(void *data)
 	}
 	write_unlock_irqrestore(&node_lock, flags);
 
+	kfree(npt);
+
 	return;
 }
 
+static void nodemgr_node_probe(void *__host)
+{
+	struct hpsb_host *host = (struct hpsb_host *)__host;
+	int nodecount = host->node_count;
+	struct selfid *sid = (struct selfid *)host->topology_map;
+	nodeid_t nodeid = LOCAL_BUS;
+	struct node_probe_task *npt;
+	atomic_t *count;
+
+	count = kmalloc(sizeof (*count), GFP_KERNEL);
+
+	if (count == NULL) {
+		HPSB_ERR ("NodeMgr: out of memory in nodemgr_node_probe");
+		return;
+	}
+
+	atomic_set(count, 0);
+
+	for (; nodecount; nodecount--, nodeid++, sid++) {
+		while (sid->extended)
+			sid++;
+		if (!sid->link_active || nodeid == host->node_id)
+			continue;
+
+		npt = kmalloc(sizeof (*npt), GFP_KERNEL);
+
+		if (npt == NULL) {
+			HPSB_ERR ("NodeMgr: out of memory in nodemgr_node_probe");
+			break;
+		}
+
+		INIT_TQUEUE(&npt->task, nodemgr_node_probe_one, npt);
+		npt->host = host;
+		npt->nodeid = nodeid;
+		npt->count = count;
+
+		atomic_inc(count);
+
+		schedule_task(&npt->task);
+	}
+
+	/* Now schedule a task to clean things up after the node probes
+	 * are done.  */
+	npt = kmalloc (sizeof (*npt), GFP_KERNEL);
+
+	if (npt == NULL) {
+		HPSB_ERR ("NodeMgr: out of memory in nodemgr_node_probe");
+		return;
+	}
+
+	INIT_TQUEUE(&npt->task, nodemgr_node_probe_cleanup, npt);
+	npt->host = host;
+	npt->nodeid = 0;
+	npt->count = count;
+
+	schedule_task(&npt->task);
+
+	return;
+}
 
 struct node_entry *hpsb_guid_get_entry(u64 guid)
 {
@@ -864,7 +941,7 @@ static void nodemgr_remove_host(struct hpsb_host *host)
 	write_unlock_irqrestore(&node_lock, flags);
 
 	spin_lock_irqsave (&host_info_lock, flags);
-	list_for_each(lh, &host_info_list) {
+	list_for_each_safe(lh, next, &host_info_list) {
 		struct host_info *hi = list_entry(lh, struct host_info, list);
 		if (hi->host == host) {
 			list_del(&hi->list);

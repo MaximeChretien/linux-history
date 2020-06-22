@@ -1,4 +1,4 @@
-/* $Id: bkm_a4t.c,v 1.13.6.6 2001/09/23 22:24:46 kai Exp $
+/* $Id: bkm_a4t.c,v 1.1.4.1 2001/11/20 14:19:35 kai Exp $
  *
  * low level stuff for T-Berkom A4T
  *
@@ -24,7 +24,7 @@
 
 extern const char *CardType[];
 
-const char *bkm_a4t_revision = "$Revision: 1.13.6.6 $";
+const char *bkm_a4t_revision = "$Revision: 1.1.4.1 $";
 
 
 static inline u_char

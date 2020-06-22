@@ -162,7 +162,7 @@ void reiserfs_release_objectid (struct reiserfs_transaction_handle *th,
 	i += 2;
     }
 
-    reiserfs_warning ("vs-15010: reiserfs_release_objectid: tried to free free object id (%lu)", 
+    reiserfs_warning ("vs-15011: reiserfs_release_objectid: tried to free free object id (%lu)\n", 
 		      ( long unsigned ) objectid_to_release);
 }
 

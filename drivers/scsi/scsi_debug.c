@@ -653,7 +653,6 @@ int scsi_debug_abort(Scsi_Cmnd * SCpnt)
 
 int scsi_debug_biosparam(Disk * disk, kdev_t dev, int *info)
 {
-	int size = disk->capacity;
 	info[0] = N_HEAD;
 	info[1] = N_SECTOR;
 	info[2] = N_CYLINDER;

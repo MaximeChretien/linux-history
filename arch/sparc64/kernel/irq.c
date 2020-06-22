@@ -1,4 +1,4 @@
-/* $Id: irq.c,v 1.109 2001/11/12 22:22:37 davem Exp $
+/* $Id: irq.c,v 1.112 2001/11/16 00:04:54 kanoj Exp $
  * irq.c: UltraSparc IRQ handling/init/registry.
  *
  * Copyright (C) 1997  David S. Miller  (davem@caip.rutgers.edu)
@@ -18,6 +18,7 @@
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/proc_fs.h>
+#include <linux/kbd_ll.h>
 
 #include <asm/ptrace.h>
 #include <asm/processor.h>
@@ -34,6 +35,7 @@
 #include <asm/softirq.h>
 #include <asm/starfire.h>
 #include <asm/uaccess.h>
+#include <asm/cache.h>
 
 #ifdef CONFIG_SMP
 static void distribute_irqs(void);
@@ -52,10 +54,10 @@ static void distribute_irqs(void);
  * at the same time.
  */
 
-struct ino_bucket ivector_table[NUM_IVECS] __attribute__ ((aligned (64)));
+struct ino_bucket ivector_table[NUM_IVECS] __attribute__ ((aligned (SMP_CACHE_BYTES)));
 
 #ifndef CONFIG_SMP
-unsigned int __up_workvec[16] __attribute__ ((aligned (64)));
+unsigned int __up_workvec[16] __attribute__ ((aligned (SMP_CACHE_BYTES)));
 #define irq_work(__cpu, __pil)	&(__up_workvec[(void)(__cpu), (__pil)])
 #else
 #define irq_work(__cpu, __pil)	&(cpu_data[(__cpu)].irq_worklists[(__pil)])
@@ -821,6 +823,11 @@ void handler_irq(int irq, struct pt_regs *regs)
 
 	irq_enter(cpu, irq);
 	kstat.irqs[cpu][irq]++;
+
+#ifdef CONFIG_PCI
+	if (irq == 9)
+		kbd_pt_regs = regs;
+#endif
 
 	/* Sliiiick... */
 #ifndef CONFIG_SMP

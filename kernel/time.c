@@ -70,11 +70,11 @@ extern rwlock_t xtime_lock;
  */
 asmlinkage long sys_time(int * tloc)
 {
-	int i;
+	struct timeval now; 
+	int i; 
 
-	/* SMP: This is fairly trivial. We grab CURRENT_TIME and 
-	   stuff it to user space. No side effects */
-	i = CURRENT_TIME;
+	do_gettimeofday(&now);
+	i = now.tv_sec;
 	if (tloc) {
 		if (put_user(i,tloc))
 			i = -EFAULT;

@@ -3003,7 +3003,7 @@ static int cs_ioctl(struct inode *inode, struct file *file, unsigned int cmd, un
 		return -ENODEV;
 
 	case SNDCTL_DSP_SETDUPLEX:
-		return -EINVAL;
+		return 0;
 
 	case SNDCTL_DSP_GETODELAY:
 		if (!(file->f_mode & FMODE_WRITE))

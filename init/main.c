@@ -591,6 +591,8 @@ asmlinkage void __init start_kernel(void)
 #endif
 	mem_init();
 	kmem_cache_sizes_init();
+	pgtable_cache_init();
+
 	mempages = num_physpages;
 
 	fork_init(mempages);

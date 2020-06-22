@@ -33,7 +33,7 @@ static int reiserfs_file_release (struct inode * inode, struct file * filp)
 
     /* fast out for when nothing needs to be done */
     if ((atomic_read(&inode->i_count) > 1 ||
-         !inode->u.reiserfs_i.i_pack_on_close || 
+         !(inode->u.reiserfs_i.i_flags & i_pack_on_close_mask) || 
          !tail_has_to_be_packed(inode))       && 
 	inode->u.reiserfs_i.i_prealloc_count <= 0) {
 	return 0;
@@ -50,7 +50,7 @@ static int reiserfs_file_release (struct inode * inode, struct file * filp)
     journal_end(&th, inode->i_sb, JOURNAL_PER_BALANCE_CNT * 3) ;
 
     if (atomic_read(&inode->i_count) <= 1 &&
-	inode->u.reiserfs_i.i_pack_on_close &&
+	(inode->u.reiserfs_i.i_flags & i_pack_on_close_mask) &&
         tail_has_to_be_packed (inode)) {
 	/* if regular file is released by last holder and it has been
 	   appended (we append by unformatted node only) or its direct
@@ -97,10 +97,16 @@ static int reiserfs_setattr(struct dentry *dentry, struct iattr *attr) {
 	/* version 2 items will be caught by the s_maxbytes check
 	** done for us in vmtruncate
 	*/
-        if (inode_items_version(inode) == ITEM_VERSION_1 && 
+	if (get_inode_item_key_version(inode) == KEY_FORMAT_3_5 &&
 	    attr->ia_size > MAX_NON_LFS)
             return -EFBIG ;
     }
+
+    if ((((attr->ia_valid & ATTR_UID) && (attr->ia_uid & ~0xffff)) ||
+	 ((attr->ia_valid & ATTR_GID) && (attr->ia_gid & ~0xffff))) &&
+	(get_inode_sd_version (inode) == STAT_DATA_V1))
+		/* stat data of format v3.5 has 16 bit uid and gid */
+	    return -EINVAL;
 
     error = inode_change_ok(inode, attr) ;
     if (!error)

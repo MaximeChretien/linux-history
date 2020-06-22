@@ -1,4 +1,4 @@
-/* $Id: isdn_audio.c,v 1.21.6.2 2001/09/23 22:24:31 kai Exp $
+/* $Id: isdn_audio.c,v 1.1.4.1 2001/11/20 14:19:33 kai Exp $
  *
  * Linux ISDN subsystem, audio conversion and compression (linklevel).
  *
@@ -15,7 +15,7 @@
 #include "isdn_audio.h"
 #include "isdn_common.h"
 
-char *isdn_audio_revision = "$Revision: 1.21.6.2 $";
+char *isdn_audio_revision = "$Revision: 1.1.4.1 $";
 
 /*
  * Misc. lookup-tables.

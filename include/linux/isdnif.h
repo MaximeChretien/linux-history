@@ -1,4 +1,4 @@
-/* $Id: isdnif.h,v 1.37.6.6 2001/09/23 22:25:05 kai Exp $
+/* $Id: isdnif.h,v 1.1.4.1 2001/11/20 14:19:38 kai Exp $
  *
  * Linux ISDN subsystem
  * Definition of the interface between the subsystem and its low-level drivers.

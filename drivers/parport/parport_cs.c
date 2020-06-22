@@ -5,7 +5,7 @@
     (specifically, for the Quatech SPP-100 EPP card: other cards will
     probably require driver tweaks)
     
-    parport_cs.c 1.20 2000/11/02 23:15:05
+    parport_cs.c 1.24 2001/10/13 14:04:05
 
     The contents of this file are subject to the Mozilla Public
     License Version 1.1 (the "License"); you may not use this file
@@ -57,32 +57,31 @@
 #include <pcmcia/cisreg.h>
 #include <pcmcia/ciscode.h>
 
+/*====================================================================*/
+
+/* Module parameters */
+
+MODULE_AUTHOR("David Hinds <dahinds@users.sourceforge.net>");
+MODULE_DESCRIPTION("PCMCIA parallel port card driver");
+MODULE_LICENSE("Dual MPL/GPL");
+
+#define INT_MODULE_PARM(n, v) static int n = v; MODULE_PARM(n, "i")
+
+/* Bit map of interrupts to choose from */
+INT_MODULE_PARM(irq_mask, 0xdeb8);
+static int irq_list[4] = { -1 };
+MODULE_PARM(irq_list, "1-4i");
+
+INT_MODULE_PARM(epp_mode, 1);
+
 #ifdef PCMCIA_DEBUG
-static int pc_debug = PCMCIA_DEBUG;
-MODULE_PARM(pc_debug, "i");
+INT_MODULE_PARM(pc_debug, PCMCIA_DEBUG);
 #define DEBUG(n, args...) if (pc_debug>(n)) printk(KERN_DEBUG args)
 static char *version =
-"parport_cs.c 1.20 2000/11/02 23:15:05 (David Hinds)";
+"parport_cs.c 1.24 2001/10/13 14:04:05 (David Hinds)";
 #else
 #define DEBUG(n, args...)
 #endif
-
-#ifndef VERSION
-#define VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
-#endif
-
-/*====================================================================*/
-
-/* Parameters that can be set with 'insmod' */
-
-/* Bit map of interrupts to choose from */
-static u_int irq_mask = 0xdeb8;
-static int irq_list[4] = { -1 };
-static int epp_mode = 1;
-
-MODULE_PARM(irq_mask, "i");
-MODULE_PARM(irq_list, "1-4i");
-MODULE_PARM(epp_mode, "i");
 
 /*====================================================================*/
 
@@ -104,9 +103,6 @@ static int parport_event(event_t event, int priority,
 
 static dev_info_t dev_info = "parport_cs";
 static dev_link_t *dev_list = NULL;
-
-extern struct parport_operations parport_pc_ops;
-static struct parport_operations parport_cs_ops;
 
 /*====================================================================*/
 
@@ -307,19 +303,6 @@ void parport_config(dev_link_t *link)
 	goto failed;
     }
 
-#if (LINUX_VERSION_CODE < VERSION(2,3,6))
-#if (LINUX_VERSION_CODE >= VERSION(2,2,8))
-    p->private_data = kmalloc(sizeof(struct parport_pc_private),
-			      GFP_KERNEL);
-    ((struct parport_pc_private *)(p->private_data))->ctr = 0x0c;
-#endif
-    parport_proc_register(p);
-    p->flags |= PARPORT_FLAG_COMA;
-    parport_pc_write_econtrol(p, 0x00);
-    parport_pc_write_control(p, 0x0c);
-    parport_pc_write_data(p, 0x00);
-#endif
-
     p->modes |= PARPORT_MODE_PCSPP;
     if (epp_mode)
 	p->modes |= PARPORT_MODE_TRISTATE | PARPORT_MODE_EPP;
@@ -365,14 +348,8 @@ void parport_cs_release(u_long arg)
 
     if (info->ndev) {
 	struct parport *p = info->port;
-#if (LINUX_VERSION_CODE < VERSION(2,3,6))
-	if (!(p->flags & PARPORT_FLAG_COMA))
-	    parport_quiesce(p);
-#endif
 	parport_proc_unregister(p);
-#if (LINUX_VERSION_CODE >= VERSION(2,2,8))
 	kfree(p->private_data);
-#endif
 	parport_unregister_port(p);
     }
     info->ndev = 0;
@@ -430,24 +407,6 @@ int parport_event(event_t event, int priority,
 
 /*====================================================================*/
 
-#if (LINUX_VERSION_CODE < VERSION(2,3,6))
-
-static void inc_use_count(void)
-{
-    MOD_INC_USE_COUNT;
-    parport_pc_ops.inc_use_count();
-}
-
-static void dec_use_count(void)
-{
-    MOD_DEC_USE_COUNT;
-    parport_pc_ops.dec_use_count();
-}
-
-#endif
-
-/*====================================================================*/
-
 static int __init init_parport_cs(void)
 {
     servinfo_t serv;
@@ -458,13 +417,6 @@ static int __init init_parport_cs(void)
 	       "does not match!\n");
 	return -1;
     }
-
-#if (LINUX_VERSION_CODE < VERSION(2,3,6))
-    /* This is to protect against unloading modules out of order */
-    parport_cs_ops = parport_pc_ops;
-    parport_cs_ops.inc_use_count = &inc_use_count;
-    parport_cs_ops.dec_use_count = &dec_use_count;
-#endif
 
     register_pccard_driver(&dev_info, &parport_attach, &parport_detach);
     return 0;
@@ -480,4 +432,3 @@ static void __exit exit_parport_cs(void)
 
 module_init(init_parport_cs);
 module_exit(exit_parport_cs);
-MODULE_LICENSE("Dual MPL/GPL");

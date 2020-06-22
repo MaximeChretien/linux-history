@@ -854,6 +854,8 @@ struct inode_operations {
 	int (*getattr) (struct dentry *, struct iattr *);
 };
 
+struct seq_file;
+
 /*
  * NOTE: write_inode, delete_inode, clear_inode, put_inode can be called
  * without the big kernel lock held in all filesystems.
@@ -905,6 +907,7 @@ struct super_operations {
 	 */
 	struct dentry * (*fh_to_dentry)(struct super_block *sb, __u32 *fh, int len, int fhtype, int parent);
 	int (*dentry_to_fh)(struct dentry *, __u32 *fh, int *lenp, int need_parent);
+	int (*show_options)(struct seq_file *, struct vfsmount *);
 };
 
 /* Inode state bits.. */

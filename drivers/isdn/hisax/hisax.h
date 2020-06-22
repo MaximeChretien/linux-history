@@ -1,4 +1,4 @@
-/* $Id: hisax.h,v 2.52.6.9 2001/09/23 22:24:48 kai Exp $
+/* $Id: hisax.h,v 1.1.4.2 2001/12/09 19:15:28 kai Exp $
  *
  * Basic declarations, defines and prototypes
  *
@@ -949,8 +949,6 @@ struct IsdnCardState {
 #define  MON1_RX	2
 #define  MON0_TX	4
 #define  MON1_TX	8
-
-#define	 HISAX_MAX_CARDS	8
 
 #define  ISDN_CTYPE_16_0	1
 #define  ISDN_CTYPE_8_0		2

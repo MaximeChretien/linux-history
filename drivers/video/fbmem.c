@@ -931,3 +931,5 @@ EXPORT_SYMBOL(num_registered_fb);
 #if 1 /* to go away in 2.5.0 */
 EXPORT_SYMBOL(GET_FB_IDX);
 #endif
+
+MODULE_LICENSE("GPL");

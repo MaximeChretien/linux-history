@@ -100,6 +100,7 @@
 #include <linux/tqueue.h>
 #include <linux/bootmem.h>
 #include <linux/pm.h>
+#include <linux/smp_lock.h>
 
 #include <asm/io.h>
 #include <asm/system.h>
@@ -2348,17 +2349,25 @@ static void con_start(struct tty_struct *tty)
 	set_leds();
 }
 
+/*
+ * we can race here against con_close, so we grab the bkl
+ * and check the pointer before calling set_cursor
+ */
 static void con_flush_chars(struct tty_struct *tty)
 {
-	struct vt_struct *vt = (struct vt_struct *)tty->driver_data;
+	struct vt_struct *vt;
 
 	if (in_interrupt())	/* from flush_to_ldisc */
 		return;
 
 	pm_access(pm_con);
+	lock_kernel();
 	acquire_console_sem();
-	set_cursor(vt->vc_num);
+	vt = (struct vt_struct *)tty->driver_data;
+	if (vt)
+		set_cursor(vt->vc_num);
 	release_console_sem();
+	unlock_kernel();
 }
 
 /*
@@ -2599,10 +2608,10 @@ void give_up_console(const struct consw *csw)
 
 static void set_vesa_blanking(unsigned long arg)
 {
-    char *argp = (char *)arg + 1;
-    unsigned int mode;
-    get_user(mode, argp);
-    vesa_blank_mode = (mode < 4) ? mode : 0;
+	char *argp = (char *)arg + 1;
+	unsigned int mode;
+	if (get_user(mode, argp) == 0)
+		vesa_blank_mode = (mode < 4) ? mode : 0;
 }
 
 /* We can't register the console with devfs during con_init(), because it

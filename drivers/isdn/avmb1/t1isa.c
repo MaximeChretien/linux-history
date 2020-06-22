@@ -1,4 +1,4 @@
-/* $Id: t1isa.c,v 1.16.6.7 2001/09/23 22:24:34 kai Exp $
+/* $Id: t1isa.c,v 1.1.4.1 2001/11/20 14:19:34 kai Exp $
  * 
  * Module for AVM T1 HEMA-card.
  * 
@@ -25,7 +25,7 @@
 #include "capilli.h"
 #include "avmcard.h"
 
-static char *revision = "$Revision: 1.16.6.7 $";
+static char *revision = "$Revision: 1.1.4.1 $";
 
 /* ------------------------------------------------------------- */
 

@@ -405,6 +405,10 @@ extern void ia64_load_extra (struct task_struct *task);
 	ia64_psr(ia64_task_regs(prev))->dfh = 1;				\
 	__switch_to(prev,next,last);						\
   } while (0)
+
+/* Return true if this CPU can call the console drivers in printk() */
+#define arch_consoles_callable() (cpu_online_map & (1UL << smp_processor_id()))
+
 #else
 # define switch_to(prev,next,last) do {						\
 	ia64_psr(ia64_task_regs(next))->dfh = (ia64_get_fpu_owner() != (next));	\

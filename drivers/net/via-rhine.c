@@ -161,7 +161,7 @@ static char version[] __devinitdata =
 KERN_INFO "via-rhine.c:v1.10-LK1.1.12  03/11/2001  Written by Donald Becker\n"
 KERN_INFO "  http://www.scyld.com/network/via-rhine.html\n";
 
-static char shortname[] __devinitdata = "via-rhine";
+static char shortname[] = "via-rhine";
 
 
 /* This driver was written to use PCI memory space, however most versions
@@ -1667,7 +1667,7 @@ static struct pci_driver via_rhine_driver = {
 	name:		"via-rhine",
 	id_table:	via_rhine_pci_tbl,
 	probe:		via_rhine_init_one,
-	remove:		via_rhine_remove_one,
+	remove:		__devexit_p(via_rhine_remove_one),
 };
 
 

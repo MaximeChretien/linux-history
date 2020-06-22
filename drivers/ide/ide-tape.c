@@ -6182,6 +6182,7 @@ static struct file_operations idetape_fops = {
 };
 
 MODULE_DESCRIPTION("ATAPI Streaming TAPE Driver");
+MODULE_LICENSE("GPL");
 
 static void __exit idetape_exit (void)
 {

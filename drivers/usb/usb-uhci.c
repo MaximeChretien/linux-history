@@ -3070,7 +3070,7 @@ static struct pci_driver uhci_pci_driver = {
 	id_table:	&uhci_pci_ids [0],
 
 	probe:		uhci_pci_probe,
-	remove:		uhci_pci_remove,
+	remove:		__devexit_p(uhci_pci_remove),
 
 #ifdef	CONFIG_PM
 	suspend:	uhci_pci_suspend,

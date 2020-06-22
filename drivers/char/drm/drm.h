@@ -104,7 +104,7 @@ typedef struct drm_tex_region {
 #include "i810_drm.h"
 #include "r128_drm.h"
 #include "radeon_drm.h"
-#ifdef CONFIG_DRM_SIS
+#if defined(CONFIG_DRM_SIS) || defined(CONFIG_DRM_SIS_MODULE)
 #include "sis_drm.h"
 #endif
 
@@ -483,7 +483,7 @@ typedef struct drm_scatter_gather {
 #define DRM_IOCTL_RADEON_INDIRECT	DRM_IOWR(0x4d, drm_radeon_indirect_t)
 #define DRM_IOCTL_RADEON_TEXTURE	DRM_IOWR(0x4e, drm_radeon_texture_t)
 
-#ifdef CONFIG_DRM_SIS
+#if defined(CONFIG_DRM_SIS) || defined(CONFIG_DRM_SIS_MODULE)
 /* SiS specific ioctls */
 #define SIS_IOCTL_FB_ALLOC		DRM_IOWR(0x44, drm_sis_mem_t)
 #define SIS_IOCTL_FB_FREE		DRM_IOW( 0x45, drm_sis_mem_t)

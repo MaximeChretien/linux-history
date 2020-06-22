@@ -106,15 +106,11 @@
 #include <linux/init.h>
 
 #ifdef CONFIG_ALL_PPC
-#include <asm/feature.h>
+#include <asm/machdep.h>
+#include <asm/pmac_feature.h>
 #include <asm/prom.h>
 #include <asm/pci-bridge.h>
 #endif
-
-/* Revert to old bus reset algorithm that works on my Pismo until
- * the new one is fixed
- */
-#undef BUSRESET_WORKAROUND
 
 #include "ieee1394.h"
 #include "ieee1394_types.h"
@@ -175,7 +171,7 @@ static struct pci_device_id ohci1394_pci_tbl[] __devinitdata = {
 MODULE_DEVICE_TABLE(pci, ohci1394_pci_tbl);
 
 static char version[] __devinitdata =
-	"v0.51 08/08/01 Ben Collins <bcollins@debian.org>";
+	"$Revision: 1.80 $ Ben Collins <bcollins@debian.org>";
 
 /* Module Parameters */
 MODULE_PARM(attempt_root,"i");
@@ -516,12 +512,9 @@ static int ohci_initialize(struct hpsb_host *host)
 	/* After enabling LPS, we need to wait for the connection
 	 * between phy and link to be established.  This should be
 	 * signaled by the LPS bit becoming 1, but this happens
-	 * immediately.  Instead we wait for reads from LinkControl to
-	 * give a valid result, i.e. not 0xffffffff. */
-	while (reg_read(ohci, OHCI1394_LinkControlSet) == 0xffffffff) {
-		DBGMSG(ohci->id, "waiting for phy-link connection");
-		mdelay(2);
-	}
+	 * immediately.  There seems to be no consistent way to wait
+	 * for this, but 50ms seems to be enough. */
+	mdelay(50);
 
 	/* Set the bus number */
 	reg_write(ohci, OHCI1394_NodeID, 0x0000ffc0);
@@ -1131,11 +1124,7 @@ static void ohci_irq_handler(int irq, void *dev_id,
 	 * selfIDComplete interrupt. */
 	spin_lock_irqsave(&ohci->event_lock, flags);
 	event = reg_read(ohci, OHCI1394_IntEventClear);
-#ifdef BUSRESET_WORKAROUND
-	reg_write(ohci, OHCI1394_IntEventClear, event);
-#else
 	reg_write(ohci, OHCI1394_IntEventClear, event & ~OHCI1394_busReset);
-#endif
 	spin_unlock_irqrestore(&ohci->event_lock, flags);
 
 	if (!event) return;
@@ -1154,11 +1143,17 @@ static void ohci_irq_handler(int irq, void *dev_id,
 		 * selfID phase, so we disable busReset interrupts, to
 		 * avoid burying the cpu in interrupt requests. */
 		spin_lock_irqsave(&ohci->event_lock, flags);
-#ifdef BUSRESET_WORKAROUND
-		reg_write(ohci, OHCI1394_IntEventClear, OHCI1394_busReset);
-#else
   		reg_write(ohci, OHCI1394_IntMaskClear, OHCI1394_busReset);
-#endif		
+		if (ohci->dev->vendor == PCI_VENDOR_ID_APPLE && 
+		    ohci->dev->device == PCI_DEVICE_ID_APPLE_UNI_N_FW) {
+  			udelay(10);
+  			while(reg_read(ohci, OHCI1394_IntEventSet) & OHCI1394_busReset) {
+  				reg_write(ohci, OHCI1394_IntEventClear, OHCI1394_busReset);
+				spin_unlock_irqrestore(&ohci->event_lock, flags);
+	  			udelay(10);
+				spin_lock_irqsave(&ohci->event_lock, flags);
+  			}
+  		}
 		spin_unlock_irqrestore(&ohci->event_lock, flags);
 		if (!host->in_bus_reset) {
 			DBGMSG(ohci->id, "irq_handler: Bus reset requested%s",
@@ -1309,12 +1304,10 @@ static void ohci_irq_handler(int irq, void *dev_id,
 
 		/* Finally, we clear the busReset event and reenable
 		 * the busReset interrupt. */
-#ifndef BUSRESET_WORKAROUND
 		spin_lock_irqsave(&ohci->event_lock, flags);
 		reg_write(ohci, OHCI1394_IntMaskSet, OHCI1394_busReset); 
 		reg_write(ohci, OHCI1394_IntEventClear, OHCI1394_busReset);
 		spin_unlock_irqrestore(&ohci->event_lock, flags);
-#endif
 		event &= ~OHCI1394_selfIDComplete;	
 	}
 
@@ -1966,8 +1959,6 @@ static void ohci_init_config_rom(struct ti_ohci *ohci)
 	cf_put_keyval(&cr, 0x03, 0x00005e);	/* Vendor ID */
 	cf_put_refer(&cr, 0x81, 2);		/* Textual description unit */
 	cf_put_keyval(&cr, 0x0c, 0x0083c0);	/* Node capabilities */
-	cf_put_refer(&cr, 0xd1, 3);		/* IPv4 unit directory */
-	cf_put_refer(&cr, 0xd1, 4);		/* IPv6 unit directory */
 	/* NOTE: Add other unit referers here, and append at bottom */
 	cf_unit_end(&cr);
 
@@ -1978,46 +1969,6 @@ static void ohci_init_config_rom(struct ti_ohci *ohci)
 	cf_put_4bytes(&cr, 'L', 'i', 'n', 'u');
 	cf_put_4bytes(&cr, 'x', ' ', '1', '3');
 	cf_put_4bytes(&cr, '9', '4', 0x0, 0x0);
-	cf_unit_end(&cr);
-
-	/* IPv4 unit directory, RFC 2734 */
-	cf_unit_begin(&cr, 3);
-	cf_put_keyval(&cr, 0x12, 0x00005e);	/* Unit spec ID */
-	cf_put_refer(&cr, 0x81, 6);		/* Textual description unit */
-	cf_put_keyval(&cr, 0x13, 0x000001);	/* Unit software version */
-	cf_put_refer(&cr, 0x81, 7);		/* Textual description unit */
-	cf_unit_end(&cr);
-
-	cf_unit_begin(&cr, 6);
-	cf_put_keyval(&cr, 0, 0);
-	cf_put_1quad(&cr, 0);
-	cf_put_4bytes(&cr, 'I', 'A', 'N', 'A');
-	cf_unit_end(&cr);
-
-	cf_unit_begin(&cr, 7);
-	cf_put_keyval(&cr, 0, 0);
-	cf_put_1quad(&cr, 0);
-	cf_put_4bytes(&cr, 'I', 'P', 'v', '4');
-	cf_unit_end(&cr);
-
-	/* IPv6 unit directory, draft-ietf-ipngwg-1394-01.txt */
-	cf_unit_begin(&cr, 4);
-	cf_put_keyval(&cr, 0x12, 0x00005e);	/* Unit spec ID */
-	cf_put_refer(&cr, 0x81, 8);		/* Textual description unit */
-	cf_put_keyval(&cr, 0x13, 0x000002);	/* (Proposed) Unit software version */
-	cf_put_refer(&cr, 0x81, 9);		/* Textual description unit */
-	cf_unit_end(&cr);
-
-	cf_unit_begin(&cr, 8);
-	cf_put_keyval(&cr, 0, 0);
-	cf_put_1quad(&cr, 0);
-	cf_put_4bytes(&cr, 'I', 'A', 'N', 'A');
-	cf_unit_end(&cr);
-
-	cf_unit_begin(&cr, 9);
-	cf_put_keyval(&cr, 0, 0);
-	cf_put_1quad(&cr, 0);
-	cf_put_4bytes(&cr, 'I', 'P', 'v', '6');
 	cf_unit_end(&cr);
 
 	ohci->csr_config_rom_length = cr.data - ohci->csr_config_rom_cpu;
@@ -2309,8 +2260,8 @@ static void remove_card(struct ti_ohci *ohci)
 
 		of_node = pci_device_to_OF_node(ohci->dev);
 		if (of_node) {
-			feature_set_firewire_power(of_node, 0);
-			feature_set_firewire_cable_power(of_node, 0);
+			pmac_call_feature(PMAC_FTR_1394_ENABLE, of_node, 0, 0);
+			pmac_call_feature(PMAC_FTR_1394_CABLE_POWER, of_node, 0, 0);
 		}
 	}
 #endif /* CONFIG_ALL_PPC */
@@ -2423,7 +2374,7 @@ static struct pci_driver ohci1394_driver = {
 	name:		OHCI1394_DRIVER_NAME,
 	id_table:	ohci1394_pci_tbl,
 	probe:		ohci1394_add_one,
-	remove:		ohci1394_remove_one,
+	remove:		__devexit_p(ohci1394_remove_one),
 };
 
 static void __exit ohci1394_cleanup (void)

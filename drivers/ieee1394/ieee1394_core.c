@@ -318,7 +318,7 @@ void hpsb_selfid_received(struct hpsb_host *host, quadlet_t sid)
 
 void hpsb_selfid_complete(struct hpsb_host *host, int phyid, int isroot)
 {
-        host->node_id = 0xffc0 | phyid;
+        host->node_id = LOCAL_BUS | phyid;
         host->in_bus_reset = 0;
         host->is_root = isroot;
 

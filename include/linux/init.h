@@ -111,7 +111,7 @@ extern struct kernel_param __setup_start, __setup_end;
  */
 #define module_exit(x)	__exitcall(x);
 
-#else
+#else	/* MODULE */
 
 #define __init
 #define __exit
@@ -141,7 +141,7 @@ typedef void (*__cleanup_module_func_t)(void);
 
 #define __setup(str,func) /* nothing */
 
-#endif
+#endif	/* !MODULE */
 
 #ifdef CONFIG_HOTPLUG
 #define __devinit
@@ -153,6 +153,18 @@ typedef void (*__cleanup_module_func_t)(void);
 #define __devinitdata __initdata
 #define __devexit __exit
 #define __devexitdata __exitdata
+#endif
+
+/* Functions marked as __devexit may be discarded at kernel link time, depending
+   on config options.  Newer versions of binutils detect references from
+   retained sections to discarded sections and flag an error.  Pointers to
+   __devexit functions must use __devexit_p(function_name), the wrapper will
+   insert either the function_name or NULL, depending on the config options.
+ */
+#if defined(MODULE) || defined(CONFIG_HOTPLUG)
+#define __devexit_p(x) x
+#else
+#define __devexit_p(x) NULL
 #endif
 
 #endif /* _LINUX_INIT_H */

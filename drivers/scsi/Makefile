@@ -25,6 +25,7 @@ export-objs	:= scsi_syms.o 53c700.o
 mod-subdirs	:= pcmcia ../acorn/scsi
 
 
+subdir-$(CONFIG_SCSI_AACRAID)	+= aacraid
 subdir-$(CONFIG_SCSI_AIC7XXX)	+= aic7xxx
 subdir-$(CONFIG_PCMCIA)		+= pcmcia
 
@@ -64,6 +65,9 @@ obj-$(CONFIG_SCSI_ULTRASTOR)	+= ultrastor.o
 obj-$(CONFIG_SCSI_AHA152X)	+= aha152x.o
 obj-$(CONFIG_SCSI_AHA1542)	+= aha1542.o
 obj-$(CONFIG_SCSI_AHA1740)	+= aha1740.o
+ifeq ($(CONFIG_SCSI_AACRAID),y)
+  obj-$(CONFIG_SCSI_AACRAID)	+= aacraid/aacraid.o
+endif
 ifeq ($(CONFIG_SCSI_AIC7XXX),y)
 obj-$(CONFIG_SCSI_AIC7XXX)	+= aic7xxx/aic7xxx_drv.o
 endif

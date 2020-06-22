@@ -1,4 +1,4 @@
-/* $Id: act2000_isa.h,v 1.4.6.1 2001/09/23 22:24:32 kai Exp $
+/* $Id: act2000_isa.h,v 1.1.4.1 2001/11/20 14:19:34 kai Exp $
  *
  * ISDN lowlevel-module for the IBM ISDN-S0 Active 2000 (ISA-Version).
  *

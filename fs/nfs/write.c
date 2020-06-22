@@ -305,18 +305,30 @@ region_locked(struct inode *inode, struct nfs_page *req)
 
 /*
  * Insert a write request into an inode
+ * Note: we sort the list in order to be able to optimize nfs_find_request()
+ *	 & co. for the 'write append' case. For 2.5 we may want to consider
+ *	 some form of hashing so as to perform well on random writes.
  */
 static inline void
 nfs_inode_add_request(struct inode *inode, struct nfs_page *req)
 {
+	struct list_head *pos, *head;
+	unsigned long pg_idx = page_index(req->wb_page);
+
 	if (!list_empty(&req->wb_hash))
 		return;
 	if (!NFS_WBACK_BUSY(req))
 		printk(KERN_ERR "NFS: unlocked request attempted hashed!\n");
-	if (list_empty(&inode->u.nfs_i.writeback))
+	head = &inode->u.nfs_i.writeback;
+	if (list_empty(head))
 		igrab(inode);
+	list_for_each_prev(pos, head) {
+		struct nfs_page *entry = nfs_inode_wb_entry(pos);
+		if (page_index(entry->wb_page) < pg_idx)
+			break;
+	}
 	inode->u.nfs_i.npages++;
-	list_add(&req->wb_hash, &inode->u.nfs_i.writeback);
+	list_add(&req->wb_hash, pos);
 	req->wb_count++;
 }
 
@@ -354,15 +366,18 @@ nfs_inode_remove_request(struct nfs_page *req)
 static inline struct nfs_page *
 _nfs_find_request(struct inode *inode, struct page *page)
 {
-	struct list_head	*head, *next;
+	struct list_head	*head, *pos;
+	unsigned long pg_idx = page_index(page);
 
 	head = &inode->u.nfs_i.writeback;
-	next = head->next;
-	while (next != head) {
-		struct nfs_page *req = nfs_inode_wb_entry(next);
-		next = next->next;
-		if (page_index(req->wb_page) != page_index(page))
+	list_for_each_prev(pos, head) {
+		struct nfs_page *req = nfs_inode_wb_entry(pos);
+		unsigned long found_idx = page_index(req->wb_page);
+
+		if (pg_idx < found_idx)
 			continue;
+		if (pg_idx != found_idx)
+			break;
 		req->wb_count++;
 		return req;
 	}
@@ -444,20 +459,20 @@ nfs_wait_on_requests(struct inode *inode, struct file *file, unsigned long idx_s
 	else
 		idx_end = idx_start + npages - 1;
 
-	spin_lock(&nfs_wreq_lock);
 	head = &inode->u.nfs_i.writeback;
-	p = head->next;
-	while (p != head) {
+ restart:
+	spin_lock(&nfs_wreq_lock);
+	list_for_each_prev(p, head) {
 		unsigned long pg_idx;
 		struct nfs_page *req = nfs_inode_wb_entry(p);
-
-		p = p->next;
 
 		if (file && req->wb_file != file)
 			continue;
 
 		pg_idx = page_index(req->wb_page);
-		if (pg_idx < idx_start || pg_idx > idx_end)
+		if (pg_idx < idx_start)
+			break;
+		if (pg_idx > idx_end)
 			continue;
 
 		if (!NFS_WBACK_BUSY(req))
@@ -468,9 +483,8 @@ nfs_wait_on_requests(struct inode *inode, struct file *file, unsigned long idx_s
 		nfs_release_request(req);
 		if (error < 0)
 			return error;
-		spin_lock(&nfs_wreq_lock);
-		p = head->next;
 		res++;
+		goto restart;
 	}
 	spin_unlock(&nfs_wreq_lock);
 	return res;
@@ -991,6 +1005,9 @@ nfs_writeback_done(struct rpc_task *task)
 	dprintk("NFS: %4d nfs_writeback_done (status %d)\n",
 		task->tk_pid, task->tk_status);
 
+	if (nfs_async_handle_jukebox(task))
+		return;
+
 	/* We can't handle that yet but we check for it nevertheless */
 	if (resp->count < argp->count && task->tk_status >= 0) {
 		static unsigned long    complain;
@@ -1183,6 +1200,9 @@ nfs_commit_done(struct rpc_task *task)
 
         dprintk("NFS: %4d nfs_commit_done (status %d)\n",
                                 task->tk_pid, task->tk_status);
+
+	if (nfs_async_handle_jukebox(task))
+		return;
 
 	nfs_write_attributes(inode, resp->fattr);
 	while (!list_empty(&data->pages)) {

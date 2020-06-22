@@ -3362,28 +3362,48 @@ static void usb_audio_featureunit(struct consmixstate *state, unsigned char *ftr
 	struct usb_device *dev = state->s->usbdev;
 	unsigned char data[1];
 #endif
+	unsigned char nr_logical_channels, i;
 
 	usb_audio_recurseunit(state, ftr[4]);
+
+	if (ftr[5] == 0 ) {
+		printk(KERN_ERR "usbaudio: wrong controls size in feature unit %u\n",ftr[3]);
+		return;
+	}
+
 	if (state->nrchannels == 0) {
 		printk(KERN_ERR "usbaudio: feature unit %u source has no channels\n", ftr[3]);
 		return;
 	}
 	if (state->nrchannels > 2)
 		printk(KERN_WARNING "usbaudio: feature unit %u: OSS mixer interface does not support more than 2 channels\n", ftr[3]);
-	if (state->nrchannels == 1 && ftr[0] == 7+ftr[5]) {
-		printk(KERN_DEBUG "usbaudio: workaround for Philips camera microphone descriptor enabled\n");
-		mchftr = ftr[6];
-		chftr = 0;
-	} else {
-		if (ftr[0] < 7+ftr[5]*(1+state->nrchannels)) {
-			printk(KERN_ERR "usbaudio: unit %u: invalid FEATURE_UNIT descriptor\n", ftr[3]);
-			return;
+
+		nr_logical_channels=(ftr[0]-7)/ftr[5]-1;
+
+		if (nr_logical_channels != state->nrchannels) {
+			printk(KERN_WARNING "usbaudio: warning: found %d of %d logical channels.\n", state->nrchannels,nr_logical_channels);
+
+		if (state->nrchannels == 1 && nr_logical_channels==0) {
+			printk(KERN_INFO "usbaudio: assuming the channel found is the master channel (got a Philips camera?). Should be fine.\n");
+		} else if (state->nrchannels == 1 && nr_logical_channels==2) {
+			printk(KERN_INFO "usbaudio: assuming that a stereo channel connected directly to a mixer is missing in search (got Labtec headset?). Should be fine.\n");
+			state->nrchannels=nr_logical_channels;
+		} else {
+			printk(KERN_WARNING "usbaudio: no idea what's going on..., contact linux-usb-devel@lists.sourceforge.net\n");
 		}
-		mchftr = ftr[6];
-		chftr = ftr[6+ftr[5]];
-		if (state->nrchannels > 1)
-			chftr &= ftr[6+2*ftr[5]];
 	}
+
+	/* There is always a master channel */
+	mchftr = ftr[6];
+	/* Binary AND over logical channels if they exist */
+	if (nr_logical_channels) {
+		chftr = ftr[6+ftr[5]];
+		for (i = 2; i <= nr_logical_channels; i++)
+			chftr &= ftr[6+i*ftr[5]];
+	} else {
+		chftr = 0;
+	}
+
 	/* volume control */
 	if (chftr & 2) {
 		ch = getmixchannel(state, getvolchannel(state));

@@ -1,5 +1,5 @@
 /*
- * ciscode.h 1.45 2000/08/12 02:08:23
+ * ciscode.h 1.48 2001/08/24 12:16:12
  *
  * The contents of this file are subject to the Mozilla Public License
  * Version 1.1 (the "License"); you may not use this file except in
@@ -16,8 +16,8 @@
  * are Copyright (C) 1999 David A. Hinds.  All Rights Reserved.
  *
  * Alternatively, the contents of this file may be used under the
- * terms of the GNU General Public License version 2 (the "GPL"), in which
- * case the provisions of the GPL are applicable instead of the
+ * terms of the GNU General Public License version 2 (the "GPL"), in
+ * which case the provisions of the GPL are applicable instead of the
  * above.  If you wish to allow the use of your version of this file
  * only under the terms of the GPL and not to allow others to use
  * your version of this file under the MPL, indicate your decision by
@@ -104,6 +104,8 @@
 #define PRODID_QUATECH_DUAL_RS232	0x0012
 #define PRODID_QUATECH_DUAL_RS232_D1	0x0007
 #define PRODID_QUATECH_QUAD_RS232	0x001b
+#define PRODID_QUATECH_DUAL_RS422	0x000e
+#define PRODID_QUATECH_QUAD_RS422	0x0045
 
 #define MANFID_SMC			0x0108
 #define PRODID_SMC_ETHER		0x0105

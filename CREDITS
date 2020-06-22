@@ -1147,6 +1147,16 @@ S: 77 Clarence Mews
 S: London SE16 1GD
 S: United Kingdom
 
+N: Jan Harkes
+E: jaharkes@cs.cmu.edu
+W: http://www.coda.cs.cmu.edu/
+D: Coda file system
+S: Computer Science Department
+S: Carnegie Mellon University
+S: 5000 Forbes Avenue
+S: Pittsburgh, Pennsylvania 15213
+S: USA
+
 N: Kai Harrekilde-Petersen
 E: kai.harrekilde@get2net.dk
 D: Original author of the ftape-HOWTO, i82078 fdc detection code.
@@ -1633,6 +1643,13 @@ D: PIIX chipset IDE
 S: ul. Matemblewska 1B/10
 S: 80-283 Gdansk
 S: Poland
+
+N: Jakob Kemi
+E: jakob.kemi@telia.com
+D: V4L W9966 Webcam driver
+S: Forsbyvägen 33
+S: 74143 Knivsta
+S: Sweden
 
 N: Gero Kuhlmann
 E: gero@gkminix.han.de
@@ -2495,7 +2512,7 @@ S: Wanniassa ACT 2903
 S: Australia
 
 N: Gerard Roudier
-E: groudier@iplus.fr
+E: groudier@free.fr
 D: Contributed to asynchronous read-ahead improvement
 S: 21 Rue Carnot
 S: 95170 Deuil La Barre

@@ -409,8 +409,18 @@ static void agp_generic_agp_enable(u32 mode)
 	 *        AGP devices and collect their data.
 	 */
 
-	while ((device = pci_find_class(PCI_CLASS_DISPLAY_VGA << 8,
-					device)) != NULL) {
+
+	pci_for_each_dev(device)
+	{
+		/*
+		 *	Enable AGP devices. Most will be VGA display but
+		 *	some may be coprocessors on non VGA devices too
+		 */
+		 
+		if((((device->class >> 16) & 0xFF) != PCI_BASE_CLASS_DISPLAY) &&
+			(device->class != (PCI_CLASS_PROCESSOR_CO << 8)))
+			continue;
+
 		pci_read_config_dword(device, 0x04, &scratch);
 
 		if (!(scratch & 0x00100000))
@@ -3242,8 +3252,18 @@ static void serverworks_agp_enable(u32 mode)
 	 *        AGP devices and collect their data.
 	 */
 
-	while ((device = pci_find_class(PCI_CLASS_DISPLAY_VGA << 8,
-					device)) != NULL) {
+
+	pci_for_each_dev(device)
+	{
+		/*
+		 *	Enable AGP devices. Most will be VGA display but
+		 *	some may be coprocessors on non VGA devices too
+		 */
+		 
+		if((((device->class >> 16) & 0xFF) != PCI_BASE_CLASS_DISPLAY) &&
+			(device->class != (PCI_CLASS_PROCESSOR_CO << 8)))
+			continue;
+
 		pci_read_config_dword(device, 0x04, &scratch);
 
 		if (!(scratch & 0x00100000))
@@ -3877,12 +3897,10 @@ static int __init agp_find_supported_device(void)
 
 		case PCI_DEVICE_ID_INTEL_830_M_0:
 			i810_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
-									   PCI_DEVICE_ID_INTEL_830_M_1,
-									   NULL);
-			if(PCI_FUNC(i810_dev->devfn) != 0) {
+					PCI_DEVICE_ID_INTEL_830_M_1, NULL);
+			if(i810_dev && PCI_FUNC(i810_dev->devfn) != 0) {
 				i810_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
-										   PCI_DEVICE_ID_INTEL_830_M_1,
-										   i810_dev);
+					PCI_DEVICE_ID_INTEL_830_M_1, i810_dev);
 			}
 
 			if (i810_dev == NULL) {

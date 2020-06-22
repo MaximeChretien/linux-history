@@ -170,10 +170,10 @@ static void shutdown_hosts(struct hpsb_host_template *tmpl)
 	list_for_each(hlh, &tmpl->hosts) {
 		host = list_entry(hlh, struct hpsb_host, list);
                 if (host->initialized) {
+                        highlevel_remove_host(host);
+
                         host->initialized = 0;
                         abort_requests(host);
-
-                        highlevel_remove_host(host);
 
                         tmpl->release_host(host);
                         while (test_bit(0, &host->timeout_tq.sync)) {

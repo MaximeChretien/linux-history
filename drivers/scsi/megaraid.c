@@ -4296,15 +4296,7 @@ mega_partsize(Disk * disk, kdev_t dev, int *geom)
 	int heads, cyls, sectors;
 	int capacity = disk->capacity;
 
-	int ma = MAJOR(dev);
-	int mi = (MINOR(dev) & ~0xf);
-
-	int block = 1024; 
-
-	if(blksize_size[ma])
-		block = blksize_size[ma][mi];
-		
-	if(!(bh = bread(MKDEV(ma,mi), 0, block)))
+	if(!(bh = bread(MKDEV(MAJOR(dev), MINOR(dev)&~0xf), 0, block_size(dev))))
 		return -1;
 
 	if( *(unsigned short *)(bh->b_data + 510) == 0xAA55 ) {

@@ -5,7 +5,7 @@
  *
  *		IPv4 Forwarding Information Base: semantics.
  *
- * Version:	$Id: fib_semantics.c,v 1.17 2000/08/19 23:22:56 davem Exp $
+ * Version:	$Id: fib_semantics.c,v 1.18 2001/10/31 21:55:54 davem Exp $
  *
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
  *
@@ -626,8 +626,6 @@ u32 __fib_res_prefsrc(struct fib_result *res)
 	return inet_select_addr(FIB_RES_DEV(*res), FIB_RES_GW(*res), res->scope);
 }
 
-#ifdef CONFIG_RTNETLINK
-
 int
 fib_dump_info(struct sk_buff *skb, u32 pid, u32 seq, int event,
 	      u8 tb_id, u8 type, u8 scope, void *dst, int dst_len, u8 tos,
@@ -697,8 +695,6 @@ rtattr_failure:
 	skb_trim(skb, b - skb->data);
 	return -1;
 }
-
-#endif /* CONFIG_RTNETLINK */
 
 #ifndef CONFIG_IP_NOSIOCRT
 

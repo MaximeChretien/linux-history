@@ -1,4 +1,4 @@
-/*  $Id: process.c,v 1.122 2001/10/18 09:06:36 davem Exp $
+/*  $Id: process.c,v 1.125 2001/11/17 00:10:48 davem Exp $
  *  arch/sparc64/kernel/process.c
  *
  *  Copyright (C) 1995, 1996 David S. Miller (davem@caip.rutgers.edu)
@@ -276,7 +276,12 @@ void __show_regs(struct pt_regs * regs)
 #ifdef CONFIG_SMP
 	unsigned long flags;
 
-	spin_lock_irqsave(&regdump_lock, flags);
+	/* Protect against xcall ipis which might lead to livelock on the lock */
+	__asm__ __volatile__("rdpr      %%pstate, %0\n\t"
+			     "wrpr      %0, %1, %%pstate"
+			     : "=r" (flags)
+			     : "i" (PSTATE_IE));
+	spin_lock(&regdump_lock);
 	printk("CPU[%d]: local_irq_count[%u] irqs_running[%d]\n",
 	       smp_processor_id(),
 	       local_irq_count(smp_processor_id()),
@@ -298,7 +303,9 @@ void __show_regs(struct pt_regs * regs)
 	       regs->u_regs[15]);
 	show_regwindow(regs);
 #ifdef CONFIG_SMP
-	spin_unlock_irqrestore(&regdump_lock, flags);
+	spin_unlock(&regdump_lock);
+	__asm__ __volatile__("wrpr	%0, 0, %%pstate"
+			     : : "r" (flags));
 #endif
 }
 
@@ -583,6 +590,11 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long sp,
 {
 	struct thread_struct *t = &p->thread;
 	char *child_trap_frame;
+
+#ifdef CONFIG_DEBUG_SPINLOCK
+	t->smp_lock_count = 0;
+	t->smp_lock_pc = 0;
+#endif
 
 	/* Calculate offset to stack_frame & pt_regs */
 	child_trap_frame = ((char *)p) + (THREAD_SIZE - (TRACEREG_SZ+REGWIN_SZ));

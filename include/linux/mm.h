@@ -422,6 +422,9 @@ extern int ptrace_detach(struct task_struct *, unsigned int);
 extern void ptrace_disable(struct task_struct *);
 extern int ptrace_check_attach(struct task_struct *task, int kill);
 
+int get_user_pages(struct task_struct *tsk, struct mm_struct *mm, unsigned long start,
+		int len, int write, int force, struct page **pages, struct vm_area_struct **vmas);
+
 /*
  * On a two-level page table, this ends up being trivial. Thus the
  * inlining and the symmetry break with pte_alloc() that does all
@@ -545,6 +548,15 @@ extern struct page *filemap_nopage(struct vm_area_struct *, unsigned long, int);
 
 #define GFP_DMA		__GFP_DMA
 
+static inline unsigned int pf_gfp_mask(unsigned int gfp_mask)
+{
+	/* avoid all memory balancing I/O methods if this task cannot block on I/O */
+	if (current->flags & PF_NOIO)
+		gfp_mask &= ~(__GFP_IO | __GFP_HIGHIO | __GFP_FS);
+
+	return gfp_mask;
+}
+	
 /* vma is the first one with  address < vma->vm_end,
  * and even  address < vma->vm_start. Have to extend vma. */
 static inline int expand_stack(struct vm_area_struct * vma, unsigned long address)
@@ -557,11 +569,13 @@ static inline int expand_stack(struct vm_area_struct * vma, unsigned long addres
 	 * before relocating the vma range ourself.
 	 */
 	address &= PAGE_MASK;
+ 	spin_lock(&vma->vm_mm->page_table_lock);
 	grow = (vma->vm_start - address) >> PAGE_SHIFT;
 	if (vma->vm_end - address > current->rlim[RLIMIT_STACK].rlim_cur ||
-	    ((vma->vm_mm->total_vm + grow) << PAGE_SHIFT) > current->rlim[RLIMIT_AS].rlim_cur)
+	    ((vma->vm_mm->total_vm + grow) << PAGE_SHIFT) > current->rlim[RLIMIT_AS].rlim_cur) {
+		spin_unlock(&vma->vm_mm->page_table_lock);
 		return -ENOMEM;
-	spin_lock(&vma->vm_mm->page_table_lock);
+	}
 	vma->vm_start = address;
 	vma->vm_pgoff -= grow;
 	vma->vm_mm->total_vm += grow;

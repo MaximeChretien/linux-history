@@ -4131,7 +4131,7 @@ int BusLogic_BIOSDiskParameters(SCSI_Disk_T *Disk, KernelDevice_T Device,
   /*
     Attempt to read the first 1024 bytes from the disk device.
   */
-  BufferHead = bread(MKDEV(MAJOR(Device), MINOR(Device) & ~0x0F), 0, 1024);
+  BufferHead = bread(MKDEV(MAJOR(Device), MINOR(Device) & ~0x0F), 0, block_size(Device));
   if (BufferHead == NULL) return 0;
   /*
     If the boot sector partition table flag is valid, search for a partition

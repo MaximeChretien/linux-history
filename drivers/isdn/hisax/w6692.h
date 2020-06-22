@@ -1,4 +1,4 @@
-/* $Id: w6692.h,v 1.2.6.2 2001/09/23 22:24:52 kai Exp $
+/* $Id: w6692.h,v 1.1.4.1 2001/11/20 14:19:36 kai Exp $
  *
  * Winbond W6692 specific defines
  *

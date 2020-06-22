@@ -1,4 +1,4 @@
-/* $Id: isdn_tty.c,v 1.94.6.9 2001/11/06 20:58:29 kai Exp $
+/* $Id: isdn_tty.c,v 1.1.4.1 2001/11/20 14:19:34 kai Exp $
  *
  * Linux ISDN subsystem, tty functions and AT-command emulator (linklevel).
  *
@@ -53,7 +53,7 @@ static int bit2si[8] =
 static int si2bit[8] =
 {4, 1, 4, 4, 4, 4, 4, 4};
 
-char *isdn_tty_revision = "$Revision: 1.94.6.9 $";
+char *isdn_tty_revision = "$Revision: 1.1.4.1 $";
 
 
 /* isdn_tty_try_read() is called from within isdn_tty_rcv_skb()

@@ -88,6 +88,9 @@
 #include <linux/adb.h>
 #include <linux/pmu.h>
 #endif
+#ifdef CONFIG_BOOTX_TEXT
+#include <asm/btext.h>
+#endif
 #ifdef CONFIG_NVRAM
 #include <linux/nvram.h>
 #endif
@@ -251,11 +254,11 @@ static int default_pll __initdata = 0;
 static int default_mclk __initdata = 0;
 
 #ifndef MODULE
-static const char *mode_option __initdata = NULL;
+static char *mode_option __initdata = NULL;
 #endif
 
 #ifdef CONFIG_PPC
-#ifdef CONFIG_NVRAM_NOT_DEFINED
+#ifndef CONFIG_NVRAM
 static int default_vmode __initdata = VMODE_NVRAM;
 static int default_cmode __initdata = CMODE_NVRAM;
 #else
@@ -271,31 +274,35 @@ static unsigned long phys_size[FB_MAX] __initdata = { 0, };
 static unsigned long phys_guiregbase[FB_MAX] __initdata = { 0, };
 #endif
 
-static const char m64n_gx[] __initdata = "mach64GX (ATI888GX00)";
-static const char m64n_cx[] __initdata = "mach64CX (ATI888CX00)";
-static const char m64n_ct[] __initdata = "mach64CT (ATI264CT)";
-static const char m64n_et[] __initdata = "mach64ET (ATI264ET)";
-static const char m64n_vta3[] __initdata = "mach64VTA3 (ATI264VT)";
-static const char m64n_vta4[] __initdata = "mach64VTA4 (ATI264VT)";
-static const char m64n_vtb[] __initdata = "mach64VTB (ATI264VTB)";
-static const char m64n_vt4[] __initdata = "mach64VT4 (ATI264VT4)";
-static const char m64n_gt[] __initdata = "3D RAGE (GT)";
-static const char m64n_gtb[] __initdata = "3D RAGE II+ (GTB)";
-static const char m64n_iic_p[] __initdata = "3D RAGE IIC (PCI)";
-static const char m64n_iic_a[] __initdata = "3D RAGE IIC (AGP)";
-static const char m64n_lt[] __initdata = "3D RAGE LT";
-static const char m64n_ltg[] __initdata = "3D RAGE LT-G";
-static const char m64n_gtc_ba[] __initdata = "3D RAGE PRO (BGA, AGP)";
-static const char m64n_gtc_ba1[] __initdata = "3D RAGE PRO (BGA, AGP, 1x only)";
-static const char m64n_gtc_bp[] __initdata = "3D RAGE PRO (BGA, PCI)";
-static const char m64n_gtc_pp[] __initdata = "3D RAGE PRO (PQFP, PCI)";
-static const char m64n_gtc_ppl[] __initdata = "3D RAGE PRO (PQFP, PCI, limited 3D)";
-static const char m64n_xl[] __initdata = "3D RAGE (XL)";
-static const char m64n_ltp_a[] __initdata = "3D RAGE LT PRO (AGP)";
-static const char m64n_ltp_p[] __initdata = "3D RAGE LT PRO (PCI)";
-static const char m64n_mob_p[] __initdata = "3D RAGE Mobility (PCI)";
-static const char m64n_mob_a[] __initdata = "3D RAGE Mobility (AGP)";
+#ifdef CONFIG_FB_ATY_GX
+static char m64n_gx[] __initdata = "mach64GX (ATI888GX00)";
+static char m64n_cx[] __initdata = "mach64CX (ATI888CX00)";
+#endif /* CONFIG_FB_ATY_GX */
 
+#ifdef CONFIG_FB_ATY_CT
+static char m64n_ct[] __initdata = "mach64CT (ATI264CT)";
+static char m64n_et[] __initdata = "mach64ET (ATI264ET)";
+static char m64n_vta3[] __initdata = "mach64VTA3 (ATI264VT)";
+static char m64n_vta4[] __initdata = "mach64VTA4 (ATI264VT)";
+static char m64n_vtb[] __initdata = "mach64VTB (ATI264VTB)";
+static char m64n_vt4[] __initdata = "mach64VT4 (ATI264VT4)";
+static char m64n_gt[] __initdata = "3D RAGE (GT)";
+static char m64n_gtb[] __initdata = "3D RAGE II+ (GTB)";
+static char m64n_iic_p[] __initdata = "3D RAGE IIC (PCI)";
+static char m64n_iic_a[] __initdata = "3D RAGE IIC (AGP)";
+static char m64n_lt[] __initdata = "3D RAGE LT";
+static char m64n_ltg[] __initdata = "3D RAGE LT-G";
+static char m64n_gtc_ba[] __initdata = "3D RAGE PRO (BGA, AGP)";
+static char m64n_gtc_ba1[] __initdata = "3D RAGE PRO (BGA, AGP, 1x only)";
+static char m64n_gtc_bp[] __initdata = "3D RAGE PRO (BGA, PCI)";
+static char m64n_gtc_pp[] __initdata = "3D RAGE PRO (PQFP, PCI)";
+static char m64n_gtc_ppl[] __initdata = "3D RAGE PRO (PQFP, PCI, limited 3D)";
+static char m64n_xl[] __initdata = "3D RAGE (XL)";
+static char m64n_ltp_a[] __initdata = "3D RAGE LT PRO (AGP)";
+static char m64n_ltp_p[] __initdata = "3D RAGE LT PRO (PCI)";
+static char m64n_mob_p[] __initdata = "3D RAGE Mobility (PCI)";
+static char m64n_mob_a[] __initdata = "3D RAGE Mobility (AGP)";
+#endif /* CONFIG_FB_ATY_CT */
 
 static const struct {
     u16 pci_id, chip_type;
@@ -357,24 +364,32 @@ static const struct {
 #endif /* CONFIG_FB_ATY_CT */
 };
 
-static const char ram_dram[] __initdata = "DRAM";
-static const char ram_vram[] __initdata = "VRAM";
-static const char ram_edo[] __initdata = "EDO";
-static const char ram_sdram[] __initdata = "SDRAM";
-static const char ram_sgram[] __initdata = "SGRAM";
-static const char ram_wram[] __initdata = "WRAM";
-static const char ram_off[] __initdata = "OFF";
-static const char ram_resv[] __initdata = "RESV";
+#if defined(CONFIG_FB_ATY_GX) || defined(CONFIG_FB_ATY_CT)
+static char ram_dram[] __initdata = "DRAM";
+#endif /* CONFIG_FB_ATY_GX || CONFIG_FB_ATY_CT */
 
 #ifdef CONFIG_FB_ATY_GX
-static const char *aty_gx_ram[8] __initdata = {
+static char ram_vram[] __initdata = "VRAM";
+#endif /* CONFIG_FB_ATY_GX */
+
+#ifdef CONFIG_FB_ATY_CT
+static char ram_edo[] __initdata = "EDO";
+static char ram_sdram[] __initdata = "SDRAM";
+static char ram_sgram[] __initdata = "SGRAM";
+static char ram_wram[] __initdata = "WRAM";
+static char ram_off[] __initdata = "OFF";
+static char ram_resv[] __initdata = "RESV";
+#endif /* CONFIG_FB_ATY_CT */
+
+#ifdef CONFIG_FB_ATY_GX
+static char *aty_gx_ram[8] __initdata = {
     ram_dram, ram_vram, ram_vram, ram_dram,
     ram_dram, ram_vram, ram_vram, ram_resv
 };
 #endif /* CONFIG_FB_ATY_GX */
 
 #ifdef CONFIG_FB_ATY_CT
-static const char *aty_ct_ram[8] __initdata = {
+static char *aty_ct_ram[8] __initdata = {
     ram_off, ram_dram, ram_edo, ram_edo,
     ram_sdram, ram_sgram, ram_wram, ram_resv
 };
@@ -819,6 +834,13 @@ static void atyfb_set_par(const struct atyfb_par *par,
 	display_info.disp_reg_address = info->ati_regbase_phys;
     }
 #endif /* CONFIG_FB_COMPAT_XPMAC */
+#ifdef CONFIG_BOOTX_TEXT
+    btext_update_display(info->frame_buffer_phys,
+			 (((par->crtc.h_tot_disp>>16) & 0xff)+1)*8,
+			 ((par->crtc.v_tot_disp>>16) & 0x7ff)+1,
+			 par->crtc.bpp,
+			 par->crtc.vxres*par->crtc.bpp/8);
+#endif /* CONFIG_BOOTX_TEXT */
 }
 
 static int atyfb_decode_var(const struct fb_var_screeninfo *var,
@@ -1638,6 +1660,8 @@ static int aty_sleep_notify(struct pmu_sleep_notifier *self, int when)
 			}
 			break;
 		case PBOOK_SLEEP_NOW:
+			if (currcon >= 0)
+				fb_display[currcon].dispsw = &fbcon_dummy;
 			if (info->blitter_may_be_busy)
 				wait_for_idle(info);
 			/* Stop accel engine (stop bus mastering) */
@@ -1667,7 +1691,11 @@ static int aty_sleep_notify(struct pmu_sleep_notifier *self, int when)
 				info->save_framebuffer = 0;
 			}
 			/* Restore display */
-			atyfb_set_par(&info->current_par, info);
+			if (currcon >= 0) {
+				atyfb_set_dispsw(&fb_display[currcon],
+					info, info->current_par.crtc.bpp,
+					info->current_par.accel_flags & FB_ACCELF_TEXT);
+			}
 			atyfbcon_blank(0, (struct fb_info *)info);
 			break;
 		}
@@ -2020,13 +2048,6 @@ found:
 		if (!mac_find_mode(&var, &info->fb_info, mode_option, 8))
 		    var = default_var;
 	    } else {
-#ifdef CONFIG_NVRAM
-		if (default_vmode == VMODE_NVRAM) {
-		    default_vmode = nvram_read_byte(NV_VMODE);
-		    if (default_vmode <= 0 || default_vmode > VMODE_MAX)
-			default_vmode = VMODE_CHOOSE;
-		}
-#endif
 		if (default_vmode == VMODE_CHOOSE) {
 		    if (M64_HAS(G3_PB_1024x768))
 			/* G3 PowerBook with 1024x768 LCD */
@@ -2139,11 +2160,16 @@ int __init atyfb_init(void)
 	return -ENXIO;
 #else
     u16 tmp;
+    int aux_app;
+    unsigned long raddr;
 #endif
 
     while ((pdev = pci_find_device(PCI_VENDOR_ID_ATI, PCI_ANY_ID, pdev))) {
 	if ((pdev->class >> 16) == PCI_BASE_CLASS_DISPLAY) {
 	    struct resource *rp;
+#ifndef __sparc__
+	    struct resource *rrp;
+#endif
 
 	    for (i = sizeof(aty_chips)/sizeof(*aty_chips)-1; i >= 0; i--)
 		if (pdev->device == aty_chips[i].pci_id)
@@ -2375,9 +2401,19 @@ int __init atyfb_init(void)
 	    }
 #else /* __sparc__ */
 
-	    info->ati_regbase_phys = 0x7ff000 + addr;
-	    info->ati_regbase = (unsigned long)
-				ioremap(info->ati_regbase_phys, 0x1000);
+	    aux_app = 0;
+	    raddr = addr + 0x7ff000UL;
+	    rrp = &pdev->resource[2];
+	    if ((rrp->flags & IORESOURCE_MEM)
+		&& request_mem_region(rrp->start, rrp->end - rrp->start + 1,
+				      "atyfb")) {
+		    aux_app = 1;
+		    raddr = rrp->start;
+		    printk(KERN_INFO "atyfb: using auxiliary register aperture\n");
+	    }
+
+	    info->ati_regbase_phys = raddr;
+	    info->ati_regbase = (unsigned long) ioremap(raddr, 0x1000);
 
 	    if(!info->ati_regbase) {
 		    kfree(info);
@@ -2385,8 +2421,8 @@ int __init atyfb_init(void)
 		    return -ENOMEM;
 	    }
 
-	    info->ati_regbase_phys += 0xc00;
-	    info->ati_regbase += 0xc00;
+	    info->ati_regbase_phys += aux_app? 0x400: 0xc00;
+	    info->ati_regbase += aux_app? 0x400: 0xc00;
 
 	    /*
 	     * Enable memory-space accesses using config-space
@@ -2891,3 +2927,4 @@ void cleanup_module(void)
 }
 
 #endif
+MODULE_LICENSE("GPL");

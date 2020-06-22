@@ -1405,10 +1405,9 @@ static ssize_t i810_write(struct file *file, const char *buffer, size_t count, l
 		if (dmabuf->count < 0) {
 			dmabuf->count = 0;
 		}
-		cnt = dmabuf->dmasize - dmabuf->fragsize - dmabuf->count;
-		// this is to make the copy_from_user simpler below
-		if(cnt > (dmabuf->dmasize - swptr))
-			cnt = dmabuf->dmasize - swptr;
+		cnt = dmabuf->dmasize - swptr;
+		if(cnt > (dmabuf->dmasize - dmabuf->count))
+			cnt = dmabuf->dmasize - dmabuf->count;
 		spin_unlock_irqrestore(&state->card->lock, flags);
 
 #ifdef DEBUG2
@@ -1419,16 +1418,13 @@ static ssize_t i810_write(struct file *file, const char *buffer, size_t count, l
 		if (cnt <= 0) {
 			unsigned long tmo;
 			// There is data waiting to be played
+			i810_update_lvi(state,0);
 			if(!dmabuf->enable && dmabuf->count) {
 				/* force the starting incase SETTRIGGER has been used */
 				/* to stop it, otherwise this is a deadlock situation */
 				dmabuf->trigger |= PCM_ENABLE_OUTPUT;
 				start_dac(state);
 			}
-			// Update the LVI pointer in case we have already
-			// written data in this syscall and are just waiting
-			// on the tail bit of data
-			i810_update_lvi(state,0);
 			if (file->f_flags & O_NONBLOCK) {
 				if (!ret) ret = -EAGAIN;
 				goto ret;
@@ -1860,7 +1856,7 @@ static int i810_ioctl(struct inode *inode, struct file *file, unsigned int cmd, 
 		if(dmabuf->mapped)
 			abinfo.bytes = dmabuf->count;
 		else
-			abinfo.bytes = dmabuf->dmasize - dmabuf->count;
+			abinfo.bytes = dmabuf->dmasize - dmabuf->fragsize - dmabuf->count;
 		abinfo.fragments = abinfo.bytes / dmabuf->userfragsize;
 		spin_unlock_irqrestore(&state->card->lock, flags);
 #ifdef DEBUG

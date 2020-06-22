@@ -8,6 +8,7 @@
 
 #include <linux/config.h>
 #include <linux/threads.h>
+#include <linux/cache.h>
 #include <asm/asi.h>
 #include <asm/starfire.h>
 #include <asm/spitfire.h>
@@ -34,7 +35,7 @@ extern struct prom_cpuinfo linux_cpus[64];
 /* Per processor Sparc parameters we need. */
 
 /* Keep this a multiple of 64-bytes for cache reasons. */
-struct cpuinfo_sparc {
+typedef struct {
 	/* Dcache line 1 */
 	unsigned int	__pad0;		/* bh_count moved to irq_stat for consistency. KAO */
 	unsigned int	multiplier;
@@ -51,9 +52,9 @@ struct cpuinfo_sparc {
 
 	/* Dcache lines 3 and 4 */
 	unsigned int	irq_worklists[16];
-};
+} ____cacheline_aligned cpuinfo_sparc;
 
-extern struct cpuinfo_sparc cpu_data[NR_CPUS];
+extern cpuinfo_sparc cpu_data[NR_CPUS];
 
 /*
  *	Private routines/data

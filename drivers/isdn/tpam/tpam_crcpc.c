@@ -1,4 +1,4 @@
-/* $Id: tpam_crcpc.c,v 1.1.2.2 2001/09/23 22:25:03 kai Exp $
+/* $Id: tpam_crcpc.c,v 1.1.2.1 2001/11/20 14:19:37 kai Exp $
  *
  * Turbo PAM ISDN driver for Linux. (Kernel Driver - CRC encoding)
  *

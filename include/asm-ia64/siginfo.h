@@ -119,11 +119,11 @@ typedef struct siginfo {
 
 #define SI_USER		0		/* sent by kill, sigsend, raise */
 #define SI_KERNEL	0x80		/* sent by the kernel from somewhere */
-#define SI_QUEUE	-1		/* sent by sigqueue */
+#define SI_QUEUE	(-1)		/* sent by sigqueue */
 #define SI_TIMER __SI_CODE(__SI_TIMER,-2) /* sent by timer expiration */
-#define SI_MESGQ	-3		/* sent by real time mesq state change */
-#define SI_ASYNCIO	-4		/* sent by AIO completion */
-#define SI_SIGIO	-5		/* sent by queued SIGIO */
+#define SI_MESGQ	(-3)		/* sent by real time mesq state change */
+#define SI_ASYNCIO	(-4)		/* sent by AIO completion */
+#define SI_SIGIO	(-5)		/* sent by queued SIGIO */
 
 #define SI_FROMUSER(siptr)	((siptr)->si_code <= 0)
 #define SI_FROMKERNEL(siptr)	((siptr)->si_code > 0)

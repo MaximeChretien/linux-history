@@ -162,6 +162,16 @@ static __inline__ void list_splice(struct list_head *list, struct list_head *hea
 	for (pos = (head)->next, n = pos->next; pos != (head); \
 		pos = n, n = pos->next)
 
+/**
+ * list_for_each_prev	-	iterate over a list in reverse order
+ * @pos:	the &struct list_head to use as a loop counter.
+ * @head:	the head for your list.
+ */
+#define list_for_each_prev(pos, head) \
+	for (pos = (head)->prev, prefetch(pos->prev); pos != (head); \
+        	pos = pos->prev, prefetch(pos->prev))
+        	
+
 #endif /* __KERNEL__ || _LVM_H_INCLUDE */
 
 #endif

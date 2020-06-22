@@ -108,6 +108,7 @@ static int default_cmode = CMODE_NVRAM;
 #endif
 
 static void matroxfb_unregister_device(struct matrox_fb_info* minfo);
+int matroxfb_switch(int con, struct fb_info *info);
 
 /* --------------------------------------------------------------------- */
 

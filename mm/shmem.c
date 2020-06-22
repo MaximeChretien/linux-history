@@ -1193,7 +1193,7 @@ static struct inode_operations shmem_symlink_inode_operations = {
 	follow_link:	shmem_follow_link,
 };
 
-static int shmem_parse_options(char *options, int *mode, unsigned long * blocks, unsigned long *inodes)
+static int shmem_parse_options(char *options, int *mode, uid_t *uid, gid_t *gid, unsigned long * blocks, unsigned long *inodes)
 {
 	char *this_char, *value, *rest;
 
@@ -1205,7 +1205,7 @@ static int shmem_parse_options(char *options, int *mode, unsigned long * blocks,
 			*value++ = 0;
 		} else {
 			printk(KERN_ERR 
-			    "shmem_parse_options: No value for option '%s'\n", 
+			    "tmpfs: No value for mount option '%s'\n", 
 			    this_char);
 			return 1;
 		}
@@ -1230,8 +1230,20 @@ static int shmem_parse_options(char *options, int *mode, unsigned long * blocks,
 			*mode = simple_strtoul(value,&rest,8);
 			if (*rest)
 				goto bad_val;
+		} else if (!strcmp(this_char,"uid")) {
+			if (!uid)
+				continue;
+			*uid = simple_strtoul(value,&rest,0);
+			if (*rest)
+				goto bad_val;
+		} else if (!strcmp(this_char,"gid")) {
+			if (!gid)
+				continue;
+			*gid = simple_strtoul(value,&rest,0);
+			if (*rest)
+				goto bad_val;
 		} else {
-			printk(KERN_ERR "shmem_parse_options: Bad option %s\n",
+			printk(KERN_ERR "tmpfs: Bad mount option %s\n",
 			       this_char);
 			return 1;
 		}
@@ -1239,7 +1251,7 @@ static int shmem_parse_options(char *options, int *mode, unsigned long * blocks,
 	return 0;
 
 bad_val:
-	printk(KERN_ERR "shmem_parse_options: Bad value '%s' for option '%s'\n", 
+	printk(KERN_ERR "tmpfs: Bad value '%s' for mount option '%s'\n", 
 	       value, this_char);
 	return 1;
 
@@ -1251,7 +1263,7 @@ static int shmem_remount_fs (struct super_block *sb, int *flags, char *data)
 	unsigned long max_blocks = sbinfo->max_blocks;
 	unsigned long max_inodes = sbinfo->max_inodes;
 
-	if (shmem_parse_options (data, NULL, &max_blocks, &max_inodes))
+	if (shmem_parse_options (data, NULL, NULL, NULL, &max_blocks, &max_inodes))
 		return -EINVAL;
 	return shmem_set_size(sbinfo, max_blocks, max_inodes);
 }
@@ -1268,6 +1280,8 @@ static struct super_block *shmem_read_super(struct super_block * sb, void * data
 	struct dentry * root;
 	unsigned long blocks, inodes;
 	int mode   = S_IRWXUGO | S_ISVTX;
+	uid_t uid = current->fsuid;
+	gid_t gid = current->fsgid;
 	struct shmem_sb_info *sbinfo = SHMEM_SB(sb);
 	struct sysinfo si;
 
@@ -1279,10 +1293,8 @@ static struct super_block *shmem_read_super(struct super_block * sb, void * data
 	blocks = inodes = si.totalram / 2;
 
 #ifdef CONFIG_TMPFS
-	if (shmem_parse_options (data, &mode, &blocks, &inodes)) {
-		printk(KERN_ERR "tmpfs invalid option\n");
+	if (shmem_parse_options (data, &mode, &uid, &gid, &blocks, &inodes))
 		return NULL;
-	}
 #endif
 
 	spin_lock_init (&sbinfo->stat_lock);
@@ -1299,6 +1311,8 @@ static struct super_block *shmem_read_super(struct super_block * sb, void * data
 	if (!inode)
 		return NULL;
 
+	inode->i_uid = uid;
+	inode->i_gid = gid;
 	root = d_alloc_root(inode);
 	if (!root) {
 		iput(inode);

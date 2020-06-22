@@ -2273,6 +2273,22 @@ static struct pci_device_id eepro100_pci_tbl[] __devinitdata = {
 		PCI_ANY_ID, PCI_ANY_ID, },
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801BA_7,
 		PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, 	0x1032,
+		PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, 0x1033,
+		PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, 0x1034,
+		PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, 0x1038,
+		PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, 	0x1227,
+		PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, 	0x1228,
+		PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, 	0x5200,
+		PCI_ANY_ID, PCI_ANY_ID, },
+	{ PCI_VENDOR_ID_INTEL, 	0x5201,
+		PCI_ANY_ID, PCI_ANY_ID, },
 	{ 0,}
 };
 MODULE_DEVICE_TABLE(pci, eepro100_pci_tbl);
@@ -2281,7 +2297,7 @@ static struct pci_driver eepro100_driver = {
 	name:		"eepro100",
 	id_table:	eepro100_pci_tbl,
 	probe:		eepro100_init_one,
-	remove:		eepro100_remove_one,
+	remove:		__devexit_p(eepro100_remove_one),
 #ifdef CONFIG_PM
 	suspend:	eepro100_suspend,
 	resume:		eepro100_resume,

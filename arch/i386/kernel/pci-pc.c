@@ -30,7 +30,7 @@ int (*pci_config_write)(int seg, int bus, int dev, int fn, int reg, int len, u32
  * This interrupt-safe spinlock protects all accesses to PCI
  * configuration space.
  */
-spinlock_t pci_config_lock = SPIN_LOCK_UNLOCKED;
+static spinlock_t pci_config_lock = SPIN_LOCK_UNLOCKED;
 
 
 /*

@@ -3025,7 +3025,7 @@ static struct pci_driver bttv_pci_driver = {
         name:     "bttv",
         id_table: bttv_pci_tbl,
         probe:    bttv_probe,
-        remove:   bttv_remove,
+        remove:   __devexit_p(bttv_remove),
 };
 
 int bttv_init_module(void)

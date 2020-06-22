@@ -1,4 +1,4 @@
-/* $Id: callc.c,v 2.51.6.6 2001/09/23 22:24:46 kai Exp $
+/* $Id: callc.c,v 1.1.4.1 2001/11/20 14:19:35 kai Exp $
  *
  * Author       Karsten Keil
  * Copyright    by Karsten Keil      <keil@isdn4linux.de>
@@ -26,7 +26,7 @@
 #define MOD_USE_COUNT ( GET_USE_COUNT (&__this_module))
 #endif	/* MODULE */
 
-const char *lli_revision = "$Revision: 2.51.6.6 $";
+const char *lli_revision = "$Revision: 1.1.4.1 $";
 
 extern struct IsdnCard cards[];
 extern int nrcards;

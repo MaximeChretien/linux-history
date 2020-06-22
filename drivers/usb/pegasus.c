@@ -53,7 +53,7 @@
 /*
  * Version Information
  */
-#define DRIVER_VERSION "v0.4.21 (2001/08/27)"
+#define DRIVER_VERSION "v0.4.22 (2001/12/07)"
 #define DRIVER_AUTHOR "Petko Manolov <pmanolov@lnxw.com>"
 #define DRIVER_DESC "Pegasus/Pegasus II USB Ethernet driver"
 
@@ -713,10 +713,8 @@ static int pegasus_open(struct net_device *net)
 	pegasus_t *pegasus = (pegasus_t *)net->priv;
 	int	res;
 
-	MOD_INC_USE_COUNT;
 	if ( (res = enable_net_traffic(net, pegasus->usb)) ) {
 		err("can't enable_net_traffic() - %d", res);
-		MOD_DEC_USE_COUNT;
 		return -EIO;
 	}
 	FILL_BULK_URB( &pegasus->rx_urb, pegasus->usb,
@@ -755,7 +753,6 @@ static int pegasus_close( struct net_device *net )
 #ifdef	PEGASUS_USE_INTR
 	usb_unlink_urb( &pegasus->intr_urb );
 #endif
-	MOD_DEC_USE_COUNT;
 
 	return 0;
 }
@@ -867,6 +864,7 @@ static void * pegasus_probe( struct usb_device *dev, unsigned int ifnum,
 	
 	pegasus->usb = dev;
 	pegasus->net = net;
+	SET_MODULE_OWNER(net);
 	net->priv = pegasus;
 	net->open = pegasus_open;
 	net->stop = pegasus_close;

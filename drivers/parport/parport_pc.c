@@ -91,7 +91,9 @@ static struct superio_struct {	/* For Super-IO chips autodetection */
 } superios[NR_SUPERIOS] __devinitdata = { {0,},};
 
 static int user_specified __devinitdata = 0;
+#if defined(CONFIG_PARPORT_PC_FIFO) || defined(CONFIG_PARPORT_PC_SUPERIO)
 static int verbose_probing;
+#endif
 static int registered_parport;
 
 /* frob_control, but for ECR */
@@ -1780,6 +1782,7 @@ static int __devinit parport_PS2_supported(struct parport *pb)
 	return ok;
 }
 
+#ifdef CONFIG_PARPORT_PC_FIFO
 static int __devinit parport_ECP_supported(struct parport *pb)
 {
 	int i;
@@ -1905,6 +1908,7 @@ static int __devinit parport_ECP_supported(struct parport *pb)
 
 	return 1;
 }
+#endif
 
 static int __devinit parport_ECPPS2_supported(struct parport *pb)
 {
@@ -2004,7 +2008,9 @@ static int __devinit parport_ECPEPP_supported(struct parport *pb)
 
 /* Don't bother probing for modes we know we won't use. */
 static int __devinit parport_PS2_supported(struct parport *pb) { return 0; }
+#ifdef CONFIG_PARPORT_PC_FIFO
 static int __devinit parport_ECP_supported(struct parport *pb) { return 0; }
+#endif
 static int __devinit parport_EPP_supported(struct parport *pb) { return 0; }
 static int __devinit parport_ECPEPP_supported(struct parport *pb){return 0;}
 static int __devinit parport_ECPPS2_supported(struct parport *pb){return 0;}
@@ -2453,9 +2459,8 @@ static int __devinit sio_ite_8872_probe (struct pci_dev *pdev, int autoirq,
 		ite8872set = 0x64e00000;
 		break;
 	case 0x6:
-		printk (KERN_INFO "parport_pc: ITE8873 found (1S1P)\n");
-		ite8872set = 0x64a00000;
-		break;
+		printk (KERN_INFO "parport_pc: ITE8873 found (1S)\n");
+		return 0;
 	case 0x8:
 		DPRINTK (KERN_DEBUG "parport_pc: ITE8874 found (2S)\n");
 		return 0;
@@ -3007,7 +3012,7 @@ EXPORT_SYMBOL (parport_pc_unregister_port);
 static int io[PARPORT_PC_MAX_PORTS+1] = { [0 ... PARPORT_PC_MAX_PORTS] = 0 };
 static int io_hi[PARPORT_PC_MAX_PORTS+1] =
 	{ [0 ... PARPORT_PC_MAX_PORTS] = PARPORT_IOHI_AUTO };
-static int dmaval[PARPORT_PC_MAX_PORTS] = { [0 ... PARPORT_PC_MAX_PORTS-1] = PARPORT_DMA_AUTO };
+static int dmaval[PARPORT_PC_MAX_PORTS] = { [0 ... PARPORT_PC_MAX_PORTS-1] = PARPORT_DMA_NONE };
 static int irqval[PARPORT_PC_MAX_PORTS] = { [0 ... PARPORT_PC_MAX_PORTS-1] = PARPORT_IRQ_PROBEONLY };
 static const char *irq[PARPORT_PC_MAX_PORTS] = { NULL, };
 static const char *dma[PARPORT_PC_MAX_PORTS] = { NULL, };
@@ -3024,8 +3029,10 @@ MODULE_PARM_DESC(irq, "IRQ line");
 MODULE_PARM(irq, "1-" __MODULE_STRING(PARPORT_PC_MAX_PORTS) "s");
 MODULE_PARM_DESC(dma, "DMA channel");
 MODULE_PARM(dma, "1-" __MODULE_STRING(PARPORT_PC_MAX_PORTS) "s");
-MODULE_PARM(verbose_probing, "i");
+#if defined(CONFIG_PARPORT_PC_FIFO) || defined(CONFIG_PARPORT_PC_SUPERIO)
 MODULE_PARM_DESC(verbose_probing, "Log chit-chat during initialisation");
+MODULE_PARM(verbose_probing, "i");
+#endif
 
 int init_module(void)
 {	

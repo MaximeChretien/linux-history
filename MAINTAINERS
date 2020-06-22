@@ -148,8 +148,8 @@ S:	Supported
 ACPI
 P:	Andy Grover
 M:	andrew.grover@intel.com
-L:	acpi@phobos.fs.tum.de
-W:	http://phobos.fs.tum.de/acpi/index.html
+L:	acpi-devel@lists.sourceforge.net
+W:	http://sf.net/projects/acpi/
 S:	Maintained
 
 AD1816 SOUND DRIVER
@@ -285,6 +285,14 @@ P:	Nils Faerber (port to kernel 2.4)
 M:	Nils Faerber <nils@kernelconcepts.de>
 S:	Maintained
 
+CODA FILE SYSTEM
+P:	Jan Harkes
+M:	jaharkes@cs.cmu.edu
+M:	coda@cs.cmu.edu
+L:	codalist@coda.cs.cmu.edu
+W:	http://www.coda.cs.cmu.edu/
+S:	Maintained
+
 COMPAQ FIBRE CHANNEL 64-bit/66MHz PCI non-intelligent HBA
 P:      Amy Vanzant-Hodge 
 M:      Amy Vanzant-Hodge (fibrechannel@compaq.com)
@@ -402,6 +410,12 @@ P:	Steven Whitehouse
 M:	SteveW@ACM.org
 W:	http://www.sucs.swan.ac.uk/~rohan/DECnet/index.html
 L:	linux-decnet-user@lists.sourceforge.net
+S:	Maintained
+
+DELL LAPTOP SMM DRIVER
+P:	Massimo Dal Zotto
+M:	dz@debian.org
+W:	http://www.debian.org/~dz/i8k/
 S:	Maintained
 
 DEVICE NUMBER REGISTRY
@@ -917,6 +931,12 @@ M:     mge@sistina.de
 L:     linux-LVM@sistina.com
 W:     http://www.sistina.com/lvm
 S:     Maintained 
+
+LSILOGIC/SYMBIOS/NCR 53C8XX and 53C1010 PCI-SCSI drivers
+P:	Gerard Roudier
+M:	groudier@free.fr
+L:	linux-scsi@vger.kernel.org
+S:	Maintained
 
 M68K
 P:	Jes Sorensen
@@ -1660,8 +1680,8 @@ S:	Maintained
 W:	http://misc.nu/hugh/keyspan/
 
 USB SUBSYSTEM
-P:	Johannes Erdfelt
-M:	johannes@erdfelt.com
+P:	Greg Kroah-Hartman
+M:	greg@kroah.com
 L:	linux-usb-users@lists.sourceforge.net
 L:	linux-usb-devel@lists.sourceforge.net
 W:	http://www.linux-usb.org
@@ -1684,10 +1704,8 @@ S:	Maintained
 
 VIA 82Cxxx AUDIO DRIVER
 P:	Jeff Garzik
-M:	jgarzik@mandrakesoft.com
 L:	linux-via@gtf.org
-W:	http://sourceforge.net/projects/gkernel/
-S:	Maintained
+S:	Odd fixes
 
 USB DIAMOND RIO500 DRIVER
 P:	Cesar Miquel

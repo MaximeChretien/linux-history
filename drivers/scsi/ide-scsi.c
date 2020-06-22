@@ -785,7 +785,7 @@ int idescsi_queue (Scsi_Cmnd *cmd, void (*done)(Scsi_Cmnd *))
 	rq->buffer = (char *) pc;
 	rq->bh = idescsi_dma_bh (drive, pc);
 	rq->cmd = IDESCSI_PC_RQ;
-	spin_unlock(&io_request_lock);
+	spin_unlock_irq(&io_request_lock);
 	(void) ide_do_drive_cmd (drive, rq, ide_end);
 	spin_lock_irq(&io_request_lock);
 	return 0;

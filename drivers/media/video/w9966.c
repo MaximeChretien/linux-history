@@ -1,9 +1,7 @@
 /*
 	Winbond w9966cf Webcam parport driver.
 
-	Version 0.32
-
-	Copyright (C) 2001 Jakob Kemi <jakob.kemi@post.utfors.se>
+	Copyright (C) 2001 Jakob Kemi <jakob.kemi@telia.com>
 
 	This program is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -21,33 +19,16 @@
 */
 /*
 	Supported devices:
-	*Lifeview FlyCam Supra (using the Philips saa7111a chip)
-
-	Does any other model using the w9966 interface chip exist ?
+	  * Lifeview FlyCam Supra (using the Philips saa7111a chip)
 
 	Todo:
-	
-	*Add a working EPP mode, since DMA ECP read isn't implemented
-	in the parport drivers. (That's why it's so sloow)
+	  * Add a working EPP mode
+	  * Support other ccd-control chips than the saa7111
+	    (what combinations exists?)
+	  * Add proper probing. IEEE1284 probing of w9966 chips haven't
+	    worked since parport drivers changed in 2.4.x.
+	  * Probe for onboard SRAM, port directions etc. (if possible)
 
-	*Add support for other ccd-control chips than the saa7111
-	please send me feedback on what kind of chips you have.
-
-	*Add proper probing. I don't know what's wrong with the IEEE1284
-	parport drivers but (IEEE1284_MODE_NIBBLE|IEEE1284_DEVICE_ID)
-	and nibble read seems to be broken for some peripherals.
-
-	*Add probing for onboard SRAM, port directions etc. (if possible)
-
-	*Add support for the hardware compressed modes (maybe using v4l2)
-
-	*Fix better support for the capture window (no skewed images, v4l
-	interface to capt. window)
-
-	*Probably some bugs that I don't know of
-
-	Please support me by sending feedback!
-	
 	Changes:
 	
 	Alan Cox:	Removed RGB mode for kernel merge, added THIS_MODULE
@@ -59,6 +40,8 @@
 #include <linux/delay.h>
 #include <linux/videodev.h>
 #include <linux/parport.h>
+#include <linux/types.h>
+#include <linux/slab.h>
 
 //#define DEBUG				// Undef me for production
 
@@ -99,43 +82,44 @@
 #define W9966_I2C_W_CLOCK	0x01
 
 struct w9966_dev {
-	unsigned char dev_state;
-	unsigned char i2c_state;
-	unsigned short ppmode;
+	u8 dev_state;
+	u8 i2c_state;
+	int ppmode;
 	struct parport* pport;
 	struct pardevice* pdev;
 	struct video_device vdev;
-	unsigned short width;
-	unsigned short height;
-	unsigned char brightness;
-	signed char contrast;
-	signed char color;
-	signed char hue;
+	u16 width;
+	u16 height;
+	u8 brightness;
+	s8 contrast;
+	s8 color;
+	s8 hue;
+	u8* buffer;
 };
 
 /*
  *	Module specific properties
  */
 
-MODULE_AUTHOR("Jakob Kemi <jakob.kemi@post.utfors.se>");
-MODULE_DESCRIPTION("Winbond w9966cf WebCam driver (0.32)");
+MODULE_AUTHOR("Jakob Kemi <jakob.kemi@telia.com>");
+MODULE_DESCRIPTION("Winbond w9966cf WebCam driver (FlyCam Supra and others)");
 MODULE_LICENSE("GPL");
 
 
-#ifdef MODULE
-static const char* pardev[] = {[0 ... W9966_MAXCAMS] = ""};
-#else
-static const char* pardev[] = {[0 ... W9966_MAXCAMS] = "aggressive"};
-#endif
-MODULE_PARM(pardev, "1-" __MODULE_STRING(W9966_MAXCAMS) "s");
-MODULE_PARM_DESC(pardev, "pardev: where to search for\n\
-\teach camera. 'aggressive' means brute-force search.\n\
-\tEg: >pardev=parport3,aggressive,parport2,parport1< would assign
-\tcam 1 to parport3 and search every parport for cam 2 etc...");
+static const char* pardev[] = {[0 ... W9966_MAXCAMS] = "auto"};
+MODULE_PARM(pardev, "0-" __MODULE_STRING(W9966_MAXCAMS) "s");
+MODULE_PARM_DESC(pardev,"\n\
+<auto|name|none[,...]> Where to find cameras.\n\
+  auto = probe all parports for camera\n\
+  name = name of parport (eg parport0)\n\
+  none = don't search for this camera\n\
+You can specify all cameras this way, for example:
+  pardev=parport2,auto,none,parport0 would search for cam1 on parport2, search\n\
+  for cam2 on all parports, skip cam3 and search for cam4 on parport0");
 
 static int parmode = 0;
 MODULE_PARM(parmode, "i");
-MODULE_PARM_DESC(parmode, "parmode: transfer mode (0=auto, 1=ecp, 2=epp");
+MODULE_PARM_DESC(parmode, "\n<0|1|2> transfer mode (0=auto, 1=ecp, 2=epp)");
 
 static int video_nr = -1;
 MODULE_PARM(video_nr, "i");
@@ -277,17 +261,23 @@ static int w9966_init(struct w9966_dev* cam, struct parport* port)
 	case 0:
 		if (port->modes & PARPORT_MODE_ECP)
 			cam->ppmode = IEEE1284_MODE_ECP;
-		else if (port->modes & PARPORT_MODE_EPP)
-			cam->ppmode = IEEE1284_MODE_EPP;
+/*		else if (port->modes & PARPORT_MODE_EPP)
+			cam->ppmode = IEEE1284_MODE_EPP;*/
 		else
-			cam->ppmode = IEEE1284_MODE_ECP;
+			cam->ppmode = IEEE1284_MODE_ECPSWE;
 		break;	
 	case 1:		// hw- or sw-ecp
-		cam->ppmode = IEEE1284_MODE_ECP;
+		if (port->modes & PARPORT_MODE_ECP)
+			cam->ppmode = IEEE1284_MODE_ECP;
+		else
+			cam->ppmode = IEEE1284_MODE_ECPSWE;
 		break;
 	case 2:		// hw- or sw-epp
-		cam->ppmode = IEEE1284_MODE_EPP;
-	break;
+		if (port->modes & PARPORT_MODE_EPP)
+			cam->ppmode = IEEE1284_MODE_EPP;
+		else
+			cam->ppmode = IEEE1284_MODE_EPPSWE;
+		break;
 	}
 	
 // Tell the parport driver that we exists
@@ -325,6 +315,8 @@ static int w9966_init(struct w9966_dev* cam, struct parport* port)
 	
 	w9966_setState(cam, W9966_STATE_VDEV, W9966_STATE_VDEV);
 	
+	cam->buffer = NULL;
+	
 	// All ok
 	printk(
 		"w9966cf: Found and initialized a webcam on %s.\n",
@@ -337,6 +329,12 @@ static int w9966_init(struct w9966_dev* cam, struct parport* port)
 // Terminate everything gracefully
 static void w9966_term(struct w9966_dev* cam)
 {
+// Delete allocated buffer if needed
+	if (cam->buffer != NULL) {
+		kfree(cam->buffer);
+		cam->buffer = NULL;
+	}
+
 // Unregister from v4l
 	if (w9966_getState(cam, W9966_STATE_VDEV, W9966_STATE_VDEV)) {
 		video_unregister_device(&cam->vdev);
@@ -431,9 +429,9 @@ static int w9966_setup(struct w9966_dev* cam, int x1, int y1, int x2, int y2, in
 {
 	unsigned int i;
 	unsigned int enh_s, enh_e;
-	unsigned char scale_x, scale_y;
-	unsigned char regs[0x1c];
-	unsigned char saa7111_regs[] = {
+	u8 scale_x, scale_y;
+	u8 regs[0x1c];
+	u8 saa7111_regs[] = {
 		0x21, 0x00, 0xd8, 0x23, 0x00, 0x80, 0x80, 0x00,
 		0x88, 0x10, 0x80, 0x40, 0x40, 0x00, 0x01, 0x00,
 		0x48, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -664,6 +662,7 @@ static int w9966_rReg_i2c(struct w9966_dev* cam, int reg)
 	return data;
 }
 
+
 // Write a register to the i2c device.
 // Expects claimed pdev. -1 on error
 static int w9966_wReg_i2c(struct w9966_dev* cam, int reg, int data)
@@ -693,11 +692,23 @@ static int w9966_wReg_i2c(struct w9966_dev* cam, int reg, int data)
 
 static int w9966_v4l_open(struct video_device *vdev, int flags)
 {
+	struct w9966_dev *cam = (struct w9966_dev*)vdev->priv;
+	cam->buffer = (u8*)kmalloc(W9966_RBUFFER, GFP_KERNEL);
+	
+	if (cam->buffer == NULL)
+		return -EFAULT;
+
 	return 0;
 }
 
 static void w9966_v4l_close(struct video_device *vdev)
 {
+	struct w9966_dev *cam = (struct w9966_dev*)vdev->priv;
+	
+	if (cam->buffer != NULL) {
+		kfree(cam->buffer);
+		cam->buffer = NULL;
+	}
 }
 
 static int w9966_v4l_ioctl(struct video_device *vdev, unsigned int cmd, void *arg)
@@ -920,13 +931,12 @@ static long w9966_v4l_read(struct video_device *vdev, char *buf, unsigned long c
 	while(dleft > 0)
 	{
 		unsigned long tsize = (dleft > W9966_RBUFFER) ? W9966_RBUFFER : dleft;
-		unsigned char tbuf[W9966_RBUFFER];
 	
-		if (parport_read(cam->pport, tbuf, tsize) < tsize) {
+		if (parport_read(cam->pport, cam->buffer, tsize) < tsize) {
 			w9966_pdev_release(cam);
 			return -EFAULT;
 		}
-		if (copy_to_user(dest, tbuf, tsize) != 0) {
+		if (copy_to_user(dest, cam->buffer, tsize) != 0) {
 			w9966_pdev_release(cam);
 			return -EFAULT;
 		}
@@ -948,14 +958,14 @@ static void w9966_attach(struct parport *port)
 	
 	for (i = 0; i < W9966_MAXCAMS; i++)
 	{
+		if (strcmp(pardev[i], "none") == 0)	// Skip if 'none'
+			continue;
 		if (w9966_cams[i].dev_state != 0)	// Cam is already assigned
 			continue;
-		if (
-			strcmp(pardev[i], "aggressive") == 0 ||
-			strcmp(pardev[i], port->name) == 0
-		) {
+		if (strcmp(pardev[i], "auto") == 0 ||
+		    strcmp(pardev[i], port->name) == 0) {
 			if (w9966_init(&w9966_cams[i], port) != 0)
-			w9966_term(&w9966_cams[i]);
+				w9966_term(&w9966_cams[i]);
 			break;	// return
 		}
 	}

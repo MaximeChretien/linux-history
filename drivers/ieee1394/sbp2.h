@@ -403,6 +403,13 @@ struct sbp2scsi_host_info {
 	spinlock_t sbp2_request_packet_lock;
 
 	/*
+	 * This is the scsi host we register with the scsi mid level.
+	 * We keep a reference to it here, so we can unregister it
+	 * when the hpsb_host is removed.
+	 */
+	struct Scsi_Host *scsi_host;
+
+	/*
 	 * Lists keeping track of inuse/free sbp2_request_packets. These structures are
 	 * used for sending out sbp2 command and agent reset packets. We initially create
 	 * a pool of request packets so that we don't have to do any kmallocs while in critical
@@ -498,7 +505,6 @@ static int sbp2_max_speed_and_size(struct sbp2scsi_host_info *hi, struct scsi_id
 /*
  * Scsi interface related prototypes
  */
-static const char *sbp2scsi_info (struct Scsi_Host *host);
 static int sbp2scsi_detect (Scsi_Host_Template *tpnt);
 void sbp2scsi_setup(char *str, int *ints);
 static int sbp2scsi_biosparam (Scsi_Disk *disk, kdev_t dev, int geom[]);
@@ -509,6 +515,5 @@ static void sbp2scsi_complete_all_commands(struct sbp2scsi_host_info *hi, struct
 					   u32 status);
 static void sbp2scsi_complete_command(struct sbp2scsi_host_info *hi, struct scsi_id_instance_data *scsi_id, 
 				      u32 scsi_status, Scsi_Cmnd *SCpnt, void (*done)(Scsi_Cmnd *));
-static void sbp2scsi_register_scsi_host(struct sbp2scsi_host_info *hi);
 
 #endif /* SBP2_H */

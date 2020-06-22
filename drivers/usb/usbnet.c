@@ -1870,6 +1870,11 @@ static const struct usb_device_id	products [] = {
 	USB_DEVICE (0x0547, 0x2720),	// AnchorChips defaults
 	driver_info:	(unsigned long) &an2720_info,
 },
+
+{
+	USB_DEVICE (0x0547, 0x2727),	// Xircom PGUNET
+	driver_info:	(unsigned long) &an2720_info,
+},
 #endif
 
 #ifdef	CONFIG_USB_BELKIN

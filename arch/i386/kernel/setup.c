@@ -1280,9 +1280,27 @@ static int __init init_amd(struct cpuinfo_x86 *c)
 			}
 			break;
 
-		case 6:	/* An Athlon/Duron. We can trust the BIOS probably */
-			mcheck_init(c);
-			break;		
+		case 6: /* An Athlon/Duron */
+ 
+			/* Bit 15 of Athlon specific MSR 15, needs to be 0
+ 			 * to enable SSE on Palomino/Morgan CPU's.
+			 * If the BIOS didn't enable it already, enable it
+			 * here.
+			 */
+			if (c->x86_model == 6 || c->x86_model == 7) {
+				if (!test_bit(X86_FEATURE_XMM,
+					      &c->x86_capability)) {
+					printk(KERN_INFO
+					       "Enabling Disabled K7/SSE Support...\n");
+					rdmsr(MSR_K7_HWCR, l, h);
+					l &= ~0x00008000;
+					wrmsr(MSR_K7_HWCR, l, h);
+					set_bit(X86_FEATURE_XMM,
+                                                &c->x86_capability);
+				}
+			}
+			break;
+
 	}
 
 	display_cacheinfo(c);
@@ -1909,7 +1927,6 @@ static void __init init_centaur(struct cpuinfo_x86 *c)
 				c->x86_cache_size = (cc>>24)+(dd>>24);
 			}
 			sprintf( c->x86_model_id, "WinChip %s", name );
-			mcheck_init(c);
 			break;
 
 		case 6:
@@ -2193,9 +2210,56 @@ static void __init init_intel(struct cpuinfo_x86 *c)
 
 	if ( p )
 		strcpy(c->x86_model_id, p);
+	
+#ifdef CONFIG_SMP
+	if (test_bit(X86_FEATURE_HT, &c->x86_capability)) {
+		extern	int phys_proc_id[NR_CPUS];
+		
+		u32 	eax, ebx, ecx, edx;
+		int 	index_lsb, index_msb, tmp;
+		int	initial_apic_id;
+		int 	cpu = smp_processor_id();
 
-	/* Enable MCA if available */
-	mcheck_init(c);
+		cpuid(1, &eax, &ebx, &ecx, &edx);
+		smp_num_siblings = (ebx & 0xff0000) >> 16;
+
+		if (smp_num_siblings == 1) {
+			printk(KERN_INFO  "CPU: Hyper-Threading is disabled\n");
+		} else if (smp_num_siblings > 1 ) {
+			index_lsb = 0;
+			index_msb = 31;
+			/*
+			 * At this point we only support two siblings per
+			 * processor package.
+			 */
+#define NR_SIBLINGS	2
+			if (smp_num_siblings != NR_SIBLINGS) {
+				printk(KERN_WARNING "CPU: Unsuppored number of the siblings %d", smp_num_siblings);
+				smp_num_siblings = 1;
+				goto too_many_siblings;
+			}
+			tmp = smp_num_siblings;
+			while ((tmp & 1) == 0) {
+				tmp >>=1 ;
+				index_lsb++;
+			}
+			tmp = smp_num_siblings;
+			while ((tmp & 0x80000000 ) == 0) {
+				tmp <<=1 ;
+				index_msb--;
+			}
+			if (index_lsb != index_msb )
+				index_msb++;
+			initial_apic_id = ebx >> 24 & 0xff;
+			phys_proc_id[cpu] = initial_apic_id >> index_msb;
+
+			printk(KERN_INFO  "CPU: Physical Processor ID: %d\n",
+                               phys_proc_id[cpu]);
+		}
+
+	}
+too_many_siblings:
+#endif
 }
 
 void __init get_cpu_vendor(struct cpuinfo_x86 *c)
@@ -2575,7 +2639,7 @@ void __init identify_cpu(struct cpuinfo_x86 *c)
 		init_rise(c);
 		break;
 	}
-	
+
 	printk(KERN_DEBUG "CPU: After vendor init, caps: %08x %08x %08x %08x\n",
 	       c->x86_capability[0],
 	       c->x86_capability[1],
@@ -2601,6 +2665,9 @@ void __init identify_cpu(struct cpuinfo_x86 *c)
 
 	/* Disable the PN if appropriate */
 	squash_the_stupid_serial_number(c);
+
+	/* Init Machine Check Exception if available. */
+	mcheck_init(c);
 
 	/* If the model name is still unset, do table lookup. */
 	if ( !c->x86_model_id[0] ) {
@@ -2699,7 +2766,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	        "fpu", "vme", "de", "pse", "tsc", "msr", "pae", "mce",
 	        "cx8", "apic", NULL, "sep", "mtrr", "pge", "mca", "cmov",
 	        "pat", "pse36", "pn", "clflush", NULL, "dts", "acpi", "mmx",
-	        "fxsr", "sse", "sse2", "ss", NULL, "tm", "ia64", NULL,
+	        "fxsr", "sse", "sse2", "ss", "ht", "tm", "ia64", NULL,
 
 		/* AMD-defined */
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,

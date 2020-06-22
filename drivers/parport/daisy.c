@@ -23,7 +23,7 @@
 #include <linux/delay.h>
 #include <asm/uaccess.h>
 
-#define DEBUG /* undef me for production */
+#undef DEBUG /* undef me for production */
 
 #ifdef DEBUG
 #define DPRINTK(stuff...) printk (stuff)

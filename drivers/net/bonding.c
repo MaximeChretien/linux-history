@@ -185,7 +185,6 @@
 
 #include <linux/if_bonding.h>
 #include <linux/smp.h>
-#include <limits.h>
 #include <linux/if_ether.h>
 #include <linux/if_arp.h>
 

@@ -17,17 +17,6 @@
 #include <linux/reiserfs_fs.h>
 #include <linux/smp_lock.h>
 
-				/* there should be an overview right
-                                   here, as there should be in every
-                                   conceptual grouping of code.  This
-                                   should be combined with dir.c and
-                                   called dir.c (naming will become
-                                   too large to be called one file in
-                                   a few years), stop senselessly
-                                   imitating the incoherent
-                                   structuring of code used by other
-                                   filesystems.  */
-
 #define INC_DIR_INODE_NLINK(i) if (i->i_nlink != 1) { i->i_nlink++; if (i->i_nlink >= REISERFS_LINK_MAX) i->i_nlink=1; }
 #define DEC_DIR_INODE_NLINK(i) if (i->i_nlink != 1) i->i_nlink--;
 
@@ -105,7 +94,7 @@ static inline void store_de_entry_key (struct reiserfs_dir_entry * de)
 	BUG ();
 
     /* store key of the found entry */
-    de->de_entry_key.version = ITEM_VERSION_1;
+    de->de_entry_key.version = KEY_FORMAT_3_5;
     de->de_entry_key.on_disk_key.k_dir_id = le32_to_cpu (de->de_ih->ih_key.k_dir_id);
     de->de_entry_key.on_disk_key.k_objectid = le32_to_cpu (de->de_ih->ih_key.k_objectid);
     set_cpu_key_k_offset (&(de->de_entry_key), deh_offset (deh));
@@ -347,7 +336,7 @@ static int reiserfs_find_entry (struct inode * dir, const char * name, int namel
 // at the ext2 code and comparing. It's subfunctions contain no code
 // used as a template unless they are so labeled.
 //
-struct dentry * reiserfs_lookup (struct inode * dir, struct dentry * dentry)
+static struct dentry * reiserfs_lookup (struct inode * dir, struct dentry * dentry)
 {
     int retval;
     struct inode * inode = 0;
@@ -372,7 +361,6 @@ struct dentry * reiserfs_lookup (struct inode * dir, struct dentry * dentry)
     d_add(dentry, inode);
     return NULL;
 }
-
 
 //
 // a portion of this function, particularly the VFS interface portion,
@@ -518,7 +506,7 @@ static int reiserfs_add_entry (struct reiserfs_transaction_handle *th, struct in
 // at the ext2 code and comparing. It's subfunctions contain no code
 // used as a template unless they are so labeled.
 //
-int reiserfs_create (struct inode * dir, struct dentry *dentry, int mode)
+static int reiserfs_create (struct inode * dir, struct dentry *dentry, int mode)
 {
     int retval;
     struct inode * inode;
@@ -574,7 +562,7 @@ int reiserfs_create (struct inode * dir, struct dentry *dentry, int mode)
 // at the ext2 code and comparing. It's subfunctions contain no code
 // used as a template unless they are so labeled.
 //
-int reiserfs_mknod (struct inode * dir, struct dentry *dentry, int mode, int rdev)
+static int reiserfs_mknod (struct inode * dir, struct dentry *dentry, int mode, int rdev)
 {
     int retval;
     struct inode * inode;
@@ -629,7 +617,7 @@ int reiserfs_mknod (struct inode * dir, struct dentry *dentry, int mode, int rde
 // at the ext2 code and comparing. It's subfunctions contain no code
 // used as a template unless they are so labeled.
 //
-int reiserfs_mkdir (struct inode * dir, struct dentry *dentry, int mode)
+static int reiserfs_mkdir (struct inode * dir, struct dentry *dentry, int mode)
 {
     int retval;
     struct inode * inode;
@@ -708,16 +696,19 @@ static inline int reiserfs_empty_dir(struct inode *inode) {
 // at the ext2 code and comparing. It's subfunctions contain no code
 // used as a template unless they are so labeled.
 //
-int reiserfs_rmdir (struct inode * dir, struct dentry *dentry)
+static int reiserfs_rmdir (struct inode * dir, struct dentry *dentry)
 {
     int retval;
     struct inode * inode;
     int windex ;
     struct reiserfs_transaction_handle th ;
-    int jbegin_count = JOURNAL_PER_BALANCE_CNT * 3; 
+    int jbegin_count; 
     INITIALIZE_PATH (path);
     struct reiserfs_dir_entry de;
 
+
+    /* we will be doing 2 balancings and update 2 stat data */
+    jbegin_count = JOURNAL_PER_BALANCE_CNT * 2 + 2;
 
     journal_begin(&th, dir->i_sb, jbegin_count) ;
     windex = push_journal_writer("reiserfs_rmdir") ;
@@ -762,6 +753,9 @@ int reiserfs_rmdir (struct inode * dir, struct dentry *dentry)
     dir->i_blocks = ((dir->i_size + 511) >> 9);
     reiserfs_update_sd (&th, dir);
 
+    /* prevent empty directory from getting lost */
+    add_save_link (&th, inode, 0/* not truncate */);
+
     pop_journal_writer(windex) ;
     journal_end(&th, dir->i_sb, jbegin_count) ;
     reiserfs_check_path(&path) ;
@@ -785,7 +779,7 @@ int reiserfs_rmdir (struct inode * dir, struct dentry *dentry)
 // at the ext2 code and comparing. It's subfunctions contain no code
 // used as a template unless they are so labeled.
 //
-int reiserfs_unlink (struct inode * dir, struct dentry *dentry)
+static int reiserfs_unlink (struct inode * dir, struct dentry *dentry)
 {
     int retval;
     struct inode * inode;
@@ -793,7 +787,13 @@ int reiserfs_unlink (struct inode * dir, struct dentry *dentry)
     INITIALIZE_PATH (path);
     int windex ;
     struct reiserfs_transaction_handle th ;
-    int jbegin_count = JOURNAL_PER_BALANCE_CNT * 3; 
+    int jbegin_count;
+
+    inode = dentry->d_inode;
+
+    /* in this transaction we can be doing at max two balancings and update
+       two stat datas */
+    jbegin_count = JOURNAL_PER_BALANCE_CNT * 2 + 2;
 
     journal_begin(&th, dir->i_sb, jbegin_count) ;
     windex = push_journal_writer("reiserfs_unlink") ;
@@ -803,7 +803,6 @@ int reiserfs_unlink (struct inode * dir, struct dentry *dentry)
 	retval = -ENOENT;
 	goto end_unlink;
     }
-    inode = dentry->d_inode;
 
     reiserfs_update_inode_transaction(inode) ;
     reiserfs_update_inode_transaction(dir) ;
@@ -834,6 +833,10 @@ int reiserfs_unlink (struct inode * dir, struct dentry *dentry)
     dir->i_ctime = dir->i_mtime = CURRENT_TIME;
     reiserfs_update_sd (&th, dir);
 
+    if (!inode->i_nlink)
+       /* prevent file from getting lost */
+       add_save_link (&th, inode, 0/* not truncate */);
+
     pop_journal_writer(windex) ;
     journal_end(&th, dir->i_sb, jbegin_count) ;
     reiserfs_check_path(&path) ;
@@ -855,7 +858,7 @@ int reiserfs_unlink (struct inode * dir, struct dentry *dentry)
 // at the ext2 code and comparing. It's subfunctions contain no code
 // used as a template unless they are so labeled.
 //
-int reiserfs_symlink (struct inode * dir, struct dentry * dentry, const char * symname)
+static int reiserfs_symlink (struct inode * dir, struct dentry * dentry, const char * symname)
 {
     int retval;
     struct inode * inode;
@@ -932,7 +935,7 @@ int reiserfs_symlink (struct inode * dir, struct dentry * dentry, const char * s
 // at the ext2 code and comparing. It's subfunctions contain no code
 // used as a template unless they are so labeled.
 //
-int reiserfs_link (struct dentry * old_dentry, struct inode * dir, struct dentry * dentry)
+static int reiserfs_link (struct dentry * old_dentry, struct inode * dir, struct dentry * dentry)
 {
     int retval;
     struct inode *inode = old_dentry->d_inode;
@@ -1032,8 +1035,8 @@ static void set_ino_in_dir_entry (struct reiserfs_dir_entry * de, struct key * k
  * one path. If it holds 2 or more, it can get into endless waiting in
  * get_empty_nodes or its clones 
  */
-int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
-		     struct inode * new_dir, struct dentry *new_dentry)
+static int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
+			    struct inode * new_dir, struct dentry *new_dentry)
 {
     int retval;
     INITIALIZE_PATH (old_entry_path);
@@ -1044,8 +1047,13 @@ int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
     struct inode * old_inode, * new_inode;
     int windex ;
     struct reiserfs_transaction_handle th ;
-    int jbegin_count = JOURNAL_PER_BALANCE_CNT * 3; 
+    int jbegin_count ; 
 
+
+    /* two balancings: old name removal, new name insertion or "save" link,
+       stat data updates: old directory and new directory and maybe block
+       containing ".." of renamed directory */
+    jbegin_count = JOURNAL_PER_BALANCE_CNT * 3 + 3;
 
     old_inode = old_dentry->d_inode;
     new_inode = new_dentry->d_inode;
@@ -1096,8 +1104,8 @@ int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
 	// FIXME: is it possible, that new_inode == 0 here? If yes, it
 	// is not clear how does ext2 handle that
 	if (!new_inode) {
-	    printk ("reiserfs_rename: new entry is found, new inode == 0\n");
-	    BUG ();
+	    reiserfs_panic (old_dir->i_sb,
+			    "vs-7050: new entry is found, new inode == 0\n");
 	}
     } else if (retval) {
 	pop_journal_writer(windex) ;
@@ -1164,13 +1172,6 @@ int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
 	    reiserfs_restore_prepared_buffer (old_inode->i_sb, new_de.de_bh);
 	    if (S_ISDIR(old_inode->i_mode))
 		reiserfs_restore_prepared_buffer (old_inode->i_sb, dot_dot_de.de_bh);
-#if 0
-	    // FIXME: do we need this? shouldn't we simply continue?
-	    run_task_queue(&tq_disk);
-	    current->policy |= SCHED_YIELD;
-	    /*current->counter = 0;*/
-	    schedule();
-#endif
 	    continue;
 	}
 
@@ -1195,29 +1196,25 @@ int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
     if (new_inode) {
 	// adjust link number of the victim
 	if (S_ISDIR(new_inode->i_mode)) {
-	  DEC_DIR_INODE_NLINK(new_inode)
+	    new_inode->i_nlink  = 0;
 	} else {
-	  new_inode->i_nlink--;
+	    new_inode->i_nlink--;
 	}
 	new_inode->i_ctime = CURRENT_TIME;
     }
 
     if (S_ISDIR(old_inode->i_mode)) {
-      //if (dot_dot_de.de_bh) {
-	// adjust ".." of renamed directory
+	// adjust ".." of renamed directory 
 	set_ino_in_dir_entry (&dot_dot_de, INODE_PKEY (new_dir));
 	journal_mark_dirty (&th, new_dir->i_sb, dot_dot_de.de_bh);
-
-	DEC_DIR_INODE_NLINK(old_dir)
-	if (new_inode) {
-	    if (S_ISDIR(new_inode->i_mode)) {
-		DEC_DIR_INODE_NLINK(new_inode)
-	    } else {
-	        new_inode->i_nlink--;
-	    }
-	} else {
-	    INC_DIR_INODE_NLINK(new_dir)
-	}
+	
+        if (!new_inode)
+	    /* there (in new_dir) was no directory, so it got new link
+	       (".."  of renamed directory) */
+	    INC_DIR_INODE_NLINK(new_dir);
+		
+	/* old directory lost one link - ".. " of renamed directory */
+	DEC_DIR_INODE_NLINK(old_dir);
     }
 
     // looks like in 2.3.99pre3 brelse is atomic. so we can use pathrelse
@@ -1228,18 +1225,40 @@ int reiserfs_rename (struct inode * old_dir, struct dentry *old_dentry,
     // anybody, but it will panic if will not be able to find the
     // entry. This needs one more clean up
     if (reiserfs_cut_from_item (&th, &old_entry_path, &(old_de.de_entry_key), old_dir, NULL, 0) < 0)
-	reiserfs_warning ("vs-: reiserfs_rename: coudl not cut old name. Fsck later?\n");
+	reiserfs_warning ("vs-7060: reiserfs_rename: couldn't not cut old name. Fsck later?\n");
 
     old_dir->i_size -= DEH_SIZE + old_de.de_entrylen;
     old_dir->i_blocks = ((old_dir->i_size + 511) >> 9);
 
     reiserfs_update_sd (&th, old_dir);
     reiserfs_update_sd (&th, new_dir);
-    if (new_inode)
+
+    if (new_inode) {
+	if (new_inode->i_nlink == 0)
+	    add_save_link (&th, new_inode, 0/* not truncate */);
 	reiserfs_update_sd (&th, new_inode);
+    }
 
     pop_journal_writer(windex) ;
     journal_end(&th, old_dir->i_sb, jbegin_count) ;
     return 0;
 }
+
+
+
+/*
+ * directories can handle most operations...
+ */
+struct inode_operations reiserfs_dir_inode_operations = {
+  //&reiserfs_dir_operations,	/* default_file_ops */
+    create:	reiserfs_create,
+    lookup:	reiserfs_lookup,
+    link:	reiserfs_link,
+    unlink:	reiserfs_unlink,
+    symlink:	reiserfs_symlink,
+    mkdir:	reiserfs_mkdir,
+    rmdir:	reiserfs_rmdir,
+    mknod:	reiserfs_mknod,
+    rename:	reiserfs_rename,
+};
 

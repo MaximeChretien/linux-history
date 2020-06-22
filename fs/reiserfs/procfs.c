@@ -15,6 +15,7 @@
 #include <linux/sched.h>
 #include <asm/uaccess.h>
 #include <linux/reiserfs_fs.h>
+#include <linux/reiserfs_fs_sb.h>
 #include <linux/smp_lock.h>
 #include <linux/locks.h>
 #include <linux/init.h>
@@ -76,12 +77,20 @@ int reiserfs_version_in_proc( char *buffer, char **start, off_t offset,
 {
 	int len = 0;
 	struct super_block *sb;
+	char *format;
     
 	sb = procinfo_prologue( ( kdev_t ) ( int ) data );
 	if( sb == NULL )
 		return -ENOENT;
+	if ( sb->u.reiserfs_sb.s_properties & (1 << REISERFS_3_6) ) {
+		format = "3.6";
+	} else if ( sb->u.reiserfs_sb.s_properties & (1 << REISERFS_3_5) ) {
+		format = "3.5";
+	} else {
+		format = "unknown";
+	}
 	len += sprintf( &buffer[ len ], "%s format\twith checks %s\n",
-			old_format_only( sb ) ? "old" : "new",
+			format,
 #if defined( CONFIG_REISERFS_CHECK )
 			"on"
 #else
@@ -179,7 +188,7 @@ int reiserfs_super_in_proc( char *buffer, char **start, off_t offset,
 			dont_have_tails( sb ) ? "NO_TAILS " : "TAILS ",
 			replay_only( sb ) ? "REPLAY_ONLY " : "",
 			reiserfs_dont_log( sb ) ? "DONT_LOG " : "LOG ",
-			old_format_only( sb ) ? "CONV " : "",
+			convert_reiserfs( sb ) ? "CONV " : "",
 
 			atomic_read( &r -> s_generation_counter ),
 			SF( s_kmallocs ),

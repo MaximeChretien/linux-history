@@ -3,7 +3,7 @@
 # Direct Rendering Infrastructure (DRI) in XFree86 4.1.0 and higher.
 
 O_TARGET	:= drm.o
-list-multi	:= gamma.o tdfx.o r128.o mga.o i810.o radeon.o ffb.o
+list-multi	:= gamma.o tdfx.o r128.o mga.o i810.o radeon.o ffb.o sis.o
 
 gamma-objs  := gamma_drv.o gamma_dma.o
 tdfx-objs   := tdfx_drv.o
@@ -12,6 +12,7 @@ mga-objs    := mga_drv.o mga_dma.o mga_state.o mga_warp.o
 i810-objs   := i810_drv.o i810_dma.o
 radeon-objs := radeon_drv.o radeon_cp.o radeon_state.o
 ffb-objs    := ffb_drv.o ffb_context.o
+sis-objs    := sis_drv.o sis_ds.o sis_mm.o
 
 obj-$(CONFIG_DRM_GAMMA) += gamma.o
 obj-$(CONFIG_DRM_TDFX)	+= tdfx.o
@@ -20,6 +21,7 @@ obj-$(CONFIG_DRM_RADEON)+= radeon.o
 obj-$(CONFIG_DRM_MGA)	+= mga.o
 obj-$(CONFIG_DRM_I810)	+= i810.o
 obj-$(CONFIG_DRM_FFB)   += ffb.o
+obj-$(CONFIG_DRM_SIS)   += sis.o
 
 include $(TOPDIR)/Rules.make
 
@@ -43,3 +45,6 @@ radeon.o: $(radeon-objs) $(lib)
 
 ffb.o: $(ffb-objs) $(lib)
 	$(LD) -r -o $@ $(ffb-objs) $(lib)
+
+sis.o: $(sis-objs) $(lib)
+	$(LD) -r -o $@ $(sis-objs) $(lib)

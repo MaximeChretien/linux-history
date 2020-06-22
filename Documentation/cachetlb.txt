@@ -275,7 +275,7 @@ Here is the new interface:
 	for example, uses this technique.
 
 	The "address" parameter tells the virtual address where the
-	user will ultimately this page mapped.
+	user will ultimately have this page mapped.
 
 	If D-cache aliasing is not an issue, these two routines may
 	simply call memcpy/memset directly and do nothing more.

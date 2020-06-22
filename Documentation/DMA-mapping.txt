@@ -60,6 +60,9 @@ nor may you use kernel stack addresses for DMA.  Both of these items
 might be mapped somewhere entirely different than the rest of physical
 memory.
 
+Also, this means that you cannot take the return of a kmap()
+call and DMA to/from that.  This is similar to vmalloc().
+
 What about block I/O and networking buffers?  The block I/O and
 networking subsystems make sure that the buffers they use are valid
 for you to DMA from/to.

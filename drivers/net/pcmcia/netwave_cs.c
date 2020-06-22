@@ -200,6 +200,8 @@ MODULE_PARM(mem_speed, "i");
 MODULE_PARM(irq_mask, "i");
 MODULE_PARM(irq_list, "1-4i");
 
+MODULE_LICENSE("GPL");
+
 /*====================================================================*/
 
 /* PCMCIA (Card Services) related functions */
@@ -1597,4 +1599,3 @@ static void set_multicast_list(struct net_device *dev)
     writeb(rcvMode, ramBase + NETWAVE_EREG_CB + 1);
     writeb(NETWAVE_CMD_EOC, ramBase + NETWAVE_EREG_CB + 2);
 }
-MODULE_LICENSE("GPL");

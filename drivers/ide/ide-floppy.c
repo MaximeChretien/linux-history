@@ -2071,8 +2071,10 @@ static void __exit idefloppy_exit (void)
 		}
 		/* We must remove proc entries defined in this module.
 		   Otherwise we oops while accessing these entries */
+#ifdef CONFIG_PROC_FS
 		if (drive->proc)
 			ide_remove_proc_entries(drive->proc, idefloppy_proc);
+#endif
 	}
 	ide_unregister_module(&idefloppy_module);
 }

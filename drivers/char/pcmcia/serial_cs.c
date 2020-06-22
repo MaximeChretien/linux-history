@@ -2,7 +2,7 @@
 
     A driver for PCMCIA serial devices
 
-    serial_cs.c 1.123 2000/08/24 18:46:38
+    serial_cs.c 1.128 2001/10/18 12:18:35
 
     The contents of this file are subject to the Mozilla Public
     License Version 1.1 (the "License"); you may not use this file
@@ -19,8 +19,8 @@
     are Copyright (C) 1999 David A. Hinds.  All Rights Reserved.
 
     Alternatively, the contents of this file may be used under the
-    terms of the GNU General Public License version 2 (the "GPL"), in which
-    case the provisions of the GPL are applicable instead of the
+    terms of the GNU General Public License version 2 (the "GPL"), in
+    which case the provisions of the GPL are applicable instead of the
     above.  If you wish to allow the use of your version of this file
     only under the terms of the GPL and not to allow others to use
     your version of this file under the MPL, indicate your decision
@@ -44,6 +44,7 @@
 #include <linux/major.h>
 #include <asm/io.h>
 #include <asm/system.h>
+#include <asm/byteorder.h>
 
 #include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
@@ -53,30 +54,32 @@
 #include <pcmcia/ds.h>
 #include <pcmcia/cisreg.h>
 
+/*====================================================================*/
+
+/* Module parameters */
+
+MODULE_AUTHOR("David Hinds <dahinds@users.sourceforge.net>");
+MODULE_DESCRIPTION("PCMCIA serial card driver");
+MODULE_LICENSE("Dual MPL/GPL");
+
+#define INT_MODULE_PARM(n, v) static int n = v; MODULE_PARM(n, "i")
+
+/* Bit map of interrupts to choose from */
+INT_MODULE_PARM(irq_mask, 0xdeb8);
+static int irq_list[4] = { -1 };
+MODULE_PARM(irq_list, "1-4i");
+
+/* Enable the speaker? */
+INT_MODULE_PARM(do_sound, 1);
+
 #ifdef PCMCIA_DEBUG
-static int pc_debug = PCMCIA_DEBUG;
-MODULE_PARM(pc_debug, "i");
+INT_MODULE_PARM(pc_debug, PCMCIA_DEBUG);
 #define DEBUG(n, args...) if (pc_debug>(n)) printk(KERN_DEBUG args)
 static char *version =
-"serial_cs.c 1.123 2000/08/24 18:46:38 (David Hinds)";
+"serial_cs.c 1.128 2001/10/18 12:18:35 (David Hinds)";
 #else
 #define DEBUG(n, args...)
 #endif
-
-/*====================================================================*/
-
-/* Parameters that can be set with 'insmod' */
-
-/* Bit map of interrupts to choose from */
-static u_int irq_mask = 0xdeb8;
-static int irq_list[4] = { -1 };
-
-/* Enable the speaker? */
-static int do_sound = 1;
-
-MODULE_PARM(irq_mask, "i");
-MODULE_PARM(irq_list, "1-4i");
-MODULE_PARM(do_sound, "i");
 
 /*====================================================================*/
 
@@ -93,6 +96,8 @@ static multi_id_t multi_id[] = {
     { MANFID_QUATECH, PRODID_QUATECH_DUAL_RS232, 2 },
     { MANFID_QUATECH, PRODID_QUATECH_DUAL_RS232_D1, 2 },
     { MANFID_QUATECH, PRODID_QUATECH_QUAD_RS232, 4 },
+    { MANFID_QUATECH, PRODID_QUATECH_DUAL_RS422, 2 },
+    { MANFID_QUATECH, PRODID_QUATECH_QUAD_RS422, 4 },
     { MANFID_SOCKET, PRODID_SOCKET_DUAL_RS232, 2 },
     { MANFID_INTEL, PRODID_INTEL_DUAL_RS232, 2 },
     { MANFID_NATINST, PRODID_NATINST_QUAD_RS232, 4 }
@@ -357,7 +362,6 @@ static int simple_config(dev_link_t *link)
 
 found_port:
     if (i != CS_SUCCESS) {
-	printk(KERN_NOTICE "serial_cs: no usable port range found, giving up\n");
 	cs_error(link->handle, RequestIO, i);
 	return -1;
     }
@@ -437,7 +441,6 @@ static int multi_config(dev_link_t *link)
     
     i = CardServices(RequestIRQ, link->handle, &link->irq);
     if (i != CS_SUCCESS) {
-	printk(KERN_NOTICE "serial_cs: no usable port range found, giving up\n");
 	cs_error(link->handle, RequestIRQ, i);
 	link->irq.AssignedIRQ = 0;
     }
@@ -663,5 +666,3 @@ static void __exit exit_serial_cs(void)
 
 module_init(init_serial_cs);
 module_exit(exit_serial_cs);
-
-MODULE_LICENSE("GPL");

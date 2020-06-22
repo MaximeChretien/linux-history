@@ -1,4 +1,4 @@
-/* $Id: pci_psycho.c,v 1.29 2001/10/11 00:44:38 davem Exp $
+/* $Id: pci_psycho.c,v 1.30 2001/11/14 13:17:56 davem Exp $
  * pci_psycho.c: PSYCHO/U2P specific PCI controller support.
  *
  * Copyright (C) 1997, 1998, 1999 David S. Miller (davem@caipfs.rutgers.edu)
@@ -371,6 +371,7 @@ static int __init psycho_ino_to_pil(struct pci_dev *pdev, unsigned int ino)
 		case PCI_BASE_CLASS_MULTIMEDIA:
 		case PCI_BASE_CLASS_MEMORY:
 		case PCI_BASE_CLASS_BRIDGE:
+		case PCI_BASE_CLASS_SERIAL:
 			ret = 10;
 			break;
 

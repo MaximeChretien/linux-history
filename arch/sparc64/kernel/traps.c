@@ -1,4 +1,4 @@
-/* $Id: traps.c,v 1.79 2001/09/21 02:14:39 kanoj Exp $
+/* $Id: traps.c,v 1.82 2001/11/18 00:12:56 davem Exp $
  * arch/sparc64/kernel/traps.c
  *
  * Copyright (C) 1995,1997 David S. Miller (davem@caip.rutgers.edu)
@@ -38,16 +38,19 @@
 
 void bad_trap (struct pt_regs *regs, long lvl)
 {
+	char buffer[32];
 	siginfo_t info;
 
 	if (lvl < 0x100) {
-		char buffer[24];
-		
-		sprintf (buffer, "Bad hw trap %lx at tl0\n", lvl);
+		sprintf(buffer, "Bad hw trap %lx at tl0\n", lvl);
+		die_if_kernel(buffer, regs);
+	}
+
+	lvl -= 0x100;
+	if (regs->tstate & TSTATE_PRIV) {
+		sprintf(buffer, "Kernel bad sw trap %lx", lvl);
 		die_if_kernel (buffer, regs);
 	}
-	if (regs->tstate & TSTATE_PRIV)
-		die_if_kernel ("Kernel bad trap", regs);
 	if ((current->thread.flags & SPARC_FLAG_32BIT) != 0) {
 		regs->tpc &= 0xffffffff;
 		regs->tnpc &= 0xffffffff;
@@ -56,7 +59,7 @@ void bad_trap (struct pt_regs *regs, long lvl)
 	info.si_errno = 0;
 	info.si_code = ILL_ILLTRP;
 	info.si_addr = (void *)regs->tpc;
-	info.si_trapno = lvl - 0x100;
+	info.si_trapno = lvl;
 	force_sig_info(SIGILL, &info, current);
 }
 
@@ -67,6 +70,14 @@ void bad_trap_tl1 (struct pt_regs *regs, long lvl)
 	sprintf (buffer, "Bad trap %lx at tl>0", lvl);
 	die_if_kernel (buffer, regs);
 }
+
+#ifdef CONFIG_DEBUG_BUGVERBOSE
+void do_BUG(const char *file, int line)
+{
+	bust_spinlocks(1);
+	printk("kernel BUG at %s:%d!\n", file, line);
+}
+#endif
 
 void instruction_access_exception (struct pt_regs *regs,
 				   unsigned long sfsr, unsigned long sfar)
@@ -947,6 +958,7 @@ static int cheetah_fix_ce(unsigned long physaddr)
 	__asm__ __volatile__("ldxa	[%0] %3, %%g0\n\t"
 			     "ldxa	[%1] %3, %%g0\n\t"
 			     "casxa	[%2] %3, %%g0, %%g0\n\t"
+			     "membar	#StoreLoad | #StoreStore\n\t"
 			     "ldxa	[%0] %3, %%g0\n\t"
 			     "ldxa	[%1] %3, %%g0\n\t"
 			     "membar	#Sync"

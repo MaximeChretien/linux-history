@@ -1072,7 +1072,7 @@ void iput(struct inode *inode)
 				}
 				inodes_stat.nr_unused++;
 				spin_unlock(&inode_lock);
-				if (!sb || sb->s_flags & MS_ACTIVE)
+				if (!sb || (sb->s_flags & MS_ACTIVE))
 					return;
 				write_inode_now(inode, 1);
 				spin_lock(&inode_lock);
@@ -1187,6 +1187,8 @@ void __init inode_init(unsigned long mempages)
  
 void update_atime (struct inode *inode)
 {
+	if (inode->i_atime == CURRENT_TIME)
+		return;
 	if ( IS_NOATIME (inode) ) return;
 	if ( IS_NODIRATIME (inode) && S_ISDIR (inode->i_mode) ) return;
 	if ( IS_RDONLY (inode) ) return;

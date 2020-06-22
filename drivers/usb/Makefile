@@ -79,6 +79,7 @@ obj-$(CONFIG_USB_BLUETOOTH)	+= bluetooth.o
 obj-$(CONFIG_USB_USBNET)	+= usbnet.o
 
 # Object files in subdirectories
+mod-subdirs	:= serial
 
 subdir-$(CONFIG_USB_SERIAL)	+= serial
 subdir-$(CONFIG_USB_STORAGE)	+= storage

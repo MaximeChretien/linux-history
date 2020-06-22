@@ -5,7 +5,7 @@
  *	Authors:
  *	Pedro Roque		<roque@di.fc.ul.pt>	
  *
- *	$Id: tcp_ipv6.c,v 1.140 2001/10/15 12:34:50 davem Exp $
+ *	$Id: tcp_ipv6.c,v 1.142 2001/11/06 22:21:08 davem Exp $
  *
  *	Based on: 
  *	linux/net/ipv4/tcp.c

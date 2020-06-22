@@ -30,6 +30,7 @@
  *    04/10/2001 - corrected devfs_register() call in lvm_init_fs()
  *    11/04/2001 - don't devfs_register("lvm") as user-space always does it
  *    10/05/2001 - show more of PV name in /proc/lvm/global
+ *    16/12/2001 - fix devfs unregister order and prevent duplicate unreg (REG)
  *
  */
 
@@ -138,7 +139,7 @@ void lvm_fs_remove_vg(vg_t *vg_ptr) {
 	int i;
 
 	devfs_unregister(ch_devfs_handle[vg_ptr->vg_number]);
-	devfs_unregister(vg_devfs_handle[vg_ptr->vg_number]);
+	ch_devfs_handle[vg_ptr->vg_number] = NULL;
 
 	/* remove lv's */
 	for(i = 0; i < vg_ptr->lv_max; i++)
@@ -147,6 +148,10 @@ void lvm_fs_remove_vg(vg_t *vg_ptr) {
 	/* remove pv's */
 	for(i = 0; i < vg_ptr->pv_max; i++)
 		if(vg_ptr->pv[i]) lvm_fs_remove_pv(vg_ptr, vg_ptr->pv[i]);
+
+	/* must not remove directory before leaf nodes */
+	devfs_unregister(vg_devfs_handle[vg_ptr->vg_number]);
+	vg_devfs_handle[vg_ptr->vg_number] = NULL;
 
 	if(vg_ptr->vg_dir_pde) {
 		remove_proc_entry(LVM_LV_SUBDIR, vg_ptr->vg_dir_pde);
@@ -189,6 +194,7 @@ devfs_handle_t lvm_fs_create_lv(vg_t *vg_ptr, lv_t *lv) {
 
 void lvm_fs_remove_lv(vg_t *vg_ptr, lv_t *lv) {
 	devfs_unregister(lv_devfs_handle[MINOR(lv->lv_dev)]);
+	lv_devfs_handle[MINOR(lv->lv_dev)] = NULL;
 
 	if(vg_ptr->lv_subdir_pde) {
 		const char *name = _basename(lv->lv_name);

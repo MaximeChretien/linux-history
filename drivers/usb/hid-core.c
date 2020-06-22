@@ -1236,7 +1236,7 @@ static void* hid_probe(struct usb_device *dev, unsigned int ifnum,
 
 	c = "Device";
 	for (i = 0; i < hid->maxapplication; i++)
-		if (IS_INPUT_APPLICATION(hid->application[i])) {
+		if ((hid->application[i] & 0xffff) < ARRAY_SIZE(hid_types)) {
 			c = hid_types[hid->application[i] & 0xffff];
 			break;
 		}

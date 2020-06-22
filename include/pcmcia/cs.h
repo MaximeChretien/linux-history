@@ -1,5 +1,5 @@
 /*
- * cs.h 1.71 2000/08/29 00:54:20
+ * cs.h 1.74 2001/10/04 03:15:22
  *
  * The contents of this file are subject to the Mozilla Public License
  * Version 1.1 (the "License"); you may not use this file except in
@@ -16,8 +16,8 @@
  * are Copyright (C) 1999 David A. Hinds.  All Rights Reserved.
  *
  * Alternatively, the contents of this file may be used under the
- * terms of the GNU General Public License version 2 (the "GPL"), in which
- * case the provisions of the GPL are applicable instead of the
+ * terms of the GNU General Public License version 2 (the "GPL"), in
+ * which case the provisions of the GPL are applicable instead of the
  * above.  If you wish to allow the use of your version of this file
  * only under the terms of the GPL and not to allow others to use
  * your version of this file under the MPL, indicate your decision by
@@ -181,6 +181,7 @@ typedef struct config_req_t {
 #define INT_MEMORY		0x01
 #define INT_MEMORY_AND_IO	0x02
 #define INT_CARDBUS		0x04
+#define INT_ZOOMED_VIDEO	0x08
 
 /* For RequestIO and ReleaseIO */
 typedef struct io_req_t {

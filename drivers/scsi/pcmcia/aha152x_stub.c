@@ -5,7 +5,7 @@
     This driver supports the Adaptec AHA-1460, the New Media Bus
     Toaster, and the New Media Toast & Jam.
     
-    aha152x_cs.c 1.54 2000/06/12 21:27:25
+    aha152x_cs.c 1.58 2001/10/13 00:08:51
 
     The contents of this file are subject to the Mozilla Public
     License Version 1.1 (the "License"); you may not use this file
@@ -22,8 +22,8 @@
     are Copyright (C) 1999 David A. Hinds.  All Rights Reserved.
 
     Alternatively, the contents of this file may be used under the
-    terms of the GNU General Public License version 2 (the "GPL"), in which
-    case the provisions of the GPL are applicable instead of the
+    terms of the GNU General Public License version 2 (the "GPL"), in
+    which case the provisions of the GPL are applicable instead of the
     above.  If you wish to allow the use of your version of this file
     only under the terms of the GPL and not to allow others to use
     your version of this file under the MPL, indicate your decision
@@ -57,42 +57,39 @@
 #include <pcmcia/cistpl.h>
 #include <pcmcia/ds.h>
 
+/*====================================================================*/
+
+/* Module parameters */
+
+MODULE_AUTHOR("David Hinds <dahinds@users.sourceforge.net>");
+MODULE_DESCRIPTION("Adaptec AHA152x-compatible PCMCIA SCSI driver");
+MODULE_LICENSE("Dual MPL/GPL");
+
+static int irq_list[4] = { -1 };
+MODULE_PARM(irq_list, "1-4i");
+
+#define INT_MODULE_PARM(n, v) static int n = v; MODULE_PARM(n, "i")
+
+INT_MODULE_PARM(irq_mask,	0xdeb8);
+INT_MODULE_PARM(host_id,	7);
+INT_MODULE_PARM(reconnect,	1);
+INT_MODULE_PARM(parity,		1);
+INT_MODULE_PARM(synchronous,	0);
+INT_MODULE_PARM(reset_delay,	100);
+INT_MODULE_PARM(ext_trans,	0);
+
+#ifdef AHA152X_DEBUG
+INT_MODULE_PARM(debug,		0);
+#endif
+
 #ifdef PCMCIA_DEBUG
-static int pc_debug = PCMCIA_DEBUG;
-MODULE_PARM(pc_debug, "i");
+INT_MODULE_PARM(pc_debug, PCMCIA_DEBUG);
 #define DEBUG(n, args...) if (pc_debug>(n)) printk(KERN_DEBUG args)
 static char *version =
-"aha152x_cs.c 1.54 2000/06/12 21:27:25 (David Hinds)";
+"aha152x_cs.c 1.58 2001/10/13 00:08:51 (David Hinds)";
 #else
 #define DEBUG(n, args...)
 #endif
-
-/*====================================================================*/
-
-/* Parameters that can be set with 'insmod' */
-
-/* Bit map of interrupts to choose from */
-static u_int irq_mask = 0xdeb8;
-static int irq_list[4] = { -1 };
-
-/* SCSI bus setup options */
-static int host_id = 7;
-static int reconnect = 1;
-static int parity = 1;
-static int synchronous = 0;
-static int reset_delay = 100;
-static int ext_trans = 0;
-
-MODULE_PARM(irq_mask, "i");
-MODULE_PARM(irq_list, "1-4i");
-MODULE_PARM(host_id, "i");
-MODULE_PARM(reconnect, "i");
-MODULE_PARM(parity, "i");
-MODULE_PARM(synchronous, "i");
-MODULE_PARM(reset_delay, "i");
-MODULE_PARM(ext_trans, "i");
-
-MODULE_LICENSE("Dual MPL/GPL");
 
 /*====================================================================*/
 
@@ -277,7 +274,6 @@ static void aha152x_config_cs(dev_link_t *link)
     release_region(link->io.BasePort1, link->io.NumPorts1);
     
     /* Set configuration options for the aha152x driver */
-    ints[0] = 7;
     ints[1] = link->io.BasePort1;
     ints[2] = link->irq.AssignedIRQ;
     ints[3] = host_id;
@@ -285,9 +281,13 @@ static void aha152x_config_cs(dev_link_t *link)
     ints[5] = parity;
     ints[6] = synchronous;
     ints[7] = reset_delay;
-    if (ext_trans) {
-	ints[8] = ext_trans; ints[0] = 8;
-    }
+    ints[8] = ext_trans;
+#ifdef AHA152X_DEBUG
+    ints[9] = debug;
+    ints[0] = 9;
+#else
+    ints[0] = 8;
+#endif
     aha152x_setup("PCMCIA setup", ints);
     
     scsi_register_module(MODULE_SCSI_HA, &driver_template);

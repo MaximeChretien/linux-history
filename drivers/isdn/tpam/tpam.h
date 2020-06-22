@@ -1,4 +1,4 @@
-/* $Id: tpam.h,v 1.1.2.3 2001/11/06 20:58:30 kai Exp $
+/* $Id: tpam.h,v 1.1.2.1 2001/11/20 14:19:37 kai Exp $
  *
  * Turbo PAM ISDN driver for Linux. (Kernel Driver)
  *

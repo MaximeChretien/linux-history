@@ -1,4 +1,4 @@
-/* $Id: netjet.c,v 1.24.6.6 2001/09/23 22:24:50 kai Exp $
+/* $Id: netjet.c,v 1.1.4.1 2001/11/20 14:19:36 kai Exp $
  *
  * low level stuff for Traverse Technologie NETJet ISDN cards
  *
@@ -24,7 +24,7 @@
 #include <asm/io.h>
 #include "netjet.h"
 
-const char *NETjet_revision = "$Revision: 1.24.6.6 $";
+const char *NETjet_revision = "$Revision: 1.1.4.1 $";
 
 /* Interface functions */
 

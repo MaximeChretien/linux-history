@@ -184,7 +184,7 @@ MODULE_DEVICE_TABLE (usb, id_table);
 
 
 /* All of the device info needed for the Handspring Visor */
-struct usb_serial_device_type handspring_device = {
+static struct usb_serial_device_type handspring_device = {
 	name:			"Handspring Visor",
 	id_table:		visor_id_table,
 	needs_interrupt_in:	MUST_HAVE_NOT,		/* this device must not have an interrupt in endpoint */
@@ -210,7 +210,7 @@ struct usb_serial_device_type handspring_device = {
 };
 
 /* device info for the Palm 4.0 devices */
-struct usb_serial_device_type palm_4_0_device = {
+static struct usb_serial_device_type palm_4_0_device = {
 	name:			"Palm 4.0",
 	id_table:		palm_4_0_id_table,
 	needs_interrupt_in:	MUST_HAVE_NOT,		/* this device must not have an interrupt in endpoint */
@@ -714,9 +714,8 @@ static void visor_shutdown (struct usb_serial *serial)
 
 	/* stop reads and writes on all ports */
 	for (i=0; i < serial->num_ports; ++i) {
-		while (serial->port[i].open_count > 0) {
-			visor_close (&serial->port[i], NULL);
-		}
+		serial->port[i].active = 0;
+		serial->port[i].open_count = 0;
 	}
 }
 

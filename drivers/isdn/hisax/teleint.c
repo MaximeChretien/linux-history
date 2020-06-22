@@ -1,4 +1,4 @@
-/* $Id: teleint.c,v 1.14.6.2 2001/09/23 22:24:52 kai Exp $
+/* $Id: teleint.c,v 1.1.4.1 2001/11/20 14:19:36 kai Exp $
  *
  * low level stuff for TeleInt isdn cards
  *
@@ -19,7 +19,7 @@
 
 extern const char *CardType[];
 
-const char *TeleInt_revision = "$Revision: 1.14.6.2 $";
+const char *TeleInt_revision = "$Revision: 1.1.4.1 $";
 
 #define byteout(addr,val) outb(val,addr)
 #define bytein(addr) inb(addr)

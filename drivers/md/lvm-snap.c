@@ -542,8 +542,6 @@ out_free_kiovec:
 
 void lvm_snapshot_release(lv_t * lv)
 {
-	int 	nbhs = KIO_MAX_SECTORS;
-
 	if (lv->lv_block_exception)
 	{
 		vfree(lv->lv_block_exception);

@@ -258,3 +258,8 @@ EXPORT_SYMBOL_NOVERS(memset);
 EXPORT_SYMBOL_NOVERS(memchr);
 
 EXPORT_SYMBOL(get_wchan);
+
+#ifdef CONFIG_ALPHA_IRONGATE
+EXPORT_SYMBOL(irongate_ioremap);
+EXPORT_SYMBOL(irongate_iounmap);
+#endif

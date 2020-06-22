@@ -42,7 +42,7 @@ static struct pci_driver i82092aa_pci_drv = {
 	name:           "i82092aa",
 	id_table:       i82092aa_pci_ids,
 	probe:          i82092aa_pci_probe,
-	remove:         i82092aa_pci_remove,
+	remove:         __devexit_p(i82092aa_pci_remove),
 	suspend:        NULL,
 	resume:         NULL 
 };
@@ -160,7 +160,7 @@ static int __init i82092aa_pci_probe(struct pci_dev *dev, const struct pci_devic
 	return 0;
 }
 
-static void __exit i82092aa_pci_remove(struct pci_dev *dev)
+static void __devexit i82092aa_pci_remove(struct pci_dev *dev)
 {
 	enter("i82092aa_pci_remove");
 	

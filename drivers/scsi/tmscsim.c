@@ -1450,7 +1450,7 @@ int DC390_bios_param (Disk *disk, kdev_t devno, int geom[])
     int ret_code = -1;
     int size = disk->capacity;
 
-    if ((bh = bread(MKDEV(MAJOR(devno), MINOR(devno)&~0xf), 0, 1024)))
+    if ((bh = bread(MKDEV(MAJOR(devno), MINOR(devno)&~0xf), 0, block_size(devno))))
     {
 	/* try to infer mapping from partition table */
 	ret_code = partsize (bh, (unsigned long) size, (unsigned int *) geom + 2,

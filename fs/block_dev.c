@@ -234,7 +234,7 @@ static struct vfsmount *bd_mnt;
 #define HASH_SIZE	(1UL << HASH_BITS)
 #define HASH_MASK	(HASH_SIZE-1)
 static struct list_head bdev_hashtable[HASH_SIZE];
-static spinlock_t bdev_lock = SPIN_LOCK_UNLOCKED;
+static spinlock_t bdev_lock __cacheline_aligned_in_smp = SPIN_LOCK_UNLOCKED;
 static kmem_cache_t * bdev_cachep;
 
 #define alloc_bdev() \
@@ -329,6 +329,7 @@ struct block_device *bdget(dev_t dev)
 			inode->i_bdev = new_bdev;
 			inode->i_data.a_ops = &def_blk_aops;
 			inode->i_data.gfp_mask = GFP_USER;
+			inode->i_mode = S_IFBLK;
 			spin_lock(&bdev_lock);
 			bdev = bdfind(dev, head);
 			if (!bdev) {
@@ -498,7 +499,10 @@ int check_disk_change(kdev_t dev)
 
 		de = devfs_find_handle (NULL, NULL, i, MINOR (dev),
 					DEVFS_SPECIAL_BLK, 0);
-		if (de) bdops = devfs_get_ops (de);
+		if (de) {
+			bdops = devfs_get_ops (de);
+			devfs_put_ops (de); /* We're running in owner module */
+		}
 	}
 	if (bdops == NULL)
 		return 0;

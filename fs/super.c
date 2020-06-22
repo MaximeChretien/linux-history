@@ -537,6 +537,7 @@ static struct super_block *get_sb_bdev(struct file_system_type *fs_type,
 	struct inode *inode;
 	struct block_device *bdev;
 	struct block_device_operations *bdops;
+	devfs_handle_t de;
 	struct super_block * s;
 	struct nameidata nd;
 	struct list_head *p;
@@ -560,13 +561,15 @@ static struct super_block *get_sb_bdev(struct file_system_type *fs_type,
 		goto out;
 	bd_acquire(inode);
 	bdev = inode->i_bdev;
-	bdops = devfs_get_ops ( devfs_get_handle_from_inode (inode) );
+	de = devfs_get_handle_from_inode (inode);
+	bdops = devfs_get_ops (de);         /*  Increments module use count  */
 	if (bdops) bdev->bd_op = bdops;
 	/* Done with lookups, semaphore down */
 	dev = to_kdev_t(bdev->bd_dev);
 	if (!(flags & MS_RDONLY))
 		mode |= FMODE_WRITE;
 	error = blkdev_get(bdev, mode, 0, BDEV_FS);
+	devfs_put_ops (de);   /*  Decrement module use count now we're safe  */
 	if (error)
 		goto out;
 	check_disk_change(dev);
@@ -999,12 +1002,13 @@ retry:
 	bdev = bdget(kdev_t_to_nr(ROOT_DEV));
 	if (!bdev)
 		panic(__FUNCTION__ ": unable to allocate root device");
-	bdev->bd_op = devfs_get_ops (handle);
+	bdev->bd_op = devfs_get_ops (handle); /* Increments module use count */
 	path_start = devfs_generate_path (handle, path + 5, sizeof (path) - 5);
 	mode = FMODE_READ;
 	if (!(root_mountflags & MS_RDONLY))
 		mode |= FMODE_WRITE;
 	retval = blkdev_get(bdev, mode, 0, BDEV_FS);
+	devfs_put_ops (handle); /* Decrement module use count now we're safe */
 	if (retval == -EROFS) {
 		root_mountflags |= MS_RDONLY;
 		goto retry;

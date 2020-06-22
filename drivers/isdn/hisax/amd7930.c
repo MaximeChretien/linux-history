@@ -1,4 +1,4 @@
-/* $Id: amd7930.c,v 1.5.6.4 2001/09/23 22:24:46 kai Exp $
+/* $Id: amd7930.c,v 1.1.4.1 2001/11/20 14:19:35 kai Exp $
  *
  * HiSax ISDN driver - chip specific routines for AMD 7930
  *
@@ -98,7 +98,7 @@
 #include "rawhdlc.h"
 #include <linux/interrupt.h>
 
-static const char *amd7930_revision = "$Revision: 1.5.6.4 $";
+static const char *amd7930_revision = "$Revision: 1.1.4.1 $";
 
 #define RCV_BUFSIZE	1024	/* Size of raw receive buffer in bytes */
 #define RCV_BUFBLKS	4	/* Number of blocks to divide buffer into

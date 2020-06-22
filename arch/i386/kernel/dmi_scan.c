@@ -523,6 +523,12 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 			MATCH(DMI_BIOS_DATE, "05/11/00"), NO_MATCH
 			} },
 
+	{ swab_apm_power_in_minutes, "Sony VAIO", {	/* Handle problems with APM on Sony Vaio PCG-Z600NE */
+			MATCH(DMI_BIOS_VENDOR, "Phoenix Technologies LTD"),
+			MATCH(DMI_BIOS_VERSION, "WME01Z1"),
+			MATCH(DMI_BIOS_DATE, "08/11/00"), NO_MATCH
+			} },
+
 	{ swab_apm_power_in_minutes, "Sony VAIO", {	/* Handle problems with APM on Sony Vaio PCG-Z505LS */
 			MATCH(DMI_BIOS_VENDOR, "Phoenix Technologies LTD"),
 			MATCH(DMI_BIOS_VERSION, "R0203D0"),
@@ -562,6 +568,11 @@ static __initdata struct dmi_blacklist dmi_blacklist[]={
 	{ broken_pirq, "l44GX Bios", {        		/* Bad $PIR */
 			MATCH(DMI_BIOS_VENDOR, "Intel Corporation"),
 			MATCH(DMI_BIOS_VERSION,"L440GX0.86B.0094.P10"),
+			NO_MATCH, NO_MATCH
+                        } },
+	{ broken_pirq, "l44GX Bios", {        		/* Bad $PIR */
+			MATCH(DMI_BIOS_VENDOR, "Intel Corporation"),
+			MATCH(DMI_BIOS_VERSION,"L440GX0.86B.0120.P12"),
 			NO_MATCH, NO_MATCH
                         } },
 	{ broken_pirq, "l44GX Bios", {		/* Bad $PIR */
