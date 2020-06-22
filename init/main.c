@@ -36,6 +36,10 @@
 #include <asm/ccwcache.h>
 #endif
 
+#ifdef CONFIG_ACPI
+#include <linux/acpi.h>
+#endif
+
 #ifdef CONFIG_PCI
 #include <linux/pci.h>
 #endif
@@ -491,7 +495,9 @@ static void __init do_basic_setup(void)
 #if defined(CONFIG_ARCH_S390)
 	s390_init_machine_check();
 #endif
-
+#ifdef CONFIG_ACPI_INTERPRETER
+	acpi_init();
+#endif
 #ifdef CONFIG_PCI
 	pci_init();
 #endif

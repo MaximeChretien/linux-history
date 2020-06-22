@@ -42,6 +42,7 @@
 #include <asm/io.h>
 #include <asm/processor.h>
 #include <asm/ppcdebug.h>
+#include <asm/machdep.h> /* for ppc_attention_msg */
 
 extern int fix_alignment(struct pt_regs *);
 extern void bad_page_fault(struct pt_regs *, unsigned long);
@@ -75,14 +76,11 @@ int (*debugger_dabr_match)(struct pt_regs *regs);
 void (*debugger_fault_handler)(struct pt_regs *regs);
 #else
 #ifdef CONFIG_KDB
-/* kdb has different call parms */
-/* ... */
-void (*debugger)(struct pt_regs *regs) = kdb;
+void (*debugger)(struct pt_regs *regs);
 int (*debugger_bpt)(struct pt_regs *regs);
 int (*debugger_sstep)(struct pt_regs *regs);
 int (*debugger_iabr_match)(struct pt_regs *regs);
-int (*debugger_dabr_match)(struct pt_regs *regs) = kdb;
-/* - only defined during (xmon) mread */
+int (*debugger_dabr_match)(struct pt_regs *regs);
 void (*debugger_fault_handler)(struct pt_regs *regs);
 #endif /* kdb */
 #endif /* kgdb */
@@ -100,12 +98,8 @@ _exception(int signr, siginfo_t *info, struct pt_regs *regs)
 	if (!user_mode(regs))
 	{
 		show_regs(regs);
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
+#if defined(CONFIG_XMON) || defined(CONFIG_KGDB) || defined(CONFIG_KDB)
 		debugger(regs);
-#endif
-#if defined(CONFIG_KDB)
-		if (kdb(KDB_REASON_BREAK, 0, (kdb_eframe_t) regs))
-		    return;
 #endif
 		print_backtrace((unsigned long *)regs->gpr[1]);
 		panic("Exception in kernel pc %lx signal %d",regs->nip,signr);
@@ -164,30 +158,11 @@ SystemResetException(struct pt_regs *regs)
 	}
 #if defined(CONFIG_XMON)
 	xmon(regs);
-	udbg_printf("leaving xmon...\n");
+	if (smp_processor_id() == 0)
+		udbg_printf("leaving xmon...\n");
 #endif
 #if defined(CONFIG_KDB)
-	{
-		int cpu = smp_processor_id();
-		static int reset_cpu = -1;
-		static spinlock_t reset_lock = SPIN_LOCK_UNLOCKED;
-
-		/* Give kdb some help serializing the reset */
-		spin_lock(&reset_lock);
-		if (reset_cpu == -1) {
-			reset_cpu = cpu;
-			spin_unlock(&reset_lock);
-			kdb(KDB_REASON_ENTER, regs->trap, (kdb_eframe_t) regs);
-			reset_cpu = -1;
-		} else {
-			spin_unlock(&reset_lock);
-			/* Let kdb catch this cpu with an IPI.
-			 * Ideally we need a way to enter kdb w/o it becoming
-			 * confused so we can precisely capture reset state.
-			 */
-			return;
-		}
-	}
+	kdb_reset_debugger(regs);
 #endif
 }
 
@@ -195,7 +170,6 @@ SystemResetException(struct pt_regs *regs)
 void
 MachineCheckException(struct pt_regs *regs)
 {
-	siginfo_t info;
 
 	if (fwnmi_active) {
 		struct rtas_error_log *errhdr = FWNMI_get_errinfo(regs);
@@ -205,51 +179,28 @@ MachineCheckException(struct pt_regs *regs)
 		FWNMI_release_errinfo();
 	}
 
-	if ( !user_mode(regs) ) {
 #if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
-		if (debugger_fault_handler) {
-			debugger_fault_handler(regs);
-			return;
-		}
-#endif
-		printk("Machine check in kernel mode.\n");
-		printk("Caused by (from SRR1=%lx): ", regs->msr);
-		show_regs(regs);
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
-		debugger(regs);
-#endif
-#ifdef CONFIG_KDB
-		if (kdb(KDB_REASON_FAULT, 0, regs))
-			return ;
-#endif
-		print_backtrace((unsigned long *)regs->gpr[1]);
-		panic("machine check");
+	if (debugger_fault_handler) {
+		debugger_fault_handler(regs);
+		return;
 	}
-	
-	/*
-	 * XXX we should check RI bit on exception exit and kill the
-	 * task if it was cleared
-	 */
-	info.si_signo = SIGBUS;
-	info.si_errno = 0;
-	info.si_code = BUS_ADRERR;
-	info.si_addr = (void *)regs->nip;
-	_exception(SIGSEGV, &info, regs);
-
+#endif
+	printk(KERN_EMERG "Unrecoverable Machine check.\n");
+	printk(KERN_EMERG "Caused by (from SRR1=%lx): ", regs->msr);
+	show_regs(regs);
+#if defined(CONFIG_XMON) || defined(CONFIG_KGDB) || defined(CONFIG_KDB)
+	debugger(regs);
+#endif
+	print_backtrace((unsigned long *)regs->gpr[1]);
+	panic("machine check");
 }
 
 void
 SMIException(struct pt_regs *regs)
 {
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
+#if defined(CONFIG_XMON) || defined(CONFIG_KGDB) || defined(CONFIG_KDB)
 	{
 		debugger(regs);
-		return;
-	}
-#endif
-#ifdef CONFIG_KDB
-	{
-		kdb(KDB_REASON_OOPS, 0, regs);
 		return;
 	}
 #endif
@@ -278,15 +229,10 @@ InstructionBreakpointException(struct pt_regs *regs)
 {
 	siginfo_t info;
 	
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
+#if defined(CONFIG_XMON) || defined(CONFIG_KGDB) || defined (CONFIG_KDB)
 	if (debugger_iabr_match(regs))
 		return;
 #endif
-#ifdef CONFIG_KDB
-	if (kdb(KDB_REASON_BREAK, 0, regs))
-		return;
-#endif
-
 	info.si_signo = SIGTRAP;
 	info.si_errno = 0;
 	info.si_code = TRAP_BRKPT;
@@ -353,12 +299,8 @@ ProgramCheckException(struct pt_regs *regs)
 	} else if (regs->msr & 0x20000) {
 		/* trap exception */
 
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
+#if defined(CONFIG_XMON) || defined(CONFIG_KGDB) || defined(CONFIG_KDB)
 		if (debugger_bpt(regs))
-			return;
-#endif
-#ifdef CONFIG_KDB
-		if (kdb(KDB_REASON_BREAK, 0, regs))
 			return;
 #endif
 		info.si_signo = SIGTRAP;
@@ -377,6 +319,14 @@ ProgramCheckException(struct pt_regs *regs)
 	}
 }
 
+ void
+KernelFPUnavailableException(struct pt_regs *regs)
+{
+	printk("Illegal floating point used in kernel (task=0x%016lx, pc=0x%016lx, trap=0x%08x)\n",
+		current, regs->nip, regs->trap);
+	panic("Unrecoverable FP Unavailable Exception in Kernel");
+}
+
 void
 SingleStepException(struct pt_regs *regs)
 {
@@ -384,15 +334,10 @@ SingleStepException(struct pt_regs *regs)
 
 	regs->msr &= ~MSR_SE;  /* Turn off 'trace' bit */
 
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
+#if defined(CONFIG_XMON) || defined(CONFIG_KGDB) || defined(CONFIG_KDB)
 	if (debugger_sstep(regs))
 		return;
 #endif
-#ifdef CONFIG_KDB
-	if (kdb(KDB_REASON_DEBUG, 0, regs))
-		return;
-#endif
-
 	info.si_signo = SIGTRAP;
 	info.si_errno = 0;
 	info.si_code = TRAP_TRACE;

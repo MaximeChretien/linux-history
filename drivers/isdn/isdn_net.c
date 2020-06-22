@@ -1296,6 +1296,16 @@ isdn_net_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 						restore_flags(flags);
 						return 0;	/* STN (skb to nirvana) ;) */
 					}
+#ifdef CONFIG_IPPP_FILTER
+					if (isdn_ppp_autodial_filter(skb, lp)) {
+						isdn_ppp_free(lp);
+						isdn_net_unbind_channel(lp);
+						restore_flags(flags);
+						isdn_net_unreachable(ndev, skb, "dial rejected: packet filtered");
+						dev_kfree_skb(skb);
+						return 0;
+					}
+#endif
 					restore_flags(flags);
 					isdn_net_dial();	/* Initiate dialing */
 					netif_stop_queue(ndev);
@@ -1793,9 +1803,6 @@ isdn_net_receive(struct net_device *ndev, struct sk_buff *skb)
 {
 	isdn_net_local *lp = (isdn_net_local *) ndev->priv;
 	isdn_net_local *olp = lp;	/* original 'lp' */
-#ifdef CONFIG_ISDN_PPP
-	int proto = PPP_PROTOCOL(skb->data);
-#endif
 #ifdef CONFIG_ISDN_X25
 	struct concap_proto *cprot = lp -> netdev -> cprot;
 #endif
@@ -1855,14 +1862,7 @@ isdn_net_receive(struct net_device *ndev, struct sk_buff *skb)
 			break;
 #ifdef CONFIG_ISDN_PPP
 		case ISDN_NET_ENCAP_SYNCPPP:
-			/*
-			 * If encapsulation is syncppp, don't reset
-			 * huptimer on LCP packets.
-			 */
-			if (proto != PPP_LCP) {
-				olp->huptimer = 0;
-				lp->huptimer = 0;
-			}
+			/* huptimer is done in isdn_ppp_push_higher */
 			isdn_ppp_receive(lp->netdev, olp, skb);
 			return;
 #endif

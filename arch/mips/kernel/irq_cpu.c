@@ -31,13 +31,13 @@ static int mips_cpu_irq_base = -1;
 
 static void mips_cpu_irq_enable(unsigned int irq)
 {
-	clear_cp0_cause( 1 << (irq - mips_cpu_irq_base + 8));
-	set_cp0_status(1 << (irq - mips_cpu_irq_base + 8));
+	clear_c0_cause( 1 << (irq - mips_cpu_irq_base + 8));
+	set_c0_status(1 << (irq - mips_cpu_irq_base + 8));
 }
 
 static void mips_cpu_irq_disable(unsigned int irq)
 {
-	clear_cp0_status(1 << (irq - mips_cpu_irq_base + 8));
+	clear_c0_status(1 << (irq - mips_cpu_irq_base + 8));
 }
 
 static unsigned int mips_cpu_irq_startup(unsigned int irq)
@@ -51,10 +51,10 @@ static unsigned int mips_cpu_irq_startup(unsigned int irq)
 
 static void mips_cpu_irq_ack(unsigned int irq)
 {
-	/* although we attemp to clear the IP bit in cause reigster, I think
+	/* although we attempt to clear the IP bit in cause register, I think
 	 * usually it is cleared by device (irq source)
 	 */
-	clear_cp0_cause(1 << (irq - mips_cpu_irq_base + 8));
+	clear_c0_cause(1 << (irq - mips_cpu_irq_base + 8));
 
 	/* disable this interrupt - so that we safe proceed to the handler */
 	mips_cpu_irq_disable(irq);
@@ -62,7 +62,7 @@ static void mips_cpu_irq_ack(unsigned int irq)
 
 static void mips_cpu_irq_end(unsigned int irq)
 {
-	if(!(irq_desc[irq].status & (IRQ_DISABLED | IRQ_INPROGRESS)))
+	if (!(irq_desc[irq].status & (IRQ_DISABLED | IRQ_INPROGRESS)))
 		mips_cpu_irq_enable(irq);
 }
 

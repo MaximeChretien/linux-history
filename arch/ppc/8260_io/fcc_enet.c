@@ -551,7 +551,7 @@ fcc_enet_rx(struct net_device *dev)
 for (;;) {
 	if (bdp->cbd_sc & BD_ENET_RX_EMPTY)
 		break;
-		
+
 #ifndef final_version
 	/* Since we have allocated space to hold a complete frame, both
 	 * the first and last indicators should be set.
@@ -662,7 +662,7 @@ fcc_enet_mii(struct net_device *dev)
 	ep = &(((immap_t *)IMAP_ADDR)->im_cpm.cp_fec);
 	mii_reg = ep->fec_mii_data;
 #endif
-	
+
 	if ((mip = mii_head) == NULL) {
 		printk("MII and no head!\n");
 		return;
@@ -1007,7 +1007,7 @@ return;
 	ep = (fcc_enet_t *)dev->base_addr;
 
 	if (dev->flags&IFF_PROMISC) {
-	  
+
 		/* Log any net taps. */
 		printk("%s: Promiscuous mode enabled.\n", dev->name);
 		cep->fccp->fcc_fpsmr |= FCC_PSMR_PRO;
@@ -1030,8 +1030,8 @@ return;
 
 			dmi = dev->mc_list;
 
-			for (i=0; i<dev->mc_count; i++) {
-				
+			for (i=0; i<dev->mc_count; i++, dmi = dmi->next) {
+
 				/* Only support group multicast for now.
 				*/
 				if (!(dmi->dmi_addr[0] & 1))
@@ -1280,7 +1280,7 @@ init_fcc_param(fcc_info_t *fip, struct net_device *dev,
 	ep->fen_genfcc.fcc_tiptr = mem_addr+32;
 	ep->fen_padptr = mem_addr+64;
 	memset((char *)(&(immap->im_dprambase[(mem_addr+64)])), 0x88, 32);
-	
+
 	ep->fen_genfcc.fcc_rbptr = 0;
 	ep->fen_genfcc.fcc_tbptr = 0;
 	ep->fen_genfcc.fcc_rcrc = 0;
@@ -1491,7 +1491,7 @@ mii_send_receive(fcc_info_t *fip, uint cmd)
 	 * updates of the registers.  I do lots of interrupt disable/enable
 	 * to ensure we don't hang out too long with interrupts disabled.
 	 */
-	
+
 	/* First, crank out 32 1-bits as preamble.
 	 * This is 64 transitions to clock the bits, with clock/data
 	 * left high.

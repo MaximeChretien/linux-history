@@ -45,10 +45,6 @@ const char *get_system_type(void)
 	return "MIPS SEAD";
 }
 
-void __init bus_error_init(void)
-{
-}
-
 void __init sead_setup(void)
 {
 	char *argptr;
@@ -72,7 +68,7 @@ void __init sead_setup(void)
 	argptr = prom_getcmdline();
 
 	if ((argptr = strstr(argptr, "nofpu")) != NULL)
-		mips_cpu.options &= ~MIPS_CPU_FPU;
+		cpu_data[0].options &= ~MIPS_CPU_FPU;
 
 	board_time_init = mips_time_init;
 	board_timer_setup = mips_timer_setup;

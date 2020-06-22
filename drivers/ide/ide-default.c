@@ -85,13 +85,10 @@ bye_game_over:
 	return ret;
 }
 
-MODULE_DESCRIPTION("IDE Default Driver");
-
 int idedefault_init (void)
 {
 	ide_register_module(&idedefault_module);
 	return 0;
 }
 
-module_init(idedefault_init);
 MODULE_LICENSE("GPL");

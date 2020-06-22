@@ -62,6 +62,12 @@
  * - Maybe make an ALSA interface, that is, create a file_ops
  *   implementation that recognizes ALSA ioctls and uses defaults for
  *   things that can't be controlled through ALSA (iso channel).
+ *
+ *   Changes:
+ *
+ * - Audit copy_from_user in amdtp_write.
+ *                           Daniele Bellucci <bellucda@tiscali.it>
+ *
  */
 
 #include <linux/module.h>
@@ -732,7 +738,7 @@ static void fill_packet(struct stream *s, struct packet *packet, int nevents)
 
 	/* Fill IEEE1394 headers */
 	packet->db->header_desc.header[0] =
-		(SPEED_100 << 16) | (0x01 << 14) | 
+		(IEEE1394_SPEED_100 << 16) | (0x01 << 14) | 
 		(s->iso_channel << 8) | (TCODE_ISO_DATA << 4);
 	packet->db->header_desc.header[1] = size << 16;
 	
@@ -1112,7 +1118,8 @@ static ssize_t amdtp_write(struct file *file, const char *buffer, size_t count,
 
 	for (i = 0; i < count; i += length) {
 		p = buffer_put_bytes(s->input, count - i, &length);
-		copy_from_user(p, buffer + i, length);
+		if (copy_from_user(p, buffer + i, length))
+			return -EFAULT;
 		if (s->input->length < s->input->size)
 			continue;
 		

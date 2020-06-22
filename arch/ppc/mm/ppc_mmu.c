@@ -7,7 +7,7 @@
  * specification, the need to work through the hypervisor makes
  * things sufficiently different that it is handled elsewhere.
  *  -- paulus
- * 
+ *
  *  Derived from arch/ppc/mm/init.c:
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
  *
@@ -86,13 +86,13 @@ unsigned long p_mapped_by_bats(unsigned long pa)
 void __init bat_mapin_ram(unsigned long bat2, unsigned long bat3)
 {
 	unsigned long tot, done;
-	
+
 	tot = total_lowmem;
 	setbat(2, KERNELBASE, PPC_MEMSTART, bat2, _PAGE_KERNEL);
 	done = (unsigned long)bat_addrs[2].limit - KERNELBASE + 1;
 	if ((done < tot) && !bat_addrs[3].limit && bat3) {
 		tot -= done;
-		setbat(3, KERNELBASE+done, PPC_MEMSTART+done, bat3, 
+		setbat(3, KERNELBASE+done, PPC_MEMSTART+done, bat3,
 		       _PAGE_KERNEL);
 	}
 }

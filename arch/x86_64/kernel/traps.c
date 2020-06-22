@@ -7,7 +7,7 @@
  *  Pentium III FXSR, SSE support
  *	Gareth Hughes <gareth@valinux.com>, May 2000
  *
- *  $Id: traps.c,v 1.62 2003/03/14 16:06:35 ak Exp $
+ *  $Id: traps.c,v 1.66 2003/06/09 05:18:21 ak Exp $
  */
 
 /*
@@ -290,7 +290,7 @@ void show_registers(struct pt_regs *regs)
 		rsp = regs->rsp;
 	}
 	printk("CPU %d ", cpu);
-	show_regs(regs);
+	__show_regs(regs);
 	printk("Process %s (pid: %d, stackpage=%08lx)\n",
 		cur->comm, cur->pid, 4096+(unsigned long)cur);
 
@@ -344,6 +344,7 @@ int die_owner = -1;
 
 void die(const char * str, struct pt_regs * regs, long err)
 {
+	unsigned long flags;
 	int cpu;
 	console_verbose();
 	bust_spinlocks(1);
@@ -352,6 +353,7 @@ void die(const char * str, struct pt_regs * regs, long err)
  	notify_die(DIE_OOPS, (char *)str, regs, err, 255, SIGSEGV);
 	cpu = safe_smp_processor_id(); 
 	/* racy, but better than risking deadlock. */ 
+	__save_flags(flags); 
 	__cli();
 	if (!spin_trylock(&die_lock)) { 
 		if (cpu == die_owner) 
@@ -362,7 +364,7 @@ void die(const char * str, struct pt_regs * regs, long err)
 	die_owner = cpu; 
 	show_registers(regs);
 	bust_spinlocks(0);
-	spin_unlock_irq(&die_lock);
+	spin_unlock_irqrestore(&die_lock, flags);
 	do_exit(SIGSEGV);
 }
 
@@ -402,8 +404,11 @@ static void do_trap(int trapnr, int signr, char *str,
 		struct task_struct *tsk = current;
 		tsk->thread.error_code = error_code;
 		tsk->thread.trap_no = trapnr;
-		if (exception_trace && trapnr != 3)
-			printk("%s[%d] trap %s rip:%lx rsp:%lx error:%lx\n",
+		if (exception_trace && !(tsk->ptrace & PT_PTRACED) && 
+		    (tsk->sig->action[signr-1].sa.sa_handler == SIG_IGN ||
+		    (tsk->sig->action[signr-1].sa.sa_handler == SIG_DFL)))
+			printk(KERN_INFO
+			       "%s[%d] trap %s rip:%lx rsp:%lx error:%lx\n",
 			       tsk->comm, tsk->pid, str,
 			       regs->rip,regs->rsp,error_code); 
 		if (info)
@@ -418,7 +423,6 @@ static void do_trap(int trapnr, int signr, char *str,
 	{	     
 		unsigned long fixup = search_exception_table(regs->rip);
 		if (fixup) {
-			extern int exception_trace; 
 			regs->rip = fixup;
 		} else	
 			die(str, regs, error_code);
@@ -478,20 +482,25 @@ asmlinkage void do_general_protection(struct pt_regs * regs, long error_code)
 			   by the segment reloads in __switch_to. Otherwise
 			   the wake_up could deadlock on scheduler locks. */
 			oops_in_progress++;
-			printk("general protection handler: wrong gs %lx expected %p\n", gs, pda);
+			printk(KERN_EMERG 
+			       "general protection handler: wrong gs %lx expected %p\n", gs, pda);
 			oops_in_progress--; 
 		}
 	}
 #endif
 
 	if (regs->cs & 3) { 		
-		current->thread.error_code = error_code;
-		current->thread.trap_no = 13;
-		if (exception_trace)
-			printk("%s[%d] general protection rip:%lx rsp:%lx error:%lx\n",
-			       current->comm, current->pid,
+		struct task_struct *tsk = current;
+		tsk->thread.error_code = error_code;
+		tsk->thread.trap_no = 13;
+		if (exception_trace && !(tsk->ptrace & PT_PTRACED) && 
+		    (tsk->sig->action[SIGSEGV-1].sa.sa_handler == SIG_IGN ||
+		    (tsk->sig->action[SIGSEGV-1].sa.sa_handler == SIG_DFL)))
+			printk(KERN_INFO
+		       "%s[%d] general protection rip:%lx rsp:%lx error:%lx\n",
+			       tsk->comm, tsk->pid,
 			       regs->rip,regs->rsp,error_code); 
-		force_sig(SIGSEGV, current);
+		force_sig(SIGSEGV, tsk);
 		return;
 	} 
 
@@ -594,7 +603,7 @@ asmlinkage void do_debug(struct pt_regs * regs, long error_code)
 		rdmsrl(MSR_GS_BASE, gs); 
 		if (gs != (unsigned long)pda) { 
 			wrmsrl(MSR_GS_BASE, pda); 
-			printk("debug handler: wrong gs %lx expected %p\n", gs, pda);
+			printk(KERN_EMERG "debug handler: wrong gs %lx expected %p\n", gs, pda);
 		}
 	}
 #endif
@@ -809,7 +818,7 @@ void do_call_debug(struct pt_regs *regs)
 #ifndef CONFIG_MCE
 void do_machine_check(struct pt_regs *regs)
 { 
-	printk("Machine check ignored\n");
+	printk(KERN_INFO "Machine check ignored\n");
 } 
 #endif
 
@@ -837,7 +846,7 @@ void __init trap_init(void)
 	set_intr_gate(19,&simd_coprocessor_error);
 
 #ifdef CONFIG_IA32_EMULATION
-	set_intr_gate(IA32_SYSCALL_VECTOR, ia32_syscall);
+	set_system_gate(IA32_SYSCALL_VECTOR, ia32_syscall);
 #endif
 
 	/*

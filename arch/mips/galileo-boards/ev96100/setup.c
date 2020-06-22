@@ -1,5 +1,4 @@
 /*
- *
  * BRIEF MODULE DESCRIPTION
  *	Galileo EV96100 setup.
  *
@@ -47,8 +46,7 @@
 #include <asm/mipsregs.h>
 #include <asm/irq.h>
 #include <asm/delay.h>
-#include <asm/gt64120.h>
-#include <asm/galileo-boards/ev96100.h>
+#include <asm/gt64120/gt64120.h>
 #include <asm/galileo-boards/ev96100int.h>
 
 
@@ -65,17 +63,16 @@ extern struct resource ioport_resource;
 
 unsigned char mac_0_1[12];
 
-
 void __init ev96100_setup(void)
 {
-	unsigned long config = read_32bit_cp0_register(CP0_CONFIG);
-	unsigned long status = read_32bit_cp0_register(CP0_STATUS);
-	unsigned long info = read_32bit_cp0_register(CP0_INFO);
+	unsigned int config = read_c0_config();
+	unsigned int status = read_c0_status();
+	unsigned int info = read_c0_info();
 	u32 tmp;
 
 	char *argptr;
 
-	clear_cp0_status(ST0_FR);
+	clear_c0_status(ST0_FR);
 
         if (config & 0x8) {
             printk("Secondary cache is enabled\n");
@@ -164,7 +161,7 @@ void __init ev96100_setup(void)
 		 GT_PCI0_CFGADDR_CONFIGEN_BIT);
 
 	udelay(2);
-	tmp = le32_to_cpu(*(volatile u32 *)(MIPS_GT_BASE+GT_PCI0_CFGDATA_OFS));
+	tmp = GT_READ(GT_PCI0_CFGDATA_OFS);
 
 	tmp |= (PCI_COMMAND_IO | PCI_COMMAND_MEMORY |
 		PCI_COMMAND_MASTER | PCI_COMMAND_SERR);
@@ -174,7 +171,7 @@ void __init ev96100_setup(void)
 		 ((PCI_COMMAND / 4) << GT_PCI0_CFGADDR_REGNUM_SHF)   |
 		 GT_PCI0_CFGADDR_CONFIGEN_BIT);
 	udelay(2);
-	*(volatile u32 *)(MIPS_GT_BASE+GT_PCI0_CFGDATA_OFS) = cpu_to_le32(tmp);
+	GT_WRITE(GT_PCI0_CFGDATA_OFS, tmp);
 
 	/* Setup address */
 	GT_WRITE(GT_PCI0_CFGADDR_OFS,
@@ -184,7 +181,7 @@ void __init ev96100_setup(void)
 		 GT_PCI0_CFGADDR_CONFIGEN_BIT);
 
 	udelay(2);
-	tmp = le32_to_cpu(*(volatile u32 *)(MIPS_GT_BASE+GT_PCI0_CFGDATA_OFS));
+	tmp = GT_READ(GT_PCI0_CFGDATA_OFS);
 }
 
 unsigned short get_gt_devid()
@@ -199,7 +196,7 @@ unsigned short get_gt_devid()
 		 GT_PCI0_CFGADDR_CONFIGEN_BIT);
 
 	udelay(4);
-	gt_devid = le32_to_cpu(*(volatile u32 *)
-			(MIPS_GT_BASE+GT_PCI0_CFGDATA_OFS));
-	return (unsigned short)(gt_devid>>16);
+	gt_devid = GT_READ(GT_PCI0_CFGDATA_OFS);
+
+	return gt_devid >> 16;
 }

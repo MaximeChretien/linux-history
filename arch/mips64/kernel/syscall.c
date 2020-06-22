@@ -50,9 +50,11 @@ out:
 	return res;
 }
 
-#define COLOUR_ALIGN(addr,pgoff)		\
-	((((addr)+SHMLBA-1)&~(SHMLBA-1)) +	\
-	 (((pgoff)<<PAGE_SHIFT) & (SHMLBA-1)))
+unsigned long shm_align_mask = PAGE_SIZE - 1;	/* Sane caches */
+
+#define COLOUR_ALIGN(addr,pgoff)				\
+	((((addr) + shm_align_mask) & ~shm_align_mask) +	\
+	 (((pgoff) << PAGE_SHIFT) & shm_align_mask))
 
 unsigned long arch_get_unmapped_area(struct file *filp, unsigned long addr,
 	unsigned long len, unsigned long pgoff, unsigned long flags)
@@ -65,7 +67,7 @@ unsigned long arch_get_unmapped_area(struct file *filp, unsigned long addr,
 		 * We do not accept a shared mapping if it would violate
 		 * cache aliasing constraints.
 		 */
-		if ((flags & MAP_SHARED) && (addr & (SHMLBA - 1)))
+		if ((flags & MAP_SHARED) && (addr & shm_align_mask))
 			return -EINVAL;
 		return addr;
 	}
@@ -186,12 +188,10 @@ asmlinkage int sys_syscall(abi64_no_regargs, struct pt_regs regs)
 	return -ENOSYS;
 }
 
-asmlinkage int
-sys_sysmips(int cmd, long arg1, int arg2, int arg3)
+asmlinkage int sys_sysmips(int cmd, long arg1, int arg2, int arg3)
 {
-	int	*p;
+	int	tmp, len;
 	char	*name;
-	int	tmp, len, errno;
 
 	switch(cmd) {
 	case SETNAME: {
@@ -207,7 +207,7 @@ sys_sysmips(int cmd, long arg1, int arg2, int arg3)
 			return -EFAULT;
 
 		down_write(&uts_sem);
-		strncpy(system_utsname.nodename, name, len);
+		strncpy(system_utsname.nodename, nodename, len);
 		system_utsname.nodename[len] = '\0';
 		up_write(&uts_sem);
 		return 0;
@@ -223,7 +223,7 @@ sys_sysmips(int cmd, long arg1, int arg2, int arg3)
 		return 0;
 
 	case FLUSH_CACHE:
-		_flush_cache_l2();
+		__flush_cache_all();
 		return 0;
 
 	case MIPS_RDNVRAM:
@@ -309,7 +309,7 @@ asmlinkage int sys_ipc (uint call, int first, int second,
 		return sys_shmctl (first, second,
 				   (struct shmid_ds *) ptr);
 	default:
-		return -EINVAL;
+		return -ENOSYS;
 	}
 }
 

@@ -15,6 +15,7 @@
 #include <asm/mipsregs.h>
 #include <asm/pgtable.h>
 #include <asm/stackframe.h>
+#include <asm/war.h>
 
 	.data
 	.comm	pgd_current, NR_CPUS * 8, 8
@@ -72,8 +73,9 @@
 	 * Determine that fault address is within vmalloc range.
 	 */
 	dla	\tmp, ekptbl
-	sltu	\tmp, \ptr, \tmp
+	slt	\tmp, \ptr, \tmp
 	beqz	\tmp, \not_vmalloc		# not vmalloc
+	 nop
 	.endm
 
 
@@ -96,16 +98,16 @@
 	__INIT
 
 	.align	5
-LEAF(except_vec0)
+LEAF(except_vec0_generic)
 	.set	noat
 	PANIC("Unused vector called")
 1:	b	1b
 	 nop
-END(except_vec0)
+END(except_vec0_generic)
 
 
 	/*
-	 * TLB refill handler for the R4000.
+	 * TLB refill handlers for the R4000 and SB1.
 	 * Attention:  We may only use 32 instructions / 128 bytes.
 	 */
 	.align  5
@@ -115,6 +117,23 @@ LEAF(except_vec1_r4k)
 	jr      k0
 	 nop
 END(except_vec1_r4k)
+
+LEAF(except_vec1_sb1)
+#if BCM1250_M3_WAR
+	dmfc0	k0, CP0_BADVADDR
+	dmfc0	k1, CP0_ENTRYHI
+	xor	k0, k1
+	dsrl	k0, k0, PAGE_SHIFT+1
+	bnez	k0, 1f
+#endif
+	.set    noat
+	dla     k0, handle_vec1_r4k
+	jr      k0
+	 nop
+
+1:	eret
+	nop
+END(except_vec1_sb1)
 
 	__FINIT
 
@@ -140,6 +159,7 @@ LEAF(handle_vec1_r4k)
 1:	nop
 	eret
 END(handle_vec1_r4k)
+
 
 	__INIT
 

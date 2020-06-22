@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999,2001-2002 Silicon Graphics, Inc. All rights reserved.
+ * Copyright (C) 1999,2001-2003 Silicon Graphics, Inc. All rights reserved.
  * 
  * This program is free software; you can redistribute it and/or modify it 
  * under the terms of version 2 of the GNU General Public License 
@@ -69,20 +69,26 @@
 #include <asm/sn/bte.h>
 #include <asm/sn/clksupport.h>
 #include <asm/sn/sn_sal.h>
-
-#ifdef CONFIG_IA64_SGI_SN2
 #include <asm/sn/sn2/shub.h>
-#endif
+
+#define pxm_to_nasid(pxm) ((pxm)<<1)
+
+#define MAX_PHYS_MEMORY		(1UL << 49)	/* 1 TB */
 
 extern void bte_init_node (nodepda_t *, cnodeid_t);
 extern void bte_init_cpu (void);
+extern void sn_timer_init(void);
+extern unsigned long last_time_offset;
+extern void (*ia64_mark_idle)(int);
+extern void snidle(int);
 
 unsigned long sn_rtc_cycles_per_second;   
-unsigned long sn_rtc_usec_per_cyc;
 
 partid_t sn_partid = -1;
 char sn_system_serial_number_string[128];
 u64 sn_partition_serial_number;
+
+short	physical_node_map[MAX_PHYSNODE_ID];
 
 /*
  * This is the address of the RRegs in the HSpace of the global
@@ -92,21 +98,14 @@ u64 sn_partition_serial_number;
  * early_printk won't try to access the UART before
  * master_node_bedrock_address is properly calculated.
  */
-u64 master_node_bedrock_address = 0UL;
+u64 master_node_bedrock_address;
 
 static void sn_init_pdas(char **);
 
-extern struct irq_desc *_sn_irq_desc[];
-
-#if defined(CONFIG_IA64_SGI_SN1)
-extern synergy_da_t	*Synergy_da_indr[];
-#endif
 
 static nodepda_t	*nodepdaindr[MAX_COMPACT_NODES];
 
-#ifdef CONFIG_IA64_SGI_SN2
-irqpda_t		*irqpdaindr[NR_CPUS];
-#endif /* CONFIG_IA64_SGI_SN2 */
+irqpda_t		*irqpdaindr;
 
 
 /*
@@ -133,29 +132,19 @@ struct screen_info sn_screen_info = {
  * running in the simulator.  Note that passing zeroes in DRIVE_INFO
  * is sufficient (the IDE driver will autodetect the drive geometry).
  */
+#ifdef CONFIG_IA64_GENERIC
+extern char drive_info[4*16];
+#else
 char drive_info[4*16];
-
-/**
- * sn_map_nr - return the mem_map entry for a given kernel address
- * @addr: kernel address to query
- *
- * Finds the mem_map entry for the kernel address given.  Used by
- * virt_to_page() (asm-ia64/page.h), among other things.
- */
-unsigned long
-sn_map_nr (void *addr)
-{
-	return MAP_NR_DISCONTIG(addr);
-}
+#endif
 
 /**
  * early_sn_setup - early setup routine for SN platforms
  *
- * Sets up an intial console to aid debugging.  Intended primarily
- * for bringup, it's only called if %BRINGUP and %CONFIG_IA64_EARLY_PRINTK
- * are turned on.  See start_kernel() in init/main.c.
+ * Sets up an initial console to aid debugging.  Intended primarily
+ * for bringup.  See start_kernel() in init/main.c.
  */
-#if defined(CONFIG_IA64_EARLY_PRINTK)
+#if defined(CONFIG_IA64_EARLY_PRINTK_SGI_SN) || defined(CONFIG_IA64_SGI_SN_SIM)
 
 void __init
 early_sn_setup(void)
@@ -170,7 +159,7 @@ early_sn_setup(void)
 
 	/*
 	 * Parse enough of the SAL tables to locate the SAL entry point. Since, console
-	 * IO on SN2 is done via SAL calls, early_printk wont work without this.
+	 * IO on SN2 is done via SAL calls, early_printk won't work without this.
 	 *
 	 * This code duplicates some of the ACPI table parsing that is in efi.c & sal.c.
 	 * Any changes to those file may have to be made hereas well.
@@ -193,21 +182,48 @@ early_sn_setup(void)
 	}
 
 	if ( IS_RUNNING_ON_SIMULATOR() ) {
-#if defined(CONFIG_IA64_SGI_SN1)
-		master_node_bedrock_address = (u64)REMOTE_HSPEC_ADDR(get_nasid(), 0);
-#else
 		master_node_bedrock_address = (u64)REMOTE_HUB(get_nasid(), SH_JUNK_BUS_UART0);
-#endif
 		printk(KERN_DEBUG "early_sn_setup: setting master_node_bedrock_address to 0x%lx\n", master_node_bedrock_address);
 	}
 }
-#endif /* CONFIG_IA64_SGI_SN1 */
+#endif /* CONFIG_IA64_EARLY_PRINTK_SGI_SN */
 
 #ifdef CONFIG_IA64_MCA
 extern int platform_intr_list[];
 #endif
 
 extern nasid_t master_nasid;
+static int shub_1_1_found __initdata;
+
+
+/*
+ * sn_check_for_wars
+ *
+ * Set flag for enabling shub specific wars
+ */
+
+static inline int __init
+is_shub_1_1(int nasid)
+{
+	unsigned long id;
+	int	rev;
+
+	id = REMOTE_HUB_L(nasid, SH_SHUB_ID);
+	rev =  (id & SH_SHUB_ID_REVISION_MASK) >> SH_SHUB_ID_REVISION_SHFT;
+	return rev <= 2;
+}
+
+static void __init
+sn_check_for_wars(void)
+{
+	int	cnode;
+
+	for (cnode=0; cnode< numnodes; cnode++)
+		if (is_shub_1_1(cnodeid_to_nasid(cnode)))
+			shub_1_1_found = 1;
+}
+
+
 
 /**
  * sn_setup - SN platform setup routine
@@ -221,8 +237,18 @@ void __init
 sn_setup(char **cmdline_p)
 {
 	long status, ticks_per_sec, drift;
-	int i;
+	int i, pxm;
 	int major = sn_sal_rev_major(), minor = sn_sal_rev_minor();
+	extern void io_sh_swapper(int, int);
+	extern nasid_t get_master_baseio_nasid(void);
+	extern void sn_cpu_init(void);
+
+	MAX_DMA_ADDRESS = PAGE_OFFSET + MAX_PHYS_MEMORY;
+
+	memset(physical_node_map, -1, sizeof(physical_node_map));
+	for (pxm=0; pxm<MAX_PXM_DOMAINS; pxm++)
+		if (pxm_to_nid_map[pxm] != -1)
+			physical_node_map[pxm_to_nasid(pxm)] = pxm_to_nid_map[pxm];
 
 	printk("SGI SAL version %x.%02x\n", major, minor);
 
@@ -236,21 +262,11 @@ sn_setup(char **cmdline_p)
 		panic("PROM version too old\n");
 	}
 
-#ifdef CONFIG_IA64_SGI_SN2
-	{
-		extern void io_sh_swapper(int, int);
-		io_sh_swapper(get_nasid(), 0);
-	}
-#endif
+	io_sh_swapper(get_nasid(), 0);
 
 	master_nasid = get_nasid();
 	(void)get_console_nasid();
-#ifndef CONFIG_IA64_SGI_SN1
-	{
-		extern nasid_t get_master_baseio_nasid(void);
-		(void)get_master_baseio_nasid();
-	}
-#endif
+	(void)get_master_baseio_nasid();
 
 	status = ia64_sal_freq_base(SAL_FREQ_BASE_REALTIME_CLOCK, &ticks_per_sec, &drift);
 	if (status != 0 || ticks_per_sec < 100000) {
@@ -261,26 +277,12 @@ sn_setup(char **cmdline_p)
 	else
 		sn_rtc_cycles_per_second = ticks_per_sec;
 
-#ifdef CONFIG_IA64_SGI_SN1
-	/* PROM has wrong value on SN1 */
-	sn_rtc_cycles_per_second = 990177;
-#endif
-	sn_rtc_usec_per_cyc = ((1000000UL<<IA64_USEC_PER_CYC_SHIFT)
-			       + sn_rtc_cycles_per_second/2) / sn_rtc_cycles_per_second;
-		
-	for (i=0;i<NR_CPUS;i++)
-		_sn_irq_desc[i] = _irq_desc;
-
 	platform_intr_list[ACPI_INTERRUPT_CPEI] = IA64_PCE_VECTOR;
 
 
 	if ( IS_RUNNING_ON_SIMULATOR() )
 	{
-#ifdef CONFIG_IA64_SGI_SN2
 		master_node_bedrock_address = (u64)REMOTE_HUB(get_nasid(), SH_JUNK_BUS_UART0);
-#else
-		master_node_bedrock_address = (u64)REMOTE_HSPEC_ADDR(get_nasid(), 0);
-#endif
 		printk(KERN_DEBUG "sn_setup: setting master_node_bedrock_address to 0x%lx\n",
 		       master_node_bedrock_address);
 	}
@@ -296,6 +298,12 @@ sn_setup(char **cmdline_p)
 	 */
 	sn_init_pdas(cmdline_p);
 
+	/*
+	 * Check for WARs.
+	 */
+	sn_check_for_wars();
+
+	ia64_mark_idle = &snidle;
 
 	/* 
 	 * For the bootcpu, we do this here. All other cpus will make the
@@ -303,16 +311,12 @@ sn_setup(char **cmdline_p)
 	 */
 	sn_cpu_init();
 
-
 #ifdef CONFIG_SMP
 	init_smp_config();
 #endif
 	screen_info = sn_screen_info;
 
-	/*
-	 * Turn off "floating-point assist fault" warnings by default.
-	 */
-	current->thread.flags |= IA64_THREAD_FPEMU_NOPRINT;
+	sn_timer_init();
 }
 
 /**
@@ -332,19 +336,16 @@ sn_init_pdas(char **cmdline_p)
 	if ((PDAADDR&~PAGE_MASK)+sizeof(pda_t) > PAGE_SIZE)
 		panic("overflow of cpu_data page");
 
+	memset(pda.cnodeid_to_nasid_table, -1, sizeof(pda.cnodeid_to_nasid_table));
+	for (cnode=0; cnode<numnodes; cnode++)
+		pda.cnodeid_to_nasid_table[cnode] = pxm_to_nasid(nid_to_pxm_map[cnode]);
+
         /*
          * Allocate & initalize the nodepda for each node.
          */
         for (cnode=0; cnode < numnodes; cnode++) {
 		nodepdaindr[cnode] = alloc_bootmem_node(NODE_DATA(cnode), sizeof(nodepda_t));
 		memset(nodepdaindr[cnode], 0, sizeof(nodepda_t));
-
-#if defined(CONFIG_IA64_SGI_SN1)
-		Synergy_da_indr[cnode * 2] = (synergy_da_t *) alloc_bootmem_node(NODE_DATA(cnode), sizeof(synergy_da_t));
-		Synergy_da_indr[cnode * 2 + 1] = (synergy_da_t *) alloc_bootmem_node(NODE_DATA(cnode), sizeof(synergy_da_t));
-		memset(Synergy_da_indr[cnode * 2], 0, sizeof(synergy_da_t));
-		memset(Synergy_da_indr[cnode * 2 + 1], 0, sizeof(synergy_da_t));
-#endif
         }
 
 	/*
@@ -381,7 +382,7 @@ sn_cpu_init(void)
 	int	cpuphyid;
 	int	nasid;
 	int	slice;
-	int	cnode;
+	int	cnode, i;
 
 	/*
 	 * The boot cpu makes this call again after platform initialization is
@@ -402,38 +403,33 @@ sn_cpu_init(void)
 	memset(&pda, 0, sizeof(pda));
 	pda.p_nodepda = nodepdaindr[cnode];
 	pda.led_address = (typeof(pda.led_address)) (LED0 + (slice<<LED_CPU_SHIFT));
-#ifdef LED_WAR
-	pda.led_address = (typeof(pda.led_address)) (LED0 + (slice<<(LED_CPU_SHIFT-1))); /* temp til L1 firmware fixed */
-#endif
 	pda.led_state = LED_ALWAYS_SET;
 	pda.hb_count = HZ/2;
 	pda.hb_state = 0;
 	pda.idle_flag = 0;
+	pda.shub_1_1_found = shub_1_1_found;
 	
+	memset(pda.cnodeid_to_nasid_table, -1, sizeof(pda.cnodeid_to_nasid_table));
+	for (i=0; i<numnodes; i++)
+		pda.cnodeid_to_nasid_table[i] = pxm_to_nasid(nid_to_pxm_map[i]);
+
 	if (local_node_data->active_cpu_count == 1)
 		nodepda->node_first_cpu = cpuid;
 
-#ifdef CONFIG_IA64_SGI_SN1
-	{
-		int	synergy;
-		synergy = cpu_physical_id_to_synergy(cpuphyid);
-		pda.p_subnodepda = &nodepdaindr[cnode]->snpda[synergy];
-	}
-#endif
 
-#ifdef CONFIG_IA64_SGI_SN2
 
 	/*
 	 * We must use different memory allocators for first cpu (bootmem 
 	 * allocator) than for the other cpus (regular allocator).
 	 */
 	if (cpuid == 0)
-		irqpdaindr[cpuid] = alloc_bootmem_node(NODE_DATA(cpuid_to_cnodeid(cpuid)),sizeof(irqpda_t));
-	else
-		irqpdaindr[cpuid] = page_address(alloc_pages_node(local_cnodeid(), GFP_KERNEL, get_order(sizeof(irqpda_t))));
+		irqpdaindr = alloc_bootmem_node(NODE_DATA(cpuid_to_cnodeid(cpuid)),sizeof(irqpda_t));
 
-	memset(irqpdaindr[cpuid], 0, sizeof(irqpda_t));
-	pda.p_irqpda = irqpdaindr[cpuid];
+	memset(irqpdaindr, 0, sizeof(irqpda_t));
+	irqpdaindr->irq_flags[SGI_PCIBR_ERROR] = SN2_IRQ_SHARED;
+	irqpdaindr->irq_flags[SGI_PCIBR_ERROR] |= SN2_IRQ_RESERVED;
+	irqpdaindr->irq_flags[SGI_II_ERROR] = SN2_IRQ_SHARED;
+	irqpdaindr->irq_flags[SGI_II_ERROR] |= SN2_IRQ_RESERVED;
 
 	pda.pio_write_status_addr = (volatile unsigned long *)
 			LOCAL_MMR_ADDR((slice < 2 ? SH_PIO_WRITE_STATUS_0 : SH_PIO_WRITE_STATUS_1 ) );
@@ -442,253 +438,9 @@ sn_cpu_init(void)
 
 	if (nodepda->node_first_cpu == cpuid) {
 		int	buddy_nasid;
-		buddy_nasid = cnodeid_to_nasid(local_cnodeid() == numnodes-1 ? 0 : local_cnodeid()+ 1);
+		buddy_nasid = cnodeid_to_nasid(numa_node_id() == numnodes-1 ? 0 : numa_node_id()+ 1);
 		pda.pio_shub_war_cam_addr = (volatile unsigned long*)GLOBAL_MMR_ADDR(nasid, SH_PI_CAM_CONTROL);
 	}
 
-#ifdef BRINGUP2
-	/*
-	 * Zero out the counters used for counting MCAs
-	 *   ZZZZZ temp
-	 */
-	{
-		long	*p;
-		p = (long*)LOCAL_MMR_ADDR(SH_XN_IILB_LB_CMP_ENABLE0);
-		*p = 0;
-		p = (long*)LOCAL_MMR_ADDR(SH_XN_IILB_LB_CMP_ENABLE1);
-		*p = 0;
-	}
-
-#endif
-#endif
-
-#ifdef CONFIG_IA64_SGI_SN1
-	pda.bedrock_rev_id = (volatile unsigned long *) LOCAL_HUB(LB_REV_ID);
-	if (cpuid_to_synergy(cpuid))
-		/* CPU B */
-		pda.pio_write_status_addr = (volatile unsigned long *) GBL_PERF_B_ADDR;
-	else
-		/* CPU A */
-		pda.pio_write_status_addr = (volatile unsigned long *) GBL_PERF_A_ADDR;
-#endif
-
-
 	bte_init_cpu();
 }
-
-
-/**
- * cnodeid_to_cpuid - convert a cnode to a cpuid of a cpu on the node.
- * @cnode: node to get a cpuid from
- *	
- * Returns -1 if no cpus exist on the node.
- * NOTE:BRINGUP ZZZ This is NOT a good way to find cpus on the node.
- * Need a better way!!
- */
-int
-cnodeid_to_cpuid(int cnode) {
-	int cpu;
-
-	for (cpu = 0; cpu < smp_num_cpus; cpu++)
-		if (cpuid_to_cnodeid(cpu) == cnode)
-			break;
-
-	if (cpu == smp_num_cpus) 
-		cpu = -1;
-
-	return cpu;
-}
-
-/**
- * get_cycles - return a non-decreasing timestamp
- *
- * On SN, we use an RTC read for this function
- */
-cycles_t
-get_cycles (void)
-{
-	return GET_RTC_COUNTER();
-}
-
-/**
- * gettimeoffset - number of usecs elapsed since &xtime was last updated
- *
- * This function is used by do_gettimeofday() to determine the number
- * of usecs that have elapsed since the last update to &xtime.  On SN
- * this is accomplished using the RTC built in to each Hub chip; each
- * is guaranteed to be synchronized by the PROM, so a local read will
- * suffice (get_cycles() does this for us).  A snapshot of the RTC value
- * is taken on every timer interrupt and this function more or less
- * subtracts that snapshot value from the current value.
- *
- * Note that if a lot of processing was done during the last timer
- * interrupt then &xtime may be some number of jiffies out of date.
- * This function must account for that.
- */
-unsigned long
-gettimeoffset(void)
-{
-	unsigned long current_rtc_val, local_last_rtc_val;
-	unsigned long usec;
-
-	local_last_rtc_val = last_rtc_val;
-	current_rtc_val = get_cycles();
-	usec = last_itc_lost_usec;
-
-	/* If the RTC has wrapped around, compensate */
-	if (unlikely(current_rtc_val < local_last_rtc_val)) {
-		printk(KERN_NOTICE "RTC wrapped cpu:%d current:0x%lx last:0x%lx\n",
-				smp_processor_id(), current_rtc_val,
-				local_last_rtc_val);
-		current_rtc_val += RTC_MASK;
-	}
-
-	usec += ((current_rtc_val - local_last_rtc_val)*sn_rtc_usec_per_cyc) >> 
-		IA64_USEC_PER_CYC_SHIFT;
-
-	/*
-	 * usec is the number of microseconds into the current clock interval. Every
-	 * clock tick, xtime is advanced by "tick" microseconds. If "usec"
-	 * is allowed to get larger than "tick", the time value returned by gettimeofday
-	 * will go backward.
-	 */
-	if (usec >= tick)
-		usec = tick-1;
-
-	return usec;
-}
-
-#ifdef II_PRTE_TLB_WAR
-long iiprt_lock[16*64] __cacheline_aligned; /* allow for NASIDs up to 64 */
-#endif
-
-#ifdef BUS_INT_WAR
-
-#include <asm/hw_irq.h>
-#include <asm/sn/pda.h>
-
-void ia64_handle_irq (ia64_vector vector, struct pt_regs *regs);
-
-static spinlock_t irq_lock = SPIN_LOCK_UNLOCKED;
-
-#define IRQCPU(irq)	((irq)>>8)
-
-void
-sn_add_polled_interrupt(int irq, int interval)
-{
-	unsigned long flags, irq_cnt;
-	sn_poll_entry_t	*irq_list;
-
-	irq_list = pdacpu(IRQCPU(irq)).pda_poll_entries;;
-
-	spin_lock_irqsave(&irq_lock, flags);
-	irq_cnt = pdacpu(IRQCPU(irq)).pda_poll_entry_count;
-	irq_list[irq_cnt].irq = irq;
-	irq_list[irq_cnt].interval = interval;
-	irq_list[irq_cnt].tick = interval;
-	pdacpu(IRQCPU(irq)).pda_poll_entry_count++;
-	spin_unlock_irqrestore(&irq_lock, flags);
-
-
-}
-
-void
-sn_delete_polled_interrupt(int irq)
-{
-	unsigned long flags, i, irq_cnt;
-	sn_poll_entry_t	*irq_list;
-
-	irq_list = pdacpu(IRQCPU(irq)).pda_poll_entries;
-
-	spin_lock_irqsave(&irq_lock, flags);
-	irq_cnt = pdacpu(IRQCPU(irq)).pda_poll_entry_count;
-	for (i=0; i<irq_cnt; i++) {
-		if (irq_list[i].irq == irq) {
-			irq_list[i] = irq_list[irq_cnt-1];
-			pdacpu(IRQCPU(irq)).pda_poll_entry_count--;
-			break;
-		}
-	}
-	spin_unlock_irqrestore(&irq_lock, flags);
-}
-
-long sn_int_poll_ticks=50;
-
-void
-sn_irq_poll(int cpu, int reason) 
-{
-	unsigned long flags, i;
-	sn_poll_entry_t	*irq_list;
-
-
-#ifdef CONFIG_SHUB_1_0_SPECIFIC
-	ia64_handle_irq(IA64_IPI_VECTOR, 0);
-#else
-	if (sn_int_poll_ticks == 0)
-		return;
-#endif
-	irq_list = pda.pda_poll_entries;
-
-	for (i=0; i<pda.pda_poll_entry_count; i++, irq_list++) {
-		if (--irq_list->tick <= 0) {
-#ifdef CONFIG_SHUB_1_0_SPECIFIC
-			irq_list->tick = irq_list->interval;
-#else
-			irq_list->tick = sn_int_poll_ticks;
-#endif
-			local_irq_save(flags);
-			ia64_handle_irq(irq_to_vector(irq_list->irq), 0);
-			local_irq_restore(flags);
-		}
-	}
-}	
-
-#define PROCFILENAME	"sn_int_poll_ticks"
-
-static struct proc_dir_entry *proc_op;
-
-
-static int
-read_proc(char *buffer, char **start, off_t off, int count, int *eof, void *data)
-{
-	int len = 0;
-
-	len += sprintf(buffer + len, "Poll hack: interval %ld ticks\n", sn_int_poll_ticks);
-
-	if (len <= off+count) *eof = 1;
-	*start = buffer + off;
-	len   -= off;
-	if (len>count) len = count;
-	if (len<0) len = 0;
-	return len;
-}
-
-static int
-write_proc (struct file *file, const char *userbuf, unsigned long count, void *data)
-{
-       extern long atoi(char *);
-       char        buf[80];
-
-       if (copy_from_user(buf, userbuf, count < sizeof(buf) ? count : sizeof(buf)))
-           return -EFAULT;
-
-       sn_int_poll_ticks = atoi(buf);
-
-       return count;
-}
-
-
-int __init
-sn_poll_init(void)
-{
-	if ((proc_op = create_proc_entry(PROCFILENAME, 0644, NULL)) == NULL) {
-		printk("%s: unable to create proc entry", PROCFILENAME);
-		return -1;
-	}
-	proc_op->read_proc = read_proc;
-	proc_op->write_proc = write_proc;
-	return 0;
-}
-
-module_init(sn_poll_init);
-#endif

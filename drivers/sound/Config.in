@@ -35,7 +35,7 @@ dep_tristate '  Creative SBLive! (EMU10K1)' CONFIG_SOUND_EMU10K1 $CONFIG_SOUND $
 dep_mbool    '    Creative SBLive! MIDI' CONFIG_MIDI_EMU10K1 $CONFIG_SOUND_EMU10K1 $CONFIG_EXPERIMENTAL
 dep_tristate '  Crystal SoundFusion (CS4280/461x)' CONFIG_SOUND_FUSION $CONFIG_SOUND $CONFIG_PCI
 dep_tristate '  Crystal Sound CS4281' CONFIG_SOUND_CS4281 $CONFIG_SOUND $CONFIG_PCI
-if [ "$CONFIG_SIBYTE_SB1250" = "y" -a "$CONFIG_REMOTE_DEBUG" != "y" ]; then
+if [ "$CONFIG_SIBYTE_SWARM" = "y" ]; then
     dep_tristate '  Crystal Sound CS4297a (for Swarm)' CONFIG_SOUND_BCM_CS4297A $CONFIG_SOUND
 fi
 dep_tristate '  Ensoniq AudioPCI (ES1370)' CONFIG_SOUND_ES1370 $CONFIG_SOUND $CONFIG_PCI
@@ -66,8 +66,8 @@ fi
 if [ "$CONFIG_DDB5477" = "y" ]; then
     dep_tristate '  NEC Vrc5477 AC97 sound' CONFIG_SOUND_VRC5477 $CONFIG_SOUND
 fi
-if [ "$CONFIG_MIPS_AU1000" = "y" ]; then
-    dep_tristate '  Au1000 Sound' CONFIG_SOUND_AU1000 $CONFIG_SOUND
+if [ "$CONFIG_SOC_AU1X00" = "y" -o  "$CONFIG_SOC_AU1500" = "y" ]; then
+    dep_tristate '  Au1x00 Sound' CONFIG_SOUND_AU1X00 $CONFIG_SOUND
 fi
 
 dep_tristate '  Trident 4DWave DX/NX, SiS 7018 or ALi 5451 PCI Audio Core' CONFIG_SOUND_TRIDENT $CONFIG_SOUND $CONFIG_PCI

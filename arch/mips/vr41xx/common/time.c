@@ -48,8 +48,7 @@
 #include <asm/mipsregs.h>
 #include <asm/param.h>
 #include <asm/time.h>
-
-#define MIPS_COUNTER_TIMER_IRQ	7
+#include <asm/vr41xx/vr41xx.h>
 
 #define VR4111_ETIMELREG	KSEG1ADDR(0x0b0000c0)
 #define VR4122_ETIMELREG	KSEG1ADDR(0x0f000100)
@@ -63,7 +62,7 @@ extern int vr41xx_rtc_set_time(unsigned long sec);
 
 void vr41xx_time_init(void)
 {
-	switch (mips_cpu.cputype) {
+	switch (current_cpu_data.cputype) {
 	case CPU_VR4111:
 	case CPU_VR4121:
 		vr41xx_rtc_base = VR4111_ETIMELREG;
@@ -87,8 +86,8 @@ void vr41xx_timer_setup(struct irqaction *irq)
 {
 	u32 count;
 
-	setup_irq(MIPS_COUNTER_TIMER_IRQ, irq);
+	setup_irq(MIPS_COUNTER_IRQ, irq);
 
-	count = read_32bit_cp0_register(CP0_COUNT);
-	write_32bit_cp0_register (CP0_COMPARE, count + (mips_counter_frequency / HZ));
+	count = read_c0_count();
+	write_c0_compare(count + (mips_counter_frequency / HZ));
 }

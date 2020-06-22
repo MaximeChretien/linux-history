@@ -28,6 +28,7 @@
  *  675 Mass Ave, Cambridge, MA 02139, USA.
  *
  */
+#include <linux/config.h>
 #include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/kernel_stat.h>
@@ -60,18 +61,18 @@ static inline void modify_cp0_intmask(unsigned clr_mask_in, unsigned set_mask_in
 	/* do the low 8 bits first */
 	clr_mask = 0xff & clr_mask_in;
 	set_mask = 0xff & set_mask_in;
-	status = read_32bit_cp0_register(CP0_STATUS);
+	status = read_c0_status();
 	status &= ~((clr_mask & 0xFF) << 8);
 	status |= (set_mask & 0xFF) << 8;
-	write_32bit_cp0_register(CP0_STATUS, status);
+	write_c0_status(status);
 
 	/* do the high 8 bits */
 	clr_mask = 0xff & (clr_mask_in >> 8);
 	set_mask = 0xff & (set_mask_in >> 8);
-	status = read_32bit_cp0_set1_register(CP0_S1_INTCONTROL);
+	status = read_c0_intcontrol();
 	status &= ~((clr_mask & 0xFF) << 8);
 	status |= (set_mask & 0xFF) << 8;
-	write_32bit_cp0_set1_register(CP0_S1_INTCONTROL, status);
+	write_c0_intcontrol(status);
 }
 
 static inline void mask_irq(unsigned int irq)
@@ -135,7 +136,6 @@ static struct hw_interrupt_type cp7000_hpcdma_irq_type = {
 
 
 extern asmlinkage void ocelot_handle_int(void);
-extern void gt64120_irq_init(void);
 
 void __init init_IRQ(void)
 {
@@ -144,7 +144,7 @@ void __init init_IRQ(void)
 	/*
 	 * Clear all of the interrupts while we change the able around a bit.
 	 */
-	clear_cp0_status(ST0_IM);
+	clear_c0_status(ST0_IM);
 	__cli();
 
 	/* Sets the first-level interrupt dispatcher. */
@@ -158,9 +158,7 @@ void __init init_IRQ(void)
 		irq_desc[i].handler	= &cp7000_hpcdma_irq_type;
 	}
 
-	gt64120_irq_init();
-
-#ifdef CONFIG_REMOTE_DEBUG
+#ifdef CONFIG_KGDB
 	printk("start kgdb ...\n");
 	set_debug_traps();
 	breakpoint();	/* you may move this line to whereever you want :-) */

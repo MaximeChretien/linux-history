@@ -162,7 +162,7 @@
 #define	CONFIG_USB_GENESYS
 #define	CONFIG_USB_NET1080
 #define	CONFIG_USB_PL2301
-#define	CONFIG_USB_SA1100
+#define	CONFIG_USB_ARMLINUX
 #define	CONFIG_USB_ZAURUS
 
 
@@ -218,6 +218,11 @@ struct usbnet {
 	struct list_head	dev_list;
 	wait_queue_head_t	*wait;
 
+	// i/o info: pipes etc
+	unsigned		in, out;
+	unsigned		maxpacket;
+	//struct timer_list	delay;
+
 	// protocol/interface state
 	struct net_device	net;
 	struct net_device_stats	stats;
@@ -266,13 +271,11 @@ struct driver_info {
 	// FIXME -- also an interrupt mechanism
 	// useful for at least PL2301/2302 and GL620USB-A
 
-	/* framework currently "knows" bulk EPs talk packets */
+	/* for new devices, use the descriptor-reading code instead */
 	int		in;		/* rx endpoint */
 	int		out;		/* tx endpoint */
 	int		epsize;
 };
-
-#define EP_SIZE(usbnet)	((usbnet)->driver_info->epsize)
 
 // we record the state for each of our queued skbs
 enum skb_state {
@@ -305,6 +308,61 @@ MODULE_PARM_DESC (msg_level, "Initial message level (default = 1)");
 /* mostly for PDA style devices, which are always present */
 static int always_connected (struct usbnet *dev)
 {
+	return 0;
+}
+
+/*-------------------------------------------------------------------------*/
+
+/* handles CDC Ethernet and many other network "bulk data" interfaces */
+static int
+get_endpoints (struct usbnet *dev, struct usb_interface *intf)
+{
+	int				tmp;
+	struct usb_interface_descriptor	*alt;
+	struct usb_endpoint_descriptor	*in, *out;
+
+	for (tmp = 0; tmp < intf->max_altsetting; tmp++) {
+		unsigned	ep;
+
+		in = out = 0;
+		alt = intf->altsetting + tmp;
+
+		/* take the first altsetting with in-bulk + out-bulk;
+		 * ignore other endpoints and altsetttings.
+		 */
+		for (ep = 0; ep < alt->bNumEndpoints; ep++) {
+			struct usb_endpoint_descriptor	*e;
+
+			e = alt->endpoint + ep;
+			if (e->bmAttributes != USB_ENDPOINT_XFER_BULK)
+				continue;
+			if (e->bEndpointAddress & USB_DIR_IN) {
+				if (!in)
+					in = e;
+			} else {
+				if (!out)
+					out = e;
+			}
+			if (in && out)
+				goto found;
+		}
+	}
+	return -EINVAL;
+
+found:
+	if (alt->bAlternateSetting != 0
+			|| !(dev->driver_info->flags & FLAG_NO_SETINT)) {
+		tmp = usb_set_interface (dev->udev, alt->bInterfaceNumber,
+				alt->bAlternateSetting);
+		if (tmp < 0)
+			return tmp;
+	}
+	
+	dev->in = usb_rcvbulkpipe (dev->udev,
+			in->bEndpointAddress & USB_ENDPOINT_NUMBER_MASK);
+	dev->out = usb_sndbulkpipe (dev->udev,
+			out->bEndpointAddress & USB_ENDPOINT_NUMBER_MASK);
+	dev->maxpacket = usb_maxpacket (dev->udev, dev->out, 1);
 	return 0;
 }
 
@@ -361,9 +419,6 @@ static const struct driver_info	an2720_info = {
 
 static const struct driver_info	belkin_info = {
 	.description =	"Belkin, eTEK, or compatible",
-
-	.in = 1, .out = 1,		// direction distinguishes these
-	.epsize =64,
 };
 
 #endif	/* CONFIG_USB_BELKIN */
@@ -708,7 +763,7 @@ genelink_tx_fixup (struct usbnet *dev, struct sk_buff *skb, int flags)
 	*packet_len = length;
 
 	// add padding byte
-	if ((skb->len % EP_SIZE (dev)) == 0)
+	if ((skb->len % dev->maxpacket) == 0)
 		skb_put (skb, 1);
 
 	return skb;
@@ -1174,9 +1229,6 @@ static const struct driver_info	net1080_info = {
 	.check_connect =net1080_check_connect,
 	.rx_fixup =	net1080_rx_fixup,
 	.tx_fixup =	net1080_tx_fixup,
-
-	.in = 1, .out = 1,		// direction distinguishes these
-	.epsize =64,
 };
 
 #endif /* CONFIG_USB_NET1080 */
@@ -1241,75 +1293,55 @@ static const struct driver_info	prolific_info = {
 	.flags =	FLAG_NO_SETINT,
 		/* some PL-2302 versions seem to fail usb_set_interface() */
 	.reset =	pl_reset,
-
-	.in = 3, .out = 2,
-	.epsize =64,
 };
 
 #endif /* CONFIG_USB_PL2301 */
 
 
 
-#ifdef	CONFIG_USB_PXA
+#ifdef	CONFIG_USB_ARMLINUX
 
 /*-------------------------------------------------------------------------
  *
- * PXA250 and PXA210 use XScale cores (ARM v5TE) with better USB support,
- * and different USB endpoint numbering than the SA1100 devices.
+ * Standard ARM kernels include a "usb-eth" driver, or a newer
+ * "ethernet gadget" driver for basic USB connectivity.  The vendor
+ * and product code may also be used for other non-CDC Linux devices,
+ * if they all maintain protocol compatibility.
  *
- *-------------------------------------------------------------------------*/
-
-static const struct driver_info	pxa_info = {
-	.description =	"PXA-250 Linux Device",
-	.check_connect = always_connected,
-
-	.in = 1, .out = 2,
-	.epsize = 64,
-};
-
-#endif	/* CONFIG_USB_PXA */
-
-
-
-#ifdef	CONFIG_USB_SA1100
-
-/*-------------------------------------------------------------------------
+ * That means lots of hardware could match here, possibly using
+ * different endpoint numbers (and bcdVersion ids).  so we rely on
+ * endpoint descriptors to sort that out for us.
  *
- * Intel's SA-1100 chip integrates basic USB support, and is used
- * in PDAs like some iPAQs, the Yopy, some Zaurus models, and more.
- * When they run Linux, arch/arm/mach-sa1100/usb-eth.c may be used to
- * network using minimal USB framing data.
- *
- * This describes the driver currently in standard ARM Linux kernels.
- * The Zaurus uses a different driver (see later).
+ * (Current Zaurus models need a different driver; see later.)
  *
  *-------------------------------------------------------------------------*/
 
 static const struct driver_info	linuxdev_info = {
-	.description =	"SA-1100 Linux Device",
+	.description =	"Linux Device",
 	.check_connect = always_connected,
-
-	.in = 2, .out = 1,
-	.epsize = 64,
 };
 
 static const struct driver_info	yopy_info = {
 	.description =	"Yopy",
 	.check_connect = always_connected,
-
-	.in = 2, .out = 1,
-	.epsize = 64,
 };
 
-#endif	/* CONFIG_USB_SA1100 */
+static const struct driver_info	blob_info = {
+	.description =	"Boot Loader OBject",
+	.check_connect = always_connected,
+};
+
+#endif	/* CONFIG_USB_ARMLINUX */
 
 
 #ifdef CONFIG_USB_ZAURUS
 
+#include <linux/crc32.h>
+
 /*-------------------------------------------------------------------------
  *
- * Zaurus is also a SA-1110 based PDA, but one using a different driver
- * (and framing) for its USB slave/gadget controller than the case above.
+ * Zaurus PDAs are also ARM based, but currently use different drivers
+ * (and framing) for USB slave/gadget controllers than the case above.
  *
  * For the current version of that driver, the main way that framing is
  * nonstandard (also from perspective of the CDC ethernet model!) is a
@@ -1317,57 +1349,6 @@ static const struct driver_info	yopy_info = {
  * haven't been fully worked around.
  *
  *-------------------------------------------------------------------------*/
-
-// NOTE: so far on 2.4 <linux/crc32.h> isn't for "bulk data" like this.
-// On 2.5 crc32_le() handles this for us.
-
-static const u32 crc32_table [256] = {
-    0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
-    0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91,
-    0x1db71064, 0x6ab020f2, 0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
-    0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec, 0x14015c4f, 0x63066cd9, 0xfa0f3d63, 0x8d080df5,
-    0x3b6e20c8, 0x4c69105e, 0xd56041e4, 0xa2677172, 0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b,
-    0x35b5a8fa, 0x42b2986c, 0xdbbbc9d6, 0xacbcf940, 0x32d86ce3, 0x45df5c75, 0xdcd60dcf, 0xabd13d59,
-    0x26d930ac, 0x51de003a, 0xc8d75180, 0xbfd06116, 0x21b4f4b5, 0x56b3c423, 0xcfba9599, 0xb8bda50f,
-    0x2802b89e, 0x5f058808, 0xc60cd9b2, 0xb10be924, 0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d,
-    0x76dc4190, 0x01db7106, 0x98d220bc, 0xefd5102a, 0x71b18589, 0x06b6b51f, 0x9fbfe4a5, 0xe8b8d433,
-    0x7807c9a2, 0x0f00f934, 0x9609a88e, 0xe10e9818, 0x7f6a0dbb, 0x086d3d2d, 0x91646c97, 0xe6635c01,
-    0x6b6b51f4, 0x1c6c6162, 0x856530d8, 0xf262004e, 0x6c0695ed, 0x1b01a57b, 0x8208f4c1, 0xf50fc457,
-    0x65b0d9c6, 0x12b7e950, 0x8bbeb8ea, 0xfcb9887c, 0x62dd1ddf, 0x15da2d49, 0x8cd37cf3, 0xfbd44c65,
-    0x4db26158, 0x3ab551ce, 0xa3bc0074, 0xd4bb30e2, 0x4adfa541, 0x3dd895d7, 0xa4d1c46d, 0xd3d6f4fb,
-    0x4369e96a, 0x346ed9fc, 0xad678846, 0xda60b8d0, 0x44042d73, 0x33031de5, 0xaa0a4c5f, 0xdd0d7cc9,
-    0x5005713c, 0x270241aa, 0xbe0b1010, 0xc90c2086, 0x5768b525, 0x206f85b3, 0xb966d409, 0xce61e49f,
-    0x5edef90e, 0x29d9c998, 0xb0d09822, 0xc7d7a8b4, 0x59b33d17, 0x2eb40d81, 0xb7bd5c3b, 0xc0ba6cad,
-    0xedb88320, 0x9abfb3b6, 0x03b6e20c, 0x74b1d29a, 0xead54739, 0x9dd277af, 0x04db2615, 0x73dc1683,
-    0xe3630b12, 0x94643b84, 0x0d6d6a3e, 0x7a6a5aa8, 0xe40ecf0b, 0x9309ff9d, 0x0a00ae27, 0x7d079eb1,
-    0xf00f9344, 0x8708a3d2, 0x1e01f268, 0x6906c2fe, 0xf762575d, 0x806567cb, 0x196c3671, 0x6e6b06e7,
-    0xfed41b76, 0x89d32be0, 0x10da7a5a, 0x67dd4acc, 0xf9b9df6f, 0x8ebeeff9, 0x17b7be43, 0x60b08ed5,
-    0xd6d6a3e8, 0xa1d1937e, 0x38d8c2c4, 0x4fdff252, 0xd1bb67f1, 0xa6bc5767, 0x3fb506dd, 0x48b2364b,
-    0xd80d2bda, 0xaf0a1b4c, 0x36034af6, 0x41047a60, 0xdf60efc3, 0xa867df55, 0x316e8eef, 0x4669be79,
-    0xcb61b38c, 0xbc66831a, 0x256fd2a0, 0x5268e236, 0xcc0c7795, 0xbb0b4703, 0x220216b9, 0x5505262f,
-    0xc5ba3bbe, 0xb2bd0b28, 0x2bb45a92, 0x5cb36a04, 0xc2d7ffa7, 0xb5d0cf31, 0x2cd99e8b, 0x5bdeae1d,
-    0x9b64c2b0, 0xec63f226, 0x756aa39c, 0x026d930a, 0x9c0906a9, 0xeb0e363f, 0x72076785, 0x05005713,
-    0x95bf4a82, 0xe2b87a14, 0x7bb12bae, 0x0cb61b38, 0x92d28e9b, 0xe5d5be0d, 0x7cdcefb7, 0x0bdbdf21,
-    0x86d3d2d4, 0xf1d4e242, 0x68ddb3f8, 0x1fda836e, 0x81be16cd, 0xf6b9265b, 0x6fb077e1, 0x18b74777,
-    0x88085ae6, 0xff0f6a70, 0x66063bca, 0x11010b5c, 0x8f659eff, 0xf862ae69, 0x616bffd3, 0x166ccf45,
-    0xa00ae278, 0xd70dd2ee, 0x4e048354, 0x3903b3c2, 0xa7672661, 0xd06016f7, 0x4969474d, 0x3e6e77db,
-    0xaed16a4a, 0xd9d65adc, 0x40df0b66, 0x37d83bf0, 0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9,
-    0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693, 0x54de5729, 0x23d967bf,
-    0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
-};
-
-#define CRC32_INITFCS     0xffffffff  // Initial FCS value 
-#define CRC32_FCS(fcs, c) (((fcs) >> 8) ^ crc32_table[((fcs) ^ (c)) & 0xff])
-
-/* fcs_compute32 - memcpy and calculate fcs
- * Perform a memcpy and calculate fcs using ppp 32bit CRC algorithm.
- */
-static inline u32 fcs_compute32 (unsigned char *sp, int len, u32 fcs)
-{
-	for (;len-- > 0; fcs = CRC32_FCS (fcs, *sp++))
-		continue;
-	return fcs;
-}
 
 static struct sk_buff *
 zaurus_tx_fixup (struct usbnet *dev, struct sk_buff *skb, int flags)
@@ -1387,7 +1368,7 @@ zaurus_tx_fixup (struct usbnet *dev, struct sk_buff *skb, int flags)
 	if (skb) {
 		u32		fcs;
 done:
-		fcs = fcs_compute32 (skb->data, skb->len, CRC32_INITFCS);
+		fcs = crc32_le (~0, skb->data, skb->len);
 		fcs = ~fcs;
 
 		*skb_put (skb, 1) = fcs       & 0xff;
@@ -1398,6 +1379,7 @@ done:
 	return skb;
 }
 
+/* SA-1100 based */
 static const struct driver_info	zaurus_sl5x00_info = {
 	.description =	"Sharp Zaurus SL-5x00",
 	.flags =	FLAG_FRAMING_Z,
@@ -1407,6 +1389,8 @@ static const struct driver_info	zaurus_sl5x00_info = {
 	.in = 2, .out = 1,
 	.epsize = 64,
 };
+
+/* PXA-2xx based */
 static const struct driver_info	zaurus_sla300_info = {
 	.description =	"Sharp Zaurus SL-A300",
 	.flags =	FLAG_FRAMING_Z,
@@ -1426,8 +1410,15 @@ static const struct driver_info	zaurus_slb500_info = {
 	.in = 1, .out = 2,
 	.epsize = 64,
 };
+static const struct driver_info	zaurus_slc700_info = {
+	.description =	"Sharp Zaurus SL-C700",
+	.flags =	FLAG_FRAMING_Z,
+	.check_connect = always_connected,
+	.tx_fixup = 	zaurus_tx_fixup,
 
-// SL-5600 and C-700 are PXA based; should resemble A300
+	.in = 1, .out = 2,
+	.epsize = 64,
+};
 
 #endif
 
@@ -1456,7 +1447,7 @@ static int usbnet_change_mtu (struct net_device *net, int new_mtu)
 		return -EINVAL;
 #endif
 	// no second zero-length packet read wanted after mtu-sized packets
-	if (((new_mtu + sizeof (struct ethhdr)) % EP_SIZE (dev)) == 0)
+	if (((new_mtu + sizeof (struct ethhdr)) % dev->maxpacket) == 0)
 		return -EDOM;
 	net->mtu = new_mtu;
 	return 0;
@@ -1545,8 +1536,7 @@ static void rx_submit (struct usbnet *dev, struct urb *urb, int flags)
 	entry->state = rx_start;
 	entry->length = 0;
 
-	usb_fill_bulk_urb (urb, dev->udev,
-		usb_rcvbulkpipe (dev->udev, dev->driver_info->in),
+	usb_fill_bulk_urb (urb, dev->udev, dev->in,
 		skb->data, size, rx_complete, skb);
 	urb->transfer_flags |= USB_ASYNC_UNLINK;
 
@@ -1895,8 +1885,7 @@ kevent (void *data)
 	/* usb_clear_halt() needs a thread context */
 	if (test_bit (EVENT_TX_HALT, &dev->flags)) {
 		unlink_urbs (&dev->txq);
-		status = usb_clear_halt (dev->udev,
-			usb_sndbulkpipe (dev->udev, dev->driver_info->out));
+		status = usb_clear_halt (dev->udev, dev->out);
 		if (status < 0)
 			err ("%s: can't clear tx halt, status %d",
 				dev->net.name, status);
@@ -1907,8 +1896,7 @@ kevent (void *data)
 	}
 	if (test_bit (EVENT_RX_HALT, &dev->flags)) {
 		unlink_urbs (&dev->rxq);
-		status = usb_clear_halt (dev->udev,
-			usb_rcvbulkpipe (dev->udev, dev->driver_info->in));
+		status = usb_clear_halt (dev->udev, dev->in);
 		if (status < 0)
 			err ("%s: can't clear rx halt, status %d",
 				dev->net.name, status);
@@ -2019,11 +2007,10 @@ static int usbnet_start_xmit (struct sk_buff *skb, struct net_device *net)
 #endif	/* CONFIG_USB_NET1080 */
 
 	/* don't assume the hardware handles USB_ZERO_PACKET */
-	if ((length % EP_SIZE (dev)) == 0)
+	if ((length % dev->maxpacket) == 0)
 		skb->len++;
 
-	usb_fill_bulk_urb (urb, dev->udev,
-			usb_sndbulkpipe (dev->udev, info->out),
+	usb_fill_bulk_urb (urb, dev->udev, dev->out,
 			skb->data, skb->len, tx_complete, skb);
 	urb->transfer_flags |= USB_ASYNC_UNLINK;
 
@@ -2060,7 +2047,7 @@ static int usbnet_start_xmit (struct sk_buff *skb, struct net_device *net)
 	if (retval) {
 		devdbg (dev, "drop, code %d", retval);
 drop:
-		retval = NET_XMIT_DROP;
+		retval = NET_XMIT_SUCCESS;
 		dev->stats.tx_dropped++;
 		if (skb)
 			dev_kfree_skb_any (skb);
@@ -2254,6 +2241,21 @@ usbnet_probe (struct usb_device *udev, unsigned ifnum,
 	net->tx_timeout = usbnet_tx_timeout;
 	net->do_ioctl = usbnet_ioctl;
 
+	// get rx/tx params from descriptors; avoid compiled-in details
+	if (!info->in || !info->out) {
+		int status = get_endpoints (dev,
+					udev->actconfig->interface + ifnum);
+		if (status < 0) {
+			err ("get_endpoints failed, %d", status);
+			kfree (dev);
+			return 0;
+		}
+	} else {
+		dev->in = usb_rcvbulkpipe (udev, info->in);
+		dev->out = usb_sndbulkpipe (udev, info->out);
+		dev->maxpacket = info->epsize;
+	}
+
 	register_netdev (&dev->net);
 	devinfo (dev, "register usbnet usb-%s-%s, %s",
 		udev->bus->bus_name, udev->devpath,
@@ -2341,32 +2343,30 @@ static const struct usb_device_id	products [] = {
 },
 #endif
 
-#ifdef	CONFIG_USB_PXA
-/*
- * PXA250 or PXA210 ...  these use a "usb-eth" driver much like
- * the sa1100 one.
- */
-{
-	// Compaq "Itsy" vendor/product id, version "2.0"
-	USB_DEVICE_VER (0x049F, 0x505A, 0x0200, 0x0200),
-	.driver_info =	(unsigned long) &pxa_info,
-}, 
-#endif
-
-#ifdef	CONFIG_USB_SA1100
+#ifdef	CONFIG_USB_ARMLINUX
 /*
  * SA-1100 using standard ARM Linux kernels, or compatible.
  * Often used when talking to Linux PDAs (iPaq, Yopy, etc).
  * The sa-1100 "usb-eth" driver handles the basic framing.
+ * ARMv4.
+ *
+ * PXA2xx using usb "gadget" driver, or older "usb-eth" much like
+ * the sa1100 one. (But PXA hardware uses different endpoints.)
+ * ARMv5TE.
  */
 {
 	// 1183 = 0x049F, both used as hex values?
-	// Compaq "Itsy" vendor/product id, version "0.0"
-	USB_DEVICE_VER (0x049F, 0x505A, 0, 0),
+	// Compaq "Itsy" vendor/product id
+	// version numbers vary, along with endpoint usage
+	// but otherwise they're protocol-compatible
+	USB_DEVICE (0x049F, 0x505A),
 	.driver_info =	(unsigned long) &linuxdev_info,
 }, {
 	USB_DEVICE (0x0E7E, 0x1001),	// G.Mate "Yopy"
 	.driver_info =	(unsigned long) &yopy_info,
+}, {
+	USB_DEVICE (0x8086, 0x07d3),	// "blob" bootloader
+	.driver_info =	(unsigned long) &blob_info,
 }, 
 #endif
 
@@ -2402,6 +2402,15 @@ static const struct usb_device_id	products [] = {
 	.bInterfaceSubClass	= 0x0a,
 	.bInterfaceProtocol	= 0x00,
 	.driver_info =  (unsigned long) &zaurus_slb500_info,
+}, {
+	.match_flags	=   USB_DEVICE_ID_MATCH_INT_INFO
+			  | USB_DEVICE_ID_MATCH_DEVICE, 
+	.idVendor		= 0x04DD,
+	.idProduct		= 0x8007,
+	.bInterfaceClass	= 0x02,
+	.bInterfaceSubClass	= 0x0a,
+	.bInterfaceProtocol	= 0x00,
+	.driver_info =  (unsigned long) &zaurus_slc700_info,
 },
 #endif
 

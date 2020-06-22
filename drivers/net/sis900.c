@@ -201,7 +201,7 @@ static void sis900_interrupt(int irq, void *dev_instance, struct pt_regs *regs);
 static int sis900_close(struct net_device *net_dev);
 static int mii_ioctl(struct net_device *net_dev, struct ifreq *rq, int cmd);
 static struct net_device_stats *sis900_get_stats(struct net_device *net_dev);
-static u16 sis900_compute_hashtable_index(u8 *addr, u8 revision);
+static u16 sis900_mcast_bitnr(u8 *addr, u8 revision);
 static void set_rx_mode(struct net_device *net_dev);
 static void sis900_reset(struct net_device *net_dev);
 static void sis630_set_eq(struct net_device *net_dev, u8 revision);
@@ -213,7 +213,7 @@ static void sis900_auto_negotiate(struct net_device *net_dev, int phy_addr);
 static void sis900_set_mode (long ioaddr, int speed, int duplex);
 
 /**
- *	sis900_get_mac_addr: - Get MAC address for stand alone SiS900 model
+ *	sis900_get_mac_addr - Get MAC address for stand alone SiS900 model
  *	@pci_dev: the sis900 pci device
  *	@net_dev: the net device to get address for 
  *
@@ -243,7 +243,7 @@ static int __devinit sis900_get_mac_addr(struct pci_dev * pci_dev, struct net_de
 }
 
 /**
- *	sis630e_get_mac_addr: - Get MAC address for SiS630E model
+ *	sis630e_get_mac_addr - Get MAC address for SiS630E model
  *	@pci_dev: the sis900 pci device
  *	@net_dev: the net device to get address for 
  *
@@ -276,7 +276,7 @@ static int __devinit sis630e_get_mac_addr(struct pci_dev * pci_dev, struct net_d
 
 
 /**
- *	sis635_get_mac_addr: - Get MAC address for SIS635 model
+ *	sis635_get_mac_addr - Get MAC address for SIS635 model
  *	@pci_dev: the sis900 pci device
  *	@net_dev: the net device to get address for 
  *
@@ -312,7 +312,7 @@ static int __devinit sis635_get_mac_addr(struct pci_dev * pci_dev, struct net_de
 }
 
 /**
- *	sis96x_get_mac_addr: - Get MAC address for SiS962 or SiS963 model
+ *	sis96x_get_mac_addr - Get MAC address for SiS962 or SiS963 model
  *	@pci_dev: the sis900 pci device
  *	@net_dev: the net device to get address for 
  *
@@ -354,7 +354,7 @@ static int __devinit sis96x_get_mac_addr(struct pci_dev * pci_dev, struct net_de
 }
 
 /**
- *	sis900_probe: - Probe for sis900 device
+ *	sis900_probe - Probe for sis900 device
  *	@pci_dev: the sis900 pci device
  *	@pci_id: the pci device ID
  *
@@ -499,7 +499,7 @@ static int __devinit sis900_probe (struct pci_dev *pci_dev, const struct pci_dev
 }
 
 /**
- *	sis900_mii_probe: - Probe MII PHY for sis900
+ *	sis900_mii_probe - Probe MII PHY for sis900
  *	@net_dev: the net device to probe for
  *	
  *	Search for total of 32 possible mii phy addresses.
@@ -528,7 +528,7 @@ static int __init sis900_mii_probe (struct net_device * net_dev)
 			mii_status = mdio_read(net_dev, phy_addr, MII_STATUS);
 
 		if (mii_status == 0xffff || mii_status == 0x0000)
-			/* the mii is not accessable, try next one */
+			/* the mii is not accessible, try next one */
 			continue;
 		
 		if ((mii_phy = kmalloc(sizeof(struct mii_phy), GFP_KERNEL)) == NULL) {
@@ -593,7 +593,7 @@ static int __init sis900_mii_probe (struct net_device * net_dev)
 			current->state = TASK_INTERRUPTIBLE;
 			schedule_timeout(0);
 			poll_bit ^= (mdio_read(net_dev, sis_priv->cur_phy, MII_STATUS) & poll_bit);
-			if (jiffies >= timeout) {
+			if (time_after_eq(jiffies, timeout)) {
 				printk(KERN_WARNING "%s: reset phy and link down now\n", net_dev->name);
 				return -ETIME;
 			}
@@ -619,7 +619,7 @@ static int __init sis900_mii_probe (struct net_device * net_dev)
 }
 
 /**
- *	sis900_default_phy: - Select default PHY for sis900 mac.
+ *	sis900_default_phy - Select default PHY for sis900 mac.
  *	@net_dev: the net device to probe for
  *
  *	Select first detected PHY with link as default.
@@ -672,7 +672,7 @@ static u16 sis900_default_phy(struct net_device * net_dev)
 
 
 /**
- * 	sis900_set_capability: - set the media capability of network adapter.
+ * 	sis900_set_capability - set the media capability of network adapter.
  *	@net_dev : the net device to probe for
  *	@phy : default PHY
  *
@@ -702,7 +702,7 @@ static void sis900_set_capability( struct net_device *net_dev , struct mii_phy *
 #define eeprom_delay()  inl(ee_addr)
 
 /**
- *	read_eeprom: - Read Serial EEPROM
+ *	read_eeprom - Read Serial EEPROM
  *	@ioaddr: base i/o address
  *	@location: the EEPROM location to read
  *
@@ -752,7 +752,7 @@ static u16 __devinit read_eeprom(long ioaddr, int location)
 
 /* Read and write the MII management registers using software-generated
    serial MDIO protocol. Note that the command bits and data bits are
-   send out seperately */
+   send out separately */
 #define mdio_delay()    inl(mdio_addr)
 
 static void mdio_idle(long mdio_addr)
@@ -777,7 +777,7 @@ static void mdio_reset(long mdio_addr)
 }
 
 /**
- *	mdio_read: - read MII PHY register
+ *	mdio_read - read MII PHY register
  *	@net_dev: the net device to read
  *	@phy_id: the phy address to read
  *	@location: the phy regiester id to read
@@ -819,7 +819,7 @@ static u16 mdio_read(struct net_device *net_dev, int phy_id, int location)
 }
 
 /**
- *	mdio_write: - write MII PHY register
+ *	mdio_write - write MII PHY register
  *	@net_dev: the net device to write
  *	@phy_id: the phy address to write
  *	@location: the phy regiester id to write
@@ -873,7 +873,7 @@ static void mdio_write(struct net_device *net_dev, int phy_id, int location, int
 
 
 /**
- *	sis900_reset_phy: - reset sis900 mii phy.
+ *	sis900_reset_phy - reset sis900 mii phy.
  *	@net_dev: the net device to write
  *	@phy_addr: default phy address
  *
@@ -896,7 +896,7 @@ static u16 sis900_reset_phy(struct net_device *net_dev, int phy_addr)
 }
 
 /**
- *	sis900_open: - open sis900 device
+ *	sis900_open - open sis900 device
  *	@net_dev: the net device to open
  *
  *	Do some initialization and start net interface.
@@ -953,7 +953,7 @@ sis900_open(struct net_device *net_dev)
 }
 
 /**
- *	sis900_init_rxfilter: - Initialize the Rx filter
+ *	sis900_init_rxfilter - Initialize the Rx filter
  *	@net_dev: the net device to initialize for
  *
  *	Set receive filter address to our MAC address
@@ -991,7 +991,7 @@ sis900_init_rxfilter (struct net_device * net_dev)
 }
 
 /**
- *	sis900_init_tx_ring: - Initialize the Tx descriptor ring
+ *	sis900_init_tx_ring - Initialize the Tx descriptor ring
  *	@net_dev: the net device to initialize for
  *
  *	Initialize the Tx descriptor ring, 
@@ -1024,7 +1024,7 @@ sis900_init_tx_ring(struct net_device *net_dev)
 }
 
 /**
- *	sis900_init_rx_ring: - Initialize the Rx descriptor ring
+ *	sis900_init_rx_ring - Initialize the Rx descriptor ring
  *	@net_dev: the net device to initialize for
  *
  *	Initialize the Rx descriptor ring, 
@@ -1078,7 +1078,7 @@ sis900_init_rx_ring(struct net_device *net_dev)
 }
 
 /**
- *	sis630_set_eq: - set phy equalizer value for 630 LAN
+ *	sis630_set_eq - set phy equalizer value for 630 LAN
  *	@net_dev: the net device to set equalizer value
  *	@revision: 630 LAN revision number
  *
@@ -1166,7 +1166,7 @@ static void sis630_set_eq(struct net_device *net_dev, u8 revision)
 }
 
 /**
- *	sis900_timer: - sis900 timer routine
+ *	sis900_timer - sis900 timer routine
  *	@data: pointer to sis900 net device
  *
  *	On each timer ticks we check two things, 
@@ -1236,7 +1236,7 @@ static void sis900_timer(unsigned long data)
 }
 
 /**
- *	sis900_check_mode: - check the media mode for sis900
+ *	sis900_check_mode - check the media mode for sis900
  *	@net_dev: the net device to be checked
  *	@mii_phy: the mii phy
  *
@@ -1267,7 +1267,7 @@ static void sis900_check_mode (struct net_device *net_dev, struct mii_phy *mii_p
 }
 
 /**
- *	sis900_set_mode: - Set the media mode of mac register.
+ *	sis900_set_mode - Set the media mode of mac register.
  *	@ioaddr: the address of the device
  *	@speed : the transmit speed to be determined
  *	@duplex: the duplex mode to be determined
@@ -1311,7 +1311,7 @@ static void sis900_set_mode (long ioaddr, int speed, int duplex)
 }
 
 /**
- *	sis900_auto_negotiate:  Set the Auto-Negotiation Enable/Reset bit.
+ *	sis900_auto_negotiate - Set the Auto-Negotiation Enable/Reset bit.
  *	@net_dev: the net device to read mode for
  *	@phy_addr: mii phy address
  *
@@ -1345,7 +1345,7 @@ static void sis900_auto_negotiate(struct net_device *net_dev, int phy_addr)
 
 
 /**
- *	sis900_read_mode: - read media mode for sis900 internal phy
+ *	sis900_read_mode - read media mode for sis900 internal phy
  *	@net_dev: the net device to read mode for
  *	@speed  : the transmit speed to be determined
  *	@duplex : the duplex mode to be determined
@@ -1402,7 +1402,7 @@ static void sis900_read_mode(struct net_device *net_dev, int *speed, int *duplex
 }
 
 /**
- *	sis900_tx_timeout: - sis900 transmit timeout routine
+ *	sis900_tx_timeout - sis900 transmit timeout routine
  *	@net_dev: the net device to transmit
  *
  *	print transmit timeout status
@@ -1457,7 +1457,7 @@ static void sis900_tx_timeout(struct net_device *net_dev)
 }
 
 /**
- *	sis900_start_xmit: - sis900 start transmit routine
+ *	sis900_start_xmit - sis900 start transmit routine
  *	@skb: socket buffer pointer to put the data being transmitted
  *	@net_dev: the net device to transmit with
  *
@@ -1527,7 +1527,7 @@ sis900_start_xmit(struct sk_buff *skb, struct net_device *net_dev)
 }
 
 /**
- *	sis900_interrupt: - sis900 interrupt handler
+ *	sis900_interrupt - sis900 interrupt handler
  *	@irq: the irq number
  *	@dev_instance: the client data object
  *	@regs: snapshot of processor context
@@ -1586,7 +1586,7 @@ static void sis900_interrupt(int irq, void *dev_instance, struct pt_regs *regs)
 }
 
 /**
- *	sis900_rx: - sis900 receive routine
+ *	sis900_rx - sis900 receive routine
  *	@net_dev: the net device which receives data
  *
  *	Process receive interrupt events, 
@@ -1725,7 +1725,7 @@ static int sis900_rx(struct net_device *net_dev)
 }
 
 /**
- *	sis900_finish_xmit: - finish up transmission of packets
+ *	sis900_finish_xmit - finish up transmission of packets
  *	@net_dev: the net device to be transmitted on
  *
  *	Check for error condition and free socket buffer etc 
@@ -1795,7 +1795,7 @@ static void sis900_finish_xmit (struct net_device *net_dev)
 }
 
 /**
- *	sis900_close: - close sis900 device 
+ *	sis900_close - close sis900 device 
  *	@net_dev: the net device to be closed
  *
  *	Disable interrupts, stop the Tx and Rx Status Machine 
@@ -1851,7 +1851,7 @@ sis900_close(struct net_device *net_dev)
 }
 
 /**
- *	netdev_ethtool_ioctl: - For the basic support of ethtool
+ *	netdev_ethtool_ioctl - For the basic support of ethtool
  *	@net_dev: the net device to command for
  *	@useraddr: start address of interface request
  *
@@ -1885,7 +1885,7 @@ static int netdev_ethtool_ioctl (struct net_device *net_dev, void *useraddr)
 }
 
 /**
- *	mii_ioctl: - process MII i/o control command 
+ *	mii_ioctl - process MII i/o control command 
  *	@net_dev: the net device to command for
  *	@rq: parameter for command
  *	@cmd: the i/o command
@@ -1924,7 +1924,7 @@ static int mii_ioctl(struct net_device *net_dev, struct ifreq *rq, int cmd)
 }
 
 /**
- *	sis900_get_stats: - Get sis900 read/write statistics 
+ *	sis900_get_stats - Get sis900 read/write statistics 
  *	@net_dev: the net device to get statistics for
  *
  *	get tx/rx statistics for sis900
@@ -1939,7 +1939,7 @@ sis900_get_stats(struct net_device *net_dev)
 }
 
 /**
- *	sis900_set_config: - Set media type by net_device.set_config 
+ *	sis900_set_config - Set media type by net_device.set_config 
  *	@dev: the net device for media type change
  *	@map: ifmap passed by ifconfig
  *
@@ -1976,7 +1976,7 @@ static int sis900_set_config(struct net_device *dev, struct ifmap *map)
 			status = mdio_read(dev, mii_phy->phy_addr, MII_CONTROL);
                 
 			/* enable auto negotiation and reset the negotioation
-			   (I dont really know what the auto negatiotiation reset
+			   (I don't really know what the auto negatiotiation reset
 			   really means, but it sounds for me right to do one here)*/
 			mdio_write(dev, mii_phy->phy_addr,
 				   MII_CONTROL, status | MII_CNTL_AUTO | MII_CNTL_RST_AUTO);
@@ -2036,7 +2036,7 @@ static int sis900_set_config(struct net_device *dev, struct ifmap *map)
 }
 
 /**
- *	sis900_compute_hashtable_index: - compute hashtable index 
+ *	sis900_mcast_bitnr - compute hashtable index 
  *	@addr: multicast address
  *	@revision: revision id of chip
  *
@@ -2046,7 +2046,7 @@ static int sis900_set_config(struct net_device *dev, struct ifmap *map)
  *   	multicast hash table. 
  */
 
-static u16 sis900_compute_hashtable_index(u8 *addr, u8 revision)
+static inline u16 sis900_mcast_bitnr(u8 *addr, u8 revision)
 {
 
 	u32 crc = ether_crc(6, addr);
@@ -2059,7 +2059,7 @@ static u16 sis900_compute_hashtable_index(u8 *addr, u8 revision)
 }
 
 /**
- *	set_rx_mode: - Set SiS900 receive mode 
+ *	set_rx_mode - Set SiS900 receive mode 
  *	@net_dev: the net device to be set
  *
  *	Set SiS900 receive mode for promiscuous, multicast, or broadcast mode.
@@ -2100,9 +2100,11 @@ static void set_rx_mode(struct net_device *net_dev)
 		struct dev_mc_list *mclist;
 		rx_mode = RFAAB;
 		for (i = 0, mclist = net_dev->mc_list; mclist && i < net_dev->mc_count;
-		     i++, mclist = mclist->next)
-			set_bit(sis900_compute_hashtable_index(mclist->dmi_addr, revision),
-				mc_filter);
+		     i++, mclist = mclist->next) {
+			unsigned int bit_nr =
+				sis900_mcast_bitnr(mclist->dmi_addr, revision);
+			mc_filter[bit_nr >> 4] |= (1 << bit_nr);
+		}
 	}
 
 	/* update Multicast Hash Table in Receive Filter */
@@ -2131,7 +2133,7 @@ static void set_rx_mode(struct net_device *net_dev)
 }
 
 /**
- *	sis900_reset: - Reset sis900 MAC 
+ *	sis900_reset - Reset sis900 MAC 
  *	@net_dev: the net device to reset
  *
  *	reset sis900 MAC and wait until finished
@@ -2166,7 +2168,7 @@ static void sis900_reset(struct net_device *net_dev)
 }
 
 /**
- *	sis900_remove: - Remove sis900 device 
+ *	sis900_remove - Remove sis900 device 
  *	@pci_dev: the pci device to be removed
  *
  *	remove and release SiS900 net device
@@ -2195,10 +2197,10 @@ static void __devexit sis900_remove(struct pci_dev *pci_dev)
 }
 
 static struct pci_driver sis900_pci_driver = {
-	name:		SIS900_MODULE_NAME,
-	id_table:	sis900_pci_tbl,
-	probe:		sis900_probe,
-	remove:		__devexit_p(sis900_remove),
+	.name		= SIS900_MODULE_NAME,
+	.id_table	= sis900_pci_tbl,
+	.probe		= sis900_probe,
+	.remove		= __devexit_p(sis900_remove),
 };
 
 static int __init sis900_init_module(void)

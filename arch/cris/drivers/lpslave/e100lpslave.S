@@ -1,12 +1,11 @@
-	;; $Id: e100lpslave.S,v 1.3 2001/06/21 16:55:26 olof Exp $
-	;;
-	;; Etrax100 slave network<->parport forwarder
-	;;
-	;; Copyright (c) 1999 Bjorn Wesen, Axis Communications AB
-	;;
-	;; We got 784 bytes (par loader size) to do DMA forwarding
-	;; between DMA0/1 (ethernet) and DMA3/4 (par port 0 RX/1 TX)
-	;;
+;;
+;; Etrax100 slave network<->parport forwarder
+;;
+;; Copyright (c) 1999, 2000, 2001, 2002, 2003 Axis Communications AB
+;;
+;; We got 784 bytes (par loader size) to do DMA forwarding
+;; between DMA0/1 (ethernet) and DMA3/4 (par port 0 RX/1 TX)
+;;
 
 #include <linux/config.h>
 #if 0

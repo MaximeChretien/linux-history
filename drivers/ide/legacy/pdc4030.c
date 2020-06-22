@@ -147,8 +147,6 @@ int pdc4030_identify(ide_drive_t *drive)
 	return pdc4030_cmd(drive, PROMISE_IDENTIFY);
 }
 
-int enable_promise_support;
-
 /*
  * setup_pdc4030()
  * Completes the setup of a Promise DC4030 controller card, once found.
@@ -308,11 +306,6 @@ int ide_probe_for_pdc4030(void)
 	unsigned int	index;
 	ide_hwif_t	*hwif;
 
-#ifndef MODULE
-	if (enable_promise_support == 0)
-		return;
-#endif
-
 	for (index = 0; index < MAX_HWIFS; index++) {
 		hwif = &ide_hwifs[index];
 		if (hwif->chipset == ide_unknown && detect_pdc4030(hwif)) {
@@ -362,7 +355,7 @@ void __init release_pdc4030(ide_hwif_t *hwif, ide_hwif_t *mate)
 
 void __init init_pdc4030(void)
 {
-	enable_promise_support = 1;
+	ide_register_driver(ide_probe_for_pdc4030);
 }
 
 #else
@@ -373,9 +366,6 @@ MODULE_LICENSE("GPL");
 
 int __init pdc4030_mod_init(void)
 {
-	if (enable_promise_support == 0)
-		enable_promise_support = 1;
-
 	if (!ide_probe_for_pdc4030())
 		return -ENODEV;
         return 0;
@@ -387,9 +377,6 @@ void __init pdc4030_mod_exit(void)
 	unsigned int    index;
 	ide_hwif_t      *hwif;
 
-	if (enable_promise_support == 0)
-		return;
- 
 	for (index = 0; index < MAX_HWIFS; index++) {
 		hwif = &ide_hwifs[index];
 		if (hwif->chipset == ide_pdc4030) {
@@ -400,7 +387,6 @@ void __init pdc4030_mod_exit(void)
 				release_pdc4030(hwif, NULL);
                 }
         }
-	enable_promise_support = 0;
 }
 module_exit(pdc4030_mod_exit);
 #endif

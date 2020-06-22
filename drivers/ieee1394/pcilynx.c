@@ -41,6 +41,7 @@
 #include <linux/pci.h>
 #include <linux/fs.h>
 #include <linux/poll.h>
+#include <linux/irq.h>
 #include <asm/byteorder.h>
 #include <asm/atomic.h>
 #include <asm/io.h>
@@ -1459,6 +1460,14 @@ static void remove_card(struct pci_dev *dev)
         case have_intr:
                 reg_write(lynx, PCI_INT_ENABLE, 0);
                 free_irq(lynx->dev->irq, lynx);
+
+		/* Disable IRM Contender */
+		if (lynx->phyic.reg_1394a)
+			set_phy_reg(lynx, 4, ~0xc0 & get_phy_reg(lynx, 4));
+
+		/* Let all other nodes know to ignore us */
+		lynx_devctl(lynx->host, RESET_BUS, LONG_RESET_NO_FORCE_ROOT);
+
         case have_iomappings:
                 reg_set_bits(lynx, MISC_CONTROL, MISC_CONTROL_SWRESET);
                 /* Fix buggy cards with autoboot pin not tied low: */
@@ -1506,6 +1515,7 @@ static int __devinit add_card(struct pci_dev *dev,
         return error; \
         } while (0)
 
+	char irq_buf[16];
 	struct hpsb_host *host;
         struct ti_lynx *lynx; /* shortcut to currently handled device */
         struct ti_pcl pcl;
@@ -1605,12 +1615,18 @@ static int __devinit add_card(struct pci_dev *dev,
         /* Fix buggy cards with autoboot pin not tied low: */
         reg_write(lynx, DMA0_CHAN_CTRL, 0);
 
+#ifndef __sparc__
+	sprintf (irq_buf, "%d", dev->irq);
+#else
+	sprintf (irq_buf, "%s", __irq_itoa(dev->irq));
+#endif
+
         if (!request_irq(dev->irq, lynx_irq_handler, SA_SHIRQ,
                          PCILYNX_DRIVER_NAME, lynx)) {
-                PRINT(KERN_INFO, lynx->id, "allocated interrupt %d", dev->irq);
+                PRINT(KERN_INFO, lynx->id, "allocated interrupt %s", irq_buf);
                 lynx->state = have_intr;
         } else {
-                FAIL("failed to allocate shared interrupt %d", dev->irq);
+                FAIL("failed to allocate shared interrupt %s", irq_buf);
         }
 
         /* alloc_pcl return values are not checked, it is expected that the

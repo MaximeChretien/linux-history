@@ -3,7 +3,7 @@
  * Copyright (C) 1995  Linus Torvalds
  * Copyright 2001, 2002 SuSE Labs / Andi Kleen.
  * See setup.c for older changelog.
- * $Id: setup64.c,v 1.19 2003/02/21 19:37:21 ak Exp $
+ * $Id: setup64.c,v 1.23 2003/05/16 14:22:27 ak Exp $
  */ 
 #include <linux/config.h>
 #include <linux/init.h>
@@ -18,6 +18,7 @@
 #include <asm/atomic.h>
 #include <asm/mmu_context.h>
 #include <asm/proto.h>
+#include <asm/mman.h>
 
 char x86_boot_params[2048] __initdata = {0,};
 
@@ -31,24 +32,82 @@ extern void ia32_cstar_target(void);
 struct desc_ptr gdt_descr = { 0 /* filled in */, (unsigned long) gdt_table }; 
 struct desc_ptr idt_descr = { 256 * 16, (unsigned long) idt_table }; 
 
+/* When you change the default make sure the no EFER path below sets the 
+   correct flags everywhere. */
 unsigned long __supported_pte_mask = ~0UL; 
-static int do_not_nx = 1; 
+static int do_not_nx __initdata = 0;  
+unsigned long vm_stack_flags = __VM_STACK_FLAGS; 
+unsigned long vm_stack_flags32 = __VM_STACK_FLAGS; 
+unsigned long vm_data_default_flags = __VM_DATA_DEFAULT_FLAGS; 
+unsigned long vm_data_default_flags32 = __VM_DATA_DEFAULT_FLAGS; 
+unsigned long vm_force_exec32 = PROT_EXEC; 
 
 char boot_cpu_stack[IRQSTACKSIZE] __cacheline_aligned;
 
+/* noexec=on|off
+
+on	Enable
+off	Disable
+noforce (default) Don't enable by default for heap/stack/data, 
+	but allow PROT_EXEC to be effective
+
+*/ 
+
 static int __init nonx_setup(char *str)
 {
-	if (!strncmp(str,"off",3)) { 
-		__supported_pte_mask &= ~_PAGE_NX; 
-		do_not_nx = 1; 
-	} else if (!strncmp(str, "on",3)) { 
-		do_not_nx = 0; 
+	if (!strncmp(str, "on",3)) { 
 		__supported_pte_mask |= _PAGE_NX; 
+		do_not_nx = 0; 
+		vm_data_default_flags &= ~VM_EXEC; 
+		vm_stack_flags &= ~VM_EXEC;  
+	} else if (!strncmp(str, "noforce",7) || !strncmp(str,"off",3)) { 
+		do_not_nx = (str[0] == 'o');
+		if (do_not_nx) 
+			__supported_pte_mask &= ~_PAGE_NX; 
+		vm_data_default_flags |= VM_EXEC; 
+		vm_stack_flags |= VM_EXEC;
+	}
+	return 1;
+} 
+
+/* noexec32=opt{,opt} 
+
+Control the no exec default for 32bit processes. Can be also overwritten
+per executable using ELF header flags (e.g. needed for the X server)
+Requires noexec=on or noexec=noforce to be effective.
+
+Valid options: 
+   all,on    Heap,stack,data is non executable. 	
+   off       (default) Heap,stack,data is executable
+   stack     Stack is non executable, heap/data is.
+   force     Don't imply PROT_EXEC for PROT_READ 
+   compat    (default) Imply PROT_EXEC for PROT_READ
+
+*/
+static int __init nonx32_setup(char *str)
+{
+	char *s;
+	while ((s = strsep(&str, ",")) != NULL) { 
+		if (!strcmp(s, "all") || !strcmp(s,"on")) {
+			vm_data_default_flags32 &= ~VM_EXEC; 
+			vm_stack_flags32 &= ~VM_EXEC;  
+		} else if (!strcmp(s, "off")) { 
+			vm_data_default_flags32 |= VM_EXEC; 
+			vm_stack_flags32 |= VM_EXEC;  
+		} else if (!strcmp(s, "stack")) { 
+			vm_data_default_flags32 |= VM_EXEC; 
+			vm_stack_flags32 &= ~VM_EXEC;  		
+		} else if (!strcmp(s, "force")) { 
+			vm_force_exec32 = 0; 
+		} else if (!strcmp(s, "compat")) { 
+			vm_force_exec32 = PROT_EXEC;
+		} 
 	} 
 	return 1;
 } 
 
 __setup("noexec=", nonx_setup); 
+__setup("noexec32=", nonx32_setup);
 
 void pda_init(int cpu)
 { 
@@ -83,6 +142,21 @@ void pda_init(int cpu)
 	asm volatile("movl %0,%%fs ; movl %0,%%gs" :: "r" (0)); 
 	wrmsrl(MSR_GS_BASE, cpu_pda + cpu);
 } 
+
+void syscall_init(void)
+{
+	/* 
+	 * LSTAR and STAR live in a bit strange symbiosis.
+	 * They both write to the same internal register. STAR allows to set CS/DS
+	 * but only a 32bit target. LSTAR sets the 64bit rip. 	 
+	 */ 
+	wrmsrl(MSR_STAR,  ((u64)__USER32_CS)<<48  | ((u64)__KERNEL_CS)<<32); 
+	wrmsrl(MSR_LSTAR, system_call); 
+
+#ifdef CONFIG_IA32_EMULATION   		
+	wrmsrl(MSR_CSTAR, ia32_cstar_target); 
+#endif
+}
 
 #define EXCEPTION_STK_ORDER 0 /* >= N_EXCEPTION_STACKS*EXCEPTION_STKSZ */
 char boot_exception_stacks[N_EXCEPTION_STACKS*EXCEPTION_STKSZ];
@@ -132,21 +206,13 @@ void __init cpu_init (void)
 
 	asm volatile("pushfq ; popq %%rax ; btr $14,%%rax ; pushq %%rax ; popfq" ::: "eax");
 
-	/* 
-	 * LSTAR and STAR live in a bit strange symbiosis.
-	 * They both write to the same internal register. STAR allows to set CS/DS
-	 * but only a 32bit target. LSTAR sets the 64bit rip. 	 
-	 */ 
-	wrmsrl(MSR_STAR,  ((u64)__USER32_CS)<<48  | ((u64)__KERNEL_CS)<<32); 
-	wrmsrl(MSR_LSTAR, system_call); 
-
-#ifdef CONFIG_IA32_EMULATION   		
-	wrmsrl(MSR_CSTAR, ia32_cstar_target); 
-#endif
+	syscall_init();
 
 		rdmsrl(MSR_EFER, efer); 
 	if (!(efer & EFER_NX) || do_not_nx) { 
 			__supported_pte_mask &= ~_PAGE_NX; 
+	} else { 
+		__supported_pte_mask |= _PAGE_NX; 
 		} 
 
 	t->io_map_base = INVALID_IO_BITMAP_OFFSET;	

@@ -1,4 +1,4 @@
-/* $Id: process.c,v 1.23 2002/10/14 18:29:27 johana Exp $
+/* $Id: process.c,v 1.24 2003/03/06 14:19:32 pkj Exp $
  * 
  *  linux/arch/cris/kernel/process.c
  *
@@ -8,6 +8,9 @@
  *  Authors:   Bjorn Wesen (bjornw@axis.com)
  *
  *  $Log: process.c,v $
+ *  Revision 1.24  2003/03/06 14:19:32  pkj
+ *  Use a cpu_idle() function identical to the one used by i386.
+ *
  *  Revision 1.23  2002/10/14 18:29:27  johana
  *  Call etrax_gpio_wake_up_check() from cpu_idle() to reduce gpio latency
  *  from ~15 ms to ~6 ms.
@@ -114,7 +117,17 @@ union task_union init_task_union
  * region by enable_hlt/disable_hlt.
  */
 
-static int hlt_counter=0;
+static int hlt_counter;
+
+/*
+ * Powermanagement idle function, if any..
+ */
+void (*pm_idle)(void);
+
+/*
+ * Power off function, if any
+ */
+void (*pm_power_off)(void);
 
 void disable_hlt(void)
 {
@@ -125,19 +138,42 @@ void enable_hlt(void)
 {
 	hlt_counter--;
 }
-#ifdef CONFIG_ETRAX_GPIO
-void etrax_gpio_wake_up_check(void); /* drivers/gpio.c */
-#endif
 
-int cpu_idle(void *unused)
+/*
+ * We use this if we don't have any better
+ * idle routine..
+ */
+static void default_idle(void)
 {
-	while(1) {
-		current->counter = -100;
 #ifdef CONFIG_ETRAX_GPIO
-		/* This can reduce latency from 15 ms to 6 ms */
-		etrax_gpio_wake_up_check(); /* drivers/gpio.c */
+	extern void etrax_gpio_wake_up_check(void); /* drivers/gpio.c */
+
+	/* This can reduce latency from 15 ms to 6 ms */
+	etrax_gpio_wake_up_check(); /* drivers/gpio.c */
 #endif
+}
+
+/*
+ * The idle thread. There's no useful work to be
+ * done, so just try to conserve power and have a
+ * low exit latency (ie sit in a loop waiting for
+ * somebody to say that they'd like to reschedule)
+ */
+void cpu_idle(void)
+{
+	/* endless idle loop with no priority at all */
+	init_idle();
+	current->nice = 20;
+	current->counter = -100;
+
+	while(1) {
+		void (*idle)(void) = pm_idle;
+		if (!idle)
+			idle = default_idle;
+		while (!current->need_resched)
+			idle();
 		schedule();
+		check_pgt_cache();
 	}
 }
 
@@ -191,6 +227,8 @@ void machine_halt(void)
 
 void machine_power_off(void)
 {
+	if (pm_power_off)
+		pm_power_off();
 }
 
 /*

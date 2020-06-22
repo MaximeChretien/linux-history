@@ -231,8 +231,8 @@ extern inline void pgd_clear (pgd_t * pgd)
 #define PAGE_NONE	__pgprot(_PAGE_PROTNONE | _PAGE_ACCESSED)
 #define PAGE_SHARED	__pgprot(_PAGE_PRESENT | _PAGE_RW | _PAGE_USER | _PAGE_ACCESSED)
 #define PAGE_SHARED_NOEXEC	__pgprot(_PAGE_NX | _PAGE_PRESENT | _PAGE_RW | _PAGE_USER | _PAGE_ACCESSED)
-#define PAGE_COPY	__pgprot(_PAGE_PRESENT | _PAGE_USER | _PAGE_ACCESSED | _PAGE_NX)
-
+#define PAGE_COPY_NOEXEC	__pgprot(_PAGE_PRESENT | _PAGE_USER | _PAGE_ACCESSED | _PAGE_NX)
+#define PAGE_COPY PAGE_COPY_NOEXEC
 #define PAGE_COPY_EXEC  \
 	__pgprot(_PAGE_PRESENT | _PAGE_USER | _PAGE_ACCESSED)
 #define PAGE_READONLY __pgprot(_PAGE_PRESENT | _PAGE_USER | _PAGE_ACCESSED | _PAGE_NX)
@@ -427,12 +427,7 @@ struct page;
 struct page;
 extern int change_page_attr(struct page *page, int numpages, pgprot_t prot);
 
-/* 
- * Map or remap large pages in the kernel mapping.
- * Only valid during kernel initilization (__init) 
- */
-extern void __map_kernel_range(void *, int, pgprot_t);
-#define map_kernel_range(adr,size) __map_kernel_range(adr,size,PAGE_KERNEL_LARGE)
+extern void clear_kernel_mapping(unsigned long addr, unsigned long size);
 
 #endif /* !__ASSEMBLY__ */
 

@@ -44,7 +44,7 @@ extern unsigned long smp_chrp_cpu_nr;
  * call event-scan periodically, not always the same
  * one.  The event-scan function needs to be called a
  * total of rtas-event-scan-rate times a minute"
- * 
+ *
  * We must call on each cpu in on a regular basis
  * so that firmware can watch for cpu unique errors.
  */

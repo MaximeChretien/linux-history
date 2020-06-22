@@ -9,7 +9,9 @@
  *
  *  Interrupt service routines for Philips Nino
  */
+#include <linux/config.h>
 #include <linux/init.h>
+#include <linux/irq.h>
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <asm/io.h>
@@ -17,8 +19,6 @@
 #include <asm/tx3912.h>
 
 #define ALLINTS (IE_IRQ0 | IE_IRQ1 | IE_IRQ2 | IE_IRQ3 | IE_IRQ4 | IE_IRQ5)
-
-extern asmlinkage void do_IRQ(int irq, struct pt_regs *regs);
 
 static void enable_irq6(unsigned int irq)
 {
@@ -112,7 +112,7 @@ done:
 
 static void enable_irq4(unsigned int irq)
 {
-	set_cp0_status(STATUSF_IP4);
+	set_c0_status(STATUSF_IP4);
 	if (irq == 2) {
 		outl(inl(TX3912_INT2_CLEAR) | TX3912_INT2_UARTA_TX_BITS,
 			TX3912_INT2_CLEAR);
@@ -130,7 +130,7 @@ static unsigned int startup_irq4(unsigned int irq)
 
 static void disable_irq4(unsigned int irq)
 {
-	clear_cp0_status(STATUSF_IP4);
+	clear_c0_status(STATUSF_IP4);
 }
 
 #define shutdown_irq4		disable_irq4
@@ -198,7 +198,7 @@ void __init nino_irq_setup(void)
 	unsigned int i;
 
 	/* Disable all hardware interrupts */
-	change_cp0_status(ST0_IM, 0x00);
+	change_c0_status(ST0_IM, 0x00);
 
 	/* Clear interrupts */
 	outl(0xffffffff, TX3912_INT1_CLEAR);
@@ -243,14 +243,14 @@ void __init nino_irq_setup(void)
 		TX3912_INT6_ENABLE);
 
 	/* Enable all interrupts */
-	change_cp0_status(ST0_IM, ALLINTS);
+	change_c0_status(ST0_IM, ALLINTS);
 }
 
 void (*irq_setup)(void);
 
 void __init init_IRQ(void)
 {
-#ifdef CONFIG_REMOTE_DEBUG
+#ifdef CONFIG_KGDB
 	extern void breakpoint(void);
 	extern void set_debug_traps(void);
 

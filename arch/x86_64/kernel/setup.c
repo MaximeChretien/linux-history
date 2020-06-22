@@ -26,9 +26,11 @@
 #include <linux/delay.h>
 #include <linux/config.h>
 #include <linux/init.h>
+#include <linux/acpi.h>
 #include <linux/blk.h>
 #include <linux/highmem.h>
 #include <linux/bootmem.h>
+#include <linux/module.h>
 #include <asm/processor.h>
 #include <linux/console.h>
 #include <linux/seq_file.h>
@@ -46,6 +48,8 @@
 #include <asm/bootsetup.h>
 #include <asm/proto.h>
 
+int acpi_disabled __initdata = 0;
+
 /*
  * Machine setup..
  */
@@ -55,6 +59,7 @@ struct cpuinfo_x86 boot_cpu_data = {
 };
 
 unsigned long mmu_cr4_features;
+EXPORT_SYMBOL(mmu_cr4_features);
 
 /* For PCI or other memory-mapped resources */
 unsigned long pci_mem_start = 0x10000000;
@@ -271,6 +276,12 @@ void __init setup_arch(char **cmdline_p)
 	kernel_end = round_up(__pa_symbol(&_end), PAGE_SIZE);
 	reserve_bootmem_generic(HIGH_MEMORY, kernel_end - HIGH_MEMORY);
 
+#ifdef CONFIG_ACPI_SLEEP
+	/*
+ 	 * Reserve low memory region for sleep support.
+ 	 */
+ 	acpi_reserve_bootmem();
+#endif
 #ifdef CONFIG_X86_LOCAL_APIC
 	/*
 	 * Find and reserve possible boot-time SMP configuration:
@@ -284,6 +295,13 @@ void __init setup_arch(char **cmdline_p)
 #endif
 
 	paging_init();
+#ifdef CONFIG_ACPI_BOOT
+	/*
+	 * Parse the ACPI tables for possible boot-time SMP configuration.
+	 */
+	if (!acpi_disabled)
+		acpi_boot_init();
+#endif
 #ifdef CONFIG_X86_LOCAL_APIC
 	/*
 	 * get boot-time SMP configuration:

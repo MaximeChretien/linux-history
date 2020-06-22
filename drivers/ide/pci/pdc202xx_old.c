@@ -168,9 +168,6 @@ static char * pdc202xx_info (char *buf, struct pci_dev *dev)
 		pdc202xx_pio_verbose(reg64h),
 		pdc202xx_pio_verbose(reg68h),
 		pdc202xx_pio_verbose(reg6ch));
-#if 0
-	p += sprintf(p, "--------------- Can ATAPI DMA ---------------\n");
-#endif
 	return (char *)p;
 }
 
@@ -426,9 +423,9 @@ static int config_chipset_for_dma (ide_drive_t *drive)
 		if (ultra_66) {
 			/*
 			 * check to make sure drive on same channel
-			 * is u66 capable
+			 * is u66 capable. Ignore empty slots.
 			 */
-			if (hwif->drives[!(drive->dn%2)].id) {
+			if (hwif->drives[!(drive->dn%2)].present) {
 				if (hwif->drives[!(drive->dn%2)].id->dma_ultra & 0x0078) {
 					hwif->OUTB(CLKSPD | mask, (hwif->dma_master + 0x11));
 				} else {
@@ -635,42 +632,7 @@ void pdc202xx_reset (ide_drive_t *drive)
 	
 	pdc202xx_reset_host(hwif);
 	pdc202xx_reset_host(mate);
-#if 0
-	/*
-	 * FIXME: Have to kick all the drives again :-/
-	 * What a pain in the ACE!
-	 */
-	if (hwif->present) {
-		u16 hunit = 0;
-		hwif->initializing = 1;
-		for (hunit = 0; hunit < MAX_DRIVES; ++hunit) {
-			ide_drive_t *hdrive = &hwif->drives[hunit];
-			if (hdrive->present) {
-				if (hwif->ide_dma_check)
-					hwif->ide_dma_check(hdrive);
-				else
-					hwif->tuneproc(hdrive, 5);
-			}
-		}
-		hwif->initializing = 0;
-	}
-	if (mate->present) {
-		u16 munit = 0;
-		mate->initializing = 1;
-		for (munit = 0; munit < MAX_DRIVES; ++munit) {
-			ide_drive_t *mdrive = &mate->drives[munit];
-			if (mdrive->present) {
-				if (mate->ide_dma_check) 
-					mate->ide_dma_check(mdrive);
-				else
-					mate->tuneproc(mdrive, 5);
-			}
-		}
-		mate->initializing = 0;
-	}
-#else
 	hwif->tuneproc(drive, 5);
-#endif
 }
 
 /*
@@ -726,20 +688,6 @@ static unsigned int __init init_chipset_pdc202xx (struct pci_dev *dev, const cha
 	 * reset leaves the timing registers intact,
 	 * but resets the drives.
 	 */
-#if 0
-	if ((dev->device == PCI_DEVICE_ID_PROMISE_20267) ||
-	    (dev->device == PCI_DEVICE_ID_PROMISE_20265) ||
-	    (dev->device == PCI_DEVICE_ID_PROMISE_20263) ||
-	    (dev->device == PCI_DEVICE_ID_PROMISE_20262)) {
-		unsigned long high_16	= pci_resource_start(dev, 4);
-		byte udma_speed_flag	= inb(high_16 + 0x001f);
-		outb(udma_speed_flag | 0x10, high_16 + 0x001f);
-		mdelay(100);
-		outb(udma_speed_flag & ~0x10, high_16 + 0x001f);
-		mdelay(2000);	/* 2 seconds ?! */
-	}
-
-#endif
 	return dev->irq;
 }
 
@@ -859,18 +807,6 @@ static void __init init_setup_pdc202ata4 (struct pci_dev *dev, ide_pci_device_t 
 		}
 	}
 
-#if 0
-        if (dev->device == PCI_DEVICE_ID_PROMISE_20262)
-        if (e->reg && (pci_read_config_byte(dev, e->reg, &tmp) ||
-             (tmp & e->mask) != e->val))
-
-        if (d->enablebits[0].reg != d->enablebits[1].reg) {
-                d->enablebits[0].reg    = d->enablebits[1].reg;
-                d->enablebits[0].mask   = d->enablebits[1].mask;
-                d->enablebits[0].val    = d->enablebits[1].val;
-        }
-#endif
-
 	ide_setup_pci_device(dev, d);
 }
 
@@ -884,22 +820,6 @@ static void __init init_setup_pdc20265 (struct pci_dev *dev, ide_pci_device_t *d
 			"attached to I2O RAID controller.\n");
 		return;
 	}
-
-#if 0
-        {
-                u8 pri = 0, sec = 0;
-
-        if (e->reg && (pci_read_config_byte(dev, e->reg, &tmp) ||
-             (tmp & e->mask) != e->val))
-
-        if (d->enablebits[0].reg != d->enablebits[1].reg) {
-                d->enablebits[0].reg    = d->enablebits[1].reg;
-                d->enablebits[0].mask   = d->enablebits[1].mask;
-                d->enablebits[0].val    = d->enablebits[1].val;
-        }
-        }
-#endif
-
 	ide_setup_pci_device(dev, d);
 }
 

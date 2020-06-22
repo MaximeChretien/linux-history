@@ -30,7 +30,7 @@ int direct2indirect (struct reiserfs_transaction_handle *th, struct inode * inod
                                 key of unfm pointer to be pasted */
     int	n_blk_size,
       n_retval;	  /* returned value for reiserfs_insert_item and clones */
-    struct unfm_nodeinfo unfm_ptr;  /* Handle on an unformatted node
+    unp_t unfm_ptr;  /* Handle on an unformatted node
 				       that will be inserted in the
 				       tree. */
 
@@ -50,7 +50,7 @@ int direct2indirect (struct reiserfs_transaction_handle *th, struct inode * inod
 
     // FIXME: we could avoid this 
     if ( search_for_position_by_key (sb, &end_key, path) == POSITION_FOUND ) {
-	reiserfs_warning ("PAP-14030: direct2indirect: "
+	reiserfs_warning (sb, "PAP-14030: direct2indirect: "
 			"pasted or inserted byte exists in the tree %K. "
 			"Use fsck to repair.\n", &end_key);
 	pathrelse(path);
@@ -59,8 +59,7 @@ int direct2indirect (struct reiserfs_transaction_handle *th, struct inode * inod
     
     p_le_ih = PATH_PITEM_HEAD (path);
 
-    unfm_ptr.unfm_nodenum = cpu_to_le32 (unbh->b_blocknr);
-    unfm_ptr.unfm_freespace = 0; // ???
+    unfm_ptr = cpu_to_le32 (unbh->b_blocknr);
     
     if ( is_statdata_le_ih (p_le_ih) )  {
 	/* Insert new indirect item. */

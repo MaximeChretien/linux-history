@@ -37,6 +37,8 @@
 #define BLIST_ISDISK    	0x100	/* Treat as (removable) disk */
 #define BLIST_ISROM     	0x200	/* Treat as (removable) CD-ROM */
 #define BLIST_LARGELUN		0x400	/* LUNs larger than 7 despite reporting as SCSI 2 */
+#define BLIST_NOSTARTONADD	0x1000	/* do not do automatic start on add */
+
 
 static void print_inquiry(unsigned char *data);
 static int scan_scsis_single(unsigned int channel, unsigned int dev,
@@ -110,9 +112,9 @@ static struct dev_info device_list[] =
 	{"HP", "C1750A", "3226", BLIST_NOLUN},			/* scanjet iic */
 	{"HP", "C1790A", "", BLIST_NOLUN},			/* scanjet iip */
 	{"HP", "C2500A", "", BLIST_NOLUN},			/* scanjet iicx */
-	{"HP", "A6188A", "*", BLIST_SPARSELUN},			/* HP Va7100 Array */
-	{"HP", "A6189A", "*", BLIST_SPARSELUN},			/* HP Va7400 Array */
-	{"HP", "A6189B", "*", BLIST_SPARSELUN},			/* HP Va7410 Array */
+	{"HP", "A6188A", "*", BLIST_SPARSELUN | BLIST_LARGELUN},/* HP Va7100 Array */
+	{"HP", "A6189A", "*", BLIST_SPARSELUN | BLIST_LARGELUN},/* HP Va7400 Array */
+	{"HP", "A6189B", "*", BLIST_SPARSELUN | BLIST_LARGELUN},/* HP Va7410 Array */
 	{"YAMAHA", "CDR100", "1.00", BLIST_NOLUN},		/* Locks up if polled for lun != 0 */
 	{"YAMAHA", "CDR102", "1.00", BLIST_NOLUN},		/* Locks up if polled for lun != 0  
 								 * extra reset */
@@ -145,7 +147,7 @@ static struct dev_info device_list[] =
 	{"EMULEX", "MD21/S2     ESDI", "*", BLIST_SINGLELUN},
 	{"CANON", "IPUBJD", "*", BLIST_SPARSELUN},
 	{"nCipher", "Fastness Crypto", "*", BLIST_FORCELUN},
-	{"DEC","HSG80","*", BLIST_FORCELUN},
+	{"DEC","HSG80","*", BLIST_FORCELUN | BLIST_NOSTARTONADD},
 	{"COMPAQ","LOGICAL VOLUME","*", BLIST_FORCELUN},
 	{"COMPAQ","CR3500","*", BLIST_FORCELUN},
 	{"NEC", "PD-1 ODX654P", "*", BLIST_FORCELUN | BLIST_SINGLELUN},
@@ -173,7 +175,10 @@ static struct dev_info device_list[] =
 	{"HP", "NetRAID-4M", "*", BLIST_FORCELUN},
 	{"ADAPTEC", "AACRAID", "*", BLIST_FORCELUN},
 	{"ADAPTEC", "Adaptec 5400S", "*", BLIST_FORCELUN},
-	{"COMPAQ", "MSA1000", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
+	{"COMPAQ", "MSA1000", "*", BLIST_SPARSELUN | BLIST_LARGELUN | BLIST_NOSTARTONADD},
+	{"COMPAQ", "MSA1000 VOLUME", "*", BLIST_SPARSELUN | BLIST_LARGELUN | BLIST_NOSTARTONADD},
+	{"COMPAQ", "HSV110", "*", BLIST_SPARSELUN | BLIST_LARGELUN | BLIST_NOSTARTONADD},
+	{"HP", "HSV100", "*", BLIST_SPARSELUN | BLIST_LARGELUN | BLIST_NOSTARTONADD},
 	{"HP", "C1557A", "*", BLIST_FORCELUN},
 	{"IBM", "AuSaV1S2", "*", BLIST_FORCELUN},
 	{"FSC", "CentricStor", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
@@ -182,7 +187,7 @@ static struct dev_info device_list[] =
 	{"HITACHI", "DF500", "*", BLIST_SPARSELUN},
 	{"HITACHI", "DF600", "*", BLIST_SPARSELUN},
 	{"IBM", "ProFibre 4000R", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
-	{"HITACHI", "OPEN-", "*", BLIST_SPARSELUN},		/* HITACHI XP Arrays */
+	{"HITACHI", "OPEN-", "*", BLIST_SPARSELUN | BLIST_LARGELUN},  /* HITACHI XP Arrays */
 	{"WINSYS","FLASHDISK G6", "*", BLIST_SPARSELUN},
 	{"DotHill","SANnet RAID X300", "*", BLIST_SPARSELUN},	
 	{"SUN", "T300", "*", BLIST_SPARSELUN},
@@ -194,6 +199,11 @@ static struct dev_info device_list[] =
 	{"SGI", "TP9400", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
 	{"SGI", "TP9500", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
 	{"MYLEX", "DACARMRB", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
+	{"PLATYPUS", "CX5", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
+	{"Raidtec", "FCR", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
+	{"HP", "C7200", "*", BLIST_SPARSELUN},			/* Medium Changer */
+	{"SMSC", "USB 2 HS", "*", BLIST_SPARSELUN | BLIST_LARGELUN}, 
+	{"XYRATEX", "RS", "*", BLIST_SPARSELUN | BLIST_LARGELUN},
 
 	/*
 	 * Must be at end of list...
@@ -741,6 +751,13 @@ static int scan_scsis_single(unsigned int channel, unsigned int dev,
 	 */
 	if ((bflags & BLIST_BORKEN) == 0)
 		SDpnt->borken = 0;
+
+ 	/*
+	 * Some devices may not want to have a start command automatically
+	 * issued when a device is added.
+	 */
+	if (bflags & BLIST_NOSTARTONADD)
+		SDpnt->no_start_on_add = 1;
 
 	/*
 	 * If we want to only allow I/O to one of the luns attached to this device

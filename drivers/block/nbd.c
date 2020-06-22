@@ -428,23 +428,24 @@ static int nbd_ioctl(struct inode *inode, struct file *file,
                 return 0 ;
  
 	case NBD_CLEAR_SOCK:
+		error = 0;
+		down(&lo->tx_lock);
+		lo->sock = NULL;
+		up(&lo->tx_lock);
+		spin_lock(&lo->queue_lock);
+		file = lo->file;
+		lo->file = NULL;
+		spin_unlock(&lo->queue_lock);
 		nbd_clear_que(lo);
 		spin_lock(&lo->queue_lock);
 		if (!list_empty(&lo->queue_head)) {
-			spin_unlock(&lo->queue_lock);
-			printk(KERN_ERR "nbd: Some requests are in progress -> can not turn off.\n");
-			return -EBUSY;
+			printk(KERN_ERR "nbd: disconnect: some requests are in progress -> please try again.\n");
+			error = -EBUSY;
 		}
-		file = lo->file;
-		if (!file) {
-			spin_unlock(&lo->queue_lock);
-			return -EINVAL;
-		}
-		lo->file = NULL;
-		lo->sock = NULL;
 		spin_unlock(&lo->queue_lock);
-		fput(file);
-		return 0;
+		if (file)
+			fput(file);
+		return error;
 	case NBD_SET_SOCK:
 		if (lo->file)
 			return -EBUSY;
@@ -491,9 +492,12 @@ static int nbd_ioctl(struct inode *inode, struct file *file,
 		 * there should be a more generic interface rather than
 		 * calling socket ops directly here */
 		down(&lo->tx_lock);
-		printk(KERN_WARNING "nbd: shutting down socket\n");
-		lo->sock->ops->shutdown(lo->sock, SEND_SHUTDOWN|RCV_SHUTDOWN);
-		lo->sock = NULL;
+		if (lo->sock) {
+			printk(KERN_WARNING "nbd: shutting down socket\n");
+			lo->sock->ops->shutdown(lo->sock,
+				SEND_SHUTDOWN|RCV_SHUTDOWN);
+			lo->sock = NULL;
+		}
 		up(&lo->tx_lock);
 		spin_lock(&lo->queue_lock);
 		file = lo->file;
@@ -505,6 +509,13 @@ static int nbd_ioctl(struct inode *inode, struct file *file,
 			fput(file);
 		return lo->harderror;
 	case NBD_CLEAR_QUE:
+		down(&lo->tx_lock);
+		if (lo->sock) {
+			up(&lo->tx_lock);
+			return 0; /* probably should be error, but that would
+				   * break "nbd-client -d", so just return 0 */
+		}
+		up(&lo->tx_lock);
 		nbd_clear_que(lo);
 		return 0;
 #ifdef PARANOIA

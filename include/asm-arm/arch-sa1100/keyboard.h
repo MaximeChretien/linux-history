@@ -21,11 +21,11 @@ extern void cerf_kbd_init_hw(void);
 static inline void kbd_init_hw(void)
 {
 	if ((machine_is_assabet() && machine_has_neponset()) ||
-	    machine_is_graphicsmaster())
+	    machine_is_graphicsmaster() || machine_is_adsagc())
 		sa1111_kbd_init_hw();
 	if (machine_is_graphicsclient())
 		gc_kbd_init_hw();
-	if (machine_is_adsbitsy())
+	if (machine_is_adsbitsy() || machine_is_adsbitsyplus())
 		smartio_kbd_init_hw();
 #ifdef CONFIG_SA1100_CERF_CPLD
 	if (machine_is_cerf())

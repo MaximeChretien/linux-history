@@ -4,6 +4,7 @@
  * Copyright (C) 2000 Silicon Graphics, Inc.
  * Written by Ulf Carlsson (ulfc@engr.sgi.com)
  * Copyright (C) 2000 Ralf Baechle
+ * Copyright (C) 2002  Maciej W. Rozycki
  *
  * Mostly stolen from the sparc64 ioctl32 implementation.
  */
@@ -22,6 +23,7 @@
 #include <linux/if_pppox.h>
 #include <linux/cdrom.h>
 #include <linux/loop.h>
+#include <linux/fb.h>
 #include <linux/vt.h>
 #include <linux/kd.h>
 #include <linux/netdevice.h>
@@ -31,17 +33,28 @@
 #include <linux/blkdev.h>
 #include <linux/elevator.h>
 #include <linux/auto_fs.h>
+#include <linux/auto_fs4.h>
 #include <linux/ext2_fs.h>
 #include <linux/raid/md_u.h>
+#include <linux/serial.h>
 
 #include <scsi/scsi.h>
 #undef __KERNEL__		/* This file was born to be ugly ...  */
 #include <scsi/scsi_ioctl.h>
 #define __KERNEL__
+#include <scsi/sg.h>
+
 #include <asm/types.h>
 #include <asm/uaccess.h>
 
 #include <linux/rtc.h>
+#ifdef CONFIG_MTD_CHAR
+#include <linux/mtd/mtd.h>
+#endif
+
+#ifdef CONFIG_SIBYTE_TBPROF
+#include <asm/sibyte/trace_prof.h>
+#endif
 
 long sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg);
 
@@ -76,6 +89,166 @@ static int rw_long(unsigned int fd, unsigned int cmd, unsigned long arg)
 }
 
 #define A(__x) ((unsigned long)(__x))
+
+
+#ifdef CONFIG_FB
+
+struct fb_fix_screeninfo32 {
+	char id[16];			/* identification string eg "TT Builtin" */
+	__u32 smem_start;		/* Start of frame buffer mem */
+					/* (physical address) */
+	__u32 smem_len;			/* Length of frame buffer mem */
+	__u32 type;			/* see FB_TYPE_*		*/
+	__u32 type_aux;			/* Interleave for interleaved Planes */
+	__u32 visual;			/* see FB_VISUAL_*		*/ 
+	__u16 xpanstep;			/* zero if no hardware panning  */
+	__u16 ypanstep;			/* zero if no hardware panning  */
+	__u16 ywrapstep;		/* zero if no hardware ywrap    */
+	__u32 line_length;		/* length of a line in bytes    */
+	__u32 mmio_start;		/* Start of Memory Mapped I/O   */
+					/* (physical address) */
+	__u32 mmio_len;			/* Length of Memory Mapped I/O  */
+	__u32 accel;			/* Type of acceleration available */
+	__u16 reserved[3];		/* Reserved for future compatibility */
+};
+
+static int do_fbioget_fscreeninfo_ioctl(unsigned int fd, unsigned int cmd,
+					unsigned long arg)
+{
+	mm_segment_t old_fs = get_fs();
+	struct fb_fix_screeninfo fix;
+	struct fb_fix_screeninfo32 *fix32 = (struct fb_fix_screeninfo32 *)arg;
+	int err;
+
+	set_fs(KERNEL_DS);
+	err = sys_ioctl(fd, cmd, (unsigned long)&fix);
+	set_fs(old_fs);
+
+	if (err == 0) {
+		err = __copy_to_user((char *)fix32->id, (char *)fix.id,
+				     sizeof(fix.id));
+		err |= __put_user((__u32)(unsigned long)fix.smem_start,
+				  &fix32->smem_start);
+		err |= __put_user(fix.smem_len, &fix32->smem_len);
+		err |= __put_user(fix.type, &fix32->type);
+		err |= __put_user(fix.type_aux, &fix32->type_aux);
+		err |= __put_user(fix.visual, &fix32->visual);
+		err |= __put_user(fix.xpanstep, &fix32->xpanstep);
+		err |= __put_user(fix.ypanstep, &fix32->ypanstep);
+		err |= __put_user(fix.ywrapstep, &fix32->ywrapstep);
+		err |= __put_user(fix.line_length, &fix32->line_length);
+		err |= __put_user((__u32)(unsigned long)fix.mmio_start,
+				  &fix32->mmio_start);
+		err |= __put_user(fix.mmio_len, &fix32->mmio_len);
+		err |= __put_user(fix.accel, &fix32->accel);
+		err |= __copy_to_user((char *)fix32->reserved,
+				      (char *)fix.reserved,
+				      sizeof(fix.reserved));
+		if (err)
+			err = -EFAULT;
+	}
+
+	return err;
+}
+
+struct fb_cmap32 {
+	__u32 start;			/* First entry  */
+	__u32 len;			/* Number of entries */
+	__u32 red;			/* Red values   */
+	__u32 green;
+	__u32 blue;
+	__u32 transp;			/* transparency, can be NULL */
+};
+
+static int do_fbiocmap_ioctl(unsigned int fd, unsigned int cmd,
+			     unsigned long arg)
+{
+	mm_segment_t old_fs = get_fs();
+	u32 red = 0, green = 0, blue = 0, transp = 0;
+	struct fb_cmap cmap;
+	struct fb_cmap32 *cmap32 = (struct fb_cmap32 *)arg;
+	int err;
+
+	memset(&cmap, 0, sizeof(cmap));
+
+	err = __get_user(cmap.start, &cmap32->start);
+	err |= __get_user(cmap.len, &cmap32->len);
+	err |= __get_user(red, &cmap32->red);
+	err |= __get_user(green, &cmap32->green);
+	err |= __get_user(blue, &cmap32->blue);
+	err |= __get_user(transp, &cmap32->transp);
+	if (err)
+		return -EFAULT;
+
+	err = -ENOMEM;
+	cmap.red = kmalloc(cmap.len * sizeof(__u16), GFP_KERNEL);
+	if (!cmap.red)
+		goto out;
+	cmap.green = kmalloc(cmap.len * sizeof(__u16), GFP_KERNEL);
+	if (!cmap.green)
+		goto out;
+	cmap.blue = kmalloc(cmap.len * sizeof(__u16), GFP_KERNEL);
+	if (!cmap.blue)
+		goto out;
+	if (transp) {
+		cmap.transp = kmalloc(cmap.len * sizeof(__u16), GFP_KERNEL);
+		if (!cmap.transp)
+			goto out;
+	}
+			
+	if (cmd == FBIOPUTCMAP) {
+		err = __copy_from_user(cmap.red, (char *)A(red),
+				       cmap.len * sizeof(__u16));
+		err |= __copy_from_user(cmap.green, (char *)A(green),
+					cmap.len * sizeof(__u16));
+		err |= __copy_from_user(cmap.blue, (char *)A(blue),
+					cmap.len * sizeof(__u16));
+		if (cmap.transp)
+			err |= __copy_from_user(cmap.transp, (char *)A(transp),
+						cmap.len * sizeof(__u16));
+		if (err) {
+			err = -EFAULT;
+			goto out;
+		}
+	}
+
+	set_fs(KERNEL_DS);
+	err = sys_ioctl(fd, cmd, (unsigned long)&cmap);
+	set_fs(old_fs);
+	if (err)
+		goto out;
+
+	if (cmd == FBIOGETCMAP) {
+		err = __copy_to_user((char *)A(red), cmap.red,
+				     cmap.len * sizeof(__u16));
+		err |= __copy_to_user((char *)A(green), cmap.blue,
+				      cmap.len * sizeof(__u16));
+		err |= __copy_to_user((char *)A(blue), cmap.blue,
+				      cmap.len * sizeof(__u16));
+		if (cmap.transp)
+			err |= __copy_to_user((char *)A(transp), cmap.transp,
+					      cmap.len * sizeof(__u16));
+		if (err) {
+			err = -EFAULT;
+			goto out;
+		}
+	}
+
+out:
+	if (cmap.red)
+		kfree(cmap.red);
+	if (cmap.green)
+		kfree(cmap.green);
+	if (cmap.blue)
+		kfree(cmap.blue);
+	if (cmap.transp)
+		kfree(cmap.transp);
+
+	return err;
+}
+
+#endif /* CONFIG_FB */
+
 
 struct timeval32 {
 	int tv_sec;
@@ -571,6 +744,127 @@ static int ioc_settimeout(unsigned int fd, unsigned int cmd, unsigned long arg)
 	return rw_long(fd, AUTOFS_IOC_SETTIMEOUT, arg);
 }
 
+/* serial_struct_ioctl was taken from x86_64/ia32/ia32_ioctl.c and
+ * slightly modified for mips */
+/* iomem_base is unsigned char * in linux/serial.h (reserved in sgiserial.h) */
+struct serial_struct32 {
+	int	type;
+	int	line;
+	unsigned int	port;
+	int	irq;
+	int	flags;
+	int	xmit_fifo_size;
+	int	custom_divisor;
+	int	baud_base;
+	unsigned short	close_delay;
+	char	io_type;
+	char	reserved_char[1];
+	int	hub6;
+	unsigned short	closing_wait; /* time to wait before closing */
+	unsigned short	closing_wait2; /* no longer used... */
+	__u32 iomem_base;
+	unsigned short	iomem_reg_shift;
+	unsigned int	port_high;
+	int	reserved[1];
+};
+
+static int serial_struct_ioctl(unsigned fd, unsigned cmd,  void *ptr) 
+{
+	typedef struct serial_struct SS;
+	struct serial_struct32 *ss32 = ptr; 
+	int err = 0;
+	struct serial_struct ss; 
+	mm_segment_t oldseg = get_fs(); 
+	set_fs(KERNEL_DS);
+	if (cmd == TIOCSSERIAL) { 
+		err = -EFAULT;
+		if (copy_from_user(&ss, ss32, sizeof(struct serial_struct32)))
+			goto out;
+		memmove(&ss.iomem_reg_shift, ((char*)&ss.iomem_base)+4, 
+			sizeof(SS)-offsetof(SS,iomem_reg_shift)); 
+		ss.iomem_base = (void *)(long)ss.iomem_base; /* sign extend */
+	}
+	if (!err)
+		err = sys_ioctl(fd,cmd,(unsigned long)(&ss)); 
+	if (cmd == TIOCGSERIAL && err >= 0) { 
+		__u32 base;
+		if (__copy_to_user(ss32,&ss,offsetof(SS,iomem_base)) ||
+		    __copy_to_user(&ss32->iomem_reg_shift,
+				   &ss.iomem_reg_shift,
+				   sizeof(SS) - offsetof(SS, iomem_reg_shift)))
+			err = -EFAULT;
+		base = (unsigned long)ss.iomem_base;
+		err |= __put_user(base, &ss32->iomem_base); 		
+	} 
+ out:
+	set_fs(oldseg);
+	return err;	
+}
+
+/* loop_status was taken from sparc64/kernel/ioctl32.c */
+struct loop_info32 {
+	int			lo_number;      /* ioctl r/o */
+	__kernel_dev_t32	lo_device;      /* ioctl r/o */
+	unsigned int		lo_inode;       /* ioctl r/o */
+	__kernel_dev_t32	lo_rdevice;     /* ioctl r/o */
+	int			lo_offset;
+	int			lo_encrypt_type;
+	int			lo_encrypt_key_size;    /* ioctl w/o */
+	int			lo_flags;       /* ioctl r/o */
+	char			lo_name[LO_NAME_SIZE];
+	unsigned char		lo_encrypt_key[LO_KEY_SIZE]; /* ioctl w/o */
+	unsigned int		lo_init[2];
+	char			reserved[4];
+};
+
+static int loop_status(unsigned int fd, unsigned int cmd, unsigned long arg)
+{
+	mm_segment_t old_fs = get_fs();
+	struct loop_info l;
+	int err = -EINVAL;
+
+	switch(cmd) {
+	case LOOP_SET_STATUS:
+		err = get_user(l.lo_number, &((struct loop_info32 *)arg)->lo_number);
+		err |= __get_user(l.lo_device, &((struct loop_info32 *)arg)->lo_device);
+		err |= __get_user(l.lo_inode, &((struct loop_info32 *)arg)->lo_inode);
+		err |= __get_user(l.lo_rdevice, &((struct loop_info32 *)arg)->lo_rdevice);
+		err |= __copy_from_user((char *)&l.lo_offset, (char *)&((struct loop_info32 *)arg)->lo_offset,
+					   8 + (unsigned long)l.lo_init - (unsigned long)&l.lo_offset);
+		if (err) {
+			err = -EFAULT;
+		} else {
+			set_fs (KERNEL_DS);
+			err = sys_ioctl (fd, cmd, (unsigned long)&l);
+			set_fs (old_fs);
+		}
+		break;
+	case LOOP_GET_STATUS:
+		set_fs (KERNEL_DS);
+		err = sys_ioctl (fd, cmd, (unsigned long)&l);
+		set_fs (old_fs);
+		if (!err) {
+			err = put_user(l.lo_number, &((struct loop_info32 *)arg)->lo_number);
+			err |= __put_user(l.lo_device, &((struct loop_info32 *)arg)->lo_device);
+			err |= __put_user(l.lo_inode, &((struct loop_info32 *)arg)->lo_inode);
+			err |= __put_user(l.lo_rdevice, &((struct loop_info32 *)arg)->lo_rdevice);
+			err |= __copy_to_user((char *)&((struct loop_info32 *)arg)->lo_offset,
+					   (char *)&l.lo_offset, (unsigned long)l.lo_init - (unsigned long)&l.lo_offset);
+			if (err)
+				err = -EFAULT;
+		}
+		break;
+	default: {
+		static int count;
+		if (++count <= 20)
+			printk("%s: Unknown loop ioctl cmd, fd(%d) "
+			       "cmd(%08x) arg(%08lx)\n",
+			       __FUNCTION__, fd, cmd, arg);
+	}
+	}
+	return err;
+}
+
 struct ioctl32_handler {
 	unsigned int cmd;
 	int (*function)(unsigned int, unsigned int, unsigned long);
@@ -620,8 +914,8 @@ static struct ioctl32_list ioctl32_handler_table[] = {
 	IOCTL32_DEFAULT(TIOCSCTTY),
 	IOCTL32_DEFAULT(TIOCGPTN),
 	IOCTL32_DEFAULT(TIOCSPTLCK),
-	IOCTL32_DEFAULT(TIOCGSERIAL),
-	IOCTL32_DEFAULT(TIOCSSERIAL),
+	IOCTL32_HANDLER(TIOCGSERIAL, serial_struct_ioctl),
+	IOCTL32_HANDLER(TIOCSSERIAL, serial_struct_ioctl),
 	IOCTL32_DEFAULT(TIOCSERGETLSR),
 
 	IOCTL32_DEFAULT(FIOCLEX),
@@ -629,6 +923,16 @@ static struct ioctl32_list ioctl32_handler_table[] = {
 	IOCTL32_DEFAULT(FIOASYNC),
 	IOCTL32_DEFAULT(FIONBIO),
 	IOCTL32_DEFAULT(FIONREAD),
+
+#ifdef CONFIG_FB
+	/* Big F */
+	IOCTL32_DEFAULT(FBIOGET_VSCREENINFO),
+	IOCTL32_DEFAULT(FBIOPUT_VSCREENINFO),
+	IOCTL32_HANDLER(FBIOGET_FSCREENINFO, do_fbioget_fscreeninfo_ioctl),
+	IOCTL32_HANDLER(FBIOGETCMAP, do_fbiocmap_ioctl),
+	IOCTL32_HANDLER(FBIOPUTCMAP, do_fbiocmap_ioctl),
+	IOCTL32_DEFAULT(FBIOPAN_DISPLAY),
+#endif /* CONFIG_FB */
 
 	/* Big K */
 	IOCTL32_DEFAULT(PIO_FONT),
@@ -651,6 +955,7 @@ static struct ioctl32_list ioctl32_handler_table[] = {
 	IOCTL32_DEFAULT(KDSKBSENT),
 	IOCTL32_DEFAULT(KDGKBDIACR),
 	IOCTL32_DEFAULT(KDSKBDIACR),
+	IOCTL32_DEFAULT(KDKBDREP),
 	IOCTL32_DEFAULT(KDGKBLED),
 	IOCTL32_DEFAULT(KDSKBLED),
 	IOCTL32_DEFAULT(KDGETLED),
@@ -793,6 +1098,8 @@ static struct ioctl32_list ioctl32_handler_table[] = {
 	/* Big L */
 	IOCTL32_DEFAULT(LOOP_SET_FD),
 	IOCTL32_DEFAULT(LOOP_CLR_FD),
+	IOCTL32_HANDLER(LOOP_SET_STATUS, loop_status),
+	IOCTL32_HANDLER(LOOP_GET_STATUS, loop_status),
 
 	/* And these ioctls need translation */
 	IOCTL32_HANDLER(SIOCGIFNAME, dev_ifname32),
@@ -915,6 +1222,12 @@ static struct ioctl32_list ioctl32_handler_table[] = {
 	IOCTL32_DEFAULT(RESTART_ARRAY_RW),
 #endif /* CONFIG_MD */
 
+#ifdef CONFIG_SIBYTE_TBPROF
+	IOCTL32_DEFAULT(SBPROF_ZBSTART),
+	IOCTL32_DEFAULT(SBPROF_ZBSTOP),
+	IOCTL32_DEFAULT(SBPROF_ZBWAITFULL),
+#endif /* CONFIG_SIBYTE_TBPROF */
+
 	IOCTL32_DEFAULT(MTIOCTOP),			/* mtio.h ioctls  */
 	IOCTL32_HANDLER(MTIOCGET32, mt_ioctl_trans),
 	IOCTL32_HANDLER(MTIOCPOS32, mt_ioctl_trans),
@@ -933,6 +1246,7 @@ static struct ioctl32_list ioctl32_handler_table[] = {
 	IOCTL32_DEFAULT(AUTOFS_IOC_PROTOVER),
 	IOCTL32_HANDLER(AUTOFS_IOC_SETTIMEOUT32, ioc_settimeout),
 	IOCTL32_DEFAULT(AUTOFS_IOC_EXPIRE),
+	IOCTL32_DEFAULT(AUTOFS_IOC_EXPIRE_MULTI),
 
 	/* Little p (/dev/rtc, /dev/envctrl, etc.) */
 	IOCTL32_DEFAULT(_IOR('p', 20, int[7])), /* RTCGET */
@@ -950,7 +1264,18 @@ static struct ioctl32_list ioctl32_handler_table[] = {
 	IOCTL32_DEFAULT(RTC_RD_TIME),
 	IOCTL32_DEFAULT(RTC_SET_TIME),
 	IOCTL32_DEFAULT(RTC_WKALM_SET),
-	IOCTL32_DEFAULT(RTC_WKALM_RD)
+	IOCTL32_DEFAULT(RTC_WKALM_RD),
+#ifdef CONFIG_MTD_CHAR
+	/* Big M */
+	IOCTL32_DEFAULT(MEMGETINFO),
+	IOCTL32_DEFAULT(MEMERASE),
+	// IOCTL32_DEFAULT(MEMWRITEOOB32, mtd_rw_oob),
+	// IOCTL32_DEFAULT(MEMREADOOB32, mtd_rw_oob),
+	IOCTL32_DEFAULT(MEMLOCK),
+	IOCTL32_DEFAULT(MEMUNLOCK),
+	IOCTL32_DEFAULT(MEMGETREGIONCOUNT),
+	IOCTL32_DEFAULT(MEMGETREGIONINFO),
+#endif
 };
 
 #define NR_IOCTL32_HANDLERS	(sizeof(ioctl32_handler_table) /	\

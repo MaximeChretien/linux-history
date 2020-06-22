@@ -29,8 +29,19 @@ static inline void detect_clustered_apic(char* oem, char* prod)
 		esr_disable = 1;
 		/*Start cyclone clock*/
 		cyclone_setup(0);
-	}
-	else if (!strncmp(oem, "IBM NUMA", 8)){
+	/* check for ACPI tables */
+	} else if (!strncmp(oem, "IBM", 3) &&
+	    (!strncmp(prod, "SERVIGIL", 8) ||
+	     !strncmp(prod, "EXA", 3) ||
+	     !strncmp(prod, "RUTHLESS", 8))){
+		clustered_apic_mode = CLUSTERED_APIC_XAPIC;
+		apic_broadcast_id = APIC_BROADCAST_ID_XAPIC;
+		int_dest_addr_mode = APIC_DEST_PHYSICAL;
+		int_delivery_mode = dest_Fixed;
+		esr_disable = 1;
+		/*Start cyclone clock*/
+		cyclone_setup(0);
+	} else if (!strncmp(oem, "IBM NUMA", 8)){
 		clustered_apic_mode = CLUSTERED_APIC_NUMAQ;
 		apic_broadcast_id = APIC_BROADCAST_ID_APIC;
 		int_dest_addr_mode = APIC_DEST_LOGICAL;

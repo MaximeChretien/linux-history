@@ -8,8 +8,6 @@
 #ifndef _ASM_DIV64_H
 #define _ASM_DIV64_H
 
-#include <asm/sgidefs.h>
-
 /*
  * No traps on overflows for any of these...
  */
@@ -33,10 +31,10 @@
 		"sll	%2, %2, 0x1\n" \
 		"1:\n\t" \
 		"bnez	%3, 2f\n\t" \
-		"sltu	%5, %0, %z6\n\t" \
-		"bnez	%5, 3f\n\t" \
+		" sltu	%5, %0, %z6\n\t" \
+		"bnez	%5, 3f\n" \
 		"2:\n\t" \
-		" addiu	%4,%4,-1\n\t" \
+		" addiu	%4, %4, -1\n\t" \
 		"subu	%0, %0, %z6\n\t" \
 		"addiu	%2, %2, 1\n" \
 		"3:\n\t" \
@@ -52,19 +50,23 @@
 
 #define do_div(n, base) ({ \
 	unsigned long long __quot; \
-	unsigned long __upper, __low, __high, __mod; \
+	unsigned long __mod; \
+	unsigned long long __div; \
+	unsigned long __upper, __low, __high, __base; \
 	\
-	__quot = (n); \
-	__high = __quot >> 32; \
-	__low = __quot; \
+	__div = (n); \
+	__base = (base); \
+	\
+	__high = __div >> 32; \
+	__low = __div; \
 	__upper = __high; \
 	\
 	if (__high) \
-		__asm__("divu	$0,%z2,%z3" \
+		__asm__("divu	$0, %z2, %z3" \
 			: "=h" (__upper), "=l" (__high) \
-			: "Jr" (__high), "Jr" (base)); \
+			: "Jr" (__high), "Jr" (__base)); \
 	\
-	__mod = do_div64_32(__low, __upper, __low, base); \
+	__mod = do_div64_32(__low, __upper, __low, __base); \
 	\
 	__quot = __high; \
 	__quot = __quot << 32 | __low; \

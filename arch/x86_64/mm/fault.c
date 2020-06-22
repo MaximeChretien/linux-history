@@ -229,9 +229,12 @@ bad_area_nosemaphore:
 
 	/* User mode accesses just cause a SIGSEGV */
 	if (error_code & 4) {
-		if (exception_trace) 
-			printk("%s[%d]: segfault at %016lx rip %016lx rsp %016lx error %lx\n",
-					current->comm, current->pid, address, regs->rip,
+		if (exception_trace && !(tsk->ptrace & PT_PTRACED) && 
+		    (tsk->sig->action[SIGSEGV-1].sa.sa_handler == SIG_IGN ||
+		    (tsk->sig->action[SIGSEGV-1].sa.sa_handler == SIG_DFL)))
+			printk(KERN_INFO 
+		       "%s[%d]: segfault at %016lx rip %016lx rsp %016lx error %lx\n",
+					tsk->comm, tsk->pid, address, regs->rip,
 					regs->rsp, error_code);
 	
 		tsk->thread.cr2 = address;
@@ -253,7 +256,7 @@ no_context:
 		if (0 && exception_trace) 
 		printk(KERN_ERR 
 		       "%s: fixed kernel exception at %lx address %lx err:%ld\n", 
-		       current->comm, regs->rip, address, error_code);
+		       tsk->comm, regs->rip, address, error_code);
 		return;
 	}
 
@@ -265,6 +268,21 @@ no_context:
 	console_verbose();
 	bust_spinlocks(1); 
 
+	int cpu = safe_smp_processor_id(); 
+	unsigned long flags; 
+	extern int die_owner; 
+	extern spinlock_t die_lock;
+	
+	__save_flags(flags); 
+	__cli(); 
+	if (!spin_trylock(&die_lock)) { 
+		if (cpu == die_owner) 
+			/* nested oops. should stop eventually */;
+		else
+			spin_lock(&die_lock); 
+	}
+	die_owner = cpu; 
+
 	if (address < PAGE_SIZE)
 		printk(KERN_ALERT "Unable to handle kernel NULL pointer dereference");
 	else
@@ -275,6 +293,7 @@ no_context:
 	dump_pagetable(address);
 	die("Oops", regs, error_code);
 	bust_spinlocks(0); 
+	spin_unlock_irqrestore(&die_lock, flags);
 	do_exit(SIGKILL);
 
 /*

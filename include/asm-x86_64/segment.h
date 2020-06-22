@@ -16,5 +16,6 @@
 #define __USER_DS     0x2b   /* 5*8+3 */ 
 #define __USER_CS     0x33   /* 6*8+3 */ 
 #define __USER32_DS	__USER_DS 
+#define __KERNEL_COMPAT32_CS 0x08
 
 #endif

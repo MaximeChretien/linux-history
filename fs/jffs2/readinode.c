@@ -44,7 +44,7 @@
 #include <linux/mtd/mtd.h>
 #include <linux/jffs2.h>
 #include "nodelist.h"
-#include "crc32.h"
+#include <linux/crc32.h>
 
 
 D1(void jffs2_print_frag_list(struct jffs2_inode_info *f)

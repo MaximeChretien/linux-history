@@ -3488,7 +3488,7 @@ struct ioctl_trans {
 };
 
 #define REF_SYMBOL(handler) if (0) (void)handler;
-#define HANDLE_IOCTL2(cmd,handler) REF_SYMBOL(handler);  asm volatile(".quad %P0, " #handler ",0"::"i" (cmd)); 
+#define HANDLE_IOCTL2(cmd,handler) REF_SYMBOL(handler);  asm volatile(".quad %P0, " #handler ",0"::"n" (cmd)); 
 #define HANDLE_IOCTL(cmd,handler) HANDLE_IOCTL2(cmd,handler)
 #define COMPATIBLE_IOCTL(cmd) HANDLE_IOCTL(cmd,sys_ioctl)
 #define IOCTL_TABLE_START void ioctl_dummy(void) { asm volatile("\nioctl_start:\n\t" );
@@ -4555,7 +4555,7 @@ asmlinkage long sys32_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg
 			       "cmd(%08x){%s} arg(%08x) on %s\n",
 			       current->comm, current->pid,
 			       (int)fd, (unsigned int)cmd, buf, (unsigned int)arg,
-			       fn);
+			       IS_ERR(fn) ? "???" : fn);
 			if (path) 
 				free_page((unsigned long)path); 
 		}

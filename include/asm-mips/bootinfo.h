@@ -35,6 +35,7 @@
 #define MACH_GROUP_ALCHEMY     18 /* Alchemy Semi Eval Boards               */
 #define MACH_GROUP_NEC_VR41XX  19 /* NEC Vr41xx based boards/gadgets        */
 #define MACH_GROUP_HP_LJ       20 /* Hewlett Packard LaserJet               */
+#define MACH_GROUP_LASAT       21
 
 /*
  * Valid machtype values for group unknown (low order halfword of mips_machtype)
@@ -53,14 +54,15 @@
  */
 #define MACH_DSUNKNOWN		0
 #define MACH_DS23100		1	/* DECstation 2100 or 3100	*/
-#define MACH_DS5100		2	/* DECstation 5100		*/
+#define MACH_DS5100		2	/* DECsystem 5100		*/
 #define MACH_DS5000_200		3	/* DECstation 5000/200		*/
 #define MACH_DS5000_1XX		4	/* DECstation 5000/120, 125, 133, 150 */
 #define MACH_DS5000_XX		5	/* DECstation 5000/20, 25, 33, 50 */
 #define MACH_DS5000_2X0		6	/* DECstation 5000/240, 260	*/
-#define MACH_DS5400		7	/* DECstation 5400		*/
-#define MACH_DS5500		8	/* DECstation 5500		*/
-#define MACH_DS5800		9	/* DECstation 5800		*/
+#define MACH_DS5400		7	/* DECsystem 5400		*/
+#define MACH_DS5500		8	/* DECsystem 5500		*/
+#define MACH_DS5800		9	/* DECsystem 5800		*/
+#define MACH_DS5900		10	/* DECsystem 5900		*/
 
 /*
  * Valid machtype for group ARC
@@ -81,17 +83,15 @@
 /*
  * Valid machtype for group SGI
  */
-#define MACH_SGI_INDY		0	/* R4?K and R5K Indy workstations */
-#define MACH_SGI_CHALLENGE_S	1	/* The Challenge S server */
-#define MACH_SGI_INDIGO2	2	/* The Indigo2 system */
-#define MACH_SGI_IP27		3	/* Origin 200, Origin 2000, Onyx 2 */
-#define MACH_SGI_IP28		4	/* Indigo2 Impact */
-#define MACH_SGI_IP32		5	/* O2 */
+#define MACH_SGI_IP22		0	/* Indy, Indigo2, Challenge S */
+#define MACH_SGI_IP27		1	/* Origin 200, Origin 2000, Onyx 2 */
+#define MACH_SGI_IP28		2	/* Indigo2 Impact */
+#define MACH_SGI_IP32		3	/* O2 */
 
 /*
  * Valid machtype for group COBALT
  */
-#define MACH_COBALT_27 		 0	/* Proto "27" hardware */
+#define MACH_COBALT_27		0	/* Proto "27" hardware */
 
 /*
  * Valid machtype for group NEC DDB
@@ -124,6 +124,7 @@
  */
 #define MACH_MOMENCO_OCELOT		0
 #define MACH_MOMENCO_OCELOT_G		1
+#define MACH_MOMENCO_OCELOT_C		2
 
 /*
  * Valid machtype for group ITE
@@ -153,6 +154,16 @@
 #define MACH_TOPAS		1
 #define MACH_JMR		2
 #define MACH_TOSHIBA_JMR3927	3	/* JMR-TX3927 CPU/IO board */
+#define MACH_TOSHIBA_RBTX4927	4
+#define MACH_TOSHIBA_RBTX4937	5
+#define GROUP_TOSHIBA_NAMES	{ "Pallas", "TopasCE", "JMR", "JMR TX3927", \
+				  "RBTX4927", "RBTX4937" }
+
+/*
+ * Valid machtype for group LASAT
+ */
+#define MACH_LASAT_100		0	/* Masquerade II/SP100/SP50/SP25 */
+#define MACH_LASAT_200		1	/* Masquerade PRO/SP200 */
 
 /*
  * Valid machtype for group Alchemy
@@ -160,6 +171,11 @@
 #define MACH_PB1000		0	/* Au1000-based eval board */
 #define MACH_PB1100		1	/* Au1100-based eval board */
 #define MACH_PB1500		2	/* Au1500-based eval board */
+#define MACH_DB1000		3       /* Au1000-based eval board */
+#define MACH_DB1100		4       /* Au1100-based eval board */
+#define MACH_DB1500		5       /* Au1500-based eval board */
+#define MACH_XXS1500		6       /* Au1500-based eval board */
+#define MACH_MTX1		7	/* 4G MTX-1 Au1500-based board */
 
 /*
  * Valid machtype for group NEC_VR41XX
@@ -167,6 +183,11 @@
 #define MACH_NEC_OSPREY		0	/* Osprey eval board */
 #define MACH_NEC_EAGLE		1	/* NEC Eagle/Hawk board */
 #define MACH_ZAO_CAPCELLA	2	/* ZAO Networks Capcella */
+#define MACH_VICTOR_MPC30X	3	/* Victor MP-C303/304 */
+#define MACH_IBM_WORKPAD	4	/* IBM WorkPad z50 */
+#define MACH_CASIO_E55		5	/* CASIO CASSIOPEIA E-10/15/55/65 */
+#define MACH_TANBAC_TB0226	6	/* TANBAC TB0226 (MBASE) */
+#define MACH_TANBAC_TB0229	7	/* TANBAC TB0229 (VR4131DIMM) */
 
 #define CL_SIZE			(256)
 

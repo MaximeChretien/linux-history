@@ -805,7 +805,7 @@ ccio_fill_pdir(struct ioc *ioc, struct scatterlist *startsg, int nents,
 
 		DBG_RUN_SG(" %d : %08lx/%05x %p/%05x\n", nents,
 			   (unsigned long)sg_dma_address(startsg), cnt,
-			   startsg->address, startsg->length
+			   sg_virt_addr(startsg), startsg->length
 		);
 
 		/*
@@ -825,7 +825,7 @@ ccio_fill_pdir(struct ioc *ioc, struct scatterlist *startsg, int nents,
 		** Look for a VCONTIG chunk
 		*/
 		if (cnt) {
-			unsigned long vaddr = (unsigned long)startsg->address;
+			unsigned long vaddr = (unsigned long) sg_virt_addr(startsg);
 			ASSERT(pdirp);
 
 			/* Since multiple Vcontig blocks could make up
@@ -878,8 +878,8 @@ ccio_coalesce_chunks(struct ioc *ioc, struct scatterlist *startsg, int nents)
 		*/
 		dma_sg = vcontig_sg = startsg;
 		dma_len = vcontig_len = vcontig_end = startsg->length;
-		vcontig_end += (unsigned long) startsg->address;
-		dma_offset = (unsigned long) startsg->address & ~IOVP_MASK;
+		vcontig_end += (unsigned long) sg_virt_addr(startsg);
+		dma_offset = (unsigned long) sg_virt_addr(startsg) & ~IOVP_MASK;
 
 		/* PARANOID: clear entries */
 		sg_dma_address(startsg) = 0;
@@ -893,7 +893,7 @@ ccio_coalesce_chunks(struct ioc *ioc, struct scatterlist *startsg, int nents)
 			unsigned long startsg_end;
 
 			startsg++;
-			startsg_end = (unsigned long)startsg->address + 
+			startsg_end = (unsigned long) sg_virt_addr(startsg) + 
 				startsg->length;
 
 			/* PARANOID: clear entries */
@@ -912,7 +912,7 @@ ccio_coalesce_chunks(struct ioc *ioc, struct scatterlist *startsg, int nents)
 			/*
 			** Append the next transaction?
 			*/
-			if(vcontig_end == (unsigned long) startsg->address) {
+			if(vcontig_end == (unsigned long) sg_virt_addr(startsg)) {
 				vcontig_len += startsg->length;
 				vcontig_end += startsg->length;
 				dma_len     += startsg->length;
@@ -981,7 +981,8 @@ ccio_map_sg(struct pci_dev *dev, struct scatterlist *sglist, int nents,
 
 	/* Fast path single entry scatterlists. */
 	if(nents == 1) {
-		sg_dma_address(sglist)= ccio_map_single(dev, sglist->address,
+		sg_dma_address(sglist)= ccio_map_single(dev,
+							sg_virt_addr(sglist),
 							sglist->length, 
 							direction);
 		sg_dma_len(sglist)= sglist->length;
@@ -1043,7 +1044,7 @@ ccio_unmap_sg(struct pci_dev *dev, struct scatterlist *sglist, int nents,
 	ioc = GET_IOC(dev);
 
 	DBG_RUN_SG("%s() START %d entries,  %p,%x\n",
-		__FUNCTION__, nents, sglist->address, sglist->length);
+		__FUNCTION__, nents, sg_virt_address(sglist), sglist->length);
 
 #ifdef CONFIG_PROC_FS
 	ioc->usg_calls++;

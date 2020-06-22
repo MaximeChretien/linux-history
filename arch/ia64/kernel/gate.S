@@ -63,15 +63,19 @@
 	 * call stack.
 	 */
 
+#define SIGTRAMP_SAVES										\
+	.unwabi @svr4, 's';	/* mark this as a sigtramp handler (saves scratch regs) */	\
+	.savesp ar.unat, UNAT_OFF+SIGCONTEXT_OFF;						\
+	.savesp ar.fpsr, FPSR_OFF+SIGCONTEXT_OFF;						\
+	.savesp pr, PR_OFF+SIGCONTEXT_OFF;     							\
+	.savesp rp, RP_OFF+SIGCONTEXT_OFF;							\
+	.savesp ar.pfs, CFM_OFF+SIGCONTEXT_OFF;							\
+	.vframesp SP_OFF+SIGCONTEXT_OFF
+
 GLOBAL_ENTRY(ia64_sigtramp)
 	// describe the state that is active when we get here:
 	.prologue
-	.unwabi @svr4, 's'		// mark this as a sigtramp handler (saves scratch regs)
-	.savesp ar.unat, UNAT_OFF+SIGCONTEXT_OFF
-	.savesp ar.fpsr, FPSR_OFF+SIGCONTEXT_OFF
-	.savesp pr, PR_OFF+SIGCONTEXT_OFF
-	.savesp rp, RP_OFF+SIGCONTEXT_OFF
-	.vframesp SP_OFF+SIGCONTEXT_OFF
+	SIGTRAMP_SAVES
 	.body
 
 	.label_state 1
@@ -89,9 +93,7 @@ GLOBAL_ENTRY(ia64_sigtramp)
 	.spillsp.p p8, ar.rnat, RNAT_OFF+SIGCONTEXT_OFF
 (p8)	br.cond.spnt setup_rbs		// yup -> (clobbers r14, r15, and r16)
 back_from_setup_rbs:
-
-	.spillreg ar.pfs, r8
-	alloc r8=ar.pfs,0,0,3,0		// get CFM0, EC0, and CPL0 into r8
+	alloc r8=ar.pfs,0,0,3,0
 	ld8 out0=[base0],16		// load arg0 (signum)
 	adds base1=(ARG1_OFF-(RBS_BASE_OFF+SIGCONTEXT_OFF)),base1
 	;;
@@ -100,17 +102,12 @@ back_from_setup_rbs:
 	;;
 	ld8 out2=[base0]		// load arg2 (sigcontextp)
 	ld8 gp=[r17]			// get signal handler's global pointer
-
 	adds base0=(BSP_OFF+SIGCONTEXT_OFF),sp
 	;;
 	.spillsp ar.bsp, BSP_OFF+SIGCONTEXT_OFF
-	st8 [base0]=r9,(CFM_OFF-BSP_OFF)	// save sc_ar_bsp
-	dep r8=0,r8,38,26			// clear EC0, CPL0 and reserved bits
-	adds base1=(FR6_OFF+16+SIGCONTEXT_OFF),sp
-	;;
-	.spillsp ar.pfs, CFM_OFF+SIGCONTEXT_OFF
-	st8 [base0]=r8				// save CFM0
+	st8 [base0]=r9			// save sc_ar_bsp
 	adds base0=(FR6_OFF+SIGCONTEXT_OFF),sp
+	adds base1=(FR6_OFF+16+SIGCONTEXT_OFF),sp
 	;;
 	stf.spill [base0]=f6,32
 	stf.spill [base1]=f7,32
@@ -133,7 +130,6 @@ back_from_setup_rbs:
 	ld8 r15=[base0],(CFM_OFF-BSP_OFF)	// fetch sc_ar_bsp and advance to CFM_OFF
 	mov r14=ar.bsp
 	;;
-	ld8 r8=[base0]				// restore (perhaps modified) CFM0, EC0, and CPL0
 	cmp.ne p8,p0=r14,r15			// do we need to restore the rbs?
 (p8)	br.cond.spnt restore_rbs		// yup -> (clobbers r14-r18, f6 & f7)
 	;;
@@ -156,10 +152,11 @@ back_from_restore_rbs:
 	ldf.fill f14=[base0],32
 	ldf.fill f15=[base1],32
 	mov r15=__NR_rt_sigreturn
+	.restore sp				// pop .prologue
 	break __BREAK_SYSCALL
 
-	.body
-	.copy_state 1
+	.prologue
+	SIGTRAMP_SAVES
 setup_rbs:
 	mov ar.rsc=0				// put RSE into enforced lazy mode
 	;;
@@ -171,6 +168,7 @@ setup_rbs:
 	;;
 	.spillsp ar.rnat, RNAT_OFF+SIGCONTEXT_OFF
 	st8 [r14]=r16				// save sc_ar_rnat
+	.body
 	adds r14=(LOADRS_OFF+SIGCONTEXT_OFF),sp
 
 	mov.m r16=ar.bsp			// sc_loadrs <- (new bsp - new bspstore) << 16
@@ -182,10 +180,11 @@ setup_rbs:
 	;;
 	st8 [r14]=r15				// save sc_loadrs
 	mov ar.rsc=0xf				// set RSE into eager mode, pl 3
+	.restore sp				// pop .prologue
 	br.cond.sptk back_from_setup_rbs
 
 	.prologue
-	.copy_state 1
+	SIGTRAMP_SAVES
 	.spillsp ar.rnat, RNAT_OFF+SIGCONTEXT_OFF
 	.body
 restore_rbs:

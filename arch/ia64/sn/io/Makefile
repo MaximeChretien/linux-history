@@ -3,31 +3,34 @@
 # License.  See the file "COPYING" in the main directory of this archive
 # for more details.
 #
-# Copyright (C) 2000-2002 Silicon Graphics, Inc.  All Rights Reserved.
+# Copyright (C) 2000-2003 Silicon Graphics, Inc.  All Rights Reserved.
 #
 # Makefile for the sn kernel routines.
 
 EXTRA_CFLAGS    := -DLITTLE_ENDIAN
 
-ifdef CONFIG_IA64_SGI_SN2
 EXTRA_CFLAGS    += -DSHUB_SWAP_WAR
-endif
 
 O_TARGET := sgiio.o
  
-export-objs := hcl.o pci_dma.o
+obj-y :=	sgi_if.o xswitch.o sgi_io_sim.o \
+		cdl.o io.o
 
-obj-y :=	stubs.o sgi_if.o xswitch.o klgraph_hack.o \
-		hcl.o labelcl.o invent.o sgi_io_sim.o \
-		klgraph_hack.o hcl_util.o cdl.o hubdev.o hubspc.o \
-		alenlist.o pci.o pci_dma.o ate_utils.o \
-		ifconfig_net.o io.o ifconfig_bus.o
+obj-y		+= sn2/snio.o machvec/snio.o \
+	           drivers/snio.o platform_init/snio.o
 
-obj-$(CONFIG_IA64_SGI_SN1)	+= sn1/snio.o
-obj-$(CONFIG_IA64_SGI_SN2)	+= sn2/snio.o
-obj-$(CONFIG_PCIBA)		+= pciba.o
+ifdef CONFIG_HWGFS_FS
+obj-$(CONFIG_HWGFS_FS)		+= hwgfs/snio.o
+else
+obj-$(CONFIG_DEVFS_FS)		+= hwgdfs/snio.o
+endif
 
-subdir-$(CONFIG_IA64_SGI_SN1)	+= sn1
-subdir-$(CONFIG_IA64_SGI_SN2)	+= sn2
+subdir-y			+= sn2 machvec drivers platform_init
+
+ifdef CONFIG_HWGFS_FS
+subdir-$(CONFIG_HWGFS_FS)	+= hwgfs
+else
+subdir-$(CONFIG_DEVFS_FS)	+= hwgdfs
+endif
 
 include $(TOPDIR)/Rules.make

@@ -31,7 +31,7 @@ struct pt_regs {
 					/* Used on APUS to hold IPL value. */
 	unsigned long trap;		/* Reason for being here */
 	unsigned long dar;		/* Fault registers */
-	unsigned long dsisr;
+	unsigned long dsisr;		/* used for ESR on 4xx/Book-E */
 	unsigned long result; 		/* Result of a system call */
 };
 #endif

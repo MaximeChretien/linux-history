@@ -2,7 +2,7 @@
  * File:	mca.c
  * Purpose:	SN specific MCA code.
  *
- * Copyright (C) 2001-2002 Silicon Graphics, Inc.  All Rights Reserved.
+ * Copyright (C) 2001-2003 Silicon Graphics, Inc.  All Rights Reserved.
  * 
  * This program is free software; you can redistribute it and/or modify it 
  * under the terms of version 2 of the GNU General Public License 
@@ -123,9 +123,7 @@ sn_cpei_handler(int irq, void *devid, struct pt_regs *regs)
 static void
 sn_cpei_timer_handler(unsigned long dummy) {
 	sn_cpei_handler(-1, NULL, NULL);
-	del_timer(&sn_cpei_timer);
-	sn_cpei_timer.expires = jiffies + CPEI_INTERVAL;
-        add_timer(&sn_cpei_timer);
+	mod_timer(&sn_cpei_timer, jiffies + CPEI_INTERVAL);
 }
 
 void
@@ -134,27 +132,3 @@ sn_init_cpei_timer() {
         sn_cpei_timer.function = sn_cpei_timer_handler;
         add_timer(&sn_cpei_timer);
 }
-
-
-
-
-#ifdef ajmtestceintr
-
-struct timer_list sn_ce_timer;
-
-void
-sn_ce_timer_handler(long dummy) {
-	unsigned long *pi_ce_error_inject_reg = 0xc00000092fffff00;
-
-	*pi_ce_error_inject_reg = 0x0000000000000100;
-	del_timer(&sn_ce_timer);
-	sn_ce_timer.expires = jiffies + CPEI_INTERVAL;
-        add_timer(&sn_ce_timer);
-}
-
-sn_init_ce_timer() {
-	sn_ce_timer.expires = jiffies + CPEI_INTERVAL;
-        sn_ce_timer.function = sn_ce_timer_handler;
-        add_timer(&sn_ce_timer);
-}
-#endif /* ajmtestceintr */

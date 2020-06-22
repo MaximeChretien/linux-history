@@ -20,27 +20,42 @@
 
 #ifndef __ASSEMBLY__
 
+#include <asm/cacheflush.h>
+
 #define BUG() do { printk("kernel BUG at %s:%d!\n", __FILE__, __LINE__); *(int *)0=0; } while (0)
 #define PAGE_BUG(page) do {  BUG(); } while (0)
 
-/*
- * Prototypes for clear_page / copy_page variants with processor dependant
- * optimizations.
- */
-void sb1_clear_page(void * page);
-void sb1_copy_page(void * to, void * from);
-
 extern void (*_clear_page)(void * page);
 extern void (*_copy_page)(void * to, void * from);
-extern void mips64_clear_page_dc(unsigned long page);
-extern void mips64_clear_page_sc(unsigned long page);
-extern void mips64_copy_page_dc(unsigned long to, unsigned long from);
-extern void mips64_copy_page_sc(unsigned long to, unsigned long from);
 
 #define clear_page(page)	_clear_page(page)
 #define copy_page(to, from)	_copy_page(to, from)
-#define clear_user_page(page, vaddr)	clear_page(page)
-#define copy_user_page(to, from, vaddr)	copy_page(to, from)
+
+extern unsigned long shm_align_mask;
+
+static inline unsigned long pages_do_alias(unsigned long addr1,
+        unsigned long addr2)
+{
+	return (addr1 ^ addr2) & shm_align_mask;
+}
+
+static inline void clear_user_page(void *page, unsigned long vaddr)
+{
+	unsigned long kaddr = (unsigned long) page;
+
+	clear_page(page);
+	if (pages_do_alias(kaddr, vaddr))
+		flush_data_cache_page(kaddr);
+}
+
+static inline void copy_user_page(void * to, void * from, unsigned long vaddr)
+{
+	unsigned long kto = (unsigned long) to;
+
+	copy_page(to, from);
+	if (pages_do_alias(kto, vaddr))
+		flush_data_cache_page(kto);
+}
 
 /*
  * These are used to make use of C type-checking..
@@ -87,19 +102,16 @@ extern __inline__ int get_order(unsigned long size)
  * at XKPHYS with a suitable caching mode for kernels with more than that.
  */
 #if defined(CONFIG_SGI_IP22) || defined(CONFIG_MIPS_ATLAS) || \
-    defined(CONFIG_MIPS_MALTA)
+    defined(CONFIG_MIPS_MALTA) || defined(CONFIG_MIPS_SEAD) || \
+    defined(CONFIG_DECSTATION)
 #define PAGE_OFFSET	0xffffffff80000000UL
 #define UNCAC_BASE	0xffffffffa0000000UL
 #endif
-#if defined(CONFIG_SGI_IP32)
-#define PAGE_OFFSET	0x9800000000000000UL
-#define UNCAC_BASE	0x9000000000000000UL
-#endif
 #if defined(CONFIG_SGI_IP27)
 #define PAGE_OFFSET	0xa800000000000000UL
-#define UNCAC_BASE	0x9000000000000000UL
+#define UNCAC_BASE	0x9600000000000000UL
 #endif
-#if defined(CONFIG_SIBYTE_SB1250)
+#if defined(CONFIG_SIBYTE_SB1xxx_SOC)
 #define PAGE_OFFSET	0xa800000000000000UL
 #endif
 

@@ -1,10 +1,16 @@
-/* $Id: fasttimer.c,v 1.5 2002/10/15 06:21:39 starvik Exp $
+/* $Id: fasttimer.c,v 1.7 2003/04/01 14:12:07 starvik Exp $
  * linux/arch/cris/kernel/fasttimer.c
  *
  * Fast timers for ETRAX100/ETRAX100LX
  * This may be useful in other OS than Linux so use 2 space indentation...
  *
  * $Log: fasttimer.c,v $
+ * Revision 1.7  2003/04/01 14:12:07  starvik
+ * Added loglevel for lots of printks
+ *
+ * Revision 1.6  2003/02/10 17:05:44  pkj
+ * Made fast_timer_pending() public.
+ *
  * Revision 1.5  2002/10/15 06:21:39  starvik
  * Added call to init_waitqueue_head
  *
@@ -63,7 +69,7 @@
  * Revision 1.1  2000/10/26 15:49:16  johana
  * Added fasttimer, highresolution timers.
  *
- * Copyright (C) 2000,2001 2002 Axis Communications AB, Lund, Sweden
+ * Copyright (C) 2000,2001,2002,2003 Axis Communications AB, Lund, Sweden
  */
 
 #include <linux/errno.h>
@@ -118,7 +124,7 @@ static int fast_timers_deleted = 0;
 static int fast_timer_is_init = 0;
 static int fast_timer_ints = 0;
 
-static struct fast_timer *fast_timer_list = NULL;
+struct fast_timer *fast_timer_list = NULL;
 
 #ifdef DEBUG_LOG_INCLUDED
 #define DEBUG_LOG_MAX 128
@@ -313,7 +319,8 @@ void start_one_shot_timer(struct fast_timer *t,
     {
       if (tmp == t)
       {
-        printk("timer name: %s data: 0x%08lX already in list!\n", name, data);
+        printk(KERN_WARNING
+	       "timer name: %s data: 0x%08lX already in list!\n", name, data);
         sanity_failed++;
         return;
       }
@@ -378,11 +385,6 @@ void start_one_shot_timer(struct fast_timer *t,
 
   restore_flags(flags);
 } /* start_one_shot_timer */
-
-static inline int fast_timer_pending (const struct fast_timer * t)
-{
-  return (t->next != NULL) || (t->prev != NULL) || (t == fast_timer_list);
-}
 
 static inline int detach_fast_timer (struct fast_timer *t)
 {
@@ -770,7 +772,7 @@ static int proc_fasttimer_read(char *buf, char **start, off_t offset, int len
       cli();
       if (t->next != nextt)
       {
-        printk("timer removed!\n");
+        printk(KERN_WARNING "timer removed!\n");
       }
       t = nextt;
     }
@@ -951,7 +953,7 @@ void fast_timer_init(void)
     int i;
 #endif
 
-    printk("fast_timer_init()\n");
+    printk(KERN_INFO "fast_timer_init()\n");
 
 #if 0 && defined(FAST_TIMER_TEST)
     for (i = 0; i <= TIMER0_DIV; i++)
@@ -971,7 +973,7 @@ void fast_timer_init(void)
     if(request_irq(TIMER1_IRQ_NBR, timer1_handler, SA_SHIRQ,
                    "fast timer int", NULL))
     {
-      printk("err: timer1 irq\n");
+      printk(KERN_CRIT "err: timer1 irq\n");
     }
     fast_timer_is_init = 1;
 #ifdef FAST_TIMER_TEST

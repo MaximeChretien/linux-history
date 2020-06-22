@@ -40,7 +40,7 @@ _GLOBAL(gemini_prom_init)
 	isync
 #if 0
 	/* zero out the bats now that the MMU is off */
-prom_no_mmu:	
+prom_no_mmu:
 	li	r3,0
         mtspr   IBAT0U,r3
         mtspr   IBAT0L,r3

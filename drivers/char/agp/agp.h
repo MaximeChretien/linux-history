@@ -166,6 +166,9 @@ struct agp_bridge_data {
 #ifndef PCI_DEVICE_ID_VIA_8363_0
 #define PCI_DEVICE_ID_VIA_8363_0      0x0305
 #endif
+#ifndef PCI_DEVICE_ID_VIA_8601_0
+#define PCI_DEVICE_ID_VIA_8601_0      0x0601
+#endif
 #ifndef PCI_DEVICE_ID_VIA_82C694X_0
 #define PCI_DEVICE_ID_VIA_82C694X_0      0x0605
 #endif
@@ -183,6 +186,24 @@ struct agp_bridge_data {
 #endif
 #ifndef PCI_DEVICE_ID_INTEL_830_M_1
 #define PCI_DEVICE_ID_INTEL_830_M_1     0x3577
+#endif
+#ifndef PCI_DEVICE_ID_INTEL_855_GM_0
+#define PCI_DEVICE_ID_INTEL_855_GM_0	0x3580
+#endif
+#ifndef PCI_DEVICE_ID_INTEL_855_GM_1
+#define PCI_DEVICE_ID_INTEL_855_GM_1	0x3582
+#endif
+#ifndef PCI_DEVICE_ID_INTEL_855_PM_0
+#define PCI_DEVICE_ID_INTEL_855_PM_0	0x3340
+#endif
+#ifndef PCI_DEVICE_ID_INTEL_855_PM_1
+#define PCI_DEVICE_ID_INTEL_855_PM_1	0x3342
+#endif
+#ifndef PCI_DEVICE_ID_INTEL_865_G_0
+#define PCI_DEVICE_ID_INTEL_865_G_0	0x2570
+#endif
+#ifndef PCI_DEVICE_ID_INTEL_865_G_1
+#define PCI_DEVICE_ID_INTEL_865_G_1	0x2572
 #endif
 #ifndef PCI_DEVICE_ID_INTEL_820_0
 #define PCI_DEVICE_ID_INTEL_820_0       0x2500
@@ -279,6 +300,28 @@ struct agp_bridge_data {
 #define INTEL_AGPCTRL   0xb0
 #define INTEL_NBXCFG    0x50
 #define INTEL_ERRSTS    0x91
+
+/* Intel 855GM/852GM registers */
+#define I855_GMCH_CTRL             0x52
+#define I855_GMCH_ENABLED          0x4
+#define I855_GMCH_GMS_MASK         (0x7 << 4)
+#define I855_GMCH_GMS_STOLEN_0M    0x0
+#define I855_GMCH_GMS_STOLEN_1M    (0x1 << 4)
+#define I855_GMCH_GMS_STOLEN_4M    (0x2 << 4)
+#define I855_GMCH_GMS_STOLEN_8M    (0x3 << 4)
+#define I855_GMCH_GMS_STOLEN_16M   (0x4 << 4)
+#define I855_GMCH_GMS_STOLEN_32M   (0x5 << 4)
+#define I85X_CAPID                 0x44
+#define I85X_VARIANT_MASK          0x7
+#define I85X_VARIANT_SHIFT         5
+#define I855_GME                   0x0
+#define I855_GM                    0x4
+#define I852_GME                   0x2
+#define I852_GM                    0x5
+#define I855_PME                   0x0
+#define I855_PM                    0x4
+#define I852_PME                   0x2
+#define I852_PM                    0x5
 
 /* intel i830 registers */
 #define I830_GMCH_CTRL             0x52
@@ -411,6 +454,17 @@ struct agp_bridge_data {
 #define SVWRKS_TLBFLUSH   0x10
 #define SVWRKS_POSTFLUSH  0x14
 #define SVWRKS_DIRFLUSH   0x0c
+
+/* NVIDIA registers */
+#define NVIDIA_0_APBASE     0x10
+#define NVIDIA_0_APSIZE     0x80
+#define NVIDIA_1_WBC        0xf0
+#define NVIDIA_2_GARTCTRL   0xd0
+#define NVIDIA_2_APBASE     0xd8
+#define NVIDIA_2_APLIMIT    0xdc
+#define NVIDIA_2_ATTBASE(i) (0xe0 + (i) * 4)
+#define NVIDIA_3_APBASE     0x50
+#define NVIDIA_3_APLIMIT    0x54
 
 /* HP ZX1 SBA registers */
 #define HP_ZX1_CTRL		0x200

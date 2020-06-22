@@ -176,9 +176,26 @@ int __init k8_scan_nodes(unsigned long start, unsigned long end)
 	} 
 	printk(KERN_INFO "Using node hash shift of %d\n", memnode_shift); 
 
-	for_all_nodes(i) { 
+	for (i = 0; i < MAXNODE; i++) { 
+		if (nodes[i].start != nodes[i].end)
 		setup_node_bootmem(i, nodes[i].start, nodes[i].end); 
 	} 
+
+	/* There are unfortunately some poorly designed mainboards around
+	   that only connect memory to a single CPU. This breaks the 1:1 cpu->node
+	   mapping. To avoid this fill in the mapping for all possible
+	   CPUs, as the number of CPUs is not known yet. 
+	   We round robin the existing nodes. */
+	int rr = 0;
+	for (i = 0; i < MAXNODE; i++) {
+		if (nodes[i].start != nodes[i].end)
+			continue;		
+		if ((nodes_present >> rr) == 0) 
+			rr = 0; 
+		rr = ffz(~nodes_present >> rr); 
+		PLAT_NODE_DATA(i) = PLAT_NODE_DATA(rr); 
+		rr++; 
+	}
 
 	return 0;
 } 

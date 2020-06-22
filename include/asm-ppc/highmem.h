@@ -10,7 +10,7 @@
  *		      Gerhard.Wichert@pdb.siemens.de
  *
  *
- * Redesigned the x86 32-bit VM architecture to deal with 
+ * Redesigned the x86 32-bit VM architecture to deal with
  * up to 16 Terrabyte physical memory. With current x86 CPUs
  * we now support up to 64 Gigabytes physical RAM.
  *
@@ -102,7 +102,7 @@ static inline void *kmap_atomic(struct page *page, enum km_type type)
 static inline void kunmap_atomic(void *kvaddr, enum km_type type)
 {
 #if HIGHMEM_DEBUG
-	unsigned long vaddr = (unsigned long) kvaddr;
+	unsigned long vaddr = (unsigned long) kvaddr & PAGE_MASK;
 	unsigned int idx = type + KM_TYPE_NR*smp_processor_id();
 
 	if (vaddr < KMAP_FIX_BEGIN) // FIXME

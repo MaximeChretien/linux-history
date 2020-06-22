@@ -6,7 +6,9 @@
  *	David Mosberger-Tang <davidm@hpl.hp.com>
  */
 
-#include <asm/system.h>
+#include <linux/types.h>
+
+#include <asm/intrinsics.h>
 
 /**
  * set_bit - Atomically set a bit in memory
@@ -258,7 +260,7 @@ __test_and_change_bit (int nr, void *addr)
 }
 
 static __inline__ int
-test_bit (int nr, volatile void *addr)
+test_bit (int nr, const volatile void *addr)
 {
 	return 1 & (((const volatile __u32 *) addr)[nr >> 5] >> (nr & 31));
 }

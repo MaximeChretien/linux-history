@@ -380,7 +380,7 @@ int __init mac8390_probe(struct net_device * dev)
 #if LINUX_VERSION_CODE > 0x20118
 MODULE_AUTHOR("David Huggins-Daines <dhd@debian.org> and others");
 MODULE_DESCRIPTION("Macintosh NS8390-based Nubus Ethernet driver");
-MODUEL_LICENSE("GPL");
+MODULE_LICENSE("GPL");
 #endif
 
 int init_module(void)

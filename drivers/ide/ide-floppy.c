@@ -2195,7 +2195,6 @@ int idefloppy_init (void)
 	idefloppy_floppy_t *floppy;
 	int failed = 0;
 
-	printk(KERN_INFO "ide-floppy driver " IDEFLOPPY_VERSION "\n");
 #endif /* CLASSIC_BUILTINS_METHOD */
 	MOD_INC_USE_COUNT;
 #ifdef CLASSIC_BUILTINS_METHOD

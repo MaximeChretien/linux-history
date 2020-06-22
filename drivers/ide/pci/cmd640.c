@@ -102,6 +102,7 @@
 #define CMD640_PREFETCH_MASKS 1
 
 #include <linux/config.h>
+#include <linux/module.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/delay.h>
@@ -120,7 +121,8 @@
 /*
  * This flag is set in ide.c by the parameter:  ide0=cmd640_vlb
  */
-int cmd640_vlb = 0;
+
+static int cmd640_vlb = 0;
 
 /*
  * CMD640 specific registers definition.
@@ -716,7 +718,7 @@ static int pci_conf2(void)
 /*
  * Probe for a cmd640 chipset, and initialize it if found.  Called from ide.c
  */
-int __init ide_probe_for_cmd640x (void)
+static void __init ide_probe_for_cmd640x (void)
 {
 #ifdef CONFIG_BLK_DEV_CMD640_ENHANCED
 	int second_port_toggled = 0;
@@ -731,13 +733,13 @@ int __init ide_probe_for_cmd640x (void)
 	} else {
 		cmd640_vlb = 0;
 		/* Find out what kind of PCI probing is supported otherwise
-		   Justin Gibbs will sulk.. */
+		   we break some Adaptec cards...  */
 		if (pci_conf1() && probe_for_cmd640_pci1())
 			bus_type = "PCI (type1)";
 		else if (pci_conf2() && probe_for_cmd640_pci2())
 			bus_type = "PCI (type2)";
 		else
-			return 0;
+			return;
 	}
 	/*
 	 * Undocumented magic (there is no 0x5b reg in specs)
@@ -745,7 +747,7 @@ int __init ide_probe_for_cmd640x (void)
 	put_cmd640_reg(0x5b, 0xbd);
 	if (get_cmd640_reg(0x5b) != 0xbd) {
 		printk(KERN_ERR "ide: cmd640 init failed: wrong value in reg 0x5b\n");
-		return 0;
+		return;
 	}
 	put_cmd640_reg(0x5b, 0);
 
@@ -760,7 +762,7 @@ int __init ide_probe_for_cmd640x (void)
 	cmd640_chip_version = cfr & CFR_DEVREV;
 	if (cmd640_chip_version == 0) {
 		printk ("ide: bad cmd640 revision: %d\n", cmd640_chip_version);
-		return 0;
+		return;
 	}
 
 	/*
@@ -874,6 +876,28 @@ int __init ide_probe_for_cmd640x (void)
 #ifdef CMD640_DUMP_REGS
 	CMD640_DUMP_REGS;
 #endif
-	return 1;
+	return;
 }
 
+static int __init cmd640_init(void)
+{
+	ide_register_driver(ide_probe_for_cmd640x);
+	return 0;
+}
+
+/*
+ *	Called by the IDE core when compiled in and cmd640=vlb is
+ *	selected.
+ */
+void init_cmd640_vlb(void)
+{
+	cmd640_vlb = 1;
+}
+
+module_init(cmd640_init);
+
+MODULE_AUTHOR("See Source");
+MODULE_DESCRIPTION("IDE support for CMD640 controller");
+MODULE_PARM(cmd640_vlb, "i");
+MODULE_PARM_DESC(cmd640_vlb, "Set to enable scanning for VLB controllers");
+MODULE_LICENSE("GPL");

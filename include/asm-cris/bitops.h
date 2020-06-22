@@ -42,6 +42,7 @@ struct __dummy { unsigned long a[100]; };
  */
 
 #define set_bit(nr, addr)    (void)test_and_set_bit(nr, addr)
+#define __set_bit(nr, addr)    (void)__test_and_set_bit(nr, addr)
 
 /*
  * clear_bit - Clears a bit in memory
@@ -55,6 +56,7 @@ struct __dummy { unsigned long a[100]; };
  */
 
 #define clear_bit(nr, addr)  (void)test_and_clear_bit(nr, addr)
+#define __clear_bit(nr, addr)  (void)__test_and_clear_bit(nr, addr)
 
 /*
  * change_bit - Toggle a bit in memory
@@ -102,6 +104,18 @@ extern __inline__ int test_and_set_bit(int nr, void *addr)
 	retval = (mask & *adr) != 0;
 	*adr |= mask;
 	restore_flags(flags);
+	return retval;
+}
+
+extern inline int __test_and_set_bit(int nr, void *addr)
+{
+	unsigned int mask, retval;
+	unsigned int *adr = (unsigned int *)addr;
+	
+	adr += nr >> 5;
+	mask = 1 << (nr & 0x1f);
+	retval = (mask & *adr) != 0;
+	*adr |= mask;
 	return retval;
 }
 

@@ -336,21 +336,6 @@ out:
 	schedule_console_callback();
 }
 
-#ifdef CONFIG_FORWARD_KEYBOARD
-extern int forward_chars;
-
-void put_queue(int ch)
-{
-	if (forward_chars == fg_console+1){
-		kbd_forward_char (ch);
-	} else {
-		if (tty) {
-			tty_insert_flip_char(tty, ch, 0);
-			con_schedule_flip(tty);
-		}
-	}
-}
-#else
 void put_queue(int ch)
 {
 	if (tty) {
@@ -358,7 +343,6 @@ void put_queue(int ch)
 		con_schedule_flip(tty);
 	}
 }
-#endif
 
 static void puts_queue(char *cp)
 {

@@ -4,7 +4,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 1992 - 1997, 2000-2002 Silicon Graphics, Inc. All rights reserved.
+ * Copyright (C) 1992 - 1997, 2000-2003 Silicon Graphics, Inc. All rights reserved.
  */
 
 #ifndef __SYS_GEO_H__
@@ -17,15 +17,7 @@
  *   GEO_MAX_LEN:	The maximum length of a geoid, formatted for printing
  */
 
-#include <linux/config.h>
-
-#ifdef CONFIG_IA64_SGI_SN2
 #include <asm/sn/sn2/geo.h>
-#else
-
-#error <<BOMB! need geo.h for this platform >>
-
-#endif /* !SN2 && ... */
 
 /* Declarations applicable to all platforms */
 

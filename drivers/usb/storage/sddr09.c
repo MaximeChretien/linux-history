@@ -1504,7 +1504,6 @@ sddr09_init_card_info(struct us_data *us) {
 	}
 }
 
-#if 0
 /*
  * It is unclear whether this does anything.
  * However, the request sense succeeds only after a reboot,
@@ -1512,6 +1511,7 @@ sddr09_init_card_info(struct us_data *us) {
  */
 int
 sddr09_init(struct us_data *us) {
+#if 0
 	int result;
 	unsigned char data[2];
 
@@ -1550,9 +1550,9 @@ sddr09_init(struct us_data *us) {
 		// additional transfer length * = sizeof(data) - 7
 	}
 #endif
+#endif
 	return USB_STOR_TRANSPORT_GOOD;		/* not result */
 }
-#endif
 
 /*
  * Transport for the Sandisk SDDR-09

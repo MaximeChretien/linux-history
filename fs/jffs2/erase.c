@@ -40,7 +40,7 @@
 #include <linux/jffs2.h>
 #include <linux/interrupt.h>
 #include "nodelist.h"
-#include "crc32.h"
+#include <linux/crc32.h>
 
 struct erase_priv_struct {
 	struct jffs2_eraseblock *jeb;

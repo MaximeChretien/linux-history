@@ -52,8 +52,12 @@ ifeq ($(CONFIG_ATM_FORE200E_SBA),y)
     CONFIG_ATM_FORE200E_SBA_FW := sba200e_ecd.bin2
   endif
 endif
-
 obj-$(CONFIG_ATM_FORE200E) += fore_200e.o
+
+obj-$(CONFIG_ATM_HE)		+= he.o
+ifeq ($(CONFIG_ATM_HE_USE_SUNI),y)
+  obj-$(CONFIG_ATM_HE)		+= suni.o
+endif
 
 EXTRA_CFLAGS=-g
 

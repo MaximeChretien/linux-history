@@ -78,6 +78,13 @@ int abs(int);
 extern struct pci_dev * iSeries_veth_dev;
 extern struct pci_dev * iSeries_vio_dev;
 
+#ifdef CONFIG_SHARED_MEMORY_ADDRESSING
+extern void shared_malloc(unsigned long);
+extern void shared_free(void *);
+extern int shared_task_mark();
+extern int shared_task_unmark();
+#endif
+
 EXPORT_SYMBOL(do_signal);
 EXPORT_SYMBOL(syscall_trace);
 EXPORT_SYMBOL(do_IRQ);
@@ -308,4 +315,11 @@ EXPORT_SYMBOL(tb_ticks_per_usec);
 #if defined(CONFIG_DUMP) || defined(CONFIG_DUMP_MODULE)
 extern void dump_send_ipi(int (*dump_ipi_callback)(struct pt_regs *));
 EXPORT_SYMBOL(dump_send_ipi);
+#endif
+
+#ifdef CONFIG_SHARED_MEMORY_ADDRESSING
+EXPORT_SYMBOL(shared_malloc);
+EXPORT_SYMBOL(shared_free);
+EXPORT_SYMBOL(shared_task_mark);
+EXPORT_SYMBOL(shared_task_unmark);
 #endif

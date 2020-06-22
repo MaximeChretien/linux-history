@@ -43,9 +43,7 @@
 spinlock_t kernel_flag __cacheline_aligned_in_smp = SPIN_LOCK_UNLOCKED;
 int smp_threads_ready;	/* Not used */
 atomic_t smp_commenced = ATOMIC_INIT(0);
-struct cpuinfo_mips cpu_data[NR_CPUS];
 
-// static atomic_t cpus_booted = ATOMIC_INIT(0);
 atomic_t cpus_booted = ATOMIC_INIT(0);
 
 int smp_num_cpus = 1;			/* Number that came online.  */
@@ -83,10 +81,6 @@ int prom_setup_smp(void);
 
 void prom_smp_finish(void);
 
-static void smp_tune_scheduling(void)
-{
-}
-
 void __init smp_callin(void)
 {
 #if 0
@@ -104,6 +98,7 @@ asmlinkage void start_secondary(void)
 {
 	unsigned int cpu = smp_processor_id();
 
+	cpu_probe();
 	prom_init_secondary();
 	per_cpu_trap_init();
 
@@ -138,7 +133,7 @@ void smp_send_reschedule(int cpu)
 	core_send_ipi(cpu, SMP_RESCHEDULE_YOURSELF);
 }
 
-static spinlock_t call_lock = SPIN_LOCK_UNLOCKED;
+spinlock_t smp_call_lock = SPIN_LOCK_UNLOCKED;
 
 struct call_data_struct *call_data;
 
@@ -170,7 +165,7 @@ int smp_call_function (void (*func) (void *info), void *info, int retry,
 	if (wait)
 		atomic_set(&data.finished, 0);
 
-	spin_lock(&call_lock);
+	spin_lock(&smp_call_lock);
 	call_data = &data;
 
 	/* Send a message to all other CPUs and wait for them to respond */
@@ -186,7 +181,7 @@ int smp_call_function (void (*func) (void *info), void *info, int retry,
 	if (wait)
 		while (atomic_read(&data.finished) != cpus)
 			barrier();
-	spin_unlock(&call_lock);
+	spin_unlock(&smp_call_lock);
 
 	return 0;
 }
@@ -224,7 +219,7 @@ static void stop_this_cpu(void *dummy)
 	 */
 	clear_bit(smp_processor_id(), &cpu_online_map);
 	/* May need to service _machine_restart IPI */
-	__sti();
+	local_irq_enable();
 	/* XXXKW wait if available? */
 	for (;;);
 }
@@ -282,7 +277,7 @@ void flush_tlb_mm(struct mm_struct *mm)
 		int i;
 		for (i = 0; i < smp_num_cpus; i++)
 			if (smp_processor_id() != i)
-				CPU_CONTEXT(i, mm) = 0;
+				cpu_context(i, mm) = 0;
 	}
 	local_flush_tlb_mm(mm);
 }
@@ -314,7 +309,7 @@ void flush_tlb_range(struct mm_struct *mm, unsigned long start, unsigned long en
 		int i;
 		for (i = 0; i < smp_num_cpus; i++)
 			if (smp_processor_id() != i)
-				CPU_CONTEXT(i, mm) = 0;
+				cpu_context(i, mm) = 0;
 	}
 	local_flush_tlb_range(mm, start, end);
 }
@@ -338,7 +333,7 @@ void flush_tlb_page(struct vm_area_struct *vma, unsigned long page)
 		int i;
 		for (i = 0; i < smp_num_cpus; i++)
 			if (smp_processor_id() != i)
-				CPU_CONTEXT(i, vma->vm_mm) = 0;
+				cpu_context(i, vma->vm_mm) = 0;
 	}
 	local_flush_tlb_page(vma, page);
 }

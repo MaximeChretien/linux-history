@@ -609,7 +609,7 @@ int i2c_bit_del_bus(struct i2c_adapter *adap)
 
 int __init i2c_algo_bit_init (void)
 {
-	printk("i2c-algo-bit.o: i2c bit algorithm module\n");
+	printk(KERN_INFO "i2c-algo-bit.o: i2c bit algorithm module\n");
 	return 0;
 }
 

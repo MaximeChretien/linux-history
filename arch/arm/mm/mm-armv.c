@@ -200,7 +200,7 @@ alloc_init_page(unsigned long virt, unsigned long phys, int domain, int prot)
 	}
 	ptep = pte_offset(pmdp, virt);
 
-	set_pte(ptep, mk_pte_phys(phys, __pgprot(prot)));
+	set_pte(ptep, pfn_pte(phys >> PAGE_SHIFT, __pgprot(prot)));
 }
 
 /*
@@ -388,8 +388,6 @@ void __init memtable_init(struct meminfo *mi)
 	init_maps->bufferable = 0;
 
 	create_mapping(init_maps);
-
-	flush_cache_all();
 }
 
 /*

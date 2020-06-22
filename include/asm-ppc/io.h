@@ -21,25 +21,25 @@
 #define PREP_ISA_MEM_BASE 	0xc0000000
 #define PREP_PCI_DRAM_OFFSET 	0x80000000
 
-#if defined(CONFIG_4xx)
-#include <asm/ppc4xx.h>
+#if defined(CONFIG_40x)
+#include <asm/ibm4xx.h>
 #elif defined(CONFIG_8xx)
 #include <asm/mpc8xx.h>
 #elif defined(CONFIG_8260)
 #include <asm/mpc8260.h>
 #elif defined(CONFIG_APUS)
-#define _IO_BASE 0
-#define _ISA_MEM_BASE 0
+#define _IO_BASE	0
+#define _ISA_MEM_BASE	0
 #define PCI_DRAM_OFFSET 0
 #else /* Everyone else */
-extern unsigned long isa_io_base;
-extern unsigned long isa_mem_base;
-extern unsigned long pci_dram_offset;
 #define _IO_BASE	isa_io_base
 #define _ISA_MEM_BASE	isa_mem_base
 #define PCI_DRAM_OFFSET	pci_dram_offset
 #endif /* Platform-dependant I/O */
 
+extern unsigned long isa_io_base;
+extern unsigned long isa_mem_base;
+extern unsigned long pci_dram_offset;
 #define readb(addr) in_8((volatile u8 *)(addr))
 #define writeb(b,addr) out_8((volatile u8 *)(addr), (b))
 #if defined(CONFIG_APUS)
@@ -223,23 +223,26 @@ extern inline void io_flush(int value)
  */
 extern inline unsigned long virt_to_bus(volatile void * address)
 {
-#ifndef CONFIG_APUS
-        if (address == (void *)0)
-		return 0;
-        return (unsigned long)address - KERNELBASE + PCI_DRAM_OFFSET;
+#if defined(CONFIG_APUS) || defined(CONFIG_8xx) || defined(CONFIG_4xx)
+	/* I think everyone will be using this version if we start allowing
+	 * uncached pages in alternate virtual spaces.  --  Dan
+	 */
+	return (iopa((unsigned long) address) + PCI_DRAM_OFFSET);
 #else
-	return iopa ((unsigned long) address);
+	if (address == (void *)0)
+		return 0;
+	return (unsigned long)address - KERNELBASE + PCI_DRAM_OFFSET;
 #endif
 }
 
 extern inline void * bus_to_virt(unsigned long address)
 {
-#ifndef CONFIG_APUS
-        if (address == 0)
-		return 0;
-        return (void *)(address - PCI_DRAM_OFFSET + KERNELBASE);
+#if defined(CONFIG_APUS) || defined(CONFIG_8xx) || defined(CONFIG_40x)
+	return (void*) mm_ptov (address - PCI_DRAM_OFFSET);
 #else
-	return (void*) mm_ptov (address);
+	if (address == 0)
+		return 0;
+	return (void *)(address - PCI_DRAM_OFFSET + KERNELBASE);
 #endif
 }
 
@@ -249,19 +252,19 @@ extern inline void * bus_to_virt(unsigned long address)
  */
 extern inline unsigned long virt_to_phys(volatile void * address)
 {
-#ifndef CONFIG_APUS
-	return (unsigned long) address - KERNELBASE;
-#else
+#if defined(CONFIG_APUS) || defined(CONFIG_8xx) || defined(CONFIG_40x)
 	return iopa ((unsigned long) address);
+#else
+	return (unsigned long) address - KERNELBASE;
 #endif
 }
 
 extern inline void * phys_to_virt(unsigned long address)
 {
-#ifndef CONFIG_APUS
-	return (void *) (address + KERNELBASE);
-#else
+#if defined(CONFIG_APUS) || defined(CONFIG_8xx) || defined(CONFIG_40x)
 	return (void*) mm_ptov (address);
+#else
+	return (void *) (address + KERNELBASE);
 #endif
 }
 

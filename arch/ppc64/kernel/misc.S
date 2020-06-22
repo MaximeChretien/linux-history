@@ -1,5 +1,5 @@
 /*
- *  arch/ppc/kernel/misc.S
+ *  arch/ppc64/kernel/misc.S
  *
  *  
  *
@@ -25,6 +25,7 @@
 #include <asm/processor.h>
 #include <asm/page.h>
 #include <asm/cache.h>
+#include <asm/cputable.h>
 #include "ppc_asm.h"
 
 	.text
@@ -353,7 +354,6 @@ _GLOBAL(_outsl)
 	bdnz	00b
 	blr	
 
-_GLOBAL(ide_insw)
 _GLOBAL(_insw_ns)
 	cmpwi	0,r5,0
 	mtctr	r5
@@ -365,7 +365,6 @@ _GLOBAL(_insw_ns)
 	bdnz	00b
 	blr
 
-_GLOBAL(ide_outsw)
 _GLOBAL(_outsw_ns)
 	cmpwi	0,r5,0
 	mtctr	r5
@@ -478,6 +477,93 @@ _GLOBAL(cvt_df)
 	mffs	0		/* save new fpscr value */
 	stfd	0,0(r5)
 	blr
+
+/*
+ * identify_cpu,
+ * In:	 r3 = base of the cpu_specs array
+ *       r4 = address of cur_cpu_spec
+ *       r5 = relocation offset
+ */
+_GLOBAL(identify_cpu)
+	mfpvr	r7
+1:
+	lwz	r8,CPU_SPEC_PVR_MASK(r3)
+	and	r8,r8,r7
+	lwz	r9,CPU_SPEC_PVR_VALUE(r3)
+	cmplw	0,r9,r8
+	beq	1f
+	addi	r3,r3,CPU_SPEC_ENTRY_SIZE
+	b	1b
+1:
+	add	r3,r3,r5
+	std	r3,0(r4)
+	blr
+
+/*
+ * do_cpu_ftr_fixups - goes through the list of CPU feature fixups
+ * and writes nop's over sections of code that don't apply for this cpu.
+ * r3 = data offset (not changed)
+ */
+_GLOBAL(do_cpu_ftr_fixups)
+	/* Get CPU 0 features */
+	LOADADDR(r6,cur_cpu_spec)
+	sub	r6,r6,r3
+	ld	r4,0(r6)
+	sub	r4,r4,r3
+	ld	r4,CPU_SPEC_FEATURES(r4)
+	/* Get the fixup table */
+	LOADADDR(r6,__start___ftr_fixup)
+	sub	r6,r6,r3
+	LOADADDR(r7,__stop___ftr_fixup)
+	sub	r7,r7,r3
+	/* Do the fixup */
+1:	cmpld	r6,r7
+	bgelr
+	addi	r6,r6,32
+	ld	r8,-32(r6)	/* mask */
+	and	r8,r8,r4
+	ld	r9,-24(r6)	/* value */
+	cmpld	r8,r9
+	beq	1b
+	ld	r8,-16(r6)	/* section begin */
+	ld	r9,-8(r6)	/* section end */
+	subf.	r9,r8,r9
+	beq	1b
+	/* write nops over the section of code */
+	/* todo: if large section, add a branch at the start of it */
+	srwi	r9,r9,2
+	mtctr	r9
+	sub	r8,r8,r3
+	lis	r0,0x60000000@h	/* nop */
+3:	stw	r0,0(r8)
+	andi.	r10,r4,CPU_FTR_SPLIT_ID_CACHE@l
+	beq	2f
+	dcbst	0,r8		/* suboptimal, but simpler */
+	sync
+	icbi	0,r8
+2:	addi	r8,r8,4
+	bdnz	3b
+	sync			/* additional sync needed on g4 */
+	isync
+	b	1b
+
+/*
+ * call_setup_cpu - call the setup_cpu function for this cpu
+ * r3 = data offset
+ *
+ * Setup function is called with:
+ *   r3 = data offset
+ *   r4 = ptr to CPU spec (relocated)
+ */
+_GLOBAL(call_setup_cpu)
+	LOADADDR(r4, cur_cpu_spec)
+	sub	r4,r4,r3
+	lwz	r4,0(r4)		# load pointer to cpu_spec
+	sub	r4,r4,r3		# relocate
+	lwz	r6,CPU_SPEC_SETUP(r4)	# load function pointer
+	sub	r6,r6,r3	
+	mtctr	r6
+	bctr
 
 /*
  * Create a kernel thread
@@ -717,7 +803,24 @@ _GLOBAL(sys_call_table32)
 	.llong .sys_madvise		/* 205 */
 	.llong .sys_mincore		/* 206 */
 	.llong .sys_gettid		/* 207 */
-	.rept NR_syscalls-208
+#if 0 /* Reserved syscalls */
+	.llong .sys_tkill		/* 208 */
+	.llong .sys_setxattr
+	.llong .sys_lsetxattr	/* 210 */
+	.llong .sys_fsetxattr
+	.llong .sys_getxattr
+	.llong .sys_lgetxattr
+	.llong .sys_fgetxattr
+	.llong .sys_listxattr	/* 215 */
+	.llong .sys_llistxattr
+	.llong .sys_flistxattr
+	.llong .sys_removexattr
+	.llong .sys_lremovexattr
+	.llong .sys_fremovexattr	/* 220 */
+	.llong .sys_futex
+#endif
+	.llong .sys_perfmonctl   /* Put this here for now ... */
+	.rept NR_syscalls-222
 		.llong .sys_ni_syscall
 	.endr
 #endif
@@ -931,6 +1034,23 @@ _GLOBAL(sys_call_table)
 	.llong .sys_madvise		/* 205 */
 	.llong .sys_mincore		/* 206 */
 	.llong .sys_gettid		/* 207 */
-	.rept NR_syscalls-208
+#if 0 /* Reserved syscalls */
+	.llong .sys_tkill		/* 208 */
+	.llong .sys_setxattr
+	.llong .sys_lsetxattr	/* 210 */
+	.llong .sys_fsetxattr
+	.llong .sys_getxattr
+	.llong .sys_lgetxattr
+	.llong .sys_fgetxattr
+	.llong .sys_listxattr	/* 215 */
+	.llong .sys_llistxattr
+	.llong .sys_flistxattr
+	.llong .sys_removexattr
+	.llong .sys_lremovexattr
+	.llong .sys_fremovexattr	/* 220 */
+	.llong .sys_futex
+#endif
+	.llong .sys_perfmonctl   /* Put this here for now ... */
+	.rept NR_syscalls-222
 	.llong .sys_ni_syscall
 	.endr

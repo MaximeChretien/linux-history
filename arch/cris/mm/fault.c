@@ -6,6 +6,10 @@
  *  Authors:  Bjorn Wesen 
  * 
  *  $Log: fault.c,v $
+ *  Revision 1.22  2003/07/07 09:07:04  johana
+ *  Added special CONFIG_ETRAX_DEBUG_INTERRUPT handling here
+ *  to deal with a di in entry.S
+ *
  *  Revision 1.21  2002/05/28 14:24:56  bjornw
  *  Corrected typo
  *
@@ -68,6 +72,7 @@
  *
  */
 
+#include <linux/config.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
 #include <linux/kernel.h>
@@ -126,6 +131,9 @@ handle_mmu_bus_fault(struct pt_regs *regs)
 	int errcode;
 	unsigned long address;
 
+#ifdef CONFIG_ETRAX_DEBUG_INTERRUPT /* The di is actually in entry.S */
+	log_int(rdpc(), regs->dccr, 0);
+#endif
 	cause = *R_MMU_CAUSE;
 	select = *R_TLB_SELECT;
 

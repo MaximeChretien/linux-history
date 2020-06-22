@@ -3,6 +3,15 @@
  *	       Hans-Peter Nilsson (hp@axis.com)
  *
  * $Log: uaccess.h,v $
+ * Revision 1.12  2003/06/17 14:00:42  starvik
+ * Merge of Linux 2.4.21
+ *
+ * Revision 1.11  2003/06/04 19:36:45  hp
+ * Remove unused copy-pasted register clobber from __asm_clear
+ *
+ * Revision 1.10  2003/04/09 08:22:38  pkj
+ * Typo correction (taken from Linux 2.5).
+ *
  * Revision 1.9  2002/11/20 18:20:17  hp
  * Make all static inline functions extern inline.
  *
@@ -129,7 +138,7 @@ extern unsigned long search_exception_table(unsigned long);
  * This gets kind of ugly. We want to return _two_ values in "get_user()"
  * and yet we don't want to do any pointers, because that is too much
  * of a performance impact. Thus we have a few rather ugly macros here,
- * and hide all the uglyness from the user.
+ * and hide all the ugliness from the user.
  *
  * The "__xxx" versions of the user access functions are versions that
  * do not verify the address space, that must have been done previously
@@ -775,7 +784,7 @@ strncpy_from_user(char *dst, const char *src, long count)
 		"	.previous"			\
 		: "=r" (to), "=r" (ret)			\
 		: "0" (to), "1" (ret)			\
-		: "r9", "memory")
+		: "memory")
 
 #define __asm_clear_1(to, ret) \
 	__asm_clear(to, ret,			\

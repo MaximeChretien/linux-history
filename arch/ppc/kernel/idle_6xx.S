@@ -56,12 +56,12 @@ END_FTR_SECTION_IFSET(CPU_FTR_DUAL_PLL_750FX)
 	blr
 
 /*
- * Here is the power_save_6xx function. This could eventually be
+ * Here is the power_save function. This could eventually be
  * split into several functions & changing the function pointer
  * depending on the various features.
  */
-	.globl	power_save_6xx
-power_save_6xx:
+	.globl	power_save
+power_save:
 	/* Check if we can nap or doze, put HID0 mask in r3
 	 */
 	lis	r3, 0
@@ -83,7 +83,7 @@ BEGIN_FTR_SECTION
 	cmpi	0,r4,0
 	beq	1f
 	lis	r3,HID0_NAP@h
-1:	
+1:
 END_FTR_SECTION_IFSET(CPU_FTR_CAN_NAP)
 	cmpi	0,r3,0
 	beqlr
@@ -99,7 +99,7 @@ END_FTR_SECTION_IFSET(CPU_FTR_CAN_NAP)
 	beq+	1f
 	mtmsr	r7	/* out of line this ? */
 	blr
-1:	
+1:
 	/* Some pre-nap cleanups needed on some CPUs */
 	andis.	r0,r3,HID0_NAP@h
 	beq	2f
@@ -127,7 +127,7 @@ END_FTR_SECTION_IFSET(CPU_FTR_NAP_DISABLE_L2_PR)
 	lwz	r4,nap_enter_count@l(r6)
 	addi	r4,r4,1
 	stw	r4,nap_enter_count@l(r6)
-#endif	
+#endif
 2:
 BEGIN_FTR_SECTION
 	/* Go to low speed mode on some 750FX */
@@ -138,10 +138,10 @@ BEGIN_FTR_SECTION
 	mfspr	r4,SPRN_HID1
 	oris	r4,r4,0x0001
 	mtspr	SPRN_HID1,r4
-1:	
+1:
 END_FTR_SECTION_IFSET(CPU_FTR_DUAL_PLL_750FX)
 
-	/* Go to NAP or DOZE now */	
+	/* Go to NAP or DOZE now */
 	mfspr	r4,SPRN_HID0
 	lis	r5,(HID0_NAP|HID0_SLEEP)@h
 BEGIN_FTR_SECTION
@@ -167,7 +167,7 @@ power_save_6xx_ret:
 	isync
 	sync
 	blr
-	
+
 /*
  * Return from NAP/DOZE mode, restore some CPU specific registers,
  * we are called with DR/IR still off and r2 containing physical
@@ -191,7 +191,7 @@ END_FTR_SECTION_IFSET(CPU_FTR_CAN_DOZE)
 	stw	r24,nap_return_count@l(r22)
 1:
 #endif
-	
+
 	lwz	r24,PROCESSOR(r2)
 	slwi	r24,r24,2
 	/* Todo make sure all these are in the same page

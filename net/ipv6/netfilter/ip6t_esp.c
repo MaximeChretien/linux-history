@@ -124,7 +124,7 @@ match(const struct sk_buff *skb,
        		return 0;
        }
 
-	esp=skb->data+ptr;
+	esp = (struct esphdr *) (skb->data + ptr);
 
 	DEBUGP("IPv6 ESP SPI %u %08X\n", ntohl(esp->spi), ntohl(esp->spi));
 

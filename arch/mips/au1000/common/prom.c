@@ -105,9 +105,11 @@ char *prom_getenv(char *envname)
 inline unsigned char str2hexnum(unsigned char c)
 {
 	if(c >= '0' && c <= '9')
-	return c - '0';
+		return c - '0';
 	if(c >= 'a' && c <= 'f')
-	return c - 'a' + 10;
+		return c - 'a' + 10;
+	if(c >= 'A' && c <= 'F')
+		return c - 'A' + 10;
 	return 0; /* foo */
 }
 
@@ -128,7 +130,6 @@ inline void str2eaddr(unsigned char *ea, unsigned char *str)
 
 int get_ethernet_addr(char *ethernet_addr)
 {
-	int i;
         char *ethaddr_str;
 
         ethaddr_str = prom_getenv("ethaddr");
@@ -139,10 +140,14 @@ int get_ethernet_addr(char *ethernet_addr)
 	str2eaddr(ethernet_addr, ethaddr_str);
 
 #if 0
+	{
+		int i;
+
 	printk("get_ethernet_addr: ");
 	for (i=0; i<5; i++)
 		printk("%02x:", (unsigned char)*(ethernet_addr+i));
 	printk("%02x\n", *(ethernet_addr+i));
+	}
 #endif
 
 	return 0;
@@ -151,3 +156,4 @@ int get_ethernet_addr(char *ethernet_addr)
 void prom_free_prom_memory (void) {}
 EXPORT_SYMBOL(prom_getcmdline);
 EXPORT_SYMBOL(get_ethernet_addr);
+EXPORT_SYMBOL(str2eaddr);

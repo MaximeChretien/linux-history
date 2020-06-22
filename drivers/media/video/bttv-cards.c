@@ -21,22 +21,20 @@
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
     Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-    
+
 */
 
-#define __NO_VERSION__ 1
-
-#include <linux/version.h>
+#include <linux/config.h>
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/kmod.h>
 #include <linux/init.h>
 #include <linux/pci.h>
+#include <linux/vmalloc.h>
 
 #include <asm/io.h>
 
 #include "bttvp.h"
-#include "tuner.h"
 #include "bt832.h"
 
 /* fwd decl */
@@ -61,6 +59,7 @@ static void windvr_audio(struct bttv *btv, struct video_audio *v, int set);
 static void adtvk503_audio(struct bttv *btv, struct video_audio *v, int set);
 static void rv605_muxsel(struct bttv *btv, unsigned int input);
 static void eagle_muxsel(struct bttv *btv, unsigned int input);
+static void xguard_muxsel(struct bttv *btv, unsigned int input);
 
 static int terratec_active_radio_upgrade(struct bttv *btv);
 static int tea5757_read(struct bttv *btv);
@@ -153,13 +152,16 @@ static struct CARD {
 	{ 0x6606107d, BTTV_WINFAST2000,   "Leadtek WinFast TV 2000" },
 	{ 0x6607107d, BTTV_WINFAST2000,   "Leadtek WinFast VC 100" },
 	{ 0x263610b4, BTTV_STB2,          "STB TV PCI FM, Gateway P/N 6000704" },
+	{ 0x264510b4, BTTV_STB2,          "STB TV PCI FM, Gateway P/N 6000704" },
  	{ 0x402010fc, BTTV_GVBCTV3PCI,    "I-O Data Co. GV-BCTV3/PCI" },
 	{ 0x405010fc, BTTV_GVBCTV4PCI,    "I-O Data Co. GV-BCTV4/PCI" },
 	{ 0x407010fc, BTTV_GVBCTV5PCI,    "I-O Data Co. GV-BCTV5/PCI" },
 
-	{ 0x1200bd11, BTTV_PINNACLE,      "Pinnacle PCTV" },
 	{ 0x001211bd, BTTV_PINNACLE,      "Pinnacle PCTV" },
 	{ 0x001c11bd, BTTV_PINNACLESAT,   "Pinnacle PCTV Sat" },
+	// some cards ship with byteswapped IDs ...
+	{ 0x1200bd11, BTTV_PINNACLE,      "Pinnacle PCTV [bswap]" },
+	{ 0xff00bd11, BTTV_PINNACLE,      "Pinnacle PCTV [bswap]" },
 
 	{ 0x3000121a, BTTV_VOODOOTV_FM,   "3Dfx VoodooTV FM/ VoodooTV 200" },
 	{ 0x3060121a, BTTV_STB2,	  "3Dfx VoodooTV 100/ STB OEM" },
@@ -167,6 +169,7 @@ static struct CARD {
 	{ 0x3000144f, BTTV_MAGICTVIEW063, "(Askey Magic/others) TView99 CPH06x" },
 	{ 0x3002144f, BTTV_MAGICTVIEW061, "(Askey Magic/others) TView99 CPH05x" },
 	{ 0x3005144f, BTTV_MAGICTVIEW061, "(Askey Magic/others) TView99 CPH061/06L (T1/LC)" },
+	{ 0x5000144f, BTTV_MAGICTVIEW061, "Askey CPH050" },
 	
 	{ 0x00011461, BTTV_AVPHONE98,     "AVerMedia TVPhone98" },
 	{ 0x00021461, BTTV_AVERMEDIA98,   "AVermedia TVCapture 98" },
@@ -196,6 +199,33 @@ static struct CARD {
 	{ 0x401015b0, BTTV_ZOLTRIX_GENIE, "Zoltrix Genie TV / Radio" },
 	{ 0x401615b0, BTTV_ZOLTRIX_GENIE, "Zoltrix Genie TV / Radio" },
 
+	{ 0x1430aa00, BTTV_PV143,         "Provideo PV143A" },
+	{ 0x1431aa00, BTTV_PV143,         "Provideo PV143B" },
+	{ 0x1432aa00, BTTV_PV143,         "Provideo PV143C" },
+	{ 0x1433aa00, BTTV_PV143,         "Provideo PV143D" },
+
+	{ 0x1460aa00, BTTV_PV150,         "Provideo PV150A-1" },
+	{ 0x1461aa01, BTTV_PV150,         "Provideo PV150A-2" },
+	{ 0x1462aa02, BTTV_PV150,         "Provideo PV150A-3" },
+	{ 0x1463aa03, BTTV_PV150,         "Provideo PV150A-4" },
+
+	{ 0x1464aa04, BTTV_PV150,         "Provideo PV150B-1" },
+	{ 0x1465aa05, BTTV_PV150,         "Provideo PV150B-2" },
+	{ 0x1466aa06, BTTV_PV150,         "Provideo PV150B-3" },
+	{ 0x1467aa07, BTTV_PV150,         "Provideo PV150B-4" },
+
+	{ 0xa1550000, BTTV_IVC200,        "IVC-200" },
+	{ 0xa1550001, BTTV_IVC200,        "IVC-200" },
+	{ 0xa1550002, BTTV_IVC200,        "IVC-200" },
+	{ 0xa1550003, BTTV_IVC200,        "IVC-200" },	
+	{ 0xa1550100, BTTV_IVC200,        "IVC-200G" },
+	{ 0xa1550101, BTTV_IVC200,        "IVC-200G" },
+	{ 0xa1550102, BTTV_IVC200,        "IVC-200G" },
+	{ 0xa1550103, BTTV_IVC200,        "IVC-200G" },
+	
+	{ 0x41424344, BTTV_GRANDTEC,      "GrandTec Multi Capture" },
+	{ 0x01020304, BTTV_XGUARD,        "Grandtec Grand X-Guard" },
+	
     	{ 0x010115cb, BTTV_GMV1,          "AG GMV1" },
 	{ 0x010114c7, BTTV_MODTEC_205,    "Modular Technology MM201/MM202/MM205/MM210/MM215 PCTV" },
 	{ 0x18501851, BTTV_CHRONOS_VS2,   "FlyVideo 98 (LR50)/ Chronos Video Shuttle II" },
@@ -206,19 +236,11 @@ static struct CARD {
 	{ 0x03116000, BTTV_SENSORAY311,   "Sensoray 311" },
 	{ 0x00790e11, BTTV_WINDVR,        "Canopus WinDVR PCI" },
 	{ 0xa0fca1a0, BTTV_ZOLTRIX,       "Face to Face Tvmax" },
-
-	{ 0x1460aa00, BTTV_PV150,         "Provideo PV150A-1" },
-	{ 0x1461aa01, BTTV_PV150,         "Provideo PV150A-2" },
-	{ 0x1462aa02, BTTV_PV150,         "Provideo PV150A-3" },
-	{ 0x1463aa03, BTTV_PV150,         "Provideo PV150A-4" },
-	{ 0x1464aa04, BTTV_PV150,         "Provideo PV150B-1" },
-	{ 0x1465aa05, BTTV_PV150,         "Provideo PV150B-2" },
-	{ 0x1466aa06, BTTV_PV150,         "Provideo PV150B-3" },
-	{ 0x1467aa07, BTTV_PV150,         "Provideo PV150B-4" },
+	{ 0x01010071, BTTV_NEBULA_DIGITV, "Nebula Electronics DigiTV" },
 
 	// likely broken, vendor id doesn't match the other magic views ...
 	//{ 0xa0fca04f, BTTV_MAGICTVIEW063, "Guillemot Maxi TV Video 3" },
-
+	
 	{ 0, -1, NULL }
 };
 
@@ -322,7 +344,7 @@ struct tvcard bttv_tvcards[] = {
 },{
 
 /* ---- card 0x08 ---------------------------------- */
-	.name		= "Lifeview FlyVideo II (Bt848) LR26",
+	.name		= "Lifeview FlyVideo II (Bt848) LR26 / MAXI TV Video PCI2 LR26",
 	.video_inputs	= 4,
 	.audio_inputs	= 1,
 	.tuner		= 0,
@@ -629,7 +651,7 @@ struct tvcard bttv_tvcards[] = {
 	.pll            = PLL_28,
 	.tuner_type	= -1,
 },{
-	.name		= "Formac iProTV",
+	.name		= "Formac iProTV, Formac ProTV I (bt848)",
 	.video_inputs	= 4,
 	.audio_inputs	= 1,
 	.tuner		= 0,
@@ -737,7 +759,7 @@ struct tvcard bttv_tvcards[] = {
 	.audiomux	= { 0x551400, 0x551200, 0, 0, 0x551c00, 0x551200 },
 	.needs_tvaudio	= 1,
 	.pll		= PLL_28,
-	.tuner_type	= -1,
+	.tuner_type	= 1,
 },{
 	.name		= "Pinnacle PCTV Studio/Rave",
 	.video_inputs	= 3,
@@ -921,7 +943,7 @@ struct tvcard bttv_tvcards[] = {
 /* ---- card 0x34 ---------------------------------- */
 	/* David Härdeman <david@2gen.com> */
 	.name           = "Pinnacle PCTV Studio Pro",
-	.video_inputs   = 3,
+	.video_inputs   = 4,
 	.audio_inputs   = 1,
 	.tuner          = 0,
 	.svhs           = 3,
@@ -1548,11 +1570,13 @@ struct tvcard bttv_tvcards[] = {
 	.no_msp34xx     = 1,
 	.no_tda9875     = 1,
 	.no_tda7432     = 1,   
+	.gpiomask       = 0x01,
+	.audiomux       = { 0, 0, 0, 0, 1 },
 	.muxsel         = { 3, 0, 1, 2},
 	.needs_tvaudio  = 0, 
 	.pll            = PLL_28,
 },{
-        .name           = "Formac ProTV II",
+        .name           = "Formac ProTV II (bt878)",
         .video_inputs   = 4,
         .audio_inputs   = 1,
         .tuner          = 0,
@@ -1571,8 +1595,8 @@ struct tvcard bttv_tvcards[] = {
 	 not soldered here, though unknown wiring.
          Card lacks: external audio in, pci subsystem id.
        */
-
 },{
+
 	/* ---- card 0x60 ---------------------------------- */
 	.name           = "MachTV",
         .video_inputs   = 3,
@@ -1621,17 +1645,166 @@ struct tvcard bttv_tvcards[] = {
 	.svhs           = 2,
 	.gpiomask       = 0x001e8007,
 	.muxsel         = { 2, 3, 1, 0 },
-                         /* Tuner,      Radio, external, internal, mute, stereo */
-	.audiomux       = { 0x00060000, 0x000, 0x000000, 0x000000, 0x07, 0x0000 }, /* Sub: 0x00180000 */
+	/*                  Tuner, Radio, external, internal, off,  on */
+	.audiomux       = { 0x08,  0x0f,  0x0a,     0x08,     0x0f, 0x08 },
 	.needs_tvaudio  = 0,
 	.no_msp34xx     = 1,
 	.pll            = PLL_28,
 	.tuner_type     = 2,
 	.audio_hook	= adtvk503_audio,
+},{
+
+	/* ---- card 0x64 ---------------------------------- */
+        .name           = "Hercules Smart TV Stereo",
+        .video_inputs   = 4,
+        .audio_inputs   = 1,
+        .tuner          = 0,
+        .svhs           = 2,
+        .gpiomask       = 0x00,
+        .muxsel         = { 2, 3, 1, 1 },
+        .needs_tvaudio  = 1,
+        .no_msp34xx     = 1,
+        .pll            = PLL_28,
+        .tuner_type     = 5,
+	/* Notes:
+	   - card lacks subsystem ID
+	   - stereo variant w/ daughter board with tda9874a @0xb0
+	   - Audio Routing: 
+		always from tda9874 independent of GPIO (?)
+		external line in: unknown
+	   - Other chips: em78p156elp @ 0x96 (probably IR remote control)
+	              hef4053 (instead 4052) for unknown function
+	*/
+},{
+        .name           = "Pace TV & Radio Card",
+        .video_inputs   = 4,
+        .audio_inputs   = 1,
+        .tuner          = 0,
+        .svhs           = 2,
+        .muxsel         = { 2, 3, 1, 1}, // Tuner, CVid, SVid, CVid over SVid connector
+        .gpiomask       = 0,
+        .no_tda9875     = 1,
+        .no_tda7432     = 1,
+        .tuner_type     = 1,
+        .has_radio      = 1,
+        .pll            = PLL_28,
+        /* Bt878, Bt832, FI1246 tuner; no pci subsystem id
+           only internal line out: (4pin header) RGGL
+           Radio must be decoded by msp3410d (not routed through)*/
+        //         .digital_mode   = DIGITAL_MODE_CAMERA, // todo!
+},{
+        /* Chris Willing <chris@vislab.usyd.edu.au> */
+        .name           = "IVC-200",
+        .video_inputs   = 1,
+        .audio_inputs   = 0,
+        .tuner          = -1,
+        .tuner_type     = -1,
+        .svhs           = -1,
+        .gpiomask       = 0xdf,
+        .muxsel         = { 2 },
+        .pll            = PLL_28,
+},{
+	.name           = "Grand X-Guard / Trust 814PCI",
+	.video_inputs   = 16,
+        .audio_inputs   = 0,
+        .tuner          = -1,
+        .svhs           = -1,
+	.tuner_type     = 4,
+        .gpiomask2      = 0xff,
+	.muxsel         = { 2,2,2,2, 3,3,3,3, 1,1,1,1, 0,0,0,0 },
+	.muxsel_hook    = xguard_muxsel,
+	.no_msp34xx     = 1,
+	.no_tda9875     = 1,
+        .no_tda7432     = 1,
+	.pll            = PLL_28,
+},{
+
+	/* ---- card 0x68 ---------------------------------- */
+	.name           = "Nebula Electronics DigiTV",
+	.video_inputs   = 0,
+	.audio_inputs   = 0,
+	.svhs           = -1,
+	.muxsel         = { 2, 3, 1, 0},
+	.needs_tvaudio  = 0,
+	.no_msp34xx     = 1,
+	.no_tda9875     = 1,
+	.no_tda7432     = 1,
+	.pll            = PLL_28,
+	.tuner_type     = -1,
+},{
+	/* Jorge Boncompte - DTI2 <jorge@dti2.net> */
+	.name           = "ProVideo PV143",
+        .video_inputs   = 4,
+        .audio_inputs   = 0,
+        .tuner          = -1,
+        .svhs           = -1,
+        .gpiomask       = 0,
+        .muxsel         = { 2, 3, 1, 0 },
+        .audiomux       = { 0 },
+        .needs_tvaudio  = 0,
+        .no_msp34xx     = 1,
+        .pll            = PLL_28,
+        .tuner_type     = -1,
+},{
+	/* M.Klahr@phytec.de */
+	.name           = "PHYTEC VD-009-X1 MiniDIN (bt878)",
+	.video_inputs   = 4,
+	.audio_inputs   = 0,
+	.tuner          = -1, /* card has no tuner */
+	.svhs           = 3,
+	.gpiomask       = 0x00, 
+	.muxsel         = { 2, 3, 1, 0},
+	.audiomux       = { 0, 0, 0, 0, 0, 0 }, /* card has no audio */
+	.needs_tvaudio  = 1,
+	.pll            = PLL_28,
+	.tuner_type     = -1,
+},{
+	.name           = "PHYTEC VD-009-X1 Combi (bt878)",
+	.video_inputs   = 4,
+	.audio_inputs   = 0,
+	.tuner          = -1, /* card has no tuner */
+	.svhs           = 3,
+	.gpiomask       = 0x00,
+	.muxsel         = { 2, 3, 1, 1},
+	.audiomux       = { 0, 0, 0, 0, 0, 0 }, /* card has no audio */
+	.needs_tvaudio  = 1,
+	.pll            = PLL_28,
+	.tuner_type     = -1,
+},{
+
+	/* ---- card 0x6c ---------------------------------- */
+	.name           = "PHYTEC VD-009 MiniDIN (bt878)",
+	.video_inputs   = 10,
+	.audio_inputs   = 0,
+	.tuner          = -1, /* card has no tuner */
+	.svhs           = 9,
+	.gpiomask       = 0x00,
+	.gpiomask2      = 0x03, /* gpiomask2 defines the bits used to switch audio
+				   via the upper nibble of muxsel. here: used for
+				   xternal video-mux */
+	.muxsel         = { 0x02, 0x12, 0x22, 0x32, 0x03, 0x13, 0x23, 0x33, 0x01, 0x00 },
+	.audiomux       = { 0, 0, 0, 0, 0, 0 }, /* card has no audio */
+	.needs_tvaudio  = 1,
+	.pll            = PLL_28,
+	.tuner_type     = -1,
+},{
+	.name           = "PHYTEC VD-009 Combi (bt878)",
+	.video_inputs   = 10,
+	.audio_inputs   = 0,
+	.tuner          = -1, /* card has no tuner */
+	.svhs           = 9,
+	.gpiomask       = 0x00,
+	.gpiomask2      = 0x03, /* gpiomask2 defines the bits used to switch audio
+				   via the upper nibble of muxsel. here: used for
+				   xternal video-mux */
+	.muxsel         = { 0x02, 0x12, 0x22, 0x32, 0x03, 0x13, 0x23, 0x33, 0x01, 0x01 },
+	.audiomux       = { 0, 0, 0, 0, 0, 0 }, /* card has no audio */
+	.needs_tvaudio  = 1,
+	.pll            = PLL_28,
+	.tuner_type     = -1,
 }};
 
-const unsigned int bttv_num_tvcards =
-	(sizeof(bttv_tvcards)/sizeof(bttv_tvcards[0]));
+const unsigned int bttv_num_tvcards = ARRAY_SIZE(bttv_tvcards);
 
 /* ----------------------------------------------------------------------- */
 
@@ -1663,12 +1836,14 @@ void __devinit bttv_idcard(struct bttv *btv)
 			printk(KERN_INFO "bttv%d: detected: %s [card=%d], "
 			       "PCI subsystem ID is %04x:%04x\n",
 			       btv->nr,cards[type].name,cards[type].cardnr,
-			       btv->cardid & 0xffff, btv->cardid >> 16);
+			       btv->cardid & 0xffff,
+			       (btv->cardid >> 16) & 0xffff);
 			btv->type = cards[type].cardnr;
 		} else {
 			/* 404 */
 			printk(KERN_INFO "bttv%d: subsystem: %04x:%04x (UNKNOWN)\n",
-			       btv->nr, btv->cardid&0xffff, btv->cardid>>16);
+			       btv->nr, btv->cardid & 0xffff,
+			       (btv->cardid >> 16) & 0xffff);
 			printk(KERN_DEBUG "please mail id, board name and "
 			       "the correct card= insmod option to kraxel@bytesex.org\n");
 		}
@@ -2241,7 +2416,7 @@ static void __devinit hauppauge_eeprom(struct bttv *btv)
 	tuner = eeprom_data[9];
 	radio = eeprom_data[blk2-1] & 0x01;
 	
-        if (tuner < sizeof(hauppauge_tuner)/sizeof(struct HAUPPAUGE_TUNER))
+        if (tuner < ARRAY_SIZE(hauppauge_tuner))
                 btv->tuner_type = hauppauge_tuner[tuner].id;
 	if (radio)
 		btv->has_radio = 1;
@@ -2293,14 +2468,6 @@ static int terratec_active_radio_upgrade(struct bttv *btv)
  * a look at Pvr/pvr45xxx.EXE (self-extracting zip archive, can be
  * unpacked with unzip).
  */
-static char *firm_altera = "/usr/lib/video4linux/hcwamc.rbf";
-MODULE_PARM(firm_altera,"s");
-MODULE_PARM_DESC(firm_altera,"WinTV/PVR firmware "
-		 "(driver CD => unzip pvr45xxx.exe => hcwamc.rbf)");
-
-/* drivers/sound/sound_firmware.c => soundcore.o */
-extern int mod_firmware_load(const char *fn, char **fp);
-
 #define PVR_GPIO_DELAY		10
 
 #define BTTV_ALT_DATA		0x000001
@@ -2345,6 +2512,16 @@ static int __devinit pvr_altera_load(struct bttv *btv, u8 *micro, u32 microlen)
 	return 0;
 }
 
+#ifndef CONFIG_FW_LOADER
+/* old 2.4.x way -- via soundcore's mod_firmware_load */
+   
+static char *firm_altera = "/usr/lib/video4linux/hcwamc.rbf";
+MODULE_PARM(firm_altera,"s");
+MODULE_PARM_DESC(firm_altera,"WinTV/PVR firmware "
+		 "(driver CD => unzip pvr45xxx.exe => hcwamc.rbf)");
+
+extern int mod_firmware_load(const char *fn, char **fp);
+
 int __devinit pvr_boot(struct bttv *btv)
 {
 	u32 microlen;
@@ -2352,8 +2529,11 @@ int __devinit pvr_boot(struct bttv *btv)
 	int result;
 
 	microlen = mod_firmware_load(firm_altera, (char**) &micro);
-	if (!microlen)
+	if (!microlen) {
+		printk(KERN_WARNING "bttv%d: altera firmware not found [%s]\n",
+		       btv->nr, firm_altera);
 		return -1;
+	}
 	
 	printk(KERN_INFO "bttv%d: uploading altera firmware [%s] ...\n",
 	       btv->nr, firm_altera);
@@ -2363,6 +2543,26 @@ int __devinit pvr_boot(struct bttv *btv)
 	vfree(micro);
 	return result;
 }
+#else
+/* new 2.5.x way -- via hotplug firmware loader */
+
+int __devinit pvr_boot(struct bttv *btv)
+{
+        const struct firmware *fw_entry;
+	struct device *dev = btv->dev->dev;
+	int result;
+
+	result = request_firmware(&fw_entry, "hcwamc.rbf", dev);
+	if (result != 0) {
+		printk(KERN_WARNING "bttv%d: no altera firmware [via hotplug]\n",
+		       btv->nr);
+                return rc;
+        }
+	result = pvr_altera_load(btv, fw_entry->data, fw_entry->size);
+        release_firmware(fw_entry);
+	return result;
+}	
+#endif
 
 /* ----------------------------------------------------------------------- */
 /* some osprey specific stuff                                              */
@@ -2613,7 +2813,8 @@ static void __devinit init_PXC200(struct bttv *btv)
 					    0x00 };
 	unsigned int i;
 	int tmp;
-
+	u32 val;
+	
 	/* Initialise GPIO-connevted stuff */
 	btwrite(1<<13,BT848_GPIO_OUT_EN); /* Reset pin only */
 	btwrite(0,BT848_GPIO_DATA);
@@ -2632,6 +2833,7 @@ static void __devinit init_PXC200(struct bttv *btv)
 	    setting BT848_ADC_AGC_EN disable the AGC
 	    tboult@eecs.lehigh.edu
 	*/
+
 	btwrite(BT848_ADC_RESERVED|BT848_ADC_AGC_EN, BT848_ADC);
 	
 	/*	Initialise MAX517 DAC */
@@ -2643,15 +2845,35 @@ static void __devinit init_PXC200(struct bttv *btv)
 	 *	same chips - but the R/W bit is included in the address
 	 *	argument so the numbers are different */
 	
+
 	printk(KERN_INFO "Initialising 12C508 PIC chip ...\n");
 
-	for (i = 0; i < sizeof(vals)/sizeof(int); i++) {
-		tmp=bttv_I2CWrite(btv,0x1E,vals[i],0,1);
-		printk(KERN_INFO "I2C Write(0x08) = %i\nI2C Read () = %x\n\n",
-		       tmp,bttv_I2CRead(btv,0x1F,NULL));
+	/* First of all, enable the clock line. This is used in the PXC200-F */
+	val = btread(BT848_GPIO_DMA_CTL);
+	val |= BT848_GPIO_DMA_CTL_GPCLKMODE;
+	btwrite(val, BT848_GPIO_DMA_CTL);
+	
+	/* Then, push to 0 the reset pin long enough to reset the *
+	 * device same as above for the reset line, but not the same
+	 * value sent to the GPIO-connected stuff
+	 * which one is the good one? */
+	btwrite( (1<<2), BT848_GPIO_OUT_EN); /* only the reset pin */
+	btwrite(0, BT848_GPIO_DATA);
+	udelay(10);
+	btwrite(1<<2, BT848_GPIO_DATA);
+
+       	for (i = 0; i < ARRAY_SIZE(vals); i++) {
+		tmp=bttv_I2CWrite(btv,0x1E,0,vals[i],1);
+		if (tmp != -1) {
+			printk(KERN_INFO
+			       "I2C Write(%2.2x) = %i\nI2C Read () = %2.2x\n\n",
+			       vals[i],tmp,bttv_I2CRead(btv,0x1F,NULL));
+		}
 	}
+
 	printk(KERN_INFO "PXC200 Initialised.\n");
 }
+
 
 /* ----------------------------------------------------------------------- */
 /* Miro Pro radio stuff -- the tea5757 is connected to some GPIO ports     */
@@ -2742,8 +2964,8 @@ int bus_in(struct bttv *btv, int bit)
 /* Low-level stuff */
 static int tea5757_read(struct bttv *btv)
 {
+	unsigned long timeout;
 	int value = 0;
-	long timeout;
 	int i;
 	
 	/* better safe than sorry */
@@ -3196,6 +3418,34 @@ static void rv605_muxsel(struct bttv *btv, unsigned int input)
 	mdelay(1);
 }
 
+// The Grandtec X-Guard framegrabber card uses two Dual 4-channel
+// video multiplexers to provide up to 16 video inputs. These
+// multiplexers are controlled by the lower 8 GPIO pins of the
+// bt878. The multiplexers probably Pericom PI5V331Q or similar.
+
+// xxx0 is pin xxx of multiplexer U5,
+// yyy1 is pin yyy of multiplexer U2
+
+#define ENA0    0x01
+#define ENB0    0x02
+#define ENA1    0x04
+#define ENB1    0x08
+
+#define IN10    0x10
+#define IN00    0x20
+#define IN11    0x40
+#define IN01    0x80
+
+static void xguard_muxsel(struct bttv *btv, unsigned int input)
+{
+	static const int masks[] = {
+                ENB0, ENB0|IN00, ENB0|IN10, ENB0|IN00|IN10,
+                ENA0, ENA0|IN00, ENA0|IN10, ENA0|IN00|IN10,
+                ENB1, ENB1|IN01, ENB1|IN11, ENB1|IN01|IN11,
+                ENA1, ENA1|IN01, ENA1|IN11, ENA1|IN01|IN11,
+	};
+        btwrite(masks[input%16], BT848_GPIO_DATA);
+}
 
 /* ----------------------------------------------------------------------- */
 /* motherboard chipset specific stuff                                      */

@@ -16,6 +16,7 @@
  *  nfs regular file handling functions
  */
 
+#include <linux/config.h>
 #include <linux/sched.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
@@ -199,6 +200,9 @@ struct address_space_operations nfs_file_aops = {
 	readpage: nfs_readpage,
 	sync_page: nfs_sync_page,
 	writepage: nfs_writepage,
+#ifdef CONFIG_NFS_DIRECTIO
+	direct_fileIO: nfs_direct_IO,
+#endif
 	prepare_write: nfs_prepare_write,
 	commit_write: nfs_commit_write
 };

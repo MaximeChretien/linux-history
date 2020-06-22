@@ -1744,6 +1744,12 @@ extern char *ide_xfer_verbose(u8 xfer_rate);
 extern void ide_toggle_bounce(ide_drive_t *drive, int on);
 extern int ide_set_xfer_rate(ide_drive_t *drive, u8 rate);
 
+/* ide driver registration */
+typedef void (*ide_driver_call)(void);
+extern void __init ide_register_driver(ide_driver_call);
+
+/* ide locks for 2.4 */
+
 #define ide_lock		(io_request_lock)
 #define DRIVE_LOCK(drive)       ((drive)->queue.queue_lock)
 

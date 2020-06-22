@@ -30,7 +30,7 @@ bttv.o
   card=28 - Terratec TerraTV+ Version 1.1 (bt878)
   card=29 - Imagenation PXC200
   card=30 - Lifeview FlyVideo 98 LR50
-  card=31 - Formac iProTV
+  card=31 - Formac iProTV, Formac ProTV I (bt848)
   card=32 - Intel Create and Share PCI/ Smart Video Recorder III
   card=33 - Terratec TerraTValue Version Bt878
   card=34 - Leadtek WinFast 2000/ WinFast 2000 XP
@@ -94,9 +94,16 @@ bttv.o
   card=92 - Osprey 2000
   card=93 - IDS Eagle
   card=94 - Pinnacle PCTV Sat
-  card=95 - Formac ProTV II
+  card=95 - Formac ProTV II (bt878)
   card=96 - MachTV
   card=97 - Euresys Picolo
+  card=98 - ProVideo PV150
+  card=99 - AD-TVK503
+  card=100 - Hercules Smart TV Stereo
+  card=101 - Pace TV & Radio Card
+  card=102 - IVC-200
+  card=103 - Grand X-Guard / Trust 814PCI
+  card=104 - Nebula Electronics DigiTV
 
 tuner.o
   type=0 - Temic PAL (4002 FH5)
@@ -139,3 +146,4 @@ tuner.o
   type=37 - LG PAL (newer TAPC series)
   type=38 - Philips PAL/SECAM multi (FM1216ME MK3)
   type=39 - LG NTSC (newer TAPC series)
+  type=40 - HITACHI V7-J180AT

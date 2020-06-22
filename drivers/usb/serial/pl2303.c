@@ -1,7 +1,8 @@
 /*
  * Prolific PL2303 USB to serial adaptor driver
  *
- * Copyright (C) 2001-2002 Greg Kroah-Hartman (greg@kroah.com)
+ * Copyright (C) 2001-2003 Greg Kroah-Hartman (greg@kroah.com)
+ * Copyright (C) 2003 IBM Corp.
  *
  * Original driver for 2.2.x by anonymous
  *
@@ -11,6 +12,8 @@
  *	(at your option) any later version.
  *
  * See Documentation/usb/usb-serial.txt for more information on using this driver
+ * 2003_Apr_24 gkh
+ *	Added line error reporting support.  Hopefully it is correct...
  *
  * 2001_Oct_06 gkh
  *	Added RTS and DTR line control.  Thanks to joe@bndlg.de for parts of it.
@@ -101,6 +104,16 @@ MODULE_DEVICE_TABLE (usb, id_table);
 #define VENDOR_READ_REQUEST_TYPE	0xc0
 #define VENDOR_READ_REQUEST		0x01
 
+#define UART_STATE			0x08
+#define UART_DCD			0x01
+#define UART_DSR			0x02
+#define UART_BREAK_ERROR		0x04
+#define UART_RING			0x08
+#define UART_FRAME_ERROR		0x10
+#define UART_PARITY_ERROR		0x20
+#define UART_OVERRUN_ERROR		0x40
+#define UART_CTS			0x80
+
 /* function prototypes for a PL2303 serial converter */
 static int pl2303_open (struct usb_serial_port *port, struct file *filp);
 static void pl2303_close (struct usb_serial_port *port, struct file *filp);
@@ -142,6 +155,7 @@ static struct usb_serial_device_type pl2303_device = {
 
 struct pl2303_private { 
 	u8 line_control;
+	u8 line_status;
 	u8 termios_initialized;
 };
 
@@ -511,10 +525,13 @@ static int get_modem_info (struct usb_serial_port *port, unsigned int *value)
 {
 	struct pl2303_private *priv = port->private;
 	unsigned int mcr = priv->line_control;
+	unsigned int status = priv->line_status;
 	unsigned int result;
 
 	result = ((mcr & CONTROL_DTR)		? TIOCM_DTR : 0)
-		  | ((mcr & CONTROL_RTS)	? TIOCM_RTS : 0);
+		  | ((mcr & CONTROL_RTS)	? TIOCM_RTS : 0)
+		  | ((status & UART_CTS)	? TIOCM_CTS : 0)
+		  | ((status & UART_DSR)	? TIOCM_DSR : 0);
 
 	dbg("%s - result = %x", __FUNCTION__, result);
 
@@ -562,7 +579,7 @@ static void pl2303_break_ctl (struct usb_serial_port *port, int break_state)
 		state = BREAK_ON;
 	dbg("%s - turning break %s", state==BREAK_OFF ? "off" : "on", __FUNCTION__);
 
-	result = usb_control_msg (serial->dev, usb_rcvctrlpipe (serial->dev, 0),
+	result = usb_control_msg (serial->dev, usb_sndctrlpipe (serial->dev, 0),
 				  BREAK_REQUEST, BREAK_REQUEST_TYPE, state, 
 				  0, NULL, 0, 100);
 	if (result)
@@ -585,10 +602,10 @@ static void pl2303_read_int_callback (struct urb *urb)
 {
 	struct usb_serial_port *port = (struct usb_serial_port *) urb->context;
 	struct usb_serial *serial = get_usb_serial (port, __FUNCTION__);
-	//unsigned char *data = urb->transfer_buffer;
-	//int i;
+	struct pl2303_private *priv = port->private;
+	unsigned char *data = urb->transfer_buffer;
 
-//ints auto restart...
+	/* ints auto restart... */
 
 	if (!serial) {
 		return;
@@ -600,9 +617,12 @@ static void pl2303_read_int_callback (struct urb *urb)
 	}
 
 	usb_serial_debug_data (__FILE__, __FUNCTION__, urb->actual_length, urb->transfer_buffer);
-#if 0
-//FIXME need to update state of terminal lines variable
-#endif
+
+	if (urb->actual_length > UART_STATE)
+		return;
+
+	/* Save off the uart status for others to look at */
+	priv->line_status = data[UART_STATE];
 
 	return;
 }
@@ -612,10 +632,13 @@ static void pl2303_read_bulk_callback (struct urb *urb)
 {
 	struct usb_serial_port *port = (struct usb_serial_port *) urb->context;
 	struct usb_serial *serial = get_usb_serial (port, __FUNCTION__);
+	struct pl2303_private *priv = port->private;
 	struct tty_struct *tty;
 	unsigned char *data = urb->transfer_buffer;
 	int i;
 	int result;
+	u8 status;
+	char tty_flag;
 
 	if (port_paranoia_check (port, __FUNCTION__))
 		return;
@@ -649,13 +672,31 @@ static void pl2303_read_bulk_callback (struct urb *urb)
 
 	usb_serial_debug_data (__FILE__, __FUNCTION__, urb->actual_length, data);
 
+	/* get tty_flag from status */
+	tty_flag = TTY_NORMAL;
+	status = priv->line_status;
+
+	/* break takes precedence over parity, */
+	/* which takes precedence over framing errors */
+	if (status & UART_BREAK_ERROR )
+		tty_flag = TTY_BREAK;
+	else if (status & UART_PARITY_ERROR)
+		tty_flag = TTY_PARITY;
+	else if (status & UART_FRAME_ERROR)
+		tty_flag = TTY_FRAME;
+	dbg("%s - tty_flag = %d", __FUNCTION__, tty_flag);
+
 	tty = port->tty;
 	if (tty && urb->actual_length) {
+		/* overrun is special, not associated with a char */
+		if (status & UART_OVERRUN_ERROR)
+			tty_insert_flip_char(tty, 0, TTY_OVERRUN);
+
 		for (i = 0; i < urb->actual_length; ++i) {
 			if (tty->flip.count >= TTY_FLIPBUF_SIZE) {
 				tty_flip_buffer_push(tty);
 			}
-			tty_insert_flip_char (tty, data[i], 0);
+			tty_insert_flip_char (tty, data[i], tty_flag);
 		}
 		tty_flip_buffer_push (tty);
 	}

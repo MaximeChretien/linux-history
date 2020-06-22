@@ -163,7 +163,7 @@ static __inline__ void __tcp_inherit_port(struct sock *sk, struct sock *child)
 	spin_unlock(&head->lock);
 }
 
-__inline__ void tcp_inherit_port(struct sock *sk, struct sock *child)
+inline void tcp_inherit_port(struct sock *sk, struct sock *child)
 {
 	local_bh_disable();
 	__tcp_inherit_port(sk, child);
@@ -292,7 +292,7 @@ fail:
 /* Get rid of any references to a local port held by the
  * given sock.
  */
-__inline__ void __tcp_put_port(struct sock *sk)
+inline void __tcp_put_port(struct sock *sk)
 {
 	struct tcp_bind_hashbucket *head = &tcp_bhash[tcp_bhashfn(sk->num)];
 	struct tcp_bind_bucket *tb;
@@ -457,7 +457,7 @@ static struct sock *__tcp_v4_lookup_listener(struct sock *sk, u32 daddr, unsigne
 }
 
 /* Optimize the common listener case. */
-__inline__ struct sock *tcp_v4_lookup_listener(u32 daddr, unsigned short hnum, int dif)
+inline struct sock *tcp_v4_lookup_listener(u32 daddr, unsigned short hnum, int dif)
 {
 	struct sock *sk;
 
@@ -533,7 +533,7 @@ static inline struct sock *__tcp_v4_lookup(u32 saddr, u16 sport,
 	return tcp_v4_lookup_listener(daddr, hnum, dif);
 }
 
-__inline__ struct sock *tcp_v4_lookup(u32 saddr, u16 sport, u32 daddr, u16 dport, int dif)
+inline struct sock *tcp_v4_lookup(u32 saddr, u16 sport, u32 daddr, u16 dport, int dif)
 {
 	struct sock *sk;
 

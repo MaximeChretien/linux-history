@@ -24,11 +24,9 @@
 #include <asm/page.h>
 #include <asm/pgalloc.h>
 #include <asm/semaphore.h>
-#include <asm/sgi/sgihpc.h>
-#include <asm/sgi/sgimc.h>
 #include <asm/softirq.h>
 #include <asm/uaccess.h>
-#ifdef CONFIG_BLK_DEV_FD
+#if defined(CONFIG_BLK_DEV_FD) || defined(CONFIG_BLK_DEV_FD_MODULE)
 #include <asm/floppy.h>
 #endif
 
@@ -86,7 +84,6 @@ EXPORT_SYMBOL(csum_partial_copy);
 /*
  * Functions to control caches.
  */
-EXPORT_SYMBOL(_flush_page_to_ram);
 EXPORT_SYMBOL(_flush_cache_all);
 
 EXPORT_SYMBOL(invalid_pte_table);
@@ -98,21 +95,6 @@ EXPORT_SYMBOL(__down);
 EXPORT_SYMBOL(__down_interruptible);
 EXPORT_SYMBOL(__down_trylock);
 EXPORT_SYMBOL(__up);
-
-/*
- * Architecture specific stuff.
- */
-#ifdef CONFIG_MIPS_JAZZ
-EXPORT_SYMBOL(vdma_alloc);
-EXPORT_SYMBOL(vdma_free);
-EXPORT_SYMBOL(vdma_log2phys);
-#endif
-
-#ifdef CONFIG_SGI_IP22
-EXPORT_SYMBOL(hpc3c0);
-EXPORT_SYMBOL(hpc3c1);
-EXPORT_SYMBOL(mcmisc_regs);
-#endif
 
 /*
  * Kernel hacking ...

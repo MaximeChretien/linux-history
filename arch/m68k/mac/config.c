@@ -91,7 +91,7 @@ extern int mackbd_init_hw(void);
 extern void mackbd_leds(unsigned int leds);
 extern int mackbd_translate(unsigned char keycode, unsigned char *keycodep, char raw_mode);
 
-extern void mac_hid_init_hw(void);
+extern void __init mac_hid_init_hw(void);
 extern int mac_hid_kbd_translate(unsigned char scancode, unsigned char *keycode, char raw_mode);
 
 #ifdef CONFIG_MAGIC_SYSRQ
@@ -202,6 +202,14 @@ static void mac_cache_card_flush(int writeback)
 	restore_flags(cpu_flags);
 }
 
+#if defined(CONFIG_VT) && defined(CONFIG_INPUT_ADBHID)
+static int __init mac_keyb_init(void)
+{
+	mac_hid_init_hw();
+	return 0;
+}
+#endif
+
 void __init config_mac(void)
 {
 	if (!MACH_IS_MAC) {
@@ -210,7 +218,7 @@ void __init config_mac(void)
 
 #ifdef CONFIG_VT
 #ifdef CONFIG_INPUT_ADBHID
-	mach_keyb_init       = mac_hid_init_hw;
+	mach_keyb_init       = mac_keyb_init;
 	mach_kbd_translate   = mac_hid_kbd_translate;
 #ifdef CONFIG_MAGIC_SYSRQ
 #ifdef CONFIG_MAC_ADBKEYCODES

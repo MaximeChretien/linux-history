@@ -1,5 +1,4 @@
-/* $Id: sys_cris.c,v 1.10 2001/06/27 21:16:15 hp Exp $
- *
+/*
  * linux/arch/cris/kernel/sys_cris.c
  *
  * This file contains various random system calls that

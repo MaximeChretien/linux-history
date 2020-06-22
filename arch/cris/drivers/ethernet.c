@@ -1,4 +1,4 @@
-/* $Id: ethernet.c,v 1.34 2002/12/13 07:17:44 starvik Exp $
+/* $Id: ethernet.c,v 1.44 2003/07/01 10:55:07 starvik Exp $
  *
  * e100net.c: A network driver for the ETRAX 100LX network controller.
  *
@@ -7,9 +7,52 @@
  * The outline of this driver comes from skeleton.c.
  *
  * $Log: ethernet.c,v $
- * Revision 1.34  2002/12/13 07:17:44  starvik
- * Basic ethtool and MII ioctls
- * Handle out of memory when allocating new buffers
+ * Revision 1.44  2003/07/01 10:55:07  starvik
+ * Never bring down link to make stupid POE equipment happy
+ *
+ * Revision 1.43  2003/04/24 08:26:50  starvik
+ * New LED behaviour: LED off when no link
+ *
+ * Revision 1.42  2003/04/10 07:14:58  starvik
+ * Merge of changes from todo list
+ *
+ * Revision 1.41  2003/04/09 08:31:14  pkj
+ * Typo correction (taken from Linux 2.5).
+ *
+ * Revision 1.40  2003/04/01 14:12:06  starvik
+ * Added loglevel for lots of printks
+ *
+ * Revision 1.39.2.3  2003/04/01 07:51:14  starvik
+ * Default Ethernet Stations Address can be specified with command line option.
+ *
+ * Revision 1.39.2.2  2003/03/31 15:41:07  starvik
+ * Only communicate with transciever when ETRAX is properly configured.
+ *
+ * Revision 1.39.2.1  2003/03/31 14:12:46  starvik
+ * Transmit interrupt always enabled. This has two side effects:
+ *   1. UDP (and possibly other protocols) works on quiet networks
+ *   2. Slightly lower transmit performance
+ *
+ * Revision 1.39  2003/03/06 15:45:39  henriken
+ * Off by one error in group address register setting.
+ *
+ * Revision 1.38  2003/02/27 17:23:07  starvik
+ * Corrected Rev to Revision
+ *
+ * Revision 1.37  2003/02/27 10:52:59  magnusmn
+ * More generic transceiver support.
+ *
+ * Revision 1.33.2.4  2003/02/24 16:51:26  magnusmn
+ * TDK specific registers to check speed/duplex
+ *
+ * Revision 1.33.2.3  2003/02/24 09:16:31  magnusmn
+ * ethernet.c
+ *
+ * Revision 1.33.2.2  2003/02/21 11:57:27  magnusmn
+ * Merging differences between 1.36 and 1.33 into ethernet.c (needed ethtool ioctl)
+ *
+ * Revision 1.33.2.1  2002/12/04 07:54:49  starvik
+ * First attempt to get more generic transceiver support
  *
  * Revision 1.33  2002/10/02 20:16:17  hp
  * SETF, SETS: Use underscored IO_x_ macros rather than incorrect token concatenation
@@ -220,6 +263,16 @@ typedef struct etrax_eth_descr
 	struct sk_buff* skb;
 } etrax_eth_descr;
 
+/* Some transceivers requires special handling */
+struct transceiver_ops
+{
+	unsigned int oui;
+	void (*check_speed)(void);
+	void (*check_duplex)(void);
+};
+
+struct transceiver_ops* transceiver;
+
 /* Duplex settings */
 enum duplex
 {
@@ -240,10 +293,17 @@ enum duplex
 */
 #define MDIO_BASE_STATUS_REG                0x1
 #define MDIO_BASE_CONTROL_REG               0x0
+#define MDIO_PHY_ID_HIGH_REG                0x2
+#define MDIO_PHY_ID_LOW_REG                 0x3
 #define MDIO_BC_NEGOTIATE                0x0200
 #define MDIO_BC_FULL_DUPLEX_MASK         0x0100
 #define MDIO_BC_AUTO_NEG_MASK            0x1000
 #define MDIO_BC_SPEED_SELECT_MASK        0x2000
+#define MDIO_STATUS_100_FD               0x4000
+#define MDIO_STATUS_100_HD               0x2000
+#define MDIO_STATUS_10_FD                0x1000
+#define MDIO_STATUS_10_HD                0x0800
+#define MDIO_STATUS_SPEED_DUPLEX_MASK	 0x7800
 #define MDIO_ADVERTISMENT_REG               0x4
 #define MDIO_ADVERT_100_FD                0x100
 #define MDIO_ADVERT_100_HD                0x080
@@ -257,9 +317,13 @@ enum duplex
 
 /* Broadcom specific */
 #define MDIO_AUX_CTRL_STATUS_REG           0x18
-#define MDIO_FULL_DUPLEX_IND                0x1
-#define MDIO_SPEED                          0x2
-#define MDIO_PHYS_ADDR                      0x0
+#define MDIO_BC_FULL_DUPLEX_IND             0x1
+#define MDIO_BC_SPEED                       0x2
+
+/* TDK specific */
+#define MDIO_TDK_DIAGNOSTIC_REG              18
+#define MDIO_TDK_DIAGNOSTIC_RATE          0x400
+#define MDIO_TDK_DIAGNOSTIC_DPLX          0x800
 
 /* Network flash constants */
 #define NET_FLASH_TIME                  (HZ/50) /* 20 ms */
@@ -303,11 +367,12 @@ static etrax_eth_descr* myNextTxDesc;  /* Next descriptor to use */
 static etrax_eth_descr TxDescList[NBR_OF_TX_DESC] __attribute__ ((aligned(32)));
 
 static unsigned int network_rec_config_shadow = 0;
+static unsigned int mdio_phy_addr; /* Transciever address */
 
 /* Network speed indication. */
 static struct timer_list speed_timer;
 static struct timer_list clear_led_timer;
-static int current_speed; /* Speed read from tranceiver */
+static int current_speed; /* Speed read from transceiver */
 static int current_speed_selection; /* Speed selected by user */
 static int led_next_time;
 static int led_active;
@@ -337,6 +402,7 @@ static void set_multicast_list(struct net_device *dev);
 static void e100_hardware_send_packet(char *buf, int length);
 static void update_rx_stats(struct net_device_stats *);
 static void update_tx_stats(struct net_device_stats *);
+static int e100_probe_transceiver(void);
 
 static void e100_check_speed(unsigned long dummy);
 static void e100_set_speed(unsigned long speed);
@@ -349,10 +415,24 @@ static void e100_set_mdio_reg(unsigned char reg, unsigned short data);
 static void e100_send_mdio_cmd(unsigned short cmd, int write_cmd);
 static void e100_send_mdio_bit(unsigned char bit);
 static unsigned char e100_receive_mdio_bit(void);
-static void e100_reset_tranceiver(void);
+static void e100_reset_transceiver(void);
 
 static void e100_clear_network_leds(unsigned long dummy);
 static void e100_set_network_leds(int active);
+
+static void broadcom_check_speed(void);
+static void broadcom_check_duplex(void);
+static void tdk_check_speed(void);
+static void tdk_check_duplex(void);
+static void generic_check_speed(void);
+static void generic_check_duplex(void);
+
+struct transceiver_ops transceivers[] = 
+{
+	{0x1018, broadcom_check_speed, broadcom_check_duplex},  /* Broadcom */
+	{0xC039, tdk_check_speed, tdk_check_duplex},            /* TDK */
+	{0x0000, generic_check_speed, generic_check_duplex}     /* Generic, must be last */
+};
 
 #define tx_done(dev) (*R_DMA_CH0_CMD == 0)
 
@@ -369,11 +449,12 @@ etrax_ethernet_init(struct net_device *dev)
 {
 	int i;
 
-	printk("ETRAX 100LX 10/100MBit ethernet v2.0 (c) 2000-2001 Axis Communications AB\n");
+	printk(KERN_INFO
+	       "ETRAX 100LX 10/100MBit ethernet v2.0 (c) 2000-2001 Axis Communications AB\n");
 
 	dev->base_addr = (unsigned int)R_NETWORK_SA_0; /* just to have something to show */
 
-	printk("%s initialized\n", dev->name);
+	printk(KERN_INFO "%s initialized\n", dev->name);
 
 	/* make Linux aware of the new hardware  */
 
@@ -468,7 +549,6 @@ etrax_ethernet_init(struct net_device *dev)
 	current_speed_selection = 0; /* Auto */
 	speed_timer.expires = jiffies + NET_LINK_UP_CHECK_INTERVAL;
 	speed_timer.function = e100_check_speed;
-	add_timer(&speed_timer);
         
 	clear_led_timer.function = e100_clear_network_leds;
         
@@ -476,8 +556,11 @@ etrax_ethernet_init(struct net_device *dev)
 	current_duplex = autoneg;
 	duplex_timer.expires = jiffies + NET_DUPLEX_CHECK_INTERVAL;		
 	duplex_timer.function = e100_check_duplex;
-	add_timer(&duplex_timer);
 
+        /* Initialize group address registers to make sure that no */
+        /* unwanted addresses are matched */
+	*R_NETWORK_GA_0 = 0x00000000;
+	*R_NETWORK_GA_1 = 0x00000000;
 	return 0;
 }
 
@@ -508,8 +591,7 @@ e100_set_mac_address(struct net_device *dev, void *p)
 
 	/* show it in the log as well */
 
-	printk("%s: changed MAC to ", dev->name);
-
+	printk(KERN_INFO "%s: changed MAC to ", dev->name);
 	for (i = 0; i < 5; i++)
 		printk("%02X:", dev->dev_addr[i]);
 
@@ -531,12 +613,6 @@ static int
 e100_open(struct net_device *dev)
 {
 	unsigned long flags;
-
-	/* disable the ethernet interface while we configure it */
-
-	*R_NETWORK_GEN_CONFIG =
-		IO_STATE(R_NETWORK_GEN_CONFIG, phy,    mii_clk) |
-		IO_STATE(R_NETWORK_GEN_CONFIG, enable, off);
 
 	/* enable the MDIO output pin */
 
@@ -636,7 +712,8 @@ e100_open(struct net_device *dev)
 	/* enable the irq's for ethernet DMA */
 
 	*R_IRQ_MASK2_SET =
-		IO_STATE(R_IRQ_MASK2_SET, dma1_eop, set); 
+		IO_STATE(R_IRQ_MASK2_SET, dma0_eop, set) |
+		IO_STATE(R_IRQ_MASK2_SET, dma1_eop, set);
 
 	*R_IRQ_MASK0_SET =
 		IO_STATE(R_IRQ_MASK0_SET, overrun,       set) |
@@ -665,6 +742,14 @@ e100_open(struct net_device *dev)
 
 	restore_flags(flags);
 	
+	/* Probe for transceiver */
+	if (e100_probe_transceiver())
+		goto grace_exit4;
+
+	/* Start duplex/speed timers */
+	add_timer(&speed_timer);
+	add_timer(&duplex_timer);
+
 	/* We are now ready to accept transmit requeusts from
 	 * the queueing layer of the networking.
 	 */
@@ -684,6 +769,33 @@ grace_exit0:
 	return -EAGAIN;
 }
 
+static void
+generic_check_speed(void)
+{
+	unsigned long data;
+	data = e100_get_mdio_reg(MDIO_ADVERTISMENT_REG);
+	if ((data & MDIO_ADVERT_100_FD) ||
+	    (data & MDIO_ADVERT_100_HD))
+		current_speed = 100;
+	else
+		current_speed = 10;
+}
+
+static void
+tdk_check_speed(void)
+{
+	unsigned long data;
+	data = e100_get_mdio_reg(MDIO_TDK_DIAGNOSTIC_REG);
+	current_speed = (data & MDIO_TDK_DIAGNOSTIC_RATE ? 100 : 10);
+}
+
+static void
+broadcom_check_speed(void)
+{
+	unsigned long data;
+	data = e100_get_mdio_reg(MDIO_AUX_CTRL_STATUS_REG);
+	current_speed = (data & MDIO_BC_SPEED ? 100 : 10);
+}
 
 static void
 e100_check_speed(unsigned long dummy)
@@ -695,8 +807,7 @@ e100_check_speed(unsigned long dummy)
 	if (!(data & MDIO_LINK_UP_MASK)) {
 		current_speed = 0;
 	} else {
-		data = e100_get_mdio_reg(MDIO_AUX_CTRL_STATUS_REG);
-		current_speed = (data & MDIO_SPEED ? 100 : 10);
+		transceiver->check_speed();
 	}
 	
 	if (old_speed != current_speed)
@@ -761,29 +872,21 @@ e100_negotiate(void)
 static void
 e100_set_speed(unsigned long speed)
 {
-	current_speed_selection = speed;
-	e100_negotiate();
+	if (speed != current_speed_selection) {
+		current_speed_selection = speed;
+		e100_negotiate();
+	}
 }
 
 static void
 e100_check_duplex(unsigned long dummy)
 {
-	unsigned long data;
-
-	data = e100_get_mdio_reg(MDIO_AUX_CTRL_STATUS_REG);
-        
-	if (data & MDIO_FULL_DUPLEX_IND) {
-		if (!full_duplex) { /* Duplex changed to full? */
-			full_duplex = 1;
-			SETF(network_rec_config_shadow, R_NETWORK_REC_CONFIG, duplex, full_duplex);
-			*R_NETWORK_REC_CONFIG = network_rec_config_shadow;
-		}
-	} else { /* half */
-		if (full_duplex) { /* Duplex changed to half? */
-			full_duplex = 0;
-			SETF(network_rec_config_shadow, R_NETWORK_REC_CONFIG, duplex, full_duplex);
-			*R_NETWORK_REC_CONFIG = network_rec_config_shadow;
-		}
+	int old_duplex = full_duplex;
+	transceiver->check_duplex();
+	if (old_duplex != full_duplex) { 
+		/* Duplex changed */
+		SETF(network_rec_config_shadow, R_NETWORK_REC_CONFIG, duplex, full_duplex);
+		*R_NETWORK_REC_CONFIG = network_rec_config_shadow;
 	}
 
 	/* Reinitialize the timer. */
@@ -791,13 +894,71 @@ e100_check_duplex(unsigned long dummy)
 	add_timer(&duplex_timer);
 }
 
+static void
+generic_check_duplex(void)
+{
+	unsigned long data;
+	data = e100_get_mdio_reg(MDIO_ADVERTISMENT_REG);
+	if ((data & MDIO_ADVERT_100_FD) ||
+	    (data & MDIO_ADVERT_10_FD))
+		full_duplex = 1;
+	else
+		full_duplex = 0;
+}
+
+static void
+tdk_check_duplex(void)
+{
+	unsigned long data;
+	data = e100_get_mdio_reg(MDIO_TDK_DIAGNOSTIC_REG);
+	full_duplex = (data & MDIO_TDK_DIAGNOSTIC_DPLX) ? 1 : 0;
+}
+
+static void
+broadcom_check_duplex(void)
+{
+	unsigned long data;
+	data = e100_get_mdio_reg(MDIO_AUX_CTRL_STATUS_REG);        
+	full_duplex = (data & MDIO_BC_FULL_DUPLEX_IND) ? 1 : 0;
+}
+
 static void 
 e100_set_duplex(enum duplex new_duplex)
 {
-	current_duplex = new_duplex;
-	e100_negotiate();
+	if (new_duplex != current_duplex) {
+		current_duplex = new_duplex;
+		e100_negotiate();
+	}
 }
 
+static int 
+e100_probe_transceiver(void)
+{
+	unsigned int phyid_high;
+	unsigned int phyid_low;
+	unsigned int oui;
+	struct transceiver_ops* ops = NULL;
+
+	/* Probe MDIO physical address */
+	for (mdio_phy_addr = 0; mdio_phy_addr <= 31; mdio_phy_addr++) {
+		if (e100_get_mdio_reg(MDIO_BASE_STATUS_REG) != 0xffff)
+			break;
+	}
+	if (mdio_phy_addr == 32)
+		 return -ENODEV;
+
+	/* Get manufacturer */
+	phyid_high = e100_get_mdio_reg(MDIO_PHY_ID_HIGH_REG);
+	phyid_low = e100_get_mdio_reg(MDIO_PHY_ID_LOW_REG);
+	oui = (phyid_high << 6) | (phyid_low >> 10);
+	
+	for (ops = &transceivers[0]; ops->oui; ops++) {
+		if (ops->oui == oui)
+			break;
+	}
+	transceiver = ops;
+	return 0;
+}
 
 static unsigned short
 e100_get_mdio_reg(unsigned char reg_num)
@@ -807,7 +968,7 @@ e100_get_mdio_reg(unsigned char reg_num)
 	int bitCounter;
 	
 	/* Start of frame, OP Code, Physical Address, Register Address */
-	cmd = (MDIO_START << 14) | (MDIO_READ << 12) | (MDIO_PHYS_ADDR << 7) |
+	cmd = (MDIO_START << 14) | (MDIO_READ << 12) | (mdio_phy_addr << 7) |
 		(reg_num << 2);
 	
 	e100_send_mdio_cmd(cmd, 0);
@@ -828,7 +989,7 @@ e100_set_mdio_reg(unsigned char reg, unsigned short data)
 	int bitCounter;
 	unsigned short cmd;
 
-	cmd = (MDIO_START << 14) | (MDIO_WRITE << 12) | (MDIO_PHYS_ADDR << 7) |
+	cmd = (MDIO_START << 14) | (MDIO_WRITE << 12) | (mdio_phy_addr << 7) |
 	      (reg << 2);
 
 	e100_send_mdio_cmd(cmd, 1);
@@ -888,7 +1049,7 @@ e100_receive_mdio_bit()
 }
 
 static void 
-e100_reset_tranceiver(void)
+e100_reset_transceiver(void)
 {
 	unsigned short cmd;
 	unsigned short data;
@@ -896,7 +1057,7 @@ e100_reset_tranceiver(void)
 
 	data = e100_get_mdio_reg(MDIO_BASE_CONTROL_REG);
 
-	cmd = (MDIO_START << 14) | (MDIO_WRITE << 12) | (MDIO_PHYS_ADDR << 7) | (MDIO_BASE_CONTROL_REG << 2);
+	cmd = (MDIO_START << 14) | (MDIO_WRITE << 12) | (mdio_phy_addr << 7) | (MDIO_BASE_CONTROL_REG << 2);
 
 	e100_send_mdio_cmd(cmd, 1);
 	
@@ -928,9 +1089,9 @@ e100_tx_timeout(struct net_device *dev)
 	RESET_DMA(NETWORK_TX_DMA_NBR);
 	WAIT_DMA(NETWORK_TX_DMA_NBR);
 	
-	/* Reset the tranceiver. */
+	/* Reset the transceiver. */
 	
-	e100_reset_tranceiver();
+	e100_reset_transceiver();
 	
 	/* and get rid of the packets that never got an interrupt */
 	while (myFirstTxDesc != myNextTxDesc)
@@ -978,9 +1139,6 @@ e100_send_packet(struct sk_buff *skb, struct net_device *dev)
 
 	/* Stop queue if full */
 	if (myNextTxDesc == myFirstTxDesc) {
-		/* Enable transmit interrupt to wake up queue */
-		*R_DMA_CH0_CLR_INTR = IO_STATE(R_DMA_CH0_CLR_INTR, clr_eop, do);		
-		*R_IRQ_MASK2_SET = IO_STATE(R_IRQ_MASK2_SET, dma0_eop, set);
 		netif_stop_queue(dev);
 	}
 
@@ -1001,6 +1159,11 @@ e100rxtx_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 	struct net_local *np = (struct net_local *)dev->priv;
 	unsigned long irqbits = *R_IRQ_MASK2_RD;
  
+	/* Disable RX/TX IRQs to avoid reentrancy */
+	*R_IRQ_MASK2_CLR = 
+	  IO_STATE(R_IRQ_MASK2_CLR, dma0_eop, clr) |
+	  IO_STATE(R_IRQ_MASK2_CLR, dma1_eop, clr);
+        
 	/* Handle received packets */
 	if (irqbits & IO_STATE(R_IRQ_MASK2_RD, dma1_eop, active)) {
 		/* acknowledge the eop interrupt */
@@ -1044,9 +1207,13 @@ e100rxtx_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 	if (irqbits & IO_STATE(R_IRQ_MASK2_RD, dma0_eop, active)) {
 		/* acknowledge the eop interrupt and wake up queue */
 		*R_DMA_CH0_CLR_INTR = IO_STATE(R_DMA_CH0_CLR_INTR, clr_eop, do);
-		*R_IRQ_MASK2_CLR = IO_STATE(R_IRQ_MASK2_CLR, dma0_eop, clr);		
 		netif_wake_queue(dev);
 	}
+
+	/* Enable RX/TX IRQs again */
+	*R_IRQ_MASK2_SET = 
+	  IO_STATE(R_IRQ_MASK2_SET, dma0_eop, set) |
+	  IO_STATE(R_IRQ_MASK2_SET, dma1_eop, set);
 }
 
 static void
@@ -1183,14 +1350,10 @@ e100_close(struct net_device *dev)
 {
 	struct net_local *np = (struct net_local *)dev->priv;
 
-	printk("Closing %s.\n", dev->name);
+	printk(KERN_INFO "Closing %s.\n", dev->name);
 
 	netif_stop_queue(dev);
 
-	*R_NETWORK_GEN_CONFIG =
-		IO_STATE(R_NETWORK_GEN_CONFIG, phy,    mii_clk) |
-		IO_STATE(R_NETWORK_GEN_CONFIG, enable, off);
-	
 	*R_IRQ_MASK0_CLR =
 		IO_STATE(R_IRQ_MASK0_CLR, overrun, clr) |
 		IO_STATE(R_IRQ_MASK0_CLR, underrun, clr) |
@@ -1221,6 +1384,9 @@ e100_close(struct net_device *dev)
 	update_rx_stats(&np->stats);
 	update_tx_stats(&np->stats);
 
+	/* Stop speed/duplex timers */
+	del_timer(&speed_timer);
+	del_timer(&duplex_timer);
 	return 0;
 }
 
@@ -1233,7 +1399,7 @@ e100_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 		case SIOCETHTOOL:
 			return e100_ethtool_ioctl(dev,ifr);
 		case SIOCGMIIPHY: /* Get PHY address */
-			data->phy_id = MDIO_PHYS_ADDR;
+			data->phy_id = mdio_phy_addr;
 			break;
 		case SIOCGMIIREG: /* Read MII register */
 			data->val_out = e100_get_mdio_reg(data->reg_num);
@@ -1252,7 +1418,7 @@ e100_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 		case SET_ETH_SPEED_AUTO:              /* Auto negotiate speed */
 			e100_set_speed(0);
 			break;
-		case SET_ETH_DUPLEX_HALF:              /* Hhalf duplex. */
+		case SET_ETH_DUPLEX_HALF:              /* Half duplex. */
 			e100_set_duplex(half);
 			break;
 		case SET_ETH_DUPLEX_FULL:              /* Full duplex. */
@@ -1285,7 +1451,7 @@ e100_ethtool_ioctl(struct net_device *dev, struct ifreq *ifr)
 			  SUPPORTED_100baseT_Half | SUPPORTED_100baseT_Full;
 			ecmd.port = PORT_TP;
 			ecmd.transceiver = XCVR_EXTERNAL;
-			ecmd.phy_address = MDIO_PHYS_ADDR;
+			ecmd.phy_address = mdio_phy_addr;
 			ecmd.speed = current_speed;
 			ecmd.duplex = full_duplex ? DUPLEX_FULL : DUPLEX_HALF;
 			ecmd.advertising = ADVERTISED_TP;
@@ -1328,7 +1494,7 @@ e100_ethtool_ioctl(struct net_device *dev, struct ifreq *ifr)
 			struct ethtool_drvinfo info;
 			memset((void *) &info, 0, sizeof (info));
 			strncpy(info.driver, "ETRAX 100LX", sizeof(info.driver) - 1);
-			strncpy(info.version, "$Rev$", sizeof(info.version) - 1);
+			strncpy(info.version, "$Revision: 1.44 $", sizeof(info.version) - 1);
 			strncpy(info.fw_version, "N/A", sizeof(info.fw_version) - 1);
 			strncpy(info.bus_info, "N/A", sizeof(info.bus_info) - 1);
 			info.regdump_len = 0;
@@ -1457,7 +1623,7 @@ set_multicast_list(struct net_device *dev)
 			
 			hash_ix &= 0x3f;
 			
-			if (hash_ix > 32) {
+			if (hash_ix >= 32) {
 				hi_bits |= (1 << (hash_ix-32));
 			}
 			else {
@@ -1526,7 +1692,7 @@ e100_set_network_leds(int active)
 
 	if (!current_speed) {
 		/* Make LED red, link is down */
-		LED_NETWORK_SET(LED_RED);
+		LED_NETWORK_SET(LED_OFF);
 	}
 	else if (light_leds) {
 		if (current_speed == 10) {
@@ -1554,5 +1720,27 @@ etrax_init_module(void)
 	else
 		return -ENODEV;
 }
+
+static int __init
+e100_boot_setup(char* str)
+{
+	struct sockaddr sa = {0};
+	int i;
+
+	/* Parse the colon separated Ethernet station address */
+	for (i = 0; i <  ETH_ALEN; i++) {
+		unsigned int tmp;
+		if (sscanf(str + 3*i, "%2x", &tmp) != 1) {
+			printk(KERN_WARNING "Malformed station address");
+			return 0;
+		}
+		sa.sa_data[i] = (char)tmp;
+	}	
+
+	default_mac = sa;
+	return 1;
+}
+
+__setup("etrax100_eth=", e100_boot_setup);
 
 module_init(etrax_init_module);

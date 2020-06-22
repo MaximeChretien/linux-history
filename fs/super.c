@@ -27,6 +27,7 @@
 #include <linux/devfs_fs_kernel.h>
 #include <linux/major.h>
 #include <linux/acct.h>
+#include <linux/quotaops.h>
 
 #include <asm/uaccess.h>
 
@@ -281,6 +282,8 @@ static struct super_block *alloc_super(void)
 		sema_init(&s->s_dquot.dqoff_sem, 1);
 		s->s_maxbytes = MAX_NON_LFS;
 		s->s_op = &empty_sops;
+		s->dq_op = sb_dquot_ops;
+		s->s_qcop = sb_quotactl_ops;
 	}
 	return s;
 }

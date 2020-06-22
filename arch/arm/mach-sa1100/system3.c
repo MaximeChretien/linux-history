@@ -42,6 +42,8 @@
 #include <linux/module.h>
 #include <linux/errno.h>
 #include <linux/cpufreq.h>
+#include <linux/list.h>
+#include <linux/timer.h>
 
 #include <asm/hardware.h>
 #include <asm/setup.h>

@@ -35,27 +35,26 @@
 #include <linux/param.h>
 #include <linux/tqueue.h>
 #include <linux/interrupt.h>
-#include <asm-mips/wbflush.h>
-#include <asm/dec/interrupts.h>
 
 #include <linux/console.h>
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
 #include <linux/serial.h>
 
-#include <asm/uaccess.h>
-#include <asm/irq.h>
-#include <asm/dec/machtype.h>
-#include <asm/dec/kn01.h>
-#include <asm/dec/kn02.h>
-
 #include <linux/ptrace.h>
 #include <linux/fs.h>
+
 #include <asm/bootinfo.h>
+#include <asm/dec/interrupts.h>
+#include <asm/dec/kn01.h>
+#include <asm/dec/kn02.h>
+#include <asm/dec/machtype.h>
+#include <asm/dec/prom.h>
+#include <asm/irq.h>
+#include <asm/system.h>
+#include <asm/uaccess.h>
 
 #define CONSOLE_LINE (3)	/* for definition of struct console */
-
-extern int (*prom_printf) (char *,...);
 
 #include "dz.h"
 
@@ -211,13 +210,12 @@ static inline void receive_chars(struct dz_serial *info_in)
 		if (!(status & DZ_DVAL))
 			goto ignore_char;
 
-
 		ch = UCHAR(status);	/* grab the char */
 
 #if 0
 		if (info->is_console) {
 			if (ch == 0)
-				return;		/* it's a break ... */
+				return;	/* it's a break ... */
 		}
 #endif
 
@@ -862,7 +860,7 @@ static int get_serial_info(struct dz_serial *info,
 	tmp.type = info->type;
 	tmp.line = info->line;
 	tmp.port = info->port;
-	tmp.irq = SERIAL;
+	tmp.irq = dec_interrupt[DEC_IRQ_DZ11];
 	tmp.flags = info->flags;
 	tmp.baud_base = info->baud_base;
 	tmp.close_delay = info->close_delay;
@@ -1404,7 +1402,7 @@ int __init dz_init(void)
 			return 0;
 
 		printk("ttyS%02d at 0x%08x (irq = %d)\n", info->line,
-		       info->port, SERIAL);
+		       info->port, dec_interrupt[DEC_IRQ_DZ11]);
 
 		tty_register_devfs(&serial_driver, 0,
 				 serial_driver.minor_start + info->line);
@@ -1413,10 +1411,10 @@ int __init dz_init(void)
 	}
 
 	/* reset the chip */
-#ifndef CONFIG_SERIAL_CONSOLE
+#ifndef CONFIG_SERIAL_DEC_CONSOLE
 	dz_out(info, DZ_CSR, DZ_CLR);
 	while ((tmp = dz_in(info, DZ_CSR)) & DZ_CLR);
-	wbflush();
+	iob();
 
 	/* enable scanning */
 	dz_out(info, DZ_CSR, DZ_MSE);
@@ -1428,13 +1426,14 @@ int __init dz_init(void)
 	restore_flags(flags);
 
 
-	if (request_irq(SERIAL, dz_interrupt, SA_INTERRUPT, "DZ", lines[0]))
+	if (request_irq(dec_interrupt[DEC_IRQ_DZ11], dz_interrupt,
+			SA_INTERRUPT, "DZ", lines[0]))
 		panic("Unable to register DZ interrupt");
 
 	return 0;
 }
 
-#ifdef CONFIG_SERIAL_CONSOLE
+#ifdef CONFIG_SERIAL_DEC_CONSOLE
 static void dz_console_put_char(unsigned char ch)
 {
 	unsigned long flags;
@@ -1575,12 +1574,12 @@ static int __init dz_console_setup(struct console *co, char *options)
 
 static struct console dz_sercons =
 {
-    name:	"ttyS",
-    write:	dz_console_print,
-    device:	dz_console_device,
-    setup:	dz_console_setup,
-    flags:	CON_CONSDEV | CON_PRINTBUFFER,
-    index:	CONSOLE_LINE,
+    .name	= "ttyS",
+    .write	= dz_console_print,
+    .device	= dz_console_device,
+    .setup	= dz_console_setup,
+    .flags	= CON_CONSDEV | CON_PRINTBUFFER,
+    .index	= CONSOLE_LINE,
 };
 
 void __init dz_serial_console_init(void)
@@ -1588,6 +1587,6 @@ void __init dz_serial_console_init(void)
 	register_console(&dz_sercons);
 }
 
-#endif /* CONFIG_SERIAL_CONSOLE */
+#endif /* CONFIG_SERIAL_DEC_CONSOLE */
 
 MODULE_LICENSE("GPL");

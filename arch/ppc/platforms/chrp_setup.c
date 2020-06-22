@@ -232,7 +232,7 @@ chrp_setup_arch(void)
 #ifdef CONFIG_BLK_DEV_INITRD
 	/* this is fine for chrp */
 	initrd_below_start_ok = 1;
-	
+
 	if (initrd_start)
 		ROOT_DEV = MKDEV(RAMDISK_MAJOR, 0);
 	else
@@ -277,14 +277,14 @@ chrp_setup_arch(void)
 		if (p && (rate = *(unsigned long *)p->value) > 0) {
 			/*
 			 * The value is the number of times per minute.
-			 * For now assign the full workload here to cpu 0.  
+			 * For now assign the full workload here to cpu 0.
 			 *
 			 * We now split the rate and spread the heartbeats
 			 * when we kick secondary cpus so we can spread
-			 * the calls evenly.   
+			 * the calls evenly.
 			 */
 			ppc_md.heartbeat = chrp_event_scan;
-			
+
 			count = (60*HZ) / rate;
 			if (!count)        /* XXX insane */
 				count = 1;
@@ -309,7 +309,7 @@ chrp_event_scan(void)
 	call_rtas( "event-scan", 4, 1, &ret, 0xffffffff, 0,
 		   __pa(log), 1024 );
 }
-	
+
 void __chrp
 chrp_restart(char *cmd)
 {
@@ -433,7 +433,7 @@ static void __init
 chrp_init_irq_8259(unsigned long intack)
 {
 	int i;
-	
+
 	ppc_md.get_irq = i8259_irq;
 	for (i = 0; i < NUM_8259_INTERRUPTS; i++)
 		irq_desc[i].handler = &i8259_pic;
@@ -445,7 +445,7 @@ void __init chrp_init_IRQ(void)
 	struct device_node *np;
 	unsigned long intack = 0;
 	struct device_node *main_irq_ctrler = NULL;
-#if defined(CONFIG_VT) && defined(CONFIG_ADB_KEYBOARD) && defined(XMON)	
+#if defined(CONFIG_VT) && defined(CONFIG_ADB_KEYBOARD) && defined(XMON)
 	struct device_node *kbd;
 #endif
 
@@ -491,10 +491,10 @@ void __init chrp_init_IRQ(void)
 void __init
 chrp_init2(void)
 {
- 
+
 	if (chrp_is_briq)
 		briq_SPOR = (unsigned int *)ioremap(0xff0000e8, 4);
-#ifdef CONFIG_NVRAM  
+#ifdef CONFIG_NVRAM
 /* Fix me: currently, a lot of pmac_nvram routines are marked __pmac, and
  * blindly calling pmac_nvram_init() on chrp cause bad results.
  * Among others, it cracks on briQ.
@@ -563,7 +563,7 @@ chrp_init(unsigned long r3, unsigned long r4, unsigned long r5,
 		rs_table[0].baud_base = (7372800 / 16);
 		rs_table[1].baud_base = (7372800 / 16);
 	}
-#endif /* CONFIG_SERIAL */	
+#endif /* CONFIG_SERIAL */
 
 	ppc_md.setup_arch     = chrp_setup_arch;
 	ppc_md.show_percpuinfo = of_show_percpuinfo;
@@ -631,7 +631,7 @@ chrp_init(unsigned long r3, unsigned long r4, unsigned long r5,
 
 	/*
 	 * Print the banner, then scroll down so boot progress
-	 * can be printed.  -- Cort 
+	 * can be printed.  -- Cort
 	 */
 	if ( ppc_md.progress ) ppc_md.progress("Linux/PPC "UTS_RELEASE"\n", 0x0);
 }

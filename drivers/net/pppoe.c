@@ -605,7 +605,8 @@ int pppoe_connect(struct socket *sock, struct sockaddr *uservaddr,
 		/* Delete the old binding */
 		delete_item(po->pppoe_pa.sid,po->pppoe_pa.remote);
 
-		dev_put(po->pppoe_dev);
+		if(po->pppoe_dev)
+			dev_put(po->pppoe_dev);
 
 		memset(po, 0, sizeof(struct pppox_opt));
 		po->sk = sk;

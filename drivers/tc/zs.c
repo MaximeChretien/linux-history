@@ -6,7 +6,7 @@
  *
  * DECstation changes
  * Copyright (C) 1998-2000 Harald Koerfgen
- * Copyright (C) 2000, 2001, 2002  Maciej W. Rozycki <macro@ds2.pg.gda.pl>
+ * Copyright (C) 2000, 2001, 2002, 2003  Maciej W. Rozycki
  *
  * For the rest of the code the original Copyright applies:
  * Copyright (C) 1996 Paul Mackerras (Paul.Mackerras@cs.anu.edu.au)
@@ -56,7 +56,7 @@
 #include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/ioport.h>
-#ifdef CONFIG_SERIAL_CONSOLE
+#ifdef CONFIG_SERIAL_DEC_CONSOLE
 #include <linux/console.h>
 #endif
 
@@ -115,8 +115,8 @@ static struct zs_parms *zs_parms;
 
 #ifdef CONFIG_DECSTATION
 static struct zs_parms ds_parms = {
-	scc0 : SCC0,
-	scc1 : SCC1,
+	scc0 : IOASIC_SCC0,
+	scc1 : IOASIC_SCC1,
 	channel_a_offset : 1,
 	channel_b_offset : 9,
 	irq0 : -1,
@@ -157,10 +157,10 @@ struct dec_serial *zs_chain;	/* list of all channels */
 
 struct tty_struct zs_ttys[NUM_CHANNELS];
 
-#ifdef CONFIG_SERIAL_CONSOLE
+#ifdef CONFIG_SERIAL_DEC_CONSOLE
 static struct console sercons;
 #endif
-#if defined(CONFIG_SERIAL_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ) \
+#if defined(CONFIG_SERIAL_DEC_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ) \
     && !defined(MODULE)
 static unsigned long break_pressed; /* break, really ... */
 #endif
@@ -416,7 +416,7 @@ static _INLINE_ void receive_chars(struct dec_serial *info,
 
 		if (tty_break) {
 			tty_break = 0;
-#if defined(CONFIG_SERIAL_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ) && !defined(MODULE)
+#if defined(CONFIG_SERIAL_DEC_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ) && !defined(MODULE)
 			if (info->line == sercons.index) {
 				if (!break_pressed) {
 					break_pressed = jiffies;
@@ -442,7 +442,7 @@ static _INLINE_ void receive_chars(struct dec_serial *info,
 				write_zsreg(info->zs_channel, R0, ERR_RES);
 		}
 
-#if defined(CONFIG_SERIAL_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ) && !defined(MODULE)
+#if defined(CONFIG_SERIAL_DEC_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ) && !defined(MODULE)
 		if (break_pressed && info->line == sercons.index) {
 			if (ch != 0 &&
 			    time_before(jiffies, break_pressed + HZ*5)) {
@@ -473,7 +473,7 @@ static _INLINE_ void receive_chars(struct dec_serial *info,
 
 		*tty->flip.flag_buf_ptr++ = flag;
 		*tty->flip.char_buf_ptr++ = ch;
-#if defined(CONFIG_SERIAL_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ) && !defined(MODULE)
+#if defined(CONFIG_SERIAL_DEC_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ) && !defined(MODULE)
 	ignore_char:
 #endif
 	}
@@ -1701,7 +1701,7 @@ int rs_open(struct tty_struct *tty, struct file * filp)
 			*tty->termios = info->callout_termios;
 		change_speed(info);
 	}
-#ifdef CONFIG_SERIAL_CONSOLE
+#ifdef CONFIG_SERIAL_DEC_CONSOLE
 	if (sercons.cflag && sercons.index == line) {
 		tty->termios->c_cflag = sercons.cflag;
 		sercons.cflag = 0;
@@ -1750,21 +1750,22 @@ static void __init probe_sccs(void)
 	switch(mips_machtype) {
 #ifdef CONFIG_DECSTATION
 	case MACH_DS5000_2X0:
-		system_base = 0xbf800000;
+	case MACH_DS5900:
+		system_base = KSEG1ADDR(0x1f800000);
 		n_chips = 2;
 		zs_parms = &ds_parms;
 		zs_parms->irq0 = dec_interrupt[DEC_IRQ_SCC0];
 		zs_parms->irq1 = dec_interrupt[DEC_IRQ_SCC1];
 		break;
 	case MACH_DS5000_1XX:
-		system_base = 0xbc000000;
+		system_base = KSEG1ADDR(0x1c000000);
 		n_chips = 2;
 		zs_parms = &ds_parms;
 		zs_parms->irq0 = dec_interrupt[DEC_IRQ_SCC0];
 		zs_parms->irq1 = dec_interrupt[DEC_IRQ_SCC1];
 		break;
 	case MACH_DS5000_XX:
-		system_base = 0xbc000000;
+		system_base = KSEG1ADDR(0x1c000000);
 		n_chips = 1;
 		zs_parms = &ds_parms;
 		zs_parms->irq0 = dec_interrupt[DEC_IRQ_SCC0];
@@ -1801,7 +1802,7 @@ static void __init probe_sccs(void)
 			zs_channels[n_channels].data =
 				zs_channels[n_channels].control + 4;
 
-#ifndef CONFIG_SERIAL_CONSOLE
+#ifndef CONFIG_SERIAL_DEC_CONSOLE
 			/*
 			 * We're called early and memory managment isn't up, yet.
 			 * Thus check_region would fail.
@@ -1942,18 +1943,6 @@ int __init zs_init(void)
 	if (tty_register_driver(&callout_driver))
 		panic("Couldn't register callout driver");
 
-	save_flags(flags); cli();
-
-	for (channel = 0; channel < zs_channels_found; ++channel) {
-		if (request_irq(zs_soft[channel].irq, rs_interrupt, SA_SHIRQ,
-				"scc", &zs_soft[channel]))
-			printk(KERN_ERR "decserial: can't get irq %d\n",
-			       zs_soft[channel].irq);
-
-		zs_soft[channel].clk_divisor = 16;
-		zs_soft[channel].zs_baud = get_zsbaud(&zs_soft[channel]);
-	}
-
 	for (info = zs_chain, i = 0; info; info = info->zs_next, i++) {
 
 		/* Needed before interrupts are enabled. */
@@ -1978,9 +1967,8 @@ int __init zs_init(void)
 		info->normal_termios = serial_driver.init_termios;
 		init_waitqueue_head(&info->open_wait);
 		init_waitqueue_head(&info->close_wait);
-		printk("ttyS%02d at 0x%08x (irq = %d)", info->line,
-		       info->port, info->irq);
-		printk(" is a Z85C30 SCC\n");
+		printk("ttyS%02d at 0x%08x (irq = %d) is a Z85C30 SCC\n",
+		       info->line, info->port, info->irq);
 		tty_register_devfs(&serial_driver, 0,
 				   serial_driver.minor_start + info->line);
 		tty_register_devfs(&callout_driver, 0,
@@ -1988,9 +1976,15 @@ int __init zs_init(void)
 
 	}
 
-	restore_flags(flags);
-
 	for (channel = 0; channel < zs_channels_found; ++channel) {
+		zs_soft[channel].clk_divisor = 16;
+		zs_soft[channel].zs_baud = get_zsbaud(&zs_soft[channel]);
+
+		if (request_irq(zs_soft[channel].irq, rs_interrupt, SA_SHIRQ,
+				"scc", &zs_soft[channel]))
+			printk(KERN_ERR "decserial: can't get irq %d\n",
+			       zs_soft[channel].irq);
+
 		if (zs_soft[channel].hook &&
 		    zs_soft[channel].hook->init_channel)
 			(*zs_soft[channel].hook->init_channel)
@@ -2003,21 +1997,6 @@ int __init zs_init(void)
 	}
 
 	return 0;
-}
-
-/*
- * register_serial and unregister_serial allows for serial ports to be
- * configured at run-time, to support PCMCIA modems.
- */
-/* PowerMac: Unused at this time, just here to make things link. */
-int register_serial(struct serial_struct *req)
-{
-	return -1;
-}
-
-void unregister_serial(int line)
-{
-	return;
 }
 
 /*
@@ -2111,7 +2090,7 @@ unsigned int unregister_zs_hook(unsigned int channel)
  * Serial console driver
  * ------------------------------------------------------------
  */
-#ifdef CONFIG_SERIAL_CONSOLE
+#ifdef CONFIG_SERIAL_DEC_CONSOLE
 
 
 /*
@@ -2264,12 +2243,12 @@ static int __init serial_console_setup(struct console *co, char *options)
 }
 
 static struct console sercons = {
-	name:		"ttyS",
-	write:		serial_console_write,
-	device:		serial_console_device,
-	setup:		serial_console_setup,
-	flags:		CON_PRINTBUFFER,
-	index:		-1,
+	.name		= "ttyS",
+	.write		= serial_console_write,
+	.device		= serial_console_device,
+	.setup		= serial_console_setup,
+	.flags		= CON_PRINTBUFFER,
+	.index		= -1,
 };
 
 /*
@@ -2279,7 +2258,7 @@ void __init zs_serial_console_init(void)
 {
 	register_console(&sercons);
 }
-#endif /* ifdef CONFIG_SERIAL_CONSOLE */
+#endif /* ifdef CONFIG_SERIAL_DEC_CONSOLE */
 
 #ifdef CONFIG_KGDB
 struct dec_zschannel *zs_kgdbchan;

@@ -123,7 +123,10 @@ asmlinkage int sys_ipc (uint call, int first, int second, int third, void *ptr, 
 	if (call <= SEMCTL)
 		switch (call) {
 		case SEMOP:
-			err = sys_semop (first, (struct sembuf *)ptr, second);
+			err = sys_semtimedop (first, (struct sembuf *)ptr, second, NULL);
+			goto out;
+		case SEMTIMEDOP:
+			err = sys_semtimedop (first, (struct sembuf *)ptr, second, (const struct timespec *) fifth);
 			goto out;
 		case SEMGET:
 			err = sys_semget (first, second, third);

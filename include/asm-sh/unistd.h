@@ -233,6 +233,7 @@
 #define __NR_fcntl64		221
 #define __NR_gettid		222
 #define __NR_tkill		223
+#define __NR_readahead		225
 
 /* user-visible error numbers are in the range -1 - -125: see <asm-sh/errno.h> */
 

@@ -70,6 +70,10 @@
 
 extern struct rtc_ops no_rtc_ops;
 
+#ifdef CONFIG_GALILLEO_GT64240_ETH
+extern unsigned char prom_mac_addr_base[6];
+#endif
+
 unsigned long gt64240_base;
 
 /* These functions are used for rebooting or halting the machine*/
@@ -85,8 +89,6 @@ static char reset_reason;
 #define ENTRYLO(x) ((pte_val(mk_pte_phys((x), PAGE_KERNEL_UNCACHED)) >> 6)|1)
 
 static void __init setup_l3cache(unsigned long size);
-
-void __init bus_error_init(void) { /* nothing */ }
 
 /* setup code for a handoff from a version 2 PMON 2000 PROM */
 void PMON_v2_setup(void)
@@ -138,6 +140,11 @@ void __init momenco_ocelot_g_setup(void)
 
 	/* do handoff reconfiguration */
 	PMON_v2_setup();
+
+#ifdef CONFIG_GALILLEO_GT64240_ETH
+	/* get the mac addr */
+	memcpy(prom_mac_addr_base, (void*)0xfc807cf2, 6);
+#endif
 
 	/* Turn off the Bit-Error LED */
 	OCELOT_PLD_WRITE(0x80, INTCLR);
@@ -213,11 +220,11 @@ static void __init setup_l3cache(unsigned long size)
 	GT_WRITE(0, tmp | (1<<14));
 
 	/* Enable the L3 cache in the CPU */
-	set_cp0_config(1<<12 /* CONF_TE */);
+	set_c0_config(1<<12 /* CONF_TE */);
 
 	/* Clear the cache */
-	set_taglo(0);
-	set_taghi(0);
+	write_c0_taglo(0);
+	write_c0_taghi(0);
 
 	for (i=0; i < size; i+= 4096) {
 		__asm__ __volatile__ (

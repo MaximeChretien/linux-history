@@ -6,7 +6,7 @@
 
 
 /*** Version/name ***/
-#define INTELFB_VERSION			"0.7.5"
+#define INTELFB_VERSION			"0.7.7"
 #define INTELFB_MODULE_NAME		"intelfb"
 #define SUPPORTED_CHIPSETS		"830M/845G/852GM/855GM/865G"
 

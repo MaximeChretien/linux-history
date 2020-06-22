@@ -490,13 +490,20 @@ static int sohci_return_urb (struct ohci *hc, struct urb * urb)
 				usb_pipeout (urb->pipe)
 					? PCI_DMA_TODEVICE
 					: PCI_DMA_FROMDEVICE);
-			urb->complete (urb);
 
-			/* implicitly requeued */
-  			urb->actual_length = 0;
-			urb->status = -EINPROGRESS;
-			td_submit_urb (urb);
-  			break;
+			if (urb->interval) {
+				urb->complete (urb);
+ 
+				/* implicitly requeued */
+				urb->actual_length = 0;
+				urb->status = -EINPROGRESS;
+				td_submit_urb (urb);
+			} else {
+				urb_rm_priv(urb);
+				urb->complete (urb);
+			}
+   			break;
+
   			
 		case PIPE_ISOCHRONOUS:
 			for (urbt = urb->next; urbt && (urbt != urb); urbt = urbt->next);

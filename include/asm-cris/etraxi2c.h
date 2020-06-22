@@ -1,5 +1,3 @@
-/* $Id: etraxi2c.h,v 1.1 2001/01/18 15:49:57 bjornw Exp $ */
-
 #ifndef _LINUX_ETRAXI2C_H
 #define _LINUX_ETRAXI2C_H
 

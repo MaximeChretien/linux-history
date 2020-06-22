@@ -1,7 +1,7 @@
 #ifndef	__ASM_SH_KEYBOARD_H
 #define	__ASM_SH_KEYBOARD_H
 /*
- *	$Id: keyboard.h,v 1.12 2001/09/06 04:01:41 gniibe Exp $
+ *	$Id: keyboard.h,v 1.2 2001/10/15 04:32:05 mrbrown Exp $
  */
 
 #include <linux/kd.h>
@@ -10,6 +10,8 @@
 
 #ifdef CONFIG_SH_EC3104
 #include <asm/keyboard-ec3104.h>
+#elif defined(CONFIG_SH_HS7729PCI)
+#include <asm/keyboard-hs7729pci.h>
 #else
 static __inline__ int kbd_setkeycode(unsigned int scancode,
 				     unsigned int keycode)

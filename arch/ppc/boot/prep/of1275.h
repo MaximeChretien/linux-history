@@ -197,7 +197,7 @@ typedef struct _of_call_method_service {
 	const char *method;
 	int ihandle;
 	/*...*/
-	int args[0]; 
+	int args[0];
 } of_call_method_service;
 
 int of_call_method(const char *method, int ihandle, ...);

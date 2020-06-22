@@ -205,6 +205,29 @@ void *hpsb_get_hostinfo_bykey(struct hpsb_highlevel *hl, unsigned long key)
 }
 
 
+struct hpsb_host *hpsb_get_host_bykey(struct hpsb_highlevel *hl, unsigned long key)
+{
+	struct list_head *lh;
+	struct hl_host_info *hi;
+	struct hpsb_host *host = NULL;
+
+	if (!hl)
+		return NULL;
+
+	read_lock(&hl->host_info_lock);
+	list_for_each (lh, &hl->host_info_list) {
+		hi = list_entry(lh, struct hl_host_info, list);
+		if (hi->key == key) {
+			host = hi->host;
+			break;
+		}
+	}
+	read_unlock(&hl->host_info_lock);
+
+	return host;
+}
+
+
 void hpsb_register_highlevel(struct hpsb_highlevel *hl)
 {
 	struct list_head *lh;

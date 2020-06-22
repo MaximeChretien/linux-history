@@ -9,10 +9,9 @@
 *!
 *!---------------------------------------------------------------------------
 *!
-*! (C) Copyright 1998, 1999 Axis Communications AB, LUND, SWEDEN
+*! (C) Copyright 1998-2003 Axis Communications AB, LUND, SWEDEN
 *!
 *!**************************************************************************/
-/* $Id: eshlibld.h,v 1.2 2001/02/23 13:47:33 bjornw Exp $ */
 
 #ifndef _cris_relocate_h
 #define _cris_relocate_h
@@ -111,4 +110,3 @@ shlibmod_fork(struct shlibdep **deps);
 
 #endif _cris_relocate_h
 /********************** END OF FILE eshlibld.h *****************************/
-

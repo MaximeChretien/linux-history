@@ -1,5 +1,5 @@
 /*
- * SiS 300/630/730/540/315/550/650/740 frame buffer driver
+ * SiS 300/630/730/540/315/550/650/740/330/660 frame buffer driver
  * for Linux kernels 2.4.x and 2.5.x
  *
  * 2D acceleration part
@@ -211,7 +211,7 @@ SiS300SubsequentSolidFillRect(int x, int y, int w, int h)
 	SiS300DoCMD
 }
 
-/* 310/325 series ------------------------------------------------ */
+/* 315 series ---------------------------------------------------- */
 
 static void
 SiS310SetupForScreenToScreenCopy(int xdir, int ydir, int rop,
@@ -230,7 +230,7 @@ SiS310SetupForScreenToScreenCopy(int xdir, int ydir, int rop,
 		/* SiSSetupCMDFlag(BITBLT | SRCVIDEO) */
 	}
 	SiS310SetupCMDFlag(ivideo.SiS310_AccelDepth)
-	/* TW: The 310/325 series is smart enough to know the direction */
+	/* TW: The 315 series is smart enough to know the direction */
 }
 
 static void
@@ -593,38 +593,38 @@ void fbcon_sis_revc(struct display *p, int srcx, int srcy)
 
 #ifdef FBCON_HAS_CFB8
 struct display_switch fbcon_sis8 = {
-	setup:			fbcon_cfb8_setup,
-	bmove:			fbcon_sis_bmove,
-	clear:			fbcon_sis_clear8,
-	putc:			fbcon_cfb8_putc,
-	putcs:			fbcon_cfb8_putcs,
-	revc:			fbcon_cfb8_revc,
-	clear_margins:		fbcon_cfb8_clear_margins,
-	fontwidthmask:		FONTWIDTH(4)|FONTWIDTH(8)|FONTWIDTH(12)|FONTWIDTH(16)
+	.setup			= fbcon_cfb8_setup,
+	.bmove			= fbcon_sis_bmove,
+	.clear			= fbcon_sis_clear8,
+	.putc			= fbcon_cfb8_putc,
+	.putcs			= fbcon_cfb8_putcs,
+	.revc			= fbcon_cfb8_revc,
+	.clear_margins		= fbcon_cfb8_clear_margins,
+	.fontwidthmask		= FONTWIDTH(4)|FONTWIDTH(8)|FONTWIDTH(12)|FONTWIDTH(16)
 };
 #endif
 #ifdef FBCON_HAS_CFB16
 struct display_switch fbcon_sis16 = {
-	setup:			fbcon_cfb16_setup,
-	bmove:			fbcon_sis_bmove,
-	clear:			fbcon_sis_clear16,
-	putc:			fbcon_cfb16_putc,
-	putcs:			fbcon_cfb16_putcs,
-	revc:			fbcon_sis_revc,
-	clear_margins:		fbcon_cfb16_clear_margins,
-	fontwidthmask:		FONTWIDTH(4)|FONTWIDTH(8)|FONTWIDTH(12)|FONTWIDTH(16)
+	.setup			= fbcon_cfb16_setup,
+	.bmove			= fbcon_sis_bmove,
+	.clear			= fbcon_sis_clear16,
+	.putc			= fbcon_cfb16_putc,
+	.putcs			= fbcon_cfb16_putcs,
+	.revc			= fbcon_sis_revc,
+	.clear_margins		= fbcon_cfb16_clear_margins,
+	.fontwidthmask		= FONTWIDTH(4)|FONTWIDTH(8)|FONTWIDTH(12)|FONTWIDTH(16)
 };
 #endif
 #ifdef FBCON_HAS_CFB32
 struct display_switch fbcon_sis32 = {
-	setup:			fbcon_cfb32_setup,
-	bmove:			fbcon_sis_bmove,
-	clear:			fbcon_sis_clear32,
-	putc:			fbcon_cfb32_putc,
-	putcs:			fbcon_cfb32_putcs,
-	revc:			fbcon_sis_revc,
-	clear_margins:		fbcon_cfb32_clear_margins,
-	fontwidthmask:		FONTWIDTH(4)|FONTWIDTH(8)|FONTWIDTH(12)|FONTWIDTH(16)
+	.setup			= fbcon_cfb32_setup,
+	.bmove			= fbcon_sis_bmove,
+	.clear			= fbcon_sis_clear32,
+	.putc			= fbcon_cfb32_putc,
+	.putcs			= fbcon_cfb32_putcs,
+	.revc			= fbcon_sis_revc,
+	.clear_margins		= fbcon_cfb32_clear_margins,
+	.fontwidthmask		= FONTWIDTH(4)|FONTWIDTH(8)|FONTWIDTH(12)|FONTWIDTH(16)
 };
 #endif
 

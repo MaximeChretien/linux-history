@@ -44,6 +44,11 @@ struct IO_APIC_reg_02 {
 		__reserved_1	:  4;
 } __attribute__ ((packed));
 
+struct IO_APIC_reg_03 {
+	__u32	boot_DT		: 1,
+		__reserved_1	: 31;
+} __attribute__ ((packed));
+
 /*
  * # of IO-APICs and # of IRQ routing registers
  */
@@ -118,15 +123,6 @@ static inline void io_apic_write(unsigned int apic, unsigned int reg, unsigned i
 }
 
 /*
- * Re-write a value: to be used for read-modify-write
- * cycles where the read already set up the index register.
- */
-static inline void io_apic_modify(unsigned int apic, unsigned int value)
-{
-	*(IO_APIC_BASE(apic)+4) = value;
-}
-
-/*
  * Synchronize the IO-APIC and the CPU by doing
  * a dummy read from the IO-APIC
  */
@@ -143,6 +139,13 @@ extern int skip_ioapic_setup;
  * assignment of PCI IRQ's.
  */
 #define io_apic_assign_pci_irqs (mp_irq_entries && !skip_ioapic_setup)
+
+#ifdef CONFIG_ACPI_BOOT
+extern int io_apic_get_unique_id (int ioapic, int apic_id);
+extern int io_apic_get_version (int ioapic);
+extern int io_apic_get_redir_entries (int ioapic);
+extern int io_apic_set_pci_routing (int ioapic, int pin, int irq, int edge_level, int active_high_low);
+#endif
 
 #else  /* !CONFIG_X86_IO_APIC */
 #define io_apic_assign_pci_irqs 0

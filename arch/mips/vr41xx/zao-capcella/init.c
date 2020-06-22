@@ -30,10 +30,6 @@ const char *get_system_type(void)
 	return "ZAO Networks Capcella";
 }
 
-void __init bus_error_init(void)
-{
-}
-
 void __init prom_init(int argc, char **argv, unsigned long magic, int *prom_vec)
 {
 	u32 config;
@@ -51,12 +47,12 @@ void __init prom_init(int argc, char **argv, unsigned long magic, int *prom_vec)
 	mips_machgroup = MACH_GROUP_NEC_VR41XX;
 	mips_machtype = MACH_ZAO_CAPCELLA;
 
-	switch (mips_cpu.processor_id) {
+	switch (current_cpu_data.processor_id) {
 	case PRID_VR4131_REV1_2:
-		config = read_32bit_cp0_register(CP0_CONFIG);
+		config = read_c0_config();
 		config &= ~0x00000030UL;
 		config |= 0x00410000UL;
-		write_32bit_cp0_register(CP0_CONFIG, config);
+		write_c0_config(config);
 		break;
 	default:
 		break;

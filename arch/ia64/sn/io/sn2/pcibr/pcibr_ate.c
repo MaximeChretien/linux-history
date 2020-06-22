@@ -4,7 +4,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2001-2002 Silicon Graphics, Inc. All rights reserved.
+ * Copyright (C) 2001-2003 Silicon Graphics, Inc. All rights reserved.
  */
 
 #include <linux/types.h>
@@ -27,22 +27,8 @@
 #include <asm/sn/prio.h>
 #include <asm/sn/xtalk/xbow.h>
 #include <asm/sn/ioc3.h>
-#include <asm/sn/eeprom.h>
 #include <asm/sn/io.h>
 #include <asm/sn/sn_private.h>
-
-#ifdef __ia64
-uint64_t atealloc(struct map *mp, size_t size);
-void atefree(struct map *mp, size_t size, uint64_t a);
-void atemapfree(struct map *mp);
-struct map *atemapalloc(uint64_t mapsiz);
-
-#define rmallocmap atemapalloc
-#define rmfreemap atemapfree
-#define rmfree atefree
-#define rmalloc atealloc
-#endif
-
 
 #ifndef LOCAL
 #define LOCAL           static
@@ -101,73 +87,26 @@ pcibr_init_ext_ate_ram(bridge_t *bridge)
     int                     i, j;
     bridgereg_t             old_enable, new_enable;
     int                     s;
-    int			    this_is_pic = is_pic(bridge);
 
     /* Probe SSRAM to determine its size. */
-    if ( this_is_pic ) {
-	old_enable = bridge->b_int_enable;
-	new_enable = old_enable & ~BRIDGE_IMR_PCI_MST_TIMEOUT;
-	bridge->b_int_enable = new_enable;
-    }
-    else {
-	if (io_get_sh_swapper(NASID_GET(bridge))) {
-		old_enable = BRIDGE_REG_GET32((&bridge->b_int_enable));
-		new_enable = old_enable & ~BRIDGE_IMR_PCI_MST_TIMEOUT;
-		BRIDGE_REG_SET32((&bridge->b_int_enable)) = new_enable;
-	}
-	else {
-		old_enable = bridge->b_int_enable;
-		new_enable = old_enable & ~BRIDGE_IMR_PCI_MST_TIMEOUT;
-		bridge->b_int_enable = new_enable;
-	}
-    }
+    old_enable = bridge->b_int_enable;
+    new_enable = old_enable & ~BRIDGE_IMR_PCI_MST_TIMEOUT;
+    bridge->b_int_enable = new_enable;
 
     for (i = 1; i < ATE_NUM_SIZES; i++) {
 	/* Try writing a value */
-	if ( this_is_pic ) {
-		bridge->b_ext_ate_ram[ATE_NUM_ENTRIES(i) - 1] = ATE_PROBE_VALUE;
-	}
-	else {
-		if (io_get_sh_swapper(NASID_GET(bridge)))
-			bridge->b_ext_ate_ram[ATE_NUM_ENTRIES(i) - 1] = __swab64(ATE_PROBE_VALUE);
-		else
-			bridge->b_ext_ate_ram[ATE_NUM_ENTRIES(i) - 1] = ATE_PROBE_VALUE;
-	}
+	bridge->b_ext_ate_ram[ATE_NUM_ENTRIES(i) - 1] = ATE_PROBE_VALUE;
 
 	/* Guard against wrap */
 	for (j = 1; j < i; j++)
 	    bridge->b_ext_ate_ram[ATE_NUM_ENTRIES(j) - 1] = 0;
 
 	/* See if value was written */
-	if ( this_is_pic ) {
-		if (bridge->b_ext_ate_ram[ATE_NUM_ENTRIES(i) - 1] == ATE_PROBE_VALUE)
+	if (bridge->b_ext_ate_ram[ATE_NUM_ENTRIES(i) - 1] == ATE_PROBE_VALUE)
 				largest_working_size = i;
-	}
-	else {
-		if (io_get_sh_swapper(NASID_GET(bridge))) {
-			if (bridge->b_ext_ate_ram[ATE_NUM_ENTRIES(i) - 1] == __swab64(ATE_PROBE_VALUE))
-					largest_working_size = i;
-			else {
-				if (bridge->b_ext_ate_ram[ATE_NUM_ENTRIES(i) - 1] == ATE_PROBE_VALUE)
-					largest_working_size = i;
-			}
-		}
-	}
     }
-    if ( this_is_pic ) {
-	bridge->b_int_enable = old_enable;
-	bridge->b_wid_tflush;		/* wait until Bridge PIO complete */
-    }
-    else {
-	if (io_get_sh_swapper(NASID_GET(bridge))) {
-		BRIDGE_REG_SET32((&bridge->b_int_enable)) = old_enable;
-		BRIDGE_REG_GET32((&bridge->b_wid_tflush));   /* wait until Bridge PIO complete */
-	}
-	else {
-		bridge->b_int_enable = old_enable;
-		bridge->b_wid_tflush;               /* wait until Bridge PIO complete */
-	}
-    }
+    bridge->b_int_enable = old_enable;
+    bridge->b_wid_tflush;		/* wait until Bridge PIO complete */
 
     /*
      * ensure that we write and read without any interruption.
@@ -175,26 +114,10 @@ pcibr_init_ext_ate_ram(bridge_t *bridge)
      */
 
     s = splhi();
-    if ( this_is_pic ) {
-	bridge->b_wid_control = (bridge->b_wid_control
+    bridge->b_wid_control = (bridge->b_wid_control
 			& ~BRIDGE_CTRL_SSRAM_SIZE_MASK)
 			| BRIDGE_CTRL_SSRAM_SIZE(largest_working_size);
-	bridge->b_wid_control;		/* inval addr bug war */
-    }
-    else {
-	if (io_get_sh_swapper(NASID_GET(bridge))) {
-		BRIDGE_REG_SET32((&(bridge->b_wid_control))) = 
-				__swab32((BRIDGE_REG_GET32((&bridge->b_wid_control))
-					& ~BRIDGE_CTRL_SSRAM_SIZE_MASK)
-					| BRIDGE_CTRL_SSRAM_SIZE(largest_working_size));
-		BRIDGE_REG_GET32((&bridge->b_wid_control));/* inval addr bug war */
-	}
-	else {
-		bridge->b_wid_control = (bridge->b_wid_control & ~BRIDGE_CTRL_SSRAM_SIZE_MASK)
-				| BRIDGE_CTRL_SSRAM_SIZE(largest_working_size);
-		bridge->b_wid_control;              /* inval addr bug war */
-	}
-    }
+    bridge->b_wid_control;		/* inval addr bug war */
     splx(s);
 
     num_entries = ATE_NUM_ENTRIES(largest_working_size);
@@ -229,32 +152,55 @@ pcibr_init_ext_ate_ram(bridge_t *bridge)
 int
 pcibr_ate_alloc(pcibr_soft_t pcibr_soft, int count)
 {
-    int                     index = 0;
+    int			    status = 0;
+    struct resource	    *new_res;
+    struct resource         **allocated_res;
 
-    index = (int) rmalloc(pcibr_soft->bs_int_ate_map, (size_t) count);
+    new_res = (struct resource *) kmalloc( sizeof(struct resource), GFP_ATOMIC);
+    memset(new_res, 0, sizeof(*new_res));
+    status = allocate_resource( &pcibr_soft->bs_int_ate_resource, new_res,
+				count, pcibr_soft->bs_int_ate_resource.start, 
+				pcibr_soft->bs_int_ate_resource.end, 1,
+				NULL, NULL);
 
-    if (!index && pcibr_soft->bs_ext_ate_map)
-	index = (int) rmalloc(pcibr_soft->bs_ext_ate_map, (size_t) count);
+    if ( status && (pcibr_soft->bs_ext_ate_resource.end != 0) ) {
+	status = allocate_resource( &pcibr_soft->bs_ext_ate_resource, new_res,
+				count, pcibr_soft->bs_ext_ate_resource.start,
+				pcibr_soft->bs_ext_ate_resource.end, 1,
+				NULL, NULL);
+	if (status) {
+		new_res->start = -1;
+	}
+    }
 
-    /* rmalloc manages resources in the 1..n
-     * range, with 0 being failure.
-     * pcibr_ate_alloc manages resources
-     * in the 0..n-1 range, with -1 being failure.
-     */
-    return index - 1;
+    if (status) {
+	/* Failed to allocate */
+	kfree(new_res);
+	return -1;
+    }
+
+    /* Save the resource for freeing */
+    allocated_res = (struct resource **)(((unsigned long)pcibr_soft->bs_allocated_ate_res) + new_res->start * sizeof( unsigned long));
+    *allocated_res = new_res;
+
+    return new_res->start;
 }
 
 void
 pcibr_ate_free(pcibr_soft_t pcibr_soft, int index, int count)
 /* Who says there's no such thing as a free meal? :-) */
 {
-    /* note the "+1" since rmalloc handles 1..n but
-     * we start counting ATEs at zero.
-     */
-    rmfree((index < pcibr_soft->bs_int_ate_size)
-	   ? pcibr_soft->bs_int_ate_map
-	   : pcibr_soft->bs_ext_ate_map,
-	   count, index + 1);
+
+    struct resource **allocated_res;
+    int status = 0;
+
+    allocated_res = (struct resource **)(((unsigned long)pcibr_soft->bs_allocated_ate_res) + index * sizeof(unsigned long));
+
+    status = release_resource(*allocated_res);
+    if (status)
+	BUG(); /* Ouch .. */
+    kfree(*allocated_res);
+
 }
 
 /*
@@ -362,7 +308,7 @@ ate_freeze(pcibr_dmamap_t pcibr_dmamap,
 
     /* Bridge Hardware Bug WAR #484930:
      * Bridge can't handle updating External ATEs
-     * while DMA is occuring that uses External ATEs,
+     * while DMA is occurring that uses External ATEs,
      * even if the particular ATEs involved are disjoint.
      */
 
@@ -423,16 +369,7 @@ ate_freeze(pcibr_dmamap_t pcibr_dmamap,
 			    /* Flush the write buffer associated with this
 			     * PCI device which might be using dma map RAM.
 			     */
-			if ( is_pic(bridge) ) {
-				bridge->b_wr_req_buf[slot].reg;
-			}
-			else {
-				if (io_get_sh_swapper(NASID_GET(bridge)) ) {
-					BRIDGE_REG_GET32((&bridge->b_wr_req_buf[slot].reg));
-				}
-				else
-					bridge->b_wr_req_buf[slot].reg;
-			}
+			bridge->b_wr_req_buf[slot].reg;
 		    }
 	    }
     }

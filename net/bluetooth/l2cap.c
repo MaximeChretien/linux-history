@@ -27,7 +27,7 @@
  *
  * $Id: l2cap.c,v 1.15 2002/09/09 01:14:52 maxk Exp $
  */
-#define VERSION "2.1"
+#define VERSION "2.3"
 
 #include <linux/config.h>
 #include <linux/module.h>
@@ -284,7 +284,7 @@ static void __l2cap_sock_close(struct sock *sk, int reason)
 			l2cap_disconn_req req;
 
 			sk->state = BT_DISCONN;
-			l2cap_sock_set_timer(sk, HZ * 5);
+			l2cap_sock_set_timer(sk, sk->sndtimeo);
 
 			req.dcid = __cpu_to_le16(l2cap_pi(sk)->dcid);
 			req.scid = __cpu_to_le16(l2cap_pi(sk)->scid);
@@ -309,11 +309,9 @@ static void __l2cap_sock_close(struct sock *sk, int reason)
 static void l2cap_sock_close(struct sock *sk)
 {
 	l2cap_sock_clear_timer(sk);
-
 	lock_sock(sk);
 	__l2cap_sock_close(sk, ECONNRESET);
 	release_sock(sk);
-
 	l2cap_sock_kill(sk);
 }
 
@@ -527,7 +525,8 @@ static int l2cap_sock_connect(struct socket *sock, struct sockaddr *addr, int al
 		goto done;
 
 wait:
-	err = bluez_sock_w4_connect(sk, flags);
+	err = bluez_sock_wait_state(sk, BT_CONNECTED,
+			sock_sndtimeo(sk, flags & O_NONBLOCK));
 
 done:
 	release_sock(sk);
@@ -760,32 +759,39 @@ static int l2cap_sock_getsockopt(struct socket *sock, int level, int optname, ch
 static int l2cap_sock_shutdown(struct socket *sock, int how)
 {
 	struct sock *sk = sock->sk;
+	int err = 0;
 
 	BT_DBG("sock %p, sk %p", sock, sk);
 
 	if (!sk) return 0;
 
-	l2cap_sock_clear_timer(sk);
-
 	lock_sock(sk);
-	sk->shutdown = SHUTDOWN_MASK;
-	__l2cap_sock_close(sk, ECONNRESET);
-	release_sock(sk);
+	if (!sk->shutdown) {
+		sk->shutdown = SHUTDOWN_MASK;
+		l2cap_sock_clear_timer(sk);
+		__l2cap_sock_close(sk, 0);
 
-	return 0;
+		if (sk->linger)
+			err = bluez_sock_wait_state(sk, BT_CLOSED, sk->lingertime);
+	}
+	release_sock(sk);
+	return err;
 }
 
 static int l2cap_sock_release(struct socket *sock)
 {
 	struct sock *sk = sock->sk;
+	int err;
 
 	BT_DBG("sock %p, sk %p", sock, sk);
 
 	if (!sk) return 0;
 
+	err = l2cap_sock_shutdown(sock, 2);
+
 	sock_orphan(sk);
-	l2cap_sock_close(sk);
-	return 0;
+	l2cap_sock_kill(sk);
+	return err;
 }
 
 /* --------- L2CAP channels --------- */
@@ -917,9 +923,11 @@ static void l2cap_chan_del(struct sock *sk, int err)
 		hci_conn_put(conn->hcon);
 	}
 
-	sk->state = BT_CLOSED;
-	sk->err   = err;
+	sk->state  = BT_CLOSED;
 	sk->zapped = 1;
+
+	if (err)
+		sk->err = err;
 
 	if (parent)
 		parent->data_ready(parent, 0);
@@ -953,6 +961,22 @@ static void l2cap_conn_ready(struct l2cap_conn *conn)
 		bh_unlock_sock(sk);
 	}
 
+	read_unlock(&l->lock);
+}
+
+/* Notify sockets that we cannot guaranty reliability anymore */
+static void l2cap_conn_unreliable(struct l2cap_conn *conn, int err)
+{
+	struct l2cap_chan_list *l = &conn->chan_list;
+	struct sock *sk;
+
+	BT_DBG("conn %p", conn);
+
+	read_lock(&l->lock);
+	for (sk = l->head; sk; sk = l2cap_pi(sk)->next_c) {
+		if (l2cap_pi(sk)->link_mode & L2CAP_LM_RELIABLE)
+			sk->err = err;
+	}
 	read_unlock(&l->lock);
 }
 
@@ -1320,15 +1344,18 @@ static int l2cap_build_conf_rsp(struct sock *sk, void *data, int *result)
 {
 	l2cap_conf_rsp *rsp = (l2cap_conf_rsp *) data;
 	void *ptr = rsp->data;
+	u16 flags = 0;
 
 	BT_DBG("sk %p complete %d", sk, result ? 1 : 0);
 
 	if (result)
 		*result = l2cap_conf_output(sk, &ptr);
+	else	
+		flags |= 0x0001;
 
 	rsp->scid   = __cpu_to_le16(l2cap_pi(sk)->dcid);
 	rsp->result = __cpu_to_le16(result ? *result : 0);
-	rsp->flags  = __cpu_to_le16(0);
+	rsp->flags  = __cpu_to_le16(flags);
 
 	return ptr - data;
 }
@@ -1441,7 +1468,7 @@ static inline int l2cap_connect_rsp(struct l2cap_conn *conn, l2cap_cmd_hdr *cmd,
 	case L2CAP_CR_SUCCESS:
 		sk->state = BT_CONFIG;
 		l2cap_pi(sk)->dcid = dcid;
-		l2cap_pi(sk)->conf_state |= CONF_REQ_SENT;
+		l2cap_pi(sk)->conf_state |= L2CAP_CONF_REQ_SENT;
 
 		l2cap_send_req(conn, L2CAP_CONF_REQ, l2cap_build_conf_req(sk, req), req);
 		break;
@@ -1476,7 +1503,7 @@ static inline int l2cap_config_req(struct l2cap_conn *conn, l2cap_cmd_hdr *cmd, 
 
 	l2cap_parse_conf_req(sk, req->data, cmd->len - L2CAP_CONF_REQ_SIZE);
 
-	if (flags & 0x01) {
+	if (flags & 0x0001) {
 		/* Incomplete config. Send empty response. */
 		l2cap_send_rsp(conn, cmd->ident, L2CAP_CONF_RSP, l2cap_build_conf_rsp(sk, rsp, NULL), rsp);
 		goto unlock;
@@ -1489,12 +1516,12 @@ static inline int l2cap_config_req(struct l2cap_conn *conn, l2cap_cmd_hdr *cmd, 
 		goto unlock;
 
 	/* Output config done */
-	l2cap_pi(sk)->conf_state |= CONF_OUTPUT_DONE;
+	l2cap_pi(sk)->conf_state |= L2CAP_CONF_OUTPUT_DONE;
 
-	if (l2cap_pi(sk)->conf_state & CONF_INPUT_DONE) {
+	if (l2cap_pi(sk)->conf_state & L2CAP_CONF_INPUT_DONE) {
 		sk->state = BT_CONNECTED;
 		l2cap_chan_ready(sk);
-	} else if (!(l2cap_pi(sk)->conf_state & CONF_REQ_SENT)) {
+	} else if (!(l2cap_pi(sk)->conf_state & L2CAP_CONF_REQ_SENT)) {
 		char req[64];
 		l2cap_send_req(conn, L2CAP_CONF_REQ, l2cap_build_conf_req(sk, req), req);
 	}
@@ -1520,18 +1547,34 @@ static inline int l2cap_config_rsp(struct l2cap_conn *conn, l2cap_cmd_hdr *cmd, 
 	if (!(sk = l2cap_get_chan_by_scid(&conn->chan_list, scid)))
 		return -ENOENT;
 
-	if (result) {
-		l2cap_disconn_req req;
+	switch (result) {
+	case L2CAP_CONF_SUCCESS:
+		break;
 
-		/* They didn't like our options. Well... we do not negotiate.
-		 * Close channel.
-		 */
+	case L2CAP_CONF_UNACCEPT:
+		if (++l2cap_pi(sk)->conf_retry < L2CAP_CONF_MAX_RETRIES) {
+			char req[128];
+			/* 
+			   It does not make sense to adjust L2CAP parameters 
+			   that are currently defined in the spec. We simply 
+			   resend config request that we sent earlier. It is
+			   stupid :) but it helps qualification testing
+			   which expects at least some response from us.
+			*/
+			l2cap_send_req(conn, L2CAP_CONF_REQ,
+				l2cap_build_conf_req(sk, req), req);
+			goto done;
+		}
+	default: 
 		sk->state = BT_DISCONN;
+		sk->err   = ECONNRESET;
 		l2cap_sock_set_timer(sk, HZ * 5);
-
-		req.dcid = __cpu_to_le16(l2cap_pi(sk)->dcid);
-		req.scid = __cpu_to_le16(l2cap_pi(sk)->scid);
-		l2cap_send_req(conn, L2CAP_DISCONN_REQ, L2CAP_DISCONN_REQ_SIZE, &req);
+		{
+			l2cap_disconn_req req;
+			req.dcid = __cpu_to_le16(l2cap_pi(sk)->dcid);
+			req.scid = __cpu_to_le16(l2cap_pi(sk)->scid);
+			l2cap_send_req(conn, L2CAP_DISCONN_REQ, L2CAP_DISCONN_REQ_SIZE, &req);
+		}
 		goto done;
 	}
 
@@ -1539,9 +1582,9 @@ static inline int l2cap_config_rsp(struct l2cap_conn *conn, l2cap_cmd_hdr *cmd, 
 		goto done;
 
 	/* Input config done */
-	l2cap_pi(sk)->conf_state |= CONF_INPUT_DONE;
+	l2cap_pi(sk)->conf_state |= L2CAP_CONF_INPUT_DONE;
 
-	if (l2cap_pi(sk)->conf_state & CONF_OUTPUT_DONE) {
+	if (l2cap_pi(sk)->conf_state & L2CAP_CONF_OUTPUT_DONE) {
 		sk->state = BT_CONNECTED;
 		l2cap_chan_ready(sk);
 	}
@@ -1592,7 +1635,7 @@ static inline int l2cap_disconnect_rsp(struct l2cap_conn *conn, l2cap_cmd_hdr *c
 
 	if (!(sk = l2cap_get_chan_by_scid(&conn->chan_list, scid)))
 		return 0;
-	l2cap_chan_del(sk, ECONNABORTED);
+	l2cap_chan_del(sk, 0);
 	bh_unlock_sock(sk);
 
 	l2cap_sock_kill(sk);
@@ -1943,17 +1986,17 @@ static int l2cap_recv_acldata(struct hci_conn *hcon, struct sk_buff *skb, __u16 
 			kfree_skb(conn->rx_skb);
 			conn->rx_skb = NULL;
 			conn->rx_len = 0;
+			l2cap_conn_unreliable(conn, ECOMM);
 		}
 
 		if (skb->len < 2) {
-			BT_ERR("Frame is too small (len %d)", skb->len);
+			BT_ERR("Frame is too short (len %d)", skb->len);
+			l2cap_conn_unreliable(conn, ECOMM);
 			goto drop;
 		}
 
 		hdr = (l2cap_hdr *) skb->data;
 		len = __le16_to_cpu(hdr->len) + L2CAP_HDR_SIZE;
-
-		BT_DBG("Start: total len %d, frag len %d", len, skb->len);
 
 		if (len == skb->len) {
 			/* Complete frame received */
@@ -1961,8 +2004,18 @@ static int l2cap_recv_acldata(struct hci_conn *hcon, struct sk_buff *skb, __u16 
 			return 0;
 		}
 
-		/* Allocate skb for the complete frame (with header) */
-		if (!(conn->rx_skb = bluez_skb_alloc(len, GFP_ATOMIC)))
+		BT_DBG("Start: total len %d, frag len %d", len, skb->len);
+
+		if (skb->len > len) {
+			BT_ERR("Frame is too long (len %d, expected len %d)",
+				skb->len, len);
+			l2cap_conn_unreliable(conn, ECOMM);
+			goto drop;
+		}
+
+		/* Allocate skb for the complete frame including header */
+		conn->rx_skb = bluez_skb_alloc(len, GFP_ATOMIC);
+		if (!conn->rx_skb)
 			goto drop;
 
 		memcpy(skb_put(conn->rx_skb, skb->len), skb->data, skb->len);
@@ -1972,15 +2025,17 @@ static int l2cap_recv_acldata(struct hci_conn *hcon, struct sk_buff *skb, __u16 
 
 		if (!conn->rx_len) {
 			BT_ERR("Unexpected continuation frame (len %d)", skb->len);
+			l2cap_conn_unreliable(conn, ECOMM);
 			goto drop;
 		}
 
 		if (skb->len > conn->rx_len) {
-			BT_ERR("Fragment is too large (len %d, expect %d)",
+			BT_ERR("Fragment is too long (len %d, expected %d)",
 					skb->len, conn->rx_len);
 			kfree_skb(conn->rx_skb);
 			conn->rx_skb = NULL;
 			conn->rx_len = 0;
+			l2cap_conn_unreliable(conn, ECOMM);
 			goto drop;
 		}
 
@@ -2113,6 +2168,16 @@ void l2cap_cleanup(void)
 	if (hci_unregister_proto(&l2cap_hci_proto))
 		BT_ERR("Can't unregister L2CAP protocol");
 }
+
+void l2cap_load(void)
+{
+	/* Dummy function to trigger automatic L2CAP module loading by 
+	   other modules that use L2CAP sockets but do not use any other
+	   symbols from it. */
+	return;
+}
+
+EXPORT_SYMBOL(l2cap_load);
 
 module_init(l2cap_init);
 module_exit(l2cap_cleanup);

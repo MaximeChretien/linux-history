@@ -3,6 +3,7 @@
 
 O_TARGET := intelfb.o
 
-obj-$(CONFIG_FB_INTEL)	+= intelfbdrv.o intelfbhw.o
+obj-y	:= intelfbdrv.o intelfbhw.o
+obj-m	:= $(O_TARGET)
 
 include $(TOPDIR)/Rules.make

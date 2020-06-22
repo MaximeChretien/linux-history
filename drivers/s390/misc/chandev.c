@@ -2470,6 +2470,7 @@ static int chandev_setup(int in_read_conf,char *instr,char *errstr,int lineno)
 					goto BadArgs;
 					
 				}
+				break;
 			case del_auto_msck_stridx*stridx_mult:
 			case (del_auto_msck_stridx*stridx_mult)|iscomma:
 				switch(ints[0])
@@ -2482,6 +2483,7 @@ static int chandev_setup(int in_read_conf,char *instr,char *errstr,int lineno)
 				default:
 					goto BadArgs;
 				}
+				break;
 			case del_noauto_stridx*stridx_mult:
 				chandev_free_all_list((list **)&chandev_noauto_head);
 				break;

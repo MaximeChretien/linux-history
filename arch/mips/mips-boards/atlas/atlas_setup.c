@@ -29,7 +29,7 @@
 #include <asm/mips-boards/generic.h>
 #include <asm/mips-boards/prom.h>
 #include <asm/mips-boards/atlasint.h>
-#include <asm/gt64120.h>
+#include <asm/gt64120/gt64120.h>
 #include <asm/time.h>
 #include <asm/traps.h>
 
@@ -38,7 +38,7 @@ extern void console_setup(char *, int *);
 char serial_console[20];
 #endif
 
-#ifdef CONFIG_REMOTE_DEBUG
+#ifdef CONFIG_KGDB
 extern void rs_kgdb_hook(int);
 extern void saa9730_kgdb_hook(void);
 extern void breakpoint(void);
@@ -54,17 +54,13 @@ const char *get_system_type(void)
 	return "MIPS Atlas";
 }
 
-void __init bus_error_init(void)
-{
-}
-
 extern void mips_time_init(void);
 extern void mips_timer_setup(struct irqaction *irq);
 extern unsigned long mips_rtc_get_time(void);
 
 void __init atlas_setup(void)
 {
-#ifdef CONFIG_REMOTE_DEBUG
+#ifdef CONFIG_KGDB
 	int rs_putDebugChar(char);
 	char rs_getDebugChar(void);
 	int saa9730_putDebugChar(char);
@@ -90,7 +86,7 @@ void __init atlas_setup(void)
 	}
 #endif
 
-#ifdef CONFIG_REMOTE_DEBUG
+#ifdef CONFIG_KGDB
 	argptr = prom_getcmdline();
 	if ((argptr = strstr(argptr, "kgdb=ttyS")) != NULL) {
 		int line;
@@ -122,7 +118,7 @@ void __init atlas_setup(void)
 	argptr = prom_getcmdline();
 
 	if ((argptr = strstr(argptr, "nofpu")) != NULL)
-		mips_cpu.options &= ~MIPS_CPU_FPU;
+		cpu_data[0].options &= ~MIPS_CPU_FPU;
 
 	rtc_ops = &atlas_rtc_ops;
 	board_time_init = mips_time_init;

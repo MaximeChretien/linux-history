@@ -7,6 +7,8 @@
  * 
  * Copyright 1994 Comtrol Corporation.    All Rights Reserved.
  * 
+ * Erroneously clashing license removed. This file is GPL
+ * (Kurt Robideau, Comtrol Corp, 20030610)
  * This driver is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2, or (at your option)
@@ -16,7 +18,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
  */
 
 /*

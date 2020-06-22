@@ -1413,7 +1413,7 @@ static int ext3_block_truncate_page(handle_t *handle,
 	length = blocksize - length;
 	iblock = index << (PAGE_CACHE_SHIFT - inode->i_sb->s_blocksize_bits);
 
-	page = grab_cache_page(mapping, index);
+	page = find_or_create_page(mapping, index, GFP_NOFS);
 	err = -ENOMEM;
 	if (!page)
 		goto out;
@@ -2159,8 +2159,6 @@ void ext3_read_inode(struct inode * inode)
 		inode->u.ext3_i.i_data[block] = iloc.raw_inode->i_block[block];
 	INIT_LIST_HEAD(&inode->u.ext3_i.i_orphan);
 
-	brelse (iloc.bh);
-
 	if (inode->i_ino == EXT3_ACL_IDX_INO ||
 	    inode->i_ino == EXT3_ACL_DATA_INO)
 		/* Nothing to do */ ;
@@ -2181,6 +2179,7 @@ void ext3_read_inode(struct inode * inode)
 	} else 
 		init_special_inode(inode, inode->i_mode,
 				   le32_to_cpu(iloc.raw_inode->i_block[0]));
+	brelse(iloc.bh);
 	ext3_set_inode_flags(inode);
 	return;
 	

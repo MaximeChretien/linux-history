@@ -47,7 +47,7 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 	    dep_tristate '    AEC62XX chipset support' CONFIG_BLK_DEV_AEC62XX $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_tristate '    ALI M15x3 chipset support' CONFIG_BLK_DEV_ALI15X3 $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_mbool    '      ALI M15x3 WDC support (DANGEROUS)' CONFIG_WDC_ALI15X3 $CONFIG_BLK_DEV_ALI15X3
-	    dep_tristate '    AMD Viper support' CONFIG_BLK_DEV_AMD74XX $CONFIG_BLK_DEV_IDEDMA_PCI
+	    dep_tristate '    AMD and nVidia IDE support' CONFIG_BLK_DEV_AMD74XX $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_mbool    '      AMD Viper ATA-66 Override' CONFIG_AMD74XX_OVERRIDE $CONFIG_BLK_DEV_AMD74XX
 	    dep_tristate '    CMD64{3|6|8|9} chipset support' CONFIG_BLK_DEV_CMD64X $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_tristate '    Compaq Triflex IDE support' CONFIG_BLK_DEV_TRIFLEX $CONFIG_BLK_DEV_IDEDMA_PCI
@@ -63,7 +63,7 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 	    dep_tristate '    NS87415 chipset support' CONFIG_BLK_DEV_NS87415 $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_tristate '    OPTi 82C621 chipset enhanced support (EXPERIMENTAL)' CONFIG_BLK_DEV_OPTI621 $CONFIG_EXPERIMENTAL
 	    dep_tristate '    PROMISE PDC202{46|62|65|67} support' CONFIG_BLK_DEV_PDC202XX_OLD $CONFIG_BLK_DEV_IDEDMA_PCI
-	    dep_mbool    '      Special UDMA Feature' CONFIG_PDC202XX_BURST $CONFIG_BLK_DEV_PDC202XX_OLD $CONFIG_BLK_DEV_IDEDMA_PCI
+	    dep_mbool     '      Special UDMA Feature' CONFIG_PDC202XX_BURST $CONFIG_BLK_DEV_PDC202XX_OLD $CONFIG_BLK_DEV_IDEDMA_PCI
 	    dep_tristate '    PROMISE PDC202{68|69|70|71|75|76|77} support' CONFIG_BLK_DEV_PDC202XX_NEW $CONFIG_BLK_DEV_IDEDMA_PCI
 	    if [ "$CONFIG_BLK_DEV_PDC202XX_OLD" = "y" -o "$CONFIG_BLK_DEV_PDC202XX_OLD" = "m" -o "$CONFIG_BLK_DEV_PDC202XX_NEW" = "y" -o "$CONFIG_BLK_DEV_PDC202XX_NEW" = "m" ]; then
 	        bool     '    Special FastTrak Feature' CONFIG_PDC202XX_FORCE
@@ -93,7 +93,7 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 	   define_bool CONFIG_BLK_DEV_IDEPCI $CONFIG_BLK_DEV_IDEDMA_PMAC
 	 fi
       fi
-      if [ "$CONFIG_SIBYTE_SWARM" = "y" ]; then
+      if [ "$CONFIG_SIBYTE_GENBUS_IDE" = "y" ]; then
 	 bool '  Broadcom SiByte onboard IDE support' CONFIG_BLK_DEV_IDE_SIBYTE
       fi
       if [ "$CONFIG_ARCH_ACORN" = "y" ]; then

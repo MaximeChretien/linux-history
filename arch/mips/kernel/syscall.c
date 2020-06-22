@@ -55,9 +55,11 @@ out:
 	return res;
 }
 
-#define COLOUR_ALIGN(addr,pgoff)		\
-	((((addr)+SHMLBA-1)&~(SHMLBA-1)) +	\
-	 (((pgoff)<<PAGE_SHIFT) & (SHMLBA-1)))
+unsigned long shm_align_mask = PAGE_SIZE - 1;	/* Sane caches */
+
+#define COLOUR_ALIGN(addr,pgoff)				\
+	((((addr) + shm_align_mask) & ~shm_align_mask) +	\
+	 (((pgoff) << PAGE_SHIFT) & shm_align_mask))
 
 unsigned long arch_get_unmapped_area(struct file *filp, unsigned long addr,
 	unsigned long len, unsigned long pgoff, unsigned long flags)
@@ -70,7 +72,7 @@ unsigned long arch_get_unmapped_area(struct file *filp, unsigned long addr,
 		 * We do not accept a shared mapping if it would violate
 		 * cache aliasing constraints.
 		 */
-		if ((flags & MAP_SHARED) && (addr & (SHMLBA - 1)))
+		if ((flags & MAP_SHARED) && (addr & shm_align_mask))
 			return -EINVAL;
 		return addr;
 	}

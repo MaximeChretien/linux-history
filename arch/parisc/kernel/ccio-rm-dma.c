@@ -118,7 +118,7 @@ static int ccio_map_sg(struct pci_dev *dev, struct scatterlist *sglist, int nent
 
         /* KISS: map each buffer seperately. */
 	while (nents) {
-		sg_dma_address(sglist) = ccio_map_single(dev, sglist->address, sglist->length, direction);
+		sg_dma_address(sglist) = ccio_map_single(dev, sg_virt_addr(sglist), sglist->length, direction);
 		sg_dma_len(sglist) = sglist->length;
 		nents--;
 		sglist++;

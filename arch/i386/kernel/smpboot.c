@@ -1034,7 +1034,7 @@ void __init smp_boot_cpus(void)
 	 * If we couldnt find an SMP configuration at boot time,
 	 * get out of here now!
 	 */
-	if (!smp_found_config) {
+	if (!smp_found_config && !acpi_lapic) {
 		printk(KERN_NOTICE "SMP motherboard not detected.\n");
 #ifndef CONFIG_VISWS
 		io_apic_irqs = 0;

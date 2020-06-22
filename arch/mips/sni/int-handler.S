@@ -47,7 +47,7 @@ led_cache:	.byte	0
 		bnez	t1, _hwint0
 		 nop
 
-		j	restore_all			# spurious interrupt
+		j	ret_from_irq			# spurious interrupt
 		 nop
 
  ##############################################################################

@@ -161,7 +161,7 @@ GLOBAL_ENTRY(ia64_switch_to)
 	mov r8=r13			// return pointer to previously running task
 	mov r13=in0			// set "current" pointer
 	;;
-(p6)	ssm psr.i			// renable psr.i AFTER the ic bit is serialized
+	ssm psr.i			// renable psr.i AFTER the ic bit is serialized
 	DO_LOAD_SWITCH_STACK
 
 #ifdef CONFIG_SMP
@@ -454,7 +454,14 @@ END(invoke_syscall_trace)
 
 GLOBAL_ENTRY(ia64_trace_syscall)
 	PT_REGS_UNWIND_INFO(0)
+{	/*
+	 * Some versions of gas generate bad unwind info if the first instruction of a
+	 * procedure doesn't go into the first slot of a bundle.  This is a workaround.
+	 */
+	nop.m 0
+	nop.i 0
 	br.call.sptk.many rp=invoke_syscall_trace // give parent a chance to catch syscall args
+}
 .ret6:	br.call.sptk.many rp=b6			// do the syscall
 strace_check_retval:
 	cmp.lt p6,p0=r8,r0			// syscall failed?
@@ -484,12 +491,19 @@ END(ia64_trace_syscall)
 
 GLOBAL_ENTRY(ia64_ret_from_clone)
 	PT_REGS_UNWIND_INFO(0)
+{	/*
+	 * Some versions of gas generate bad unwind info if the first instruction of a
+	 * procedure doesn't go into the first slot of a bundle.  This is a workaround.
+	 */
+	nop.m 0
+	nop.i 0
 	/*
 	 * We need to call schedule_tail() to complete the scheduling process.
 	 * Called by ia64_switch_to after do_fork()->copy_thread().  r8 contains the
 	 * address of the previously executing task.
 	 */
 	br.call.sptk.many rp=ia64_invoke_schedule_tail
+}
 .ret8:
 	adds r2=IA64_TASK_PTRACE_OFFSET,r13
 	;;
@@ -652,7 +666,7 @@ GLOBAL_ENTRY(ia64_leave_kernel)
 	 * NOTE: alloc, loadrs, and cover can't be predicated.
 	 */
 (pNonSys) br.cond.dpnt dont_preserve_current_frame
-	cover				// add current frame into dirty partition
+	cover				// add current frame into dirty partition and set cr.ifs
 	;;
 	mov r19=ar.bsp			// get new backing store pointer
 	sub r16=r16,r18			// krbs = old bsp - size of dirty partition
@@ -678,24 +692,12 @@ dont_preserve_current_frame:
 #	define Nregs	14
 #endif
 	alloc loc0=ar.pfs,2,Nregs-2,2,0
-	shr.u loc1=r18,9		// RNaTslots <= dirtySize / (64*8) + 1
+	shr.u loc1=r18,9		// RNaTslots <= floor(dirtySize / (64*8))
 	sub r17=r17,r18			// r17 = (physStackedSize + 8) - dirtySize
 	;;
-#if 1
-	.align 32		// see comment below about gas bug...
-#endif
 	mov ar.rsc=r19			// load ar.rsc to be used for "loadrs"
 	shladd in0=loc1,3,r17
 	mov in1=0
-#if 0
-	// gas-2.11.90 is unable to generate a stop bit after .align, which is bad,
-	// because alloc must be at the beginning of an insn-group.
-	.align 32
-#else
-	nop 0
-	nop 0
-	nop 0
-#endif
 	;;
 rse_clear_invalid:
 #ifdef CONFIG_ITANIUM
@@ -737,13 +739,13 @@ rse_clear_invalid:
 	;;
 	mov loc3=0
 	mov loc4=0
-	mov loc9=0
 	mov loc5=0
 	mov loc6=0
+	mov loc7=0
 (pRecurse) br.call.sptk.many b6=rse_clear_invalid
 	;;
-	mov loc7=0
 	mov loc8=0
+	mov loc9=0
 	cmp.ne pReturn,p0=r0,in1	// if recursion count != 0, we need to do a br.ret
 	mov loc10=0
 	mov loc11=0
@@ -848,13 +850,14 @@ ENTRY(handle_signal_delivery)
 	mov r9=ar.unat
 	mov loc0=rp				// save return address
 	mov out0=0				// there is no "oldset"
-	adds out1=0,sp				// out1=&sigscratch
+	adds out1=8,sp				// out1=&sigscratch->ar_pfs
 (pSys)	mov out2=1				// out2==1 => we're in a syscall
 	;;
 (pNonSys) mov out2=0				// out2==0 => not a syscall
 	.fframe 16
 	.spillpsp ar.unat, 16			// (note that offset is relative to psp+0x10!)
 	st8 [sp]=r9,-16				// allocate space for ar.unat and save it
+	st8 [out1]=loc1,-8			// save ar.pfs, out1=&sigscratch
 	.body
 	br.call.sptk.many rp=ia64_do_signal
 .ret15:	.restore sp
@@ -875,11 +878,12 @@ GLOBAL_ENTRY(sys_rt_sigsuspend)
 	mov loc0=rp				// save return address
 	mov out0=in0				// mask
 	mov out1=in1				// sigsetsize
-	adds out2=0,sp				// out2=&sigscratch
+	adds out2=8,sp				// out2=&sigscratch->ar_pfs
 	;;
 	.fframe 16
 	.spillpsp ar.unat, 16			// (note that offset is relative to psp+0x10!)
 	st8 [sp]=r9,-16				// allocate space for ar.unat and save it
+	st8 [out2]=loc1,-8			// save ar.pfs, out2=&sigscratch
 	.body
 	br.call.sptk.many rp=ia64_rt_sigsuspend
 .ret17:	.restore sp
@@ -915,17 +919,16 @@ ENTRY(sys_rt_sigreturn)
 END(sys_rt_sigreturn)
 
 GLOBAL_ENTRY(ia64_prepare_handle_unaligned)
-	//
-	// r16 = fake ar.pfs, we simply need to make sure
-	// privilege is still 0
-	//
-	mov r16=r0
 	.prologue
+	/*
+	 * r16 = fake ar.pfs, we simply need to make sure privilege is still 0
+	 */
+	mov r16=r0
 	DO_SAVE_SWITCH_STACK
-	br.call.sptk.many rp=ia64_handle_unaligned // stack frame setup in ivt
+	br.call.sptk.many rp=ia64_handle_unaligned	// stack frame setup in ivt
 .ret21:	.body
 	DO_LOAD_SWITCH_STACK
-	br.cond.sptk.many rp			  // goes to ia64_leave_kernel
+	br.cond.sptk.many rp				// goes to ia64_leave_kernel
 END(ia64_prepare_handle_unaligned)
 
 	//

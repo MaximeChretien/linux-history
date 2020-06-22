@@ -1622,6 +1622,7 @@ gmac_probe1(struct device_node *gmac)
 	gm->of_node = gmac;
 	if (!request_OF_resource(gmac, 0, " (gmac)")) {
 		printk(KERN_ERR "GMAC: can't request IO resource !\n");
+		gm->of_node = NULL;
 		goto out_unreg;
 	}
 	dev->base_addr = gmac->addrs[0].address;

@@ -25,7 +25,8 @@
 #ifndef _BTTVP_H_
 #define _BTTVP_H_
 
-#define BTTV_VERSION_CODE KERNEL_VERSION(0,7,104)
+#include <linux/version.h>
+#define BTTV_VERSION_CODE KERNEL_VERSION(0,7,107)
 
 #include <linux/types.h>
 #include <linux/wait.h>
@@ -35,6 +36,8 @@
 #include "bt848.h"
 #include "bttv.h"
 #include "audiochip.h"
+#include "tuner.h"
+#include "i2c-compat.h"
 
 #ifdef __KERNEL__
 
@@ -53,8 +56,7 @@ extern int pvr_boot(struct bttv *btv);
 #define dprintk		if (bttv_debug)   printk
 #define vprintk		if (bttv_verbose) printk
 
-/* Anybody who uses more than four? */
-#define BTTV_MAX 4
+#define BTTV_MAX 16
 extern unsigned int bttv_num;			/* number of Bt848s in use */
 extern struct bttv bttvs[BTTV_MAX];
 

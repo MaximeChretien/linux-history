@@ -1,6 +1,6 @@
 /*
  * include/asm-ppc/platforms/spruce.h
- * 
+ *
  * Definitions for IBM Spruce reference board support
  *
  * Authors: Matt Porter and Johnnie Peters
@@ -51,7 +51,7 @@ unsigned char spruce_read_keyb_status(void);
 
 /*
  * Serial port defines
- */ 
+ */
 #define SPRUCE_FPGA_REG_A	0xff820000
 #define SPRUCE_UARTCLK_33M	0x02
 #define SPRUCE_UARTCLK_IS_33M(reg)	(reg & SPRUCE_UARTCLK_33M)

@@ -279,7 +279,11 @@ local_flush_tlb_all(void)
 	/* Implemented to just flush the vmalloc area.
 	 * vmalloc is the only user of flush_tlb_all.
 	 */
+#ifdef CONFIG_SHARED_MEMORY_ADDRESSING
+	local_flush_tlb_range( NULL, VMALLOC_START, SMALLOC_END );
+#else
 	local_flush_tlb_range( NULL, VMALLOC_START, VMALLOC_END );
+#endif
 }
 
 void
@@ -292,11 +296,6 @@ local_flush_tlb_mm(struct mm_struct *mm)
 		for ( mp = mm->mmap; mp != NULL; mp = mp->vm_next )
 			local_flush_tlb_range( mm, mp->vm_start, mp->vm_end );
 	}
-	else	/* MIKEC: It is not clear why this is needed */
-		/* paulus: it is needed to clear out stale HPTEs
-		 * when an address space (represented by an mm_struct)
-		 * is being destroyed. */
-		local_flush_tlb_range( mm, USER_START, USER_END );
 
 	spin_unlock(&mm->page_table_lock);
 }
@@ -644,3 +643,131 @@ void flush_icache_user_range(struct vm_area_struct *vma, struct page *page,
 	maddr = (unsigned long)page_address(page) + (addr & ~PAGE_MASK);
 	flush_icache_range(maddr, maddr + len);
 }
+
+#ifdef CONFIG_SHARED_MEMORY_ADDRESSING
+static spinlock_t shared_malloc_lock = SPIN_LOCK_UNLOCKED;
+struct vm_struct *shared_list = NULL;
+static struct vm_struct *get_shared_area(unsigned long size, 
+					 unsigned long flags);
+
+void *shared_malloc(unsigned long size) {
+	pgprot_t prot;
+	struct vm_struct *area;
+	unsigned long ea;
+
+	spin_lock(&shared_malloc_lock);
+
+	printk("shared_malloc1 (no _PAGE_USER): addr = 0x%lx, size = 0x%lx\n", 
+	       SMALLOC_START, size); 
+
+	area = get_shared_area(size, 0);
+	if (!area) {
+	spin_unlock(&shared_malloc_lock);
+		return NULL;
+	}
+
+	ea = (unsigned long) area->addr;
+
+	prot = __pgprot(pgprot_val(PAGE_KERNEL));
+	if (vmalloc_area_pages(VMALLOC_VMADDR(ea), size, GFP_KERNEL, prot)) { 
+	spin_unlock(&shared_malloc_lock);
+		return NULL;
+	} 
+
+	printk("shared_malloc: addr = 0x%lx, size = 0x%lx\n", ea, size); 
+
+	spin_unlock(&shared_malloc_lock);
+	return(ea); 
+}
+
+void shared_free(void *addr) {
+	struct vm_struct **p, *tmp;
+	unsigned long size = 0;
+
+	if (!addr)
+		return;
+	if ((PAGE_SIZE-1) & (unsigned long) addr) {
+		printk(KERN_ERR "Trying to shared_free() bad address (%p)\n", 
+		       addr);
+		return;
+	}
+	spin_lock(&shared_malloc_lock);
+
+	printk("shared_free: addr = 0x%lx\n", addr); 
+
+	/* Scan the memory list for an entry matching
+	 * the address to be freed, get the size (in bytes)
+	 * and free the entry.  The list lock is not dropped
+	 * until the page table entries are removed.
+	 */
+	for(p = &shared_list; (tmp = *p); p = &tmp->next ) {
+		if (tmp->addr == addr) {
+			*p = tmp->next;
+			vmfree_area_pages(VMALLOC_VMADDR(tmp->addr),tmp->size);
+			spin_unlock(&shared_malloc_lock);
+			kfree(tmp);
+			return;
+		}
+	}
+
+	spin_unlock(&shared_malloc_lock);
+	printk("shared_free: error\n"); 
+}
+
+static struct vm_struct *get_shared_area(unsigned long size, 
+					 unsigned long flags) {
+	unsigned long addr;
+	struct vm_struct **p, *tmp, *area;
+  
+	area = (struct vm_struct *) kmalloc(sizeof(*area), GFP_KERNEL);
+	if (!area) return NULL;
+
+	size += PAGE_SIZE;
+	if (!size) {
+		kfree (area);
+		return NULL;
+	}
+
+	addr = SMALLOC_START;
+	for (p = &shared_list; (tmp = *p) ; p = &tmp->next) {
+		if ((size + addr) < addr) {
+			kfree(area);
+			return NULL;
+		}
+		if (size + addr <= (unsigned long) tmp->addr)
+			break;
+		addr = tmp->size + (unsigned long) tmp->addr;
+		if (addr > SMALLOC_END-size) {
+			kfree(area);
+			return NULL;
+		}
+	}
+
+	if (addr + size > SMALLOC_END) {
+		kfree(area);
+		return NULL;
+	}
+	area->flags = flags;
+	area->addr = (void *)addr;
+	area->size = size;
+	area->next = *p;
+	*p = area;
+	return area;
+}
+
+int shared_task_mark() {
+	current->thread.flags |= PPC_FLAG_SHARED;
+	printk("current->thread.flags = 0x%lx\n", current->thread.flags);
+
+	return 0;
+}
+
+int shared_task_unmark() {
+	if(current->thread.flags & PPC_FLAG_SHARED) {
+		current->thread.flags &= (~PPC_FLAG_SHARED);
+		return 0;
+	} else {
+		return -1;
+	}
+}
+#endif

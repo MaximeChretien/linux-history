@@ -564,7 +564,7 @@ static struct sock *udp_v6_mcast_next(struct sock *sk,
 				if(ipv6_addr_cmp(&np->rcv_saddr, loc_addr) == 0)
 					return s;
 			}
-			if(!inet6_mc_check(s, loc_addr))
+			if(!inet6_mc_check(s, loc_addr, rmt_addr))
 				continue;
 			return s;
 		}
@@ -838,7 +838,7 @@ static int udpv6_sendmsg(struct sock *sk, struct msghdr *msg, int ulen)
 			fl.oif = sin6->sin6_scope_id;
 	} else {
 		if (sk->state != TCP_ESTABLISHED)
-			return -ENOTCONN;
+			return -EDESTADDRREQ;
 
 		udh.uh.dest = sk->dport;
 		daddr = &sk->net_pinfo.af_inet6.daddr;

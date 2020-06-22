@@ -129,6 +129,7 @@ obj-$(CONFIG_FB_SA1100)           += sa1100fb.o
 obj-$(CONFIG_FB_VIRTUAL)          += vfb.o  
 obj-$(CONFIG_FB_HIT)              += hitfb.o fbgen.o
 obj-$(CONFIG_FB_E1355)            += epson1355fb.o fbgen.o
+obj-$(CONFIG_FB_E1356)            += epson1356fb.o
 obj-$(CONFIG_FB_PVR2)             += pvr2fb.o
 obj-$(CONFIG_FB_VOODOO1)          += sstfb.o
 

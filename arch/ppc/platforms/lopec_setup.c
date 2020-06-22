@@ -1,6 +1,6 @@
 /*
  * arch/ppc/platforms/lopec_setup.c
- * 
+ *
  * Setup routines for the Motorola LoPEC.
  *
  * Author: Dan Cox
@@ -48,7 +48,7 @@
 #include <asm/keyboard.h>
 #include <asm/prep_nvram.h>
 #include <asm/serial.h>
-  
+
 extern char saved_command_line[];
 extern void lopec_find_bridges(void);
 
@@ -314,7 +314,7 @@ lopec_early_serial_map(void)
 	/* Assume early_serial_setup() doesn't modify serial_req */
 	serial_req.line = 1;
 	serial_req.port = 1;
-	serial_req.irq = UART1_INT; 
+	serial_req.irq = UART1_INT;
 	serial_req.iomem_base = ioremap(UART1_PORT, 8);
 
 #if defined(CONFIG_SERIAL_TEXT_DEBUG) || defined(CONFIG_KGDB)
@@ -327,7 +327,7 @@ lopec_early_serial_map(void)
 
 	serial_req.line = 2;
 	serial_req.port = 2;
-	serial_req.irq = UART2_INT; 
+	serial_req.irq = UART2_INT;
 	serial_req.iomem_base = ioremap(UART2_PORT, 8);
 
 #if defined(CONFIG_SERIAL_TEXT_DEBUG) || defined(CONFIG_KGDB)
@@ -372,7 +372,7 @@ lopec_setup_arch(void)
 #endif
 
 #ifdef CONFIG_PPCBUG_NVRAM
-	/* Read in NVRAM data */ 
+	/* Read in NVRAM data */
 	init_prep_nvram();
 
 	/* if no bootargs, look in NVRAM */

@@ -52,7 +52,7 @@ endif
 ifeq ($(CONFIG_PPC_ISERIES),y)
 all:	vmlinux.sm
 else
-all:	$(TOPDIR)/zImage
+all:	zImage
 endif
 
 
@@ -94,7 +94,7 @@ imagesize.c: $(TOPDIR)/vmlinux
 
 zImage.o: $(TOPDIR)/vmlinux
 
-vmlinux .config System.map: % : $(TOPDIR)/%
+vmlinux .config System.map: % : $(TOPDIR)/% zImage.o
 	gzip -cvf9 $(TOPDIR)/$@ > kernel-$@.gz
 	$(OBJCOPY) zImage.o \
 		--add-section=.kernel:$@=kernel-$@.gz \

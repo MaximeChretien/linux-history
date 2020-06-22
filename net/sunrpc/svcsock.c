@@ -595,8 +595,17 @@ svc_tcp_listen_data_ready(struct sock *sk, int count_unused)
 	dprintk("svc: socket %p TCP (listen) state change %d\n",
 			sk, sk->state);
 
-	if  (sk->state != TCP_ESTABLISHED) {
-		/* Aborted connection, SYN_RECV or whatever... */
+	if  (sk->state != TCP_LISTEN) {
+		/*
+		 * This callback may called twice when a new connection
+		 * is established as a child socket inherits everything
+		 * from a parent LISTEN socket.
+		 * 1) data_ready method of the parent socket will be called
+		 *    when one of child sockets become ESTABLISHED.
+		 * 2) data_ready method of the child socket may be called
+		 *    when it receives data before the socket is accepted.
+		 * In case of 2, we should ignore it silently.
+		 */
 		goto out;
 	}
 	if (!(svsk = (struct svc_sock *) sk->user_data)) {
@@ -816,8 +825,12 @@ svc_tcp_recvfrom(struct svc_rqst *rqstp)
 		if ((len = svc_recvfrom(rqstp, &iov, 1, want)) < 0)
 			goto error;
 		svsk->sk_tcplen += len;
-		if (len < want)
-			return 0;
+		if (len < want) {
+			dprintk("svc: short recvfrom while reading record length (%d of %ld)\n",
+			        len, want);
+			svc_sock_received(svsk);
+			return -EAGAIN; /* record header not complete */
+		}
 
 		svsk->sk_reclen = ntohl(svsk->sk_reclen);
 		if (!(svsk->sk_reclen & 0x80000000)) {
@@ -932,6 +945,7 @@ static int
 svc_tcp_init(struct svc_sock *svsk)
 {
 	struct sock	*sk = svsk->sk_sk;
+	struct tcp_opt  *tp = &(sk->tp_pinfo.af_tcp);
 
 	svsk->sk_recvfrom = svc_tcp_recvfrom;
 	svsk->sk_sendto = svc_tcp_sendto;
@@ -948,6 +962,8 @@ svc_tcp_init(struct svc_sock *svsk)
 		svsk->sk_reclen = 0;
 		svsk->sk_tcplen = 0;
 
+		tp->nonagle = 1;        /* disable Nagle's algorithm */
+
 		/* initialise setting must have enough space to
 		 * receive and respond to one request.  
 		 * svc_tcp_recvfrom will re-adjust if necessary
@@ -957,6 +973,8 @@ svc_tcp_init(struct svc_sock *svsk)
 				    3 * svsk->sk_server->sv_bufsz);
 
 		set_bit(SK_CHNGBUF, &svsk->sk_flags);
+		if (sk->state != TCP_ESTABLISHED) 
+			set_bit(SK_CLOSE, &svsk->sk_flags);
 	}
 
 	return 0;
@@ -1226,7 +1244,8 @@ svc_create_socket(struct svc_serv *serv, int protocol, struct sockaddr_in *sin)
 		return error;
 
 	if (sin != NULL) {
-		sock->sk->reuse = 1; /* allow address reuse */
+		if (type == SOCK_STREAM)
+			sock->sk->reuse = 1; /* allow address reuse */
 		error = sock->ops->bind(sock, (struct sockaddr *) sin,
 						sizeof(*sin));
 		if (error < 0)

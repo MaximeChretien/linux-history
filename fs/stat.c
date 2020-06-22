@@ -37,6 +37,8 @@ static int cp_old_stat(struct inode * inode, struct __old_kernel_stat * statbuf)
 	static int warncount = 5;
 	struct __old_kernel_stat tmp;
 
+	memset(&tmp, 0, sizeof(struct __old_kernel_stat));
+	
 	if (warncount > 0) {
 		warncount--;
 		printk(KERN_WARNING "VFS: Warning: %s using old stat() call. Recompile your binary.\n",

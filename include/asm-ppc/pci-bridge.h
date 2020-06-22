@@ -24,7 +24,7 @@ extern void pci_init_resource(struct resource *res, unsigned long start,
 			      unsigned long end, int flags, char *name);
 
 /*
- * PCI <-> OF matching functions 
+ * PCI <-> OF matching functions
  */
 extern int pci_device_from_OF_node(struct device_node *node,
 				   u8* bus, u8* devfn);
@@ -54,10 +54,11 @@ struct pci_controller {
 
 	int first_busno;
 	int last_busno;
-        
+	int bus_offset;
+
 	void *io_base_virt;
 	unsigned long io_base_phys;
-	
+
 	/* Some machines (PReP) have a non 1:1 mapping of
 	 * the PCI memory space in the CPU bus space
 	 */
@@ -66,6 +67,11 @@ struct pci_controller {
 	struct pci_ops *ops;
 	volatile unsigned int *cfg_addr;
 	volatile unsigned char *cfg_data;
+	/*
+	 * If set, indirect method will set the cfg_type bit as
+	 * needed to generate type 1 configuration transactions.
+	 */
+	int set_cfg_type;
 
 	/* Currently, we limit ourselves to 1 IO range and 3 mem
 	 * ranges since the common pci_bus structure can't handle more
@@ -83,15 +89,21 @@ struct pci_controller {
 
 /* These are used for config access before all the PCI probing
    has been done. */
-int early_read_config_byte(struct pci_controller *hose, int bus, int dev_fn, int where, u8 *val);
-int early_read_config_word(struct pci_controller *hose, int bus, int dev_fn, int where, u16 *val);
-int early_read_config_dword(struct pci_controller *hose, int bus, int dev_fn, int where, u32 *val);
-int early_write_config_byte(struct pci_controller *hose, int bus, int dev_fn, int where, u8 val);
-int early_write_config_word(struct pci_controller *hose, int bus, int dev_fn, int where, u16 val);
-int early_write_config_dword(struct pci_controller *hose, int bus, int dev_fn, int where, u32 val);
+int early_read_config_byte(struct pci_controller *hose, int bus, int dev_fn,
+			   int where, u8 *val);
+int early_read_config_word(struct pci_controller *hose, int bus, int dev_fn,
+			   int where, u16 *val);
+int early_read_config_dword(struct pci_controller *hose, int bus, int dev_fn,
+			    int where, u32 *val);
+int early_write_config_byte(struct pci_controller *hose, int bus, int dev_fn,
+			    int where, u8 val);
+int early_write_config_word(struct pci_controller *hose, int bus, int dev_fn,
+			    int where, u16 val);
+int early_write_config_dword(struct pci_controller *hose, int bus, int dev_fn,
+			     int where, u32 val);
 
-extern void setup_indirect_pci(struct pci_controller* hose, u32 cfg_addr,
-		u32 cfg_data);
+extern void setup_indirect_pci(struct pci_controller* hose,
+			       u32 cfg_addr, u32 cfg_data);
 extern void setup_grackle(struct pci_controller *hose);
 
 extern unsigned char common_swizzle(struct pci_dev *, unsigned char *);
@@ -103,7 +115,7 @@ extern unsigned char common_swizzle(struct pci_dev *, unsigned char *);
  *   break this piece out separately.
  */
 static inline unsigned char bridge_swizzle(unsigned char pin,
-		unsigned char idsel) 
+		unsigned char idsel)
 {
 	return (((pin-1) + idsel) % 4) + 1;
 }

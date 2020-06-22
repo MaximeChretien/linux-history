@@ -1,9 +1,8 @@
-/* $Id: time.c,v 1.17 2002/11/15 14:49:24 oskarp Exp $
- *
+/*
  *  linux/arch/cris/kernel/time.c
  *
  *  Copyright (C) 1991, 1992, 1995  Linus Torvalds
- *  Copyright (C) 1999, 2000, 2001, 2002 Axis Communications AB
+ *  Copyright (C) 1999, 2000, 2001, 2002, 2003 Axis Communications AB
  *
  * 1994-07-02    Alan Modra
  *	fixed set_rtc_mmss, fixed time.year for >= 2000, new mktime
@@ -18,15 +17,16 @@
  * Linux/CRIS specific code:
  *
  * Authors:    Bjorn Wesen
- *             Johan Adolfsson  
+ *             Johan Adolfsson
+ *
  * 2002-03-04    Johan Adolfsson
- *      Use prescale timer at 25000 Hz instead of the baudrate timer at 
- *      19200 to get rid of the 64ppm to fast timer (and we get better 
+ *      Use prescale timer at 25000 Hz instead of the baudrate timer at
+ *      19200 to get rid of the 64ppm to fast timer (and we get better
  *      resolution within a jiffie as well.
  * 2002-03-05    Johan Adolfsson
  *      Use prescaler in do_slow_gettimeoffset() to get 1 us resolution (40ns)
  * 2002-09-06    Johan Adolfsson
- *      Handle lost ticks by checking wall_jiffies, more efficient code 
+ *      Handle lost ticks by checking wall_jiffies, more efficient code
  *      by using local vars and not the pointer argument.
  *
  */
@@ -101,6 +101,60 @@ unsigned long get_ns_in_jiffie(void)
 	     ( (presc_count) * (1000000000/PRESCALE_FREQ));
 	return ns;
 }
+
+
+/* Convert the clkdiv_low and clkdivb_high fiels in timer_data
+ * (from *R_TIMER_DATA) to nanoseconds (67 ns resolution)
+ */
+unsigned long timer_data_to_ns(unsigned long timer_data) 
+{
+/* low (clkdiv_low lsb toggles with 7.3728MHz so it counts
+ * with 14.7456 MHz = 67.816 ns (0-17361ns)
+ * high (clkdiv_high lsb toggles with 38.4kHz so it counts
+ * with 76.8kHz = 13020.833 ns (0-3333333 ns)
+ * By checking bit 9,8,7 we can now how to compensate the low value
+ * to get a 67 ns resolution all the way.
+Example of R_TIMER_DATA values:
+     bit 98 7   low      9 87     offset
+0289DC00 00 000 0        0 00       0
+0289DC41 00 010 64       0 01       0
+0289DC81 00 100 128      0 10       0
+0289DDC0 01 110 192      1 11       0        13020 = 192        
+0289DD01 01 000 0    256 1 00     +256    
+0289DD41 01 010 64   320 1 01     +256        
+
+0288DE80 10 100 128  384 0 10  0: -128             26040= 384  
+0288DEC1 10 110 192  448 0 11  64 -128            
+0288DE01 10 000 0    512      128 +128    
+0288DF40 11 010 64   576      192 +128             39060 
+0288DF81 11 100 128  640      256 +128   
+0288DFC1 11 110 192  704      320 +128
+                              ..393		 
+*/
+	
+	static const short timer_data_add[8] = {
+		0,   /* 00 0 */
+		0,   /* 00 1 */
+		256, /* 01 0 */
+		0,   /* 01 1 */
+		128, /* 10 0 */
+		-128,/* 10 1 */
+		128, /* 11 0 */
+		128  /* 11 1 */
+	};  
+	unsigned long ns;
+	unsigned long low;
+	unsigned long high;
+  
+	high = (((timer_data & 0x0000FE00)>>8) * 13020833)/1000;
+	ns = high;
+  
+	low = timer_data & 0xFF;
+	low += timer_data_add[(timer_data >>7) & 0x7];
+	ns += (low * 67816)/1000;
+	return ns;
+} /* timer_data_to_ns */
+
 
 
 
@@ -274,7 +328,7 @@ static int set_rtc_mmss(unsigned long nowtime)
 	int retval = 0;
 	int real_seconds, real_minutes, cmos_minutes;
 
-	printk("set_rtc_mmss(%lu)\n", nowtime);
+	printk(KERN_INFO "set_rtc_mmss(%lu)\n", nowtime);
 
 	if(!have_rtc)
 		return 0;
@@ -460,7 +514,8 @@ get_cmos_time(void)
 	mon = CMOS_READ(RTC_MONTH);
 	year = CMOS_READ(RTC_YEAR);
 
-	printk("rtc: sec 0x%x min 0x%x hour 0x%x day 0x%x mon 0x%x year 0x%x\n", 
+	printk(KERN_INFO
+	       "rtc: sec 0x%x min 0x%x hour 0x%x day 0x%x mon 0x%x year 0x%x\n", 
 	       sec, min, hour, day, mon, year);
 
 	BCD_TO_BIN(sec);
@@ -585,7 +640,7 @@ time_init(void)
 	/* enable watchdog if we should use one */
 
 #if defined(CONFIG_ETRAX_WATCHDOG) && !defined(CONFIG_SVINTO_SIM)
-	printk("Enabling watchdog...\n");
+	printk(KERN_INFO "Enabling watchdog...\n");
 	start_watchdog();
 
 	/* If we use the hardware watchdog, we want to trap it as an NMI

@@ -44,12 +44,12 @@
 #include <linux/genhd.h>
 
 #define CCISS_DRIVER_VERSION(maj,min,submin) ((maj<<16)|(min<<8)|(submin))
-#define DRIVER_NAME "HP CISS Driver (v 2.4.42)"
-#define DRIVER_VERSION CCISS_DRIVER_VERSION(2,4,42)
+#define DRIVER_NAME "HP CISS Driver (v 2.4.47)"
+#define DRIVER_VERSION CCISS_DRIVER_VERSION(2,4,47)
 
 /* Embedded module documentation macros - see modules.h */
-MODULE_AUTHOR("Charles M. White III - Hewlett-Packard Company");
-MODULE_DESCRIPTION("Driver for HP SA5xxx SA6xxx Controllers version 2.4.42");
+MODULE_AUTHOR("Hewlett-Packard Company");
+MODULE_DESCRIPTION("Driver for HP SA5xxx SA6xxx Controllers version 2.4.47");
 MODULE_SUPPORTED_DEVICE("HP SA5i SA5i+ SA532 SA5300 SA5312 SA641 SA642 SA6400"); 
 MODULE_LICENSE("GPL");
 
@@ -73,6 +73,8 @@ const struct pci_device_id cciss_pci_device_id[] = {
                         0x0E11, 0x409B, 0, 0, 0},
 	{ PCI_VENDOR_ID_COMPAQ, PCI_DEVICE_ID_COMPAQ_CISSC,
                         0x0E11, 0x409C, 0, 0, 0},
+	{ PCI_VENDOR_ID_COMPAQ, PCI_DEVICE_ID_COMPAQ_CISSC,
+                        0x0E11, 0x409D, 0, 0, 0},
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, cciss_pci_device_id);
@@ -91,10 +93,12 @@ static struct board_type products[] = {
 	{ 0x409A0E11, "Smart Array 641", &SA5_access},
 	{ 0x409B0E11, "Smart Array 642", &SA5_access},
 	{ 0x409C0E11, "Smart Array 6400", &SA5_access},
+	{ 0x409D0E11, "Smart Array 6400 EM", &SA5_access},
 };
 
 /* How long to wait (in millesconds) for board to go into simple mode */
-#define MAX_CONFIG_WAIT 1000 
+#define MAX_CONFIG_WAIT 30000 
+#define MAX_IOCTL_CONFIG_WAIT 1000
 
 /*define how many times we will try a command because of bus resets */
 #define MAX_CMD_RETRIES 3
@@ -103,7 +107,7 @@ static struct board_type products[] = {
 #define NR_CMDS		 128 /* #commands that can be outstanding */
 #define MAX_CTLR 8
 
-#define CCISS_DMA_MASK	0xFFFFFFFF	/* 32 bit DMA */
+#define CCISS_DMA_MASK 0xFFFFFFFFFFFFFFFF /* 64 bit DMA */
 
 static ctlr_info_t *hba[MAX_CTLR];
 
@@ -578,7 +582,7 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
                         &(c->cfgtable->HostWrite.CoalIntCount));
 		writel( CFGTBL_ChangeReq, c->vaddr + SA5_DOORBELL);
 
-		for(i=0;i<MAX_CONFIG_WAIT;i++) {
+		for(i=0;i<MAX_IOCTL_CONFIG_WAIT;i++) {
 			if (!(readl(c->vaddr + SA5_DOORBELL) 
 					& CFGTBL_ChangeReq))
 				break;
@@ -586,8 +590,11 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 			udelay(1000);
 		}	
 		spin_unlock_irqrestore(&io_request_lock, flags);
-		if (i >= MAX_CONFIG_WAIT)
-			return -EFAULT;
+		if (i >= MAX_IOCTL_CONFIG_WAIT)
+			/* there is an unlikely case where this can happen,
+			 * involving hot replacing a failed 144 GB drive in a 
+			 * RAID 5 set just as we attempt this ioctl. */
+			return -EAGAIN;
                 return 0;
         }
 	case CCISS_GETNODENAME:
@@ -627,7 +634,7 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 			
 		writel( CFGTBL_ChangeReq, c->vaddr + SA5_DOORBELL);
 
-		for(i=0;i<MAX_CONFIG_WAIT;i++) {
+		for(i=0;i<MAX_IOCTL_CONFIG_WAIT;i++) {
 			if (!(readl(c->vaddr + SA5_DOORBELL) 
 					& CFGTBL_ChangeReq))
 				break;
@@ -635,8 +642,11 @@ static int cciss_ioctl(struct inode *inode, struct file *filep,
 			udelay(1000);
 		}	
 		spin_unlock_irqrestore(&io_request_lock, flags);
-		if (i >= MAX_CONFIG_WAIT)
-			return -EFAULT;
+		if (i >= MAX_IOCTL_CONFIG_WAIT)
+			/* there is an unlikely case where this can happen,
+			 * involving hot replacing a failed 144 GB drive in a 
+			 * RAID 5 set just as we attempt this ioctl. */
+			return -EAGAIN;
                 return 0;
         }
 
@@ -1345,15 +1355,7 @@ static int register_new_disk(int ctlr, int opened_vol, __u64 requested_lun)
 			sizeof(ReportLunData_struct), 0, 0, 0 );
 
 	if (return_code == IO_OK) {
-		/* printk("LUN Data\n--------------------------\n"); */
-		listlength |= (0xff &
-			(unsigned int)(ld_buff->LUNListLength[0])) << 24;
-		listlength |= (0xff &
-			(unsigned int)(ld_buff->LUNListLength[1])) << 16;
-		listlength |= (0xff &
-			(unsigned int)(ld_buff->LUNListLength[2])) << 8;
-		listlength |= 0xff &
-			(unsigned int)(ld_buff->LUNListLength[3]);
+		listlength = be32_to_cpu(*((__u32 *) &ld_buff->LUNListLength[0]));
 	} else {
 		/* reading number of logical volumes failed */
 		printk(KERN_WARNING "cciss: report logical volume"
@@ -2339,7 +2341,7 @@ static void do_cciss_intr(int irq, void *dev_id, struct pt_regs *regs)
 
 
 	/* Is this interrupt for us? */
-	if (h->access.intr_pending(h) == 0)
+	if ((h->access.intr_pending(h) == 0) || (h->interrupts_enabled == 0))
 		return;
 
 	/*
@@ -2435,25 +2437,58 @@ static void release_io_mem(ctlr_info_t *c)
 	c->io_mem_addr = 0;
 	c->io_mem_length = 0;
 }
+static int find_PCI_BAR_index(struct pci_dev *pdev,
+               unsigned long pci_bar_addr)
+{
+	int i, offset, mem_type, bar_type;
+	if (pci_bar_addr == PCI_BASE_ADDRESS_0) /* looking for BAR zero? */
+		return 0;
+	offset = 0;
+	for (i=0; i<DEVICE_COUNT_RESOURCE; i++) {
+		bar_type = pci_resource_flags(pdev, i) &
+			PCI_BASE_ADDRESS_SPACE; 
+		if (bar_type == PCI_BASE_ADDRESS_SPACE_IO)
+			offset += 4;
+		else {
+			mem_type = pci_resource_flags(pdev, i) &
+				PCI_BASE_ADDRESS_MEM_TYPE_MASK; 
+			switch (mem_type) {
+				case PCI_BASE_ADDRESS_MEM_TYPE_32:
+				case PCI_BASE_ADDRESS_MEM_TYPE_1M:
+					offset += 4; /* 32 bit */
+					break;
+				case PCI_BASE_ADDRESS_MEM_TYPE_64:
+					offset += 8;
+					break;
+				default: /* reserved in PCI 2.2 */
+					printk(KERN_WARNING "Base address is invalid\n");
+					return -1;	
+				break;
+			}
+		}
+		if (offset == pci_bar_addr - PCI_BASE_ADDRESS_0)
+			return i+1;
+	}
+	return -1;
+}
+			
 static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 {
-	ushort vendor_id, device_id, command;
-	unchar cache_line_size, latency_timer;
-	unchar irq, revision;
-	uint addr[6];
+	ushort subsystem_vendor_id, subsystem_device_id, command;
+	unchar irq = pdev->irq;
 	__u32 board_id;
-	int cfg_offset;
-	int cfg_base_addr;
-	int cfg_base_addr_index;
+	__u64 cfg_offset;
+	__u32 cfg_base_addr;
+	__u64 cfg_base_addr_index;
 	int i;
 
-	vendor_id = pdev->vendor;
-	device_id = pdev->device;
-	irq = pdev->irq;
-
-	for(i=0; i<6; i++)
-		addr[i] = pdev->resource[i].start;
-
+	/* check to see if controller has been disabled */
+	/* BEFORE we try to enable it */
+	(void) pci_read_config_word(pdev, PCI_COMMAND,&command);
+	if (!(command & 0x02)) {
+		printk(KERN_WARNING "cciss: controller appears to be disabled\n");
+		return -1;
+	}
 	if (pci_enable_device(pdev)) {
 		printk(KERN_ERR "cciss: Unable to Enable PCI device\n");
 		return -1;
@@ -2463,28 +2498,19 @@ static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 		return -1;
 	}
 	
-	(void) pci_read_config_word(pdev, PCI_COMMAND,&command);
-	(void) pci_read_config_byte(pdev, PCI_CLASS_REVISION, &revision);
-	(void) pci_read_config_byte(pdev, PCI_CACHE_LINE_SIZE,
-						&cache_line_size);
-	(void) pci_read_config_byte(pdev, PCI_LATENCY_TIMER,
-						&latency_timer);
+	subsystem_vendor_id = pdev->subsystem_vendor;
+	subsystem_device_id = pdev->subsystem_device;
+	board_id = (((__u32) (subsystem_device_id << 16) & 0xffff0000) |
+					subsystem_vendor_id );
 
-	(void) pci_read_config_dword(pdev, PCI_SUBSYSTEM_VENDOR_ID, 
-						&board_id);
 
-	/* check to see if controller has been disabled */
-	if (!(command & 0x02)) {
-		printk(KERN_WARNING "cciss: controller appears to be disabled\n");
-		return -1;
-	}
 	/* search for our IO range so we can protect it */
-	for (i=0; i<6; i++) {
+	for (i=0; i<DEVICE_COUNT_RESOURCE; i++) {
 		/* is this an IO range */
-		if (pdev->resource[i].flags & 0x01) {
-			c->io_mem_addr = pdev->resource[i].start;
-			c->io_mem_length = pdev->resource[i].end -
-				pdev->resource[i].start +1; 
+		if (pci_resource_flags(pdev, i) & 0x01) {
+			c->io_mem_addr = pci_resource_start(pdev, i);
+			c->io_mem_length = pci_resource_end(pdev, i) -
+				pci_resource_start(pdev, i) + 1; 
 #ifdef CCISS_DEBUG
 			printk("IO value found base_addr[%d] %lx %lx\n", i,
 				c->io_mem_addr, c->io_mem_length);
@@ -2504,15 +2530,8 @@ static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 	}
 
 #ifdef CCISS_DEBUG
-	printk("vendor_id = %x\n", vendor_id);
-	printk("device_id = %x\n", device_id);
 	printk("command = %x\n", command);
-	for(i=0; i<6; i++)
-		printk("addr[%d] = %x\n", i, addr[i]);
-	printk("revision = %x\n", revision);
 	printk("irq = %x\n", irq);
-	printk("cache_line_size = %x\n", cache_line_size);
-	printk("latency_timer = %x\n", latency_timer);
 	printk("board_id = %x\n", board_id);
 #endif /* CCISS_DEBUG */ 
 
@@ -2523,7 +2542,7 @@ static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
          *   table
 	 */
 
-	c->paddr = addr[0] ; /* addressing mode bits already removed */
+	c->paddr = pci_resource_start(pdev, 0); /* addressing mode bits already removed */
 #ifdef CCISS_DEBUG
 	printk("address 0 = %x\n", c->paddr);
 #endif /* CCISS_DEBUG */ 
@@ -2532,21 +2551,27 @@ static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 	/* get the address index number */
 	cfg_base_addr = readl(c->vaddr + SA5_CTCFG_OFFSET);
 	/* I am not prepared to deal with a 64 bit address value */
-	cfg_base_addr &= 0xffff;
+	cfg_base_addr &= (__u32) 0x0000ffff;
 #ifdef CCISS_DEBUG
 	printk("cfg base address = %x\n", cfg_base_addr);
 #endif /* CCISS_DEBUG */
-	cfg_base_addr_index = (cfg_base_addr  - PCI_BASE_ADDRESS_0)/4;
+	cfg_base_addr_index =
+		find_PCI_BAR_index(pdev, cfg_base_addr);
 #ifdef CCISS_DEBUG
 	printk("cfg base address index = %x\n", cfg_base_addr_index);
 #endif /* CCISS_DEBUG */
+	if (cfg_base_addr_index == -1) {
+		printk(KERN_WARNING "cciss: Cannot find cfg_base_addr_index\n");
+		release_io_mem(hba[i]);
+		return -1;
+	}
 
 	cfg_offset = readl(c->vaddr + SA5_CTMEM_OFFSET);
 #ifdef CCISS_DEBUG
 	printk("cfg offset = %x\n", cfg_offset);
 #endif /* CCISS_DEBUG */
 	c->cfgtable = (CfgTable_struct *) 
-		remap_pci_mem((addr[cfg_base_addr_index] & 0xfffffff0)
+		remap_pci_mem(pci_resource_start(pdev, cfg_base_addr_index)
 				+ cfg_offset, sizeof(CfgTable_struct));
 	c->board_id = board_id;
 
@@ -2583,11 +2608,17 @@ static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 		&(c->cfgtable->HostWrite.TransportRequest));
 	writel( CFGTBL_ChangeReq, c->vaddr + SA5_DOORBELL);
 
+	/* Here, we wait, possibly for a long time, (4 secs or more). 
+	 * In some unlikely cases, (e.g. A failed 144 GB drive in a 
+	 * RAID 5 set was hot replaced just as we're coming in here) it 
+	 * can take that long.  Normally (almost always) we will wait 
+	 * less than 1 sec. */
 	for(i=0;i<MAX_CONFIG_WAIT;i++) {
 		if (!(readl(c->vaddr + SA5_DOORBELL) & CFGTBL_ChangeReq))
 			break;
 		/* delay and try again */
-		udelay(1000);
+		set_current_state(TASK_INTERRUPTIBLE);
+		schedule_timeout(1);
 	}	
 
 #ifdef CCISS_DEBUG
@@ -2661,10 +2692,7 @@ static void cciss_getgeometry(int cntl_num)
 		printk("LUN Data\n--------------------------\n");
 #endif /* CCISS_DEBUG */ 
 
-		listlength |= (0xff & (unsigned int)(ld_buff->LUNListLength[0])) << 24;
-		listlength |= (0xff & (unsigned int)(ld_buff->LUNListLength[1])) << 16;
-		listlength |= (0xff & (unsigned int)(ld_buff->LUNListLength[2])) << 8;	
-		listlength |= 0xff & (unsigned int)(ld_buff->LUNListLength[3]);
+		listlength = be32_to_cpu(*((__u32 *) &ld_buff->LUNListLength[0]));
 	} else { /* reading number of logical volumes failed */
 		printk(KERN_WARNING "cciss: report logical volume"
 			" command failed\n");
@@ -2834,17 +2862,6 @@ static int __init cciss_init_one(struct pci_dev *pdev,
 	hba[i]->ctlr = i;
 	hba[i]->pdev = pdev;
 
-	/* configure PCI DMA stuff */
-	if (!pci_set_dma_mask(pdev, (u64) 0xffffffffffffffff))
-		printk("cciss: using DAC cycles\n");
-	else if (!pci_set_dma_mask(pdev, (u64) 0xffffffff))
-		printk("cciss: not using DAC cycles\n");
-	else {
-		printk("cciss: no suitable DMA available\n");
-		free_hba(i);
-		return -ENODEV;
-	}
-		
 	if (register_blkdev(MAJOR_NR+i, hba[i]->devname, &cciss_fops)) {
 		printk(KERN_ERR "cciss:  Unable to get major number "
 			"%d for %s\n", MAJOR_NR+i, hba[i]->devname);
@@ -3021,12 +3038,8 @@ int __init cciss_init(void)
 
 	printk(KERN_INFO DRIVER_NAME "\n");
 	/* Register for out PCI devices */
-	if (pci_register_driver(&cciss_pci_driver) > 0 )
-		return 0;
-	else 
-		return -ENODEV;
-
- }
+	return pci_module_init(&cciss_pci_driver);
+}
 
 EXPORT_NO_SYMBOLS;
 static int __init init_cciss_module(void)

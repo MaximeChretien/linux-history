@@ -716,10 +716,10 @@ breakpoint(void)
 	     breakinst: .long 0x7d821008");
 }
 
-#ifdef CONFIG_KGDB_CONSOLE 
-/* 
+#ifdef CONFIG_KGDB_CONSOLE
+/*
  * Output string in GDB O-packet format if GDB has connected. If nothing
- * output, returns 0 (caller must then handle output) 
+ * output, returns 0 (caller must then handle output)
  */
 int
 kgdb_output_string (const char* s, unsigned int count)
@@ -729,7 +729,7 @@ kgdb_output_string (const char* s, unsigned int count)
         if (!kgdb_started)
             return 0;
 
-	count = (count <= (sizeof(buffer) / 2 - 2)) 
+	count = (count <= (sizeof(buffer) / 2 - 2))
 		? count : (sizeof(buffer) / 2 - 2);
 
 	buffer[0] = 'O';

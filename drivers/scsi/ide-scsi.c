@@ -1105,15 +1105,34 @@ int idescsi_abort (Scsi_Cmnd *cmd)
 
 int idescsi_reset (Scsi_Cmnd *cmd, unsigned int resetflags)
 {
+	return SCSI_RESET_SNOOZE;
+
+#ifdef WORK_IN_PROGRESS
 	ide_drive_t *drive	= idescsi_drives[cmd->target];
 
-	/* We cannot reset the interface holding the lock. We can
-	   drop the lock here however */
+	/* At this point the state machine is running, that
+	   requires we are especially careful. Ideally we want
+	   to abort commands on timeout only if they hit the
+	   cable but thats harder */
+
+	DRIVER(drive)->abort(drive, "scsi reset");
+	if(HWGROUP(drive)->handler)
+		BUG();
+	
+	/* Ok the state machine is halted but make sure it
+	   doesn't restart too early */ 
 	   
-	spin_unlock(&io_request_lock);
-	(void) ide_do_reset(drive);
-	spin_lock(&io_request_lock);
+	HWGROUP(drive)->busy = 1;
+	spin_unlock_irq(&io_request_lock);
+	
+	/* Apply the mallet of re-education firmly to the drive */
+	ide_do_reset(drive);
+
+	/* At this point the reset state machine is running and
+	   its termination will kick off the next command */	
+	spin_lock_irq(&io_request_lock);
 	return SCSI_RESET_SUCCESS;
+#endif	
 }
 
 int idescsi_bios (Disk *disk, kdev_t dev, int *parm)

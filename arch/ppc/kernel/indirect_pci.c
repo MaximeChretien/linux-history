@@ -29,10 +29,19 @@ static int								 \
 indirect_##rw##_config_##size(struct pci_dev *dev, int offset, type val) \
 {									 \
 	struct pci_controller *hose = dev->sysdata;			 \
+	u8 cfg_type = 0;						 \
+									 \
+	if (ppc_md.pci_exclude_device)					 \
+		if (ppc_md.pci_exclude_device(dev->bus->number, dev->devfn)) \
+			return PCIBIOS_DEVICE_NOT_FOUND;		 \
+									 \
+	if (hose->set_cfg_type)					 	 \
+		if (dev->bus->number != hose->first_busno)		 \
+			cfg_type = 1;					 \
 									 \
 	out_be32(hose->cfg_addr, 					 \
-		 ((offset & 0xfc) << 24) | (dev->devfn << 16)		 \
-		 | (dev->bus->number << 8) | 0x80);			 \
+		 (((offset & 0xfc) | cfg_type) << 24) | (dev->devfn << 16) \
+		 | ((dev->bus->number - hose->bus_offset) << 8) | 0x80); \
 	cfg_##rw(val, hose->cfg_data + (offset & mask), type, op);	 \
 	return PCIBIOS_SUCCESSFUL;    					 \
 }

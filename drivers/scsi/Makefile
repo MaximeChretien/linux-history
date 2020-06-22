@@ -27,7 +27,7 @@ mod-subdirs	:= pcmcia ../acorn/scsi
 
 subdir-$(CONFIG_SCSI_AACRAID)	+= aacraid
 subdir-$(CONFIG_SCSI_AIC7XXX)	+= aic7xxx
-subdir-$(CONFIG_SCSI_AIC79XX)	+= aic79xx
+subdir-$(CONFIG_SCSI_AIC79XX)	+= aic7xxx
 subdir-$(CONFIG_PCMCIA)		+= pcmcia
 
 
@@ -73,7 +73,7 @@ ifeq ($(CONFIG_SCSI_AIC7XXX),y)
   obj-$(CONFIG_SCSI_AIC7XXX)	+= aic7xxx/aic7xxx.o
 endif
 ifeq ($(CONFIG_SCSI_AIC79XX),y)
-  obj-$(CONFIG_SCSI_AIC79XX)	+= aic79xx/aic79xx.o
+  obj-$(CONFIG_SCSI_AIC79XX)	+= aic7xxx/aic79xx.o
 endif
 obj-$(CONFIG_SCSI_AIC7XXX_OLD)	+= aic7xxx_old.o
 obj-$(CONFIG_SCSI_IPS)		+= ips.o

@@ -4353,9 +4353,10 @@ enum pci_board_num_t {
 #ifdef CONFIG_DDB5074
 	pbn_nec_nile4,
 #endif
-#if 0
+
+	pbn_dci_pccom4,
 	pbn_dci_pccom8,
-#endif
+
 	pbn_xircom_combo,
 
 	pbn_siig10x_0,
@@ -4449,9 +4450,10 @@ static struct pci_board pci_boards[] __devinitdata = {
 	{ SPCI_FL_BASE0, 1, 520833,			   /* pbn_nec_nile4 */
 		64, 3, NULL, 0x300 },
 #endif
-#if 0	/* PCI_DEVICE_ID_DCI_PCCOM8 ? */		   /* pbn_dci_pccom8 */
-	{ SPCI_FL_BASE3, 8, 115200, 8 },
-#endif
+
+	{SPCI_FL_BASE3, 4, 115200, 8},			   /* pbn_dci_pccom4 */
+	{SPCI_FL_BASE3, 8, 115200, 8},			   /* pbn_dci_pccom8 */
+
 	{ SPCI_FL_BASE0, 1, 115200,			  /* pbn_xircom_combo */
 		0, 0, pci_xircom_fn },
 
@@ -4912,11 +4914,12 @@ static struct pci_device_id serial_pci_tbl[] __devinitdata = {
 		pbn_nec_nile4 },
 #endif
 
-#if 0	/* PCI_DEVICE_ID_DCI_PCCOM8 ? */
+	{	PCI_VENDOR_ID_DCI, PCI_DEVICE_ID_DCI_PCCOM4,
+		PCI_ANY_ID, PCI_ANY_ID, 0, 0,
+		pbn_dci_pccom4 },
 	{	PCI_VENDOR_ID_DCI, PCI_DEVICE_ID_DCI_PCCOM8,
 		PCI_ANY_ID, PCI_ANY_ID, 0, 0,
 		pbn_dci_pccom8 },
-#endif
 
        { PCI_ANY_ID, PCI_ANY_ID, PCI_ANY_ID, PCI_ANY_ID,
 	 PCI_CLASS_COMMUNICATION_SERIAL << 8, 0xffff00, },

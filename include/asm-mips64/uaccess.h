@@ -22,8 +22,8 @@
  *
  * For historical reasons, these macros are grossly misnamed.
  */
-#define KERNEL_DS	((mm_segment_t) { (unsigned long) 0L })
-#define USER_DS		((mm_segment_t) { (unsigned long) -1L })
+#define KERNEL_DS	((mm_segment_t) { 0UL })
+#define USER_DS		((mm_segment_t) { -TASK_SIZE })
 
 #define VERIFY_READ    0
 #define VERIFY_WRITE   1
@@ -46,45 +46,138 @@
  *  - OR we are in kernel mode.
  */
 #define __ua_size(size)							\
-	(__builtin_constant_p(size) && (signed long) (size) > 0 ? 0 : (size))
+	((__builtin_constant_p(size) && (size)) > 0 ? 0 : (size))
 
-#define __access_ok(addr,size,mask)					\
-	(((signed long)((mask)&(addr | (addr + size) | __ua_size(size)))) >= 0)
+#define __access_ok(addr, size, mask)					\
+	(((mask) & ((addr) | ((addr) + (size)) | __ua_size(size))) == 0)
 
-#define __access_mask ((long)(get_fs().seg))
+#define __access_mask get_fs().seg
 
-#define access_ok(type,addr,size) \
-	__access_ok(((unsigned long)(addr)),(size),__access_mask)
+/*
+ * access_ok: - Checks if a user space pointer is valid
+ * @type: Type of access: %VERIFY_READ or %VERIFY_WRITE.  Note that
+ *        %VERIFY_WRITE is a superset of %VERIFY_READ - if it is safe
+ *        to write to a block, it is always safe to read from it.
+ * @addr: User space pointer to start of block to check
+ * @size: Size of block to check
+ *
+ * Context: User context only.  This function may sleep.
+ *
+ * Checks if a pointer to a block of memory in user space is valid.
+ *
+ * Returns true (nonzero) if the memory block may be valid, false (zero)
+ * if it is definitely invalid.
+ *
+ * Note that, depending on architecture, this function probably just
+ * checks that the pointer is in the user space range - after calling
+ * this function, memory access functions may still return -EFAULT.
+ */
+#define access_ok(type, addr, size)					\
+	__access_ok((unsigned long)(addr), (size), __access_mask)
 
+/*
+ * verify_area: - Obsolete, use access_ok()
+ * @type: Type of access: %VERIFY_READ or %VERIFY_WRITE
+ * @addr: User space pointer to start of block to check
+ * @size: Size of block to check
+ *
+ * Context: User context only.  This function may sleep.
+ *
+ * This function has been replaced by access_ok().
+ *
+ * Checks if a pointer to a block of memory in user space is valid.
+ *
+ * Returns zero if the memory block may be valid, -EFAULT
+ * if it is definitely invalid.
+ *
+ * See access_ok() for more details.
+ */
 static inline int verify_area(int type, const void * addr, unsigned long size)
 {
-	return access_ok(type,addr,size) ? 0 : -EFAULT;
+	return access_ok(type, addr, size) ? 0 : -EFAULT;
 }
 
 /*
- * Uh, these should become the main single-value transfer routines ...
- * They automatically use the right size if we just have the right
- * pointer type ...
+ * put_user: - Write a simple value into user space.
+ * @x:   Value to copy to user space.
+ * @ptr: Destination address, in user space.
  *
- * As MIPS uses the same address space for kernel and user data, we
- * can just do these as direct assignments.
+ * Context: User context only.  This function may sleep.
  *
- * Careful to not
- * (a) re-use the arguments for side effects (sizeof is ok)
- * (b) require any knowledge of processes at this stage
+ * This macro copies a single simple value from kernel space to user
+ * space.  It supports simple types like char and int, but not larger
+ * data types like structures or arrays.
+ *
+ * @ptr must have pointer-to-simple-variable type, and @x must be assignable
+ * to the result of dereferencing @ptr.
+ *
+ * Returns zero on success, or -EFAULT on error.
  */
 #define put_user(x,ptr)	\
 	__put_user_check((__typeof__(*(ptr)))(x),(ptr),sizeof(*(ptr)))
+
+/*
+ * get_user: - Get a simple variable from user space.
+ * @x:   Variable to store result.
+ * @ptr: Source address, in user space.
+ *
+ * Context: User context only.  This function may sleep.
+ *
+ * This macro copies a single simple variable from user space to kernel
+ * space.  It supports simple types like char and int, but not larger
+ * data types like structures or arrays.
+ *
+ * @ptr must have pointer-to-simple-variable type, and the result of
+ * dereferencing @ptr must be assignable to @x without a cast.
+ *
+ * Returns zero on success, or -EFAULT on error.
+ * On error, the variable @x is set to zero.
+ */
 #define get_user(x,ptr) \
 	__get_user_check((__typeof__(*(ptr)))(x),(ptr),sizeof(*(ptr)))
 
 /*
- * The "__xxx" versions do not do address space checking, useful when
- * doing multiple accesses to the same area (the user has to do the
- * checks by hand with "access_ok()")
+ * __put_user: - Write a simple value into user space, with less checking.
+ * @x:   Value to copy to user space.
+ * @ptr: Destination address, in user space.
+ *
+ * Context: User context only.  This function may sleep.
+ *
+ * This macro copies a single simple value from kernel space to user
+ * space.  It supports simple types like char and int, but not larger
+ * data types like structures or arrays.
+ *
+ * @ptr must have pointer-to-simple-variable type, and @x must be assignable
+ * to the result of dereferencing @ptr.
+ *
+ * Caller must check the pointer with access_ok() before calling this
+ * function.
+ *
+ * Returns zero on success, or -EFAULT on error.
  */
 #define __put_user(x,ptr) \
 	__put_user_nocheck((__typeof__(*(ptr)))(x),(ptr),sizeof(*(ptr)))
+
+/*
+ * __get_user: - Get a simple variable from user space, with less checking.
+ * @x:   Variable to store result.
+ * @ptr: Source address, in user space.
+ *
+ * Context: User context only.  This function may sleep.
+ *
+ * This macro copies a single simple variable from user space to kernel
+ * space.  It supports simple types like char and int, but not larger
+ * data types like structures or arrays.
+ *
+ * @ptr must have pointer-to-simple-variable type, and the result of
+ * dereferencing @ptr must be assignable to @x without a cast.
+ *
+ * Caller must check the pointer with access_ok() before calling this
+ * function.
+ *
+ * Returns zero on success, or -EFAULT on error.
+ * On error, the variable @x is set to zero.
+ */
 #define __get_user(x,ptr) \
 	__get_user_nocheck((__typeof__(*(ptr)))(x),(ptr),sizeof(*(ptr)))
 
@@ -100,12 +193,13 @@ struct __large_struct { unsigned long buf[100]; };
 	__gu_addr = (long) (ptr);				\
 	__asm__("":"=r" (__gu_err));				\
 	switch (size) {						\
-	case 1: __get_user_asm("lb"); break;			\
-	case 2: __get_user_asm("lh"); break;			\
-	case 4: __get_user_asm("lw"); break;			\
-	case 8: __get_user_asm("ld"); break;			\
-	default: __get_user_unknown(); break;			\
-	} x = (__typeof__(*(ptr))) __gu_val; __gu_err;		\
+		case 1: __get_user_asm("lb"); break;		\
+		case 2: __get_user_asm("lh"); break;		\
+		case 4: __get_user_asm("lw"); break;		\
+		case 8: __get_user_asm("ld"); break;		\
+		default: __get_user_unknown(); break;		\
+	} x = (__typeof__(*(ptr))) __gu_val;			\
+	__gu_err;						\
 })
 
 #define __get_user_check(x,ptr,size)				\
@@ -124,7 +218,8 @@ struct __large_struct { unsigned long buf[100]; };
 		case 8: __get_user_asm("ld"); break;		\
 		default: __get_user_unknown(); break;		\
 		}						\
-	} x = (__typeof__(*(ptr))) __gu_val; __gu_err;		\
+	} x = (__typeof__(*(ptr))) __gu_val;			\
+	__gu_err;						\
 })
 
 #define __get_user_asm(insn)					\
@@ -156,12 +251,13 @@ extern void __get_user_unknown(void);
 	__pu_addr = (long) (ptr);				\
 	__asm__("":"=r" (__pu_err));				\
 	switch (size) {						\
-	case 1: __put_user_asm("sb"); break;			\
-	case 2: __put_user_asm("sh"); break;			\
-	case 4: __put_user_asm("sw"); break;			\
-	case 8: __put_user_asm("sd"); break;			\
-	default: __put_user_unknown(); break;			\
-	} __pu_err;						\
+		case 1: __put_user_asm("sb"); break;		\
+		case 2: __put_user_asm("sh"); break;		\
+		case 4: __put_user_asm("sw"); break;		\
+		case 8: __put_user_asm("sd"); break;		\
+		default: __put_user_unknown(); break;		\
+	}							\
+	__pu_err;						\
 })
 
 #define __put_user_check(x,ptr,size)				\
@@ -172,7 +268,7 @@ extern void __get_user_unknown(void);
 	__pu_val = (x);						\
 	__pu_addr = (long) (ptr);				\
 	__asm__("":"=r" (__pu_err));				\
-	if (__access_ok(__pu_addr,size,__access_mask)) { 	\
+	if (__access_ok(__pu_addr,size,__access_mask)) {	\
 		switch (size) {					\
 		case 1: __put_user_asm("sb"); break;		\
 		case 2: __put_user_asm("sh"); break;		\
@@ -180,21 +276,22 @@ extern void __get_user_unknown(void);
 		case 8: __put_user_asm("sd"); break;		\
 		default: __put_user_unknown(); break;		\
 		}						\
-	} __pu_err;						\
+	}							\
+	__pu_err;						\
 })
 
 #define __put_user_asm(insn)					\
 ({								\
 	__asm__ __volatile__(					\
 	"1:\t" insn "\t%z1, %2\t\t\t# __put_user_asm\n\t"	\
-	"move\t%0,$0\n"						\
+	"move\t%0, $0\n"					\
 	"2:\n\t"						\
 	".section\t.fixup,\"ax\"\n"				\
-	"3:\tli\t%0,%3\n\t"					\
+	"3:\tli\t%0, %3\n\t"					\
 	"j\t2b\n\t"						\
 	".previous\n\t"						\
 	".section\t__ex_table,\"a\"\n\t"			\
-	".dword\t1b,3b\n\t"					\
+	".dword\t1b, 3b\n\t"					\
 	".previous"						\
 	:"=r" (__pu_err)					\
 	:"Jr" (__pu_val), "o" (__m(__pu_addr)), "i" (-EFAULT));	\
@@ -237,6 +334,20 @@ extern size_t __copy_user(void *__to, const void *__from, size_t __n);
 	__cu_len_r;							\
 })
 
+/*
+ * __copy_to_user: - Copy a block of data into user space, with less checking.
+ * @to:   Destination address, in user space.
+ * @from: Source address, in kernel space.
+ * @n:    Number of bytes to copy.
+ *
+ * Context: User context only.  This function may sleep.
+ *
+ * Copy data from kernel space to user space.  Caller must check
+ * the specified block with access_ok() before calling this function.
+ *
+ * Returns number of bytes that could not be copied.
+ * On success, this will be zero.
+ */
 #define __copy_to_user(to,from,n)					\
 ({									\
 	void *__cu_to;							\
@@ -250,6 +361,19 @@ extern size_t __copy_user(void *__to, const void *__from, size_t __n);
 	__cu_len;							\
 })
 
+/*
+ * copy_to_user: - Copy a block of data into user space.
+ * @to:   Destination address, in user space.
+ * @from: Source address, in kernel space.
+ * @n:    Number of bytes to copy.
+ *
+ * Context: User context only.  This function may sleep.
+ *
+ * Copy data from kernel space to user space.
+ *
+ * Returns number of bytes that could not be copied.
+ * On success, this will be zero.
+ */
 #define copy_to_user(to,from,n)						\
 ({									\
 	void *__cu_to;							\
@@ -261,7 +385,7 @@ extern size_t __copy_user(void *__to, const void *__from, size_t __n);
 	__cu_len = (n);							\
 	if (access_ok(VERIFY_WRITE, __cu_to, __cu_len))			\
 		__cu_len = __invoke_copy_to_user(__cu_to, __cu_from,	\
-		                                __cu_len);		\
+		                                 __cu_len);		\
 	__cu_len;							\
 })
 
@@ -289,6 +413,22 @@ extern size_t __copy_user(void *__to, const void *__from, size_t __n);
 	__cu_len_r;							\
 })
 
+/*
+ * __copy_from_user: - Copy a block of data from user space, with less checking. * @to:   Destination address, in kernel space.
+ * @from: Source address, in user space.
+ * @n:    Number of bytes to copy.
+ *
+ * Context: User context only.  This function may sleep.
+ *
+ * Copy data from user space to kernel space.  Caller must check
+ * the specified block with access_ok() before calling this function.
+ *
+ * Returns number of bytes that could not be copied.
+ * On success, this will be zero.
+ *
+ * If some data could not be copied, this function will pad the copied
+ * data to the requested size using zero bytes.
+ */
 #define __copy_from_user(to,from,n)					\
 ({									\
 	void *__cu_to;							\
@@ -303,6 +443,22 @@ extern size_t __copy_user(void *__to, const void *__from, size_t __n);
 	__cu_len;							\
 })
 
+/*
+ * copy_from_user: - Copy a block of data from user space.
+ * @to:   Destination address, in kernel space.
+ * @from: Source address, in user space.
+ * @n:    Number of bytes to copy.
+ *
+ * Context: User context only.  This function may sleep.
+ *
+ * Copy data from user space to kernel space.
+ *
+ * Returns number of bytes that could not be copied.
+ * On success, this will be zero.
+ *
+ * If some data could not be copied, this function will pad the copied
+ * data to the requested size using zero bytes.
+ */
 #define copy_from_user(to,from,n)					\
 ({									\
 	void *__cu_to;							\
@@ -318,6 +474,17 @@ extern size_t __copy_user(void *__to, const void *__from, size_t __n);
 	__cu_len;							\
 })
 
+/*
+ * __clear_user: - Zero a block of memory in user space, with less checking.
+ * @to:   Destination address, in user space.
+ * @n:    Number of bytes to zero.
+ *
+ * Zero a block of memory in user space.  Caller must check
+ * the specified block with access_ok() before calling this function.
+ *
+ * Returns number of bytes that could not be cleared.
+ * On success, this will be zero.
+ */
 static inline __kernel_size_t
 __clear_user(void *addr, __kernel_size_t size)
 {
@@ -340,15 +507,31 @@ __clear_user(void *addr, __kernel_size_t size)
 ({								\
 	void * __cl_addr = (addr);				\
 	unsigned long __cl_size = (n);				\
-	if (__cl_size && __access_ok(VERIFY_WRITE,		\
-	       ((unsigned long)(__cl_addr)), __cl_size))	\
+	if (__cl_size && access_ok(VERIFY_WRITE,		\
+		((unsigned long)(__cl_addr)), __cl_size))	\
 		__cl_size = __clear_user(__cl_addr, __cl_size);	\
 	__cl_size;						\
 })
 
 /*
- * Returns: -EFAULT if exception before terminator, N if the entire
- * buffer filled, else strlen.
+ * __strncpy_from_user: - Copy a NUL terminated string from userspace, with less checking.
+ * @dst:   Destination address, in kernel space.  This buffer must be at
+ *         least @count bytes long.
+ * @src:   Source address, in user space.
+ * @count: Maximum number of bytes to copy, including the trailing NUL.
+ *
+ * Copies a NUL-terminated string from userspace to kernel space.
+ * Caller must check the specified block with access_ok() before calling
+ * this function.
+ *
+ * On success, returns the length of the string (not including the trailing
+ * NUL).
+ *
+ * If access to userspace fails, returns -EFAULT (some data may have been
+ * copied).
+ *
+ * If @count is smaller than the length of the string, copies @count bytes
+ * and returns @count.
  */
 static inline long
 __strncpy_from_user(char *__to, const char *__from, long __len)
@@ -368,6 +551,24 @@ __strncpy_from_user(char *__to, const char *__from, long __len)
 	return res;
 }
 
+/*
+ * strncpy_from_user: - Copy a NUL terminated string from userspace.
+ * @dst:   Destination address, in kernel space.  This buffer must be at
+ *         least @count bytes long.
+ * @src:   Source address, in user space.
+ * @count: Maximum number of bytes to copy, including the trailing NUL.
+ *
+ * Copies a NUL-terminated string from userspace to kernel space.
+ *
+ * On success, returns the length of the string (not including the trailing
+ * NUL).
+ *
+ * If access to userspace fails, returns -EFAULT (some data may have been
+ * copied).
+ *
+ * If @count is smaller than the length of the string, copies @count bytes
+ * and returns @count.
+ */
 static inline long
 strncpy_from_user(char *__to, const char *__from, long __len)
 {
@@ -402,6 +603,20 @@ static inline long __strlen_user(const char *s)
 	return res;
 }
 
+/*
+ * strlen_user: - Get the size of a string in user space.
+ * @str: The string to measure.
+ *
+ * Context: User context only.  This function may sleep.
+ *
+ * Get the size of a NUL-terminated string in user space.
+ *
+ * Returns the size of the string INCLUDING the terminating NUL.
+ * On exception, returns 0.
+ *
+ * If there is a limit on the length of a valid string, you may wish to
+ * consider using strnlen_user() instead.
+ */
 static inline long strlen_user(const char *s)
 {
 	long res;
@@ -417,23 +632,17 @@ static inline long strlen_user(const char *s)
 	return res;
 }
 
-/* Returns: 0 if bad, string length+1 (memory size) of string if ok */
-static inline long __strnlen_user(const char *s, long n)
-{
-	long res;
-
-	__asm__ __volatile__(
-		"move\t$4, %1\n\t"
-		"move\t$5, %2\n\t"
-		__MODULE_JAL(__strnlen_user_nocheck_asm)
-		"move\t%0, $2"
-		: "=r" (res)
-		: "r" (s), "r" (n)
-		: "$2", "$4", "$5", "$8", "$31");
-
-	return res;
-}
-
+/*
+ * strlen_user: - Get the size of a string in user space.
+ * @str: The string to measure.
+ * @n:   The maximum valid length
+ *
+ * Get the size of a NUL-terminated string in user space.
+ *
+ * Returns the size of the string INCLUDING the terminating NUL.
+ * On exception, returns 0.
+ * If the string is too long, returns a value greater than @n.
+ */
 static inline long strnlen_user(const char *s, long n)
 {
 	long res;

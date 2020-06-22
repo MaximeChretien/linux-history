@@ -5,6 +5,9 @@
  *
  * Default SMP lock implementation
  */
+#ifndef __ASM_SMPLOCK_H
+#define __ASM_SMPLOCK_H
+
 #include <linux/interrupt.h>
 #include <linux/spinlock.h>
 
@@ -51,3 +54,5 @@ extern __inline__ void unlock_kernel(void)
 	if (--current->lock_depth < 0)
 		spin_unlock(&kernel_flag);
 }
+
+#endif /* __ASM_SMPLOCK_H */

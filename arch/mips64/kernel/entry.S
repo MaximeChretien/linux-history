@@ -18,7 +18,7 @@
 #define KU_USER 0x10
 
 		.text
-		.align 4
+		.align	5
 FEXPORT(ret_from_fork)
 		move	a0, v0			# prev
 		jal	schedule_tail

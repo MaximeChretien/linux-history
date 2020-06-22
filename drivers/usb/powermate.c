@@ -1,9 +1,9 @@
 /*
  * A driver for the Griffin Technology, Inc. "PowerMate" USB controller dial.
  *
- * v1.0, (c)2002 William R Sowerbutts <will@sowerbutts.com>
+ * v1.1, (c)2002 William R Sowerbutts <will@sowerbutts.com>
  *
- * This device is a stainless steel knob which connects over USB. It can measure
+ * This device is an anodized aluminium knob which connects over USB. It can measure
  * clockwise and anticlockwise rotation. The dial also acts as a pushbutton with
  * a spring for automatic release. The base contains a pair of LEDs which illuminate
  * the translucent base. It rotates without limit and reports its relative rotation
@@ -49,9 +49,13 @@
 #define UPDATE_PULSE_AWAKE       (1<<2)
 #define UPDATE_PULSE_MODE        (1<<3)
 
-#define POWERMATE_PAYLOAD_SIZE 3
+/* at least two versions of the hardware exist, with differing payload 
+   sizes. the first three bytes always contain the "interesting" data in
+   the relevant format. */
+#define POWERMATE_PAYLOAD_SIZE_MAX 6
+#define POWERMATE_PAYLOAD_SIZE_MIN 3
 struct powermate_device {
-	signed char data[POWERMATE_PAYLOAD_SIZE];
+	signed char data[POWERMATE_PAYLOAD_SIZE_MAX];
 	struct urb irq, config;
 	struct usb_ctrlrequest configdr;
 	struct usb_device *udev;
@@ -266,10 +270,14 @@ static void *powermate_probe(struct usb_device *udev, unsigned int ifnum, const 
 	pipe = usb_rcvintpipe(udev, endpoint->bEndpointAddress);
 	maxp = usb_maxpacket(udev, pipe, usb_pipeout(pipe));
 
-	if(maxp != POWERMATE_PAYLOAD_SIZE)
-		printk("powermate: Expected payload of %d bytes, found %d bytes!\n", POWERMATE_PAYLOAD_SIZE, maxp);
+	if(maxp < POWERMATE_PAYLOAD_SIZE_MIN || maxp > POWERMATE_PAYLOAD_SIZE_MAX){
+		printk("powermate: Expected payload of %d--%d bytes, found %d bytes!\n", 
+		       POWERMATE_PAYLOAD_SIZE_MIN, POWERMATE_PAYLOAD_SIZE_MAX, maxp);
+		maxp = POWERMATE_PAYLOAD_SIZE_MAX;
+	}
 
-	FILL_INT_URB(&pm->irq, udev, pipe, pm->data, POWERMATE_PAYLOAD_SIZE, powermate_irq, pm, endpoint->bInterval);
+
+	FILL_INT_URB(&pm->irq, udev, pipe, pm->data, maxp, powermate_irq, pm, endpoint->bInterval);
 
 	/* register our interrupt URB with the USB system */
 	if(usb_submit_urb(&pm->irq)) {

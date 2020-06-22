@@ -2931,7 +2931,6 @@ static int acquirecodecaccess(struct trident_card *card)
 		block = 1;
 		goto unlock;
 	}
-	printk(KERN_ERR "accesscodecsemaphore: fail\n");
 	return 0;
 }
 
@@ -2956,8 +2955,6 @@ static int waitforstimertick(struct trident_card *card)
 			break;
 		udelay(50);
 	}
-
-	printk(KERN_NOTICE "waitforstimertick :BIT_CLK is dead\n");
 	return 0;
 }
 
@@ -2969,6 +2966,7 @@ static u16 ali_ac97_get(struct trident_card *card, int secondary, u8 reg)
         unsigned long aud_reg;
 	u32 data;
         u16 wcontrol;
+        unsigned long flags;
 
 	if(!card)
 		BUG();
@@ -2981,6 +2979,8 @@ static u16 ali_ac97_get(struct trident_card *card, int secondary, u8 reg)
 	if (secondary)
 		mask |= ALI_AC97_SECONDARY;
     
+    	spin_lock_irqsave(&card->lock, flags);
+    	
 	if (!acquirecodecaccess(card))
 		printk(KERN_ERR "access codec fail\n");
 	
@@ -2992,7 +2992,7 @@ static u16 ali_ac97_get(struct trident_card *card, int secondary, u8 reg)
 	data = (mask | (reg & AC97_REG_ADDR));
 	
 	if(!waitforstimertick(card)) {
-		printk(KERN_ERR "BIT_CLOCK is dead\n");
+		printk(KERN_ERR "ali_ac97_read: BIT_CLOCK is dead\n");
 		goto releasecodec;
 	}
 	
@@ -3014,12 +3014,15 @@ static u16 ali_ac97_get(struct trident_card *card, int secondary, u8 reg)
 	}
 	
 	data = inl(TRID_REG(card, address));
+
+	spin_unlock_irqrestore(&card->lock, flags); 
 	
 	return ((u16) (data >> 16));
 
  releasecodec: 
 	releasecodecaccess(card);
-	printk(KERN_ERR "ali: AC97 CODEC read timed out.\n");
+	spin_unlock_irqrestore(&card->lock, flags);
+	printk(KERN_ERR "ali_ac97_read: AC97 CODEC read timed out.\n");
 	return 0;
 }
 
@@ -3031,6 +3034,7 @@ static void ali_ac97_set(struct trident_card *card, int secondary, u8 reg, u16 v
 	unsigned int ncount;
 	u32 data;
         u16 wcontrol;
+        unsigned long flags;
 	
 	data = ((u32) val) << 16;
 	
@@ -3044,8 +3048,9 @@ static void ali_ac97_set(struct trident_card *card, int secondary, u8 reg, u16 v
 	if (card->revision == ALI_5451_V02)
 		mask |= ALI_AC97_WRITE_MIXER_REGISTER;
 		
+	spin_lock_irqsave(&card->lock, flags);
         if (!acquirecodecaccess(card))      
-		printk(KERN_ERR "access codec fail\n");
+		printk(KERN_ERR "ali_ac97_write: access codec fail\n");
 			
 	wcontrol = inw(TRID_REG(card, ALI_AC97_WRITE));
 	wcontrol &= 0xff00;
@@ -3073,6 +3078,7 @@ static void ali_ac97_set(struct trident_card *card, int secondary, u8 reg, u16 v
 	
  releasecodec:
 	releasecodecaccess(card);
+	spin_unlock_irqrestore(&card->lock, flags);
 	return;
 }
 
@@ -3101,6 +3107,9 @@ static u16 ali_ac97_read(struct ac97_codec *codec, u8 reg)
 	if(!card->mixer_regs_ready)
 		return ali_ac97_get(card, codec->id, reg);
 
+	/*
+	 *	FIXME: need to stop this caching some registers
+	 */
 	if(codec->id)
 		id = 1;
 	else
@@ -4015,9 +4024,8 @@ static int __init trident_ac97_init(struct trident_card *card)
 	}
 
 	for (num_ac97 = 0; num_ac97 < NR_AC97; num_ac97++) {
-		if ((codec = kmalloc(sizeof(struct ac97_codec), GFP_KERNEL)) == NULL)
+		if ((codec = ac97_alloc_codec()) == NULL)
 			return -ENOMEM;
-		memset(codec, 0, sizeof(struct ac97_codec));
 
 		/* initialize some basic codec information, other fields will be filled
 		   in ac97_probe_codec */
@@ -4038,7 +4046,7 @@ static int __init trident_ac97_init(struct trident_card *card)
 
 		if ((codec->dev_mixer = register_sound_mixer(&trident_mixer_fops, -1)) < 0) {
 			printk(KERN_ERR "trident: couldn't register mixer!\n");
-			kfree(codec);
+			ac97_release_codec(codec);
 			break;
 		}
 
@@ -4206,7 +4214,7 @@ static int __init trident_probe(struct pci_dev *pci_dev, const struct pci_device
 		for (i = 0; i < NR_AC97; i++) {
 			if (card->ac97_codec[i] != NULL) {
 				unregister_sound_mixer(card->ac97_codec[i]->dev_mixer);
-				kfree (card->ac97_codec[i]);
+				ac97_release_codec(card->ac97_codec[i]);
 			}
 		}
 		goto out_unregister_sound_dsp;
@@ -4304,7 +4312,7 @@ static void __devexit trident_remove(struct pci_dev *pci_dev)
 	for (i = 0; i < NR_AC97; i++)
 		if (card->ac97_codec[i] != NULL) {
 			unregister_sound_mixer(card->ac97_codec[i]->dev_mixer);
-			kfree (card->ac97_codec[i]);
+			ac97_release_codec(card->ac97_codec[i]);
 		}
 	unregister_sound_dsp(card->dev_audio);
 	

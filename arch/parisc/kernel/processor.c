@@ -77,8 +77,6 @@ static int __init processor_probe(struct parisc_device *dev)
 	unsigned long txn_addr;
 	unsigned long cpuid;
 	struct cpuinfo_parisc *p;
-	extern struct irq_region_ops cpu_irq_ops; /* arch/parisc...irq.c */
-	extern struct irqaction cpu_irq_actions[]; /* arch/parisc...irq.c */
 
 #ifndef CONFIG_SMP
 	if (boot_cpu_data.cpu_count > 0) {

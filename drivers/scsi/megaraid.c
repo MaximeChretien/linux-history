@@ -4924,8 +4924,10 @@ static int megadev_ioctl (struct inode *inode, struct file *filep,
 
 		if( !scsicmd->result && outlen ) {
 			if (copy_to_user(uaddr, kvaddr, length))
+			{
 				ret = -EFAULT;
 				goto out;
+			}
 		}
 
 		/*

@@ -19,6 +19,15 @@
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #endif
 
+#ifndef BITS_TO_LONGS	/* < 2.4.21-pre6 */
+#define BITS_TO_LONGS(bits) \
+	(((bits)+BITS_PER_LONG-1)/BITS_PER_LONG)
+#define DECLARE_BITMAP(name,bits) \
+	unsigned long name[BITS_TO_LONGS(bits)]
+#define CLEAR_BITMAP(name,bits) \
+	memset(name, 0, BITS_TO_LONGS(bits)*sizeof(unsigned long))
+#endif
+
 
 /* Transaction Label handling */
 struct hpsb_tlabel_pool {
@@ -36,7 +45,7 @@ do {						\
 	(_tp)->next = 0;			\
 	(_tp)->allocations = 0;			\
 	sema_init(&(_tp)->count, 63);		\
-} while(0)
+} while (0)
 
 
 typedef u32 quadlet_t;
@@ -57,8 +66,9 @@ typedef u16 arm_length_t;
 #define NODEID_TO_NODE(nodeid)	(nodeid & NODE_MASK)
 
 /* Can be used to consistently print a node/bus ID. */
-#define NODE_BUS_FMT		"%02d:%04d"
-#define NODE_BUS_ARGS(nodeid)	NODEID_TO_NODE(nodeid), NODEID_TO_BUS(nodeid)
+#define NODE_BUS_FMT		"%d-%02d:%04d"
+#define NODE_BUS_ARGS(__host, __nodeid)	\
+	__host->id, NODEID_TO_NODE(__nodeid), NODEID_TO_BUS(__nodeid)
 
 #define HPSB_PRINT(level, fmt, args...) printk(level "ieee1394: " fmt "\n" , ## args)
 

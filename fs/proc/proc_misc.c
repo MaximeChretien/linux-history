@@ -423,9 +423,9 @@ static int cmdline_read_proc(char *page, char **start, off_t off,
 				 int count, int *eof, void *data)
 {
 	extern char saved_command_line[];
-	int len;
+	int len = 0;
 
-	len = snprintf(page, count, "%s\n", saved_command_line);
+	proc_sprintf(page, &off, &len, "%s\n", saved_command_line);
 	return proc_calc_metrics(page, start, off, count, eof, len);
 }
 
@@ -495,7 +495,8 @@ static ssize_t read_profile(struct file *file, char *buf,
 		buf++; p++; count--; read++;
 	}
 	pnt = (char *)prof_buffer + p - sizeof(unsigned int);
-	copy_to_user(buf,(void *)pnt,count);
+	if (copy_to_user(buf,(void *)pnt,count))
+		return -EFAULT;
 	read += count;
 	*ppos += read;
 	return read;

@@ -24,6 +24,8 @@
 #include <linux/ptrace.h>
 #include <linux/errno.h>
 #include <linux/ioport.h>
+#include <linux/list.h>
+#include <linux/timer.h>
 
 #include <asm/hardware.h>
 #include <asm/irq.h>

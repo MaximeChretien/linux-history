@@ -548,26 +548,11 @@ startup:basr  %r13,0                     # get base
 	tm     __LC_CPUID,0xff          # running under VM ?
 	bno    0f-.LPG1(%r13)
         oi     7(%r12),1                # set VM flag
-#
-# we are running under VM, find out if we have PFIX
-#
-	la     %r1,0f-.LPG1(%r13)       # set program check address
-	stg    %r1,__LC_PGM_NEW_PSW+8
-        lghi   %r0,0x4000
-	lghi   %r2,0
-	.long  0x83200098               # diag 2,0,x'0098' - lock page
-	lghi   %r2,4
-	.long  0x83200098               # diag 2,0,x'0098' - unlock page
-	oi     7(%r12),128              # set PFIX flag
 0:      lh     %r0,__LC_CPUID+4         # get cpu version
         chi    %r0,0x7490               # running on a P/390 ?
         bne    1f-.LPG1(%r13)
         oi     7(%r12),4                # set P/390 flag
 1:
-	chi    %r0,0x2084		# new stidp format?
-	bne    2f-.LPG1(%r13)
-	oi     7(%r12),64		# set new stidp flag
-2:	
 
 #
 # find out if we have the MVPG instruction
@@ -601,7 +586,7 @@ startup:basr  %r13,0                     # get base
         .quad  .Lduct                   # cr2: dispatchable unit control table
         .quad  0                        # cr3: instruction authorization
         .quad  0                        # cr4: instruction authorization
-        .quad  0                        # cr5:  various things
+        .quad  0xffffffffffffffff       # cr5: primary-aste origin
         .quad  0                        # cr6:  I/O interrupts
         .quad  0                        # cr7:  secondary space segment table
         .quad  0                        # cr8:  access registers translation

@@ -152,6 +152,165 @@ static struct fb_var_screeninfo vesafb_defined = {
 
 /* --------------------------------------------------------------------- */
 
+static void matroxfb_crtc1_panpos(WPMINFO2) {
+	if (ACCESS_FBINFO(crtc1.panpos) >= 0) {
+		unsigned long flags;
+		int panpos;
+		
+		matroxfb_DAC_lock_irqsave(flags);
+		panpos = ACCESS_FBINFO(crtc1.panpos);
+		if (panpos >= 0) {
+			unsigned int extvga_reg;
+			
+			ACCESS_FBINFO(crtc1.panpos) = -1; /* No update pending anymore */
+			extvga_reg = mga_inb(M_EXTVGA_INDEX);
+			mga_setr(M_EXTVGA_INDEX, 0x00, panpos);
+			if (extvga_reg != 0x00) {
+				mga_outb(M_EXTVGA_INDEX, extvga_reg);
+			}
+		}
+		matroxfb_DAC_unlock_irqrestore(flags);
+	}
+}
+
+static void matrox_irq(int irq, void *dev_id, struct pt_regs *fp)
+{
+	u_int32_t status;
+	int handled = 0;
+
+	MINFO_FROM(dev_id);
+
+	status = mga_inl(M_STATUS);
+
+	if (status & 0x20) {
+		mga_outl(M_ICLEAR, 0x20);
+		ACCESS_FBINFO(crtc1.vsync.cnt)++;
+		matroxfb_crtc1_panpos(PMINFO2);
+		wake_up_interruptible(&ACCESS_FBINFO(crtc1.vsync.wait));
+		handled = 1;
+	}
+	if (status & 0x200) {
+		mga_outl(M_ICLEAR, 0x200);
+		ACCESS_FBINFO(crtc2.vsync.cnt)++;
+		wake_up_interruptible(&ACCESS_FBINFO(crtc2.vsync.wait));
+		handled = 1;
+	}
+	return;
+}
+
+int matroxfb_enable_irq(WPMINFO int reenable) {
+	u_int32_t bm;
+	
+	if (ACCESS_FBINFO(devflags.accelerator) == FB_ACCEL_MATROX_MGAG400)
+		bm = 0x220;
+	else
+		bm = 0x020;
+
+	if (!test_and_set_bit(0, &ACCESS_FBINFO(irq_flags))) {
+		if (request_irq(ACCESS_FBINFO(pcidev)->irq, matrox_irq,
+				SA_SHIRQ, "matroxfb", MINFO)) {
+			clear_bit(0, &ACCESS_FBINFO(irq_flags));
+			return -EINVAL;
+		}
+		/* Clear any pending field interrupts */
+		mga_outl(M_ICLEAR, bm);
+		mga_outl(M_IEN, mga_inl(M_IEN) | bm);
+	} else if (reenable) {
+		u_int32_t ien;
+		
+		ien = mga_inl(M_IEN);
+		if ((ien & bm) != bm) {
+			printk(KERN_DEBUG "matroxfb: someone disabled IRQ [%08X]\n", ien);
+			mga_outl(M_IEN, ien | bm);
+		}
+	}
+	return 0;
+}
+
+static void matroxfb_disable_irq(WPMINFO2) {
+	if (test_and_clear_bit(0, &ACCESS_FBINFO(irq_flags))) {
+		/* Flush pending pan-at-vbl request... */
+		matroxfb_crtc1_panpos(PMINFO2);
+		if (ACCESS_FBINFO(devflags.accelerator) == FB_ACCEL_MATROX_MGAG400)
+			mga_outl(M_IEN, mga_inl(M_IEN) & ~0x220);
+		else
+			mga_outl(M_IEN, mga_inl(M_IEN) & ~0x20);
+		free_irq(ACCESS_FBINFO(pcidev)->irq, MINFO);
+	}
+}
+
+#ifndef wait_event_interruptible_timeout
+#define __wait_event_interruptible_timeout(wq, condition, ret)		\
+do {									\
+	wait_queue_t __wait;						\
+	init_waitqueue_entry(&__wait, current);				\
+									\
+	add_wait_queue(&wq, &__wait);					\
+	for (;;) {							\
+		set_current_state(TASK_INTERRUPTIBLE);			\
+		if (condition)						\
+			break;						\
+		if (!signal_pending(current)) {				\
+			ret = schedule_timeout(ret);			\
+			if (!ret)					\
+				break;					\
+			continue;					\
+		}							\
+		ret = -ERESTARTSYS;					\
+		break;							\
+	}								\
+	current->state = TASK_RUNNING;					\
+	remove_wait_queue(&wq, &__wait);				\
+} while (0)
+
+#define wait_event_interruptible_timeout(wq, condition, timeout)	\
+({									\
+	long __ret = timeout;						\
+	if (!(condition))						\
+		__wait_event_interruptible_timeout(wq, condition, __ret); \
+	__ret;								\
+})
+#endif
+
+int matroxfb_wait_for_sync(WPMINFO u_int32_t crtc) {
+	wait_queue_t __wait;
+	struct matrox_vsync *vs;
+	unsigned int cnt;
+	int ret;
+
+	switch (crtc) {
+		case 0:
+			vs = &ACCESS_FBINFO(crtc1.vsync);
+			break;
+		case 1:
+			if (ACCESS_FBINFO(devflags.accelerator) != FB_ACCEL_MATROX_MGAG400) {
+				return -ENODEV;
+			}
+			vs = &ACCESS_FBINFO(crtc2.vsync);
+			break;
+		default:
+			return -ENODEV;
+	}
+	ret = matroxfb_enable_irq(PMINFO 0);
+	if (ret) {
+		return ret;
+	}
+        init_waitqueue_entry(&__wait, current);
+
+	cnt = vs->cnt;
+	ret = wait_event_interruptible_timeout(vs->wait, cnt != vs->cnt, HZ/10);
+	if (ret < 0) {
+		return ret;
+	}
+	if (ret == 0) {
+		matroxfb_enable_irq(PMINFO 1);
+		return -ETIMEDOUT;
+	}
+	return 0;
+}
+
+/* --------------------------------------------------------------------- */
+
 static void matrox_pan_var(WPMINFO struct fb_var_screeninfo *var) {
 	unsigned int pos;
 	unsigned short p0, p1, p2;
@@ -159,6 +318,8 @@ static void matrox_pan_var(WPMINFO struct fb_var_screeninfo *var) {
 	unsigned int p3;
 #endif
 	struct display *disp;
+	int vbl;
+	unsigned long flags;
 	CRITFLAGS
 
 	DBG("matrox_pan_var")
@@ -180,7 +341,12 @@ static void matrox_pan_var(WPMINFO struct fb_var_screeninfo *var) {
 	p3 = ACCESS_FBINFO(hw).CRTCEXT[8] = pos >> 21;
 #endif
 
+	/* FB_ACTIVATE_VBL and we can acquire interrupts? Honor FB_ACTIVATE_VBL then... */
+	vbl = (var->activate & FB_ACTIVATE_VBL) && (matroxfb_enable_irq(PMINFO 0) == 0);
+
 	CRITBEGIN
+
+	matroxfb_DAC_lock_irqsave(flags);
 
 	mga_setr(M_CRTC_INDEX, 0x0D, p0);
 	mga_setr(M_CRTC_INDEX, 0x0C, p1);
@@ -188,7 +354,14 @@ static void matrox_pan_var(WPMINFO struct fb_var_screeninfo *var) {
 	if (ACCESS_FBINFO(devflags.support32MB))
 		mga_setr(M_EXTVGA_INDEX, 0x08, p3);
 #endif
-	mga_setr(M_EXTVGA_INDEX, 0x00, p2);
+	if (vbl) {
+		ACCESS_FBINFO(crtc1.panpos) = p2;
+	} else {
+		/* Abort any pending change */
+		ACCESS_FBINFO(crtc1.panpos) = -1;
+		mga_setr(M_EXTVGA_INDEX, 0x00, p2);
+	}
+	matroxfb_DAC_unlock_irqrestore(flags);
 
 	CRITEND
 }
@@ -231,53 +404,61 @@ static void matroxfb_remove(WPMINFO int dummy) {
 
 static int matroxfb_open(struct fb_info *info, int user)
 {
-#define minfo (list_entry(info, struct matrox_fb_info, fbcon))
-	DBG_LOOP("matroxfb_open")
-
-	if (ACCESS_FBINFO(dead)) {
-		return -ENXIO;
+	MINFO_FROM_INFO(info);
+	
+	DBG_LOOP(__FUNCTION__)
+ 
+ 	if (ACCESS_FBINFO(dead)) {
+ 		return -ENXIO;
+ 	}
+ 	ACCESS_FBINFO(usecount)++;
+	if (user) {
+		ACCESS_FBINFO(userusecount)++;
 	}
-	ACCESS_FBINFO(usecount)++;
-#undef minfo
-	return(0);
+	return 0;
 }
 
 static int matroxfb_release(struct fb_info *info, int user)
 {
-#define minfo (list_entry(info, struct matrox_fb_info, fbcon))
-	DBG_LOOP("matroxfb_release")
+	MINFO_FROM_INFO(info);
+	
+	DBG_LOOP(__FUNCTION__)
 
+	if (user) {
+		if (0 == --ACCESS_FBINFO(userusecount)) {
+			matroxfb_disable_irq(PMINFO2);
+		}
+	}
 	if (!(--ACCESS_FBINFO(usecount)) && ACCESS_FBINFO(dead)) {
 		matroxfb_remove(PMINFO 0);
 	}
-#undef minfo
-	return(0);
+	return 0;
 }
 
 static int matroxfb_pan_display(struct fb_var_screeninfo *var, int con,
 		struct fb_info* info) {
-#define minfo (list_entry(info, struct matrox_fb_info, fbcon))
-
+	struct display* dsp;
+	MINFO_FROM_INFO(info);
 	DBG("matroxfb_pan_display")
 
-	if (var->vmode & FB_VMODE_YWRAP) {
-		if (var->yoffset < 0 || var->yoffset >= fb_display[con].var.yres_virtual || var->xoffset)
-			return -EINVAL;
+	if (con < 0) {
+		dsp = info->disp;
 	} else {
-		if (var->xoffset+fb_display[con].var.xres > fb_display[con].var.xres_virtual ||
-		    var->yoffset+fb_display[con].var.yres > fb_display[con].var.yres_virtual)
+		dsp = fb_display + con;
+	}
+	if (var->vmode & FB_VMODE_YWRAP) {
+		return -EINVAL;
+	} else {
+		if (var->xoffset+dsp->var.xres > dsp->var.xres_virtual ||
+		    var->yoffset+dsp->var.yres > dsp->var.yres_virtual)
 			return -EINVAL;
 	}
 	if (con == ACCESS_FBINFO(currcon))
 		matrox_pan_var(PMINFO var);
-	fb_display[con].var.xoffset = var->xoffset;
-	fb_display[con].var.yoffset = var->yoffset;
-	if (var->vmode & FB_VMODE_YWRAP)
-		fb_display[con].var.vmode |= FB_VMODE_YWRAP;
-	else
-		fb_display[con].var.vmode &= ~FB_VMODE_YWRAP;
+	dsp->var.xoffset = var->xoffset;
+	dsp->var.yoffset = var->yoffset;
+	dsp->var.vmode &= ~FB_VMODE_YWRAP;
 	return 0;
-#undef minfo
 }
 
 static int matroxfb_updatevar(int con, struct fb_info *info)
@@ -963,10 +1144,11 @@ static int matroxfb_set_cmap(struct fb_cmap *cmap, int kspc, int con,
 #undef minfo
 }
 
-static int matroxfb_get_vblank(CPMINFO struct fb_vblank *vblank)
+static int matroxfb_get_vblank(WPMINFO struct fb_vblank *vblank)
 {
 	unsigned int sts1;
 
+	matroxfb_enable_irq(PMINFO 0);
 	memset(vblank, 0, sizeof(*vblank));
 	vblank->flags = FB_VBLANK_HAVE_VCOUNT | FB_VBLANK_HAVE_VSYNC |
 			FB_VBLANK_HAVE_VBLANK | FB_VBLANK_HAVE_HBLANK;
@@ -981,8 +1163,12 @@ static int matroxfb_get_vblank(CPMINFO struct fb_vblank *vblank)
 		vblank->flags |= FB_VBLANK_VSYNCING;
 	if (vblank->vcount >= ACCESS_FBINFO(currcon_display)->var.yres)
 		vblank->flags |= FB_VBLANK_VBLANKING;
-	vblank->hcount = 0;
-	vblank->count = 0;
+	if (test_bit(0, &ACCESS_FBINFO(irq_flags))) {
+		vblank->flags |= FB_VBLANK_HAVE_COUNT;
+		/* Only one writer, aligned int value... 
+		   it should work without lock and without atomic_t */
+		vblank->count = ACCESS_FBINFO(crtc1).vsync.cnt;
+	}
 	return 0;
 }
 
@@ -1014,6 +1200,15 @@ static int matroxfb_ioctl(struct inode *inode, struct file *file,
 				if (copy_to_user((struct fb_vblank*)arg, &vblank, sizeof(vblank)))
 					return -EFAULT;
 				return 0;
+			}
+		case FBIO_WAITFORVSYNC:
+			{
+				u_int32_t crt;
+
+				if (get_user(crt, (u_int32_t *)arg))
+					return -EFAULT;
+
+				return matroxfb_wait_for_sync(PMINFO crt);
 			}
 		case MATROXFB_SET_OUTPUT_MODE:
 			{
@@ -2230,6 +2425,10 @@ static int matroxfb_probe(struct pci_dev* pdev, const struct pci_device_id* dumm
 	spin_lock_init(&ACCESS_FBINFO(lock.accel));
 	init_rwsem(&ACCESS_FBINFO(crtc2.lock));
 	init_rwsem(&ACCESS_FBINFO(altout.lock));
+	ACCESS_FBINFO(irq_flags) = 0;
+	init_waitqueue_head(&ACCESS_FBINFO(crtc1.vsync.wait));
+	init_waitqueue_head(&ACCESS_FBINFO(crtc2.vsync.wait));
+	ACCESS_FBINFO(crtc1.panpos) = -1;
 
 	err = initMatrox2(PMINFO d, b);
 	if (!err) {
@@ -2768,6 +2967,8 @@ module_exit(matrox_done);
 EXPORT_SYMBOL(matroxfb_register_driver);
 EXPORT_SYMBOL(matroxfb_unregister_driver);
 EXPORT_SYMBOL(matroxfb_switch);
+EXPORT_SYMBOL(matroxfb_wait_for_sync);
+EXPORT_SYMBOL(matroxfb_enable_irq);
 
 /*
  * Overrides for Emacs so that we follow Linus's tabbing style.

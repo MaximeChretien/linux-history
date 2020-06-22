@@ -136,7 +136,7 @@ if [ "$CONFIG_NET" = "y" ]; then
 
    if [ "$CONFIG_NETDEVICES" = "y" ]; then
       source drivers/net/Config.in
-      if [ "$CONFIG_ATM" = "y" ]; then
+      if [ "$CONFIG_ATM" = "y" -o "$CONFIG_ATM" = "m" ]; then
          source drivers/atm/Config.in
       fi
    fi
@@ -196,4 +196,5 @@ comment 'Kernel hacking'
 bool 'Magic SysRq key' CONFIG_MAGIC_SYSRQ
 endmenu
 
+source crypto/Config.in
 source lib/Config.in

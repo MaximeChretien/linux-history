@@ -1945,10 +1945,8 @@ forte_chip_init (struct forte_chip *chip)
 	      chip->iobase + FORTE_IRQ_STATUS);
 
 	/* Set up the AC97 codec */
-	if ((codec = kmalloc (sizeof (struct ac97_codec), GFP_KERNEL)) == NULL)
+	if ((codec = ac97_alloc_codec()) == NULL)
 		return -ENOMEM;
-	memset (codec, 0, sizeof (struct ac97_codec));
-
 	codec->private_data = chip;
 	codec->codec_read = forte_ac97_read;
 	codec->codec_write = forte_ac97_write;
@@ -1956,7 +1954,7 @@ forte_chip_init (struct forte_chip *chip)
 
 	if (ac97_probe_codec (codec) == 0) {
 		printk (KERN_ERR PFX "codec probe failed\n");
-		kfree (codec);
+		ac97_release_codec(codec);
 		return -1;
 	}
 
@@ -1964,7 +1962,7 @@ forte_chip_init (struct forte_chip *chip)
 	if ((codec->dev_mixer = 
 	     register_sound_mixer (&forte_mixer_fops, -1)) < 0) {
 		printk (KERN_ERR PFX "couldn't register mixer!\n");
-		kfree (codec);
+		ac97_release_codec(codec);
 		return -1;
 	}
 
@@ -2092,7 +2090,7 @@ forte_remove (struct pci_dev *pci_dev)
 
 	unregister_sound_dsp (chip->dsp);
 	unregister_sound_mixer (chip->ac97->dev_mixer);
-
+	ac97_release_codec(chip->ac97);
 	kfree (chip);
 
 	printk (KERN_INFO PFX "driver released\n");

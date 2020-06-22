@@ -1,4 +1,4 @@
-/* $Id: io_se.c,v 1.12 2001/08/11 01:23:28 jzs Exp $
+/* $Id: io_se.c,v 1.1.1.1.2.1 2002/02/26 11:42:29 gniibe Exp $
  *
  * linux/arch/sh/kernel/io_se.c
  *
@@ -22,6 +22,7 @@ int sh_pcic_io_dummy;
 
 static inline void delay(void)
 {
+	ctrl_inw(0xa0000000);
 	ctrl_inw(0xa0000000);
 }
 

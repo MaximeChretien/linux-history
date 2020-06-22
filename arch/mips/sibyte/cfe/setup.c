@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2000, 2001 Broadcom Corporation
+ * Copyright (C) 2000, 2001, 2002, 2003 Broadcom Corporation
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -23,13 +23,11 @@
 #include <linux/blk.h>
 #include <linux/bootmem.h>
 #include <linux/smp.h>
-#include <linux/console.h>
 
 #include <asm/bootinfo.h>
 #include <asm/reboot.h>
 #include <asm/sibyte/board.h>
 
-#include "cfe_xiocb.h"
 #include "cfe_api.h"
 #include "cfe_error.h"
 
@@ -48,10 +46,6 @@
 #endif
 #endif
 
-#define SB1250_DUART_MINOR_BASE		192 /* XXXKW put this somewhere sane */
-#define SB1250_PROMICE_MINOR_BASE	191 /* XXXKW put this somewhere sane */
-kdev_t cfe_consdev;
-
 #define SIBYTE_MAX_MEM_REGIONS 8
 phys_t board_mem_region_addrs[SIBYTE_MAX_MEM_REGIONS];
 phys_t board_mem_region_sizes[SIBYTE_MAX_MEM_REGIONS];
@@ -62,6 +56,8 @@ unsigned int board_mem_region_count;
    quite redundant.  But not something to fix just now */
 extern char arcs_cmdline[];
 
+int cfe_cons_handle;
+
 #ifdef CONFIG_EMBEDDED_RAMDISK
 /* These are symbols defined by the ramdisk linker script */
 extern unsigned char __rd_start;
@@ -70,6 +66,10 @@ extern unsigned char __rd_end;
 
 #ifdef CONFIG_SMP
 static int reboot_smp = 0;
+#endif
+
+#ifdef CONFIG_KGDB
+extern int kgdb_port;
 #endif
 
 static void cfe_linux_exit(void)
@@ -95,8 +95,8 @@ static void cfe_linux_exit(void)
 
 static __init void prom_meminit(void)
 {
-	u64 addr, size; /* regardless of 64BIT_PHYS_ADDR */
-	long type;
+	u64 addr, size, type; /* regardless of 64BIT_PHYS_ADDR */
+	int mem_flags = 0;
 	unsigned int idx;
 	int rd_flag;
 #ifdef CONFIG_BLK_DEV_INITRD
@@ -114,8 +114,8 @@ static __init void prom_meminit(void)
 	}
 #endif
 
-	initrd_pstart = __pa(initrd_start);
-	initrd_pend = __pa(initrd_end);
+	initrd_pstart = CPHYSADDR(initrd_start);
+	initrd_pend = CPHYSADDR(initrd_end);
 	if (initrd_start &&
 	    ((initrd_pstart > MAX_RAM_SIZE)
 	     || (initrd_pend > MAX_RAM_SIZE))) {
@@ -124,7 +124,7 @@ static __init void prom_meminit(void)
 
 #endif /* INITRD */
 
-	for (idx = 0; cfe_enummem(idx, &addr, &size, &type) != CFE_ERR_NOMORE;
+	for (idx = 0; cfe_enummem(idx, mem_flags, &addr, &size, &type) != CFE_ERR_NOMORE;
 	     idx++) {
 		rd_flag = 0;
 		if (type == CFE_MI_AVAILABLE) {
@@ -189,6 +189,18 @@ static __init void prom_meminit(void)
 #ifdef CONFIG_BLK_DEV_INITRD
 static int __init initrd_setup(char *str)
 {
+	char rdarg[64];
+	int idx;
+
+	/* Make a copy of the initrd argument so we can smash it up here */
+	for (idx = 0; idx < sizeof(rdarg)-1; idx++) {
+		if (!str[idx] || (str[idx] == ' ')) break;
+		rdarg[idx] = str[idx];
+	}
+
+	rdarg[idx] = 0;
+	str = rdarg;
+
 	/*
 	 *Initrd location comes in the form "<hex size of ramdisk in bytes>@<location in memory>"
 	 *  e.g. initrd=3abfd@80010000.  This is set up by the loader.
@@ -205,21 +217,21 @@ static int __init initrd_setup(char *str)
 	if (!*tmp) {
 		goto fail;
 	}
-	initrd_size = simple_strtol(str, &endptr, 16);
+	initrd_size = simple_strtoul(str, &endptr, 16);
 	if (*endptr) {
 		*(tmp-1) = '@';
 		goto fail;
 	}
 	*(tmp-1) = '@';
-	initrd_start = simple_strtol(tmp, &endptr, 16);
+	initrd_start = simple_strtoul(tmp, &endptr, 16);
 	if (*endptr) {
 		goto fail;
 	}
 	initrd_end = initrd_start + initrd_size;
-	printk("Found initrd of %lx@%lx\n", initrd_size, initrd_start);
+	prom_printf("Found initrd of %lx@%lx\n", initrd_size, initrd_start);
 	return 1;
  fail:
-	printk("Bad initrd argument.  Disabling initrd\n");
+	prom_printf("Bad initrd argument.  Disabling initrd\n");
 	initrd_start = 0;
 	initrd_end = 0;
 	return 1;
@@ -232,21 +244,56 @@ static int __init initrd_setup(char *str)
  */
 __init int prom_init(int argc, char **argv, char **envp, int *prom_vec)
 {
+	uint64_t cfe_ept, cfe_handle;
+	unsigned int cfe_eptseal;
+#ifdef CONFIG_KGDB
+	char *arg;
+#endif
+
 	_machine_restart   = (void (*)(char *))cfe_linux_exit;
 	_machine_halt      = cfe_linux_exit;
 	_machine_power_off = cfe_linux_exit;
 
 	/*
-	 * This should go away.  Detect if we're booting
-	 * straight from cfe without a loader.  If we
-	 * are, then we've got a prom vector in a0.  Otherwise,
-	 * argc (and argv and envp, for that matter) will be 0)
+	 * Check if a loader was used; if NOT, the 4 arguments are
+	 * what CFE gives us (handle, 0, EPT and EPTSEAL)
 	 */
 	if (argc < 0) {
-		prom_vec = (int *)argc;
+		cfe_handle = (uint64_t)(long)argc;
+		cfe_ept = (long)envp;
+		cfe_eptseal = (uint32_t)(unsigned long)prom_vec;
+	} else {
+		if ((int32_t)(long)prom_vec < 0) {
+			/*
+			 * Old loader; all it gives us is the handle,
+			 * so use the "known" entrypoint and assume
+			 * the seal.
+			 */
+			cfe_handle = (uint64_t)(long)prom_vec;
+			cfe_ept = (uint64_t)((int32_t)0x9fc00500);
+			cfe_eptseal = CFE_EPTSEAL;
+		} else {
+			/*
+			 * Newer loaders bundle the handle/ept/eptseal
+			 * Note: prom_vec is in the loader's useg
+			 * which is still alive in the TLB.
+			 */
+			cfe_handle = (uint64_t)((int32_t *)prom_vec)[0];
+			cfe_ept = (uint64_t)((int32_t *)prom_vec)[2];
+			cfe_eptseal = (unsigned int)((uint32_t *)prom_vec)[3];
+		}
 	}
-	cfe_init((long)prom_vec);
-	cfe_open_console();
+	if (cfe_eptseal != CFE_EPTSEAL) {
+		/* too early for panic to do any good */
+		prom_printf("CFE's entrypoint seal doesn't match. Spinning.");
+		while (1) ;
+	}
+	cfe_init(cfe_handle, cfe_ept);
+	/* 
+	 * Get the handle for (at least) prom_putchar, possibly for
+	 * boot console
+	 */
+	cfe_cons_handle = cfe_getstdhandle(CFE_STDHANDLE_CONSOLE);
 	if (cfe_getenv("LINUX_CMDLINE", arcs_cmdline, CL_SIZE) < 0) {
 		if (argc < 0) {
 			/*
@@ -254,14 +301,27 @@ __init int prom_init(int argc, char **argv, char **envp, int *prom_vec)
 			 *  command line
 			 */
 			strcpy(arcs_cmdline, "root=/dev/ram0 ");
-#ifdef CONFIG_SIBYTE_PTSWARM
-			strcat(arcs_cmdline, "console=ttyS0,115200 ");
-#endif
 		} else {
 			/* The loader should have set the command line */
-			panic("LINUX_CMDLINE not defined in cfe.");
+			/* too early for panic to do any good */
+			prom_printf("LINUX_CMDLINE not defined in cfe.");
+			while (1) ;
 		}
 	}
+
+#ifdef CONFIG_KGDB
+	if ((arg = strstr(arcs_cmdline,"kgdb=duart")) != NULL)
+		kgdb_port = (arg[10] == '0') ? 0 : 1;
+	else
+		kgdb_port = 1;
+#endif
+
+#ifdef SIBYTE_DEFAULT_CONSOLE
+	/* Force default console from board header (allowing override) */
+	if (!strstr(arcs_cmdline,"console=")) {
+		strcat(arcs_cmdline, "console=" SIBYTE_DEFAULT_CONSOLE);
+	}
+#endif
 
 #ifdef CONFIG_BLK_DEV_INITRD
 	{
@@ -311,77 +371,10 @@ int page_is_ram(unsigned long pagenr)
 	return 0;
 }
 
-#ifdef CONFIG_SIBYTE_CFE_CONSOLE
-
-static void cfe_console_write(struct console *cons, const char *str,
-                              unsigned int count)
+void prom_putchar(char c)
 {
-	int i, last;
+	int ret;
 
-	for (i=0,last=0; i<count; i++) {
-		if (!str[i])
-			/* XXXKW can/should this ever happen? */
-			panic("cfe_console_write with NULL");
-		if (str[i] == '\n') {
-			cfe_console_print(&str[last], i-last);
-			cfe_console_print("\r", 1);
-			last = i;
-		}
-	}
-	if (last != count)
-		cfe_console_print(&str[last], count-last);
+	while ((ret = cfe_write(cfe_cons_handle, &c, 1)) == 0)
+		;
 }
-
-static kdev_t cfe_console_device(struct console *c)
-{
-	return cfe_consdev;
-}
-
-static int cfe_console_setup(struct console *cons, char *str)
-{
-	char consdev[32];
-	cfe_open_console();
-	/* XXXKW think about interaction with 'console=' cmdline arg */
-	/* If none of the console options are configured, the build will break. */
-	if (cfe_getenv("BOOT_CONSOLE", consdev, 32) >= 0) {
-#ifdef CONFIG_SIBYTE_SB1250_DUART
-		if (!strcmp(consdev, "uart0")) {
-			setleds("u0cn");
-			cfe_consdev = MKDEV(TTY_MAJOR, SB1250_DUART_MINOR_BASE + 0);
-#ifndef CONFIG_SIBYTE_SB1250_DUART_NO_PORT_1
-		} else if (!strcmp(consdev, "uart1")) {
-			setleds("u1cn");
-			cfe_consdev = MKDEV(TTY_MAJOR, SB1250_DUART_MINOR_BASE + 1);
-#endif
-#endif
-#ifdef CONFIG_VGA_CONSOLE
-		} else if (!strcmp(consdev, "pcconsole0")) {
-			setleds("pccn");
-			cfe_consdev = MKDEV(TTY_MAJOR, 0);
-#endif
-#ifdef CONFIG_PROMICE
-		} else if (!strcmp(consdev, "promice0")) {
-			setleds("picn");
-			cfe_consdev = MKDEV(TTY_MAJOR, SB1250_PROMICE_MINOR_BASE);
-#endif
-		} else
-			return -ENODEV;
-	}
-	return 0;
-}
-
-static struct console sb1250_cfe_cons = {
-	name:		"cfe",
-	write:		cfe_console_write,
-	device:		cfe_console_device,
-	setup:		cfe_console_setup,
-	flags:		CON_PRINTBUFFER,
-	index:		-1,
-};
-
-void __init sb1250_cfe_console_init(void)
-{
-	register_console(&sb1250_cfe_cons);
-}
-
-#endif /* CONFIG_SIBYTE_CFE_CONSOLE */

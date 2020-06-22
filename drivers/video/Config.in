@@ -172,7 +172,7 @@ if [ "$CONFIG_FB" = "y" ]; then
 	     bool '    Use CRT on Pb1100 ' CONFIG_PB1500_CRT
 	     bool '    Use TFT Panel on Pb1100 ' CONFIG_PB1500_TFT
            fi
-           if [ "$CONFIG_MIPS_PB1100" = "y" ]; then
+           if [ "$CONFIG_SOC_AU1100" = "y" ]; then
 	     bool '    Au1100 LCD Driver' CONFIG_FB_AU1100
            fi
 	 fi
@@ -220,7 +220,7 @@ if [ "$CONFIG_FB" = "y" ]; then
    if [ "$CONFIG_DECSTATION" = "y" ]; then
       dep_bool '  PMAG-BA TURBOchannel framebuffer support' CONFIG_FB_PMAG_BA $CONFIG_TC
       dep_bool '  PMAGB-B TURBOchannel framebuffer support' CONFIG_FB_PMAGB_B $CONFIG_TC
-      bool '  Maxine (Personal DECstation) onboard framebuffer support' CONFIG_FB_MAXINE
+      dep_bool '  Maxine (Personal DECstation) onboard framebuffer support' CONFIG_FB_MAXINE $CONFIG_TC
    fi
    if [ "$CONFIG_NINO" = "y" ]; then
       bool '  TMPTX3912/PR31700 frame buffer support' CONFIG_FB_TX3912

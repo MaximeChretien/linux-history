@@ -16,6 +16,7 @@
 #include <linux/types.h>
 #include <linux/spinlock.h>
 #include <linux/fs.h>
+#include <linux/slab.h>
 
 #include <asm/init.h>
 #include <asm/prom.h>
@@ -27,9 +28,11 @@
 #include <asm/system.h>
 #include <asm/abs_addr.h>
 #include <asm/udbg.h>
+#include <asm/uaccess.h>
 
 struct proc_dir_entry *rtas_proc_dir;	/* /proc/ppc64/rtas dir */
 struct flash_block_list_header rtas_firmware_flash_list = {0, 0};
+struct errinjct_token ei_token_list[MAX_ERRINJCT_TOKENS];
 
 /*
  * prom_init() is called very early on, before the kernel text
@@ -59,7 +62,7 @@ struct rtas_t rtas = {
 extern unsigned long reloc_offset(void);
 
 spinlock_t rtas_data_buf_lock = SPIN_LOCK_UNLOCKED;
-char rtas_data_buf[RTAS_DATA_BUF_SIZE];
+char rtas_data_buf[RTAS_DATA_BUF_SIZE]__page_aligned;
 
 void
 phys_call_rtas(int token, int nargs, int nret, ...)
@@ -219,7 +222,11 @@ rtas_flash_firmware(void)
 			image_size += f->blocks[i].length;
 		}
 		next = f->next;
-		f->next = (struct flash_block_list *)virt_to_absolute((unsigned long)f->next);
+		/* Don't translate final NULL pointer */
+		if(f->next)
+			f->next = (struct flash_block_list *)virt_to_absolute((unsigned long)f->next);
+		else
+			f->next = 0LL;
 		/* make num_blocks into the version/length field */
 		f->num_blocks = (FLASH_BLOCK_LIST_VERSION << 56) | ((f->num_blocks+1)*16);
 	}
@@ -285,3 +292,108 @@ rtas_halt(void)
 		rtas_flash_bypass_warning();
         rtas_power_off();
 }
+
+int
+rtas_errinjct_open(void)
+{
+	u32 ret[2];
+	int open_token;
+	int rc;
+
+	/* The rc and open_token values are backwards due to a misprint in
+	 * the RPA */ 
+	open_token = rtas_call(rtas_token("ibm,open-errinjct"), 0, 2, (void *) &ret);
+	rc = ret[0];
+
+	if (rc < 0) {
+		printk(KERN_WARNING "error: ibm,open-errinjct failed (%d)\n", rc);
+		return rc;
+	}
+
+	return open_token;
+}
+
+int
+rtas_errinjct(unsigned int open_token, char * ei_token, char * in_workspace)
+{
+	struct errinjct_token * ei;
+	int rtas_ei_token = -1;
+	int rc;
+	int i;
+
+	ei = ei_token_list;
+	for (i = 0; i < MAX_ERRINJCT_TOKENS && ei->name; i++) {
+		if (strcmp(ei_token, ei->name) == 0) {
+			rtas_ei_token = ei->value;
+			break;
+		}
+		ei++;
+	}
+	if (rtas_ei_token == -1) {
+		return -EINVAL;
+	}
+
+	spin_lock(&rtas_data_buf_lock);
+
+	if (in_workspace) 
+		memcpy(rtas_data_buf, in_workspace, RTAS_DATA_BUF_SIZE);
+
+	rc = rtas_call(rtas_token("ibm,errinjct"), 3, 1, NULL, rtas_ei_token,
+		       open_token, __pa(rtas_data_buf));   
+
+	spin_unlock(&rtas_data_buf_lock);
+
+	return rc;
+}
+
+int
+rtas_errinjct_close(unsigned int open_token)
+{
+	int rc;
+
+	rc = rtas_call(rtas_token("ibm,close-errinjct"), 1, 1, NULL, open_token);
+	if (rc != 0) {
+		printk(KERN_WARNING "error: ibm,close-errinjct failed (%d)\n", rc);
+		return rc;
+	}
+
+	return 0;
+}
+
+#ifndef CONFIG_PPC_ISERIES
+static int __init rtas_errinjct_init(void)
+{
+	char * token_array;
+	char * end_array;
+	int array_len = 0;
+	int len;
+	int i, j;
+
+	token_array = (char *) get_property(rtas.dev, "ibm,errinjct-tokens",
+					    &array_len);    
+	/* if token is not found, then we fall through loop */
+	end_array = token_array + array_len;
+	for (i = 0, j = 0; i < MAX_ERRINJCT_TOKENS && token_array < end_array; i++) {
+
+		len = strnlen(token_array, ERRINJCT_TOKEN_LEN) + 1;
+		ei_token_list[i].name = (char *) kmalloc(len, GFP_KERNEL);
+		if (!ei_token_list[i].name) {
+			printk(KERN_WARNING "error: kmalloc failed\n");
+			return -ENOMEM;
+		}
+
+		strcpy(ei_token_list[i].name, token_array);
+		token_array += len;
+
+		ei_token_list[i].value = *(int *)token_array;
+		token_array += sizeof(int);
+	}
+	for (; i < MAX_ERRINJCT_TOKENS; i++) {
+		ei_token_list[i].name = 0;
+		ei_token_list[i].value = 0;
+	}
+	return 0;
+}
+
+__initcall(rtas_errinjct_init);
+#endif

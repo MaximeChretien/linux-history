@@ -223,7 +223,7 @@ int matroxfb_PLL_calcclock(const struct matrox_pll_features* pll, unsigned int f
 
 int matroxfb_vgaHWinit(WPMINFO struct my_timming* m, struct display* p) {
 	unsigned int hd, hs, he, hbe, ht;
-	unsigned int vd, vs, ve, vt;
+	unsigned int vd, vs, ve, vt, lc;
 	unsigned int wd;
 	unsigned int divider;
 	int i;
@@ -336,6 +336,7 @@ int matroxfb_vgaHWinit(WPMINFO struct my_timming* m, struct display* p) {
 	vs = m->VSyncStart - 1;
 	ve = m->VSyncEnd - 1;
 	vt = m->VTotal - 2;
+	lc = vd;
 	/* G200 cannot work with (ht & 7) == 6 */
 	if (((ht & 0x07) == 0x06) || ((ht & 0x0F) == 0x04))
 		ht++;
@@ -367,7 +368,8 @@ int matroxfb_vgaHWinit(WPMINFO struct my_timming* m, struct display* p) {
 	hw->CRTCEXT[2] =  ((vt & 0xC00) >> 10) |
 			  ((vd & 0x400) >>  8) |	/* disp end */
 			  ((vd & 0xC00) >>  7) |	/* vblanking start */
-			  ((vs & 0xC00) >>  5);
+			  ((vs & 0xC00) >>  5) |
+			  ((lc & 0x400) >>  3);
 	if (text)
 		hw->CRTCEXT[3] = 0x00;
 	else
@@ -387,12 +389,13 @@ int matroxfb_vgaHWinit(WPMINFO struct my_timming* m, struct display* p) {
 		      ((vd & 0x100) >> 7) |
 		      ((vs & 0x100) >> 6) |
 		      ((vd & 0x100) >> 5) |
-		      0x10                |
+		      ((lc & 0x100) >> 4) |
 		      ((vt & 0x200) >> 4) |
 		      ((vd & 0x200) >> 3) |
 		      ((vs & 0x200) >> 2);
 	hw->CRTC[8] = 0x00;
-	hw->CRTC[9] = ((vd & 0x200) >> 4) | 0x40;
+	hw->CRTC[9] = ((vd & 0x200) >> 4) |
+		      ((lc & 0x200) >> 3);
 	if (text)
 		hw->CRTC[9] |= fontheight(p) - 1;
 	if (m->dblscan && !m->interlaced)
@@ -417,7 +420,7 @@ int matroxfb_vgaHWinit(WPMINFO struct my_timming* m, struct display* p) {
 			hw->CRTC[20] = 0x1F;
 	} else
 		hw->CRTC[23] = 0xC3;
-	hw->CRTC[24] = 0xFF;
+	hw->CRTC[24] = lc;
 	return 0;
 };
 

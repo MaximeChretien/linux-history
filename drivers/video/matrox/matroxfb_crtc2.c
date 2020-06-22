@@ -193,7 +193,7 @@ static void matroxfb_dh_restore(struct matroxfb_dh_fb_info* m2info,
 	{
 		u_int32_t tmp;
 
-		tmp = 0x0FFF0000;		/* line compare */
+		tmp = mt->VDisplay << 16;		/* line compare */
 		if (mt->sync & FB_SYNC_HOR_HIGH_ACT)
 			tmp |= 0x00000100;
 		if (mt->sync & FB_SYNC_VERT_HIGH_ACT)
@@ -338,8 +338,14 @@ static int matroxfb_dh_open(struct fb_info* info, int user) {
 	MINFO_FROM(m2info->primary_dev);
 
 	if (MINFO) {
-		if (ACCESS_FBINFO(dead)) {
-			return -ENXIO;
+		int err;
+
+ 		if (ACCESS_FBINFO(dead)) {
+ 			return -ENXIO;
+ 		}
+		err = ACCESS_FBINFO(fbcon.fbops)->fb_open(&ACCESS_FBINFO(fbcon), user);
+		if (err) {
+			return err;
 		}
 	}
 	return 0;
@@ -348,11 +354,13 @@ static int matroxfb_dh_open(struct fb_info* info, int user) {
 
 static int matroxfb_dh_release(struct fb_info* info, int user) {
 #define m2info (list_entry(info, struct matroxfb_dh_fb_info, fbcon))
+	int err = 0;
 	MINFO_FROM(m2info->primary_dev);
 
 	if (MINFO) {
+		err = ACCESS_FBINFO(fbcon.fbops)->fb_release(&ACCESS_FBINFO(fbcon), user);
 	}
-	return 0;
+	return err;
 #undef m2info
 }
 
@@ -544,13 +552,19 @@ static int matroxfb_dh_set_cmap(struct fb_cmap* cmap, int kspc, int con,
 static int matroxfb_dh_pan_display(struct fb_var_screeninfo* var, int con,
 		struct fb_info* info) {
 #define m2info (list_entry(info, struct matroxfb_dh_fb_info, fbcon))
-	if (var->xoffset + fb_display[con].var.xres > fb_display[con].var.xres_virtual ||
-	    var->yoffset + fb_display[con].var.yres > fb_display[con].var.yres_virtual)
+	struct display* dsp;
+
+	if (con < 0)
+		dsp = m2info->fbcon.disp;
+	else
+		dsp = fb_display + con;
+	if (var->xoffset + dsp->var.xres > dsp->var.xres_virtual ||
+	    var->yoffset + dsp->var.yres > dsp->var.yres_virtual)
 		return -EINVAL;
 	if (con == m2info->currcon)
 		matroxfb_dh_pan_var(m2info, var);
-	fb_display[con].var.xoffset = var->xoffset;
-	fb_display[con].var.yoffset = var->yoffset;
+	dsp->var.xoffset = var->xoffset;
+	dsp->var.yoffset = var->yoffset;
 	return 0;
 #undef m2info
 }
@@ -560,6 +574,7 @@ static int matroxfb_dh_switch(int con, struct fb_info* info);
 static int matroxfb_dh_get_vblank(const struct matroxfb_dh_fb_info* m2info, struct fb_vblank* vblank) {
 	MINFO_FROM(m2info->primary_dev);
 
+	matroxfb_enable_irq(PMINFO 0);
 	memset(vblank, 0, sizeof(*vblank));
 	vblank->flags = FB_VBLANK_HAVE_VCOUNT | FB_VBLANK_HAVE_VBLANK;
 	/* mask out reserved bits + field number (odd/even) */
@@ -567,6 +582,12 @@ static int matroxfb_dh_get_vblank(const struct matroxfb_dh_fb_info* m2info, stru
 	/* compatibility stuff */
 	if (vblank->vcount >= m2info->currcon_display->var.yres)
 		vblank->flags |= FB_VBLANK_VBLANKING;
+	if (test_bit(0, &ACCESS_FBINFO(irq_flags))) {
+		vblank->flags |= FB_VBLANK_HAVE_COUNT;
+		/* Only one writer, aligned int value...
+		   it should work without lock and without atomic_t */
+		vblank->count = ACCESS_FBINFO(crtc2).vsync.cnt;
+	}
 	return 0;
 }
 
@@ -593,6 +614,17 @@ static int matroxfb_dh_ioctl(struct inode* inode,
 				if (copy_to_user((struct fb_vblank*)arg, &vblank, sizeof(vblank)))
 					return -EFAULT;
 				return 0;
+			}
+		case FBIO_WAITFORVSYNC:
+			{
+				u_int32_t crt;
+
+				if (get_user(crt, (u_int32_t *)arg))
+					return -EFAULT;
+
+				if (crt != 0)
+					return -ENODEV;
+				return matroxfb_wait_for_sync(PMINFO 1);
 			}
 		case MATROXFB_SET_OUTPUT_MODE:
 		case MATROXFB_GET_OUTPUT_MODE:

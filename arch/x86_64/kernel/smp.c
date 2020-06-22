@@ -488,7 +488,7 @@ int smp_call_function (void (*func) (void *info), void *info, int nonatomic,
 	return 0;
 }
 
-static void stop_this_cpu (void * dummy)
+void smp_stop_cpu(void)
 {
 	/*
 	 * Remove this CPU:
@@ -496,8 +496,14 @@ static void stop_this_cpu (void * dummy)
 	clear_bit(smp_processor_id(), &cpu_online_map);
 	__cli();
 	disable_local_APIC();
-	for(;;) __asm__("hlt");
-	for (;;);
+	__sti(); 
+}
+
+static void smp_really_stop_cpu(void *dummy)
+{
+	smp_stop_cpu(); 
+	for (;;) 
+		asm("hlt"); 
 }
 
 /*
@@ -506,12 +512,8 @@ static void stop_this_cpu (void * dummy)
 
 void smp_send_stop(void)
 {
-	smp_call_function(stop_this_cpu, NULL, 1, 0);
-	smp_num_cpus = 1;
-
-	__cli();
-	disable_local_APIC();
-	__sti();
+	smp_call_function(smp_really_stop_cpu, NULL, 1, 0);
+	smp_stop_cpu();
 }
 
 /*

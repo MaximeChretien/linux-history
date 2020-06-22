@@ -1,3 +1,35 @@
+/* $XFree86: xc/programs/Xserver/hw/xfree86/drivers/sis/vgatypes.h,v 1.0 2001/06/15 21:23:00 dawes Exp $ */
+/*
+ * General type definitions for universal mode switching modules
+ *
+ * Copyright 2002, 2003 by Thomas Winischhofer, Vienna, Austria
+ *
+ * If distributed as part of the linux kernel, the contents of this file
+ * is entirely covered by the GPL.
+ *
+ * Otherwise, the following terms apply:
+ *
+ * Permission to use, copy, modify, distribute, and sell this software and its
+ * documentation for any purpose is hereby granted without fee, provided that
+ * the above copyright notice appear in all copies and that both that
+ * copyright notice and this permission notice appear in supporting
+ * documentation, and that the name of the copyright holder not be used in
+ * advertising or publicity pertaining to distribution of the software without
+ * specific, written prior permission.  The copyright holder makes no representations
+ * about the suitability of this software for any purpose.  It is provided
+ * "as is" without express or implied warranty.
+ *
+ * THE COPYRIGHT HOLDER DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
+ * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO
+ * EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY SPECIAL, INDIRECT OR
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
+ * DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+ * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+ * PERFORMANCE OF THIS SOFTWARE.
+ *
+ * Author: 	Thomas Winischhofer <thomas@winischhofer.net>
+ *
+ */
 #ifndef _VGATYPES_
 #define _VGATYPES_
 
@@ -5,7 +37,7 @@
 #include "xf86Pci.h"
 #endif
 
-#ifdef LINUX_KERNEL  /* TW: We don't want the X driver to depend on kernel source */
+#ifdef LINUX_KERNEL  /* We don't want the X driver to depend on kernel source */
 #include <linux/ioctl.h>
 #endif
 
@@ -72,18 +104,15 @@ typedef void VOID;
 typedef UCHAR BOOLEAN;
 #endif
 
-#ifndef WINCE_HEADER
 #ifndef bool
 typedef UCHAR bool;
 #endif
-#endif /*WINCE_HEADER*/
 
 #ifndef VBIOS_VER_MAX_LENGTH
 #define VBIOS_VER_MAX_LENGTH         4
 #endif
 
 #ifndef LINUX_KERNEL   /* For kernel, this is defined in sisfb.h */
-#ifndef WIN2000
 #ifndef SIS_CHIP_TYPE
 typedef enum _SIS_CHIP_TYPE {
     SIS_VGALegacy = 0,
@@ -101,19 +130,18 @@ typedef enum _SIS_CHIP_TYPE {
     SIS_550,
     SIS_650,
     SIS_740,
-    SIS_330, 
+    SIS_330,
+    SIS_660,
     MAX_SIS_CHIP
 } SIS_CHIP_TYPE;
 #endif
 #endif
-#endif
 
-#ifndef WIN2000
 #ifndef SIS_VB_CHIP_TYPE
 typedef enum _SIS_VB_CHIP_TYPE {
     VB_CHIP_Legacy = 0,
     VB_CHIP_301,
-    VB_CHIP_301B,      
+    VB_CHIP_301B,
     VB_CHIP_301LV,
     VB_CHIP_302,
     VB_CHIP_302B,
@@ -122,9 +150,7 @@ typedef enum _SIS_VB_CHIP_TYPE {
     MAX_VB_CHIP
 } SIS_VB_CHIP_TYPE;
 #endif
-#endif
 
-#ifndef WIN2000
 #ifndef SIS_LCD_TYPE
 typedef enum _SIS_LCD_TYPE {
     LCD_INVALID = 0,
@@ -136,18 +162,19 @@ typedef enum _SIS_LCD_TYPE {
     LCD_1600x1200,
     LCD_1920x1440,
     LCD_2048x1536,
-    LCD_320x480,       /* TW: FSTN */
+    LCD_320x480,       /* FSTN, DSTN */
     LCD_1400x1050,
     LCD_1152x864,
     LCD_1152x768,
     LCD_1280x768,
     LCD_1024x600,
+    LCD_640x480_2,     /* FSTN, DSTN */
+    LCD_640x480_3,     /* FSTN, DSTN */
+    LCD_CUSTOM,
     LCD_UNKNOWN
 } SIS_LCD_TYPE;
 #endif
-#endif
 
-#ifndef WIN2000 /* mark by Paul, Move definition to sisv.h*/
 #ifndef PSIS_DSReg
 typedef struct _SIS_DSReg
 {
@@ -162,7 +189,6 @@ typedef struct _SIS_HW_DEVICE_INFO  SIS_HW_DEVICE_INFO, *PSIS_HW_DEVICE_INFO;
 
 typedef BOOLEAN (*PSIS_QUERYSPACE)   (PSIS_HW_DEVICE_INFO, ULONG, ULONG, ULONG *);
 
-
 struct _SIS_HW_DEVICE_INFO
 {
     PVOID  pDevice;              /* The pointer to the physical device data structure
@@ -173,7 +199,7 @@ struct _SIS_HW_DEVICE_INFO
                                  /* Note:ROM image file is the file of VBIOS ROM */
 
     BOOLEAN UseROM;		 /* TW: Use the ROM image if provided */
- 
+
     UCHAR  *pjCustomizedROMImage;/* base virtual address of ROM image file. */
                                  /* wincE:ROM image file is the file for OEM */
                                  /*       customized table */
@@ -195,7 +221,7 @@ struct _SIS_HW_DEVICE_INFO
                                  /* defined in the data structure type */
                                  /* "SIS_VB_CHIP_TYPE" */
 
-    USHORT usExternalChip;       /* NO VB or other video bridge(not  */
+    USHORT usExternalChip;       /* NO VB or other video bridge (other than  */
                                  /* SiS video bridge) */
                                  /* if ujVBChipID = VB_CHIP_UNKNOWN, */
                                  /* then bit0=1 : LVDS,bit1=1 : trumpion, */
@@ -207,7 +233,7 @@ struct _SIS_HW_DEVICE_INFO
                                  /*             011:Trumpion LVDS Scaling Chip */
                                  /*             100:LVDS(LCD-out)+Chrontel 7005 */
                                  /*             101:Single Chrontel 7005 */
-				 /* TW: This has changed on 310/325 series! */
+				 /* TW: This has changed on 315 series! */
 
     ULONG  ulCRT2LCDType;        /* defined in the data structure type */
                                  /* "SIS_LCD_TYPE" */
@@ -244,7 +270,6 @@ struct _SIS_HW_DEVICE_INFO
 #endif
 };
 #endif
-#endif 
 
 
 /* TW: Addtional IOCTL for communication sisfb <> X driver        */
@@ -288,8 +313,6 @@ struct _SISFB_INFO {
 };
 #endif
 
-#ifndef WIN2000
-#ifndef WINCE_HEADER
 #ifndef BUS_DATA_TYPE
 typedef enum _BUS_DATA_TYPE {
     ConfigurationSpaceUndefined = -1,
@@ -307,7 +330,6 @@ typedef enum _BUS_DATA_TYPE {
     MaximumBusDataType
 } BUS_DATA_TYPE, *PBUS_DATA_TYPE;
 #endif
-#endif /* WINCE_HEADER */
 
 #ifndef PCI_TYPE0_ADDRESSES
 #define PCI_TYPE0_ADDRESSES             6
@@ -317,7 +339,6 @@ typedef enum _BUS_DATA_TYPE {
 #define PCI_TYPE1_ADDRESSES             2
 #endif
 
-#ifndef WINCE_HEADER
 #ifndef PCI_COMMON_CONFIG
 typedef struct _PCI_COMMON_CONFIG {
     USHORT  VendorID;                   /* (ro)                 */
@@ -355,7 +376,6 @@ typedef struct _PCI_COMMON_CONFIG {
 
 } PCI_COMMON_CONFIG, *PPCI_COMMON_CONFIG;
 #endif
-#endif /* WINCE_HEADER */
 
 #ifndef FIELD_OFFSET
 #define FIELD_OFFSET(type, field)    ((LONG)&(((type *)0)->field))
@@ -364,6 +384,6 @@ typedef struct _PCI_COMMON_CONFIG {
 #ifndef PCI_COMMON_HDR_LENGTH
 #define PCI_COMMON_HDR_LENGTH (FIELD_OFFSET (PCI_COMMON_CONFIG, DeviceSpecific))
 #endif
-#endif
 
 #endif
+

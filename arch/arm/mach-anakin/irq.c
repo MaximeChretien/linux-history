@@ -15,6 +15,8 @@
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <linux/init.h>
+#include <linux/list.h>
+#include <linux/timer.h>
 
 #include <asm/irq.h>
 #include <asm/mach/irq.h>

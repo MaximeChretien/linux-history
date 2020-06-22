@@ -41,7 +41,7 @@ unsigned long serial_init(int chan, void *ignored)
 
 	/* How far apart the registers are. */
 	shift = rs_table[chan].iomem_reg_shift;
-	
+
 	/* save the LCR */
 	lcr = inb(com_port + (UART_LCR << shift));
 	/* Access baud rate */

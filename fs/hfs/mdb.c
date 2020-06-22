@@ -197,7 +197,7 @@ struct hfs_mdb *hfs_mdb_get(hfs_sysmdb sys_mdb, int readonly,
 
 	if (!(mdb->attrib & htons(HFS_SB_ATTRIB_CLEAN))) {
 		hfs_warn("hfs_fs: WARNING: mounting unclean filesystem.\n");
-	} else if (!readonly) {
+	} else if (!readonly && !(mdb->attrib & (HFS_SB_ATTRIB_HLOCK | HFS_SB_ATTRIB_SLOCK))) {
 		/* Mark the volume uncleanly unmounted in case we crash */
 		hfs_put_ns(mdb->attrib & htons(~HFS_SB_ATTRIB_CLEAN),
 			   raw->drAtrb);

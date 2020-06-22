@@ -101,6 +101,7 @@ copy_siginfo_to_user(siginfo_t *to, siginfo_t *from)
 		err |= __put_user(from->si_pid, &to->si_pid);
 		switch (from->si_code >> 16) {
 		case __SI_FAULT >> 16:
+			err |= __put_user(from->si_addr, &to->si_addr);
 			break;
 		case __SI_CHLD >> 16:
 			err |= __put_user(from->si_utime, &to->si_utime);

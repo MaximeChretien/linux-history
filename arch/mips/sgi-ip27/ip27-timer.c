@@ -1,5 +1,5 @@
 /*
- * Copytight (C) 1999, 2000 Ralf Baechle (ralf@gnu.org)
+ * Copytight (C) 1999, 2000, 2002 Ralf Baechle (ralf@gnu.org)
  * Copytight (C) 1999, 2000 Silicon Graphics, Inc.
  */
 #include <linux/config.h>
@@ -55,6 +55,7 @@ static int set_rtc_mmss(unsigned long nowtime)
 	rtc = (struct m48t35_rtc *)(KL_CONFIG_CH_CONS_INFO(nid)->memory_base +
 							IOC3_BYTEBUS_DEV0);
 
+	spin_lock(&rtc_lock);
 	rtc->control |= M48T35_RTC_READ;
 	cmos_minutes = rtc->min;
 	BCD_TO_BIN(cmos_minutes);
@@ -84,15 +85,18 @@ static int set_rtc_mmss(unsigned long nowtime)
 		       cmos_minutes, real_minutes);
 		retval = -1;
 	}
+	spin_unlock(&rtc_lock);
 
 	return retval;
 }
+
+#define IP27_TIMER_IRQ	9			/* XXX Assign number */
 
 void rt_timer_interrupt(struct pt_regs *regs)
 {
 	int cpu = smp_processor_id();
 	int cpuA = ((cputoslice(cpu)) == 0);
-	int irq = 9;				/* XXX Assign number */
+	int irq = IP27_TIMER_IRQ;
 
 	irq_enter(cpu, irq);
 	write_lock(&xtime_lock);
@@ -157,7 +161,7 @@ unsigned long ip27_do_gettimeoffset(void)
 
 static __init unsigned long get_m48t35_time(void)
 {
-        unsigned int year, month, date, hour, min, sec;
+	unsigned int year, month, date, hour, min, sec;
 	struct m48t35_rtc *rtc;
 	nasid_t nid;
 
@@ -165,6 +169,7 @@ static __init unsigned long get_m48t35_time(void)
 	rtc = (struct m48t35_rtc *)(KL_CONFIG_CH_CONS_INFO(nid)->memory_base +
 							IOC3_BYTEBUS_DEV0);
 
+	spin_lock(&rtc_lock);
 	rtc->control |= M48T35_RTC_READ;
 	sec = rtc->sec;
 	min = rtc->min;
@@ -173,17 +178,27 @@ static __init unsigned long get_m48t35_time(void)
 	month = rtc->month;
 	year = rtc->year;
 	rtc->control &= ~M48T35_RTC_READ;
+	spin_unlock(&rtc_lock);
 
-        BCD_TO_BIN(sec);
-        BCD_TO_BIN(min);
-        BCD_TO_BIN(hour);
-        BCD_TO_BIN(date);
-        BCD_TO_BIN(month);
-        BCD_TO_BIN(year);
+	BCD_TO_BIN(sec);
+	BCD_TO_BIN(min);
+	BCD_TO_BIN(hour);
+	BCD_TO_BIN(date);
+	BCD_TO_BIN(month);
+	BCD_TO_BIN(year);
 
-        year += 1970;
+	year += 1970;
 
-        return mktime(year, month, date, hour, min, sec);
+	return mktime(year, month, date, hour, min, sec);
+}
+
+static void ip27_timer_setup(struct irqaction *irq)
+{
+	/* over-write the handler, we use our own way */
+	irq->handler = no_action;
+
+	/* setup irqaction */
+//	setup_irq(IP27_TIMER_IRQ, irq);		/* XXX Can't do this yet.  */
 }
 
 void __init ip27_time_init(void)
@@ -192,6 +207,9 @@ void __init ip27_time_init(void)
 	xtime.tv_usec = 0;
 
 	do_gettimeoffset = ip27_do_gettimeoffset;
+
+	// board_time_init = ip27_time_init;
+	board_timer_setup = ip27_timer_setup;
 }
 
 void __init cpu_time_init(void)
@@ -212,7 +230,7 @@ void __init cpu_time_init(void)
 
 	printk("CPU %d clock is %dMHz.\n", smp_processor_id(), cpu->cpu_speed);
 
-	set_cp0_status(SRB_TIMOCLK);
+	set_c0_status(SRB_TIMOCLK);
 }
 
 void __init hub_rtc_init(cnodeid_t cnode)

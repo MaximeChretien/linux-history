@@ -39,10 +39,6 @@ OFFSET				:= ../utils/offset
 
 # Extra include search dirs
 CFLAGS_kbd.o			+= -I$(TOPDIR)/drivers/char
-AFLAGS_head.o			+= -I$(TOPDIR)/arch/$(ARCH)/kernel
-AFLAGS_../common/util.o			+= -I$(TOPDIR)/arch/$(ARCH)/kernel
-AFLAGS_../common/relocate.o	+= -I$(TOPDIR)/arch/$(ARCH)/kernel
-AFLAGS_../simple/legacy.o	+= -I$(TOPDIR)/arch/$(ARCH)/kernel
 
 all: zImage
 

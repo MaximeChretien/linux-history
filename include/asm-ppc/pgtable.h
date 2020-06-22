@@ -11,16 +11,19 @@
 #include <asm/mmu.h>
 #include <asm/page.h>
 
-#if defined(CONFIG_4xx)
-extern void local_flush_tlb_all(void);
-extern void local_flush_tlb_mm(struct mm_struct *mm);
-extern void local_flush_tlb_page(struct vm_area_struct *vma, unsigned long vmaddr);
-extern void local_flush_tlb_range(struct mm_struct *mm, unsigned long start,
-				  unsigned long end);
-#define update_mmu_cache(vma, addr, pte)	do { } while (0)
+extern void _tlbie(unsigned long address);
+extern void _tlbia(void);
 
-#elif defined(CONFIG_8xx)
-#define __tlbia()	asm volatile ("tlbia" : : )
+#ifdef CONFIG_4xx
+#ifdef CONFIG_PIN_TLB
+/* When pinning entries on the 4xx, we have to use a software function
+ * to ensure we don't remove them since there isn't any hardware support
+ * for this.
+ */
+#define __tlbia()	_tlbia()
+#else
+#define __tlbia()	asm volatile ("tlbia; sync" : : : "memory")
+#endif
 
 static inline void local_flush_tlb_all(void)
 	{ __tlbia(); }
@@ -28,7 +31,22 @@ static inline void local_flush_tlb_mm(struct mm_struct *mm)
 	{ __tlbia(); }
 static inline void local_flush_tlb_page(struct vm_area_struct *vma,
 				unsigned long vmaddr)
+	{ _tlbie(vmaddr); }
+static inline void local_flush_tlb_range(struct mm_struct *mm,
+				unsigned long start, unsigned long end)
 	{ __tlbia(); }
+#define update_mmu_cache(vma, addr, pte)	do { } while (0)
+
+#elif defined(CONFIG_8xx)
+#define __tlbia()	asm volatile ("tlbia; sync" : : : "memory")
+
+static inline void local_flush_tlb_all(void)
+	{ __tlbia(); }
+static inline void local_flush_tlb_mm(struct mm_struct *mm)
+	{ __tlbia(); }
+static inline void local_flush_tlb_page(struct vm_area_struct *vma,
+				unsigned long vmaddr)
+	{ _tlbie(vmaddr); }
 static inline void local_flush_tlb_range(struct mm_struct *mm,
 				unsigned long start, unsigned long end)
 	{ __tlbia(); }
@@ -193,18 +211,46 @@ extern unsigned long ioremap_bot, ioremap_base;
  * (hardware-defined) PowerPC PTE as closely as possible.
  */
 
-#if defined(CONFIG_4xx)
+#if defined(CONFIG_40x)
+
+/* There are several potential gotchas here.  The 40x hardware TLBLO
+   field looks like this:
+
+   0  1  2  3  4  ... 18 19 20 21 22 23 24 25 26 27 28 29 30 31
+   RPN.....................  0  0 EX WR ZSEL.......  W  I  M  G
+
+   Where possible we make the Linux PTE bits match up with this
+
+   - bits 20 and 21 must be cleared, because we use 4k pages (4xx can
+     support down to 1k pages), this is done in the TLBMiss exception
+     handler.
+   - We use only zones 0 (for kernel pages) and 1 (for user pages)
+     of the 16 available.  Bit 24-26 of the TLB are cleared in the TLB
+     miss handler.  Bit 27 is PAGE_USER, thus selecting the correct
+     zone.
+   - PRESENT *must* be in the bottom two bits because swap cache
+     entries use the top 30 bits.  Because 4xx doesn't support SMP
+     anyway, M is irrelevant so we borrow it for PAGE_PRESENT.  Bit 30
+     is cleared in the TLB miss handler before the TLB entry is loaded.
+   - All other bits of the PTE are loaded into TLBLO without
+     modification, leaving us only the bits 20, 21, 24, 25, 26, 30 for
+     software PTE bits.  We actually use use bits 21, 24, 25, and
+     30 respectively for the software bits: ACCESSED, DIRTY, RW, and
+     PRESENT.
+*/
+
 /* Definitions for 4xx embedded chips. */
 #define	_PAGE_GUARDED	0x001	/* G: page is guarded from prefetch */
-#define	_PAGE_COHERENT	0x002	/* M: enforece memory coherence */
+#define _PAGE_PRESENT	0x002	/* software: PTE contains a translation */
 #define	_PAGE_NO_CACHE	0x004	/* I: caching is inhibited */
 #define	_PAGE_WRITETHRU	0x008	/* W: caching is write-through */
 #define	_PAGE_USER	0x010	/* matches one of the zone permission bits */
-#define _PAGE_EXEC	0x020	/* software: i-cache coherency required */
-#define	_PAGE_PRESENT	0x040	/* software: PTE contains a translation */
-#define _PAGE_DIRTY	0x100	/* C: page changed */
-#define	_PAGE_RW	0x200	/* Writes permitted */
-#define _PAGE_ACCESSED	0x400	/* R: page referenced */
+#define	_PAGE_RW	0x040	/* software: Writes permitted */
+#define	_PAGE_DIRTY	0x080	/* software: dirty page */
+#define _PAGE_HWWRITE	0x100	/* hardware: Dirty & RW, set in exception */
+#define _PAGE_HWEXEC	0x200	/* hardware: EX permission */
+#define _PAGE_ACCESSED	0x400	/* software: R: page referenced */
+#define _PMD_PRESENT	PAGE_MASK
 
 #elif defined(CONFIG_8xx)
 /* Definitions for 8xx embedded chips. */
@@ -260,6 +306,12 @@ extern unsigned long ioremap_bot, ioremap_base;
 #ifndef _PAGE_HWWRITE
 #define _PAGE_HWWRITE	0
 #endif
+#ifndef _PAGE_HWEXEC
+#define _PAGE_HWEXEC	0
+#endif
+#ifndef _PAGE_EXEC
+#define _PAGE_EXEC	0
+#endif
 
 #define _PAGE_CHG_MASK	(PAGE_MASK | _PAGE_ACCESSED | _PAGE_DIRTY)
 
@@ -272,7 +324,7 @@ extern unsigned long ioremap_bot, ioremap_base;
 #define _PAGE_BASE	_PAGE_PRESENT | _PAGE_ACCESSED
 #define _PAGE_WRENABLE	_PAGE_RW | _PAGE_DIRTY | _PAGE_HWWRITE
 
-#define _PAGE_KERNEL	_PAGE_BASE | _PAGE_WRENABLE | _PAGE_SHARED
+#define _PAGE_KERNEL	_PAGE_BASE | _PAGE_WRENABLE | _PAGE_SHARED | _PAGE_HWEXEC
 #define _PAGE_IO	_PAGE_KERNEL | _PAGE_NO_CACHE | _PAGE_GUARDED
 
 #define PAGE_NONE	__pgprot(_PAGE_BASE)
@@ -416,7 +468,7 @@ static inline unsigned long pte_update(pte_t *p, unsigned long clr,
 				       unsigned long set)
 {
 	unsigned long old, tmp;
-	
+
 	__asm__ __volatile__("\
 1:	lwarx	%0,0,%3\n\
 	andc	%1,%0,%4\n\
@@ -486,7 +538,7 @@ static inline pmd_t * pmd_offset(pgd_t * dir, unsigned long address)
 	return (pmd_t *) dir;
 }
 
-/* Find an entry in the third-level page table.. */ 
+/* Find an entry in the third-level page table.. */
 static inline pte_t * pte_offset(pmd_t * dir, unsigned long address)
 {
 	return (pte_t *) pmd_page(*dir) + ((address >> PAGE_SHIFT) & (PTRS_PER_PTE - 1));
@@ -539,7 +591,7 @@ extern unsigned long kernel_map(unsigned long paddr, unsigned long size,
 				int nocacheflag, unsigned long *memavailp );
 
 /*
- * Set cache mode of (kernel space) address range. 
+ * Set cache mode of (kernel space) address range.
  */
 extern void kernel_set_cachemode (unsigned long address, unsigned long size,
                                  unsigned int cmode);
@@ -547,7 +599,7 @@ extern void kernel_set_cachemode (unsigned long address, unsigned long size,
 /* Needs to be defined here and not in linux/mm.h, as it is arch dependent */
 #define kern_addr_valid(addr)	(1)
 
-#define io_remap_page_range remap_page_range 
+#define io_remap_page_range remap_page_range
 
 /*
  * No page table caches to initialise

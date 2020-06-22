@@ -22,6 +22,8 @@
 #include <asm/bootinfo.h>
 #include <asm/cpu.h>
 
+extern void except_vec1_sb1(void);
+
 /* Dump the current entry* and pagemask registers */
 static inline void dump_cur_tlb_regs(void)
 {
@@ -65,30 +67,24 @@ void sb1_dump_tlb(void)
 	unsigned long old_ctx;
 	unsigned long flags;
 	int entry;
-	__save_and_cli(flags);
-	old_ctx = get_entryhi();
+	local_irq_save(flags);
+	old_ctx = read_c0_entryhi();
 	printk("Current TLB registers state:\n"
 	       "      EntryHi       EntryLo0          EntryLo1     PageMask  Index\n"
 	       "--------------------------------------------------------------------\n");
 	dump_cur_tlb_regs();
-	printk(" %08X\n", read_32bit_cp0_register(CP0_INDEX));
+	printk(" %08X\n", read_c0_index());
 	printk("\n\nFull TLB Dump:\n"
 	       "Idx      EntryHi       EntryLo0          EntryLo1     PageMask\n"
 	       "--------------------------------------------------------------\n");
-	for (entry = 0; entry < mips_cpu.tlbsize; entry++) {
-		set_index(entry);
+	for (entry = 0; entry < current_cpu_data.tlbsize; entry++) {
+		write_c0_index(entry);
 		printk("\n%02i ", entry);
-		__asm__ __volatile__ (
-			".set push             \n"
-			"#.set mips64           \n"
-			".set mips4           \n"
-			"     tlbr             \n"
-			".set pop              \n");
 		dump_cur_tlb_regs();
 	}
 	printk("\n");
-	set_entryhi(old_ctx);
-	__restore_flags(flags);
+	write_c0_entryhi(old_ctx);
+	local_irq_restore(flags);
 }
 
 void local_flush_tlb_all(void)
@@ -97,18 +93,18 @@ void local_flush_tlb_all(void)
 	unsigned long old_ctx;
 	int entry;
 
-	__save_and_cli(flags);
+	local_irq_save(flags);
 	/* Save old context and create impossible VPN2 value */
-	old_ctx = (get_entryhi() & 0xff);
-	set_entrylo0(0);
-	set_entrylo1(0);
-	for (entry = 0; entry < mips_cpu.tlbsize; entry++) {
-		set_entryhi(KSEG0 + (PAGE_SIZE << 1) * entry);
-		set_index(entry);
+	old_ctx = read_c0_entryhi() & ASID_MASK;
+	write_c0_entrylo0(0);
+	write_c0_entrylo1(0);
+	for (entry = 0; entry < current_cpu_data.tlbsize; entry++) {
+		write_c0_entryhi(KSEG0 + (PAGE_SIZE << 1) * entry);
+		write_c0_index(entry);
 		tlb_write_indexed();
 	}
-	set_entryhi(old_ctx);
-	__restore_flags(flags);
+	write_c0_entryhi(old_ctx);
+	local_irq_restore(flags);
 }
 
 
@@ -126,15 +122,15 @@ void sb1_sanitize_tlb(void)
 
 	long inc = 1<<24;  /* 16MB */
 	/* Save old context and create impossible VPN2 value */
-	set_entrylo0(0);
-	set_entrylo1(0);
-	for (entry = 0; entry < mips_cpu.tlbsize; entry++) {
+	write_c0_entrylo0(0);
+	write_c0_entrylo1(0);
+	for (entry = 0; entry < current_cpu_data.tlbsize; entry++) {
 		do {
 			addr += inc;
-			set_entryhi(addr);
+			write_c0_entryhi(addr);
 			tlb_probe();
-		} while ((int)(get_index()) >= 0);
-		set_index(entry);
+		} while ((int)(read_c0_index()) >= 0);
+		write_c0_index(entry);
 		tlb_write_indexed();
 	}
 	/* Now that we know we're safe from collisions, we can safely flush
@@ -149,15 +145,15 @@ void local_flush_tlb_range(struct mm_struct *mm, unsigned long start,
 	unsigned long flags;
 	int cpu;
 
-	__save_and_cli(flags);
+	local_irq_save(flags);
 	cpu = smp_processor_id();
-	if(CPU_CONTEXT(cpu, mm) != 0) {
+	if (cpu_context(cpu, mm) != 0) {
 		int size;
 		size = (end - start + (PAGE_SIZE - 1)) >> PAGE_SHIFT;
 		size = (size + 1) >> 1;
-		if(size <= (mips_cpu.tlbsize/2)) {
-			int oldpid = (get_entryhi() & 0xff);
-			int newpid = (CPU_CONTEXT(cpu, mm) & 0xff);
+		if(size <= (current_cpu_data.tlbsize/2)) {
+			int oldpid = read_c0_entryhi() & ASID_MASK;
+			int newpid = cpu_asid(cpu, mm);
 
 			start &= (PAGE_MASK << 1);
 			end += ((PAGE_SIZE << 1) - 1);
@@ -165,63 +161,50 @@ void local_flush_tlb_range(struct mm_struct *mm, unsigned long start,
 			while(start < end) {
 				int idx;
 
-				set_entryhi(start | newpid);
+				write_c0_entryhi(start | newpid);
 				start += (PAGE_SIZE << 1);
 				tlb_probe();
-				idx = get_index();
-				set_entrylo0(0);
-				set_entrylo1(0);
-				set_entryhi(KSEG0 + (idx << (PAGE_SHIFT+1)));
+				idx = read_c0_index();
+				write_c0_entrylo0(0);
+				write_c0_entrylo1(0);
+				write_c0_entryhi(KSEG0 + (idx << (PAGE_SHIFT+1)));
 				if(idx < 0)
 					continue;
 				tlb_write_indexed();
 			}
-			set_entryhi(oldpid);
+			write_c0_entryhi(oldpid);
 		} else {
-			get_new_mmu_context(mm, cpu);
-			if (mm == current->active_mm)
-				set_entryhi(CPU_CONTEXT(cpu, mm) & 0xff);
+			drop_mmu_context(mm, cpu);
 		}
 	}
-	__restore_flags(flags);
+	local_irq_restore(flags);
 }
 
 void local_flush_tlb_page(struct vm_area_struct *vma, unsigned long page)
 {
 	unsigned long flags;
-
-#ifdef CONFIG_SMP
-	/*
-	 * This variable is eliminated from CPU_CONTEXT() if SMP isn't defined,
-	 * so conditional it to get rid of silly "unused variable" compiler
-	 * complaints
-	 */
 	int cpu = smp_processor_id();
-#endif
 
-	__save_and_cli(flags);
-	if (CPU_CONTEXT(cpu, vma->vm_mm) != 0) {
+	local_irq_save(flags);
+	if (cpu_context(cpu, vma->vm_mm) != 0) {
 		int oldpid, newpid, idx;
-#ifdef DEBUG_TLB
-		printk("[tlbpage<%d,%08lx>]", CPU_CONTEXT(cpu, vma->vm_mm), page);
-#endif
-		newpid = (CPU_CONTEXT(cpu, vma->vm_mm) & 0xff);
+		newpid = cpu_asid(cpu, vma->vm_mm);
 		page &= (PAGE_MASK << 1);
-		oldpid = (get_entryhi() & 0xff);
-		set_entryhi	(page | newpid);
+		oldpid = read_c0_entryhi() & ASID_MASK;
+		write_c0_entryhi(page | newpid);
 		tlb_probe();
-		idx = get_index();
-		set_entrylo0(0);
-		set_entrylo1(0);
+		idx = read_c0_index();
+		write_c0_entrylo0(0);
+		write_c0_entrylo1(0);
 		if(idx < 0)
 			goto finish;
 		/* Make sure all entries differ. */
-		set_entryhi(KSEG0+(idx<<(PAGE_SHIFT+1)));
+		write_c0_entryhi(KSEG0+(idx<<(PAGE_SHIFT+1)));
 		tlb_write_indexed();
 	finish:
-		set_entryhi(oldpid);
+		write_c0_entryhi(oldpid);
 	}
-	__restore_flags(flags);
+	local_irq_restore(flags);
 }
 
 
@@ -229,23 +212,15 @@ void local_flush_tlb_page(struct vm_area_struct *vma, unsigned long page)
    these entries, we just bump the asid. */
 void local_flush_tlb_mm(struct mm_struct *mm)
 {
-	unsigned long flags;
-	int cpu;
-	__save_and_cli(flags);
-	cpu = smp_processor_id();
-	if (CPU_CONTEXT(cpu, mm) != 0) {
-		get_new_mmu_context(mm, smp_processor_id());
-		if (mm == current->active_mm) {
-			set_entryhi(CPU_CONTEXT(cpu, mm) & 0xff);
-		}
+	int cpu = smp_processor_id();
+	if (cpu_context(cpu, mm) != 0) {
+		drop_mmu_context(mm, cpu);
 	}
-	__restore_flags(flags);
 }
 
 /* Stolen from mips32 routines */
 
-void sb1_update_mmu_cache(struct vm_area_struct *vma, unsigned long address,
-                      pte_t pte)
+void __update_tlb(struct vm_area_struct *vma, unsigned long address, pte_t pte)
 {
 	unsigned long flags;
 	pgd_t *pgdp;
@@ -259,35 +234,24 @@ void sb1_update_mmu_cache(struct vm_area_struct *vma, unsigned long address,
 	if (current->active_mm != vma->vm_mm)
 		return;
 
-	__save_and_cli(flags);
+	local_irq_save(flags);
 
-
-	pid = get_entryhi() & 0xff;
-
-#ifdef DEBUG_TLB
-	if((pid != (CPU_CONTEXT(cpu, vma->vm_mm) & 0xff)) || (CPU_CONTEXT(cpu, vma->vm_mm) == 0)) {
-		printk("update_mmu_cache: Wheee, bogus tlbpid mmpid=%d tlbpid=%d\n",
-		       (int) (CPU_CONTEXT(cpu, vma->vm_mm) & 0xff), pid);
-	}
-#endif
-
+	pid = read_c0_entryhi() & ASID_MASK;
 	address &= (PAGE_MASK << 1);
-	set_entryhi(address | (pid));
+	write_c0_entryhi(address | (pid));
 	pgdp = pgd_offset(vma->vm_mm, address);
 	tlb_probe();
 	pmdp = pmd_offset(pgdp, address);
-	idx = get_index();
+	idx = read_c0_index();
 	ptep = pte_offset(pmdp, address);
-	set_entrylo0(pte_val(*ptep++) >> 6);
-	set_entrylo1(pte_val(*ptep) >> 6);
-	set_entryhi(address | (pid));
+	write_c0_entrylo0(pte_val(*ptep++) >> 6);
+	write_c0_entrylo1(pte_val(*ptep) >> 6);
 	if (idx < 0) {
 		tlb_write_random();
 	} else {
 		tlb_write_indexed();
 	}
-	set_entryhi(pid);
-	__restore_flags(flags);
+	local_irq_restore(flags);
 }
 
 /*
@@ -297,10 +261,7 @@ void sb1_update_mmu_cache(struct vm_area_struct *vma, unsigned long address,
  */
 void sb1_tlb_init(void)
 {
-	u32 config1;
-
-	config1 = read_mips32_cp0_config1();
-	mips_cpu.tlbsize = ((config1 >> 25) & 0x3f) + 1;
+	write_c0_pagemask(PM_4K);
 
 	/*
 	 * We don't know what state the firmware left the TLB's in, so this is
@@ -308,5 +269,7 @@ void sb1_tlb_init(void)
 	 * check exceptions due to duplicate TLB entries
 	 */
 	sb1_sanitize_tlb();
-	_update_mmu_cache = sb1_update_mmu_cache;
+
+	memcpy((void *)KSEG0 + 0x080, except_vec1_sb1, 0x80);
+	flush_icache_range(KSEG0, KSEG0 + 0x80);
 }

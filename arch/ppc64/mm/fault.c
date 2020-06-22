@@ -65,7 +65,7 @@ extern unsigned long get_srr1(void);
 void do_page_fault(struct pt_regs *regs, unsigned long address,
 		   unsigned long error_code)
 {
-	struct vm_area_struct * vma;
+	struct vm_area_struct * vma, * prev_vma;
 	struct mm_struct *mm = current->mm;
 	siginfo_t info;
 	unsigned long code = SEGV_MAPERR;
@@ -90,8 +90,8 @@ void do_page_fault(struct pt_regs *regs, unsigned long address,
 	}
 #endif /* CONFIG_XMON || CONFIG_KGDB */
 
-	/* On an SLB miss we can only check for a valid exception entry */
-	if (regs->trap == 0x380) {
+	/* On a kernel SLB miss we can only check for a valid exception entry */
+	if (!user_mode(regs) && (regs->trap == 0x380)) {
 		bad_page_fault(regs, address);
 		return;
 	}
@@ -99,13 +99,8 @@ void do_page_fault(struct pt_regs *regs, unsigned long address,
 #if defined(CONFIG_XMON) || defined(CONFIG_KGDB) || defined(CONFIG_KDB)
 	if (error_code & 0x00400000) {
 		/* DABR match */
-#if defined(CONFIG_KDB)
-	    if (kdb(KDB_REASON_BREAK,regs->trap,regs))
-			return;
-#else
 		if (debugger_dabr_match(regs))
 			return;
-#endif
 	}
 #endif /* CONFIG_XMON || CONFIG_KGDB || CONFIG_KDB */
 
@@ -128,6 +123,7 @@ void do_page_fault(struct pt_regs *regs, unsigned long address,
 		PPCDBG(PPCDBG_MM, "\tdo_page_fault: vma->vm_flags = %lx, %lx\n", vma->vm_flags, VM_GROWSDOWN);
 		goto bad_area;
 	}
+	vma = find_vma_prev(mm, address, &prev_vma);
 	if (expand_stack(vma, address)) {
 		PPCDBG(PPCDBG_MM, "\tdo_page_fault: expand_stack\n");
 		goto bad_area;
@@ -243,13 +239,10 @@ bad_page_fault(struct pt_regs *regs, unsigned long address)
 
 	/* kernel has accessed a bad area */
 	show_regs(regs);
-#if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
+#if defined(CONFIG_XMON) || defined(CONFIG_KGDB) || defined(CONFIG_KDB)
 	if (debugger_kernel_faults)
 		debugger(regs);
 #endif
-#if defined(CONFIG_KDB)
-	kdb(KDB_REASON_FAULT, regs->trap, regs);
-#endif	
 	print_backtrace( (unsigned long *)regs->gpr[1] );
 	panic("kernel access of bad area pc %lx lr %lx address %lX tsk %s/%d",
 	      regs->nip,regs->link,address,current->comm,current->pid);

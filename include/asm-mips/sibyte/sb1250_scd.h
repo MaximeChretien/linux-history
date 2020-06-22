@@ -1,23 +1,23 @@
 /*  *********************************************************************
     *  SB1250 Board Support Package
-    *
+    *  
     *  SCD Constants and Macros			File: sb1250_scd.h
-    *
+    *  
     *  This module contains constants and macros useful for
     *  manipulating the System Control and Debug module on the 1250.
-    *
+    *  
     *  SB1250 specification level:  User's manual 1/02/02
+    *  
+    *  Author:  Mitch Lichtenberg
+    *  
+    *********************************************************************  
     *
-    *  Author:  Mitch Lichtenberg (mpl@broadcom.com)
-    *
-    *********************************************************************
-    *
-    *  Copyright 2000,2001
+    *  Copyright 2000,2001,2002,2003
     *  Broadcom Corporation. All rights reserved.
-    *
-    *  This program is free software; you can redistribute it and/or
-    *  modify it under the terms of the GNU General Public License as
-    *  published by the Free Software Foundation; either version 2 of
+    *  
+    *  This program is free software; you can redistribute it and/or 
+    *  modify it under the terms of the GNU General Public License as 
+    *  published by the Free Software Foundation; either version 2 of 
     *  the License, or (at your option) any later version.
     *
     *  This program is distributed in the hope that it will be useful,
@@ -27,7 +27,7 @@
     *
     *  You should have received a copy of the GNU General Public License
     *  along with this program; if not, write to the Free Software
-    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+    *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, 
     *  MA 02111-1307 USA
     ********************************************************************* */
 
@@ -51,24 +51,119 @@
 #define V_SYS_REVISION(x)           _SB_MAKEVALUE(x,S_SYS_REVISION)
 #define G_SYS_REVISION(x)           _SB_GETVALUE(x,S_SYS_REVISION,M_SYS_REVISION)
 
-#define K_SYS_REVISION_PASS1	    1
-#define K_SYS_REVISION_PASS2	    3
-#define K_SYS_REVISION_PASS2_2	    16
-#define K_SYS_REVISION_PASS3	    32
+#if SIBYTE_HDR_FEATURE_CHIP(1250)
+#define K_SYS_REVISION_BCM1250_PASS1	1
+#define K_SYS_REVISION_BCM1250_PASS2	3
+#define K_SYS_REVISION_BCM1250_A10	11
+#define K_SYS_REVISION_BCM1250_PASS2_2	16
+#define K_SYS_REVISION_BCM1250_B2	17
+#define K_SYS_REVISION_BCM1250_PASS3	32
+#define K_SYS_REVISION_BCM1250_C1	33
 
+/* XXX: discourage people from using these constants.  */
+#define K_SYS_REVISION_PASS1	    K_SYS_REVISION_BCM1250_PASS1
+#define K_SYS_REVISION_PASS2	    K_SYS_REVISION_BCM1250_PASS2
+#define K_SYS_REVISION_PASS2_2	    K_SYS_REVISION_BCM1250_PASS2_2
+#define K_SYS_REVISION_PASS3	    K_SYS_REVISION_BCM1250_PASS3
+#endif /* 1250 */
+
+#if SIBYTE_HDR_FEATURE_CHIP(112x)
+#define K_SYS_REVISION_BCM112x_A1	32
+#define K_SYS_REVISION_BCM112x_A2	33
+#endif /* 112x */
+
+/* XXX: discourage people from using these constants.  */
 #define S_SYS_PART                  _SB_MAKE64(16)
 #define M_SYS_PART                  _SB_MAKEMASK(16,S_SYS_PART)
 #define V_SYS_PART(x)               _SB_MAKEVALUE(x,S_SYS_PART)
 #define G_SYS_PART(x)               _SB_GETVALUE(x,S_SYS_PART,M_SYS_PART)
 
+/* XXX: discourage people from using these constants.  */
 #define K_SYS_PART_SB1250           0x1250
-#define K_SYS_PART_SB1125           0x1125
+#define K_SYS_PART_BCM1120          0x1121
+#define K_SYS_PART_BCM1125          0x1123
+#define K_SYS_PART_BCM1125H         0x1124
+
+/* The "peripheral set" (SOC type) is the low 4 bits of the "part" field.  */
+#define S_SYS_SOC_TYPE              _SB_MAKE64(16)
+#define M_SYS_SOC_TYPE              _SB_MAKEMASK(4,S_SYS_SOC_TYPE)
+#define V_SYS_SOC_TYPE(x)           _SB_MAKEVALUE(x,S_SYS_SOC_TYPE)
+#define G_SYS_SOC_TYPE(x)           _SB_GETVALUE(x,S_SYS_SOC_TYPE,M_SYS_SOC_TYPE)
+
+#define K_SYS_SOC_TYPE_BCM1250      0x0
+#define K_SYS_SOC_TYPE_BCM1120      0x1
+#define K_SYS_SOC_TYPE_BCM1250_ALT  0x2		/* 1250pass2 w/ 1/4 L2.  */
+#define K_SYS_SOC_TYPE_BCM1125      0x3
+#define K_SYS_SOC_TYPE_BCM1125H     0x4
+#define K_SYS_SOC_TYPE_BCM1250_ALT2 0x5		/* 1250pass2 w/ 1/2 L2.  */
+
+/*
+ * Calculate correct SOC type given a copy of system revision register.
+ *
+ * (For the assembler version, sysrev and dest may be the same register.
+ * Also, it clobbers AT.)
+ */
+#ifdef __ASSEMBLER__
+#define SYS_SOC_TYPE(dest, sysrev)					\
+	.set push ;							\
+	.set reorder ;							\
+	dsrl	dest, sysrev, S_SYS_SOC_TYPE ;				\
+	andi	dest, dest, (M_SYS_SOC_TYPE >> S_SYS_SOC_TYPE);		\
+	beq	dest, K_SYS_SOC_TYPE_BCM1250_ALT, 991f ;		\
+	beq	dest, K_SYS_SOC_TYPE_BCM1250_ALT2, 991f	 ;		\
+	b	992f ;							\
+991:	li	dest, K_SYS_SOC_TYPE_BCM1250 ;				\
+992:									\
+	.set pop
+#else
+#define SYS_SOC_TYPE(sysrev)						\
+	((G_SYS_SOC_TYPE(sysrev) == K_SYS_SOC_TYPE_BCM1250_ALT		\
+	  || G_SYS_SOC_TYPE(sysrev) == K_SYS_SOC_TYPE_BCM1250_ALT2)	\
+	 ? K_SYS_SOC_TYPE_BCM1250 : G_SYS_SOC_TYPE(sysrev))
+#endif
 
 #define S_SYS_WID                   _SB_MAKE64(32)
 #define M_SYS_WID                   _SB_MAKEMASK(32,S_SYS_WID)
 #define V_SYS_WID(x)                _SB_MAKEVALUE(x,S_SYS_WID)
 #define G_SYS_WID(x)                _SB_GETVALUE(x,S_SYS_WID,M_SYS_WID)
 
+/* System Manufacturing Register
+* Register: SCD_SYSTEM_MANUF
+*/
+ 
+/* Wafer ID: bits 31:0 */
+#define S_SYS_WAFERID1_200        _SB_MAKE64(0)
+#define M_SYS_WAFERID1_200        _SB_MAKEMASK(32,S_SYS_WAFERID1_200)
+#define V_SYS_WAFERID1_200(x)     _SB_MAKEVALUE(x,S_SYS_WAFERID1_200)
+#define G_SYS_WAFERID1_200(x)     _SB_GETVALUE(x,S_SYS_WAFERID1_200,M_SYS_WAFERID1_200)
+ 
+#define S_SYS_BIN                 _SB_MAKE64(32)
+#define M_SYS_BIN                 _SB_MAKEMASK(4,S_SYS_BIN)
+#define V_SYS_BIN                 _SB_MAKEVALUE(x,S_SYS_BIN)
+#define G_SYS_BIN                 _SB_GETVALUE(x,S_SYS_BIN,M_SYS_BIN)
+ 
+/* Wafer ID: bits 39:36 */
+#define S_SYS_WAFERID2_200        _SB_MAKE64(36)
+#define M_SYS_WAFERID2_200        _SB_MAKEMASK(4,S_SYS_WAFERID2_200)
+#define V_SYS_WAFERID2_200(x)     _SB_MAKEVALUE(x,S_SYS_WAFERID2_200)
+#define G_SYS_WAFERID2_200(x)     _SB_GETVALUE(x,S_SYS_WAFERID2_200,M_SYS_WAFERID2_200)
+ 
+/* Wafer ID: bits 39:0 */
+#define S_SYS_WAFERID_300         _SB_MAKE64(0)
+#define M_SYS_WAFERID_300         _SB_MAKEMASK(40,S_SYS_WAFERID_300)
+#define V_SYS_WAFERID_300(x)      _SB_MAKEVALUE(x,S_SYS_WAFERID_300)
+#define G_SYS_WAFERID_300(x)      _SB_GETVALUE(x,S_SYS_WAFERID_300,M_SYS_WAFERID_300)
+ 
+#define S_SYS_XPOS                _SB_MAKE64(40)
+#define M_SYS_XPOS                _SB_MAKEMASK(6,S_SYS_XPOS)
+#define V_SYS_XPOS(x)             _SB_MAKEVALUE(x,S_SYS_XPOS)
+#define G_SYS_XPOS(x)             _SB_GETVALUE(x,S_SYS_XPOS,M_SYS_XPOS)
+ 
+#define S_SYS_YPOS                _SB_MAKE64(46)
+#define M_SYS_YPOS                _SB_MAKEMASK(6,S_SYS_YPOS)
+#define V_SYS_YPOS(x)             _SB_MAKEVALUE(x,S_SYS_YPOS)
+#define G_SYS_YPOS(x)             _SB_GETVALUE(x,S_SYS_YPOS,M_SYS_YPOS)
+ 
 /*
  * System Config Register (Table 4-2)
  * Register: SCD_SYSTEM_CFG
@@ -154,7 +249,9 @@
 #define M_SYS_MISR_MODE             _SB_MAKEMASK1(61)
 #define M_SYS_MISR_RESET            _SB_MAKEMASK1(62)
 
-#define M_SYS_SW_FLAG		    _SB_MAKEMASK1(63)	/* PASS2 */
+#if SIBYTE_HDR_FEATURE(1250, PASS2) || SIBYTE_HDR_FEATURE(112x, PASS1)
+#define M_SYS_SW_FLAG		    _SB_MAKEMASK1(63)
+#endif /* 1250 PASS2 || 112x PASS1 */
 
 
 /*
@@ -179,12 +276,31 @@
 #define V_SCD_WDOG_FREQ             1000000
 
 #define S_SCD_WDOG_INIT             0
-#define M_SCD_WDOG_INIT             _SB_MAKEMASK(13,S_SCD_WDOG_INIT)
+#define M_SCD_WDOG_INIT             _SB_MAKEMASK(23,S_SCD_WDOG_INIT)
 
 #define S_SCD_WDOG_CNT              0
-#define M_SCD_WDOG_CNT              _SB_MAKEMASK(13,S_SCD_WDOG_CNT)
+#define M_SCD_WDOG_CNT              _SB_MAKEMASK(23,S_SCD_WDOG_CNT)
 
-#define M_SCD_WDOG_ENABLE           _SB_MAKEMASK1(0)
+#define S_SCD_WDOG_ENABLE           0
+#define M_SCD_WDOG_ENABLE           _SB_MAKEMASK1(S_SCD_WDOG_ENABLE)
+
+#define S_SCD_WDOG_RESET_TYPE       2
+#define M_SCD_WDOG_RESET_TYPE       _SB_MAKEMASK(3,S_SCD_WDOG_RESET_TYPE)
+#define V_SCD_WDOG_RESET_TYPE(x)    _SB_MAKEVALUE(x,S_SCD_WDOG_RESET_TYPE)
+#define G_SCD_WDOG_RESET_TYPE(x)    _SB_GETVALUE(x,S_SCD_WDOG_RESET_TYPE,M_SCD_WDOG_RESET_TYPE)
+
+#define K_SCD_WDOG_RESET_FULL       0	/* actually, (x & 1) == 0  */
+#define K_SCD_WDOG_RESET_SOFT       1
+#define K_SCD_WDOG_RESET_CPU0       3
+#define K_SCD_WDOG_RESET_CPU1       5
+#define K_SCD_WDOG_RESET_BOTH_CPUS  7
+
+/* This feature is present in 1250 C0 and later, but *not* in 112x A revs.  */
+#if SIBYTE_HDR_FEATURE(1250, PASS3)
+#define S_SCD_WDOG_HAS_RESET        8
+#define M_SCD_WDOG_HAS_RESET        _SB_MAKEMASK1(S_SCD_WDOG_HAS_RESET)
+#endif
+
 
 /*
  * Timer Registers (Table 4-11) (Table 4-12) (Table 4-13)
@@ -248,48 +364,48 @@
 #define V_SCD_BERR_RID(x)         _SB_MAKEVALUE(x,S_SCD_BERR_RID)
 #define G_SCD_BERR_RID(x)         _SB_GETVALUE(x,S_SCD_BERR_RID,M_SCD_BERR_RID)
 
-#define S_SCD_BERR_DCODE            22
-#define M_SCD_BERR_DCODE            _SB_MAKEMASK(3,S_SCD_BERR_DCODE)
-#define V_SCD_BERR_DCODE(x)         _SB_MAKEVALUE(x,S_SCD_BERR_DCODE)
-#define G_SCD_BERR_DCODE(x)         _SB_GETVALUE(x,S_SCD_BERR_DCODE,M_SCD_BERR_DCODE)
+#define S_SCD_BERR_DCODE          22
+#define M_SCD_BERR_DCODE          _SB_MAKEMASK(3,S_SCD_BERR_DCODE)
+#define V_SCD_BERR_DCODE(x)       _SB_MAKEVALUE(x,S_SCD_BERR_DCODE)
+#define G_SCD_BERR_DCODE(x)       _SB_GETVALUE(x,S_SCD_BERR_DCODE,M_SCD_BERR_DCODE)
 
-#define M_SCD_BERR_MULTERRS	_SB_MAKEMASK1(30)
+#define M_SCD_BERR_MULTERRS       _SB_MAKEMASK1(30)
 
 
-#define S_SCD_L2ECC_CORR_D            0
-#define M_SCD_L2ECC_CORR_D            _SB_MAKEMASK(8,S_SCD_L2ECC_CORR_D)
-#define V_SCD_L2ECC_CORR_D(x)         _SB_MAKEVALUE(x,S_SCD_L2ECC_CORR_D)
-#define G_SCD_L2ECC_CORR_D(x)         _SB_GETVALUE(x,S_SCD_L2ECC_CORR_D,M_SCD_L2ECC_CORR_D)
+#define S_SCD_L2ECC_CORR_D        0
+#define M_SCD_L2ECC_CORR_D        _SB_MAKEMASK(8,S_SCD_L2ECC_CORR_D)
+#define V_SCD_L2ECC_CORR_D(x)     _SB_MAKEVALUE(x,S_SCD_L2ECC_CORR_D)
+#define G_SCD_L2ECC_CORR_D(x)     _SB_GETVALUE(x,S_SCD_L2ECC_CORR_D,M_SCD_L2ECC_CORR_D)
 
-#define S_SCD_L2ECC_BAD_D            8
-#define M_SCD_L2ECC_BAD_D            _SB_MAKEMASK(8,S_SCD_L2ECC_BAD_D)
-#define V_SCD_L2ECC_BAD_D(x)         _SB_MAKEVALUE(x,S_SCD_L2ECC_BAD_D)
-#define G_SCD_L2ECC_BAD_D(x)         _SB_GETVALUE(x,S_SCD_L2ECC_BAD_D,M_SCD_L2ECC_BAD_D)
+#define S_SCD_L2ECC_BAD_D         8
+#define M_SCD_L2ECC_BAD_D         _SB_MAKEMASK(8,S_SCD_L2ECC_BAD_D)
+#define V_SCD_L2ECC_BAD_D(x)      _SB_MAKEVALUE(x,S_SCD_L2ECC_BAD_D)
+#define G_SCD_L2ECC_BAD_D(x)      _SB_GETVALUE(x,S_SCD_L2ECC_BAD_D,M_SCD_L2ECC_BAD_D)
 
-#define S_SCD_L2ECC_CORR_T            16
-#define M_SCD_L2ECC_CORR_T            _SB_MAKEMASK(8,S_SCD_L2ECC_CORR_T)
-#define V_SCD_L2ECC_CORR_T(x)         _SB_MAKEVALUE(x,S_SCD_L2ECC_CORR_T)
-#define G_SCD_L2ECC_CORR_T(x)         _SB_GETVALUE(x,S_SCD_L2ECC_CORR_T,M_SCD_L2ECC_CORR_T)
+#define S_SCD_L2ECC_CORR_T        16
+#define M_SCD_L2ECC_CORR_T        _SB_MAKEMASK(8,S_SCD_L2ECC_CORR_T)
+#define V_SCD_L2ECC_CORR_T(x)     _SB_MAKEVALUE(x,S_SCD_L2ECC_CORR_T)
+#define G_SCD_L2ECC_CORR_T(x)     _SB_GETVALUE(x,S_SCD_L2ECC_CORR_T,M_SCD_L2ECC_CORR_T)
 
-#define S_SCD_L2ECC_BAD_T            24
-#define M_SCD_L2ECC_BAD_T            _SB_MAKEMASK(8,S_SCD_L2ECC_BAD_T)
-#define V_SCD_L2ECC_BAD_T(x)         _SB_MAKEVALUE(x,S_SCD_L2ECC_BAD_T)
-#define G_SCD_L2ECC_BAD_T(x)         _SB_GETVALUE(x,S_SCD_L2ECC_BAD_T,M_SCD_L2ECC_BAD_T)
+#define S_SCD_L2ECC_BAD_T         24
+#define M_SCD_L2ECC_BAD_T         _SB_MAKEMASK(8,S_SCD_L2ECC_BAD_T)
+#define V_SCD_L2ECC_BAD_T(x)      _SB_MAKEVALUE(x,S_SCD_L2ECC_BAD_T)
+#define G_SCD_L2ECC_BAD_T(x)      _SB_GETVALUE(x,S_SCD_L2ECC_BAD_T,M_SCD_L2ECC_BAD_T)
 
-#define S_SCD_MEM_ECC_CORR            0
-#define M_SCD_MEM_ECC_CORR            _SB_MAKEMASK(8,S_SCD_MEM_ECC_CORR)
-#define V_SCD_MEM_ECC_CORR(x)         _SB_MAKEVALUE(x,S_SCD_MEM_ECC_CORR)
-#define G_SCD_MEM_ECC_CORR(x)         _SB_GETVALUE(x,S_SCD_MEM_ECC_CORR,M_SCD_MEM_ECC_CORR)
+#define S_SCD_MEM_ECC_CORR        0
+#define M_SCD_MEM_ECC_CORR        _SB_MAKEMASK(8,S_SCD_MEM_ECC_CORR)
+#define V_SCD_MEM_ECC_CORR(x)     _SB_MAKEVALUE(x,S_SCD_MEM_ECC_CORR)
+#define G_SCD_MEM_ECC_CORR(x)     _SB_GETVALUE(x,S_SCD_MEM_ECC_CORR,M_SCD_MEM_ECC_CORR)
 
-#define S_SCD_MEM_ECC_BAD            16
-#define M_SCD_MEM_ECC_BAD            _SB_MAKEMASK(8,S_SCD_MEM_ECC_BAD)
-#define V_SCD_MEM_ECC_BAD(x)         _SB_MAKEVALUE(x,S_SCD_MEM_ECC_BAD)
-#define G_SCD_MEM_ECC_BAD(x)         _SB_GETVALUE(x,S_SCD_MEM_ECC_BAD,M_SCD_MEM_ECC_BAD)
+#define S_SCD_MEM_ECC_BAD         8
+#define M_SCD_MEM_ECC_BAD         _SB_MAKEMASK(8,S_SCD_MEM_ECC_BAD)
+#define V_SCD_MEM_ECC_BAD(x)      _SB_MAKEVALUE(x,S_SCD_MEM_ECC_BAD)
+#define G_SCD_MEM_ECC_BAD(x)      _SB_GETVALUE(x,S_SCD_MEM_ECC_BAD,M_SCD_MEM_ECC_BAD)
 
-#define S_SCD_MEM_BUSERR            24
-#define M_SCD_MEM_BUSERR            _SB_MAKEMASK(8,S_SCD_MEM_BUSERR)
-#define V_SCD_MEM_BUSERR(x)         _SB_MAKEVALUE(x,S_SCD_MEM_BUSERR)
-#define G_SCD_MEM_BUSERR(x)         _SB_GETVALUE(x,S_SCD_MEM_BUSERR,M_SCD_MEM_BUSERR)
+#define S_SCD_MEM_BUSERR          16
+#define M_SCD_MEM_BUSERR          _SB_MAKEMASK(8,S_SCD_MEM_BUSERR)
+#define V_SCD_MEM_BUSERR(x)       _SB_MAKEVALUE(x,S_SCD_MEM_BUSERR)
+#define G_SCD_MEM_BUSERR(x)       _SB_GETVALUE(x,S_SCD_MEM_BUSERR,M_SCD_MEM_BUSERR)
 
 
 /*
@@ -350,7 +466,9 @@
 #define M_SCD_TRACE_CFG_FREEZE_FULL     _SB_MAKEMASK1(5)
 #define M_SCD_TRACE_CFG_DEBUG_FULL      _SB_MAKEMASK1(6)
 #define M_SCD_TRACE_CFG_FULL            _SB_MAKEMASK1(7)
-#define M_SCD_TRACE_CFG_FORCECNT        _SB_MAKEMASK1(8)	/* PASS2 */
+#if SIBYTE_HDR_FEATURE(1250, PASS2) || SIBYTE_HDR_FEATURE(112x, PASS1)
+#define M_SCD_TRACE_CFG_FORCECNT        _SB_MAKEMASK1(8)
+#endif /* 1250 PASS2 || 112x PASS1 */
 
 #define S_SCD_TRACE_CFG_CUR_ADDR        10
 #define M_SCD_TRACE_CFG_CUR_ADDR        _SB_MAKEMASK(8,S_SCD_TRACE_CFG_CUR_ADDR)

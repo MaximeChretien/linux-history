@@ -49,6 +49,7 @@ static struct super_operations hfs_super_operations = {
 	put_super:	hfs_put_super,
 	write_super:	hfs_write_super,
 	statfs:		hfs_statfs,
+	remount_fs:     hfs_remount,
 };
 
 /*================ File-local variables ================*/
@@ -162,23 +163,24 @@ static int parse_options(char *options, struct hfs_sb_info *hsb, int *part)
 	char *this_char, *value;
 	char names, fork;
 
-	/* initialize the sb with defaults */
-	memset(hsb, 0, sizeof(*hsb));
-	hsb->magic = HFS_SB_MAGIC;
-	hsb->s_uid   = current->uid;
-	hsb->s_gid   = current->gid;
-	hsb->s_umask = current->fs->umask;
-	hsb->s_type    = 0x3f3f3f3f;	/* == '????' */
-	hsb->s_creator = 0x3f3f3f3f;	/* == '????' */
-	hsb->s_lowercase = 0;
-	hsb->s_quiet     = 0;
-	hsb->s_afpd      = 0;
-        /* default version. 0 just selects the defaults */
-	hsb->s_version   = 0; 
-	hsb->s_conv = 'b';
-	names = '?';
-	fork = '?';
-	*part = 0;
+	if (hsb->magic != HFS_SB_MAGIC) {
+		/* initialize the sb with defaults */
+		hsb->magic = HFS_SB_MAGIC;
+		hsb->s_uid   = current->uid;
+		hsb->s_gid   = current->gid;
+		hsb->s_umask = current->fs->umask;
+		hsb->s_type    = 0x3f3f3f3f;	/* == '????' */
+		hsb->s_creator = 0x3f3f3f3f;	/* == '????' */
+		hsb->s_lowercase = 0;
+		hsb->s_quiet     = 0;
+		hsb->s_afpd      = 0;
+		/* default version. 0 just selects the defaults */
+		hsb->s_version   = 0; 
+		hsb->s_conv = 'b';
+		names = '?';
+		fork = '?';
+		*part = 0;
+	}
 
 	if (!options) {
 		goto done;
@@ -397,6 +399,7 @@ struct super_block *hfs_read_super(struct super_block *s, void *data,
 	struct inode *root_inode;
 	int part;
 
+	memset(HFS_SB(s), 0, sizeof(*(HFS_SB(s))));	
 	if (!parse_options((char *)data, HFS_SB(s), &part)) {
 		hfs_warn("hfs_fs: unable to parse mount options.\n");
 		goto bail3;
@@ -478,6 +481,27 @@ bail2:
 	set_blocksize(dev, BLOCK_SIZE);
 bail3:
 	return NULL;	
+}
+
+int hfs_remount(struct super_block *s, int *flags, char *data)
+{
+        int part; /* ignored */
+
+        if (!parse_options(data, HFS_SB(s), &part)) {
+                hfs_warn("hfs_fs: unable to parse mount options.\n");
+                return -EINVAL;
+	}
+
+        if ((*flags & MS_RDONLY) == (s->s_flags & MS_RDONLY))
+                return 0;
+	if (!(*flags & MS_RDONLY)) {
+                if (HFS_SB(s)->s_mdb->attrib & (HFS_SB_ATTRIB_HLOCK | HFS_SB_ATTRIB_SLOCK)) {
+                        hfs_warn("hfs_fs: Filesystem is marked locked, leaving it read-only.\n");
+		        s->s_flags |= MS_RDONLY;
+			*flags |= MS_RDONLY;
+	        }
+        }
+	return 0;
 }
 
 static int __init init_hfs_fs(void)

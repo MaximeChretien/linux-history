@@ -8,6 +8,7 @@
  * Kevin Kissell, kevink@mips.com and Carsten Langgaard, carstenl@mips.com
  * Copyright (C) 2000 MIPS Technologies, Inc.
  */
+#include <linux/config.h>
 #include <linux/types.h>
 #include <linux/sched.h>
 #include <linux/mm.h>
@@ -151,12 +152,19 @@ void output_sc_defines(void)
 	offset("#define SC_MDLO       ", struct sigcontext, sc_mdlo);
 	offset("#define SC_PC         ", struct sigcontext, sc_pc);
 	offset("#define SC_STATUS     ", struct sigcontext, sc_status);
-	offset("#define SC_OWNEDFP    ", struct sigcontext, sc_ownedfp);
 	offset("#define SC_FPC_CSR    ", struct sigcontext, sc_fpc_csr);
 	offset("#define SC_FPC_EIR    ", struct sigcontext, sc_fpc_eir);
 	offset("#define SC_CAUSE      ", struct sigcontext, sc_cause);
 	offset("#define SC_BADVADDR   ", struct sigcontext, sc_badvaddr);
 	linefeed;
+
+#ifdef CONFIG_MIPS64
+	text("/* Linux 32-bit sigcontext offsets. */");
+	offset("#define SC32_FPREGS     ", struct sigcontext32, sc_fpregs);
+	offset("#define SC32_FPC_CSR    ", struct sigcontext32, sc_fpc_csr);
+	offset("#define SC32_FPC_EIR    ", struct sigcontext32, sc_fpc_eir);
+	linefeed;
+#endif
 }
 
 void output_signal_defined(void)

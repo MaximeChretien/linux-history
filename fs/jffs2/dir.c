@@ -43,7 +43,7 @@
 #include <linux/jffs2_fs_i.h>
 #include <linux/jffs2_fs_sb.h>
 #include "nodelist.h"
-#include "crc32.h"
+#include <linux/crc32.h>
 
 static int jffs2_readdir (struct file *, void *, filldir_t);
 

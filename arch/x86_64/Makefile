@@ -19,7 +19,7 @@
 # 20010105  Andi Kleen, add IA32 compiler.
 #           ....and later removed it again....
 #
-# $Id: Makefile,v 1.32 2003/03/03 16:06:43 ak Exp $
+# $Id: Makefile,v 1.33 2003/05/12 14:36:34 ak Exp $
 
 #
 # early bootup linking needs 32bit. You can either use real 32bit tools
@@ -46,6 +46,7 @@ CFLAGS += -fno-reorder-blocks
 CFLAGS += -finline-limit=2000
 # needed for earlier gcc 3.1
 CFLAGS += -fno-strength-reduce
+CFLAGS += -Wno-sign-compare
 #CFLAGS += -g
 ifneq ($(CONFIG_X86_REMOTE_DEBUG),y)
 CFLAGS += -fno-asynchronous-unwind-tables

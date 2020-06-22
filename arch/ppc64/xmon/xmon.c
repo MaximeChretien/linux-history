@@ -26,6 +26,7 @@
 #include <asm/naca.h>
 #include <asm/paca.h>
 #include <asm/ppcdebug.h>
+#include <asm/cputable.h>
 #include "nonstdio.h"
 #include "privinst.h"
 
@@ -33,9 +34,11 @@
 #define skipbl	xmon_skipbl
 
 #ifdef CONFIG_SMP
-static unsigned long cpus_in_xmon = 0;
-static unsigned long got_xmon = 0;
+static volatile unsigned long cpus_in_xmon = 0;
+static volatile unsigned long got_xmon = 0;
 static volatile int take_xmon = -1;
+static volatile int leaving_xmon = 0;
+
 #endif /* CONFIG_SMP */
 
 static unsigned long adrs;
@@ -190,7 +193,7 @@ extern inline void sync(void)
 	asm volatile("sync; isync");
 }
 
-/* (Ref: 64-bit PowerPC ELF ABI Spplement; Ian Lance Taylor, Zembu Labs).
+/* (Ref: 64-bit PowerPC ELF ABI Supplement; Ian Lance Taylor, Zembu Labs).
  A PPC stack frame looks like this:
 
  High Address
@@ -250,12 +253,12 @@ void
 xmon(struct pt_regs *excp)
 {
 	struct pt_regs regs;
-	int cmd;
+	int cmd = 0;
 	unsigned long msr;
 
 	if (excp == NULL) {
 		/* Ok, grab regs as they are now.
-		 This won't do a particularily good job because the
+		 This won't do a particularly good job because the
 		 prologue has already been executed.
 		 ToDo: We could reach back into the callers save
 		 area to do a better job of representing the
@@ -309,9 +312,15 @@ xmon(struct pt_regs *excp)
 	xmon_regs[smp_processor_id()] = excp;
 	excprint(excp);
 #ifdef CONFIG_SMP
-	if (test_and_set_bit(smp_processor_id(), &cpus_in_xmon))
+	/* possible race condition here if a CPU is held up and gets
+	 * here while we are exiting */
+	leaving_xmon = 0;
+	if (test_and_set_bit(smp_processor_id(), &cpus_in_xmon)) {
+		/* xmon probably caused an exception itself */
+		printf("We are already in xmon\n");
 		for (;;)
 			;
+	}
 	while (test_and_set_bit(0, &got_xmon)) {
 		if (take_xmon == smp_processor_id()) {
 			take_xmon = -1;
@@ -327,6 +336,9 @@ xmon(struct pt_regs *excp)
 	if (cmd == 's') {
 		xmon_trace[smp_processor_id()] = SSTEP;
 		excp->msr |= MSR_SE;
+#ifdef CONFIG_SMP		
+		take_xmon = smp_processor_id();
+#endif		
 	} else if (at_breakpoint(excp->nip)) {
 		xmon_trace[smp_processor_id()] = BRSTEP;
 		excp->msr |= MSR_SE;
@@ -336,7 +348,9 @@ xmon(struct pt_regs *excp)
 	}
 	xmon_regs[smp_processor_id()] = 0;
 #ifdef CONFIG_SMP
-	clear_bit(0, &got_xmon);
+	leaving_xmon = 1;
+	if (cmd != 's')
+		clear_bit(0, &got_xmon);
 	clear_bit(smp_processor_id(), &cpus_in_xmon);
 #endif /* CONFIG_SMP */
 	set_msrd(msr);		/* restore interrupt enable */
@@ -442,7 +456,7 @@ insert_bpts()
 	int i;
 	struct bpt *bp;
 
-	if (systemcfg->platform != PLATFORM_PSERIES)
+	if (!(systemcfg->platform & PLATFORM_PSERIES))
 		return;
 	bp = bpts;
 	for (i = 0; i < NBPTS; ++i, ++bp) {
@@ -458,7 +472,7 @@ insert_bpts()
 		}
 	}
 
-	if (!__is_processor(PV_POWER4) && !__is_processor(PV_POWER4p)) {
+	if (!(cur_cpu_spec->cpu_features & CPU_FTR_SLB)) {
 		if (dabr.enabled)
 			set_dabr(dabr.address);
 		if (iabr.enabled)
@@ -473,11 +487,13 @@ remove_bpts()
 	struct bpt *bp;
 	unsigned instr;
 
-	if (systemcfg->platform != PLATFORM_PSERIES)
+	if (!(systemcfg->platform & PLATFORM_PSERIES))
 		return;
-	if (!__is_processor(PV_POWER4) && !__is_processor(PV_POWER4p)) {
-		set_dabr(0);
-		set_iabr(0);
+	if (!(cur_cpu_spec->cpu_features & CPU_FTR_SLB)) {
+		if (dabr.enabled)
+			set_dabr(0);
+		if (iabr.enabled)
+			set_iabr(0);
 	}
 
 	bp = bpts;
@@ -500,11 +516,15 @@ static char *last_cmd;
 static int
 cmds(struct pt_regs *excp)
 {
-	int cmd;
+	int cmd = 0;
 
 	last_cmd = NULL;
 	for(;;) {
 #ifdef CONFIG_SMP
+		/* Need to check if we should take any commands on
+		   this CPU. */
+		if (leaving_xmon)
+			return cmd;
 		printf("%d:", smp_processor_id());
 #endif /* CONFIG_SMP */
 		printf("mon> ");
@@ -767,10 +787,11 @@ bpt_cmds(void)
 	cmd = inchar();
 	switch (cmd) {
 	case 'd':	/* bd - hardware data breakpoint */
-		if (__is_processor(PV_POWER4) || __is_processor(PV_POWER4p)) {
+		if (cur_cpu_spec->cpu_features & CPU_FTR_SLB) {
 			printf("Not implemented on POWER4\n");
 			break;
 		}
+			
 		mode = 7;
 		cmd = inchar();
 		if (cmd == 'r')
@@ -787,7 +808,7 @@ bpt_cmds(void)
 			dabr.address = (dabr.address & ~7) | mode;
 		break;
 	case 'i':	/* bi - hardware instr breakpoint */
-		if (__is_processor(PV_POWER4) || __is_processor(PV_POWER4p)) {
+		if (cur_cpu_spec->cpu_features & CPU_FTR_SLB) {
 			printf("Not implemented on POWER4\n");
 			break;
 		}

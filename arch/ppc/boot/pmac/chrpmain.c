@@ -38,13 +38,15 @@ char *avail_high;
 
 #define SCRATCH_SIZE	(128 << 10)
 
+typedef void (*kernel_start_t)(int, int, void *);
+
 void boot(int a1, int a2, void *prom)
 {
     unsigned sa, len;
     void *dst;
     unsigned char *im;
     unsigned initrd_start, initrd_size;
-    
+
     printf("chrpboot starting: loaded at 0x%p\n", &_start);
 
     initrd_size = (char *)(&__ramdisk_end) - (char *)(&__ramdisk_begin);
@@ -87,7 +89,7 @@ void boot(int a1, int a2, void *prom)
     sa = (unsigned long)PROG_START;
     printf("start address = 0x%x\n", sa);
 
-    (*(void (*)())sa)(a1, a2, prom);
+    (*(kernel_start_t)sa)(a1, a2, prom);
 
     printf("returned?\n");
 

@@ -1056,7 +1056,7 @@ sba_fill_pdir(
 			printk(KERN_DEBUG " %2d : %08lx/%05x %p/%05x\n",
 				nents,
 				(unsigned long) sg_dma_address(startsg), cnt,
-				sg_virt_address(startsg), startsg->length
+				sg_virt_addr(startsg), startsg->length
 		);
 #else
 		DBG_RUN_SG(" %d : %08lx/%05x %p/%05x\n",

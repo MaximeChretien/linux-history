@@ -107,7 +107,7 @@ NESTED(kernel_entry, 16, sp)			# kernel entry point
 
 	PTR_LA	$28, init_task_union		# init current pointer
 	daddiu	sp, $28, KERNEL_STACK_SIZE-32
-	set_saved_sp	sp, t0
+	set_saved_sp	sp, t0, t1
 
 	/* The firmware/bootloader passes argc/argp/envp
 	 * to us as arguments.  But clear bss first because
@@ -157,8 +157,6 @@ NESTED(smp_bootstrap, 16, sp)
         or	t0, ST0_KX
 	mtc0	t0, CP0_STATUS
 
-	set_saved_sp	sp, t0
-
 	jal	start_secondary			# XXX: IP27: cboot
 
 	END(smp_bootstrap)
@@ -168,13 +166,10 @@ NESTED(smp_bootstrap, 16, sp)
 
 	declare_saved_sp
 
-#undef PAGE_SIZE
-#define PAGE_SIZE	0x1000
-
 	.macro	page name, order=0
 	.globl	\name
-\name:	.size	\name, (PAGE_SIZE << \order)
-	.org	. + (PAGE_SIZE << \order)
+\name:	.size	\name, (_PAGE_SIZE << \order)
+	.org	. + (_PAGE_SIZE << \order)
 	.type	\name, @object
 	.endm
 

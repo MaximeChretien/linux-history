@@ -1805,10 +1805,12 @@ static int do_md_stop(mddev_t * mddev, int ro)
 	int err = 0, resync_interrupted = 0;
 	kdev_t dev = mddev_to_kdev(mddev);
 
+#if 0 /* ->active is not currently reliable */
 	if (atomic_read(&mddev->active)>1) {
 		printk(STILL_IN_USE, mdidx(mddev));
 		OUT(-EBUSY);
 	}
+#endif
 
 	if (mddev->pers) {
 		/*
@@ -2623,6 +2625,7 @@ static int md_ioctl(struct inode *inode, struct file *file,
 		case BLKRAGET:
 		case BLKRASET:
 		case BLKFLSBUF:
+		case BLKSSZGET:
 		case BLKBSZGET:
 		case BLKBSZSET:
 			err = blk_ioctl (dev, cmd, arg);
@@ -2741,12 +2744,17 @@ static int md_ioctl(struct inode *inode, struct file *file,
 			goto done_unlock;
 
 		case STOP_ARRAY:
-			if (!(err = do_md_stop (mddev, 0)))
+			if (inode->i_bdev->bd_openers > 1)
+				err = -EBUSY;
+			else if (!(err = do_md_stop (mddev, 0)))
 				mddev = NULL;
 			goto done_unlock;
 
 		case STOP_ARRAY_RO:
-			err = do_md_stop (mddev, 1);
+			if (inode->i_bdev->bd_openers > 1)
+				err = -EBUSY;
+			else 
+				err = do_md_stop (mddev, 1);
 			goto done_unlock;
 
 	/*
@@ -3155,7 +3163,7 @@ static void *md_seq_start(struct seq_file *seq, loff_t *pos)
 	loff_t l = *pos;
 	mddev_t *mddev;
 
-	if (l > 0x10000)
+	if (l >= 0x10000)
 		return NULL;
 	if (!l--)
 		/* header */
@@ -3166,7 +3174,9 @@ static void *md_seq_start(struct seq_file *seq, loff_t *pos)
 			mddev = list_entry(tmp, mddev_t, all_mddevs);
 			return mddev;
 		}
-	return (void*)2;/* tail */
+	if (!l--)	
+		return (void*)2;/* tail */
+	return NULL;
 }
 
 static void *md_seq_next(struct seq_file *seq, void *v, loff_t *pos)

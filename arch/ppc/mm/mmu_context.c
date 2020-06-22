@@ -7,7 +7,7 @@
  * specification, the need to work through the hypervisor makes
  * things sufficiently different that it is handled elsewhere.
  *  -- paulus
- * 
+ *
  *  Derived from arch/ppc/mm/init.c:
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
  *

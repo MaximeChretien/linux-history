@@ -42,7 +42,7 @@
 /*
  * Version Information
  */
-#define DRIVER_VERSION "v0.4.30 (2003/04/01)"
+#define DRIVER_VERSION "v0.4.32 (2003/06/06)"
 #define DRIVER_AUTHOR "Petko Manolov <petkan@users.sourceforge.net>"
 #define DRIVER_DESC "Pegasus/Pegasus II USB Ethernet driver"
 
@@ -582,18 +582,34 @@ goon:
 static void write_bulk_callback(struct urb *urb)
 {
 	pegasus_t *pegasus = urb->context;
+	struct net_device *net = pegasus->net;
 
 	if (!pegasus || !(pegasus->flags & PEGASUS_RUNNING))
 		return;
 
-	if (!netif_device_present(pegasus->net))
+	if (!netif_device_present(net))
 		return;
 
-	if (urb->status)
-		info("%s: TX status %d", pegasus->net->name, urb->status);
+	switch (urb->status) {
+	case -EPIPE:
+		/* FIXME schedule_work() to clear the tx halt */
+		netif_stop_queue(net);
+		warn("%s: no tx stall recovery", net->name);
+		return;
+	case -ENOENT:
+	case -ECONNRESET:
+	case -ESHUTDOWN:
+		dbg("%s: tx unlink, %d", net->name, urb->status);
+		return;
+	default:
+		info("%s: TX status %d", net->name, urb->status);
+		/* FALL THROUGH */
+	case 0:
+		break;
+	}
 
-	pegasus->net->trans_start = jiffies;
-	netif_wake_queue(pegasus->net);
+	net->trans_start = jiffies;
+	netif_wake_queue(net);
 }
 
 #ifdef	PEGASUS_USE_INTR
@@ -665,9 +681,16 @@ static int pegasus_start_xmit(struct sk_buff *skb, struct net_device *net)
 		      write_bulk_callback, pegasus);
 	pegasus->tx_urb->transfer_buffer_length = count;
 	if ((res = usb_submit_urb(pegasus->tx_urb))) {
-		warn("failed tx_urb %d", res);
-		pegasus->stats.tx_errors++;
-		netif_start_queue(net);
+		switch (res) {
+		case -EPIPE:	/* stall, or disconnect from TT */
+			/* cleanup should already have been scheduled */
+			break;
+		case -ENODEV:	/* disconnect() upcoming */
+			break;
+		default:
+			pegasus->stats.tx_errors++;
+			netif_start_queue(net);
+		}
 	} else {
 		pegasus->stats.tx_packets++;
 		pegasus->stats.tx_bytes += skb->len;
@@ -793,11 +816,16 @@ static int pegasus_ethtool_ioctl(struct net_device *dev, void *useraddr)
 	switch (ethcmd) {
 	/* get driver-specific version/etc. info */
 	case ETHTOOL_GDRVINFO:{
-			struct ethtool_drvinfo info = { ETHTOOL_GDRVINFO };
+			struct ethtool_drvinfo info;
+
+			memset (&info, 0, sizeof info);
+			info.cmd = ETHTOOL_GDRVINFO;
 			strncpy(info.driver, driver_name,
 				sizeof (info.driver) - 1);
 			strncpy(info.version, DRIVER_VERSION,
 				sizeof (info.version) - 1);
+			usb_make_path(pegasus->usb, info.bus_info,
+			              sizeof info.bus_info);
 			if (copy_to_user(useraddr, &info, sizeof (info)))
 				return -EFAULT;
 			return 0;
@@ -860,20 +888,22 @@ static int pegasus_ethtool_ioctl(struct net_device *net, void *uaddr)
 {
 	pegasus_t *pegasus;
 	int cmd;
-	char tmp[128];
 
 	pegasus = net->priv;
 	if (get_user(cmd, (int *) uaddr))
 		return -EFAULT;
 	switch (cmd) {
 	case ETHTOOL_GDRVINFO:{
-			struct ethtool_drvinfo info = { ETHTOOL_GDRVINFO };
-			strncpy(info.driver, DRIVER_DESC, ETHTOOL_BUSINFO_LEN);
+			struct ethtool_drvinfo info;
+
+			memset (&info, 0, sizeof info);
+			info.cmd = ETHTOOL_GDRVINFO;
+			strncpy(info.driver, driver_name,
+			        sizeof (info.driver) - 1);
 			strncpy(info.version, DRIVER_VERSION,
-				ETHTOOL_BUSINFO_LEN);
-			sprintf(tmp, "usb%d:%d", pegasus->usb->bus->busnum,
-				pegasus->usb->devnum);
-			strncpy(info.bus_info, tmp, ETHTOOL_BUSINFO_LEN);
+				sizeof (info.version) - 1);
+			usb_make_path(pegasus->usb, info.bus_info,
+			              sizeof (info.bus_info) -1);
 			if (copy_to_user(uaddr, &info, sizeof(info)))
 				return -EFAULT;
 			return 0;
@@ -881,6 +911,7 @@ static int pegasus_ethtool_ioctl(struct net_device *net, void *uaddr)
 	case ETHTOOL_GSET:{
 			struct ethtool_cmd ecmd;
 			short lpa, bmcr;
+			u8 port;
 
 			if (copy_from_user(&ecmd, uaddr, sizeof(ecmd)))
 				return -EFAULT;
@@ -890,7 +921,11 @@ static int pegasus_ethtool_ioctl(struct net_device *net, void *uaddr)
 					  SUPPORTED_100baseT_Full |
 					  SUPPORTED_Autoneg |
 					  SUPPORTED_TP | SUPPORTED_MII);
-			ecmd.port = PORT_TP;
+			get_registers(pegasus, Reg7b, 1, &port);
+			if (port == 0)
+				ecmd.port = PORT_MII;
+			else
+				ecmd.port = PORT_TP;
 			ecmd.transceiver = XCVR_INTERNAL;
 			ecmd.phy_address = pegasus->phy;
 			read_mii_word(pegasus, pegasus->phy, MII_BMCR, &bmcr);
@@ -1013,7 +1048,10 @@ static inline void setup_pegasus_II(pegasus_t * pegasus)
 	set_register(pegasus, Reg1d, 0);
 	set_register(pegasus, Reg7b, 1);
 	mdelay(100);
-	set_register(pegasus, Reg7b, 2);
+	if ((pegasus->features & HAS_HOME_PNA) && mii_mode)
+		set_register(pegasus, Reg7b, 0);
+	else
+		set_register(pegasus, Reg7b, 2);
 	
 	set_register(pegasus, 0x83, data);
 	get_registers(pegasus, 0x83, 1, &data);

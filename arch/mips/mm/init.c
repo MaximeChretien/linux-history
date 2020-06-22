@@ -43,17 +43,6 @@ unsigned long highstart_pfn, highend_pfn;
 static unsigned long totalram_pages;
 static unsigned long totalhigh_pages;
 
-extern void prom_free_prom_memory(void);
-
-
-asmlinkage int sys_cacheflush(void *addr, int bytes, int cache)
-{
-	/* This should flush more selectivly ...  */
-	__flush_cache_all();
-
-	return 0;
-}
-
 /*
  * We have upto 8 empty zeroed pages so we can map one of the right colour
  * when needed.  This is necessary only on R4000 / R4400 SC and MC versions
@@ -67,7 +56,8 @@ static inline unsigned long setup_zero_pages(void)
 {
 	unsigned long order, size;
 	struct page *page;
-	if(mips_cpu.options & MIPS_CPU_VCE)
+
+	if (cpu_has_vce)
 		order = 3;
 	else
 		order = 0;
@@ -161,6 +151,7 @@ void show_mem(void)
 extern char _ftext, _etext, _fdata, _edata;
 extern char __init_begin, __init_end;
 
+#ifdef CONFIG_HIGHMEM
 static void __init fixrange_init (unsigned long start, unsigned long end,
 	pgd_t *pgd_base)
 {
@@ -189,22 +180,25 @@ static void __init fixrange_init (unsigned long start, unsigned long end,
 		j = 0;
 	}
 }
+#endif
 
 void __init pagetable_init(void)
 {
+#ifdef CONFIG_HIGHMEM
 	unsigned long vaddr;
 	pgd_t *pgd, *pgd_base;
 	pmd_t *pmd;
 	pte_t *pte;
+#endif
 
 	/* Initialize the entire pgd.  */
 	pgd_init((unsigned long)swapper_pg_dir);
 	pgd_init((unsigned long)swapper_pg_dir +
 	         sizeof(pgd_t ) * USER_PTRS_PER_PGD);
 
+#ifdef CONFIG_HIGHMEM
 	pgd_base = swapper_pg_dir;
 
-#ifdef CONFIG_HIGHMEM
 	/*
 	 * Fixed mappings:
 	 */
@@ -360,7 +354,7 @@ void free_initrd_mem(unsigned long start, unsigned long end)
 #endif
 
 extern char __init_begin, __init_end;
-extern void prom_free_prom_memory(void);
+extern void prom_free_prom_memory(void) __init;
 
 void free_initmem(void)
 {

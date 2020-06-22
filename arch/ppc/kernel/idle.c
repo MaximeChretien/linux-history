@@ -34,9 +34,7 @@ unsigned long zero_paged_on;
 unsigned long powersave_nap;
 unsigned long powersave_lowspeed;
 
-#ifdef CONFIG_6xx
-extern void power_save_6xx(void);
-#endif
+extern void power_save(void);
 
 int idled(void)
 {
@@ -66,10 +64,8 @@ int idled(void)
 			}
 		}
 #endif
-#ifdef CONFIG_6xx
 		if (do_power_save && !current->need_resched)
-			power_save_6xx();
-#endif /* CONFIG_6xx */			
+			power_save();
 
 		if (current->need_resched) {
 			schedule();
@@ -86,5 +82,5 @@ int idled(void)
 int cpu_idle(void)
 {
 	idled();
-	return 0; 
+	return 0;
 }

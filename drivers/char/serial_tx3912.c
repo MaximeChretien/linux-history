@@ -752,6 +752,21 @@ void serial_outc(unsigned char c)
 	outl(int2, TX3912_INT2_ENABLE);
 }
 
+static int serial_console_wait_key(struct console *co)
+{
+	unsigned int int2, res;
+
+	int2 = inl(TX3912_INT2_ENABLE);
+	outl(0, TX3912_INT2_ENABLE);
+
+	while (!(inl(TX3912_UARTA_CTRL1) & TX3912_UART_CTRL1_RXHOLDFULL));
+	res = inl(TX3912_UARTA_DATA);
+	udelay(10);
+	
+	outl(int2, TX3912_INT2_ENABLE);
+	return res;
+}
+
 static void serial_console_write(struct console *co, const char *s,
 	unsigned count)
 {

@@ -882,7 +882,7 @@ static void handle_stripe(struct stripe_head *sh)
 	/* check if the array has lost two devices and, if so, some requests might
 	 * need to be failed
 	 */
-	if (failed > 1 && to_read+to_write) {
+	if (failed > 1 && to_read+to_write+written) {
 		for (i=disks; i--; ) {
 			/* fail all writes first */
 			if (sh->bh_write[i]) to_write--;
@@ -891,6 +891,14 @@ static void handle_stripe(struct stripe_head *sh)
 				bh->b_reqnext = return_fail;
 				return_fail = bh;
 			}
+			/* and fail all 'written' */
+			if (sh->bh_written[i]) written--;
+			while ((bh = sh->bh_written[i])) {
+				sh->bh_written[i] = bh->b_reqnext;
+				bh->b_reqnext = return_fail;
+				return_fail = bh;
+			}
+
 			/* fail any reads if this device is non-operational */
 			if (!conf->disks[i].operational) {
 				spin_lock_irq(&conf->device_lock);

@@ -20,7 +20,7 @@ piggyback: piggyback.c
 	$(HOSTCC) $(HOSTCFLAGS) -o piggyback piggyback.c
 
 image: $(TOPDIR)/vmlinux
-	$(STRIP) -R .comment -R .note $(TOPDIR)/vmlinux -o $@
+	$(STRIP) -R .comment -R .note -K sun4u_init -K _end -K _start $(TOPDIR)/vmlinux -o $@
 
 dep:
 

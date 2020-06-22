@@ -5,7 +5,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 1996, 1998, 2002 by Ralf Baechle
+ * Copyright (C) 1996, 1998, 1999, 2002 by Ralf Baechle
  * Copyright (C) 1999 Silicon Graphics, Inc.
  *
  * This file contains exception handler for address error exception with the
@@ -88,22 +88,21 @@
 #define STR(x)  __STR(x)
 #define __STR(x)  #x
 
-/*
- * User code may only access USEG; kernel code may access the
- * entire address space.
- */
-#define check_axs(pc,a,s)				\
-	if ((long)(~(pc) & ((a) | ((a)+(s)))) < 0)	\
-		goto sigbus;
+#ifdef CONFIG_PROC_FS
+unsigned long unaligned_instructions;
+#endif
 
 static inline int emulate_load_store_insn(struct pt_regs *regs,
-	unsigned long addr, unsigned long pc)
+	void *addr, unsigned long pc,
+	unsigned long **regptr, unsigned long *newvalue)
 {
 	union mips_instruction insn;
 	unsigned long value, fixup;
 	unsigned int res;
 
 	regs->regs[0] = 0;
+	*regptr=NULL;
+
 	/*
 	 * This load never faults.
 	 */
@@ -143,8 +142,10 @@ static inline int emulate_load_store_insn(struct pt_regs *regs,
 	 * The remaining opcodes are the ones that are really of interest.
 	 */
 	case lh_op:
-		check_axs(pc, addr, 2);
-		__asm__(".set\tnoat\n"
+		if (verify_area(VERIFY_READ, addr, 2))
+			goto sigbus;
+
+		__asm__ __volatile__ (".set\tnoat\n"
 #ifdef __BIG_ENDIAN
 			"1:\tlb\t%0, 0(%2)\n"
 			"2:\tlbu\t$1, 1(%2)\n\t"
@@ -169,12 +170,15 @@ static inline int emulate_load_store_insn(struct pt_regs *regs,
 			: "r" (addr), "i" (-EFAULT));
 		if (res)
 			goto fault;
-		regs->regs[insn.i_format.rt] = value;
-		return 0;
+		*newvalue = value;
+		*regptr = &regs->regs[insn.i_format.rt];
+		break;
 
 	case lw_op:
-		check_axs(pc, addr, 4);
-		__asm__(
+		if (verify_area(VERIFY_READ, addr, 4))
+			goto sigbus;
+
+		__asm__ __volatile__ (
 #ifdef __BIG_ENDIAN
 			"1:\tlwl\t%0, (%2)\n"
 			"2:\tlwr\t%0, 3(%2)\n\t"
@@ -196,12 +200,15 @@ static inline int emulate_load_store_insn(struct pt_regs *regs,
 			: "r" (addr), "i" (-EFAULT));
 		if (res)
 			goto fault;
-		regs->regs[insn.i_format.rt] = value;
-		return 0;
+		*newvalue = value;
+		*regptr = &regs->regs[insn.i_format.rt];
+		break;
 
 	case lhu_op:
-		check_axs(pc, addr, 2);
-		__asm__(
+		if (verify_area(VERIFY_READ, addr, 2))
+			goto sigbus;
+
+		__asm__ __volatile__ (
 			".set\tnoat\n"
 #ifdef __BIG_ENDIAN
 			"1:\tlbu\t%0, 0(%2)\n"
@@ -227,18 +234,102 @@ static inline int emulate_load_store_insn(struct pt_regs *regs,
 			: "r" (addr), "i" (-EFAULT));
 		if (res)
 			goto fault;
-		regs->regs[insn.i_format.rt] = value;
-		return 0;
+		*newvalue = value;
+		*regptr = &regs->regs[insn.i_format.rt];
+		break;
 
 	case lwu_op:
+#ifdef CONFIG_MIPS64
+		/*
+		 * A 32-bit kernel might be running on a 64-bit processor.  But
+		 * if we're on a 32-bit processor and an i-cache incoherency
+		 * or race makes us see a 64-bit instruction here the sdl/sdr
+		 * would blow up, so for now we don't handle unaligned 64-bit
+		 * instructions on 32-bit kernels.
+		 */
+		if (verify_area(VERIFY_READ, addr, 4))
+			goto sigbus;
+
+		__asm__ __volatile__ (
+#ifdef __BIG_ENDIAN
+			"1:\tlwl\t%0, (%2)\n"
+			"2:\tlwr\t%0, 3(%2)\n\t"
+#endif
+#ifdef __LITTLE_ENDIAN
+			"1:\tlwl\t%0, 3(%2)\n"
+			"2:\tlwr\t%0, (%2)\n\t"
+#endif
+			"dsll\t%0, %0, 32\n\t"
+			"dsrl\t%0, %0, 32\n\t"
+			"li\t%1, 0\n"
+			"3:\t.section\t.fixup,\"ax\"\n\t"
+			"4:\tli\t%1, %3\n\t"
+			"j\t3b\n\t"
+			".previous\n\t"
+			".section\t__ex_table,\"a\"\n\t"
+			STR(PTR)"\t1b, 4b\n\t"
+			STR(PTR)"\t2b, 4b\n\t"
+			".previous"
+			: "=&r" (value), "=r" (res)
+			: "r" (addr), "i" (-EFAULT));
+		if (res)
+			goto fault;
+		*newvalue = value;
+		*regptr = &regs->regs[insn.i_format.rt];
+		break;
+#endif /* CONFIG_MIPS64 */
+
+		/* Cannot handle 64-bit instructions in 32-bit kernel */
+		goto sigill;
+
 	case ld_op:
+#ifdef CONFIG_MIPS64
+		/*
+		 * A 32-bit kernel might be running on a 64-bit processor.  But
+		 * if we're on a 32-bit processor and an i-cache incoherency
+		 * or race makes us see a 64-bit instruction here the sdl/sdr
+		 * would blow up, so for now we don't handle unaligned 64-bit
+		 * instructions on 32-bit kernels.
+		 */
+		if (verify_area(VERIFY_READ, addr, 8))
+			goto sigbus;
+
+		__asm__ __volatile__ (
+#ifdef __BIG_ENDIAN
+			"1:\tldl\t%0, (%2)\n"
+			"2:\tldr\t%0, 7(%2)\n\t"
+#endif
+#ifdef __LITTLE_ENDIAN
+			"1:\tldl\t%0, 7(%2)\n"
+			"2:\tldr\t%0, (%2)\n\t"
+#endif
+			"li\t%1, 0\n"
+			"3:\t.section\t.fixup,\"ax\"\n\t"
+			"4:\tli\t%1, %3\n\t"
+			"j\t3b\n\t"
+			".previous\n\t"
+			".section\t__ex_table,\"a\"\n\t"
+			STR(PTR)"\t1b, 4b\n\t"
+			STR(PTR)"\t2b, 4b\n\t"
+			".previous"
+			: "=&r" (value), "=r" (res)
+			: "r" (addr), "i" (-EFAULT));
+		if (res)
+			goto fault;
+		*newvalue = value;
+		*regptr = &regs->regs[insn.i_format.rt];
+		break;
+#endif /* CONFIG_MIPS64 */
+
 		/* Cannot handle 64-bit instructions in 32-bit kernel */
 		goto sigill;
 
 	case sh_op:
-		check_axs(pc, addr, 2);
+		if (verify_area(VERIFY_WRITE, addr, 2))
+			goto sigbus;
+
 		value = regs->regs[insn.i_format.rt];
-		__asm__(
+		__asm__ __volatile__ (
 #ifdef __BIG_ENDIAN
 			".set\tnoat\n"
 			"1:\tsb\t%1, 1(%2)\n\t"
@@ -267,12 +358,14 @@ static inline int emulate_load_store_insn(struct pt_regs *regs,
 			: "r" (value), "r" (addr), "i" (-EFAULT));
 		if (res)
 			goto fault;
-		return 0;
+		break;
 
 	case sw_op:
-		check_axs(pc, addr, 4);
+		if (verify_area(VERIFY_WRITE, addr, 4))
+			goto sigbus;
+
 		value = regs->regs[insn.i_format.rt];
-		__asm__(
+		__asm__ __volatile__ (
 #ifdef __BIG_ENDIAN
 			"1:\tswl\t%1,(%2)\n"
 			"2:\tswr\t%1, 3(%2)\n\t"
@@ -295,9 +388,47 @@ static inline int emulate_load_store_insn(struct pt_regs *regs,
 		: "r" (value), "r" (addr), "i" (-EFAULT));
 		if (res)
 			goto fault;
-		return 0;
+		break;
 
 	case sd_op:
+#ifdef CONFIG_MIPS64
+		/*
+		 * A 32-bit kernel might be running on a 64-bit processor.  But
+		 * if we're on a 32-bit processor and an i-cache incoherency
+		 * or race makes us see a 64-bit instruction here the sdl/sdr
+		 * would blow up, so for now we don't handle unaligned 64-bit
+		 * instructions on 32-bit kernels.
+		 */
+		if (verify_area(VERIFY_WRITE, addr, 8))
+			goto sigbus;
+
+		value = regs->regs[insn.i_format.rt];
+		__asm__ __volatile__ (
+#ifdef __BIG_ENDIAN
+			"1:\tsdl\t%1,(%2)\n"
+			"2:\tsdr\t%1, 7(%2)\n\t"
+#endif
+#ifdef __LITTLE_ENDIAN
+			"1:\tsdl\t%1, 7(%2)\n"
+			"2:\tsdr\t%1, (%2)\n\t"
+#endif
+			"li\t%0, 0\n"
+			"3:\n\t"
+			".section\t.fixup,\"ax\"\n\t"
+			"4:\tli\t%0, %3\n\t"
+			"j\t3b\n\t"
+			".previous\n\t"
+			".section\t__ex_table,\"a\"\n\t"
+			STR(PTR)"\t1b, 4b\n\t"
+			STR(PTR)"\t2b, 4b\n\t"
+			".previous"
+		: "=r" (res)
+		: "r" (value), "r" (addr), "i" (-EFAULT));
+		if (res)
+			goto fault;
+		break;
+#endif /* CONFIG_MIPS64 */
+
 		/* Cannot handle 64-bit instructions in 32-bit kernel */
 		goto sigill;
 
@@ -328,6 +459,11 @@ static inline int emulate_load_store_insn(struct pt_regs *regs,
 		 */
 		goto sigill;
 	}
+
+#ifdef CONFIG_PROC_FS
+	unaligned_instructions++;
+#endif
+
 	return 0;
 
 fault:
@@ -356,23 +492,21 @@ sigbus:
 sigill:
 	die_if_kernel("Unhandled kernel unaligned access or invalid instruction", regs);
 	send_sig(SIGILL, current, 1);
+
 	return 0;
 }
 
-#ifdef CONFIG_PROC_FS
-unsigned long unaligned_instructions;
-#endif
-
 asmlinkage void do_ade(struct pt_regs *regs)
 {
-	unsigned long pc;
+	unsigned long *regptr, newval;
 	extern int do_dsemulret(struct pt_regs *);
+	mm_segment_t seg;
+	unsigned long pc;
 
 	/*
-	 * Address errors may be deliberately induced
-	 * by the FPU emulator to take retake control
-	 * of the CPU after executing the instruction
-	 * in the delay slot of an emulated branch.
+	 * Address errors may be deliberately induced by the FPU emulator to
+	 * retake control of the CPU after executing the instruction in the
+	 * delay slot of an emulated branch.
 	 */
 	/* Terminate if exception was recognized as a delay slot return */
 	if (do_dsemulret(regs))
@@ -382,13 +516,12 @@ asmlinkage void do_ade(struct pt_regs *regs)
 
 	/*
 	 * Did we catch a fault trying to load an instruction?
-	 * This also catches attempts to activate MIPS16 code on
-	 * CPUs which don't support it.
+	 * Or are we running in MIPS16 mode?
 	 */
-	if (regs->cp0_badvaddr == regs->cp0_epc)
+	if ((regs->cp0_badvaddr == regs->cp0_epc) || (regs->cp0_epc & 0x1))
 		goto sigbus;
 
-	pc = regs->cp0_epc + ((regs->cp0_cause & CAUSEF_BD) ? 4 : 0);
+	pc = exception_epc(regs);
 	if ((current->thread.mflags & MF_FIXADE) == 0)
 		goto sigbus;
 
@@ -396,12 +529,20 @@ asmlinkage void do_ade(struct pt_regs *regs)
 	 * Do branch emulation only if we didn't forward the exception.
 	 * This is all so but ugly ...
 	 */
-	if (!emulate_load_store_insn(regs, regs->cp0_badvaddr, pc))
+	seg = get_fs();
+	if (!user_mode(regs))
+		set_fs(KERNEL_DS);
+	if (!emulate_load_store_insn(regs, (void *)regs->cp0_badvaddr, pc,
+	                             &regptr, &newval)) {
 		compute_return_epc(regs);
-
-#ifdef CONFIG_PROC_FS
-	unaligned_instructions++;
-#endif
+		/*
+		 * Now that branch is evaluated, update the dest
+		 * register if necessary
+		 */
+		if (regptr)
+			*regptr = newval;
+	}
+	set_fs(seg);
 
 	return;
 
@@ -412,6 +553,4 @@ sigbus:
 	/*
 	 * XXX On return from the signal handler we should advance the epc
 	 */
-
-	return;
 }

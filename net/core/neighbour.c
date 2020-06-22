@@ -435,8 +435,8 @@ void neigh_destroy(struct neighbour *neigh)
 	struct hh_cache *hh;
 
 	if (!neigh->dead) {
-		printk("Destroying alive neighbour %p from %08lx\n", neigh,
-		       *(((unsigned long*)&neigh)-1));
+		printk("Destroying alive neighbour %p\n", neigh);
+		dump_stack();
 		return;
 	}
 
@@ -1069,6 +1069,7 @@ struct neigh_parms *neigh_parms_alloc(struct net_device *dev, struct neigh_table
 				return NULL;
 			}
 		}
+		p->sysctl_table = NULL;
 		write_lock_bh(&tbl->lock);
 		p->next = tbl->parms.next;
 		tbl->parms.next = p;

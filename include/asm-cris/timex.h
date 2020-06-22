@@ -26,6 +26,8 @@
 
 unsigned long get_ns_in_jiffie(void);
 
+unsigned long timer_data_to_ns(unsigned long timer_data);
+
 extern inline unsigned long get_us_in_jiffie_highres(void)
 {
 	return get_ns_in_jiffie()/1000;

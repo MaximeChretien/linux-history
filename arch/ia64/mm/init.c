@@ -255,7 +255,7 @@ put_gate_page (struct page *page, unsigned long address)
 	pte_t *pte;
 
 	if (!PageReserved(page))
-		printk("put_gate_page: gate page at 0x%p not in reserved memory\n",
+		printk(KERN_ERR "put_gate_page: gate page at 0x%p not in reserved memory\n",
 		       page_address(page));
 
 	pgd = pgd_offset_k(address);		/* note: this is NOT pgd_offset()! */
@@ -560,7 +560,7 @@ paging_init (void)
 		efi_memmap_walk(create_mem_map_page_table, 0);
 
 		free_area_init_node(0, NULL, vmem_map, zones_size, 0, zholes_size);
-		printk("Virtual mem_map starts at 0x%p\n", mem_map);
+		printk(KERN_INFO "Virtual mem_map starts at 0x%p\n", mem_map);
 	}
 #endif
 }

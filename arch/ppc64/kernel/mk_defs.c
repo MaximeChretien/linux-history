@@ -37,6 +37,7 @@
 #include <asm/iSeries/HvLpEvent.h>
 #include <asm/prom.h>
 #include <asm/rtas.h>
+#include <asm/cputable.h>
 
 #define DEFINE(sym, val) \
 	asm volatile("\n#define\t" #sym "\t%0" : : "i" (val))
@@ -187,6 +188,13 @@ main(void)
 	DEFINE(_SRR1, STACK_FRAME_OVERHEAD+sizeof(struct pt_regs)+8);
 
 	DEFINE(CLONE_VM, CLONE_VM);
+
+	/* About the CPU features table */
+	DEFINE(CPU_SPEC_ENTRY_SIZE, sizeof(struct cpu_spec));
+	DEFINE(CPU_SPEC_PVR_MASK, offsetof(struct cpu_spec, pvr_mask));
+	DEFINE(CPU_SPEC_PVR_VALUE, offsetof(struct cpu_spec, pvr_value));
+	DEFINE(CPU_SPEC_FEATURES, offsetof(struct cpu_spec, cpu_features));
+	DEFINE(CPU_SPEC_SETUP, offsetof(struct cpu_spec, cpu_setup));
 
 	return 0;
 }

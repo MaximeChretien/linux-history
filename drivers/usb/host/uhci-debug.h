@@ -464,7 +464,7 @@ static int uhci_sprint_schedule(struct uhci *uhci, char *buf, int len)
 }
 
 #ifdef CONFIG_PROC_FS
-#define MAX_OUTPUT	(PAGE_SIZE * 8)
+#define MAX_OUTPUT	(64 * 1024)
 
 static struct proc_dir_entry *uhci_proc_root = NULL;
 

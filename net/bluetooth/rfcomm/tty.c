@@ -260,9 +260,9 @@ static inline void rfcomm_set_owner_w(struct sk_buff *skb, struct rfcomm_dev *de
 	skb->destructor = rfcomm_wfree;
 }
 
-static struct sk_buff *rfcomm_wmalloc(struct rfcomm_dev *dev, unsigned long size, int priority)
+static struct sk_buff *rfcomm_wmalloc(struct rfcomm_dev *dev, unsigned long size, int force, int priority)
 {
-	if (atomic_read(&dev->wmem_alloc) < rfcomm_room(dev->dlc)) {
+	if (force || atomic_read(&dev->wmem_alloc) < rfcomm_room(dev->dlc)) {
 		struct sk_buff *skb = alloc_skb(size, priority);
 		if (skb) {
 			rfcomm_set_owner_w(skb, dev);
@@ -627,9 +627,9 @@ static int rfcomm_tty_write(struct tty_struct *tty, int from_user, const unsigne
 		size = min_t(uint, count, dlc->mtu);
 
 		if (from_user)
-			skb = rfcomm_wmalloc(dev, size + RFCOMM_SKB_RESERVE, GFP_KERNEL);
+			skb = rfcomm_wmalloc(dev, size + RFCOMM_SKB_RESERVE, 0, GFP_KERNEL);
 		else
-			skb = rfcomm_wmalloc(dev, size + RFCOMM_SKB_RESERVE, GFP_ATOMIC);
+			skb = rfcomm_wmalloc(dev, size + RFCOMM_SKB_RESERVE, 0, GFP_ATOMIC);
 		
 		if (!skb)
 			break;
@@ -651,6 +651,27 @@ static int rfcomm_tty_write(struct tty_struct *tty, int from_user, const unsigne
 	}
 
 	return sent ? sent : err;
+}
+
+static void rfcomm_tty_put_char(struct tty_struct *tty, unsigned char ch)
+{
+	struct rfcomm_dev *dev = (struct rfcomm_dev *) tty->driver_data;
+	struct rfcomm_dlc *dlc = dev->dlc;
+	struct sk_buff *skb;
+
+	BT_DBG("tty %p char %x", tty, ch);
+
+	skb = rfcomm_wmalloc(dev, 1 + RFCOMM_SKB_RESERVE, 1, GFP_ATOMIC);
+
+	if (!skb)
+		return;
+
+	skb_reserve(skb, RFCOMM_SKB_HEAD_RESERVE);
+
+	*(char *)skb_put(skb, 1) = ch;
+
+	if ((rfcomm_dlc_send(dlc, skb)) < 0)
+		kfree_skb(skb);	
 }
 
 static int rfcomm_tty_write_room(struct tty_struct *tty)
@@ -879,6 +900,7 @@ static struct tty_driver rfcomm_tty_driver = {
 
 	open:			rfcomm_tty_open,
 	close:			rfcomm_tty_close,
+	put_char:		rfcomm_tty_put_char,
 	write:			rfcomm_tty_write,
 	write_room:		rfcomm_tty_write_room,
 	chars_in_buffer:	rfcomm_tty_chars_in_buffer,

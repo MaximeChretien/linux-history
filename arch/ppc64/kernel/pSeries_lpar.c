@@ -276,7 +276,6 @@ static unsigned char udbg_getcLP(void)
 
 
 
-/* Code for hvc_console.  Should move it back eventually. */
 
 int hvc_get_chars(int index, char *buf, int count)
 {

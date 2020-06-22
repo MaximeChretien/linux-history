@@ -17,6 +17,7 @@
 #include <linux/ioport.h>
 
 #include <asm/bootinfo.h>
+#include <asm/i8259.h>
 #include <asm/io.h>
 #include <asm/irq.h>
 #include <asm/mipsregs.h>
@@ -77,7 +78,7 @@ static void enable_cpu_irq(unsigned int irq)
 	unsigned long flags;
 
 	save_and_cli(flags);
-	change_cp0_status(irqnr_to_type[irq], irqnr_to_type[irq]);
+	change_c0_status(irqnr_to_type[irq], irqnr_to_type[irq]);
 	restore_flags(flags);
 }
 
@@ -93,7 +94,7 @@ static void disable_cpu_irq(unsigned int irq)
 	unsigned long flags;
 
 	save_and_cli(flags);
-	change_cp0_status(irqnr_to_type[irq], ~(irqnr_to_type[irq]));
+	change_c0_status(irqnr_to_type[irq], ~(irqnr_to_type[irq]));
 	restore_flags(flags);
 }
 
@@ -133,8 +134,8 @@ void __init init_IRQ(void)
 
 	/* Mask all cpu interrupts
 	    (except IE4, we already masked those at VIA level) */
-	clear_cp0_status(ST0_IM);
-	set_cp0_status(IE_IRQ4);
+	clear_c0_status(ST0_IM);
+	set_c0_status(IE_IRQ4);
 
 	cli();
 

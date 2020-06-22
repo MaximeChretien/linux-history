@@ -104,7 +104,9 @@ struct vm_area_struct {
 #define VM_DONTEXPAND	0x00040000	/* Cannot expand with mremap() */
 #define VM_RESERVED	0x00080000	/* Don't unmap it from swap_out */
 
+#ifndef VM_STACK_FLAGS
 #define VM_STACK_FLAGS	0x00000177
+#endif
 
 #define VM_READHINTMASK			(VM_SEQ_READ | VM_RAND_READ)
 #define VM_ClearReadHint(v)		(v)->vm_flags &= ~VM_READHINTMASK
@@ -299,10 +301,18 @@ typedef struct page {
 #define PG_launder		15	/* written out by VM pressure.. */
 #define PG_fs_1			16	/* Filesystem specific */
 
+#ifndef arch_set_page_uptodate
+#define arch_set_page_uptodate(page)
+#endif
+
 /* Make it prettier to test the above... */
 #define UnlockPage(page)	unlock_page(page)
 #define Page_Uptodate(page)	test_bit(PG_uptodate, &(page)->flags)
-#define SetPageUptodate(page)	set_bit(PG_uptodate, &(page)->flags)
+#define SetPageUptodate(page) \
+	do {								\
+		arch_set_page_uptodate(page);				\
+		set_bit(PG_uptodate, &(page)->flags);			\
+	} while (0)
 #define ClearPageUptodate(page)	clear_bit(PG_uptodate, &(page)->flags)
 #define PageDirty(page)		test_bit(PG_dirty, &(page)->flags)
 #define SetPageDirty(page)	set_bit(PG_dirty, &(page)->flags)

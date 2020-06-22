@@ -392,7 +392,7 @@ sys_call_table:
         .long  SYSCALL(sys_oldumount,sys32_oldumount_wrapper)
         .long  SYSCALL(sys_ni_syscall,sys32_setuid16_wrapper)   /* old setuid16 syscall*/
         .long  SYSCALL(sys_ni_syscall,sys32_getuid16)   /* old getuid16 syscall*/
-        .long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 25 old stime syscall */
+        .long  SYSCALL(sys_ni_syscall,sys32_stime_wrapper) /* 25 old stime syscall */
         .long  SYSCALL(sys_ptrace,sys32_ptrace_wrapper)
         .long  SYSCALL(sys_alarm,sys32_alarm_wrapper)
         .long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* old fstat syscall */
@@ -489,7 +489,7 @@ sys_call_table:
         .long  SYSCALL(sys_sigreturn_glue,sys32_sigreturn_glue)
         .long  SYSCALL(sys_clone_glue,sys_clone_glue) /* 120 */
         .long  SYSCALL(sys_setdomainname,sys32_setdomainname_wrapper)
-        .long  SYSCALL(sys_newuname,sys32_newuname_wrapper)
+        .long  SYSCALL(s390x_newuname,sys32_newuname_wrapper)
         .long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* modify_ldt for i386 */
         .long  SYSCALL(sys_adjtimex,sys32_adjtimex_wrapper)
         .long  SYSCALL(sys_mprotect,sys32_mprotect_wrapper) /* 125 */
@@ -503,7 +503,7 @@ sys_call_table:
         .long  SYSCALL(sys_fchdir,sys32_fchdir_wrapper)
         .long  SYSCALL(sys_bdflush,sys32_bdflush_wrapper)
         .long  SYSCALL(sys_sysfs,sys32_sysfs_wrapper)           /* 135 */
-        .long  SYSCALL(sys_personality,sys32_personality_wrapper)
+        .long  SYSCALL(s390x_personality,sys32_personality_wrapper)
         .long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* for afs_syscall */
         .long  SYSCALL(sys_ni_syscall,sys32_setfsuid16_wrapper) /* old setfsuid16 syscall */
         .long  SYSCALL(sys_ni_syscall,sys32_setfsgid16_wrapper) /* old setfsgid16 syscall */
@@ -516,7 +516,7 @@ sys_call_table:
         .long  SYSCALL(sys_writev,sys32_writev_wrapper)
         .long  SYSCALL(sys_getsid,sys32_getsid_wrapper)
         .long  SYSCALL(sys_fdatasync,sys32_fdatasync_wrapper)
-        .long  SYSCALL(sys_sysctl,sys_ni_syscall)
+        .long  SYSCALL(sys_sysctl,sys32_sysctl_wrapper)
         .long  SYSCALL(sys_mlock,sys32_mlock_wrapper)           /* 150 */
         .long  SYSCALL(sys_munlock,sys32_munlock_wrapper)
         .long  SYSCALL(sys_mlockall,sys32_mlockall_wrapper)
@@ -558,7 +558,7 @@ sys_call_table:
         .long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* streams1 */
         .long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* streams2 */
         .long  SYSCALL(sys_vfork_glue,sys_vfork_glue) /* 190 */
-        .long  SYSCALL(sys_getrlimit,sys32_old_getrlimit_wrapper)
+        .long  SYSCALL(sys_getrlimit,sys32_getrlimit_wrapper)
 	.long  SYSCALL(sys_mmap2,sys32_mmap2_wrapper)
 	.long  SYSCALL(sys_ni_syscall,sys32_truncate64_wrapper)
         .long  SYSCALL(sys_ni_syscall,sys32_ftruncate64_wrapper)
@@ -589,7 +589,7 @@ sys_call_table:
         .long  SYSCALL(sys_madvise,sys32_madvise_wrapper)
 	.long  SYSCALL(sys_getdents64,sys32_getdents64_wrapper)/* 220 */
 	.long  SYSCALL(sys_ni_syscall,sys32_fcntl64_wrapper)
-	.long  SYSCALL(sys_readahead,sys_ni_syscall)
+	.long  SYSCALL(sys_readahead,sys32_readahead)
 	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall)
 	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 224 - reserved for setxattr  */
 	.long  SYSCALL(sys_ni_syscall,sys_ni_syscall) /* 225 - reserved for lsetxattr */

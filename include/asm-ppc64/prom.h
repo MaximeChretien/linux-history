@@ -179,7 +179,6 @@ extern struct prom_t prom;
 extern char *of_stdout_device;
 
 /* Prototypes */
-extern void abort(void);
 extern unsigned long prom_init(unsigned long, unsigned long, unsigned long,
     unsigned long, unsigned long, yaboot_debug_t *);
 extern void prom_print(const char *msg);

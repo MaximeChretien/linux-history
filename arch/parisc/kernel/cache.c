@@ -194,31 +194,69 @@ cache_init(void)
 
 void disable_sr_hashing(void)
 {
-    int srhash_type;
+	int srhash_type;
 
-    if (boot_cpu_data.cpu_type == pcxl2)
-	return; /* pcxl2 doesn't support space register hashing */
+	switch (boot_cpu_data.cpu_type) {
+	case pcx: /* We shouldn't get this far.  setup.c should prevent it. */
+		BUG();
+		return;
 
-    switch (boot_cpu_data.cpu_type) {
+	case pcxs:
+	case pcxt:
+	case pcxt_:
+		srhash_type = SRHASH_PCXST;
+		break;
 
-    case pcx:
-	BUG(); /* We shouldn't get here. code in setup.c should prevent it */
-	return;
+	case pcxl:
+		srhash_type = SRHASH_PCXL;
+		break;
 
-    case pcxs:
-    case pcxt:
-    case pcxt_:
-	srhash_type = SRHASH_PCXST;
-	break;
+	case pcxl2: /* pcxl2 doesn't support space register hashing */
+		return;
 
-    case pcxl:
-	srhash_type = SRHASH_PCXL;
-	break;
+	default: /* Currently all PA2.0 machines use the same ins. sequence */
+		srhash_type = SRHASH_PA20;
+		break;
+	}
 
-    default: /* Currently all PA2.0 machines use the same ins. sequence */
-	srhash_type = SRHASH_PA20;
-	break;
-    }
-
-    disable_sr_hashing_asm(srhash_type);
+	disable_sr_hashing_asm(srhash_type);
 }
+
+void __flush_dcache_page(struct page *page)
+{
+	struct mm_struct *mm = current->active_mm;
+	struct vm_area_struct *mpnt;
+
+	flush_kernel_dcache_page(page_address(page));
+
+	if (!page->mapping)
+		return;
+
+	for (mpnt = page->mapping->i_mmap_shared;
+	     mpnt != NULL;
+	     mpnt = mpnt->vm_next_share)
+	{
+		unsigned long off;
+
+		/*
+		 * If this VMA is not in our MM, we can ignore it.
+		 */
+		if (mpnt->vm_mm != mm)
+			continue;
+
+		if (page->index < mpnt->vm_pgoff)
+			continue;
+
+		off = page->index - mpnt->vm_pgoff;
+		if (off >= (mpnt->vm_end - mpnt->vm_start) >> PAGE_SHIFT)
+			continue;
+
+		flush_cache_page(mpnt, mpnt->vm_start + (off << PAGE_SHIFT));
+
+		/* All user shared mappings should be equivalently mapped,
+		 * so once we've flushed one we should be ok
+		 */
+		break;
+	}
+}
+

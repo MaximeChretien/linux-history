@@ -173,7 +173,7 @@ iic_read(uint devaddr, u_char *buf, uint offset, uint count)
 	}
 #endif
 #endif
-	
+
 	/* Chip errata, clear enable.
 	*/
 	i2c->i2c_i2mod = 0;
@@ -207,7 +207,7 @@ iic_read(uint devaddr, u_char *buf, uint offset, uint count)
 	while ((tbdf->cbd_sc & BD_SC_READY) && (temp != 0))
 		temp--;
 #endif
-	
+
 	/* Chip errata, clear enable.
 	*/
 	i2c->i2c_i2mod = 0;

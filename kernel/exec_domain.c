@@ -196,8 +196,6 @@ __set_personality(u_long personality)
 
 	put_exec_domain(oep);
 
-	printk(KERN_DEBUG "[%s:%d]: set personality to %lx\n",
-			current->comm, current->pid, personality);
 	return 0;
 }
 

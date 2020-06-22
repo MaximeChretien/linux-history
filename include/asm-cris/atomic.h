@@ -1,5 +1,3 @@
-/* $Id: atomic.h,v 1.4 2002/11/20 18:20:17 hp Exp $ */
-
 #ifndef __ASM_CRIS_ATOMIC__
 #define __ASM_CRIS_ATOMIC__
 

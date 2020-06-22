@@ -125,6 +125,8 @@ enum
 	KERN_TAINTED=53,	/* int: various kernel tainted flags */
 	KERN_CADPID=54,		/* int: PID of the process to notify on CAD */
  	KERN_CORE_PATTERN=56,	/* string: pattern for core-files */
+	KERN_PPC_L3CR=57,       /* l3cr register on PPC */
+	KERN_EXCEPTION_TRACE=58, /* boolean: exception trace */
 };
 
 
@@ -548,7 +550,7 @@ enum
 	FS_STATINODE=2,
 	FS_MAXINODE=3,	/* int:maximum number of inodes that can be allocated */
 	FS_NRDQUOT=4,	/* int:current number of allocated dquots */
-	FS_MAXDQUOT=5,	/* int:maximum number of dquots that can be allocated */
+	/* was FS_MAXDQUOT */
 	FS_NRFILE=6,	/* int:current number of allocated filedescriptors */
 	FS_MAXFILE=7,	/* int:maximum number of filedescriptors that can be allocated */
 	FS_DENTRY=8,
@@ -559,6 +561,20 @@ enum
 	FS_LEASES=13,	/* int: leases enabled */
 	FS_DIR_NOTIFY=14,	/* int: directory notification enabled */
 	FS_LEASE_TIME=15,	/* int: maximum time to wait for a lease break */
+	FS_DQSTATS=16,	/* dir: disc quota usage statistics */
+	FS_XFS=17,	/* struct: control xfs parameters */
+};
+
+/* /proc/sys/fs/quota/ */
+enum {
+	FS_DQ_LOOKUPS = 1,
+	FS_DQ_DROPS = 2,
+	FS_DQ_READS = 3,
+	FS_DQ_WRITES = 4,
+	FS_DQ_CACHE_HITS = 5,
+	FS_DQ_ALLOCATED = 6,
+	FS_DQ_FREE = 7,
+	FS_DQ_SYNCS = 8,
 };
 
 /* CTL_DEBUG names: */

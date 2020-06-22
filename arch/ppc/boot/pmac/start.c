@@ -11,7 +11,7 @@
 extern int strlen(const char *s);
 extern void boot(int a1, int a2, void *prom);
 
-int (*prom)();
+int (*prom)(void *args);
 
 void *chosen_handle;
 void *stdin;
@@ -26,7 +26,7 @@ void printk(char *fmt, ...);
 void
 start(int a1, int a2, void *promptr)
 {
-    prom = (int (*)()) promptr;
+    prom = (int (*)(void *)) promptr;
     chosen_handle = finddevice("/chosen");
     if (chosen_handle == (void *) -1)
 	exit();

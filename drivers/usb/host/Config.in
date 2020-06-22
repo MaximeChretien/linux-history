@@ -12,4 +12,6 @@ else
    define_bool CONFIG_USB_UHCI_ALT n
 fi
 dep_tristate '  OHCI (Compaq, iMacs, OPTi, SiS, ALi, ...) support' CONFIG_USB_OHCI $CONFIG_USB
-
+if [ "$CONFIG_ARM" = "y" ]; then
+   dep_tristate '  SL811HS Alternate (support isosynchronous mode)' CONFIG_USB_SL811HS_ALT $CONFIG_USB
+fi

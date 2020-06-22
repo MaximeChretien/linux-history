@@ -248,6 +248,7 @@ obj-$(CONFIG_DS1620) += ds1620.o
 obj-$(CONFIG_INTEL_RNG) += i810_rng.o
 obj-$(CONFIG_AMD_RNG) += amd768_rng.o
 obj-$(CONFIG_AMD_PM768) += amd76x_pm.o
+obj-$(CONFIG_BRIQ_PANEL) += briq_panel.o
 
 obj-$(CONFIG_ITE_GPIO) += ite_gpio.o
 obj-$(CONFIG_AU1000_GPIO) += au1000_gpio.o

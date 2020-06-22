@@ -353,7 +353,7 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum,
 		unsigned long initrd_loc;
 		unsigned long rec_loc = _ALIGN((unsigned long)(zimage_size) +
 				(1 << 20) - 1, (1 << 20));
-		
+
 		rec = (struct bi_record *)rec_loc;
 
 		/* We need to make sure that the initrd and bi_recs do not

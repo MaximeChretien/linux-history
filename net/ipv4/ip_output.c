@@ -167,8 +167,11 @@ static inline int ip_finish_output2(struct sk_buff *skb)
 #endif /*CONFIG_NETFILTER_DEBUG*/
 
 	if (hh) {
+		int hh_alen;
+
 		read_lock_bh(&hh->hh_lock);
-  		memcpy(skb->data - 16, hh->hh_data, 16);
+		hh_alen = HH_DATA_ALIGN(hh->hh_len);
+  		memcpy(skb->data - hh_alen, hh->hh_data, hh_alen);
 		read_unlock_bh(&hh->hh_lock);
 	        skb_push(skb, hh->hh_len);
 		return hh->hh_output(skb);
@@ -1021,4 +1024,5 @@ void __init ip_init(void)
 #ifdef CONFIG_IP_MULTICAST
 	proc_net_create("igmp", 0, ip_mc_procinfo);
 #endif
+	proc_net_create("mcfilter", 0, ip_mcf_procinfo);
 }

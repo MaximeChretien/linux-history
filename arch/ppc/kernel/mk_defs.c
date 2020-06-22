@@ -57,6 +57,9 @@ main(void)
 	DEFINE(THREAD_VRSAVE, offsetof(struct thread_struct, vrsave));
 	DEFINE(THREAD_VSCR, offsetof(struct thread_struct, vscr));
 #endif /* CONFIG_ALTIVEC */
+#ifdef CONFIG_4xx
+	DEFINE(THREAD_DBCR0, offsetof(struct thread_struct, dbcr0));
+#endif
 	/* Interrupt register frame */
 	DEFINE(TASK_UNION_SIZE, sizeof(union task_union));
 	DEFINE(STACK_FRAME_OVERHEAD, STACK_FRAME_OVERHEAD);

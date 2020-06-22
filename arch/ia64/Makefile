@@ -132,6 +132,9 @@ srmboot:
 archclean:
 	@$(MAKEBOOT) clean
 
+check: vmlinux
+	arch/ia64/scripts/unwcheck.sh vmlinux
+
 archmrproper:
 	rm -f arch/$(ARCH)/vmlinux.lds
 	@$(MAKE) -C arch/$(ARCH)/tools mrproper

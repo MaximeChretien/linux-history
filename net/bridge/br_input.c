@@ -160,7 +160,8 @@ err_nolock:
 
 handle_special_frame:
 	if (!dest[5]) {
-		br_stp_handle_bpdu(skb);
+		NF_HOOK(PF_BRIDGE, NF_BR_LOCAL_IN, skb, skb->dev,NULL,
+			br_stp_handle_bpdu);
 		read_unlock(&br->lock);
 		return;
 	}

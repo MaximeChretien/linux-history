@@ -595,8 +595,11 @@ static void icmp_unreach(struct sk_buff *skb)
 		if (inet_addr_type(iph->daddr) == RTN_BROADCAST)
 		{
 			if (net_ratelimit())
-				printk(KERN_WARNING "%u.%u.%u.%u sent an invalid ICMP error to a broadcast.\n",
-			       	NIPQUAD(skb->nh.iph->saddr));
+				printk(KERN_WARNING "%u.%u.%u.%u sent an invalid ICMP type %u, code %u error to a broadcast: %u.%u.%u.%u on %s\n",
+					NIPQUAD(iph->saddr),
+					icmph->type, icmph->code,
+					NIPQUAD(iph->daddr),
+					skb->dev->name);
 			goto out;
 		}
 	}

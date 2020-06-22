@@ -437,7 +437,7 @@ _GLOBAL(enter_rtas)
 	mfsrr1	r10
 	std	r10,_SRR1(r1)
 
-	/* Unfortunatly, the stack pointer and the MSR are also clobbered,
+	/* Unfortunately, the stack pointer and the MSR are also clobbered,
 	 * so they are saved in the PACA (SPRG3) which allows us to restore
 	 * our original state after RTAS returns.
          */
@@ -548,7 +548,7 @@ _GLOBAL(enter_prom)
 	mfmsr	r11
 	std	r11,_MSR(r1)
 
-	/* Unfortunatly, the stack pointer is also clobbered, so it is saved
+	/* Unfortunately, the stack pointer is also clobbered, so it is saved
 	 * in the SPRG2 which allows us to restore our original state after
 	 * PROM returns.
          */

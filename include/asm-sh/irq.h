@@ -10,6 +10,9 @@
  *
  */
 
+#if defined(CONFIG_CPU_SUBTYPE_SH7300)
+#include <asm/irq-sh7300.h>
+#else
 #include <linux/config.h>
 #include <asm/machvec.h>
 #include <asm/ptrace.h>		/* for pt_regs */
@@ -21,6 +24,9 @@
 #define INTC_IPRA	0xffd00004UL
 #define INTC_IPRB	0xffd00008UL
 #define INTC_IPRC	0xffd0000cUL
+#if defined(CONFIG_CPU_SUBTYPE_SH7751)
+# define INTC_IPRD	0xffd00010UL
+#endif
 #endif
 
 #define TIMER_IRQ	16
@@ -80,7 +86,7 @@
 #define IRDA_IPR_POS	2
 #define IRDA_PRIORITY	3
 #elif defined(CONFIG_CPU_SUBTYPE_SH7750) || defined(CONFIG_CPU_SUBTYPE_SH7751) || \
-      defined(CONFIG_CPU_SUBTYPE_ST40STB1)
+      defined(CONFIG_CPU_SUBTYPE_ST40)
 #define SCIF_ERI_IRQ	40
 #define SCIF_RXI_IRQ	41
 #define SCIF_BRI_IRQ	42
@@ -88,7 +94,7 @@
 #define SCIF_IPR_ADDR	INTC_IPRC
 #define SCIF_IPR_POS	1
 #define SCIF_PRIORITY	3
-#if defined(CONFIG_CPU_SUBTYPE_ST40STB1)
+#if defined(CONFIG_CPU_SUBTYPE_ST40)
 #define SCIF1_ERI_IRQ	23
 #define SCIF1_RXI_IRQ	24
 #define SCIF1_BRI_IRQ	25
@@ -123,6 +129,10 @@
 #  define ONCHIP_NR_IRQS 72
 # elif defined(CONFIG_CPU_SUBTYPE_ST40STB1)
 #  define ONCHIP_NR_IRQS 144
+# elif defined(CONFIG_CPU_SUBTYPE_ST40GX1)
+#   define ONCHIP_NR_IRQS 176
+# else
+#  error Unknown chip
 # endif
 #endif
 
@@ -265,7 +275,7 @@ extern int ipr_irq_demux(int irq);
 #endif /* CONFIG_CPU_SUBTYPE_SH7707 || CONFIG_CPU_SUBTYPE_SH7709 */
 
 #if defined(CONFIG_CPU_SUBTYPE_SH7750) || defined(CONFIG_CPU_SUBTYPE_SH7751) || \
-    defined(CONFIG_CPU_SUBTYPE_ST40STB1)
+    defined(CONFIG_CPU_SUBTYPE_ST40)
 #define INTC_ICR        0xffd00000
 #define INTC_ICR_NMIL	(1<<15)
 #define INTC_ICR_MAI	(1<<14)
@@ -274,9 +284,15 @@ extern int ipr_irq_demux(int irq);
 #define INTC_ICR_IRLM	(1<<7)
 #endif
 
-#ifdef CONFIG_CPU_SUBTYPE_ST40STB1
+#ifdef CONFIG_CPU_SUBTYPE_ST40
 #define INTC2_FIRST_IRQ 64
-#define NR_INTC2_IRQS 25
+#if defined(CONFIG_CPU_SUBTYPE_ST40STB1)
+#define NR_INTC2_IRQS 80
+#elif defined(CONFIG_CPU_SUBTYPE_ST40GX1)
+#define NR_INTC2_IRQS 112
+#else
+#error Unknown CPU
+#endif
  
 #define INTC2_BASE0 0xfe080000
 #define INTC2_INTC2MODE  (INTC2_BASE0+0x80)
@@ -338,5 +354,6 @@ extern int systemasic_irq_demux(int irq);
 #endif
 
 
+#endif /* !CONFIG_CPU_SUBTYPE_SH7300 */
 
 #endif /* __ASM_SH_IRQ_H */

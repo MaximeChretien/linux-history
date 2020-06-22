@@ -18,9 +18,9 @@
  *  Copyright (c) 1999-2002 LSI Logic Corporation
  *  Originally By: Steven J. Ralston
  *  (mailto:sjralston1@netscape.net)
- *  (mailto:Pam.Delaney@lsil.com)
+ *  (mailto:lstephens@lsil.com)
  *
- *  $Id: mptctl.h,v 1.13 2002/12/03 21:26:33 pdelaney Exp $
+ *  $Id: mptctl.h,v 1.14 2003/03/18 22:49:51 pdelaney Exp $
  */
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
@@ -90,6 +90,7 @@
 #endif	/*}*/
 
 #define MPTIOCINFO		_IOWR(MPT_MAGIC_NUMBER,17,struct mpt_ioctl_iocinfo)
+#define MPTIOCINFO1		_IOWR(MPT_MAGIC_NUMBER,17,struct mpt_ioctl_iocinfo_rev0)
 #define MPTTARGETINFO		_IOWR(MPT_MAGIC_NUMBER,18,struct mpt_ioctl_targetinfo)
 #define MPTTEST			_IOWR(MPT_MAGIC_NUMBER,19,struct mpt_ioctl_test)
 #define MPTEVENTQUERY		_IOWR(MPT_MAGIC_NUMBER,21,struct mpt_ioctl_eventquery)
@@ -99,7 +100,7 @@
 #define MPTFWREPLACE		_IOWR(MPT_MAGIC_NUMBER,25,struct mpt_ioctl_replace_fw)
 
 /*
- * SPARC PLATFORM REMARK:
+ * SPARC PLATFORM REMARKS:
  * IOCTL data structures that contain pointers
  * will have different sizes in the driver and applications
  * (as the app. will not use 8-byte pointers).
@@ -107,6 +108,8 @@
  * The driver will convert data from
  * mpt_fw_xfer32 (mpt_ioctl_command32) to mpt_fw_xfer (mpt_ioctl_command)
  * internally.
+ *
+ * If data structures change size, must handle as in IOCGETINFO.
  */
 struct mpt_fw_xfer {
 	unsigned int	 iocnum;	/* IOC unit number */
@@ -154,11 +157,11 @@ struct mpt_ioctl_diag_reset {
 struct mpt_ioctl_pci_info {
 	union {
 		struct {
-			unsigned long  deviceNumber   :  5;
-			unsigned long  functionNumber :  3;
-			unsigned long  busNumber      : 24;
+			unsigned int  deviceNumber   :  5;
+			unsigned int  functionNumber :  3;
+			unsigned int  busNumber      : 24;
 		} bits;
-		unsigned long  asUlong;
+		unsigned int  asUlong;
 	} u;
 };
 
@@ -187,6 +190,27 @@ struct mpt_ioctl_iocinfo {
 	char		 hostId;
 	char		 rsvd[2];
 	struct mpt_ioctl_pci_info  pciInfo; /* Added Rev 1 */
+};
+
+/* Original structure, must always accept these
+ * IOCTLs. 4 byte pads can occur based on arch with
+ * above structure. Wish to re-align, but cannot.
+ */
+struct mpt_ioctl_iocinfo_rev0 {
+	mpt_ioctl_header hdr;
+	int		 adapterType;	/* SCSI or FCP */
+	int		 port;		/* port number */
+	int		 pciId;		/* PCI Id. */
+	int		 hwRev;		/* hardware revision */
+	int		 subSystemDevice;	/* PCI subsystem Device ID */
+	int		 subSystemVendor;	/* PCI subsystem Vendor ID */
+	int		 numDevices;		/* number of devices */
+	int		 FWVersion;		/* FW Version (integer) */
+	int		 BIOSVersion;		/* BIOS Version (integer) */
+	char		 driverVersion[MPT_IOCTL_VERSION_LENGTH];	/* Driver Version (string) */
+	char		 busChangeEvent;
+	char		 hostId;
+	char		 rsvd[2];
 };
 
 /*
@@ -318,6 +342,7 @@ struct mpt_ioctl_command32 {
 #define CPQFCTS_IOC_MAGIC 'Z'
 #define HP_IOC_MAGIC 'Z'
 #define HP_GETHOSTINFO		_IOR(HP_IOC_MAGIC, 20, hp_host_info_t)
+#define HP_GETHOSTINFO1		_IOR(HP_IOC_MAGIC, 20, hp_host_info_rev0_t)
 #define HP_GETTARGETINFO	_IOR(HP_IOC_MAGIC, 21, hp_target_info_t)
 
 /* All HP IOCTLs must include this header
@@ -330,7 +355,7 @@ typedef struct _hp_header {
 	unsigned int lun;
 } hp_header_t;
 
-/*  
+/*
  *  Header:
  *  iocnum 	required (input)
  *  host 	ignored	
@@ -353,12 +378,35 @@ typedef struct _hp_host_info {
 	u32		 bus_phys_width;
 	u32		 base_io_addr;
 	u32		 rsvd;
+	unsigned int	 hard_resets;		/* driver initiated resets */
+	unsigned int	 soft_resets;		/* ioc, external resets */
+	unsigned int	 timeouts;		/* num timeouts */
+} hp_host_info_t;
+
+/* replace ulongs with uints, need to preserve backwards
+ * compatibility.
+ */
+typedef struct _hp_host_info_rev0 {
+	hp_header_t	 hdr;
+	u16		 vendor;
+	u16		 device;
+	u16		 subsystem_vendor;
+	u16		 subsystem_id;
+	u8		 devfn;
+	u8		 bus;
+	ushort		 host_no;		/* SCSI Host number, if scsi driver not loaded*/
+	u8		 fw_version[16];	/* string */	
+	u8		 serial_number[24];	/* string */
+	u32		 ioc_status;	
+	u32		 bus_phys_width;
+	u32		 base_io_addr;
+	u32		 rsvd;
 	unsigned long	 hard_resets;		/* driver initiated resets */
 	unsigned long	 soft_resets;		/* ioc, external resets */
 	unsigned long	 timeouts;		/* num timeouts */
-} hp_host_info_t;
+} hp_host_info_rev0_t;
 
-/*  
+/*
  *  Header:
  *  iocnum 	required (input)
  *  host 	required	

@@ -191,9 +191,63 @@ struct known_lcd_panels
  */
 struct known_lcd_panels panels[] =
 {
-	{ /* 0: Pb1100 LCDA: Sharp 320x240 TFT panel */
+	{ /* 0: Pb1100 LCDA: Sharp 320x240x16bpp TFT panel, no rotate */
 		320, /* xres */
 		240, /* yres */
+		16,  /* bpp  */
+		
+		"Sharp_320x240_16",
+		/* mode_control */
+		( LCD_CONTROL_SBPPF_565
+		/*LCD_CONTROL_WP*/
+		/*LCD_CONTROL_WD*/
+		| LCD_CONTROL_C
+		| LCD_CONTROL_SM_0
+		/*LCD_CONTROL_DB*/
+		/*LCD_CONTROL_CCO*/
+		/*LCD_CONTROL_DP*/
+		| LCD_CONTROL_PO_00
+		/*LCD_CONTROL_MPI*/
+		| LCD_CONTROL_PT
+		| LCD_CONTROL_PC
+		| LCD_CONTROL_BPP_16 ),
+
+		/* mode_horztiming */
+		( LCD_HORZTIMING_HN2_N(8)
+		| LCD_HORZTIMING_HN1_N(60)
+		| LCD_HORZTIMING_HPW_N(12)
+		| LCD_HORZTIMING_PPL_N(320) ),
+
+		/* mode_verttiming */
+		( LCD_VERTTIMING_VN2_N(5)
+		| LCD_VERTTIMING_VN1_N(17)
+		| LCD_VERTTIMING_VPW_N(1)
+		| LCD_VERTTIMING_LPP_N(240) ),
+
+		/* mode_clkcontrol */
+		( 0
+		/*LCD_CLKCONTROL_IB*/
+		/*LCD_CLKCONTROL_IC*/
+		/*LCD_CLKCONTROL_IH*/
+		/*LCD_CLKCONTROL_IV*/
+		| LCD_CLKCONTROL_PCD_N(1) ),
+
+		/* mode_pwmdiv */
+		0,
+
+		/* mode_pwmhi */
+		0,
+
+		/* mode_toyclksrc */
+		((1<<7) | (1<<6) | (1<<5)),
+
+		/* mode_backlight */
+		6
+	},
+
+	{ /* 1: Pb1100 LCDA: Sharp 320x240x16bpp TFT panel, rotated */
+		240, /* xres */
+		320, /* yres */
 		16,  /* bpp  */
 		
 		"Sharp_320x240_16",
@@ -245,7 +299,39 @@ struct known_lcd_panels panels[] =
 		6
 	},
 
-	{ /* 1: Pb1100 LCDC 640x480 TFT panel */
+	{ /* 2: Pb1100 LCDB 640x480x16bpp PrimeView TFT panel */
+		640, /* xres */
+		480, /* yres */
+		16,  /* bpp  */
+
+		"Primeview_640x480_16",
+
+		/* mode_control */
+		0x0004886a,
+
+		/* mode_horztiming */
+		0x0e4bfe7f,
+
+		/* mode_verttiming */
+		0x210805df,
+
+		/* mode_clkcontrol */
+		0x00038001,
+
+		/* mode_pwmdiv */
+		0,
+
+		/* mode_pwmhi */
+		0,
+
+		/* mode_toyclksrc */
+		((1<<7) | (1<<6) | (0<<5)),
+
+		/* mode_backlight */
+		7
+	},
+
+	{ /* 3: Pb1100 LCDC 640x480x16bpp TFT panel */
 		640, /* xres */
 		480, /* yres */
 		16,  /* bpp  */
@@ -253,7 +339,11 @@ struct known_lcd_panels panels[] =
 		"Generic_640x480_16",
 
 		/* mode_control */
+#ifdef CONFIG_MIPS_HYD1100
+		0x0004c15a,
+#else
 		0x004806a | LCD_DEFAULT_PIX_FORMAT,
+#endif
 
 		/* mode_horztiming */
 		0x3434d67f,
@@ -282,24 +372,31 @@ struct known_lcd_panels panels[] =
 		7
 	},
 
-	{ /* 2: Pb1100 LCDB 640x480 PrimeView TFT panel */
+	{ // 4: Pb1100 NEON: 640x480x16bpp CRT, HOG, Hsync 30.7 kHz, Vsync 57.7 Hz
 		640, /* xres */
 		480, /* yres */
-		16,  /* bpp  */
+		16,  /* bpp */
 
-		"PrimeView_640x480_16",
+		"NEON_640x480_16",
 
 		/* mode_control */
 		0x0004886a | LCD_DEFAULT_PIX_FORMAT,
 
-		/* mode_horztiming */
-		0x0e4bfe7f,
+		// mode_horztiming
+		// 15 pixels front porch
+		// 76 pixels back porch
+		// 64 pixels sync pulse
+		0x1e3bfe7f,
 
-		/* mode_verttiming */
+		// mode_verttiming
+		// 34 lines front porch
+		// 9 lines back porch
+		// 2 lines sync pulse
 		0x210805df,
 
 		/* mode_clkcontrol */
-		0x00038001,
+		// div to 24 MHz
+		0x00020001,
 
 		/* mode_pwmdiv */
 		0,
@@ -308,13 +405,14 @@ struct known_lcd_panels panels[] =
 		0,
 
 		/* mode_toyclksrc */
+		// use 48 MHz clock
 		((1<<7) | (1<<6) | (0<<5)),
 
 		/* mode_backlight */
 		7
 	},
 
-	{ /* 3: Pb1100 800x600x16bpp NEON CRT */
+	{ //5: Pb1100 NEON: 800x600x16bpp CRT, HOG, Hsync 45.7 kHz, Vsync 68.7 Hz
 		800, /* xres */
 		600, /* yres */
 		16,  /* bpp */
@@ -324,13 +422,20 @@ struct known_lcd_panels panels[] =
 		/* mode_control */
 		0x0004886A | LCD_DEFAULT_PIX_FORMAT,
 
-		/* mode_horztiming */
-		0x005AFF1F,
+		// mode_horztiming
+		// 32 pixels front porch
+		// 152 pixels back porch
+		// 64 pixels sync pulse
+		0x1F97FF1F,
 
-		/* mode_verttiming */
-		0x16000E57,
+		// mode_verttiming
+		// 37 lines front porch
+		// 23 lines back porch
+		// 6 lines sync pulse
+		0x24161A57,
 
 		/* mode_clkcontrol */
+		// keep at 47 MHz
 		0x00020000,
 
 		/* mode_pwmdiv */
@@ -340,13 +445,14 @@ struct known_lcd_panels panels[] =
 		0,
 
 		/* mode_toyclksrc */
+		// use 48 MHz clock
 		((1<<7) | (1<<6) | (0<<5)),
-
+		
 		/* mode_backlight */
 		7
 	},
 
-	{ /* 4: Pb1100 640x480x16bpp NEON CRT */
+	{ //6: Pb1100 NEON: 800x600x16bpp CRT, HOG, Hsync 45.7 kHz, Vsync 68.7 Hz
 		640, /* xres */
 		480, /* yres */
 		16,  /* bpp */
@@ -356,13 +462,20 @@ struct known_lcd_panels panels[] =
 		/* mode_control */
 		0x0004886A | LCD_DEFAULT_PIX_FORMAT,
 
-		/* mode_horztiming */
-		0x0052E27F,
+		// mode_horztiming
+		// 32 pixels front porch
+		// 152 pixels back porch
+		// 64 pixels sync pulse
+		0x1F97FF1F,
 
-		/* mode_verttiming */
-		0x18000DDF,
+		// mode_verttiming
+		// 37 lines front porch
+		// 23 lines back porch
+		// 6 lines sync pulse
+		0x24161A57,
 
 		/* mode_clkcontrol */
+		// keep at 47 MHz
 		0x00020000,
 
 		/* mode_pwmdiv */
@@ -372,10 +485,54 @@ struct known_lcd_panels panels[] =
 		0,
 
 		/* mode_toyclksrc */
+		// use 48 MHz clock
 		((1<<7) | (1<<6) | (0<<5)),
-
+		
 		/* mode_backlight */
 		7
 	},
+
+	{ //7: Pb1100 NEON: 800x600x16bpp CRT, HOG, Hsync 45.7 kHz, Vsync 68.7 Hz
+		800, /* xres */
+		600, /* yres */
+		16,  /* bpp */
+
+		"NEON_800x600_16",
+
+
+	  	/* mode_control */
+	   	0x0004886A,
+
+		// mode_horztiming
+		// 32 pixels front porch
+		// 152 pixels back porch
+		// 64 pixels sync pulse
+		0x1F97FF1F,
+
+		// mode_verttiming
+		// 37 lines front porch
+		// 23 lines back porch
+		// 6 lines sync pulse
+		0x24161A57,
+
+		/* mode_clkcontrol */
+		// keep at 47 MHz
+		0x00020000,
+
+		/* mode_pwmdiv */
+		0,
+
+		/* mode_pwmhi */
+		0,
+
+		/* mode_toyclksrc */
+		// use 48 MHz clock
+		((1<<7) | (1<<6) | (0<<5)),
+		
+		/* mode_backlight */
+		7
+	},
+
+
 };
 #endif /* _AU1100LCD_H */

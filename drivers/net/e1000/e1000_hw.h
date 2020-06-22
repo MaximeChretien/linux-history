@@ -99,6 +99,7 @@ typedef enum {
     e1000_bus_speed_33,
     e1000_bus_speed_66,
     e1000_bus_speed_100,
+    e1000_bus_speed_120,
     e1000_bus_speed_133,
     e1000_bus_speed_reserved
 } e1000_bus_speed;
@@ -314,10 +315,11 @@ void e1000_write_reg_io(struct e1000_hw *hw, uint32_t offset, uint32_t value);
 #define E1000_DEV_ID_82545EM_FIBER       0x1011
 #define E1000_DEV_ID_82546EB_COPPER      0x1010
 #define E1000_DEV_ID_82546EB_FIBER       0x1012
+#define E1000_DEV_ID_82546EB_QUAD_COPPER 0x101D
 #define E1000_DEV_ID_82541EI             0x1013
 #define E1000_DEV_ID_82541EP             0x1018
 #define E1000_DEV_ID_82547EI             0x1019
-#define NUM_DEV_IDS 19
+#define NUM_DEV_IDS 20
 
 #define NODE_ADDRESS_SIZE 6
 #define ETH_LENGTH_OF_ADDRESS 6
@@ -601,7 +603,7 @@ struct e1000_ffvt_entry {
 #define E1000_EECD     0x00010  /* EEPROM/Flash Control - RW */
 #define E1000_EERD     0x00014  /* EEPROM Read - RW */
 #define E1000_CTRL_EXT 0x00018  /* Extended Device Control - RW */
-#define E1000_FLA      0x0001C  /* Flash Access Register - RW */
+#define E1000_FLA      0x0001C  /* Flash Access - RW */
 #define E1000_MDIC     0x00020  /* MDI Control - RW */
 #define E1000_FCAL     0x00028  /* Flow Control Address Low - RW */
 #define E1000_FCAH     0x0002C  /* Flow Control Address High -RW */
@@ -730,6 +732,7 @@ struct e1000_ffvt_entry {
  * the registers function in the same manner.
  */
 #define E1000_82542_CTRL     E1000_CTRL
+#define E1000_82542_CTRL_DUP E1000_CTRL_DUP
 #define E1000_82542_STATUS   E1000_STATUS
 #define E1000_82542_EECD     E1000_EECD
 #define E1000_82542_EERD     E1000_EERD
@@ -1485,7 +1488,6 @@ struct e1000_hw {
 #define E1000_COLLISION_DISTANCE        64
 #define E1000_FDX_COLLISION_DISTANCE    E1000_COLLISION_DISTANCE
 #define E1000_HDX_COLLISION_DISTANCE    E1000_COLLISION_DISTANCE
-#define E1000_GB_HDX_COLLISION_DISTANCE 512
 #define E1000_COLD_SHIFT                12
 
 /* The number of Transmit and Receive Descriptors must be a multiple of 8 */
@@ -1666,6 +1668,7 @@ struct e1000_hw {
 #define M88E1000_EXT_PHY_SPEC_CTRL 0x14  /* Extended PHY Specific Control */
 #define M88E1000_RX_ERR_CNTR       0x15  /* Receive Error Counter */
 
+#define IGP01E1000_IEEE_REGS_PAGE  0x0000
 /* IGP01E1000 Specific Registers */
 #define IGP01E1000_PHY_PORT_CONFIG 0x10 /* PHY Specific Port Config Register */
 #define IGP01E1000_PHY_PORT_STATUS 0x11 /* PHY Specific Status Register */
@@ -1688,6 +1691,7 @@ struct e1000_hw {
  * speed = 1000 Mbps. */
 #define IGP01E1000_PHY_PCS_INIT_REG  0x00B4
 
+#define IGP01E1000_ANALOG_REGS_PAGE  0x20C0
 
 #define MAX_PHY_REG_ADDRESS 0x1F        /* 5 bit address bus (0-0x1F) */
 
@@ -1978,6 +1982,22 @@ uint16_t e1000_igp_cable_length_table[IGP01E1000_AGC_LENGTH_TABLE_SIZE] =
 #define IGP01E1000_GMII_FLEX_SPD               0x10 /* Enable flexible speed
                                                      * on Link-Up */
 #define IGP01E1000_GMII_SPD                    0x20 /* Enable SPD */
+/* IGP01E1000 Analog Register */
+#define IGP01E1000_ANALOG_SPARE_FUSE_STATUS         0x0011
+#define IGP01E1000_ANALOG_FUSE_STATUS               0x0010
+#define IGP01E1000_ANALOG_FUSE_CONTROL              0x001C
+#define IGP01E1000_ANALOG_FUSE_BYPASS               0x001E
+
+#define IGP01E1000_ANALOG_FUSE_POLY_MASK            0xF000
+#define IGP01E1000_ANALOG_FUSE_FINE_MASK            0x0F80
+#define IGP01E1000_ANALOG_FUSE_COARSE_MASK          0x0070
+#define IGP01E1000_ANALOG_SPARE_FUSE_ENABLED        0x0100
+#define IGP01E1000_ANALOG_FUSE_ENABLE_SW_CONTROL    0x0002
+
+#define IGP01E1000_ANALOG_FUSE_COARSE_THRESH        0x0040
+#define IGP01E1000_ANALOG_FUSE_COARSE_10            0x0010
+#define IGP01E1000_ANALOG_FUSE_FINE_1               0x0080
+#define IGP01E1000_ANALOG_FUSE_FINE_10              0x0500
 
 /* Bit definitions for valid PHY IDs. */
 #define M88E1000_E_PHY_ID  0x01410C50

@@ -420,6 +420,11 @@ retry:
 	if (sk == NULL)
 		goto no_dst;
 
+	/* Don't bother queuing skb if kernel socket has no input function */
+	if (sk->protinfo.af_netlink->pid == 0 &&
+	    !sk->protinfo.af_netlink->data_ready)
+		goto no_dst;
+
 #ifdef NL_EMULATE_DEV
 	if (sk->protinfo.af_netlink->handler) {
 		skb_orphan(skb);

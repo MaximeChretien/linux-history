@@ -418,35 +418,31 @@ void __init mem_init(void)
 #endif
 }
 
-void __init __map_kernel_range(void *address, int len, pgprot_t prot) 
+/* Unmap a kernel mapping if it exists. This is useful to avoid prefetches
+   from the CPU leading to inconsistent cache lines. address and size
+   must be aligned to 2MB boundaries. 
+   Does nothing when the mapping doesn't exist. */
+void __init clear_kernel_mapping(unsigned long address, unsigned long size) 
 { 
-	int i;
-	void *end = address + len;
-	BUG_ON((pgprot_val(prot) & _PAGE_PSE) == 0);
-	address = (void *)((unsigned long)address & LARGE_PAGE_MASK); 
-	for (; address < end; address += LARGE_PAGE_SIZE) { 
-		pml4_t *pml4;
-		pgd_t *pgd;
-		pmd_t *pmd;
+	unsigned long end = address + size;
 
-		pml4 = pml4_offset_k((unsigned long) address); 
-		if (pml4_none(*pml4)) { 
-			void *p = (void *)get_zeroed_page(GFP_KERNEL); 
-			if (!p) panic("Cannot map kernel range"); 
-			for (i = 0; i < smp_num_cpus; i++) {
-				set_pml4((pml4_t *)(cpu_pda[i].level4_pgt) + 
-					 pml4_index((unsigned long)address),
-					 mk_kernel_pml4(virt_to_phys(p),KERNPG_TABLE));
-			}
+	BUG_ON(address & ~LARGE_PAGE_MASK);
+	BUG_ON(size & ~LARGE_PAGE_MASK); 
+	
+	for (; address < end; address += LARGE_PAGE_SIZE) { 
+		pgd_t *pgd = pgd_offset_k(address);
+		if (!pgd || pgd_none(*pgd))
+			continue; 
+		pmd_t *pmd = pmd_offset(pgd, address);
+		if (!pmd || pmd_none(*pmd))
+			continue; 
+		if (0 == (pmd_val(*pmd) & _PAGE_PSE)) { 
+			/* Could handle this, but it should not happen currently. */
+			printk(KERN_ERR 
+		"clear_kernel_mapping: mapping has been split. will leak memory\n"); 
+			pmd_ERROR(*pmd); 
 		} 
-		pgd = pgd_offset_k((unsigned long)address); 
-		if (pgd_none(*pgd)) { 
-			void *p = (void *)get_zeroed_page(GFP_KERNEL); 
-			if (!p) panic("Cannot map kernel range"); 
-			set_pgd(pgd, __mk_pgd(virt_to_phys(p), KERNPG_TABLE));
-		} 
-		pmd = pmd_offset(pgd, (unsigned long) address); 
-		set_pmd(pmd, __mk_pmd(virt_to_phys(address), prot));
+		set_pmd(pmd, __pmd(0)); 		
 	} 
 	__flush_tlb_all(); 
 } 

@@ -45,18 +45,13 @@
 #include <linux/slab.h>
 #include <linux/i2c.h>
 #include <linux/videodev.h>
-#include <asm/semaphore.h>
 #include <linux/init.h>
-
-#ifdef CONFIG_SMP
-#include <asm/pgtable.h>
 #include <linux/smp_lock.h>
-#endif
-/* kernel_thread */
-#define __KERNEL_SYSCALLS__
-#include <linux/unistd.h>
+#include <asm/semaphore.h>
+#include <asm/pgtable.h>
 
 #include "audiochip.h"
+#include "i2c-compat.h"
 #include "msp3400.h"
 
 /* insmod parameters */
@@ -103,9 +98,9 @@ struct msp3400c {
 	struct timer_list    wake_stereo;
 };
 
-#define HAVE_NICAM(msp)   (((msp->rev2>>8) & 0xff)     != 00)
-#define HAVE_SIMPLE(msp)  ((msp->rev1      & 0xff)+'@' >= 'D')
-#define HAVE_RADIO(msp)   ((msp->rev1      & 0xff)+'@' >= 'G')
+#define HAVE_NICAM(msp)   (((msp->rev2>>8) & 0xff) != 00)
+#define HAVE_SIMPLE(msp)  ((msp->rev1      & 0xff) >= 'D'-'@')
+#define HAVE_RADIO(msp)   ((msp->rev1      & 0xff) >= 'G'-'@')
 
 #define MSP3400_MAX 4
 static struct i2c_client *msps[MSP3400_MAX];
@@ -124,7 +119,7 @@ MODULE_PARM(dolby,"i");
 
 MODULE_DESCRIPTION("device driver for msp34xx TV sound processor");
 MODULE_AUTHOR("Gerd Knorr");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("Dual BSD/GPL"); /* FreeBSD uses this too */
 
 /* ---------------------------------------------------------------------- */
 
@@ -360,7 +355,7 @@ static char *scart_names[] = {
 static void
 msp3400c_set_scart(struct i2c_client *client, int in, int out)
 {
-	struct msp3400c *msp = client->data;
+	struct msp3400c *msp = i2c_get_clientdata(client);
 
 	if (-1 == scarts[out][in])
 		return;
@@ -424,7 +419,7 @@ static void msp3400c_settreble(struct i2c_client *client, int treble)
 
 static void msp3400c_setmode(struct i2c_client *client, int type)
 {
-	struct msp3400c *msp = client->data;
+	struct msp3400c *msp = i2c_get_clientdata(client);
 	int i;
 	
 	dprintk(KERN_DEBUG "msp3400: setmode: %d\n",type);
@@ -482,9 +477,16 @@ static void msp3400c_setmode(struct i2c_client *client, int type)
 /* turn on/off nicam + stereo */
 static void msp3400c_setstereo(struct i2c_client *client, int mode)
 {
-	static char *strmode[] = { "0", "mono", "stereo", "3",
-				   "lang1", "5", "6", "7", "lang2" };
-	struct msp3400c *msp = client->data;
+	static char *strmode[16] = {
+#if __GNUC__ >= 3
+		[ 0 ... 15 ]           = "invalid",
+#endif
+		[ VIDEO_SOUND_MONO ]   = "mono",
+		[ VIDEO_SOUND_STEREO ] = "stereo",
+		[ VIDEO_SOUND_LANG1  ] = "lang1",
+		[ VIDEO_SOUND_LANG2  ] = "lang2",
+	};
+	struct msp3400c *msp = i2c_get_clientdata(client);
 	int nicam=0; /* channel source: FM/AM or nicam */
 	int src=0;
 
@@ -613,7 +615,7 @@ msp3400c_print_mode(struct msp3400c *msp)
 static void
 msp3400c_restore_dfp(struct i2c_client *client)
 {
-	struct msp3400c *msp = client->data;
+	struct msp3400c *msp = i2c_get_clientdata(client);
 	int i;
 
 	for (i = 0; i < DFP_COUNT; i++) {
@@ -641,7 +643,7 @@ struct REGISTER_DUMP d1[] = {
 static int
 autodetect_stereo(struct i2c_client *client)
 {
-	struct msp3400c *msp = client->data;
+	struct msp3400c *msp = i2c_get_clientdata(client);
 	int val;
 	int newstereo = msp->stereo;
 	int newnicam  = msp->nicam_on;
@@ -744,7 +746,7 @@ static void msp3400c_stereo_wake(unsigned long data)
 /* stereo/multilang monitoring */
 static void watch_stereo(struct i2c_client *client)
 {
-	struct msp3400c *msp = client->data;
+	struct msp3400c *msp = i2c_get_clientdata(client);
 
 	if (autodetect_stereo(client)) {
 		if (msp->stereo & VIDEO_SOUND_STEREO)
@@ -765,24 +767,17 @@ static void watch_stereo(struct i2c_client *client)
 static int msp3400c_thread(void *data)
 {
 	struct i2c_client *client = data;
-	struct msp3400c *msp = client->data;
+	struct msp3400c *msp = i2c_get_clientdata(client);
 	
 	struct CARRIER_DETECT *cd;
 	int count, max1,max2,val1,val2, val,this;
 	
-#ifdef CONFIG_SMP
 	lock_kernel();
-#endif
-	
 	daemonize();
 	sigfillset(&current->blocked);
 	strcpy(current->comm,"msp3400");
-
 	msp->thread = current;
-
-#ifdef CONFIG_SMP
 	unlock_kernel();
-#endif
 
 	printk("msp3400: daemon started\n");
 	if(msp->notify != NULL)
@@ -1024,22 +1019,15 @@ static struct MODES {
 static int msp3410d_thread(void *data)
 {
 	struct i2c_client *client = data;
-	struct msp3400c *msp = client->data;
+	struct msp3400c *msp = i2c_get_clientdata(client);
 	int mode,val,i,std;
     
-#ifdef CONFIG_SMP
 	lock_kernel();
-#endif
-    
 	daemonize();
 	sigfillset(&current->blocked);
 	strcpy(current->comm,"msp3410 [auto]");
-
 	msp->thread = current;
-
-#ifdef CONFIG_SMP
 	unlock_kernel();
-#endif
 
 	printk("msp3410: daemon started\n");
 	if(msp->notify != NULL)
@@ -1265,9 +1253,9 @@ static struct i2c_driver driver = {
 
 static struct i2c_client client_template = 
 {
-	.name   = "(unset)",
-	.flags  = I2C_CLIENT_ALLOW_USE,
-        .driver = &driver,
+	I2C_DEVNAME("(unset)"),
+	.flags     = I2C_CLIENT_ALLOW_USE,
+        .driver    = &driver,
 };
 
 static int msp_attach(struct i2c_adapter *adap, int addr,
@@ -1276,7 +1264,7 @@ static int msp_attach(struct i2c_adapter *adap, int addr,
 	DECLARE_MUTEX_LOCKED(sem);
 	struct msp3400c *msp;
         struct i2c_client *c;
-	int i;
+	int i, rc;
 
         client_template.adapter = adap;
         client_template.addr = addr;
@@ -1304,7 +1292,7 @@ static int msp_attach(struct i2c_adapter *adap, int addr,
 	for (i = 0; i < DFP_COUNT; i++)
 		msp->dfp_regs[i] = -1;
 
-	c->data = msp;
+	i2c_set_clientdata(c, msp);
 	init_waitqueue_head(&msp->wq);
 
 	if (-1 == msp3400c_reset(c)) {
@@ -1348,7 +1336,7 @@ static int msp_attach(struct i2c_adapter *adap, int addr,
 	msp->wake_stereo.data     = (unsigned long)msp;
 
 	/* hello world :-) */
-	printk(KERN_INFO "msp34xx: init: chip=%s",c->name);
+	printk(KERN_INFO "msp34xx: init: chip=%s",i2c_clientname(c));
 	if (HAVE_NICAM(msp))
 		printk(" +nicam");
 	if (HAVE_SIMPLE(msp))
@@ -1360,9 +1348,12 @@ static int msp_attach(struct i2c_adapter *adap, int addr,
 	/* startup control thread */
 	MOD_INC_USE_COUNT;
 	msp->notify = &sem;
-	kernel_thread(msp->simple ? msp3410d_thread : msp3400c_thread,
-		      (void *)c, 0);
-	down(&sem);
+	rc = kernel_thread(msp->simple ? msp3410d_thread : msp3400c_thread,
+			   (void *)c, 0);
+	if (rc < 0)
+		printk(KERN_WARNING "msp34xx: kernel_thread() failed\n");
+	else
+		down(&sem);
 	msp->notify = NULL;
 	wake_up_interruptible(&msp->wq);
 
@@ -1382,7 +1373,7 @@ static int msp_attach(struct i2c_adapter *adap, int addr,
 static int msp_detach(struct i2c_client *client)
 {
 	DECLARE_MUTEX_LOCKED(sem);
-	struct msp3400c *msp  = (struct msp3400c*)client->data;
+	struct msp3400c *msp  = i2c_get_clientdata(client);
 	int i;
 	
 	/* shutdown control thread */
@@ -1421,7 +1412,7 @@ static int msp_probe(struct i2c_adapter *adap)
 
 static void msp_wake_thread(struct i2c_client *client)
 {
-	struct msp3400c *msp  = (struct msp3400c*)client->data;
+	struct msp3400c *msp  = i2c_get_clientdata(client);
 
 	msp3400c_setvolume(client,msp->muted,0,0);
 	msp->watch_stereo=0;
@@ -1433,7 +1424,7 @@ static void msp_wake_thread(struct i2c_client *client)
 
 static int msp_command(struct i2c_client *client, unsigned int cmd, void *arg)
 {
-	struct msp3400c *msp  = (struct msp3400c*)client->data;
+	struct msp3400c *msp  = i2c_get_clientdata(client);
         __u16           *sarg = arg;
 #if 0
 	int             *iarg = (int*)arg;
@@ -1505,7 +1496,7 @@ static int msp_command(struct i2c_client *client, unsigned int cmd, void *arg)
 
 		if (r->reg < 0 || r->reg >= DFP_COUNT)
 			return -EINVAL;
-		for (i = 0; i < sizeof(bl_dfp)/sizeof(int); i++)
+		for (i = 0; i < ARRAY_SIZE(bl_dfp); i++)
 			if (r->reg == bl_dfp[i])
 				return -EINVAL;
 		msp->dfp_regs[r->reg] = r->value;
@@ -1537,8 +1528,8 @@ static int msp_command(struct i2c_client *client, unsigned int cmd, void *arg)
 			VIDEO_AUDIO_MUTABLE;
 		if (msp->muted)
 			va->flags |= VIDEO_AUDIO_MUTE;
-		va->volume=MAX(msp->left,msp->right);
-		va->balance=(32768*MIN(msp->left,msp->right))/
+		va->volume=max(msp->left,msp->right);
+		va->balance=(32768*min(msp->left,msp->right))/
 			(va->volume ? va->volume : 1);
 		va->balance=(msp->left<msp->right)?
 			(65535-va->balance) : va->balance;
@@ -1559,9 +1550,9 @@ static int msp_command(struct i2c_client *client, unsigned int cmd, void *arg)
 
 		dprintk(KERN_DEBUG "msp34xx: VIDIOCSAUDIO\n");
 		msp->muted = (va->flags & VIDEO_AUDIO_MUTE);
-		msp->left = (MIN(65536 - va->balance,32768) *
+		msp->left = (min(65536 - va->balance,32768) *
 			     va->volume) / 32768;
-		msp->right = (MIN(va->balance,32768) *
+		msp->right = (min(va->balance,(__u16)32768) *
 			      va->volume) / 32768;
 		msp->bass = va->bass;
 		msp->treble = va->treble;
@@ -1572,8 +1563,8 @@ static int msp_command(struct i2c_client *client, unsigned int cmd, void *arg)
 		if (va->mode != 0 && msp->norm != VIDEO_MODE_RADIO) {
 			msp->watch_stereo=0;
 			del_timer(&msp->wake_stereo);
-			msp->stereo = va->mode;
-			msp3400c_setstereo(client,va->mode);
+			msp->stereo = va->mode & 0x0f;
+			msp3400c_setstereo(client,va->mode & 0x0f);
 		}
 		break;
 	}

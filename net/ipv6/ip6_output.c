@@ -69,8 +69,11 @@ static inline int ip6_output_finish(struct sk_buff *skb)
 	struct hh_cache *hh = dst->hh;
 
 	if (hh) {
+		int hh_alen;
+
 		read_lock_bh(&hh->hh_lock);
-		memcpy(skb->data - 16, hh->hh_data, 16);
+		hh_alen = HH_DATA_ALIGN(hh->hh_len);
+		memcpy(skb->data - hh_alen, hh->hh_data, hh_alen);
 		read_unlock_bh(&hh->hh_lock);
 	        skb_push(skb, hh->hh_len);
 		return hh->hh_output(skb);
@@ -107,7 +110,8 @@ int ip6_output(struct sk_buff *skb)
 	if (ipv6_addr_is_multicast(&skb->nh.ipv6h->daddr)) {
 		if (!(dev->flags&IFF_LOOPBACK) &&
 		    (skb->sk == NULL || skb->sk->net_pinfo.af_inet6.mc_loop) &&
-		    ipv6_chk_mcast_addr(dev, &skb->nh.ipv6h->daddr)) {
+		    ipv6_chk_mcast_addr(dev, &skb->nh.ipv6h->daddr,
+				&skb->nh.ipv6h->saddr)) {
 			struct sk_buff *newskb = skb_clone(skb, GFP_ATOMIC);
 
 			/* Do not check for IFF_ALLMULTI; multicast routing
@@ -243,6 +247,7 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
 
 	if (net_ratelimit())
 		printk(KERN_DEBUG "IPv6: sending pkt_too_big to self\n");
+	skb->dev = dst->dev;
 	icmpv6_send(skb, ICMPV6_PKT_TOOBIG, 0, dst->pmtu, skb->dev);
 	kfree_skb(skb);
 	return -EMSGSIZE;

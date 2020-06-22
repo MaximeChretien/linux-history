@@ -93,7 +93,7 @@ static void i8259_set_irq_mask(int irq_nr)
 	outb(cached_A1,0xA1);
 	outb(cached_21,0x21);
 }
- 
+
 static void i8259_mask_irq(unsigned int irq_nr)
 {
 	unsigned long flags;

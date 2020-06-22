@@ -2,13 +2,13 @@
  *
  * Copyright 2001 MontaVista Software Inc.
  * Author: MontaVista Software, Inc.
- *              ahennessy@mvista.com       
+ *              ahennessy@mvista.com
  *
  * Based on arch/mips/ddb5xxx/ddb5477/setup.c
  *
  *     Setup file for JMR3927.
  *
- * Copyright (C) 2000-2001 Toshiba Corporation 
+ * Copyright (C) 2000-2001 Toshiba Corporation
  *
  *  This program is free software; you can redistribute  it and/or modify it
  *  under  the terms of  the GNU General  Public License as published by the
@@ -55,6 +55,7 @@
 #include <asm/gdb-stub.h>
 #include <asm/jmr3927/jmr3927.h>
 #include <asm/mipsregs.h>
+#include <asm/traps.h>
 
 /* Tick Timer divider */
 #define JMR3927_TIMER_CCD	0	/* 1/2 */
@@ -180,11 +181,12 @@ unsigned long jmr3927_do_gettimeoffset(void)
        }
 
        return res;
-}                                         
+}
+
 
 #if defined(CONFIG_BLK_DEV_INITRD)
 extern unsigned long __rd_start, __rd_end, initrd_start, initrd_end;
-#endif 
+#endif
 
 //#undef DO_WRITE_THROUGH
 #define DO_WRITE_THROUGH
@@ -211,19 +213,19 @@ void __init jmr3927_setup(void)
 	_machine_power_off = jmr3927_machine_power_off;
 
 	/*
-	 * IO/MEM resources. 
+	 * IO/MEM resources.
 	 */
 	ioport_resource.start = pci_io_resource.start;
 	ioport_resource.end = pci_io_resource.end;
 	iomem_resource.start = pci_mem_resource.start;
 	iomem_resource.end = pci_mem_resource.end;
-	
+
 	/* Reboot on panic */
 	panic_timeout = 180;
 
 	{
 		unsigned int conf;
-		conf = read_32bit_cp0_register(CP0_CONF);
+		conf = read_c0_conf();
 	}
 
 #if 1
@@ -243,15 +245,15 @@ void __init jmr3927_setup(void)
 		int mips_config_wbon = 1;
 #endif
 
-		conf = read_32bit_cp0_register(CP0_CONF);
+		conf = read_c0_conf();
 		conf &= ~(TX39_CONF_ICE | TX39_CONF_DCE | TX39_CONF_WBON | TX39_CONF_CWFON);
 		conf |= mips_ic_disable ? 0 : TX39_CONF_ICE;
 		conf |= mips_dc_disable ? 0 : TX39_CONF_DCE;
 		conf |= mips_config_wbon ? TX39_CONF_WBON : 0;
 		conf |= mips_config_cwfon ? TX39_CONF_CWFON : 0;
 
-		write_32bit_cp0_register(CP0_CONF, conf);
-		write_32bit_cp0_register(CP0_TX39_CACHE, 0);
+		write_c0_conf(conf);
+		write_c0_cache(0);
 	}
 #endif
 
@@ -275,9 +277,9 @@ void __init jmr3927_setup(void)
 		argptr = prom_getcmdline();
 		strcat(argptr, " console=ttyS1,115200");
 	}
-#endif                                             
+#endif
 }
- 
+
 
 static void tx3927_setup(void);
 
@@ -338,7 +340,7 @@ static void jmr3927_board_init()
 	jmr3927_led_set(0);
 
 
-	if (jmr3927_have_isac()) 
+	if (jmr3927_have_isac())
 		jmr3927_io_led_set(0);
 	printk("JMR-TX3927 (Rev %d) --- IOC(Rev %d) DIPSW:%d,%d,%d,%d\n",
 	       jmr3927_ioc_reg_in(JMR3927_IOC_BREV_ADDR) & JMR3927_REV_MASK,
@@ -510,7 +512,7 @@ static void tx3927_setup(void)
 	{
 		unsigned int conf;
 
-	conf = read_32bit_cp0_register(CP0_CONF);
+	conf = read_c0_conf();
                if (!(conf & TX39_CONF_ICE))
                        printk("TX3927 I-Cache disabled.\n");
                if (!(conf & TX39_CONF_DCE))

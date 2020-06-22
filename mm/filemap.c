@@ -123,8 +123,6 @@ static inline void remove_page_from_hash_queue(struct page * page)
  */
 void __remove_inode_page(struct page *page)
 {
-	if (PageDirty(page) && !PageSwapCache(page))
-		BUG();
 	remove_page_from_inode_queue(page);
 	remove_page_from_hash_queue(page);
 }
@@ -810,6 +808,20 @@ static inline wait_queue_head_t *page_waitqueue(struct page *page)
 	hash >>= zone->wait_table_shift;
 
 	return &wait[hash];
+}
+
+/*
+ * This must be called after every submit_bh with end_io
+ * callbacks that would result into the blkdev layer waking
+ * up the page after a queue unplug.
+ */
+void wakeup_page_waiters(struct page * page)
+{
+	wait_queue_head_t * head;
+
+	head = page_waitqueue(page);
+	if (waitqueue_active(head))
+		wake_up(head);
 }
 
 /* 
@@ -1545,6 +1557,27 @@ no_cached_page:
 	UPDATE_ATIME(inode);
 }
 
+static inline int have_mapping_directIO(struct address_space * mapping)
+{
+	return mapping->a_ops->direct_IO || mapping->a_ops->direct_fileIO;
+}
+
+/* Switch between old and new directIO formats */
+static inline int do_call_directIO(int rw, struct file *filp, struct kiobuf *iobuf, unsigned long offset, int blocksize)
+{
+	struct address_space * mapping = filp->f_dentry->d_inode->i_mapping;
+
+	if (mapping->a_ops->direct_fileIO)
+		return mapping->a_ops->direct_fileIO(rw, filp, iobuf, offset, blocksize);
+	return mapping->a_ops->direct_IO(rw, mapping->host, iobuf, offset, blocksize);
+}
+
+/*
+ * i_sem and i_alloc_sem should be held already.  i_sem may be dropped
+ * later once we've mapped the new IO.  i_alloc_sem is kept until the IO
+ * completes.
+ */
+
 static ssize_t generic_file_direct_IO(int rw, struct file * filp, char * buf, size_t count, loff_t offset)
 {
 	ssize_t retval;
@@ -1575,7 +1608,7 @@ static ssize_t generic_file_direct_IO(int rw, struct file * filp, char * buf, si
 	retval = -EINVAL;
 	if ((offset & blocksize_mask) || (count & blocksize_mask) || ((unsigned long) buf & blocksize_mask))
 		goto out_free;
-	if (!mapping->a_ops->direct_IO)
+	if (!have_mapping_directIO(mapping))
 		goto out_free;
 
 	if ((rw == READ) && (offset + count > size))
@@ -1603,7 +1636,7 @@ static ssize_t generic_file_direct_IO(int rw, struct file * filp, char * buf, si
 		if (retval)
 			break;
 
-		retval = mapping->a_ops->direct_IO(rw, inode, iobuf, (offset+progress) >> blocksize_bits, blocksize);
+		retval = do_call_directIO(rw, filp, iobuf, (offset+progress) >> blocksize_bits, blocksize);
 
 		if (rw == READ && retval > 0)
 			mark_dirty_kiobuf(iobuf, retval);
@@ -1699,12 +1732,16 @@ ssize_t generic_file_read(struct file * filp, char * buf, size_t count, loff_t *
 		retval = 0;
 		if (!count)
 			goto out; /* skip atime */
+		down_read(&inode->i_alloc_sem);
+		down(&inode->i_sem);
 		size = inode->i_size;
 		if (pos < size) {
 			retval = generic_file_direct_IO(READ, filp, buf, count, pos);
 			if (retval > 0)
 				*ppos = pos + retval;
 		}
+		up(&inode->i_sem);
+		up_read(&inode->i_alloc_sem);
 		UPDATE_ATIME(filp->f_dentry->d_inode);
 		goto out;
 	}
@@ -2483,14 +2520,17 @@ static long madvise_willneed(struct vm_area_struct * vma,
 {
 	long error = -EBADF;
 	struct file * file;
+	struct inode * inode;
 	unsigned long size, rlim_rss;
 
 	/* Doesn't work if there's no mapped file. */
 	if (!vma->vm_file)
 		return error;
 	file = vma->vm_file;
-	size = (file->f_dentry->d_inode->i_size + PAGE_CACHE_SIZE - 1) >>
-							PAGE_CACHE_SHIFT;
+	inode = file->f_dentry->d_inode;
+	if (!inode->i_mapping->a_ops->readpage)
+		return error;
+	size = (inode->i_size + PAGE_CACHE_SIZE - 1) >> PAGE_CACHE_SHIFT;
 
 	start = ((start - vma->vm_start) >> PAGE_SHIFT) + vma->vm_pgoff;
 	if (end > vma->vm_end)
@@ -2944,44 +2984,18 @@ inline void remove_suid(struct inode *inode)
 }
 
 /*
- * Write to a file through the page cache. 
- *
- * We currently put everything into the page cache prior to writing it.
- * This is not a problem when writing full pages. With partial pages,
- * however, we first have to read the data into the cache, then
- * dirty the page, and finally schedule it for writing. Alternatively, we
- * could write-through just the portion of data that would go into that
- * page, but that would kill performance for applications that write data
- * line by line, and it's prone to race conditions.
- *
- * Note that this routine doesn't try to keep track of dirty pages. Each
- * file system has to do this all by itself, unfortunately.
- *							okir@monad.swb.de
+ * precheck_file_write():
+ * Check the conditions on a file descriptor prior to beginning a write
+ * on it.  Contains the common precheck code for both buffered and direct
+ * IO.
  */
-ssize_t
-generic_file_write(struct file *file,const char *buf,size_t count, loff_t *ppos)
+int precheck_file_write(struct file *file, struct inode *inode,
+			size_t *count, loff_t *ppos)
 {
-	struct address_space *mapping = file->f_dentry->d_inode->i_mapping;
-	struct inode	*inode = mapping->host;
-	unsigned long	limit = current->rlim[RLIMIT_FSIZE].rlim_cur;
-	loff_t		pos;
-	struct page	*page, *cached_page;
-	ssize_t		written;
-	long		status = 0;
 	ssize_t		err;
-	unsigned	bytes;
-
-	if ((ssize_t) count < 0)
-		return -EINVAL;
-
-	if (!access_ok(VERIFY_READ, buf, count))
-		return -EFAULT;
-
-	cached_page = NULL;
-
-	down(&inode->i_sem);
-
-	pos = *ppos;
+	unsigned long	limit = current->rlim[RLIMIT_FSIZE].rlim_cur;
+	loff_t		pos = *ppos;
+	
 	err = -EINVAL;
 	if (pos < 0)
 		goto out;
@@ -2992,11 +3006,9 @@ generic_file_write(struct file *file,const char *buf,size_t count, loff_t *ppos)
 		goto out;
 	}
 
-	written = 0;
-
 	/* FIXME: this is for backwards compatibility with 2.4 */
 	if (!S_ISBLK(inode->i_mode) && file->f_flags & O_APPEND)
-		pos = inode->i_size;
+		*ppos = pos = inode->i_size;
 
 	/*
 	 * Check whether we've reached the file size limit.
@@ -3008,23 +3020,23 @@ generic_file_write(struct file *file,const char *buf,size_t count, loff_t *ppos)
 			send_sig(SIGXFSZ, current, 0);
 			goto out;
 		}
-		if (pos > 0xFFFFFFFFULL || count > limit - (u32)pos) {
+		if (pos > 0xFFFFFFFFULL || *count > limit - (u32)pos) {
 			/* send_sig(SIGXFSZ, current, 0); */
-			count = limit - (u32)pos;
+			*count = limit - (u32)pos;
 		}
 	}
 
 	/*
 	 *	LFS rule 
 	 */
-	if ( pos + count > MAX_NON_LFS && !(file->f_flags&O_LARGEFILE)) {
+	if ( pos + *count > MAX_NON_LFS && !(file->f_flags&O_LARGEFILE)) {
 		if (pos >= MAX_NON_LFS) {
 			send_sig(SIGXFSZ, current, 0);
 			goto out;
 		}
-		if (count > MAX_NON_LFS - (u32)pos) {
+		if (*count > MAX_NON_LFS - (u32)pos) {
 			/* send_sig(SIGXFSZ, current, 0); */
-			count = MAX_NON_LFS - (u32)pos;
+			*count = MAX_NON_LFS - (u32)pos;
 		}
 	}
 
@@ -3041,7 +3053,7 @@ generic_file_write(struct file *file,const char *buf,size_t count, loff_t *ppos)
 	if (!S_ISBLK(inode->i_mode)) {
 		if (pos >= inode->i_sb->s_maxbytes)
 		{
-			if (count || pos > inode->i_sb->s_maxbytes) {
+			if (*count || pos > inode->i_sb->s_maxbytes) {
 				send_sig(SIGXFSZ, current, 0);
 				err = -EFBIG;
 				goto out;
@@ -3049,34 +3061,67 @@ generic_file_write(struct file *file,const char *buf,size_t count, loff_t *ppos)
 			/* zero-length writes at ->s_maxbytes are OK */
 		}
 
-		if (pos + count > inode->i_sb->s_maxbytes)
-			count = inode->i_sb->s_maxbytes - pos;
+		if (pos + *count > inode->i_sb->s_maxbytes)
+			*count = inode->i_sb->s_maxbytes - pos;
 	} else {
 		if (is_read_only(inode->i_rdev)) {
 			err = -EPERM;
 			goto out;
 		}
 		if (pos >= inode->i_size) {
-			if (count || pos > inode->i_size) {
+			if (*count || pos > inode->i_size) {
 				err = -ENOSPC;
 				goto out;
 			}
 		}
 
-		if (pos + count > inode->i_size)
-			count = inode->i_size - pos;
+		if (pos + *count > inode->i_size)
+			*count = inode->i_size - pos;
 	}
 
 	err = 0;
-	if (count == 0)
+out:
+	return err;
+}
+
+/*
+ * Write to a file through the page cache. 
+ *
+ * We currently put everything into the page cache prior to writing it.
+ * This is not a problem when writing full pages. With partial pages,
+ * however, we first have to read the data into the cache, then
+ * dirty the page, and finally schedule it for writing. Alternatively, we
+ * could write-through just the portion of data that would go into that
+ * page, but that would kill performance for applications that write data
+ * line by line, and it's prone to race conditions.
+ *
+ * Note that this routine doesn't try to keep track of dirty pages. Each
+ * file system has to do this all by itself, unfortunately.
+ *							okir@monad.swb.de
+ */
+ssize_t
+do_generic_file_write(struct file *file,const char *buf,size_t count, loff_t *ppos)
+{
+	struct address_space *mapping = file->f_dentry->d_inode->i_mapping;
+	struct inode	*inode = mapping->host;
+	loff_t		pos;
+	struct page	*page, *cached_page;
+	ssize_t		written;
+	long		status = 0;
+	ssize_t		err;
+	unsigned	bytes;
+
+	cached_page = NULL;
+	pos = *ppos;
+	written = 0;
+
+	err = precheck_file_write(file, inode, &count, &pos);
+	if (err != 0 || count == 0)
 		goto out;
 
 	remove_suid(inode);
 	inode->i_ctime = inode->i_mtime = CURRENT_TIME;
 	mark_inode_dirty_sync(inode);
-
-	if (file->f_flags & O_DIRECT)
-		goto o_direct;
 
 	do {
 		unsigned long index, offset;
@@ -3155,11 +3200,9 @@ done:
 			status = generic_osync_inode(inode, OSYNC_METADATA|OSYNC_DATA);
 	}
 	
-out_status:	
 	err = written ? written : status;
 out:
 
-	up(&inode->i_sem);
 	return err;
 fail_write:
 	status = -EFAULT;
@@ -3176,8 +3219,32 @@ sync_failure:
 	if (pos + bytes > inode->i_size)
 		vmtruncate(inode, inode->i_size);
 	goto done;
+}
 
-o_direct:
+ssize_t
+do_generic_direct_write(struct file *file,const char *buf,size_t count, loff_t *ppos)
+{
+	struct address_space *mapping = file->f_dentry->d_inode->i_mapping;
+	struct inode	*inode = mapping->host;
+	loff_t		pos;
+	ssize_t		written;
+	long		status = 0;
+	ssize_t		err;
+
+	pos = *ppos;
+	written = 0;
+
+	err = precheck_file_write(file, inode, &count, &pos);
+	if (err != 0 || count == 0)
+		goto out;
+
+	if (!file->f_flags & O_DIRECT)
+		BUG();
+
+	remove_suid(inode);
+	inode->i_ctime = inode->i_mtime = CURRENT_TIME;
+	mark_inode_dirty_sync(inode);
+
 	written = generic_file_direct_IO(WRITE, file, (char *) buf, count, pos);
 	if (written > 0) {
 		loff_t end = pos + written;
@@ -3194,7 +3261,58 @@ o_direct:
 	 */
 	if (written >= 0 && file->f_flags & O_SYNC)
 		status = generic_osync_inode(inode, OSYNC_METADATA);
-	goto out_status;
+
+	err = written ? written : status;
+out:
+	return err;
+}
+
+static int do_odirect_fallback(struct file *file, struct inode *inode,
+			       const char *buf, size_t count, loff_t *ppos)
+{
+	ssize_t ret;
+	int err;
+
+	down(&inode->i_sem);
+	ret = do_generic_file_write(file, buf, count, ppos);
+	if (ret > 0) {
+		err = do_fdatasync(file);
+		if (err)
+			ret = err;
+	}
+	up(&inode->i_sem);
+	return ret;
+}
+
+ssize_t
+generic_file_write(struct file *file,const char *buf,size_t count, loff_t *ppos)
+{
+	struct inode	*inode = file->f_dentry->d_inode->i_mapping->host;
+	ssize_t		err;
+
+	if ((ssize_t) count < 0)
+		return -EINVAL;
+
+	if (!access_ok(VERIFY_READ, buf, count))
+		return -EFAULT;
+
+	if (file->f_flags & O_DIRECT) {
+		/* do_generic_direct_write may drop i_sem during the
+		   actual IO */
+		down_read(&inode->i_alloc_sem);
+		down(&inode->i_sem);
+		err = do_generic_direct_write(file, buf, count, ppos);
+		up(&inode->i_sem);
+		up_read(&inode->i_alloc_sem);
+		if (unlikely(err == -ENOTBLK))
+			err = do_odirect_fallback(file, inode, buf, count, ppos);
+	} else {
+		down(&inode->i_sem);
+		err = do_generic_file_write(file, buf, count, ppos);
+		up(&inode->i_sem);
+	}
+
+	return err;
 }
 
 void __init page_cache_init(unsigned long mempages)

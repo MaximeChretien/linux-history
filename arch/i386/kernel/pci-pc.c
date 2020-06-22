@@ -11,6 +11,7 @@
 #include <linux/pci.h>
 #include <linux/init.h>
 #include <linux/ioport.h>
+#include <linux/acpi.h>
 
 #include <asm/segment.h>
 #include <asm/io.h>
@@ -27,6 +28,8 @@ struct pci_ops *pci_root_ops = NULL;
 
 int (*pci_config_read)(int seg, int bus, int dev, int fn, int reg, int len, u32 *value) = NULL;
 int (*pci_config_write)(int seg, int bus, int dev, int fn, int reg, int len, u32 value) = NULL;
+
+static int pci_using_acpi_prt = 0;
 
 #ifdef CONFIG_MULTIQUAD
 #define BUS2QUAD(global) (mp_bus_id_to_node[global])
@@ -1353,6 +1356,23 @@ void __devinit  pcibios_fixup_bus(struct pci_bus *b)
 	pci_read_bridge_bases(b);
 }
 
+struct pci_bus * __devinit pcibios_scan_root(int busnum)
+{
+	struct list_head *list;
+	struct pci_bus *bus;
+
+	list_for_each(list, &pci_root_buses) {
+		bus = pci_bus_b(list);
+		if (bus->number == busnum) {
+			/* Already scanned */
+			return bus;
+		}
+	}
+
+	printk("PCI: Probing PCI hardware (bus %02x)\n", busnum);
+
+	return pci_scan_bus(busnum, pci_root_ops, NULL);
+}
 
 void __devinit pcibios_config_init(void)
 {
@@ -1394,6 +1414,8 @@ void __devinit pcibios_config_init(void)
 	return;
 }
 
+int use_acpi_pci __initdata = 1;
+
 void __init pcibios_init(void)
 {
 	int quad;
@@ -1406,7 +1428,19 @@ void __init pcibios_init(void)
 	}
 
 	printk(KERN_INFO "PCI: Probing PCI hardware\n");
-	pci_root_bus = pci_scan_bus(0, pci_root_ops, NULL);
+#ifdef CONFIG_ACPI_PCI
+	if (use_acpi_pci && !acpi_pci_irq_init()) {
+		pci_using_acpi_prt = 1;
+		printk(KERN_INFO "PCI: Using ACPI for IRQ routing\n");
+		printk(KERN_INFO "PCI: if you experience problems, try using option 'pci=noacpi' or even 'acpi=off'\n");
+	}
+#endif
+	if (!pci_using_acpi_prt) {
+		pci_root_bus = pcibios_scan_root(0);
+		pcibios_irq_init();
+		pcibios_fixup_peer_bridges();
+		pcibios_fixup_irqs();
+	}
 	if (clustered_apic_mode && (numnodes > 1)) {
 		for (quad = 1; quad < numnodes; ++quad) {
 			printk("Scanning PCI bus %d for quad %d\n", 
@@ -1416,9 +1450,6 @@ void __init pcibios_init(void)
 		}
 	}
 
-	pcibios_irq_init();
-	pcibios_fixup_peer_bridges();
-	pcibios_fixup_irqs();
 	pcibios_resource_survey();
 
 #ifdef CONFIG_PCI_BIOS
@@ -1470,6 +1501,9 @@ char * __devinit  pcibios_setup(char *str)
 	} else if (!strncmp(str, "lastbus=", 8)) {
 		pcibios_last_bus = simple_strtol(str+8, NULL, 0);
 		return NULL;
+	} else if (!strncmp(str, "noacpi", 6)) {
+		use_acpi_pci = 0;
+		return NULL;
 	}
 	return str;
 }
@@ -1485,6 +1519,15 @@ int pcibios_enable_device(struct pci_dev *dev, int mask)
 
 	if ((err = pcibios_enable_resources(dev, mask)) < 0)
 		return err;
+
+#ifdef CONFIG_ACPI_PCI
+	if (pci_using_acpi_prt) {
+		acpi_pci_irq_enable(dev);
+		return 0;
+	}
+#endif
+
 	pcibios_enable_irq(dev);
+
 	return 0;
 }

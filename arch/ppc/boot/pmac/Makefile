@@ -30,8 +30,6 @@ endif
 
 TFTPIMAGE=/tftpboot/zImage.pmac$(END)
 
-AFLAGS_../common/crt0.o		+= -I$(TOPDIR)/arch/$(ARCH)/kernel
-
 ../common/coffcrt0.o:
 	$(MAKE) -C ../common coffcrt0.o
 

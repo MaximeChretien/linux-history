@@ -25,34 +25,33 @@
  */
 #include <linux/config.h>
 #include <linux/init.h>
+#include <linux/irq.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/interrupt.h>
 #include <linux/kernel_stat.h>
 
-#include <asm/irq.h>
 #include <asm/mips-boards/sead.h>
 #include <asm/mips-boards/seadint.h>
 
 extern asmlinkage void mipsIRQ(void);
-extern void do_IRQ(int irq, struct pt_regs *regs);
 
 void disable_sead_irq(unsigned int irq_nr)
 {
 	if (irq_nr == SEADINT_UART0)
-		clear_cp0_status(0x00000400);
+		clear_c0_status(0x00000400);
 	else
 		if (irq_nr == SEADINT_UART1)
-			clear_cp0_status(0x00000800);
+			clear_c0_status(0x00000800);
 }
 
 void enable_sead_irq(unsigned int irq_nr)
 {
 	if (irq_nr == SEADINT_UART0)
-		set_cp0_status(0x00000400);
+		set_c0_status(0x00000400);
 	else
 		if (irq_nr == SEADINT_UART1)
-			set_cp0_status(0x00000800);
+			set_c0_status(0x00000800);
 }
 
 static unsigned int startup_sead_irq(unsigned int irq)
@@ -99,14 +98,14 @@ void __init init_IRQ(void)
         /*
          * Mask out all interrupt
 	 */
-	clear_cp0_status(0x0000ff00);
+	clear_c0_status(0x0000ff00);
 
 	/* Now safe to set the exception vector. */
 	set_except_vector(0, mipsIRQ);
 
 	init_generic_irq();
 
-	for (i = 0; i <= SEADINT_END; i++) {
+	for (i = 0; i < SEADINT_END; i++) {
 		irq_desc[i].status	= IRQ_DISABLED;
 		irq_desc[i].action	= NULL;
 		irq_desc[i].depth	= 1;

@@ -106,6 +106,7 @@ obj-$(CONFIG_USB_PEGASUS)	+= pegasus.o
 obj-$(CONFIG_USB_RTL8150)	+= rtl8150.o
 obj-$(CONFIG_USB_CATC)		+= catc.o
 obj-$(CONFIG_USB_KAWETH)        += kaweth.o
+obj-$(CONFIG_USB_AX8817X)	+= ax8817x.o
 obj-$(CONFIG_USB_CDCETHER)	+= CDCEther.o
 obj-$(CONFIG_USB_RIO500)	+= rio500.o
 obj-$(CONFIG_USB_TIGL)          += tiglusb.o
@@ -117,6 +118,7 @@ obj-$(CONFIG_USB_USBNET)	+= usbnet.o
 obj-$(CONFIG_USB_AUERSWALD)	+= auerswald.o
 obj-$(CONFIG_USB_BRLVGER)	+= brlvger.o
 obj-$(CONFIG_USB_LCD)		+= usblcd.o
+obj-$(CONFIG_USB_SPEEDTOUCH)	+= speedtch.o
 
 # Object files in subdirectories
 mod-subdirs	:= serial host

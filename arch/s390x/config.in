@@ -42,6 +42,10 @@ comment 'General setup'
 bool 'Fast IRQ handling' CONFIG_FAST_IRQ
 bool 'Process warning machine checks' CONFIG_MACHCHK_WARNING
 bool 'Use chscs for Common I/O' CONFIG_CHSC
+tristate 'QDIO support' CONFIG_QDIO
+if [ "$CONFIG_QDIO" != "n" ]; then
+  bool '   Performance statistics in /proc' CONFIG_QDIO_PERF_STATS
+fi
 bool 'Builtin IPL record support' CONFIG_IPL
 if [ "$CONFIG_IPL" = "y" ]; then
   choice 'IPL method generated into head.S' \
@@ -79,4 +83,5 @@ comment 'Kernel hacking'
 bool 'Magic SysRq key' CONFIG_MAGIC_SYSRQ
 endmenu
 
+source crypto/Config.in
 source lib/Config.in

@@ -1,10 +1,11 @@
-/* $Id: traps.c,v 1.14 2001/07/24 08:07:10 gniibe Exp $
+/* $Id: traps.c,v 1.1.1.1.2.4 2002/05/10 17:58:54 jzs Exp $
  *
  *  linux/arch/sh/traps.c
  *
  *  SuperH version: Copyright (C) 1999 Niibe Yutaka
  *                  Copyright (C) 2000 Philipp Rumpf
  *                  Copyright (C) 2000 David Howells
+ *                  Copyright (C) 2002 Paul Mundt
  */
 
 /*
@@ -31,6 +32,19 @@
 #include <asm/atomic.h>
 #include <asm/processor.h>
 
+#ifdef CONFIG_SH_KGDB
+#include <asm/kgdb.h>
+#define CHK_REMOTE_DEBUG(regs)                                               \
+{                                                                            \
+  if ((kgdb_debug_hook != (kgdb_debug_hook_t *) NULL) && (!user_mode(regs))) \
+  {                                                                          \
+    (*kgdb_debug_hook)(regs);                                                \
+  }                                                                          \
+}
+#else
+#define CHK_REMOTE_DEBUG(regs)
+#endif
+
 #define DO_ERROR(trapnr, signr, str, name, tsk) \
 asmlinkage void do_##name(unsigned long r4, unsigned long r5, \
 			  unsigned long r6, unsigned long r7, \
@@ -42,6 +56,7 @@ asmlinkage void do_##name(unsigned long r4, unsigned long r5, \
 	sti(); \
 	tsk->thread.error_code = error_code; \
 	tsk->thread.trap_no = trapnr; \
+        CHK_REMOTE_DEBUG(&regs); \
 	force_sig(signr, tsk); \
 	die_if_no_fixup(str,&regs,error_code); \
 }
@@ -61,6 +76,7 @@ void die(const char * str, struct pt_regs * regs, long err)
 	console_verbose();
 	spin_lock_irq(&die_lock);
 	printk("%s: %04lx\n", str, err & 0xffff);
+	CHK_REMOTE_DEBUG(regs);
 	show_regs(regs);
 	spin_unlock_irq(&die_lock);
 	do_exit(SIGSEGV);
@@ -300,10 +316,19 @@ static inline int handle_unaligned_delayslot(struct pt_regs *regs)
 /*
  * handle an instruction that does an unaligned memory access
  * - have to be careful of branch delay-slot instructions that fault
+ *  SH3:
  *   - if the branch would be taken PC points to the branch
  *   - if the branch would not be taken, PC points to delay-slot
+ *  SH4:
+ *   - PC always points to delayed branch
  * - return 0 if handled, -EFAULT if failed (may not return if in kernel)
  */
+
+/* Macros to determine offset from current PC for branch instructions */
+/* Explicit type coercion is used to force sign extension where needed */
+#define SH_PC_8BIT_OFFSET(instr) ((((signed char)(instr))*2) + 4)
+#define SH_PC_12BIT_OFFSET(instr) ((((signed short)(instr<<4))>>3) + 4)
+
 static int handle_unaligned_access(u16 instruction, struct pt_regs *regs)
 {
 	u_int rm;
@@ -392,15 +417,27 @@ static int handle_unaligned_access(u16 instruction, struct pt_regs *regs)
 			break;
 		case 0x0F00: /* bf/s lab */
 			ret = handle_unaligned_delayslot(regs);
-			if (ret==0)
-				regs->pc += (instruction&0x00FF)*2 + 4;
+			if (ret==0) {
+#if defined(__SH4__)
+				if ((regs->sr & 0x00000001) != 0)
+					regs->pc += 4; /* next after slot */
+				else
+#endif
+					regs->pc += SH_PC_8BIT_OFFSET(instruction);
+			}
 			break;
 		case 0x0900: /* bt   lab - no delayslot */
 			break;
 		case 0x0D00: /* bt/s lab */
 			ret = handle_unaligned_delayslot(regs);
-			if (ret==0)
-				regs->pc += (instruction&0x00FF)*2 + 4;
+			if (ret==0) {
+#if defined(__SH4__)
+				if ((regs->sr & 0x00000001) == 0)
+					regs->pc += 4; /* next after slot */
+				else
+#endif
+					regs->pc += SH_PC_8BIT_OFFSET(instruction);
+			}
 			break;
 		}
 		break;
@@ -408,14 +445,14 @@ static int handle_unaligned_access(u16 instruction, struct pt_regs *regs)
 	case 0xA000: /* bra label */
 		ret = handle_unaligned_delayslot(regs);
 		if (ret==0)
-			regs->pc += (instruction&0x0FFF)*2 + 4;
+			regs->pc += SH_PC_12BIT_OFFSET(instruction);
 		break;
 
 	case 0xB000: /* bsr label */
 		ret = handle_unaligned_delayslot(regs);
 		if (ret==0) {
 			regs->pr = regs->pc + 4;
-			regs->pc += (instruction&0x0FFF)*2 + 4;
+			regs->pc += SH_PC_12BIT_OFFSET(instruction);
 		}
 		break;
 	}
@@ -539,29 +576,51 @@ void __init trap_init(void)
 		     : "memory");
 }
 
-void dump_stack(void)
+void show_task(unsigned long *sp)
 {
-	unsigned long *start;
-	unsigned long *end;
-	unsigned long *p;
+	unsigned long *stack, addr;
+	unsigned long module_start = VMALLOC_START;
+	unsigned long module_end = VMALLOC_END;
+	extern long _text, _etext;
+	int i = 1;
 
-	asm("mov	r15, %0" : "=r" (start));
-	asm("stc	r7_bank, %0" : "=r" (end));
-	end += 8192/4;
+	if (!sp) {
+		__asm__ __volatile__ (
+			"mov r15, %0\n\t"
+			"stc r7_bank, %1\n\t"
+			: "=r" (module_start),
+			  "=r" (module_end)
+		);
+		
+		sp = (unsigned long *)module_start;
+	}
 
-	printk("%08lx:%08lx\n", (unsigned long)start, (unsigned long)end);
-	for (p=start; p < end; p++) {
-		extern long _text, _etext;
-		unsigned long v=*p;
+	stack = sp;
 
-		if ((v >= (unsigned long )&_text)
-		    && (v <= (unsigned long )&_etext)) {
-			printk("%08lx\n", v);
+	printk("\nCall trace: ");
+
+	while (((long)stack & (THREAD_SIZE - 1))) {
+		if (__get_user(addr, stack)) {
+			printk("Failing address 0x%lx\n", *stack);
+			break;
+		}
+		stack++;
+
+		if (((addr >= (unsigned long)&_text) &&
+		     (addr <= (unsigned long)&_etext)) ||
+		    ((addr >= module_start) && (addr <= module_end))) {
+			if (i && ((i % 8) == 0))
+				printk("\n       ");
+
+			printk("[<%08lx>] ", addr);
+			i++;
 		}
 	}
+
+	printk("\n");
 }
 
 void show_trace_task(struct task_struct *tsk)
 {
-	printk("Backtrace not yet implemented for SH.\n");
+	show_task((unsigned long *)tsk->thread.sp);
 }

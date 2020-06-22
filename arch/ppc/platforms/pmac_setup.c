@@ -1,7 +1,7 @@
 /*
  *  arch/ppc/platforms/setup.c
  *
- *  PowerPC version 
+ *  PowerPC version
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
  *
  *  Adapted for Power Macintosh by Paul Mackerras
@@ -150,7 +150,7 @@ of_show_percpuinfo(struct seq_file *m, int i)
 {
 	struct device_node *cpu_node;
 	int *fp, s;
-			
+
 	cpu_node = find_type_devices("cpu");
 	if (!cpu_node)
 		return 0;
@@ -176,7 +176,7 @@ pmac_show_cpuinfo(struct seq_file *m)
 
 	if (pmac_call_feature(PMAC_FTR_GET_MB_INFO, NULL, PMAC_MB_INFO_NAME, (int)&mbname) != 0)
 		mbname = "Unknown";
-		
+
 	/* find motherboard type */
 	seq_printf(m, "machine\t\t: ");
 	np = find_devices("device-tree");
@@ -236,7 +236,7 @@ pmac_show_cpuinfo(struct seq_file *m)
 		int n;
 		struct reg_property *reg = (struct reg_property *)
 			get_property(np, "reg", &n);
-		
+
 		if (reg != 0) {
 			unsigned long total = 0;
 
@@ -247,9 +247,9 @@ pmac_show_cpuinfo(struct seq_file *m)
 	}
 
 	/* Checks "l2cr-value" property in the registry */
-	np = find_devices("cpus");		
+	np = find_devices("cpus");
 	if (np == 0)
-		np = find_type_devices("cpu");		
+		np = find_type_devices("cpu");
 	if (np != 0) {
 		unsigned int *l2cr = (unsigned int *)
 			get_property(np, "l2cr-value", NULL);
@@ -257,11 +257,11 @@ pmac_show_cpuinfo(struct seq_file *m)
 			seq_printf(m, "l2cr override\t: 0x%x\n", *l2cr);
 		}
 	}
-	
+
 	/* Indicate newworld/oldworld */
 	seq_printf(m, "pmac-generation\t: %s\n",
 		   pmac_newworld ? "NewWorld" : "OldWorld");
-	
+
 
 	return 0;
 }
@@ -285,7 +285,7 @@ pmac_setup_arch(void)
 	struct device_node *cpu;
 	int *fp;
 	unsigned long pvr;
-	
+
 	pvr = PVR_VER(mfspr(PVR));
 
 	/* Set loops_per_jiffy to a half-way reasonable value,
@@ -311,12 +311,12 @@ pmac_setup_arch(void)
 
 	/* Lookup PCI hosts */
 	pmac_find_bridges();
-	
+
 	/* Checks "l2cr-value" property in the registry */
 	if (cur_cpu_spec[0]->cpu_features & CPU_FTR_L2CR) {
-		struct device_node *np = find_devices("cpus");		
+		struct device_node *np = find_devices("cpus");
 		if (np == 0)
-			np = find_type_devices("cpu");		
+			np = find_type_devices("cpu");
 		if (np != 0) {
 			unsigned int *l2cr = (unsigned int *)
 				get_property(np, "l2cr-value", NULL);
@@ -333,7 +333,7 @@ pmac_setup_arch(void)
 		printk(KERN_INFO "L2CR overriden (0x%x), backside cache is %s\n",
 			ppc_override_l2cr_value, (ppc_override_l2cr_value & 0x80000000)
 				? "enabled" : "disabled");
-	
+
 #ifdef CONFIG_KGDB
 	zs_kgdb_hook(0);
 #endif
@@ -345,7 +345,7 @@ pmac_setup_arch(void)
 		printk("WARNING ! Your machine is Cuda based but your kernel\n");
 		printk("          wasn't compiled with CONFIG_ADB_CUDA option !\n");
 	}
-#endif	
+#endif
 #ifdef CONFIG_ADB_PMU
 	find_via_pmu();
 #else
@@ -353,7 +353,7 @@ pmac_setup_arch(void)
 		printk("WARNING ! Your machine is PMU based but your kernel\n");
 		printk("          wasn't compiled with CONFIG_ADB_PMU option !\n");
 	}
-#endif	
+#endif
 #ifdef CONFIG_NVRAM
 	pmac_nvram_init();
 #endif
@@ -520,7 +520,7 @@ check_bootable_part(kdev_t dev, int blk, struct mac_partition *part)
 	macpart_fix_string(part->processor, 16);
 	macpart_fix_string(part->name, 32);
 	macpart_fix_string(part->type, 32);
-    
+
 	if ((be32_to_cpu(part->status) & MAC_STATUS_BOOTABLE)
 	    && strcasecmp(part->processor, "powerpc") == 0)
 		goodness++;
@@ -559,7 +559,7 @@ check_bootable_disk(kdev_t dev, struct block_device *bdev)
 	struct page* pg;
 	unsigned secsize, blocks_in_map, blk;
 	unsigned char* data;
-	
+
 	/* Check driver descriptor */
 	md = (struct mac_driver_desc *) read_one_block(bdev, 0, &pg);
 	if (!md)
@@ -568,7 +568,7 @@ check_bootable_disk(kdev_t dev, struct block_device *bdev)
 		goto fail;
 	secsize = be16_to_cpu(md->block_size);
 	page_cache_release(pg);
-	
+
 	/* Check if it looks like a mac partition map */
 	data = read_one_block(bdev, secsize/512, &pg);
 	if (!data)
@@ -591,7 +591,7 @@ check_bootable_disk(kdev_t dev, struct block_device *bdev)
 		check_bootable_part(dev, blk, part);
 	}
 fail:
-	if (pg)	
+	if (pg)
 		page_cache_release(pg);
 }
 
@@ -599,7 +599,7 @@ static int __init
 walk_bootable(struct gendisk *hd, void *data)
 {
 	int drive;
-	
+
 	for (drive=0; drive<hd->nr_real; drive++) {
 		kdev_t dev;
 		struct block_device *bdev;
@@ -650,7 +650,7 @@ pmac_restart(char *cmd)
 #ifdef CONFIG_NVRAM
 	pmac_nvram_update();
 #endif
-	
+
 	switch (sys_ctrler) {
 #ifdef CONFIG_ADB_CUDA
 	case SYS_CTRLER_CUDA:
@@ -660,11 +660,11 @@ pmac_restart(char *cmd)
 			cuda_poll();
 		break;
 #endif /* CONFIG_ADB_CUDA */
-#ifdef CONFIG_ADB_PMU		
+#ifdef CONFIG_ADB_PMU
 	case SYS_CTRLER_PMU:
 		pmu_restart();
 		break;
-#endif /* CONFIG_ADB_PMU */		
+#endif /* CONFIG_ADB_PMU */
 	default: ;
 	}
 }
@@ -679,7 +679,7 @@ pmac_power_off(void)
 #ifdef CONFIG_NVRAM
 	pmac_nvram_update();
 #endif
-	
+
 	switch (sys_ctrler) {
 #ifdef CONFIG_ADB_CUDA
 	case SYS_CTRLER_CUDA:
@@ -841,7 +841,7 @@ pmac_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	ppc_md.init_IRQ       = pmac_pic_init;
 	ppc_md.get_irq        = pmac_get_irq; /* Changed later on ... */
 	ppc_md.init           = pmac_init2;
-	
+
 	ppc_md.pcibios_fixup  = pmac_pcibios_fixup;
 	ppc_md.pcibios_enable_device_hook = pmac_pci_enable_device_hook;
 	ppc_md.pcibios_after_init = pmac_pcibios_after_init;
@@ -875,7 +875,7 @@ pmac_init(unsigned long r3, unsigned long r4, unsigned long r5,
 #endif /* CONFIG_BOOTX_TEXT */
 
 	if (ppc_md.progress) ppc_md.progress("pmac_init(): exit", 0);
-	
+
 }
 
 #ifdef CONFIG_BOOTX_TEXT

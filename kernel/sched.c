@@ -282,7 +282,7 @@ send_now_idle:
 				target_tsk = tsk;
 			}
 		} else {
-			if (oldest_idle == -1ULL) {
+			if (oldest_idle == (cycles_t)-1) {
 				int prio = preemption_goodness(tsk, p, cpu);
 
 				if (prio > max_prio) {
@@ -294,7 +294,7 @@ send_now_idle:
 	}
 	tsk = target_tsk;
 	if (tsk) {
-		if (oldest_idle != -1ULL) {
+		if (oldest_idle != (cycles_t)-1) {
 			best_cpu = tsk->processor;
 			goto send_now_idle;
 		}

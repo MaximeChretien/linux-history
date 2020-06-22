@@ -106,6 +106,7 @@ static struct inode *alloc_inode(struct super_block *sb)
 		atomic_set(&inode->i_writecount, 0);
 		inode->i_size = 0;
 		inode->i_blocks = 0;
+		inode->i_bytes = 0;
 		inode->i_generation = 0;
 		memset(&inode->i_dquot, 0, sizeof(inode->i_dquot));
 		inode->i_pipe = NULL;
@@ -150,6 +151,7 @@ void inode_init_once(struct inode *inode)
 	INIT_LIST_HEAD(&inode->i_devices);
 	sema_init(&inode->i_sem, 1);
 	sema_init(&inode->i_zombie, 1);
+	init_rwsem(&inode->i_alloc_sem);
 	spin_lock_init(&inode->i_data.i_shared_lock);
 }
 
@@ -1186,12 +1188,34 @@ void update_atime (struct inode *inode)
 {
 	if (inode->i_atime == CURRENT_TIME)
 		return;
-	if ( IS_NOATIME (inode) ) return;
-	if ( IS_NODIRATIME (inode) && S_ISDIR (inode->i_mode) ) return;
-	if ( IS_RDONLY (inode) ) return;
+	if (IS_NOATIME(inode))
+		return;
+	if (IS_NODIRATIME(inode) && S_ISDIR(inode->i_mode)) 
+		return;
+	if (IS_RDONLY(inode)) 
+		return;
 	inode->i_atime = CURRENT_TIME;
 	mark_inode_dirty_sync (inode);
-}   /*  End Function update_atime  */
+}
+
+/**
+ *	update_mctime	-	update the mtime and ctime
+ *	@inode: inode accessed
+ *
+ *	Update the modified and changed times on an inode for writes to special
+ *	files such as fifos.  No change is forced if the timestamps are already
+ *	up-to-date or if the filesystem is readonly.
+ */
+ 
+void update_mctime (struct inode *inode)
+{
+	if (inode->i_mtime == CURRENT_TIME && inode->i_ctime == CURRENT_TIME)
+		return;
+	if (IS_RDONLY(inode))
+		return;
+	inode->i_ctime = inode->i_mtime = CURRENT_TIME;
+	mark_inode_dirty (inode);
+}
 
 
 /*

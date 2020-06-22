@@ -19,6 +19,13 @@ ifeq ($(shell uname -m),ppc64)
 CHECKS		= checks
 endif
 
+HAS_BIARCH      := $(shell if gcc -m64 -S -o /dev/null -xc /dev/null > /dev/null 2>&1; then echo y; else echo n; fi;)
+ifeq ($(HAS_BIARCH),y)
+AS              := $(AS) -64
+LD              := $(LD) -m elf64ppc
+CC		:= gcc -m64
+endif
+
 LINKFLAGS	= -T arch/ppc64/vmlinux.lds -Bstatic \
 		-e $(KERNELLOAD) -Ttext $(KERNELLOAD)
 CFLAGS		:= $(CFLAGS) -fsigned-char -msoft-float -pipe \

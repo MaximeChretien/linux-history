@@ -135,6 +135,10 @@ struct sk_buff {
 	struct sock	*sk;			/* Socket we are owned by 			*/
 	struct timeval	stamp;			/* Time we arrived				*/
 	struct net_device	*dev;		/* Device we arrived on/are leaving by		*/
+	struct net_device	*real_dev;	/* For support of point to point protocols 
+						   (e.g. 802.3ad) over bonding, we must save the
+						   physical device that got the packet before
+						   replacing skb->dev with the virtual device.  */
 
 	/* Transport layer header */
 	union

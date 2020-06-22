@@ -279,7 +279,7 @@ m8xx_init_IRQ(void)
 	i8259_init(0);
 
 	/* The i8259 cascade interrupt must be level sensitive. */
-	((immap_t *)IMAP_ADDR)->im_siu_conf.sc_siel &= 
+	((immap_t *)IMAP_ADDR)->im_siu_conf.sc_siel &=
 		~(0x80000000 >> ISA_BRIDGE_INT);
 
 	if (request_irq(ISA_BRIDGE_INT, mbx_i8259_action, 0, "i8259 cascade",

@@ -7,9 +7,6 @@
  * Based on skelton.c by Donald Becker.
  * Copyright (C) 2000-2001 Toshiba Corporation
  *
- * Cleaned up various non portable stuff (save_and_cli etc) and made it
- * build on x86 platforms -- Alan Cox <alan@redhat.com> 20020302
- *
  * This program is free software; you can redistribute  it and/or modify it
  * under  the terms of  the GNU General  Public License as published by the
  * Free Software Foundation;  either version 2 of the  License, or (at your
@@ -29,13 +26,10 @@
  * You should have received a copy of the  GNU General Public License along
  * with this program; if not, write  to the Free Software Foundation, Inc.,
  * 675 Mass Ave, Cambridge, MA 02139, USA.
- *
- * TODO:
- *	Switch to spin_lock not lock_kernel for scalability.
  */
 
 static const char *version =
-	"tc35815.c:v0.00-ac 26/07/2000 by Toshiba Corporation\n";
+	"tc35815.c:v0.00 26/07/2000 by Toshiba Corporation\n";
 
 #include <linux/module.h>
 
@@ -405,14 +399,8 @@ struct FrFD {
 };
 
 
-#if defined(__mips__)
-/* MIPS weirdness */
 extern unsigned long tc_readl(volatile __u32 *addr);
 extern void tc_writel(unsigned long data, volatile __u32 *addr);
-#else
-#define tc_readl	readl
-#define tc_writel	writel
-#endif
 
 dma_addr_t priv_dma_handle;
 
@@ -477,6 +465,7 @@ static void	tc35815_set_multicast_list(struct net_device *dev);
 static void 	tc35815_chip_reset(struct net_device *dev);
 static void 	tc35815_chip_init(struct net_device *dev);
 static void 	tc35815_phy_chip_init(struct net_device *dev);
+static int 	tc35815_proc_info(char *buffer, char **start, off_t offset, int length, int *eof, void *data);
 
 /* A list of all installed tc35815 devices. */
 static struct net_device *root_tc35815_dev = NULL;
@@ -507,7 +496,7 @@ tc35815_probe(struct pci_dev *pdev,
 		return -ENODEV;
 
 	if (pdev) {
-		unsigned long pci_memaddr;
+		unsigned int pci_memaddr;
 		unsigned int pci_irq_line;
 
 		printk(KERN_INFO "tc35815_probe: found device %#08x.%#08x\n", ent->vendor, ent->device);
@@ -571,12 +560,12 @@ static int __init tc35815_probe1(struct pci_dev *pdev, unsigned int base_addr, u
 
 	/* Retrieve and print the ethernet address. */
 	while (tc_readl(&tr->PROM_Ctl) & PROM_Busy)
-		cpu_relax();
+		;
 	for (i = 0; i < 6; i += 2) {
 		unsigned short data;
 		tc_writel(PROM_Busy | PROM_Read | (i / 2 + 2), &tr->PROM_Ctl);
 		while (tc_readl(&tr->PROM_Ctl) & PROM_Busy)
-			cpu_relax();
+			;
 		data = tc_readl(&tr->PROM_Data);
 		dev->dev_addr[i] = data & 0xff;
 		dev->dev_addr[i+1] = data >> 8;
@@ -842,7 +831,6 @@ panic_queues(struct net_device *dev)
 	panic("%s: Illegal queue state.", dev->name);
 }
 
-#if 0
 static void print_buf(char *add, int length)
 {
 	int i;
@@ -859,7 +847,6 @@ static void print_buf(char *add, int length)
 	}
 	printk("\n");
 }
-#endif
 
 static void print_eth(char *add)
 {
@@ -920,8 +907,7 @@ static void tc35815_tx_timeout(struct net_device *dev)
 	struct tc35815_regs *tr = (struct tc35815_regs *)dev->base_addr;
 	int flags;
 
-	save_flags(flags);
-	cli();
+	save_and_cli(flags);
 	printk(KERN_WARNING "%s: transmit timed out, status %#x\n",
 	       dev->name, tc_readl(&tr->Tx_Stat));
 	/* Try to restart the adaptor. */
@@ -977,8 +963,7 @@ static int tc35815_send_packet(struct sk_buff *skb, struct net_device *dev)
 		dma_cache_wback_inv((unsigned long)buf, length);
 #endif
 
-		save_flags(flags);
-		cli();
+		save_and_cli(flags);
 
 		/* failsafe... */
 		if (lp->tfd_start != lp->tfd_end)
@@ -1428,8 +1413,7 @@ static struct net_device_stats *tc35815_get_stats(struct net_device *dev)
 	unsigned long flags;
 
 	if (netif_running(dev)) {
-		save_flags(flags);
-		cli();
+		save_and_cli(flags);
 		/* Update the statistics from the device registers. */
 		lp->stats.rx_missed_errors = tc_readl(&tr->Miss_Cnt);
 		restore_flags(flags);
@@ -1537,11 +1521,10 @@ static unsigned long tc_phy_read(struct tc35815_regs *tr, int phy, int phy_reg)
 {
 	unsigned long data;
 	int flags;
-	save_flags(flags);
-	cli();
+	save_and_cli(flags);
 	tc_writel(MD_CA_Busy | (phy << 5) | phy_reg, &tr->MD_CA);
 	while (tc_readl(&tr->MD_CA) & MD_CA_Busy)
-		cpu_relax();
+		;
 	data = tc_readl(&tr->MD_Data);
 	restore_flags(flags);
 	return data;
@@ -1550,12 +1533,11 @@ static unsigned long tc_phy_read(struct tc35815_regs *tr, int phy, int phy_reg)
 static void tc_phy_write(unsigned long d, struct tc35815_regs *tr, int phy, int phy_reg)
 {
 	int flags;
-	save_flags(flags);
-	cli();
+	save_and_cli(flags);
 	tc_writel(d, &tr->MD_Data);
 	tc_writel(MD_CA_Busy | MD_CA_Wr | (phy << 5) | phy_reg, &tr->MD_CA);
 	while (tc_readl(&tr->MD_CA) & MD_CA_Busy)
-		cpu_relax();
+		;
 	restore_flags(flags);
 }
 
@@ -1643,7 +1625,7 @@ static void tc35815_chip_reset(struct net_device *dev)
 	/* reset the controller */
 	tc_writel(MAC_Reset, &tr->MAC_Ctl);
 	while (tc_readl(&tr->MAC_Ctl) & MAC_Reset)
-		cpu_relax();
+		;
 
 	tc_writel(0, &tr->MAC_Ctl);
 
@@ -1680,8 +1662,7 @@ static void tc35815_chip_init(struct net_device *dev)
 	tc_writel(CAM_Ena_Bit(CAM_ENTRY_SOURCE), &tr->CAM_Ena);
 	tc_writel(CAM_CompEn | CAM_BroadAcc, &tr->CAM_Ctl);
 
-	save_flags(flags);
-	cli();
+	save_and_cli(flags);
 
 	tc_writel(DMA_BURST_SIZE, &tr->DMA_Ctl);
 
@@ -1715,6 +1696,39 @@ static void tc35815_chip_init(struct net_device *dev)
 	restore_flags(flags);
 }
 
+static int tc35815_proc_info(char *buffer, char **start, off_t offset, int length, int *eof, void *data)
+{
+	int len = 0;
+	off_t pos = 0;
+	off_t begin = 0;
+	struct net_device *dev;
+
+	len += sprintf(buffer, "TC35815 statistics:\n");
+	for (dev = root_tc35815_dev; dev; dev = ((struct tc35815_local *)dev->priv)->next_module) {
+		struct tc35815_local *lp = (struct tc35815_local *)dev->priv;
+		len += sprintf(buffer + len,
+			       "%s: tx_ints %d, rx_ints %d, max_tx_qlen %d\n",
+			       dev->name,
+			       lp->lstats.tx_ints,
+			       lp->lstats.rx_ints,
+			       lp->lstats.max_tx_qlen);
+		pos = begin + len;
+
+		if (pos < offset) {
+			len = 0;
+			begin = pos;
+		}
+    
+		if (pos > offset+length) break;
+	}
+
+	*start = buffer + (offset - begin);
+	len -= (offset - begin);
+  
+	if (len > length) len = length;
+  
+	return len;
+}
 
 /* XXX */
 void

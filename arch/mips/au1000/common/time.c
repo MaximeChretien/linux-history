@@ -45,7 +45,7 @@
 #include <linux/timex.h>
 
 extern void startup_match20_interrupt(void);
-
+extern void do_softirq(void);
 extern volatile unsigned long wall_jiffies;
 unsigned long missed_heart_beats = 0;
 
@@ -63,9 +63,11 @@ extern void startup_match20_interrupt(void);
 static unsigned long last_pc0, last_match20;
 #endif
 
+static spinlock_t time_lock = SPIN_LOCK_UNLOCKED;
+
 static inline void ack_r4ktimer(unsigned long newval)
 {
-	write_32bit_cp0_register(CP0_COMPARE, newval);
+	write_c0_compare(newval);
 }
 
 /*
@@ -93,7 +95,7 @@ void mips_timer_interrupt(struct pt_regs *regs)
 		goto null;
 
 	do {
-		count = read_32bit_cp0_register(CP0_COUNT);
+		count = read_c0_count();
 		timerhi += (count < timerlo);   /* Wrap around */
 		timerlo = count;
 
@@ -102,7 +104,7 @@ void mips_timer_interrupt(struct pt_regs *regs)
 		r4k_cur += r4k_offset;
 		ack_r4ktimer(r4k_cur);
 
-	} while (((unsigned long)read_32bit_cp0_register(CP0_COUNT)
+	} while (((unsigned long)read_c0_count()
 	         - r4k_cur) < 0x7fffffff);
 
 	irq_exit(cpu, irq);
@@ -174,7 +176,7 @@ unsigned long cal_r4koff(void)
 	int trim_divide = 16;
 	unsigned long flags;
 
-	save_and_cli(flags);
+	spin_lock_irqsave(&time_lock, flags);
 
 	counter = au_readl(SYS_COUNTER_CNTRL);
 	au_writel(counter | SYS_CNTRL_EN1, SYS_COUNTER_CNTRL);
@@ -193,16 +195,16 @@ unsigned long cal_r4koff(void)
 	while (au_readl(SYS_RTCREAD) < start);
 
 	/* Start r4k counter. */
-	write_32bit_cp0_register(CP0_COUNT, 0);
+	write_c0_count(0);
 	end = start + (32768 / trim_divide)/2; /* wait 0.5 seconds */
 
 	while (end > au_readl(SYS_RTCREAD));
 
-	count = read_32bit_cp0_register(CP0_COUNT);
+	count = read_c0_count();
 	cpu_speed = count * 2;
 	mips_counter_frequency = count;
-	set_au1000_uart_baud_base(((cpu_speed) / 4) / 16);
-	restore_flags(flags);
+	set_au1x00_uart_baud_base(((cpu_speed) / 4) / 16);
+	spin_unlock_irqrestore(&time_lock, flags);
 	return (cpu_speed / HZ);
 }
 
@@ -221,11 +223,11 @@ void __init time_init(void)
 	est_freq -= est_freq%10000;
 	printk("CPU frequency %d.%02d MHz\n", est_freq/1000000,
 	       (est_freq%1000000)*100/1000000);
-	set_au1000_speed(est_freq);
-	set_au1000_lcd_clock(); // program the LCD clock
-	r4k_cur = (read_32bit_cp0_register(CP0_COUNT) + r4k_offset);
+ 	set_au1x00_speed(est_freq);
+ 	set_au1x00_lcd_clock(); // program the LCD clock
+	r4k_cur = (read_c0_count() + r4k_offset);
 
-	write_32bit_cp0_register(CP0_COMPARE, r4k_cur);
+	write_c0_compare(r4k_cur);
 
 	/* no RTC on the pb1000 */
 	xtime.tv_sec = 0;
@@ -258,7 +260,7 @@ void __init time_init(void)
 	startup_match20_interrupt();
 #endif
 
-	//set_cp0_status(ALLINTS);
+	//set_c0_status(ALLINTS);
 	au_sync();
 }
 
@@ -266,7 +268,7 @@ void __init time_init(void)
 #define USECS_PER_JIFFY (1000000/HZ)
 #define USECS_PER_JIFFY_FRAC (0x100000000*1000000/HZ&0xffffffff)
 
-
+#ifndef CONFIG_PM
 static unsigned long
 div64_32(unsigned long v1, unsigned long v2, unsigned long v3)
 {
@@ -274,7 +276,7 @@ div64_32(unsigned long v1, unsigned long v2, unsigned long v3)
 	do_div64_32(r0, v1, v2, v3);
 	return r0;
 }
-
+#endif
 
 static unsigned long do_fast_gettimeoffset(void)
 {
@@ -326,7 +328,7 @@ static unsigned long do_fast_gettimeoffset(void)
 	}
 
 	/* Get last timer tick in absolute kernel time */
-	count = read_32bit_cp0_register(CP0_COUNT);
+	count = read_c0_count();
 
 	/* .. relative to previous jiffy (32 bits is enough) */
 	count -= timerlo;
@@ -350,7 +352,7 @@ static unsigned long do_fast_gettimeoffset(void)
 
 void do_gettimeofday(struct timeval *tv)
 {
-	unsigned int flags;
+	unsigned long flags;
 
 	read_lock_irqsave (&xtime_lock, flags);
 	*tv = xtime;
@@ -376,7 +378,7 @@ void do_settimeofday(struct timeval *tv)
 	write_lock_irq (&xtime_lock);
 
 	/* This is revolting. We need to set the xtime.tv_usec correctly.
-	 * However, the value in this location is is value at the last tick.
+	 * However, the value in this location is value at the last tick.
 	 * Discover what correction gettimeofday would have done, and then
 	 * undo it!
 	 */

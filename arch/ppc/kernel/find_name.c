@@ -12,7 +12,7 @@ int main(int argc, char **argv)
 	unsigned long addr, cmp, i;
 	FILE *f;
 	char s[256], last[256];
-	
+
 	if ( argc < 2 )
 	{
 		fprintf(stderr, "Usage: %s <address>\n", argv[0]);
@@ -25,13 +25,13 @@ int main(int argc, char **argv)
 		/* adjust if addr is relative to kernelbase */
 		if ( addr < PAGE_OFFSET )
 			addr += PAGE_OFFSET;
-		
+
 		if ( (f = fopen( "System.map", "r" )) == NULL )
 		{
 			perror("fopen()\n");
 			exit(-1);
 		}
-		
+
 		while ( !feof(f) )
 		{
 			fgets(s, 255 , f);
@@ -40,9 +40,9 @@ int main(int argc, char **argv)
 				break;
 			strcpy( last, s);
 		}
-		
+
 		printf( "%s%s", last, s );
-	}		
+	}
 	fclose(f);
 	return 0;
 }

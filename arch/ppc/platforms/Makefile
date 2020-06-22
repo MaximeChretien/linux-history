@@ -28,7 +28,7 @@ O_TARGET := platform.o
 
 export-objs			:= prep_setup.o
 
-obj-$(CONFIG_WALNUT)		+= walnut.o
+obj-$(CONFIG_WALNUT)		+= walnut.o ibm405gp.o
 
 obj-$(CONFIG_APUS)		+= apus_setup.o
 ifeq ($(CONFIG_APUS),y)
@@ -46,6 +46,7 @@ obj-$(CONFIG_PREP_RESIDUAL)	+= residual.o
 obj-$(CONFIG_GEMINI)		+= gemini_pci.o gemini_setup.o gemini_prom.o
 obj-$(CONFIG_LOPEC)		+= lopec_setup.o lopec_pci.o
 obj-$(CONFIG_PAL4)		+= pal4_setup.o pal4_pci.o cpc700_pic.o
+obj-$(CONFIG_PPLUS)		+= pplus_pci.o pplus_setup.o
 obj-$(CONFIG_SPRUCE)		+= spruce_setup.o spruce_pci.o cpc700_pic.o
 
 ifeq ($(CONFIG_SMP),y)

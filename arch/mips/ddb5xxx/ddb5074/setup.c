@@ -31,7 +31,7 @@
 #include <asm/ddb5xxx/ddb5xxx.h>
 
 
-#ifdef CONFIG_REMOTE_DEBUG
+#ifdef CONFIG_KGDB
 extern void rs_kgdb_hook(int);
 extern void breakpoint(void);
 #endif
@@ -81,10 +81,6 @@ extern void rtc_ds1386_init(unsigned long base);
 
 extern void (*board_timer_setup) (struct irqaction * irq);
 
-void __init bus_error_init(void)
-{
-}
-
 static void __init ddb_timer_init(struct irqaction *irq)
 {
 	/* set the clock to 1 Hz */
@@ -96,7 +92,7 @@ static void __init ddb_timer_init(struct irqaction *irq)
 	/* enable interrupt */
 	setup_irq(nile4_to_irq(NILE4_INT_GPT), irq);
 	nile4_enable_irq(nile4_to_irq(NILE4_INT_GPT));
-	change_cp0_status(ST0_IM,
+	change_c0_status(ST0_IM,
 		          IE_IRQ0 | IE_IRQ1 | IE_IRQ2 | IE_IRQ3 | IE_IRQ4);
 
 }

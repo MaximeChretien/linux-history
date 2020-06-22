@@ -716,6 +716,7 @@ static void Ti3026_restore(WPMINFO struct display* p) {
 
 	CRITBEGIN
 
+	ACCESS_FBINFO(crtc1.panpos) = -1;
 	for (i = 0; i < 6; i++)
 		mga_setr(M_EXTVGA_INDEX, i, hw->CRTCEXT[i]);
 

@@ -17,6 +17,7 @@
 #include <asm/paca.h>
 #include <asm/naca.h>
 #include <asm/pmc.h>
+#include <asm/cputable.h>
 
 inline int make_ste(unsigned long stab, 
 		    unsigned long esid, unsigned long vsid);
@@ -35,10 +36,7 @@ void stab_initialize(unsigned long stab)
 	esid = GET_ESID(KERNELBASE);
 	vsid = get_kernel_vsid(esid << SID_SHIFT); 
 
-	if (!__is_processor(PV_POWER4) && !__is_processor(PV_POWER4p)) {
-                __asm__ __volatile__("isync; slbia; isync":::"memory");
-		make_ste(stab, esid, vsid);
-	} else {
+	if (cur_cpu_spec->cpu_features & CPU_FTR_SLB) {
                 /* Invalidate the entire SLB & all the ERATS */
                 __asm__ __volatile__("isync" : : : "memory");
 #ifndef CONFIG_PPC_ISERIES
@@ -49,7 +47,10 @@ void stab_initialize(unsigned long stab)
 #else
                 __asm__ __volatile__("isync; slbia; isync":::"memory");
 #endif
-        }
+	} else {
+                __asm__ __volatile__("isync; slbia; isync":::"memory");
+		make_ste(stab, esid, vsid);
+	}
 }
 
 /*
@@ -61,6 +62,15 @@ make_ste(unsigned long stab, unsigned long esid, unsigned long vsid)
 	unsigned long entry, group, old_esid, castout_entry, i;
 	unsigned int global_entry;
 	STE *ste, *castout_ste;
+	unsigned char kp = 1;
+	
+#ifdef CONFIG_SHARED_MEMORY_ADDRESSING
+	if(((esid >> SMALLOC_ESID_SHIFT) == 
+	    (SMALLOC_START >> SMALLOC_EA_SHIFT)) && 
+	   (current->thread.flags & PPC_FLAG_SHARED)) {
+		kp = 0;
+	}
+#endif
 
 	/* Search the primary group first. */
 	global_entry = (esid & 0x1f) << 3;
@@ -77,7 +87,7 @@ make_ste(unsigned long stab, unsigned long esid, unsigned long vsid)
 				__asm__ __volatile__ ("eieio" : : : "memory");
 				ste->dw0.dw0.esid = esid;
 				ste->dw0.dw0.v  = 1;
-				ste->dw0.dw0.kp = 1;
+				ste->dw0.dw0.kp = kp;
 				/* Order update     */
 				__asm__ __volatile__ ("sync" : : : "memory"); 
 
@@ -135,7 +145,7 @@ make_ste(unsigned long stab, unsigned long esid, unsigned long vsid)
 	old_esid = castout_ste->dw0.dw0.esid;
 	castout_ste->dw0.dw0.esid = esid;
 	castout_ste->dw0.dw0.v  = 1;
-	castout_ste->dw0.dw0.kp = 1;
+	castout_ste->dw0.dw0.kp = kp;
 	__asm__ __volatile__ ("slbie  %0" : : "r" (old_esid << SID_SHIFT)); 
 	/* Ensure completion of slbie */
 	__asm__ __volatile__ ("sync" : : : "memory" );  
@@ -158,6 +168,15 @@ inline void make_slbe(unsigned long esid, unsigned long vsid, int large)
 		unsigned long word0;
 		slb_dword1    data;
 	} vsid_data;
+	unsigned char kp = 1;
+ 	
+#ifdef CONFIG_SHARED_MEMORY_ADDRESSING
+	if(((esid >> SMALLOC_ESID_SHIFT) == 
+	    (SMALLOC_START >> SMALLOC_EA_SHIFT)) && 
+	   (current->thread.flags & PPC_FLAG_SHARED)) {
+		kp = 0;
+	}
+#endif
 	
 	/*
 	 * Find an empty entry, if one exists.
@@ -171,7 +190,7 @@ inline void make_slbe(unsigned long esid, unsigned long vsid, int large)
 			 */
 			vsid_data.word0 = 0;
 			vsid_data.data.vsid = vsid;
-			vsid_data.data.kp = 1;
+			vsid_data.data.kp = kp;
 			if (large)
 				vsid_data.data.l = 1;
 
@@ -220,7 +239,7 @@ inline void make_slbe(unsigned long esid, unsigned long vsid, int large)
 	 */
 	vsid_data.word0 = 0;
 	vsid_data.data.vsid = vsid;
-	vsid_data.data.kp = 1;
+	vsid_data.data.kp = kp;
 	if (large)
 		vsid_data.data.l = 1;
 	
@@ -264,6 +283,15 @@ int ste_allocate ( unsigned long ea,
 		}
 	}
 
+#ifdef CONFIG_SHARED_MEMORY_ADDRESSING
+	/* Shared segments might be mapped into a user task space,
+	 * so we need to add them to the list of entries to flush
+	 */
+	if ((ea >> SMALLOC_EA_SHIFT) == (SMALLOC_START >> SMALLOC_EA_SHIFT)) {
+		kernel_segment = 0;
+	}
+#endif
+
 	esid = GET_ESID(ea);
 	if (trap == 0x380 || trap == 0x480) {
 #ifndef CONFIG_PPC_ISERIES
@@ -305,7 +333,15 @@ void flush_stab(void)
 	unsigned char *segments = get_paca()->xSegments;
 	unsigned long flags, i;
 
-	if (!__is_processor(PV_POWER4) && !__is_processor(PV_POWER4p)) {
+	if (cur_cpu_spec->cpu_features & CPU_FTR_SLB) {
+		unsigned long flags;
+
+		PMC_SW_PROCESSOR(stab_invalidations); 
+
+		__save_and_cli(flags);
+		__asm__ __volatile__("isync; slbia; isync":::"memory");
+		__restore_flags(flags);
+	} else {
 		unsigned long entry;
 		STE *ste;
 
@@ -330,7 +366,8 @@ void flush_stab(void)
 			    entry++, ste++) {
 				unsigned long ea;
 				ea = ste->dw0.dw0.esid << SID_SHIFT;
-				if (STAB_PRESSURE || (!REGION_ID(ea))) {
+				if (STAB_PRESSURE || (!REGION_ID(ea)) ||
+				    (REGION_ID(ea) == VMALLOC_REGION_ID)) {
 					ste->dw0.dw0.v = 0;
 					PMC_SW_PROCESSOR(stab_invalidations); 
 				}
@@ -347,13 +384,5 @@ void flush_stab(void)
 		__asm__ __volatile__ ("slbia" : : : "memory"); 
 		/* Force flush to complete.  */
 		__asm__ __volatile__ ("sync" : : : "memory");  
-	} else {
-		unsigned long flags;
-
-		PMC_SW_PROCESSOR(stab_invalidations); 
-
-		__save_and_cli(flags);
-		__asm__ __volatile__("isync; slbia; isync":::"memory");
-		__restore_flags(flags);
 	}
 }

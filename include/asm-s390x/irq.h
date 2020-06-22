@@ -498,6 +498,8 @@ typedef struct {
 #define DEVSTAT_SUSPENDED          0x00000400
 #define DEVSTAT_UNKNOWN_DEV        0x00000800
 #define DEVSTAT_UNFRIENDLY_DEV     0x00001000
+#define DEVSTAT_NOT_ACC            0x00002000
+#define DEVSTAT_NOT_ACC_ERR        0x00004000
 #define DEVSTAT_FINAL_STATUS       0x80000000
 
 #define DEVINFO_NOT_OPER           DEVSTAT_NOT_OPER
@@ -582,6 +584,7 @@ typedef struct {
 #define DOIO_TIMEOUT             0x0080 /* 3 secs. timeout for sync. I/O */
 #define DOIO_DONT_CALL_INTHDLR   0x0100 /* don't call interrupt handler */
 #define DOIO_CANCEL_ON_TIMEOUT   0x0200 /* cancel I/O if it timed out */
+#define DOIO_USE_DIAG98          0x0400 /* use DIAG98 instead of SSCH */
 
 /*
  * do_IO()
@@ -786,6 +789,25 @@ extern __inline__ int ssch(int irq, volatile orb_t *addr)
         return ccode;
 }
 
+extern __inline__ int diag98(int irq, volatile orb_t *addr)
+{
+        int ccode;
+
+        __asm__ __volatile__(
+                "   lr    1,%1\n"
+                "   lgr   0,%2\n"    /* orb in 0 */
+		"   lghi  2,12\n"    /* function code 0x0c */
+		"   diag  2,0,152\n" /* diag98 instead of ssch,
+					result in gpr 1 */
+                "   ipm   %0\n"      /* usual cc evaluation. cc=3 will be
+				        reported as not operational */
+                "   srl   %0,28"
+                : "=d" (ccode) 
+		: "d" (irq | 0x10000L), "a" (addr)
+                : "cc", "0", "1", "2");
+        return ccode;
+}
+
 extern __inline__ int rsch(int irq)
 {
         int ccode;
@@ -889,25 +911,7 @@ typedef struct {
 void VM_virtual_device_info( __u16      devno,   /* device number */
                              senseid_t *ps );    /* ptr to senseID data */
 
-extern __inline__ int diag210( diag210_t * addr)
-{
-        int ccode;
-
-        __asm__ __volatile__(
-#ifdef CONFIG_ARCH_S390X
-                "   sam31\n"
-                "   diag  %1,0,0x210\n"
-                "   sam64\n"
-#else
-                "   diag  %1,0,0x210\n"
-#endif
-                "   ipm   %0\n"
-                "   srl   %0,28"
-                : "=d" (ccode) 
-		: "a" (addr)
-                : "cc" );
-        return ccode;
-}
+extern int diag210( diag210_t * addr);
 
 extern __inline__ int chsc( chsc_area_t * chsc_area)
 {
@@ -1000,6 +1004,8 @@ static inline void s390_do_profile (unsigned long addr)
 }
 
 #include <asm/s390io.h>
+
+#define get_irq_lock(irq) &ioinfo[irq]->irq_lock
 
 #define s390irq_spin_lock(irq) \
         spin_lock(&(ioinfo[irq]->irq_lock))

@@ -131,8 +131,8 @@ static char * number(char * buf, char * end, long long num, int base, int size, 
 {
 	char c,sign,tmp[66];
 	const char *digits;
-	const char small_digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
-	const char large_digits[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	static const char small_digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+	static const char large_digits[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 	int i;
 
 	digits = (type & LARGE) ? large_digits : small_digits;
@@ -306,7 +306,8 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list args)
 
 		/* get the conversion qualifier */
 		qualifier = -1;
-		if (*fmt == 'h' || *fmt == 'l' || *fmt == 'L' || *fmt =='Z') {
+		if (*fmt == 'h' || *fmt == 'l' || *fmt == 'L' ||
+		    *fmt =='Z' || *fmt == 'z') {
 			qualifier = *fmt;
 			++fmt;
 			if (qualifier == 'l' && *fmt == 'l') {
@@ -381,7 +382,7 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list args)
 				if (qualifier == 'l') {
 					long * ip = va_arg(args, long *);
 					*ip = (str - buf);
-				} else if (qualifier == 'Z') {
+				} else if (qualifier == 'Z' || qualifier == 'z') {
 					size_t * ip = va_arg(args, size_t *);
 					*ip = (str - buf);
 				} else {
@@ -432,7 +433,7 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list args)
 			num = va_arg(args, unsigned long);
 			if (flags & SIGN)
 				num = (signed long) num;
-		} else if (qualifier == 'Z') {
+		} else if (qualifier == 'Z' || qualifier == 'z') {
 			num = va_arg(args, size_t);
 		} else if (qualifier == 'h') {
 			num = (unsigned short) va_arg(args, int);
@@ -517,10 +518,11 @@ int vsscanf(const char * buf, const char * fmt, va_list args)
 {
 	const char *str = buf;
 	char *next;
+	char digit;
 	int num = 0;
 	int qualifier;
 	int base;
-	int field_width = -1;
+	int field_width;
 	int is_sign = 0;
 
 	while(*fmt && *str) {
@@ -558,12 +560,14 @@ int vsscanf(const char * buf, const char * fmt, va_list args)
 		}
 
 		/* get field width */
+		field_width = -1;
 		if (isdigit(*fmt))
 			field_width = skip_atoi(&fmt);
 
 		/* get conversion qualifier */
 		qualifier = -1;
-		if (*fmt == 'h' || *fmt == 'l' || *fmt == 'L' || *fmt == 'Z') {
+		if (*fmt == 'h' || *fmt == 'l' || *fmt == 'L' ||
+		    *fmt == 'Z' || *fmt == 'z') {
 			qualifier = *fmt;
 			fmt++;
 		}
@@ -616,8 +620,9 @@ int vsscanf(const char * buf, const char * fmt, va_list args)
 		case 'X':
 			base = 16;
 			break;
-		case 'd':
 		case 'i':
+                        base = 0;
+		case 'd':
 			is_sign = 1;
 		case 'u':
 			break;
@@ -637,12 +642,16 @@ int vsscanf(const char * buf, const char * fmt, va_list args)
 		while (isspace(*str))
 			str++;
 
-		if (!*str
-		    || (base == 16 && !isxdigit(*str))
-		    || (base == 10 && !isdigit(*str))
-		    || (base == 8 && (!isdigit(*str) || *str > '7'))
-		    || (base == 0 && !isdigit(*str)))
-			break;
+		digit = *str;
+		if (is_sign && digit == '-')
+			digit = *(str + 1);
+
+		if (!digit
+                    || (base == 16 && !isxdigit(digit))
+                    || (base == 10 && !isdigit(digit))
+                    || (base == 8 && (!isdigit(digit) || digit > '7'))
+                    || (base == 0 && !isdigit(digit)))
+				break;
 
 		switch(qualifier) {
 		case 'h':
@@ -673,6 +682,7 @@ int vsscanf(const char * buf, const char * fmt, va_list args)
 			}
 			break;
 		case 'Z':
+		case 'z':
 		{
 			size_t *s = (size_t*) va_arg(args,size_t*);
 			*s = (size_t) simple_strtoul(str,&next,base);

@@ -41,6 +41,7 @@
 #define PFM_FL_NOTIFY_BLOCK    	 0x04	/* block task on user level notifications */
 #define PFM_FL_SYSTEM_WIDE	 0x08	/* create a system wide context */
 #define PFM_FL_EXCL_IDLE         0x20   /* exclude idle task from system wide session */
+#define PFM_FL_UNSECURE		 0x40   /* allow unsecure monitoring for non self-monitoring task */
 
 /*
  * PMC flags
@@ -150,7 +151,7 @@ typedef struct {
  * Define the version numbers for both perfmon as a whole and the sampling buffer format.
  */
 #define PFM_VERSION_MAJ		1U
-#define PFM_VERSION_MIN		3U
+#define PFM_VERSION_MIN		5U
 #define PFM_VERSION		(((PFM_VERSION_MAJ&0xffff)<<16)|(PFM_VERSION_MIN & 0xffff))
 
 #define PFM_SMPL_VERSION_MAJ	1U
@@ -197,6 +198,12 @@ extern int pfm_remove_alternate_syswide_subsystem(pfm_intr_handler_desc_t *h);
 #define PFM_CPUINFO_SYST_WIDE	0x1	/* if set a system wide session exist on the CPU */
 #define PFM_CPUINFO_DCR_PP	0x2	/* if set a system wide session started on the CPU */
 #define PFM_CPUINFO_EXCL_IDLE	0x4	/* system wide session excludes the idle task */
+
+/*
+ * macros to set the specific perfmon bits in each CPU's private data area
+ */
+#define PFM_CPUINFO_CLEAR(v)	local_cpu_data->pfm_syst_info &= ~(v)
+#define PFM_CPUINFO_SET(v)	local_cpu_data->pfm_syst_info |= (v)
 
 #endif /* __KERNEL__ */
 

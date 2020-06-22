@@ -16,10 +16,6 @@
 # Be sure to change PAGE_OFFSET in include/asm-ppc/page.h to match
 KERNELLOAD	=0xc0000000
 
-ifeq ($(shell uname -m),ppc)
-CHECKS		= checks
-endif
-
 LINKFLAGS	= -T arch/ppc/vmlinux.lds -Ttext $(KERNELLOAD) -Bstatic
 CPPFLAGS	:= $(CPPFLAGS) -I$(TOPDIR)/arch/$(ARCH)
 AFLAGS		:= $(AFLAGS) -I$(TOPDIR)/arch/$(ARCH)
@@ -46,7 +42,7 @@ ifdef CONFIG_MORE_COMPILE_OPTIONS
   CFLAGS += $(shell echo $(CONFIG_COMPILE_OPTIONS) | sed -e 's/"//g')
 endif
 
-ifdef CONFIG_4xx
+ifdef CONFIG_40x
   HEAD := arch/ppc/kernel/head_4xx.o
 else
   ifdef CONFIG_8xx
@@ -99,7 +95,7 @@ BOOT_TARGETS = zImage zImage.initrd znetboot znetboot.initrd
 # All the instructions talk about "make bzImage".
 bzImage: zImage
 
-$(BOOT_TARGETS): $(CHECKS) vmlinux
+$(BOOT_TARGETS): vmlinux
 	@$(MAKEBOOT) $@
 
 %_config: arch/ppc/configs/%_defconfig

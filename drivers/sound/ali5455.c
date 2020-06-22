@@ -306,6 +306,7 @@ struct ali_card {
 	/* The ali has a certain amount of cross channel interaction
 	   so we use a single per card lock */
 	spinlock_t lock;
+	spinlock_t ac97_lock;
 
 	/* PCI device stuff */
 	struct pci_dev *pci_dev;
@@ -2950,6 +2951,7 @@ static u16 ali_ac97_get(struct ac97_codec *dev, u8 reg)
 	char val;
 	unsigned short int data, count, addr1, addr2;
 
+	spin_lock(&card->ac97_lock);
 	while (count1-- && (inl(card->iobase + ALI_CAS) & 0x80000000))
 		udelay(1);
 
@@ -2961,7 +2963,10 @@ static u16 ali_ac97_get(struct ac97_codec *dev, u8 reg)
 			break;
 	}
 	if (count == 0x7f)
+	{
+		spin_unlock(&card->ac97_lock);
 		return -1;
+	}
 	outw(reg, (card->iobase + ALI_CPR) + 2);
 	for (count = 0; count < 0x7f; count++) {
 		val = inb(card->iobase + ALI_CSPSR);
@@ -2971,6 +2976,7 @@ static u16 ali_ac97_get(struct ac97_codec *dev, u8 reg)
 			break;
 		}
 	}
+	spin_unlock(&card->ac97_lock);
 	if (count == 0x7f)
 		return -1;
 	if (addr2 != addr1)
@@ -2988,6 +2994,7 @@ static void ali_ac97_set(struct ac97_codec *dev, u8 reg, u16 data)
 	char val;
 	unsigned short int count;
 
+	spin_lock(&card->ac97_lock);
 	while (count1-- && (inl(card->iobase + ALI_CAS) & 0x80000000))
 		udelay(1);
 
@@ -2997,7 +3004,8 @@ static void ali_ac97_set(struct ac97_codec *dev, u8 reg, u16 data)
 			break;
 	}
 	if (count == 0x7f) {
-		printk(KERN_WARNING "ali_ac96_set: AC97 codec register access timed out. \n");
+		printk(KERN_WARNING "ali_ac97_set: AC97 codec register access timed out. \n");
+		spin_unlock(&card->ac97_lock);
 		return;
 	}
 	outw(data, (card->iobase + ALI_CPR));
@@ -3007,10 +3015,9 @@ static void ali_ac97_set(struct ac97_codec *dev, u8 reg, u16 data)
 		if (val & 0x01)
 			break;
 	}
-	if (count == 0x7f) {
-		printk(KERN_WARNING "ali_ac96_set: AC97 codec register access timed out. \n");
-		return;
-	}
+	spin_unlock(&card->ac97_lock);
+	if (count == 0x7f)
+		printk(KERN_WARNING "ali_ac97_set: AC97 codec register access timed out. \n");
 	return;
 }
 
@@ -3257,9 +3264,8 @@ static int __init ali_ac97_init(struct ali_card *card)
 			break;
 		}
 
-		if ((codec = kmalloc(sizeof(struct ac97_codec), GFP_KERNEL)) == NULL)
+		if ((codec = ac97_alloc_codec()) == NULL)
 			return -ENOMEM;
-		memset(codec, 0, sizeof(struct ac97_codec));
 		/* initialize some basic codec information, other fields will be filled
 		   in ac97_probe_codec */
 		codec->private_data = card;
@@ -3277,7 +3283,7 @@ static int __init ali_ac97_init(struct ali_card *card)
 		card->ac97_status = 0;
 		/* Don't attempt to get eid until powerup is complete */
 		eid = ali_ac97_get(codec, AC97_EXTENDED_ID);
-		if (eid == 0xFFFFFF) {
+		if (eid == 0xFFFF) {
 			printk(KERN_ERR "ali_audio: no codec attached ?\n");
 			kfree(codec);
 			break;
@@ -3427,6 +3433,7 @@ static int __init ali_probe(struct pci_dev *pci_dev, const struct pci_device_id
 	card->pm_suspended = 0;
 #endif
 	spin_lock_init(&card->lock);
+	spin_lock_init(&card->ac97_lock);
 	devs = card;
 	pci_set_master(pci_dev);
 	printk(KERN_INFO "ali: %s found at IO 0x%04lx, IRQ %d\n",
@@ -3516,7 +3523,7 @@ static void __devexit ali_remove(struct pci_dev *pci_dev)
 		if (card->ac97_codec[i] != NULL) {
 			unregister_sound_mixer(card->ac97_codec[i]->
 					       dev_mixer);
-			kfree(card->ac97_codec[i]);
+			ac97_release_codec(card->ac97_codec[i]);
 			card->ac97_codec[i] = NULL;
 		}
 	unregister_sound_dsp(card->dev_audio);

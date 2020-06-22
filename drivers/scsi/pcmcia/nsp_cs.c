@@ -36,7 +36,6 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/string.h>
-#include <linux/timer.h>
 #include <linux/ioport.h>
 #include <linux/delay.h>
 #include <linux/tqueue.h>
@@ -1341,10 +1340,6 @@ static dev_link_t *nsp_cs_attach(void)
 	link = &info->link;
 	link->priv = info;
 
-	/* Initialize the dev_link_t structure */
-	link->release.function	 = &nsp_cs_release;
-	link->release.data	 = (u_long)link;
-
 	/* The io structure describes IO port mapping */
 	link->io.NumPorts1	 = 0x10;
 	link->io.Attributes1	 = IO_DATA_PATH_WIDTH_AUTO;
@@ -1415,7 +1410,6 @@ static void nsp_cs_detach(dev_link_t *link)
 		return;
 	}
 
-	del_timer(&link->release);
 	if (link->state & DEV_CONFIG) {
 		nsp_cs_release((u_long)link);
 		if (link->state & DEV_STALE_CONFIG) {
@@ -1660,7 +1654,7 @@ static int nsp_cs_event(event_t		    event,
 		link->state &= ~DEV_PRESENT;
 		if (link->state & DEV_CONFIG) {
 			((scsi_info_t *)link->priv)->stop = 1;
-			mod_timer(&link->release, jiffies + HZ/20);
+			nsp_cs_release((u_long)link);
 		}
 		break;
 

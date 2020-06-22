@@ -45,6 +45,7 @@
 
 static acpi_table_handler acpi_boot_ops[ACPI_TABLE_COUNT];
 
+int acpi_lapic;
 
 static unsigned char __init
 acpi_checksum(void *buffer, int length)
@@ -94,7 +95,7 @@ acpi_print_table_header(acpi_table_header * header)
 static void *__init
 acpi_tb_scan_memory_for_rsdp(void *address, int length)
 {
-	u32 offset;
+	int offset;
 
 	if (length <= 0)
 		return NULL;
@@ -117,7 +118,8 @@ acpi_tb_scan_memory_for_rsdp(void *address, int length)
 	}
 
 	/* Searched entire block, no RSDP was found */
-	printk(KERN_INFO "ACPI: Searched entire block, no RSDP was found.\n");
+	dprintk(KERN_INFO "ACPI: Searched entire block 0x%x:0x%x, no RSDP was found.\n",
+		(int)address, (int)address + length);
 	return NULL;
 }
 
@@ -330,7 +332,7 @@ acpi_parse_lapic(struct acpi_table_lapic *local_apic)
 	printk(KERN_INFO "CPU %d (0x%02x00)", total_cpus, local_apic->id);
 
 	if (local_apic->flags.enabled) {
-		printk(" enabled");
+		printk(" enabled\n");
 		ix = local_apic->id;
 		if (ix >= MAX_APICS) {
 			printk(KERN_WARNING
@@ -360,9 +362,8 @@ acpi_parse_lapic(struct acpi_table_lapic *local_apic)
 		proc_entry.mpc_apicver = 0x10;	/* integrated APIC */
 		MP_processor_info(&proc_entry);
 	} else {
-		printk(" disabled");
+		printk(" disabled\n");
 	}
-	printk("\n");
 
 	total_cpus++;
 	return;
@@ -530,14 +531,13 @@ acpi_parse_madt(acpi_table_header * header, unsigned long phys)
 	return 0;
 }
 
-extern int enable_acpi_smp_table;
 
 /*
  * Configure the processor info using MADT in the ACPI tables. If we fail to
  * configure that, then we use the MPS tables.
  */
 void __init
-config_acpi_tables(void)
+acpi_boot_init(void)
 {
 
 	memset(&acpi_boot_ops, 0, sizeof(acpi_boot_ops));
@@ -547,8 +547,7 @@ config_acpi_tables(void)
 	 * Only do this when requested, either because of CPU/Bios type or from the command line
 	 */
 
-	if (enable_acpi_smp_table && !acpi_tables_init()) {
-		have_acpi_tables = 1;
-		printk("Enabling the CPU's according to the ACPI table\n");
-	}
+	if (!acpi_tables_init())
+		acpi_lapic = 1;
 }
+

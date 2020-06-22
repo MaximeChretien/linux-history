@@ -23,15 +23,21 @@ fi
 
 bool 'Serial-port support' CONFIG_ETRAX_SERIAL
 if [ "$CONFIG_ETRAX_SERIAL" = "y" ]; then
-  bool '  Use fast timers for serial DMA flush (experimental)' CONFIG_ETRAX_SERIAL_FAST_TIMER
+  bool '  Use fast timers for serial DMA flush' CONFIG_ETRAX_SERIAL_FAST_TIMER
   if [ "$CONFIG_ETRAX_SERIAL_FAST_TIMER" = "n" ]; then
     bool '  Fast serial port DMA flush' CONFIG_ETRAX_SERIAL_FLUSH_DMA_FAST
     if [ "$CONFIG_ETRAX_SERIAL_FLUSH_DMA_FAST" = "n" ]; then
       int '  Receive flush timeout (ticks) ' CONFIG_ETRAX_SERIAL_RX_TIMEOUT_TICKS 5
     fi
   fi
+  bool '  Enable external clock on PB6' CONFIG_ETRAX_EXTERN_PB6CLK_ENABLED
+  if [ "$CONFIG_ETRAX_EXTERN_PB6CLK_ENABLED" = "y" ]; then
+    int '  Extern clock frequency (baudrate=clk/8) (Hz)' CONFIG_ETRAX_EXTERN_PB6CLK_FREQ
+  fi
   bool '  Serial port 0 enabled' CONFIG_ETRAX_SERIAL_PORT0
   if [ "$CONFIG_ETRAX_SERIAL_PORT0" = "y" ]; then
+  bool '  Serial port 0 uses DMA6 out' CONFIG_ETRAX_SERIAL_PORT0_DMA6_OUT
+  bool '  Serial port 0 uses DMA7 in' CONFIG_ETRAX_SERIAL_PORT0_DMA7_IN
   choice 'Ser0 DTR, RI, DSR and CD assignment' \
   "No_DTR_RI_DSR_CD      CONFIG_ETRAX_SER0_DTR_RI_DSR_CD_ON_NONE \
    DTR_RI_DSR_CD_on_PA   CONFIG_ETRAX_SER0_DTR_RI_DSR_CD_ON_PA \
@@ -67,6 +73,8 @@ if [ "$CONFIG_ETRAX_SERIAL" = "y" ]; then
 
   bool '  Serial port 1 enabled' CONFIG_ETRAX_SERIAL_PORT1
   if [ "$CONFIG_ETRAX_SERIAL_PORT1" = "y" ]; then
+  bool '  Serial port 1 uses DMA8 out' CONFIG_ETRAX_SERIAL_PORT1_DMA8_OUT
+  bool '  Serial port 1 uses DMA9 in' CONFIG_ETRAX_SERIAL_PORT1_DMA9_IN
   choice 'Ser1 DTR, RI, DSR and CD assignment' \
   "No_DTR_RI_DSR_CD      CONFIG_ETRAX_SER1_DTR_RI_DSR_CD_ON_NONE \
    DTR_RI_DSR_CD_on_PA   CONFIG_ETRAX_SER1_DTR_RI_DSR_CD_ON_PA \
@@ -106,6 +114,8 @@ if [ "$CONFIG_ETRAX_SERIAL" = "y" ]; then
   fi
   bool '  Serial port 2 enabled' CONFIG_ETRAX_SERIAL_PORT2
   if [ "$CONFIG_ETRAX_SERIAL_PORT2" = "y" ]; then
+  bool '  Serial port 2 uses DMA2 out' CONFIG_ETRAX_SERIAL_PORT2_DMA2_OUT
+  bool '  Serial port 2 uses DMA3 in' CONFIG_ETRAX_SERIAL_PORT2_DMA3_IN
   choice 'Ser2 DTR, RI, DSR and CD assignment' \
   "No_DTR_RI_DSR_CD      CONFIG_ETRAX_SER2_DTR_RI_DSR_CD_ON_NONE \
    DTR_RI_DSR_CD_on_PA   CONFIG_ETRAX_SER2_DTR_RI_DSR_CD_ON_PA \
@@ -139,6 +149,8 @@ if [ "$CONFIG_ETRAX_SERIAL" = "y" ]; then
   fi
   bool '  Serial port 3 enabled' CONFIG_ETRAX_SERIAL_PORT3
   if [ "$CONFIG_ETRAX_SERIAL_PORT3" = "y" ]; then
+  bool '  Serial port 3 uses DMA4 out' CONFIG_ETRAX_SERIAL_PORT3_DMA4_OUT
+  bool '  Serial port 3 uses DMA5 in' CONFIG_ETRAX_SERIAL_PORT3_DMA5_IN
   choice 'Ser3 DTR, RI, DSR and CD assignment' \
   "No_DTR_RI_DSR_CD      CONFIG_ETRAX_SER3_DTR_RI_DSR_CD_ON_NONE \
    DTR_RI_DSR_CD_on_PA   CONFIG_ETRAX_SER3_DTR_RI_DSR_CD_ON_PA \
@@ -303,6 +315,7 @@ fi
 
 bool 'Real Time Clock support' CONFIG_ETRAX_RTC
 if [ "$CONFIG_ETRAX_RTC" = "y" ]; then
+  bool '  Enable RTC read only mode' CONFIG_ETRAX_RTC_READONLY	 
   choice '  RTC chip' \
     "DS1302 CONFIG_ETRAX_DS1302 \
      PCF8563  CONFIG_ETRAX_PCF8563" DS1302

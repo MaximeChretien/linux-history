@@ -37,6 +37,7 @@
 #define SHORT_DRIVER_DESC "CDC Ethernet Class"
 #define DRIVER_VERSION "0.98.6"
 
+static const char driver_name[] = "CDCEther";
 static const char *version = __FILE__ ": " DRIVER_VERSION " 7 Jan 2002 Brad Hards and another";
 // We only try to claim CDC Ethernet model devices */
 static struct usb_device_id CDCEther_ids[] = {
@@ -460,7 +461,7 @@ static int netdev_ethtool_ioctl(struct net_device *netdev, void *useraddr)
 	/* get driver info */
 	case ETHTOOL_GDRVINFO: {
 	struct ethtool_drvinfo info = {ETHTOOL_GDRVINFO};
-		strncpy(info.driver, SHORT_DRIVER_DESC, ETHTOOL_BUSINFO_LEN);
+		strncpy(info.driver, driver_name, ETHTOOL_BUSINFO_LEN);
 		strncpy(info.version, DRIVER_VERSION, ETHTOOL_BUSINFO_LEN);
 		sprintf(tmp, "usb%d:%d", ether_dev->usb->bus->busnum, ether_dev->usb->devnum);
 		strncpy(info.bus_info, tmp, ETHTOOL_BUSINFO_LEN);
@@ -1421,7 +1422,7 @@ static void CDCEther_disconnect( struct usb_device *usb, void *ptr )
 //////////////////////////////////////////////////////////////////////////////
 
 static struct usb_driver CDCEther_driver = {
-	name:		"CDCEther",
+	name:		driver_name,
 	probe:		CDCEther_probe,
 	disconnect:	CDCEther_disconnect,
 	id_table:	CDCEther_ids,

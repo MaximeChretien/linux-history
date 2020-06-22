@@ -455,13 +455,6 @@ void handle_interruption(int code, struct pt_regs *regs)
 	unsigned long fault_space = 0;
 	struct siginfo si;
 
-	/* HACK! jsm is going to fix this.
-	 * entry.S will manage I-bit - only enable I-bit if it was
-	 * enabled before we took the "trap".
-	 */
-	if (code != 1)
-		local_irq_enable();
-
 	switch(code) {
 
 	case  1:
@@ -727,6 +720,7 @@ void handle_interruption(int code, struct pt_regs *regs)
 	    }
 	}
 
+	local_irq_enable();
 	do_page_fault(regs, code, fault_address);
 }
 

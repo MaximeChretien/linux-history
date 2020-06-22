@@ -218,8 +218,10 @@ struct switch_stack {
 # define user_mode(regs)		(((struct ia64_psr *) &(regs)->cr_ipsr)->cpl != 0)
 
   struct task_struct;			/* forward decl */
+  struct unw_frame_info;		/* forward decl */
 
   extern void show_regs (struct pt_regs *);
+  extern void ia64_do_show_stack (struct unw_frame_info *, void *);
   extern unsigned long ia64_get_user_rbs_end (struct task_struct *, struct pt_regs *,
 					      unsigned long *);
   extern long ia64_peek (struct task_struct *, struct switch_stack *, unsigned long,

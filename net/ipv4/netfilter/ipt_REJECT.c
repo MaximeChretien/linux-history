@@ -1,6 +1,7 @@
 /*
  * This is a module which is used for rejecting packets.
  * Added support for customized reject packets (Jozsef Kadlecsik).
+ * Added support for ICMP type-3-code-13 (Maciej Soltysiak). [RFC 1812]
  */
 #include <linux/config.h>
 #include <linux/module.h>
@@ -33,6 +34,46 @@ static void connection_attach(struct sk_buff *new_skb, struct nf_ct_info *nfct)
 		attach(new_skb, nfct);
 }
 
+static inline struct rtable *route_reverse(struct sk_buff *skb, int local)
+{
+	struct iphdr *iph = skb->nh.iph;
+	struct dst_entry *odst;
+	struct rt_key key = {};
+	struct rtable *rt;
+
+	if (local) {
+		key.dst = iph->saddr;
+		key.src = iph->daddr;
+		key.tos = RT_TOS(iph->tos);
+
+		if (ip_route_output_key(&rt, &key) != 0)
+			return NULL;
+	} else {
+		/* non-local src, find valid iif to satisfy
+		 * rp-filter when calling ip_route_input. */
+		key.dst = iph->daddr;
+		if (ip_route_output_key(&rt, &key) != 0)
+			return NULL;
+
+		odst = skb->dst;
+		if (ip_route_input(skb, iph->saddr, iph->daddr,
+		                   RT_TOS(iph->tos), rt->u.dst.dev) != 0) {
+			dst_release(&rt->u.dst);
+			return NULL;
+		}
+		dst_release(&rt->u.dst);
+		rt = (struct rtable *)skb->dst;
+		skb->dst = odst;
+	}
+
+	if (rt->u.dst.error) {
+		dst_release(&rt->u.dst);
+		rt = NULL;
+	}
+
+	return rt;
+}
+
 /* Send RST reply */
 static void send_reset(struct sk_buff *oldskb, int local)
 {
@@ -63,10 +104,7 @@ static void send_reset(struct sk_buff *oldskb, int local)
 			 csum_partial((char *)otcph, otcplen, 0)) != 0)
 		return;
 
-	/* Routing: if not headed for us, route won't like source */
-	if (ip_route_output(&rt, oldskb->nh.iph->saddr,
-			    local ? oldskb->nh.iph->daddr : 0,
-			    RT_TOS(oldskb->nh.iph->tos), 0) != 0)
+	if ((rt = route_reverse(oldskb, local)) == NULL)
 		return;
 
 	hh_len = (rt->u.dst.dev->hard_header_len + 15)&~15;
@@ -330,6 +368,9 @@ static unsigned int reject(struct sk_buff **pskb,
 	case IPT_ICMP_HOST_PROHIBITED:
     		send_unreach(*pskb, ICMP_HOST_ANO);
     		break;
+    	case IPT_ICMP_ADMIN_PROHIBITED:
+		send_unreach(*pskb, ICMP_PKT_FILTERED);
+		break;
 	case IPT_TCP_RESET:
 		send_reset(*pskb, hooknum == NF_IP_LOCAL_IN);
 	case IPT_ICMP_ECHOREPLY:

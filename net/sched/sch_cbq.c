@@ -1056,11 +1056,9 @@ cbq_dequeue(struct Qdisc *sch)
 		sch->stats.overlimits++;
 		if (q->wd_expires && !netif_queue_stopped(sch->dev)) {
 			long delay = PSCHED_US2JIFFIE(q->wd_expires);
-			del_timer(&q->wd_timer);
 			if (delay <= 0)
 				delay = 1;
-			q->wd_timer.expires = jiffies + delay;
-			add_timer(&q->wd_timer);
+			mod_timer(&q->wd_timer, jiffies + delay);
 			sch->flags |= TCQ_F_THROTTLED;
 		}
 	}
@@ -1233,11 +1231,12 @@ static void cbq_link_class(struct cbq_class *this)
 	}
 }
 
-static int cbq_drop(struct Qdisc* sch)
+static unsigned int cbq_drop(struct Qdisc* sch)
 {
 	struct cbq_sched_data *q = (struct cbq_sched_data *)sch->data;
 	struct cbq_class *cl, *cl_head;
 	int prio;
+	unsigned int len;
 
 	for (prio = TC_CBQ_MAXPRIO; prio >= 0; prio--) {
 		if ((cl_head = q->active[prio]) == NULL)
@@ -1245,9 +1244,9 @@ static int cbq_drop(struct Qdisc* sch)
 
 		cl = cl_head;
 		do {
-			if (cl->q->ops->drop && cl->q->ops->drop(cl->q)) {
+			if (cl->q->ops->drop && (len = cl->q->ops->drop(cl->q))) {
 				sch->q.qlen--;
-				return 1;
+				return len;
 			}
 		} while ((cl = cl->next_alive) != cl_head);
 	}

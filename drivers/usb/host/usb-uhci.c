@@ -2430,9 +2430,9 @@ _static int process_transfer (uhci_t *s, struct urb *urb, int mode)
 
 _static int process_interrupt (uhci_t *s, struct urb *urb)
 {
-	int i, ret = -EINPROGRESS;
+	int ret = -EINPROGRESS;
 	urb_priv_t *urb_priv = urb->hcpriv;
-	struct list_head *p = urb_priv->desc_list.next;
+	struct list_head *p;
 	uhci_desc_t *desc = list_entry (urb_priv->desc_list.prev, uhci_desc_t, desc_list);
 
 	int actual_length;
@@ -2440,8 +2440,9 @@ _static int process_interrupt (uhci_t *s, struct urb *urb)
 
 	//dbg("urb contains interrupt request");
 
-	for (i = 0; p != &urb_priv->desc_list; p = p->next, i++)	// Maybe we allow more than one TD later ;-)
-	{
+	// Maybe we allow more than one TD later ;-)
+	while ((p = urb_priv->desc_list.next) != &urb_priv->desc_list) {
+
 		desc = list_entry (p, uhci_desc_t, desc_list);
 
 		if (is_td_active(desc)) {

@@ -12,6 +12,7 @@
 #include <linux/rwsem.h>
 #include <linux/sched.h>
 #include <linux/string.h>
+#include <linux/personality.h>
 #include <asm/segment.h> 
 #include <asm/ptrace.h>
 #include <asm/processor.h>
@@ -27,7 +28,7 @@ struct elf_phdr;
 
 #define ELF_NAME "elf/i386"
 
-#define IA32_PAGE_OFFSET 0xFFFFe000
+#define IA32_PAGE_OFFSET ((current->personality & ADDR_LIMIT_3GB) ? 0xc0000000 : 0xFFFFe000)
 #define IA32_STACK_TOP IA32_PAGE_OFFSET
 #define ELF_ET_DYN_BASE		(IA32_PAGE_OFFSET/3 + 0x1000000)
 
@@ -243,8 +244,9 @@ int ia32_setup_arg_pages(struct linux_binprm *bprm)
 		mpnt->vm_mm = current->mm;
 		mpnt->vm_start = PAGE_MASK & (unsigned long) bprm->p;
 		mpnt->vm_end = IA32_STACK_TOP;
-		mpnt->vm_page_prot = PAGE_COPY_EXEC;
-		mpnt->vm_flags = VM_STACK_FLAGS;
+		mpnt->vm_flags = vm_stack_flags32; 
+		mpnt->vm_page_prot = (mpnt->vm_flags & VM_EXEC) ? 
+			PAGE_COPY_EXEC : PAGE_COPY;
 		mpnt->vm_ops = NULL;
 		mpnt->vm_pgoff = 0;
 		mpnt->vm_file = NULL;

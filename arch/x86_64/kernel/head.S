@@ -6,7 +6,7 @@
  *  Copyright (C) 2000 Karsten Keil <kkeil@suse.de>
  *  Copyright (C) 2001,2002 Andi Kleen <ak@suse.de>
  *
- *  $Id: head.S,v 1.55 2003/02/11 12:29:15 ak Exp $
+ *  $Id: head.S,v 1.56 2003/05/12 14:38:43 ak Exp $
  */
 
 
@@ -198,6 +198,7 @@ ENTRY(no_long_mode)
 1:
 	jmp	1b	
 	
+	.globl pGDT32	
 .org 0xf00
 pGDT32:
 	.word	gdt32_end-gdt_table32
@@ -312,10 +313,19 @@ ENTRY(level3_physmem_pgt)
 	.quad	0x0000000000105007		/* -> level2_kernel_pgt (so that __va works even before pagetable_init) */
 
 .org 0xb000
+ENTRY(wakeup_level4_pgt)
+        .quad   0x0000000000102007              /* -> level3_ident_pgt */
+        .fill   255,8,0
+        .quad   0x000000000010a007
+        .fill   254,8,0
+        /* (2^48-(2*1024*1024*1024))/(2^39) = 511 */
+        .quad   0x0000000000103007              /* -> level3_kernel_pgt */
+
 .data
 
 .globl SYMBOL_NAME(gdt)
 
+	.globl pGDT64
 	.word 0
 	.align 16
 	.word 0
@@ -340,7 +350,7 @@ gdt32_end:
 .align 64 /* cacheline aligned, keep this synchronized with asm/desc.h */
 ENTRY(gdt_table)
 	.quad	0x0000000000000000	/* This one is magic */
-	.quad	0x0000000000000000	/* unused */
+	.quad	0x00af9a000000ffff ^ (1<<21)	/* __KERNEL_COMPAT32_CS */	
 	.quad	0x00af9a000000ffff	/* __KERNEL_CS */
 	.quad	0x00cf92000000ffff	/* __KERNEL_DS */
 	.quad	0x00cffe000000ffff	/* __USER32_CS */

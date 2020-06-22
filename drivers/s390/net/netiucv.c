@@ -1,5 +1,5 @@
 /*
- * $Id: netiucv.c,v 1.17 2002/02/12 21:52:20 felfert Exp $
+ * $Id: netiucv.c,v 1.23 2003/06/24 16:05:32 felfert Exp $
  *
  * IUCV network driver
  *
@@ -28,7 +28,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * RELEASE-TAG: IUCV network driver $Revision: 1.17 $
+ * RELEASE-TAG: IUCV network driver $Revision: 1.23 $
  *
  */
 
@@ -96,6 +96,8 @@ typedef struct connection_profile_t {
 	unsigned long txlen;
 	unsigned long tx_time;
 	struct timeval send_stamp;
+	unsigned long tx_pending;
+	unsigned long tx_max_pending;
 } connection_profile;
 
 /**
@@ -108,6 +110,7 @@ typedef struct iucv_connection_t {
 	struct sk_buff           *rx_buff;
 	struct sk_buff           *tx_buff;
 	struct sk_buff_head      collect_queue;
+	struct sk_buff_head      commit_queue;
 	spinlock_t               collect_lock;
 	int                      collect_len;
 	int                      max_buffsize;
@@ -443,6 +446,10 @@ netiucv_callback_connack(iucv_ConnectionComplete *eib, void *pgm_data)
 	iucv_connection *conn = (iucv_connection *)pgm_data;
 	iucv_event ev;
 
+#ifdef DEBUG
+	printk(KERN_DEBUG "%s() called\n", __FUNCTION__);
+#endif
+
 	ev.conn = conn;
 	ev.data = (void *)eib;
 	fsm_event(conn->fsm, CONN_EVENT_CONN_ACK, &ev);
@@ -619,10 +626,11 @@ conn_action_txdone(fsm_instance *fi, int event, void *arg)
 	iucv_MessageComplete *eib = (iucv_MessageComplete *)ev->data;
 	netiucv_priv *privptr = NULL;
 			         /* Shut up, gcc! skb is always below 2G. */
-	struct sk_buff *skb = (struct sk_buff *)(unsigned long)eib->ipmsgtag;
+	__u32 single_flag = eib->ipmsgtag;
 	__u32 txbytes = 0;
 	__u32 txpackets = 0;
 	__u32 stat_maxcq = 0;
+	struct sk_buff *skb;
 	unsigned long saveflags;
 	ll_header header;
 
@@ -632,13 +640,17 @@ conn_action_txdone(fsm_instance *fi, int event, void *arg)
 	fsm_deltimer(&conn->timer);
 	if (conn && conn->netdev && conn->netdev->priv)
 		privptr = (netiucv_priv *)conn->netdev->priv;
-	if (skb) {
+	conn->prof.tx_pending--;
+	if (single_flag) {
+		if ((skb = skb_dequeue(&conn->commit_queue))) {
+			atomic_dec(&skb->users);
+			dev_kfree_skb_any(skb);
+		}
 		if (privptr) {
 			privptr->stats.tx_packets++;
 			privptr->stats.tx_bytes +=
 				(skb->len - NETIUCV_HDRLEN - NETIUCV_HDRLEN);
 		}
-		dev_kfree_skb_any(skb);
 	}
 	conn->tx_buff->data = conn->tx_buff->tail = conn->tx_buff->head;
 	conn->tx_buff->len = 0;
@@ -672,11 +684,17 @@ conn_action_txdone(fsm_instance *fi, int event, void *arg)
 			       conn->tx_buff->data, conn->tx_buff->len);
 		conn->prof.doios_multi++;
 		conn->prof.txlen += conn->tx_buff->len;
+		conn->prof.tx_pending++;
+		if (conn->prof.tx_pending > conn->prof.tx_max_pending)
+			conn->prof.tx_max_pending = conn->prof.tx_pending;
 		if (rc != 0) {
 			fsm_deltimer(&conn->timer);
+			conn->prof.tx_pending--;
 			fsm_newstate(fi, CONN_STATE_IDLE);
 			if (privptr)
 				privptr->stats.tx_errors += txpackets;
+			printk(KERN_DEBUG "iucv_send returned %08x\n",
+			       rc);
 		} else {
 			if (privptr) {
 				privptr->stats.tx_packets += txpackets;
@@ -764,6 +782,13 @@ conn_action_connsever(fsm_instance *fi, int event, void *arg)
 	printk(KERN_DEBUG "%s() called\n", __FUNCTION__);
 #endif
 	switch (state) {
+		case CONN_STATE_SETUPWAIT:
+			printk(KERN_INFO "%s: Remote dropped connection\n",
+			       netdev->name);
+			conn->handle = 0;
+			fsm_newstate(fi, CONN_STATE_STOPPED);
+			fsm_event(privptr->fsm, DEV_EVENT_CONDOWN, netdev);
+			break;
 		case CONN_STATE_IDLE:
 		case CONN_STATE_TX:
 			printk(KERN_INFO "%s: Remote dropped connection\n",
@@ -807,10 +832,15 @@ conn_action_start(fsm_instance *fi, int event, void *arg)
 	printk(KERN_DEBUG "%s('%s'): connecting ...\n",
 	       conn->netdev->name, conn->userid);
 #endif
+
+	/* We must set the state before calling iucv_connect because the callback
+	 * handler could be called at any point after the connection request is
+	 * sent. */
+
+	fsm_newstate(fi, CONN_STATE_SETUPWAIT);
 	rc = iucv_connect(&(conn->pathid), NETIUCV_QUEUELEN_DEFAULT, iucvMagic,
 			  conn->userid, iucv_host, 0, NULL, NULL, conn->handle,
 			  conn);
-	fsm_newstate(fi, CONN_STATE_SETUPWAIT);
 	switch (rc) {
 		case 0:
 			return;
@@ -885,6 +915,7 @@ conn_action_stop(fsm_instance *fi, int event, void *arg)
 	if (conn->handle)
 		iucv_unregister_program(conn->handle);
 	conn->handle = 0;
+	netiucv_purge_skb_queue(&conn->commit_queue);
 	fsm_event(privptr->fsm, DEV_EVENT_CONDOWN, netdev);
 }
 
@@ -928,6 +959,7 @@ static const fsm_node conn_fsm[] = {
 	{ CONN_STATE_TX,        CONN_EVENT_RX,       conn_action_rx         },
 
 	{ CONN_STATE_TX,        CONN_EVENT_TXDONE,   conn_action_txdone     },
+	{ CONN_STATE_IDLE,      CONN_EVENT_TXDONE,   conn_action_txdone     },
 };
 
 static const int CONN_FSM_LEN = sizeof(conn_fsm) / sizeof(fsm_node);
@@ -1130,14 +1162,21 @@ netiucv_transmit_skb(iucv_connection *conn, struct sk_buff *skb) {
 			     CONN_EVENT_TIMER, conn);
 		conn->prof.send_stamp = xtime;
 		
-		rc = iucv_send(conn->pathid, NULL, 0, 0,
-			       /* Shut up, gcc! nskb is always below 2G. */
-			       (__u32)(((unsigned long)nskb)&0xffffffff), 0,
-			       nskb->data, nskb->len);
+		rc = iucv_send(conn->pathid, NULL, 0, 0, 1 /* single_flag */,
+			       0, nskb->data, nskb->len);
 		conn->prof.doios_single++;
 		conn->prof.txlen += skb->len;
+		conn->prof.tx_pending++;
+		if (conn->prof.tx_pending > conn->prof.tx_max_pending)
+			conn->prof.tx_max_pending = conn->prof.tx_pending;
 		if (rc != 0) {
+			netiucv_priv *privptr;
 			fsm_deltimer(&conn->timer);
+			fsm_newstate(conn->fsm, CONN_STATE_IDLE);
+			conn->prof.tx_pending--;
+			privptr = (netiucv_priv *)conn->netdev->priv;
+			if (privptr)
+				privptr->stats.tx_errors++;
 			if (copied)
 				dev_kfree_skb(nskb);
 			else {
@@ -1148,9 +1187,13 @@ netiucv_transmit_skb(iucv_connection *conn, struct sk_buff *skb) {
 				skb_pull(skb, NETIUCV_HDRLEN);
 				skb_trim(skb, skb->len - NETIUCV_HDRLEN);
 			}
+			printk(KERN_DEBUG "iucv_send returned %08x\n",
+			       rc);
 		} else {
 			if (copied)
 				dev_kfree_skb(skb);
+			atomic_inc(&nskb->users);
+			skb_queue_tail(&conn->commit_queue, nskb);
 		}
 	}
 
@@ -1549,12 +1592,7 @@ netiucv_stat_write(struct file *file, const char *buf, size_t count, loff_t *off
 	if (!(dev = find_netdev_by_ino(ino)))
 		return -ENODEV;
 	privptr = (netiucv_priv *)dev->priv;
-	privptr->conn->prof.maxmulti = 0;
-	privptr->conn->prof.maxcqueue = 0;
-	privptr->conn->prof.doios_single = 0;
-	privptr->conn->prof.doios_multi = 0;
-	privptr->conn->prof.txlen = 0;
-	privptr->conn->prof.tx_time = 0;
+	memset(&(privptr->conn->prof), 0, sizeof(privptr->conn->prof));
 	return count;
 }
 
@@ -1593,6 +1631,10 @@ netiucv_stat_read(struct file *file, char *buf, size_t count, loff_t *off)
 			     privptr->conn->prof.txlen);
 		p += sprintf(p, "Max. TX IO-time: %ld\n",
 			     privptr->conn->prof.tx_time);
+		p += sprintf(p, "Pending transmits: %ld\n",
+			     privptr->conn->prof.tx_pending);
+		p += sprintf(p, "Max. pending transmits: %ld\n",
+			     privptr->conn->prof.tx_max_pending);
 	}
 	l = strlen(sbuf);
 	p = sbuf;
@@ -1725,8 +1767,10 @@ netiucv_proc_create_main(void)
 	 * If not registered, register main proc dir-entry now
 	 */
 #if LINUX_VERSION_CODE > 0x020362
+#ifdef CONFIG_PROC_FS
 	if (!netiucv_dir)
 		netiucv_dir = proc_mkdir("iucv", proc_net);
+#endif
 #else
 	if (netiucv_dir.low_ino == 0)
 		proc_net_register(&netiucv_dir);
@@ -1741,7 +1785,9 @@ static void
 netiucv_proc_destroy_main(void)
 {
 #if LINUX_VERSION_CODE > 0x020362
+#ifdef CONFIG_PROC_FS
 	remove_proc_entry("iucv", proc_net);
+#endif
 #else
 	proc_net_unregister(netiucv_dir.low_ino);
 #endif
@@ -1833,6 +1879,7 @@ netiucv_new_connection(net_device *dev, char *username)
 	if (conn) {
 		memset(conn, 0, sizeof(iucv_connection));
 		skb_queue_head_init(&conn->collect_queue);
+		skb_queue_head_init(&conn->commit_queue);
 		conn->max_buffsize = NETIUCV_BUFSIZE_DEFAULT;
 		conn->netdev = dev;
 
@@ -2005,7 +2052,7 @@ netiucv_free_netdevice(net_device *dev)
 static void
 netiucv_banner(void)
 {
-	char vbuf[] = "$Revision: 1.17 $";
+	char vbuf[] = "$Revision: 1.23 $";
 	char *version = vbuf;
 
 	if ((version = strchr(version, ':'))) {
@@ -2066,7 +2113,7 @@ netiucv_init(void)
 
 	netiucv_proc_create_main();
 	while (p) {
-		if (isalnum(*p)) {
+		if (isalnum(*p) || (*p == '$')) {
 			username[i++] = *p++;
 			username[i] = '\0';
 			if (i > 8) {

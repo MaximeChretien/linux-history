@@ -15,12 +15,23 @@
 #ifdef __KERNEL__
 
 #include <linux/config.h>
+#include <asm-generic/ide_iops.h>
 #include <asm/machvec.h>
 
 #ifndef MAX_HWIFS
-/* Should never have less than 2, ide-pci.c(ide_match_hwif) requires it */
-#define MAX_HWIFS	2
+/* Should never have fewer than 2, ide-pci.c(ide_match_hwif) requires it */
+#define MAX_HWIFS	4
 #endif
+
+static __inline__ int ide_default_irq_hs7729pci(ide_ioreg_t base)
+{
+	switch (base) {
+		case 0x01f0: return 9;
+		case 0x0170: return 14;
+		default:
+			return 0;
+	}
+}
 
 static __inline__ int ide_default_irq_hp600(ide_ioreg_t base)
 {
@@ -36,6 +47,9 @@ static __inline__ int ide_default_irq(ide_ioreg_t base)
 {
 	if (MACH_HP600) {
 		return ide_default_irq_hp600(base);
+	}
+	if (MACH_HS7729PCI) {
+		return ide_default_irq_hs7729pci(base);
 	}
 	switch (base) {
 		case 0x01f0: return 14;
@@ -98,14 +112,13 @@ static __inline__ void ide_init_default_hwifs(void)
 	int index;
 
 	for(index = 0; index < MAX_HWIFS; index++) {
+		memset(&hw, 0, sizeof hw);
 		ide_init_hwif_ports(&hw, ide_default_io_base(index), 0, NULL);
 		hw.irq = ide_default_irq(ide_default_io_base(index));
 		ide_register_hw(&hw, NULL);
 	}
 #endif /* CONFIG_BLK_DEV_IDEPCI */
 }
-
-#include <asm-generic/ide_iops.h>
 
 #endif /* __KERNEL__ */
 

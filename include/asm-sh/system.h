@@ -130,7 +130,9 @@ static __inline__ void __cli(void)
 }
 
 #define __save_flags(x) \
-	__asm__("stc sr, %0; and #0xf0, %0" : "=&z" (x) :/**/: "memory" )
+	__asm__ __volatile__("stc sr, %0\n\t" \
+			     "and #0xf0, %0"  \
+			     : "=&z" (x) :/**/: "memory" )
 
 static __inline__ unsigned long __save_and_cli(void)
 {

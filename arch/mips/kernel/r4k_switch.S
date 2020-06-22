@@ -25,6 +25,19 @@
 
 #include <asm/asmmacro.h>
 
+#define PF_USEDFPU      0x00100000      /* task used FPU this quantum (SMP) */
+#define ST_OFF (KERNEL_STACK_SIZE - 32 - PT_SIZE + PT_STATUS)
+
+/*
+ * [jsun] FPU context is saved if and only if the process has used FPU in 
+ * the current run (PF_USEDFPU).  In any case, the CU1 bit for user space 
+ * STATUS register should be 0, so that a process *always* starts its 
+ * userland with FPU disabled after each context switch.
+ *
+ * FPU will be enabled as soon as the process accesses FPU again, through 
+ * do_cpu() trap.
+ */
+
 /*
  * task_struct *r4xx0_resume(task_struct *prev, task_struct *next)
  */
@@ -39,6 +52,32 @@
 	CPU_SAVE_NONSCRATCH(a0)
 	sw	ra, THREAD_REG31(a0)
 
+	/* 
+	 * check if we need to save FPU registers
+	 */
+	lw	t0, TASK_FLAGS(a0)
+	li	t1, PF_USEDFPU
+	and	t2, t0, t1
+	beqz	t2, 1f
+	nor	t1, zero, t1
+
+	/*
+	 * clear PF_USEDFPU bit in task flags
+	 */
+	and	t0, t0, t1
+	sw	t0, TASK_FLAGS(a0)
+
+	/*
+	 * clear saved user stack CU1 bit
+	 */
+	lw	t0, ST_OFF(a0)
+	li	t1, ~ST0_CU1
+	and	t0, t0, t1
+	sw	t0, ST_OFF(a0)
+
+	FPU_SAVE_DOUBLE(a0, t0)			# clobbers t0
+
+1:
 	/*
 	 * The order of restoring the registers takes care of the race
 	 * updating $28, $29 and kernelsp without disabling ints.
@@ -69,50 +108,20 @@
 	END(resume)
 
 /*
- * Do lazy fpu context switch.  Saves FPU context to the process in a0
- * and loads the new context of the current process.
- */
-
-#define ST_OFF (KERNEL_STACK_SIZE - 32 - PT_SIZE + PT_STATUS)
-
-LEAF(lazy_fpu_switch)
-	mfc0	t0, CP0_STATUS			# enable cp1
-	li	t3, ST0_CU1
-	or	t0, t3
-	mtc0	t0, CP0_STATUS
-	FPU_ENABLE_HAZARD
-
-	beqz	a0, 2f				# Save floating point state
-	 nor	t3, zero, t3
-
-	lw	t1, ST_OFF(a0)			# last thread looses fpu
-	and	t1, t3
-	sw	t1, ST_OFF(a0)
-
-
-	FPU_SAVE_DOUBLE(a0, t1)			# clobbers t1
-2:
-
-	.set	reorder
-	FPU_RESTORE_DOUBLE($28, t0)		# clobbers t0
-	jr	ra
-	END(lazy_fpu_switch)
-
-/*
  * Save a thread's fp context.
  */
-LEAF(save_fp)
+LEAF(_save_fp)
 	FPU_SAVE_DOUBLE(a0, t1)			# clobbers t1
 	jr	ra
-	END(save_fp)
+	END(_save_fp)
 
 /*
  * Restore a thread's fp context.
  */
-LEAF(restore_fp)
+LEAF(_restore_fp)
 	FPU_RESTORE_DOUBLE(a0, t1)		# clobbers t1
 	jr	ra
-	END(restore_fp)
+	END(_restore_fp)
 
 /*
  * Load the FPU with signalling NANS.  This bit pattern we're using has
@@ -124,7 +133,7 @@ LEAF(restore_fp)
 
 #define FPU_DEFAULT  0x00000000
 
-LEAF(init_fpu)
+LEAF(_init_fpu)
 	.set	mips3
 	mfc0	t0, CP0_STATUS
 	li	t1, ST0_CU1
@@ -156,5 +165,5 @@ LEAF(init_fpu)
 	jr	ra
 	 dmtc1	t0, $f30
 	.set	reorder
-	END(init_fpu)
+	END(_init_fpu)
 

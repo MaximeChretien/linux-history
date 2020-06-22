@@ -9,6 +9,7 @@
  *
  *  Interrupt and exception initialization for Philips Nino
  */
+#include <linux/config.h>
 #include <linux/console.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -18,6 +19,7 @@
 #include <asm/irq.h>
 #include <asm/reboot.h>
 #include <asm/time.h>
+#include <asm/traps.h>
 #include <asm/tx3912.h>
 
 static void nino_machine_restart(char *command)
@@ -79,6 +81,7 @@ static __init void nino_timer_setup(struct irqaction *irq)
 	irq->dev_id = (void *) irq;
 	setup_irq(0, irq);
 }
+
 
 void __init nino_setup(void)
 {

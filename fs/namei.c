@@ -627,6 +627,8 @@ lookup_parent:
 			nd->last_type = LAST_DOT;
 		else if (this.len == 2 && this.name[1] == '.')
 			nd->last_type = LAST_DOTDOT;
+		else
+			goto return_base;
 return_reval:
 		/*
 		 * We bypassed the ordinary revalidation routines.

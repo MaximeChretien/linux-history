@@ -140,16 +140,25 @@ struct cpu_spec	cpu_specs[] = {
 	32, 32,
 	__setup_cpu_750cx
     },
-    {	/* 750FX rev 2.0 must disable HID0[DPM] */
-    	0xffffffff, 0x70000200, "750FX",
+    {	/* 750FX rev 1.x */
+    	0xffffff00, 0x70000100, "750FX",
     	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_CAN_DOZE | CPU_FTR_USE_TB |
 	CPU_FTR_L2CR | CPU_FTR_TAU | CPU_FTR_HPTE_TABLE | CPU_FTR_CAN_NAP |
-	CPU_FTR_NO_DPM,
+	CPU_FTR_DUAL_PLL_750FX | CPU_FTR_NO_DPM,
 	COMMON_PPC,
 	32, 32,
 	__setup_cpu_750
     },
-    {	/* 750FX (All revs except 2.0) */
+    {	/* 750FX rev 2.0 must disable HID0[DPM] */
+    	0xffffffff, 0x70000200, "750FX",
+    	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_CAN_DOZE | CPU_FTR_USE_TB |
+	CPU_FTR_L2CR | CPU_FTR_TAU | CPU_FTR_HPTE_TABLE | CPU_FTR_CAN_NAP |
+	CPU_FTR_DUAL_PLL_750FX | CPU_FTR_HAS_HIGH_BATS | CPU_FTR_NO_DPM,
+	COMMON_PPC,
+	32, 32,
+	__setup_cpu_750
+    },
+    {	/* 750FX (All revs > 2.0) */
     	0xffff0000, 0x70000000, "750FX",
     	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_CAN_DOZE | CPU_FTR_USE_TB |
 	CPU_FTR_L2CR | CPU_FTR_TAU | CPU_FTR_HPTE_TABLE | CPU_FTR_CAN_NAP |
@@ -274,7 +283,7 @@ struct cpu_spec	cpu_specs[] = {
 	32, 32,
 	__setup_cpu_generic
     },
-#endif /* CLASSIC_PPC */    
+#endif /* CLASSIC_PPC */
 #ifdef CONFIG_PPC64BRIDGE
     {	/* Power3 */
     	0xffff0000, 0x00400000, "Power3 (630)",
@@ -304,7 +313,7 @@ struct cpu_spec	cpu_specs[] = {
 		128, 128,
 		__setup_cpu_power3
 	},
-#endif /* CONFIG_PPC64BRIDGE */    
+#endif /* CONFIG_PPC64BRIDGE */
 #ifdef CONFIG_POWER4
     {	/* Power4 */
     	0xffff0000, 0x00350000, "Power4",
@@ -313,7 +322,7 @@ struct cpu_spec	cpu_specs[] = {
 	128, 128,
 	__setup_cpu_power4
     },
-#endif /* CONFIG_POWER4 */    
+#endif /* CONFIG_POWER4 */
 #ifdef CONFIG_8xx
     {	/* 8xx */
     	0xffff0000, 0x00500000, "8xx",
@@ -324,7 +333,7 @@ struct cpu_spec	cpu_specs[] = {
 	__setup_cpu_8xx	/* Empty */
     },
 #endif /* CONFIG_8xx */
-#ifdef CONFIG_4xx
+#ifdef CONFIG_40x
     {	/* 403GC */
     	0xffffff00, 0x00200200, "403GC",
     	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_USE_TB,

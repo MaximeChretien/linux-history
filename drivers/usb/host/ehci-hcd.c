@@ -31,6 +31,7 @@
 #include <linux/list.h>
 #include <linux/interrupt.h>
 #include <linux/reboot.h>
+#include <linux/bitops.h> /* for generic_ffs */
 
 #ifdef CONFIG_USB_DEBUG
 	#define DEBUG
@@ -41,11 +42,7 @@
 #include <linux/usb.h>
 
 #include <linux/version.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,32)
 #include "../hcd.h"
-#else
-#include "../core/hcd.h"
-#endif
 
 #include <asm/byteorder.h>
 #include <asm/io.h>
@@ -94,11 +91,11 @@
  * 2001-June	Works with usb-storage and NEC EHCI on 2.4
  */
 
-#define DRIVER_VERSION "2003-Jan-22"
+#define DRIVER_VERSION "2003-Jun-19/2.4"
 #define DRIVER_AUTHOR "David Brownell"
 #define DRIVER_DESC "USB 2.0 'Enhanced' Host Controller (EHCI) Driver"
 
-static const char	hcd_name [] = "ehci-hcd";
+static const char	hcd_name [] = "ehci_hcd";
 
 
 // #define EHCI_VERBOSE_DEBUG
@@ -118,8 +115,10 @@ static const char	hcd_name [] = "ehci-hcd";
 #define	EHCI_TUNE_MULT_TT	1
 #define	EHCI_TUNE_FLS		2	/* (small) 256 frame schedule */
 
-#define EHCI_WATCHDOG_JIFFIES	(HZ/100)	/* arbitrary; ~10 msec */
+#define EHCI_IAA_JIFFIES	(HZ/100)	/* arbitrary; ~10 msec */
+#define EHCI_IO_JIFFIES		(HZ/10)		/* io watchdog > irq_thresh */
 #define EHCI_ASYNC_JIFFIES	(HZ/20)		/* async idle timeout */
+#define EHCI_SHRINK_JIFFIES	(HZ/200)	/* async qh unlink delay */
 
 /* Initial IRQ latency:  lower than default */
 static int log2_irq_thresh = 0;		// 0 to 6
@@ -268,16 +267,13 @@ static void ehci_watchdog (unsigned long param)
 		}
 	}
 
-	ehci_work (ehci, NULL);
-	if (ehci->reclaim && !timer_pending (&ehci->watchdog))
-		mod_timer (&ehci->watchdog,
-				jiffies + EHCI_WATCHDOG_JIFFIES);
-
- 	/* stop async processing after it's idled a while */
-	else if (ehci->async_idle) {
+ 	/* stop async processing after it's idled a bit */
+	if (test_bit (TIMER_ASYNC_OFF, &ehci->actions))
  		start_unlink_async (ehci, ehci->async);
- 		ehci->async_idle = 0;
-	}
+
+	/* ehci could run by timer, without IRQs ... */
+	ehci_work (ehci, NULL);
+
 	spin_unlock_irqrestore (&ehci->lock, flags);
 }
 
@@ -437,7 +433,7 @@ static int ehci_start (struct usb_hcd *hcd)
 	pci_set_mwi (ehci->hcd.pdev);
 
 	/* clear interrupt enables, set irq latency */
-	temp = readl (&ehci->regs->command) & 0xff;
+	temp = readl (&ehci->regs->command) & 0x0fff;
 	if (log2_irq_thresh < 0 || log2_irq_thresh > 6)
 		log2_irq_thresh = 0;
 	temp |= 1 << (16 + log2_irq_thresh);
@@ -660,11 +656,18 @@ static int ehci_resume (struct usb_hcd *hcd)
  */
 static void ehci_work (struct ehci_hcd *ehci, struct pt_regs *regs)
 {
+	timer_action_done (ehci, TIMER_IO_WATCHDOG);
 	if (ehci->reclaim_ready)
 		end_unlink_async (ehci, regs);
 	scan_async (ehci, regs);
 	if (ehci->next_uframe != -1)
 		scan_periodic (ehci, regs);
+
+	/* the IO watchdog guards against hardware or driver bugs that
+	 * misplace IRQs, and should let us run completely without IRQs.
+	 */
+	if ((ehci->async->qh_next.ptr != 0) || (ehci->periodic_sched != 0))
+		timer_action (ehci, TIMER_IO_WATCHDOG);
 }
 
 /*-------------------------------------------------------------------------*/
@@ -1039,8 +1042,8 @@ MODULE_LICENSE ("GPL");
 
 static int __init init (void) 
 {
-	dbg (DRIVER_INFO);
-	dbg ("block sizes: qh %Zd qtd %Zd itd %Zd sitd %Zd",
+	pr_debug ("%s: block sizes: qh %Zd qtd %Zd itd %Zd sitd %Zd\n",
+		hcd_name,
 		sizeof (struct ehci_qh), sizeof (struct ehci_qtd),
 		sizeof (struct ehci_itd), sizeof (struct ehci_sitd));
 

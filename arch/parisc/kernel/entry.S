@@ -927,11 +927,11 @@ skip_save_ior:
 	ldo		-16(%r30),%r29	/* Reference param save area */
 #endif
 
-	ldil		L%intr_restore, %r2
+	ldil		L%intr_check_sig, %r2
 	copy		%r25, %r16	/* save pt_regs */
 
 	b		handle_interruption
-	ldo		R%intr_restore(%r2), %r2
+	ldo		R%intr_check_sig(%r2), %r2
 
 
 	/*

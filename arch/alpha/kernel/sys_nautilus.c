@@ -76,6 +76,9 @@ nautilus_map_irq(struct pci_dev *dev, u8 slot, u8 pin)
 void
 nautilus_kill_arch(int mode)
 {
+	u32 pmuport;
+	int off;
+
 	switch (mode) {
 	case LINUX_REBOOT_CMD_RESTART:
 		if (! alpha_using_srm) {
@@ -89,14 +92,18 @@ nautilus_kill_arch(int mode)
 		break;
 
 	case LINUX_REBOOT_CMD_POWER_OFF:
-		{
-			u32 pmuport;
-			pcibios_read_config_dword(0, 0x88, 0x10, &pmuport);
-			pmuport &= 0xfffe;
-			outl(0xffff, pmuport); /* clear pending events */
-			outw(0x2000, pmuport+4); /* power off */
-			/* NOTREACHED */
+		/* Assume M1543C */
+		off = 0x2000;		/* SLP_TYPE = 0, SLP_EN = 1 */
+		pcibios_read_config_dword(0, 0x88, 0x10, &pmuport);
+		if (!pmuport) {
+			/* M1535D/D+ */
+			off = 0x3400;	/* SLP_TYPE = 5, SLP_EN = 1 */
+			pcibios_read_config_dword(0, 0x88, 0xe0, &pmuport);
 		}
+		pmuport &= 0xfffe;
+		outw(0xffff, pmuport);	/* Clear pending events. */
+		outw(off, pmuport + 4);
+		/* NOTREACHED */
 		break;
 	}
 }

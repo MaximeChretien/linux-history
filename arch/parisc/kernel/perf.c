@@ -499,6 +499,8 @@ static struct miscdevice perf_dev = {
  */
 static int __init perf_init(void)
 {
+	int ret;
+
 	/* Determine correct processor interface to use */
 	bitmask_array = perf_bitmasks;
 
@@ -517,11 +519,17 @@ static int __init perf_init(void)
 		return -ENODEV;
 	}
 
+	ret = misc_register(&perf_dev);
+	if (ret) {
+		printk(KERN_ERR "Performance monitoring counters: "
+			"cannot register misc device.\n");
+		return ret;
+	}
+
 	/* Patch the images to match the system */
     	perf_patch_images();
 
 	spin_lock_init(&perf_lock);
-	misc_register(&perf_dev);
 
 	/* TODO: this only lets us access the first cpu.. what to do for SMP? */
 	cpu_device = cpu_data[0].dev;

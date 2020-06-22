@@ -498,7 +498,7 @@ static int __init skge_probe (void)
 		}
 
 		/* Configure DMA attributes. */
-		if (pci_set_dma_mask(pdev, (u64) 0xffffffffffffffff) &&
+		if (pci_set_dma_mask(pdev, (u64) 0xffffffffffffffffULL) &&
 			pci_set_dma_mask(pdev, (u64) 0xffffffff))
 			continue;
 

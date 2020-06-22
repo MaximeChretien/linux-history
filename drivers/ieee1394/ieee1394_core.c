@@ -41,7 +41,6 @@
 #include "ieee1394_transactions.h"
 #include "csr.h"
 #include "nodemgr.h"
-#include "ieee1394_hotplug.h"
 #include "dma.h"
 #include "iso.h"
 
@@ -59,7 +58,6 @@ static kmem_cache_t *hpsb_packet_cache;
 
 /* Some globals used */
 const char *hpsb_speedto_str[] = { "S100", "S200", "S400", "S800", "S1600", "S3200" };
-const u8 hpsb_speedto_maxrec[] = {   0x7,    0x8,    0x9,   0x10,    0x11,    0x12 };
 
 static void dump_packet(const char *text, quadlet_t *data, int size)
 {
@@ -78,9 +76,12 @@ static void dump_packet(const char *text, quadlet_t *data, int size)
 static void run_packet_complete(struct hpsb_packet *packet)
 {
 	if (packet->complete_routine != NULL) {
-		packet->complete_routine(packet->complete_data);
+		void (*complete_routine)(void*) = packet->complete_routine;
+		void *complete_data = packet->complete_data;
+
 		packet->complete_routine = NULL;
 		packet->complete_data = NULL;
+		complete_routine(complete_data);
 	}
 	return;
 }
@@ -285,7 +286,7 @@ static void build_speed_map(struct hpsb_host *host, int nodecount)
 
         for (i = 0; i < (nodecount * 64); i += 64) {
                 for (j = 0; j < nodecount; j++) {
-                        map[i+j] = SPEED_MAX;
+                        map[i+j] = IEEE1394_SPEED_MAX;
                 }
         }
 
@@ -380,8 +381,10 @@ void hpsb_selfid_complete(struct hpsb_host *host, int phyid, int isroot)
                 } else {
                         HPSB_NOTICE("Stopping out-of-control reset loop");
                         HPSB_NOTICE("Warning - topology map and speed map will not be valid");
+			host->reset_retries = 0;
                 }
         } else {
+		host->reset_retries = 0;
                 build_speed_map(host, host->node_count);
         }
 
@@ -436,7 +439,7 @@ void hpsb_packet_sent(struct hpsb_host *host, struct hpsb_packet *packet,
         spin_unlock_irqrestore(&host->pending_pkt_lock, flags);
 
         up(&packet->state_change);
-        schedule_task(&host->timeout_tq);
+	mod_timer(&host->timeout, jiffies + host->timeout_interval);
 }
 
 /**
@@ -454,7 +457,7 @@ int hpsb_send_phy_config(struct hpsb_host *host, int rootid, int gapcnt)
 	struct hpsb_packet *packet;
 	int retval = 0;
 
-	if(rootid >= ALL_NODES || rootid < -1 || gapcnt > 0x3f || gapcnt < -1 ||
+	if (rootid >= ALL_NODES || rootid < -1 || gapcnt > 0x3f || gapcnt < -1 ||
 	   (rootid == -1 && gapcnt == -1)) {
 		HPSB_DEBUG("Invalid Parameter: rootid = %d   gapcnt = %d",
 			   rootid, gapcnt);
@@ -466,22 +469,21 @@ int hpsb_send_phy_config(struct hpsb_host *host, int rootid, int gapcnt)
 		return -ENOMEM;
 
 	packet->host = host;
-	packet->header_size = 16;
+	packet->header_size = 8;
 	packet->data_size = 0;
 	packet->expect_response = 0;
 	packet->no_waiter = 0;
 	packet->type = hpsb_raw;
 	packet->header[0] = 0;
-	if(rootid != -1)
+	if (rootid != -1)
 		packet->header[0] |= rootid << 24 | 1 << 23;
-	if(gapcnt != -1)
+	if (gapcnt != -1)
 		packet->header[0] |= gapcnt << 16 | 1 << 22;
 
 	packet->header[1] = ~packet->header[0];
 
 	packet->generation = get_hpsb_generation(host);
 
-	HPSB_DEBUG("Sending PHY configuration packet (I hope)...");
 	if (!hpsb_send_packet(packet)) {
 		retval = -EINVAL;
 		goto fail;
@@ -936,7 +938,7 @@ void abort_requests(struct hpsb_host *host)
 {
         unsigned long flags;
         struct hpsb_packet *packet;
-        struct list_head *lh;
+        struct list_head *lh, *tlh;
         LIST_HEAD(llist);
 
         host->driver->devctl(host, CANCEL_REQUESTS, 0);
@@ -946,8 +948,9 @@ void abort_requests(struct hpsb_host *host)
         INIT_LIST_HEAD(&host->pending_packets);
         spin_unlock_irqrestore(&host->pending_pkt_lock, flags);
 
-        list_for_each(lh, &llist) {
+        list_for_each_safe(lh, tlh, &llist) {
                 packet = list_entry(lh, struct hpsb_packet, list);
+                list_del(&packet->list);
                 packet->state = hpsb_complete;
                 packet->ack_code = ACKX_ABORTED;
                 up(&packet->state_change);
@@ -955,28 +958,23 @@ void abort_requests(struct hpsb_host *host)
         }
 }
 
-void abort_timedouts(struct hpsb_host *host)
+void abort_timedouts(unsigned long __opaque)
 {
+	struct hpsb_host *host = (struct hpsb_host *)__opaque;
         unsigned long flags;
         struct hpsb_packet *packet;
         unsigned long expire;
-        struct list_head *lh, *next;
+        struct list_head *lh, *tlh;
         LIST_HEAD(expiredlist);
 
         spin_lock_irqsave(&host->csr.lock, flags);
-        expire = (host->csr.split_timeout_hi * 8000 
-                  + (host->csr.split_timeout_lo >> 19))
-                * HZ / 8000;
-        /* Avoid shortening of timeout due to rounding errors: */
-        expire++;
+	expire = host->csr.expire;
         spin_unlock_irqrestore(&host->csr.lock, flags);
-
 
         spin_lock_irqsave(&host->pending_pkt_lock, flags);
 
-	for (lh = host->pending_packets.next; lh != &host->pending_packets; lh = next) {
+	list_for_each_safe(lh, tlh, &host->pending_packets) {
                 packet = list_entry(lh, struct hpsb_packet, list);
-		next = lh->next;
                 if (time_before(packet->sendtime + expire, jiffies)) {
                         list_del(&packet->list);
                         list_add(&packet->list, &expiredlist);
@@ -984,12 +982,13 @@ void abort_timedouts(struct hpsb_host *host)
         }
 
         if (!list_empty(&host->pending_packets))
-		schedule_task(&host->timeout_tq);
+		mod_timer(&host->timeout, jiffies + host->timeout_interval);
 
         spin_unlock_irqrestore(&host->pending_pkt_lock, flags);
 
-        list_for_each(lh, &expiredlist) {
+        list_for_each_safe(lh, tlh, &expiredlist) {
                 packet = list_entry(lh, struct hpsb_packet, list);
+                list_del(&packet->list);
                 packet->state = hpsb_complete;
                 packet->ack_code = ACKX_TIMEOUT;
                 up(&packet->state_change);
@@ -1027,12 +1026,12 @@ int ieee1394_register_chardev(int blocknum,
 {
 	int retval;
 
-	if( (blocknum < 0) || (blocknum > 15) )
+	if ( (blocknum < 0) || (blocknum > 15) )
 		return -EINVAL;
 
 	write_lock(&ieee1394_chardevs_lock);
 
-	if(ieee1394_chardevs[blocknum].file_ops == NULL) {
+	if (ieee1394_chardevs[blocknum].file_ops == NULL) {
 		/* grab the minor block */
 		ieee1394_chardevs[blocknum].file_ops = file_ops;
 		ieee1394_chardevs[blocknum].module = module;
@@ -1051,12 +1050,12 @@ int ieee1394_register_chardev(int blocknum,
 /* release a block of minor numbers */
 void ieee1394_unregister_chardev(int blocknum)
 {
-	if( (blocknum < 0) || (blocknum > 15) )
+	if ( (blocknum < 0) || (blocknum > 15) )
 		return;
 
 	write_lock(&ieee1394_chardevs_lock);
 
-	if(ieee1394_chardevs[blocknum].file_ops) {
+	if (ieee1394_chardevs[blocknum].file_ops) {
 		ieee1394_chardevs[blocknum].file_ops = NULL;
 		ieee1394_chardevs[blocknum].module = NULL;
 	}
@@ -1093,7 +1092,7 @@ static int ieee1394_get_chardev(int blocknum,
 		goto out;
 
 	/* don't need try_inc_mod_count if the driver is non-modular */
-	if(*module && (try_inc_mod_count(*module) == 0))
+	if (*module && (try_inc_mod_count(*module) == 0))
 		goto out;
 
 	/* success! */
@@ -1137,7 +1136,7 @@ static int ieee1394_dispatch_open(struct inode *inode, struct file *file)
 
 	/* look up the driver */
 
-	if(ieee1394_get_chardev(blocknum, &module, &file_ops) == 0)
+	if (ieee1394_get_chardev(blocknum, &module, &file_ops) == 0)
 		return -ENODEV;
 
 	/* redirect all subsequent requests to the driver's
@@ -1150,7 +1149,7 @@ static int ieee1394_dispatch_open(struct inode *inode, struct file *file)
 	/* follow through with the open() */
 	retval = file_ops->open(inode, file);
 
-	if(retval == 0) {
+	if (retval == 0) {
 		
 		/* If the open() succeeded, then ieee1394 will be left
 		   with an extra module reference, so we discard it here.
@@ -1162,7 +1161,7 @@ static int ieee1394_dispatch_open(struct inode *inode, struct file *file)
 		   dropped by the VFS when the file is released.
 		*/
 		
-		if(THIS_MODULE)
+		if (THIS_MODULE)
 			__MOD_DEC_USE_COUNT((struct module*) THIS_MODULE);
 		
 		/* note that if ieee1394 is compiled into the kernel,
@@ -1175,7 +1174,7 @@ static int ieee1394_dispatch_open(struct inode *inode, struct file *file)
 		   extra reference we gave to the task-specific
 		   driver */
 		
-		if(module)
+		if (module)
 			__MOD_DEC_USE_COUNT(module);
 	
 		/* point the file's f_ops back to ieee1394. The VFS will then
@@ -1206,7 +1205,7 @@ static int __init ieee1394_init(void)
 #ifdef CONFIG_PROC_FS
 	/* Must be done before we start everything else, since the drivers
 	 * may use it.  */
-	ieee1394_procfs_entry = proc_mkdir( "ieee1394", proc_bus);
+	ieee1394_procfs_entry = proc_mkdir("ieee1394", proc_bus);
 	if (ieee1394_procfs_entry == NULL) {
 		HPSB_ERR("unable to create /proc/bus/ieee1394\n");
 		unregister_chrdev(IEEE1394_MAJOR, "ieee1394");
@@ -1256,7 +1255,6 @@ EXPORT_SYMBOL(hpsb_unref_host);
 
 /** ieee1394_core.c **/
 EXPORT_SYMBOL(hpsb_speedto_str);
-EXPORT_SYMBOL(hpsb_speedto_maxrec);
 EXPORT_SYMBOL(hpsb_set_packet_complete_task);
 EXPORT_SYMBOL(alloc_hpsb_packet);
 EXPORT_SYMBOL(free_hpsb_packet);
@@ -1297,6 +1295,7 @@ EXPORT_SYMBOL(hpsb_unregister_addrspace);
 EXPORT_SYMBOL(hpsb_listen_channel);
 EXPORT_SYMBOL(hpsb_unlisten_channel);
 EXPORT_SYMBOL(hpsb_get_hostinfo);
+EXPORT_SYMBOL(hpsb_get_host_bykey);
 EXPORT_SYMBOL(hpsb_create_hostinfo);
 EXPORT_SYMBOL(hpsb_destroy_hostinfo);
 EXPORT_SYMBOL(hpsb_set_hostinfo_key);
@@ -1354,3 +1353,4 @@ EXPORT_SYMBOL(hpsb_iso_n_ready);
 EXPORT_SYMBOL(hpsb_iso_packet_sent);
 EXPORT_SYMBOL(hpsb_iso_packet_received);
 EXPORT_SYMBOL(hpsb_iso_wake);
+EXPORT_SYMBOL(hpsb_iso_recv_flush);

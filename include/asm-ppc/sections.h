@@ -7,7 +7,7 @@
 #define __pmacfunc(__argpmac) \
 	__argpmac __pmac; \
 	__argpmac
-	
+
 #define __prep __attribute__ ((__section__ (".text.prep")))
 #define __prepdata __attribute__ ((__section__ (".data.prep")))
 #define __prepfunc(__argprep) \
@@ -26,6 +26,6 @@
 #define __openfirmwarefunc(__argopenfirmware) \
 	__argopenfirmware __openfirmware; \
 	__argopenfirmware
-	
+
 #endif /* _PPC_SECTIONS_H */
 #endif /* __KERNEL__ */

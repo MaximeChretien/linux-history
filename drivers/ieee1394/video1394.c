@@ -46,7 +46,7 @@
 
 #include "ieee1394.h"
 #include "ieee1394_types.h"
-#include "ieee1394_hotplug.h"
+#include "nodemgr.h"
 #include "hosts.h"
 #include "ieee1394_core.h"
 #include "highlevel.h"
@@ -594,7 +594,7 @@ static void initialize_dma_it_prg(struct dma_iso_ctx *d, int n, int sync_tag)
 		it_prg[i].begin.status = 0;
 		
 		it_prg[i].data[0] = cpu_to_le32(
-			(SPEED_100 << 16) 
+			(IEEE1394_SPEED_100 << 16) 
 			| (/* tag */ 1 << 14)
 			| (d->channel << 8) 
 			| (TCODE_ISO_DATA << 4));
@@ -713,7 +713,7 @@ static int video1394_ioctl(struct inode *inode, struct file *file,
 		struct dma_iso_ctx *d;
 		int i;
 
-		if(copy_from_user(&v, (void *)arg, sizeof(v)))
+		if (copy_from_user(&v, (void *)arg, sizeof(v)))
 			return -EFAULT;
 
 		/* if channel < 0, find lowest available one */
@@ -810,7 +810,7 @@ static int video1394_ioctl(struct inode *inode, struct file *file,
 			      v.channel);
 		}
 
-		if(copy_to_user((void *)arg, &v, sizeof(v)))
+		if (copy_to_user((void *)arg, &v, sizeof(v)))
 			return -EFAULT;
 
 		return 0;
@@ -824,7 +824,7 @@ static int video1394_ioctl(struct inode *inode, struct file *file,
 		u64 mask;
 		struct dma_iso_ctx *d;
 
-		if(copy_from_user(&channel, (void *)arg, sizeof(int)))
+		if (copy_from_user(&channel, (void *)arg, sizeof(int)))
 			return -EFAULT;
 
 		if (channel<0 || channel>(ISO_CHANNELS-1)) {
@@ -860,7 +860,7 @@ static int video1394_ioctl(struct inode *inode, struct file *file,
 		struct video1394_wait v;
 		struct dma_iso_ctx *d;
 
-		if(copy_from_user(&v, (void *)arg, sizeof(v)))
+		if (copy_from_user(&v, (void *)arg, sizeof(v)))
 			return -EFAULT;
 
 		d = find_ctx(&ctx->context_list, OHCI_ISO_RECEIVE, v.channel);
@@ -924,7 +924,7 @@ static int video1394_ioctl(struct inode *inode, struct file *file,
 		struct dma_iso_ctx *d;
 		int i;
 
-		if(copy_from_user(&v, (void *)arg, sizeof(v)))
+		if (copy_from_user(&v, (void *)arg, sizeof(v)))
 			return -EFAULT;
 
 		d = find_ctx(&ctx->context_list, OHCI_ISO_RECEIVE, v.channel);
@@ -953,12 +953,12 @@ static int video1394_ioctl(struct inode *inode, struct file *file,
 			}
 
 #if 1
-			while(d->buffer_status[v.buffer]!=
+			while (d->buffer_status[v.buffer]!=
 			      VIDEO1394_BUFFER_READY) {
 				spin_unlock_irqrestore(&d->lock, flags);
 				interruptible_sleep_on(&d->waitq);
 				spin_lock_irqsave(&d->lock, flags);
-				if(signal_pending(current)) {
+				if (signal_pending(current)) {
 					spin_unlock_irqrestore(&d->lock,flags);
 					return -EINTR;
 				}
@@ -995,7 +995,7 @@ static int video1394_ioctl(struct inode *inode, struct file *file,
 		spin_unlock_irqrestore(&d->lock, flags);
 
 		v.buffer=i;
-		if(copy_to_user((void *)arg, &v, sizeof(v)))
+		if (copy_to_user((void *)arg, &v, sizeof(v)))
 			return -EFAULT;
 
 		return 0;
@@ -1007,7 +1007,9 @@ static int video1394_ioctl(struct inode *inode, struct file *file,
 		struct video1394_queue_variable qv;
 		struct dma_iso_ctx *d;
 
-		if(copy_from_user(&v, (void *)arg, sizeof(v)))
+		qv.packet_sizes = NULL;
+
+		if (copy_from_user(&v, (void *)arg, sizeof(v)))
 			return -EFAULT;
 
 		d = find_ctx(&ctx->context_list, OHCI_ISO_TRANSMIT, v.channel);
@@ -1019,12 +1021,22 @@ static int video1394_ioctl(struct inode *inode, struct file *file,
 		}
 		
 		if (d->flags & VIDEO1394_VARIABLE_PACKET_SIZE) {
+			unsigned int *psizes;
+			int buf_size = d->nb_cmd * sizeof(unsigned int);
+
 			if (copy_from_user(&qv, (void *)arg, sizeof(qv))) 
 				return -EFAULT;
-			if (!access_ok(VERIFY_READ, qv.packet_sizes, 
-				       d->nb_cmd * sizeof(unsigned int))) {
+
+			psizes = kmalloc(buf_size, GFP_KERNEL);
+			if (!psizes)
+				return -ENOMEM;
+
+			if (copy_from_user(psizes, qv.packet_sizes, buf_size)) {
+				kfree(psizes);
 				return -EFAULT;
 			}
+
+			qv.packet_sizes = psizes;
 		}
 
 		spin_lock_irqsave(&d->lock,flags);
@@ -1033,6 +1045,8 @@ static int video1394_ioctl(struct inode *inode, struct file *file,
 			PRINT(KERN_ERR, ohci->id, 
 			      "Buffer %d is already used",v.buffer);
 			spin_unlock_irqrestore(&d->lock,flags);
+			if (qv.packet_sizes)
+				kfree(qv.packet_sizes);
 			return -EFAULT;
 		}
 		
@@ -1086,6 +1100,10 @@ static int video1394_ioctl(struct inode *inode, struct file *file,
 				reg_write(ohci, d->ctrlSet, 0x1000);
 			}
 		}
+
+		if (qv.packet_sizes)
+			kfree(qv.packet_sizes);
+
 		return 0;
 		
 	}
@@ -1095,7 +1113,7 @@ static int video1394_ioctl(struct inode *inode, struct file *file,
 		struct video1394_wait v;
 		struct dma_iso_ctx *d;
 
-		if(copy_from_user(&v, (void *)arg, sizeof(v)))
+		if (copy_from_user(&v, (void *)arg, sizeof(v)))
 			return -EFAULT;
 
 		d = find_ctx(&ctx->context_list, OHCI_ISO_TRANSMIT, v.channel);
@@ -1112,10 +1130,10 @@ static int video1394_ioctl(struct inode *inode, struct file *file,
 			return 0;
 		case VIDEO1394_BUFFER_QUEUED:
 #if 1
-			while(d->buffer_status[v.buffer]!=
+			while (d->buffer_status[v.buffer]!=
 			      VIDEO1394_BUFFER_READY) {
 				interruptible_sleep_on(&d->waitq);
-				if(signal_pending(current)) return -EINTR;
+				if (signal_pending(current)) return -EINTR;
 			}
 #else
 			if (wait_event_interruptible(d->waitq, 

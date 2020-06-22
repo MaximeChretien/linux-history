@@ -24,7 +24,7 @@ enum {
 	IA64_MCA_FAILURE	=	1
 };
 
-#define IA64_MCA_RENDEZ_TIMEOUT		(100 * HZ)	/* 1000 milliseconds */
+#define IA64_MCA_RENDEZ_TIMEOUT		(20 * 1000)	/* value in milliseconds - 20 seconds */
 
 #define IA64_CMC_INT_DISABLE		0
 #define IA64_CMC_INT_ENABLE		1
@@ -135,7 +135,7 @@ extern void ia64_mca_cmc_int_handler(int,void *,struct pt_regs *);
 extern void ia64_mca_cpe_int_handler(int,void *,struct pt_regs *);
 extern int  ia64_log_print(int,prfunc_t);
 extern void ia64_mca_cmc_vector_setup(void);
-extern void ia64_mca_check_errors( void );
+extern int  ia64_mca_check_errors(void);
 extern u64  ia64_log_get(int, prfunc_t);
 
 #define PLATFORM_CALL(fn, args)	printk("Platform call TBD\n")

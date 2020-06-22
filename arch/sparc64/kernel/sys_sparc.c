@@ -182,7 +182,10 @@ asmlinkage int sys_ipc (unsigned call, int first, int second, unsigned long thir
 	if (call <= SEMCTL)
 		switch (call) {
 		case SEMOP:
-			err = sys_semop (first, (struct sembuf *)ptr, second);
+			err = sys_semtimedop (first, (struct sembuf *)ptr, second, NULL);
+			goto out;
+		case SEMTIMEDOP:
+			err = sys_semtimedop (first, (struct sembuf *)ptr, second, (const struct timespec *) fifth);
 			goto out;
 		case SEMGET:
 			err = sys_semget (first, second, (int)third);
@@ -223,9 +226,15 @@ asmlinkage int sys_ipc (unsigned call, int first, int second, unsigned long thir
 		}
 	if (call <= SHMCTL) 
 		switch (call) {
-		case SHMAT:
-			err = sys_shmat (first, (char *) ptr, second, (ulong *) third);
+		case SHMAT: {
+			ulong raddr;
+			err = sys_shmat (first, (char *) ptr, second, &raddr);
+			if (!err) {
+				if (put_user(raddr, (ulong *) third))
+					err = -EFAULT;
+			}
 			goto out;
+		}
 		case SHMDT:
 			err = sys_shmdt ((char *)ptr);
 			goto out;

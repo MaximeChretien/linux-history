@@ -14,6 +14,8 @@
 
 #include "tuner.h"
 #include "audiochip.h"
+#include "i2c-compat.h"
+# define strlcpy(dest,src,len) strncpy(dest,src,(len)-1)
 
 /* Addresses to scan */
 static unsigned short normal_i2c[] = {I2C_CLIENT_END};
@@ -222,8 +224,13 @@ static struct tunertype tuners[] = {
 	  16*160.00,16*442.00,0x01,0x02,0x04,0x8e,623 },
 	{ "LG NTSC (newer TAPC series)", LGINNOTEK, NTSC,
           16*170.00, 16*450.00, 0x01,0x02,0x08,0x8e,732},
+
+	{ "HITACHI V7-J180AT", HITACHI, NTSC,
+	  16*170.00, 16*450.00, 0x01,0x02,0x00,0x8e,940 },
+	{ "Philips PAL_MK (FI1216 MK)", Philips, PAL,
+	  16*140.25,16*463.25,0x01,0xc2,0xcf,0x8e,623},
 };
-#define TUNERS (sizeof(tuners)/sizeof(tuners[0]))
+#define TUNERS ARRAY_SIZE(tuners)
 
 /* ---------------------------------------------------------------------- */
 
@@ -231,7 +238,7 @@ static int tuner_getstatus(struct i2c_client *c)
 {
 	unsigned char byte;
 
-	struct tuner *t = (struct tuner*)c->data;
+	struct tuner *t = i2c_get_clientdata(c);
 
         if (t->type == TUNER_MT2032)
 		return 0;
@@ -281,7 +288,7 @@ static int mt2032_init(struct i2c_client *c)
 {
         unsigned char buf[21];
         int ret,xogc,xok=0;
-	struct tuner *t = (struct tuner*)c->data;
+	struct tuner *t = i2c_get_clientdata(c);
 
         buf[0]=0;
         ret=i2c_master_send(c,buf,1);
@@ -529,7 +536,7 @@ static void mt2032_set_if_freq(struct i2c_client *c, unsigned int rfin,
 {
 	unsigned char buf[21];
 	int lint_try,ret,sel,lock=0;
-	struct tuner *t = (struct tuner*)c->data;
+	struct tuner *t = i2c_get_clientdata(c);
 
 	dprintk("mt2032_set_if_freq rfin=%d if1=%d if2=%d from=%d to=%d\n",rfin,if1,if2,from,to);
 
@@ -586,18 +593,19 @@ static void mt2032_set_tv_freq(struct i2c_client *c,
 	int if2,from,to;
 
 	// signal bandwidth and picture carrier
-	if(norm==VIDEO_MODE_NTSC) {
+	if (norm==VIDEO_MODE_NTSC) {
 		from=40750*1000;
 		to=46750*1000;
 		if2=45750*1000; 
-	}
-	else {  // Pal 
+	} else {
+		// Pal 
 		from=32900*1000;
 		to=39900*1000;
 		if2=38900*1000;
 	}
 
-        mt2032_set_if_freq(c,freq* 1000*1000/16, 1090*1000*1000, if2, from, to);
+        mt2032_set_if_freq(c, freq*62500 /* freq*1000*1000/16 */,
+			   1090*1000*1000, if2, from, to);
 }
 
 
@@ -607,7 +615,7 @@ static void set_tv_freq(struct i2c_client *c, unsigned int freq)
 	u8 config;
 	u16 div;
 	struct tunertype *tun;
-	struct tuner *t = c->data;
+	struct tuner *t = i2c_get_clientdata(c);
         unsigned char buffer[4];
 	int rc;
 
@@ -733,19 +741,20 @@ static void set_tv_freq(struct i2c_client *c, unsigned int freq)
 
 }
 
-static void mt2032_set_radio_freq(struct i2c_client *c, int freq)
+static void mt2032_set_radio_freq(struct i2c_client *c, unsigned int freq)
 {
-	struct tuner *t = (struct tuner*)c->data;
+	struct tuner *t = i2c_get_clientdata(c);
 	int if2 = t->radio_if2;
 
 	// per Manual for FM tuning: first if center freq. 1085 MHz
-        mt2032_set_if_freq(c,freq* 1000*1000/16, 1085*1000*1000,if2,if2,if2);
+        mt2032_set_if_freq(c, freq*62500 /* freq*1000*1000/16 */,
+			   1085*1000*1000,if2,if2,if2);
 }
 
 static void set_radio_freq(struct i2c_client *c, unsigned int freq)
 {
 	struct tunertype *tun;
-	struct tuner *t = (struct tuner*)c->data;
+	struct tuner *t = i2c_get_clientdata(c);
         unsigned char buffer[4];
 	unsigned div;
 	int rc;
@@ -807,19 +816,20 @@ static int tuner_attach(struct i2c_adapter *adap, int addr,
         if (NULL == (client = kmalloc(sizeof(struct i2c_client), GFP_KERNEL)))
                 return -ENOMEM;
         memcpy(client,&client_template,sizeof(struct i2c_client));
-        client->data = t = kmalloc(sizeof(struct tuner),GFP_KERNEL);
+        t = kmalloc(sizeof(struct tuner),GFP_KERNEL);
         if (NULL == t) {
                 kfree(client);
                 return -ENOMEM;
         }
         memset(t,0,sizeof(struct tuner));
+	i2c_set_clientdata(client, t);
 	t->type       = UNSET;
 	t->radio_if2  = 10700*1000; // 10.7MHz - FM radio
 
 	if (type < TUNERS) {
 		t->type = type;
 		printk("tuner(bttv): type forced to %d (%s) [insmod]\n",t->type,tuners[t->type].name);
-		strncpy(client->name, tuners[t->type].name, sizeof(client->name));
+		strlcpy(client->name, tuners[t->type].name, sizeof(client->name));
 	}
         i2c_attach_client(client);
         if (t->type == TUNER_MT2032)
@@ -831,34 +841,26 @@ static int tuner_attach(struct i2c_adapter *adap, int addr,
 
 static int tuner_probe(struct i2c_adapter *adap)
 {
-	int rc;
-
 	if (0 != addr) {
 		normal_i2c_range[0] = addr;
 		normal_i2c_range[1] = addr;
 	}
 	this_adap = 0;
+
 	switch (adap->id) {
 	case I2C_ALGO_BIT | I2C_HW_B_BT848:
 	case I2C_ALGO_BIT | I2C_HW_B_RIVA:
 	case I2C_ALGO_SAA7134:
 	case I2C_ALGO_SAA7146:
-		printk("tuner: probing %s i2c adapter [id=0x%x]\n",
-		       adap->name,adap->id);
-		rc = i2c_probe(adap, &addr_data, tuner_attach);
+		return i2c_probe(adap, &addr_data, tuner_attach);
 		break;
-	default:
-		printk("tuner: ignoring %s i2c adapter [id=0x%x]\n",
-		       adap->name,adap->id);
-		rc = 0;
-		/* nothing */
 	}
-	return rc;
+	return 0;
 }
 
 static int tuner_detach(struct i2c_client *client)
 {
-	struct tuner *t = (struct tuner*)client->data;
+	struct tuner *t = i2c_get_clientdata(client);
 
 	i2c_detach_client(client);
 	kfree(t);
@@ -870,7 +872,7 @@ static int tuner_detach(struct i2c_client *client)
 static int
 tuner_command(struct i2c_client *client, unsigned int cmd, void *arg)
 {
-	struct tuner *t = (struct tuner*)client->data;
+	struct tuner *t = i2c_get_clientdata(client);
         unsigned int *iarg = (int*)arg;
 
         switch (cmd) {
@@ -886,7 +888,7 @@ tuner_command(struct i2c_client *client, unsigned int cmd, void *arg)
 		t->type = *iarg;
 		printk("tuner: type set to %d (%s)\n",
                         t->type,tuners[t->type].name);
-		strncpy(client->name, tuners[t->type].name, sizeof(client->name));
+		strlcpy(client->name, tuners[t->type].name, sizeof(client->name));
 		if (t->type == TUNER_MT2032)
                         mt2032_init(client);
 		break;
@@ -970,9 +972,9 @@ static struct i2c_driver driver = {
 };
 static struct i2c_client client_template =
 {
-        .name   = "(tuner unset)",
-	.flags  = I2C_CLIENT_ALLOW_USE,
-        .driver = &driver,
+	I2C_DEVNAME("(tuner unset)"),
+	.flags      = I2C_CLIENT_ALLOW_USE,
+        .driver     = &driver,
 };
 
 static int tuner_init_module(void)

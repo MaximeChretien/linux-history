@@ -9,6 +9,7 @@ obj-$(CONFIG_USB_EHCI_HCD)			+= ehci-hcd.o
 obj-$(CONFIG_USB_UHCI_ALT)			+= uhci.o
 obj-$(CONFIG_USB_UHCI)				+= usb-uhci.o
 obj-$(CONFIG_USB_OHCI)				+= usb-ohci.o
+obj-$(CONFIG_USB_SL811HS_ALT)  			+= sl811.o
 
 # Extract lists of the multi-part drivers.
 # The 'int-*' lists are the intermediate files used to build the multi's.

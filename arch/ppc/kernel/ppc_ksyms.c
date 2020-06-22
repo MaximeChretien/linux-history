@@ -353,6 +353,10 @@ EXPORT_SYMBOL(ret_to_user_hook);
 EXPORT_SYMBOL(next_mmu_context);
 EXPORT_SYMBOL(set_context);
 EXPORT_SYMBOL(handle_mm_fault); /* For MOL */
+#ifdef CONFIG_SMP
+extern int *hash_table_lock;
+EXPORT_SYMBOL_NOVERS(hash_table_lock); /* For MOL */
+#endif
 EXPORT_SYMBOL_NOVERS(disarm_decr);
 #ifdef CONFIG_PPC_STD_MMU
 EXPORT_SYMBOL(flush_hash_page); /* For MOL */

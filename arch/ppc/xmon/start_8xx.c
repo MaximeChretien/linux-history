@@ -46,7 +46,7 @@ xmon_map_scc(void)
 
 	cpmp = (cpm8xx_t *)&(((immap_t *)IMAP_ADDR)->im_cpm);
 	use_screen = 0;
-	
+
 	prom_drawstring("xmon uses serial port\n");
 }
 

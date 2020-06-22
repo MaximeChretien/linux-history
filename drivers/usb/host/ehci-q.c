@@ -88,7 +88,6 @@ qtd_fill (struct ehci_qtd *qtd, dma_addr_t buf, size_t len,
 static inline void
 qh_update (struct ehci_hcd *ehci, struct ehci_qh *qh, struct ehci_qtd *qtd)
 {
-	qh->hw_current = 0;
 	qh->hw_qtd_next = QTD_NEXT (qtd->qtd_dma);
 	qh->hw_alt_next = EHCI_LIST_END;
 
@@ -98,8 +97,6 @@ qh_update (struct ehci_hcd *ehci, struct ehci_qh *qh, struct ehci_qtd *qtd)
 }
 
 /*-------------------------------------------------------------------------*/
-
-#define IS_SHORT_READ(token) (QTD_LENGTH (token) != 0 && QTD_PID (token) == 1)
 
 static void qtd_copy_status (
 	struct ehci_hcd *ehci,
@@ -314,16 +311,15 @@ qh_completions (struct ehci_hcd *ehci, struct ehci_qh *qh, struct pt_regs *regs)
 		/* hardware copies qtd out of qh overlay */
 		rmb ();
 		token = le32_to_cpu (qtd->hw_token);
-		stopped = stopped
-			|| (HALT_BIT & qh->hw_token) != 0
-			|| (ehci->hcd.state == USB_STATE_HALT);
 
 		/* always clean up qtds the hc de-activated */
 		if ((token & QTD_STS_ACTIVE) == 0) {
 
-			/* magic dummy for short reads; won't advance */
-			if (IS_SHORT_READ (token)
-					&& !(token & QTD_STS_HALT)
+			if ((token & QTD_STS_HALT) != 0) {
+				stopped = 1;
+
+			/* magic dummy for some short reads; qh won't advance */
+			} else if (IS_SHORT_READ (token)
 					&& (qh->hw_alt_next & QTD_MASK)
 						== ehci->async->hw_alt_next) {
 				stopped = 1;
@@ -331,10 +327,13 @@ qh_completions (struct ehci_hcd *ehci, struct ehci_qh *qh, struct pt_regs *regs)
 			}
 
 		/* stop scanning when we reach qtds the hc is using */
-		} else if (likely (!stopped)) {
+		} else if (likely (!stopped
+				&& HCD_IS_RUNNING (ehci->hcd.state))) {
 			break;
 
 		} else {
+			stopped = 1;
+
 			/* ignore active urbs unless some previous qtd
 			 * for the urb faulted (including short read) or
 			 * its urb was canceled.  we may patch qh or qtds.
@@ -393,12 +392,20 @@ halt:
 	qh->qh_state = state;
 
 	/* update qh after fault cleanup */
-	if (unlikely ((HALT_BIT & qh->hw_token) != 0)) {
-		qh_update (ehci, qh,
-			list_empty (&qh->qtd_list)
-				? qh->dummy
-				: list_entry (qh->qtd_list.next,
-					struct ehci_qtd, qtd_list));
+	if (unlikely (stopped != 0)
+			/* some EHCI 0.95 impls will overlay dummy qtds */ 
+			|| qh->hw_qtd_next == EHCI_LIST_END) {
+		if (list_empty (&qh->qtd_list))
+			end = qh->dummy;
+		else {
+			end = list_entry (qh->qtd_list.next,
+					struct ehci_qtd, qtd_list);
+			/* first qtd may already be partially processed */
+			if (cpu_to_le32 (end->qtd_dma) == qh->hw_current)
+				end = 0;
+		}
+		if (end)
+			qh_update (ehci, qh, end);
 	}
 
 	return count;
@@ -718,12 +725,11 @@ done:
 
 	/* NOTE:  if (PIPE_INTERRUPT) { scheduler sets s-mask } */
 
-	/* init as halted, toggle clear, advance to dummy */
+	/* init as live, toggle clear, advance to dummy */
 	qh->qh_state = QH_STATE_IDLE;
 	qh->hw_info1 = cpu_to_le32 (info1);
 	qh->hw_info2 = cpu_to_le32 (info2);
 	qh_update (ehci, qh, qh->dummy);
-	qh->hw_token = cpu_to_le32 (QTD_STS_HALT);
 	usb_settoggle (urb->dev, usb_pipeendpoint (urb->pipe), !is_input, 1);
 	return qh;
 }
@@ -741,8 +747,7 @@ static void qh_link_async (struct ehci_hcd *ehci, struct ehci_qh *qh)
 
 	/* (re)start the async schedule? */
 	head = ehci->async;
-	if (ehci->async_idle)
-		del_timer (&ehci->watchdog);
+	timer_action_done (ehci, TIMER_ASYNC_OFF);
 	if (!head->qh_next.qh) {
 		u32	cmd = readl (&ehci->regs->command);
 
@@ -773,8 +778,6 @@ static void qh_link_async (struct ehci_hcd *ehci, struct ehci_qh *qh)
 
 	qh->qh_state = QH_STATE_LINKED;
 	/* qtd completions reported later by interrupt */
-
-	ehci->async_idle = 0;
 }
 
 /*-------------------------------------------------------------------------*/
@@ -831,9 +834,8 @@ static struct ehci_qh *qh_append_tds (
 			}
 		}
 
-		/* FIXME:  changing config or interface setting is not
-		 * supported yet.  preferred fix is for usbcore to tell
-		 * us to clear out each endpoint's state, but...
+		/* NOTE:  changing config or interface setting is not
+		 * supported without the 2.5 endpoint disable logic.
 		 */
 
 		/* usb_clear_halt() means qh data toggle gets reset */
@@ -955,17 +957,17 @@ static void end_unlink_async (struct ehci_hcd *ehci, struct pt_regs *regs)
 	struct ehci_qh		*qh = ehci->reclaim;
 	struct ehci_qh		*next;
 
-	del_timer (&ehci->watchdog);
+	timer_action_done (ehci, TIMER_IAA_WATCHDOG);
 
 	// qh->hw_next = cpu_to_le32 (qh->qh_dma);
 	qh->qh_state = QH_STATE_IDLE;
 	qh->qh_next.qh = 0;
 	qh_put (ehci, qh);			// refcount from reclaim 
-	ehci->reclaim = 0;
-	ehci->reclaim_ready = 0;
 
 	/* other unlink(s) may be pending (in QH_STATE_UNLINK_WAIT) */
 	next = qh->reclaim;
+	ehci->reclaim = next;
+	ehci->reclaim_ready = 0;
 	qh->reclaim = 0;
 
 	qh_completions (ehci, qh, regs);
@@ -980,16 +982,14 @@ static void end_unlink_async (struct ehci_hcd *ehci, struct pt_regs *regs)
 		 * active but idle for a while once it empties.
 		 */
 		if (HCD_IS_RUNNING (ehci->hcd.state)
-				&& ehci->async->qh_next.qh == 0
-				&& !timer_pending (&ehci->watchdog)) {
-			ehci->async_idle = 1;
-			mod_timer (&ehci->watchdog,
-					jiffies + EHCI_ASYNC_JIFFIES);
-		}
+				&& ehci->async->qh_next.qh == 0)
+			timer_action (ehci, TIMER_ASYNC_OFF);
 	}
 
-	if (next)
+	if (next) {
+		ehci->reclaim = 0;
 		start_unlink_async (ehci, next);
+	}
 }
 
 /* makes sure the async qh will become idle */
@@ -1020,6 +1020,7 @@ static void start_unlink_async (struct ehci_hcd *ehci, struct ehci_qh *qh)
 			wmb ();
 			// handshake later, if we need to
 		}
+		timer_action_done (ehci, TIMER_ASYNC_OFF);
 		return;
 	} 
 
@@ -1045,9 +1046,8 @@ static void start_unlink_async (struct ehci_hcd *ehci, struct ehci_qh *qh)
 	ehci->reclaim_ready = 0;
 	cmd |= CMD_IAAD;
 	writel (cmd, &ehci->regs->command);
-	/* posted write need not be known to HC yet ... */
-
-	mod_timer (&ehci->watchdog, jiffies + EHCI_WATCHDOG_JIFFIES);
+	(void) readl (&ehci->regs->command);
+	timer_action (ehci, TIMER_IAA_WATCHDOG);
 }
 
 /*-------------------------------------------------------------------------*/
@@ -1056,10 +1056,11 @@ static void
 scan_async (struct ehci_hcd *ehci, struct pt_regs *regs)
 {
 	struct ehci_qh		*qh;
-	int			unlink_delay = 0;
+	enum ehci_timer_action	action = TIMER_IO_WATCHDOG;
 
 	if (!++(ehci->stamp))
 		ehci->stamp++;
+	timer_action_done (ehci, TIMER_ASYNC_SHRINK);
 rescan:
 	qh = ehci->async->qh_next.qh;
 	if (likely (qh != 0)) {
@@ -1091,17 +1092,15 @@ rescan:
 			 */
 			if (list_empty (&qh->qtd_list)) {
 				if (qh->stamp == ehci->stamp)
-					unlink_delay = 1;
-				else if (!ehci->reclaim) {
+					action = TIMER_ASYNC_SHRINK;
+				else if (!ehci->reclaim
+					    && qh->qh_state == QH_STATE_LINKED)
 					start_unlink_async (ehci, qh);
-					unlink_delay = 0;
-				}
 			}
 
 			qh = qh->qh_next.qh;
 		} while (qh);
 	}
-
-	if (unlink_delay && !timer_pending (&ehci->watchdog))
-		mod_timer (&ehci->watchdog, jiffies + EHCI_WATCHDOG_JIFFIES/2);
+	if (action == TIMER_ASYNC_SHRINK)
+		timer_action (ehci, TIMER_ASYNC_SHRINK);
 }

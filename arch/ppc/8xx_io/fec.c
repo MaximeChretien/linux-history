@@ -163,7 +163,7 @@ struct fec_enet_private {
 	cbd_t	*dirty_tx;	/* The ring entries to be free()ed. */
 	scc_t	*sccp;
 	struct	net_device_stats stats;
-	uint	tx_full;
+	uint	tx_free;
 	spinlock_t lock;
 
 #ifdef	CONFIG_USE_MDIO
@@ -229,6 +229,7 @@ mii_list_t	mii_cmds[NMII];
 mii_list_t	*mii_free;
 mii_list_t	*mii_head;
 mii_list_t	*mii_tail;
+int         mii_stopped;
 
 typedef struct mdio_read_data {
 	u16 regval;
@@ -295,18 +296,13 @@ fec_enet_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	fep = dev->priv;
 	fecp = (volatile fec_t*)dev->base_addr;
 
-	if (!fep->link) {
-		/* Link is down or autonegotiation is in progress. */
-		return 1;
-	}
-
 	/* Fill in a Tx ring entry */
 	bdp = fep->cur_tx;
 
 #ifndef final_version
-	if (bdp->cbd_sc & BD_ENET_TX_READY) {
+	if (!fep->tx_free || (bdp->cbd_sc & BD_ENET_TX_READY)) {
 		/* Ooops.  All transmit buffers are full.  Bail out.
-		 * This should not happen, since dev->tbusy should be set.
+		 * This should not happen, since the tx queue should be stopped.
 		 */
 		printk("%s: tx queue full!.\n", dev->name);
 		return 1;
@@ -357,10 +353,8 @@ fec_enet_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		bdp++;
 	}
 
-	if (bdp->cbd_sc & BD_ENET_TX_READY) {
+	if (!--fep->tx_free)
 		netif_stop_queue(dev);
-		fep->tx_full = 1;
-	}
 
 	fep->cur_tx = (cbd_t *)bdp;
 
@@ -381,8 +375,8 @@ fec_timeout(struct net_device *dev)
 	int	i;
 	cbd_t	*bdp;
 
-	printk("Ring data dump: cur_tx %lx%s, dirty_tx %lx cur_rx: %lx\n",
-	       (unsigned long)fep->cur_tx, fep->tx_full ? " (full)" : "",
+	printk("Ring data dump: cur_tx %lx, tx_free %d, dirty_tx %lx, cur_rx %lx\n",
+	       (unsigned long)fep->cur_tx, fep->tx_free,
 	       (unsigned long)fep->dirty_tx,
 	       (unsigned long)fep->cur_rx);
 
@@ -409,7 +403,7 @@ fec_timeout(struct net_device *dev)
 	}
 	}
 #endif
-	if (!fep->tx_full)
+	if (fep->tx_free)
 		netif_wake_queue(dev);
 }
 
@@ -469,7 +463,7 @@ fec_enet_tx(struct net_device *dev)
 	bdp = fep->dirty_tx;
 
 	while ((bdp->cbd_sc&BD_ENET_TX_READY) == 0) {
-		if (bdp == fep->cur_tx && fep->tx_full == 0) break;
+		if (fep->tx_free == TX_RING_SIZE) break;
 
 		skb = fep->tx_skbuff[fep->skb_dirty];
 		/* Check for errors. */
@@ -519,8 +513,7 @@ printk("TXI: %x %x %x\n", bdp, skb, fep->skb_dirty);
 		/* Since we have freed up a buffer, the ring is no longer
 		 * full.
 		 */
-		if (fep->tx_full) {
-			fep->tx_full = 0;
+		if (!fep->tx_free++) {
 			if (netif_queue_stopped(dev))
 				netif_wake_queue(dev);
 		}
@@ -668,6 +661,12 @@ fec_enet_mii(struct net_device *dev)
 	ep = &(((immap_t *)IMAP_ADDR)->im_cpm.cp_fec);
 	mii_reg = ep->fec_mii_data;
 
+	/* Ignore this answer if the request queue has been stopped.
+	 * The request will be re-issued when the queue is restarted.
+	 */
+	if (mii_stopped)
+		return;
+
 	if ((mip = mii_head) == NULL) {
 		printk("MII and no head!\n");
 		return;
@@ -714,7 +713,8 @@ mii_queue(struct net_device *dev, int regval, void (*func)(uint, struct net_devi
 			mii_tail = mip;
 		} else {
 			mii_head = mii_tail = mip;
-			(&(((immap_t *)IMAP_ADDR)->im_cpm.cp_fec))->fec_mii_data = regval;
+			if (!mii_stopped)
+				(&(((immap_t *)IMAP_ADDR)->im_cpm.cp_fec))->fec_mii_data = regval;
 		}
 	} else {
 		retval = 1;
@@ -723,6 +723,30 @@ mii_queue(struct net_device *dev, int regval, void (*func)(uint, struct net_devi
 	restore_flags(flags);
 
 	return(retval);
+}
+
+/* Functions to stop/start the transmission of requests through the MDIO.
+ * They are intended to be used before and after a FEC reset.
+ */
+static void stop_mii_queue(struct net_device *dev)
+{
+	unsigned long flags;
+	save_flags(flags);
+	cli();
+	mii_stopped = 1;
+	restore_flags(flags);
+}
+
+static void start_mii_queue(struct net_device *dev)
+{
+	unsigned long flags;
+	volatile fec_t *ep = &(((immap_t *)IMAP_ADDR)->im_cpm.cp_fec);
+	save_flags(flags);
+	cli();
+	mii_stopped = 0;
+	if(mii_head)
+		ep->fec_mii_data = mii_head->mii_regval;
+	restore_flags(flags);
 }
 
 static void mii_do_cmd(struct net_device *dev, const phy_cmd_t *c)
@@ -995,7 +1019,7 @@ static phy_info_t phy_info_qs6612 = {
 		{ mk_mii_end, }
 	},
 	(const phy_cmd_t []) {  /* startup - enable interrupts */
-		{ mk_mii_write(MII_QS6612_IMR, 0x003a), NULL },
+		{ mk_mii_write(MII_QS6612_IMR, 0x0050), NULL },
 		{ mk_mii_write(MII_REG_CR, 0x1200), NULL }, /* autonegotiate */
 		{ mk_mii_end, }
 	},
@@ -1060,7 +1084,7 @@ static phy_info_t phy_info_dp83843 = {
 	0x020005c1,
 	"DP83843BVJE",
 
-	(const phy_cmd_t []) {  /* config */  
+	(const phy_cmd_t []) {  /* config */
 		{ mk_mii_write(MII_REG_ANAR, 0x01E1), NULL  }, /* Auto-Negociation Register Control set to    */
 		                                               /* auto-negociate 10/100MBps, Half/Full duplex */
 		{ mk_mii_read(MII_REG_CR),   mii_parse_cr   },
@@ -1132,7 +1156,7 @@ static phy_info_t phy_info_dp83846a = {
 	0x020005c2,
 	"DP83846A",
 
-	(const phy_cmd_t []) {  /* config */  
+	(const phy_cmd_t []) {  /* config */
 		{ mk_mii_write(MII_REG_ANAR, 0x01E1), NULL  }, /* Auto-Negociation Register Control set to    */
 		                                               /* auto-negociate 10/100MBps, Half/Full duplex */
 		{ mk_mii_read(MII_REG_CR),   mii_parse_cr   },
@@ -1367,31 +1391,20 @@ mii_link_interrupt(int irq, void * dev_id, struct pt_regs * regs)
 #ifdef	CONFIG_USE_MDIO
 	struct	net_device *dev = dev_id;
 	struct fec_enet_private *fep = dev->priv;
-	volatile immap_t *immap = (immap_t *)IMAP_ADDR;
-	volatile fec_t *fecp = &(immap->im_cpm.cp_fec);
-	unsigned int ecntrl = fecp->fec_ecntrl;
 
-	/* We need the FEC enabled to access the MII
-	*/
-	if ((ecntrl & FEC_ECNTRL_ETHER_EN) == 0) {
-		fecp->fec_ecntrl |= FEC_ECNTRL_ETHER_EN;
-	}
-#endif	/* CONFIG_USE_MDIO */
-
-#if 0
-	disable_irq(fep->mii_irq);  /* disable now, enable later */
-#endif
-
-
-#ifdef	CONFIG_USE_MDIO
-	mii_do_cmd(dev, fep->phy->ack_int);
-	mii_do_cmd(dev, phy_cmd_relink);  /* restart and display status */
-
-	if ((ecntrl & FEC_ECNTRL_ETHER_EN) == 0) {
-		fecp->fec_ecntrl = ecntrl;	/* restore old settings */
+	/*
+	 * Acknowledge the interrupt if possible. If we have not
+	 * found the PHY yet we can't process or acknowledge the
+	 * interrupt now. Instead we ignore this interrupt for now,
+	 * which we can do since it is edge triggered. It will be
+	 * acknowledged later by fec_enet_open().
+	 */
+	if (fep->phy) {
+		mii_do_cmd(dev, fep->phy->ack_int);
+		mii_do_cmd(dev, phy_cmd_relink);  /* restart and display status */
 	}
 #else
-printk("%s[%d] %s: unexpected Link interrupt\n", __FILE__,__LINE__,__FUNCTION__);
+	printk ("FEC: unexpected Link interrupt\n");
 #endif	/* CONFIG_USE_MDIO */
 
 }
@@ -1422,7 +1435,7 @@ fec_enet_open(struct net_device *dev)
 		{
 			/* Initializing timers
 			 */
-			init_timer( &fep->phy_timer_list ); 
+			init_timer( &fep->phy_timer_list );
 
 			/* Starting timer for periodic link status check
 			 * After 100 milli-seconds, mdio_timer_callback function is called.
@@ -1492,7 +1505,7 @@ static void mdio_timer_callback(unsigned long data)
 	{
 		fep->phy_timer_list.expires  = jiffies + (1 * HZ); /* Sleep for 1 sec. */
 	}
-	add_timer( &fep->phy_timer_list ); 
+	add_timer( &fep->phy_timer_list );
 }
 #endif /* CONFIG_FEC_DP83846A */
 
@@ -1540,7 +1553,7 @@ static int fec_enet_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 	else
 	{
 		switch(cmd)
-		{						
+		{
 		case SIOCETHTOOL:
 			return netdev_ethtool_ioctl(dev, (void*)rq->ifr_data);
 			break;
@@ -1571,7 +1584,7 @@ static int fec_enet_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 		default:
 			retval = -EOPNOTSUPP;
 			break;
-		}		
+		}
 	}
 	return retval;
 }
@@ -1652,7 +1665,7 @@ static void set_multicast_list(struct net_device *dev)
 
 			dmi = dev->mc_list;
 
-			for (i=0; i<dev->mc_count; i++) {
+			for (i=0; i<dev->mc_count; i++, dmi = dmi->next) {
 
 				/* Only support group multicast for now.
 				*/
@@ -1927,6 +1940,11 @@ fec_restart(struct net_device *dev, int duplex)
 
 	fep = dev->priv;
 
+#ifdef CONFIG_USE_MDIO
+	/* Stop the MDIO communication prior to reset. */
+	stop_mii_queue(dev);
+#endif
+
 	/* Whack a reset.  We should wait for this.
 	*/
 	fecp->fec_ecntrl = FEC_ECNTRL_PINMUX | FEC_ECNTRL_RESET;
@@ -1960,6 +1978,7 @@ fec_restart(struct net_device *dev, int duplex)
 	fecp->fec_x_des_start = __pa((uint)(fep->tx_bd_base));
 
 	fep->dirty_tx = fep->cur_tx = fep->tx_bd_base;
+	fep->tx_free = TX_RING_SIZE;
 	fep->cur_rx = fep->rx_bd_base;
 
 	/* Reset SKB transmit buffers.
@@ -2043,12 +2062,10 @@ fec_restart(struct net_device *dev, int duplex)
 	fecp->fec_ecntrl = FEC_ECNTRL_PINMUX | FEC_ECNTRL_ETHER_EN;
 	fecp->fec_r_des_active = 0x01000000;
 
-	/* The tx ring is no longer full. */
-	if(fep->tx_full)
-	{
-		fep->tx_full = 0;
-		netif_wake_queue(dev);
-	}
+#ifdef CONFIG_USE_MDIO
+	/* Re-start any pending MDIO communication. */
+	start_mii_queue(dev);
+#endif
 }
 
 static void
@@ -2080,22 +2097,7 @@ fec_stop(struct net_device *dev)
 		printk ("FEC timeout on graceful transmit stop\n");
 	}
 
-	/* Clear outstanding MII command interrupts.
-	*/
-	fecp->fec_ievent = FEC_ENET_MII;
-
-	/* Enable MII command finished interrupt
-	*/
-	fecp->fec_ivec = (FEC_INTERRUPT/2) << 29;
+	/* Disable FEC. Let only MII interrupts. */
 	fecp->fec_imask = FEC_ENET_MII;
-
-#ifdef	CONFIG_USE_MDIO
-	/* Set MII speed.
-	*/
-	fecp->fec_mii_speed = fep->phy_speed;
-#endif	/* CONFIG_USE_MDIO */
-
-	/* Disable FEC
-	*/
 	fecp->fec_ecntrl &= ~(FEC_ECNTRL_ETHER_EN);
 }

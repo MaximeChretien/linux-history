@@ -556,6 +556,7 @@ static void __serial_close(struct usb_serial_port *port, struct file *filp)
 		else
 			generic_close(port, filp);
 		port->open_count = 0;
+		port->tty = NULL;
 	}
 
 	if (port->serial->type->owner)

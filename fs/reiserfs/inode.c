@@ -748,7 +748,7 @@ static int reiserfs_get_block (struct inode * inode, long block,
 		retval = convert_tail_for_hole(inode, bh_result, tail_offset) ;
 		if (retval) {
 		    if ( retval != -ENOSPC )
-			printk("clm-6004: convert tail failed inode %lu, error %d\n", inode->i_ino, retval) ;
+			reiserfs_warning(inode->i_sb, "clm-6004: convert tail failed inode %lu, error %d\n", inode->i_ino, retval) ;
 		    if (allocated_block_nr) {
 			/* the bitmap, the super, and the stat data == 3 */
 			journal_begin(&th, inode->i_sb, 3) ;
@@ -798,7 +798,11 @@ static int reiserfs_get_block (struct inode * inode, long block,
 	       pointer to 'block'-th block use block, which is already
 	       allocated */
 	    struct cpu_key tmp_key;
-	    struct unfm_nodeinfo un = {0, 0};
+	    unp_t unf_single=0; // We use this in case we need to allocate only
+				// one block which is a fastpath
+	    unp_t *un;
+	    __u64 max_to_insert=MAX_ITEM_LEN(inode->i_sb->s_blocksize)/UNFM_P_SIZE;
+	    __u64 blocks_needed;
 
 	    RFALSE( pos_in_item != ih_item_len(ih) / UNFM_P_SIZE,
 		    "vs-804: invalid position for append");
@@ -807,30 +811,58 @@ static int reiserfs_get_block (struct inode * inode, long block,
 			  le_key_k_offset (version, &(ih->ih_key)) + op_bytes_number (ih, inode->i_sb->s_blocksize),
 			  //pos_in_item * inode->i_sb->s_blocksize,
 			  TYPE_INDIRECT, 3);// key type is unimportant
-		  
-	    if (cpu_key_k_offset (&tmp_key) == cpu_key_k_offset (&key)) {
+
+	    blocks_needed = 1 + ((cpu_key_k_offset (&key) - cpu_key_k_offset (&tmp_key)) >> inode->i_sb->s_blocksize_bits);
+	    RFALSE( blocks_needed < 0, "green-805: invalid offset");
+
+	    if ( blocks_needed == 1 ) {
+		un = &unf_single;
+	    } else {
+		un=kmalloc( min(blocks_needed,max_to_insert)*UNFM_P_SIZE,
+			    GFP_ATOMIC); // We need to avoid scheduling.
+		if ( !un) {
+		    un = &unf_single;
+		    blocks_needed = 1;
+		    max_to_insert = 0;
+		} else
+		    memset(un, 0, UNFM_P_SIZE * min(blocks_needed,max_to_insert));
+	    }
+	    if ( blocks_needed <= max_to_insert) {
 		/* we are going to add target block to the file. Use allocated
 		   block for that */
-		un.unfm_nodenum = cpu_to_le32 (allocated_block_nr);
+		un[blocks_needed-1] = cpu_to_le32 (allocated_block_nr);
 		set_block_dev_mapped (bh_result, allocated_block_nr, inode);
 		bh_result->b_state |= (1UL << BH_New);
 		done = 1;
 	    } else {
 		/* paste hole to the indirect item */
+		/* If kmalloc failed, max_to_insert becomes zero and it means we
+		   only have space for one block */
+		blocks_needed=max_to_insert?max_to_insert:1;
 	    }
-	    retval = reiserfs_paste_into_item (&th, &path, &tmp_key, (char *)&un, UNFM_P_SIZE);
+	    retval = reiserfs_paste_into_item (&th, &path, &tmp_key, (char *)un, UNFM_P_SIZE * blocks_needed);
+
+	    if (blocks_needed != 1)
+		 kfree(un);
+
 	    if (retval) {
 		reiserfs_free_block (&th, allocated_block_nr);
 		goto failure;
 	    }
-	    if (un.unfm_nodenum)
+	    if (done) {
 		inode->i_blocks += inode->i_sb->s_blocksize / 512;
+	    } else {
+		/* We need to mark new file size in case this function will be
+		   interrupted/aborted later on. And we may do this only for
+		   holes. */
+		inode->i_size += blocks_needed << inode->i_blkbits;
+	    }
 	    //mark_tail_converted (inode);
 	}
-		
+
 	if (done == 1)
 	    break;
-	 
+
 	/* this loop could log more blocks than we had originally asked
 	** for.  So, we have to allow the transaction to end if it is
 	** too big or too full.  Update the inode so things are 
@@ -854,7 +886,7 @@ static int reiserfs_get_block (struct inode * inode, long block,
 	    goto failure;
 	}
 	if (retval == POSITION_FOUND) {
-	    reiserfs_warning ("vs-825: reiserfs_get_block: "
+	    reiserfs_warning (inode->i_sb, "vs-825: reiserfs_get_block: "
 			      "%K should not be found\n", &key);
 	    retval = -EEXIST;
 	    if (allocated_block_nr)
@@ -1085,8 +1117,8 @@ void reiserfs_update_sd (struct reiserfs_transaction_handle *th,
 	/* look for the object's stat data */
 	retval = search_item (inode->i_sb, &key, &path);
 	if (retval == IO_ERROR) {
-	    reiserfs_warning ("vs-13050: reiserfs_update_sd: "
-			      "i/o failure occurred trying to update %K stat data",
+	    reiserfs_warning (inode->i_sb, "vs-13050: reiserfs_update_sd: "
+			      "i/o failure occurred trying to update %K stat data\n",
 			      &key);
 	    return;
 	}
@@ -1097,7 +1129,7 @@ void reiserfs_update_sd (struct reiserfs_transaction_handle *th,
 		/*printk ("vs-13050: reiserfs_update_sd: i_nlink == 0, stat data not found\n");*/
 		return;
 	    }
-	    reiserfs_warning ("vs-13060: reiserfs_update_sd: "
+	    reiserfs_warning (inode->i_sb, "vs-13060: reiserfs_update_sd: "
 			      "stat data of object %k (nlink == %d) not found (pos %d)\n", 
 			      INODE_PKEY (inode), inode->i_nlink, pos);
 	    reiserfs_check_path(&path) ;
@@ -1165,7 +1197,7 @@ void reiserfs_read_inode2 (struct inode * inode, void *p)
     /* look for the object's stat data */
     retval = search_item (inode->i_sb, &key, &path_to_sd);
     if (retval == IO_ERROR) {
-	reiserfs_warning ("vs-13070: reiserfs_read_inode2: "
+	reiserfs_warning (inode->i_sb, "vs-13070: reiserfs_read_inode2: "
                     "i/o failure occurred trying to find stat data of %K\n",
                     &key);
 	reiserfs_make_bad_inode(inode) ;
@@ -1197,7 +1229,7 @@ void reiserfs_read_inode2 (struct inode * inode, void *p)
        during mount (fs/reiserfs/super.c:finish_unfinished()). */
     if( ( inode -> i_nlink == 0 ) && 
 	! inode -> i_sb -> u.reiserfs_sb.s_is_unlinked_ok ) {
-	    reiserfs_warning( "vs-13075: reiserfs_read_inode2: "
+	    reiserfs_warning( inode->i_sb, "vs-13075: reiserfs_read_inode2: "
 			      "dead inode read from disk %K. "
 			      "This is likely to be race with knfsd. Ignore\n", 
 			      &key );
@@ -1288,7 +1320,7 @@ struct dentry *reiserfs_fh_to_dentry(struct super_block *sb, __u32 *data,
      */
     if (fhtype > len) {
 	    if (fhtype != 6 || len != 5)
-		    printk(KERN_WARNING "nfsd/reiserfs, fhtype=%d, len=%d - odd\n",
+		    reiserfs_warning(sb, "nfsd/reiserfs, fhtype=%d, len=%d - odd\n",
 			   fhtype, len);
 	    fhtype = 5;
     }
@@ -1387,7 +1419,7 @@ void reiserfs_write_inode (struct inode * inode, int do_sync) {
     int jbegin_count = 1 ;
 
     if (inode->i_sb->s_flags & MS_RDONLY) {
-        reiserfs_warning("clm-6005: writing inode %lu on readonly FS\n", 
+        reiserfs_warning(inode->i_sb, "clm-6005: writing inode %lu on readonly FS\n", 
 	                  inode->i_ino) ;
         return ;
     }
@@ -1450,14 +1482,14 @@ static int reiserfs_new_directory (struct reiserfs_transaction_handle *th,
     /* look for place in the tree for new item */
     retval = search_item (sb, &key, path);
     if (retval == IO_ERROR) {
-	reiserfs_warning ("vs-13080: reiserfs_new_directory: "
+	reiserfs_warning (sb, "vs-13080: reiserfs_new_directory: "
 			  "i/o failure occurred creating new directory\n");
 	return -EIO;
     }
     if (retval == ITEM_FOUND) {
 	pathrelse (path);
-	reiserfs_warning ("vs-13070: reiserfs_new_directory: "
-			  "object with this key exists (%k)", &(ih->ih_key));
+	reiserfs_warning (sb, "vs-13070: reiserfs_new_directory: "
+			  "object with this key exists (%k)\n", &(ih->ih_key));
 	return -EEXIST;
     }
 
@@ -1486,14 +1518,14 @@ static int reiserfs_new_symlink (struct reiserfs_transaction_handle *th,
     /* look for place in the tree for new item */
     retval = search_item (sb, &key, path);
     if (retval == IO_ERROR) {
-	reiserfs_warning ("vs-13080: reiserfs_new_symlinik: "
+	reiserfs_warning (sb, "vs-13080: reiserfs_new_symlinik: "
 			  "i/o failure occurred creating new symlink\n");
 	return -EIO;
     }
     if (retval == ITEM_FOUND) {
 	pathrelse (path);
-	reiserfs_warning ("vs-13080: reiserfs_new_symlink: "
-			  "object with this key exists (%k)", &(ih->ih_key));
+	reiserfs_warning (sb, "vs-13080: reiserfs_new_symlink: "
+			  "object with this key exists (%k)\n", &(ih->ih_key));
 	return -EEXIST;
     }
 
@@ -1751,8 +1783,8 @@ static int grab_tail_page(struct inode *p_s_inode,
 	** I've screwed up the code to find the buffer, or the code to
 	** call prepare_write
 	*/
-	reiserfs_warning("clm-6000: error reading block %lu on dev %s\n",
-	                  bh->b_blocknr, kdevname(bh->b_dev)) ;
+	reiserfs_warning(p_s_inode->i_sb, "clm-6000: error reading block %lu\n",
+	                  bh->b_blocknr) ;
 	error = -EIO ;
 	goto unlock ;
     }
@@ -1792,7 +1824,7 @@ void reiserfs_truncate_file(struct inode *p_s_inode, int update_timestamps) {
 	    // and get_block_create_0 could not find a block to read in,
 	    // which is ok.
 	    if (error != -ENOENT)
-	        reiserfs_warning("clm-6001: grab_tail_page failed %d\n", error);
+	        reiserfs_warning(p_s_inode->i_sb, "clm-6001: grab_tail_page failed %d\n", error);
 	    page = NULL ;
 	    bh = NULL ;
 	}
@@ -1889,7 +1921,7 @@ research:
     /* we've found an unformatted node */
     if (indirect_item_found(retval, ih)) {
 	if (bytes_copied > 0) {
-	    reiserfs_warning("clm-6002: bytes_copied %d\n", bytes_copied) ;
+	    reiserfs_warning(inode->i_sb, "clm-6002: bytes_copied %d\n", bytes_copied) ;
 	}
         if (!get_block_num(item, pos_in_item)) {
 	    /* crap, we are writing to a hole */
@@ -1926,7 +1958,7 @@ research:
 	    goto research ;
 	}
     } else {
-        reiserfs_warning("clm-6003: bad item inode %lu, device %s\n", inode->i_ino, kdevname(inode->i_sb->s_dev)) ;
+        reiserfs_warning(inode->i_sb, "clm-6003: bad item inode %lu\n", inode->i_ino) ;
         retval = -EIO ;
 	goto out ;
     }
@@ -2048,6 +2080,7 @@ static int reiserfs_write_full_page(struct page *page) {
     */
     if (nr) {
         submit_bh_for_writepage(arr, nr) ;
+	wakeup_page_waiters(page);
     } else {
         UnlockPage(page) ;
     }
@@ -2148,6 +2181,10 @@ void sd_attrs_to_i_attrs( __u16 sd_attrs, struct inode *inode )
 			inode -> i_flags |= S_IMMUTABLE;
 		else
 			inode -> i_flags &= ~S_IMMUTABLE;
+		if( sd_attrs & REISERFS_APPEND_FL )
+			inode -> i_flags |= S_APPEND;
+		else
+			inode -> i_flags &= ~S_APPEND;
 		if( sd_attrs & REISERFS_NOATIME_FL )
 			inode -> i_flags |= S_NOATIME;
 		else

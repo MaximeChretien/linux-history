@@ -39,8 +39,13 @@ else
 bool 'MsChunks Physical to Absolute address translation support' CONFIG_MSCHUNKS
 tristate 'Firmware flash interface' CONFIG_RTAS_FLASH
 tristate 'Scanlog Dump interface' CONFIG_SCANLOG
+bool 'Support for RTAS (RunTime Abstraction Services) in /proc' CONFIG_PPC_RTAS
+     if [ "$CONFIG_PPC_RTAS" = "y" ]; then
+	bool 'RTAS Error Inject' CONFIG_RTAS_ERRINJCT
+     fi
 fi
 
+bool 'Shared kernel/user space addressing' CONFIG_SHARED_MEMORY_ADDRESSING
 
 endmenu
 
@@ -136,7 +141,7 @@ if [ "$CONFIG_NET" = "y" ]; then
    bool 'Network device support' CONFIG_NETDEVICES
    if [ "$CONFIG_NETDEVICES" = "y" ]; then
       source drivers/net/Config.in
-      if [ "$CONFIG_ATM" = "y" ]; then
+      if [ "$CONFIG_ATM" = "y" -o "$CONFIG_ATM" = "m" ]; then
          source drivers/atm/Config.in
       fi
    fi
@@ -231,6 +236,8 @@ fi
 
 source lib/Config.in
 
+source crypto/Config.in
+
 mainmenu_option next_comment
 comment 'Kernel hacking'
 
@@ -238,6 +245,7 @@ bool 'Magic SysRq key' CONFIG_MAGIC_SYSRQ
 bool 'Include kgdb kernel debugger' CONFIG_KGDB
 bool 'Include xmon kernel debugger' CONFIG_XMON
 bool 'Include kdb kernel debugger' CONFIG_KDB
+bool 'Debug memory allocations' CONFIG_DEBUG_SLAB
 if [ "$CONFIG_KDB" = "y" ]; then
   bool '  KDB off by default' CONFIG_KDB_OFF
   define_bool CONFIG_KALLSYMS y

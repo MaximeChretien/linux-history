@@ -33,10 +33,13 @@
 #include <asm/sn/idle.h>
 #endif
 
-static void
-do_show_stack (struct unw_frame_info *info, void *arg)
+#define print_symbol(fmt, addr)	printk(fmt, "");
+
+void
+ia64_do_show_stack (struct unw_frame_info *info, void *arg)
 {
 	unsigned long ip, sp, bsp;
+	char buf[80];			/* don't make it so big that it overflows the stack! */
 
 	printk("\nCall Trace: ");
 	do {
@@ -46,29 +49,28 @@ do_show_stack (struct unw_frame_info *info, void *arg)
 
 		unw_get_sp(info, &sp);
 		unw_get_bsp(info, &bsp);
-		printk("[<%016lx>] sp=0x%016lx bsp=0x%016lx\n", ip, sp, bsp);
+		snprintf(buf, sizeof(buf), " [<%016lx>] %%s\n\t\t\t\tsp=%016lx bsp=%016lx\n",
+			 ip, sp, bsp);
+		print_symbol(buf, ip);
 	} while (unw_unwind(info) >= 0);
 }
 
 void
 show_trace_task (struct task_struct *task)
 {
-	struct unw_frame_info info;
-
-	unw_init_from_blocked_task(&info, task);
-	do_show_stack(&info, 0);
+	show_stack(task);
 }
 
 void
 show_stack (struct task_struct *task)
 {
 	if (!task)
-		unw_init_running(do_show_stack, 0);
+		unw_init_running(ia64_do_show_stack, 0);
 	else {
 		struct unw_frame_info info;
 
 		unw_init_from_blocked_task(&info, task);
-		do_show_stack(&info, 0);
+		ia64_do_show_stack(&info, 0);
 	}
 }
 
@@ -119,7 +121,7 @@ show_regs (struct pt_regs *regs)
 		}
 	}
 	if (!user_mode(regs))
-		show_stack(0);
+		show_stack(NULL);
 }
 
 void __attribute__((noreturn))
@@ -331,6 +333,7 @@ copy_thread (int nr, unsigned long clone_flags,
 #	define THREAD_FLAGS_TO_SET	0
 	p->thread.flags = ((current->thread.flags & ~THREAD_FLAGS_TO_CLEAR)
 			   | THREAD_FLAGS_TO_SET);
+	ia64_drop_fpu(p);	/* don't pick up stale state from a CPU's fph */
 #ifdef CONFIG_IA32_SUPPORT
 	/*
 	 * If we're cloning an IA32 task then save the IA32 extra
@@ -492,6 +495,15 @@ arch_kernel_thread (int (*fn)(void *), void *arg, unsigned long flags)
 
 	tid = clone(flags | CLONE_VM, 0);
 	if (parent != current) {
+#ifdef CONFIG_IA32_SUPPORT
+		if (IS_IA32_PROCESS(ia64_task_regs(current))) {
+			/* A kernel thread is always a 64-bit process. */
+			current->thread.map_base  = DEFAULT_MAP_BASE;
+			current->thread.task_size = DEFAULT_TASK_SIZE;
+			ia64_set_kr(IA64_KR_IO_BASE, current->thread.old_iob);
+			ia64_set_kr(IA64_KR_TSSD, current->thread.old_k1);
+		}
+#endif
 		result = (*fn)(arg);
 		_exit(result);
 	}
@@ -506,11 +518,7 @@ flush_thread (void)
 {
 	/* drop floating-point and debug-register state if it exists: */
 	current->thread.flags &= ~(IA64_THREAD_FPH_VALID | IA64_THREAD_DBG_VALID);
-
-#ifndef CONFIG_SMP
-	if (ia64_get_fpu_owner() == current)
-		ia64_set_fpu_owner(0);
-#endif
+	ia64_drop_fpu(current);
 }
 
 #ifdef CONFIG_PERFMON
@@ -548,10 +556,7 @@ release_thread (struct task_struct *task)
 void
 exit_thread (void)
 {
-#ifndef CONFIG_SMP
-	if (ia64_get_fpu_owner() == current)
-		ia64_set_fpu_owner(0);
-#endif
+	ia64_drop_fpu(current);
 #ifdef CONFIG_PERFMON
        /* stop monitoring */
 	if (current->thread.pfm_context)

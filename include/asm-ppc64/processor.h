@@ -137,7 +137,7 @@
 #define	SPRN_DBAT2U	0x21C	/* Data BAT 2 Upper Register */
 #define	SPRN_DBAT3L	0x21F	/* Data BAT 3 Lower Register */
 #define	SPRN_DBAT3U	0x21E	/* Data BAT 3 Upper Register */
-#define	SPRN_DBCR	0x3F2	/* Debug Control Regsiter */
+#define	SPRN_DBCR	0x3F2	/* Debug Control Register */
 #define	  DBCR_EDM	0x80000000
 #define	  DBCR_IDM	0x40000000
 #define	  DBCR_RST(x)	(((x) & 0x3) << 28)
@@ -191,13 +191,13 @@
 #define	  ESR_IMCB	0x20000000	/* Instr. Machine Check - Bus error */
 #define	  ESR_IMCT	0x10000000	/* Instr. Machine Check - Timeout */
 #define	  ESR_PIL	0x08000000	/* Program Exception - Illegal */
-#define	  ESR_PPR	0x04000000	/* Program Exception - Priveleged */
+#define	  ESR_PPR	0x04000000	/* Program Exception - Privileged */
 #define	  ESR_PTR	0x02000000	/* Program Exception - Trap */
 #define	  ESR_DST	0x00800000	/* Storage Exception - Data miss */
 #define	  ESR_DIZ	0x00400000	/* Storage Exception - Zone fault */
 #define	SPRN_EVPR	0x3D6	/* Exception Vector Prefix Register */
 #define	SPRN_HASH1	0x3D2	/* Primary Hash Address Register */
-#define	SPRN_HASH2	0x3D3	/* Secondary Hash Address Resgister */
+#define	SPRN_HASH2	0x3D3	/* Secondary Hash Address Register */
 #define	SPRN_HID0	0x3F0	/* Hardware Implementation Register 0 */
 #define	  HID0_EMCP	(1<<31)		/* Enable Machine Check pin */
 #define	  HID0_EBA	(1<<29)		/* Enable Bus Address Parity */
@@ -246,7 +246,7 @@
 #define	SPRN_ICTC	0x3FB	/* Instruction Cache Throttling Control Reg */
 #define	SPRN_IMISS	0x3D4	/* Instruction TLB Miss Register */
 #define	SPRN_IMMR	0x27E  	/* Internal Memory Map Register */
-#define	SPRN_L2CR	0x3F9	/* Level 2 Cache Control Regsiter */
+#define	SPRN_L2CR	0x3F9	/* Level 2 Cache Control Register */
 #define	SPRN_LR		0x008	/* Link Register */
 #define	SPRN_PBL1	0x3FC	/* Protection Bound Lower 1 */
 #define	SPRN_PBL2	0x3FE	/* Protection Bound Lower 2 */
@@ -504,7 +504,7 @@
 #define GLUE(a,b) XGLUE(a,b)
 
 /*
- * Begining of traceback info work for asm functions.
+ * Beginning of traceback info work for asm functions.
  */
 #define TB_ASM		0x000C000000000000
 #define TB_GLOBALLINK	0x0000800000000000
@@ -635,8 +635,8 @@ extern struct task_struct *last_task_used_math;
 /* This decides where the kernel will search for a free chunk of vm
  * space during mmap's.
  */
-#define TASK_UNMAPPED_BASE_USER32 (STACK_TOP_USER32 / 4)
-#define TASK_UNMAPPED_BASE_USER64 (STACK_TOP_USER64 / 4)
+#define TASK_UNMAPPED_BASE_USER32 PAGE_ALIGN(STACK_TOP_USER32 / 4)
+#define TASK_UNMAPPED_BASE_USER64 PAGE_ALIGN(STACK_TOP_USER64 / 4)
 
 #define TASK_UNMAPPED_BASE (((current->thread.flags & PPC_FLAG_32BIT)||(ppcdebugset(PPCDBG_BINFMT_32ADDR))) ? \
 		TASK_UNMAPPED_BASE_USER32 : TASK_UNMAPPED_BASE_USER64 )
@@ -661,6 +661,10 @@ struct thread_struct {
 
 #define PPC_FLAG_32BIT		0x01
 #define PPC_FLAG_RUN_LIGHT	RUN_FLAG
+
+#ifdef CONFIG_SHARED_MEMORY_ADDRESSING
+#define PPC_FLAG_SHARED   	0x4UL
+#endif
 
 #define INIT_SP		(sizeof(init_stack) + (unsigned long) &init_stack)
 
@@ -753,18 +757,6 @@ static inline void prefetchw(const void *x)
 }
 
 #define spin_lock_prefetch(x)	prefetchw(x)
-
-#define cpu_has_largepage()	(__is_processor(PV_POWER4) || \
-				 __is_processor(PV_POWER4p))
-
-#define cpu_has_slb()		(__is_processor(PV_POWER4) || \
-				 __is_processor(PV_POWER4p))
-
-#define cpu_has_tlbiel()	(__is_processor(PV_POWER4) || \
-				 __is_processor(PV_POWER4p))
-
-#define cpu_has_noexecute()	(__is_processor(PV_POWER4) || \
-				 __is_processor(PV_POWER4p))
 
 #endif /* ASSEMBLY */
 

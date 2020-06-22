@@ -282,7 +282,7 @@ static dev_link_t *awc_attach(void)
 	};
 	memset(dev,0,sizeof(struct net_device));
 	dev->priv = kmalloc(sizeof(struct awc_private), GFP_KERNEL);
-	if (!dev->priv ) {printk(KERN_CRIT "out of mem on dev priv alloc \n"); return NULL;};
+	if (!dev->priv ) {printk(KERN_CRIT "out of mem on dev priv alloc \n"); kfree(dev); return NULL;};
 	memset(dev->priv,0,sizeof(struct awc_private));
 	
 //	link->dev->minor = dev->minor;

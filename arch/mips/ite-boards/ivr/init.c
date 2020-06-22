@@ -27,14 +27,12 @@
  *  with this program; if not, write  to the Free Software Foundation, Inc.,
  *  675 Mass Ave, Cambridge, MA 02139, USA.
  */
-
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/bootmem.h>
 #include <asm/addrspace.h>
 #include <asm/bootinfo.h>
-#include <linux/config.h>
 #include <linux/string.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
@@ -81,7 +79,7 @@ int __init prom_init(int argc, char **argv, char **envp, int *prom_vec)
 	 * make the entire physical memory visible to pci bus masters
 	 */
 	IT_READ(IT_MC_PCICR, pcicr);
-	pcicr &= ~0x1f; 
+	pcicr &= ~0x1f;
 	pcicr |= (mem_size - 1) >> 22;
 	IT_WRITE(IT_MC_PCICR, pcicr);
 

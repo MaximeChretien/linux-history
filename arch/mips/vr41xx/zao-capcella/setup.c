@@ -29,10 +29,6 @@ extern unsigned long initrd_start, initrd_end;
 extern void * __rd_start, * __rd_end;
 #endif
 
-#ifdef CONFIG_BLK_DEV_IDE
-extern struct ide_ops capcella_ide_ops;
-#endif
-
 #ifdef CONFIG_PCI
 static struct resource vr41xx_pci_io_resource = {
 	"PCI I/O space",
@@ -105,8 +101,8 @@ void __init zao_capcella_setup(void)
 	conswitchp = &dummy_con;
 #endif
 
-#ifdef CONFIG_BLK_DEV_IDE
-	ide_ops = &capcella_ide_ops;
+#if defined(CONFIG_IDE) || defined(CONFIG_IDE_MODULE)
+	ide_ops = &vr41xx_ide_ops;
 #endif
 
 	vr41xx_bcu_init();
@@ -114,6 +110,7 @@ void __init zao_capcella_setup(void)
 	vr41xx_cmu_init(0x0102);
 
 	vr41xx_siu_init(SIU_RS232C, 0);
+	vr41xx_dsiu_init();
 
 #ifdef CONFIG_PCI
 	vr41xx_pciu_init(&pci_address_map);

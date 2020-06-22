@@ -6,16 +6,13 @@
 # unless it's something special (ie not a .c file).
 #
 
-.S.s:
-	$(CPP) $(CFLAGS) $< -o $*.s
-.S.o:
-	$(CC) $(CFLAGS) -c $< -o $*.o
+USE_STANDARD_AS_RULE := true
 
 O_TARGET:= jmr3927.o
 
 obj-y	 += init.o int-handler.o irq.o setup.o rtc.o pci_fixup.o pci_ops.o
 
-obj-$(CONFIG_LL_DEBUG) 		+= debug.o
-obj-$(CONFIG_REMOTE_DEBUG)	+= kgdb_io.o
+obj-$(CONFIG_RUNTIME_DEBUG) 	+= debug.o
+obj-$(CONFIG_KGDB)		+= kgdb_io.o
 
 include $(TOPDIR)/Rules.make

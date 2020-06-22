@@ -16,14 +16,14 @@ all: au1000.o
 
 O_TARGET := au1000.o
 
-export-objs		= prom.o serial.o clocks.o power.o usbdev.o
+export-objs		= prom.o clocks.o power.o usbdev.o
 
 obj-y := prom.o int-handler.o dma.o irq.o puts.o time.o reset.o \
-	clocks.o power.o usbdev.o
+	clocks.o power.o setup.o
 
-obj-$(CONFIG_AU1000_UART) += serial.o
-obj-$(CONFIG_AU1000_USB_DEVICE) += usbdev.o
-obj-$(CONFIG_REMOTE_DEBUG) += dbg_io.o
+obj-$(CONFIG_AU1X00_USB_DEVICE) += usbdev.o
+obj-$(CONFIG_KGDB) += dbg_io.o
 obj-$(CONFIG_RTC) += rtc.o
+obj-$(CONFIG_PCI) += pci_ops.o pci_fixup.o
 
 include $(TOPDIR)/Rules.make

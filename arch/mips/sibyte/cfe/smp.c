@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2000, 2001 Broadcom Corporation
+ * Copyright (C) 2000, 2001, 2002, 2003 Broadcom Corporation
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -21,7 +21,6 @@
 
 #include <asm/mipsregs.h>
 
-#include "cfe_xiocb.h"
 #include "cfe_api.h"
 #include "cfe_error.h"
 
@@ -32,8 +31,8 @@ extern void asmlinkage smp_bootstrap(void);
 int prom_boot_secondary(int cpu, unsigned long sp, unsigned long gp)
 {
 	int retval;
-
-	retval = cfe_start_cpu(cpu, &smp_bootstrap, sp, gp, 0);
+	
+	retval = cfe_cpu_start(cpu, &smp_bootstrap, sp, gp, 0);
 	if (retval != 0) {
 		printk("cfe_start_cpu(%i) returned %i\n" , cpu, retval);
 		return 0;
@@ -44,13 +43,16 @@ int prom_boot_secondary(int cpu, unsigned long sp, unsigned long gp)
 
 void prom_init_secondary(void)
 {
-	/* Set up kseg0 to be cachable coherent */
-	clear_cp0_config(CONF_CM_CMASK);
-	set_cp0_config(0x5);
+	extern void load_mmu(void);
+	unsigned int imask = STATUSF_IP4 | STATUSF_IP3 | STATUSF_IP2 |
+		STATUSF_IP1 | STATUSF_IP0;
 
-	/* Enable interrupts for lines 0-4 */
-	clear_cp0_status(0xe000);
-	set_cp0_status(0x1f01);
+	/* Enable basic interrupts */
+	change_c0_status(ST0_IM, imask);
+	set_c0_status(ST0_IE);
+
+	/* cache and TLB setup */
+	load_mmu();
 }
 
 /*
@@ -64,7 +66,7 @@ int prom_setup_smp(void)
 
 	/* Use CFE to find out how many CPUs are available */
 	for (i=1; i<NR_CPUS; i++) {
-		if (cfe_stop_cpu(i) == 0) {
+		if (cfe_cpu_stop(i) == 0) {
 			num_cpus++;
 		}
 	}

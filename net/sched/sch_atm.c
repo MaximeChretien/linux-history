@@ -512,7 +512,6 @@ static void sch_atm_dequeue(unsigned long data)
 			memcpy(skb_push(skb,flow->hdr_len),flow->hdr,
 			    flow->hdr_len);
 			atomic_add(skb->truesize,&flow->vcc->sk->wmem_alloc);
-			ATM_SKB(skb)->iovcnt = 0;
 			/* atm.atm_options are already set by atm_tc_enqueue */
 			(void) flow->vcc->send(flow->vcc,skb);
 		}
@@ -548,15 +547,16 @@ static int atm_tc_requeue(struct sk_buff *skb,struct Qdisc *sch)
 }
 
 
-static int atm_tc_drop(struct Qdisc *sch)
+static unsigned int atm_tc_drop(struct Qdisc *sch)
 {
 	struct atm_qdisc_data *p = PRIV(sch);
 	struct atm_flow_data *flow;
+	unsigned int len;
 
 	DPRINTK("atm_tc_drop(sch %p,[qdisc %p])\n",sch,p);
 	for (flow = p->flows; flow; flow = flow->next)
-		if (flow->q->ops->drop && flow->q->ops->drop(flow->q))
-			return 1;
+		if (flow->q->ops->drop && (len = flow->q->ops->drop(flow->q)))
+			return len;
 	return 0;
 }
 

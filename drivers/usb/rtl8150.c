@@ -111,8 +111,10 @@ static void rtl8150_disconnect(struct usb_device *dev, void *ptr);
 static void *rtl8150_probe(struct usb_device *dev, unsigned int ifnum,
 			   const struct usb_device_id *id);
 
+static const char driver_name[] = "rtl8150";
+
 static struct usb_driver rtl8150_driver = {
-	name:		"rtl8150",
+	name:		driver_name,
 	probe:		rtl8150_probe,
 	disconnect:	rtl8150_disconnect,
 	id_table:	rtl8150_table,
@@ -155,7 +157,7 @@ static void ctrl_callback(struct urb *urb)
 	clear_bit(RX_REG_SET, &dev->flags);
 }
 
-static int async_set_registers(rtl8150_t * dev, u16 indx, u16 size, void *data)
+static int async_set_registers(rtl8150_t * dev, u16 indx, u16 size)
 {
 	int ret;
 
@@ -426,7 +428,8 @@ static int enable_net_traffic(rtl8150_t * dev)
 	if (rtl8150_reset(dev)) {
 		warn("%s - device reset failed", __FUNCTION__);
 	}
-	dev->rx_creg = rcr = 0x9e;	/* bit7=1 attach Rx info at the end */
+	rcr = 0x9e;	/* bit7=1 attach Rx info at the end */
+	dev->rx_creg = cpu_to_le16(rcr);
 	tcr = 0xd8;
 	cr = 0x0c;
 	set_registers(dev, RCR, 1, &rcr);
@@ -471,18 +474,18 @@ static void rtl8150_set_multicast(struct net_device *netdev)
 	dev = netdev->priv;
 	netif_stop_queue(netdev);
 	if (netdev->flags & IFF_PROMISC) {
-		dev->rx_creg |= 0x0001;
+		dev->rx_creg |= cpu_to_le16(0x0001);
 		info("%s: promiscuous mode", netdev->name);
 	} else if ((netdev->mc_count > multicast_filter_limit) ||
 		   (netdev->flags & IFF_ALLMULTI)) {
-		dev->rx_creg &= 0xfffe;
-		dev->rx_creg |= 0x0002;
+		dev->rx_creg &= cpu_to_le16(0xfffe);
+		dev->rx_creg |= cpu_to_le16(0x0002);
 		info("%s: allmulti set", netdev->name);
 	} else {
 		/* ~RX_MULTICAST, ~RX_PROMISCUOUS */
-		dev->rx_creg &= 0x00fc;
+		dev->rx_creg &= cpu_to_le16(0x00fc);
 	}
-	async_set_registers(dev, RCR, 2, &dev->rx_creg);
+	async_set_registers(dev, RCR, 2);
 	netif_wake_queue(netdev);
 }
 
@@ -577,7 +580,7 @@ static int rtl8150_ethtool_ioctl(struct net_device *netdev, void *uaddr)
 	case ETHTOOL_GDRVINFO:{
 			struct ethtool_drvinfo info = { ETHTOOL_GDRVINFO };
 
-			strncpy(info.driver, DRIVER_DESC, ETHTOOL_BUSINFO_LEN);
+			strncpy(info.driver, driver_name, ETHTOOL_BUSINFO_LEN);
 			strncpy(info.version, DRIVER_VERSION,
 				ETHTOOL_BUSINFO_LEN);
 			sprintf(tmp, "usb%d:%d", dev->udev->bus->busnum,

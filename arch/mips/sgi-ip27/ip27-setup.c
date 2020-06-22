@@ -29,6 +29,7 @@
 #include <asm/pci/bridge.h>
 #include <asm/paccess.h>
 #include <asm/sn/sn0/ip27.h>
+#include <asm/traps.h>
 
 /* Check against user dumbness.  */
 #ifdef CONFIG_VT
@@ -41,6 +42,8 @@
 #else
 #define DBG(x...)
 #endif
+
+extern void ip27_be_init(void) __init;
 
 /*
  * get_nasid() returns the physical node id number of the caller.
@@ -276,6 +279,7 @@ void __init pcibr_setup(cnodeid_t nid)
 
 extern void ip27_setup_console(void);
 extern void ip27_time_init(void);
+extern void ip27_reboot_setup(void);
 
 void __init ip27_setup(void)
 {
@@ -283,6 +287,7 @@ void __init ip27_setup(void)
 	hubreg_t p, e;
 
 	ip27_setup_console();
+	ip27_reboot_setup();
 
 	num_bridges = 0;
 	/*
@@ -309,6 +314,8 @@ void __init ip27_setup(void)
 	ioc3_eth_init();
 	per_cpu_init();
 
-	mips_io_port_base = IO_BASE;
+	set_io_port_base(IO_BASE);
+
+	board_be_init = ip27_be_init;
 	board_time_init = ip27_time_init;
 }

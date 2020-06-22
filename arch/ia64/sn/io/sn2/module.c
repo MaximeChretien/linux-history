@@ -4,7 +4,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 1992 - 1997, 2000-2002 Silicon Graphics, Inc. All rights reserved.
+ * Copyright (C) 1992 - 1997, 2000-2003 Silicon Graphics, Inc. All rights reserved.
  */
 
 #include <linux/types.h>
@@ -18,7 +18,6 @@
 #include <asm/sn/xtalk/xbow.h>
 #include <asm/sn/pci/bridge.h>
 #include <asm/sn/klconfig.h>
-#include <asm/sn/sn1/hubdev.h>
 #include <asm/sn/module.h>
 #include <asm/sn/pci/pcibr.h>
 #include <asm/sn/xtalk/xswitch.h>
@@ -261,20 +260,5 @@ io_module_init(void)
 	    nserial);
 
     if (nserial == 0)
-	printk(KERN_WARNING  "io_module_init: No serial number found.\n");
-}
-
-int
-get_kmod_info(cmoduleid_t cmod, module_info_t *mod_info)
-{
-    if (cmod < 0 || cmod >= nummodules)
-	return -EINVAL;
-
-    mod_info->mod_num = modules[cmod]->id;
-
-    ia64_sn_sys_serial_get(mod_info->serial_str);
-    
-    mod_info->serial_num = ia64_sn_partition_serial_get();
-
-    return 0;
+	DPRINTF(KERN_WARNING  "io_module_init: No serial number found.\n");
 }

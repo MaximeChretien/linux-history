@@ -91,6 +91,8 @@
 		 nop
 		END(except_vec_ejtag_debug)
 
+		__FINIT
+
 		/*
 		 * EJTAG debug exception handler.
 		 */
@@ -114,10 +116,14 @@
 
 ejtag_return:
 		mfc0	k0, CP0_DESAVE
-		.word	0x4200001f     # DERET, return from EJTAG debug exception.
+		.set	mips32
+		deret
+		.set	mips0
 		 nop
 		.set	at
 		END(ejtag_debug_handler)
+
+		__INIT
 
 		/*
 		* NMI debug exception handler for MIPS reference boards.
@@ -129,6 +135,8 @@ ejtag_return:
 		j       nmi_handler
 		 nop
 		END(except_vec_nmi)
+
+		__FINIT
 
 		NESTED(nmi_handler, PT_SIZE, sp)
 		.set    noat
@@ -142,6 +150,8 @@ ejtag_return:
 		.set    at
 		.set    mips0
 		END(nmi_handler)
+
+		__INIT
 
 		/*
 		 * Kernel entry point

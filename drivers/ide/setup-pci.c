@@ -137,7 +137,7 @@ static int ide_setup_pci_baseregs (struct pci_dev *dev, const char *name)
 				"native PCI mode\n", name);
 			return -EOPNOTSUPP;
 		}
-		printk("%s: placing both ports into native PCI mode\n", name);
+		printk(KERN_INFO "%s: placing both ports into native PCI mode\n", name);
 		(void) pci_write_config_byte(dev, PCI_CLASS_PROG, progif|5);
 		if (pci_read_config_byte(dev, PCI_CLASS_PROG, &progif) ||
 		    (progif & 5) != 5) {
@@ -172,7 +172,7 @@ static int ide_setup_pci_baseregs (struct pci_dev *dev, const char *name)
  *	is already in DMA mode we check and enforce IDE simplex rules.
  */
 
-static unsigned long __init ide_get_or_set_dma_base (ide_hwif_t *hwif)
+static unsigned long ide_get_or_set_dma_base (ide_hwif_t *hwif)
 {
 	unsigned long	dma_base = 0;
 	struct pci_dev	*dev = hwif->pci_dev;
@@ -183,10 +183,9 @@ static unsigned long __init ide_get_or_set_dma_base (ide_hwif_t *hwif)
 second_chance_to_dma:
 #endif /* CONFIG_BLK_DEV_IDEDMA_FORCED */
 
-	if ((hwif->mmio) && (hwif->dma_base))
+	if (hwif->mmio && hwif->dma_base)
 		return hwif->dma_base;
-
-	if (hwif->mate && hwif->mate->dma_base) {
+	else if (hwif->mate && hwif->mate->dma_base) {
 		dma_base = hwif->mate->dma_base - (hwif->channel ? 0 : 8);
 	} else {
 		dma_base = (hwif->mmio) ?

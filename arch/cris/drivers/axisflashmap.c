@@ -11,6 +11,9 @@
  * partition split defined below.
  *
  * $Log: axisflashmap.c,v $
+ * Revision 1.29  2003/04/01 14:12:06  starvik
+ * Added loglevel for lots of printks
+ *
  * Revision 1.28  2002/10/01 08:08:43  jonashg
  * The first partition ends at the start of the partition table.
  *
@@ -300,7 +303,8 @@ static struct mtd_info *probe_cs(struct map_info *map_cs)
 {
 	struct mtd_info *mtd_cs = NULL;
 
-	printk("%s: Probing a 0x%08lx bytes large window at 0x%08lx.\n",
+	printk(KERN_INFO 
+	       "%s: Probing a 0x%08lx bytes large window at 0x%08lx.\n",
 	       map_cs->name, map_cs->size, map_cs->map_priv_1);
 
 #ifdef CONFIG_MTD_AMDSTD
@@ -387,7 +391,7 @@ static int __init init_axis_flash(void)
 	struct partitiontable_head *ptable_head;
 	struct partitiontable_entry *ptable;
 	int use_default_ptable = 1; /* Until proven otherwise. */
-	const char *pmsg = "  /dev/flash%d at 0x%08x, size 0x%08x\n";
+	const char *pmsg = KERN_INFO "  /dev/flash%d at 0x%08x, size 0x%08x\n";
 
 	if (!(mymtd = flash_probe())) {
 		/* There's no reason to use this module if no flash chip can
@@ -396,7 +400,7 @@ static int __init init_axis_flash(void)
 		panic("axisflashmap found no flash chip!\n");
 	}
 
-	printk("%s: 0x%08x bytes of flash memory.\n",
+	printk(KERN_INFO "%s: 0x%08x bytes of flash memory.\n",
 	       mymtd->name, mymtd->size);
 
 	mymtd->module = THIS_MODULE;
@@ -440,7 +444,7 @@ static int __init init_axis_flash(void)
 		ptable_ok = (csum == ptable_head->checksum);
 
 		/* Read the entries and use/show the info.  */
-		printk(" Found a%s partition table at 0x%p-0x%p.\n",
+		printk(KERN_INFO " Found a%s partition table at 0x%p-0x%p.\n",
 		       (ptable_ok ? " valid" : "n invalid"), ptable_head,
 		       max_addr);
 
@@ -472,14 +476,14 @@ static int __init init_axis_flash(void)
 		axis_partitions[pidx].offset = romfs_start - FLASH_CACHED_ADDR;
 		axis_partitions[pidx].mask_flags |= MTD_WRITEABLE;
 
-		printk(" Adding readonly flash partition for romfs image:\n");
+		printk(KERN_INFO " Adding readonly flash partition for romfs image:\n");
 		printk(pmsg, pidx, axis_partitions[pidx].offset,
 		       axis_partitions[pidx].size);
 		pidx++;
 	}
 
 	if (use_default_ptable) {
-		printk(" Using default partition table.\n");
+		printk(KERN_INFO " Using default partition table.\n");
 		err = add_mtd_partitions(mymtd, axis_default_partitions,
 		                         NUM_DEFAULT_PARTITIONS);
 	} else {
@@ -508,7 +512,7 @@ static int __init init_axis_flash(void)
 			      "mtd_info!\n");
 		}
 
-		printk(" Adding RAM partition for romfs image:\n");
+		printk(KERN_INFO " Adding RAM partition for romfs image:\n");
 		printk(pmsg, pidx, romfs_start, romfs_length);
 
 		err = mtdram_init_device(mtd_ram, (void*)romfs_start, 

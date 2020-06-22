@@ -1,4 +1,4 @@
-# $Id: Makefile,v 1.27 2002/03/08 13:08:50 bjornw Exp $
+#
 # cris/Makefile
 #
 # This file is included by the global makefile so that you can add your own
@@ -56,6 +56,10 @@ ifdef CONFIG_ETRAX_AXISFLASHMAP
 # each others config options
 SUBDIRS += arch/cris/boot/rescue
 endif
+
+# Note that the order of .o files below is important is some cases
+# (because initcalls are executed in the order they are linked)
+# Never add any driver before mm.o!
 CORE_FILES += arch/cris/kernel/kernel.o arch/cris/mm/mm.o
 DRIVERS += arch/cris/drivers/drivers.o
 LIBGCC = $(shell $(CC) $(CFLAGS) -print-file-name=libgcc.a)

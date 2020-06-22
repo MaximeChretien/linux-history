@@ -13,6 +13,14 @@
 #include <linux/types.h>
 #include <asm/byteorder.h>		/* sigh ... */
 
+#if (_MIPS_SZLONG == 32)
+#define SZLONG_LOG 5
+#define SZLONG_MASK 31UL
+#elif (_MIPS_SZLONG == 64)
+#define SZLONG_LOG 6
+#define SZLONG_MASK 63UL
+#endif
+
 #ifndef __KERNEL__
 #error "Don't do this, sucker ..."
 #endif
@@ -90,7 +98,7 @@ static inline void clear_bit(unsigned long nr, volatile void *addr)
 
 /*
  * change_bit - Toggle a bit in memory
- * @nr: Bit to clear
+ * @nr: Bit to change
  * @addr: Address to start counting from
  *
  * change_bit() is atomic and may not be reordered.
@@ -113,7 +121,7 @@ static inline void change_bit(unsigned long nr, volatile void *addr)
 
 /*
  * __change_bit - Toggle a bit in memory
- * @nr: the bit to set
+ * @nr: the bit to change
  * @addr: the address to start counting from
  *
  * Unlike change_bit(), this function is non-atomic and may be reordered.
@@ -136,7 +144,7 @@ static inline void __change_bit(int nr, volatile void * addr)
  * It also implies a memory barrier.
  */
 static inline unsigned long test_and_set_bit(unsigned long nr,
-					     volatile void *addr)
+	volatile void *addr)
 {
 	unsigned long *m = ((unsigned long *) addr) + (nr >> 6);
 	unsigned long temp, res;
@@ -183,14 +191,14 @@ static inline int __test_and_set_bit(int nr, volatile void *addr)
 
 /*
  * test_and_clear_bit - Clear a bit and return its old value
- * @nr: Bit to set
+ * @nr: Bit to clear
  * @addr: Address to count from
  *
  * This operation is atomic and cannot be reordered.
  * It also implies a memory barrier.
  */
 static inline unsigned long test_and_clear_bit(unsigned long nr,
-					       volatile void *addr)
+	volatile void *addr)
 {
 	unsigned long *m = ((unsigned long *) addr) + (nr >> 6);
 	unsigned long temp, res;
@@ -216,7 +224,7 @@ static inline unsigned long test_and_clear_bit(unsigned long nr,
 
 /*
  * __test_and_clear_bit - Clear a bit and return its old value
- * @nr: Bit to set
+ * @nr: Bit to clear
  * @addr: Address to count from
  *
  * This operation is non-atomic and can be reordered.
@@ -238,14 +246,14 @@ static inline int __test_and_clear_bit(int nr, volatile void * addr)
 
 /*
  * test_and_change_bit - Change a bit and return its new value
- * @nr: Bit to set
+ * @nr: Bit to change
  * @addr: Address to count from
  *
  * This operation is atomic and cannot be reordered.
  * It also implies a memory barrier.
  */
 static inline unsigned long test_and_change_bit(unsigned long nr,
-						volatile void *addr)
+	volatile void *addr)
 {
 	unsigned long *m = ((unsigned long *) addr) + (nr >> 6);
 	unsigned long temp, res;
@@ -270,7 +278,7 @@ static inline unsigned long test_and_change_bit(unsigned long nr,
 
 /*
  * __test_and_change_bit - Change a bit and return its old value
- * @nr: Bit to set
+ * @nr: Bit to change
  * @addr: Address to count from
  *
  * This operation is non-atomic and can be reordered.
@@ -294,105 +302,10 @@ static inline int __test_and_change_bit(int nr, volatile void *addr)
  * @nr: bit number to test
  * @addr: Address to start counting from
  */
-static inline unsigned long test_bit(int nr, volatile void * addr)
+static inline int test_bit(int nr, volatile void * addr)
 {
-	return 1UL & (((volatile unsigned long *) addr)[nr >> 6] >> (nr & 0x3f));
+	return 1UL & (((const volatile unsigned long *) addr)[nr >> SZLONG_LOG] >> (nr & SZLONG_MASK));
 }
-
-#ifndef __MIPSEB__
-
-/* Little endian versions. */
-
-/*
- * find_first_zero_bit - find the first zero bit in a memory region
- * @addr: The address to start the search at
- * @size: The maximum size to search
- *
- * Returns the bit-number of the first zero bit, not the number of the byte
- * containing a bit.
- */
-static inline int find_first_zero_bit (void *addr, unsigned size)
-{
-	unsigned long dummy;
-	int res;
-
-	if (!size)
-		return 0;
-
-	__asm__ (".set\tnoreorder\n\t"
-		".set\tnoat\n"
-		"1:\tsubu\t$1,%6,%0\n\t"
-		"blez\t$1,2f\n\t"
-		"lw\t$1,(%5)\n\t"
-		"addiu\t%5,4\n\t"
-#if (_MIPS_ISA == _MIPS_ISA_MIPS2 ) || (_MIPS_ISA == _MIPS_ISA_MIPS3 ) || \
-    (_MIPS_ISA == _MIPS_ISA_MIPS4 ) || (_MIPS_ISA == _MIPS_ISA_MIPS5 ) || \
-    (_MIPS_ISA == _MIPS_ISA_MIPS32) || (_MIPS_ISA == _MIPS_ISA_MIPS64)
-		"beql\t%1,$1,1b\n\t"
-		"addiu\t%0,32\n\t"
-#else
-		"addiu\t%0,32\n\t"
-		"beq\t%1,$1,1b\n\t"
-		"nop\n\t"
-		"subu\t%0,32\n\t"
-#endif
-		"li\t%1,1\n"
-		"1:\tand\t%2,$1,%1\n\t"
-		"beqz\t%2,2f\n\t"
-		"sll\t%1,%1,1\n\t"
-		"bnez\t%1,1b\n\t"
-		"add\t%0,%0,1\n\t"
-		".set\tat\n\t"
-		".set\treorder\n"
-		"2:"
-		: "=r" (res), "=r" (dummy), "=r" (addr)
-		: "0" ((signed int) 0), "1" ((unsigned int) 0xffffffff),
-		  "2" (addr), "r" (size));
-
-	return res;
-}
-
-/*
- * find_next_zero_bit - find the first zero bit in a memory region
- * @addr: The address to base the search on
- * @offset: The bitnumber to start searching at
- * @size: The maximum size to search
- */
-static inline int find_next_zero_bit (void * addr, int size, int offset)
-{
-	unsigned int *p = ((unsigned int *) addr) + (offset >> 5);
-	int set = 0, bit = offset & 31, res;
-	unsigned long dummy;
-
-	if (bit) {
-		/*
-		 * Look for zero in first byte
-		 */
-		__asm__(".set\tnoreorder\n\t"
-			".set\tnoat\n"
-			"1:\tand\t$1,%4,%1\n\t"
-			"beqz\t$1,1f\n\t"
-			"sll\t%1,%1,1\n\t"
-			"bnez\t%1,1b\n\t"
-			"addiu\t%0,1\n\t"
-			".set\tat\n\t"
-			".set\treorder\n"
-			"1:"
-			: "=r" (set), "=r" (dummy)
-			: "0" (0), "1" (1 << bit), "r" (*p));
-		if (set < (32 - bit))
-			return set + offset;
-		set = 32 - bit;
-		p++;
-	}
-	/*
-	 * No zero yet, search remaining full bytes for a zero
-	 */
-	res = find_first_zero_bit(p, size - 32 * (p - (unsigned int *) addr));
-	return offset + set + res;
-}
-
-#endif /* !(__MIPSEB__) */
 
 /*
  * ffz - find first zero in word.
@@ -415,8 +328,55 @@ static __inline__ unsigned long ffz(unsigned long word)
 	return b;
 }
 
-#ifdef __KERNEL__
+/*
+ * find_next_zero_bit - find the first zero bit in a memory region
+ * @addr: The address to base the search on
+ * @offset: The bitnumber to start searching at
+ * @size: The maximum size to search
+ */
+static inline unsigned long find_next_zero_bit(void *addr, unsigned long size,
+					       unsigned long offset)
+{
+	unsigned long *p = ((unsigned long *) addr) + (offset >> SZLONG_LOG);
+	unsigned long result = offset & ~SZLONG_MASK;
+	unsigned long tmp;
 
+	if (offset >= size)
+		return size;
+	size -= result;
+	offset &= SZLONG_MASK;
+	if (offset) {
+		tmp = *(p++);
+		tmp |= ~0UL >> (_MIPS_SZLONG-offset);
+		if (size < _MIPS_SZLONG)
+			goto found_first;
+		if (~tmp)
+			goto found_middle;
+		size -= _MIPS_SZLONG;
+		result += _MIPS_SZLONG;
+	}
+	while (size & ~SZLONG_MASK) {
+		if (~(tmp = *(p++)))
+			goto found_middle;
+		result += _MIPS_SZLONG;
+		size -= _MIPS_SZLONG;
+	}
+	if (!size)
+		return result;
+	tmp = *p;
+
+found_first:
+	tmp |= ~0UL << size;
+	if (tmp == ~0UL)		/* Are any bits zero? */
+		return result + size;	/* Nope. */
+found_middle:
+	return result + ffz(tmp);
+}
+
+#define find_first_zero_bit(addr, size) \
+	find_next_zero_bit((addr), (size), 0)
+
+#ifdef __KERNEL__
 
 /*
  * ffs - find first bit set
@@ -440,170 +400,110 @@ static __inline__ unsigned long ffz(unsigned long word)
 #define hweight16(x) generic_hweight16(x)
 #define hweight8(x)  generic_hweight8(x)
 
-#endif /* __KERNEL__ */
-
-#ifdef __MIPSEB__
-
-/*
- * find_next_zero_bit - find the first zero bit in a memory region
- * @addr: The address to base the search on
- * @offset: The bitnumber to start searching at
- * @size: The maximum size to search
- */
-static inline unsigned long find_next_zero_bit(void *addr, unsigned long size,
-					       unsigned long offset)
+static inline int __test_and_set_le_bit(unsigned long nr, void * addr)
 {
-	unsigned long *p = ((unsigned long *) addr) + (offset >> 6);
-	unsigned long result = offset & ~63UL;
-	unsigned long tmp;
-
-	if (offset >= size)
-		return size;
-	size -= result;
-	offset &= 63UL;
-	if (offset) {
-		tmp = *(p++);
-		tmp |= ~0UL >> (64-offset);
-		if (size < 64)
-			goto found_first;
-		if (~tmp)
-			goto found_middle;
-		size -= 64;
-		result += 64;
-	}
-	while (size & ~63UL) {
-		if (~(tmp = *(p++)))
-			goto found_middle;
-		result += 64;
-		size -= 64;
-	}
-	if (!size)
-		return result;
-	tmp = *p;
-
-found_first:
-	tmp |= ~0UL << size;
-found_middle:
-	return result + ffz(tmp);
-}
-
-#define find_first_zero_bit(addr, size) \
-        find_next_zero_bit((addr), (size), 0)
-
-#endif /* (__MIPSEB__) */
-
-#ifdef __KERNEL__
-
-/* Now for the ext2 filesystem bit operations and helper routines. */
-
-#ifdef __MIPSEB__
-
-static inline int ext2_set_bit(int nr,void * addr)
-{
-	int		mask, retval, flags;
 	unsigned char	*ADDR = (unsigned char *) addr;
+	int		mask, retval;
 
 	ADDR += nr >> 3;
 	mask = 1 << (nr & 0x07);
-	save_and_cli(flags);
 	retval = (mask & *ADDR) != 0;
 	*ADDR |= mask;
-	restore_flags(flags);
+
 	return retval;
 }
 
-static inline int ext2_clear_bit(int nr, void * addr)
+static inline int __test_and_clear_le_bit(unsigned long nr, void * addr)
 {
-	int		mask, retval, flags;
 	unsigned char	*ADDR = (unsigned char *) addr;
+	int		mask, retval;
 
 	ADDR += nr >> 3;
 	mask = 1 << (nr & 0x07);
-	save_and_cli(flags);
 	retval = (mask & *ADDR) != 0;
 	*ADDR &= ~mask;
-	restore_flags(flags);
+
 	return retval;
 }
 
-static inline int ext2_test_bit(int nr, const void * addr)
+static inline int test_le_bit(unsigned long nr, const void * addr)
 {
-	int			mask;
 	const unsigned char	*ADDR = (const unsigned char *) addr;
+	int			mask;
 
 	ADDR += nr >> 3;
 	mask = 1 << (nr & 0x07);
+
 	return ((mask & *ADDR) != 0);
 }
 
-#define ext2_find_first_zero_bit(addr, size) \
-        ext2_find_next_zero_bit((addr), (size), 0)
+static inline unsigned long ext2_ffz(unsigned int word)
+{
+	int b = 0, s;
 
-static inline unsigned int ext2_find_next_zero_bit(void *addr,
-						   unsigned long size,
-						   unsigned long offset)
+	word = ~word;
+	s = 16; if (word << 16 != 0) s = 0; b += s; word >>= s;
+	s =  8; if (word << 24 != 0) s = 0; b += s; word >>= s;
+	s =  4; if (word << 28 != 0) s = 0; b += s; word >>= s;
+	s =  2; if (word << 30 != 0) s = 0; b += s; word >>= s;
+	s =  1; if (word << 31 != 0) s = 0; b += s;
+
+	return b;
+}
+
+static inline unsigned long find_next_zero_le_bit(void *addr,
+	unsigned long size, unsigned long offset)
 {
 	unsigned int *p = ((unsigned int *) addr) + (offset >> 5);
-	unsigned int result = offset & ~31UL;
+	unsigned int result = offset & ~31;
 	unsigned int tmp;
 
 	if (offset >= size)
 		return size;
+
 	size -= result;
-	offset &= 31UL;
-	if(offset) {
-		/* We hold the little endian value in tmp, but then the
-		 * shift is illegal. So we could keep a big endian value
-		 * in tmp, like this:
-		 *
-		 * tmp = __swab32(*(p++));
-		 * tmp |= ~0UL >> (32-offset);
-		 *
-		 * but this would decrease preformance, so we change the
-		 * shift:
-		 */
-		tmp = *(p++);
-		tmp |= __swab32(~0UL >> (32-offset));
-		if(size < 32)
+	offset &= 31;
+	if (offset) {
+		tmp = cpu_to_le32p(p++);
+		tmp |= ~0U >> (32-offset); /* bug or feature ? */
+		if (size < 32)
 			goto found_first;
-		if(~tmp)
+		if (tmp != ~0U)
 			goto found_middle;
 		size -= 32;
 		result += 32;
 	}
-	while(size & ~31UL) {
-		if(~(tmp = *(p++)))
+	while (size >= 32) {
+		if ((tmp = cpu_to_le32p(p++)) != ~0U)
 			goto found_middle;
 		result += 32;
 		size -= 32;
 	}
-	if(!size)
+	if (!size)
 		return result;
-	tmp = *p;
 
+	tmp = cpu_to_le32p(p);
 found_first:
-	/* tmp is little endian, so we would have to swab the shift,
-	 * see above. But then we have to swab tmp below for ffz, so
-	 * we might as well do this here.
-	 */
-	return result + ffz(__swab32(tmp) | (~0UL << size));
+	tmp |= ~0 << size;
+	if (tmp == ~0U)			/* Are any bits zero? */
+		return result + size;	/* Nope. */
+
 found_middle:
-	return result + ffz(__swab32(tmp));
+	return result + ext2_ffz(tmp);
 }
-#else /* !(__MIPSEB__) */
 
-/* Native ext2 byte ordering, just collapse using defines. */
-#define ext2_set_bit(nr, addr) test_and_set_bit((nr), (addr))
-#define ext2_clear_bit(nr, addr) test_and_clear_bit((nr), (addr))
-#define ext2_test_bit(nr, addr) test_bit((nr), (addr))
-#define ext2_find_first_zero_bit(addr, size) find_first_zero_bit((addr), (size))
-#define ext2_find_next_zero_bit(addr, size, offset) \
-                find_next_zero_bit((addr), (size), (offset))
+#define find_first_zero_le_bit(addr, size) \
+	find_next_zero_le_bit((addr), (size), 0)
 
-#endif /* !(__MIPSEB__) */
+#define ext2_set_bit			__test_and_set_le_bit
+#define ext2_clear_bit			__test_and_clear_le_bit
+#define ext2_test_bit			test_le_bit
+#define ext2_find_first_zero_bit	find_first_zero_le_bit
+#define ext2_find_next_zero_bit		find_next_zero_le_bit
 
 /*
  * Bitmap functions for the minix filesystem.
+ *
  * FIXME: These assume that Minix uses the native byte/bitorder.
  * This limits the Minix filesystem's value for data exchange very much.
  */

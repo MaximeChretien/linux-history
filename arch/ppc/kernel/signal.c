@@ -1,7 +1,7 @@
 /*
  *  linux/arch/ppc/kernel/signal.c
  *
- *  PowerPC version 
+ *  PowerPC version
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
  *
  *  Derived from "arch/i386/kernel/signal.c"
@@ -40,7 +40,7 @@
 
 #define GP_REGS_SIZE	MIN(sizeof(elf_gregset_t), sizeof(struct pt_regs))
 
-/* 
+/*
  * These are the flags in the MSR that the user is allowed to change
  * by modifying the saved value of the MSR on the stack.  SE and BE
  * should not be in this list since gdb may want to change these.  I.e,
@@ -117,7 +117,7 @@ sys_sigsuspend(old_sigset_t mask, int p2, int p3, int p4, int p6, int p7,
 			 * do_signal() has set R3 to the signal number (the
 			 * first argument of the signal handler), so don't
 			 * overwrite that with EINTR !
-			 * In the other cases, do_signal() doesn't touch 
+			 * In the other cases, do_signal() doesn't touch
 			 * R3, so it's still set to -EINTR (see above).
 			 */
 			return regs->gpr[3];
@@ -163,7 +163,7 @@ sys_sigaltstack(const stack_t *uss, stack_t *uoss)
 	return do_sigaltstack(uss, uoss, regs->gpr[1]);
 }
 
-int 
+int
 sys_sigaction(int sig, const struct old_sigaction *act,
 	      struct old_sigaction *oact)
 {
@@ -261,8 +261,8 @@ int sys_rt_sigreturn(struct pt_regs *regs)
 	rt_sf++;			/* Look at next rt_sigframe */
 	if (rt_sf == (struct rt_sigframe *)(sigctx.regs)) {
 		/* Last stacked signal - restore registers -
-		 * sigctx is initialized to point to the 
-		 * preamble frame (where registers are stored) 
+		 * sigctx is initialized to point to the
+		 * preamble frame (where registers are stored)
 		 * see handle_signal()
 		 */
 		sr = (struct sigregs *) sigctx.regs;
@@ -322,7 +322,7 @@ setup_rt_frame(struct pt_regs *regs, struct sigregs *frame,
 	    || __copy_to_user(&frame->fp_regs, current->thread.fpr,
 			      ELF_NFPREG * sizeof(double))
 	/* Set up to return from user space.
-	   It calls the sc exception at offset 0x9999 
+	   It calls the sc exception at offset 0x9999
 	   for sys_rt_sigreturn().
 	*/
 	    || __put_user(0x38006666UL, &frame->tramp[0])	/* li r0,0x6666 */
@@ -422,7 +422,7 @@ int sys_sigreturn(struct pt_regs *regs)
 
 badframe:
 	do_exit(SIGSEGV);
-}	
+}
 
 /*
  * Set up a signal frame.
@@ -500,7 +500,7 @@ handle_signal(unsigned long sig, struct k_sigaction *ka,
 		    || __put_user(0, &rt_sf->uc.uc_flags)
 		    || __put_user(0, &rt_sf->uc.uc_link)
 		    || __put_user(current->sas_ss_sp, &rt_sf->uc.uc_stack.ss_sp)
-		    || __put_user(sas_ss_flags(regs->gpr[1]), 
+		    || __put_user(sas_ss_flags(regs->gpr[1]),
 				  &rt_sf->uc.uc_stack.ss_flags)
 		    || __put_user(current->sas_ss_size, &rt_sf->uc.uc_stack.ss_size)
 		    || __copy_to_user(&rt_sf->uc.uc_sigmask, oldset, sizeof(*oldset))
@@ -514,7 +514,7 @@ handle_signal(unsigned long sig, struct k_sigaction *ka,
 		sc = (struct sigcontext_struct *) *newspp;
 		if (verify_area(VERIFY_WRITE, sc, sizeof(*sc)))
 			goto badframe;
-		
+
 		if (__put_user((unsigned long) ka->sa.sa_handler, &sc->handler)
 		    || __put_user(oldset->sig[0], &sc->oldmask)
 #if _NSIG_WORDS > 1

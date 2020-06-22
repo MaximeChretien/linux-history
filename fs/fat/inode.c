@@ -637,6 +637,7 @@ fat_read_super(struct super_block *sb, void *data, int silent,
 	sbi->cluster_bits = ffs(logical_sector_size * sbi->cluster_size) - 1;
 	sbi->fats = b->fats;
 	sbi->fat_start = CF_LE_W(b->reserved);
+	sbi->prev_free = 0;
 	if (!b->fat_length && b->fat32_length) {
 		struct fat_boot_fsinfo *fsinfo;
 		struct buffer_head *fsinfo_bh;
@@ -675,6 +676,7 @@ fat_read_super(struct super_block *sb, void *data, int silent,
 			       sbi->fsinfo_sector);
 		} else {
 			sbi->free_clusters = CF_LE_L(fsinfo->free_clusters);
+			sbi->prev_free = CF_LE_L(fsinfo->next_cluster);
 		}
 
 		if (fsinfo_block != 0)
@@ -754,7 +756,6 @@ fat_read_super(struct super_block *sb, void *data, int silent,
 	sb->s_magic = MSDOS_SUPER_MAGIC;
 	/* set up enough so that it can read an inode */
 	init_MUTEX(&sbi->fat_lock);
-	sbi->prev_free = 0;
 
 	cp = opts.codepage ? opts.codepage : 437;
 	sprintf(buf, "cp%d", cp);

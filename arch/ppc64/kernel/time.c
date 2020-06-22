@@ -415,8 +415,8 @@ void do_settimeofday(struct timeval *tv)
 	time_esterror = NTP_PHASE_LIMIT;
 
 	delta_xsec = mulhdu( (tb_last_stamp-systemcfg->tb_orig_stamp), systemcfg->tb_to_xs );
-	new_xsec = (new_usec * XSEC_PER_SEC) / USEC_PER_SEC;
-	new_xsec += new_sec * XSEC_PER_SEC;
+	new_xsec = (tv->tv_usec * XSEC_PER_SEC) / USEC_PER_SEC;
+	new_xsec += tv->tv_sec * XSEC_PER_SEC;
 	if ( new_xsec > delta_xsec ) {
 		systemcfg->stamp_xsec = new_xsec - delta_xsec;
 	}

@@ -27,7 +27,7 @@ obj-y               :=	ppc_ksyms.o setup.o entry.o traps.o irq.o idle.o \
 			pmc.o mf_proc.o proc_pmc.o proc_pcifr.o iSeries_setup.o \
 			ItLpQueue.o hvCall.o mf.o HvLpEvent.o ras.o \
 			iSeries_proc.o HvCall.o flight_recorder.o HvLpConfig.o \
-			rtc.o perfmon.o
+			rtc.o perfmon.o cputable.o
 
 obj-$(CONFIG_PCI) +=  pci.o pci_dn.o pci_dma.o pSeries_lpar.o pSeries_hvCall.o
 

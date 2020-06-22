@@ -1,6 +1,6 @@
 # arch/ia64/sn/kernel/Makefile
 #
-# Copyright (C) 1999,2001-2002 Silicon Graphics, Inc.  All Rights Reserved.
+# Copyright (C) 1999,2001-2003 Silicon Graphics, Inc.  All Rights Reserved.
 #
 # This program is free software; you can redistribute it and/or modify it 
 # under the terms of version 2 of the GNU General Public License 
@@ -40,21 +40,15 @@ EXTRA_CFLAGS    := -DLITTLE_ENDIAN
 
 O_TARGET        = sn.o
 
-export-objs = sn_ksyms.o iomv.o
+export-objs = sn_ksyms.o
 
-subdir-$(CONFIG_IA64_SGI_SN1)	= sn1
-subdir-$(CONFIG_IA64_SGI_SN2)	= sn2
+subdir-y			= sn2
 
-obj-y		= probe.o setup.o sn_asm.o sv.o bte.o iomv.o
-obj-$(CONFIG_IA64_SGI_SN1)      += irq.o mca.o
-obj-$(CONFIG_IA64_SGI_SN2)      += irq.o mca.o
+obj-y				= probe.o setup.o sv.o bte.o
+obj-y			        += irq.o mca.o idle.o
+obj-y			        += sn2/sn2.o
 
-obj-$(CONFIG_IA64_SGI_SN1)      += sn1/sn1.o  
-obj-$(CONFIG_IA64_SGI_SN2)      += sn2/sn2.o  
-
-obj-$(CONFIG_IA64_SGI_AUTOTEST) += llsc4.o misctest.o
 obj-$(CONFIG_IA64_GENERIC)      += machvec.o
 obj-$(CONFIG_MODULES)           += sn_ksyms.o
-obj-$(CONFIG_IA64_SGI_SN_BRT)	+= bte_regr_test.o
 
 include $(TOPDIR)/Rules.make

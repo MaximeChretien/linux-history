@@ -11,9 +11,9 @@
  *  Copyright (c) 1999-2002 LSI Logic Corporation
  *  Originally By: Steven J. Ralston
  *  (mailto:sjralston1@netscape.net)
- *  (mailto:Pam.Delaney@lsil.com)
+ *  (mailto:lstephens@lsil.com)
  *
- *  $Id: mptbase.h,v 1.144 2003/01/28 21:31:56 pdelaney Exp $
+ *  $Id: mptbase.h,v 1.149 2003/05/07 14:08:31 pdelaney Exp $
  */
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
@@ -80,8 +80,8 @@
 #define COPYRIGHT	"Copyright (c) 1999-2002 " MODULEAUTHOR
 #endif
 
-#define MPT_LINUX_VERSION_COMMON	"2.05.00+"
-#define MPT_LINUX_PACKAGE_NAME		"@(#)mptlinux-2.05.00+"
+#define MPT_LINUX_VERSION_COMMON	"2.05.05+"
+#define MPT_LINUX_PACKAGE_NAME		"@(#)mptlinux-2.05.05+"
 #define WHAT_MAGIC_STRING		"@" "(" "#" ")"
 
 #define show_mptmod_ver(s,ver)  \
@@ -93,7 +93,7 @@
  */
 #define MPT_MAX_ADAPTERS		18
 #define MPT_MAX_PROTOCOL_DRIVERS	16
-#define MPT_MAX_BUS			1
+#define MPT_MAX_BUS			1	/* Do not change */
 #define MPT_MAX_FC_DEVICES		255
 #define MPT_MAX_SCSI_DEVICES		16
 #define MPT_LAST_LUN			31
@@ -383,12 +383,9 @@ typedef struct _VirtDevice {
 	u8			 maxWidth;	/* 0 if narrow, 1 if wide*/
 	u8			 negoFlags;	/* bit field, 0 if WDTR/SDTR/QAS allowed */
 	u8			 raidVolume;	/* set, if RAID Volume */
-#ifdef ABORT_FIX
-	u8			 numAborts;
-#else
-	u8			 rsvd;
-#endif
-	u16			 rsvd1raid;
+	u8			 type;		/* byte 0 of Inquiry data */
+	u8			 cflags;	/* controller flags */
+	u8			 rsvd1raid;
 	int			 npaths;
 	u16			 fc_phys_lun;
 	u16			 fc_xlat_lun;
@@ -400,11 +397,8 @@ typedef struct _VirtDevice {
 	ScsiCmndTracker		 WaitQ;
 	ScsiCmndTracker		 SentQ;
 	ScsiCmndTracker		 DoneQ;
+	u32			 num_luns;
 //--- LUN split here?
-#ifdef MPT_SAVE_AUTOSENSE
-	u8			 sense[SCSI_STD_SENSE_BYTES];		/* 18 */
-	u8			 rsvd2[2];	/* alignment */
-#endif
 	u32			 luns;		/* Max LUNs is 32 */
 	u8			 inq_data[SCSI_STD_INQUIRY_BYTES];	/* 36 */
 	u8			 pad0[4];
@@ -428,13 +422,15 @@ typedef struct _VirtDevice {
  *  Fibre Channel (SCSI) target device and associated defines...
  */
 #define MPT_TARGET_DEFAULT_DV_STATUS	0
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,55)
+#define MPT_TARGET_FLAGS_CONFIGURED	0x02
+#define MPT_TARGET_FLAGS_Q_YES		0x08
+#else
 #define MPT_TARGET_FLAGS_VALID_NEGO	0x01
 #define MPT_TARGET_FLAGS_VALID_INQUIRY	0x02
-#ifdef MPT_SAVE_AUTOSENSE
-#define MPT_TARGET_FLAGS_VALID_SENSE	0x04
-#endif
 #define MPT_TARGET_FLAGS_Q_YES		0x08
 #define MPT_TARGET_FLAGS_VALID_56	0x10
+#endif
 
 #define MPT_TARGET_NO_NEGO_WIDE		0x01
 #define MPT_TARGET_NO_NEGO_SYNC		0x02
@@ -603,7 +599,7 @@ typedef struct _MPT_ADAPTER
 	dma_addr_t		 sense_buf_pool_dma;
 	u32			 sense_buf_low_dma;
 	int			 mtrr_reg;
-	void			*pcidev;	/* struct pci_dev pointer */
+	struct pci_dev		*pcidev;	/* struct pci_dev pointer */
 	u8			*memmap;	/* mmap address */
 	struct Scsi_Host	*sh;		/* Scsi Host pointer */
 	ScsiCfgData		spi_data;	/* Scsi config. data */
@@ -616,6 +612,12 @@ typedef struct _MPT_ADAPTER
 	int			 eventTypes;	/* Event logging parameters */
 	int			 eventContext;	/* Next event context */
 	int			 eventLogSize;	/* Max number of cached events */
+#ifdef MPTSCSIH_DBG_TIMEOUT
+	int			timeout_hard;
+	int			timeout_delta;
+	int			timeout_cnt;
+	int			timeout_maxcnt;
+#endif
 	struct _mpt_ioctl_events *events;	/* pointer to event log */
 	fw_image_t		**cached_fw;	/* Pointer to FW SG List */
 	Q_TRACKER		 configQ;	/* linked list of config. requests */
@@ -656,6 +658,7 @@ typedef int (*MPT_RESETHANDLER)(MPT_ADAPTER *ioc, int reset_phase);
 /* reset_phase defs */
 #define MPT_IOC_PRE_RESET		0
 #define MPT_IOC_POST_RESET		1
+#define MPT_IOC_SETUP_RESET		2
 
 /*
  * Invent MPT host event (super-set of MPI Events)
@@ -757,6 +760,19 @@ typedef struct _mpt_sge {
 #else
 #define nehprintk(x)
 #endif
+
+#if defined(MPT_DEBUG_CONFIG) || defined(MPT_DEBUG)
+#define dcprintk(x) printk x
+#else
+#define dcprintk(x)
+#endif
+
+#if defined(MPT_DEBUG_SCSI) || defined(MPT_DEBUG) || defined(MPT_DEBUG_MSG_FRAME)
+#define dsprintk(x) printk x
+#else
+#define dsprintk(x)
+#endif
+
 
 #define MPT_INDEX_2_MFPTR(ioc,idx) \
 	(MPT_FRAME_HDR*)( (u8*)(ioc)->req_frames + (ioc)->req_sz * (idx) )

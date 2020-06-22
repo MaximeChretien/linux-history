@@ -713,12 +713,6 @@ void create_tce_tables_for_busesLP(struct list_head *bus_list)
 	for (ln=bus_list->next; ln != bus_list; ln=ln->next) {
 		bus = pci_bus_b(ln);
 		busdn = PCI_GET_DN(bus);
-		/* NOTE: there should never be a window declared on a bus when
-		 * child devices also have a window.  If this should ever be
-		 * architected, we probably want children to have priority.
-		 * In reality, the PHB containing ISA has the property, but otherwise
-		 * it is the pci-bridges that have the property.
-		 */
 		dma_window = (u32 *)get_property(busdn, "ibm,dma-window", 0);
 		if (dma_window) {
 			/* Busno hasn't been copied yet.
@@ -726,8 +720,9 @@ void create_tce_tables_for_busesLP(struct list_head *bus_list)
 			 */
 			busdn->busno = bus->number;
 			create_pci_bus_tce_table((unsigned long)busdn);
-		} else
-			create_tce_tables_for_busesLP(&bus->children);
+		}
+		/* look for a window on a bridge even if the PHB had one */
+		create_tce_tables_for_busesLP(&bus->children);
 	}
 }
 
@@ -1349,7 +1344,7 @@ int pci_map_sg( struct pci_dev *hwdev, struct scatterlist *sg, int nents, int di
 {
 	struct TceTable * tbl;
 	unsigned numTces;
-	int num_dma;
+	int num_dma = 0;
 	dma_addr_t dma_handle;
 
 	PPCDBG(PPCDBG_TCE, "pci_map_sg:\n");
@@ -1372,6 +1367,8 @@ int pci_map_sg( struct pci_dev *hwdev, struct scatterlist *sg, int nents, int di
 		numTces = num_tces_sg( sg, nents );
 		/* Create the tces and get the dma address */ 
 		dma_handle = create_tces_sg( tbl, sg, nents, numTces, direction );
+
+		if(dma_handle == NO_TCE) return 0;
 
 		/* Fill in the dma scatterlist */
 		num_dma = fill_scatterlist_sg( sg, nents, dma_handle, numTces );

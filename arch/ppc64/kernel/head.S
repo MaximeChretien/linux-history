@@ -32,6 +32,7 @@
 #include <linux/config.h>
 #include <asm/mmu.h>
 #include <asm/perfmon.h>
+#include <asm/cputable.h>
 
 #ifdef CONFIG_PPC_ISERIES
 #define DO_SOFT_DISABLE
@@ -746,6 +747,13 @@ HardwareInterrupt_entry:
 #ifdef CONFIG_XMON
 	bl	.xmon
 #endif
+#ifdef CONFIG_KDB
+        /*          kdb(KDB_REASON_FAULT,regs->trap,regs); */
+	li      r3,1
+	li 	r4,0x200
+	li      r5,0
+	bl	.kdb
+#endif
 4:	b	4b
 
 
@@ -781,11 +789,16 @@ ProgramCheck_common:
 FPUnavailable_common:
 	EXCEPTION_PROLOG_COMMON
 	bne	.load_up_fpu		/* if from user, just load it up */
-	li	r20,0
+	addi	r3,r1,STACK_FRAME_OVERHEAD
+#ifdef DO_SOFT_DISABLE
+	ld	r20,SOFTE(r1)
+#else
+	rldicl	r20,r23,49,63   	/* copy EE bit from saved MSR */
+#endif
 	li	r6,0x800
-	bl      .save_remaining_regs    /* if from kernel, take a trap */
-	bl      .KernelFP
-	b       .ret_from_except
+	bl      .save_remaining_regs
+	bl      .KernelFPUnavailableException
+	BUG_OPCODE
 
 	.globl SystemCall_common
 SystemCall_common:
@@ -1390,6 +1403,11 @@ _GLOBAL(__start_initialization_iSeries)
 	li	r0,0
 	stdu	r0,-STACK_FRAME_OVERHEAD(r1)
 
+	LOADADDR(r3,cpu_specs)
+	LOADADDR(r4,cur_cpu_spec)
+	li	r5,0
+	bl	.identify_cpu
+
 	LOADADDR(r2,__toc_start)
 	addi	r2,r2,0x4000
 	addi	r2,r2,0x4000
@@ -1619,21 +1637,19 @@ _STATIC(load_up_fpu)
 	/* restore registers and return */
 	b	fast_exception_return
 
+
 /*
- * FP unavailable trap from kernel - print a message, but let
- * the task use FP in the kernel until it returns to user mode.
+ * disable_kernel_fp()
+ * Disable the FPU.
  */
-_GLOBAL(KernelFP)
-	ld	r3,_MSR(r1)
-	ori	r3,r3,MSR_FP
-	std	r3,_MSR(r1)		/* enable use of FP after return */
-	LOADADDR(r3,86f)
-	mfspr	r4,SPRG3		/* Get PACA */
-	ld	r4,PACACURRENT(r4)	/* current */
-	ld	r5,_NIP(r1)
-	b	.ret_from_except
-86:	.string	"floating point used in kernel (task=%p, pc=%x)\n"
-	.align	4
+_GLOBAL(disable_kernel_fp)
+	mfmsr   r3
+	rldicl  r0,r3,(63-MSR_FP_LG),1
+	rldicl  r3,r0,(MSR_FP_LG+1),0
+	mtmsrd  r3			/* disable use of fpu now */
+	isync
+	blr
+
 
 /*
  * giveup_fpu(tsk)
@@ -1861,6 +1877,13 @@ _STATIC(start_here_pSeries)
 	li	r0,0
 	stdu	r0,-STACK_FRAME_OVERHEAD(r1)
 
+	LOADADDR(r3,cpu_specs)
+	sub	r3,r3,r26
+	LOADADDR(r4,cur_cpu_spec)
+	sub	r4,r4,r26
+	mr	r5,r26
+	bl	.identify_cpu
+
 	/* set up the TOC (physical address) */
 	LOADADDR(r2,__toc_start)
 	addi    r2,r2,0x4000
@@ -1949,6 +1972,9 @@ _STATIC(start_here_common)
 	addi    r2,r2,0x4000
 	addi    r2,r2,0x4000
 
+	li	r3,0
+	bl	.do_cpu_ftr_fixups
+
 	/* setup the systemcfg pointer                                       */
 	LOADADDR(r9,systemcfg)
 	SET_REG_TO_CONST(r8, KERNELBASE+0x5000)
@@ -2005,6 +2031,11 @@ _STATIC(start_here_common)
 #endif
 
 	bl .start_kernel
+
+_GLOBAL(__setup_cpu_power3)
+	blr
+_GLOBAL(__setup_cpu_power4)
+	blr
 
 _GLOBAL(hmt_init)
 #ifdef CONFIG_HMT

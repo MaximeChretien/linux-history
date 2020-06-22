@@ -13,6 +13,7 @@ if [ "$CONFIG_NET" != "n" ]; then
       dep_tristate 'SCO links support' CONFIG_BLUEZ_SCO $CONFIG_BLUEZ
       source net/bluetooth/rfcomm/Config.in
       source net/bluetooth/bnep/Config.in
+      source net/bluetooth/cmtp/Config.in
       source drivers/bluetooth/Config.in
    fi
 

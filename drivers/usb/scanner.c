@@ -362,6 +362,11 @@
  *      that assumption is not correct in all cases.
  *
  *
+ * 0.4.13  2003-06-14
+ *    - Added vendor/product ids for Genius, Hewlett-Packard, Microtek, 
+ *      Mustek, Pacific Image Electronics, Plustek, and Visioneer scanners.
+ *      Fixed names of some other scanners.
+ *
  * TODO
  *    - Performance
  *    - Select/poll methods

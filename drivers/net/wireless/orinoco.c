@@ -1,4 +1,4 @@
-/* orinoco.c 0.13b	- (formerly known as dldwd_cs.c and orinoco_cs.c)
+/* orinoco.c 0.13d	- (formerly known as dldwd_cs.c and orinoco_cs.c)
  *
  * A driver for Hermes or Prism 2 chipset based PCMCIA wireless
  * adaptors, with Lucent/Agere, Intersil or Symbol firmware.
@@ -345,11 +345,45 @@
  * 	  we are connected (avoids cofusing the firmware), and only
  * 	  give LINKSTATUS printk()s if the status has changed.
  *
+ * v0.13b -> v0.13c - 11 Mar 2003 - David Gibson
+ *	o Cleanup: use dev instead of priv in various places.
+ *	o Bug fix: Don't ReleaseConfiguration on RESET_PHYSICAL event
+ *	  if we're in the middle of a (driver initiated) hard reset.
+ *	o Bug fix: ETH_ZLEN is supposed to include the header
+ *	  (Dionysus Blazakis & Manish Karir)
+ *	o Convert to using workqueues instead of taskqueues (and
+ *	  backwards compatibility macros for pre 2.5.41 kernels).
+ *	o Drop redundant (I think...) MOD_{INC,DEC}_USE_COUNT in
+ *	  airport.c
+ *	o New orinoco_tmd.c init module from Joerg Dorchain for
+ *	  TMD7160 based PCI to PCMCIA bridges (similar to
+ *	  orinoco_plx.c).
+ *
+ * v0.13c -> v0.13d - 22 Apr 2003 - David Gibson
+ *	o Make hw_unavailable a counter, rather than just a flag, this
+ *	  is necessary to avoid some races (such as a card being
+ *	  removed in the middle of orinoco_reset().
+ *	o Restore Release/RequestConfiguration in the PCMCIA event handler
+ *	  when dealing with a driver initiated hard reset.  This is
+ *	  necessary to prevent hangs due to a spurious interrupt while
+ *	  the reset is in progress.
+ *	o Clear the 802.11 header when transmitting, even though we
+ *	  don't use it.  This fixes a long standing bug on some
+ *	  firmwares, which seem to get confused if that isn't done.
+ *	o Be less eager to de-encapsulate SNAP frames, only do so if
+ *	  the OUI is 00:00:00 or 00:00:f8, leave others alone.  The old
+ *	  behaviour broke CDP (Cisco Discovery Protocol).
+ *	o Use dev instead of priv for free_irq() as well as
+ *	  request_irq() (oops).
+ *	o Attempt to reset rather than giving up if we get too many
+ *	  IRQs.
+ *	o Changed semantics of __orinoco_down() so it can be called
+ *	  safely with hw_unavailable set.  It also now clears the
+ *	  linkstatus (since we're going to have to reassociate).
+ *
  * TODO
-
  *	o New wireless extensions API (patch from Moustafa
  *	  Youssef, updated by Jim Carter).
- *	o Fix PCMCIA hard resets with pcmcia-cs.
  *	o Handle de-encapsulation within network layer, provide 802.11
  *	  headers (patch from Thomas 'Dent' Mirlacher)
  *	o Fix possible races in SPY handling.
@@ -373,7 +407,7 @@
  * flag after taking the lock, and if it is set, give up on whatever
  * they are doing and drop the lock again.  The orinoco_lock()
  * function handles this (it unlocks and returns -EBUSY if
- * hw_unavailable is true). */
+ * hw_unavailable is non-zero). */
 
 #include <linux/config.h>
 
@@ -522,7 +556,7 @@ static struct iw_statistics *orinoco_get_wireless_stats(struct net_device *dev);
 
 /* Hardware control routines */
 
-static int __orinoco_program_rids(struct orinoco_private *priv);
+static int __orinoco_program_rids(struct net_device *dev);
 
 static int __orinoco_hw_set_bitrate(struct orinoco_private *priv);
 static int __orinoco_hw_setup_wep(struct orinoco_private *priv);
@@ -535,14 +569,14 @@ static int orinoco_hw_get_bitratelist(struct orinoco_private *priv, int *numrate
 static void __orinoco_set_multicast_list(struct net_device *dev);
 
 /* Interrupt handling routines */
-static void __orinoco_ev_tick(struct orinoco_private *priv, hermes_t *hw);
-static void __orinoco_ev_wterr(struct orinoco_private *priv, hermes_t *hw);
-static void __orinoco_ev_infdrop(struct orinoco_private *priv, hermes_t *hw);
-static void __orinoco_ev_info(struct orinoco_private *priv, hermes_t *hw);
-static void __orinoco_ev_rx(struct orinoco_private *priv, hermes_t *hw);
-static void __orinoco_ev_txexc(struct orinoco_private *priv, hermes_t *hw);
-static void __orinoco_ev_tx(struct orinoco_private *priv, hermes_t *hw);
-static void __orinoco_ev_alloc(struct orinoco_private *priv, hermes_t *hw);
+static void __orinoco_ev_tick(struct net_device *dev, hermes_t *hw);
+static void __orinoco_ev_wterr(struct net_device *dev, hermes_t *hw);
+static void __orinoco_ev_infdrop(struct net_device *dev, hermes_t *hw);
+static void __orinoco_ev_info(struct net_device *dev, hermes_t *hw);
+static void __orinoco_ev_rx(struct net_device *dev, hermes_t *hw);
+static void __orinoco_ev_txexc(struct net_device *dev, hermes_t *hw);
+static void __orinoco_ev_tx(struct net_device *dev, hermes_t *hw);
+static void __orinoco_ev_alloc(struct net_device *dev, hermes_t *hw);
 
 /* ioctl() routines */
 static int orinoco_ioctl_getiwrange(struct net_device *dev, struct iw_point *rrq);
@@ -577,7 +611,7 @@ int __orinoco_up(struct net_device *dev)
 	struct hermes *hw = &priv->hw;
 	int err;
 
-	err = __orinoco_program_rids(priv);
+	err = __orinoco_program_rids(dev);
 	if (err) {
 		printk(KERN_ERR "%s: Error %d configuring card\n",
 		       dev->name, err);
@@ -606,14 +640,25 @@ int __orinoco_down(struct net_device *dev)
 
 	netif_stop_queue(dev);
 
-	err = hermes_disable_port(hw, 0);
-	if (err) {
-		printk(KERN_ERR "%s: Error %d disabling MAC port\n",
-		       dev->name, err);
-		return err;
+	if (! priv->hw_unavailable) {
+		if (! priv->broken_disableport) {
+			err = hermes_disable_port(hw, 0);
+			if (err) {
+				/* Some firmwares (e.g. Intersil 1.3.x) seem
+				 * to have problems disabling the port, oh
+				 * well, too bad. */
+				printk(KERN_WARNING "%s: Error %d disabling MAC port\n",
+				       dev->name, err);
+				priv->broken_disableport = 1;
+			}
+		}
+		hermes_set_irqmask(hw, 0);
+		hermes_write_regn(hw, EVACK, 0xffff);
 	}
-	hermes_set_irqmask(hw, 0);
-	hermes_write_regn(hw, EVACK, 0xffff);
+	
+	/* firmware will have to reassociate */
+	priv->last_linkstatus = 0xffff;
+	priv->connected = 0;
 
 	return 0;
 }
@@ -656,38 +701,38 @@ static int orinoco_open(struct net_device *dev)
 	if (err)
 		return err;
 
-        priv->open = 1;
-
 	err = __orinoco_up(dev);
+
+	if (! err)
+		priv->open = 1;
 
 	orinoco_unlock(priv, &flags);
 
 	return err;
 }
 
-static int orinoco_stop(struct net_device *dev)
+int orinoco_stop(struct net_device *dev)
 {
 	struct orinoco_private *priv = dev->priv;
 	int err = 0;
 
 	/* We mustn't use orinoco_lock() here, because we need to be
-	   able to close the interface, even if hw_unavailable is set
+	   able to close the interface even if hw_unavailable is set
 	   (e.g. as we're released after a PC Card removal) */
 	spin_lock_irq(&priv->lock);
 
 	priv->open = 0;
 
-	if (! priv->hw_unavailable)
-		err = __orinoco_down(dev);
+	err = __orinoco_down(dev);
 
 	spin_unlock_irq(&priv->lock);
 
 	return err;
 }
 
-static int __orinoco_program_rids(struct orinoco_private *priv)
+static int __orinoco_program_rids(struct net_device *dev)
 {
-	struct net_device *dev = priv->ndev;
+	struct orinoco_private *priv = dev->priv;
 	hermes_t *hw = &priv->hw;
 	int err;
 	struct hermes_idstring idbuf;
@@ -873,51 +918,84 @@ ESSID in IBSS-Ad-Hoc mode.\n", dev->name);
 }
 
 /* xyzzy */
-static int orinoco_reconfigure(struct orinoco_private *priv)
+static int orinoco_reconfigure(struct net_device *dev)
 {
+	struct orinoco_private *priv = dev->priv;
 	struct hermes *hw = &priv->hw;
 	unsigned long flags;
 	int err = 0;
 
-	orinoco_lock(priv, &flags);
+	if (priv->broken_disableport) {
+		schedule_work(&priv->reset_work);
+		return 0;
+	}
 
+	err = orinoco_lock(priv, &flags);
+	if (err)
+		return err;
+
+		
 	err = hermes_disable_port(hw, 0);
 	if (err) {
-		printk(KERN_ERR "%s: Unable to disable port in orinco_reconfigure()\n",
-		       priv->ndev->name);
+		printk(KERN_WARNING "%s: Unable to disable port while reconfiguring card\n",
+		       dev->name);
+		priv->broken_disableport = 1;
 		goto out;
 	}
 
-	err = __orinoco_program_rids(priv);
-	if (err)
+	err = __orinoco_program_rids(dev);
+	if (err) {
+		printk(KERN_WARNING "%s: Unable to reconfigure card\n",
+		       dev->name);
 		goto out;
+	}
 
 	err = hermes_enable_port(hw, 0);
 	if (err) {
-		printk(KERN_ERR "%s: Unable to enable port in orinco_reconfigure()\n",
-		       priv->ndev->name);
+		printk(KERN_WARNING "%s: Unable to enable port while reconfiguring card\n",
+		       dev->name);
 		goto out;
 	}
 
  out:
+	if (err) {
+		printk(KERN_WARNING "%s: Resetting instead...\n", dev->name);
+		schedule_work(&priv->reset_work);
+		err = 0;
+	}
+
 	orinoco_unlock(priv, &flags);
 	return err;
 
 }
 
 /* This must be called from user context, without locks held - use
- * schedule_task() */
+ * schedule_work() */
 static void orinoco_reset(struct net_device *dev)
 {
 	struct orinoco_private *priv = dev->priv;
+	struct hermes *hw = &priv->hw;
 	int err;
 	unsigned long flags;
 
 	err = orinoco_lock(priv, &flags);
 	if (err)
+		/* When the hardware becomes available again, whatever
+		 * detects that is responsible for re-initializing
+		 * it. So no need for anything further*/
 		return;
 
-	priv->hw_unavailable = 1;
+	netif_stop_queue(dev);
+
+	/* Shut off interrupts.  Depending on what state the hardware
+	 * is in, this might not work, but we'll try anyway */
+	hermes_set_irqmask(hw, 0);
+	hermes_write_regn(hw, EVACK, 0xffff);
+
+	priv->hw_unavailable++;
+	priv->last_linkstatus = 0xffff; /* firmware will have to reassociate */
+	priv->connected = 0;
+
 	orinoco_unlock(priv, &flags);
 
 	if (priv->hard_reset)
@@ -936,18 +1014,22 @@ static void orinoco_reset(struct net_device *dev)
 		return;
 	}
 
-	spin_lock_irqsave(&priv->lock, flags);
+	spin_lock_irq(&priv->lock); /* This has to be called from user context */
 
-	priv->hw_unavailable = 0;
+	priv->hw_unavailable--;
 
-	err = __orinoco_up(dev);
-	if (err) {
-		printk(KERN_ERR "%s: orinoco_reset: Error %d reenabling card\n",
-		       dev->name, err);
-	} else
-		dev->trans_start = jiffies;
+	/* priv->open or priv->hw_unavailable might have changed while
+	 * we dropped the lock */
+	if (priv->open && (! priv->hw_unavailable)) {
+		err = __orinoco_up(dev);
+		if (err) {
+			printk(KERN_ERR "%s: orinoco_reset: Error %d reenabling card\n",
+			       dev->name, err);
+		} else
+			dev->trans_start = jiffies;
+	}
 
-	orinoco_unlock(priv, &flags);
+	spin_unlock_irq(&priv->lock);
 
 	return;
 }
@@ -979,10 +1061,18 @@ set_port_type(struct orinoco_private *priv)
 	}
 }
 
+/* Does the frame have a SNAP header indicating it should be
+ * de-encapsulated to Ethernet-II? */
 static inline int
-is_snap(struct header_struct *hdr)
+is_ethersnap(struct header_struct *hdr)
 {
-	return (hdr->dsap == 0xAA) && (hdr->ssap == 0xAA) && (hdr->ctrl == 0x3);
+	/* We de-encapsulate all packets which, a) have SNAP headers
+	 * (i.e. SSAP=DSAP=0xaa and CTRL=0x3 in the 802.2 LLC header
+	 * and where b) the OUI of the SNAP header is 00:00:00 or
+	 * 00:00:f8 - we need both because different APs appear to use
+	 * different OUIs for some reason */
+	return (memcmp(&hdr->dsap, &encaps_hdr, 5) == 0)
+		&& ( (hdr->oui[2] == 0x00) || (hdr->oui[2] == 0xf8) );
 }
 
 static void
@@ -1140,7 +1230,8 @@ static int __orinoco_hw_setup_wep(struct orinoco_private *priv)
 	return 0;
 }
 
-static int orinoco_hw_get_bssid(struct orinoco_private *priv, char buf[ETH_ALEN])
+static int orinoco_hw_get_bssid(struct orinoco_private *priv,
+				char buf[ETH_ALEN])
 {
 	hermes_t *hw = &priv->hw;
 	int err = 0;
@@ -1159,7 +1250,7 @@ static int orinoco_hw_get_bssid(struct orinoco_private *priv, char buf[ETH_ALEN]
 }
 
 static int orinoco_hw_get_essid(struct orinoco_private *priv, int *active,
-			      char buf[IW_ESSID_MAX_SIZE+1])
+				char buf[IW_ESSID_MAX_SIZE+1])
 {
 	hermes_t *hw = &priv->hw;
 	int err = 0;
@@ -1236,9 +1327,8 @@ static long orinoco_hw_get_freq(struct orinoco_private *priv)
 	}
 
 	if ( (channel < 1) || (channel > NUM_CHANNELS) ) {
-		struct net_device *dev = priv->ndev;
-
-		printk(KERN_WARNING "%s: Channel out of range (%d)!\n", dev->name, channel);
+		printk(KERN_WARNING "%s: Channel out of range (%d)!\n",
+		       priv->ndev->name, channel);
 		err = -EBUSY;
 		goto out;
 
@@ -1253,8 +1343,8 @@ static long orinoco_hw_get_freq(struct orinoco_private *priv)
 	return err ? err : freq;
 }
 
-static int orinoco_hw_get_bitratelist(struct orinoco_private *priv, int *numrates,
-				    s32 *rates, int max)
+static int orinoco_hw_get_bitratelist(struct orinoco_private *priv,
+				      int *numrates, s32 *rates, int max)
 {
 	hermes_t *hw = &priv->hw;
 	struct hermes_idstring list;
@@ -1354,9 +1444,9 @@ static void show_rx_frame(struct orinoco_rxframe_hdr *frame)
  */
 void orinoco_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 {
-	struct orinoco_private *priv = (struct orinoco_private *) dev_id;
+	struct net_device *dev = (struct net_device *)dev_id;
+	struct orinoco_private *priv = dev->priv;
 	hermes_t *hw = &priv->hw;
-	struct net_device *dev = priv->ndev;
 	int count = MAX_IRQLOOPS_PER_IRQ;
 	u16 evstat, events;
 	/* These are used to detect a runaway interrupt situation */
@@ -1380,11 +1470,11 @@ void orinoco_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 
 	while (events && count--) {
 		if (++loops_this_jiffy > MAX_IRQLOOPS_PER_JIFFY) {
-			printk(KERN_CRIT "%s: IRQ handler is looping too \
-much! Shutting down.\n",
-			       dev->name);
-			/* Perform an emergency shutdown */
+			printk(KERN_WARNING "%s: IRQ handler is looping too "
+			       "much! Resetting.\n", dev->name);
+			/* Disable interrupts for now */
 			hermes_set_irqmask(hw, 0);
+			schedule_work(&priv->reset_work);
 			break;
 		}
 
@@ -1395,21 +1485,21 @@ much! Shutting down.\n",
 		}
 
 		if (events & HERMES_EV_TICK)
-			__orinoco_ev_tick(priv, hw);
+			__orinoco_ev_tick(dev, hw);
 		if (events & HERMES_EV_WTERR)
-			__orinoco_ev_wterr(priv, hw);
+			__orinoco_ev_wterr(dev, hw);
 		if (events & HERMES_EV_INFDROP)
-			__orinoco_ev_infdrop(priv, hw);
+			__orinoco_ev_infdrop(dev, hw);
 		if (events & HERMES_EV_INFO)
-			__orinoco_ev_info(priv, hw);
+			__orinoco_ev_info(dev, hw);
 		if (events & HERMES_EV_RX)
-			__orinoco_ev_rx(priv, hw);
+			__orinoco_ev_rx(dev, hw);
 		if (events & HERMES_EV_TXEXC)
-			__orinoco_ev_txexc(priv, hw);
+			__orinoco_ev_txexc(dev, hw);
 		if (events & HERMES_EV_TX)
-			__orinoco_ev_tx(priv, hw);
+			__orinoco_ev_tx(dev, hw);
 		if (events & HERMES_EV_ALLOC)
-			__orinoco_ev_alloc(priv, hw);
+			__orinoco_ev_alloc(dev, hw);
 		
 		hermes_write_regn(hw, EVACK, events);
 
@@ -1420,22 +1510,22 @@ much! Shutting down.\n",
 	orinoco_unlock(priv, &flags);
 }
 
-static void __orinoco_ev_tick(struct orinoco_private *priv, hermes_t *hw)
+static void __orinoco_ev_tick(struct net_device *dev, hermes_t *hw)
 {
-	printk(KERN_DEBUG "%s: TICK\n", priv->ndev->name);
+	printk(KERN_DEBUG "%s: TICK\n", dev->name);
 }
 
-static void __orinoco_ev_wterr(struct orinoco_private *priv, hermes_t *hw)
+static void __orinoco_ev_wterr(struct net_device *dev, hermes_t *hw)
 {
 	/* This seems to happen a fair bit under load, but ignoring it
 	   seems to work fine...*/
 	printk(KERN_DEBUG "%s: MAC controller error (WTERR). Ignoring.\n",
-	       priv->ndev->name);
+	       dev->name);
 }
 
-static void __orinoco_ev_infdrop(struct orinoco_private *priv, hermes_t *hw)
+static void __orinoco_ev_infdrop(struct net_device *dev, hermes_t *hw)
 {
-	printk(KERN_WARNING "%s: Information frame lost.\n", priv->ndev->name);
+	printk(KERN_WARNING "%s: Information frame lost.\n", dev->name);
 }
 
 static void print_linkstatus(struct net_device *dev, u16 status)
@@ -1472,9 +1562,9 @@ static void print_linkstatus(struct net_device *dev, u16 status)
 	       dev->name, s, status);
 }
 
-static void __orinoco_ev_info(struct orinoco_private *priv, hermes_t *hw)
+static void __orinoco_ev_info(struct net_device *dev, hermes_t *hw)
 {
-	struct net_device *dev = priv->ndev;
+	struct orinoco_private *priv = dev->priv;
 	u16 infofid;
 	struct {
 		u16 len;
@@ -1573,9 +1663,9 @@ static void __orinoco_ev_info(struct orinoco_private *priv, hermes_t *hw)
 	}
 }
 
-static void __orinoco_ev_rx(struct orinoco_private *priv, hermes_t *hw)
+static void __orinoco_ev_rx(struct net_device *dev, hermes_t *hw)
 {
-	struct net_device *dev = priv->ndev;
+	struct orinoco_private *priv = dev->priv;
 	struct net_device_stats *stats = &priv->stats;
 	struct iw_statistics *wstats = &priv->wstats;
 	struct sk_buff *skb = NULL;
@@ -1664,7 +1754,7 @@ static void __orinoco_ev_rx(struct orinoco_private *priv, hermes_t *hw)
 	 * So, check ourselves */
 	if(((status & HERMES_RXSTAT_MSGTYPE) == HERMES_RXSTAT_1042) ||
 	   ((status & HERMES_RXSTAT_MSGTYPE) == HERMES_RXSTAT_TUNNEL) ||
-	   is_snap(&hdr)) {
+	   is_ethersnap(&hdr)) {
 		/* These indicate a SNAP within 802.2 LLC within
 		   802.11 frame which we'll need to de-encapsulate to
 		   the original EthernetII frame. */
@@ -1726,9 +1816,9 @@ static void __orinoco_ev_rx(struct orinoco_private *priv, hermes_t *hw)
 	return;
 }
 
-static void __orinoco_ev_txexc(struct orinoco_private *priv, hermes_t *hw)
+static void __orinoco_ev_txexc(struct net_device *dev, hermes_t *hw)
 {
-	struct net_device *dev = priv->ndev;
+	struct orinoco_private *priv = dev->priv;
 	struct net_device_stats *stats = &priv->stats;
 	u16 fid = hermes_read_regn(hw, TXCOMPLFID);
 	struct hermes_tx_descriptor desc;
@@ -1752,8 +1842,9 @@ static void __orinoco_ev_txexc(struct orinoco_private *priv, hermes_t *hw)
 	hermes_write_regn(hw, TXCOMPLFID, DUMMY_FID);
 }
 
-static void __orinoco_ev_tx(struct orinoco_private *priv, hermes_t *hw)
+static void __orinoco_ev_tx(struct net_device *dev, hermes_t *hw)
 {
+	struct orinoco_private *priv = dev->priv;
 	struct net_device_stats *stats = &priv->stats;
 
 	stats->tx_packets++;
@@ -1761,9 +1852,10 @@ static void __orinoco_ev_tx(struct orinoco_private *priv, hermes_t *hw)
 	hermes_write_regn(hw, TXCOMPLFID, DUMMY_FID);
 }
 
-static void __orinoco_ev_alloc(struct orinoco_private *priv, hermes_t *hw)
+static void __orinoco_ev_alloc(struct net_device *dev, hermes_t *hw)
 {
-	struct net_device *dev = priv->ndev;
+	struct orinoco_private *priv = dev->priv;
+
 	u16 fid = hermes_read_regn(hw, ALLOCFID);
 
 	if (fid != priv->txfid) {
@@ -1945,7 +2037,7 @@ orinoco_init(struct net_device *dev)
 
 	TRACE_ENTER(dev->name);
 
-	/* No need to lock, the resetting flag is already set in
+	/* No need to lock, the hw_unavailable flag is already set in
 	 * alloc_orinocodev() */
 	priv->nicbuf_size = IEEE802_11_FRAME_LEN + ETH_HLEN;
 
@@ -2081,8 +2173,6 @@ orinoco_init(struct net_device *dev)
 	priv->wep_on = 0;
 	priv->tx_key = 0;
 
-	priv->hw_unavailable = 0;
-
 	err = hermes_allocate(hw, priv->nicbuf_size, &priv->txfid);
 	if (err == -EIO) {
 		/* Try workaround for old Symbol firmware bug */
@@ -2101,6 +2191,12 @@ orinoco_init(struct net_device *dev)
 		printk("%s: Error %d allocating Tx buffer\n", dev->name, err);
 		goto out;
 	}
+
+	/* Make the hardware available, as long as it hasn't been
+	 * removed elsewhere (e.g. by PCMCIA hot unplug) */
+	spin_lock_irq(&priv->lock);
+	priv->hw_unavailable--;
+	spin_unlock_irq(&priv->lock);
 
 	printk(KERN_DEBUG "%s: ready\n", dev->name);
 
@@ -2267,7 +2363,7 @@ orinoco_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	/* Length of the packet body */
 	/* FIXME: what if the skb is smaller than this? */
-	len = max_t(int,skb->len - ETH_HLEN, ETH_ZLEN);
+	len = max_t(int,skb->len - ETH_HLEN, ETH_ZLEN - ETH_HLEN);
 
 	eh = (struct ethhdr *)skb->data;
 
@@ -2280,6 +2376,12 @@ orinoco_xmit(struct sk_buff *skb, struct net_device *dev)
 		stats->tx_errors++;
 		goto fail;
 	}
+
+	/* Clear the 802.11 header and data length fields - some
+	 * firmwares (e.g. Lucent/Agere 8.xx) appear to get confused
+	 * if this isn't done. */
+	hermes_clear_words(hw, HERMES_DATA0,
+			   HERMES_802_3_OFFSET - HERMES_802_11_OFFSET);
 
 	/* Encapsulate Ethernet-II frames */
 	if (ntohs(eh->h_proto) > 1500) { /* Ethernet-II frame */
@@ -2362,7 +2464,7 @@ orinoco_tx_timeout(struct net_device *dev)
 
 	stats->tx_errors++;
 
-	schedule_task(&priv->timeout_task);
+	schedule_work(&priv->reset_work);
 }
 
 static int
@@ -2532,7 +2634,7 @@ static int orinoco_ioctl_getiwrange(struct net_device *dev, struct iw_point *rrq
 	}
 
 	err = orinoco_hw_get_bitratelist(priv, &numrates,
-				       range.bitrate, IW_MAX_BITRATES);
+					 range.bitrate, IW_MAX_BITRATES);
 	if (err)
 		return err;
 	range.num_bitrates = numrates;
@@ -3128,7 +3230,7 @@ static int orinoco_ioctl_getrate(struct net_device *dev, struct iw_param *rrq)
 				rrq->value = 5500000;
 			else
 				rrq->value = val * 1000000;
-                        break;
+			break;
 		case FIRMWARE_TYPE_INTERSIL: /* Intersil style rate */
 		case FIRMWARE_TYPE_SYMBOL: /* Symbol style rate */
 			for (i = 0; i < BITRATE_TABLE_SIZE; i++)
@@ -3754,7 +3856,7 @@ orinoco_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 		
 		printk(KERN_DEBUG "%s: Force scheduling reset!\n", dev->name);
 
-		schedule_task(&priv->timeout_task);
+		schedule_work(&priv->reset_work);
 		break;
 
 	case SIOCIWFIRSTPRIV + 0x2: /* set_port3 */
@@ -3839,7 +3941,7 @@ orinoco_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 	}
 	
 	if (! err && changed && netif_running(dev)) {
-		err = orinoco_reconfigure(priv);
+		err = orinoco_reconfigure(dev);
 	}		
 
 	TRACE_EXIT(dev->name);
@@ -3924,7 +4026,7 @@ struct {
 	DEBUG_REC(PRIID,WORDS),
 	DEBUG_REC(PRISUPRANGE,WORDS),
 	DEBUG_REC(CFIACTRANGES,WORDS),
-	DEBUG_REC(NICSERNUM,WORDS),
+	DEBUG_REC(NICSERNUM,XSTRING),
 	DEBUG_REC(NICID,WORDS),
 	DEBUG_REC(MFISUPRANGE,WORDS),
 	DEBUG_REC(CFISUPRANGE,WORDS),
@@ -4062,7 +4164,7 @@ struct net_device *alloc_orinocodev(int sizeof_card, int (*hard_reset)(struct or
 	priv->hw_unavailable = 1; /* orinoco_init() must clear this
 				   * before anything else touches the
 				   * hardware */
-	INIT_TQUEUE(&priv->timeout_task, (void (*)(void *))orinoco_reset, dev);
+	INIT_WORK(&priv->reset_work, (void (*)(void *))orinoco_reset, dev);
 
 	priv->last_linkstatus = 0xffff;
 	priv->connected = 0;
@@ -4079,13 +4181,14 @@ EXPORT_SYMBOL(alloc_orinocodev);
 
 EXPORT_SYMBOL(__orinoco_up);
 EXPORT_SYMBOL(__orinoco_down);
+EXPORT_SYMBOL(orinoco_stop);
 EXPORT_SYMBOL(orinoco_reinit_firmware);
 
 EXPORT_SYMBOL(orinoco_interrupt);
 
 /* Can't be declared "const" or the whole __initdata section will
  * become const */
-static char version[] __initdata = "orinoco.c 0.13b (David Gibson <hermes@gibson.dropbear.id.au> and others)";
+static char version[] __initdata = "orinoco.c 0.13d (David Gibson <hermes@gibson.dropbear.id.au> and others)";
 
 static int __init init_orinoco(void)
 {

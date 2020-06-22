@@ -23,8 +23,22 @@ extern void enable_irq(unsigned int);
 #define IRQ_POLARITY_POSITIVE	0x2	/* high level or low->high edge */
 #define IRQ_POLARITY_NEGATIVE	0x0	/* low level or high->low edge */
 
-#if defined(CONFIG_4xx)
+#if defined(CONFIG_40x)
+#include <asm/ibm4xx.h>
 
+#ifndef NR_BOARD_IRQS
+#define NR_BOARD_IRQS 0
+#endif
+
+#ifndef UIC_WIDTH /* Number of interrupts per device */
+#define UIC_WIDTH 32
+#endif
+
+#ifndef NR_UICS /* number  of UIC devices */
+#define NR_UICS 1
+#endif
+
+#if defined (CONFIG_403)
 /*
  * The PowerPC 403 cores' Asynchronous Interrupt Controller (AIC) has
  * 32 possible interrupts, a majority of which are not implemented on
@@ -32,30 +46,36 @@ extern void enable_irq(unsigned int);
  * there are eight internal interrupts for the on-chip serial port
  * (SPU), DMA controller, and JTAG controller.
  *
- * The PowerPC 405 cores' Universal Interrupt Controller (UIC) has 32
+ */
+
+#define	NR_AIC_IRQS 32
+#define	NR_IRQS	 (NR_AIC_IRQS + NR_BOARD_IRQS)
+
+#elif !defined (CONFIG_403)
+
+/*
+ *  The PowerPC 405 cores' Universal Interrupt Controller (UIC) has 32
  * possible interrupts as well. There are seven, configurable external
  * interrupt pins and there are 17 internal interrupts for the on-chip
  * serial port, DMA controller, on-chip Ethernet controller, PCI, etc.
  *
  */
 
-#define	NR_IRQS		32
 
-#define	AIC_INT0	(0)
-#define	AIC_INT4	(4)
-#define	AIC_INT5	(5)
-#define	AIC_INT6	(6)
-#define	AIC_INT7	(7)
-#define	AIC_INT8	(8)
-#define	AIC_INT9	(9)
-#define	AIC_INT10	(10)
-#define	AIC_INT11	(11)
-#define	AIC_INT27	(27)
-#define	AIC_INT28	(28)
-#define	AIC_INT29	(29)
-#define	AIC_INT30	(30)
-#define	AIC_INT31	(31)
+#define NR_UIC_IRQS UIC_WIDTH
+#define NR_IRQS		((NR_UIC_IRQS * NR_UICS) + NR_BOARD_IRQS)
+#endif
+static __inline__ int
+irq_cannonicalize(int irq)
+{
+	return (irq);
+}
 
+#elif defined(CONFIG_440)
+#include <asm/ibm440.h>
+
+#define	NR_UIC_IRQS	32
+#define	NR_IRQS		((NR_UIC_IRQS * NR_UICS) + NR_BOARD_IRQS)
 
 static __inline__ int
 irq_cannonicalize(int irq)
@@ -73,7 +93,7 @@ irq_cannonicalize(int irq)
  * possible level sensitive interrupts assigned and generated internally
  * from such devices as CPM, PCMCIA, RTC, PIT, TimeBase and Decrementer.
  * There are eight external interrupts (IRQs) that can be configured
- * as either level or edge sensitive. 
+ * as either level or edge sensitive.
  *
  * On some implementations, there is also the possibility of an 8259
  * through the PCI and PCI-ISA bridges.
@@ -145,7 +165,7 @@ static __inline__ int irq_cannonicalize(int irq)
 	return irq;
 }
 
-#else /* CONFIG_4xx + CONFIG_8xx */
+#else /* CONFIG_40x + CONFIG_8xx */
 /*
  * this is the # irq's for all ppc arch's (pmac/chrp/prep)
  * so it is the max of them all

@@ -1309,9 +1309,9 @@ static struct ip_nat_helper snmp = {
 	"snmp",
 	IP_NAT_HELPER_F_STANDALONE,
 	THIS_MODULE,
-	{ { 0, { __constant_htons(SNMP_PORT) } },
+	{ { 0, { .udp = { __constant_htons(SNMP_PORT) } } },
 	  { 0, { 0 }, IPPROTO_UDP } },
-	{ { 0, { 0xFFFF } },
+	{ { 0, { .udp = { 0xFFFF } } },
 	  { 0, { 0 }, 0xFFFF } },
 	nat_help, NULL };
  
@@ -1320,9 +1320,9 @@ static struct ip_nat_helper snmp_trap = {
 	"snmp_trap",
 	IP_NAT_HELPER_F_STANDALONE,
 	THIS_MODULE,
-	{ { 0, { __constant_htons(SNMP_TRAP_PORT) } },
+	{ { 0, { .udp = { __constant_htons(SNMP_TRAP_PORT) } } },
 	  { 0, { 0 }, IPPROTO_UDP } },
-	{ { 0, { 0xFFFF } },
+	{ { 0, { .udp = { 0xFFFF } } },
 	  { 0, { 0 }, 0xFFFF } },
 	nat_help, NULL };
 

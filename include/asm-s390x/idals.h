@@ -217,7 +217,7 @@ idal_buffer_set_cda(struct idal_buffer *ib, ccw1_t *ccw)
  * Copy count bytes from an idal buffer to user memory
  */
 static inline size_t
-idal_buffer_to_user(struct idal_buffer *ib, void *to, size_t count)
+idal_buffer_to_user(const struct idal_buffer *ib, void *to, size_t count)
 {
 	size_t left;
 	int i;
@@ -238,7 +238,7 @@ idal_buffer_to_user(struct idal_buffer *ib, void *to, size_t count)
  * Copy count bytes from user memory to an idal buffer
  */
 static inline size_t
-idal_buffer_from_user(struct idal_buffer *ib, void *from, size_t count)
+idal_buffer_from_user(struct idal_buffer *ib, const void *from, size_t count)
 {
 	size_t left;
 	int i;

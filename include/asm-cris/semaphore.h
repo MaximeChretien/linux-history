@@ -1,5 +1,3 @@
-/* $Id: semaphore.h,v 1.5 2002/12/02 08:14:08 starvik Exp $ */
-
 /* On the i386 these are coded in asm, perhaps we should as well. Later.. */
 
 #ifndef _CRIS_SEMAPHORE_H
@@ -15,7 +13,7 @@
 #include <asm/atomic.h>
 
 /*
- * CRIS semaphores, implemented in C-only so far. 
+ * CRIS semaphores, implemented in C-only so far.
  */
 
 int printk(const char *fmt, ...);
@@ -140,7 +138,7 @@ extern inline int down_trylock(struct semaphore * sem)
  * jumps for both down() and up().
  */
 extern inline void up(struct semaphore * sem)
-{  
+{
 	unsigned long flags;
 	int wakeup;
 

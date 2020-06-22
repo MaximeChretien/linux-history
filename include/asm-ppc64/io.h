@@ -67,6 +67,18 @@ extern int have_print;
 #define outl(val, port)		eeh_outl(val, (unsigned long)port)
 
 /*
+ * The __raw_read/write macros don't do byte-swapping. 
+ * They are needed for some PCI devices such as the Matrox graphics 
+ * adapter which is programmed to operate in big endian mode.
+ */
+#define __raw_readb(addr)              eeh_readb((void*)(addr))
+#define __raw_readw(addr)              eeh_raw_readw((void*)(addr))
+#define __raw_readl(addr)              eeh_raw_readl((void*)(addr))
+#define __raw_writeb(data, addr)       eeh_writeb((data), ((void*)(addr)))
+#define __raw_writew(data, addr)       eeh_raw_writew((data), ((void*)(addr)))
+#define __raw_writel(data, addr)       eeh_raw_writel((data), ((void*)(addr)))
+
+/*
  * The insw/outsw/insl/outsl macros don't do byte-swapping.
  * They are only used in practice for transferring buffers which
  * are arrays of bytes, and byte-swapping is not appropriate in
@@ -99,7 +111,7 @@ extern void _outsl_ns(volatile u32 *port, const void *buf, int nl);
 #define inw_p(port)             inw(port)
 #define outw_p(val, port)       (udelay(1), outw((val), (port)))
 #define inl_p(port)             inl(port)
-#define outl_p(val, port)       (udelay(1), outl((val, (port)))
+#define outl_p(val, port)       (udelay(1), outl((val), (port)))
 
 /*
  * The *_ns versions below don't do byte-swapping.

@@ -24,6 +24,7 @@ if [ "$CONFIG_IP_NF_IPTABLES" != "n" ]; then
   dep_tristate '  netfilter MARK match support' CONFIG_IP_NF_MATCH_MARK $CONFIG_IP_NF_IPTABLES
   dep_tristate '  Multiple port match support' CONFIG_IP_NF_MATCH_MULTIPORT $CONFIG_IP_NF_IPTABLES
   dep_tristate '  TOS match support' CONFIG_IP_NF_MATCH_TOS $CONFIG_IP_NF_IPTABLES
+  dep_tristate '  recent match support' CONFIG_IP_NF_MATCH_RECENT $CONFIG_IP_NF_IPTABLES
   dep_tristate '  ECN match support' CONFIG_IP_NF_MATCH_ECN $CONFIG_IP_NF_IPTABLES
  
   dep_tristate '  DSCP match support' CONFIG_IP_NF_MATCH_DSCP $CONFIG_IP_NF_IPTABLES
@@ -112,6 +113,9 @@ fi
 tristate 'ARP tables support' CONFIG_IP_NF_ARPTABLES
 if [ "$CONFIG_IP_NF_ARPTABLES" != "n" ]; then
   dep_tristate '  ARP packet filtering' CONFIG_IP_NF_ARPFILTER $CONFIG_IP_NF_ARPTABLES 
+fi
+if [ "$CONFIG_IP_NF_ARPTABLES" != "n" ]; then
+  dep_tristate '  ARP payload mangling' CONFIG_IP_NF_ARP_MANGLE $CONFIG_IP_NF_ARPTABLES
 fi
 
 # Backwards compatibility modules: only if you don't build in the others.

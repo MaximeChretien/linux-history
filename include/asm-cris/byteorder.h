@@ -1,5 +1,3 @@
-/* $Id: byteorder.h,v 1.2 2002/11/20 18:20:17 hp Exp $ */
-
 #ifndef _CRIS_BYTEORDER_H
 #define _CRIS_BYTEORDER_H
 
@@ -15,14 +13,14 @@
 extern __inline__ __const__ __u32 ___arch__swab32(__u32 x)
 {
 	__asm__ ("swapwb %0" : "=r" (x) : "0" (x));
-  
+
 	return(x);
 }
 
 extern __inline__ __const__ __u16 ___arch__swab16(__u16 x)
 {
 	__asm__ ("swapb %0" : "=r" (x) : "0" (x));
-	
+
 	return(x);
 }
 
@@ -43,5 +41,3 @@ extern __inline__ __const__ __u16 ___arch__swab16(__u16 x)
 #include <linux/byteorder/little_endian.h>
 
 #endif
-
-

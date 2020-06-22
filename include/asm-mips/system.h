@@ -114,7 +114,24 @@ __asm__ __volatile__(							\
 	: /* no inputs */						\
 	: "memory")
 
-#define __save_and_sti(x)	do { __save_flags(x); __sti(); } while(0);
+__asm__ (
+	".macro\t__save_and_sti result\n\t"
+	".set\tpush\n\t"
+	".set\treorder\n\t"
+	".set\tnoat\n\t"
+	"mfc0\t\\result, $12\n\t"
+	"ori\t$1, \\result, 1\n\t"
+	".set\tnoreorder\n\t"
+	"mtc0\t$1, $12\n\t"
+	".set\tpop\n\t"
+	".endm");
+
+#define __save_and_sti(x)						\
+__asm__ __volatile__(							\
+	"__save_and_sti\t%0"						\
+	: "=r" (x)							\
+	: /* no inputs */						\
+	: "memory")
 
 __asm__(".macro\t__restore_flags flags\n\t"
 	".set\tnoreorder\n\t"
@@ -243,22 +260,15 @@ do { var = value; mb(); } while (0)
 #define set_wmb(var, value) \
 do { var = value; wmb(); } while (0)
 
-#ifndef __ASSEMBLY__
 /*
  * switch_to(n) should switch tasks to task nr n, first
  * checking that n isn't the current task, in which case it does nothing.
  */
 extern asmlinkage void *resume(void *last, void *next);
-#endif /* !__ASSEMBLY__ */
 
 #define prepare_to_switch()	do { } while(0)
 
 struct task_struct;
-
-extern asmlinkage void lazy_fpu_switch(void *);
-extern asmlinkage void init_fpu(void);
-extern asmlinkage void save_fp(struct task_struct *);
-extern asmlinkage void restore_fp(struct task_struct *);
 
 #define switch_to(prev,next,last) \
 do { \
@@ -293,11 +303,10 @@ extern __inline__ unsigned long xchg_u32(volatile int * m, unsigned long val)
 #else
 	unsigned long flags, retval;
 
-	save_flags(flags);
-	cli();
+	local_irq_save(flags);
 	retval = *m;
 	*m = val;
-	restore_flags(flags);	/* implies memory barrier  */
+	local_irq_restore(flags);	/* implies memory barrier  */
 	return retval;
 #endif /* Processor-dependent optimization */
 }
@@ -316,6 +325,7 @@ __xchg(unsigned long x, volatile void * ptr, int size)
 }
 
 extern void *set_except_vector(int n, void *addr);
+extern void per_cpu_trap_init(void);
 
 extern void __die(const char *, struct pt_regs *, const char *file,
 	const char *func, unsigned long line) __attribute__((noreturn));

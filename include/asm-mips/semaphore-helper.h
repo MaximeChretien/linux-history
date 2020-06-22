@@ -3,14 +3,15 @@
  *
  * Copyright (C) 1996 Linus Torvalds
  * Copyright (C) 1999 Andrea Arcangeli
- * Copyright (C) 1999 Ralf Baechle
- * Copyright (C) 1999 Silicon Graphics, Inc.
+ * Copyright (C) 1999, 2001, 2002 Ralf Baechle
+ * Copyright (C) 1999, 2001 Silicon Graphics, Inc.
  * Copyright (C) 2000 MIPS Technologies, Inc.
  */
 #ifndef _ASM_SEMAPHORE_HELPER_H
 #define _ASM_SEMAPHORE_HELPER_H
 
 #include <linux/config.h>
+#include <linux/errno.h>
 
 #define sem_read(a) ((a)->counter)
 #define sem_inc(a) (((a)->counter)++)
@@ -37,7 +38,7 @@ static inline int waking_non_zero(struct semaphore *sem)
 	"beqz\t%0, 1b\n"
 	"2:"
 	: "=r" (ret), "=r" (tmp), "+m" (sem->waking)
-	: "0"(0));
+	: "0" (0));
 
 	return ret;
 }
@@ -54,12 +55,12 @@ static inline int waking_non_zero(struct semaphore *sem)
 	unsigned long flags;
 	int ret = 0;
 
-	save_and_cli(flags);
+	local_irq_save(flags);
 	if (sem_read(&sem->waking) > 0) {
 		sem_dec(&sem->waking);
 		ret = 1;
 	}
-	restore_flags(flags);
+	local_irq_restore(flags);
 	return ret;
 }
 #endif /* !CONFIG_CPU_HAS_LLSC */
@@ -102,7 +103,7 @@ waking_non_zero_interruptible(struct semaphore *sem, struct task_struct *tsk)
 	long ret, tmp;
 
 	__asm__ __volatile__(
-	".set\tpush\n\t"
+	".set\tpush\t\t\t# waking_non_zero_interruptible\n\t"
 	".set\tmips3\n\t"
 	".set\tnoat\n"
 	"0:\tlld\t%1, %2\n\t"
@@ -147,7 +148,7 @@ static inline int waking_non_zero_interruptible(struct semaphore *sem,
 	int ret = 0;
 	unsigned long flags;
 
-	save_and_cli(flags);
+	local_irq_save(flags);
 	if (sem_read(&sem->waking) > 0) {
 		sem_dec(&sem->waking);
 		ret = 1;
@@ -155,7 +156,7 @@ static inline int waking_non_zero_interruptible(struct semaphore *sem,
 		sem_inc(&sem->count);
 		ret = -EINTR;
 	}
-	restore_flags(flags);
+	local_irq_restore(flags);
 	return ret;
 }
 
@@ -164,14 +165,14 @@ static inline int waking_non_zero_trylock(struct semaphore *sem)
         int ret = 1;
 	unsigned long flags;
 
-	save_and_cli(flags);
+	local_irq_save(flags);
 	if (sem_read(&sem->waking) <= 0)
 		sem_inc(&sem->count);
 	else {
 		sem_dec(&sem->waking);
 		ret = 0;
 	}
-	restore_flags(flags);
+	local_irq_restore(flags);
 
 	return ret;
 }

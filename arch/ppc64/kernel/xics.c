@@ -143,18 +143,22 @@ xics_enable_irq(
 	u_int		irq;
 	unsigned long	status;
 	long	        call_status;
+	unsigned int    interrupt_server = default_server;
 
 	virq -= XICS_IRQ_OFFSET;
 	irq = virt_irq_to_real(virq);
 	if (irq == XICS_IPI)
 		return;
+
 #ifdef CONFIG_IRQ_ALL_CPUS
-	call_status = rtas_call(ibm_set_xive, 3, 1, (unsigned long*)&status,
-				irq, smp_threads_ready ? default_distrib_server : default_server, DEFAULT_PRIORITY);
-#else
-	call_status = rtas_call(ibm_set_xive, 3, 1, (unsigned long*)&status,
-				irq, default_server, DEFAULT_PRIORITY);
+	if((smp_num_cpus == systemcfg->processorCount) &&
+	   (smp_threads_ready)) {
+		interrupt_server = default_distrib_server;
+	}
 #endif
+	call_status = rtas_call(ibm_set_xive, 3, 1, (unsigned long*)&status,
+				irq, interrupt_server, DEFAULT_PRIORITY);
+
 	if( call_status != 0 ) {
 		printk("xics_enable_irq: irq=%x: rtas_call failed; retn=%lx, status=%lx\n",
 		       irq, call_status, status);

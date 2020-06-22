@@ -3,7 +3,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2000-2002 Silicon Graphics, Inc. All rights reserved.
+ * Copyright (C) 2000-2003 Silicon Graphics, Inc. All rights reserved.
  */
 
 #include <asm/sn/sn2/shub_mmr.h>
@@ -61,20 +61,22 @@ sn2_ptc_deadlock_recovery_core:
 	cmp.ne	p6,p0=zeroval,scr2
 (p6)	br.cond.sptk 5b;;
 
-	tbit.nz	p6,p7=scr1,DEADLOCKBIT;;// Test for DEADLOCK
+	tbit.nz	p8,p7=scr1,DEADLOCKBIT;;// Test for DEADLOCK
 	
 (p7)	st8.rel [ptc1]=data1;;		// Now write PTC1.
+
+5:	ld8.acq	scr1=[piowcphy];;	// Wait for PIOs to complete.
+	extr.u	scr2=scr1,WRITECOUNT,7;;// PIO count
+	cmp.ne	p6,p0=zeroval,scr2
+(p6)	br.cond.sptk 5b
+	
+	tbit.nz	p8,p0=scr1,DEADLOCKBIT;;// Test for DEADLOCK
 
 	mov psr.l=psrsave;;		// Reenable IC
 	srlz.i;;
 	////////////// END   PHYSICAL MODE ////////////////////
 
-(p6)	br.cond.spnt 1b;;		// Repeat if DEADLOCK occurred.
+(p8)	br.cond.spnt 1b;;		// Repeat if DEADLOCK occurred.
 
-5:	ld8.acq	scr1=[piowc];;		// Wait for PIOs to complete.
-	extr.u	scr2=scr1,WRITECOUNT,7;;// PIO count
-	cmp.ne	p6,p0=zeroval,scr2
-(p6)	br.cond.sptk 5b
-	
 	br.ret.sptk	rp
 	.endp sn2_ptc_deadlock_recovery_core

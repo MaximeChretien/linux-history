@@ -4,6 +4,7 @@
 /* misc architecture specific prototypes */
 
 struct cpuinfo_x86; 
+struct pt_regs;
 
 extern void get_cpu_vendor(struct cpuinfo_x86*);
 extern void start_kernel(void);
@@ -20,6 +21,7 @@ extern void sys_ni_syscall(void);
 extern void config_acpi_tables(void);
 extern void ia32_syscall(void);
 extern void iommu_hole_init(void);
+extern void syscall_init(void);
 
 extern void do_softirq_thunk(void);
 
@@ -38,6 +40,9 @@ extern unsigned long start_pfn, end_pfn, end_pfn_map;
 
 extern void show_stack(unsigned long * rsp);
 extern void show_trace(unsigned long *stack);
+extern void __show_regs(struct pt_regs * regs);
+extern void show_regs(struct pt_regs * regs);
+
 
 #define round_up(x,y) (((x) + (y) - 1) & ~((y)-1))
 #define round_down(x,y) ((x) & ~((y)-1))

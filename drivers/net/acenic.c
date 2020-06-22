@@ -1865,7 +1865,9 @@ static void ace_watchdog(struct net_device *data)
 	} else {
 		printk(KERN_DEBUG "%s: BUG... transmitter died. Kicking it.\n",
 		       dev->name);
+#if 0
 		netif_wake_queue(dev);
+#endif
 	}
 }
 
@@ -3017,9 +3019,6 @@ static int ace_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 		return 0;
 
 	case ETHTOOL_SSET:
-		if(!capable(CAP_NET_ADMIN))
-			return -EPERM;
-
 		link = readl(&regs->GigLnkState);
 		if (link & LNK_1000MB)
 			speed = SPEED_1000;

@@ -39,7 +39,9 @@
 #ifndef _HEADER_ACPITABLE_H_
 #define _HEADER_ACPITABLE_H_
 
-#define dprintk printk
+//#define dprintk(s, args...) printk(s, ## args)
+#define dprintk(s, args...)
+
 typedef unsigned int ACPI_TBLPTR;
 
 typedef struct {		/* ACPI common table header */

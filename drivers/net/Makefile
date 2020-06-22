@@ -25,8 +25,14 @@ ifeq ($(CONFIG_TULIP),y)
   obj-y += tulip/tulip.o
 endif
 
+obj-$(CONFIG_OCP_NET) += ibm_emac/ocp.o
+
 ifeq ($(CONFIG_E1000),y)
   obj-y += e1000/e1000.o
+endif
+
+ifeq ($(CONFIG_BONDING),y)
+  obj-y += bonding/bonding.o
 endif
 
 ifeq ($(CONFIG_ISDN_PPP),y)
@@ -36,6 +42,7 @@ endif
 subdir-$(CONFIG_NET_PCMCIA) += pcmcia
 subdir-$(CONFIG_NET_WIRELESS) += wireless
 subdir-$(CONFIG_TULIP) += tulip
+subdir-$(CONFIG_OCP_NET) += ibm_emac
 subdir-$(CONFIG_IRDA) += irda
 subdir-$(CONFIG_TR) += tokenring
 subdir-$(CONFIG_WAN) += wan
@@ -46,6 +53,7 @@ subdir-$(CONFIG_SK98LIN) += sk98lin
 subdir-$(CONFIG_SKFP) += skfp
 subdir-$(CONFIG_E100) += e100
 subdir-$(CONFIG_E1000) += e1000
+subdir-$(CONFIG_BONDING) += bonding
 
 #
 # link order important here
@@ -143,6 +151,7 @@ obj-$(CONFIG_ES3210) += es3210.o 8390.o
 obj-$(CONFIG_LNE390) += lne390.o 8390.o
 obj-$(CONFIG_NE3210) += ne3210.o 8390.o
 obj-$(CONFIG_NET_SB1250_MAC) += sb1250-mac.o
+obj-$(CONFIG_B44) += b44.o
 
 obj-$(CONFIG_PPP) += ppp_generic.o slhc.o
 obj-$(CONFIG_PPP_ASYNC) += ppp_async.o
@@ -158,7 +167,6 @@ endif
 
 obj-$(CONFIG_STRIP) += strip.o
 obj-$(CONFIG_DUMMY) += dummy.o
-obj-$(CONFIG_BONDING) += bonding.o
 obj-$(CONFIG_DE600) += de600.o
 obj-$(CONFIG_DE620) += de620.o
 obj-$(CONFIG_AT1500) += lance.o
@@ -229,7 +237,7 @@ obj-$(CONFIG_TUN) += tun.o
 obj-$(CONFIG_ETHER00) +=ether00.o
 obj-$(CONFIG_DL2K) += dl2k.o
 obj-$(CONFIG_R8169) += r8169.o
-obj-$(CONFIG_AMD8111_ETH) += amd8111e.o
+obj-$(CONFIG_AMD8111_ETH) += amd8111e.o mii.o
 
 # non-drivers/net drivers who want mii lib
 obj-$(CONFIG_PCMCIA_SMC91C92) += mii.o

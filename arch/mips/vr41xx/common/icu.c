@@ -54,21 +54,10 @@
 #include <asm/mipsregs.h>
 #include <asm/vr41xx/vr41xx.h>
 
-#define MIPS_CPU_IRQ_BASE	0
-#define SYSINT1_IRQ_BASE	8
-#define SYSINT1_IRQ_LAST	23
-#define SYSINT2_IRQ_BASE	24
-#define SYSINT2_IRQ_LAST	39
-#define GIUINT_IRQ_BASE		GIU_IRQ(0)
-#define GIUINT_IRQ_LAST		GIU_IRQ(31)
-
-#define ICU_CASCADE_IRQ		(MIPS_CPU_IRQ_BASE + 2)
-
 extern asmlinkage void vr41xx_handle_interrupt(void);
 
 extern void __init init_generic_irq(void);
 extern void mips_cpu_irq_init(u32 irq_base);
-extern unsigned int do_IRQ(int irq, struct pt_regs *regs);
 
 extern void vr41xx_giuint_init(void);
 extern unsigned int giuint_do_IRQ(int pin, struct pt_regs *regs);
@@ -224,15 +213,11 @@ static struct hw_interrupt_type sysint2_irq_type = {
 
 /*=======================================================================*/
 
-extern void vr41xx_enable_giuint(u8 pin);
-extern void vr41xx_disable_giuint(u8 pin);
-extern void vr41xx_clear_giuint(u8 pin);
-
 static void enable_giuint_irq(unsigned int irq)
 {
-	u8 pin;
+	int pin;
 
-	pin = irq - GIUINT_IRQ_BASE;
+	pin = irq - GIU_IRQ_BASE;
 	if (pin < 16)
 		set_icu1(MGIUINTLREG, (u16)1 << pin);
 	else
@@ -243,9 +228,9 @@ static void enable_giuint_irq(unsigned int irq)
 
 static void disable_giuint_irq(unsigned int irq)
 {
-	u8 pin;
+	int pin;
 
-	pin = irq - GIUINT_IRQ_BASE;
+	pin = irq - GIU_IRQ_BASE;
 	vr41xx_disable_giuint(pin);
 
 	if (pin < 16)
@@ -256,7 +241,7 @@ static void disable_giuint_irq(unsigned int irq)
 
 static unsigned int startup_giuint_irq(unsigned int irq)
 {
-	vr41xx_clear_giuint(irq - GIUINT_IRQ_BASE);
+	vr41xx_clear_giuint(irq - GIU_IRQ_BASE);
 
 	enable_giuint_irq(irq);
 
@@ -269,7 +254,7 @@ static void ack_giuint_irq(unsigned int irq)
 {
 	disable_giuint_irq(irq);
 
-	vr41xx_clear_giuint(irq - GIUINT_IRQ_BASE);
+	vr41xx_clear_giuint(irq - GIU_IRQ_BASE);
 }
 
 static void end_giuint_irq(unsigned int irq)
@@ -297,7 +282,7 @@ static void __init vr41xx_icu_init(void)
 {
 	int i;
 
-	switch (mips_cpu.cputype) {
+	switch (current_cpu_data.cputype) {
 	case CPU_VR4111:
 	case CPU_VR4121:
 		vr41xx_icu1_base = VR4111_SYSINT1REG;
@@ -319,12 +304,12 @@ static void __init vr41xx_icu_init(void)
 	write_icu2(0, MSYSINT2REG);
 	write_icu2(0, MGIUINTHREG);
 
-	for (i = SYSINT1_IRQ_BASE; i <= GIUINT_IRQ_LAST; i++) {
+	for (i = SYSINT1_IRQ_BASE; i <= GIU_IRQ_LAST; i++) {
 		if (i >= SYSINT1_IRQ_BASE && i <= SYSINT1_IRQ_LAST)
 			irq_desc[i].handler = &sysint1_irq_type;
 		else if (i >= SYSINT2_IRQ_BASE && i <= SYSINT2_IRQ_LAST)
 			irq_desc[i].handler = &sysint2_irq_type;
-		else if (i >= GIUINT_IRQ_BASE && i <= GIUINT_IRQ_LAST)
+		else if (i >= GIU_IRQ_BASE && i <= GIU_IRQ_LAST)
 			irq_desc[i].handler = &giuint_irq_type;
 	}
 
@@ -343,7 +328,7 @@ void __init init_IRQ(void)
 
 	set_except_vector(0, vr41xx_handle_interrupt);
 
-#ifdef CONFIG_REMOTE_DEBUG
+#ifdef CONFIG_KGDB
 	printk("Setting debug traps - please connect the remote debugger.\n");
 	set_debug_traps();
 	breakpoint();

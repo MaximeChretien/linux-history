@@ -21,65 +21,63 @@
 
 #ifndef __ASSEMBLY__
 
+#include <asm/cacheflush.h>
+
 #define BUG() do { printk("kernel BUG at %s:%d!\n", __FILE__, __LINE__); *(int *)0=0; } while (0)
 #define PAGE_BUG(page) do {  BUG(); } while (0)
-
-/*
- * Prototypes for clear_page / copy_page variants with processor dependant
- * optimizations.
- */
-void andes_clear_page(void * page);
-void mips32_clear_page_dc(unsigned long page);
-void mips32_clear_page_sc(unsigned long page);
-void r3k_clear_page(void * page);
-void r4k_clear_page_d16(void * page);
-void r4k_clear_page_d32(void * page);
-void r4k_clear_page_r4600_v1(void * page);
-void r4k_clear_page_r4600_v2(void * page);
-void r4k_clear_page_s16(void * page);
-void r4k_clear_page_s32(void * page);
-void r4k_clear_page_s64(void * page);
-void r4k_clear_page_s128(void * page);
-void r5432_clear_page_d32(void * page);
-void rm7k_clear_page(void * page);
-void sb1_clear_page(void * page);
-void andes_copy_page(void * to, void * from);
-void mips32_copy_page_dc(unsigned long to, unsigned long from);
-void mips32_copy_page_sc(unsigned long to, unsigned long from);
-void r3k_copy_page(void * to, void * from);
-void r4k_copy_page_d16(void * to, void * from);
-void r4k_copy_page_d32(void * to, void * from);
-void r4k_copy_page_r4600_v1(void * to, void * from);
-void r4k_copy_page_r4600_v2(void * to, void * from);
-void r4k_copy_page_s16(void * to, void * from);
-void r4k_copy_page_s32(void * to, void * from);
-void r4k_copy_page_s64(void * to, void * from);
-void r4k_copy_page_s128(void * to, void * from);
-void r5432_copy_page_d32(void * to, void * from);
-void rm7k_copy_page(void * to, void * from);
-void sb1_copy_page(void * to, void * from);
 
 extern void (*_clear_page)(void * page);
 extern void (*_copy_page)(void * to, void * from);
 
 #define clear_page(page)	_clear_page(page)
 #define copy_page(to, from)	_copy_page(to, from)
-#define clear_user_page(page, vaddr)	clear_page(page)
-#define copy_user_page(to, from, vaddr)	copy_page(to, from)
+
+extern unsigned long shm_align_mask;
+
+static inline unsigned long pages_do_alias(unsigned long addr1,
+	unsigned long addr2)
+{
+	return (addr1 ^ addr2) & shm_align_mask;
+}
+
+static inline void clear_user_page(void *page, unsigned long vaddr)
+{
+	unsigned long kaddr = (unsigned long) page;
+
+	clear_page(page);
+	if (pages_do_alias(kaddr, vaddr))
+		flush_data_cache_page(kaddr);
+}
+
+static inline void copy_user_page(void * to, void * from, unsigned long vaddr)
+{
+	unsigned long kto = (unsigned long) to;
+
+	copy_page(to, from);
+	if (pages_do_alias(kto, vaddr))
+		flush_data_cache_page(kto);
+}
 
 /*
  * These are used to make use of C type-checking..
  */
 #ifdef CONFIG_64BIT_PHYS_ADDR
-typedef struct { unsigned long long pte; } pte_t;
+  #ifdef CONFIG_CPU_MIPS32
+    typedef struct { unsigned long pte_low, pte_high; } pte_t;
+    #define pte_val(x)    ((x).pte_low | ((unsigned long long)(x).pte_high << 32))
+  #else
+    typedef struct { unsigned long long pte_low; } pte_t;
+    #define pte_val(x)    ((x).pte_low)
+  #endif
 #else
-typedef struct { unsigned long pte; } pte_t;
+typedef struct { unsigned long pte_low; } pte_t;
+#define pte_val(x)    ((x).pte_low)
 #endif
+
 typedef struct { unsigned long pmd; } pmd_t;
 typedef struct { unsigned long pgd; } pgd_t;
 typedef struct { unsigned long pgprot; } pgprot_t;
 
-#define pte_val(x)	((x).pte)
 #define pmd_val(x)	((x).pmd)
 #define pgd_val(x)	((x).pgd)
 #define pgprot_val(x)	((x).pgprot)
@@ -131,7 +129,7 @@ extern __inline__ int get_order(unsigned long size)
 /*
  * Memory above this physical address will be considered highmem.
  */
-#define HIGHMEM_START	(0x20000000)
+#define HIGHMEM_START	0x20000000UL
 
 #endif /* defined (__KERNEL__) */
 

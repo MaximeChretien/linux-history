@@ -98,7 +98,7 @@ static void sysrq_handle_xmon(int key, struct pt_regs *regs,
 	xmon(regs);
 }
 
-static struct sysrq_key_op sysrq_xmon_op = 
+static struct sysrq_key_op sysrq_xmon_op =
 {
 	handler:	sysrq_handle_xmon,
 	help_msg:	"Xmon",
@@ -112,7 +112,7 @@ xmon_map_scc(void)
 	volatile unsigned char *base;
 
 	use_screen = 0;
-	
+
 	if (_machine == _MACH_Pmac) {
 		struct device_node *np;
 		unsigned long addr;
@@ -176,7 +176,7 @@ xmon_map_scc(void)
 #endif
 		TXRDY = 4;
 		RXRDY = 1;
-		
+
 		np = find_devices("mac-io");
 		if (np && np->n_addrs)
 			addr = np->addrs[0].address + 0x13020;

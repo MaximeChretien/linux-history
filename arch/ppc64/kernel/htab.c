@@ -46,6 +46,7 @@
 #include <asm/hvcall.h>
 #include <asm/iSeries/LparData.h>
 #include <asm/iSeries/HvCallHpt.h>
+#include <asm/cputable.h>
 
 /*
  * Note:  pte   --> Linux PTE
@@ -183,7 +184,9 @@ htab_initialize(void)
 
 	/* XXX we currently map kernel text rw, should fix this */
 	if ((systemcfg->platform & PLATFORM_PSERIES) &&
-	   cpu_has_largepage() && (systemcfg->physicalMemorySize > 256*MB)) {
+	    (cur_cpu_spec->cpu_features & 
+	     CPU_FTR_16M_PAGE) &&
+	    (systemcfg->physicalMemorySize > 256*MB)) {
 		create_pte_mapping((unsigned long)KERNELBASE, 
 				   KERNELBASE + 256*MB, mode_rw, mask, 0);
 		create_pte_mapping((unsigned long)KERNELBASE + 256*MB, 
@@ -334,11 +337,23 @@ int __hash_page(unsigned long ea, unsigned long access,
 	 * Check the user's access rights to the page.  If access should be
 	 * prevented then send the problem up to do_page_fault.
 	 */
+#ifdef CONFIG_SHARED_MEMORY_ADDRESSING
+	access |= _PAGE_PRESENT;
+	if (unlikely(access & ~(pte_val(*ptep)))) {
+		if(!(((ea >> SMALLOC_EA_SHIFT) == 
+		      (SMALLOC_START >> SMALLOC_EA_SHIFT)) &&
+		     ((current->thread.flags) & PPC_FLAG_SHARED))) {
+			spin_unlock(&hash_table_lock[lock_slot].lock);
+			return 1;
+		}
+	}
+#else
 	access |= _PAGE_PRESENT;
 	if (unlikely(access & ~(pte_val(*ptep)))) {
 		spin_unlock(&hash_table_lock[lock_slot].lock);
 		return 1;
 	}
+#endif
 
 	/* 
 	 * We have found a pte (which was present).
@@ -446,6 +461,19 @@ int hash_page(unsigned long ea, unsigned long access)
 	case VMALLOC_REGION_ID:
 		mm = &init_mm;
 		vsid = get_kernel_vsid(ea);
+#ifdef CONFIG_SHARED_MEMORY_ADDRESSING
+                /*
+                 * Check if this is a user task with shared access to kernel
+                 * data & we got a protection fault.  If it is, the kernel
+                 * must have faulted in the segment and the protection flags
+                 * on the segment are kernel access only.  Just flush the
+                 * segment table & fault in the segment with the right flags.
+                 */
+                if(((current->thread.flags) & PPC_FLAG_SHARED) &&
+                   (access & _PAGE_USER)) {
+                        flush_stab();
+                }
+#endif
 		break;
 	case EEH_REGION_ID:
 		/*

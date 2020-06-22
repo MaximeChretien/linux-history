@@ -219,6 +219,7 @@ int i2cdev_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 	struct i2c_smbus_ioctl_data data_arg;
 	union i2c_smbus_data temp;
 	struct i2c_msg *rdwr_pa;
+	u8 **data_ptrs;
 	int i,datasize,res;
 	unsigned long funcs;
 
@@ -248,7 +249,7 @@ int i2cdev_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 		return (copy_to_user((unsigned long *)arg,&funcs,
 		                     sizeof(unsigned long)))?-EFAULT:0;
 
-        case I2C_RDWR:
+	case I2C_RDWR:
 		if (copy_from_user(&rdwr_arg, 
 				   (struct i2c_rdwr_ioctl_data *)arg, 
 				   sizeof(rdwr_arg)))
@@ -265,21 +266,28 @@ int i2cdev_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 
 		if (rdwr_pa == NULL) return -ENOMEM;
 
+		if (copy_from_user(rdwr_pa, rdwr_arg.msgs,
+				   rdwr_arg.nmsgs * sizeof(struct i2c_msg))) {
+			kfree(rdwr_pa);
+			return -EFAULT;
+		}
+
+		data_ptrs = (u8 **) kmalloc(rdwr_arg.nmsgs * sizeof(u8 *),
+					    GFP_KERNEL);
+		if (data_ptrs == NULL) {
+			kfree(rdwr_pa);
+			return -ENOMEM;
+		}
+
 		res = 0;
 		for( i=0; i<rdwr_arg.nmsgs; i++ )
 		{
-		    	if(copy_from_user(&(rdwr_pa[i]),
-					&(rdwr_arg.msgs[i]),
-					sizeof(rdwr_pa[i])))
-			{
-			        res = -EFAULT;
-				break;
-			}
 			/* Limit the size of the message to a sane amount */
 			if (rdwr_pa[i].len > 8192) {
 				res = -EINVAL;
 				break;
 			}
+			data_ptrs[i] = rdwr_pa[i].buf;
 			rdwr_pa[i].buf = kmalloc(rdwr_pa[i].len, GFP_KERNEL);
 			if(rdwr_pa[i].buf == NULL)
 			{
@@ -287,10 +295,11 @@ int i2cdev_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 				break;
 			}
 			if(copy_from_user(rdwr_pa[i].buf,
-				rdwr_arg.msgs[i].buf,
+				data_ptrs[i],
 				rdwr_pa[i].len))
 			{
-			    	res = -EFAULT;
+				++i; /* Needs to be kfreed too */
+				res = -EFAULT;
 				break;
 			}
 		}
@@ -298,21 +307,20 @@ int i2cdev_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 			int j;
 			for (j = 0; j < i; ++j)
 				kfree(rdwr_pa[j].buf);
+			kfree(data_ptrs);
 			kfree(rdwr_pa);
 			return res;
 		}
-		if (!res) 
-		{
-			res = i2c_transfer(client->adapter,
-				rdwr_pa,
-				rdwr_arg.nmsgs);
-		}
+
+		res = i2c_transfer(client->adapter,
+			rdwr_pa,
+			rdwr_arg.nmsgs);
 		while(i-- > 0)
 		{
 			if( res>=0 && (rdwr_pa[i].flags & I2C_M_RD))
 			{
 				if(copy_to_user(
-					rdwr_arg.msgs[i].buf,
+					data_ptrs[i],
 					rdwr_pa[i].buf,
 					rdwr_pa[i].len))
 				{
@@ -321,6 +329,7 @@ int i2cdev_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 			}
 			kfree(rdwr_pa[i].buf);
 		}
+		kfree(data_ptrs);
 		kfree(rdwr_pa);
 		return res;
 

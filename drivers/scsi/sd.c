@@ -774,7 +774,8 @@ static int sd_init_onedisk(int i)
 	char nbuff[6];
 	unsigned char *buffer;
 	unsigned long spintime_value = 0;
-	int the_result, retries, spintime;
+	int retries, spintime;
+	unsigned int the_result;
 	int sector_size;
 	Scsi_Request *SRpnt;
 
@@ -816,7 +817,7 @@ static int sd_init_onedisk(int i)
 	do {
 		retries = 0;
 
-		while (retries < 3) {
+		do {
 			cmd[0] = TEST_UNIT_READY;
 			cmd[1] = (rscsi_disks[i].device->scsi_level <= SCSI_2) ?
 				 ((rscsi_disks[i].device->lun << 5) & 0xe0) : 0;
@@ -831,10 +832,10 @@ static int sd_init_onedisk(int i)
 
 			the_result = SRpnt->sr_result;
 			retries++;
-			if (the_result == 0
-			    || SRpnt->sr_sense_buffer[2] != UNIT_ATTENTION)
-				break;
-		}
+		} while (retries < 3
+			 && (the_result !=0
+			     || ((driver_byte(the_result) & DRIVER_SENSE)
+				 && SRpnt->sr_sense_buffer[2] == UNIT_ATTENTION)));
 
 		/*
 		 * If the drive has indicated to us that it doesn't have
@@ -852,10 +853,33 @@ static int sd_init_onedisk(int i)
 			break;
 		}
 
+		if ((driver_byte(the_result) & DRIVER_SENSE) == 0) {
+			/* no sense, TUR either succeeded or failed
+			 * with a status error */
+			if(!spintime && the_result != 0)
+				printk(KERN_NOTICE "%s: Unit Not Ready, error = 0x%x\n", nbuff, the_result);
+			break;
+		}
+
+		/*
+		 * The device does not want the automatic start to be issued.
+		 */
+		if (rscsi_disks[i].device->no_start_on_add) {
+			break;
+		}
+
+		/*
+		 * If manual intervention is required, or this is an
+		 * absent USB storage device, a spinup is meaningless.
+		 */
+		if (SRpnt->sr_sense_buffer[2] == NOT_READY &&
+		    SRpnt->sr_sense_buffer[12] == 4 /* not ready */ &&
+		    SRpnt->sr_sense_buffer[13] == 3) {
+			break;		/* manual intervention required */
 		/* Look for non-removable devices that return NOT_READY.
 		 * Issue command to spin up drive for these cases. */
-		if (the_result && !rscsi_disks[i].device->removable &&
-		    SRpnt->sr_sense_buffer[2] == NOT_READY) {
+		} else if (the_result && !rscsi_disks[i].device->removable &&
+			   SRpnt->sr_sense_buffer[2] == NOT_READY) {
 			unsigned long time1;
 			if (!spintime) {
 				printk("%s: Spinning up disk...", nbuff);
@@ -869,7 +893,7 @@ static int sd_init_onedisk(int i)
 				SRpnt->sr_sense_buffer[0] = 0;
 				SRpnt->sr_sense_buffer[2] = 0;
 
-				SRpnt->sr_data_direction = SCSI_DATA_READ;
+				SRpnt->sr_data_direction = SCSI_DATA_NONE;
 				scsi_wait_req(SRpnt, (void *) cmd, (void *) buffer,
 					    0/*512*/, SD_TIMEOUT, MAX_RETRIES);
 				spintime_value = jiffies;
@@ -882,6 +906,14 @@ static int sd_init_onedisk(int i)
 				time1 = schedule_timeout(time1);
 			} while(time1);
 			printk(".");
+		} else {
+			/* we don't understand the sense code, so it's
+			 * probably pointless to loop */
+			if(!spintime) {
+				printk(KERN_NOTICE "%s: Unit Not Ready, sense:\n", nbuff);
+				print_req_sense("", SRpnt);
+			}
+			break;
 		}
 	} while (the_result && spintime &&
 		 time_after(spintime_value + 100 * HZ, jiffies));

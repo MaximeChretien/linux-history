@@ -42,6 +42,7 @@ extern void smp_send_reschedule(int cpu);
 extern void smp_invalidate_rcv(void);		/* Process an NMI */
 extern void (*mtrr_hook) (void);
 extern void zap_low_mappings (void);
+extern void smp_stop_cpu(void);
 
 /*
  * On x86 all CPUs are mapped 1:1 to the APIC space.

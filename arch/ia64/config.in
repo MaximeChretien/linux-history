@@ -23,8 +23,8 @@ define_bool CONFIG_ISA n
 define_bool CONFIG_EISA n
 define_bool CONFIG_MCA n
 define_bool CONFIG_SBUS n
-define_bool CONFIG_RWSEM_GENERIC_SPINLOCK y
-define_bool CONFIG_RWSEM_XCHGADD_ALGORITHM n
+define_bool CONFIG_RWSEM_GENERIC_SPINLOCK n
+define_bool CONFIG_RWSEM_XCHGADD_ALGORITHM y
 
 choice 'IA-64 processor type' \
 	"Itanium		CONFIG_ITANIUM \
@@ -179,7 +179,7 @@ if [ "$CONFIG_IA64_HP_SIM" = "n" ]; then
     bool 'Network device support' CONFIG_NETDEVICES
     if [ "$CONFIG_NETDEVICES" = "y" ]; then
       source drivers/net/Config.in
-      if [ "$CONFIG_ATM" = "y" ]; then
+      if [ "$CONFIG_ATM" = "y" -o "$CONFIG_ATM" = "m" ]; then
          source drivers/atm/Config.in
       fi
     fi
@@ -242,6 +242,7 @@ if [ "$CONFIG_IA64_HP_SIM" = "n" ]; then
 
   source drivers/usb/Config.in
 
+  source crypto/Config.in
   source lib/Config.in
 
   if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then

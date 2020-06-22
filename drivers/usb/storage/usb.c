@@ -401,18 +401,6 @@ static int usb_stor_control_thread(void * __us)
 				break;
 			}
 
-			/* handle those devices which can't do a START_STOP */
-			if ((us->srb->cmnd[0] == START_STOP) &&
-			    (us->flags & US_FL_START_STOP)) {
-				US_DEBUGP("Skipping START_STOP command\n");
-				us->srb->result = GOOD << 1;
-
-				set_current_state(TASK_INTERRUPTIBLE);
-				us->srb->scsi_done(us->srb);
-				us->srb = NULL;
-				break;
-			}
-
 			/* lock the device pointers */
 			down(&(us->dev_semaphore));
 
@@ -621,8 +609,12 @@ static void * storage_probe(struct usb_device *dev, unsigned int ifnum,
 	US_DEBUGP("USB Mass Storage device detected\n");
 
 	/* Determine subclass and protocol, or copy from the interface */
-	subclass = unusual_dev->useProtocol;
-	protocol = unusual_dev->useTransport;
+	subclass = (unusual_dev->useProtocol == US_SC_DEVICE) ?
+			altsetting->bInterfaceSubClass :
+			unusual_dev->useProtocol;
+	protocol = (unusual_dev->useTransport == US_PR_DEVICE) ?
+			altsetting->bInterfaceProtocol :
+			unusual_dev->useTransport;
 	flags = unusual_dev->flags;
 
 	/*

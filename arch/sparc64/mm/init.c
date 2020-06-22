@@ -46,8 +46,6 @@ unsigned long *sparc64_valid_addr_bitmap;
 /* Ugly, but necessary... -DaveM */
 unsigned long phys_base;
 
-enum ultra_tlb_layout tlb_type = spitfire;
-
 /* get_new_mmu_context() uses "cache + 1".  */
 spinlock_t ctx_alloc_lock = SPIN_LOCK_UNLOCKED;
 unsigned long tlb_context_cache = CTX_FIRST_VERSION - 1;

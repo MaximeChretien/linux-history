@@ -1,7 +1,7 @@
 /*
  * SN2 Platform specific SMP Support
  *
- * Copyright (C) 2000-2002 Silicon Graphics, Inc. All rights reserved.
+ * Copyright (C) 2000-2003 Silicon Graphics, Inc. All rights reserved.
  * 
  * This program is free software; you can redistribute it and/or modify it 
  * under the terms of version 2 of the GNU General Public License 
@@ -79,296 +79,6 @@ wait_piowc(void)
 	return ws;
 }
 
-static long use_tlb_hack;
-static volatile unsigned long zz[1024] __attribute__((__aligned__(128)));
-static inline long
-get_itc(void)
-{
-        long ret;                                                                                                           
-        __asm__ __volatile__ ("mov %0=ar.itc" : "=r"(ret));
-        return ret+1;
-}                                                                                                                           
-
-
-
-#ifdef PTCG_WAR
-/*
- * The following structure is used to pass params thru smp_call_function
- * to other cpus for flushing TLB ranges.
- */
-typedef struct {
-	unsigned long	start;
-	unsigned long	end;
-	unsigned long	nbits;
-	unsigned int	rid;
-	atomic_t	unfinished_count;
-	char		fill[96];
-} ptc_params_t;
-
-#define NUMPTC	512
-
-static ptc_params_t	ptcParamArray[NUMPTC] __attribute__((__aligned__(128)));
-
-/* use separate cache lines on ptcParamsNextByCpu to avoid false sharing */
-static ptc_params_t	*ptcParamsNextByCpu[NR_CPUS*16] __attribute__((__aligned__(128)));
-static volatile ptc_params_t	*ptcParamsEmpty __cacheline_aligned;
-
-/*REFERENCED*/
-static spinlock_t ptcParamsLock __cacheline_aligned = SPIN_LOCK_UNLOCKED;
-
-static int ptcInit = 0;
-#ifdef PTCDEBUG
-static int ptcParamsAllBusy = 0;		/* debugging/statistics */
-static int ptcCountBacklog = 0;
-static int ptcBacklog[NUMPTC+1];
-static char ptcParamsCounts[NR_CPUS][NUMPTC] __attribute__((__aligned__(128)));
-static char ptcParamsResults[NR_CPUS][NUMPTC] __attribute__((__aligned__(128)));
-#endif
-
-/*
- * Make smp_send_flush_tlbsmp_send_flush_tlb() a weak reference,
- * so that we get a clean compile with the ia64 patch without the
- * actual SN1 specific code in arch/ia64/kernel/smp.c.
- */
-extern void smp_send_flush_tlb (void) __attribute((weak));
-
-
-/**
- * sn1_ptc_l_range - purge local translation cache
- * @start: start of virtual address range
- * @end: end of virtual address range
- * @nbits: specifies number of bytes to purge per instruction (num = 1<<(nbits & 0xfc))
- *
- * Purges the range specified from the local processor's translation cache
- * (as opposed to the translation registers).  Note that more than the specified
- * range *may* be cleared from the cache by some processors.
- *
- * This is probably not good enough, but I don't want to try to make it better 
- * until I get some statistics on a running system. At a minimum, we should only 
- * send IPIs to 1 processor in each TLB domain & have it issue a ptc.g on it's 
- * own FSB. Also, we only have to serialize per FSB, not globally.
- *
- * More likely, we will have to do some work to reduce the frequency of calls to
- * this routine.
- */
-static inline void
-sn1_ptc_l_range(unsigned long start, unsigned long end, unsigned long nbits)
-{
-	do {
-		__asm__ __volatile__ ("ptc.l %0,%1" :: "r"(start), "r"(nbits<<2) : "memory");
-		start += (1UL << nbits);
-	} while (start < end);
-	ia64_srlz_d();
-}
-
-/**
- * sn1_received_flush_tlb - cpu tlb flush routine
- *
- * Flushes the TLB of a given processor.
- */
-void
-sn1_received_flush_tlb(void)
-{
-	unsigned long	start, end, nbits;
-	unsigned int	rid, saved_rid;
-	int		cpu = smp_processor_id();
-	int		result;
-	ptc_params_t	*ptcParams;
-
-	ptcParams = ptcParamsNextByCpu[cpu*16];
-	if (ptcParams == ptcParamsEmpty)
-		return;
-
-	do {
-		start = ptcParams->start;
-		saved_rid = (unsigned int) ia64_get_rr(start);
-		end = ptcParams->end;
-		nbits = ptcParams->nbits;
-		rid = ptcParams->rid;
-
-		if (saved_rid != rid) {
-			ia64_set_rr(start, (unsigned long)rid);
-			ia64_srlz_d();
-		}
-
-		sn1_ptc_l_range(start, end, nbits);
-
-		if (saved_rid != rid) 
-			ia64_set_rr(start, (unsigned long)saved_rid);
-
-		ia64_srlz_i();
-
-		result = atomic_dec(&ptcParams->unfinished_count);
-#ifdef PTCDEBUG
-		{
-		    int i = ptcParams-&ptcParamArray[0];
-		    ptcParamsResults[cpu][i] = (char) result;
-		    ptcParamsCounts[cpu][i]++;
-		}
-#endif /* PTCDEBUG */
-
-		if (++ptcParams == &ptcParamArray[NUMPTC])
-			ptcParams = &ptcParamArray[0];
-
-	} while (ptcParams != ptcParamsEmpty);
-
-	ptcParamsNextByCpu[cpu*16] = ptcParams;
-}
-
-/**
- * sn1_global_tlb_purge - flush a translation cache range on all processors
- * @start: start of virtual address range to flush
- * @end: end of virtual address range
- * @nbits: specifies number of bytes to purge per instruction (num = 1<<(nbits & 0xfc))
- *
- * Flushes the translation cache of all processors from @start to @end.
- */
-void
-sn1_global_tlb_purge (unsigned long start, unsigned long end, unsigned long nbits)
-{
-	ptc_params_t	*params;
-	ptc_params_t	*next;
-	unsigned long	irqflags;
-#ifdef PTCDEBUG
-	ptc_params_t	*nextnext;
-	int		backlog = 0;
-#endif
-
-	if (smp_num_cpus == 1) {
-		sn1_ptc_l_range(start, end, nbits);
-		return;
-	}
-
-	if (in_interrupt()) {
-		/*
-		 *  If at interrupt level and cannot get spinlock, 
-		 *  then do something useful by flushing own tlbflush queue
-		 *  so as to avoid a possible deadlock.
-		 */
-		while (!spin_trylock(&ptcParamsLock)) {
-			local_irq_save(irqflags);
-			sn1_received_flush_tlb();
-			local_irq_restore(irqflags);
-			udelay(10);	/* take it easier on the bus */	
-		}
-	} else {
-		spin_lock(&ptcParamsLock);
-	}
-
-	if (!ptcInit) {
-		int cpu;
-		ptcInit = 1;
-		memset(ptcParamArray, 0, sizeof(ptcParamArray));
-		ptcParamsEmpty = &ptcParamArray[0];
-		for (cpu=0; cpu<NR_CPUS; cpu++)
-			ptcParamsNextByCpu[cpu*16] = &ptcParamArray[0];
-
-#ifdef PTCDEBUG
-		memset(ptcBacklog, 0, sizeof(ptcBacklog));
-		memset(ptcParamsCounts, 0, sizeof(ptcParamsCounts));
-		memset(ptcParamsResults, 0, sizeof(ptcParamsResults));
-#endif	/* PTCDEBUG */
-	}
-
-	params = (ptc_params_t *) ptcParamsEmpty;
-	next = (ptc_params_t *) ptcParamsEmpty + 1;
-	if (next == &ptcParamArray[NUMPTC])
-		next = &ptcParamArray[0];
-
-#ifdef PTCDEBUG
-	nextnext = next + 1;
-	if (nextnext == &ptcParamArray[NUMPTC])
-		nextnext = &ptcParamArray[0];
-
-	if (ptcCountBacklog) {
-		/* quick count of backlog */
-		ptc_params_t *ptr;
-
-		/* check the current pointer to the beginning */
-		ptr = params;
-		while(--ptr >= &ptcParamArray[0]) {
-			if (atomic_read(&ptr->unfinished_count) == 0)
-				break;
-			++backlog;
-		}
-
-		if (backlog) {
-			/* check the end of the array */
-			ptr = &ptcParamArray[NUMPTC];
-			while (--ptr > params) {
-				if (atomic_read(&ptr->unfinished_count) == 0)
-					break;
-				++backlog;
-			}
-		}
-		ptcBacklog[backlog]++;
-	}
-#endif	/* PTCDEBUG */
-
-	/* wait for the next entry to clear...should be rare */
-	if (atomic_read(&next->unfinished_count) > 0) {
-#ifdef PTCDEBUG
-		ptcParamsAllBusy++;
-
-		if (atomic_read(&nextnext->unfinished_count) == 0) {
-		    if (atomic_read(&next->unfinished_count) > 0) {
-			panic("\nnonzero next zero nextnext %lx %lx\n",
-			    (long)next, (long)nextnext);
-		    }
-		}
-#endif
-
-		/* it could be this cpu that is behind */
-		local_irq_save(irqflags);
-		sn1_received_flush_tlb();
-		local_irq_restore(irqflags);
-
-		/* now we know it's not this cpu, so just wait */
-		while (atomic_read(&next->unfinished_count) > 0) {
-			barrier();
-		}
-	}
-
-	params->start = start;
-	params->end = end;
-	params->nbits = nbits;
-	params->rid = (unsigned int) ia64_get_rr(start);
-	atomic_set(&params->unfinished_count, smp_num_cpus);
-
-	/* The atomic_set above can hit memory *after* the update
-	 * to ptcParamsEmpty below, which opens a timing window
-	 * that other cpus can squeeze into!
-	 */
-	mb();
-
-	/* everything is ready to process:
-	 *	-- global lock is held
-	 *	-- new entry + 1 is free
-	 *	-- new entry is set up
-	 * so now:
-	 *	-- update the global next pointer
-	 *	-- unlock the global lock
-	 *	-- send IPI to notify other cpus
-	 *	-- process the data ourselves
-	 */
-	ptcParamsEmpty = next;
-	spin_unlock(&ptcParamsLock);
-	smp_send_flush_tlb();
-
-	local_irq_save(irqflags);
-	sn1_received_flush_tlb();
-	local_irq_restore(irqflags);
-
-	/* 
-	 * Since IPIs are polled event (for now), we need to wait til the
-	 * TLB flush has started.
-	 * wait for the flush to complete 
-	 */ 
-	while (atomic_read(&params->unfinished_count) > 0)
-		barrier();
-}
-
-#endif /* PTCG_WAR */
 
 
 /**
@@ -384,19 +94,10 @@ sn1_global_tlb_purge (unsigned long start, unsigned long end, unsigned long nbit
 void
 sn2_global_tlb_purge (unsigned long start, unsigned long end, unsigned long nbits)
 {
-	int			cnode, mycnode, nasid;
+	int			cnode, mycnode, nasid, flushed=0;
 	volatile unsigned	long	*ptc0, *ptc1;
 	unsigned long		flags=0, data0, data1;
-	long 		        zzbase, zztime, zztime2;
 
-	/*
-	 * Special case 1 cpu & 1 node. Use local purges.
-	 */
-#ifdef PTCG_WAR
-	sn1_global_tlb_purge(start, end, nbits);
-	return;
-#endif /* PTCG_WAR */
-		
 	data0 = (1UL<<SH_PTC_0_A_SHFT) |
 		(nbits<<SH_PTC_0_PS_SHFT) |
 		((ia64_get_rr(start)>>8)<<SH_PTC_0_RID_SHFT) |
@@ -405,20 +106,9 @@ sn2_global_tlb_purge (unsigned long start, unsigned long end, unsigned long nbit
 	ptc0 = (long*)GLOBAL_MMR_PHYS_ADDR(0, SH_PTC_0);
 	ptc1 = (long*)GLOBAL_MMR_PHYS_ADDR(0, SH_PTC_1);
 
-	mycnode = local_cnodeid();
+	mycnode = numa_node_id();
 
-	/* 
-	 * For now, we dont want to spin uninterruptibly waiting
-	 * for the lock. Makes hangs hard to debug.
-	 */
-	zzbase = smp_processor_id()*16;
-	zz[zzbase+0] += 0x0000ffff00000001UL;
-
-	local_irq_save(flags);
-	zztime = get_itc();     
-	spin_lock(&sn2_global_ptc_lock);
-	zz[zzbase+0] += 0xffff000000000000UL;
-	zztime2 = get_itc();     
+	spin_lock_irqsave(&sn2_global_ptc_lock, flags);
 
 	do {
 		data1 = start | (1UL<<SH_PTC_1_START_SHFT);
@@ -427,16 +117,16 @@ sn2_global_tlb_purge (unsigned long start, unsigned long end, unsigned long nbit
 				continue;
 			if (cnode == mycnode) {
 				asm volatile ("ptc.ga %0,%1;;srlz.i;;" :: "r"(start), "r"(nbits<<2) : "memory");
-			} else {
+			} else if (current->shared_mm || test_bit(cnode, current->node_history)) {
 				nasid = cnodeid_to_nasid(cnode);
 				ptc0 = CHANGE_NASID(nasid, ptc0);
 				ptc1 = CHANGE_NASID(nasid, ptc1);
 				pio_atomic_phys_write_mmrs(ptc0, data0, ptc1, data1);
+				flushed = 1;
 			}
 		}
 
-		if (wait_piowc() & SH_PIO_WRITE_STATUS_0_WRITE_DEADLOCK_MASK) {
-			zz[zzbase+1]++;
+		if (flushed && (wait_piowc() & SH_PIO_WRITE_STATUS_0_WRITE_DEADLOCK_MASK)) {
 			sn2_ptc_deadlock_recovery(data0, data1);
 		}
 
@@ -444,19 +134,7 @@ sn2_global_tlb_purge (unsigned long start, unsigned long end, unsigned long nbit
 
 	} while (start < end);
 
-	zz[zzbase+0] -= 0xffffffff00000000UL;   
-	zztime2 = get_itc() - zztime2;    
 	spin_unlock_irqrestore(&sn2_global_ptc_lock, flags);
-
-	zztime = get_itc() - zztime;    
-
-	zz[zzbase+6] += zztime;                                                                                             
-	if (zztime > zz[zzbase+7])
-	       zz[zzbase+7] = zztime; 
-
-	zz[zzbase+8] += zztime2;                                                                                             
-	if (zztime2 > zz[zzbase+9])
-	       zz[zzbase+9] = zztime2; 
 
 }
 
@@ -480,7 +158,7 @@ sn2_ptc_deadlock_recovery(unsigned long data0, unsigned long data1)
 	ptc1 = (long*)GLOBAL_MMR_PHYS_ADDR(0, SH_PTC_1);
 	piows = (long*)pda.pio_write_status_addr;
 
-	mycnode = local_cnodeid();
+	mycnode = numa_node_id();
 
 	for (cnode = 0; cnode < numnodes; cnode++) {
 		if (is_headless_node(cnode) || cnode == mycnode)
@@ -511,15 +189,9 @@ sn2_ptc_deadlock_recovery(unsigned long data0, unsigned long data1)
 void
 sn_send_IPI_phys(long physid, int vector, int delivery_mode)
 {
-	long		nasid, slice;
-	long		val;
+	long		nasid, slice, val;
+	unsigned long	flags=0;
 	volatile long	*p;
-
-#if defined(BUS_INT_WAR) && defined(CONFIG_SHUB_1_0_SPECIFIC)
-	if (vector != ap_wakeup_vector && delivery_mode == IA64_IPI_DM_INT) {
-		return;
-	}
-#endif
 
 	nasid = cpu_physical_id_to_nasid(physid);
         slice = cpu_physical_id_to_slice(physid);
@@ -532,12 +204,15 @@ sn_send_IPI_phys(long physid, int vector, int delivery_mode)
 		(0x000feeUL<<SH_IPI_INT_BASE_SHFT);
 
 	mb();
+	if (enable_shub_wars_1_1() ) {
+		spin_lock_irqsave(&sn2_global_ptc_lock, flags);
+	}
 	pio_phys_write_mmr(p, val);
+	if (enable_shub_wars_1_1() ) {
+		wait_piowc();
+		spin_unlock_irqrestore(&sn2_global_ptc_lock, flags);
+	}
 
-#ifndef CONFIG_SHUB_1_0_SPECIFIC
-	/* doesnt work on shub 1.0 */
-	wait_piowc();
-#endif
 }
 
 /**
@@ -565,133 +240,3 @@ sn2_send_IPI(int cpuid, int vector, int delivery_mode, int redirect)
 
 	sn_send_IPI_phys(physid, vector, delivery_mode);
 }
-
-
-
-/* ----------------------------------------------------------------------------------------------- */
-
-#include <linux/proc_fs.h>
-
-
-static struct proc_dir_entry *ptcg_stats;
-
-static int
-ptcg_read_proc(char *buffer, char **start, off_t off, int count, int *eof, void *data)
-{
-	long cpu, *p, cnt;
-	int len = 0;
-
-	p = (long*)LOCAL_MMR_ADDR(SH_DIAG_MSG_DATA7L);
-	len += sprintf(buffer + len, "PTCG Stats (option 0x%lx)\n", use_tlb_hack);
-
-	len += sprintf(buffer + len, "%-14s", "CPU");
-	for (cpu=0; cpu<smp_num_cpus; cpu++)
-		len += sprintf(buffer + len, "%10ld", cpu);
-	len += sprintf(buffer + len, "\n");
-
-	len += sprintf(buffer + len, "%-14s", "flushes");
-	for (cpu=0; cpu<smp_num_cpus; cpu++)
-		len += sprintf(buffer + len, "%10ld", zz[cpu*16+0]&0xffffffff);
-	len += sprintf(buffer + len, "\n");
-
-	len += sprintf(buffer + len, "%-14s", "deadlocks");
-	for (cpu=0; cpu<smp_num_cpus; cpu++)
-		len += sprintf(buffer + len, "%10ld", zz[cpu*16+1]);
-	len += sprintf(buffer + len, "\n");
-
-	len += sprintf(buffer + len, "%-14s", "aver-us");
-	for (cpu=0; cpu<smp_num_cpus; cpu++) {
-		cnt = zz[cpu*16+0]&0xffffffff;
-		len += sprintf(buffer + len, "%10ld", cnt ? zz[cpu*16+6]/(cnt)/cpu_data(cpu)->cyc_per_usec : 0);
-	}
-	len += sprintf(buffer + len, "\n");
-
-	len += sprintf(buffer + len, "%-14s", "max-us");
-	for (cpu=0; cpu<smp_num_cpus; cpu++)
-		len += sprintf(buffer + len, "%10ld", zz[cpu*16+7]/cpu_data(cpu)->cyc_per_usec);
-	len += sprintf(buffer + len, "\n");
-
-	len += sprintf(buffer + len, "%-14s", "iaver-us");
-	for (cpu=0; cpu<smp_num_cpus; cpu++) {
-		cnt = zz[cpu*16+0]&0xffffffff;
-		len += sprintf(buffer + len, "%10ld", cnt ? zz[cpu*16+8]/(cnt)/cpu_data(cpu)->cyc_per_usec : 0);
-	}
-	len += sprintf(buffer + len, "\n");
-
-	len += sprintf(buffer + len, "%-14s", "imax-us");
-	for (cpu=0; cpu<smp_num_cpus; cpu++)
-		len += sprintf(buffer + len, "%10ld", zz[cpu*16+9]/cpu_data(cpu)->cyc_per_usec);
-	len += sprintf(buffer + len, "\n");
-
-	len += sprintf(buffer + len, "%-14s", "long-piowc");
-	for (cpu=0; cpu<smp_num_cpus; cpu++)
-		len += sprintf(buffer + len, "%10ld", zz[cpu*16+9]);
-	len += sprintf(buffer + len, "\n");
-
-        len += sprintf(buffer + len, "%-14s", "ipi-rp-error");
-        for (cpu=0; cpu<smp_num_cpus; cpu++) {
-                p = (long*)GLOBAL_MMR_ADDR(cpuid_to_nasid(cpu), SH_XN_IILB_LB_CMP_ENABLE0);
-                len += sprintf(buffer + len, "%10ld", *p);
-        }
-	len += sprintf(buffer + len, "\n");
-
-        len += sprintf(buffer + len, "%-14s", "lb-cb-error");
-        for (cpu=0; cpu<smp_num_cpus; cpu++) {
-                p = (long*)GLOBAL_MMR_ADDR(cpuid_to_nasid(cpu), SH_XN_IILB_LB_CMP_ENABLE1);
-                len += sprintf(buffer + len, "%10ld", *p);
-        }
-        len += sprintf(buffer + len, "\n");
-
-
-	if (len <= off+count) *eof = 1;
-	*start = buffer + off;
-	len   -= off;
-	if (len>count) len = count;
-	if (len<0) len = 0;
-	return len;
-}
-
-
-static int
-ptcg_write_proc (struct file *file, const char *userbuf, unsigned long count, void *data)
-{
-	extern long atoi(char *);
-	char		buf[80];
-	long		val;
-	long		cpu;
-	long		*p;
-
-	if (copy_from_user(buf, userbuf, count < sizeof(buf) ? count : sizeof(buf)))
-		return -EFAULT;
-
-	val = atoi(buf);
-	if (val&4) val |= 1;
-	use_tlb_hack = val;
-
-	memset((void*)zz, 0, sizeof(zz));
-
-	for (cpu=0; cpu<smp_num_cpus; cpu++) {
-		p = (long*)GLOBAL_MMR_ADDR(cpuid_to_nasid(cpu), SH_XN_IILB_LB_CMP_ENABLE0);
-		*p = 0;
-		p = (long*)GLOBAL_MMR_ADDR(cpuid_to_nasid(cpu), SH_XN_IILB_LB_CMP_ENABLE1);
-		*p = 0;
-	}
-	return count;
-}
-
-	
-
-static int
-sn2_ptcg_stats_init(void)
-{
-	if ((ptcg_stats = create_proc_entry("ptcg_stats", 0644, NULL)) == NULL) {
-		printk("unable to create proc entry for ptcg_stats");
-		return -1;
-	}
-	ptcg_stats->read_proc = ptcg_read_proc;
-	ptcg_stats->write_proc = ptcg_write_proc;
-	return 0;
-}
-
-#include <linux/module.h>
-module_init(sn2_ptcg_stats_init);

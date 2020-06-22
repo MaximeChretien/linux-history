@@ -65,7 +65,7 @@ static unsigned int timer_tick_count=0;
 
 static inline void ack_r4ktimer(unsigned int newval)
 {
-	write_32bit_cp0_register(CP0_COMPARE, newval);
+	write_c0_compare(newval);
 }
 
 void mips_timer_interrupt(struct pt_regs *regs)
@@ -87,25 +87,25 @@ void mips_timer_interrupt(struct pt_regs *regs)
  */
 static unsigned int __init cal_r4koff(void)
 {
-	unsigned int flags;
+	unsigned long flags;
 
-	__save_and_cli(flags);
+	local_irq_save(flags);
 
 	/* Start counter exactly on falling edge of update flag */
 	while (CMOS_READ(RTC_REG_A) & RTC_UIP);
 	while (!(CMOS_READ(RTC_REG_A) & RTC_UIP));
 
 	/* Start r4k counter. */
-	write_32bit_cp0_register(CP0_COUNT, 0);
+	write_c0_count(0);
 
 	/* Read counter exactly on falling edge of update flag */
 	while (CMOS_READ(RTC_REG_A) & RTC_UIP);
 	while (!(CMOS_READ(RTC_REG_A) & RTC_UIP));
 
-	mips_counter_frequency = read_32bit_cp0_register(CP0_COUNT);
+	mips_counter_frequency = read_c0_count();
 
 	/* restore interrupts */
-	__restore_flags(flags);
+	local_irq_restore(flags);
 
 	return (mips_counter_frequency / HZ);
 }
@@ -147,9 +147,10 @@ unsigned long __init mips_rtc_get_time(void)
 
 void __init mips_time_init(void)
 {
-        unsigned int est_freq, flags;
+        unsigned long flags;
+        unsigned int est_freq;
 
-	__save_and_cli(flags);
+	local_irq_save(flags);
 
         /* Set Data mode - binary. */
         CMOS_WRITE(CMOS_READ(RTC_CONTROL) | RTC_DM_BINARY, RTC_CONTROL);
@@ -158,7 +159,7 @@ void __init mips_time_init(void)
 	r4k_offset = cal_r4koff();
 	printk("%08x(%d)\n", r4k_offset, r4k_offset);
 
-        if ((read_32bit_cp0_register(CP0_PRID) & 0xffff00) ==
+        if ((read_c0_prid() & 0xffff00) ==
 	    (PRID_COMP_MIPS | PRID_IMP_20KC))
 		est_freq = r4k_offset*HZ;
 	else
@@ -169,7 +170,7 @@ void __init mips_time_init(void)
 	printk("CPU frequency %d.%02d MHz\n", est_freq/1000000,
 	       (est_freq%1000000)*100/1000000);
 
-	__restore_flags(flags);
+	local_irq_restore(flags);
 }
 
 void __init mips_timer_setup(struct irqaction *irq)
@@ -179,7 +180,7 @@ void __init mips_timer_setup(struct irqaction *irq)
 	setup_irq(MIPS_CPU_TIMER_IRQ, irq);
 
         /* to generate the first timer interrupt */
-	r4k_cur = (read_32bit_cp0_register(CP0_COUNT) + r4k_offset);
-	write_32bit_cp0_register(CP0_COMPARE, r4k_cur);
-	set_cp0_status(ALLINTS);
+	r4k_cur = (read_c0_count() + r4k_offset);
+	write_c0_compare(r4k_cur);
+	set_c0_status(ALLINTS);
 }

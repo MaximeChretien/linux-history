@@ -121,7 +121,7 @@ void s390_init_machine_check( void )
 #if 1
   	ctl_set_bit( 14, 28 );		// enable channel report MCH
 #endif
-#ifdef CONFIG_MACHCK_WARNING
+#ifdef CONFIG_MACHCHK_WARNING
 	ctl_set_bit( 14, 24);   /* enable warning MCH */
 #endif
 
@@ -151,7 +151,6 @@ static void s390_handle_damage(char * msg){
 	disabled_wait(caller);
 	return;
 }
-
 
 /*
  * s390_do_machine_check
@@ -316,6 +315,16 @@ static int s390_machine_check_handler( void *parm)
 				spin_unlock( &crw_queue_lock);
 
 			} /* endif */
+
+#ifdef CONFIG_MACHCHK_WARNING
+			if ( pmache->mcic.mcc.mcd.w )
+			{
+				ctrl_alt_del();		// shutdown NOW!
+#ifdef S390_MACHCHK_DEBUG
+			printk( KERN_DEBUG "mach_handler : kill -SIGPWR init\n");
+#endif
+			} /* endif */
+#endif
 
 #ifdef CONFIG_MACHCHK_WARNING
 			if ( pmache->mcic.mcc.mcd.w )
@@ -655,4 +664,3 @@ static int s390_post_warning( void )
 	return ( 1 );
 }
 #endif
-

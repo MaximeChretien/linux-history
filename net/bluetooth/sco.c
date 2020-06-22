@@ -332,8 +332,10 @@ static void sco_sock_cleanup_listen(struct sock *parent)
 	BT_DBG("parent %p", parent);
 
 	/* Close not yet accepted channels */
-	while ((sk = bluez_accept_dequeue(parent, NULL)))
+	while ((sk = bluez_accept_dequeue(parent, NULL))) {
 		sco_sock_close(sk);
+		sco_sock_kill(sk);
+	}
 
 	parent->state  = BT_CLOSED;
 	parent->zapped = 1;
@@ -388,8 +390,6 @@ static void sco_sock_close(struct sock *sk)
 	};
 
 	release_sock(sk);
-
-	sco_sock_kill(sk);
 }
 
 static void sco_sock_init(struct sock *sk, struct sock *parent)
@@ -508,7 +508,8 @@ static int sco_sock_connect(struct socket *sock, struct sockaddr *addr, int alen
 	if ((err = sco_connect(sk)))
 		goto done;
 
-	err = bluez_sock_w4_connect(sk, flags);
+	err = bluez_sock_wait_state(sk, BT_CONNECTED,
+			sock_sndtimeo(sk, flags & O_NONBLOCK));
 
 done:
 	release_sock(sk);
@@ -712,16 +713,23 @@ int sco_sock_getsockopt(struct socket *sock, int level, int optname, char *optva
 static int sco_sock_release(struct socket *sock)
 {
 	struct sock *sk = sock->sk;
+	int err = 0;
 
 	BT_DBG("sock %p, sk %p", sock, sk);
 
 	if (!sk)
 		return 0;
 
-	sock_orphan(sk);
 	sco_sock_close(sk);
+	if (sk->linger) {
+		lock_sock(sk);
+		err = bluez_sock_wait_state(sk, BT_CLOSED, sk->lingertime);
+		release_sock(sk);
+	}
 
-	return 0;
+	sock_orphan(sk);
+	sco_sock_kill(sk);
+	return err;
 }
 
 static void __sco_chan_add(struct sco_conn *conn, struct sock *sk, struct sock *parent)

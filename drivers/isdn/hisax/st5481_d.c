@@ -162,8 +162,8 @@ static struct FsmNode L1FnList[] __initdata =
 	{ST_L1_F8, EV_TIMER3,            l1_timer3},
 	{ST_L1_F8, EV_IND_DP,            l1_go_f3},
 	{ST_L1_F8, EV_IND_AP,            l1_go_f6},
-	{ST_L1_F8, EV_IND_AI8,           l1_go_f8},
-	{ST_L1_F8, EV_IND_AI10,          l1_go_f8},
+	{ST_L1_F8, EV_IND_AI8,           l1_go_f7},
+	{ST_L1_F8, EV_IND_AI10,          l1_go_f7},
 	{ST_L1_F8, EV_IND_RSY,           l1_ignore},
 };
 

@@ -231,6 +231,7 @@ static inline void skb_headerinit(void *p, kmem_cache_t *cache,
 	skb->sk = NULL;
 	skb->stamp.tv_sec=0;	/* No idea about time */
 	skb->dev = NULL;
+	skb->real_dev = NULL;
 	skb->dst = NULL;
 	memset(skb->cb, 0, sizeof(skb->cb));
 	skb->pkt_type = PACKET_HOST;	/* Default type */
@@ -362,6 +363,7 @@ struct sk_buff *skb_clone(struct sk_buff *skb, int gfp_mask)
 	n->sk = NULL;
 	C(stamp);
 	C(dev);
+	C(real_dev);
 	C(h);
 	C(nh);
 	C(mac);
@@ -417,6 +419,7 @@ static void copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	new->list=NULL;
 	new->sk=NULL;
 	new->dev=old->dev;
+	new->real_dev=old->real_dev;
 	new->priority=old->priority;
 	new->protocol=old->protocol;
 	new->dst=dst_clone(old->dst);

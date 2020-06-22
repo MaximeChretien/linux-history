@@ -63,6 +63,11 @@ static unsigned int do_gettimeoffset_hpet(void)
 	return ((hpet_readl(HPET_COUNTER) - vxtime.last) * vxtime.quot) >> 32;
 }
 
+static unsigned int do_gettimeoffset_nop(void)
+{
+	return 0;
+}
+
 unsigned int (*do_gettimeoffset)(void) = do_gettimeoffset_tsc;
 
 /*
@@ -482,13 +487,9 @@ static int __init notsc_setup(char *str)
 
 static struct irqaction irq0 = { timer_interrupt, SA_INTERRUPT, 0, "timer", NULL, NULL};
 
-extern void __init config_acpi_tables(void);
-
 void __init time_init(void)
 {
 	char *timename;
-
-	config_acpi_tables();
 
 #ifdef HPET_HACK_ENABLE_DANGEROUS
         if (!hpet_address) {
@@ -546,11 +547,16 @@ void __init time_init_smp(void)
 		} else {
 			timetype = "HPET/TSC";
 			vxtime.mode = VXTIME_TSC;
-			do_gettimeoffset = do_gettimeoffset_tsc;
 		}		
 	} else {
+		if (notsc) { 
+			timetype = "PIT"; 
+			vxtime.mode = VXTIME_STUPID; 
+			do_gettimeoffset = do_gettimeoffset_nop;
+		} else { 
 			timetype = "PIT/TSC";
 			vxtime.mode = VXTIME_TSC;
+	}
 	}
 	printk(KERN_INFO "time.c: Using %s based timekeeping.\n", timetype);
 }

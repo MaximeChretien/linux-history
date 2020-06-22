@@ -1,5 +1,5 @@
 /*
- *  PowerPC version 
+ *  PowerPC version
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
  *
  *  Rewritten by Cort Dougan (cort@cs.nmt.edu) for PReP
@@ -66,7 +66,7 @@
 	mtspr	DBAT##n##U,RA;		\
 	mtspr	DBAT##n##L,RB;		\
 1:
-#endif /* CONFIG_PPC64BRIDGE */	 
+#endif /* CONFIG_PPC64BRIDGE */
 
 	.text
 	.globl	_stext
@@ -79,7 +79,7 @@ _stext:
 	.text
 	.globl	_start
 _start:
-	/* 
+	/*
 	 * These are here for legacy reasons, the kernel used to
 	 * need to look like a coff function entry for the pmac
 	 * but we're always started by some kind of bootloader now.
@@ -145,8 +145,8 @@ __start:
 	bl	early_init
 
 #ifdef CONFIG_APUS
-/* On APUS the __va/__pa constants need to be set to the correct 
- * values before continuing. 
+/* On APUS the __va/__pa constants need to be set to the correct
+ * values before continuing.
  */
 	mr	r4,r30
 	bl	fix_mem_constants
@@ -1181,7 +1181,7 @@ fix_mem_constants:
 
 /*
  * Map the memory where the exception handlers will
- * be copied to when hash constants have been patched.  
+ * be copied to when hash constants have been patched.
  */
 #ifdef CONFIG_APUS_FAST_EXCEPT
 	lis	r8,0xfff0
@@ -1277,7 +1277,7 @@ __secondary_start:
 	lis	r3,-KERNELBASE@h
 	bl	init_idle_6xx
 #endif /* CONFIG_6xx */
-	
+
 	/* get current */
 	lis	r2,current_set@h
 	ori	r2,r2,current_set@l
@@ -1498,13 +1498,13 @@ END_FTR_SECTION_IFSET(CPU_FTR_ALTIVEC)
 	isync
 	blr
 
-/* 
+/*
  * An undocumented "feature" of 604e requires that the v bit
  * be cleared before changing BAT values.
  *
  * Also, newer IBM firmware does not clear bat3 and 4 so
  * this makes sure it's done.
- *  -- Cort 
+ *  -- Cort
  */
 clear_bats:
 	li	r20,0
@@ -1575,7 +1575,7 @@ mmu_off:
 	sync
 	RFI
 
-#ifndef CONFIG_POWER4	
+#ifndef CONFIG_POWER4
 /*
  * Use the first pair of BAT registers to map the 1st 16MB
  * of RAM to KERNELBASE.  From this point on we can't safely

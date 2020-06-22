@@ -52,7 +52,7 @@ static void m8xx_end_irq(unsigned int irq_nr)
 		word = irq_nr >> 5;
 
 		ppc_cached_irq_mask[word] |= (1 << (31-bit));
-		((immap_t *)IMAP_ADDR)->im_siu_conf.sc_simask = 
+		((immap_t *)IMAP_ADDR)->im_siu_conf.sc_simask =
 			ppc_cached_irq_mask[word];
 	}
 }
@@ -96,7 +96,7 @@ m8xx_get_irq(struct pt_regs *regs)
 	irq = ((immap_t *)IMAP_ADDR)->im_siu_conf.sc_sivec >> 26;
 
 	/*
-	 * When we read the sivec without an interrupt to process, we will 
+	 * When we read the sivec without an interrupt to process, we will
 	 * get back SIU_LEVEL7.  In this case, return -1
 	 */
         if (irq == CPM_INTERRUPT)

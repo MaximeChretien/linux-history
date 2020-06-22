@@ -37,7 +37,6 @@ int pci_map_sg(struct pci_dev *hwdev, struct scatterlist *sg,
  	 */
  	for (i = 0; i < nents; i++ ) {
 		struct scatterlist *s = &sg[i];
-		int flush = (i == nents-1);
 		void *addr = s->address; 
 		if (addr) 
 			BUG_ON(s->page || s->offset); 
@@ -45,8 +44,7 @@ int pci_map_sg(struct pci_dev *hwdev, struct scatterlist *sg,
 			addr = page_address(s->page) + s->offset; 
 		else
 			BUG(); 
-		s->dma_address = __pci_map_single(hwdev, addr, s->length,
-						  direction, flush); 
+		s->dma_address = pci_map_single(hwdev, addr, s->length, direction); 
 		if (unlikely(s->dma_address == bad_dma_address))
 			goto error; 
  	}

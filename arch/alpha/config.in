@@ -42,6 +42,7 @@ choice 'Alpha system type' \
 	 Eiger			CONFIG_ALPHA_EIGER		\
 	 Jensen			CONFIG_ALPHA_JENSEN		\
 	 LX164			CONFIG_ALPHA_LX164		\
+	 Lynx			CONFIG_ALPHA_LYNX		\
 	 Marvel			CONFIG_ALPHA_MARVEL		\
 	 Miata			CONFIG_ALPHA_MIATA		\
 	 Mikasa			CONFIG_ALPHA_MIKASA		\
@@ -157,6 +158,16 @@ then
 	fi
 	define_bool CONFIG_ALPHA_T2 y
 fi
+if [ "$CONFIG_ALPHA_LYNX" = "y" ]
+then
+	bool 'EV5 CPU(s) (model 5/xxx)?' CONFIG_ALPHA_EV5
+	if [ "$CONFIG_ALPHA_EV5" != "y" ]
+	then
+		define_bool CONFIG_ALPHA_EV4 y
+	fi
+	define_bool CONFIG_ALPHA_GAMMA y
+	define_bool CONFIG_ALPHA_T2 y
+fi
 if [ "$CONFIG_ALPHA_MIATA" = "y" -o "$CONFIG_ALPHA_LX164" = "y" \
 	-o "$CONFIG_ALPHA_SX164" = "y" -o "$CONFIG_ALPHA_RUFFIAN" = "y" ]
 then
@@ -216,7 +227,7 @@ if [ "$CONFIG_ALPHA_JENSEN" = "y" -o "$CONFIG_ALPHA_MIKASA" = "y" \
 	-o "$CONFIG_ALPHA_DP264" = "y" -o "$CONFIG_ALPHA_RAWHIDE" = "y" \
 	-o "$CONFIG_ALPHA_EIGER" = "y" -o "$CONFIG_ALPHA_WILDFIRE" = "y" \
 	-o "$CONFIG_ALPHA_TITAN" = "y" -o "$CONFIG_ALPHA_SHARK" = "y" \
-	-o "$CONFIG_ALPHA_MARVEL" = "y" ]
+	-o "$CONFIG_ALPHA_MARVEL" = "y" -o "$CONFIG_ALPHA_LYNX" = "y" ]
 then
 	define_bool CONFIG_ALPHA_SRM y
 fi
@@ -234,7 +245,7 @@ bool 'Verbose Machine Checks' CONFIG_VERBOSE_MCHECK
 
 if [ "$CONFIG_ALPHA_ALCOR" = "y" -o "$CONFIG_ALPHA_MIKASA" = "y" \
 	-o "$CONFIG_ALPHA_SABLE" = "y" -o "$CONFIG_ALPHA_NORITAKE" = "y" \
-	-o "$CONFIG_ALPHA_RAWHIDE" = "y" ]
+	-o "$CONFIG_ALPHA_RAWHIDE" = "y" -o "$CONFIG_ALPHA_LYNX" = "y" ]
 then
 	define_bool CONFIG_ALPHA_EISA y
 fi
@@ -250,7 +261,8 @@ fi
 if [ "$CONFIG_ALPHA_SABLE" = "y" -o "$CONFIG_ALPHA_RAWHIDE" = "y" \
 	-o "$CONFIG_ALPHA_DP264" = "y" -o "$CONFIG_ALPHA_WILDFIRE" = "y" \
 	-o "$CONFIG_ALPHA_TITAN" = "y" -o "$CONFIG_ALPHA_GENERIC" = "y" \
-	-o "$CONFIG_ALPHA_SHARK" = "y" -o "$CONFIG_ALPHA_MARVEL" = "y" ]
+	-o "$CONFIG_ALPHA_SHARK" = "y" -o "$CONFIG_ALPHA_MARVEL" = "y" \
+	-o "$CONFIG_ALPHA_LYNX" = "y" ]
 then
 	bool 'Symmetric multi-processing support' CONFIG_SMP
 fi
@@ -355,7 +367,7 @@ if [ "$CONFIG_NET" = "y" ]; then
   bool 'Network device support' CONFIG_NETDEVICES
   if [ "$CONFIG_NETDEVICES" = "y" ]; then
     source drivers/net/Config.in
-    if [ "$CONFIG_ATM" = "y" ]; then
+    if [ "$CONFIG_ATM" = "y" -o "$CONFIG_ATM" = "m" ]; then
       source drivers/atm/Config.in
     fi
   fi
@@ -443,4 +455,5 @@ fi
 
 endmenu
 
+source crypto/Config.in
 source lib/Config.in

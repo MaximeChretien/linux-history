@@ -59,7 +59,7 @@ struct dccproto dccprotos[NUM_DCCPROTO] = {
 	{"TSEND ", 6},
 	{"SCHAT ", 6}
 };
-#define MAXMATCHLEN	6
+#define MINMATCHLEN	5
 
 DECLARE_LOCK(ip_irc_lock);
 struct module *ip_conntrack_irc = THIS_MODULE;
@@ -92,9 +92,11 @@ int parse_dcc(char *data, char *data_end, u_int32_t * ip, u_int16_t * port,
 	*ip = simple_strtoul(data, &data, 10);
 
 	/* skip blanks between ip and port */
-	while (*data == ' ')
+	while (*data == ' ') {
+		if (data >= data_end) 
+			return -1;
 		data++;
-
+	}
 
 	*port = simple_strtoul(data, &data, 10);
 	*ad_end_p = data;
@@ -153,13 +155,17 @@ static int help(const struct iphdr *iph, size_t len,
 	}
 
 	data_limit = (char *) data + datalen;
-	while (data < (data_limit - (22 + MAXMATCHLEN))) {
+
+	/* strlen("\1DCC SEND t AAAAAAAA P\1\n")=24
+	 *         5+MINMATCHLEN+strlen("t AAAAAAAA P\1\n")=14 */
+	while (data < (data_limit - (19 + MINMATCHLEN))) {
 		if (memcmp(data, "\1DCC ", 5)) {
 			data++;
 			continue;
 		}
 
 		data += 5;
+		/* we have at least (19+MINMATCHLEN)-5 bytes valid data left */
 
 		DEBUGP("DCC found in master %u.%u.%u.%u:%u %u.%u.%u.%u:%u...\n",
 			NIPQUAD(iph->saddr), ntohs(tcph->source),
@@ -174,6 +180,9 @@ static int help(const struct iphdr *iph, size_t len,
 
 			DEBUGP("DCC %s detected\n", dccprotos[i].match);
 			data += dccprotos[i].matchlen;
+			/* we have at least
+			 * (19+MINMATCHLEN)-5-dccprotos[i].matchlen bytes valid
+			 * data left (== 14/13 bytes) */
 			if (parse_dcc((char *) data, data_limit, &dcc_ip,
 				       &dcc_port, &addr_beg_p, &addr_end_p)) {
 				/* unable to parse */
@@ -209,11 +218,11 @@ static int help(const struct iphdr *iph, size_t len,
 
 			exp->tuple = ((struct ip_conntrack_tuple)
 				{ { 0, { 0 } },
-				  { htonl(dcc_ip), { htons(dcc_port) },
+				  { htonl(dcc_ip), { .tcp = { htons(dcc_port) } },
 				    IPPROTO_TCP }});
 			exp->mask = ((struct ip_conntrack_tuple)
 				{ { 0, { 0 } },
-				  { 0xFFFFFFFF, { 0xFFFF }, 0xFFFF }});
+				  { 0xFFFFFFFF, { .tcp = { 0xFFFF } }, 0xFFFF }});
 
 			exp->expectfn = NULL;
 
@@ -259,8 +268,6 @@ static int __init init(void)
 
 	for (i = 0; (i < MAX_PORTS) && ports[i]; i++) {
 		hlpr = &irc_helpers[i];
-		memset(hlpr, 0,
-		       sizeof(struct ip_conntrack_helper));
 		hlpr->tuple.src.u.tcp.port = htons(ports[i]);
 		hlpr->tuple.dst.protonum = IPPROTO_TCP;
 		hlpr->mask.src.u.tcp.port = 0xFFFF;

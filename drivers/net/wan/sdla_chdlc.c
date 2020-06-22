@@ -591,8 +591,7 @@ int wpc_init (sdla_t* card, wandev_conf_t* conf)
 	
 
 		if (chdlc_set_intr_mode(card, APP_INT_ON_TIMER)){
-			printk (KERN_INFO "%s: 
-				Failed to set interrupt triggers!\n",
+			printk (KERN_INFO "%s: Failed to set interrupt triggers!\n",
 				card->devname);
 			return -EIO;	
         	}
@@ -1089,13 +1088,11 @@ static int if_open (netdevice_t* dev)
 	
 	set_bit(0,&chdlc_priv_area->config_chdlc);
 	chdlc_priv_area->config_chdlc_timeout=jiffies;
-	del_timer(&chdlc_priv_area->poll_delay_timer);
 
 	/* Start the CHDLC configuration after 1sec delay.
 	 * This will give the interface initilization time
 	 * to finish its configuration */
-	chdlc_priv_area->poll_delay_timer.expires=jiffies+HZ;
-	add_timer(&chdlc_priv_area->poll_delay_timer);
+	mod_timer(&chdlc_priv_area->poll_delay_timer, jiffies + HZ);
 	return err;
 }
 

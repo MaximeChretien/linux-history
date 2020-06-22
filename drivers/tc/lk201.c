@@ -5,7 +5,7 @@
  * for more details.
  *
  * Copyright (C) 1999-2002 Harald Koerfgen <hkoerfg@web.de>
- * Copyright (C) 2001, 2002  Maciej W. Rozycki <macro@ds2.pg.gda.pl>
+ * Copyright (C) 2001, 2002, 2003  Maciej W. Rozycki <macro@ds2.pg.gda.pl>
  */
 
 #include <linux/config.h>
@@ -27,6 +27,21 @@
 #include "zs.h"
 #include "lk201.h"
 
+/*
+ * Only handle DECstations that have an LK201 interface.
+ * Maxine uses LK501 at the Access.Bus and various DECsystems
+ * have no keyboard interface at all.
+ */
+#define LK_IFACE	(mips_machtype == MACH_DS23100    || \
+			 mips_machtype == MACH_DS5000_200 || \
+			 mips_machtype == MACH_DS5000_1XX || \
+			 mips_machtype == MACH_DS5000_2X0)
+/*
+ * These use the Z8530 SCC.  Others use the DZ11.
+ */
+#define LK_IFACE_ZS	(mips_machtype == MACH_DS5000_1XX || \
+			 mips_machtype == MACH_DS5000_2X0)
+
 /* Simple translation table for the SysRq keys */
 
 #ifdef CONFIG_MAGIC_SYSRQ
@@ -47,12 +62,12 @@ static void __init lk201_info(struct dec_serial *);
 static void lk201_kbd_rx_char(unsigned char, unsigned char);
 
 struct zs_hook lk201_kbdhook = {
-	init_channel:	lk201_init,
-	init_info:	lk201_info,
-	rx_char:	NULL,
-	poll_rx_char:	NULL,
-	poll_tx_char:	NULL,
-	cflags:		B4800 | CS8 | CSTOPB | CLOCAL
+	.init_channel	= lk201_init,
+	.init_info	= lk201_info,
+	.rx_char	= NULL,
+	.poll_rx_char	= NULL,
+	.poll_tx_char	= NULL,
+	.cflags		= B4800 | CS8 | CSTOPB | CLOCAL
 };
 
 /*
@@ -145,11 +160,17 @@ static void lk201_id(unsigned char id[6])
 	case 2:
 		printk(KERN_INFO "lk201: LK401 detected\n");
 		break;
+	case 3:
+		printk(KERN_INFO "lk201: LK443 detected\n");
+		break;
+	case 4:
+		printk(KERN_INFO "lk201: LK421 detected\n");
+		break;
 	default:
 		printk(KERN_WARNING
 		       "lk201: unknown keyboard detected, ID %d\n", id[4]);
 		printk(KERN_WARNING "lk201: ... please report to "
-		       "<linux-mips@oss.sgi.com>\n");
+		       "<linux-mips@linux-mips.org>\n");
 	}
 }
 
@@ -321,7 +342,7 @@ static void lk201_kbd_rx_char(unsigned char ch, unsigned char stat)
 				       "error, skipping initialization\n");
 			}
 		} else if (id_i == 6) {
-			/* We got the ID; report it and start an operation. */
+			/* We got the ID; report it and start operation. */
 			id_i = 0;
 			lk201_id(id);
 			lk201_reset(lk201kbd_info);
@@ -341,19 +362,19 @@ static void lk201_kbd_rx_char(unsigned char ch, unsigned char stat)
 		break;
 	case LK_KEY_LOCK:
 		shift_state ^= LK_LOCK;
-		handle_scancode(c, shift_state && LK_LOCK ? 1 : 0);
+		handle_scancode(c, (shift_state & LK_LOCK) ? 1 : 0);
 		break;
 	case LK_KEY_SHIFT:
 		shift_state ^= LK_SHIFT;
-		handle_scancode(c, shift_state && LK_SHIFT ? 1 : 0);
+		handle_scancode(c, (shift_state & LK_SHIFT) ? 1 : 0);
 		break;
 	case LK_KEY_CTRL:
 		shift_state ^= LK_CTRL;
-		handle_scancode(c, shift_state && LK_CTRL ? 1 : 0);
+		handle_scancode(c, (shift_state & LK_CTRL) ? 1 : 0);
 		break;
 	case LK_KEY_COMP:
 		shift_state ^= LK_COMP;
-		handle_scancode(c, shift_state && LK_COMP ? 1 : 0);
+		handle_scancode(c, (shift_state & LK_COMP) ? 1 : 0);
 		break;
 	case LK_KEY_RELEASE:
 		if (shift_state & LK_SHIFT)
@@ -402,28 +423,24 @@ void __init kbd_init_hw(void)
 	extern int unregister_zs_hook(unsigned int);
 
 	/* Maxine uses LK501 at the Access.Bus. */
-	if (mips_machtype == MACH_DS5000_XX)
+	if (!LK_IFACE)
 		return;
 
 	printk(KERN_INFO "lk201: DECstation LK keyboard driver v0.05.\n");
 
-	if (TURBOCHANNEL) {
+	if (LK_IFACE_ZS) {
 		/*
 		 * kbd_init_hw() is being called before
 		 * rs_init() so just register the kbd hook
 		 * and let zs_init do the rest :-)
 		 */
-		if (mips_machtype == MACH_DS5000_200)
-			printk(KERN_ERR "lk201: support for DS5000/200 "
-			       "not yet ready.\n");
-		else
-			if(!register_zs_hook(KEYB_LINE, &lk201_kbdhook))
-				unregister_zs_hook(KEYB_LINE);
+		if(!register_zs_hook(KEYB_LINE, &lk201_kbdhook))
+			unregister_zs_hook(KEYB_LINE);
 	} else {
 		/*
 		 * TODO: modify dz.c to allow similar hooks
 		 * for LK201 handling on DS2100, DS3100, and DS5000/200
 		 */
-		printk(KERN_ERR "lk201: support for DS3100 not yet ready.\n");
+		printk(KERN_ERR "lk201: support for DZ11 not yet ready.\n");
 	}
 }

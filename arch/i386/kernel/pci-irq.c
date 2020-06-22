@@ -116,7 +116,7 @@ static void __init pirq_peer_trick(void)
  *  Code for querying and setting of IRQ routes on various interrupt routers.
  */
 
-static void eisa_set_level_irq(unsigned int irq)
+void eisa_set_level_irq(unsigned int irq)
 {
 	unsigned char mask = 1 << (irq & 7);
 	unsigned int port = 0x4d0 + (irq >> 3);
@@ -196,15 +196,16 @@ static int pirq_piix_set(struct pci_dev *router, struct pci_dev *dev, int pirq, 
 /*
  * The VIA pirq rules are nibble-based, like ALI,
  * but without the ugly irq number munging.
+ * However, PIRQD is in the upper instead of lower nibble.
  */
 static int pirq_via_get(struct pci_dev *router, struct pci_dev *dev, int pirq)
 {
-	return read_config_nybble(router, 0x55, pirq);
+	return read_config_nybble(router, 0x55, pirq == 4 ? 5 : pirq);
 }
 
 static int pirq_via_set(struct pci_dev *router, struct pci_dev *dev, int pirq, int irq)
 {
-	write_config_nybble(router, 0x55, pirq, irq);
+	write_config_nybble(router, 0x55, pirq == 4 ? 5 : pirq, irq);
 	return 1;
 }
 
@@ -472,6 +473,8 @@ static struct irq_router pirq_routers[] = {
 	{ "PIIX", PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801CA_12, pirq_piix_get, pirq_piix_set },
 	{ "PIIX", PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801DB_0, pirq_piix_get, pirq_piix_set },
 	{ "PIIX", PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801E_0, pirq_piix_get, pirq_piix_set },
+	{ "PIIX", PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82801EB_0, pirq_piix_get, pirq_piix_set },
+	{ "PIIX", PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_ESB_0, pirq_piix_get, pirq_piix_set },
 
 	{ "ALI", PCI_VENDOR_ID_AL, PCI_DEVICE_ID_AL_M1533, pirq_ali_get, pirq_ali_set },
 

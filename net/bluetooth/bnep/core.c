@@ -680,7 +680,8 @@ int bnep_get_conninfo(struct bnep_conninfo *ci)
 
 static int __init bnep_init_module(void)
 {
-	bnep_crc32_init();
+	l2cap_load();
+
 	bnep_sock_init();
 
 	BT_INFO("BlueZ BNEP ver %s", VERSION);
@@ -695,7 +696,6 @@ static int __init bnep_init_module(void)
 static void __exit bnep_cleanup_module(void)
 {
 	bnep_sock_cleanup();
-	bnep_crc32_cleanup();
 }
 
 module_init(bnep_init_module);

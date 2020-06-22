@@ -628,8 +628,6 @@ e100_force_speed_duplex(struct e100_private *bdp)
 	u16 control;
 	unsigned long expires;
 
-	e100_phy_reset(bdp);
-
 	bdp->flags |= DF_SPEED_FORCED;
 
 	e100_mdi_read(bdp, MII_BMCR, bdp->phy_addr, &control);
@@ -912,11 +910,16 @@ e100_phy_reset(struct e100_private *bdp)
 	u16 ctrl_reg;
 	ctrl_reg = BMCR_RESET;
 	e100_mdi_write(bdp, MII_BMCR, bdp->phy_addr, ctrl_reg);
+	/* ieee 802.3 : The reset process shall be completed       */
+	/* within 0.5 seconds from the settting of PHY reset bit.  */
+	set_current_state(TASK_UNINTERRUPTIBLE);
+	schedule_timeout(HZ / 2);
 }
 
 unsigned char __devinit
 e100_phy_init(struct e100_private *bdp)
 {
+	e100_phy_reset(bdp);
 	e100_phy_address_detect(bdp);
 	e100_phy_isolate(bdp);
 	e100_phy_id_detect(bdp);

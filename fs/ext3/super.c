@@ -448,6 +448,9 @@ void ext3_put_super (struct super_block * sb)
 	return;
 }
 
+static struct dquot_operations ext3_qops;
+static int (*old_sync_dquot)(struct dquot *dquot);
+
 static struct super_operations ext3_sops = {
 	read_inode:	ext3_read_inode,	/* BKL held */
 	write_inode:	ext3_write_inode,	/* BKL not held.  Don't need */
@@ -1128,6 +1131,7 @@ struct super_block * ext3_read_super (struct super_block * sb, void * data,
 	 * set up enough so that it can read an inode
 	 */
 	sb->s_op = &ext3_sops;
+	sb->dq_op = &ext3_qops;
 	INIT_LIST_HEAD(&sbi->s_orphan); /* unlinked but open files */
 
 	sb->s_root = 0;
@@ -1758,10 +1762,65 @@ int ext3_statfs (struct super_block * sb, struct statfs * buf)
 	return 0;
 }
 
+/* Helper function for writing quotas on sync - we need to start transaction before quota file
+ * is locked for write. Otherwise the are possible deadlocks:
+ * Process 1                         Process 2
+ * ext3_create()                     quota_sync()
+ *   journal_start()                   write_dquot()
+ *   DQUOT_INIT()                        down(dqio_sem)
+ *     down(dqio_sem)                    journal_start()
+ *
+ */
+
+#ifdef CONFIG_QUOTA
+
+/* Blocks: (2 data blocks) * (3 indirect + 1 descriptor + 1 bitmap) + superblock */
+#define EXT3_OLD_QFMT_BLOCKS 11
+/* Blocks: quota info + (4 pointer blocks + 1 entry block) * (3 indirect + 1 descriptor + 1 bitmap) + superblock */
+#define EXT3_V0_QFMT_BLOCKS 27
+
+static int ext3_sync_dquot(struct dquot *dquot)
+{
+	int nblocks, ret;
+	handle_t *handle;
+	struct quota_info *dqops = sb_dqopt(dquot->dq_sb);
+	struct inode *qinode;
+
+	switch (dqops->info[dquot->dq_type].dqi_format->qf_fmt_id) {
+		case QFMT_VFS_OLD:
+			nblocks = EXT3_OLD_QFMT_BLOCKS;
+			break;
+		case QFMT_VFS_V0:
+			nblocks = EXT3_V0_QFMT_BLOCKS;
+			break;
+		default:
+			nblocks = EXT3_MAX_TRANS_DATA;
+	}
+	lock_kernel();
+	qinode = dqops->files[dquot->dq_type]->f_dentry->d_inode;
+	handle = ext3_journal_start(qinode, nblocks);
+	if (IS_ERR(handle)) {
+		unlock_kernel();
+		return PTR_ERR(handle);
+	}
+	unlock_kernel();
+	ret = old_sync_dquot(dquot);
+	lock_kernel();
+	ret = ext3_journal_stop(handle, qinode);
+	unlock_kernel();
+	return ret;
+}
+#endif
+
 static DECLARE_FSTYPE_DEV(ext3_fs_type, "ext3", ext3_read_super);
 
 static int __init init_ext3_fs(void)
 {
+#ifdef CONFIG_QUOTA
+	init_dquot_operations(&ext3_qops);
+	old_sync_dquot = ext3_qops.sync_dquot;
+	ext3_qops.sync_dquot = ext3_sync_dquot;
+#endif
         return register_filesystem(&ext3_fs_type);
 }
 

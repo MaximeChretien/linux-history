@@ -257,7 +257,7 @@ static void ad1889_free_dev(ad1889_dev_t *dev)
 		return;
 
 	if (dev->ac97_codec)
-		kfree(dev->ac97_codec);
+		ac97_release_codec(dev->ac97_codec);
 
 	for (j = 0; j < AD_MAX_STATES; j++) {
 		dmabuf = &dev->state[j].dmabuf;
@@ -831,9 +831,8 @@ static int ad1889_ac97_init(ad1889_dev_t *dev, int id)
 	struct ac97_codec *ac97;
 	u16 eid;
 
-	if ((ac97 = kmalloc(sizeof(struct ac97_codec), GFP_KERNEL)) == NULL) 
+	if ((ac97 = ac97_alloc_codec()) == NULL) 
 		return -ENOMEM;
-	memset(ac97, 0, sizeof(struct ac97_codec));
 
 	ac97->private_data = dev;
 	ac97->id = id;
@@ -863,7 +862,7 @@ static int ad1889_ac97_init(ad1889_dev_t *dev, int id)
 	return 0;
 
 out_free:
-	kfree(ac97);
+	ac97_release_codec(ac97);
 	return -ENODEV;
 }
 

@@ -1,5 +1,4 @@
-/* $Id: kimagerescue.S,v 1.5 2001/10/03 17:15:15 bjornw Exp $
- * 
+/*
  * Rescue code to be prepended on a kimage and copied to the
  * rescue serial port.
  * This is called from the rescue code, it will copy received data to

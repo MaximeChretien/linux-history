@@ -277,6 +277,7 @@ typedef struct mtd_info *cfi_cmdset_fn_t(struct map_info *, int);
 
 extern cfi_cmdset_fn_t cfi_cmdset_0001;
 extern cfi_cmdset_fn_t cfi_cmdset_0002;
+extern cfi_cmdset_fn_t cfi_cmdset_0020;
 
 static inline struct mtd_info *cfi_cmdset_unknown(struct map_info *map, 
 						  int primary)

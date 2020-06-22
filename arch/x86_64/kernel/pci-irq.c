@@ -116,7 +116,7 @@ static void __init pirq_peer_trick(void)
  *  Code for querying and setting of IRQ routes on various interrupt routers.
  */
 
-static void eisa_set_level_irq(unsigned int irq)
+void eisa_set_level_irq(unsigned int irq)
 {
 	unsigned char mask = 1 << (irq & 7);
 	unsigned int port = 0x4d0 + (irq >> 3);

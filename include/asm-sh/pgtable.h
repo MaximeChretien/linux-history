@@ -43,6 +43,7 @@ extern void paging_init(void);
 #define flush_icache_page(vma,pg)		do { } while (0)
 #define flush_icache_user_range(vma,pg,adr,len)	do { } while (0)
 #define flush_cache_sigtramp(vaddr)		do { } while (0)
+#define __flush_icache_all()			do { } while (0)
 
 #define p3_cache_init()				do { } while (0)
 
@@ -309,5 +310,11 @@ extern void update_mmu_cache(struct vm_area_struct * vma,
  * No page table caches to initialise
  */
 #define pgtable_cache_init()	do { } while (0)
+
+/*
+ * Set pg flags to non-cached
+ */
+#define pgprot_noncached(_prot) __pgprot(pgprot_val(_prot) &= ~_PAGE_CACHABLE)
+
 
 #endif /* __ASM_SH_PAGE_H */

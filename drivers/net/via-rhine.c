@@ -2,6 +2,8 @@
 /*
 	Written 1998-2001 by Donald Becker.
 
+	Current Maintainer: Roger Luethi <rl@hellgate.ch>
+
 	This software may be used and distributed according to the terms of
 	the GNU General Public License (GPL), incorporated herein by reference.
 	Drivers based on or derived from this code fall under the GPL and must
@@ -9,8 +11,9 @@
 	a complete program and may only be used when the entire operating
 	system is licensed under the GPL.
 
-	This driver is designed for the VIA VT86C100A Rhine-I. 
-	It also works with the 6102 Rhine-II, and 6105/6105M Rhine-III.   
+	This driver is designed for the VIA VT86C100A Rhine-I.
+	It also works with the Rhine-II (6102) and Rhine-III (6105/6105L/6105LOM
+	and management NIC 6105M).
 
 	The author may be reached as becker@scyld.com, or C/O
 	Scyld Computing Corporation
@@ -115,11 +118,18 @@
 	- Force flushing for PCI posted writes
 	- More reset code changes
 
+	LK1.1.18 (Roger Luethi)
+	- No filtering multicast in promisc mode (Edward Peng)
+	- Fix for Rhine-I Tx timeouts
+
+	LK1.1.19 (Roger Luethi)
+	- Increase Tx threshold for unspecified errors
+
 */
 
 #define DRV_NAME	"via-rhine"
-#define DRV_VERSION	"1.1.17"
-#define DRV_RELDATE	"March-1-2003"
+#define DRV_VERSION	"1.1.19"
+#define DRV_RELDATE	"July-12-2003"
 
 
 /* A few user-configurable values.
@@ -139,7 +149,7 @@ static int backoff;
    Both 'options[]' and 'full_duplex[]' should exist for driver
    interoperability.
    The media type is usually passed in 'options[]'.
-   The default is autonegotation for speed and duplex.
+   The default is autonegotiation for speed and duplex.
      This should rarely be overridden.
    Use option values 0x10/0x20 for 10Mbps, 0x100,0x200 for 100Mbps.
    Use option values 0x10 and 0x100 for forcing half duplex fixed speed.
@@ -386,17 +396,17 @@ static struct via_rhine_chip_info via_rhine_chip_info[] __devinitdata =
 	{ "VIA VT6102 Rhine-II", RHINE_IOTYPE, 256,
 	  CanHaveMII | HasWOL },
 	{ "VIA VT6105 Rhine-III", RHINE_IOTYPE, 256,
-	  CanHaveMII | HasWOL },	  
+	  CanHaveMII | HasWOL },
 	{ "VIA VT6105M Rhine-III", RHINE_IOTYPE, 256,
-	  CanHaveMII | HasWOL },	  	  	 
+	  CanHaveMII | HasWOL },
 };
 
 static struct pci_device_id via_rhine_pci_tbl[] __devinitdata =
 {
 	{0x1106, 0x3043, PCI_ANY_ID, PCI_ANY_ID, 0, 0, VT86C100A},
 	{0x1106, 0x3065, PCI_ANY_ID, PCI_ANY_ID, 0, 0, VT6102},
-	{0x1106, 0x3106, PCI_ANY_ID, PCI_ANY_ID, 0, 0, VT6105},
-	{0x1106, 0x3053, PCI_ANY_ID, PCI_ANY_ID, 0, 0, VT6105M},	
+	{0x1106, 0x3106, PCI_ANY_ID, PCI_ANY_ID, 0, 0, VT6105}, /* 6105{,L,LOM} */
+	{0x1106, 0x3053, PCI_ANY_ID, PCI_ANY_ID, 0, 0, VT6105M},
 	{0,}			/* terminate list */
 };
 MODULE_DEVICE_TABLE(pci, via_rhine_pci_tbl);
@@ -441,7 +451,7 @@ enum intr_status_bits {
 	IntrRxWakeUp=0x8000,
 	IntrNormalSummary=0x0003, IntrAbnormalSummary=0xC260,
 	IntrTxDescRace=0x080000,	/* mapped from IntrStatus2 */
-	IntrTxErrSummary=0x082210,
+	IntrTxErrSummary=0x082218,
 };
 
 /* The Rx and Tx buffer descriptors. */
@@ -1264,7 +1274,7 @@ static int via_rhine_start_tx(struct sk_buff *skb, struct net_device *dev)
 
 	if (skb->len < ETH_ZLEN) {
 		skb = skb_padto(skb, ETH_ZLEN);
-		if(skb == NULL)
+		if (skb == NULL)
 			return 0;
 	}
 
@@ -1650,11 +1660,22 @@ static void via_rhine_error(struct net_device *dev, int intr_status)
 			printk(KERN_INFO "%s: Tx descriptor write-back race.\n",
 				   dev->name);
 	}
-	if (intr_status & ( IntrTxAborted | IntrTxUnderrun | IntrTxDescRace ))
+	if ((intr_status & IntrTxError) && ~( IntrTxAborted | IntrTxUnderrun |
+										   IntrTxDescRace )) {
+		if (np->tx_thresh < 0xE0) {
+			writeb(np->tx_thresh += 0x20, ioaddr + TxConfig);
+		}
+		if (debug > 1)
+			printk(KERN_INFO "%s: Unspecified error. Tx "
+				   "threshold now %2.2x.\n",
+				   dev->name, np->tx_thresh);
+	}
+	if (intr_status & ( IntrTxAborted | IntrTxUnderrun | IntrTxDescRace |
+						IntrTxError ))
 		via_rhine_restart_tx(dev);
 
 	if (intr_status & ~( IntrLinkChange | IntrStatsMax | IntrTxUnderrun |
- 						 IntrTxError | IntrTxAborted | IntrNormalSummary |
+						 IntrTxError | IntrTxAborted | IntrNormalSummary |
 						 IntrTxDescRace )) {
 		if (debug > 1)
 			printk(KERN_ERR "%s: Something Wicked happened! %8.8x.\n",
@@ -1690,6 +1711,8 @@ static void via_rhine_set_rx_mode(struct net_device *dev)
 		/* Unconditionally log net taps. */
 		printk(KERN_NOTICE "%s: Promiscuous mode enabled.\n", dev->name);
 		rx_mode = 0x1C;
+		writel(0xffffffff, ioaddr + MulticastFilter0);
+		writel(0xffffffff, ioaddr + MulticastFilter1);
 	} else if ((dev->mc_count > multicast_filter_limit)
 			   ||  (dev->flags & IFF_ALLMULTI)) {
 		/* Too many to match, or accept all multicasts. */

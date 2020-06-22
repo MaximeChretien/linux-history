@@ -22,11 +22,11 @@ all: vmlinux.ecoff addinitrd
 vmlinux.ecoff:	$(CONFIGURE) elf2ecoff $(TOPDIR)/vmlinux
 	./elf2ecoff $(TOPDIR)/vmlinux vmlinux.ecoff $(E2EFLAGS)
 
-elf2ecoff: elf2ecoff.c
-	$(HOSTCC) -o $@ $^
+elf2ecoff: $(TOPDIR)/arch/mips/boot/elf2ecoff.c
+	$(HOSTCC) -I$(TOPDIR)/arch/mips/boot -I- -o $@ $^
 
-addinitrd: addinitrd.c
-	$(HOSTCC) -o $@ $^
+addinitrd: $(TOPDIR)/arch/mips/boot/addinitrd.c
+	$(HOSTCC) -I$(TOPDIR)/arch/mips/boot -I- -o $@ $^
 
 # Don't build dependencies, this may die if $(CC) isn't gcc
 dep:

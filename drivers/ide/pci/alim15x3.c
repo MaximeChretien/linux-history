@@ -525,10 +525,14 @@ static int ali15x3_config_drive_for_dma(ide_drive_t *drive)
 
 	drive->init_speed = 0;
 
+	/* Set reasonable PIO timings first - some of them are needed
+	   for DMA as well. */
+	hwif->tuneproc(drive, 255);
+
 	if ((id->capability & 1) != 0 && drive->autodma) {
 		/* Consult the list of known "bad" drives */
 		if (hwif->ide_dma_bad_drive(drive))
-			goto ata_pio;
+			goto no_dma_set;
 		if ((id->field_valid & 4) && (m5229_revision >= 0xC2)) {
 			if (id->dma_ultra & hwif->ultra_mask) {
 				/* Force if Capable UltraDMA */
@@ -550,11 +554,9 @@ try_dma_modes:
 			if (!config_chipset_for_dma(drive))
 				goto no_dma_set;
 		} else {
-			goto ata_pio;
+			goto no_dma_set;
 		}
 	} else {
-ata_pio:
-		hwif->tuneproc(drive, 255);
 no_dma_set:
 		return hwif->ide_dma_off_quietly(drive);
 	}

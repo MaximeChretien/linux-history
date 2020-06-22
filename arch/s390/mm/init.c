@@ -154,11 +154,6 @@ void __init paging_init(void)
                         if (address >= end_mem)
                                 pte_clear(&pte);
                         set_pte(pg_table, pte);
-			if (address < memory_size) /* do not set storage
-						      key outside the storage
-						      or die */
-				set_access_key(pte); /* switch to our
-							access key */
                         address += PAGE_SIZE;
                 }
         }

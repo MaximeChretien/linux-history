@@ -27,10 +27,6 @@ ibmphp-objs		:=	ibmphp_core.o	\
 				ibmphp_res.o	\
 				ibmphp_hpc.o
 
-ifdef CONFIG_HOTPLUG_PCI_ACPI
-  EXTRA_CFLAGS	+= -D_LINUX -I$(CURDIR)/../acpi
-endif
-
 acpiphp_objs		:=	acpiphp_core.o	\
 				acpiphp_glue.o	\
 				acpiphp_pci.o	\

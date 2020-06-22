@@ -26,7 +26,7 @@
  *  Copyright (c) 2000-2002 LSI Logic Corporation
  *  Originally By: Noah Romer
  *
- *  $Id: mptlan.c,v 1.53 2002/10/17 20:15:58 pdelaney Exp $
+ *  $Id: mptlan.c,v 1.55 2003/05/07 14:08:32 pdelaney Exp $
  */
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
@@ -154,7 +154,7 @@ static int  mpt_lan_open(struct net_device *dev);
 static int  mpt_lan_reset(struct net_device *dev);
 static int  mpt_lan_close(struct net_device *dev);
 static void mpt_lan_post_receive_buckets(void *dev_id);
-static void mpt_lan_wake_post_buckets_task(struct net_device *dev, 
+static void mpt_lan_wake_post_buckets_task(struct net_device *dev,
 					   int priority);
 static int  mpt_lan_receive_post_turbo(struct net_device *dev, u32 tmsg);
 static int  mpt_lan_receive_post_reply(struct net_device *dev,
@@ -242,7 +242,7 @@ lan_reply (MPT_ADAPTER *ioc, MPT_FRAME_HDR *mf, MPT_FRAME_HDR *reply)
 			//  would Oops because mf has already been set
 			//  to NULL.  So after return from this func,
 			//  mpt_interrupt() will attempt to put (NULL) mf ptr
-			//  item back onto it's adapter FreeQ - Oops!:-(
+			//  item back onto its adapter FreeQ - Oops!:-(
 			//  It's Ok, since mpt_lan_send_turbo() *currently*
 			//  always returns 0, but..., just in case:
 
@@ -339,12 +339,15 @@ mpt_lan_ioc_reset(MPT_ADAPTER *ioc, int reset_phase)
 	struct mpt_lan_priv *priv = (struct mpt_lan_priv *) dev->priv;
 
 	dlprintk((KERN_INFO MYNAM ": IOC %s_reset routed to LAN driver!\n",
-			reset_phase==MPT_IOC_PRE_RESET ? "pre" : "post"));
+			reset_phase==MPT_IOC_SETUP_RESET ? "setup" : (
+			reset_phase==MPT_IOC_PRE_RESET ? "pre" : "post")));
 
 	if (priv->mpt_rxfidx == NULL)
 		return (1);
 
-	if (reset_phase == MPT_IOC_PRE_RESET) {
+	if (reset_phase == MPT_IOC_SETUP_RESET) {
+		;
+	} else if (reset_phase == MPT_IOC_PRE_RESET) {
 		int i;
 		unsigned long flags;
 
@@ -868,7 +871,7 @@ mpt_lan_sdu_send (struct sk_buff *skb, struct net_device *dev)
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 static inline void
 mpt_lan_wake_post_buckets_task(struct net_device *dev, int priority)
-/* 
+/*
  * @priority: 0 = put it on the timer queue, 1 = put it on the immediate queue
  */
 {
@@ -878,8 +881,6 @@ mpt_lan_wake_post_buckets_task(struct net_device *dev, int priority)
 		if (priority) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,41)
 			schedule_work(&priv->post_buckets_task);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,40)
-			schedule_task(&priv->post_buckets_task);
 #else
 			queue_task(&priv->post_buckets_task, &tq_immediate);
 			mark_bh(IMMEDIATE_BH);
@@ -887,8 +888,6 @@ mpt_lan_wake_post_buckets_task(struct net_device *dev, int priority)
 		} else {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,41)
 			schedule_delayed_work(&priv->post_buckets_task, 1);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,40)
-			schedule_task(&priv->post_buckets_task);
 #else
 			queue_task(&priv->post_buckets_task, &tq_timer);
 #endif
@@ -1191,7 +1190,7 @@ mpt_lan_receive_post_reply(struct net_device *dev,
 			remaining, atomic_read(&priv->buckets_out));
 	
 	if ((remaining < priv->bucketthresh) &&
-	    ((atomic_read(&priv->buckets_out) - remaining) > 
+	    ((atomic_read(&priv->buckets_out) - remaining) >
 	     MPT_LAN_BUCKETS_REMAIN_MISMATCH_THRESH)) {
 		
 		printk (KERN_WARNING MYNAM " Mismatch between driver's "
@@ -1525,7 +1524,7 @@ mpt_lan_init (void)
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-void __init mpt_lan_exit(void)
+static void mpt_lan_exit(void)
 {
 	int i;
 
@@ -1534,10 +1533,11 @@ void __init mpt_lan_exit(void)
 	for (i = 0; mpt_landev[i] != NULL; i++) {
 		struct net_device *dev = mpt_landev[i];
 
-		printk (KERN_INFO MYNAM ": %s/%s: Fusion MPT LAN device unregistered\n",
+		printk (KERN_INFO ": %s/%s: Fusion MPT LAN device unregistered\n",
 			       IOC_AND_NETDEV_NAMES_s_s(dev));
 		unregister_fcdev(dev);
-		mpt_landev[i] = (struct net_device *) 0xdeadbeef; /* Debug */
+		//mpt_landev[i] = (struct net_device *) 0xdeadbeef; /* Debug */
+		mpt_landev[i] = NULL;
 	}
 
 	if (LanCtx >= 0) {
@@ -1550,9 +1550,10 @@ void __init mpt_lan_exit(void)
 }
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,59)
 MODULE_PARM(tx_max_out_p, "i");
 MODULE_PARM(max_buckets_out, "i"); // Debug stuff. FIXME!
+#endif
 
 module_init(mpt_lan_init);
 module_exit(mpt_lan_exit);

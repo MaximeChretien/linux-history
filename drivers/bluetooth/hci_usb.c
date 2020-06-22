@@ -301,7 +301,8 @@ static int hci_usb_open(struct hci_dev *hdev)
 			hci_usb_bulk_rx_submit(husb);
 
 #ifdef CONFIG_BLUEZ_USB_SCO
-		hci_usb_isoc_rx_submit(husb);
+		if (husb->isoc_iface)
+			hci_usb_isoc_rx_submit(husb);
 #endif
 	} else {
 		clear_bit(HCI_RUNNING, &hdev->flags);

@@ -1186,7 +1186,6 @@ static int rx_pkt(struct atm_dev *dev)
 	skb_put(skb,len);  
         // pwang_test
         ATM_SKB(skb)->vcc = vcc;
-        ATM_SKB(skb)->iovcnt = 0;
         ATM_DESC(skb) = desc;        
 	skb_queue_tail(&iadev->rx_dma_q, skb);  
 
@@ -2827,11 +2826,15 @@ static int ia_ioctl(struct atm_dev *dev, unsigned int cmd, void *arg)
              break;
           case MEMDUMP_FFL:
           {  
-             ia_regs_t       regs_local;
-             ffredn_t        *ffL = &regs_local.ffredn;
-             rfredn_t        *rfL = &regs_local.rfredn;
+             ia_regs_t       *regs_local;
+             ffredn_t        *ffL;
+             rfredn_t        *rfL;
                      
 	     if (!capable(CAP_NET_ADMIN)) return -EPERM;
+	     regs_local = kmalloc(sizeof(*regs_local), GFP_KERNEL);
+	     if (!regs_local) return -ENOMEM;
+	     ffL = &regs_local->ffredn;
+	     rfL = &regs_local->rfredn;
              /* Copy real rfred registers into the local copy */
  	     for (i=0; i<(sizeof (rfredn_t))/4; i++)
                 ((u_int *)rfL)[i] = ((u_int *)iadev->reass_reg)[i] & 0xffff;
@@ -2839,8 +2842,11 @@ static int ia_ioctl(struct atm_dev *dev, unsigned int cmd, void *arg)
 	     for (i=0; i<(sizeof (ffredn_t))/4; i++)
                 ((u_int *)ffL)[i] = ((u_int *)iadev->seg_reg)[i] & 0xffff;
 
-             if (copy_to_user(ia_cmds.buf, &regs_local,sizeof(ia_regs_t)))
+             if (copy_to_user(ia_cmds.buf, regs_local,sizeof(ia_regs_t))) {
+                kfree(regs_local);
                 return -EFAULT;
+             }
+             kfree(regs_local);
              printk("Board %d registers dumped\n", board);
              ia_cmds.status = 0;                  
 	 }	
@@ -2965,7 +2971,7 @@ static int ia_pkt_tx (struct atm_vcc *vcc, struct sk_buff *skb) {
 	                 dev_kfree_skb_any(skb);
 	           return 0;
 	   }
-	   kfree(skb);
+	   dev_kfree_skb_any(skb);
 	   skb = newskb;
         }       
 	/* Get a descriptor number from our free descriptor queue  

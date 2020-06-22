@@ -1,7 +1,7 @@
 /*
  * This file contains the routines setting up the linux page tables.
  *  -- paulus
- * 
+ *
  *  Derived from arch/ppc/mm/init.c:
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
  *
@@ -122,7 +122,7 @@ __ioremap(unsigned long addr, unsigned long size, unsigned long flags)
 	 */
 	if ((v = p_mapped_by_bats(p)) /*&& p_mapped_by_bats(p+size-1)*/ )
 		goto out;
-	
+
 	if (mem_init_done) {
 		struct vm_struct *area;
 		area = get_vm_area(size, VM_IOREMAP);
@@ -193,13 +193,13 @@ void __init
 adjust_total_lowmem(void)
 {
 	unsigned long max_low_mem = MAX_LOW_MEM;
-	
+
 #ifdef HAVE_BATS
 	unsigned long bat_max = 0x10000000;
 	unsigned long align;
 	unsigned long ram;
 	int is601 = 0;
-	
+
 	/* 601s have smaller BATs */
 	if (PVR_VER(mfspr(PVR)) == 1) {
 		bat_max = 0x00800000;
@@ -224,7 +224,7 @@ adjust_total_lowmem(void)
 	if (align && align < bat_max)
 		bat_max = align;
 
-	/* Calculate BAT values */	
+	/* Calculate BAT values */
 	__bat2 = 1UL << __ilog2(ram);
 	if (__bat2 > bat_max)
 		__bat2 = bat_max;
@@ -278,11 +278,11 @@ void __init mapin_ram(void)
 		/* On the MPC8xx, we want the page shared so we
 		 * don't get ASID compares on kernel space.
 		 */
-		f = _PAGE_PRESENT | _PAGE_ACCESSED | _PAGE_SHARED;
-#if defined(CONFIG_KGDB) || defined(CONFIG_XMON)
+		f = _PAGE_PRESENT | _PAGE_ACCESSED | _PAGE_SHARED | _PAGE_HWEXEC;
+#if defined(CONFIG_KGDB) || defined(CONFIG_XMON) || defined(CONFIG_BDI_SWITCH)
 		/* Allows stub to set breakpoints everywhere */
 		f |= _PAGE_WRENABLE;
-#else	/* !CONFIG_KGDB && !CONFIG_XMON */
+#else	/* !CONFIG_KGDB && !CONFIG_XMON && !CONFIG_BDI_SWITCH */
 		if ((char *) v < _stext || (char *) v >= etext)
 			f |= _PAGE_WRENABLE;
 #ifdef CONFIG_PPC_STD_MMU
@@ -388,7 +388,7 @@ unsigned long iopa(unsigned long addr)
 		mm = current->mm;
 	else
 		mm = &init_mm;
-	
+
 	pa = 0;
 	if (get_pteptr(mm, addr, &pte))
 		pa = (pte_val(*pte) & PAGE_MASK) | (addr & ~PAGE_MASK);
@@ -421,7 +421,7 @@ mm_ptov (unsigned long paddr)
 				goto exit;
 			}
 		}
-		
+
 		ret = (unsigned long) __va(paddr);
 	}
 exit:

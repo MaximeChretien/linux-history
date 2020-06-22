@@ -37,7 +37,7 @@ extern unsigned int csum_partial_copy_generic(const char *src, char *dst,
 
 /* FIXME: this needs to be written to really do no check -- Cort */
 #define csum_partial_copy_nocheck(src, dst, len, sum)	\
-	csum_partial_copy_generic((src), (dst), (len), (sum), 0, 0)     
+	csum_partial_copy_generic((src), (dst), (len), (sum), 0, 0)
 /*
  * Old versions which ignore errors.
  */
@@ -81,7 +81,7 @@ static inline unsigned long csum_tcpudp_nofold(unsigned long saddr,
 						   unsigned long daddr,
 						   unsigned short len,
 						   unsigned short proto,
-						   unsigned int sum) 
+						   unsigned int sum)
 {
     __asm__("\n\
 	addc %0,%0,%1 \n\

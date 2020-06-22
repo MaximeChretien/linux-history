@@ -129,17 +129,16 @@ struct eeh_early_enable_info {
 	int adapters_enabled;
 };
 
-/* Enable eeh for the given device node. */
-static void *early_enable_eeh(struct device_node *dn, void *data)
+
+/* Enable/disable eeh for the given device node. */
+static void *early_set_eeh(struct device_node *dn, struct eeh_early_enable_info *info, int enable)
 {
-	struct eeh_early_enable_info *info = data;
 	long ret;
 	char *status = get_property(dn, "status", 0);
 	u32 *class_code = (u32 *)get_property(dn, "class-code", 0);
 	u32 *vendor_id =(u32 *) get_property(dn, "vendor-id", 0);
 	u32 *device_id = (u32 *)get_property(dn, "device-id", 0);
 	u32 *regs;
-	int enable;
 
 	if (status && strcmp(status, "ok") != 0)
 		return NULL;	/* ignore devices with bad status */
@@ -161,15 +160,19 @@ static void *early_enable_eeh(struct device_node *dn, void *data)
 	 * hang waiting on status bits that won't change, etc.
 	 * But there are a few cases like display devices that make sense.
 	 */
-	enable = 1;	/* i.e. we will do checking */
-	if ((*class_code >> 16) == PCI_BASE_CLASS_DISPLAY)
-		enable = 0;
 
 	if (!eeh_check_opts_config(dn, *class_code, *vendor_id, *device_id, enable)) {
 		if (enable) {
 			printk(KERN_INFO "EEH: %s user requested to run without EEH.\n", dn->full_name);
 			enable = 0;
 		}
+#if 0
+	/* Turn off EEH automatically for graphics ... 
+	* but we don't want to do this, not really. .... */
+	} else 	if ((*class_code >> 16) == PCI_BASE_CLASS_DISPLAY) {
+		printk(KERN_INFO "EEH: %s DISPLAY automatically set to run without EEH.\n", dn->full_name);
+		enable = 0;
+#endif
 	}
 
 	if (!enable)
@@ -179,6 +182,16 @@ static void *early_enable_eeh(struct device_node *dn, void *data)
 	if (dn->parent && (dn->parent->eeh_mode & EEH_MODE_SUPPORTED)) {
 		/* Parent supports EEH. */
 		dn->eeh_mode |= EEH_MODE_SUPPORTED;
+
+		/* Recurse to parent to set EEH, since we are probably
+		 * a non-eeh supporting pci bridge chip on some card. 
+		 * But recurse only if our eeh setting is to be different.
+		 */
+		if ((enable && (EEH_MODE_NOCHECK == dn->eeh_mode)) ||
+		    (!enable && (EEH_MODE_NOCHECK != dn->eeh_mode))) 
+		{
+			early_set_eeh (dn->parent, info, enable);
+		}
 		dn->eeh_config_addr = dn->parent->eeh_config_addr;
 		return NULL;
 	}
@@ -187,17 +200,27 @@ static void *early_enable_eeh(struct device_node *dn, void *data)
 	regs = (u32 *)get_property(dn, "reg", 0);
 	if (regs) {
 		/* First register entry is addr (00BBSS00)  */
-		/* Try to enable eeh */
+		/* Try to enable/disable eeh */
 		ret = rtas_call(ibm_set_eeh_option, 4, 1, NULL,
 				regs[0], info->buid_hi, info->buid_lo,
-				EEH_ENABLE);
+				enable ? EEH_ENABLE : EEH_DISABLE);
 		if (ret == 0) {
 			info->adapters_enabled++;
 			dn->eeh_mode |= EEH_MODE_SUPPORTED;
 			dn->eeh_config_addr = regs[0];
+		} else {
+			printk(KERN_INFO "EEH: %s failed to %s ret=%ld\n", dn->full_name, enable ? "enable" : "disable", ret);
 		}
 	}
 	return NULL; 
+}
+
+/* Enable eeh for the given device node. */
+static void *early_enable_eeh(struct device_node *dn, void *data)
+{
+	struct eeh_early_enable_info *info = data;
+	/* Set enable to 1, i.e. we will do checking */
+	return early_set_eeh (dn, info, 1);
 }
 
 /*

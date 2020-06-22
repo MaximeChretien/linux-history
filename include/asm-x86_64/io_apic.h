@@ -145,4 +145,9 @@ extern int skip_ioapic_setup;
 #define io_apic_assign_pci_irqs 0
 #endif
 
+extern int io_apic_get_unique_id (int ioapic, int apic_id);
+extern int io_apic_get_version (int ioapic);
+extern int io_apic_get_redir_entries (int ioapic);
+extern int io_apic_set_pci_routing (int ioapic, int pin, int irq);
+
 #endif

@@ -56,6 +56,7 @@ void io_outb(unsigned long port, unsigned char val)
 unsigned long serial_init(int chan, void *ignored)
 {
 	unsigned long com_port;
+	unsigned char lcr, dlm;
 
 	/* We need to find out which type io we're expecting.  If it's
 	 * 'SERIAL_IO_PORT', we get an offset from the isa_io_base.
@@ -78,22 +79,38 @@ unsigned long serial_init(int chan, void *ignored)
 
 	/* How far apart the registers are. */
 	shift = rs_table[chan].iomem_reg_shift;
-	
+
+	/* save the LCR */
+	lcr = serial_inb(com_port + (UART_LCR << shift));
+
 	/* Access baud rate */
-	serial_outb(com_port + (UART_LCR << shift), 0x80);
+	serial_outb(com_port + (UART_LCR << shift), UART_LCR_DLAB);
+	dlm = serial_inb(com_port + (UART_DLM << shift));
 
-	/* Input clock. */
-	serial_outb(com_port + (UART_DLL << shift),
+	/*
+	 * Test if serial port is unconfigured
+	 * We assume that no-one uses less than 110 baud or
+	 * less than 7 bits per character these days.
+	 *  -- paulus.
+	 */
+	if ((dlm <= 4) && (lcr & 2)) {
+		/* port is configured, put the old LCR back */
+		serial_outb(com_port + (UART_LCR << shift), lcr);
+	}
+	else {
+		/* Input clock. */
+		serial_outb(com_port + (UART_DLL << shift),
 			(rs_table[chan].baud_base / SERIAL_BAUD) & 0xFF);
-	serial_outb(com_port + (UART_DLM << shift),
-			(rs_table[chan].baud_base / SERIAL_BAUD) >> 8);
-	/* 8 data, 1 stop, no parity */
-	serial_outb(com_port + (UART_LCR << shift), 0x03);
-	/* RTS/DTR */
-	serial_outb(com_port + (UART_MCR << shift), 0x03);
+		serial_outb(com_port + (UART_DLM << shift),
+				(rs_table[chan].baud_base / SERIAL_BAUD) >> 8);
+		/* 8 data, 1 stop, no parity */
+		serial_outb(com_port + (UART_LCR << shift), 0x03);
+		/* RTS/DTR */
+		serial_outb(com_port + (UART_MCR << shift), 0x03);
 
-	/* Clear & enable FIFOs */
-	serial_outb(com_port + (UART_FCR << shift), 0x07);
+		/* Clear & enable FIFOs */
+		serial_outb(com_port + (UART_FCR << shift), 0x07);
+	}
 
 	return (com_port);
 }

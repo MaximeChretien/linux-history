@@ -49,6 +49,9 @@ static unsigned int rtas_error_log_max;
 #define SURVEILLANCE_TIMEOUT	1
 #define SURVEILLANCE_SCANRATE	1
 
+extern struct proc_dir_entry *proc_ppc64_root;
+extern struct proc_dir_entry *rtas_proc_dir;
+extern spinlock_t proc_ppc64_lock;
 /*
  * Since we use 32 bit RTAS, the physical address of this must be below
  * 4G or else bad things happen. Allocate this in the kernel data and
@@ -821,12 +824,8 @@ static int rtasd(void *unused)
 		current->cpus_allowed = 1UL << cpu_logical_map(cpu);
 
 		/* Check all cpus for pending events before sleeping*/
-		if (first_pass) {
-			schedule();
-		} else {
-			set_current_state(TASK_INTERRUPTIBLE);
-			schedule_timeout((HZ*60/rtas_event_scan_rate) / 2);
-		}
+                set_current_state(TASK_INTERRUPTIBLE);
+                schedule_timeout(first_pass ? HZ : (HZ*60/rtas_event_scan_rate) / 2);
 	}
 
 error_vfree:
@@ -836,25 +835,45 @@ error:
 	return -EINVAL;
 }
 
-static void __init rtas_init(void)
+static int __init rtas_init(void)
 {
-	struct proc_dir_entry *rtas_dir, *entry;
+	int ret = 0;
+	struct proc_dir_entry *entry;
 
-	rtas_dir = proc_mkdir("rtas", 0);
-	if (!rtas_dir) {
-		printk(KERN_ERR "Failed to create rtas proc directory\n");
-	} else {
-		entry = create_proc_entry("error_log", S_IRUSR, rtas_dir);
-		if (entry)
-			entry->proc_fops = &proc_rtas_log_operations;
-		else
-			printk(KERN_ERR "Failed to create rtas/error_log proc entry\n");
+	spin_lock(&proc_ppc64_lock);
+	if (proc_ppc64_root == NULL) {
+		proc_ppc64_root = proc_mkdir("ppc64", 0);
+		if (!proc_ppc64_root) {
+			spin_unlock(&proc_ppc64_lock);
+			return -EINVAL;
+		}		
+	}
+	spin_unlock(&proc_ppc64_lock);
+	
+	if (rtas_proc_dir == NULL) {
+		rtas_proc_dir = proc_mkdir("rtas", proc_ppc64_root);
 	}
 
-	if (kernel_thread(rtasd, 0, CLONE_FS) < 0)
+	if (rtas_proc_dir == NULL) {
+		printk(KERN_ERR "Failed to create /proc/ppc64/rtas in rtas_init\n");
+		ret = -EINVAL;
+	} else {
+		entry = create_proc_entry("error_log", S_IRUSR, rtas_proc_dir);
+		if (entry)
+			entry->proc_fops = &proc_rtas_log_operations;
+		else {
+			printk(KERN_ERR "Failed to create rtas/error_log proc entry\n");
+			ret = -EINVAL;
+		}
+	}
+
+	if (kernel_thread(rtasd, 0, CLONE_FS) < 0) { 
 		printk(KERN_ERR "Failed to start RTAS daemon\n");
+		ret = -EINVAL;
+	}
 
 	printk(KERN_ERR "RTAS daemon started\n");
+	return ret;
 }
 
 static int __init surveillance_setup(char *str)

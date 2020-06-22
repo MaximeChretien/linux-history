@@ -1378,8 +1378,13 @@ static int packet_notifier(struct notifier_block *this, unsigned long msg, void 
 		po = sk->protinfo.af_packet;
 
 		switch (msg) {
-		case NETDEV_DOWN:
 		case NETDEV_UNREGISTER:
+#ifdef CONFIG_PACKET_MULTICAST
+			if (po->mclist)
+				packet_dev_mclist(dev, po->mclist, -1);
+			// fallthrough
+#endif
+		case NETDEV_DOWN:
 			if (dev->ifindex == po->ifindex) {
 				spin_lock(&po->bind_lock);
 				if (po->running) {
@@ -1396,10 +1401,6 @@ static int packet_notifier(struct notifier_block *this, unsigned long msg, void 
 				}
 				spin_unlock(&po->bind_lock);
 			}
-#ifdef CONFIG_PACKET_MULTICAST
-			if (po->mclist)
-				packet_dev_mclist(dev, po->mclist, -1);
-#endif
 			break;
 		case NETDEV_UP:
 			spin_lock(&po->bind_lock);
@@ -1409,10 +1410,6 @@ static int packet_notifier(struct notifier_block *this, unsigned long msg, void 
 				po->running = 1;
 			}
 			spin_unlock(&po->bind_lock);
-#ifdef CONFIG_PACKET_MULTICAST
-			if (po->mclist)
-				packet_dev_mclist(dev, po->mclist, +1);
-#endif
 			break;
 		}
 	}

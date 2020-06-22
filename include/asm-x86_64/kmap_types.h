@@ -7,6 +7,8 @@ enum km_type {
 	KM_SKB_DATA_SOFTIRQ,
 	KM_USER0,
 	KM_USER1,
+	KM_SOFTIRQ0,
+	KM_SOFTIRQ1,
 	KM_TYPE_NR
 };
 

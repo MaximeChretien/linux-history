@@ -261,7 +261,7 @@ static inline u32
 calc_clkdiv(int baud)
 {
 	u32 sys_busclk =
-		(get_au1000_speed() / (int)(inl(PM_POWERUP_CONTROL)&0x03) + 2);
+		(get_au1x00_speed() / (int)(inl(SYS_POWERCTRL)&0x03) + 2);
 	return (sys_busclk / (2 * baud)) - 1;
 }
 
@@ -269,7 +269,7 @@ static inline int
 calc_baudrate(u32 clkdiv)
 {
 	u32 sys_busclk =
-		(get_au1000_speed() / (int)(inl(PM_POWERUP_CONTROL)&0x03) + 2);
+		(get_au1x00_speed() / (int)(inl(SYS_POWERCTRL)&0x03) + 2);
 	return sys_busclk / (2 * (clkdiv + 1));
 }
 
@@ -642,7 +642,7 @@ au1000ts_init_module(void)
 	ts->y_plate_ohms = DEFAULT_Y_PLATE_OHMS;
 
 	// set GPIO to SSI0 function
-	outl(inl(PIN_FUNCTION) & ~1, PIN_FUNCTION);
+	outl(inl(SYS_PINFUNC) & ~1, SYS_PINFUNC);
 	
 	// enable SSI0 clock and bring SSI0 out of reset
 	outl(0, SSI0_CONTROL);

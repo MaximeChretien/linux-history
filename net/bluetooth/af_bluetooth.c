@@ -27,7 +27,7 @@
  *
  * $Id: af_bluetooth.c,v 1.8 2002/07/22 20:32:54 maxk Exp $
  */
-#define VERSION "2.2"
+#define VERSION "2.3"
 
 #include <linux/config.h>
 #include <linux/module.h>
@@ -57,7 +57,7 @@
 #endif
 
 /* Bluetooth sockets */
-#define BLUEZ_MAX_PROTO	5
+#define BLUEZ_MAX_PROTO	6
 static struct net_proto_family *bluez_proto[BLUEZ_MAX_PROTO];
 
 int bluez_sock_register(int proto, struct net_proto_family *ops)
@@ -253,19 +253,24 @@ unsigned int bluez_sock_poll(struct file * file, struct socket *sock, poll_table
 	return mask;
 }
 
-int bluez_sock_w4_connect(struct sock *sk, int flags)
+int bluez_sock_wait_state(struct sock *sk, int state, unsigned long timeo)
 {
 	DECLARE_WAITQUEUE(wait, current);
-	long timeo = sock_sndtimeo(sk, flags & O_NONBLOCK);
 	int err = 0;
 
 	BT_DBG("sk %p", sk);
 
 	add_wait_queue(sk->sleep, &wait);
-	while (sk->state != BT_CONNECTED) {
+	while (sk->state != state) {
 		set_current_state(TASK_INTERRUPTIBLE);
+
 		if (!timeo) {
 			err = -EAGAIN;
+			break;
+		}
+
+		if (signal_pending(current)) {
+			err = sock_intr_errno(timeo);
 			break;
 		}
 
@@ -273,17 +278,8 @@ int bluez_sock_w4_connect(struct sock *sk, int flags)
 		timeo = schedule_timeout(timeo);
 		lock_sock(sk);
 
-		err = 0;
-		if (sk->state == BT_CONNECTED)
-			break;
-
 		if (sk->err) {
 			err = sock_error(sk);
-			break;
-		}
-
-		if (signal_pending(current)) {
-			err = sock_intr_errno(timeo);
 			break;
 		}
 	}

@@ -48,7 +48,10 @@ static __inline__ void ide_init_default_hwifs(void)
 {
 }
 
-#include <asm-generic/ide_iops.h>
+#define __ide_mm_insw(p, a, c)  _insw_ns((volatile u16 *)(p), (a), (c))
+#define __ide_mm_insl(p, a, c)  _insl_ns((volatile u32 *)(p), (a), (c))
+#define __ide_mm_outsw(p, a, c) _outsw_ns((volatile u16 *)(p), (a), (c))
+#define __ide_mm_outsl(p, a, c) _outsl_ns((volatile u32 *)(p), (a), (c))
 
 #endif /* __KERNEL__ */
 

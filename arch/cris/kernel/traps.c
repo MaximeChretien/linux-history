@@ -1,12 +1,11 @@
-/* $Id: traps.c,v 1.18 2002/12/02 08:11:41 starvik Exp $
- *
+/*
  *  linux/arch/cris/traps.c
  *
- *  Here we handle the break vectors not used by the system call 
- *  mechanism, as well as some general stack/register dumping 
+ *  Here we handle the break vectors not used by the system call
+ *  mechanism, as well as some general stack/register dumping
  *  things.
- * 
- *  Copyright (C) 2000,2001 Axis Communications AB
+ *
+ *  Copyright (C) 2000, 2001, 2002, 2003 Axis Communications AB
  *
  *  Authors:   Bjorn Wesen
  *  	       Hans-Peter Nilsson
@@ -216,6 +215,8 @@ bad:
  * we have the nice doggy development flag set, we halt here
  * instead of rebooting.
  */
+extern void reset_watchdog(void);
+extern void stop_watchdog(void);
 
 void
 watchdog_bite_hook(struct pt_regs *regs)
@@ -239,9 +240,6 @@ void dump_stack(void)
 void 
 die_if_kernel(const char * str, struct pt_regs * regs, long err)
 {
-	extern void reset_watchdog(void);
-	extern void stop_watchdog(void);
-
 	if(user_mode(regs))
 		return;
 

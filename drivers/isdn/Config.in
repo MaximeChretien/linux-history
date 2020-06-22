@@ -8,6 +8,7 @@ define_bool CONFIG_ISDN_BOOL y
 if [ "$CONFIG_INET" != "n" ]; then
    bool '  Support synchronous PPP' CONFIG_ISDN_PPP
    if [ "$CONFIG_ISDN_PPP" != "n" ]; then
+      bool         '    PPP filtering for ISDN' CONFIG_IPPP_FILTER $CONFIG_FILTER
       bool         '    Use VJ-compression with synchronous PPP' CONFIG_ISDN_PPP_VJ
       bool         '    Support generic MP (RFC 1717)' CONFIG_ISDN_MPP
       dep_tristate '    Support BSD compression' CONFIG_ISDN_PPP_BSDCOMP $CONFIG_ISDN

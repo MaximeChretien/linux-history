@@ -716,7 +716,7 @@ backtrace(struct pt_regs *excp)
 	extern char do_signal_ret, ret_from_except;
 
 	printf("backtrace:\n");
-	
+
 	if (excp != NULL)
 		sp = excp->gpr[1];
 	else
@@ -1176,7 +1176,7 @@ void
 byterev(unsigned char *val, int size)
 {
 	int t;
-	
+
 	switch (size) {
 	case 2:
 		SWAP(val[0], val[1], t);
@@ -1787,7 +1787,7 @@ pretty_print_addr(unsigned long addr)
 {
 	char *sym;
 	unsigned long saddr;
-	
+
 	printf("%08x", addr);
 	sym = xmon_find_symbol(addr, &saddr);
 	if (sym)
@@ -1807,7 +1807,7 @@ xmon_find_symbol(unsigned long addr, unsigned long* saddr)
 	extern unsigned long sysmap_size;
 	if ( !sysmap || !sysmap_size )
 		return NULL;
-	
+
 	prev = 0;
 	psym = NULL;
 	p = sysmap;
@@ -1852,7 +1852,7 @@ xmon_symbol_to_addr(char* symbol)
 	char *match;
 	int goodness = 0;
 	int result = 0;
-	
+
 	extern char *sysmap;
 	extern unsigned long sysmap_size;
 	if ( !sysmap || !sysmap_size )
@@ -1883,7 +1883,7 @@ xmon_symbol_to_addr(char* symbol)
 				}
 				cur++;
 			}
-		}	
+		}
 		if (goodness) {
 			p = match;
 			while(p > sysmap && *p != 10)
@@ -1895,4 +1895,4 @@ xmon_symbol_to_addr(char* symbol)
 	}
 	debugger_fault_handler = 0;
 	return result;
-}		
+}

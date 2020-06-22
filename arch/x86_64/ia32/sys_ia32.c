@@ -16,7 +16,7 @@
  *
  * This file assumes that there is a hole at the end of user address space.
  *
- * $Id: sys_ia32.c,v 1.54 2003/03/24 09:28:26 ak Exp $
+ * $Id: sys_ia32.c,v 1.58 2003/05/09 17:21:17 ak Exp $
  */
 
 #include <linux/config.h>
@@ -845,6 +845,7 @@ sys32_select(int n, fd_set *inp, fd_set *outp, fd_set *exp, struct timeval32 *tv
 	ret = -EINVAL;
 	if (n < 0)
 		goto out_nofds;
+	size = FDS_BYTES(n);
 
 	if (n > current->files->max_fdset)
 		n = current->files->max_fdset;
@@ -855,7 +856,6 @@ sys32_select(int n, fd_set *inp, fd_set *outp, fd_set *exp, struct timeval32 *tv
 	 * long-words. 
 	 */
 	ret = -ENOMEM;
-	size = FDS_BYTES(n);
 	bits = kmalloc(6 * size, GFP_KERNEL);
 	if (!bits)
 		goto out_nofds;
@@ -1062,8 +1062,8 @@ sys32_writev(int fd, struct iovec32 *vector, u32 count)
 #define RESOURCE32(x) ((x > RLIM_INFINITY32) ? RLIM_INFINITY32 : x)
 
 struct rlimit32 {
-	int	rlim_cur;
-	int	rlim_max;
+	unsigned	rlim_cur;
+	unsigned	rlim_max;
 };
 
 extern asmlinkage long sys_getrlimit(unsigned int resource, struct rlimit *rlim);
@@ -1080,6 +1080,10 @@ sys32_getrlimit(unsigned int resource, struct rlimit32 *rlim)
 	ret = sys_getrlimit(resource, &r);
 	set_fs(old_fs);
 	if (!ret) {
+		if (r.rlim_cur >= 0xffffffff) 
+			r.rlim_cur = RLIM_INFINITY32;
+		if (r.rlim_max >= 0xffffffff) 
+			r.rlim_max = RLIM_INFINITY32;
 		if (verify_area(VERIFY_WRITE, rlim, sizeof(struct rlimit32)) ||
 		    __put_user(RESOURCE32(r.rlim_cur), &rlim->rlim_cur) ||
 		    __put_user(RESOURCE32(r.rlim_max), &rlim->rlim_max))
@@ -1099,9 +1103,13 @@ sys32_old_getrlimit(unsigned int resource, struct rlimit32 *rlim)
 	
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
-	ret = sys_old_getrlimit(resource, &r);
+	ret = sys_getrlimit(resource, &r);
 	set_fs(old_fs);
 	if (!ret) {
+		if (r.rlim_cur >= 0x7fffffff) 
+			r.rlim_cur = RLIM_INFINITY32;
+		if (r.rlim_max >= 0x7fffffff) 
+			r.rlim_max = RLIM_INFINITY32;	
 		if (verify_area(VERIFY_WRITE, rlim, sizeof(struct rlimit32)) ||
 		    __put_user(r.rlim_cur, &rlim->rlim_cur) ||
 		    __put_user(r.rlim_max, &rlim->rlim_max))
@@ -1494,7 +1502,11 @@ struct sysinfo32 {
         u32 totalswap;
         u32 freeswap;
         unsigned short procs;
-        char _f[22];
+	unsigned short pad; 
+        u32 totalhigh;
+        u32 freehigh;
+        u32 mem_unit;
+        char _f[20-2*sizeof(u32)-sizeof(int)];
 };
 
 extern asmlinkage long sys_sysinfo(struct sysinfo *info);
@@ -1520,7 +1532,10 @@ sys32_sysinfo(struct sysinfo32 *info)
 	    __put_user (s.bufferram, &info->bufferram) ||
 	    __put_user (s.totalswap, &info->totalswap) ||
 	    __put_user (s.freeswap, &info->freeswap) ||
-	    __put_user (s.procs, &info->procs))
+	    __put_user (s.procs, &info->procs) ||
+	    __put_user (s.totalhigh, &info->totalhigh) || 
+	    __put_user (s.freehigh, &info->freehigh) ||
+	    __put_user (s.mem_unit, &info->mem_unit))
 		return -EFAULT;
 	return 0;
 }
@@ -2550,7 +2565,7 @@ struct exec_domain ia32_exec_domain = {
 
 static int __init ia32_init (void)
 {
-	printk("IA32 emulation $Id: sys_ia32.c,v 1.54 2003/03/24 09:28:26 ak Exp $\n");  
+	printk("IA32 emulation $Id: sys_ia32.c,v 1.58 2003/05/09 17:21:17 ak Exp $\n");  
 	ia32_exec_domain.signal_map = default_exec_domain.signal_map;
 	ia32_exec_domain.signal_invmap = default_exec_domain.signal_invmap;
 	register_exec_domain(&ia32_exec_domain);

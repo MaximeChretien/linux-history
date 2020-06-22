@@ -7,6 +7,15 @@
  *  Authors:  Bjorn Wesen (bjornw@axis.com)
  *
  *  $Log: init.c,v $
+ *  Revision 1.38  2003/04/01 14:12:08  starvik
+ *  Added loglevel for lots of printks
+ *
+ *  Revision 1.37  2003/01/22 06:54:47  starvik
+ *  Fixed warnings issued by GCC 3.2.1
+ *
+ *  Revision 1.36  2003/01/09 17:59:55  starvik
+ *  Added init_ioremap to initcalls
+ *
  *  Revision 1.35  2002/05/17 05:33:59  starvik
  *  Limit cache flush range to the size of the cache
  *
@@ -113,6 +122,7 @@
 #include <linux/swap.h>
 #include <linux/smp.h>
 #include <linux/bootmem.h>
+#include <linux/init.h>
 
 #include <asm/system.h>
 #include <asm/segment.h>
@@ -208,7 +218,7 @@ paging_init(void)
 	int i;
 	unsigned long zones_size[MAX_NR_ZONES];
 
-	printk("Setting up paging and the MMU.\n");
+	printk(KERN_INFO "Setting up paging and the MMU.\n");
 	
 	/* clear out the init_mm.pgd that will contain the kernel's mappings */
 
@@ -404,7 +414,8 @@ mem_init(void)
         datasize =  (unsigned long) &_edata - (unsigned long) &_etext;
         initsize =  (unsigned long) &__init_end - (unsigned long) &__init_begin;
 	
-        printk("Memory: %luk/%luk available (%dk kernel code, %dk reserved, %dk data, "
+        printk(KERN_INFO
+	       "Memory: %luk/%luk available (%dk kernel code, %dk reserved, %dk data, "
 	       "%dk init)\n" ,
 	       (unsigned long) nr_free_pages() << (PAGE_SHIFT-10),
 	       max_mapnr << (PAGE_SHIFT-10),
@@ -425,46 +436,39 @@ mem_init(void)
 	return;
 }
 
-/* Initialize remaps of some I/O-ports. This is designed to be callable
- * multiple times from the drivers init-sections, because we don't know
- * beforehand which driver will get initialized first.
+/* Initialize remaps of some I/O-ports. It is important that this
+ * is called before any driver is initialized.
  */
 
-void 
-init_ioremap(void)
+static int 
+__init init_ioremap(void)
 {
   
 	/* Give the external I/O-port addresses their values */
 
-        static int initialized = 0;
-  
-        if( !initialized ) {
-                initialized++;
-            
 #ifdef CONFIG_CRIS_LOW_MAP
-               /* Simply a linear map (see the KSEG map above in paging_init) */
-               port_cse1_addr = (volatile unsigned long *)(MEM_CSE1_START | 
-                                                           MEM_NON_CACHEABLE);
-               port_csp0_addr = (volatile unsigned long *)(MEM_CSP0_START |
-                                                           MEM_NON_CACHEABLE);
-               port_csp4_addr = (volatile unsigned long *)(MEM_CSP4_START |
-                                                           MEM_NON_CACHEABLE);
-#else
-               /* Note that nothing blows up just because we do this remapping 
-                * it's ok even if the ports are not used or connected 
-                * to anything (or connected to a non-I/O thing) */        
-               port_cse1_addr = (volatile unsigned long *)
-                 ioremap((unsigned long)(MEM_CSE1_START | 
-                                         MEM_NON_CACHEABLE), 16);
-               port_csp0_addr = (volatile unsigned long *)
-                 ioremap((unsigned long)(MEM_CSP0_START |
-                                         MEM_NON_CACHEABLE), 16);
-               port_csp4_addr = (volatile unsigned long *)
-                 ioremap((unsigned long)(MEM_CSP4_START |
-                                         MEM_NON_CACHEABLE), 16);
-#endif	
-        }
+	/* Simply a linear map (see the KSEG map above in paging_init) */
+	port_cse1_addr = (volatile unsigned long *)(MEM_CSE1_START |
+	                                            MEM_NON_CACHEABLE);
+	port_csp0_addr = (volatile unsigned long *)(MEM_CSP0_START |
+	                                            MEM_NON_CACHEABLE);
+	port_csp4_addr = (volatile unsigned long *)(MEM_CSP4_START |
+	                                            MEM_NON_CACHEABLE);
+#else						    
+	/* Note that nothing blows up just because we do this remapping 
+	 * it's ok even if the ports are not used or connected 
+	 * to anything (or connected to a non-I/O thing) */        
+	port_cse1_addr = (volatile unsigned long *)
+	ioremap((unsigned long)(MEM_CSE1_START | MEM_NON_CACHEABLE), 16);
+	port_csp0_addr = (volatile unsigned long *)
+	ioremap((unsigned long)(MEM_CSP0_START | MEM_NON_CACHEABLE), 16);
+	port_csp4_addr = (volatile unsigned long *)
+	ioremap((unsigned long)(MEM_CSP4_START | MEM_NON_CACHEABLE), 16);
+#endif
+	return 0;
 }
+
+__initcall(init_ioremap);
 
 /* Helper function for the two below */
 
@@ -481,7 +485,7 @@ flush_etrax_cacherange(void *startadr, int length)
 	length = length > 8192 ? 8192 : length;  /* No need to flush more than cache size */
 
 	while(length > 0) {
-		short tmp = *flushadr;           /* dummy read to flush */
+		*flushadr; /* dummy read to flush */
 		flushadr += (32/sizeof(short));  /* a cacheline is 32 bytes */
 		length -= 32;
 	}
@@ -524,7 +528,7 @@ free_initmem(void)
                 totalram_pages++;
         }
         printk (KERN_INFO "Freeing unused kernel memory: %luk freed\n", 
-		(&__init_end - &__init_begin) >> 10);
+		(unsigned long)((&__init_end - &__init_begin) >> 10));
 }
 
 void 

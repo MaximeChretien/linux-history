@@ -9,9 +9,9 @@
  *  Written By: Steven J. Ralston
  *  (yes I wrote some of the orig. code back in 1991!)
  *  (mailto:sjralston1@netscape.net)
- *  (mailto:Pam.Delaney@lsil.com)
+ *  (mailto:lstephens@lsil.com)
  *
- *  $Id: isense.c,v 1.33 2002/02/27 18:44:19 sralston Exp $
+ *  $Id: isense.c,v 1.34 2003/03/18 22:49:48 pdelaney Exp $
  */
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /*
@@ -89,7 +89,9 @@
 #define my_VERSION	MPT_LINUX_VERSION_COMMON
 #define MYNAM		"isense"
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,62)
 EXPORT_NO_SYMBOLS;
+#endif
 MODULE_AUTHOR(MODULEAUTHOR);
 MODULE_DESCRIPTION(my_NAME);
 MODULE_LICENSE("GPL");

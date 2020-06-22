@@ -581,6 +581,17 @@ static int ethtool_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 		len += sizeof(struct ethtool_regs);
 		break;
 	}
+	case ETHTOOL_GEEPROM: 
+	case ETHTOOL_SEEPROM: { 
+		struct ethtool_eeprom *promaddr = (struct ethtool_eeprom *)A(data); 
+		/* darned variable size arguments */ 
+		if (get_user(len, (u32 *)&promaddr->len)) { 
+			err = -EFAULT; 
+			goto out; 
+		} 
+		len += sizeof(struct ethtool_eeprom); 
+		break; 
+	} 
 	case ETHTOOL_GSET:
 	case ETHTOOL_SSET:	len = sizeof(struct ethtool_cmd); break;
 	default:
@@ -3070,7 +3081,7 @@ typedef struct drm32_dma {
 #define DRM32_IOCTL_DMA	     DRM_IOWR(0x29, drm32_dma_t)
 
 /* RED PEN	The DRM layer blindly dereferences the send/request
- * 		indice/size arrays even though they are userland
+ * 		index/size arrays even though they are userland
  * 		pointers.  -DaveM
  */
 static int drm32_dma(unsigned int fd, unsigned int cmd, unsigned long arg)
@@ -3894,6 +3905,7 @@ COMPATIBLE_IOCTL(BLKGETSIZE64),
 
 /* RAID */
 COMPATIBLE_IOCTL(RAID_VERSION),
+COMPATIBLE_IOCTL(RAID_AUTORUN),
 COMPATIBLE_IOCTL(GET_ARRAY_INFO),
 COMPATIBLE_IOCTL(GET_DISK_INFO),
 COMPATIBLE_IOCTL(PRINT_RAID_DEBUG),

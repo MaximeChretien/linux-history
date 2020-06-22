@@ -108,7 +108,7 @@ int ip_rt_max_delay		= 10 * HZ;
 int ip_rt_max_size;
 int ip_rt_gc_timeout		= RT_GC_TIMEOUT;
 int ip_rt_gc_interval		= 60 * HZ;
-int ip_rt_gc_min_interval	= 5 * HZ;
+int ip_rt_gc_min_interval	= HZ / 2;
 int ip_rt_redirect_number	= 9;
 int ip_rt_redirect_load		= HZ / 50;
 int ip_rt_redirect_silence	= ((HZ / 50) << (9 + 1));
@@ -287,7 +287,7 @@ static int rt_cache_stat_get_info(char *buffer, char **start, off_t offset, int 
         for (lcpu = 0; lcpu < smp_num_cpus; lcpu++) {
                 i = cpu_logical_map(lcpu);
 
-		len += sprintf(buffer+len, "%08x  %08x %08x %08x %08x %08x %08x %08x  %08x %08x %08x %08x %08x %08x %08x \n",
+		len += sprintf(buffer+len, "%08x  %08x %08x %08x %08x %08x %08x %08x  %08x %08x %08x %08x %08x %08x %08x %08x %08x \n",
 			       dst_entries,		       
 			       rt_cache_stat[i].in_hit,
 			       rt_cache_stat[i].in_slow_tot,
@@ -304,7 +304,9 @@ static int rt_cache_stat_get_info(char *buffer, char **start, off_t offset, int 
 			       rt_cache_stat[i].gc_total,
 			       rt_cache_stat[i].gc_ignored,
 			       rt_cache_stat[i].gc_goal_miss,
-			       rt_cache_stat[i].gc_dst_overflow
+			       rt_cache_stat[i].gc_dst_overflow,
+			       rt_cache_stat[i].in_hlist_search,
+			       rt_cache_stat[i].out_hlist_search
 
 			);
 	}
@@ -344,16 +346,17 @@ static __inline__ int rt_valuable(struct rtable *rth)
 		rth->u.dst.expires;
 }
 
-static __inline__ int rt_may_expire(struct rtable *rth, int tmo1, int tmo2)
+static __inline__ int rt_may_expire(struct rtable *rth, unsigned long tmo1, unsigned long tmo2)
 {
-	int age;
+	unsigned long age;
 	int ret = 0;
 
 	if (atomic_read(&rth->u.dst.__refcnt))
 		goto out;
 
 	ret = 1;
-	if (rth->u.dst.expires && (long)(rth->u.dst.expires - jiffies) <= 0)
+	if (rth->u.dst.expires &&
+	    time_after_eq(jiffies, rth->u.dst.expires))
 		goto out;
 
 	age = jiffies - rth->u.dst.lastuse;
@@ -363,6 +366,25 @@ static __inline__ int rt_may_expire(struct rtable *rth, int tmo1, int tmo2)
 		goto out;
 	ret = 1;
 out:	return ret;
+}
+
+/* Bits of score are:
+ * 31: very valuable
+ * 30: not quite useless
+ * 29..0: usage counter
+ */
+static inline u32 rt_score(struct rtable *rt)
+{
+	u32 score = rt->u.dst.__use;
+
+	if (rt_valuable(rt))
+		score |= (1<<31);
+
+	if (!rt->key.iif ||
+	    !(rt->rt_flags & (RTCF_BROADCAST|RTCF_MULTICAST|RTCF_LOCAL)))
+		score |= (1<<30);
+
+	return score;
 }
 
 /* This runs via a timer and thus is always in BH context. */
@@ -375,7 +397,7 @@ static void SMP_TIMER_NAME(rt_check_expire)(unsigned long dummy)
 
 	for (t = ip_rt_gc_interval << rt_hash_log; t >= 0;
 	     t -= ip_rt_gc_timeout) {
-		unsigned tmo = ip_rt_gc_timeout;
+		unsigned long tmo = ip_rt_gc_timeout;
 
 		i = (i + 1) & rt_hash_mask;
 		rthp = &rt_hash_table[i].chain;
@@ -384,7 +406,7 @@ static void SMP_TIMER_NAME(rt_check_expire)(unsigned long dummy)
 		while ((rth = *rthp) != NULL) {
 			if (rth->u.dst.expires) {
 				/* Entry is expired even if it is in use */
-				if ((long)(now - rth->u.dst.expires) <= 0) {
+				if (time_before_eq(now, rth->u.dst.expires)) {
 					tmo >>= 1;
 					rthp = &rth->u.rt_next;
 					continue;
@@ -402,7 +424,7 @@ static void SMP_TIMER_NAME(rt_check_expire)(unsigned long dummy)
 		write_unlock(&rt_hash_table[i].lock);
 
 		/* Fallback loop breaker. */
-		if ((jiffies - now) > 0)
+		if (time_after(jiffies, now))
 			break;
 	}
 	rover = i;
@@ -504,7 +526,7 @@ static void rt_secret_rebuild(unsigned long dummy)
 
 static int rt_garbage_collect(void)
 {
-	static unsigned expire = RT_GC_TIMEOUT;
+	static unsigned long expire = RT_GC_TIMEOUT;
 	static unsigned long last_gc;
 	static int rover;
 	static int equilibrium;
@@ -556,7 +578,7 @@ static int rt_garbage_collect(void)
 		int i, k;
 
 		for (i = rt_hash_mask, k = rover; i >= 0; i--) {
-			unsigned tmo = expire;
+			unsigned long tmo = expire;
 
 			k = (k + 1) & rt_hash_mask;
 			rthp = &rt_hash_table[k].chain;
@@ -602,7 +624,7 @@ static int rt_garbage_collect(void)
 
 		if (atomic_read(&ipv4_dst_ops.entries) < ip_rt_max_size)
 			goto out;
-	} while (!in_softirq() && jiffies - now < 1);
+	} while (!in_softirq() && time_before_eq(jiffies, now));
 
 	if (atomic_read(&ipv4_dst_ops.entries) < ip_rt_max_size)
 		goto out;
@@ -626,10 +648,19 @@ out:	return 0;
 static int rt_intern_hash(unsigned hash, struct rtable *rt, struct rtable **rp)
 {
 	struct rtable	*rth, **rthp;
-	unsigned long	now = jiffies;
+	unsigned long	now;
+	struct rtable *cand, **candp;
+	u32 		min_score;
+	int		chain_length;
 	int attempts = !in_softirq();
 
 restart:
+	chain_length = 0;
+	min_score = ~(u32)0;
+	cand = NULL;
+	candp = NULL;
+	now = jiffies;
+
 	rthp = &rt_hash_table[hash].chain;
 
 	write_lock_bh(&rt_hash_table[hash].lock);
@@ -650,7 +681,33 @@ restart:
 			return 0;
 		}
 
+		if (!atomic_read(&rth->u.dst.__refcnt)) {
+			u32 score = rt_score(rth);
+
+			if (score <= min_score) {
+				cand = rth;
+				candp = rthp;
+				min_score = score;
+			}
+		}
+
+		chain_length++;
+
 		rthp = &rth->u.rt_next;
+	}
+
+	if (cand) {
+		/* ip_rt_gc_elasticity used to be average length of chain
+		 * length, when exceeded gc becomes really aggressive.
+		 *
+		 * The second limit is less certain. At the moment it allows
+		 * only 2 entries per bucket. We will see.
+		 */
+		if (chain_length > ip_rt_gc_elasticity ||
+		    (chain_length > 1 && !(min_score & (1<<31)))) {
+			*candp = cand->u.rt_next;
+			rt_free(cand);
+		}
 	}
 
 	/* Try to bind route to arp only if it is output
@@ -960,7 +1017,7 @@ void ip_rt_send_redirect(struct sk_buff *skb)
 	/* No redirected packets during ip_rt_redirect_silence;
 	 * reset the algorithm.
 	 */
-	if (jiffies - rt->u.dst.rate_last > ip_rt_redirect_silence)
+	if (time_after(jiffies, rt->u.dst.rate_last + ip_rt_redirect_silence))
 		rt->u.dst.rate_tokens = 0;
 
 	/* Too many ignored redirects; do not send anything
@@ -974,8 +1031,9 @@ void ip_rt_send_redirect(struct sk_buff *skb)
 	/* Check for load limit; set rate_last to the latest sent
 	 * redirect.
 	 */
-	if (jiffies - rt->u.dst.rate_last >
-	    (ip_rt_redirect_load << rt->u.dst.rate_tokens)) {
+	if (time_after(jiffies,
+		       (rt->u.dst.rate_last +
+			(ip_rt_redirect_load << rt->u.dst.rate_tokens)))) {
 		icmp_send(skb, ICMP_REDIRECT, ICMP_REDIR_HOST, rt->rt_gateway);
 		rt->u.dst.rate_last = jiffies;
 		++rt->u.dst.rate_tokens;
@@ -1672,6 +1730,7 @@ int ip_route_input(struct sk_buff *skb, u32 daddr, u32 saddr,
 			skb->dst = (struct dst_entry*)rth;
 			return 0;
 		}
+		rt_cache_stat[smp_processor_id()].in_hlist_search++;
 	}
 	read_unlock(&rt_hash_table[hash].lock);
 
@@ -1691,7 +1750,7 @@ int ip_route_input(struct sk_buff *skb, u32 daddr, u32 saddr,
 
 		read_lock(&inetdev_lock);
 		if ((in_dev = __in_dev_get(dev)) != NULL) {
-			int our = ip_check_mc(in_dev, daddr);
+			int our = ip_check_mc(in_dev, daddr, saddr);
 			if (our
 #ifdef CONFIG_IP_MROUTE
 			    || (!LOCAL_MCAST(daddr) && IN_DEV_MFORWARD(in_dev))
@@ -1917,7 +1976,7 @@ make_route:
 		flags |= RTCF_MULTICAST|RTCF_LOCAL;
 		read_lock(&inetdev_lock);
 		if (!__in_dev_get(dev_out) ||
-		    !ip_check_mc(__in_dev_get(dev_out), oldkey->dst))
+		    !ip_check_mc(__in_dev_get(dev_out),oldkey->dst,oldkey->src))
 			flags &= ~RTCF_LOCAL;
 		read_unlock(&inetdev_lock);
 		/* If multicast route do not exist use
@@ -2032,6 +2091,7 @@ int ip_route_output_key(struct rtable **rp, const struct rt_key *key)
 			*rp = rth;
 			return 0;
 		}
+		rt_cache_stat[smp_processor_id()].out_hlist_search++;
 	}
 	read_unlock_bh(&rt_hash_table[hash].lock);
 

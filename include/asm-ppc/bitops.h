@@ -31,7 +31,7 @@ static __inline__ void set_bit(int nr, volatile void * addr)
 	unsigned long old;
 	unsigned long mask = 1 << (nr & 0x1f);
 	unsigned long *p = ((unsigned long *)addr) + (nr >> 5);
-	
+
 	__asm__ __volatile__("\n\
 1:	lwarx	%0,0,%3 \n\
 	or	%0,%0,%2 \n"

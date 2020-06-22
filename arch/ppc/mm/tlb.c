@@ -1,10 +1,10 @@
 /*
  * This file contains the routines for TLB flushing.
  * On machines where the MMU uses a hash table to store virtual to
- * physical translations, these routines flush entries from the 
+ * physical translations, these routines flush entries from the
  * hash table also.
  *  -- paulus
- * 
+ *
  *  Derived from arch/ppc/mm/init.c:
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
  *
@@ -87,7 +87,7 @@ local_flush_tlb_mm(struct mm_struct *mm)
 
 #ifdef CONFIG_SMP
 	smp_send_tlb_invalidate(0);
-#endif	
+#endif
 }
 
 void
@@ -110,7 +110,7 @@ local_flush_tlb_page(struct vm_area_struct *vma, unsigned long vmaddr)
 	}
 #ifdef CONFIG_SMP
 	smp_send_tlb_invalidate(0);
-#endif	
+#endif
 }
 
 
@@ -155,5 +155,5 @@ local_flush_tlb_range(struct mm_struct *mm, unsigned long start, unsigned long e
 
 #ifdef CONFIG_SMP
 	smp_send_tlb_invalidate(0);
-#endif	
+#endif
 }

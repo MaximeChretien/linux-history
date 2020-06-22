@@ -22,6 +22,7 @@
 #include <linux/config.h>
 #include <linux/types.h>
 #include <linux/init.h>
+#include <linux/irq.h>
 #include <linux/kernel_stat.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
@@ -30,10 +31,10 @@
 #include <asm/irq.h>
 #include <asm/mipsregs.h>
 #include <asm/addrspace.h>
-#include <asm/sgi/sgint23.h>
-
-extern int EISA_bus;
-extern void do_IRQ(int irq, struct pt_regs *regs);
+#include <asm/processor.h>
+#include <asm/sgi/ioc.h>
+#include <asm/sgi/mc.h>
+#include <asm/sgi/ip22.h>
 
 #define EISA_MAX_SLOTS		  4
 #define EISA_MAX_IRQ             16
@@ -92,7 +93,7 @@ static void ip22_eisa_intr(int irq, void *dev_id, struct pt_regs *regs)
 
 	if (eisa_irq >= EISA_MAX_IRQ) {
 		/* Oops, Bad Stuff Happened... */
-		printk("eisa_irq %d out of bound\n", eisa_irq);
+		printk(KERN_ERR "eisa_irq %d out of bound\n", eisa_irq);
 
 		EISA_WRITE_8(EISA_INT2_CTRL, 0x20);
 		EISA_WRITE_8(EISA_INT1_CTRL, 0x20);
@@ -153,14 +154,13 @@ static void end_eisa1_irq(unsigned int irq)
 }
 
 static struct hw_interrupt_type ip22_eisa1_irq_type = {
-	"IP22 EISA",
-	startup_eisa1_irq,
-	shutdown_eisa1_irq,
-	enable_eisa1_irq,
-	disable_eisa1_irq,
-	mask_and_ack_eisa1_irq,
-	end_eisa1_irq,
-	NULL
+	.typename	= "IP22 EISA",
+	.startup	= startup_eisa1_irq,
+	.shutdown	= shutdown_eisa1_irq,
+	.enable		= enable_eisa1_irq,
+	.disable	= disable_eisa1_irq,
+	.ack		= mask_and_ack_eisa1_irq,
+	.end		= end_eisa1_irq,
 };
 
 static void enable_eisa2_irq(unsigned int irq)
@@ -217,22 +217,23 @@ static void end_eisa2_irq(unsigned int irq)
 }
 
 static struct hw_interrupt_type ip22_eisa2_irq_type = {
-	"IP22 EISA",
-	startup_eisa2_irq,
-	shutdown_eisa2_irq,
-	enable_eisa2_irq,
-	disable_eisa2_irq,
-	mask_and_ack_eisa2_irq,
-	end_eisa2_irq,
-	NULL
+	.typename	= "IP22 EISA",
+	.startup	= startup_eisa2_irq,
+	.shutdown	= shutdown_eisa2_irq,
+	.enable		= enable_eisa2_irq,
+	.disable	= disable_eisa2_irq,
+	.ack		= mask_and_ack_eisa2_irq,
+	.end		= end_eisa2_irq,
 };
 
 static struct irqaction eisa_action = {
-	ip22_eisa_intr, 0, 0, "EISA", NULL, NULL
+	.handler	= ip22_eisa_intr,
+	.name		= "EISA",
 };
 
 static struct irqaction cascade_action = {
-	no_action, 0, 0, "EISA cascade", NULL, NULL
+	.handler	= no_action,
+	.name		= "EISA cascade",
 };
 
 int __init ip22_eisa_init(void)
@@ -240,20 +241,26 @@ int __init ip22_eisa_init(void)
 	int i, c;
 	char *str;
 	u8 *slot_addr;
+	
+	if (!(sgimc->systemid & SGIMC_SYSID_EPRESENT)) {
+		printk(KERN_INFO "EISA: bus not present.\n");
+		return 1;
+	}
 
-	printk("EISA: Probing bus...\n");
+	printk(KERN_INFO "EISA: Probing bus...\n");
 	for (c = 0, i = 1; i <= EISA_MAX_SLOTS; i++) {
 		slot_addr =
 		    (u8 *) EISA_TO_KSEG1((0x1000 * i) +
 					 EISA_VENDOR_ID_OFFSET);
 		if ((str = decode_eisa_sig(slot_addr))) {
-			printk("EISA: slot %d : %s detected.\n", i, str);
+			printk(KERN_INFO "EISA: slot %d : %s detected.\n",
+			       i, str);
 			c++;
 		}
 	}
-	printk("EISA: Detected %d card%s.\n", c, c < 2 ? "" : "s");
+	printk(KERN_INFO "EISA: Detected %d card%s.\n", c, c < 2 ? "" : "s");
 #ifdef CONFIG_ISA
-	printk("ISA support compiled in.\n");
+	printk(KERN_INFO "ISA support compiled in.\n");
 #endif
 
 	/* Warning : BlackMagicAhead(tm).

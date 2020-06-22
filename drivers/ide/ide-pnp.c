@@ -16,6 +16,7 @@
  * Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.  
  */
 
+#include <linux/module.h>
 #include <linux/ide.h>
 #include <linux/init.h>
 
@@ -98,7 +99,7 @@ static int pnp_ide_dev_idx = 0;
  * Probe for ISA PnP IDE interfaces.
  */
 
-void __init pnpide_init(int enable)
+static void pnpide_init(int enable)
 {
 	struct pci_dev *dev = NULL;
 	struct pnp_dev_t *dev_type;
@@ -155,3 +156,26 @@ void __init pnpide_init(int enable)
 		}
 	}
 }
+
+static void __init pnpide_begin(void)
+{
+	pnpide_init(1);
+}
+
+static int pnpide_init_module(void)
+{
+	ide_register_driver(pnpide_begin);
+	return 0;
+}
+
+static void pnpide_unload(void)
+{
+	pnpide_init(0);
+}
+
+module_init(pnpide_init_module);
+module_exit(pnpide_unload);
+
+MODULE_AUTHOR("Andrey Panin");
+MODULE_DESCRIPTION("Enabler for ISAPNP IDE devices");
+MODULE_LICENSE("GPL");

@@ -21,11 +21,13 @@
 #ifdef CONFIG_SGI_IP27
 extern unsigned long bus_to_baddr[256];
 
-#define bus_to_baddr(hwdev, addr) (bus_to_baddr[(hwdev)->bus->number] + (addr))
-#define baddr_to_bus(hwdev, addr) ((addr) - bus_to_baddr[(hwdev)->bus->number])
+#define bus_to_baddr(bus, addr)	(bus_to_baddr[(bus)->number] + (addr))
+#define baddr_to_bus(bus, addr)	((addr) - bus_to_baddr[(bus)->number])
+#define __swizzle_addr_w(port)	((port) ^ 2)
 #else
-#define bus_to_baddr(hwdev, addr) (addr)
-#define baddr_to_bus(hwdev, addr) (addr)
+#define bus_to_baddr(bus, addr)	(addr)
+#define baddr_to_bus(bus, addr)	(addr)
+#define __swizzle_addr_w(port)	(port)
 #endif
 
 /*
@@ -35,136 +37,25 @@ extern unsigned long bus_to_baddr[256];
 
 /*
  * Sane hardware offers swapping of I/O space accesses in hardware; less
- * sane hardware forces software to fiddle with this ...
+ * sane hardware forces software to fiddle with this.  Totally insane hardware
+ * introduces special cases like:
+ *
+ * IP22 seems braindead enough to swap 16-bits values in hardware, but not
+ * 32-bits.  Go figure... Can't tell without documentation.
+ * 
+ * We only do the swapping to keep the kernel config bits of bi-endian
+ * machines a bit saner.
  */
-#if defined(CONFIG_SWAP_IO_SPACE) && defined(__MIPSEB__)
-
-#define __ioswab8(x) (x)
-#ifdef CONFIG_SGI_IP22
-/* IP22 seems braindead enough to swap 16bits values in hardware, but
-   not 32bits.  Go figure... Can't tell without documentation. */
-#define __ioswab16(x) (x)
-#else
+#if defined(CONFIG_SWAP_IO_SPACE_W) && defined(__MIPSEB__)
 #define __ioswab16(x) swab16(x)
-#endif
-#define __ioswab32(x) swab32(x)
-
 #else
-
-#define __ioswab8(x) (x)
 #define __ioswab16(x) (x)
+#endif
+#if defined(CONFIG_SWAP_IO_SPACE_L) && defined(__MIPSEB__)
+#define __ioswab32(x) swab32(x)
+#else
 #define __ioswab32(x) (x)
-
 #endif
-
-/*
- * <Bacchus> Historically I wrote this stuff the same way as Linus did
- * because I was young and clueless.  And now it's so jucky that I
- * don't want to put my eyes on it again to get rid of it :-)
- *
- * I'll do it then, because this code offends both me and my compiler
- * - particularly the bits of inline asm which end up doing crap like
- * 'lb $2,$2($5)' -- dwmw2
- */
-
-#define IO_SPACE_LIMIT 0xffff
-
-/*
- * On MIPS I/O ports are memory mapped, so we access them using normal
- * load/store instructions. mips_io_port_base is the virtual address to
- * which all ports are being mapped.  For sake of efficiency some code
- * assumes that this is an address that can be loaded with a single lui
- * instruction, so the lower 16 bits must be zero.  Should be true on
- * on any sane architecture; generic code does not use this assumption.
- */
-extern const unsigned long mips_io_port_base;
-
-#define set_io_port_base(base)	\
-	do { * (unsigned long *) &mips_io_port_base = (base); } while (0)
-
-/*
- * Thanks to James van Artsdalen for a better timing-fix than
- * the two short jumps: using outb's to a nonexistent port seems
- * to guarantee better timings even on fast machines.
- *
- * On the other hand, I'd like to be sure of a non-existent port:
- * I feel a bit unsafe about using 0x80 (should be safe, though)
- *
- *		Linus
- *
- */
-
-#define __SLOW_DOWN_IO \
-	__asm__ __volatile__( \
-		"sb\t$0,0x80(%0)" \
-		: : "r" (mips_io_port_base));
-
-#ifdef CONF_SLOWDOWN_IO
-#ifdef REALLY_SLOW_IO
-#define SLOW_DOWN_IO { __SLOW_DOWN_IO; __SLOW_DOWN_IO; __SLOW_DOWN_IO; __SLOW_DOWN_IO; }
-#else
-#define SLOW_DOWN_IO __SLOW_DOWN_IO
-#endif
-#else
-#define SLOW_DOWN_IO
-#endif
-
-/*
- *     virt_to_phys    -       map virtual addresses to physical
- *     @address: address to remap
- *
- *     The returned physical address is the physical (CPU) mapping for
- *     the memory address given. It is only valid to use this function on
- *     addresses directly mapped or allocated via kmalloc.
- *
- *     This function does not give bus mappings for DMA transfers. In
- *     almost all conceivable cases a device driver should not be using
- *     this function
- */
-
-static inline unsigned long virt_to_phys(volatile void * address)
-{
-	return PHYSADDR(address);
-}
-
-/*
- *     phys_to_virt    -       map physical address to virtual
- *     @address: address to remap
- *
- *     The returned virtual address is a current CPU mapping for
- *     the memory address given. It is only valid to use this function on
- *     addresses that have a kernel mapping
- *
- *     This function does not handle bus mappings for DMA transfers. In
- *     almost all conceivable cases a device driver should not be using
- *     this function
- */
-
-static inline void * phys_to_virt(unsigned long address)
-{
-	return (void *)KSEG0ADDR(address);
-}
-
-/*
- * IO bus memory addresses are also 1:1 with the physical address
- */
-static inline unsigned long virt_to_bus(volatile void * address)
-{
-	return PHYSADDR(address);
-}
-
-static inline void * bus_to_virt(unsigned long address)
-{
-	return (void *)KSEG0ADDR(address);
-}
-
-#define page_to_bus page_to_phys
-
-/*
- * isa_slot_offset is the address where E(ISA) busaddress 0 is mapped
- * for the processor.
- */
-extern unsigned long isa_slot_offset;
 
 /*
  * Change "struct page" to physical address.
@@ -175,6 +66,7 @@ extern unsigned long isa_slot_offset;
 #define page_to_phys(page)	((page - mem_map) << PAGE_SHIFT)
 #endif
 
+#define IO_SPACE_LIMIT 0xffff
 
 extern void * __ioremap(phys_t offset, phys_t size, unsigned long flags);
 
@@ -234,7 +126,7 @@ extern void iounmap(void *addr);
 #define __raw_readw(addr)	(*(volatile unsigned short *)(addr))
 #define __raw_readl(addr)	(*(volatile unsigned int *)(addr))
 
-#define writeb(b,addr) ((*(volatile unsigned char *)(addr)) = (__ioswab8(b)))
+#define writeb(b,addr) ((*(volatile unsigned char *)(addr)) = (b))
 #define writew(b,addr) ((*(volatile unsigned short *)(addr)) = (__ioswab16(b)))
 #define writel(b,addr) ((*(volatile unsigned int *)(addr)) = (__ioswab32(b)))
 
@@ -242,9 +134,19 @@ extern void iounmap(void *addr);
 #define __raw_writew(w,addr)	((*(volatile unsigned short *)(addr)) = (w))
 #define __raw_writel(l,addr)	((*(volatile unsigned int *)(addr)) = (l))
 
+/*
+ * TODO: Should use variants that don't do prefetching.
+ */
 #define memset_io(a,b,c)	memset((void *)(a),(b),(c))
 #define memcpy_fromio(a,b,c)	memcpy((a),(void *)(b),(c))
 #define memcpy_toio(a,b,c)	memcpy((void *)(a),(b),(c))
+
+/*
+ * isa_slot_offset is the address where E(ISA) busaddress 0 is mapped
+ * for the processor.  This implies the assumption that there is only
+ * one of these busses.
+ */
+extern unsigned long isa_slot_offset;
 
 /*
  * ISA space is 'always mapped' on currently supported MIPS systems, no need
@@ -284,7 +186,7 @@ extern void iounmap(void *addr);
  *     Returns 1 on a match.
  */
 static inline int check_signature(unsigned long io_addr,
-                                  const unsigned char *signature, int length)
+	const unsigned char *signature, int length)
 {
 	int retval = 0;
 	do {
@@ -328,17 +230,95 @@ out:
 	return retval;
 }
 
+/*
+ *     virt_to_phys    -       map virtual addresses to physical
+ *     @address: address to remap
+ *
+ *     The returned physical address is the physical (CPU) mapping for
+ *     the memory address given. It is only valid to use this function on
+ *     addresses directly mapped or allocated via kmalloc.
+ *
+ *     This function does not give bus mappings for DMA transfers. In
+ *     almost all conceivable cases a device driver should not be using
+ *     this function
+ */
 
+static inline unsigned long virt_to_phys(volatile void * address)
+{
+	return (unsigned long)address - PAGE_OFFSET;
+}
 
+/*
+ *     phys_to_virt    -       map physical address to virtual
+ *     @address: address to remap
+ *
+ *     The returned virtual address is a current CPU mapping for
+ *     the memory address given. It is only valid to use this function on
+ *     addresses that have a kernel mapping
+ *
+ *     This function does not handle bus mappings for DMA transfers. In
+ *     almost all conceivable cases a device driver should not be using
+ *     this function
+ */
+
+static inline void * phys_to_virt(unsigned long address)
+{
+	return (void *)(address + PAGE_OFFSET);
+}
+
+/*
+ * IO bus memory addresses are also 1:1 with the physical address
+ */
+static inline unsigned long virt_to_bus(volatile void * address)
+{
+	return (unsigned long)address - PAGE_OFFSET;
+}
+
+static inline void * bus_to_virt(unsigned long address)
+{
+	return (void *)(address + PAGE_OFFSET);
+}
+
+/* This is too simpleminded for more sophisticated than dumb hardware ...  */
+#define page_to_bus page_to_phys
+
+/*
+ * On MIPS I/O ports are memory mapped, so we access them using normal
+ * load/store instructions. mips_io_port_base is the virtual address to
+ * which all ports are being mapped.  For sake of efficiency some code
+ * assumes that this is an address that can be loaded with a single lui
+ * instruction, so the lower 16 bits must be zero.  Should be true on
+ * on any sane architecture; generic code does not use this assumption.
+ */
+extern const unsigned long mips_io_port_base;
+
+#define set_io_port_base(base) \
+	do { * (unsigned long *) &mips_io_port_base = (base); } while (0)
+
+#define __SLOW_DOWN_IO \
+	__asm__ __volatile__( \
+		"sb\t$0,0x80(%0)" \
+		: : "r" (mips_io_port_base));
+
+#ifdef CONF_SLOWDOWN_IO
+#ifdef REALLY_SLOW_IO
+#define SLOW_DOWN_IO { __SLOW_DOWN_IO; __SLOW_DOWN_IO; __SLOW_DOWN_IO; __SLOW_DOWN_IO; }
+#else
+#define SLOW_DOWN_IO __SLOW_DOWN_IO
+#endif
+#else
+#define SLOW_DOWN_IO
+#endif
 
 #define outb(val,port)							\
 do {									\
-	*(volatile u8 *)(mips_io_port_base + (port)) = __ioswab8(val);	\
+	*(volatile u8 *)(mips_io_port_base + (port)) = (val);		\
 } while(0)
 
 #define outw(val,port)							\
 do {									\
-	*(volatile u16 *)(mips_io_port_base + (port)) = __ioswab16(val);	\
+	*(volatile u16 *)(mips_io_port_base + __swizzle_addr_w(port)) =	\
+		__ioswab16(val);					\
 } while(0)
 
 #define outl(val,port)							\
@@ -348,13 +328,14 @@ do {									\
 
 #define outb_p(val,port)						\
 do {									\
-	*(volatile u8 *)(mips_io_port_base + (port)) = __ioswab8(val);	\
+	*(volatile u8 *)(mips_io_port_base + (port)) = (val);		\
 	SLOW_DOWN_IO;							\
 } while(0)
 
 #define outw_p(val,port)						\
 do {									\
-	*(volatile u16 *)(mips_io_port_base + (port)) = __ioswab16(val);\
+	*(volatile u16 *)(mips_io_port_base + __swizzle_addr_w(port)) =	\
+		__ioswab16(val);					\
 	SLOW_DOWN_IO;							\
 } while(0)
 
@@ -364,49 +345,45 @@ do {									\
 	SLOW_DOWN_IO;							\
 } while(0)
 
-#define inb(port) __inb(port)
-#define inw(port) __inw(port)
-#define inl(port) __inl(port)
-#define inb_p(port) __inb_p(port)
-#define inw_p(port) __inw_p(port)
-#define inl_p(port) __inl_p(port)
-
-static inline unsigned char __inb(unsigned long port)
+static inline unsigned char inb(unsigned long port)
 {
-	return __ioswab8(*(volatile u8 *)(mips_io_port_base + port));
+	return *(volatile u8 *)(mips_io_port_base + port);
 }
 
-static inline unsigned short __inw(unsigned long port)
+static inline unsigned short inw(unsigned long port)
 {
+	port = __swizzle_addr_w(port);
+
 	return __ioswab16(*(volatile u16 *)(mips_io_port_base + port));
 }
 
-static inline unsigned int __inl(unsigned long port)
+static inline unsigned int inl(unsigned long port)
 {
 	return __ioswab32(*(volatile u32 *)(mips_io_port_base + port));
 }
 
-static inline unsigned char __inb_p(unsigned long port)
+static inline unsigned char inb_p(unsigned long port)
 {
 	u8 __val;
 
 	__val = *(volatile u8 *)(mips_io_port_base + port);
 	SLOW_DOWN_IO;
 
-	return __ioswab8(__val);
+	return __val;
 }
 
-static inline unsigned short __inw_p(unsigned long port)
+static inline unsigned short inw_p(unsigned long port)
 {
 	u16 __val;
 
+	port = __swizzle_addr_w(port);
 	__val = *(volatile u16 *)(mips_io_port_base + port);
 	SLOW_DOWN_IO;
 
 	return __ioswab16(__val);
 }
 
-static inline unsigned int __inl_p(unsigned long port)
+static inline unsigned int inl_p(unsigned long port)
 {
 	u32 __val;
 
@@ -414,13 +391,6 @@ static inline unsigned int __inl_p(unsigned long port)
 	SLOW_DOWN_IO;
 	return __ioswab32(__val);
 }
-
-#define outsb(port, addr, count) __outsb(port, addr, count)
-#define insb(port, addr, count) __insb(port, addr, count)
-#define outsw(port, addr, count) __outsw(port, addr, count)
-#define insw(port, addr, count) __insw(port, addr, count)
-#define outsl(port, addr, count) __outsl(port, addr, count)
-#define insl(port, addr, count) __insl(port, addr, count)
 
 static inline void __outsb(unsigned long port, void *addr, unsigned int count)
 {
@@ -470,6 +440,13 @@ static inline void __insl(unsigned long port, void *addr, unsigned int count)
 	}
 }
 
+#define outsb(port, addr, count) __outsb(port, addr, count)
+#define insb(port, addr, count) __insb(port, addr, count)
+#define outsw(port, addr, count) __outsw(port, addr, count)
+#define insw(port, addr, count) __insw(port, addr, count)
+#define outsl(port, addr, count) __outsl(port, addr, count)
+#define insl(port, addr, count) __insl(port, addr, count)
+
 /*
  * The caches on some architectures aren't dma-coherent and have need to
  * handle this in software.  There are three types of operations that
@@ -500,9 +477,12 @@ extern void (*_dma_cache_inv)(unsigned long start, unsigned long size);
 
 #else /* Sane hardware */
 
-#define dma_cache_wback_inv(start,size)	do { (start); (size); } while (0)
-#define dma_cache_wback(start,size)	do { (start); (size); } while (0)
-#define dma_cache_inv(start,size)	do { (start); (size); } while (0)
+#define dma_cache_wback_inv(start,size)	\
+	do { (void) (start); (void) (size); } while (0)
+#define dma_cache_wback(start,size)	\
+	do { (void) (start); (void) (size); } while (0)
+#define dma_cache_inv(start,size)	\
+	do { (void) (start); (void) (size); } while (0)
 
 #endif /* CONFIG_NONCOHERENT_IO */
 

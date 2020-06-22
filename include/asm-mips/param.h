@@ -24,13 +24,13 @@
     * This works only if 100 / HZ <= 1
     */
 #  define QUOTIENT ((1UL << (32 - LOG_2_HZ)) * 100)
-#  define hz_to_std(a)                            \
-   ({ unsigned int __res;			  \
-      unsigned long __lo;			  \
-        __asm__("multu\t%2,%3\n\t"		  \
-		:"=h" (__res), "=l" (__lo)	  \
-		:"r" (a),"r" (QUOTIENT));         \
-        (__typeof__(a)) __res;})
+#  define hz_to_std(a)				\
+   ({ unsigned long __res;			\
+      unsigned long __lo;			\
+	__asm__("multu\t%2,%3\n\t"		\
+		:"=h" (__res), "=l" (__lo)	\
+		:"r" (a), "r" (QUOTIENT));	\
+	(__typeof__(a)) __res;})
 
 #else /* Not a DECstation  */
 
@@ -41,7 +41,7 @@
 #  define HZ 100
 #  define hz_to_std(a) (a)
 
-#endif /* Not a DECstation */
+#endif /* Not a DECstation  */
 
 #else /* defined(__KERNEL__)  */
 

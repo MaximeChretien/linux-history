@@ -206,7 +206,7 @@ ppc64_pmc_hw(int file)
  *            the segment table.
  *
  * Input : unsigned long size: bytes of storage to allocate.
- * Return: void * : pointer to the kernal address of the buffer.
+ * Return: void * : pointer to the kernel address of the buffer.
  */
 void* btmalloc (unsigned long size) {
 	pgd_t *pgdp;

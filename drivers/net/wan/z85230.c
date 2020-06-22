@@ -1451,7 +1451,6 @@ static void z8530_tx_begin(struct z8530_channel *c)
 	c->tx_next_skb=NULL;
 	c->tx_ptr=c->tx_next_ptr;
 	
-	netif_wake_queue(c->netdevice);
 	if(c->tx_skb==NULL)
 	{
 		/* Idle on */
@@ -1513,7 +1512,6 @@ static void z8530_tx_begin(struct z8530_channel *c)
 			/* ABUNDER off */
 			write_zsreg(c, R10, c->regs[10]);
 			write_zsctrl(c, RES_Tx_CRC);
-//???			write_zsctrl(c, RES_EOM_L);
 	
 			while(c->txcount && (read_zsreg(c,R0)&Tx_BUF_EMP))
 			{		
@@ -1523,6 +1521,10 @@ static void z8530_tx_begin(struct z8530_channel *c)
 
 		}
 	}
+	/*
+	 *	Since we emptied tx_skb we can ask for more
+	 */
+	netif_wake_queue(c->netdevice);
 }
 
 /**
@@ -1540,7 +1542,6 @@ static void z8530_tx_done(struct z8530_channel *c)
 {
 	struct sk_buff *skb;
 
-	netif_wake_queue(c->netdevice);
 	/* Actually this can happen.*/
 	if(c->tx_skb==NULL)
 		return;
@@ -1795,7 +1796,6 @@ int z8530_queue_xmit(struct z8530_channel *c, struct sk_buff *skb)
 	z8530_tx_begin(c);
 	spin_unlock_irqrestore(c->lock, flags);
 	
-	netif_wake_queue(c->netdevice);
 	return 0;
 }
 

@@ -1,7 +1,7 @@
 
 /*
  * arch/ppc/kernel/mpc10x_common.c
- * 
+ *
  * Common routines for the Motorola SPS MPC106, MPC107 and MPC8240 Host bridge,
  * Mem ctlr, EPIC, etc.
  *
@@ -227,7 +227,7 @@ mpc10x_bridge_init(struct pci_controller *hose,
 			printk("Host bridge in Agent mode\n");
 			/* Read or Set LMBAR & PCSRBAR? */
 		}
-		       
+
 		/* Set base addr of the 8240/107 EUMB.  */
 		early_write_config_dword(hose,
 					 0,
@@ -236,7 +236,7 @@ mpc10x_bridge_init(struct pci_controller *hose,
 					 phys_eumb_base);
 
 		/* Map EPIC register part of EUMB into vitual memory */
-		OpenPIC_Addr = 
+		OpenPIC_Addr =
 			ioremap(phys_eumb_base + MPC10X_EUMB_EPIC_OFFSET,
 				MPC10X_EUMB_EPIC_SIZE);
 	}

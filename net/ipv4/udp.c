@@ -271,6 +271,8 @@ __inline__ struct sock *udp_v4_lookup(u32 saddr, u16 sport, u32 daddr, u16 dport
 	return sk;
 }
 
+extern int ip_mc_sf_allow(struct sock *sk, u32 local, u32 rmt, int dif);
+
 static inline struct sock *udp_v4_mcast_next(struct sock *sk,
 					     u16 loc_port, u32 loc_addr,
 					     u16 rmt_port, u32 rmt_addr,
@@ -285,6 +287,8 @@ static inline struct sock *udp_v4_mcast_next(struct sock *sk,
 		    (s->rcv_saddr  && s->rcv_saddr != loc_addr)		||
 		    ipv6_only_sock(s)					||
 		    (s->bound_dev_if && s->bound_dev_if != dif))
+			continue;
+		if (!ip_mc_sf_allow(sk, loc_addr, rmt_addr, dif))
 			continue;
 		break;
   	}
@@ -476,7 +480,7 @@ int udp_sendmsg(struct sock *sk, struct msghdr *msg, int len)
 			return -EINVAL;
 	} else {
 		if (sk->state != TCP_ESTABLISHED)
-			return -ENOTCONN;
+			return -EDESTADDRREQ;
 		ufh.daddr = sk->daddr;
 		ufh.uh.dest = sk->dport;
 		/* Open fast path for connected socket.

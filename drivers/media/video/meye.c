@@ -161,6 +161,34 @@ static void rvfree(void * mem, unsigned long size) {
 	}
 }
 
+/****************************************************************************/
+/* dma_alloc_coherent / dma_free_coherent ported from 2.5                  */
+/****************************************************************************/
+
+void *dma_alloc_coherent(struct pci_dev *dev, size_t size,
+                           dma_addr_t *dma_handle, int gfp)
+{
+        void *ret;
+        /* ignore region specifiers */
+        gfp &= ~(__GFP_DMA | __GFP_HIGHMEM);
+
+        if (dev == NULL || ((u32)dev->dma_mask < 0xffffffff))
+                gfp |= GFP_DMA;
+        ret = (void *)__get_free_pages(gfp, get_order(size));
+
+        if (ret != NULL) { 
+                memset(ret, 0, size);
+                *dma_handle = virt_to_phys(ret);
+        }       
+        return ret;
+}
+
+void dma_free_coherent(struct pci_dev *dev, size_t size,
+                         void *vaddr, dma_addr_t dma_handle)
+{
+        free_pages((unsigned long)vaddr, get_order(size));
+}
+
 /* return a page table pointing to N pages of locked memory */
 static int ptable_alloc(void) {
 	u32 *pt;
@@ -168,9 +196,10 @@ static int ptable_alloc(void) {
 
 	memset(meye.mchip_ptable, 0, sizeof(meye.mchip_ptable));
 
-	meye.mchip_ptable[MCHIP_NB_PAGES] = pci_alloc_consistent(meye.mchip_dev, 
-								 PAGE_SIZE, 
-								 &meye.mchip_dmahandle);
+	meye.mchip_ptable[MCHIP_NB_PAGES] = dma_alloc_coherent(meye.mchip_dev, 
+							       PAGE_SIZE, 
+							       &meye.mchip_dmahandle,
+							       GFP_KERNEL);
 	if (!meye.mchip_ptable[MCHIP_NB_PAGES]) {
 		meye.mchip_dmahandle = 0;
 		return -1;
@@ -178,16 +207,17 @@ static int ptable_alloc(void) {
 
 	pt = (u32 *)meye.mchip_ptable[MCHIP_NB_PAGES];
 	for (i = 0; i < MCHIP_NB_PAGES; i++) {
-		meye.mchip_ptable[i] = pci_alloc_consistent(meye.mchip_dev, 
-							    PAGE_SIZE,
-							    pt);
+		meye.mchip_ptable[i] = dma_alloc_coherent(meye.mchip_dev, 
+							  PAGE_SIZE,
+							  pt,
+							  GFP_KERNEL);
 		if (!meye.mchip_ptable[i]) {
 			int j;
 			pt = (u32 *)meye.mchip_ptable[MCHIP_NB_PAGES];
 			for (j = 0; j < i; ++j) {
-				pci_free_consistent(meye.mchip_dev,
-						    PAGE_SIZE,
-						    meye.mchip_ptable[j], *pt);
+				dma_free_coherent(meye.mchip_dev,
+						  PAGE_SIZE,
+						  meye.mchip_ptable[j], *pt);
 				pt++;
 			}
 			meye.mchip_dmahandle = 0;
@@ -205,17 +235,17 @@ static void ptable_free(void) {
 	pt = (u32 *)meye.mchip_ptable[MCHIP_NB_PAGES];
 	for (i = 0; i < MCHIP_NB_PAGES; i++) {
 		if (meye.mchip_ptable[i])
-			pci_free_consistent(meye.mchip_dev, 
-					    PAGE_SIZE, 
-					    meye.mchip_ptable[i], *pt);
+			dma_free_coherent(meye.mchip_dev, 
+					  PAGE_SIZE, 
+					  meye.mchip_ptable[i], *pt);
 		pt++;
 	}
 
 	if (meye.mchip_ptable[MCHIP_NB_PAGES])
-		pci_free_consistent(meye.mchip_dev, 
-				    PAGE_SIZE, 
-				    meye.mchip_ptable[MCHIP_NB_PAGES], 
-				    meye.mchip_dmahandle);
+		dma_free_coherent(meye.mchip_dev, 
+				  PAGE_SIZE, 
+				  meye.mchip_ptable[MCHIP_NB_PAGES],
+				  meye.mchip_dmahandle);
 
 	memset(meye.mchip_ptable, 0, sizeof(meye.mchip_ptable));
 	meye.mchip_dmahandle = 0;
@@ -614,25 +644,25 @@ static void mchip_dma_free(void) {
 /* stop any existing HIC action and wait for any dma to complete then
    reset the dma engine */
 static void mchip_hic_stop(void) {
-	int i = 0;
+	int i, j;
 
 	meye.mchip_mode = MCHIP_HIC_MODE_NOOP;
-	if (!(mchip_read(MCHIP_HIC_STATUS) & MCHIP_HIC_STATUS_BUSY)) 
+	if (!(mchip_read(MCHIP_HIC_STATUS) & MCHIP_HIC_STATUS_BUSY))
 		return;
-	mchip_set(MCHIP_HIC_CMD, MCHIP_HIC_CMD_STOP);
-	mchip_delay(MCHIP_HIC_CMD, 0);
-	while (!mchip_delay(MCHIP_HIC_STATUS, MCHIP_HIC_STATUS_IDLE)) {
-		/*  resetting HIC */
+	for (i = 0; i < 20; ++i) {
 		mchip_set(MCHIP_HIC_CMD, MCHIP_HIC_CMD_STOP);
 		mchip_delay(MCHIP_HIC_CMD, 0);
+		for (j = 0; j < 100; ++j) {
+			if (mchip_delay(MCHIP_HIC_STATUS, MCHIP_HIC_STATUS_IDLE))
+				return;
+			wait_ms(1);
+		}
+		printk(KERN_ERR "meye: need to reset HIC!\n");
+	
 		mchip_set(MCHIP_HIC_CTL, MCHIP_HIC_CTL_SOFT_RESET);
 		wait_ms(250);
-		if (i++ > 20) {
-			printk(KERN_ERR "meye: resetting HIC hanged!\n");
-			break;
-		}
 	}
-	wait_ms(100);
+	printk(KERN_ERR "meye: resetting HIC hanged!\n");
 }
 
 /****************************************************************************/
@@ -1392,6 +1422,8 @@ static void __devexit meye_remove(struct pci_dev *pcidev) {
 
 	mchip_hic_stop();
 
+	mchip_dma_free();
+
 	/* disable interrupts */
 	mchip_set(MCHIP_MM_INTA, 0x0);
 
@@ -1403,8 +1435,6 @@ static void __devexit meye_remove(struct pci_dev *pcidev) {
 			   pci_resource_len(meye.mchip_dev, 0));
 
 	pci_disable_device(meye.mchip_dev);
-
-	mchip_dma_free();
 
 	if (meye.grab_fbuffer)
 		rvfree(meye.grab_fbuffer, gbuffers*gbufsize);

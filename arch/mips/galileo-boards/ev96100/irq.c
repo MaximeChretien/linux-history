@@ -32,6 +32,7 @@
 #include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/kernel_stat.h>
+#include <linux/irq.h>
 #include <linux/module.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
@@ -45,12 +46,9 @@
 #include <asm/bitops.h>
 #include <asm/bootinfo.h>
 #include <asm/io.h>
-#include <asm/irq.h>
 #include <asm/mipsregs.h>
 #include <asm/system.h>
 #include <asm/galileo-boards/ev96100int.h>
-
-extern asmlinkage unsigned int do_IRQ(int irq, struct pt_regs *regs);
 
 extern void mips_timer_interrupt(int irq, struct pt_regs *regs);
 extern asmlinkage void ev96100IRQ(void);
@@ -60,7 +58,7 @@ static void disable_ev96100_irq(unsigned int irq_nr)
 	unsigned long flags;
 
 	save_and_cli(flags);
-	clear_cp0_status(0x100 << irq_nr);
+	clear_c0_status(0x100 << irq_nr);
 	restore_flags(flags);
 }
 
@@ -69,7 +67,7 @@ static inline void enable_ev96100_irq(unsigned int irq_nr)
 	unsigned long flags;
 
 	save_and_cli(flags);
-	set_cp0_status(0x100 << irq_nr);
+	set_c0_status(0x100 << irq_nr);
 	restore_flags(flags);
 }
 

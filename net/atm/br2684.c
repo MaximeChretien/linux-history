@@ -189,7 +189,6 @@ static int br2684_xmit_vcc(struct sk_buff *skb, struct br2684_dev *brdev,
 		return 0;
 		}
 	atomic_add(skb->truesize, &atmvcc->sk->wmem_alloc);
-	ATM_SKB(skb)->iovcnt = 0;
 	ATM_SKB(skb)->atm_options = atmvcc->atm_options;
 	brdev->stats.tx_packets++;
 	brdev->stats.tx_bytes += skb->len;
@@ -482,6 +481,7 @@ static void br2684_push(struct atm_vcc *atmvcc, struct sk_buff *skb)
 	}
 	brdev->stats.rx_packets++;
 	brdev->stats.rx_bytes += skb->len;
+	memset(ATM_SKB(skb), 0, sizeof(struct atm_skb_data));
 	netif_rx(skb);
 }
 

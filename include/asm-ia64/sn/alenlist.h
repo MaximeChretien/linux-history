@@ -4,7 +4,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 1992 - 1997, 2000-2002 Silicon Graphics, Inc. All rights reserved.
+ * Copyright (C) 1992 - 1997, 2000-2003 Silicon Graphics, Inc. All rights reserved.
  */
 #ifndef _ASM_IA64_SN_ALENLIST_H
 #define _ASM_IA64_SN_ALENLIST_H
@@ -15,7 +15,7 @@
 
 /*
  * An Address/Length List is used when setting up for an I/O DMA operation.
- * A driver creates an Address/Length List that describes to the DMA 
+ * A driver creates an Address/Length List that describes to the the DMA 
  * interface where in memory the DMA should go.  The bus interface sets up 
  * mapping registers, if required, and returns a suitable list of "physical 
  * addresses" or "I/O address" to the driver.  The driver then uses these 

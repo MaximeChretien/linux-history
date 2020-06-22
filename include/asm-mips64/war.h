@@ -11,7 +11,7 @@
 #include <linux/config.h>
 
 /*
- * Pleassures of the R4600 V1.x.  Cite from the IDT R4600 V1.7 errata:
+ * Pleasures of the R4600 V1.x.  Cite from the IDT R4600 V1.7 errata:
  *
  *  18. The CACHE instructions Hit_Writeback_Invalidate_D, Hit_Writeback_D,
  *      Hit_Invalidate_D and Create_Dirty_Excl_D should only be
@@ -35,8 +35,9 @@
  *                              nop
  *                              nop
  *                              cache       Hit_Writeback_Invalidate_D
+ *
+ * #define R4600_V1_HIT_CACHEOP_WAR 1
  */
-#undef R4600_V1_HIT_DCACHE_WAR	/* Not used yet in 64-bit kernel */
 
 
 /*
@@ -49,8 +50,28 @@
  * by a load instruction to an uncached address to empty the response buffer."
  * (Revision 2.0 device errata from IDT available on http://www.idt.com/
  * in .pdf format.)
+ *
+ * #define R4600_V2_HIT_CACHEOP_WAR 1
  */
-#undef R4600_V2_HIT_CACHEOP_WAR	/* Not used yet in 64-bit kernel */
+
+/*
+ * R4600 CPU modules for the Indy come with both V1.7 and V2.0 processors.
+ */
+#ifdef CONFIG_SGI_IP22
+
+#define R4600_V1_HIT_CACHEOP_WAR	1
+#define R4600_V2_HIT_CACHEOP_WAR	1
+
+#endif
+
+/*
+ * But the RM200C seems to have been shipped only with V2.0 R4600s
+ */
+#ifdef CONFIG_SNI_RM200_PCI
+
+#define R4600_V2_HIT_CACHEOP_WAR	1
+
+#endif
 
 #ifdef CONFIG_CPU_R5432
 
@@ -63,8 +84,106 @@
  * first thing in the exception handler, which breaks one of the
  * pre-conditions for this problem.
  */
-#define	R5432_CP0_INTERRUPT_WAR
+#define	R5432_CP0_INTERRUPT_WAR 1
 
+#endif
+
+#if defined(CONFIG_SB1_PASS_1_WORKAROUNDS) || \
+    defined(CONFIG_SB1_PASS_2_WORKAROUNDS)
+
+/*
+ * Workaround for the Sibyte M3 errata the text of which can be found at
+ *
+ *   http://sibyte.broadcom.com/hw/bcm1250/docs/pass2errata.txt
+ *
+ * This will enable the use of a special TLB refill handler which does a
+ * consistency check on the information in c0_badvaddr and c0_entryhi and
+ * will just return and take the exception again if the information was
+ * found to be inconsistent.
+ */
+#define BCM1250_M3_WAR 1
+
+/* 
+ * This is a DUART workaround related to glitches around register accesses
+ */
+#define SIBYTE_1956_WAR 1
+
+#endif
+
+/*
+ * Fill buffers not flushed on CACHE instructions
+ * 
+ * Hit_Invalidate_I cacheops invalidate an icache line but the refill
+ * for that line can get stale data from the fill buffer instead of
+ * accessing memory if the previous icache miss was also to that line.
+ *
+ * Workaround: generate an icache refill from a different line
+ *
+ * Affects:
+ *  MIPS 4K		RTL revision <3.0, PRID revision <4
+ */
+#if defined(CONFIG_MIPS_MALTA) || defined(CONFIG_MIPS_ATLAS) || \
+    defined(CONFIG_MIPS_SEAD)
+#define MIPS4K_ICACHE_REFILL_WAR 1
+#endif
+
+/*
+ * Missing implicit forced flush of evictions caused by CACHE
+ * instruction
+ *
+ * Evictions caused by a CACHE instructions are not forced on to the
+ * bus. The BIU gives higher priority to fetches than to the data from
+ * the eviction buffer and no collision detection is performed between
+ * fetches and pending data from the eviction buffer.
+ *
+ * Workaround: Execute a SYNC instruction after the cache instruction
+ *
+ * Affects:
+ *   MIPS 5Kc,5Kf	RTL revision <2.3, PRID revision <8
+ *   MIPS 20Kc		RTL revision <4.0, PRID revision <?
+ */
+#if defined(CONFIG_MIPS_MALTA) || defined(CONFIG_MIPS_ATLAS) || \
+    defined(CONFIG_MIPS_SEAD)
+#define MIPS_CACHE_SYNC_WAR 1
+#endif
+
+/*
+ * From TX49/H2 manual: "If the instruction (i.e. CACHE) is issued for
+ * the line which this instruction itself exists, the following
+ * operation is not guaranteed."
+ *
+ * Workaround: do two phase flushing for Index_Invalidate_I
+ */
+#ifdef CONFIG_CPU_TX49XX
+#define TX49XX_ICACHE_INDEX_INV_WAR 1
+#endif
+
+/*
+ * Workarounds default to off
+ */
+#ifndef R4600_V1_HIT_CACHEOP_WAR
+#define R4600_V1_HIT_CACHEOP_WAR	0
+#endif
+#ifndef R4600_V2_HIT_CACHEOP_WAR
+#define R4600_V2_HIT_CACHEOP_WAR	0
+#endif
+#ifndef R5432_CP0_INTERRUPT_WAR
+#define R5432_CP0_INTERRUPT_WAR		0
+#endif
+#ifndef BCM1250_M3_WAR
+#define BCM1250_M3_WAR			0
+#endif
+#ifndef SIBYTE_1956_WAR
+#define SIBYTE_1956_WAR			0
+#endif
+#ifndef MIPS4K_ICACHE_REFILL_WAR
+#define MIPS4K_ICACHE_REFILL_WAR	0
+#endif
+#ifndef MIPS_CACHE_SYNC_WAR
+#define MIPS_CACHE_SYNC_WAR		0
+#endif
+#ifndef TX49XX_ICACHE_INDEX_INV_WAR
+#define TX49XX_ICACHE_INDEX_INV_WAR	0
 #endif
 
 #endif /* _ASM_WAR_H */

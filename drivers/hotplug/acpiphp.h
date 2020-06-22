@@ -5,8 +5,8 @@
  * Copyright (c) 2001 Greg Kroah-Hartman (greg@kroah.com)
  * Copyright (c) 2001 IBM Corp.
  * Copyright (c) 2002 Hiroshi Aono (h-aono@ap.jp.nec.com)
- * Copyright (c) 2002 Takayoshi Kochi (t-kouchi@cq.jp.nec.com)
- * Copyright (c) 2002 NEC Corporation
+ * Copyright (c) 2002,2003 Takayoshi Kochi (t-kochi@bq.jp.nec.com)
+ * Copyright (c) 2002,2003 NEC Corporation
  *
  * All rights reserved.
  *
@@ -26,15 +26,14 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  * Send feedback to <gregkh@us.ibm.com>,
- *		    <h-aono@ap.jp.nec.com>,
- *		    <t-kouchi@cq.jp.nec.com>
+ *		    <t-kochi@bq.jp.nec.com>
  *
  */
 
 #ifndef _ACPIPHP_H
 #define _ACPIPHP_H
 
-#include "include/acpi.h"
+#include <linux/acpi.h>
 #include "pci_hotplug.h"
 
 #if ACPI_CA_VERSION < 0x20020201
@@ -71,7 +70,7 @@ acpi_evaluate_integer (
 	return AE_OK;
 }
 #else  /* ACPI_CA_VERSION < 0x20020201 */
-#include "acpi_bus.h"
+#include <acpi/acpi_bus.h>
 #endif
 
 /* compatibility stuff for ACPI CA */
@@ -107,7 +106,7 @@ acpi_evaluate_integer (
 
 #define SLOT_MAGIC	0x67267322
 /* name size which is used for entries in pcihpfs */
-#define SLOT_NAME_SIZE	32		/* ACPI{_SUN}-{BUS}:{DEV} */
+#define SLOT_NAME_SIZE	16		/* {_SUN} */
 
 struct acpiphp_bridge;
 struct acpiphp_slot;
@@ -270,11 +269,7 @@ struct acpiphp_func {
 #define FUNC_HAS_PS2		(0x00000040)
 #define FUNC_HAS_PS3		(0x00000080)
 
-/* not yet */
-#define SLOT_SUPPORT_66MHZ	(0x00010000)
-#define SLOT_SUPPORT_100MHZ	(0x00020000)
-#define SLOT_SUPPORT_133MHZ	(0x00040000)
-#define SLOT_SUPPORT_PCIX	(0x00080000)
+#define FUNC_EXISTS		(0x10000000) /* to make sure we call _EJ0 only for existing funcs */
 
 /* function prototypes */
 

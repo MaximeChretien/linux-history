@@ -77,6 +77,8 @@ strcpy:
 	bne	1b
 	blr
 
+/* This clears out any unused part of the destination buffer,
+   just as the libc version does.  -- paulus */
 	.globl	strncpy
 strncpy:
 	cmpwi	0,r5,0
@@ -88,6 +90,12 @@ strncpy:
 	cmpwi	0,r0,0
 	stbu	r0,1(r6)
 	bdnzf	2,1b		/* dec ctr, branch if ctr != 0 && !cr0.eq */
+	bnelr			/* if we didn't hit a null char, we're done */
+	mfctr	r5
+	cmpwi	0,r5,0		/* any space left in destination buffer? */
+	beqlr			/* we know r0 == 0 here */
+2:	stbu	r0,1(r6)	/* clear it out if so */
+	bdnz	2b
 	blr
 
 	.globl	strcat
@@ -380,7 +388,7 @@ backwards_memcpy:
 	beq	2b
 	mtctr	r7
 	b	1b
-	
+
 	.globl	memcmp
 memcmp:
 	cmpwi	0,r5,0

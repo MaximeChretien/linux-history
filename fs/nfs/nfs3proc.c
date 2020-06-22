@@ -300,11 +300,16 @@ nfs3_proc_unlink_setup(struct rpc_message *msg, struct dentry *dir, struct qstr 
 {
 	struct nfs3_diropargs	*arg;
 	struct nfs_fattr	*res;
+	struct unlinkxdr {
+		struct nfs3_diropargs arg;
+		struct nfs_fattr res;
+	} *ptr;
 
-	arg = (struct nfs3_diropargs *)kmalloc(sizeof(*arg)+sizeof(*res), GFP_KERNEL);
-	if (!arg)
+	ptr = (struct unlinkxdr *)kmalloc(sizeof(*ptr), GFP_KERNEL);
+	if (!ptr)
 		return -ENOMEM;
-	res = (struct nfs_fattr*)(arg + 1);
+	arg = &ptr->arg;
+	res = &ptr->res;
 	arg->fh = NFS_FH(dir->d_inode);
 	arg->name = name->name;
 	arg->len = name->len;

@@ -251,7 +251,7 @@ static u##size dino_in##size (struct pci_hba_data *d, u16 addr) \
 	unsigned long flags; \
 	spin_lock_irqsave(&(DINO_DEV(d)->dinosaur_pen), flags); \
 	/* tell HW which IO Port address */ \
-	gsc_writel((u32) addr & ~3, d->base_addr + DINO_PCI_ADDR); \
+	gsc_writel((u32) addr, d->base_addr + DINO_PCI_ADDR); \
 	/* generate I/O PORT read cycle */ \
 	v = gsc_read##type(d->base_addr+DINO_IO_DATA+(addr&mask)); \
 	spin_unlock_irqrestore(&(DINO_DEV(d)->dinosaur_pen), flags); \
@@ -267,7 +267,7 @@ static void dino_out##size (struct pci_hba_data *d, u16 addr, u##size val) \
 { \
 	unsigned long flags; \
 	spin_lock_irqsave(&(DINO_DEV(d)->dinosaur_pen), flags); \
-	/* tell HW which CFG address */ \
+	/* tell HW which IO port address */ \
 	gsc_writel((u32) addr, d->base_addr + DINO_PCI_ADDR); \
 	/* generate cfg write cycle */ \
 	gsc_write##type(cpu_to_le##size(val), d->base_addr+DINO_IO_DATA+(addr&mask)); \
@@ -467,7 +467,7 @@ dino_bios_init(void)
  * to set up the addresses of the devices on this bus.
  */
 #define _8MB 0x00800000UL
-static void __init
+static int __init
 dino_card_setup(struct pci_bus *bus, unsigned long base_addr)
 {
 	int i;
@@ -482,7 +482,7 @@ dino_card_setup(struct pci_bus *bus, unsigned long base_addr)
 				0xffffffffffffffffUL &~ _8MB, _8MB,
 				NULL, NULL) < 0) {
 		printk(KERN_WARNING "Dino: Failed to allocate memory region\n");
-		return;
+		return -ENODEV;
 	}
 	bus->resource[1] = res;
 	bus->resource[0] = &(dino_dev->hba.io_space);
@@ -495,6 +495,7 @@ dino_card_setup(struct pci_bus *bus, unsigned long base_addr)
 	gsc_writel(1 << i, base_addr + DINO_IO_ADDR_EN);
 
 	pcibios_assign_unassigned_resources(bus);
+	return 0;
 }
 
 static void __init

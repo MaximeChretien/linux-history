@@ -1,6 +1,4 @@
 /*
- * Copyright (C) 2000, 2001 Broadcom Corporation
- *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
@@ -14,21 +12,24 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ *
+ * Copyright (C) 2000 - 2001 by Kanoj Sarcar (kanoj@sgi.com)
+ * Copyright (C) 2000, 2001, 2002 by Ralf Baechle
+ * Copyright (C) 2000 - 2001 by Silicon Graphics, Inc.
+ * Copyright (C) 2000, 2001 Broadcom Corporation
  */
-
-#ifndef __ASM_MIPS_SMP_H
-#define __ASM_MIPS_SMP_H
+#ifndef _ASM_SMP_H
+#define _ASM_SMP_H
 
 #include <linux/config.h>
 
 #ifdef CONFIG_SMP
 
-#include <asm/spinlock.h>
 #include <linux/threads.h>
 #include <asm/atomic.h>
 #include <asm/current.h>
 
-#define smp_processor_id()  (current->processor)
+#define smp_processor_id()	(current->processor)
 
 #define PROC_CHANGE_PENALTY	20
 
@@ -43,17 +44,6 @@ extern int __cpu_logical_map[NR_CPUS];
 
 #define NO_PROC_ID	(-1)
 
-struct call_data_struct {
-	void		(*func)(void *);
-	void		*info;
-	atomic_t	started;
-	atomic_t	finished;
-	int		wait;
-};
-
-extern struct call_data_struct *call_data;
-
-/* ipi types that boards must handle, one bit per type   */
 #define SMP_RESCHEDULE_YOURSELF	0x1	/* XXX braindead */
 #define SMP_CALL_FUNCTION	0x2
 
@@ -61,8 +51,8 @@ extern struct call_data_struct *call_data;
 
 typedef unsigned long   cpumask_t;
 
-#define CPUMASK_CLRALL(p)	(p) = 0
-#define CPUMASK_SETB(p, bit)	(p) |= 1 << (bit)
+#define CPUMASK_CLRALL(p)	do { (p) = 0; } while(0)
+#define CPUMASK_SETB(p, bit)	(p) |= 1UL << (bit)
 #define CPUMASK_CLRB(p, bit)	(p) &= ~(1UL << (bit))
 #define CPUMASK_TSTB(p, bit)	((p) & (1UL << (bit)))
 
@@ -91,7 +81,17 @@ typedef struct {
 #error cpumask macros only defined for 128p kernels
 #endif
 
+struct call_data_struct {
+	void		(*func)(void *);
+	void		*info;
+	atomic_t	started;
+	atomic_t	finished;
+	int		wait;
+};
+
+extern struct call_data_struct *call_data;
+
 extern cpumask_t cpu_online_map;
 
 #endif /* CONFIG_SMP */
-#endif /* __ASM_MIPS_SMP_H */
+#endif /* _ASM_SMP_H */

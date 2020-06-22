@@ -78,6 +78,7 @@
 #include <linux/pci.h>
 #include <linux/delay.h>
 #include <linux/pm.h>
+#include <linux/init.h>
 
 #include "amd76x_pm.h"
 

@@ -22,6 +22,7 @@
 #include <asm/perfmon.h>
 #include <asm/iSeries/HvCall.h>
 #include <asm/hvcall.h>
+#include <asm/cputable.h>
 
 extern char _stext[], _etext[], _end[];
 struct perfmon_base_struct perfmon_base = {0, 0, 0, 0, 0, 0, 0, PMC_STATE_INITIAL};
@@ -450,7 +451,7 @@ int pmc_profile(struct perfmon_struct *perfdata)
 	}
 	perfmon_base.state = PMC_STATE_PROFILE_KERN; 
 
-	if (__is_processor(PV_POWER4) || __is_processor(PV_POWER4p)) {
+	if (cur_cpu_spec->cpu_features & CPU_FTR_SLB) {
 		for(i = 0; i < 8; i++) 
 			pdata->pmc[i] = 0x0;
 		pdata->pmc[1] = 0x7f000000;
@@ -794,7 +795,7 @@ void pmc_configure_hardware() {
 	 * Flood enabled is required on GP for PMC cycle profile mode
 	 *   iSeries SP sets this by default.  pSeries requires the OS to enable.
 	 */
-	if (__is_processor(PV_POWER4) || __is_processor(PV_POWER4p)) {
+	if (cur_cpu_spec->cpu_features & CPU_FTR_SLB) {
 		/* Set up the debug bus to pmc mode - a feature of GP */
 		switch(systemcfg->platform) {
 		case PLATFORM_ISERIES_LPAR:

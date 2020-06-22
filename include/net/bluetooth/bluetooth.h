@@ -51,6 +51,7 @@
 #define BTPROTO_SCO   	2
 #define BTPROTO_RFCOMM	3
 #define BTPROTO_BNEP	4
+#define BTPROTO_CMTP	5
 
 #define SOL_HCI     0
 #define SOL_L2CAP   6
@@ -155,7 +156,7 @@ void bluez_sock_link(struct bluez_sock_list *l, struct sock *s);
 void bluez_sock_unlink(struct bluez_sock_list *l, struct sock *s);
 int  bluez_sock_recvmsg(struct socket *sock, struct msghdr *msg, int len, int flags, struct scm_cookie *scm);
 uint bluez_sock_poll(struct file * file, struct socket *sock, poll_table *wait);
-int  bluez_sock_w4_connect(struct sock *sk, int flags);
+int  bluez_sock_wait_state(struct sock *sk, int state, unsigned long timeo);
 
 void bluez_accept_enqueue(struct sock *parent, struct sock *sk);
 struct sock * bluez_accept_dequeue(struct sock *parent, struct socket *newsock);

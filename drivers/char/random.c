@@ -175,7 +175,7 @@
  *	chmod 600 $random_seed
  *	poolfile=/proc/sys/kernel/random/poolsize
  *	[ -r $poolfile ] && bytes=`cat $poolfile` || bytes=512
- *	dd if=/dev/urandom of=$random_seed count=1 bs=bytes
+ *	dd if=/dev/urandom of=$random_seed count=1 bs=$bytes
  *
  * and the following lines in an appropriate script which is run as
  * the system is shutdown:
@@ -188,7 +188,7 @@
  *	chmod 600 $random_seed
  *	poolfile=/proc/sys/kernel/random/poolsize
  *	[ -r $poolfile ] && bytes=`cat $poolfile` || bytes=512
- *	dd if=/dev/urandom of=$random_seed count=1 bs=bytes
+ *	dd if=/dev/urandom of=$random_seed count=1 bs=$bytes
  *
  * For example, on most modern systems using the System V init
  * scripts, such code fragments would be found in
@@ -251,6 +251,8 @@
 #include <linux/random.h>
 #include <linux/poll.h>
 #include <linux/init.h>
+#include <linux/interrupt.h>
+#include <linux/spinlock.h>
 
 #include <asm/processor.h>
 #include <asm/uaccess.h>
@@ -2069,7 +2071,7 @@ static unsigned int ip_cnt;
 static struct keydata *__check_and_rekey(time_t time)
 {
 	struct keydata *keyptr;
-	spin_lock(&ip_lock);
+	spin_lock_bh(&ip_lock);
 	keyptr = &ip_keydata[ip_cnt&1];
 	if (!keyptr->rekey_time || (time - keyptr->rekey_time) > REKEY_INTERVAL) {
 		keyptr = &ip_keydata[1^(ip_cnt&1)];
@@ -2079,7 +2081,7 @@ static struct keydata *__check_and_rekey(time_t time)
 		mb();
 		ip_cnt++;
 	}
-	spin_unlock(&ip_lock);
+	spin_unlock_bh(&ip_lock);
 	return keyptr;
 }
 

@@ -6,8 +6,7 @@
  * for more details.
  *
  * Copyright (C) 1995, 1996, 1997 by Ralf Baechle
- * Copyright (C) 2001 by Liam Davies (ldavies@agile.tv)
- *
+ * Copyright (C) 2001, 2002, 2003 by Liam Davies (ldavies@agile.tv)
  */
 #include <asm/asm.h>
 #include <asm/mipsregs.h>
@@ -30,7 +29,9 @@
 		/*
 		 * Get pending Interrupts
 		 */
-		mfc0	s0,CP0_CAUSE	# get irq mask
+		mfc0	s0,CP0_CAUSE	# get raw irq status
+		mfc0	a0,CP0_STATUS	# get irq mask
+		and	s0,s0,a0	# compute masked irq status
 
 		andi	a0,s0,CAUSEF_IP2	/* Check for Galileo timer */
 		beq	a0,zero,1f
@@ -57,7 +58,7 @@
 		 andi	a0,s0,CAUSEF_IP4
 
 		/* Ethernet 0 interrupt */
-		li	a0,COBALT_RAQ_ETH0_IRQ
+		li	a0,COBALT_ETH0_IRQ
 		jal     do_IRQ
 		 move	a1,sp
 
@@ -69,7 +70,7 @@
 		 andi	a0,s0,CAUSEF_IP5
 
 		/* Ethernet 1 interrupt */
-		li	a0,COBALT_RAQ_ETH1_IRQ
+		li	a0,COBALT_ETH1_IRQ
 		jal     do_IRQ
 		 move	a1,sp
 
@@ -80,7 +81,7 @@
 		 andi	a0,s0,CAUSEF_IP7
 
 		/* Serial interrupt */
-		li	a0,7
+		li	a0,COBALT_SERIAL_IRQ
 		jal     do_IRQ
 		 move	a1,sp
 
@@ -91,7 +92,7 @@
 		  nop
 
 		/* PCI interrupt */
-		li	a0,9
+		li	a0,COBALT_QUBE_SLOT_IRQ
 		jal     do_IRQ
 		 move	a1,sp
 

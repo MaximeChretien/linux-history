@@ -51,7 +51,16 @@
  */
 #define VMALLOC_START (0xD000000000000000)
 #define VMALLOC_VMADDR(x) ((unsigned long)(x))
+
+#ifndef CONFIG_SHARED_MEMORY_ADDRESSING
 #define VMALLOC_END   (VMALLOC_START + VALID_EA_BITS)
+#else
+#define VMALLOC_END   (VMALLOC_START + (VALID_EA_BITS >> 1))
+#define SMALLOC_START (VMALLOC_START + (VALID_EA_BITS >> 1) + 1)
+#define SMALLOC_END   (VMALLOC_START + VALID_EA_BITS)
+#define SMALLOC_EA_SHIFT 40
+#define SMALLOC_ESID_SHIFT 12
+#endif
 
 /*
  * Define the address range of the imalloc VM area.

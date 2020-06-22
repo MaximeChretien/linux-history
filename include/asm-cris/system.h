@@ -14,6 +14,15 @@ extern struct task_struct *resume(struct task_struct *prev, struct task_struct *
 #define switch_to(prev,next,last) last = resume(prev,next, \
 					 (int)&((struct task_struct *)0)->thread)
 
+/* read the CPU PC register */
+
+extern inline unsigned long rdpc(void)
+{ 
+	unsigned long pc;
+	__asm__ volatile ("move.d $pc,%0" : "=rm" (pc));
+	return pc;
+}
+
 /* read the CPU version register */
 
 extern inline unsigned long rdvr(void) { 
@@ -54,6 +63,7 @@ extern inline unsigned long _get_base(char * addr)
 struct __xchg_dummy { unsigned long a[100]; };
 #define __xg(x) ((struct __xchg_dummy *)(x))
 
+#ifdef CONFIG_ETRAX_DEBUG_INTERRUPT
 #if 0
 /* use these and an oscilloscope to see the fraction of time we're running with IRQ's disabled */
 /* it assumes the LED's are on port 0x90000000 of course. */
@@ -61,6 +71,60 @@ struct __xchg_dummy { unsigned long a[100]; };
 #define cli() __asm__ __volatile__ ( "di\n\tpush $r0\n\tmove.d 0x40000,$r0\n\tmove.d $r0,[0x90000000]\n\tpop $r0");
 #define save_flags(x) __asm__ __volatile__ ("move $ccr,%0" : "=rm" (x) : : "memory");
 #define restore_flags(x) __asm__ __volatile__ ("move %0,$ccr\n\tbtstq 5,%0\n\tbpl 1f\n\tnop\n\tpush $r0\n\tmoveq 0,$r0\n\tmove.d $r0,[0x90000000]\n\tpop $r0\n1:\n" : : "r" (x) : "memory");
+#else
+
+/* Log when interrupts are turned on and off and who did it. */
+#define CCR_EI_MASK (1 << 5)
+/* in debug.c */
+extern int log_int_pos;
+extern int log_int_size;
+extern int log_int_enable;
+extern int log_int_trig0_pos;
+extern int log_int_trig1_pos;
+extern void log_int(unsigned long pc, unsigned long prev_ccr, unsigned long next_ccr);
+
+/* If you only want to log changes - change to 1 to a 0 below */
+#define LOG_INT(pc, curr_ccr, next_ccr) do { \
+  if (1 || (curr_ccr ^ next_ccr) & CCR_EI_MASK) \
+          log_int((pc), curr_ccr, next_ccr); \
+  }while(0)
+
+#define __save_flags(x) __asm__ __volatile__ ("move $ccr,%0" : "=rm" (x) : : "memory");
+
+extern inline void __cli(void)
+{
+  unsigned long pc = rdpc();  
+  unsigned long curr_ccr; __save_flags(curr_ccr); 
+  LOG_INT(pc, curr_ccr, 0); 
+  __asm__ __volatile__ ( "di" : : :"memory");
+}
+
+
+extern inline void __sti(void)
+{
+  unsigned long pc = rdpc();  
+  unsigned long curr_ccr; __save_flags(curr_ccr); 
+  LOG_INT(pc, curr_ccr, CCR_EI_MASK); 
+  __asm__ __volatile__ ( "ei" : : :"memory");
+}
+
+extern inline void __restore_flags(unsigned long x)
+{
+  unsigned long pc = rdpc();
+  unsigned long curr_ccr; __save_flags(curr_ccr);
+  LOG_INT(pc, curr_ccr, x);   
+  __asm__ __volatile__ ("move %0,$ccr" : : "rm" (x) : "memory");
+}
+
+/* For spinlocks etc */
+#define local_irq_save(x) do { __save_flags(x); __cli(); }while (0)
+#define local_irq_restore(x) restore_flags(x)
+
+#define local_irq_disable()  cli()
+#define local_irq_enable()   sti()
+
+#endif
+
 #else
 #define __cli() __asm__ __volatile__ ( "di" : : :"memory");
 #define __sti() __asm__ __volatile__ ( "ei" : : :"memory");

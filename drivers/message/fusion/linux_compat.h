@@ -75,11 +75,11 @@ typedef int (*__init_module_func_t)(void);
 typedef void (*__cleanup_module_func_t)(void);
 #define module_init(x) \
 	int init_module(void) __attribute__((alias(#x))); \
-	extern inline __init_module_func_t __init_module_inline(void) \
+	static inline __init_module_func_t __init_module_inline(void) \
 	{ return x; }
 #define module_exit(x) \
 	void cleanup_module(void) __attribute__((alias(#x))); \
-	extern inline __cleanup_module_func_t __cleanup_module_inline(void) \
+	static inline __cleanup_module_func_t __cleanup_module_inline(void) \
 	{ return x; }
 
 #else
@@ -247,8 +247,10 @@ static __inline__ int __get_order(unsigned long size)
 
 /*
  *  We use our new error handling code if the kernel version is 2.4.18 or newer.
+ *  Remark: 5/5/03 use old EH code with 2.4 kernels as it runs in a background thread
+ *  2.4 kernels choke on a call to schedule via eh thread.
  */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,18)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,1)
         #define MPT_SCSI_USE_NEW_EH
 #endif
 
@@ -270,6 +272,13 @@ static __inline__ int __get_order(unsigned long size)
 #define mptscsih_sync_irq(_irq) synchronize_irq()
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,58)
+#define mpt_inc_use_count()
+#define mpt_dec_use_count()
+#else
+#define mpt_inc_use_count() MOD_INC_USE_COUNT
+#define mpt_dec_use_count() MOD_DEC_USE_COUNT
+#endif
 
 
 /*}-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/

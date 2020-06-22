@@ -153,10 +153,23 @@ void __wait_on_buffer(struct buffer_head * bh)
 	get_bh(bh);
 	add_wait_queue(&bh->b_wait, &wait);
 	do {
-		run_task_queue(&tq_disk);
 		set_task_state(tsk, TASK_UNINTERRUPTIBLE);
 		if (!buffer_locked(bh))
 			break;
+		/*
+		 * We must read tq_disk in TQ_ACTIVE after the
+		 * add_wait_queue effect is visible to other cpus.
+		 * We could unplug some line above it wouldn't matter
+		 * but we can't do that right after add_wait_queue
+		 * without an smp_mb() in between because spin_unlock
+		 * has inclusive semantics.
+		 * Doing it here is the most efficient place so we
+		 * don't do a suprious unplug if we get a racy
+		 * wakeup that make buffer_locked to return 0, and
+		 * doing it here avoids an explicit smp_mb() we
+		 * rely on the implicit one in set_task_state.
+		 */
+		run_task_queue(&tq_disk);
 		schedule();
 	} while (buffer_locked(bh));
 	tsk->state = TASK_RUNNING;
@@ -323,7 +336,7 @@ int fsync_super(struct super_block *sb)
 
 	lock_kernel();
 	sync_inodes_sb(sb);
-	DQUOT_SYNC(dev);
+	DQUOT_SYNC_SB(sb);
 	lock_super(sb);
 	if (sb->s_dirt && sb->s_op && sb->s_op->write_super)
 		sb->s_op->write_super(sb);
@@ -347,7 +360,7 @@ int fsync_dev(kdev_t dev)
 
 	lock_kernel();
 	sync_inodes(dev);
-	DQUOT_SYNC(dev);
+	DQUOT_SYNC_DEV(dev);
 	sync_supers(dev, 1);
 	unlock_kernel();
 
@@ -436,26 +449,18 @@ out:
 	return ret;
 }
 
-asmlinkage long sys_fdatasync(unsigned int fd)
+int do_fdatasync(struct file *file)
 {
-	struct file * file;
-	struct dentry * dentry;
-	struct inode * inode;
 	int ret, err;
+	struct dentry *dentry;
+	struct inode *inode;
 
-	ret = -EBADF;
-	file = fget(fd);
-	if (!file)
-		goto out;
-
+	if (unlikely(!file->f_op || !file->f_op->fsync))
+		return -EINVAL;
+	
 	dentry = file->f_dentry;
 	inode = dentry->d_inode;
 
-	ret = -EINVAL;
-	if (!file->f_op || !file->f_op->fsync)
-		goto out_putf;
-
-	down(&inode->i_sem);
 	ret = filemap_fdatasync(inode->i_mapping);
 	err = file->f_op->fsync(file, dentry, 1);
 	if (err && !ret)
@@ -463,9 +468,25 @@ asmlinkage long sys_fdatasync(unsigned int fd)
 	err = filemap_fdatawait(inode->i_mapping);
 	if (err && !ret)
 		ret = err;
+	return ret;
+}
+
+asmlinkage long sys_fdatasync(unsigned int fd)
+{
+	struct file * file;
+	struct inode *inode;
+	int ret;
+
+	ret = -EBADF;
+	file = fget(fd);
+	if (!file)
+		goto out;
+
+	inode = file->f_dentry->d_inode;
+	down(&inode->i_sem);
+	ret = do_fdatasync(file);
 	up(&inode->i_sem);
 
-out_putf:
 	fput(file);
 out:
 	return ret;
@@ -1120,6 +1141,7 @@ struct buffer_head * bread(kdev_t dev, int block, int size)
 	bh = getblk(dev, block, size);
 	if (buffer_uptodate(bh))
 		return bh;
+	set_bit(BH_Sync, &bh->b_state);
 	ll_rw_block(READ, 1, &bh);
 	wait_on_buffer(bh);
 	if (buffer_uptodate(bh))
@@ -1209,10 +1231,11 @@ void set_bh_page (struct buffer_head *bh, struct page *page, unsigned long offse
 	if (offset >= PAGE_SIZE)
 		BUG();
 
-	/*
-	 * page_address will return NULL anyways for highmem pages
-	 */
-	bh->b_data = page_address(page) + offset;
+	if (PageHighMem(page)) {
+		bh->b_data = (char *)offset;
+	} else {
+		bh->b_data = page_address(page) + offset;
+	}
 	bh->b_page = page;
 }
 EXPORT_SYMBOL(set_bh_page);
@@ -1507,6 +1530,9 @@ static int __block_write_full_page(struct inode *inode, struct page *page, get_b
 
 	/* Done - end_buffer_io_async will unlock */
 	SetPageUptodate(page);
+
+	wakeup_page_waiters(page);
+
 	return 0;
 
 out:
@@ -1538,6 +1564,7 @@ out:
 	} while (bh != head);
 	if (need_unlock)
 		UnlockPage(page);
+	wakeup_page_waiters(page);
 	return err;
 }
 
@@ -1765,6 +1792,8 @@ int block_read_full_page(struct page *page, get_block_t *get_block)
 		else
 			submit_bh(READ, bh);
 	}
+
+	wakeup_page_waiters(page);
 	
 	return 0;
 }
@@ -2106,7 +2135,8 @@ int generic_direct_IO(int rw, struct inode * inode, struct kiobuf * iobuf, unsig
 	int i, nr_blocks, retval;
 	unsigned long * blocks = iobuf->blocks;
 	int length;
-
+	int beyond_eof = 0;
+	
 	length = iobuf->length;
 	nr_blocks = length / blocksize;
 	/* build the blocklist */
@@ -2116,14 +2146,22 @@ int generic_direct_IO(int rw, struct inode * inode, struct kiobuf * iobuf, unsig
 		bh.b_state = 0;
 		bh.b_dev = inode->i_dev;
 		bh.b_size = blocksize;
+		bh.b_page = NULL;
 
-		retval = get_block(inode, blocknr, &bh, rw == READ ? 0 : 1);
+		if (((loff_t) blocknr) * blocksize >= inode->i_size)
+			beyond_eof = 1;
+
+		/* Only allow get_block to create new blocks if we are safely
+		   beyond EOF.  O_DIRECT is unsafe inside sparse files. */
+		retval = get_block(inode, blocknr, &bh, 
+				   ((rw != READ) && beyond_eof));
+
 		if (retval) {
 			if (!i)
 				/* report error to userspace */
 				goto out;
 			else
-				/* do short I/O utill 'i' */
+				/* do short I/O until 'i' */
 				break;
 		}
 
@@ -2139,14 +2177,20 @@ int generic_direct_IO(int rw, struct inode * inode, struct kiobuf * iobuf, unsig
 			if (buffer_new(&bh))
 				unmap_underlying_metadata(&bh);
 			if (!buffer_mapped(&bh))
-				BUG();
+				/* upper layers need to pass the error on or
+				 * fall back to buffered IO. */
+				return -ENOTBLK;
 		}
 		blocks[i] = bh.b_blocknr;
 	}
 
 	/* patch length to handle short I/O */
 	iobuf->length = i * blocksize;
+	if (!beyond_eof)
+		up(&inode->i_sem);
 	retval = brw_kiovec(rw, 1, &iobuf, inode->i_dev, iobuf->blocks, blocksize);
+	if (!beyond_eof)
+		down(&inode->i_sem);
 	/* restore orig length */
 	iobuf->length = length;
  out:
@@ -2187,9 +2231,7 @@ static int wait_kio(int rw, int nr, struct buffer_head *bh[], int size)
 	for (i = nr; --i >= 0; ) {
 		iosize += size;
 		tmp = bh[i];
-		if (buffer_locked(tmp)) {
-			wait_on_buffer(tmp);
-		}
+		wait_on_buffer(tmp);
 		
 		if (!buffer_uptodate(tmp)) {
 			/* We are traversing bh'es in reverse order so
@@ -2378,6 +2420,7 @@ int brw_page(int rw, struct page *page, kdev_t dev, int b[], int size)
 		submit_bh(rw, bh);
 		bh = next;
 	} while (bh != head);
+	wakeup_page_waiters(page);
 	return 0;
 }
 
@@ -2785,7 +2828,7 @@ void __init buffer_init(unsigned long mempages)
 		hash_table = (struct buffer_head **)
 		    __get_free_pages(GFP_ATOMIC, order);
 	} while (hash_table == NULL && --order > 0);
-	printk("Buffer-cache hash table entries: %d (order: %d, %ld bytes)\n",
+	printk(KERN_INFO "Buffer cache hash table entries: %d (order: %d, %ld bytes)\n",
 	       nr_hash, order, (PAGE_SIZE << order));
 
 	if (!hash_table)

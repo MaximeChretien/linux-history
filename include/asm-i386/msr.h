@@ -75,6 +75,9 @@
 #define MSR_P6_EVNTSEL0			0x186
 #define MSR_P6_EVNTSEL1			0x187
 
+#define MSR_IA32_PERF_STATUS		0x198
+#define MSR_IA32_PERF_CTL		0x199
+
 /* AMD Defined MSRs */
 #define MSR_K6_EFER			0xC0000080
 #define MSR_K6_STAR			0xC0000081

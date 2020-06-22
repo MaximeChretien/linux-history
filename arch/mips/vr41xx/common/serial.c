@@ -67,7 +67,6 @@
 
 #define SIU_BASE_BAUD		1152000
 #define SIU_CLOCK		0x0102
-#define SIU_IRQ			17
 
 /* VR4122 and VR4131 DSIU Registers */
 #define DSIURB			KSEG1ADDR(0x0f000820)
@@ -77,7 +76,6 @@
 
 #define DSIU_BASE_BAUD		1152000
 #define DSIU_CLOCK		0x0802
-#define DSIU_IRQ		29
 
 int vr41xx_serial_ports = 0;
 
@@ -101,7 +99,7 @@ void vr41xx_siu_ifselect(int interface, int module)
 		val |= USE_IRDA | SIU_USES_IRDA;
 	}
 
-	switch (mips_cpu.cputype) {
+	switch (current_cpu_data.cputype) {
 	case CPU_VR4111:
 	case CPU_VR4121:
 		writew(val, VR4111_SIUIRSEL);
@@ -128,7 +126,7 @@ void __init vr41xx_siu_init(int interface, int module)
 	s.baud_base = SIU_BASE_BAUD;
 	s.irq = SIU_IRQ;
 	s.flags = ASYNC_BOOT_AUTOCONF | ASYNC_SKIP_TEST;
-	switch (mips_cpu.cputype) {
+	switch (current_cpu_data.cputype) {
 	case CPU_VR4111:
 	case CPU_VR4121:
 		s.iomem_base = (unsigned char *)VR4111_SIURB;
@@ -155,7 +153,8 @@ void __init vr41xx_dsiu_init(void)
 {
 	struct serial_struct s;
 
-	if (mips_cpu.cputype != CPU_VR4122 && mips_cpu.cputype != CPU_VR4131)
+	if (current_cpu_data.cputype != CPU_VR4122 &&
+	    current_cpu_data.cputype != CPU_VR4131)
 		return;
 
 	memset(&s, 0, sizeof(s));

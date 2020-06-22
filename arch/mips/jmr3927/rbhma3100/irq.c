@@ -1,7 +1,7 @@
 /*
  * Copyright 2001 MontaVista Software Inc.
  * Author: MontaVista Software, Inc.
- *              ahennessy@mvista.com       
+ *              ahennessy@mvista.com
  *
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
@@ -33,6 +33,7 @@
 #include <linux/init.h>
 
 #include <linux/errno.h>
+#include <linux/irq.h>
 #include <linux/kernel_stat.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
@@ -47,7 +48,6 @@
 
 #include <asm/bitops.h>
 #include <asm/io.h>
-#include <asm/irq.h>
 #include <asm/mipsregs.h>
 #include <asm/system.h>
 
@@ -137,7 +137,7 @@ static void jmr3927_irq_ack(unsigned int irq)
 	db_assert(irq < jmr3927_irq_base + JMR3927_NR_IRQ_IRC + JMR3927_NR_IRQ_IOC);
 
 	if (irq == JMR3927_IRQ_IRC_TMR0) {
-		jmr3927_tmrptr->tisr = 0;       /* ack interrupt */  
+		jmr3927_tmrptr->tisr = 0;       /* ack interrupt */
 	}
 
 	jmr3927_irq_disable(irq);
@@ -248,33 +248,33 @@ static void unmask_irq_irc(int irq_nr, int space_id)
 }
 
 struct tb_irq_space jmr3927_isac_irqspace = {
-	next: NULL,
-	start_irqno: JMR3927_IRQ_ISAC,
+	.next = NULL,
+	.start_irqno = JMR3927_IRQ_ISAC,
 	nr_irqs : JMR3927_NR_IRQ_ISAC,
-	mask_func: mask_irq_isac,
-	unmask_func: unmask_irq_isac,
-	name: "ISAC",
-	space_id: 0,
+	.mask_func = mask_irq_isac,
+	.unmask_func = unmask_irq_isac,
+	.name = "ISAC",
+	.space_id = 0,
 	can_share : 0
 };
 struct tb_irq_space jmr3927_ioc_irqspace = {
-	next: NULL,
-	start_irqno: JMR3927_IRQ_IOC,
+	.next = NULL,
+	.start_irqno = JMR3927_IRQ_IOC,
 	nr_irqs : JMR3927_NR_IRQ_IOC,
-	mask_func: mask_irq_ioc,
-	unmask_func: unmask_irq_ioc,
-	name: "IOC",
-	space_id: 0,
+	.mask_func = mask_irq_ioc,
+	.unmask_func = unmask_irq_ioc,
+	.name = "IOC",
+	.space_id = 0,
 	can_share : 1
 };
 struct tb_irq_space jmr3927_irc_irqspace = {
-	next: NULL,
-	start_irqno: JMR3927_IRQ_IRC,
+	.next = NULL,
+	.start_irqno = JMR3927_IRQ_IRC,
 	nr_irqs : JMR3927_NR_IRQ_IRC,
-	mask_func: mask_irq_irc,
-	unmask_func: unmask_irq_irc,
-	name: "on-chip",
-	space_id: 0,
+	.mask_func = mask_irq_irc,
+	.unmask_func = unmask_irq_irc,
+	.name = "on-chip",
+	.space_id = 0,
 	can_share : 0
 };
 
@@ -287,11 +287,10 @@ void jmr3927_spurious(struct pt_regs *regs)
 	       regs->cp0_cause, regs->cp0_epc, regs->regs[31]);
 }
 
-extern asmlinkage void do_IRQ(int irq, struct pt_regs *regs);
 void jmr3927_irc_irqdispatch(struct pt_regs *regs)
 {
 	int irq;
-	
+
 #ifdef CONFIG_TX_BRANCH_LIKELY_BUG_WORKAROUND
 	tx_branch_likely_bug_fixup(regs);
 #endif
@@ -437,14 +436,14 @@ void jmr3927_irq_setup(void)
 #endif
 
 	/* enable all CPU interrupt bits. */
-	set_cp0_status(ST0_IM);	/* IE bit is still 0. */
+	set_c0_status(ST0_IM);	/* IE bit is still 0. */
 }
 
 void (*irq_setup)(void);
 void __init init_IRQ(void)
 {
 
-#ifdef CONFIG_REMOTE_DEBUG
+#ifdef CONFIG_KGDB
         extern void breakpoint(void);
         extern void set_debug_traps(void);
 
@@ -468,7 +467,7 @@ hw_irq_controller jmr3927_irq_controller = {
 	NULL			/* no affinity stuff for UP */
 };
 
-void 
+void
 jmr3927_irq_init(u32 irq_base)
 {
 	extern irq_desc_t irq_desc[];
@@ -480,7 +479,7 @@ jmr3927_irq_init(u32 irq_base)
 		irq_desc[i].depth = 1;
 		irq_desc[i].handler = &jmr3927_irq_controller;
 	}
-	
+
 	jmr3927_irq_base = irq_base;
 }
 

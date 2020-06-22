@@ -49,12 +49,12 @@ extern void proc_pciFr_init(struct proc_dir_entry *proc_ppc64_root);
 
 static int proc_pmc_control_mode = 0;
 
-static struct proc_dir_entry *proc_ppc64_root = NULL;
+struct proc_dir_entry *proc_ppc64_root = NULL;
 static struct proc_dir_entry *proc_ppc64_pmc_root = NULL;
 static struct proc_dir_entry *proc_ppc64_pmc_system_root = NULL;
 static struct proc_dir_entry *proc_ppc64_pmc_cpu_root[NR_CPUS] = {NULL, };
 
-static spinlock_t proc_ppc64_lock;
+spinlock_t proc_ppc64_lock;
 static int proc_ppc64_page_read(char *page, char **start, off_t off,
 				int count, int *eof, void *data);
 static void proc_ppc64_create_paca(int num, struct proc_dir_entry *paca_dir);
@@ -145,8 +145,13 @@ void proc_ppc64_init(void)
 	 *   /proc/ppc64/pmc/cpu0 
 	 */
 	spin_lock(&proc_ppc64_lock);
-	proc_ppc64_root = proc_mkdir("ppc64", 0);
-	if (!proc_ppc64_root) return;
+	if (proc_ppc64_root == NULL) {
+		proc_ppc64_root = proc_mkdir("ppc64", 0);
+		if (!proc_ppc64_root) {
+			spin_unlock(&proc_ppc64_lock);
+			return;
+		}
+	}
 	spin_unlock(&proc_ppc64_lock);
 
 	ent = create_proc_entry("naca", S_IFREG|S_IRUGO, proc_ppc64_root);
@@ -173,7 +178,9 @@ void proc_ppc64_init(void)
 	}
 
 	/* Placeholder for rtas interfaces. */
-	rtas_proc_dir = proc_mkdir("rtas", proc_ppc64_root);
+	if (rtas_proc_dir == NULL) {
+		rtas_proc_dir = proc_mkdir("rtas", proc_ppc64_root);
+	}
 
 	/* Create the /proc/ppc64/pcifr for the Pci Flight Recorder.	 */
 	proc_pciFr_init(proc_ppc64_root);

@@ -1,4 +1,4 @@
-# $Id: Makefile,v 1.6 2000/06/10 03:03:52 gniibe Exp $
+# $Id: Makefile,v 1.1.1.1.2.2 2002/05/10 17:58:54 jzs Exp $
 #
 # This file is subject to the terms and conditions of the GNU General Public
 # License.  See the file "COPYING" in the main directory of this archive
@@ -22,6 +22,14 @@ CFLAGS		+= -mb
 AFLAGS		+= -mb
 # LINKFLAGS	+= -EB
 LDFLAGS		:= -EB
+endif
+
+ifdef CONFIG_SH_KGDB
+CFLAGS :=$(CFLAGS:-fomit-frame-pointer=) -g
+AFLAGS += -g
+ifdef CONFIG_KGDB_MORE
+CFLAGS += $(shell echo $(CONFIG_KGDB_OPTIONS) | sed -e 's/"//g')
+endif
 endif
 
 LD	=$(CROSS_COMPILE)ld $(LDFLAGS)

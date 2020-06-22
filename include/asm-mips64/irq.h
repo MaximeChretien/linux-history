@@ -12,6 +12,7 @@
 #define _ASM_IRQ_H
 
 #include <linux/config.h>
+#include <linux/linkage.h>
 #include <asm/sn/arch.h>
 
 #define NR_IRQS 256
@@ -42,17 +43,12 @@ static inline int irq_cannonicalize(int irq)
 #define irq_cannonicalize(irq) (irq)	/* Sane hardware, sane code ... */
 #endif
 
-struct irqaction;
-extern int i8259_setup_irq(int irq, struct irqaction * new);
 extern void disable_irq(unsigned int);
-
-#ifdef CONFIG_NEW_IRQ
 extern void disable_irq_nosync(unsigned int);
-#else
-#define disable_irq_nosync	disable_irq
-#endif
-
 extern void enable_irq(unsigned int);
+
+struct pt_regs;
+extern asmlinkage unsigned int do_IRQ(int irq, struct pt_regs *regs);
 
 /* Machine specific interrupt initialization  */
 extern void (*irq_setup)(void);

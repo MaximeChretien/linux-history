@@ -7,7 +7,7 @@
  *  Updated and modified by Cort Dougan (cort@cs.nmt.edu) and
  *  Paul Mackerras (paulus@cs.anu.edu.au)
  *
- *  PowerPC version 
+ *  PowerPC version
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
  *
  *  This program is free software; you can redistribute it and/or
@@ -80,7 +80,7 @@ int check_stack(struct task_struct *tsk)
 	unsigned long tsk_top = task_top(tsk);
 	int ret = 0;
 
-#if 0	
+#if 0
 	/* check thread magic */
 	if ( tsk->thread.magic != THREAD_MAGIC )
 	{
@@ -91,7 +91,7 @@ int check_stack(struct task_struct *tsk)
 
 	if ( !tsk )
 		printk("check_stack(): tsk bad tsk %p\n",tsk);
-	
+
 	/* check if stored ksp is bad */
 	if ( (tsk->thread.ksp > stack_top) || (tsk->thread.ksp < tsk_top) )
 	{
@@ -101,7 +101,7 @@ int check_stack(struct task_struct *tsk)
 		       tsk_top, tsk->thread.ksp, stack_top);
 		ret |= 2;
 	}
-	
+
 	/* check if stack ptr RIGHT NOW is bad */
 	if ( (tsk == current) && ((_get_SP() > stack_top ) || (_get_SP() < tsk_top)) )
 	{
@@ -112,7 +112,7 @@ int check_stack(struct task_struct *tsk)
 		ret |= 4;
 	}
 
-#if 0	
+#if 0
 	/* check amount of free stack */
 	for ( i = (unsigned long *)task_top(tsk) ; i < kernel_stack_top(tsk) ; i++ )
 	{
@@ -147,7 +147,7 @@ dump_altivec(struct pt_regs *regs, elf_vrregset_t *vrregs)
 	return 1;
 }
 
-void 
+void
 enable_kernel_altivec(void)
 {
 #ifdef CONFIG_SMP
@@ -189,7 +189,7 @@ _switch_to(struct task_struct *prev, struct task_struct *new,
 {
 	struct thread_struct *new_thread, *old_thread;
 	unsigned long s;
-	
+
 	__save_flags(s);
 	__cli();
 #if CHECK_STACK
@@ -201,7 +201,7 @@ _switch_to(struct task_struct *prev, struct task_struct *new,
 	/* avoid complexity of lazy save/restore of fpu
 	 * by just saving it every time we switch out if
 	 * this task used the fpu during the last quantum.
-	 * 
+	 *
 	 * If it tries to use the fpu again, it'll trap and
 	 * reload its fp regs.  So we don't have to do a restore
 	 * every switch, just a save.
@@ -209,7 +209,7 @@ _switch_to(struct task_struct *prev, struct task_struct *new,
 	 */
 	if ( prev->thread.regs && (prev->thread.regs->msr & MSR_FP) )
 		giveup_fpu(prev);
-#ifdef CONFIG_ALTIVEC	
+#ifdef CONFIG_ALTIVEC
 	/*
 	 * If the previous thread used altivec in the last quantum
 	 * (thus changing altivec regs) then save them.
@@ -223,7 +223,7 @@ _switch_to(struct task_struct *prev, struct task_struct *new,
 	 */
 	if ((prev->thread.regs && (prev->thread.regs->msr & MSR_VEC)))
 		giveup_altivec(prev);
-#endif /* CONFIG_ALTIVEC */	
+#endif /* CONFIG_ALTIVEC */
 #endif /* CONFIG_SMP */
 
 	current_set[smp_processor_id()] = new;
@@ -250,27 +250,40 @@ void show_regs(struct pt_regs * regs)
 	       regs->msr & MSR_FP ? 1 : 0,regs->msr&MSR_ME ? 1 : 0,
 	       regs->msr&MSR_IR ? 1 : 0,
 	       regs->msr&MSR_DR ? 1 : 0);
+#ifdef CONFIG_4xx
+	/*
+	 * TRAP 0x800 is the hijacked FPU unavailable exception vector
+	 * on 40x used to implement the heavyweight data access
+	 * functionality.  It is an emulated value (like all trap
+	 * vectors) on 440.
+	 */
+	if (regs->trap == 0x300 || regs->trap == 0x600 || regs->trap == 0x800)
+		printk("DEAR: %08lX, ESR: %08lX\n", regs->dar, regs->dsisr);
+#else
 	if (regs->trap == 0x300 || regs->trap == 0x600)
 		printk("DAR: %08lX, DSISR: %08lX\n", regs->dar, regs->dsisr);
+#endif
 	printk("TASK = %p[%d] '%s' ",
 	       current, current->pid, current->comm);
 	printk("Last syscall: %ld ", current->thread.last_syscall);
 	printk("\nlast math %p last altivec %p", last_task_used_math,
 	       last_task_used_altivec);
 
-#ifdef CONFIG_4xx
+#if defined(CONFIG_4xx) && defined(DCRN_PLB0_BEAR)
 	printk("\nPLB0: bear= 0x%8.8x acr=   0x%8.8x besr=  0x%8.8x\n",
-	    mfdcr(DCRN_POB0_BEAR), mfdcr(DCRN_PLB0_ACR),
+	    mfdcr(DCRN_PLB0_BEAR), mfdcr(DCRN_PLB0_ACR),
 	    mfdcr(DCRN_PLB0_BESR));
+#endif
+#if defined(CONFIG_4xx) && defined(DCRN_POB0_BEAR)
 	printk("PLB0 to OPB: bear= 0x%8.8x besr0= 0x%8.8x besr1= 0x%8.8x\n",
-	    mfdcr(DCRN_PLB0_BEAR), mfdcr(DCRN_POB0_BESR0),
+	    mfdcr(DCRN_POB0_BEAR), mfdcr(DCRN_POB0_BESR0),
 	    mfdcr(DCRN_POB0_BESR1));
 #endif
-	
+
 #ifdef CONFIG_SMP
 	printk(" CPU: %d", current->processor);
 #endif /* CONFIG_SMP */
-	
+
 	printk("\n");
 	for (i = 0;  i < 32;  i++)
 	{
@@ -475,7 +488,7 @@ int sys_execve(unsigned long a0, unsigned long a1, unsigned long a2,
 #ifdef CONFIG_ALTIVEC
 	if (regs->msr & MSR_VEC)
 		giveup_altivec(current);
-#endif /* CONFIG_ALTIVEC */ 
+#endif /* CONFIG_ALTIVEC */
 	error = do_execve(filename, (char **) a1, (char **) a2, regs);
 	if (error == 0)
 		current->ptrace &= ~PT_DTRACE;
@@ -573,7 +586,7 @@ void __init ll_puts(const char *s)
 		return;
 	}
 
-#if 0	
+#if 0
 	if ( have_of )
 	{
 		prom_print(s);
@@ -600,7 +613,7 @@ void __init ll_puts(const char *s)
 				y = 0;
 			}
 		} else {
-			vidmem [ ( x + cols * y ) * 2 ] = c; 
+			vidmem [ ( x + cols * y ) * 2 ] = c;
 			if ( ++x >= cols ) {
 				x = 0;
 				if ( ++y >= lines ) {

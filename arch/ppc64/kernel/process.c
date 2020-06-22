@@ -42,6 +42,7 @@
 #include <asm/ppcdebug.h>
 #include <asm/machdep.h>
 #include <asm/iSeries/HvCallHpt.h>
+#include <asm/cputable.h>
 
 int dump_fpu(struct pt_regs *regs, elf_fpregset_t *fpregs);
 
@@ -390,7 +391,7 @@ void initialize_paca_hardware_interrupt_stack(void)
 	 * __get_free_pages() might give us a page > KERNBASE+256M which
 	 * is mapped with large ptes so we can't set up the guard page.
 	 */
-	if (__is_processor(PV_POWER4) || __is_processor(PV_POWER4p))
+	if (cur_cpu_spec->cpu_features & CPU_FTR_16M_PAGE)
 		return;
 
 	for (i=0; i < systemcfg->processorCount; i++) {
@@ -493,7 +494,7 @@ unsigned long get_wchan(struct task_struct *p)
 			 * gets fixed.
 			 */
 			if (ip < first_sched || ip >= last_sched)
-				return (ip & 0xFFFFFFFF);
+				return (ip);
 		}
 	} while (count++ < 16);
 	return 0;

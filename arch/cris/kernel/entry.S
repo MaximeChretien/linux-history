@@ -1,4 +1,4 @@
-/* $Id: entry.S,v 1.40 2002/12/02 08:11:41 starvik Exp $
+/* $Id: entry.S,v 1.42 2003/07/07 09:00:50 johana Exp $
  *
  *  linux/arch/cris/entry.S
  *
@@ -7,6 +7,12 @@
  *  Authors:	Bjorn Wesen (bjornw@axis.com)
  *
  *  $Log: entry.S,v $
+ *  Revision 1.42  2003/07/07 09:00:50  johana
+ *  Added CONFIG_ETRAX_DEBUG_INTERRUPT support.
+ *
+ *  Revision 1.41  2003/06/17 13:57:50  starvik
+ *  Merge of Linux 2.4.21
+ *
  *  Revision 1.40  2002/12/02 08:11:41  starvik
  *  Merge of Linux 2.4.20
  *
@@ -358,6 +364,12 @@ _ret_with_reschedule:
 	
 _Rexit:
 	;; this epilogue MUST match the prologues in multiple_interrupt, irq.h and ptregs.h
+#ifdef CONFIG_ETRAX_DEBUG_INTERRUPT
+	move.d $pc,$r10
+	move $ccr,$r11
+	move.d	[$sp + LDCCR], $r12; regs->dccr	
+	jsr log_int
+#endif
 	pop	$r10		; frametype
 	bne	_RBFexit	; was not CRIS_FRAME_NORMAL, handle otherwise
 	addq	4, $sp		; skip orig_r10, in delayslot
@@ -449,6 +461,22 @@ resume:
 	push	$srp		         ; we keep the old/new PC on the stack 
 	add.d	$r12, $r10		 ; r10 = current tasks tss
 	move	$dccr, [$r10+LTHREAD_DCCR] ; save irq enable state
+#ifdef CONFIG_ETRAX_DEBUG_INTERRUPT
+	push $r9
+	push $r10
+	push $r11
+	push $r12
+	push $r13
+	move.d $pc,$r10
+	move $ccr,$r11
+	clear.d $r12
+	jsr log_int
+	pop $r13
+	pop $r12
+	pop $r11
+	pop $r10
+	pop $r9
+#endif
 	di
 
 	move	$usp, [$r10+LTHREAD_USP] ; save user-mode stackpointer

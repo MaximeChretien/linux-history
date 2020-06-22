@@ -369,8 +369,8 @@ embed_config(bd_t **bdp)
 
 	bd->bi_memstart = 0;
 	bd->bi_memsize = (8 * 1024 * 1024);
-	bd->bi_intfreq = 40000000;
-	bd->bi_busfreq = 40000000;
+	bd->bi_intfreq = 48000000;
+	bd->bi_busfreq = 48000000;
 }
 #endif /* FADS */
 

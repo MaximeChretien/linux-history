@@ -108,6 +108,15 @@ static void pmagbbfb_encode_var(struct fb_var_screeninfo *var,
 	var->yoffset = 0;
 	var->bits_per_pixel = 8;
 	var->grayscale = 0;
+	var->red.offset = 0;
+	var->red.length = 8;
+	var->red.msb_right = 0;
+	var->green.offset = 0;
+	var->green.length = 8;
+	var->green.msb_right = 0;
+	var->blue.offset = 0;
+	var->blue.length = 8;
+	var->blue.msb_right = 0;
 	var->transp.offset = 0;
 	var->transp.length = 0;
 	var->transp.msb_right = 0;

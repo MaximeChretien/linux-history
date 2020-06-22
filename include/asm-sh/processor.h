@@ -23,8 +23,8 @@
 enum cpu_type {
 	CPU_SH7708,		/* Represents 7707, 7708, 7708S, 7708R, 7709 */
 	CPU_SH7729,		/* Represents 7709A, 7729 */
-	CPU_SH7750,     /* Represents 7750, 7751 */
-	CPU_ST40STB1,
+	CPU_SH7750,     	/* Represents 7750, 7751 */
+	CPU_ST40,		/* Represents ST40STB1 and ST40GX1 */
 	CPU_SH_NONE
 };
 
@@ -34,7 +34,7 @@ struct sh_cpuinfo {
 	unsigned long loops_per_jiffy;
 
 	unsigned int cpu_clock, master_clock, bus_clock, module_clock;
-#ifdef CONFIG_CPU_SUBTYPE_ST40STB1
+#ifdef CONFIG_CPU_SUBTYPE_ST40
 	unsigned int memory_clock;
 #endif
 };
@@ -104,17 +104,23 @@ struct thread_struct {
 
 	unsigned long trap_no, error_code;
 	unsigned long address;
-	/* Hardware debugging registers may come here */
+
+	/* Hardware debugging registers */
+	unsigned long ubc_pc1, ubc_pc2;
 
 	/* floating point info */
 	union sh_fpu_union fpu;
 };
+
+/* Count of active tasks with UBC settings */
+extern int ubc_usercnt;
 
 #define INIT_THREAD  {						\
 	sizeof(init_stack) + (long) &init_stack, /* sp */	\
 	0,					 /* pc */	\
 	0, 0, 							\
 	0, 							\
+	0, -1, 							\
 	{{{0,}},} 				/* fpu state */	\
 }
 
@@ -184,18 +190,22 @@ extern void save_fpu(struct task_struct *__tsk);
 
 #define unlazy_fpu(tsk) do { 			\
 	if ((tsk)->flags & PF_USEDFPU) {	\
-		grab_fpu();			\
 		save_fpu(tsk); 			\
 	}					\
 } while (0)
 
 #define clear_fpu(tsk) do { 			\
-	if ((tsk)->flags & PF_USEDFPU)	 	\
+	if ((tsk)->flags & PF_USEDFPU) { 	\
 		(tsk)->flags &= ~PF_USEDFPU; 	\
+		release_fpu();			\
+	}					\
 } while (0)
 
 /* Double presision, NANS as NANS, rounding to nearest, no exceptions */
 #define FPSCR_INIT  0x00080000
+
+#define	FPSCR_CAUSE_MASK	0x0001f000	/* Cause bits */
+#define	FPSCR_FLAG_MASK		0x0000007c	/* Flag bits */
 
 /*
  * Return saved PC of a blocked thread.

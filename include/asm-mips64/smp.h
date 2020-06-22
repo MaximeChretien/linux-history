@@ -1,20 +1,33 @@
 /*
- * This file is subject to the terms and conditions of the GNU General
- * Public License.  See the file "COPYING" in the main directory of this
- * archive for more details.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  *
  * Copyright (C) 2000 - 2001 by Kanoj Sarcar (kanoj@sgi.com)
+ * Copyright (C) 2000, 2001, 2002 by Ralf Baechle
  * Copyright (C) 2000 - 2001 by Silicon Graphics, Inc.
+ * Copyright (C) 2000, 2001 Broadcom Corporation
  */
-#ifndef __ASM_SMP_H
-#define __ASM_SMP_H
+#ifndef _ASM_SMP_H
+#define _ASM_SMP_H
 
 #include <linux/config.h>
 
 #ifdef CONFIG_SMP
 
 #include <linux/threads.h>
-#include <linux/irq.h>
+#include <asm/atomic.h>
+#include <asm/current.h>
 
 #define smp_processor_id()	(current->processor)
 
@@ -29,8 +42,6 @@ extern int __cpu_number_map[NR_CPUS];
 extern int __cpu_logical_map[NR_CPUS];
 #define cpu_logical_map(cpu)  __cpu_logical_map[cpu]
 
-#endif
-
 #define NO_PROC_ID	(-1)
 
 #define SMP_RESCHEDULE_YOURSELF	0x1	/* XXX braindead */
@@ -40,7 +51,7 @@ extern int __cpu_logical_map[NR_CPUS];
 
 typedef unsigned long   cpumask_t;
 
-#define CPUMASK_CLRALL(p)	(p) = 0
+#define CPUMASK_CLRALL(p)	do { (p) = 0; } while(0)
 #define CPUMASK_SETB(p, bit)	(p) |= 1UL << (bit)
 #define CPUMASK_CLRB(p, bit)	(p) &= ~(1UL << (bit))
 #define CPUMASK_TSTB(p, bit)	((p) & (1UL << (bit)))
@@ -82,4 +93,5 @@ extern struct call_data_struct *call_data;
 
 extern cpumask_t cpu_online_map;
 
-#endif /* __ASM_SMP_H */
+#endif /* CONFIG_SMP */
+#endif /* _ASM_SMP_H */

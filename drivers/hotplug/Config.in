@@ -11,6 +11,7 @@ dep_mbool '    Save configuration into NVRAM on Compaq servers' CONFIG_HOTPLUG_P
 if [ "$CONFIG_X86_IO_APIC" = "y" ]; then
    dep_tristate '  IBM PCI Hotplug driver' CONFIG_HOTPLUG_PCI_IBM $CONFIG_HOTPLUG_PCI $CONFIG_X86_IO_APIC $CONFIG_X86
 fi
-dep_tristate '  ACPI PCI Hotplug driver' CONFIG_HOTPLUG_PCI_ACPI $CONFIG_ACPI $CONFIG_HOTPLUG_PCI
-
+if [ "$CONFIG_ACPI_INTERPRETER" ]; then
+   dep_tristate '  ACPI PCI Hotplug driver' CONFIG_HOTPLUG_PCI_ACPI $CONFIG_HOTPLUG_PCI
+fi
 endmenu

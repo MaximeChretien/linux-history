@@ -244,7 +244,6 @@ int __init init_oct5066(void)
 	}
 	if (OctProbe() != 0) {
 		printk(KERN_NOTICE "5066: Octagon Probe Failed, is this an Octagon 5066 SBC?\n");
-		iounmap((void *)iomapadr);
 		ret = -EAGAIN;
 		goto out_unmap;
 	}

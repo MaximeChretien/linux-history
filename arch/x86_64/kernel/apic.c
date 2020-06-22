@@ -591,52 +591,14 @@ int dont_enable_local_apic __initdata = 0;
 
 static int __init detect_init_APIC (void)
 {
-	u32 h, l, features;
-	extern void get_cpu_vendor(struct cpuinfo_x86*);
-
 	/* Disabled by DMI scan or kernel option? */
 	if (dont_enable_local_apic)
 		return -1;
 
-	/* Workaround for us being called before identify_cpu(). */
-	get_cpu_vendor(&boot_cpu_data);
-
-	switch (boot_cpu_data.x86_vendor) {
-	case X86_VENDOR_AMD:
-		if (boot_cpu_data.x86 == 6 && boot_cpu_data.x86_model > 1)
-			break;
-		goto no_apic;
-	case X86_VENDOR_INTEL:
-		if (boot_cpu_data.x86 == 6 ||
-		    (boot_cpu_data.x86 == 15 && cpu_has_apic) ||
-		    (boot_cpu_data.x86 == 5 && cpu_has_apic))
-			break;
-		goto no_apic;
-	default:
-		goto no_apic;
-	}
-
+	/* Don't force the APIC if the BIOS didn't enable it. Usually
+	   it is broken in some way. */
 	if (!cpu_has_apic) {
-		/*
-		 * Some BIOSes disable the local APIC in the
-		 * APIC_BASE MSR. This can only be done in
-		 * software for Intel P6 and AMD K7 (Model > 1).
-		 */
-		rdmsr(MSR_IA32_APICBASE, l, h);
-		if (!(l & MSR_IA32_APICBASE_ENABLE)) {
-			printk("Local APIC disabled by BIOS -- reenabling.\n");
-			l &= ~MSR_IA32_APICBASE_BASE;
-			l |= MSR_IA32_APICBASE_ENABLE | APIC_DEFAULT_PHYS_BASE;
-			wrmsr(MSR_IA32_APICBASE, l, h);
-		}
-	}
-	/*
-	 * The APIC feature bit should now be enabled
-	 * in `cpuid'
-	 */
-	features = cpuid_edx(1);
-	if (!(features & (1 << X86_FEATURE_APIC))) {
-		printk("Could not enable APIC!\n");
+		printk(KERN_INFO "APIC disabled by BIOS.\n");
 		return -1;
 	}
 	set_bit(X86_FEATURE_APIC, &boot_cpu_data.x86_capability);
@@ -645,15 +607,11 @@ static int __init detect_init_APIC (void)
 	if (nmi_watchdog != NMI_NONE)
 		nmi_watchdog = NMI_LOCAL_APIC;
 
-	printk("Found and enabled local APIC!\n");
+	printk(KERN_INFO "Found and enabled local APIC!\n");
 
 	apic_pm_init1();
 
 	return 0;
-
-no_apic:
-	printk("No local APIC present or hardware disabled\n");
-	return -1;
 }
 
 void __init init_apic_mappings(void)
@@ -1065,7 +1023,11 @@ asmlinkage void smp_error_interrupt(void)
  */
 int __init APIC_init_uniprocessor (void)
 {
-	if (!smp_found_config && !cpu_has_apic) { 
+	if (apic_disabled) 
+		clear_bit(X86_FEATURE_APIC, &boot_cpu_data.x86_capability); 
+
+	if (!cpu_has_apic) { 
+		printk("No APIC available.\n"); 
 		apic_disabled = 1;
 		return -1;
 	} 
@@ -1103,3 +1065,11 @@ int __init APIC_init_uniprocessor (void)
 
 	return 0;
 }
+
+static int disable_local_apic(char *s) 
+{
+	apic_disabled = 1;
+	return 0;
+}
+__setup("nolocalapic", disable_local_apic); 
+

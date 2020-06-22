@@ -66,7 +66,7 @@ struct hpsb_iso {
 	/* wait for buffer space */
 	wait_queue_head_t waitq;
 
-	int speed; /* SPEED_100, 200, or 400 */
+	int speed; /* IEEE1394_SPEED_100, 200, or 400 */
 	int channel; /* -1 if multichannel */
 
 	/* greatest # of packets between interrupts - controls
@@ -78,9 +78,6 @@ struct hpsb_iso {
 
 	/* size of data_buf, in bytes (always a multiple of PAGE_SIZE) */
 	unsigned int buf_size;
-
-	/* ringbuffer of packet descriptors in regular kernel memory */
-	struct hpsb_iso_packet_info *infos;
 
 	/* # of packets in the ringbuffer */
 	unsigned int buf_packets;
@@ -118,6 +115,11 @@ struct hpsb_iso {
 	/* cycle at which next packet will be transmitted,
 	   -1 if not known */
 	int xmit_cycle;
+
+	/* ringbuffer of packet descriptors in regular kernel memory
+	 * XXX Keep this last, since we use over-allocated memory from
+	 * this entry to fill this field. */
+	struct hpsb_iso_packet_info *infos;
 };
 
 /* functions available to high-level drivers (e.g. raw1394) */
@@ -162,6 +164,10 @@ int hpsb_iso_xmit_sync(struct hpsb_iso *iso);
 
 /* N packets have been read out of the buffer, re-use the buffer space */
 int  hpsb_iso_recv_release_packets(struct hpsb_iso *recv, unsigned int n_packets);
+
+/* check for arrival of new packets immediately (even if irq_interval
+   has not yet been reached) */
+int hpsb_iso_recv_flush(struct hpsb_iso *iso);
 
 /* returns # of packets ready to send or receive */
 int hpsb_iso_n_ready(struct hpsb_iso *iso);

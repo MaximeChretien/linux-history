@@ -112,12 +112,7 @@ bool 'Power Management support' CONFIG_PM
 
 bool 'IA32 Emulation' CONFIG_IA32_EMULATION
 
-if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
-   dep_bool '  ACPI support' CONFIG_ACPI $CONFIG_PM
-   if [ "$CONFIG_ACPI" != "n" ]; then
-      source drivers/acpi/Config.in
-   fi
-fi
+source drivers/acpi/Config.in
 
 endmenu
 
@@ -173,7 +168,7 @@ if [ "$CONFIG_NET" = "y" ]; then
    if [ "$CONFIG_NETDEVICES" = "y" ]; then
       source drivers/net/Config.in
 # seems to be largely not 64bit safe	   
-#      if [ "$CONFIG_ATM" = "y" ]; then
+#      if [ "$CONFIG_ATM" = "y" -o "$CONFIG_ATM" = "m" ]; then
 #         source drivers/atm/Config.in
 #      fi
    fi
@@ -231,6 +226,8 @@ endmenu
 source drivers/usb/Config.in
 
 source net/bluetooth/Config.in
+
+source crypto/Config.in
 
 mainmenu_option next_comment
 comment 'Kernel hacking'

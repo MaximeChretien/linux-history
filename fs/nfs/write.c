@@ -123,23 +123,6 @@ static void nfs_writedata_release(struct rpc_task *task)
 }
 
 /*
- * This function will be used to simulate weak cache consistency
- * under NFSv2 when the NFSv3 attribute patch is included.
- * For the moment, we just call nfs_refresh_inode().
- */
-static __inline__ int
-nfs_write_attributes(struct inode *inode, struct nfs_fattr *fattr)
-{
-	if ((fattr->valid & NFS_ATTR_FATTR) && !(fattr->valid & NFS_ATTR_WCC)) {
-		fattr->pre_size  = NFS_CACHE_ISIZE(inode);
-		fattr->pre_mtime = NFS_CACHE_MTIME(inode);
-		fattr->pre_ctime = NFS_CACHE_CTIME(inode);
-		fattr->valid |= NFS_ATTR_WCC;
-	}
-	return nfs_refresh_inode(inode, fattr);
-}
-
-/*
  * Write a page synchronously.
  * Offset is the data offset within the page.
  */
@@ -812,8 +795,15 @@ nfs_updatepage(struct file *file, struct page *page, unsigned int offset, unsign
 	 * If wsize is smaller than page size, update and write
 	 * page synchronously.
 	 */
-	if (NFS_SERVER(inode)->wsize < PAGE_CACHE_SIZE || IS_SYNC(inode))
-		return nfs_writepage_sync(file, inode, page, offset, count);
+	if (NFS_SERVER(inode)->wsize < PAGE_CACHE_SIZE || IS_SYNC(inode)) {
+		status = nfs_writepage_sync(file, inode, page, offset, count);
+		if (status > 0) {
+			if (offset == 0 && status == PAGE_CACHE_SIZE)
+				SetPageUptodate(page);
+			return 0;
+		}
+		return status;
+	}
 
 	/*
 	 * Try to find an NFS request corresponding to this page

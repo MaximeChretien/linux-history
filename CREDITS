@@ -111,16 +111,18 @@ S: San Jose, California 95129
 S: USA
 
 N: Andrea Arcangeli
-E: andrea@e-mind.com
-W: http://e-mind.com/~andrea/
-P: 1024/CB4660B9 CC A0 71 81 F4 A0 63 AC  C0 4B 81 1D 8C 15 C8 E5
+E: andrea@suse.de
+W: http://www.kernel.org/pub/linux/kernel/people/andrea/
+P: 1024D/68B9CB43 13D9 8355 295F 4823 7C49  C012 DFA1 686E 68B9 CB43
+P: 1024R/CB4660B9 CC A0 71 81 F4 A0 63 AC  C0 4B 81 1D 8C 15 C8 E5
 D: Parport hacker
 D: Implemented a workaround for some interrupt buggy printers
-D: Author of pscan that helps to fix lp/parport bug
+D: Author of pscan that helps to fix lp/parport bugs
 D: Author of lil (Linux Interrupt Latency benchmark)
 D: Fixed the shm swap deallocation at swapoff time (try_to_unuse message)
+D: VM hacker
 D: Various other kernel hacks
-S: Via Ciaclini 26
+S: Via Cicalini 26
 S: Imola 40026
 S: Italy
 
@@ -600,10 +602,6 @@ S: (ask for current address)
 S: USA
 
 N: Alan Cox
-W: http://roadrunner.swansea.linux.org.uk/alan.shtml
-E: alan@lxorguk.ukuu.org.uk
-E: alan@www.linux.org.uk (linux.org.uk stuff)
-E: Alan.Cox@linux.org (if others fail)
 D: Linux Networking (0.99.10->2.0.29)
 D: Original Appletalk, AX.25, and IPX code
 D: Current 3c501 hacker. >>More 3c501 info/tricks wanted<<.
@@ -1348,7 +1346,9 @@ S: USA
 N: Marcel Holtmann
 E: marcel@holtmann.org
 W: http://www.holtmann.org
-D: Author of the Linux Bluetooth Subsystem PC Card drivers
+D: Author and maintainer of the various Bluetooth HCI drivers
+D: Author and maintainer of the CAPI message transport protocol driver
+D: Various other Bluetooth related patches, cleanups and fixes
 S: Germany
 
 N: Rob W. W. Hooft
@@ -1511,6 +1511,18 @@ D: digiboard driver update(modularisation work and 2.1.x upd)
 S: Tallak 95
 S: 8103 Rein
 S: Austria
+
+N: Mitsuru Kanda
+E: mk@linux-ipv6.org
+E: mk@isl.rdc.toshiba.co.jp
+E: mk@karaba.org
+W: http://www.karaba.org/~mk/
+P: 1024D/2EC7E30D 9A35 D378 F084 9EA4 EFBA  925B 1C93 B376 F0EF BE59
+D: IPsec, IPv6
+D: USAGI/WIDE Project, TOSHIBA CORPORATION
+S: 2-47-8, Takinogawa,
+S: Kita, Tokyo 114-0023
+S: Japan
 
 N: Jan Kara
 E: jack@atrey.karlin.mff.cuni.cz
@@ -1929,7 +1941,7 @@ S: Halifax, Nova Scotia
 S: Canada B3J 3C8
 
 N: Kai Mäkisara
-E: Kai.Makisara@metla.fi
+E: Kai.Makisara@kolumbus.fi
 D: SCSI Tape Driver
 
 N: Dan Malek
@@ -2147,6 +2159,17 @@ D: Sony CDU31A CDROM Driver
 S: 1805 Marquette
 S: Richardson, Texas 75081
 S: USA
+
+N: Kazunori Miyazawa
+E: miyazawa@linux-ipv6.org
+E: Kazunori.Miyazawa@jp.yokogawa.com
+E: kazunori@miyazawa.org
+W: http://www.miyazawa.org/~kazunori/
+D: IPsec, IPv6
+D: USAGI/WIDE Project, Yokogawa Electric Corporation
+S: 2-20-4-203, Nakacho,
+S: Musashino, Tokyo 180-0006
+S: Japan
 
 N: Patrick Mochel
 E: pat@osdl.org
@@ -2687,6 +2710,14 @@ N: Robert Sanders
 E: gt8134b@prism.gatech.edu
 D: Dosemu
 
+N: Duncan Sands
+E: duncan.sands@wanadoo.fr
+W: http://topo.math.u-psud.fr/~sands
+D: Alcatel SpeedTouch USB driver
+S: 69 rue Dunois
+S: 75013 Paris
+S: France
+
 N: Hannu Savolainen
 E: hannu@opensound.com
 D: Maintainer of the sound drivers until 2.1.x days.
@@ -3062,7 +3093,7 @@ S: Germany
 N: Geert Uytterhoeven
 E: geert@linux-m68k.org
 W: http://home.tvd.be/cr26864/
-P: 1024/EC4A1EE1 8B 88 38 35 88 1E 95 A1  CD 9E AE DC 4B 4A 2F 41
+P: 1024/862678A6 C51D 361C 0BD1 4C90 B275  C553 6EEA 11BA 8626 78A6
 D: m68k/Amiga and PPC/CHRP Longtrail coordinator
 D: Frame buffer device and XF68_FBDev maintainer
 D: m68k IDE maintainer
@@ -3071,8 +3102,8 @@ D: Amiga Buddha and Catweasel chipset IDE
 D: Atari Falcon chipset IDE
 D: Amiga Gayle chipset IDE
 D: mipsel NEC DDB Vrc-5074
-S: C. Huysmansstraat 12
-S: B-3128 Baal
+S: Holsbeeksesteenweg 166
+S: B-3010 Kessel-Lo
 S: Belgium
 
 N: Petr Vandrovec
@@ -3325,6 +3356,17 @@ N: Hiroshi YOKOTA
 E: yokota@netlab.is.tsukuba.ac.jp
 D: Workbit NinjaSCSI-3/32Bi PCMCIA driver
 D: Workbit NinjaSCSI-32Bi/UDE driver
+S: Japan
+
+N: Hideaki YOSHIFUJI
+E: hideaki@yoshifuji.org
+E: yoshfuji@linux-ipv6.org
+W: http://www.yoshifuji.org/~hideaki/
+P: 1024D/E0620EEA 9022 65EB 1ECF 3AD1 0BDF  80D8 4807 F894 E062 0EEA
+D: IPv6 and other networking related stuff
+D: USAGI/WIDE Project, The University of Tokyo
+S: Green House #102, 1-15-5, Nishikata, 
+S: Bunkyo, Tokyo 113-0024
 S: Japan
 
 N: Eric Youngdale

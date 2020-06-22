@@ -51,9 +51,9 @@
 	#undef ASSERT(expr, func)
 	#define ASSERT(expr, func) \
 	if(!(expr)) { \
-	        printk( "Assertion failed! %s,%s,%s,line=%d\n",\
-        	#expr,__FILE__,__FUNCTION__,__LINE__); \
-	        ##func}
+		printk( "Assertion failed! %s,%s,%s,line=%d\n",\
+		#expr,__FILE__,__FUNCTION__,__LINE__); \
+		func}
 #endif
 
 /* convert hex value to ascii hex */

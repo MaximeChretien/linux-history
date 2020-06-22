@@ -75,6 +75,8 @@ extern int msg_ctlmni;
 extern int sem_ctls[];
 #endif
 
+extern int exception_trace;
+
 #ifdef __sparc__
 extern char reboot_command [];
 extern int stop_a_enabled;
@@ -90,7 +92,9 @@ extern int sysctl_userprocess_debug;
 #ifdef CONFIG_PPC32
 extern unsigned long zero_paged_on, powersave_nap;
 int proc_dol2crvec(ctl_table *table, int write, struct file *filp,
-		  void *buffer, size_t *lenp);
+		void *buffer, size_t *lenp);
+int proc_dol3crvec(ctl_table *table, int write, struct file *filp,
+		void *buffer, size_t *lenp);
 #endif
 
 #ifdef CONFIG_BSD_PROCESS_ACCT
@@ -195,6 +199,8 @@ static ctl_table kern_table[] = {
 	 0644, NULL, &proc_dointvec},
 	{KERN_PPC_L2CR, "l2cr", NULL, 0,
 	 0644, NULL, &proc_dol2crvec},
+	{KERN_PPC_L3CR, "l3cr", NULL, 0,
+	 0644, NULL, &proc_dol3crvec},
 #endif
 	{KERN_CTLALTDEL, "ctrl-alt-del", &C_A_D, sizeof(int),
 	 0644, NULL, &proc_dointvec},
@@ -259,6 +265,10 @@ static ctl_table kern_table[] = {
 	{KERN_S390_USER_DEBUG_LOGGING,"userprocess_debug",
 	 &sysctl_userprocess_debug,sizeof(int),0644,NULL,&proc_dointvec},
 #endif
+#ifdef __x86_64__
+	{KERN_EXCEPTION_TRACE,"exception-trace",
+	 &exception_trace,sizeof(int),0644,NULL,&proc_dointvec},
+#endif	
 	{0}
 };
 
@@ -296,8 +306,6 @@ static ctl_table fs_table[] = {
 	 0444, NULL, &proc_dointvec},
 	{FS_MAXFILE, "file-max", &files_stat.max_files, sizeof(int),
 	 0644, NULL, &proc_dointvec},
-	{FS_NRDQUOT, "dquot-nr", &nr_dquots, 2*sizeof(int),
-	 0444, NULL, &proc_dointvec},
 	{FS_DENTRY, "dentry-state", &dentry_stat, 6*sizeof(int),
 	 0444, NULL, &proc_dointvec},
 	{FS_OVERFLOWUID, "overflowuid", &fs_overflowuid, sizeof(int), 0644, NULL,
@@ -466,7 +474,8 @@ int do_sysctl_strategy (ctl_table *table,
 	 * zero, proceed with automatic r/w */
 	if (table->data && table->maxlen) {
 		if (oldval && oldlenp) {
-			get_user(len, oldlenp);
+			if (get_user(len, oldlenp))
+				return -EFAULT;
 			if (len) {
 				if (len > table->maxlen)
 					len = table->maxlen;
@@ -757,7 +766,7 @@ int proc_dostring(ctl_table *table, int write, struct file *filp,
 		len = 0;
 		p = buffer;
 		while (len < *lenp) {
-			if(get_user(c, p++))
+			if (get_user(c, p++))
 				return -EFAULT;
 			if (c == 0 || c == '\n')
 				break;
@@ -840,7 +849,7 @@ static int do_proc_dointvec(ctl_table *table, int write, struct file *filp,
 		if (write) {
 			while (left) {
 				char c;
-				if(get_user(c,(char *) buffer))
+				if (get_user(c, (char *) buffer))
 					return -EFAULT;
 				if (!isspace(c))
 					break;
@@ -906,7 +915,7 @@ static int do_proc_dointvec(ctl_table *table, int write, struct file *filp,
 		p = (char *) buffer;
 		while (left) {
 			char c;
-			if(get_user(c, p++))
+			if (get_user(c, p++))
 				return -EFAULT;
 			if (!isspace(c))
 				break;
@@ -993,7 +1002,7 @@ int proc_dointvec_minmax(ctl_table *table, int write, struct file *filp,
 		if (write) {
 			while (left) {
 				char c;
-				if(get_user(c, (char *) buffer))
+				if (get_user(c, (char *) buffer))
 					return -EFAULT;
 				if (!isspace(c))
 					break;
@@ -1052,7 +1061,7 @@ int proc_dointvec_minmax(ctl_table *table, int write, struct file *filp,
 		p = (char *) buffer;
 		while (left) {
 			char c;
-			if(get_user(c, p++))
+			if (get_user(c, p++))
 				return -EFAULT;
 			if (!isspace(c))
 				break;
@@ -1094,7 +1103,7 @@ static int do_proc_doulongvec_minmax(ctl_table *table, int write,
 		if (write) {
 			while (left) {
 				char c;
-				if(get_user(c, (char *) buffer))
+				if (get_user(c, (char *) buffer))
 					return -EFAULT;
 				if (!isspace(c))
 					break;
@@ -1157,7 +1166,7 @@ static int do_proc_doulongvec_minmax(ctl_table *table, int write,
 		p = (char *) buffer;
 		while (left) {
 			char c;
-			if(get_user(c, p++))
+			if (get_user(c, p++))
 				return -EFAULT;
 			if (!isspace(c))
 				break;
@@ -1311,7 +1320,7 @@ int sysctl_string(ctl_table *table, int *name, int nlen,
 		return -ENOTDIR;
 	
 	if (oldval && oldlenp) {
-		if(get_user(len, oldlenp))
+		if (get_user(len, oldlenp))
 			return -EFAULT;
 		if (len) {
 			l = strlen(table->data);
@@ -1368,7 +1377,8 @@ int sysctl_intvec(ctl_table *table, int *name, int nlen,
 
 		for (i = 0; i < length; i++) {
 			int value;
-			get_user(value, vec + i);
+			if (get_user(value, vec + i))
+				return -EFAULT;
 			if (min && value < min[i])
 				return -EINVAL;
 			if (max && value > max[i])

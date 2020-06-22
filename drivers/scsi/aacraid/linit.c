@@ -35,8 +35,8 @@
  *	
  */
 
-#define AAC_DRIVER_VERSION		"0.9.9ac6-TEST"
-#define AAC_DRIVER_BUILD_DATE		__DATE__
+#define AAC_DRIVER_VERSION		"1.1.2"
+#define AAC_DRIVER_BUILD_DATE		__DATE__ " " __TIME__
 
 #include <linux/module.h>
 #include <linux/config.h>
@@ -59,12 +59,12 @@
 #define AAC_DRIVERNAME	"aacraid"
 
 MODULE_AUTHOR("Red Hat Inc and Adaptec");
-MODULE_DESCRIPTION("Supports Dell PERC2, 2/Si, 3/Si, 3/Di, PERC 320/DC, Adaptec 2120S, 2200S, 5400S, and HP NetRAID-4M devices. http://domsch.com/linux/ or http://linux.adaptec.com");
+MODULE_DESCRIPTION("Supports Dell PERC2, 2/Si, 3/Si, 3/Di, Adaptec Advanced Raid Products, and HP NetRAID-4M devices. http://domsch.com/linux/ or http://linux.adaptec.com");
 MODULE_LICENSE("GPL");
-MODULE_PARM(nondasd, "i");
-MODULE_PARM_DESC(nondasd, "Control scanning of hba for nondasd devices. 0=off, 1=on");
+MODULE_PARM(paemode, "i");
+MODULE_PARM_DESC(paemode, "Control whether dma addressing is using PAE. 0=off, 1=on");
 
-static int nondasd=-1;
+static int paemode = -1;
 
 struct aac_dev *aac_devices[MAXIMUM_NUM_ADAPTERS];
 
@@ -81,25 +81,41 @@ static int aac_cfg_major = -1;
  */
  
 static struct aac_driver_ident aac_drivers[] = {
-	{ 0x1028, 0x0001, 0x1028, 0x0001, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, /* PERC 2/Si */
-	{ 0x1028, 0x0002, 0x1028, 0x0002, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, /* PERC 3/Di */
-	{ 0x1028, 0x0003, 0x1028, 0x0003, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, /* PERC 3/Si */
-	{ 0x1028, 0x0004, 0x1028, 0x00d0, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, /* PERC 3/Si */
-	{ 0x1028, 0x0002, 0x1028, 0x00d1, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, /* PERC 3/Di */
-	{ 0x1028, 0x0002, 0x1028, 0x00d9, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, /* PERC 3/Di */
-	{ 0x1028, 0x000a, 0x1028, 0x0106, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, /* PERC 3/Di */
-	{ 0x1028, 0x000a, 0x1028, 0x011b, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, /* PERC 3/Di */
-	{ 0x1028, 0x000a, 0x1028, 0x0121, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, /* PERC 3/Di */
-	{ 0x9005, 0x0283, 0x9005, 0x0283, aac_rx_init, "aacraid",  "ADAPTEC ", "catapult        ", 2 }, /* catapult*/
-	{ 0x9005, 0x0284, 0x9005, 0x0284, aac_rx_init, "aacraid",  "ADAPTEC ", "tomcat          ", 2 }, /* tomcat*/
-	{ 0x9005, 0x0285, 0x9005, 0x0286, aac_rx_init, "aacraid",  "ADAPTEC ", "Adaptec 2120S   ", 1 }, /* Adaptec 2120S (Crusader)*/
-	{ 0x9005, 0x0285, 0x9005, 0x0285, aac_rx_init, "aacraid",  "ADAPTEC ", "Adaptec 2200S   ", 2 }, /* Adaptec 2200S (Vulcan)*/
-	{ 0x9005, 0x0285, 0x9005, 0x0287, aac_rx_init, "aacraid",  "ADAPTEC ", "Adaptec 2200S   ", 2 }, /* Adaptec 2200S (Vulcan-2m)*/
-	{ 0x9005, 0x0285, 0x1028, 0x0287, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, /* Dell PERC 320/DC */
-	{ 0x1011, 0x0046, 0x9005, 0x0365, aac_sa_init, "aacraid",  "ADAPTEC ", "Adaptec 5400S   ", 4 }, /* Adaptec 5400S (Mustang)*/
-	{ 0x1011, 0x0046, 0x9005, 0x0364, aac_sa_init, "aacraid",  "ADAPTEC ", "AAC-364         ", 4 }, /* Adaptec 5400S (Mustang)*/
-	{ 0x1011, 0x0046, 0x9005, 0x1364, aac_sa_init, "percraid", "DELL    ", "PERCRAID        ", 4 }, /* Dell PERC2 "Quad Channel" */
-	{ 0x1011, 0x0046, 0x103c, 0x10c2, aac_sa_init, "hpnraid",  "HP      ", "NetRAID-4M      ", 4 }  /* HP NetRAID-4M */
+	{ 0x1028, 0x0001, 0x1028, 0x0001, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, 		/* PERC 2/Si (Iguana/PERC2Si) */
+	{ 0x1028, 0x0002, 0x1028, 0x0002, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, 		/* PERC 3/Di (Opal/PERC3Di) */
+	{ 0x1028, 0x0003, 0x1028, 0x0003, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, 		/* PERC 3/Si (SlimFast/PERC3Si */
+	{ 0x1028, 0x0004, 0x1028, 0x00d0, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, 		/* PERC 3/Di (Iguana FlipChip/PERC3DiF */
+	{ 0x1028, 0x0002, 0x1028, 0x00d1, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, 		/* PERC 3/Di (Viper/PERC3DiV) */
+	{ 0x1028, 0x0002, 0x1028, 0x00d9, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, 		/* PERC 3/Di (Lexus/PERC3DiL) */
+	{ 0x1028, 0x000a, 0x1028, 0x0106, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, 		/* PERC 3/Di (Jaguar/PERC3DiJ) */
+	{ 0x1028, 0x000a, 0x1028, 0x011b, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, 		/* PERC 3/Di (Dagger/PERC3DiD) */
+	{ 0x1028, 0x000a, 0x1028, 0x0121, aac_rx_init, "percraid", "DELL    ", "PERCRAID        ", 2 }, 		/* PERC 3/Di (Boxster/PERC3DiB) */
+	{ 0x9005, 0x0283, 0x9005, 0x0283, aac_rx_init, "aacraid",  "ADAPTEC ", "catapult        ", 2 }, 		/* catapult */
+	{ 0x9005, 0x0284, 0x9005, 0x0284, aac_rx_init, "aacraid",  "ADAPTEC ", "tomcat          ", 2 }, 		/* tomcat */
+	{ 0x9005, 0x0285, 0x9005, 0x0286, aac_rx_init, "aacraid",  "ADAPTEC ", "Adaptec 2120S   ", 1, AAC_QUIRK_31BIT },/* Adaptec 2120S (Crusader) */
+	{ 0x9005, 0x0285, 0x9005, 0x0285, aac_rx_init, "aacraid",  "ADAPTEC ", "Adaptec 2200S   ", 2, AAC_QUIRK_31BIT },/* Adaptec 2200S (Vulcan) */
+	{ 0x9005, 0x0285, 0x9005, 0x0287, aac_rx_init, "aacraid",  "ADAPTEC ", "Adaptec 2200S   ", 2, AAC_QUIRK_31BIT },/* Adaptec 2200S (Vulcan-2m) */
+	{ 0x9005, 0x0285, 0x17aa, 0x0286, aac_rx_init, "aacraid",  "Legend  ", "Legend S220     ", 1 }, 		/* Legend S220 (Legend Crusader) */
+	{ 0x9005, 0x0285, 0x17aa, 0x0287, aac_rx_init, "aacraid",  "Legend  ", "Legend S230     ", 2 }, 		/* Legend S230 (Legend Vulcan) */
+
+	{ 0x9005, 0x0285, 0x9005, 0x0288, aac_rx_init, "aacraid",  "ADAPTEC ", "Adaptec 3230S   ", 2 }, 		/* Adaptec 3230S (Harrier) */
+	{ 0x9005, 0x0285, 0x9005, 0x0289, aac_rx_init, "aacraid",  "ADAPTEC ", "Adaptec 3240S   ", 2 }, 		/* Adaptec 3240S (Tornado) */
+	{ 0x9005, 0x0285, 0x9005, 0x028a, aac_rx_init, "aacraid",  "ADAPTEC ", "ASR-2020S PCI-X ", 2 }, 		/* ASR-2020S PCI-X ZCR (Skyhawk) */
+	{ 0x9005, 0x0285, 0x9005, 0x028b, aac_rx_init, "aacraid",  "ADAPTEC ", "ASR-2020S PCI-X ", 2 }, 		/* ASR-2020S SO-DIMM PCI-X ZCR (Terminator) */
+	{ 0x9005, 0x0285, 0x9005, 0x0290, aac_rx_init, "aacraid",  "ADAPTEC ", "AAR-2410SA SATA ", 2 }, 		/* AAR-2410SA PCI SATA 4ch (Jaguar II) */
+	{ 0x9005, 0x0285, 0x1028, 0x0291, aac_rx_init, "aacraid",  "DELL    ", "CERC SATA RAID 2 ", 2 },		/* CERC SATA RAID 2 PCI SATA 8ch (DellCorsair) */
+	{ 0x9005, 0x0285, 0x9005, 0x0292, aac_rx_init, "aacraid",  "ADAPTEC ", "AAR-2810SA SATA ", 2 }, 		/* AAR-2810SA PCI SATA 8ch (Corsair-8) */
+	{ 0x9005, 0x0285, 0x9005, 0x0293, aac_rx_init, "aacraid",  "ADAPTEC ", "AAR-21610SA SATA ", 2 },		/* AAR-21610SA PCI SATA 16ch (Corsair-16) */
+	{ 0x9005, 0x0285, 0x9005, 0x0294, aac_rx_init, "aacraid",  "ADAPTEC ", "SO-DIMM SATA ZCR ", 2 },		/* ESD SO-DIMM PCI-X SATA ZCR (Prowler) */
+	/* ServeRAID */
+/*	{ 0x9005, 0x0250, 0x1014, 0x0279, aac_rx_init, "aacraid",  "ADAPTEC ", "Adaptec         ", 2 }, */ /*  (Marco) */
+/*	{ 0x9005, 0x0250, 0x1014, 0x028c, aac_rx_init, "aacraid",  "ADAPTEC ", "Adaptec         ", 2 }, */ /* (Sebring)*/
+
+	{ 0x9005, 0x0285, 0x1028, 0x0287, aac_rx_init, "percraid", "DELL    ", "PERC 320/DC     ", 2 },			/* Perc 320/DC*/
+	{ 0x1011, 0x0046, 0x9005, 0x0365, aac_sa_init, "aacraid",  "ADAPTEC ", "Adaptec 5400S   ", 4 }, 		/* Adaptec 5400S (Mustang)*/
+	{ 0x1011, 0x0046, 0x9005, 0x0364, aac_sa_init, "aacraid",  "ADAPTEC ", "AAC-364         ", 4 },			/* Adaptec 5400S (Mustang)*/
+	{ 0x1011, 0x0046, 0x9005, 0x1364, aac_sa_init, "percraid", "DELL    ", "PERCRAID        ", 4 },			/* Dell PERC2 "Quad Channel" */
+	{ 0x1011, 0x0046, 0x103c, 0x10c2, aac_sa_init, "hpnraid",  "HP      ", "NetRAID         ", 4 }			/* HP NetRAID-4M */
 };
 
 #define NUM_AACTYPES	(sizeof(aac_drivers) / sizeof(struct aac_driver_ident))
@@ -159,10 +175,11 @@ static int aac_detect(Scsi_Host_Template *template)
 	struct fsa_scsi_hba *fsa_dev_ptr;
 	char *name = NULL;
 	
-	printk(KERN_INFO "Red Hat/Adaptec aacraid driver, %s\n", AAC_DRIVER_BUILD_DATE);
+	printk(KERN_INFO "Red Hat/Adaptec aacraid driver (%s %s)\n", AAC_DRIVER_VERSION, AAC_DRIVER_BUILD_DATE);
 
 	/* setting up the proc directory structure */
 	template->proc_name = "aacraid";
+	spin_unlock_irq(&io_request_lock);
 
 	for( index = 0; index != num_aacdrivers; index++ )
 	{
@@ -179,7 +196,11 @@ static int aac_detect(Scsi_Host_Template *template)
 			if (pci_enable_device(dev))
 				continue;
 			pci_set_master(dev);
-			pci_set_dma_mask(dev, 0xFFFFFFFFULL);
+			
+			if(aac_drivers[index].quirks & AAC_QUIRK_31BIT)
+				pci_set_dma_mask(dev, 0x7FFFFFFFULL);
+			else
+				pci_set_dma_mask(dev, 0xFFFFFFFFULL);
 
 			if((dev->subsystem_vendor != aac_drivers[index].subsystem_vendor) || 
 			   (dev->subsystem_device != aac_drivers[index].subsystem_device))
@@ -188,8 +209,6 @@ static int aac_detect(Scsi_Host_Template *template)
 			dprintk((KERN_DEBUG "%s device detected.\n", name));
 			dprintk((KERN_DEBUG "%x/%x/%x/%x.\n", vendor_id, device_id, 
 				aac_drivers[index].subsystem_vendor, aac_drivers[index].subsystem_device));
-			/* Increment the host adapter count */
-			aac_count++;
 			/*
 			 * scsi_register() allocates memory for a Scsi_Hosts structure and
 			 * links it into the linked list of host adapters. This linked list
@@ -203,13 +222,14 @@ static int aac_detect(Scsi_Host_Template *template)
 			 * specific information.
 			 */
 			host_ptr = scsi_register( template, sizeof(struct aac_dev) );
+			if(host_ptr == NULL)
+				continue;
+			/* Increment the host adapter count */
+			aac_count++;
 			/* 
 			 * These three parameters can be used to allow for wide SCSI 
 			 * and for host adapters that support multiple buses.
 			 */
-			host_ptr->max_id = 17;
-			host_ptr->max_lun = 8;
-			host_ptr->max_channel = 1;
 			host_ptr->irq = dev->irq;		/* Adapter IRQ number */
 			/* host_ptr->base = ( char * )(dev->resource[0].start & ~0xff); */
 			host_ptr->base = dev->resource[0].start;
@@ -236,9 +256,13 @@ static int aac_detect(Scsi_Host_Template *template)
 			/* attach a pointer back to Scsi_Host */
 			aac->scsi_host_ptr = host_ptr;	
 			aac->pdev = dev;
-			aac->cardtype =  index;
 			aac->name = aac->scsi_host_ptr->hostt->name;
 			aac->id = aac->scsi_host_ptr->unique_id;
+			aac->cardtype =  index;
+
+			aac->fibs = (struct fib*) kmalloc(sizeof(struct fib)*AAC_NUM_FIB, GFP_KERNEL);
+			spin_lock_init(&aac->fib_lock);
+
 			/* Initialize the ordinal number of the device to -1 */
 			fsa_dev_ptr = &(aac->fsa_dev);
 			for( container = 0; container < MAXIMUM_NUM_CONTAINERS; container++ )
@@ -255,15 +279,6 @@ static int aac_detect(Scsi_Host_Template *template)
 			} 
 			dprintk((KERN_DEBUG "%s:%d device initialization successful.\n", name, host_ptr->unique_id));
 			aac_get_adapter_info(aac);
-			if(nondasd != -1) 
-			{
-				/* someone told us how to set this on the cmdline */
-				aac->nondasd_support = (nondasd!=0);
-			}
-			if(aac->nondasd_support != 0){
-				printk(KERN_INFO "%s%d: Non-DASD support enabled\n", aac->name, aac->id);
-			}
-			dprintk((KERN_DEBUG "%s:%d options flag %04x.\n",name, host_ptr->unique_id,aac->adapter_info.options));
 			if(aac->nondasd_support == 1)
 			{
 				/*
@@ -280,21 +295,11 @@ static int aac_detect(Scsi_Host_Template *template)
 			aac_devices[aac_count-1] = aac;
 
 			/*
-			 * dmb - we may need to move these 3 parms somewhere else once
+			 * dmb - we may need to move the setting of these parms somewhere else once
 			 * we get a fib that can report the actual numbers
 			 */
 			host_ptr->max_id = AAC_MAX_TARGET;
 			host_ptr->max_lun = AAC_MAX_LUN;
-			
-			/*
-			 *  If we are PAE capable then our future DMA mappings
-			 *  (for read/write commands) are 64bit clean and don't 
-			 *  need bouncing. This assumes we do no other 32bit only
-			 *  allocations (eg fib table expands) after this point.
-			 */
-			 
-			if(aac->pae_support)
-				pci_set_dma_mask(dev, 0xFFFFFFFFFFFFFFFFUL);
 		}
 	}
 
@@ -302,6 +307,7 @@ static int aac_detect(Scsi_Host_Template *template)
 		if((aac_cfg_major = register_chrdev( 0, "aac", &aac_cfg_fops))<0)
 			printk(KERN_WARNING "aacraid: unable to register \"aac\" device.\n");
 	}
+	spin_lock_irq(&io_request_lock);
 
 	template->present = aac_count; /* # of cards of this type found */
 	return aac_count;
@@ -738,7 +744,10 @@ static int aac_procinfo(char *proc_buffer, char **start_ptr,off_t offset,
 	if(write || offset > 0)
 		return 0;
 	*start_ptr = proc_buffer;
-	return sprintf(proc_buffer, "%s  %d\n", "Raid Controller, scsi hba number", host_no);
+	return sprintf(proc_buffer,
+	  "Adaptec Raid Controller %s %s, scsi hba number %d\n",
+	  AAC_DRIVER_VERSION, AAC_DRIVER_BUILD_DATE,
+	  host_no);
 }
 
 EXPORT_NO_SYMBOLS;

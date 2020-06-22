@@ -45,6 +45,9 @@ extern __u32 sysctl_rmem_max;
 #include <linux/ip.h>
 #include <net/protocol.h>
 #include <net/arp.h>
+#if defined(CONFIG_ATM_CLIP) || defined(CONFIG_ATM_CLIP_MODULE)
+#include <net/atmclip.h>
+#endif
 #include <net/ip.h>
 #include <net/udp.h>
 #include <net/tcp.h>
@@ -160,6 +163,7 @@ EXPORT_SYMBOL(datagram_poll);
 EXPORT_SYMBOL(put_cmsg);
 EXPORT_SYMBOL(sock_kmalloc);
 EXPORT_SYMBOL(sock_kfree_s);
+EXPORT_SYMBOL(sockfd_lookup);
 
 #ifdef CONFIG_FILTER
 EXPORT_SYMBOL(sk_run_filter);
@@ -461,6 +465,9 @@ EXPORT_SYMBOL(xrlim_allow);
 EXPORT_SYMBOL(ip_rcv);
 EXPORT_SYMBOL(arp_rcv);
 EXPORT_SYMBOL(arp_tbl);
+#if defined(CONFIG_ATM_CLIP) || defined(CONFIG_ATM_CLIP_MODULE)
+EXPORT_SYMBOL(clip_tbl_hook);
+#endif
 EXPORT_SYMBOL(arp_find);
 
 #endif  /* CONFIG_INET */
@@ -554,6 +561,7 @@ EXPORT_SYMBOL(qdisc_tree_lock);
 #ifdef CONFIG_NET_SCHED
 PSCHED_EXPORTLIST;
 EXPORT_SYMBOL(pfifo_qdisc_ops);
+EXPORT_SYMBOL(bfifo_qdisc_ops);
 EXPORT_SYMBOL(register_qdisc);
 EXPORT_SYMBOL(unregister_qdisc);
 EXPORT_SYMBOL(qdisc_get_rtab);

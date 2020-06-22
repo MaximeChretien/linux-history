@@ -108,6 +108,7 @@ void fat_clusters_flush(struct super_block *sb)
 		return;
 	}
 	fsinfo->free_clusters = CF_LE_L(MSDOS_SB(sb)->free_clusters);
+	fsinfo->next_cluster = CF_LE_L(MSDOS_SB(sb)->prev_free);
 	fat_mark_buffer_dirty(sb, bh);
 	fat_brelse(sb, bh);
 }

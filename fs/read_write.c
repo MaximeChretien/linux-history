@@ -322,7 +322,7 @@ out_nofree:
 	/* VERIFY_WRITE actually means a read, as we write to user space */
 	if ((ret + (type == VERIFY_WRITE)) > 0)
 		dnotify_parent(file->f_dentry,
-			(type == VERIFY_WRITE) ? DN_MODIFY : DN_ACCESS);
+			(type == VERIFY_WRITE) ? DN_ACCESS : DN_MODIFY);
 	return ret;
 }
 

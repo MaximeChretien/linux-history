@@ -48,6 +48,7 @@
 #include <linux/completion.h>
 #include <linux/seq_file.h>
 #include <linux/dnotify.h>
+#include <linux/crc32.h>
 #include <asm/checksum.h>
 
 #if defined(CONFIG_PROC_FS)
@@ -111,6 +112,7 @@ EXPORT_SYMBOL(kmalloc);
 EXPORT_SYMBOL(kfree);
 EXPORT_SYMBOL(vfree);
 EXPORT_SYMBOL(__vmalloc);
+EXPORT_SYMBOL(vmap);
 EXPORT_SYMBOL(vmalloc_to_page);
 EXPORT_SYMBOL(mem_map);
 EXPORT_SYMBOL(remap_page_range);
@@ -268,6 +270,7 @@ EXPORT_SYMBOL(find_or_create_page);
 EXPORT_SYMBOL(grab_cache_page_nowait);
 EXPORT_SYMBOL(read_cache_page);
 EXPORT_SYMBOL(set_page_dirty);
+EXPORT_SYMBOL(mark_page_accessed);
 EXPORT_SYMBOL(vfs_readlink);
 EXPORT_SYMBOL(vfs_follow_link);
 EXPORT_SYMBOL(page_readlink);
@@ -295,6 +298,7 @@ EXPORT_SYMBOL(filemap_fdatasync);
 EXPORT_SYMBOL(filemap_fdatawait);
 EXPORT_SYMBOL(lock_page);
 EXPORT_SYMBOL(unlock_page);
+EXPORT_SYMBOL(wakeup_page_waiters);
 
 /* device registration */
 EXPORT_SYMBOL(register_chrdev);
@@ -561,6 +565,12 @@ EXPORT_SYMBOL(strnicmp);
 EXPORT_SYMBOL(strspn);
 EXPORT_SYMBOL(strsep);
 
+#ifdef CONFIG_CRC32
+EXPORT_SYMBOL(crc32_le);
+EXPORT_SYMBOL(crc32_be);
+EXPORT_SYMBOL(bitreverse);
+#endif
+
 /* software interrupts */
 EXPORT_SYMBOL(tasklet_hi_vec);
 EXPORT_SYMBOL(tasklet_vec);
@@ -582,6 +592,11 @@ EXPORT_SYMBOL(init_task_union);
 
 EXPORT_SYMBOL(tasklist_lock);
 EXPORT_SYMBOL(pidhash);
+EXPORT_SYMBOL(unshare_files);
 
 /* debug */
 EXPORT_SYMBOL(dump_stack);
+
+/* To match ksyms with System.map */
+extern const char _end[];
+EXPORT_SYMBOL(_end);

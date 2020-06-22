@@ -188,8 +188,10 @@ static void rfcomm_sock_cleanup_listen(struct sock *parent)
 	BT_DBG("parent %p", parent);
 
 	/* Close not yet accepted dlcs */
-	while ((sk = bluez_accept_dequeue(parent, NULL)))
+	while ((sk = bluez_accept_dequeue(parent, NULL))) {
 		rfcomm_sock_close(sk);
+		rfcomm_sock_kill(sk);
+	}
 
 	parent->state  = BT_CLOSED;
 	parent->zapped = 1;
@@ -211,14 +213,9 @@ static void rfcomm_sock_kill(struct sock *sk)
 	sock_put(sk);
 }
 
-/* Close socket.
- * Must be called on unlocked socket.
- */
-static void rfcomm_sock_close(struct sock *sk)
+static void __rfcomm_sock_close(struct sock *sk)
 {
 	struct rfcomm_dlc *d = rfcomm_pi(sk)->dlc;
-
-	lock_sock(sk);
 
 	BT_DBG("sk %p state %d socket %p", sk, sk->state, sk->socket);
 
@@ -236,11 +233,17 @@ static void rfcomm_sock_close(struct sock *sk)
 	default:
 		sk->zapped = 1;
 		break;
-	};
+	}
+}
 
+/* Close socket.
+ * Must be called on unlocked socket.
+ */
+static void rfcomm_sock_close(struct sock *sk)
+{
+	lock_sock(sk);
+	__rfcomm_sock_close(sk);
 	release_sock(sk);
-
-	rfcomm_sock_kill(sk);
 }
 
 static void rfcomm_sock_init(struct sock *sk, struct sock *parent)
@@ -374,7 +377,8 @@ static int rfcomm_sock_connect(struct socket *sock, struct sockaddr *addr, int a
 	
 	err = rfcomm_dlc_open(d, &bluez_pi(sk)->src, &sa->rc_bdaddr, sa->rc_channel);
 	if (!err)
-		err = bluez_sock_w4_connect(sk, flags);
+		err = bluez_sock_wait_state(sk, BT_CONNECTED,
+				sock_sndtimeo(sk, flags & O_NONBLOCK));
 
 	release_sock(sk);
 	return err;
@@ -558,9 +562,6 @@ static int rfcomm_sock_recvmsg(struct socket *sock, struct msghdr *msg, int size
 	int target, err = 0, copied = 0;
 	long timeo;
 
-	if (sk->state != BT_CONNECTED)
-		return -EINVAL;
-
 	if (flags & MSG_OOB)
 		return -EOPNOTSUPP;
 
@@ -635,23 +636,6 @@ out:
 	return copied ? : err;
 }
 
-static int rfcomm_sock_shutdown(struct socket *sock, int how)
-{
-	struct sock *sk = sock->sk;
-
-	BT_DBG("sock %p, sk %p", sock, sk);
-
-	if (!sk) return 0;
-
-	lock_sock(sk);
-	sk->shutdown = SHUTDOWN_MASK;
-	if (sk->state == BT_CONNECTED)
-		rfcomm_dlc_close(rfcomm_pi(sk)->dlc, 0);
-	release_sock(sk);
-
-	return 0;
-}
-
 static int rfcomm_sock_setsockopt(struct socket *sock, int level, int optname, char *optval, int optlen)
 {
 	struct sock *sk = sock->sk;
@@ -711,19 +695,42 @@ static int rfcomm_sock_ioctl(struct socket *sock, unsigned int cmd, unsigned lon
 	return err;
 }
 
+static int rfcomm_sock_shutdown(struct socket *sock, int how)
+{
+	struct sock *sk = sock->sk;
+	int err = 0;
+
+	BT_DBG("sock %p, sk %p", sock, sk);
+
+	if (!sk) return 0;
+
+	lock_sock(sk);
+	if (!sk->shutdown) {
+		sk->shutdown = SHUTDOWN_MASK;
+		__rfcomm_sock_close(sk);
+
+		if (sk->linger)
+			err = bluez_sock_wait_state(sk, BT_CLOSED, sk->lingertime);
+	}
+	release_sock(sk);
+	return err;
+}
+
 static int rfcomm_sock_release(struct socket *sock)
 {
 	struct sock *sk = sock->sk;
+	int err = 0;
 
 	BT_DBG("sock %p, sk %p", sock, sk);
 
 	if (!sk)
 		return 0;
 
-	sock_orphan(sk);
-	rfcomm_sock_close(sk);
+	err = rfcomm_sock_shutdown(sock, 2);
 
-	return 0;
+	sock_orphan(sk);
+	rfcomm_sock_kill(sk);
+	return err;
 }
 
 /* ---- RFCOMM core layer callbacks ---- 

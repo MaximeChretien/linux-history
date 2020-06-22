@@ -19,6 +19,7 @@
 #include <linux/stat.h>
 #include <linux/in.h>
 #include <linux/seq_file.h>
+#include <linux/smp_lock.h>
 
 #include <linux/sunrpc/svc.h>
 #include <linux/nfsd/nfsd.h>
@@ -571,6 +572,7 @@ static void *e_start(struct seq_file *m, loff_t *pos)
 	svc_client *clp;
 	struct list_head *p;
 	
+	lock_kernel();
 	exp_readlock();
 	if (!n--)
 		return (void *)1;
@@ -622,6 +624,7 @@ static void *e_next(struct seq_file *m, void *p, loff_t *pos)
 static void e_stop(struct seq_file *m, void *p)
 {
 	exp_unlock();
+	unlock_kernel();
 }
 
 struct flags {

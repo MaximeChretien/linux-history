@@ -82,7 +82,7 @@ static char *pmc1_lookup(unsigned long mmcr0)
 	default:
 		return "unknown";
 	}
-}	
+}
 
 static char *pmc2_lookup(unsigned long mmcr0)
 {
@@ -101,7 +101,7 @@ static char *pmc2_lookup(unsigned long mmcr0)
 	default:
 		return "unknown";
 	}
-}	
+}
 
 /*
  * print some useful info about the hash table.  This function
@@ -177,7 +177,7 @@ static ssize_t ppc_htab_read(struct file * file, char * buf,
 		if (!valid)
 			zombie_ptes++;
 	}
-	
+
 	n += sprintf( buffer + n,
 		      "PTE Hash Table Information\n"
 		      "Size\t\t: %luKb\n"
@@ -208,7 +208,7 @@ static ssize_t ppc_htab_read(struct file * file, char * buf,
 		      primary_pteg_full, htab_evicts);
 return_string:
 #endif /* CONFIG_PPC_STD_MMU */
-	
+
 	n += sprintf( buffer + n,
 		      "Non-error misses: %lu\n"
 		      "Error misses\t: %lu\n",
@@ -244,7 +244,7 @@ static ssize_t ppc_htab_write(struct file * file, const char * buffer,
 		if (cur_cpu_spec[0]->cpu_features & CPU_FTR_604_PERF_MON) {
 			asm volatile ("mtspr %0, %3 \n\t"
 			    "mtspr %1, %3 \n\t"
-			    "mtspr %2, %3 \n\t"			    
+			    "mtspr %2, %3 \n\t"
 			    :: "i" (MMCR0), "i" (PMC1), "i" (PMC2), "r" (0));
 		}
 	}
@@ -295,7 +295,7 @@ static ssize_t ppc_htab_write(struct file * file, const char * buffer,
 				"i" (PMC1),  "r" (0), "i"(PMC2) );
 		}
 	}
-	
+
 	/* PMC1 values */
 	if ( !strncmp( buffer, "dtlb", 4) )
 	{
@@ -310,7 +310,7 @@ static ssize_t ppc_htab_write(struct file * file, const char * buffer,
 				:: "r" (tmp), "i" (MMCR0), "i" (MMCR0_PMC1_DTLB),
 				"i" (PMC1),  "r" (0) );
 		}
-	}	
+	}
 
 	if ( !strncmp( buffer, "ic miss", 7) )
 	{
@@ -325,7 +325,7 @@ static ssize_t ppc_htab_write(struct file * file, const char * buffer,
 				:: "r" (tmp), "i" (MMCR0),
 				"i" (MMCR0_PMC1_ICACHEMISS), "i" (PMC1),  "r" (0));
 		}
-	}	
+	}
 
 	/* PMC2 values */
 	if ( !strncmp( buffer, "load miss time", 14) )
@@ -343,7 +343,7 @@ static ssize_t ppc_htab_write(struct file * file, const char * buffer,
 			       "i" (PMC2),  "r" (0) );
 		}
 	}
-	
+
 	if ( !strncmp( buffer, "itlb", 4) )
 	{
 		if (cur_cpu_spec[0]->cpu_features & CPU_FTR_604_PERF_MON) {
@@ -374,21 +374,21 @@ static ssize_t ppc_htab_write(struct file * file, const char * buffer,
 			       : "i" (MMCR0), "i" (MMCR0_PMC2_DCACHEMISS),
 			       "i" (PMC2),  "r" (0) );
 		}
-	}	
-	
+	}
+
 
 	return count;
-	
+
 #if 0 /* resizing htab is a bit difficult right now -- Cort */
 	unsigned long size;
 	extern void reset_SDR1(void);
-	
+
 	/* only know how to set size right now */
 	if ( strncmp( buffer, "size ", 5) )
 		return -EINVAL;
 
 	size = simple_strtoul( &buffer[5], NULL, 10 );
-	
+
 	/* only allow to shrink */
 	if ( size >= Hash_size>>10 )
 		return -EINVAL;
@@ -396,11 +396,11 @@ static ssize_t ppc_htab_write(struct file * file, const char * buffer,
 	/* minimum size of htab */
 	if ( size < 64 )
 		return -EINVAL;
-	
+
 	/* make sure it's a multiple of 64k */
 	if ( size % 64 )
 		return -EINVAL;
-	
+
 	printk("Hash table resize to %luk\n", size);
 	/*
 	 * We need to rehash all kernel entries for the new htab size.
@@ -416,7 +416,7 @@ static ssize_t ppc_htab_write(struct file * file, const char * buffer,
 	flush_tlb_all();
 
 	reset_SDR1();
-#endif	
+#endif
 	return count;
 #else /* CONFIG_PPC_STD_MMU */
 	return 0;
@@ -441,18 +441,18 @@ ppc_htab_lseek(struct file * file, loff_t offset, int orig)
     }
 }
 
+#define TMPBUFLEN 512
 int proc_dol2crvec(ctl_table *table, int write, struct file *filp,
 		  void *buffer, size_t *lenp)
 {
 	int vleft, first=1, len, left, val;
-	#define TMPBUFLEN 256
 	char buf[TMPBUFLEN], *p;
 	static const char *sizestrings[4] = {
 		"2MB", "256KB", "512KB", "1MB"
 	};
 	static const char *clockstrings[8] = {
-		"clock disabled", "+1 clock", "+1.5 clock", "reserved(3)",
-		"+2 clock", "+2.5 clock", "+3 clock", "reserved(7)"
+		"clock disabled", "+1 clock", "+1.5 clock", "+3.5 clock",
+		"+2 clock", "+2.5 clock", "+3 clock", "+4 clock"
 	};
 	static const char *typestrings[4] = {
 		"flow-through burst SRAM", "reserved SRAM",
@@ -464,12 +464,12 @@ int proc_dol2crvec(ctl_table *table, int write, struct file *filp,
 
 	if (!(cur_cpu_spec[0]->cpu_features & CPU_FTR_L2CR))
 		return -EFAULT;
-	
+
 	if ( /*!table->maxlen ||*/ (filp->f_pos && !write)) {
 		*lenp = 0;
 		return 0;
 	}
-	
+
 	vleft = table->maxlen / sizeof(int);
 	left = *lenp;
 
@@ -508,24 +508,46 @@ int proc_dol2crvec(ctl_table *table, int write, struct file *filp,
 				*p++ = '\t';
 			val = _get_L2CR();
 			p += sprintf(p, "0x%08x: ", val);
-			p += sprintf(p, " %s", (val >> 31) & 1 ? "enabled" :
+			p += sprintf(p, " L2 %s", (val >> 31) & 1 ? "enabled" :
 				     	"disabled");
 			p += sprintf(p, ", %sparity", (val>>30)&1 ? "" : "no ");
-			p += sprintf(p, ", %s", sizestrings[(val >> 28) & 3]);
-			p += sprintf(p, ", %s", clockstrings[(val >> 25) & 7]);
-			p += sprintf(p, ", %s", typestrings[(val >> 23) & 2]);
-			p += sprintf(p, "%s", (val>>22)&1 ? ", data only" : "");
-			p += sprintf(p, "%s", (val>>20)&1 ? ", ZZ enabled": "");
-			p += sprintf(p, ", %s", (val>>19)&1 ? "write-through" :
-					"copy-back");
-			p += sprintf(p, "%s", (val>>18)&1 ? ", testing" : "");
-			p += sprintf(p, ", %sns hold",holdstrings[(val>>16)&3]);
-			p += sprintf(p, "%s", (val>>15)&1 ? ", DLL slow" : "");
-			p += sprintf(p, "%s", (val>>14)&1 ? ", diff clock" :"");
-			p += sprintf(p, "%s", (val>>13)&1 ? ", DLL bypass" :"");
-			
+
+			/* 75x & 74x0 have different L2CR than 745x */
+			if (!(cur_cpu_spec[0]->cpu_features &
+						CPU_FTR_SPEC7450)) {
+				p += sprintf(p, ", %s",
+					sizestrings[(val >> 28) & 3]);
+				p += sprintf(p, ", %s",
+					clockstrings[(val >> 25) & 7]);
+				p += sprintf(p, ", %s",
+					typestrings[(val >> 23) & 3]);
+				p += sprintf(p, "%s", (val>>22)&1 ?
+					", data only" : "");
+				p += sprintf(p, "%s", (val>>20)&1 ?
+					", ZZ enabled": "");
+				p += sprintf(p, ", %s", (val>>19)&1 ?
+					"write-through" : "copy-back");
+				p += sprintf(p, "%s", (val>>18)&1 ?
+					", testing" : "");
+				p += sprintf(p, ", %sns hold",
+					holdstrings[(val>>16)&3]);
+				p += sprintf(p, "%s", (val>>15)&1 ?
+					", DLL slow" : "");
+				p += sprintf(p, "%s", (val>>14)&1 ?
+					", diff clock" :"");
+				p += sprintf(p, "%s", (val>>13)&1 ?
+					", DLL bypass" :"");
+			} else { /* 745x */
+				p += sprintf(p, ", %sinstn only", (val>>20)&1 ?
+					"" : "no ");
+				p += sprintf(p, ", %sdata only", (val>>16)&1 ?
+					"" : "no ");
+				p += sprintf(p, ", %s replacement",
+					(val>>12)&1 ?  "secondary" : "default");
+			}
+
 			p += sprintf(p,"\n");
-			
+
 			len = strlen(buf);
 			if (len > left)
 				len = left;
@@ -555,6 +577,98 @@ int proc_dol2crvec(ctl_table *table, int write, struct file *filp,
 	}
 	if (write && first)
 		return -EINVAL;
+	*lenp -= left;
+	filp->f_pos += *lenp;
+	return 0;
+}
+
+int proc_dol3crvec(ctl_table *table, int write, struct file *filp,
+		  void *buffer, size_t *lenp)
+{
+	int vleft, first=1, len, left, val;
+	char buf[TMPBUFLEN], *p;
+	static const char *clockstrings[8] = {
+		"+6 clock", "reserved(1)", "+2 clock", "+2.5 clock",
+		"+3 clock", "+3.5 clock", "+4 clock", "+5 clock"
+	};
+	static const char *clocksampstrings[4] = {
+		"2 clock", "3 clock", "4 clock", "5 clock"
+	};
+	static const char *pclocksampstrings[8] = {
+		"0 P-clock", "1 P-clock", "2 P-clock", "3 P-clock",
+		"4 P-clock", "5 P-clock", "reserved(6)", "reserved(7)"
+	};
+	static const char *typestrings[4] = {
+		"MSUG2 DDR SRAM",
+		"Pipelined synchronous late-write SRAM",
+		"Reserved", "PB2 SRAM"
+	};
+
+	if (!(cur_cpu_spec[0]->cpu_features & CPU_FTR_L3CR))
+		return -EFAULT;
+	if (write)
+		return -EFAULT;
+
+	if (filp->f_pos && !write) {
+		*lenp = 0;
+		return 0;
+	}
+
+	vleft = table->maxlen / sizeof(int);
+	left = *lenp;
+
+	for (; left; first=0) {
+		p = buf;
+		if (!first)
+			*p++ = '\t';
+		val = _get_L3CR();
+		p += sprintf(p, "0x%08x: ", val);
+		p += sprintf(p, " L3 %s", (val >> 31) & 1 ? "enabled" :
+			     	"disabled");
+		p += sprintf(p, ", %sdata parity", (val>>30)&1 ? "" :
+				"no ");
+		p += sprintf(p, ", %saddr parity", (val>>29)&1 ? "" :
+				"no ");
+		p += sprintf(p, ", %s", (val>>28)&1 ? "2MB" : "1MB");
+		p += sprintf(p, ", clocks %s", (val>>27)&1 ? "enabled" :
+				"disabled");
+		p += sprintf(p, ", %s", clockstrings[(val >> 23) & 7]);
+		p += sprintf(p, ", %sinstn only", (val>>22)&1 ? "" :
+				"no ");
+		p += sprintf(p, ", %ssample point override",
+				(val>>18)&1 ? "" : "no ");
+		p += sprintf(p, ", %s sample point",
+				clocksampstrings[(val>>16)&3]);
+		p += sprintf(p, ", %s sample point",
+				pclocksampstrings[(val>>13)&7]);
+		p += sprintf(p, ", %s replacement", (val>>12)&1 ?
+				"secondary" : "default");
+		p += sprintf(p, ", %s", typestrings[(val >> 8) & 3]);
+		p += sprintf(p, ", %sclock cntl", (val>>7)&1 ? "" :
+				"no ");
+		p += sprintf(p, ", %sdata only", (val>>6)&1 ? "" :
+				"no ");
+		p += sprintf(p, ", private mem %s", (val>>2)&1 ?
+				"enabled" : "disabled");
+		p += sprintf(p, ", %sprivate mem", val&1 ? "2MB " :
+				"1MB ");
+		p += sprintf(p,"\n");
+
+		len = strlen(buf);
+		if (len > left)
+			len = left;
+		if(copy_to_user(buffer, buf, len))
+			return -EFAULT;
+		left -= len;
+		buffer += len;
+		break;
+	}
+
+	if (!write && !first && left) {
+		if(put_user('\n', (char *) buffer))
+			return -EFAULT;
+		left--, buffer++;
+	}
 	*lenp -= left;
 	filp->f_pos += *lenp;
 	return 0;

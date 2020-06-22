@@ -33,6 +33,7 @@
 #include <linux/kernel_stat.h>
 #include <linux/mm.h>
 #include <linux/delay.h>
+#include <linux/reboot.h>
 
 #include <asm/system.h>
 #include <asm/atomic.h>
@@ -434,25 +435,21 @@ smp_cpu_init(int cpunum)
 	extern void init_IRQ(void);    /* arch/parisc/kernel/irq.c */
 
 	/* Set modes and Enable floating point coprocessor */
-	(void) init_per_cpu(cpunum);
+	init_per_cpu(cpunum);
 
 	disable_sr_hashing();
-
 	mb();
 
 	/* Well, support 2.4 linux scheme as well. */
-	if (test_and_set_bit(cpunum, (unsigned long *) (&cpu_online_map)))
-	{
-		extern void machine_halt(void); /* arch/parisc.../process.c */
-
+	if (test_and_set_bit(cpunum, (unsigned long *) (&cpu_online_map))) {
 		printk(KERN_CRIT "CPU#%d already initialized!\n", cpunum);
 		machine_halt();
-	}  
+	}
 
 	/* Initialise the idle task for this CPU */
 	atomic_inc(&init_mm.mm_count);
 	current->active_mm = &init_mm;
-	if(current->mm)
+	if (current->mm)
 		BUG();
 	enter_lazy_tlb(&init_mm, current, cpunum);
 

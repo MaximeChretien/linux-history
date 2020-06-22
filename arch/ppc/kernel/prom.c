@@ -1000,8 +1000,8 @@ find_parent_pci_resource(struct pci_dev* pdev, struct address_range *range)
 {
 	unsigned long mask;
 	int i;
-	
-	/* Check this one */ 
+
+	/* Check this one */
 	mask = bus_space_to_resource_flags(range->space);
 	for (i=0; i<DEVICE_COUNT_RESOURCE; i++) {
 		if ((pdev->resource[i].flags & mask) == mask &&
@@ -1049,7 +1049,7 @@ request_OF_resource(struct device_node* node, int index, const char* name_postfi
 		parent = &ioport_resource;
 	else
 		goto fail;
-		
+
 	/* Find a PCI parent if any */
 	nd = node;
 	pcidev = NULL;
@@ -1104,7 +1104,7 @@ release_OF_resource(struct device_node* node, int index)
 		parent = &ioport_resource;
 	else
 		return -EINVAL;
-		
+
 	/* Find a PCI parent if any */
 	nd = node;
 	pcidev = NULL;

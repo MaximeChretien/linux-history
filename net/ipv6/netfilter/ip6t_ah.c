@@ -134,7 +134,7 @@ match(const struct sk_buff *skb,
        		return 0;
        }
 
-       ah=skb->data+ptr;
+       ah = (struct ahhdr *) (skb->data + ptr);
 
        DEBUGP("IPv6 AH LEN %u %u ", hdrlen, ah->hdrlen);
        DEBUGP("RES %04X ", ah->reserved);

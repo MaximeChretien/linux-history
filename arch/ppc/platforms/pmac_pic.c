@@ -161,7 +161,7 @@ struct hw_interrupt_type gatwick_pic = {
 static void gatwick_action(int cpl, void *dev_id, struct pt_regs *regs)
 {
 	int irq, bits;
-	
+
 	for (irq = max_irqs; (irq -= 32) >= max_real_irqs; ) {
 		int i = irq >> 5;
 		bits = in_le32(&pmac_irq_hw[i]->event) | ppc_lost_interrupts[i];
@@ -191,7 +191,7 @@ pmac_get_irq(struct pt_regs *regs)
 
 #ifdef CONFIG_SMP
 	void psurge_smp_message_recv(struct pt_regs *);
-	
+
        	/* IPI's are a hack on the powersurge -- Cort */
        	if ( smp_processor_id() != 0 ) {
 		psurge_smp_message_recv(regs);
@@ -221,7 +221,7 @@ pmac_fix_gatwick_interrupts(struct device_node *gw, int irq_base)
 {
 	struct device_node *node;
 	int count;
-	
+
 	memset(gatwick_int_pool, 0, sizeof(gatwick_int_pool));
 	node = gw->child;
 	count = 0;
@@ -234,7 +234,7 @@ pmac_fix_gatwick_interrupts(struct device_node *gw, int irq_base)
 					node->child->intrs = &gatwick_int_pool[count];
 					count += 3;
 				}
-				node->child->n_intrs = 3;				
+				node->child->n_intrs = 3;
 				node->child->intrs[0].line = 15+irq_base;
 				node->child->intrs[1].line =  4+irq_base;
 				node->child->intrs[2].line =  5+irq_base;
@@ -253,7 +253,7 @@ pmac_fix_gatwick_interrupts(struct device_node *gw, int irq_base)
 			node->intrs[0].line = 29+irq_base;
 			printk(KERN_INFO "irq: fixed media-bay on second controller (%d)\n",
 					node->intrs[0].line);
-			
+
 			ya_node = node->child;
 			while(ya_node)
 			{
@@ -267,7 +267,7 @@ pmac_fix_gatwick_interrupts(struct device_node *gw, int irq_base)
 					ya_node->intrs[1].line =  1+irq_base;
 					printk(KERN_INFO "irq: fixed floppy on second controller (%d,%d)\n",
 						ya_node->intrs[0].line, ya_node->intrs[1].line);
-				} 
+				}
 				if (strcasecmp(ya_node->name, "ata4") == 0) {
 					if (ya_node->n_intrs < 2) {
 						ya_node->intrs = &gatwick_int_pool[count];
@@ -278,7 +278,7 @@ pmac_fix_gatwick_interrupts(struct device_node *gw, int irq_base)
 					ya_node->intrs[1].line =  3+irq_base;
 					printk(KERN_INFO "irq: fixed ide on second controller (%d,%d)\n",
 						ya_node->intrs[0].line, ya_node->intrs[1].line);
-				} 
+				}
 				ya_node = ya_node->sibling;
 			}
 		}
@@ -345,7 +345,7 @@ pmac_pic_init(void)
         struct device_node *irqctrler;
         unsigned long addr;
 	int irq_cascade = -1;
-	
+
 	/* We first try to detect Apple's new Core99 chipset, since mac-io
 	 * is quite different on those machines and contains an IBM MPIC2.
 	 */
@@ -403,7 +403,7 @@ pmac_pic_init(void)
 
 	/*
 	 * G3 powermacs and 1999 G3 PowerBooks have 64 interrupts,
-	 * 1998 G3 Series PowerBooks have 128, 
+	 * 1998 G3 Series PowerBooks have 128,
 	 * other powermacs have 32.
 	 * The combo ethernet/modem card for the Powerstar powerbooks
 	 * (2400/3400/3500, ohare based) has a second ohare chip
@@ -425,17 +425,17 @@ pmac_pic_init(void)
 	/* get addresses of first controller */
 	if (irqctrler) {
 		if  (irqctrler->n_addrs > 0) {
-			addr = (unsigned long) 
+			addr = (unsigned long)
 				ioremap(irqctrler->addrs[0].address, 0x40);
 			for (i = 0; i < 2; ++i)
 				pmac_irq_hw[i] = (volatile struct pmac_irq_hw*)
 					(addr + (2 - i) * 0x10);
 		}
-		
+
 		/* get addresses of second controller */
 		irqctrler = irqctrler->next;
 		if (irqctrler && irqctrler->n_addrs > 0) {
-			addr = (unsigned long) 
+			addr = (unsigned long)
 				ioremap(irqctrler->addrs[0].address, 0x40);
 			for (i = 2; i < 4; ++i)
 				pmac_irq_hw[i] = (volatile struct pmac_irq_hw*)
@@ -464,7 +464,7 @@ pmac_pic_init(void)
 	for (i = 0; i < max_irqs; i++)
 		if (level_mask[i >> 5] & (1UL << (i & 0x1f)))
 			irq_desc[i].status = IRQ_LEVEL;
-	
+
 	/* get interrupt line of secondary interrupt controller */
 	if (irq_cascade >= 0) {
 		printk(KERN_INFO "irq: secondary controller on irq %d\n",

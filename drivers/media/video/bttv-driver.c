@@ -20,7 +20,6 @@
     Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
-#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/errno.h>
@@ -32,10 +31,7 @@
 #include <linux/poll.h>
 #include <linux/pci.h>
 #include <linux/signal.h>
-#include <asm/io.h>
 #include <linux/ioport.h>
-#include <asm/pgtable.h>
-#include <asm/page.h>
 #include <linux/sched.h>
 #include <linux/types.h>
 #include <linux/wrapper.h>
@@ -45,8 +41,12 @@
 #include <linux/init.h>
 #include <linux/pagemap.h>
 
+#include <asm/io.h>
+#include <asm/pgtable.h>
+#include <asm/page.h>
+#include <asm/byteorder.h>
+
 #include "bttvp.h"
-#include "tuner.h"
 
 #define DEBUG(x)	/* Debug driver */
 #define MIN(a,b) (((a)>(b))?(b):(a))
@@ -61,7 +61,7 @@ unsigned int bttv_num;			/* number of Bt848s in use */
 struct bttv bttvs[BTTV_MAX];
 
 /* configuration variables */
-#if defined(__sparc__) || defined(__powerpc__) || defined(__hppa__)
+#ifdef __BIG_ENDIAN
 static unsigned int bigendian=1;
 #else
 static unsigned int bigendian=0;
@@ -609,7 +609,7 @@ static struct tvnorm tvnorms[] = {
                 .sram           = 2,
         }
 };
-#define TVNORMS (sizeof(tvnorms)/sizeof(struct tvnorm))
+#define TVNORMS ARRAY_SIZE(tvnorms)
 
 /* used to switch between the bt848's analog/digital video capture modes */
 void bt848A_set_timing(struct bttv *btv)
@@ -734,7 +734,7 @@ static unsigned int palette2fmt[] = {
 	BT848_COLOR_FMT_YCrCb422,
 	BT848_COLOR_FMT_YCrCb411,
 };
-#define PALETTEFMT_MAX (sizeof(palette2fmt)/sizeof(palette2fmt[0]))
+#define PALETTEFMT_MAX ARRAY_SIZE(palette2fmt)
 
 static int make_rawrisctab(struct bttv *btv, u32 *ro, u32 *re, u32 *vbuf)
 {
@@ -776,7 +776,7 @@ static int  make_prisctab(struct bttv *btv, u32 *ro, u32 *re, u32 *vbuf,
 	u32 todo;
 	u32 **rp;
 	int inter;
-	u32 cbadr, cradr;
+	unsigned long cbadr, cradr;
 	unsigned long vadr=(unsigned long) vbuf;
 	u32 shift, csize;
 
@@ -1055,6 +1055,7 @@ static void make_clip_tab(struct bttv *btv, struct video_clip *cr, int ncr)
 		*(ro++)=cpu_to_le32(btv->bus_vbi_even);
 		*(re++)=cpu_to_le32(BT848_RISC_JUMP);
 		*(re++)=cpu_to_le32(btv->bus_vbi_odd);
+		return;
 	}
 	if (ncr < 0) {	/* bitmap was pased */
 		memcpy(clipmap, (unsigned char *)cr, VIDEO_CLIPMAP_SIZE);
@@ -1756,6 +1757,7 @@ static int bttv_ioctl(struct video_device *dev, unsigned int cmd, void *arg)
 	case VIDIOCSPICT:
 	{
 		struct video_picture p;
+
 		if (copy_from_user(&p, arg,sizeof(p)))
 			return -EFAULT;
 		if (p.palette > PALETTEFMT_MAX)
@@ -2737,10 +2739,11 @@ static int __devinit init_bt848(struct bttv *btv)
 		btwrite(BT848_CONTROL_LDEC, BT848_O_CONTROL);
 	}
 
-	btv->picture.colour=254<<7;
-	btv->picture.brightness=128<<8;
-	btv->picture.hue=128<<8;
-	btv->picture.contrast=0xd8<<7;
+	btv->picture.colour     = 254<<7;
+	btv->picture.brightness = 128<<8;
+	btv->picture.hue        = 128<<8;
+	btv->picture.contrast   = 0xd8<<7;
+	btv->picture.palette    = VIDEO_PALETTE_RGB24;
 
 	val = chroma_agc ? BT848_SCLOOP_CAGC : 0;
         btwrite(val, BT848_E_SCLOOP);
@@ -2819,7 +2822,7 @@ static void bttv_irq(int irq, void *dev_id, struct pt_regs * regs)
 			unsigned int i;
 			printk(KERN_DEBUG "bttv%d: irq loop=%d risc=%x, bits:",
 			       btv->nr, count, stat>>28);
-			for (i = 0; i < (sizeof(irq_name)/sizeof(char*)); i++) {
+			for (i = 0; i < ARRAY_SIZE(irq_name); i++) {
 				if (stat & (1 << i))
 					printk(" %s",irq_name[i]);
 				if (astat & (1 << i))
@@ -3173,6 +3176,7 @@ static struct pci_driver bttv_pci_driver = {
 
 static int bttv_init_module(void)
 {
+	int rc;
 	bttv_num = 0;
 
 	printk(KERN_INFO "bttv: driver version %d.%d.%d loaded\n",
@@ -3189,7 +3193,13 @@ static int bttv_init_module(void)
 
 	bttv_check_chipset();
 
-	return pci_module_init(&bttv_pci_driver);
+	rc = pci_module_init(&bttv_pci_driver);
+	if (-ENODEV == rc) {
+		/* plenty of people trying to use bttv for the cx2388x ... */
+		if (NULL != pci_find_device(0x14f1, 0x8800, NULL))
+			printk("bttv doesn't support your Conexant 2388x card.\n");
+	}
+	return rc;
 }
 
 static void bttv_cleanup_module(void)

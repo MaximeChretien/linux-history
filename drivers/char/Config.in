@@ -18,7 +18,7 @@ if [ "$CONFIG_SERIAL" = "y" ]; then
       bool '   serial port on GSC support' CONFIG_SERIAL_GSC
    fi
    if [ "$CONFIG_IA64" = "y" ]; then
-      bool 'Support for serial console port described by EFI HCDP table' CONFIG_SERIAL_HCDP
+      bool '  Support for serial port described by EFI HCDP table' CONFIG_SERIAL_HCDP
    fi
    if [ "$CONFIG_ARCH_ACORN" = "y" ]; then
       tristate '   Atomwide serial port support' CONFIG_ATOMWIDE_SERIAL
@@ -160,6 +160,9 @@ fi
 
 if [ "$CONFIG_PPC64" ] ; then 
    bool 'pSeries Hypervisor Virtual Console support' CONFIG_HVC_CONSOLE
+fi
+if [ "$CONFIG_ALL_PPC" = "y" ]; then
+   tristate 'Total Impact briQ front panel driver' CONFIG_BRIQ_PANEL
 fi
 
 source drivers/i2c/Config.in
@@ -306,6 +309,9 @@ if [ "$CONFIG_AGP" != "n" ]; then
    bool '  Generic SiS support' CONFIG_AGP_SIS
    bool '  ALI chipset support' CONFIG_AGP_ALI
    bool '  Serverworks LE/HE support' CONFIG_AGP_SWORKS
+   if [ "$CONFIG_X86" = "y" ]; then
+      bool '  NVIDIA chipset support' CONFIG_AGP_NVIDIA
+   fi
    if [ "$CONFIG_IA64" = "y" ]; then
       bool '  HP ZX1 AGP support' CONFIG_AGP_HP_ZX1
    fi

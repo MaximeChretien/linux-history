@@ -9,7 +9,6 @@
 #ifndef _S390_PAGE_H
 #define _S390_PAGE_H
 
-#include <asm/errno.h>
 #include <asm/setup.h>
 #include <asm/types.h>
 
@@ -17,9 +16,6 @@
 #define PAGE_SHIFT      12
 #define PAGE_SIZE       (1UL << PAGE_SHIFT)
 #define PAGE_MASK       (~(PAGE_SIZE-1))
-
-#define STORAGE_ACC_KEY		6
-#define STORAGE_ACC_KEY_MASK	(STORAGE_ACC_KEY<<4)
 
 #ifdef __KERNEL__
 #ifndef __ASSEMBLY__
@@ -124,61 +120,12 @@ typedef struct { unsigned long pgprot; } pgprot_t;
 #define virt_to_page(kaddr)	(mem_map + (__pa(kaddr) >> PAGE_SHIFT))
 #define VALID_PAGE(page)	((page - mem_map) < max_mapnr)
 
-/* the pfix table of all mem addresses */
-extern void* *pfix_table;
-#define pfix_get_page_addr(ptr) (pfix_table[(unsigned long)ptr>>PAGE_SHIFT])
-#define pfix_get_addr(ptr) (pfix_get_page_addr(ptr)+ \
-			    ((unsigned long)ptr&PAGE_MASK))
-
-/*
- * These functions allow to lock and unlock pages in VM. They need
- * the absolute address of the page to be locked or unlocked. This will
- * only work if the diag98 option in the user directory is enabled for
- * the guest.
- */
-
-/* if result is 0, addr will become the host absolute address */
-extern __inline__ int pfix_lock_page(void *addr)
-{
-        int ret = -ENOMEM;
-
-        if (!MACHINE_HAS_PFIX)
-                return -ENOSYS;
-
-        __asm__ __volatile__(
-                "   l     0,%1\n"  /* parameter in gpr 0 */
-                "   lhi   2,0\n"   /* function code is 0 */
-                "   diag  2,0,0x98\n" /* result in gpr 1 */
-                "   jnz   0f\n"
-                "   lhi   %0,0\n"
-                "0: l     %1,1\n"  /* gpr1 contains host absol. addr */
-                : "+d" (ret), "+d" ((unsigned long)addr) : 
-                : "0", "1", "2", "cc" );
-        return ret;
-}
-
-extern __inline__ int pfix_unlock_page(unsigned long addr)
-{
-        int ret = -EINVAL;
-
-        if (!MACHINE_HAS_PFIX)
-                return -ENOSYS;
-
-        __asm__ __volatile__(
-                "   lr    0,%1\n"  /* parameter in gpr 0 */
-                "   lhi   2,4\n"   /* function code is 4 */
-                "   diag  2,0,0x98\n" /* result in gpr 1 */
-                "   jnz   0f\n"
-                "   lhi   %0,0\n"
-                "0:\n"
-                : "+d" (ret)
-                : "a" (addr)
-                : "0", "1", "2", "cc" );
-        return ret;
-}
-
 #define VM_DATA_DEFAULT_FLAGS	(VM_READ | VM_WRITE | VM_EXEC | \
 				 VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC)
+
+unsigned int get_storage_key(void);
+unsigned long pfix_get_page_addr(void *);
+unsigned long pfix_get_addr(void *);
 
 #endif /* __KERNEL__ */
 

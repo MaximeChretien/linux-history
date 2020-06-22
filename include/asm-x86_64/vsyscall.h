@@ -30,6 +30,7 @@ struct vxtime_data {
 	int mode;
 };
 
+#define VXTIME_STUPID	0
 #define VXTIME_TSC	1
 #define	VXTIME_HPET	2
 

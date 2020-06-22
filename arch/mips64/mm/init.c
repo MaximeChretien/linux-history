@@ -110,14 +110,6 @@ int do_check_pgt_cache(int low, int high)
 	return freed;
 }
 
-
-asmlinkage int sys_cacheflush(void *addr, int bytes, int cache)
-{
-	/* XXX Just get it working for now... */
-	flush_cache_l1();
-	return 0;
-}
-
 /*
  * We have up to 8 empty zeroed pages so we can map one of the right colour
  * when needed.  This is necessary only on R4000 / R4400 SC and MC versions
@@ -132,16 +124,10 @@ unsigned long setup_zero_pages(void)
 	unsigned long order, size;
 	struct page *page;
 
-	switch (mips_cpu.cputype) {
-	case CPU_R4000SC:
-	case CPU_R4000MC:
-	case CPU_R4400SC:
-	case CPU_R4400MC:
+	if (cpu_has_vce)
 		order = 3;
-		break;
-	default:
+	else
 		order = 0;
-	}
 
 	empty_zero_page = __get_free_pages(GFP_KERNEL, order);
 	if (!empty_zero_page)
@@ -297,19 +283,24 @@ void __init mem_init(void)
 #ifdef CONFIG_BLK_DEV_INITRD
 void free_initrd_mem(unsigned long start, unsigned long end)
 {
+	/* Switch from KSEG0 to XKPHYS addresses */
+	start = (unsigned long)phys_to_virt(CPHYSADDR(start));
+	end = (unsigned long)phys_to_virt(CPHYSADDR(end));
+	if (start < end)
+		printk(KERN_INFO "Freeing initrd memory: %ldk freed\n",
+		       (end - start) >> 10);
+
 	for (; start < end; start += PAGE_SIZE) {
 		ClearPageReserved(virt_to_page(start));
 		set_page_count(virt_to_page(start), 1);
 		free_page(start);
 		totalram_pages++;
 	}
-	printk(KERN_INFO "Freeing initrd memory: %ldk freed\n",
-	       (end - start) >> 10);
 }
 #endif
 
 extern char __init_begin, __init_end;
-extern void prom_free_prom_memory(void);
+extern void prom_free_prom_memory(void) __init;
 
 void
 free_initmem(void)

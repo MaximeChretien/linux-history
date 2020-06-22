@@ -14,8 +14,12 @@ O_TARGET := vr41xx.o
 
 obj-y := bcu.o cmu.o giu.o icu.o int-handler.o reset.o
 
+export-objs := vrc4173.o
+
 obj-$(CONFIG_PCI)		+= pciu.o
 obj-$(CONFIG_SERIAL)		+= serial.o
 obj-$(CONFIG_VR41XX_TIME_C)	+= time.o
+obj-$(CONFIG_VRC4173)		+= vrc4173.o
+obj-$(subst m,y,$(CONFIG_IDE))	+= ide.o
 
 include $(TOPDIR)/Rules.make

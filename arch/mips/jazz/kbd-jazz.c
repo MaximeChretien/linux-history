@@ -1,5 +1,4 @@
-/* $Id: kbd-jazz.c,v 1.1 1998/10/28 12:38:10 ralf Exp $
- *
+/*
  * Low-level hardware access stuff for Jazz family machines.
  *
  * This file is subject to the terms and conditions of the GNU General Public
@@ -39,20 +38,20 @@ static int jazz_request_irq(void (*handler)(int, void *, struct pt_regs *))
 static int jazz_aux_request_irq(void (*handler)(int, void *, struct pt_regs *))
 {
 	int ret;
-    
+
 	ret = request_irq(JAZZ_MOUSE_IRQ, handler, 0, "PS/2 Mouse", NULL);
 	if (ret != 0)
 		return ret;
 
-		r4030_write_reg16(JAZZ_IO_IRQ_ENABLE, 
-				  r4030_read_reg16(JAZZ_IO_IRQ_ENABLE) | 
+		r4030_write_reg16(JAZZ_IO_IRQ_ENABLE,
+				  r4030_read_reg16(JAZZ_IO_IRQ_ENABLE) |
 				  JAZZ_IE_MOUSE);
 	return 0;
 }
 
 static void jazz_aux_free_irq(void)
 {
-	r4030_write_reg16(JAZZ_IO_IRQ_ENABLE, 
+	r4030_write_reg16(JAZZ_IO_IRQ_ENABLE,
 	                  r4030_read_reg16(JAZZ_IO_IRQ_ENABLE)
 	                  | JAZZ_IE_MOUSE);
 	free_irq(JAZZ_MOUSE_IRQ, NULL);

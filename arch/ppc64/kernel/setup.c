@@ -37,9 +37,7 @@
 #include <asm/paca.h>
 #include <asm/ppcdebug.h>
 #include <asm/time.h>
-#ifdef CONFIG_KDB
-#include <linux/kdb.h>
-#endif
+#include <asm/cputable.h>
 
 extern unsigned long klimit;
 /* extern void *stab; */
@@ -74,10 +72,6 @@ unsigned long decr_overclock_proc0_set = 0;
 extern void xmon_map_scc(void);
 #endif
 
-#ifdef CONFIG_KDB
-extern void kdb_map_scc(void);
-#endif
-
 char saved_command_line[256];
 unsigned char aux_device_present;
 
@@ -107,7 +101,7 @@ struct console udbg_console = {
 };
 
 /*
- * Do some initial setup of the system.  The paramters are those which 
+ * Do some initial setup of the system.  The parameters are those which 
  * were passed in from the bootloader.
  */
 void setup_system(unsigned long r3, unsigned long r4, unsigned long r5,
@@ -187,6 +181,7 @@ void setup_system(unsigned long r3, unsigned long r4, unsigned long r5,
 
 /* This is called just before console_init().
  * It will be obsolete when Linux gets real early console support (2.5?)
+ * We need to hack preferred_console to retain the correct behavior
  */
 void setup_before_console_init(void)
 {
@@ -244,6 +239,14 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 
 	pvr = paca[cpu_id].pvr;
 
+	if (cur_cpu_spec->pvr_mask)
+		seq_printf(m, "%s", cur_cpu_spec->cpu_name);
+	else
+		seq_printf(m, "unknown (%08x)", pvr);
+
+
+	seq_printf(m, "\n");
+#if 0
 	switch (PVR_VER(pvr)) {
 	case PV_NORTHSTAR:
 		seq_printf(m, "RS64-II (northstar)\n");
@@ -273,7 +276,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 		seq_printf(m, "Unknown (%08x)\n", pvr);
 		break;
 	}
-
+#endif
 	/*
 	 * Assume here that all clock rates are the same in a
 	 * smp system.  -- Cort
@@ -325,6 +328,7 @@ struct seq_operations cpuinfo_op = {
 void parse_cmd_line(unsigned long r3, unsigned long r4, unsigned long r5,
 		  unsigned long r6, unsigned long r7)
 {
+	struct device_node *chosen;
 	char *p;
 
 #ifdef CONFIG_BLK_DEV_INITRD
@@ -333,6 +337,7 @@ void parse_cmd_line(unsigned long r3, unsigned long r4, unsigned long r5,
 		initrd_end = initrd_start + r4;
 		ROOT_DEV = MKDEV(RAMDISK_MAJOR, 0);
 		initrd_below_start_ok = 1;
+		lmb_reserve(__pa(initrd_start),r4);
 	}
 #endif
 
@@ -495,12 +500,6 @@ void __init setup_arch(char **cmdline_p)
 		xmon(0);
 #endif /* CONFIG_XMON */
 
-#ifdef CONFIG_KDB
-	kdb_map_scc();	
-	if (strstr(cmd_line, "kdb=early"))
-		kdb(KDB_REASON_CALL,0,0);
-#endif
-
 #if defined(CONFIG_KGDB)
 	kgdb_map_scc();
 	set_debug_traps();
@@ -560,28 +559,28 @@ static void ppc64_do_msg(unsigned int src, const char *msg)
 void ppc64_boot_msg(unsigned int src, const char *msg)
 {
 	ppc64_do_msg(PPC64_LINUX_FUNCTION|PPC64_IPL_MESSAGE|src, msg);
-	printk("[boot]%04x %s\n", src, msg);
+	udbg_printf("[boot]%04x %s\n", src, msg);
 }
 
 /* Print a termination message (print only -- does not stop the kernel) */
 void ppc64_terminate_msg(unsigned int src, const char *msg)
 {
 	ppc64_do_msg(PPC64_LINUX_FUNCTION|PPC64_TERM_MESSAGE|src, msg);
-	printk("[terminate]%04x %s\n", src, msg);
+	udbg_printf("[terminate]%04x %s\n", src, msg);
 }
 
 /* Print something that needs attention (device error, etc) */
 void ppc64_attention_msg(unsigned int src, const char *msg)
 {
 	ppc64_do_msg(PPC64_LINUX_FUNCTION|PPC64_ATTN_MESSAGE|src, msg);
-	printk("[attention]%04x %s\n", src, msg);
+	udbg_printf("[attention]%04x %s\n", src, msg);
 }
 
 /* Print a dump progress message. */
 void ppc64_dump_msg(unsigned int src, const char *msg)
 {
 	ppc64_do_msg(PPC64_LINUX_FUNCTION|PPC64_DUMP_MESSAGE|src, msg);
-	printk("[dump]%04x %s\n", src, msg);
+	udbg_printf("[dump]%04x %s\n", src, msg);
 }
 
 

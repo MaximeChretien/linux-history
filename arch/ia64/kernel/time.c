@@ -73,10 +73,8 @@ gettimeoffset (void)
 
 	now = ia64_get_itc();
 	if ((long) (now - last_tick) < 0) {
-# if 1
-		printk("CPU %d: now < last_tick (now=0x%lx,last_tick=0x%lx)!\n",
+		printk(KERN_ERR "CPU %d: now < last_tick (now=0x%lx,last_tick=0x%lx)!\n",
 		       smp_processor_id(), now, last_tick);
-# endif
 		return last_time_offset;
 	}
 	elapsed_cycles = now - last_tick;
@@ -154,7 +152,7 @@ timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 	new_itm = local_cpu_data->itm_next;
 
 	if (!time_after(ia64_get_itc(), new_itm))
-		printk("Oops: timer tick before it's due (itc=%lx,itm=%lx)\n",
+		printk(KERN_ERR "Oops: timer tick before it's due (itc=%lx,itm=%lx)\n",
 		       ia64_get_itc(), new_itm);
 
 	while (1) {
@@ -243,21 +241,22 @@ ia64_init_itm (void)
 	 */
 	status = ia64_sal_freq_base(SAL_FREQ_BASE_PLATFORM, &platform_base_freq, &drift);
 	if (status != 0) {
-		printk("SAL_FREQ_BASE_PLATFORM failed: %s\n", ia64_sal_strerror(status));
+		printk(KERN_ERR "SAL_FREQ_BASE_PLATFORM failed: %s\n", ia64_sal_strerror(status));
 	} else {
 		status = ia64_pal_freq_ratios(&proc_ratio, 0, &itc_ratio);
 		if (status != 0)
-			printk("PAL_FREQ_RATIOS failed with status=%ld\n", status);
+			printk(KERN_ERR "PAL_FREQ_RATIOS failed with status=%ld\n", status);
 	}
 	if (status != 0) {
 		/* invent "random" values */
-		printk("SAL/PAL failed to obtain frequency info---inventing reasonably values\n");
+		printk(KERN_ERR
+		       "SAL/PAL failed to obtain frequency info---inventing reasonably values\n");
 		platform_base_freq = 100000000;
 		itc_ratio.num = 3;
 		itc_ratio.den = 1;
 	}
 	if (platform_base_freq < 40000000) {
-		printk("Platform base frequency %lu bogus---resetting to 75MHz!\n",
+		printk(KERN_ERR "Platform base frequency %lu bogus---resetting to 75MHz!\n",
 		       platform_base_freq);
 		platform_base_freq = 75000000;
 	}
@@ -268,8 +267,8 @@ ia64_init_itm (void)
 
 	itc_freq = (platform_base_freq*itc_ratio.num)/itc_ratio.den;
 	local_cpu_data->itm_delta = (itc_freq + HZ/2) / HZ;
-	printk("CPU %d: base freq=%lu.%03luMHz, ITC ratio=%lu/%lu, ITC freq=%lu.%03luMHz\n",
-	       smp_processor_id(),
+	printk(KERN_INFO "CPU %d: base freq=%lu.%03luMHz, ITC ratio=%lu/%lu, "
+	       "ITC freq=%lu.%03luMHz\n", smp_processor_id(),
 	       platform_base_freq / 1000000, (platform_base_freq / 1000) % 1000,
 	       itc_ratio.num, itc_ratio.den, itc_freq / 1000000, (itc_freq / 1000) % 1000);
 
@@ -284,9 +283,9 @@ ia64_init_itm (void)
 }
 
 static struct irqaction timer_irqaction = {
-	handler:	timer_interrupt,
-	flags:		SA_INTERRUPT,
-	name:		"timer"
+	.handler =	timer_interrupt,
+	.flags =	SA_INTERRUPT,
+	.name =		"timer"
 };
 
 void __init

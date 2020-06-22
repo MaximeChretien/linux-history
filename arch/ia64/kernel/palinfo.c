@@ -6,7 +6,7 @@
  * Intel IA-64 Architecture Software Developer's Manual v1.0.
  *
  *
- * Copyright (C) 2000-2001 Hewlett-Packard Co
+ * Copyright (C) 2000-2001, 2003 Hewlett-Packard Co
  *	Stephane Eranian <eranian@hpl.hp.com>
  *
  * 05/26/2000	S.Eranian	initial release
@@ -27,21 +27,13 @@
 #include <asm/sal.h>
 #include <asm/page.h>
 #include <asm/processor.h>
-#ifdef CONFIG_SMP
 #include <linux/smp.h>
-#endif
 
 MODULE_AUTHOR("Stephane Eranian <eranian@hpl.hp.com>");
 MODULE_DESCRIPTION("/proc interface to IA-64 PAL");
 MODULE_LICENSE("GPL");
 
 #define PALINFO_VERSION "0.5"
-
-#ifdef CONFIG_SMP
-#define cpu_is_online(i) (cpu_online_map & (1UL << i))
-#else
-#define cpu_is_online(i)	1
-#endif
 
 typedef int (*palinfo_func_t)(char*);
 
@@ -101,26 +93,15 @@ static const char *rse_hints[]={
 
 #define RSE_HINTS_COUNT (sizeof(rse_hints)/sizeof(const char *))
 
-/*
- * The current revision of the Volume 2 (July 2000) of
- * IA-64 Architecture Software Developer's Manual is wrong.
- * Table 4-10 has invalid information concerning the ma field:
- * Correct table is:
- *      bit 0 - 001 - UC
- *      bit 4 - 100 - UC
- *      bit 5 - 101 - UCE
- *      bit 6 - 110 - WC
- *      bit 7 - 111 - NatPage
- */
 static const char *mem_attrib[]={
-	"Write Back (WB)",		/* 000 */
-	"Uncacheable (UC)",		/* 001 */
-	"Reserved",			/* 010 */
-	"Reserved",			/* 011 */
-	"Uncacheable (UC)",		/* 100 */
-	"Uncacheable Exported (UCE)",	/* 101 */
-	"Write Coalescing (WC)",	/* 110 */
-	"NaTPage"			/* 111 */
+	"WB",		/* 000 */
+	"SW",		/* 001 */
+	"010",		/* 010 */
+	"011",		/* 011 */
+	"UC",		/* 100 */
+	"UCE",		/* 101 */
+	"WC",		/* 110 */
+	"NaTPage"	/* 111 */
 };
 
 /*
@@ -236,15 +217,12 @@ cache_info(char *page)
 	int i,j, k;
 	s64 status;
 
-	if ((status=ia64_pal_cache_summary(&levels, &unique_caches)) != 0) {
-			printk("ia64_pal_cache_summary=%ld\n", status);
-			return 0;
+	if ((status = ia64_pal_cache_summary(&levels, &unique_caches)) != 0) {
+		printk(KERN_ERR "ia64_pal_cache_summary=%ld\n", status);
+		return 0;
 	}
 
-	p += sprintf(p, "Cache levels  : %ld\n" \
-			"Unique caches : %ld\n\n",
-			levels,
-			unique_caches);
+	p += sprintf(p, "Cache levels  : %ld\nUnique caches : %ld\n\n", levels, unique_caches);
 
 	for (i=0; i < levels; i++) {
 
@@ -315,11 +293,12 @@ vm_info(char *page)
 	pal_vm_info_2_u_t vm_info_2;
 	pal_tc_info_u_t	tc_info;
 	ia64_ptce_info_t ptce;
+	const char *sep;
 	int i, j;
 	s64 status;
 
-	if ((status=ia64_pal_vm_summary(&vm_info_1, &vm_info_2)) !=0) {
-		printk("ia64_pal_vm_summary=%ld\n", status);
+	if ((status = ia64_pal_vm_summary(&vm_info_1, &vm_info_2)) !=0) {
+		printk(KERN_ERR "ia64_pal_vm_summary=%ld\n", status);
 		return 0;
 	}
 
@@ -339,18 +318,26 @@ vm_info(char *page)
 
 	if (ia64_pal_mem_attrib(&attrib) != 0) return 0;
 
-	p += sprintf(p, "Supported memory attributes    : %s\n", mem_attrib[attrib&0x7]);
+	p += sprintf(p, "Supported memory attributes    : ");
+	sep = "";
+	for (i = 0; i < 8; i++) {
+		if (attrib & (1 << i)) {
+			p += sprintf(p, "%s%s", sep, mem_attrib[i]);
+			sep = ", ";
+		}
+	}
+	p += sprintf(p, "\n");
 
-	if ((status=ia64_pal_vm_page_size(&tr_pages, &vw_pages)) !=0) {
-		printk("ia64_pal_vm_page_size=%ld\n", status);
+	if ((status = ia64_pal_vm_page_size(&tr_pages, &vw_pages)) !=0) {
+		printk(KERN_ERR "ia64_pal_vm_page_size=%ld\n", status);
 		return 0;
 	}
 
-	p += sprintf(p, "\nTLB walker                     : %s implemented\n" \
+	p += sprintf(p, "\nTLB walker                     : %simplemented\n" \
 			"Number of DTR                  : %d\n" \
 			"Number of ITR                  : %d\n" \
 			"TLB insertable page sizes      : ",
-			vm_info_1.pal_vm_info_1_s.vw ? "\b":"not",
+			vm_info_1.pal_vm_info_1_s.vw ? "" : "not ",
 			vm_info_1.pal_vm_info_1_s.max_dtr_entry+1,
 			vm_info_1.pal_vm_info_1_s.max_itr_entry+1);
 
@@ -362,7 +349,7 @@ vm_info(char *page)
 	p = bitvector_process(p, vw_pages);
 
 	if ((status=ia64_get_ptce(&ptce)) != 0) {
-		printk("ia64_get_ptce=%ld\n",status);
+		printk(KERN_ERR "ia64_get_ptce=%ld\n", status);
 		return 0;
 	}
 
@@ -712,8 +699,8 @@ tr_info(char *page)
 		u64 rv2:32;
 	} *rid_reg;
 
-	if ((status=ia64_pal_vm_summary(&vm_info_1, &vm_info_2)) !=0) {
-		printk("ia64_pal_vm_summary=%ld\n", status);
+	if ((status = ia64_pal_vm_summary(&vm_info_1, &vm_info_2)) !=0) {
+		printk(KERN_ERR "ia64_pal_vm_summary=%ld\n", status);
 		return 0;
 	}
 	max[0] = vm_info_1.pal_vm_info_1_s.max_itr_entry+1;
@@ -724,7 +711,8 @@ tr_info(char *page)
 
 		status = ia64_pal_tr_read(j, i, tr_buffer, &tr_valid);
 		if (status != 0) {
-			printk("palinfo: pal call failed on tr[%d:%d]=%ld\n", i, j, status);
+			printk(KERN_ERR "palinfo: pal call failed on tr[%d:%d]=%ld\n",
+			       i, j, status);
 			continue;
 		}
 
@@ -843,7 +831,7 @@ palinfo_smp_call(void *info)
 {
 	palinfo_smp_data_t *data = (palinfo_smp_data_t *)info;
 	if (data == NULL) {
-		printk("%s palinfo: data pointer is NULL\n", KERN_ERR);
+		printk(KERN_ERR "palinfo: data pointer is NULL\n");
 		data->ret = 0; /* no output */
 		return;
 	}
@@ -870,7 +858,8 @@ int palinfo_handle_smp(pal_func_cpu_u_t *f, char *page)
 
 	/* will send IPI to other CPU and wait for completion of remote call */
 	if ((ret=smp_call_function_single(f->req_cpu, palinfo_smp_call, &ptr, 0, 1))) {
-		printk("palinfo: remote CPU call from %d to %d on function %d: error %d\n", smp_processor_id(), f->req_cpu, f->func_id, ret);
+		printk(KERN_ERR "palinfo: remote CPU call from %d to %d on function %d: "
+		       "error %d\n", smp_processor_id(), f->req_cpu, f->func_id, ret);
 		return 0;
 	}
 	return ptr.ret;
@@ -879,7 +868,7 @@ int palinfo_handle_smp(pal_func_cpu_u_t *f, char *page)
 static
 int palinfo_handle_smp(pal_func_cpu_u_t *f, char *page)
 {
-	printk("palinfo: should not be called with non SMP kernel\n");
+	printk(KERN_ERR "palinfo: should not be called with non SMP kernel\n");
 	return 0;
 }
 #endif /* CONFIG_SMP */
@@ -937,7 +926,7 @@ palinfo_init(void)
 	 */
 	for (i=0; i < NR_CPUS; i++) {
 
-		if (!cpu_is_online(i)) continue;
+		if (!cpu_online(i)) continue;
 
 		sprintf(cpustr,CPUSTR, i);
 
@@ -947,8 +936,10 @@ palinfo_init(void)
 
 		for (j=0; j < NR_PALINFO_ENTRIES; j++) {
 			f.func_id = j;
-			*pdir++ = create_proc_read_entry (palinfo_entries[j].name, 0, cpu_dir,
-						palinfo_read_entry, (void *)f.value);
+			*pdir = create_proc_read_entry(
+					palinfo_entries[j].name, 0, cpu_dir,
+					palinfo_read_entry, (void *)f.value);
+			pdir++;
 		}
 		*pdir++ = cpu_dir;
 	}

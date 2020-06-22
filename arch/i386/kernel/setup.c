@@ -95,6 +95,7 @@
 #include <linux/delay.h>
 #include <linux/config.h>
 #include <linux/init.h>
+#include <linux/acpi.h>
 #include <linux/apm_bios.h>
 #ifdef CONFIG_BLK_DEV_RAM
 #include <linux/blk.h>
@@ -106,6 +107,7 @@
 #include <linux/seq_file.h>
 #include <asm/processor.h>
 #include <linux/console.h>
+#include <linux/module.h>
 #include <asm/mtrr.h>
 #include <asm/uaccess.h>
 #include <asm/system.h>
@@ -126,6 +128,7 @@ char ignore_irq13;		/* set if exception 16 works */
 struct cpuinfo_x86 boot_cpu_data = { 0, 0, 0, 0, -1, 1, 0, 0, -1 };
 
 unsigned long mmu_cr4_features;
+EXPORT_SYMBOL(mmu_cr4_features);
 
 /*
  * Bus types ..
@@ -170,11 +173,23 @@ extern char _text, _etext, _edata, _end;
 static int have_cpuid_p(void) __init;
 
 static int disable_x86_serial_nr __initdata = 1;
-static int disable_x86_ht __initdata = 0;
 static u32 disabled_x86_caps[NCAPINTS] __initdata = { 0 };
-extern int blk_nohighio;
 
-int enable_acpi_smp_table;
+#ifdef	CONFIG_ACPI_INTERPRETER
+	int acpi_disabled __initdata = 0;
+#else
+	int acpi_disabled __initdata = 1;
+#endif
+EXPORT_SYMBOL(acpi_disabled);
+
+#ifdef	CONFIG_ACPI_BOOT
+	int acpi_ht __initdata = 1; 	/* enable HT */
+#endif
+
+
+int acpi_force __initdata = 0;
+
+extern int blk_nohighio;
 
 /*
  * This is set up by the setup-routine at boot-time
@@ -782,6 +797,12 @@ static void __init parse_cmdline_early (char ** cmdline_p)
 				if (*from == '@') {
 					start_at = memparse(from+1, &from);
 					add_memory_region(start_at, mem_size, E820_RAM);
+				} else if (*from == '#') {
+					start_at = memparse(from+1, &from);
+					add_memory_region(start_at, mem_size, E820_ACPI);
+				} else if (*from == '$') {
+					start_at = memparse(from+1, &from);
+					add_memory_region(start_at, mem_size, E820_RESERVED);
 				} else {
 					limit_regions(mem_size);
 					userdef=1;
@@ -789,16 +810,30 @@ static void __init parse_cmdline_early (char ** cmdline_p)
 			}
 		}
 
-		/* "noht" disables HyperThreading (2 logical cpus per Xeon) */
-		else if (!memcmp(from, "noht", 4)) { 
-			disable_x86_ht = 1;
-			set_bit(X86_FEATURE_HT, disabled_x86_caps);
+#ifdef CONFIG_ACPI_BOOT
+		/* "acpi=off" disables both ACPI table parsing and interpreter */
+		else if (!memcmp(from, "acpi=off", 8)) {
+			acpi_ht = 0;
+			acpi_disabled = 1;
 		}
 
-		/* "acpismp=force" forces parsing and use of the ACPI SMP table */
-		else if (!memcmp(from, "acpismp=force", 13))
-			enable_acpi_smp_table = 1;
+		/* acpi=force to over-ride black-list */
+		else if (!memcmp(from, "acpi=force", 10)) { 
+			acpi_force = 1;
+			acpi_ht=1;
+			acpi_disabled = 0;
+		} 
 
+		/* Limit ACPI to boot-time only, still enabled HT */
+		else if (!memcmp(from, "acpi=ht", 7)) { 
+			acpi_ht = 1; 
+			if (!acpi_force) acpi_disabled = 1; 
+		} 
+
+                /* disable IO-APIC */
+                else if (!memcmp(from, "noapic", 6))
+                        disable_ioapic_setup();
+#endif
 		/*
 		 * highmem=size forces highmem to be exactly 'size' bytes.
 		 * This works even on boxes that have no highmem otherwise.
@@ -1007,10 +1042,15 @@ static unsigned long __init setup_memory(void)
 	 */
 	reserve_bootmem(PAGE_SIZE, PAGE_SIZE);
 #endif
-
+#ifdef CONFIG_ACPI_SLEEP
+	/*
+	 * Reserve low memory region for sleep support.
+	 */
+	acpi_reserve_bootmem();
+#endif
 #ifdef CONFIG_X86_LOCAL_APIC
 	/*
-	 * Find and reserve possible boot-time SMP configuration:
+	 * Find and reserve possible boot-time SMP configuration.
 	 */
 	find_smp_config();
 #endif
@@ -1043,7 +1083,6 @@ static void __init register_memory(unsigned long max_low_pfn)
 {
 	unsigned long low_mem_size;
 	int i;
-
 	probe_roms();
 	for (i = 0; i < e820.nr_map; i++) {
 		struct resource *res;
@@ -1130,22 +1169,6 @@ void __init setup_arch(char **cmdline_p)
 	max_low_pfn = setup_memory();
 
 	/*
-	 * If enable_acpi_smp_table and HT feature present, acpitable.c
-	 * will find all logical cpus despite disable_x86_ht: so if both
-	 * "noht" and "acpismp=force" are specified, let "noht" override
-	 * "acpismp=force" cleanly.  Why retain "acpismp=force"? because
-	 * parsing ACPI SMP table might prove useful on some non-HT cpu.
-	 */
-	if (disable_x86_ht) {
-		clear_bit(X86_FEATURE_HT, &boot_cpu_data.x86_capability[0]);
-		set_bit(X86_FEATURE_HT, disabled_x86_caps);
-		enable_acpi_smp_table = 0;
-	}
-	if (test_bit(X86_FEATURE_HT, &boot_cpu_data.x86_capability[0]))
-		enable_acpi_smp_table = 1;
-	
-
-	/*
 	 * NOTE: before this point _nobody_ is allowed to allocate
 	 * any memory using the bootmem allocator.
 	 */
@@ -1154,6 +1177,14 @@ void __init setup_arch(char **cmdline_p)
 	smp_alloc_memory(); /* AP processor realmode stacks in low memory*/
 #endif
 	paging_init();
+
+	dmi_scan_machine();
+
+	/*
+	 * Parse the ACPI tables for possible boot-time SMP configuration.
+	 */
+	acpi_boot_init();
+
 #ifdef CONFIG_X86_LOCAL_APIC
 	/*
 	 * get boot-time SMP configuration:
@@ -1171,7 +1202,6 @@ void __init setup_arch(char **cmdline_p)
 	conswitchp = &dummy_con;
 #endif
 #endif
-	dmi_scan_machine();
 }
 
 static int cachesize_override __initdata = -1;
@@ -2387,7 +2417,7 @@ static void __init init_intel(struct cpuinfo_x86 *c)
 		strcpy(c->x86_model_id, p);
 	
 #ifdef CONFIG_SMP
-	if (test_bit(X86_FEATURE_HT, &c->x86_capability) && !disable_x86_ht) {
+	if (test_bit(X86_FEATURE_HT, &c->x86_capability)) {
 		extern	int phys_proc_id[NR_CPUS];
 		
 		u32 	eax, ebx, ecx, edx;

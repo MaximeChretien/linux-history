@@ -68,6 +68,7 @@ extern int actisys_init(void);
 extern int girbil_init(void);
 extern int sa1100_irda_init(void);
 extern int ep7211_ir_init(void);
+extern int mcp2120_init(void);
 
 static void __irda_task_delete(struct irda_task *task);
 
@@ -122,6 +123,9 @@ int __init irda_device_init( void)
 	/* 
 	 * Call the init function of the device drivers that has not been
 	 * compiled as a module 
+	 * Note : non-modular IrDA is not supported in 2.4.X, so don't
+	 * waste too much time fixing this code. If you require it, please
+	 * upgrade to the IrDA stack in 2.5.X. Jean II
 	 */
 #ifdef CONFIG_IRTTY_SIR
 	irtty_init();
@@ -135,7 +139,7 @@ int __init irda_device_init( void)
 #ifdef CONFIG_NSC_FIR
 	nsc_ircc_init();
 #endif
-#ifdef CONFIG_TOSHIBA_FIR
+#ifdef CONFIG_TOSHIBA_OLD
 	toshoboe_init();
 #endif
 #ifdef CONFIG_SMC_IRCC_FIR
@@ -161,6 +165,9 @@ int __init irda_device_init( void)
 #endif
 #ifdef CONFIG_EP7211_IR
  	ep7211_ir_init();
+#endif
+#ifdef CONFIG_MCP2120_DONGLE
+	mcp2120_init();
 #endif
 	return 0;
 }

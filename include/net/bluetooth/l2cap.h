@@ -60,6 +60,7 @@ struct l2cap_conninfo {
 #define L2CAP_LM_AUTH		0x0002
 #define L2CAP_LM_ENCRYPT	0x0004
 #define L2CAP_LM_TRUSTED	0x0008
+#define L2CAP_LM_RELIABLE	0x0010
 
 #define L2CAP_QOS	0x04
 struct l2cap_qos {
@@ -229,6 +230,7 @@ struct l2cap_pinfo {
 	__u32		link_mode;
 
 	__u8		conf_state;
+	__u8		conf_retry;
 	__u16		conf_mtu;
 
 	__u8		ident;
@@ -238,8 +240,11 @@ struct l2cap_pinfo {
 	struct sock 		*prev_c;
 };
 
-#define CONF_REQ_SENT    0x01
-#define CONF_INPUT_DONE  0x02
-#define CONF_OUTPUT_DONE 0x04
+#define L2CAP_CONF_REQ_SENT    0x01
+#define L2CAP_CONF_INPUT_DONE  0x02
+#define L2CAP_CONF_OUTPUT_DONE 0x04
+#define L2CAP_CONF_MAX_RETRIES 2
+
+void l2cap_load(void);
 
 #endif /* __L2CAP_H */

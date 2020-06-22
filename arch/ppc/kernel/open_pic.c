@@ -540,7 +540,7 @@ static void __init openpic_initipi(u_int ipi, u_int pri, u_int vec)
 
 /*
  *  Send an IPI to one or more CPUs
- *  
+ *
  *  Externally called, however, it takes an IPI number (0...OPENPIC_NUM_IPI)
  *  and not a system-wide interrupt number
  */
@@ -557,12 +557,12 @@ void openpic_cause_IPI(u_int ipi, u_int cpumask)
 void openpic_request_IPIs(void)
 {
 	int i;
-	
+
 	/*
-	 * Make sure this matches what is defined in smp.c for 
-	 * smp_message_{pass|recv}() or what shows up in 
+	 * Make sure this matches what is defined in smp.c for
+	 * smp_message_{pass|recv}() or what shows up in
 	 * /proc/interrupts will be wrong!!! --Troy */
-	
+
 	if (OpenPIC == NULL)
 		return;
 
@@ -698,7 +698,7 @@ static void openpic_disable_irq(u_int irq)
 {
 	volatile u_int *vpp;
 	u32 vp;
-	
+
 	check_arg_irq(irq);
 	vpp = &ISR[irq - open_pic_irq_offset]->Vector_Priority;
 	openpic_setfield(vpp, OPENPIC_MASK);
@@ -712,7 +712,7 @@ static void openpic_disable_irq(u_int irq)
 #ifdef CONFIG_SMP
 /*
  *  Enable/disable an IPI interrupt source
- *  
+ *
  *  Externally called, irq is an offseted system-wide interrupt number
  */
 void openpic_enable_ipi(u_int irq)
@@ -875,7 +875,7 @@ openpic_sleep_save_intrs(void)
 {
 	int	i;
 	unsigned long flags;
-	
+
 	spin_lock_irqsave(&openpic_setup_lock, flags);
 
 	for (i=0; i<NumProcessors; i++) {
@@ -903,7 +903,7 @@ openpic_sleep_restore_intrs(void)
 	unsigned long	flags;
 
 	spin_lock_irqsave(&openpic_setup_lock, flags);
-	
+
 	openpic_reset();
 
 	for (i=0; i<OPENPIC_NUM_IPI; i++)

@@ -17,11 +17,15 @@
  * Bill Ryder - bryder@sgi.com formerly of Silicon Graphics, Inc.- wrote the 
  * FTDI_SIO implementation.
  *
+ * Philipp Gühring - pg@futureware.at - added the Device ID of the USB relais
+ * from Rudolf Gugler
+ *
  */
 
 #define FTDI_VID	0x0403	/* Vendor Id */
 #define FTDI_SIO_PID	0x8372	/* Product Id SIO application of 8U100AX  */
 #define FTDI_8U232AM_PID 0x6001 /* Similar device to SIO above */
+#define FTDI_RELAIS_PID	0xFA10  /* Relais device from Rudolf Gugler */
 #define FTDI_NF_RIC_VID	0x0DCD	/* Vendor Id */
 #define FTDI_NF_RIC_PID	0x0001	/* Product Id */
 
@@ -31,6 +35,10 @@
 #define FTDI_XF_634_PID  0xFC09	/* Four line device */
 #define FTDI_XF_632_PID  0xFC08	/* Two line device */
 
+/* Video Networks Limited / Homechoice in the UK use an ftdi-based device for their 1Mb */
+/* broadband internet service.  The following PID is exhibited by the usb device supplied */
+/* (the VID is the standard ftdi vid (FTDI_VID) */
+#define FTDI_VNHCPCUSB_D_PID 0xfe38 /* Product Id */
 
 /*
  * The following are the values for the Matrix Orbital LCD displays,
@@ -45,6 +53,73 @@
 #define FTDI_MTXORB_5_PID      0xFA05  /* Matrix Orbital Product Id */
 #define FTDI_MTXORB_6_PID      0xFA06  /* Matrix Orbital Product Id */
 
+/*
+ * The following are the values for the Sealevel SeaLINK+ adapters.
+ * (Original list sent by Tuan Hoang.  Ian Abbott renamed the macros and
+ * removed some PIDs that don't seem to match any existing products.)
+ */
+#define SEALEVEL_VID		0x0c52	/* Sealevel Vendor ID */
+#define SEALEVEL_2101_PID	0x2101	/* SeaLINK+232 (2101/2105) */
+#define SEALEVEL_2102_PID	0x2102	/* SeaLINK+485 (2102) */
+#define SEALEVEL_2103_PID	0x2103	/* SeaLINK+232I (2103) */
+#define SEALEVEL_2104_PID	0x2104	/* SeaLINK+485I (2104) */
+#define SEALEVEL_2201_1_PID	0x2211	/* SeaPORT+2/232 (2201) Port 1 */
+#define SEALEVEL_2201_2_PID	0x2221	/* SeaPORT+2/232 (2201) Port 2 */
+#define SEALEVEL_2202_1_PID	0x2212	/* SeaPORT+2/485 (2202) Port 1 */
+#define SEALEVEL_2202_2_PID	0x2222	/* SeaPORT+2/485 (2202) Port 2 */
+#define SEALEVEL_2203_1_PID	0x2213	/* SeaPORT+2 (2203) Port 1 */
+#define SEALEVEL_2203_2_PID	0x2223	/* SeaPORT+2 (2203) Port 2 */
+#define SEALEVEL_2401_1_PID	0x2411	/* SeaPORT+4/232 (2401) Port 1 */
+#define SEALEVEL_2401_2_PID	0x2421	/* SeaPORT+4/232 (2401) Port 2 */
+#define SEALEVEL_2401_3_PID	0x2431	/* SeaPORT+4/232 (2401) Port 3 */
+#define SEALEVEL_2401_4_PID	0x2441	/* SeaPORT+4/232 (2401) Port 4 */
+#define SEALEVEL_2402_1_PID	0x2412	/* SeaPORT+4/485 (2402) Port 1 */
+#define SEALEVEL_2402_2_PID	0x2422	/* SeaPORT+4/485 (2402) Port 2 */
+#define SEALEVEL_2402_3_PID	0x2432	/* SeaPORT+4/485 (2402) Port 3 */
+#define SEALEVEL_2402_4_PID	0x2442	/* SeaPORT+4/485 (2402) Port 4 */
+#define SEALEVEL_2403_1_PID	0x2413	/* SeaPORT+4 (2403) Port 1 */
+#define SEALEVEL_2403_2_PID	0x2423	/* SeaPORT+4 (2403) Port 2 */
+#define SEALEVEL_2403_3_PID	0x2433	/* SeaPORT+4 (2403) Port 3 */
+#define SEALEVEL_2403_4_PID	0x2443	/* SeaPORT+4 (2403) Port 4 */
+#define SEALEVEL_2801_1_PID	0X2811	/* SeaLINK+8/232 (2801) Port 1 */
+#define SEALEVEL_2801_2_PID	0X2821	/* SeaLINK+8/232 (2801) Port 2 */
+#define SEALEVEL_2801_3_PID	0X2831	/* SeaLINK+8/232 (2801) Port 3 */
+#define SEALEVEL_2801_4_PID	0X2841	/* SeaLINK+8/232 (2801) Port 4 */
+#define SEALEVEL_2801_5_PID	0X2851	/* SeaLINK+8/232 (2801) Port 5 */
+#define SEALEVEL_2801_6_PID	0X2861	/* SeaLINK+8/232 (2801) Port 6 */
+#define SEALEVEL_2801_7_PID	0X2871	/* SeaLINK+8/232 (2801) Port 7 */
+#define SEALEVEL_2801_8_PID	0X2881	/* SeaLINK+8/232 (2801) Port 8 */
+#define SEALEVEL_2802_1_PID	0X2812	/* SeaLINK+8/485 (2802) Port 1 */
+#define SEALEVEL_2802_2_PID	0X2822	/* SeaLINK+8/485 (2802) Port 2 */
+#define SEALEVEL_2802_3_PID	0X2832	/* SeaLINK+8/485 (2802) Port 3 */
+#define SEALEVEL_2802_4_PID	0X2842	/* SeaLINK+8/485 (2802) Port 4 */
+#define SEALEVEL_2802_5_PID	0X2852	/* SeaLINK+8/485 (2802) Port 5 */
+#define SEALEVEL_2802_6_PID	0X2862	/* SeaLINK+8/485 (2802) Port 6 */
+#define SEALEVEL_2802_7_PID	0X2872	/* SeaLINK+8/485 (2802) Port 7 */
+#define SEALEVEL_2802_8_PID	0X2882	/* SeaLINK+8/485 (2802) Port 8 */
+#define SEALEVEL_2803_1_PID	0X2813	/* SeaLINK+8 (2803) Port 1 */
+#define SEALEVEL_2803_2_PID	0X2823 	/* SeaLINK+8 (2803) Port 2 */
+#define SEALEVEL_2803_3_PID	0X2833 	/* SeaLINK+8 (2803) Port 3 */
+#define SEALEVEL_2803_4_PID	0X2843 	/* SeaLINK+8 (2803) Port 4 */
+#define SEALEVEL_2803_5_PID	0X2853 	/* SeaLINK+8 (2803) Port 5 */
+#define SEALEVEL_2803_6_PID	0X2863 	/* SeaLINK+8 (2803) Port 6 */
+#define SEALEVEL_2803_7_PID	0X2873 	/* SeaLINK+8 (2803) Port 7 */
+#define SEALEVEL_2803_8_PID	0X2883 	/* SeaLINK+8 (2803) Port 8 */
+
+/*
+ * DSS-20 Sync Station for Sony Ericsson P800
+ */
+ 
+#define FTDI_DSS20_PID          0xFC82  
+
+/*
+ * Home Electronics (www.home-electro.com) USB gadgets
+ */
+#define FTDI_HE_TIRA1_PID	0xFA78	/* Tira-1 IR tranceiver */
+
+/* USB-UIRT - An infrared receiver and transmitter using the 8U232AM chip */
+/* http://home.earthlink.net/~jrhees/USBUIRT/index.htm */
+#define FTDI_USB_UIRT_PID	0xF850	/* Product Id */
 
 /* Commands */
 #define FTDI_SIO_RESET 		0 /* Reset the port */

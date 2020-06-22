@@ -8,6 +8,7 @@
 
 #ifndef __s390io_h
 #define __s390io_h
+#include <linux/tqueue.h>
 
 /*
  * IRQ data structure used by I/O subroutines
@@ -57,7 +58,9 @@ typedef struct _ioinfo {
            unsigned int  dval      : 1;  /* device number valid */
            unsigned int  unknown   : 1;  /* unknown device - if SenseID failed */
 	   unsigned int  unfriendly: 1;  /* device is locked by someone else */
-           unsigned int  unused    : (sizeof(unsigned int)*8 - 25); /* unused */
+	   unsigned int  killio    : 1;  /* currently killing pending io */
+	   unsigned int  noio      : 1;  /* don't let drivers start io */
+           unsigned int  unused    : (sizeof(unsigned int)*8 - 27); /* unused */
               } __attribute__ ((packed)) flags;
         } ui;
 
@@ -80,8 +83,9 @@ typedef struct _ioinfo {
      unsigned long qflag;         /* queued flags */
      __u8          qlpm;          /* queued logical path mask */
      ssd_info_t    ssd_info;      /* subchannel description */
-
-   } __attribute__ ((aligned(8))) ioinfo_t;
+     struct tq_struct pver_bh;    /* path verification bottom half task */
+     atomic_t	   pver_pending;  /* != 0 if path verification for sch is pending */
+} __attribute__ ((aligned(8))) ioinfo_t;
 
 #define IOINFO_FLAGS_BUSY    0x80000000
 #define IOINFO_FLAGS_OPER    0x40000000
@@ -100,6 +104,10 @@ void * s390_get_private_data(int irq);
 #define CHSC_SEI_ACC_CHPID        1
 #define CHSC_SEI_ACC_LINKADDR     2
 #define CHSC_SEI_ACC_FULLLINKADDR 3
+
+#define CIO_PATHGONE_WAIT4INT     0x01
+#define CIO_PATHGONE_IOERR        0x02
+#define CIO_PATHGONE_DEVGONE      0x04
 
 #endif  /* __s390io_h */
 

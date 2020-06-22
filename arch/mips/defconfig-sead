@@ -19,17 +19,26 @@ CONFIG_EXPERIMENTAL=y
 # Machine selection
 #
 # CONFIG_ACER_PICA_61 is not set
+# CONFIG_MIPS_BOSPORUS is not set
+# CONFIG_MIPS_MIRAGE is not set
+# CONFIG_MIPS_DB1000 is not set
+# CONFIG_MIPS_DB1100 is not set
+# CONFIG_MIPS_DB1500 is not set
 # CONFIG_MIPS_PB1000 is not set
 # CONFIG_MIPS_PB1100 is not set
 # CONFIG_MIPS_PB1500 is not set
-# CONFIG_ALGOR_P4032 is not set
+# CONFIG_MIPS_XXS1500 is not set
+# CONFIG_MIPS_MTX1 is not set
 # CONFIG_BAGET_MIPS is not set
+# CONFIG_CASIO_E55 is not set
 # CONFIG_MIPS_COBALT is not set
 # CONFIG_DECSTATION is not set
 # CONFIG_MIPS_EV64120 is not set
 # CONFIG_MIPS_EV96100 is not set
 # CONFIG_MIPS_IVR is not set
 # CONFIG_HP_LASERJET is not set
+# CONFIG_IBM_WORKPAD is not set
+# CONFIG_LASAT is not set
 # CONFIG_MIPS_ITE8172 is not set
 # CONFIG_MIPS_ATLAS is not set
 # CONFIG_MIPS_MAGNUM_4000 is not set
@@ -37,6 +46,7 @@ CONFIG_EXPERIMENTAL=y
 CONFIG_MIPS_SEAD=y
 # CONFIG_MOMENCO_OCELOT is not set
 # CONFIG_MOMENCO_OCELOT_G is not set
+# CONFIG_MOMENCO_OCELOT_C is not set
 # CONFIG_DDB5074 is not set
 # CONFIG_DDB5476 is not set
 # CONFIG_DDB5477 is not set
@@ -46,16 +56,19 @@ CONFIG_MIPS_SEAD=y
 # CONFIG_NINO is not set
 # CONFIG_SGI_IP22 is not set
 # CONFIG_SGI_IP27 is not set
-# CONFIG_SGI_IP32 is not set
 # CONFIG_SIBYTE_SB1xxx_SOC is not set
 # CONFIG_SNI_RM200_PCI is not set
+# CONFIG_TANBAC_TB0226 is not set
+# CONFIG_TANBAC_TB0229 is not set
 # CONFIG_TOSHIBA_JMR3927 is not set
+# CONFIG_TOSHIBA_RBTX4927 is not set
+# CONFIG_VICTOR_MPC30X is not set
 # CONFIG_ZAO_CAPCELLA is not set
 # CONFIG_HIGHMEM is not set
 CONFIG_RWSEM_GENERIC_SPINLOCK=y
 # CONFIG_RWSEM_XCHGADD_ALGORITHM is not set
+CONFIG_BOOT_ELF32=y
 CONFIG_L1_CACHE_SHIFT=5
-CONFIG_NEW_IRQ=y
 CONFIG_NEW_TIME_C=y
 CONFIG_NONCOHERENT_IO=y
 # CONFIG_PCI is not set
@@ -111,9 +124,10 @@ CONFIG_KCORE_ELF=y
 # CONFIG_BINFMT_AOUT is not set
 CONFIG_BINFMT_ELF=y
 # CONFIG_MIPS32_COMPAT is not set
+# CONFIG_MIPS32_O32 is not set
+# CONFIG_MIPS32_N32 is not set
 # CONFIG_BINFMT_ELF32 is not set
 # CONFIG_BINFMT_MISC is not set
-# CONFIG_PM is not set
 
 #
 # Memory Technology Devices (MTD)
@@ -152,7 +166,7 @@ CONFIG_BLK_DEV_INITRD=y
 #
 # MIPS initrd options
 #
-CONFIG_EMBEDDED_RAMDISK=y
+# CONFIG_EMBEDDED_RAMDISK is not set
 
 #
 # Multi-device support (RAID and LVM)
@@ -233,13 +247,21 @@ CONFIG_SERIAL_CONSOLE=y
 # Input core support is needed for joysticks
 #
 # CONFIG_QIC02_TAPE is not set
+# CONFIG_IPMI_HANDLER is not set
+# CONFIG_IPMI_PANIC_EVENT is not set
+# CONFIG_IPMI_DEVICE_INTERFACE is not set
+# CONFIG_IPMI_KCS is not set
+# CONFIG_IPMI_WATCHDOG is not set
 
 #
 # Watchdog Cards
 #
 # CONFIG_WATCHDOG is not set
+# CONFIG_SCx200_GPIO is not set
+# CONFIG_AMD_PM768 is not set
 # CONFIG_NVRAM is not set
 # CONFIG_RTC is not set
+# CONFIG_MIPS_RTC is not set
 # CONFIG_DTLK is not set
 # CONFIG_R3964 is not set
 # CONFIG_APPLICOM is not set
@@ -255,6 +277,7 @@ CONFIG_SERIAL_CONSOLE=y
 # File systems
 #
 # CONFIG_QUOTA is not set
+# CONFIG_QFMT_V2 is not set
 # CONFIG_AUTOFS_FS is not set
 # CONFIG_AUTOFS4_FS is not set
 # CONFIG_REISERFS_FS is not set
@@ -264,6 +287,7 @@ CONFIG_SERIAL_CONSOLE=y
 # CONFIG_ADFS_FS_RW is not set
 # CONFIG_AFFS_FS is not set
 # CONFIG_HFS_FS is not set
+# CONFIG_HFSPLUS_FS is not set
 # CONFIG_BEFS_FS is not set
 # CONFIG_BEFS_DEBUG is not set
 # CONFIG_BFS_FS is not set
@@ -350,14 +374,20 @@ CONFIG_SGI_PARTITION=y
 # Kernel hacking
 #
 CONFIG_CROSSCOMPILE=y
-# CONFIG_REMOTE_DEBUG is not set
+# CONFIG_RUNTIME_DEBUG is not set
+# CONFIG_KGDB is not set
 # CONFIG_GDB_CONSOLE is not set
-# CONFIG_DEBUG is not set
 # CONFIG_MAGIC_SYSRQ is not set
 # CONFIG_MIPS_UNCACHED is not set
 
 #
+# Cryptographic options
+#
+# CONFIG_CRYPTO is not set
+
+#
 # Library routines
 #
+# CONFIG_CRC32 is not set
 # CONFIG_ZLIB_INFLATE is not set
 # CONFIG_ZLIB_DEFLATE is not set

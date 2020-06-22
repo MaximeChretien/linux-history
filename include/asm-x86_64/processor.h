@@ -85,7 +85,7 @@ extern struct cpuinfo_x86 cpu_data[];
 #define cpu_has_vme 1
 #define cpu_has_fxsr 1
 #define cpu_has_xmm 1
-#define cpu_has_apic 1
+#define cpu_has_apic (test_bit(X86_FEATURE_APIC, boot_cpu_data.x86_capability))
 
 extern char ignore_irq13;
 
@@ -362,6 +362,7 @@ extern void release_thread(struct task_struct *);
  * create a kernel thread without removing it from tasklists
  */
 extern long kernel_thread(int (*fn)(void *), void * arg, unsigned long flags);
+extern int arch_kernel_thread(int (*fn)(void *), void * arg, unsigned long flags);
 
 /* Copy and release all segment info associated with a VM */
 extern void copy_segments(struct task_struct *p, struct mm_struct * mm);
@@ -411,8 +412,8 @@ extern inline void sync_core(void)
 #define ARCH_HAS_PREFETCHW
 #define ARCH_HAS_SPINLOCK_PREFETCH
 
-#define prefetch(x) __builtin_prefetch((x),0,1)
-#define prefetchw(x) __builtin_prefetch((x),1,1)
+#define prefetch(x) __builtin_prefetch((x),0)
+#define prefetchw(x) __builtin_prefetch((x),1)
 #define spin_lock_prefetch(x)  prefetchw(x)
 #define cpu_relax()   rep_nop()
 

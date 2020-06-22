@@ -322,7 +322,7 @@ __out:	__ret; \
 #define init_task	(init_task_union.task)
 #define init_stack	(init_task_union.stack)
 
-#define cpu_relax()	udelay(1 + smp_processor_id())
+#define cpu_relax()	do { udelay(1 + smp_processor_id()); barrier(); } while (0)
 
 #endif /* __KERNEL__ */
 

@@ -213,7 +213,7 @@ do_load_som_binary(struct linux_binprm * bprm, struct pt_regs * regs)
 			(char *) hpuxhdr, size);
 	if (retval < 0)
 		goto out_free;
-
+#error "Fix security hole before enabling me"
 	retval = get_unused_fd();
 	if (retval < 0)
 		goto out_free;

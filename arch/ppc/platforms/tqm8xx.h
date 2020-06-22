@@ -1,6 +1,6 @@
 /*
  * TQM8xx(L) board specific definitions
- * 
+ *
  * Copyright (c) 1999,2000,2001 Wolfgang Denk (wd@denx.de)
  */
 
@@ -8,7 +8,7 @@
 #define __MACH_TQM8xx_H
 
 #include <linux/config.h>
- 
+
 #include <asm/ppcboot.h>
 
 #define	TQM_IMMR_BASE	0xFFF00000	/* phys. addr of IMMR */

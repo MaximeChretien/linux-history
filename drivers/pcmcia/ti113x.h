@@ -167,6 +167,32 @@ static int ti_intctl(pci_socket_t *socket)
 		new |= I365_INTR_ENA;
 	if (new != reg)
 		exca_writeb(socket, I365_INTCTL, new);
+
+	/*
+	 * If ISA interrupts don't work, then fall back to routing card
+	 * interrupts to the PCI interrupt of the socket.
+	 *
+	 * Tweaking this when we are using serial PCI IRQs causes hangs
+	 *   --rmk
+	 */
+	if (!socket->cap.irq_mask) {
+		u8 irqmux, devctl;
+
+		devctl = config_readb(socket, TI113X_DEVICE_CONTROL);
+		if ((devctl & TI113X_DCR_IMODE_MASK) != TI12XX_DCR_IMODE_ALL_SERIAL) {
+			printk (KERN_INFO "ti113x: Routing card interrupts to PCI\n");
+
+			devctl &= ~TI113X_DCR_IMODE_MASK;
+
+			irqmux = config_readl(socket, TI122X_IRQMUX);
+			irqmux = (irqmux & ~0x0f) | 0x02; /* route INTA */
+			irqmux = (irqmux & ~0xf0) | 0x20; /* route INTB */
+
+			config_writel(socket, TI122X_IRQMUX, irqmux);
+			config_writeb(socket, TI113X_DEVICE_CONTROL, devctl);
+		}
+	}
+
 	return 0;
 }
 

@@ -38,7 +38,7 @@ typedef struct _PTE {
 	unsigned long g:1;	/* Guarded */
 	unsigned long  :1;	/* Unused */
 	unsigned long pp:2;	/* Page protection */
-} PTE; 
+} PTE;
 
 extern PTE *Hash, *Hash_end;
 extern unsigned long Hash_size, Hash_mask;
@@ -81,7 +81,7 @@ typedef struct _BATU {		/* Upper part of BAT (all except 601) */
 	unsigned long bl:11;	/* Block size mask */
 	unsigned long vs:1;	/* Supervisor valid */
 	unsigned long vp:1;	/* User valid */
-} BATU;   
+} BATU;
 
 typedef struct _P601_BATL {	/* Lower part of BAT for 601 processor */
 	unsigned long brpn:15;	/* Real page index (physical address) */
@@ -293,7 +293,7 @@ extern void _tlbia(void);		/* invalidate all TLB entries */
 
 #define	TLB_LO          1
 #define	TLB_HI          0
-       
+
 #define	TLB_DATA        TLB_LO
 #define	TLB_TAG         TLB_HI
 
@@ -313,7 +313,7 @@ extern void _tlbia(void);		/* invalidate all TLB entries */
 #define TLB_VALID       0x00000040      /* Entry is valid */
 
 /* Data portion */
-                 
+
 #define TLB_RPN_MASK    0xFFFFFC00      /* Real Page Number */
 #define TLB_PERM_MASK   0x00000300
 #define TLB_EX          0x00000200      /* Instruction execution allowed */

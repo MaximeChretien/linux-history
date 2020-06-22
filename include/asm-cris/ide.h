@@ -17,6 +17,9 @@
 #ifdef __KERNEL__
 
 #include <asm/svinto.h>
+#include <asm/io.h>
+#include <asm-generic/ide_iops.h>
+
 
 /* ETRAX 100 can support 4 IDE busses on the same pins (serialized) */
 

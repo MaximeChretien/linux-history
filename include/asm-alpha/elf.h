@@ -52,6 +52,7 @@ typedef elf_fpreg_t elf_fpregset_t[ELF_NFPREG];
 
 #define ELF_PLAT_INIT(_r)       _r->r0 = 0
 
+#ifdef __KERNEL__
 /* The registers are layed out in pt_regs for PAL and syscall
    convenience.  Re-order them for the linear elf_gregset_t.  */
 
@@ -59,6 +60,7 @@ extern void dump_elf_thread(elf_greg_t *, struct pt_regs *,
 			    struct task_struct *);
 #define ELF_CORE_COPY_REGS(DEST, REGS) \
 	dump_elf_thread(DEST, REGS, current);
+#endif /* __KERNEL__ */
 
 /* This yields a mask that user programs can use to figure out what
    instruction set this CPU supports.  This is trivial on Alpha, 

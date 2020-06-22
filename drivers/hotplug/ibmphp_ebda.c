@@ -292,12 +292,16 @@ int __init ibmphp_access_ebda (void)
 	rio_complete = 0;
 	hs_complete = 0;
 
+	/* FIXME: This is x86-32 specific, and even then PC specific.. */
 	io_mem = ioremap ((0x40 << 4) + 0x0e, 2);
 	if (!io_mem )
 		return -ENOMEM;
 	ebda_seg = readw (io_mem);
 	iounmap (io_mem);
 	debug ("returned ebda segment: %x\n", ebda_seg);
+	
+	if(ebda_seg == 0)		/* No EBDA */
+		return -ENOENT;
 	
 	io_mem = ioremap (ebda_seg<<4, 65000);
 	if (!io_mem )

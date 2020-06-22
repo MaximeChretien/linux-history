@@ -47,9 +47,7 @@
 #include <linux/pci.h>
 
 #include <asm/vr41xx/eagle.h>
-#ifdef CONFIG_VRC4173
 #include <asm/vr41xx/vrc4173.h>
-#endif
 
 void __init pcibios_fixup_resources(struct pci_dev *dev)
 {
@@ -119,41 +117,44 @@ void __init pcibios_fixup_irqs(void)
 				break;
 			}
 			break;
-#ifdef CONFIG_VRC4173
 		case 12:
-			dev->irq = VRC4173_CARDU1_IRQ;
+			dev->irq = VRC4173_PCMCIA1_IRQ;
 			break;
 		case 13:
-			dev->irq = VRC4173_CARDU2_IRQ;
+			dev->irq = VRC4173_PCMCIA2_IRQ;
 			break;
-		case 24:
-			dev->irq = VRC4173_CARDU1_IRQ;
-			break;
-		case 25:
-			dev->irq = VRC4173_CARDU2_IRQ;
-			break;
-#endif
 		case 28:
 			dev->irq = LANINTA_IRQ;
 			break;
 		case 29:
-			dev->irq = PCISLOT_IRQ;
-			break;
-#ifdef CONFIG_VRC4173
-		case 30:
-			switch (func) {
-			case 0:
-				dev->irq = VRC4173_IRQ;
-				break;
+			switch (pin) {
 			case 1:
-				dev->irq = VRC4173_AC97U_IRQ;
+				dev->irq = PCISLOT_IRQ;
 				break;
 			case 2:
-				dev->irq = VRC4173_USBU_IRQ;
+				dev->irq = CP_INTB_IRQ;
+				break;
+			case 3:
+				dev->irq = CP_INTC_IRQ;
+				break;
+			case 4:
+				dev->irq = CP_INTD_IRQ;
 				break;
 			}
 			break;
-#endif
+		case 30:
+			switch (func) {
+			case 0:
+				dev->irq = VRC4173_CASCADE_IRQ;
+				break;
+			case 1:
+				dev->irq = VRC4173_AC97_IRQ;
+				break;
+			case 2:
+				dev->irq = VRC4173_USB_IRQ;
+				break;
+			}
+			break;
 		}
 
 		pci_write_config_byte(dev, PCI_INTERRUPT_LINE, dev->irq);

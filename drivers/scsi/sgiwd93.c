@@ -24,9 +24,9 @@
 #include <asm/pgtable.h>
 #include <asm/sgialib.h>
 #include <asm/sgi/sgi.h>
-#include <asm/sgi/sgimc.h>
-#include <asm/sgi/sgihpc.h>
-#include <asm/sgi/sgint23.h>
+#include <asm/sgi/mc.h>
+#include <asm/sgi/hpc3.h>
+#include <asm/sgi/ip22.h>
 #include <asm/irq.h>
 #include <asm/io.h>
 
@@ -70,7 +70,6 @@ static inline unsigned long read_wd33c93_count(const wd33c93_regs regs)
 	return value;
 }
 
-/* XXX woof! */
 static void sgiwd93_intr(int irq, void *dev_id, struct pt_regs *regs)
 {
 	unsigned long flags;
@@ -123,10 +122,10 @@ static int dma_setup(Scsi_Cmnd *cmd, int datainp)
 	 * IMHO a better fix would be, not to do these
 	 * dma setups in the first place
 	 */
-	if (cmd->SCp.ptr == NULL)
+	if (cmd->SCp.ptr == NULL || cmd->SCp.this_residual == 0)
 		return 1;
 
-	fill_hpc_entries (&hcp, cmd->SCp.ptr,cmd->SCp.this_residual);
+	fill_hpc_entries (&hcp, cmd->SCp.ptr, cmd->SCp.this_residual);
 
 	/* To make sure, if we trip an HPC bug, that we transfer
 	 * every single byte, we tag on an extra zero length dma
@@ -230,7 +229,7 @@ int __init sgiwd93_detect(Scsi_Host_Template *SGIblows)
 	sgiwd93_host->base = (unsigned long) hregs;
 	sgiwd93_host->irq = SGI_WD93_0_IRQ;
 
-	buf = (uchar *) get_free_page(GFP_KERNEL);
+	buf = (uchar *) get_zeroed_page(GFP_KERNEL);
 	if (!buf) {
 		printk(KERN_WARNING "sgiwd93: Could not allocate memory for host0 buffer.\n");
 		scsi_unregister(sgiwd93_host);
@@ -257,14 +256,14 @@ int __init sgiwd93_detect(Scsi_Host_Template *SGIblows)
 		return 0;
 	}
         /* set up second controller on the Indigo2 */
-	if(!sgi_guiness) {
+	if(ip22_is_fullhouse()) {
 		sgiwd93_host1 = scsi_register(SGIblows, sizeof(struct WD33C93_hostdata));
 		if(sgiwd93_host1 != NULL)
 		{
 			sgiwd93_host1->base = (unsigned long) hregs1;
 			sgiwd93_host1->irq = SGI_WD93_1_IRQ;
 	
-			buf = (uchar *) get_free_page(GFP_KERNEL);
+			buf = (uchar *) get_zeroed_page(GFP_KERNEL);
 			if (!buf) {
 				printk(KERN_WARNING "sgiwd93: Could not allocate memory for host1 buffer.\n");
 				scsi_unregister(sgiwd93_host1);
@@ -314,7 +313,7 @@ int sgiwd93_release(struct Scsi_Host *instance)
 	free_irq(SGI_WD93_0_IRQ, sgiwd93_intr);
 	free_page(KSEG0ADDR(hdata->dma_bounce_buffer));
 	wd33c93_release();
-	if(!sgi_guiness) {
+	if(ip22_is_fullhouse()) {
 		free_irq(SGI_WD93_1_IRQ, sgiwd93_intr);
 		free_page(KSEG0ADDR(hdata1->dma_bounce_buffer));
 		wd33c93_release();

@@ -1,7 +1,7 @@
 /*  
  * Simple synchronous serial port driver for ETRAX 100LX.
  *
- * Synchronous serial ports are used for continous streamed data like audio.
+ * Synchronous serial ports are used for continuous streamed data like audio.
  * The default setting for this driver is compatible with the STA 013 MP3
  * decoder. The driver can easily be tuned to fit other audio encoder/decoders
  * and SPI
@@ -29,7 +29,7 @@
 #include <asm/system.h>
 #include <asm/sync_serial.h>
 
-/* The receiver is a bit tricky beacuse of the continous stream of data. */
+/* The receiver is a bit tricky beacuse of the continuous stream of data.*/
 /*                                                                       */
 /* Two DMA descriptors are linked together. Each DMA descriptor is       */
 /* responsible for one half of a common buffer.                          */
@@ -256,7 +256,7 @@ static int __init etrax_sync_serial_init(void)
 	initialize_port(1);
 	if (ports[0].use_dma) /* Port 0 uses dma, we must manual allocate IRQ */
 	{
-		if (request_irq(8, manual_interrupt, SA_SHIRQ | SA_INTERRUPT, "synchronous serial manual irq", &ports[1]))
+		if (request_irq(8, manual_interrupt, SA_SHIRQ | SA_INTERRUPT, "synchronous serial manual irq", &ports[1]))
 			panic("Can't allocate sync serial manual irq");
 	}
 #endif

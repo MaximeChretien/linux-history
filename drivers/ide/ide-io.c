@@ -896,15 +896,18 @@ void do_ide_request(request_queue_t *q)
 	ide_do_request(q->queuedata, IDE_NO_IRQ);
 }
 
+EXPORT_SYMBOL(do_ide_request);
+
 /*
  * un-busy the hwgroup etc, and clear any pending DMA status. we want to
  * retry the current request in pio mode instead of risking tossing it
  * all away
  */
-void ide_dma_timeout_retry(ide_drive_t *drive)
+static ide_startstop_t ide_dma_timeout_retry(ide_drive_t *drive, int error)
 {
 	ide_hwif_t *hwif = HWIF(drive);
 	struct request *rq;
+	ide_startstop_t ret = ide_stopped;
 
 	/*
 	 * end current dma transaction
@@ -914,8 +917,16 @@ void ide_dma_timeout_retry(ide_drive_t *drive)
 	/*
 	 * complain a little, later we might remove some of this verbosity
 	 */
-	printk(KERN_ERR "%s: timeout waiting for DMA\n", drive->name);
-	(void) hwif->ide_dma_timeout(drive);
+
+	if (error < 0) {
+		printk(KERN_ERR "%s: error waiting for DMA\n", drive->name);
+		(void)HWIF(drive)->ide_dma_end(drive);
+		ret = DRIVER(drive)->error(drive, "dma timeout retry",
+				hwif->INB(IDE_STATUS_REG));
+	} else {
+		printk(KERN_ERR "%s: timeout waiting for DMA\n", drive->name);
+		(void) hwif->ide_dma_timeout(drive);
+	}
 
 	/*
 	 * disable dma for now, but remember that we did so because of
@@ -938,9 +949,9 @@ void ide_dma_timeout_retry(ide_drive_t *drive)
 	rq->current_nr_sectors = rq->bh->b_size >> 9;
 	rq->hard_cur_sectors = rq->current_nr_sectors;
 	rq->buffer = rq->bh->b_data;
-}
 
-EXPORT_SYMBOL(ide_dma_timeout_retry);
+	return ret;
+}
 
 /**
  *	ide_timer_expiry	-	handle lack of an IDE interrupt
@@ -962,10 +973,9 @@ void ide_timer_expiry (unsigned long data)
 	ide_handler_t	*handler;
 	ide_expiry_t	*expiry;
  	unsigned long	flags;
-	unsigned long	wait;
+	unsigned long	wait = -1;
 
 	spin_lock_irqsave(&io_request_lock, flags);
-	del_timer(&hwgroup->timer);
 
 	if ((handler = hwgroup->handler) == NULL) {
 		/*
@@ -992,7 +1002,7 @@ void ide_timer_expiry (unsigned long data)
 			}
 			if ((expiry = hwgroup->expiry) != NULL) {
 				/* continue */
-				if ((wait = expiry(drive)) != 0) {
+				if ((wait = expiry(drive)) > 0) {
 					/* reset timer */
 					hwgroup->timer.expires  = jiffies + wait;
 					add_timer(&hwgroup->timer);
@@ -1028,16 +1038,15 @@ void ide_timer_expiry (unsigned long data)
 				startstop = handler(drive);
 			} else {
 				if (drive->waiting_for_dma) {
-					startstop = ide_stopped;
-					ide_dma_timeout_retry(drive);
+					startstop = ide_dma_timeout_retry(drive, wait);
 				} else {
 					startstop = DRIVER(drive)->error(drive, "irq timeout", hwif->INB(IDE_STATUS_REG));
 				}
 			}
 			set_recovery_timer(hwif);
 			drive->service_time = jiffies - drive->service_start;
-			enable_irq(hwif->irq);
 			spin_lock_irq(&io_request_lock);
+			enable_irq(hwif->irq);
 			if (startstop == ide_stopped)
 				hwgroup->busy = 0;
 		}

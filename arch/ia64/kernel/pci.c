@@ -2,9 +2,15 @@
  * pci.c - Low-Level PCI Access in IA-64
  *
  * Derived from bios32.c of i386 tree.
+ * Copyright (C) 2002, 2003 Hewlett-Packard Co
+ *	David Mosberger-Tang <davidm@hpl.hp.com>
+ *	Bjorn Helgaas <bjorn_helgaas@hp.com>
+ *
+ * Note: Above list of copyright holders is incomplete...
  */
 #include <linux/config.h>
 
+#include <linux/acpi.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
@@ -13,9 +19,9 @@
 #include <linux/slab.h>
 #include <linux/smp_lock.h>
 #include <linux/spinlock.h>
-#include <linux/acpi.h>
 
 #include <asm/machvec.h>
+#include <asm/mca.h>
 #include <asm/page.h>
 #include <asm/segment.h>
 #include <asm/system.h>
@@ -38,12 +44,6 @@
 #else
 #define DBG(x...)
 #endif
-
-#ifdef CONFIG_IA64_MCA
-extern void ia64_mca_check_errors( void );
-#endif
-
-static unsigned int acpi_root_bridges;
 
 struct pci_fixup pcibios_fixups[1];
 
@@ -213,14 +213,14 @@ scan_root_bus (int bus, struct pci_ops *ops, void *sysdata)
 	return b;
 }
 
-static void
+static int
 alloc_resource (char *name, struct resource *root, unsigned long start, unsigned long end, unsigned long flags)
 {
 	struct resource *res;
 
 	res = kmalloc(sizeof(*res), GFP_KERNEL);
 	if (!res)
-		return;
+		return -ENOMEM;
 
 	memset(res, 0, sizeof(*res));
 	res->name = name;
@@ -228,7 +228,10 @@ alloc_resource (char *name, struct resource *root, unsigned long start, unsigned
 	res->end = end;
 	res->flags = flags;
 
-	request_resource(root, res);
+	if (request_resource(root, res))
+		return -EBUSY;
+
+	return 0;
 }
 
 static u64
@@ -308,14 +311,24 @@ add_window (acpi_resource *res, void *data)
 		} else
 			return AE_OK;
 
+		if (addr.min_address_range == addr.max_address_range) {
+			printk(KERN_INFO "ACPI reports bogus %s %s range 0x%lx-0x%lx; ignoring it\n",
+					info->name, root->name, addr.min_address_range + offset,
+					addr.max_address_range + offset);
+			return AE_OK;
+		}
+
 		window = &info->controller->window[info->controller->windows++];
 		window->resource.flags |= flags;
 		window->resource.start  = addr.min_address_range;
 		window->resource.end    = addr.max_address_range;
 		window->offset		= offset;
 
-		alloc_resource(info->name, root, addr.min_address_range + offset,
-			addr.max_address_range + offset, flags);
+		if (alloc_resource(info->name, root, addr.min_address_range + offset,
+			addr.max_address_range + offset, flags))
+			printk(KERN_ERR "alloc 0x%lx-0x%lx from %s for %s failed\n",
+				addr.min_address_range + offset, addr.max_address_range + offset,
+				root->name, info->name);
 	}
 
 	return AE_OK;
@@ -328,8 +341,6 @@ pcibios_scan_root (void *handle, int seg, int bus)
 	struct pci_controller *controller;
 	unsigned int windows = 0;
 	char *name;
-
-	acpi_root_bridges++;
 
 	controller = alloc_pci_controller(seg);
 	if (!controller)
@@ -379,7 +390,6 @@ pcibios_config_init (void)
 void __init
 pcibios_init (void)
 {
-#	define PCI_BUSES_TO_SCAN 256
 	int i = 0;
 	struct pci_controller *controller;
 
@@ -390,15 +400,6 @@ pcibios_init (void)
 	pcibios_config_init();
 
 	platform_pci_fixup(0);	/* phase 0 fixups (before buses scanned) */
-
-	/* Only probe blindly if ACPI didn't tell us about root bridges */
-	if (!acpi_root_bridges) {
-		printk("PCI: Probing PCI hardware\n");
-		controller = alloc_pci_controller(0);
-		if (controller)
-			for (i = 0; i < PCI_BUSES_TO_SCAN; i++)
-				pci_scan_bus(i, pci_root_ops, controller);
-	}
 
 	platform_pci_fixup(1);	/* phase 1 fixups (after buses scanned) */
 
@@ -576,9 +577,81 @@ pci_mmap_page_range (struct pci_dev *dev, struct vm_area_struct *vma,
 		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 
 	if (remap_page_range(vma->vm_start, vma->vm_pgoff << PAGE_SHIFT,
-			     vma->vm_end - vma->vm_start,
-			     vma->vm_page_prot))
+			     vma->vm_end - vma->vm_start, vma->vm_page_prot))
 		return -EAGAIN;
 
 	return 0;
+}
+
+/**
+ * pci_cacheline_size - determine cacheline size for PCI devices
+ * @dev: void
+ *
+ * We want to use the line-size of the outer-most cache.  We assume
+ * that this line-size is the same for all CPUs.
+ *
+ * Code mostly taken from arch/ia64/kernel/palinfo.c:cache_info().
+ *
+ * RETURNS: An appropriate -ERRNO error value on eror, or zero for success.
+ */
+static unsigned long
+pci_cacheline_size (void)
+{
+	u64 levels, unique_caches;
+	s64 status;
+	pal_cache_config_info_t cci;
+	static u8 cacheline_size;
+
+	if (cacheline_size)
+		return cacheline_size;
+
+	status = ia64_pal_cache_summary(&levels, &unique_caches);
+	if (status != 0) {
+		printk(KERN_ERR "%s: ia64_pal_cache_summary() failed (status=%ld)\n",
+		       __FUNCTION__, status);
+		return SMP_CACHE_BYTES;
+	}
+
+	status = ia64_pal_cache_config_info(levels - 1, /* cache_type (data_or_unified)= */ 2,
+					    &cci);
+	if (status != 0) {
+		printk(KERN_ERR "%s: ia64_pal_cache_config_info() failed (status=%ld)\n",
+		       __FUNCTION__, status);
+		return SMP_CACHE_BYTES;
+	}
+	cacheline_size = 1 << cci.pcci_line_size;
+	return cacheline_size;
+}
+
+/**
+ * pcibios_prep_mwi - helper function for drivers/pci/pci.c:pci_set_mwi()
+ * @dev: the PCI device for which MWI is enabled
+ *
+ * For ia64, we can get the cacheline sizes from PAL.
+ *
+ * RETURNS: An appropriate -ERRNO error value on eror, or zero for success.
+ */
+int
+pcibios_set_mwi (struct pci_dev *dev)
+{
+	unsigned long desired_linesize, current_linesize;
+	int rc = 0;
+	u8 pci_linesize;
+
+	desired_linesize = pci_cacheline_size();
+
+	pci_read_config_byte(dev, PCI_CACHE_LINE_SIZE, &pci_linesize);
+	current_linesize = 4 * pci_linesize;
+	if (desired_linesize != current_linesize) {
+		printk(KERN_WARNING "PCI: slot %s has incorrect PCI cache line size of %lu bytes,",
+		       dev->slot_name, current_linesize);
+		if (current_linesize > desired_linesize) {
+			printk(" expected %lu bytes instead\n", desired_linesize);
+			rc = -EINVAL;
+		} else {
+			printk(" correcting to %lu\n", desired_linesize);
+			pci_write_config_byte(dev, PCI_CACHE_LINE_SIZE, desired_linesize / 4);
+		}
+	}
+	return rc;
 }

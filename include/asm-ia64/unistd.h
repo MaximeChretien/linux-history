@@ -223,6 +223,7 @@
 #define __NR_security			1233
 /* 1234-1235: reserved for {alloc,free}_hugepages */
 /* 1238-1242: reserved for io_{setup,destroy,getevents,submit,cancel} */
+#define __NR_semtimedop			1247
 
 #if !defined(__ASSEMBLY__) && !defined(ASSEMBLER)
 

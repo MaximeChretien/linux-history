@@ -11,7 +11,7 @@
  * (i.e. linux_logo_{red,green,blue}[0] is color 0x20)
  */
 #ifdef __KERNEL__
- 
+
 #include <linux/init.h>
 
 #define linux_logo_banner "Linux/PPC version " UTS_RELEASE

@@ -22,7 +22,7 @@
  * BEGIN_DESC
  *
  *  File:
- *	@(#)	pa/spmath/sfcmp.c		$Revision: 1.1 $
+ *	@(#)	pa/spmath/sfcmp.c		$Revision: $
  *
  *  Purpose:
  *	sgl_cmp: compare two values

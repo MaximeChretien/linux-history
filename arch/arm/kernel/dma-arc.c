@@ -34,14 +34,14 @@ static void arc_floppy_data_enable_dma(dmach_t channel, dma_t *dma)
 		extern void fdc1772_setupdma(unsigned int count,unsigned int addr);
 		unsigned long flags;
 		DPRINTK("enable_dma fdc1772 data read\n");
-		save_flags(flags);
-		clf();
+		local_save_flags(flags);
+		__clf();
 			
 		memcpy ((void *)0x1c, (void *)&fdc1772_dma_read,
 			&fdc1772_dma_read_end - &fdc1772_dma_read);
 		fdc1772_setupdma(dma->buf.length, dma->buf.address); /* Sets data pointer up */
 		enable_fiq(FIQ_FLOPPYDATA);
-		restore_flags(flags);
+		local_irq_restore(flags);
 	   }
 	   break;
 
@@ -50,14 +50,14 @@ static void arc_floppy_data_enable_dma(dmach_t channel, dma_t *dma)
 		extern void fdc1772_setupdma(unsigned int count,unsigned int addr);
 		unsigned long flags;
 		DPRINTK("enable_dma fdc1772 data write\n");
-		save_flags(flags);
-		clf();
+		local_save_flags(flags);
+		__clf();
 		memcpy ((void *)0x1c, (void *)&fdc1772_dma_write,
 			&fdc1772_dma_write_end - &fdc1772_dma_write);
 		fdc1772_setupdma(dma->buf.length, dma->buf.address); /* Sets data pointer up */
 		enable_fiq(FIQ_FLOPPYDATA;
 
-		restore_flags(flags);
+		local_irq_restore(flags);
 	    }
 	    break;
 	default:
@@ -81,14 +81,14 @@ static void arc_floppy_cmdend_enable_dma(dmach_t channel, dma_t *dma)
 
 	DPRINTK("arc_floppy_cmdend_enable_dma\n");
 	/*printk("enable_dma fdc1772 command end FIQ\n");*/
-	save_flags(flags);
-	clf();
+	local_save_flags(flags);
+	__clf();
 	
 	/* B fdc1772_comendhandler */
 	*((unsigned int *)0x1c)=0xea000000 |
 			(((unsigned int)fdc1772_comendhandler-(0x1c+8))/4);
 
-	restore_flags(flags);
+	local_irq_restore(flags);
 }
 
 static int arc_floppy_cmdend_get_dma_residue(dmach_t channel, dma_t *dma)

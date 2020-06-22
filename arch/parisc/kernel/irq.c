@@ -57,7 +57,7 @@ extern void ipi_interrupt(int, void *, struct pt_regs *);
 /* Bits in EIEM correlate with cpu_irq_action[].
 ** Numbered *Big Endian*! (ie bit 0 is MSB)
 */
-static unsigned long cpu_eiem = 0;
+static volatile unsigned long cpu_eiem = 0;
 
 static spinlock_t irq_lock = SPIN_LOCK_UNLOCKED;  /* protect IRQ regions */
 
@@ -462,7 +462,7 @@ void do_cpu_irq_mask(struct pt_regs *regs)
 
 		for (irq = 0; eirr_val && bit; bit>>=1, irq++)
 		{
-			if (!(bit&eirr_val))
+			if (!(bit&eirr_val&cpu_eiem))
 				continue;
 
 			/* clear bit in mask - can exit loop sooner */

@@ -199,7 +199,7 @@ get_std_req_name(int req)
 
 #if 0
 static void
-dump_setup(devrequest* s)
+dump_setup(struct usb_ctrlrequest* s)
 {
 	dbg(__FUNCTION__ ": requesttype=%d", s->requesttype);
 	dbg(__FUNCTION__ ": request=%d %s", s->request,
@@ -635,9 +635,9 @@ receive_packet_complete(endpoint_t * ep)
  */
 
 static ep0_stage_t
-do_get_status(struct usb_dev* dev, devrequest* setup)
+do_get_status(struct usb_dev* dev, struct usb_ctrlrequest* setup)
 {
-	switch (setup->requesttype) {
+	switch (setup->bRequestType) {
 	case 0x80:	// Device
 		// FIXME: send device status
 		break;
@@ -657,9 +657,9 @@ do_get_status(struct usb_dev* dev, devrequest* setup)
 }
 
 static ep0_stage_t
-do_clear_feature(struct usb_dev* dev, devrequest* setup)
+do_clear_feature(struct usb_dev* dev, struct usb_ctrlrequest* setup)
 {
-	switch (setup->requesttype) {
+	switch (setup->bRequestType) {
 	case 0x00:	// Device
 		if ((le16_to_cpu(setup->wValue) & 0xff) == 1)
 			dev->remote_wakeup_en = 0;
@@ -670,7 +670,7 @@ do_clear_feature(struct usb_dev* dev, devrequest* setup)
 		if ((le16_to_cpu(setup->wValue) & 0xff) == 0) {
 			endpoint_t *ep =
 				epaddr_to_ep(dev,
-					     le16_to_cpu(setup->index) & 0xff);
+					     le16_to_cpu(setup->wIndex) & 0xff);
 
 			endpoint_unstall(ep);
 			endpoint_reset_datatoggle(ep);
@@ -683,7 +683,7 @@ do_clear_feature(struct usb_dev* dev, devrequest* setup)
 }
 
 static ep0_stage_t
-do_reserved(struct usb_dev* dev, devrequest* setup)
+do_reserved(struct usb_dev* dev, struct usb_ctrlrequest* setup)
 {
 	// Invalid request, stall End Point 0
 	endpoint_stall(&dev->ep[0]);
@@ -691,9 +691,9 @@ do_reserved(struct usb_dev* dev, devrequest* setup)
 }
 
 static ep0_stage_t
-do_set_feature(struct usb_dev* dev, devrequest* setup)
+do_set_feature(struct usb_dev* dev, struct usb_ctrlrequest* setup)
 {
-	switch (setup->requesttype) {
+	switch (setup->bRequestType) {
 	case 0x00:	// Device
 		if ((le16_to_cpu(setup->wValue) & 0xff) == 1)
 			dev->remote_wakeup_en = 1;
@@ -701,10 +701,10 @@ do_set_feature(struct usb_dev* dev, devrequest* setup)
 			endpoint_stall(&dev->ep[0]);
 		break;
 	case 0x02:	// End Point
-		if ((le16_to_cpu(setup->vwValue) & 0xff) == 0) {
+		if ((le16_to_cpu(setup->wValue) & 0xff) == 0) {
 			endpoint_t *ep =
 				epaddr_to_ep(dev,
-					     le16_to_cpu(setup->index) & 0xff);
+					     le16_to_cpu(setup->wIndex) & 0xff);
 
 			endpoint_stall(ep);
 		} else
@@ -716,7 +716,7 @@ do_set_feature(struct usb_dev* dev, devrequest* setup)
 }
 
 static ep0_stage_t
-do_set_address(struct usb_dev* dev, devrequest* setup)
+do_set_address(struct usb_dev* dev, struct usb_ctrlrequest* setup)
 {
 	int new_state = dev->state;
 	int new_addr = le16_to_cpu(setup->wValue);
@@ -743,9 +743,9 @@ do_set_address(struct usb_dev* dev, devrequest* setup)
 }
 
 static ep0_stage_t
-do_get_descriptor(struct usb_dev* dev, devrequest* setup)
+do_get_descriptor(struct usb_dev* dev, struct usb_ctrlrequest* setup)
 {
-	int strnum, desc_len = le16_to_cpu(setup->length);
+	int strnum, desc_len = le16_to_cpu(setup->wLength);
 
 		switch (le16_to_cpu(setup->wValue) >> 8) {
 		case USB_DT_DEVICE:
@@ -812,7 +812,7 @@ do_get_descriptor(struct usb_dev* dev, devrequest* setup)
 }
 
 static ep0_stage_t
-do_set_descriptor(struct usb_dev* dev, devrequest* setup)
+do_set_descriptor(struct usb_dev* dev, struct usb_ctrlrequest* setup)
 {
 	// TODO: implement
 	// there will be an OUT data stage (the descriptor to set)
@@ -820,7 +820,7 @@ do_set_descriptor(struct usb_dev* dev, devrequest* setup)
 }
 
 static ep0_stage_t
-do_get_configuration(struct usb_dev* dev, devrequest* setup)
+do_get_configuration(struct usb_dev* dev, struct usb_ctrlrequest* setup)
 {
 	// send dev->configuration
 	dbg("sending config");
@@ -830,7 +830,7 @@ do_get_configuration(struct usb_dev* dev, devrequest* setup)
 }
 
 static ep0_stage_t
-do_set_configuration(struct usb_dev* dev, devrequest* setup)
+do_set_configuration(struct usb_dev* dev, struct usb_ctrlrequest* setup)
 {
 	// set active config to low-byte of setup->wValue
 	dev->configuration = le16_to_cpu(setup->wValue) & 0xff;
@@ -851,10 +851,10 @@ do_set_configuration(struct usb_dev* dev, devrequest* setup)
 }
 
 static ep0_stage_t
-do_get_interface(struct usb_dev* dev, devrequest* setup)
+do_get_interface(struct usb_dev* dev, struct usb_ctrlrequest* setup)
 {
 		// interface must be zero.
-	if ((le16_to_cpu(setup->index) & 0xff) || dev->state == ADDRESS) {
+	if ((le16_to_cpu(setup->wIndex) & 0xff) || dev->state == ADDRESS) {
 			// FIXME: respond with "request error". how?
 	} else if (dev->state == CONFIGURED) {
 		// send dev->alternate_setting
@@ -868,12 +868,12 @@ do_get_interface(struct usb_dev* dev, devrequest* setup)
 }
 
 static ep0_stage_t
-do_set_interface(struct usb_dev* dev, devrequest* setup)
+do_set_interface(struct usb_dev* dev, struct usb_ctrlrequest* setup)
 {
 	if (dev->state == ADDRESS) {
 			// FIXME: respond with "request error". how?
 	} else if (dev->state == CONFIGURED) {
-		dev->interface = le16_to_cpu(setup->index) & 0xff;
+		dev->interface = le16_to_cpu(setup->wIndex) & 0xff;
 		dev->alternate_setting =
 			    le16_to_cpu(setup->wValue) & 0xff;
 			// interface and alternate_setting must be zero
@@ -886,14 +886,14 @@ do_set_interface(struct usb_dev* dev, devrequest* setup)
 }
 
 static ep0_stage_t
-do_synch_frame(struct usb_dev* dev, devrequest* setup)
+do_synch_frame(struct usb_dev* dev, struct usb_ctrlrequest* setup)
 {
 	// TODO
 	return SETUP_STAGE;
 }
 
 typedef ep0_stage_t (*req_method_t)(struct usb_dev* dev,
-				    devrequest* setup);
+				    struct usb_ctrlrequest* setup);
 
 
 /* Table of the standard device request handlers */
@@ -916,25 +916,25 @@ static const req_method_t req_method[] = {
 
 // SETUP packet request dispatcher
 static void
-do_setup (struct usb_dev* dev, devrequest* setup)
+do_setup (struct usb_dev* dev, struct usb_ctrlrequest* setup)
 {
 	req_method_t m;
 
-	dbg(__FUNCTION__ ": req %d %s", setup->request,
-	    get_std_req_name(setup->request));
+	dbg(__FUNCTION__ ": req %d %s", setup->bRequestType,
+	    get_std_req_name(setup->bRequestType));
 
-	if ((setup->requesttype & USB_TYPE_MASK) != USB_TYPE_STANDARD ||
-	    (setup->requesttype & USB_RECIP_MASK) != USB_RECIP_DEVICE) {
+	if ((setup->bRequestType & USB_TYPE_MASK) != USB_TYPE_STANDARD ||
+	    (setup->bRequestType & USB_RECIP_MASK) != USB_RECIP_DEVICE) {
 		err(__FUNCTION__ ": invalid requesttype 0x%02x",
-		    setup->requesttype);
+		    setup->bRequestType);
 		return;
 		}
 
-	if ((setup->requesttype & 0x80) == USB_DIR_OUT && setup->length)
-		dbg(__FUNCTION__ ": OUT phase! length=%d", setup->length);
+	if ((setup->bRequestType & 0x80) == USB_DIR_OUT && setup->wLength)
+		dbg(__FUNCTION__ ": OUT phase! length=%d", setup->wLength);
 
-	if (setup->request < sizeof(req_method)/sizeof(req_method_t))
-		m = req_method[setup->request];
+	if (setup->bRequestType < sizeof(req_method)/sizeof(req_method_t))
+		m = req_method[setup->bRequestType];
 			else
 		m = do_reserved;
 
@@ -973,14 +973,14 @@ process_ep0_receive (struct usb_dev* dev)
 		vdbg("SU bit is %s in setup stage",
 		     (pkt->status & PKT_STATUS_SU) ? "set" : "not set");
 
-			if (pkt->size == sizeof(devrequest)) {
+			if (pkt->size == sizeof(struct usb_ctrlrequest)) {
 #ifdef VDEBUG
 			if (pkt->status & PKT_STATUS_ACK)
 				vdbg("received SETUP");
 				else
 				vdbg("received NAK SETUP");
 #endif
-			do_setup(dev, (devrequest*)pkt->payload);
+			do_setup(dev, (struct usb_ctrlrequest*)pkt->payload);
 		} else
 			err(__FUNCTION__ ": wrong size SETUP received");
 		break;

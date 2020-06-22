@@ -23,6 +23,12 @@
  * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  *
  */
+
+/*
+ * Intel(R) 855GM/852GM and 865G support, added by
+ * David Dawes <dawes@tungstengraphics.com>.
+ */
+
 #include <linux/config.h>
 #include <linux/version.h>
 #include <linux/module.h>
@@ -43,6 +49,9 @@
 #include <asm/uaccess.h>
 #include <asm/io.h>
 #include <asm/page.h>
+#ifdef CONFIG_AGP_NVIDIA
+    #include <asm/msr.h>
+#endif
 
 #include <linux/agp_backend.h>
 #include "agp.h"
@@ -577,7 +586,7 @@ static int agp_generic_create_gatt_table(void)
 	for (page = virt_to_page(table); page <= virt_to_page(table_end); page++)
 		SetPageReserved(page);
 
-	agp_bridge.gatt_table_real = (unsigned long *) table;
+	agp_bridge.gatt_table_real = (u32 *) table;
 	agp_gatt_table = (void *)table;
 #ifdef CONFIG_X86
 	err = change_page_attr(virt_to_page(table), 1<<page_order, PAGE_KERNEL_NOCACHE);
@@ -1112,34 +1121,64 @@ static void intel_i830_init_gtt_entries(void)
 	u16 gmch_ctrl;
 	int gtt_entries;
 	u8 rdct;
+	int local = 0;
 	static const int ddt[4] = { 0, 16, 32, 64 };
 
 	pci_read_config_word(agp_bridge.dev,I830_GMCH_CTRL,&gmch_ctrl);
 
-	switch (gmch_ctrl & I830_GMCH_GMS_MASK) {
-	case I830_GMCH_GMS_STOLEN_512:
-		gtt_entries = KB(512) - KB(132);
-		printk(KERN_INFO PFX "detected %dK stolen memory.\n",gtt_entries / KB(1));
-		break;
-	case I830_GMCH_GMS_STOLEN_1024:
-		gtt_entries = MB(1) - KB(132);
-		printk(KERN_INFO PFX "detected %dK stolen memory.\n",gtt_entries / KB(1));
-		break;
-	case I830_GMCH_GMS_STOLEN_8192:
-		gtt_entries = MB(8) - KB(132);
-		printk(KERN_INFO PFX "detected %dK stolen memory.\n",gtt_entries / KB(1));
-		break;
-	case I830_GMCH_GMS_LOCAL:
-		rdct = INREG8(intel_i830_private.registers,I830_RDRAM_CHANNEL_TYPE);
-		gtt_entries = (I830_RDRAM_ND(rdct) + 1) * MB(ddt[I830_RDRAM_DDT(rdct)]);
-		printk(KERN_INFO PFX "detected %dK local memory.\n",gtt_entries / KB(1));
-		break;
-	default:
-		printk(KERN_INFO PFX "no video memory detected.\n");
-		gtt_entries = 0;
-		break;
+	if (agp_bridge.dev->device != PCI_DEVICE_ID_INTEL_830_M_0 &&
+	    agp_bridge.dev->device != PCI_DEVICE_ID_INTEL_845_G_0) {
+		switch (gmch_ctrl & I855_GMCH_GMS_MASK) {
+		case I855_GMCH_GMS_STOLEN_1M:
+			gtt_entries = MB(1) - KB(132);
+			break;
+		case I855_GMCH_GMS_STOLEN_4M:
+			gtt_entries = MB(4) - KB(132);
+			break;
+		case I855_GMCH_GMS_STOLEN_8M:
+			gtt_entries = MB(8) - KB(132);
+			break;
+		case I855_GMCH_GMS_STOLEN_16M:
+			gtt_entries = MB(16) - KB(132);
+			break;
+		case I855_GMCH_GMS_STOLEN_32M:
+			gtt_entries = MB(32) - KB(132);
+			break;
+		default:
+			gtt_entries = 0;
+			break;
+		}
+	} else
+	{
+		switch (gmch_ctrl & I830_GMCH_GMS_MASK) {
+		case I830_GMCH_GMS_STOLEN_512:
+			gtt_entries = KB(512) - KB(132);
+			break;
+		case I830_GMCH_GMS_STOLEN_1024:
+			gtt_entries = MB(1) - KB(132);
+			break;
+		case I830_GMCH_GMS_STOLEN_8192:
+			gtt_entries = MB(8) - KB(132);
+			break;
+		case I830_GMCH_GMS_LOCAL:
+			rdct = INREG8(intel_i830_private.registers,
+				      I830_RDRAM_CHANNEL_TYPE);
+			gtt_entries = (I830_RDRAM_ND(rdct) + 1) *
+				      MB(ddt[I830_RDRAM_DDT(rdct)]);
+			local = 1;
+			break;
+		default:
+			gtt_entries = 0;
+			break;
+		}
 	}
 
+	if (gtt_entries > 0)
+		printk(KERN_INFO PFX "Detected %dK %s memory.\n",
+		       gtt_entries / KB(1), local ? "local" : "stolen");
+	else
+		printk(KERN_INFO PFX
+		       "No pre-allocated video memory detected.\n");
 	gtt_entries /= KB(4);
 
 	intel_i830_private.gtt_entries = gtt_entries;
@@ -1192,9 +1231,16 @@ static int intel_i830_fetch_size(void)
 	u16 gmch_ctrl;
 	aper_size_info_fixed *values;
 
-	pci_read_config_word(agp_bridge.dev,I830_GMCH_CTRL,&gmch_ctrl);
 	values = A_SIZE_FIX(agp_bridge.aperture_sizes);
 
+	if (agp_bridge.dev->device != PCI_DEVICE_ID_INTEL_830_M_0 &&
+	    agp_bridge.dev->device != PCI_DEVICE_ID_INTEL_845_G_0) {
+		agp_bridge.previous_size = agp_bridge.current_size = (void *) values;
+		agp_bridge.aperture_size_idx = 0;
+		return(values[0].size);
+	}
+		
+	pci_read_config_word(agp_bridge.dev,I830_GMCH_CTRL,&gmch_ctrl);
 	if ((gmch_ctrl & I830_GMCH_MEM_MASK) == I830_GMCH_MEM_128M) {
 		agp_bridge.previous_size = agp_bridge.current_size = (void *) values;
 		agp_bridge.aperture_size_idx = 0;
@@ -2450,8 +2496,8 @@ static int amd_create_gatt_table(void)
 		return retval;
 	}
 
-	agp_bridge.gatt_table_real = page_dir.real;
-	agp_bridge.gatt_table = page_dir.remapped;
+	agp_bridge.gatt_table_real = (u32 *)page_dir.real;
+	agp_bridge.gatt_table = (u32 *)page_dir.remapped;
 	agp_bridge.gatt_bus_addr = virt_to_bus(page_dir.real);
 
 	/* Get the address for the gart region.
@@ -2477,8 +2523,8 @@ static int amd_free_gatt_table(void)
 {
 	amd_page_map page_dir;
    
-	page_dir.real = agp_bridge.gatt_table_real;
-	page_dir.remapped = agp_bridge.gatt_table;
+	page_dir.real = (unsigned long *)agp_bridge.gatt_table_real;
+	page_dir.remapped = (unsigned long *)agp_bridge.gatt_table;
 
 	amd_free_gatt_pages();
 	amd_free_page_map(&page_dir);
@@ -3559,8 +3605,8 @@ static int serverworks_create_gatt_table(void)
 		return retval;
 	}
 
-	agp_bridge.gatt_table_real = page_dir.real;
-	agp_bridge.gatt_table = page_dir.remapped;
+	agp_bridge.gatt_table_real = (u32 *)page_dir.real;
+	agp_bridge.gatt_table = (u32 *)page_dir.remapped;
 	agp_bridge.gatt_bus_addr = virt_to_bus(page_dir.real);
 
 	/* Get the address for the gart region.
@@ -3588,8 +3634,8 @@ static int serverworks_free_gatt_table(void)
 {
 	serverworks_page_map page_dir;
    
-	page_dir.real = agp_bridge.gatt_table_real;
-	page_dir.remapped = agp_bridge.gatt_table;
+	page_dir.real = (unsigned long *)agp_bridge.gatt_table_real;
+	page_dir.remapped = (unsigned long *)agp_bridge.gatt_table;
 
 	serverworks_free_gatt_pages();
 	serverworks_free_page_map(&page_dir);
@@ -4002,6 +4048,330 @@ static int __init serverworks_setup (struct pci_dev *pdev)
 }
 
 #endif /* CONFIG_AGP_SWORKS */
+
+#ifdef CONFIG_AGP_NVIDIA
+
+static struct _nvidia_private {
+	struct pci_dev *dev_1;
+	struct pci_dev *dev_2;
+	struct pci_dev *dev_3;
+	volatile u32 *aperture;
+	int num_active_entries;
+	off_t pg_offset;
+} nvidia_private;
+
+static int nvidia_fetch_size(void)
+{
+	int i;
+	u8 size_value;
+	aper_size_info_8 *values;
+
+	pci_read_config_byte(agp_bridge.dev, NVIDIA_0_APSIZE, &size_value);
+	size_value &= 0x0f;
+	values = A_SIZE_8(agp_bridge.aperture_sizes);
+
+	for (i = 0; i < agp_bridge.num_aperture_sizes; i++) {
+		if (size_value == values[i].size_value) {
+			agp_bridge.previous_size =
+				agp_bridge.current_size = (void *) (values + i);
+			agp_bridge.aperture_size_idx = i;
+			return values[i].size;
+		}
+	}
+
+	return 0;
+}
+
+#define SYSCFG          0xC0010010
+#define IORR_BASE0      0xC0010016
+#define IORR_MASK0      0xC0010017
+#define AMD_K7_NUM_IORR 2
+
+static int nvidia_init_iorr(u32 base, u32 size)
+{
+	u32 base_hi, base_lo;
+	u32 mask_hi, mask_lo;
+	u32 sys_hi, sys_lo;
+	u32 iorr_addr, free_iorr_addr;
+
+	/* Find the iorr that is already used for the base */
+	/* If not found, determine the uppermost available iorr */
+	free_iorr_addr = AMD_K7_NUM_IORR;
+	for(iorr_addr = 0; iorr_addr < AMD_K7_NUM_IORR; iorr_addr++) {
+		rdmsr(IORR_BASE0 + 2 * iorr_addr, base_lo, base_hi);
+		rdmsr(IORR_MASK0 + 2 * iorr_addr, mask_lo, mask_hi);
+
+		if ((base_lo & 0xfffff000) == (base & 0xfffff000))
+			break;
+
+		if ((mask_lo & 0x00000800) == 0)
+			free_iorr_addr = iorr_addr;
+	}
+	
+	if (iorr_addr >= AMD_K7_NUM_IORR) {
+		iorr_addr = free_iorr_addr;
+		if (iorr_addr >= AMD_K7_NUM_IORR)
+			return -EINVAL;
+	}
+
+    base_hi = 0x0;
+    base_lo = (base & ~0xfff) | 0x18;
+    mask_hi = 0xf;
+    mask_lo = ((~(size - 1)) & 0xfffff000) | 0x800;
+    wrmsr(IORR_BASE0 + 2 * iorr_addr, base_lo, base_hi);
+    wrmsr(IORR_MASK0 + 2 * iorr_addr, mask_lo, mask_hi);
+
+    rdmsr(SYSCFG, sys_lo, sys_hi);
+    sys_lo |= 0x00100000;
+    wrmsr(SYSCFG, sys_lo, sys_hi);
+
+	return 0;
+}
+
+static int nvidia_configure(void)
+{
+	int i, rc, num_dirs;
+	u32 apbase, aplimit;
+	aper_size_info_8 *current_size;
+	u32 temp;
+
+	current_size = A_SIZE_8(agp_bridge.current_size);
+
+	/* aperture size */
+	pci_write_config_byte(agp_bridge.dev, NVIDIA_0_APSIZE,
+		current_size->size_value);
+
+    /* address to map to */
+	pci_read_config_dword(agp_bridge.dev, NVIDIA_0_APBASE, &apbase);
+	apbase &= PCI_BASE_ADDRESS_MEM_MASK;
+	agp_bridge.gart_bus_addr = apbase;
+	aplimit = apbase + (current_size->size * 1024 * 1024) - 1;
+	pci_write_config_dword(nvidia_private.dev_2, NVIDIA_2_APBASE, apbase);
+	pci_write_config_dword(nvidia_private.dev_2, NVIDIA_2_APLIMIT, aplimit);
+	pci_write_config_dword(nvidia_private.dev_3, NVIDIA_3_APBASE, apbase);
+	pci_write_config_dword(nvidia_private.dev_3, NVIDIA_3_APLIMIT, aplimit);
+	if (0 != (rc = nvidia_init_iorr(apbase, current_size->size * 1024 * 1024)))
+		return rc;
+
+	/* directory size is 64k */
+	num_dirs = current_size->size / 64;
+	nvidia_private.num_active_entries = current_size->num_entries;
+	nvidia_private.pg_offset = 0;
+	if (num_dirs == 0) {
+		num_dirs = 1;
+		nvidia_private.num_active_entries /= (64 / current_size->size);
+		nvidia_private.pg_offset = (apbase & (64 * 1024 * 1024 - 1) &
+			~(current_size->size * 1024 * 1024 - 1)) / PAGE_SIZE;
+	}
+
+	/* attbase */
+	for(i = 0; i < 8; i++) {
+		pci_write_config_dword(nvidia_private.dev_2, NVIDIA_2_ATTBASE(i),
+			(agp_bridge.gatt_bus_addr + (i % num_dirs) * 64 * 1024) | 1);
+	}
+
+	/* gtlb control */
+	pci_read_config_dword(nvidia_private.dev_2, NVIDIA_2_GARTCTRL, &temp);
+	pci_write_config_dword(nvidia_private.dev_2, NVIDIA_2_GARTCTRL,
+		temp | 0x11);
+
+	/* gart control */
+	pci_read_config_dword(agp_bridge.dev, NVIDIA_0_APSIZE, &temp);
+	pci_write_config_dword(agp_bridge.dev, NVIDIA_0_APSIZE,
+		temp | 0x100);
+
+	/* map aperture */
+	nvidia_private.aperture =
+		(volatile u32 *) ioremap(apbase, 33 * PAGE_SIZE);
+
+	return 0;
+}
+
+static void nvidia_cleanup(void)
+{
+	aper_size_info_8 *previous_size;
+	u32 temp;
+
+	/* gart control */
+	pci_read_config_dword(agp_bridge.dev, NVIDIA_0_APSIZE, &temp);
+	pci_write_config_dword(agp_bridge.dev, NVIDIA_0_APSIZE,
+		temp & ~(0x100));
+
+	/* gtlb control */
+	pci_read_config_dword(nvidia_private.dev_2, NVIDIA_2_GARTCTRL, &temp);
+	pci_write_config_dword(nvidia_private.dev_2, NVIDIA_2_GARTCTRL,
+		temp & ~(0x11));
+
+	/* unmap aperture */
+	iounmap((void *) nvidia_private.aperture);
+
+	/* restore previous aperture size */
+	previous_size = A_SIZE_8(agp_bridge.previous_size);
+	pci_write_config_byte(agp_bridge.dev, NVIDIA_0_APSIZE,
+		previous_size->size_value);
+
+	/* restore iorr for previous aperture size */
+	nvidia_init_iorr(agp_bridge.gart_bus_addr,
+		previous_size->size * 1024 * 1024);
+}
+
+static void nvidia_tlbflush(agp_memory * mem)
+{
+	int i;
+	unsigned long end;
+	u32 wbc_reg, wbc_mask, temp;
+
+	/* flush chipset */
+	switch(agp_bridge.type) {
+	case NVIDIA_NFORCE:
+		wbc_mask = 0x00010000;
+		break;
+	case NVIDIA_NFORCE2:
+		wbc_mask = 0x80000000;
+		break;
+	default:
+		wbc_mask = 0;
+		break;
+	}
+
+	if (wbc_mask) {
+		pci_read_config_dword(nvidia_private.dev_1, NVIDIA_1_WBC, &wbc_reg);
+		wbc_reg |= wbc_mask;
+		pci_write_config_dword(nvidia_private.dev_1, NVIDIA_1_WBC, wbc_reg);
+
+		end = jiffies + 3*HZ;
+		do {
+			pci_read_config_dword(nvidia_private.dev_1, NVIDIA_1_WBC, &wbc_reg);
+			if ((signed)(end - jiffies) <= 0) {
+				printk(KERN_ERR "TLB flush took more than 3 seconds.\n");
+			}
+		} while (wbc_reg & wbc_mask);
+	}
+
+	/* flush TLB entries */
+	for(i = 0; i < 32 + 1; i++)
+		temp = nvidia_private.aperture[i * PAGE_SIZE / sizeof(u32)];
+	for(i = 0; i < 32 + 1; i++)
+		temp = nvidia_private.aperture[i * PAGE_SIZE / sizeof(u32)];
+}
+
+static unsigned long nvidia_mask_memory(unsigned long addr, int type)
+{
+	/* Memory type is ignored */
+
+	return addr | agp_bridge.masks[0].mask;
+}
+
+static int nvidia_insert_memory(agp_memory * mem,
+				     off_t pg_start, int type)
+{
+	int i, j;
+	
+	if ((type != 0) || (mem->type != 0))
+		return -EINVAL;
+	
+	if ((pg_start + mem->page_count) >
+		(nvidia_private.num_active_entries - agp_memory_reserved/PAGE_SIZE))
+		return -EINVAL;
+	
+	for(j = pg_start; j < (pg_start + mem->page_count); j++) {
+		if (!PGE_EMPTY(agp_bridge.gatt_table[nvidia_private.pg_offset + j])) {
+			return -EBUSY;
+		}
+	}
+
+	if (mem->is_flushed == FALSE) {
+		CACHE_FLUSH();
+		mem->is_flushed = TRUE;
+	}
+	for (i = 0, j = pg_start; i < mem->page_count; i++, j++) {
+		agp_bridge.gatt_table[nvidia_private.pg_offset + j] = agp_bridge.mask_memory(mem->memory[i], mem->type);
+	}
+
+	agp_bridge.tlb_flush(mem);
+	return 0;
+}
+
+static int nvidia_remove_memory(agp_memory * mem, off_t pg_start,
+				     int type)
+{
+	int i;
+
+	if ((type != 0) || (mem->type != 0))
+		return -EINVAL;
+	
+	for (i = pg_start; i < (mem->page_count + pg_start); i++) {
+		agp_bridge.gatt_table[nvidia_private.pg_offset + i] =
+		    (unsigned long) agp_bridge.scratch_page;
+	}
+
+	agp_bridge.tlb_flush(mem);
+	return 0;
+}
+
+static aper_size_info_8 nvidia_generic_sizes[5] =
+{
+	{512, 131072, 7, 0},
+	{256, 65536, 6, 8},
+	{128, 32768, 5, 12},
+	{64, 16384, 4, 14},
+	/* The 32M mode still requires a 64k gatt */
+	{32, 16384, 4, 15}
+};
+
+static gatt_mask nvidia_generic_masks[] =
+{
+	{0x00000001, 0}
+};
+
+static int __init nvidia_generic_setup (struct pci_dev *pdev)
+{
+	nvidia_private.dev_1 =
+		pci_find_slot((unsigned int)pdev->bus->number, PCI_DEVFN(0, 1));
+	nvidia_private.dev_2 =
+		pci_find_slot((unsigned int)pdev->bus->number, PCI_DEVFN(0, 2));
+	nvidia_private.dev_3 =
+		pci_find_slot((unsigned int)pdev->bus->number, PCI_DEVFN(30, 0));
+	
+	if((nvidia_private.dev_1 == NULL) ||
+		(nvidia_private.dev_2 == NULL) ||
+		(nvidia_private.dev_3 == NULL)) {
+		printk(KERN_INFO PFX "agpgart: Detected an NVIDIA "
+			"nForce/nForce2 chipset, but could not find "
+			"the secondary devices.\n");
+		agp_bridge.type = NOT_SUPPORTED;
+		return -ENODEV;
+	}
+
+	agp_bridge.masks = nvidia_generic_masks;
+	agp_bridge.aperture_sizes = (void *) nvidia_generic_sizes;
+	agp_bridge.size_type = U8_APER_SIZE;
+	agp_bridge.num_aperture_sizes = 5;
+	agp_bridge.dev_private_data = (void *) &nvidia_private;
+	agp_bridge.needs_scratch_page = FALSE;
+	agp_bridge.configure = nvidia_configure;
+	agp_bridge.fetch_size = nvidia_fetch_size;
+	agp_bridge.cleanup = nvidia_cleanup;
+	agp_bridge.tlb_flush = nvidia_tlbflush;
+	agp_bridge.mask_memory = nvidia_mask_memory;
+	agp_bridge.agp_enable = agp_generic_agp_enable;
+	agp_bridge.cache_flush = global_cache_flush;
+	agp_bridge.create_gatt_table = agp_generic_create_gatt_table;
+	agp_bridge.free_gatt_table = agp_generic_free_gatt_table;
+	agp_bridge.insert_memory = nvidia_insert_memory;
+	agp_bridge.remove_memory = nvidia_remove_memory;
+	agp_bridge.alloc_by_type = agp_generic_alloc_by_type;
+	agp_bridge.free_by_type = agp_generic_free_by_type;
+	agp_bridge.agp_alloc_page = agp_generic_alloc_page;
+	agp_bridge.agp_destroy_page = agp_generic_destroy_page;
+	agp_bridge.suspend = agp_generic_suspend;
+	agp_bridge.resume = agp_generic_resume;
+	agp_bridge.cant_use_aperture = 0;
+
+	return 0;
+}
+
+#endif /* CONFIG_AGP_NVIDIA */
 
 #ifdef CONFIG_AGP_HP_ZX1
 
@@ -4516,15 +4886,38 @@ static struct {
 	{ PCI_DEVICE_ID_INTEL_830_M_0,
 		PCI_VENDOR_ID_INTEL,
 		INTEL_I830_M,
-		"Intel",
-		"i830M",
+		"Intel(R)",
+		"830M",
 		intel_830mp_setup },
-    { PCI_DEVICE_ID_INTEL_845_G_0,
+	
+	{ PCI_DEVICE_ID_INTEL_845_G_0,
 		 PCI_VENDOR_ID_INTEL,
 		 INTEL_I845_G,
-		 "Intel",
-		 "i845G",
+		 "Intel(R)",
+		 "845G",
 		 intel_845_setup },
+
+	{ PCI_DEVICE_ID_INTEL_855_GM_0,
+		 PCI_VENDOR_ID_INTEL,
+		 INTEL_I855_PM,
+		 "Intel(R)",
+		 "855PM",
+		 intel_845_setup },
+
+	{ PCI_DEVICE_ID_INTEL_855_PM_0,
+		 PCI_VENDOR_ID_INTEL,
+		 INTEL_I855_PM,
+		 "Intel(R)",
+		 "855PM",
+		 intel_845_setup },
+
+	{ PCI_DEVICE_ID_INTEL_865_G_0,
+		PCI_VENDOR_ID_INTEL,
+		INTEL_I865_G,
+		"Intel(R)",
+		"865G",
+		 intel_845_setup },
+
 	{ PCI_DEVICE_ID_INTEL_840_0,
 		PCI_VENDOR_ID_INTEL,
 		INTEL_I840,
@@ -4565,11 +4958,23 @@ static struct {
 		"SiS",
 		"740",
 		sis_generic_setup },
+	{ PCI_DEVICE_ID_SI_651,
+		PCI_VENDOR_ID_SI,
+		SIS_GENERIC,
+		"SiS",
+		"651",
+		sis_generic_setup },
 	{ PCI_DEVICE_ID_SI_650,
 		PCI_VENDOR_ID_SI,
 		SIS_GENERIC,
 		"SiS",
 		"650",
+		sis_generic_setup },
+	{ PCI_DEVICE_ID_SI_651,
+		PCI_VENDOR_ID_SI,
+		SIS_GENERIC,
+		"SiS",
+		"651",
 		sis_generic_setup },
 	{ PCI_DEVICE_ID_SI_645,
 		PCI_VENDOR_ID_SI,
@@ -4583,6 +4988,12 @@ static struct {
 		"SiS",
 		"646",
 		sis_generic_setup },
+	{ PCI_DEVICE_ID_SI_648,
+		PCI_VENDOR_ID_SI,
+		SIS_GENERIC,
+		"SiS",
+		"648",
+		sis_generic_setup },		
 	{ PCI_DEVICE_ID_SI_735,
 		PCI_VENDOR_ID_SI,
 		SIS_GENERIC,
@@ -4594,6 +5005,12 @@ static struct {
 		SIS_GENERIC,
 		"SiS",
 		"745",
+		sis_generic_setup },
+	{ PCI_DEVICE_ID_SI_746,
+		PCI_VENDOR_ID_SI,
+		SIS_GENERIC,
+		"SiS",
+		"746",
 		sis_generic_setup },
 	{ PCI_DEVICE_ID_SI_730,
 		PCI_VENDOR_ID_SI,
@@ -4658,6 +5075,12 @@ static struct {
 		"Via",
 		"MVP3",
 		via_generic_setup },
+	{ PCI_DEVICE_ID_VIA_8601_0,
+		PCI_VENDOR_ID_VIA,
+		VIA_APOLLO_PLE133,
+		"Via",
+		"Apollo PLE133",
+		via_generic_setup },
 	{ PCI_DEVICE_ID_VIA_82C691_0,
 		PCI_VENDOR_ID_VIA,
 		VIA_APOLLO_PRO,
@@ -4682,17 +5105,29 @@ static struct {
 		"Via",
 		"Apollo Pro KT266",
 		via_generic_setup },
+	{ PCI_DEVICE_ID_VIA_8375,
+		PCI_VENDOR_ID_VIA,
+		VIA_APOLLO_KM266,
+		"Via",
+		"Apollo Pro KM266 / KL266",
+		via_generic_setup },
+	{ PCI_DEVICE_ID_VIA_8377_0,
+		PCI_VENDOR_ID_VIA,
+		VIA_APOLLO_KT400,
+		"Via",
+		"Apollo Pro KT400",
+		via_generic_setup },
         { PCI_DEVICE_ID_VIA_8377_0,
 		PCI_VENDOR_ID_VIA,
 		VIA_APOLLO_KT400,
 		"Via",
 		"Apollo Pro KT400",
 		via_generic_setup },
-	{ PCI_DEVICE_ID_VIA_P4X333,
+	{ PCI_DEVICE_ID_VIA_P4M266,
 		PCI_VENDOR_ID_VIA,
-		VIA_APOLLO_P4X400,
+		VIA_APOLLO_P4M266,
 		"Via",
-		"Apollo P4X400",
+		"Apollo P4M266",
 		via_generic_setup },
 	{ 0,
 		PCI_VENDOR_ID_VIA,
@@ -4701,6 +5136,27 @@ static struct {
 		"Generic",
 		via_generic_setup },
 #endif /* CONFIG_AGP_VIA */
+
+#ifdef CONFIG_AGP_NVIDIA
+	{ PCI_DEVICE_ID_NVIDIA_NFORCE,
+		PCI_VENDOR_ID_NVIDIA,
+		NVIDIA_NFORCE,
+		"NVIDIA",
+		"nForce",
+		nvidia_generic_setup },
+	{ PCI_DEVICE_ID_NVIDIA_NFORCE2,
+		PCI_VENDOR_ID_NVIDIA,
+		NVIDIA_NFORCE2,
+		"NVIDIA",
+		"nForce2",
+		nvidia_generic_setup },
+	{ 0,
+		PCI_VENDOR_ID_NVIDIA,
+		NVIDIA_GENERIC,
+		"NVIDIA",
+		"Generic",
+		nvidia_generic_setup },
+#endif /* CONFIG_AGP_NVIDIA */
 
 #ifdef CONFIG_AGP_HP_ZX1
 	{ PCI_DEVICE_ID_HP_ZX1_LBA,
@@ -4888,10 +5344,14 @@ static int __init agp_find_supported_device(void)
                                  * with an external graphics
                                  * card. It will be initialized later 
                                  */
+				printk(KERN_ERR PFX "Detected an "
+				       "Intel(R) 845G, but could not find the"
+				       " secondary device. Assuming a "
+				       "non-integrated video card.\n");
 				agp_bridge.type = INTEL_I845_G;
 				break;
 			}
-			printk(KERN_INFO PFX "Detected an Intel "
+			printk(KERN_INFO PFX "Detected an Intel(R) "
 				   "845G Chipset.\n");
 			agp_bridge.type = INTEL_I810;
 			return intel_i830_setup(i810_dev);
@@ -4913,8 +5373,116 @@ static int __init agp_find_supported_device(void)
 				agp_bridge.type = INTEL_I830_M;
 				break;
 			}
-			printk(KERN_INFO PFX "Detected an Intel "
+			printk(KERN_INFO PFX "Detected an Intel(R) "
 				   "830M Chipset.\n");
+			agp_bridge.type = INTEL_I810;
+			return intel_i830_setup(i810_dev);
+		case PCI_DEVICE_ID_INTEL_855_GM_0:
+			i810_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
+					PCI_DEVICE_ID_INTEL_855_GM_1, NULL);
+			if(i810_dev && PCI_FUNC(i810_dev->devfn) != 0) {
+				i810_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
+					PCI_DEVICE_ID_INTEL_855_GM_1, i810_dev);
+			}
+			if (i810_dev == NULL) {
+                                /* 
+                                 * We probably have an 855PM chipset
+                                 * with an external graphics
+                                 * card. It will be initialized later.
+                                 */
+				agp_bridge.type = INTEL_I855_PM;
+				break;
+			}
+			{
+				u32 capval = 0;
+				const char *name = "855GM/852GM";
+
+				pci_read_config_dword(dev, I85X_CAPID, &capval);
+				switch ((capval >> I85X_VARIANT_SHIFT) &
+					I85X_VARIANT_MASK) {
+				case I855_GME:
+					name = "855GME";
+					break;
+				case I855_GM:
+					name = "855GM";
+					break;
+				case I852_GME:
+					name = "852GME";
+					break;
+				case I852_GM:
+					name = "852GM";
+					break;
+				}
+				printk(KERN_INFO PFX "Detected an Intel(R) "
+					"%s Chipset.\n", name);
+			}
+			agp_bridge.type = INTEL_I810;
+			return intel_i830_setup(i810_dev);
+		case PCI_DEVICE_ID_INTEL_855_PM_0:
+			i810_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
+					PCI_DEVICE_ID_INTEL_855_PM_1, NULL);
+			if(i810_dev && PCI_FUNC(i810_dev->devfn) != 0) {
+				i810_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
+					PCI_DEVICE_ID_INTEL_855_PM_1, i810_dev);
+			}
+			if (i810_dev == NULL) {
+                                /* 
+                                 * We probably have an 855PM chipset
+                                 * with an external graphics
+                                 * card. It will be initialized later.
+                                 */
+				agp_bridge.type = INTEL_I855_PM;
+				break;
+			}
+			{
+				u32 capval = 0;
+				const char *name = "855PM/852PM";
+
+				pci_read_config_dword(dev, I85X_CAPID, &capval);
+				switch ((capval >> I85X_VARIANT_SHIFT) &
+					I85X_VARIANT_MASK) {
+				case I855_PME:
+					name = "855PME";
+					break;
+				case I855_PM:
+					name = "855PM";
+					break;
+				case I852_PME:
+					name = "852PME";
+					break;
+				case I852_PM:
+					name = "852PM";
+					break;
+				}
+				printk(KERN_INFO PFX "Detected an Intel(R) "
+					"%s Chipset.\n", name);
+			}
+			agp_bridge.type = INTEL_I810;
+			return intel_i830_setup(i810_dev);
+		case PCI_DEVICE_ID_INTEL_865_G_0:
+			i810_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
+					PCI_DEVICE_ID_INTEL_865_G_1, NULL);
+			if(i810_dev && PCI_FUNC(i810_dev->devfn) != 0) {
+				i810_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
+					PCI_DEVICE_ID_INTEL_865_G_1, i810_dev);
+			}
+
+			if (i810_dev == NULL) {
+                                /* 
+                                 * We probably have a 865G chipset
+                                 * with an external graphics
+                                 * card. It will be initialized later 
+                                 */
+				printk(KERN_ERR PFX "Detected an "
+				       "Intel(R) 865G, but could not"
+				       " find the"
+				       " secondary device. Assuming a "
+				       "non-integrated video card.\n");
+				agp_bridge.type = INTEL_I865_G;
+				break;
+			}
+			printk(KERN_INFO PFX "Detected an Intel(R) "
+				   "865G Chipset.\n");
 			agp_bridge.type = INTEL_I810;
 			return intel_i830_setup(i810_dev);
 		default:
@@ -5012,7 +5580,11 @@ static int __init agp_find_max (void)
 {
 	long memory, index, result;
 
-	memory = (num_physpages << PAGE_SHIFT) >> 20;
+#if PAGE_SHIFT < 20
+	memory = num_physpages >> (20 - PAGE_SHIFT);
+#else
+	memory = num_physpages << (PAGE_SHIFT - 20);
+#endif
 	index = 1;
 
 	while ((memory > maxes_table[index].mem) &&

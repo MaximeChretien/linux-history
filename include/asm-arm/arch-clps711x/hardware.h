@@ -119,6 +119,17 @@
 #define ETHER_SIZE       0x1000
 #define ETHER_BASE       0xfe000000
 
+#if defined (CONFIG_ARCH_GUIDEA07)
+/* persistance flash writing */
+#define GD_A07_PERSISTANCE_START       0x00300000
+#define GD_A07_PERSISTANCE_SIZE        0x00200000
+#define GD_A07_PERSISTANCE_BASE        0xe8300000
+/* Xilinx Spartan II FPGA */
+#define GD_A07_FPGA_START              0x10000000
+#define GD_A07_FPGA_SIZE               0x08000000
+#define GD_A07_FPGA_BASE               0xf0000000
+#endif
+
 #endif
 
 

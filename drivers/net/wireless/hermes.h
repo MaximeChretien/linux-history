@@ -250,7 +250,6 @@ struct hermes_scan_frame {
 	u16 scanreason;             /* ??? */
 	struct hermes_scan_apinfo aps[35];        /* Scan result */
 } __attribute__ ((packed));
-
 #define HERMES_LINKSTATUS_NOT_CONNECTED   (0x0000)  
 #define HERMES_LINKSTATUS_CONNECTED       (0x0001)
 #define HERMES_LINKSTATUS_DISCONNECTED    (0x0002)
@@ -368,7 +367,7 @@ static inline void hermes_read_words(struct hermes *hw, int off, void *buf, unsi
 	if (hw->io_space) {
 		insw(hw->iobase + off, buf, count);
 	} else {
-		int i;
+		unsigned i;
 		u16 *p;
 
 		/* This needs to *not* byteswap (like insw()) but
@@ -388,7 +387,7 @@ static inline void hermes_write_words(struct hermes *hw, int off, const void *bu
 	if (hw->io_space) {
 		outsw(hw->iobase + off, buf, count);
 	} else {
-		int i;
+		unsigned i;
 		const u16 *p;
 
 		/* This needs to *not* byteswap (like outsw()) but
@@ -398,6 +397,21 @@ static inline void hermes_write_words(struct hermes *hw, int off, const void *bu
 		for (i = 0, p = buf; i < count; i++) {
 			writew(le16_to_cpu(*p++), hw->iobase + off);
 		}
+	}
+}
+
+static inline void hermes_clear_words(struct hermes *hw, int off, unsigned count)
+{
+	unsigned i;
+
+	off = off << hw->reg_spacing;;
+
+	if (hw->io_space) {
+		for (i = 0; i < count; i++)
+			outw(0, hw->iobase + off);
+	} else {
+		for (i = 0; i < count; i++)
+			writew(0, hw->iobase + off);
 	}
 }
 

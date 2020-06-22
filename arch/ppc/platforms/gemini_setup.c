@@ -154,7 +154,7 @@ gemini_heartbeat(void)
 	if (smp_processor_id()) {
 		static short ratelimit;
 		if (!ratelimit++)
-			printk(KERN_ERR "%s: unexpected heartbeat on cpu %d\n", 
+			printk(KERN_ERR "%s: unexpected heartbeat on cpu %d\n",
 					__FUNCTION__, smp_processor_id());
 		return;
 	}

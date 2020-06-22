@@ -2059,18 +2059,15 @@ awe_ioctl(int dev, unsigned int cmd, caddr_t arg)
 		awe_reset(dev);
 		awe_reset_samples();
 		return 0;
-		break;
 
 	case SNDCTL_SEQ_PERCMODE:
 		/* what's this? */
 		return 0;
-		break;
 
 	case SNDCTL_SYNTH_MEMAVL:
 		return memsize - awe_free_mem_ptr() * 2;
 
 	default:
-		printk(KERN_WARNING "AWE32: unsupported ioctl %d\n", cmd);
 		return -EINVAL;
 	}
 }

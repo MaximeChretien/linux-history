@@ -4,6 +4,9 @@
 #include <linux/config.h>
 #include <linux/module.h>
 
+#include <linux/pm.h>
+EXPORT_SYMBOL(pm_idle);
+
 #include <linux/string.h>
 
 EXPORT_SYMBOL_NOVERS(memset);
@@ -47,6 +50,7 @@ EXPORT_SYMBOL(ip_fast_csum);
 EXPORT_SYMBOL(__ia64_memcpy_fromio);
 EXPORT_SYMBOL(__ia64_memcpy_toio);
 EXPORT_SYMBOL(__ia64_memset_c_io);
+EXPORT_SYMBOL(io_space);
 
 #include <asm/semaphore.h>
 EXPORT_SYMBOL_NOVERS(__down);

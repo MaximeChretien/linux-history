@@ -1,9 +1,8 @@
-/* $Id: setup.c,v 1.27 2002/10/11 12:57:15 pkj Exp $
- *
+/*
  *  linux/arch/cris/kernel/setup.c
  *
  *  Copyright (C) 1995  Linus Torvalds
- *  Copyright (c) 2001  Axis Communications AB
+ *  Copyright (c) 2001, 2002, 2003  Axis Communications AB
  */
 
 /*
@@ -94,7 +93,8 @@ setup_arch(char **cmdline_p)
 		memory_start = (unsigned long) &_end;
 	} else {
 		/* otherwise the free area starts after the ROM filesystem */
-		printk("ROM fs in RAM, size %lu bytes\n", romfs_length);
+		printk(KERN_INFO "ROM fs in RAM, size %lu bytes\n",
+		       romfs_length);
 		memory_start = romfs_start + romfs_length;
 	}
 
@@ -169,9 +169,14 @@ setup_arch(char **cmdline_p)
 
 	*cmdline_p = command_line;
 
+#ifdef CONFIG_ETRAX_CMDLINE
+	strncpy(command_line, CONFIG_ETRAX_CMDLINE, COMMAND_LINE_SIZE);
+#elif defined(CONFIG_ETRAX_ROOT_DEVICE)
 	strncpy(command_line, "root=", COMMAND_LINE_SIZE);
 	strncpy(command_line+5, CONFIG_ETRAX_ROOT_DEVICE,
 			COMMAND_LINE_SIZE-5);
+#endif
+	command_line[COMMAND_LINE_SIZE - 1] = '\0';
 
 	/* Save command line copy for /proc/cmdline */
 	
@@ -180,7 +185,7 @@ setup_arch(char **cmdline_p)
 
 	/* give credit for the CRIS port */
 
-	printk("Linux/CRIS port on ETRAX 100LX (c) 2001, 2002 Axis Communications AB\n");
+	printk(KERN_INFO "Linux/CRIS port on ETRAX 100LX (c) 2001, 2002 Axis Communications AB\n");
 
 }
 

@@ -90,6 +90,7 @@
 #define BTTV_SENSORAY311    0x49
 #define BTTV_RV605          0x4a
 #define BTTV_WINDVR         0x4c
+#define BTTV_GRANDTEC       0x4d
 #define BTTV_KWORLD         0x4e
 #define BTTV_HAUPPAUGEPVR   0x50
 #define BTTV_GVBCTV5PCI     0x51
@@ -110,6 +111,10 @@
 #define BTTV_EURESYS_PICOLO 0x61
 #define BTTV_PV150          0x62
 #define BTTV_AD_TVK503      0x63
+#define BTTV_IVC200         0x66
+#define BTTV_XGUARD         0x67
+#define BTTV_NEBULA_DIGITV  0x68
+#define BTTV_PV143          0x69
 
 /* i2c address list */
 #define I2C_TSA5522        0xc2
@@ -247,7 +252,6 @@ extern void bttv_i2c_call(unsigned int card, unsigned int cmd, void *arg);
 
 
 /* i2c */
-#define I2C_CLIENTS_MAX 16
 extern void bttv_bit_setscl(void *data, int state);
 extern void bttv_bit_setsda(void *data, int state);
 extern void bttv_call_i2c_clients(struct bttv *btv, unsigned int cmd, void *arg);

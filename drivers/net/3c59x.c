@@ -166,6 +166,11 @@
     - Rename wait_for_completion() to issue_and_wait() to avoid completion.h
       clash.
 
+    LK1.1.18ac 01Jul02 akpm
+     - Fix for undocumented transceiver power-up bit on some 3c566B's
+       (Donald Becker, Rahul Karnik)
+ 
+
     - See http://www.uow.edu.au/~andrewm/linux/#3c59x-2.3 for more details.
     - Also see Documentation/networking/vortex.txt
 */
@@ -181,8 +186,8 @@
 
 
 #define DRV_NAME	"3c59x"
-#define DRV_VERSION	"LK1.1.16"
-#define DRV_RELDATE	"19 July 2001"
+#define DRV_VERSION	"LK1.1.18-ac"
+#define DRV_RELDATE	"1 July 2002"
 
 
 
@@ -400,7 +405,7 @@ enum {	IS_VORTEX=1, IS_BOOMERANG=2, IS_CYCLONE=4, IS_TORNADO=8,
 	EEPROM_8BIT=0x10,	/* AKPM: Uses 0x230 as the base bitmaps for EEPROM reads */
 	HAS_PWR_CTRL=0x20, HAS_MII=0x40, HAS_NWAY=0x80, HAS_CB_FNS=0x100,
 	INVERT_MII_PWR=0x200, INVERT_LED_PWR=0x400, MAX_COLLISION_RESET=0x800,
-	EEPROM_OFFSET=0x1000, HAS_HWCKSM=0x2000 };
+	EEPROM_OFFSET=0x1000, HAS_HWCKSM=0x2000, WNO_XCVR_PWR=0x4000 };
 
 enum vortex_chips {
 	CH_3C590 = 0,
@@ -424,6 +429,7 @@ enum vortex_chips {
 	CH_3C905B_2,
 	CH_3C905B_FX,
 	CH_3C905C,
+	CH_3C905C2,
 	CH_3C980,
 	CH_3C9805,
 
@@ -442,6 +448,8 @@ enum vortex_chips {
 	CH_3CCFEM656_1,
 	CH_3C450,
 	CH_3C920,
+	CH_3C982A,
+	CH_3C982B,
 };
 
 
@@ -495,10 +503,12 @@ static struct vortex_chip_info {
 	 PCI_USES_IO|PCI_USES_MASTER, IS_CYCLONE|HAS_HWCKSM, 128, },
 	{"3c905C Tornado",
 	 PCI_USES_IO|PCI_USES_MASTER, IS_TORNADO|HAS_NWAY|HAS_HWCKSM, 128, },
+	{"3c905C Tornado 2",
+	 PCI_USES_IO|PCI_USES_MASTER, IS_TORNADO|HAS_NWAY|HAS_HWCKSM, 128, },
 	{"3c980 Cyclone",
 	 PCI_USES_IO|PCI_USES_MASTER, IS_CYCLONE|HAS_HWCKSM, 128, },
-	{"3c982 Dual Port Server Cyclone",
-	 PCI_USES_IO|PCI_USES_MASTER, IS_CYCLONE|HAS_HWCKSM, 128, },
+	{"3c980C Python-T",
+	 PCI_USES_IO|PCI_USES_MASTER, IS_CYCLONE|HAS_NWAY|HAS_HWCKSM, 128, },
 
 	{"3cSOHO100-TX Hurricane",
 	 PCI_USES_IO|PCI_USES_MASTER, IS_CYCLONE|HAS_NWAY|HAS_HWCKSM, 128, },
@@ -509,7 +519,7 @@ static struct vortex_chip_info {
 									HAS_HWCKSM, 128, },
 	{"3c556B Laptop Hurricane",
 	 PCI_USES_IO|PCI_USES_MASTER, IS_TORNADO|HAS_NWAY|EEPROM_OFFSET|HAS_CB_FNS|INVERT_MII_PWR|
-									HAS_HWCKSM, 128, },
+	                                WNO_XCVR_PWR|HAS_HWCKSM, 128, },
 	{"3c575 [Megahertz] 10/100 LAN 	CardBus",
 	PCI_USES_IO|PCI_USES_MASTER, IS_BOOMERANG|HAS_MII|EEPROM_8BIT, 128, },
 
@@ -535,6 +545,11 @@ static struct vortex_chip_info {
 	 PCI_USES_IO|PCI_USES_MASTER, IS_TORNADO|HAS_NWAY|HAS_HWCKSM, 128, },
 	{"3c920 Tornado",
 	 PCI_USES_IO|PCI_USES_MASTER, IS_TORNADO|HAS_NWAY|HAS_HWCKSM, 128, },
+	{"3c982 Hydra Dual Port A",
+	 PCI_USES_IO|PCI_USES_MASTER, IS_TORNADO|HAS_HWCKSM|HAS_NWAY, 128, },
+	{"3c982 Hydra Dual Port B",
+	 PCI_USES_IO|PCI_USES_MASTER, IS_TORNADO|HAS_HWCKSM|HAS_NWAY, 128, },
+
 	{0,}, /* 0 terminated list. */
 };
 
@@ -561,6 +576,7 @@ static struct pci_device_id vortex_pci_tbl[] __devinitdata = {
 	{ 0x10B7, 0x9058, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3C905B_2 },
 	{ 0x10B7, 0x905A, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3C905B_FX },
 	{ 0x10B7, 0x9200, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3C905C },
+	{ 0x10B7, 0x9201, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3C905C2 },
 	{ 0x10B7, 0x9800, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3C980 },
 	{ 0x10B7, 0x9805, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3C9805 },
 
@@ -579,6 +595,8 @@ static struct pci_device_id vortex_pci_tbl[] __devinitdata = {
 	{ 0x10B7, 0x6564, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3CCFEM656_1 },
 	{ 0x10B7, 0x4500, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3C450 },
 	{ 0x10B7, 0x9201, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3C920 },
+	{ 0x10B7, 0x1201, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3C982A },
+	{ 0x10B7, 0x1202, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CH_3C982B },
 	{0,}						/* 0 terminated list. */
 };
 MODULE_DEVICE_TABLE(pci, vortex_pci_tbl);
@@ -1190,6 +1208,10 @@ static int __devinit vortex_probe1(struct pci_dev *pdev,
 		if (vp->drv_flags & INVERT_MII_PWR)
 			n |= 0x4000;
 		outw(n, ioaddr + Wn2_ResetOptions);
+		if (vp->drv_flags & WNO_XCVR_PWR) {
+			EL3WINDOW(0);
+			outw(0x0800, ioaddr);
+		}
 	}
 
 	/* Extract our information from the EEPROM data. */

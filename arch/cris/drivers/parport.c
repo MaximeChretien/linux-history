@@ -1,13 +1,13 @@
-/* $Id: parport.c,v 1.10 2002/10/03 05:54:24 starvik Exp $
- * 
- * Elinux parallel port driver
+/*
+ * Parallel port driver for ETRAX.
+ *
  * NOTE!
  *   Since par0 shares DMA with ser2 and par 1 shares DMA with ser3
  *   this should be handled if both are enabled at the same time.
  *   THIS IS NOT HANDLED YET!
  *
- * Copyright (c) 2001 Axis Communications AB
- * 
+ * Copyright (c) 2001, 2002, 2003 Axis Communications AB
+ *
  * Author: Fredrik Hugosson
  *
  */
@@ -406,7 +406,7 @@ parport_etrax_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 static void __init
 parport_etrax_show_parallel_version(void)
 {
-	printk("ETRAX 100LX parallel port driver v1.0, (c) 2001 Axis Communications AB\n");
+	printk("ETRAX 100LX parallel port driver v1.0, (c) 2001-2003 Axis Communications AB\n");
 }
 
 #ifdef CONFIG_ETRAX_PAR0_DMA

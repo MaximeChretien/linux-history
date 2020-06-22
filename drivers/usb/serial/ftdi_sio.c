@@ -17,6 +17,48 @@
  * See http://ftdi-usb-sio.sourceforge.net for upto date testing info
  *	and extra documentation
  *
+ * (23/Jun/2003) Ian Abbott
+ *      Reduced flip buffer pushes and corrected a data length test in
+ *      ftdi_read_bulk_callback.
+ *      Defererence pointers after any paranoid checks, not before.
+ *
+ * (21/Jun/2003) Erik Nygren
+ *      Added support for Home Electronics Tira-1 IR tranceiver using FT232BM chip.
+ *      See <http://www.home-electro.com/tira1.htm>.  Only operates properly 
+ *      at 100000 and RTS-CTS, so set custom divisor mode on startup.
+ *      Also force the Tira-1 and USB-UIRT to only use their custom baud rates.
+ *
+ * (18/Jun/2003) Ian Abbott
+ *      Added Device ID of the USB relais from Rudolf Gugler (backported from
+ *      Philipp Gühring's patch for 2.5.x kernel).
+ *      Moved read transfer buffer reallocation into startup function.
+ *      Free existing write urb and transfer buffer in startup function.
+ *      Only use urbs in write urb pool that were successfully allocated.
+ *      Moved some constant macros out of functions.
+ *      Minor whitespace and comment changes.
+ *
+ * (12/Jun/2003) David Norwood
+ *      Added support for USB-UIRT IR tranceiver using 8U232AM chip.
+ *      See <http://home.earthlink.net/~jrhees/USBUIRT/index.htm>.  Only
+ *      operates properly at 312500, so set custom divisor mode on startup.
+ *
+ * (12/Jun/2003) Ian Abbott
+ *      Added Sealevel SeaLINK+ 210x, 220x, 240x, 280x vid/pids from Tuan Hoang
+ *      - I've eliminated some that don't seem to exist!
+ *      Added Home Electronics Tira-1 IR transceiver pid from Chris Horn
+ *      Some whitespace/coding-style cleanups
+ *
+ * (11/Jun/2003) Ian Abbott
+ *      Fixed unsafe spinlock usage in ftdi_write
+ *
+ * (24/Feb/2003) Richard Shooter
+ *      Increase read buffer size to improve read speeds at higher baud rates
+ *      (specifically tested with up to 1Mb/sec at 1.5M baud)
+ *
+ * (23/Feb/2003) John Wilkins
+ *      Added Xon/xoff flow control (activating support in the ftdi device)
+ *      Added vid/pid for Videonetworks/Homechoice (UK ISP)
+ *
  * (23/Feb/2003) Bill Ryder
  *      Added matrix orb device vid/pids from Wayne Wylupski
  *
@@ -175,7 +217,7 @@
 /*
  * Version Information
  */
-#define DRIVER_VERSION "v1.3.2"
+#define DRIVER_VERSION "v1.3.4"
 #define DRIVER_AUTHOR "Greg Kroah-Hartman <greg@kroah.com>, Bill Ryder <bryder@sgi.com>, Kuba Ober <kuba@mareimbrium.org>"
 #define DRIVER_DESC "USB FTDI Serial Converters Driver"
 
@@ -203,9 +245,12 @@ static struct usb_device_id id_table_sio [] = {
 
 static struct usb_device_id id_table_8U232AM [] = {
 	{ USB_DEVICE_VER(FTDI_VID, FTDI_8U232AM_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_RELAIS_PID, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_NF_RIC_VID, FTDI_NF_RIC_PID, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_VID, FTDI_XF_634_PID, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_VID, FTDI_XF_632_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_VNHCPCUSB_D_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_DSS20_PID, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_MTXORB_VID, FTDI_MTXORB_0_PID, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_MTXORB_VID, FTDI_MTXORB_1_PID, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_MTXORB_VID, FTDI_MTXORB_2_PID, 0, 0x3ff) },
@@ -213,15 +258,64 @@ static struct usb_device_id id_table_8U232AM [] = {
 	{ USB_DEVICE_VER(FTDI_MTXORB_VID, FTDI_MTXORB_4_PID, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_MTXORB_VID, FTDI_MTXORB_5_PID, 0, 0x3ff) },
 	{ USB_DEVICE_VER(FTDI_MTXORB_VID, FTDI_MTXORB_6_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2101_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2102_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2103_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2104_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2201_1_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2201_2_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2202_1_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2202_2_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2203_1_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2203_2_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2401_1_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2401_2_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2401_3_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2401_4_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2402_1_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2402_2_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2402_3_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2402_4_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2403_1_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2403_2_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2403_3_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2403_4_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_1_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_2_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_3_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_4_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_5_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_6_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_7_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_8_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_1_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_2_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_3_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_4_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_5_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_6_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_7_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_8_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_1_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_2_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_3_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_4_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_5_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_6_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_7_PID, 0, 0x3ff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_8_PID, 0, 0x3ff) },
 	{ }						/* Terminating entry */
 };
 
 
 static struct usb_device_id id_table_FT232BM [] = {
 	{ USB_DEVICE_VER(FTDI_VID, FTDI_8U232AM_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_RELAIS_PID, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_NF_RIC_VID, FTDI_NF_RIC_PID, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_VID, FTDI_XF_634_PID, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_VID, FTDI_XF_632_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_VNHCPCUSB_D_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_DSS20_PID, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_MTXORB_VID, FTDI_MTXORB_0_PID, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_MTXORB_VID, FTDI_MTXORB_1_PID, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_MTXORB_VID, FTDI_MTXORB_2_PID, 0x400, 0xffff) },
@@ -229,7 +323,64 @@ static struct usb_device_id id_table_FT232BM [] = {
 	{ USB_DEVICE_VER(FTDI_MTXORB_VID, FTDI_MTXORB_4_PID, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_MTXORB_VID, FTDI_MTXORB_5_PID, 0x400, 0xffff) },
 	{ USB_DEVICE_VER(FTDI_MTXORB_VID, FTDI_MTXORB_6_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2101_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2102_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2103_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2104_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2201_1_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2201_2_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2202_1_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2202_2_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2203_1_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2203_2_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2401_1_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2401_2_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2401_3_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2401_4_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2402_1_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2402_2_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2402_3_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2402_4_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2403_1_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2403_2_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2403_3_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2403_4_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_1_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_2_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_3_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_4_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_5_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_6_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_7_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2801_8_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_1_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_2_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_3_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_4_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_5_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_6_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_7_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2802_8_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_1_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_2_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_3_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_4_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_5_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_6_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_7_PID, 0x400, 0xffff) },
+	{ USB_DEVICE_VER(SEALEVEL_VID, SEALEVEL_2803_8_PID, 0x400, 0xffff) },
+	{ }						/* Terminating entry */
+};
 
+
+static struct usb_device_id id_table_USB_UIRT [] = {
+	{ USB_DEVICE(FTDI_VID, FTDI_USB_UIRT_PID) },
+	{ }						/* Terminating entry */
+};
+
+
+static struct usb_device_id id_table_HE_TIRA1 [] = {
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_HE_TIRA1_PID, 0x400, 0xffff) },
 	{ }						/* Terminating entry */
 };
 
@@ -237,16 +388,68 @@ static struct usb_device_id id_table_FT232BM [] = {
 static __devinitdata struct usb_device_id id_table_combined [] = {
 	{ USB_DEVICE(FTDI_VID, FTDI_SIO_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_8U232AM_PID) },
+	{ USB_DEVICE(FTDI_VID, FTDI_RELAIS_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_XF_634_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_XF_632_PID) },
+	{ USB_DEVICE(FTDI_VID, FTDI_DSS20_PID) },
 	{ USB_DEVICE(FTDI_NF_RIC_VID, FTDI_NF_RIC_PID) },
+	{ USB_DEVICE(FTDI_VID, FTDI_VNHCPCUSB_D_PID) },
 	{ USB_DEVICE(FTDI_MTXORB_VID, FTDI_MTXORB_0_PID) },
 	{ USB_DEVICE(FTDI_MTXORB_VID, FTDI_MTXORB_1_PID) },
 	{ USB_DEVICE(FTDI_MTXORB_VID, FTDI_MTXORB_2_PID) },
 	{ USB_DEVICE(FTDI_MTXORB_VID, FTDI_MTXORB_3_PID) },
 	{ USB_DEVICE(FTDI_MTXORB_VID, FTDI_MTXORB_4_PID) },
 	{ USB_DEVICE(FTDI_MTXORB_VID, FTDI_MTXORB_5_PID) },
-	{ USB_DEVICE(FTDI_MTXORB_VID, FTDI_MTXORB_6_PID) },	{ }						/* Terminating entry */
+	{ USB_DEVICE(FTDI_MTXORB_VID, FTDI_MTXORB_6_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2101_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2102_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2103_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2104_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2201_1_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2201_2_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2202_1_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2202_2_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2203_1_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2203_2_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2401_1_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2401_2_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2401_3_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2401_4_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2402_1_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2402_2_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2402_3_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2402_4_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2403_1_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2403_2_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2403_3_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2403_4_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2801_1_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2801_2_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2801_3_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2801_4_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2801_5_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2801_6_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2801_7_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2801_8_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2802_1_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2802_2_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2802_3_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2802_4_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2802_5_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2802_6_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2802_7_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2802_8_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2803_1_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2803_2_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2803_3_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2803_4_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2803_5_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2803_6_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2803_7_PID) },
+	{ USB_DEVICE(SEALEVEL_VID, SEALEVEL_2803_8_PID) },
+	{ USB_DEVICE_VER(FTDI_VID, FTDI_HE_TIRA1_PID, 0x400, 0xffff) },
+	{ USB_DEVICE(FTDI_VID, FTDI_USB_UIRT_PID) },
+	{ }						/* Terminating entry */
 };
 
 MODULE_DEVICE_TABLE (usb, id_table_combined);
@@ -257,6 +460,9 @@ MODULE_DEVICE_TABLE (usb, id_table_combined);
 /* Don't be tempted to increase this buffer to > 64 ! I tried it and it doesn't work */
 #define URB_TRANSFER_BUFFER_SIZE	64 /* the device's max packet size */
 
+/* Constants for read urb */
+#define BUFSZ 512
+#define PKTSZ 64
 
 struct ftdi_private {
 	ftdi_chip_type_t chip_type;
@@ -276,6 +482,8 @@ struct ftdi_private {
 	struct urb	*write_urb_pool[NUM_URBS];
 	spinlock_t	write_urb_pool_lock;
 
+	int force_baud;		/* if non-zero, force the baud rate to this value */
+	int force_rtscts;	/* if non-zero, force RTS-CTS to always be enabled */
 };
 
 /* Used for TIOCMIWAIT */
@@ -290,6 +498,8 @@ struct ftdi_private {
 static int  ftdi_SIO_startup		(struct usb_serial *serial);
 static int  ftdi_8U232AM_startup	(struct usb_serial *serial);
 static int  ftdi_FT232BM_startup	(struct usb_serial *serial);
+static int  ftdi_USB_UIRT_startup	(struct usb_serial *serial);
+static int  ftdi_HE_TIRA1_startup	(struct usb_serial *serial);
 static void ftdi_shutdown		(struct usb_serial *serial);
 static int  ftdi_open			(struct usb_serial_port *port, struct file *filp);
 static void ftdi_close			(struct usb_serial_port *port, struct file *filp);
@@ -378,6 +588,56 @@ static struct usb_serial_device_type ftdi_FT232BM_device = {
 	.set_termios =		ftdi_set_termios,
 	.break_ctl =		ftdi_break_ctl,
 	.startup =		ftdi_FT232BM_startup,
+	.shutdown =		ftdi_shutdown,
+};
+
+static struct usb_serial_device_type ftdi_USB_UIRT_device = {
+	.owner =		THIS_MODULE,
+	.name =			"USB-UIRT Infrared Receiver/Transmitter",
+	.id_table =		id_table_USB_UIRT,
+	.num_interrupt_in =	0,
+	.num_bulk_in =		1,
+	.num_bulk_out =		1,
+	.num_ports =		1,
+	.open =			ftdi_open,
+	.close =		ftdi_close,
+	.throttle =		ftdi_throttle,
+	.unthrottle =		ftdi_unthrottle,
+	.write =		ftdi_write,
+	.write_room =		ftdi_write_room,
+	.chars_in_buffer =	ftdi_chars_in_buffer,
+	.read_bulk_callback =	ftdi_read_bulk_callback,
+	.write_bulk_callback =	ftdi_write_bulk_callback,
+	.ioctl =		ftdi_ioctl,
+	.set_termios =		ftdi_set_termios,
+	.break_ctl =		ftdi_break_ctl,
+	.startup =		ftdi_USB_UIRT_startup,
+	.shutdown =		ftdi_shutdown,
+};
+
+/* The TIRA1 is based on a  FT232BM which requires a fixed baud rate of 100000
+ * and which requires RTS-CTS to be enabled. */
+static struct usb_serial_device_type ftdi_HE_TIRA1_device = {
+	.owner =		THIS_MODULE,
+	.name =			"Home-Electronics TIRA-1 IR Transceiver",
+	.id_table =		id_table_HE_TIRA1,
+	.num_interrupt_in =	0,
+	.num_bulk_in =		1,
+	.num_bulk_out =		1,
+	.num_ports =		1,
+	.open =			ftdi_open,
+	.close =		ftdi_close,
+	.throttle =		ftdi_throttle,
+	.unthrottle =		ftdi_unthrottle,
+	.write =		ftdi_write,
+	.write_room =		ftdi_write_room,
+	.chars_in_buffer =	ftdi_chars_in_buffer,
+	.read_bulk_callback =	ftdi_read_bulk_callback,
+	.write_bulk_callback =	ftdi_write_bulk_callback,
+	.ioctl =		ftdi_ioctl,
+	.set_termios =		ftdi_set_termios,
+	.break_ctl =		ftdi_break_ctl,
+	.startup =		ftdi_HE_TIRA1_startup,
 	.shutdown =		ftdi_shutdown,
 };
 
@@ -684,13 +944,14 @@ check_and_exit:
 /* Called from ftdi_SIO_startup, etc. */
 static int ftdi_common_startup (struct usb_serial *serial)
 {
+	struct usb_serial_port *port = &serial->port[0];
 	struct ftdi_private *priv;
 	int i ;
 	struct urb *urb; 
 	
 	dbg("%s",__FUNCTION__);
 
-	priv = serial->port->private = kmalloc(sizeof(struct ftdi_private), GFP_KERNEL);
+	priv = kmalloc(sizeof(struct ftdi_private), GFP_KERNEL);
 	if (!priv){
 		err("%s- kmalloc(%Zd) failed.", __FUNCTION__, sizeof(struct ftdi_private));
 		return -ENOMEM;
@@ -702,17 +963,40 @@ static int ftdi_common_startup (struct usb_serial *serial)
 	   than queue a task to deliver them */
 	priv->flags = ASYNC_LOW_LATENCY;
 
-	/* create our write urb pool and transfer buffers - shared across all ftdi devices */ 
+	/* Increase the size of read buffers */
+	if (port->bulk_in_buffer) {
+		kfree (port->bulk_in_buffer);
+	}
+	port->bulk_in_buffer = kmalloc (BUFSZ, GFP_KERNEL);
+	if (!port->bulk_in_buffer) {
+		kfree (priv);
+		return -ENOMEM;
+	}
+	if (port->read_urb) {
+		port->read_urb->transfer_buffer = port->bulk_in_buffer;
+		port->read_urb->transfer_buffer_length = BUFSZ;
+	}
+
+	/* Free port's existing write urb and transfer buffer. */
+	if (port->write_urb) {
+		usb_free_urb (port->write_urb);
+		port->write_urb = NULL;
+	}
+	if (port->bulk_out_buffer) {
+		kfree (port->bulk_out_buffer);
+		port->bulk_out_buffer = NULL;
+	}
+
+	/* create our write urb pool and transfer buffers */ 
 	spin_lock_init (&priv->write_urb_pool_lock);
 	for (i = 0; i < NUM_URBS; ++i) {
 		urb = usb_alloc_urb(0);
 		priv->write_urb_pool[i] = urb;
 		if (urb == NULL) {
 			err("Unable to create new urb in urb pool");
-			continue;
+			break;
 		}
 
-		urb->transfer_buffer = NULL;
 		urb->transfer_buffer = kmalloc (URB_TRANSFER_BUFFER_SIZE, GFP_KERNEL);
 		if (!urb->transfer_buffer) {
 			err("%s - out of memory for urb buffers.", 
@@ -721,6 +1005,13 @@ static int ftdi_common_startup (struct usb_serial *serial)
 		}
 	}
 
+	/* Need at least one write urb in the pool */
+	if (i == 0) {
+		kfree (priv);
+		return -ENOMEM;
+	}
+
+	port->private = priv;
 	
 	return (0);
 }
@@ -788,6 +1079,50 @@ static int ftdi_FT232BM_startup (struct usb_serial *serial)
 	return (0);
 } /* ftdi_FT232BM_startup */
 
+/* Startup for the USB-UIRT device, which requires hardwired baudrate (38400 gets mapped to 312500) */
+/* Called from usbserial:serial_probe */
+static int ftdi_USB_UIRT_startup (struct usb_serial *serial)
+{ /* ftdi_USB_UIRT_startup */
+	struct ftdi_private *priv;
+	int err;
+
+	dbg("%s",__FUNCTION__);
+	err = ftdi_8U232AM_startup(serial);
+	if (err){
+		return (err);
+	}
+
+	priv = serial->port->private;
+	priv->flags |= ASYNC_SPD_CUST;
+	priv->custom_divisor = 77;
+	priv->force_baud = B38400;
+	
+	return (0);
+} /* ftdi_USB_UIRT_startup */
+
+/* Startup for the HE-TIRA1 device, which requires hardwired
+ * baudrate (38400 gets mapped to 100000) */
+static int ftdi_HE_TIRA1_startup (struct usb_serial *serial)
+{ /* ftdi_HE_TIRA1_startup */
+	struct ftdi_private *priv;
+	int err;
+
+	dbg("%s",__FUNCTION__);
+	err = ftdi_FT232BM_startup(serial);
+	if (err){
+		return (err);
+	}
+
+	priv = serial->port->private;
+	priv->flags |= ASYNC_SPD_CUST;
+	priv->custom_divisor = 240;
+	priv->force_baud = B38400;
+	priv->force_rtscts = 1;
+	
+	return (0);
+} /* ftdi_HE_TIRA1_startup */
+
+
 /* ftdi_shutdown is called from usbserial:usb_serial_disconnect 
  *   it is called when the usb device is disconnected
  *
@@ -816,19 +1151,17 @@ static void ftdi_shutdown (struct usb_serial *serial)
 	if (port->open_count == 0){
 		spin_lock_irqsave (&priv->write_urb_pool_lock, flags);
 
-		for (i = 0; i < NUM_URBS; ++i) {
-			if (priv->write_urb_pool[i]) {
-				/* FIXME - uncomment the following usb_unlink_urb call when
-				 * the host controllers get fixed to set urb->dev = NULL after
-				 * the urb is finished.  Otherwise this call oopses. */
-				/* usb_unlink_urb(priv->write_urb_pool[i]); */
-				if (priv->write_urb_pool[i]->transfer_buffer) {
-					kfree(priv->write_urb_pool[i]->transfer_buffer);
-					priv->write_urb_pool[i]->transfer_buffer = NULL;
-				}
-				usb_free_urb (priv->write_urb_pool[i]);
-				priv->write_urb_pool[i] = NULL;
+		for (i = 0; i < NUM_URBS && priv->write_urb_pool[i]; ++i) {
+			/* FIXME - uncomment the following usb_unlink_urb call when
+			 * the host controllers get fixed to set urb->dev = NULL after
+			 * the urb is finished.  Otherwise this call oopses. */
+			/* usb_unlink_urb(priv->write_urb_pool[i]); */
+			if (priv->write_urb_pool[i]->transfer_buffer) {
+				kfree(priv->write_urb_pool[i]->transfer_buffer);
+				priv->write_urb_pool[i]->transfer_buffer = NULL;
 			}
+			usb_free_urb (priv->write_urb_pool[i]);
+			priv->write_urb_pool[i] = NULL;
 		}
 
 		spin_unlock_irqrestore (&priv->write_urb_pool_lock, flags);
@@ -879,10 +1212,6 @@ static int  ftdi_open (struct usb_serial_port *port, struct file *filp)
 	if (set_rts(port, HIGH) < 0){
 		err("%s Error from RTS HIGH urb", __FUNCTION__);
 	}
-
-	/* Make sure write_urb is initialised since a write_pool is used now */
-	port->write_urb = NULL; /* prevents usbserial.c from trying something silly */
-
 
 	/* Start reading from the device */
 	FILL_BULK_URB(port->read_urb, serial->dev, 
@@ -998,20 +1327,18 @@ static int ftdi_write (struct usb_serial_port *port, int from_user,
 
 		spin_lock_irqsave (&(priv->write_urb_pool_lock), flags) ; 
 
-		for (i = 0 ; i < NUM_URBS; i++) {
+		for (i = 0 ; i < NUM_URBS && priv->write_urb_pool[i]; i++) {
 			if (priv->write_urb_pool[i] -> status != -EINPROGRESS) {
-			  urb = priv->write_urb_pool[i];
-			  /* Must make sure another device doesn't grab this */
-			  /* BUT unfortunately the uhci stack errors if it sees this */
-			  /* so have to increase the size of the spin_lock */
-			  /* urb->status = -EINPROGRESS; */
+				urb = priv->write_urb_pool[i];
+				/* Must make sure another write doesn't grab this */
+				urb->status = -EINPROGRESS;
 				break;
 			}
 		}
 
+		spin_unlock_irqrestore (&priv->write_urb_pool_lock, flags);
 
 		if (urb == NULL) {
-		        spin_unlock_irqrestore (&priv->write_urb_pool_lock, flags);
 			dbg("%s - no more free urbs", __FUNCTION__);
 			goto exit;
 		}
@@ -1020,7 +1347,6 @@ static int ftdi_write (struct usb_serial_port *port, int from_user,
 		if (urb->transfer_buffer == NULL) {
 			urb->transfer_buffer = kmalloc (URB_TRANSFER_BUFFER_SIZE, GFP_KERNEL);
 			if (urb->transfer_buffer == NULL) {
-				spin_unlock_irqrestore (&priv->write_urb_pool_lock, flags);
 				err("%s ran out of kernel memory for urb ...", __FUNCTION__);
 				goto exit;
 			}
@@ -1036,7 +1362,6 @@ static int ftdi_write (struct usb_serial_port *port, int from_user,
 		if (from_user) {
 			if (copy_from_user(urb->transfer_buffer + data_offset,
 					   current_position, user_byte_count )){
-				spin_unlock_irqrestore (&priv->write_urb_pool_lock, flags);
 				return -EFAULT;
 			}
 		} else {
@@ -1060,6 +1385,11 @@ static int ftdi_write (struct usb_serial_port *port, int from_user,
 			      ftdi_write_bulk_callback, port);
 		urb->transfer_flags |= USB_QUEUE_BULK;
 		
+		/* uhci stack errors if it status set to -EINPROGRESS on */
+		/* urb submission, so clear status before submission.    */
+		spin_lock_irqsave (&(priv->write_urb_pool_lock), flags) ; 
+		urb->status = 0;
+
 		result = usb_submit_urb(urb);
 		if (result) {
 			spin_unlock_irqrestore (&priv->write_urb_pool_lock, flags);
@@ -1089,7 +1419,7 @@ static int ftdi_write (struct usb_serial_port *port, int from_user,
 static void ftdi_write_bulk_callback (struct urb *urb)
 {
 	struct usb_serial_port *port = (struct usb_serial_port *)urb->context;
-	struct usb_serial *serial = get_usb_serial (port, __FUNCTION__);
+	struct usb_serial *serial;
 
 	dbg("%s", __FUNCTION__);
 
@@ -1101,6 +1431,7 @@ static void ftdi_write_bulk_callback (struct urb *urb)
 		return;
 	}
 
+	serial = get_usb_serial (port, __FUNCTION__);
 	if (!serial) {
 		dbg("%s - bad serial pointer, exiting", __FUNCTION__);
 		return;
@@ -1128,7 +1459,7 @@ static int ftdi_write_room( struct usb_serial_port *port )
 
 	spin_lock_irqsave (&priv->write_urb_pool_lock, flags);
 
-	for (i = 0; i < NUM_URBS; i++) {
+	for (i = 0; i < NUM_URBS && priv->write_urb_pool[i]; i++) {
 		if (priv->write_urb_pool[i]->status != -EINPROGRESS) {
 			room += URB_TRANSFER_BUFFER_SIZE - priv->write_offset;
 		}
@@ -1154,7 +1485,7 @@ static int ftdi_chars_in_buffer (struct usb_serial_port *port)
 	spin_lock_irqsave (&priv->write_urb_pool_lock, flags);
 
 	/* tally up the number of bytes waiting */
-	for (i = 0; i < NUM_URBS; ++i) {
+	for (i = 0; i < NUM_URBS && priv->write_urb_pool[i]; i++) {
 		if (priv->write_urb_pool[i]->status == -EINPROGRESS) {
 			chars += URB_TRANSFER_BUFFER_SIZE - data_offset;
 		}
@@ -1173,15 +1504,22 @@ static int ftdi_chars_in_buffer (struct usb_serial_port *port)
 static void ftdi_read_bulk_callback (struct urb *urb)
 { /* ftdi_read_bulk_callback */
 	struct usb_serial_port *port = (struct usb_serial_port *)urb->context;
-	struct usb_serial *serial = get_usb_serial(port,__FUNCTION__);
-       	struct tty_struct *tty = port->tty ;
-	struct ftdi_private *priv = (struct ftdi_private *) port->private;
+	struct usb_serial *serial;
+	struct tty_struct *tty;
+	struct ftdi_private *priv;
 	char error_flag;
        	unsigned char *data = urb->transfer_buffer;
 
-	const int data_offset = 2;
 	int i;
 	int result;
+	int need_flip;
+	int packet_offset;
+
+	if (urb->number_of_packets > 0) {
+		err("%s transfer_buffer_length %d actual_length %d number of packets %d",__FUNCTION__,
+		    urb->transfer_buffer_length, urb->actual_length, urb->number_of_packets );
+		err("%s transfer_flags %x USB_QUEUE_BULK %x ", __FUNCTION__,urb->transfer_flags, USB_QUEUE_BULK );
+	}
 
 	dbg("%s", __FUNCTION__);
 
@@ -1191,16 +1529,19 @@ static void ftdi_read_bulk_callback (struct urb *urb)
 	if (port->open_count <= 0)
 		return;
 
+	serial = get_usb_serial(port,__FUNCTION__);
 	if (!serial){
 		dbg("%s - bad serial pointer - exiting",__FUNCTION__);
 		return;
 	}
 	
+	tty = port->tty;
 	if (!tty) {
 		dbg("%s - bad tty pointer - exiting",__FUNCTION__);
 		return;
 	}
 
+	priv = (struct ftdi_private *) port->private;
 
 	if (urb->status) {
 		/* This will happen at close every time so it is a dbg not an err */
@@ -1221,75 +1562,82 @@ static void ftdi_read_bulk_callback (struct urb *urb)
 	/* See acm.c - you do a tty_hangup  - eg tty_hangup(tty) */
 	/* if CD is dropped and the line is not CLOCAL then we should hangup */
 
-	/* Compare new line status to the old one, signal if different */
-	if (priv != NULL) {
-		char new_status = data[0] & FTDI_STATUS_B0_MASK;
-		if (new_status != priv->prev_status) {
-			priv->diff_status |= new_status ^ priv->prev_status;
-			wake_up_interruptible(&priv->delta_msr_wait);
-			priv->prev_status = new_status;
-		}
-	}
-
-	/* Handle errors and break */
-	error_flag = TTY_NORMAL;
-        /* Although the device uses a bitmask and hence can have multiple */
-        /* errors on a packet - the order here sets the priority the */
-        /* error is returned to the tty layer  */
-	
-	if ( data[1] & FTDI_RS_OE ) { 
-		error_flag = TTY_OVERRUN;
-                dbg("OVERRRUN error");
-	}
-	if ( data[1] & FTDI_RS_BI ) { 
-		error_flag = TTY_BREAK;
-                dbg("BREAK received");
-	}
-	if ( data[1] & FTDI_RS_PE ) { 
-		error_flag = TTY_PARITY;
-                dbg("PARITY error");
-	}
-	if ( data[1] & FTDI_RS_FE ) { 
-		error_flag = TTY_FRAME;
-                dbg("FRAMING error");
-	}
-	if (urb->actual_length > data_offset) {
-
-		for (i = data_offset ; i < urb->actual_length ; ++i) {
-			/* have to make sure we don't overflow the buffer
-			  with tty_insert_flip_char's */
-			if(tty->flip.count >= TTY_FLIPBUF_SIZE) {
-				tty_flip_buffer_push(tty);
+	need_flip = 0;
+	for (packet_offset=0; packet_offset < urb->actual_length; packet_offset += PKTSZ) {
+		/* Compare new line status to the old one, signal if different */
+		if (priv != NULL) {
+			char new_status = data[packet_offset+0] & FTDI_STATUS_B0_MASK;
+			if (new_status != priv->prev_status) {
+				priv->diff_status |= new_status ^ priv->prev_status;
+				wake_up_interruptible(&priv->delta_msr_wait);
+				priv->prev_status = new_status;
 			}
-			/* Note that the error flag is duplicated for 
-			   every character received since we don't know
-			   which character it applied to */
-			tty_insert_flip_char(tty, data[i], error_flag);
 		}
-	  	tty_flip_buffer_push(tty);
-	} 
+
+		/* Handle errors and break */
+		error_flag = TTY_NORMAL;
+		/* Although the device uses a bitmask and hence can have multiple */
+		/* errors on a packet - the order here sets the priority the */
+		/* error is returned to the tty layer  */
+
+		if ( data[packet_offset+1] & FTDI_RS_OE ) {
+			error_flag = TTY_OVERRUN;
+			dbg("OVERRRUN error");
+		}
+		if ( data[packet_offset+1] & FTDI_RS_BI ) {
+			error_flag = TTY_BREAK;
+			dbg("BREAK received");
+		}
+		if ( data[packet_offset+1] & FTDI_RS_PE ) {
+			error_flag = TTY_PARITY;
+			dbg("PARITY error");
+		}
+		if ( data[packet_offset+1] & FTDI_RS_FE ) {
+			error_flag = TTY_FRAME;
+			dbg("FRAMING error");
+		}
+		if (urb->actual_length > packet_offset + 2) {
+			for (i = 2; (i < PKTSZ) && ((i+packet_offset) < urb->actual_length); ++i) {
+				/* have to make sure we don't overflow the buffer
+				  with tty_insert_flip_char's */
+				if(tty->flip.count >= TTY_FLIPBUF_SIZE) {
+					tty_flip_buffer_push(tty);
+				}
+				/* Note that the error flag is duplicated for 
+				   every character received since we don't know
+				   which character it applied to */
+				tty_insert_flip_char(tty, data[packet_offset+i], error_flag);
+			}
+			need_flip = 1;
+		}
 
 #ifdef NOT_CORRECT_BUT_KEEPING_IT_FOR_NOW
-	/* if a parity error is detected you get status packets forever
-	   until a character is sent without a parity error.
-	   This doesn't work well since the application receives a never
-	   ending stream of bad data - even though new data hasn't been sent.
-	   Therefore I (bill) have taken this out.
-	   However - this might make sense for framing errors and so on 
-	   so I am leaving the code in for now.
-	*/
-      else {
-		if (error_flag != TTY_NORMAL){
-			dbg("error_flag is not normal");
+		/* if a parity error is detected you get status packets forever
+		   until a character is sent without a parity error.
+		   This doesn't work well since the application receives a never
+		   ending stream of bad data - even though new data hasn't been sent.
+		   Therefore I (bill) have taken this out.
+		   However - this might make sense for framing errors and so on 
+		   so I am leaving the code in for now.
+		*/
+		else {
+			if (error_flag != TTY_NORMAL){
+				dbg("error_flag is not normal");
 				/* In this case it is just status - if that is an error send a bad character */
 				if(tty->flip.count >= TTY_FLIPBUF_SIZE) {
 					tty_flip_buffer_push(tty);
 				}
 				tty_insert_flip_char(tty, 0xff, error_flag);
-				tty_flip_buffer_push(tty);
+				need_flip = 1;
+			}
 		}
-	}
 #endif
+	} /* "for(packet_offset=0..." */
+
+	/* Low latency */
+	if (need_flip) {
+		tty_flip_buffer_push(tty);
+	}
 
 	/* if the port is closed stop trying to read */
 	if (port->open_count > 0){
@@ -1347,14 +1695,32 @@ static void ftdi_break_ctl( struct usb_serial_port *port, int break_state )
 static void ftdi_set_termios (struct usb_serial_port *port, struct termios *old_termios)
 { /* ftdi_termios */
 	struct usb_serial *serial = port->serial;
-	unsigned int cflag = port->tty->termios->c_cflag;
+	unsigned int cflag;
 	struct ftdi_private *priv = (struct ftdi_private *)port->private;	
 	__u16 urb_value; /* will hold the new flags */
 	char buf[1]; /* Perhaps I should dynamically alloc this? */
 	
+	// Added for xon/xoff support
+	unsigned int iflag = port->tty->termios->c_iflag;
+	unsigned char vstop;
+	unsigned char vstart;
 	
 	dbg("%s", __FUNCTION__);
 
+	/* Force baud rate if this device requires it, unless it is set to B0. */
+	if (priv->force_baud && ((port->tty->termios->c_cflag & CBAUD) != B0)) {
+		dbg("%s: forcing baud rate for this device", __FUNCTION__);
+		port->tty->termios->c_cflag &= ~CBAUD;
+		port->tty->termios->c_cflag |= priv->force_baud;
+	}
+
+	/* Force RTS-CTS if this device requires it. */
+	if (priv->force_rtscts) {
+		dbg("%s: forcing rtscts for this device", __FUNCTION__);
+		port->tty->termios->c_cflag |= CRTSCTS;
+	}
+
+	cflag = port->tty->termios->c_cflag;
 
 	/* FIXME -For this cut I don't care if the line is really changing or 
 	   not  - so just do the change regardless  - should be able to 
@@ -1434,16 +1800,43 @@ static void ftdi_set_termios (struct usb_serial_port *port, struct termios *old_
 		}		
 		
 	} else { 
-		/* CHECKME Assuming XON/XOFF handled by tty stack - not by device */
-		dbg("%s Turning off hardware flow control", __FUNCTION__);
-		if (usb_control_msg(serial->dev, 
-				    usb_sndctrlpipe(serial->dev, 0),
-				    FTDI_SIO_SET_FLOW_CTRL_REQUEST, 
-				    FTDI_SIO_SET_FLOW_CTRL_REQUEST_TYPE,
-				    0, 0, 
-				    buf, 0, WDR_TIMEOUT) < 0) {
-			err("urb failed to clear flow control");
-		}				
+		/*
+		 * Xon/Xoff code
+		 *
+		 * Check the IXOFF status in the iflag component of the termios structure
+		 * if IXOFF is not set, the pre-xon/xoff code is executed.
+		*/
+		if (iflag & IXOFF) {
+			dbg("%s  request to enable xonxoff iflag=%04x",__FUNCTION__,iflag);
+			// Try to enable the XON/XOFF on the ftdi_sio
+			// Set the vstart and vstop -- could have been done up above where
+			// a lot of other dereferencing is done but that would be very
+			// inefficient as vstart and vstop are not always needed
+			vstart=port->tty->termios->c_cc[VSTART];
+			vstop=port->tty->termios->c_cc[VSTOP];
+			urb_value=(vstop << 8) | (vstart);
+
+			if (usb_control_msg(serial->dev,
+					    usb_sndctrlpipe(serial->dev, 0),
+					    FTDI_SIO_SET_FLOW_CTRL_REQUEST,
+					    FTDI_SIO_SET_FLOW_CTRL_REQUEST_TYPE,
+					    urb_value , FTDI_SIO_XON_XOFF_HS,
+					    buf, 0, WDR_TIMEOUT) < 0) {
+				err("urb failed to set to xon/xoff flow control");
+			}
+		} else {
+			/* else clause to only run if cfag ! CRTSCTS and iflag ! XOFF */
+			/* CHECKME Assuming XON/XOFF handled by tty stack - not by device */
+			dbg("%s Turning off hardware flow control", __FUNCTION__);
+			if (usb_control_msg(serial->dev, 
+					    usb_sndctrlpipe(serial->dev, 0),
+					    FTDI_SIO_SET_FLOW_CTRL_REQUEST, 
+					    FTDI_SIO_SET_FLOW_CTRL_REQUEST_TYPE,
+					    0, 0, 
+					    buf, 0, WDR_TIMEOUT) < 0) {
+				err("urb failed to clear flow control");
+			}				
+		}
 		
 	}
 	return;
@@ -1665,6 +2058,8 @@ static int __init ftdi_init (void)
 	usb_serial_register (&ftdi_SIO_device);
 	usb_serial_register (&ftdi_8U232AM_device);
 	usb_serial_register (&ftdi_FT232BM_device);
+	usb_serial_register (&ftdi_USB_UIRT_device);
+	usb_serial_register (&ftdi_HE_TIRA1_device);
 
 
 	info(DRIVER_VERSION ":" DRIVER_DESC);
@@ -1677,6 +2072,8 @@ static void __exit ftdi_exit (void)
 
 	dbg("%s", __FUNCTION__);
 
+	usb_serial_deregister (&ftdi_HE_TIRA1_device);
+	usb_serial_deregister (&ftdi_USB_UIRT_device);
 	usb_serial_deregister (&ftdi_FT232BM_device);
 	usb_serial_deregister (&ftdi_8U232AM_device);
 	usb_serial_deregister (&ftdi_SIO_device);

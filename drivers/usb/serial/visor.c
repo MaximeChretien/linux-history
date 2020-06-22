@@ -12,6 +12,10 @@
  *
  * See Documentation/usb/usb-serial.txt for more information on using this driver
  *
+ * (06/03/2003) Judd Montgomery <judd at jpilot.org>
+ *	Added support for module parameter options for untested/unknown
+ *	devices.
+ *
  * (03/09/2003) gkh
  *	Added support for the Sony Clie NZ90V device.  Thanks to Martin Brachtl
  *	<brachtl@redgrep.cz> for the information.
@@ -182,6 +186,11 @@ static void visor_read_int_callback	(struct urb *urb);
 static int  clie_3_5_startup	(struct usb_serial *serial);
 static void treo_attach		(struct usb_serial *serial);
 
+/* Parameters that may be passed into the module. */
+static int vendor = -1;
+static int product = -1;
+static int param_register;
+
 
 static struct usb_device_id id_table [] = {
 	{ USB_DEVICE(HANDSPRING_VENDOR_ID, HANDSPRING_VISOR_ID) },
@@ -230,6 +239,12 @@ static __devinitdata struct usb_device_id id_table_combined [] = {
 	{ USB_DEVICE(SONY_VENDOR_ID, SONY_CLIE_NX60_ID) },
 	{ USB_DEVICE(SONY_VENDOR_ID, SONY_CLIE_NZ90V_ID) },
 	{ USB_DEVICE(SAMSUNG_VENDOR_ID, SAMSUNG_SCH_I330_ID) },
+	{ }					/* Terminating entry */
+};
+
+/* For passed in parameters */
+static struct usb_device_id id_param_table [] = {
+	{ },
 	{ }					/* Terminating entry */
 };
 
@@ -285,6 +300,34 @@ static struct usb_serial_device_type clie_3_5_device = {
 	.read_bulk_callback =	visor_read_bulk_callback,
 };
 
+/* This structure is for Handspring Visor, and Palm 4.0 devices that are not
+ * compiled into the kernel, but can be passed in when the module is loaded.
+ * This will allow the visor driver to work with new Vendor and Device IDs
+ * without recompiling the driver.
+ */
+static struct usb_serial_device_type param_device = {
+	.owner =		THIS_MODULE,
+	.name =			"user specified device with Palm 4.x protocols",
+	.id_table =		id_param_table,
+	.num_interrupt_in =	NUM_DONT_CARE,
+	.num_bulk_in =		2,
+	.num_bulk_out =		2,
+	.num_ports =		2,
+	.open =			visor_open,
+	.close =		visor_close,
+	.throttle =		visor_throttle,
+	.unthrottle =		visor_unthrottle,
+	.startup =		visor_startup,
+	.shutdown =		visor_shutdown,
+	.ioctl =		visor_ioctl,
+	.set_termios =		visor_set_termios,
+	.write =		visor_write,
+	.write_room =		visor_write_room,
+	.chars_in_buffer =	visor_chars_in_buffer,
+	.write_bulk_callback =	visor_write_bulk_callback,
+	.read_bulk_callback =	visor_read_bulk_callback,
+	.read_int_callback =	visor_read_int_callback,
+};
 
 #define NUM_URBS			24
 #define URB_TRANSFER_BUFFER_SIZE	768
@@ -925,6 +968,19 @@ static int __init visor_init (void)
 	struct urb *urb;
 	int i;
 
+	/* Only if parameters were passed to us */
+	if ((vendor > 0) && (product > 0)) {
+       		struct usb_device_id usb_dev_temp[]=
+	       		{{USB_DEVICE(vendor, product)}};
+		id_param_table[0] = usb_dev_temp[0];
+		info("Untested USB device specified at time of module insertion");
+		info("Warning: This is not guaranteed to work");
+		info("Using a newer kernel is preferred to this method");
+		info("Adding Palm OS protocol 4.x support for unknown device: 0x%x/0x%x",
+			param_device.id_table[0].idVendor, param_device.id_table[0].idProduct);
+		param_register = 1;
+		usb_serial_register (&param_device);
+	}
 	usb_serial_register (&handspring_device);
 	usb_serial_register (&clie_3_5_device);
 	
@@ -957,6 +1013,10 @@ static void __exit visor_exit (void)
 	int i;
 	unsigned long flags;
 
+	if (param_register) {
+		param_register = 0;
+		usb_serial_deregister (&param_device);
+	}
 	usb_serial_deregister (&handspring_device);
 	usb_serial_deregister (&clie_3_5_device);
 
@@ -987,15 +1047,7 @@ MODULE_LICENSE("GPL");
 
 MODULE_PARM(debug, "i");
 MODULE_PARM_DESC(debug, "Debug enabled or not");
-
-
-
-
-
-
-
-
-
-
-
-
+MODULE_PARM(vendor, "i");
+MODULE_PARM_DESC(vendor, "User specified vendor ID");
+MODULE_PARM(product, "i");
+MODULE_PARM_DESC(product, "User specified product ID");

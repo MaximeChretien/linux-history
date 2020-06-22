@@ -1,9 +1,8 @@
-/* $Id: cache-sh4.c,v 1.16 2001/09/10 11:06:35 dwmw2 Exp $
+/* $Id: cache-sh4.c,v 1.1.1.1.2.8 2003/07/09 09:59:30 trent Exp $
  *
- *  linux/arch/sh/mm/cache.c
+ *  linux/arch/sh/mm/cache-sh4.c
  *
- * Copyright (C) 1999, 2000  Niibe Yutaka
- *
+ * Copyright (C) 1999, 2000, 2002  Niibe Yutaka
  */
 
 #include <linux/config.h>
@@ -42,6 +41,7 @@
 #define CACHE_OC_ADDRESS_ARRAY 0xf4000000
 #define CACHE_VALID	  1
 #define CACHE_UPDATED	  2
+#define CACHE_ASSOC	  8
 
 #define CACHE_OC_WAY_SHIFT       13
 #define CACHE_IC_WAY_SHIFT       13
@@ -56,8 +56,8 @@
 static void __init
 detect_cpu_and_cache_system(void)
 {
-#ifdef CONFIG_CPU_SUBTYPE_ST40STB1
-	cpu_data->type = CPU_ST40STB1;
+#ifdef CONFIG_CPU_SUBTYPE_ST40
+	cpu_data->type = CPU_ST40;
 #elif defined(CONFIG_CPU_SUBTYPE_SH7750) || defined(CONFIG_CPU_SUBTYPE_SH7751)
 	cpu_data->type = CPU_SH7750;
 #else
@@ -109,7 +109,7 @@ void __init p3_cache_init(void)
 				    unsigned long size, unsigned long flags);
 
 	if (remap_area_pages(P3SEG, 0, PAGE_SIZE*4, _PAGE_CACHABLE))
-		panic("p3_cachie_init failed.");
+		panic("%s failed.", __FUNCTION__);
 	sema_init (&p3map_sem[0], 1);
 	sema_init (&p3map_sem[1], 1);
 	sema_init (&p3map_sem[2], 1);
@@ -177,6 +177,17 @@ void __flush_invalidate_region(void *start, int size)
 	}
 }
 
+void __flush_icache_all(void)
+{
+	unsigned long flags;
+
+	save_and_cli(flags);
+	jump_to_P2();
+	ctrl_outl(CCR_CACHE_VAL|CCR_CACHE_ICI, CCR);
+	back_to_P1();
+	restore_flags(flags);
+}
+
 /*
  * Write back the range of D-cache, and purge the I-cache.
  *
@@ -208,44 +219,26 @@ void flush_cache_sigtramp(unsigned long addr)
 	restore_flags(flags);
 }
 
-/*
- * Writeback&Invalidate the D-cache of the page
- */
-static void __flush_dcache_page(unsigned long phys)
+static inline void flush_cache_4096(unsigned long start,
+				    unsigned long phys)
 {
-	unsigned long addr, data;
-	unsigned long flags;
+	unsigned long flags; 
+	extern void __flush_cache_4096(unsigned long addr, unsigned long phys, unsigned long exec_offset);
 
-	phys |= CACHE_VALID;
-
-	save_and_cli(flags);
-	jump_to_P2();
-
-	/* Loop all the D-cache */
-	for (addr = CACHE_OC_ADDRESS_ARRAY;
-	     addr < (CACHE_OC_ADDRESS_ARRAY
-		     +(CACHE_OC_NUM_ENTRIES<< CACHE_OC_ENTRY_SHIFT));
-	     addr += (1<<CACHE_OC_ENTRY_SHIFT)) {
-		data = ctrl_inl(addr)&(0x1ffff000|CACHE_VALID);
-		if (data == phys)
-			ctrl_outl(0, addr);
-	}
-
-#if 0 /* DEBUG DEBUG */
-	/* Loop all the I-cache */
-	for (addr = CACHE_IC_ADDRESS_ARRAY;
-	     addr < (CACHE_IC_ADDRESS_ARRAY
-		     +(CACHE_IC_NUM_ENTRIES<< CACHE_IC_ENTRY_SHIFT));
-	     addr += (1<<CACHE_IC_ENTRY_SHIFT)) {
-		data = ctrl_inl(addr)&(0x1ffff000|CACHE_VALID);
-		if (data == phys) {
-			printk(KERN_INFO "__flush_cache_page: I-cache entry found\n");
-			ctrl_outl(0, addr);
-		}
-	}
+#if defined(CONFIG_CPU_SUBTYPE_SH7751) || defined(CONFIG_CPU_SUBTYPE_ST40)
+	if (start >= CACHE_OC_ADDRESS_ARRAY) {
+		/*
+		 * SH7751 and ST40 have no restriction to handle cache.
+		 * (While SH7750 must do that at P2 area.)
+		 */
+		__flush_cache_4096(start | CACHE_ASSOC, phys | 0x80000000, 0);
+	} else
 #endif
-	back_to_P1();
-	restore_flags(flags);
+	{
+		save_and_cli(flags);
+		__flush_cache_4096(start | CACHE_ASSOC, phys | 0x80000000, 0x20000000);
+		restore_flags(flags);
+	}
 }
 
 /*
@@ -254,36 +247,75 @@ static void __flush_dcache_page(unsigned long phys)
  */
 void flush_dcache_page(struct page *page)
 {
-	if (test_bit(PG_mapped, &page->flags))
-		__flush_dcache_page(PHYSADDR(page_address(page)));
+	if (test_bit(PG_mapped, &page->flags)) {
+		unsigned long phys = PHYSADDR(page_address(page));
+
+		/* Loop all the D-cache */
+		flush_cache_4096(CACHE_OC_ADDRESS_ARRAY,          phys);
+		flush_cache_4096(CACHE_OC_ADDRESS_ARRAY | 0x1000, phys);
+		flush_cache_4096(CACHE_OC_ADDRESS_ARRAY | 0x2000, phys);
+		flush_cache_4096(CACHE_OC_ADDRESS_ARRAY | 0x3000, phys);
+	}
+}
+
+static inline void flush_icache_all(void)
+{
+	unsigned long flags;
+
+	save_and_cli(flags);
+	jump_to_P2();
+	/* Flush I-cache */
+	ctrl_outl(CCR_CACHE_VAL|CCR_CACHE_ICI, CCR);
+	back_to_P1();
+	restore_flags(flags);
 }
 
 void flush_cache_all(void)
 {
-	extern unsigned long empty_zero_page[1024];
-	unsigned long flags;
-	unsigned long addr;
+	extern void __flush_dcache_all(void);
 
-	save_and_cli(flags);
-
-	/* Prefetch the data to write back D-cache */
-	for (addr = (unsigned long)empty_zero_page;
-	     addr < (unsigned long)empty_zero_page + 1024*16;
-	     addr += L1_CACHE_BYTES)
-		asm volatile("pref @%0"::"r" (addr));
-
-	jump_to_P2();
-	/* Flush D-cache/I-cache */
-	ctrl_outl(CCR_CACHE_INIT, CCR);
-	back_to_P1();
-	restore_flags(flags);
+	__flush_dcache_all();
+	flush_icache_all();
 }
 
 void flush_cache_mm(struct mm_struct *mm)
 {
 	/* Is there any good way? */
 	/* XXX: possibly call flush_cache_range for each vm area */
+	/* 
+	 * FIXME: Really, the optimal solution here would be able to flush out
+	 * individual lines created by the specified context, but this isn't
+	 * feasible for a number of architectures (such as MIPS, and some
+	 * SPARC) .. is this possible for SuperH?
+	 *
+	 * In the meantime, we'll just flush all of the caches.. this
+	 * seems to be the simplest way to avoid at least a few wasted
+	 * cache flushes. -Lethal
+	 */
 	flush_cache_all();
+}
+
+static void __flush_cache_page(struct vm_area_struct *vma,
+			       unsigned long address,
+			       unsigned long phys)
+{
+	/* We only need to flush D-cache when we have alias */
+	if ((address^phys) & CACHE_ALIAS) {
+		/* Loop 4K of the D-cache */
+		flush_cache_4096(
+			CACHE_OC_ADDRESS_ARRAY | (address & CACHE_ALIAS),
+			phys);
+		/* Loop another 4K of the D-cache */
+		flush_cache_4096(
+			CACHE_OC_ADDRESS_ARRAY | (phys & CACHE_ALIAS),
+			phys);
+	}
+
+	if (vma->vm_flags & VM_EXEC)
+		/* Loop 4K (half) of the I-cache */
+		flush_cache_4096(
+			CACHE_IC_ADDRESS_ARRAY | (address & 0x1000),
+			phys);
 }
 
 /*
@@ -298,14 +330,53 @@ void flush_cache_mm(struct mm_struct *mm)
 void flush_cache_range(struct mm_struct *mm, unsigned long start,
 		       unsigned long end)
 {
-	/*
-	 * We could call flush_cache_page for the pages of these range,
-	 * but it's not efficient (scan the caches all the time...).
-	 *
-	 * We can't use A-bit magic, as there's the case we don't have
-	 * valid entry on TLB.
-	 */
-	flush_cache_all();
+	extern void flush_cache_4096_all(unsigned long start);
+
+	unsigned long p = start & PAGE_MASK;
+	pgd_t *dir;
+	pmd_t *pmd;
+	pte_t *pte;
+	pte_t entry;
+	unsigned long phys;
+	unsigned long d = 0;
+
+	dir = pgd_offset(mm, p);
+	pmd = pmd_offset(dir, p);
+
+	do {
+		if (pmd_none(*pmd) || pmd_bad(*pmd)) {
+			p &= ~((1 << PMD_SHIFT) -1);
+			p += (1 << PMD_SHIFT);
+			pmd++;
+			continue;
+		}
+		pte = pte_offset(pmd, p);
+		do {
+			entry = *pte;
+			if ((pte_val(entry) & _PAGE_PRESENT)) {
+				phys = pte_val(entry)&PTE_PHYS_MASK;
+				if ((p^phys) & CACHE_ALIAS) {
+					d |= 1 << ((p & CACHE_ALIAS)>>12); 
+					d |= 1 << ((phys & CACHE_ALIAS)>>12);
+					if (d == 0x0f)
+						goto loop_exit;
+				}
+			}
+			pte++;
+			p += PAGE_SIZE;
+		} while (p < end && (unsigned long)pte & PAGE_MASK);
+		pmd++;
+	} while (p < end);
+ loop_exit:
+	if (d & 1)
+		flush_cache_4096_all(0);
+	if (d & 2)
+		flush_cache_4096_all(0x1000);
+	if (d & 4)
+		flush_cache_4096_all(0x2000);
+	if (d & 8)
+		flush_cache_4096_all(0x3000);
+	flush_icache_all();
 }
 
 /*
@@ -319,8 +390,7 @@ void flush_cache_page(struct vm_area_struct *vma, unsigned long address)
 	pmd_t *pmd;
 	pte_t *pte;
 	pte_t entry;
-	unsigned long phys, addr, data;
-	unsigned long flags;
+	unsigned long phys;
 
 	dir = pgd_offset(vma->vm_mm, address);
 	pmd = pmd_offset(dir, address);
@@ -328,49 +398,11 @@ void flush_cache_page(struct vm_area_struct *vma, unsigned long address)
 		return;
 	pte = pte_offset(pmd, address);
 	entry = *pte;
-	if (pte_none(entry) || !pte_present(entry))
+	if (!(pte_val(entry) & _PAGE_PRESENT))
 		return;
 
 	phys = pte_val(entry)&PTE_PHYS_MASK;
-
-	phys |= CACHE_VALID;
-	save_and_cli(flags);
-	jump_to_P2();
-
-	/* We only need to flush D-cache when we have alias */
-	if ((address^phys) & CACHE_ALIAS) {
-		/* Loop 4K of the D-cache */
-		for (addr = CACHE_OC_ADDRESS_ARRAY | (address & CACHE_ALIAS);
-		     addr < (CACHE_OC_ADDRESS_ARRAY + (address & CACHE_ALIAS) 
-			     +(CACHE_OC_NUM_ENTRIES/4<<CACHE_OC_ENTRY_SHIFT));
-		     addr += (1<<CACHE_OC_ENTRY_SHIFT)) {
-			data = ctrl_inl(addr)&(0x1ffff000|CACHE_VALID);
-			if (data == phys)
-				ctrl_outl(0, addr);
-		}
-		/* Loop another 4K of the D-cache */
-		for (addr = CACHE_OC_ADDRESS_ARRAY | (phys & CACHE_ALIAS);
-		     addr < (CACHE_OC_ADDRESS_ARRAY + (phys & CACHE_ALIAS) 
-			     +(CACHE_OC_NUM_ENTRIES/4<<CACHE_OC_ENTRY_SHIFT));
-		     addr += (1<<CACHE_OC_ENTRY_SHIFT)) {
-			data = ctrl_inl(addr)&(0x1ffff000|CACHE_VALID);
-			if (data == phys)
-				ctrl_outl(0, addr);
-		}
-	}
-
-	if (vma->vm_flags & VM_EXEC)
-		/* Loop 4K of the I-cache */
-		for (addr = CACHE_IC_ADDRESS_ARRAY|(address&0x1000);
-		     addr < ((CACHE_IC_ADDRESS_ARRAY|(address&0x1000))
-			     +(CACHE_IC_NUM_ENTRIES/2<<CACHE_IC_ENTRY_SHIFT));
-		     addr += (1<<CACHE_IC_ENTRY_SHIFT)) {
-			data = ctrl_inl(addr)&(0x1ffff000|CACHE_VALID);
-			if (data == phys)
-				ctrl_outl(0, addr);
-		}
-	back_to_P1();
-	restore_flags(flags);
+	__flush_cache_page(vma, address, phys);
 }
 
 /*

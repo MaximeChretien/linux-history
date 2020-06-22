@@ -46,7 +46,7 @@ static unsigned long arthur_to_linux_signals[32] = {
 /*
  * Linux to Arthur signal map.
  */
-static unsigned long linux_to_arthur_signals[32] = {
+static unsigned long arthur_invmap[32] = {
 	[0]		= 0,
 	[SIGHUP]	= -1,
 	[SIGINT]	= ARTHUR_SIGINT,
@@ -97,7 +97,7 @@ static struct exec_domain arthur_exec_domain = {
 	.pers_low	= PER_RISCOS,
 	.pers_high	= PER_RISCOS,
 	.signal_map	= arthur_to_linux_signals,
-	.signal_invmap	= linux_to_arthur_signals,
+	.signal_invmap	= arthur_invmap,
 	.module		= THIS_MODULE,
 };
 

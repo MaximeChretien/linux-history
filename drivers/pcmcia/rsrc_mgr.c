@@ -419,14 +419,17 @@ void validate_mem(int (*is_valid)(u_long), int (*do_cksum)(u_long),
 void validate_mem(int (*is_valid)(u_long), int (*do_cksum)(u_long),
 		  int force_low, socket_info_t *s)
 {
-    resource_map_t *m;
+    resource_map_t *m, *n;
     static int done = 0;
     
     if (!probe_mem || done++)
 	return;
-    for (m = mem_db.next; m != &mem_db; m = m->next)
+
+    for (m = mem_db.next; m != &mem_db; m = n) {
+	n = m->next;
 	if (do_mem_probe(m->base, m->num, is_valid, do_cksum, s))
 	    return;
+    }
 }
 
 #endif /* CONFIG_ISA */

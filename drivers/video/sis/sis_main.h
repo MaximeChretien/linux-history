@@ -12,7 +12,7 @@
 
 #define VER_MAJOR                 1
 #define VER_MINOR                 6
-#define VER_LEVEL                 3
+#define VER_LEVEL                 11
 
 #include "sis.h"
 
@@ -28,6 +28,12 @@
 #endif
 #ifndef PCI_DEVICE_ID_SI_330
 #define PCI_DEVICE_ID_SI_330      0x0330
+#endif
+#ifndef PCI_DEVICE_ID_SI_660
+#define PCI_DEVICE_ID_SI_660      0x0660
+#endif
+#ifndef PCI_DEVICE_ID_SI_660_VGA
+#define PCI_DEVICE_ID_SI_660_VGA  0x6330
 #endif
 
 /* To be included in fb.h */
@@ -51,7 +57,7 @@
 #define TURBO_QUEUE_AREA_SIZE     0x80000 /* 512K */
 #endif
 
-/* For 310/315 series */
+/* For 315 series */
 #ifdef CONFIG_FB_SIS_315
 #define COMMAND_QUEUE_AREA_SIZE   0x80000 /* 512K */
 #define COMMAND_QUEUE_THRESHOLD   0x1F
@@ -281,43 +287,43 @@
 static struct fb_info sis_fb_info;
 
 static struct fb_var_screeninfo default_var = {
-	xres:           0,
-	yres:           0,
-	xres_virtual:   0,
-	yres_virtual:   0,
-	xoffset:        0,
-	yoffset:        0,
-	bits_per_pixel: 0,
-	grayscale:      0,
-	red:            {0, 8, 0},
-	green:          {0, 8, 0},
-	blue:           {0, 8, 0},
-	transp:         {0, 0, 0},
-	nonstd:         0,
-	activate:       FB_ACTIVATE_NOW,
-	height:         -1,
-	width:          -1,
-	accel_flags:    0,
-	pixclock:       0,
-	left_margin:    0,
-	right_margin:   0,
-	upper_margin:   0,
-	lower_margin:   0,
-	hsync_len:      0,
-	vsync_len:      0,
-	sync:           0,
-	vmode:          FB_VMODE_NONINTERLACED,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)	
-	reserved:       {0, 0, 0, 0, 0, 0}
-#endif	
+	.xres            = 0,
+	.yres            = 0,
+	.xres_virtual    = 0,
+	.yres_virtual    = 0,
+	.xoffset         = 0,
+	.yoffset         = 0,
+	.bits_per_pixel  = 0,
+	.grayscale       = 0,
+	.red             = {0, 8, 0},
+	.green           = {0, 8, 0},
+	.blue            = {0, 8, 0},
+	.transp          = {0, 0, 0},
+	.nonstd          = 0,
+	.activate        = FB_ACTIVATE_NOW,
+	.height          = -1,
+	.width           = -1,
+	.accel_flags     = 0,
+	.pixclock        = 0,
+	.left_margin     = 0,
+	.right_margin    = 0,
+	.upper_margin    = 0,
+	.lower_margin    = 0,
+	.hsync_len       = 0,
+	.vsync_len       = 0,
+	.sync            = 0,
+	.vmode           = FB_VMODE_NONINTERLACED,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
+	.reserved        = {0, 0, 0, 0, 0, 0}
+#endif
 };
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,0)
 static struct fb_fix_screeninfo sisfb_fix = {
-	id:		"SiS",
-	type:		FB_TYPE_PACKED_PIXELS,
-	xpanstep:	0,
-	ypanstep:	1,
+	.id		= "SiS",
+	.type		= FB_TYPE_PACKED_PIXELS,
+	.xpanstep	= 0,
+	.ypanstep	= 1,
 };
 static char myid[20];
 static u32 pseudo_palette[17];
@@ -356,9 +362,10 @@ static int sisfb_parm_rate = -1;
 static int sisfb_registered = 0;
 static int sisfb_mem = 0;
 static int sisfb_pdc = 0;
-static int enable_dstn = 0;
 static int sisfb_ypan = -1;
 static int sisfb_nocrt2rate = 0;
+static int sisfb_dstn = 0;
+static int sisfb_fstn = 0;
 
 VGA_ENGINE sisvga_engine = UNKNOWN_VGA;
 int 	   sisfb_accel = -1;
@@ -370,7 +377,7 @@ static int sisfb_CRT2_write_enable = 0;
 int sisfb_crt2type  = -1;	/* CRT2 type (for overriding autodetection) */
 int sisfb_tvplug    = -1;	/* Tv plug type (for overriding autodetection) */
 
-int sisfb_queuemode = -1; 	/* Use MMIO queue mode by default (310/325 series only) */
+int sisfb_queuemode = -1; 	/* Use MMIO queue mode by default (315 series only) */
 
 unsigned char sisfb_detectedpdc = 0;
 
@@ -404,7 +411,7 @@ typedef enum _SIS_CMDTYPE {
 	VM_CMD_QUEUE,
 } SIS_CMDTYPE;
 
-/* Supported SiS Chips list */
+/* List of supported chips */
 static struct board {
 	u16 vendor, device;
 	const char *name;
@@ -418,6 +425,7 @@ static struct board {
 	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_550_VGA, "SIS 550 VGA"},
 	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_650_VGA, "SIS 650/M650/651/740 VGA"},
 	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_330,     "SIS 330"},
+	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_660_VGA, "SIS 660 VGA"},
 	{0, 0, NULL}
 };
 
@@ -425,7 +433,7 @@ static struct board {
 #define MD_SIS315 2
 
 /* Mode table */
-/* NOT const - will be patched for 1280x960 mode number chaos reasons */
+/* NOT const - will be patched for 1280x768 mode number chaos reasons */
 struct _sisbios_mode {
 	char name[15];
 	u8 mode_no;
@@ -449,8 +457,8 @@ struct _sisbios_mode {
 	{"320x240x16",   0x56, 0x0135, 0x0000,  320,  240, 16, 1,  40, 15, MD_SIS300|MD_SIS315},
 	{"320x240x24",   0x53, 0x0000, 0x0000,  320,  240, 32, 1,  40, 15, MD_SIS300|MD_SIS315},
 	{"320x240x32",   0x53, 0x0000, 0x0000,  320,  240, 32, 1,  40, 15, MD_SIS300|MD_SIS315},
-	{"320x480x8",    0x5a, 0x0000, 0x0000,  320,  480,  8, 1,  40, 30,           MD_SIS315},  /* TW: FSTN */
-	{"320x480x16",   0x5b, 0x0000, 0x0000,  320,  480, 16, 1,  40, 30,           MD_SIS315},  /* TW: FSTN */
+	{"320x240x8",    0x5a, 0x0132, 0x0000,  320,  480,  8, 1,  40, 30,           MD_SIS315},  /* TW: FSTN */
+	{"320x240x16",   0x5b, 0x0135, 0x0000,  320,  480, 16, 1,  40, 30,           MD_SIS315},  /* TW: FSTN */
 	{"400x300x8",    0x51, 0x0133, 0x0000,  400,  300,  8, 1,  50, 18, MD_SIS300|MD_SIS315},
 	{"400x300x16",   0x57, 0x0136, 0x0000,  400,  300, 16, 1,  50, 18, MD_SIS300|MD_SIS315},
 	{"400x300x24",   0x54, 0x0000, 0x0000,  400,  300, 32, 1,  50, 18, MD_SIS300|MD_SIS315},
@@ -518,12 +526,12 @@ struct _sisbios_mode {
 	{"1280x720x16",  0x75, 0x0000, 0x0000, 1280,  720, 16, 1, 160, 45, MD_SIS300|MD_SIS315},
 	{"1280x720x24",  0x78, 0x0000, 0x0000, 1280,  720, 32, 1, 160, 45, MD_SIS300|MD_SIS315},
 	{"1280x720x32",  0x78, 0x0000, 0x0000, 1280,  720, 32, 1, 160, 45, MD_SIS300|MD_SIS315},
-	{"1280x768x8",   0x23, 0x0000, 0x0000, 1280,  768,  8, 1, 160, 48,           MD_SIS315},
-	{"1280x768x16",  0x24, 0x0000, 0x0000, 1280,  768, 16, 1, 160, 48,           MD_SIS315},
-	{"1280x768x24",  0x25, 0x0000, 0x0000, 1280,  768, 32, 1, 160, 48,           MD_SIS315},
-	{"1280x768x32",  0x25, 0x0000, 0x0000, 1280,  768, 32, 1, 160, 48,           MD_SIS315},
-#define MODEINDEX_1280x960 79
-	{"1280x960x8",   0x7c, 0x0000, 0x0000, 1280,  960,  8, 1, 160, 60, MD_SIS300|MD_SIS315},  /* TW: Modenumbers being patched */
+#define MODEINDEX_1280x768 75
+	{"1280x768x8",   0x23, 0x0000, 0x0000, 1280,  768,  8, 1, 160, 48, MD_SIS300|MD_SIS315},
+	{"1280x768x16",  0x24, 0x0000, 0x0000, 1280,  768, 16, 1, 160, 48, MD_SIS300|MD_SIS315},
+	{"1280x768x24",  0x25, 0x0000, 0x0000, 1280,  768, 32, 1, 160, 48, MD_SIS300|MD_SIS315},
+	{"1280x768x32",  0x25, 0x0000, 0x0000, 1280,  768, 32, 1, 160, 48, MD_SIS300|MD_SIS315},
+	{"1280x960x8",   0x7c, 0x0000, 0x0000, 1280,  960,  8, 1, 160, 60, MD_SIS300|MD_SIS315}, 
 	{"1280x960x16",  0x7d, 0x0000, 0x0000, 1280,  960, 16, 1, 160, 60, MD_SIS300|MD_SIS315},
 	{"1280x960x24",  0x7e, 0x0000, 0x0000, 1280,  960, 32, 1, 160, 60, MD_SIS300|MD_SIS315},
 	{"1280x960x32",  0x7e, 0x0000, 0x0000, 1280,  960, 32, 1, 160, 60, MD_SIS300|MD_SIS315},
@@ -531,10 +539,14 @@ struct _sisbios_mode {
 	{"1280x1024x16", 0x4d, 0x011a, 0x011a, 1280, 1024, 16, 2, 160, 64, MD_SIS300|MD_SIS315},
 	{"1280x1024x24", 0x65, 0x013d, 0x011b, 1280, 1024, 32, 2, 160, 64, MD_SIS300|MD_SIS315},
 	{"1280x1024x32", 0x65, 0x013d, 0x011b, 1280, 1024, 32, 2, 160, 64, MD_SIS300|MD_SIS315},
-	{"1360x768x8",   0x48, 0x0107, 0x0107, 1360,  768,  8, 1, 170, 48, MD_SIS300|MD_SIS315},
-	{"1360x768x16",  0x4b, 0x011a, 0x011a, 1360,  768, 16, 1, 170, 48, MD_SIS300|MD_SIS315},
-	{"1360x768x24",  0x4e, 0x013d, 0x011b, 1360,  768, 32, 1, 170, 48, MD_SIS300|MD_SIS315},
-	{"1360x768x32",  0x4e, 0x013d, 0x011b, 1360,  768, 32, 1, 170, 48, MD_SIS300|MD_SIS315},
+	{"1360x768x8",   0x48, 0x0000, 0x0000, 1360,  768,  8, 1, 170, 48, MD_SIS300|MD_SIS315},
+	{"1360x768x16",  0x4b, 0x0000, 0x0000, 1360,  768, 16, 1, 170, 48, MD_SIS300|MD_SIS315},
+	{"1360x768x24",  0x4e, 0x0000, 0x0000, 1360,  768, 32, 1, 170, 48, MD_SIS300|MD_SIS315},
+	{"1360x768x32",  0x4e, 0x0000, 0x0000, 1360,  768, 32, 1, 170, 48, MD_SIS300|MD_SIS315},
+	{"1360x1024x8",  0x67, 0x0000, 0x0000, 1360, 1024,  8, 1, 170, 64, MD_SIS300          },
+	{"1360x1024x16", 0x6f, 0x0000, 0x0000, 1360, 1024, 16, 1, 170, 64, MD_SIS300          },
+	{"1360x1024x24", 0x72, 0x0000, 0x0000, 1360, 1024, 32, 1, 170, 64, MD_SIS300          },
+	{"1360x1024x32", 0x72, 0x0000, 0x0000, 1360, 1024, 32, 1, 170, 64, MD_SIS300          },
 	{"1400x1050x8",  0x26, 0x0000, 0x0000, 1400, 1050,  8, 1, 175, 65,           MD_SIS315},
 	{"1400x1050x16", 0x27, 0x0000, 0x0000, 1400, 1050, 16, 1, 175, 65,           MD_SIS315},
 	{"1400x1050x24", 0x28, 0x0000, 0x0000, 1400, 1050, 32, 1, 175, 65,           MD_SIS315},
@@ -565,37 +577,45 @@ u8  sisfb_rate_idx = 0;
 
 /* TW: CR36 evaluation */
 const USHORT sis300paneltype[] =
-    { LCD_UNKNOWN,   LCD_800x600,  LCD_1024x768,  LCD_1280x1024,
-      LCD_1280x960,  LCD_640x480,  LCD_1024x600,  LCD_1152x768,
-      LCD_320x480,   LCD_1024x768, LCD_1024x768,  LCD_1024x768,
-      LCD_1024x768,  LCD_1024x768, LCD_1024x768,  LCD_1024x768 };
+    { LCD_UNKNOWN,   LCD_800x600,   LCD_1024x768,  LCD_1280x1024,
+      LCD_1280x960,  LCD_640x480,   LCD_1024x600,  LCD_1152x768,
+      LCD_1024x768,   LCD_1024x768,  LCD_1024x768,  LCD_1024x768,
+      LCD_1024x768,  LCD_1024x768,  LCD_320x480,   LCD_1024x768 };
 
 const USHORT sis310paneltype[] =
-    { LCD_UNKNOWN,   LCD_800x600,  LCD_1024x768,  LCD_1280x1024,
-      LCD_640x480,   LCD_1024x600, LCD_1152x864,  LCD_1280x960,
-      LCD_1152x768,  LCD_1400x1050,LCD_1280x768,  LCD_1600x1200,
-      LCD_320x480,   LCD_1024x768, LCD_1024x768,  LCD_1024x768 };
+    { LCD_UNKNOWN,   LCD_800x600,   LCD_1024x768,  LCD_1280x1024,
+      LCD_640x480,   LCD_1024x600,  LCD_1152x864,  LCD_1280x960,
+      LCD_1152x768,  LCD_1400x1050, LCD_1280x768,  LCD_1600x1200,
+      LCD_640x480_2, LCD_640x480_3, LCD_320x480,   LCD_1024x768 };
+
+#define FL_550_DSTN 0x01
+#define FL_550_FSTN 0x02
 
 static const struct _sis_crt2type {
 	char name[10];
 	int type_no;
 	int tvplug_no;
+	unsigned short flags;
 } sis_crt2type[] = {
-	{"NONE", 	0, 		-1},
-	{"LCD",  	CRT2_LCD, 	-1},
-	{"TV",   	CRT2_TV, 	-1},
-	{"VGA",  	CRT2_VGA, 	-1},
-	{"SVIDEO", 	CRT2_TV, 	TV_SVIDEO},
-	{"COMPOSITE", 	CRT2_TV, 	TV_AVIDEO},
-	{"SCART", 	CRT2_TV, 	TV_SCART},
-	{"none", 	0, 		-1},
-	{"lcd",  	CRT2_LCD, 	-1},
-	{"tv",   	CRT2_TV, 	-1},
-	{"vga",  	CRT2_VGA, 	-1},
-	{"svideo", 	CRT2_TV, 	TV_SVIDEO},
-	{"composite", 	CRT2_TV, 	TV_AVIDEO},
-	{"scart", 	CRT2_TV, 	TV_SCART},
-	{"\0",  	-1, 		-1}
+	{"NONE", 	0, 		-1,        0},
+	{"LCD",  	CRT2_LCD, 	-1,        0},
+	{"TV",   	CRT2_TV, 	-1,        0},
+	{"VGA",  	CRT2_VGA, 	-1,        0},
+	{"SVIDEO", 	CRT2_TV, 	TV_SVIDEO, 0},
+	{"COMPOSITE", 	CRT2_TV, 	TV_AVIDEO, 0},
+	{"SCART", 	CRT2_TV, 	TV_SCART,  0},
+	{"none", 	0, 		-1,        0},
+	{"lcd",  	CRT2_LCD, 	-1,        0},
+	{"tv",   	CRT2_TV, 	-1,        0},
+	{"vga",  	CRT2_VGA, 	-1,        0},
+	{"svideo", 	CRT2_TV, 	TV_SVIDEO, 0},
+	{"composite", 	CRT2_TV, 	TV_AVIDEO, 0},
+	{"scart", 	CRT2_TV, 	TV_SCART,  0},
+	{"DSTN",        CRT2_LCD,       -1,        FL_550_DSTN},
+	{"dstn",        CRT2_LCD,       -1,        FL_550_DSTN},
+	{"FSTN",        CRT2_LCD,       -1,        FL_550_FSTN},
+	{"fstn",        CRT2_LCD,       -1,        FL_550_FSTN},
+	{"\0",  	-1, 		-1,        0}
 };
 
 /* Queue mode selection for 310 series */
@@ -661,6 +681,7 @@ static const struct _sis_vrate {
 	{1, 1280, 1024,  43,  TRUE}, {2, 1280, 1024,  60,  TRUE}, {3, 1280, 1024,  75,  TRUE},
 	{4, 1280, 1024,  85,  TRUE},
 	{1, 1360,  768,  60,  TRUE},
+	{1, 1360, 1024,  59,  TRUE},
 	{1, 1400, 1050,  60,  TRUE}, {2, 1400, 1050,  75,  TRUE},
 	{1, 1600, 1200,  60,  TRUE}, {2, 1600, 1200,  65,  TRUE}, {3, 1600, 1200,  70,  TRUE},
 	{4, 1600, 1200,  75,  TRUE}, {5, 1600, 1200,  85,  TRUE}, {6, 1600, 1200, 100,  TRUE},
@@ -670,6 +691,54 @@ static const struct _sis_vrate {
 	{1, 2048, 1536,  60,  TRUE}, {2, 2048, 1536,  65,  TRUE}, {3, 2048, 1536,  70,  TRUE},
 	{4, 2048, 1536,  75,  TRUE}, {5, 2048, 1536,  85,  TRUE},
 	{0,    0,    0,   0, FALSE}
+};
+
+static struct sisfb_monitor {
+	u16 hmin;
+	u16 hmax;
+	u16 vmin;
+	u16 vmax;
+	u32 dclockmax;
+	u8  feature;
+	BOOLEAN datavalid;
+} sisfb_thismonitor;
+
+static const struct _sisfbddcsmodes {
+	u32 mask;
+	u16 h;
+	u16 v;
+	u32 d;
+} sisfb_ddcsmodes[] = {
+	{ 0x10000, 67, 75, 108000},
+	{ 0x08000, 48, 72,  50000},
+	{ 0x04000, 46, 75,  49500},
+	{ 0x01000, 35, 43,  44900},
+	{ 0x00800, 48, 60,  65000},
+	{ 0x00400, 56, 70,  75000},
+	{ 0x00200, 60, 75,  78800},
+	{ 0x00100, 80, 75, 135000},
+	{ 0x00020, 31, 60,  25200},
+	{ 0x00008, 38, 72,  31500},
+	{ 0x00004, 37, 75,  31500},
+	{ 0x00002, 35, 56,  36000},
+	{ 0x00001, 38, 60,  40000}
+};
+
+static const struct _sisfbddcfmodes {
+	u16 x;
+	u16 y;
+	u16 v;
+	u16 h;
+	u32 d;
+} sisfb_ddcfmodes[] = {
+       { 1280, 1024, 85, 92, 157500},
+       { 1600, 1200, 60, 75, 162000},
+       { 1600, 1200, 65, 82, 175500},
+       { 1600, 1200, 70, 88, 189000},
+       { 1600, 1200, 75, 94, 202500},
+       { 1600, 1200, 85, 107,229500},
+       { 1920, 1440, 60, 90, 234000},
+       { 1920, 1440, 75, 113,297000}
 };
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,0)
@@ -683,7 +752,36 @@ static const struct _chswtable {
     char *cardName;
 } mychswtable[] = {
         { 0x1631, 0x1002, "Mitachi", "0x1002" },
+	{ 0x1071, 0x7521, "Mitac"  , "7521P"  },
 	{ 0,      0,      ""       , ""       }
+};
+
+static const struct _customttable {
+    unsigned short chipID;
+    char *biosversion;
+    char *biosdate;
+    unsigned short biosFootprintAddr[5];
+    unsigned char biosFootprintData[5];
+    char *vendorName;
+    char *cardName;
+    unsigned long SpecialID;
+    char *optionName;
+} mycustomttable[] = {
+        { SIS_630, "2.00.07", "09/27/2002-13:38:25",
+	  { 0x220, 0x227, 0x228, 0x229, 0x22a },
+	  {  0x01,  0xe3,  0x9a,  0x6a,  0x00 },
+	  "Barco", "iQ R200L/300/400", CUT_BARCO1366, "BARCO1366"
+	},
+	{ SIS_630, "2.00.07", "09/27/2002-13:38:25",
+	  { 0x220, 0x227, 0x228, 0x229, 0x22a },
+	  {  0x00,  0x5a,  0x64,  0x41,  0x00 },
+	  "Barco", "iQ G200L/300/400/500", CUT_BARCO1024, "BARCO1024"
+	},
+	{ 0, "", "",
+	  { 0, 0, 0, 0 },
+	  { 0, 0, 0, 0 },
+	  "", "", CUT_NONE, ""
+	}
 };
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
@@ -953,7 +1051,7 @@ extern int      sisfb_mode_rate_to_ddata(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INF
 			 unsigned int *left_margin, unsigned int *right_margin, 
 			 unsigned int *upper_margin, unsigned int *lower_margin,
 			 unsigned int *hsync_len, unsigned int *vsync_len,
-			 unsigned int *sync, unsigned int *vmode);			      		    			      
+			 unsigned int *sync, unsigned int *vmode);
 #endif
 			
 static int      sisfb_get_fix(struct fb_fix_screeninfo *fix, int con,
@@ -964,7 +1062,7 @@ extern int      sisfb_initaccel(void);
 extern void     sisfb_syncaccel(void);
 
 /* Internal general routines */
-static void     sisfb_search_mode(const char *name);
+static void     sisfb_search_mode(char *name, BOOLEAN quiet);
 static int      sisfb_validate_mode(int modeindex, unsigned long vbflags);
 static u8       sisfb_search_refresh_rate(unsigned int rate, int index);
 static int      sisfb_setcolreg(unsigned regno, unsigned red, unsigned green,
@@ -982,6 +1080,10 @@ static BOOLEAN  sisfbcheckvretracecrt1(void);
 static BOOLEAN  sisfb_bridgeisslave(void);
 static void     sisfb_detect_VB_connect(void);
 static void     sisfb_get_VB_type(void);
+
+static void     sisfb_handle_ddc(struct sisfb_monitor *monitor, int crtno);
+static BOOLEAN  sisfb_interpret_edid(struct sisfb_monitor *monitor, unsigned char *buffer);
+
 
 /* SiS-specific Export functions */
 void            sis_dispinfo(struct ap_data *rec);
@@ -1019,8 +1121,12 @@ BOOLEAN         sisfb_query_north_bridge_space(PSIS_HW_DEVICE_INFO psishw_ext,
 extern void 	SiSRegInit(SiS_Private *SiS_Pr, USHORT BaseAddr);
 extern BOOLEAN  SiSInit(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension);
 extern BOOLEAN  SiSSetMode(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension, USHORT ModeNo);
-extern void     SiS_SetEnableDstn(SiS_Private *SiS_Pr);
+extern void     SiS_SetEnableDstn(SiS_Private *SiS_Pr, int enable);
+extern void     SiS_SetEnableFstn(SiS_Private *SiS_Pr, int enable);
 extern void     SiS_LongWait(SiS_Private *SiS_Pr);
+
+extern BOOLEAN  sisfb_gettotalfrommode(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension,
+		       unsigned char modeno, int *htotal, int *vtotal, unsigned char rateindex);
 
 /* Chrontel TV functions */
 extern USHORT 	SiS_GetCH700x(SiS_Private *SiS_Pr, USHORT tempbx);
@@ -1029,7 +1135,14 @@ extern USHORT 	SiS_GetCH701x(SiS_Private *SiS_Pr, USHORT tempbx);
 extern void 	SiS_SetCH701x(SiS_Private *SiS_Pr, USHORT tempbx);
 extern void     SiS_SetCH70xxANDOR(SiS_Private *SiS_Pr, USHORT tempax,USHORT tempbh);
 extern void     SiS_DDC2Delay(SiS_Private *SiS_Pr, USHORT delaytime);
-
+extern void     SiS_SetChrontelGPIO(SiS_Private *SiS_Pr, USHORT myvbinfo);
+extern USHORT   SiS_HandleDDC(SiS_Private *SiS_Pr, unsigned long VBFlags, int VGAEngine,
+		              USHORT adaptnum, USHORT DDCdatatype, unsigned char *buffer);
+extern void SiS_Chrontel701xBLOn(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension);
+extern void SiS_Chrontel701xBLOff(SiS_Private *SiS_Pr);
+extern void SiS_SiS30xBLOn(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension);
+extern void SiS_SiS30xBLOff(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension);
+			      
 /* Sensing routines */
 void            SiS_Sense30x(void);
 int             SISDoSense(int tempbl, int tempbh, int tempcl, int tempch);

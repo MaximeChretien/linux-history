@@ -15,10 +15,10 @@
 #include <linux/rtnetlink.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter.h>
+#include <linux/smp.h>
 #include <net/pkt_sched.h>
 #include <asm/byteorder.h>
 #include <asm/uaccess.h>
-#include <asm/smp.h>
 #include <linux/kmod.h>
 #include <linux/stat.h>
 #include <linux/interrupt.h>
@@ -190,7 +190,7 @@ static int ingress_requeue(struct sk_buff *skb,struct Qdisc *sch)
 	return 0;
 }
 
-static int ingress_drop(struct Qdisc *sch)
+static unsigned int ingress_drop(struct Qdisc *sch)
 {
 #ifdef DEBUG_INGRESS
 	struct ingress_qdisc_data *p = PRIV(sch);

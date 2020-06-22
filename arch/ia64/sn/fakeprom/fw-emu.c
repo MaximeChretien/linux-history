@@ -5,7 +5,7 @@
  * Copyright (C) 1998-2000 David Mosberger-Tang <davidm@hpl.hp.com>
  *
  *
- * Copyright (C) 2000-2002 Silicon Graphics, Inc.  All rights reserved.
+ * Copyright (C) 2000-2003 Silicon Graphics, Inc.  All rights reserved.
  * 
  * This program is free software; you can redistribute it and/or modify it 
  * under the terms of version 2 of the GNU General Public License 
@@ -42,7 +42,7 @@
 #include <asm/sn/sn_sal.h>
 #include <asm/processor.h>
 #include <asm/sn/sn_cpuid.h>
-#ifdef CONFIG_IA64_SGI_SN2
+#ifdef SGI_SN2
 #include <asm/sn/sn2/addrs.h>
 #include <asm/sn/sn2/shub_mmr.h>
 #endif
@@ -68,10 +68,7 @@
 #define ACPI_SLIT_REVISION 1
 
 #define OEMID			"SGI"
-#ifdef CONFIG_IA64_SGI_SN1
-#define PRODUCT			"SN1"
-#define PROXIMITY_DOMAIN(nasid)	(nasid)
-#else
+#ifdef SGI_SN2
 #define PRODUCT			"SN2"
 #define PROXIMITY_DOMAIN(nasid)	(((nasid)>>1) & 255)
 #endif
@@ -99,12 +96,7 @@
 
 typedef union ia64_nasid_va {
         struct {
-#if defined(CONFIG_IA64_SGI_SN1)
-                unsigned long off   : 33;       /* intra-region offset */
-		unsigned long nasid :  7;	/* NASID */
-		unsigned long off2  : 21;	/* fill */
-                unsigned long reg   :  3;       /* region number */
-#elif defined(CONFIG_IA64_SGI_SN2)
+#if defined(SGI_SN2)
                 unsigned long off   : 36;       /* intra-region offset */
 		unsigned long attr  :  2;
 		unsigned long nasid : 11;	/* NASID */
@@ -124,9 +116,7 @@ typedef struct {
 #define IS_VIRTUAL_MODE() 	 ({struct ia64_psr psr; asm("mov %0=psr" : "=r"(psr)); psr.dt;})
 #define ADDR_OF(p)		(IS_VIRTUAL_MODE() ? ((void*)((long)(p)+PAGE_OFFSET)) : ((void*) (p)))
 
-#if defined(CONFIG_IA64_SGI_SN1)
-#define __fwtab_pa(n,x)		({ia64_nasid_va _v; _v.l = (long) (x); _v.f.nasid = (x) ? (n) : 0; _v.f.reg = 0; _v.l;})
-#elif defined(CONFIG_IA64_SGI_SN2)
+#if defined(SGI_SN2)
 #define __fwtab_pa(n,x)		({ia64_nasid_va _v; _v.l = (long) (x); _v.f.nasid = (x) ? (n) : 0; _v.f.reg = 0; _v.f.attr = 3; _v.l;})
 #endif
 
@@ -207,7 +197,7 @@ efi_unimplemented (void)
 	return EFI_UNSUPPORTED;
 }
 
-#ifdef CONFIG_IA64_SGI_SN2
+#ifdef SGI_SN2
 
 #undef cpu_physical_id
 #define cpu_physical_id(cpuid)                  ((ia64_get_lid() >> 16) & 0xffff)
@@ -300,7 +290,7 @@ sal_emulator (long index, unsigned long in1, unsigned long in2,
 		;
 	} else if (index == SAL_UPDATE_PAL) {
 		;
-#ifdef CONFIG_IA64_SGI_SN2
+#ifdef SGI_SN2
 	} else if (index == SN_SAL_LOG_CE) {
 #ifdef ajmtestcpei
 		fprom_send_cpei();
@@ -500,9 +490,7 @@ sys_fw_init (const char *args, int arglen, int bsp)
 	/*
 	 * Pass the parameter base address to the build_efi_xxx routines.
 	 */
-#if defined(CONFIG_IA64_SGI_SN1)
-	build_init(8LL*GB*base_nasid);
-#else
+#if defined(SGI_SN2)
 	build_init(0x3000000000UL | ((long)base_nasid<<38));
 #endif
 
@@ -624,10 +612,7 @@ sys_fw_init (const char *args, int arglen, int bsp)
 			lsapic20->header.length = sizeof(struct acpi_table_lsapic);
 			lsapic20->acpi_id = cnode*4+cpu;
 			lsapic20->flags.enabled = 1;
-#if defined(CONFIG_IA64_SGI_SN1)
-			lsapic20->eid = cpu;
-			lsapic20->id = nasid;
-#else
+#if defined(SGI_SN2)
 			lsapic20->eid = nasid&0xffff;
 			lsapic20->id = (cpu<<4) | (nasid>>16);
 #endif
@@ -648,12 +633,9 @@ sys_fw_init (const char *args, int arglen, int bsp)
 		srat_memory_affinity->proximity_domain = PROXIMITY_DOMAIN(nasid);
 		srat_memory_affinity->base_addr_lo = 0;
 		srat_memory_affinity->length_lo = 0;
-#if defined(CONFIG_IA64_SGI_SN1)
-		srat_memory_affinity->base_addr_hi = nasid<<1;
-		srat_memory_affinity->length_hi = SN1_NODE_SIZE>>32;
-#else
+#if defined(SGI_SN2)
 		srat_memory_affinity->base_addr_hi = (nasid<<6) | (3<<4);
-		srat_memory_affinity->length_hi = SN2_NODE_SIZE>>32;
+		srat_memory_affinity->length_hi = (MD_BANKSIZE*MD_BANKS_PER_NODE)>>32;
 #endif
 		srat_memory_affinity->memory_type = ACPI_ADDRESS_RANGE_MEMORY;
 		srat_memory_affinity->flags.enabled = 1;
@@ -670,10 +652,7 @@ sys_fw_init (const char *args, int arglen, int bsp)
 			srat_cpu_affinity->header.length = sizeof(struct acpi_table_processor_affinity);
 			srat_cpu_affinity->proximity_domain = PROXIMITY_DOMAIN(nasid);
 			srat_cpu_affinity->flags.enabled = 1;
-#if defined(CONFIG_IA64_SGI_SN1)
-			srat_cpu_affinity->apic_id = nasid;
-			srat_cpu_affinity->lsapic_eid = cpu;
-#else
+#if defined(SGI_SN2)
 			srat_cpu_affinity->lsapic_eid = nasid&0xffff;
 			srat_cpu_affinity->apic_id = (cpu<<4) | (nasid>>16);
 #endif
@@ -707,7 +686,7 @@ sys_fw_init (const char *args, int arglen, int bsp)
 	sal_systab->sal_b_rev_minor = 0x0; /* 1.00 */
 
 	strcpy(sal_systab->oem_id, "SGI");
-	strcpy(sal_systab->product_id, "SN1");
+	strcpy(sal_systab->product_id, "SN2");
 
 	/* fill in an entry point: */	
 	sal_ed->type = SAL_DESC_ENTRY_POINT;
@@ -785,9 +764,7 @@ sys_fw_init (const char *args, int arglen, int bsp)
 		for(cpu=0; cpu<CPUS_PER_NODE; cpu++) {
 			if (!IsCpuPresent(cnode, cpu))
 				continue;
-#ifdef CONFIG_IA64_SGI_SN1
-			bsp_lid = (GetNasid(cnode)<<24) | (cpu<<16);
-#else
+#ifdef SGI_SN2
 			bsp_lid = (GetNasid(cnode)<<16) | (cpu<<28);
 #endif
 			if (bsp-- > 0)

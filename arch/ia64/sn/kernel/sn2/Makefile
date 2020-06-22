@@ -1,7 +1,7 @@
 #
 # arch/ia64/sn/kernel/sn2/Makefile
 #
-# Copyright (C) 1999,2001-2002 Silicon Graphics, Inc. All rights reserved.
+# Copyright (C) 1999,2001-2003 Silicon Graphics, Inc. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify it 
 # under the terms of version 2 of the GNU General Public License 
@@ -41,7 +41,9 @@ EXTRA_CFLAGS    := -DLITTLE_ENDIAN
 	$(CC) $(AFLAGS) $(AFLAGS_KERNEL) -c -o $*.o $<
 
 O_TARGET        = sn2.o
+export-objs	:= io.o
 
-obj-y          = cache.o iomv.o ptc_deadlock.o sn2_smp.o sn_proc_fs.o
+obj-y		= cache.o io.o ptc_deadlock.o sn2_smp.o sn_proc_fs.o \
+		  prominfo_proc.o timer.o
 
 include $(TOPDIR)/Rules.make

@@ -89,7 +89,7 @@ int main(int argc, char *argv[])
 	cp = (uint *)&bt;
 	for (i=0; i<sizeof(bt)/sizeof(uint); i++)
 		cksum += *cp++;
-	
+
 	/* Assume zImage is an ELF file, and skip the 64K header.
 	*/
 	if (read(in_fd, tmpbuf, IMGBLK) != IMGBLK) {

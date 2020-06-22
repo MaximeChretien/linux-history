@@ -82,7 +82,7 @@ Soft_emulate_8xx(struct pt_regs *regs)
 		if (copy_from_user(ip, ea, sizeof(double)))
 			retval = -EFAULT;
 		break;
-		
+
 	case LFDU:
 		if (copy_from_user(ip, ea, sizeof(double)))
 			retval = -EFAULT;
@@ -137,7 +137,7 @@ Soft_emulate_8xx(struct pt_regs *regs)
 			printk("Kernel VA for NIP 0x%p ", __va(pa));
 			print_8xx_pte(current->mm, (unsigned long)__va(pa));
 		}
-		
+
 	}
 
 	if (retval == 0)

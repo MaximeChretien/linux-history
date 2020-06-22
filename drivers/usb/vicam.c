@@ -1,6 +1,10 @@
 /*
  * USB ViCam WebCam driver
- * Copyright (c) 2002 Joe Burks (jburks@wavicle.org)
+ * Copyright (c) 2002 Joe Burks (jburks@wavicle.org),
+ *                    Christopher L Cheney (ccheney@cheney.cx),
+ *                    Pavel Machek (pavel@suse.cz),
+ *                    John Tyner (jtyner@cs.ucr.edu),
+ *                    Monroe Williams (monroe@pobox.com)
  *
  * Supports 3COM HomeConnect PC Digital WebCam
  *
@@ -18,8 +22,17 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * This source code is based heavily on the CPiA webcam driver
- * */
+ * This source code is based heavily on the CPiA webcam driver which was
+ * written by Peter Pregler, Scott J. Bertin and Johannes Erdfelt
+ *
+ * Portions of this code were also copied from usbvideo.c
+ *
+ * Special thanks to the the whole team at Sourceforge for help making
+ * this driver become a reality.  Notably:
+ * Andy Armstrong who reverse engineered the color encoding and
+ * Pavel Machek and Chris Cheney who worked on reverse engineering the
+ *    camera controls and wrote the first generation driver.
+ */
 
 #include <linux/kernel.h>
 #include <linux/wrapper.h>
@@ -354,7 +367,8 @@ struct vicam_camera {
 	struct semaphore busy_lock;	// guard against SMP multithreading
 
 	bool is_initialized;
-	u8 open_count;
+	bool is_removed;
+	bool is_opened;
 	u8 bulkEndpoint;
 	bool needsDummyRead;
 
@@ -371,6 +385,7 @@ static void *vicam_probe(struct usb_device *dev, unsigned int ifnum,
 			       const struct usb_device_id *id);
 static void vicam_disconnect(struct usb_device *dev, void *ptr);
 static void read_frame(struct vicam_camera *cam, int framenum);
+static void vicam_purge(struct vicam_camera *cam);
 
 static int
 send_control_msg(struct usb_device *udev, u8 request, u16 value, u16 index,
@@ -691,6 +706,7 @@ vicam_open(struct video_device *dev, int flags)
 {
 	struct vicam_camera *cam =
 	    (struct vicam_camera *) dev->priv;
+	int intr;
 	DBG("open\n");
 
 	if (!cam) {
@@ -698,9 +714,11 @@ vicam_open(struct video_device *dev, int flags)
 		       "vicam video_device improperly initialized");
 	}
 
-	down_interruptible(&cam->busy_lock);
+	intr = down_interruptible(&cam->busy_lock);
+	if (intr)
+		return -EINTR;
 
-	if (cam->open_count > 0) {
+	if (cam->is_opened) {
 		printk(KERN_INFO
 		       "vicam_open called on already opened camera");
 		up(&cam->busy_lock);
@@ -735,7 +753,7 @@ vicam_open(struct video_device *dev, int flags)
 	set_camera_power(cam, 1);
 
 	cam->needsDummyRead = 1;
-	cam->open_count++;
+	cam->is_opened = 1;
 
 	up(&cam->busy_lock);
 
@@ -745,10 +763,16 @@ vicam_open(struct video_device *dev, int flags)
 static void
 vicam_close(struct video_device *dev)
 {
+	struct vicam_camera *cam = (struct vicam_camera *) dev->priv;
 	DBG("close\n");
-	set_camera_power((struct vicam_camera *) dev->priv, 0);
 
-	((struct vicam_camera *) dev->priv)->open_count--;
+
+	if (cam->is_removed) {
+		vicam_purge(cam);
+	} else {
+		set_camera_power(cam, 0);
+		cam->is_opened = 0;
+	}
 }
 
 inline int pin(int x)
@@ -759,7 +783,7 @@ inline int pin(int x)
 inline void writepixel(char *rgb, int Y, int Cr, int Cb)
 {
 	Y = 1160 * (Y - 16);
-	
+
 	rgb[2] = pin( ( ( Y + ( 1594 * Cr ) ) + 500 ) / 1300 );
 	rgb[1] = pin( ( ( Y - (  392 * Cb ) - ( 813 * Cr ) ) + 500 ) / 1000 );
 	rgb[0] = pin( ( ( Y + ( 2017 * Cb ) ) + 500 ) / 900 );
@@ -926,6 +950,7 @@ vicam_read(struct video_device *dev, char *buf,
 		 unsigned long count, int noblock)
 {
 	struct vicam_camera *cam = dev->priv;
+	int intr;
 	DBG("read %d bytes.\n", (int) count);
 
 	if (!buf)
@@ -962,7 +987,9 @@ vicam_read(struct video_device *dev, char *buf,
 		}
 	}
 
-	down_interruptible(&cam->busy_lock);
+	intr = down_interruptible(&cam->busy_lock);
+	if (intr)
+		return -EINTR;
 
 	if (cam->needsDummyRead) {
 		read_frame(cam, 0);
@@ -1293,10 +1320,10 @@ vicam_probe(struct usb_device *dev, unsigned int ifnum,
 	return cam;
 }
 
+
 static void
-vicam_disconnect(struct usb_device *dev, void *ptr)
+vicam_purge(struct vicam_camera *cam)
 {
-	struct vicam_camera *cam = ptr;
 	video_unregister_device(&cam->vdev);
 
 #ifdef CONFIG_PROC_FS
@@ -1312,6 +1339,18 @@ vicam_disconnect(struct usb_device *dev, void *ptr)
 	kfree(cam);
 
 	printk(KERN_DEBUG "ViCam-based WebCam disconnected\n");
+}
+
+static void
+vicam_disconnect(struct usb_device *dev, void *ptr)
+{
+	struct vicam_camera *cam = ptr;
+
+	if (cam->is_opened) {
+		cam->is_removed = 1;
+	} else {
+		vicam_purge(cam);
+	}
 }
 
 /*

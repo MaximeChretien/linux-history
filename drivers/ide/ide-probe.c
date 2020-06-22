@@ -971,6 +971,7 @@ static void ide_init_queue(ide_drive_t *drive)
 
 	q->queuedata = HWGROUP(drive);
 	blk_init_queue(q, do_ide_request);
+	blk_queue_throttle_sectors(q, 1);
 }
 
 #undef __IRQ_HELL_SPIN

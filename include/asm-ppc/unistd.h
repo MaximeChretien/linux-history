@@ -368,7 +368,7 @@ static inline _syscall1(int,_exit,int,exitcode)
 static inline _syscall3(pid_t,waitpid,pid_t,pid,int *,wait_stat,int,options)
 static inline _syscall1(int,delete_module,const char *,name)
 
-static inline pid_t wait(int * wait_stat) 
+static inline pid_t wait(int * wait_stat)
 {
 	return waitpid(-1,wait_stat,0);
 }

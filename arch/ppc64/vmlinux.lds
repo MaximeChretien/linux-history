@@ -73,6 +73,9 @@ SECTIONS
   __kallsyms : { *(__kallsyms) }
   __stop___kallsyms = .;
 
+  __start___ftr_fixup = .;
+  __ftr_fixup : { *(__ftr_fixup) }
+  __stop___ftr_fixup = .;
 
   . = ALIGN(4096);
   .data.page_aligned : { *(.data.page_aligned) }

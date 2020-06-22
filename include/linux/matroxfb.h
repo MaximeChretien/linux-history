@@ -76,5 +76,7 @@ struct matroxfb_control {
 #define MATROXFB_G_TVOCTRL	_IOWR('V',27,struct matroxfb_control)
 #define MATROXFB_S_TVOCTRL	_IOW ('V',28,struct matroxfb_control)
 
+#define FBIO_WAITFORVSYNC	_IOW('F', 0x20, u_int32_t)
+
 #endif
 

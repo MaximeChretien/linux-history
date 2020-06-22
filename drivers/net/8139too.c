@@ -978,7 +978,7 @@ static int __devinit rtl8139_init_one (struct pci_dev *pdev,
 
 	dev->irq = pdev->irq;
 
-	/* dev->priv/tp zeroed and aligned in init_etherdev */
+	/* dev->priv/tp zeroed and aligned in alloc_etherdev */
 	tp = dev->priv;
 
 	/* note: tp->chipset set in rtl8139_init_board */
@@ -1687,7 +1687,7 @@ static int rtl8139_start_xmit (struct sk_buff *skb, struct net_device *dev)
 	entry = tp->cur_tx % NUM_TX_DESC;
 
 	if (likely(len < TX_BUF_SIZE)) {
-		if(len < ETH_ZLEN)
+		if (len < ETH_ZLEN)
 			memset(tp->tx_buf[entry], 0, ETH_ZLEN);
 		skb_copy_and_csum_dev(skb, tp->tx_buf[entry]);
 		dev_kfree_skb(skb);
@@ -2074,7 +2074,7 @@ static void rtl8139_interrupt (int irq, void *dev_instance,
 		RTL_W16 (IntrStatus, ackstat);
 
 		DPRINTK ("%s: interrupt  status=%#4.4x ackstat=%#4.4x new intstat=%#4.4x.\n",
-			 dev->name, ackstat, status, RTL_R16 (IntrStatus));
+			 dev->name, status, ackstat, RTL_R16 (IntrStatus));
 
 		if (netif_running (dev) && (status & RxAckBits))
 			rtl8139_rx_interrupt (dev, tp, ioaddr);
@@ -2146,7 +2146,7 @@ static int rtl8139_close (struct net_device *dev)
 
 	spin_unlock_irqrestore (&tp->lock, flags);
 
-	synchronize_irq ();
+	synchronize_irq ();		/* racy, but that's ok here */
 	free_irq (dev->irq, dev);
 
 	rtl8139_tx_clear (tp);

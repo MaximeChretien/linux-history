@@ -51,12 +51,12 @@ trap_init (void)
 	if (ia64_boot_param->fpswa) {
 		/* FPSWA fixup: make the interface pointer a kernel virtual address: */
 		fpswa_interface = __va(ia64_boot_param->fpswa);
-		printk("FPSWA interface at 0x%lx, revision %d.%d\n",
+		printk(KERN_INFO "FPSWA interface at 0x%lx, revision %d.%d\n",
 			ia64_boot_param->fpswa,
 			fpswa_interface->revision >> 16,
 			fpswa_interface->revision & 0xffff);
 	} else
-		printk("No FPSWA interface\n");
+		printk(KERN_INFO "No FPSWA interface\n");
 }
 
 /*
@@ -97,9 +97,9 @@ die (const char *str, struct pt_regs *regs, long err)
 		int lock_owner;
 		int lock_owner_depth;
 	} die = {
-		lock:			SPIN_LOCK_UNLOCKED,
-		lock_owner:		-1,
-		lock_owner_depth:	0
+		.lock =		SPIN_LOCK_UNLOCKED,
+		.lock_owner =		-1,
+		.lock_owner_depth =	0
 	};
 
 	if (die.lock_owner != smp_processor_id()) {
@@ -223,7 +223,7 @@ ia64_ni_syscall (unsigned long arg0, unsigned long arg1, unsigned long arg2, uns
 {
 	struct pt_regs *regs = (struct pt_regs *) &stack;
 
-	printk("%s(%d): <sc%ld(%lx,%lx,%lx,%lx)>\n", current->comm, current->pid,
+	printk(KERN_DEBUG "%s(%d): <sc%ld(%lx,%lx,%lx,%lx)>\n", current->comm, current->pid,
 	       regs->r15, arg0, arg1, arg2, arg3);
 	return -ENOSYS;
 }
@@ -245,17 +245,17 @@ disabled_fph_fault (struct pt_regs *regs)
 	psr->dfh = 0;
 #ifndef CONFIG_SMP
 	{
-		struct task_struct *fpu_owner = ia64_get_fpu_owner();
+		struct task_struct *fpu_owner
+			= (struct task_struct *)ia64_get_kr(IA64_KR_FPU_OWNER);
 
-		if (fpu_owner == current)
+		if (ia64_is_local_fpu_owner(current))
 			return;
 
 		if (fpu_owner)
 			ia64_flush_fph(fpu_owner);
-
 	}
 #endif /* !CONFIG_SMP */
-	ia64_set_fpu_owner(current);
+	ia64_set_local_fpu_owner(current);
 	if ((current->thread.flags & IA64_THREAD_FPH_VALID) != 0) {
 		__ia64_load_fpu(current->thread.fph);
 		psr->mfh = 0;
@@ -337,8 +337,8 @@ handle_fpu_swa (int fp_fault, struct pt_regs *regs, unsigned long isr)
 		fpu_swa_count = 0;
 	if ((++fpu_swa_count < 5) && !(current->thread.flags & IA64_THREAD_FPEMU_NOPRINT)) {
 		last_time = jiffies;
-		printk(KERN_WARNING "%s(%d): floating-point assist fault at ip %016lx\n",
-		       current->comm, current->pid, regs->cr_iip + ia64_psr(regs)->ri);
+		printk(KERN_WARNING "%s(%d): floating-point assist fault at ip %016lx, isr %016lx\n",
+		       current->comm, current->pid, regs->cr_iip + ia64_psr(regs)->ri, isr);
 	}
 
 	exception = fp_emulate(fp_fault, bundle, &regs->cr_ipsr, &regs->ar_fpsr, &isr, &regs->pr,
@@ -348,7 +348,7 @@ handle_fpu_swa (int fp_fault, struct pt_regs *regs, unsigned long isr)
 			/* emulation was successful */
 			ia64_increment_ip(regs);
 		} else if (exception == -1) {
-			printk("handle_fpu_swa: fp_emulate() returned -1\n");
+			printk(KERN_ERR "handle_fpu_swa: fp_emulate() returned -1\n");
 			return -1;
 		} else {
 			/* is next instruction a trap? */
@@ -371,7 +371,7 @@ handle_fpu_swa (int fp_fault, struct pt_regs *regs, unsigned long isr)
 		}
 	} else {
 		if (exception == -1) {
-			printk("handle_fpu_swa: fp_emulate() returned -1\n");
+			printk(KERN_ERR "handle_fpu_swa: fp_emulate() returned -1\n");
 			return -1;
 		} else if (exception != 0) {
 			/* raise exception */
@@ -469,7 +469,9 @@ ia64_fault (unsigned long vector, unsigned long isr, unsigned long ifa,
 				       ? " (RSE access)" : " (data access)") : "");
 		if (code == 8) {
 # ifdef CONFIG_IA64_PRINT_HAZARDS
-			printk("%016lx:possible hazard, pr = %016lx\n", regs->cr_iip, regs->pr);
+			printk("%s[%d]: possible hazard @ ip=%016lx (pr = %016lx)\n",
+			       current->comm, current->pid, regs->cr_iip + ia64_psr(regs)->ri,
+			       regs->pr);
 # endif
 			return;
 		}
@@ -485,19 +487,23 @@ ia64_fault (unsigned long vector, unsigned long isr, unsigned long ifa,
 
 	      case 26: /* NaT Consumption */
 		if (user_mode(regs)) {
+			void *addr;
+
 			if (((isr >> 4) & 0xf) == 2) {
 				/* NaT page consumption */
 				sig = SIGSEGV;
 				code = SEGV_ACCERR;
+				addr = (void *) ifa;
 			} else {
 				/* register NaT consumption */
 				sig = SIGILL;
 				code = ILL_ILLOPN;
+				addr = (void *) (regs->cr_iip + ia64_psr(regs)->ri);
 			}
 			siginfo.si_signo = sig;
 			siginfo.si_code = code;
 			siginfo.si_errno = 0;
-			siginfo.si_addr = (void *) (regs->cr_iip + ia64_psr(regs)->ri);
+			siginfo.si_addr = addr;
 			siginfo.si_imm = vector;
 			siginfo.si_flags = __ISR_VALID;
 			siginfo.si_isr = isr;
@@ -585,8 +591,9 @@ ia64_fault (unsigned long vector, unsigned long isr, unsigned long ifa,
 		if (ia32_exception(regs, isr) == 0)
 			return;
 #endif
-		printk("Unexpected IA-32 exception (Trap 45)\n");
-		printk("  iip - 0x%lx, ifa - 0x%lx, isr - 0x%lx\n", regs->cr_iip, ifa, isr);
+		printk(KERN_ERR "Unexpected IA-32 exception (Trap 45)\n");
+		printk(KERN_ERR "  iip - 0x%lx, ifa - 0x%lx, isr - 0x%lx\n",
+		       regs->cr_iip, ifa, isr);
 		force_sig(SIGSEGV, current);
 		break;
 
@@ -595,8 +602,8 @@ ia64_fault (unsigned long vector, unsigned long isr, unsigned long ifa,
 		if (ia32_intercept(regs, isr) == 0)
 			return;
 #endif
-		printk("Unexpected IA-32 intercept trap (Trap 46)\n");
-		printk("  iip - 0x%lx, ifa - 0x%lx, isr - 0x%lx, iim - 0x%lx\n",
+		printk(KERN_ERR "Unexpected IA-32 intercept trap (Trap 46)\n");
+		printk(KERN_ERR "  iip - 0x%lx, ifa - 0x%lx, isr - 0x%lx, iim - 0x%lx\n",
 		       regs->cr_iip, ifa, isr, iim);
 		force_sig(SIGSEGV, current);
 		return;

@@ -484,9 +484,12 @@ static int config_chipset_for_dma (ide_drive_t *drive)
 {
 	u8 speed = ide_dma_speed(drive, hpt3xx_ratemask(drive));
 
-	if (!(speed))
+	if (!speed)
 		return 0;
 
+	if (pci_get_drvdata(HWIF(drive)->pci_dev) == NULL)
+		return 0;
+		
 	(void) hpt3xx_tune_chipset(drive, speed);
 	return ide_dma_enable(drive);
 }
@@ -919,6 +922,8 @@ static int __init init_hpt37x(struct pci_dev *dev)
 	 * Currently we always set up the PLL for the 372N
 	 */
 	 
+	pci_set_drvdata(dev, NULL);
+	
 	if(is_372n)
 	{
 		printk(KERN_INFO "hpt: HPT372N detected, using 372N timing.\n");
@@ -957,6 +962,7 @@ static int __init init_hpt37x(struct pci_dev *dev)
 				pci_set_drvdata(dev, (void *) thirty_three_base_hpt370);
 			printk("HPT37X: using 33MHz PCI clock\n");
 		} else if (pll == F_LOW_PCI_40) {
+			/* Unsupported */
 		} else if (pll == F_LOW_PCI_50) {
 			if (hpt_minimum_revision(dev,8))
 				pci_set_drvdata(dev, NULL);
@@ -971,7 +977,6 @@ static int __init init_hpt37x(struct pci_dev *dev)
 			if (hpt_minimum_revision(dev,8))
 			{
 				printk(KERN_ERR "HPT37x: 66MHz timings are not supported.\n");
-				pci_set_drvdata(dev, NULL);
 			}
 			else if (hpt_minimum_revision(dev,5))
 				pci_set_drvdata(dev, (void *) sixty_six_base_hpt372);
@@ -996,6 +1001,11 @@ static int __init init_hpt37x(struct pci_dev *dev)
 	if (pci_get_drvdata(dev)) 
 		goto init_hpt37X_done;
 	
+	if (hpt_minimum_revision(dev,8))
+	{
+		printk(KERN_ERR "HPT374: Only 33MHz PCI timings are supported.\n");
+		return -EOPNOTSUPP;
+	}
 	/*
 	 * adjust PLL based upon PCI clock, enable it, and wait for
 	 * stabilization.
@@ -1021,9 +1031,7 @@ static int __init init_hpt37x(struct pci_dev *dev)
 				pci_write_config_dword(dev, 0x5c, 
 						       pll & ~0x100);
 				pci_write_config_byte(dev, 0x5b, 0x21);
-				if (hpt_minimum_revision(dev,8))
-					return -EOPNOTSUPP;
-				else if (hpt_minimum_revision(dev,5))
+				if (hpt_minimum_revision(dev,5))
 					pci_set_drvdata(dev, (void *) fifty_base_hpt372);
 				else if (hpt_minimum_revision(dev,4))
 					pci_set_drvdata(dev, (void *) fifty_base_hpt370a);
@@ -1334,7 +1342,7 @@ static void __init init_setup_hpt366 (struct pci_dev *dev, ide_pci_device_t *d)
 	struct pci_dev *findev = NULL;
 	u8 pin1 = 0, pin2 = 0;
 	unsigned int class_rev;
-	char *chipset_names[] = {"HPT366", "HPT366",  "HPT368",
+	static char *chipset_names[] = {"HPT366", "HPT366",  "HPT368",
 				 "HPT370", "HPT370A", "HPT372"};
 
 	if (PCI_FUNC(dev->devfn) & 1)
@@ -1349,7 +1357,8 @@ static void __init init_setup_hpt366 (struct pci_dev *dev, ide_pci_device_t *d)
 	if(d->device == PCI_DEVICE_ID_TTI_HPT372N)
 		class_rev = 5;
 		
-	strcpy(d->name, chipset_names[class_rev]);
+	if(class_rev < 6)
+		d->name = chipset_names[class_rev];
 
 	switch(class_rev) {
 		case 5:

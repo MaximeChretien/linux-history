@@ -544,4 +544,9 @@ static int __init init_hermes(void)
 	return 0;
 }
 
+static void __exit exit_hermes(void)
+{
+}
+
 module_init(init_hermes);
+module_exit(exit_hermes);

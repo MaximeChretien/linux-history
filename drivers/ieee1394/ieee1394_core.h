@@ -34,7 +34,7 @@ struct hpsb_packet {
         } __attribute__((packed)) state;
 
         /* These are core internal. */
-        char tlabel;
+        signed char tlabel;
         char ack_code;
         char tcode;
 
@@ -88,7 +88,7 @@ static inline struct hpsb_packet *driver_packet(struct list_head *l)
 	return list_entry(l, struct hpsb_packet, driver_list);
 }
 
-void abort_timedouts(struct hpsb_host *host);
+void abort_timedouts(unsigned long __opaque);
 void abort_requests(struct hpsb_host *host);
 
 struct hpsb_packet *alloc_hpsb_packet(size_t data_size);

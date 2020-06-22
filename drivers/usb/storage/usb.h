@@ -99,10 +99,10 @@ struct us_unusual_dev {
 #define US_FL_SINGLE_LUN      0x00000001 /* allow access to only LUN 0	    */
 #define US_FL_MODE_XLATE      0x00000002 /* translate _6 to _10 commands for
 						    Win/MacOS compatibility */
-#define US_FL_START_STOP      0x00000004 /* ignore START_STOP commands	    */
 #define US_FL_IGNORE_SER      0x00000010 /* Ignore the serial number given  */
 #define US_FL_SCM_MULT_TARG   0x00000020 /* supports multiple targets */
 #define US_FL_FIX_INQUIRY     0x00000040 /* INQUIRY response needs fixing */
+#define US_FL_FIX_CAPACITY    0x00000080 /* READ_CAPACITY response too big */
 
 #define USB_STOR_STRING_LEN 32
 
@@ -155,7 +155,7 @@ struct us_data {
 	/* thread information */
 	Scsi_Cmnd		*queue_srb;	 /* the single queue slot */
 	int			action;		 /* what to do		  */
-	int			pid;		 /* control thread	  */
+	pid_t			pid;		 /* control thread	  */
 
 	/* interrupt info for CBI devices -- only good if attached */
 	struct semaphore	ip_waitq;	 /* for CBI interrupts	 */

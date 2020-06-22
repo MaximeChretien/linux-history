@@ -78,4 +78,4 @@ EXPORT_SYMBOL(bluez_sock_recvmsg);
 EXPORT_SYMBOL(bluez_sock_poll);
 EXPORT_SYMBOL(bluez_accept_enqueue);
 EXPORT_SYMBOL(bluez_accept_dequeue);
-EXPORT_SYMBOL(bluez_sock_w4_connect);
+EXPORT_SYMBOL(bluez_sock_wait_state);

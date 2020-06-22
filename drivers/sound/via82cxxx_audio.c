@@ -3,7 +3,7 @@
  * Copyright 1999,2000 Jeff Garzik
  *
  * Updated to support the VIA 8233/8235 audio subsystem
- * Alan Cox <alan@redhat.com> (C) Copyright 2002 Red Hat Inc
+ * Alan Cox <alan@redhat.com> (C) Copyright 2002, 2003 Red Hat Inc
  *
  * Distributed under the GNU GENERAL PUBLIC LICENSE (GPL) Version 2.
  * See the "COPYING" file distributed with this software for more info.
@@ -15,7 +15,7 @@
  */
 
 
-#define VIA_VERSION	"1.9.1-ac2"
+#define VIA_VERSION	"1.9.1-ac3"
 
 
 #include <linux/config.h>
@@ -85,10 +85,13 @@
 #define VIA_DEFAULT_FRAG_TIME		20
 #define VIA_DEFAULT_BUFFER_TIME		500
 
-#define VIA_MAX_FRAG_SIZE		PAGE_SIZE
-#define VIA_MIN_FRAG_SIZE		64
-
+/* the hardware has a 256 fragment limit */
 #define VIA_MIN_FRAG_NUMBER		2
+#define VIA_MAX_FRAG_NUMBER		128
+
+#define VIA_MAX_FRAG_SIZE		PAGE_SIZE
+#define VIA_MIN_FRAG_SIZE		(VIA_MAX_BUFFER_DMA_PAGES * PAGE_SIZE / VIA_MAX_FRAG_NUMBER)
+
 
 /* 82C686 function 5 (audio codec) PCI configuration registers */
 #define VIA_ACLINK_STATUS	0x40
@@ -296,7 +299,8 @@ struct via_info {
 	struct pci_dev *pdev;
 	long baseaddr;
 
-	struct ac97_codec ac97;
+	struct ac97_codec *ac97;
+	spinlock_t ac97_lock;
 	spinlock_t lock;
 	int card_num;		/* unique card number, from 0 */
 
@@ -746,9 +750,8 @@ static void via_chan_init_defaults (struct via_info *card, struct via_channel *c
  *      Performs some of the preparations necessary to begin
  *      using a PCM channel.
  *
- *      Currently the preparations consist in
- *      setting the
- *      PCM channel to a known state.
+ *      Currently the preparations consist of
+ *      setting the PCM channel to a known state.
  */
 
 
@@ -1128,7 +1131,7 @@ static int via_chan_set_speed (struct via_info *card,
 
 	via_chan_clear (card, chan);
 
-	val = via_set_rate (&card->ac97, chan, val);
+	val = via_set_rate (card->ac97, chan, val);
 
 	DPRINTK ("EXIT, returning %d\n", val);
 	return val;
@@ -1235,7 +1238,6 @@ static int via_chan_set_stereo (struct via_info *card,
 		}
 	/* unknown */
 	default:
-		printk (KERN_WARNING PFX "unknown number of channels\n");
 		val = -EINVAL;
 		break;
 	}
@@ -1301,6 +1303,8 @@ static int via_chan_set_buffering (struct via_info *card,
 
 	if (chan->frag_number < VIA_MIN_FRAG_NUMBER)
                 chan->frag_number = VIA_MIN_FRAG_NUMBER;
+        if (chan->frag_number > VIA_MAX_FRAG_NUMBER)
+        	chan->frag_number = VIA_MAX_FRAG_NUMBER;
 
 	if ((chan->frag_number * chan->frag_size) / PAGE_SIZE > VIA_MAX_BUFFER_DMA_PAGES)
 		chan->frag_number = (VIA_MAX_BUFFER_DMA_PAGES * PAGE_SIZE) / chan->frag_size;
@@ -1383,6 +1387,7 @@ static inline void via_chan_maybe_start (struct via_channel *chan)
 {
 	assert (chan->is_active == sg_active(chan->iobase));
 
+	DPRINTK ("MAYBE START %s\n", chan->name);
 	if (!chan->is_active && chan->is_enabled) {
 		chan->is_active = 1;
 		sg_begin (chan);
@@ -1456,6 +1461,8 @@ static u16 via_ac97_read_reg (struct ac97_codec *codec, u8 reg)
 	assert (codec->private_data != NULL);
 
 	card = codec->private_data;
+	
+	spin_lock(&card->ac97_lock);
 
 	/* Every time we write to register 80 we cause a transaction.
 	   The only safe way to clear the valid bit is to write it at
@@ -1486,6 +1493,7 @@ out:
 	if (((data & 0x007F0000) >> 16) == reg) {
 		DPRINTK ("EXIT, success, data=0x%lx, retval=0x%lx\n",
 			 data, data & 0x0000FFFF);
+		spin_unlock(&card->ac97_lock);
 		return data & 0x0000FFFF;
 	}
 
@@ -1493,6 +1501,7 @@ out:
 		reg, ((data & 0x007F0000) >> 16));
 
 err_out:
+	spin_unlock(&card->ac97_lock);
 	DPRINTK ("EXIT, returning 0\n");
 	return 0;
 }
@@ -1524,6 +1533,8 @@ static void via_ac97_write_reg (struct ac97_codec *codec, u8 reg, u16 value)
 
 	card = codec->private_data;
 
+	spin_lock(&card->ac97_lock);
+	
 	data = (reg << 16) + value;
 	outl (data, card->baseaddr + VIA_BASE0_AC97_CTRL);
 	udelay (10);
@@ -1538,6 +1549,7 @@ static void via_ac97_write_reg (struct ac97_codec *codec, u8 reg, u16 value)
 	printk (KERN_WARNING PFX "timeout after AC97 codec write (0x%X, 0x%X)\n", reg, value);
 
 out:
+	spin_unlock(&card->ac97_lock);
 	DPRINTK ("EXIT\n");
 }
 
@@ -1557,7 +1569,7 @@ static int via_mixer_open (struct inode *inode, struct file *file)
 			assert (pci_get_drvdata (pdev) != NULL);
 
 			card = pci_get_drvdata (pdev);
-			if (card->ac97.dev_mixer == minor)
+			if (card->ac97->dev_mixer == minor)
 				goto match;
 		}
 	}
@@ -1566,7 +1578,7 @@ static int via_mixer_open (struct inode *inode, struct file *file)
 	return -ENODEV;
 
 match:
-	file->private_data = &card->ac97;
+	file->private_data = card->ac97;
 
 	DPRINTK ("EXIT, returning 0\n");
 	return 0;
@@ -1724,9 +1736,9 @@ static int __init via_ac97_reset (struct via_info *card)
 	/* WARNING: this line is magic.  Remove this
 	 * and things break. */
 	/* enable variable rate */
- 	tmp16 = via_ac97_read_reg (&card->ac97, AC97_EXTENDED_STATUS);
+ 	tmp16 = via_ac97_read_reg (card->ac97, AC97_EXTENDED_STATUS);
  	if ((tmp16 & 1) == 0)
- 		via_ac97_write_reg (&card->ac97, AC97_EXTENDED_STATUS, tmp16 | 1);
+ 		via_ac97_write_reg (card->ac97, AC97_EXTENDED_STATUS, tmp16 | 1);
 
 	DPRINTK ("EXIT, returning 0\n");
 	return 0;
@@ -1749,16 +1761,20 @@ static int __init via_ac97_init (struct via_info *card)
 
 	assert (card != NULL);
 
-	memset (&card->ac97, 0, sizeof (card->ac97));
-	card->ac97.private_data = card;
-	card->ac97.codec_read = via_ac97_read_reg;
-	card->ac97.codec_write = via_ac97_write_reg;
-	card->ac97.codec_wait = via_ac97_codec_wait;
+	card->ac97 = ac97_alloc_codec();
+	if(card->ac97 == NULL)
+		return -ENOMEM;
+		
+	card->ac97->private_data = card;
+	card->ac97->codec_read = via_ac97_read_reg;
+	card->ac97->codec_write = via_ac97_write_reg;
+	card->ac97->codec_wait = via_ac97_codec_wait;
 
-	card->ac97.dev_mixer = register_sound_mixer (&via_mixer_fops, -1);
-	if (card->ac97.dev_mixer < 0) {
+	card->ac97->dev_mixer = register_sound_mixer (&via_mixer_fops, -1);
+	if (card->ac97->dev_mixer < 0) {
 		printk (KERN_ERR PFX "unable to register AC97 mixer, aborting\n");
 		DPRINTK ("EXIT, returning -EIO\n");
+		ac97_release_codec(card->ac97);
 		return -EIO;
 	}
 
@@ -1770,24 +1786,24 @@ static int __init via_ac97_init (struct via_info *card)
 	
 	mdelay(10);
 	
-	if (ac97_probe_codec (&card->ac97) == 0) {
+	if (ac97_probe_codec (card->ac97) == 0) {
 		printk (KERN_ERR PFX "unable to probe AC97 codec, aborting\n");
 		rc = -EIO;
 		goto err_out;
 	}
 
 	/* enable variable rate */
-	tmp16 = via_ac97_read_reg (&card->ac97, AC97_EXTENDED_STATUS);
-	via_ac97_write_reg (&card->ac97, AC97_EXTENDED_STATUS, tmp16 | 1);
+	tmp16 = via_ac97_read_reg (card->ac97, AC97_EXTENDED_STATUS);
+	via_ac97_write_reg (card->ac97, AC97_EXTENDED_STATUS, tmp16 | 1);
 
  	/*
  	 * If we cannot enable VRA, we have a locked-rate codec.
  	 * We try again to enable VRA before assuming so, however.
  	 */
- 	tmp16 = via_ac97_read_reg (&card->ac97, AC97_EXTENDED_STATUS);
+ 	tmp16 = via_ac97_read_reg (card->ac97, AC97_EXTENDED_STATUS);
  	if ((tmp16 & 1) == 0) {
- 		via_ac97_write_reg (&card->ac97, AC97_EXTENDED_STATUS, tmp16 | 1);
- 		tmp16 = via_ac97_read_reg (&card->ac97, AC97_EXTENDED_STATUS);
+ 		via_ac97_write_reg (card->ac97, AC97_EXTENDED_STATUS, tmp16 | 1);
+ 		tmp16 = via_ac97_read_reg (card->ac97, AC97_EXTENDED_STATUS);
  		if ((tmp16 & 1) == 0) {
  			card->locked_rate = 1;
  			printk (KERN_WARNING PFX "Codec rate locked at 48Khz\n");
@@ -1798,8 +1814,9 @@ static int __init via_ac97_init (struct via_info *card)
 	return 0;
 
 err_out:
-	unregister_sound_mixer (card->ac97.dev_mixer);
+	unregister_sound_mixer (card->ac97->dev_mixer);
 	DPRINTK ("EXIT, returning %d\n", rc);
+	ac97_release_codec(card->ac97);
 	return rc;
 }
 
@@ -1809,9 +1826,10 @@ static void via_ac97_cleanup (struct via_info *card)
 	DPRINTK ("ENTER\n");
 
 	assert (card != NULL);
-	assert (card->ac97.dev_mixer >= 0);
+	assert (card->ac97->dev_mixer >= 0);
 
-	unregister_sound_mixer (card->ac97.dev_mixer);
+	unregister_sound_mixer (card->ac97->dev_mixer);
+	ac97_release_codec(card->ac97);
 
 	DPRINTK ("EXIT\n");
 }
@@ -1836,11 +1854,11 @@ static void via_ac97_cleanup (struct via_info *card)
  *	Locking: inside card->lock
  */
 
-static void via_intr_channel (struct via_channel *chan)
+static void via_intr_channel (struct via_info *card, struct via_channel *chan)
 {
 	u8 status;
 	int n;
-
+	
 	/* check pertinent bits of status register for action bits */
 	status = inb (chan->iobase) & (VIA_SGD_FLAG | VIA_SGD_EOL | VIA_SGD_STOPPED);
 	if (!status)
@@ -1859,6 +1877,7 @@ static void via_intr_channel (struct via_channel *chan)
 	assert (n >= 0);
 	assert (n < chan->frag_number);
 
+	
 	/* reset SGD data structure in memory to reflect a full buffer,
 	 * and advance the h/w ptr, wrapping around to zero if needed
 	 */
@@ -1873,9 +1892,28 @@ static void via_intr_channel (struct via_channel *chan)
 	/* accounting crap for SNDCTL_DSP_GETxPTR */
 	chan->n_irqs++;
 	chan->bytes += chan->frag_size;
+	/* FIXME - signed overflow is undefined */
 	if (chan->bytes < 0) /* handle overflow of 31-bit value */
 		chan->bytes = chan->frag_size;
-
+	/* all following checks only occur when not in mmap(2) mode */
+	if (!chan->is_mapped)
+	{
+		/* If we are recording, then n_frags represents the number
+		 * of fragments waiting to be handled by userspace.
+		 * If we are playback, then n_frags represents the number
+		 * of fragments remaining to be filled by userspace.
+		 * We increment here.  If we reach max number of fragments,
+		 * this indicates an underrun/overrun.  For this case under OSS,
+		 * we stop the record/playback process.
+		 */
+		if (atomic_read (&chan->n_frags) < chan->frag_number)
+			atomic_inc (&chan->n_frags);
+		assert (atomic_read (&chan->n_frags) <= chan->frag_number);
+		if (atomic_read (&chan->n_frags) == chan->frag_number) {
+			chan->is_active = 0;
+			via_chan_stop (chan->iobase);
+		}
+	}
 	/* wake up anyone listening to see when interrupts occur */
 	wake_up_all (&chan->wait);
 
@@ -1883,29 +1921,8 @@ static void via_intr_channel (struct via_channel *chan)
 		 chan->name, status, (long) inl (chan->iobase + 0x04),
 		 atomic_read (&chan->hw_ptr));
 
-	/* all following checks only occur when not in mmap(2) mode */
-	if (chan->is_mapped)
-		return;
-
-	/* If we are recording, then n_frags represents the number
-	 * of fragments waiting to be handled by userspace.
-	 * If we are playback, then n_frags represents the number
-	 * of fragments remaining to be filled by userspace.
-	 * We increment here.  If we reach max number of fragments,
-	 * this indicates an underrun/overrun.  For this case under OSS,
-	 * we stop the record/playback process.
-	 */
-	if (atomic_read (&chan->n_frags) < chan->frag_number)
-		atomic_inc (&chan->n_frags);
-	assert (atomic_read (&chan->n_frags) <= chan->frag_number);
-
-	if (atomic_read (&chan->n_frags) == chan->frag_number) {
-		chan->is_active = 0;
-		via_chan_stop (chan->iobase);
-	}
-
-	DPRINTK ("%s intr, channel n_frags == %d\n", chan->name,
-		 atomic_read (&chan->n_frags));
+	DPRINTK ("%s intr, channel n_frags == %d, missed %d\n", chan->name,
+		 atomic_read (&chan->n_frags), missed);
 }
 
 
@@ -1936,11 +1953,11 @@ static void via_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 	spin_lock (&card->lock);
 
 	if (status32 & VIA_INTR_OUT)
-		via_intr_channel (&card->ch_out);
+		via_intr_channel (card, &card->ch_out);
 	if (status32 & VIA_INTR_IN)
-		via_intr_channel (&card->ch_in);
+		via_intr_channel (card, &card->ch_in);
 	if (status32 & VIA_INTR_FM)
-		via_intr_channel (&card->ch_fm);
+		via_intr_channel (card, &card->ch_fm);
 
 	spin_unlock (&card->lock);
 }
@@ -1963,9 +1980,9 @@ static void via_new_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 	 */
 	spin_lock (&card->lock);
 
-	via_intr_channel (&card->ch_out);
-	via_intr_channel (&card->ch_in);
-	via_intr_channel (&card->ch_fm);
+	via_intr_channel (card, &card->ch_out);
+	via_intr_channel (card, &card->ch_in);
+	via_intr_channel (card, &card->ch_fm);
 
 	spin_unlock (&card->lock);
 }
@@ -2548,7 +2565,10 @@ handle_one_block:
 		goto handle_one_block;
 
 out:
-	return userbuf - orig_userbuf;
+	if (userbuf - orig_userbuf)
+		return userbuf - orig_userbuf;
+	else
+		return ret;
 }
 
 
@@ -2657,6 +2677,7 @@ static int via_dsp_drain_playback (struct via_info *card,
 
 	add_wait_queue(&chan->wait, &wait);
 	for (;;) {
+		DPRINTK ("FRAGS %d FRAGNUM %d\n", atomic_read(&chan->n_frags), chan->frag_number);
 		__set_current_state(TASK_INTERRUPTIBLE);
 		if (atomic_read (&chan->n_frags) >= chan->frag_number)
 			break;
@@ -3289,7 +3310,7 @@ match:
 
 		// TO DO - use FIFO: via_capture_fifo(card, 1);
 		via_chan_pcm_fmt (chan, 0);
-		via_set_rate (&card->ac97, chan, 44100);
+		via_set_rate (card->ac97, chan, 44100);
 	}
 
 	/* handle output to analog source */
@@ -3304,15 +3325,15 @@ match:
 			chan->pcm_fmt = VIA_PCM_FMT_16BIT | VIA_PCM_FMT_STEREO;
 			chan->channels = 2;
 			via_chan_pcm_fmt (chan, 0);
-                        via_set_rate (&card->ac97, chan, 44100);
+                        via_set_rate (card->ac97, chan, 44100);
 		} else {
 			 if ((minor & 0xf) == SND_DEV_DSP16) {
 				chan->pcm_fmt = VIA_PCM_FMT_16BIT;
 				via_chan_pcm_fmt (chan, 0);
-				via_set_rate (&card->ac97, chan, 44100);
+				via_set_rate (card->ac97, chan, 44100);
 			} else {
 				via_chan_pcm_fmt (chan, 1);
-				via_set_rate (&card->ac97, chan, 8000);
+				via_set_rate (card->ac97, chan, 8000);
 			}
 		}
 	}
@@ -3406,6 +3427,7 @@ static int __init via_init_one (struct pci_dev *pdev, const struct pci_device_id
 	card->baseaddr = pci_resource_start (pdev, 0);
 	card->card_num = via_num_cards++;
 	spin_lock_init (&card->lock);
+	spin_lock_init (&card->ac97_lock);
 	init_MUTEX (&card->syscall_sem);
 	init_MUTEX (&card->open_sem);
 
@@ -3769,7 +3791,7 @@ static int __init via_card_init_proc (struct via_info *card)
 	}
 
 	sprintf (s, "driver/via/%d/ac97", card->card_num);
-	if (!create_proc_read_entry (s, 0, 0, ac97_read_proc, &card->ac97)) {
+	if (!create_proc_read_entry (s, 0, 0, ac97_read_proc, card->ac97)) {
 		rc = -EIO;
 		goto err_out_info;
 	}

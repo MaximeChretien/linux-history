@@ -283,7 +283,7 @@ int llc_resend_ipdu(llcptr lp, unsigned char ack_nr, unsigned char type, char p)
 		if(tmp!=NULL)
 		{
 			tmp->dev = lp->dev;
-			dev_queue_xmit(skb);
+			dev_queue_xmit(tmp);
 		}
 		resend_count++;
 		skb = skb->next;

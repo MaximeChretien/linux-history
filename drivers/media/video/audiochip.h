@@ -3,9 +3,6 @@
 
 /* ---------------------------------------------------------------------- */
 
-#define MIN(a,b) (((a)>(b))?(b):(a))
-#define MAX(a,b) (((a)>(b))?(a):(b))
-
 /* v4l device was opened in Radio mode */
 #define AUDC_SET_RADIO        _IO('m',2)
 /* select from TV,radio,extern,MUTE */

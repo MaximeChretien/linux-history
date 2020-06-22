@@ -32,47 +32,57 @@
  * without having access to 64-bit registers...  which doesn't work by default
  * in o32 format...grrr...
  */
+static inline void __out64(u64 val, unsigned long addr)
+{
+	u64 tmp;
+
+	__asm__ __volatile__ (
+		"	.set	mips3				\n"
+		"	dsll32	%L0, %L0, 0	# __out64	\n"
+		"	dsrl32	%L0, %L0, 0			\n"
+		"	dsll32	%M0, %M0, 0			\n"
+		"	or	%L0, %L0, %M0			\n"
+		"	sd	%L0, (%2)			\n"
+		"	.set	mips0				\n"
+		: "=r" (tmp)
+		: "0" (val), "r" (addr));
+}
+
 static inline void out64(u64 val, unsigned long addr)
 {
-	u32 low, high;
 	unsigned long flags;
-	high = val >> 32;
-	low = val & 0xffffffff;
-	// save_flags(flags);
-	__save_and_cli(flags);
+
+	local_irq_save(flags);
+	__out64(val, addr);
+	local_irq_restore(flags);
+}
+
+static inline u64 __in64(unsigned long addr)
+{
+	u64 res;
+
 	__asm__ __volatile__ (
-		".set push\n"
-		".set noreorder\n"
-		".set noat\n"
-		".set mips4\n"
-		"   dsll32 $2, %1, 0   \n"
-		"   dsll32 $1, %0, 0   \n"
-		"   dsrl32 $2, $2, 0   \n"
-		"   or     $1, $1, $2  \n"
-		"   sd $1, (%2)\n"
-		".set pop\n"
-		::"r" (high), "r" (low), "r" (addr)
-		:"$1", "$2");
-	__restore_flags(flags);
+		"	.set	mips3		# __in64	\n"
+		"	ld	%L0, (%1)			\n"
+		"	dsra32	%M0, %L0, 0			\n"
+		"	sll	%L0, %L0, 0			\n"
+		"	.set	mips0				\n"
+		: "=r" (res)
+		: "r" (addr));
+
+	return res;
 }
 
 static inline u64 in64(unsigned long addr)
 {
-	u32 low, high;
 	unsigned long flags;
-	__save_and_cli(flags);
-	__asm__ __volatile__ (
-		".set push\n"
-		".set noreorder\n"
-		".set noat     \n"
-		".set mips4    \n"
-		"  ld     %1, (%2)\n"
-		"  dsra32 %0, %1, 0\n"
-		"  sll    %1, %1, 0\n"
-		".set pop\n"
-		:"=r" (high), "=r" (low): "r" (addr));
-	__restore_flags(flags);
-	return (((u64)high) << 32) | low;
+	u64 res;
+
+	local_irq_save(flags);
+	res = __in64(addr);
+	local_irq_restore(flags);
+
+	return res;
 }
 
 #endif /* CONFIG_MIPS32 */
@@ -93,6 +103,9 @@ extern inline u64 in64(unsigned long addr)
 	return *(volatile unsigned long *)addr;
 }
 
+#define __in64(a)	in64(a)
+#define __out64(v,a)	out64(v,a)
+
 #endif /* CONFIG_MIPS64 */
 
 /*
@@ -106,7 +119,7 @@ extern inline u64 in64(unsigned long addr)
 #define __CSR_32_ADJUST 0
 #endif
 
-#define csr_out32(v,a) (*(u32 *)((unsigned long)(a) + __CSR_32_ADJUST) = (v))
-#define csr_in32(a)    (*(u32 *)((unsigned long)(a) + __CSR_32_ADJUST))
+#define csr_out32(v,a) (*(volatile u32 *)((unsigned long)(a) + __CSR_32_ADJUST) = (v))
+#define csr_in32(a)    (*(volatile u32 *)((unsigned long)(a) + __CSR_32_ADJUST))
 
 #endif /* __ASM_SIBYTE_64BIT_H */

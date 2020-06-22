@@ -134,6 +134,8 @@ extern int intelfb_init(void);
 extern int intelfb_setup(char*);
 extern int e1355fb_init(void);
 extern int e1355fb_setup(char*);
+extern int e1356fb_init(void);
+extern int e1356fb_setup(char*);
 extern int au1100fb_init(void);
 extern int au1100fb_setup(char*);
 extern int pvr2fb_init(void);
@@ -304,6 +306,9 @@ static struct {
 #endif
 #ifdef CONFIG_FB_E1355
 	{ "e1355fb", e1355fb_init, e1355fb_setup },
+#endif
+#ifdef CONFIG_FB_E1356
+        { "e1356fb", e1356fb_init, e1356fb_setup },
 #endif
 #ifdef CONFIG_FB_PVR2
 	{ "pvr2", pvr2fb_init, pvr2fb_setup },

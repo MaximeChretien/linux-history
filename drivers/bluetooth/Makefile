@@ -14,6 +14,8 @@ uart-y					:= hci_ldisc.o
 uart-$(CONFIG_BLUEZ_HCIUART_H4)		+= hci_h4.o
 uart-$(CONFIG_BLUEZ_HCIUART_BCSP)	+= hci_bcsp.o
 
+obj-$(CONFIG_BLUEZ_HCIBFUSB)	+= bfusb.o
+
 obj-$(CONFIG_BLUEZ_HCIDTL1)	+= dtl1_cs.o
 obj-$(CONFIG_BLUEZ_HCIBT3C)	+= bt3c_cs.o
 obj-$(CONFIG_BLUEZ_HCIBLUECARD)	+= bluecard_cs.o

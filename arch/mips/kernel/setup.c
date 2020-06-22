@@ -7,7 +7,7 @@
  * Copyright (C) 1995  Waldorf Electronics
  * Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001  Ralf Baechle
  * Copyright (C) 1996  Stoned Elipot
- * Copyright (C) 2000, 2001  Maciej W. Rozycki
+ * Copyright (C) 2000, 2001, 2002  Maciej W. Rozycki
  */
 #include <linux/config.h>
 #include <linux/errno.h>
@@ -39,9 +39,7 @@
 #include <asm/ptrace.h>
 #include <asm/system.h>
 
-#ifndef CONFIG_SMP
-struct cpuinfo_mips cpu_data[1];
-#endif
+struct cpuinfo_mips cpu_data[NR_CPUS];
 
 /*
  * There are several bus types available for MIPS machines.  "RISC PC"
@@ -56,8 +54,11 @@ int EISA_bus = 0;
 
 struct screen_info screen_info;
 
+#if defined(CONFIG_BLK_DEV_FD) || defined(CONFIG_BLK_DEV_FD_MODULE)
+#include <asm/floppy.h>
 extern struct fd_ops no_fd_ops;
 struct fd_ops *fd_ops;
+#endif
 
 #if defined(CONFIG_BLK_DEV_IDE) || defined(CONFIG_BLK_DEV_IDE_MODULE)
 extern struct ide_ops no_ide_ops;
@@ -70,7 +71,6 @@ extern struct rtc_ops no_rtc_ops;
 struct rtc_ops *rtc_ops;
 
 #ifdef CONFIG_PC_KEYB
-extern struct kbd_ops no_kbd_ops;
 struct kbd_ops *kbd_ops;
 #endif
 
@@ -100,15 +100,14 @@ EXPORT_SYMBOL(mips_io_port_base);
 
 
 /*
- * isa_slot_offset is the address where E(ISA) busaddress 0 is is mapped
+ * isa_slot_offset is the address where E(ISA) busaddress 0 is mapped
  * for the processor.
  */
 unsigned long isa_slot_offset;
 EXPORT_SYMBOL(isa_slot_offset);
 
-extern void sgi_sysinit(void);
 extern void SetUpBootInfo(void);
-extern void loadmmu(void);
+extern void load_mmu(void);
 extern asmlinkage void start_kernel(void);
 extern void prom_init(int, char **, char **, int *);
 
@@ -123,10 +122,6 @@ init_arch(int argc, char **argv, char **envp, int *prom_vec)
 
 	prom_init(argc, argv, envp, prom_vec);
 
-#ifdef CONFIG_SGI_IP22
-	sgi_sysinit();
-#endif
-
 	cpu_report();
 
 	/*
@@ -134,11 +129,11 @@ init_arch(int argc, char **argv, char **envp, int *prom_vec)
 	 * then flush the tlb and caches.  On the r4xx0
 	 * variants this also sets CP0_WIRED to zero.
 	 */
-	loadmmu();
+	load_mmu();
 
 	/* Disable coprocessors and set FPU for 16/32 FPR register model */
-	clear_cp0_status(ST0_CU1|ST0_CU2|ST0_CU3|ST0_KX|ST0_SX|ST0_FR);
-	set_cp0_status(ST0_CU0);
+	clear_c0_status(ST0_CU1|ST0_CU2|ST0_CU3|ST0_KX|ST0_SX|ST0_FR);
+	set_c0_status(ST0_CU0);
 
 	start_kernel();
 }
@@ -236,210 +231,6 @@ static inline void parse_mem_cmdline(void)
 	}
 }
 
-void __init setup_arch(char **cmdline_p)
-{
-	void atlas_setup(void);
-	void baget_setup(void);
-	void cobalt_setup(void);
-	void ddb_setup(void);
-	void decstation_setup(void);
-	void deskstation_setup(void);
-	void jazz_setup(void);
-	void sni_rm200_pci_setup(void);
-	void ip22_setup(void);
-        void ev96100_setup(void);
-	void malta_setup(void);
-	void sead_setup(void);
-	void ikos_setup(void);
-	void momenco_ocelot_setup(void);
-	void momenco_ocelot_g_setup(void);
-	void nino_setup(void);
-	void nec_osprey_setup(void);
-	void nec_eagle_setup(void);
-	void zao_capcella_setup(void);
-	void jmr3927_setup(void);
- 	void it8172_setup(void);
-	void swarm_setup(void);
-	void hp_setup(void);
-
-	unsigned long bootmap_size;
-	unsigned long start_pfn, max_pfn, max_low_pfn, first_usable_pfn;
-#ifdef CONFIG_BLK_DEV_INITRD
-	unsigned long tmp;
-	unsigned long* initrd_header;
-#endif
-
-	int i;
-
-#ifdef CONFIG_BLK_DEV_FD
-	fd_ops = &no_fd_ops;
-#endif
-
-#ifdef CONFIG_BLK_DEV_IDE
-	ide_ops = &no_ide_ops;
-#endif
-
-#ifdef CONFIG_PC_KEYB
-	kbd_ops = &no_kbd_ops;
-#endif
-
-	rtc_ops = &no_rtc_ops;
-
-	switch(mips_machgroup)
-	{
-#ifdef CONFIG_BAGET_MIPS
-	case MACH_GROUP_BAGET:
-		baget_setup();
-		break;
-#endif
-#ifdef CONFIG_MIPS_COBALT
-        case MACH_GROUP_COBALT:
-                cobalt_setup();
-                break;
-#endif
-#ifdef CONFIG_DECSTATION
-	case MACH_GROUP_DEC:
-		decstation_setup();
-		break;
-#endif
-#ifdef CONFIG_MIPS_ATLAS
-	case MACH_GROUP_UNKNOWN:
-		atlas_setup();
-		break;
-#endif
-#ifdef CONFIG_MIPS_JAZZ
-	case MACH_GROUP_JAZZ:
-		jazz_setup();
-		break;
-#endif
-#ifdef CONFIG_MIPS_MALTA
-	case MACH_GROUP_UNKNOWN:
-		malta_setup();
-		break;
-#endif
-#ifdef CONFIG_MOMENCO_OCELOT
-	case MACH_GROUP_MOMENCO:
-		momenco_ocelot_setup();
-		break;
-#endif
-#ifdef CONFIG_MOMENCO_OCELOT_G
-	case MACH_GROUP_MOMENCO:
-		momenco_ocelot_g_setup();
-		break;
-#endif
-#ifdef CONFIG_MIPS_SEAD
-	case MACH_GROUP_UNKNOWN:
-		sead_setup();
-		break;
-#endif
-#ifdef CONFIG_SGI_IP22
-	/* As of now this is only IP22.  */
-	case MACH_GROUP_SGI:
-		ip22_setup();
-		break;
-#endif
-#ifdef CONFIG_SNI_RM200_PCI
-	case MACH_GROUP_SNI_RM:
-		sni_rm200_pci_setup();
-		break;
-#endif
-#ifdef CONFIG_DDB5074
-	case MACH_GROUP_NEC_DDB:
-		ddb_setup();
-		break;
-#endif
-#ifdef CONFIG_DDB5476
-       case MACH_GROUP_NEC_DDB:
-               ddb_setup();
-               break;
-#endif
-#ifdef CONFIG_DDB5477
-       case MACH_GROUP_NEC_DDB:
-               ddb_setup();
-               break;
-#endif
-#ifdef CONFIG_CPU_VR41XX
-	case MACH_GROUP_NEC_VR41XX:
-		switch (mips_machtype) {
-#ifdef CONFIG_NEC_OSPREY
-		case MACH_NEC_OSPREY:
-			nec_osprey_setup();
-			break;
-#endif
-#ifdef CONFIG_NEC_EAGLE
-		case MACH_NEC_EAGLE:
-			nec_eagle_setup();
-			break;
-#endif
-#ifdef CONFIG_ZAO_CAPCELLA
-		case MACH_ZAO_CAPCELLA:
-			zao_capcella_setup();
-			break;
-#endif
-		}
-		break;
-#endif
-#ifdef CONFIG_MIPS_EV96100
-	case MACH_GROUP_GALILEO:
-		ev96100_setup();
-		break;
-#endif
-#ifdef CONFIG_MIPS_EV64120
-	case MACH_GROUP_GALILEO:
-		ev64120_setup();
-		break;
-#endif
-#if defined(CONFIG_MIPS_IVR) || defined(CONFIG_MIPS_ITE8172)
-	case  MACH_GROUP_ITE:
-	case  MACH_GROUP_GLOBESPAN:
-		it8172_setup();
-		break;
-#endif
-#ifdef CONFIG_NINO
-	case MACH_GROUP_PHILIPS:
-		nino_setup();
-		break;
-#endif
-#ifdef CONFIG_MIPS_PB1000
-	case MACH_GROUP_ALCHEMY:
-		au1000_setup();
-		break;
-#endif
-#ifdef CONFIG_MIPS_PB1100
-	case MACH_GROUP_ALCHEMY:
-		au1100_setup();
-		break;
-#endif
-#ifdef CONFIG_MIPS_PB1500
-	case MACH_GROUP_ALCHEMY:
-		au1500_setup();
-		break;
-#endif
-#ifdef CONFIG_TOSHIBA_JMR3927
-	case MACH_GROUP_TOSHIBA:
-		jmr3927_setup();
-		break;
-#endif
-#ifdef CONFIG_SIBYTE_SWARM
-	case MACH_GROUP_SIBYTE:
-		swarm_setup();
-		break;
-#endif
-#ifdef CONFIG_HP_LASERJET
-        case MACH_GROUP_HP_LJ:
-                hp_setup();
-                break;
-#endif
-	default:
-		panic("Unsupported architecture");
-	}
-
-	strncpy(command_line, arcs_cmdline, sizeof command_line);
-	command_line[sizeof command_line - 1] = 0;
-	strcpy(saved_command_line, command_line);
-	*cmdline_p = command_line;
-
-	parse_mem_cmdline();
 
 #define PFN_UP(x)	(((x) + PAGE_SIZE - 1) >> PAGE_SHIFT)
 #define PFN_DOWN(x)	((x) >> PAGE_SHIFT)
@@ -447,6 +238,16 @@ void __init setup_arch(char **cmdline_p)
 
 #define MAXMEM		HIGHMEM_START
 #define MAXMEM_PFN	PFN_DOWN(MAXMEM)
+
+static inline void bootmem_init(void)
+{
+#ifdef CONFIG_BLK_DEV_INITRD
+	unsigned long tmp;
+	unsigned long *initrd_header;
+#endif
+	unsigned long bootmap_size;
+	unsigned long start_pfn, max_pfn, max_low_pfn, first_usable_pfn;
+	int i;
 
 #ifdef CONFIG_BLK_DEV_INITRD
 	tmp = (((unsigned long)&_end + PAGE_SIZE-1) & PAGE_MASK) - 8;
@@ -592,15 +393,18 @@ void __init setup_arch(char **cmdline_p)
 		       initrd_size);
 		if (PHYSADDR(initrd_end) > PFN_PHYS(max_low_pfn)) {
 			printk("initrd extends beyond end of memory "
-			       "(0x%lx > 0x%p)\ndisabling initrd\n",
+			       "(0x%08lx > 0x%08lx)\ndisabling initrd\n",
 			       PHYSADDR(initrd_end),
 			       PFN_PHYS(max_low_pfn));
 			initrd_start = initrd_end = 0;
 		}
 	}
 #endif /* CONFIG_BLK_DEV_INITRD  */
+}
 
-	paging_init();
+static inline void resource_init(void)
+{
+	int i;
 
 	code_resource.start = virt_to_bus(&_ftext);
 	code_resource.end = virt_to_bus(&_etext) - 1;
@@ -612,7 +416,14 @@ void __init setup_arch(char **cmdline_p)
 	 */
 	for (i = 0; i < boot_mem_map.nr_map; i++) {
 		struct resource *res;
-		unsigned long addr_pfn, end_pfn;
+		unsigned long start, end;
+
+		start = boot_mem_map.map[i].addr;
+		end = boot_mem_map.map[i].addr + boot_mem_map.map[i].size - 1;
+		if (start >= MAXMEM)
+			continue;
+		if (end >= MAXMEM)
+			end = MAXMEM - 1;
 
 		res = alloc_bootmem(sizeof(struct resource));
 		switch (boot_mem_map.map[i].type) {
@@ -624,16 +435,10 @@ void __init setup_arch(char **cmdline_p)
 		default:
 			res->name = "reserved";
 		}
-		addr_pfn = PFN_UP(boot_mem_map.map[i].addr);
-		end_pfn = PFN_UP(boot_mem_map.map[i].addr+boot_mem_map.map[i].size);
-		if (addr_pfn > max_low_pfn)
-			continue;
-		res->start = boot_mem_map.map[i].addr;
-		if (end_pfn < max_low_pfn) {
-			res->end = res->start + boot_mem_map.map[i].size - 1;
-		} else {
-			res->end = max_low_pfn - 1;
-		}
+
+		res->start = start;
+		res->end = end;
+
 		res->flags = IORESOURCE_MEM | IORESOURCE_BUSY;
 		request_resource(&iomem_resource, res);
 
@@ -647,9 +452,257 @@ void __init setup_arch(char **cmdline_p)
 	}
 }
 
+#undef PFN_UP
+#undef PFN_DOWN
+#undef PFN_PHYS
+
+#undef MAXMEM
+#undef MAXMEM_PFN
+
+
+void __init setup_arch(char **cmdline_p)
+{
+	void atlas_setup(void);
+	void baget_setup(void);
+	void cobalt_setup(void);
+	void lasat_setup(void);
+	void ddb_setup(void);
+	void decstation_setup(void);
+	void deskstation_setup(void);
+	void jazz_setup(void);
+	void sni_rm200_pci_setup(void);
+	void ip22_setup(void);
+	void ev96100_setup(void);
+	void malta_setup(void);
+	void sead_setup(void);
+	void ikos_setup(void);
+	void momenco_ocelot_setup(void);
+	void momenco_ocelot_g_setup(void);
+	void momenco_ocelot_c_setup(void);
+	void nino_setup(void);
+	void nec_osprey_setup(void);
+	void nec_eagle_setup(void);
+	void zao_capcella_setup(void);
+	void victor_mpc30x_setup(void);
+	void ibm_workpad_setup(void);
+	void casio_e55_setup(void);
+	void tanbac_tb0226_setup(void);
+	void jmr3927_setup(void);
+	void tx4927_setup(void);
+ 	void it8172_setup(void);
+	void swarm_setup(void);
+	void hp_setup(void);
+	void au1x00_setup(void);
+	void frame_info_init(void);
+
+	frame_info_init();
+#if defined(CONFIG_BLK_DEV_FD) || defined(CONFIG_BLK_DEV_FD_MODULE)
+	fd_ops = &no_fd_ops;
+#endif
+
+#ifdef CONFIG_BLK_DEV_IDE
+	ide_ops = &no_ide_ops;
+#endif
+
+	rtc_ops = &no_rtc_ops;
+
+	switch(mips_machgroup)
+	{
+#ifdef CONFIG_BAGET_MIPS
+	case MACH_GROUP_BAGET:
+		baget_setup();
+		break;
+#endif
+#ifdef CONFIG_MIPS_COBALT
+        case MACH_GROUP_COBALT:
+                cobalt_setup();
+                break;
+#endif
+#ifdef CONFIG_DECSTATION
+	case MACH_GROUP_DEC:
+		decstation_setup();
+		break;
+#endif
+#ifdef CONFIG_MIPS_ATLAS
+	case MACH_GROUP_UNKNOWN:
+		atlas_setup();
+		break;
+#endif
+#ifdef CONFIG_MIPS_JAZZ
+	case MACH_GROUP_JAZZ:
+		jazz_setup();
+		break;
+#endif
+#ifdef CONFIG_MIPS_MALTA
+	case MACH_GROUP_UNKNOWN:
+		malta_setup();
+		break;
+#endif
+#ifdef CONFIG_MOMENCO_OCELOT
+	case MACH_GROUP_MOMENCO:
+		momenco_ocelot_setup();
+		break;
+#endif
+#ifdef CONFIG_MOMENCO_OCELOT_G
+	case MACH_GROUP_MOMENCO:
+		momenco_ocelot_g_setup();
+		break;
+#endif
+#ifdef CONFIG_MOMENCO_OCELOT_C
+	case MACH_GROUP_MOMENCO:
+		momenco_ocelot_c_setup();
+		break;
+#endif
+#ifdef CONFIG_MIPS_SEAD
+	case MACH_GROUP_UNKNOWN:
+		sead_setup();
+		break;
+#endif
+#ifdef CONFIG_SGI_IP22
+	/* As of now this is only IP22.  */
+	case MACH_GROUP_SGI:
+		ip22_setup();
+		break;
+#endif
+#ifdef CONFIG_SNI_RM200_PCI
+	case MACH_GROUP_SNI_RM:
+		sni_rm200_pci_setup();
+		break;
+#endif
+#ifdef CONFIG_DDB5074
+	case MACH_GROUP_NEC_DDB:
+		ddb_setup();
+		break;
+#endif
+#ifdef CONFIG_DDB5476
+       case MACH_GROUP_NEC_DDB:
+               ddb_setup();
+               break;
+#endif
+#ifdef CONFIG_DDB5477
+       case MACH_GROUP_NEC_DDB:
+               ddb_setup();
+               break;
+#endif
+#ifdef CONFIG_CPU_VR41XX
+	case MACH_GROUP_NEC_VR41XX:
+		switch (mips_machtype) {
+#ifdef CONFIG_NEC_OSPREY
+		case MACH_NEC_OSPREY:
+			nec_osprey_setup();
+			break;
+#endif
+#ifdef CONFIG_NEC_EAGLE
+		case MACH_NEC_EAGLE:
+			nec_eagle_setup();
+			break;
+#endif
+#ifdef CONFIG_ZAO_CAPCELLA
+		case MACH_ZAO_CAPCELLA:
+			zao_capcella_setup();
+			break;
+#endif
+#ifdef CONFIG_VICTOR_MPC30X
+		case MACH_VICTOR_MPC30X:
+			victor_mpc30x_setup();
+			break;
+#endif
+#ifdef CONFIG_IBM_WORKPAD
+		case MACH_IBM_WORKPAD:
+			ibm_workpad_setup();
+			break;
+#endif
+#ifdef CONFIG_CASIO_E55
+		case MACH_CASIO_E55:
+			casio_e55_setup();
+			break;
+#endif
+#ifdef CONFIG_TANBAC_TB0226
+		case MACH_TANBAC_TB0226:
+			tanbac_tb0226_setup();
+			break;
+#endif
+#ifdef CONFIG_TANBAC_TB0229
+		case MACH_TANBAC_TB0229:
+			tanbac_tb0229_setup();
+			break;
+#endif
+		}
+		break;
+#endif
+#ifdef CONFIG_MIPS_EV96100
+	case MACH_GROUP_GALILEO:
+		ev96100_setup();
+		break;
+#endif
+#ifdef CONFIG_MIPS_EV64120
+	case MACH_GROUP_GALILEO:
+		ev64120_setup();
+		break;
+#endif
+#if defined(CONFIG_MIPS_IVR) || defined(CONFIG_MIPS_ITE8172)
+	case  MACH_GROUP_ITE:
+	case  MACH_GROUP_GLOBESPAN:
+		it8172_setup();
+		break;
+#endif
+#ifdef CONFIG_NINO
+	case MACH_GROUP_PHILIPS:
+		nino_setup();
+		break;
+#endif
+#ifdef CONFIG_LASAT
+        case MACH_GROUP_LASAT:
+                lasat_setup();
+                break;
+#endif
+#ifdef CONFIG_SOC_AU1X00
+	case MACH_GROUP_ALCHEMY:
+		au1x00_setup();
+		break;
+#endif
+#ifdef CONFIG_TOSHIBA_JMR3927
+	case MACH_GROUP_TOSHIBA:
+		jmr3927_setup();
+		break;
+#endif
+#ifdef CONFIG_TOSHIBA_RBTX4927
+       case MACH_GROUP_TOSHIBA:
+               tx4927_setup();
+               break;
+#endif
+#ifdef CONFIG_SIBYTE_BOARD
+	case MACH_GROUP_SIBYTE:
+		swarm_setup();
+		break;
+#endif
+#ifdef CONFIG_HP_LASERJET
+        case MACH_GROUP_HP_LJ:
+                hp_setup();
+                break;
+#endif
+	default:
+		panic("Unsupported architecture");
+	}
+
+	strncpy(command_line, arcs_cmdline, sizeof command_line);
+	command_line[sizeof command_line - 1] = 0;
+	strcpy(saved_command_line, command_line);
+	*cmdline_p = command_line;
+
+	parse_mem_cmdline();
+
+	bootmem_init();
+
+	paging_init();
+
+	resource_init();
+}
+
 static int __init fpu_disable(char *s)
 {
-	mips_cpu.options &= ~MIPS_CPU_FPU;
+	cpu_data[0].options &= ~MIPS_CPU_FPU;
+
 	return 1;
 }
 __setup("nofpu", fpu_disable);

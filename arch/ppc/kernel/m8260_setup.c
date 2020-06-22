@@ -148,7 +148,7 @@ m8260_show_percpuinfo(struct seq_file *m, int i)
 	bd_t	*bp;
 
 	bp = (bd_t *)__res;
-			
+
 	seq_printf(m, "core clock\t: %d MHz\n"
 		   "CPM  clock\t: %d MHz\n"
 		   "bus  clock\t: %d MHz\n",
@@ -176,7 +176,7 @@ m8260_init_IRQ(void)
 #endif
         for ( i = 0 ; i < NR_SIU_INTS ; i++ )
                 irq_desc[i].handler = &ppc8260_pic;
-	
+
 	/* Initialize the default interrupt mapping priorities,
 	 * in case the boot rom changed something on us.
 	 */
@@ -195,7 +195,7 @@ m8260_find_end_of_memory(void)
 {
 	bd_t	*binfo;
 	extern unsigned char __res[];
-	
+
 	binfo = (bd_t *)__res;
 
 	return binfo->bi_memsize;
@@ -221,7 +221,7 @@ platform_init(unsigned long r3, unsigned long r4, unsigned long r5,
 
 	if ( r3 )
 		memcpy( (void *)__res,(void *)(r3+KERNELBASE), sizeof(bd_t) );
-	
+
 #ifdef CONFIG_BLK_DEV_INITRD
 	/* take care of initrd if we have one */
 	if ( r4 )
@@ -233,7 +233,7 @@ platform_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	/* take care of cmd line */
 	if ( r6 )
 	{
-		
+
 		*(char *)(r7+KERNELBASE) = 0;
 		strcpy(cmd_line, (char *)(r6+KERNELBASE));
 	}

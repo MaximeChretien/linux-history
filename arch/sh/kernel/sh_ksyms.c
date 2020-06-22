@@ -56,6 +56,7 @@ EXPORT_SYMBOL(pcibios_penalize_isa_irq);
 #endif
 
 /* mem exports */
+EXPORT_SYMBOL(memscan);
 EXPORT_SYMBOL(memchr);
 EXPORT_SYMBOL(memcpy);
 EXPORT_SYMBOL(memcpy_fromio);
@@ -64,6 +65,7 @@ EXPORT_SYMBOL(memset);
 EXPORT_SYMBOL(memset_io);
 EXPORT_SYMBOL(memmove);
 EXPORT_SYMBOL(memcmp);
+EXPORT_SYMBOL(__copy_user);
 
 #ifdef CONFIG_VT
 EXPORT_SYMBOL(screen_info);
@@ -77,6 +79,7 @@ EXPORT_SYMBOL(get_vm_area);
 EXPORT_SYMBOL(__up);
 EXPORT_SYMBOL(__down);
 EXPORT_SYMBOL(__down_interruptible);
+EXPORT_SYMBOL(__down_trylock);
 
 EXPORT_SYMBOL(__udelay);
 EXPORT_SYMBOL(__const_udelay);

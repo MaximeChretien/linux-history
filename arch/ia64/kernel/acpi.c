@@ -3,7 +3,7 @@
  *
  *  Copyright (C) 1999 VA Linux Systems
  *  Copyright (C) 1999,2000 Walt Drummond <drummond@valinux.com>
- *  Copyright (C) 2000, 2002 Hewlett-Packard Co.
+ *  Copyright (C) 2000, 2002-2003 Hewlett-Packard Co.
  *	David Mosberger-Tang <davidm@hpl.hp.com>
  *  Copyright (C) 2000 Intel Corp.
  *  Copyright (C) 2000,2001 J.I. Lee <jung-ik.lee@intel.com>
@@ -51,6 +51,7 @@ asm (".weak iosapic_register_intr");
 asm (".weak iosapic_override_isa_irq");
 asm (".weak iosapic_register_platform_intr");
 asm (".weak iosapic_init");
+asm (".weak iosapic_system_init");
 asm (".weak iosapic_version");
 
 void (*pm_idle) (void);
@@ -69,20 +70,20 @@ acpi_get_sysname (void)
 
 	rsdp_phys = acpi_find_rsdp();
 	if (!rsdp_phys) {
-		printk("ACPI 2.0 RSDP not found, default to \"dig\"\n");
+		printk(KERN_ERR "ACPI 2.0 RSDP not found, default to \"dig\"\n");
 		return "dig";
 	}
 
 	rsdp = (struct acpi20_table_rsdp *) __va(rsdp_phys);
 	if (strncmp(rsdp->signature, RSDP_SIG, sizeof(RSDP_SIG) - 1)) {
-		printk("ACPI 2.0 RSDP signature incorrect, default to \"dig\"\n");
+		printk(KERN_ERR "ACPI 2.0 RSDP signature incorrect, default to \"dig\"\n");
 		return "dig";
 	}
 
 	xsdt = (struct acpi_table_xsdt *) __va(rsdp->xsdt_address);
 	hdr = &xsdt->header;
 	if (strncmp(hdr->signature, XSDT_SIG, sizeof(XSDT_SIG) - 1)) {
-		printk("ACPI 2.0 XSDT signature incorrect, default to \"dig\"\n");
+		printk(KERN_ERR "ACPI 2.0 XSDT signature incorrect, default to \"dig\"\n");
 		return "dig";
 	}
 
@@ -110,165 +111,88 @@ acpi_get_sysname (void)
 
 #ifdef CONFIG_ACPI
 
-static acpi_resource *
-acpi_get_crs_next (acpi_buffer *buf, int *offset)
+struct acpi_vendor_descriptor {
+	u8				guid_id;
+	efi_guid_t			guid;
+};
+
+struct acpi_vendor_info {
+	struct acpi_vendor_descriptor	*descriptor;
+	u8				*data;
+	u32				length;
+};
+
+acpi_status
+acpi_vendor_resource_match(acpi_resource *resource, void *context)
 {
-	acpi_resource *res;
+	struct acpi_vendor_info *info = (struct acpi_vendor_info *) context;
+	acpi_resource_vendor *vendor;
+	struct acpi_vendor_descriptor *descriptor;
+	u32 length;
 
-	if (*offset >= buf->length)
-		return NULL;
+	if (resource->id != ACPI_RSTYPE_VENDOR)
+		return AE_OK;
 
-	res = (acpi_resource *)((char *) buf->pointer + *offset);
-	*offset += res->length;
-	return res;
-}
+	vendor = (acpi_resource_vendor *) &resource->data;
+	descriptor = (struct acpi_vendor_descriptor *) vendor->reserved;
+	if (vendor->length <= sizeof(*info->descriptor) ||
+	    descriptor->guid_id != info->descriptor->guid_id ||
+	    efi_guidcmp(descriptor->guid, info->descriptor->guid))
+		return AE_OK;
 
-static acpi_resource_data *
-acpi_get_crs_type (acpi_buffer *buf, int *offset, int type)
-{
-	for (;;) {
-		acpi_resource *res = acpi_get_crs_next(buf, offset);
-		if (!res)
-			return NULL;
-		if (res->id == type)
-			return &res->data;
-	}
-}
+	length = vendor->length - sizeof(struct acpi_vendor_descriptor);
+	info->data = acpi_os_allocate(length);
+	if (!info->data)
+		return AE_NO_MEMORY;
 
-static void
-acpi_get_crs_addr (acpi_buffer *buf, int type, u64 *base, u64 *length, u64 *tra)
-{
-	int offset = 0;
-	acpi_resource_address16 *addr16;
-	acpi_resource_address32 *addr32;
-	acpi_resource_address64 *addr64;
-
-	for (;;) {
-		acpi_resource *res = acpi_get_crs_next(buf, &offset);
-		if (!res)
-			return;
-		switch (res->id) {
-			case ACPI_RSTYPE_ADDRESS16:
-				addr16 = (acpi_resource_address16 *) &res->data;
-
-				if (type == addr16->resource_type) {
-					*base = addr16->min_address_range;
-					*length = addr16->address_length;
-					*tra = addr16->address_translation_offset;
-					return;
-				}
-				break;
-			case ACPI_RSTYPE_ADDRESS32:
-				addr32 = (acpi_resource_address32 *) &res->data;
-				if (type == addr32->resource_type) {
-					*base = addr32->min_address_range;
-					*length = addr32->address_length;
-					*tra = addr32->address_translation_offset;
-					return;
-				}
-				break;
-			case ACPI_RSTYPE_ADDRESS64:
-				addr64 = (acpi_resource_address64 *) &res->data;
-				if (type == addr64->resource_type) {
-					*base = addr64->min_address_range;
-					*length = addr64->address_length;
-					*tra = addr64->address_translation_offset;
-					return;
-				}
-				break;
-			case ACPI_RSTYPE_END_TAG:
-				return;
-				break;
-		}
-	}
+	memcpy(info->data, vendor->reserved + sizeof(struct acpi_vendor_descriptor), length);
+	info->length = length;
+	return AE_CTRL_TERMINATE;
 }
 
 acpi_status
-acpi_get_addr_space(acpi_handle obj, u8 type, u64 *base, u64 *length, u64 *tra)
+acpi_find_vendor_resource(acpi_handle obj, struct acpi_vendor_descriptor *id,
+		u8 **data, u32 *length)
 {
-	acpi_status status;
-	acpi_buffer buf = { .length  = ACPI_ALLOCATE_BUFFER,
-			    .pointer = NULL };
+	struct acpi_vendor_info info;
 
-	*base = 0;
-	*length = 0;
-	*tra = 0;
+	info.descriptor = id;
+	info.data = 0;
 
-	status = acpi_get_current_resources(obj, &buf);
-	if (ACPI_FAILURE(status)) {
-		printk(KERN_ERR PREFIX "Unable to get _CRS data on object\n");
-		return status;
-	}
+	acpi_walk_resources(obj, METHOD_NAME__CRS, acpi_vendor_resource_match, &info);
+	if (!info.data)
+		return AE_NOT_FOUND;
 
-	acpi_get_crs_addr(&buf, type, base, length, tra);
-
-	acpi_os_free(buf.pointer);
-
+	*data = info.data;
+	*length = info.length;
 	return AE_OK;
 }
 
-typedef struct {
-	u8	guid_id;
-	u8	guid[16];
-	u8	csr_base[8];
-	u8	csr_length[8];
-} acpi_hp_vendor_long;
-
-#define HP_CCSR_LENGTH 0x21
-#define HP_CCSR_TYPE 0x2
-#define HP_CCSR_GUID EFI_GUID(0x69e9adf9, 0x924f, 0xab5f, \
-			      0xf6, 0x4a, 0x24, 0xd2, 0x01, 0x37, 0x0e, 0xad)
+struct acpi_vendor_descriptor hp_ccsr_descriptor = {
+	.guid_id = 2,
+	.guid    = EFI_GUID(0x69e9adf9, 0x924f, 0xab5f, 0xf6, 0x4a, 0x24, 0xd2, 0x01, 0x37, 0x0e, 0xad)
+};
 
 acpi_status
 acpi_hp_csr_space(acpi_handle obj, u64 *csr_base, u64 *csr_length)
 {
-	int i, offset = 0;
 	acpi_status status;
-	acpi_buffer buf = { .length  = ACPI_ALLOCATE_BUFFER,
-			    .pointer = NULL };
-	acpi_resource_vendor *res;
-	acpi_hp_vendor_long *hp_res;
-	efi_guid_t vendor_guid;
+	u8 *data;
+	u32 length;
+	int i;
 
-	*csr_base = 0;
-	*csr_length = 0;
+	status = acpi_find_vendor_resource(obj, &hp_ccsr_descriptor, &data, &length);
 
-	status = acpi_get_current_resources(obj, &buf);
-	if (ACPI_FAILURE(status)) {
-		printk(KERN_ERR PREFIX "Unable to get _CRS data on object\n");
-		return status;
-	}
+	if (ACPI_FAILURE(status) || length != 16)
+		return AE_NOT_FOUND;
 
-	status = AE_NOT_FOUND;
-	res = (acpi_resource_vendor *)acpi_get_crs_type(&buf, &offset, ACPI_RSTYPE_VENDOR);
-	if (!res) {
-		printk(KERN_ERR PREFIX "Failed to find config space for device\n");
-		goto out;
-	}
+	memcpy(csr_base, data, sizeof(*csr_base));
+	memcpy(csr_length, data + 8, sizeof(*csr_length));
+	acpi_os_free(data);
 
-	status = AE_TYPE; /* Revisit error? */
-	hp_res = (acpi_hp_vendor_long *)(res->reserved);
-
-	if (res->length != HP_CCSR_LENGTH || hp_res->guid_id != HP_CCSR_TYPE) {
-		printk(KERN_ERR PREFIX "Unknown Vendor data\n");
-		goto out;
-	}
-
-	memcpy(&vendor_guid, hp_res->guid, sizeof(efi_guid_t));
-	if (efi_guidcmp(vendor_guid, HP_CCSR_GUID) != 0) {
-		printk(KERN_ERR PREFIX "Vendor GUID does not match\n");
-		goto out;
-	}
-
-	/* It's probably unaligned, so use memcpy */
-	memcpy(csr_base, hp_res->csr_base, 8);
-	memcpy(csr_length, hp_res->csr_length, 8);
-	status = AE_OK;
-
- out:
-	acpi_os_free(buf.pointer);
-	return status;
+	return AE_OK;
 }
+
 #endif /* CONFIG_ACPI */
 
 #ifdef CONFIG_ACPI_BOOT
@@ -293,8 +217,7 @@ acpi_request_vector (u32 int_type)
 		/* correctable platform error interrupt */
 		vector = platform_intr_list[int_type];
 	} else
-		printk("acpi_request_vector(): invalid interrupt type\n");
-
+		printk(KERN_ERR "acpi_request_vector(): invalid interrupt type\n");
 	return vector;
 }
 
@@ -354,7 +277,7 @@ acpi_parse_lsapic (acpi_table_entry_header *header)
 		return 0;
 	}
 
-	printk("CPU %d (0x%04x)", total_cpus, phys_id);
+	printk(KERN_INFO "CPU %d (0x%04x)", total_cpus, phys_id);
 
 	if (lsapic->flags.enabled) {
 		available_cpus++;
@@ -397,40 +320,6 @@ acpi_parse_lapic_nmi (acpi_table_entry_header *header)
 
 
 static int __init
-acpi_find_iosapic (unsigned int gsi, u32 *gsi_base, char **iosapic_address)
-{
-	struct acpi_table_iosapic *iosapic;
-	int ver;
-	int max_pin;
-	char *p;
-	char *end;
-
-	if (!gsi_base || !iosapic_address)
-		return -ENODEV;
-
-	p = (char *) (acpi_madt + 1);
-	end = p + (acpi_madt->header.length - sizeof(struct acpi_table_madt));
-
-	while (p < end) {
-		if (*p == ACPI_MADT_IOSAPIC) {
-			iosapic = (struct acpi_table_iosapic *) p;
-
-			*gsi_base = iosapic->global_irq_base;
-			*iosapic_address = ioremap(iosapic->address, 0);
-
-			ver = iosapic_version(*iosapic_address);
-			max_pin = (ver >> 16) & 0xff;
-
-			if ((gsi - *gsi_base) <= max_pin)
-				return 0;	/* Found it! */
-		}
-		p += p[1];
-	}
-	return -ENODEV;
-}
-
-
-static int __init
 acpi_parse_iosapic (acpi_table_entry_header *header)
 {
 	struct acpi_table_iosapic *iosapic;
@@ -441,15 +330,9 @@ acpi_parse_iosapic (acpi_table_entry_header *header)
 
 	acpi_table_print_madt_entry(header);
 
-	if (iosapic_init) {
-#ifndef CONFIG_ITANIUM
-		iosapic_init(iosapic->address, iosapic->global_irq_base,
-			     has_8259);
-#else
-		/* Firmware on old Itanium systems is broken */
-		iosapic_init(iosapic->address, iosapic->global_irq_base, 1);
-#endif
-	}
+	if (iosapic_init)
+		iosapic_init(iosapic->address, iosapic->global_irq_base);
+
 	return 0;
 }
 
@@ -459,8 +342,6 @@ acpi_parse_plat_int_src (acpi_table_entry_header *header)
 {
 	struct acpi_table_plat_int_src *plintsrc;
 	int vector;
-	u32 gsi_base;
-	char *iosapic_address;
 
 	plintsrc = (struct acpi_table_plat_int_src *) header;
 	if (!plintsrc)
@@ -473,11 +354,6 @@ acpi_parse_plat_int_src (acpi_table_entry_header *header)
 		return -ENODEV;
 	}
 
-	if (acpi_find_iosapic(plintsrc->global_irq, &gsi_base, &iosapic_address)) {
-		printk(KERN_WARNING PREFIX "IOSAPIC not found\n");
-		return -ENODEV;
-	}
-
 	/*
 	 * Get vector assignment for this interrupt, set attributes,
 	 * and program the IOSAPIC routing table.
@@ -487,10 +363,8 @@ acpi_parse_plat_int_src (acpi_table_entry_header *header)
 						plintsrc->iosapic_vector,
 						plintsrc->eid,
 						plintsrc->id,
-						(plintsrc->flags.polarity == 1) ? 1 : 0,
-						(plintsrc->flags.trigger == 1) ? 1 : 0,
-						gsi_base,
-						iosapic_address);
+						(plintsrc->flags.polarity == 1) ? IOSAPIC_POL_HIGH : IOSAPIC_POL_LOW,
+						(plintsrc->flags.trigger == 1) ? IOSAPIC_EDGE : IOSAPIC_LEVEL);
 
 	platform_intr_list[plintsrc->type] = vector;
 	return 0;
@@ -513,9 +387,8 @@ acpi_parse_int_src_ovr (acpi_table_entry_header *header)
 		return 0;
 
 	iosapic_override_isa_irq(p->bus_irq, p->global_irq,
-				 (p->flags.polarity == 1) ? 1 : 0,
-				 (p->flags.trigger == 1) ? 1 : 0);
-
+				 (p->flags.polarity == 1) ? IOSAPIC_POL_HIGH : IOSAPIC_POL_LOW,
+				 (p->flags.trigger == 1) ? IOSAPIC_EDGE : IOSAPIC_LEVEL);
 	return 0;
 }
 
@@ -546,7 +419,13 @@ acpi_parse_madt (unsigned long phys_addr, unsigned long size)
 	acpi_madt = (struct acpi_table_madt *) __va(phys_addr);
 
 	/* remember the value for reference after free_initmem() */
+#ifdef CONFIG_ITANIUM
+	has_8259 = 1; /* Firmware on old Itanium systems is broken */
+#else
 	has_8259 = acpi_madt->flags.pcat_compat;
+#endif
+	if (iosapic_system_init)
+		iosapic_system_init(has_8259);
 
 	/* Get base address of IPI Message Block */
 
@@ -563,8 +442,7 @@ acpi_parse_fadt (unsigned long phys_addr, unsigned long size)
 {
 	struct acpi_table_header *fadt_header;
 	fadt_descriptor_rev2 *fadt;
-	u32 sci_irq, gsi_base;
-	char *iosapic_address;
+	u32 sci_irq;
 
 	if (!phys_addr || !size)
 		return -EINVAL;
@@ -587,9 +465,7 @@ acpi_parse_fadt (unsigned long phys_addr, unsigned long size)
 	if (!iosapic_register_intr)
 		return -ENODEV;
 
-	if (!acpi_find_iosapic(sci_irq, &gsi_base, &iosapic_address))
-		iosapic_register_intr(sci_irq, 0, 0, gsi_base, iosapic_address);
-
+	iosapic_register_intr(sci_irq, IOSAPIC_POL_LOW, IOSAPIC_LEVEL);
 	return 0;
 }
 
@@ -676,13 +552,13 @@ skip_madt:
 
 #ifdef CONFIG_SMP
 	if (available_cpus == 0) {
-		printk("ACPI: Found 0 CPUS; assuming 1\n");
+		printk(KERN_INFO "ACPI: Found 0 CPUS; assuming 1\n");
 		available_cpus = 1; /* We've got at least one of these, no? */
 	}
 	smp_boot_data.cpu_count = total_cpus;
 #endif
 	/* Make boot-up look pretty */
-	printk("%d CPUs available, %d CPUs total\n", available_cpus, total_cpus);
+	printk(KERN_INFO "%d CPUs available, %d CPUs total\n", available_cpus, total_cpus);
 	return 0;
 }
 
@@ -690,6 +566,7 @@ skip_madt:
 /* --------------------------------------------------------------------------
                              PCI Interrupt Routing
    -------------------------------------------------------------------------- */
+#ifdef CONFIG_PCI
 
 int __init
 acpi_get_prt (struct pci_vector_struct **vectors, int *count)
@@ -732,7 +609,7 @@ acpi_get_prt (struct pci_vector_struct **vectors, int *count)
 	*count = acpi_prt.count;
 	return 0;
 }
-
+#endif
 /* Assume IA64 always use I/O SAPIC */
 
 int __init

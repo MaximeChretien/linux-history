@@ -14,19 +14,33 @@ if [ "$CONFIG_MODULES" = "y" ]; then
 fi
 endmenu
 
+#
+# Keep these alphabetically sorted
+#
 mainmenu_option next_comment
 comment 'Machine selection'
 dep_bool 'Support for Acer PICA 1 chipset (EXPERIMENTAL)' CONFIG_ACER_PICA_61 $CONFIG_EXPERIMENTAL
-dep_bool 'Support for Alchemy Semi PB1000 board' CONFIG_MIPS_PB1000 $CONFIG_MIPS32
+dep_bool 'Support for Alchemy Bosporus board' CONFIG_MIPS_BOSPORUS $CONFIG_MIPS32
+dep_bool 'Support for Alchemy Mirage board' CONFIG_MIPS_MIRAGE $CONFIG_MIPS32
+dep_bool 'Support for Alchemy Db1000 board' CONFIG_MIPS_DB1000 $CONFIG_MIPS32
+dep_bool 'Support for Alchemy Db1100 board' CONFIG_MIPS_DB1100 $CONFIG_MIPS32
+dep_bool 'Support for Alchemy Db1500 board' CONFIG_MIPS_DB1500 $CONFIG_MIPS32
+dep_bool 'Support for Alchemy PB1000 board' CONFIG_MIPS_PB1000 $CONFIG_MIPS32
 if [ "$CONFIG_MIPS_PB1000" = "y" ]; then
    bool '  Support for PCI AUTO Config' CONFIG_PCI_AUTO
 fi
-dep_bool 'Support for Alchemy Semi PB1100 board' CONFIG_MIPS_PB1100 $CONFIG_MIPS32
-dep_bool 'Support for Alchemy Semi PB1500 board' CONFIG_MIPS_PB1500 $CONFIG_MIPS32
-dep_bool 'Support for Algorithmics P4032 (EXPERIMENTAL)' CONFIG_ALGOR_P4032 $CONFIG_EXPERIMENTAL
+dep_bool 'Support for Alchemy PB1100 board' CONFIG_MIPS_PB1100 $CONFIG_MIPS32
+dep_bool 'Support for Alchemy PB1500 board' CONFIG_MIPS_PB1500 $CONFIG_MIPS32
+dep_bool 'Support for MyCable XXS1500 board' CONFIG_MIPS_XXS1500 $CONFIG_MIPS32
+dep_bool 'Support for 4G Systems MTX-1 board' CONFIG_MIPS_MTX1 $CONFIG_MIPS32
 dep_bool 'Support for BAGET MIPS series (EXPERIMENTAL)' CONFIG_BAGET_MIPS $CONFIG_MIPS32 $CONFIG_EXPERIMENTAL
+bool 'Support for CASIO CASSIOPEIA E-10/15/55/65' CONFIG_CASIO_E55
 dep_bool 'Support for Cobalt Server (EXPERIMENTAL)' CONFIG_MIPS_COBALT $CONFIG_EXPERIMENTAL
-dep_bool 'Support for DECstations' CONFIG_DECSTATION $CONFIG_MIPS32
+if [ "$CONFIG_MIPS32" = "y" ]; then
+   bool 'Support for DECstations' CONFIG_DECSTATION
+else
+   dep_bool 'Support for DECstations (EXPERIMENTAL)' CONFIG_DECSTATION $CONFIG_EXPERIMENTAL
+fi
 dep_bool 'Support for Galileo EV64120 Evaluation board (EXPERIMENTAL)' CONFIG_MIPS_EV64120 $CONFIG_EXPERIMENTAL
 if [ "$CONFIG_MIPS_EV64120" = "y" ]; then
    bool '  Enable Second PCI (PCI1)' CONFIG_EVB_PCI1
@@ -38,16 +52,25 @@ fi
 dep_bool 'Support for Galileo EV96100 Evaluation board (EXPERIMENTAL)' CONFIG_MIPS_EV96100 $CONFIG_EXPERIMENTAL
 bool 'Support for Globespan IVR board' CONFIG_MIPS_IVR
 bool 'Support for Hewlett Packard LaserJet board' CONFIG_HP_LASERJET
+bool 'Support for IBM WorkPad z50' CONFIG_IBM_WORKPAD
+bool 'Support for LASAT Networks platforms' CONFIG_LASAT
+if [ "$CONFIG_LASAT" = "y" ]; then
+   tristate '  PICVUE LCD display driver' CONFIG_PICVUE
+   dep_tristate '   PICVUE LCD display driver /proc interface' CONFIG_PICVUE_PROC $CONFIG_PICVUE
+   bool '  DS1603 RTC driver' CONFIG_DS1603
+   bool '  LASAT sysctl interface' CONFIG_LASAT_SYSCTL
+fi
 bool 'Support for ITE 8172G board' CONFIG_MIPS_ITE8172
 if [ "$CONFIG_MIPS_ITE8172" = "y" ]; then
    bool '  Support for older IT8172 (Rev C)' CONFIG_IT8172_REVC
 fi
-dep_bool 'Support for MIPS Atlas board (EXPERIMENTAL)' CONFIG_MIPS_ATLAS $CONFIG_EXPERIMENTAL
+bool 'Support for MIPS Atlas board' CONFIG_MIPS_ATLAS
 bool 'Support for MIPS Magnum 4000' CONFIG_MIPS_MAGNUM_4000
-dep_bool 'Support for MIPS Malta board (EXPERIMENTAL)' CONFIG_MIPS_MALTA $CONFIG_EXPERIMENTAL
+bool 'Support for MIPS Malta board' CONFIG_MIPS_MALTA
 dep_bool 'Support for MIPS SEAD board (EXPERIMENTAL)' CONFIG_MIPS_SEAD $CONFIG_EXPERIMENTAL
 bool 'Support for Momentum Ocelot board' CONFIG_MOMENCO_OCELOT
 bool 'Support for Momentum Ocelot-G board' CONFIG_MOMENCO_OCELOT_G
+bool 'Support for Momentum Ocelot-C and -CS boards' CONFIG_MOMENCO_OCELOT_C
 dep_bool 'Support for NEC DDB Vrc-5074 (EXPERIMENTAL)' CONFIG_DDB5074 $CONFIG_EXPERIMENTAL
 bool 'Support for NEC DDB Vrc-5476' CONFIG_DDB5476
 bool 'Support for NEC DDB Vrc-5477' CONFIG_DDB5477
@@ -56,6 +79,9 @@ if [ "$CONFIG_DDB5477" = "y" ]; then
 fi
 bool 'Support for NEC Osprey board' CONFIG_NEC_OSPREY
 bool 'Support for NEC Eagle/Hawk board' CONFIG_NEC_EAGLE
+if [ "$CONFIG_NEC_EAGLE" = "y" ]; then
+   tristate '  NEC VRC4173 support' CONFIG_VRC4173
+fi
 bool 'Support for Olivetti M700-10' CONFIG_OLIVETTI_M700
 dep_bool 'Support for Philips Nino (EXPERIMENTAL)' CONFIG_NINO $CONFIG_MIPS32 $CONFIG_EXPERIMENTAL
 if [ "$CONFIG_NINO" = "y" ]; then
@@ -65,7 +91,7 @@ if [ "$CONFIG_NINO" = "y" ]; then
 	 Model-500/510				CONFIG_NINO_16MB" Model-200
 fi
 bool 'Support for SGI IP22 (Indy/Indigo2)' CONFIG_SGI_IP22
-dep_bool 'Support for SGI-IP27 (Origin200/2000)' CONFIG_SGI_IP27 $CONFIG_MIPS64
+dep_bool 'Support for SGI IP27 (Origin200/2000)' CONFIG_SGI_IP27 $CONFIG_MIPS64
 if [ "$CONFIG_SGI_IP27" = "y" ]; then
    bool '  IP27 N-Mode' CONFIG_SGI_SN0_N_MODE
    bool '  Discontiguous Memory Support' CONFIG_DISCONTIGMEM
@@ -73,16 +99,72 @@ if [ "$CONFIG_SGI_IP27" = "y" ]; then
    bool '  Mapped kernel support' CONFIG_MAPPED_KERNEL
    bool '  Kernel text replication support' CONFIG_REPLICATE_KTEXT
    bool '  Exception handler replication support' CONFIG_REPLICATE_EXHANDLERS
-   bool '  Multi-Processing support' CONFIG_SMP
+   define_bool CONFIG_SMP_CAPABLE y
    #bool '  IP27 XXL' CONFIG_SGI_SN0_XXL
 fi
-dep_bool 'Support for SGI-IP32 (O2) (EXPERIMENTAL)' CONFIG_SGI_IP32 $CONFIG_EXPERIMENTAL
 dep_bool 'Support for Broadcom BCM1xxx SOCs (EXPERIMENTAL)' CONFIG_SIBYTE_SB1xxx_SOC $CONFIG_EXPERIMENTAL
 if [ "$CONFIG_SIBYTE_SB1xxx_SOC" = "y" ]; then
-   choice '   BCM1xxx SOC Type' \
-	  "BCM1250          CONFIG_SIBYTE_SB1250" BCM1250
+   choice '   BCM1xxx SOC-based board' \
+          "BCM91250A-SWARM      CONFIG_SIBYTE_SWARM \
+           BCM91250E-Sentosa    CONFIG_SIBYTE_SENTOSA \
+           BCM91125E-Rhone      CONFIG_SIBYTE_RHONE \
+           BCM91120x-Carmel     CONFIG_SIBYTE_CARMEL \
+           BCM91250PT-PTSwarm   CONFIG_SIBYTE_PTSWARM \
+           BCM91250C2-LittleSur CONFIG_SIBYTE_LITTLESUR \
+           BCM91120C-CRhine     CONFIG_SIBYTE_CRHINE \
+           BCM91125C-CRhone     CONFIG_SIBYTE_CRHONE \
+           Other                CONFIG_SIBYTE_UNKNOWN" CONFIG_SIBYTE_SWARM
 
-   bool '   Running under simulation' CONFIG_SIMULATION
+   if [ "$CONFIG_SIBYTE_UNKNOWN" = "y" ]; then
+      choice '   BCM1xxx SOC Type' \
+          "BCM91250     CONFIG_SIBYTE_SB1250 \
+           BCM91120     CONFIG_SIBYTE_BCM1120 \
+           BCM91125     CONFIG_SIBYTE_BCM1125 \
+           BCM91125H    CONFIG_SIBYTE_BCM1125H" CONFIG_SIBYTE_SB1250
+      unset CONFIG_SIBYTE_BOARD
+   else
+      define_bool CONFIG_SIBYTE_BOARD y
+      if [ "$CONFIG_SIBYTE_SWARM" = "y" -o \
+           "$CONFIG_SIBYTE_LITTLESUR" = "y" -o \
+           "$CONFIG_SIBYTE_PTSWARM" = "y" -o \
+           "$CONFIG_SIBYTE_SENTOSA" = "y" ]; then
+         define_bool CONFIG_SIBYTE_SB1250 y
+         unset CONFIG_SIBYTE_BCM1120
+         unset CONFIG_SIBYTE_BCM1125
+         unset CONFIG_SIBYTE_BCM1125H
+      fi
+      if [ "$CONFIG_SIBYTE_CRHINE" = "y" -o \
+           "$CONFIG_SIBYTE_CARMEL" = "y" ]; then
+         define_bool CONFIG_SIBYTE_BCM1120 y
+         unset CONFIG_SIBYTE_SB1250
+         unset CONFIG_SIBYTE_BCM1125
+         unset CONFIG_SIBYTE_BCM1125H
+      fi
+      if [ "$CONFIG_SIBYTE_CRHONE" = "y" -o \
+           "$CONFIG_SIBYTE_RHONE" = "y" ]; then
+         define_bool CONFIG_SIBYTE_BCM1125H y
+         unset CONFIG_SIBYTE_SB1250
+         unset CONFIG_SIBYTE_BCM1120
+         unset CONFIG_SIBYTE_BCM1125
+      fi
+   fi
+
+   if [ "$CONFIG_SIBYTE_BCM1120" = "y" -o \
+        "$CONFIG_SIBYTE_BCM1125" = "y" -o \
+        "$CONFIG_SIBYTE_BCM1125H" = "y" ]; then
+      define_bool CONFIG_SIBYTE_BCM112X y
+      choice 'BCM112x Stepping' \
+         "Hybrid CONFIG_CPU_SB1_PASS_2 \
+          An     CONFIG_CPU_SB1_PASS_3" An
+   else
+      unset CONFIG_SIBYTE_BCM112X
+      choice 'BCM1250 Stepping' \
+         "Pass1   CONFIG_CPU_SB1_PASS_1 \
+          An      CONFIG_CPU_SB1_PASS_2 \
+          Bn      CONFIG_CPU_SB1_PASS_2_2 \
+          Cn      CONFIG_CPU_SB1_PASS_4" An
+   fi
+
    bool '   Booting from CFE' CONFIG_SIBYTE_CFE
    dep_bool '     Use firmware console' CONFIG_SIBYTE_CFE_CONSOLE $CONFIG_SIBYTE_CFE
    if [ "$CONFIG_SIBYTE_CFE" = "n" ]; then
@@ -90,25 +172,48 @@ if [ "$CONFIG_SIBYTE_SB1xxx_SOC" = "y" ]; then
       int  '   Memory size (in megabytes)' CONFIG_SIBYTE_STANDALONE_RAM_SIZE 32
    fi
 
+   bool '   Support for Bus Watcher statistics' CONFIG_SIBYTE_BUS_WATCHER
    bool '   Support for SB1/SOC profiling - SB1/SCD perf counters' CONFIG_SIBYTE_SB1250_PROF
-   bool '   Support for ZBbus profiling' CONFIG_BCM1250_TBPROF
+   bool '   Support for ZBbus profiling' CONFIG_SIBYTE_TBPROF
 
-   if [ "$CONFIG_SIBYTE_SB1250" = "y" ]; then
-      if [ "$CONFIG_SIBYTE_STANDALONE" != "y" ]; then
-	 bool '   Multi-Processing support' CONFIG_SMP
+   if [ "$CONFIG_SIBYTE_SB1250" = "y" -o \
+        "$CONFIG_SIBYTE_BCM1125" = "y" -o \
+        "$CONFIG_SIBYTE_BCM1125H" = "y" ]; then
+      bool '   Support for BCM1250/BCM1125 onchip PCI controller' CONFIG_PCI
+   fi
+
+   if [ "$CONFIG_SIBYTE_SB1250" = "y" -o \
+        "$CONFIG_SIBYTE_BCM1125H" = "y" ]; then
+      if [ "$CONFIG_PCI" = "y" ]; then
+         define_bool CONFIG_SIBYTE_HAS_LDT y
       fi
    fi
 
-   if [ "$CONFIG_SIBYTE_SB1250" = "y" ]; then
-      bool '   Support for BCM1250/BCM112x onchip PCI controller' CONFIG_PCI
+   if [ "$CONFIG_SIBYTE_SWARM" = "y" -o \
+        "$CONFIG_SIBYTE_LITTLESUR" = "y" -o \
+        "$CONFIG_SIBYTE_PTSWARM" = "y" -o \
+        "$CONFIG_SIBYTE_CARMEL" = "y" ]; then
+      define_bool CONFIG_SIBYTE_GENBUS_IDE y
    fi
 
-   if [ "$CONFIG_SIBYTE_SB1250" = "y" ]; then
-      bool '   Support for SWARM board' CONFIG_SIBYTE_SWARM
+   if [ "$CONFIG_SIBYTE_SB1250" = "y" -a \
+        "$CONFIG_SIBYTE_STANDALONE" != "y" ]; then
+      define_bool CONFIG_SMP_CAPABLE y
    fi
 fi
 bool 'Support for SNI RM200 PCI' CONFIG_SNI_RM200_PCI
+bool 'Support for TANBAC TB0226 (Mbase)' CONFIG_TANBAC_TB0226
+bool 'Support for TANBAC TB0229 (VR4131DIMM)' CONFIG_TANBAC_TB0229
+if [ "$CONFIG_TANBAC_TB0229" = "y" ]; then
+   bool '  Add TANBAC TB0219 Base board support' CONFIG_TANBAC_TB0219
+fi
+
 dep_bool 'Support for Toshiba JMR-TX3927 board' CONFIG_TOSHIBA_JMR3927 $CONFIG_MIPS32
+bool 'Support for Toshiba RBTX49[23]7 Reference Board' CONFIG_TOSHIBA_RBTX4927
+bool 'Support for Victor MP-C303/304' CONFIG_VICTOR_MPC30X
+if [ "$CONFIG_VICTOR_MPC30X" = "y" ]; then
+   tristate '  NEC VRC4173 support' CONFIG_VRC4173
+fi
 bool 'Support for ZAO Networks Capcella' CONFIG_ZAO_CAPCELLA
 
 dep_bool 'High Memory Support' CONFIG_HIGHMEM $CONFIG_MIPS32
@@ -127,56 +232,123 @@ if [ "$CONFIG_ACER_PICA_61" = "y" ]; then
    define_bool CONFIG_MIPS_JAZZ y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_PC_KEYB y
-   define_bool CONFIG_ROTTEN_IRQ y
    define_bool CONFIG_OLD_TIME_C y
 fi
+if [ "$CONFIG_CASIO_E55" = "y" ]; then
+   define_bool CONFIG_IRQ_CPU y
+   define_bool CONFIG_NEW_TIME_C y
+   define_bool CONFIG_VR41XX_TIME_C y
+   define_bool CONFIG_NONCOHERENT_IO y
+   define_bool CONFIG_ISA y
+   define_bool CONFIG_DUMMY_KEYB y
+   define_bool CONFIG_SCSI n
+fi
+if [ "$CONFIG_MIPS_MIRAGE" = "y" ]; then
+   define_bool CONFIG_SOC_AU1X00 y
+   define_bool CONFIG_SOC_AU1500 y
+   define_bool CONFIG_PC_KEYB y
+   define_bool CONFIG_PCI y
+   define_bool CONFIG_NEW_PCI y
+   define_bool CONFIG_PCI_AUTO y
+   define_bool CONFIG_NONCOHERENT_IO y
+fi
+if [ "$CONFIG_MIPS_BOSPORUS" = "y" ]; then
+   define_bool CONFIG_SOC_AU1X00 y
+   define_bool CONFIG_SOC_AU1500 y
+   define_bool CONFIG_PC_KEYB y
+   define_bool CONFIG_PCI y
+   define_bool CONFIG_NEW_PCI y
+   define_bool CONFIG_PCI_AUTO y
+   define_bool CONFIG_NONCOHERENT_IO y
+fi
 if [ "$CONFIG_MIPS_PB1000" = "y" ]; then
-   define_bool CONFIG_MIPS_AU1000 y
-   define_bool CONFIG_NEW_IRQ y
+   define_bool CONFIG_SOC_AU1X00 y
+   define_bool CONFIG_SOC_AU1000 y
    define_bool CONFIG_PCI y
    define_bool CONFIG_NEW_PCI y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_PC_KEYB y
-   define_bool CONFIG_SWAP_IO_SPACE y
-   define_bool CONFIG_AU1000_USB_DEVICE y
+   define_bool CONFIG_SWAP_IO_SPACE_W y
+   define_bool CONFIG_SWAP_IO_SPACE_L y
 fi
 if [ "$CONFIG_MIPS_PB1100" = "y" ]; then
-   define_bool CONFIG_MIPS_AU1000 y
-   define_bool CONFIG_NEW_IRQ y
+   define_bool CONFIG_SOC_AU1X00 y
+   define_bool CONFIG_SOC_AU1100 y
    define_bool CONFIG_PCI y
    define_bool CONFIG_PCI_AUTO n
    define_bool CONFIG_NEW_PCI y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_PC_KEYB y
-   define_bool CONFIG_SWAP_IO_SPACE y
-   define_bool CONFIG_AU1000_USB_DEVICE y
+   define_bool CONFIG_SWAP_IO_SPACE_W y
+   define_bool CONFIG_SWAP_IO_SPACE_L y
 fi
 if [ "$CONFIG_MIPS_PB1500" = "y" ]; then
-   define_bool CONFIG_MIPS_AU1000 y
-   define_bool CONFIG_NEW_IRQ y
+   define_bool CONFIG_SOC_AU1X00 y
+   define_bool CONFIG_SOC_AU1500 y
    define_bool CONFIG_PCI y
    define_bool CONFIG_NEW_PCI y
    define_bool CONFIG_PCI_AUTO y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_PC_KEYB y
-   define_bool CONFIG_AU1000_USB_DEVICE y
 fi
-if [ "$CONFIG_ALGOR_P4032" = "y" ]; then
+if [ "$CONFIG_MIPS_DB1000" = "y" ]; then
+   define_bool CONFIG_SOC_AU1X00 y
+   define_bool CONFIG_SOC_AU1000 y
+   # CONFIG_PCI needed for USB
    define_bool CONFIG_PCI y
+   define_bool CONFIG_NEW_PCI y
+   define_bool CONFIG_PCI_AUTO n
    define_bool CONFIG_NONCOHERENT_IO y
-   define_bool CONFIG_OLD_TIME_C y
+   define_bool CONFIG_PC_KEYB y
+   define_bool CONFIG_SWAP_IO_SPACE y
+fi
+if [ "$CONFIG_MIPS_DB1500" = "y" ]; then
+   define_bool CONFIG_SOC_AU1X00 y
+   define_bool CONFIG_SOC_AU1500 y
+   define_bool CONFIG_PCI y
+   define_bool CONFIG_NEW_PCI y
+   define_bool CONFIG_PCI_AUTO y
+   define_bool CONFIG_NONCOHERENT_IO y
+   define_bool CONFIG_PC_KEYB y
+fi
+if [ "$CONFIG_MIPS_DB1100" = "y" ]; then
+   define_bool CONFIG_SOC_AU1X00 y
+   define_bool CONFIG_SOC_AU1100 y
+   define_bool CONFIG_PCI y
+   define_bool CONFIG_NEW_PCI y
+   define_bool CONFIG_NONCOHERENT_IO y
+   define_bool CONFIG_PC_KEYB y
+   define_bool CONFIG_SWAP_IO_SPACE y
+fi
+if [ "$CONFIG_MIPS_XXS1500" = "y" ]; then
+   define_bool CONFIG_SOC_AU1X00 y
+   define_bool CONFIG_SOC_AU1500 y
+   define_bool CONFIG_PCI y
+   define_bool CONFIG_NEW_PCI y
+   define_bool CONFIG_PCI_AUTO y
+   define_bool CONFIG_NONCOHERENT_IO y
+   define_bool CONFIG_PC_KEYB y
+fi
+if [ "$CONFIG_MIPS_MTX1" = "y" ]; then
+   define_bool CONFIG_SOC_AU1X00 y
+   define_bool CONFIG_SOC_AU1500 y
+   define_bool CONFIG_PCI y
+   define_bool CONFIG_NEW_PCI y
+   define_bool CONFIG_PCI_AUTO y
+   define_bool CONFIG_NONCOHERENT_IO y
 fi
 if [ "$CONFIG_MIPS_COBALT" = "y" ]; then
    define_bool CONFIG_COBALT_LCD y
    define_bool CONFIG_I8259 y
    define_bool CONFIG_PCI y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_NONCOHERENT_IO y
 fi
 if [ "$CONFIG_DECSTATION" = "y" ]; then
+   define_bool CONFIG_BOOT_ELF32 y
    define_bool CONFIG_IRQ_CPU y
-   define_bool CONFIG_NEW_IRQ y
+   define_int CONFIG_L1_CACHE_SHIFT 4
+   define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_NONCOHERENT_IO y
 fi
 if [ "$CONFIG_MIPS_EV64120" = "y" ]; then
@@ -187,13 +359,15 @@ if [ "$CONFIG_MIPS_EV64120" = "y" ]; then
    define_bool CONFIG_OLD_TIME_C y
 fi
 if [ "$CONFIG_MIPS_EV96100" = "y" ]; then
+   define_bool CONFIG_BOARD_SCACHE y
    define_bool CONFIG_PCI y
+   define_bool CONFIG_MIPS_GT64120 y
    define_bool CONFIG_MIPS_GT96100 y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_NEW_PCI y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_PCI_AUTO y
-   define_bool CONFIG_SWAP_IO_SPACE y
+   define_bool CONFIG_SWAP_IO_SPACE_W y
+   define_bool CONFIG_SWAP_IO_SPACE_L y
 fi
 if [ "$CONFIG_MIPS_IVR" = "y" ]; then
    define_bool CONFIG_PCI y
@@ -202,17 +376,33 @@ if [ "$CONFIG_MIPS_IVR" = "y" ]; then
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_PCI_AUTO y
    define_bool CONFIG_IT8172_CIR y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_NEW_TIME_C y
 fi
 if [ "$CONFIG_HP_LASERJET" = "y" ]; then
    define_bool CONFIG_IRQ_CPU y
    define_bool CONFIG_NEW_TIME_C y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_NEW_PCI y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_PCI y
    #not yet define_bool CONFIG_PCI_AUTO y
+fi
+if [ "$CONFIG_IBM_WORKPAD" = "y" ]; then
+   define_bool CONFIG_IRQ_CPU y
+   define_bool CONFIG_NEW_TIME_C y
+   define_bool CONFIG_VR41XX_TIME_C y
+   define_bool CONFIG_NONCOHERENT_IO y
+   define_bool CONFIG_ISA y
+   define_bool CONFIG_DUMMY_KEYB y
+   define_bool CONFIG_SCSI n
+fi
+if [ "$CONFIG_LASAT" = "y" ]; then
+   define_bool CONFIG_BOARD_SCACHE y
+   define_bool CONFIG_R5000_CPU_SCACHE y
+   define_bool CONFIG_PCI y
+   define_bool CONFIG_MIPS_GT64120 y
+   define_bool CONFIG_MIPS_NILE4 y
+   define_bool CONFIG_NONCOHERENT_IO y
+   define_bool CONFIG_NEW_TIME_C y
 fi
 if [ "$CONFIG_MIPS_ITE8172" = "y" ]; then
    define_bool CONFIG_PCI y
@@ -222,17 +412,19 @@ if [ "$CONFIG_MIPS_ITE8172" = "y" ]; then
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_PCI_AUTO y
    define_bool CONFIG_IT8172_CIR y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_NEW_TIME_C y
 fi
 if [ "$CONFIG_MIPS_ATLAS" = "y" ]; then
    define_bool CONFIG_BOOT_ELF32 y
    define_int CONFIG_L1_CACHE_SHIFT 5
-   define_bool CONFIG_NEW_IRQ y
+   define_bool CONFIG_MIPS_BONITO64 y
+   define_bool CONFIG_MIPS_GT64120 y
+   define_bool CONFIG_MIPS_MSC y
    define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_PCI y
-   define_bool CONFIG_SWAP_IO_SPACE y
+   define_bool CONFIG_SWAP_IO_SPACE_W y
+   define_bool CONFIG_SWAP_IO_SPACE_L y
 fi
 if [ "$CONFIG_MIPS_MAGNUM_4000" = "y" -o \
      "$CONFIG_OLIVETTI_M700"    = "y" ]; then
@@ -250,36 +442,46 @@ if [ "$CONFIG_MIPS_MALTA" = "y" ]; then
    define_bool CONFIG_BOOT_ELF32 y
    define_bool CONFIG_HAVE_STD_PC_SERIAL_PORT y
    define_bool CONFIG_I8259 y
+   define_bool CONFIG_MIPS_BONITO64 y
+   define_bool CONFIG_MIPS_GT64120 y
+   define_bool CONFIG_MIPS_MSC y
    define_int CONFIG_L1_CACHE_SHIFT 5
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_NONCOHERENT_IO y
-   define_bool CONFIG_SWAP_IO_SPACE y
+   define_bool CONFIG_SWAP_IO_SPACE_W y
+   define_bool CONFIG_SWAP_IO_SPACE_L y
    define_bool CONFIG_PC_KEYB y
    define_bool CONFIG_PCI y
 fi
 if [ "$CONFIG_MIPS_SEAD" = "y" ]; then
+   define_bool CONFIG_BOOT_ELF32 y
    define_int CONFIG_L1_CACHE_SHIFT 5
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_PCI n
 fi
 if [ "$CONFIG_MOMENCO_OCELOT" = "y" ]; then
+   define_bool CONFIG_BOARD_SCACHE y
    define_bool CONFIG_PCI y
    define_bool CONFIG_SYSCLK_100 y
-   define_bool CONFIG_SWAP_IO_SPACE y
-   define_bool CONFIG_NEW_IRQ y
+   define_bool CONFIG_SWAP_IO_SPACE_W y
+   define_bool CONFIG_SWAP_IO_SPACE_L y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_OLD_TIME_C y
 fi
 if [ "$CONFIG_MOMENCO_OCELOT_G" = "y" ]; then
    define_bool CONFIG_PCI y
    define_bool CONFIG_SYSCLK_100 y
-   define_bool CONFIG_SWAP_IO_SPACE y
-   define_bool CONFIG_NEW_IRQ y
+   define_bool CONFIG_SWAP_IO_SPACE_W y
+   define_bool CONFIG_SWAP_IO_SPACE_L y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_OLD_TIME_C y
+fi
+if [ "$CONFIG_MOMENCO_OCELOT_C" = "y" ]; then
+   define_bool CONFIG_PCI y
+   define_bool CONFIG_SWAP_IO_SPACE y
+   define_bool CONFIG_NONCOHERENT_IO y
+   define_bool CONFIG_NEW_TIME_C y
 fi
 if [ "$CONFIG_DDB5074" = "y" ]; then
    define_bool CONFIG_HAVE_STD_PC_SERIAL_PORT y
@@ -290,7 +492,6 @@ if [ "$CONFIG_DDB5074" = "y" ]; then
    define_bool CONFIG_PC_KEYB y
    define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_PCI_AUTO y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_IRQ_CPU y
    define_bool CONFIG_NEW_PCI y
 fi
@@ -298,7 +499,6 @@ if [ "$CONFIG_DDB5476"  = "y" ]; then
    define_bool CONFIG_ISA y
    define_bool CONFIG_PCI y
    define_bool CONFIG_PC_KEYB y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_IRQ_CPU y
    define_bool CONFIG_I8259 y
    define_bool CONFIG_HAVE_STD_PC_SERIAL_PORT y
@@ -310,19 +510,15 @@ fi
 if [ "$CONFIG_DDB5477" = "y" ]; then
    define_bool CONFIG_PCI y
    define_bool CONFIG_NEW_TIME_C y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_IRQ_CPU y
    define_bool CONFIG_NEW_PCI y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_PCI_AUTO y
-   define_bool CONFIG_DUMMY_KEYB y
+   define_bool CONFIG_PC_KEYB y
    define_bool CONFIG_I8259 y
 fi
 if [ "$CONFIG_NEC_OSPREY" = "y" ]; then
    define_bool CONFIG_VR4181 y
-   define_bool CONFIG_SERIAL y
-   define_bool CONFIG_SERIAL_MANY_PORTS y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_IRQ_CPU y
    define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_NONCOHERENT_IO y
@@ -330,8 +526,6 @@ if [ "$CONFIG_NEC_OSPREY" = "y" ]; then
    define_bool CONFIG_SCSI n
 fi
 if [ "$CONFIG_NEC_EAGLE" = "y" ]; then
-   define_bool CONFIG_CPU_VR41XX y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_IRQ_CPU y
    define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_VR41XX_TIME_C y
@@ -344,78 +538,108 @@ if [ "$CONFIG_NEC_EAGLE" = "y" ]; then
    define_bool CONFIG_SCSI n
 fi
 if [ "$CONFIG_NINO" = "y" ]; then
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_PC_KEYB y
 fi
 if [ "$CONFIG_SGI_IP22" = "y" ]; then
    define_bool CONFIG_ARC32 y
-   define_bool CONFIG_ARC_CONSOLE y
-   define_bool CONFIG_ARC_MEMORY y
+   define_bool CONFIG_ARC_PROMLIB y
    define_bool CONFIG_BOARD_SCACHE y
    define_bool CONFIG_BOOT_ELF32 y
-   define_bool CONFIG_SWAP_IO_SPACE y
+   define_bool CONFIG_SWAP_IO_SPACE_W n
+   define_bool CONFIG_SWAP_IO_SPACE_L y
    define_bool CONFIG_IRQ_CPU y
    define_int CONFIG_L1_CACHE_SHIFT 5
-   define_bool CONFIG_NONCOHERENT_IO y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_PC_KEYB y
-   define_bool CONFIG_SGI y
 fi
 if [ "$CONFIG_SGI_IP27" = "y" ]; then
    define_bool CONFIG_BOOT_ELF64 y
    define_bool CONFIG_ARC64 y
+   define_int CONFIG_L1_CACHE_SHIFT 7
    #define_bool CONFIG_MAPPED_PCI_IO y
+   define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_PCI y
    define_bool CONFIG_QL_ISP_A64 y
-   define_int CONFIG_L1_CACHE_SHIFT 7
 fi
-if [ "$CONFIG_SGI_IP32" = "y" ]; then
-   define_bool CONFIG_ARC_MEMORY y
-   define_bool CONFIG_ARC32 y
-   #define_bool CONFIG_BOARD_SCACHE y
-   define_bool CONFIG_BOOT_ELF32 y
-   define_int CONFIG_L1_CACHE_SHIFT 5
-   define_bool CONFIG_NONCOHERENT_IO y
-   define_bool CONFIG_PC_KEYB y
-   define_bool CONFIG_PCI y
-fi
-if [ "$CONFIG_SIBYTE_SB1250" = "y" ]; then
-   define_bool CONFIG_NEW_IRQ y
+if [ "$CONFIG_SIBYTE_SB1xxx_SOC" = "y" ]; then
    define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_DUMMY_KEYB y
-   define_bool CONFIG_SWAP_IO_SPACE y
+   define_bool CONFIG_SWAP_IO_SPACE_W y
+   define_bool CONFIG_SWAP_IO_SPACE_L y
    define_bool CONFIG_BOOT_ELF32 y
 fi
 if [ "$CONFIG_SNI_RM200_PCI" = "y" ]; then
    define_bool CONFIG_ARC32 y
    define_bool CONFIG_ARC_MEMORY y
+   define_bool CONFIG_ARC_PROMLIB y
    define_bool CONFIG_I8259 y
    define_bool CONFIG_ISA y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_NONCOHERENT_IO y
    define_bool CONFIG_OLD_TIME_C y
    define_bool CONFIG_PC_KEYB y
    define_bool CONFIG_PCI y
+fi
+if [ "$CONFIG_TANBAC_TB0226" = "y" ]; then
+   define_bool CONFIG_IRQ_CPU y
+   define_bool CONFIG_NEW_TIME_C y
+   define_bool CONFIG_VR41XX_TIME_C y
+   define_bool CONFIG_NONCOHERENT_IO y
+   define_bool CONFIG_ISA n
+   define_bool CONFIG_PCI y
+   define_bool CONFIG_NEW_PCI y
+   define_bool CONFIG_PCI_AUTO y
+   define_bool CONFIG_DUMMY_KEYB y
+   define_bool CONFIG_SERIAL_MANY_PORTS y
+fi
+if [ "$CONFIG_TANBAC_TB0229" = "y" ]; then
+   define_bool CONFIG_IRQ_CPU y
+   define_bool CONFIG_NEW_TIME_C y
+   define_bool CONFIG_VR41XX_TIME_C y
+   define_bool CONFIG_NONCOHERENT_IO y
+   define_bool CONFIG_ISA n
+   define_bool CONFIG_PCI y
+   define_bool CONFIG_NEW_PCI y
+   define_bool CONFIG_PCI_AUTO y
+   define_bool CONFIG_DUMMY_KEYB y
+   define_bool CONFIG_SERIAL_MANY_PORTS y
 fi
 if [ "$CONFIG_TOSHIBA_JMR3927" = "y" ]; then
    define_bool CONFIG_TOSHIBA_BOARDS y
    define_bool CONFIG_PCI y
    define_bool CONFIG_NEW_PCI y
    define_bool CONFIG_PCI_AUTO y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_NONCOHERENT_IO y
-   define_bool CONFIG_SWAP_IO_SPACE y
+   define_bool CONFIG_SWAP_IO_SPACE_W y
+   define_bool CONFIG_SWAP_IO_SPACE_L y
    define_bool CONFIG_PC_KEYB y
 fi
+if [ "$CONFIG_TOSHIBA_RBTX4927" = "y" ]; then
+   define_bool CONFIG_NEW_TIME_C y
+   define_bool CONFIG_PCI y
+   define_bool CONFIG_NEW_PCI y
+   define_bool CONFIG_PCI_AUTO y
+   define_bool CONFIG_SWAP_IO_SPACE_W y
+   define_bool CONFIG_SWAP_IO_SPACE_L y
+   define_bool CONFIG_ISA y
+   define_bool CONFIG_NONCOHERENT_IO y
+fi
+if [ "$CONFIG_VICTOR_MPC30X" = "y" ]; then
+   define_bool CONFIG_IRQ_CPU y
+   define_bool CONFIG_NEW_TIME_C y
+   define_bool CONFIG_VR41XX_TIME_C y
+   define_bool CONFIG_NONCOHERENT_IO y
+   define_bool CONFIG_ISA n
+   define_bool CONFIG_PCI y
+   define_bool CONFIG_NEW_PCI y
+   define_bool CONFIG_PCI_AUTO y
+   define_bool CONFIG_DUMMY_KEYB y
+   define_bool CONFIG_SCSI n
+fi
 if [ "$CONFIG_ZAO_CAPCELLA" = "y" ]; then
-   define_bool CONFIG_CPU_VR41XX y
-   define_bool CONFIG_CPU_LITTLE_ENDIAN y
-   define_bool CONFIG_NEW_IRQ y
    define_bool CONFIG_IRQ_CPU y
    define_bool CONFIG_NEW_TIME_C y
    define_bool CONFIG_VR41XX_TIME_C y
@@ -454,12 +678,8 @@ choice 'CPU type' \
 	 RM7000	CONFIG_CPU_RM7000 \
 	 SB1	CONFIG_CPU_SB1" R4x00
 
-if [ "$CONFIG_CPU_R5000" = "y" ]; then
-   define_bool CONFIG_BOARD_SCACHE y
-fi
-
-if [ "$CONFIG_CPU_NEVADA" = "y" ]; then
-   define_bool CONFIG_BOARD_SCACHE y
+if [ "$CONFIG_SMP_CAPABLE" = "y" ]; then
+   bool '  Multi-Processing support' CONFIG_SMP
 fi
  
 if [ "$CONFIG_CPU_MIPS32" = "y" ]; then
@@ -477,15 +697,14 @@ if [ "$CONFIG_CPU_RM7000" = "y" ]; then
 fi
 
 if [ "$CONFIG_CPU_SB1" = "y" ]; then
-   choice 'SB1 Pass' \
-	 "Pass1   CONFIG_CPU_SB1_PASS_1  \
-	  Pass2   CONFIG_CPU_SB1_PASS_2  \
-	  Pass2.2 CONFIG_CPU_SB1_PASS_2_2" Pass1
+   bool '  Use DMA to clear/copy pages' CONFIG_SIBYTE_DMA_PAGEOPS
+   # SB1 Pass-specific options
    if [ "$CONFIG_CPU_SB1_PASS_1" = "y" ]; then
       define_bool CONFIG_SB1_PASS_1_WORKAROUNDS y
    fi
    if [ "$CONFIG_CPU_SB1_PASS_2" = "y" ]; then
       define_bool CONFIG_SB1_PASS_2_WORKAROUNDS y
+      define_bool CONFIG_SB1_PASS_2_1_WORKAROUNDS y
    else
       # Avoid prefetches on Pass 2 (before 2.2)
       bool '  Enable prefetches' CONFIG_CPU_HAS_PREFETCH
@@ -494,9 +713,7 @@ if [ "$CONFIG_CPU_SB1" = "y" ]; then
       # XXXKW for now, let 2.2 use same WORKAROUNDS flag as pre-2.2
       define_bool CONFIG_SB1_PASS_2_WORKAROUNDS y
    fi
-   bool '  Support for SB1 Cache Error handler' CONFIG_SB1_CACHE_ERROR
-   dep_bool '    Ignore recoverable cache errors' CONFIG_SB1_CERR_IGNORE_RECOVERABLE $CONFIG_SB1_CACHE_ERROR
-   dep_bool '    Spin instead of running handler' CONFIG_SB1_CERR_SPIN $CONFIG_SB1_CACHE_ERROR
+
    define_bool CONFIG_VTAG_ICACHE y
 fi
 
@@ -547,15 +764,51 @@ else
 fi
 endmenu
 
+#
+# Choose endianess of code to generate.  It's a frequent trap for users so the
+# config file tries it's best to choose the right endianess for those systems
+# where we know about their endianess.  We only ask the user for systems
+# known to be bi-endian; for those systems the defconfig file should defaults
+# to the common endianess used for that system.
+#
 mainmenu_option next_comment
 comment 'General setup'
-if [ "$CONFIG_DECSTATION"  = "y" -o \
-     "$CONFIG_DDB5074"     = "y" -o \
-     "$CONFIG_NINO"        = "y" -o \
-     "$CONFIG_MIPS_COBALT" = "y" ]; then
+if [ "$CONFIG_ACER_PICA_61" = "y" -o \
+     "$CONFIG_CASIO_E55" = "y" -o \
+     "$CONFIG_DDB5074" = "y" -o \
+     "$CONFIG_DDB5476" = "y" -o \
+     "$CONFIG_DDB5477" = "y" -o \
+     "$CONFIG_DECSTATION" = "y" -o \
+     "$CONFIG_HP_LASERJET" = "y" -o \
+     "$CONFIG_IBM_WORKPAD" = "y" -o \
+     "$CONFIG_LASAT" = "y" -o \
+     "$CONFIG_MIPS_COBALT" = "y" -o \
+     "$CONFIG_MIPS_ITE8172" = "y" -o \
+     "$CONFIG_MIPS_IVR" = "y" -o \
+     "$CONFIG_MIPS_PB1000" = "y" -o \
+     "$CONFIG_MIPS_PB1100" = "y" -o \
+     "$CONFIG_MIPS_PB1500" = "y" -o \
+     "$CONFIG_NEC_OSPREY" = "y" -o \
+     "$CONFIG_NEC_EAGLE" = "y" -o \
+     "$CONFIG_NINO" = "y" -o \
+     "$CONFIG_OLIVETTI_M700" = "y" -o \
+     "$CONFIG_SNI_RM200_PCI" = "y" -o \
+     "$CONFIG_VICTOR_MPC30X" = "y" -o \
+     "$CONFIG_ZAO_CAPCELLA" = "y" ]; then
    define_bool CONFIG_CPU_LITTLE_ENDIAN y
 else
-   bool 'Generate little endian code' CONFIG_CPU_LITTLE_ENDIAN
+   if [ "$CONFIG_BAGET_MIPS" = "y" -o \
+	"$CONFIG_MIPS_EV64120" = "y" -o \
+	"$CONFIG_MIPS_EV96100" = "y" -o \
+	"$CONFIG_MOMENCO_OCELOT" = "y" -o \
+	"$CONFIG_MOMENCO_OCELOT_G" = "y" -o \
+	"$CONFIG_SGI_IP22" = "y" -o \
+	"$CONFIG_SGI_IP27" = "y" -o \
+	"$CONFIG_TOSHIBA_JMR3927" = "y" ]; then
+      define_bool CONFIG_CPU_LITTLE_ENDIAN n
+   else
+      bool 'Generate little endian code' CONFIG_CPU_LITTLE_ENDIAN
+   fi
 fi
 
 if [ "$CONFIG_TOSHIBA_JMR3927" = "y" ]; then
@@ -564,7 +817,6 @@ fi
 
 if [ "$CONFIG_CPU_LITTLE_ENDIAN" = "n" ]; then
    bool 'Include IRIX binary compatibility' CONFIG_BINFMT_IRIX
-   bool 'Include forward keyboard' CONFIG_FORWARD_KEYBOARD
 fi
 
 if [ "$CONFIG_CPU_R10000" = "y" ]; then
@@ -623,11 +875,20 @@ define_bool CONFIG_KCORE_AOUT n
 define_bool CONFIG_BINFMT_AOUT n
 tristate 'Kernel support for ELF binaries' CONFIG_BINFMT_ELF
 dep_bool 'Kernel support for Linux/MIPS 32-bit binary compatibility' CONFIG_MIPS32_COMPAT $CONFIG_MIPS64
-define_bool CONFIG_BINFMT_ELF32 $CONFIG_MIPS32_COMPAT
+dep_bool 'Kernel support for o32 binaries' CONFIG_MIPS32_O32 $CONFIG_MIPS32_COMPAT
+dep_bool 'Kernel support for n32 binaries' CONFIG_MIPS32_N32 $CONFIG_MIPS32_COMPAT
+if [ "$CONFIG_MIPS32_O32" = "y" -o \
+     "$CONFIG_MIPS32_N32" = "y" ]; then
+   define_bool CONFIG_BINFMT_ELF32 y
+else
+   define_bool CONFIG_BINFMT_ELF32 n
+fi
 
 tristate 'Kernel support for MISC binaries' CONFIG_BINFMT_MISC
 
-dep_bool 'Power Management support (EXPERIMENTAL)' CONFIG_PM $CONFIG_EXPERIMENTAL $CONFIG_MIPS_AU1000
+if [ "$CONFIG_SOC_AU1X00" = "y" ]; then
+   bool 'Power Management support' CONFIG_PM
+fi
 endmenu
 
 source drivers/mtd/Config.in
@@ -641,6 +902,9 @@ if [ "$CONFIG_BLK_DEV_INITRD" = "y" ]; then
    mainmenu_option next_comment
    comment 'MIPS initrd options'
    bool '  Embed root filesystem ramdisk into the kernel' CONFIG_EMBEDDED_RAMDISK
+   if [ "$CONFIG_EMBEDDED_RAMDISK" = "y" ]; then
+      string '    Filename of gziped ramdisk image' CONFIG_EMBEDDED_RAMDISK_IMAGE ramdisk.gz
+   fi
    endmenu
 fi
 
@@ -675,7 +939,7 @@ if [ "$CONFIG_SCSI" != "n" ]; then
 fi
 endmenu
 
-if [ "$CONFIG_PCI" = "y" ]; then
+if [ "$CONFIG_PCI" = "y" -a "$CONFIG_MIPS32" = "y" ]; then
    source drivers/message/i2o/Config.in
 fi
 
@@ -686,7 +950,7 @@ if [ "$CONFIG_NET" = "y" ]; then
    bool 'Network device support' CONFIG_NETDEVICES
    if [ "$CONFIG_NETDEVICES" = "y" ]; then
       source drivers/net/Config.in
-      if [ "$CONFIG_ATM" = "y" ]; then
+      if [ "$CONFIG_ATM" = "y" -o "$CONFIG_ATM" = "m" ]; then
 	 source drivers/atm/Config.in
       fi
    fi
@@ -727,32 +991,6 @@ source drivers/char/Config.in
 
 #source drivers/misc/Config.in
 
-if [ "$CONFIG_DECSTATION" = "y" ]; then
-   mainmenu_option next_comment
-   comment 'DECStation Character devices'
-
-   tristate 'Standard/generic (dumb) serial support' CONFIG_SERIAL
-   dep_bool '  DZ11 Serial Support' CONFIG_DZ $CONFIG_SERIAL
-   dep_bool '  Z85C30 Serial Support' CONFIG_ZS $CONFIG_SERIAL $CONFIG_TC
-   dep_bool '  Support for console on serial port' CONFIG_SERIAL_CONSOLE $CONFIG_SERIAL
-#   dep_bool 'MAXINE Access.Bus mouse (VSXXX-BB/GB) support' CONFIG_DTOP_MOUSE $CONFIG_ACCESSBUS
-   bool 'Enhanced Real Time Clock Support' CONFIG_RTC
-   endmenu
-fi
-
-if [ "$CONFIG_SGI_IP22" = "y" ]; then
-   mainmenu_option next_comment
-   comment 'SGI Character devices'
-   if [ "$CONFIG_VT" = "y" ]; then
-      tristate 'SGI Newport Console support' CONFIG_SGI_NEWPORT_CONSOLE
-      if [ "$CONFIG_SGI_NEWPORT_CONSOLE" = "y" ]; then
-	 define_bool CONFIG_FONT_8x16 y
-      fi
-      define_bool CONFIG_DUMMY_CONSOLE y
-   fi
-   endmenu
-fi
-
 source fs/Config.in
 
 source drivers/media/Config.in
@@ -761,6 +999,13 @@ if [ "$CONFIG_VT" = "y" ]; then
    mainmenu_option next_comment
    comment 'Console drivers'
    bool 'VGA text console' CONFIG_VGA_CONSOLE
+   if [ "$CONFIG_SGI_IP22" = "y" ]; then
+      tristate 'SGI Newport Console support' CONFIG_SGI_NEWPORT_CONSOLE
+      if [ "$CONFIG_SGI_NEWPORT_CONSOLE" = "y" ]; then
+         define_bool CONFIG_FONT_8x16 y
+      fi
+      define_bool CONFIG_DUMMY_CONSOLE y
+   fi
    if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
       tristate 'MDA text console (dual-headed) (EXPERIMENTAL)' CONFIG_MDA_CONSOLE
       source drivers/video/Config.in
@@ -777,10 +1022,6 @@ if [ "$CONFIG_SOUND" != "n" ]; then
 fi
 endmenu
 
-if [ "$CONFIG_SGI_IP22" = "y" ]; then
-   source drivers/sgi/Config.in
-fi
-
 source drivers/usb/Config.in
 
 source net/bluetooth/Config.in
@@ -789,15 +1030,17 @@ mainmenu_option next_comment
 comment 'Kernel hacking'
 
 bool 'Are you using a crosscompiler' CONFIG_CROSSCOMPILE
-if [ "$CONFIG_SERIAL" = "y" -o "$CONFIG_AU1000_UART" = "y" ]; then
-   bool 'Remote GDB kernel debugging' CONFIG_REMOTE_DEBUG
-   dep_bool 'Console output to GDB' CONFIG_GDB_CONSOLE $CONFIG_REMOTE_DEBUG
+bool 'Enable run-time debugging' CONFIG_RUNTIME_DEBUG
+bool 'Remote GDB kernel debugging' CONFIG_KGDB
+dep_bool '  Console output to GDB' CONFIG_GDB_CONSOLE $CONFIG_KGDB
+if [ "$CONFIG_SIBYTE_SB1xxx_SOC" = "y" ]; then
+   bool 'Compile for Corelis Debugger' CONFIG_SB1XXX_CORELIS
 fi
-bool 'Enable run-time debugging' CONFIG_DEBUG
 bool 'Magic SysRq key' CONFIG_MAGIC_SYSRQ
 if [ "$CONFIG_SMP" != "y" ]; then
    bool 'Run uncached' CONFIG_MIPS_UNCACHED
 fi
 endmenu
 
+source crypto/Config.in
 source lib/Config.in

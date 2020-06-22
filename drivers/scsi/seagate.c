@@ -324,6 +324,8 @@ static Signature __initdata signatures[] = {
 	{"FUTURE DOMAIN TMC-950", 5, 21, FD},
 	/* Added for 2.2.16 by Matthias_Heidbrink@b.maus.de */
 	{"IBM F1 V1.2009/22/93", 5, 25, FD},
+	/* Added for Dell Latitude XP 4100CX */
+	{"Future Domain Corp. V1.0008/18/9364/32", 5, 38, FD},
 };
 
 #define NUM_SIGNATURES (sizeof(signatures) / sizeof(Signature))

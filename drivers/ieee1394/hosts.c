@@ -138,7 +138,10 @@ struct hpsb_host *hpsb_alloc_host(struct hpsb_host_driver *drv, size_t extra)
 
 	atomic_set(&h->generation, 0);
 
-	INIT_TQUEUE(&h->timeout_tq, (void (*)(void*))abort_timedouts, h);
+	init_timer(&h->timeout);
+	h->timeout.data = (unsigned long) h;
+	h->timeout.function = abort_timedouts;
+	h->timeout_interval = HZ / 20; // 50ms by default
 
         h->topology_map = h->csr.topology_map + 3;
         h->speed_map = (u8 *)(h->csr.speed_map + 2);

@@ -109,7 +109,24 @@ __asm__ __volatile__(							\
 	: /* no inputs */						\
 	: "memory")
 
-#define __save_and_sti(x)       do { __save_flags(x); __sti(); } while(0);
+__asm__ (
+	".macro\t__save_and_sti result\n\t"
+	".set\tpush\n\t"
+	".set\treorder\n\t"
+	".set\tnoat\n\t"
+	"mfc0\t\\result, $12\n\t"
+	"ori\t$1, \\result, 1\n\t"
+	".set\tnoreorder\n\t"
+	"mtc0\t$1, $12\n\t"
+	".set\tpop\n\t"
+	".endm");
+
+#define __save_and_sti(x)						\
+__asm__ __volatile__(							\
+	"__save_and_sti\t%0"						\
+	: "=r" (x)							\
+	: /* no inputs */						\
+	: "memory")
 
 __asm__(".macro\t__restore_flags flags\n\t"
 	".set\tnoreorder\n\t"
@@ -227,25 +244,8 @@ extern asmlinkage void *resume(void *last, void *next);
 
 struct task_struct;
 
-extern asmlinkage void lazy_fpu_switch(void *, void *);
-extern asmlinkage void init_fpu(void);
-extern asmlinkage void save_fp(struct task_struct *);
-extern asmlinkage void restore_fp(struct task_struct *);
-
-#ifdef CONFIG_SMP
-#define SWITCH_DO_LAZY_FPU \
-	if (prev->flags & PF_USEDFPU) { \
-		lazy_fpu_switch(prev, 0); \
-		clear_cp0_status(ST0_CU1); \
-		prev->flags &= ~PF_USEDFPU; \
-	}
-#else /* CONFIG_SMP */
-#define SWITCH_DO_LAZY_FPU	do { } while(0)
-#endif /* CONFIG_SMP */
-
 #define switch_to(prev,next,last) \
 do { \
-	SWITCH_DO_LAZY_FPU; \
 	(last) = resume(prev, next); \
 } while(0)
 
@@ -310,6 +310,7 @@ static inline unsigned long __xchg(unsigned long x, volatile void * ptr,
 }
 
 extern void *set_except_vector(int n, void *addr);
+extern void per_cpu_trap_init(void);
 
 extern void __die(const char *, struct pt_regs *, const char *file,
 	const char *func, unsigned long line) __attribute__((noreturn));

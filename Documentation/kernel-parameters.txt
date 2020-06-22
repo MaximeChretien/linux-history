@@ -69,8 +69,10 @@ running once the system is up.
 	53c7xx=		[HW,SCSI] Amiga SCSI controllers.
 
 	acpi=		[HW,ACPI] Advanced Configuration and Power Interface 
-
-	acpismp=force	[IA-32] Early setup parse and use ACPI SMP table.
+		force	Force ACPI on, even if blacklisted platform
+		off	Disable ACPI
+		ht	Limit ACPI to boot-time LAPIC enumeration for HT,
+			disabling the run-time AML interpreter.
  
 	ad1816=		[HW,SOUND]
 
@@ -341,6 +343,18 @@ running once the system is up.
 			memory; to be used when the kernel is not able
 			to see the whole system memory or for test.
 
+	mem=nn[KMG]@ss[KMG]
+			[KNL,BOOT] Force usage of a specific region of memory
+			Region of memory to be used, from ss to ss+nn.
+
+	mem=nn[KMG]#ss[KMG]
+			[KNL,BOOT,ACPI] Mark specific memory as ACPI data.
+			Region of memory to be used, from ss to ss+nn.
+
+	mem=nn[KMG]$ss[KMG]
+			[KNL,BOOT,ACPI] Mark specific memory as reserved.
+			Region of memory to be used, from ss to ss+nn.
+
 	memfrac=	[KNL]
 
 	mga=		[HW,DRM]
@@ -392,8 +406,6 @@ running once the system is up.
 	no-hlt		[BUGS=IA-32] Tells the kernel that the hlt
 			instruction doesn't work correctly and not to
 			use it.
-
-	noht		[SMP,IA-32] Disables P4 Xeon(tm) HyperThreading.
 
 	noisapnp	[ISAPNP] Disables ISA PnP code.
 
@@ -491,7 +503,7 @@ running once the system is up.
 	plip=		[PPT,NET] Parallel port network link.
 
 	profile=	[KNL] enable kernel profiling via /proc/profile
-			(param:log level).
+			(param: profile step/bucket size as a power of 2)
 
 	prompt_ramdisk=	[RAM] List of RAM disks to prompt for floppy disk
 			before loading.

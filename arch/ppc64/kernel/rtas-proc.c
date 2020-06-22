@@ -115,14 +115,18 @@
 
 
 /* Globals */
-static struct proc_dir_entry *proc_rtas;
 static struct rtas_sensors sensors;
-static struct device_node *rtas_node;
+static struct device_node *rtas_node = NULL;
 static unsigned long power_on_time = 0; /* Save the time the user set */
 static char progress_led[MAX_LINELENGTH];
 
 static unsigned long rtas_tone_frequency = 1000;
 static unsigned long rtas_tone_volume = 0;
+static unsigned int open_token = 0;
+
+extern struct proc_dir_entry *proc_ppc64_root;
+extern struct proc_dir_entry *rtas_proc_dir;
+extern spinlock_t proc_ppc64_lock;
 
 /* ****************STRUCTS******************************************* */
 struct individual_sensor {
@@ -160,6 +164,12 @@ static ssize_t ppc_rtas_tone_volume_write(struct file * file, const char * buf,
 		size_t count, loff_t *ppos);
 static ssize_t ppc_rtas_tone_volume_read(struct file * file, char * buf,
 		size_t count, loff_t *ppos);
+static int ppc_rtas_errinjct_open(struct inode *inode, struct file *file);
+static int ppc_rtas_errinjct_release(struct inode *inode, struct file *file);
+static ssize_t ppc_rtas_errinjct_write(struct file * file, const char * buf,
+				   size_t count, loff_t *ppos);
+static ssize_t ppc_rtas_errinjct_read(struct file *file, char *buf,
+				      size_t count, loff_t *ppos);
 
 struct file_operations ppc_rtas_poweron_operations = {
 	.read =		ppc_rtas_poweron_read,
@@ -184,6 +194,13 @@ struct file_operations ppc_rtas_tone_volume_operations = {
 	.write =	ppc_rtas_tone_volume_write
 };
 
+struct file_operations ppc_rtas_errinjct_operations = {
+    .open =		ppc_rtas_errinjct_open,
+    .read = 		ppc_rtas_errinjct_read,
+    .write = 		ppc_rtas_errinjct_write,
+    .release = 		ppc_rtas_errinjct_release
+};
+
 int ppc_rtas_find_all_sensors (void);
 int ppc_rtas_process_sensor(struct individual_sensor s, int state, 
 		int error, char * buf);
@@ -200,33 +217,54 @@ void proc_rtas_init(void)
 	struct proc_dir_entry *entry;
 
 	rtas_node = find_devices("rtas");
-	if ((rtas_node == 0) || (systemcfg->platform == PLATFORM_ISERIES_LPAR)) {
+	if ((rtas_node == NULL) || (systemcfg->platform == PLATFORM_ISERIES_LPAR)) {
 		return;
 	}
 	
-	proc_rtas = proc_mkdir("rtas", 0);
-	if (proc_rtas == 0)
+	spin_lock(&proc_ppc64_lock);
+	if (proc_ppc64_root == NULL) {
+		proc_ppc64_root = proc_mkdir("ppc64", 0);
+		if (!proc_ppc64_root) {
+			spin_unlock(&proc_ppc64_lock);
+			return;
+		}		
+	}
+	spin_unlock(&proc_ppc64_lock);
+	
+	if (rtas_proc_dir == NULL) {
+		rtas_proc_dir = proc_mkdir("rtas", proc_ppc64_root);
+	}
+
+	if (rtas_proc_dir == NULL) {
+		printk(KERN_ERR "Failed to create /proc/ppc64/rtas in rtas_init\n");
 		return;
+	}
 
 	/* /proc/rtas entries */
 
-	entry = create_proc_entry("progress", S_IRUGO|S_IWUSR, proc_rtas);
+	entry = create_proc_entry("progress", S_IRUGO|S_IWUSR, rtas_proc_dir);
 	if (entry) entry->proc_fops = &ppc_rtas_progress_operations;
 
-	entry = create_proc_entry("clock", S_IRUGO|S_IWUSR, proc_rtas); 
+	entry = create_proc_entry("clock", S_IRUGO|S_IWUSR, rtas_proc_dir); 
 	if (entry) entry->proc_fops = &ppc_rtas_clock_operations;
 
-	entry = create_proc_entry("poweron", S_IWUSR|S_IRUGO, proc_rtas); 
+	entry = create_proc_entry("poweron", S_IWUSR|S_IRUGO, rtas_proc_dir); 
 	if (entry) entry->proc_fops = &ppc_rtas_poweron_operations;
 
-	create_proc_read_entry("sensors", S_IRUGO, proc_rtas, 
+	create_proc_read_entry("sensors", S_IRUGO, rtas_proc_dir, 
 			ppc_rtas_sensor_read, NULL);
 	
-	entry = create_proc_entry("frequency", S_IWUSR|S_IRUGO, proc_rtas); 
+	entry = create_proc_entry("frequency", S_IWUSR|S_IRUGO, rtas_proc_dir); 
 	if (entry) entry->proc_fops = &ppc_rtas_tone_freq_operations;
 
-	entry = create_proc_entry("volume", S_IWUSR|S_IRUGO, proc_rtas); 
+	entry = create_proc_entry("volume", S_IWUSR|S_IRUGO, rtas_proc_dir); 
 	if (entry) entry->proc_fops = &ppc_rtas_tone_volume_operations;
+
+#ifdef CONFIG_RTAS_ERRINJCT
+	entry = create_proc_entry("errinjct", S_IWUSR|S_IRUGO, rtas_proc_dir);
+	if (entry) entry->proc_fops = &ppc_rtas_errinjct_operations;
+#endif
+
 }
 
 /* ****************************************************************** */
@@ -405,10 +443,14 @@ static int ppc_rtas_sensor_read(char * buf, char ** start, off_t off,
 		j = sensors.sensor[i].quant;
 		/* A sensor may have multiple instances */
 		while (j >= 0) {
+
 			error =	rtas_call(get_sensor_state, 2, 2, &ret, 
-				  sensors.sensor[i].token, sensors.sensor[i].quant-j);
+				  	  sensors.sensor[i].token, 
+				  	  sensors.sensor[i].quant - j);
+
 			state = (int) ret;
-			n += ppc_rtas_process_sensor(sensors.sensor[i], state, error, buffer+n );
+			n += ppc_rtas_process_sensor(sensors.sensor[i], state, 
+					     	     error, buffer+n );
 			n += sprintf (buffer+n, "\n");
 			j--;
 		} /* while */
@@ -426,6 +468,7 @@ return_string:
 		n = count;
 	else
 		*eof = 1;
+
 	memcpy(buf, buffer + off, n);
 	*start = buf;
 	kfree(buffer);
@@ -436,10 +479,10 @@ return_string:
 
 int ppc_rtas_find_all_sensors (void)
 {
-	unsigned long *utmp;
-	int len, i, j;
+	unsigned int *utmp;
+	int len, i;
 
-	utmp = (unsigned long *) get_property(rtas_node, "rtas-sensors", &len);
+	utmp = (unsigned int *) get_property(rtas_node, "rtas-sensors", &len);
 	if (utmp == NULL) {
 		printk (KERN_ERR "error: could not get rtas-sensors\n");
 		return 1;
@@ -447,9 +490,9 @@ int ppc_rtas_find_all_sensors (void)
 
 	sensors.quant = len / 8;      /* int + int */
 
-	for (i=0, j=0; j<sensors.quant; i+=2, j++) {
-		sensors.sensor[j].token = utmp[i];
-		sensors.sensor[j].quant = utmp[i+1];
+	for (i=0; i<sensors.quant; i++) {
+		sensors.sensor[i].token = *utmp++;
+		sensors.sensor[i].quant = *utmp++;
 	}
 	return 0;
 }
@@ -515,6 +558,7 @@ int ppc_rtas_process_sensor(struct individual_sensor s, int state,
 	int n = 0;
 
 	/* What kind of sensor do we have here? */
+	
 	switch (s.token) {
 		case KEY_SWITCH:
 			n += sprintf(buf+n, "Key switch:\t");
@@ -698,9 +742,9 @@ int get_location_code(struct individual_sensor s, char * buffer)
 	ret = (char *) get_property(rtas_node, rstr, &llen);
 
 	n=0;
-	if (ret[0] == '\0')
+	if (ret == NULL || ret[0] == '\0') {
 		n += sprintf ( buffer+n, "--- ");/* does not have a location */
-	else {
+	} else {
 		char t[50];
 		ret += pos;
 
@@ -792,5 +836,139 @@ static ssize_t ppc_rtas_tone_volume_read(struct file * file, char * buf,
 	if (n > count)
 		n = count;
 	*ppos += n;
+	return n;
+}
+
+/* ****************************************************************** */
+/* ERRINJCT			                                      */
+/* ****************************************************************** */
+static int ppc_rtas_errinjct_open(struct inode *inode, struct file *file)
+{
+	int rc;
+
+	/* We will only allow one process to use error inject at a
+	   time.  Since errinjct is usually only used for testing,
+	   this shouldn't be an issue */
+	if (open_token) {
+		return -EAGAIN;
+	}
+	rc = rtas_errinjct_open();
+	if (rc < 0) {
+		return -EIO;
+	}
+	open_token = rc;
+
+	return 0;
+}
+
+static ssize_t ppc_rtas_errinjct_write(struct file * file, const char * buf,
+				       size_t count, loff_t *ppos)
+{
+ 
+	char * ei_token;
+	char * workspace = NULL;
+	size_t max_len;
+	int token_len;
+	int rc;
+
+	/* Verify the errinjct token length */
+	if (count < ERRINJCT_TOKEN_LEN) {
+		max_len = count;
+	} else {
+		max_len = ERRINJCT_TOKEN_LEN;
+	}
+
+	token_len = strnlen(buf, max_len);
+	token_len++; /* Add one for the null termination */
+    
+	ei_token = (char *)kmalloc(token_len, GFP_KERNEL);
+	if (!ei_token) {
+		printk(KERN_WARNING "error: kmalloc failed\n");
+		return -ENOMEM;
+	}
+
+	strncpy(ei_token, buf, token_len);
+    
+	if (count > token_len + WORKSPACE_SIZE) {
+		count = token_len + WORKSPACE_SIZE;
+	}
+    
+	buf += token_len;
+
+	/* check if there is a workspace */
+	if (count > token_len) {
+		/* Verify the workspace size */
+		if ((count - token_len) > WORKSPACE_SIZE) {
+			max_len = WORKSPACE_SIZE;
+		} else {
+			max_len = count - token_len;
+		}
+
+		workspace = (char *)kmalloc(max_len, GFP_KERNEL);
+		if (!workspace) {
+			printk(KERN_WARNING "error: failed kmalloc\n");
+			kfree(ei_token);
+			return -ENOMEM;
+		}
+	
+		memcpy(workspace, buf, max_len);
+	}
+
+	rc = rtas_errinjct(open_token, ei_token, workspace);
+
+	if (count > token_len) {
+		kfree(workspace);
+	}
+	kfree(ei_token);
+
+	return rc < 0 ? rc : count;
+}
+
+static int ppc_rtas_errinjct_release(struct inode *inode, struct file *file)
+{
+	int rc;
+    
+	rc = rtas_errinjct_close(open_token);
+	if (rc) {
+		return rc;
+	}
+	open_token = 0;
+	return 0;
+}
+
+static ssize_t ppc_rtas_errinjct_read(struct file *file, char *buf,
+				      size_t count, loff_t *ppos) 
+{
+	char * buffer;
+	int i;
+	int n = 0;
+
+	buffer = (char *)kmalloc(MAX_ERRINJCT_TOKENS * (ERRINJCT_TOKEN_LEN+1),
+				 GFP_KERNEL);
+	if (!buffer) {
+		printk(KERN_ERR "error: kmalloc failed\n");
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < MAX_ERRINJCT_TOKENS && ei_token_list[i].value; i++) {
+		n += sprintf(buffer+n, ei_token_list[i].name);
+		n += sprintf(buffer+n, "\n");
+	}
+
+	if (*ppos >= strlen(buffer)) {
+		kfree(buffer);
+		return 0;
+	}
+	if (n > strlen(buffer) - *ppos)
+		n = strlen(buffer) - *ppos;
+
+	if (n > count)
+		n = count;
+
+	memcpy(buf, buffer + *ppos, n);
+
+	*ppos += n;
+
+	kfree(buffer);
 	return n;
 }

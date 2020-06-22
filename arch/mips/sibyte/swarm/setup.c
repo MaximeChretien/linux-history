@@ -31,40 +31,36 @@
 #include <asm/irq.h>
 #include <asm/io.h>
 #include <asm/bootinfo.h>
+#include <asm/mipsregs.h>
 #include <asm/reboot.h>
 #include <asm/time.h>
+#include <asm/traps.h>
 #include <asm/sibyte/sb1250.h>
 #include <asm/sibyte/sb1250_regs.h>
 #include <asm/sibyte/sb1250_genbus.h>
 #include <asm/sibyte/64bit.h>
-#include <asm/sibyte/swarm.h>
+#include <asm/sibyte/board.h>
 
 extern struct rtc_ops *rtc_ops;
 extern struct rtc_ops swarm_rtc_ops;
 
 #ifdef CONFIG_BLK_DEV_IDE
-extern struct ide_ops std_ide_ops;
-#ifdef CONFIG_BLK_DEV_IDE_SIBYTE
 extern struct ide_ops sibyte_ide_ops;
 #endif
-#endif
 
-#ifdef CONFIG_L3DEMO
-extern void *l3info;
-#endif
+extern void sb1250_setup(void);
 
-static unsigned char *led_ptr;
-#define LED_BASE_ADDR (A_IO_EXT_REG(R_IO_EXT_REG(R_IO_EXT_START_ADDR, LEDS_CS)))
-#define setled(index, c) led_ptr[(3-((index)&3)) << 3] = (c)
+extern int xicor_probe(void);
+extern int xicor_set_time(unsigned long);
+extern unsigned long xicor_get_time(void);
+
+extern int m41t81_probe(void);
+extern int m41t81_set_time(unsigned long);
+extern unsigned long m41t81_get_time(void);
 
 const char *get_system_type(void)
 {
-	return "SiByte Swarm";
-}
-
-
-void __init bus_error_init(void)
-{
+	return "SiByte " SIBYTE_BOARD_NAME;
 }
 
 void __init swarm_timer_setup(struct irqaction *irq)
@@ -78,9 +74,20 @@ void __init swarm_timer_setup(struct irqaction *irq)
         sb1250_time_init();
 }
 
-extern int xicor_set_time(unsigned long);
-extern unsigned long xicor_get_time(void);
-extern void sb1250_setup(void);
+int swarm_be_handler(struct pt_regs *regs, int is_fixup)
+{
+	if (!is_fixup && (regs->cp0_cause & 4)) {
+		/* Data bus error - print PA */
+#ifdef CONFIG_MIPS64
+		printk("DBE physical address: %010lx\n",
+		       __read_64bit_c0_register($26, 1));
+#else
+		printk("DBE physical address: %010llx\n",
+		       __read_64bit_c0_split($26, 1));
+#endif
+	}
+	return (is_fixup ? MIPS_BE_FIXUP : MIPS_BE_FATAL);
+}
 
 void __init swarm_setup(void)
 {
@@ -90,16 +97,21 @@ void __init swarm_setup(void)
 
 	panic_timeout = 5;  /* For debug.  */
 
-        board_timer_setup = swarm_timer_setup;
+	board_timer_setup = swarm_timer_setup;
+	board_be_handler = swarm_be_handler;
 
-        rtc_get_time = xicor_get_time;
-        rtc_set_time = xicor_set_time;
-
-#ifdef CONFIG_L3DEMO
-	if (l3info != NULL) {
-		printk("\n");
+	if (xicor_probe()) {
+		printk("swarm setup: Xicor 1241 RTC detected.\n");
+		rtc_get_time = xicor_get_time;
+		rtc_set_time = xicor_set_time;
 	}
-#endif
+ 
+	if (m41t81_probe()) {
+		printk("swarm setup: M41T81 RTC detected.\n");
+		rtc_get_time = m41t81_get_time;
+		rtc_set_time = m41t81_set_time;
+	}
+
 	printk("This kernel optimized for "
 #ifdef CONFIG_SIMULATION
 	       "simulation"
@@ -115,23 +127,8 @@ void __init swarm_setup(void)
 	       " CFE\n");
 
 #ifdef CONFIG_BLK_DEV_IDE
-#ifdef CONFIG_BLK_DEV_IDE_SIBYTE
 	ide_ops = &sibyte_ide_ops;
-#else
-	ide_ops = &std_ide_ops;
 #endif
-#endif
-
-	/* Set up the LED base address */
-#ifdef __MIPSEL__
-	/* Pass1 workaround (bug 1624) */
-	if (sb1250_pass == K_SYS_REVISION_PASS1)
-		led_ptr = (unsigned char *)
-			((unsigned long)(KSEG1 | (G_IO_START_ADDR(csr_in32(4+(KSEG1|LED_BASE_ADDR))) << S_IO_ADDRBASE))+0x20);
-	else
-#endif
-		led_ptr = (unsigned char *)
-			((unsigned long)(KSEG1 | (G_IO_START_ADDR(csr_in32(KSEG1|LED_BASE_ADDR)) << S_IO_ADDRBASE))+0x20);
 
 #ifdef CONFIG_VT
 #ifdef CONFIG_DUMMY_CONSOLE
@@ -152,60 +149,25 @@ void __init swarm_setup(void)
 #endif
 }
 
+#ifdef LEDS_PHYS
+
+#ifdef CONFIG_SIBYTE_CARMEL
+/* XXXKW need to detect Monterey/LittleSur/etc */
+#undef LEDS_PHYS
+#define LEDS_PHYS MLEDS_PHYS
+#endif
+
+#define setled(index, c) \
+  ((unsigned char *)(LEDS_PHYS|IO_SPACE_BASE|0x20))[(3-(index))<<3] = (c)
 void setleds(char *str)
 {
 	int i;
 	for (i = 0; i < 4; i++) {
 		if (!str[i]) {
-			for (; i < 4; i++) {
-				setled(' ', str[i]);
-			}
+			setled(i, ' ');
 		} else {
 			setled(i, str[i]);
 		}
 	}
 }
-
-#include <linux/timer.h>
-
-static struct timer_list led_timer;
-static unsigned char default_led_msg[] =
-	"Today: the CSWARM.  Tomorrow: the WORLD!!!!           ";
-static unsigned char *led_msg = default_led_msg;
-static unsigned char *led_msg_ptr = default_led_msg;
-
-void set_led_msg(char *new_msg)
-{
-	led_msg = new_msg;
-	led_msg_ptr = new_msg;
-	setleds("    ");
-}
-
-static void move_leds(unsigned long arg)
-{
-	int i;
-	unsigned char *tmp = led_msg_ptr;
-	for (i = 0; i < 4; i++) {
-		setled(i, *tmp);
-		tmp++;
-		if (!*tmp) {
-			tmp = led_msg;
-		}
-	}
-	led_msg_ptr++;
-	if (!*led_msg_ptr) {
- 		led_msg_ptr = led_msg;
-	}
-	del_timer(&led_timer);
-	led_timer.expires = jiffies + (HZ/8);
-	add_timer(&led_timer);
-}
-
-void hack_leds(void)
-{
-	init_timer(&led_timer);
-	led_timer.expires = jiffies + (HZ/8);
-	led_timer.data = 0;
-	led_timer.function = move_leds;
-	add_timer(&led_timer);
-}
+#endif

@@ -172,7 +172,8 @@ void keybdev_event(struct input_handle *handle, unsigned int type, unsigned int 
 	if (type != EV_KEY) return;
 
 	if (emulate_raw(code, down))
-		printk(KERN_WARNING "keyboard.c: can't emulate rawmode for keycode %d\n", code);
+		if(code < BTN_MISC)
+			printk(KERN_WARNING "keybdev.c: can't emulate rawmode for keycode %d\n", code);
 
 	tasklet_schedule(&keyboard_tasklet);
 }

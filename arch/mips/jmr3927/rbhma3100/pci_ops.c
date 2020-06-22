@@ -1,15 +1,15 @@
 /***********************************************************************
  * Copyright 2001 MontaVista Software Inc.
  * Author: MontaVista Software, Inc.
- *              ahennessy@mvista.com       
+ *              ahennessy@mvista.com
  *
- * Copyright (C) 2000-2001 Toshiba Corporation 
+ * Copyright (C) 2000-2001 Toshiba Corporation
  *
  * Based on arch/mips/ddb5xxx/ddb5477/pci_ops.c
  *
  *     Define the pci_ops for JMR3927.
  *
- * Much of the code is derived from the original DDB5074 port by 
+ * Much of the code is derived from the original DDB5074 port by
  * Geert Uytterhoeven <geert@sonycom.com>
  *
  *  This program is free software; you can redistribute  it and/or modify it
@@ -37,7 +37,6 @@
 #include <linux/pci.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/config.h>
 
 #include <asm/addrspace.h>
 #include <asm/pci_channel.h>
@@ -45,13 +44,13 @@
 #include <asm/debug.h>
 
 struct resource pci_io_resource = {
-	"pci IO space", 
+	"pci IO space",
 	0x1000,  /* reserve regacy I/O space */
 	0x1000 + JMR3927_PCIIO_SIZE -1,
 	IORESOURCE_IO};
 
 struct resource pci_mem_resource = {
-	"pci memory space", 
+	"pci memory space",
 	JMR3927_PCIMEM,
 	JMR3927_PCIMEM + JMR3927_PCIMEM_SIZE -1,
 	IORESOURCE_MEM};
@@ -66,7 +65,7 @@ struct pci_channel mips_pci_channels[] = {
 unsigned int pcibios_assign_all_busses(void)
 {
 	return 1;
-}                           
+}
 
 static int
 mkaddr(unsigned char bus, unsigned char dev_fn, unsigned char where, int *flagsp)
@@ -107,7 +106,7 @@ static int jmr3927_pcibios_read_config_byte (struct pci_dev *dev,
 	unsigned char bus, func_num;
 
 	db_assert((where & 3) == 0);
-	db_assert(where < (1 << 8));  
+	db_assert(where < (1 << 8));
 
 	/* check if the bus is top-level */
 	if (dev->bus->parent != NULL) {
@@ -115,7 +114,7 @@ static int jmr3927_pcibios_read_config_byte (struct pci_dev *dev,
 		db_assert(bus != 0);
 	} else {
 		bus = 0;
-	}                               
+	}
 
 	func_num = PCI_FUNC(dev->devfn);
 	if (mkaddr(bus, dev->devfn, where, &flags))
@@ -135,7 +134,7 @@ static int jmr3927_pcibios_read_config_word (struct pci_dev *dev,
 		return PCIBIOS_BAD_REGISTER_NUMBER;
 
 	db_assert((where & 3) == 0);
-	db_assert(where < (1 << 8));  
+	db_assert(where < (1 << 8));
 
 	/* check if the bus is top-level */
 	if (dev->bus->parent != NULL) {
@@ -143,7 +142,7 @@ static int jmr3927_pcibios_read_config_word (struct pci_dev *dev,
 		db_assert(bus != 0);
 	} else {
 		bus = 0;
-	}                               
+	}
 
 	func_num = PCI_FUNC(dev->devfn);
 	if (mkaddr(bus, dev->devfn, where, &flags))
@@ -163,7 +162,7 @@ static int jmr3927_pcibios_read_config_dword (struct pci_dev *dev,
 		return PCIBIOS_BAD_REGISTER_NUMBER;
 
 	db_assert((where & 3) == 0);
-	db_assert(where < (1 << 8));  
+	db_assert(where < (1 << 8));
 
 	/* check if the bus is top-level */
 	if (dev->bus->parent != NULL) {
@@ -171,7 +170,7 @@ static int jmr3927_pcibios_read_config_dword (struct pci_dev *dev,
 		db_assert(bus != 0);
 	} else {
 		bus = 0;
-	}                               
+	}
 
 	func_num = PCI_FUNC(dev->devfn);
 	if (mkaddr(bus, dev->devfn, where, &flags))
@@ -193,7 +192,7 @@ static int jmr3927_pcibios_write_config_byte (struct pci_dev *dev,
 		db_assert(bus != 0);
 	} else {
 		bus = 0;
-	}                               
+	}
 
 	func_num = PCI_FUNC(dev->devfn);
 	if (mkaddr(bus, dev->devfn, where, &flags))
@@ -218,7 +217,7 @@ static int jmr3927_pcibios_write_config_word (struct pci_dev *dev,
 		db_assert(bus != 0);
 	} else {
 		bus = 0;
-	}                               
+	}
 
 	func_num = PCI_FUNC(dev->devfn);
 	if (mkaddr(bus, dev->devfn, where, &flags))
@@ -243,7 +242,7 @@ static int jmr3927_pcibios_write_config_dword (struct pci_dev *dev,
 		db_assert(bus != 0);
 	} else {
 		bus = 0;
-	}                               
+	}
 
 	func_num = PCI_FUNC(dev->devfn);
 	if (mkaddr(bus, dev->devfn, where, &flags))
@@ -276,7 +275,7 @@ unsigned long tc_readl(volatile __u32 *addr)
 
 	addr = PHYSADDR(addr);
 	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipciaddr =  (unsigned long)addr;
-	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =  
+	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =
 	    (PCI_IPCIBE_ICMD_MEMREAD << PCI_IPCIBE_ICMD_SHIFT) | PCI_IPCIBE_IBE_LONG;
 	while (!(tx3927_pcicptr->istat & PCI_ISTAT_IDICC)) ;
 	val = le32_to_cpu(*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcidata);
@@ -289,7 +288,7 @@ void tc_writel(unsigned long data, volatile __u32 *addr)
 	addr = PHYSADDR(addr);
 	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcidata = cpu_to_le32(data);
 	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipciaddr =  (unsigned long)addr;
-	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =  
+	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =
 	    (PCI_IPCIBE_ICMD_MEMWRITE << PCI_IPCIBE_ICMD_SHIFT)  | PCI_IPCIBE_IBE_LONG;
 	while (!(tx3927_pcicptr->istat & PCI_ISTAT_IDICC)) ;
 	/* clear by setting */
@@ -313,7 +312,7 @@ unsigned char tx_ioinb(unsigned char *addr)
 	else if (offset == 3)
 		byte = 0xe;
 	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipciaddr =  (unsigned long)ioaddr;
-	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =  
+	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =
 	    (PCI_IPCIBE_ICMD_IOREAD << PCI_IPCIBE_ICMD_SHIFT) | byte;
 	while (!(tx3927_pcicptr->istat & PCI_ISTAT_IDICC)) ;
 	val = le32_to_cpu(*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcidata);
@@ -341,7 +340,7 @@ void tx_iooutb(unsigned long data, unsigned char *addr)
 		byte = 0xe;
 	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcidata = data;
 	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipciaddr =  (unsigned long)ioaddr;
-	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =  
+	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =
 	    (PCI_IPCIBE_ICMD_IOWRITE << PCI_IPCIBE_ICMD_SHIFT)  | byte;
 	while (!(tx3927_pcicptr->istat & PCI_ISTAT_IDICC)) ;
 	/* clear by setting */
@@ -361,7 +360,7 @@ unsigned short tx_ioinw(unsigned short *addr)
 	else if (offset == 2)
 		byte = 0xc;
 	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipciaddr =  (unsigned long)ioaddr;
-	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =  
+	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =
 	    (PCI_IPCIBE_ICMD_IOREAD << PCI_IPCIBE_ICMD_SHIFT) | byte;
 	while (!(tx3927_pcicptr->istat & PCI_ISTAT_IDICC)) ;
 	val = le32_to_cpu(*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcidata);
@@ -386,7 +385,7 @@ void tx_iooutw(unsigned long data, unsigned short *addr)
 		byte = 0xc;
 	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcidata = data;
 	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipciaddr =  (unsigned long)ioaddr;
-	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =  
+	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =
 	    (PCI_IPCIBE_ICMD_IOWRITE << PCI_IPCIBE_ICMD_SHIFT)  | byte;
 	while (!(tx3927_pcicptr->istat & PCI_ISTAT_IDICC)) ;
 	/* clear by setting */
@@ -399,7 +398,7 @@ unsigned long tx_ioinl(unsigned int *addr)
 
 	ioaddr = (unsigned long)addr;
 	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipciaddr =  (unsigned long)ioaddr;
-	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =  
+	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =
 	    (PCI_IPCIBE_ICMD_IOREAD << PCI_IPCIBE_ICMD_SHIFT) | PCI_IPCIBE_IBE_LONG;
 	while (!(tx3927_pcicptr->istat & PCI_ISTAT_IDICC)) ;
 	val = le32_to_cpu(*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcidata);
@@ -414,7 +413,7 @@ void tx_iooutl(unsigned long data, unsigned int *addr)
 	ioaddr = (unsigned long)addr;
 	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcidata = cpu_to_le32(data);
 	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipciaddr =  (unsigned long)ioaddr;
-	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =  
+	*(volatile u32 *)(ulong)&tx3927_pcicptr->ipcibe =
 	    (PCI_IPCIBE_ICMD_IOWRITE << PCI_IPCIBE_ICMD_SHIFT)  | PCI_IPCIBE_IBE_LONG;
 	while (!(tx3927_pcicptr->istat & PCI_ISTAT_IDICC)) ;
 	/* clear by setting */

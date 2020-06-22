@@ -157,6 +157,7 @@ struct cpuinfo_ia64 {
 	__u8 family;
 	__u8 archrev;
 	char vendor[16];
+	__u8 need_tlb_flush;
 	__u64 itc_freq;		/* frequency of ITC counter */
 	__u64 proc_freq;	/* frequency of processor */
 	__u64 cyc_per_usec;	/* itc_freq/1000000 */
@@ -300,12 +301,13 @@ struct thread_struct {
 	INIT_THREAD_PM					\
 	{0, },				/* dbr */	\
 	{0, },				/* ibr */	\
-	{{{{0}}}, }			/* fph */	\
+	{{{{0}}}, },			/* fph */	\
+	-1				/* last_fph_cpu*/	\
 }
 
 #define start_thread(regs,new_ip,new_sp) do {							\
 	set_fs(USER_DS);									\
-	regs->cr_ipsr = ((regs->cr_ipsr | (IA64_PSR_BITS_TO_SET | IA64_PSR_CPL | IA64_PSR_SP))	\
+	regs->cr_ipsr = ((regs->cr_ipsr | (IA64_PSR_BITS_TO_SET | IA64_PSR_CPL))		\
 			 & ~(IA64_PSR_BITS_TO_CLEAR | IA64_PSR_RI | IA64_PSR_IS));		\
 	regs->cr_iip = new_ip;									\
 	regs->ar_rsc = 0xf;		/* eager mode, privilege level 3 */			\
@@ -394,7 +396,7 @@ extern unsigned long get_wchan (struct task_struct *p);
 static inline unsigned long
 ia64_get_kr (unsigned long regnum)
 {
-	unsigned long r;
+	unsigned long r = 0;
 
 	switch (regnum) {
 	      case 0: asm volatile ("mov %0=ar.k0" : "=r"(r)); break;
@@ -423,18 +425,23 @@ ia64_set_kr (unsigned long regnum, unsigned long r)
 	      case 7: asm volatile ("mov ar.k7=%0" :: "r"(r)); break;
 	}
 }
+/* Return TRUE if task T owns the fph partition of the CPU we're running on. */
+#define ia64_is_local_fpu_owner(t)								\
+({												\
+	struct task_struct *__ia64_islfo_task = (t);						\
+	(__ia64_islfo_task->thread.last_fph_cpu == smp_processor_id()				\
+	 && __ia64_islfo_task == (struct task_struct *) ia64_get_kr(IA64_KR_FPU_OWNER));	\
+})
 
-static inline struct task_struct *
-ia64_get_fpu_owner (void)
-{
-	return (struct task_struct *) ia64_get_kr(IA64_KR_FPU_OWNER);
-}
+/* Mark task T as owning the fph partition of the CPU we're running on. */
+#define ia64_set_local_fpu_owner(t) do {						\
+	struct task_struct *__ia64_slfo_task = (t);					\
+	__ia64_slfo_task->thread.last_fph_cpu = smp_processor_id();			\
+	ia64_set_kr(IA64_KR_FPU_OWNER, (unsigned long) __ia64_slfo_task);		\
+} while (0)
 
-static inline void
-ia64_set_fpu_owner (struct task_struct *t)
-{
-	ia64_set_kr(IA64_KR_FPU_OWNER, (unsigned long) t);
-}
+/* Mark the fph partition of task T as being invalid on all CPUs.  */
+#define ia64_drop_fpu(t)	((t)->thread.last_fph_cpu = -1)
 
 extern void __ia64_init_fpu (void);
 extern void __ia64_save_fpu (struct ia64_fpreg *fph);

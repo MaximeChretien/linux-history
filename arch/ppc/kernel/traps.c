@@ -167,7 +167,7 @@ static inline int check_io_access(struct pt_regs *regs)
 #if defined(CONFIG_4xx) || defined(CONFIG_BOOKE)
 /* On 4xx, the reason for the machine check or program exception
    is in the ESR. */
-#define get_reason(regs)	mfspr(SPRN_ESR);
+#define get_reason(regs)	((regs)->dsisr)
 #define REASON_FP		0
 #define REASON_ILLEGAL		ESR_PIL
 #define REASON_PRIVILEGED	ESR_PPR
@@ -213,7 +213,7 @@ MachineCheckException(struct pt_regs *regs)
 		printk("Data");
 	printk(" machine check in kernel mode.\n");
 
-#else /* CONFIG_4xx */
+#else /* !CONFIG_4xx */
 	printk("Machine check in kernel mode.\n");
 	printk("Caused by (from SRR1=%lx): ", reason);
 	switch (reason & 0x601F0000) {
@@ -327,7 +327,14 @@ ProgramCheckException(struct pt_regs *regs)
 	extern int do_mathemu(struct pt_regs *regs);
 
 #ifdef CONFIG_MATH_EMULATION
-	if ((reason & REASON_ILLEGAL) && do_mathemu(regs) == 0)
+	/* (reason & REASON_ILLEGAL) would be the obvious thing here,
+	 * but there seems to be a hardware bug on the 405GP (RevD)
+	 * that means ESR is sometimes set incorrectly - either to
+	 * ESR_DST (!?) or 0.  In the process of chasing this with the
+	 * hardware people - not sure if it can happen on any illegal
+	 * instruction or only on FP instructions, whether there is a
+	 * pattern to occurences etc. -dgibson 31/Mar/2003 */
+	if (!(reason & REASON_TRAP) && do_mathemu(regs) == 0)
 		return;
 #endif /* CONFIG_MATH_EMULATION */
 
@@ -449,6 +456,35 @@ SoftwareEmulation(struct pt_regs *regs)
 	}
 }
 #endif /* CONFIG_8xx */
+
+#if defined(CONFIG_4xx)
+
+void DebugException(struct pt_regs *regs)
+{
+	unsigned long debug_status;
+
+	debug_status = mfspr(SPRN_DBSR);
+
+	regs->msr &= ~MSR_DE;  /* Turn off 'debug' bit */
+	if (debug_status & DBSR_TIE) {		/* trap instruction*/
+
+		mtspr(SPRN_DBSR, DBSR_TIE);
+
+		if (!user_mode(regs) && debugger_bpt(regs))
+			return;
+		_exception(SIGTRAP, regs, 0, 0);
+
+	} else if (debug_status & DBSR_IC) {	/* instruction completion */
+
+		mtspr(SPRN_DBSR, DBSR_IC);
+		current->thread.dbcr0 &=  ~DBCR0_IC;
+
+		if (!user_mode(regs) && debugger_sstep(regs))
+			return;
+		_exception(SIGTRAP, regs, 0, 0);
+	}
+}
+#endif /* CONFIG_4xx */
 
 #if !defined(CONFIG_TAU_INT)
 void

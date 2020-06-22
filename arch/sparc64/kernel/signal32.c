@@ -1348,6 +1348,8 @@ static inline void read_maps (void)
 			line = d_path(map->vm_file->f_dentry,
 				      map->vm_file->f_vfsmnt,
 				      buffer, PAGE_SIZE);
+			if (IS_ERR(line))
+				break;
 		}
 		printk(MAPS_LINE_FORMAT, map->vm_start, map->vm_end, str, map->vm_pgoff << PAGE_SHIFT,
 			      kdevname(dev), ino);

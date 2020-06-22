@@ -95,7 +95,7 @@ static void fill_phy_packet(struct hpsb_packet *packet, quadlet_t data)
         packet->data_size = 0;
         packet->expect_response = 0;
         packet->type = hpsb_raw;             /* No CRC added */
-        packet->speed_code = SPEED_100; /* Force speed to be 100Mbps */
+        packet->speed_code = IEEE1394_SPEED_100; /* Force speed to be 100Mbps */
 }
 
 static void fill_async_stream_packet(struct hpsb_packet *packet, int length,
@@ -147,6 +147,8 @@ int hpsb_get_tlabel(struct hpsb_packet *packet, int wait)
 	spin_lock_irqsave(&tp->lock, flags);
 	
 	packet->tlabel = find_next_zero_bit(tp->pool, 64, tp->next);
+	if (packet->tlabel > 63)
+		packet->tlabel = find_first_zero_bit(tp->pool, 64);
 	tp->next = (packet->tlabel + 1) % 64;
 	/* Should _never_ happen */
 	BUG_ON(test_and_set_bit(packet->tlabel, tp->pool));
@@ -573,10 +575,6 @@ int hpsb_send_gasp(struct hpsb_host *host, int channel, unsigned int generation,
 		   quadlet_t *buffer, size_t length, u32 specifier_id,
 		   unsigned int version)
 {
-#ifdef CONFIG_IEEE1394_VERBOSEDEBUG
-	int i;
-#endif
-
 	struct hpsb_packet *packet;
 	int retval = 0;
 	u16 specifier_id_hi = (specifier_id & 0x00ffff00) >> 8;
@@ -603,14 +601,6 @@ int hpsb_send_gasp(struct hpsb_host *host, int channel, unsigned int generation,
 	packet->data[1] = cpu_to_be32((specifier_id_lo << 24) | (version & 0x00ffffff));
 
 	memcpy(&(packet->data[2]), buffer, length - 4);
-
-#ifdef CONFIG_IEEE1394_VERBOSEDEBUG
-	HPSB_DEBUG("GASP: packet->header_size = %d", packet->header_size);
-	HPSB_DEBUG("GASP: packet->data_size = %d", packet->data_size);
-
-	for(i=0; i<(packet->data_size/4); i++)
-		HPSB_DEBUG("GASP: data[%d]: 0x%08x", i*4, be32_to_cpu(packet->data[i]));
-#endif
 
 	packet->generation = generation;
 

@@ -1,5 +1,4 @@
-/* $Id: ds1742rtc.h,v 1.1 2002/02/27 18:57:58 marcelo Exp $
- *
+/*
  * ds1742rtc.h - register definitions for the Real-Time-Clock / CMOS RAM
  *
  *   Based on include/asm-mips/ds1643rtc.h.

@@ -29,14 +29,14 @@ extern void set_dec_cpu6(unsigned int val);
 int via_calibrate_decr(void);
 
 /* Accessor functions for the decrementer register.
- * The 4xx doesn't even have a decrementer.  I tried to use the
- * generic timer interrupt code, which seems OK, with the 4xx PIT
+ * The 40x doesn't even have a decrementer.  I tried to use the
+ * generic timer interrupt code, which seems OK, with the 40x PIT
  * in auto-reload mode.  The problem is PIT stops counting when it
  * hits zero.  If it would wrap, we could use it just like a decrementer.
  */
 static __inline__ unsigned int get_dec(void)
 {
-#if defined(CONFIG_4xx)
+#if defined(CONFIG_40x)
 	return (mfspr(SPRN_PIT));
 #else
 	return (mfspr(SPRN_DEC));
@@ -45,7 +45,7 @@ static __inline__ unsigned int get_dec(void)
 
 static __inline__ void set_dec(unsigned int val)
 {
-#if defined(CONFIG_4xx)
+#if defined(CONFIG_40x)
 	return;		/* Have to let it auto-reload */
 #elif defined(CONFIG_8xx_CPU6)
 	set_dec_cpu6(val);

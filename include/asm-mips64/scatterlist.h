@@ -10,13 +10,6 @@ struct scatterlist {
 	unsigned long length;
 };
 
-struct mmu_sglist {
-	char *addr;
-	char *__dont_touch;
-	unsigned long len;
-	dma_addr_t dvma_addr;
-};
-
 #define ISA_DMA_THRESHOLD (0x00ffffff)
 
 #endif /* __ASM_SCATTERLIST_H */

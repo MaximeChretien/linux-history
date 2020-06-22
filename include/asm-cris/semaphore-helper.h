@@ -1,7 +1,6 @@
-/* $Id: semaphore-helper.h,v 1.4 2002/11/20 18:20:17 hp Exp $
- *
+/*
  * SMP- and interrupt-safe semaphores helper functions. Generic versions, no
- * optimizations whatsoever... 
+ * optimizations whatsoever...
  *
  */
 
@@ -73,5 +72,3 @@ extern inline int waking_non_zero_trylock(struct semaphore *sem)
 }
 
 #endif /* _ASM_SEMAPHORE_HELPER_H */
-
-

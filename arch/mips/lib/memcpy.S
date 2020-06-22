@@ -77,11 +77,13 @@
 	.previous
 
 /*
- * In the mips (not mips64) tree, so we can't use doubles
+ * Only on the 64-bit kernel we can made use of 64-bit registers.
  */
-#undef USE_DOUBLE
+#ifdef CONFIG_MIPS64
+#define USE_DOUBLE
+#endif
 
-#if defined(USE_DOUBLE)
+#ifdef USE_DOUBLE
 
 #define LOAD   ld
 #define LOADL  ldl
@@ -99,6 +101,24 @@
 #define NBYTES 8
 #define LOG_NBYTES 3
 
+/* 
+ * As we are sharing code base with the mips32 tree (which use the o32 ABI
+ * register definitions). We need to redefine the register definitions from
+ * the n64 ABI register naming to the o32 ABI register naming.
+ */
+#undef t0
+#undef t1
+#undef t2
+#undef t3
+#define t0	$8
+#define t1	$9
+#define t2	$10
+#define t3	$11
+#define t4	$12
+#define t5	$13
+#define t6	$14
+#define t7	$15
+	
 #else
 
 #define LOAD   lw
@@ -246,7 +266,7 @@ less_than_4units:
 	beq	rem, len, copy_bytes
 	 nop
 1:
-EXC(	LOAD	 t0, 0(src),		l_exc)
+EXC(	LOAD	t0, 0(src),		l_exc)
 	ADD	src, src, NBYTES
 	SUB	len, len, NBYTES
 EXC(	STORE	t0, 0(dst),		s_exc_p1u)
@@ -320,10 +340,10 @@ EXC(	LDFIRST	t2, FIRST(2)(src),	l_exc_copy)
 EXC(	LDFIRST	t3, FIRST(3)(src),	l_exc_copy)
 EXC(	LDREST	t2, REST(2)(src),	l_exc_copy)
 EXC(	LDREST	t3, REST(3)(src),	l_exc_copy)
-	PREF(	0, 9*32(src) )	   	# 0 is PREF_LOAD  (not streamed)
+	PREF(	0, 9*32(src) )		# 0 is PREF_LOAD  (not streamed)
 	ADD	src, src, 4*NBYTES
 #ifdef CONFIG_CPU_SB1
-	nop			   	# improves slotting
+	nop				# improves slotting
 #endif
 EXC(	STORE	t0, UNIT(0)(dst),	s_exc_p4u)
 EXC(	STORE	t1, UNIT(1)(dst),	s_exc_p3u)
@@ -337,8 +357,9 @@ cleanup_src_unaligned:
 	beqz	len, done
 	 and	rem, len, NBYTES-1  # rem = len % NBYTES
 	beq	rem, len, copy_bytes
+	 nop
 1:
-EXC(	 LDFIRST t0, FIRST(0)(src),	l_exc)
+EXC(	LDFIRST t0, FIRST(0)(src),	l_exc)
 EXC(	LDREST	t0, REST(0)(src),	l_exc_copy)
 	ADD	src, src, NBYTES
 	SUB	len, len, NBYTES
@@ -385,7 +406,7 @@ l_exc_copy:
 	 *
 	 * Assumes src < THREAD_BUADDR($28)
 	 */
-	lw	t0, THREAD_BUADDR($28)
+	LOAD	t0, THREAD_BUADDR($28)
 1:
 EXC(	lb	t1, 0(src),	l_exc)
 	ADD	src, src, 1
@@ -393,16 +414,16 @@ EXC(	lb	t1, 0(src),	l_exc)
 	bne	src, t0, 1b
 	 ADD	dst, dst, 1
 l_exc:
-	lw	t0, THREAD_BUADDR($28)	# t0 is just past last good address
+	LOAD	t0, THREAD_BUADDR($28)	# t0 is just past last good address
 	 nop
-	subu	len, AT, t0		# len number of uncopied bytes
+	SUB	len, AT, t0		# len number of uncopied bytes
 	/*
 	 * Here's where we rely on src and dst being incremented in tandem,
 	 *   See (3) above.
 	 * dst += (fault addr - src) to put dst at first byte to clear
 	 */
-	addu	dst, t0			# compute start address in a1
-	subu	dst, src
+	ADD	dst, t0			# compute start address in a1
+	SUB	dst, src
 	/*
 	 * Clear len bytes starting at dst.  Can't call __bzero because it
 	 * might modify len.  An inefficient loop for these rare times...
@@ -440,8 +461,8 @@ s_exc:
 
 	.align	5
 LEAF(memmove)
-	addu	t0, a0, a2
-	addu	t1, a1, a2
+	ADD	t0, a0, a2
+	ADD	t1, a1, a2
 	sltu	t0, a1, t0			# dst + len <= src -> memcpy
 	sltu	t1, a0, t1			# dst >= src + len -> memcpy
 	and	t0, t1
@@ -455,16 +476,16 @@ LEAF(__rmemcpy)					/* a0=dst a1=src a2=len */
 	 sltu	t0, a1, a0
 	beqz	t0, r_end_bytes_up		# src >= dst
 	 nop
-	addu	a0, a2				# dst = dst + len
-	addu	a1, a2				# src = src + len
+	ADD	a0, a2				# dst = dst + len
+	ADD	a1, a2				# src = src + len
 
 r_end_bytes:
 	lb	t0, -1(a1)
-	subu	a2, a2, 0x1
+	SUB	a2, a2, 0x1
 	sb	t0, -1(a0)
-	subu	a1, a1, 0x1
+	SUB	a1, a1, 0x1
 	bnez	a2, r_end_bytes
-	 subu	a0, a0, 0x1
+	 SUB	a0, a0, 0x1
 
 r_out:
 	jr	ra
@@ -472,11 +493,11 @@ r_out:
 
 r_end_bytes_up:
 	lb	t0, (a1)
-	subu	a2, a2, 0x1
+	SUB	a2, a2, 0x1
 	sb	t0, (a0)
-	addu	a1, a1, 0x1
+	ADD	a1, a1, 0x1
 	bnez	a2, r_end_bytes_up
-	 addu	a0, a0, 0x1
+	 ADD	a0, a0, 0x1
 
 	jr	ra
 	 move	a2, zero

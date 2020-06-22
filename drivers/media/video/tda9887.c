@@ -7,8 +7,9 @@
 #include <linux/errno.h>
 #include <linux/slab.h>
 
-#include "id.h"
 #include "audiochip.h"
+#include "id.h"
+#include "i2c-compat.h"
 
 /* Chips:
    TDA9885 (PAL, NTSC)
@@ -293,8 +294,6 @@ static int tda9887_configure(struct tda9887 *t)
 	unsigned char *buf = NULL;
 	int rc;
 
-	printk("tda9887_configure\n");
-
 	if (t->radio) {
 		dprintk("tda9885/6/7: FM Radio mode\n");
 		buf = buf_fm_stereo;
@@ -359,9 +358,9 @@ static int tda9887_attach(struct i2c_adapter *adap, int addr,
                 return -ENOMEM;
 	memset(t,0,sizeof(*t));
 	t->client = client_template;
-        t->client.data = t;
 	t->pinnacle_id = -1;
 	t->tvnorm=VIDEO_MODE_PAL;
+        i2c_set_clientdata(&t->client, t);
         i2c_attach_client(&t->client);
         
 	MOD_INC_USE_COUNT;
@@ -370,28 +369,19 @@ static int tda9887_attach(struct i2c_adapter *adap, int addr,
 
 static int tda9887_probe(struct i2c_adapter *adap)
 {
-	int rc;
-
 	switch (adap->id) {
 	case I2C_ALGO_BIT | I2C_HW_B_BT848:
 	case I2C_ALGO_BIT | I2C_HW_B_RIVA:
 	case I2C_ALGO_SAA7134:
-		printk("tda9887: probing %s i2c adapter [id=0x%x]\n",
-		       adap->name,adap->id);
-		rc = i2c_probe(adap, &addr_data, tda9887_attach);
+		return i2c_probe(adap, &addr_data, tda9887_attach);
 		break;
-	default:
-		printk("tda9887: ignoring %s i2c adapter [id=0x%x]\n",
-		       adap->name,adap->id);
-		rc = 0;
-		/* nothing */
 	}
-	return rc;
+	return 0;
 }
 
 static int tda9887_detach(struct i2c_client *client)
 {
-	struct tda9887 *t = (struct tda9887*)client->data;
+	struct tda9887 *t = i2c_get_clientdata(client);
 
 	i2c_detach_client(client);
 	kfree(t);
@@ -402,7 +392,7 @@ static int tda9887_detach(struct i2c_client *client)
 static int
 tda9887_command(struct i2c_client *client, unsigned int cmd, void *arg)
 {
-	struct tda9887 *t = (struct tda9887*)client->data;
+	struct tda9887 *t = i2c_get_clientdata(client);
 
         switch (cmd) {
 
@@ -457,9 +447,9 @@ static struct i2c_driver driver = {
 };
 static struct i2c_client client_template =
 {
-        .name   = "tda9887",
-	.flags  = I2C_CLIENT_ALLOW_USE,
-        .driver = &driver,
+	I2C_DEVNAME("tda9887"),
+	.flags     = I2C_CLIENT_ALLOW_USE,
+        .driver    = &driver,
 };
 
 static int tda9887_init_module(void)

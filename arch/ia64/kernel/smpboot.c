@@ -1,7 +1,8 @@
 /*
  * SMP boot-related support
  *
- * Copyright (C) 2001 David Mosberger-Tang <davidm@hpl.hp.com>
+ * Copyright (C) 1998-2003 Hewlett-Packard Co
+ *	David Mosberger-Tang <davidm@hpl.hp.com>
  *
  * 01/05/16 Rohit Seth <rohit.seth@intel.com>	Moved SMP booting functions from smp.c to here.
  * 01/04/27 David Mosberger <davidm@hpl.hp.com>	Added ITC synching code.
@@ -66,8 +67,8 @@ static volatile unsigned long go[SLAVE + 1];
 
 #define DEBUG_ITC_SYNC	0
 
-extern void __init calibrate_delay(void);
-extern void start_ap(void);
+extern void __init calibrate_delay (void);
+extern void start_ap (void);
 extern unsigned long ia64_iobase;
 
 int cpucount;
@@ -235,7 +236,7 @@ ia64_sync_itc (unsigned int master)
 	go[MASTER] = 1;
 
 	if (smp_call_function_single(master, sync_master, NULL, 1, 0) < 0) {
-		printk("sync_itc: failed to get attention of CPU %u!\n", master);
+		printk(KERN_ERR "sync_itc: failed to get attention of CPU %u!\n", master);
 		return;
 	}
 
@@ -275,8 +276,8 @@ ia64_sync_itc (unsigned int master)
 		       t[i].rt, t[i].master, t[i].diff, t[i].lat);
 #endif
 
-	printk("CPU %d: synchronized ITC with CPU %u (last diff %ld cycles, maxerr %lu cycles)\n",
-	       smp_processor_id(), master, delta, rt);
+	printk(KERN_INFO "CPU %d: synchronized ITC with CPU %u (last diff %ld cycles, "
+	       "maxerr %lu cycles)\n", smp_processor_id(), master, delta, rt);
 }
 
 /*
@@ -328,18 +329,13 @@ smp_callin (void)
 	phys_id = hard_smp_processor_id();
 
 	if (test_and_set_bit(cpuid, &cpu_online_map)) {
-		printk("huh, phys CPU#0x%x, CPU#0x%x already present??\n", phys_id, cpuid);
+		printk(KERN_ERR "huh, phys CPU#0x%x, CPU#0x%x already present??\n",
+		       phys_id, cpuid);
 		BUG();
 	}
 
 	smp_setup_percpu_timer();
 
-	/*
-	 * Synchronize the ITC with the BP
-	 */
-	Dprintk("Going to syncup ITC with BP.\n");
-
-	ia64_sync_itc(0);
 	/*
 	 * Get our bogomips.
 	 */
@@ -362,6 +358,27 @@ smp_callin (void)
 	local_irq_enable();
 	calibrate_delay();
 	local_cpu_data->loops_per_jiffy = loops_per_jiffy;
+
+	if (!(sal_platform_features & IA64_SAL_PLATFORM_FEATURE_ITC_DRIFT)) {
+		/*
+		 * Synchronize the ITC with the BP.  Need to do this after irqs are
+		 * enabled because ia64_sync_itc() calls smp_call_function_single(), which
+		 * calls spin_unlock_bh(), which calls spin_unlock_bh(), which calls
+		 * local_bh_enable(), which bugs out if irqs are not enabled...
+		 */
+		Dprintk("Going to syncup ITC with BP.\n");
+		ia64_sync_itc(0);
+
+		/*
+		 * Make sure we didn't sync the itc ahead of the next
+		 * timer interrupt, if so, just reset it.
+		 */
+		if (time_after(ia64_get_itc(),local_cpu_data->itm_next)) {
+			Dprintk("oops, jumped a timer.\n");
+			ia64_cpu_local_tick();
+		}
+	}
+
 	/*
 	 * Allow the master to continue.
 	 */
@@ -394,8 +411,8 @@ static int __init
 fork_by_hand (void)
 {
 	/*
-	 * don't care about the eip and regs settings since
-	 * we'll never reschedule the forked task.
+	 * don't care about the eip and regs settings since we'll never reschedule the
+	 * forked task.
 	 */
 	return do_fork(CLONE_VM|CLONE_PID, 0, 0, 0);
 }
@@ -430,7 +447,7 @@ do_boot_cpu (int sapicid)
 	unhash_process(idle);
 	init_tasks[cpu] = idle;
 
-	Dprintk("Sending wakeup vector %u to AP 0x%x/0x%x.\n", ap_wakeup_vector, cpu, sapicid);
+	Dprintk("Sending wakeup vector %lu to AP 0x%x/0x%x.\n", ap_wakeup_vector, cpu, sapicid);
 
 	platform_send_ipi(cpu, ap_wakeup_vector, IA64_IPI_DM_INT, 0);
 
@@ -447,9 +464,7 @@ do_boot_cpu (int sapicid)
 
 	if (test_bit(cpu, &cpu_callin_map)) {
 		/* number CPUs logically, starting from 1 (BSP is 0) */
-		printk("CPU%d: ", cpu);
-		/*print_cpu_info(&cpu_data[cpu]); */
-		printk("CPU has booted.\n");
+		printk(KERN_INFO "CPU%d: CPU has booted.\n", cpu);
 	} else {
 		printk(KERN_ERR "Processor 0x%x/0x%x is stuck.\n", cpu, sapicid);
 		ia64_cpu_to_sapicid[cpu] = -1;
@@ -476,15 +491,15 @@ smp_boot_cpus (void)
 	smp_setup_percpu_timer();
 
 	/*
-	* We have the boot CPU online for sure.
-	*/
+	 * We have the boot CPU online for sure.
+	 */
 	set_bit(0, &cpu_online_map);
 	set_bit(0, &cpu_callin_map);
 
 	local_cpu_data->loops_per_jiffy = loops_per_jiffy;
 	ia64_cpu_to_sapicid[0] = boot_cpu_id;
 
-	printk("Boot processor id 0x%x/0x%x\n", 0, boot_cpu_id);
+	printk(KERN_INFO "Boot processor id 0x%x/0x%x\n", 0, boot_cpu_id);
 
 	global_irq_holder = 0;
 	current->processor = 0;
@@ -500,7 +515,7 @@ smp_boot_cpus (void)
 		goto smp_done;
 	}
 	if  (max_cpus != -1)
-		printk (KERN_INFO "Limiting CPUs to %d\n", max_cpus);
+		printk(KERN_INFO "Limiting CPUs to %d\n", max_cpus);
 
 	if (smp_boot_data.cpu_count > 1) {
 
@@ -518,12 +533,6 @@ smp_boot_cpus (void)
 				break;
 
 			do_boot_cpu(sapicid);
-
-			/*
-			 * Make sure we unmap all failed CPUs
-			 */
-			if (ia64_cpu_to_sapicid[cpu] == -1)
-				printk("phys CPU#%d not responding - cannot use it.\n", cpu);
 		}
 
 		smp_num_cpus = cpucount + 1;
@@ -541,7 +550,7 @@ smp_boot_cpus (void)
 				if (cpu_online_map & (1UL << cpu))
 					bogosum += cpu_data(cpu)->loops_per_jiffy;
 
-			printk(KERN_INFO"Total of %d processors activated (%lu.%02lu BogoMIPS).\n",
+			printk(KERN_INFO "Total of %d processors activated (%lu.%02lu BogoMIPS).\n",
 			       cpucount + 1, bogosum/(500000/HZ), (bogosum/(5000/HZ))%100);
 		}
 	}
@@ -550,7 +559,7 @@ smp_boot_cpus (void)
 }
 
 /*
- * Assume that CPU's have been discovered by some platform-dependant interface.  For
+ * Assume that CPU's have been discovered by some platform-dependent interface.  For
  * SoftSDV/Lion, that would be ACPI.
  *
  * Setup of the IPI irq handler is done in irq.c:init_IRQ_SMP().
@@ -569,7 +578,7 @@ init_smp_config(void)
 	sal_ret = ia64_sal_set_vectors(SAL_VECTOR_OS_BOOT_RENDEZ,
 				       __pa(ap_startup->fp), __pa(ap_startup->gp), 0, 0, 0, 0);
 	if (sal_ret < 0) {
-		printk("SMP: Can't set SAL AP Boot Rendezvous: %s\n     Forcing UP mode\n",
+		printk(KERN_ERR "SMP: Can't set SAL AP Boot Rendezvous: %s\n     Forcing UP mode\n",
 		       ia64_sal_strerror(sal_ret));
 		max_cpus = 0;
 		smp_num_cpus = 1;

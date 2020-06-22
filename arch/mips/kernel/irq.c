@@ -211,7 +211,7 @@ static inline void get_irqlock(int cpu)
 
 void __global_cli(void)
 {
-	unsigned int flags;
+	unsigned long flags;
 
 	__save_flags(flags);
 	if (flags & ST0_IE) {

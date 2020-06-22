@@ -67,6 +67,8 @@ extern void local_enable_irq(unsigned int irq_nr);
 
 #ifdef CONFIG_PM
 
+static spinlock_t pm_lock = SPIN_LOCK_UNLOCKED;
+
 unsigned long suspend_mode;
 
 void wakeup_from_suspend(void)
@@ -77,7 +79,7 @@ void wakeup_from_suspend(void)
 int au_sleep(void)
 {
 	unsigned long wakeup, flags;
-	save_and_cli(flags);
+	spin_lock_irqsave(&pm_lock,flags);
 
 	flush_cache_all();
 	/* pin 6 is gpio */
@@ -104,7 +106,7 @@ int au_sleep(void)
 	/* after a wakeup, the cpu vectors back to 0x1fc00000 so
 	 * it's up to the boot code to get us back here.
 	 */
-	restore_flags(flags);
+	spin_unlock_irqrestore(&pm_lock, flags);
 	return 0;
 }
 
@@ -158,31 +160,31 @@ static int pm_do_freq(ctl_table * ctl, int write, struct file *file,
 	    old_refresh;
 	unsigned long new_baud_base, new_cpu_freq, new_clk, new_refresh;
 
-	save_and_cli(flags);
+	spin_lock_irqsave(&pm_lock, flags);
 	if (!write) {
 		*len = 0;
 	} else {
 		/* Parse the new frequency */
 		if (*len > TMPBUFLEN - 1) {
-			restore_flags(flags);
+			spin_unlock_irqrestore(&pm_lock, flags);
 			return -EFAULT;
 		}
 		if (copy_from_user(buf, buffer, *len)) {
-			restore_flags(flags);
+			spin_unlock_irqrestore(&pm_lock, flags);
 			return -EFAULT;
 		}
 		buf[*len] = 0;
 		p = buf;
 		val = simple_strtoul(p, &p, 0);
 		if (val > MAX_CPU_FREQ) {
-			restore_flags(flags);
+			spin_unlock_irqrestore(&pm_lock, flags);
 			return -EFAULT;
 		}
 
 		pll = val / 12;
 		if ((pll > 33) || (pll < 7)) {	/* 396 MHz max, 84 MHz min */
 			/* revisit this for higher speed cpus */
-			restore_flags(flags);
+			spin_unlock_irqrestore(&pm_lock, flags);
 			return -EFAULT;
 		}
 
@@ -247,7 +249,7 @@ static int pm_do_freq(ctl_table * ctl, int write, struct file *file,
 	intc0_mask = save_local_and_disable(0);
 	intc1_mask = save_local_and_disable(1);
 	local_enable_irq(AU1000_TOY_MATCH2_INT);
-	restore_flags(flags);
+	spin_unlock_irqrestore(&pm_lock, flags);
 	calibrate_delay();
 	restore_local_and_enable(0, intc0_mask);
 	restore_local_and_enable(1, intc1_mask);
@@ -321,6 +323,11 @@ static void calibrate_delay(void)
 		if (jiffies != ticks)	/* longer than 1 tick */
 			loops_per_jiffy &= ~loopbit;
 	}
+}
+
+void au1k_wait(void)
+{
+	__asm__("nop\n\t" "nop\n\t");
 }
 
 #endif				/* CONFIG_PM */

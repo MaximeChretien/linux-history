@@ -363,7 +363,7 @@ prom_initialize_naca(unsigned long mem)
 			 * d-cache and i-cache sizes... -Peter
 			 */
 			if ( num_cpus == 1 ) {
-				u32 size, lsize;
+				u32 size, lsize, sets;
 
 				call_prom(RELOC("getprop"), 4, 1, node,
 					  RELOC("d-cache-size"),
@@ -631,6 +631,7 @@ prom_instantiate_rtas(void)
 	unsigned long offset = reloc_offset();
 	struct prom_t *_prom = PTRRELOC(&prom);
 	struct rtas_t *_rtas = PTRRELOC(&rtas);
+	struct naca_struct *_naca = RELOC(naca);
 	struct systemcfg *_systemcfg = RELOC(systemcfg);
 	ihandle prom_rtas;
         u32 getprop_rval;
@@ -1059,6 +1060,7 @@ prom_hold_cpus(unsigned long mem)
         unsigned long *spinloop     = __v2a(&__secondary_hold_spinloop);
         unsigned long *acknowledge  = __v2a(&__secondary_hold_acknowledge);
         unsigned long secondary_hold = (unsigned long)__v2a(*PTRRELOC((unsigned long *)__secondary_hold));
+        struct naca_struct *_naca = RELOC(naca);
         struct systemcfg *_systemcfg = RELOC(systemcfg);
 	struct paca_struct *_xPaca = PTRRELOC(&paca[0]);
 	struct prom_t *_prom = PTRRELOC(&prom);
@@ -1237,7 +1239,7 @@ prom_hold_cpus(unsigned long mem)
 #ifdef CONFIG_PPCDBG
 extern char *trace_names[];	/* defined in udbg.c -- need a better interface */
 
-static void parse_ppcdbg_optionlist(const char *cmd,
+void parse_ppcdbg_optionlist(const char *cmd,
 				    const char *cmdend)
 {
 	unsigned long offset = reloc_offset();
@@ -1559,7 +1561,7 @@ prom_init(unsigned long r3, unsigned long r4, unsigned long pp,
 	}
 
 	/* We assume the phys. address size is 3 cells */
-	RELOC(prom_mmu) = (ihandle)(unsigned long)getprop_rval;
+	prom_mmu = (ihandle)(unsigned long)getprop_rval;
 
 	if ((long)call_prom(RELOC("call-method"), 4, 4,
 				RELOC("translate"),

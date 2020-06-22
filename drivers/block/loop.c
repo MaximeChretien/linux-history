@@ -682,7 +682,7 @@ static int loop_set_fd(struct loop_device *lo, struct file *lo_file, kdev_t dev,
 	lo->ioctl = NULL;
 	figure_loop_size(lo);
 	lo->old_gfp_mask = inode->i_mapping->gfp_mask;
-	inode->i_mapping->gfp_mask = GFP_NOIO;
+	inode->i_mapping->gfp_mask &= ~(__GFP_IO|__GFP_FS);
 
 	bs = 0;
 	if (blksize_size[MAJOR(lo_device)])
@@ -893,6 +893,7 @@ static int lo_ioctl(struct inode * inode, struct file * file,
 		break;
 	case BLKBSZGET:
 	case BLKBSZSET:
+	case BLKSSZGET:
 		err = blk_ioctl(inode->i_rdev, cmd, arg);
 		break;
 	default:

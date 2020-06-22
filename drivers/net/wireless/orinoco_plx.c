@@ -1,4 +1,4 @@
-/* orinoco_plx.c 0.13b
+/* orinoco_plx.c 0.13d
  * 
  * Driver for Prism II devices which would usually be driven by orinoco_cs,
  * but are connected to the PCI bus by a PLX9052. 
@@ -243,7 +243,7 @@ static int orinoco_plx_init_one(struct pci_dev *pdev,
 			HERMES_IO, HERMES_16BIT_REGSPACING);
 	pci_set_drvdata(pdev, dev);
 
-	err = request_irq(pdev->irq, orinoco_interrupt, SA_SHIRQ, dev->name, priv);
+	err = request_irq(pdev->irq, orinoco_interrupt, SA_SHIRQ, dev->name, dev);
 	if (err) {
 		printk(KERN_ERR "orinoco_plx: Error allocating IRQ %d.\n", pdev->irq);
 		err = -EBUSY;
@@ -266,7 +266,7 @@ static int orinoco_plx_init_one(struct pci_dev *pdev,
 			unregister_netdev(dev);
 		
 		if (dev->irq)
-			free_irq(dev->irq, priv);
+			free_irq(dev->irq, dev);
 		
 		kfree(priv);
 	}
@@ -285,7 +285,6 @@ static int orinoco_plx_init_one(struct pci_dev *pdev,
 static void __devexit orinoco_plx_remove_one(struct pci_dev *pdev)
 {
 	struct net_device *dev = pci_get_drvdata(pdev);
-	struct orinoco_private *priv = dev->priv;
 
 	if (! dev)
 		BUG();
@@ -293,7 +292,7 @@ static void __devexit orinoco_plx_remove_one(struct pci_dev *pdev)
 	unregister_netdev(dev);
 		
 	if (dev->irq)
-		free_irq(dev->irq, priv);
+		free_irq(dev->irq, dev);
 		
 	pci_set_drvdata(pdev, NULL);
 
@@ -334,7 +333,7 @@ static struct pci_driver orinoco_plx_driver = {
 	.resume		= 0,
 };
 
-static char version[] __initdata = "orinoco_plx.c 0.13b (Daniel Barlow <dan@telent.net>, David Gibson <hermes@gibson.dropbear.id.au>)";
+static char version[] __initdata = "orinoco_plx.c 0.13d (Daniel Barlow <dan@telent.net>, David Gibson <hermes@gibson.dropbear.id.au>)";
 MODULE_AUTHOR("Daniel Barlow <dan@telent.net>");
 MODULE_DESCRIPTION("Driver for wireless LAN cards using the PLX9052 PCI bridge");
 #ifdef MODULE_LICENSE

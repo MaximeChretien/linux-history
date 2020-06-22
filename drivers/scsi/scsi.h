@@ -608,6 +608,7 @@ struct scsi_device {
 	unsigned remap:1;	/* support remapping  */
 	unsigned starved:1;	/* unable to process commands because
 				   host busy */
+	unsigned no_start_on_add:1;	/* do not issue start on add */
 
 	// Flag to allow revalidate to succeed in sd_open
 	int allow_revalidate;

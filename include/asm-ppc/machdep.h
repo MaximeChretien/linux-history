@@ -9,7 +9,7 @@
 #endif
 
 struct pt_regs;
-struct pci_bus;	
+struct pci_bus;
 struct pci_dev;
 struct seq_file;
 
@@ -27,7 +27,7 @@ struct machdep_calls {
 	unsigned int	(*irq_cannonicalize)(unsigned int irq);
 	void		(*init_IRQ)(void);
 	int		(*get_irq)(struct pt_regs *);
-	
+
 	/* A general init function, called by ppc_init in init/main.c.
 	   May be NULL. */
 	void		(*init)(void);

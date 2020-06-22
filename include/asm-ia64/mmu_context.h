@@ -2,8 +2,8 @@
 #define _ASM_IA64_MMU_CONTEXT_H
 
 /*
- * Copyright (C) 1998-2001 Hewlett-Packard Co
- * Copyright (C) 1998-2001 David Mosberger-Tang <davidm@hpl.hp.com>
+ * Copyright (C) 1998-2002 Hewlett-Packard Co
+ *	David Mosberger-Tang <davidm@hpl.hp.com>
  */
 
 /*
@@ -13,8 +13,6 @@
  * consider the region number when performing a TLB lookup, we need to assign a unique
  * region id to each region in a process.  We use the least significant three bits in a
  * region id for this purpose.
- *
- * Copyright (C) 1998-2001 David Mosberger-Tang <davidm@hpl.hp.com>
  */
 
 #define IA64_REGION_ID_KERNEL	0 /* the kernel's region id (tlb.c depends on this being 0) */
@@ -42,6 +40,23 @@ extern void wrap_mmu_context (struct mm_struct *mm);
 static inline void
 enter_lazy_tlb (struct mm_struct *mm, struct task_struct *tsk, unsigned cpu)
 {
+}
+
+/*
+ * When the context counter wraps around all TLBs need to be flushed because an old
+ * context number might have been reused. This is signalled by the ia64_need_tlb_flush
+ * per-CPU variable, which is checked in the routine below. Called by activate_mm().
+ * <efocht@ess.nec.de>
+ */
+static inline void
+delayed_tlb_flush (void)
+{
+	extern void local_flush_tlb_all (void);
+
+	if (unlikely(local_cpu_data->need_tlb_flush)) {
+		local_flush_tlb_all();
+		local_cpu_data->need_tlb_flush = 0;
+	}
 }
 
 static inline mm_context_t
@@ -127,6 +142,8 @@ activate_context (struct mm_struct *mm)
 static inline void
 activate_mm (struct mm_struct *prev, struct mm_struct *next)
 {
+	delayed_tlb_flush();
+
 	/*
 	 * We may get interrupts here, but that's OK because interrupt handlers cannot
 	 * touch user-space.

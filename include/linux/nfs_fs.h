@@ -274,6 +274,11 @@ extern int  nfs_scan_lru_read_timeout(struct nfs_server *, struct list_head *);
 #define NFS_TestClearPageSync(page)	test_and_clear_bit(PG_fs_1, &(page)->flags)
 
 /*
+ * linux/fs/nfs/direct.c
+ */
+extern int  nfs_direct_IO(int, struct file *, struct kiobuf *, unsigned long, int);
+
+/*
  * linux/fs/mount_clnt.c
  * (Used only by nfsroot module)
  */
@@ -300,6 +305,23 @@ nfs_refresh_inode(struct inode *inode, struct nfs_fattr *fattr)
 	if ((fattr->valid & NFS_ATTR_FATTR) == 0)
 		return 0;
 	return __nfs_refresh_inode(inode,fattr);
+}
+
+/*
+ * This function will be used to simulate weak cache consistency
+ * under NFSv2 when the NFSv3 attribute patch is included.
+ * For the moment, we just call nfs_refresh_inode().
+ */
+static __inline__ int
+nfs_write_attributes(struct inode *inode, struct nfs_fattr *fattr)
+{
+	if ((fattr->valid & NFS_ATTR_FATTR) && !(fattr->valid & NFS_ATTR_WCC)) {
+		fattr->pre_size  = NFS_CACHE_ISIZE(inode);
+		fattr->pre_mtime = NFS_CACHE_MTIME(inode);
+		fattr->pre_ctime = NFS_CACHE_CTIME(inode);
+		fattr->valid |= NFS_ATTR_WCC;
+	}
+	return nfs_refresh_inode(inode, fattr);
 }
 
 static inline loff_t

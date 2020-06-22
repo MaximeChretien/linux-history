@@ -32,6 +32,7 @@
 #include <linux/smb_mount.h>
 #include <linux/ncp_fs.h>
 #include <linux/quota.h>
+#include <linux/quotacompat.h>
 #include <linux/module.h>
 #include <linux/sunrpc/svc.h>
 #include <linux/nfsd/nfsd.h>
@@ -506,7 +507,7 @@ out:
 
 static int do_sys32_msgsnd (int first, int second, int third, void *uptr)
 {
-	struct msgbuf *p = kmalloc (second + sizeof (struct msgbuf) + 4, GFP_USER);
+	struct msgbuf *p = kmalloc (second + sizeof (struct msgbuf), GFP_USER);
 	struct msgbuf32 *up = (struct msgbuf32 *)uptr;
 	mm_segment_t old_fs;
 	int err;
@@ -548,12 +549,12 @@ static int do_sys32_msgrcv (int first, int second, int msgtyp, int third,
 		msgtyp = ipck.msgtyp;
 	}
 	err = -ENOMEM;
-	p = kmalloc (second + sizeof (struct msgbuf) + 4, GFP_USER);
+	p = kmalloc (second + sizeof (struct msgbuf), GFP_USER);
 	if (!p)
 		goto out;
 	old_fs = get_fs ();
 	set_fs (KERNEL_DS);
-	err = sys_msgrcv (first, p, second + 4, msgtyp, third);
+	err = sys_msgrcv (first, p, second, msgtyp, third);
 	set_fs (old_fs);
 	if (err < 0)
 		goto free_then_out;
@@ -762,6 +763,38 @@ out:
 	return err;
 }
 
+static __inline__ void *alloc_user_space(long len)
+{
+	struct pt_regs *regs = current->thread.kregs;
+	unsigned long usp = regs->u_regs[UREG_I6];
+
+	if (!(current->thread.flags & SPARC_FLAG_32BIT))
+		usp += STACK_BIAS;
+
+	return (void *) (usp - len);
+}
+
+struct timespec32 {
+	s32    tv_sec;
+	s32    tv_nsec;
+};
+                
+static int sys32_semtimedop(int semid, struct sembuf *tsems, int nsems,
+			    const struct timespec32 *timeout32)
+{
+	struct timespec32 t32;
+	struct timespec *t64 = alloc_user_space(sizeof(*t64));
+
+	if (copy_from_user(&t32, timeout32, sizeof(t32)))
+		return -EFAULT;
+
+	if (put_user(t32.tv_sec, &t64->tv_sec) ||
+	    put_user(t32.tv_nsec, &t64->tv_nsec))
+		return -EFAULT;
+
+	return sys_semtimedop(semid, tsems, nsems, t64);
+}
+
 asmlinkage int sys32_ipc (u32 call, int first, int second, int third, u32 ptr, u32 fifth)
 {
 	int version, err;
@@ -773,8 +806,10 @@ asmlinkage int sys32_ipc (u32 call, int first, int second, int third, u32 ptr, u
 		switch (call) {
 		case SEMOP:
 			/* struct sembuf is the same on 32 and 64bit :)) */
-			err = sys_semop (first, (struct sembuf *)AA(ptr), second);
+			err = sys_semtimedop (first, (struct sembuf *)AA(ptr), second, NULL);
 			goto out;
+		case SEMTIMEDOP:
+			err = sys32_semtimedop (first, (struct sembuf *)AA(ptr), second, (const struct timespec32 *) AA(fifth));
 		case SEMGET:
 			err = sys_semget (first, second, third);
 			goto out;
@@ -889,7 +924,7 @@ asmlinkage long sys32_fcntl64(unsigned int fd, unsigned int cmd, unsigned long a
 	return sys32_fcntl(fd, cmd, arg);
 }
 
-struct dqblk32 {
+struct user_dqblk32 {
     __u32 dqb_bhardlimit;
     __u32 dqb_bsoftlimit;
     __u32 dqb_curblocks;
@@ -902,44 +937,42 @@ struct dqblk32 {
                                 
 extern asmlinkage int sys_quotactl(int cmd, const char *special, int id, caddr_t addr);
 
-asmlinkage int sys32_quotactl(int cmd, const char *special, int id, unsigned long addr)
+asmlinkage int sys32_quotactl(int cmd, const char *special, int id, caddr_t addr)
 {
 	int cmds = cmd >> SUBCMDSHIFT;
 	int err;
-	struct dqblk d;
+	struct v1c_mem_dqblk d;
 	mm_segment_t old_fs;
 	char *spec;
 	
 	switch (cmds) {
-	case Q_GETQUOTA:
+	case Q_V1_GETQUOTA:
 		break;
-	case Q_SETQUOTA:
-	case Q_SETUSE:
-	case Q_SETQLIM:
-		if (copy_from_user (&d, (struct dqblk32 *)addr,
-				    sizeof (struct dqblk32)))
+	case Q_V1_SETQUOTA:
+	case Q_V1_SETUSE:
+	case Q_V1_SETQLIM:
+		if (copy_from_user(&d, addr, sizeof(struct user_dqblk32)))
 			return -EFAULT;
-		d.dqb_itime = ((struct dqblk32 *)&d)->dqb_itime;
-		d.dqb_btime = ((struct dqblk32 *)&d)->dqb_btime;
+		d.dqb_itime = ((struct user_dqblk32 *)&d)->dqb_itime;
+		d.dqb_btime = ((struct user_dqblk32 *)&d)->dqb_btime;
 		break;
 	default:
-		return sys_quotactl(cmd, special,
-				    id, (caddr_t)addr);
+		return sys_quotactl(cmd, special, id, addr);
 	}
-	spec = getname (special);
+	spec = getname(special);
 	err = PTR_ERR(spec);
-	if (IS_ERR(spec)) return err;
-	old_fs = get_fs ();
+	if (IS_ERR(spec))
+		return err;
+	old_fs = get_fs();
 	set_fs (KERNEL_DS);
 	err = sys_quotactl(cmd, (const char *)spec, id, (caddr_t)&d);
 	set_fs (old_fs);
 	putname (spec);
-	if (cmds == Q_GETQUOTA) {
+	if (cmds == Q_V1_GETQUOTA) {
 		__kernel_time_t b = d.dqb_btime, i = d.dqb_itime;
-		((struct dqblk32 *)&d)->dqb_itime = i;
-		((struct dqblk32 *)&d)->dqb_btime = b;
-		if (copy_to_user ((struct dqblk32 *)addr, &d,
-				  sizeof (struct dqblk32)))
+		((struct user_dqblk32 *)&d)->dqb_itime = i;
+		((struct user_dqblk32 *)&d)->dqb_btime = b;
+		if (copy_to_user(addr, &d, sizeof(struct user_dqblk32)))
 			return -EFAULT;
 	}
 	return err;
@@ -1891,7 +1924,11 @@ struct sysinfo32 {
         u32 totalswap;
         u32 freeswap;
         unsigned short procs;
-        char _f[22];
+	unsigned short pad;
+	u32 totalhigh;
+	u32 freehigh;
+	u32 mem_unit;
+	char _f[20-2*sizeof(int)-sizeof(int)];
 };
 
 extern asmlinkage int sys_sysinfo(struct sysinfo *info);
@@ -1900,11 +1937,30 @@ asmlinkage int sys32_sysinfo(struct sysinfo32 *info)
 {
 	struct sysinfo s;
 	int ret, err;
+	int bitcount = 0;
 	mm_segment_t old_fs = get_fs ();
 	
-	set_fs (KERNEL_DS);
+	set_fs(KERNEL_DS);
 	ret = sys_sysinfo(&s);
-	set_fs (old_fs);
+	set_fs(old_fs);
+	/* Check to see if any memory value is too large for 32-bit and
+         * scale down if needed.
+         */
+	if ((s.totalram >> 32) || (s.totalswap >> 32)) {
+		while (s.mem_unit < PAGE_SIZE) {
+			s.mem_unit <<= 1;
+			bitcount++;
+		}
+		s.totalram >>= bitcount;
+		s.freeram >>= bitcount;
+		s.sharedram >>= bitcount;
+		s.bufferram >>= bitcount;
+		s.totalswap >>= bitcount;
+		s.freeswap >>= bitcount;
+		s.totalhigh >>= bitcount;
+		s.freehigh >>= bitcount;
+	}
+
 	err = put_user (s.uptime, &info->uptime);
 	err |= __put_user (s.loads[0], &info->loads[0]);
 	err |= __put_user (s.loads[1], &info->loads[1]);
@@ -1916,16 +1972,14 @@ asmlinkage int sys32_sysinfo(struct sysinfo32 *info)
 	err |= __put_user (s.totalswap, &info->totalswap);
 	err |= __put_user (s.freeswap, &info->freeswap);
 	err |= __put_user (s.procs, &info->procs);
+	err |= __put_user (s.totalhigh, &info->totalhigh);
+	err |= __put_user (s.freehigh, &info->freehigh);
+	err |= __put_user (s.mem_unit, &info->mem_unit);
 	if (err)
 		return -EFAULT;
 	return ret;
 }
 
-struct timespec32 {
-	s32    tv_sec;
-	s32    tv_nsec;
-};
-                
 extern asmlinkage int sys_sched_rr_get_interval(pid_t pid, struct timespec *interval);
 
 asmlinkage int sys32_sched_rr_get_interval(__kernel_pid_t32 pid, struct timespec32 *interval)
@@ -2102,13 +2156,6 @@ sys32_rt_sigtimedwait(sigset_t32 *uthese, siginfo_t32 *uinfo,
 	spin_lock_irq(&current->sigmask_lock);
 	sig = dequeue_signal(&these, &info);
 	if (!sig) {
-		/* None ready -- temporarily unblock those we're interested
-		   in so that we'll be awakened when they arrive.  */
-		sigset_t oldblocked = current->blocked;
-		sigandsets(&current->blocked, &current->blocked, &these);
-		recalc_sigpending(current);
-		spin_unlock_irq(&current->sigmask_lock);
-
 		timeout = MAX_SCHEDULE_TIMEOUT;
 		if (uts)
 			timeout = (timespec_to_jiffies(&ts)
@@ -2117,10 +2164,23 @@ sys32_rt_sigtimedwait(sigset_t32 *uthese, siginfo_t32 *uinfo,
 		current->state = TASK_INTERRUPTIBLE;
 		timeout = schedule_timeout(timeout);
 
-		spin_lock_irq(&current->sigmask_lock);
-		sig = dequeue_signal(&these, &info);
-		current->blocked = oldblocked;
-		recalc_sigpending(current);
+		if (timeout) {
+			/* None ready -- temporarily unblock those we're
+			 * interested while we are sleeping in so that we'll
+			 * be awakened when they arrive.  */
+			sigset_t oldblocked = current->blocked;
+			sigandsets(&current->blocked, &current->blocked, &these);
+			recalc_sigpending(current);
+			spin_unlock_irq(&current->sigmask_lock);
+
+			current->state = TASK_INTERRUPTIBLE;
+			timeout = schedule_timeout(timeout);
+
+			spin_lock_irq(&current->sigmask_lock);
+			sig = dequeue_signal(&these, &info);
+			current->blocked = oldblocked;
+			recalc_sigpending(current);
+		}
 	}
 	spin_unlock_irq(&current->sigmask_lock);
 
@@ -2911,33 +2971,6 @@ static int do_set_attach_filter(int fd, int level, int optname,
 	return ret;
 }
 
-static int do_set_icmpv6_filter(int fd, int level, int optname,
-				char *optval, int optlen)
-{
-	struct icmp6_filter kfilter;
-	mm_segment_t old_fs;
-	int ret, i;
-
-	if (copy_from_user(&kfilter, optval, sizeof(kfilter)))
-		return -EFAULT;
-
-
-	for (i = 0; i < 8; i += 2) {
-		u32 tmp = kfilter.data[i];
-
-		kfilter.data[i] = kfilter.data[i + 1];
-		kfilter.data[i + 1] = tmp;
-	}
-
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-	ret = sys_setsockopt(fd, level, optname,
-			     (char *) &kfilter, sizeof(kfilter));
-	set_fs(old_fs);
-
-	return ret;
-}
-
 static int do_set_sock_timeout(int fd, int level, int optname, char *optval, int optlen)
 {
 	struct timeval32 *up = (struct timeval32 *) optval;
@@ -2969,9 +3002,6 @@ asmlinkage int sys32_setsockopt(int fd, int level, int optname,
 					    optval, optlen);
 	if (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO)
 		return do_set_sock_timeout(fd, level, optname, optval, optlen);
-	if (level == SOL_ICMPV6 && optname == ICMPV6_FILTER)
-		return do_set_icmpv6_filter(fd, level, optname,
-					    optval, optlen);
 
 	return sys_setsockopt(fd, level, optname, optval, optlen);
 }

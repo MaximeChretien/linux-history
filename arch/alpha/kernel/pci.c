@@ -19,6 +19,7 @@
 #include <linux/ioport.h>
 #include <linux/kernel.h>
 #include <linux/bootmem.h>
+#include <linux/slab.h>
 #include <asm/machvec.h>
 
 #include "proto.h"
@@ -42,7 +43,7 @@ const char *const pci_mem_names[] = {
 const char pci_hae0_name[] = "HAE0";
 
 /* Indicate whether we respect the PCI setup left by console. */
-int __initdata pci_probe_only;
+int pci_probe_only;
 
 /*
  * The PCI controller list.
@@ -196,6 +197,52 @@ pcibios_setup(char *str)
 	return str;
 }
 
+#ifdef ALPHA_RESTORE_SRM_SETUP
+static struct pdev_srm_saved_conf *srm_saved_configs;
+
+void __init
+pdev_save_srm_config(struct pci_dev *dev)
+{
+	struct pdev_srm_saved_conf *tmp;
+	static int printed = 0;
+
+	if (!alpha_using_srm || pci_probe_only)
+		return;
+
+	if (!printed) {
+		printk(KERN_INFO "pci: enabling save/restore of SRM state\n");
+		printed = 1;
+	}
+
+	tmp = kmalloc(sizeof(*tmp), GFP_KERNEL);
+	if (!tmp) {
+		printk(KERN_ERR "%s: kmalloc() failed!\n", __FUNCTION__);
+		return;
+	}
+	tmp->next = srm_saved_configs;
+	tmp->dev = dev;
+
+	pci_save_state(dev, tmp->regs);
+
+	srm_saved_configs = tmp;
+}
+
+void
+pci_restore_srm_config(void)
+{
+	struct pdev_srm_saved_conf *tmp;
+
+	/* No need to restore if probed only. */
+	if (pci_probe_only)
+		return;
+
+	/* Restore SRM config. */
+	for (tmp = srm_saved_configs; tmp; tmp = tmp->next) {
+		pci_restore_state(tmp->dev, tmp->regs);
+	}
+}
+#endif
+
 void __init
 pcibios_fixup_resource(struct resource *res, struct resource *root)
 {
@@ -254,6 +301,8 @@ pcibios_fixup_bus(struct pci_bus *bus)
 
 	for (ln = bus->devices.next; ln != &bus->devices; ln = ln->next) {
 		struct pci_dev *dev = pci_dev_b(ln);
+
+		pdev_save_srm_config(dev);
 		if ((dev->class >> 8) != PCI_CLASS_BRIDGE_PCI)
 			pcibios_fixup_device_resources(dev, bus);
 	}
@@ -298,8 +347,6 @@ void __init
 pcibios_update_irq(struct pci_dev *dev, int irq)
 {
 	pci_write_config_byte(dev, PCI_INTERRUPT_LINE, irq);
-
-	/* ??? FIXME -- record old value for shutdown.  */
 }
 
 /* Most Alphas have straight-forward swizzling needs.  */

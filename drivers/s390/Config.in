@@ -80,6 +80,7 @@ if [ "$CONFIG_NET" = "y" ]; then
     tristate 'Universal TUN/TAP device driver support' CONFIG_TUN
     bool 'Ethernet (10 or 100Mbit)' CONFIG_NET_ETHERNET
     bool 'Token Ring driver support' CONFIG_TR
+    dep_tristate 'Cisco 7000 support' CONFIG_C7000 m
     bool 'FDDI driver support' CONFIG_FDDI
     comment 'S/390 network device drivers'
     bool 'Channel Device Configuration' CONFIG_CHANDEV
