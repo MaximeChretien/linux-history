@@ -64,6 +64,7 @@ obj-$(CONFIG_440GP)		+= ibm440gp_common.o
 obj-$(CONFIG_PPC4xx_DMA)	+= ppc4xx_dma.o
 obj-$(CONFIG_PPC4xx_EDMA)	+= ppc4xx_sgdma.o
 obj-$(CONFIG_8xx)		+= m8xx_setup.o ppc8xx_pic.o
+obj-$(CONFIG_8xx_WDT)		+= m8xx_wdt.o
 ifeq ($(CONFIG_8xx),y)
 obj-$(CONFIG_PCI)		+= qspan_pci.o
 ifndef CONFIG_MATH_EMULATION
@@ -79,6 +80,10 @@ obj-$(CONFIG_LOPEC)		+= mpc10x_common.o indirect_pci.o pci_auto.o \
 obj-$(CONFIG_PAL4)		+= indirect_pci.o pci_auto.o todc_time.o
 obj-$(CONFIG_PPLUS)		+= pplus_common.o open_pic.o i8259.o \
 				   indirect_pci.o todc_time.o pci_auto.o
+obj-$(CONFIG_PRPMC750)		+= open_pic.o indirect_pci.o pci_auto.o \
+					pplus_common.o
+obj-$(CONFIG_SANDPOINT)		+= i8259.o open_pic.o mpc10x_common.o \
+					pci_auto.o indirect_pci.o todc_time.o
 obj-$(CONFIG_SPRUCE)		+= indirect_pci.o pci_auto.o todc_time.o
 obj-$(CONFIG_8260)		+= m8260_setup.o ppc8260_pic.o
 obj-$(CONFIG_BOOTX_TEXT)	+= btext.o

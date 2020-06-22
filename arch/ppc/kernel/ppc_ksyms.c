@@ -357,6 +357,12 @@ EXPORT_SYMBOL(cpm_install_handler);
 EXPORT_SYMBOL(cpm_free_handler);
 EXPORT_SYMBOL(m8xx_cpm_hostalloc);
 EXPORT_SYMBOL(m8xx_cpm_dpalloc);
+#ifdef CONFIG_8xx_WDT
+extern int m8xx_wdt_get_timeout(void);
+extern void m8xx_wdt_reset(void);
+EXPORT_SYMBOL(m8xx_wdt_get_timeout);
+EXPORT_SYMBOL(m8xx_wdt_reset);
+#endif
 #endif /* CONFIG_8xx */
 
 /* Those should really be inline */

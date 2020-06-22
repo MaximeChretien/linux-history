@@ -160,14 +160,7 @@ ejtag_return:
 		.set	noreorder
 
 		/*
-		 * Stack for kernel and init, current variable
-		 */
-		la	$28, init_task_union
-		addiu	t0, $28, KERNEL_STACK_SIZE-32
-		subu	sp, t0, 4*SZREG
-
-		sw	t0, kernelsp
-		/* The firmware/bootloader passes argc/argp/envp
+		 * The firmware/bootloader passes argc/argp/envp
 		 * to us as arguments.  But clear bss first because
 		 * the romvec and other important info is stored there
 		 * by prom_init().
@@ -179,6 +172,14 @@ ejtag_return:
 		addiu	t0, 4
 		bne	t0, t1, 1b
 		 sw	zero, (t0)
+
+		/*
+		 * Stack for kernel and init, current variable
+		 */
+		la	$28, init_task_union
+		addiu	t0, $28, KERNEL_STACK_SIZE-32
+		subu	sp, t0, 4*SZREG
+		sw	t0, kernelsp
 
 		jal	init_arch
 		 nop
@@ -197,7 +198,7 @@ ejtag_return:
 		mtc0	zero, CP0_WIRED
 		CLI
 		mfc0	t0, CP0_STATUS
-		li	t1, ~(ST0_CU1|ST0_CU2|ST0_CU3|ST0_KX|ST0_SX)
+		li	t1, ~(ST0_CU1|ST0_CU2|ST0_CU3|ST0_KX|ST0_SX|ST0_UX)
 		and	t0, t1
 		or	t0, (ST0_CU0);
 		jal	start_secondary

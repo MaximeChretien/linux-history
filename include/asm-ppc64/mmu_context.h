@@ -6,7 +6,9 @@
 #include <linux/mm.h>	
 #include <asm/mmu.h>	
 #include <asm/ppcdebug.h>	
-
+#ifdef CONFIG_ALTIVEC
+#include <asm/cputable.h>
+#endif
 /*
  * Copyright (C) 2001 PPC 64 Team, IBM Corp
  *
@@ -130,6 +132,14 @@ static inline void
 switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	  struct task_struct *tsk, int cpu)
 {
+#ifdef CONFIG_ALTIVEC
+	 __asm__ __volatile__(
+		 BEGIN_FTR_SECTION
+		 "\tdssall\n"
+		  "\tsync\n"
+		 END_FTR_SECTION_IFSET(CPU_FTR_ALTIVEC)
+		 ::);
+#endif
 	flush_stab();
 }
 

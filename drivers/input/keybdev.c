@@ -154,16 +154,18 @@ static int emulate_raw(unsigned int keycode, int down)
 
 static struct input_handler keybdev_handler;
 
+static unsigned int ledstate = 0xff;
+
 void keybdev_ledfunc(unsigned int led)
 {
 	struct input_handle *handle;	
 
-	for (handle = keybdev_handler.handle; handle; handle = handle->hnext) {
+	ledstate = led;
 
+	for (handle = keybdev_handler.handle; handle; handle = handle->hnext) {
 		input_event(handle->dev, EV_LED, LED_SCROLLL, !!(led & 0x01));
 		input_event(handle->dev, EV_LED, LED_NUML,    !!(led & 0x02));
 		input_event(handle->dev, EV_LED, LED_CAPSL,   !!(led & 0x04));
-
 	}
 }
 
@@ -202,7 +204,12 @@ static struct input_handle *keybdev_connect(struct input_handler *handler, struc
 	input_open_device(handle);
 
 //	printk(KERN_INFO "keybdev.c: Adding keyboard: input%d\n", dev->number);
-	kbd_refresh_leds();
+
+	if (ledstate != 0xff) {
+		input_event(dev, EV_LED, LED_SCROLLL, !!(ledstate & 0x01));
+		input_event(dev, EV_LED, LED_NUML,    !!(ledstate & 0x02));
+		input_event(dev, EV_LED, LED_CAPSL,   !!(ledstate & 0x04));
+	}
 
 	return handle;
 }

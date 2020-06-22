@@ -96,12 +96,12 @@ ifdef O_TARGET
 $(O_TARGET): $(obj-y)
 	rm -f $@
     ifneq "$(strip $(obj-y))" ""
-	$(LD) $(EXTRA_LDFLAGS) -r -o $@ $(filter $(obj-y), $^)
+	$(LD) $(LDFLAGS) $(EXTRA_LDFLAGS) -r -o $@ $(filter $(obj-y), $^)
     else
 	$(AR) rcs $@
     endif
 	@ ( \
-	    echo 'ifeq ($(strip $(subst $(comma),:,$(EXTRA_LDFLAGS) $(obj-y))),$$(strip $$(subst $$(comma),:,$$(EXTRA_LDFLAGS) $$(obj-y))))' ; \
+	    echo 'ifeq ($(strip $(subst $(comma),:,$(LDFLAGS) $(EXTRA_LDFLAGS) $(obj-y))),$$(strip $$(subst $$(comma),:,$$(LDFLAGS) $$(EXTRA_LDFLAGS) $$(obj-y))))' ; \
 	    echo 'FILES_FLAGS_UP_TO_DATE += $@' ; \
 	    echo 'endif' \
 	) > $(dir $@)/.$(notdir $@).flags

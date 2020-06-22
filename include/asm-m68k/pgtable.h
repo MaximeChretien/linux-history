@@ -123,7 +123,7 @@ extern pte_t * __bad_pagetable(void);
  * It makes no sense to consider whether we cross a memory boundary if
  * we support just one physical chunk of memory.
  */
-extern inline int mm_end_of_chunk (unsigned long addr, int len)
+static inline int mm_end_of_chunk(unsigned long addr, int len)
 {
 	return 0;
 }
@@ -138,8 +138,8 @@ extern void kernel_set_cachemode(void *addr, unsigned long size, int cmode);
  * tables contain all the necessary information.  The Sun3 does, but
  * they are updated on demand.
  */
-extern inline void update_mmu_cache(struct vm_area_struct * vma,
-	unsigned long address, pte_t pte)
+static inline void update_mmu_cache(struct vm_area_struct *vma,
+				    unsigned long address, pte_t pte)
 {
 }
 

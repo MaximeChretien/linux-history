@@ -1141,8 +1141,6 @@ void __init
 prep_pcibios_fixup(void)
 {
         struct pci_dev *dev;
-        extern unsigned char *Motherboard_map;
-        extern unsigned char *Motherboard_routes;
 
 	prep_route_pci_interrupts();
 

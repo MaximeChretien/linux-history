@@ -14,6 +14,10 @@
  *  Adapted for 64bit PowerPC by Dave Engebretsen, Peter Bergner, and
  *    Mike Corrigan {engebret|bergner|mikejc}@us.ibm.com
  *
+ *  VMX/Altivec port from ppc32 (C) IBM 2003
+ *   Denis Joseph Barrow (dj@de.ibm.com,barrow_dj@yahoo.com)
+ *   additional debugging & 2.4-2.5 VMX port
+ *   Ben Herrenschmidt 	(benh@kernel.crashing.org)
  *  This file contains the low-level support and setup for the
  *  PowerPC-64 platform, including trap and interrupt dispatch.
  *
@@ -36,6 +40,15 @@
 
 #ifdef CONFIG_PPC_ISERIES
 #define DO_SOFT_DISABLE
+#endif
+
+/* copy saved SOFTE bit or EE bit from saved MSR depending
+ * if we are doing soft-disable or not
+ */
+#ifdef DO_SOFT_DISABLE
+#define DO_COPY_EE()	ld	r20,SOFTE(r1)
+#else
+#define DO_COPY_EE()	rldicl	r20,r23,49,63
 #endif
 
 /*
@@ -130,6 +143,10 @@ __secondary_hold_acknowledge:
  * All of it must fit below the first exception vector at 0x100.
  */
 _GLOBAL(__secondary_hold)
+	mfmsr	r24
+	ori	r24,r24,MSR_RI
+	mtmsrd	r24			/* RI on */
+
 	/* Grab our linux cpu number */
 	mr      r24,r3
 
@@ -201,7 +218,7 @@ _GLOBAL(__secondary_hold)
 		                        /*   assumes *_common < 16b   */ \
 	mfmsr   r23;                                                     \
 	rotldi  r23,r23,4;                                               \
-	ori     r23,r23,0x30B;          /* Set IR, DR, SF, ISF, HV    */ \
+	ori     r23,r23,0x32B;          /* Set IR, DR, RI, SF, ISF, HV*/ \
 	rotldi  r23,r23,60;             /* for generic handlers       */ \
 	mtspr   SRR0,r22;                                                \
 	mtspr   SRR1,r23;                                                \
@@ -285,7 +302,7 @@ _GLOBAL(__secondary_hold)
 	SAVE_8GPRS(2, r1);              /* save r2 - r13 in stackframe */ \
 	SAVE_4GPRS(10, r1);                                               \
 	ld      r2,PACATOC(r20);	                                  \
-	ld      r13,PACACURRENT(r20)
+	mr	r13,r20
 
 /*
  * Note: code which follows this uses cr0.eq (set if from kernel),
@@ -363,8 +380,17 @@ __start_interupts:
 	STD_EXCEPTION_PSERIES( 0xc00, SystemCall )
 	STD_EXCEPTION_PSERIES( 0xd00, SingleStep )
 	STD_EXCEPTION_PSERIES( 0xe00, Trap_0e )
-	STD_EXCEPTION_PSERIES( 0xf00, PerformanceMonitor )
+	. = 0xf00
+	b   PerformanceMonitor_Pseries
+	STD_EXCEPTION_PSERIES( 0xf20, AltiVecUnavailable )
+	. = 0xf90
+	.globl PerformanceMonitor_Pseries
+PerformanceMonitor_Pseries:
+	EXCEPTION_PROLOG_PSERIES( 0xf00, PerformanceMonitor_common )
 	STD_EXCEPTION_PSERIES( 0x1300, InstructionBreakpoint )
+	STD_EXCEPTION_PSERIES( 0x1700, AltiVecAssist )
+	STD_EXCEPTION_PSERIES( 0x1800, ThermalInterrupt)
+
 
 	/* Space for the naca.  Architected to be located at real address
 	 * 0x4000.  Various tools rely on this location being fixed.
@@ -436,8 +462,8 @@ __end_systemcfg:
 
 	.globl SystemReset_Iseries
 SystemReset_Iseries:
-	mfspr	25,SPRG3		/* Get paca address */
-	lhz	r24,PACAPACAINDEX(r25)	/* Get processor # */
+	mfspr	13,SPRG3		/* Get paca address */
+	lhz	r24,PACAPACAINDEX(r13)	/* Get processor # */
 	cmpi	0,r24,0			/* Are we processor 0? */
 	beq	.__start_initialization_iSeries	/* Start up the first processor */
 	mfspr	r4,CTRLF
@@ -448,7 +474,7 @@ SystemReset_Iseries:
 1:
 	HMT_LOW
 #ifdef CONFIG_SMP
-	lbz	r23,PACAPROCSTART(r25)	/* Test if this processor
+	lbz	r23,PACAPROCSTART(r13)	/* Test if this processor
 					 * should start */
 	sync
 	LOADADDR(r3,current_set)
@@ -478,7 +504,7 @@ iseries_secondary_smp_loop:
 #endif /* CONFIG_SMP */
 	li	r0,-1			/* r0=-1 indicates a Hypervisor call */
 	sc				/* Invoke the hypervisor via a system call */
-	mfspr	r25,SPRG3		/* Put r25 back ???? */
+	mfspr	r13,SPRG3		/* Put r13 back - why???? */
 	b	1b			/* If SMP not configured, secondaries
 					 * loop forever */
 
@@ -551,6 +577,47 @@ __end_stab:
 	STD_EXCEPTION_COMMON( 0xb00, Trap_0b, .UnknownException )
 	STD_EXCEPTION_COMMON( 0xd00, SingleStep, .SingleStepException )
 	STD_EXCEPTION_COMMON( 0xe00, Trap_0e, .UnknownException )
+
+	.globl AltiVecUnavailable_common
+AltiVecUnavailable_common:
+	EXCEPTION_PROLOG_COMMON
+#ifdef CONFIG_ALTIVEC
+	bne	.load_up_altivec	/* if from user, just load it up */
+#endif
+	addi	r3,r1,STACK_FRAME_OVERHEAD
+	DO_COPY_EE()
+	li	r6,0xf20
+	bl      .save_remaining_regs
+#ifndef CONFIG_ALTIVEC
+	beq    1f
+	bl     .IllegalAltiVecInstruction
+	b      .ret_from_except
+1:
+#endif
+	bl      .KernelAltiVecUnavailableException
+	BUG_OPCODE
+
+	.global AltiVecAssist_common
+AltiVecAssist_common:
+	EXCEPTION_PROLOG_COMMON
+	addi	r3,r1,STACK_FRAME_OVERHEAD
+	DO_COPY_EE()
+	li	r6,0x1700
+	bl	.save_remaining_regs
+	bl	.AltiVecAssistException
+	b	.ret_from_except
+
+	.global ThermalInterrupt_common
+ThermalInterrupt_common:
+	EXCEPTION_PROLOG_COMMON
+	addi	r3,r1,STACK_FRAME_OVERHEAD
+	DO_COPY_EE()
+	li	r6,0x1800
+	bl      .save_remaining_regs
+	bl	.ThermalInterrupt
+	BUG_OPCODE
+
+
 	STD_EXCEPTION_COMMON(0x1300, InstructionBreakpoint, .InstructionBreakpointException )
 
 /*
@@ -570,6 +637,12 @@ fast_exception_return:
 	REST_GPR(0, r1)
 	REST_8GPRS(2, r1)
 	REST_4GPRS(10, r1)
+
+	mfmsr	r20
+	li	r21, MSR_RI
+	andc	r20,r20,r21
+	mtmsrd	r20,1
+
 	mtspr   SRR1,r23
 	mtspr   SRR0,r22
 	REST_4GPRS(20, r1)
@@ -613,11 +686,7 @@ DataAccess_common:
 	ld      r4,_DAR(r1)
 	ld      r5,_DSISR(r1)
 	addi	r3,r1,STACK_FRAME_OVERHEAD
-#ifdef DO_SOFT_DISABLE
-	ld	r20,SOFTE(r1)		/* Copy saved SOFTE bit */
-#else
-	rldicl	r20,r23,49,63   	/* copy EE bit from saved MSR */
-#endif
+	DO_COPY_EE()
 	li	r6,0x300
 	bl      .save_remaining_regs
 	bl      .do_page_fault
@@ -639,11 +708,7 @@ DataAccessSLB_common:
 	or.	r3,r3,r3		/* Check return code */
 	beq     fast_exception_return   /* Return if we succeeded */
 	addi	r3,r1,STACK_FRAME_OVERHEAD
-#ifdef DO_SOFT_DISABLE
-	ld	r20,SOFTE(r1)
-#else
-	rldicl	r20,r23,49,63   	/* copy EE bit from saved MSR */
-#endif
+	DO_COPY_EE()
 	li	r6,0x380
 	li	r5,0
 	bl      .save_remaining_regs
@@ -669,11 +734,7 @@ InstructionAccess_common:
 	mr	r4,r22
 	rlwinm	r5,r23,0,4,4		/* We only care about PR in error_code */
 	addi	r3,r1,STACK_FRAME_OVERHEAD
-#ifdef DO_SOFT_DISABLE
-	ld	r20,SOFTE(r1)
-#else
-	rldicl	r20,r23,49,63   	/* copy EE bit from saved MSR */
-#endif
+	DO_COPY_EE()
 	li	r6,0x400
 	bl      .save_remaining_regs
 	bl      .do_page_fault
@@ -689,11 +750,7 @@ InstructionAccessSLB_common:
 	beq     fast_exception_return   /* Return if we succeeded */
 
 	addi	r3,r1,STACK_FRAME_OVERHEAD
-#ifdef DO_SOFT_DISABLE
-	ld	r20,SOFTE(r1)
-#else
-	rldicl	r20,r23,49,63   	/* copy EE bit from saved MSR */
-#endif
+	DO_COPY_EE()
 	li	r6,0x480
 	li	r5,0
 	bl      .save_remaining_regs
@@ -766,11 +823,7 @@ HardwareInterrupt_entry:
 Alignment_common:
 	EXCEPTION_PROLOG_COMMON
 	addi	r3,r1,STACK_FRAME_OVERHEAD
-#ifdef DO_SOFT_DISABLE
-	ld	r20,SOFTE(r1)
-#else
-	rldicl	r20,r23,49,63   	/* copy EE bit from saved MSR */
-#endif
+	DO_COPY_EE()
 	li	r6,0x600
 	bl      .save_remaining_regs
 	bl      .AlignmentException
@@ -780,11 +833,7 @@ Alignment_common:
 ProgramCheck_common:
 	EXCEPTION_PROLOG_COMMON
 	addi	r3,r1,STACK_FRAME_OVERHEAD
-#ifdef DO_SOFT_DISABLE
-	ld	r20,SOFTE(r1)
-#else
-	rldicl	r20,r23,49,63   	/* copy EE bit from saved MSR */
-#endif
+	DO_COPY_EE()
 	li	r6,0x700
 	bl      .save_remaining_regs
 	bl      .ProgramCheckException
@@ -795,11 +844,7 @@ FPUnavailable_common:
 	EXCEPTION_PROLOG_COMMON
 	bne	.load_up_fpu		/* if from user, just load it up */
 	addi	r3,r1,STACK_FRAME_OVERHEAD
-#ifdef DO_SOFT_DISABLE
-	ld	r20,SOFTE(r1)
-#else
-	rldicl	r20,r23,49,63   	/* copy EE bit from saved MSR */
-#endif
+	DO_COPY_EE()
 	li	r6,0x800
 	bl      .save_remaining_regs
 	bl      .KernelFPUnavailableException
@@ -816,11 +861,7 @@ SystemCall_common:
 1:
 #endif
 	std	r3,ORIG_GPR3(r1)
-#ifdef DO_SOFT_DISABLE
-	ld	r20,SOFTE(r1)
-#else
-	rldicl	r20,r23,49,63   	/* copy EE bit from saved MSR */
-#endif
+	DO_COPY_EE()
 	li	r6,0xC00
 	bl      .save_remaining_regs
 	bl      .DoSyscall
@@ -1143,6 +1184,12 @@ _GLOBAL(do_stab_bolted)
 	lwz	r23,EX_CCR(r21)		/* get saved CR */
 	/* note that this is almost identical to maskable_exception_exit */
 	mtcr    r23                     /* restore CR */
+
+	mfmsr	r22
+	li	r23, MSR_RI
+	andc	r22,r22,r23
+	mtmsrd	r22,1
+
 	ld	r22,EX_SRR0(r21)	/* Get SRR0 from exc. frame */
 	ld	r23,EX_SRR1(r21)	/* Get SRR1 from exc. frame */
 	mtspr	SRR0,r22
@@ -1184,7 +1231,7 @@ _GLOBAL(do_slb_bolted)
 	slbmfee	r23,r22
 	rldicl  r23,r23,37,63
 	cmpwi   r23,0
-	beq     3f              /* Found an invalid entry              */
+	beq     4f              /* Found an invalid entry              */
 
 	addi	r22,r22,1
 	cmpldi	r22,64
@@ -1193,16 +1240,36 @@ _GLOBAL(do_slb_bolted)
 	/* No free entry - just take the next entry, round-robin */
 	/* XXX we should get the number of SLB entries from the naca */
 SLB_NUM_ENTRIES = 64
-	mfspr	r21,SPRG3
+2:	mfspr	r21,SPRG3
 	ld	r22,PACASTABRR(r21)
 	addi	r23,r22,1
 	cmpdi	r23,SLB_NUM_ENTRIES
-	blt	2f
+	blt	3f
 	li	r23,1
-2:	std	r23,PACASTABRR(r21)
+3:	std	r23,PACASTABRR(r21)
 
 	/* r20 = vsid, r22 = entry */
-3:
+
+	/*
+	 * Never cast out the segment for our kernel stack. Since we
+	 * dont invalidate the ERAT we could have a valid translation
+	 * for the kernel stack during the first part of exception exit
+	 * which gets invalidated due to a tlbie from another cpu at a
+	 * non recoverable point (after setting srr0/1) - Anton
+	 */
+	slbmfee	r23,r22
+	srdi	r23,r23,28
+	/*
+	 * This is incorrect (r1 is not the kernel stack) if we entered
+	 * from userspace but there is no critical window from userspace
+	 * so this should be OK. Also if we cast out the userspace stack
+	 * segment while in userspace we will fault it straight back in.
+	 */
+	srdi	r21,r1,28
+	cmpd	r21,r23
+	beq-	2b
+	
+4:
 	/* Put together the vsid portion of the entry. */
 	li      r21,0
 	rldimi  r21,r20,12,0
@@ -1237,6 +1304,12 @@ SLB_NUM_ENTRIES = 64
 	lwz	r23,EX_CCR(r21)		/* get saved CR */
 	/* note that this is almost identical to maskable_exception_exit */
 	mtcr    r23                     /* restore CR */
+
+	mfmsr	r22
+	li	r23, MSR_RI
+	andc	r22,r22,r23
+	mtmsrd	r22,1
+
 	ld	r22,EX_SRR0(r21)	/* Get SRR0 from exc. frame */
 	ld	r23,EX_SRR1(r21)	/* Get SRR1 from exc. frame */
 	mtspr	SRR0,r22
@@ -1295,21 +1368,27 @@ _GLOBAL(save_remaining_regs)
 	 * Indicate that r1 contains the kernel stack and
 	 * get the Kernel TOC and CURRENT pointers from the paca
 	 */
-	mfspr	r23,SPRG3		/* Get PACA */
-	std	r22,PACAKSAVE(r23)	/* r1 is now kernel sp */
-	ld	r2,PACATOC(r23)		/* Get Kernel TOC pointer */
+	std	r22,PACAKSAVE(r13)	/* r1 is now kernel sp */
+	ld	r2,PACATOC(r13)		/* Get Kernel TOC pointer */
 
 	/*
 	 * If from user state, update THREAD.regs
 	 */
 	beq	2f			/* Modify THREAD.regs if from user */
 	addi	r24,r1,STACK_FRAME_OVERHEAD
-	std	r24,THREAD+PT_REGS(r13)
+	ld	r22,PACACURRENT(r13)
+	std	r24,THREAD+PT_REGS(r22)
+#ifdef CONFIG_ALTIVEC
+BEGIN_FTR_SECTION
+	mfspr	r24,SPRN_VRSAVE		/* if save vrsave register value */
+	std	r24,THREAD+THREAD_VRSAVE(r22)
+END_FTR_SECTION_IFSET(CPU_FTR_ALTIVEC)
+#endif /* CONFIG_ALTIVEC */
 2:
 	SET_REG_TO_CONST(r22, MSR_KERNEL)
 
 #ifdef DO_SOFT_DISABLE
-	stb	r20,PACAPROCENABLED(r23) /* possibly soft enable */
+	stb	r20,PACAPROCENABLED(r13) /* possibly soft enable */
 	ori	r22,r22,MSR_EE		/* always hard enable */
 #else
 	rldimi	r22,r20,15,48		/* Insert desired EE value */
@@ -1356,20 +1435,20 @@ _GLOBAL(pseries_secondary_smp_init)
 
 	/* Set up a paca value for this processor. */
 	LOADADDR(r24, paca) 		 /* Get base vaddr of Paca array  */
-	mulli	r25,r3,PACA_SIZE	 /* Calculate vaddr of right Paca */
-	add	r25,r25,r24              /* for this processor.           */
+	mulli	r13,r3,PACA_SIZE	 /* Calculate vaddr of right Paca */
+	add	r13,r13,r24              /* for this processor.           */
 
-	mtspr	SPRG3,r25		 /* Save vaddr of Paca in SPRG3   */
+	mtspr	SPRG3,r13		 /* Save vaddr of Paca in SPRG3   */
 	mr	r24,r3			 /* __secondary_start needs cpu#  */
 
 1:
 	HMT_LOW
-	lbz	r23,PACAPROCSTART(r25)	 /* Test if this processor should */
+	lbz	r23,PACAPROCSTART(r13)	 /* Test if this processor should */
 					 /* start.                        */
 	sync
 
         /* Create a temp kernel stack for use before relocation is on.    */
-        mr      r1,r25
+	mr	r1,r13
         addi    r1,r1,PACAGUARD
         addi    r1,r1,0x1000
         subi    r1,r1,STACK_FRAME_OVERHEAD
@@ -1609,16 +1688,17 @@ _STATIC(load_up_fpu)
 1:
 #endif /* CONFIG_SMP */
 	/* enable use of FP after return */
-	addi	r5,r13,THREAD
-	ld	r4,THREAD_FPEXC_MODE(r5)
+	ld	r4,PACACURRENT(r13)
+	addi	r5,r4,THREAD		/* Get THREAD */
+	ld	r20,THREAD_FPEXC_MODE(r5)
 	ori	r23,r23,MSR_FP
-	or	r23,r23,r4
+	or	r23,r23,r20
 	lfd	fr0,THREAD_FPSCR(r5)
 	mtfsf	0xff,fr0
 	REST_32FPRS(0, r5)
 #ifndef CONFIG_SMP
 	/* Update last_task_used_math to 'current' */
-	std	r13,last_task_used_math@l(r3)
+	std	r4,last_task_used_math@l(r3)
 #endif /* CONFIG_SMP */
 	/* restore registers and return */
 	b	fast_exception_return
@@ -1674,6 +1754,100 @@ _GLOBAL(giveup_fpu)
 #endif /* CONFIG_SMP */
 	blr
 
+#ifdef CONFIG_ALTIVEC
+/*
+ * load_up_altivec(unused, unused, tsk)
+ * Disable Altivec for the task which used altivec upreviously,
+ * and save its altivec registers in its thread_struct.
+ * Enables Altivec for use in the kernel on return.
+ * On SMP we know the fpu is free, since we give it up every
+ * switch (ie, no lazy save of the altivec registers).
+ * On entry: r13 == 'current' && last_task_used_altivec != 'current'
+ */
+_STATIC(load_up_altivec)
+/*
+ * Disable AltiVec for the task which had AltiVec previously,
+ * and save its AltiVec registers in its thread_struct.
+ * Enables AltiVec for use in the kernel on return.
+ * On SMP we know the AltiVec units are free, since we give it up every
+ * switch.  -- Kumar
+ */
+	mfmsr	r5
+	oris	r5,r5,MSR_VEC@h
+	mtmsrd	r5			/* enable use of AltiVec now */
+	isync
+/*
+ * For SMP, we don't do lazy AltiVec switching because it just gets too
+ * horrendously complex, especially when a task switches from one CPU
+ * to another.  Instead we call giveup_altivec in switch_to.
+ */
+#ifndef CONFIG_SMP
+	LOADBASE(r3,last_task_used_altivec)
+	ld	r4,last_task_used_altivec@l(r3)
+	cmpi	0,r4,0
+	beq	1f
+	addi	r4,r4,THREAD	/* want THREAD of last_task_used_altivec */
+	SAVE_32VR(0,r20,r4)
+	MFVSCR(vr0)
+	li	r20,THREAD_VSCR
+	STVX(vr0,r20,r4)
+	ld	r5,PT_REGS(r4)
+	ld	r4,_MSR-STACK_FRAME_OVERHEAD(r5)
+	lis	r20,MSR_VEC@h
+	andc	r4,r4,r20	/* disable altivec for previous task */
+	std	r4,_MSR-STACK_FRAME_OVERHEAD(r5)
+1:
+#endif /* CONFIG_SMP */
+	/* enable use of AltiVec after return */
+	ld	r4,PACACURRENT(r13)
+	addi	r5,r4,THREAD
+	oris	r23,r23,MSR_VEC@h
+	li	r20,THREAD_VSCR
+	LVX(vr0,r20,r5)
+	MTVSCR(vr0)
+	REST_32VR(0,r20,r5)
+#ifndef CONFIG_SMP
+	/* Update last_task_used_altivec to 'current' */
+	std	r4,last_task_used_altivec@l(r3)
+#endif /* CONFIG_SMP */
+	/* restore registers and return */
+	b	fast_exception_return
+/*
+ * giveup_altivec(tsk)
+ * Disable AltiVec for the task given as the argument,
+ * and save the AltiVec registers in its thread_struct.
+ * Enables AltiVec for use in the kernel on return.
+ */
+_GLOBAL(giveup_altivec)
+	mfmsr	r5
+	oris	r5,r5,MSR_VEC@h
+	mtmsrd	r5			/* enable use of AltiVec now */
+	isync
+	cmpi	0,r3,0
+	beqlr-				/* if no previous owner, done */
+	addi	r3,r3,THREAD		/* want THREAD of task */
+	ld	r5,PT_REGS(r3)
+	cmpi	0,r5,0
+	SAVE_32VR(0, r4, r3)
+	MFVSCR(vr0)
+	li	r4,THREAD_VSCR
+	STVX(vr0, r4, r3)
+	beq	1f
+	ld	r4,_MSR-STACK_FRAME_OVERHEAD(r5)
+	lis	r3,MSR_VEC@h
+	andc	r4,r4,r3		/* disable AltiVec for previous task */
+	std	r4,_MSR-STACK_FRAME_OVERHEAD(r5)
+1:
+#ifndef CONFIG_SMP
+	li	r5,0
+	LOADBASE(r4,last_task_used_altivec)
+	std	r5,last_task_used_altivec@l(r4)
+#endif /* CONFIG_SMP */
+	blr
+#endif /* CONFIG_ALTIVEC */
+
+
+
 #ifdef CONFIG_SMP
 /*
  * This function is called after the master CPU has released the
@@ -1685,7 +1859,7 @@ _GLOBAL(giveup_fpu)
  * On entry the following are set:
  *   r1    = stack pointer.  vaddr for iSeries, raddr (temp stack) for pSeries
  *   r24   = cpu# (in Linux terms)
- *   r25   = paca virtual address
+ *   r13   = paca virtual address
  *   SPRG3 = paca virtual address
  */
 _GLOBAL(__secondary_start)
@@ -1697,10 +1871,10 @@ _GLOBAL(__secondary_start)
 	addi    r2,r2,0x4000
 	addi    r2,r2,0x4000
 
-	std	r2,PACATOC(r25)
+	std	r2,PACATOC(r13)
 	li	r6,0
-	std	r6,PACAKSAVE(r25)
-	stb	r6,PACAPROCENABLED(r25)
+	std	r6,PACAKSAVE(r13)
+	stb	r6,PACAPROCENABLED(r13)
 
 #ifndef CONFIG_PPC_ISERIES
 	/* Initialize the page table pointer register. */
@@ -1709,18 +1883,18 @@ _GLOBAL(__secondary_start)
 	mtspr	SDR1,r6			/* set the htab location  */
 #endif
 	/* Initialize the first segment table (or SLB) entry                */
-	ld	r3,PACASTABVIRT(r25)    /* get addr of segment table        */
+	ld	r3,PACASTABVIRT(r13)    /* get addr of segment table        */
 	bl	.stab_initialize
 
 	/* Initialize the kernel stack.  Just a repeat for iSeries.         */
 	LOADADDR(r3,current_set)
 	sldi	r28,r24,4		/* get current_set[cpu#] */
-	ldx	r13,r3,r28
-	std	r13,PACACURRENT(r25)
-	addi	r1,r13,TASK_UNION_SIZE
+	ldx	r28,r3,r28
+	std	r28,PACACURRENT(r13)
+	addi	r1,r28,TASK_UNION_SIZE
 	subi	r1,r1,STACK_FRAME_OVERHEAD
 
-	ld	r3,PACASTABREAL(r25)    /* get raddr of segment table       */
+	ld	r3,PACASTABREAL(r13)    /* get raddr of segment table       */
 	ori	r4,r3,1			/* turn on valid bit                */
 
 #ifdef CONFIG_PPC_ISERIES
@@ -1737,9 +1911,13 @@ _GLOBAL(__secondary_start)
 	bne   	98f
 	mfspr	r3,PVR
 	srwi	r3,r3,16
-	cmpwi	r3,0x37         /* SStar */
+	cmpwi	r3,0x37         /* SStar  */
+	beq	97f
+	cmpwi	r3,0x36         /* IStar  */
+	beq	97f
+	cmpwi	r3,0x34         /* Pulsar */
 	bne	98f
-	li	r3,H_SET_ASR    /* hcall = H_SET_ASR */
+97:	li	r3,H_SET_ASR    /* hcall = H_SET_ASR */
 	HSC     		/* Invoking hcall */
 	b	99f
 98:                             /* !(rpa hypervisor) || !(sstar) */
@@ -1758,7 +1936,6 @@ _GLOBAL(__secondary_start)
 	mtspr	SRR0,r3
 	mtspr	SRR1,r4
 	rfid
-#endif /* CONFIG_SMP */
 
 /* 
  * Running with relocation on at this point.  All we want to do is
@@ -1768,6 +1945,7 @@ _GLOBAL(start_secondary_prolog)
 	li	r3,0
 	std	r3,0(r1)                /* Zero the stack frame pointer     */
 	bl	.start_secondary
+#endif /* CONFIG_SMP */
 
 /*
  * This subroutine clobbers r11, r12 and the LR
@@ -1806,6 +1984,10 @@ _STATIC(start_here_pSeries)
 	/* get a new offset, now that the kernel has moved. */
 	bl	.reloc_offset
 	mr	r26,r3
+
+	mfmsr	r6
+	ori	r6,r6,MSR_RI
+	mtmsrd	r6			/* RI on */
 
 	/* setup the systemcfg pointer which is needed by *tab_initialize  */
 	LOADADDR(r6,systemcfg)
@@ -1880,9 +2062,9 @@ _STATIC(start_here_pSeries)
 	/* stab_initialize                                                 */
 	li	r27,0x4000
 	ld	r6,PACA(r27)            /* Get the base paca pointer       */
-	sub	r6,r6,r26		/* convert to physical addr         */
-	mtspr	SPRG3,r6		/* PPPBBB: Temp... -Peter */
-	ld	r3,PACASTABREAL(r6)
+	sub	r13,r6,r26		/* convert to physical addr         */
+	mtspr	SPRG3,r13		/* PPPBBB: Temp... -Peter */
+	ld	r3,PACASTABREAL(r13)
 	ori	r4,r3,1			/* turn on valid bit                */
 
 	/* set the ASR */
@@ -1893,8 +2075,12 @@ _STATIC(start_here_pSeries)
 	mfspr	r3,PVR
 	srwi	r3,r3,16
 	cmpwi	r3,0x37         /* SStar */
+	beq	97f
+	cmpwi	r3,0x36         /* IStar  */
+	beq	97f
+	cmpwi	r3,0x34         /* Pulsar */
 	bne	98f
-	li	r3,H_SET_ASR    /* hcall = H_SET_ASR */
+97:	li	r3,H_SET_ASR    /* hcall = H_SET_ASR */
 	HSC     	        /* Invoking hcall */
 	b     	99f
 98:                 /* This is not a hypervisor machine */
@@ -1973,16 +2159,16 @@ _STATIC(start_here_common)
 
 	LOADADDR(r4,naca)               /* Get naca ptr address           */
 	ld	r4,0(r4)                /* Get the location of the naca   */
-	ld	r4,PACA(r4)             /* Get the base paca pointer      */
-	mtspr	SPRG3,r4
+	ld	r13,PACA(r4)            /* Get the base paca pointer      */
+	mtspr	SPRG3,r13
 
 	/* ptr to current */
-	LOADADDR(r13,init_task_union)
-	std	r13,PACACURRENT(r4)
+	LOADADDR(r4,init_task_union)
+	std	r4,PACACURRENT(r13)
 
-	std	r2,PACATOC(r4)
+	std	r2,PACATOC(r13)
 	li	r5,0
-	std	r0,PACAKSAVE(r4)
+	std	r0,PACAKSAVE(r13)
 
 	/* ptr to hardware interrupt stack for processor 0                */
 	LOADADDR(r3, hardware_int_paca0)
@@ -1991,10 +2177,10 @@ _STATIC(start_here_common)
 	subi    r5,r5,STACK_FRAME_OVERHEAD
 
 	add     r3,r3,r5
-	std     r3,PACAHRDWINTSTACK(r4)
+	std     r3,PACAHRDWINTSTACK(r13)
 
 	li      r3,0
-	stb     r3,PACAHRDWINTCOUNT(r4)
+	stb     r3,PACAHRDWINTCOUNT(r13)
 
 	/* Restore the parms passed in from the bootloader. */
 	mr	r3,r31

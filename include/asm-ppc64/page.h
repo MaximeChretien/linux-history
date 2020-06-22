@@ -128,14 +128,6 @@ extern void xmon(struct pt_regs *excp);
 	printk("kernel BUG at %s:%d!\n", __FILE__, __LINE__); \
 	xmon(0); \
 } while (0)
-#elif defined(CONFIG_KDB)
-#include <asm/ptrace.h>
-#include <linux/kdb.h>
-/* extern void kdb(kdb_reason_t reason, int error, kdb_eframe_t ef); */
-#define BUG() do { \
-      printk("kernel BUG at %s:%d!\n", __FILE__, __LINE__); \
-      kdb(KDB_REASON_CALL, 0, (kdb_eframe_t) 0); \
-} while (0)
 #else
 #define BUG() do { \
 	printk("kernel BUG at %s:%d!\n", __FILE__, __LINE__); \

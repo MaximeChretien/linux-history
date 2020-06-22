@@ -3746,7 +3746,14 @@ static void autoconfig(struct serial_state * state)
 		/* Check for Startech UART's */
 		serial_outp(info, UART_LCR, UART_LCR_DLAB);
 		if (serial_in(info, UART_EFR) == 0) {
+			serial_outp(info, UART_EFR, 0xA8);
+			if (serial_in(info, UART_EFR) == 0) {
+				/* We are a NS16552D/Motorola
+				 * 8xxx DUART, stop. */
+				goto out;
+			}
 			state->type = PORT_16650;
+			serial_outp(info, UART_EFR, 0);
 		} else {
 			serial_outp(info, UART_LCR, 0xBF);
 			if (serial_in(info, UART_EFR) == 0)
@@ -3795,6 +3802,7 @@ static void autoconfig(struct serial_state * state)
 		}
 	}
 #endif
+out:
 	serial_outp(info, UART_LCR, save_lcr);
 	if (state->type == PORT_16450) {
 		scratch = serial_in(info, UART_SCR);

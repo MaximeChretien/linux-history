@@ -5,15 +5,24 @@
  * traditional mips two-level paging structure:
  */
 
-#define PMD_SHIFT	22
-#define PTRS_PER_PTE	1024
-#define PTRS_PER_PMD	1
-#define PTRS_PER_PGD	1024
+#ifdef CONFIG_64BIT_PHYS_ADDR
+#define PGD_ORDER	1
+#define PTE_ORDER	0
+#else
 #define PGD_ORDER	0
+#define PTE_ORDER	0
+#endif
+
+#define PMD_SHIFT       (2 * PAGE_SHIFT - PTE_T_LOG2)
 
 #if !defined (_LANGUAGE_ASSEMBLY)
+#ifdef CONFIG_64BIT_PHYS_ADDR
+#define pte_ERROR(e) \
+	printk("%s:%d: bad pte %016Lx.\n", __FILE__, __LINE__, pte_val(e))
+#else
 #define pte_ERROR(e) \
 	printk("%s:%d: bad pte %08lx.\n", __FILE__, __LINE__, (e).pte_low)
+#endif
 #define pmd_ERROR(e) \
 	printk("%s:%d: bad pmd %08lx.\n", __FILE__, __LINE__, pmd_val(e))
 #define pgd_ERROR(e) \

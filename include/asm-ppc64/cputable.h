@@ -1,5 +1,5 @@
 /*
- *  include/asm-ppc/cputable.h
+ *  include/asm-ppc64/cputable.h
  *
  *  Copyright (C) 2001 Ben. Herrenschmidt (benh@kernel.crashing.org)
  *
@@ -30,7 +30,7 @@
 #ifndef __ASSEMBLY__
 
 /* This structure can grow, it's real size is used by head.S code
- * via the mkdefs mecanism.
+ * via the mkdefs mechanism.
  */
 struct cpu_spec;
 
@@ -74,10 +74,20 @@ extern struct cpu_spec		*cur_cpu_spec;
 #define FW_FEATURE_COPY		(1UL<<4)	
 #define FW_FEATURE_ASR		(1UL<<5)	
 #define FW_FEATURE_DEBUG	(1UL<<6)	
-#define FW_FEATURE_PERF		(1UL<<7)	
-#define FW_FEATURE_DUMP		(1UL<<8)	
-#define FW_FEATURE_INTERRUPT	(1UL<<9)	
-#define FW_FEATURE_MIGRATE	(1UL<<10)	
+#define FW_FEATURE_TERM		(1UL<<7)
+#define FW_FEATURE_PERF		(1UL<<8)
+#define FW_FEATURE_DUMP		(1UL<<9)
+#define FW_FEATURE_INTERRUPT	(1UL<<10)
+#define FW_FEATURE_MIGRATE	(1UL<<11)
+#define FW_FEATURE_PERFMON	(1UL<<12)
+#define FW_FEATURE_CRQ   	(1UL<<13)
+#define FW_FEATURE_VIO   	(1UL<<14)
+#define FW_FEATURE_RDMA   	(1UL<<15)
+#define FW_FEATURE_LLAN   	(1UL<<16)
+#define FW_FEATURE_BULK   	(1UL<<17)
+#define FW_FEATURE_XDABR   	(1UL<<18)
+#define FW_FEATURE_MULTITCE   	(1UL<<19)
+#define FW_FEATURE_SPLPAR   	(1UL<<20)
 
 typedef struct {
     unsigned long val;
@@ -113,6 +123,8 @@ extern firmware_feature_t firmware_features_table[];
 #define CPU_FTR_TLBIEL         		0x0000000400000000
 #define CPU_FTR_NOEXECUTE     		0x0000000800000000
 #define CPU_FTR_NODSISRALIGN  		0x0000001000000000
+#define CPU_FTR_DABR  			0x0000002000000000
+#define CPU_FTR_IABR  			0x0000004000000000
 
 /* Platform firmware features */
 #define FW_FTR_                         0x0000000000000001
@@ -142,10 +154,24 @@ extern firmware_feature_t firmware_features_table[];
 	.llong 99b;	 		        \
 	.previous
 
-#define END_FTR_SECTION_IFSET(msk)	END_FTR_SECTION((msk), (msk))
-#define END_FTR_SECTION_IFCLR(msk)	END_FTR_SECTION((msk), 0)
+#else
+
+#define BEGIN_FTR_SECTION		"98:\n"
+#define END_FTR_SECTION(msk, val)		\
+"99:\n"						\
+"	.section __ftr_fixup,\"a\";\n"		\
+"	.align 3;\n"				\
+"	.llong "#msk";\n"			\
+"	.llong "#val";\n"			\
+"	.llong 98b;\n"			        \
+"	.llong 99b;\n"	 		        \
+"	.previous\n"
 
 #endif /* __ASSEMBLY__ */
+
+
+#define END_FTR_SECTION_IFSET(msk)	END_FTR_SECTION((msk), (msk))
+#define END_FTR_SECTION_IFCLR(msk)	END_FTR_SECTION((msk), 0)
 
 #endif /* __ASM_PPC_CPUTABLE_H */
 #endif /* __KERNEL__ */

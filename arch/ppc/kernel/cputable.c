@@ -144,7 +144,7 @@ struct cpu_spec	cpu_specs[] = {
     	0xffffff00, 0x70000100, "750FX",
     	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_CAN_DOZE | CPU_FTR_USE_TB |
 	CPU_FTR_L2CR | CPU_FTR_TAU | CPU_FTR_HPTE_TABLE | CPU_FTR_CAN_NAP |
-	CPU_FTR_DUAL_PLL_750FX | CPU_FTR_NO_DPM,
+	CPU_FTR_750FX | CPU_FTR_NO_DPM,
 	COMMON_PPC,
 	32, 32,
 	__setup_cpu_750
@@ -153,7 +153,7 @@ struct cpu_spec	cpu_specs[] = {
     	0xffffffff, 0x70000200, "750FX",
     	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_CAN_DOZE | CPU_FTR_USE_TB |
 	CPU_FTR_L2CR | CPU_FTR_TAU | CPU_FTR_HPTE_TABLE | CPU_FTR_CAN_NAP |
-	CPU_FTR_DUAL_PLL_750FX | CPU_FTR_HAS_HIGH_BATS | CPU_FTR_NO_DPM,
+	CPU_FTR_750FX | CPU_FTR_HAS_HIGH_BATS | CPU_FTR_NO_DPM,
 	COMMON_PPC,
 	32, 32,
 	__setup_cpu_750
@@ -162,7 +162,7 @@ struct cpu_spec	cpu_specs[] = {
     	0xffff0000, 0x70000000, "750FX",
     	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_CAN_DOZE | CPU_FTR_USE_TB |
 	CPU_FTR_L2CR | CPU_FTR_TAU | CPU_FTR_HPTE_TABLE | CPU_FTR_CAN_NAP |
-	CPU_FTR_DUAL_PLL_750FX | CPU_FTR_HAS_HIGH_BATS,
+	CPU_FTR_750FX | CPU_FTR_HAS_HIGH_BATS,
 	COMMON_PPC,
 	32, 32,
 	__setup_cpu_750fx
@@ -201,6 +201,15 @@ struct cpu_spec	cpu_specs[] = {
 	COMMON_PPC | PPC_FEATURE_HAS_ALTIVEC,
 	32, 32,
 	__setup_cpu_7410
+    },
+    {	/* 7450 1.x - no doze/nap */
+    	0xffffff00, 0x80000100, "7450",
+    	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_USE_TB |
+	CPU_FTR_L2CR | CPU_FTR_ALTIVEC_COMP | CPU_FTR_L3CR |
+	CPU_FTR_HPTE_TABLE | CPU_FTR_SPEC7450,
+	COMMON_PPC | PPC_FEATURE_HAS_ALTIVEC,
+	32, 32,
+	__setup_cpu_745x
     },
     {	/* 7450 2.0 - no doze/nap */
     	0xffffffff, 0x80000200, "7450",
@@ -272,6 +281,14 @@ struct cpu_spec	cpu_specs[] = {
     {	/* 82xx (8240, 8245, 8260 are all 603e cores) */
 	0x7fff0000, 0x00810000, "82xx",
 	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_CAN_DOZE | CPU_FTR_USE_TB,
+	COMMON_PPC,
+	32, 32,
+	__setup_cpu_603
+    },
+    {	/* 8280 is a G2_LE (603e core, plus some) */
+	0x7fff0000, 0x00820000, "8280",
+	CPU_FTR_SPLIT_ID_CACHE | CPU_FTR_CAN_DOZE | CPU_FTR_USE_TB |
+	CPU_FTR_CAN_NAP | CPU_FTR_HAS_HIGH_BATS,
 	COMMON_PPC,
 	32, 32,
 	__setup_cpu_603

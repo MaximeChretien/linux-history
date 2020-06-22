@@ -975,7 +975,6 @@ int ip_conntrack_expect_related(struct ip_conntrack *related_to,
 		}
 	} else if (related_to->helper->max_expected && 
 		   related_to->expecting >= related_to->helper->max_expected) {
-		struct list_head *cur_item;
 		/* old == NULL */
 		if (!(related_to->helper->flags & 
 		      IP_CT_HELPER_F_REUSE_EXPECT)) {
@@ -1000,21 +999,14 @@ int ip_conntrack_expect_related(struct ip_conntrack *related_to,
 		       NIPQUAD(related_to->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.ip));
  
 		/* choose the the oldest expectation to evict */
-		list_for_each(cur_item, &related_to->sibling_list) { 
-			struct ip_conntrack_expect *cur;
-
-			cur = list_entry(cur_item, 
-					 struct ip_conntrack_expect,
-					 expected_list);
-			if (cur->sibling == NULL) {
-				old = cur;
+		list_for_each_entry(old, &related_to->sibling_list, 
+		                                      expected_list)
+			if (old->sibling == NULL)
 				break;
-			}
-		}
 
-		/* (!old) cannot happen, since related_to->expecting is the
-		 * number of unconfirmed expects */
-		IP_NF_ASSERT(old);
+		/* We cannot fail since related_to->expecting is the number
+		 * of unconfirmed expectations */
+		IP_NF_ASSERT(old && old->sibling == NULL);
 
 		/* newnat14 does not reuse the real allocated memory
 		 * structures but rather unexpects the old and
@@ -1046,7 +1038,7 @@ int ip_conntrack_expect_related(struct ip_conntrack *related_to,
 	atomic_set(&new->use, 1);
 	
 	/* add to expected list for this connection */	
-	list_add(&new->expected_list, &related_to->sibling_list);
+	list_add_tail(&new->expected_list, &related_to->sibling_list);
 	/* add to global list of expectations */
 	list_prepend(&ip_conntrack_expect_list, &new->list);
 	/* add and start timer if required */
@@ -1266,14 +1258,13 @@ do_kill(const struct ip_conntrack_tuple_hash *i,
 /* Bring out ya dead! */
 static struct ip_conntrack_tuple_hash *
 get_next_corpse(int (*kill)(const struct ip_conntrack *i, void *data),
-		void *data)
+		void *data, unsigned int *bucket)
 {
 	struct ip_conntrack_tuple_hash *h = NULL;
-	unsigned int i;
 
 	READ_LOCK(&ip_conntrack_lock);
-	for (i = 0; !h && i < ip_conntrack_htable_size; i++) {
-		h = LIST_FIND(&ip_conntrack_hash[i], do_kill,
+	for (; !h && *bucket < ip_conntrack_htable_size; (*bucket)++) {
+		h = LIST_FIND(&ip_conntrack_hash[*bucket], do_kill,
 			      struct ip_conntrack_tuple_hash *, kill, data);
 	}
 	if (h)
@@ -1288,9 +1279,9 @@ ip_ct_selective_cleanup(int (*kill)(const struct ip_conntrack *i, void *data),
 			void *data)
 {
 	struct ip_conntrack_tuple_hash *h;
+	unsigned int bucket = 0;
 
-	/* This is order n^2, by the way. */
-	while ((h = get_next_corpse(kill, data)) != NULL) {
+	while ((h = get_next_corpse(kill, data, &bucket)) != NULL) {
 		/* Time to push up daises... */
 		if (del_timer(&h->ctrack->timeout))
 			death_by_timeout((unsigned long)h->ctrack);

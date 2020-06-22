@@ -58,6 +58,10 @@ do {						\
 
 #ifdef CONFIG_40x
 
+#if defined(CONFIG_CPCI405)
+#include <platforms/cpci405.h>
+#endif
+
 #if defined(CONFIG_OAK)
 #include <platforms/oak.h>
 #endif

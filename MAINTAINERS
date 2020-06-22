@@ -73,7 +73,7 @@ S: Status, one of the following:
 3C359 NETWORK DRIVER
 P:	Mike Phillips
 M:	mikep@linuxtr.net
-L:	linux-net@vger.rutgers.edu
+L:	linux-net@vger.kernel.org
 L:	linux-tr@linuxtr.net
 W:	http://www.linuxtr.net
 S:	Maintained
@@ -322,18 +322,25 @@ L:	linux-kernel@vger.kernel.org
 S:	Maintained
 
 BLUETOOTH SUBSYSTEM
+P:	Marcel Holtmann
+M:	marcel@holtmann.org
 P:	Maxim Krasnyansky
 M:	maxk@qualcomm.com
+L:	bluez-devel@lists.sf.net
 W:	http://bluez.sf.net
 S:	Maintained
 
 BLUETOOTH RFCOMM LAYER
+P:	Marcel Holtmann
+M:	marcel@holtmann.org
 P:	Maxim Krasnyansky
 M:	maxk@qualcomm.com
 W:	http://bluez.sf.net
 S:	Maintained
 
 BLUETOOTH BNEP LAYER
+P:	Marcel Holtmann
+M:	marcel@holtmann.org
 P:	Maxim Krasnyansky
 M:	maxk@qualcomm.com
 W:	http://bluez.sf.net
@@ -346,12 +353,16 @@ W:	http://www.holtmann.org/linux/bluetooth/
 S:	Maintained
 
 BLUETOOTH HCI USB DRIVER
+P:	Marcel Holtmann
+M:	marcel@holtmann.org
 P:	Maxim Krasnyansky
 M:	maxk@qualcomm.com
 W:	http://bluez.sf.net
 S:	Maintained
 
 BLUETOOTH HCI UART DRIVER
+P:	Marcel Holtmann
+M:	marcel@holtmann.org
 P:	Maxim Krasnyansky
 M:	maxk@qualcomm.com
 W:	http://bluez.sf.net
@@ -435,6 +446,12 @@ P:      Chase Maupin
 M:      chase.maupin@hp.com
 L:     iss_storagedev@hp.com
 S:      Odd Fixes
+
+HP OMNIBOOK 600 C/CT POP-UP MOUSE DRIVER
+P:      Grant Grundler
+M:      grundler@parisc-linux.org
+L:	omnibook@zurich.ai.mit.edu
+S:      Maintained
 
 
 HP SMART2 RAID DRIVER
@@ -806,7 +823,7 @@ M:	mikulas@artax.karlin.mff.cuni.cz
 W:	http://artax.karlin.mff.cuni.cz/~mikulas/vyplody/hpfs/index-e.cgi
 S:	Maintained
 
-I2C AND SENSORS DRIVERS
+I2C SUBSYSTEM
 P:	Jean Delvare
 M:	khali@linux-fr.org
 L:	sensors@stimpy.netroedge.com
@@ -954,7 +971,7 @@ S:      Maintained
 
 IOC3 DRIVER
 P:	Ralf Baechle
-M:	ralf@oss.sgi.com
+M:	ralf@linux-mips.org
 L:	linux-mips@linux-mips.org
 S:	Maintained
 
@@ -1149,6 +1166,13 @@ P:	Zach Brown
 M:	zab@zabbo.net
 S:	Odd Fixes
 
+MARVELL MV64340 ETHERNET DRIVER
+P:	Manish Lachwani
+M:	Manish_Lachwani@pmc-sierra.com
+L:	linux-mips@linux-mips.org
+L:	netdev@oss.sgi.com
+S:	Supported
+
 MATROX FRAMEBUFFER DRIVER
 P:	Petr Vandrovec
 M:	vandrove@vc.cvut.cz
@@ -1170,7 +1194,7 @@ S:      Maintained
 
 MIPS
 P:	Ralf Baechle
-M:	ralf@gnu.org
+M:	ralf@linux-mips.org
 W:	http://oss.sgi.com/mips/mips-howto.html
 L:	linux-mips@linux-mips.org
 S:	Maintained
@@ -1344,8 +1368,8 @@ S:	Maintained
 ONSTREAM SCSI TAPE DRIVER
 P:	Willem Riede
 M:	osst@riede.org
-L:	osst@linux1.onstream.nl
-L:	linux-scsi@vger.rutgers.edu
+L:	osst-users@lists.sourceforge.net
+L:	linux-scsi@vger.kernel.org
 S:	Maintained
 
 OPL3-SA2, SA3, and SAx DRIVER
@@ -1682,8 +1706,10 @@ L:	ultralinux@vger.kernel.org
 S:	Maintained
 
 SPARC (sparc32):
+P:	Keith M. Wesolowski
+M:	wesolows@foobazco.org
 L:	sparclinux@vger.kernel.org
-S:	Unmaintained - please send patches to mailing list
+S:	Maintained
 
 SPECIALIX IO8+ MULTIPORT SERIAL CARD DRIVER
 P:	Roger Wolff
@@ -2063,11 +2089,11 @@ L:	linux-usb-devel@lists.sourceforge.net
 S:	Maintained
 
 USB W9968CF DRIVER
-P:      Luca Risolia
-M:      luca_ing@libero.it
-L:      linux-usb-devel@lists.sourceforge.net
-W:      http://go.lamarinapunto.com
-S:      Maintained
+P:	Luca Risolia
+M:	luca.risolia@studio.unibo.it
+L:	linux-usb-devel@lists.sourceforge.net
+W:	http://go.lamarinapunto.com
+S:	Maintained
 
 VFAT FILESYSTEM:
 P:	Gordon Chaffee
@@ -2084,6 +2110,11 @@ S:	Odd fixes
 VIA RHINE NETWORK DRIVER
 P:	Roger Luethi
 M:	rl@hellgate.ch
+S:	Maintained
+
+VIA-IRCC IRDA DRIVER
+P:	Jens David
+M:	dg1kjd@afthd.tu-darmstadt.de
 S:	Maintained
 
 USB DIAMOND RIO500 DRIVER
@@ -2122,6 +2153,14 @@ P:	Henner Eisen
 M:	eis@baty.hanse.de
 L:	linux-x25@vger.kernel.org
 S:	Maintained
+
+XFS FILESYSTEM
+P:	Silicon Graphics Inc
+M:	owner-xfs@oss.sgi.com
+M:	nathans@sgi.com
+L:	linux-xfs@oss.sgi.com
+W:	http://oss.sgi.com/projects/xfs
+S:	Supported
 
 X86 3-LEVEL PAGING (PAE) SUPPORT
 P:	Ingo Molnar

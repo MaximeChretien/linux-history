@@ -32,7 +32,7 @@
  *  Copyright (c) 1999-2002 LSI Logic Corporation
  *  Originally By: Steven J. Ralston, Noah Romer
  *  (mailto:sjralston1@netscape.net)
- *  (mailto:lstephens@lsil.com)
+ *  (mailto:mpt_linux_developer@lsil.com)
  *
  *  $Id: mptctl.c,v 1.66 2003/05/07 14:08:32 pdelaney Exp $
  */
@@ -82,6 +82,7 @@
 #include <linux/types.h>
 #include <linux/pci.h>
 #include <linux/miscdevice.h>
+#include <linux/smp_lock.h>
 
 #include <asm/io.h>
 #include <asm/uaccess.h>
@@ -208,14 +209,6 @@ mptctl_syscall_down(MPT_ADAPTER *ioc, int nonblock)
 		return -EBUSY;
 	}
 
-#if defined(__sparc__) && defined(__sparc_v9__)		/*{*/
-	if (!nonblock) {
-		if (down_interruptible(&mptctl_syscall_sem_ioc[ioc->id]))
-			rc = -ERESTARTSYS;
-	} else {
-		rc = -EPERM;
-	}
-#else
 	if (nonblock) {
 		if (down_trylock(&mptctl_syscall_sem_ioc[ioc->id]))
 			rc = -EAGAIN;
@@ -223,7 +216,6 @@ mptctl_syscall_down(MPT_ADAPTER *ioc, int nonblock)
 		if (down_interruptible(&mptctl_syscall_sem_ioc[ioc->id]))
 			rc = -ERESTARTSYS;
 	}
-#endif
 	dctlprintk((KERN_INFO MYNAM "::mptctl_syscall_down return %d\n", rc));
 	return rc;
 }
@@ -1275,10 +1267,10 @@ mptctl_getiocinfo (unsigned long arg, unsigned int data_size)
 	/* Fill in the data and return the structure to the calling
 	 * program
 	 */
-	if (ioc->chip_type == C1030)
-		karg.adapterType = MPT_IOCTL_INTERFACE_SCSI;
-	else
+	if ((int)ioc->chip_type <= (int) FC929)
 		karg.adapterType = MPT_IOCTL_INTERFACE_FC;
+	else
+		karg.adapterType = MPT_IOCTL_INTERFACE_SCSI;
 
 	port = karg.hdr.port;
 
@@ -1329,6 +1321,7 @@ mptctl_getiocinfo (unsigned long arg, unsigned int data_size)
 	/* Set the Version Strings.
 	 */
 	strncpy (karg.driverVersion, MPT_LINUX_PACKAGE_NAME, MPT_IOCTL_VERSION_LENGTH);
+	karg.driverVersion[MPT_IOCTL_VERSION_LENGTH-1]='\0';
 
 	karg.busChangeEvent = 0;
 	karg.hostId = ioc->pfacts[port].PortSCSIID;
@@ -1369,7 +1362,8 @@ mptctl_gettargetinfo (unsigned long arg)
 	int			iocnum;
 	int			numDevices = 0;
 	unsigned int		max_id;
-	int			ii, jj, lun;
+	int			ii, jj, indexed_lun, lun_index;
+	u32			lun;
 	int			maxWordsLeft;
 	int			numBytes;
 	u8			port;
@@ -1443,8 +1437,10 @@ mptctl_gettargetinfo (unsigned long arg)
 			while (ii <= max_id) {
 				if (hd->Targets[ii]) {
 					for (jj = 0; jj <= MPT_LAST_LUN; jj++) {
-						lun = (1 << jj);
-						if (hd->Targets[ii]->luns & lun) {
+						lun_index = (jj >> 5);
+						indexed_lun = (jj % 32);
+						lun = (1 << indexed_lun);
+						if (hd->Targets[ii]->luns[lun_index] & lun) {
 							numDevices++;
 							*pdata = (jj << 16) | ii;
 							--maxWordsLeft;
@@ -1529,7 +1525,9 @@ mptctl_readtest (unsigned long arg)
 	karg.chip_type = ioc->chip_type;
 #endif
 	strncpy (karg.name, ioc->name, MPT_MAX_NAME);
+	karg.name[MPT_MAX_NAME-1]='\0';
 	strncpy (karg.product, ioc->prod_name, MPT_PRODUCT_LENGTH);
+	karg.product[MPT_PRODUCT_LENGTH-1]='\0';
 
 	/* Copy the data from kernel memory to user memory
 	 */
@@ -1950,6 +1948,8 @@ mptctl_do_mpt_command (struct mpt_ioctl_command karg, char *mfPtr, int local)
 			 */
 			if (karg.maxSenseBytes > MPT_SENSE_BUFFER_SIZE)
 				pScsiReq->SenseBufferLength = MPT_SENSE_BUFFER_SIZE;
+			else
+				pScsiReq->SenseBufferLength = karg.maxSenseBytes;
 
 			pScsiReq->SenseBufferLowAddr =
 				cpu_to_le32(ioc->sense_buf_low_dma
@@ -2011,6 +2011,8 @@ mptctl_do_mpt_command (struct mpt_ioctl_command karg, char *mfPtr, int local)
 			 */
 			if (karg.maxSenseBytes > MPT_SENSE_BUFFER_SIZE)
 				pScsiReq->SenseBufferLength = MPT_SENSE_BUFFER_SIZE;
+			else
+				pScsiReq->SenseBufferLength = karg.maxSenseBytes;
 
 			pScsiReq->SenseBufferLowAddr =
 				cpu_to_le32(ioc->sense_buf_low_dma
@@ -2471,8 +2473,10 @@ mptctl_hp_hostinfo(unsigned long arg, unsigned int data_size)
 				cfg.physAddr = buf_dma;
 				if (mpt_config(ioc, &cfg) == 0) {
 					ManufacturingPage0_t *pdata = (ManufacturingPage0_t *) pbuf;
-					if (strlen(pdata->BoardTracerNumber) > 1)
+					if (strlen(pdata->BoardTracerNumber) > 1) {
 						strncpy(karg.serial_number, pdata->BoardTracerNumber, 24);
+						karg.serial_number[24-1]='\0';
+					}
 				}
 				pci_free_consistent(ioc->pcidev, hdr.PageLength * 4, pbuf, buf_dma);
 				pbuf = NULL;
@@ -2705,27 +2709,36 @@ static struct miscdevice mptctl_miscdev = {
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 
-#if defined(__sparc__) && defined(__sparc_v9__)		/*{*/
-
-/* The dynamic ioctl32 compat. registry only exists in >2.3.x sparc64 kernels */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,3,0)		/*{*/
+#ifdef MPT_CONFIG_COMPAT
 extern int register_ioctl32_conversion(unsigned int cmd,
 				       int (*handler)(unsigned int,
 						      unsigned int,
 						      unsigned long,
 						      struct file *));
 int unregister_ioctl32_conversion(unsigned int cmd);
-extern asmlinkage int sys_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg);
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
-/* sparc32_XXX functions are used to provide a conversion between
+/* compat_XXX functions are used to provide a conversion between
  * pointers and u32's. If the arg does not contain any pointers, then
- * a specialized function (sparc32_XXX) is not needed. If the arg
+ * a specialized function (compat_XXX) is not needed. If the arg
  * does contain pointer(s), then the specialized function is used
  * to ensure the structure contents is properly processed by mptctl.
  */
 static int
-sparc32_mptfwxfer_ioctl(unsigned int fd, unsigned int cmd,
+compat_mptctl_ioctl(unsigned int fd, unsigned int cmd,
+			unsigned long arg, struct file *filp)
+{
+	int ret;
+
+	lock_kernel();
+	dctlprintk((KERN_INFO MYNAM "::compat_mptctl_ioctl() called\n"));
+	ret = mptctl_ioctl(filp->f_dentry->d_inode, filp, cmd, arg);
+	unlock_kernel();
+	return ret;
+}
+
+static int
+compat_mptfwxfer_ioctl(unsigned int fd, unsigned int cmd,
 			unsigned long arg, struct file *filp)
 {
 	struct mpt_fw_xfer32 kfw32;
@@ -2735,7 +2748,7 @@ sparc32_mptfwxfer_ioctl(unsigned int fd, unsigned int cmd,
 	int nonblock = (filp->f_flags & O_NONBLOCK);
 	int ret;
 
-	dctlprintk((KERN_INFO MYNAM "::sparc32_mptfwxfer_ioctl() called\n"));
+	dctlprintk((KERN_INFO MYNAM "::compat_mptfwxfer_ioctl() called\n"));
 
 	if (copy_from_user(&kfw32, (char *)arg, sizeof(kfw32)))
 		return -EFAULT;
@@ -2744,7 +2757,7 @@ sparc32_mptfwxfer_ioctl(unsigned int fd, unsigned int cmd,
 	iocnumX = kfw32.iocnum & 0xFF;
 	if (((iocnum = mpt_verify_adapter(iocnumX, &iocp)) < 0) ||
 	    (iocp == NULL)) {
-		dctlprintk((KERN_ERR MYNAM "::sparc32_mptfwxfer_ioctl @%d - ioc%d not found!\n",
+		dctlprintk((KERN_ERR MYNAM "::compat_mptfwxfer_ioctl @%d - ioc%d not found!\n",
 				__LINE__, iocnumX));
 		return -ENODEV;
 	}
@@ -2764,7 +2777,7 @@ sparc32_mptfwxfer_ioctl(unsigned int fd, unsigned int cmd,
 }
 
 static int
-sparc32_mpt_command(unsigned int fd, unsigned int cmd,
+compat_mpt_command(unsigned int fd, unsigned int cmd,
 			unsigned long arg, struct file *filp)
 {
 	struct mpt_ioctl_command32 karg32;
@@ -2775,7 +2788,7 @@ sparc32_mpt_command(unsigned int fd, unsigned int cmd,
 	int nonblock = (filp->f_flags & O_NONBLOCK);
 	int ret;
 
-	dctlprintk((KERN_INFO MYNAM "::sparc32_mpt_command() called\n"));
+	dctlprintk((KERN_INFO MYNAM "::compat_mpt_command() called\n"));
 
 	if (copy_from_user(&karg32, (char *)arg, sizeof(karg32)))
 		return -EFAULT;
@@ -2784,7 +2797,7 @@ sparc32_mpt_command(unsigned int fd, unsigned int cmd,
 	iocnumX = karg32.hdr.iocnum & 0xFF;
 	if (((iocnum = mpt_verify_adapter(iocnumX, &iocp)) < 0) ||
 	    (iocp == NULL)) {
-		dctlprintk((KERN_ERR MYNAM "::sparc32_mpt_command @%d - ioc%d not found!\n",
+		dctlprintk((KERN_ERR MYNAM "::compat_mpt_command @%d - ioc%d not found!\n",
 				__LINE__, iocnumX));
 		return -ENODEV;
 	}
@@ -2817,8 +2830,7 @@ sparc32_mpt_command(unsigned int fd, unsigned int cmd,
 	return ret;
 }
 
-#endif		/*} linux >= 2.3.x */
-#endif		/*} sparc */
+#endif
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 int __init mptctl_init(void)
@@ -2864,35 +2876,34 @@ int __init mptctl_init(void)
 		}
 	}
 
-#if defined(__sparc__) && defined(__sparc_v9__)		/*{*/
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,3,0)		/*{*/
-	err = register_ioctl32_conversion(MPTIOCINFO, NULL);
+#ifdef MPT_CONFIG_COMPAT
+	err = register_ioctl32_conversion(MPTIOCINFO, compat_mptctl_ioctl);
 	if (++where && err) goto out_fail;
-	err = register_ioctl32_conversion(MPTIOCINFO1, NULL);
+	err = register_ioctl32_conversion(MPTIOCINFO1, compat_mptctl_ioctl);
 	if (++where && err) goto out_fail;
-	err = register_ioctl32_conversion(MPTTARGETINFO, NULL);
+	err = register_ioctl32_conversion(MPTTARGETINFO, compat_mptctl_ioctl);
 	if (++where && err) goto out_fail;
-	err = register_ioctl32_conversion(MPTTEST, NULL);
+	err = register_ioctl32_conversion(MPTTEST, compat_mptctl_ioctl);
 	if (++where && err) goto out_fail;
-	err = register_ioctl32_conversion(MPTEVENTQUERY, NULL);
+	err = register_ioctl32_conversion(MPTEVENTQUERY, compat_mptctl_ioctl);
 	if (++where && err) goto out_fail;
-	err = register_ioctl32_conversion(MPTEVENTENABLE, NULL);
+	err = register_ioctl32_conversion(MPTEVENTENABLE, compat_mptctl_ioctl);
 	if (++where && err) goto out_fail;
-	err = register_ioctl32_conversion(MPTEVENTREPORT, NULL);
+	err = register_ioctl32_conversion(MPTEVENTREPORT, compat_mptctl_ioctl);
 	if (++where && err) goto out_fail;
-	err = register_ioctl32_conversion(MPTHARDRESET, NULL);
+	err = register_ioctl32_conversion(MPTHARDRESET, compat_mptctl_ioctl);
 	if (++where && err) goto out_fail;
-	err = register_ioctl32_conversion(MPTCOMMAND32, sparc32_mpt_command);
+	err = register_ioctl32_conversion(MPTCOMMAND32, compat_mpt_command);
 	if (++where && err) goto out_fail;
 	err = register_ioctl32_conversion(MPTFWDOWNLOAD32,
-					  sparc32_mptfwxfer_ioctl);
+					  compat_mptfwxfer_ioctl);
 	if (++where && err) goto out_fail;
-	err = register_ioctl32_conversion(HP_GETHOSTINFO, NULL);
+	err = register_ioctl32_conversion(HP_GETHOSTINFO, compat_mptctl_ioctl);
 	if (++where && err) goto out_fail;
-	err = register_ioctl32_conversion(HP_GETTARGETINFO, NULL);
+	err = register_ioctl32_conversion(HP_GETTARGETINFO,
+	    				compat_mptctl_ioctl);
 	if (++where && err) goto out_fail;
-#endif		/*} linux >= 2.3.x */
-#endif		/*} sparc */
+#endif
 
 	/* Register this device */
 	err = misc_register(&mptctl_miscdev);
@@ -2925,8 +2936,7 @@ int __init mptctl_init(void)
 
 out_fail:
 
-#if defined(__sparc__) && defined(__sparc_v9__)		/*{*/
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,3,0)		/*{*/
+#ifdef MPT_CONFIG_COMPAT
 	printk(KERN_ERR MYNAM ": ERROR: Failed to register ioctl32_conversion!"
 			" (%d:err=%d)\n", where, err);
 	unregister_ioctl32_conversion(MPTIOCINFO);
@@ -2941,8 +2951,7 @@ out_fail:
 	unregister_ioctl32_conversion(MPTFWDOWNLOAD32);
 	unregister_ioctl32_conversion(HP_GETHOSTINFO);
 	unregister_ioctl32_conversion(HP_GETTARGETINFO);
-#endif		/*} linux >= 2.3.x */
-#endif		/*} sparc */
+#endif
 
 	for (i=0; i<MPT_MAX_ADAPTERS; i++) {
 		ioc = NULL;
@@ -2978,6 +2987,21 @@ void mptctl_exit(void)
 	/* De-register callback handler from base module */
 	mpt_deregister(mptctl_id);
 	printk(KERN_INFO MYNAM ": Deregistered from Fusion MPT base driver\n");
+
+#ifdef MPT_CONFIG_COMPAT
+	unregister_ioctl32_conversion(MPTIOCINFO);
+	unregister_ioctl32_conversion(MPTIOCINFO1);
+	unregister_ioctl32_conversion(MPTTARGETINFO);
+	unregister_ioctl32_conversion(MPTTEST);
+	unregister_ioctl32_conversion(MPTEVENTQUERY);
+	unregister_ioctl32_conversion(MPTEVENTENABLE);
+	unregister_ioctl32_conversion(MPTEVENTREPORT);
+	unregister_ioctl32_conversion(MPTHARDRESET);
+	unregister_ioctl32_conversion(MPTCOMMAND32);
+	unregister_ioctl32_conversion(MPTFWDOWNLOAD32);
+	unregister_ioctl32_conversion(HP_GETHOSTINFO);
+	unregister_ioctl32_conversion(HP_GETTARGETINFO);
+#endif
 
 	/* Free allocated memory */
 	for (i=0; i<MPT_MAX_ADAPTERS; i++) {

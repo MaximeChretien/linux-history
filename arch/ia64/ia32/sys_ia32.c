@@ -74,6 +74,7 @@
 #define OFFSET4K(a)		((a) & 0xfff)
 #define PAGE_START(addr)	((addr) & PAGE_MASK)
 #define PAGE_OFF(addr)		((addr) & ~PAGE_MASK)
+#define MINSIGSTKSZ_IA32	2048
 
 extern asmlinkage long sys_execve (char *, char **, char **, struct pt_regs *);
 extern asmlinkage long sys_mprotect (unsigned long, size_t, unsigned long);
@@ -201,13 +202,18 @@ extern asmlinkage long sys_newstat (char * filename, struct stat * statbuf);
 asmlinkage long
 sys32_newstat (char *filename, struct stat32 *statbuf)
 {
+	char *name;
 	int ret;
 	struct stat s;
 	mm_segment_t old_fs = get_fs();
 
+	name = getname(filename);
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 	set_fs(KERNEL_DS);
-	ret = sys_newstat(filename, &s);
+	ret = sys_newstat(name, &s);
 	set_fs(old_fs);
+	putname(name);
 	if (putstat(statbuf, &s))
 		return -EFAULT;
 	return ret;
@@ -218,13 +224,18 @@ extern asmlinkage long sys_newlstat(char * filename, struct stat * statbuf);
 asmlinkage long
 sys32_newlstat (char *filename, struct stat32 *statbuf)
 {
+	char *name;
 	mm_segment_t old_fs = get_fs();
 	struct stat s;
 	int ret;
 
+	name = getname(filename);
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 	set_fs(KERNEL_DS);
-	ret = sys_newlstat(filename, &s);
+	ret = sys_newlstat(name, &s);
 	set_fs(old_fs);
+	putname(name);
 	if (putstat(statbuf, &s))
 		return -EFAULT;
 	return ret;
@@ -698,13 +709,18 @@ extern asmlinkage long sys_statfs(const char * path, struct statfs * buf);
 asmlinkage long
 sys32_statfs (const char *path, struct statfs32 *buf)
 {
+	const char *name;
 	int ret;
 	struct statfs s;
 	mm_segment_t old_fs = get_fs();
 
+	name = getname(path);
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 	set_fs(KERNEL_DS);
-	ret = sys_statfs(path, &s);
+	ret = sys_statfs(name, &s);
 	set_fs(old_fs);
+	putname(name);
 	if (put_statfs(buf, &s))
 		return -EFAULT;
 	return ret;
@@ -3388,10 +3404,18 @@ sys32_sigaltstack (ia32_stack_t *uss32, ia32_stack_t *uoss32,
 			return -EFAULT;
 	uss.ss_sp = (void *) (long) buf32.ss_sp;
 	uss.ss_flags = buf32.ss_flags;
-	uss.ss_size = buf32.ss_size;
+	/* MINSIGSTKSZ is different for ia32 vs ia64. We lie here to pass the 
+           check and set it to the user requested value later */
+	if ((buf32.ss_flags != SS_DISABLE) && (buf32.ss_size < MINSIGSTKSZ_IA32)) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	uss.ss_size = MINSIGSTKSZ;
 	set_fs(KERNEL_DS);
 	ret = do_sigaltstack(uss32 ? &uss : NULL, &uoss, pt->r12);
+ 	current->sas_ss_size = buf32.ss_size;	
 	set_fs(old_fs);
+out:
 	if (ret < 0)
 		return(ret);
 	if (uoss32) {
@@ -3689,13 +3713,18 @@ putstat64 (struct stat64 *ubuf, struct stat *kbuf)
 asmlinkage long
 sys32_stat64 (char *filename, struct stat64 *statbuf)
 {
+	char *name;
 	mm_segment_t old_fs = get_fs();
 	struct stat s;
 	long ret;
 
+	name = getname(filename);
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 	set_fs(KERNEL_DS);
-	ret = sys_newstat(filename, &s);
+	ret = sys_newstat(name, &s);
 	set_fs(old_fs);
+	putname(name);
 	if (putstat64(statbuf, &s))
 		return -EFAULT;
 	return ret;
@@ -3704,13 +3733,18 @@ sys32_stat64 (char *filename, struct stat64 *statbuf)
 asmlinkage long
 sys32_lstat64 (char *filename, struct stat64 *statbuf)
 {
+	char *name;
 	mm_segment_t old_fs = get_fs();
 	struct stat s;
 	long ret;
 
+	name = getname(filename);
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 	set_fs(KERNEL_DS);
-	ret = sys_newlstat(filename, &s);
+	ret = sys_newlstat(name, &s);
 	set_fs(old_fs);
+	putname(name);
 	if (putstat64(statbuf, &s))
 		return -EFAULT;
 	return ret;

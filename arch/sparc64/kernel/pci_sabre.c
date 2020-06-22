@@ -325,15 +325,21 @@ static int __sabre_read_dword(struct pci_dev *dev, int where, u32 *value)
 	return PCIBIOS_SUCCESSFUL;
 }
 
+/* When accessing PCI config space of the PCI controller itself (bus
+ * 0, device slot 0, function 0) there are restrictions.  Each
+ * register must be accessed as it's natural size.  Thus, for example
+ * the Vendor ID must be accessed as a 16-bit quantity.
+ */
+
 static int sabre_read_byte(struct pci_dev *dev, int where, u8 *value)
 {
-	if (dev->bus->number)
-		return __sabre_read_byte(dev, where, value);
-
-	if (sabre_out_of_range(dev->devfn)) {
+	if (!dev->bus->number && sabre_out_of_range(dev->devfn)) {
 		*value = 0xff;
 		return PCIBIOS_SUCCESSFUL;
 	}
+
+	if (dev->bus->number || PCI_SLOT(dev->devfn))
+		return __sabre_read_byte(dev, where, value);
 
 	if (where < 8) {
 		u16 tmp;
@@ -350,13 +356,13 @@ static int sabre_read_byte(struct pci_dev *dev, int where, u8 *value)
 
 static int sabre_read_word(struct pci_dev *dev, int where, u16 *value)
 {
-	if (dev->bus->number)
-		return __sabre_read_word(dev, where, value);
-
-	if (sabre_out_of_range(dev->devfn)) {
+	if (!dev->bus->number && sabre_out_of_range(dev->devfn)) {
 		*value = 0xffff;
 		return PCIBIOS_SUCCESSFUL;
 	}
+
+	if (dev->bus->number || PCI_SLOT(dev->devfn))
+		return __sabre_read_word(dev, where, value);
 
 	if (where < 8)
 		return __sabre_read_word(dev, where, value);
@@ -375,13 +381,13 @@ static int sabre_read_dword(struct pci_dev *dev, int where, u32 *value)
 {
 	u16 tmp;
 
-	if (dev->bus->number)
-		return __sabre_read_dword(dev, where, value);
-
-	if (sabre_out_of_range(dev->devfn)) {
+	if (!dev->bus->number && sabre_out_of_range(dev->devfn)) {
 		*value = 0xffffffff;
 		return PCIBIOS_SUCCESSFUL;
 	}
+
+	if (dev->bus->number || PCI_SLOT(dev->devfn))
+		return __sabre_read_dword(dev, where, value);
 
 	sabre_read_word(dev, where, &tmp);
 	*value = tmp;

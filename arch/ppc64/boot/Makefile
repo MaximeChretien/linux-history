@@ -31,6 +31,10 @@ BOOTAFLAGS = -D__ASSEMBLY__ $(HOSTCFLAGS) -I$(HPATH)
 
 OBJCOPYFLAGS = contents,alloc,load,readonly,data
 
+LDVARS=	\
+	--defsym _vmlinux_memsize=0x`$(CROSS_COMPILE)nm -n $(TOPDIR)/vmlinux | sed '$$s/^........\([^ ]*\).*/\1/p;d'` \
+	--defsym _vmlinux_filesize=0x`ls -l $(TOPDIR)/vmlinux | awk '{ printf "%x\n", $$5 }'`
+
 .c.o:
 	$(BOOTCC) $(BOOTCFLAGS) -c -o $*.o $<
 .S.o:
@@ -39,7 +43,7 @@ OBJCOPYFLAGS = contents,alloc,load,readonly,data
 CFLAGS	= $(CPPFLAGS) -O -fno-builtin -DSTDC_HEADERS
 LD_ARGS = -Ttext 0x00400000 -e _start
 
-OBJS = crt0.o string.o prom.o zImage.o zlib.o imagesize.o
+OBJS = crt0.o string.o prom.o zImage.o zlib.o
 LIBS =
 
 ifeq ($(CONFIG_SMP),y)
@@ -88,11 +92,12 @@ addnote: addnote.c
 	$(HOSTCC) $(HOSTCFLAGS) -o addnote addnote.c
 
 
-imagesize.c: $(TOPDIR)/vmlinux
-	ls -l $(TOPDIR)/vmlinux | awk '{printf "/* generated -- do not edit! */\nunsigned long vmlinux_filesize = %d;\n", $$5}' > imagesize.c
-	$(CROSS_COMPILE)nm -n $(TOPDIR)/vmlinux | awk '{i=$$1}END{printf "unsigned long vmlinux_memsize = 0x%s;\n", substr(i,8)}' >> imagesize.c
-
 zImage.o: $(TOPDIR)/vmlinux
+
+uts_string: uts_string.txt
+	$(OBJCOPY) zImage.o \
+		--add-section=.kernel:$@=$@.txt \
+		--set-section-flags=.kernel:$@=$(OBJCOPYFLAGS)
 
 vmlinux .config System.map: % : $(TOPDIR)/% zImage.o
 	gzip -cvf9 $(TOPDIR)/$@ > kernel-$@.gz
@@ -105,17 +110,23 @@ initrd: ramdisk.image.gz
 		--add-section=.kernel:$@=ramdisk.image.gz \
 		--set-section-flags=.kernel:$@=$(OBJCOPYFLAGS)
 
-zImage: $(OBJS) addnote vmlinux .config System.map
-	$(BOOTLD) $(LD_ARGS) -T zImage.lds -o $@ $(OBJS) $(LIBS)
+uts_string.txt: $(TOPDIR)/vmlinux
+	strings $(TOPDIR)/vmlinux | \
+	grep -E 'Linux version .* .gcc version' > $@
+
+zImage: $(OBJS) addnote uts_string vmlinux .config System.map
+	$(BOOTLD) $(LD_ARGS) -T zImage.lds -o $@ $(OBJS) $(LIBS) \
+        $(LDVARS)
 	./addnote $@
 
-zImage.initrd: $(OBJS) addnote vmlinux .config System.map initrd
-	$(BOOTLD) $(LD_ARGS) -T zImage.lds -o $@ $(OBJS) $(LIBS)
+zImage.initrd: $(OBJS) addnote uts_string vmlinux .config System.map initrd
+	$(BOOTLD) $(LD_ARGS) -T zImage.lds -o $@ $(OBJS) $(LIBS) \
+        $(LDVARS)
 	./addnote $@
 
 clean:
 	rm -f add{note,RamDisk,SystemMap} $(OBJS) initrd.o \
-		vmlinux.{sm,initrd} zImage{,.initrd} imagesize.c \
+		vmlinux.{sm,initrd} zImage{,.initrd} uts_string.txt \
 		kernel-{vmlinux,.config,System.map}.gz
 
 fastdep:

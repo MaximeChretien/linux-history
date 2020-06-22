@@ -75,7 +75,7 @@ wrap_mmu_context (struct mm_struct *mm)
 	 * and because interrupts are disabled during context switch.
 	 */
 	for (i = 0; i < NR_CPUS; ++i)
-		if (i != smp_processor_id())
+		if (cpu_online(i) && (i != smp_processor_id()))
 			cpu_data(i)->need_tlb_flush = 1;
 	local_flush_tlb_all();
 }

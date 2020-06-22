@@ -28,12 +28,20 @@ struct usb_ep;
  * 	for mapping and unmapping the buffer.
  * @length: Length of that data
  * @no_interrupt: If true, hints that no completion irq is needed.
- *	Helpful sometimes with deep request queues.
+ *	Helpful sometimes with deep request queues that are handled
+ *	directly by DMA controllers.
  * @zero: If true, when writing data, makes the last packet be "short"
  *     by adding a zero length packet as needed;
  * @short_not_ok: When reading data, makes short packets be
  *     treated as errors (queue stops advancing till cleanup).
- * @complete: Function called when request completes
+ * @complete: Function called when request completes, so this request and
+ *	its buffer may be re-used.
+ *	Reads terminate with a short packet, or when the buffer fills,
+ *	whichever comes first.  When writes terminate, some data bytes
+ *	will usually still be in flight (often in a hardware fifo).
+ *	Errors (for reads or writes) stop the queue from advancing
+ *	until the completion function returns, so that any transfers
+ *	invalidated by the error may first be dequeued.
  * @context: For use by the completion callback
  * @list: For use by the gadget driver.
  * @status: Reports completion code, zero or a negative errno.
@@ -41,12 +49,13 @@ struct usb_ep;
  * 	the completion callback returns.
  * 	Code "-ESHUTDOWN" indicates completion caused by device disconnect,
  * 	or when the driver disabled the endpoint.
- * @actual: Reports actual bytes transferred.  For reads (OUT
+ * @actual: Reports bytes transferred to/from the buffer.  For reads (OUT
  * 	transfers) this may be less than the requested length.  If the
  * 	short_not_ok flag is set, short reads are treated as errors
  * 	even when status otherwise indicates successful completion.
- * 	Note that for writes (IN transfers) the data bytes may still
- * 	reside in a device-side FIFO.
+ * 	Note that for writes (IN transfers) some data bytes may still
+ * 	reside in a device-side FIFO when the request is reported as
+ *	complete.
  *
  * These are allocated/freed through the endpoint they're used with.  The
  * hardware's driver can add extra per-request data to the memory it returns,
@@ -72,9 +81,9 @@ struct usb_request {
 	unsigned		length;
 	dma_addr_t		dma;
 
-	unsigned		no_interrupt : 1,
-				zero : 1,
-				short_not_ok : 1;
+	unsigned		no_interrupt:1;
+	unsigned		zero:1;
+	unsigned		short_not_ok:1;
 
 	void			(*complete)(struct usb_ep *ep,
 					struct usb_request *req);
@@ -122,9 +131,11 @@ struct usb_ep_ops {
 /**
  * struct usb_ep - device side representation of USB endpoint
  * @name:identifier for the endpoint, such as "ep-a" or "ep9in-bulk"
+ * @ops: Function pointers used to access hardware-specific operations.
  * @ep_list:the gadget's ep_list holds all of its endpoints
- * @maxpacket:the maximum packet size used on this endpoint, as
- * 	configured when the endpoint was enabled.
+ * @maxpacket:The maximum packet size used on this endpoint.  The initial
+ *	value can sometimes be reduced (hardware allowing), according to
+ *      the endpoint descriptor used to configure the endpoint.
  * @driver_data:for use by the gadget driver.  all other fields are
  * 	read-only to gadget drivers.
  *
@@ -138,7 +149,7 @@ struct usb_ep {
 	const char		*name;
 	const struct usb_ep_ops	*ops;
 	struct list_head	ep_list;
-	unsigned		maxpacket : 16;
+	unsigned		maxpacket:16;
 };
 
 /*-------------------------------------------------------------------------*/
@@ -285,6 +296,9 @@ usb_ep_free_buffer (struct usb_ep *ep, void *buf, dma_addr_t dma, unsigned len)
  * Each request is turned into one or more packets.  The controller driver
  * never merges adjacent requests into the same packet.  OUT transfers
  * will sometimes use data that's already buffered in the hardware.
+ * Drivers can rely on the fact that the first byte of the request's buffer
+ * always corresponds to the first byte of some USB packet, for both
+ * IN and OUT transfers.
  *
  * Bulk endpoints can queue any amount of data; the transfer is packetized
  * automatically.  The last packet will be short if the request doesn't fill it
@@ -359,6 +373,9 @@ static inline int usb_ep_dequeue (struct usb_ep *ep, struct usb_request *req)
  *
  * Returns zero, or a negative error code.  On success, this call sets
  * underlying hardware state that blocks data transfers.
+ * Attempts to halt IN endpoints will fail (returning -EAGAIN) if any
+ * transfer requests are still queued, or if the controller hardware
+ * (usually a FIFO) still holds bytes that the host hasn't collected.
  */
 static inline int
 usb_ep_set_halt (struct usb_ep *ep)
@@ -391,8 +408,8 @@ usb_ep_clear_halt (struct usb_ep *ep)
  *
  * FIFO endpoints may have "unclaimed data" in them in certain cases,
  * such as after aborted transfers.  Hosts may not have collected all
- * the IN data written by the gadget driver, as reported by a request
- * completion.  The gadget driver may not have collected all the data
+ * the IN data written by the gadget driver (and reported by a request
+ * completion).  The gadget driver may not have collected all the data
  * written OUT to it by the host.  Drivers that need precise handling for
  * fault reporting or recovery may need to use this call.
  *
@@ -443,18 +460,21 @@ struct usb_gadget_ops {
 
 /**
  * struct usb_gadget - represents a usb slave device
+ * @ops: Function pointers used to access hardware-specific operations.
  * @ep0: Endpoint zero, used when reading or writing responses to
  * 	driver setup() requests
  * @ep_list: List of other endpoints supported by the device.
  * @speed: Speed of current connection to USB host.
  * @name: Identifies the controller hardware type.  Used in diagnostics
  * 	and sometimes configuration.
+ * @dev: Driver model state for this abstract device.
  *
  * Gadgets have a mostly-portable "gadget driver" implementing device
- * functions, handling all usb configurations and interfaces.  They
- * also have a hardware-specific driver (accessed through ops vectors),
- * which insulates the gadget driver from hardware details and packages
- * the hardware endpoints through generic i/o queues.
+ * functions, handling all usb configurations and interfaces.  Gadget
+ * drivers talk to hardware-specific code indirectly, through ops vectors.
+ * That insulates the gadget driver from hardware details, and packages
+ * the hardware endpoints through generic i/o queues.  The "usb_gadget"
+ * and "usb_ep" interfaces provide that insulation from the hardware.
  *
  * Except for the driver data, all fields in this structure are
  * read-only to the gadget driver.  That driver data is part of the

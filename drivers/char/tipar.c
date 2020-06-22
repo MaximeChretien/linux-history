@@ -71,9 +71,11 @@
 #define DRIVER_DESC    "Device driver for TI/PC parallel link cables"
 #define DRIVER_LICENSE "GPL"
 
-#define VERSION(ver,rel,seq) (((ver)<<16) | ((rel)<<8) | (seq))
-#if LINUX_VERSION_CODE < VERSION(2,5,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,4,18)
 # define minor(x) MINOR(x)
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)
 # define need_resched() (current->need_resched)
 #endif
 

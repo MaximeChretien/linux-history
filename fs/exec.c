@@ -427,6 +427,15 @@ static int exec_mmap(void)
 
 	old_mm = current->mm;
 
+	if (old_mm && atomic_read(&old_mm->mm_users) == 1) {
+		mm_release();
+		down_write(&old_mm->mmap_sem);
+		exit_mmap(old_mm);
+		up_write(&old_mm->mmap_sem);
+		return 0;
+	}
+
+
 	mm = mm_alloc();
 	if (mm) {
 		struct mm_struct *active_mm;

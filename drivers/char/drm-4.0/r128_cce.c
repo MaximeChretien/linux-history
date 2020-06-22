@@ -86,12 +86,12 @@ static u32 r128_cce_microcode[] = {
 };
 
 
-#define DO_REMAP(_m) (_m)->handle = drm_ioremap((_m)->offset, (_m)->size)
+#define DO_REMAP(_m, _d) (_m)->handle = drm_ioremap((_m)->offset, (_m)->size, (_d))
 
-#define DO_REMAPFREE(_m)                                                    \
+#define DO_REMAPFREE(_m, _d)                                                   \
 	do {                                                                \
 		if ((_m)->handle && (_m)->size)                             \
-			drm_ioremapfree((_m)->handle, (_m)->size);          \
+			drm_ioremapfree((_m)->handle, (_m)->size, (_d));    \
 	} while (0)
 
 #define DO_FIND_MAP(_m, _o)                                                 \
@@ -481,12 +481,12 @@ static int r128_do_init_cce( drm_device_t *dev, drm_r128_init_t *init )
 		(drm_r128_sarea_t *)((u8 *)dev_priv->sarea->handle +
 				     init->sarea_priv_offset);
 
-	DO_REMAP( dev_priv->cce_ring );
-	DO_REMAP( dev_priv->ring_rptr );
-	DO_REMAP( dev_priv->buffers );
+	DO_REMAP( dev_priv->cce_ring, dev );
+	DO_REMAP( dev_priv->ring_rptr, dev );
+	DO_REMAP( dev_priv->buffers, dev );
 #if 0
 	if ( !dev_priv->is_pci ) {
-		DO_REMAP( dev_priv->agp_textures );
+		DO_REMAP( dev_priv->agp_textures, dev );
 	}
 #endif
 
@@ -521,12 +521,12 @@ static int r128_do_cleanup_cce( drm_device_t *dev )
 	if ( dev->dev_private ) {
 		drm_r128_private_t *dev_priv = dev->dev_private;
 
-		DO_REMAPFREE( dev_priv->cce_ring );
-		DO_REMAPFREE( dev_priv->ring_rptr );
-		DO_REMAPFREE( dev_priv->buffers );
+		DO_REMAPFREE( dev_priv->cce_ring, dev );
+		DO_REMAPFREE( dev_priv->ring_rptr, dev );
+		DO_REMAPFREE( dev_priv->buffers, dev );
 #if 0
 		if ( !dev_priv->is_pci ) {
-			DO_REMAPFREE( dev_priv->agp_textures );
+			DO_REMAPFREE( dev_priv->agp_textures, dev );
 		}
 #endif
 

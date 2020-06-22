@@ -53,7 +53,7 @@ UNUSUAL_DEV(  0x03ee, 0x0000, 0x0000, 0x0245,
 UNUSUAL_DEV(  0x03ee, 0x6901, 0x0000, 0x0100,
 		"Mitsumi",
 		"USB FDD",
-		US_SC_UFI, US_PR_CBI, NULL,
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_SINGLE_LUN ),
 
 UNUSUAL_DEV(  0x03f0, 0x0107, 0x0200, 0x0200, 
@@ -101,6 +101,12 @@ UNUSUAL_DEV(  0x0482, 0x0101, 0x0100, 0x0100,
 		"Kyocera",
 		"Finecam S4",
 		US_SC_8070, US_PR_CB, NULL, US_FL_FIX_INQUIRY),
+
+/* Patch submitted by Stephane Galles <stephane.galles@free.fr> */
+UNUSUAL_DEV(  0x0482, 0x0103, 0x0100, 0x0100,
+		"Kyocera",
+		"Finecam S5",
+		US_SC_DEVICE, US_PR_DEVICE, NULL, US_FL_FIX_INQUIRY),
 
 /* Reported by Paul Stewart <stewart@wetlogic.net>
  * This entry is needed because the device reports Sub=ff */
@@ -257,7 +263,7 @@ UNUSUAL_DEV(  0x054c, 0x002b, 0x0100, 0x0110,
 UNUSUAL_DEV(  0x054c, 0x002d, 0x0100, 0x0100, 
 		"Sony",
 		"Memorystick MSAC-US1",
-		US_SC_UFI, US_PR_CB, NULL,
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_SINGLE_LUN ),
 
 /* Submitted by Klaus Mueller <k.mueller@intershop.de> */
@@ -283,7 +289,7 @@ UNUSUAL_DEV(  0x054c, 0x0069, 0x0000, 0x9999,
 UNUSUAL_DEV(  0x054c, 0x006d, 0x0000, 0x9999,
 		"Sony",
 		"PEG Mass Storage",
-		US_SC_8070, US_PR_CBI, NULL,
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_FIX_INQUIRY ),
 		
 UNUSUAL_DEV(  0x057b, 0x0000, 0x0000, 0x0299, 
@@ -297,6 +303,12 @@ UNUSUAL_DEV(  0x057b, 0x0000, 0x0300, 0x9999,
 		"Flashbuster-U",
 		US_SC_DEVICE,  US_PR_DEVICE, NULL,
 		US_FL_SINGLE_LUN),
+
+/* Fabrizio Fellini <fello@libero.it> */
+UNUSUAL_DEV(  0x0595, 0x4343, 0x0000, 0x2210,
+		"Fujifilm",
+		"Digital Camera EX-20 DSC",
+		US_SC_8070, US_PR_CBI, NULL, 0 ),
 
 UNUSUAL_DEV(  0x059f, 0xa601, 0x0200, 0x0200, 
 		"LaCie",
@@ -354,6 +366,13 @@ UNUSUAL_DEV(  0x05e3, 0x0700, 0x0000, 0xffff,
 		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_FIX_INQUIRY ),
 
+/* Submitted Alexander Oltu <alexander@all-2.com> */
+UNUSUAL_DEV(  0x05e3, 0x0701, 0x0000, 0xffff, 
+		"", 
+		"USB TO IDE",
+		US_SC_SCSI, US_PR_DEVICE, NULL,
+		US_FL_MODE_XLATE ), 
+
 /* Reported by Peter Marks <peter.marks@turner.com>
  * Like the SIIG unit above, this unit needs an INQUIRY to ask for exactly
  * 36 bytes of data.  No more, no less. That is the only reason this entry
@@ -399,6 +418,28 @@ UNUSUAL_DEV(  0x0686, 0x4017, 0x0001, 0x0001,
                 "Minolta",
                 "DIMAGE E223",
                 US_SC_SCSI, US_PR_DEVICE, NULL, 0 ),
+
+/* Following three Minolta cameras reported by Martin Pool
+ * <mbp@sourcefrog.net>.  Originally discovered by Kedar Petankar,
+ * Matthew Geier, Mikael Lofj"ard, Marcel de Boer.
+ */
+UNUSUAL_DEV( 0x0686, 0x4006, 0x0001, 0x0001,
+             "Minolta",
+             "DiMAGE 7",
+             US_SC_SCSI, US_PR_DEVICE, NULL,
+             0 ),
+
+UNUSUAL_DEV( 0x0686, 0x400b, 0x0001, 0x0001,
+             "Minolta",
+             "DiMAGE 7i",
+             US_SC_SCSI, US_PR_DEVICE, NULL,
+             0 ),
+
+UNUSUAL_DEV( 0x0686, 0x400f, 0x0001, 0x0001,
+             "Minolta",
+             "DiMAGE 7Hi",
+             US_SC_SCSI, US_PR_DEVICE, NULL,
+             0 ),
 
 UNUSUAL_DEV(  0x0693, 0x0002, 0x0100, 0x0100, 
 		"Hagiwara",
@@ -528,6 +569,14 @@ UNUSUAL_DEV(  0x07c4, 0xa109, 0x0000, 0xffff,
 		US_SC_SCSI, US_PR_DATAFAB, NULL,
 		US_FL_MODE_XLATE ),
 #endif
+#ifdef CONFIG_USB_STORAGE_SDDR55
+/* SM part - aeb <Andries.Brouwer@cwi.nl> */
+UNUSUAL_DEV(  0x07c4, 0xa109, 0x0000, 0xffff,
+		"Datafab Systems, Inc.",
+		"USB to CF + SM Combo (LC1)",
+		US_SC_SCSI, US_PR_SDDR55, NULL,
+		US_FL_SINGLE_LUN ),
+#endif
 
 /* Datafab KECF-USB / Sagatek DCS-CF / Simpletech Flashlink UCF-100
  * Only revision 1.13 tested (same for all of the above devices,
@@ -570,11 +619,27 @@ UNUSUAL_DEV(  0x08ca, 0x2011, 0x0000, 0x9999,
 		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_MODE_XLATE ),
 
+/*Medion 6047 Digital Camera
+Davide Andrian <_nessuno_@katamail.com>
+*/
+UNUSUAL_DEV( 0x08ca, 0x2011, 0x0001, 0x0001,
+		"3MegaCam",
+		"3MegaCam",
+		US_SC_DEVICE, US_PR_BULK, NULL,
+		US_FL_MODE_XLATE ),
+
+/* Trumpion Microelectronics MP3 player (felipe_alfaro@linuxmail.org) */
+UNUSUAL_DEV( 0x090a, 0x1200, 0x0000, 0x9999,
+		"Trumpion",
+		"MP3 player",
+		US_SC_RBC, US_PR_BULK, NULL,
+		US_FL_MODE_XLATE),
+
 /* aeb */
 UNUSUAL_DEV( 0x090c, 0x1132, 0x0000, 0xffff,
 		"Feiya",
 		"5-in-1 Card Reader",
-		US_SC_SCSI, US_PR_BULK, NULL,
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_FIX_CAPACITY ),
 
 UNUSUAL_DEV(  0x097a, 0x0001, 0x0000, 0x0001,
@@ -602,11 +667,18 @@ UNUSUAL_DEV( 0x0a17, 0x0004, 0x1000, 0x1000,
                 US_SC_DEVICE, US_PR_DEVICE, NULL,
                 US_FL_FIX_INQUIRY ),
 
+/* This entry from <matthias@ma-c.de> in the Debian mailing list */
+UNUSUAL_DEV( 0x0a17, 0x0006, 0x0000, 0xffff,
+		"Pentax",
+		"Optio 330GS",
+		US_SC_8070, US_PR_CB, NULL,
+		US_FL_MODE_XLATE | US_FL_FIX_INQUIRY ),
+
 /* Submitted by Per Winkvist <per.winkvist@uk.com> */
 UNUSUAL_DEV( 0x0a17, 0x006, 0x1000, 0x9009,
                 "Pentax",
-                "Optio S",
-                US_SC_8070, US_PR_CBI, NULL,
+                "Optio S/S4",
+                US_SC_DEVICE, US_PR_DEVICE, NULL,
                 US_FL_FIX_INQUIRY ),
 		
 #ifdef CONFIG_USB_STORAGE_ISD200
@@ -616,13 +688,6 @@ UNUSUAL_DEV(  0x0bf6, 0xa001, 0x0100, 0x0110,
 		US_SC_ISD200, US_PR_BULK, isd200_Initialization,
 		0 ),
 #endif
-
-/* Submitted by Antoine Mairesse <antoine.mairesse@free.fr> */
-UNUSUAL_DEV( 0x0ed1, 0x6660, 0x0100, 0x0300,
-		"USB",
-		"Solid state disk",
-		US_SC_DEVICE, US_PR_DEVICE, NULL,
-		US_FL_FIX_INQUIRY ),
 
 /* Submitted by Joris Struyve <joris@struyve.be> */
 UNUSUAL_DEV( 0x0d96, 0x410a, 0x0001, 0xffff,
@@ -640,6 +705,24 @@ UNUSUAL_DEV(  0x0d96, 0x5200, 0x0001, 0x0200,
 		"Jenoptik",
 		"JD 5200 z3",
 		US_SC_DEVICE, US_PR_DEVICE, NULL, US_FL_FIX_INQUIRY),
+
+/* Reported by Lubomir Blaha <tritol@trilogic.cz>
+ * I _REALLY_ don't know what 3rd, 4th number and all defines mean, but this
+ * works for me. Can anybody correct these values? (I able to test corrected
+ * version.)
+ */
+UNUSUAL_DEV( 0x0dd8, 0x1060, 0x0000, 0xffff,
+		"Netac",
+		"USB-CF-Card",
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
+		US_FL_FIX_INQUIRY ),
+
+/* Submitted by Antoine Mairesse <antoine.mairesse@free.fr> */
+UNUSUAL_DEV( 0x0ed1, 0x6660, 0x0100, 0x0300,
+		"USB",
+		"Solid state disk",
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
+		US_FL_FIX_INQUIRY ),
 		
 /* Reported by Kevin Cernekee <kpc-usbdev@gelato.uiuc.edu>
  * Tested on hardware version 1.10.
@@ -669,3 +752,12 @@ UNUSUAL_DEV(  0x55aa, 0xa103, 0x0000, 0x9999,
 		US_SC_SCSI, US_PR_SDDR55, NULL,
 		US_FL_SINGLE_LUN),
 #endif
+
+/* Patch for Kyocera Finecam L3
+ * Submitted by Michael Krauth <michael.krauth@web.de>
+ */
+UNUSUAL_DEV(  0x0482, 0x0105, 0x0100, 0x0100,
+		"Kyocera",
+		"Finecam L3",
+		US_SC_SCSI, US_PR_BULK, NULL,
+		US_FL_FIX_INQUIRY),

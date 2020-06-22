@@ -252,7 +252,11 @@ int __init hvc_init(void)
 
 	hvc_driver.magic = TTY_DRIVER_MAGIC;
 	hvc_driver.driver_name = "hvc";
+#ifdef CONFIG_DEVFS_FS
 	hvc_driver.name = "hvc/%d";
+#else
+	hvc_driver.name = "hvc";
+#endif
 	hvc_driver.major = HVC_MAJOR;
 	hvc_driver.minor_start = HVC_MINOR;
 	hvc_driver.num = hvc_count(&hvc_offset);

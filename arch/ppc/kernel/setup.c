@@ -157,7 +157,7 @@ int show_cpuinfo(struct seq_file *m, void *v)
 	lpj = loops_per_jiffy;
 #endif
 
-	seq_printf(m, "processor\t: %lu\n", i);
+	seq_printf(m, "processor\t: %u\n", i);
 	seq_printf(m, "cpu\t\t: ");
 
 	if (cur_cpu_spec[i]->pvr_mask)
@@ -258,7 +258,7 @@ __init
 unsigned long
 early_init(int r3, int r4, int r5)
 {
-	extern char __bss_start, _end;
+	extern char __bss_start[], _end[];
  	unsigned long phys;
 	unsigned long offset = reloc_offset();
 
@@ -267,7 +267,7 @@ early_init(int r3, int r4, int r5)
 
 	/* First zero the BSS -- use memset, some arches don't have
 	 * caches on yet */
-	memset_io(PTRRELOC(&__bss_start), 0, &_end - &__bss_start);
+	memset_io(PTRRELOC(&__bss_start), 0, _end - __bss_start);
 
 	/*
 	 * Identify the CPU type and fix up code sections

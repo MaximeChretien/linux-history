@@ -50,9 +50,6 @@ SECTIONS
   . = ALIGN(4096);	/* Align double page for init_task_union */
   __init_end = .;
 
-  . = ALIGN(4096);
-  .data.page_aligned : { *(.data.idt) }
-
   . = ALIGN(32);
   .data.cacheline_aligned : { *(.data.cacheline_aligned) }
 

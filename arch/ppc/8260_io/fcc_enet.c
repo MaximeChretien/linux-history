@@ -1327,6 +1327,12 @@ init_fcc_param(fcc_info_t *fip, struct net_device *dev,
 	 */
 	eap = (unsigned char *)&(ep->fen_paddrh);
 	for (i=5; i>=0; i--) {
+
+/* 
+ * The EP8260 only uses FCC3, so we can safely give it the real
+ * MAC address.
+ */
+#ifndef CONFIG_RPX6
 		if (i == 3) {
 			dev->dev_addr[i] = bd->bi_enetaddr[i];
 			dev->dev_addr[i] |= (1 << (7 - fip->fc_fccnum));
@@ -1335,6 +1341,9 @@ init_fcc_param(fcc_info_t *fip, struct net_device *dev,
 		else {
 			*eap++ = dev->dev_addr[i] = bd->bi_enetaddr[i];
 		}
+#else
+		*eap++ = dev->dev_addr[i] = bd->bi_enetaddr[i];
+#endif
 	}
 
 	ep->fen_taddrh = 0;

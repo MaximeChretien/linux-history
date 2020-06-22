@@ -509,40 +509,59 @@ int proc_dol2crvec(ctl_table *table, int write, struct file *filp,
 			left -= len;
 			_set_L2CR(val);
 		} else {
+			int is750fx = cur_cpu_spec[0]->cpu_features & CPU_FTR_750FX;
 			p = buf;
 			if (!first)
 				*p++ = '\t';
 			val = _get_L2CR();
 			p += sprintf(p, "0x%08x: ", val);
-			p += sprintf(p, " L2 %s", (val >> 31) & 1 ? "enabled" :
+			p += sprintf(p, " L2 %s, ", (val >> 31) & 1 ? "enabled" :
 				     	"disabled");
-			p += sprintf(p, ", %sparity", (val>>30)&1 ? "" : "no ");
+			if (!(val>>30&1))
+				p += sprintf(p, "no ");
+			if (is750fx)
+				p += sprintf(p, "ECC checkstop");
+			else
+				p += sprintf(p, "parity");
 
 			/* 75x & 74x0 have different L2CR than 745x */
 			if (!(cur_cpu_spec[0]->cpu_features &
 						CPU_FTR_SPEC7450)) {
-				p += sprintf(p, ", %s",
-					sizestrings[(val >> 28) & 3]);
-				p += sprintf(p, ", %s",
-					clockstrings[(val >> 25) & 7]);
-				p += sprintf(p, ", %s",
-					typestrings[(val >> 23) & 3]);
+				if (!is750fx) {
+					p += sprintf(p, ", %s",
+						     sizestrings[(val >> 28) & 3]);
+					p += sprintf(p, ", %s",
+						     clockstrings[(val >> 25) & 7]);
+					p += sprintf(p, ", %s",
+						     typestrings[(val >> 23) & 3]);
+				}
 				p += sprintf(p, "%s", (val>>22)&1 ?
-					", data only" : "");
-				p += sprintf(p, "%s", (val>>20)&1 ?
-					", ZZ enabled": "");
+					     ", data only" : "");
+				if (!is750fx) {
+					p += sprintf(p, "%s", (val>>20)&1 ?
+						     ", ZZ enabled": "");
+				}
 				p += sprintf(p, ", %s", (val>>19)&1 ?
 					"write-through" : "copy-back");
 				p += sprintf(p, "%s", (val>>18)&1 ?
 					", testing" : "");
-				p += sprintf(p, ", %sns hold",
-					holdstrings[(val>>16)&3]);
-				p += sprintf(p, "%s", (val>>15)&1 ?
-					", DLL slow" : "");
-				p += sprintf(p, "%s", (val>>14)&1 ?
-					", diff clock" :"");
-				p += sprintf(p, "%s", (val>>13)&1 ?
-					", DLL bypass" :"");
+				if (!is750fx) {
+					p += sprintf(p, ", %sns hold",
+						     holdstrings[(val>>16)&3]);
+					p += sprintf(p, "%s", (val>>15)&1 ?
+						     ", DLL slow" : "");
+					p += sprintf(p, "%s", (val>>14)&1 ?
+						     ", diff clock" :"");
+					p += sprintf(p, "%s", (val>>13)&1 ?
+						     ", DLL bypass" :"");
+				} else {
+					if ((val>>11)&1)
+						p += sprintf(p, ", lock way 0");
+					if ((val>>10)&1)
+						p += sprintf(p, ", lock way 1");
+					if ((val>>9)&1)
+						p += sprintf(p, ", Snoop Hit in Locked Line Error Enabled");
+				}
 			} else { /* 745x */
 				p += sprintf(p, ", %sinstn only", (val>>20)&1 ?
 					"" : "no ");

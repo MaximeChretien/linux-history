@@ -1106,7 +1106,7 @@ void __init smp_boot_cpus(void)
 	 */
 	Dprintk("CPU present map: %lx\n", phys_cpu_present_map);
 
-	for (bit = 0; bit < NR_CPUS; bit++) {
+	for (bit = 0; bit < BITS_PER_LONG; bit++) {
 		apicid = cpu_present_to_apicid(bit);
 		
 		/* don't try to boot BAD_APICID */

@@ -102,6 +102,8 @@ static inline void remove_page_from_inode_queue(struct page * page)
 	page->mapping = NULL;
 	wmb();
 	mapping->nrpages--;
+	if (!mapping->nrpages)
+		refile_inode(mapping->host);
 }
 
 static inline void remove_page_from_hash_queue(struct page * page)
@@ -546,6 +548,49 @@ int fail_writepage(struct page *page)
 }
 
 EXPORT_SYMBOL(fail_writepage);
+
+/**
+ *      filemap_fdatawrite - walk the list of dirty pages of the given address space
+ *     	and writepage() each unlocked page (does not wait on locked pages).
+ * 
+ *      @mapping: address space structure to write
+ *
+ */
+int filemap_fdatawrite(struct address_space * mapping)
+{
+	int ret = 0;
+	int (*writepage)(struct page *) = mapping->a_ops->writepage;
+
+	spin_lock(&pagecache_lock);
+
+	while (!list_empty(&mapping->dirty_pages)) {
+		struct page *page = list_entry(mapping->dirty_pages.prev, struct page, list);
+
+		list_del(&page->list);
+		list_add(&page->list, &mapping->locked_pages);
+
+		if (!PageDirty(page))
+			continue;
+
+		page_cache_get(page);
+		spin_unlock(&pagecache_lock);
+
+		if (!TryLockPage(page)) {
+			if (PageDirty(page)) {
+				int err;
+				ClearPageDirty(page);
+				err = writepage(page);
+				if (err && !ret)
+					ret = err;
+			} else
+				UnlockPage(page);
+		}
+		page_cache_release(page);
+		spin_lock(&pagecache_lock);
+	}
+	spin_unlock(&pagecache_lock);
+	return ret;
+}
 
 /**
  *      filemap_fdatasync - walk the list of dirty pages of the given address space
@@ -1299,11 +1344,14 @@ static void generic_file_readahead(int reada_ok,
  */
 	ahead = 0;
 	while (ahead < max_ahead) {
-		ahead ++;
-		if ((raend + ahead) >= end_index)
+		unsigned long ra_index = raend + ahead + 1;
+
+		if (ra_index > end_index)
 			break;
-		if (page_cache_read(filp, raend + ahead) < 0)
+		if (page_cache_read(filp, ra_index) < 0)
 			break;
+
+		ahead++;
 	}
 /*
  * If we tried to read ahead some pages,
@@ -1699,6 +1747,17 @@ int file_read_actor(read_descriptor_t * desc, struct page *page, unsigned long o
 	return size;
 }
 
+inline ssize_t do_generic_direct_read(struct file * filp, char * buf, size_t count, loff_t *ppos)
+{
+	ssize_t retval;
+	loff_t pos = *ppos;
+
+	retval = generic_file_direct_IO(READ, filp, buf, count, pos);
+	if (retval > 0)
+		*ppos = pos + retval;
+	return retval;
+}
+
 /*
  * This is the "read()" routine for all filesystems
  * that can use the page cache directly.
@@ -1736,7 +1795,7 @@ ssize_t generic_file_read(struct file * filp, char * buf, size_t count, loff_t *
 
  o_direct:
 	{
-		loff_t pos = *ppos, size;
+		loff_t size;
 		struct address_space *mapping = filp->f_dentry->d_inode->i_mapping;
 		struct inode *inode = mapping->host;
 
@@ -1746,11 +1805,8 @@ ssize_t generic_file_read(struct file * filp, char * buf, size_t count, loff_t *
 		down_read(&inode->i_alloc_sem);
 		down(&inode->i_sem);
 		size = inode->i_size;
-		if (pos < size) {
-			retval = generic_file_direct_IO(READ, filp, buf, count, pos);
-			if (retval > 0)
-				*ppos = pos + retval;
-		}
+		if (*ppos < size)
+			retval = do_generic_direct_read(filp, buf, count, ppos);
 		up(&inode->i_sem);
 		up_read(&inode->i_alloc_sem);
 		UPDATE_ATIME(filp->f_dentry->d_inode);
@@ -1909,7 +1965,7 @@ static ssize_t do_readahead(struct file *file, unsigned long index, unsigned lon
 		nr = max;
 
 	/* And limit it to a sane percentage of the inactive list.. */
-	max = nr_inactive_pages / 2;
+	max = (nr_free_pages() + nr_inactive_pages) / 2;
 	if (nr > max)
 		nr = max;
 

@@ -8,7 +8,7 @@
  * any future changes wrt the API will result in a change of the APIVERSION reported
  * to userspace by the DASDAPIVER-ioctl
  *
- * $Revision: 1.51 $
+ * $Revision: 1.53 $
  *
  * History of changes (starts July 2000)
  * 05/04/01 created by moving the kernel interface to drivers/s390/block/dasd_int.h
@@ -225,6 +225,10 @@ typedef struct attrib_data_t {
 #define BIODASDSLCK    _IO(DASD_IOCTL_LETTER,4) /* steal lock */
 /* reset profiling information of a device */
 #define BIODASDPRRST   _IO(DASD_IOCTL_LETTER,5)
+/* Quiesce IO on device */
+#define BIODASDQUIESCE _IO(DASD_IOCTL_LETTER,6) 
+/* Resume IO on device */
+#define BIODASDRESUME  _IO(DASD_IOCTL_LETTER,7) 
 
 
 /* retrieve API version number */
@@ -237,6 +241,8 @@ typedef struct attrib_data_t {
 #define BIODASDINFO2   _IOR(DASD_IOCTL_LETTER,3,dasd_information2_t)
 /* Performance Statistics Read */
 #define BIODASDPSRD    _IOR(DASD_IOCTL_LETTER,4,dasd_rssd_perf_stats_t)
+/* Get Attributes (cache operations) */
+#define BIODASDGATTR   _IOR(DASD_IOCTL_LETTER,5,attrib_data_t) 
 
 
 /* #define BIODASDFORMAT  _IOW(IOCTL_LETTER,0,format_data_t) , deprecated */

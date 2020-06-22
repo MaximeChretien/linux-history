@@ -1790,7 +1790,7 @@ static int __devinit ns83820_init_one(struct pci_dev *pci_dev, const struct pci_
 	dev->net_dev.owner = THIS_MODULE;
 	dev->net_dev.priv = dev;
 
-	PREPARE_TQUEUE(&dev->tq_refill, queue_refill, dev);
+	INIT_TQUEUE(&dev->tq_refill, queue_refill, dev);
 	tasklet_init(&dev->rx_tasklet, rx_action, (unsigned long)dev);
 
 	err = pci_enable_device(pci_dev);

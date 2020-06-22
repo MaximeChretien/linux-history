@@ -33,6 +33,7 @@ tools-$(CONFIG_ALL_PPC)		:= addnote mknote hack-coff mkprep
 tools-$(CONFIG_4xx)		:= mktree
 tools-$(CONFIG_LOPEC)		:= mkbugboot mkprep
 tools-$(CONFIG_PPLUS)		:= mkbugboot mkprep
+tools-$(CONFIG_PRPMC750)	:= mkbugboot mkprep
 tools-$(CONFIG_SPRUCE)		:= mktree
 
 # These are dirs we don't want to go into on BOOT_TARGETS.  We have them for
@@ -42,6 +43,9 @@ NONBOOT				:= lib common
 # These are the subdirs we want to use
 BOOTDIRS			= $(filter-out $(NONBOOT), $(subdir-y))
 
+makeof1275:
+	$(MAKE) -C of1275
+
 # This will make the tools we need.  We do it like this to ensure that we use
 # HOSTCC. -- Tom
 maketools:
@@ -50,7 +54,7 @@ maketools:
 # The targets all boards support for boot images.
 BOOT_TARGETS = zImage zImage.initrd znetboot znetboot.initrd
 
-$(BOOT_TARGETS): vmapus lib/zlib.a images/vmlinux.gz maketools
+$(BOOT_TARGETS): vmapus lib/zlib.a images/vmlinux.gz makeof1275 maketools
 ifneq ($(BOOTDIRS),)
 	for d in $(BOOTDIRS); do $(MAKE) -C $$d $@; done
 endif

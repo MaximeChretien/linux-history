@@ -37,6 +37,12 @@
 #include <asm/system.h>
 #include <asm/fpu.h>
 
+/*
+ * Including <asm/unistd.h would give use the 64-bit syscall numbers ...
+ */
+#define __NR_N32_rt_sigreturn		6211
+#define __NR_N32_restart_syscall	6214
+
 #define _BLOCKABLE (~(sigmask(SIGKILL) | sigmask(SIGSTOP)))
 
 /* IRIX compatible stack_t  */

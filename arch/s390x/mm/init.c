@@ -170,6 +170,15 @@ int do_check_pgt_cache(int low, int high)
         return freed;
 }
 
+void diag10(unsigned long addr)
+{
+        if (addr >= 0x80000000)
+                return;
+        asm volatile ("sam31\n\t"
+                      "diag %0,%0,0x10\n\t"
+                      "sam64" : : "a" (addr) );
+}
+
 void show_mem(void)
 {
         int i, total = 0,reserved = 0;

@@ -272,7 +272,6 @@ CONFIG_BLK_DEV_AMD74XX=y
 CONFIG_IDEDMA_AUTO=y
 # CONFIG_IDEDMA_IVB is not set
 # CONFIG_DMA_NONPCI is not set
-CONFIG_BLK_DEV_IDE_MODES=y
 # CONFIG_BLK_DEV_ATARAID is not set
 # CONFIG_BLK_DEV_ATARAID_PDC is not set
 # CONFIG_BLK_DEV_ATARAID_HPT is not set
@@ -477,6 +476,7 @@ CONFIG_TIGON3=y
 # CONFIG_INPUT_MOUSEDEV is not set
 # CONFIG_INPUT_JOYDEV is not set
 # CONFIG_INPUT_EVDEV is not set
+# CONFIG_INPUT_UINPUT is not set
 
 #
 # Character devices
@@ -528,6 +528,7 @@ CONFIG_PSMOUSE=y
 # Watchdog Cards
 #
 # CONFIG_WATCHDOG is not set
+# CONFIG_SCx200 is not set
 # CONFIG_SCx200_GPIO is not set
 # CONFIG_AMD_RNG is not set
 # CONFIG_INTEL_RNG is not set
@@ -560,6 +561,7 @@ CONFIG_AGP_NVIDIA=y
 #
 # CONFIG_DRM is not set
 # CONFIG_MWAVE is not set
+# CONFIG_OBMOUSE is not set
 
 #
 # Multimedia devices
@@ -620,6 +622,11 @@ CONFIG_EXT2_FS=y
 # CONFIG_UFS_FS is not set
 # CONFIG_UFS_FS_WRITE is not set
 # CONFIG_SIMICSFS is not set
+# CONFIG_XFS_FS is not set
+# CONFIG_XFS_QUOTA is not set
+# CONFIG_XFS_RT is not set
+# CONFIG_XFS_TRACE is not set
+# CONFIG_XFS_DEBUG is not set
 
 #
 # Network File Systems

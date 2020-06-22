@@ -37,6 +37,9 @@ static inline void crypto_alg_put(struct crypto_alg *alg)
 struct crypto_alg *crypto_alg_lookup(const char *name)
 {
 	struct crypto_alg *q, *alg = NULL;
+
+	if (!name)
+		return NULL;
 	
 	down_read(&crypto_alg_sem);
 	

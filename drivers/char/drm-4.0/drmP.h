@@ -679,8 +679,8 @@ extern void	     drm_free(void *pt, size_t size, int area);
 extern unsigned long drm_alloc_pages(int order, int area);
 extern void	     drm_free_pages(unsigned long address, int order,
 				    int area);
-extern void	     *drm_ioremap(unsigned long offset, unsigned long size);
-extern void	     drm_ioremapfree(void *pt, unsigned long size);
+extern void	     *drm_ioremap(unsigned long offset, unsigned long size, drm_device_t *dev);
+extern void	     drm_ioremapfree(void *pt, unsigned long size, drm_device_t *dev);
 
 #if defined(CONFIG_AGP) || defined(CONFIG_AGP_MODULE)
 extern agp_memory    *drm_alloc_agp(int pages, u32 type);

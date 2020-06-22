@@ -34,6 +34,7 @@ obj-$(CONFIG_TYPHOON)		+= crc32.o
 obj-$(CONFIG_VIA_RHINE)		+= crc32.o
 obj-$(CONFIG_WINBOND_840)	+= crc32.o
 obj-$(CONFIG_YELLOWFIN)		+= crc32.o
+obj-$(CONFIG_NATSEMI)		+= crc32.o
 
 # These rely on drivers/net/7990.o which requires crc32.o
 obj-$(CONFIG_HPLANCE)		+= crc32.o	

@@ -62,7 +62,7 @@
 #define BT_DMP( A... )
 #endif
 
-#ifndef CONFIG_BLUEZ_USB_ZERO_PACKET
+#ifndef CONFIG_BLUEZ_HCIUSB_ZERO_PACKET
 #undef  USB_ZERO_PACKET
 #define USB_ZERO_PACKET 0
 #endif
@@ -139,6 +139,7 @@ static inline struct _urb *__get_completed(struct hci_usb *husb, int type)
 	return _urb_dequeue(__completed_q(husb, type)); 
 }
 
+#ifdef CONFIG_BLUEZ_HCIUSB_SCO
 static void __fill_isoc_desc(struct urb *urb, int len, int mtu)
 {
 	int offset = 0, i;
@@ -158,6 +159,7 @@ static void __fill_isoc_desc(struct urb *urb, int len, int mtu)
 	}
 	urb->number_of_packets = i;
 }
+#endif
 
 static int hci_usb_intr_rx_submit(struct hci_usb *husb)
 {
@@ -235,7 +237,7 @@ static int hci_usb_bulk_rx_submit(struct hci_usb *husb)
 	return err;
 }
 
-#ifdef CONFIG_BLUEZ_USB_SCO
+#ifdef CONFIG_BLUEZ_HCIUSB_SCO
 static int hci_usb_isoc_rx_submit(struct hci_usb *husb)
 {
 	struct _urb *_urb;
@@ -306,7 +308,7 @@ static int hci_usb_open(struct hci_dev *hdev)
 		for (i = 0; i < HCI_MAX_BULK_RX; i++)
 			hci_usb_bulk_rx_submit(husb);
 
-#ifdef CONFIG_BLUEZ_USB_SCO
+#ifdef CONFIG_BLUEZ_HCIUSB_SCO
 		if (husb->isoc_iface)
 			for (i = 0; i < HCI_MAX_ISOC_RX; i++)
 				hci_usb_isoc_rx_submit(husb);
@@ -475,7 +477,7 @@ static inline int hci_usb_send_bulk(struct hci_usb *husb, struct sk_buff *skb)
 	return __tx_submit(husb, _urb);
 }
 
-#ifdef CONFIG_BLUEZ_USB_SCO
+#ifdef CONFIG_BLUEZ_HCIUSB_SCO
 static inline int hci_usb_send_isoc(struct hci_usb *husb, struct sk_buff *skb)
 {
 	struct _urb *_urb = __get_completed(husb, skb->pkt_type);
@@ -526,7 +528,7 @@ static void hci_usb_tx_process(struct hci_usb *husb)
 				skb_queue_head(q, skb);
 		}
 
-#ifdef CONFIG_BLUEZ_USB_SCO
+#ifdef CONFIG_BLUEZ_HCIUSB_SCO
 		/* Process SCO queue */
 		q = __transmit_q(husb, HCI_SCODATA_PKT);
 		if (atomic_read(__pending_tx(husb, HCI_SCODATA_PKT)) < HCI_MAX_ISOC_TX &&
@@ -585,7 +587,7 @@ static int hci_usb_send_frame(struct sk_buff *skb)
 		hdev->stat.acl_tx++;
 		break;
 
-#ifdef CONFIG_BLUEZ_USB_SCO
+#ifdef CONFIG_BLUEZ_HCIUSB_SCO
 	case HCI_SCODATA_PKT:
 		hdev->stat.sco_tx++;
 		break;
@@ -635,7 +637,7 @@ static inline int __recv_frame(struct hci_usb *husb, int type, void *data, int c
 				} else
 					return -EILSEQ;
 				break;
-#ifdef CONFIG_BLUEZ_USB_SCO
+#ifdef CONFIG_BLUEZ_HCIUSB_SCO
 			case HCI_SCODATA_PKT:
 				if (count >= HCI_SCO_HDR_SIZE) {
 					hci_sco_hdr *h = data;
@@ -700,7 +702,7 @@ static void hci_usb_rx_complete(struct urb *urb)
 		goto resubmit;
 
 	if (_urb->type == HCI_SCODATA_PKT) {
-#ifdef CONFIG_BLUEZ_USB_SCO
+#ifdef CONFIG_BLUEZ_HCIUSB_SCO
 		int i;
 		for (i=0; i < urb->number_of_packets; i++) {
 			BT_DBG("desc %d status %d offset %d len %d", i,
@@ -835,7 +837,7 @@ static void *hci_usb_probe(struct usb_device *udev, unsigned int ifnum, const st
 						bulk_out_ep[i] = ep;
 					break;
 
-#ifdef CONFIG_BLUEZ_USB_SCO
+#ifdef CONFIG_BLUEZ_HCIUSB_SCO
 				case USB_ENDPOINT_XFER_ISOC:
 					if (ep->wMaxPacketSize < size || a > 2)
 						break;
@@ -861,7 +863,7 @@ static void *hci_usb_probe(struct usb_device *udev, unsigned int ifnum, const st
 		goto done;
 	}
 
-#ifdef CONFIG_BLUEZ_USB_SCO
+#ifdef CONFIG_BLUEZ_HCIUSB_SCO
 	if (!isoc_in_ep[1] || !isoc_out_ep[1]) {
 		BT_DBG("Isoc endpoints not found");
 		isoc_iface = NULL;
@@ -885,7 +887,7 @@ static void *hci_usb_probe(struct usb_device *udev, unsigned int ifnum, const st
 	else
 		husb->ctrl_req = HCI_CTRL_REQ;
 
-#ifdef CONFIG_BLUEZ_USB_SCO
+#ifdef CONFIG_BLUEZ_HCIUSB_SCO
 	if (isoc_iface) {
 		BT_DBG("isoc ifnum %d alts %d", isoc_ifnum, isoc_alts);
 		if (usb_set_interface(udev, isoc_ifnum, isoc_alts)) {

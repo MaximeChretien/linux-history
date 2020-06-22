@@ -1468,15 +1468,19 @@ static void send_more_port_data(struct edgeport_serial *edge_serial, struct edge
 	urb->transfer_flags |= USB_QUEUE_BULK;
 
 	urb->dev = edge_serial->serial->dev;
+	/* decrement the number of credits we have by the number we just sent */
+	edge_port->txCredits -= count;
+	edge_port->icount.tx += count;
+
 	status = usb_submit_urb(urb);
 	if (status) {
 		/* something went wrong */
 		dbg("%s - usb_submit_urb(write bulk) failed", __FUNCTION__);
 		edge_port->write_in_progress = FALSE;
-	} else {
-		/* decrement the number of credits we have by the number we just sent */
-		edge_port->txCredits -= count;
-		edge_port->icount.tx += count;
+
+		/*revert the count if something bad happened...*/
+		edge_port->txCredits += count;
+		edge_port->icount.tx -= count;
 	}
 	dbg("%s wrote %d byte(s) TxCredit %d, Fifo %d", __FUNCTION__, count, edge_port->txCredits, fifo->count);
 }

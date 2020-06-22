@@ -999,7 +999,7 @@ static int     get_hw_addr(struct net_device *dev);
 static void    srom_repair(struct net_device *dev, int card);
 static int     test_bad_enet(struct net_device *dev, int status);
 static int     an_exception(struct de4x5_bus_type *lp);
-#if !defined(__sparc_v9__) && !defined(__powerpc__) && !defined(__alpha__)
+#ifdef CONFIG_EISA
 static void    eisa_probe(struct net_device *dev, u_long iobase);
 #endif
 static void    pci_probe(struct net_device *dev, u_long iobase);
@@ -1053,7 +1053,7 @@ static int loading_module;
 #endif /* MODULE */
 
 static char name[DE4X5_NAME_LENGTH + 1];
-#if !defined(__sparc_v9__) && !defined(__powerpc__) && !defined(__alpha__)
+#ifdef CONFIG_EISA
 static u_char de4x5_irq[] = EISA_ALLOWED_IRQ_LIST;
 static int lastEISA;
 #  ifdef DE4X5_FORCE_EISA                 /* Force an EISA bus probe or not */
@@ -1131,7 +1131,7 @@ de4x5_probe(struct net_device *dev)
     u_long iobase = dev->base_addr;
 
     pci_probe(dev, iobase);
-#if !defined(__sparc_v9__) && !defined(__powerpc__) && !defined(__alpha__)
+#ifdef CONFIG_EISA
     if ((lastPCI == NO_MORE_PCI) && ((num_de4x5s == 0) || forceEISA)) {
         eisa_probe(dev, iobase);
     }
@@ -2093,7 +2093,7 @@ SetMulticastFilter(struct net_device *dev)
     return;
 }
 
-#if !defined(__sparc_v9__) && !defined(__powerpc__) && !defined(__alpha__)
+#ifdef CONFIG_EISA
 /*
 ** EISA bus I/O device probe. Probe from slot 1 since slot 0 is usually
 ** the motherboard. Upto 15 EISA devices are supported.
@@ -5363,7 +5363,7 @@ de4x5_parse_params(struct net_device *dev)
 	t = *q;
 	*q = '\0';
 
-#if !defined(__sparc_v9__) && !defined(__powerpc__) && !defined(__alpha__)
+#ifdef CONFIG_EISA
 	if (strstr(p, "force_eisa") || strstr(p, "FORCE_EISA")) forceEISA = 1;
 #endif
 	if (strstr(p, "fdx") || strstr(p, "FDX")) lp->params.fdx = 1;
@@ -5865,7 +5865,7 @@ count_adapters(void)
     u_int class = DE4X5_CLASS_CODE;
     u_int device;
 
-#if !defined(__sparc_v9__) && !defined(__powerpc__) && !defined(__alpha__)
+#ifdef CONFIG_EISA
     char name[DE4X5_STRLEN];
     u_long iobase = 0x1000;
 

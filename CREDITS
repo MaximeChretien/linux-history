@@ -83,13 +83,13 @@ S: Howell, NJ 07731
 S: USA
 
 N: Erik Andersen
-E: andersee@debian.org
-W: http://www.xmission.com/~andersen
-P: 1024/FC4CFFED 78 3C 6A 19 FA 5D 92 5A  FB AC 7B A5 A5 E1 FF 8E
+E: andersen@codepoet.org
+W: http://www.codepoet.org/
+P: 1024D/30D39057 1BC4 2742 E885 E4DE 9301  0C82 5F9B 643E 30D3 9057
 D: Maintainer of ide-cd and Uniform CD-ROM driver, 
 D: ATAPI CD-Changer support, Major 2.1.x CD-ROM update.
-S: 4538 South Carnegie Tech Street
-S: Salt Lake City, Utah 84120
+S: 352 North 525 East
+S: Springville, Utah 84663
 S: USA
 
 N: Michael Ang
@@ -848,8 +848,8 @@ E: bj0rn@blox.se
 W: http://www.pi.se/blox/
 D: Extended support for loadable modules
 D: D-Link pocket adapter drivers
-S: Grevgatan 11
-S: S-114 53 Stockholm
+S: Brevia 1043
+S: S-114 79 Stockholm
 S: Sweden
 
 N: Michael Engel
@@ -1345,6 +1345,7 @@ S: USA
 N: Marcel Holtmann
 E: marcel@holtmann.org
 W: http://www.holtmann.org
+D: Maintainer of the Linux Bluetooth Subsystem
 D: Author and maintainer of the various Bluetooth HCI drivers
 D: Author and maintainer of the CAPI message transport protocol driver
 D: Various other Bluetooth related patches, cleanups and fixes
@@ -1869,6 +1870,12 @@ E: imp@village.org
 D: Linux/MIPS Deskstation support, Provided OI/OB for Linux
 S: 8786 Niwot Road
 S: Niwot, Colorado 80503
+S: USA
+
+N: Pete Popov
+E: pete_popov@yahoo.com
+D: Linux/MIPS AMD/Alchemy Port and mips hacking and debugging
+S: San Jose, CA 95134
 S: USA
 
 N: Robert M. Love
@@ -2591,9 +2598,9 @@ S: Tucson, Arizona
 S: USA
 
 N: Luca Risolia
-E: luca_ing@libero.it
-D: V4L driver for W996[87]CF JPEG USB Dual Mode Camera Chip
-S: Via Libert√† 41/a
+E: luca.risolia@studio.unibo.it
+D: V4L driver for W996[87]CF JPEG USB Dual Mode Camera Chips
+S: Via Liberta' 41-A
 S: Osio Sotto, 24046, Bergamo
 S: Italy
 
@@ -2662,6 +2669,7 @@ S: Australia
 N: Aristeu Sergio Rozanski Filho
 E: aris@conectiva.com.br
 D: Support for EtherExpress 10 ISA (i82595) in eepro driver
+D: User level driver support for input
 S: Conectiva S.A.
 S: R. Tocantins, 89 - Cristo Rei
 S: 80050-430 - Curitiba - Paran·

@@ -19,9 +19,9 @@ CONFIG_EXPERIMENTAL=y
 # Processor type and features
 #
 CONFIG_SMP=y
+CONFIG_NR_CPUS=32
 CONFIG_S390_SUPPORT=y
 CONFIG_BINFMT_ELF32=y
-CONFIG_NR_CPUS=32
 
 #
 # Loadable module support
@@ -36,9 +36,11 @@ CONFIG_KMOD=y
 CONFIG_FAST_IRQ=y
 CONFIG_MACHCHK_WARNING=y
 CONFIG_CHSC=y
+CONFIG_QDIO=m
+# CONFIG_QDIO_PERF_STATS is not set
 CONFIG_IPL=y
-CONFIG_IPL_TAPE=y
-# CONFIG_IPL_VM is not set
+# CONFIG_IPL_TAPE is not set
+CONFIG_IPL_VM=y
 CONFIG_NET=y
 CONFIG_SYSVIPC=y
 # CONFIG_BSD_PROCESS_ACCT is not set
@@ -106,8 +108,8 @@ CONFIG_S390_TAPE_BLOCK=y
 #
 # S/390 tape hardware support
 #
-CONFIG_S390_TAPE_3490=m
-CONFIG_S390_TAPE_3480=m
+CONFIG_S390_TAPE_3490=y
+CONFIG_S390_TAPE_3480=y
 
 #
 # Network device drivers
@@ -119,6 +121,7 @@ CONFIG_NETDEVICES=y
 # CONFIG_TUN is not set
 CONFIG_NET_ETHERNET=y
 CONFIG_TR=y
+# CONFIG_C7000 is not set
 CONFIG_FDDI=y
 
 #
@@ -162,6 +165,11 @@ CONFIG_IP_PIMSM_V2=y
 # CONFIG_IP_NF_ARPTABLES is not set
 # CONFIG_IP_NF_COMPAT_IPCHAINS is not set
 # CONFIG_IP_NF_COMPAT_IPFWADM is not set
+
+#
+#   IP: Virtual Server Configuration
+#
+# CONFIG_IP_VS is not set
 CONFIG_IPV6=m
 
 #
@@ -169,8 +177,13 @@ CONFIG_IPV6=m
 #
 # CONFIG_IP6_NF_QUEUE is not set
 # CONFIG_IP6_NF_IPTABLES is not set
-CONFIG_SHARED_IPV6_CARDS=y
 # CONFIG_KHTTPD is not set
+
+#
+#    SCTP Configuration (EXPERIMENTAL)
+#
+CONFIG_IPV6_SCTP__=m
+# CONFIG_IP_SCTP is not set
 # CONFIG_ATM is not set
 CONFIG_VLAN_8021Q=m
 
@@ -209,6 +222,7 @@ CONFIG_NET_FASTROUTE=y
 # File systems
 #
 # CONFIG_QUOTA is not set
+# CONFIG_QFMT_V2 is not set
 # CONFIG_AUTOFS_FS is not set
 # CONFIG_AUTOFS4_FS is not set
 # CONFIG_REISERFS_FS is not set
@@ -218,6 +232,7 @@ CONFIG_NET_FASTROUTE=y
 # CONFIG_ADFS_FS_RW is not set
 # CONFIG_AFFS_FS is not set
 # CONFIG_HFS_FS is not set
+# CONFIG_HFSPLUS_FS is not set
 # CONFIG_BEFS_FS is not set
 # CONFIG_BEFS_DEBUG is not set
 # CONFIG_BFS_FS is not set
@@ -259,6 +274,11 @@ CONFIG_EXT2_FS=y
 # CONFIG_UDF_RW is not set
 # CONFIG_UFS_FS is not set
 # CONFIG_UFS_FS_WRITE is not set
+# CONFIG_XFS_FS is not set
+# CONFIG_XFS_QUOTA is not set
+# CONFIG_XFS_RT is not set
+# CONFIG_XFS_TRACE is not set
+# CONFIG_XFS_DEBUG is not set
 
 #
 # Network File Systems
@@ -267,6 +287,7 @@ CONFIG_EXT2_FS=y
 # CONFIG_INTERMEZZO_FS is not set
 CONFIG_NFS_FS=y
 CONFIG_NFS_V3=y
+# CONFIG_NFS_DIRECTIO is not set
 # CONFIG_ROOT_NFS is not set
 CONFIG_NFSD=y
 CONFIG_NFSD_V3=y
@@ -358,9 +379,17 @@ CONFIG_NLS_DEFAULT="iso8859-1"
 # Kernel hacking
 #
 CONFIG_MAGIC_SYSRQ=y
+CONFIG_LOG_BUF_SHIFT=0
+
+#
+# Cryptographic options
+#
+# CONFIG_CRYPTO is not set
 
 #
 # Library routines
 #
+# CONFIG_CRC32 is not set
 # CONFIG_ZLIB_INFLATE is not set
 # CONFIG_ZLIB_DEFLATE is not set
+# CONFIG_FW_LOADER is not set

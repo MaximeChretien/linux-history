@@ -69,7 +69,6 @@ static void openpic_mapirq(u_int irq, u_int cpumask, u_int keepmask);
  * These functions are not used but the code is kept here
  * for completeness and future reference.
  */
-static void openpic_reset(void);
 #ifdef notused
 static void openpic_enable_8259_pass_through(void);
 static u_int openpic_get_priority(void);
@@ -167,13 +166,21 @@ u_int openpic_read(volatile u_int *addr)
 {
 	u_int val;
 
+#ifdef CONFIG_PPC_OPENPIC_BE
+	val = in_be32(addr);
+#else
 	val = in_le32(addr);
+#endif
 	return val;
 }
 
 static inline void openpic_write(volatile u_int *addr, u_int val)
 {
+#ifdef CONFIG_PPC_OPENPIC_BE
+	out_be32(addr, val);
+#else
 	out_le32(addr, val);
+#endif
 }
 
 static inline u_int openpic_readfield(volatile u_int *addr, u_int mask)
@@ -212,7 +219,7 @@ static void openpic_safe_writefield(volatile u_int *addr, u_int mask,
 u_int openpic_read_IPI(volatile u_int* addr)
 {
          u_int val = 0;
-#ifdef CONFIG_POWER3
+#if defined(CONFIG_PPC_OPENPIC_BE) || defined(CONFIG_POWER3)
         val = in_be32(addr);
 #else
         val = in_le32(addr);

@@ -59,7 +59,6 @@ static void tl_i2c_tx_byte(void *GPIOout, u8 data);
 #define SLAVE_WRITE_ADDRESS	0xA0
 
 
-static void i2c_delay(u32 mstime);
 static void tl_i2c_clock_pulse(u8, void *GPIOout);
 static u8 tl_read_i2c_data(void *);
 

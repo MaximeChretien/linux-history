@@ -188,7 +188,8 @@ nlmclnt_recovery(struct nlm_host *host, u32 newstate)
 		nlmclnt_prepare_reclaim(host, newstate);
 		nlm_get_host(host);
 		MOD_INC_USE_COUNT;
-		kernel_thread(reclaimer, host, CLONE_SIGNAL);
+		if (kernel_thread(reclaimer, host, CLONE_SIGNAL) < 0)
+			MOD_DEC_USE_COUNT;
 	}
 }
 

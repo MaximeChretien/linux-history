@@ -5644,7 +5644,7 @@ static int ati_create_gatt_pages(int nr_tables)
 #define GET_PAGE_DIR_IDX(addr) (GET_PAGE_DIR_OFF(addr) - \
 	GET_PAGE_DIR_OFF(agp_bridge.gart_bus_addr))
 #define GET_GATT_OFF(addr) ((addr & 0x003ff000) >> 12)
-#undef  GET_GATT(addr)
+#undef  GET_GATT
 #define GET_GATT(addr) (ati_generic_private.gatt_pages[\
 	GET_PAGE_DIR_IDX(addr)]->remapped)
 
@@ -5738,6 +5738,7 @@ static int ati_create_gatt_table(void)
 
 	if ((agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS100) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200) ||
+	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200_B) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS250)) {
 		pci_read_config_dword(agp_bridge.dev, ATI_RS100_APSIZE, &temp);
 		temp = (((temp & ~(0x0000000e)) | current_size->size_value)
@@ -5791,6 +5792,7 @@ static int ati_fetch_size(void)
 
 	if ((agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS100) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200) ||
+	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200_B) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS250)) {
 		pci_read_config_dword(agp_bridge.dev, ATI_RS100_APSIZE, &temp);
 	} else {
@@ -5823,6 +5825,7 @@ static int ati_configure(void)
 
 	if ((agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS100) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200) ||
+	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200_B) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS250)) {
         	pci_write_config_dword(agp_bridge.dev, ATI_RS100_IG_AGPMODE, 0x20000);
 	} else {
@@ -5860,6 +5863,7 @@ static void ati_cleanup(void)
 	/* Write back the previous size and disable gart translation */
 	if ((agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS100) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200) ||
+	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200_B) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS250)) {
 		pci_read_config_dword(agp_bridge.dev, ATI_RS100_APSIZE, &temp);
 		temp = ((temp & ~(0x0000000f)) | previous_size->size_value);
@@ -6423,6 +6427,12 @@ static struct {
 	  "IGP320/M",
 	  ati_generic_setup },
 	{ PCI_DEVICE_ID_ATI_RS200,
+	  PCI_VENDOR_ID_ATI,
+	  ATI_RS200,
+	  "ATI",
+	  "IGP330/340/345/350/M",
+	  ati_generic_setup },
+	{ PCI_DEVICE_ID_ATI_RS200_B,
 	  PCI_VENDOR_ID_ATI,
 	  ATI_RS200,
 	  "ATI",

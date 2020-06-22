@@ -12,7 +12,7 @@
 #define __ASM_PPC_FLOPPY_H
 
 #define fd_inb(port)			inb_p(port)
-#define fd_outb(port,value)		outb_p(port,value)
+#define fd_outb(value,port)		outb_p(value,port)
 
 #define fd_enable_dma()         enable_dma(FLOPPY_DMA)
 #define fd_disable_dma()        disable_dma(FLOPPY_DMA)
@@ -24,7 +24,11 @@
 #define fd_set_dma_count(count) set_dma_count(FLOPPY_DMA,count)
 #define fd_enable_irq()         enable_irq(FLOPPY_IRQ)
 #define fd_disable_irq()        disable_irq(FLOPPY_IRQ)
+#if CONFIG_NOT_COHERENT_CACHE
+#define fd_cacheflush(addr,size) dma_cache_wback_inv(addr, size)
+#else
 #define fd_cacheflush(addr,size) /* nothing */
+#endif
 #define fd_request_irq()        request_irq(FLOPPY_IRQ, floppy_interrupt, \
 					    SA_INTERRUPT|SA_SAMPLE_RANDOM, \
 				            "floppy", NULL)

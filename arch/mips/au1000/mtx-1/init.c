@@ -1,12 +1,12 @@
 /*
  *
  * BRIEF MODULE DESCRIPTION
- *	MTX-1 board setup
+ *	4G Systems MTX-1 board setup
  *
  * Copyright 2003 MontaVista Software Inc.
  * Author: MontaVista Software, Inc.
  *         	ppopov@mvista.com or source@mvista.com
- *         Bruno Randolf <bruno.randolf@4g-systems.de>
+ *         Bruno Randolf <bruno.randolf@4g-systems.biz>
  *
  *  This program is free software; you can redistribute  it and/or modify it
  *  under  the terms of  the GNU General  Public License as published by the

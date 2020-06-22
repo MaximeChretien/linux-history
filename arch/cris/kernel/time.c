@@ -328,7 +328,7 @@ static int set_rtc_mmss(unsigned long nowtime)
 	int retval = 0;
 	int real_seconds, real_minutes, cmos_minutes;
 
-	printk(KERN_INFO "set_rtc_mmss(%lu)\n", nowtime);
+	printk(KERN_DEBUG "set_rtc_mmss(%lu)\n", nowtime);
 
 	if(!have_rtc)
 		return 0;
@@ -514,7 +514,7 @@ get_cmos_time(void)
 	mon = CMOS_READ(RTC_MONTH);
 	year = CMOS_READ(RTC_YEAR);
 
-	printk(KERN_INFO
+	printk(KERN_DEBUG
 	       "rtc: sec 0x%x min 0x%x hour 0x%x day 0x%x mon 0x%x year 0x%x\n", 
 	       sec, min, hour, day, mon, year);
 

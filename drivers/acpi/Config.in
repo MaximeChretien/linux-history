@@ -32,7 +32,7 @@ if [ "$CONFIG_X86" = "y" ]; then
     tristate     '  Toshiba Laptop Extras'	CONFIG_ACPI_TOSHIBA
     bool         '  Debug Statements'	CONFIG_ACPI_DEBUG
     bool         '  Relaxed AML Checking'	CONFIG_ACPI_RELAXED_AML
-  else 
+  else
     if [ "$CONFIG_SMP" = "y" ]; then
       define_bool CONFIG_ACPI_BOOT		y
     fi

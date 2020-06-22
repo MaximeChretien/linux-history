@@ -1,3 +1,31 @@
+### Version 2.10.1
+Wed Dec  3 15:34:42 EST 2003 - Atul Mukker <atulm@lsil.com>
+1.	pci_dma_sync_sg(), 2nd argument is pointer to scatter-gather list. All
+	previous drivers have a pointer which is incremented beyond the end of
+	the scatter-gather list
+2.	Remove 'ipdev', pci device pointer, to allocate memory for internal
+	commands. pci_alloc_consistent() guaranteed to allocate memory below
+	4GB, which is a requirement for these commands -
+		Tom Coughlan <coughlan@redhat.com>
+3.	Added support for LSI SATA PCI-X controllers
+4.	Advanced Server 3.0 version of the driver is the reference driver now.
+	For all other kernels, we create patches.
+5.	Removed superfluous white spaces.
+6.	Corrected some comments
+
+### Version 2.10.0
+Tue Nov  4 14:33:43 EST 2003 - Atul Mukker <atulm@lsil.com>
+1.	Added vendor ids and device ids for PCI-Express controllers,
+	PERC4E/Si, PERC4E/Di, PERC4E/DC, PERC4E/SC
+2.	Backport some minor changes from 2.6 kernel version of the driver.
+
+### Version 2.00.9a
+Fri Oct  3 18:04:29 EDT 2003 - Atul Mukker <atulm@lsil.com>
+1.	Minor changes which are brough in when sync'ing with kernel 2.9-test6.
+2.	Use sizeof(mbox_t) in synchronous routines instead of hard-coded value
+	of 16 bytes.
+3.	De-couple adapter->host->pci_dev. Replace with adapter->pdev
+
 ### Version 2.00.9
 Thu Sep  4 17:49:42 EDT 2003 - Atul Mukker <atulm@lsil.com>
 i.	For extended passthru commands, 64-bit scatter-gather list and 64-bit

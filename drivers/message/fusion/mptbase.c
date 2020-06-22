@@ -47,7 +47,7 @@
  *  Copyright (c) 1999-2002 LSI Logic Corporation
  *  Originally By: Steven J. Ralston
  *  (mailto:sjralston1@netscape.net)
- *  (mailto:lstephens@lsil.com)
+ *  (mailto:mpt_linux_developer@lsil.com)
  *
  *  $Id: mptbase.c,v 1.130 2003/05/07 14:08:30 pdelaney Exp $
  */
@@ -211,6 +211,7 @@ static int	mpt_GetScsiPortSettings(MPT_ADAPTER *ioc, int portnum);
 static int	mpt_readScsiDevicePageHeaders(MPT_ADAPTER *ioc, int portnum);
 static int	mpt_findImVolumes(MPT_ADAPTER *ioc);
 static void 	mpt_read_ioc_pg_1(MPT_ADAPTER *ioc);
+static void 	mpt_read_ioc_pg_4(MPT_ADAPTER *ioc);
 static void	mpt_timer_expired(unsigned long data);
 static int	SendEventNotification(MPT_ADAPTER *ioc, u8 EvSwitch);
 static int	SendEventAck(MPT_ADAPTER *ioc, EventNotificationReply_t *evnp);
@@ -319,14 +320,14 @@ mpt_interrupt(int irq, void *bus_id, struct pt_regs *r)
 	MPT_FRAME_HDR	*mf;
 	MPT_FRAME_HDR	*mr;
 	u32		 pa;
-	int		 req_idx = -1;
+	int		 req_idx;
 	int		 cb_idx;
 	int		 type;
 	int		 freeme;
-	int		 count = 0;
 
 	ioc = bus_id;
 
+#ifdef MPT_DEBUG_IRQ
 	/*
 	 * Verify ioc pointer is ok
 	 */
@@ -341,6 +342,7 @@ mpt_interrupt(int irq, void *bus_id, struct pt_regs *r)
 			return;
 		}
 	}
+#endif
 
 	/*
 	 *  Drain the reply FIFO!
@@ -493,17 +495,7 @@ mpt_interrupt(int irq, void *bus_id, struct pt_regs *r)
 			spin_unlock_irqrestore(&ioc->FreeQlock, flags);
 		}
 
-		count++;
-		dirqprintk((MYIOC_s_INFO_FMT "ISR processed frame #%d\n", ioc->name, count));
 		mb();
-
-		if (count >= MPT_MAX_REPLIES_PER_ISR) {
-			dirqprintk((MYIOC_s_INFO_FMT "ISR processed %d replies.",
-					ioc->name, count));
-			dirqprintk((" Giving this ISR a break!\n"));
-			return;
-		}
-
 	}	/* drain reply FIFO */
 }
 
@@ -814,7 +806,7 @@ mpt_reset_deregister(int cb_idx)
 MPT_FRAME_HDR*
 mpt_get_msg_frame(int handle, int iocid)
 {
-	MPT_FRAME_HDR *mf = NULL;
+	MPT_FRAME_HDR *mf;
 	MPT_ADAPTER *iocp;
 	unsigned long flags;
 
@@ -846,6 +838,8 @@ mpt_get_msg_frame(int handle, int iocid)
 		iocp->mfcnt++;
 #endif
 	}
+	else
+		mf = NULL;
 	spin_unlock_irqrestore(&iocp->FreeQlock, flags);
 
 #ifdef MFCNT
@@ -1114,10 +1108,12 @@ mpt_send_handshake_request(int handle, int iocid, int reqBytes, u32 *req, int sl
 MPT_ADAPTER *
 mpt_adapter_find_first(void)
 {
-	MPT_ADAPTER *this = NULL;
+	MPT_ADAPTER *this;
 
 	if (! Q_IS_EMPTY(&MptAdapters))
 		this = MptAdapters.head;
+	else
+		this = NULL;
 
 	return this;
 }
@@ -1132,10 +1128,12 @@ mpt_adapter_find_first(void)
 MPT_ADAPTER *
 mpt_adapter_find_next(MPT_ADAPTER *prev)
 {
-	MPT_ADAPTER *next = NULL;
+	MPT_ADAPTER *next;
 
 	if (prev && (prev->forw != (MPT_ADAPTER*)&MptAdapters.head))
 		next = prev->forw;
+	else
+		next = NULL;
 
 	return next;
 }
@@ -1285,7 +1283,11 @@ mpt_adapter_install(struct pci_dev *pdev)
 	if (pci_enable_device(pdev))
 		return r;
 
-	if (!pci_set_dma_mask(pdev, mask)) {
+	/* For some kernels, broken kernel limits memory allocation for target mode
+	 * driver. Shirron. Fixed in 2.4.20-8
+	 * if ((sizeof(dma_addr_t) == sizeof(u64)) && (!pci_set_dma_mask(pdev, mask))) {
+	 */
+	if ((!pci_set_dma_mask(pdev, mask))) {
 		dprintk((KERN_INFO MYNAM ": 64 BIT PCI BUS DMA ADDRESSING SUPPORTED\n"));
 	} else {
 		if (pci_set_dma_mask(pdev, (u64) 0xffffffff)) {
@@ -1300,10 +1302,10 @@ mpt_adapter_install(struct pci_dev *pdev)
 		printk(KERN_ERR MYNAM ": ERROR - Insufficient memory to add adapter!\n");
 		return -ENOMEM;
 	}
-	memset(ioc, 0, sizeof(*ioc));
+	memset(ioc, 0, sizeof(MPT_ADAPTER));
 	ioc->alloc_total = sizeof(MPT_ADAPTER);
 	ioc->req_sz = MPT_DEFAULT_FRAME_SIZE;		/* avoid div by zero! */
-	ioc->reply_sz = ioc->req_sz;
+	ioc->reply_sz = MPT_REPLY_FRAME_SIZE;
 
 	ioc->pcidev = pdev;
 	ioc->diagPending = 0;
@@ -1419,13 +1421,12 @@ mpt_adapter_install(struct pci_dev *pdev)
 		ioc->prod_name = "LSIFC929X";
 		{
 			/* 929X Chip Fix. Set Split transactions level
-			 * for PCIX. Set bits 5 - 6 to zero, turn on bit 4.
+			 * for PCIX. Set MOST bits to zero.
 			 */
-			u16 pcixcmd = 0;
-			pci_read_config_word(pdev, 0x6a, &pcixcmd);
-			pcixcmd &= 0xFF9F;
-			pcixcmd |= 0x0010;
-			pci_write_config_word(pdev, 0x6a, pcixcmd);
+			u8 pcixcmd;
+			pci_read_config_byte(pdev, 0x6a, &pcixcmd);
+			pcixcmd &= 0x8F;
+			pci_write_config_byte(pdev, 0x6a, pcixcmd);
 		}
 	}
 	else if (pdev->device == MPI_MANUFACTPAGE_DEVICEID_FC919X) {
@@ -1433,13 +1434,12 @@ mpt_adapter_install(struct pci_dev *pdev)
 		ioc->prod_name = "LSIFC919X";
 		{
 			/* 919X Chip Fix. Set Split transactions level
-			 * for PCIX. Set bits 5 - 6 to zero, turn on bit 4.
+			 * for PCIX. Set MOST bits to zero.
 			 */
-			u16 pcixcmd = 0;
-			pci_read_config_word(pdev, 0x6a, &pcixcmd);
-			pcixcmd &= 0xFF9F;
-			pcixcmd |= 0x0010;
-			pci_write_config_word(pdev, 0x6a, pcixcmd);
+			u8 pcixcmd;
+			pci_read_config_byte(pdev, 0x6a, &pcixcmd);
+			pcixcmd &= 0x8F;
+			pci_write_config_byte(pdev, 0x6a, pcixcmd);
 		}
 	}
 	else if (pdev->device == MPI_MANUFACTPAGE_DEVID_53C1030) {
@@ -1449,14 +1449,14 @@ mpt_adapter_install(struct pci_dev *pdev)
 			u8 revision;
 
 			/* 1030 Chip Fix. Disable Split transactions
-			 * for PCIX. Set bits 4 - 6 to zero if Rev < C0( = 8)
+			 * for PCIX. Set MOST bits to zero if Rev < C0( = 8).
 			 */
 			pci_read_config_byte(pdev, PCI_CLASS_REVISION, &revision);
 			if (revision < 0x08) {
-				u16 pcixcmd = 0;
-				pci_read_config_word(pdev, 0x6a, &pcixcmd);
-				pcixcmd &= 0xFF8F;
-				pci_write_config_word(pdev, 0x6a, pcixcmd);
+				u8 pcixcmd;
+				pci_read_config_byte(pdev, 0x6a, &pcixcmd);
+				pcixcmd &= 0x8F;
+				pci_write_config_byte(pdev, 0x6a, pcixcmd);
 			}
 		}
 	}
@@ -1764,6 +1764,8 @@ mpt_do_ioc_recovery(MPT_ADAPTER *ioc, u32 reason, int sleepFlag)
 			/* Check, and possibly reset, the coalescing value
 			 */
 			mpt_read_ioc_pg_1(ioc);
+
+			mpt_read_ioc_pg_4(ioc);
 		}
 
 		GetIoUnitPage2(ioc);
@@ -1949,6 +1951,15 @@ mpt_adapter_disable(MPT_ADAPTER *this, int freeup)
 		if (freeup && this->spi_data.pIocPg3 != NULL) {
 			kfree(this->spi_data.pIocPg3);
 			this->spi_data.pIocPg3 = NULL;
+		}
+
+		if (freeup && this->spi_data.pIocPg4 != NULL) {
+			sz = this->spi_data.IocPg4Sz;
+			pci_free_consistent(this->pcidev, sz, 
+				this->spi_data.pIocPg4,
+				this->spi_data.IocPg4_dma);
+			this->spi_data.pIocPg4 = NULL;
+			this->alloc_total -= sz;
 		}
 	}
 }
@@ -2346,7 +2357,7 @@ GetIocFacts(MPT_ADAPTER *ioc, int sleepFlag, int reason)
 			 */
 			ioc->req_sz = MIN(MPT_DEFAULT_FRAME_SIZE, facts->RequestFrameSize * 4);
 			ioc->req_depth = MIN(MPT_MAX_REQ_DEPTH, facts->GlobalCredits);
-			ioc->reply_sz = ioc->req_sz;
+			ioc->reply_sz = MPT_REPLY_FRAME_SIZE;
 			ioc->reply_depth = MIN(MPT_DEFAULT_REPLY_DEPTH, facts->ReplyQueueDepth);
 
 			dprintk((MYIOC_s_INFO_FMT "reply_sz=%3d, reply_depth=%4d\n",
@@ -2609,8 +2620,8 @@ SendPortEnable(MPT_ADAPTER *ioc, int portnum, int sleepFlag)
 void *
 mpt_alloc_fw_memory(MPT_ADAPTER *ioc, int size, int *frags, int *alloc_sz)
 {
-	fw_image_t	**cached_fw = NULL;
-	u8		*mem = NULL;
+	fw_image_t	**cached_fw;
+	u8		*mem;
 	dma_addr_t	fw_dma;
 	int		alloc_total = 0;
 	int		bytes_left, bytes, num_frags;
@@ -2758,7 +2769,7 @@ mpt_do_upload(MPT_ADAPTER *ioc, int sleepFlag)
 	u8			 reply[sizeof(FWUploadReply_t)];
 	FWUpload_t		*prequest;
 	FWUploadReply_t		*preply;
-	FWUploadTCSGE_t		*ptcsge = NULL;
+	FWUploadTCSGE_t		*ptcsge;
 	int			 sgeoffset;
 	int			 ii, sz, reply_sz;
 	int			 cmdStatus, freeMem = 0;
@@ -2890,16 +2901,16 @@ mpt_do_upload(MPT_ADAPTER *ioc, int sleepFlag)
 static int
 mpt_downloadboot(MPT_ADAPTER *ioc, int sleepFlag)
 {
-	MpiFwHeader_t		*FwHdr = NULL;
+	MpiFwHeader_t		*FwHdr;
 	MpiExtImageHeader_t 	*ExtHdr;
-	fw_image_t		**pCached = NULL;
+	fw_image_t		**pCached;
 	int			 fw_sz;
 	u32			 diag0val;
 #ifdef MPT_DEBUG
 	u32			 diag1val = 0;
 #endif
 	int			 count = 0;
-	u32			*ptru32 = NULL;
+	u32			*ptru32;
 	u32			 diagRwData;
 	u32			 nextImage;
 	u32			 ext_offset;
@@ -4301,7 +4312,7 @@ GetIoUnitPage2(MPT_ADAPTER *ioc)
 static int
 mpt_GetScsiPortSettings(MPT_ADAPTER *ioc, int portnum)
 {
-	u8			*pbuf = NULL;
+	u8			*pbuf;
 	dma_addr_t		 buf_dma;
 	CONFIGPARMS		 cfg;
 	ConfigPageHeader_t	 header;
@@ -4387,7 +4398,6 @@ mpt_GetScsiPortSettings(MPT_ADAPTER *ioc, int portnum)
 			}
 			if (pbuf) {
 				pci_free_consistent(ioc->pcidev, header.PageLength * 4, pbuf, buf_dma);
-				pbuf = NULL;
 			}
 		}
 	}
@@ -4424,6 +4434,8 @@ mpt_GetScsiPortSettings(MPT_ADAPTER *ioc, int portnum)
 				/* Save the Port Page 2 data
 				 * (reformat into a 32bit quantity)
 				 */
+				data = le32_to_cpu(pPP2->PortFlags) & MPI_SCSIPORTPAGE2_PORT_FLAGS_DV_MASK;
+				ioc->spi_data.PortFlags = data;
 				for (ii=0; ii < MPT_MAX_SCSI_DEVICES; ii++) {
 					pdevice = &pPP2->DeviceSettings[ii];
 					data = (le16_to_cpu(pdevice->DeviceFlags) << 16) |
@@ -4433,7 +4445,6 @@ mpt_GetScsiPortSettings(MPT_ADAPTER *ioc, int portnum)
 			}
 
 			pci_free_consistent(ioc->pcidev, header.PageLength * 4, pbuf, buf_dma);
-			pbuf = NULL;
 		}
 	}
 
@@ -4509,8 +4520,8 @@ mpt_readScsiDevicePageHeaders(MPT_ADAPTER *ioc, int portnum)
 static int
 mpt_findImVolumes(MPT_ADAPTER *ioc)
 {
-	IOCPage2_t		*pIoc2 = NULL;
-	ConfigPageIoc2RaidVol_t	*pIocRv = NULL;
+	IOCPage2_t		*pIoc2;
+	ConfigPageIoc2RaidVol_t	*pIocRv;
 	dma_addr_t		 ioc2_dma;
 	CONFIGPARMS		 cfg;
 	ConfigPageHeader_t	 header;
@@ -4587,10 +4598,7 @@ mpt_findImVolumes(MPT_ADAPTER *ioc)
 	}
 
 done_and_free:
-	if (pIoc2) {
-		pci_free_consistent(ioc->pcidev, iocpage2sz, pIoc2, ioc2_dma);
-		pIoc2 = NULL;
-	}
+	pci_free_consistent(ioc->pcidev, iocpage2sz, pIoc2, ioc2_dma);
 
 	return rc;
 }
@@ -4598,7 +4606,7 @@ done_and_free:
 int
 mpt_read_ioc_pg_3(MPT_ADAPTER *ioc)
 {
-	IOCPage3_t		*pIoc3 = NULL;
+	IOCPage3_t		*pIoc3;
 	u8			*mem;
 	CONFIGPARMS		 cfg;
 	ConfigPageHeader_t	 header;
@@ -4651,18 +4659,66 @@ mpt_read_ioc_pg_3(MPT_ADAPTER *ioc)
 		}
 	}
 
-	if (pIoc3) {
-		pci_free_consistent(ioc->pcidev, iocpage3sz, pIoc3, ioc3_dma);
-		pIoc3 = NULL;
-	}
+	pci_free_consistent(ioc->pcidev, iocpage3sz, pIoc3, ioc3_dma);
 
 	return 0;
 }
 
 static void
+mpt_read_ioc_pg_4(MPT_ADAPTER *ioc)
+{
+	IOCPage4_t		*pIoc4;
+	CONFIGPARMS		 cfg;
+	ConfigPageHeader_t	 header;
+	dma_addr_t		 ioc4_dma;
+	int			 iocpage4sz;
+
+	/* Read and save IOC Page 4
+	 */
+	header.PageVersion = 0;
+	header.PageLength = 0;
+	header.PageNumber = 4;
+	header.PageType = MPI_CONFIG_PAGETYPE_IOC;
+	cfg.hdr = &header;
+	cfg.physAddr = -1;
+	cfg.pageAddr = 0;
+	cfg.action = MPI_CONFIG_ACTION_PAGE_HEADER;
+	cfg.dir = 0;
+	cfg.timeout = 0;
+	if (mpt_config(ioc, &cfg) != 0)
+		return;
+
+	if (header.PageLength == 0)
+		return;
+
+	if ( (pIoc4 = ioc->spi_data.pIocPg4) == NULL ) {
+		iocpage4sz = (header.PageLength + 4) * 4; /* Allow 4 additional SEP's */
+		pIoc4 = pci_alloc_consistent(ioc->pcidev, iocpage4sz, &ioc4_dma);
+		if (!pIoc4)
+			return;
+	} else {
+		ioc4_dma = ioc->spi_data.IocPg4_dma;
+		iocpage4sz = ioc->spi_data.IocPg4Sz;
+	}
+
+	/* Read the Page into dma memory.
+	 */
+	cfg.physAddr = ioc4_dma;
+	cfg.action = MPI_CONFIG_ACTION_PAGE_READ_CURRENT;
+	if (mpt_config(ioc, &cfg) == 0) {
+		ioc->spi_data.pIocPg4 = (IOCPage4_t *) pIoc4;
+		ioc->spi_data.IocPg4_dma = ioc4_dma;
+		ioc->spi_data.IocPg4Sz = iocpage4sz;
+	} else {
+		pci_free_consistent(ioc->pcidev, iocpage4sz, pIoc4, ioc4_dma);
+		ioc->spi_data.pIocPg4 = NULL;
+	}
+}
+
+static void
 mpt_read_ioc_pg_1(MPT_ADAPTER *ioc)
 {
-	IOCPage1_t		*pIoc1 = NULL;
+	IOCPage1_t		*pIoc1;
 	CONFIGPARMS		 cfg;
 	ConfigPageHeader_t	 header;
 	dma_addr_t		 ioc1_dma;
@@ -4738,10 +4794,7 @@ mpt_read_ioc_pg_1(MPT_ADAPTER *ioc)
 		}
 	}
 
-	if (pIoc1) {
-		pci_free_consistent(ioc->pcidev, iocpage1sz, pIoc1, ioc1_dma);
-		pIoc1 = NULL;
-	}
+	pci_free_consistent(ioc->pcidev, iocpage1sz, pIoc1, ioc1_dma);
 
 	return;
 }
@@ -5428,7 +5481,7 @@ mpt_HardResetHandler(MPT_ADAPTER *ioc, int sleepFlag)
 	int		 rc;
 	unsigned long	 flags;
 
-	dprintk((MYIOC_s_INFO_FMT "HardResetHandler Entered!\n", ioc->name));
+	dtmprintk((MYIOC_s_INFO_FMT "HardResetHandler Entered!\n", ioc->name));
 #ifdef MFCNT
 	printk(MYIOC_s_INFO_FMT "HardResetHandler Entered!\n", ioc->name);
 	printk("MF count 0x%x !\n", ioc->mfcnt);
@@ -5460,11 +5513,11 @@ mpt_HardResetHandler(MPT_ADAPTER *ioc, int sleepFlag)
 
 		for (ii=MPT_MAX_PROTOCOL_DRIVERS-1; ii; ii--) {
 			if (MptResetHandlers[ii]) {
-				dprintk((MYIOC_s_INFO_FMT "Calling IOC reset_setup handler #%d\n",
+				dtmprintk((MYIOC_s_INFO_FMT "Calling IOC reset_setup handler #%d\n",
 						ioc->name, ii));
 				r += (*(MptResetHandlers[ii]))(ioc, MPT_IOC_SETUP_RESET);
 				if (ioc->alt_ioc) {
-					dprintk((MYIOC_s_INFO_FMT "Calling alt-%s setup reset handler #%d\n",
+					dtmprintk((MYIOC_s_INFO_FMT "Calling alt-%s setup reset handler #%d\n",
 							ioc->name, ioc->alt_ioc->name, ii));
 					r += (*(MptResetHandlers[ii]))(ioc->alt_ioc, MPT_IOC_SETUP_RESET);
 				}
@@ -5486,7 +5539,7 @@ mpt_HardResetHandler(MPT_ADAPTER *ioc, int sleepFlag)
 		ioc->alt_ioc->diagPending = 0;
 	spin_unlock_irqrestore(&ioc->diagLock, flags);
 
-	dprintk((MYIOC_s_INFO_FMT "HardResetHandler rc = %d!\n", ioc->name, rc));
+	dtmprintk((MYIOC_s_INFO_FMT "HardResetHandler rc = %d!\n", ioc->name, rc));
 
 	return rc;
 }
@@ -5495,7 +5548,7 @@ mpt_HardResetHandler(MPT_ADAPTER *ioc, int sleepFlag)
 static char *
 EventDescriptionStr(u8 event, u32 evData0)
 {
-	char *ds = NULL;
+	char *ds;
 
 	switch(event) {
 	case MPI_EVENT_NONE:
@@ -6001,7 +6054,7 @@ static void
 fusion_exit(void)
 {
 	MPT_ADAPTER *this;
-	struct pci_dev *pdev = NULL;
+	struct pci_dev *pdev;
 
 	dprintk((KERN_INFO MYNAM ": fusion_exit() called!\n"));
 
@@ -6021,7 +6074,7 @@ fusion_exit(void)
 		this->active = 0;
 
 		pdev = (struct pci_dev *)this->pcidev;
-		mptscsih_sync_irq(pdev->irq);
+		mpt_sync_irq(pdev->irq);
 
 		/* Clear any lingering interrupt */
 		CHIPREG_WRITE32(&this->chip->IntStatus, 0);

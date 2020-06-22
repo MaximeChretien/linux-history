@@ -258,16 +258,20 @@ unsigned long do_mremap(unsigned long addr,
 		if ((addr <= new_addr) && (addr+old_len) > new_addr)
 			goto out;
 
-		do_munmap(current->mm, new_addr, new_len);
+		ret = do_munmap(current->mm, new_addr, new_len);
+		if (ret && new_len)
+			goto out;
 	}
 
 	/*
 	 * Always allow a shrinking remap: that just unmaps
 	 * the unnecessary pages..
 	 */
-	ret = addr;
 	if (old_len >= new_len) {
-		do_munmap(current->mm, addr+new_len, old_len - new_len);
+		ret = do_munmap(current->mm, addr+new_len, old_len - new_len);
+		if (ret && old_len != new_len)
+			goto out;
+		ret = addr;
 		if (!(flags & MREMAP_FIXED) || (new_addr == addr))
 			goto out;
 	}

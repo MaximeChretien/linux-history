@@ -36,6 +36,7 @@
 #define MACH_GROUP_NEC_VR41XX  19 /* NEC Vr41xx based boards/gadgets        */
 #define MACH_GROUP_HP_LJ       20 /* Hewlett Packard LaserJet               */
 #define MACH_GROUP_LASAT       21
+#define MACH_GROUP_TITAN       22 /* PMC-Sierra Titan 			    */
 
 /*
  * Valid machtype values for group unknown (low order halfword of mips_machtype)
@@ -125,6 +126,7 @@
 #define MACH_MOMENCO_OCELOT		0
 #define MACH_MOMENCO_OCELOT_G		1
 #define MACH_MOMENCO_OCELOT_C		2
+#define MACH_MOMENCO_JAGUAR_ATX		3
 
 /*
  * Valid machtype for group ITE
@@ -174,6 +176,9 @@
 #define MACH_DB1000		3       /* Au1000-based eval board */
 #define MACH_DB1100		4       /* Au1100-based eval board */
 #define MACH_DB1500		5       /* Au1500-based eval board */
+#define MACH_XXS1500		6       /* Au1500-based eval board */
+#define MACH_MTX1		7	/* 4G MTX-1 Au1500-based board */
+#define MACH_CSB250		8	/* Cogent Au1500 */
 
 /*
  * Valid machtype for group NEC_VR41XX
@@ -186,6 +191,11 @@
 #define MACH_CASIO_E55		5	/* CASIO CASSIOPEIA E-10/15/55/65 */
 #define MACH_TANBAC_TB0226	6	/* TANBAC TB0226 (MBASE) */
 #define MACH_TANBAC_TB0229	7	/* TANBAC TB0229 (VR4131DIMM) */
+
+/*
+ * Valid machtype for group TITAN
+ */
+#define	MACH_TITAN_YOSEMITE	1 	/* PMC-Sierra Yosemite */
 
 #define CL_SIZE			(256)
 

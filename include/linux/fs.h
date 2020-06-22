@@ -223,6 +223,7 @@ enum bh_state_bits {
 	BH_Attached,	/* 1 if b_inode_buffers is linked into a list */
 	BH_JBD,		/* 1 if it has an attached journal_head */
 	BH_Sync,	/* 1 if the buffer is a sync read */
+	BH_Delay,       /* 1 if the buffer is delayed allocate */
 
 	BH_PrivateStart,/* not a state bit, but the first bit available
 			 * for private allocation by other entities
@@ -285,6 +286,7 @@ void init_buffer(struct buffer_head *, bh_end_io_t *, void *);
 #define buffer_new(bh)		__buffer_state(bh,New)
 #define buffer_async(bh)	__buffer_state(bh,Async)
 #define buffer_launder(bh)	__buffer_state(bh,Launder)
+#define buffer_delay(bh)	__buffer_state(bh,Delay)
 
 #define bh_offset(bh)		((unsigned long)(bh)->b_data & ~PAGE_MASK)
 
@@ -967,6 +969,7 @@ struct super_operations {
 #define I_LOCK			8
 #define I_FREEING		16
 #define I_CLEAR			32
+#define I_NEW			64
 
 #define I_DIRTY (I_DIRTY_SYNC | I_DIRTY_DATASYNC | I_DIRTY_PAGES)
 
@@ -1145,6 +1148,7 @@ extern int FASTCALL(try_to_free_buffers(struct page *, unsigned int));
 extern void refile_buffer(struct buffer_head * buf);
 extern void create_empty_buffers(struct page *, kdev_t, unsigned long);
 extern void end_buffer_io_sync(struct buffer_head *bh, int uptodate);
+extern void end_buffer_io_async(struct buffer_head *bh, int uptodate);
 
 /* reiserfs_writepage needs this */
 extern void set_buffer_async_io(struct buffer_head *bh) ;
@@ -1287,6 +1291,7 @@ static inline int fsync_inode_data_buffers(struct inode *inode)
 }
 extern int inode_has_buffers(struct inode *);
 extern int do_fdatasync(struct file *);
+extern int filemap_fdatawrite(struct address_space *);
 extern int filemap_fdatasync(struct address_space *);
 extern int filemap_fdatawait(struct address_space *);
 extern void sync_supers(kdev_t dev, int wait);
@@ -1392,17 +1397,54 @@ extern struct dentry * lookup_hash(struct qstr *, struct dentry *);
 #define user_path_walk_link(name,nd) __user_walk(name, LOOKUP_POSITIVE, nd)
 
 extern void inode_init_once(struct inode *);
+extern void __inode_init_once(struct inode *);
 extern void iput(struct inode *);
+extern void refile_inode(struct inode *inode);
 extern void force_delete(struct inode *);
 extern struct inode * igrab(struct inode *);
 extern struct inode * ilookup(struct super_block *, unsigned long);
 extern ino_t iunique(struct super_block *, ino_t);
+extern void unlock_new_inode(struct inode *);
 
 typedef int (*find_inode_t)(struct inode *, unsigned long, void *);
-extern struct inode * iget4(struct super_block *, unsigned long, find_inode_t, void *);
+
+extern struct inode * iget4_locked(struct super_block *, unsigned long,
+				   find_inode_t, void *);
+
+static inline struct inode *iget4(struct super_block *sb, unsigned long ino,
+				  find_inode_t find_actor, void *opaque)
+{
+	struct inode *inode = iget4_locked(sb, ino, find_actor, opaque);
+
+	if (inode && (inode->i_state & I_NEW)) {
+		/*
+		 * reiserfs-specific kludge that is expected to go away ASAP.
+		 */
+		if (sb->s_op->read_inode2)
+			sb->s_op->read_inode2(inode, opaque);
+		else
+			sb->s_op->read_inode(inode);
+		unlock_new_inode(inode);
+	}
+
+	return inode;
+}
+
 static inline struct inode *iget(struct super_block *sb, unsigned long ino)
 {
-	return iget4(sb, ino, NULL, NULL);
+	struct inode *inode = iget4_locked(sb, ino, NULL, NULL);
+
+	if (inode && (inode->i_state & I_NEW)) {
+		sb->s_op->read_inode(inode);
+		unlock_new_inode(inode);
+	}
+
+	return inode;
+}
+
+static inline struct inode *iget_locked(struct super_block *sb, unsigned long ino)
+{
+	return iget4_locked(sb, ino, NULL, NULL);
 }
 
 extern void clear_inode(struct inode *);
@@ -1481,9 +1523,12 @@ extern int writeout_one_page(struct page *);
 extern int generic_file_mmap(struct file *, struct vm_area_struct *);
 extern int file_read_actor(read_descriptor_t * desc, struct page *page, unsigned long offset, unsigned long size);
 extern ssize_t generic_file_read(struct file *, char *, size_t, loff_t *);
+extern inline ssize_t do_generic_direct_read(struct file *, char *, size_t, loff_t *);
 extern int precheck_file_write(struct file *, struct inode *, size_t *, loff_t *);
 extern ssize_t generic_file_write(struct file *, const char *, size_t, loff_t *);
 extern void do_generic_file_read(struct file *, loff_t *, read_descriptor_t *, read_actor_t);
+extern ssize_t do_generic_file_write(struct file *, const char *, size_t, loff_t *);
+extern ssize_t do_generic_direct_write(struct file *, const char *, size_t, loff_t *);
 extern loff_t no_llseek(struct file *file, loff_t offset, int origin);
 extern loff_t generic_file_llseek(struct file *file, loff_t offset, int origin);
 extern ssize_t generic_read_dir(struct file *, char *, size_t, loff_t *);

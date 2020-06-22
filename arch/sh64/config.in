@@ -155,6 +155,8 @@ fi
 tristate 'Kernel support for ELF binaries' CONFIG_BINFMT_ELF
 tristate 'Kernel support for MISC binaries' CONFIG_BINFMT_MISC
 
+bool 'Select task to kill on out of memory condition' CONFIG_OOM_KILLER
+
 # source drivers/parport/Config.in
 
 endmenu
@@ -175,7 +177,6 @@ tristate 'ATA/IDE/MFM/RLL support' CONFIG_IDE
 if [ "$CONFIG_IDE" != "n" ]; then
   source drivers/ide/Config.in
 else
-   define_bool CONFIG_BLK_DEV_IDE_MODES n
    define_bool CONFIG_BLK_DEV_HD n
 fi
 endmenu

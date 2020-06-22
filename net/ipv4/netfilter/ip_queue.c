@@ -585,12 +585,11 @@ static struct notifier_block ipq_nl_notifier = {
 	0
 };
 
-static int sysctl_maxlen = IPQ_QMAX_DEFAULT;
 static struct ctl_table_header *ipq_sysctl_header;
 
 static ctl_table ipq_table[] = {
-	{ NET_IPQ_QMAX, NET_IPQ_QMAX_NAME, &sysctl_maxlen,
-	  sizeof(sysctl_maxlen), 0644,  NULL, proc_dointvec },
+	{ NET_IPQ_QMAX, NET_IPQ_QMAX_NAME, &queue_maxlen,
+	  sizeof(queue_maxlen), 0644,  NULL, proc_dointvec },
  	{ 0 }
 };
 

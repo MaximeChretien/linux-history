@@ -62,7 +62,7 @@ EXPORT_SYMBOL_NOVERS(strrchr);
 EXPORT_SYMBOL_NOVERS(strstr);
 EXPORT_SYMBOL_NOVERS(strtok);
 
-EXPORT_SYMBOL(_clear_page);
+EXPORT_SYMBOL(clear_page);
 EXPORT_SYMBOL(kernel_thread);
 
 /*
@@ -87,14 +87,6 @@ EXPORT_SYMBOL(csum_partial_copy);
 EXPORT_SYMBOL(_flush_cache_all);
 
 EXPORT_SYMBOL(invalid_pte_table);
-
-/*
- * Semaphore stuff
- */
-EXPORT_SYMBOL(__down);
-EXPORT_SYMBOL(__down_interruptible);
-EXPORT_SYMBOL(__down_trylock);
-EXPORT_SYMBOL(__up);
 
 /*
  * Kernel hacking ...

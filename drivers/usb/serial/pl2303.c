@@ -69,6 +69,7 @@ static struct usb_device_id id_table [] = {
 	{ USB_DEVICE(PL2303_VENDOR_ID, PL2303_PRODUCT_ID_RSAQ2) },
 	{ USB_DEVICE(IODATA_VENDOR_ID, IODATA_PRODUCT_ID) },
 	{ USB_DEVICE(ATEN_VENDOR_ID, ATEN_PRODUCT_ID) },
+	{ USB_DEVICE(ATEN_VENDOR_ID2, ATEN_PRODUCT_ID) },
 	{ USB_DEVICE(ELCOM_VENDOR_ID, ELCOM_PRODUCT_ID) },
 	{ USB_DEVICE(ITEGNO_VENDOR_ID, ITEGNO_PRODUCT_ID) },
 	{ USB_DEVICE(MA620_VENDOR_ID, MA620_PRODUCT_ID) },
@@ -156,6 +157,7 @@ static struct usb_serial_device_type pl2303_device = {
 
 struct pl2303_private {
 	spinlock_t lock;
+	wait_queue_head_t delta_msr_wait;
 	u8 line_control;
 	u8 line_status;
 	u8 termios_initialized;
@@ -173,6 +175,7 @@ static int pl2303_startup (struct usb_serial *serial)
 			return -ENOMEM;
 		memset (priv, 0x00, sizeof (struct pl2303_private));
 		spin_lock_init(&priv->lock);
+		init_waitqueue_head(&priv->delta_msr_wait);
 		usb_set_serial_port_data(&serial->port[i], priv);
 	}
 	return 0;
@@ -563,6 +566,42 @@ static int get_modem_info (struct usb_serial_port *port, unsigned int *value)
 	return 0;
 }
 
+static int wait_modem_info(struct usb_serial_port *port, unsigned int arg)
+{
+	struct pl2303_private *priv = usb_get_serial_port_data(port);
+	unsigned long flags;
+	unsigned int prevstatus;
+	unsigned int status;
+	unsigned int changed;
+
+	spin_lock_irqsave (&priv->lock, flags);
+	prevstatus = priv->line_status;
+	spin_unlock_irqrestore (&priv->lock, flags);
+
+	while (1) {
+		interruptible_sleep_on(&priv->delta_msr_wait);
+		/* see if a signal did it */
+		if (signal_pending(current))
+			return -ERESTARTSYS;
+		
+		spin_lock_irqsave (&priv->lock, flags);
+		status = priv->line_status;
+		spin_unlock_irqrestore (&priv->lock, flags);
+		
+		changed=prevstatus^status;
+		
+		if (((arg & TIOCM_RNG) && (changed & UART_RING)) ||
+		    ((arg & TIOCM_DSR) && (changed & UART_DSR)) ||
+		    ((arg & TIOCM_CD)  && (changed & UART_DCD)) ||
+		    ((arg & TIOCM_CTS) && (changed & UART_CTS)) ) {
+			return 0;
+		}
+		prevstatus = status;
+	}
+	/* NOTREACHED */
+	return 0;
+}
+
 static int pl2303_ioctl (struct usb_serial_port *port, struct file *file, unsigned int cmd, unsigned long arg)
 {
 	dbg("%s (%d) cmd = 0x%04x", __FUNCTION__, port->number, cmd);
@@ -579,6 +618,10 @@ static int pl2303_ioctl (struct usb_serial_port *port, struct file *file, unsign
 			dbg("%s (%d) TIOCMSET/TIOCMBIC/TIOCMSET", __FUNCTION__,  port->number);
 			return set_modem_info(port, cmd, (unsigned int *) arg);
 
+		case TIOCMIWAIT:
+			dbg("%s (%d) TIOCMIWAIT", __FUNCTION__,  port->number);
+			return wait_modem_info(port, arg);
+		
 		default:
 			dbg("%s not supported = 0x%04x", __FUNCTION__, cmd);
 			break;
@@ -662,6 +705,7 @@ static void pl2303_read_int_callback (struct urb *urb)
 	spin_lock_irqsave(&priv->lock, flags);
 	priv->line_status = data[UART_STATE];
 	spin_unlock_irqrestore(&priv->lock, flags);
+	wake_up_interruptible (&priv->delta_msr_wait);
 
 	return;
 }

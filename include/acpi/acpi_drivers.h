@@ -162,7 +162,6 @@ void acpi_ec_exit (void);
 
 int acpi_pci_root_init (void);
 void acpi_pci_root_exit (void);
-void acpi_pci_get_translations (struct acpi_pci_id* id, u64* mem_tra, u64* io_tra);
 
 /* ACPI PCI Interrupt Link (pci_link.c) */
 

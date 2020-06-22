@@ -11,7 +11,7 @@
  *  Copyright (c) 1999-2002 LSI Logic Corporation
  *  Originally By: Steven J. Ralston
  *  (mailto:sjralston1@netscape.net)
- *  (mailto:lstephens@lsil.com)
+ *  (mailto:mpt_linux_developer@lsil.com)
  *
  *  $Id: mptbase.h,v 1.149 2003/05/07 14:08:31 pdelaney Exp $
  */
@@ -77,11 +77,11 @@
 #endif
 
 #ifndef COPYRIGHT
-#define COPYRIGHT	"Copyright (c) 1999-2002 " MODULEAUTHOR
+#define COPYRIGHT	"Copyright (c) 1999-2003 " MODULEAUTHOR
 #endif
 
-#define MPT_LINUX_VERSION_COMMON	"2.05.05+"
-#define MPT_LINUX_PACKAGE_NAME		"@(#)mptlinux-2.05.05+"
+#define MPT_LINUX_VERSION_COMMON	"2.05.11.03"
+#define MPT_LINUX_PACKAGE_NAME		"@(#)mptlinux-2.05.11.03"
 #define WHAT_MAGIC_STRING		"@" "(" "#" ")"
 
 #define show_mptmod_ver(s,ver)  \
@@ -96,7 +96,7 @@
 #define MPT_MAX_BUS			1	/* Do not change */
 #define MPT_MAX_FC_DEVICES		255
 #define MPT_MAX_SCSI_DEVICES		16
-#define MPT_LAST_LUN			31
+#define MPT_LAST_LUN			255
 #define MPT_SENSE_BUFFER_ALLOC		64
 	/* allow for 256 max sense alloc, but only 255 max request */
 #if MPT_SENSE_BUFFER_ALLOC >= 256
@@ -126,6 +126,8 @@
 
 #define  MPT_MAX_FRAME_SIZE		128
 #define  MPT_DEFAULT_FRAME_SIZE		128
+
+#define  MPT_REPLY_FRAME_SIZE		0x40  /* Must be a multiple of 8 */
 
 #define  MPT_SG_REQ_128_SCALE		1
 #define  MPT_SG_REQ_96_SCALE		2
@@ -245,6 +247,7 @@ typedef struct _MPT_FRAME_HDR {
 		MPIHeader_t		hdr;
 		SCSIIORequest_t		scsireq;
 		SCSIIOReply_t		sreply;
+		ConfigReply_t		configreply;
 		MPIDefaultReply_t	reply;
 		MPT_FRAME_TRACKER	frame;
 	} u;
@@ -398,12 +401,9 @@ typedef struct _VirtDevice {
 	ScsiCmndTracker		 SentQ;
 	ScsiCmndTracker		 DoneQ;
 	u32			 num_luns;
-//--- LUN split here?
-	u32			 luns;		/* Max LUNs is 32 */
-	u8			 inq_data[SCSI_STD_INQUIRY_BYTES];	/* 36 */
-	u8			 pad0[4];
-	u8			 inq00_data[20];
-	u8			 pad1[4];
+	u32			 luns[8];		/* Max LUNs is 256 */
+	u8			 pad[4];
+	u8			 inq_data[8];
 		/* IEEE Registered Extended Identifier
 		   obtained via INQUIRY VPD page 0x83 */
 		/* NOTE: Do not separate uniq_prepad and uniq_data
@@ -411,11 +411,6 @@ typedef struct _VirtDevice {
 	u8			 uniq_prepad[8];
 	u8			 uniq_data[20];
 	u8			 pad2[4];
-	u8			 inqC3_data[12];
-	u8			 pad3[4];
-	u8			 inqC9_data[12];
-	u8			 pad4[4];
-	u8			 dev_vol_name[64];
 } VirtDevice;
 
 /*
@@ -430,6 +425,7 @@ typedef struct _VirtDevice {
 #define MPT_TARGET_FLAGS_VALID_INQUIRY	0x02
 #define MPT_TARGET_FLAGS_Q_YES		0x08
 #define MPT_TARGET_FLAGS_VALID_56	0x10
+#define MPT_TARGET_FLAGS_SAF_TE_ISSUED	0x20
 #endif
 
 #define MPT_TARGET_NO_NEGO_WIDE		0x01
@@ -529,8 +525,12 @@ typedef struct _mpt_ioctl_events {
 /* #define MPT_SCSICFG_BLK_NEGO		0x10	   WriteSDP1 with WDTR and SDTR disabled */
 
 typedef	struct _ScsiCfgData {
+	u32		 PortFlags;
 	int		*nvram;			/* table of device NVRAM values */
 	IOCPage3_t	*pIocPg3;		/* table of physical disks */
+	IOCPage4_t	*pIocPg4;		/* SEP devices addressing */
+	dma_addr_t	 IocPg4_dma;		/* Phys Addr of IOCPage4 data */
+	int		 IocPg4Sz;		/* IOCPage4 size */
 	u8		 dvStatus[MPT_MAX_SCSI_DEVICES];
 	int		 isRaid;		/* bit field, 1 if RAID */
 	u8		 minSyncFactor;		/* 0xFF if async */
@@ -544,7 +544,8 @@ typedef	struct _ScsiCfgData {
 	u8		 dvScheduled;		/* 1 if scheduled */
 	u8		 forceDv;		/* 1 to force DV scheduling */
 	u8		 noQas;			/* Disable QAS for this adapter */
-	u8		 rsvd[2];
+	u8		 Saf_Te;		/* 1 to force all Processors as SAF-TE if Inquiry data length is too short to check for SAF-TE */
+	u8		 rsvd[1];
 } ScsiCfgData;
 
 typedef struct _fw_image {

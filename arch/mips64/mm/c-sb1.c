@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1996 David S. Miller (dm@engr.sgi.com)
  * Copyright (C) 1997, 2001 Ralf Baechle (ralf@gnu.org)
- * Copyright (C) 2000, 2001 Broadcom Corporation
+ * Copyright (C) 2000, 2001, 2002, 2003 Broadcom Corporation
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -25,14 +25,7 @@
 #include <asm/cpu.h>
 #include <asm/uaccess.h>
 
-#ifdef CONFIG_SIBYTE_DMA_PAGEOPS
 extern void sb1_dma_init(void);
-extern void sb1_clear_page_dma(void * page);
-extern void sb1_copy_page_dma(void * to, void * from);
-#else
-extern void sb1_clear_page(void * page);
-extern void sb1_copy_page(void * to, void * from);
-#endif
 
 /* These are probed at ld_mmu time */
 static unsigned long icache_size;
@@ -231,6 +224,7 @@ static void sb1_flush_cache_page(struct vm_area_struct *vma, unsigned long addr)
 	if (!(vma->vm_flags & VM_EXEC))
 		return;
 
+	addr &= PAGE_MASK;
 	args.vma = vma;
 	args.addr = addr;
 	smp_call_function(sb1_flush_cache_page_ipi, (void *) &args, 1, 1);
@@ -556,21 +550,18 @@ static __init void probe_cache_sizes(void)
 void ld_mmu_sb1(void)
 {
 	extern char except_vec2_sb1;
+	extern char handle_vec2_sb1;
 	unsigned long temp;
 
 	/* Special cache error handler for SB1 */
 	memcpy((void *)(KSEG0 + 0x100), &except_vec2_sb1, 0x80);
 	memcpy((void *)(KSEG1 + 0x100), &except_vec2_sb1, 0x80);
+	memcpy((void *)KSEG1ADDR(&handle_vec2_sb1), &handle_vec2_sb1, 0x80);
 
 	probe_cache_sizes();
 
 #ifdef CONFIG_SIBYTE_DMA_PAGEOPS
-	_clear_page = sb1_clear_page_dma;
-	_copy_page = sb1_copy_page_dma;
 	sb1_dma_init();
-#else
-	_clear_page = sb1_clear_page;
-	_copy_page = sb1_copy_page;
 #endif
 
 	/*
@@ -579,7 +570,6 @@ void ld_mmu_sb1(void)
 	 * occur
 	 */
 	_flush_cache_range = (void *) sb1_nop;
-	_flush_cache_page = sb1_flush_cache_page;
 	_flush_cache_mm = (void (*)(struct mm_struct *))sb1_nop;
 	_flush_cache_all = sb1_nop;
 
@@ -589,6 +579,9 @@ void ld_mmu_sb1(void)
 	_flush_icache_all = __sb1_flush_icache_all; /* local only */
 	_flush_cache_sigtramp = sb1_flush_cache_sigtramp;
 	_flush_data_cache_page = (void *) sb1_nop;
+
+	/* This implies an Icache flush too, so can't be nop'ed */
+	_flush_cache_page = sb1_flush_cache_page;
 
 	/* Full flushes */
 	___flush_cache_all = sb1___flush_cache_all;

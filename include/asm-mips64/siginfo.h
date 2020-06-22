@@ -3,7 +3,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 1998, 1999, 2001 Ralf Baechle
+ * Copyright (C) 1998, 1999, 2001, 2003 Ralf Baechle
  * Copyright (C) 2000, 2001 Silicon Graphics, Inc.
  */
 #ifndef _ASM_SIGINFO_H
@@ -282,19 +282,18 @@ typedef struct siginfo32 {
  * thread manager then catches and does the appropriate nonsense.
  * However, everything is written out here so as to not get lost.
  */
-#define SIGEV_NONE	128	/* other notification: meaningless */
-#define SIGEV_SIGNAL	129	/* notify via signal */
-#define SIGEV_CALLBACK	130	/* ??? */
-#define SIGEV_THREAD	131	/* deliver via thread creation */
+#define SIGEV_SIGNAL	0	/* notify via signal */
+#define SIGEV_NONE	1	/* other notification: meaningless */
+#define SIGEV_THREAD	2	/* deliver via thread creation */
 
 #define SIGEV_MAX_SIZE	64
-#define SIGEV_PAD_SIZE	((SIGEV_MAX_SIZE/sizeof(int)) - 4)
+#define SIGEV_HEAD_SIZE	(sizeof(long) + 2*sizeof(int))
+#define SIGEV_PAD_SIZE	((SIGEV_MAX_SIZE-SIGEV_HEAD_SIZE) / sizeof(int))
 
-/* XXX This one isn't yet IRIX / ABI compatible.  */
 typedef struct sigevent {
-	int sigev_notify;
 	sigval_t sigev_value;
 	int sigev_signo;
+	int sigev_notify;
 	union {
 		int _pad[SIGEV_PAD_SIZE];
 

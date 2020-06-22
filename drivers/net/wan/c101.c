@@ -14,7 +14,6 @@
  *    Moxa C101 User's Manual
  */
 
-#include <linux/config.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
@@ -32,6 +31,9 @@
 
 static const char* version = "Moxa C101 driver version: 1.14";
 static const char* devname = "C101";
+
+#undef DEBUG_PKT
+#define DEBUG_RINGS
 
 #define C101_PAGE 0x1D00
 #define C101_DTR 0x1E00
@@ -188,7 +190,7 @@ static int c101_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 	hdlc_device *hdlc = dev_to_hdlc(dev);
 	port_t *port = hdlc_to_port(hdlc);
 
-#ifdef CONFIG_HDLC_DEBUG_RINGS
+#ifdef DEBUG_RINGS
 	if (cmd == SIOCDEVPRIVATE) {
 		sca_dump_rings(hdlc);
 		return 0;
@@ -297,9 +299,6 @@ static int __init c101_run(unsigned long irq, unsigned long winbase)
 
 	card->tx_ring_buffers = TX_RING_BUFFERS;
 	card->rx_ring_buffers = RX_RING_BUFFERS;
-	printk(KERN_DEBUG "c101: using %u TX + %u RX packets rings\n",
-	       card->tx_ring_buffers, card->rx_ring_buffers);
-
 	card->buff_offset = C101_WINDOW_SIZE; /* Bytes 1D00-1FFF reserved */
 
 	readb(card->win0base + C101_PAGE); /* Resets SCA? */
@@ -331,6 +330,11 @@ static int __init c101_run(unsigned long irq, unsigned long winbase)
 	}
 
 	sca_init_sync_port(card); /* Set up C101 memory */
+
+	printk(KERN_INFO "%s: Moxa C101 on IRQ%u,"
+	       " using %u TX + %u RX packets rings\n",
+	       hdlc_to_name(&card->hdlc), card->irq,
+	       card->tx_ring_buffers, card->rx_ring_buffers);
 
 	*new_card = card;
 	new_card = &card->next_card;

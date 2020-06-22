@@ -87,8 +87,7 @@ static inline void *kmap_atomic(struct page *page, enum km_type type)
 	idx = type + KM_TYPE_NR*smp_processor_id();
 	vaddr = __fix_to_virt(FIX_KMAP_BEGIN + idx);
 	set_pte(kmap_pte-idx, mk_pte(page, kmap_prot));
-	//local_flush_tlb_page(NULL, vaddr);
-	local_flush_tlb_all();
+	local_flush_tlb_one(vaddr);
 
 	return (void*) vaddr;
 }

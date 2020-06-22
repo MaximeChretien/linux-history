@@ -299,7 +299,7 @@ lopec_early_serial_map(void)
 	serial_req.line = 0;
 	serial_req.baud_base = BASE_BAUD;
 	serial_req.irq = UART0_INT;
-	serial_req.flags = ASYNC_BOOT_AUTOCONF | ASYNC_SKIP_TEST;
+	serial_req.flags = ASYNC_BOOT_AUTOCONF;
 	serial_req.io_type = SERIAL_IO_MEM;
 	serial_req.iomem_base = ioremap(UART0_PORT, 8);
 

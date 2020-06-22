@@ -21,7 +21,7 @@
  * [07-SEP-99] Bugfixes 
  */
 
-#define DEBUG_DZ 1
+#undef DEBUG_DZ
 
 #include <linux/config.h>
 #include <linux/version.h>
@@ -254,13 +254,19 @@ static inline void receive_chars(struct dz_serial *info_in)
 
 			if (tmp & DZ_PERR) {
 				*tty->flip.flag_buf_ptr = TTY_PARITY;
+#ifdef DEBUG_DZ
 				debug_console("PERR\n", 5);
+#endif
 			} else if (tmp & DZ_FERR) {
 				*tty->flip.flag_buf_ptr = TTY_FRAME;
+#ifdef DEBUG_DZ
 				debug_console("FERR\n", 5);
+#endif
 			}
 			if (tmp & DZ_OERR) {
+#ifdef DEBUG_DZ
 				debug_console("OERR\n", 5);
+#endif
 				if (tty->flip.count < TTY_FLIPBUF_SIZE) {
 					tty->flip.count++;
 					tty->flip.flag_buf_ptr++;
@@ -1299,7 +1305,7 @@ static void show_serial_version(void)
 
 int __init dz_init(void)
 {
-	int i, tmp;
+	int i;
 	long flags;
 	struct dz_serial *info;
 
@@ -1413,7 +1419,7 @@ int __init dz_init(void)
 	/* reset the chip */
 #ifndef CONFIG_SERIAL_DEC_CONSOLE
 	dz_out(info, DZ_CSR, DZ_CLR);
-	while ((tmp = dz_in(info, DZ_CSR)) & DZ_CLR);
+	while (dz_in(info, DZ_CSR) & DZ_CLR);
 	iob();
 
 	/* enable scanning */

@@ -138,7 +138,7 @@ static ide_ioreg_t lasat_ide_default_io_base(int index) {
 
 static void lasat_time_init(void)
 {
-	mips_counter_frequency = lasat_board_info.li_cpu_hz / 2;
+	mips_hpt_frequency = lasat_board_info.li_cpu_hz / 2;
 }
 
 static void lasat_timer_setup(struct irqaction *irq)
@@ -146,7 +146,7 @@ static void lasat_timer_setup(struct irqaction *irq)
 
 	write_c0_compare(
 		read_c0_count() + 
-		mips_counter_frequency / HZ);
+		mips_hpt_frequency / HZ);
 	change_c0_status(ST0_IM, IE_IRQ0 | IE_IRQ5);
 }
 

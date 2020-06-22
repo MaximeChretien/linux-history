@@ -111,10 +111,6 @@
 
 #include <linux/module.h>
 
-#ifdef PCMCIA
-#undef MODULE
-#endif 
-
 #include <linux/blk.h>	/* to get disk capacity */
 #include <linux/kernel.h>
 #include <linux/string.h>
@@ -130,6 +126,10 @@
 #include "hosts.h"
 #include "qlogicfas.h"
 #include <linux/stat.h>
+
+#ifdef PCMCIA
+#undef MODULE
+#endif 
 
 /*----------------------------------------------------------------*/
 /* driver state info, local to driver */
@@ -647,7 +647,7 @@ host->proc_name =  "qlogicfas";
 	if(request_irq(qlirq, do_ql_ihandl, SA_SHIRQ, "qlogicfas", hreg) < 0)
 #endif	
 	{
-		scsi_unregister(host);
+		scsi_unregister(hreg);
 		goto err_release_mem;
 	}
 #endif
@@ -717,7 +717,9 @@ const char	*qlogicfas_info(struct Scsi_Host * host)
 }
 MODULE_LICENSE("GPL");
 
+#ifndef PCMCIA
 /* Eventually this will go into an include file, but this will be later */
 static Scsi_Host_Template driver_template = QLOGICFAS;
 #include "scsi_module.c"
+#endif
 

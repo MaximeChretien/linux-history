@@ -332,6 +332,8 @@ static int usb_stor_control_thread(void * __us)
 
 	/* set our name for identification purposes */
 	sprintf(current->comm, "usb-storage-%d", us->host_number);
+	
+	current->flags |= PF_MEMALLOC;
 
 	unlock_kernel();
 
@@ -726,6 +728,7 @@ static void * storage_probe(struct usb_device *dev, unsigned int ifnum,
 
 		/* allocate an IRQ callback if one is needed */
 		if ((ss->protocol == US_PR_CBI) && usb_stor_allocate_irq(ss)) {
+			up(&(ss->dev_semaphore));
 			usb_dec_dev_use(dev);
 			return NULL;
 		}
@@ -733,6 +736,7 @@ static void * storage_probe(struct usb_device *dev, unsigned int ifnum,
 		/* allocate the URB we're going to use */
 		ss->current_urb = usb_alloc_urb(0);
 		if (!ss->current_urb) {
+			up(&(ss->dev_semaphore));
 			usb_dec_dev_use(dev);
 			return NULL;
 		}

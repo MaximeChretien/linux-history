@@ -449,7 +449,6 @@ void ext3_put_super (struct super_block * sb)
 }
 
 static struct dquot_operations ext3_qops;
-static int (*old_sync_dquot)(struct dquot *dquot);
 
 static struct super_operations ext3_sops = {
 	read_inode:	ext3_read_inode,	/* BKL held */
@@ -795,6 +794,26 @@ static int ext3_check_descriptors (struct super_block * sb)
 	return 1;
 }
 
+static unsigned long descriptor_loc(struct super_block *sb,
+				    unsigned long logic_sb_block,
+				    int nr)
+{
+	struct ext3_sb_info *sbi = EXT3_SB(sb);
+	unsigned long bg, first_data_block, first_meta_bg;
+	int has_super = 0;
+	
+	first_data_block = le32_to_cpu(sbi->s_es->s_first_data_block);
+	first_meta_bg = le32_to_cpu(sbi->s_es->s_first_meta_bg);
+
+	if (!EXT3_HAS_INCOMPAT_FEATURE(sb, EXT3_FEATURE_INCOMPAT_META_BG) ||
+	    nr < first_meta_bg)
+		return (logic_sb_block + nr + 1);
+	bg = sbi->s_desc_per_block * nr;
+	if (ext3_bg_has_super(sb, bg))
+		has_super = 1;
+	return (first_data_block + has_super + (bg * sbi->s_blocks_per_group));
+}
+
 
 /* ext3_orphan_cleanup() walks a singly-linked list of inodes (starting at
  * the superblock) which were deleted from all directories, but held open by
@@ -902,6 +921,7 @@ struct super_block * ext3_read_super (struct super_block * sb, void * data,
 	struct buffer_head * bh;
 	struct ext3_super_block *es = 0;
 	struct ext3_sb_info *sbi = EXT3_SB(sb);
+	unsigned long block;
 	unsigned long sb_block = 1;
 	unsigned long logic_sb_block = 1;
 	unsigned long offset = 0;
@@ -1042,7 +1062,9 @@ struct super_block * ext3_read_super (struct super_block * sb, void * data,
 	} else {
 		sbi->s_inode_size = le16_to_cpu(es->s_inode_size);
 		sbi->s_first_ino = le32_to_cpu(es->s_first_ino);
-		if (sbi->s_inode_size != EXT3_GOOD_OLD_INODE_SIZE) {
+		if ((sbi->s_inode_size < EXT3_GOOD_OLD_INODE_SIZE) ||
+		    (sbi->s_inode_size & (sbi->s_inode_size - 1)) ||
+		    (sbi->s_inode_size > blocksize)) {
 			printk (KERN_ERR
 				"EXT3-fs: unsupported inode size: %d\n",
 				sbi->s_inode_size);
@@ -1105,7 +1127,8 @@ struct super_block * ext3_read_super (struct super_block * sb, void * data,
 		goto failed_mount;
 	}
 	for (i = 0; i < db_count; i++) {
-		sbi->s_group_desc[i] = sb_bread(sb, logic_sb_block + i + 1);
+		block = descriptor_loc(sb, logic_sb_block, i);
+		sbi->s_group_desc[i] = sb_bread(sb, block);
 		if (!sbi->s_group_desc[i]) {
 			printk (KERN_ERR "EXT3-fs: "
 				"can't read group descriptor %d\n", i);
@@ -1774,12 +1797,14 @@ int ext3_statfs (struct super_block * sb, struct statfs * buf)
 
 #ifdef CONFIG_QUOTA
 
+static int (*old_write_dquot)(struct dquot *dquot);
+
 /* Blocks: (2 data blocks) * (3 indirect + 1 descriptor + 1 bitmap) + superblock */
 #define EXT3_OLD_QFMT_BLOCKS 11
 /* Blocks: quota info + (4 pointer blocks + 1 entry block) * (3 indirect + 1 descriptor + 1 bitmap) + superblock */
 #define EXT3_V0_QFMT_BLOCKS 27
 
-static int ext3_sync_dquot(struct dquot *dquot)
+static int ext3_write_dquot(struct dquot *dquot)
 {
 	int nblocks, ret;
 	handle_t *handle;
@@ -1804,7 +1829,7 @@ static int ext3_sync_dquot(struct dquot *dquot)
 		return PTR_ERR(handle);
 	}
 	unlock_kernel();
-	ret = old_sync_dquot(dquot);
+	ret = old_write_dquot(dquot);
 	lock_kernel();
 	ret = ext3_journal_stop(handle, qinode);
 	unlock_kernel();
@@ -1818,8 +1843,8 @@ static int __init init_ext3_fs(void)
 {
 #ifdef CONFIG_QUOTA
 	init_dquot_operations(&ext3_qops);
-	old_sync_dquot = ext3_qops.sync_dquot;
-	ext3_qops.sync_dquot = ext3_sync_dquot;
+	old_write_dquot = ext3_qops.write_dquot;
+	ext3_qops.write_dquot = ext3_write_dquot;
 #endif
         return register_filesystem(&ext3_fs_type);
 }

@@ -2537,8 +2537,8 @@ static int find_PCI_BAR_index(struct pci_dev *pdev,
 static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 {
 	ushort subsystem_vendor_id, subsystem_device_id, command;
-	unchar irq = pdev->irq;
-	__u32 board_id;
+	unchar irq = pdev->irq, ready = 0;
+	__u32 board_id, scratchpad;
 	__u64 cfg_offset;
 	__u32 cfg_base_addr;
 	__u64 cfg_base_addr_index;
@@ -2609,10 +2609,24 @@ static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 	printk("address 0 = %x\n", c->paddr);
 #endif /* CCISS_DEBUG */ 
 	c->vaddr = remap_pci_mem(c->paddr, 200);
+	/* Wait for the board to become ready.  (PCI hotplug needs this.)
+	 * We poll for up to 120 secs, once per 100ms. */
+	for (i=0; i < 1200; i++) {
+		scratchpad = readl(c->vaddr + SA5_SCRATCHPAD_OFFSET);
+		if (scratchpad == 0xffff0000) {
+			ready = 1;
+			break;
+		}
+		set_current_state(TASK_UNINTERRUPTIBLE);
+		schedule_timeout(HZ / 10); /* wait 100ms */
+	}
+	if (!ready) {
+		printk(KERN_WARNING "cciss: Board not ready.  Timed out.\n");
+		return -1;
+	}
 
 	/* get the address index number */
 	cfg_base_addr = readl(c->vaddr + SA5_CTCFG_OFFSET);
-	/* I am not prepared to deal with a 64 bit address value */
 	cfg_base_addr &= (__u32) 0x0000ffff;
 #ifdef CCISS_DEBUG
 	printk("cfg base address = %x\n", cfg_base_addr);
@@ -2624,7 +2638,7 @@ static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 #endif /* CCISS_DEBUG */
 	if (cfg_base_addr_index == -1) {
 		printk(KERN_WARNING "cciss: Cannot find cfg_base_addr_index\n");
-		release_io_mem(hba[i]);
+		release_io_mem(c);
 		return -1;
 	}
 
@@ -2661,6 +2675,17 @@ static int cciss_pci_init(ctlr_info_t *c, struct pci_dev *pdev)
 		printk("Does not appear to be a valid CISS config table\n");
 		return -1;
 	}
+
+#ifdef CONFIG_X86
+{
+	/* Need to enable prefetch in the SCSI core for 6400 in x86 */
+	__u32 prefetch;
+	prefetch = readl(&(c->cfgtable->SCSI_Prefetch));
+	prefetch |= 0x100;
+	writel(prefetch, &(c->cfgtable->SCSI_Prefetch));
+}
+#endif
+
 #ifdef CCISS_DEBUG
 	printk("Trying to put board into Simple mode\n");
 #endif /* CCISS_DEBUG */ 

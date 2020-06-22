@@ -21,8 +21,6 @@
 #include <linux/swapctl.h>
 #include <linux/timex.h>
 
-#if 0		/* Nothing in this file is used */
-
 /* #define DEBUG */
 
 /**
@@ -153,6 +151,7 @@ void oom_kill_task(struct task_struct *p)
 	 * exit() and clear out its resources quickly...
 	 */
 	p->counter = 5 * HZ;
+	p->flags |= PF_MEMALLOC | PF_MEMDIE;
 
 	/* This process has hardware access, be more careful. */
 	if (cap_t(p->cap_effective) & CAP_TO_MASK(CAP_SYS_RAWIO)) {
@@ -202,6 +201,11 @@ static void oom_kill(void)
  */
 void out_of_memory(void)
 {
+	/*
+	 * oom_lock protects out_of_memory()'s static variables.
+	 * It's a global lock; this is not performance-critical.
+	 */
+	static spinlock_t oom_lock = SPIN_LOCK_UNLOCKED;
 	static unsigned long first, last, count, lastkill;
 	unsigned long now, since;
 
@@ -211,6 +215,7 @@ void out_of_memory(void)
 	if (nr_swap_pages > 0)
 		return;
 
+	spin_lock(&oom_lock);
 	now = jiffies;
 	since = now - last;
 	last = now;
@@ -229,14 +234,14 @@ void out_of_memory(void)
 	 */
 	since = now - first;
 	if (since < HZ)
-		return;
+		goto out_unlock;
 
 	/*
 	 * If we have gotten only a few failures,
 	 * we're not really oom. 
 	 */
 	if (++count < 10)
-		return;
+		goto out_unlock;
 
 	/*
 	 * If we just killed a process, wait a while
@@ -245,17 +250,23 @@ void out_of_memory(void)
 	 */
 	since = now - lastkill;
 	if (since < HZ*5)
-		return;
+		goto out_unlock;
 
 	/*
 	 * Ok, really out of memory. Kill something.
 	 */
 	lastkill = now;
+
+	/* oom_kill() can sleep */
+	spin_unlock(&oom_lock);
 	oom_kill();
+	spin_lock(&oom_lock);
 
 reset:
-	first = now;
+	if (first < now)
+		first = now;
 	count = 0;
-}
 
-#endif	/* Unused file */
+out_unlock:
+	spin_unlock(&oom_lock);
+}

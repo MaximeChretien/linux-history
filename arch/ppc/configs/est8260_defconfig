@@ -50,6 +50,7 @@ CONFIG_KCORE_ELF=y
 CONFIG_BINFMT_ELF=y
 CONFIG_KERNEL_ELF=y
 # CONFIG_BINFMT_MISC is not set
+# CONFIG_OOM_KILLER is not set
 # CONFIG_HOTPLUG is not set
 # CONFIG_PCMCIA is not set
 
@@ -163,7 +164,6 @@ CONFIG_SYN_COOKIES=y
 # ATA/IDE/MFM/RLL support
 #
 # CONFIG_IDE is not set
-# CONFIG_BLK_DEV_IDE_MODES is not set
 # CONFIG_BLK_DEV_HD is not set
 
 #

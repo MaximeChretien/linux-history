@@ -46,6 +46,7 @@
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
 #include <asm/smp.h>
+#include <asm/tlb.h>
 
 #ifdef CONFIG_BLK_DEV_RAM
 # include <linux/blk.h>
@@ -64,6 +65,7 @@ extern char _end;
  struct cpuinfo_ia64 *_cpu_data[NR_CPUS];
 #else
  struct cpuinfo_ia64 _cpu_data[NR_CPUS] __attribute__ ((section ("__special_page_section")));
+ mmu_gather_t mmu_gathers[NR_CPUS];
 #endif
 
 unsigned long ia64_cycles_per_usec;
@@ -376,7 +378,6 @@ setup_arch (char **cmdline_p)
 	saved_command_line[COMMAND_LINE_SIZE-1] = '\0';		/* for safety */
 
 	efi_init();
-	find_memory();
 
 #ifdef CONFIG_ACPI_BOOT
 	/* Initialize the ACPI boot-time table parser */
@@ -392,6 +393,7 @@ setup_arch (char **cmdline_p)
 #endif /* CONFIG_APCI_BOOT */
 
 	iomem_resource.end = ~0UL;	/* FIXME probably belongs elsewhere */
+	find_memory();
 
 #if 0
 	/* XXX fix me */
@@ -659,6 +661,7 @@ cpu_init (void)
 		_cpu_data[cpu]->cpu_data[smp_processor_id()] = my_cpu_data;
 #else
 	my_cpu_data = cpu_data(smp_processor_id());
+	my_cpu_data->mmu_gathers = &mmu_gathers[smp_processor_id()];
 #endif
 
 	/*

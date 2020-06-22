@@ -658,6 +658,8 @@ static inline long find_next_zero_bit(void *addr, unsigned long size,
 
 found_first:
 	tmp |= ~0UL << size;
+	if (tmp == ~0UL)		/* Are any bits zero? */
+		return result + size;	/* Nope. */
 found_middle:
 	return result + ffz(tmp);
 }

@@ -258,7 +258,7 @@ adjust_total_lowmem(void)
 
 	printk(KERN_INFO "Memory BAT mapping: BAT2=%ldMb, BAT3=%ldMb,"
 			" residual: %ldMb\n", __bat2 >> 20, __bat3 >> 20,
-			(total_lowmem - (__bat2 - __bat3)) >> 20);
+			(total_lowmem - (__bat2 + __bat3)) >> 20);
 
 	/* On SMP, we limit the lowmem to the area mapped with BATs.
 	 * We also assume nobody will do SMP with 601s

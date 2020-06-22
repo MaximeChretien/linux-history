@@ -93,7 +93,7 @@ acpi_ac_get_state (
                               FS Interface (/proc)
    -------------------------------------------------------------------------- */
 
-struct proc_dir_entry		*acpi_ac_dir = NULL;
+struct proc_dir_entry		*acpi_ac_dir;
 
 static int
 acpi_ac_read_state (

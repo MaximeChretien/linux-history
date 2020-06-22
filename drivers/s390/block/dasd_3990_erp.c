@@ -5,7 +5,7 @@
  * Bugreports.to..: <Linux390@de.ibm.com>
  * (C) IBM Corporation, IBM Deutschland Entwicklung GmbH, 2000, 2001
  *
- * $Revision: 1.50 $
+ * $Revision: 1.52 $
  *
  * History of changes:
  * 05/14/01 fixed PL030160GTO (BUG() in erp_action_5)
@@ -447,13 +447,6 @@ dasd_3990_erp_cleanup (ccw_req_t *erp,
  *   Block the given device request queue to prevent from further
  *   processing until the started timer has expired or an related
  *   interrupt was received.
- *
- *  PARAMETER
- *   erp                request to be blocked
- *   expires            time to wait until restart (in seconds) 
- *
- * RETURN VALUES
- *   void               
  */
 void
 dasd_3990_erp_block_queue (ccw_req_t     *erp,
@@ -466,15 +459,17 @@ dasd_3990_erp_block_queue (ccw_req_t     *erp,
                      "blocking request queue for %is",
                      (int) expires);
 
+        device->stopped |= DASD_STOPPED_PENDING;
+
         check_then_set (&erp->status,
                         CQR_STATUS_ERROR,
-                        CQR_STATUS_PENDING);
+                        CQR_STATUS_QUEUED);
 
         /* restart queue after some time */
         if (!timer_pending(&device->blocking_timer)) {
                 init_timer(&device->blocking_timer);
                 device->blocking_timer.function = dasd_3990_erp_restart_queue; 
-                device->blocking_timer.data     = (unsigned long) erp;
+                device->blocking_timer.data     = (unsigned long) device;
                 device->blocking_timer.expires  = jiffies + (expires * HZ);
                 add_timer(&device->blocking_timer); 
         } else {
@@ -487,24 +482,15 @@ dasd_3990_erp_block_queue (ccw_req_t     *erp,
  * DASD_3990_ERP_RESTART_QUEUE 
  *
  * DESCRIPTION
- *   Restarts request currently in status PENDING.
- *   This has to be done if either an related interrupt has received, or 
- *   a timer has expired.
- *   
- *
- *  PARAMETER
- *   erp                pointer to the PENDING ERP
- *
- * RETURN VALUES
- *   void               
- *
+ *   Restarts request queue of current device.
+ *   This has to be done if either an related interrupt was received, or 
+ *   the timer has expired.
  */
 void
-dasd_3990_erp_restart_queue (unsigned long erp)
+dasd_3990_erp_restart_queue (unsigned long device_ptr)
 {
 
-        ccw_req_t     *cqr    = (void *) erp;
-	dasd_device_t *device = cqr->device;
+	dasd_device_t *device = (dasd_device_t *) device_ptr;
 	unsigned long flags;
         
         /* get the needed locks to modify the request queue */
@@ -512,20 +498,13 @@ dasd_3990_erp_restart_queue (unsigned long erp)
                                    flags);
 
         /* 'restart' the device queue */
-        if (cqr->status == CQR_STATUS_PENDING) {
-                
-                DEV_MESSAGE (KERN_INFO, device, "%s",
-                             "request queue restarted by MIH");
+        DEV_MESSAGE (KERN_INFO, device, "%s",
+                     "request queue restarted by MIH");
 
-                check_then_set (&cqr->status,
-                                CQR_STATUS_PENDING,
-                                CQR_STATUS_QUEUED);
-        }
+        device->stopped &= ~DASD_STOPPED_PENDING;
 
-        /* release the lock */
         s390irq_spin_unlock_irqrestore (device->devinfo.irq, 
                                         flags);
-
         dasd_schedule_bh (device);
 
 } /* end dasd_3990_erp_restart_queue */
@@ -771,14 +750,18 @@ dasd_3990_erp_action_4 (ccw_req_t *erp,
 
                 if (sense[25] == 0x1D) {	/* state change pending */
                         
-                        DEV_MESSAGE (KERN_INFO, device, "%s",
+                        DEV_MESSAGE (KERN_INFO, device,
                                      "waiting for state change pending "
-                                     "int");
-                        
+                                     "interrupt, %d retries left",
+                                     erp->retries);
+
                         dasd_3990_erp_block_queue (erp,
                                                    30);
                 } else {
-			DEV_MESSAGE (KERN_INFO, device, "redriving request immediately, %d retries left", erp->retries);
+			DEV_MESSAGE (KERN_INFO, device, 
+                                     "redriving request immediately, "
+                                     "%d retries left", 
+                                     erp->retries);
                         /* no state change pending - retry */
                         check_then_set (&erp->status,
                                         CQR_STATUS_ERROR,

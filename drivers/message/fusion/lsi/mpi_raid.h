@@ -1,12 +1,12 @@
 /*
- *  Copyright (c) 2001-2002 LSI Logic Corporation.
+ *  Copyright (c) 2001-2003 LSI Logic Corporation.
  *
  *
  *           Name:  MPI_RAID.H
  *          Title:  MPI RAID message and structures
  *  Creation Date:  February 27, 2001
  *
- *    MPI_RAID.H Version:  01.02.07
+ *    MPI_RAID.H Version:  01.02.09
  *
  *  Version History
  *  ---------------
@@ -25,6 +25,9 @@
  *                      MPI_RAID_ACTION_INACTIVATE_VOLUME, and
  *                      MPI_RAID_ACTION_ADATA_INACTIVATE_ALL.
  *  07-12-02  01.02.07  Added structures for Mailbox request and reply.
+ *  11-15-02  01.02.08  Added missing MsgContext field to MSG_MAILBOX_REQUEST.
+ *  04-01-03  01.02.09  New action data option flag for
+ *                      MPI_RAID_ACTION_DELETE_VOLUME.
  *  --------------------------------------------------------------------------
  */
 
@@ -89,6 +92,9 @@ typedef struct _MSG_RAID_ACTION
 /* ActionDataWord defines for use with MPI_RAID_ACTION_DELETE_VOLUME action */
 #define MPI_RAID_ACTION_ADATA_KEEP_PHYS_DISKS       (0x00000000)
 #define MPI_RAID_ACTION_ADATA_DEL_PHYS_DISKS        (0x00000001)
+
+#define MPI_RAID_ACTION_ADATA_KEEP_LBA0             (0x00000000)
+#define MPI_RAID_ACTION_ADATA_ZERO_LBA0             (0x00000002)
 
 /* ActionDataWord defines for use with MPI_RAID_ACTION_ACTIVATE_VOLUME action */
 #define MPI_RAID_ACTION_ADATA_INACTIVATE_ALL        (0x00000001)
@@ -195,6 +201,7 @@ typedef struct _MSG_MAILBOX_REQUEST
     U16                     Reserved2;
     U8                      Reserved3;
     U8                      MsgFlags;
+    U32                     MsgContext;
     U8                      Command[10];
     U16                     Reserved4;
     SGE_IO_UNION            SGL;

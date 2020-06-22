@@ -638,7 +638,7 @@ static int gamma_do_init_dma( drm_device_t *dev, drm_gamma_init_t *init )
 	} else {
 		DRM_FIND_MAP( dev_priv->buffers, init->buffers_offset );
 
-		DRM_IOREMAP( dev_priv->buffers );
+		DRM_IOREMAP( dev_priv->buffers, dev );
 
 		buf = dma->buflist[GLINT_DRI_BUF_COUNT];
 		pgt = buf->address;
@@ -668,7 +668,7 @@ int gamma_do_cleanup_dma( drm_device_t *dev )
 	if ( dev->dev_private ) {
 		drm_gamma_private_t *dev_priv = dev->dev_private;
 
-		DRM_IOREMAPFREE( dev_priv->buffers );
+		DRM_IOREMAPFREE( dev_priv->buffers, dev );
 
 		DRM(free)( dev->dev_private, sizeof(drm_gamma_private_t),
 			   DRM_MEM_DRIVER );

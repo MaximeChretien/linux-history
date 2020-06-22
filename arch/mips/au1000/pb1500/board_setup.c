@@ -132,8 +132,8 @@ void __init board_setup(void)
 	au_sync();
 #endif
 
-	/* Enable BCLK switching */
-	au_writel(0x00000060, 0xb190003c);
+	/* Enable sys bus clock divider when IDLE state or no bus activity. */
+	au_writel(au_readl(SYS_POWERCTRL) | (0x3 << 5), SYS_POWERCTRL);
 
 #ifdef CONFIG_RTC
 	rtc_ops = &pb1500_rtc_ops;

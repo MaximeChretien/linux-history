@@ -1821,6 +1821,8 @@ static int __devinit sstfb_probe(struct pci_dev *pdev, const struct pci_device_i
 	sst_info = (struct sstfb_info*)kmalloc(sizeof(*sst_info), GFP_KERNEL);
 	if (!sst_info)
 		goto fail_kmalloc;
+	memset(sst_info, 0, sizeof(*sst_info));
+	
 	pci_set_drvdata(pdev, sst_info);
 	sst_info->type = id->driver_data;
 	spec = &voodoo_spec[sst_info->type];

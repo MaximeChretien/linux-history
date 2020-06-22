@@ -10,7 +10,6 @@
 
 #ifdef __KERNEL__
 #include <asm/page.h>
-#include <asm/oplib.h>
 #include <asm/psr.h>
 #include <asm/ptrace.h>
 #include <asm/btfixup.h>
@@ -51,9 +50,6 @@ extern enum sparc_cpu sparc_cpu_model;
 extern unsigned long empty_bad_page;
 extern unsigned long empty_bad_page_table;
 extern unsigned long empty_zero_page;
-
-extern struct linux_romvec *romvec;
-#define halt() romvec->pv_halt()
 
 /* When a context switch happens we must flush all user windows so that
  * the windows of the current process are flushed onto its stack. This

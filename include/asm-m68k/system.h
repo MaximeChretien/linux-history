@@ -10,6 +10,8 @@
 
 #define prepare_to_switch()	do { } while(0)
 
+#ifdef __KERNEL__
+
 /*
  * switch_to(n) should switch tasks to task ptr, first checking that
  * ptr isn't the current task, in which case it does nothing.  This
@@ -161,5 +163,7 @@ static inline unsigned long __xchg(unsigned long x, volatile void * ptr, int siz
 	return x;
 }
 #endif
+
+#endif /* __KERNEL__ */
 
 #endif /* _M68K_SYSTEM_H */

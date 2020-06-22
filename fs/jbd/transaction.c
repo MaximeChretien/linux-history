@@ -59,11 +59,13 @@ static transaction_t * get_transaction (journal_t * journal, int is_try)
 	transaction->t_expires = jiffies + journal->j_commit_interval;
 	INIT_LIST_HEAD(&transaction->t_jcb);
 
-	/* Set up the commit timer for the new transaction. */
-	J_ASSERT (!journal->j_commit_timer_active);
-	journal->j_commit_timer_active = 1;
-	journal->j_commit_timer->expires = transaction->t_expires;
-	add_timer(journal->j_commit_timer);
+	if (journal->j_commit_interval) {
+		/* Set up the commit timer for the new transaction. */
+		J_ASSERT (!journal->j_commit_timer_active);
+		journal->j_commit_timer_active = 1;
+		journal->j_commit_timer->expires = transaction->t_expires;
+		add_timer(journal->j_commit_timer);
+	}
 	
 	J_ASSERT (journal->j_running_transaction == NULL);
 	journal->j_running_transaction = transaction;
@@ -1465,7 +1467,8 @@ int journal_stop(handle_t *handle)
 	if (handle->h_sync ||
 			transaction->t_outstanding_credits >
 				journal->j_max_transaction_buffers ||
-	    		time_after_eq(jiffies, transaction->t_expires)) {
+	    		(journal->j_commit_interval &&
+	    		 time_after_eq(jiffies, transaction->t_expires))) {
 		/* Do this even for aborted journals: an abort still
 		 * completes the commit thread, it just doesn't write
 		 * anything to disk. */

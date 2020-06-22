@@ -33,7 +33,7 @@
 
 #define STD_UART_OP(num)					\
 	{ 0, BASE_BAUD, UART##num##_PORT, UART##num##_INT,	\
-		(ASYNC_BOOT_AUTOCONF|ASYNC_SKIP_TEST),		\
+		ASYNC_BOOT_AUTOCONF,				\
 		iomem_base: UART##num##_IO_BASE,		\
 		io_type: SERIAL_IO_MEM },
 

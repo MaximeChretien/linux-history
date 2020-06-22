@@ -18,7 +18,7 @@
  *  Copyright (c) 1999-2002 LSI Logic Corporation
  *  Originally By: Steven J. Ralston
  *  (mailto:sjralston1@netscape.net)
- *  (mailto:lstephens@lsil.com)
+ *  (mailto:mpt_linux_developer@lsil.com)
  *
  *  $Id: mptctl.h,v 1.14 2003/03/18 22:49:51 pdelaney Exp $
  */
@@ -84,10 +84,10 @@
 #define MPTFWDOWNLOAD		_IOWR(MPT_MAGIC_NUMBER,15,struct mpt_fw_xfer)
 #define MPTCOMMAND		_IOWR(MPT_MAGIC_NUMBER,20,struct mpt_ioctl_command)
 
-#if defined(__KERNEL__) && defined(__sparc__) && defined(__sparc_v9__)		/*{*/
+#if defined(__KERNEL__) && defined(MPT_CONFIG_COMPAT)
 #define MPTFWDOWNLOAD32		_IOWR(MPT_MAGIC_NUMBER,15,struct mpt_fw_xfer32)
 #define MPTCOMMAND32		_IOWR(MPT_MAGIC_NUMBER,20,struct mpt_ioctl_command32)
-#endif	/*}*/
+#endif
 
 #define MPTIOCINFO		_IOWR(MPT_MAGIC_NUMBER,17,struct mpt_ioctl_iocinfo)
 #define MPTIOCINFO1		_IOWR(MPT_MAGIC_NUMBER,17,struct mpt_ioctl_iocinfo_rev0)
@@ -117,13 +117,13 @@ struct mpt_fw_xfer {
 	void		*bufp;		/* Pointer to firmware buffer */
 };
 
-#if defined(__KERNEL__) && defined(__sparc__) && defined(__sparc_v9__)		/*{*/
+#if defined(__KERNEL__) && defined(MPT_CONFIG_COMPAT)
 struct mpt_fw_xfer32 {
 	unsigned int iocnum;
 	unsigned int fwlen;
 	u32 bufp;
 };
-#endif	/*}*/
+#endif
 
 /*
  *  IOCTL header structure.
@@ -316,7 +316,7 @@ struct mpt_ioctl_command {
 /*
  * SPARC PLATFORM: See earlier remark.
  */
-#if defined(__KERNEL__) && defined(__sparc__) && defined(__sparc_v9__)		/*{*/
+#if defined(__KERNEL__) && defined(MPT_CONFIG_COMPAT)
 struct mpt_ioctl_command32 {
 	mpt_ioctl_header hdr;
 	int	timeout;
@@ -331,7 +331,7 @@ struct mpt_ioctl_command32 {
 	int	dataSgeOffset;
 	char	MF[1];
 };
-#endif	/*}*/
+#endif
 
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/

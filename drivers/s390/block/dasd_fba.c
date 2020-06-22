@@ -4,7 +4,7 @@
  * Bugreports.to..: <Linux390@de.ibm.com>
  * (C) IBM Corporation, IBM Deutschland Entwicklung GmbH, 1999,2000
  *
- * $Revision: 1.49 $
+ * $Revision: 1.50 $
  *
  * History of changes
  *          fixed partition handling and HDIO_GETGEO
@@ -409,21 +409,6 @@ dasd_fba_fill_info (dasd_device_t * device, dasd_information2_t * info)
 }
 
 
-static char *
-dasd_fba_dump_sense (struct dasd_device_t *device, ccw_req_t * req)
-{
-	char *page = (char *) get_free_page (GFP_KERNEL);
-	int len;
-	if (page == NULL) {
-		return NULL;
-	}
-	len = sprintf (page, KERN_WARNING PRINTK_HEADER
-		       "device %04X on irq %d: I/O status report:\n",
-		       device->devinfo.devno, device->devinfo.irq);
-
-	return page;
-}
-
 dasd_discipline_t dasd_fba_discipline = {
         owner: THIS_MODULE,
 	name:"FBA ",
@@ -439,7 +424,6 @@ dasd_discipline_t dasd_fba_discipline = {
 	erp_action:dasd_fba_erp_action,
 	erp_postaction:dasd_fba_erp_postaction,
 	build_cp_from_req:dasd_fba_build_cp_from_req,
-	dump_sense:dasd_fba_dump_sense,
 	int_handler:dasd_int_handler,
 	fill_info:dasd_fba_fill_info,
 	list:LIST_HEAD_INIT(dasd_fba_discipline.list),

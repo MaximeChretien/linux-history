@@ -21,7 +21,7 @@
  *
  * We follows above, except:
  *	16 --- program counter (PC)
- *	22 --- syscall # (now just a placeholder)
+ *	22 --- expevt # (Exception Event Number)
  *	23 --- floating point communication register
  */
 #define REG_REG0	 0
@@ -35,7 +35,7 @@
 #define REG_MACH	20
 #define REG_MACL	21
 
-#define REG_SYSCALL	22
+#define REG_EXPEVT	22
 
 #define REG_FPREG0	23
 #define REG_FPREG15	38
@@ -62,7 +62,7 @@ struct pt_regs {
 	unsigned long gbr;
 	unsigned long mach;
 	unsigned long macl;
-	unsigned long dummy;
+	unsigned long expevt;
 };
 
 /*

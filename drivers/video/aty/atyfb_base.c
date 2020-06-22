@@ -383,6 +383,7 @@ static struct {
 
 #if defined(CONFIG_FB_ATY_GX) || defined(CONFIG_FB_ATY_CT)
 static char ram_dram[] __initdata = "DRAM";
+static char ram_resv[] __initdata = "RESV";
 #endif /* CONFIG_FB_ATY_GX || CONFIG_FB_ATY_CT */
 
 #ifdef CONFIG_FB_ATY_GX
@@ -395,7 +396,6 @@ static char ram_sdram[] __initdata = "SDRAM";
 static char ram_sgram[] __initdata = "SGRAM";
 static char ram_wram[] __initdata = "WRAM";
 static char ram_off[] __initdata = "OFF";
-static char ram_resv[] __initdata = "RESV";
 #endif /* CONFIG_FB_ATY_CT */
 
 #ifdef CONFIG_FB_ATY_GX
@@ -488,8 +488,6 @@ static u32 aty_ld_lcd(int index, const struct fb_info_aty *info)
 static void aty_set_crtc(const struct fb_info_aty *info,
                          const struct crtc *crtc)
 {
-    u32 v;
-    
     aty_st_le32(CRTC_H_TOTAL_DISP, crtc->h_tot_disp, info);
     aty_st_le32(CRTC_H_SYNC_STRT_WID, crtc->h_sync_strt_wid, info);
 #ifdef CONFIG_FB_ATY_GENERIC_LCD
@@ -523,6 +521,7 @@ static void aty_set_crtc(const struct fb_info_aty *info,
        registers.
      */
     if (info->lcd_table != 0) {
+	u32 v;
         /* Enable/disable horizontal stretching */
         v = aty_ld_lcd(HORZ_STRETCHING, info);
         v = v & ~(HORZ_STRETCH_RATIO | HORZ_STRETCH_EN | AUTO_HORZ_RATIO |
@@ -1985,7 +1984,6 @@ static int __init aty_init(struct fb_info_aty *info, const char *name)
 #if defined(CONFIG_PPC)
     int sense;
 #endif
-    u8 pll_ref_div;
     u32 monitors_enabled;
 
     info->aty_cmap_regs = (struct aty_cmap_regs *)(info->ati_regbase+0xc0);
@@ -2103,19 +2101,24 @@ found:
 
     info->ref_clk_per = 1000000000000ULL/14318180;
     xtal = "14.31818";
-    if (M64_HAS(GTB_DSP) && (pll_ref_div = aty_ld_pll(PLL_REF_DIV, info))) {
-        int diff1, diff2;
-        diff1 = 510*14/pll_ref_div-pll;
-        diff2 = 510*29/pll_ref_div-pll;
-        if (diff1 < 0)
-            diff1 = -diff1;
-        if (diff2 < 0)
-            diff2 = -diff2;
-        if (diff2 < diff1) {
-            info->ref_clk_per = 1000000000000ULL/29498928;
-            xtal = "29.498928";
-        }
+#ifdef CONFIG_FB_ATY_CT
+    if (M64_HAS(INTEGRATED)) {
+	u8 pll_ref_div = aty_ld_pll(PLL_REF_DIV, info);
+	if (pll_ref_div) {
+	    int diff1, diff2;
+	    diff1 = 510*14/pll_ref_div-pll;
+	    diff2 = 510*29/pll_ref_div-pll;
+	    if (diff1 < 0)
+		diff1 = -diff1;
+	    if (diff2 < 0)
+		diff2 = -diff2;
+	    if (diff2 < diff1) {
+		info->ref_clk_per = 1000000000000ULL/29498928;
+		xtal = "29.498928";
+	    }
+	}
     }
+#endif /* CONFIG_FB_ATY_CT */
 
     i = aty_ld_le32(MEM_CNTL, info);
     gtb_memsize = M64_HAS(GTB_DSP);
@@ -3001,9 +3004,11 @@ int __init atyfb_init(void)
          *  Map the video memory (physical address given) to somewhere in the
          *  kernel address space.
          */
-        info->frame_buffer = ioremap(phys_vmembase[m64_num], phys_size[m64_num]);
+        info->frame_buffer = (unsigned long)ioremap(phys_vmembase[m64_num],
+						    phys_size[m64_num]);
         info->frame_buffer_phys = info->frame_buffer;  /* Fake! */
-        info->ati_regbase = ioremap(phys_guiregbase[m64_num], 0x10000)+0xFC00ul;
+        info->ati_regbase = (unsigned long)ioremap(phys_guiregbase[m64_num],
+						   0x10000)+0xFC00ul;
         info->ati_regbase_phys = info->ati_regbase;  /* Fake! */
 
         aty_st_le32(CLOCK_CNTL, 0x12345678, info);

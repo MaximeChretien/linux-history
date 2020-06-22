@@ -10,26 +10,38 @@
 #define _ASM_PAGE_H
 
 #include <linux/config.h>
-
-/* PAGE_SHIFT determines the page size */
-#define PAGE_SHIFT	12
-#define PAGE_SIZE	(1UL << PAGE_SHIFT)
-#define PAGE_MASK	(~(PAGE_SIZE-1))
+#include <asm/break.h>
 
 #ifdef __KERNEL__
+
+/*
+ * PAGE_SHIFT determines the page size
+ */
+#ifdef CONFIG_PAGE_SIZE_4KB
+#define PAGE_SHIFT	12
+#endif
+#ifdef CONFIG_PAGE_SIZE_16KB
+#define PAGE_SHIFT	14
+#endif
+#ifdef CONFIG_PAGE_SIZE_64KB
+#define PAGE_SHIFT	16
+#endif
+#define PAGE_SIZE	(1UL << PAGE_SHIFT)
+#define PAGE_MASK	(~(PAGE_SIZE-1))
 
 #ifndef __ASSEMBLY__
 
 #include <asm/cacheflush.h>
 
-#define BUG() do { printk("kernel BUG at %s:%d!\n", __FILE__, __LINE__); *(int *)0=0; } while (0)
+#define BUG()								\
+do {									\
+	__asm__ __volatile__("break %0" : : "i" (BRK_BUG));		\
+} while (0)
+
 #define PAGE_BUG(page) do {  BUG(); } while (0)
 
-extern void (*_clear_page)(void * page);
-extern void (*_copy_page)(void * to, void * from);
-
-#define clear_page(page)	_clear_page(page)
-#define copy_page(to, from)	_copy_page(to, from)
+extern void clear_page(void * page);
+extern void copy_page(void * to, void * from);
 
 extern unsigned long shm_align_mask;
 
@@ -78,7 +90,7 @@ typedef struct { unsigned long pgprot; } pgprot_t;
 #define __pgprot(x)	((pgprot_t) { (x) } )
 
 /* Pure 2^n version of get_order */
-extern __inline__ int get_order(unsigned long size)
+static __inline__ int get_order(unsigned long size)
 {
 	int order;
 
@@ -103,7 +115,7 @@ extern __inline__ int get_order(unsigned long size)
  */
 #if defined(CONFIG_SGI_IP22) || defined(CONFIG_MIPS_ATLAS) || \
     defined(CONFIG_MIPS_MALTA) || defined(CONFIG_MIPS_SEAD) || \
-    defined(CONFIG_DECSTATION)
+    defined(CONFIG_DECSTATION) || defined(CONFIG_MIPS_COBALT)
 #define PAGE_OFFSET	0xffffffff80000000UL
 #define UNCAC_BASE	0xffffffffa0000000UL
 #endif
@@ -113,6 +125,14 @@ extern __inline__ int get_order(unsigned long size)
 #endif
 #if defined(CONFIG_SIBYTE_SB1xxx_SOC)
 #define PAGE_OFFSET	0xa800000000000000UL
+#endif
+#if defined(CONFIG_MOMENCO_OCELOT_C)
+#define PAGE_OFFSET	0x9800000000000000UL
+#define UNCAC_BASE	0x9000000000000000UL
+#endif
+#if defined(CONFIG_MOMENCO_JAGUAR_ATX)
+#define PAGE_OFFSET	0xa800000000000000UL    /* cached, coherent writeback */
+#define UNCAC_BASE	0x9000000000000000UL    /* uncac, blocking */
 #endif
 
 #define __pa(x)		((unsigned long) (x) - PAGE_OFFSET)

@@ -67,6 +67,11 @@ int do_check_pgt_cache(int low, int high)
         return freed;
 }
 
+void diag10(unsigned long addr)
+{
+        asm volatile ("diag %0,%0,0x10" : : "a" (addr));
+}
+
 void show_mem(void)
 {
         int i, total = 0, reserved = 0;

@@ -395,6 +395,7 @@ struct super_block *hfs_read_super(struct super_block *s, void *data,
 	struct hfs_mdb *mdb;
 	struct hfs_cat_key key;
 	kdev_t dev = s->s_dev;
+	int dev_blocksize;
 	hfs_s32 part_size, part_start;
 	struct inode *root_inode;
 	int part;
@@ -406,7 +407,12 @@ struct super_block *hfs_read_super(struct super_block *s, void *data,
 	}
 
 	/* set the device driver to 512-byte blocks */
-	set_blocksize(dev, HFS_SECTOR_SIZE);
+	if (set_blocksize(dev, HFS_SECTOR_SIZE) < 0) {
+		dev_blocksize = get_hardsect_size(dev);
+		hfs_warn("hfs_fs: unsupported device block size: %d\n",
+			 dev_blocksize);
+		goto bail3;
+	}
 	s->s_blocksize_bits = HFS_SECTOR_SIZE_BITS;
 	s->s_blocksize = HFS_SECTOR_SIZE;
 

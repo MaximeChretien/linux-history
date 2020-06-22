@@ -96,7 +96,7 @@ acpi_get_sysname (void)
 	}
 
 	if (!strcmp(hdr->oem_id, "HP")) {
-		return "hpzx1";
+		return "hp";
 	}
 	else if (!strcmp(hdr->oem_id, "SGI")) {
 		return "sn2";
@@ -107,7 +107,7 @@ acpi_get_sysname (void)
 # if defined (CONFIG_IA64_HP_SIM)
 	return "hpsim";
 # elif defined (CONFIG_IA64_HP_ZX1)
-	return "hpzx1";
+	return "hp";
 # elif defined (CONFIG_IA64_SGI_SN2)
 	return "sn2";
 # elif defined (CONFIG_IA64_DIG)
@@ -818,6 +818,24 @@ acpi_irq_to_vector (u32 irq)
 		return isa_irq_to_vector(irq);
 
 	return gsi_to_vector(irq);
+}
+
+int
+acpi_register_irq (u32 gsi, u32 polarity, u32 trigger)
+{
+	int vector = 0;
+
+	if (has_8259 && gsi < 16)
+		return isa_irq_to_vector(gsi);
+
+	if (!iosapic_register_intr)
+		return 0;
+
+	/* Turn it on */
+	vector = iosapic_register_intr(gsi,
+		       	(polarity == ACPI_ACTIVE_HIGH) ? IOSAPIC_POL_HIGH : IOSAPIC_POL_LOW,
+			(trigger == ACPI_EDGE_SENSITIVE) ? IOSAPIC_EDGE : IOSAPIC_LEVEL);
+	return vector;
 }
 
 #endif /* CONFIG_ACPI_BOOT */

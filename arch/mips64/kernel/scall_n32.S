@@ -326,7 +326,7 @@ EXPORT(sysn32_call_table)
 	PTR	sys_lremovexattr		/* 6190 */
 	PTR	sys_fremovexattr
 	PTR	sys_tkill
-	PTR	sys_time
+	PTR	sys_ni_syscall
 	PTR	sys_ni_syscall			/* res. for futex */
 	PTR	sys_ni_syscall			/* 6195 rs. sched_setaffinity */
 	PTR	sys_ni_syscall			/* res. f. sched_getaffinity */
@@ -348,7 +348,7 @@ EXPORT(sysn32_call_table)
 	PTR	sys_fcntl
 	PTR	sys_ni_syscall
 	PTR	sys_ni_syscall
-	PTR	sys_ni_syscall			/* 6215 */
+	PTR	sys_semtimedop			/* 6215 */
 	PTR	sys_ni_syscall
 	PTR	sys_ni_syscall
 	PTR	sys_ni_syscall

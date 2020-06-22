@@ -426,7 +426,6 @@ CONFIG_AT91_ETHER_RMII=y
 # ATA/ATAPI/MFM/RLL support
 #
 # CONFIG_IDE is not set
-# CONFIG_BLK_DEV_IDE_MODES is not set
 # CONFIG_BLK_DEV_HD is not set
 
 #

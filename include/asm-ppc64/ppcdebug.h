@@ -103,11 +103,6 @@ extern char *trace_names[64];
 #define PPCDBG_ENTER_DEBUGGER() xmon(0)
 #define PPCDBG_ENTER_DEBUGGER_REGS(X) xmon(X)
 #endif
-#ifdef CONFIG_KDB
-#include <linux/kdb.h>
-#define PPCDBG_ENTER_DEBUGGER() kdb(KDB_REASON_CALL, 0, 0)
-#define PPCDBG_ENTER_DEBUGGER_REGS(X) kdb(KDB_REASON_CALL, 0, X)
-#endif
 
 #else
 #define PPCDBG(...) do {;} while (0)

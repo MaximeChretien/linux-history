@@ -215,7 +215,7 @@ ocotea_early_serial_map(void)
 	serial_req.baud_base = BASE_BAUD;
 	serial_req.port = 0;
 	serial_req.irq = 0;
-	serial_req.flags = ASYNC_BOOT_AUTOCONF | ASYNC_SKIP_TEST;
+	serial_req.flags = ASYNC_BOOT_AUTOCONF;
 	serial_req.io_type = SERIAL_IO_MEM;
 	serial_req.iomem_base = ioremap64(PPC440GX_UART0_ADDR, 8);
 	serial_req.iomem_reg_shift = 0;

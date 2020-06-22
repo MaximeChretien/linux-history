@@ -104,11 +104,37 @@ asmlinkage long sys32_utime(char * filename, struct utimbuf32 *times)
 	return ret;
 }
 
+asmlinkage int sys32_ustat(__kernel_dev_t32 dev, struct ustat32 * ubuf)
+{
 
+	struct super_block *s;
+	struct ustat32 tmp;
+	struct statfs sbuf;
+	int err = -EINVAL;
+
+	s = get_super(to_kdev_t(dev));
+	if (s == NULL)
+		goto out;
+	err = vfs_statfs(s, &sbuf);
+	drop_super(s);
+	if (err)
+		goto out;
+
+	memset(&tmp,0,sizeof(struct ustat));
+	tmp.f_tfree = sbuf.f_bfree;
+	tmp.f_tinode = sbuf.f_ffree;
+
+	err = copy_to_user(ubuf, &tmp, sizeof(struct ustat32)) ? -EFAULT : 0;
+
+out:
+	return err;
+
+}
 
 struct iovec32 { u32 iov_base; __kernel_size_t32 iov_len; };
 
 typedef ssize_t (*IO_fn_t)(struct file *, char *, size_t, loff_t *);
+typedef __kernel_ssize_t32 ssize_t32;
 
 static long do_readv_writev32(int type, struct file *file,
 			      const struct iovec32 *vector, u32 count)
@@ -149,6 +175,11 @@ static long do_readv_writev32(int type, struct file *file,
 		ivp->iov_len = (__kernel_size_t) len;
 		vector++;
 		ivp++;
+		if ((len < 0) || (tot_len != (ssize_t32)tot_len)) {
+			if (iov != iovstack)
+				kfree(iov);
+			return -EINVAL;
+		}
 		i--;
 	}
 
@@ -467,7 +498,7 @@ struct user_dqblk32 {
 };
                                 
 
-extern asmlinkage long sys_quotactl(int cmd, const char *special, int id, caddr_t addr);
+extern asmlinkage long sys_quotactl(unsigned int cmd, const char *special, qid_t id, caddr_t addr);
 
 /* Note: it is necessary to treat cmd and id as unsigned ints, 
  * with the corresponding cast to a signed int to insure that the 
@@ -476,9 +507,9 @@ extern asmlinkage long sys_quotactl(int cmd, const char *special, int id, caddr_
  */
 asmlinkage long sys32_quotactl(u32 cmd_parm, const char *special, u32 id_parm, caddr_t addr)
 {
-	int cmd = (int)cmd_parm;
-	int id  = (int)id_parm;
-	int cmds = cmd >> SUBCMDSHIFT;
+	unsigned int cmd = cmd_parm;
+	qid_t id  = (qid_t)id_parm;
+	unsigned int cmds = cmd >> SUBCMDSHIFT;
 	int err;
 	struct v1c_mem_dqblk d;
 	mm_segment_t old_fs;
@@ -995,19 +1026,21 @@ asmlinkage long sys32_newfstat(unsigned int fd, struct stat32 *statbuf)
 
 static inline int put_statfs (struct statfs32 *ubuf, struct statfs *kbuf)
 {
-	int err;
-	
-	err = put_user (kbuf->f_type, &ubuf->f_type);
-	err |= __put_user (kbuf->f_bsize, &ubuf->f_bsize);
-	err |= __put_user (kbuf->f_blocks, &ubuf->f_blocks);
-	err |= __put_user (kbuf->f_bfree, &ubuf->f_bfree);
-	err |= __put_user (kbuf->f_bavail, &ubuf->f_bavail);
-	err |= __put_user (kbuf->f_files, &ubuf->f_files);
-	err |= __put_user (kbuf->f_ffree, &ubuf->f_ffree);
-	err |= __put_user (kbuf->f_namelen, &ubuf->f_namelen);
-	err |= __put_user (kbuf->f_fsid.val[0], &ubuf->f_fsid.val[0]);
-	err |= __put_user (kbuf->f_fsid.val[1], &ubuf->f_fsid.val[1]);
-	return err;
+	struct statfs32 tmp;
+	memset(&tmp, 0, sizeof(tmp));
+
+	tmp.f_type = kbuf->f_type;
+	tmp.f_bsize = kbuf->f_bsize;
+	tmp.f_blocks = kbuf->f_blocks;
+	tmp.f_bfree = kbuf->f_bfree;
+	tmp.f_bavail = kbuf->f_bavail;
+	tmp.f_files = kbuf->f_files;
+	tmp.f_ffree = kbuf->f_ffree;
+	tmp.f_namelen = kbuf->f_namelen;
+	tmp.f_fsid.val[0] = kbuf->f_fsid.val[0];
+	tmp.f_fsid.val[1] = kbuf->f_fsid.val[1];
+
+	return copy_to_user(ubuf, &tmp, sizeof(tmp)) ? -EFAULT : 0;
 }
 
 extern asmlinkage int sys_statfs(const char * path, struct statfs * buf);
@@ -2567,7 +2600,7 @@ static long do_sys32_semctl(int first, int second, int third, void *uptr)
 	err = -EFAULT;
 	if (get_user(pad, (u32 *)uptr))
 		return err;
-	if (third == SETVAL)
+	if ((third & (~IPC_64)) == SETVAL)
 		fourth.val = (int)pad;
 	else
 		fourth.__pad = (void *)A(pad);
@@ -3488,7 +3521,7 @@ asmlinkage long sys32_sendmsg(int fd, struct msghdr32* user_msg, unsigned int us
 	if(msghdr_from_user32_to_kern(&kern_msg, user_msg))
 		return -EFAULT;
 	if(kern_msg.msg_iovlen > UIO_MAXIOV)
-		return -EINVAL;
+		return -EMSGSIZE;
 	err = verify_iovec32(&kern_msg, iov, address, VERIFY_READ);
 	if (err < 0)
 		goto out;
@@ -3726,7 +3759,7 @@ asmlinkage long sys32_recvmsg(int fd, struct msghdr32* user_msg, unsigned int us
 	if(msghdr_from_user32_to_kern(&kern_msg, user_msg))
 		return -EFAULT;
 	if(kern_msg.msg_iovlen > UIO_MAXIOV)
-		return -EINVAL;
+		return -EMSGSIZE;
 
 	uaddr = kern_msg.msg_name;
 	uaddr_len = &user_msg->msg_namelen;
@@ -3987,8 +4020,10 @@ void start_thread32(struct pt_regs* regs, unsigned long nip, unsigned long sp)
 	regs->nip = nip;
 	regs->gpr[1] = sp;
 	regs->msr = MSR_USER32;
+#ifndef CONFIG_SMP
 	if (last_task_used_math == current)
 		last_task_used_math = 0;
+#endif
 	current->thread.fpscr = 0;
 }
 
@@ -4606,8 +4641,6 @@ extern asmlinkage ssize_t sys_pread(unsigned int fd, char * buf,
 
 extern asmlinkage ssize_t sys_pwrite(unsigned int fd, const char * buf,
 				     size_t count, loff_t pos);
-
-typedef __kernel_ssize_t32 ssize_t32;
 
 asmlinkage ssize_t32 sys32_pread(unsigned int fd, char *ubuf,
 				 __kernel_size_t32 count, u32 reg6, u32 poshi, u32 poslo)

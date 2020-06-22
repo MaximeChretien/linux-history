@@ -1210,7 +1210,7 @@ static int __init smc_init(void)
 	return ircc_init();
 }
 
-void __exit smc_cleanup(void)
+static void __exit smc_cleanup(void)
 {
 	int i;
 

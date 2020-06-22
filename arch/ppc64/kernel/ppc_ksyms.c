@@ -81,8 +81,8 @@ extern struct pci_dev * iSeries_vio_dev;
 #ifdef CONFIG_SHARED_MEMORY_ADDRESSING
 extern void shared_malloc(unsigned long);
 extern void shared_free(void *);
-extern int shared_task_mark();
-extern int shared_task_unmark();
+extern int shared_task_mark(void);
+extern int shared_task_unmark(void);
 #endif
 
 EXPORT_SYMBOL(do_signal);
@@ -232,6 +232,12 @@ EXPORT_SYMBOL(flush_icache_range);
 EXPORT_SYMBOL(flush_icache_user_range);
 EXPORT_SYMBOL(flush_icache_page);
 EXPORT_SYMBOL(flush_dcache_page);
+#ifdef CONFIG_ALTIVEC
+#ifndef CONFIG_SMP
+EXPORT_SYMBOL(last_task_used_altivec);
+#endif /* CONFIG_SMP */
+EXPORT_SYMBOL(giveup_altivec);
+#endif /* CONFIG_ALTIVEC */
 #ifdef CONFIG_SMP
 EXPORT_SYMBOL(__global_cli);
 EXPORT_SYMBOL(__global_sti);
@@ -263,6 +269,7 @@ EXPORT_SYMBOL(rtas_token);
 EXPORT_SYMBOL(rtas_call);
 EXPORT_SYMBOL(rtas_data_buf);
 EXPORT_SYMBOL(rtas_data_buf_lock);
+EXPORT_SYMBOL(rtas_extended_busy_delay_time);
 #endif
 
 #ifndef CONFIG_PPC_ISERIES

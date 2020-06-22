@@ -28,7 +28,7 @@
 #define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 #include <linux/init.h>
-/* #include <linux/openpic.h> */
+#include <linux/mm.h>
 #include <linux/spinlock.h>
 #include <linux/cache.h>
 
@@ -52,9 +52,10 @@
 #include <asm/ppcdebug.h>
 #include "open_pic.h"
 #include <asm/machdep.h>
+#include <asm/cputable.h>
 #if defined(CONFIG_DUMP) || defined(CONFIG_DUMP_MODULE)
 int (*dump_ipi_function_ptr)(struct pt_regs *);
-#include <linux/dump.h>
+#include <asm/dump.h>
 #endif
 
 #ifdef CONFIG_KDB
@@ -89,6 +90,9 @@ static unsigned long iSeries_smp_message[NR_CPUS];
 
 void xics_setup_cpu(void);
 void xics_cause_IPI(int cpu);
+
+long h_register_vpa(unsigned long flags, unsigned long proc,
+		    unsigned long vpa);
 
 /*
  * XICS only has a single IPI, so encode the messages per CPU
@@ -434,7 +438,16 @@ void smp_message_recv(int msg, struct pt_regs *regs)
 
 void smp_send_reschedule(int cpu)
 {
+	if ((systemcfg->platform & PLATFORM_LPAR) &&
+	    (paca[cpu].yielded == 1)) {
+#ifdef CONFIG_PPC_ISERIES
+		HvCall_sendLpProd(cpu);
+#else
+		prod_processor(cpu);
+#endif
+	} else {
 	smp_message_pass(cpu, PPC_MSG_RESCHEDULE, 0, 0);
+}
 }
 
 #ifdef CONFIG_XMON
@@ -564,6 +577,7 @@ int smp_call_function (void (*func) (void *info), void *info, int nonatomic,
 	ret = 0;
 
  out:
+	call_data = NULL;
 	HMT_medium();
 	spin_unlock_bh(&call_lock);
 	return ret;
@@ -571,9 +585,20 @@ int smp_call_function (void (*func) (void *info), void *info, int nonatomic,
 
 void smp_call_function_interrupt(void)
 {
-	void (*func) (void *info) = call_data->func;
-	void *info = call_data->info;
-	int wait = call_data->wait;
+	void (*func) (void *info);
+	void *info;
+	int wait;
+
+
+	/* call_data will be NULL if the sender timed out while
+	 * waiting on us to receive the call.
+	 */
+	if (!call_data)
+		return;
+
+	func = call_data->func;
+	info = call_data->info;
+	wait = call_data->wait;
 
 	/*
 	 * Notify initiating CPU that I've grabbed the data and am
@@ -772,6 +797,12 @@ int start_secondary(void *unused)
 	atomic_inc(&init_mm.mm_count);
 	current->active_mm = &init_mm;
 	smp_callin();
+
+	get_paca()->yielded = 0;
+
+	if (cur_cpu_spec->firmware_features & FW_FEATURE_SPLPAR) {
+		vpa_init(cpu);
+	}
 
 	/* Go into the idle loop. */
 	return cpu_idle(NULL);

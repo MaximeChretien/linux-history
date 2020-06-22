@@ -20,7 +20,7 @@
 #include <asm/pgtable.h>
 #include <asm/irq.h>
 #include <asm/prom.h>
-
+#include <asm/smp.h>
 #include <asm/machdep.h>
 
 #include "local_irq.h"
@@ -131,13 +131,23 @@ extern unsigned long* _get_SP(void);
 
 #define GET_ISU(source)	ISU[(source) >> 4][(source) & 0xf]
 
+void
+openpic_init_irq_desc(irq_desc_t *desc)
+{
+	/* Don't mess with the handler if already set.
+	 * This leaves the setup of isa/ipi handlers undisturbed.
+	 */
+	if (!desc->handler)
+		desc->handler = &open_pic;
+}
+
 void __init openpic_init_IRQ(void)
 {
         struct device_node *np;
         int i;
         unsigned int *addrp;
         unsigned char* chrp_int_ack_special = 0;
-        unsigned char init_senses[NR_IRQS - NUM_8259_INTERRUPTS];
+	unsigned char init_senses[NR_IRQS - NUM_ISA_INTERRUPTS];
         int nmi_irq = -1;
 #if defined(CONFIG_VT) && defined(CONFIG_ADB_KEYBOARD) && defined(XMON)
         struct device_node *kbd;
@@ -152,13 +162,13 @@ void __init openpic_init_IRQ(void)
 			__ioremap(addrp[prom_n_addr_cells(np)-1], 1, _PAGE_NO_CACHE);
         /* hydra still sets OpenPIC_InitSenses to a static set of values */
         if (OpenPIC_InitSenses == NULL) {
-                prom_get_irq_senses(init_senses, NUM_8259_INTERRUPTS, NR_IRQS);
-                OpenPIC_InitSenses = init_senses;
-                OpenPIC_NumInitSenses = NR_IRQS - NUM_8259_INTERRUPTS;
-        }
-        openpic_init(1, NUM_8259_INTERRUPTS, chrp_int_ack_special, nmi_irq);
-        for ( i = 0 ; i < NUM_8259_INTERRUPTS  ; i++ )
-                irq_desc[i].handler = &i8259_pic;
+		prom_get_irq_senses(init_senses, NUM_ISA_INTERRUPTS, NR_IRQS);
+		OpenPIC_InitSenses = init_senses;
+		OpenPIC_NumInitSenses = NR_IRQS - NUM_ISA_INTERRUPTS;
+	}
+	openpic_init(1, NUM_ISA_INTERRUPTS, chrp_int_ack_special, nmi_irq);
+	for ( i = 0 ; i < NUM_ISA_INTERRUPTS  ; i++ )
+		real_irqdesc(i)->handler = &i8259_pic;
         i8259_init();
 }
 
@@ -343,8 +353,8 @@ void __init openpic_init(int main_pic, int offset, unsigned char* chrp_ack,
 		/* Disabled, Priority 10..13 */
 		openpic_initipi(i, 10+i, openpic_vec_ipi+i);
 		/* IPIs are per-CPU */
-		irq_desc[openpic_vec_ipi+i].status |= IRQ_PER_CPU;
-		irq_desc[openpic_vec_ipi+i].handler = &open_pic_ipi;
+		real_irqdesc(openpic_vec_ipi+i)->status |= IRQ_PER_CPU;
+		real_irqdesc(openpic_vec_ipi+i)->handler = &open_pic_ipi;
 	}
 #endif
 
@@ -369,17 +379,13 @@ void __init openpic_init(int main_pic, int offset, unsigned char* chrp_ack,
 		pri = (i == programmer_switch_irq)? 9: 8;
 		sense = (i < OpenPIC_NumInitSenses)? OpenPIC_InitSenses[i]: 1;
 		if (sense)
-			irq_desc[i+offset].status = IRQ_LEVEL;
+			real_irqdesc(i+offset)->status = IRQ_LEVEL;
 
 		/* Enabled, Priority 8 or 9 */
 		openpic_initirq(i, pri, i+offset, !sense, sense);
 		/* Processor 0 */
 		openpic_mapirq(i, 1<<get_hard_smp_processor_id(0));
 	}
-
-	/* Init descriptors */
-	for (i = offset; i < NumSources + offset; i++)
-		irq_desc[i].handler = &open_pic;
 
 	/* Initialize the spurious interrupt */
 	ppc64_boot_msg(0x24, "OpenPic Spurious");
@@ -755,7 +761,7 @@ static inline void openpic_set_sense(u_int irq, int sense)
 
 static void openpic_end_irq(unsigned int irq_nr)
 {
-	if ((irq_desc[irq_nr].status & IRQ_LEVEL) != 0)
+	if ((irqdesc(irq_nr)->status & IRQ_LEVEL) != 0)
 		openpic_eoi();
 }
 

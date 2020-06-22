@@ -33,14 +33,14 @@ NESTED(handle_sys64, PT_SIZE, sp)
 #endif
 	ld	t1, PT_EPC(sp)		# skip syscall on return
 
-	subu	t0, v0, __NR_Linux	# check syscall number
-	sltiu	t0, t0,	__NR_Linux_syscalls + 1
+	subu	t0, v0, __NR_64_Linux	# check syscall number
+	sltiu	t0, t0,	__NR_64_Linux_syscalls + 1
 	daddiu	t1, 4			# skip to next instruction
 	beqz	t0, illegal_syscall
 	sd	t1, PT_EPC(sp)
 
 	dsll	t0, v0, 3		# offset into table
-	ld	t2, (sys_call_table - (__NR_Linux * 8))(t0) # syscall routine
+	ld	t2, (sys_call_table - (__NR_64_Linux * 8))(t0) # syscall routine
 
 	sd	a3, PT_R26(sp)		# save a3 for syscall restarting
 
@@ -326,7 +326,7 @@ sys_call_table:
 	PTR	sys_lremovexattr		/* 5190 */
 	PTR	sys_fremovexattr
 	PTR	sys_tkill
-	PTR	sys_time
+	PTR	sys_ni_syscall
 	PTR	sys_ni_syscall			/* res. for futex */
 	PTR	sys_ni_syscall			/* 5195 rs. sched_setaffinity */
 	PTR	sys_ni_syscall			/* res. f. sched_getaffinity */
@@ -345,3 +345,6 @@ sys_call_table:
 	PTR	sys_ni_syscall
 	PTR	sys_ni_syscall			/* 5210 */
 	PTR	sys_rt_sigreturn
+	PTR	sys_ni_syscall
+	PTR	sys_ni_syscall
+	PTR	sys_semtimedop

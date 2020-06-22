@@ -173,6 +173,8 @@
    1.02.00.035 - Improve tw_allocate_memory() memory allocation.
                  Fix tw_chrdev_ioctl() to sleep correctly.
    1.02.00.036 - Increase character ioctl timeout to 60 seconds.
+   1.02.00.037 - Fix tw_ioctl() to handle all non-data ATA passthru cmds
+                 for 'smartmontools' support.
 */
 
 #include <linux/module.h>
@@ -240,7 +242,7 @@ static struct file_operations tw_fops = {
 };
 
 /* Globals */
-char *tw_driver_version="1.02.00.036";
+char *tw_driver_version="1.02.00.037";
 TW_Device_Extension *tw_device_extension_list[TW_MAX_SLOT];
 int tw_device_extension_count = 0;
 static int twe_major = -1;
@@ -1930,12 +1932,15 @@ int tw_ioctl(TW_Device_Extension *tw_dev, int request_id)
 			}
 
 			passthru = (TW_Passthru *)tw_dev->command_packet_virtual_address[request_id];
-			passthru->sg_list[0].length = passthru->sector_count*512;
-			if (passthru->sg_list[0].length > TW_MAX_PASSTHRU_BYTES) {
-				printk(KERN_WARNING "3w-xxxx: tw_ioctl(): Passthru size (%d) too big.\n", passthru->sg_list[0].length);
-				return 1;
+			/* Don't load sg_list for non-data ATA cmds */
+			if ((passthru->param != 0) && (passthru->param != 0x8)) {
+				passthru->sg_list[0].length = passthru->sector_count*512;
+				if (passthru->sg_list[0].length > TW_MAX_PASSTHRU_BYTES) {
+					printk(KERN_WARNING "3w-xxxx: tw_ioctl(): Passthru size (%d) too big.\n", passthru->sg_list[0].length);
+					return 1;
+				}
+				passthru->sg_list[0].address = tw_dev->alignment_physical_address[request_id];
 			}
-			passthru->sg_list[0].address = tw_dev->alignment_physical_address[request_id];
 			tw_post_command_packet(tw_dev, request_id);
 			return 0;
 		case TW_CMD_PACKET:
@@ -2186,7 +2191,14 @@ int tw_ioctl_complete(TW_Device_Extension *tw_dev, int request_id)
 	switch (ioctl->opcode) {
 		case TW_ATA_PASSTHRU:
 			passthru = (TW_Passthru *)ioctl->data;
-			memcpy(buff, tw_dev->alignment_virtual_address[request_id], passthru->sector_count * 512);
+			/* Don't return data for non-data ATA cmds */
+			if ((passthru->param != 0) && (passthru->param != 0x8))
+				memcpy(buff, tw_dev->alignment_virtual_address[request_id], passthru->sector_count * 512);
+			else {
+				/* For non-data cmds, return cmd pkt */
+				if (tw_dev->srb[request_id]->request_bufflen >= sizeof(TW_Command))
+					memcpy(buff, tw_dev->command_packet_virtual_address[request_id], sizeof(TW_Command));
+			}
 			break;
 		case TW_CMD_PACKET_WITH_DATA:
 			dprintk(KERN_WARNING "3w-xxxx: tw_ioctl_complete(): caught TW_CMD_PACKET_WITH_DATA.\n");

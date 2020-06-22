@@ -652,7 +652,7 @@ static struct sl811_urb_priv* sl811_alloc_urb_priv(struct urb *urb)
 {
 	struct sl811_urb_priv *urbp;
 	
-	urbp = kmalloc(sizeof(*urbp), GFP_KERNEL);
+	urbp = kmalloc(sizeof(*urbp), GFP_ATOMIC);
 	if (!urbp)
 		return NULL;
 	
@@ -763,7 +763,7 @@ static struct sl811_td* sl811_alloc_td(struct urb *urb)
 	struct sl811_urb_priv *urbp = urb->hcpriv;
 	struct sl811_td *td;
 	
-	td = kmalloc(sizeof (*td), GFP_KERNEL);
+	td = kmalloc(sizeof (*td), GFP_ATOMIC);
 	if (!td)
 		return NULL;
 	

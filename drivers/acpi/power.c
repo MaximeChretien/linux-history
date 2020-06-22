@@ -373,7 +373,7 @@ end:
                               FS Interface (/proc)
    -------------------------------------------------------------------------- */
 
-struct proc_dir_entry		*acpi_power_dir = NULL;
+struct proc_dir_entry		*acpi_power_dir;
 
 
 static int

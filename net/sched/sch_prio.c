@@ -162,7 +162,7 @@ prio_destroy(struct Qdisc* sch)
 
 	while ((tp = q->filter_list) != NULL) {
 		q->filter_list = tp->next;
-		tp->ops->destroy(tp);
+		tcf_destroy(tp);
 	}
 
 	for (prio=0; prio<q->bands; prio++) {
@@ -268,6 +268,7 @@ static int prio_graft(struct Qdisc *sch, unsigned long arg, struct Qdisc *new,
 	sch_tree_lock(sch);
 	*old = q->queues[band];
 	q->queues[band] = new;
+	sch->q.qlen -= (*old)->q.qlen;
 	qdisc_reset(*old);
 	sch_tree_unlock(sch);
 

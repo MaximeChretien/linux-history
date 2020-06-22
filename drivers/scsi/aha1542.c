@@ -111,8 +111,6 @@ static int setup_buson[MAXBOARDS];
 static int setup_busoff[MAXBOARDS];
 static int setup_dmaspeed[MAXBOARDS] __initdata = { -1, -1, -1, -1 };
 
-static char *setup_str[MAXBOARDS] __initdata;
-
 /*
  * LILO/Module params:  aha1542=<PORTBASE>[,<BUSON>,<BUSOFF>[,<DMASPEED>]]
  *
@@ -960,6 +958,7 @@ fail:
 
 #ifndef MODULE
 static int setup_idx = 0;
+static char *setup_str[MAXBOARDS] __initdata;
 
 void __init aha1542_setup(char *str, int *ints)
 {

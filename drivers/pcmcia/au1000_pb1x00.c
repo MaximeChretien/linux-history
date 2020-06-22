@@ -124,7 +124,7 @@ pb1x00_pcmcia_socket_state(unsigned sock, struct pcmcia_state *state)
 #else
 	vs0 = (au_readw(BOARD_STATUS_REG) >> 4) & 0x3;
 #ifdef CONFIG_MIPS_PB1500
-	inserted0 = !((au_readl(GPIO2_PIN_STATE) >> 1) & 0x1); /* gpio 201 */
+	inserted0 = !((au_readl(GPIO2_PINSTATE) >> 1) & 0x1); /* gpio 201 */
 #else /* Pb1100 */
 	inserted0 = !((au_readl(SYS_PINSTATERD) >> 9) & 0x1); /* gpio 9 */
 #endif

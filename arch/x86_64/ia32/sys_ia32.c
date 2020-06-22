@@ -16,7 +16,7 @@
  *
  * This file assumes that there is a hole at the end of user address space.
  *
- * $Id: sys_ia32.c,v 1.66 2003/11/10 13:09:54 ak Exp $
+ * $Id: sys_ia32.c,v 1.69 2004/01/29 02:52:13 ak Exp $
  */
 
 #include <linux/config.h>
@@ -174,12 +174,15 @@ sys32_newfstat(unsigned int fd, struct stat32 *statbuf)
 	return putstat(statbuf, &s);
 }
 
+extern long sys_truncate(char *, loff_t); 
+
 asmlinkage long
 sys32_truncate64(char * filename, unsigned long offset_low, unsigned long offset_high)
 {
        return sys_truncate(filename, ((loff_t) offset_high << 32) | offset_low);
 }
 
+extern long sys_ftruncate(int, loff_t); 
 
 asmlinkage long
 sys32_ftruncate64(unsigned int fd, unsigned long offset_low, unsigned long offset_high)
@@ -1453,8 +1456,12 @@ asmlinkage long sys32_fcntl64(unsigned int fd, unsigned int cmd, unsigned long a
 
 asmlinkage long sys32_ni_syscall(int call)
 { 
+	/* Disable for now because the emulation should be pretty complete 
+	   and we miss some syscalls from 2.6. */
+#if 0
 	printk(KERN_INFO "IA32 syscall %d from %s not implemented\n", call,
 	       current->comm);
+#endif		   
 	return -ENOSYS;	       
 } 
 
@@ -3035,7 +3042,7 @@ struct exec_domain ia32_exec_domain = {
 
 static int __init ia32_init (void)
 {
-	printk("IA32 emulation $Id: sys_ia32.c,v 1.66 2003/11/10 13:09:54 ak Exp $\n");  
+	printk("IA32 emulation $Id: sys_ia32.c,v 1.69 2004/01/29 02:52:13 ak Exp $\n");  
 	ia32_exec_domain.signal_map = default_exec_domain.signal_map;
 	ia32_exec_domain.signal_invmap = default_exec_domain.signal_invmap;
 	register_exec_domain(&ia32_exec_domain);

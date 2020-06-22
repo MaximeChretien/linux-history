@@ -30,6 +30,7 @@
 #include <linux/ptrace.h>
 #include <linux/mman.h>
 #include <linux/mm.h>
+#include <linux/slab.h>
 #include <linux/swap.h>
 #include <linux/stddef.h>
 #include <linux/vmalloc.h>
@@ -650,7 +651,8 @@ struct vm_struct *shared_list = NULL;
 static struct vm_struct *get_shared_area(unsigned long size, 
 					 unsigned long flags);
 
-void *shared_malloc(unsigned long size) {
+void *shared_malloc(unsigned long size)
+{
 	pgprot_t prot;
 	struct vm_struct *area;
 	unsigned long ea;
@@ -680,9 +682,9 @@ void *shared_malloc(unsigned long size) {
 	return(ea); 
 }
 
-void shared_free(void *addr) {
+void shared_free(void *addr)
+{
 	struct vm_struct **p, *tmp;
-	unsigned long size = 0;
 
 	if (!addr)
 		return;
@@ -693,7 +695,7 @@ void shared_free(void *addr) {
 	}
 	spin_lock(&shared_malloc_lock);
 
-	printk("shared_free: addr = 0x%lx\n", addr); 
+	printk("shared_free: addr = 0x%p\n", addr);
 
 	/* Scan the memory list for an entry matching
 	 * the address to be freed, get the size (in bytes)
@@ -715,7 +717,8 @@ void shared_free(void *addr) {
 }
 
 static struct vm_struct *get_shared_area(unsigned long size, 
-					 unsigned long flags) {
+					 unsigned long flags)
+{
 	unsigned long addr;
 	struct vm_struct **p, *tmp, *area;
   
@@ -755,14 +758,16 @@ static struct vm_struct *get_shared_area(unsigned long size,
 	return area;
 }
 
-int shared_task_mark() {
+int shared_task_mark(void)
+{
 	current->thread.flags |= PPC_FLAG_SHARED;
 	printk("current->thread.flags = 0x%lx\n", current->thread.flags);
 
 	return 0;
 }
 
-int shared_task_unmark() {
+int shared_task_unmark()
+{
 	if(current->thread.flags & PPC_FLAG_SHARED) {
 		current->thread.flags &= (~PPC_FLAG_SHARED);
 		return 0;

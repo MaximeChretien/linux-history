@@ -34,12 +34,12 @@ struct sha256_ctx {
 
 static inline u32 Ch(u32 x, u32 y, u32 z)
 {
-	return ((x & y) ^ (~x & z));
+	return z ^ (x & (y ^ z));
 }
 
 static inline u32 Maj(u32 x, u32 y, u32 z)
 {
-	return ((x & y) ^ (x & z) ^ (y & z));
+	return (x & y) | (z & (x | y));
 }
 
 static inline u32 RORu32(u32 x, u32 y)
@@ -295,7 +295,7 @@ static void sha256_final(void* ctx, u8 *out)
 	u8 bits[8];
 	unsigned int index, pad_len, t;
 	int i, j;
-	const u8 padding[64] = { 0x80, };
+	static u8 padding[64] = { 0x80, };
 
 	/* Save number of bits */
 	t = sctx->count[0];

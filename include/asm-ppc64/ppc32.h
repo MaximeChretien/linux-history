@@ -76,6 +76,13 @@ struct statfs32 {
 	int f_spare[6];
 };
 
+struct ustat32 {
+	__kernel_daddr_t32      f_tfree;
+	__kernel_ino_t32        f_tinode;
+	char                    f_fname[6];
+	char                    f_fpack[6];
+};
+
 typedef union sigval32 {
 	int sival_int;
 	unsigned int sival_ptr;

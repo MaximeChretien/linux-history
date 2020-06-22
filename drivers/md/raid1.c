@@ -1436,7 +1436,7 @@ static int raid1_sync_request (mddev_t *mddev, unsigned long sector_nr)
 	block_nr = sector_nr;
 	bsize = 512;
 	while (!(block_nr & 1) && bsize < PAGE_SIZE
-			&& (block_nr+2)*(bsize>>9) < (mddev->sb->size *2)) {
+			&& (block_nr+2)*(bsize>>9) <= (mddev->sb->size *2)) {
 		block_nr >>= 1;
 		bsize <<= 1;
 	}

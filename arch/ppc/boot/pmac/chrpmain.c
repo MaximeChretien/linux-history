@@ -7,6 +7,7 @@
  * 2 of the License, or (at your option) any later version.
  */
 #include "nonstdio.h"
+#include "of1275.h"
 #include <asm/processor.h>
 #include <asm/page.h>
 
@@ -15,16 +16,11 @@ extern char __image_begin, __image_end;
 extern char __ramdisk_begin[], __ramdisk_end;
 extern char _start, _end;
 
-extern int getprop(void *, const char *, void *, int);
 extern unsigned int heap_max;
-extern void *claim(unsigned int virt, unsigned int size, unsigned int align);
-extern void *finddevice(const char *);
 extern void flush_cache(void *start, unsigned int len);
 extern void gunzip(void *, int, unsigned char *, int *);
 extern void make_bi_recs(unsigned long addr, char *name, unsigned int mach,
 		unsigned int progend);
-extern void pause(void);
-extern void release(void *ptr, unsigned int len);
 
 char *avail_ram;
 char *begin_avail, *end_avail;

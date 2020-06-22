@@ -474,7 +474,7 @@ activate_amd76x_NTH(int enable, int ratio)
 }
 #endif
 
-
+#ifdef AMD76X_POS
 /*
  * Activate sleep state via its ACPI register (PM1_CNT).
  */
@@ -489,8 +489,6 @@ activate_amd76x_SLP(int type)
 	outw(regshort, amd76x_pm_cfg.slp_reg);
 }
 
-
-#ifdef AMD76X_POS
 /*
  * Wrapper function to activate POS sleep state.
  */

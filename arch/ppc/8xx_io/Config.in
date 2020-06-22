@@ -27,8 +27,8 @@ fi
 if [ "$CONFIG_SCC3_ENET" != "y" ]; then
   bool 'Use SMC1 for UART' CONFIG_8xx_SMC1
 fi
-bool 'Use SMC2 for UART' CONFIG_SMC2_UART
-if [ "$CONFIG_SMC2_UART" = "y" ]; then
+bool 'Use SMC2 for UART' CONFIG_8xx_SMC2
+if [ "$CONFIG_8xx_SMC2" = "y" ]; then
   bool 'Use Alternate SMC2 I/O (823/850)' CONFIG_ALTSMC2
   bool 'Use SMC2 for Console' CONFIG_CONS_SMC2
 fi

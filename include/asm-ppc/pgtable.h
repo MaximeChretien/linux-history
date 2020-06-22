@@ -149,6 +149,12 @@ extern unsigned long vmalloc_start;
  * that is where it exists in the MD_TWC, and bit 26 for writethrough.
  * These will get masked from the level 2 descriptor at TLB load time, and
  * copied to the MD_TWC before it gets loaded.
+ * Large page sizes added.  We currently support two sizes, 4K and 8M.
+ * This also allows a TLB hander optimization because we can directly
+ * load the PMD into MD_TWC.  The 8M pages are only used for kernel
+ * mapping of well known areas.  The PMD (PGD) entries contain control
+ * flags in addition to the address, so care must be taken that the
+ * software no longer assumes these are only pointers.
  */
 
 /*
@@ -297,13 +303,20 @@ extern unsigned long vmalloc_start;
  */
 #define _PAGE_EXEC	0x0008	/* software: i-cache coherency required */
 #define _PAGE_GUARDED	0x0010	/* software: guarded access */
-#define _PAGE_WRITETHRU 0x0020	/* software: use writethrough cache */
+#define _PAGE_DIRTY	0x0020	/* software: page changed */
 #define _PAGE_RW	0x0040	/* software: user write access allowed */
 #define _PAGE_ACCESSED	0x0080	/* software: page referenced */
 
+/* Setting any bits in the nibble with the follow two controls will
+ * require a TLB exception handler change.  It is assumed unused bits
+ * are always zero.
+ */
 #define _PAGE_HWWRITE	0x0100	/* h/w write enable: never set in Linux PTE */
-#define _PAGE_DIRTY	0x0200	/* software: page changed */
 #define _PAGE_USER	0x0800	/* One of the PP bits, the other is USER&~RW */
+
+#define _PMD_PRESENT	PAGE_MASK
+#define _PMD_PAGE_MASK	0x000c
+#define _PMD_PAGE_8M	0x000c
 
 /*
  * The 8xx TLB miss handler allegedly sets _PAGE_ACCESSED in the PTE
@@ -328,6 +341,7 @@ extern unsigned long vmalloc_start;
 #define _PAGE_ACCESSED	0x100	/* R: page referenced */
 #define _PAGE_EXEC	0x200	/* software: i-cache coherency required */
 #define _PAGE_RW	0x400	/* software: user write access allowed */
+#define _PMD_PRESENT	PAGE_MASK
 
 #define _PTE_NONE_MASK	_PAGE_HASHPTE
 
@@ -429,8 +443,8 @@ extern unsigned long empty_zero_page[1024];
 #define pte_clear(ptep)		do { set_pte((ptep), __pte(0)); } while (0)
 
 #define pmd_none(pmd)		(!pmd_val(pmd))
-#define	pmd_bad(pmd)		((pmd_val(pmd) & ~PAGE_MASK) != 0)
-#define	pmd_present(pmd)	((pmd_val(pmd) & PAGE_MASK) != 0)
+#define	pmd_bad(pmd)		((pmd_val(pmd) & _PMD_PRESENT) == 0)
+#define	pmd_present(pmd)	((pmd_val(pmd) & _PMD_PRESENT) != 0)
 #define	pmd_clear(pmdp)		do { pmd_val(*(pmdp)) = 0; } while (0)
 
 #define pte_page(x)		(mem_map+(unsigned long)((pte_val(x)-PPC_MEMSTART) >> PAGE_SHIFT))
@@ -445,7 +459,6 @@ static inline int pgd_none(pgd_t pgd)		{ return 0; }
 static inline int pgd_bad(pgd_t pgd)		{ return 0; }
 static inline int pgd_present(pgd_t pgd)	{ return 1; }
 #define pgd_clear(xp)				do { } while (0)
-
 #define pgd_page(pgd) \
 	((unsigned long) __va(pgd_val(pgd) & PAGE_MASK))
 
@@ -576,7 +589,7 @@ static inline void ptep_mkdirty(pte_t *ptep)
 
 #define pte_same(A,B)	(((pte_val(A) ^ pte_val(B)) & ~_PAGE_HASHPTE) == 0)
 
-#define pmd_page(pmd)	(pmd_val(pmd))
+#define pmd_page(pmd)	(pmd_val(pmd) & PAGE_MASK)
 
 /* to find an entry in a kernel page-table-directory */
 #define pgd_offset_k(address) pgd_offset(&init_mm, address)

@@ -33,7 +33,7 @@
 #include <linux/hdlc.h>
 
 
-static const char* version = "HDLC support module revision 1.14";
+static const char* version = "HDLC support module revision 1.14b";
 
 
 static int hdlc_change_mtu(struct net_device *dev, int new_mtu)
@@ -145,7 +145,7 @@ int register_hdlc_device(hdlc_device *hdlc)
 	hdlc->proto_detach = NULL;
 
 	result = dev_alloc_name(dev, "hdlc%d");
-	if (result<0)
+	if (result < 0)
 		return result;
 
 	result = register_netdev(dev);
@@ -177,8 +177,7 @@ EXPORT_SYMBOL(hdlc_ioctl);
 EXPORT_SYMBOL(register_hdlc_device);
 EXPORT_SYMBOL(unregister_hdlc_device);
 
-struct packet_type hdlc_packet_type=
-{
+static struct packet_type hdlc_packet_type = {
         __constant_htons(ETH_P_HDLC),
         NULL,
         hdlc_rcv,

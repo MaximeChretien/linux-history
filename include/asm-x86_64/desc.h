@@ -121,6 +121,7 @@ static inline void set_tssldt_descriptor(struct ldttss_desc *dst, unsigned long 
 	dst->base1 = PTR_MIDDLE(ptr) & 0xFF; 
 	dst->type = type;
 	dst->p = 1; 
+	dst->g = 1;
 	dst->limit1 = (size >> 16) & 0xF;
 	dst->base2 = (PTR_MIDDLE(ptr) >> 8) & 0xFF; 
 	dst->base3 = PTR_HIGH(ptr); 

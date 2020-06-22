@@ -34,6 +34,7 @@
 #include <linux/smp.h>
 
 #include <asm/cachectl.h>
+#include <asm/cpu.h>
 #include <asm/mipsregs.h>
 #include <asm/reg.h>
 #include <asm/system.h>
@@ -116,7 +117,9 @@ struct cpuinfo_mips {
 #define cpu_has_mips16		(cpu_data[0].options & MIPS_CPU_MIPS16)
 #define cpu_has_divec		(cpu_data[0].options & MIPS_CPU_DIVEC)
 #define cpu_has_vce		(cpu_data[0].options & MIPS_CPU_VCE)
-#define cpu_has_cache_cdex	(cpu_data[0].options & MIPS_CPU_CACHE_CDEX)
+#define cpu_has_cache_cdex_p	(cpu_data[0].options & MIPS_CPU_CACHE_CDEX_P)
+#define cpu_has_cache_cdex_s	(cpu_data[0].options & MIPS_CPU_CACHE_CDEX_S)
+#define cpu_has_prefetch	(cpu_data[0].options & MIPS_CPU_PREFETCH)
 #define cpu_has_mcheck		(cpu_data[0].options & MIPS_CPU_MCHECK)
 #define cpu_has_ejtag		(cpu_data[0].options & MIPS_CPU_EJTAG)
 #define cpu_has_nofpuex		(cpu_data[0].options & MIPS_CPU_NOFPUEX)
@@ -125,7 +128,12 @@ struct cpuinfo_mips {
 #define cpu_has_dc_aliases	(cpu_data[0].dcache.flags & MIPS_CACHE_ALIASES)
 #define cpu_has_ic_fills_f_dc	(cpu_data[0].dcache.flags & MIPS_CACHE_IC_F_DC)
 #define cpu_has_64bits		1
+#define cpu_has_64bit_addresses	1
 #define cpu_has_subset_pcaches	(cpu_data[0].options & MIPS_CPU_SUBSET_CACHES)
+
+#define cpu_dcache_line_size()	current_cpu_data.dcache.linesz
+#define cpu_icache_line_size()	current_cpu_data.icache.linesz
+#define cpu_scache_line_size()	current_cpu_data.scache.linesz
 
 extern struct cpuinfo_mips cpu_data[];
 #define current_cpu_data cpu_data[smp_processor_id()]
@@ -321,10 +329,12 @@ unsigned long get_wchan(struct task_struct *p);
 /*
  * NOTE! The task struct and the stack go together
  */
-#define THREAD_SIZE (2*PAGE_SIZE)
+#define THREAD_ORDER		(PAGE_SHIFT >= 14 ? 0 : 2)
+#define THREAD_SIZE		(PAGE_SIZE << THREAD_ORDER)
+#define THREAD_MASK		(THREAD_SIZE - 1UL)
 #define alloc_task_struct() \
-	((struct task_struct *) __get_free_pages(GFP_KERNEL, 2))
-#define free_task_struct(p)	free_pages((unsigned long)(p), 2)
+	((struct task_struct *) __get_free_pages(GFP_KERNEL, THREAD_ORDER))
+#define free_task_struct(p)	free_pages((unsigned long)(p), THREAD_ORDER)
 #define get_task_struct(tsk)	atomic_inc(&virt_to_page(tsk)->count)
 
 #define init_task	(init_task_union.task)

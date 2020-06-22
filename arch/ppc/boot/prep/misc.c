@@ -18,6 +18,7 @@
 #include <asm/bootinfo.h>
 #include <asm/mmu.h>
 #include <asm/byteorder.h>
+#include "of1275.h"
 #include "nonstdio.h"
 #include "zlib.h"
 
@@ -54,7 +55,6 @@ int keyb_present = 1;	/* keyboard controller is present by default */
 RESIDUAL hold_resid_buf;
 RESIDUAL *hold_residual = &hold_resid_buf;
 unsigned long initrd_size = 0;
-unsigned long orig_MSR;
 
 char *zimage_start;
 int zimage_size;
@@ -67,14 +67,9 @@ int orig_x, orig_y = 24;
 #endif /* CONFIG_VGA_CONSOLE */
 
 extern int CRT_tstc(void);
-extern void of_init(void *handler);
-extern int of_finddevice(const char *device_specifier, int *phandle);
-extern int of_getprop(int phandle, const char *name, void *buf, int buflen,
-		int *size);
 extern int vga_init(unsigned char *ISA_mem);
 extern void gunzip(void *, int, unsigned char *, int *);
 
-extern void _put_MSR(unsigned int val);
 extern unsigned long serial_init(int chan, void *ignored);
 extern void serial_fixups(void);
 
@@ -119,6 +114,27 @@ scroll(void)
 }
 #endif /* CONFIG_VGA_CONSOLE */
 
+static void
+get_of_args(void)
+{
+	int size;
+	phandle chosen;
+	char buf[256];
+
+	/* Get bootargs property of /chosen node */
+	if (!(chosen = finddevice("/chosen")))
+		return;
+
+	if (getprop(chosen, "bootargs", buf, sizeof(buf)) != 4)
+		return;
+
+	if (size > sizeof(cmd_buf))
+		size = sizeof(cmd_buf);
+
+	if (size > 1) /* includes null-terminator */
+		memcpy(cmd_buf, buf, size);
+}
+
 unsigned long
 decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum,
 		  RESIDUAL *residual, void *OFW_interface)
@@ -131,13 +147,12 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum,
 	char *cp;
 	/* Default to 32MiB memory. */
 	unsigned long TotalMemory = 0x02000000;
-	int dev_handle;
-	int mem_info[2];
-	int res, size;
-	unsigned char board_type;
-	unsigned char base_mod;
 	int start_multi = 0;
 	unsigned int pci_viddid, pci_did, tulip_pci_base, tulip_base;
+
+	/* If we have Open Firmware, initialise it immediately */
+	if (OFW_interface)
+		ofinit(OFW_interface);
 
 	serial_fixups();
 	com_port = serial_init(0, NULL);
@@ -175,7 +190,8 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum,
 		/* Is this Motorola PPCBug? */
 		if ((1 & residual->VitalProductData.FirmwareSupports) &&
 		    (1 == residual->VitalProductData.FirmwareSupplier)) {
-			board_type = inb(0x800) & 0xF0;
+			unsigned char base_mod;
+			unsigned char board_type = inb(0x800) & 0xF0;
 
 			/*
 			 * Reset the onboard 21x4x Ethernet
@@ -231,35 +247,23 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum,
 		 * we don't try this on a PReP box without OF
 		 *     -- Cort
 		 */
-		while (OFW_interface && ((unsigned long)OFW_interface < 0x10000000) )
+		while (OFW_interface)
 		{
-			/* We need to restore the slightly inaccurate
-			 * MSR so that OpenFirmware will behave. -- Tom
-			 */
-			_put_MSR(orig_MSR);
-			of_init(OFW_interface);
+			phandle dev_handle;
+			int mem_info[2];
 
 			/* get handle to memory description */
-			res = of_finddevice("/memory@0",
-					    &dev_handle);
-			if (res)
+			if (!(dev_handle = finddevice("/memory@0")))
 				break;
 
 			/* get the info */
-			res = of_getprop(dev_handle,
-					 "reg",
-					 mem_info,
-					 sizeof(mem_info),
-					 &size);
-			if (res)
+			if (getprop(dev_handle, "reg", mem_info,
+						sizeof(mem_info)) !=8)
 				break;
 
 			TotalMemory = mem_info[1];
 			break;
 		}
-
-		/* Enforce a sane MSR for booting. */
-		_put_MSR(MSR_IP);
         }
 
 	/* assume the chunk below 8M is free */
@@ -300,6 +304,10 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum,
 	if (keyb_present)
 		CRT_tstc();  /* Forces keyboard to be initialized */
 
+	/* If we have OF then try to get args from there */
+	if (OFW_interface)
+		get_of_args();
+
 	puts("\nLinux/PPC load: ");
 	cp = cmd_line;
 	memcpy (cmd_line, cmd_preset, sizeof(cmd_preset));
@@ -337,6 +345,18 @@ decompress_kernel(unsigned long load_addr, int num_words, unsigned long cksum,
 #endif
 	*cp = 0;
 	puts("\nUncompressing Linux...");
+
+	/*
+	 * If we have OF, then we have deferred setting the MSR.
+	 * We must set it now because we are about to overwrite
+	 * the exception table.  The new MSR value will disable
+	 * machine check exceptions and point the exception table
+	 * to the ROM.
+	 */
+	if (OFW_interface) {
+		mtmsr(MSR_IP | MSR_FP);
+		asm volatile("isync");
+	}
 
 	gunzip(0, 0x400000, zimage_start, &zimage_size);
 	puts("done.\n");

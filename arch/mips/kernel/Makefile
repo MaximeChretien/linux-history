@@ -12,7 +12,7 @@ all:	kernel.o head.o init_task.o
 
 O_TARGET := kernel.o
 
-export-objs	= irq.o mips_ksyms.o pci-dma.o setup.o smp.o
+export-objs	= irq.o mips_ksyms.o pci-dma.o setup.o semaphore.o smp.o
 
 obj-y		+= branch.o cpu-probe.o irq.o process.o signal.o entry.o \
 		   traps.o ptrace.o reset.o semaphore.o setup.o syscall.o \
@@ -30,6 +30,7 @@ obj-$(CONFIG_CPU_R4X00)		+= r4k_fpu.o r4k_switch.o
 obj-$(CONFIG_CPU_R5000)		+= r4k_fpu.o r4k_switch.o
 obj-$(CONFIG_CPU_R5432)		+= r4k_fpu.o r4k_switch.o
 obj-$(CONFIG_CPU_RM7000)	+= r4k_fpu.o r4k_switch.o
+obj-$(CONFIG_CPU_RM9000)	+= r4k_fpu.o r4k_switch.o
 obj-$(CONFIG_CPU_NEVADA)	+= r4k_fpu.o r4k_switch.o
 obj-$(CONFIG_CPU_R10000)	+= r4k_fpu.o r4k_switch.o
 obj-$(CONFIG_CPU_SB1)		+= r4k_fpu.o r4k_switch.o

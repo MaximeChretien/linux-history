@@ -63,6 +63,7 @@ extern int fpu_emulator_cop1Handler(int xcptno, struct pt_regs *xcp,
 
 void (*board_be_init)(void);
 int (*board_be_handler)(struct pt_regs *regs, int is_fixup);
+void (*board_nmi_handler_setup)(void);
 
 int kstack_depth_to_print = 24;
 
@@ -234,9 +235,10 @@ void show_regs(struct pt_regs *regs)
 	/*
 	 * Saved cp0 registers
 	 */
-	printk("epc  : %08lx    %s\nStatus: %08lx\nCause : %08lx\n",
-	       regs->cp0_epc, print_tainted(), regs->cp0_status,
-	       regs->cp0_cause);
+	printk("epc   : %08lx    %s\n", regs->cp0_epc, print_tainted());
+	printk("Status: %08lx\n", regs->cp0_status);
+	printk("Cause : %08lx\n", regs->cp0_cause);
+	printk("PrId  : %08x\n", read_c0_prid());
 }
 
 void show_registers(struct pt_regs *regs)
@@ -523,6 +525,8 @@ static inline int simulate_llsc(struct pt_regs *regs)
 		simulate_sc(regs, opcode);
 		return 0;
 	}
+
+	return -EFAULT;			/* Strange things going on ... */
 }
 
 asmlinkage void do_ov(struct pt_regs *regs)
@@ -583,6 +587,8 @@ asmlinkage void do_bp(struct pt_regs *regs)
 {
 	unsigned int opcode, bcode;
 	siginfo_t info;
+
+	die_if_kernel("Break instruction in kernel code", regs);
 
 	if (get_insn_opcode(regs, &opcode))
 		return;
@@ -879,7 +885,7 @@ void __init per_cpu_trap_init(void)
 	unsigned int cpu = smp_processor_id();
 
 	/* Some firmware leaves the BEV flag set, clear it.  */
-	clear_c0_status(ST0_CU1|ST0_CU2|ST0_CU3|ST0_BEV);
+	clear_c0_status(ST0_CU3|ST0_CU2|ST0_CU1|ST0_BEV|ST0_KX|ST0_SX|ST0_UX);
 
 	if (current_cpu_data.isa_level == MIPS_CPU_ISA_IV)
 		set_c0_status(ST0_XX);
@@ -896,8 +902,7 @@ void __init per_cpu_trap_init(void)
 
 	atomic_inc(&init_mm.mm_count);
 	current->active_mm = &init_mm;
-	if (current->mm)
-		BUG();
+	BUG_ON(current->mm);
 	enter_lazy_tlb(&init_mm, current, cpu);
 }
 
@@ -1006,6 +1011,9 @@ void __init trap_init(void)
 		save_fp_context = fpu_emulator_save_context;
 		restore_fp_context = fpu_emulator_restore_context;
 	}
+
+	if (board_nmi_handler_setup)
+		board_nmi_handler_setup();
 
 	flush_icache_range(KSEG0, KSEG0 + 0x400);
 

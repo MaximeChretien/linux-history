@@ -1409,6 +1409,10 @@ void jfs_flush_journal(struct jfs_log *log, int wait)
 	int i;
 	struct tblock *target;
 
+	if (!log)
+		/* jfs_write_inode may call us during read-only mount */
+		return;
+
 	jfs_info("jfs_flush_journal: log:0x%p wait=%d", log, wait);
 
 	LOGGC_LOCK(log);
@@ -2211,8 +2215,7 @@ int jfsIOWait(void *arg)
 	} while (!jfs_stop_threads);
 
 	jfs_info("jfsIOWait being killed!");
-	complete(&jfsIOwait);
-	return 0;
+	complete_and_exit(&jfsIOwait, 0);
 }
 
 /*

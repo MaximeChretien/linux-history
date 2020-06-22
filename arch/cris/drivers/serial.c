@@ -1,4 +1,4 @@
-/* $Id: serial.c,v 1.54 2003/07/08 12:42:19 johana Exp $
+/* $Id: serial.c,v 1.58 2003/08/29 17:32:50 johana Exp $
  *
  * Serial port driver for the ETRAX 100LX chip
  *
@@ -7,6 +7,24 @@
  *    Many, many authors. Based once upon a time on serial.c for 16x50.
  *
  * $Log: serial.c,v $
+ * Revision 1.58  2003/08/29 17:32:50  johana
+ * Fixed CMSPAR (Mark/Space) support. CMSPAR|PARODD = Mark(1) parity.
+ *
+ * Revision 1.57  2003/08/26 16:53:06  johana
+ * Merged in change_branch--johana to get non DMA support etc.
+ *
+ * Revision 1.56  2003/07/10 13:18:03  pkj
+ * Corrected a copy-paste error.
+ *
+ * Revision 1.55  2003/07/10 11:00:46  starvik
+ * Moved all the latest stuff to a branch until it is stable
+ *
+ * Revision 1.50.2.2  2003/07/28 09:59:39  johana
+ * Clear tr_running so next write really starts transmission.
+ *
+ * Revision 1.50.2.1  2003/07/10 10:59:54  starvik
+ * Moved all the latest stuff to a branch until it is stable
+ *
  * Revision 1.54  2003/07/08 12:42:19  johana
  * Removed some test defines within #if 0.
  * Moved a comment to correct place.
@@ -437,7 +455,7 @@
  *
  */
 
-static char *serial_version = "$Revision: 1.54 $";
+static char *serial_version = "$Revision: 1.58 $";
 
 #include <linux/config.h>
 #include <linux/version.h>
@@ -3164,6 +3182,7 @@ extern _INLINE_ void handle_ser_tx_interrupt(struct e100_serial *info)
 		info->last_tx_active_usec = GET_JIFFIES_USEC();
 		info->last_tx_active = jiffies;
 		e100_disable_serial_tx_ready_irq(info);
+		info->tr_running = 0;
 		DFLOW(DEBUG_LOG(info->line, "tx_int: stop2\n", 0));
 	} else {
 		/* We must enable since it is disabled in ser_interrupt */
@@ -3657,20 +3676,14 @@ change_speed(struct e100_serial *info)
 	}
 	
 	if (cflag & CMSPAR) {
-		/* enable stick parity */
+		/* enable stick parity, PARODD mean Mark which matches ETRAX */
 		info->tx_ctrl |= IO_STATE(R_SERIAL0_TR_CTRL, tr_stick_par, stick);
 		info->rx_ctrl |= IO_STATE(R_SERIAL0_REC_CTRL, rec_stick_par, stick);
-		if (!(cflag & PARODD)) {
-			/* set mark parity */
-			info->tx_ctrl |= IO_STATE(R_SERIAL0_TR_CTRL, tr_par, odd);
-			info->rx_ctrl |= IO_STATE(R_SERIAL0_REC_CTRL, rec_par, odd);
-		}
-	} else {
-		if (cflag & PARODD) {
-			/* set odd parity */
-			info->tx_ctrl |= IO_STATE(R_SERIAL0_TR_CTRL, tr_par, odd);
-			info->rx_ctrl |= IO_STATE(R_SERIAL0_REC_CTRL, rec_par, odd);
-		}
+	}
+	if (cflag & PARODD) {
+		/* set odd parity (or Mark if CMSPAR) */
+		info->tx_ctrl |= IO_STATE(R_SERIAL0_TR_CTRL, tr_par, odd);
+		info->rx_ctrl |= IO_STATE(R_SERIAL0_REC_CTRL, rec_par, odd);
 	}
 	
 	if (cflag & CRTSCTS) {

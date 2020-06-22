@@ -253,6 +253,7 @@ int kjournald(void *arg)
 
 		/* Were we woken up by a commit wakeup event? */
 		if ((transaction = journal->j_running_transaction) != NULL &&
+		    journal->j_commit_interval &&
 		    time_after_eq(jiffies, transaction->t_expires)) {
 			journal->j_commit_request = transaction->t_tid;
 			jbd_debug(1, "woke because of timeout\n");

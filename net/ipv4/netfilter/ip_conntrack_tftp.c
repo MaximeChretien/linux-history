@@ -94,8 +94,6 @@ static int __init init(void)
 
 	for (i = 0 ; (i < MAX_PORTS) && ports[i] ; i++) {
 		/* Create helper structure */
-		memset(&tftp[i], 0, sizeof(struct ip_conntrack_helper));
-
 		tftp[i].tuple.dst.protonum = IPPROTO_UDP;
 		tftp[i].tuple.src.u.udp.port = htons(ports[i]);
 		tftp[i].mask.dst.protonum = 0xFFFF;

@@ -172,6 +172,7 @@ struct cpuinfo_ia64 {
 	__u32 ptce_count[2];
 	__u32 ptce_stride[2];
 	struct task_struct *ksoftirqd;	/* kernel softirq daemon for this CPU */
+	void *mmu_gathers;
 # ifdef CONFIG_PERFMON
 	unsigned long pfm_syst_info;
 # endif

@@ -1,7 +1,7 @@
 /*
  *  drivers/s390/s390io.c
  *   S/390 common I/O routines
- *   $Revision: 1.247 $
+ *   $Revision: 1.258 $
  *
  *  S390 version
  *    Copyright (C) 1999, 2000 IBM Deutschland Entwicklung GmbH,
@@ -766,6 +766,8 @@ do_adapter_IO (__u32 intparm)
 	return;
 }
 
+void s390_free_irq (unsigned int irq, void *dev_id);
+
 /*
  * Note : internal use of irqflags SA_PROBE for NOT path grouping 
  *
@@ -802,7 +804,11 @@ s390_request_irq_special (int irq,
 	 */
 	s390irq_spin_lock_irqsave (irq, flags);
 
-	if (!ioinfo[irq]->ui.flags.ready) {
+	if (ioinfo[irq]->ui.flags.unfriendly &&
+	    !(irqflags & SA_FORCE)) {
+		retval = -EUSERS;
+
+	} else if (!ioinfo[irq]->ui.flags.ready) {
 		retry = 5;
 
 		ioinfo[irq]->irq_desc.handler = io_handler;
@@ -836,12 +842,55 @@ s390_request_irq_special (int irq,
 	s390irq_spin_unlock_irqrestore (irq, flags);
 
 	if (retval == 0) {
+		if (irqflags & SA_DOPATHGROUP) {
+			ioinfo[irq]->ui.flags.pgid_supp = 1;
+			ioinfo[irq]->ui.flags.notacccap = 1;
+		}
+		if ((irqflags & SA_DOPATHGROUP) &&
+		    (!ioinfo[irq]->ui.flags.pgid ||
+		     irqflags & SA_PROBE)) {
+			pgid_t pgid;
+			int i, mask;
+			/* 
+			 * Do an initial SensePGID to find out if device
+			 * is locked by someone else.
+			 */
+			memcpy(&pgid, global_pgid, sizeof(pgid_t));
+			
+			retval = -EAGAIN;
+			for (i=0; i<8 && retval==-EAGAIN; i++) {
+
+				mask = (0x80 >> i) & ioinfo[irq]->opm;
+				
+				if (!mask)
+					continue;
+				
+				retval = s390_SensePGID(irq, mask, &pgid);
+				
+				if (retval == -EOPNOTSUPP) 
+					/* Doesn't prevent us from proceeding */
+					retval = 0;
+			}
+			
+		}
 		if (!(irqflags & SA_PROBE) &&
+		    (irqflags & SA_DOPATHGROUP) &&
 		    (!ioinfo[irq]->ui.flags.unfriendly)) 
 			s390_DevicePathVerification (irq, 0);
 
-		ioinfo[irq]->ui.flags.newreq = 1;
-		ioinfo[irq]->nopfunc = not_oper_handler;
+		if (ioinfo[irq]->ui.flags.unfriendly &&
+		    !(irqflags & SA_FORCE)) {
+			/* 
+			 * We found out during path verification that the
+			 * device is locked by someone else and we have to
+			 * let the device driver know.
+			 */
+			retval = -EUSERS;
+			free_irq(irq, dev_id);
+		} else {
+			ioinfo[irq]->ui.flags.newreq = 1;
+			ioinfo[irq]->nopfunc = not_oper_handler;
+		}
 	}
 
 	if (cio_debug_initialized)
@@ -978,61 +1027,6 @@ s390_free_irq (unsigned int irq, void *dev_id)
 			      "no action block ... !\n", irq);
 
 	}
-}
-
-/*
- * Generic enable/disable code
- */
-int
-disable_irq (unsigned int irq)
-{
-	unsigned long flags;
-	int ret;
-	char dbf_txt[15];
-
-	SANITY_CHECK (irq);
-
-	if (!ioinfo[irq]->ui.flags.ready)
-		return -ENODEV;
-
-	sprintf (dbf_txt, "disirq%x", irq);
-	CIO_TRACE_EVENT (4, dbf_txt);
-
-	s390irq_spin_lock_irqsave (irq, flags);
-	ret = disable_subchannel (irq);
-	s390irq_spin_unlock_irqrestore (irq, flags);
-
-	synchronize_irq ();
-
-	sprintf (dbf_txt, "ret:%d", ret);
-	CIO_TRACE_EVENT (4, dbf_txt);
-
-	return (ret);
-}
-
-int
-enable_irq (unsigned int irq)
-{
-	unsigned long flags;
-	int ret;
-	char dbf_txt[15];
-
-	SANITY_CHECK (irq);
-
-	if (!ioinfo[irq]->ui.flags.ready)
-		return -ENODEV;
-
-	sprintf (dbf_txt, "enirq%x", irq);
-	CIO_TRACE_EVENT (4, dbf_txt);
-
-	s390irq_spin_lock_irqsave (irq, flags);
-	ret = enable_subchannel (irq);
-	s390irq_spin_unlock_irqrestore (irq, flags);
-
-	sprintf (dbf_txt, "ret:%d", ret);
-	CIO_TRACE_EVENT (4, dbf_txt);
-
-	return (ret);
 }
 
 /*
@@ -1442,8 +1436,6 @@ s390_start_IO (int irq,		/* IRQ */
 
 		}
 
-		ioinfo[irq]->ulpm = ioinfo[irq]->orb.lpm;
-
 		/*
 		 * If synchronous I/O processing is requested, we have
 		 *  to wait for the corresponding interrupt to occur by
@@ -1782,35 +1774,6 @@ do_IO (int irq,			/* IRQ */
 	 */
 	if (!ioinfo[irq]->ui.flags.busy) {	/* last I/O completed ? */
 		ret = s390_start_IO (irq, cpa, user_intparm, lpm, flag);
-		if ((ret == -ETIMEDOUT) && (flag & DOIO_CANCEL_ON_TIMEOUT)) {
-			/*
-			 * We should better cancel the io request here
-			 * or we might not be able to do io on this sch
-			 * again
-			 */
-			cancel_IO (irq);
-		}
-
-	} else if (ioinfo[irq]->ui.flags.fast) {
-		/*
-		 * If primary status was received and ending status is missing,
-		 *  the device driver won't be notified on the ending status
-		 *  if early (fast) interrupt notification was requested.
-		 *  Therefore we have to queue the next incoming request. If
-		 *  halt_IO() is issued while there is a request queued, a HSCH
-		 *  needs to be issued and the queued request must be deleted
-		 *  but its intparm must be returned (see halt_IO() processing)
-		 */
-		if (ioinfo[irq]->ui.flags.w4final
-		    && !ioinfo[irq]->ui.flags.doio_q) {
-			ioinfo[irq]->qflag = flag;
-			ioinfo[irq]->qcpa = cpa;
-			ioinfo[irq]->qintparm = user_intparm;
-			ioinfo[irq]->qlpm = lpm;
-		} else {
-			ret = -EBUSY;
-
-		}
 	} else {
 		ret = -EBUSY;
 
@@ -3004,47 +2967,6 @@ s390_process_IRQ (unsigned int irq)
 				 */
 				dp->intparm = 0;
 
-				/*
-				 * Was there anything queued ? Start the pending channel program
-				 *  if there is one.
-				 */
-				if (ioinfo[irq]->ui.flags.doio_q) {
-					int ret;
-					int do_cancel =
-					    ioinfo[irq]->
-					    qflag & DOIO_CANCEL_ON_TIMEOUT;
-
-					ret = s390_start_IO (irq,
-							     ioinfo[irq]->qcpa,
-							     ioinfo[irq]->
-							     qintparm,
-							     ioinfo[irq]->qlpm,
-							     ioinfo[irq]->
-							     qflag);
-
-					ioinfo[irq]->ui.flags.doio_q = 0;
-
-					/*
-					 * If s390_start_IO() failed call the device's interrupt
-					 *  handler, the IRQ related devstat area was setup by
-					 *  s390_start_IO() accordingly already (status pending
-					 *  condition).
-					 */
-					if (ret) {
-						ioinfo[irq]->irq_desc.
-						    handler (irq, udp, NULL);
-
-					}
-
-					/* 
-					 * better cancel the io when we time out...
-					 */
-					if ((ret == -ETIMEDOUT) && do_cancel) {
-						cancel_IO (irq);
-					}
-
-				}
-
 			} else {
 				ioinfo[irq]->ui.flags.w4final = 1;
 
@@ -3098,32 +3020,19 @@ s390_process_IRQ (unsigned int irq)
 		ioinfo[irq]->devstat.flag |= DEVSTAT_NOT_OPER;
 		ioinfo[irq]->devstat.flag |= DEVSTAT_FINAL_STATUS;
 
-		/*
-		 * When we find a device "not oper" we save the status
-		 *  information into the device status area and call the
-		 *  device specific interrupt handler.
-		 *
-		 * Note: currently we don't have any way to reenable
-		 *       the device unless an unsolicited interrupt
-		 *       is presented. We don't check for spurious
-		 *       interrupts on "not oper" conditions.
-		 */
 
-		if ((ioinfo[irq]->ui.flags.fast)
-		    && (ioinfo[irq]->ui.flags.w4final)) {
-			/*
-			 * If a new request was queued already, we have
-			 *  to simulate the "not oper" status for the
-			 *  queued request by switching the "intparm" value
-			 *  and notify the interrupt handler.
-			 */
-			if (ioinfo[irq]->ui.flags.doio_q) {
-				ioinfo[irq]->devstat.intparm =
-				    ioinfo[irq]->qintparm;
+               /*
+                * When we find a device "not oper" we save the status
+                *  information into the device status area and call the
+                *  device specific interrupt handler.
+                *
+                * Note: currently we don't have any way to reenable
+                *       the device unless an unsolicited interrupt
+                *       is presented. We don't check for spurious
+                *       interrupts on "not oper" conditions.
+                */
 
-			}
-		}
-
+		
 		ioinfo[irq]->ui.flags.fast = 0;
 		ioinfo[irq]->ui.flags.repall = 0;
 		ioinfo[irq]->ui.flags.w4final = 0;
@@ -3175,9 +3084,8 @@ s390_process_IRQ (unsigned int irq)
  *  without having to delay I/O processing (by queueing)
  *  for non-console devices.
  *
- * Setting of this isc is done by set_cons_dev(), while
- *  reset_cons_dev() resets this isc and re-enables the
- *  default isc3 for this device. wait_cons_dev() allows
+ * Setting of this isc is done by set_cons_dev(). 
+ *  wait_cons_dev() allows
  *  to actively wait on an interrupt for this device in
  *  disabed state. When the interrupt condition is
  *  encountered, wait_cons_dev(9 calls do_IRQ() to have
@@ -3221,52 +3129,6 @@ set_cons_dev (int irq)
 			 * enable console I/O-interrupt sublass 7
 			 */
 			ctl_set_bit (6, 24);
-
-		}
-	}
-
-	return (rc);
-}
-
-int
-reset_cons_dev (int irq)
-{
-	int rc = 0;
-	int ccode;
-	char dbf_txt[15];
-
-	SANITY_CHECK (irq);
-
-	if (cons_dev != -1)
-		return -EBUSY;
-
-	sprintf (dbf_txt, "rcons%x", irq);
-	CIO_TRACE_EVENT (4, dbf_txt);
-
-	/*
-	 * reset the indicated console device to operate
-	 *  on default console interrupt sublass 3
-	 */
-	ccode = stsch (irq, &(ioinfo[irq]->schib));
-
-	if (ccode) {
-		rc = -ENODEV;
-		ioinfo[irq]->devstat.flag |= DEVSTAT_NOT_OPER;
-	} else {
-
-		ioinfo[irq]->schib.pmcw.isc = 3;
-
-		ccode = msch (irq, &(ioinfo[irq]->schib));
-
-		if (ccode) {
-			rc = -EIO;
-		} else {
-			cons_dev = -1;
-
-			/*
-			 * disable special console I/O-interrupt sublass 7
-			 */
-			ctl_clear_bit(6, 24);
 
 		}
 	}
@@ -3376,10 +3238,8 @@ enable_cpu_sync_isc (int irq)
 						cr6 |= 0x04000000;
 						/* disable standard isc 3 */
 						cr6 &= 0xEFFFFFFF;
-						/* disable console isc 7,
-						 * if neccessary */
-						if (cons_dev != -1)
-							cr6 &= 0xFEFFFFFF;
+						/* disable console isc 7 */
+						cr6 &= 0xFEFFFFFF;
 						ioinfo[irq]->ui.flags.syncio = 1;
 						__ctl_load (cr6, 6, 6);
 						rc = 0;
@@ -3500,10 +3360,8 @@ disable_cpu_sync_isc (int irq)
 						cr6 &= 0xFBFFFFFF;
 						/* enable standard isc 3 */
 						cr6 |= 0x10000000;
-						/* enable console isc 7,
-						 * if neccessary */
-						if (cons_dev != -1)
-							cr6 |= 0x01000000;
+						/* enable console isc 7 */
+						cr6 |= 0x01000000;
 						__ctl_load (cr6, 6, 6);
 
 						retry2 = 0;
@@ -4515,69 +4373,50 @@ s390_device_recognition_irq (int irq)
 		int irq_ret;
 		devstat_t devstat;
 
-		irq_ret = request_irq (irq,
-				       init_IRQ_handler,
-				       SA_PROBE, "INIT", &devstat);
+		if (ioinfo[irq]->ui.flags.pgid_supp)
+			irq_ret = request_irq (irq,
+					       init_IRQ_handler,
+					       SA_PROBE | SA_DOPATHGROUP,
+					       "INIT", &devstat);
+		else
+			irq_ret = request_irq (irq,
+					       init_IRQ_handler,
+					       SA_PROBE, "INIT", &devstat);
 
 		if (!irq_ret) {
 			ret = enable_cpu_sync_isc (irq);
 
 			if (!ret) {
- 				pgid_t pgid;
-				int i, mask;
- 				/*
- 				 * First thing we should do is a sensePGID in
- 				 * order to find out how we can proceed with
- 				 * the recognition process. 
- 				 * An unfriendly (locked by so else) device 
- 				 * won't take kindly to our attempts at 
- 				 * SetPGID and SenseID...
- 				 */
-  
- 				memcpy(&pgid, global_pgid, sizeof(pgid_t));
-
-				ret = -EAGAIN;
-				for (i=0; i<8 && ret==-EAGAIN; i++) {
-
-					mask = (0x80 >> i) & ioinfo[irq]->opm;
-
-					if (!mask)
-						continue;
-
-					ret = s390_SensePGID(irq, mask, &pgid);
-
+				ioinfo[irq]->ui.flags.unknown = 0;
+				
+				memset (&ioinfo[irq]->senseid, '\0',
+					sizeof (senseid_t));
+				
+				if (cio_sid_with_pgid) {
+					
+					ret = s390_DevicePathVerification(irq,0);
+					
 					if (ret == -EOPNOTSUPP) 
 						/* 
 						 * Doesn't prevent us from proceeding
 						 */
 						ret = 0;
-
 				}
- 				
- 				if (!ret && !ioinfo[irq]->ui.flags.unfriendly) {
-
-					ioinfo[irq]->ui.flags.unknown = 0;
-					
-					memset (&ioinfo[irq]->senseid, '\0',
-						sizeof (senseid_t));
-					
-					if (cio_sid_with_pgid) {
-						
-						ret = s390_DevicePathVerification(irq,0);
-						
-						if (ret == -EOPNOTSUPP) 
-							/* 
-							 * Doesn't prevent us from proceeding
-							 */
-							ret = 0;
+				
+				/*
+				 * we'll fallthrough here if we don't want
+				 * to do SPID before SID
+				 */
+				if (!ret) {
+					ret = s390_SenseID (irq, &ioinfo[irq]->senseid, 0xff);
+					if (ret == -ETIMEDOUT) {
+						/* SenseID timed out.
+						 * We consider this device to be
+						 * boxed for now.
+						 */
+						ioinfo[irq]->ui.flags.unfriendly = 1;
 					}
 
-					/*
-					 * we'll fallthrough here if we don't want
-					 * to do SPID before SID
-					 */
-					if (!ret) {
-						s390_SenseID (irq, &ioinfo[irq]->senseid, 0xff);
 #if 0				/* FIXME */
 				/*
 				 * We initially check the configuration data for
@@ -4620,7 +4459,6 @@ s390_device_recognition_irq (int irq)
 					}
 				}
 #endif
-					}
 				}
 				disable_cpu_sync_isc (irq);
 
@@ -4628,7 +4466,7 @@ s390_device_recognition_irq (int irq)
 
 			free_irq (irq, &devstat);
 
-		}
+		}			
 	}
 }
 
@@ -4715,6 +4553,13 @@ s390_trigger_resense(int irq)
 			"Device is in use!\n", irq);
 		return -EBUSY;
 	}
+
+	/* 
+	 * This function is called by dasd if it just executed a "steal lock".
+	 * Therefore, re-initialize the 'unfriendly' flag to 0.
+	 * We run into timeouts if the device is still boxed...
+	 */
+	ioinfo[irq]->ui.flags.unfriendly = 0;
 
 	s390_device_recognition_irq(irq);
 
@@ -4896,8 +4741,6 @@ s390_validate_subchannel (int irq, int enable)
 	ioinfo[irq]->st = ioinfo[irq]->schib.pmcw.st;
 	if (ioinfo[irq]->st)
 		return -ENODEV;
-
-	ioinfo[irq]->ui.flags.pgid_supp = 1;
 
 	ioinfo[irq]->opm = ioinfo[irq]->schib.pmcw.pim
 	    & ioinfo[irq]->schib.pmcw.pam & ioinfo[irq]->schib.pmcw.pom;
@@ -5577,7 +5420,7 @@ s390_SenseID (int irq, senseid_t * sid, __u8 lpm)
 
 	if (!ioinfo[irq]->ui.flags.unknown)
 		irq_ret = 0;
-	else
+	else if (irq_ret != -ETIMEDOUT)
 		irq_ret = -ENODEV;
 
 	return (irq_ret);
@@ -5845,9 +5688,24 @@ s390_DevicePathVerification (int irq, __u8 usermask)
 			       "No logical path for sch %d...\n",
 			       irq);
 
-			if (ioinfo[irq]->nopfunc)
-				ioinfo[irq]->nopfunc(irq, DEVSTAT_NOT_ACC);
-
+			if (ioinfo[irq]->nopfunc) {
+				if (ioinfo[irq]->ui.flags.notacccap)
+					ioinfo[irq]->nopfunc(irq,
+							     DEVSTAT_NOT_ACC);
+				else {
+					not_oper_handler_func_t nopfunc =
+						ioinfo[irq]->nopfunc;
+#ifdef CONFIG_PROC_FS
+					/* remove procfs entry */
+					if (cio_proc_devinfo)
+						cio_procfs_device_remove
+							(ioinfo[irq]->devno);
+#endif
+					free_irq(irq,
+						 ioinfo[irq]->irq_desc.dev_id);
+					nopfunc(irq, DEVSTAT_DEVICE_GONE);
+				}
+			}
 			return -ENODEV;
 		}
 		if (!old_opm) {
@@ -5905,7 +5763,9 @@ s390_DevicePathVerification (int irq, __u8 usermask)
 		return 0;
 	}
 
-	return s390_do_path_verification (irq, usermask);
+	if (ioinfo[irq]->ui.flags.ready)
+		return s390_do_path_verification (irq, usermask);
+	return 0;
 
 }
 
@@ -7249,10 +7109,15 @@ s390_do_chpid_processing( __u8 chpid)
 			
 			s390irq_spin_unlock(irq);
 			
-			/* Tell the device driver not to disturb us. */
+			/* 
+			 * Tell the device driver not to disturb us. 
+			 * If the driver is not capable of handling
+			 * DEVSTAT_NOT_ACC, it doesn't want path grouping anyway.
+			 */
 			if (ioinfo[irq]->ui.flags.ready &&
 			    schib->pmcw.pim != 0x80 &&
-			    ioinfo[irq]->nopfunc) {
+			    ioinfo[irq]->nopfunc &&
+			    ioinfo[irq]->ui.flags.notacccap) {
 				if (err)
 					ioinfo[irq]->nopfunc(irq, DEVSTAT_NOT_ACC_ERR);
 				else
@@ -7387,7 +7252,8 @@ s390_do_res_acc_processing( __u8 chpid, __u16 fla, int info)
 				/* Tell the device driver not to disturb us. */
 				if (ioinfo[irq]->ui.flags.ready &&
 				    ioinfo[irq]->schib.pmcw.pim != 0x80 &&
-				    ioinfo[irq]->nopfunc)
+				    ioinfo[irq]->nopfunc &&
+				    ioinfo[irq]->ui.flags.notacccap)
 					ioinfo[irq]->nopfunc(irq, DEVSTAT_NOT_ACC);
 
 				ioinfo[irq]->ui.flags.noio = 1;
@@ -7463,7 +7329,8 @@ s390_do_res_acc_processing( __u8 chpid, __u16 fla, int info)
 				/* Tell the device driver not to disturb us. */
 				if (ioinfo[irq]->ui.flags.ready &&
 				    ioinfo[irq]->schib.pmcw.pim != 0x80 &&
-				    ioinfo[irq]->nopfunc)
+				    ioinfo[irq]->nopfunc &&
+				    ioinfo[irq]->ui.flags.notacccap)
 					ioinfo[irq]->nopfunc(irq, DEVSTAT_NOT_ACC);
 
 				ioinfo[irq]->ui.flags.noio = 1;
@@ -7489,11 +7356,41 @@ s390_do_res_acc_processing( __u8 chpid, __u16 fla, int info)
 	}
 }
 
+static int
+__get_chpid_from_lir(void *data)
+{
+	struct lir {
+		u8  iq;
+		u8  ic;
+		u16 sci;
+		/* incident-node descriptor */
+		u32 indesc[28];
+		/* attached-node descriptor */
+		u32 andesc[28];
+		/* incident-specific information */
+		u32 isinfo[28];
+	} *lir;
+
+	lir = (struct lir*) data;
+	if (!(lir->iq&0x80))
+		/* NULL link incident record */
+		return -EINVAL;
+	if (!(lir->indesc[0]&0xc0000000))
+		/* node descriptor not valid */
+		return -EINVAL;
+	if (!(lir->indesc[0]&0x10000000))
+		/* don't handle device-type nodes - FIXME */
+		return -EINVAL;
+	/* Byte 3 contains the chpid. Could also be CTCA, but we don't care */
+
+	return (u16) (lir->indesc[0]&0x000000ff);
+}
+
 void 
 s390_process_css( void ) 
 {
 
-	int ccode, do_sei;
+	int ccode, do_sei, chpid;
 
 	CIO_TRACE_EVENT( 2, "prcss");
 
@@ -7646,9 +7543,11 @@ s390_process_css( void )
 				       chsc_area_sei->response_block.
 				       response_block_data.sei_res.rsid);
 			
-			s390_do_chpid_processing(chsc_area_sei->response_block.
-						 response_block_data.sei_res.rsid);
-			
+			chpid = __get_chpid_from_lir(chsc_area_sei->response_block.
+						     response_block_data.sei_res.
+						     ccdf);
+			if (chpid >= 0)
+				s390_do_chpid_processing(chpid);
 			break;
 			
 		case 2: /* i/o resource accessibiliy */
@@ -7788,7 +7687,8 @@ __process_chp_gone(int irq, int chpid)
 		/* Tell the device driver not to disturb us. */
 		if (ioinfo[irq]->ui.flags.ready &&
 		    schib->pmcw.pim != 0x80 &&
-		    ioinfo[irq]->nopfunc) {
+		    ioinfo[irq]->nopfunc &&
+		    ioinfo[irq]->ui.flags.notacccap) {
 			if (err)
 				ioinfo[irq]->nopfunc(irq, DEVSTAT_NOT_ACC_ERR);
 			else
@@ -7823,7 +7723,8 @@ __process_chp_come(int irq, int chpid)
 		/* Tell the device driver not to disturb us. */
 		if (ioinfo[irq]->ui.flags.ready &&
 		    schib->pmcw.pim != 0x80 &&
-		    ioinfo[irq]->nopfunc)
+		    ioinfo[irq]->nopfunc &&
+		    ioinfo[irq]->ui.flags.notacccap)
 			ioinfo[irq]->nopfunc(irq, DEVSTAT_NOT_ACC);
 		
 		ioinfo[irq]->ui.flags.noio = 1;
@@ -8198,7 +8099,8 @@ __vary_chpid_offline(int irq, int chpid)
 		/* Tell the device driver not to disturb us. */
 		if (ioinfo[irq]->ui.flags.ready &&
 		    schib->pmcw.pim != 0x80 &&
-		    ioinfo[irq]->nopfunc)
+		    ioinfo[irq]->nopfunc &&
+		    ioinfo[irq]->ui.flags.notacccap)
 			ioinfo[irq]->nopfunc(irq, DEVSTAT_NOT_ACC);
 		
 		if (out)
@@ -8228,7 +8130,8 @@ __vary_chpid_online(int irq, int chpid)
 		/* Tell the device driver not to disturb us. */
 		if (ioinfo[irq]->ui.flags.ready &&
 		    schib->pmcw.pim != 0x80 &&
-		    ioinfo[irq]->nopfunc)
+		    ioinfo[irq]->nopfunc &&
+		    ioinfo[irq]->ui.flags.notacccap)
 			ioinfo[irq]->nopfunc(irq, DEVSTAT_NOT_ACC);
 		
 		ioinfo[irq]->ui.flags.noio = 1;
@@ -8238,10 +8141,7 @@ __vary_chpid_online(int irq, int chpid)
 			/* Wait for interrupt. */
 			break;
 		
-		if (ioinfo[irq]->ui.flags.ready)
-			s390_schedule_path_verification(irq);
-		else
-			ioinfo[irq]->ui.flags.noio = 0;
+		s390_schedule_path_verification(irq);
 		
 		break;
 	}
@@ -9256,7 +9156,6 @@ cio_chpids_proc_write (struct file *file, const char *user_buf,
 #ifdef CIO_DEBUG_IO
 	printk("/proc/chpids: '%s'\n", buffer);
 #endif /* CIO_DEBUG_IO */
-	CIO_MSG_EVENT( 2, "/proc/chpids: '%s'\n", buffer);
 
 	cio_parse_chpids_proc_parameters(buffer);
 

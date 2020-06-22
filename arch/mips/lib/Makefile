@@ -11,6 +11,8 @@ obj-y				+= csum_partial.o csum_partial_copy.o \
 				   memset.o watch.o strlen_user.o \
 				   strncpy_user.o strnlen_user.o
 
+export-objs			:= rtc-std.o rtc-no.o
+
 ifeq ($(CONFIG_CPU_R3000)$(CONFIG_CPU_TX39XX),y)
   obj-y	+= r3k_dump_tlb.o
 else

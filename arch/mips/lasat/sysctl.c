@@ -95,32 +95,6 @@ int proc_dolasatint(ctl_table *table, int write, struct file *filp,
 	return 0;
 }
 
-static int rtctmp;
-
-#ifdef CONFIG_DS1603
-/* proc function to read/write RealTime Clock */ 
-int proc_dolasatrtc(ctl_table *table, int write, struct file *filp,
-		       void *buffer, size_t *lenp)
-{
-	int r;
-	down(&lasat_info_sem);
-	if (!write) {
-		rtctmp = ds1603_read();
-		/* check for time < 0 and set to 0 */
-		if (rtctmp < 0)
-			rtctmp = 0;
-	}
-	r = proc_dointvec(table, write, filp, buffer, lenp);
-	if ( (!write) || r) {
-		up(&lasat_info_sem);
-		return r;
-	}
-	ds1603_set(rtctmp);
-	up(&lasat_info_sem);
-	return 0;
-}
-#endif
-
 /* Sysctl for setting the IP addresses */
 int sysctl_lasat_intvec(ctl_table *table, int *name, int nlen,
 		    void *oldval, size_t *oldlenp,
@@ -139,30 +113,6 @@ int sysctl_lasat_intvec(ctl_table *table, int *name, int nlen,
 	up(&lasat_info_sem);
 	return 1;
 }
-
-#if CONFIG_DS1603
-/* Same for RTC */
-int sysctl_lasat_rtc(ctl_table *table, int *name, int nlen,
-		    void *oldval, size_t *oldlenp,
-		    void *newval, size_t newlen, void **context)
-{
-	int r;
-	down(&lasat_info_sem);
-	rtctmp = ds1603_read();
-	if (rtctmp < 0)
-		rtctmp = 0;
-	r = sysctl_intvec(table, name, nlen, oldval, oldlenp, newval, newlen, context);
-	if (r < 0) {
-		up(&lasat_info_sem);
-		return r;
-	}
-	if (newval && newlen) {
-		ds1603_set(rtctmp);
-	}
-	up(&lasat_info_sem);
-	return 1;
-}
-#endif
 
 #ifdef CONFIG_INET
 static char lasat_bcastaddr[16];
@@ -328,10 +278,6 @@ static ctl_table lasat_table[] = {
 	 0600, NULL, &proc_dolasatstring, &sysctl_lasatstring},
 	{LASAT_SBOOT, "boot-service", &lasat_boot_to_service, sizeof(int),
 	 0644, NULL, &proc_dointvec, &sysctl_intvec},
-#if CONFIG_DS1603
-	{LASAT_RTC, "rtc", &rtctmp, sizeof(int),
-	 0644, NULL, &proc_dolasatrtc, &sysctl_lasat_rtc},
-#endif
 	{LASAT_NAMESTR, "namestr", &lasat_board_info.li_namestr, sizeof(lasat_board_info.li_namestr),
 	 0444, NULL, &proc_dostring, &sysctl_string},
 	{LASAT_TYPESTR, "typestr", &lasat_board_info.li_typestr, sizeof(lasat_board_info.li_typestr),

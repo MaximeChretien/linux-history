@@ -1,49 +1,67 @@
-/* $XFree86: xc/programs/Xserver/hw/xfree86/drivers/sis/vgatypes.h,v 1.0 2001/06/15 21:23:00 dawes Exp $ */
+/* $XFree86$ */
 /*
  * General type definitions for universal mode switching modules
  *
- * Copyright 2002, 2003 by Thomas Winischhofer, Vienna, Austria
+ * Copyright (C) 2001-2004 by Thomas Winischhofer, Vienna, Austria
  *
- * If distributed as part of the linux kernel, the contents of this file
- * is entirely covered by the GPL.
+ * If distributed as part of the Linux kernel, the following license terms
+ * apply:
  *
- * Otherwise, the following terms apply:
+ * * This program is free software; you can redistribute it and/or modify
+ * * it under the terms of the GNU General Public License as published by
+ * * the Free Software Foundation; either version 2 of the named License,
+ * * or any later version.
+ * *
+ * * This program is distributed in the hope that it will be useful,
+ * * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * * GNU General Public License for more details.
+ * *
+ * * You should have received a copy of the GNU General Public License
+ * * along with this program; if not, write to the Free Software
+ * * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
  *
- * Permission to use, copy, modify, distribute, and sell this software and its
- * documentation for any purpose is hereby granted without fee, provided that
- * the above copyright notice appear in all copies and that both that
- * copyright notice and this permission notice appear in supporting
- * documentation, and that the name of the copyright holder not be used in
- * advertising or publicity pertaining to distribution of the software without
- * specific, written prior permission.  The copyright holder makes no representations
- * about the suitability of this software for any purpose.  It is provided
- * "as is" without express or implied warranty.
+ * Otherwise, the following license terms apply:
  *
- * THE COPYRIGHT HOLDER DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
- * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO
- * EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY SPECIAL, INDIRECT OR
- * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
- * DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
- * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
- * PERFORMANCE OF THIS SOFTWARE.
+ * * Redistribution and use in source and binary forms, with or without
+ * * modification, are permitted provided that the following conditions
+ * * are met:
+ * * 1) Redistributions of source code must retain the above copyright
+ * *    notice, this list of conditions and the following disclaimer.
+ * * 2) Redistributions in binary form must reproduce the above copyright
+ * *    notice, this list of conditions and the following disclaimer in the
+ * *    documentation and/or other materials provided with the distribution.
+ * * 3) All advertising materials mentioning features or use of this software
+ * *    must display the following acknowledgement: "This product includes
+ * *    software developed by Thomas Winischhofer, Vienna, Austria."
+ * * 4) The name of the author may not be used to endorse or promote products
+ * *    derived from this software without specific prior written permission.
+ * *
+ * * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * Authors: 	Thomas Winischhofer <thomas@winischhofer.net>
- *		Silicon Integrated Systems
+ * Author: 	Thomas Winischhofer <thomas@winischhofer.net>
  *
  */
+
 #ifndef _VGATYPES_
 #define _VGATYPES_
 
 #ifdef LINUX_XF86
+#include "xf86Version.h"
 #include "xf86Pci.h"
 #endif
 
 #ifdef LINUX_KERNEL  /* We don't want the X driver to depend on kernel source */
 #include <linux/ioctl.h>
-#endif
-
-#ifndef TC
-#define far
 #endif
 
 #ifndef FALSE
@@ -82,25 +100,6 @@ typedef unsigned short USHORT;
 typedef unsigned long ULONG;
 #endif
 
-#ifndef PUCHAR
-typedef UCHAR far *PUCHAR;
-#endif
-
-#ifndef PUSHORT
-typedef USHORT far *PUSHORT;
-#endif
-
-#ifndef PULONG
-typedef ULONG far *PULONG;
-#endif
-
-#ifndef PVOID
-typedef void far *PVOID;
-#endif
-#ifndef VOID
-typedef void VOID;
-#endif
-
 #ifndef BOOLEAN
 typedef UCHAR BOOLEAN;
 #endif
@@ -109,17 +108,26 @@ typedef UCHAR BOOLEAN;
 typedef UCHAR bool;
 #endif
 
-#ifndef VBIOS_VER_MAX_LENGTH
-#define VBIOS_VER_MAX_LENGTH         4
+#ifdef LINUX_KERNEL
+typedef unsigned long SISIOADDRESS;
 #endif
 
-#ifndef LINUX_KERNEL   /* For kernel, this is defined in sisfb.h */
+#ifdef LINUX_XF86
+#if XF86_VERSION_CURRENT < XF86_VERSION_NUMERIC(4,2,0,0,0)
+typedef unsigned long IOADDRESS;
+typedef unsigned long SISIOADDRESS;
+#else
+typedef IOADDRESS SISIOADDRESS;
+#endif
+#endif
+
+#ifndef LINUX_KERNEL   /* For the linux kernel, this is defined in sisfb.h */
 #ifndef SIS_CHIP_TYPE
 typedef enum _SIS_CHIP_TYPE {
     SIS_VGALegacy = 0,
 #ifdef LINUX_XF86
-    SIS_530,	/* TW */
-    SIS_OLD,	/* TW */
+    SIS_530,
+    SIS_OLD,
 #endif
     SIS_300,
     SIS_630,
@@ -132,6 +140,8 @@ typedef enum _SIS_CHIP_TYPE {
     SIS_650,
     SIS_740,
     SIS_330,
+    SIS_661,
+    SIS_741,
     SIS_660,
     SIS_760,
     MAX_SIS_CHIP
@@ -149,6 +159,7 @@ typedef enum _SIS_VB_CHIP_TYPE {
     VB_CHIP_302B,
     VB_CHIP_302LV,
     VB_CHIP_301C,
+    VB_CHIP_302ELV,
     VB_CHIP_UNKNOWN, /* other video bridge or no video bridge */
     MAX_VB_CHIP
 } SIS_VB_CHIP_TYPE;
@@ -174,6 +185,8 @@ typedef enum _SIS_LCD_TYPE {
     LCD_640x480_2,     /* FSTN, DSTN */
     LCD_640x480_3,     /* FSTN, DSTN */
     LCD_848x480,
+    LCD_1280x800,
+    LCD_1680x1050,
     LCD_CUSTOM,
     LCD_UNKNOWN
 } SIS_LCD_TYPE;
@@ -187,35 +200,27 @@ typedef struct _SIS_DSReg
 } SIS_DSReg, *PSIS_DSReg;
 #endif
 
-#ifndef SIS_HW_DEVICE_INFO
+#ifndef SIS_HW_INFO
 
-typedef struct _SIS_HW_DEVICE_INFO  SIS_HW_DEVICE_INFO, *PSIS_HW_DEVICE_INFO;
+typedef struct _SIS_HW_INFO  SIS_HW_INFO, *PSIS_HW_INFO;
 
-typedef BOOLEAN (*PSIS_QUERYSPACE)   (PSIS_HW_DEVICE_INFO, ULONG, ULONG, ULONG *);
+typedef BOOLEAN (*PSIS_QUERYSPACE)   (PSIS_HW_INFO, ULONG, ULONG, ULONG *);
 
-struct _SIS_HW_DEVICE_INFO
+struct _SIS_HW_INFO
 {
-    PVOID  pDevice;              /* The pointer to the physical device data structure
-                                    in each OS or NULL for unused. */
-    UCHAR  *pjVirtualRomBase;    /* base virtual address of VBIOS ROM Space */
-                                 /* or base virtual address of ROM image file. */
-                                 /* if NULL, then read from pjROMImage; */
-                                 /* Note:ROM image file is the file of VBIOS ROM */
+#ifdef LINUX_XF86
+    PCITAG PciTag;		 /* PCI Tag */
+#endif
 
-    BOOLEAN UseROM;		 /* TW: Use the ROM image if provided */
+    UCHAR  *pjVirtualRomBase;    /* ROM image */
 
-    UCHAR  *pjCustomizedROMImage;/* base virtual address of ROM image file. */
-                                 /* wincE:ROM image file is the file for OEM */
-                                 /*       customized table */
-                                 /* Linux: not used */
-                                 /* NT   : not used  */
-                                 /* Note : pjCustomizedROMImage=NULL if no ROM image file */
+    BOOLEAN UseROM;		 /* Use the ROM image if provided */
 
     UCHAR  *pjVideoMemoryAddress;/* base virtual memory address */
                                  /* of Linear VGA memory */
 
     ULONG  ulVideoMemorySize;    /* size, in bytes, of the memory on the board */
-    ULONG  ulIOAddress;          /* base I/O address of VGA ports (0x3B0) */
+    SISIOADDRESS ulIOAddress;    /* base I/O address of VGA ports (0x3B0) */
     UCHAR  jChipType;            /* Used to Identify SiS Graphics Chip */
                                  /* defined in the data structure type  */
                                  /* "SIS_CHIP_TYPE" */
@@ -224,20 +229,12 @@ struct _SIS_HW_DEVICE_INFO
     UCHAR  ujVBChipID;           /* the ID of video bridge */
                                  /* defined in the data structure type */
                                  /* "SIS_VB_CHIP_TYPE" */
+#ifdef LINUX_KERNEL
+    BOOLEAN Is301BDH;
+#endif
 
     USHORT usExternalChip;       /* NO VB or other video bridge (other than  */
                                  /* SiS video bridge) */
-                                 /* if ujVBChipID = VB_CHIP_UNKNOWN, */
-                                 /* then bit0=1 : LVDS,bit1=1 : trumpion, */
-                                 /* bit2=1 : CH7005 & no video bridge if */
-                                 /* usExternalChip = 0. */
-                                 /* Note: CR37[3:1]: */
-                                 /*             001:SiS 301 */
-                                 /*             010:LVDS */
-                                 /*             011:Trumpion LVDS Scaling Chip */
-                                 /*             100:LVDS(LCD-out)+Chrontel 7005 */
-                                 /*             101:Single Chrontel 7005 */
-				 /* TW: This has changed on 315 series! */
 
     ULONG  ulCRT2LCDType;        /* defined in the data structure type */
                                  /* "SIS_LCD_TYPE" */
@@ -245,6 +242,8 @@ struct _SIS_HW_DEVICE_INFO
     BOOLEAN bIntegratedMMEnabled;/* supporting integration MM enable */
                                       
     BOOLEAN bSkipDramSizing;     /* True: Skip video memory sizing. */
+
+#ifdef LINUX_KERNEL
     PSIS_DSReg  pSR;             /* restore SR registers in initial function. */
                                  /* end data :(idx, val) =  (FF, FF). */
                                  /* Note : restore SR registers if  */
@@ -254,37 +253,25 @@ struct _SIS_HW_DEVICE_INFO
                                  /* end data :(idx, val) =  (FF, FF) */
                                  /* Note : restore cR registers if  */
                                  /* bSkipDramSizing = TRUE */
+#endif
 
     PSIS_QUERYSPACE  pQueryVGAConfigSpace; /* Get/Set VGA Configuration  */
                                            /* space */
  
     PSIS_QUERYSPACE  pQueryNorthBridgeSpace;/* Get/Set North Bridge  */
                                             /* space  */
-
-    UCHAR  szVBIOSVer[VBIOS_VER_MAX_LENGTH];
-
-    UCHAR  pdc;			/* TW: PanelDelayCompensation */
-    
-#ifdef LINUX_KERNEL
-    BOOLEAN Is301BDH;
-#endif        
-
-#ifdef LINUX_XF86
-    PCITAG PciTag;		/* PCI Tag for Linux XF86 */
-#endif
 };
 #endif
 
-
-/* TW: Addtional IOCTL for communication sisfb <> X driver        */
-/*     If changing this, sisfb.h must also be changed (for sisfb) */
+/* Addtional IOCTL for communication sisfb <> X driver        */
+/* If changing this, sisfb.h must also be changed (for sisfb) */
 
 #ifdef LINUX_XF86  /* We don't want the X driver to depend on the kernel source */
 
-/* TW: ioctl for identifying and giving some info (esp. memory heap start) */
+/* ioctl for identifying and giving some info (esp. memory heap start) */
 #define SISFB_GET_INFO    0x80046ef8  /* Wow, what a terrible hack... */
 
-/* TW: Structure argument for SISFB_GET_INFO ioctl  */
+/* Structure argument for SISFB_GET_INFO ioctl  */
 typedef struct _SISFB_INFO sisfb_info, *psisfb_info;
 
 struct _SISFB_INFO {
@@ -319,80 +306,12 @@ struct _SISFB_INFO {
 	int sisfb_scalelcd;
 	unsigned long sisfb_specialtiming;
 
-	char reserved[219]; 		/* for future use */
+	unsigned char sisfb_haveemi;
+	unsigned char sisfb_emi30,sisfb_emi31,sisfb_emi32,sisfb_emi33;
+	unsigned char sisfb_haveemilcd;
+
+	char reserved[213]; 		/* for future use */
 };
-#endif
-
-#ifndef BUS_DATA_TYPE
-typedef enum _BUS_DATA_TYPE {
-    ConfigurationSpaceUndefined = -1,
-    Cmos,
-    EisaConfiguration,
-    Pos,
-    CbusConfiguration,
-    PCIConfiguration,
-    VMEConfiguration,
-    NuBusConfiguration,
-    PCMCIAConfiguration,
-    MPIConfiguration,
-    MPSAConfiguration,
-    PNPISAConfiguration,
-    MaximumBusDataType
-} BUS_DATA_TYPE, *PBUS_DATA_TYPE;
-#endif
-
-#ifndef PCI_TYPE0_ADDRESSES
-#define PCI_TYPE0_ADDRESSES             6
-#endif
-
-#ifndef PCI_TYPE1_ADDRESSES
-#define PCI_TYPE1_ADDRESSES             2
-#endif
-
-#ifndef PCI_COMMON_CONFIG
-typedef struct _PCI_COMMON_CONFIG {
-    USHORT  VendorID;                   /* (ro)                 */
-    USHORT  DeviceID;                   /* (ro)                 */
-    USHORT  Command;                    /* Device control       */
-    USHORT  Status;
-    UCHAR   RevisionID;                 /* (ro)                 */
-    UCHAR   ProgIf;                     /* (ro)                 */
-    UCHAR   SubClass;                   /* (ro)                 */
-    UCHAR   BaseClass;                  /* (ro)                 */
-    UCHAR   CacheLineSize;              /* (ro+)                */
-    UCHAR   LatencyTimer;               /* (ro+)                */
-    UCHAR   HeaderType;                 /* (ro)                 */
-    UCHAR   BIST;                       /* Built in self test   */
-
-    union {
-        struct _PCI_HEADER_TYPE_0 {
-            ULONG   BaseAddresses[PCI_TYPE0_ADDRESSES];
-            ULONG   CIS;
-            USHORT  SubVendorID;
-            USHORT  SubSystemID;
-            ULONG   ROMBaseAddress;
-            ULONG   Reserved2[2];
-
-            UCHAR   InterruptLine;      /*                    */
-            UCHAR   InterruptPin;       /* (ro)               */
-            UCHAR   MinimumGrant;       /* (ro)               */
-            UCHAR   MaximumLatency;     /* (ro)               */
-        } type0;
-
-
-    } u;
-
-    UCHAR   DeviceSpecific[192];
-
-} PCI_COMMON_CONFIG, *PPCI_COMMON_CONFIG;
-#endif
-
-#ifndef FIELD_OFFSET
-#define FIELD_OFFSET(type, field)    ((LONG)&(((type *)0)->field))
-#endif
-
-#ifndef PCI_COMMON_HDR_LENGTH
-#define PCI_COMMON_HDR_LENGTH (FIELD_OFFSET (PCI_COMMON_CONFIG, DeviceSpecific))
 #endif
 
 #endif

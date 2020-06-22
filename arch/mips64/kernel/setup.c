@@ -416,6 +416,7 @@ void __init setup_arch(char **cmdline_p)
 	extern void momenco_ocelot_setup(void);
 	extern void momenco_ocelot_g_setup(void);
 	extern void momenco_ocelot_c_setup(void);
+	extern void momenco_jaguar_atx_setup(void);
 	extern void sead_setup(void);
 	extern void swarm_setup(void);
 	extern void frame_info_init(void);
@@ -426,6 +427,9 @@ void __init setup_arch(char **cmdline_p)
 #endif
 #ifdef CONFIG_DECSTATION
 	decstation_setup();
+#endif
+#ifdef  CONFIG_PMC_YOSEMITE
+	pmc_yosemite_setup();
 #endif
 #ifdef CONFIG_SGI_IP22
 	ip22_setup();
@@ -450,6 +454,9 @@ void __init setup_arch(char **cmdline_p)
 #endif
 #ifdef CONFIG_MOMENCO_OCELOT_C
 	momenco_ocelot_c_setup();
+#endif
+#ifdef CONFIG_MOMENCO_JAGUAR_ATX
+	momenco_jaguar_atx_setup();
 #endif
 
 	strncpy(command_line, arcs_cmdline, CL_SIZE);

@@ -300,12 +300,12 @@ static u32 radeon_cp_microcode[][2] = {
 };
 
 
-#define DO_IOREMAP(_m) (_m)->handle = drm_ioremap((_m)->offset, (_m)->size)
+#define DO_IOREMAP(_m, _d) (_m)->handle = drm_ioremap((_m)->offset, (_m)->size, (_d))
 
-#define DO_IOREMAPFREE(_m)						\
+#define DO_IOREMAPFREE(_m, _d)						\
 	do {								\
 		if ((_m)->handle && (_m)->size)				\
-			drm_ioremapfree((_m)->handle, (_m)->size);	\
+			drm_ioremapfree((_m)->handle, (_m)->size, (_d));\
 	} while (0)
 
 #define DO_FIND_MAP(_m, _o)						\
@@ -757,12 +757,12 @@ static int radeon_do_init_cp( drm_device_t *dev, drm_radeon_init_t *init )
 		(drm_radeon_sarea_t *)((u8 *)dev_priv->sarea->handle +
 				       init->sarea_priv_offset);
 
-	DO_IOREMAP( dev_priv->cp_ring );
-	DO_IOREMAP( dev_priv->ring_rptr );
-	DO_IOREMAP( dev_priv->buffers );
+	DO_IOREMAP( dev_priv->cp_ring, dev );
+	DO_IOREMAP( dev_priv->ring_rptr, dev );
+	DO_IOREMAP( dev_priv->buffers, dev );
 #if 0
 	if ( !dev_priv->is_pci ) {
-		DO_IOREMAP( dev_priv->agp_textures );
+		DO_IOREMAP( dev_priv->agp_textures, dev );
 	}
 #endif
 
@@ -828,12 +828,12 @@ static int radeon_do_cleanup_cp( drm_device_t *dev )
 	if ( dev->dev_private ) {
 		drm_radeon_private_t *dev_priv = dev->dev_private;
 
-		DO_IOREMAPFREE( dev_priv->cp_ring );
-		DO_IOREMAPFREE( dev_priv->ring_rptr );
-		DO_IOREMAPFREE( dev_priv->buffers );
+		DO_IOREMAPFREE( dev_priv->cp_ring, dev );
+		DO_IOREMAPFREE( dev_priv->ring_rptr, dev );
+		DO_IOREMAPFREE( dev_priv->buffers, dev );
 #if 0
 		if ( !dev_priv->is_pci ) {
-			DO_IOREMAPFREE( dev_priv->agp_textures );
+			DO_IOREMAPFREE( dev_priv->agp_textures, dev );
 		}
 #endif
 

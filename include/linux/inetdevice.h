@@ -19,6 +19,7 @@ struct ipv4_devconf
 	int	tag;
 	int     arp_filter;
 	int	medium_id;
+	int	force_igmp_version;
 	void	*sysctl;
 };
 

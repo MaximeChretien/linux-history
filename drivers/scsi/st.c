@@ -9,10 +9,10 @@
    Steve Hirsch, Andreas Koppenh"ofer, Michael Leodolter, Eyal Lebedinsky,
    Michael Schaefer, J"org Weule, and Eric Youngdale.
 
-   Copyright 1992 - 2003 Kai Makisara
+   Copyright 1992 - 2004 Kai Makisara
    email Kai.Makisara@kolumbus.fi
 
-   Last modified: Sun Apr  6 22:44:42 2003 by makisara
+   Last modified: Fri Jan  2 17:50:08 2004 by makisara
    Some small formal changes - aeb, 950809
 
    Last modified: 18-JAN-1998 Richard Gooch <rgooch@atnf.csiro.au> Devfs support
@@ -21,7 +21,7 @@
    error handling will be discarded.
  */
 
-static char *verstr = "20030406";
+static char *verstr = "20040102";
 
 #include <linux/module.h>
 
@@ -1277,6 +1277,18 @@ static ssize_t
 		goto out;
 	}
 
+	if ((STp->buffer)->writing) {
+		write_behind_check(STp);
+		if ((STp->buffer)->syscall_result) {
+                        DEBC(printk(ST_DEB_MSG "st%d: Async write error (write) %x.\n",
+                                    dev, (STp->buffer)->midlevel_result));
+			if ((STp->buffer)->midlevel_result == INT_MAX)
+				STps->eof = ST_EOM_OK;
+			else
+				STps->eof = ST_EOM_ERROR;
+		}
+	}
+
 	if (STp->block_size == 0) {
 		if (STp->max_block > 0 &&
 		    (count < STp->min_block || count > STp->max_block)) {
@@ -1321,18 +1333,6 @@ static ssize_t
 					goto out;
 				}
 			}
-		}
-	}
-
-	if ((STp->buffer)->writing) {
-		write_behind_check(STp);
-		if ((STp->buffer)->syscall_result) {
-                        DEBC(printk(ST_DEB_MSG "st%d: Async write error (write) %x.\n",
-                                    dev, (STp->buffer)->midlevel_result));
-			if ((STp->buffer)->midlevel_result == INT_MAX)
-				STps->eof = ST_EOM_OK;
-			else
-				STps->eof = ST_EOM_ERROR;
 		}
 	}
 

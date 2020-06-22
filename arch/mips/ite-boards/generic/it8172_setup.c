@@ -48,11 +48,6 @@
 #include <asm/keyboard.h>
 #endif
 
-#if defined(CONFIG_SERIAL_CONSOLE) || defined(CONFIG_PROM_CONSOLE)
-extern void console_setup(char *, int *);
-char serial_console[20];
-#endif
-
 extern struct resource ioport_resource;
 #ifdef CONFIG_BLK_DEV_IDE
 extern struct ide_ops std_ide_ops;

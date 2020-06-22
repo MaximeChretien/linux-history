@@ -26,7 +26,7 @@
 #include "i82365.h"
 
 #if 0
-#define DEBUG(x,args...)	printk(__FUNCTION__ ": " x,##args)
+#define DEBUG(x,args...)	printk(KERN_DEBUG __FUNCTION__ ": " x,##args)
 #else
 #define DEBUG(x,args...)
 #endif
@@ -576,7 +576,8 @@ static void yenta_get_socket_capabilities(pci_socket_t *socket, u32 isa_irq_mask
 	socket->cap.cb_dev = socket->dev;
 	socket->cap.bus = NULL;
 
-	printk("Yenta IRQ list %04x, PCI irq%d\n", socket->cap.irq_mask, socket->cb_irq);
+	printk(KERN_INFO "Yenta ISA IRQ mask 0x%04x, PCI irq %d\n",
+	       socket->cap.irq_mask, socket->cb_irq);
 }
 
 extern void cardbus_register(pci_socket_t *socket);
@@ -603,7 +604,8 @@ static void yenta_open_bh(void * data)
 
 	/* Figure out what the dang thing can do for the PCMCIA layer... */
 	yenta_get_socket_capabilities(socket, isa_interrupts);
-	printk("Socket status: %08x\n", cb_readl(socket, CB_SOCKET_STATE));
+	printk(KERN_INFO "Socket status: %08x\n",
+	       cb_readl(socket, CB_SOCKET_STATE));
 
 	/* Register it with the pcmcia layer.. */
 	cardbus_register(socket);
@@ -634,6 +636,7 @@ static void yenta_clear_maps(pci_socket_t *socket)
  */
 static void yenta_config_init(pci_socket_t *socket)
 {
+	u32 state;
 	u16 bridge;
 	struct pci_dev *dev = socket->dev;
 
@@ -673,6 +676,10 @@ static void yenta_config_init(pci_socket_t *socket)
 	exca_writeb(socket, I365_GENCTL, 0x00);
 
 	/* Redo card voltage interrogation */
+	state = cb_readl(socket, CB_SOCKET_STATE);
+	if (!(state & (CB_CDETECT1 | CB_CDETECT2 | CB_5VCARD |
+			CB_3VCARD | CB_XVCARD | CB_YVCARD)))
+		
 	cb_writel(socket, CB_SOCKET_FORCE, CB_CVSTEST);
 }
 
@@ -889,7 +896,7 @@ static int yenta_open(pci_socket_t *socket)
 	if (pci_enable_device(dev))
 		return -1;
 	if (!pci_resource_start(dev, 0)) {
-		printk("No cardbus resource!\n");
+		printk(KERN_ERR "No cardbus resource!\n");
 		return -1;
 	}
 

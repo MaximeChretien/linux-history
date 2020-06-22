@@ -62,12 +62,13 @@ delayed_tlb_flush (void)
 static inline mm_context_t
 get_mmu_context (struct mm_struct *mm)
 {
+	unsigned long flags;
 	mm_context_t context = mm->context;
 
 	if (context)
 		return context;
 
-	spin_lock(&ia64_ctx.lock);
+	spin_lock_irqsave(&ia64_ctx.lock, flags);
 	{
 		/* re-check, now that we've got the lock: */
 		context = mm->context;
@@ -77,7 +78,7 @@ get_mmu_context (struct mm_struct *mm)
 			mm->context = context = ia64_ctx.next++;
 		}
 	}
-	spin_unlock(&ia64_ctx.lock);
+	spin_unlock_irqrestore(&ia64_ctx.lock, flags);
 	return context;
 }
 
@@ -114,6 +115,10 @@ reload_context (mm_context_t context)
 	rr2 = rr0 + 2*rid_incr;
 	rr3 = rr0 + 3*rid_incr;
 	rr4 = rr0 + 4*rid_incr;
+#ifdef  CONFIG_HUGETLB_PAGE
+	rr4 = (rr4 & (~(0xfcUL))) | (HPAGE_SHIFT << 2);
+#endif
+
 	ia64_set_rr(0x0000000000000000, rr0);
 	ia64_set_rr(0x2000000000000000, rr1);
 	ia64_set_rr(0x4000000000000000, rr2);

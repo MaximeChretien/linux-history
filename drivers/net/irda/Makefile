@@ -22,6 +22,7 @@ obj-$(CONFIG_TOSHIBA_FIR)	+= donauboe.o
 obj-$(CONFIG_SMC_IRCC_FIR)	+= smc-ircc.o	irport.o
 obj-$(CONFIG_ALI_FIR)		+= ali-ircc.o
 obj-$(CONFIG_VLSI_FIR)		+= vlsi_ir.o
+obj-$(CONFIG_VIA_IRCC_FIR)      += via-ircc.o
 obj-$(CONFIG_ESI_DONGLE)	+= esi.o
 obj-$(CONFIG_TEKRAM_DONGLE)	+= tekram.o
 obj-$(CONFIG_ACTISYS_DONGLE)	+= actisys.o

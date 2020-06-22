@@ -102,9 +102,9 @@ static void null_hpt_init(unsigned int count) { /* nothing */ }
 
 
 /*
- * Timer ack for a R4k-compatible timer of a known frequency.
+ * Timer ack for an R4k-compatible timer of a known frequency.
  */
-static void c0_fixed_timer_ack(void)
+static void c0_timer_ack(void)
 {
 	unsigned int count;
 
@@ -129,22 +129,23 @@ static unsigned int c0_hpt_read(void)
 	return read_c0_count();
 }
 
-/* For unknown frequency.  */
+/* For use solely as a high precision timer.  */
 static void c0_hpt_init(unsigned int count)
 {
 	write_c0_count(read_c0_count() - count);
 }
 
-/* For a known frequency.  Used as an interrupt source.  */
-static void c0_fixed_hpt_init(unsigned int count)
+/* For use both as a high precision timer and an interrupt source.  */
+static void c0_hpt_timer_init(unsigned int count)
 {
-	expirelo = cycles_per_jiffy;
 	count = read_c0_count() - count;
-	write_c0_count(0);
-	write_c0_compare(cycles_per_jiffy);
+	expirelo = (count / cycles_per_jiffy + 1) * cycles_per_jiffy;
+	write_c0_count(expirelo - cycles_per_jiffy);
+	write_c0_compare(expirelo);
 	write_c0_count(count);
 }
 
+int (*mips_timer_state)(void);
 void (*mips_timer_ack)(void);
 unsigned int (*mips_hpt_read)(void);
 void (*mips_hpt_init)(unsigned int);
@@ -185,7 +186,7 @@ void do_settimeofday(struct timeval *tv)
 	 * This is revolting.  We need to set "xtime" correctly.  However,
 	 * the value in this location is the value at the most recent update
 	 * of wall time.  Discover what correction gettimeofday() would have
-	 * done, and then undo it!
+	 * made, and then undo it!
 	 */
 	tv->tv_usec -= do_gettimeoffset();
 	tv->tv_usec -= (jiffies - wall_jiffies) * USECS_PER_JIFFY;
@@ -328,9 +329,9 @@ static unsigned long calibrate_div64_gettimeoffset(void)
 				"dsll32	%1,%2,0\n\t"
 				"or	%1,%1,%0\n\t"
 				"ddivu	$0,%1,%4\n\t"
+				"mflo	%1\n\t"
 				"dsll32	%0,%5,0\n\t"
 				"or	%0,%0,%6\n\t"
-				"mflo	%1\n\t"
 				"ddivu	$0,%0,%1\n\t"
 				"mflo	%0\n\t"
 				".set	pop"
@@ -410,6 +411,7 @@ void local_timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
  */
 void timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 {
+	unsigned long j;
 	unsigned int count;
 
 	count = mips_hpt_read();
@@ -447,10 +449,41 @@ void timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 	 * If jiffies has overflown in this timer_interrupt, we must
 	 * update the timer[hi]/[lo] to make fast gettimeoffset funcs
 	 * quotient calc still valid. -arca
+	 *
+	 * The first timer interrupt comes late as interrupts are
+	 * enabled long after timers are initialized.  Therefore the
+	 * high precision timer is fast, leading to wrong gettimeoffset()
+	 * calculations.  We deal with it by setting it based on the
+	 * number of its ticks between the second and the third interrupt.
+	 * That is still somewhat imprecise, but it's a good estimate.
+	 * --macro
 	 */
-	if (!jiffies) {
-		timerhi = timerlo = 0;
-		mips_hpt_init(count);
+	j = jiffies;
+	if (j < 4) {
+		static unsigned int prev_count;
+		static int hpt_initialized;
+
+		switch (j) {
+		case 0:
+			timerhi = timerlo = 0;
+			mips_hpt_init(count);
+			break;
+		case 2:
+			prev_count = count;
+			break;
+		case 3:
+			if (!hpt_initialized) {
+				unsigned int c3 = 3 * (count - prev_count);
+
+				timerhi = 0;
+				timerlo = c3;
+				mips_hpt_init(count - c3);
+				hpt_initialized = 1;
+			}
+			break;
+		default:
+			break;
+		}
 	}
 
 #if !defined(CONFIG_SMP)
@@ -500,7 +533,9 @@ asmlinkage void ll_local_timer_interrupt(int irq, struct pt_regs *regs)
 	int cpu = smp_processor_id();
 
 	irq_enter(cpu, irq);
-	kstat.irqs[cpu][irq]++;
+
+	if (cpu != 0)
+		kstat.irqs[cpu][irq]++;
 
 	/* we keep interrupt disabled all the time */
 	local_timer_interrupt(irq, NULL, regs);
@@ -516,7 +551,7 @@ asmlinkage void ll_local_timer_interrupt(int irq, struct pt_regs *regs)
  *
  * 1) board_time_init() -
  * 	a) (optional) set up RTC routines,
- *      b) (optional) calibrate and set the mips_counter_frequency
+ *      b) (optional) calibrate and set the mips_hpt_frequency
  *	    (only needed if you intended to use fixed_rate_gettimeoffset
  *	     or use cpu counter as timer interrupt source)
  * 2) setup xtime based on rtc_get_time().
@@ -531,13 +566,56 @@ asmlinkage void ll_local_timer_interrupt(int irq, struct pt_regs *regs)
 void (*board_time_init)(void);
 void (*board_timer_setup)(struct irqaction *irq);
 
-unsigned int mips_counter_frequency;
+unsigned int mips_hpt_frequency;
 
 static struct irqaction timer_irqaction = {
 	.handler = timer_interrupt,
 	.flags = SA_INTERRUPT,
 	.name = "timer",
 };
+
+static unsigned int __init calibrate_hpt(void)
+{
+	u64 frequency;
+	u32 hpt_start, hpt_end, hpt_count, hz;
+
+	const int loops = HZ / 10;
+	int log_2_loops = 0;
+	int i;
+
+	/*
+	 * We want to calibrate for 0.1s, but to avoid a 64-bit
+	 * division we round the number of loops up to the nearest
+	 * power of 2.
+	 */
+	while (loops > 1 << log_2_loops)
+		log_2_loops++;
+	i = 1 << log_2_loops;
+
+	/*
+	 * Wait for a rising edge of the timer interrupt.
+	 */
+	while (mips_timer_state());
+	while (!mips_timer_state());
+
+	/*
+	 * Now see how many high precision timer ticks happen
+	 * during the calculated number of periods between timer
+	 * interrupts.
+	 */
+	hpt_start = mips_hpt_read();
+	do {
+		while (mips_timer_state());
+		while (!mips_timer_state());
+	} while (--i);
+	hpt_end = mips_hpt_read();
+
+	hpt_count = hpt_end - hpt_start;
+	hz = HZ;
+	frequency = (u64)hpt_count * (u64)hz;
+
+	return frequency >> log_2_loops;
+}
 
 void __init time_init(void)
 {
@@ -555,7 +633,7 @@ void __init time_init(void)
 		/* No high precision timer -- sorry.  */
 		mips_hpt_read = null_hpt_read;
 		mips_hpt_init = null_hpt_init;
-	} else if (!mips_counter_frequency) {
+	} else if (!mips_hpt_frequency && !mips_timer_state) {
 		/* A high precision timer of unknown frequency.  */
 		if (!mips_hpt_read) {
 			/* No external high precision timer -- use R4k.  */
@@ -578,27 +656,36 @@ void __init time_init(void)
 			 */
 			do_gettimeoffset = calibrate_div64_gettimeoffset;
 	} else {
-		/* We know counter frequency! */
+		/* We know counter frequency.  Or we can get it.  */
 		if (!mips_hpt_read) {
 			/* No external high precision timer -- use R4k.  */
 			mips_hpt_read = c0_hpt_read;
-			mips_hpt_init = c0_fixed_hpt_init;
 
-			if (!mips_timer_ack)
-				/* R4k timer interrupt ack.  */
-				mips_timer_ack = c0_fixed_timer_ack;
+			if (mips_timer_state)
+				mips_hpt_init = c0_hpt_init;
+			else {
+				/* No external timer interrupt -- use R4k.  */
+				mips_hpt_init = c0_hpt_timer_init;
+				mips_timer_ack = c0_timer_ack;
+			}
 		}
+		if (!mips_hpt_frequency)
+			mips_hpt_frequency = calibrate_hpt();
 
 		do_gettimeoffset = fixed_rate_gettimeoffset;
 
 		/* Calculate cache parameters.  */
-		cycles_per_jiffy = mips_counter_frequency / HZ;
+		cycles_per_jiffy = (mips_hpt_frequency + HZ / 2) / HZ;
 
 		/* sll32_usecs_per_cycle = 10^6 * 2^32 / mips_counter_freq  */
-		/* Any better way to do this?  */
-		sll32_usecs_per_cycle = mips_counter_frequency / 100000;
-		sll32_usecs_per_cycle = 0xffffffff / sll32_usecs_per_cycle;
-		sll32_usecs_per_cycle *= 10;
+		do_div64_32(sll32_usecs_per_cycle,
+			    1000000, mips_hpt_frequency / 2,
+			    mips_hpt_frequency);
+
+		/* Report the high precision timer rate for a reference.  */
+		printk("Using %u.%03u MHz high precision timer.\n",
+		       ((mips_hpt_frequency + 500) / 1000) / 1000,
+		       ((mips_hpt_frequency + 500) / 1000) % 1000);
 	}
 
 	if (!mips_timer_ack)

@@ -4,7 +4,7 @@
  * for more details.
  *
  * Copyright (C) 1994, 1995 Waldorf GmbH
- * Copyright (C) 1994 - 2000 Ralf Baechle
+ * Copyright (C) 1994 - 2000, 03 Ralf Baechle
  * Copyright (C) 1999, 2000 Silicon Graphics, Inc.
  */
 #ifndef _ASM_IO_H
@@ -14,6 +14,10 @@
 #include <asm/addrspace.h>
 #include <asm/page.h>
 #include <asm/byteorder.h>
+
+#ifdef CONFIG_MIPS_COBALT
+#include <asm/cobalt/io.h>
+#endif
 
 #ifdef CONFIG_DECSTATION
 #include <asm/dec/io.h>

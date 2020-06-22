@@ -13,6 +13,7 @@
 #include <asm/pgalloc.h>
 #include <asm/setup.h>
 #include <asm/softirq.h>
+#include <asm/ioctl32.h>
 #if CONFIG_IP_MULTICAST
 #include <net/arp.h>
 #endif
@@ -26,6 +27,7 @@ EXPORT_SYMBOL_NOVERS(_zb_findmap);
 EXPORT_SYMBOL_NOVERS(__copy_from_user_asm);
 EXPORT_SYMBOL_NOVERS(__copy_to_user_asm);
 EXPORT_SYMBOL_NOVERS(__clear_user_asm);
+EXPORT_SYMBOL(diag10);
 
 /*
  * semaphore ops
@@ -66,14 +68,9 @@ EXPORT_SYMBOL(overflowgid);
 /*
  * Dynamically add/remove 31 bit ioctl conversion functions.
  */
-extern int register_ioctl32_conversion(unsigned int cmd,
-				       int (*handler)(unsigned int, 
-						      unsigned int,
-						      unsigned long,
-						      struct file *));
-int unregister_ioctl32_conversion(unsigned int cmd);
 EXPORT_SYMBOL(register_ioctl32_conversion);
 EXPORT_SYMBOL(unregister_ioctl32_conversion);
+EXPORT_SYMBOL(sys_ioctl);
 #endif
 
 /*

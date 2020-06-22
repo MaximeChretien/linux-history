@@ -78,7 +78,7 @@ endif
 # SK_DBGCAT_DRV_INT_SRC         0x04000000      interrupts sources
 # SK_DBGCAT_DRV_EVENT           0x08000000      driver events
 
-EXTRA_CFLAGS += -I. -DSK_USE_CSUM -DGENESIS -DYUKON $(DBGDEF) $(SKPARAM)
+EXTRA_CFLAGS += -I. -DSK_DIAG_SUPPORT -DSK_USE_CSUM -DGENESIS -DYUKON $(DBGDEF) $(SKPARAM)
 
 include $(TOPDIR)/Rules.make
 

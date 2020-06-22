@@ -317,6 +317,7 @@
 #define	    WRS_SYSTEM		3		/* WDT forced system reset */
 #define	  TSR_PIS		0x08000000	/* PIT Interrupt Status */
 #define	  TSR_FIS		0x04000000	/* FIT Interrupt Status */
+#define SPRN_VRSAVE	0x100	/* Vector Register Save Register */
 #define	SPRN_XER	0x001	/* Fixed Point Exception Register */
 #define	SPRN_ZPR	0x3B0	/* Zone Protection Register */
 
@@ -485,6 +486,7 @@
 #define	PV_ICESTAR	0x0036
 #define	PV_SSTAR	0x0037
 #define	PV_POWER4p	0x0038
+#define PV_POWER4ul	0x0039
 #define	PV_630        	0x0040
 #define	PV_630p	        0x0041
 
@@ -492,6 +494,7 @@
 #define PLATFORM_PSERIES      0x0100
 #define PLATFORM_PSERIES_LPAR 0x0101
 #define PLATFORM_ISERIES_LPAR 0x0201
+#define PLATFORM_LPAR         0x0001
 	
 /*
  * List of interrupt controllers.
@@ -612,8 +615,11 @@ extern long arch_kernel_thread(int (*fn)(void *), void *arg, unsigned long flags
 #define MCA_bus 0
 #define MCA_bus__is_a_macro /* for versions in ksyms.c */
 
+#ifndef CONFIG_SMP
 /* Lazy FPU handling on uni-processor */
 extern struct task_struct *last_task_used_math;
+extern struct task_struct *last_task_used_altivec;
+#endif /* CONFIG_SMP */
 
 
 #ifdef __KERNEL__
@@ -657,6 +663,11 @@ struct thread_struct {
 	unsigned long	fpexc_mode;	/* Floating-point exception mode */
 	unsigned long	saved_msr;	/* Save MSR across signal handlers */
 	unsigned long	saved_softe;	/* Ditto for Soft Enable/Disable */
+#ifdef CONFIG_ALTIVEC
+	vector128	vr[32];		/* Complete AltiVec set */
+	vector128	vscr;		/* AltiVec status */
+	u32             vrsave[2];      /* 32 bit vrsave is in vrsave[1] */
+#endif /* CONFIG_ALTIVEC */
 };
 
 #define PPC_FLAG_32BIT		0x01

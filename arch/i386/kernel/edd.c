@@ -1,7 +1,8 @@
 /*
  * linux/arch/i386/kernel/edd.c
- *  Copyright (C) 2002 Dell Computer Corporation
+ *  Copyright (C) 2002, 2003 Dell, Inc.
  *  by Matt Domsch <Matt_Domsch@dell.com>
+ *  disk80 signature by Matt Domsch, Andrew Wilks, and Sandeep K. Shandilya
  *
  * BIOS Enhanced Disk Drive Services (EDD)
  * conformant to T13 Committee www.t13.org
@@ -27,7 +28,6 @@
 /*
  * TODO:
  * - move edd.[ch] to better locations if/when one is decided
- * - keep current with 2.5 EDD code changes
  */
 
 #include <linux/module.h>
@@ -46,7 +46,7 @@ MODULE_AUTHOR("Matt Domsch <Matt_Domsch@Dell.com>");
 MODULE_DESCRIPTION("proc interface to BIOS EDD information");
 MODULE_LICENSE("GPL");
 
-#define EDD_VERSION "0.09 2003-Jan-21"
+#define EDD_VERSION "0.10 2003-Dec-05"
 #define EDD_DEVICE_NAME_SIZE 16
 #define REPORT_URL "http://domsch.com/linux/edd30/results.html"
 
@@ -333,6 +333,18 @@ edd_show_version(char *page, char **start, off_t off, int count, int *eof, void 
 }
 
 static int
+edd_show_disk80_sig(char *page, char **start, off_t off, int count, int *eof, void *data)
+{
+	char *p = page;
+	if ( !page || off) {
+		return proc_calc_metrics(page, start, off, count, eof, 0);
+	}
+
+	p += snprintf(p, left, "0x%08x\n", edd_disk80_sig);
+	return proc_calc_metrics(page, start, off, count, eof, (p - page));
+}
+
+static int
 edd_show_extensions(char *page, char **start, off_t off, int count, int *eof, void *data)
 {
 	struct edd_info *info = data;
@@ -491,6 +503,15 @@ edd_has_edd30(struct edd_device *edev)
 	return 1;
 }
 
+static int
+edd_has_disk80_sig(struct edd_device *edev)
+{
+	struct edd_info *info = edd_dev_get_info(edev);
+	if (!edev || !info)
+		return 0;
+	return info->device == 0x80;
+}
+
 static EDD_DEVICE_ATTR(raw_data, edd_show_raw_data, NULL);
 static EDD_DEVICE_ATTR(version, edd_show_version, NULL);
 static EDD_DEVICE_ATTR(extensions, edd_show_extensions, NULL);
@@ -505,6 +526,7 @@ static EDD_DEVICE_ATTR(default_sectors_per_track,
 		       edd_has_default_sectors_per_track);
 static EDD_DEVICE_ATTR(interface, edd_show_interface,edd_has_edd30);
 static EDD_DEVICE_ATTR(host_bus, edd_show_host_bus, edd_has_edd30);
+static EDD_DEVICE_ATTR(mbr_signature, edd_show_disk80_sig, edd_has_disk80_sig);
 
 static struct edd_attribute *def_attrs[] = {
 	&edd_attr_raw_data,
@@ -517,6 +539,7 @@ static struct edd_attribute *def_attrs[] = {
 	&edd_attr_default_sectors_per_track,
 	&edd_attr_interface,
 	&edd_attr_host_bus,
+	&edd_attr_mbr_signature,
 	NULL,
 };
 

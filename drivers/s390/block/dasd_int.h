@@ -5,7 +5,7 @@
  * Bugreports.to..: <Linux390@de.ibm.com>
  * (C) IBM Corporation, IBM Deutschland Entwicklung GmbH, 1999,2000
  *
- * $Revision: 1.26 $
+ * $Revision: 1.36 $
  *
  * History of changes (starts July 2000)
  * 02/01/01 added dynamic registration of ioctls
@@ -292,6 +292,7 @@ do { \
                       d_args); \
 } while(0)
 
+/* general messages to be written via klogd and dbf */
 #define MESSAGE(d_loglevel,d_string,d_args...)\
 do { \
         printk(d_loglevel PRINTK_HEADER \
@@ -301,6 +302,14 @@ do { \
         DBF_EVENT(DBF_ALERT, \
                   d_string, \
                   d_args); \
+} while(0)
+
+/* general messages to be written via klogd only */
+#define MESSAGE_LOG(d_loglevel,d_string,d_args...)\
+do { \
+        printk(d_loglevel PRINTK_HEADER \
+               " " d_string "\n", \
+               d_args); \
 } while(0)
 
 struct dasd_device_t;
@@ -321,11 +330,13 @@ typedef int    (*dasd_io_stopper_fn_t)         (ccw_req_t *);
 typedef int    (*dasd_info_fn_t)               (struct dasd_device_t *, 
                                                 dasd_information2_t *);
 typedef int    (*dasd_use_count_fn_t)          (int);
+typedef int    (*dasd_get_attrib_fn_t)         (struct dasd_device_t *, 
+                                                struct attrib_data_t *);
 typedef int    (*dasd_set_attrib_fn_t)         (struct dasd_device_t *, 
                                                 struct attrib_data_t *);
 typedef void   (*dasd_int_handler_fn_t)        (int irq, void *, 
                                                 struct pt_regs *);
-typedef char * (*dasd_dump_sense_fn_t)         (struct dasd_device_t *,
+typedef void   (*dasd_dump_sense_fn_t)         (struct dasd_device_t *,
                                                 ccw_req_t *);
 typedef ccw_req_t *(*dasd_format_fn_t)         (struct dasd_device_t *, 
                                                 struct format_data_t *);
@@ -378,6 +389,7 @@ typedef struct dasd_discipline_t {
         dasd_info_fn_t               fill_info;
         dasd_read_stats_fn_t         read_stats;
         dasd_ret_stats_fn_t          ret_stats;             /* return performance statistics */
+        dasd_get_attrib_fn_t         get_attrib;            /* get attributes (cache operations */ 
         dasd_set_attrib_fn_t         set_attrib;            /* set attributes (cache operations */ 
 	struct list_head list;	/* used for list of disciplines */
 } dasd_discipline_t;
@@ -429,9 +441,13 @@ typedef struct dasd_device_t {
         dasd_profile_info_t profile;
         ccw_req_t *init_cqr;
         atomic_t plugged;
-        int accessible; /* set to !=0 if doing IO is permitted */
+        int stopped;                         /* device (do_IO) was stopped */
         struct list_head lowmem_pool;
 }  dasd_device_t;
+
+/* reasons why device (do_IO) was stopped */
+#define DASD_STOPPED_NOT_ACC 1         /* not accessible */
+#define DASD_STOPPED_PENDING 2         /* long busy */
 
 
 int  dasd_init               (void);

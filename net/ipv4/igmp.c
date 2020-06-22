@@ -122,10 +122,14 @@
  * contradict to specs provided this delay is small enough.
  */
 
-#define IGMP_V1_SEEN(in_dev) ((in_dev)->mr_v1_seen && \
-		time_before(jiffies, (in_dev)->mr_v1_seen))
-#define IGMP_V2_SEEN(in_dev) ((in_dev)->mr_v2_seen && \
-		time_before(jiffies, (in_dev)->mr_v2_seen))
+#define IGMP_V1_SEEN(in_dev) (ipv4_devconf.force_igmp_version == 1 || \
+		(in_dev)->cnf.force_igmp_version == 1 || \
+		((in_dev)->mr_v1_seen && \
+		time_before(jiffies, (in_dev)->mr_v1_seen)))
+#define IGMP_V2_SEEN(in_dev) (ipv4_devconf.force_igmp_version == 2 || \
+		(in_dev)->cnf.force_igmp_version == 2 || \
+		((in_dev)->mr_v2_seen && \
+		time_before(jiffies, (in_dev)->mr_v2_seen)))
 
 static void igmpv3_add_delrec(struct in_device *in_dev, struct ip_mc_list *im);
 static void igmpv3_del_delrec(struct in_device *in_dev, __u32 multiaddr);
@@ -1051,7 +1055,7 @@ static void igmp_group_dropped(struct ip_mc_list *im)
 	reporter = im->reporter;
 	igmp_stop_timer(im);
 
-	if (in_dev->dev->flags & IFF_UP) {
+	if (!in_dev->dead) {
 		if (IGMP_V1_SEEN(in_dev))
 			goto done;
 		if (IGMP_V2_SEEN(in_dev)) {
@@ -1082,6 +1086,8 @@ static void igmp_group_added(struct ip_mc_list *im)
 	if (im->multiaddr == IGMP_ALL_HOSTS)
 		return;
 
+	if (in_dev->dead)
+		return;
 	if (IGMP_V1_SEEN(in_dev) || IGMP_V2_SEEN(in_dev)) {
 		spin_lock_bh(&im->lock);
 		igmp_start_timer(im, IGMP_Initial_Report_Delay);
@@ -1155,7 +1161,7 @@ void ip_mc_inc_group(struct in_device *in_dev, u32 addr)
 	igmpv3_del_delrec(in_dev, im->multiaddr);
 #endif
 	igmp_group_added(im);
-	if (in_dev->dev->flags & IFF_UP)
+	if (!in_dev->dead)
 		ip_rt_multicast_event(in_dev);
 out:
 	return;
@@ -1179,7 +1185,7 @@ void ip_mc_dec_group(struct in_device *in_dev, u32 addr)
 				write_unlock_bh(&in_dev->lock);
 				igmp_group_dropped(i);
 
-				if (in_dev->dev->flags & IFF_UP)
+				if (!in_dev->dead)
 					ip_rt_multicast_event(in_dev);
 
 				ip_ma_put(i);
@@ -1254,6 +1260,9 @@ void ip_mc_destroy_dev(struct in_device *in_dev)
 	struct ip_mc_list *i;
 
 	ASSERT_RTNL();
+
+	/* Deactivate timers */
+	ip_mc_down(in_dev);
 
 	write_lock_bh(&in_dev->lock);
 	while ((i = in_dev->mc_list) != NULL) {
@@ -1731,11 +1740,10 @@ int ip_mc_source(int add, int omode, struct sock *sk, struct
 			goto done;
 	} else if (pmc->sfmode != omode) {
 		/* allow mode switches for empty-set filters */
+		ip_mc_add_src(in_dev, &mreqs->imr_multiaddr, omode, 0, 0, 0);
 		ip_mc_del_src(in_dev, &mreqs->imr_multiaddr, pmc->sfmode, 0, 
 			0, 0);
 		pmc->sfmode = omode;
-		ip_mc_add_src(in_dev, &mreqs->imr_multiaddr, pmc->sfmode, 0, 
-			0, 0);
 	}
 
 	psl = pmc->sflist;
@@ -2072,16 +2080,19 @@ int ip_check_mc(struct in_device *in_dev, u32 mc_addr, u32 src_addr)
 	 * Differs from 2.5.x here.	+-DLS 4/23/03
 	 */
 	if (im) {
-		for (psf=im->sources; psf; psf=psf->sf_next) {
-			if (psf->sf_inaddr == src_addr)
-				break;
-		}
-		if (psf)
-			rv = psf->sf_count[MCAST_INCLUDE] ||
-				psf->sf_count[MCAST_EXCLUDE] !=
-				im->sfcount[MCAST_EXCLUDE];
-		else
-			rv = im->sfcount[MCAST_EXCLUDE] != 0;
+		if (src_addr) {
+			for (psf=im->sources; psf; psf=psf->sf_next) {
+				if (psf->sf_inaddr == src_addr)
+					break;
+			}
+			if (psf)
+				rv = psf->sf_count[MCAST_INCLUDE] ||
+					psf->sf_count[MCAST_EXCLUDE] !=
+					im->sfcount[MCAST_EXCLUDE];
+			else
+				rv = im->sfcount[MCAST_EXCLUDE] != 0;
+		} else
+			rv = 1;
 	}
 	read_unlock(&in_dev->lock);
 	return rv;

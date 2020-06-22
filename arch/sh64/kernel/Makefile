@@ -29,7 +29,7 @@ endif
 
 obj-$(CONFIG_SH_DMA)		+= dma.o
 
-export-objs := sh_ksyms.o
+export-objs := sh_ksyms.o dma.o
 
 ifndef CONFIG_NOFPU_SUPPORT
 obj-y	+= fpu.o

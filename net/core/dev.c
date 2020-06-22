@@ -1501,8 +1501,8 @@ int netif_receive_skb(struct sk_buff *skb)
 #endif /* CONFIG_NET_DIVERT */
 			
 #if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
-	if (skb->dev->br_port != NULL &&
-	    br_handle_frame_hook != NULL) {
+	if (skb->dev->br_port != NULL && br_handle_frame_hook != NULL &&
+	    skb->pkt_type != PACKET_LOOPBACK) {
 		return handle_bridge(skb, pt_prev);
 	}
 #endif

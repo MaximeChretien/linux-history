@@ -18,7 +18,7 @@
 #include <asm/unistd.h>
 
 /* Highest syscall used of any syscall flavour */
-#define MAX_SYSCALL_NO	__NR_Linux + __NR_Linux_syscalls
+#define MAX_SYSCALL_NO	__NR_O32_Linux + __NR_O32_Linux_syscalls
 
 	.align  5
 NESTED(handle_sys, PT_SIZE, sp)
@@ -309,7 +309,7 @@ END(sys_sysmips)
 LEAF(sys_syscall)
 	lw	t0, PT_R29(sp)		# user sp
 
-	sltu	v0, a0, __NR_Linux + __NR_Linux_syscalls + 1
+	sltu	v0, a0, __NR_O32_Linux + __NR_O32_Linux_syscalls + 1
 	beqz	v0, enosys
 
 	sll	v0, a0, 2

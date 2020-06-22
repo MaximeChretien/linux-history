@@ -9,7 +9,9 @@
  * as published by the Free Software Foundation; either version
  * 2 of the License, or (at your option) any later version.
  */
+#include <asm/types.h>
 #include <asm/ptrace.h>
+#include <asm/cputable.h>
 
 #define ELF_NGREG	48	/* includes nip, msr, lr, etc. */
 #define ELF_NFPREG	33	/* includes fpscr */
@@ -40,8 +42,14 @@ typedef elf_greg_t32 elf_gregset_t32[ELF_NGREG];
 # define elf_caddr_t u32
 #endif
 
+/* Floating point registers */
 typedef double elf_fpreg_t;
 typedef elf_fpreg_t elf_fpregset_t[ELF_NFPREG];
+
+/* Altivec registers */
+typedef __vector128 elf_vrreg_t;
+typedef elf_vrreg_t elf_vrregset_t[ELF_NVRREG];
+
 
 #ifdef __KERNEL__
 
@@ -77,7 +85,7 @@ elf_core_copy_regs(elf_gregset_t dstRegs, struct pt_regs* srcRegs)
    instruction set this cpu supports.  This could be done in userspace,
    but it's not easy, and we've already done it here.  */
 
-#define ELF_HWCAP	(0)
+#define ELF_HWCAP	(cur_cpu_spec->cpu_user_features)
 
 /* This yields a string that ld.so will use to load implementation
    specific libraries for optimization.  This is more specific in

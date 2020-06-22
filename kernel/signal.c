@@ -879,16 +879,16 @@ sys_rt_sigprocmask(int how, sigset_t *set, sigset_t *oset, size_t sigsetsize)
 			error = -EINVAL;
 			break;
 		case SIG_BLOCK:
-			sigorsets(&new_set, &old_set, &new_set);
+			sigorsets(&current->blocked, &old_set, &new_set);
 			break;
 		case SIG_UNBLOCK:
-			signandsets(&new_set, &old_set, &new_set);
+			signandsets(&current->blocked, &old_set, &new_set);
 			break;
 		case SIG_SETMASK:
+			current->blocked = new_set;
 			break;
 		}
 
-		current->blocked = new_set;
 		recalc_sigpending(current);
 		spin_unlock_irq(&current->sigmask_lock);
 		if (error)

@@ -70,7 +70,7 @@
 
 extern struct rtc_ops no_rtc_ops;
 
-#ifdef CONFIG_GALILLEO_GT64240_ETH
+#ifdef CONFIG_GALILEO_GT64240_ETH
 extern unsigned char prom_mac_addr_base[6];
 #endif
 
@@ -141,7 +141,7 @@ void __init momenco_ocelot_g_setup(void)
 	/* do handoff reconfiguration */
 	PMON_v2_setup();
 
-#ifdef CONFIG_GALILLEO_GT64240_ETH
+#ifdef CONFIG_GALILEO_GT64240_ETH
 	/* get the mac addr */
 	memcpy(prom_mac_addr_base, (void*)0xfc807cf2, 6);
 #endif

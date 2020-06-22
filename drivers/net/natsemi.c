@@ -164,6 +164,7 @@
 #include <linux/delay.h>
 #include <linux/rtnetlink.h>
 #include <linux/mii.h>
+#include <linux/crc32.h>
 #include <asm/processor.h>	/* Processor type for cache alignment. */
 #include <asm/bitops.h>
 #include <asm/io.h>
@@ -365,7 +366,7 @@ static struct {
 	{ "NatSemi DP8381[56]", PCI_IOTYPE },
 };
 
-static struct pci_device_id natsemi_pci_tbl[] __devinitdata = {
+static struct pci_device_id natsemi_pci_tbl[] = {
 	{ PCI_VENDOR_ID_NS, PCI_DEVICE_ID_NS_83815, PCI_ANY_ID, PCI_ANY_ID, },
 	{ 0, },
 };
@@ -695,7 +696,7 @@ static void free_ring(struct net_device *dev);
 static void reinit_ring(struct net_device *dev);
 static void init_registers(struct net_device *dev);
 static int start_tx(struct sk_buff *skb, struct net_device *dev);
-static void intr_handler(int irq, void *dev_instance, struct pt_regs *regs);
+static irqreturn_t intr_handler(int irq, void *dev_instance, struct pt_regs *regs);
 static void netdev_error(struct net_device *dev, int intr_status);
 static void netdev_rx(struct net_device *dev);
 static void netdev_tx_done(struct net_device *dev);
@@ -763,19 +764,13 @@ static int __devinit natsemi_probe1 (struct pci_dev *pdev,
 	SET_MODULE_OWNER(dev);
 
 	i = pci_request_regions(pdev, dev->name);
-	if (i) {
-		kfree(dev);
-		return i;
-	}
+	if (i)
+		goto err_pci_request_regions;
 
-	{
-		void *mmio = ioremap (ioaddr, iosize);
-		if (!mmio) {
-			pci_release_regions(pdev);
-			kfree(dev);
-			return -ENOMEM;
-		}
-		ioaddr = (unsigned long) mmio;
+	ioaddr = (unsigned long) ioremap (ioaddr, iosize);
+	if (!ioaddr) {
+		i = -ENOMEM;
+		goto err_ioremap;
 	}
 
 	/* Work around the dropped serial bit. */
@@ -833,13 +828,9 @@ static int __devinit natsemi_probe1 (struct pci_dev *pdev,
 		dev->mtu = mtu;
 
 	i = register_netdev(dev);
-	if (i) {
-		pci_release_regions(pdev);
-		unregister_netdev(dev);
-		kfree(dev);
-		pci_set_drvdata(pdev, NULL);
-		return i;
-	}
+	if (i)
+		goto err_register_netdev;
+
 	netif_carrier_off(dev);
 
 	if (netif_msg_drv(np)) {
@@ -876,6 +867,17 @@ static int __devinit natsemi_probe1 (struct pci_dev *pdev,
 
 
 	return 0;
+
+ err_register_netdev:
+	iounmap ((void *) dev->base_addr);
+
+ err_ioremap:
+	pci_release_regions(pdev);
+	pci_set_drvdata(pdev, NULL);
+
+ err_pci_request_regions:
+	free_netdev(dev);
+	return i;
 }
 
 
@@ -1679,15 +1681,16 @@ static void netdev_tx_done(struct net_device *dev)
 
 /* The interrupt handler does all of the Rx thread work and cleans up
    after the Tx thread. */
-static void intr_handler(int irq, void *dev_instance, struct pt_regs *rgs)
+static irqreturn_t intr_handler(int irq, void *dev_instance, struct pt_regs *rgs)
 {
 	struct net_device *dev = dev_instance;
 	struct netdev_private *np = dev->priv;
 	long ioaddr = dev->base_addr;
 	int boguscnt = max_interrupt_work;
+	unsigned int handled = 0;
 
 	if (np->hands_off)
-		return;
+		return IRQ_NONE;
 	do {
 		/* Reading automatically acknowledges all int sources. */
 		u32 intr_status = readl(ioaddr + IntrStatus);
@@ -1700,6 +1703,7 @@ static void intr_handler(int irq, void *dev_instance, struct pt_regs *rgs)
 
 		if (intr_status == 0)
 			break;
+		handled = 1;
 
 		if (intr_status &
 		   (IntrRxDone | IntrRxIntr | RxStatusFIFOOver |
@@ -1730,6 +1734,8 @@ static void intr_handler(int irq, void *dev_instance, struct pt_regs *rgs)
 
 	if (netif_msg_intr(np))
 		printk(KERN_DEBUG "%s: exiting interrupt.\n", dev->name);
+
+	return IRQ_RETVAL(handled);
 }
 
 /* This routine is logically part of the interrupt handler, but separated
@@ -1898,44 +1904,6 @@ static struct net_device_stats *get_stats(struct net_device *dev)
 	return &np->stats;
 }
 
-/**
- * dp83815_crc - computer CRC for hash table entries
- *
- * Note - this is, for some reason, *not* the same function
- * as ether_crc_le() or ether_crc(), though it uses the
- * same big-endian polynomial.
- */
-#define DP_POLYNOMIAL			0x04C11DB7
-static unsigned dp83815_crc(int length, unsigned char *data)
-{
-	u32 crc;
-	u8 cur_byte;
-	u8 msb;
-	u8 byte, bit;
-
-	crc = ~0;
-	for (byte=0; byte<length; byte++) {
-		cur_byte = *data++;
-		for (bit=0; bit<8; bit++) {
-			msb = crc >> 31;
-			crc <<= 1;
-			if (msb ^ (cur_byte & 1)) {
-				crc ^= DP_POLYNOMIAL;
-				crc |= 1;
-			}
-			cur_byte >>= 1;
-		}
-	}
-	crc >>= 23;
-
-	return (crc);
-}
-
-
-void set_bit_le(int offset, unsigned char * data)
-{
-	data[offset >> 3] |= (1 << (offset & 0x07));
-}
 #define HASH_TABLE	0x200
 static void __set_rx_mode(struct net_device *dev)
 {
@@ -1960,9 +1928,8 @@ static void __set_rx_mode(struct net_device *dev)
 		memset(mc_filter, 0, sizeof(mc_filter));
 		for (i = 0, mclist = dev->mc_list; mclist && i < dev->mc_count;
 			 i++, mclist = mclist->next) {
-			set_bit_le(
-				dp83815_crc(ETH_ALEN, mclist->dmi_addr) & 0x1ff,
-				mc_filter);
+			int i = (ether_crc(ETH_ALEN, mclist->dmi_addr) >> 23) & 0x1ff;
+			mc_filter[i/8] |= (1 << (i & 0x07));
 		}
 		rx_mode = RxFilterEnable | AcceptBroadcast
 			| AcceptMulticast | AcceptMyPhys;
@@ -2000,7 +1967,7 @@ static int netdev_ethtool_ioctl(struct net_device *dev, void *useraddr)
 		strncpy(info.driver, DRV_NAME, ETHTOOL_BUSINFO_LEN);
 		strncpy(info.version, DRV_VERSION, ETHTOOL_BUSINFO_LEN);
 		info.fw_version[0] = '\0';
-		strncpy(info.bus_info, np->pci_dev->slot_name,
+		strncpy(info.bus_info, pci_name(np->pci_dev),
 			ETHTOOL_BUSINFO_LEN);
 		info.eedump_len = NATSEMI_EEPROM_SIZE;
 		info.regdump_len = NATSEMI_REGS_SIZE;
@@ -2585,7 +2552,7 @@ static void __devexit natsemi_remove1 (struct pci_dev *pdev)
 	unregister_netdev (dev);
 	pci_release_regions (pdev);
 	iounmap ((char *) dev->base_addr);
-	kfree (dev);
+	free_netdev (dev);
 	pci_set_drvdata(pdev, NULL);
 }
 
@@ -2646,7 +2613,7 @@ static int natsemi_suspend (struct pci_dev *pdev, u32 state)
 			if (wol) {
 				/* restart the NIC in WOL mode.
 				 * The nic must be stopped for this.
-				 * FIXME: use the WOL interupt
+				 * FIXME: use the WOL interrupt
 				 */
 				enable_wol_mode(dev, 0);
 			} else {

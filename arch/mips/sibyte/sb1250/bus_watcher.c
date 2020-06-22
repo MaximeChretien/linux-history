@@ -174,8 +174,22 @@ static void sibyte_bw_int(int irq, void *data, struct pt_regs *regs)
 {
 	struct bw_stats_struct *stats = data;
 	unsigned long cntr;
+#ifdef CONFIG_SIBYTE_BW_TRACE
+	int i;
+#endif
 #ifndef CONFIG_PROC_FS
 	char bw_buf[1024];
+#endif
+
+#ifdef CONFIG_SIBYTE_BW_TRACE
+	csr_out32(M_SCD_TRACE_CFG_FREEZE, IO_SPACE_BASE | A_SCD_TRACE_CFG);
+	csr_out32(M_SCD_TRACE_CFG_START_READ, IO_SPACE_BASE | A_SCD_TRACE_CFG);
+
+	for (i=0; i<256*6; i++)
+		printk("%016llx\n", in64(IO_SPACE_BASE | A_SCD_TRACE_READ));
+
+	csr_out32(M_SCD_TRACE_CFG_RESET, IO_SPACE_BASE | A_SCD_TRACE_CFG);
+	csr_out32(M_SCD_TRACE_CFG_START, IO_SPACE_BASE | A_SCD_TRACE_CFG);
 #endif
 
 	/* Destructive read, clears register and interrupt */
@@ -224,6 +238,14 @@ int __init sibyte_bus_watcher(void)
 
 #ifdef CONFIG_PROC_FS
 	create_proc_decoder(&bw_stats);
+#endif
+
+#ifdef CONFIG_SIBYTE_BW_TRACE
+	csr_out32((M_SCD_TRSEQ_ASAMPLE | M_SCD_TRSEQ_DSAMPLE |
+	       K_SCD_TRSEQ_TRIGGER_ALL),
+	      IO_SPACE_BASE | A_SCD_TRACE_SEQUENCE_0);
+	csr_out32(M_SCD_TRACE_CFG_RESET, IO_SPACE_BASE | A_SCD_TRACE_CFG);
+	csr_out32(M_SCD_TRACE_CFG_START, IO_SPACE_BASE | A_SCD_TRACE_CFG);
 #endif
 
 	return 0;

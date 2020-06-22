@@ -676,49 +676,53 @@ repeat:
 			continue;
 		flag = 1;
 		switch (p->state) {
-			case TASK_STOPPED:
-				if (!p->exit_code)
-					continue;
-				if (!(options & (W_TRAPPED|W_STOPPED)) &&
-				    !(p->ptrace & PT_PTRACED))
-					continue;
-				if (ru != NULL)
-					getrusage(p, RUSAGE_BOTH, ru);
-				__put_user(SIGCHLD, &info->sig);
-				__put_user(0, &info->code);
-				__put_user(p->pid, &info->stuff.procinfo.pid);
-				__put_user((p->exit_code >> 8) & 0xff,
-				           &info->stuff.procinfo.procdata.child.status);
-				__put_user(p->times.tms_utime, &info->stuff.procinfo.procdata.child.utime);
-				__put_user(p->times.tms_stime, &info->stuff.procinfo.procdata.child.stime);
-				p->exit_code = 0;
-				retval = 0;
-				goto end_waitsys;
-			case TASK_ZOMBIE:
-				current->times.tms_cutime += p->times.tms_utime + p->times.tms_cutime;
-				current->times.tms_cstime += p->times.tms_stime + p->times.tms_cstime;
-				if (ru != NULL)
-					getrusage(p, RUSAGE_BOTH, ru);
-				__put_user(SIGCHLD, &info->sig);
-				__put_user(1, &info->code);      /* CLD_EXITED */
-				__put_user(p->pid, &info->stuff.procinfo.pid);
-				__put_user((p->exit_code >> 8) & 0xff,
-				           &info->stuff.procinfo.procdata.child.status);
-				__put_user(p->times.tms_utime,
-				           &info->stuff.procinfo.procdata.child.utime);
-				__put_user(p->times.tms_stime,
-				           &info->stuff.procinfo.procdata.child.stime);
-				retval = 0;
-				if (p->p_opptr != p->p_pptr) {
-					REMOVE_LINKS(p);
-					p->p_pptr = p->p_opptr;
-					SET_LINKS(p);
-					notify_parent(p, SIGCHLD);
-				} else
-					release_task(p);
-				goto end_waitsys;
-			default:
+		case TASK_STOPPED:
+			if (!p->exit_code)
 				continue;
+			if (!(options & (W_TRAPPED|W_STOPPED)) &&
+			    !(p->ptrace & PT_PTRACED))
+				continue;
+			read_unlock(&tasklist_lock);
+			if (ru != NULL)
+				getrusage(p, RUSAGE_BOTH, ru);
+			__put_user(SIGCHLD, &info->sig);
+			__put_user(0, &info->code);
+			__put_user(p->pid, &info->stuff.procinfo.pid);
+			__put_user((p->exit_code >> 8) & 0xff,
+			           &info->stuff.procinfo.procdata.child.status);
+			__put_user(p->times.tms_utime, &info->stuff.procinfo.procdata.child.utime);
+			__put_user(p->times.tms_stime, &info->stuff.procinfo.procdata.child.stime);
+			p->exit_code = 0;
+			retval = 0;
+			goto end_waitsys;
+		case TASK_ZOMBIE:
+			current->times.tms_cutime += p->times.tms_utime + p->times.tms_cutime;
+			current->times.tms_cstime += p->times.tms_stime + p->times.tms_cstime;
+			read_unlock(&tasklist_lock);
+			if (ru != NULL)
+				getrusage(p, RUSAGE_BOTH, ru);
+			__put_user(SIGCHLD, &info->sig);
+			__put_user(1, &info->code);      /* CLD_EXITED */
+			__put_user(p->pid, &info->stuff.procinfo.pid);
+			__put_user((p->exit_code >> 8) & 0xff,
+			           &info->stuff.procinfo.procdata.child.status);
+			__put_user(p->times.tms_utime,
+			           &info->stuff.procinfo.procdata.child.utime);
+			__put_user(p->times.tms_stime,
+			           &info->stuff.procinfo.procdata.child.stime);
+			retval = 0;
+			if (p->p_opptr != p->p_pptr) {
+				write_lock_irq(&tasklist_lock);
+				REMOVE_LINKS(p);
+				p->p_pptr = p->p_opptr;
+				SET_LINKS(p);
+				notify_parent(p, SIGCHLD);
+				write_unlock_irq(&tasklist_lock);
+			} else
+				release_task(p);
+			goto end_waitsys;
+		default:
+			continue;
 		}
 	}
 	read_unlock(&tasklist_lock);

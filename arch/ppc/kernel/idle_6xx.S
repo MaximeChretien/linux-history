@@ -52,7 +52,7 @@ BEGIN_FTR_SECTION
 	mfspr	r4,SPRN_HID1
 	addis	r6,r5,nap_save_hid1@ha
 	stw	r4,nap_save_hid1@l(r6)
-END_FTR_SECTION_IFSET(CPU_FTR_DUAL_PLL_750FX)
+END_FTR_SECTION_IFSET(CPU_FTR_750FX)
 	blr
 
 /*
@@ -139,7 +139,7 @@ BEGIN_FTR_SECTION
 	oris	r4,r4,0x0001
 	mtspr	SPRN_HID1,r4
 1:
-END_FTR_SECTION_IFSET(CPU_FTR_DUAL_PLL_750FX)
+END_FTR_SECTION_IFSET(CPU_FTR_750FX)
 
 	/* Go to NAP or DOZE now */
 	mfspr	r4,SPRN_HID0
@@ -210,7 +210,7 @@ BEGIN_FTR_SECTION
 	addis	r22,r24,(nap_save_hid1-KERNELBASE)@ha
 	lwz	r22,nap_save_hid1@l(r22)
 	mtspr	SPRN_HID1, r22
-END_FTR_SECTION_IFSET(CPU_FTR_DUAL_PLL_750FX)
+END_FTR_SECTION_IFSET(CPU_FTR_750FX)
 	b	transfer_to_handler_cont
 
 	.data

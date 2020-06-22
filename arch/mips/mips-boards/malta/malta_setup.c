@@ -45,11 +45,6 @@
 #include <linux/console.h>
 #endif
 
-#if defined(CONFIG_SERIAL_CONSOLE) || defined(CONFIG_PROM_CONSOLE)
-extern void console_setup(char *, int *);
-char serial_console[20];
-#endif
-
 #ifdef CONFIG_KGDB
 extern void rs_kgdb_hook(int);
 int remote_debug = 0;

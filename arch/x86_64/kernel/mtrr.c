@@ -70,6 +70,9 @@
 
 #define MTRR_VERSION "2.02 (20020716)"
 
+#define MTRR_BEG_BIT 12
+#define MTRR_END_BIT 7
+
 #undef Dprintk
 
 #define Dprintk(...) 
@@ -192,8 +195,9 @@ static u64 size_or_mask, size_and_mask;
 
 static void get_mtrr (unsigned int reg, u64 *base, u32 *size, mtrr_type * type)
 {
-	u32 mask_lo, mask_hi, base_lo, base_hi;
-	u64 newsize;
+	u32 count, tmp, mask_lo, mask_hi;
+	int i;
+	u32 base_lo, base_hi;
 
 	rdmsr (MSR_MTRRphysMask(reg), mask_lo, mask_hi);
 	if ((mask_lo & 0x800) == 0) {
@@ -206,10 +210,16 @@ static void get_mtrr (unsigned int reg, u64 *base, u32 *size, mtrr_type * type)
 
 	rdmsr (MSR_MTRRphysBase(reg), base_lo, base_hi);
 
-	/* Work out the shifted address mask. */
-	newsize = (u64) mask_hi << 32 | (mask_lo & ~0x800);
-	newsize = ~newsize+1;
-	*size = (u32) newsize >> PAGE_SHIFT;
+	count = 0;
+	tmp = mask_lo >> MTRR_BEG_BIT;
+	for (i = MTRR_BEG_BIT; i <= 31; i++, tmp = tmp >> 1)
+		count = (count << (~tmp & 1)) | (~tmp & 1);
+	
+	tmp = mask_hi;
+	for (i = 0; i <= MTRR_END_BIT; i++, tmp = tmp >> 1)
+		count = (count << (~tmp & 1)) | (~tmp & 1);
+	
+	*size = (count+1); 
 	*base = base_hi << (32 - PAGE_SHIFT) | base_lo >> PAGE_SHIFT;
 	*type = base_lo & 0xff;
 }
@@ -243,7 +253,7 @@ static void set_mtrr_up (unsigned int reg, u64 base,
 		base64 = (base << PAGE_SHIFT) & size_and_mask;
 		wrmsr (MSR_MTRRphysBase(reg), base64 | type, base64 >> 32);
 
-		size64 = ~((size << PAGE_SHIFT) - 1);
+		size64 = ~(((u64)size << PAGE_SHIFT) - 1);
 		size64 = size64 & size_and_mask;
 		wrmsr (MSR_MTRRphysMask(reg), (u32) (size64 | 0x800), (u32) (size64 >> 32));
 	}

@@ -8,7 +8,7 @@
  * This allows to access 64bit processes too; but there is no way to see the extended 
  * register contents.
  *
- * $Id: ptrace32.c,v 1.17 2003/03/24 09:25:15 ak Exp $
+ * $Id: ptrace32.c,v 1.18 2004/01/29 00:50:29 ak Exp $
  */ 
 
 #include <linux/kernel.h>
@@ -24,6 +24,10 @@
 #include <asm/i387.h>
 #include <asm/fpu32.h>
 #include <linux/mm.h>
+
+/* determines which flags the user has access to. */
+/* 1 = access 0 = no access */
+#define FLAG_MASK 0x44dd5UL
 
 #define R32(l,q) \
 	case offsetof(struct user32, regs.l): stack[offsetof(struct pt_regs, q)/8] = val; break

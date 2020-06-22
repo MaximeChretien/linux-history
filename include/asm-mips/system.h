@@ -6,10 +6,6 @@
  * Copyright (C) 1994 - 1999 by Ralf Baechle
  * Copyright (C) 1996 by Paul M. Antoine
  * Copyright (C) 1994 - 1999 by Ralf Baechle
- *
- * Changed set_except_vector declaration to allow return of previous
- * vector address value - necessary for "borrowing" vectors.
- *
  * Kevin D. Kissell, kevink@mips.org and Carsten Langgaard, carstenl@mips.com
  * Copyright (C) 2000 MIPS Technologies, Inc.
  */
@@ -36,7 +32,7 @@ __asm__ (
 	".set\tpop\n\t"
 	".endm");
 
-extern __inline__ void
+static __inline__ void
 __sti(void)
 {
 	__asm__ __volatile__(
@@ -68,7 +64,7 @@ __asm__ (
 	".set\tpop\n\t"
 	".endm");
 
-extern __inline__ void
+static __inline__ void
 __cli(void)
 {
 	__asm__ __volatile__(
@@ -232,8 +228,8 @@ extern void __global_restore_flags(unsigned long);
 
 #define wmb()		fast_wmb()
 #define rmb()		fast_rmb()
-#define mb()		wbflush();
-#define iob()		wbflush();
+#define mb()		wbflush()
+#define iob()		wbflush()
 
 #else /* !CONFIG_CPU_HAS_WB */
 
@@ -279,7 +275,7 @@ do { \
  * For 32 and 64 bit operands we can take advantage of ll and sc.
  * FIXME: This doesn't work for R3000 machines.
  */
-extern __inline__ unsigned long xchg_u32(volatile int * m, unsigned long val)
+static __inline__ unsigned long xchg_u32(volatile int * m, unsigned long val)
 {
 #ifdef CONFIG_CPU_HAS_LLSC
 	unsigned long dummy;

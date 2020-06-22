@@ -394,7 +394,7 @@ static inline void bootmem_init(void)
 		if (PHYSADDR(initrd_end) > PFN_PHYS(max_low_pfn)) {
 			printk("initrd extends beyond end of memory "
 			       "(0x%08lx > 0x%08lx)\ndisabling initrd\n",
-			       PHYSADDR(initrd_end),
+			       (unsigned long) PHYSADDR(initrd_end),
 			       PFN_PHYS(max_low_pfn));
 			initrd_start = initrd_end = 0;
 		}
@@ -479,6 +479,7 @@ void __init setup_arch(char **cmdline_p)
 	void momenco_ocelot_setup(void);
 	void momenco_ocelot_g_setup(void);
 	void momenco_ocelot_c_setup(void);
+	void momenco_jaguar_atx_setup(void);
 	void nino_setup(void);
 	void nec_osprey_setup(void);
 	void nec_eagle_setup(void);
@@ -551,6 +552,11 @@ void __init setup_arch(char **cmdline_p)
 #ifdef CONFIG_MOMENCO_OCELOT_C
 	case MACH_GROUP_MOMENCO:
 		momenco_ocelot_c_setup();
+		break;
+#endif
+#ifdef CONFIG_MOMENCO_JAGUAR_ATX
+	case MACH_GROUP_MOMENCO:
+		momenco_jaguar_atx_setup();
 		break;
 #endif
 #ifdef CONFIG_MIPS_SEAD
@@ -679,6 +685,11 @@ void __init setup_arch(char **cmdline_p)
 #ifdef CONFIG_HP_LASERJET
         case MACH_GROUP_HP_LJ:
                 hp_setup();
+                break;
+#endif
+#ifdef  CONFIG_PMC_YOSEMITE
+        case MACH_GROUP_TITAN:
+                pmc_yosemite_setup();
                 break;
 #endif
 	default:

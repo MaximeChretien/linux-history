@@ -2046,7 +2046,9 @@ int fdomain_16x0_release(struct Scsi_Host *shpnt)
 
 MODULE_LICENSE("GPL");
 
+#ifndef PCMCIA
 /* Eventually this will go into an include file, but this will be later */
 static Scsi_Host_Template driver_template = FDOMAIN_16X0;
 
 #include "scsi_module.c"
+#endif

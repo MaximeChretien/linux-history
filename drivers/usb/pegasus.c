@@ -54,7 +54,7 @@ static const char driver_name[] = "pegasus";
 			BMSR_100FULL | BMSR_ANEGCAPABLE)
 
 static int loopback = 0;
-static int mii_mode = 1;
+static int mii_mode = 0;
 static int multicast_filter_limit = 32;
 
 static struct usb_eth_dev usb_dev_id[] = {
@@ -486,7 +486,7 @@ static int enable_net_traffic(struct net_device *dev, struct usb_device *usb)
 	if (linkpart & (ADVERTISE_100FULL | ADVERTISE_100HALF))
 		data[1] |= 0x10;	/* set 100 Mbps */
 	if (mii_mode)
-		data[1] = 0;
+		data[1] |= 1;
 	data[2] = (loopback & 1) ? 0x09 : 0x01;
 	memcpy(pegasus->eth_regs, data, sizeof(data));
 	set_registers(pegasus, EthCtrl0, 3, data);
@@ -900,6 +900,7 @@ static int pegasus_ethtool_ioctl(struct net_device *net, void *uaddr)
 			info.cmd = ETHTOOL_GDRVINFO;
 			strncpy(info.driver, driver_name,
 			        sizeof (info.driver) - 1);
+			strncpy(info.driver, DRIVER_DESC, ETHTOOL_BUSINFO_LEN);
 			strncpy(info.version, DRIVER_VERSION,
 				sizeof (info.version) - 1);
 			usb_make_path(pegasus->usb, info.bus_info,

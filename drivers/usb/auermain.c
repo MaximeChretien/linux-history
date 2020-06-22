@@ -2,7 +2,7 @@
 /*
  *      auermain.c  --  Auerswald PBX/System Telephone usb driver.
  *
- *      Copyright (C) 2002  Wolfgang Mües (wolfgang@iksw-muees.de)
+ *      Copyright (C) 2002-2004  Wolfgang Mües (wolfgang@iksw-muees.de)
  *
  *      Very much code of this driver is borrowed from dabusb.c (Deti Fliegl)
  *      and from the USB Skeleton driver (Greg Kroah-Hartman). Thank you.
@@ -55,7 +55,7 @@ do {			\
 
 /*-------------------------------------------------------------------*/
 /* Version Information */
-#define DRIVER_VERSION "1.2.3"
+#define DRIVER_VERSION "1.2.6"
 #define DRIVER_AUTHOR  "Wolfgang Mües <wolfgang@iksw-muees.de>"
 #define DRIVER_DESC    "Auerswald PBX/System Telephone usb driver"
 
@@ -828,9 +828,10 @@ static void auerswald_disconnect(struct usb_device *usbdev,
 static struct usb_device_id auerswald_ids[] = {
 	{USB_DEVICE(ID_AUERSWALD, 0x00C0)},	/* COMpact 2104 USB/DSL */
 	{USB_DEVICE(ID_AUERSWALD, 0x00DB)},	/* COMpact 4410/2206 USB */
-	{USB_DEVICE(ID_AUERSWALD, 0x00DC)},	/* comming soon... */
-	{USB_DEVICE(ID_AUERSWALD, 0x00F1)},	/* Comfort 2000 System Telephone */
-	{USB_DEVICE(ID_AUERSWALD, 0x00F2)},	/* Comfort 1200 System Telephone */
+	{USB_DEVICE(ID_AUERSWALD, 0x00DC)},	/* COMpact 4406 DSL */
+	{USB_DEVICE(ID_AUERSWALD, 0x00DD)},	/* COMpact 2204 USB */
+	{USB_DEVICE(ID_AUERSWALD, 0x00F1)},	/* COMfort 2000 System Telephone */
+	{USB_DEVICE(ID_AUERSWALD, 0x00F2)},	/* COMfort 1200 System Telephone */
 	{}					/* Terminating entry */
 };
 

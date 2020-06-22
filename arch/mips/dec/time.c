@@ -8,31 +8,21 @@
  * found in some MIPS systems.
  *
  */
-#include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/irq.h>
 #include <linux/kernel.h>
-#include <linux/mm.h>
+#include <linux/mc146818rtc.h>
 #include <linux/param.h>
-#include <linux/sched.h>
-#include <linux/string.h>
-#include <linux/types.h>
+#include <linux/time.h>
 
-#include <asm/bootinfo.h>
-#include <asm/cpu.h>
-#include <asm/div64.h>
-#include <asm/io.h>
-#include <asm/irq.h>
-#include <asm/mipsregs.h>
+#include <asm/processor.h>
 #include <asm/time.h>
 
 #include <asm/dec/interrupts.h>
 #include <asm/dec/ioasic.h>
 #include <asm/dec/ioasic_addrs.h>
 #include <asm/dec/machtype.h>
-
-#include <linux/mc146818rtc.h>
-#include <linux/timex.h>
 
 
 static unsigned long dec_rtc_get_time(void)
@@ -144,6 +134,11 @@ static int dec_rtc_set_mmss(unsigned long nowtime)
 }
 
 
+static int dec_timer_state(void)
+{
+	return (CMOS_READ(RTC_REG_C) & RTC_PF) != 0;
+}
+
 static void dec_timer_ack(void)
 {
 	CMOS_READ(RTC_REG_C);			/* Ack the RTC interrupt.  */
@@ -169,19 +164,23 @@ void __init dec_time_init(void)
 	rtc_get_time = dec_rtc_get_time;
 	rtc_set_mmss = dec_rtc_set_mmss;
 
+	mips_timer_state = dec_timer_state;
 	mips_timer_ack = dec_timer_ack;
+
 	if (!cpu_has_counter && IOASIC) {
 		/* For pre-R4k systems we use the I/O ASIC's counter.  */
 		mips_hpt_read = dec_ioasic_hpt_read;
 		mips_hpt_init = dec_ioasic_hpt_init;
 	}
+
+	/* Set up the rate of periodic DS1287 interrupts.  */
+	CMOS_WRITE(RTC_REF_CLCK_32KHZ | (16 - LOG_2_HZ), RTC_REG_A);
 }
 
 void __init dec_timer_setup(struct irqaction *irq)
 {
-	/* Enable periodic DS1287 interrupts.  */
-	CMOS_WRITE(RTC_REF_CLCK_32KHZ | (16 - LOG_2_HZ), RTC_REG_A);
-	CMOS_WRITE(CMOS_READ(RTC_REG_B) | RTC_PIE, RTC_REG_B);
-
 	setup_irq(dec_interrupt[DEC_IRQ_RTC], irq);
+
+	/* Enable periodic DS1287 interrupts.  */
+	CMOS_WRITE(CMOS_READ(RTC_REG_B) | RTC_PIE, RTC_REG_B);
 }

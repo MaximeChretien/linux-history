@@ -105,6 +105,19 @@ unsigned long arch_get_unmapped_area(struct file *filp, unsigned long addr,
 	}
 }
 
+unsigned long check_unmapped_fixed_area(struct file *file, unsigned long addr,
+	unsigned long len, unsigned long pgoff, unsigned long flags)
+{
+	if (addr > TASK_SIZE - len)
+		return -ENOMEM;
+	if (addr & ~PAGE_MASK)
+		return -EINVAL;
+	if (flags & MAP_SHARED && pages_do_alias((pgoff << PAGE_SHIFT), addr))
+		return -EINVAL;
+
+	return addr;
+}
+
 asmlinkage unsigned long
 sys_mmap(unsigned long addr, size_t len, unsigned long prot,
          unsigned long flags, unsigned long fd, off_t offset)
@@ -134,22 +147,22 @@ out:
 	return error;
 }
 
-asmlinkage int sys_fork(abi64_no_regargs, struct pt_regs regs)
+save_static_function(sys_fork);
+static_unused int _sys_fork(abi64_no_regargs, struct pt_regs regs)
 {
 	int res;
 
-	save_static(&regs);
 	res = do_fork(SIGCHLD, regs.regs[29], &regs, 0);
 	return res;
 }
 
-asmlinkage int sys_clone(abi64_no_regargs, struct pt_regs regs)
+save_static_function(sys_clone);
+static_unused int _sys_clone(abi64_no_regargs, struct pt_regs regs)
 {
 	unsigned long clone_flags;
 	unsigned long newsp;
 	int res;
 
-	save_static(&regs);
 	clone_flags = regs.regs[4];
 	newsp = regs.regs[5];
 	if (!newsp)

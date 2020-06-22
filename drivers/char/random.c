@@ -715,7 +715,9 @@ struct timer_rand_state {
 static struct timer_rand_state keyboard_timer_state;
 static struct timer_rand_state mouse_timer_state;
 static struct timer_rand_state extract_timer_state;
+#ifndef CONFIG_ARCH_S390
 static struct timer_rand_state *irq_timer_state[NR_IRQS];
+#endif
 static struct timer_rand_state *blkdev_timer_state[MAX_BLKDEV];
 
 /*
@@ -791,6 +793,7 @@ static void add_timer_randomness(struct timer_rand_state *state, unsigned num)
 	batch_entropy_store(num, time, entropy);
 }
 
+#ifndef CONFIG_ARCH_S390
 void add_keyboard_randomness(unsigned char scancode)
 {
 	static unsigned char last_scancode;
@@ -813,6 +816,7 @@ void add_interrupt_randomness(int irq)
 
 	add_timer_randomness(irq_timer_state[irq], 0x100+irq);
 }
+#endif
 
 void add_blkdev_randomness(int major)
 {
@@ -1445,8 +1449,10 @@ void __init rand_initialize(void)
 #ifdef CONFIG_SYSCTL
 	sysctl_init_random(random_state);
 #endif
+#ifndef CONFIG_ARCH_S390
 	for (i = 0; i < NR_IRQS; i++)
 		irq_timer_state[i] = NULL;
+#endif
 	for (i = 0; i < MAX_BLKDEV; i++)
 		blkdev_timer_state[i] = NULL;
 	memset(&keyboard_timer_state, 0, sizeof(struct timer_rand_state));
@@ -1455,6 +1461,7 @@ void __init rand_initialize(void)
 	extract_timer_state.dont_count_entropy = 1;
 }
 
+#ifndef CONFIG_ARCH_S390
 void rand_initialize_irq(int irq)
 {
 	struct timer_rand_state *state;
@@ -1472,6 +1479,7 @@ void rand_initialize_irq(int irq)
 		irq_timer_state[irq] = state;
 	}
 }
+#endif
 
 void rand_initialize_blkdev(int major, int mode)
 {
@@ -2304,9 +2312,11 @@ __u32 check_tcp_syn_cookie(__u32 cookie, __u32 saddr, __u32 daddr, __u16 sport,
 
 
 
+#ifndef CONFIG_ARCH_S390
 EXPORT_SYMBOL(add_keyboard_randomness);
 EXPORT_SYMBOL(add_mouse_randomness);
 EXPORT_SYMBOL(add_interrupt_randomness);
+#endif
 EXPORT_SYMBOL(add_blkdev_randomness);
 EXPORT_SYMBOL(batch_entropy_store);
 EXPORT_SYMBOL(generate_random_uuid);

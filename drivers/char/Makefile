@@ -24,7 +24,8 @@ obj-y	 += mem.o tty_io.o n_tty.o tty_ioctl.o raw.o pty.o misc.o random.o
 export-objs     :=	busmouse.o console.o keyboard.o sysrq.o \
 			misc.o pty.o random.o selection.o serial.o \
 			sonypi.o tty_io.o tty_ioctl.o generic_serial.o \
-			au1000_gpio.o hp_psaux.o nvram.o scx200.o fetchop.o
+			au1000_gpio.o vac-serial.o hp_psaux.o nvram.o \
+			scx200.o fetchop.o
 
 mod-subdirs	:=	joystick ftape drm drm-4.0 pcmcia
 
@@ -45,6 +46,10 @@ endif
 ifeq ($(ARCH),mips)
   ifneq ($(CONFIG_PC_KEYB),y)
     KEYBD    =
+  endif
+  ifeq ($(CONFIG_VR41XX_KIU),y)
+    KEYMAP   =
+    KEYBD    = vr41xx_keyb.o
   endif
 endif
 
@@ -140,12 +145,11 @@ endif
 ifeq ($(CONFIG_DECSTATION),y)
   KEYMAP   =
   KEYBD    =
-  SERIAL   = decserial.o
 endif
 
 ifeq ($(CONFIG_BAGET_MIPS),y)
   KEYBD    =
-  SERIAL   =
+  SERIAL   = vac-serial.o
 endif
 
 ifeq ($(CONFIG_NINO),y)
@@ -171,7 +175,8 @@ obj-$(CONFIG_SERIAL_HCDP) += hcdp_serial.o
 obj-$(CONFIG_SERIAL_21285) += serial_21285.o
 obj-$(CONFIG_SERIAL_SA1100) += serial_sa1100.o
 obj-$(CONFIG_SERIAL_AMBA) += serial_amba.o
-obj-$(CONFIG_TS_AU1000_ADS7846) += au1000_ts.o
+obj-$(CONFIG_TS_AU1X00_ADS7846) += au1000_ts.o
+obj-$(CONFIG_SERIAL_DEC) += decserial.o
 
 ifndef CONFIG_SUN_KEYBOARD
   obj-$(CONFIG_VT) += keyboard.o $(KEYMAP) $(KEYBD)
@@ -211,6 +216,9 @@ obj-$(CONFIG_BVME6000_SCC) += generic_serial.o vme_scc.o
 obj-$(CONFIG_HVC_CONSOLE) += hvc_console.o
 obj-$(CONFIG_SERIAL_TX3912) += generic_serial.o serial_tx3912.o
 obj-$(CONFIG_TXX927_SERIAL) += serial_txx927.o
+obj-$(CONFIG_SERIAL_TXX9) += generic_serial.o serial_txx9.o
+obj-$(CONFIG_IP22_SERIAL) += sgiserial.o
+obj-$(CONFIG_AU1X00_UART) += au1x00-serial.o
 obj-$(CONFIG_SGI_L1_SERIAL) += sn_serial.o
 
 subdir-$(CONFIG_RIO) += rio
@@ -220,6 +228,7 @@ obj-$(CONFIG_ATIXL_BUSMOUSE) += atixlmouse.o
 obj-$(CONFIG_LOGIBUSMOUSE) += logibusmouse.o
 obj-$(CONFIG_PRINTER) += lp.o
 obj-$(CONFIG_TIPAR) += tipar.o
+obj-$(CONFIG_OBMOUSE) += obmouse.o
 
 ifeq ($(CONFIG_INPUT),y)
 obj-y += joystick/js.o
@@ -241,12 +250,16 @@ obj-$(CONFIG_MK712_MOUSE) += mk712.o
 obj-$(CONFIG_RTC) += rtc.o
 obj-$(CONFIG_GEN_RTC) += genrtc.o
 obj-$(CONFIG_EFI_RTC) += efirtc.o
+obj-$(CONFIG_SGI_DS1286) += ds1286.o
+obj-$(CONFIG_MIPS_RTC) += mips_rtc.o
+obj-$(CONFIG_SGI_IP27_RTC) += ip27-rtc.o
 ifeq ($(CONFIG_PPC),)
   obj-$(CONFIG_NVRAM) += nvram.o
 endif
 obj-$(CONFIG_TOSHIBA) += toshiba.o
 obj-$(CONFIG_I8K) += i8k.o
 obj-$(CONFIG_DS1620) += ds1620.o
+obj-$(CONFIG_DS1742) += ds1742.o
 obj-$(CONFIG_INTEL_RNG) += i810_rng.o
 obj-$(CONFIG_AMD_RNG) += amd768_rng.o
 obj-$(CONFIG_HW_RANDOM) += hw_random.o
@@ -254,7 +267,9 @@ obj-$(CONFIG_AMD_PM768) += amd76x_pm.o
 obj-$(CONFIG_BRIQ_PANEL) += briq_panel.o
 
 obj-$(CONFIG_ITE_GPIO) += ite_gpio.o
-obj-$(CONFIG_AU1000_GPIO) += au1000_gpio.o
+obj-$(CONFIG_AU1X00_GPIO) += au1000_gpio.o
+obj-$(CONFIG_AU1X00_USB_TTY) += au1000_usbtty.o
+obj-$(CONFIG_AU1X00_USB_RAW) += au1000_usbraw.o
 obj-$(CONFIG_COBALT_LCD) += lcd.o
 
 obj-$(CONFIG_QIC02_TAPE) += tpqic02.o
@@ -274,7 +289,8 @@ obj-$(CONFIG_PPDEV) += ppdev.o
 obj-$(CONFIG_DZ) += dz.o
 obj-$(CONFIG_NWBUTTON) += nwbutton.o
 obj-$(CONFIG_NWFLASH) += nwflash.o
-obj-$(CONFIG_SCx200_GPIO) += scx200_gpio.o scx200.o
+obj-$(CONFIG_SCx200) += scx200.o
+obj-$(CONFIG_SCx200_GPIO) += scx200_gpio.o
 
 # Only one watchdog can succeed. We probe the hardware watchdog
 # drivers first, then the softdog driver.  This means if your hardware
@@ -305,6 +321,8 @@ obj-$(CONFIG_SCx200_WDT) += scx200_wdt.o
 obj-$(CONFIG_WAFER_WDT) += wafer5823wdt.o
 obj-$(CONFIG_SOFT_WATCHDOG) += softdog.o
 obj-$(CONFIG_AMD7XX_TCO) += amd7xx_tco.o
+obj-$(CONFIG_INDYDOG) += indydog.o
+obj-$(CONFIG_8xx_WDT) += mpc8xx_wdt.o
 
 subdir-$(CONFIG_MWAVE) += mwave
 ifeq ($(CONFIG_MWAVE),y)

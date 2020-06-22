@@ -17,7 +17,7 @@
 #include <asm/dma.h>
 #include <asm/iosapic.h>
 
-#define PFX "hpzx1: "
+#define PFX
 
 static int hpzx1_devices;
 
@@ -50,7 +50,14 @@ static int hp_cfg_read##sz (struct pci_dev *dev, int where, u##bits *value) \
 		fake_dev->sizing = 0; \
 		return PCIBIOS_SUCCESSFUL; \
 	} \
-	*value = read##sz(fake_dev->mapped_csrs + where); \
+	switch (where & ~0x7) { \
+		case 0x48: /* initiates config cycles */ \
+		case 0x78: /* elroy suspend mode register */ \
+			*value = 0; \
+			break; \
+		default: \
+			*value = read##sz(fake_dev->mapped_csrs + where); \
+	} \
 	if (where == PCI_COMMAND) \
 		*value |= PCI_COMMAND_MEMORY; /* SBA omits this */ \
 	return PCIBIOS_SUCCESSFUL; \
@@ -68,8 +75,14 @@ static int hp_cfg_write##sz (struct pci_dev *dev, int where, u##bits value) \
 		if (value == (u##bits) ~0) \
 			fake_dev->sizing = 1; \
 		return PCIBIOS_SUCCESSFUL; \
-	} else \
-		write##sz(value, fake_dev->mapped_csrs + where); \
+	} \
+	switch (where & ~0x7) { \
+		case 0x48: /* initiates config cycles */ \
+		case 0x78: /* elroy suspend mode register */ \
+			break; \
+		default: \
+			write##sz(value, fake_dev->mapped_csrs + where); \
+	} \
 	return PCIBIOS_SUCCESSFUL; \
 }
 

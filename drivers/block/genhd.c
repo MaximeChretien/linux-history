@@ -201,7 +201,7 @@ static int part_show(struct seq_file *s, void *v)
 
 			disk_round_stats(hd);
 			seq_printf(s, "%4d  %4d %10d %s "
-				      "%d %d %d %d %d %d %d %d %d %d %d\n",
+				      "%u %u %u %u %u %u %u %u %d %u %u\n",
 				      gp->major, n, gp->sizes[n],
 				      disk_name(gp, n, buf),
 				      hd->rd_ios, hd->rd_merges,

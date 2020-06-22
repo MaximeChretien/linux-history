@@ -49,6 +49,8 @@ extern void bad_page_fault(struct pt_regs *, unsigned long);
 
 /* This is true if we are using the firmware NMI handler (typically LPAR) */
 extern int fwnmi_active;
+/* This is true if we are using a check-exception based handler */
+extern int check_exception_flag;
 
 #ifdef CONFIG_XMON
 extern void xmon(struct pt_regs *regs);
@@ -87,6 +89,9 @@ void (*debugger_fault_handler)(struct pt_regs *regs);
 #endif /* xmon */
 
 void set_local_DABR(void *valp);
+
+/* do not want to kmalloc or wait on lock during machine check */
+char mce_data_buf[RTAS_ERROR_LOG_MAX]__page_aligned;
 
 /*
  * Trap & Exception support
@@ -128,7 +133,9 @@ static struct rtas_error_log *FWNMI_get_errinfo(struct pt_regs *regs)
 	    (errdata >= rtas.base && errdata < rtas.base + rtas.size - 16)) {
 		savep = __va(errdata);
 		regs->gpr[3] = savep[0];	/* restore original r3 */
-		errhdr = (struct rtas_error_log *)(savep + 1);
+		memset(mce_data_buf, 0, RTAS_ERROR_LOG_MAX);
+		memcpy(mce_data_buf, (char *)(savep + 1), RTAS_ERROR_LOG_MAX);
+		errhdr = (struct rtas_error_log *)mce_data_buf;
 	} else {
 		printk("FWNMI: corrupt r3\n");
 	}
@@ -166,17 +173,87 @@ SystemResetException(struct pt_regs *regs)
 #endif
 }
 
+/*
+ * See if we can recover from a machine check exception.
+ * This is only called on power4 (or above) and only via
+ * the Firmware Non-Maskable Interrupts (fwnmi) handler
+ * which provides the error analysis for us.
+ *
+ * Return 1 if corrected (or delivered a signal).
+ * Return 0 if there is nothing we can do.
+ */
+static int recover_mce(struct pt_regs *regs, struct rtas_error_log *errp)
+{
+	siginfo_t info;
+	int nonfatal = 0;
 
+
+	if (errp->disposition == DISP_FULLY_RECOVERED) {
+		/* Platform corrected itself */
+		nonfatal = 1;
+	} else if ((regs->msr & MSR_RI) &&
+		   user_mode(regs) &&
+		   errp->severity == SEVERITY_ERROR_SYNC &&
+		   errp->disposition == DISP_NOT_RECOVERED &&
+		   errp->target == TARGET_MEMORY &&
+		   errp->type == TYPE_ECC_UNCORR &&
+		   !(current->pid == 0 || current->pid == 1)) {
+
+		/* Kill off a user process with an ECC error */
+		printk(KERN_ERR "MCE: uncorrectable ecc error killed process %d (%s).\n", current->pid, current->comm);
+
+		info.si_signo = SIGBUS;
+		info.si_errno = 0;
+		/* XXX better si_code for ECC error? */
+		info.si_code = BUS_ADRERR;
+		info.si_addr = (void *)regs->nip;
+		_exception(SIGBUS, &info, regs);
+		nonfatal = 1;
+	}
+
+	log_error((char *)errp, ERR_TYPE_RTAS_LOG, !nonfatal);
+
+	return nonfatal;
+}
+
+/*
+ * Handle a machine check.
+ *
+ * Note that on Power 4 and beyond Firmware Non-Maskable Interrupts (fwnmi)
+ * should be present.  If so the handler which called us tells us if the
+ * error was recovered (never true if RI=0).
+ *
+ * On hardware prior to Power 4 these exceptions were asynchronous which
+ * means we can't tell exactly where it occurred and so we can't recover.
+ *
+ * Note that the debugger should test RI=0 and warn the user that system
+ * state has been corrupted.
+ */
 void
 MachineCheckException(struct pt_regs *regs)
 {
+	struct rtas_error_log *errp;
 
 	if (fwnmi_active) {
-		struct rtas_error_log *errhdr = FWNMI_get_errinfo(regs);
-		if (errhdr) {
-			/* ToDo: attempt to recover from some errors here */
-		}
+		errp = FWNMI_get_errinfo(regs);
 		FWNMI_release_errinfo();
+		if (errp && recover_mce(regs, errp))
+			return;
+	} else if (check_exception_flag) {
+		int status;
+		unsigned long long srr1 = regs->msr;
+
+		memset(mce_data_buf, 0, RTAS_ERROR_LOG_MAX);
+		/* XXX
+		 * We only pass the low 32 bits of SRR1, this could
+		 * be changed to 7 input params and the high 32 bits
+		 * of SRR1 could be passed as the extended info argument.
+		 */
+		status = rtas_call(rtas_token("check-exception"), 6, 1, NULL,
+				   0x200, (uint)srr1, RTAS_INTERNAL_ERROR, 0,
+				   __pa(mce_data_buf), RTAS_ERROR_LOG_MAX);
+		if (status == 0)
+			log_error((char *)mce_data_buf, ERR_TYPE_RTAS_LOG, 1);
 	}
 
 #if defined(CONFIG_XMON) || defined(CONFIG_KGDB)
@@ -279,6 +356,19 @@ parse_fpe(siginfo_t *info, struct pt_regs *regs)
 	_exception(SIGFPE, info, regs);
 }
 
+#ifndef CONFIG_ALTIVEC
+void IllegalAltiVecInstruction(struct pt_regs *regs)
+{
+	siginfo_t info;
+
+	info.si_signo = SIGILL;
+	info.si_errno = 0;
+	info.si_code = ILL_ILLTRP;
+	info.si_addr = (void *)regs->nip;
+	_exception(SIGILL, &info, regs);
+}
+#endif
+
 void
 ProgramCheckException(struct pt_regs *regs)
 {
@@ -325,6 +415,47 @@ KernelFPUnavailableException(struct pt_regs *regs)
 	printk("Illegal floating point used in kernel (task=0x%016lx, pc=0x%016lx, trap=0x%08x)\n",
 		current, regs->nip, regs->trap);
 	panic("Unrecoverable FP Unavailable Exception in Kernel");
+}
+
+
+void
+KernelAltiVecUnavailableException(struct pt_regs *regs)
+{
+	printk("Illegal Altivec used in kernel (task=0x%016lx, pc=0x%016lx, trap=0x%08x)\n",
+		(unsigned long)current, regs->nip, (unsigned int)regs->trap);
+	panic("Unrecoverable Altivec Unavailable Exception in Kernel");
+}
+
+void
+AltiVecAssistException(struct pt_regs *regs)
+{
+#ifdef CONFIG_ALTIVEC
+	printk("Altivec assist called by %s, switching java mode off\n",
+		current->comm);
+	/* We do this the "hard" way, but that's ok for now, maybe one
+	 * day, we'll have a proper implementation...
+	 */
+	if (regs->msr & MSR_VEC)
+		giveup_altivec(current);
+	current->thread.vscr.u[3] |= 0x00010000;
+#else
+	siginfo_t info;
+
+	printk("Altivec assist called by %s;, no altivec support !\n",
+		current->comm);
+
+	info.si_signo = SIGTRAP;
+	info.si_errno = 0;
+	info.si_code = 0;
+	info.si_addr = 0;
+	_exception(SIGTRAP, &info, regs);
+#endif /* CONFIG_ALTIVEC */
+}
+
+void
+ThermalInterrupt(struct pt_regs *regs)
+{
+	panic("Thermal interrupt exception not handled !");
 }
 
 void

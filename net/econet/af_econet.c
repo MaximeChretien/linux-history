@@ -1033,14 +1033,14 @@ static int econet_rcv(struct sk_buff *skb, struct net_device *dev, struct packet
 	if (! edev)
 	{
 		kfree_skb(skb);
-		return 0;
+		return NET_RX_DROP;
 	}
 
 	if (skb->len < sizeof(struct ec_framehdr))
 	{
 		/* Frame is too small to be any use */
 		kfree_skb(skb);
-		return 0;
+		return NET_RX_DROP;
 	}
 
 	/* First check for encapsulated IP */
@@ -1056,11 +1056,15 @@ static int econet_rcv(struct sk_buff *skb, struct net_device *dev, struct packet
 	if (!sk) 
 	{
 		kfree_skb(skb);
-		return 0;
+		return NET_RX_DROP;
 	}
 
-	return ec_queue_packet(sk, skb, edev->net, hdr->src_stn, hdr->cb, 
-			       hdr->port);
+	if (ec_queue_packet(sk, skb, edev->net, hdr->src_stn, hdr->cb, 
+			    hdr->port)) {
+		kfree_skb(skb);
+		return NET_RX_DROP;
+	}
+	return 0;
 }
 
 static struct packet_type econet_packet_type = {

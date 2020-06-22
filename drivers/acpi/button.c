@@ -68,7 +68,7 @@ struct acpi_button {
                               FS Interface (/proc)
    -------------------------------------------------------------------------- */
 
-static struct proc_dir_entry	*acpi_button_dir = NULL;
+static struct proc_dir_entry	*acpi_button_dir;
 
 static int
 acpi_button_read_info (

@@ -1584,7 +1584,7 @@ static struct usb_driver irda_driver = {
 /*
  * Module insertion
  */
-int __init usb_irda_init(void)
+static int __init usb_irda_init(void)
 {
 	if (usb_register(&irda_driver) < 0)
 		return -1;
@@ -1598,7 +1598,7 @@ module_init(usb_irda_init);
 /*
  * Module removal
  */
-void __exit usb_irda_cleanup(void)
+static void __exit usb_irda_cleanup(void)
 {
 	struct irda_usb_cb *irda = NULL;
 	int	i;

@@ -93,7 +93,6 @@ do_settimeofday (struct timeval *tv)
 		 * it!
 		 */
 		tv->tv_usec -= gettimeoffset();
-		tv->tv_usec -= (jiffies - wall_jiffies) * (1000000 / HZ);
 
 		while (tv->tv_usec < 0) {
 			tv->tv_usec += 1000000;

@@ -1527,7 +1527,7 @@ pfm_write_pmcs(struct task_struct *task, pfm_context_t *ctx, void *arg, int coun
 		 * 	- system-wide session: PMCx.pm=1 (privileged monitor)
 		 * 	- per-task           : PMCx.pm=0 (user monitor)
 		 */
-		if ((is_monitor || is_counting) && value != PMC_DFL_VAL(i) && PFM_CHECK_PMC_PM(ctx, cnum, value)) {
+		if ((is_monitor || is_counting) && value != PMC_DFL_VAL(cnum) && PFM_CHECK_PMC_PM(ctx, cnum, value)) {
 			DBprintk(("pmc%u pmc_pm=%ld fl_system=%d\n", 
 				cnum, 
 				PMC_PM(cnum, value), 
@@ -4013,6 +4013,10 @@ pfm_inherit(struct task_struct *task, struct pt_regs *regs)
 	if (CTX_INHERIT_MODE(ctx) == PFM_FL_INHERIT_ONCE) {
 		nctx->ctx_fl_inherit = PFM_FL_INHERIT_NONE;
 		DBprintk(("downgrading to INHERIT_NONE for [%d]\n", task->pid));
+		/*
+		 * downgrade parent: once means only first child!
+		 */
+		ctx->ctx_fl_inherit = PFM_FL_INHERIT_NONE;
 	}
 	/*
 	 * task is not yet visible in the tasklist, so we do 

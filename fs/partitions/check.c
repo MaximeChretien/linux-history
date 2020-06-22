@@ -43,6 +43,9 @@ static int (*check_part[])(struct gendisk *hd, struct block_device *bdev, unsign
 #ifdef CONFIG_ACORN_PARTITION
 	acorn_partition,
 #endif
+#ifdef CONFIG_SGI_PARTITION
+	sgi_partition,
+#endif
 #ifdef CONFIG_EFI_PARTITION
 	efi_partition,		/* this must come before msdos */
 #endif
@@ -66,9 +69,6 @@ static int (*check_part[])(struct gendisk *hd, struct block_device *bdev, unsign
 #endif
 #ifdef CONFIG_MAC_PARTITION
 	mac_partition,
-#endif
-#ifdef CONFIG_SGI_PARTITION
-	sgi_partition,
 #endif
 #ifdef CONFIG_ULTRIX_PARTITION
 	ultrix_partition,

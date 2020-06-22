@@ -13,9 +13,6 @@
  * thorough pass to merge in the rest of the updates.
  * Better still, someone really ought to make it a common
  * code module for both platforms.   kevink@mips.com
- *
- * 20010616 - Klaus Naumann <spock@mgnet.de> : Make serial console work with
- *                                             any speed - not only 9600
  */
 
 #include <linux/config.h> /* for CONFIG_KGDB */
@@ -2079,14 +2076,14 @@ static kdev_t zs_console_device(struct console *con)
 static int __init zs_console_setup(struct console *con, char *options)
 {
 	struct sgi_serial *info;
-	int	baud;
-	int	bits = 8;
-	int	parity = 'n';
-	int	cflag = CREAD | HUPCL | CLOCAL;
-	char	*s, *dbaud;
-	int     i, brg;
+	int baud = 9600;
+	int bits = 8;
+	int parity = 'n';
+	int cflag = CREAD | HUPCL | CLOCAL;
+	char *s;
+	int i, brg;
 
-	if (options) {
+	if(options) {
 		baud = simple_strtoul(options, NULL, 10);
 		s = options;
 		while(*s >= '0' && *s <= '9')
@@ -2094,25 +2091,7 @@ static int __init zs_console_setup(struct console *con, char *options)
 		if (*s) parity = *s++;
 		if (*s) bits   = *s - '0';
 	}
-	else {
-		/* If the user doesn't set console=... try to read the
-		 * PROM variable - if this fails use 9600 baud and
-		 * inform the user about the problem
-		 */
-		dbaud = ArcGetEnvironmentVariable("dbaud");
-		if(dbaud) baud = simple_strtoul(dbaud, NULL, 10);
-		else {
-			/* Use prom_printf() to make sure that the user
-			 * is getting anything ...
-			 */
-			prom_printf("No dbaud set in PROM ?!? Using 9600.\n");
-			baud = 9600;
-		}
-	}
-
-	/*
-	 *	Now construct a cflag setting.
-	 */
+	/* Now construct a cflag setting. */
 	switch(baud) {
 		case 1200:
 			cflag |= B1200;

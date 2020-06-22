@@ -158,9 +158,7 @@ static void free_inode(struct inode *inode)
 	inode->i_uid = inode->i_gid = 0;
 	inode->i_size = 0;
 	list_del(&inode->u.usbdev_i.slist);
-	INIT_LIST_HEAD(&inode->u.usbdev_i.slist);
 	list_del(&inode->u.usbdev_i.dlist);
-	INIT_LIST_HEAD(&inode->u.usbdev_i.dlist);
 	iput(inode);
 }
 
@@ -512,8 +510,6 @@ static void usbdevfs_read_inode(struct inode *inode)
 	inode->i_ctime = inode->i_mtime = inode->i_atime = CURRENT_TIME;
 	inode->i_mode = S_IFREG;
 	inode->i_gid = inode->i_uid = 0;
-	INIT_LIST_HEAD(&inode->u.usbdev_i.dlist);
-	INIT_LIST_HEAD(&inode->u.usbdev_i.slist);
 	inode->u.usbdev_i.p.dev = NULL;
 	inode->u.usbdev_i.p.bus = NULL;
 	switch (ITYPE(inode->i_ino)) {

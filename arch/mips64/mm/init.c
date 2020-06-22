@@ -63,7 +63,7 @@ pgd_t *get_pgd_slow(void)
 {
 	pgd_t *ret, *init;
 
-	ret = (pgd_t *) __get_free_pages(GFP_KERNEL, 1);
+	ret = (pgd_t *) __get_free_pages(GFP_KERNEL, PGD_ORDER);
 	if (ret) {
 		init = pgd_offset(&init_mm, 0);
 		pgd_init((unsigned long)ret);

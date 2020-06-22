@@ -1,5 +1,5 @@
 /*
- *  include/asm-s390/bugs.h
+ *  include/asm-s390/pgalloc.h
  *
  *  S390 version
  *    Copyright (C) 1999,2000 IBM Deutschland Entwicklung GmbH, IBM Corporation
@@ -21,6 +21,8 @@
 #define pmd_quicklist ((unsigned long *)0)
 #define pte_quicklist (S390_lowcore.cpu_data.pte_quick)
 #define pgtable_cache_size (S390_lowcore.cpu_data.pgtable_cache_sz)
+
+extern void diag10(unsigned long addr);
 
 /*
  * Allocate and free page tables. The xxx_kernel() versions are

@@ -6,10 +6,8 @@
  */
 
 #define PMD_SHIFT	21
-#define PTRS_PER_PTE	512
-#define PTRS_PER_PMD	1
-#define PTRS_PER_PGD	2048
 #define PGD_ORDER	1
+#define PTE_ORDER	0
 
 #if !defined (_LANGUAGE_ASSEMBLY)
 #define pte_ERROR(e) \

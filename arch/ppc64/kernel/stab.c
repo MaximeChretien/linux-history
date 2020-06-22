@@ -159,7 +159,6 @@ make_ste(unsigned long stab, unsigned long esid, unsigned long vsid)
 inline void make_slbe(unsigned long esid, unsigned long vsid, int large)
 {
 	unsigned long entry, castout_entry;
-	slb_dword0 castout_esid_data;
 	union {
 		unsigned long word0;
 		slb_dword0    data;
@@ -217,23 +216,37 @@ inline void make_slbe(unsigned long esid, unsigned long vsid, int large)
 
 	PMC_SW_PROCESSOR(stab_capacity_castouts); 
 
-	castout_entry = get_paca()->xStab_data.next_round_robin;
-	__asm__ __volatile__("slbmfee  %0,%1" 
-			     : "=r" (castout_esid_data) 
-			     : "r" (castout_entry)); 
+	/*
+	 * Never cast out the segment for our own stack. Since we
+	 * dont invalidate the ERAT we could have a valid translation
+	 * for our stack during the first part of exception exit
+	 * which gets invalidated due to a tlbie from another cpu at a
+	 * non recoverable point (after setting srr0/1) - Anton
+	 */
 
-	entry = castout_entry; 
-	castout_entry++; 
-	if(castout_entry >= naca->slb_size) {
-		castout_entry = 1; 
-	}
+	castout_entry = get_paca()->xStab_data.next_round_robin;
+	do {
+		entry = castout_entry;
+		castout_entry++;
+		if (castout_entry >= naca->slb_size)
+			castout_entry = 1;
+		asm volatile("slbmfee  %0,%1" : "=r" (esid_data) : "r" (entry));
+	} while (esid_data.data.esid == GET_ESID((unsigned long)_get_SP()));
+	
 	get_paca()->xStab_data.next_round_robin = castout_entry;
 
-	/* Invalidate the old entry. */
-	castout_esid_data.v = 0; /* Set the class to 0 */
-	/* slbie not needed as the previous mapping is still valid. */
-	__asm__ __volatile__("slbie  %0" : : "r" (castout_esid_data)); 
-	
+	/* We're executing this code on the interrupt stack, so the
+	 * above code might pick the kernel stack segment as the victim.
+	 *
+	 * Because of this, we need to invalidate the old entry. We need
+	 * to do this since it'll otherwise be in the ERAT and might come
+	 * back and haunt us if it get's thrown out of there at the wrong
+	 * time (i.e. similar to throwing out our own stack above).
+	 */
+
+	esid_data.data.v = 0;
+	__asm__ __volatile__("slbie  %0" : : "r" (esid_data));
+
 	/* 
 	 * Write the new SLB entry.
 	 */

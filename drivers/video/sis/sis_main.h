@@ -1,3 +1,24 @@
+/*
+ * SiS 300/630/730/540/315/550/650/651/M650/661FX/M661FX/740/741/330/760
+ * frame buffer driver for Linux kernels 2.4.x and 2.5.x
+ *
+ * Copyright (C) 2001-2004 Thomas Winischhofer, Vienna, Austria.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the named License,
+ * or any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
+ */
+
 #ifndef _SISFB_MAIN
 #define _SISFB_MAIN
 
@@ -5,14 +26,13 @@
 
 /* ------------------- Constant Definitions ------------------------- */
 
-#undef LINUXBIOS   /* turn this on when compiling for LINUXBIOS */
 #define AGPOFF     /* default is turn off AGP */
 
 #define SISFAIL(x) do { printk(x "\n"); return -EINVAL; } while(0)
 
 #define VER_MAJOR                 1
 #define VER_MINOR                 6
-#define VER_LEVEL                 16
+#define VER_LEVEL                 25
 
 #include "sis.h"
 
@@ -29,11 +49,17 @@
 #ifndef PCI_DEVICE_ID_SI_330
 #define PCI_DEVICE_ID_SI_330      0x0330
 #endif
-#ifndef PCI_DEVICE_ID_SI_660
-#define PCI_DEVICE_ID_SI_660      0x0660
-#endif
 #ifndef PCI_DEVICE_ID_SI_660_VGA
 #define PCI_DEVICE_ID_SI_660_VGA  0x6330
+#endif
+#ifndef PCI_DEVICE_ID_SI_660
+#define PCI_DEVICE_ID_SI_660      0x0661
+#endif
+#ifndef PCI_DEVICE_ID_SI_741
+#define PCI_DEVICE_ID_SI_741      0x0741
+#endif
+#ifndef PCI_DEVICE_ID_SI_660
+#define PCI_DEVICE_ID_SI_660      0x0660
 #endif
 #ifndef PCI_DEVICE_ID_SI_760
 #define PCI_DEVICE_ID_SI_760      0x0760
@@ -41,10 +67,10 @@
 
 /* To be included in fb.h */
 #ifndef FB_ACCEL_SIS_GLAMOUR_2
-#define FB_ACCEL_SIS_GLAMOUR_2  40	/* SiS 315, 650, 661, 740		*/
+#define FB_ACCEL_SIS_GLAMOUR_2  40	/* SiS 315, 65x, 740, 661, 741  */
 #endif
 #ifndef FB_ACCEL_SIS_XABRE
-#define FB_ACCEL_SIS_XABRE      41	/* SiS 330 ("Xabre"), 660, 760 (DOA)	*/
+#define FB_ACCEL_SIS_XABRE      41	/* SiS 330 ("Xabre"), 760 	*/
 #endif
 
 #define MAX_ROM_SCAN              0x10000
@@ -101,7 +127,9 @@
 #define SISDAC2A                  SISPART5
 #define SISDAC2D                  (SISPART5 + 1)
 #define SISMISCR                  (SiS_Pr.RelIO + 0x1c)
-#define SISINPSTAT		  (SiS_Pr.RelIO + 0x2a)  
+#define SISMISCW                  SiS_Pr.SiS_P3c2
+#define SISINPSTAT		  (SiS_Pr.RelIO + 0x2a)
+#define SISPEL			  SiS_Pr.SiS_P3c6
 
 #define IND_SIS_PASSWORD          0x05  /* SRs */
 #define IND_SIS_COLOR_MODE        0x06
@@ -155,14 +183,6 @@
 #define SIS_DATA_BUS_64           0x01
 #define SIS_DATA_BUS_128          0x02
 
-#define SIS315_DRAM_SIZE_MASK     0xF0  /* 315 SR14 */
-#define SIS315_DRAM_SIZE_2MB      0x01
-#define SIS315_DRAM_SIZE_4MB      0x02
-#define SIS315_DRAM_SIZE_8MB      0x03
-#define SIS315_DRAM_SIZE_16MB     0x04
-#define SIS315_DRAM_SIZE_32MB     0x05
-#define SIS315_DRAM_SIZE_64MB     0x06
-#define SIS315_DRAM_SIZE_128MB    0x07
 #define SIS315_DATA_BUS_MASK      0x02
 #define SIS315_DATA_BUS_64        0x00
 #define SIS315_DATA_BUS_128       0x01
@@ -171,17 +191,6 @@
 #define SIS315_SINGLE_CHANNEL_2_RANK  	0x1
 #define SIS315_ASYM_DDR		  	0x02
 #define SIS315_DUAL_CHANNEL_1_RANK    	0x3
-
-#define SIS550_DRAM_SIZE_MASK     0x3F  /* 550/650/740 SR14 */
-#define SIS550_DRAM_SIZE_4MB      0x00
-#define SIS550_DRAM_SIZE_8MB      0x01
-#define SIS550_DRAM_SIZE_16MB     0x03
-#define SIS550_DRAM_SIZE_24MB     0x05
-#define SIS550_DRAM_SIZE_32MB     0x07
-#define SIS550_DRAM_SIZE_64MB     0x0F
-#define SIS550_DRAM_SIZE_96MB     0x17
-#define SIS550_DRAM_SIZE_128MB    0x1F
-#define SIS550_DRAM_SIZE_256MB    0x3F
 
 #define SIS_SCRATCH_REG_1A_MASK   0x10
 
@@ -223,7 +232,7 @@
 #define SIS_VB_TV                 (SIS_VB_COMPOSITE | SIS_VB_SVIDEO | \
                                    SIS_VB_SCART | SIS_VB_HIVISION)
 
-#define SIS_EXTERNAL_CHIP_MASK    	   0x0E  /* CR37 */
+#define SIS_EXTERNAL_CHIP_MASK    	   0x0E  /* CR37 (< SiS 660) */
 #define SIS_EXTERNAL_CHIP_SIS301           0x01  /* in CR37 << 1 ! */
 #define SIS_EXTERNAL_CHIP_LVDS             0x02  /* in CR37 << 1 ! */
 #define SIS_EXTERNAL_CHIP_TRUMPION         0x03  /* in CR37 << 1 ! */
@@ -242,11 +251,32 @@
 #define BRI_DRAM_SIZE_32MB        0x04
 #define BRI_DRAM_SIZE_64MB        0x05
 
-#define HW_DEVICE_EXTENSION	  SIS_HW_DEVICE_INFO
-#define PHW_DEVICE_EXTENSION      PSIS_HW_DEVICE_INFO
+#define HW_DEVICE_EXTENSION	  SIS_HW_INFO
+#define PHW_DEVICE_EXTENSION      PSIS_HW_INFO
 
 #define SR_BUFFER_SIZE            5
 #define CR_BUFFER_SIZE            5
+
+/* entries for disp_state - deprecated as of 1.6.02 */
+#define DISPTYPE_CRT1       0x00000008L
+#define DISPTYPE_CRT2       0x00000004L
+#define DISPTYPE_LCD        0x00000002L
+#define DISPTYPE_TV         0x00000001L
+#define DISPTYPE_DISP1      DISPTYPE_CRT1
+#define DISPTYPE_DISP2      (DISPTYPE_CRT2 | DISPTYPE_LCD | DISPTYPE_TV)
+#define DISPMODE_SINGLE	    0x00000020L
+#define DISPMODE_MIRROR	    0x00000010L
+#define DISPMODE_DUALVIEW   0x00000040L
+
+/* Deprecated as of 1.6.02 - use vbflags instead */
+#define HASVB_NONE      	0x00
+#define HASVB_301       	0x01
+#define HASVB_LVDS      	0x02
+#define HASVB_TRUMPION  	0x04
+#define HASVB_LVDS_CHRONTEL	0x10
+#define HASVB_302       	0x20
+#define HASVB_303       	0x40
+#define HASVB_CHRONTEL  	0x80
 
 /* Useful macros */
 #define inSISREG(base)          inb(base)
@@ -287,7 +317,7 @@
 /* ------------------- Global Variables ----------------------------- */
 
 /* Fbcon variables */
-static struct fb_info sis_fb_info;
+static struct fb_info *sis_fb_info;
 
 static struct fb_var_screeninfo default_var = {
 	.xres            = 0,
@@ -366,6 +396,7 @@ static int sisfb_registered = 0;
 static int sisfb_mem = 0;
 static int sisfb_pdc = 0;
 static int sisfb_ypan = -1;
+static int sisfb_max = -1;
 static int sisfb_nocrt2rate = 0;
 static int sisfb_dstn = 0;
 static int sisfb_fstn = 0;
@@ -392,14 +423,8 @@ struct video_info ivideo;
 /* For ioctl SISFB_GET_INFO */
 sisfb_info sisfbinfo;
 
-/* Hardware extension; contains data on hardware */
-HW_DEVICE_EXTENSION sishw_ext = {
-	NULL, NULL, FALSE, NULL, NULL,
-	0, 0, 0, 0, 0, 0, 0, 0, 0,
-	NULL, NULL, NULL, NULL,
-	{0, 0, 0, 0},
-	0
-};
+/* Hardware info; contains data on hardware */
+SIS_HW_INFO sishw_ext;
 
 /* SiS private structure */
 SiS_Private  SiS_Pr;
@@ -426,11 +451,9 @@ static struct board {
 	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_315,     "SIS 315"},
 	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_315PRO,  "SIS 315PRO"},
 	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_550_VGA, "SIS 550 VGA"},
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_650_VGA, "SIS 650/M650/651/661FX/M661FX/740/741 VGA"},
+	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_650_VGA, "SIS 65x/M65x/740 VGA"},
 	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_330,     "SIS 330"},
-#if 0
-	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_660_VGA, "SIS 660/M660/760/M760 VGA"},
-#endif
+	{PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_660_VGA, "SIS 661FX/M661FX/741/760 VGA"},
 	{0, 0, NULL}
 };
 
@@ -766,42 +789,119 @@ static const struct _customttable {
     unsigned long SpecialID;
     char *optionName;
 } mycustomttable[] = {
-        { SIS_630, "2.00.07", "09/27/2002-13:38:25",
+	{ SIS_630, "2.00.07", "09/27/2002-13:38:25",
 	  0x3240A8,
-	  { 0x220, 0x227, 0x228, 0x229, 0x22a },
-	  {  0x01,  0xe3,  0x9a,  0x6a,  0x00 },
+	  { 0x220, 0x227, 0x228, 0x229, 0x0ee },
+	  {  0x01,  0xe3,  0x9a,  0x6a,  0xef },
 	  0x1039, 0x6300,
-	  "Barco", "iQ R200L/300/400", CUT_BARCO1366, "BARCO1366"
+	  "Barco", "iQ R200L/300/400", CUT_BARCO1366, "BARCO_1366"
 	},
 	{ SIS_630, "2.00.07", "09/27/2002-13:38:25",
 	  0x323FBD,
-	  { 0x220, 0x227, 0x228, 0x229, 0x22a },
-	  {  0x00,  0x5a,  0x64,  0x41,  0x00 },
+	  { 0x220, 0x227, 0x228, 0x229, 0x0ee },
+	  {  0x00,  0x5a,  0x64,  0x41,  0xef },
 	  0x1039, 0x6300,
-	  "Barco", "iQ G200L/300/400/500", CUT_BARCO1024, "BARCO1024"
+	  "Barco", "iQ G200L/300/400/500", CUT_BARCO1024, "BARCO_1024"
 	},
 	{ SIS_650, "", "",
 	  0,
 	  { 0, 0, 0, 0, 0 },
 	  { 0, 0, 0, 0, 0 },
 	  0x0e11, 0x083c,
-	  "Compaq", "Presario 3017cl/3045US", CUT_COMPAQ12802, "COMPAQ1280"
+	  "Inventec (Compaq)", "3017cl/3045US", CUT_COMPAQ12802, "COMPAQ_1280"
 	},
 	{ SIS_650, "", "",
 	  0,
 	  { 0x00c, 0, 0, 0, 0 },
 	  { 'e'  , 0, 0, 0, 0 },
 	  0x1558, 0x0287,
-	  "Clevo", "L285/L287 (Version 1)", CUT_CLEVO1024, "CLEVO1024"
+	  "Clevo", "L285/L287 (Version 1)", CUT_CLEVO1024, "CLEVO_L28X_1"
 	},
 	{ SIS_650, "", "",
 	  0,
 	  { 0x00c, 0, 0, 0, 0 },
 	  { 'y'  , 0, 0, 0, 0 },
 	  0x1558, 0x0287,
-	  "Clevo", "L285/L287 (Version 2)", CUT_CLEVO10242, "CLEVO10242"
+	  "Clevo", "L285/L287 (Version 2)", CUT_CLEVO10242, "CLEVO_L28X_2"
 	},
-	{ 4321, "", "",			/* This is hopefully NEVER autodetected */
+	{ SIS_650, "", "",
+	  0,
+	  { 0, 0, 0, 0, 0 },
+	  { 0, 0, 0, 0, 0 },
+	  0x1558, 0x0400,  /* possibly 401 and 402 as well; not panelsize specific (?) */
+	  "Clevo", "D400S/D410S/D400H/D410H", CUT_CLEVO1400, "CLEVO_D4X0"
+	},
+	{ SIS_650, "", "",
+	  0,	/* Shift LCD in LCD-via-CRT1 mode */
+	  { 0, 0, 0, 0, 0 },
+	  { 0, 0, 0, 0, 0 },
+	  0x1558, 0x2263,
+	  "Clevo", "D22ES/D27ES", CUT_UNIWILL1024, "CLEVO_D2X0ES"
+	},
+	{ SIS_650, "", "",
+	  0,	/* Shift LCD in LCD-via-CRT1 mode */
+	  { 0, 0, 0, 0, 0 },
+	  { 0, 0, 0, 0, 0 },
+	  0x1734, 0x101f,
+	  "Uniwill", "N243S9", CUT_UNIWILL1024, "UNIWILL_N243S9"
+	},
+	{ SIS_650, "", "",
+	  0,	/* Shift LCD in LCD-via-CRT1 mode */
+	  { 0, 0, 0, 0, 0 },
+	  { 0, 0, 0, 0, 0 },
+	  0x1584, 0x5103,
+	  "Uniwill", "N35BS1", CUT_UNIWILL10242, "UNIWILL_N35BS1"
+	},
+	{ SIS_650, "1.09.2c", "",  /* Other versions, too? */
+	  0,	/* Shift LCD in LCD-via-CRT1 mode */
+	  { 0, 0, 0, 0, 0 },
+	  { 0, 0, 0, 0, 0 },
+	  0x1019, 0x0f05,
+	  "ECS", "A928", CUT_UNIWILL1024, "ECS_A928"
+	},
+	{ SIS_740, "1.11.27a", "",
+	  0,
+	  { 0, 0, 0, 0, 0 },
+	  { 0, 0, 0, 0, 0 },
+	  0x1043, 0x1612,
+	  "Asus", "L3000D/L3500D", CUT_ASUSL3000D, "ASUS_L3X00"
+	},
+	{ SIS_650, "1.10.9k", "",
+	  0,
+	  { 0, 0, 0, 0, 0 },
+	  { 0, 0, 0, 0, 0 },
+	  0x1025, 0x0028,
+	  "Acer", "Aspire 1700", CUT_ACER1280, "ACER_ASPIRE1700"
+	},
+	{ SIS_650, "1.10.7w", "",
+	  0,
+	  { 0, 0, 0, 0, 0 },
+	  { 0, 0, 0, 0, 0 },
+	  0x14c0, 0x0012,
+	  "Compal", "??? (V1)", CUT_COMPAL1400_1, "COMPAL_1400_1"
+	},
+	{ SIS_650, "1.10.7x", "",
+	  0,
+	  { 0, 0, 0, 0, 0 },
+	  { 0, 0, 0, 0, 0 },
+	  0x14c0, 0x0012,
+	  "Compal", "??? (V2)", CUT_COMPAL1400_2, "COMPAL_1400_2"
+	},
+	{ SIS_650, "1.10.8o", "",
+	  0,	/* For EMI (unknown) */
+	  { 0, 0, 0, 0, 0 },
+	  { 0, 0, 0, 0, 0 },
+	  0x1043, 0x1612,
+	  "Asus", "A2H (V1)", CUT_ASUSA2H_1, "ASUS_A2H_1"
+	},
+	{ SIS_650, "1.10.8q", "",
+	  0,	/* For EMI */
+	  { 0, 0, 0, 0, 0 },
+	  { 0, 0, 0, 0, 0 },
+	  0x1043, 0x1612,
+	  "Asus", "A2H (V2)", CUT_ASUSA2H_2, "ASUS_A2H_2"
+	},
+	{ 4321, "", "",			/* never autodetected */
 	  0,
 	  { 0, 0, 0, 0, 0 },
 	  { 0, 0, 0, 0, 0 },
@@ -826,6 +926,8 @@ typedef struct _SIS_GLYINFO {
 	u8 gmask[72];
 	int ngmask;
 } SIS_GLYINFO;
+
+static char sisfb_fontname[40];
 #endif
 
 typedef struct _SIS_OH {
@@ -1077,9 +1179,9 @@ static int      sisfb_ioctl(struct inode *inode,
 			    unsigned long arg, 
 		       	    struct fb_info *info);
 extern int	sisfb_mode_rate_to_dclock(SiS_Private *SiS_Pr, 
-			      PSIS_HW_DEVICE_INFO HwDeviceExtension,
+			      PSIS_HW_INFO HwDeviceExtension,
 			      unsigned char modeno, unsigned char rateindex);	
-extern int      sisfb_mode_rate_to_ddata(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension,
+extern int      sisfb_mode_rate_to_ddata(SiS_Private *SiS_Pr, PSIS_HW_INFO HwDeviceExtension,
 			 unsigned char modeno, unsigned char rateindex,
 			 unsigned int *left_margin, unsigned int *right_margin, 
 			 unsigned int *upper_margin, unsigned int *lower_margin,
@@ -1117,7 +1219,6 @@ static void     sisfb_get_VB_type(void);
 static void     sisfb_handle_ddc(struct sisfb_monitor *monitor, int crtno);
 static BOOLEAN  sisfb_interpret_edid(struct sisfb_monitor *monitor, unsigned char *buffer);
 
-
 /* SiS-specific Export functions */
 void            sis_dispinfo(struct ap_data *rec);
 void            sis_malloc(struct sis_memreq *req);
@@ -1145,20 +1246,29 @@ static SIS_OH   *sisfb_poh_free(unsigned long base);
 static void     sisfb_free_node(SIS_OH *poh);
 
 /* Internal routines to access PCI configuration space */
-BOOLEAN         sisfb_query_VGA_config_space(PSIS_HW_DEVICE_INFO psishw_ext,
+BOOLEAN         sisfb_query_VGA_config_space(PSIS_HW_INFO psishw_ext,
 	          	unsigned long offset, unsigned long set, unsigned long *value);
-BOOLEAN         sisfb_query_north_bridge_space(PSIS_HW_DEVICE_INFO psishw_ext,
+BOOLEAN         sisfb_query_north_bridge_space(PSIS_HW_INFO psishw_ext,
 	         	unsigned long offset, unsigned long set, unsigned long *value);
 
+/* Sensing routines */
+void            SiS_Sense30x(void);
+int             SISDoSense(int tempbl, int tempbh, int tempcl, int tempch);
+void            SiS_SenseCh(void);
+
 /* Routines from init.c/init301.c */
-extern void 	SiSRegInit(SiS_Private *SiS_Pr, USHORT BaseAddr);
-extern BOOLEAN  SiSInit(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension);
-extern BOOLEAN  SiSSetMode(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension, USHORT ModeNo);
+extern USHORT   SiS_GetModeID(int VGAEngine, ULONG VBFlags, int HDisplay, int VDisplay, int Depth, BOOLEAN FSTN);
+extern USHORT   SiS_GetModeID_LCD(int VGAEngine, ULONG VBFlags, int HDisplay, int VDisplay, int Depth,
+                                  BOOLEAN FSTN, USHORT CustomT, int LCDwith, int LCDheight);
+extern USHORT   SiS_GetModeID_TV(int VGAEngine, ULONG VBFlags, int HDisplay, int VDisplay, int Depth);
+extern USHORT   SiS_GetModeID_VGA2(int VGAEngine, ULONG VBFlags, int HDisplay, int VDisplay, int Depth);
+
+extern void 	SiSRegInit(SiS_Private *SiS_Pr, SISIOADDRESS BaseAddr);
+extern BOOLEAN  SiSSetMode(SiS_Private *SiS_Pr, PSIS_HW_INFO HwDeviceInfo, USHORT ModeNo);
 extern void     SiS_SetEnableDstn(SiS_Private *SiS_Pr, int enable);
 extern void     SiS_SetEnableFstn(SiS_Private *SiS_Pr, int enable);
-extern void     SiS_LongWait(SiS_Private *SiS_Pr);
 
-extern BOOLEAN  sisfb_gettotalfrommode(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension,
+extern BOOLEAN  sisfb_gettotalfrommode(SiS_Private *SiS_Pr, PSIS_HW_INFO HwDeviceExtension,
 		       unsigned char modeno, int *htotal, int *vtotal, unsigned char rateindex);
 
 /* Chrontel TV functions */
@@ -1171,14 +1281,11 @@ extern void     SiS_DDC2Delay(SiS_Private *SiS_Pr, USHORT delaytime);
 extern void     SiS_SetChrontelGPIO(SiS_Private *SiS_Pr, USHORT myvbinfo);
 extern USHORT   SiS_HandleDDC(SiS_Private *SiS_Pr, unsigned long VBFlags, int VGAEngine,
 		              USHORT adaptnum, USHORT DDCdatatype, unsigned char *buffer);
-extern void SiS_Chrontel701xBLOn(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension);
-extern void SiS_Chrontel701xBLOff(SiS_Private *SiS_Pr);
-extern void SiS_SiS30xBLOn(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension);
-extern void SiS_SiS30xBLOff(SiS_Private *SiS_Pr, PSIS_HW_DEVICE_INFO HwDeviceExtension);
-			      
-/* Sensing routines */
-void            SiS_Sense30x(void);
-int             SISDoSense(int tempbl, int tempbh, int tempcl, int tempch);
-void            SiS_SenseCh(void);			
+extern USHORT   SiS_ReadDDC1Bit(SiS_Private *SiS_Pr);			      
+extern void 	SiS_Chrontel701xBLOn(SiS_Private *SiS_Pr, PSIS_HW_INFO HwDeviceInfo);
+extern void 	SiS_Chrontel701xBLOff(SiS_Private *SiS_Pr);
+extern void 	SiS_SiS30xBLOn(SiS_Private *SiS_Pr, PSIS_HW_INFO HwDeviceInfo);
+extern void 	SiS_SiS30xBLOff(SiS_Private *SiS_Pr, PSIS_HW_INFO HwDeviceInfo);
+
 			
 #endif

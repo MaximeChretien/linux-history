@@ -184,9 +184,7 @@ MODULE_PARM_DESC(sizes, "list of device (partition) sizes " \
 		 "All devices with size 0 equally partition the "
 		 "remaining space on the expanded strorage not "
 		 "claimed by explicit sizes\n");
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,4,12))
-MODULE_LICENSE ("GPL");
-#endif
+MODULE_LICENSE("GPL");
 
 
 /* The following items are obtained through kmalloc() in init_module() */
@@ -273,7 +271,7 @@ xpram_int_format(char **strptr)
 		return XPRAM_INVALF;
 	if ( (**strptr == '0') 
 	     && ( (*((*strptr)+1) == 'x') || (*((*strptr) +1) == 'X') ) 
-	     && isdigit(*((*strptr)+3)) ) {
+	     && isxdigit(*((*strptr)+2)) ) {
 		*strptr=(*strptr)+2;
 		return XPRAM_HEXF;
 	} else return XPRAM_DECF;

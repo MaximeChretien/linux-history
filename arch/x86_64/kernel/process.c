@@ -9,7 +9,7 @@
  *  X86-64 port
  *	Andi Kleen.
  * 
- *  $Id: process.c,v 1.74 2003/08/13 13:43:16 ak Exp $
+ *  $Id: process.c,v 1.75 2004/01/13 09:04:32 ak Exp $
  */
 
 /*
@@ -159,7 +159,7 @@ static int __init idle_setup (char *str)
 
 __setup("idle=", idle_setup);
 
-static long no_idt[3];
+static struct { long x; } no_idt[3];
 static enum { 
 	BOOT_BIOS = 'b',
 	BOOT_TRIPLE = 't', 

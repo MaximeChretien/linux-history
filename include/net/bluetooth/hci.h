@@ -462,6 +462,17 @@ typedef struct {
 } __attribute__ ((packed)) inquiry_info;
 #define INQUIRY_INFO_SIZE 14
 
+#define EVT_INQUIRY_RESULT_WITH_RSSI	0x22
+typedef struct {
+	bdaddr_t	bdaddr;
+	__u8	pscan_rep_mode;
+	__u8	pscan_period_mode;
+	__u8	dev_class[3];
+	__u16	clock_offset;
+	__u8	rssi;
+} __attribute__ ((packed)) inquiry_info_with_rssi;
+#define INQUIRY_INFO_WITH_RSSI_SIZE 14
+
 #define EVT_CONN_COMPLETE 	0x03
 typedef struct {
 	__u8	status;

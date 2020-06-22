@@ -11,6 +11,12 @@
  * partition split defined below.
  *
  * $Log: axisflashmap.c,v $
+ * Revision 1.31  2003/11/14 16:55:27  jonashg
+ * Made it possible to RAM boot without any flash drivers present.
+ *
+ * Revision 1.30  2003/09/29 06:37:18  mikaelp
+ * Exported master mtd device as axisflash_mtd.
+ *
  * Revision 1.29  2003/04/01 14:12:06  starvik
  * Added loglevel for lots of printks
  *
@@ -141,6 +147,9 @@
 
 /* From head.S */
 extern unsigned long romfs_start, romfs_length, romfs_in_flash;
+
+/* The master mtd for the entire flash. */
+struct mtd_info* axisflash_mtd = NULL;
 
 /* Map driver functions. */
 
@@ -388,7 +397,7 @@ static int __init init_axis_flash(void)
 	struct mtd_info *mymtd;
 	int err = 0;
 	int pidx = 0;
-	struct partitiontable_head *ptable_head;
+	struct partitiontable_head *ptable_head = NULL;
 	struct partitiontable_entry *ptable;
 	int use_default_ptable = 1; /* Until proven otherwise. */
 	const char *pmsg = KERN_INFO "  /dev/flash%d at 0x%08x, size 0x%08x\n";
@@ -397,19 +406,22 @@ static int __init init_axis_flash(void)
 		/* There's no reason to use this module if no flash chip can
 		 * be identified. Make sure that's understood.
 		 */
-		panic("axisflashmap found no flash chip!\n");
+		printk(KERN_INFO "axisflashmap: Found no flash chip.\n");
+	} else {
+		printk(KERN_INFO "%s: 0x%08x bytes of flash memory.\n",
+		       mymtd->name, mymtd->size);
+		axisflash_mtd = mymtd;
 	}
 
-	printk(KERN_INFO "%s: 0x%08x bytes of flash memory.\n",
-	       mymtd->name, mymtd->size);
-
-	mymtd->module = THIS_MODULE;
-
-	ptable_head = (struct partitiontable_head *)(FLASH_CACHED_ADDR +
-		      CONFIG_ETRAX_PTABLE_SECTOR + PARTITION_TABLE_OFFSET);
+	if (mymtd) {
+		mymtd->module = THIS_MODULE;
+		ptable_head = (struct partitiontable_head *)(FLASH_CACHED_ADDR +
+			      CONFIG_ETRAX_PTABLE_SECTOR +
+			      PARTITION_TABLE_OFFSET);
+	}
 	pidx++;  /* First partition is always set to the default. */
 
-	if ((ptable_head->magic == PARTITION_TABLE_MAGIC)
+	if (ptable_head && (ptable_head->magic == PARTITION_TABLE_MAGIC)
 	    && (ptable_head->size <
 		(MAX_PARTITIONS * sizeof(struct partitiontable_entry) +
 		PARTITIONTABLE_END_MARKER_SIZE))
@@ -476,22 +488,25 @@ static int __init init_axis_flash(void)
 		axis_partitions[pidx].offset = romfs_start - FLASH_CACHED_ADDR;
 		axis_partitions[pidx].mask_flags |= MTD_WRITEABLE;
 
-		printk(KERN_INFO " Adding readonly flash partition for romfs image:\n");
+		printk(KERN_INFO
+		       " Adding readonly flash partition for romfs image:\n");
 		printk(pmsg, pidx, axis_partitions[pidx].offset,
 		       axis_partitions[pidx].size);
 		pidx++;
 	}
 
-	if (use_default_ptable) {
-		printk(KERN_INFO " Using default partition table.\n");
-		err = add_mtd_partitions(mymtd, axis_default_partitions,
-		                         NUM_DEFAULT_PARTITIONS);
-	} else {
-		err = add_mtd_partitions(mymtd, axis_partitions, pidx);
-	}
+	if (mymtd) {
+		if (use_default_ptable) {
+			printk(KERN_INFO " Using default partition table.\n");
+			err = add_mtd_partitions(mymtd, axis_default_partitions,
+						 NUM_DEFAULT_PARTITIONS);
+		} else {
+			err = add_mtd_partitions(mymtd, axis_partitions, pidx);
+		}
 
-	if (err) {
-		panic("axisflashmap could not add MTD partitions!\n");
+		if (err) {
+			panic("axisflashmap could not add MTD partitions!\n");
+		}
 	}
 
 	if (!romfs_in_flash) {
@@ -529,3 +544,5 @@ static int __init init_axis_flash(void)
 
 /* This adds the above to the kernels init-call chain. */
 module_init(init_axis_flash);
+
+EXPORT_SYMBOL(axisflash_mtd);

@@ -82,6 +82,7 @@ bool 'SunOS binary emulation' CONFIG_SUNOS_EMUL
 if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
    tristate 'Solaris binary emulation (EXPERIMENTAL)' CONFIG_SOLARIS_EMUL
 fi
+bool 'Select task to kill on out of memory condition' CONFIG_OOM_KILLER
 source drivers/parport/Config.in
 dep_tristate '  Parallel printer support' CONFIG_PRINTER $CONFIG_PARPORT
 if [ "$CONFIG_PCI" = "y" ]; then
@@ -131,7 +132,6 @@ tristate 'ATA/IDE/MFM/RLL support' CONFIG_IDE
 if [ "$CONFIG_IDE" != "n" ]; then
   source drivers/ide/Config.in
 else
-  define_bool CONFIG_BLK_DEV_IDE_MODES n
   define_bool CONFIG_BLK_DEV_HD n
 fi
 endmenu
@@ -305,6 +305,7 @@ if [ "$CONFIG_DEBUG_KERNEL" != "n" ]; then
    bool '  Spinlock debugging' CONFIG_DEBUG_SPINLOCK
    bool '  Verbose BUG() reporting (adds 70K)' CONFIG_DEBUG_BUGVERBOSE
    bool '  D-cache flush debugging' CONFIG_DEBUG_DCFLUSH
+   bool '  Debug BOOTMEM initialization' CONFIG_DEBUG_BOOTMEM
 fi
 bool 'Stack Overflow Detection Support' CONFIG_STACK_DEBUG
 if [ "$CONFIG_STACK_DEBUG" = "y" ] ; then

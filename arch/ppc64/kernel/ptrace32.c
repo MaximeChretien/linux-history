@@ -31,6 +31,40 @@
 #include <asm/pgtable.h>
 #include <asm/system.h>
 
+#ifdef CONFIG_ALTIVEC
+/*
+ * Get contents of AltiVec register state in task TASK
+ */
+static inline int get_vrregs32(unsigned long data, struct task_struct *task)
+{
+	if(copy_to_user((void *)data,&task->thread.vr[0],
+			offsetof(struct thread_struct,vrsave)-
+			offsetof(struct thread_struct,vr[0])))
+		return -EFAULT;
+	data+=offsetof(struct thread_struct,vrsave[1])-
+		offsetof(struct thread_struct,vr[0]);
+	if (put_user(task->thread.vrsave[1],((u32 *)data)))
+		return -EFAULT;
+	return 0;
+}
+
+/*
+ * Write contents of AltiVec register state into task TASK.
+ */
+static inline int set_vrregs32(struct task_struct *task, unsigned long data)
+{
+	if(copy_from_user(&task->thread.vr[0],(void *)data,
+			offsetof(struct thread_struct,vrsave)-
+			  offsetof(struct thread_struct,vr[0])))
+		return -EFAULT;
+	data+=offsetof(struct thread_struct,vrsave[1])-
+		offsetof(struct thread_struct,vr[0]);
+	if (get_user(task->thread.vrsave[1],((u32 *)data)))
+		return -EFAULT;
+	return 0;
+}
+#endif
+
 /*
  * Set of msr bits that gdb can change on behalf of a process.
  */
@@ -463,6 +497,23 @@ int sys32_ptrace(long request, long pid, unsigned long addr, unsigned long data)
 
 
 
+#ifdef CONFIG_ALTIVEC
+	case PTRACE_GETVRREGS:
+		/* Get the child altivec register state. */
+		if (child->thread.regs->msr & MSR_VEC)
+			giveup_altivec(child);
+		ret = get_vrregs32((unsigned long)data, child);
+		break;
+
+	case PTRACE_SETVRREGS:
+		/* Set the child altivec register state. */
+		/* this is to clear the MSR_VEC bit to force a reload
+		 * of register state from memory */
+		if (child->thread.regs->msr & MSR_VEC)
+			giveup_altivec(child);
+		ret = set_vrregs32(child,(unsigned long)data);
+		break;
+#endif
 	default:
 		ret = -EIO;
 		break;

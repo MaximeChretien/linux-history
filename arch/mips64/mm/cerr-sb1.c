@@ -193,7 +193,9 @@ asmlinkage void sb1_cache_error(void)
 		prom_printf(" c0_cerr_i   ==   %08x", cerr_i);
 		breakout_cerri(cerr_i);
 		if (CP0_CERRI_IDX_VALID(cerr_i)) {
-			if ((eepc & SB1_CACHE_INDEX_MASK) != (cerr_i & SB1_CACHE_INDEX_MASK))
+			/* Check index of EPC, allowing for delay slot */
+			if (((eepc & SB1_CACHE_INDEX_MASK) != (cerr_i & SB1_CACHE_INDEX_MASK)) &&
+			    ((eepc & SB1_CACHE_INDEX_MASK) != ((cerr_i & SB1_CACHE_INDEX_MASK) - 4)))
 				prom_printf(" cerr_i idx doesn't match eepc\n");
 			else {
 				res = extract_ic(cerr_i & SB1_CACHE_INDEX_MASK,

@@ -266,5 +266,5 @@ do_sigbus:
 	return;
 
 vmalloc_fault:
-	panic("Pagefault for kernel virtual memory");
+	die("Pagefault for kernel virtual memory", regs);
 }

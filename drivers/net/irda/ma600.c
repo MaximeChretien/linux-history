@@ -84,13 +84,13 @@ static struct dongle_reg dongle = {
 	ma600_change_speed,
 };
 
-int __init ma600_init(void)
+static int __init ma600_init(void)
 {
 	IRDA_DEBUG(2, "%s()\n", __FUNCTION__);
 	return irda_device_register_dongle(&dongle);
 }
 
-void __exit ma600_cleanup(void)
+static void __exit ma600_cleanup(void)
 {
 	IRDA_DEBUG(2, "%s()\n", __FUNCTION__);
 	irda_device_unregister_dongle(&dongle);

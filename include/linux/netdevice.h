@@ -454,6 +454,8 @@ struct net_device
 #endif /* CONFIG_NET_DIVERT */
 };
 
+/* 2.6 compatibility */
+#define SET_NETDEV_DEV(net, pdev) do { } while (0)
 
 struct packet_type 
 {

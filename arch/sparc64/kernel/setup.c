@@ -40,6 +40,7 @@
 #include <asm/head.h>
 #include <asm/starfire.h>
 #include <asm/hardirq.h>
+#include <asm/sections.h>
 
 #ifdef CONFIG_IP_PNP
 #include <net/ipconfig.h>
@@ -456,7 +457,7 @@ extern int root_mountflags;
 char saved_command_line[256];
 char reboot_command[256];
 
-extern unsigned long phys_base;
+extern unsigned long phys_base, kern_base, kern_size;
 
 static struct pt_regs fake_swapper_regs = { { 0, }, 0, 0, 0, 0 };
 
@@ -526,6 +527,22 @@ void __init setup_arch(char **cmdline_p)
 		if (highest_paddr < top)
 			highest_paddr = top;
 	}
+
+	switch (tlb_type) {
+	default:
+	case spitfire:
+		kern_base = spitfire_get_itlb_data(sparc64_highest_locked_tlbent());
+		kern_base &= _PAGE_PADDR_SF;
+		break;
+
+	case cheetah:
+	case cheetah_plus:
+		kern_base = cheetah_get_litlb_data(sparc64_highest_locked_tlbent());
+		kern_base &= _PAGE_PADDR;
+		break;
+	};
+
+	kern_size = (unsigned long)&_end - (unsigned long)KERNBASE;
 
 	if (!root_flags)
 		root_mountflags &= ~MS_RDONLY;

@@ -23,6 +23,8 @@
 #define pte_quicklist (S390_lowcore.cpu_data.pte_quick)
 #define pgtable_cache_size (S390_lowcore.cpu_data.pgtable_cache_sz)
 
+extern void diag10(unsigned long addr);
+
 /*
  * Allocate and free page tables. The xxx_kernel() versions are
  * used to allocate a kernel page table - this turns on ASN bits

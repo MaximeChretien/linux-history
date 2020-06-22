@@ -62,7 +62,7 @@ EXPORT_SYMBOL_NOVERS(strrchr);
 EXPORT_SYMBOL_NOVERS(strtok);
 EXPORT_SYMBOL_NOVERS(strpbrk);
 
-EXPORT_SYMBOL(_clear_page);
+EXPORT_SYMBOL(clear_page);
 EXPORT_SYMBOL(kernel_thread);
 
 /*

@@ -70,6 +70,7 @@ extern struct systemcfg *systemcfg;
 #define PV_ICESTAR      0x0036
 #define PV_SSTAR        0x0037
 #define PV_POWER4p      0x0038
+#define PV_POWER4ul	0x0039
 #define PV_630          0x0040
 #define PV_630p         0x0041
 

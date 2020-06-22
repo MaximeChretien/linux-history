@@ -144,6 +144,8 @@ struct acpi_processor_performance {
 	int			platform_limit;
 	u16			control_register;
 	u16			status_register;
+	u8			control_register_bit_width;
+	u8			status_register_bit_width;
 	int			state_count;
 	struct acpi_processor_px states[ACPI_PROCESSOR_MAX_PERFORMANCE];
 };
@@ -212,7 +214,7 @@ struct acpi_processor_errata {
 
 static struct acpi_processor	*processors[NR_CPUS];
 static struct acpi_processor_errata errata;
-static void (*pm_idle_save)(void) = NULL;
+static void (*pm_idle_save)(void);
 
 
 /* --------------------------------------------------------------------------
@@ -902,7 +904,7 @@ acpi_processor_get_performance_control (
 	}
 
 	pr->performance.control_register = (u16) reg->address;
-
+	pr->performance.control_register_bit_width = reg->bit_width;
 	/*
 	 * status_register
 	 */
@@ -929,6 +931,7 @@ acpi_processor_get_performance_control (
 	}
 
 	pr->performance.status_register = (u16) reg->address;
+	pr->performance.status_register_bit_width = reg->bit_width;
 
 	ACPI_DEBUG_PRINT((ACPI_DB_INFO, 
 		"control_register[0x%04x] status_register[0x%04x]\n",
@@ -1018,6 +1021,42 @@ end:
 	return_VALUE(result);
 }
 
+static int
+acpi_processor_write_port(
+	u16	port,
+	u8	bit_width,
+	u32	value)
+{
+	if (bit_width <= 8) {
+		outb(value, port);
+	} else if (bit_width <= 16) {
+		outw(value, port);
+	} else if (bit_width <= 32) {
+		outl(value, port);
+	} else {
+		return -ENODEV;
+	}
+	return 0;
+}
+
+static int
+acpi_processor_read_port(
+	u16	port,
+	u8	bit_width,
+	u32	*ret)
+{
+	*ret = 0;
+	if (bit_width <= 8) {
+		*ret = inb(port);
+	} else if (bit_width <= 16) {
+		*ret = inw(port);
+	} else if (bit_width <= 32) {
+		*ret = inl(port);
+	} else {
+		return -ENODEV;
+	}
+	return 0;
+}
 
 static int
 acpi_processor_set_performance (
@@ -1025,7 +1064,9 @@ acpi_processor_set_performance (
 	int			state)
 {
 	u16			port = 0;
-	u8			value = 0;
+	u8			bit_width = 0;
+	int			ret = 0;
+	u32			value = 0;
 	int			i = 0;
 
 	ACPI_FUNCTION_TRACE("acpi_processor_set_performance");
@@ -1064,12 +1105,18 @@ acpi_processor_set_performance (
 	 */
 
 	port = pr->performance.control_register;
-	value = (u16) pr->performance.states[state].control;
+	value = (u32) pr->performance.states[state].control;
+	bit_width = pr->performance.control_register_bit_width;
 
 	ACPI_DEBUG_PRINT((ACPI_DB_INFO, 
-		"Writing 0x%02x to port 0x%04x\n", value, port));
+		"Writing 0x%08x to port 0x%04x\n", value, port));
 
-	outb(value, port); 
+	ret = acpi_processor_write_port(port, bit_width, value);
+	if (ret) {
+		ACPI_DEBUG_PRINT((ACPI_DB_WARN,
+			"Invalid port width 0x%04x\n", bit_width));
+		return_VALUE(ret);
+	}
 
 	/*
 	 * Then we read the 'status_register' and compare the value with the
@@ -1079,19 +1126,25 @@ acpi_processor_set_performance (
 	 */
 
 	port = pr->performance.status_register;
+	bit_width = pr->performance.status_register_bit_width;
 
 	ACPI_DEBUG_PRINT((ACPI_DB_INFO, 
-		"Looking for 0x%02x from port 0x%04x\n",
-		(u8) pr->performance.states[state].status, port));
+		"Looking for 0x%08x from port 0x%04x\n",
+		(u32) pr->performance.states[state].status, port));
 
 	for (i=0; i<100; i++) {
-		value = inb(port);
-		if (value == (u8) pr->performance.states[state].status)
+		ret = acpi_processor_read_port(port, bit_width, &value);
+		if (ret) {	
+			ACPI_DEBUG_PRINT((ACPI_DB_WARN,
+				"Invalid port width 0x%04x\n", bit_width));
+			return_VALUE(ret);
+		}
+		if (value == (u32) pr->performance.states[state].status)
 			break;
 		udelay(10);
 	}
 
-	if (value != pr->performance.states[state].status) {
+	if (value != (u32) pr->performance.states[state].status) {
 		ACPI_DEBUG_PRINT((ACPI_DB_WARN, "Transition failed\n"));
 		return_VALUE(-ENODEV);
 	}

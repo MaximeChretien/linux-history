@@ -224,12 +224,16 @@ if [ "$CONFIG_FB" = "y" ]; then
       tristate '  HD64461 Frame Buffer support' CONFIG_FB_HIT
    fi
    if [ "$CONFIG_DECSTATION" = "y" ]; then
+      dep_bool '  PMAG-AA TURBOchannel framebuffer support' CONFIG_FB_PMAG_AA $CONFIG_TC
       dep_bool '  PMAG-BA TURBOchannel framebuffer support' CONFIG_FB_PMAG_BA $CONFIG_TC
       dep_bool '  PMAGB-B TURBOchannel framebuffer support' CONFIG_FB_PMAGB_B $CONFIG_TC
       dep_bool '  Maxine (Personal DECstation) onboard framebuffer support' CONFIG_FB_MAXINE $CONFIG_TC
    fi
    if [ "$CONFIG_NINO" = "y" ]; then
       bool '  TMPTX3912/PR31700 frame buffer support' CONFIG_FB_TX3912
+   fi
+   if [ "$CONFIG_PCI" = "y" -o "$CONFIG_CPU_VR41XX" = "y" ]; then
+      tristate '  ITE IT8181E/F support' CONFIG_FB_IT8181
    fi
    if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
       tristate '  Virtual Frame Buffer support (ONLY FOR TESTING!) (EXPERIMENTAL)' CONFIG_FB_VIRTUAL
@@ -303,8 +307,9 @@ if [ "$CONFIG_FB" = "y" ]; then
 	   "$CONFIG_FB_INTEL" = "y" -o \
 	   "$CONFIG_FB_SGIVW" = "y" -o "$CONFIG_FB_CYBER2000" = "y" -o \
 	   "$CONFIG_FB_SA1100" = "y" -o "$CONFIG_FB_3DFX" = "y" -o \
-	   "$CONFIG_FB_PMAG_BA" = "y" -o "$CONFIG_FB_PMAGB_B" = "y" -o \
-	   "$CONFIG_FB_MAXINE" = "y" -o "$CONFIG_FB_TX3912" = "y" -o \
+	   "$CONFIG_FB_PMAG_AA" = "y" -o "$CONFIG_FB_PMAG_BA" = "y" -o \
+	   "$CONFIG_FB_PMAGB_B" = "y" -o "$CONFIG_FB_MAXINE" = "y" -o \
+	   "$CONFIG_FB_TX3912" = "y" -o \
 	   "$CONFIG_FB_SIS" = "y" -o "$CONFIG_FB_NEOMAGIC" = "y" -o \
 	   "$CONFIG_FB_STI" = "y" -o "$CONFIG_FB_HP300" = "y" -o \
 	   "$CONFIG_FB_INTEL" = "y" ]; then
@@ -325,9 +330,9 @@ if [ "$CONFIG_FB" = "y" ]; then
 	      "$CONFIG_FB_P9100" = "m" -o "$CONFIG_FB_ATY128" = "m" -o \
 	      "$CONFIG_FB_RIVA" = "m" -o "$CONFIG_FB_3DFX" = "m" -o \
 	      "$CONFIG_FB_SGIVW" = "m" -o "$CONFIG_FB_CYBER2000" = "m" -o \
-	      "$CONFIG_FB_PMAG_BA" = "m" -o "$CONFIG_FB_PMAGB_B" = "m" -o \
-	      "$CONFIG_FB_MAXINE" = "m" -o "$CONFIG_FB_RADEON" = "m" -o \
-	      "$CONFIG_FB_INTEL" = "m" -o \
+	      "$CONFIG_FB_PMAG_AA" = "m" -o "$CONFIG_FB_PMAG_BA" = "m" -o \
+	      "$CONFIG_FB_PMAGB_B" = "m" -o "$CONFIG_FB_MAXINE" = "m" -o \
+	      "$CONFIG_FB_RADEON" = "m" -o "$CONFIG_FB_INTEL" = "m" -o \
 	      "$CONFIG_FB_SA1100" = "m" -o "$CONFIG_FB_SIS" = "m" -o \
 	      "$CONFIG_FB_TX3912" = "m" -o "$CONFIG_FB_NEOMAGIC" = "m" -o \
 	      "$CONFIG_FB_STI" = "m" -o "$CONFIG_FB_INTEL" = "m" ]; then

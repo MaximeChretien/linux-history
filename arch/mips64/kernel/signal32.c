@@ -27,6 +27,13 @@
 #include <asm/system.h>
 #include <asm/fpu.h>
 
+/*
+ * Including <asm/unistd.h> would give use the 64-bit syscall numbers ...
+ */
+#define __NR_O32_sigreturn		4119
+#define __NR_O32_rt_sigreturn		4193
+#define __NR_O32_restart_syscall	4253
+
 #define DEBUG_SIG 0
 
 #define _BLOCKABLE (~(sigmask(SIGKILL) | sigmask(SIGSTOP)))
@@ -119,12 +126,12 @@ static inline int get_sigset(sigset_t *kbuf, const sigset32_t *ubuf)
 /*
  * Atomically swap in the new signal mask, and wait for a signal.
  */
-asmlinkage inline int sys32_sigsuspend(abi64_no_regargs, struct pt_regs regs)
+save_static_function(sys32_sigsuspend);
+static_unused int _sys32_sigsuspend(abi64_no_regargs, struct pt_regs regs)
 {
 	sigset32_t *uset;
 	sigset_t newset, saveset;
 
-	save_static(&regs);
 	uset = (sigset32_t *) regs.regs[4];
 	if (get_sigset(&newset, uset))
 		return -EFAULT;
@@ -146,13 +153,13 @@ asmlinkage inline int sys32_sigsuspend(abi64_no_regargs, struct pt_regs regs)
 	}
 }
 
-asmlinkage int sys32_rt_sigsuspend(abi64_no_regargs, struct pt_regs regs)
+save_static_function(sys32_rt_sigsuspend);
+static_unused int _sys32_rt_sigsuspend(abi64_no_regargs, struct pt_regs regs)
 {
 	sigset32_t *uset;
 	sigset_t newset, saveset;
         size_t sigsetsize;
 
-	save_static(&regs);
 	/* XXX Don't preclude handling different sized sigset_t's.  */
 	sigsetsize = regs.regs[5];
 	if (sigsetsize != sizeof(sigset32_t))
@@ -234,7 +241,7 @@ asmlinkage int sys32_sigaltstack(abi64_no_regargs, struct pt_regs regs)
 		if (!access_ok(VERIFY_READ, uss, sizeof(*uss)))
 			return -EFAULT;
 		err |= __get_user(sp, &uss->ss_sp);
-		kss.ss_size = (long) sp;
+		kss.ss_sp = (void *) (long) sp;
 		err |= __get_user(kss.ss_size, &uss->ss_size);
 		err |= __get_user(kss.ss_flags, &uss->ss_flags);
 		if (err)

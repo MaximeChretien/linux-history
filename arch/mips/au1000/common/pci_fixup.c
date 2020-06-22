@@ -25,6 +25,12 @@
  *  You should have received a copy of the  GNU General Public License along
  *  with this program; if not, write  to the Free Software Foundation, Inc.,
  *  675 Mass Ave, Cambridge, MA 02139, USA.
+ *
+ *	CTG 11/18/2003  Added supoprt for Au1550 SOC. The PCI block did not 
+ *		   change from Au1500 to the Au1550. However, the boards are now 
+ *         using INTB for second PCI slot.
+ *         This is reflected in pcibios_fixup_irqs.
+ *
  */
 #include <linux/config.h>
 
@@ -36,7 +42,6 @@
 #include <linux/init.h>
 
 #include <asm/au1000.h>
-//#include <asm/pb1500.h>
 #ifdef CONFIG_MIPS_PB1000
 #include <asm/pb1000.h>
 #endif
@@ -49,7 +54,7 @@
 #endif
 
 static void fixup_resource(int r_num, struct pci_dev *dev) ;
-#ifdef CONFIG_SOC_AU1500
+#if defined( CONFIG_SOC_AU1500 ) || defined( CONFIG_SOC_AU1550 )
 static unsigned long virt_io_addr;
 #endif
 
@@ -60,7 +65,7 @@ void __init pcibios_fixup_resources(struct pci_dev *dev)
 
 void __init pcibios_fixup(void)
 {
-#ifdef CONFIG_SOC_AU1500
+#if defined( CONFIG_SOC_AU1500 ) || defined( CONFIG_SOC_AU1550 )
 	int i;
 	struct pci_dev *dev;
 	
@@ -100,7 +105,7 @@ void __init pcibios_fixup(void)
 
 void __init pcibios_fixup_irqs(void)
 {
-#ifdef CONFIG_SOC_AU1500
+#if defined( CONFIG_SOC_AU1500 ) || defined( CONFIG_SOC_AU1550 )
 	unsigned int slot, func;
 	unsigned char pin;
 	struct pci_dev *dev;
@@ -111,14 +116,26 @@ void __init pcibios_fixup_irqs(void)
 
 		dev->irq = 0xff;
 		slot = PCI_SLOT(dev->devfn);
+#if defined( CONFIG_SOC_AU1500 )
 		switch (slot) {
 			case 12:
 			case 13:
 			default:
 				dev->irq = AU1000_PCI_INTA;
 				break;
-
 		}
+#elif defined( CONFIG_SOC_AU1550 )
+		switch (slot) {
+			default:
+			case 12:
+				dev->irq = AU1000_PCI_INTA;
+				break;
+			case 13:
+				dev->irq = AU1000_PCI_INTB;
+				break;
+		}
+#endif
+
 		pci_write_config_byte(dev, PCI_INTERRUPT_LINE, dev->irq);
 		DBG("slot %d irq %d\n", slot, dev->irq);
 	}

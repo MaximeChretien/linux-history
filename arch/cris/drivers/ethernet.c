@@ -1,4 +1,4 @@
-/* $Id: ethernet.c,v 1.44 2003/07/01 10:55:07 starvik Exp $
+/* $Id: ethernet.c,v 1.48 2003/12/03 13:44:39 starvik Exp $
  *
  * e100net.c: A network driver for the ETRAX 100LX network controller.
  *
@@ -7,6 +7,19 @@
  * The outline of this driver comes from skeleton.c.
  *
  * $Log: ethernet.c,v $
+ * Revision 1.48  2003/12/03 13:44:39  starvik
+ * Use hardware pad for short packets. This prevents information leakage
+ * reported by Nessus.
+ *
+ * Revision 1.47  2003/11/25 15:12:38  anderstj
+ * Make sure the LED always is inititated.
+ *
+ * Revision 1.46  2003/08/28 14:35:29  jonasw
+ * Added support for TDK 2120C and fixed led when not connected
+ *
+ * Revision 1.45  2003/08/21 07:22:25  matsfg
+ * Optional behaviour on networkled when no connection.
+ *
  * Revision 1.44  2003/07/01 10:55:07  starvik
  * Never bring down link to make stupid POE equipment happy
  *
@@ -430,7 +443,8 @@ static void generic_check_duplex(void);
 struct transceiver_ops transceivers[] = 
 {
 	{0x1018, broadcom_check_speed, broadcom_check_duplex},  /* Broadcom */
-	{0xC039, tdk_check_speed, tdk_check_duplex},            /* TDK */
+	{0xC039, tdk_check_speed, tdk_check_duplex},            /* TDK 2120 */
+	{0x039C, tdk_check_speed, tdk_check_duplex},            /* TDK 2120C */
 	{0x0000, generic_check_speed, generic_check_duplex}     /* Generic, must be last */
 };
 
@@ -800,6 +814,7 @@ broadcom_check_speed(void)
 static void
 e100_check_speed(unsigned long dummy)
 {
+	static int led_initiated = 0;
 	unsigned long data;
 	int old_speed = current_speed;
 
@@ -810,8 +825,10 @@ e100_check_speed(unsigned long dummy)
 		transceiver->check_speed();
 	}
 	
-	if (old_speed != current_speed)
+	if ((old_speed != current_speed) || !led_initiated) {
+		led_initiated = 1;
 		e100_set_network_leds(NO_NETWORK_ACTIVITY);
+	}
 
 	/* Reinitialize the timer. */
 	speed_timer.expires = jiffies + NET_LINK_UP_CHECK_INTERVAL;
@@ -957,6 +974,7 @@ e100_probe_transceiver(void)
 			break;
 	}
 	transceiver = ops;
+
 	return 0;
 }
 
@@ -1121,7 +1139,6 @@ static int
 e100_send_packet(struct sk_buff *skb, struct net_device *dev)
 {
 	struct net_local *np = (struct net_local *)dev->priv;
-	int length = ETH_ZLEN < skb->len ? skb->len : ETH_ZLEN;
 	unsigned char *buf = skb->data;
 	
 #ifdef ETHDEBUG
@@ -1133,7 +1150,7 @@ e100_send_packet(struct sk_buff *skb, struct net_device *dev)
 
 	dev->trans_start = jiffies;
 	
-	e100_hardware_send_packet(buf, length);
+	e100_hardware_send_packet(buf, skb->len);
 
 	myNextTxDesc = phys_to_virt(myNextTxDesc->descr.next);
 
@@ -1494,7 +1511,7 @@ e100_ethtool_ioctl(struct net_device *dev, struct ifreq *ifr)
 			struct ethtool_drvinfo info;
 			memset((void *) &info, 0, sizeof (info));
 			strncpy(info.driver, "ETRAX 100LX", sizeof(info.driver) - 1);
-			strncpy(info.version, "$Revision: 1.44 $", sizeof(info.version) - 1);
+			strncpy(info.version, "$Revision: 1.48 $", sizeof(info.version) - 1);
 			strncpy(info.fw_version, "N/A", sizeof(info.fw_version) - 1);
 			strncpy(info.bus_info, "N/A", sizeof(info.bus_info) - 1);
 			info.regdump_len = 0;
@@ -1692,7 +1709,11 @@ e100_set_network_leds(int active)
 
 	if (!current_speed) {
 		/* Make LED red, link is down */
+#if defined(CONFIG_ETRAX_NETWORK_RED_ON_NO_CONNECTION)
+		LED_NETWORK_SET(LED_RED);
+#else		
 		LED_NETWORK_SET(LED_OFF);
+#endif		
 	}
 	else if (light_leds) {
 		if (current_speed == 10) {

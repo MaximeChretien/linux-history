@@ -226,8 +226,8 @@ static int __init rtc_init(void)
 		return -ENOENT;
 	}
 
-
 	rtc_freq = 1024;
+
 	return 0;
 }
 

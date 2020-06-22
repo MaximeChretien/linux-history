@@ -54,7 +54,15 @@ bootup_user_stack:
 
         .ascii  "HdrS"
         .word   LINUX_VERSION_CODE
-        .half   0x0203          /* HdrS version */
+
+	/* History:
+	 *
+	 * 0x0300 : Supports being located at other than 0x4000
+	 * 0x0202 : Supports kernel params string
+	 * 0x0201 : Supports reboot_command
+	 */
+	.half   0x0300          /* HdrS version */
+
 root_flags:
         .half   1
 root_dev:
@@ -151,12 +159,31 @@ cheetah_generic_boot:
 	blu,pt	%xcc, 1b
 	 add	%l0, (1 << 3), %l0
 
+	/* Search the small TLB.  OBP never maps us like that but
+	 * newer SILO can.
+	 */
+	clr	%l0
+
+1:	ldxa	[%l0] ASI_ITLB_TAG_READ, %g1
+	membar	#Sync
+	andn	%g1, %l2, %g1
+	cmp	%g1, %g2
+	be,pn	%xcc, cheetah_got_tlbentry
+	 nop
+	cmp	%l0, (15 << 3)
+	blu,pt	%xcc, 1b
+	 add	%l0, (1 << 3), %l0
+
+	/* BUG() if we get here... */
+	ta	0x5
+
 cheetah_got_tlbentry:
 	ldxa	[%l0] ASI_ITLB_DATA_ACCESS, %g0
 	ldxa	[%l0] ASI_ITLB_DATA_ACCESS, %g1
 	membar	#Sync
 	and	%g1, %g3, %g1
-	sub	%g1, %g2, %g1
+	set	0x5fff, %l0
+	andn	%g1, %l0, %g1
 	or	%g5, %g1, %g5
 
 	/* Clear out any KERNBASE area entries. */
@@ -333,13 +360,17 @@ spitfire_create_mappings:
 	blu,pt	%xcc, 1b
 	 add	%l0, (1 << 3), %l0
 
+	/* BUG() if we get here... */
+	ta	0x5
+
 spitfire_got_tlbentry:
 	/* Nops here again, perhaps Cheetah/Blackbird are better behaved... */
 	nop
 	nop
 	nop
 	and	%g1, %g3, %g1		/* Mask to just get paddr bits.       */
-	sub	%g1, %g2, %g1		/* Get rid of %pc offset to get base. */
+	set	0x5fff, %l3		/* Mask offset to get phys base.      */
+	andn	%g1, %l3, %g1
 
 	/* NOTE: We hold on to %g1 paddr base as we need it below to lock
 	 * NOTE: the PROM cif code into the TLB.

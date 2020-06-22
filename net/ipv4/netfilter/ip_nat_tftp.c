@@ -160,8 +160,6 @@ static int __init init(void)
 		ports[0] = TFTP_PORT;
 
 	for (i = 0 ; (i < MAX_PORTS) && ports[i] ; i++) {
-		memset(&tftp[i], 0, sizeof(struct ip_nat_helper));
-
 		tftp[i].tuple.dst.protonum = IPPROTO_UDP;
 		tftp[i].tuple.src.u.udp.port = htons(ports[i]);
 		tftp[i].mask.dst.protonum = 0xFFFF;

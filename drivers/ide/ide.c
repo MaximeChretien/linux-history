@@ -2548,6 +2548,12 @@ static void __init probe_for_hwifs (void)
 		macide_init();
 	}
 #endif /* CONFIG_BLK_DEV_MAC_IDE */
+#ifdef CONFIG_BLK_DEV_CPCI405_IDE
+	{
+		extern void cpci405ide_init(void);
+		cpci405ide_init();
+	}
+#endif /* CONFIG_BLK_DEV_CPCI405_IDE */
 #ifdef CONFIG_BLK_DEV_Q40IDE
 	{
 		extern void q40ide_init(void);
@@ -2850,8 +2856,10 @@ int ide_register_subdriver (ide_drive_t *drive, ide_driver_t *driver, int versio
 	drive->revalidate = 1;
 	drive->suspend_reset = 0;
 #ifdef CONFIG_PROC_FS
-	ide_add_proc_entries(drive->proc, generic_subdriver_entries, drive);
-	ide_add_proc_entries(drive->proc, driver->proc, drive);
+	if (drive->driver != &idedefault_driver) {
+		ide_add_proc_entries(drive->proc, generic_subdriver_entries, drive);
+		ide_add_proc_entries(drive->proc, driver->proc, drive);
+	}
 #endif
 	return 0;
 }

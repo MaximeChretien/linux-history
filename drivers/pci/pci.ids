@@ -3428,8 +3428,6 @@
 		1148 5061  SK-9861 V2.0 Gigabit Ethernet 1000Base-SX Adapter
 		1148 5071  SK-9871 V2.0 Gigabit Ethernet 1000Base-ZX Adapter
 		1148 9521  SK-9521 10/100/1000Base-T Adapter
-	4400 SK-9Dxx Gigabit Ethernet Adapter
-	4500 SK-9Mxx Gigabit Ethernet Adapter
 1149  Win System Corporation
 114a  VMIC
 	5579  VMIPCI-5579 (Reflective Memory Card)
@@ -3725,8 +3723,24 @@
 11aa  Actel
 11ab  Galileo Technology Ltd.
 	0146  GT-64010/64010A System Controller
+	4146  GT-64011/GT-64111 System Controller
 	4320  Gigabit Ethernet Adapter
-		11ab 9521  Marvell Yukon Gigabit Ethernet 10/100/1000Base-T Adapter
+		1019 0f38  Marvell 88E8001 Gigabit LOM Ethernet Adapter (ECS)
+		1019 8001  Marvell 88E8001 Gigabit LOM Ethernet Adapter (ECS)
+		1043 173c  Marvell 88E8001 Gigabit LOM Ethernet Adapter (Asus)
+		1043 811a  Marvell 88E8001 Gigabit LOM Ethernet Adapter (Asus)
+		105b 0c19  Marvell 88E8001 Gigabit LOM Ethernet Adapter (Foxconn)
+		10b8 b452  SMC EZ Card 1000 (SMC9452TXV.2)
+		11ab 0121  Marvell RDK-8001 Adapter
+		11ab 0321  Marvell RDK-8003 Adapter
+		11ab 1021  Marvell RDK-8010 Adapter
+		11ab 5021  Marvell Yukon Gigabit Ethernet 10/100/1000Base-T Adapter (64 bit)
+		11ab 9521  Marvell Yukon Gigabit Ethernet 10/100/1000Base-T Adapter (32 bit)
+		1458 e000  Marvell 88E8001 Gigabit LOM Ethernet Adapter (Gigabyte)
+		147b 1406  Marvell 88E8001 Gigabit LOM Ethernet Adapter (Abit)
+		15d4 0047  Marvell 88E8001 Gigabit LOM Ethernet Adapter (Iwill)
+		1695 9025  Marvell 88E8001 Gigabit LOM Ethernet Adapter (Epox)
+		17f2 1c03  Marvell 88E8001 Gigabit LOM Ethernet Adapter (Albatron)
 	4611  GT-64115 System Controller
 	4620  GT-64120/64120A/64121A System Controller
 	4801  GT-48001
@@ -4497,6 +4511,7 @@
 	9132  Ethernet 100/10 MBit
 1283  Integrated Technology Express, Inc.
 	673a  IT8330G
+	8181  IT8181E/F LCD/VGA Controller
 	8330  IT8330G
 	8888  IT8888F PCI to ISA Bridge with SMB
 	8889  IT8889F PCI to ISA Bridge
@@ -5524,11 +5539,13 @@
 		10b7 2000  3C998-T Dual Port 10/100/1000 PCI-X
 		10b7 3000  3C999-T Quad Port 10/100/1000 PCI-X
 		1166 1648  NetXtreme CIOB-E 1000Base-T
+	1649  NetXtreme BCM5704S Gigabit Ethernet
 	164d  NetXtreme BCM5702FE Gigabit Ethernet
 	1653  NetXtreme BCM5705 Gigabit Ethernet
 	1654  NetXtreme BCM5705 Gigabit Ethernet
 	165d  NetXtreme BCM5705M Gigabit Ethernet
 	165e  NetXtreme BCM5705M Gigabit Ethernet
+	166e  NetXtreme BCM5705F Gigabit Ethernet
 	1696  NetXtreme BCM5782 Gigabit Ethernet
 		14e4 000d  NetXtreme BCM5782 1000Base-T
 	169c  NetXtreme BCM5788 Gigabit Ethernet

@@ -539,8 +539,8 @@ dasd_eckd_check_characteristics (struct dasd_device_t *device)
                      private->rdc_data.sec_per_trk);
 
         /* set default cache operations */
-        private->attrib.operation = DASD_SEQ_ACCESS;
-        private->attrib.nr_cyl    = 0x02;
+        private->attrib.operation = DASD_NORMAL_CACHE;
+        private->attrib.nr_cyl    = 0;
         
         /* Read Configuration Data */
         rc = read_conf_data (device->devinfo.irq, 
@@ -1630,7 +1630,26 @@ dasd_eckd_ret_stats (ccw_req_t *cqr)
 
 
 /*
- * DASD_ECKD_SET_ATTRUB
+ * DASD_ECKD_GET_ATTRIB
+ * 
+ * DESCRIPTION
+ *   returnes the cache attributes used in Define Extend (DE).
+ */
+int
+dasd_eckd_get_attrib (dasd_device_t *device,
+                      attrib_data_t *attrib)
+{
+	dasd_eckd_private_t *private;
+
+        private = (dasd_eckd_private_t *) device->private;
+        *attrib = private->attrib;
+        
+        return 0;
+        
+} /* end dasd_eckd_get_attrib */
+
+/*
+ * DASD_ECKD_SET_ATTRIB
  * 
  * DESCRIPTION
  *   stores the attributes for cache operation to be used in Define Extend (DE).
@@ -1639,7 +1658,6 @@ int
 dasd_eckd_set_attrib (dasd_device_t *device,
                       attrib_data_t *attrib)
 {
-        int rc = 0;
 	dasd_eckd_private_t *private;
 
         private = (dasd_eckd_private_t *) device->private;
@@ -1650,13 +1668,12 @@ dasd_eckd_set_attrib (dasd_device_t *device,
                      "%x (%i cylinder prestage)",
                      private->attrib.operation,
                      private->attrib.nr_cyl);
-        
 
-        return rc;
+        return 0;
         
 } /* end dasd_eckd_set_attrib */
 
-static char*
+static void
 dasd_eckd_dump_sense (struct dasd_device_t *device, 
                       ccw_req_t            *req)
 {
@@ -1671,7 +1688,7 @@ dasd_eckd_dump_sense (struct dasd_device_t *device,
                 MESSAGE (KERN_ERR, "%s",
                         "No memory to dump sense data");
 
-		return NULL;
+		return;
 	}
 
 	len = sprintf (page, KERN_ERR PRINTK_HEADER
@@ -1734,13 +1751,11 @@ dasd_eckd_dump_sense (struct dasd_device_t *device,
 		}
 	}
 
-        MESSAGE (KERN_ERR,
-                 "Sense data:\n%s", 
-                 page);
+        MESSAGE_LOG (KERN_ERR,
+                     "Sense data:\n%s", 
+                     page);
 
         free_page ((unsigned long) page);
-        
-	return NULL;
 }
 
 
@@ -1770,6 +1785,7 @@ dasd_discipline_t dasd_eckd_discipline = {
 	fill_info:dasd_eckd_fill_info,
         read_stats:dasd_eckd_read_stats,
         ret_stats:dasd_eckd_ret_stats,
+        get_attrib:dasd_eckd_get_attrib,
         set_attrib:dasd_eckd_set_attrib,
 	list:LIST_HEAD_INIT(dasd_eckd_discipline.list),
 };

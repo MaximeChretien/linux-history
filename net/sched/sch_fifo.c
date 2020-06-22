@@ -46,7 +46,7 @@ bfifo_enqueue(struct sk_buff *skb, struct Qdisc* sch)
 {
 	struct fifo_sched_data *q = (struct fifo_sched_data *)sch->data;
 
-	if (sch->stats.backlog <= q->limit) {
+	if (sch->stats.backlog + skb->len <= q->limit) {
 		__skb_queue_tail(&sch->q, skb);
 		sch->stats.backlog += skb->len;
 		sch->stats.bytes += skb->len;
@@ -107,7 +107,7 @@ pfifo_enqueue(struct sk_buff *skb, struct Qdisc* sch)
 {
 	struct fifo_sched_data *q = (struct fifo_sched_data *)sch->data;
 
-	if (sch->q.qlen <= q->limit) {
+	if (sch->q.qlen < q->limit) {
 		__skb_queue_tail(&sch->q, skb);
 		sch->stats.bytes += skb->len;
 		sch->stats.packets++;

@@ -1,4 +1,4 @@
-/* $Id: entry.S,v 1.1.1.1.2.18 2003/10/23 22:08:56 yoshii Exp $
+/* $Id: entry.S,v 1.1.1.1.2.19 2003/11/26 21:28:28 kkojima Exp $
  *
  *  linux/arch/sh/entry.S
  *
@@ -560,7 +560,6 @@ restore_all:
 	ldc.l	@r15+, gbr
 	lds.l	@r15+, mach
 	lds.l	@r15+, macl
-	add	#4, r15			! skip placeholder
  
 #ifdef CONFIG_SH_DSP
 	mov.l	@r15+, k0		! DSP mode marker
@@ -751,7 +750,6 @@ skip_save:
 
 	! Save the user registers on the stack.
 	mov.l	k2, @-r15	! EXPEVT
-	add	#-4, r15	! placeholder
 	!
 	sts.l	macl, @-r15
 	sts.l	mach, @-r15

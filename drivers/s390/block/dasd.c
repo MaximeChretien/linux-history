@@ -6,7 +6,7 @@
  * Bugreports.to..: <Linux390@de.ibm.com>
  * (C) IBM Corporation, IBM Deutschland Entwicklung GmbH, 1999-2001
  *
- * $Revision: 1.289 $
+ * $Revision: 1.311 $
  *
  * History of changes (starts July 2000)
  * 11/09/00 complete redesign after code review
@@ -36,6 +36,7 @@
  * 07/09/01 fixed PL030324MSH (wrong statistics output)
  * 07/16/01 merged in new fixes for handling low-mem situations
  * 01/22/01 fixed PL030579KBE (wrong statistics)
+ * 08/07/03 fixed LTC BZ 3847 Erroneous message when formatting DASD
  */
 
 #include <linux/config.h>
@@ -162,6 +163,8 @@ static struct block_device_operations dasd_device_operations;
 static inline dasd_device_t ** dasd_device_from_devno (int);
 static void dasd_process_queues (dasd_device_t * device);
 static int  dasd_sleep_on_immediate (ccw_req_t *cqr);
+static int  dasd_devno_from_devindex (int devindex);
+static int  dasd_devindex_from_devno (int devno);
 
 /********************************************************************************
  * SECTION: static variables of dasd.c 
@@ -229,29 +232,7 @@ static inline dasd_range_t *
 dasd_create_range (int from, int to, int features)
 {
 	dasd_range_t *range = NULL;
-        int i;
 
-	if ( from > to ) {
-
-                MESSAGE (KERN_WARNING, 
-                         "Adding device range %04x-%04x: "
-                         "range invalid, ignoring.",
-                         from,
-                         to);
-
-		return NULL;
-	}
-	for (i=from;i<=to;i++) {
-                if (dasd_device_from_devno(i)) {
-
-                        MESSAGE (KERN_WARNING,
-                                 "device range %04x-%04x: device "
-                                 "%04x is already in a range.",
-                                 from,
-                                 to,
-                                 i);
-                }
-        }
 	range = (dasd_range_t *) kmalloc (sizeof (dasd_range_t), GFP_KERNEL);
 	if (range == NULL)
 		return NULL;
@@ -307,31 +288,70 @@ dasd_dechain_range (dasd_range_t * range)
 /*
  * function: dasd_add_range
  * creates a dasd_range_t according to the arguments and
- * appends it to the list of ranges
+ * appends it to the list of ranges.
+ * If a device in the range is already in an other range, we split the 
+ * range and add the subranges (no duplicate devices).
  * additionally a devreg_t is created and added to the list of devregs
  */
-static inline dasd_range_t *
+static inline void
 dasd_add_range (int from, int to, int features)
 {
 	dasd_range_t *range;
+        int start, end, index, i;
 
-	range = dasd_create_range (from, to, features);
-	if (!range)
-		return NULL;
-
-	dasd_append_range (range);
-#ifdef CONFIG_DASD_DYNAMIC
-	/* allocate and chain devreg infos for the devnos... */
-	{
-		int i;
-		for (i = range->from; i <= range->to; i++) {
-			dasd_devreg_t *reg = dasd_create_devreg (i);
-			s390_device_register (&reg->devreg);
-			list_add (&reg->list, &dasd_devreg_head);
-		}
+	if (from > to) {
+                MESSAGE (KERN_DEBUG, 
+                         "Adding device range %04x-%04x: "
+                         "range invalid, ignoring.",
+                         from, to);
+		return;
 	}
+
+        /* loop over the given range, remove the already contained devices */
+        /* and add the remaining subranges                                 */
+	for (start = index = from, end = -EINVAL; index <= to; index++) {
+                
+                if (dasd_devindex_from_devno(index) > 0) {
+                        /* current device is already in range */
+                        MESSAGE (KERN_DEBUG,
+                                 "dasd_add_range %04x-%04x: "
+                                 "device %04x is already in range",
+                                 from, to, index);
+
+                        if (start == index) 
+                                start++;        /* first already in range */
+                        else
+                                end = index -1; /* current already in range */
+                } else {
+                        if (index == to) 
+                                end = to; /* end of original range reached */
+                }
+
+                range = NULL;
+                if (end != -EINVAL) {
+                        MESSAGE (KERN_DEBUG,
+                                 "dasd_add_range %04x-%04x: "
+                                 "add (sub)range %04x-%04x",
+                                 from, to, start, end);
+                        
+                        range = dasd_create_range (start, end, features); 
+                        end = -EINVAL;
+                        start = index + 1; 
+                }
+
+                if (range) {
+                        dasd_append_range (range);
+#ifdef CONFIG_DASD_DYNAMIC
+                        /* allocate and chain devreg infos for the devnos... */
+                        for (i = range->from; i <= range->to; i++) {
+                                dasd_devreg_t *reg = dasd_create_devreg (i);
+                                s390_device_register (&reg->devreg);
+                                list_add (&reg->list, &dasd_devreg_head);
+                        }
 #endif				/* CONFIG_DASD_DYNAMIC */
-	return range;
+                }
+        }
+	return;
 }
 
 /*
@@ -534,10 +554,10 @@ dasd_strtoul (char *str, char **stra, int* features)
 
         if (buffer==NULL) {
 
-                MESSAGE (KERN_WARNING,
-                         "can't parse dasd= parameter %s due "
-                         "to low memory",
-                         str);
+                MESSAGE_LOG (KERN_WARNING,
+                             "can't parse dasd= parameter %s due "
+                             "to low memory",
+                             str);
         }
 
         /* remove leading '0x' */
@@ -580,16 +600,16 @@ dasd_strtoul (char *str, char **stra, int* features)
                                         break;
                                 }
 
-                                MESSAGE (KERN_WARNING,
-                                         "unsupported feature: %s, "
-                                         "ignoring setting",
-                                         buffer);
+                                MESSAGE_LOG (KERN_WARNING,
+                                             "unsupported feature: %s, "
+                                             "ignoring setting",
+                                             buffer);
                         }
                 }
         }
 
         *stra = temp+i;
-        if ((val > 65535) || (val < 0))
+        if ((val > 0xFFFF) || (val < 0))
                 return -EINVAL;
         return val;
 }
@@ -1754,7 +1774,7 @@ dasd_start_IO (ccw_req_t * cqr)
 	now = get_clock ();
 
         cqr->startclk = now;
-        if (device->accessible)
+        if (!device->stopped)
                 rc = do_IO (irq, cqr->cpaddr, (long) cqr, cqr->lpm, cqr->options);
         else
                 rc = -EBUSY;
@@ -2158,10 +2178,6 @@ dasd_process_queues (dasd_device_t * device)
 				/* to be filled with MIH */
 			}
 			break;
-
-		case CQR_STATUS_PENDING:
-			/* just wait */
-			break;
 		default:
                         MESSAGE (KERN_EMERG,
                                  "invalid cqr (%p) detected with status %02x ",
@@ -2235,65 +2251,42 @@ do_dasd_request (request_queue_t * queue)
 }
 
 /*
- * DASD_HANDLE_STATE_CHANGE_PENDING
+ * function dasd_handle_state_change_pending
  *
- * DESCRIPTION
- *   Handles the state change pending interrupt.
- *   Search for the device related request queue and check if the first
- *   cqr in queue in in status 'CQR_STATUE_PENDING'.
- *   If so the status is set to 'CQR_STATUS_QUEUED' to reactivate
- *   the device.
- *
- *  PARAMETER
- *   stat               device status of state change pending interrupt.
+ * handles the state change pending interrupt.
  */
 void
 dasd_handle_state_change_pending (devstat_t * stat)
 {
-	dasd_device_t **device_addr;
+
+	dasd_device_t **device_addr, *device;
 	ccw_req_t *cqr;
 
 	device_addr = dasd_device_from_devno (stat->devno);
 
-	if (device_addr == NULL) {
-
-		MESSAGE (KERN_DEBUG,
-                         "unable to find device for state change pending "
-                         "interrupt: devno%04x", 
-                         stat->devno);
+	if (!device_addr) 
                 return;
-	} 
 
-        /* re-activate first request in queue */
-        cqr = (*device_addr)->queue.head;
-
-	if (cqr == NULL) {
-		MESSAGE (KERN_DEBUG,
-			 "got state change pending interrupt on"
-			 "idle device: %04x",
-			 stat->devno);
-		return;
-	}
+        device = *device_addr;
+	if (!device) 
+                return;
         
-        if (cqr->status == CQR_STATUS_PENDING) {
-                
-                DEV_MESSAGE (KERN_DEBUG, (*device_addr), "%s",
-                             "device request queue restarted by "
-                             "state change pending interrupt");
-                
-                del_timer_sync (&(*device_addr)->blocking_timer);
-                
-                check_then_set (&cqr->status,
-                                CQR_STATUS_PENDING, CQR_STATUS_QUEUED);
-                
+        /* restart all 'running' IO on queue */
+        cqr = device->queue.head;
+        while (cqr) {
+                if (cqr->status == CQR_STATUS_IN_IO) {
+                        cqr->status = CQR_STATUS_QUEUED;
+                }
+                cqr = cqr->next;
         }
-	if (cqr->status == CQR_STATUS_IN_IO) {
-		cqr->status = CQR_STATUS_QUEUED;
-		DEV_MESSAGE (KERN_WARNING, (*device_addr), "%s",
-				"redriving state change pending condition while in IO");
-	}
 
-        dasd_schedule_bh (*device_addr);
+        DEV_MESSAGE (KERN_DEBUG, device, "%s",
+                     "device request queue restarted by "
+                     "state change pending interrupt");
+        
+        del_timer_sync (&(device->blocking_timer));
+        device->stopped &= ~DASD_STOPPED_PENDING;
+        dasd_schedule_bh (device);
 
 } /* end dasd_handle_state_change_pending */
 
@@ -2634,15 +2627,18 @@ dasd_format (dasd_device_t * device, format_data_t * fdata)
 			rc = -ENOMEM;
 			break;
 		}
-		if ((rc = dasd_sleep_on_req (req)) != 0) {
 
-			DEV_MESSAGE (KERN_WARNING, device,
-                                     " Formatting of unit %d failed "
-                                     "with rc = %d",
-                                     fdata->start_unit, rc);
-			break;
-		} 
-		dasd_free_request (req, device);	/* request is no longer used */
+                rc = dasd_sleep_on_req (req);
+                dasd_free_request (req, device); /* request is no longer used */
+
+                if ( rc ) {
+                        if (rc != -ERESTARTSYS )
+                               DEV_MESSAGE (KERN_WARNING, device,
+                                            " Formatting of unit %d failed"
+                                            " with rc = %d",
+                                            fdata->start_unit, rc);
+                       break;
+                }
 		fdata->start_unit++;
 	}
 	return rc;
@@ -2862,6 +2858,37 @@ do_dasd_ioctl (struct inode *inp, /* unsigned */ int no, unsigned long data)
                         return -EINVAL;
                 }
                 rc = dasd_format (device, &fdata);
+                break;
+        }
+	case BIODASDGATTR: {      /* Get Attributes (cache operations) */
+
+                attrib_data_t attrib;
+                
+                if (!capable (CAP_SYS_ADMIN)) {
+                        rc = -EACCES;
+                        break;
+                }
+
+                if (!data) {
+                        rc = -EINVAL;
+                        break;
+                }
+                        
+                if (!device->discipline->get_attrib) {
+                        rc = -EINVAL;
+                        break;
+                }
+                        
+                device->discipline->get_attrib (device,
+                                                &attrib);
+                
+                rc = copy_to_user ((void *) data, &attrib,
+                                   sizeof (attrib_data_t));
+
+                if (rc) {
+                        rc = -EFAULT;
+                }
+
                 break;
         }
 	case BIODASDSATTR: {      /* Set Attributes (cache operations) */
@@ -3410,7 +3437,7 @@ dasd_flush_chanq ( dasd_device_t * device, int destroy )
                 while ( cqr != NULL ) {
                         if ( cqr->status == CQR_STATUS_IN_IO )
                                 device->discipline->term_IO (cqr);
-                        if ( cqr->status != CQR_STATUS_DONE ||
+                        if ( cqr->status != CQR_STATUS_DONE &&
                              cqr->status != CQR_STATUS_FAILED ) {
 
                                 cqr->status = CQR_STATUS_FAILED;
@@ -3530,6 +3557,8 @@ dasd_disable_ranges (dasd_range_t *range,
                      dasd_discipline_t *discipline,
                      int all, int force ) 
 {
+        dasd_device_t **dptr;
+        dasd_device_t *device;
         dasd_range_t *rrange;
         int j;
 
@@ -3541,10 +3570,8 @@ dasd_disable_ranges (dasd_range_t *range,
         }
         do {
                 for (j = rrange->from; j <= rrange->to; j++) {
-                        dasd_device_t **dptr;
-                        dasd_device_t *device;
                         dptr = dasd_device_from_devno(j);
-                        if ( dptr == NULL ) {
+                        if (dptr == NULL) {
                             continue;
                         }
                         device = *dptr;
@@ -3555,6 +3582,9 @@ dasd_disable_ranges (dasd_range_t *range,
                         
                         dasd_disable_volume(device, force);
                 }
+
+                if (rrange->list.next == NULL)
+                        break;
                 rrange = list_entry (rrange->list.next, dasd_range_t, list);
         } while ( all && rrange && rrange != range );
         
@@ -3723,7 +3753,8 @@ dasd_not_oper_handler (int irq, int status)
 			"device is not accessible, disabling it temporary\n");                
                 s390irq_spin_lock_irqsave (device->devinfo.irq, 
                                            flags);
-                device->accessible = 0;
+                device->stopped |= DASD_STOPPED_NOT_ACC;
+
 		if (status == DEVSTAT_NOT_ACC_ERR) {
 			cqr = device->queue.head;
 			while (cqr) {
@@ -3755,7 +3786,7 @@ dasd_oper_handler (int irq, devreg_t * devreg)
 	int devno;
 	int rc = 0;
 	major_info_t *major_info;
-        dasd_range_t *rptr,range;
+        dasd_range_t range;
         dasd_device_t *device;
 	struct list_head *l;
 	unsigned long flags;
@@ -3783,33 +3814,25 @@ dasd_oper_handler (int irq, devreg_t * devreg)
 			break;
 	}
 
-        if ( device &&
-             (device->level == DASD_STATE_ONLINE) &&
-	     (!device->accessible) ) {
+        if (device &&
+            device->level >= DASD_STATE_READY) {
                 s390irq_spin_lock_irqsave (device->devinfo.irq, 
                                            flags);
 		DEV_MESSAGE (KERN_DEBUG, device, "%s",
-			"device is accessible again, reenabling it\n");
-                device->accessible = 1;
+                             "device is accessible again, reenabling it\n");
+                device->stopped &= ~DASD_STOPPED_NOT_ACC;
+                
                 s390irq_spin_unlock_irqrestore(device->devinfo.irq, 
                                                flags);
-
-		    
                 dasd_schedule_bh(device);
         } else {
 
                 if (dasd_autodetect) {
-                        rptr = dasd_add_range (devno, devno, DASD_FEATURE_DEFAULT);
-                        if ( rptr == NULL ) {
-                                rc = -ENOMEM;
-                                goto out;
-                        }
-                } else {
-                        range.from = devno;
-                        range.to = devno;
-                        rptr = &range;
+                        dasd_add_range (devno, devno, DASD_FEATURE_DEFAULT);
                 }
-                dasd_enable_ranges (rptr, NULL, 0);
+                range.from = devno;
+                range.to = devno;
+                dasd_enable_ranges (&range, NULL, 0);
         }
  out:
 	return rc;
@@ -3868,7 +3891,6 @@ dasd_state_del_to_new (dasd_device_t **addr, int devno)
         
         memset (device, 0, sizeof (dasd_device_t));
         dasd_plug_device (device);
-        device->accessible = 1;
         INIT_LIST_HEAD (&device->lowmem_pool);
         
         /* allocate pages for lowmem pool */
@@ -4040,12 +4062,17 @@ dasd_state_known_to_accept (dasd_device_t *device)
                 rc = s390_request_irq_special (device->devinfo.irq,
                                                device->discipline->int_handler,
                                                dasd_not_oper_handler,
-                                               0, DASD_NAME,
+                                               SA_DOPATHGROUP, DASD_NAME,
                                                &device->dev_status);
                 if ( rc ) {
 
                         MESSAGE (KERN_DEBUG, "%s",
                                  "No request IRQ");
+
+			if (rc == -EUSERS) {
+				/* Device is reserved by someone else. */
+				device->level = DASD_STATE_BOXED;
+			}
 
                         goto out;
                 }
@@ -4674,9 +4701,9 @@ dasd_parse_range (char *buffer, dasd_range_t *range)
 	for (; isspace(*str); str++);
 
         if (range->from < 0 || range->to < 0) {
-                MESSAGE (KERN_WARNING,
-                         "/proc/dasd/devices: range parse error in '%s'", 
-                         buffer);
+                MESSAGE_LOG (KERN_WARNING,
+                             "/proc/dasd/devices: range parse error in '%s'", 
+                             buffer);
                 return ERR_PTR (-EINVAL);
         }
 
@@ -4698,7 +4725,7 @@ dasd_proc_set (char *buffer)
         
         /* Negative numbers in str/from/to indicate errors */
         if (IS_ERR (str) || (range.from < 0) || (range.to < 0)
-            || (range.from > 65535) || (range.to > 65535)) 
+            || (range.from > 0xFFFF) || (range.to > 0xFFFF)) 
                 return;
 
         if (strncmp (str, "on", 2) == 0) {
@@ -4708,12 +4735,12 @@ dasd_proc_set (char *buffer)
                 dasd_disable_ranges (&range, NULL, 0, 1);
                 
         } else {
-                MESSAGE (KERN_WARNING,
-                         "/proc/dasd/devices: "
-                         "only 'on' and 'off' are alowed in 'set' "
-                         "command ('%s'/'%s')",
-                         buffer,
-                         str);
+                MESSAGE_LOG (KERN_WARNING,
+                             "/proc/dasd/devices: "
+                             "only 'on' and 'off' are alowed in 'set' "
+                             "command ('%s'/'%s')",
+                             buffer,
+                             str);
         }
 
         return;
@@ -4734,7 +4761,7 @@ dasd_proc_add (char *buffer)
         
         /* Negative numbers in str/from/to indicate errors */
         if (IS_ERR (str) || (range.from < 0) || (range.to < 0)
-            || (range.from > 65535) || (range.to > 65535))
+            || (range.from > 0xFFFF) || (range.to > 0xFFFF))
                 return;
 
         dasd_add_range (range.from, range.to, range.features);
@@ -4795,13 +4822,13 @@ dasd_break_boxed (dasd_range_t  *range,
         rc = s390_request_irq_special (device->devinfo.irq,
                                        device->discipline->int_handler,
                                        dasd_not_oper_handler,
-                                       0, 
+                                       SA_DOPATHGROUP | SA_FORCE, 
                                        DASD_NAME,
                                        &device->dev_status);
         if ( rc ) 
                 goto out;
 
-        rc = dasd_steal_lock (device);
+	rc = dasd_steal_lock (device);
 
         /* unregister the int handler to enable re-sensing */
         free_irq (device->devinfo.irq, 
@@ -4841,10 +4868,10 @@ dasd_proc_brk (char *buffer)
 
         /* check for discipline = 'eckd' */
         if (strncmp(str, "eckd", 4) != 0) {
-                MESSAGE (KERN_WARNING,
-                         "/proc/dasd/devices: 'brk <devno> <discipline> "
-                         "is only allowed for 'eckd' (%s)",
-                         str);
+                MESSAGE_LOG (KERN_WARNING,
+                             "/proc/dasd/devices: 'brk <devno> <discipline> "
+                             "is only allowed for 'eckd' (%s)",
+                             str);
                 return;
         }
         
@@ -4897,10 +4924,10 @@ dasd_devices_write (struct file *file, const char *user_buf,
                 buffer[user_len] = '\0';
         }
 
-	MESSAGE (KERN_INFO,
-                 "/proc/dasd/devices: '%s'", 
-                 buffer);
-
+	MESSAGE_LOG (KERN_INFO,
+                     "/proc/dasd/devices: '%s'", 
+                     buffer);
+        
 	if (strncmp (buffer, "set ", 4) == 0) {
                 /* handle 'set <devno> on/off' */
                 dasd_proc_set (buffer);
@@ -5270,10 +5297,10 @@ dasd_request_module ( void *name ) {
 	while ( (rc=request_module(name)) != 0 ) {
         	DECLARE_WAIT_QUEUE_HEAD(wait);
 
-		MESSAGE (KERN_INFO,
-                         "request_module returned %d for %s",
-                         rc,
-                         (char*)name);
+		MESSAGE_LOG (KERN_INFO,
+                             "request_module returned %d for %s",
+                             rc,
+                             (char*)name);
 
         	sleep_on_timeout(&wait,5* HZ); /* wait in steps of 5 seconds */
     	}
@@ -5371,14 +5398,13 @@ dasd_init (void)
 		     irq = get_irq_next (irq)) {
 			int devno = get_devno_by_irq (irq);
 			int index = dasd_devindex_from_devno (devno);
-			if (index == -ENODEV) {	/* not included in ranges */
+			if (index < 0) {	/* not included in ranges */
 
 				DBF_EVENT (DBF_CRIT,
                                            "add %04x to range",
                                            devno);
 
-				dasd_add_range (devno, 
-                                                devno, 
+				dasd_add_range (devno, devno, 
                                                 DASD_FEATURE_DEFAULT);
 			}
 		}

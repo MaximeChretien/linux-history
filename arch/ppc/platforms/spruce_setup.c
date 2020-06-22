@@ -132,7 +132,7 @@ spruce_early_serial_map(void)
 	serial_req.line = 0;
 	serial_req.port = 0;
 	serial_req.irq = 3;
-	serial_req.flags = ASYNC_BOOT_AUTOCONF | ASYNC_SKIP_TEST;
+	serial_req.flags = ASYNC_BOOT_AUTOCONF;
 	serial_req.io_type = SERIAL_IO_MEM;
 	serial_req.iomem_base = (u_char *)UART0_IO_BASE;
 	serial_req.iomem_reg_shift = 0;

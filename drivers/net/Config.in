@@ -59,20 +59,23 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
    if [ "$CONFIG_MIPS_JAZZ" = "y" ]; then
       tristate '  MIPS JAZZ onboard SONIC Ethernet support' CONFIG_MIPS_JAZZ_SONIC
    fi
+   if [ "$CONFIG_MOMENCO_OCELOT_G" = "y" ]; then
+      bool '  GT-64240 Ethernet support' CONFIG_GALILEO_64240_ETH
+   fi
    if [ "$CONFIG_MIPS_GT96100" = "y" ]; then
       bool '  MIPS GT96100 Ethernet support' CONFIG_MIPS_GT96100ETH
    fi
-   if [ "$CONFIG_MIPS_AU1000" = "y" ]; then
-      bool '  MIPS AU1000 Ethernet support' CONFIG_MIPS_AU1000_ENET
+   if [ "$CONFIG_SOC_AU1X00" = "y" ]; then
+      tristate '  MIPS Au1x00 Ethernet support' CONFIG_MIPS_AU1X00_ENET
+      if [ "$CONFIG_MIPS_AU1X00_ENET" = "y" ]; then
+         bool '   Broadcom 5222 Dual Phy Support' CONFIG_BCM5222_DUAL_PHY
+      fi
    fi
-   if [ "$CONFIG_SIBYTE_SB1250" = "y" ]; then
+   if [ "$CONFIG_SIBYTE_SB1xxx_SOC" = "y" ]; then
       tristate '  SB1250 Ethernet support' CONFIG_NET_SB1250_MAC
    fi
    if [ "$CONFIG_SGI_IP27" = "y" ]; then
       bool '  SGI IOC3 Ethernet' CONFIG_SGI_IOC3_ETH
-   fi
-   if [ "$CONFIG_SGI_IP32" = "y" ]; then
-      tristate '  SGI O2 MACE Fast Ethernet support' CONFIG_SGI_O2MACE_ETH
    fi
    if [ "$CONFIG_IA64_SGI_SN1" = "y" ]; then
       bool '  SGI IOC3 Ethernet' CONFIG_SGI_IOC3_ETH
@@ -211,7 +214,7 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
          tristate '    TI ThunderLAN support' CONFIG_TLAN
       fi
       if [ "$CONFIG_TOSHIBA_JMR3927" = "y" ]; then
-         dep_tristate '    TOSHIBA TC35815 Ethernet support' CONFIG_TC35815 $CONFIG_PCI
+	 dep_tristate '    TOSHIBA TC35815 Ethernet support' CONFIG_TC35815 $CONFIG_PCI
       fi
       dep_tristate '    VIA Rhine support' CONFIG_VIA_RHINE $CONFIG_PCI
       dep_mbool '      Use MMIO instead of PIO (EXPERIMENTAL)' CONFIG_VIA_RHINE_MMIO $CONFIG_VIA_RHINE $CONFIG_EXPERIMENTAL
@@ -232,7 +235,7 @@ if [ "$CONFIG_NET_ETHERNET" = "y" ]; then
       dep_tristate '    D-Link DE620 pocket adapter support' CONFIG_DE620 $CONFIG_ISA
    fi
    if [ "$CONFIG_SGI_IP22" = "y" ]; then
-      bool '  SGI Seeq ethernet controller support' CONFIG_SGISEEQ
+      tristate '  SGI Seeq ethernet controller support' CONFIG_SGISEEQ
    fi
    if [ "$CONFIG_DECSTATION" = "y" ]; then
       tristate '  DEC LANCE ethernet controller support' CONFIG_DECLANCE

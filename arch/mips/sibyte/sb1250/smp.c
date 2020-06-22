@@ -62,9 +62,6 @@ void core_send_ipi(int cpu, unsigned int action)
 
 void sb1250_smp_finish(void)
 {
-	extern void sb1_sanitize_tlb(void);
-
-	sb1_sanitize_tlb();
 	sb1250_time_init();
 }
 
@@ -91,8 +88,33 @@ void sb1250_mailbox_interrupt(struct pt_regs *regs)
 }
 
 extern atomic_t cpus_booted;
-extern int prom_setup_smp(void);
-extern int prom_boot_secondary(int cpu, unsigned long sp, unsigned long gp);
+extern atomic_t smp_commenced;
+
+/*
+ * Hook for doing final board-specific setup after the generic smp setup
+ * is done
+ */
+asmlinkage void start_secondary(void)
+{
+	unsigned int cpu = smp_processor_id();
+
+	cpu_probe();
+	prom_init_secondary();
+	per_cpu_trap_init();
+
+	/*
+	 * XXX parity protection should be folded in here when it's converted
+	 * to an option instead of something based on .cputype
+	 */
+	pgd_current[cpu] = init_mm.pgd;
+	cpu_data[cpu].udelay_val = loops_per_jiffy;
+	prom_smp_finish();
+	printk("Slave cpu booted successfully\n");
+	CPUMASK_SETB(cpu_online_map, cpu);
+	atomic_inc(&cpus_booted);
+	while (!atomic_read(&smp_commenced));
+	cpu_idle();
+}
 
 void __init smp_boot_cpus(void)
 {
@@ -119,7 +141,6 @@ void __init smp_boot_cpus(void)
 	for (i = 1; i < smp_num_cpus; ) {
 		struct task_struct *p;
 		struct pt_regs regs;
-		int retval;
 		printk("Starting CPU %d... ", i);
 
 		/* Spawn a new process normally.  Grab a pointer to
@@ -139,17 +160,13 @@ void __init smp_boot_cpus(void)
 		do {
 			/* Iterate until we find a CPU that comes up */
 			cur_cpu++;
-			retval = prom_boot_secondary(cur_cpu,
+			prom_boot_secondary(cur_cpu,
 					    (unsigned long)p + KERNEL_STACK_SIZE - 32,
 					    (unsigned long)p);
-		} while (!retval && (cur_cpu < NR_CPUS));
-		if (retval) {
-			__cpu_number_map[cur_cpu] = i;
-			__cpu_logical_map[i] = cur_cpu;
-			i++;
-		} else {
-			panic("CPU discovery disaster");
-		}
+		} while (cur_cpu < NR_CPUS);
+		__cpu_number_map[cur_cpu] = i;
+		__cpu_logical_map[i] = cur_cpu;
+		i++;
 	}
 
 	/* Wait for everyone to come up */

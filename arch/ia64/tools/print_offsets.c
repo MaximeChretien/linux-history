@@ -21,6 +21,7 @@
 #include <asm-ia64/ptrace.h>
 #include <asm-ia64/siginfo.h>
 #include <asm-ia64/sigcontext.h>
+#include <asm-ia64/mca.h>
 
 #include "../kernel/sigframe.h"
 
@@ -179,6 +180,7 @@ tab[] =
     { "IA64_CPU_IRQ_COUNT_OFFSET",	offsetof (struct cpuinfo_ia64, irq_stat.f.irq_count) },
     { "IA64_CPU_BH_COUNT_OFFSET",	offsetof (struct cpuinfo_ia64, irq_stat.f.bh_count) },
     { "IA64_CPU_PHYS_STACKED_SIZE_P8_OFFSET",offsetof (struct cpuinfo_ia64, phys_stacked_size_p8)},
+    { "IA64_MCA_TLB_INFO_SIZE",		sizeof (struct ia64_mca_tlb_info) },
 };
 
 static const char *tabs = "\t\t\t\t\t\t\t\t\t\t";

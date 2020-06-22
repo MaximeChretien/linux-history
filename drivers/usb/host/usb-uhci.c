@@ -88,8 +88,8 @@
 	static kmem_cache_t *urb_priv_kmem;
 #endif
 
-#define SLAB_FLAG     (in_interrupt () || current->state != TASK_RUNNING ? SLAB_ATOMIC : SLAB_KERNEL)
-#define KMALLOC_FLAG  (in_interrupt () || current->state != TASK_RUNNING ? GFP_ATOMIC : GFP_KERNEL)
+#define SLAB_FLAG     (in_interrupt () || current->state != TASK_RUNNING ? SLAB_ATOMIC : SLAB_NOIO)
+#define KMALLOC_FLAG  (in_interrupt () || current->state != TASK_RUNNING ? GFP_ATOMIC : GFP_NOIO)
 
 /* CONFIG_USB_UHCI_HIGH_BANDWITH turns on Full Speed Bandwidth
  * Reclamation: feature that puts loop on descriptor loop when

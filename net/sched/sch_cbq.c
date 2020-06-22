@@ -1673,6 +1673,7 @@ static int cbq_graft(struct Qdisc *sch, unsigned long arg, struct Qdisc *new,
 		sch_tree_lock(sch);
 		*old = cl->q;
 		cl->q = new;
+		sch->q.qlen -= (*old)->q.qlen;
 		qdisc_reset(*old);
 		sch_tree_unlock(sch);
 
@@ -1707,7 +1708,7 @@ static void cbq_destroy_filters(struct cbq_class *cl)
 
 	while ((tp = cl->filter_list) != NULL) {
 		cl->filter_list = tp->next;
-		tp->ops->destroy(tp);
+		tcf_destroy(tp);
 	}
 }
 

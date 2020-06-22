@@ -64,8 +64,8 @@
 #include <linux/bootmem.h>
 #include <linux/blk.h>
 #include <linux/console.h>
-#ifdef CONFIG_RTC_DS1742
-#include <asm/rtc_ds1742.h>
+#ifdef CONFIG_DS1742
+#include <asm/mc146818rtc.h>
 #endif
 #ifdef CONFIG_TOSHIBA_FPCIB0
 #include <asm/smsc_fdc37m81x.h>
@@ -907,8 +907,44 @@ void toshiba_rbtx4927_power_off(void)
 	/* no return */
 }
 
+void toshiba_rbtx4927_nmi (struct pt_regs *regs)
+{
+	extern void show_code(unsigned int *pc);
+	extern void show_runqueue(void);
+	extern void show_stack(unsigned int *sp);
+	extern void show_state_nolock(void);
+	extern void show_trace(long *sp);
+
+	bust_spinlocks(1);
+	printk("\ncurrent = %d:%s\n",current->pid,current->comm);
+	show_regs(regs);
+	printk("Process %s (pid: %d, stackpage=%08lx)\n",
+		current->comm, current->pid, (unsigned long) current);
+	show_stack((unsigned int *)regs->regs[29]);
+	show_trace((long *)regs->regs[29]);
+	show_code((unsigned int *)regs->cp0_epc);
+	bust_spinlocks(0);
+}
+
+void __init toshiba_rbtx4927_nmi_handler_setup (void)
+{
+	extern void tx4927_nmi_handler (void);
+	unsigned long vec[2];
+
+	vec[0] = 0x08000000 |
+			(0x03ffffff & ((unsigned long)tx4927_nmi_handler >> 2));
+	vec[1] = 0;
+
+	/*
+	 * Our firmware (PMON in this case) has a NMI hook that
+	 * jumps to 0x80000220. We locate our NMI handler there.
+	 */
+	memcpy((void *)(KSEG0 + 0x220), &vec, 0x8);
+}
+
 void __init toshiba_rbtx4927_setup(void)
 {
+	extern void (*board_nmi_handler_setup)(void);
 	vu32 cp0_config;
 
 	printk("CPU is %s\n", toshiba_name);
@@ -927,6 +963,9 @@ void __init toshiba_rbtx4927_setup(void)
 	cp0_config = read_c0_config();
 	cp0_config = cp0_config & ~(TX49_CONF_IC | TX49_CONF_DC);
 	write_c0_config(cp0_config);
+
+	/* set up the NMI handler */
+	board_nmi_handler_setup = toshiba_rbtx4927_nmi_handler_setup;
 
 #ifdef TOSHIBA_RBTX4927_SETUP_DEBUG
 	{
@@ -1149,26 +1188,28 @@ void __init toshiba_rbtx4927_setup(void)
 void __init
 toshiba_rbtx4927_time_init(void)
 {
-#ifdef CONFIG_RTC_DS1742
+#ifdef CONFIG_DS1742
+	extern void rtc_ds1742_init(unsigned long base);
+	extern void rtc_ds1742_wait(void);
+	extern struct rtc_ops ds1742_rtc_ops;
 	u32 c1;
 	u32 c2;
 #endif
 
 	TOSHIBA_RBTX4927_SETUP_DPRINTK(TOSHIBA_RBTX4927_SETUP_TIME_INIT, "-\n");
 
-#ifdef CONFIG_RTC_DS1742
-
-	rtc_get_time = rtc_ds1742_get_time;
-	rtc_set_time = rtc_ds1742_set_time;
+#ifdef CONFIG_DS1742
 
 	TOSHIBA_RBTX4927_SETUP_DPRINTK(TOSHIBA_RBTX4927_SETUP_TIME_INIT,
 				       ":rtc_ds1742_init()-\n");
-	rtc_ds1742_init(0xbc010000);
+	rtc_ds1742_init(RBTX4927_IOC_NVRAMB_ADDR);
+	rtc_ops = &ds1742_rtc_ops;
+
 	TOSHIBA_RBTX4927_SETUP_DPRINTK(TOSHIBA_RBTX4927_SETUP_TIME_INIT,
 				       ":rtc_ds1742_init()+\n");
 
 	TOSHIBA_RBTX4927_SETUP_DPRINTK(TOSHIBA_RBTX4927_SETUP_TIME_INIT,
-				       ":Calibrate mips_counter_frequency-\n");
+				       ":Calibrate mips_hpt_frequency-\n");
 	rtc_ds1742_wait();
 
 	/* get the count */
@@ -1181,29 +1222,29 @@ toshiba_rbtx4927_time_init(void)
 	c2 = read_c0_count();
 
 	TOSHIBA_RBTX4927_SETUP_DPRINTK(TOSHIBA_RBTX4927_SETUP_TIME_INIT,
-				       ":Calibrate mips_counter_frequency+\n");
+				       ":Calibrate mips_hpt_frequency+\n");
 	TOSHIBA_RBTX4927_SETUP_DPRINTK(TOSHIBA_RBTX4927_SETUP_TIME_INIT,
 				       ":c1=%12u\n", c1);
 	TOSHIBA_RBTX4927_SETUP_DPRINTK(TOSHIBA_RBTX4927_SETUP_TIME_INIT,
 				       ":c2=%12u\n", c2);
 
 	/* this diff is as close as we are going to get to counter ticks per sec */
-	mips_counter_frequency = abs(c2 - c1);
+	mips_hpt_frequency = abs(c2 - c1);
 	TOSHIBA_RBTX4927_SETUP_DPRINTK(TOSHIBA_RBTX4927_SETUP_TIME_INIT,
-				       ":f1=%12u\n", mips_counter_frequency);
+				       ":f1=%12u\n", mips_hpt_frequency);
 
 	/* round to 1/10th of a MHz */
-	mips_counter_frequency /= (100 * 1000);
-	mips_counter_frequency *= (100 * 1000);
+	mips_hpt_frequency /= (100 * 1000);
+	mips_hpt_frequency *= (100 * 1000);
 	TOSHIBA_RBTX4927_SETUP_DPRINTK(TOSHIBA_RBTX4927_SETUP_TIME_INIT,
-				       ":f2=%12u\n", mips_counter_frequency);
+				       ":f2=%12u\n", mips_hpt_frequency);
 
 	TOSHIBA_RBTX4927_SETUP_DPRINTK(TOSHIBA_RBTX4927_SETUP_INFO,
-				       ":mips_counter_frequency=%uHz (%uMHz)\n",
-				       mips_counter_frequency,
-				       mips_counter_frequency / 1000000);
+				       ":mips_hpt_frequency=%uHz (%uMHz)\n",
+				       mips_hpt_frequency,
+				       mips_hpt_frequency / 1000000);
 #else
-	mips_counter_frequency = 100000000;
+	mips_hpt_frequency = 100000000;
 #endif
 
 	TOSHIBA_RBTX4927_SETUP_DPRINTK(TOSHIBA_RBTX4927_SETUP_TIME_INIT, "+\n");

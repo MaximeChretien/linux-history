@@ -12,6 +12,7 @@
 #include <asm/setup.h>
 #include <asm/machdep.h>
 #include <asm/pgalloc.h>
+#include <asm/pgtable.h>
 #include <asm/irq.h>
 #include <asm/io.h>
 #include <asm/semaphore.h>
@@ -19,6 +20,7 @@
 #include <asm/hardirq.h>
 #include <asm/softirq.h>
 #include <asm/rtc.h>
+#include <asm/hwtest.h>
 
 asmlinkage long long __ashldi3 (long long, int);
 asmlinkage long long __ashrdi3 (long long, int);
@@ -47,6 +49,9 @@ EXPORT_SYMBOL(mm_end_of_chunk);
 EXPORT_SYMBOL(__ioremap);
 EXPORT_SYMBOL(iounmap);
 EXPORT_SYMBOL(kernel_set_cachemode);
+#ifndef mm_cachebits
+EXPORT_SYMBOL(mm_cachebits);
+#endif
 #endif /* !CONFIG_SUN3 */
 EXPORT_SYMBOL(m68k_debug_device);
 EXPORT_SYMBOL(mach_hwclk);
@@ -65,6 +70,8 @@ EXPORT_SYMBOL(kernel_thread);
 #ifdef CONFIG_VME
 EXPORT_SYMBOL(vme_brdtype);
 #endif
+EXPORT_SYMBOL(hwreg_present);
+EXPORT_SYMBOL(hwreg_write);
 
 /* Networking helper routines. */
 EXPORT_SYMBOL(csum_partial_copy);

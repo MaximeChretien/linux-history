@@ -11,6 +11,11 @@
 
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 
+
+#if (defined(__sparc__) && defined(__sparc_v9__)) || defined(__x86_64__)
+#define MPT_CONFIG_COMPAT
+#endif
+
 #ifndef rwlock_init
 #define rwlock_init(x) do { *(x) = RW_LOCK_UNLOCKED; } while(0)
 #endif
@@ -267,9 +272,9 @@ static __inline__ int __get_order(unsigned long size)
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,28)
-#define mptscsih_sync_irq(_irq) synchronize_irq(_irq)
+#define mpt_sync_irq(_irq) synchronize_irq(_irq)
 #else
-#define mptscsih_sync_irq(_irq) synchronize_irq()
+#define mpt_sync_irq(_irq) synchronize_irq()
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,5,58)

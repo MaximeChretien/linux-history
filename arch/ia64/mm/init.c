@@ -28,9 +28,7 @@
 #include <asm/sal.h>
 #include <asm/system.h>
 #include <asm/uaccess.h>
-#include <asm/tlb.h>
-
-mmu_gather_t mmu_gathers[NR_CPUS];
+#include <asm/mca.h>
 
 /* References to section boundaries: */
 extern char _stext, _etext, _edata, __init_begin, __init_end;
@@ -284,6 +282,10 @@ ia64_mmu_init (void *my_cpu_data)
 {
 	unsigned long psr, rid, pta, impl_va_bits;
 	extern void __init tlb_init (void);
+#ifdef CONFIG_IA64_MCA
+	int cpu;
+#endif
+
 #ifdef CONFIG_DISABLE_VHPT
 #	define VHPT_ENABLE_BIT	0
 #else
@@ -354,6 +356,22 @@ ia64_mmu_init (void *my_cpu_data)
 	ia64_set_pta(pta | (0 << 8) | (vmlpt_bits << 2) | VHPT_ENABLE_BIT);
 
 	ia64_tlb_init();
+
+#ifdef	CONFIG_IA64_MCA
+	cpu = smp_processor_id();
+
+	/* mca handler uses cr.lid as key to pick the right entry */
+	ia64_mca_tlb_list[cpu].cr_lid = ia64_get_lid();
+
+	/* insert this percpu data information into our list for MCA recovery purposes */
+	ia64_mca_tlb_list[cpu].percpu_paddr = pte_val(mk_pte_phys(__pa(my_cpu_data), PAGE_KERNEL));
+	/* Also save per-cpu tlb flush recipe for use in physical mode mca handler */
+	ia64_mca_tlb_list[cpu].ptce_base = local_cpu_data->ptce_base;
+	ia64_mca_tlb_list[cpu].ptce_count[0] = local_cpu_data->ptce_count[0];
+	ia64_mca_tlb_list[cpu].ptce_count[1] = local_cpu_data->ptce_count[1];
+	ia64_mca_tlb_list[cpu].ptce_stride[0] = local_cpu_data->ptce_stride[0];
+	ia64_mca_tlb_list[cpu].ptce_stride[1] = local_cpu_data->ptce_stride[1];
+#endif
 }
 
 static int
@@ -488,7 +506,8 @@ ia64_page_valid (struct page *page)
 {
 	char byte;
 
-	return __get_user(byte, (char *) page) == 0;
+	return     (__get_user(byte, (char *) page) == 0)
+		&& (__get_user(byte, (char *) (page + 1) - 1) == 0);
 }
 
 #define GRANULEROUNDDOWN(n) ((n) & ~(IA64_GRANULE_SIZE-1))

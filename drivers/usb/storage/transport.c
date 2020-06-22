@@ -1140,7 +1140,7 @@ int usb_stor_Bulk_transport(Scsi_Cmnd *srb, struct us_data *us)
 	US_DEBUGP("Bulk command S 0x%x T 0x%x Trg %d LUN %d L %d F %d CL %d\n",
 		  le32_to_cpu(bcb->Signature), bcb->Tag,
 		  (bcb->Lun >> 4), (bcb->Lun & 0x0F), 
-		  bcb->DataTransferLength, bcb->Flags, bcb->Length);
+		  le32_to_cpu(bcb->DataTransferLength), bcb->Flags, bcb->Length);
 	result = usb_stor_bulk_msg(us, bcb, pipe, US_BULK_CB_WRAP_LEN, 
 				   &partial);
 	US_DEBUGP("Bulk command transfer result=%d\n", result);

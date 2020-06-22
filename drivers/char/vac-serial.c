@@ -10,7 +10,9 @@
 #define CONFIG_SERIAL_NOPAUSE_IO
 #define SERIAL_DO_RESTART
 
+#ifndef CONFIG_SERIAL_SHARE_IRQ
 #define CONFIG_SERIAL_SHARE_IRQ
+#endif
 
 /* Set of debugging defines */
 

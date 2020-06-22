@@ -389,7 +389,7 @@ extern void puthex(unsigned long);
 extern void puts(const char *);
 static void unlockS3(void);
 
-static void inline
+static inline void
 outw(int port, unsigned short val)
 {
 	outb(port, val >> 8);
@@ -691,14 +691,14 @@ struct PCI_ConfigInfo {
   unsigned long regs[NPCIREGS];
 } PCI_slots [NSLOTS] = {
 
-    { (unsigned long *)0x80808000, 0xDEADBEEF },   /* onboard */
-    { (unsigned long *)0x80800800, 0xDEADBEEF },   /* onboard */
-    { (unsigned long *)0x80801000, 0xDEADBEEF },   /* onboard */
-    { (unsigned long *)0x80802000, 0xDEADBEEF },   /* onboard */
-    { (unsigned long *)0x80804000, 0xDEADBEEF },   /* onboard */
-    { (unsigned long *)0x80810000, 0xDEADBEEF },   /* slot A/1 */
-    { (unsigned long *)0x80820000, 0xDEADBEEF },   /* slot B/2 */
-    { (unsigned long *)0x80840000, 0xDEADBEEF }    /* slot C/3 */
+    { (unsigned long *)0x80808000, {0xDEADBEEF,} },   /* onboard */
+    { (unsigned long *)0x80800800, {0xDEADBEEF,} },   /* onboard */
+    { (unsigned long *)0x80801000, {0xDEADBEEF,} },   /* onboard */
+    { (unsigned long *)0x80802000, {0xDEADBEEF,} },   /* onboard */
+    { (unsigned long *)0x80804000, {0xDEADBEEF,} },   /* onboard */
+    { (unsigned long *)0x80810000, {0xDEADBEEF,} },   /* slot A/1 */
+    { (unsigned long *)0x80820000, {0xDEADBEEF,} },   /* slot B/2 */
+    { (unsigned long *)0x80840000, {0xDEADBEEF,} }    /* slot C/3 */
 };
 
 

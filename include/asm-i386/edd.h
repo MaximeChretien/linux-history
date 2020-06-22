@@ -1,6 +1,6 @@
 /*
  * linux/include/asm-i386/edd.h
- *  Copyright (C) 2002 Dell Computer Corporation
+ *  Copyright (C) 2002, 2003 Dell, Inc.
  *  by Matt Domsch <Matt_Domsch@dell.com>
  *
  * structures and definitions for the int 13h, ax={41,48}h
@@ -40,6 +40,10 @@
 #define GETDEVICEPARAMETERS 0x48
 #define EDDMAGIC1 0x55AA
 #define EDDMAGIC2 0xAA55
+
+#define READ_SECTORS 0x02
+#define MBR_SIG_OFFSET 0x1B8
+#define DISK80_SIG_BUFFER 0x2cc
 
 #ifndef __ASSEMBLY__
 
@@ -167,6 +171,7 @@ struct edd_info {
 
 extern struct edd_info edd[EDDMAXNR];
 extern unsigned char eddnr;
+extern unsigned int edd_disk80_sig;
 #endif				/*!__ASSEMBLY__ */
 
 #endif				/* _ASM_I386_EDD_H */

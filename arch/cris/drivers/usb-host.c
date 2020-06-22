@@ -41,7 +41,7 @@ typedef struct usb_ctrlrequest devrequest;
 #define ETRAX_USB_RX_IRQ USB_DMA_RX_IRQ_NBR
 #define ETRAX_USB_TX_IRQ USB_DMA_TX_IRQ_NBR
 
-static const char *usb_hcd_version = "$Revision: 1.18 $";
+static const char *usb_hcd_version = "$Revision: 1.19 $";
 
 #undef KERN_DEBUG
 #define KERN_DEBUG ""
@@ -1540,9 +1540,18 @@ static void etrax_usb_rx_interrupt(int irq, void *vhc, struct pt_regs *regs)
                    ctrl pipes are not. */
                 
 		if (myNextRxDesc->status & IO_MASK(USB_IN_status, error)) {
+			__u32 r_usb_ept_data;
+
 			warn("error in rx desc->status, epid %d, first urb = 0x%lx", 
                              epid, (unsigned long)urb);
 			__dump_in_desc(myNextRxDesc);
+
+                        *R_USB_EPT_INDEX = IO_FIELD(R_USB_EPT_INDEX, value, epid); 
+                        nop();
+                        r_usb_ept_data = *R_USB_EPT_DATA;
+			warn("R_USB_EPT_DATA for epid %d = 0x%x", epid, r_usb_ept_data);
+			warn("R_USB_STATUS = 0x%x", *R_USB_STATUS);
+
                         etrax_usb_complete_urb(urb, -EPROTO);
 			goto skip_out;
 		}

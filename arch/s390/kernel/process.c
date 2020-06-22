@@ -60,7 +60,9 @@ int cpu_idle(void *unused)
 	current->nice = 20;
 	current->counter = -100;
 	while (1) {
+		__cli();
 		if (current->need_resched) {
+			__sti();
 			schedule();
 			check_pgt_cache();
 			continue;

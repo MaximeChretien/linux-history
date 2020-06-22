@@ -40,7 +40,7 @@ static unsigned long indy_rtc_get_time(void)
 
 	sec = hpc3c0->rtcregs[RTC_SECONDS] & 0xff;
 	min = hpc3c0->rtcregs[RTC_MINUTES] & 0xff;
-	hrs = hpc3c0->rtcregs[RTC_HOURS] & 0x1f;
+	hrs = hpc3c0->rtcregs[RTC_HOURS] & 0x3f;
 	day = hpc3c0->rtcregs[RTC_DATE] & 0xff;
 	mon = hpc3c0->rtcregs[RTC_MONTH] & 0x1f;
 	yrs = hpc3c0->rtcregs[RTC_YEAR] & 0xff;
@@ -127,7 +127,7 @@ static unsigned long dosample(void)
 	 * for every 1/HZ seconds. We round off the nearest 1 MHz of master
 	 * clock (= 1000000 / HZ / 2).
 	 */
-	//return (ct1 - ct0 + (500000/HZ/2)) / (500000/HZ) * (500000/HZ);
+	/*return (ct1 - ct0 + (500000/HZ/2)) / (500000/HZ) * (500000/HZ);*/
 	return (ct1 - ct0) / (500000/HZ) * (500000/HZ);
 }
 
@@ -177,7 +177,7 @@ void indy_time_init(void)
 		(int) (r4k_tick / (500000 / HZ)),
 		(int) (r4k_tick % (500000 / HZ)));
 
-	mips_counter_frequency = r4k_tick * HZ;
+	mips_hpt_frequency = r4k_tick * HZ;
 }
 
 /* Generic SGI handler for (spurious) 8254 interrupts */

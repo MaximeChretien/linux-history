@@ -115,6 +115,7 @@ obj-$(CONFIG_ADAPTEC_STARFIRE) += starfire.o mii.o
 # end link order section
 #
 
+obj-$(CONFIG_GALILEO_64240_ETH) += gt64240eth.o
 obj-$(CONFIG_MV64340_ETH)	+= mv64340_eth.o
 obj-$(CONFIG_AIRONET4500) 	+= aironet4500_core.o
 obj-$(CONFIG_AIRONET4500_CS) 	+= aironet4500_core.o
@@ -176,7 +177,6 @@ obj-$(CONFIG_SUN3_82586) += sun3_82586.o
 obj-$(CONFIG_SUN3LANCE) += sun3lance.o
 obj-$(CONFIG_DEFXX) += defxx.o
 obj-$(CONFIG_SGISEEQ) += sgiseeq.o
-obj-$(CONFIG_SGI_O2MACE_ETH) += meth.o
 obj-$(CONFIG_AT1700) += at1700.o
 obj-$(CONFIG_FMV18X) += fmv18x.o
 obj-$(CONFIG_EL1) += 3c501.o
@@ -219,7 +219,7 @@ obj-$(CONFIG_MVME147_NET) += mvme147.o 7990.o
 obj-$(CONFIG_EQUALIZER) += eql.o
 obj-$(CONFIG_MIPS_JAZZ_SONIC) += jazzsonic.o
 obj-$(CONFIG_MIPS_GT96100ETH) += gt96100eth.o
-obj-$(CONFIG_MIPS_AU1000_ENET) += au1000_eth.o
+obj-$(CONFIG_MIPS_AU1X00_ENET) += au1000_eth.o
 obj-$(CONFIG_SGI_IOC3_ETH) += ioc3-eth.o
 obj-$(CONFIG_BAGETLANCE) += bagetlance.o
 obj-$(CONFIG_DECLANCE) += declance.o

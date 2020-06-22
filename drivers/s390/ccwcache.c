@@ -146,7 +146,7 @@ ccw_alloc_request ( char *magic, int cplength, int datasize )
 
 	/* determine cache index for the requested size */
 	for (cachind = 0; cachind < CCW_NUMBER_CACHES; cachind ++ )
-	   if ( size_needed < (SMALLEST_SLAB << cachind) ) 
+	   if ( size_needed <= (SMALLEST_SLAB << cachind) ) 
 			break;
 
 	/* Try to fulfill the request from a cache */

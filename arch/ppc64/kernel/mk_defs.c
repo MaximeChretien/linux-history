@@ -133,6 +133,11 @@ main(void)
 	DEFINE(THREAD_FPR0, offsetof(struct thread_struct, fpr[0]));
 	DEFINE(THREAD_FPEXC_MODE, offsetof(struct thread_struct, fpexc_mode));
 	DEFINE(THREAD_FPSCR, offsetof(struct thread_struct, fpscr));
+#ifdef CONFIG_ALTIVEC
+	DEFINE(THREAD_VR0, offsetof(struct thread_struct, vr[0]));
+	DEFINE(THREAD_VRSAVE, offsetof(struct thread_struct, vrsave));
+	DEFINE(THREAD_VSCR, offsetof(struct thread_struct, vscr));
+#endif /* CONFIG_ALTIVEC */
 	DEFINE(THREAD_FLAGS, offsetof(struct thread_struct, flags));
 	DEFINE(PPC_FLAG_32BIT, PPC_FLAG_32BIT);
 	/*
@@ -188,6 +193,13 @@ main(void)
 	DEFINE(_SRR1, STACK_FRAME_OVERHEAD+sizeof(struct pt_regs)+8);
 
 	DEFINE(CLONE_VM, CLONE_VM);
+
+	/* About the CPU features table */
+	DEFINE(CPU_SPEC_ENTRY_SIZE, sizeof(struct cpu_spec));
+	DEFINE(CPU_SPEC_PVR_MASK, offsetof(struct cpu_spec, pvr_mask));
+	DEFINE(CPU_SPEC_PVR_VALUE, offsetof(struct cpu_spec, pvr_value));
+	DEFINE(CPU_SPEC_FEATURES, offsetof(struct cpu_spec, cpu_features));
+	DEFINE(CPU_SPEC_SETUP, offsetof(struct cpu_spec, cpu_setup));
 
 	/* About the CPU features table */
 	DEFINE(CPU_SPEC_ENTRY_SIZE, sizeof(struct cpu_spec));

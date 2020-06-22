@@ -199,7 +199,7 @@ static int ntfs_printcb(ntfs_u8 *entry, void *param)
 		ntfs_debug(DEBUG_OTHER, "%s(): Skipping unrepresentable "
 				"file.\n", __FUNCTION__);
 		err = 0;
-		goto err_ret;
+		goto err_noname;
 	}
 	if (!show_sys_files && inum < 0x10UL) {
 		ntfs_debug(DEBUG_OTHER, "%s(): Skipping system file (%s).\n",
@@ -233,8 +233,9 @@ static int ntfs_printcb(ntfs_u8 *entry, void *param)
 	if (err)
 		nf->ret_code = err;
 err_ret:
-	nf->namelen = 0;
 	ntfs_free(nf->name);
+err_noname:
+	nf->namelen = 0;
 	nf->name = NULL;
 	return err;
 }

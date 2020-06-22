@@ -51,29 +51,22 @@ unsigned short le16_to_cpu(unsigned short x)
 /* size of read buffer */
 #define SIZE 0x1000
 
-#ifndef __sun__
-/* typedef long int32_t; */
-typedef unsigned long uint32_t;
-typedef unsigned short uint16_t;
-typedef unsigned char uint8_t;
-#endif
-
 /* PPCBUG ROM boot header */
 typedef struct bug_boot_header {
-  uint8_t	magic_word[4];		/* "BOOT" */
-  uint32_t	entry_offset;		/* Offset from top of header to code */
-  uint32_t	routine_length;		/* Length of code */
-  uint8_t	routine_name[8];	/* Name of the boot code */
+  unsigned char	magic_word[4];		/* "BOOT" */
+  unsigned long	entry_offset;		/* Offset from top of header to code */
+  unsigned long	routine_length;		/* Length of code */
+  unsigned char	routine_name[8];	/* Name of the boot code */
 } bug_boot_header_t;
 
 #define HEADER_SIZE	sizeof(bug_boot_header_t)
 
-uint32_t copy_image(int32_t in_fd, int32_t out_fd)
+unsigned long copy_image(int32_t in_fd, int32_t out_fd)
 {
-  uint8_t buf[SIZE];
+  unsigned char buf[SIZE];
   int n;
-  uint32_t image_size = 0;
-  uint8_t zero = 0;
+  unsigned long image_size = 0;
+  unsigned char zero = 0;
 
   lseek(in_fd, ELF_HEADER_SIZE, SEEK_SET);
 
@@ -95,9 +88,9 @@ uint32_t copy_image(int32_t in_fd, int32_t out_fd)
   return image_size;
 }
 
-void write_bugboot_header(int32_t out_fd, uint32_t boot_size)
+void write_bugboot_header(int32_t out_fd, unsigned long boot_size)
 {
-  uint8_t header_block[HEADER_SIZE];
+  unsigned char header_block[HEADER_SIZE];
   bug_boot_header_t *bbh = (bug_boot_header_t *)&header_block[0];
 
   memset(header_block, 0, HEADER_SIZE);
@@ -112,16 +105,16 @@ void write_bugboot_header(int32_t out_fd, uint32_t boot_size)
   write(out_fd, header_block, HEADER_SIZE);
 }
 
-uint16_t calc_checksum(int32_t bug_fd)
+unsigned short calc_checksum(int32_t bug_fd)
 {
-  uint32_t checksum_var = 0;
-  uint8_t buf[2];
+  unsigned long checksum_var = 0;
+  unsigned char buf[2];
   int n;
 
   /* Checksum loop */
   while ( (n = read(bug_fd, buf, 2) ) )
   {
-    checksum_var = checksum_var + *(uint16_t *)buf;
+    checksum_var = checksum_var + *(unsigned short *)buf;
 
     /* If we carry out, mask it and add one to the checksum */
     if (checksum_var >> 16)
@@ -135,9 +128,9 @@ int main(int argc, char *argv[])
 {
   int32_t image_fd, bugboot_fd;
   int argptr = 1;
-  uint32_t kernel_size = 0;
-  uint16_t checksum = 0;
-  uint8_t bugbootname[256];
+  unsigned long kernel_size = 0;
+  unsigned short checksum = 0;
+  unsigned char bugbootname[256];
 
   if ( (argc != 3) )
   {

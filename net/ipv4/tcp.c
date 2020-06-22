@@ -1505,19 +1505,14 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg,
 		struct sk_buff * skb;
 		u32 offset;
 
-		/* Are we at urgent data? Stop if we have read anything. */
-		if (copied && tp->urg_data && tp->urg_seq == *seq)
-			break;
-
-		/* We need to check signals first, to get correct SIGURG
-		 * handling. FIXME: Need to check this doesn't impact 1003.1g
-		 * and move it down to the bottom of the loop
-		 */
-		if (signal_pending(current)) {
+		/* Are we at urgent data? Stop if we have read anything or have SIGURG pending. */
+		if (tp->urg_data && tp->urg_seq == *seq) {
 			if (copied)
 				break;
-			copied = timeo ? sock_intr_errno(timeo) : -EAGAIN;
-			break;
+			if (signal_pending(current)) {
+				copied = timeo ? sock_intr_errno(timeo) : -EAGAIN;
+				break;
+			}
 		}
 
 		/* Next get a buffer. */
@@ -1556,6 +1551,7 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg,
 			    sk->state == TCP_CLOSE ||
 			    (sk->shutdown & RCV_SHUTDOWN) ||
 			    !timeo ||
+			    signal_pending(current) ||
 			    (flags & MSG_PEEK))
 				break;
 		} else {
@@ -1583,6 +1579,11 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg,
 
 			if (!timeo) {
 				copied = -EAGAIN;
+				break;
+			}
+
+			if (signal_pending(current)) {
+				copied = sock_intr_errno(timeo);
 				break;
 			}
 		}

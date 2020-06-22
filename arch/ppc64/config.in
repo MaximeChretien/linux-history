@@ -25,7 +25,7 @@ define_bool CONFIG_SERIAL_CONSOLE y
 choice 'Machine Type'	\
 	"pSeries       		CONFIG_PPC_PSERIES \
 	 iSeries                CONFIG_PPC_ISERIES" CONFIG_PPC_PSERIES
-
+bool 'VMX ( AltiVec ) Support' CONFIG_ALTIVEC
 bool 'Symmetric multi-processing support' CONFIG_SMP
 if [ "$CONFIG_SMP" = "y" ]; then
   bool '  Distribute interrupts on all CPUs by default' CONFIG_IRQ_ALL_CPUS
@@ -47,6 +47,8 @@ bool 'Support for RTAS (RunTime Abstraction Services) in /proc' CONFIG_PPC_RTAS
 fi
 
 bool 'Shared kernel/user space addressing' CONFIG_SHARED_MEMORY_ADDRESSING
+
+bool 'LPAR Configuration Data' CONFIG_LPARCFG
 
 endmenu
 
@@ -120,7 +122,6 @@ tristate 'ATA/IDE/MFM/RLL support' CONFIG_IDE
 if [ "$CONFIG_IDE" != "n" ]; then
   source drivers/ide/Config.in
 else
-  define_bool CONFIG_BLK_DEV_IDE_MODES n
   define_bool CONFIG_BLK_DEV_HD n
 fi
 endmenu
@@ -245,15 +246,8 @@ comment 'Kernel hacking'
 bool 'Magic SysRq key' CONFIG_MAGIC_SYSRQ
 bool 'Include kgdb kernel debugger' CONFIG_KGDB
 bool 'Include xmon kernel debugger' CONFIG_XMON
-bool 'Include kdb kernel debugger' CONFIG_KDB
 bool 'Debug memory allocations' CONFIG_DEBUG_SLAB
-if [ "$CONFIG_KDB" = "y" ]; then
-  bool '  KDB off by default' CONFIG_KDB_OFF
-  define_bool CONFIG_KALLSYMS y
-  define_bool CONFIG_XMON n
-fi
 if [ "$CONFIG_XMON" = "y" ]; then
-  define_bool CONFIG_KDB n
   define_bool CONFIG_KALLSYMS n
 fi
 bool 'Include PPCDBG realtime debugging' CONFIG_PPCDBG

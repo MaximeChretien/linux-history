@@ -113,7 +113,8 @@ extern rwlock_t xtime_lock;
 extern unsigned long wall_jiffies;
 extern unsigned long volatile jiffies;
 
-static unsigned long tmu_base, rtc_base, cprc_base;
+static unsigned long tmu_base, rtc_base;
+unsigned long cprc_base;
 
 /* Variables to allow interpolation of time of day to resolution better than a
  * jiffy. */

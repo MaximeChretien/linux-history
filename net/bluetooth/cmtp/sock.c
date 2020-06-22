@@ -47,36 +47,6 @@
 #define BT_DBG(D...)
 #endif
 
-static inline struct socket *socki_lookup(struct inode *inode)
-{
-	return &inode->u.socket_i;
-}
-
-static struct socket *sockfd_lookup(int fd, int *err)
-{
-	struct file *file;
-	struct inode *inode;
-	struct socket *sock;
-
-	if (!(file = fget(fd))) {
-		*err = -EBADF;
-		return NULL;
-	}
-
-	inode = file->f_dentry->d_inode;
-	if (!inode->i_sock || !(sock = socki_lookup(inode))) {
-		*err = -ENOTSOCK;
-		fput(file);
-		return NULL;
-	}
-
-	if (sock->file != file) {
-		printk(KERN_ERR "socki_lookup: socket file changed!\n");
-		sock->file = file;
-	}
-	return sock;
-}
-
 static int cmtp_sock_release(struct socket *sock)
 {
 	struct sock *sk = sock->sk;

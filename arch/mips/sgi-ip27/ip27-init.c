@@ -466,7 +466,6 @@ __init void allowboot(void)
 	int		num_cpus = 0;
 	cpuid_t		cpu, mycpuid = getcpuid();
 	cnodeid_t	cnode;
-	extern void	smp_bootstrap(void);
 
 	sn_mp_setup();
 	/* Master has already done per_cpu_init() */

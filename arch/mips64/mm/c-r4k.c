@@ -28,27 +28,6 @@
 
 static unsigned long icache_size, dcache_size, scache_size;
 
-extern void andes_clear_page(void * page);
-extern void r4k_clear_page32_d16(void * page);
-extern void r4k_clear_page32_d32(void * page);
-extern void r4k_clear_page_d16(void * page);
-extern void r4k_clear_page_d32(void * page);
-extern void r4k_clear_page_r4600_v1(void * page);
-extern void r4k_clear_page_r4600_v2(void * page);
-extern void r4k_clear_page_s16(void * page);
-extern void r4k_clear_page_s32(void * page);
-extern void r4k_clear_page_s64(void * page);
-extern void r4k_clear_page_s128(void * page);
-extern void andes_copy_page(void * to, void * from);
-extern void r4k_copy_page_d16(void * to, void * from);
-extern void r4k_copy_page_d32(void * to, void * from);
-extern void r4k_copy_page_r4600_v1(void * to, void * from);
-extern void r4k_copy_page_r4600_v2(void * to, void * from);
-extern void r4k_copy_page_s16(void * to, void * from);
-extern void r4k_copy_page_s32(void * to, void * from);
-extern void r4k_copy_page_s64(void * to, void * from);
-extern void r4k_copy_page_s128(void * to, void * from);
-
 /*
  * Dummy cache handling routines for machines without boardcaches
  */
@@ -73,80 +52,46 @@ do {									\
 		__asm__ __volatile__("nop;nop;nop;nop");		\
 } while (0)
 
-static void r4k_blast_dcache_page(unsigned long addr)
+static void (* r4k_blast_dcache_page)(unsigned long addr);
+
+static inline void r4k_blast_dcache_page_dc32(unsigned long addr)
 {
-	static void *l = &&init;
-	unsigned long dc_lsize;
-
-	goto *l;
-
-dc_16:
-	blast_dcache16_page(addr);
-	return;
-
-dc_32:
 	R4600_HIT_CACHEOP_WAR_IMPL;
 	blast_dcache32_page(addr);
-	return;
-
-init:
-	dc_lsize = current_cpu_data.dcache.linesz;
-
-	if (dc_lsize == 16)
-		l = &&dc_16;
-	else if (dc_lsize == 32)
-		l = &&dc_32;
-	goto *l;
 }
 
-static void r4k_blast_dcache_page_indexed(unsigned long addr)
+static inline void r4k_blast_dcache_page_setup(void)
 {
-	static void *l = &&init;
-	unsigned long dc_lsize;
-
-	goto *l;
-
-dc_16:
-	blast_dcache16_page_indexed(addr);
-	return;
-
-dc_32:
-	blast_dcache32_page_indexed(addr);
-	return;
-
-init:
-	dc_lsize = current_cpu_data.dcache.linesz;
+	unsigned long dc_lsize = current_cpu_data.dcache.linesz;
 
 	if (dc_lsize == 16)
-		l = &&dc_16;
+		r4k_blast_dcache_page = blast_dcache16_page;
 	else if (dc_lsize == 32)
-		l = &&dc_32;
-	goto *l;
+		r4k_blast_dcache_page = r4k_blast_dcache_page_dc32;
 }
 
-static void r4k_blast_dcache(void)
+static void (* r4k_blast_dcache_page_indexed)(unsigned long addr);
+
+static void r4k_blast_dcache_page_indexed_setup(void)
 {
-	static void *l = &&init;
-	unsigned long dc_lsize;
-
-	goto *l;
-
-dc_16:
-	blast_dcache16();
-	return;
-
-dc_32:
-	blast_dcache32();
-	return;
-
-init:
-	dc_lsize = current_cpu_data.dcache.linesz;
+	unsigned long dc_lsize = current_cpu_data.dcache.linesz;
 
 	if (dc_lsize == 16)
-		l = &&dc_16;
+		r4k_blast_dcache_page_indexed = blast_dcache16_page_indexed;
 	else if (dc_lsize == 32)
-		l = &&dc_32;
-	goto *l;
+		r4k_blast_dcache_page_indexed = blast_dcache32_page_indexed;
+}
+
+static void (* r4k_blast_dcache)(void);
+
+static inline void r4k_blast_dcache_setup(void)
+{
+	unsigned long dc_lsize = current_cpu_data.dcache.linesz;
+
+	if (dc_lsize == 16)
+		r4k_blast_dcache = blast_dcache16;
+	else if (dc_lsize == 32)
+		r4k_blast_dcache = blast_dcache32;
 }
 
 /* force code alignment (used for TX49XX_ICACHE_INDEX_INV_WAR) */
@@ -201,175 +146,82 @@ static inline void tx49_blast_icache32_page_indexed(unsigned long page)
 			cache32_unroll32(addr|ws,Index_Invalidate_I);
 }
 
-static void r4k_blast_icache_page(unsigned long addr)
+static void (* r4k_blast_icache_page)(unsigned long addr);
+
+static inline void r4k_blast_icache_page_setup(void)
 {
 	unsigned long ic_lsize = current_cpu_data.icache.linesz;
-	static void *l = &&init;
 
-	goto *l;
-
-ic_16:
-	blast_icache16_page(addr);
-	return;
-
-ic_32:
-	blast_icache32_page(addr);
-	return;
-
-ic_64:
-	blast_icache64_page(addr);
-	return;
-
-init:
 	if (ic_lsize == 16)
-		l = &&ic_16;
+		r4k_blast_icache_page = blast_icache16_page;
 	else if (ic_lsize == 32)
-		l = &&ic_32;
+		r4k_blast_icache_page = blast_icache32_page;
 	else if (ic_lsize == 64)
-		l = &&ic_64;
-	goto *l;
+		r4k_blast_icache_page = blast_icache64_page;
 }
 
-static void r4k_blast_icache_page_indexed(unsigned long addr)
+static void (* r4k_blast_icache_page_indexed)(unsigned long addr);
+
+static inline void r4k_blast_icache_page_indexed_setup(void)
 {
 	unsigned long ic_lsize = current_cpu_data.icache.linesz;
-	static void *l = &&init;
 
-	goto *l;
-
-ic_16:
-	blast_icache16_page_indexed(addr);
-	return;
-
-ic_32:
-	blast_icache32_page_indexed(addr);
-	return;
-
-ic_64:
-	blast_icache64_page_indexed(addr);
-	return;
-
-ic_32_tx49:
-	tx49_blast_icache32_page_indexed(addr);
-	return;
-
-init:
 	if (ic_lsize == 16)
-		l = &&ic_16;
+		r4k_blast_icache_page_indexed = blast_icache16_page_indexed;
+	else if (ic_lsize == 32 && TX49XX_ICACHE_INDEX_INV_WAR)
+		r4k_blast_icache_page_indexed = tx49_blast_icache32_page_indexed;
 	else if (ic_lsize == 32)
-		if (TX49XX_ICACHE_INDEX_INV_WAR)
-			l = &&ic_32_tx49;
-		else
-			l = &&ic_32;
+		r4k_blast_icache_page_indexed = blast_icache32_page_indexed;
 	else if (ic_lsize == 64)
-		l = &&ic_64;
-	goto *l;
+		r4k_blast_icache_page_indexed = blast_icache64_page_indexed;
 }
 
-static void r4k_blast_icache(void)
+static void (* r4k_blast_icache)(void);
+
+static inline void r4k_blast_icache_setup(void)
 {
 	unsigned long ic_lsize = current_cpu_data.icache.linesz;
-	static void *l = &&init;
 
-	goto *l;
-
-ic_16:
-	blast_icache16();
-	return;
-
-ic_32:
-	blast_icache32();
-	return;
-
-ic_64:
-	blast_icache64();
-	return;
-
-ic_32_tx49:
-	tx49_blast_icache32();
-	return;
-
-init:
 	if (ic_lsize == 16)
-		l = &&ic_16;
+		r4k_blast_icache = blast_icache16;
+	else if (ic_lsize == 32 && TX49XX_ICACHE_INDEX_INV_WAR)
+		r4k_blast_icache = tx49_blast_icache32;
 	else if (ic_lsize == 32)
-		if (TX49XX_ICACHE_INDEX_INV_WAR)
-			l = &&ic_32_tx49;
-		else
-			l = &&ic_32;
+		r4k_blast_icache = blast_icache32;
 	else if (ic_lsize == 64)
-		l = &&ic_64;
-	goto *l;
+		r4k_blast_icache = blast_icache64;
 }
 
-static void r4k_blast_scache_page(unsigned long addr)
+static void (* r4k_blast_scache_page)(unsigned long addr);
+
+static inline void r4k_blast_scache_page_setup(void)
 {
 	unsigned long sc_lsize = current_cpu_data.scache.linesz;
-	static void *l = &&init;
 
-	goto *l;
-
-sc_16:
-	blast_scache16_page(addr);
-	return;
-
-sc_32:
-	blast_scache32_page(addr);
-	return;
-
-sc_64:
-	blast_scache64_page(addr);
-	return;
-
-sc_128:
-	blast_scache128_page(addr);
-	return;
-
-init:
 	if (sc_lsize == 16)
-		l = &&sc_16;
+		r4k_blast_scache_page = blast_scache16_page;
 	else if (sc_lsize == 32)
-		l = &&sc_32;
+		r4k_blast_scache_page = blast_scache32_page;
 	else if (sc_lsize == 64)
-		l = &&sc_64;
+		r4k_blast_scache_page = blast_scache64_page;
 	else if (sc_lsize == 128)
-		l = &&sc_128;
-	goto *l;
+		r4k_blast_scache_page = blast_scache128_page;
 }
 
-static void r4k_blast_scache(void)
+static void (* r4k_blast_scache)(void);
+
+static inline void r4k_blast_scache_setup(void)
 {
 	unsigned long sc_lsize = current_cpu_data.scache.linesz;
-	static void *l = &&init;
 
-	goto *l;
-
-sc_16:
-	blast_scache16();
-	return;
-
-sc_32:
-	blast_scache32();
-	return;
-
-sc_64:
-	blast_scache64();
-	return;
-
-sc_128:
-	blast_scache128();
-	return;
-
-init:
 	if (sc_lsize == 16)
-		l = &&sc_16;
+		r4k_blast_scache = blast_scache16;
 	else if (sc_lsize == 32)
-		l = &&sc_32;
+		r4k_blast_scache = blast_scache32;
 	else if (sc_lsize == 64)
-		l = &&sc_64;
+		r4k_blast_scache = blast_scache64;
 	else if (sc_lsize == 128)
-		l = &&sc_128;
-	goto *l;
+		r4k_blast_scache = blast_scache128;
 }
 
 static void r4k_flush_cache_all(void)
@@ -561,7 +413,9 @@ static void r4k_flush_icache_page(struct vm_area_struct *vma,
 	 */
 	if (cpu_has_subset_pcaches) {
 		unsigned long addr = (unsigned long) page_address(page);
+
 		r4k_blast_scache_page(addr);
+		ClearPageDcacheDirty(page);
 
 		return;
 	}
@@ -569,6 +423,7 @@ static void r4k_flush_icache_page(struct vm_area_struct *vma,
 	if (!cpu_has_ic_fills_f_dc) {
 		unsigned long addr = (unsigned long) page_address(page);
 		r4k_blast_dcache_page(addr);
+		ClearPageDcacheDirty(page);
 	}
 
 	/*
@@ -775,6 +630,8 @@ static void __init probe_pcache(void)
 		c->dcache.linesz = 16 << ((config & CONF_DB) >> 4);
 		c->dcache.ways = 2;
 		c->dcache.waybit= ffs(dcache_size/2) - 1;
+
+		c->options |= MIPS_CPU_CACHE_CDEX_P;
 		break;
 
 	case CPU_R5432:
@@ -788,6 +645,8 @@ static void __init probe_pcache(void)
 		c->dcache.linesz = 16 << ((config & CONF_DB) >> 4);
 		c->dcache.ways = 2;
 		c->dcache.waybit = 0;
+
+		c->options |= MIPS_CPU_CACHE_CDEX_P;
 		break;
 
 	case CPU_TX49XX:
@@ -800,6 +659,8 @@ static void __init probe_pcache(void)
 		c->dcache.linesz = 16 << ((config & CONF_DB) >> 4);
 		c->dcache.ways = 4;
 		c->dcache.waybit = 0;
+
+		c->options |= MIPS_CPU_CACHE_CDEX_P;
 		break;
 
 	case CPU_R4000PC:
@@ -818,6 +679,8 @@ static void __init probe_pcache(void)
 		c->dcache.linesz = 16 << ((config & CONF_DB) >> 4);
 		c->dcache.ways = 1;
 		c->dcache.waybit = 0;	/* does not matter */
+
+		c->options |= MIPS_CPU_CACHE_CDEX_P;
 		break;
 
 	case CPU_R10000:
@@ -831,9 +694,20 @@ static void __init probe_pcache(void)
 		c->dcache.linesz = 32;
 		c->dcache.ways = 2;
 		c->dcache.waybit = 0;
+
+		c->options |= MIPS_CPU_PREFETCH;
 		break;
 
+	case CPU_VR4133:
+		write_c0_config(config & ~CONF_EB);
 	case CPU_VR4131:
+		/* Workaround for cache instruction bug of VR4131 */
+		if (c->processor_id == 0x0c80U || c->processor_id == 0x0c81U ||
+		    c->processor_id == 0x0c82U) {
+			config &= ~0x00000030U;
+			config |= 0x00410000U;
+			write_c0_config(config);
+		}
 		icache_size = 1 << (10 + ((config & CONF_IC) >> 9));
 		c->icache.linesz = 16 << ((config & CONF_IB) >> 5);
 		c->icache.ways = 2;
@@ -843,6 +717,8 @@ static void __init probe_pcache(void)
 		c->dcache.linesz = 16 << ((config & CONF_DB) >> 4);
 		c->dcache.ways = 2;
 		c->dcache.waybit = ffs(dcache_size/2) - 1;
+
+		c->options |= MIPS_CPU_CACHE_CDEX_P;
 		break;
 
 	case CPU_VR41XX:
@@ -860,11 +736,14 @@ static void __init probe_pcache(void)
 		c->dcache.linesz = 16 << ((config & CONF_DB) >> 4);
 		c->dcache.ways = 1;
 		c->dcache.waybit = 0;	/* does not matter */
+
+		c->options |= MIPS_CPU_CACHE_CDEX_P;
 		break;
 
 	case CPU_RM7000:
 		rm7k_erratum31();
 
+	case CPU_RM9000:
 		icache_size = 1 << (12 + ((config & CONF_IC) >> 9));
 		c->icache.linesz = 16 << ((config & CONF_IB) >> 5);
 		c->icache.ways = 4;
@@ -874,6 +753,8 @@ static void __init probe_pcache(void)
 		c->dcache.linesz = 16 << ((config & CONF_DB) >> 4);
 		c->dcache.ways = 4;
 		c->dcache.waybit = ffs(dcache_size / c->dcache.ways) - 1;
+
+		c->options |= MIPS_CPU_CACHE_CDEX_P | MIPS_CPU_PREFETCH;
 		break;
 
 	default:
@@ -898,6 +779,9 @@ static void __init probe_pcache(void)
 		              c->icache.linesz;
 		c->icache.waybit = ffs(icache_size/c->icache.ways) - 1;
 
+		if (config & 0x8)		/* VI bit */
+			c->icache.flags |= MIPS_CACHE_VTAG;
+
 		/*
 		 * Now probe the MIPS32 / MIPS64 data cache.
 		 */
@@ -914,6 +798,8 @@ static void __init probe_pcache(void)
 		              c->dcache.ways *
 		              c->dcache.linesz;
 		c->dcache.waybit = ffs(dcache_size/c->dcache.ways) - 1;
+
+		c->options |= MIPS_CPU_PREFETCH;
 		break;
 	}
 
@@ -946,9 +832,6 @@ static void __init probe_pcache(void)
 	if (c->cputype != CPU_R10000 && c->cputype != CPU_R12000)
 		if (c->dcache.waysize > PAGE_SIZE)
 		        c->dcache.flags |= MIPS_CACHE_ALIASES;
-
-	if (config & 0x8)		/* VI bit */
-		c->icache.flags |= MIPS_CACHE_VTAG;
 
 	switch (c->cputype) {
 	case CPU_20KC:
@@ -1037,71 +920,6 @@ static int __init probe_scache(void)
 	return 1;
 }
 
-static void __init setup_noscache_funcs(void)
-{
-	unsigned int prid;
-
-	switch (current_cpu_data.dcache.linesz) {
-	case 16:
-		if (cpu_has_64bits)
-			_clear_page = r4k_clear_page_d16;
-		else
-			_clear_page = r4k_clear_page32_d16;
-		_copy_page = r4k_copy_page_d16;
-
-		break;
-	case 32:
-		prid = read_c0_prid() & 0xfff0;
-		if (prid == 0x2010) {			/* R4600 V1.7 */
-			_clear_page = r4k_clear_page_r4600_v1;
-			_copy_page = r4k_copy_page_r4600_v1;
-		} else if (prid == 0x2020) {		/* R4600 V2.0 */
-			_clear_page = r4k_clear_page_r4600_v2;
-			_copy_page = r4k_copy_page_r4600_v2;
-		} else {
-			if (cpu_has_64bits)
-				_clear_page = r4k_clear_page_d32;
-			else
-				_clear_page = r4k_clear_page32_d32;
-			_copy_page = r4k_copy_page_d32;
-		}
-		break;
-	}
-}
-
-static void __init setup_scache_funcs(void)
-{
-	struct cpuinfo_mips *c = &current_cpu_data;
-
-	if (c->dcache.linesz > c->scache.linesz)
-		panic("Invalid primary cache configuration detected");
-
-	if (c->cputype == CPU_R10000 || c->cputype == CPU_R12000) {
-		_clear_page = andes_clear_page;
-		_copy_page = andes_copy_page;
-		return;
-	}
-
-	switch (c->scache.linesz) {
-	case 16:
-		_clear_page = r4k_clear_page_s16;
-		_copy_page = r4k_copy_page_s16;
-		break;
-	case 32:
-		_clear_page = r4k_clear_page_s32;
-		_copy_page = r4k_copy_page_s32;
-		break;
-	case 64:
-		_clear_page = r4k_clear_page_s64;
-		_copy_page = r4k_copy_page_s64;
-		break;
-	case 128:
-		_clear_page = r4k_clear_page_s128;
-		_copy_page = r4k_copy_page_s128;
-		break;
-	}
-}
-
 typedef int (*probe_func_t)(unsigned long);
 extern int r5k_sc_init(void);
 extern int rm7k_sc_init(void);
@@ -1127,6 +945,8 @@ static void __init setup_scache(void)
 	case CPU_R4400MC:
 		probe_scache_kseg1 = (probe_func_t) (KSEG1ADDR(&probe_scache));
 		sc_present = probe_scache_kseg1(config);
+		if (sc_present)
+			c->options |= MIPS_CPU_CACHE_CDEX_S;
 		break;
 
 	case CPU_R10000:
@@ -1140,14 +960,13 @@ static void __init setup_scache(void)
 
 	case CPU_R5000:
 	case CPU_NEVADA:
-		setup_noscache_funcs();
 #ifdef CONFIG_R5000_CPU_SCACHE
 		r5k_sc_init();
 #endif
                 return;
 
 	case CPU_RM7000:
-		setup_noscache_funcs();
+	case CPU_RM9000:
 #ifdef CONFIG_RM7000_CPU_SCACHE
 		rm7k_sc_init();
 #endif
@@ -1157,10 +976,8 @@ static void __init setup_scache(void)
 		sc_present = 0;
 	}
 
-	if (!sc_present) {
-		setup_noscache_funcs();
+	if (!sc_present)
 		return;
-	}
 
 	if ((c->isa_level == MIPS_CPU_ISA_M32 ||
 	     c->isa_level == MIPS_CPU_ISA_M64) &&
@@ -1176,7 +993,6 @@ static void __init setup_scache(void)
 	       scache_size >> 10, way_string[c->scache.ways], c->scache.linesz);
 
 	c->options |= MIPS_CPU_SUBSET_CACHES;
-        setup_scache_funcs();
 }
 
 static inline void coherency_setup(void)
@@ -1205,6 +1021,8 @@ static inline void coherency_setup(void)
 
 void __init ld_mmu_r4xx0(void)
 {
+	extern void build_clear_page(void);
+	extern void build_copy_page(void);
 	extern char except_vec2_generic;
 	struct cpuinfo_mips *c = &current_cpu_data;
 
@@ -1218,6 +1036,15 @@ void __init ld_mmu_r4xx0(void)
 
 	if (c->dcache.sets * c->dcache.ways > PAGE_SIZE)
 		c->dcache.flags |= MIPS_CACHE_ALIASES;
+
+	r4k_blast_dcache_page_setup();
+	r4k_blast_dcache_page_indexed_setup();
+	r4k_blast_dcache_setup();
+	r4k_blast_icache_page_setup();
+	r4k_blast_icache_page_indexed_setup();
+	r4k_blast_icache_setup();
+	r4k_blast_scache_page_setup();
+	r4k_blast_scache_setup();
 
 	/*
 	 * Some MIPS32 and MIPS64 processors have physically indexed caches.
@@ -1247,4 +1074,7 @@ void __init ld_mmu_r4xx0(void)
 #endif
 
 	__flush_cache_all();
+
+	build_clear_page();
+	build_copy_page();
 }

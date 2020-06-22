@@ -180,7 +180,7 @@ typedef struct {
 extern HTAB htab_data;
 
 #include <linux/cache.h>
-#include <asm/spinlock.h>
+#include <linux/spinlock.h>
 typedef struct {
 	spinlock_t lock;
 } ____cacheline_aligned hash_table_lock_t;
@@ -191,6 +191,7 @@ void create_valid_hpte( unsigned long slot, unsigned long vpn,
 			unsigned long prpn, unsigned hash,
 			void * ptep, unsigned hpteflags,
 			unsigned bolted );
+unsigned long get_lock_slot(unsigned long vpn);
 
 #define PD_SHIFT (10+12)		/* Page directory */
 #define PD_MASK  0x02FF

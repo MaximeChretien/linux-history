@@ -111,22 +111,13 @@
       #define min(x,y) ((x) < (y) ? x : y)
    #endif
 
+   #define pci_dma_hi32(a)         ((a >> 16) >> 16)
    #define pci_dma_lo32(a)         (a & 0xffffffff)
 
    #if (BITS_PER_LONG > 32) || (defined CONFIG_HIGHMEM64G && defined IPS_HIGHIO)
       #define IPS_ENABLE_DMA64        (1)
-      #define pci_dma_hi32(a)         (a >> 32)
    #else
       #define IPS_ENABLE_DMA64        (0)
-      #define pci_dma_hi32(a)         (0)
-   #endif
-
-   #if defined(__ia64__)
-      #define IPS_ATOMIC_GFP	(GFP_DMA | GFP_ATOMIC)
-      #define IPS_INIT_GFP	GFP_DMA
-   #else
-      #define IPS_ATOMIC_GFP    GFP_ATOMIC
-      #define IPS_INIT_GFP	GFP_KERNEL
    #endif
 
    /*
@@ -734,7 +725,6 @@ typedef struct {
    volatile PIPS_STATUS p_status_tail;
    volatile uint32_t    hw_status_start;
    volatile uint32_t    hw_status_tail;
-   IPS_LD_INFO          logical_drive_info;
 } IPS_ADAPTER, *PIPS_ADAPTER;
 
 typedef struct {
@@ -1092,6 +1082,8 @@ typedef struct ips_ha {
    ips_scb_queue_t    scb_activelist;     /* Active SCB list            */
    IPS_IO_CMD        *dummy;              /* dummy command              */
    IPS_ADAPTER       *adapt;              /* Adapter status area        */
+   IPS_LD_INFO       *logical_drive_info; /* Logical Drive Info         */
+   dma_addr_t         logical_drive_info_dma_addr; /* Logical Drive Info DMA Address */
    IPS_ENQ           *enq;                /* Adapter Enquiry data       */
    IPS_CONF          *conf;               /* Adapter config data        */
    IPS_NVRAM_P5      *nvram;              /* NVRAM page 5 data          */
@@ -1109,7 +1101,8 @@ typedef struct ips_ha {
    uint16_t           device_id;          /* PCI device ID              */
    uint8_t            slot_num;           /* PCI Slot Number            */
    uint16_t           subdevice_id;       /* Subsystem device ID        */
-   uint8_t            ioctl_order;        /* Number of pages in ioctl   */
+   int                ioctl_len;          /* size of ioctl buffer       */
+   dma_addr_t         ioctl_busaddr;      /* dma address of ioctl buffer*/
    uint8_t            bios_version[8];    /* BIOS Revision              */
    uint32_t           mem_addr;           /* Memory mapped address      */
    uint32_t           io_len;             /* Size of IO Address         */
@@ -1119,8 +1112,10 @@ typedef struct ips_ha {
    ips_hw_func_t      func;               /* hw function pointers       */
    struct pci_dev    *pcidev;             /* PCI device handle          */
    char              *flash_data;         /* Save Area for flash data   */
-   u8                 flash_order;        /* Save Area for flash size order */
+   int                flash_len;          /* length of flash buffer     */
    u32                flash_datasize;     /* Save Area for flash data size */
+   dma_addr_t         flash_busaddr;      /* dma address of flash buffer*/
+   dma_addr_t         enq_busaddr;        /* dma address of enq struct  */
    uint8_t            requires_esl;       /* Requires an EraseStripeLock */
 } ips_ha_t;
 
@@ -1136,8 +1131,8 @@ typedef struct ips_scb {
    uint8_t           bus;
    uint8_t           lun;
    uint8_t           cdb[12];
-   uint32_t          scb_busaddr;
-   uint32_t          data_busaddr;
+   uint32_t          scb_busaddr;      
+   uint32_t          old_data_busaddr;         // Obsolete field left in to not break utilities
    uint32_t          timeout;
    uint8_t           basic_status;
    uint8_t           extended_status;
@@ -1153,6 +1148,7 @@ typedef struct ips_scb {
    ips_scb_callback  callback;
    uint32_t          sg_busaddr;
    int               sg_count;
+   dma_addr_t        data_busaddr;
 } ips_scb_t;
 
 typedef struct ips_scb_pt {
@@ -1208,13 +1204,13 @@ typedef struct {
 
 #define IPS_VER_MAJOR 6
 #define IPS_VER_MAJOR_STRING "6"
-#define IPS_VER_MINOR 10
-#define IPS_VER_MINOR_STRING "10"
-#define IPS_VER_BUILD 24
-#define IPS_VER_BUILD_STRING "24"
-#define IPS_VER_STRING "6.10.24"
-#define IPS_RELEASE_ID 0x00010000
-#define IPS_BUILD_IDENT 1250
+#define IPS_VER_MINOR 11
+#define IPS_VER_MINOR_STRING "11"
+#define IPS_VER_BUILD 07
+#define IPS_VER_BUILD_STRING "07"
+#define IPS_VER_STRING "6.11.07"
+#define IPS_RELEASE_ID 0x00010001
+#define IPS_BUILD_IDENT 2224
 #define IPS_LEGALCOPYRIGHT_STRING "(C) Copyright IBM Corp. 1994, 2003. All Rights Reserved."
 #define IPS_ADAPTECCOPYRIGHT_STRING "(c) Copyright Adaptec, Inc. 2002 to present. All Rights Reserved."
 #define IPS_NT_LEGALCOPYRIGHT_STRING "(C) Copyright IBM Corp. 1994, 2003."
@@ -1224,11 +1220,11 @@ typedef struct {
 #define IPS_VER_SERVERAID2 "2.88.13"
 #define IPS_VER_NAVAJO "2.88.13"
 #define IPS_VER_SERVERAID3 "6.10.24"
-#define IPS_VER_SERVERAID4H "6.10.24"
-#define IPS_VER_SERVERAID4MLx "6.10.24"
-#define IPS_VER_SARASOTA "6.10.24"
-#define IPS_VER_MARCO "6.10.24"
-#define IPS_VER_SEBRING "6.10.24"
+#define IPS_VER_SERVERAID4H "6.11.07"
+#define IPS_VER_SERVERAID4MLx "6.11.07"
+#define IPS_VER_SARASOTA "6.11.07"
+#define IPS_VER_MARCO "6.11.07"
+#define IPS_VER_SEBRING "6.11.07"
 
 /* Compatability IDs for various adapters */
 #define IPS_COMPAT_UNKNOWN ""

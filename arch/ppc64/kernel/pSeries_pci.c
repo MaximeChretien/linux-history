@@ -208,6 +208,7 @@ pci_read_irq_line(struct pci_dev *Pci_Dev)
 		PPCDBG(PPCDBG_BUSWALK,"\tDevice: %s No Interrupt used by device.\n",Pci_Dev->slot_name);
 		return 0;	
 	}
+
 	Node = pci_device_to_OF_node(Pci_Dev);
 	if ( Node == NULL) { 
 		PPCDBG(PPCDBG_BUSWALK,"\tDevice: %s Device Node not found.\n",Pci_Dev->slot_name);
@@ -524,13 +525,22 @@ alloc_phb(struct device_node *dev, char *model, unsigned int addr_size_words)
 		}
 
 		phb->local_number = ((reg_struct.address >> 12) & 0xf) - 0x8;
-	/***************************************************************
-	* Trying to build a known just gets the code in trouble.
-	***************************************************************/
-	} else { 
+	} else {
 		PPCDBG(PPCDBG_PHBINIT, "\tUnknown PHB Type!\n");
-		printk("PCI: Unknown Phb Type!\n");
-		return NULL;
+
+		if (systemcfg->platform == PLATFORM_PSERIES_LPAR) {
+
+			phb=pci_alloc_pci_controller("PHB UK",phb_type_unknown);
+			if (phb == NULL) return NULL;
+
+			phb->cfg_addr = NULL;
+			phb->cfg_data = NULL;
+			phb->phb_regs = NULL;
+			phb->chip_regs = NULL;
+		} else {
+			printk("PCI: Unknown Phb Type!\n");
+			return NULL;
+		}
 	}
 
 	/* Add a linux,phbnum property to the device tree so user code
@@ -702,10 +712,6 @@ pSeries_pcibios_fixup(void)
 	pci_for_each_dev(dev) {
 		pci_read_irq_line(dev);
 		PPCDBGCALL(PPCDBG_PHBINIT, dumpPci_Dev(dev) );
-	}
-
-	if (naca->interrupt_controller == IC_PPC_XIC) {
-		xics_isa_init(); 
 	}
 }
 

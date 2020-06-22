@@ -6,7 +6,7 @@
  * Instead the northbridge registers are read directly. 
  * 
  * Copyright 2002 Andi Kleen, SuSE Labs.
- * $Id: k8topology.c,v 1.11 2003/09/12 01:55:37 ak Exp $
+ * $Id: k8topology.c,v 1.12 2004/01/29 00:51:01 ak Exp $
  */
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -100,7 +100,7 @@ int __init k8_scan_nodes(unsigned long start, unsigned long end)
 
 	printk(KERN_INFO "Scanning NUMA topology in Northbridge %d\n", nb); 
 
-	numnodes = (read_pci_config(0, nb, 0, 0x60 ) >> 4) & 3; 
+	numnodes = (read_pci_config(0, nb, 0, 0x60 ) >> 4) & 7; 
 
 	memset(&nodes,0,sizeof(nodes)); 
 	prevbase = 0;
@@ -111,7 +111,7 @@ int __init k8_scan_nodes(unsigned long start, unsigned long end)
 		base = read_pci_config(0, nb, 1, 0x40 + i*8);
 		limit = read_pci_config(0, nb, 1, 0x44 + i*8);
 
-		nodeid = limit & 3; 
+		nodeid = limit & 7; 
 		if ((base & 3) == 0) { 
 			continue;
 		} 

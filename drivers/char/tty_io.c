@@ -164,6 +164,7 @@ extern void txx9_rs_init(void);
 extern void txx9_serial_console_init(void);
 extern void sb1250_serial_console_init(void);
 extern void arc_console_init(void);
+extern int hvc_console_init(void);
 
 #ifndef MIN
 #define MIN(a,b)	((a) < (b) ? (a) : (b))
@@ -2237,6 +2238,9 @@ void __init console_init(void)
 	 */
 #ifdef CONFIG_EARLY_PRINTK
 	disable_early_printk(); 
+#endif
+#ifdef CONFIG_HVC_CONSOLE
+	hvc_console_init();
 #endif
 #ifdef CONFIG_VT
 	con_init();

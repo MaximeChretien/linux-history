@@ -93,12 +93,12 @@ static inline u64 in64(unsigned long addr)
  * These are provided so as to be able to use common
  * driver code for the 32-bit and 64-bit trees
  */
-extern inline void out64(u64 val, unsigned long addr)
+static inline void out64(u64 val, unsigned long addr)
 {
 	*(volatile unsigned long *)addr = val;
 }
 
-extern inline u64 in64(unsigned long addr)
+static inline u64 in64(unsigned long addr)
 {
 	return *(volatile unsigned long *)addr;
 }

@@ -43,6 +43,23 @@ unsigned long highstart_pfn, highend_pfn;
 static unsigned long totalram_pages;
 static unsigned long totalhigh_pages;
 
+void pgd_init(unsigned long page)
+{
+	unsigned long *p = (unsigned long *) page;
+	int i;
+
+	for (i = 0; i < USER_PTRS_PER_PGD; i+=8) {
+		p[i + 0] = (unsigned long) invalid_pte_table;
+		p[i + 1] = (unsigned long) invalid_pte_table;
+		p[i + 2] = (unsigned long) invalid_pte_table;
+		p[i + 3] = (unsigned long) invalid_pte_table;
+		p[i + 4] = (unsigned long) invalid_pte_table;
+		p[i + 5] = (unsigned long) invalid_pte_table;
+		p[i + 6] = (unsigned long) invalid_pte_table;
+		p[i + 7] = (unsigned long) invalid_pte_table;
+	}
+}
+
 /*
  * We have upto 8 empty zeroed pages so we can map one of the right colour
  * when needed.  This is necessary only on R4000 / R4400 SC and MC versions
@@ -244,7 +261,13 @@ void __init paging_init(void)
 	zones_size[ZONE_DMA] = low;
 #endif
 #ifdef CONFIG_HIGHMEM
-	zones_size[ZONE_HIGHMEM] = high - low;
+	if (cpu_has_dc_aliases) {
+		printk(KERN_WARNING "This processor doesn't support highmem.");
+		if (high - low)
+			printk(" %dk highmem ignored", high - low);
+		printk("\n");
+	} else
+		zones_size[ZONE_HIGHMEM] = high - low;
 #endif
 
 	free_area_init(zones_size);

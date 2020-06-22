@@ -439,7 +439,7 @@ static int rh_init_int_timer(struct urb * urb);
 
 /*-------------------------------------------------------------------------*/
 
-#define ALLOC_FLAGS (in_interrupt () || current->state != TASK_RUNNING ? GFP_ATOMIC : GFP_KERNEL)
+#define ALLOC_FLAGS (in_interrupt () || current->state != TASK_RUNNING ? GFP_ATOMIC : GFP_NOIO)
 
 #ifdef DEBUG
 #	define OHCI_MEM_FLAGS	SLAB_POISON

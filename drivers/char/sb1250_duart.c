@@ -368,7 +368,7 @@ static void duart_put_char(struct tty_struct *tty, u_char ch)
 
 	spin_lock_irqsave(&us->outp_lock, flags);
 
-	if (us->outp_count >= SERIAL_XMIT_SIZE - 1) {
+	if (us->outp_count == SERIAL_XMIT_SIZE) {
 		spin_unlock_irqrestore(&us->outp_lock, flags);
 		return;
 	}
@@ -910,6 +910,8 @@ static int ser_console_setup(struct console *cons, char *str)
 			     port->mode_2, i);
 		WRITE_SERCSR(V_DUART_BAUD_RATE(115200),
 			     port->clk_sel, i);
+		WRITE_SERCSR(M_DUART_RX_EN|M_DUART_TX_EN,
+			     port->cmd, i);
 	}
 	return 0;
 }

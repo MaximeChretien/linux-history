@@ -19,7 +19,7 @@ O_TARGET := au1000.o
 export-objs		= prom.o clocks.o power.o usbdev.o
 
 obj-y := prom.o int-handler.o dma.o irq.o puts.o time.o reset.o \
-	clocks.o power.o setup.o
+	clocks.o power.o setup.o sleeper.o
 
 obj-$(CONFIG_AU1X00_USB_DEVICE) += usbdev.o
 obj-$(CONFIG_KGDB) += dbg_io.o

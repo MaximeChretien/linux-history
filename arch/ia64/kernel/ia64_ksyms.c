@@ -169,3 +169,7 @@ EXPORT_SYMBOL(machvec_noop);
 EXPORT_SYMBOL(pfm_install_alternate_syswide_subsystem);
 EXPORT_SYMBOL(pfm_remove_alternate_syswide_subsystem);
 #endif
+
+#include <linux/acpi.h>
+extern acpi_status acpi_hp_csr_space(acpi_handle, u64 *, u64 *);
+EXPORT_SYMBOL(acpi_hp_csr_space);

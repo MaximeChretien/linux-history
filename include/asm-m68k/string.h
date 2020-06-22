@@ -82,7 +82,7 @@ static inline char * strchr(const char * s, int c)
 
 #if 0
 #define __HAVE_ARCH_STRPBRK
-extern inline char * strpbrk(const char * cs,const char * ct)
+static inline char *strpbrk(const char *cs,const char *ct)
 {
   const char *sc1,*sc2;
   
@@ -119,7 +119,7 @@ static inline size_t strspn(const char *s, const char *accept)
 
 #if 0
 #define __HAVE_ARCH_STRTOK
-extern inline char * strtok(char * s,const char * ct)
+static inline char *strtok(char *s, const char *ct)
 {
   char *sbegin, *send;
   
@@ -553,7 +553,8 @@ extern int memcmp(const void * ,const void * ,size_t );
  memcmp((cs),(ct),(n)))
 
 #define __HAVE_ARCH_MEMCHR
-extern inline void * memchr(const void * cs, int c, size_t count) {
+static inline void *memchr(const void *cs, int c, size_t count)
+{
 	/* Someone else can optimize this, I don't care - tonym@mac.linux-m68k.org */
 	unsigned char *ret = (unsigned char *)cs;
 	for(;count>0;count--,ret++)

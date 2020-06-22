@@ -52,35 +52,6 @@ int __cpu_number_map[NR_CPUS];
 int __cpu_logical_map[NR_CPUS];
 cycles_t cacheflush_time;
 
-/* These are defined by the board-specific code. */
-
-/*
- * Cause the function described by call_data to be executed on the passed
- * cpu.  When the function has finished, increment the finished field of
- * call_data.
- */
-void core_send_ipi(int cpu, unsigned int action);
-
-/*
- * Clear all undefined state in the cpu, set up sp and gp to the passed
- * values, and kick the cpu into smp_bootstrap();
- */
-void prom_boot_secondary(int cpu, unsigned long sp, unsigned long gp);
-
-/*
- *  After we've done initial boot, this function is called to allow the
- *  board code to clean up state, if needed
- */
-void prom_init_secondary(void);
-
-/*
- * Do whatever setup needs to be done for SMP at the board level.  Return
- * the number of cpus in the system, including this one
- */
-int prom_setup_smp(void);
-
-void prom_smp_finish(void);
-
 void __init smp_callin(void)
 {
 #if 0
@@ -88,34 +59,6 @@ void __init smp_callin(void)
 	smp_store_cpu_info(cpuid);
 #endif
 }
-
-#ifndef CONFIG_SGI_IP27
-/*
- * Hook for doing final board-specific setup after the generic smp setup
- * is done
- */
-asmlinkage void start_secondary(void)
-{
-	unsigned int cpu = smp_processor_id();
-
-	cpu_probe();
-	prom_init_secondary();
-	per_cpu_trap_init();
-
-	/*
-	 * XXX parity protection should be folded in here when it's converted
-	 * to an option instead of something based on .cputype
-	 */
-	pgd_current[cpu] = init_mm.pgd;
-	cpu_data[cpu].udelay_val = loops_per_jiffy;
-	prom_smp_finish();
-	printk("Slave cpu booted successfully\n");
-	CPUMASK_SETB(cpu_online_map, cpu);
-	atomic_inc(&cpus_booted);
-	while (!atomic_read(&smp_commenced));
-	cpu_idle();
-}
-#endif /* CONFIG_SGI_IP27 */
 
 void __init smp_commence(void)
 {

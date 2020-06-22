@@ -173,6 +173,36 @@ void local_flush_tlb_page(struct vm_area_struct *vma, unsigned long page)
 }
 
 /*
+ * Remove one kernel space TLB entry.  This entry is assumed to be marked
+ * global so we don't do the ASID thing.
+ */
+void local_flush_tlb_one(unsigned long page)
+{
+	unsigned long flags;
+	int oldpid, idx;
+
+	page &= (PAGE_MASK << 1);
+	oldpid = read_c0_entryhi() & ASID_MASK;
+
+	local_irq_save(flags);
+	write_c0_entryhi(page);
+	BARRIER;
+	tlb_probe();
+	BARRIER;
+	idx = read_c0_index();
+	write_c0_entrylo0(0);
+	write_c0_entrylo1(0);
+	if (idx >= 0) {
+		/* Make sure all entries differ. */
+		write_c0_entryhi(KSEG0+idx*0x2000);
+		tlb_write_indexed();
+	}
+	BARRIER;
+	write_c0_entryhi(oldpid);
+	local_irq_restore(flags);
+}
+
+/*
  * Updates the TLB with the new pte(s).
  */
 void __update_tlb(struct vm_area_struct * vma, unsigned long address, pte_t pte)
@@ -305,31 +335,29 @@ out:
 
 static void __init probe_tlb(unsigned long config)
 {
-        if (!(config & (1 << 31))) {
-	        /*
-		 * Not a MIPS64 complainant CPU.
-		 * Config 1 register not supported, we assume R4k style.
-		 */
-	        current_cpu_data.tlbsize = 48;
-	} else {
-        	unsigned long config1;
+	struct cpuinfo_mips *c = &current_cpu_data;
+	unsigned int config1;
 
-	        config1 = read_c0_config1();
-		if (!((config >> 7) & 3))
-		        panic("No MMU present");
-		else
-		        current_cpu_data.tlbsize = ((config1 >> 25) & 0x3f) + 1;
-	}
+	/*
+	 * If this isn't a MIPS32 / MIPS64 compliant CPU.  Config 1 register
+	 * is not supported, we assume R4k style.  Cpu probing already figured
+	 * out the number of tlb entries.
+	 */
+	if ((c->processor_id  & 0xff0000) == PRID_COMP_LEGACY)
+		return;
 
-	printk("Number of TLB entries %d.\n", current_cpu_data.tlbsize);
+	config1 = read_c0_config1();
+	if (!((config1 >> 7) & 3))
+		panic("No MMU present");
+
+	c->tlbsize = ((config1 >> 25) & 0x3f) + 1;
 }
 
 void __init r4k_tlb_init(void)
 {
 	unsigned long config = read_c0_config();
-
 	probe_tlb(config);
-	write_c0_pagemask(PM_4K);
+	write_c0_pagemask(PM_DEFAULT_MASK);
 	write_c0_wired(0);
 	temp_tlb_entry = current_cpu_data.tlbsize - 1;
 	local_flush_tlb_all();

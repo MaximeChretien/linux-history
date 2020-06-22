@@ -1179,7 +1179,7 @@ repeat:
                 "mr    5, %3\n"
                 "mr    6, %4\n"
                 "mr    7, %5\n"
-                HSC    
+		HVSC
                 "mr    %0, 3\n"
                 "mr    %1, 4\n"
 		: "=r" (lpar_rc), "=r" (slot)
@@ -1200,7 +1200,7 @@ repeat:
 			      "mr    5, %3\n"
 			      "mr    6, %4\n"
 			      "mr    7, %5\n"
-			      HSC    
+			      HVSC
 			      "mr    %0, 3\n"
 			      "mr    %1, 4\n"
 			      : "=r" (lpar_rc), "=r" (slot)

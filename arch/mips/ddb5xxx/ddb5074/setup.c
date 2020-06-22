@@ -36,10 +36,6 @@ extern void rs_kgdb_hook(int);
 extern void breakpoint(void);
 #endif
 
-#if defined(CONFIG_SERIAL_CONSOLE)
-extern void console_setup(char *);
-#endif
-
 extern struct ide_ops std_ide_ops;
 extern struct kbd_ops std_kbd_ops;
 extern struct rtc_ops ddb_rtc_ops;

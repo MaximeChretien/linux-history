@@ -4991,7 +4991,7 @@ static int megadev_ioctl (struct inode *inode, struct file *filep,
 
 		if( !scsicmd->result && outlen ) {
 			if (copy_to_user(uaddr, kvaddr, length)) {
-				return -EFAULT;
+				ret = -EFAULT;
 				goto out_ioctl_cmd_new;
 			}
 		}

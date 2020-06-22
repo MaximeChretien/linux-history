@@ -8,7 +8,7 @@
  * See Documentation/DMA-mapping.txt for the interface specification.
  * 
  * Copyright 2002 Andi Kleen, SuSE Labs.
- * $Id: pci-gart.c,v 1.28 2003/09/19 07:01:58 ak Exp $
+ * $Id: pci-gart.c,v 1.30 2004/01/13 09:09:32 ak Exp $
  */
 
 #include <linux/config.h>
@@ -42,6 +42,7 @@ int force_mmu = 1;
 #else
 int force_mmu = 0;
 #endif
+int iommu_fullflush = 1;
 
 extern int fallback_aper_order;
 extern int fallback_aper_force;
@@ -97,6 +98,8 @@ static unsigned long alloc_iommu(int size)
 			next_bit = 0;
 	} 
 	} 
+	if (iommu_fullflush)
+		need_flush = 1;
 	spin_unlock_irqrestore(&iommu_bitmap_lock, flags);      
 	return offset;
 } 
@@ -123,8 +126,12 @@ static void __flush_gart(void)
 	/* recheck flush count inside lock */
 	if (need_flush) { 
 		for (i = 0; northbridges[i]; i++) { 
+			u32 w;
 			pci_write_config_dword(northbridges[i], 0x9c, 
 					       northbridge_flush_word[i] | 1); 
+			do { 
+				pci_read_config_dword(northbridges[i], 0x9c, &w);
+			} while (w & 1);
 			flushed++;
 		} 
 		if (!flushed) 
@@ -463,6 +470,7 @@ static __init int init_k8_gatt(agp_kern_info *info)
 
  nommu:
 	/* XXX: reject 0xffffffff mask now in pci mapping functions */
+	if (end_pfn >= 0xffffffff>>PAGE_SHIFT)
 		printk(KERN_ERR "PCI-DMA: More than 4GB of RAM and no IOMMU\n"
 	       KERN_ERR "PCI-DMA: 32bit PCI IO may malfunction."); 
 	return -1; 
@@ -570,6 +578,8 @@ void __init pci_iommu_init(void)
    memaper[=order] allocate an own aperture over RAM with size 32MB^order.
    noforce don't force IOMMU usage. Default
    force  Force IOMMU for all devices.
+   nofullflush use optimized IOMMU flushing (may break on some devices).
+               default off.
 */
 __init int iommu_setup(char *opt) 
 { 
@@ -585,6 +595,8 @@ __init int iommu_setup(char *opt)
 		    force_mmu = 1;
 	    if (!memcmp(p,"noforce", 7))
 		    force_mmu = 0;
+	    if (!memcmp(p,"nofullflush", 11))
+		    iommu_fullflush = 0;
 	    if (!memcmp(p, "memaper", 7)) { 
 		    fallback_aper_force = 1; 
 		    p += 7; 

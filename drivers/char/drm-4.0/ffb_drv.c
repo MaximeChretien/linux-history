@@ -158,7 +158,7 @@ static int ffb_takedown(drm_device_t *dev)
 			switch (map->type) {
 			case _DRM_REGISTERS:
 			case _DRM_FRAME_BUFFER:
-				drm_ioremapfree(map->handle, map->size);
+				drm_ioremapfree(map->handle, map->size, dev);
 				break;
 
 			case _DRM_SHM:

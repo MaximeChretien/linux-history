@@ -68,6 +68,9 @@
  *
  * HISTORY:
  *
+ * 2003-12-29 Rewritten high speed iso transfer support (by Michal Sojka,
+ *	<sojkam@centrum.cz>, updates by DB).
+ *
  * 2002-11-29	Correct handling for hw async_next register.
  * 2002-08-06	Handling for bulk and interrupt transfers is mostly shared;
  *	only scheduling is different, no arbitrary limitations.
@@ -91,14 +94,16 @@
  * 2001-June	Works with usb-storage and NEC EHCI on 2.4
  */
 
-#define DRIVER_VERSION "2003-Jun-19/2.4"
+#define DRIVER_VERSION "2003-Dec-29/2.4"
 #define DRIVER_AUTHOR "David Brownell"
 #define DRIVER_DESC "USB 2.0 'Enhanced' Host Controller (EHCI) Driver"
 
 static const char	hcd_name [] = "ehci_hcd";
 
 
-// #define EHCI_VERBOSE_DEBUG
+#undef EHCI_VERBOSE_DEBUG
+#undef EHCI_URB_TRACE
+
 // #define have_split_iso
 
 #ifdef DEBUG
@@ -333,8 +338,8 @@ static int ehci_start (struct usb_hcd *hcd)
 	spin_lock_init (&ehci->lock);
 
 	ehci->caps = (struct ehci_caps *) hcd->regs;
-	ehci->regs = (struct ehci_regs *) (hcd->regs +
-				readb (&ehci->caps->length));
+ 	ehci->regs = (struct ehci_regs *) (hcd->regs +
+ 				HC_LENGTH (readl (&ehci->caps->hc_capbase)));
 	dbg_hcs_params (ehci, "ehci_start");
 	dbg_hcc_params (ehci, "ehci_start");
 
@@ -486,7 +491,7 @@ done2:
 
         /* PCI Serial Bus Release Number is at 0x60 offset */
 	pci_read_config_byte (hcd->pdev, 0x60, &tempbyte);
-	temp = readw (&ehci->caps->hci_version);
+	temp = HC_VERSION(readl (&ehci->caps->hc_capbase));
 	ehci_info (ehci,
 		"USB %x.%x enabled, EHCI %x.%02x, driver %s\n",
 		((tempbyte & 0xf0)>>4), (tempbyte & 0x0f),
@@ -895,8 +900,16 @@ static void ehci_free_config (struct usb_hcd *hcd, struct usb_device *udev)
 			struct ehci_qh		*qh;
 			char			*why;
 
-			/* dev->ep never has ITDs or SITDs */
+			/* dev->ep is a QH unless info1.maxpacket of zero
+			 * marks an iso stream head.
+			 * FIXME do something smarter here with ISO
+			 */
 			qh = (struct ehci_qh *) dev->ep [i];
+			if (qh->hw_info1 == 0) {
+				ehci_err (ehci, "no iso cleanup!!\n");
+				continue;
+			}
+
 
 			/* detect/report non-recoverable errors */
 			if (in_interrupt ()) 

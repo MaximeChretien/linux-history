@@ -85,6 +85,7 @@ extern int nr_swap_pages;
 
 extern unsigned int nr_free_pages(void);
 extern unsigned int nr_free_buffer_pages(void);
+extern unsigned int freeable_lowmem(void);
 extern int nr_active_pages;
 extern int nr_inactive_pages;
 extern unsigned long page_cache_size;

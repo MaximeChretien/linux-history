@@ -3,12 +3,13 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 1996, 1997, 1998, 1999, 2000 by Ralf Baechle
+ * Copyright (C) 1996, 1997, 1998, 1999, 2000, 03 by Ralf Baechle
  * Copyright (C) 1999, 2000 Silicon Graphics, Inc.
  */
 #ifndef _ASM_UACCESS_H
 #define _ASM_UACCESS_H
 
+#include <linux/compiler.h>
 #include <linux/errno.h>
 #include <linux/sched.h>
 
@@ -73,7 +74,7 @@
  * this function, memory access functions may still return -EFAULT.
  */
 #define access_ok(type, addr, size)					\
-	__access_ok((unsigned long)(addr), (size), __access_mask)
+	likely(__access_ok((unsigned long)(addr), (size), __access_mask))
 
 /*
  * verify_area: - Obsolete, use access_ok()
@@ -184,117 +185,117 @@ static inline int verify_area(int type, const void * addr, unsigned long size)
 struct __large_struct { unsigned long buf[100]; };
 #define __m(x) (*(struct __large_struct *)(x))
 
-#define __get_user_nocheck(x,ptr,size)				\
-({								\
-	long __gu_err;						\
-	__typeof(*(ptr)) __gu_val;				\
-	long __gu_addr;						\
-	__asm__("":"=r" (__gu_val));				\
-	__gu_addr = (long) (ptr);				\
-	__asm__("":"=r" (__gu_err));				\
-	switch (size) {						\
-		case 1: __get_user_asm("lb"); break;		\
-		case 2: __get_user_asm("lh"); break;		\
-		case 4: __get_user_asm("lw"); break;		\
-		case 8: __get_user_asm("ld"); break;		\
-		default: __get_user_unknown(); break;		\
-	} x = (__typeof__(*(ptr))) __gu_val;			\
-	__gu_err;						\
+#define __get_user_nocheck(x,ptr,size)					\
+({									\
+	long __gu_err;							\
+	__typeof(*(ptr)) __gu_val;					\
+	long __gu_addr;							\
+	__asm__("":"=r" (__gu_val));					\
+	__gu_addr = (long) (ptr);					\
+	__asm__("":"=r" (__gu_err));					\
+	switch (size) {							\
+		case 1: __get_user_asm("lb"); break;			\
+		case 2: __get_user_asm("lh"); break;			\
+		case 4: __get_user_asm("lw"); break;			\
+		case 8: __get_user_asm("ld"); break;			\
+		default: __get_user_unknown(); break;			\
+	} x = (__typeof__(*(ptr))) __gu_val;				\
+	__gu_err;							\
 })
 
-#define __get_user_check(x,ptr,size)				\
-({								\
-	long __gu_err;						\
-	__typeof__(*(ptr)) __gu_val;				\
-	long __gu_addr;						\
-	__asm__("":"=r" (__gu_val));				\
-	__gu_addr = (long) (ptr);				\
-	__asm__("":"=r" (__gu_err));				\
-	if (__access_ok(__gu_addr,size,__access_mask)) {	\
-		switch (size) {					\
-		case 1: __get_user_asm("lb"); break;		\
-		case 2: __get_user_asm("lh"); break;		\
-		case 4: __get_user_asm("lw"); break;		\
-		case 8: __get_user_asm("ld"); break;		\
-		default: __get_user_unknown(); break;		\
-		}						\
-	} x = (__typeof__(*(ptr))) __gu_val;			\
-	__gu_err;						\
+#define __get_user_check(x,ptr,size)					\
+({									\
+	long __gu_err;							\
+	__typeof__(*(ptr)) __gu_val;					\
+	long __gu_addr;							\
+	__asm__("":"=r" (__gu_val));					\
+	__gu_addr = (long) (ptr);					\
+	__asm__("":"=r" (__gu_err));					\
+	if (access_ok(VERIFY_READ, __gu_addr, size)) {			\
+		switch (size) {						\
+		case 1: __get_user_asm("lb"); break;			\
+		case 2: __get_user_asm("lh"); break;			\
+		case 4: __get_user_asm("lw"); break;			\
+		case 8: __get_user_asm("ld"); break;			\
+		default: __get_user_unknown(); break;			\
+		}							\
+	} x = (__typeof__(*(ptr))) __gu_val;				\
+	__gu_err;							\
 })
 
-#define __get_user_asm(insn)					\
-({								\
-	__asm__ __volatile__(					\
-	"1:\t" insn "\t%1,%2\n\t"				\
-	"move\t%0,$0\n"						\
-	"2:\n\t"						\
-	".section\t.fixup,\"ax\"\n"				\
-	"3:\tli\t%0,%3\n\t"					\
-	"move\t%1,$0\n\t"					\
-	"j\t2b\n\t"						\
-	".previous\n\t"						\
-	".section\t__ex_table,\"a\"\n\t"			\
-	".dword\t1b,3b\n\t"					\
-	".previous"						\
-	:"=r" (__gu_err), "=r" (__gu_val)			\
-	:"o" (__m(__gu_addr)), "i" (-EFAULT));			\
+#define __get_user_asm(insn)						\
+({									\
+	__asm__ __volatile__(						\
+	"1:\t" insn "\t%1,%2\n\t"					\
+	"move\t%0,$0\n"							\
+	"2:\n\t"							\
+	".section\t.fixup,\"ax\"\n"					\
+	"3:\tli\t%0,%3\n\t"						\
+	"move\t%1,$0\n\t"						\
+	"j\t2b\n\t"							\
+	".previous\n\t"							\
+	".section\t__ex_table,\"a\"\n\t"				\
+	".dword\t1b,3b\n\t"						\
+	".previous"							\
+	:"=r" (__gu_err), "=r" (__gu_val)				\
+	:"o" (__m(__gu_addr)), "i" (-EFAULT));				\
 })
 
 extern void __get_user_unknown(void);
 
-#define __put_user_nocheck(x,ptr,size)				\
-({								\
-	long __pu_err;						\
-	__typeof__(*(ptr)) __pu_val;				\
-	long __pu_addr;						\
-	__pu_val = (x);						\
-	__pu_addr = (long) (ptr);				\
-	__asm__("":"=r" (__pu_err));				\
-	switch (size) {						\
-		case 1: __put_user_asm("sb"); break;		\
-		case 2: __put_user_asm("sh"); break;		\
-		case 4: __put_user_asm("sw"); break;		\
-		case 8: __put_user_asm("sd"); break;		\
-		default: __put_user_unknown(); break;		\
-	}							\
-	__pu_err;						\
+#define __put_user_nocheck(x,ptr,size)					\
+({									\
+	long __pu_err;							\
+	__typeof__(*(ptr)) __pu_val;					\
+	long __pu_addr;							\
+	__pu_val = (x);							\
+	__pu_addr = (long) (ptr);					\
+	__asm__("":"=r" (__pu_err));					\
+	switch (size) {							\
+		case 1: __put_user_asm("sb"); break;			\
+		case 2: __put_user_asm("sh"); break;			\
+		case 4: __put_user_asm("sw"); break;			\
+		case 8: __put_user_asm("sd"); break;			\
+		default: __put_user_unknown(); break;			\
+	}								\
+	__pu_err;							\
 })
 
-#define __put_user_check(x,ptr,size)				\
-({								\
-	long __pu_err;						\
-	__typeof__(*(ptr)) __pu_val;				\
-	long __pu_addr;						\
-	__pu_val = (x);						\
-	__pu_addr = (long) (ptr);				\
-	__asm__("":"=r" (__pu_err));				\
-	if (__access_ok(__pu_addr,size,__access_mask)) {	\
-		switch (size) {					\
-		case 1: __put_user_asm("sb"); break;		\
-		case 2: __put_user_asm("sh"); break;		\
-		case 4: __put_user_asm("sw"); break;		\
-		case 8: __put_user_asm("sd"); break;		\
-		default: __put_user_unknown(); break;		\
-		}						\
-	}							\
-	__pu_err;						\
+#define __put_user_check(x,ptr,size)					\
+({									\
+	long __pu_err;							\
+	__typeof__(*(ptr)) __pu_val;					\
+	long __pu_addr;							\
+	__pu_val = (x);							\
+	__pu_addr = (long) (ptr);					\
+	__asm__("":"=r" (__pu_err));					\
+	if (access_ok(VERIFY_WRITE, __pu_addr, size)) {			\
+		switch (size) {						\
+		case 1: __put_user_asm("sb"); break;			\
+		case 2: __put_user_asm("sh"); break;			\
+		case 4: __put_user_asm("sw"); break;			\
+		case 8: __put_user_asm("sd"); break;			\
+		default: __put_user_unknown(); break;			\
+		}							\
+	}								\
+	__pu_err;							\
 })
 
-#define __put_user_asm(insn)					\
-({								\
-	__asm__ __volatile__(					\
-	"1:\t" insn "\t%z1, %2\t\t\t# __put_user_asm\n\t"	\
-	"move\t%0, $0\n"					\
-	"2:\n\t"						\
-	".section\t.fixup,\"ax\"\n"				\
-	"3:\tli\t%0, %3\n\t"					\
-	"j\t2b\n\t"						\
-	".previous\n\t"						\
-	".section\t__ex_table,\"a\"\n\t"			\
-	".dword\t1b, 3b\n\t"					\
-	".previous"						\
-	:"=r" (__pu_err)					\
-	:"Jr" (__pu_val), "o" (__m(__pu_addr)), "i" (-EFAULT));	\
+#define __put_user_asm(insn)						\
+({									\
+	__asm__ __volatile__(						\
+	"1:\t" insn "\t%z1, %2\t\t\t# __put_user_asm\n\t"		\
+	"move\t%0, $0\n"						\
+	"2:\n\t"							\
+	".section\t.fixup,\"ax\"\n"					\
+	"3:\tli\t%0, %3\n\t"						\
+	"j\t2b\n\t"							\
+	".previous\n\t"							\
+	".section\t__ex_table,\"a\"\n\t"				\
+	".dword\t1b, 3b\n\t"						\
+	".previous"							\
+	:"=r" (__pu_err)						\
+	:"Jr" (__pu_val), "o" (__m(__pu_addr)), "i" (-EFAULT));		\
 })
 
 extern void __put_user_unknown(void);
@@ -304,13 +305,13 @@ extern void __put_user_unknown(void);
  * jump instructions
  */
 #ifdef MODULE
-#define __MODULE_JAL(destination)	\
-	".set\tnoat\n\t"		\
-	"dla\t$1, " #destination "\n\t" \
-	"jalr\t$1\n\t"			\
+#define __MODULE_JAL(destination)					\
+	".set\tnoat\n\t"						\
+	"dla\t$1, " #destination "\n\t"					 \
+	"jalr\t$1\n\t"							\
 	".set\tat\n\t"
 #else
-#define __MODULE_JAL(destination)	\
+#define __MODULE_JAL(destination)					\
 	"jal\t" #destination "\n\t"
 #endif
 
@@ -503,14 +504,14 @@ __clear_user(void *addr, __kernel_size_t size)
 	return res;
 }
 
-#define clear_user(addr,n)					\
-({								\
-	void * __cl_addr = (addr);				\
-	unsigned long __cl_size = (n);				\
-	if (__cl_size && access_ok(VERIFY_WRITE,		\
-		((unsigned long)(__cl_addr)), __cl_size))	\
-		__cl_size = __clear_user(__cl_addr, __cl_size);	\
-	__cl_size;						\
+#define clear_user(addr,n)						\
+({									\
+	void * __cl_addr = (addr);					\
+	unsigned long __cl_size = (n);					\
+	if (__cl_size && access_ok(VERIFY_WRITE,			\
+		((unsigned long)(__cl_addr)), __cl_size))		\
+		__cl_size = __clear_user(__cl_addr, __cl_size);		\
+	__cl_size;							\
 })
 
 /*
@@ -669,9 +670,9 @@ struct exception_table_entry
 extern unsigned long search_exception_table(unsigned long addr);
 
 /* Returns the new pc */
-#define fixup_exception(map_reg, fixup_unit, pc)                \
-({                                                              \
-	fixup_unit;                                             \
+#define fixup_exception(map_reg, fixup_unit, pc)			\
+({									\
+	fixup_unit;							\
 })
 
 #endif /* _ASM_UACCESS_H */

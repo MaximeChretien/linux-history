@@ -9,7 +9,7 @@ SUB_DIRS     :=
 
 O_TARGET := wan.o
 
-export-objs =	z85230.o syncppp.o comx.o sdladrv.o cycx_drv.o hdlc_generic.o
+export-objs =	z85230.o syncppp.o comx.o sdladrv.o cycx_drv.o hdlc_generic.o pc300_drv.o
 list-multi =	wanpipe.o cyclomx.o
 
 wanpipe-objs = sdlamain.o sdla_ft1.o $(wanpipe-y)
@@ -30,6 +30,8 @@ hdlc-$(CONFIG_HDLC_FR)		+= hdlc_fr.o
 hdlc-$(CONFIG_HDLC_PPP)		+= hdlc_ppp.o
 hdlc-$(CONFIG_HDLC_X25)		+= hdlc_x25.o
 hdlc-objs			:= $(hdlc-y)
+
+pc300-$(CONFIG_PC300_MLPPP)	+= pc300_tty.o
 
 obj-$(CONFIG_HOSTESS_SV11)	+= z85230.o	syncppp.o	hostess_sv11.o
 obj-$(CONFIG_SEALEVEL_4021)	+= z85230.o	syncppp.o	sealevel.o
@@ -71,14 +73,19 @@ endif
 obj-$(CONFIG_CYCLADES_SYNC)	+= cycx_drv.o cyclomx.o
 obj-$(CONFIG_LAPBETHER)		+= lapbether.o
 obj-$(CONFIG_SBNI)		+= sbni.o
+obj-$(CONFIG_PC300)		+= pc300.o
 obj-$(CONFIG_HDLC)		+= hdlc.o
 ifeq ($(CONFIG_HDLC_PPP),y)
   obj-$(CONFIG_HDLC)		+= syncppp.o
 endif
 obj-$(CONFIG_N2)		+= n2.o
 obj-$(CONFIG_C101)		+= c101.o
+obj-$(CONFIG_PCI200SYN)		+= pci200syn.o
 
 include $(TOPDIR)/Rules.make
+
+pc300.o: pc300_drv.o $(pc300-y)
+	$(LD) -r -o $@ pc300_drv.o $(pc300-y)
 
 hdlc.o: $(hdlc-objs)
 	$(LD) -r -o $@ $(hdlc-objs)

@@ -24,7 +24,6 @@ typedef void ia64_mv_setup_t (char **);
 typedef void ia64_mv_cpu_init_t(void);
 typedef void ia64_mv_irq_init_t (void);
 typedef void ia64_mv_pci_fixup_t (int);
-typedef void ia64_mv_pci_enable_device_t (struct pci_dev *);
 typedef unsigned long ia64_mv_map_nr_t (void *);
 typedef void ia64_mv_mca_init_t (void);
 typedef void ia64_mv_mca_handler_t (void);
@@ -91,7 +90,6 @@ extern void machvec_noop (void);
 #  define platform_cmci_handler	ia64_mv.cmci_handler
 #  define platform_log_print	ia64_mv.log_print
 #  define platform_pci_fixup	ia64_mv.pci_fixup
-#  define platform_pci_enable_device	ia64_mv.pci_enable_device
 #  define platform_send_ipi		ia64_mv.send_ipi
 #  define platform_global_tlb_purge	ia64_mv.global_tlb_purge
 #  define platform_pci_dma_init		ia64_mv.dma_init
@@ -121,7 +119,6 @@ struct ia64_machine_vector {
 	ia64_mv_cpu_init_t *cpu_init;
 	ia64_mv_irq_init_t *irq_init;
 	ia64_mv_pci_fixup_t *pci_fixup;
-	ia64_mv_pci_enable_device_t *pci_enable_device;
 	ia64_mv_map_nr_t *map_nr;
 	ia64_mv_mca_init_t *mca_init;
 	ia64_mv_mca_handler_t *mca_handler;
@@ -157,7 +154,6 @@ struct ia64_machine_vector {
 	platform_cpu_init,			\
 	platform_irq_init,			\
 	platform_pci_fixup,			\
-	platform_pci_enable_device,		\
 	platform_map_nr,			\
 	platform_mca_init,			\
 	platform_mca_handler,			\
@@ -234,9 +230,6 @@ extern ia64_mv_pci_dma_supported swiotlb_pci_dma_supported;
 #endif
 #ifndef platform_pci_fixup
 # define platform_pci_fixup	((ia64_mv_pci_fixup_t *) machvec_noop)
-#endif
-#ifndef platform_pci_enable_device
-# define platform_pci_enable_device	((ia64_mv_pci_enable_device_t *) machvec_noop)
 #endif
 #ifndef platform_send_ipi
 # define platform_send_ipi	ia64_send_ipi	/* default to architected version */

@@ -242,6 +242,8 @@ static void vcc_sock_destruct(struct sock *sk)
 		printk(KERN_DEBUG "vcc_sock_destruct: wmem leakage (%d bytes) detected.\n", atomic_read(&sk->wmem_alloc));
 
 	kfree(sk->protinfo.af_atm);
+
+	MOD_DEC_USE_COUNT;
 }
 
 int vcc_create(struct socket *sock, int protocol, int family)
@@ -282,6 +284,9 @@ int vcc_create(struct socket *sock, int protocol, int family)
 	sk->sleep = &vcc->sleep;
 	sk->destruct = vcc_sock_destruct;
 	sock->sk = sk;
+
+	MOD_INC_USE_COUNT;
+
 	return 0;
 }
 
@@ -510,9 +515,8 @@ int vcc_recvmsg(struct socket *sock, struct msghdr *msg,
  		return -EOPNOTSUPP;
   	vcc = ATM_SD(sock);
  	if (test_bit(ATM_VF_RELEASED,&vcc->flags) ||
- 	    test_bit(ATM_VF_CLOSE,&vcc->flags))
- 		return vcc->reply;
- 	if (!test_bit(ATM_VF_READY, &vcc->flags))
+ 	    test_bit(ATM_VF_CLOSE, &vcc->flags) ||
+ 	    !test_bit(ATM_VF_READY, &vcc->flags))
  		return 0;
  
  	skb = skb_recv_datagram(sk, flags, flags & MSG_DONTWAIT, &error);
@@ -568,12 +572,10 @@ int vcc_sendmsg(struct socket *sock, struct msghdr *m, int total_len,
   	size = m->msg_iov->iov_len;
   	vcc = ATM_SD(sock);
  	if (test_bit(ATM_VF_RELEASED, &vcc->flags) ||
- 	    test_bit(ATM_VF_CLOSE, &vcc->flags)) {
- 		error = vcc->reply;
- 		goto out;
- 	}
- 	if (!test_bit(ATM_VF_READY, &vcc->flags)) {
+ 	    test_bit(ATM_VF_CLOSE, &vcc->flags) ||
+ 	    !test_bit(ATM_VF_READY, &vcc->flags)) {
  		error = -EPIPE;
+ 		send_sig(SIGPIPE, current, 0);
  		goto out;
  	}
  	if (!size) {
@@ -601,12 +603,10 @@ int vcc_sendmsg(struct socket *sock, struct msghdr *m, int total_len,
 			break;
 		}
 		if (test_bit(ATM_VF_RELEASED,&vcc->flags) ||
-		    test_bit(ATM_VF_CLOSE,&vcc->flags)) {
-			error = vcc->reply;
-			break;
-		}
-		if (!test_bit(ATM_VF_READY,&vcc->flags)) {
+		    test_bit(ATM_VF_CLOSE, &vcc->flags) ||
+		    !test_bit(ATM_VF_READY, &vcc->flags)) {
 			error = -EPIPE;
+			send_sig(SIGPIPE, current, 0);
 			break;
 		}
 	}

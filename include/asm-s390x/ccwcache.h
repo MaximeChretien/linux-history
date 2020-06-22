@@ -4,7 +4,7 @@
  * Bugreports.to..: <Linux390@de.ibm.com>
  * (C) IBM Corporation, IBM Deutschland Entwicklung GmbH, 2000
  *
- * $Revision: 1.10 $
+ * $Revision: 1.11 $
  *
  */
 #ifndef CCWCACHE_H
@@ -67,7 +67,6 @@ typedef struct ccw_req_t {
 #define CQR_STATUS_DONE     0x04	/* cqr is completed successfully */
 #define CQR_STATUS_ERROR    0x05	/* cqr is completed with error */
 #define CQR_STATUS_FAILED   0x06	/* cqr is finally failed */
-#define CQR_STATUS_PENDING  0x07        /* cqr is waiting for interrupt - ERP only */ 
 
 #define CQR_FLAGS_CHAINED   0x01	/* cqr is chained by another (last CCW is TIC) */
 #define CQR_FLAGS_FINALIZED 0x02	

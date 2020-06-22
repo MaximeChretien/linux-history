@@ -49,7 +49,8 @@ static unsigned int i_hash_shift;
  * other linked list is the "type" list:
  *  "in_use" - valid inode, i_count > 0, i_nlink > 0
  *  "dirty"  - as "in_use" but also dirty
- *  "unused" - valid inode, i_count = 0
+ *  "unused" - valid inode, i_count = 0, no pages in the pagecache
+ *  "unused_pagecache" - valid inode, i_count = 0, data in the pagecache
  *
  * A "dirty" list is maintained for each super block,
  * allowing for low-overhead inode sync() operations.
@@ -57,6 +58,7 @@ static unsigned int i_hash_shift;
 
 static LIST_HEAD(inode_in_use);
 static LIST_HEAD(inode_unused);
+static LIST_HEAD(inode_unused_pagecache);
 static struct list_head *inode_hashtable;
 static LIST_HEAD(anon_hash_chain); /* for inodes with NULL i_sb */
 
@@ -125,6 +127,10 @@ static void destroy_inode(struct inode *inode)
 {
 	if (inode_has_buffers(inode))
 		BUG();
+	/* Reinitialise the waitqueue head because __wait_on_freeing_inode()
+	   may have left stale entries on it which it can't remove (since
+	   it knows we're freeing the inode right now */
+	init_waitqueue_head(&inode->i_wait);
 	if (inode->i_sb->s_op->destroy_inode)
 		inode->i_sb->s_op->destroy_inode(inode);
 	else
@@ -140,6 +146,11 @@ static void destroy_inode(struct inode *inode)
 void inode_init_once(struct inode *inode)
 {
 	memset(inode, 0, sizeof(*inode));
+	__inode_init_once(inode);
+}
+
+void __inode_init_once(struct inode *inode)
+{
 	init_waitqueue_head(&inode->i_wait);
 	INIT_LIST_HEAD(&inode->i_hash);
 	INIT_LIST_HEAD(&inode->i_data.clean_pages);
@@ -243,9 +254,10 @@ static inline void wait_on_inode(struct inode *inode)
  * ->read_inode, and we want to be sure that evidence of the deletion is found
  * by ->read_inode.
  *
- * This call might return early if an inode which shares the waitq is woken up.
- * This is most easily handled by the caller which will loop around again
- * looking for the inode.
+ * Unlike the 2.6 version, this call call cannot return early, since inodes
+ * do not share wait queue. Therefore, we don't call remove_wait_queue(); it
+ * would be dangerous to do so since the inode may have already been freed, 
+ * and it's unnecessary, since the inode is definitely going to get freed.
  *
  * This is called with inode_lock held.
  */
@@ -257,7 +269,7 @@ static void __wait_on_freeing_inode(struct inode *inode)
         set_current_state(TASK_UNINTERRUPTIBLE);
         spin_unlock(&inode_lock);
         schedule();
-        remove_wait_queue(&inode->i_wait, &wait);
+
         spin_lock(&inode_lock);
 }
 
@@ -281,6 +293,36 @@ static inline void __iget(struct inode * inode)
 	inodes_stat.nr_unused--;
 }
 
+static inline void __refile_inode(struct inode *inode)
+{
+	struct list_head *to;
+
+	if (inode->i_state & I_FREEING)
+		return;
+	if (list_empty(&inode->i_hash))
+		return;
+
+	if (inode->i_state & I_DIRTY)
+		to = &inode->i_sb->s_dirty;
+	else if (atomic_read(&inode->i_count))
+		to = &inode_in_use;
+	else if (inode->i_data.nrpages)
+		to = &inode_unused_pagecache;
+	else
+		to = &inode_unused;
+	list_del(&inode->i_list);
+	list_add(&inode->i_list, to);
+}
+
+void refile_inode(struct inode *inode)
+{
+	if (!inode)
+		return;
+	spin_lock(&inode_lock);
+	__refile_inode(inode);
+	spin_unlock(&inode_lock);
+}
+
 static inline void __sync_one(struct inode *inode, int sync)
 {
 	unsigned dirty;
@@ -288,7 +330,7 @@ static inline void __sync_one(struct inode *inode, int sync)
 	list_del(&inode->i_list);
 	list_add(&inode->i_list, &inode->i_sb->s_locked_inodes);
 
-	if (inode->i_state & I_LOCK)
+	if (inode->i_state & (I_LOCK|I_FREEING))
 		BUG();
 
 	/* Set I_LOCK, reset I_DIRTY */
@@ -307,17 +349,7 @@ static inline void __sync_one(struct inode *inode, int sync)
 
 	spin_lock(&inode_lock);
 	inode->i_state &= ~I_LOCK;
-	if (!(inode->i_state & I_FREEING)) {
-		struct list_head *to;
-		if (inode->i_state & I_DIRTY)
-			to = &inode->i_sb->s_dirty;
-		else if (atomic_read(&inode->i_count))
-			to = &inode_in_use;
-		else
-			to = &inode_unused;
-		list_del(&inode->i_list);
-		list_add(&inode->i_list, to);
-	}
+	__refile_inode(inode);
 	wake_up(&inode->i_wait);
 }
 
@@ -694,6 +726,7 @@ int invalidate_inodes(struct super_block * sb)
 	spin_lock(&inode_lock);
 	busy = invalidate_list(&inode_in_use, sb, &throw_away);
 	busy |= invalidate_list(&inode_unused, sb, &throw_away);
+	busy |= invalidate_list(&inode_unused_pagecache, sb, &throw_away);
 	busy |= invalidate_list(&sb->s_dirty, sb, &throw_away);
 	busy |= invalidate_list(&sb->s_locked_inodes, sb, &throw_away);
 	spin_unlock(&inode_lock);
@@ -758,6 +791,9 @@ void prune_icache(int goal)
 	LIST_HEAD(list);
 	struct list_head *entry, *freeable = &list;
 	int count;
+#ifdef CONFIG_HIGHMEM
+	int avg_pages;
+#endif
 	struct inode * inode;
 
 	spin_lock(&inode_lock);
@@ -780,7 +816,7 @@ void prune_icache(int goal)
 		list_add(tmp, freeable);
 		inode->i_state |= I_FREEING;
 		count++;
-		if (!--goal)
+		if (--goal <= 0)
 			break;
 	}
 	inodes_stat.nr_unused -= count;
@@ -794,8 +830,71 @@ void prune_icache(int goal)
 	 * from here or we're either synchronously dogslow
 	 * or we deadlock with oom.
 	 */
-	if (goal)
+	if (goal > 0)
 		schedule_task(&unused_inodes_flush_task);
+
+#ifdef CONFIG_HIGHMEM
+	/*
+	 * On highmem machines it is possible to have low memory
+	 * filled with inodes that cannot be reclaimed because they
+	 * have page cache pages in highmem attached to them.
+	 * This could deadlock the system if the memory used by
+	 * inodes is significant compared to the amount of freeable
+	 * low memory.  In that case we forcefully remove the page
+	 * cache pages from the inodes we want to reclaim.
+	 *
+	 * Note that this loop doesn't actually reclaim the inodes;
+	 * once the last pagecache pages belonging to the inode is
+	 * gone it will be placed on the inode_unused list and the
+	 * loop above will prune it the next time prune_icache() is
+	 * called.
+	 */
+	if (goal <= 0)
+		return;
+	if (inodes_stat.nr_unused * sizeof(struct inode) * 10 <
+				freeable_lowmem() * PAGE_SIZE)
+		return;
+
+	wakeup_bdflush();
+
+	avg_pages = page_cache_size;
+	avg_pages -= atomic_read(&buffermem_pages) + swapper_space.nrpages;
+	avg_pages = avg_pages / (inodes_stat.nr_inodes + 1);
+	spin_lock(&inode_lock);
+	while (goal-- > 0) {
+		if (list_empty(&inode_unused_pagecache))
+			break;
+		entry = inode_unused_pagecache.prev;
+		list_del(entry);
+		list_add(entry, &inode_unused_pagecache);
+
+		inode = INODE(entry);
+		/* Don't nuke inodes with lots of page cache attached. */
+		if (inode->i_mapping->nrpages > 5 * avg_pages)
+			continue;
+		/* Because of locking we grab the inode and unlock the list .*/
+		if (inode->i_state & I_LOCK)
+			continue;
+		inode->i_state |= I_LOCK;
+		spin_unlock(&inode_lock);
+
+		/*
+		 * If the inode has clean pages only, we can free all its
+		 * pagecache memory; the inode will automagically be refiled
+		 * onto the unused_list.  The wakeup_bdflush above makes
+		 * sure that all inodes become clean eventually.
+		 */
+		if (list_empty(&inode->i_mapping->dirty_pages) &&
+				!inode_has_buffers(inode))
+			invalidate_inode_pages(inode);
+
+		/* Release the inode again. */
+		spin_lock(&inode_lock);
+		inode->i_state &= ~I_LOCK;
+		wake_up(&inode->i_wait);
+	}
+	spin_unlock(&inode_lock);
+#endif /* CONFIG_HIGHMEM */
 }
 
 int shrink_icache_memory(int priority, int gfp_mask)
@@ -878,6 +977,20 @@ struct inode * new_inode(struct super_block *sb)
 	return inode;
 }
 
+void unlock_new_inode(struct inode *inode)
+{
+	/*
+	 * This is special!  We do not need the spinlock
+	 * when clearing I_LOCK, because we're guaranteed
+	 * that nobody else tries to do anything about the
+	 * state of the inode when it is locked, as we
+	 * just created it (so there can be no old holders
+	 * that haven't tested I_LOCK).
+	 */
+	inode->i_state &= ~(I_LOCK|I_NEW);
+	wake_up(&inode->i_wait);
+}
+
 /*
  * This is called without the inode lock held.. Be careful.
  *
@@ -900,31 +1013,13 @@ static struct inode * get_new_inode(struct super_block *sb, unsigned long ino, s
 			list_add(&inode->i_list, &inode_in_use);
 			list_add(&inode->i_hash, head);
 			inode->i_ino = ino;
-			inode->i_state = I_LOCK;
+			inode->i_state = I_LOCK|I_NEW;
 			spin_unlock(&inode_lock);
 
-			/* reiserfs specific hack right here.  We don't
-			** want this to last, and are looking for VFS changes
-			** that will allow us to get rid of it.
-			** -- mason@suse.com 
-			*/
-			if (sb->s_op->read_inode2) {
-				sb->s_op->read_inode2(inode, opaque) ;
-			} else {
-				sb->s_op->read_inode(inode);
-			}
-
 			/*
-			 * This is special!  We do not need the spinlock
-			 * when clearing I_LOCK, because we're guaranteed
-			 * that nobody else tries to do anything about the
-			 * state of the inode when it is locked, as we
-			 * just created it (so there can be no old holders
-			 * that haven't tested I_LOCK).
+			 * Return the locked inode with I_NEW set, the
+			 * caller is responsible for filling in the contents
 			 */
-			inode->i_state &= ~I_LOCK;
-			wake_up(&inode->i_wait);
-
 			return inode;
 		}
 
@@ -1035,8 +1130,7 @@ struct inode *igrab(struct inode *inode)
 	return inode;
 }
 
-
-struct inode *iget4(struct super_block *sb, unsigned long ino, find_inode_t find_actor, void *opaque)
+struct inode *iget4_locked(struct super_block *sb, unsigned long ino, find_inode_t find_actor, void *opaque)
 {
 	struct list_head * head = inode_hashtable + hash(sb,ino);
 	struct inode * inode;
@@ -1143,10 +1237,8 @@ void iput(struct inode *inode)
 				BUG();
 		} else {
 			if (!list_empty(&inode->i_hash)) {
-				if (!(inode->i_state & (I_DIRTY|I_LOCK))) {
-					list_del(&inode->i_list);
-					list_add(&inode->i_list, &inode_unused);
-				}
+				if (!(inode->i_state & (I_DIRTY|I_LOCK))) 
+					__refile_inode(inode);
 				inodes_stat.nr_unused++;
 				spin_unlock(&inode_lock);
 				if (!sb || (sb->s_flags & MS_ACTIVE))
@@ -1323,6 +1415,11 @@ void remove_dquot_ref(struct super_block *sb, short type)
 			remove_inode_dquot_ref(inode, type, &tofree_head);
 	}
 	list_for_each(act_head, &inode_unused) {
+		inode = list_entry(act_head, struct inode, i_list);
+		if (inode->i_sb == sb && IS_QUOTAINIT(inode))
+			remove_inode_dquot_ref(inode, type, &tofree_head);
+	}
+	list_for_each(act_head, &inode_unused_pagecache) {
 		inode = list_entry(act_head, struct inode, i_list);
 		if (inode->i_sb == sb && IS_QUOTAINIT(inode))
 			remove_inode_dquot_ref(inode, type, &tofree_head);

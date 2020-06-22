@@ -30,6 +30,33 @@
 #define PAGE_MASK		(~(PAGE_SIZE - 1))
 #define PAGE_ALIGN(addr)	(((addr) + PAGE_SIZE - 1) & PAGE_MASK)
 
+#ifdef CONFIG_HUGETLB_PAGE
+#if defined(CONFIG_HUGETLB_PAGE_SIZE_4GB)
+#define HPAGE_SHIFT                 32
+#elif defined(CONFIG_HUGETLB_PAGE_SIZE_1GB)
+#define HPAGE_SHIFT                 30
+#elif defined(CONFIG_HUGETLB_PAGE_SIZE_256MB)
+#define HPAGE_SHIFT                 28
+#elif defined(CONFIG_HUGETLB_PAGE_SIZE_64MB)
+#define HPAGE_SHIFT                 26
+#elif defined(CONFIG_HUGETLB_PAGE_SIZE_16MB)
+#define HPAGE_SHIFT                 24
+#elif defined(CONFIG_HUGETLB_PAGE_SIZE_4MB)
+#define HPAGE_SHIFT                 22
+#elif defined(CONFIG_HUGETLB_PAGE_SIZE_1MB)
+#define HPAGE_SHIFT                 20
+#elif defined(CONFIG_HUGETLB_PAGE_SIZE_256KB)
+#define HPAGE_SHIFT                 18
+#else
+# error Unsupported IA-64 HugeTLB Page Size!
+#endif
+
+#define       REGION_HPAGE          (4UL)
+#define       REGION_SHIFT          61
+#define HPAGE_SIZE                  (__IA64_UL_CONST(1) << HPAGE_SHIFT)
+#define HPAGE_MASK                  (~(HPAGE_SIZE - 1))
+#define HAVE_ARCH_HUGETLB_UNMAPPED_AREA
+#endif
 #define RGN_MAP_LIMIT	((1UL << (4*PAGE_SHIFT - 12)) - PAGE_SIZE)	/* per region addr limit */
 
 #ifdef __ASSEMBLY__
@@ -84,6 +111,14 @@ typedef union ia64_va {
 
 #define REGION_SIZE		REGION_NUMBER(1)
 #define REGION_KERNEL	7
+
+#ifdef CONFIG_HUGETLB_PAGE
+#define htlbpage_to_page(x) ((REGION_NUMBER(x) << 61) | (REGION_OFFSET(x) >> (HPAGE_SHIFT-PAGE_SHIFT)))
+#define HUGETLB_PAGE_ORDER	(HPAGE_SHIFT - PAGE_SHIFT)
+extern int  is_invalid_hugepage_range(unsigned long addr, unsigned long len);
+#else
+#define is_invalid_hugepage_range(addr, len) 0
+#endif
 
 #define BUG() do { printk("kernel BUG at %s:%d!\n", __FILE__, __LINE__); *(int *)0=0; } while (0)
 #define PAGE_BUG(page) do { BUG(); } while (0)

@@ -15,6 +15,7 @@
 #include <linux/smp.h>
 #include <linux/smp_lock.h>
 #include <linux/highuid.h>
+#include <linux/hugetlb.h>
 
 #include <asm/shmparam.h>
 #include <asm/uaccess.h>
@@ -29,6 +30,10 @@ arch_get_unmapped_area (struct file *filp, unsigned long addr, unsigned long len
 
 	if (len > RGN_MAP_LIMIT)
 		return -ENOMEM;
+#ifdef CONFIG_HUGETLB_PAGE
+	if (rgn_index(addr)==REGION_HPAGE)
+		addr = 0;
+#endif
 	if (!addr)
 		addr = TASK_UNMAPPED_BASE;
 

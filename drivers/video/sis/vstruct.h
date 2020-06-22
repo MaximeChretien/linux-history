@@ -1,34 +1,54 @@
-/* $XFree86: xc/programs/Xserver/hw/xfree86/drivers/sis/vstruct.h,v 1.0 2001/06/15 21:23:00 dawes Exp $ */
+/* $XFree86$ */
 /*
  * General structure definitions for universal mode switching modules
  *
- * Copyright 2002, 2003 by Thomas Winischhofer, Vienna, Austria
+ * Copyright (C) 2001-2004 by Thomas Winischhofer, Vienna, Austria
  *
- * If distributed as part of the linux kernel, the contents of this file
- * is entirely covered by the GPL.
+ * If distributed as part of the Linux kernel, the following license terms
+ * apply:
  *
- * Otherwise, the following terms apply:
+ * * This program is free software; you can redistribute it and/or modify
+ * * it under the terms of the GNU General Public License as published by
+ * * the Free Software Foundation; either version 2 of the named License,
+ * * or any later version.
+ * *
+ * * This program is distributed in the hope that it will be useful,
+ * * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * * GNU General Public License for more details.
+ * *
+ * * You should have received a copy of the GNU General Public License
+ * * along with this program; if not, write to the Free Software
+ * * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
  *
- * Permission to use, copy, modify, distribute, and sell this software and its
- * documentation for any purpose is hereby granted without fee, provided that
- * the above copyright notice appear in all copies and that both that
- * copyright notice and this permission notice appear in supporting
- * documentation, and that the name of the copyright holder not be used in
- * advertising or publicity pertaining to distribution of the software without
- * specific, written prior permission.  The copyright holder makes no representations
- * about the suitability of this software for any purpose.  It is provided
- * "as is" without express or implied warranty.
+ * Otherwise, the following license terms apply:
  *
- * THE COPYRIGHT HOLDER DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
- * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO
- * EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY SPECIAL, INDIRECT OR
- * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
- * DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
- * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
- * PERFORMANCE OF THIS SOFTWARE.
+ * * Redistribution and use in source and binary forms, with or without
+ * * modification, are permitted provided that the following conditions
+ * * are met:
+ * * 1) Redistributions of source code must retain the above copyright
+ * *    notice, this list of conditions and the following disclaimer.
+ * * 2) Redistributions in binary form must reproduce the above copyright
+ * *    notice, this list of conditions and the following disclaimer in the
+ * *    documentation and/or other materials provided with the distribution.
+ * * 3) All advertising materials mentioning features or use of this software
+ * *    must display the following acknowledgement: "This product includes
+ * *    software developed by Thomas Winischhofer, Vienna, Austria."
+ * * 4) The name of the author may not be used to endorse or promote products
+ * *    derived from this software without specific prior written permission.
+ * *
+ * * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * Authors: 	Thomas Winischhofer <thomas@winischhofer.net>
- *              Silicon Integrated Systems
+ * Author: 	Thomas Winischhofer <thomas@winischhofer.net>
  *
  */
  
@@ -112,6 +132,7 @@ typedef struct _SiS_StStruct
 	UCHAR  VB_StTVFlickerIndex;
 	UCHAR  VB_StTVEdgeIndex;
 	UCHAR  VB_StTVYFilterIndex;
+	UCHAR  St_PDC;
 } SiS_StStruct;
 
 typedef struct _SiS_VBModeStruct
@@ -143,12 +164,13 @@ typedef struct _SiS_ExtStruct
 {
 	UCHAR  Ext_ModeID;
 	USHORT Ext_ModeFlag;
-	USHORT Ext_ModeInfo;
+	UCHAR  Ext_ModeOffset;
 	USHORT Ext_VESAID;
 	UCHAR  Ext_RESINFO;
 	UCHAR  VB_ExtTVFlickerIndex;
 	UCHAR  VB_ExtTVEdgeIndex;
 	UCHAR  VB_ExtTVYFilterIndex;
+	UCHAR  VB_ExtTVYFilterIndexROM661;
 	UCHAR  REFindex;
 } SiS_ExtStruct;
 
@@ -161,6 +183,7 @@ typedef struct _SiS_Ext2Struct
 	UCHAR  ModeID;
 	USHORT XRes;
 	USHORT YRes;
+	UCHAR  Ext_PDC;
 } SiS_Ext2Struct;
 
 typedef struct _SiS_Part2PortTblStruct
@@ -178,12 +201,6 @@ typedef struct _SiS_MCLKDataStruct
 	UCHAR  SR28,SR29,SR2A;
 	USHORT CLOCK;
 } SiS_MCLKDataStruct;
-
-typedef struct _SiS_ECLKDataStruct
-{
-	UCHAR  SR2E,SR2F,SR30;
-	USHORT CLOCK;
-} SiS_ECLKDataStruct;
 
 typedef struct _SiS_VCLKDataStruct
 {
@@ -213,48 +230,59 @@ typedef struct _SiS_ModeResInfoStruct
 
 typedef UCHAR DRAM4Type[4];
 
-/* Defines for SiS_Customt */
-#define CUT_NONE        0
-#define CUT_FORCENONE   1
-#define CUT_BARCO1366   2
-#define CUT_BARCO1024   3
-#define CUT_COMPAQ1280  4
-#define CUT_COMPAQ12802 5
-#define CUT_PANEL848    6
-#define CUT_CLEVO1024   7
-#define CUT_CLEVO10242  8
+/* Defines for SiS_CustomT */
+/* Never change these for sisfb compatibility */
+#define CUT_NONE          0
+#define CUT_FORCENONE     1
+#define CUT_BARCO1366     2
+#define CUT_BARCO1024     3
+#define CUT_COMPAQ1280    4
+#define CUT_COMPAQ12802   5
+#define CUT_PANEL848      6
+#define CUT_CLEVO1024     7
+#define CUT_CLEVO10242    8
+#define CUT_CLEVO1400     9
+#define CUT_CLEVO14002    10
+#define CUT_UNIWILL1024   11
+#define CUT_ASUSL3000D    12
+#define CUT_UNIWILL10242  13
+#define CUT_ACER1280      14
+#define CUT_COMPAL1400_1  15
+#define CUT_COMPAL1400_2  16
+#define CUT_ASUSA2H_1     17
+#define CUT_ASUSA2H_2     18
 
 typedef struct _SiS_Private
 {
 #ifdef LINUX_KERNEL
-        USHORT RelIO;
+        SISIOADDRESS RelIO;
 #endif
-	USHORT SiS_P3c4;
-	USHORT SiS_P3d4;
-	USHORT SiS_P3c0;
-	USHORT SiS_P3ce;
-	USHORT SiS_P3c2;
-	USHORT SiS_P3ca;
-	USHORT SiS_P3c6;
-	USHORT SiS_P3c7;
-	USHORT SiS_P3c8;
-	USHORT SiS_P3c9;
-	USHORT SiS_P3cb;
-	USHORT SiS_P3cd;
-	USHORT SiS_P3da;
-	USHORT SiS_Part1Port;
-	USHORT SiS_Part2Port;
-	USHORT SiS_Part3Port;
-	USHORT SiS_Part4Port;
-	USHORT SiS_Part5Port;
-	USHORT SiS_VidCapt;
-	USHORT SiS_VidPlay;
+	SISIOADDRESS SiS_P3c4;
+	SISIOADDRESS SiS_P3d4;
+	SISIOADDRESS SiS_P3c0;
+	SISIOADDRESS SiS_P3ce;
+	SISIOADDRESS SiS_P3c2;
+	SISIOADDRESS SiS_P3ca;
+	SISIOADDRESS SiS_P3c6;
+	SISIOADDRESS SiS_P3c7;
+	SISIOADDRESS SiS_P3c8;
+	SISIOADDRESS SiS_P3c9;
+	SISIOADDRESS SiS_P3cb;
+	SISIOADDRESS SiS_P3cd;
+	SISIOADDRESS SiS_P3da;
+	SISIOADDRESS SiS_Part1Port;
+	SISIOADDRESS SiS_Part2Port;
+	SISIOADDRESS SiS_Part3Port;
+	SISIOADDRESS SiS_Part4Port;
+	SISIOADDRESS SiS_Part5Port;
+	SISIOADDRESS SiS_VidCapt;
+	SISIOADDRESS SiS_VidPlay;
 	USHORT SiS_IF_DEF_LVDS;
+	USHORT SiS_IF_DEF_CH70xx;
+	USHORT SiS_IF_DEF_CONEX;
 	USHORT SiS_IF_DEF_TRUMPION;
 	USHORT SiS_IF_DEF_DSTN;
 	USHORT SiS_IF_DEF_FSTN;
-	USHORT SiS_IF_DEF_CH70xx;
-	USHORT SiS_IF_DEF_HiVision;
 	USHORT SiS_SysFlags;
 	UCHAR  SiS_VGAINFO;
 #ifndef LINUX_KERNEL
@@ -268,6 +296,11 @@ typedef struct _SiS_Private
 	int    SiS_UseOEM;
 	ULONG  SiS_CustomT;
 	USHORT SiS_Backup70xx;
+	BOOLEAN HaveEMI;
+	BOOLEAN HaveEMILCD;
+	BOOLEAN OverruleEMI;
+	UCHAR  EMI_30,EMI_31,EMI_32,EMI_33;
+	UCHAR  PDC;
 	USHORT SiS_CRT1Mode;
 	USHORT SiS_flag_clearbuffer;
 	int    SiS_RAMType;
@@ -275,12 +308,14 @@ typedef struct _SiS_Private
 	UCHAR  SiS_DataBusWidth;
 	USHORT SiS_ModeType;
 	USHORT SiS_VBInfo;
+	USHORT SiS_TVMode;
 	USHORT SiS_LCDResInfo;
 	USHORT SiS_LCDTypeInfo;
 	USHORT SiS_LCDInfo;
+	USHORT SiS_LCDInfo661;
 	USHORT SiS_VBType;
 	USHORT SiS_VBExtInfo;
-	USHORT SiS_HiVision;
+	USHORT SiS_YPbPr;
 	USHORT SiS_SelectCRT2Rate;
 	USHORT SiS_SetFlag;
 	USHORT SiS_RVBHCFACT;
@@ -338,7 +373,6 @@ typedef struct _SiS_Private
 	const SiS_CRT1TableStruct   *SiS_CRT1Table;
 	const SiS_MCLKDataStruct    *SiS_MCLKData_0;
 	const SiS_MCLKDataStruct    *SiS_MCLKData_1;
-	const SiS_ECLKDataStruct    *SiS_ECLKData;
 	const SiS_VCLKDataStruct    *SiS_VCLKData;
 	const SiS_VBVCLKDataStruct  *SiS_VBVCLKData;
 	const SiS_StResInfoStruct   *SiS_StResInfo;
@@ -382,6 +416,8 @@ typedef struct _SiS_Private
 	const UCHAR *SiS_PALMPhase2;
 	const UCHAR *SiS_PALNPhase2;
 	const UCHAR *SiS_SpecialPhase;
+	const UCHAR *SiS_SpecialPhaseM;
+	const UCHAR *SiS_SpecialPhaseJ;
 	const SiS_LCDDataStruct  *SiS_StLCD1024x768Data;
 	const SiS_LCDDataStruct  *SiS_ExtLCD1024x768Data;
 	const SiS_LCDDataStruct  *SiS_St2LCD1024x768Data;
@@ -407,6 +443,12 @@ typedef struct _SiS_Private
 	const SiS_TVDataStruct   *SiS_ExtNTSCData;
 	const SiS_TVDataStruct   *SiS_St2HiTVData;
 	const SiS_TVDataStruct   *SiS_ExtHiTVData;
+	const SiS_TVDataStruct   *SiS_St525iData;
+	const SiS_TVDataStruct   *SiS_St525pData;
+	const SiS_TVDataStruct   *SiS_St750pData;
+	const SiS_TVDataStruct   *SiS_Ext525iData;
+	const SiS_TVDataStruct   *SiS_Ext525pData;
+	const SiS_TVDataStruct   *SiS_Ext750pData;
 	const UCHAR *SiS_NTSCTiming;
 	const UCHAR *SiS_PALTiming;
 	const UCHAR *SiS_HiTVExtTiming;
@@ -439,6 +481,10 @@ typedef struct _SiS_Private
 	const SiS_LVDSDataStruct  *SiS_LVDS640x480Data_1;
 	const SiS_LVDSDataStruct  *SiS_LVDS640x480Data_2;
 	const SiS_LVDSDataStruct  *SiS_LVDS320x480Data_1;
+	const SiS_LVDSDataStruct  *SiS_LCDA1024x768Data_1;
+	const SiS_LVDSDataStruct  *SiS_LCDA1024x768Data_2;
+	const SiS_LVDSDataStruct  *SiS_LCDA1280x1024Data_1;
+	const SiS_LVDSDataStruct  *SiS_LCDA1280x1024Data_2;
 	const SiS_LVDSDataStruct  *SiS_LCDA1400x1050Data_1;
 	const SiS_LVDSDataStruct  *SiS_LCDA1400x1050Data_2;
 	const SiS_LVDSDataStruct  *SiS_LCDA1600x1200Data_1;
@@ -555,22 +601,18 @@ typedef struct _SiS_Private
 
 	const SiS_LVDSCRT1DataStruct  *SiS_LVDSCRT1320x480_1;
 
-	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT1800x600_1;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11024x768_1;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11280x1024_1;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11400x1050_1;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11600x1200_1;
-	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT1800x600_1_H;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11024x768_1_H;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11280x1024_1_H;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11400x1050_1_H;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11600x1200_1_H;
-	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT1800x600_2;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11024x768_2;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11280x1024_2;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11400x1050_2;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11600x1200_2;
-	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT1800x600_2_H;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11024x768_2_H;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11280x1024_2_H;
 	const SiS_LCDACRT1DataStruct  *SiS_LCDACRT11400x1050_2_H;
@@ -636,9 +678,6 @@ typedef struct _SiS_Private
 	USHORT  CModeFlag_CRT1;
 	USHORT  CInfoFlag;
 
-	BOOLEAN SiS_CHPALM;
-	BOOLEAN SiS_CHPALN;
-
 	int	LVDSHL;
 	
 	BOOLEAN Backup;
@@ -660,6 +699,7 @@ typedef struct _SiS_Private
 	BOOLEAN CP_HaveCustomData;
 	int     CP_PreferredX, CP_PreferredY;
 	int	CP_MaxX, CP_MaxY, CP_MaxClock;
+	BOOLEAN CP_Supports64048075;
 	int     CP_HDisplay[7], CP_VDisplay[7];	/* For Custom LCD panel dimensions */
     	int     CP_HTotal[7], CP_VTotal[7];
     	int     CP_HSyncStart[7], CP_VSyncStart[7];

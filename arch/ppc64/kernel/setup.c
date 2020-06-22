@@ -62,6 +62,7 @@ extern void iSeries_init_early( void );
 extern void pSeries_init_early( void );
 extern void pSeriesLP_init_early(void);
 extern void mm_init_ppc64( void ); 
+extern void pseries_secondary_smp_init(unsigned long);
 
 unsigned long decr_overclock = 1;
 unsigned long decr_overclock_proc0 = 1;
@@ -107,6 +108,8 @@ struct console udbg_console = {
 void setup_system(unsigned long r3, unsigned long r4, unsigned long r5,
 		  unsigned long r6, unsigned long r7)
 {
+	unsigned int ret, i;
+
 	/* This should be fixed properly in kernel/resource.c */
 	iomem_resource.end = MEM_SPACE_LIMIT;
 
@@ -143,12 +146,27 @@ void setup_system(unsigned long r3, unsigned long r4, unsigned long r5,
 		udbg_printf("---- start early boot console ----\n");
 	}
 
-	printk("Starting Linux PPC64 %s\n", UTS_RELEASE);
+	if (systemcfg->platform & PLATFORM_PSERIES) {
+		finish_device_tree();
+		chrp_init(r3, r4, r5, r6, r7);
+
+		/* Start secondary threads on SMT systems */
+		for (i = 0; i < NR_CPUS; i++) {
+			if(cpu_available(i)  && !cpu_possible(i)) {
+				printk("%16.16lx : starting thread\n", i);
+				rtas_call(rtas_token("start-cpu"), 3, 1,
+					  (void *)&ret,
+					  i, *((unsigned long *)pseries_secondary_smp_init), i);
+				paca[i].active = 1;
+				systemcfg->processorCount++;
+			}
+		}
+	}
 
 	printk("-----------------------------------------------------\n");
 	printk("naca                          = 0x%p\n", naca);
 	printk("naca->pftSize                 = 0x%lx\n", naca->pftSize);
-	printk("naca->paca                    = 0x%lx\n\n", naca->paca);
+	printk("naca->paca                    = 0x%p\n\n", naca->paca);
 	printk("systemcfg                     = 0x%p\n", systemcfg);
 	printk("systemcfg->platform           = 0x%x\n", systemcfg->platform);
 	printk("systemcfg->processor          = 0x%x\n", systemcfg->processor);
@@ -160,12 +178,15 @@ void setup_system(unsigned long r3, unsigned long r4, unsigned long r5,
 	printk("htab_data.num_ptegs           = 0x%lx\n", htab_data.htab_num_ptegs);
 	printk("-----------------------------------------------------\n");
 
-	if (systemcfg->platform & PLATFORM_PSERIES) {
-		finish_device_tree();
-		chrp_init(r3, r4, r5, r6, r7);
-	}
+	printk("Starting Linux PPC64 %s\n", UTS_RELEASE);
 
 	mm_init_ppc64();
+
+	if (cur_cpu_spec->firmware_features & FW_FEATURE_SPLPAR) {
+		vpa_init(0);
+	}
+
+	idle_setup();
 
 	switch (systemcfg->platform) {
 	    case PLATFORM_ISERIES_LPAR:
@@ -246,37 +267,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 
 
 	seq_printf(m, "\n");
-#if 0
-	switch (PVR_VER(pvr)) {
-	case PV_NORTHSTAR:
-		seq_printf(m, "RS64-II (northstar)\n");
-		break;
-	case PV_PULSAR:
-		seq_printf(m, "RS64-III (pulsar)\n");
-		break;
-	case PV_POWER4:
-		seq_printf(m, "POWER4 (gp)\n");
-		break;
-	case PV_ICESTAR:
-		seq_printf(m, "RS64-III (icestar)\n");
-		break;
-	case PV_SSTAR:
-		seq_printf(m, "RS64-IV (sstar)\n");
-		break;
-	case PV_630:
-		seq_printf(m, "POWER3 (630)\n");
-		break;
-	case PV_630p:
-		seq_printf(m, "POWER3 (630+)\n");
-		break;
-	case PV_POWER4p:
-		seq_printf(m, "POWER4+ (gq)\n");
-		break;
-	default:
-		seq_printf(m, "Unknown (%08x)\n", pvr);
-		break;
-	}
-#endif
+
 	/*
 	 * Assume here that all clock rates are the same in a
 	 * smp system.  -- Cort
@@ -328,7 +319,6 @@ struct seq_operations cpuinfo_op = {
 void parse_cmd_line(unsigned long r3, unsigned long r4, unsigned long r5,
 		  unsigned long r6, unsigned long r7)
 {
-	struct device_node *chosen;
 	char *p;
 
 #ifdef CONFIG_BLK_DEV_INITRD
@@ -401,7 +391,7 @@ void parse_cmd_line(unsigned long r3, unsigned long r4, unsigned long r5,
 	}
 }
 
-
+#if 0
 char *bi_tag2str(unsigned long tag)
 {
 	switch (tag) {
@@ -423,6 +413,7 @@ char *bi_tag2str(unsigned long tag)
 		return "BI_UNKNOWN";
 	}
 }
+#endif
 
 int parse_bootinfo(void)
 {
@@ -607,20 +598,35 @@ void exception_trace(unsigned long trap)
 	udbg_puts("   "); udbg_puthex(srr1); udbg_puts("\n");
 }
 
-int set_spread_lpevents( char * str )
+void do_spread_lpevents(unsigned long n)
 {
-	/* The parameter is the number of processors to share in processing lp events */
-	unsigned long i;
-	unsigned long val = simple_strtoul( str, NULL, 0 );
-	if ( ( val > 0 ) && ( val <= MAX_PACAS ) ) {
-		for ( i=1; i<val; ++i )
-			paca[i].lpQueuePtr = paca[0].lpQueuePtr;
-		printk("lpevent processing spread over %ld processors\n", val);
-	}
+	unsigned long i,m;
+
+	if (n < MAX_PACAS)
+		m = n;
 	else
+		m = MAX_PACAS;
+
+	for (i=1; i<m; ++i)
+		paca[i].lpQueuePtr = paca[0].lpQueuePtr;
+
+	printk("lpevent processing spread over %ld processors\n", n);
+}
+
+/*
+ * The parameter is the number of processors to share in
+ * processing lp events
+ */
+int set_spread_lpevents(char * str)
+{
+	unsigned long val = simple_strtoul( str, NULL, 0 );
+	if ((val > 0) && (val <= MAX_PACAS)) {
+		do_spread_lpevents(val);
+	} else
 		printk("invalid spreaqd_lpevents %ld\n", val);
+
 	return 1;
-}	
+}
 
 /* This should only be called on processor 0 during calibrate decr */
 void setup_default_decr(void)

@@ -77,6 +77,7 @@ static int dsmark_graft(struct Qdisc *sch,unsigned long arg,
 	*old = xchg(&p->q,new);
 	if (*old)
 		qdisc_reset(*old);
+	sch->q.qlen = 0;
 	sch_tree_unlock(sch); /* @@@ move up ? */
         return 0;
 }
@@ -377,7 +378,7 @@ static void dsmark_destroy(struct Qdisc *sch)
 	while (p->filter_list) {
 		tp = p->filter_list;
 		p->filter_list = tp->next;
-		tp->ops->destroy(tp);
+		tcf_destroy(tp);
 	}
 	qdisc_destroy(p->q);
 	p->q = &noop_qdisc;

@@ -22,10 +22,6 @@
 #include <asm/pgtable.h>
 #include <asm/system.h>
 
-/* memory functions */
-void (*_clear_page)(void * page);
-void (*_copy_page)(void * to, void * from);
-
 /* Cache operations. */
 void (*_flush_cache_all)(void);
 void (*___flush_cache_all)(void);
@@ -73,7 +69,7 @@ void __init load_mmu(void)
     defined(CONFIG_CPU_NEVADA) || defined(CONFIG_CPU_R5432)  || \
     defined(CONFIG_CPU_R5500)  || defined(CONFIG_CPU_MIPS32) || \
     defined(CONFIG_CPU_MIPS64) || defined(CONFIG_CPU_TX49XX) || \
-    defined(CONFIG_CPU_RM7000)
+    defined(CONFIG_CPU_RM7000) || defined(CONFIG_CPU_RM9000)
 		ld_mmu_r4xx0();
 		r4k_tlb_init();
 #endif

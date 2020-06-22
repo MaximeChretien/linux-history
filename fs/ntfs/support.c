@@ -240,7 +240,7 @@ int ntfs_dupuni2map(ntfs_volume *vol, ntfs_u16 *in, int in_len, char **out,
 				NLS_MAX_CHARSET_SIZE)) > 0) {
 			/* Adjust result buffer. */
 			if (chl > 1) {
-				buf = ntfs_malloc(*out_len + chl - 1);
+				buf = ntfs_malloc(*out_len + chl);
 				if (!buf) {
 					i = -ENOMEM;
 					goto err_ret;

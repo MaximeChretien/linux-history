@@ -84,6 +84,8 @@
 
 #if defined (CONFIG_CPU_R4300)						\
     || defined (CONFIG_CPU_R4X00)					\
+    || defined (CONFIG_CPU_RM7000)					\
+    || defined (CONFIG_CPU_RM9000)					\
     || defined (CONFIG_CPU_R5000)					\
     || defined (CONFIG_CPU_NEVADA)					\
     || defined (CONFIG_CPU_MIPS64)
@@ -124,7 +126,11 @@
 #define KUBASE			0
 #define KUSIZE_32		0x0000000080000000	/* KUSIZE
 							   for a 32 bit proc */
+#ifdef CONFIG_CPU_RM7000
+#define K0BASE			0x9800000000000000UL
+#else
 #define K0BASE			0xa800000000000000
+#endif
 #define K0BASE_EXL_WR		K0BASE			/* exclusive on write */
 #define K0BASE_NONCOH		0x9800000000000000	/* noncoherent */
 #define K0BASE_EXL		0xa000000000000000	/* exclusive */

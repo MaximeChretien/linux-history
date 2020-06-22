@@ -6,7 +6,7 @@
  *          Title:  MPI initiator mode messages and structures
  *  Creation Date:  June 8, 2000
  *
- *    MPI_INIT.H Version:  01.02.05
+ *    MPI_INIT.H Version:  01.02.07
  *
  *  Version History
  *  ---------------
@@ -31,6 +31,8 @@
  *  10-04-01  01.02.04  Added defines for SEP request Action field.
  *  05-31-02  01.02.05  Added MPI_SCSIIO_MSGFLGS_CMD_DETERMINES_DATA_DIR define
  *                      for SCSI IO requests.
+ *  11-15-02  01.02.06  Added special extended SCSI Status defines for FCP.
+ *  06-26-03  01.02.07  Added MPI_SCSI_STATUS_FCPEXT_UNASSIGNED define.
  *  --------------------------------------------------------------------------
  */
 
@@ -152,6 +154,10 @@ typedef struct _MSG_SCSI_IO_REPLY
 #define MPI_SCSI_STATUS_COMMAND_TERMINATED      (0x22)
 #define MPI_SCSI_STATUS_TASK_SET_FULL           (0x28)
 #define MPI_SCSI_STATUS_ACA_ACTIVE              (0x30)
+
+#define MPI_SCSI_STATUS_FCPEXT_DEVICE_LOGGED_OUT    (0x80)
+#define MPI_SCSI_STATUS_FCPEXT_NO_LINK              (0x81)
+#define MPI_SCSI_STATUS_FCPEXT_UNASSIGNED           (0x82)
 
 
 /* SCSI IO Reply SCSIState values */

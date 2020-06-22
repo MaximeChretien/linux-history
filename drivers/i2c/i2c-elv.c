@@ -27,7 +27,6 @@
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
-#include <linux/version.h>
 #include <linux/init.h>
 
 #include <asm/uaccess.h>
@@ -95,14 +94,14 @@ static int bit_elv_init(void)
 	} else {
 						/* test for ELV adap. 	*/
 		if (inb(base+1) & 0x80) {	/* BUSY should be high	*/
-			DEBINIT(printk("i2c-elv.o: Busy was low.\n"));
+			DEBINIT(printk(KERN_DEBUG "i2c-elv.o: Busy was low.\n"));
 			return -ENODEV;
 		} else {
 			outb(0x0c,base+2);	/* SLCT auf low		*/
 			udelay(400);
 			if ( !(inb(base+1) && 0x10) ) {
 				outb(0x04,base+2);
-				DEBINIT(printk("i2c-elv.o: Select was high.\n"));
+				DEBINIT(printk(KERN_DEBUG "i2c-elv.o: Select was high.\n"));
 				return -ENODEV;
 			}
 		}
@@ -170,7 +169,7 @@ static struct i2c_adapter bit_elv_ops = {
 
 int __init i2c_bitelv_init(void)
 {
-	printk("i2c-elv.o: i2c ELV parallel port adapter module\n");
+	printk(KERN_INFO "i2c-elv.o: i2c ELV parallel port adapter module version %s (%s)\n", I2C_VERSION, I2C_DATE);
 	if (base==0) {
 		/* probe some values */
 		base=DEFAULT_BASE;
@@ -190,7 +189,7 @@ int __init i2c_bitelv_init(void)
 			return -ENODEV;
 		}
 	}
-	printk("i2c-elv.o: found device at %#x.\n",base);
+	printk(KERN_DEBUG "i2c-elv.o: found device at %#x.\n",base);
 	return 0;
 }
 
@@ -201,7 +200,6 @@ EXPORT_NO_SYMBOLS;
 MODULE_AUTHOR("Simon G. Vogl <simon@tk.uni-linz.ac.at>");
 MODULE_DESCRIPTION("I2C-Bus adapter routines for ELV parallel port adapter");
 MODULE_LICENSE("GPL");
-
 
 MODULE_PARM(base, "i");
 

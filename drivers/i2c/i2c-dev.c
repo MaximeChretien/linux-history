@@ -35,10 +35,7 @@
 #include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/slab.h>
-#include <linux/version.h>
-#if LINUX_KERNEL_VERSION >= KERNEL_VERSION(2,4,0)
 #include <linux/smp_lock.h>
-#endif /* LINUX_KERNEL_VERSION >= KERNEL_VERSION(2,4,0) */
 #ifdef CONFIG_DEVFS_FS
 #include <linux/devfs_fs_kernel.h>
 #endif
@@ -60,9 +57,6 @@ extern int cleanup_module(void);
 
 /* struct file_operations changed too often in the 2.1 series for nice code */
 
-#if LINUX_KERNEL_VERSION < KERNEL_VERSION(2,4,9)
-static loff_t i2cdev_lseek (struct file *file, loff_t offset, int origin);
-#endif
 static ssize_t i2cdev_read (struct file *file, char *buf, size_t count, 
                             loff_t *offset);
 static ssize_t i2cdev_write (struct file *file, const char *buf, size_t count, 
@@ -88,14 +82,8 @@ extern
 static int i2cdev_cleanup(void);
 
 static struct file_operations i2cdev_fops = {
-#if LINUX_KERNEL_VERSION >= KERNEL_VERSION(2,4,0)
 	owner:		THIS_MODULE,
-#endif /* LINUX_KERNEL_VERSION >= KERNEL_VERSION(2,4,0) */
-#if LINUX_KERNEL_VERSION < KERNEL_VERSION(2,4,9)
-	llseek:		i2cdev_lseek,
-#else
 	llseek:		no_llseek,
-#endif
 	read:		i2cdev_read,
 	write:		i2cdev_write,
 	ioctl:		i2cdev_ioctl,
@@ -133,20 +121,6 @@ static struct i2c_client i2cdev_client_template = {
 
 static int i2cdev_initialized;
 
-#if LINUX_KERNEL_VERSION < KERNEL_VERSION(2,4,9)
-/* Note that the lseek function is called llseek in 2.1 kernels. But things
-   are complicated enough as is. */
-loff_t i2cdev_lseek (struct file *file, loff_t offset, int origin)
-{
-#ifdef DEBUG
-	struct inode *inode = file->f_dentry->d_inode;
-	printk("i2c-dev.o: i2c-%d lseek to %ld bytes relative to %d.\n",
-	       MINOR(inode->i_rdev),(long) offset,origin);
-#endif /* DEBUG */
-	return -ESPIPE;
-}
-#endif
-
 static ssize_t i2cdev_read (struct file *file, char *buf, size_t count,
                             loff_t *offset)
 {
@@ -159,16 +133,16 @@ static ssize_t i2cdev_read (struct file *file, char *buf, size_t count,
 
 	struct i2c_client *client = (struct i2c_client *)file->private_data;
 
-	if(count > 8192)
+	if (count > 8192)
 		count = 8192;
-		
+
 	/* copy user space data to kernel space. */
 	tmp = kmalloc(count,GFP_KERNEL);
 	if (tmp==NULL)
 		return -ENOMEM;
 
 #ifdef DEBUG
-	printk("i2c-dev.o: i2c-%d reading %d bytes.\n",MINOR(inode->i_rdev),
+	printk(KERN_DEBUG "i2c-dev.o: i2c-%d reading %d bytes.\n",MINOR(inode->i_rdev),
 	       count);
 #endif
 
@@ -190,9 +164,9 @@ static ssize_t i2cdev_write (struct file *file, const char *buf, size_t count,
 	struct inode *inode = file->f_dentry->d_inode;
 #endif /* DEBUG */
 
-	if(count > 8192)
+	if (count > 8192)
 		count = 8192;
-		
+
 	/* copy user space data to kernel space. */
 	tmp = kmalloc(count,GFP_KERNEL);
 	if (tmp==NULL)
@@ -203,7 +177,7 @@ static ssize_t i2cdev_write (struct file *file, const char *buf, size_t count,
 	}
 
 #ifdef DEBUG
-	printk("i2c-dev.o: i2c-%d writing %d bytes.\n",MINOR(inode->i_rdev),
+	printk(KERN_DEBUG "i2c-dev.o: i2c-%d writing %d bytes.\n",MINOR(inode->i_rdev),
 	       count);
 #endif
 	ret = i2c_master_send(client,tmp,count);
@@ -224,7 +198,7 @@ int i2cdev_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 	unsigned long funcs;
 
 #ifdef DEBUG
-	printk("i2c-dev.o: i2c-%d ioctl, cmd: 0x%x, arg: %lx.\n", 
+	printk(KERN_DEBUG "i2c-dev.o: i2c-%d ioctl, cmd: 0x%x, arg: %lx.\n", 
 	       MINOR(inode->i_rdev),cmd, arg);
 #endif /* DEBUG */
 
@@ -346,7 +320,7 @@ int i2cdev_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 		    (data_arg.size != I2C_SMBUS_BLOCK_DATA) &&
 		    (data_arg.size != I2C_SMBUS_I2C_BLOCK_DATA)) {
 #ifdef DEBUG
-			printk("i2c-dev.o: size out of range (%x) in ioctl I2C_SMBUS.\n",
+			printk(KERN_DEBUG "i2c-dev.o: size out of range (%x) in ioctl I2C_SMBUS.\n",
 			       data_arg.size);
 #endif
 			return -EINVAL;
@@ -356,7 +330,7 @@ int i2cdev_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 		if ((data_arg.read_write != I2C_SMBUS_READ) && 
 		    (data_arg.read_write != I2C_SMBUS_WRITE)) {
 #ifdef DEBUG
-			printk("i2c-dev.o: read_write out of range (%x) in ioctl I2C_SMBUS.\n",
+			printk(KERN_DEBUG "i2c-dev.o: read_write out of range (%x) in ioctl I2C_SMBUS.\n",
 			       data_arg.read_write);
 #endif
 			return -EINVAL;
@@ -376,7 +350,7 @@ int i2cdev_ioctl (struct inode *inode, struct file *file, unsigned int cmd,
 
 		if (data_arg.data == NULL) {
 #ifdef DEBUG
-			printk("i2c-dev.o: data is NULL pointer in ioctl I2C_SMBUS.\n");
+			printk(KERN_DEBUG "i2c-dev.o: data is NULL pointer in ioctl I2C_SMBUS.\n");
 #endif
 			return -EINVAL;
 		}
@@ -418,7 +392,7 @@ int i2cdev_open (struct inode *inode, struct file *file)
 
 	if ((minor >= I2CDEV_ADAPS_MAX) || ! (i2cdev_adaps[minor])) {
 #ifdef DEBUG
-		printk("i2c-dev.o: Trying to open unattached adapter i2c-%d\n",
+		printk(KERN_DEBUG "i2c-dev.o: Trying to open unattached adapter i2c-%d\n",
 		       minor);
 #endif
 		return -ENODEV;
@@ -434,12 +408,9 @@ int i2cdev_open (struct inode *inode, struct file *file)
 
 	if (i2cdev_adaps[minor]->inc_use)
 		i2cdev_adaps[minor]->inc_use(i2cdev_adaps[minor]);
-#if LINUX_KERNEL_VERSION < KERNEL_VERSION(2,4,0)
-	MOD_INC_USE_COUNT;
-#endif /* LINUX_KERNEL_VERSION < KERNEL_VERSION(2,4,0) */
 
 #ifdef DEBUG
-	printk("i2c-dev.o: opened i2c-%d\n",minor);
+	printk(KERN_DEBUG "i2c-dev.o: opened i2c-%d\n",minor);
 #endif
 	return 0;
 }
@@ -450,18 +421,12 @@ static int i2cdev_release (struct inode *inode, struct file *file)
 	kfree(file->private_data);
 	file->private_data=NULL;
 #ifdef DEBUG
-	printk("i2c-dev.o: Closed: i2c-%d\n", minor);
+	printk(KERN_DEBUG "i2c-dev.o: Closed: i2c-%d\n", minor);
 #endif
-#if LINUX_KERNEL_VERSION < KERNEL_VERSION(2,4,0)
-	MOD_DEC_USE_COUNT;
-#else /* LINUX_KERNEL_VERSION >= KERNEL_VERSION(2,4,0) */
 	lock_kernel();
-#endif /* LINUX_KERNEL_VERSION < KERNEL_VERSION(2,4,0) */
 	if (i2cdev_adaps[minor]->dec_use)
 		i2cdev_adaps[minor]->dec_use(i2cdev_adaps[minor]);
-#if LINUX_KERNEL_VERSION >= KERNEL_VERSION(2,4,0)
 	unlock_kernel();
-#endif /* LINUX_KERNEL_VERSION >= KERNEL_VERSION(2,4,0) */
 	return 0;
 }
 
@@ -471,11 +436,11 @@ int i2cdev_attach_adapter(struct i2c_adapter *adap)
 	char name[8];
 
 	if ((i = i2c_adapter_id(adap)) < 0) {
-		printk("i2c-dev.o: Unknown adapter ?!?\n");
+		printk(KERN_DEBUG "i2c-dev.o: Unknown adapter ?!?\n");
 		return -ENODEV;
 	}
 	if (i >= I2CDEV_ADAPS_MAX) {
-		printk("i2c-dev.o: Adapter number too large?!? (%d)\n",i);
+		printk(KERN_DEBUG "i2c-dev.o: Adapter number too large?!? (%d)\n",i);
 		return -ENODEV;
 	}
 
@@ -488,7 +453,7 @@ int i2cdev_attach_adapter(struct i2c_adapter *adap)
 			S_IFCHR | S_IRUSR | S_IWUSR,
 			&i2cdev_fops, NULL);
 #endif
-		printk("i2c-dev.o: Registered '%s' as minor %d\n",adap->name,i);
+		printk(KERN_DEBUG "i2c-dev.o: Registered '%s' as minor %d\n",adap->name,i);
 	} else {
 		/* This is actually a detach_adapter call! */
 #ifdef CONFIG_DEVFS_FS
@@ -496,7 +461,7 @@ int i2cdev_attach_adapter(struct i2c_adapter *adap)
 #endif
 		i2cdev_adaps[i] = NULL;
 #ifdef DEBUG
-		printk("i2c-dev.o: Adapter unregistered: %s\n",adap->name);
+		printk(KERN_DEBUG "i2c-dev.o: Adapter unregistered: %s\n",adap->name);
 #endif
 	}
 
@@ -518,7 +483,7 @@ int __init i2c_dev_init(void)
 {
 	int res;
 
-	printk("i2c-dev.o: i2c /dev entries driver module\n");
+	printk(KERN_INFO "i2c-dev.o: i2c /dev entries driver module version %s (%s)\n", I2C_VERSION, I2C_DATE);
 
 	i2cdev_initialized = 0;
 #ifdef CONFIG_DEVFS_FS
@@ -526,7 +491,7 @@ int __init i2c_dev_init(void)
 #else
 	if (register_chrdev(I2C_MAJOR,"i2c",&i2cdev_fops)) {
 #endif
-		printk("i2c-dev.o: unable to get major %d for i2c bus\n",
+		printk(KERN_ERR "i2c-dev.o: unable to get major %d for i2c bus\n",
 		       I2C_MAJOR);
 		return -EIO;
 	}
@@ -536,7 +501,7 @@ int __init i2c_dev_init(void)
 	i2cdev_initialized ++;
 
 	if ((res = i2c_add_driver(&i2cdev_driver))) {
-		printk("i2c-dev.o: Driver registration failed, module not inserted.\n");
+		printk(KERN_ERR "i2c-dev.o: Driver registration failed, module not inserted.\n");
 		i2cdev_cleanup();
 		return res;
 	}

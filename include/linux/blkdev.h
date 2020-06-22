@@ -176,8 +176,8 @@ extern inline int rq_data_dir(struct request *rq)
 
 extern unsigned long blk_max_low_pfn, blk_max_pfn;
 
-#define BLK_BOUNCE_HIGH		(blk_max_low_pfn << PAGE_SHIFT)
-#define BLK_BOUNCE_ANY		(blk_max_pfn << PAGE_SHIFT)
+#define BLK_BOUNCE_HIGH		((u64)blk_max_low_pfn << PAGE_SHIFT)
+#define BLK_BOUNCE_ANY		((u64)blk_max_pfn << PAGE_SHIFT)
 
 extern void blk_queue_bounce_limit(request_queue_t *, u64);
 

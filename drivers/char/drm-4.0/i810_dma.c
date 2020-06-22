@@ -305,7 +305,7 @@ static int i810_dma_cleanup(drm_device_t *dev)
 	   
 	   	if(dev_priv->ring.virtual_start) {
 		   	drm_ioremapfree((void *) dev_priv->ring.virtual_start,
-					dev_priv->ring.Size);
+					dev_priv->ring.Size, dev);
 		}
 	   	if(dev_priv->hw_status_page != 0UL) {
 		   	i810_free_page(dev, dev_priv->hw_status_page);
@@ -319,7 +319,7 @@ static int i810_dma_cleanup(drm_device_t *dev)
 		for (i = 0; i < dma->buf_count; i++) {
 			drm_buf_t *buf = dma->buflist[ i ];
 			drm_i810_buf_priv_t *buf_priv = buf->dev_private;
-			drm_ioremapfree(buf_priv->kernel_virtual, buf->total);
+			drm_ioremapfree(buf_priv->kernel_virtual, buf->total, dev);
 		}
 	}
    	return 0;
@@ -393,7 +393,7 @@ static int i810_freelist_init(drm_device_t *dev)
 	   	*buf_priv->in_use = I810_BUF_FREE;
 
 		buf_priv->kernel_virtual = drm_ioremap(buf->bus_address, 
-						       buf->total);
+						       buf->total, dev);
 	}
 	return 0;
 }
@@ -430,7 +430,7 @@ static int i810_dma_initialize(drm_device_t *dev,
 
    	dev_priv->ring.virtual_start = drm_ioremap(dev->agp->base + 
 						   init->ring_start, 
-						   init->ring_size);
+						   init->ring_size, dev);
 
    	dev_priv->ring.tail_mask = dev_priv->ring.Size - 1;
    

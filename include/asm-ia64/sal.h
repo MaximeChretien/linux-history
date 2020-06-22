@@ -806,6 +806,8 @@ ia64_sal_update_pal (u64 param_buf, u64 scratch_buf, u64 scratch_buf_size,
 
 extern unsigned long sal_platform_features;
 
+extern int (*salinfo_platform_oemdata)(const u8 *, u8 **, u64 *);
+
 #endif /* __ASSEMBLY__ */
 
-#endif /* _ASM_IA64_PAL_H */
+#endif /* _ASM_IA64_SAL_H */

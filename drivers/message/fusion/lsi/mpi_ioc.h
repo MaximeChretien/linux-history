@@ -1,12 +1,12 @@
 /*
- *  Copyright (c) 2000-2002 LSI Logic Corporation.
+ *  Copyright (c) 2000-2003 LSI Logic Corporation.
  *
  *
  *           Name:  MPI_IOC.H
  *          Title:  MPI IOC, Port, Event, FW Download, and FW Upload messages
  *  Creation Date:  August 11, 2000
  *
- *    MPI_IOC.H Version:  01.02.06
+ *    MPI_IOC.H Version:  01.02.08
  *
  *  Version History
  *  ---------------
@@ -55,6 +55,8 @@
  *  05-31-02  01.02.06  Added define for
  *                      MPI_IOCFACTS_EXCEPT_RAID_CONFIG_INVALID.
  *                      Added AliasIndex to EVENT_DATA_LOGOUT structure.
+ *  04-01-03  01.02.07  Added defines for MPI_FW_HEADER_SIGNATURE_.
+ *  06-26-03  01.02.08  Added new values to the product family defines.
  *  --------------------------------------------------------------------------
  */
 
@@ -654,6 +656,10 @@ typedef struct _MPI_FW_HEADER
 #define MPI_FW_HEADER_PID_TYPE_SCSI             (0x0000)
 #define MPI_FW_HEADER_PID_TYPE_FC               (0x1000)
 
+#define MPI_FW_HEADER_SIGNATURE_0               (0x5AEAA55A)
+#define MPI_FW_HEADER_SIGNATURE_1               (0xA55AEAA5)
+#define MPI_FW_HEADER_SIGNATURE_2               (0x5AA55AEA)
+
 #define MPI_FW_HEADER_PID_PROD_MASK                     (0x0F00)
 #define MPI_FW_HEADER_PID_PROD_INITIATOR_SCSI           (0x0100)
 #define MPI_FW_HEADER_PID_PROD_TARGET_INITIATOR_SCSI    (0x0200)
@@ -673,6 +679,8 @@ typedef struct _MPI_FW_HEADER
 #define MPI_FW_HEADER_PID_FAMILY_1020C0_SCSI    (0x0008)
 #define MPI_FW_HEADER_PID_FAMILY_1035A0_SCSI    (0x0009)
 #define MPI_FW_HEADER_PID_FAMILY_1035B0_SCSI    (0x000A)
+#define MPI_FW_HEADER_PID_FAMILY_1030TA0_SCSI   (0x000B)
+#define MPI_FW_HEADER_PID_FAMILY_1020TA0_SCSI   (0x000C)
 #define MPI_FW_HEADER_PID_FAMILY_909_FC         (0x0000)
 #define MPI_FW_HEADER_PID_FAMILY_919_FC         (0x0001)
 #define MPI_FW_HEADER_PID_FAMILY_919X_FC        (0x0002)

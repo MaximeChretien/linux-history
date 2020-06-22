@@ -360,9 +360,13 @@ static unsigned long calc_pdcblock_offset (int major,int minor)
 		return 0;
 	if (ideinfo->sect==0)
 		return 0;
-	lba = (ideinfo->capacity / (ideinfo->head*ideinfo->sect));
-	lba = lba * (ideinfo->head*ideinfo->sect);
-	lba = lba - ideinfo->sect;
+	if (ideinfo->head!=255) {
+		lba = (ideinfo->capacity / (ideinfo->head*ideinfo->sect));
+		lba = lba * (ideinfo->head*ideinfo->sect);
+		lba = lba - ideinfo->sect; }
+	else {
+		lba = ideinfo->capacity - ideinfo->sect;
+	}
 
 	return lba;
 }

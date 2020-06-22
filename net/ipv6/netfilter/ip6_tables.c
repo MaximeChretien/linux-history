@@ -1543,7 +1543,8 @@ tcp_find_option(u_int8_t option,
 
 	duprintf("tcp_match: finding option\n");
 	/* If we don't have the whole header, drop packet. */
-	if (tcp->doff * 4 > datalen) {
+	if (tcp->doff * 4 < sizeof(struct tcphdr) ||
+	    tcp->doff * 4 > datalen) {
 		*hotdrop = 1;
 		return 0;
 	}

@@ -222,10 +222,6 @@
 
 #include <linux/module.h>
 
-#if defined(PCMCIA)
-#undef MODULE
-#endif
-
 #include <linux/sched.h>
 #include <asm/irq.h>
 #include <asm/io.h>
@@ -253,6 +249,10 @@
 #include <linux/stat.h>
 
 #include <scsi/scsicam.h>
+
+#if defined(PCMCIA)
+#undef MODULE
+#endif
 
 /* DEFINES */
 
@@ -3951,7 +3951,9 @@ int aha152x_proc_info(char *buffer, char **start,
 	return thislength < length ? thislength : length;
 }
 
+#ifndef PCMCIA
 /* Eventually this will go into an include file, but this will be later */
 static Scsi_Host_Template driver_template = AHA152X;
 
 #include "scsi_module.c"
+#endif

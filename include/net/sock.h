@@ -1184,6 +1184,7 @@ static inline void skb_set_owner_r(struct sk_buff *skb, struct sock *sk)
 static inline int sock_queue_rcv_skb(struct sock *sk, struct sk_buff *skb)
 {
 	int err = 0;
+	int skb_len;
 
 	/* Cast skb->rcvbuf to unsigned... It's pointless, but reduces
 	   number of warnings when compiling with -W --ANK
@@ -1203,9 +1204,17 @@ static inline int sock_queue_rcv_skb(struct sock *sk, struct sk_buff *skb)
 
 	skb->dev = NULL;
 	skb_set_owner_r(skb, sk);
+
+	/* Cache the SKB length before we tack it onto the receive
+	 * queue.  Once it is added it no longer belongs to us and
+	 * may be freed by other threads of control pulling packets
+	 * from the queue.
+	 */
+	skb_len = skb->len;
+
 	skb_queue_tail(&sk->receive_queue, skb);
 	if (!sk->dead)
-		sk->data_ready(sk,skb->len);
+		sk->data_ready(sk,skb_len);
 out:
 	return err;
 }

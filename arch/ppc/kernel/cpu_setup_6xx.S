@@ -104,8 +104,8 @@ setup_604_hid0:
 
 /* 7400 <= rev 2.7 and 7410 rev = 1.0 suffer from some
  * erratas we work around here.
- * Moto MPC710CE.pdf describes them, those are errata
- * #3, #4 and #5
+ * Moto MPC7410CE.pdf describes them, those are errata
+ * #3, #4 and #5 (7400 erratas #13, #14 and #15).
  * Note that we assume the firmware didn't choose to
  * apply other workarounds (there are other ones documented
  * in the .pdf). It appear that Apple firmware only works
@@ -155,7 +155,20 @@ setup_750_7400_hid0:
 BEGIN_FTR_SECTION
 	oris	r11,r11,HID0_DPM@h	/* enable dynamic power mgmt */
 END_FTR_SECTION_IFCLR(CPU_FTR_NO_DPM)
-	li	r3,HID0_SPD
+
+	/* 7400 Errata #7, don't enable SGE on < Rev 2.1 */
+	mfpvr	r10
+	rlwinm	r3,r10,16,16,31
+	cmplwi	r3,0x000c
+	bne	1f			/* Not a 7400. */
+	andi.	r3,r10,0x0f0f
+	cmpwi	0,r3,0x0200
+	bgt	1f			/* Rev >= 2.1 */
+	li	r3,HID0_SGE		/* 7400 rev < 2.1, clear SGE. */
+	b	2f
+
+1:	li	r3,0			/* Don't clear SGE. */
+2:	ori	r3,r3,HID0_SPD
 	andc	r11,r11,r3		/* clear SPD: enable speculative */
  	li	r3,0
  	mtspr	ICTC,r3			/* Instruction Cache Throttling off */
@@ -223,9 +236,17 @@ BEGIN_FTR_SECTION
 	oris	r11,r11,HID0_DPM@h	/* enable dynamic power mgmt */
 END_FTR_SECTION_IFCLR(CPU_FTR_NO_DPM)
 
+	/* We only want to disable BTIC on 7457's */
+	mfpvr	r3
+	rlwinm	r3,r3,16,16,31
+	cmplwi	r3,0x8002
+	li	r3,0			/* Assume we don't want to clear BTIC. */
+	bne	2f			/* Not a 7457. */
+	li	r3,HID0_BTIC		/* 7457, clear BTIC. */
+
 	/* All of the bits we have to clear....
 	 */
-	li	r3,HID0_SPD | HID0_NOPDST | HID0_NOPTI
+2:	ori	r3,r3,HID0_SPD | HID0_NOPDST | HID0_NOPTI
 	andc	r11,r11,r3		/* clear SPD: enable speculative */
  	li	r3,0
 

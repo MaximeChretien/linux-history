@@ -1122,23 +1122,6 @@ The set_cons_dev() function returns
           not operational
 -EBUSY  - the console device is already defined
 
-reset_cons_dev - Reset Console Device
-
-This routine allows for resetting the console device specification. See
-wait_cons_dev() for details.
-
-int reset_cons_dev( int irq);
-
-irq : subchannel identifying the system console device
-
-The reset_cons_dev() function returns
-
-      0 - successful completion
--EIO    - an unhandled interrupt condition is pending for the
-          specified subchannel (irq) - status pending
--ENODEV - irq doesn't specify a valid subchannel or the devive is
-          not operational
-
 wait_cons_dev - Synchronously Wait for Console Processing
 
 The wait_cons_dev() routine is used by the console device driver when its

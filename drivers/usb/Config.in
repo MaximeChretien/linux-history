@@ -92,7 +92,6 @@ if [ "$CONFIG_USB" = "y" -o  "$CONFIG_USB" = "m" ]; then
       dep_tristate '  USB Realtek RTL8150 based ethernet device support (EXPERIMENTAL)' CONFIG_USB_RTL8150 $CONFIG_USB $CONFIG_NET $CONFIG_EXPERIMENTAL
       dep_tristate '  USB KLSI KL5USB101-based ethernet device support (EXPERIMENTAL)' CONFIG_USB_KAWETH $CONFIG_USB $CONFIG_NET $CONFIG_EXPERIMENTAL
       dep_tristate '  USB CATC NetMate-based Ethernet device support (EXPERIMENTAL)' CONFIG_USB_CATC $CONFIG_USB $CONFIG_NET $CONFIG_EXPERIMENTAL
-      dep_tristate '  USB ASIX AX88172 based ethernet device support (EXPERIMENTAL)' CONFIG_USB_AX8817X $CONFIG_USB $CONFIG_NET $CONFIG_EXPERIMENTAL
       dep_tristate '  USB Communication Class Ethernet device support (EXPERIMENTAL)' CONFIG_USB_CDCETHER $CONFIG_USB $CONFIG_NET $CONFIG_EXPERIMENTAL
       dep_tristate '  USB-to-USB Networking cables, Linux PDAs, ... (EXPERIMENTAL)' CONFIG_USB_USBNET $CONFIG_USB $CONFIG_NET $CONFIG_EXPERIMENTAL
    fi

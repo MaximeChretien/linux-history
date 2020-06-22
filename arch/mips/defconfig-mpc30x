@@ -29,8 +29,10 @@ CONFIG_KMOD=y
 # CONFIG_MIPS_PB1000 is not set
 # CONFIG_MIPS_PB1100 is not set
 # CONFIG_MIPS_PB1500 is not set
+# CONFIG_MIPS_HYDROGEN3 is not set
 # CONFIG_MIPS_XXS1500 is not set
 # CONFIG_MIPS_MTX1 is not set
+# CONFIG_COGENT_CSB250 is not set
 # CONFIG_BAGET_MIPS is not set
 # CONFIG_CASIO_E55 is not set
 # CONFIG_MIPS_COBALT is not set
@@ -49,6 +51,8 @@ CONFIG_KMOD=y
 # CONFIG_MOMENCO_OCELOT is not set
 # CONFIG_MOMENCO_OCELOT_G is not set
 # CONFIG_MOMENCO_OCELOT_C is not set
+# CONFIG_MOMENCO_JAGUAR_ATX is not set
+# CONFIG_PMC_YOSEMITE is not set
 # CONFIG_DDB5074 is not set
 # CONFIG_DDB5476 is not set
 # CONFIG_DDB5477 is not set
@@ -72,9 +76,7 @@ CONFIG_RWSEM_GENERIC_SPINLOCK=y
 # CONFIG_RWSEM_XCHGADD_ALGORITHM is not set
 CONFIG_IRQ_CPU=y
 CONFIG_NEW_TIME_C=y
-CONFIG_VR41XX_TIME_C=y
 CONFIG_NONCOHERENT_IO=y
-# CONFIG_ISA is not set
 CONFIG_PCI=y
 CONFIG_NEW_PCI=y
 CONFIG_PCI_AUTO=y
@@ -100,7 +102,11 @@ CONFIG_CPU_VR41XX=y
 # CONFIG_CPU_R8000 is not set
 # CONFIG_CPU_R10000 is not set
 # CONFIG_CPU_RM7000 is not set
+# CONFIG_CPU_RM9000 is not set
 # CONFIG_CPU_SB1 is not set
+CONFIG_PAGE_SIZE_4KB=y
+# CONFIG_PAGE_SIZE_16KB is not set
+# CONFIG_PAGE_SIZE_64KB is not set
 # CONFIG_CPU_ADVANCED is not set
 # CONFIG_CPU_HAS_LLSC is not set
 # CONFIG_CPU_HAS_LLDSCD is not set
@@ -114,7 +120,6 @@ CONFIG_CPU_LITTLE_ENDIAN=y
 CONFIG_NET=y
 # CONFIG_PCI_NAMES is not set
 # CONFIG_ISA is not set
-# CONFIG_EISA is not set
 # CONFIG_TC is not set
 # CONFIG_MCA is not set
 # CONFIG_SBUS is not set
@@ -133,6 +138,7 @@ CONFIG_BINFMT_ELF=y
 # CONFIG_MIPS32_N32 is not set
 # CONFIG_BINFMT_ELF32 is not set
 # CONFIG_BINFMT_MISC is not set
+# CONFIG_OOM_KILLER is not set
 
 #
 # Memory Technology Devices (MTD)
@@ -159,6 +165,7 @@ CONFIG_BINFMT_ELF=y
 # CONFIG_BLK_CPQ_DA is not set
 # CONFIG_BLK_CPQ_CISS_DA is not set
 # CONFIG_CISS_SCSI_TAPE is not set
+# CONFIG_CISS_MONITOR_THREAD is not set
 # CONFIG_BLK_DEV_DAC960 is not set
 # CONFIG_BLK_DEV_UMEM is not set
 # CONFIG_BLK_DEV_LOOP is not set
@@ -203,6 +210,12 @@ CONFIG_IP_PNP_BOOTP=y
 # CONFIG_SYN_COOKIES is not set
 # CONFIG_IPV6 is not set
 # CONFIG_KHTTPD is not set
+
+#
+#    SCTP Configuration (EXPERIMENTAL)
+#
+CONFIG_IPV6_SCTP__=y
+# CONFIG_IP_SCTP is not set
 # CONFIG_ATM is not set
 # CONFIG_VLAN_8021Q is not set
 
@@ -248,13 +261,26 @@ CONFIG_IP_PNP_BOOTP=y
 # ATA/IDE/MFM/RLL support
 #
 # CONFIG_IDE is not set
-# CONFIG_BLK_DEV_IDE_MODES is not set
 # CONFIG_BLK_DEV_HD is not set
 
 #
 # SCSI support
 #
 # CONFIG_SCSI is not set
+
+#
+# Fusion MPT device support
+#
+# CONFIG_FUSION is not set
+# CONFIG_FUSION_BOOT is not set
+# CONFIG_FUSION_ISENSE is not set
+# CONFIG_FUSION_CTL is not set
+# CONFIG_FUSION_LAN is not set
+
+#
+# IEEE 1394 (FireWire) support (EXPERIMENTAL)
+#
+# CONFIG_IEEE1394 is not set
 
 #
 # I2O device support
@@ -359,6 +385,7 @@ CONFIG_NET_ETHERNET=y
 # CONFIG_INPUT_MOUSEDEV is not set
 # CONFIG_INPUT_JOYDEV is not set
 # CONFIG_INPUT_EVDEV is not set
+# CONFIG_INPUT_UINPUT is not set
 
 #
 # Character devices
@@ -369,6 +396,7 @@ CONFIG_SERIAL=y
 CONFIG_SERIAL_CONSOLE=y
 # CONFIG_SERIAL_EXTENDED is not set
 # CONFIG_SERIAL_NONSTANDARD is not set
+# CONFIG_VR41XX_KIU is not set
 CONFIG_UNIX98_PTYS=y
 CONFIG_UNIX98_PTY_COUNT=256
 
@@ -406,6 +434,7 @@ CONFIG_UNIX98_PTY_COUNT=256
 # Watchdog Cards
 #
 # CONFIG_WATCHDOG is not set
+# CONFIG_SCx200 is not set
 # CONFIG_SCx200_GPIO is not set
 # CONFIG_AMD_PM768 is not set
 # CONFIG_NVRAM is not set
@@ -420,6 +449,10 @@ CONFIG_UNIX98_PTY_COUNT=256
 #
 # CONFIG_FTAPE is not set
 # CONFIG_AGP is not set
+
+#
+# Direct Rendering Manager (XFree86 DRI support)
+#
 # CONFIG_DRM is not set
 
 #
@@ -478,6 +511,11 @@ CONFIG_EXT2_FS=y
 # CONFIG_UDF_RW is not set
 # CONFIG_UFS_FS is not set
 # CONFIG_UFS_FS_WRITE is not set
+# CONFIG_XFS_FS is not set
+# CONFIG_XFS_QUOTA is not set
+# CONFIG_XFS_RT is not set
+# CONFIG_XFS_TRACE is not set
+# CONFIG_XFS_DEBUG is not set
 
 #
 # Network File Systems
@@ -657,6 +695,11 @@ CONFIG_USB_RTL8150=y
 # CONFIG_USB_LCD is not set
 
 #
+# Support for USB gadgets
+#
+# CONFIG_USB_GADGET is not set
+
+#
 # Bluetooth support
 #
 # CONFIG_BLUEZ is not set
@@ -668,8 +711,10 @@ CONFIG_CROSSCOMPILE=y
 # CONFIG_RUNTIME_DEBUG is not set
 # CONFIG_KGDB is not set
 # CONFIG_GDB_CONSOLE is not set
+# CONFIG_DEBUG_INFO is not set
 # CONFIG_MAGIC_SYSRQ is not set
 # CONFIG_MIPS_UNCACHED is not set
+CONFIG_LOG_BUF_SHIFT=0
 
 #
 # Cryptographic options

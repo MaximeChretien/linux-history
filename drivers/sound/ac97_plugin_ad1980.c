@@ -45,7 +45,7 @@
  *	use of the codec after the probe function.
  */
  
-static void ad1980_remove(struct ac97_codec *codec)
+static void ad1980_remove(struct ac97_codec *codec, struct ac97_driver *driver)
 {
 	/* Nothing to do in the simple example */
 }
@@ -72,9 +72,11 @@ static int ad1980_probe(struct ac97_codec *codec, struct ac97_driver *driver)
 
 #define AC97_AD_MISC	0x76
 
-	/* Switch the inputs/outputs over (from Dell code) */
+	/* Switch the inputs/outputs over (from Dell code)
+	Set the ADI compatibility mode (AC97NC bit) */
+
 	control = codec->codec_read(codec, AC97_AD_MISC);
-	codec->codec_write(codec, AC97_AD_MISC, control | 0x0420);
+	codec->codec_write(codec, AC97_AD_MISC, control | 0x4420);
 	
 	/* We could refuse the device since we dont need to hang around,
 	   but we will claim it */
@@ -120,5 +122,6 @@ static int ad1980_init(void)
 	return ac97_register_driver(&ad1980_driver);
 }
 
+MODULE_LICENSE("GPL");
 module_init(ad1980_init);
 module_exit(ad1980_exit);

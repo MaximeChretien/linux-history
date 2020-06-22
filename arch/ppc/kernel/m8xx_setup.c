@@ -58,6 +58,7 @@ extern void m8xx_ide_init(void);
 
 extern unsigned long find_available_memory(void);
 extern void m8xx_cpm_reset(uint);
+extern void m8xx_wdt_handler_install(bd_t *bp);
 
 void __init
 m8xx_setup_arch(void)
@@ -184,6 +185,13 @@ void __init m8xx_calibrate_decr(void)
 	if (request_irq(DEC_INTERRUPT, timebase_interrupt, 0, "tbint",
 				NULL) != 0)
 		panic("Could not allocate timer IRQ!");
+
+#ifdef CONFIG_8xx_WDT
+	/* Install watchdog timer handler early because it might be
+	 * already enabled by the bootloader
+	 */
+	m8xx_wdt_handler_install(binfo);
+#endif
 }
 
 /* The RTC on the MPC8xx is an internal register.

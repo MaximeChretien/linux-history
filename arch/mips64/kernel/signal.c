@@ -74,12 +74,11 @@ int copy_siginfo_to_user(siginfo_t *to, siginfo_t *from)
 /*
  * Atomically swap in the new signal mask, and wait for a signal.
  */
-asmlinkage int sys_rt_sigsuspend(abi64_no_regargs, struct pt_regs regs)
+save_static_function(sys_rt_sigsuspend);
+static_unused int _sys_rt_sigsuspend(abi64_no_regargs, struct pt_regs regs)
 {
 	sigset_t *unewset, saveset, newset;
         size_t sigsetsize;
-
-	save_static(&regs);
 
 	/* XXX Don't preclude handling different sized sigset_t's.  */
 	sigsetsize = regs.regs[5];

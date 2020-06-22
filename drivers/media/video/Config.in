@@ -39,8 +39,8 @@ fi
 dep_tristate '  SAA5249 Teletext processor' CONFIG_VIDEO_SAA5249 $CONFIG_VIDEO_DEV $CONFIG_I2C
 dep_tristate '  SAB3036 tuner' CONFIG_TUNER_3036 $CONFIG_VIDEO_DEV $CONFIG_I2C
 if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
-   if [ "$CONFIG_SGI_IP22" = "y" ]; then
-      dep_tristate '  SGI Vino Video For Linux (EXPERIMENTAL)' CONFIG_VIDEO_VINO $CONFIG_VIDEO_DEV
+   if [ "$CONFIG_SGI_IP22" = "y" -a "$CONFIG_I2C" != "n" ]; then
+      dep_tristate '  SGI VINO (EXPERIMENTAL)' CONFIG_VIDEO_VINO $CONFIG_VIDEO_DEV $CONFIG_I2C_ALGO_SGI
    fi
    dep_tristate '  Stradis 4:2:2 MPEG-2 video driver  (EXPERIMENTAL)' CONFIG_VIDEO_STRADIS $CONFIG_VIDEO_DEV $CONFIG_PCI
 fi

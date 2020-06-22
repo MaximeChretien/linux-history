@@ -432,7 +432,6 @@ int __init cyclone_setup(char *str)
 
 const int use_cyclone = 0;
 static void mark_timeoffset_cyclone(void) {}
-static unsigned long do_gettimeoffset_cyclone(void) {return 0;}
 static void init_cyclone_clock(void) {}
 void __cyclone_delay(unsigned long loops) {}
 #endif /* CONFIG_X86_SUMMIT */

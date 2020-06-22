@@ -23,7 +23,7 @@ fi
 # COMX drivers
 #
 
-   tristate '  MultiGate (COMX) synchronous serial boards support' CONFIG_COMX
+   bool '  MultiGate (COMX) synchronous serial boards support' CONFIG_COMX
    if [ "$CONFIG_COMX" != "n" ]; then
       dep_tristate '    Support for COMX/CMX/HiCOMX boards' CONFIG_COMX_HW_COMX $CONFIG_COMX
       dep_tristate '    Support for LoCOMX board' CONFIG_COMX_HW_LOCOMX $CONFIG_COMX
@@ -77,13 +77,23 @@ fi
       else
 	 comment '    X.25/LAPB support is disabled'
       fi
-      dep_tristate '    SDL RISCom/N2 support' CONFIG_N2 $CONFIG_HDLC
-      dep_tristate '    Moxa C101 support' CONFIG_C101 $CONFIG_HDLC
-      dep_tristate '    FarSync T-Series support' CONFIG_FARSYNC $CONFIG_HDLC
-      bool '    Debug received/transmitted packets' CONFIG_HDLC_DEBUG_PKT
-      bool '    Debug hard_header routines' CONFIG_HDLC_DEBUG_HARD_HEADER
-      bool '    Debug FECN/BECN conditions' CONFIG_HDLC_DEBUG_ECN
-      bool '    Debug RX/TX packet rings' CONFIG_HDLC_DEBUG_RINGS
+      if [ "$CONFIG_PCI" != "n" ]; then
+         dep_tristate '    Goramo PCI200SYN support' CONFIG_PCI200SYN $CONFIG_HDLC
+         dep_tristate '    Cyclades-PC300 support (RS-232/V.35, X.21, T1/E1 boards)' CONFIG_PC300 $CONFIG_HDLC
+         if [ "$CONFIG_PC300" != "n" ]; then
+               if [ "$CONFIG_PPP" != "n" -a "$CONFIG_PPP_MULTLINK" != "n" -a "$CONFIG_PPP_SYNCTTY" != "n" -a "$CONFIG_HDLC_PPP" = "y" ]; then
+                       bool '      Cyclades-PC300 MLPPP support' CONFIG_PC300_MLPPP
+               else
+                       comment '     Cyclades-PC300 MLPPP support is disabled.'
+                       comment '     Refer to the file README.mlppp, provided by PC300 package.'
+               fi
+         fi
+	 dep_tristate '    FarSync T-Series support' CONFIG_FARSYNC $CONFIG_HDLC
+      fi
+      if [ "$CONFIG_ISA" != "n" ]; then
+	 dep_tristate '    SDL RISCom/N2 support' CONFIG_N2 $CONFIG_HDLC
+	 dep_tristate '    Moxa C101 support' CONFIG_C101 $CONFIG_HDLC
+      fi
    fi
 
    tristate '  Frame relay DLCI support' CONFIG_DLCI

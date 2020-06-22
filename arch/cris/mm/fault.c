@@ -6,6 +6,9 @@
  *  Authors:  Bjorn Wesen 
  * 
  *  $Log: fault.c,v $
+ *  Revision 1.23  2003/10/16 05:32:32  starvik
+ *  Only read TLB_SELECT if DEBUG
+ *
  *  Revision 1.22  2003/07/07 09:07:04  johana
  *  Added special CONFIG_ETRAX_DEBUG_INTERRUPT handling here
  *  to deal with a di in entry.S
@@ -119,8 +122,9 @@ volatile pgd_t *current_pgd;
 void
 handle_mmu_bus_fault(struct pt_regs *regs)
 {
-	int cause, select;
+	int cause;
 #ifdef DEBUG
+	int select;
 	int index;
 	int page_id;
 	int acc, inv;
@@ -135,11 +139,11 @@ handle_mmu_bus_fault(struct pt_regs *regs)
 	log_int(rdpc(), regs->dccr, 0);
 #endif
 	cause = *R_MMU_CAUSE;
-	select = *R_TLB_SELECT;
 
 	address = cause & PAGE_MASK; /* get faulting address */
 
 #ifdef DEBUG
+	select = *R_TLB_SELECT;
 	page_id = IO_EXTRACT(R_MMU_CAUSE,  page_id,   cause);
 	acc     = IO_EXTRACT(R_MMU_CAUSE,  acc_excp,  cause);
 	inv     = IO_EXTRACT(R_MMU_CAUSE,  inv_excp,  cause);  

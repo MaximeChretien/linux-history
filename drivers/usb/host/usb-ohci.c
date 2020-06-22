@@ -628,7 +628,7 @@ static int sohci_submit_urb (struct urb * urb)
 
 	/* allocate the private part of the URB */
 	urb_priv = kmalloc (sizeof (urb_priv_t) + size * sizeof (td_t *), 
-							in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
+							in_interrupt() ? GFP_ATOMIC : GFP_NOIO);
 	if (!urb_priv) {
 		usb_dec_dev_use (urb->dev);	
 		return -ENOMEM;

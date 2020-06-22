@@ -102,7 +102,7 @@
 #endif	
 	nop
 	mfc0	k0, CP0_BADVADDR		# Get faulting address
-	srl	k0, k0, PGDIR_SHIFT		# get pgd only bits
+	srl	k0, k0, _PGDIR_SHIFT		# get pgd only bits
 
 	sll	k0, k0, 2
 	addu	k1, k1, k0			# add in pgd offset
@@ -168,7 +168,7 @@
 #define LOAD_PTE(pte, ptr) \
 	GET_PGD(pte, ptr)          \
 	mfc0	pte, CP0_BADVADDR; \
-	srl	pte, pte, PGDIR_SHIFT; \
+	srl	pte, pte, _PGDIR_SHIFT; \
 	sll	pte, pte, 2; \
 	addu	ptr, ptr, pte; \
 	mfc0	pte, CP0_BADVADDR; \

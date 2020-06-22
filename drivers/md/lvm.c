@@ -2594,8 +2594,9 @@ static int lvm_do_lv_extend_reduce(int minor, char *lv_name, lv_t * new_lv)
 				      new_lv->lv_block_exception[e].
 				      rsector_org, new_lv);
 
-		vg_ptr->pe_allocated -= old_lv->lv_allocated_le;
+		vg_ptr->pe_allocated -= old_lv->lv_allocated_snapshot_le;
 		vg_ptr->pe_allocated += new_lv->lv_allocated_le;
+		old_lv->lv_allocated_snapshot_le = new_lv->lv_allocated_le;
 	} else {
 		vfree(old_lv->lv_current_pe);
 		vfree(old_lv->lv_snapshot_hash_table);

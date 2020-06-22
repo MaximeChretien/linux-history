@@ -2,7 +2,7 @@
  * arch/cris/kernel/debug.c
  * Various debug routines:
  * o Logging of interrupt enabling/disabling. /proc/debug_interrupt
- *   gives result and toggles if it is enabled or not.
+ *   gives result and enables logging when read.
  *
  * Copyright (C) 2003 Axis Communications AB
  */
@@ -24,7 +24,7 @@ int log_int_size = LOG_INT_SIZE;
 int log_int_trig0_pos = 0;
 int log_int_trig1_pos = 0;
 
-int log_int_enable = 0; /* toggled every read of /proc/debug_interrupt */
+int log_int_enable = 0; /* Enabled every read of /proc/debug_interrupt */
 
 struct log_int_struct 
 {

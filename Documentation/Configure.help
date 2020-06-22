@@ -412,6 +412,20 @@ CONFIG_HIGHIO
   Otherwise low memory pages are used as bounce buffers causing a
   degrade in performance.
 
+OOM killer support
+CONFIG_OOM_KILLER
+   This option selects the kernel behaviour during total out of memory
+   condition. 
+
+   The default behaviour is to, as soon as no freeable memory and no swap
+   space are available, kill the task which tries to allocate memory. 
+   The default behaviour is very reliable.
+
+   If you select this option, as soon as no freeable memory is available, 
+   the kernel will try to select the "best" task to be killed.
+
+   If unsure, say N.
+
 Normal floppy disk support
 CONFIG_BLK_DEV_FD
   If you want to use the floppy disk drive(s) of your PC under Linux,
@@ -1485,12 +1499,15 @@ CONFIG_BLK_DEV_UMC8672
 
 Amiga Gayle IDE interface support
 CONFIG_BLK_DEV_GAYLE
-  This is the IDE driver for the builtin IDE interface on some Amiga
-  models. It supports both the `A1200 style' (used in A600 and A1200)
-  and `A4000 style' (used in A4000 and A4000T) of the Gayle IDE
-  interface. Say Y if you have such an Amiga model and want to use IDE
-  devices (hard disks, CD-ROM drives, etc.) that are connected to the
-  builtin IDE interface.
+  This is the IDE driver for the Amiga Gayle IDE interface. It supports
+  both the `A1200 style' and `A4000 style' of the Gayle IDE interface,
+  This includes builtin IDE interfaces on some Amiga models (A600,
+  A1200, A4000, and A4000T), and IDE interfaces on the Zorro expansion
+  bus (M-Tech E-Matrix 530 expansion card).
+  Say Y if you have an Amiga with a Gayle IDE interface and want to use
+  IDE devices (hard disks, CD-ROM drives, etc.) that are connected to it.
+  Note that you also have to enable Zorro bus support if you want to
+  use Gayle IDE interfaces on the Zorro expansion bus.
 
 Falcon IDE interface support
 CONFIG_BLK_DEV_FALCON_IDE
@@ -1522,12 +1539,6 @@ CONFIG_BLK_DEV_IDEDOUBLER
 
   Say Y if you have an IDE doubler.  The driver is enabled at kernel
   runtime using the "ide=doubler" kernel boot parameter.
-
-WarpEngine SCSI support
-CONFIG_WARPENGINE_SCSI
-  Support for MacroSystem Development's WarpEngine Amiga SCSI-2
-  controller. Info at
-  <http://www.lysator.liu.se/amiga/ar/guide/ar310.guide?FEATURE5>.
 
 Builtin PowerMac IDE support
 CONFIG_BLK_DEV_IDE_PMAC
@@ -2079,7 +2090,7 @@ CONFIG_ACER_PICA_61
   This is a machine with a R4400 133/150 MHz CPU. To compile a Linux
   kernel that runs on these, say Y here. For details about Linux on
   the MIPS architecture, check out the Linux/MIPS FAQ on the WWW at
-  <http://oss.sgi.com/mips/>.
+  <http://www.linux-mips.org/>.
 
 Support for Algorithmics P4032 (EXPERIMENTAL)
 CONFIG_ALGOR_P4032
@@ -2102,7 +2113,7 @@ Support for BAGET MIPS series
 CONFIG_BAGET_MIPS
   This enables support for the Baget, a Russian embedded system.  For
   more details about the Baget see the Linux/MIPS FAQ on
-  <http://oss.sgi.com/mips/>.
+  <http://www.linux-mips.org/>.
 
 Baget AMD LANCE support
 CONFIG_BAGETLANCE
@@ -2113,7 +2124,7 @@ CONFIG_BAGETLANCE
 Support for DECstations
 CONFIG_DECSTATION
   This enables support for DEC's MIPS based workstations.  For details
-  see the Linux/MIPS FAQ on <http://oss.sgi.com/mips/> and the
+  see the Linux/MIPS FAQ on <http://www.linux-mips.org/> and the
   DECstation porting pages on <http://decstation.unix-ag.org/>.
 
   If you have one of the following DECstation Models you definitely
@@ -2240,6 +2251,13 @@ CONFIG_SIBYTE_BUS_WATCHER
   Handle and keep statistics on the bus error interrupts (COR_ECC,
   BAD_ECC, IO_BUS).
 
+Bus trace dump on bus error
+CONFIG_SIBYTE_BW_TRACE
+  Run a continuous bus trace, dumping the raw data as soon as a ZBbus
+  error is detected.  Cannot work if ZBbus profiling is turned on, and
+  also will interfere with JTAG-based trace buffer activity.  Raw
+  buffer data is dumped to console, and must be processed off-line.
+
 Corelis Debugger
 CONFIG_SB1XXX_CORELIS
   Select compile flags that produce code that can be processed by the
@@ -2264,7 +2282,7 @@ CONFIG_MIPS_MAGNUM_4000
   This is a machine with a R4000 100 MHz CPU. To compile a Linux
   kernel that runs on these, say Y here. For details about Linux on
   the MIPS architecture, check out the Linux/MIPS FAQ on the WWW at
-  <http://oss.sgi.com/mips/>.
+  <http://www.linux-mips.org/>.
 
 Enable Qtronix 990P Keyboard Support
 CONFIG_QTRONIX_KEYBOARD
@@ -2276,7 +2294,7 @@ CONFIG_OLIVETTI_M700
   This is a machine with a R4000 100 MHz CPU. To compile a Linux
   kernel that runs on these, say Y here. For details about Linux on
   the MIPS architecture, check out the Linux/MIPS FAQ on the WWW at
-  <http://oss.sgi.com/mips/>.
+  <http://www.linux-mips.org/>.
 
 Support for SNI RM200 PCI
 CONFIG_SNI_RM200_PCI
@@ -3235,10 +3253,31 @@ CONFIG_IP6_NF_TARGET_MARK
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
 
+ARP tables support
+CONFIG_IP_NF_ARPTABLES
+  arptables is a general, extensible packet identification framework.
+  The ARP packet filtering and mangling (manipulation)subsystems
+  use this: say Y or M here if you want to use either of those.
+
+  If you want to compile it as a module, say M here and read
+  <file:Documentation/modules.txt>.  If unsure, say `N'.
+
+ARP packet filtering
+CONFIG_IP_NF_ARPFILTER
+  ARP packet filtering defines a table `filter', which has a series of
+  rules for simple ARP packet filtering at local input and
+  local output.  See the man page for arptables(8).
+
+  If you want to compile it as a module, say M here and read
+  <file:Documentation/modules.txt>.  If unsure, say `N'.
+
 ARP payload mangling
 CONFIG_IP_NF_ARP_MANGLE
   Allows altering the ARP packet payload: source and destination
   hardware and network addresses.
+
+  If you want to compile it as a module, say M here and read
+  <file:Documentation/modules.txt>.  If unsure, say `N'.
 
 TCP Explicit Congestion Notification support
 CONFIG_INET_ECN
@@ -3887,6 +3926,24 @@ CONFIG_SGI_DS1286
   Every SGI has such a clock built in. It reports status information
   via the file /proc/rtc and its behaviour is set by various ioctls on
   /dev/rtc.
+
+Dallas DS1742 RTC Support
+CONFIG_DS1742
+  If you say Y here and create a character special file /dev/rtc with
+  major number 10 and minor number 135 using mknod ("man mknod"), you
+  will get access to the real time clock present on various Toshiba
+  MIPS-based boards. It reports status information via the file
+  /proc/driver/rtc and its behaviour is set by various ioctls on
+  /dev/rtc or /dev/misc/rtc if using devfs.
+
+  For technical information and application notes, please see the
+  Dallas Semiconductor website:
+  <http://www.dalsemi.com/quick_view2.cfm?qv_pk=2768>.
+
+  This driver is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module is called ds1742.o. If you want to compile it as a module,
+  say M here and read <file:Documentation/modules.txt>.
 
 Indy/I2 Hardware Watchdog
 CONFIG_INDYDOG
@@ -4950,6 +5007,11 @@ CONFIG_FB_MAXINE
   Support for the onboard framebuffer (1024x768x8) in the Personal
   DECstation series (Personal DECstation 5000/20, /25, /33, /50,
   Codename "Maxine").
+
+PMAG-AA TURBOchannel framebuffer support
+CONFIG_FB_PMAG_AA
+  Support for the PMAG-AA TURBOchannel framebuffer card (1280x1024x1)
+  used mainly in the MIPS-based DECstation series.
 
 PMAG-BA TURBOchannel framebuffer support
 CONFIG_FB_PMAG_BA
@@ -10585,6 +10647,15 @@ CONFIG_NET_SCH_HTB
   whenever you want).  If you want to compile it as a module, say M
   here and read <file:Documentation/modules.txt>.
 
+CONFIG_NET_SCH_HFSC
+  Say Y here if you want to use the Hierarchical Fair Service Curve
+  (HFSC) packet scheduling algorithm for some of your network devices.
+
+  This code is also available as a module called sch_hfsc.o ( = code
+  which can be inserted in and removed from the running kernel
+  whenever you want).  If you want to compile it as a module, say M
+  here and read <file:Documentation/modules.txt>.
+
 CSZ packet scheduler
 CONFIG_NET_SCH_CSZ
   Say Y here if you want to use the Clark-Shenker-Zhang (CSZ) packet
@@ -11114,9 +11185,6 @@ CONFIG_COMX
   You must say Y to "/proc file system support" (CONFIG_PROC_FS) to
   use this driver.
 
-  If you want to compile this as a module, say M and read
-  <file:Documentation/modules.txt>.  The module will be called comx.o.
-
 Support for COMX/CMX/HiCOMX boards
 CONFIG_COMX_HW_COMX
   Hardware driver for the 'CMX', 'COMX' and 'HiCOMX' boards from the
@@ -11310,6 +11378,39 @@ CONFIG_HDLC_X25
 
   If unsure, say N here.
 
+Cyclades-PC300 support
+CONFIG_PC300
+  This is a driver for the Cyclades-PC300 synchronous communication
+  boards. These boards provide synchronous serial interfaces to your
+  Linux box (interfaces currently available are RS-232/V.35, X.21 and
+  T1/E1). If you wish to support Multilink PPP, please select the
+  option below this one and read the file README.mlppp provided by PC300
+  package.
+
+  If you want to compile this as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want),
+  say M here and read Documentation/modules.txt. The module will be
+  called pc300.o.
+
+  If you haven't heard about it, it's safe to say N.
+
+Cyclades-PC300 Sync TTY (to MLPPP) support
+CONFIG_PC300_MLPPP
+  Say 'Y' to this option if you are planning to use Multilink PPP over the
+  PC300 synchronous communication boards.
+
+CONFIG_PCI200SYN
+  This driver is for PCI200SYN cards made by Goramo sp. j.
+  If you have such a card, say Y or M here and see
+  <http://hq.pm.waw.pl/pub/hdlc/>
+
+  If you want to compile the driver as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want),
+  say M here and read <file:Documentation/modules.txt>.  The module
+  will be called pci200syn.o.
+
+  If unsure, say N here.
+
 SDL RISCom/N2 support
 CONFIG_N2
   This driver is for RISCom/N2 single or dual channel ISA cards
@@ -11337,25 +11438,6 @@ CONFIG_C101
   will be called c101.o.
 
   If unsure, say N here.
-
-CONFIG_HDLC_DEBUG_PKT
-  This option is for developers only - do NOT use on production
-  systems.
-
-CONFIG_HDLC_DEBUG_HARD_HEADER
-  This option is for developers only - do NOT use on production
-  systems.
-
-CONFIG_HDLC_DEBUG_ECN
-  This option is for developers only - do NOT use on production
-  systems.
-
-CONFIG_HDLC_DEBUG_RINGS
-  If you answer Y here you will be able to get a diagnostic dump of
-  port's TX and RX packet rings, using "sethdlc hdlcX private"
-  command. It does not affect normal operations.
-
-  If unsure, say Y here.
 
 Ethernet (10 or 100Mbit)
 CONFIG_NET_ETHERNET
@@ -11704,9 +11786,11 @@ CONFIG_SK98LIN
 	    - EG1032 v2 Instant Gigabit Network Adapter
 	    - EG1064 v2 Instant Gigabit Network Adapter
 	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Abit)
+	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Albatron)
 	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Asus)
 	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (ECS)
 	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Epox)
+	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Foxconn)
 	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Gigabyte)
 	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Iwill)
 	    - Marvell RDK-8001 Adapter
@@ -11781,6 +11865,24 @@ CONFIG_TIGON3
   inserted in and removed from the running kernel whenever you want),
   say M here and read <file:Documentation/modules.txt>.  This is
   recommended.  The module will be called tg3.o.
+
+MV-64340 Ethernet support
+CONFIG_MV64340_ETH
+  This driver supports the Marvell Discovery II MV64340 device
+  as an Ethernet controller.  Say Y here and select Port 0,1,2
+  as needed.  Otherwise, say N.
+
+MV-64340 Port 0
+CONFIG_MV64340_ETH_0
+  Enable port 0 on the MV64340 Ethernet controller.
+
+MV-64340 Port 1
+CONFIG_MV64340_ETH_1
+  Enable port 1 on the MV64340 Ethernet controller.
+
+MV-64340 Port 2
+CONFIG_MV64340_ETH_2
+  Enable port 2 on the MV64340 Ethernet controller.
 
 MyriCOM Gigabit Ethernet support
 CONFIG_MYRI_SBUS
@@ -14365,7 +14467,7 @@ CONFIG_MTD_SLRAM
 
 DEC MS02-NV NVRAM module support
 CONFIG_MTD_MS02NV
-  This is a MTD driver for the DEC's MS02-NV (54-20948-01) battery
+  This is an MTD driver for the DEC's MS02-NV (54-20948-01) battery
   backed-up NVRAM module.  The module was originally meant as an NFS
   accelerator.  Say Y here if you have a DECstation 5000/2x0 or a
   DECsystem 5900 equipped with such a module.
@@ -14804,6 +14906,16 @@ CONFIG_INPUT_ADBHID
 
   If unsure, say Y.
 
+HP OB600 C/CT Pop-Up Mouse
+CONFIG_OBMOUSE
+  Only add this driver if you have an Omnibook 600C or 600CT laptop.
+  This driver has no probe routine and must assume ports 0x238-23b
+  belong to the Pop-Up mouse. Depends on CONFIG_INPUT_MOUSEDEV.
+
+  Best is to use a module and load the obmouse driver at runtime.
+  Say M here and read <file:Documentation/modules.txt>.
+
+
 Input core support
 CONFIG_INPUT
   Say Y here if you want to enable any of the following options for
@@ -14869,6 +14981,15 @@ CONFIG_INPUT_EVDEV
   Say Y here if you want your USB or ADB HID device events be
   accessible under char device 13:64+ - /dev/input/eventX in a generic
   way.  This is the future ...
+
+CONFIG_INPUT_UINPUT
+  Say Y here if you want to support user level drivers for input
+  subsystem accessible under char device 10:223 - /dev/input/uinput.
+
+  This driver is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called uinput.o.  If you want to compile it as a
+  module, say M here and read <file:Documentation/modules.txt>.	    
 
 USB Scanner support
 CONFIG_USB_SCANNER
@@ -15302,19 +15423,18 @@ CONFIG_USB_W9968CF
 
   This driver has an optional plugin, which is distributed as a
   separate module only (released under GPL). It contains code that 
-  allows you to use higher resolutions and framerates, and can't
-  be included into the official Linux kernel for performance 
-  purposes.
-  At the moment the driver needs a third-part module for the CMOS 
+  allows you to use higher resolutions and framerates, and cannot
+  be included in the official Linux kernel for performance purposes.
+  At the moment the driver needs a third-party module for the CMOS 
   sensors, which is available on internet: it is recommended to read
   <file:Documentation/usb/w9968cf.txt> for more informations and for
   a list of supported cameras.
 
   This driver uses the Video For Linux and the I2C APIs. 
-  You must say Y or M to both "Video For Linux" and 
-  "I2C Support" to use this driver.
-  Information on this API and pointers to "v4l" programs may be found
-  on the WWW at <http://roadrunner.swansea.uk.linux.org/v4l.shtml>.
+  You must say Y or M to both "Video For Linux" and "I2C Support" 
+  to use this driver. Information on this API and pointers to "v4l" 
+  programs may be found on the WWW at 
+  <http://roadrunner.swansea.uk.linux.org/v4l.shtml>.
 
   This code is also available as a module ( = code which can be
   inserted in and removed from the running kernel whenever you want).
@@ -15507,24 +15627,6 @@ CONFIG_USB_CATC
   This code is also available as a module ( = code which can be
   inserted in and removed from the running kernel whenever you want).
   The module will be called catc.o. If you want to compile it as a
-  module, say M here and read <file:Documentation/modules.txt>.
-
-USB ASIX AX88172 based ethernet device support
-CONFIG_USB_AX8817X
-  Say Y if you want to use one of the following 10/100 USB2 Ethernet
-  devices based on the ASIX AX88172 chip.  Supported devices are:
-    Linksys USB200M
-    Netgear FA120
-    D-Link DUB-E100
-    Hawking UF200
-
-  This driver makes the adapter appear as a normal Ethernet interface,
-  typically on eth0, if it is the only ethernet device, or perhaps on
-  eth1, if you have a PCI or ISA ethernet card installed.
-
-  This code is also available as a module ( = code which can be
-  inserted in and removed from the running kernel whenever you want).
-  The module will be called ax8817x.o. If you want to compile it as a
   module, say M here and read <file:Documentation/modules.txt>.
 
 USB Kodak DC-2xx Camera support
@@ -17183,6 +17285,80 @@ CONFIG_UFS_FS_WRITE
   Say Y here if you want to try writing to UFS partitions. This is
   experimental, so you should back up your UFS partitions beforehand.
 
+XFS filesystem support
+CONFIG_XFS_FS
+  XFS is a high performance journaling filesystem which originated
+  on the SGI IRIX platform.  It is completely multi-threaded, can
+  support large files and large filesystems, extended attributes,
+  variable block sizes, is extent based, and makes extensive use of
+  Btrees (directories, extents, free space) to aid both performance
+  and scalability.
+
+  Refer to the documentation at <http://oss.sgi.com/projects/xfs/>
+  for complete details.  This implementation is on-disk compatible
+  with the IRIX version of XFS.
+
+  If you want to compile this file system as a module ( = code which
+  can be inserted in and removed from the running kernel whenever you
+  want), say M here and read <file:Documentation/modules.txt>.  The
+  module will be called xfs.o.  Be aware, however, that if the file
+  system of your root partition is compiled as a module, you'll need
+  to use an initial ramdisk (initrd) to boot.
+
+Quota support
+CONFIG_XFS_QUOTA
+  If you say Y here, you will be able to set limits for disk usage on
+  a per user and/or per group basis under XFS.  XFS considers quota
+  information as filesystem metadata and uses journaling to provide a
+  higher level guarantee of consistency.  The on-disk data format for
+  quota is also compatible with the IRIX version of XFS, allowing a
+  filesystem to be migrated between Linux and IRIX without any need
+  for conversion.
+
+  If unsure, say N.  More comprehensive documentation can be found in
+  README.quota in the xfsprogs package.  XFS quota can be used either
+  with or without the generic quota support enabled (CONFIG_QUOTA) -
+  they are completely independent subsystems.
+
+Realtime support (EXPERIMENTAL)
+CONFIG_XFS_RT
+  If you say Y here you will be able to mount and use XFS filesystems
+  which contain a realtime subvolume. The realtime subvolume is a
+  separate area of disk space where only file data is stored. The
+  realtime subvolume is designed to provide very deterministic
+  data rates suitable for media streaming applications.
+
+  See the xfs man page in section 5 for a bit more information.
+
+  This feature is unsupported at this time, is not yet fully
+  functional, and may cause serious problems.
+
+  If unsure, say N.
+
+Tracing support (EXPERIMENTAL)
+CONFIG_XFS_TRACE
+  Say Y here to get an XFS build with activity tracing enabled.
+  Enabling this option will attach historical information to XFS
+  inodes, pagebufs, certain locks, the log, the IO path, and a
+  few other key areas within XFS.  These traces can be examined
+  using a kernel debugger.
+
+  Note that for the pagebuf traces, you will also have to enable
+  the sysctl in /proc/sys/vm/pagebuf/debug for this to work.
+
+  Say N unless you are an XFS developer.
+
+Debugging support (EXPERIMENTAL)
+CONFIG_XFS_DEBUG
+  Say Y here to get an XFS build with many debugging features,
+  including ASSERT checks, function wrappers around macros,
+  and extra sanity-checking functions in various code paths.
+
+  Note that the resulting code will be HUGE and SLOW, and probably
+  not useful unless you are debugging a particular problem.
+
+  Say N unless you are an XFS developer, or play one on TV.
+
 Advanced partition selection
 CONFIG_PARTITION_ADVANCED
   Say Y here if you would like to use hard disks under Linux which
@@ -17488,6 +17664,17 @@ CONFIG_SMB_NLS_REMOTE
   supports that, using the codepage and iocharset parameters.
 
   smbmount from samba 2.2.0 or later supports this.
+
+Enable Unix Extensions
+CONFIG_SMB_UNIX
+  Enabling this will make smbfs use the CIFS Unix Extensions if
+  supported by the server. These extensions allows use of unix user
+  ids, permissions, file modes, symlinks, etc that normally do not
+  work on smbfs.
+
+  Samba 3.0 servers supports these extensions.
+
+  If you don't know what all this is about, it is safe to say Y.
 
 Coda file system support (advanced network fs)
 CONFIG_CODA_FS
@@ -18819,7 +19006,7 @@ CONFIG_SOUND_IT8172
   Say Y here to support the on-board sound generator on the Integrated
   Technology Express, Inc. ITE8172 SBC.  Vendor page at
   <http://www.ite.com.tw/ia/brief_it8172bsp.htm>; picture of the
-  board at <http://www.mvista.com/allies/semiconductor/ite.html>.
+  board at <http://www.mvista.com/partners/semiconductor/ite.html>.
 
 I2C support
 CONFIG_I2C
@@ -18888,9 +19075,9 @@ CONFIG_I2C_ELV
   <file:Documentation/modules.txt>.
   The module will be called i2c-elv.o.
 
-Velleman K9000 adapter
+Velleman K8000 adapter
 CONFIG_I2C_VELLEMAN
-  This supports the Velleman K9000 parallel-port I2C adapter.  Say Y
+  This supports the Velleman K8000 parallel-port I2C adapter.  Say Y
   if you own such an adapter.
 
   This driver is also available as a module.  If you want to compile
@@ -18950,6 +19137,11 @@ CONFIG_I2C_MAX1617
   This builds a simple polling driver for the Maxim 1617 temperature
   sensor.  Currently the device is only supported on a SiByte I2C
   adapter, and the driver prints status updates to the system log.
+
+SGI I2C Algorithm
+CONFIG_I2C_ALGO_SGI
+  Supports the SGI interfaces like the ones found on SGI Indy VINO
+  or SGI O2 MACE.
 
 I2C device interface
 CONFIG_I2C_CHARDEV
@@ -21738,14 +21930,14 @@ CONFIG_MIPS_EV64120
   This is an evaluation board based on the Galileo GT-64120
   single-chip system controller that contains a MIPS R5000 compatible
   core running at 75/100MHz.  Their website is located at
-  <http://www.galileot.com/>.  Say Y here if you wish to build a
+  <http://www.marvell.com/>.  Say Y here if you wish to build a
   kernel for this platform.
 
 Galileo EV96100 Evaluation board
 CONFIG_MIPS_EV96100
   This is an evaluation board based on the Galielo GT-96100 LAN/WAN
   communications controllers containing a MIPS R5000 compatible core
-  running at 83MHz. Their website is <http://www.galileot.com/>. Say Y
+  running at 83MHz. Their website is <http://www.marvell.com/>. Say Y
   here if you wish to build a kernel for this platform.
 
 Support for ITE 8172G board
@@ -21761,8 +21953,8 @@ CONFIG_MIPS_IVR
   This is an evaluation board built by Globespan to showcase their
   iVR (Internet Video Recorder) design. It utilizes a QED RM5231
   R5000 MIPS core. More information can be found out their website
-  located at <http://www.globespan.net/products/product4.html>P. Say Y
-  here if you wish to build a kernel for this platform.
+  located at <http://www.globespan.net/>. Say Y here if you wish to
+  build a kernel for this platform.
 
 Support for Alchemy Semi PB1000 board
 CONFIG_MIPS_PB1000
@@ -22850,7 +23042,7 @@ CONFIG_BLUEZ_HCIUSB
   kernel or say M to compile it as module (hci_usb.o).
 
 HCI USB SCO (voice) support
-CONFIG_BLUEZ_USB_SCO
+CONFIG_BLUEZ_HCIUSB_SCO
   This option enables the SCO support in the HCI USB driver. You need this
   to transmit voice data with your Bluetooth USB device. And your device
   must also support sending SCO data over the HCI layer, because some of
@@ -22858,14 +23050,6 @@ CONFIG_BLUEZ_USB_SCO
  
   Say Y here to compile support for HCI SCO data.
  
-HCI USB zero packet support
-CONFIG_BLUEZ_USB_ZERO_PACKET
-  This option is provided only as a work around for buggy Bluetooth USB 
-  devices. Do NOT enable it unless you know for sure that your device 
-  requires zero packets.
- 
-  Most people should say N here.
-
 HCI VHCI Virtual HCI device driver
 CONFIG_BLUEZ_HCIVHCI
   Bluetooth Virtual HCI device driver.
@@ -23010,15 +23194,22 @@ CONFIG_A2232
   "ser_a2232.o". If you want to do this, answer M here and read
   "<file:Documentation/modules.txt>".
 
-A4000T SCSI support
-CONFIG_A4000T_SCSI
-  Support for the NCR53C710 SCSI controller on the Amiga 4000T.
-
-A4091 SCSI support
-CONFIG_A4091_SCSI
-  Support for the NCR53C710 chip on the Amiga 4091 Z3 SCSI2 controller
-  (1993).  Very obscure -- the 4091 was part of an Amiga 4000 upgrade
-  plan at the time the Amiga business was sold to DKB.
+Amiga NCR53c710 SCSI support
+CONFIG_SCSI_AMIGA7XX
+  Support for various NCR53c710-based SCSI controllers on the Amiga.
+  This includes:
+    - the builtin SCSI controller on the Amiga 4000T,
+    - the Amiga 4091 Zorro III SCSI-2 controller,
+    - the MacroSystem Development's WarpEngine Amiga SCSI-2 controller
+      (info at
+       <http://www.lysator.liu.se/amiga/ar/guide/ar310.guide?FEATURE5>),
+    - the SCSI controller on the Phase5 Blizzard PowerUP 603e+
+      accelerator card for the Amiga 1200,
+    - the SCSI controller on the GVP Turbo 040/060 accelerator.
+  Note that all of the above SCSI controllers, except for the builtin
+  SCSI controller on the Amiga 4000T, reside on the Zorro expansion
+  bus, so you also have to enable Zorro bus support if you want to use
+  them.
 
 Atari support
 CONFIG_ATARI
@@ -23339,11 +23530,6 @@ CONFIG_BLZ1230_SCSI
   If you have an Amiga 1200 with a Phase5 Blizzard 1230IV or Blizzard
   1260 accelerator, and the optional SCSI module, say Y. Otherwise,
   say N.
-
-Blizzard PowerUP 603e+ SCSI support
-CONFIG_BLZ603EPLUS_SCSI
-  If you have an Amiga 1200 with a Phase5 Blizzard PowerUP 603e+
-  accelerator, say Y. Otherwise, say N.
 
 Fastlane SCSI support
 CONFIG_FASTLANE_SCSI
@@ -23744,7 +23930,7 @@ CONFIG_IDE_8xx_PCCARD
              PCMCIA interface (example: IDIF860 systems)
 
 Use SMC2 for UART
-CONFIG_SMC2_UART
+CONFIG_8xx_SMC2
   If you would like to use SMC2 as a serial port, say Y here.
 
   If in doubt, say Y here.
@@ -24264,6 +24450,11 @@ CONFIG_PPC_RTAS
 
   If unsure, say Y.
 
+Support for Lpar Configuration data in /proc
+CONFIG_LPARCFG
+  This option adds lparcfg entry as /proc/ppc64/lparcfg which returns
+  system configuration info in <key word>=<value> pairs. 
+
 MESH (Power Mac internal SCSI) support
 CONFIG_SCSI_MESH
   Many Power Macintoshes and clones have a MESH (Macintosh Enhanced
@@ -24738,8 +24929,8 @@ CONFIG_SOUND_BT878
 
 SGI Vino Video For Linux
 CONFIG_VIDEO_VINO
-  Say Y here to build in support for the Vino video input system found
-  on SGI Indy machines.
+  Say Y here to include support for SGI VINO (Video In No Out) system
+  found on SGI Indy workstations.
 
 Stradis 4:2:2 MPEG-2 video driver
 CONFIG_VIDEO_STRADIS
@@ -26157,6 +26348,14 @@ CONFIG_SMC_IRCC_FIR
   here and read <file:Documentation/modules.txt>.  The module will be
   called smc-ircc.o.
 
+VIA IrCC
+CONFIG_VIA_IRCC_FIR
+  Say Y here if you want to build support for the VIA Fast Infrared
+  Communications Controller.  It is used in all sorts of VIA686a- and
+  VT1211-based notebooks. If you want to compile it as a module, say M
+  here and read <file:Documentation/modules.txt>.  The module will be
+  called via-ircc.o.
+
 ALi M5123 FIR controller driver
 CONFIG_ALI_FIR
   Say Y here if you want to build support for the ALi M5123 FIR
@@ -27150,16 +27349,11 @@ CONFIG_IA64_GENERIC
   will run on any supported IA-64 system.  However, if you configure
   a kernel for your specific system, it will be faster and smaller.
 
-  To find out what type of IA-64 system you have, you may want to
-  check the IA-64 Linux web site at <http://www.linux-ia64.org/>.
-  As of the time of this writing, most hardware is DIG compliant,
-  so the "DIG-compliant" option is usually the right choice.
-
-  HP-simulator   For the HP simulator (<http://software.hp.com/ia64linux/>).
-  HP-zx1	 For HP zx1 Platforms.
-  SN1            For SGI SN1 Platforms.
-  SN2            For SGI SN2 Platforms.
-  DIG-compliant  For DIG ("Developer's Interface Guide") compliant systems.
+  generic        For any supported IA-64 system
+  DIG-compliant  For DIG ("Developer's Interface Guide") compliant systems
+  HP             For HP systems
+  SGI-SN2        For SGI SN2 systems
+  Ski-simulator  For the HP simulator (<http://www.hpl.hp.com/research/linux/ski/>)
 
   If you don't know what to do, choose "generic".
 
@@ -27446,7 +27640,7 @@ CONFIG_DEBUG_BUGVERBOSE
 Include kgdb kernel debugger
 CONFIG_KGDB
   Include in-kernel hooks for kgdb, the Linux kernel source level
-  debugger.  This project has a web page at
+  debugger.  For i386 architecture there is project page at
   <http://kgdb.sourceforge.net/>.
 
 Include xmon kernel debugger
@@ -27893,7 +28087,7 @@ CONFIG_BLK_DEV_IT8172
   Say Y here to support the on-board IDE controller on the Integrated
   Technology Express, Inc. ITE8172 SBC.  Vendor page at
   <http://www.ite.com.tw/ia/brief_it8172bsp.htm>; picture of the
-  board at <http://www.mvista.com/allies/semiconductor/ite.html>.
+  board at <http://www.mvista.com/partners/semiconductor/ite.html>.
 
 Support ARM926T processor
 CONFIG_CPU_ARM926T
@@ -28061,21 +28255,21 @@ CONFIG_IT8172_REVC
   Say Y here to support the older, Revision C version of the Integrated
   Technology Express, Inc. ITE8172 SBC.  Vendor page at
   <http://www.ite.com.tw/ia/brief_it8172bsp.htm>; picture of the
-  board at <http://www.mvista.com/allies/semiconductor/ite.html>.
+  board at <http://www.mvista.com/partners/semiconductor/ite.html>.
 
 Enable Smart Card Reader 0 Support
 CONFIG_IT8172_SCR0
   Say Y here to support smart-card reader 0 (SCR0) on the Integrated
   Technology Express, Inc. ITE8172 SBC.  Vendor page at
   <http://www.ite.com.tw/ia/brief_it8172bsp.htm>; picture of the
-  board at <http://www.mvista.com/allies/semiconductor/ite.html>.
+  board at <http://www.mvista.com/partners/semiconductor/ite.html>.
 
 Enable Smart Card Reader 1 Support
 CONFIG_IT8172_SCR1
   Say Y here to support smart-card reader 1 (SCR1) on the Integrated
   Technology Express, Inc. ITE8172 SBC.  Vendor page at
   <http://www.ite.com.tw/ia/brief_it8172bsp.htm>; picture of the
-  board at <http://www.mvista.com/allies/semiconductor/ite.html>.
+  board at <http://www.mvista.com/partners/semiconductor/ite.html>.
 
 IT8172 IDE Tuning support
 CONFIG_IT8172_TUNING
@@ -28112,6 +28306,14 @@ CONFIG_SCx200
 
   This support is also available as a module.  If compiled as a
   module, it will be called scx200.o.
+
+NatSemi SCx200 GPIO support
+CONFIG_SCx200_GPIO
+  Give userspace access to the GPIO pins on the National
+  Semiconductor SCx200 processors.
+
+  This support is also available as a module.  If compiled as a
+  module, it will be called scx200_gpio.o.
 
 NatSemi SCx200 Watchdog
 CONFIG_SCx200_WDT
@@ -28264,7 +28466,7 @@ CONFIG_MTD_UCLINUX
   If compiled as a module, it will be called uclinux.o.
 
 NatSemi SCx200 I2C using GPIO pins
-CONFIG_SCx200_GPIO
+CONFIG_SCx200_I2C
   Enable the use of two GPIO pins of a SCx200 processor as an I2C bus.
 
   If you don't know what to do here, say N.
@@ -28492,6 +28694,12 @@ CONFIG_CRYPTO_CAST5
 
   The CAST5 encryption algorithm (synonymous with CAST-128) is
   described in RFC2144.
+
+CONFIG_CRYPTO_CAST6
+  CAST6 (CAST-256) cipher algorithm.
+  
+  The CAST6 encryption algorithm (synonymous with CAST-256) is
+  described in RFC2612.
 
 CONFIG_CRYPTO_DEFLATE
   This is the Deflate algorithm (RFC1951), specified for use in

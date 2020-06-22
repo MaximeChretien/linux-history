@@ -5,7 +5,7 @@
 #
 # Copyright (C) 1994, 1995, 1996 by Ralf Baechle
 # DECStation modifications by Paul M. Antoine, 1996
-# Copyright (C) 2002  Maciej W. Rozycki
+# Copyright (C) 2002, 2003  Maciej W. Rozycki
 #
 # This file is included by the global makefile so that you can add your own
 # architecture-specific flags and dependencies. Remember to do have actions
@@ -43,63 +43,124 @@ check_gcc = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null > /dev/null 2>&1
 #
 GCCFLAGS	:= -I $(TOPDIR)/include/asm/gcc
 GCCFLAGS	+= -G 0 -mno-abicalls -fno-pic -pipe
-GCCFLAGS	+= $(call check_gcc, -mabi=32,)
+GCCFLAGS	+= $(call check_gcc, -finline-limit=100000,)
 LINKFLAGS	+= -G 0 -static # -N
 MODFLAGS	+= -mlong-calls
 
-ifdef CONFIG_KGDB
+ifdef CONFIG_DEBUG_INFO
 GCCFLAGS	+= -g
 ifdef CONFIG_SB1XXX_CORELIS
 GCCFLAGS	+= -mno-sched-prolog -fno-omit-frame-pointer
 endif
 endif
 
+#
+# Use: $(call set_gccflags,<cpu0>,<isa0>,<cpu1>,<isa1>,<isa2>)
+#
+# <cpu0>,<isa0> -- preferred CPU and ISA designations (may require
+#                  recent tools)
+# <cpu1>,<isa1> -- fallback CPU and ISA designations (have to work
+#                  with up to the oldest supported tools)
+# <isa2>        -- an ISA designation used as an ABI selector for
+#                  gcc versions that do not support "-mabi=32"
+#                  (depending on the CPU type, either "mips1" or
+#                  "mips2")
+#
+set_gccflags = $(shell \
+while :; do \
+	cpu=$(1); isa=-$(2); \
+	for gcc_opt in -march= -mcpu=; do \
+		$(CC) $$gcc_opt$$cpu $$isa -S -o /dev/null \
+			-xc /dev/null > /dev/null 2>&1 && \
+			break 2; \
+	done; \
+	cpu=$(3); isa=-$(4); \
+	for gcc_opt in -march= -mcpu=; do \
+		$(CC) $$gcc_opt$$cpu $$isa -S -o /dev/null \
+			-xc /dev/null > /dev/null 2>&1 && \
+			break 2; \
+	done; \
+	break; \
+done; \
+gcc_abi=-mabi=32; gcc_cpu=$$cpu; \
+if $(CC) $$gcc_abi -S -o /dev/null -xc /dev/null > /dev/null 2>&1; then \
+	gcc_isa=$$isa; \
+else \
+	gcc_abi=; gcc_isa=-$(5); \
+fi; \
+gas_abi=-Wa,-32; gas_cpu=$$cpu; gas_isa=-Wa,$$isa; \
+while :; do \
+	for gas_opt in -Wa,-march= -Wa,-mcpu=; do \
+		$(CC) $$gas_abi $$gas_opt$$cpu $$gas_isa -Wa,-Z -c \
+			-o /dev/null -xassembler /dev/null > /dev/null 2>&1 && \
+			break 2; \
+	done; \
+	gas_abi=; gas_opt=; gas_cpu=; gas_isa=; \
+	break; \
+done; \
+echo $$gcc_abi $$gcc_opt$$gcc_cpu $$gcc_isa $$gas_abi $$gas_opt$$gas_cpu $$gas_isa)
+
+#
 # CPU-dependent compiler/assembler options for optimization.
 #
 ifdef CONFIG_CPU_R3000
-GCCFLAGS	+= -mcpu=r3000 -mips1
+GCCFLAGS	+= $(call set_gccflags,r3000,mips1,r3000,mips1,mips1)
 endif
 ifdef CONFIG_CPU_TX39XX
-GCCFLAGS	+= -mcpu=r3000 -mips1
+GCCFLAGS	+= $(call set_gccflags,r3900,mips1,r3000,mips1,mips1)
 endif
 ifdef CONFIG_CPU_R6000
-GCCFLAGS	+= -mcpu=r6000 -mips2 -Wa,--trap
+GCCFLAGS	+= $(call set_gccflags,r6000,mips2,r6000,mips2,mips2) \
+		   -Wa,--trap
 endif
 ifdef CONFIG_CPU_R4300
-GCCFLAGS	+= -mcpu=r4300 -mips2 -Wa,--trap
+GCCFLAGS	+= $(call set_gccflags,r4300,mips3,r4300,mips3,mips2) \
+		   -Wa,--trap
 endif
 ifdef CONFIG_CPU_VR41XX
-GCCFLAGS	+= -mcpu=r4600 -mips2 -Wa,--trap
+GCCFLAGS	+= $(call set_gccflags,r4100,mips3,r4600,mips3,mips2) \
+		   -Wa,--trap
 endif
 ifdef CONFIG_CPU_R4X00
-GCCFLAGS	+= -mcpu=r4600 -mips2 -Wa,--trap
+GCCFLAGS	+= $(call set_gccflags,r4600,mips3,r4600,mips3,mips2) \
+		   -Wa,--trap
 endif
 ifdef CONFIG_CPU_TX49XX
-GCCFLAGS	+= -mcpu=r4600 -mips2 -Wa,--trap
+GCCFLAGS	+= $(call set_gccflags,r4600,mips3,r4600,mips3,mips2) \
+		   -Wa,--trap
 endif
 ifdef CONFIG_CPU_MIPS32
-GCCFLAGS	+= -mcpu=r4600 -mips2 -Wa,--trap
+GCCFLAGS	+= $(call set_gccflags,mips32,mips32,r4600,mips3,mips2) \
+		   -Wa,--trap
 endif
 ifdef CONFIG_CPU_MIPS64
-GCCFLAGS	+= -mcpu=r4600 -mips2 -Wa,--trap
+GCCFLAGS	+= $(call set_gccflags,mips64,mips64,r4600,mips3,mips2) \
+		   -Wa,--trap
 endif
 ifdef CONFIG_CPU_R5000
-GCCFLAGS	+= -mcpu=r5000 -mips2 -Wa,--trap
+GCCFLAGS	+= $(call set_gccflags,r5000,mips4,r5000,mips4,mips2) \
+		   -Wa,--trap
 endif
 ifdef CONFIG_CPU_R5432
-GCCFLAGS	+= -mcpu=r5000 -mips2 -Wa,--trap
+GCCFLAGS	+= $(call set_gccflags,r5400,mips4,r5000,mips4,mips2) \
+		   -Wa,--trap
 endif
 ifdef CONFIG_CPU_NEVADA
-# Cannot use -mmad with currently recommended tools
-GCCFLAGS	+= -mcpu=r5000 -mips2 -Wa,--trap
+GCCFLAGS	+= $(call set_gccflags,rm5200,mips4,r5000,mips4,mips2) \
+		   -Wa,--trap
+#GCCFLAGS	+= $(call check_gcc,-mmad,)
 endif
 ifdef CONFIG_CPU_RM7000
-GCCFLAGS	+= $(call check_gcc, -march=rm7000, -mcpu=r5000) \
-		   -mips2 -Wa,--trap
+GCCFLAGS	+= $(call set_gccflags,rm7000,mips4,r5000,mips4,mips2) \
+		   -Wa,--trap
+endif
+ifdef CONFIG_CPU_RM9000
+GCCFLAGS	+= $(call set_gccflags,rm9000,mips4,r5000,mips4,mips2) \
+		   -Wa,--trap
 endif
 ifdef CONFIG_CPU_SB1
-GCCFLAGS	+= $(call check_gcc, -mcpu=sb1, -mcpu=r5000) \
-		   -mips2 -Wa,--trap
+GCCFLAGS	+= $(call set_gccflags,sb1,mips64,r5000,mips4,mips2) \
+		   -Wa,--trap
 ifdef CONFIG_SB1_PASS_1_WORKAROUNDS
 MODFLAGS	+= -msb1-pass1-workarounds
 endif
@@ -195,6 +256,13 @@ SUBDIRS       += arch/mips/au1000/db1x00 arch/mips/au1000/common
 LOADADDR      += 0x80100000
 endif
 
+ifdef CONFIG_MIPS_HYDROGEN3
+LIBS          += arch/mips/au1000/hydrogen3/hydrogen3.o \
+                 arch/mips/au1000/common/au1000.o
+SUBDIRS       += arch/mips/au1000/hydrogen3 arch/mips/au1000/common
+LOADADDR      += 0x80100000
+endif
+
 ifdef CONFIG_MIPS_BOSPORUS
 LIBS          += arch/mips/au1000/db1x00/db1x00.o \
                  arch/mips/au1000/common/au1000.o
@@ -221,6 +289,24 @@ LIBS          += arch/mips/au1000/mtx-1/mtx-1.o \
                  arch/mips/au1000/common/au1000.o
 SUBDIRS       += arch/mips/au1000/mtx-1 arch/mips/au1000/common
 LOADADDR      += 0x80100000
+endif
+
+ifdef CONFIG_MIPS_PB1550
+LIBS          += arch/mips/au1000/pb1550/pb1550.o \
+                 arch/mips/au1000/common/au1000.o
+SUBDIRS       += arch/mips/au1000/pb1550 arch/mips/au1000/common
+LOADADDR      += 0x80100000
+endif
+
+
+#
+# Cogent CSB250
+#
+ifdef CONFIG_COGENT_CSB250
+LIBS		+= arch/mips/au1000/csb250/csb250.o \
+		   arch/mips/au1000/common/au1000.o
+SUBDIRS		+= arch/mips/au1000/csb250 arch/mips/au1000/common
+LOADADDR	:= 0x80100000
 endif
 
 ifdef CONFIG_PCI
@@ -375,6 +461,16 @@ ifdef CONFIG_MOMENCO_OCELOT_C
 CORE_FILES	+= arch/mips/momentum/ocelot_c/ocelot_c.o
 SUBDIRS		+= arch/mips/momentum/ocelot_c
 LOADADDR	:= 0x80100000
+endif
+
+ifdef CONFIG_MOMENCO_JAGUAR_ATX
+LIBS		+= arch/mips/momentum/jaguar_atx/jaguar_atx.o
+SUBDIRS		+= arch/mips/momentum/jaguar_atx
+ifdef CONFIG_JAGUAR_DMALOW
+LOADADDR	:= 0x88000000
+else
+LOADADDR	:= 0x80100000
+endif
 endif
 
 #
@@ -630,6 +726,9 @@ endif
 MAKEBOOT = $(MAKE) -C arch/$(ARCH)/boot
 
 vmlinux.ecoff: vmlinux
+	@$(MAKEBOOT) $@
+
+vmlinux.srec: vmlinux
 	@$(MAKEBOOT) $@
 
 archclean:

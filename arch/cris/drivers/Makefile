@@ -4,6 +4,8 @@
 
 O_TARGET := drivers.o
 
+export-objs := axisflashmap.o
+
 obj-y :=
 
 obj-$(CONFIG_ETRAX_VIRTEX_FPGA)         += virtex.o

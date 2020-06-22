@@ -700,7 +700,8 @@ gt96100_probe1(int port_num)
 	struct net_device *dev = NULL;
     
 	if (gtif->irq < 0) {
-		printk(KERN_ERR "%s: irq unknown - probing not supported\n", __FUNCTION_);
+		printk(KERN_ERR "%s: irq unknown - probing not supported\n",
+		       __FUNCTION__);
 		return -ENODEV;
 	}
     
@@ -1363,7 +1364,8 @@ gt96100_tx_complete(struct net_device *dev, u32 status)
 			gp->tx_full = 0;
 			if (gp->last_psr & psrLink) {
 				netif_wake_queue(dev);
-				dbg(2, "%s: Tx Ring was full, queue waked\n", __FUNCTION_);
+				dbg(2, "%s: Tx Ring was full, queue waked\n",
+				    __FUNCTION__);
 			}
 		}
 	
@@ -1444,7 +1446,7 @@ gt96100_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 				if ((psr & psrLink) && !gp->tx_full &&
 				    netif_queue_stopped(dev)) {
 					dbg(0, ": Link up, waking queue.\n",
-					    __FUNCTION_);
+					    __FUNCTION__);
 					netif_wake_queue(dev);
 				} else if (!(psr & psrLink) &&
 					   !netif_queue_stopped(dev)) {

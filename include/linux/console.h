@@ -80,7 +80,7 @@ struct console_cmdline
 	char	*options;			/* Options for the driver   */
 };
 #define MAX_CMDLINECONSOLES 8
-extern struct console_cmdline console_list[MAX_CMDLINECONSOLES];
+extern struct console_cmdline console_cmdline[MAX_CMDLINECONSOLES];
 
 /*
  *	The interface for a console, or any other device that

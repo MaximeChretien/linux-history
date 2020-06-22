@@ -420,6 +420,33 @@ int perfmon_timeslice_ctl(void *data) {
 
 	return(0); 
 }
+
+static long plpar_perfmon(int mode)
+{
+        return plpar_hcall_norets(H_PERFMON, mode, 0); 
+}
+
+static void pmc_configure_hardware() {
+	/* 
+	 * Debug bus enabled is required on GP for timeslice mode.
+	 * Flood enabled is required on GP for PMC cycle profile mode
+	 *   iSeries SP sets this by default.  pSeries requires the OS to enable.
+	 */
+	if (cur_cpu_spec->cpu_features & CPU_FTR_SLB) {
+		/* Set up the debug bus to pmc mode - a feature of GP */
+		switch(systemcfg->platform) {
+		case PLATFORM_ISERIES_LPAR:
+			HvCall_setDebugBus(1);
+			break;
+		case PLATFORM_PSERIES_LPAR:
+			plpar_perfmon(1);
+			break;
+		case PLATFORM_PSERIES:
+			mtspr(HID0, mfspr(HID0) | 0x0000080000000000);
+		} 
+	} 
+}
+
 /*
  * pmc_profile
  *
@@ -782,30 +809,4 @@ void pmc_dump_timeslice(struct perfmon_struct *perfdata)
 		}
 	}
 	spin_unlock(&pmc_lock);
-}
-
-long plpar_perfmon(int mode)
-{
-        return plpar_hcall_norets(H_PERFMON, mode, 0); 
-}
-
-void pmc_configure_hardware() {
-	/* 
-	 * Debug bus enabled is required on GP for timeslice mode.
-	 * Flood enabled is required on GP for PMC cycle profile mode
-	 *   iSeries SP sets this by default.  pSeries requires the OS to enable.
-	 */
-	if (cur_cpu_spec->cpu_features & CPU_FTR_SLB) {
-		/* Set up the debug bus to pmc mode - a feature of GP */
-		switch(systemcfg->platform) {
-		case PLATFORM_ISERIES_LPAR:
-			HvCall_setDebugBus(1);
-			break;
-		case PLATFORM_PSERIES_LPAR:
-			plpar_perfmon(1);
-			break;
-		case PLATFORM_PSERIES:
-			mtspr(HID0, mfspr(HID0) | 0x0000080000000000);
-		} 
-	} 
 }

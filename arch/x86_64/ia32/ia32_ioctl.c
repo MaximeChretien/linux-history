@@ -1,4 +1,4 @@
-/* $Id: ia32_ioctl.c,v 1.37 2003/08/20 11:00:23 ak Exp $
+/* $Id: ia32_ioctl.c,v 1.39 2004/01/29 03:01:57 ak Exp $
  * ioctl32.c: Conversion between 32bit and 64bit native ioctls.
  *
  * Copyright (C) 1997-2000  Jakub Jelinek  (jakub@redhat.com)
@@ -59,6 +59,7 @@
 #include <linux/reiserfs_fs.h>
 #include <linux/if_tun.h>
 #include <linux/ctype.h>
+#include <linux/wireless.h>
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/rfcomm.h>
 #if defined(CONFIG_BLK_DEV_LVM) || defined(CONFIG_BLK_DEV_LVM_MODULE)
@@ -112,9 +113,15 @@
 
 #include <asm/mtrr.h>
 
-
 #define A(__x) ((void *)(unsigned long)(__x))
 #define AA(__x)	A(__x)
+
+/* Allocate memory on the user stack */
+static __inline__ void *compat_alloc_user_space(long len)
+{
+	struct pt_regs *regs = (void *)current->thread.rsp0 - sizeof(struct pt_regs); 
+	return (void *)regs->rsp - len; 
+}
 
 /* Aiee. Someone does not find a difference between int and long */
 #define EXT2_IOC32_GETFLAGS               _IOR('f', 1, int)
@@ -2917,7 +2924,7 @@ static int rtc32_ioctl(unsigned fd, unsigned cmd, unsigned long arg)
 	return ret; 
 
 	case RTC_IRQP_SET32: 
-		cmd = RTC_EPOCH_SET; 
+		cmd = RTC_IRQP_SET; 
 		break; 
 
 	case RTC_EPOCH_READ32:
@@ -3483,6 +3490,50 @@ static int mtrr_ioctl32(unsigned int fd, unsigned int cmd, unsigned long arg)
 	} 
 	return err;
 } 
+
+
+struct compat_iw_point {
+        __u32 pointer;
+	__u16 length;
+	__u16 flags;
+};
+
+static int do_wireless_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
+{
+	struct iwreq *iwr, *iwr_u;
+	struct iw_point *iwp;
+	struct compat_iw_point *iwp_u;
+	__u32 pointer;
+	__u16 length, flags;
+
+	iwr_u = (struct iwreq *) (u64)arg;
+	iwp_u = (struct compat_iw_point *) &iwr_u->u.data;
+	iwr = compat_alloc_user_space(sizeof(*iwr));
+	if (iwr == NULL)
+		return -ENOMEM;
+
+	iwp = &iwr->u.data;
+
+	if (verify_area(VERIFY_WRITE, iwr, sizeof(*iwr)))
+		return -EFAULT;
+
+	if (__copy_in_user(&iwr->ifr_ifrn.ifrn_name[0],
+			   &iwr_u->ifr_ifrn.ifrn_name[0],
+			   sizeof(iwr->ifr_ifrn.ifrn_name)))
+		return -EFAULT;
+
+	if (__get_user(pointer, &iwp_u->pointer) ||
+	    __get_user(length, &iwp_u->length) ||
+	    __get_user(flags, &iwp_u->flags))
+		return -EFAULT;
+
+	if (__put_user((u64)pointer, &iwp->pointer) ||
+	    __put_user(length, &iwp->length) ||
+	    __put_user(flags, &iwp->flags))
+		return -EFAULT;
+
+	return sys_ioctl(fd, cmd, (unsigned long) iwr);
+}
 
 struct ioctl_trans {
 	unsigned long cmd;
@@ -4357,6 +4408,21 @@ HANDLE_IOCTL(MTRRIOC32_SET_PAGE_ENTRY, mtrr_ioctl32)
 HANDLE_IOCTL(MTRRIOC32_DEL_PAGE_ENTRY, mtrr_ioctl32)
 HANDLE_IOCTL(MTRRIOC32_GET_PAGE_ENTRY, mtrr_ioctl32)
 HANDLE_IOCTL(MTRRIOC32_KILL_PAGE_ENTRY, mtrr_ioctl32)
+/* wireless */
+HANDLE_IOCTL(SIOCGIWRANGE, do_wireless_ioctl)
+HANDLE_IOCTL(SIOCSIWSPY, do_wireless_ioctl)
+HANDLE_IOCTL(SIOCGIWSPY, do_wireless_ioctl)
+HANDLE_IOCTL(SIOCSIWTHRSPY, do_wireless_ioctl)
+HANDLE_IOCTL(SIOCGIWTHRSPY, do_wireless_ioctl)
+HANDLE_IOCTL(SIOCGIWAPLIST, do_wireless_ioctl)
+HANDLE_IOCTL(SIOCGIWSCAN, do_wireless_ioctl)
+HANDLE_IOCTL(SIOCSIWESSID, do_wireless_ioctl)
+HANDLE_IOCTL(SIOCGIWESSID, do_wireless_ioctl)
+HANDLE_IOCTL(SIOCSIWNICKN, do_wireless_ioctl)
+HANDLE_IOCTL(SIOCGIWNICKN, do_wireless_ioctl)
+HANDLE_IOCTL(SIOCSIWENCODE, do_wireless_ioctl)
+HANDLE_IOCTL(SIOCGIWENCODE, do_wireless_ioctl)
+COMPATIBLE_IOCTL(SIOCGIWNAME)
 IOCTL_TABLE_END
 
 #define IOCTL_HASHSIZE 256

@@ -216,6 +216,13 @@ static inline int pte_young(pte_t pte)	{ return (pte).pte_low & _PAGE_ACCESSED; 
 #define set_pmd(pmdptr, pmdval) (*(pmdptr) = pmdval)
 #define set_pgd(pgdptr, pgdval) (*(pgdptr) = pgdval)
 
+#define PGD_T_LOG2	ffz(~sizeof(pgd_t))
+#define PMD_T_LOG2	ffz(~sizeof(pmd_t))
+#define PTE_T_LOG2	ffz(~sizeof(pte_t))
+
+#define PTRS_PER_PGD	((PAGE_SIZE << PGD_ORDER) / sizeof(pgd_t))
+#define PTRS_PER_PMD	1
+#define PTRS_PER_PTE	((PAGE_SIZE << PTE_ORDER) / sizeof(pte_t))
 
 #define page_pte(page) page_pte_prot(page, __pgprot(0))
 
@@ -249,7 +256,7 @@ static inline pte_t *pte_offset(pmd_t * dir, unsigned long address)
 
 extern int do_check_pgt_cache(int, int);
 
-extern pgd_t swapper_pg_dir[1024];
+extern pgd_t swapper_pg_dir[PTRS_PER_PGD];
 extern void paging_init(void);
 
 extern void __update_tlb(struct vm_area_struct *vma, unsigned long address,

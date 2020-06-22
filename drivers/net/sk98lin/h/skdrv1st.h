@@ -2,15 +2,16 @@
  *
  * Name:	skdrv1st.h
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
- * Version:	$Revision: 1.1 $
- * Date:	$Date: 2003/07/21 07:22:43 $
+ * Version:	$Revision: 1.4 $
+ * Date:	$Date: 2003/11/12 14:28:14 $
  * Purpose:	First header file for driver and all other modules
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2003 SysKonnect GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect GmbH.
+ *	(C)Copyright 2002-2003 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -26,6 +27,15 @@
  * History:
  *
  *	$Log: skdrv1st.h,v $
+ *	Revision 1.4  2003/11/12 14:28:14  rroesler
+ *	Fix: use dedicated ip_fast_csum() on X86_64 systems
+ *	
+ *	Revision 1.3  2003/10/07 08:16:52  mlindner
+ *	Fix: Copyright changes
+ *	
+ *	Revision 1.2  2003/09/29 12:05:59  mlindner
+ *	Fix: Added define SK_CS_CALCULSTE_CHECKSUM
+ *	
  *	Revision 1.1  2003/07/21 07:22:43  rroesler
  *	Fix: Re-Enter after CVS crash
  *	
@@ -127,10 +137,7 @@ typedef struct s_AC	SK_AC;
 #define SK_PNMI_READ_U32(p,v)		memcpy((char*)&(v),(char*)(p),4)
 #define SK_PNMI_READ_U64(p,v)		memcpy((char*)&(v),(char*)(p),8)
 
-#define SkCsCalculateChecksum(p,l)	((~ip_compute_csum(p, l)) & 0xffff)
-
 #define SK_ADDR_EQUAL(a1,a2)		(!memcmp(a1,a2,6))
-
 
 #if !defined(__OPTIMIZE__)  ||  !defined(__KERNEL__)
 #warning  You must compile this file with the correct options!
@@ -157,6 +164,13 @@ typedef struct s_AC	SK_AC;
 #include <linux/init.h>
 #include <asm/uaccess.h>
 #include <net/checksum.h>
+
+#define SK_CS_CALCULATE_CHECKSUM
+#ifndef CONFIG_X86_64
+#define SkCsCalculateChecksum(p,l)	((~ip_compute_csum(p, l)) & 0xffff)
+#else
+#define SkCsCalculateChecksum(p,l)	((~ip_fast_csum(p, l)) & 0xffff)
+#endif
 
 #include	"h/sktypes.h"
 #include	"h/skerror.h"

@@ -15,25 +15,25 @@
 #define z_memcpy_fromio(a,b,c)	memcpy((a),(void *)(b),(c))
 #define z_memcpy_toio(a,b,c)	memcpy((void *)(a),(b),(c))
 
-extern inline void *z_remap_nocache_ser(unsigned long physaddr, 
-					  unsigned long size)
+static inline void *z_remap_nocache_ser(unsigned long physaddr,
+					unsigned long size)
 {
 	return __ioremap(physaddr, size, IOMAP_NOCACHE_SER);
 }
 
-extern inline void *z_remap_nocache_nonser(unsigned long physaddr, 
-					     unsigned long size)
+static inline void *z_remap_nocache_nonser(unsigned long physaddr,
+					   unsigned long size)
 {
 	return __ioremap(physaddr, size, IOMAP_NOCACHE_NONSER);
 }
 
-extern inline void *z_remap_writethrough(unsigned long physaddr,
-					   unsigned long size)
+static inline void *z_remap_writethrough(unsigned long physaddr,
+					 unsigned long size)
 {
 	return __ioremap(physaddr, size, IOMAP_WRITETHROUGH);
 }
-extern inline void *z_remap_fullcache(unsigned long physaddr,
-					unsigned long size)
+static inline void *z_remap_fullcache(unsigned long physaddr,
+				      unsigned long size)
 {
 	return __ioremap(physaddr, size, IOMAP_FULL_CACHING);
 }
@@ -42,4 +42,4 @@ extern inline void *z_remap_fullcache(unsigned long physaddr,
 #define z_iounmap iounmap
 #define z_ioremap z_remap_nocache_ser
 
-#endif /* _ASM_ZORRO_H */
+#endif /* _ASM_M68K_ZORRO_H */

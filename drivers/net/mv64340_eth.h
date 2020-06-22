@@ -55,6 +55,12 @@
 #define ETH_PORT1_IRQ_NUM ETH_PORT0_IRQ_NUM+1	/* main high register, bit1 */
 #define ETH_PORT2_IRQ_NUM ETH_PORT0_IRQ_NUM+2	/* main high register, bit1 */
 
+/* Checksum offload for Tx works */
+#define  MV64340_CHECKSUM_OFFLOAD_TX	1
+#define	 MV64340_NAPI			1
+#define	 MV64340_TX_FAST_REFILL		1
+#undef	 MV64340_COAL
+
 /* 
  * Number of RX / TX descriptors on RX / TX rings.
  * Note that allocating RX descriptors is done by allocating the RX
@@ -69,8 +75,10 @@
 /* Default RX ring size is 400 descriptors */
 #define MV64340_RX_QUEUE_SIZE 400
 
-#define MV64340_TX_COAL 200
-#define MV64340_RX_COAL 200
+#define MV64340_TX_COAL 100
+#ifdef MV64340_COAL
+#define MV64340_RX_COAL 100
+#endif
 
 /* Private data structure used for ethernet device */
 struct mv64340_eth_priv {
@@ -151,9 +159,9 @@ typedef enum _bool { false, true } bool;
 
 /* Default sdma control value */
 #define PORT_SDMA_CONFIG_VALUE			\
-			 ETH_RX_BURST_SIZE_4_64BIT 	|	\
+			 ETH_RX_BURST_SIZE_16_64BIT 	|	\
 			 GT_ETH_IPG_INT_RX(0) 		|	\
-			 ETH_TX_BURST_SIZE_4_64BIT;
+			 ETH_TX_BURST_SIZE_16_64BIT;
 
 #define GT_ETH_IPG_INT_RX(value)                \
             ((value & 0x3fff) << 8)
@@ -173,7 +181,7 @@ typedef enum _bool { false, true } bool;
 			ETH_DTE_ADV_0 				|	\
 			ETH_DISABLE_AUTO_NEG_BYPASS		|	\
 			ETH_AUTO_NEG_NO_CHANGE 			|	\
-			ETH_MAX_RX_PACKET_1552BYTE 		|	\
+			ETH_MAX_RX_PACKET_9700BYTE 		|	\
 			ETH_CLR_EXT_LOOPBACK 			|	\
 			ETH_SET_FULL_DUPLEX_MODE 		|	\
 			ETH_ENABLE_FLOW_CTRL_TX_RX_IN_FULL_DUPLEX
@@ -554,6 +562,13 @@ typedef struct _eth_port_ctrl {
 
 	/* Next available and first returning Tx resource */
 	int tx_curr_desc_q, tx_used_desc_q;
+#ifdef MV64340_CHECKSUM_OFFLOAD_TX
+        int tx_first_desc_q;
+#endif
+
+#ifdef MV64340_TX_FAST_REFILL
+	u32	tx_clean_threshold;
+#endif
 
 	/* Tx/Rx rings size and base variables fields. For driver use */
 	volatile ETH_RX_DESC *p_rx_desc_area;
@@ -563,7 +578,7 @@ typedef struct _eth_port_ctrl {
 	volatile ETH_TX_DESC *p_tx_desc_area;
 	unsigned int tx_desc_area_size;
 	struct sk_buff* tx_skb[MV64340_TX_QUEUE_SIZE];
-
+	struct tq_struct tx_timeout_task;
 } ETH_PORT_INFO;
 
 
@@ -578,13 +593,11 @@ static void ethernet_set_config_reg(ETH_PORT eth_port_num,
 				    unsigned int value);
 static unsigned int ethernet_get_config_reg(ETH_PORT eth_port_num);
 
-#ifdef MDD_CUT
 /* Interrupt Coalesting functions */
 static unsigned int eth_port_set_rx_coal(ETH_PORT, unsigned int,
 					 unsigned int);
 static unsigned int eth_port_set_tx_coal(ETH_PORT, unsigned int,
 					 unsigned int);
-#endif
 
 /* Port MAC address routines */
 static void eth_port_uc_addr_set(ETH_PORT eth_port_num,

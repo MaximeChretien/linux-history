@@ -354,7 +354,7 @@ nfs_direct_IO(int rw, struct file *file, struct kiobuf *iobuf,
 	size_t count = iobuf->length;
 	struct dentry *dentry = file->f_dentry;
 	struct inode *inode = dentry->d_inode;
-	loff_t offset = blocknr << inode->i_blkbits;
+	loff_t offset = (loff_t) blocknr << inode->i_blkbits;
 
 	switch (rw) {
 	case READ:

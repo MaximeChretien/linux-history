@@ -12,8 +12,12 @@
 #include <platforms/gemini_serial.h>
 #elif defined(CONFIG_LOPEC)
 #include <platforms/lopec_serial.h>
+#elif defined(CONFIG_SANDPOINT)
+#include <platforms/sandpoint_serial.h>
 #elif defined(CONFIG_SPRUCE)
 #include <platforms/spruce.h>
+#elif defined(CONFIG_PRPMC750)
+#include <platforms/prpmc750_serial.h>
 #elif defined(CONFIG_4xx)
 #include <asm/ibm4xx.h>
 #else

@@ -140,7 +140,7 @@ void __init nec_eagle_setup(void)
 
 	vr41xx_bcu_init();
 
-	vr41xx_cmu_init(0);
+	vr41xx_cmu_init();
 
 #ifdef CONFIG_SERIAL
 	vr41xx_dsiu_init();

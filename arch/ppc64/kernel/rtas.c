@@ -25,6 +25,7 @@
 #include <asm/machdep.h>
 #include <asm/paca.h>
 #include <asm/page.h>
+#include <asm/param.h>
 #include <asm/system.h>
 #include <asm/abs_addr.h>
 #include <asm/udbg.h>
@@ -184,6 +185,26 @@ rtas_call(int token, int nargs, int nret,
 	return (ulong)((nret > 0) ? rtas_args->rets[0] : 0);
 }
 
+/* Given an RTAS status code of 990n compute the hinted delay of 10^n
+ * (last digit) milliseconds.  For now we bound at n=3 (1 sec).
+ */
+unsigned int
+rtas_extended_busy_delay_time(int status)
+{
+	int order = status - 9900;
+	unsigned int ms;
+
+	if (order < 0)
+		order = 0;	/* RTC depends on this for -2 clock busy */
+	else if (order > 3)
+		order = 3;	/* bound */
+
+	/* Use microseconds for reasonable accuracy */
+	for (ms = 1000; order > 0; order--)
+		ms = ms * 10;
+	return ms / (1000000/HZ); /* round down is fine */
+}
+
 #define FLASH_BLOCK_LIST_VERSION (1UL)
 static void
 rtas_flash_firmware(void)
@@ -207,7 +228,8 @@ rtas_flash_firmware(void)
 	rtas_firmware_flash_list.num_blocks = 0;
 	flist = (struct flash_block_list *)&rtas_firmware_flash_list;
 	rtas_block_list = virt_to_absolute((unsigned long)flist);
-	if (rtas_block_list >= (4UL << 20)) {
+
+	if (rtas_block_list >= 4UL*1024*1024*1024) {
 		printk(KERN_ALERT "FLASH: kernel bug...flash list header addr above 4GB\n");
 		return;
 	}

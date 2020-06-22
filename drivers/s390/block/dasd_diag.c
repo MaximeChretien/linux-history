@@ -6,7 +6,7 @@
  * Bugreports.to..: <Linux390@de.ibm.com>
  * (C) IBM Corporation, IBM Deutschland Entwicklung GmbH, 1999,2000
  *
- * $Revision: 1.47 $
+ * $Revision: 1.49 $
  *
  * History of changes
  * 07/13/00 Added fixup sections for diagnoses ans saved some registers
@@ -83,7 +83,7 @@ dia250 (void *iob, int cmd)
 			      "    .quad  0b,1b\n"
                               ".previous\n"
 #endif
-                              : "+&d" (rc)
+                              : "=&d" (rc)
                               : "d" (cmd), "d" (addr) : "0", "1", "cc");
 	return rc;
 }
@@ -269,7 +269,7 @@ dasd_diag_check_characteristics (struct dasd_device_t *device)
 	dasd_diag_private_t *private;
 	diag210_t *rdc_data;
 	ccw_req_t *cqr;
-	long *label;
+	unsigned long *label;
 	int sb;
 
 	if (device == NULL) {
@@ -280,6 +280,8 @@ dasd_diag_check_characteristics (struct dasd_device_t *device)
 
 		return -ENODEV;
 	}
+
+        label = NULL;
 	device->private = kmalloc (sizeof (dasd_diag_private_t), GFP_KERNEL);
 
 	if (device->private == NULL) {
@@ -291,6 +293,7 @@ dasd_diag_check_characteristics (struct dasd_device_t *device)
                 goto fail;
 	}
 	private = (dasd_diag_private_t *) device->private;
+        memset (private, 0, sizeof(dasd_diag_private_t));
 	rdc_data = (void *) &(private->rdc_data);
 
 	rdc_data->vrdcdvno = device->devinfo.devno;
@@ -324,8 +327,13 @@ dasd_diag_check_characteristics (struct dasd_device_t *device)
 	} else {
                 BUG();
 	}
-	private->label = (long *) get_free_page (GFP_KERNEL);
-	label = private->label;
+        label = (unsigned long *) get_free_page (GFP_KERNEL);
+        if (!label) {
+                MESSAGE (KERN_WARNING, "%s",
+                         "No memory to allocate label struct");
+                rc = -ENOMEM;
+                goto fail;
+        }
 	mdsk_term_io (device);	/* first terminate all outstanding operations */
 	/* figure out blocksize of device */
 	for (bsize = 512; bsize <= PAGE_SIZE; bsize <<= 1) {
@@ -345,7 +353,6 @@ dasd_diag_check_characteristics (struct dasd_device_t *device)
 			MESSAGE (KERN_WARNING, "%s",
                                  "No memory to allocate initialization request");
                         
-			free_page ((long) private->label);
                         rc = -ENOMEM;
                         goto fail;
 		}
@@ -353,7 +360,7 @@ dasd_diag_check_characteristics (struct dasd_device_t *device)
 		memset (bio, 0, sizeof (diag_bio_t));
 		bio->type = MDSK_READ_REQ;
 		bio->block_number = device->sizes.pt_block + 1;
-		bio->buffer = __pa (private->label);
+		bio->buffer = __pa (label);
 		cqr->device = device;
 		cqr->status = CQR_STATUS_FILLED;
 		memset (iob, 0, sizeof (diag_rw_io_t));
@@ -391,15 +398,17 @@ dasd_diag_check_characteristics (struct dasd_device_t *device)
                      (device->sizes.bp_block >> 10),
                      (device->sizes.blocks << device->sizes.s2b_shift) >> 1);
 
-	free_page ((long) private->label);
         rc = 0;
 	goto out;
  fail:
-        if ( rc ) {
+        if (device->private) {
                 kfree (device->private);
                 device->private = NULL;
         }
  out:
+        if (label) {
+                free_page ((unsigned long) label);
+        }
 	return rc;
 }
 
@@ -507,32 +516,25 @@ dasd_diag_fill_info (dasd_device_t * device, dasd_information2_t * info)
 	return rc;
 }
 
-static char *
-dasd_diag_dump_sense (struct dasd_device_t *device, ccw_req_t * req)
-{
-	char *page = (char *) get_free_page (GFP_KERNEL);
-	int len;
-	if (page == NULL) {
-		return NULL;
-	}
-	len = sprintf (page, KERN_WARNING PRINTK_HEADER
-		       "device %04X on irq %d: I/O status report:\n",
-		       device->devinfo.devno, device->devinfo.irq);
 
-	return page;
-}
-
+/*
+ * max_blocks: We want to fit one CP into one page of memory so that we can 
+ * effectively use available resources.
+ * The ccw_req_t has less than 256 bytes (including safety)
+ * and diag_bio_t for each block has 16 bytes. 
+ * That makes:
+ * (4096 - 256) / 16 = 240 blocks at maximum.
+ */
 dasd_discipline_t dasd_diag_discipline = {
         owner: THIS_MODULE,
 	name:"DIAG",
 	ebcname:"DIAG",
-	max_blocks:PAGE_SIZE / sizeof (diag_bio_t),
+	max_blocks:240,
 	check_characteristics:dasd_diag_check_characteristics,
 	fill_geometry:dasd_diag_fill_geometry,
 	start_IO:dasd_start_diag,
 	examine_error:dasd_diag_examine_error,
 	build_cp_from_req:dasd_diag_build_cp_from_req,
-	dump_sense:dasd_diag_dump_sense,
 	int_handler:(void *) dasd_ext_handler,
 	fill_info:dasd_diag_fill_info,
 	list:LIST_HEAD_INIT(dasd_diag_discipline.list),

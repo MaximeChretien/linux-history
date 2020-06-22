@@ -298,6 +298,9 @@ add_window (struct acpi_resource *res, void *data)
 
 	status = acpi_resource_to_address64(res, &addr);
 	if (ACPI_SUCCESS(status)) {
+		if (!addr.address_length)
+			return AE_OK;
+
 		if (addr.resource_type == ACPI_MEMORY_RANGE) {
 			flags = IORESOURCE_MEM;
 			root = &iomem_resource;
@@ -310,13 +313,6 @@ add_window (struct acpi_resource *res, void *data)
 				return AE_OK;
 		} else
 			return AE_OK;
-
-		if (addr.min_address_range == addr.max_address_range) {
-			printk(KERN_INFO "ACPI reports bogus %s %s range 0x%lx-0x%lx; ignoring it\n",
-					info->name, root->name, addr.min_address_range + offset,
-					addr.max_address_range + offset);
-			return AE_OK;
-		}
 
 		window = &info->controller->window[info->controller->windows++];
 		window->resource.flags |= flags;
@@ -522,8 +518,6 @@ pcibios_enable_device (struct pci_dev *dev, int mask)
 	ret = pcibios_enable_resources(dev, mask);
 	if (ret < 0)
 		return ret;
-
- 	platform_pci_enable_device(dev);
 
 	printk(KERN_INFO "PCI: Found IRQ %d for device %s\n", dev->irq, dev->slot_name);
 

@@ -18,7 +18,7 @@
  *  Copyright (c) 1999-2002 LSI Logic Corporation
  *  Originally By: Steven J. Ralston
  *  (mailto:sjralston1@netscape.net)
- *  (mailto:lstephens@lsil.com)
+ *  (mailto:mpt_linux_developer@lsil.com)
  *
  *  $Id: mptscsih.h,v 1.1.2.2 2003/05/07 14:08:35 pdelaney Exp $
  */
@@ -116,12 +116,14 @@
 #define MPTSCSIH_DOMAIN_VALIDATION      1
 #define MPTSCSIH_MAX_WIDTH              1
 #define MPTSCSIH_MIN_SYNC               0x08
+#define MPTSCSIH_SAF_TE                 0
 
 struct mptscsih_driver_setup
 {
         u8      dv;
         u8      max_width;
         u8      min_sync_fac;
+        u8      saf_te;
 };
 
 
@@ -130,6 +132,7 @@ struct mptscsih_driver_setup
         MPTSCSIH_DOMAIN_VALIDATION,             \
         MPTSCSIH_MAX_WIDTH,                     \
         MPTSCSIH_MIN_SYNC,                      \
+        MPTSCSIH_SAF_TE,                        \
 }
 
 

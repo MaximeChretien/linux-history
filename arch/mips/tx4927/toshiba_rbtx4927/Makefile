@@ -13,8 +13,11 @@ O_TARGET:= toshiba_rbtx4927.o
 obj-y	+= toshiba_rbtx4927_prom.o 
 obj-y	+= toshiba_rbtx4927_setup.o 
 obj-y	+= toshiba_rbtx4927_irq.o 
+obj-y	+= toshiba_rbtx4927_led.o
+obj-y	+= toshiba_rbtx4927_nmi.o
 
 obj-$(CONFIG_PCI)	+= toshiba_rbtx4927_pci_fixup.o 
 obj-$(CONFIG_PCI)	+= toshiba_rbtx4927_pci_ops.o 
+obj-$(CONFIG_DS1742)	+= toshiba_rbtx4927_rtc.o
 
 include $(TOPDIR)/Rules.make

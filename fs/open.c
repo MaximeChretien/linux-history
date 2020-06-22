@@ -274,6 +274,9 @@ asmlinkage long sys_utime(char * filename, struct utimbuf * times)
 	/* Don't worry, the checks are done in inode_change_ok() */
 	newattrs.ia_valid = ATTR_CTIME | ATTR_MTIME | ATTR_ATIME;
 	if (times) {
+		error = -EPERM;
+		if (IS_APPEND(inode) || IS_IMMUTABLE(inode))
+			goto dput_and_out;
 		error = get_user(newattrs.ia_atime, &times->actime);
 		if (!error) 
 			error = get_user(newattrs.ia_mtime, &times->modtime);
@@ -282,6 +285,9 @@ asmlinkage long sys_utime(char * filename, struct utimbuf * times)
 
 		newattrs.ia_valid |= ATTR_ATIME_SET | ATTR_MTIME_SET;
 	} else {
+		error = -EACCES;
+		if (IS_IMMUTABLE(inode))
+			goto dput_and_out;
 		if (current->fsuid != inode->i_uid &&
 		    (error = permission(inode,MAY_WRITE)) != 0)
 			goto dput_and_out;
@@ -320,6 +326,9 @@ asmlinkage long sys_utimes(char * filename, struct timeval * utimes)
 	newattrs.ia_valid = ATTR_CTIME | ATTR_MTIME | ATTR_ATIME;
 	if (utimes) {
 		struct timeval times[2];
+		error = -EPERM;
+		if (IS_APPEND(inode) || IS_IMMUTABLE(inode))
+			goto dput_and_out;
 		error = -EFAULT;
 		if (copy_from_user(&times, utimes, sizeof(times)))
 			goto dput_and_out;
@@ -327,6 +336,10 @@ asmlinkage long sys_utimes(char * filename, struct timeval * utimes)
 		newattrs.ia_mtime = times[1].tv_sec;
 		newattrs.ia_valid |= ATTR_ATIME_SET | ATTR_MTIME_SET;
 	} else {
+		error = -EACCES;
+		if (IS_IMMUTABLE(inode))
+			goto dput_and_out;
+
 		if (current->fsuid != inode->i_uid &&
 		    (error = permission(inode,MAY_WRITE)) != 0)
 			goto dput_and_out;

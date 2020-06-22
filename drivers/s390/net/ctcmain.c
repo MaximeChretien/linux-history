@@ -1,5 +1,5 @@
 /*
- * $Id: ctcmain.c,v 1.60 2003/06/18 11:16:32 cotte Exp $
+ * $Id: ctcmain.c,v 1.63 2003/10/22 19:32:57 felfert Exp $
  *
  * CTC / ESCON network driver
  *
@@ -35,7 +35,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * RELEASE-TAG: CTC/ESCON network driver $Revision: 1.60 $
+ * RELEASE-TAG: CTC/ESCON network driver $Revision: 1.63 $
  *
  */
 
@@ -400,12 +400,14 @@ static __inline__ int ctc_test_and_set_busy(net_device *dev)
 static __inline__ void ctc_clear_busy(net_device *dev)
 {
 	clear_bit(0, &(((ctc_priv *)dev->priv)->tbusy));
-	netif_wake_queue(dev);
+	if (((ctc_priv *)dev->priv)->protocol != CTC_PROTO_LINUX_TTY)
+		netif_wake_queue(dev);
 }
 
 static __inline__ int ctc_test_and_set_busy(net_device *dev)
 {
-	netif_stop_queue(dev);
+	if (((ctc_priv *)dev->priv)->protocol != CTC_PROTO_LINUX_TTY)
+		netif_stop_queue(dev);
 	return test_and_set_bit(0, &((ctc_priv *)dev->priv)->tbusy);
 }
 
@@ -417,7 +419,7 @@ static __inline__ int ctc_test_and_set_busy(net_device *dev)
  */
 static void print_banner(void) {
 	static int printed = 0;
-	char vbuf[] = "$Revision: 1.60 $";
+	char vbuf[] = "$Revision: 1.63 $";
 	char *version = vbuf;
 
 	if (printed)
@@ -2833,7 +2835,6 @@ static int ctc_tx(struct sk_buff *skb, net_device *dev)
 		fsm_event(privptr->fsm, DEV_EVENT_START, dev);
 		if (privptr->protocol == CTC_PROTO_LINUX_TTY)
 			return -EBUSY;
-		dst_link_failure(skb);
 		dev_kfree_skb(skb);
 		privptr->stats.tx_dropped++;
 		privptr->stats.tx_errors++;
@@ -3058,7 +3059,7 @@ static ssize_t ctc_loglevel_write(struct file *file, const char *buf, size_t cou
 
 	privptr = (ctc_priv *)dev->priv;
 
-	if (count >= 3)
+	if (count >= 20)
 		return -EINVAL;
 
 	if (copy_from_user(tmp, buf, count))

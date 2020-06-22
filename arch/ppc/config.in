@@ -62,7 +62,8 @@ fi
 
 if [ "$CONFIG_40x" = "y" ]; then
     choice 'Machine Type'			\
-	 "Oak		CONFIG_OAK		\
+	 "CPCI405	CONFIG_CPCI405 		\
+	 Oak		CONFIG_OAK		\
 	 Walnut		CONFIG_WALNUT"		Walnut
 fi
 
@@ -111,13 +112,15 @@ if [ "$CONFIG_6xx" = "y" -a "$CONFIG_8260" = "n" ]; then
 	 Amiga-APUS		CONFIG_APUS		\
 	 IBM-Spruce		CONFIG_SPRUCE		\
 	 Motorola-LoPEC		CONFIG_LOPEC		\
+	 Motorola-Sandpoint	CONFIG_SANDPOINT	\
 	 Motorola-PowerPlus	CONFIG_PPLUS		\
+	 Motorola-PrPMC750	CONFIG_PRPMC750		\
 	 SBS-Palomar4		CONFIG_PAL4		\
 	 Synergy-Gemini		CONFIG_GEMINI"		CHRP/PowerMac/PReP
 fi
 
-if [ "$CONFIG_SPRUCE" = "y" ]; then
-  define_bool CONFIG_GEN550 y
+if [ "$CONFIG_SANDPOINT" = "y" ]; then
+  bool 'Enable MPC10x store gathering' CONFIG_MPC10X_STORE_GATHERING
 fi
 
 if [ "$CONFIG_LOPEC" = "y" ]; then
@@ -126,6 +129,19 @@ if [ "$CONFIG_LOPEC" = "y" ]; then
 fi
 
 if [ "$CONFIG_PPLUS" = "y" ]; then
+  define_bool CONFIG_GEN550 y
+fi
+
+if [ "$CONFIG_PRPMC750" = "y" ]; then
+  define_bool CONFIG_GEN550 y
+fi
+
+if [ "$CONFIG_SANDPOINT" = "y" ]; then
+  define_bool CONFIG_EPIC_SERIAL_MODE y
+  define_bool CONFIG_GEN550 y
+fi
+
+if [ "$CONFIG_SPRUCE" = "y" ]; then
   define_bool CONFIG_GEN550 y
 fi
 
@@ -173,6 +189,11 @@ if [ "$CONFIG_4xx" = "y" ]; then
 #
 # Set processor implementation based on board
 #
+
+  if [ "$CONFIG_CPCI405" = "y" ]; then
+    define_bool CONFIG_405GP y
+  fi
+
   if [ "$CONFIG_OAK" = "y" -o "$CONFIG_TIVO" = "y" ]; then
     define_bool CONFIG_403GCX y
   fi
@@ -270,6 +291,9 @@ if [ "$CONFIG_ADVANCED_OPTIONS" = "y" ]; then
   if [ "$CONFIG_TASK_SIZE_BOOL" = "y" ]; then
     hex "  Size of user task space" CONFIG_TASK_SIZE 0x80000000
   fi
+  if [ "$CONFIG_8xx" = "y" ]; then
+    bool "Pinned Kernel TLBs (86x ONLY)" CONFIG_PIN_TLB
+  fi
 fi
 
 if [ "$CONFIG_HIGHMEM_START_BOOL" != "y" ]; then
@@ -328,6 +352,7 @@ fi
 define_bool CONFIG_BINFMT_ELF y
 define_bool CONFIG_KERNEL_ELF y
 tristate 'Kernel support for MISC binaries' CONFIG_BINFMT_MISC
+bool 'Select task to kill on out of memory condition' CONFIG_OOM_KILLER
 
 source drivers/pci/Config.in
 
@@ -420,7 +445,6 @@ tristate 'ATA/IDE/MFM/RLL support' CONFIG_IDE
 if [ "$CONFIG_IDE" != "n" ]; then
   source drivers/ide/Config.in
 else
-  define_bool CONFIG_BLK_DEV_IDE_MODES n
   define_bool CONFIG_BLK_DEV_HD n
 fi
 endmenu

@@ -1028,11 +1028,10 @@ static void nodemgr_update_node(struct node_entry *ne, quadlet_t busoptions,
 		ne->nodeid = nodeid;
 	}
 
+	ne->generation = generation;
+
 	if (ne->busopt.generation != ((busoptions >> 4) & 0xf))
 		nodemgr_process_config_rom (ne, busoptions);
-
-	/* Since that's done, we can declare this record current */
-	ne->generation = generation;
 
 	list_for_each (lh, &ne->unit_directories) {
 		ud = list_entry (lh, struct unit_directory, node_list);

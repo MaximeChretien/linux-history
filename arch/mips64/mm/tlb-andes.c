@@ -192,7 +192,7 @@ void __init andes_tlb_init(void)
 	 *   - The entire mm handling assumes the c0_pagemask register to
 	 *     be set for 4kb pages.
 	 */
-	write_c0_pagemask(PM_4K);
+	write_c0_pagemask(PM_DEFAULT_MASK);
 	write_c0_wired(0);
 	write_c0_framemask(0);
 

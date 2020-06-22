@@ -341,7 +341,7 @@ InstructionTLBMiss:
 	beq	2f		/* If zero, don't try to find a pte */
 
 	/* We have a pte table, so load the MI_TWC with the attributes
-	 * for this page, which has only bit 31 set.
+	 * for this "segment."
 	 */
 	tophys(r21,r21)
 	ori	r21,r21,1		/* Set valid bit */
@@ -350,7 +350,7 @@ InstructionTLBMiss:
 	stw	r3, 12(r0)
 	lwz	r3, 12(r0)
 #endif
-	mtspr	MI_TWC, r21	/* Set page attributes */
+	mtspr	MI_TWC, r21	/* Set segment attributes */
 #ifdef CONFIG_8xx_CPU6
 	li	r3, 0x3b80
 	stw	r3, 12(r0)
@@ -369,8 +369,6 @@ InstructionTLBMiss:
 	 * set.  All other Linux PTE bits control the behavior
 	 * of the MMU.
 	 */
-	li	r21, 0x0600
-	andc	r20, r20, r21		/* Clear 21, 22 */
 	li	r21, 0x00f0
 	rlwimi	r20, r21, 0, 24, 28	/* Set 24-27, clear 28 */
 
@@ -463,8 +461,6 @@ DataStoreTLBMiss:
 	 * set.  All other Linux PTE bits control the behavior
 	 * of the MMU.
 	 */
-	li	r21, 0x0600
-	andc	r20, r20, r21		/* Clear 21, 22 */
 	li	r21, 0x00f0
 	rlwimi	r20, r21, 0, 24, 28	/* Set 24-27, clear 28 */
 
@@ -608,8 +604,6 @@ DataTLBError:
 	 * set.  All other Linux PTE bits control the behavior
 	 * of the MMU.
 	 */
-	li	r21, 0x0600
-	andc	r20, r20, r21		/* Clear 21, 22 */
 	li	r21, 0x00f0
 	rlwimi	r20, r21, 0, 24, 28	/* Set 24-27, clear 28 */
 

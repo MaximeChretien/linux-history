@@ -146,7 +146,7 @@ static struct raid_device_operations hptraid01_ops = {
 	make_request:		hptraid01_make_request
 };
 
-static __init struct {
+static __initdata struct {
 	struct raid_device_operations *op;
 	u_int8_t type;
 	char label[8];
