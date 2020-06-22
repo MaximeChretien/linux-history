@@ -1390,6 +1390,7 @@ int lmLogClose(struct super_block *sb, struct jfs_log * log)
 	blkdev_put(log->bdev, BDEV_FS);
 
       out:
+	kfree(log);
 	jfs_info("lmLogClose: exit(%d)", rc);
 	return rc;
 }

@@ -245,6 +245,8 @@ obj-$(CONFIG_AMD8111_ETH) += amd8111e.o mii.o
 obj-$(CONFIG_PCMCIA_SMC91C92) += mii.o
 obj-$(CONFIG_USB_USBNET) += mii.o
 
+obj-$(CONFIG_IBMVETH) += ibmveth.o
+
 ifeq ($(CONFIG_ARCH_ACORN),y)
 mod-subdirs	+= ../acorn/net
 subdir-y	+= ../acorn/net

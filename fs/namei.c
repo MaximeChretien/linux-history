@@ -583,9 +583,9 @@ last_component:
 			if (err < 0)
 				break;
 		}
-		dentry = cached_lookup(nd->dentry, &this, 0);
+		dentry = cached_lookup(nd->dentry, &this, nd->flags);
 		if (!dentry) {
-			dentry = real_lookup(nd->dentry, &this, 0);
+			dentry = real_lookup(nd->dentry, &this, nd->flags);
 			err = PTR_ERR(dentry);
 			if (IS_ERR(dentry))
 				break;

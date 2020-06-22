@@ -59,7 +59,10 @@ int acpi_sci_override_gsi __initdata;
                               Boot-time Configuration
    -------------------------------------------------------------------------- */
 
-int acpi_noirq __initdata = 0;  /* skip ACPI IRQ initialization */
+#ifdef CONFIG_ACPI_PCI
+int acpi_noirq __initdata;	/* skip ACPI IRQ initialization */
+int acpi_pci_disabled __initdata; /* skip ACPI PCI scan and IRQ initialization */
+#endif
 int acpi_ht __initdata = 1;     /* enable HT */
 
 enum acpi_irq_model_id		acpi_irq_model;
@@ -105,6 +108,35 @@ char *__acpi_map_table(unsigned long phys, unsigned long size)
 	return ((unsigned char *) base + offset);
 }
 
+#ifdef CONFIG_ACPI_MMCONFIG
+
+u32 pci_mmcfg_base_addr;
+
+static int __init 
+acpi_parse_mcfg(unsigned long phys_addr,
+		unsigned long size)
+{
+	struct acpi_table_mcfg *mcfg = NULL;
+
+	if (!phys_addr || !size)
+		return -EINVAL;
+
+	mcfg = (struct acpi_table_mcfg *) __acpi_map_table(phys_addr, size);
+	if (!mcfg) {
+		printk(KERN_WARNING PREFIX "Unable to map MCFG\n");
+		return -ENODEV;
+	}
+
+	if (mcfg->base_reserved) {
+		printk(KERN_ERR PREFIX "MMCONFIG not in low 4GB of memory\n");
+		return -ENODEV;
+	}
+
+	pci_mmcfg_base_addr = mcfg->base_address;
+
+	return 0;
+}
+#endif /* CONFIG_ACPI_MMCONFIG */
 
 #ifdef CONFIG_X86_LOCAL_APIC
 
@@ -406,6 +438,15 @@ acpi_boot_init (void)
 		return result;
 	}
 
+#ifdef CONFIG_ACPI_MMCONFIG
+	result = acpi_table_parse(ACPI_MCFG, acpi_parse_mcfg);
+	if (result < 0) {
+		printk(KERN_ERR PREFIX "Error %d parsing MCFG\n", result);
+	} else if (result > 1) {
+		printk(KERN_WARNING PREFIX "Multiple MCFG tables exist\n");
+	}
+#endif
+
 #ifdef CONFIG_X86_LOCAL_APIC
 
 	/* 
@@ -491,6 +532,11 @@ acpi_boot_init (void)
 		return 1;
         }
 
+	result = mp_irqs_alloc();	/* Dynamically allocate mp_irqs[] */
+	if (result < 0)  {
+		acpi_noirq = 1;
+		return result;
+	}
 
 	result = acpi_table_parse_madt(ACPI_MADT_IOAPIC, acpi_parse_ioapic);
 	if (!result) { 
@@ -501,9 +547,6 @@ acpi_boot_init (void)
 		printk(KERN_ERR PREFIX "Error parsing IOAPIC entry\n");
 		return result;
 	}
-
-	/* Build a default routing table for legacy (ISA) interrupts. */
-	mp_config_acpi_legacy_irqs();
 
 	/* Record sci_int for use when looking for MADT sci_int override */
 	acpi_table_parse(ACPI_FADT, acpi_parse_fadt);
@@ -521,6 +564,9 @@ acpi_boot_init (void)
 	 */
 	if (!acpi_sci_override_gsi)
 		acpi_sci_ioapic_setup(acpi_fadt.sci_int, 0, 0);
+
+	/* Fill in identity legacy mapings where no override */
+	mp_config_acpi_legacy_irqs();
 
 	result = acpi_table_parse_madt(ACPI_MADT_NMI_SRC, acpi_parse_nmi_src);
 	if (result < 0) {

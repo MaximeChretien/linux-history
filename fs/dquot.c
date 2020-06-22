@@ -397,6 +397,10 @@ restart:
 			wait_on_dquot(dquot);
 		if (dquot_dirty(dquot))
 			sb->dq_op->write_dquot(dquot);
+		/* Move the inuse_list head pointer to just after the
+		 * current dquot, so that we'll restart the list walk
+		 * after this point on the next pass. */
+		list_move(&inuse_list, &dquot->dq_inuse);
 		dqput(dquot);
 		goto restart;
 	}

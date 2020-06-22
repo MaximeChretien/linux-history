@@ -99,7 +99,7 @@ endmenu
 
 mainmenu_option next_comment
 comment 'Network testing'
-tristate 'Packet Generator (USE WITH CAUTION)' CONFIG_NET_PKTGEN
+dep_tristate 'Packet Generator (USE WITH CAUTION)' CONFIG_NET_PKTGEN $CONFIG_PROC_FS
 endmenu
 
 endmenu

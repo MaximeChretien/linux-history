@@ -14,7 +14,7 @@
 #define unlikely(x)	__builtin_expect((x),0)
 
 #if __GNUC__ > 3
-#define __attribute_used__	__attribute((__used__))
+#define __attribute_used__	__attribute__((__used__))
 #elif __GNUC__ == 3
 #if  __GNUC_MINOR__ >= 3
 # define __attribute_used__	__attribute__((__used__))
@@ -26,5 +26,16 @@
 #else
 #define __attribute_used__	/* not implemented */
 #endif /* __GNUC__ */
+
+#if __GNUC__ == 3
+#if __GNUC_MINOR__ >= 1
+# define inline         __inline__ __attribute__((always_inline))
+# define __inline__     __inline__ __attribute__((always_inline))
+# define __inline       __inline__ __attribute__((always_inline))
+#endif
+#endif
+
+/* no checker support, so we unconditionally define this as (null) */
+#define __user
 
 #endif /* __LINUX_COMPILER_H */

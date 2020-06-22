@@ -290,7 +290,7 @@ static inline struct sock *udp_v4_mcast_next(struct sock *sk,
 		    ipv6_only_sock(s)					||
 		    (s->bound_dev_if && s->bound_dev_if != dif))
 			continue;
-		if (!ip_mc_sf_allow(sk, loc_addr, rmt_addr, dif))
+		if (!ip_mc_sf_allow(s, loc_addr, rmt_addr, dif))
 			continue;
 		break;
   	}
@@ -698,7 +698,10 @@ try_again:
   	}
 	if (sk->protinfo.af_inet.cmsg_flags)
 		ip_cmsg_recv(msg, skb);
+
 	err = copied;
+	if (flags & MSG_TRUNC)
+		err = skb->len - sizeof(struct udphdr);
   
 out_free:
   	skb_free_datagram(sk, skb);

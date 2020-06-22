@@ -52,7 +52,6 @@ do {								\
 #endif
 #define SMP_ALIGN(x) (((x) + SMP_CACHE_BYTES-1) & ~(SMP_CACHE_BYTES-1))
 
-static DECLARE_MUTEX(arpt_mutex);
 
 #define ASSERT_READ_LOCK(x) ARP_NF_ASSERT(down_trylock(&arpt_mutex) != 0)
 #define ASSERT_WRITE_LOCK(x) ARP_NF_ASSERT(down_trylock(&arpt_mutex) != 0)
@@ -175,11 +174,10 @@ static inline int arp_packet_match(const struct arphdr *arphdr,
 		return 0;
 	}
 
-	/* Look for ifname matches; this should unroll nicely. */
-	for (i = 0, ret = 0; i < IFNAMSIZ/sizeof(unsigned long); i++) {
-		ret |= (((const unsigned long *)indev)[i]
-			^ ((const unsigned long *)arpinfo->iniface)[i])
-			& ((const unsigned long *)arpinfo->iniface_mask)[i];
+	/* Look for ifname matches.  */
+	for (i = 0, ret = 0; i < IFNAMSIZ; i++) {
+		ret |= (indev[i] ^ arpinfo->iniface[i])
+			& arpinfo->iniface_mask[i];
 	}
 
 	if (FWINV(ret != 0, ARPT_INV_VIA_IN)) {
@@ -380,12 +378,12 @@ find_inlist_lock(struct list_head *head,
 }
 #endif
 
-static inline struct arpt_table *find_table_lock(const char *name, int *error, struct semaphore *mutex)
+static inline struct arpt_table *arpt_find_table_lock(const char *name, int *error, struct semaphore *mutex)
 {
 	return find_inlist_lock(&arpt_tables, name, "arptable_", error, mutex);
 }
 
-static inline struct arpt_target *find_target_lock(const char *name, int *error, struct semaphore *mutex)
+struct arpt_target *arpt_find_target_lock(const char *name, int *error, struct semaphore *mutex)
 {
 	return find_inlist_lock(&arpt_target, name, "arpt_", error, mutex);
 }
@@ -535,7 +533,7 @@ static inline int check_entry(struct arpt_entry *e, const char *name, unsigned i
 	}
 
 	t = arpt_get_target(e);
-	target = find_target_lock(t->u.user.name, &ret, &arpt_mutex);
+	target = arpt_find_target_lock(t->u.user.name, &ret, &arpt_mutex);
 	if (!target) {
 		duprintf("check_entry: `%s' not found\n", t->u.user.name);
 		goto out;
@@ -834,7 +832,7 @@ static int get_entries(const struct arpt_get_entries *entries,
 	int ret;
 	struct arpt_table *t;
 
-	t = find_table_lock(entries->name, &ret, &arpt_mutex);
+	t = arpt_find_table_lock(entries->name, &ret, &arpt_mutex);
 	if (t) {
 		duprintf("t->private->number = %u\n",
 			 t->private->number);
@@ -900,7 +898,7 @@ static int do_replace(void *user, unsigned int len)
 
 	duprintf("arp_tables: Translated table\n");
 
-	t = find_table_lock(tmp.name, &ret, &arpt_mutex);
+	t = arpt_find_table_lock(tmp.name, &ret, &arpt_mutex);
 	if (!t)
 		goto free_newinfo_counters_untrans;
 
@@ -985,7 +983,7 @@ static int do_add_counters(void *user, unsigned int len)
 		goto free;
 	}
 
-	t = find_table_lock(tmp.name, &ret, &arpt_mutex);
+	t = arpt_find_table_lock(tmp.name, &ret, &arpt_mutex);
 	if (!t)
 		goto free;
 
@@ -1058,7 +1056,7 @@ static int do_arpt_get_ctl(struct sock *sk, int cmd, void *user, int *len)
 			break;
 		}
 		name[ARPT_TABLE_MAXNAMELEN-1] = '\0';
-		t = find_table_lock(name, &ret, &arpt_mutex);
+		t = arpt_find_table_lock(name, &ret, &arpt_mutex);
 		if (t) {
 			struct arpt_getinfo info;
 
@@ -1306,6 +1304,7 @@ static void __exit fini(void)
 EXPORT_SYMBOL(arpt_register_table);
 EXPORT_SYMBOL(arpt_unregister_table);
 EXPORT_SYMBOL(arpt_do_table);
+EXPORT_SYMBOL(arpt_find_target_lock);
 EXPORT_SYMBOL(arpt_register_target);
 EXPORT_SYMBOL(arpt_unregister_target);
 

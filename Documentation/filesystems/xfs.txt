@@ -123,9 +123,15 @@ The following sysctls are available for the XFS filesystem:
 	in /proc/fs/xfs/stat.  It then immediately reset to "0".
   	
   fs.xfs.sync_interval		(Min: HZ  Default: 30*HZ  Max: 60*HZ)
-	The interval at which the xfssyncd thread for xfs filesystems
-	flushes metadata out to disk. This thread will flush log
-	activity out, and do some processing on unlinked inodes
+	The interval at which the xfssyncd thread flushes metadata
+	out to disk.  This thread will flush log activity out, and
+	do some processing on unlinked inodes.
+
+  fs.xfs.age_buffer             (Min: 1*HZ  Default: 15*HZ  Max: 300*HZ)
+	The age at which xfsbufd flushes dirty metadata buffers to disk.
+
+  fs.xfs.flush_interval         (Min: HZ/2  Default: HZ  Max: 30*HZ)
+	The interval at which xfsbufd scans the dirty metadata buffers list.
 
   fs.xfs.error_level		(Min: 0  Default: 3  Max: 11)
 	A volume knob for error reporting when internal errors occur.
@@ -190,14 +196,3 @@ The following sysctls are available for the XFS filesystem:
 	Setting this to "1" will cause the "noatime" flag set 
 	by the chattr(1) command on a directory to be
 	inherited by files in that directory.
-
-  vm.pagebuf.stats_clear	(Min: 0  Default: 0  Max: 1)
-	Setting this to "1" clears accumulated pagebuf statistics 
-	in /proc/fs/pagebuf/stat.  It then immediately reset to "0".
-  	
-  vm.pagebuf.flush_age		(Min: 1*HZ  Default: 15*HZ  Max: 300*HZ)
-	The age at which dirty metadata buffers are flushed to disk
-
-  vm.pagebuf.flush_int		(Min: HZ/2  Default: HZ  Max: 30*HZ)
-	The interval at which the list of dirty metadata buffers is
-	scanned.

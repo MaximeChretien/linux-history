@@ -567,10 +567,10 @@ void __init parse_mem_cmdline (char ** cmdline_p)
 			acpi_strict = 1;
 		}
 
-		else if (!memcmp(from, "pci=noacpi", 10)) {
+		else if (!memcmp(from, "pci=noacpi", 10))
+			acpi_disable_pci();
+		else if (!memcmp(from, "acpi=noirq", 10))
 			acpi_noirq_set();
-		}
-
 		else if (!memcmp(from, "acpi_sci=edge", 13))
 			acpi_sci_flags.trigger =  1;
 		else if (!memcmp(from, "acpi_sci=level", 14))

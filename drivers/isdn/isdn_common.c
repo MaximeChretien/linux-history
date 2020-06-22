@@ -976,9 +976,13 @@ isdn_read(struct file *file, char *buf, size_t count, loff_t * off)
 	int chidx;
 	int retval;
 	char *p;
+	loff_t pos = *off;
 
 	if (off != &file->f_pos)
 		return -ESPIPE;
+
+	if (pos != (unsigned) pos)
+		return -EINVAL;
 
 	lock_kernel();
 	if (minor == ISDN_MINOR_STATUS) {
@@ -996,7 +1000,7 @@ isdn_read(struct file *file, char *buf, size_t count, loff_t * off)
 				retval = -EFAULT;
 				goto out;
 			}
-			*off += len;
+			*off = pos + len;
 			retval = len;
 			goto out;
 		}
@@ -1027,7 +1031,7 @@ isdn_read(struct file *file, char *buf, size_t count, loff_t * off)
 		cli();
 		len = isdn_readbchan(drvidx, chidx, p, 0, count,
 				     &dev->drv[drvidx]->rcv_waitq[chidx]);
-		*off += len;
+		*off = pos + len;
 		restore_flags(flags);
 		if (copy_to_user(buf,p,len)) 
 			len = -EFAULT;
@@ -1064,7 +1068,7 @@ isdn_read(struct file *file, char *buf, size_t count, loff_t * off)
 		else
 			dev->drv[drvidx]->stavail = 0;
 		restore_flags(flags);
-		*off += len;
+		*off = pos + len;
 		retval = len;
 		goto out;
 	}

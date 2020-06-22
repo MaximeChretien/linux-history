@@ -84,6 +84,7 @@ extern int exception_trace;
 #ifdef __sparc__
 extern char reboot_command [];
 extern int stop_a_enabled;
+extern int scons_pwroff;
 #endif
 
 #ifdef CONFIG_ARCH_S390
@@ -196,6 +197,8 @@ static ctl_table kern_table[] = {
 	{KERN_SPARC_REBOOT, "reboot-cmd", reboot_command,
 	 256, 0644, NULL, &proc_dostring, &sysctl_string },
 	{KERN_SPARC_STOP_A, "stop-a", &stop_a_enabled, sizeof (int),
+	 0644, NULL, &proc_dointvec},
+	{KERN_SPARC_SCONS_PWROFF, "scons-poweroff", &scons_pwroff, sizeof (int),
 	 0644, NULL, &proc_dointvec},
 #endif
 #ifdef CONFIG_PPC32

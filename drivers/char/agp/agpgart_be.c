@@ -5738,6 +5738,7 @@ static int ati_create_gatt_table(void)
 
 	if ((agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS100) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200) ||
+	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200_REV2) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200_B) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS250)) {
 		pci_read_config_dword(agp_bridge.dev, ATI_RS100_APSIZE, &temp);
@@ -5792,6 +5793,7 @@ static int ati_fetch_size(void)
 
 	if ((agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS100) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200) ||
+	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200_REV2) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200_B) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS250)) {
 		pci_read_config_dword(agp_bridge.dev, ATI_RS100_APSIZE, &temp);
@@ -5825,6 +5827,7 @@ static int ati_configure(void)
 
 	if ((agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS100) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200) ||
+	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200_REV2) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200_B) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS250)) {
         	pci_write_config_dword(agp_bridge.dev, ATI_RS100_IG_AGPMODE, 0x20000);
@@ -5863,6 +5866,7 @@ static void ati_cleanup(void)
 	/* Write back the previous size and disable gart translation */
 	if ((agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS100) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200) ||
+	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200_REV2) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS200_B) ||
 	    (agp_bridge.dev->device == PCI_DEVICE_ID_ATI_RS250)) {
 		pci_read_config_dword(agp_bridge.dev, ATI_RS100_APSIZE, &temp);
@@ -6426,6 +6430,12 @@ static struct {
 	  "ATI",
 	  "IGP330/340/345/350/M",
 	  ati_generic_setup },
+	{ PCI_DEVICE_ID_ATI_RS200_REV2,
+          PCI_VENDOR_ID_ATI,
+          ATI_RS200,
+          "ATI",
+          "IGP345M (rev 2)",
+          ati_generic_setup },
 	{ PCI_DEVICE_ID_ATI_RS200_B,
 	  PCI_VENDOR_ID_ATI,
 	  ATI_RS200,

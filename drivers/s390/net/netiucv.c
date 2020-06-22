@@ -1375,6 +1375,7 @@ netiucv_buffer_open(struct inode *inode, struct file *file)
 	file->private_data = kmalloc(CTRL_BUFSIZE, GFP_KERNEL);
 	if (file->private_data == NULL)
 		return -ENOMEM;
+	*(char *)file->private_data = '\0';
 	MOD_INC_USE_COUNT;
 	return 0;
 }
@@ -1440,6 +1441,7 @@ netiucv_buffer_read(struct file *file, char *buf, size_t count, loff_t *off)
 	netiucv_priv *privptr;
 	ssize_t ret = 0;
 	char *p = sbuf;
+	loff_t pos = *ppos;
 	int l;
 
 	if (!(dev = find_netdev_by_ino(ino)))
@@ -1449,19 +1451,20 @@ netiucv_buffer_read(struct file *file, char *buf, size_t count, loff_t *off)
 
 	privptr = (netiucv_priv *)dev->priv;
 
-	if (file->f_pos == 0)
+	if (!*sbuf || pos == 0)
 		sprintf(sbuf, "%d\n", privptr->conn->max_buffsize);
 
 	l = strlen(sbuf);
 	p = sbuf;
-	if (file->f_pos < l) {
-		p += file->f_pos;
+	if (pos == (unsigned)pos && pos < l) {
+		p += pos;
 		l = strlen(p);
 		ret = (count > l) ? l : count;
 		if (copy_to_user(buf, p, ret))
 			return -EFAULT;
 	}
-	file->f_pos += ret;
+	pos += ret;
+	*ppos = pos;
 	return ret;
 }
 
@@ -1471,6 +1474,7 @@ netiucv_user_open(struct inode *inode, struct file *file)
 	file->private_data = kmalloc(CTRL_BUFSIZE, GFP_KERNEL);
 	if (file->private_data == NULL)
 		return -ENOMEM;
+	*(char *)file->private_data = '\0';
 	MOD_INC_USE_COUNT;
 	return 0;
 }
@@ -1535,6 +1539,7 @@ netiucv_user_read(struct file *file, char *buf, size_t count, loff_t *off)
 	netiucv_priv *privptr;
 	ssize_t ret = 0;
 	char *p = sbuf;
+	loff_t pos = *ppos;
 	int l;
 
 	if (!(dev = find_netdev_by_ino(ino)))
@@ -1545,20 +1550,20 @@ netiucv_user_read(struct file *file, char *buf, size_t count, loff_t *off)
 	privptr = (netiucv_priv *)dev->priv;
 
 
-	if (file->f_pos == 0)
+	if (!*sbuf || pos == 0)
 		sprintf(sbuf, "%s\n",
 			netiucv_printname(privptr->conn->userid));
 
 	l = strlen(sbuf);
 	p = sbuf;
-	if (file->f_pos < l) {
-		p += file->f_pos;
+	if (pos == (unsigned)pos && pos < l) {
+		p += pos;
 		l = strlen(p);
 		ret = (count > l) ? l : count;
 		if (copy_to_user(buf, p, ret))
 			return -EFAULT;
+		*ppos = pos + ret;
 	}
-	file->f_pos += ret;
 	return ret;
 }
 
@@ -1570,6 +1575,7 @@ netiucv_stat_open(struct inode *inode, struct file *file)
 	file->private_data = kmalloc(STATS_BUFSIZE, GFP_KERNEL);
 	if (file->private_data == NULL)
 		return -ENOMEM;
+	*(char *)file->private_data = '\0';
 	MOD_INC_USE_COUNT;
 	return 0;
 }
@@ -1600,6 +1606,7 @@ static ssize_t
 netiucv_stat_read(struct file *file, char *buf, size_t count, loff_t *off)
 {
 	unsigned int ino = ((struct inode *)file->f_dentry->d_inode)->i_ino;
+	loff_t pos = *ppos;
 	char *sbuf = (char *)file->private_data;
 	net_device *dev;
 	netiucv_priv *privptr;
@@ -1614,7 +1621,7 @@ netiucv_stat_read(struct file *file, char *buf, size_t count, loff_t *off)
 
 	privptr = (netiucv_priv *)dev->priv;
 
-	if (file->f_pos == 0) {
+	if (!*sbuf || pos == 0) {
 		p += sprintf(p, "Device FSM state: %s\n",
 			     fsm_getstate_str(privptr->fsm));
 		p += sprintf(p, "Connection FSM state: %s\n",
@@ -1638,14 +1645,14 @@ netiucv_stat_read(struct file *file, char *buf, size_t count, loff_t *off)
 	}
 	l = strlen(sbuf);
 	p = sbuf;
-	if (file->f_pos < l) {
-		p += file->f_pos;
+	if (pos == (unsigned)pos && pos < l) {
+		p += pos;
 		l = strlen(p);
 		ret = (count > l) ? l : count;
 		if (copy_to_user(buf, p, ret))
 			return -EFAULT;
+		*ppos = pos + ret;
 	}
-	file->f_pos += ret;
 	return ret;
 }
 

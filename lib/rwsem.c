@@ -5,6 +5,7 @@
  */
 #include <linux/rwsem.h>
 #include <linux/sched.h>
+#include <linux/mm.h>
 #include <linux/module.h>
 
 struct rwsem_waiter {
@@ -38,9 +39,9 @@ void rwsemtrace(struct rw_semaphore *sem, const char *str)
 static inline struct rw_semaphore *__rwsem_do_wake(struct rw_semaphore *sem)
 {
 	struct rwsem_waiter *waiter;
+	struct task_struct *tsk;
 	struct list_head *next;
-	signed long oldcount;
-	int woken, loop;
+	signed long oldcount, woken, loop;
 
 	rwsemtrace(sem,"Entering __rwsem_do_wake");
 
@@ -60,8 +61,11 @@ static inline struct rw_semaphore *__rwsem_do_wake(struct rw_semaphore *sem)
 		goto readers_only;
 
 	list_del(&waiter->list);
-	waiter->flags = 0;
-	wake_up_process(waiter->task);
+	tsk = waiter->task;
+	mb();
+	waiter->task = NULL;
+	wake_up_process(tsk);
+	free_task_struct(tsk);
 	goto out;
 
 	/* grant an infinite number of read locks to the readers at the front of the queue
@@ -89,8 +93,11 @@ static inline struct rw_semaphore *__rwsem_do_wake(struct rw_semaphore *sem)
 	for (; loop>0; loop--) {
 		waiter = list_entry(next,struct rwsem_waiter,list);
 		next = waiter->list.next;
-		waiter->flags = 0;
-		wake_up_process(waiter->task);
+		tsk = waiter->task;
+		mb();
+		waiter->task = NULL;
+		wake_up_process(tsk);
+		free_task_struct(tsk);
 	}
 
 	sem->wait_list.next = next;
@@ -122,6 +129,7 @@ static inline struct rw_semaphore *rwsem_down_failed_common(struct rw_semaphore 
 	/* set up my own style of waitqueue */
 	spin_lock(&sem->wait_lock);
 	waiter->task = tsk;
+	get_task_struct(tsk);
 
 	list_add_tail(&waiter->list,&sem->wait_list);
 
@@ -138,7 +146,7 @@ static inline struct rw_semaphore *rwsem_down_failed_common(struct rw_semaphore 
 
 	/* wait to be given the lock */
 	for (;;) {
-		if (!waiter->flags)
+		if (!waiter->task)
 			break;
 		schedule();
 		set_task_state(tsk, TASK_UNINTERRUPTIBLE);

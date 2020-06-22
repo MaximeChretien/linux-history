@@ -118,7 +118,7 @@ xfs_init(void)
 	xfs_ili_zone = kmem_zone_init(sizeof(xfs_inode_log_item_t), "xfs_ili");
 	xfs_chashlist_zone = kmem_zone_init(sizeof(xfs_chashlist_t),
 					    "xfs_chashlist");
-	_ACL_ZONE_INIT(xfs_acl_zone, "xfs_acl");
+	xfs_acl_zone_init(xfs_acl_zone, "xfs_acl");
 
 	/*
 	 * Allocate global trace buffers.
@@ -170,6 +170,7 @@ xfs_cleanup(void)
 	xfs_cleanup_procfs();
 	xfs_sysctl_unregister();
 	xfs_refcache_destroy();
+	xfs_acl_zone_destroy(xfs_acl_zone);
 
 #ifdef XFS_DIR2_TRACE
 	ktrace_free(xfs_dir2_trace_buf);
@@ -202,7 +203,6 @@ xfs_cleanup(void)
 	kmem_cache_destroy(xfs_ifork_zone);
 	kmem_cache_destroy(xfs_ili_zone);
 	kmem_cache_destroy(xfs_chashlist_zone);
-	_ACL_ZONE_DESTROY(xfs_acl_zone);
 }
 
 /*
@@ -213,9 +213,9 @@ xfs_cleanup(void)
  */
 STATIC int
 xfs_start_flags(
+	struct vfs		*vfs,
 	struct xfs_mount_args	*ap,
-	struct xfs_mount	*mp,
-	int			ronly)
+	struct xfs_mount	*mp)
 {
 	/* Values are in BBs */
 	if ((ap->flags & XFSMNT_NOALIGN) != XFSMNT_NOALIGN) {
@@ -279,6 +279,9 @@ xfs_start_flags(
 	if (ap->flags & XFSMNT_NOALIGN)
 		mp->m_flags |= XFS_MOUNT_NOALIGN;
 
+	if (ap->flags & XFSMNT_SWALLOC)
+		mp->m_flags |= XFS_MOUNT_SWALLOC;
+
 	if (ap->flags & XFSMNT_OSYNCISOSYNC)
 		mp->m_flags |= XFS_MOUNT_OSYNCISOSYNC;
 
@@ -305,7 +308,7 @@ xfs_start_flags(
 	 * no recovery flag requires a read-only mount
 	 */
 	if (ap->flags & XFSMNT_NORECOVERY) {
-		if (!ronly) {
+		if (!(vfs->vfs_flag & VFS_RDONLY)) {
 			cmn_err(CE_WARN,
 	"XFS: tried to mount a FS read-write without recovery!");
 			return XFS_ERROR(EINVAL);
@@ -327,10 +330,12 @@ xfs_start_flags(
  */
 STATIC int
 xfs_finish_flags(
+	struct vfs		*vfs,
 	struct xfs_mount_args	*ap,
-	struct xfs_mount	*mp,
-	int			ronly)
+	struct xfs_mount	*mp)
 {
+	int			ronly = (vfs->vfs_flag & VFS_RDONLY);
+
 	/* Fail a mount where the logbuf is smaller then the log stripe */
 	if (XFS_SB_VERSION_HASLOGV2(&mp->m_sb)) {
 		if ((ap->logbufsize == -1) &&
@@ -420,7 +425,6 @@ xfs_mount(
 	struct bhv_desc		*p;
 	struct xfs_mount	*mp = XFS_BHVTOM(bhvp);
 	struct block_device	*ddev, *logdev, *rtdev;
-	int			ronly = (vfsp->vfs_flag & VFS_RDONLY);
 	int			flags = 0, error;
 
 	ddev = vfsp->vfs_super->s_bdev;
@@ -472,13 +476,13 @@ xfs_mount(
 	/*
 	 * Setup flags based on mount(2) options and then the superblock
 	 */
-	error = xfs_start_flags(args, mp, ronly);
+	error = xfs_start_flags(vfsp, args, mp);
 	if (error)
 		goto error;
 	error = xfs_readsb(mp);
 	if (error)
 		goto error;
-	error = xfs_finish_flags(args, mp, ronly);
+	error = xfs_finish_flags(vfsp, args, mp);
 	if (error) {
 		xfs_freesb(mp);
 		goto error;
@@ -535,7 +539,7 @@ xfs_unmount(
 	rvp = XFS_ITOV(rip);
 
 	if (vfsp->vfs_flag & VFS_DMI) {
-		error = XFS_SEND_NAMESP(mp, DM_EVENT_PREUNMOUNT,
+		error = XFS_SEND_PREUNMOUNT(mp, vfsp,
 				rvp, DM_RIGHT_NULL, rvp, DM_RIGHT_NULL,
 				NULL, NULL, 0, 0,
 				(mp->m_dmevmask & (1<<DM_EVENT_PREUNMOUNT))?
@@ -624,7 +628,7 @@ xfs_mntupdate(
 
 	if (*flags & MS_RDONLY) {
 		xfs_refcache_purge_mp(mp);
-		pagebuf_delwri_flush(mp->m_ddev_targp, 0, NULL);
+		xfs_flush_buftarg(mp->m_ddev_targp, 0);
 		xfs_finish_reclaim_all(mp, 0);
 
 		/* This loop must run at least twice.
@@ -636,9 +640,11 @@ xfs_mntupdate(
 		 */ 
 		do {
 			VFS_SYNC(vfsp, REMOUNT_READONLY_FLAGS, NULL, error);
-			pagebuf_delwri_flush(mp->m_ddev_targp, PBDF_WAIT,
-								&pincount);
-			if(0 == pincount) { delay(50); count++; }
+			pincount = xfs_flush_buftarg(mp->m_ddev_targp, 1);
+			if (!pincount) {
+				delay(50);
+				count++;
+			}
 		} while (count < 2);
 
 		/* Ok now write out an unmount record */
@@ -1609,6 +1615,7 @@ xfs_vget(
 #define MNTOPT_WSYNC	"wsync"		/* safe-mode nfs compatible mount */
 #define MNTOPT_INO64	"ino64"		/* force inodes into 64-bit range */
 #define MNTOPT_NOALIGN	"noalign"	/* turn off stripe alignment */
+#define MNTOPT_SWALLOC	"swalloc"	/* turn on stripe width allocation */
 #define MNTOPT_SUNIT	"sunit"		/* data volume stripe unit */
 #define MNTOPT_SWIDTH	"swidth"	/* data volume stripe width */
 #define MNTOPT_NOUUID	"nouuid"	/* ignore filesystem UUID */
@@ -1716,6 +1723,8 @@ xfs_parseargs(
 #endif
 		} else if (!strcmp(this_char, MNTOPT_NOALIGN)) {
 			args->flags |= XFSMNT_NOALIGN;
+		} else if (!strcmp(this_char, MNTOPT_SWALLOC)) {
+			args->flags |= XFSMNT_SWALLOC;
 		} else if (!strcmp(this_char, MNTOPT_SUNIT)) {
 			if (!value || !*value) {
 				printk("XFS: %s option requires an argument\n",
@@ -1810,6 +1819,7 @@ xfs_showargs(
 		{ XFS_MOUNT_WSYNC,		"," MNTOPT_WSYNC },
 		{ XFS_MOUNT_INO64,		"," MNTOPT_INO64 },
 		{ XFS_MOUNT_NOALIGN,		"," MNTOPT_NOALIGN },
+		{ XFS_MOUNT_SWALLOC,		"," MNTOPT_SWALLOC },
 		{ XFS_MOUNT_NOUUID,		"," MNTOPT_NOUUID },
 		{ XFS_MOUNT_NORECOVERY,		"," MNTOPT_NORECOVERY },
 		{ XFS_MOUNT_OSYNCISOSYNC,	"," MNTOPT_OSYNCISOSYNC },

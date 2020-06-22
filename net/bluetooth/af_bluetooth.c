@@ -27,7 +27,7 @@
  *
  * $Id: af_bluetooth.c,v 1.8 2002/07/22 20:32:54 maxk Exp $
  */
-#define VERSION "2.3"
+#define VERSION "2.4"
 
 #include <linux/config.h>
 #include <linux/module.h>
@@ -57,7 +57,7 @@
 #endif
 
 /* Bluetooth sockets */
-#define BLUEZ_MAX_PROTO	6
+#define BLUEZ_MAX_PROTO	7
 static struct net_proto_family *bluez_proto[BLUEZ_MAX_PROTO];
 
 int bluez_sock_register(int proto, struct net_proto_family *ops)

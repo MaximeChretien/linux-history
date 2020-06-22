@@ -395,6 +395,25 @@ static __inline__ int tcp_sk_listen_hashfn(struct sock *sk)
 # define TCP_TW_RECYCLE_TICK (12+2-TCP_TW_RECYCLE_SLOTS_LOG)
 #endif
 
+#define BICTCP_1_OVER_BETA	8	/*
+					 * Fast recovery
+					 * multiplicative decrease factor
+					 */
+#define BICTCP_MAX_INCREMENT 32		/*
+					 * Limit on the amount of
+					 * increment allowed during
+					 * binary search.
+					 */
+#define BICTCP_FUNC_OF_MIN_INCR 11	/*
+					 * log(B/Smin)/log(B/(B-1))+1,
+					 * Smin:min increment
+					 * B:log factor
+					 */
+#define BICTCP_B		4	 /*
+					  * In binary search,
+					  * go to point (max+min)/N
+					  */
+
 /*
  *	TCP option
  */
@@ -464,6 +483,16 @@ extern int sysctl_tcp_tw_reuse;
 extern int sysctl_tcp_frto;
 extern int sysctl_tcp_low_latency;
 extern int sysctl_tcp_westwood;
+extern int sysctl_tcp_vegas_cong_avoid;
+extern int sysctl_tcp_vegas_alpha;
+extern int sysctl_tcp_vegas_beta;
+extern int sysctl_tcp_vegas_gamma;
+extern int sysctl_tcp_nometrics_save;
+extern int sysctl_tcp_bic;
+extern int sysctl_tcp_bic_fast_convergence;
+extern int sysctl_tcp_bic_low_window;
+extern int sysctl_tcp_default_win_scale;
+extern int sysctl_tcp_moderate_rcvbuf;
 
 extern atomic_t tcp_memory_allocated;
 extern atomic_t tcp_sockets_allocated;
@@ -659,6 +688,8 @@ extern int			tcp_rcv_established(struct sock *sk,
 						    struct sk_buff *skb,
 						    struct tcphdr *th, 
 						    unsigned len);
+
+extern void			tcp_rcv_space_adjust(struct sock *sk);
 
 enum tcp_ack_state_t
 {
@@ -1081,12 +1112,84 @@ static __inline__ unsigned int tcp_packets_in_flight(struct tcp_opt *tp)
 
 /* Recalculate snd_ssthresh, we want to set it to:
  *
+ * Reno:
  * 	one half the current congestion window, but no
  *	less than two segments
+ *
+ * BIC:
+ *	behave like Reno until low_window is reached,
+ *	then increase congestion window slowly
  */
 static inline __u32 tcp_recalc_ssthresh(struct tcp_opt *tp)
 {
+	if (sysctl_tcp_bic) {
+		if (sysctl_tcp_bic_fast_convergence &&
+		    tp->snd_cwnd < tp->bictcp.last_max_cwnd)
+			tp->bictcp.last_max_cwnd
+				= (tp->snd_cwnd * (2*BICTCP_1_OVER_BETA-1))
+				/ (BICTCP_1_OVER_BETA/2);
+		else
+			tp->bictcp.last_max_cwnd = tp->snd_cwnd;
+
+		if (tp->snd_cwnd > sysctl_tcp_bic_low_window)
+			return max(tp->snd_cwnd - (tp->snd_cwnd/BICTCP_1_OVER_BETA),
+				   2U);
+	}
+
 	return max(tp->snd_cwnd >> 1U, 2U);
+}
+
+/* Stop taking Vegas samples for now. */
+#define tcp_vegas_disable(__tp)	((__tp)->vegas.doing_vegas_now = 0)
+
+/* Is this TCP connection using Vegas (regardless of whether it is taking
+ * Vegas measurements at the current time)?
+ */
+#define tcp_is_vegas(__tp)	((__tp)->vegas.do_vegas)
+    
+static inline void tcp_vegas_enable(struct tcp_opt *tp)
+{
+	/* There are several situations when we must "re-start" Vegas:
+	 *
+	 *  o when a connection is established
+	 *  o after an RTO
+	 *  o after fast recovery
+	 *  o when we send a packet and there is no outstanding
+	 *    unacknowledged data (restarting an idle connection)
+	 *
+	 * In these circumstances we cannot do a Vegas calculation at the
+	 * end of the first RTT, because any calculation we do is using
+	 * stale info -- both the saved cwnd and congestion feedback are
+	 * stale.
+	 *
+	 * Instead we must wait until the completion of an RTT during
+	 * which we actually receive ACKs.
+	 */
+    
+	/* Begin taking Vegas samples next time we send something. */
+	tp->vegas.doing_vegas_now = 1;
+     
+	/* Set the beginning of the next send window. */
+	tp->vegas.beg_snd_nxt = tp->snd_nxt;
+
+	tp->vegas.cntRTT = 0;
+	tp->vegas.minRTT = 0x7fffffff;
+}
+
+/* Should we be taking Vegas samples right now? */
+#define tcp_vegas_enabled(__tp)	((__tp)->vegas.doing_vegas_now)
+
+extern void tcp_vegas_init(struct tcp_opt *tp);
+
+static inline void tcp_set_ca_state(struct tcp_opt *tp, u8 ca_state)
+{
+	if (tcp_is_vegas(tp)) {
+		if (ca_state == TCP_CA_Open) 
+			tcp_vegas_enable(tp);
+		else
+			tcp_vegas_disable(tp);
+	}
+	tp->ca_state = ca_state;
 }
 
 /* If cwnd > ssthresh, we may raise ssthresh to be half-way to cwnd.
@@ -1148,7 +1251,7 @@ static inline void tcp_enter_cwr(struct tcp_opt *tp)
 	tp->prior_ssthresh = 0;
 	if (tp->ca_state < TCP_CA_CWR) {
 		__tcp_enter_cwr(tp);
-		tp->ca_state = TCP_CA_CWR;
+		tcp_set_ca_state(tp, TCP_CA_CWR);
 	}
 }
 
@@ -1531,6 +1634,9 @@ static inline void tcp_select_initial_window(int __space, __u32 mss,
 		if (*rcv_wscale && sysctl_tcp_app_win && space>=mss &&
 		    space - max((space>>sysctl_tcp_app_win), mss>>*rcv_wscale) < 65536/2)
 			(*rcv_wscale)--;
+
+		*rcv_wscale = max((__u8)sysctl_tcp_default_win_scale,
+				  *rcv_wscale);
 	}
 
 	/* Set initial window to value enough for senders,

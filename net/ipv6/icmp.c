@@ -595,6 +595,7 @@ int icmpv6_rcv(struct sk_buff *skb)
 		break;
 
 	case ICMPV6_MGM_REDUCTION:
+	case ICMPV6_MLD2_REPORT:
 		break;
 
 	default:

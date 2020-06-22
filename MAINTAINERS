@@ -113,6 +113,12 @@ M:	jgarzik@pobox.com
 W:	http://sourceforge.net/projects/gkernel/
 S:	Maintained
 
+8169 10/100/1000 GIGABIT ETHERNET DRIVER
+P:	Francois Romieu
+M:	romieu@fr.zoreil.com
+L:	netdev@oss.sgi.com
+S:	Maintained
+
 8250/16?50 (AND CLONE UARTS) SERIAL DRIVER
 P:	Theodore Ts'o
 M:	tytso@mit.edu
@@ -328,6 +334,8 @@ P:	Maxim Krasnyansky
 M:	maxk@qualcomm.com
 L:	bluez-devel@lists.sf.net
 W:	http://bluez.sf.net
+W:	http://www.bluez.org
+W:	http://www.holtmann.org/linux/bluetooth/
 S:	Maintained
 
 BLUETOOTH RFCOMM LAYER
@@ -335,7 +343,6 @@ P:	Marcel Holtmann
 M:	marcel@holtmann.org
 P:	Maxim Krasnyansky
 M:	maxk@qualcomm.com
-W:	http://bluez.sf.net
 S:	Maintained
 
 BLUETOOTH BNEP LAYER
@@ -343,21 +350,11 @@ P:	Marcel Holtmann
 M:	marcel@holtmann.org
 P:	Maxim Krasnyansky
 M:	maxk@qualcomm.com
-W:	http://bluez.sf.net
 S:	Maintained
 
 BLUETOOTH CMTP LAYER
 P:	Marcel Holtmann
 M:	marcel@holtmann.org
-W:	http://www.holtmann.org/linux/bluetooth/
-S:	Maintained
-
-BLUETOOTH HCI USB DRIVER
-P:	Marcel Holtmann
-M:	marcel@holtmann.org
-P:	Maxim Krasnyansky
-M:	maxk@qualcomm.com
-W:	http://bluez.sf.net
 S:	Maintained
 
 BLUETOOTH HCI UART DRIVER
@@ -365,43 +362,48 @@ P:	Marcel Holtmann
 M:	marcel@holtmann.org
 P:	Maxim Krasnyansky
 M:	maxk@qualcomm.com
-W:	http://bluez.sf.net
+S:	Maintained
+
+BLUETOOTH HCI USB DRIVER
+P:	Marcel Holtmann
+M:	marcel@holtmann.org
+P:	Maxim Krasnyansky
+M:	maxk@qualcomm.com
+S:	Maintained
+
+BLUETOOTH HCI BCM203X DRIVER
+P:	Marcel Holtmann
+M:	marcel@holtmann.org
 S:	Maintained
 
 BLUETOOTH HCI BFUSB DRIVER
 P:	Marcel Holtmann
 M:	marcel@holtmann.org
-W:	http://www.holtmann.org/linux/bluetooth/
 S:	Maintained
 
 BLUETOOTH HCI DTL1 DRIVER
 P:	Marcel Holtmann
 M:	marcel@holtmann.org
-W:	http://www.holtmann.org/linux/bluetooth/
 S:	Maintained
 
 BLUETOOTH HCI BLUECARD DRIVER
 P:	Marcel Holtmann
 M:	marcel@holtmann.org
-W:	http://www.holtmann.org/linux/bluetooth/
 S:	Maintained
 
 BLUETOOTH HCI BT3C DRIVER
 P:	Marcel Holtmann
 M:	marcel@holtmann.org
-W:	http://www.holtmann.org/linux/bluetooth/
 S:	Maintained
 
 BLUETOOTH HCI BTUART DRIVER
 P:	Marcel Holtmann
 M:	marcel@holtmann.org
-W:	http://www.holtmann.org/linux/bluetooth/
 S:	Maintained
 
 BLUETOOTH HCI VHCI DRIVER
 P:	Maxim Krasnyansky
 M:	maxk@qualcomm.com
-W:	http://bluez.sf.net
 S:	Maintained
 
 BONDING DRIVER
@@ -954,11 +956,21 @@ P:	Tigran Aivazian
 M:	tigran@veritas.com
 S:	Maintained
 
+INTEL PRO/100 ETHERNET SUPPORT
+P:	John Ronciak
+M:	john.ronciak@intel.com
+P:	Ganesh Venkatesan
+M:	Ganesh.Venkatesan@intel.com
+W:	http://sourceforge.net/projects/e1000/
+S:	Supported
+
 INTEL PRO/1000 GIGABIT ETHERNET SUPPORT
 P:	Jeb Cramer
 M:	cramerj@intel.com
-P:	Scott Feldman
-M:	scott.feldman@intel.com
+P:	John Ronciak
+M:	john.ronciak@intel.com
+P:	Ganesh Venkatesan
+M:	Ganesh.Venkatesan@intel.com
 W:	http://sourceforge.net/projects/e1000/
 S:	Supported
 
@@ -1141,11 +1153,14 @@ M:	groudier@free.fr
 L:	linux-scsi@vger.kernel.org
 S:	Maintained
 
-M68K
-P:	Jes Sorensen
-M:	jes@trained-monkey.org
-W:	http://www.clark.net/pub/lawrencc/linux/index.html
+M68K ARCHITECTURE
+P:	Geert Uytterhoeven
+M:	geert@linux-m68k.org
+P:	Roman Zippel
+M:	zippel@linux-m68k.org
 L:	linux-m68k@lists.linux-m68k.org
+W:	http://www.linux-m68k.org/
+W:	http://linux-m68k-cvs.ubb.ca/
 S:	Maintained
 
 M68K ON APPLE MACINTOSH
@@ -1306,6 +1321,8 @@ P:	James Morris
 M:	jmorris@intercode.com.au
 P:	Hideaki YOSHIFUJI
 M:	yoshfuji@linux-ipv6.org
+P:	Patrick McHardy
+M:	kaber@coreworks.de
 L:	netdev@oss.sgi.com
 S:	Maintained
 
@@ -1636,6 +1653,12 @@ SCx200 CPU SUPPORT
 P:	Christer Weinigel
 M:	christer@weinigel.se
 W:	http://www.weinigel.se
+S:	Supported
+
+SERIAL ATA (SATA) SUBSYSTEM:
+P:	Jeff Garzik
+M:	jgarzik@pobox.com
+L:	linux-ide@vger.kernel.org
 S:	Supported
 
 SGI VISUAL WORKSTATION 320 AND 540
@@ -2161,7 +2184,7 @@ S:	Maintained
 
 XFS FILESYSTEM
 P:	Silicon Graphics Inc
-M:	owner-xfs@oss.sgi.com
+M:	xfs-masters@oss.sgi.com
 M:	nathans@sgi.com
 L:	linux-xfs@oss.sgi.com
 W:	http://oss.sgi.com/projects/xfs

@@ -152,3 +152,5 @@ void unregister_snap_client(unsigned char *desc)
 
 	restore_flags(flags);
 }
+
+MODULE_LICENSE("GPL");

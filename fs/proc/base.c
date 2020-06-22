@@ -337,6 +337,7 @@ static ssize_t proc_info_read(struct file * file, char * buf,
 	ssize_t length;
 	ssize_t end;
 	struct task_struct *task = inode->u.proc_i.task;
+	loff_t pos = *ppos;
 
 	if (count > PROC_BLOCK_SIZE)
 		count = PROC_BLOCK_SIZE;
@@ -350,14 +351,14 @@ static ssize_t proc_info_read(struct file * file, char * buf,
 		return length;
 	}
 	/* Static 4kB (or whatever) block capacity */
-	if (*ppos >= length) {
+	if (pos < 0 || pos >= length) {
 		free_page(page);
 		return 0;
 	}
-	if (count + *ppos > length)
-		count = length - *ppos;
-	end = count + *ppos;
-	copy_to_user(buf, (char *) page + *ppos, count);
+	if (count > length - pos)
+		count = length - pos;
+	end = count + pos;
+	copy_to_user(buf, (char *) page + pos, count);
 	*ppos = end;
 	free_page(page);
 	return count;
@@ -883,8 +884,8 @@ static struct dentry *proc_lookupfd(struct inode * dir, struct dentry * dentry)
 	return NULL;
 
 out_unlock2:
-	put_files_struct(files);
 	read_unlock(&files->file_lock);
+	put_files_struct(files);
 out_unlock:
 	iput(inode);
 out:

@@ -128,6 +128,7 @@ enum
 	KERN_PPC_L3CR=57,       /* l3cr register on PPC */
 	KERN_EXCEPTION_TRACE=58, /* boolean: exception trace */
  	KERN_CORE_SETUID=59,	/* int: set to allow core dumps of setuid apps */
+	KERN_SPARC_SCONS_PWROFF=64, /* int: serial console power-off halt */
 };
 
 
@@ -314,6 +315,16 @@ enum
 	NET_IPV4_IPFRAG_SECRET_INTERVAL=94,
 	NET_TCP_WESTWOOD=95,
 	NET_IPV4_IGMP_MAX_MSF=96,
+	NET_TCP_NO_METRICS_SAVE=97,
+	NET_TCP_VEGAS=98,
+	NET_TCP_VEGAS_ALPHA=99,
+	NET_TCP_VEGAS_BETA=100,
+	NET_TCP_VEGAS_GAMMA=101,
+ 	NET_TCP_BIC=102,
+ 	NET_TCP_BIC_FAST_CONVERGENCE=103,
+	NET_TCP_BIC_LOW_WINDOW=104,
+	NET_TCP_DEFAULT_WIN_SCALE=105,
+	NET_TCP_MODERATE_RCVBUF=106,
 };
 
 enum {
@@ -554,6 +565,7 @@ enum {
 	NET_SCTP_PRESERVE_ENABLE         = 11,
 	NET_SCTP_MAX_BURST               = 12,
 	NET_SCTP_ADDIP_ENABLE            = 13,
+	NET_SCTP_PRSCTP_ENABLE           = 14,
 };
 /* /proc/sys/net/khttpd/ */
 enum {

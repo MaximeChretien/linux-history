@@ -338,11 +338,13 @@ static int rfcomm_release_dev(unsigned long arg)
 
 	BT_DBG("dev_id %id flags 0x%x", req.dev_id, req.flags);
 
-	if (!capable(CAP_NET_ADMIN))
-		return -EPERM;
-
 	if (!(dev = rfcomm_dev_get(req.dev_id)))
 		return -ENODEV;
+
+	if (dev->flags != NOCAP_FLAGS && !capable(CAP_NET_ADMIN)) {
+		rfcomm_dev_put(dev);
+		return -EPERM;
+	}
 
 	if (req.flags & (1 << RFCOMM_HANGUP_NOW))
 		rfcomm_dlc_close(dev->dlc, 0);

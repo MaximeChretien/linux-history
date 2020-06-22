@@ -501,6 +501,9 @@ static int usb_stor_control_thread(void * __us)
  * strucuture is current.  This includes the ep_int field, which gives us
  * the endpoint for the interrupt.
  * Returns non-zero on failure, zero on success
+ *
+ * ss->dev_semaphore is expected taken, except for a newly minted,
+ * unregistered device.
  */ 
 static int usb_stor_allocate_irq(struct us_data *ss)
 {
@@ -510,13 +513,9 @@ static int usb_stor_allocate_irq(struct us_data *ss)
 
 	US_DEBUGP("Allocating IRQ for CBI transport\n");
 
-	/* lock access to the data structure */
-	down(&(ss->irq_urb_sem));
-
 	/* allocate the URB */
 	ss->irq_urb = usb_alloc_urb(0);
 	if (!ss->irq_urb) {
-		up(&(ss->irq_urb_sem));
 		US_DEBUGP("couldn't allocate interrupt URB");
 		return 1;
 	}
@@ -537,12 +536,9 @@ static int usb_stor_allocate_irq(struct us_data *ss)
 	US_DEBUGP("usb_submit_urb() returns %d\n", result);
 	if (result) {
 		usb_free_urb(ss->irq_urb);
-		up(&(ss->irq_urb_sem));
 		return 2;
 	}
 
-	/* unlock the data structure and return success */
-	up(&(ss->irq_urb_sem));
 	return 0;
 }
 
@@ -772,7 +768,6 @@ static void * storage_probe(struct usb_device *dev, unsigned int ifnum,
 		init_completion(&(ss->notify));
 		init_MUTEX_LOCKED(&(ss->ip_waitq));
 		spin_lock_init(&(ss->queue_exclusion));
-		init_MUTEX(&(ss->irq_urb_sem));
 		init_MUTEX(&(ss->current_urb_sem));
 		init_MUTEX(&(ss->dev_semaphore));
 
@@ -1063,7 +1058,6 @@ static void storage_disconnect(struct usb_device *dev, void *ptr)
 	down(&(ss->dev_semaphore));
 
 	/* release the IRQ, if we have one */
-	down(&(ss->irq_urb_sem));
 	if (ss->irq_urb) {
 		US_DEBUGP("-- releasing irq URB\n");
 		result = usb_unlink_urb(ss->irq_urb);
@@ -1071,7 +1065,6 @@ static void storage_disconnect(struct usb_device *dev, void *ptr)
 		usb_free_urb(ss->irq_urb);
 		ss->irq_urb = NULL;
 	}
-	up(&(ss->irq_urb_sem));
 
 	/* free up the main URB for this device */
 	US_DEBUGP("-- releasing main URB\n");

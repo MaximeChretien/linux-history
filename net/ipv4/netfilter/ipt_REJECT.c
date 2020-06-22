@@ -126,12 +126,8 @@ static void send_reset(struct sk_buff *oldskb, int hook)
 	nskb->dst = &rt->u.dst;
 
 	/* This packet will not be the same as the other: clear nf fields */
-	nf_conntrack_put(nskb->nfct);
-	nskb->nfct = NULL;
+	nf_reset(nskb);
 	nskb->nfcache = 0;
-#ifdef CONFIG_NETFILTER_DEBUG
-	nskb->nf_debug = 0;
-#endif
 	nskb->nfmark = 0;
 
 	tcph = (struct tcphdr *)((u_int32_t*)nskb->nh.iph + nskb->nh.iph->ihl);

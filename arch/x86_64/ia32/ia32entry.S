@@ -71,7 +71,7 @@ ia32_tracesys:
 	movq %rsp,%rdi        /* &pt_regs -> arg1 */
 	call syscall_trace
 	LOAD_ARGS ARGOFFSET  /* reload args from stack in case ptrace changed it */
-	addq $ARGOFFSET,%rsp	
+	RESTORE_REST
 	cmpl $(IA32_NR_syscalls),%eax
 	jae  1f
 	IA32_ARG_FIXUP
@@ -81,7 +81,7 @@ ia32_tracesys_end:
 1:	SAVE_REST
 	movq %rsp,%rdi		/* &pt_regs -> arg1 */ 
 	call syscall_trace
-	addq $ARGOFFSET,%rsp
+	RESTORE_REST
 	jmp int_ret_from_sys_call
 		
 ia32_badsys:

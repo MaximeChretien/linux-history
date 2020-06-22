@@ -89,7 +89,6 @@ typedef struct {
 static ulog_buff_t ulog_buffers[ULOG_MAXNLGROUPS];	/* array of buffers */
 
 static struct sock *nflognl;	/* our socket */
-static size_t qlen;		/* current length of multipart-nlmsg */
 DECLARE_LOCK(ulog_lock);	/* spinlock */
 
 /* send one ulog_buff_t to userspace */
@@ -108,7 +107,7 @@ static void ulog_send(unsigned int nlgroupnum)
 
 	NETLINK_CB(ub->skb).dst_groups = (1 << nlgroupnum);
 	DEBUGP("ipt_ULOG: throwing %d packets to netlink mask %u\n",
-		ub->qlen, nlgroup);
+		ub->qlen, nlgroupnum);
 	netlink_broadcast(nflognl, ub->skb, 0, (1 << nlgroupnum), GFP_ATOMIC);
 
 	ub->qlen = 0;
@@ -118,7 +117,7 @@ static void ulog_send(unsigned int nlgroupnum)
 }
 
 
-/* timer function to flush queue in ULOG_FLUSH_INTERVAL time */
+/* timer function to flush queue in flushtimeout time */
 static void ulog_timer(unsigned long data)
 {
 	DEBUGP("ipt_ULOG: timer function called, calling ulog_send\n");
@@ -246,18 +245,19 @@ static unsigned int ipt_ulog_target(struct sk_buff **pskb,
 		ub->lastnlh->nlmsg_flags |= NLM_F_MULTI;
 	}
 
-	/* if threshold is reached, send message to userspace */
-	if (qlen >= loginfo->qthreshold) {
-		if (loginfo->qthreshold > 1)
-			nlh->nlmsg_type = NLMSG_DONE;
-	}
-
 	ub->lastnlh = nlh;
 
 	/* if timer isn't already running, start it */
 	if (!timer_pending(&ub->timer)) {
 		ub->timer.expires = jiffies + flushtimeout;
 		add_timer(&ub->timer);
+	}
+
+	/* if threshold is reached, send message to userspace */
+	if (ub->qlen >= loginfo->qthreshold) {
+		if (loginfo->qthreshold > 1)
+			nlh->nlmsg_type = NLMSG_DONE;
+		ulog_send(groupnum);
 	}
 
 	UNLOCK_BH(&ulog_lock);

@@ -490,6 +490,7 @@ CONFIG_FONT_8x16=y
 # CONFIG_SH64_PAGE_TABLE_AUDIT is not set
 # CONFIG_SH64_PROC_TLB is not set
 # CONFIG_SH64_PROC_ASIDS is not set
+# CONFIG_SH64_SR_WATCH is not set
 
 #
 # Library routines

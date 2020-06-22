@@ -35,6 +35,8 @@
 #define to_cycles(ns)	((ns)/120)
 #define to_ns(cycles)	((cycles)*120)
 
+static int override_bios;
+
 /*
  * Generate easy-to-use ways of reading a cardbus sockets
  * regular memory space ("cb_xxx"), configuration space
@@ -753,7 +755,7 @@ static void yenta_allocate_res(pci_socket_t *socket, int nr, unsigned type)
 
 	start = config_readl(socket, offset) & mask;
 	end = config_readl(socket, offset+4) | ~mask;
-	if (start && end > start) {
+	if (start && end > start && !override_bios) {
 		res->start = start;
 		res->end = end;
 		if (request_resource(root, res) == 0)
@@ -950,6 +952,9 @@ static int yenta_open(pci_socket_t *socket)
 
 	return 0;
 }
+  
+MODULE_PARM (override_bios, "i");
+MODULE_PARM_DESC (override_bios, "yenta ignore bios resource allocation");
 
 /*
  * Standard plain cardbus - no frills, no extensions

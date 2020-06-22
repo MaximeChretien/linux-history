@@ -736,6 +736,8 @@ static ssize_t br2684_proc_read(struct file *file, char *buf, size_t count,
 {
 	unsigned long page;
 	int len = 0, x, left;
+	loff_t n = *pos;
+
 	page = get_free_page(GFP_KERNEL);
 	if (!page)
 		return -ENOMEM;
@@ -744,7 +746,7 @@ static ssize_t br2684_proc_read(struct file *file, char *buf, size_t count,
 		left = count;
 	read_lock(&devs_lock);
 	for (;;) {
-		x = br2684_proc_engine(*pos, &((char *) page)[len]);
+		x = br2684_proc_engine(n, &((char *) page)[len]);
 		if (x == 0)
 			break;
 		if (x > left)
@@ -759,11 +761,12 @@ static ssize_t br2684_proc_read(struct file *file, char *buf, size_t count,
 		}
 		len += x;
 		left -= x;
-		(*pos)++;
+		n++;
 		if (left < 256)
 			break;
 	}
 	read_unlock(&devs_lock);
+	*pos = n;
 	if (len > 0 && copy_to_user(buf, (char *) page, len))
 		len = -EFAULT;
 	free_page(page);

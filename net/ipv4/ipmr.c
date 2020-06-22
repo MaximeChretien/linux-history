@@ -1097,10 +1097,7 @@ static void ip_encap(struct sk_buff *skb, u32 saddr, u32 daddr)
 	skb->h.ipiph = skb->nh.iph;
 	skb->nh.iph = iph;
 	memset(&(IPCB(skb)->opt), 0, sizeof(IPCB(skb)->opt));
-#ifdef CONFIG_NETFILTER
-	nf_conntrack_put(skb->nfct);
-	skb->nfct = NULL;
-#endif
+	nf_reset(skb);
 }
 
 static inline int ipmr_forward_finish(struct sk_buff *skb)
@@ -1446,10 +1443,7 @@ int pim_rcv_v1(struct sk_buff * skb)
 	skb->dst = NULL;
 	((struct net_device_stats*)reg_dev->priv)->rx_bytes += skb->len;
 	((struct net_device_stats*)reg_dev->priv)->rx_packets++;
-#ifdef CONFIG_NETFILTER
-	nf_conntrack_put(skb->nfct);
-	skb->nfct = NULL;
-#endif
+	nf_reset(skb);
 	netif_rx(skb);
 	dev_put(reg_dev);
 	return 0;
@@ -1513,10 +1507,7 @@ int pim_rcv(struct sk_buff * skb)
 	((struct net_device_stats*)reg_dev->priv)->rx_bytes += skb->len;
 	((struct net_device_stats*)reg_dev->priv)->rx_packets++;
 	skb->dst = NULL;
-#ifdef CONFIG_NETFILTER
-	nf_conntrack_put(skb->nfct);
-	skb->nfct = NULL;
-#endif
+	nf_reset(skb);
 	netif_rx(skb);
 	dev_put(reg_dev);
 	return 0;

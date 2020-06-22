@@ -21,6 +21,8 @@ endmenu
 mainmenu_option next_comment
 comment 'General setup'
 
+source drivers/i2c/Config.in
+
 tristate 'UltraSPARC-III bootbus i2c controller driver' CONFIG_BBC_I2C
 
 define_bool CONFIG_VT y

@@ -15,6 +15,7 @@
 #include <linux/proc_fs.h>
 #include <linux/version.h>
 #include <linux/module.h>
+#include <net/ip.h>
 #include <net/route.h>
 
 #define ASSERT_READ_LOCK(x) MUST_BE_READ_LOCKED(&ip_conntrack_lock)

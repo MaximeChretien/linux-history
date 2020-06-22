@@ -4655,15 +4655,17 @@ dasd_generic_read (struct file *file, char *user_buf, size_t user_len,
 		   loff_t * offset)
 {
 	loff_t len;
+	loff_t n = *offset;
+	unsigned pos = n;
 	tempinfo_t *p_info = (tempinfo_t *) file->private_data;
 
-	if (*offset >= p_info->len) {
+	if (n != pos || pos >= p_info->len) {
 		return 0;	/* EOF */
 	} else {
-		len = MIN (user_len, (p_info->len - *offset));
-		if (copy_to_user (user_buf, &(p_info->data[*offset]), len))
+		len = MIN (user_len, (p_info->len - pos));
+		if (copy_to_user (user_buf, &(p_info->data[pos]), len))
 			return -EFAULT;
-		(*offset) += len;
+		*offset = pos + len;
 		return len;	/* number of bytes "read" */
 	}
 }

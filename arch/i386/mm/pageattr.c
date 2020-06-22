@@ -52,11 +52,9 @@ static struct page *split_large_page(unsigned long address, pgprot_t prot)
 
 static void flush_kernel_map(void * address) 
 { 
-	if (!test_bit(X86_FEATURE_SELFSNOOP, boot_cpu_data.x86_capability)) {
-		/* Could use CLFLUSH here if the CPU supports it (Hammer,P4) */
-		if (boot_cpu_data.x86_model >= 4) 
-			asm volatile("wbinvd":::"memory"); 	
-	} 
+	/* Could use CLFLUSH here if the CPU supports it (Hammer,P4) */
+	if (boot_cpu_data.x86_model >= 4) 
+		asm volatile("wbinvd":::"memory"); 	
 
 	/* Do global flush here to work around large page flushing errata 
 	   in some early Athlons */

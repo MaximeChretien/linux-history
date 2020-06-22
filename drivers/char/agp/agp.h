@@ -316,6 +316,9 @@ struct agp_bridge_data {
 #ifndef PCI_DEVICE_ID_ATI_RS200
 #define PCI_DEVICE_ID_ATI_RS200		0xcab2
 #endif
+#ifndef PCI_DEVICE_ID_ATI_RS200_REV2
+#define PCI_DEVICE_ID_ATI_RS200_REV2	0xcbb2
+#endif
 #ifndef PCI_DEVICE_ID_ATI_RS250
 #define PCI_DEVICE_ID_ATI_RS250		0xcab3
 #endif

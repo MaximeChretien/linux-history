@@ -480,7 +480,7 @@ static int tcp_v6_check_established(struct sock *sk)
 	tw = NULL;
 
 	for(skp = &head->chain; (sk2=*skp)!=NULL; skp = &sk2->next) {
-		if(TCP_IPV6_MATCH(sk, saddr, daddr, ports, dif))
+		if(TCP_IPV6_MATCH(sk2, saddr, daddr, ports, dif))
 			goto not_unique;
 	}
 

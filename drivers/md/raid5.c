@@ -950,7 +950,7 @@ static void handle_stripe(struct stripe_head *sh)
 	/* Now we might consider reading some blocks, either to check/generate
 	 * parity, or to satisfy requests
 	 */
-	if (to_read || (syncing && (uptodate+failed < disks))) {
+	if (to_read || (syncing && (uptodate < disks))) {
 		for (i=disks; i--;) {
 			bh = sh->bh_cache[i];
 			if (!buffer_locked(bh) && !buffer_uptodate(bh) &&

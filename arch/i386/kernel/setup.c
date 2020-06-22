@@ -2333,6 +2333,7 @@ static struct _cache_table cache_table[] __initdata =
 	{ 0x43, LVL_2,      512 },
 	{ 0x44, LVL_2,      1024 },
 	{ 0x45, LVL_2,      2048 },
+	{ 0x60, LVL_1_DATA, 16 },
 	{ 0x66, LVL_1_DATA, 8 },
 	{ 0x67, LVL_1_DATA, 16 },
 	{ 0x68, LVL_1_DATA, 32 },
@@ -2443,6 +2444,8 @@ static void __init init_intel(struct cpuinfo_x86 *c)
 			printk (KERN_INFO "CPU: L1 I cache: %dK", l1i);
 		if ( l1d )
 			printk(", L1 D cache: %dK\n", l1d);
+		else
+			printk("\n");
 
 		if ( l2 )
 			printk(KERN_INFO "CPU: L2 cache: %dK\n", l2);

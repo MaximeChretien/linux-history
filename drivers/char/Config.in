@@ -273,7 +273,6 @@ if [ "$CONFIG_WATCHDOG" != "n" ]; then
    if [ "$CONFIG_SGI_IP22" = "y" ]; then
       dep_tristate '  Indy/I2 Hardware Watchdog' CONFIG_INDYDOG $CONFIG_SGI_IP22
    fi
-   dep_tristate '  AMD 766/768 TCO Timer/Watchdog' CONFIG_AMD7XX_TCO $CONFIG_EXPERIMENTAL
    if [ "$CONFIG_8xx" = "y" ]; then
       tristate '  MPC8xx Watchdog Timer' CONFIG_8xx_WDT
    fi

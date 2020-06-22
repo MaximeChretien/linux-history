@@ -943,7 +943,7 @@ pci_generic_prep_mwi(struct pci_dev *dev)
 	if (cacheline_size == pci_cache_line_size)
 		return 0;
 
-	printk(KERN_WARNING "PCI: cache line size of %d is not supported "
+	printk(KERN_DEBUG "PCI: cache line size of %d is not supported "
 	       "by device %s\n", pci_cache_line_size << 2, dev->slot_name);
 
 	return -EINVAL;
@@ -2214,6 +2214,7 @@ EXPORT_SYMBOL(pcibios_find_device);
 
 EXPORT_SYMBOL(isa_dma_bridge_buggy);
 EXPORT_SYMBOL(pci_pci_problems);
+EXPORT_SYMBOL(pciehp_msi_quirk);
 
 /* Pool allocator */
 

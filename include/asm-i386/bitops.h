@@ -266,7 +266,6 @@ static __inline__ int find_first_zero_bit(void * addr, unsigned size)
 
 	if (!size)
 		return 0;
-	/* This looks at memory. Mark it volatile to tell gcc not to move it around */
 	__asm__ __volatile__(
 		"movl $-1,%%eax\n\t"
 		"xorl %%edx,%%edx\n\t"
@@ -279,7 +278,7 @@ static __inline__ int find_first_zero_bit(void * addr, unsigned size)
 		"shll $3,%%edi\n\t"
 		"addl %%edi,%%edx"
 		:"=d" (res), "=&c" (d0), "=&D" (d1), "=&a" (d2)
-		:"1" ((size + 31) >> 5), "2" (addr), "b" (addr));
+		:"1" ((size + 31) >> 5), "2" (addr), "b" (addr) : "memory");
 	return res;
 }
 

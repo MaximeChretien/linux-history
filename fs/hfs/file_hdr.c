@@ -384,7 +384,7 @@ static hfs_rwret_t hdr_read(struct file * filp, char * buf,
 	struct hfs_cat_entry *entry = HFS_I(inode)->entry;
 	const struct hfs_hdr_layout *layout;
 	off_t start, length, offset;
-	off_t pos = *ppos;
+	loff_t pos = *ppos;
 	int left, lcv, read = 0;
 
 	if (!S_ISREG(inode->i_mode)) {
@@ -399,7 +399,7 @@ static hfs_rwret_t hdr_read(struct file * filp, char * buf,
 	}
 
 	/* Adjust count to fit within the bounds of the file */
-	if ((pos >= inode->i_size) || (count <= 0)) {
+	if (pos != (unsigned)pos || pos >= inode->i_size || count <= 0) {
 		return 0;
 	} else if (count > inode->i_size - pos) {
 		count = inode->i_size - pos;
@@ -646,7 +646,7 @@ static hfs_rwret_t hdr_write(struct file *filp, const char *buf,
 		hfs_warn("hfs_hdr_write: mode = %07o\n", inode->i_mode);
 		return -EINVAL;
 	}
-	if (count <= 0) {
+	if (count <= 0 || pos != (unsigned)pos) {
 		return 0;
 	}
 

@@ -46,7 +46,16 @@
 
 /* Change Log
  * 
- * 2.3.38       12/14/03
+ * 2.3.40       2/13/04
+ * o Updated microcode for D102 rev 15 and rev 16 to include fix
+ *   for TCO issue.  NFS packets would be misinterpreted as TCO packets
+ *   and incorrectly routed to the BMC over SMBus.  The microcode fix
+ *   checks the fragmented IP bit in the NFS/UDP header to distinguish
+ *   between NFS and TCO.
+ * o Bug fix: don't strip MAC header count from Rx byte count.
+ *   Ben Greear (greear@candeltech.com).
+ *
+ * 2.3.38	12/14/03
  * o Added netpoll support.
  * o Added ICH6 device ID support
  * o Moved to 2.6 APIs: pci_name() and free_netdev().
@@ -54,12 +63,6 @@
  *   as such (Anton Blanchard [anton@samba.org]).
  * 
  * 2.3.33       10/21/03
- * o Bug fix (Bugzilla 97908): Loading e100 was causing crash on Itanium2
- *   with HP chipset
- * o Bug fix (Bugzilla 101583): e100 can't pass traffic with ipv6
- * o Bug fix (Bugzilla 101360): PRO/10+ can't pass traffic
- * 
- * 2.3.27       08/08/03
  */
  
 #include <linux/config.h>
@@ -132,7 +135,7 @@ static void e100_non_tx_background(unsigned long);
 static inline void e100_tx_skb_free(struct e100_private *bdp, tcb_t *tcb);
 /* Global Data structures and variables */
 char e100_copyright[] __devinitdata = "Copyright (c) 2004 Intel Corporation";
-char e100_driver_version[]="2.3.38-k1";
+char e100_driver_version[]="2.3.43-k1";
 const char *e100_full_driver_name = "Intel(R) PRO/100 Network Driver";
 char e100_short_driver_name[] = "e100";
 static int e100nics = 0;
@@ -582,6 +585,7 @@ e100_found1(struct pci_dev *pcid, const struct pci_device_id *ent)
 	bdp->device = dev;
 
 	pci_set_drvdata(pcid, dev);
+	SET_NETDEV_DEV(dev, &pcid->dev);
 
 	bdp->flags = 0;
 	bdp->ifs_state = 0;
@@ -2062,6 +2066,8 @@ e100_rx_srv(struct e100_private *bdp)
 		else
 			skb_put(skb, (int) data_sz);
 
+		bdp->drv_stats.net_stats.rx_bytes += skb->len;
+
 		/* set the protocol */
 		skb->protocol = eth_type_trans(skb, dev);
 
@@ -2075,8 +2081,6 @@ e100_rx_srv(struct e100_private *bdp)
 		} else {
 			skb->ip_summed = CHECKSUM_NONE;
 		}
-
-		bdp->drv_stats.net_stats.rx_bytes += skb->len;
 
 		if(bdp->vlgrp && (rfd_status & CB_STATUS_VLAN)) {
 			vlan_hwaccel_rx(skb, bdp->vlgrp, be16_to_cpu(rfd->vlanid));
@@ -2831,6 +2835,11 @@ e100_load_microcode(struct e100_private *bdp)
 		  D102_C_CPUSAVER_BUNDLE_DWORD,
 		  D102_C_CPUSAVER_MIN_SIZE_DWORD },
 		{ D102E_REV_ID,
+		  D102_E_RCVBUNDLE_UCODE,
+		  D102_E_CPUSAVER_TIMER_DWORD,
+		  D102_E_CPUSAVER_BUNDLE_DWORD,
+		  D102_E_CPUSAVER_MIN_SIZE_DWORD },
+		{ D102E_A1_REV_ID,
 		  D102_E_RCVBUNDLE_UCODE,
 		  D102_E_CPUSAVER_TIMER_DWORD,
 		  D102_E_CPUSAVER_BUNDLE_DWORD,

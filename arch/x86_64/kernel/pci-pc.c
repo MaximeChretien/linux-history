@@ -646,7 +646,7 @@ char * __devinit pcibios_setup(char *str)
 		pcibios_last_bus = simple_strtol(str+8, NULL, 0);
 		return NULL;
 	} else if (!strncmp(str, "noacpi", 6)) {
-		acpi_noirq_set();
+		acpi_disable_pci();
 		return NULL;
 	}
 	return str;

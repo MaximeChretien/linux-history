@@ -9792,7 +9792,7 @@ static ssize_t qeth_procfile_write(struct file *file,
 	int pos=0,end_pos;
 	char dbf_text[15];
 
-	if (*offset>0) return user_len;
+	if (*offset) return user_len;
 	buffer=vmalloc(__max(user_len+1,QETH_DBF_MISC_LEN));
 	if (buffer == NULL)
 		return -ENOMEM;
@@ -10308,14 +10308,16 @@ static ssize_t qeth_procfile_read(struct file *file,char *user_buf,
 {
 	loff_t len;
 	tempinfo_t *p_info = (tempinfo_t *) file->private_data;
+	loff_t n = *offset;
+	unsigned long pos = n;
 	
-	if (*offset >= p_info->len) {
+	if (pos != n || pos >= p_info->len) {
 		return 0;
 	} else {
-		len = __min(user_len, (p_info->len - *offset));
-		if (copy_to_user (user_buf, &(p_info->data[*offset]), len))
+		len = __min(user_len, (p_info->len - pos));
+		if (copy_to_user (user_buf, &(p_info->data[pos]), len))
 			return -EFAULT;
-		(*offset) += len;
+		*offset = pos + len;
 		return len;
 	}
 }
@@ -10350,7 +10352,7 @@ static ssize_t qeth_ipato_procfile_write(struct file *file,
 	qeth_card_t *card;
 #define BUFFER_LEN (10+32+1+5+1+DEV_NAME_LEN+1)
 
-	if (*offset>0) return user_len;
+	if (*offset) return user_len;
 	buffer=vmalloc(__max(__max(user_len+1,BUFFER_LEN),QETH_DBF_MISC_LEN));
 
 	if (buffer == NULL)
@@ -10474,7 +10476,7 @@ static ssize_t qeth_ipato_procfile_write(struct file *file,
 	PRINT_ERR("unknown ipato information command\n");
 out:
 	vfree(buffer);
-	*offset = *offset + user_len;
+	*offset = user_len;
 #undef BUFFER_LEN
 	return user_len;
 }

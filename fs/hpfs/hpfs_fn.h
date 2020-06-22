@@ -27,9 +27,6 @@
 
 #include "hpfs.h"
 
-#define memcpy_tofs memcpy
-#define memcpy_fromfs memcpy
-
 #define EIOERROR  EIO
 #define EFSERROR  EPERM
 #define EMEMERROR ENOMEM
@@ -121,12 +118,12 @@ extern inline struct hpfs_dirent *de_next_de (struct hpfs_dirent *de)
 
 extern inline struct extended_attribute *fnode_ea(struct fnode *fnode)
 {
-	return (struct extended_attribute *)((char *)fnode + fnode->ea_offs);
+	return (struct extended_attribute *)((char *)fnode + fnode->ea_offs + fnode->acl_size_s);
 }
 
 extern inline struct extended_attribute *fnode_end_ea(struct fnode *fnode)
 {
-	return (struct extended_attribute *)((char *)fnode + fnode->ea_offs + fnode->ea_size_s);
+	return (struct extended_attribute *)((char *)fnode + fnode->ea_offs + fnode->acl_size_s + fnode->ea_size_s);
 }
 
 extern inline struct extended_attribute *next_ea(struct extended_attribute *ea)

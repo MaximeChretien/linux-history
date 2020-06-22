@@ -175,12 +175,11 @@ static void
 destroy_expect(struct ip_conntrack_expect *exp)
 {
 	DEBUGP("destroy_expect(%p) use=%d\n", exp, atomic_read(&exp->use));
-	IP_NF_ASSERT(atomic_read(&exp->use));
+	IP_NF_ASSERT(atomic_read(&exp->use) == 0);
 	IP_NF_ASSERT(!timer_pending(&exp->timeout));
 
 	kfree(exp);
 }
-
 
 inline void ip_conntrack_expect_put(struct ip_conntrack_expect *exp)
 {
@@ -326,8 +325,9 @@ destroy_conntrack(struct nf_conntrack *nfct)
 		ip_conntrack_destroyed(ct);
 
 	WRITE_LOCK(&ip_conntrack_lock);
-	/* Delete us from our own list to prevent corruption later */
-	list_del(&ct->sibling_list);
+	/* Make sure don't leave any orphaned expectations lying around */
+	if (ct->expecting)
+		remove_expectations(ct, 1);
 
 	/* Delete our master expectation */
 	if (ct->master) {
@@ -503,7 +503,7 @@ icmp_error_track(struct sk_buff *skb,
 		 enum ip_conntrack_info *ctinfo,
 		 unsigned int hooknum)
 {
-	const struct iphdr *iph;
+	const struct iphdr *iph = skb->nh.iph;
 	struct icmphdr *hdr;
 	struct ip_conntrack_tuple innertuple, origtuple;
 	struct iphdr *inner;
@@ -514,7 +514,6 @@ icmp_error_track(struct sk_buff *skb,
 	IP_NF_ASSERT(iph->protocol == IPPROTO_ICMP);
 	IP_NF_ASSERT(skb->nfct == NULL);
 
-	iph = skb->nh.iph;
 	hdr = (struct icmphdr *)((u_int32_t *)iph + iph->ihl);
 	inner = (struct iphdr *)(hdr + 1);
 	datalen = skb->len - iph->ihl*4 - sizeof(*hdr);
@@ -730,7 +729,6 @@ init_conntrack(const struct ip_conntrack_tuple *tuple,
 		DEBUGP("conntrack: expectation arrives ct=%p exp=%p\n",
 			conntrack, expected);
 		/* Welcome, Mr. Bond.  We've been expecting you... */
-		IP_NF_ASSERT(master_ct(conntrack));
 		__set_bit(IPS_EXPECTED_BIT, &conntrack->status);
 		conntrack->master = expected;
 		expected->sibling = conntrack;
@@ -1115,10 +1113,8 @@ int ip_conntrack_alter_reply(struct ip_conntrack *conntrack,
 	DUMP_TUPLE(newreply);
 
 	conntrack->tuplehash[IP_CT_DIR_REPLY].tuple = *newreply;
-	if (!conntrack->master)
-		conntrack->helper = LIST_FIND(&helpers, helper_cmp,
-					      struct ip_conntrack_helper *,
-					      newreply);
+	if (!conntrack->master && list_empty(&conntrack->sibling_list))
+		conntrack->helper = ip_ct_find_helper(newreply);
 	WRITE_UNLOCK(&ip_conntrack_lock);
 
 	return 1;

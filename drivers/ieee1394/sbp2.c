@@ -113,8 +113,8 @@ static int sbp2_max_speed = IEEE1394_SPEED_MAX;
  * badly behaved sbp2 devices.
  */
 MODULE_PARM(sbp2_serialize_io,"i");
-MODULE_PARM_DESC(sbp2_serialize_io, "Serialize all I/O coming down from the scsi drivers (default = 0)");
-static int sbp2_serialize_io = 0;	/* serialize I/O - available for debugging purposes */
+MODULE_PARM_DESC(sbp2_serialize_io, "Serialize all I/O coming down from the scsi drivers (default = 1)");
+static int sbp2_serialize_io = 1;	/* serialize I/O - available for debugging purposes */
 
 /*
  * Bump up sbp2_max_sectors if you'd like to support very large sized

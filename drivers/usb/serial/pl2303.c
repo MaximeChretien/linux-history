@@ -107,6 +107,7 @@ MODULE_DEVICE_TABLE (usb, id_table);
 #define VENDOR_READ_REQUEST		0x01
 
 #define UART_STATE			0x08
+#define UART_STATE_TRANSIENT_MASK	0x74
 #define UART_DCD			0x01
 #define UART_DSR			0x02
 #define UART_BREAK_ERROR		0x04
@@ -197,6 +198,9 @@ static int pl2303_write (struct usb_serial_port *port, int from_user,  const uns
 	int result;
 
 	dbg("%s - port %d, %d bytes", __FUNCTION__, port->number, count);
+
+	if (!count)
+		return count;
 
 	if (port->write_urb->status == -EINPROGRESS) {
 		dbg("%s - already writing", __FUNCTION__);
@@ -648,7 +652,7 @@ static void pl2303_break_ctl (struct usb_serial_port *port, int break_state)
 		state = BREAK_OFF;
 	else
 		state = BREAK_ON;
-	dbg("%s - turning break %s", state==BREAK_OFF ? "off" : "on", __FUNCTION__);
+	dbg("%s - turning break %s", __FUNCTION__, state==BREAK_OFF ? "off" : "on");
 
 	result = usb_control_msg (serial->dev, usb_sndctrlpipe (serial->dev, 0),
 				  BREAK_REQUEST, BREAK_REQUEST_TYPE, state, 
@@ -678,6 +682,7 @@ static void pl2303_read_int_callback (struct urb *urb)
 	struct pl2303_private *priv = usb_get_serial_port_data(port);
 	unsigned char *data = urb->transfer_buffer;
 	unsigned long flags;
+	u8 uart_state;
 
 	dbg("%s (%d)", __FUNCTION__, port->number);
 
@@ -708,8 +713,10 @@ static void pl2303_read_int_callback (struct urb *urb)
 		return;
 
 	/* Save off the uart status for others to look at */
+	uart_state = data[UART_STATE];
 	spin_lock_irqsave(&priv->lock, flags);
-	priv->line_status = data[UART_STATE];
+	uart_state |= (priv->line_status & UART_STATE_TRANSIENT_MASK);
+	priv->line_status = uart_state;
 	spin_unlock_irqrestore(&priv->lock, flags);
 	wake_up_interruptible (&priv->delta_msr_wait);
 
@@ -767,7 +774,9 @@ static void pl2303_read_bulk_callback (struct urb *urb)
 
 	spin_lock_irqsave(&priv->lock, flags);
 	status = priv->line_status;
+	priv->line_status &= ~UART_STATE_TRANSIENT_MASK;
 	spin_unlock_irqrestore(&priv->lock, flags);
+	wake_up_interruptible (&priv->delta_msr_wait); //AF from 2.6
 
 	/* break takes precedence over parity, */
 	/* which takes precedence over framing errors */

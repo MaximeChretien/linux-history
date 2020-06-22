@@ -6,7 +6,7 @@
 
 
 #define MEGARAID_VERSION	\
-	"v2.10.1 (Release Date: Wed Dec  3 15:34:42 EST 2003)\n"
+	"v2.10.3 (Release Date: Thu Apr  8 16:16:05 EDT 2004)\n"
 
 /*
  * Driver features - change the values to enable or disable features in the
@@ -43,12 +43,6 @@
  * the status of the logical drives, battery status, physical drives etc.
  */
 #define MEGA_HAVE_ENH_PROC	1
-
-#define MAX_DEV_TYPE	32
-
-#ifndef PCI_VENDOR_ID_LSI_LOGIC
-#define PCI_VENDOR_ID_LSI_LOGIC		0x1000
-#endif
 
 #ifndef PCI_VENDOR_ID_AMI
 #define PCI_VENDOR_ID_AMI		0x101E
@@ -87,6 +81,7 @@
 #define	HP_SUBSYS_VID			0x103C
 #define LSI_SUBSYS_VID			0x1000
 #define INTEL_SUBSYS_VID		0x8086
+#define FSC_SUBSYS_VID			0x1734
 
 #define HBA_SIGNATURE	      		0x3344
 #define HBA_SIGNATURE_471	  	0xCCCC
@@ -134,7 +129,6 @@
 	.info =				megaraid_info,		\
 	.command =			megaraid_command,	\
 	.queuecommand =			megaraid_queue,		\
-	.bios_param =			megaraid_biosparam,	\
 	.max_sectors =			MAX_SECTORS_PER_IO,	\
 	.can_queue =			MAX_COMMANDS,		\
 	.this_id =			DEFAULT_INITIATOR_ID,	\
@@ -662,6 +656,9 @@ typedef struct {
  */
 #define MEGAIOC_MAGIC  	'm'
 
+/* Mega IOCTL command */
+#define MEGAIOCCMD     	_IOWR(MEGAIOC_MAGIC, 0, struct uioctl_t)
+
 #define MEGAIOC_QNADAP		'm'	/* Query # of adapters */
 #define MEGAIOC_QDRVRVER	'e'	/* Query driver version */
 #define MEGAIOC_QADAPINFO   	'g'	/* Query adapter information */
@@ -1115,7 +1112,6 @@ static int megaraid_release (struct Scsi_Host *);
 static int megaraid_command (Scsi_Cmnd *);
 static int megaraid_abort(Scsi_Cmnd *);
 static int megaraid_reset(Scsi_Cmnd *);
-static int megaraid_biosparam (Disk *, kdev_t, int *);
 
 static int mega_build_sglist (adapter_t *adapter, scb_t *scb,
 			      u32 *buffer, u32 *length);
@@ -1129,6 +1125,16 @@ static void mega_8_to_40ld (mraid_inquiry *inquiry,
 static int megaraid_reboot_notify (struct notifier_block *,
 				   unsigned long, void *);
 static int megadev_open (struct inode *, struct file *);
+
+#if defined(CONFIG_COMPAT) || defined( __x86_64__) || defined(IA32_EMULATION)
+#define LSI_CONFIG_COMPAT
+#endif
+
+#ifdef LSI_CONFIG_COMPAT
+static int megadev_compat_ioctl(unsigned int, unsigned int, unsigned long,
+	struct file *);
+#endif
+
 static int megadev_ioctl (struct inode *, struct file *, unsigned int,
 		unsigned long);
 static int mega_m_to_n(void *, nitioctl_t *);
@@ -1172,7 +1178,6 @@ static mega_passthru* mega_prepare_passthru(adapter_t *, scb_t *,
 static mega_ext_passthru* mega_prepare_extpassthru(adapter_t *,
 		scb_t *, Scsi_Cmnd *, int, int);
 static void mega_enum_raid_scsi(adapter_t *);
-static int mega_partsize(Disk *, kdev_t, int *);
 static void mega_get_boot_drv(adapter_t *);
 static inline int mega_get_ldrv_num(adapter_t *, Scsi_Cmnd *, int);
 static int mega_support_random_del(adapter_t *);

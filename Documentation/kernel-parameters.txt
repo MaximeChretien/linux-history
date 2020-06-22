@@ -69,8 +69,9 @@ running once the system is up.
 	53c7xx=		[HW,SCSI] Amiga SCSI controllers.
 
 	acpi=		[HW,ACPI] Advanced Configuration and Power Interface 
-		force	Force ACPI on, even if blacklisted platform
-		off	Disable ACPI
+		force	Enable ACPI if default was off
+		off	Disable ACPI if default was on
+		noirq	Do not use ACPI for IRQ routing (see pci=noacpi)
 		ht	Limit ACPI to boot-time LAPIC enumeration for HT,
 			disabling the run-time AML interpreter.
 		strict	Be less tolerant of platforms that are not

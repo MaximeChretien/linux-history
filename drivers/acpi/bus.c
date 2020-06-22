@@ -1964,8 +1964,10 @@ acpi_bus_init (void)
 	acpi_ec_init();		/* ACPI Embedded Controller */
 #endif
 #ifdef CONFIG_ACPI_PCI
-	acpi_pci_link_init();	/* ACPI PCI Interrupt Link */
-	acpi_pci_root_init();	/* ACPI PCI Root Bridge */
+	if (!acpi_pci_disabled) {
+		acpi_pci_link_init();	/* ACPI PCI Interrupt Link */
+		acpi_pci_root_init();	/* ACPI PCI Root Bridge */
+	}
 #endif
 	/*
 	 * Enumerate devices in the ACPI namespace.

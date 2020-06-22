@@ -111,6 +111,8 @@ struct usb_serial_port {
 	int			bulk_out_size;
 	struct urb *		write_urb;
 	__u8			bulk_out_endpointAddress;
+	char			write_busy;	/* URB is active */
+	int			write_backlog;	/* Fifo used */
 
 	wait_queue_head_t	write_wait;
 	struct tq_struct	tqueue;
@@ -161,6 +163,7 @@ struct usb_serial {
 	__u16				product;
 	struct usb_serial_port		port[MAX_NUM_PORTS];
 	void *				private;
+	int				ref;
 };
 
 

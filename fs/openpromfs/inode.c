@@ -69,17 +69,18 @@ static ssize_t nodenum_read(struct file *file, char *buf,
 			    size_t count, loff_t *ppos)
 {
 	struct inode *inode = file->f_dentry->d_inode;
+	loff_t pos = *ppos;
 	char buffer[10];
 	
 	if (count < 0 || !inode->u.generic_ip)
 		return -EINVAL;
 	sprintf (buffer, "%8.8x\n", (u32)(long)(inode->u.generic_ip));
-	if (file->f_pos >= 9)
+	if (pos != (unsigned)pos || pos >= 9)
 		return 0;
-	if (count > 9 - file->f_pos)
-		count = 9 - file->f_pos;
-	copy_to_user(buf, buffer + file->f_pos, count);
-	file->f_pos += count;
+	if (count > 9 - pos)
+		count = 9 - pos;
+	copy_to_user(buf, buffer + pos, count);
+	*ppos = pos + count;
 	return count;
 }
 
@@ -87,6 +88,7 @@ static ssize_t property_read(struct file *filp, char *buf,
 			     size_t count, loff_t *ppos)
 {
 	struct inode *inode = filp->f_dentry->d_inode;
+	loff_t pos = *ppos;
 	int i, j, k;
 	u32 node;
 	char *p, *s;
@@ -94,7 +96,7 @@ static ssize_t property_read(struct file *filp, char *buf,
 	openprom_property *op;
 	char buffer[64];
 	
-	if (filp->f_pos >= 0xffffff)
+	if (pos < 0 || pos >= 0xffffff)
 		return -EINVAL;
 	if (!filp->private_data) {
 		node = nodes[(u16)((long)inode->u.generic_ip)].node;
@@ -180,7 +182,7 @@ static ssize_t property_read(struct file *filp, char *buf,
 	} else {
 		i = (op->len << 1) + 1;
 	}
-	k = filp->f_pos;
+	k = pos;
 	if (k >= i) return 0;
 	if (count > i - k) count = i - k;
 	if (op->flag & OPP_STRING) {
@@ -196,16 +198,16 @@ static ssize_t property_read(struct file *filp, char *buf,
 			j = count;
 
 		if (j >= 0) {
-			copy_to_user(buf + k - filp->f_pos,
+			copy_to_user(buf + k - pos,
 				     op->value + k - 1, j);
 			count -= j;
 			k += j;
 		}
 
 		if (count)
-			__put_user('\'', &buf [k++ - filp->f_pos]);
+			__put_user('\'', &buf [k++ - pos]);
 		if (count > 1)
-			__put_user('\n', &buf [k++ - filp->f_pos]);
+			__put_user('\n', &buf [k++ - pos]);
 
 	} else if (op->flag & OPP_STRINGLIST) {
 		char *tmp;
@@ -273,47 +275,48 @@ static ssize_t property_read(struct file *filp, char *buf,
 
 		if ((k < i - 1) && (k & 1)) {
 			sprintf (buffer, "%02x", *(op->value + (k >> 1)));
-			__put_user(buffer[1], &buf[k++ - filp->f_pos]);
+			__put_user(buffer[1], &buf[k++ - pos]);
 			count--;
 		}
 
 		for (; (count > 1) && (k < i - 1); k += 2) {
 			sprintf (buffer, "%02x", *(op->value + (k >> 1)));
-			copy_to_user (buf + k - filp->f_pos, buffer, 2);
+			copy_to_user (buf + k - pos, buffer, 2);
 			count -= 2;
 		}
 
 		if (count && (k < i - 1)) {
 			sprintf (buffer, "%02x", *(op->value + (k >> 1)));
-			__put_user(buffer[0], &buf[k++ - filp->f_pos]);
+			__put_user(buffer[0], &buf[k++ - pos]);
 			count--;
 		}
 
 		if (count)
-			__put_user('\n', &buf [k++ - filp->f_pos]);
+			__put_user('\n', &buf [k++ - pos]);
 	}
-	count = k - filp->f_pos;
-	filp->f_pos = k;
+	count = k - pos;
+	*ppos = k;
 	return count;
 }
 
 static ssize_t property_write(struct file *filp, const char *buf,
 			      size_t count, loff_t *ppos)
 {
+	loff_t pos = *ppos;
 	int i, j, k;
 	char *p;
 	u32 *q;
 	void *b;
 	openprom_property *op;
 	
-	if (filp->f_pos >= 0xffffff)
+	if (pos < 0 || pos >= 0xffffff)
 		return -EINVAL;
 	if (!filp->private_data) {
 		i = property_read (filp, NULL, 0, 0);
 		if (i)
 			return i;
 	}
-	k = filp->f_pos;
+	k = pos;
 	op = (openprom_property *)filp->private_data;
 	if (!(op->flag & OPP_STRING)) {
 		u32 *first, *last;
@@ -433,7 +436,8 @@ static ssize_t property_write(struct file *filp, const char *buf,
 				op->len = i;
 		} else
 			op->len = i;
-		filp->f_pos += count;
+		pos += count;
+		*ppos = pos;
 	}
 write_try_string:
 	if (!(op->flag & OPP_BINARY)) {
@@ -450,7 +454,8 @@ write_try_string:
 				op->flag |= OPP_QUOTED;
 				buf++;
 				count--;
-				filp->f_pos++;
+				pos++;
+				*ppos = pos;
 				if (!count) {
 					op->flag |= OPP_STRING;
 					return 1;
@@ -459,9 +464,9 @@ write_try_string:
 				op->flag |= OPP_NOTQUOTED;
 		}
 		op->flag |= OPP_STRING;
-		if (op->alloclen <= count + filp->f_pos) {
+		if (op->alloclen <= count + pos) {
 			b = kmalloc (sizeof (openprom_property)
-				     + 2 * (count + filp->f_pos), GFP_KERNEL);
+				     + 2 * (count + pos), GFP_KERNEL);
 			if (!b)
 				return -ENOMEM;
 			memcpy (b, filp->private_data,
@@ -469,14 +474,14 @@ write_try_string:
 				+ strlen (op->name) + op->alloclen);
 			memset (((char *)b) + sizeof (openprom_property)
 				+ strlen (op->name) + op->alloclen, 
-				0, 2*(count - filp->f_pos) - op->alloclen);
+				0, 2*(count - pos) - op->alloclen);
 			op = (openprom_property *)b;
-			op->alloclen = 2*(count + filp->f_pos);
+			op->alloclen = 2*(count + pos);
 			b = filp->private_data;
 			filp->private_data = (void *)op;
 			kfree (b);
 		}
-		p = op->value + filp->f_pos - ((op->flag & OPP_QUOTED) ? 1 : 0);
+		p = op->value + pos - ((op->flag & OPP_QUOTED) ? 1 : 0);
 		copy_from_user (p, buf, count);
 		op->flag |= OPP_DIRTY;
 		for (i = 0; i < count; i++, p++)
@@ -486,17 +491,19 @@ write_try_string:
 			}
 		if (i < count) {
 			op->len = p - op->value;
-			filp->f_pos += i + 1;
+			pos += i + 1;
+			*ppos = pos;
 			if ((p > op->value) && (op->flag & OPP_QUOTED)
 			    && (*(p - 1) == '\''))
 				op->len--;
 		} else {
 			if (p - op->value > op->len)
 				op->len = p - op->value;
-			filp->f_pos += count;
+			pos += count;
+			*ppos = pos;
 		}
 	}
-	return filp->f_pos - k;
+	return pos - k;
 }
 
 int property_release (struct inode *inode, struct file *filp)

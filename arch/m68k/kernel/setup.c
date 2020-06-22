@@ -244,6 +244,18 @@ void __init setup_arch(char **cmdline_p)
 	else if (CPU_IS_060)
 		m68k_is040or060 = 6;
 
+	if (CPU_IS_060) {
+		u32 pcr;
+
+		asm (".chip 68060; movec %%pcr,%0; .chip 68k"
+		     : "=d" (pcr));
+		if (((pcr >> 8) & 0xff) <= 5) {
+			printk("Enabling workaround for errata I14\n");
+			asm (".chip 68060; movec %0,%%pcr; .chip 68k"
+			     : : "d" (pcr | 0x20));
+		}
+	}
+
 	/* FIXME: m68k_fputype is passed in by Penguin booter, which can
 	 * be confused by software FPU emulation. BEWARE.
 	 * We should really do our own FPU check at startup.

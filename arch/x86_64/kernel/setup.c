@@ -48,11 +48,8 @@
 #include <asm/bootsetup.h>
 #include <asm/proto.h>
 
-int acpi_disabled = 0;
-#ifdef	CONFIG_ACPI_BOOT
-int acpi_noirq __initdata = 0;	/* skip ACPI IRQ initialization */
-#endif
-
+int acpi_disabled;
+EXPORT_SYMBOL(acpi_disabled);
 
 int swiotlb;
 

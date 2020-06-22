@@ -1,5 +1,5 @@
 /* SCTP kernel reference Implementation
- * (C) Copyright IBM Corp. 2001, 2003
+ * (C) Copyright IBM Corp. 2001, 2004
  * Copyright (c) 1999-2000 Cisco, Inc.
  * Copyright (c) 1999-2001 Motorola, Inc.
  * Copyright (c) 2001 Intel Corp.
@@ -210,6 +210,7 @@ struct sctp_association *sctp_association_init(struct sctp_association *asoc,
 	asoc->next_tsn = asoc->c.initial_tsn;
 
 	asoc->ctsn_ack_point = asoc->next_tsn - 1;
+	asoc->adv_peer_ack_point = asoc->ctsn_ack_point;
 	asoc->highest_sacked = asoc->ctsn_ack_point;
 	asoc->last_cwr_tsn = asoc->ctsn_ack_point;
 	asoc->unack_data = 0;
@@ -261,12 +262,6 @@ struct sctp_association *sctp_association_init(struct sctp_association *asoc,
 
 	/* Create an output queue.  */
 	sctp_outq_init(asoc, &asoc->outqueue);
-	sctp_outq_set_output_handlers(&asoc->outqueue,
-				      sctp_packet_init,
-				      sctp_packet_config,
-				      sctp_packet_append_chunk,
-				      sctp_packet_transmit_chunk,
-				      sctp_packet_transmit);
 
 	if (!sctp_ulpq_init(&asoc->ulpq, asoc))
 		goto fail_init;
@@ -478,10 +473,8 @@ struct sctp_transport *sctp_assoc_add_peer(struct sctp_association *asoc,
 	/* The asoc->peer.port might not be meaningful yet, but
 	 * initialize the packet structure anyway.
 	 */
-	(asoc->outqueue.init_output)(&peer->packet,
-				     peer,
-				     asoc->base.bind_addr.port,
-				     asoc->peer.port);
+	sctp_packet_init(&peer->packet, peer, asoc->base.bind_addr.port,
+			 asoc->peer.port);
 
 	/* 7.2.1 Slow-Start
 	 *
@@ -611,7 +604,7 @@ void sctp_assoc_control_transport(struct sctp_association *asoc,
 	switch (command) {
 	case SCTP_TRANSPORT_UP:
 		transport->active = SCTP_ACTIVE;
-		spc_state = SCTP_ADDR_REACHABLE;
+		spc_state = SCTP_ADDR_AVAILABLE;
 		break;
 
 	case SCTP_TRANSPORT_DOWN:
@@ -958,6 +951,9 @@ void sctp_assoc_migrate(struct sctp_association *assoc, struct sock *newsk)
 void sctp_assoc_update(struct sctp_association *asoc,
 		       struct sctp_association *new)
 {
+	struct sctp_transport *trans;
+	struct list_head *pos, *temp;
+
 	/* Copy in new parameters of peer. */
 	asoc->c = new->c;
 	asoc->peer.rwnd = new->peer.rwnd;
@@ -966,22 +962,22 @@ void sctp_assoc_update(struct sctp_association *asoc,
 	sctp_tsnmap_init(&asoc->peer.tsn_map, SCTP_TSN_MAP_SIZE,
 			 asoc->peer.i.initial_tsn);
 
-	/* FIXME:
-	 *    Do we need to copy primary_path etc?
-	 *
-	 *    More explicitly, addresses may have been removed and
-	 *    this needs accounting for.
-	 */
+	/* Remove any peer addresses not present in the new association. */
+	list_for_each_safe(pos, temp, &asoc->peer.transport_addr_list) {
+		trans = list_entry(pos, struct sctp_transport, transports);
+		if (!sctp_assoc_lookup_paddr(new, &trans->ipaddr))
+			sctp_assoc_del_peer(asoc, &trans->ipaddr);
+	}
 
 	/* If the case is A (association restart), use
 	 * initial_tsn as next_tsn. If the case is B, use
 	 * current next_tsn in case data sent to peer
 	 * has been discarded and needs retransmission.
 	 */
-	if (sctp_state(asoc, ESTABLISHED)) {
-
+	if (asoc->state >= SCTP_STATE_ESTABLISHED) {
 		asoc->next_tsn = new->next_tsn;
 		asoc->ctsn_ack_point = new->ctsn_ack_point;
+		asoc->adv_peer_ack_point = new->adv_peer_ack_point;
 
 		/* Reinitialize SSN for both local streams
 		 * and peer's streams.
@@ -989,14 +985,23 @@ void sctp_assoc_update(struct sctp_association *asoc,
 		sctp_ssnmap_clear(asoc->ssnmap);
 
 	} else {
+		/* Add any peer addresses from the new association. */
+		list_for_each(pos, &new->peer.transport_addr_list) {
+			trans = list_entry(pos, struct sctp_transport,
+					   transports);
+			if (!sctp_assoc_lookup_paddr(asoc, &trans->ipaddr))
+				sctp_assoc_add_peer(asoc, &trans->ipaddr,
+						    GFP_ATOMIC);
+		}
+
 		asoc->ctsn_ack_point = asoc->next_tsn - 1;
+		asoc->adv_peer_ack_point = asoc->ctsn_ack_point;
 		if (!asoc->ssnmap) {
 			/* Move the ssnmap. */
 			asoc->ssnmap = new->ssnmap;
 			new->ssnmap = NULL;
 		}
 	}
-
 }
 
 /* Update the retran path for sending a retransmitted packet.
@@ -1205,7 +1210,7 @@ int sctp_assoc_set_bind_addr_from_cookie(struct sctp_association *asoc,
 {
 	int var_size2 = ntohs(cookie->peer_init->chunk_hdr.length);
 	int var_size3 = cookie->raw_addr_list_len;
-	__u8 *raw = (__u8 *)cookie + sizeof(struct sctp_cookie) + var_size2;
+	__u8 *raw = (__u8 *)cookie->peer_init + var_size2;
 
 	return sctp_raw_to_bind_addrs(&asoc->base.bind_addr, raw, var_size3,
 				      asoc->ep->base.bind_addr.port, gfp);

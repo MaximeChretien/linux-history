@@ -1227,18 +1227,8 @@ struct super_block * ext3_read_super (struct super_block * sb, void * data,
 	}
 
 	ext3_setup_super (sb, es, sb->s_flags & MS_RDONLY);
-	/*
-	 * akpm: core read_super() calls in here with the superblock locked.
-	 * That deadlocks, because orphan cleanup needs to lock the superblock
-	 * in numerous places.  Here we just pop the lock - it's relatively
-	 * harmless, because we are now ready to accept write_super() requests,
-	 * and aviro says that's the only reason for hanging onto the
-	 * superblock lock.
-	 */
 	EXT3_SB(sb)->s_mount_state |= EXT3_ORPHAN_FS;
-	unlock_super(sb);	/* akpm: sigh */
 	ext3_orphan_cleanup(sb, es);
-	lock_super(sb);
 	EXT3_SB(sb)->s_mount_state &= ~EXT3_ORPHAN_FS;
 	if (needs_recovery)
 		printk (KERN_INFO "EXT3-fs: recovery complete.\n");

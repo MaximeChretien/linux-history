@@ -503,12 +503,13 @@ void __init pci_iommu_init(void)
 	no_agp = no_agp || (agp_init() < 0) || (agp_copy_info(&info) < 0); 
 #endif	
 
+#ifdef CONFIG_SWIOTLB
 	if (swiotlb) { 
 		no_iommu = 1;
 		printk(KERN_INFO "PCI-DMA: Using SWIOTLB\n"); 
 		return; 
-	} 
-
+	}
+#endif
 
 	if (no_iommu || (!force_mmu && end_pfn < 0xffffffff>>PAGE_SHIFT) || !iommu_aperture) { 
 		printk(KERN_INFO "PCI-DMA: Disabling IOMMU.\n"); 

@@ -429,6 +429,9 @@ static void sctp_cmd_init_failed(sctp_cmd_seq_t *commands,
 		sctp_add_cmd_sf(commands, SCTP_CMD_EVENT_ULP,
 				SCTP_ULPEVENT(event));
 
+	sctp_add_cmd_sf(commands, SCTP_CMD_NEW_STATE,
+			SCTP_STATE(SCTP_STATE_CLOSED));
+
 	/* SEND_FAILED sent later when cleaning up the association. */
 	asoc->outqueue.error = error;
 	sctp_add_cmd_sf(commands, SCTP_CMD_DELETE_TCB, SCTP_NULL());
@@ -456,6 +459,10 @@ static void sctp_cmd_assoc_failed(sctp_cmd_seq_t *commands,
 
 	sctp_add_cmd_sf(commands, SCTP_CMD_NEW_STATE,
 			SCTP_STATE(SCTP_STATE_CLOSED));
+
+	/* Set sk_err to ECONNRESET on a 1-1 style socket. */
+	if (!sctp_style(asoc->base.sk, UDP))
+		asoc->base.sk->sk_err = ECONNRESET; 
 
 	/* SEND_FAILED sent later when cleaning up the association. */
 	asoc->outqueue.error = error;
@@ -579,7 +586,7 @@ static void sctp_cmd_transport_reset(sctp_cmd_seq_t *cmds,
 /* Helper function to process the process SACK command.  */
 static int sctp_cmd_process_sack(sctp_cmd_seq_t *cmds,
 				 struct sctp_association *asoc,
-				 sctp_sackhdr_t *sackh)
+				 struct sctp_sackhdr *sackh)
 {
 	int err;
 
@@ -727,6 +734,19 @@ static void sctp_cmd_process_operr(sctp_cmd_seq_t *cmds,
 	default:
 		break;
 	}
+}
+
+/* Process variable FWDTSN chunk information. */
+static void sctp_cmd_process_fwdtsn(struct sctp_ulpq *ulpq, 
+				    struct sctp_chunk *chunk)
+{
+	struct sctp_fwdtsn_skip *skip;
+	/* Walk through all the skipped SSNs */
+	sctp_walk_fwdtsn(skip, chunk) {
+		sctp_ulpq_skip(ulpq, ntohs(skip->stream), ntohs(skip->ssn));
+	}
+
+	return;
 }
 
 /* These three macros allow us to pull the debugging code out of the
@@ -903,7 +923,7 @@ int sctp_cmd_interpreter(sctp_event_t event_type, sctp_subtype_t subtype,
 	struct timer_list *timer;
 	unsigned long timeout;
 	struct sctp_transport *t;
-	sctp_sackhdr_t sackh;
+	struct sctp_sackhdr sackh;
 	int local_cork = 0;
 
 	if (SCTP_EVENT_T_TIMEOUT != event_type)
@@ -961,6 +981,18 @@ int sctp_cmd_interpreter(sctp_event_t event_type, sctp_subtype_t subtype,
 			/* Record the arrival of a TSN.  */
 			sctp_tsnmap_mark(&asoc->peer.tsn_map, cmd->obj.u32);
 			break;
+
+		case SCTP_CMD_REPORT_FWDTSN:
+			/* Move the Cumulattive TSN Ack ahead. */
+			sctp_tsnmap_skip(&asoc->peer.tsn_map, cmd->obj.u32);
+
+			/* Abort any in progress partial delivery. */
+			sctp_ulpq_abort_pd(&asoc->ulpq, GFP_ATOMIC);
+			break;
+
+		case SCTP_CMD_PROCESS_FWDTSN:
+			sctp_cmd_process_fwdtsn(&asoc->ulpq, cmd->obj.ptr);
+                        break;
 
 		case SCTP_CMD_GEN_SACK:
 			/* Generate a Selective ACK.
@@ -1246,6 +1278,9 @@ int sctp_cmd_interpreter(sctp_event_t event_type, sctp_subtype_t subtype,
 
 		case SCTP_CMD_PROCESS_OPERR:
 			sctp_cmd_process_operr(commands, asoc, chunk);
+			break;
+		case SCTP_CMD_CLEAR_INIT_TAG:
+			asoc->peer.i.init_tag = 0;
 			break;
 		default:
 			printk(KERN_WARNING "Impossible command: %u, %p\n",

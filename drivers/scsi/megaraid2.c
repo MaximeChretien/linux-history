@@ -14,7 +14,10 @@
  *	  - speed-ups (list handling fixes, issued_list, optimizations.)
  *	  - lots of cleanups.
  *
- * Version : v2.10.1 (Dec 03, 2003) - Atul Mukker <Atul.Mukker@lsil.com>
+ * Version : v2.10.3 (Apr 08, 2004)
+ *
+ * Authors:	Atul Mukker <Atul.Mukker@lsil.com>
+ *		Sreenivas Bagalkote <Sreenivas.Bagalkote@lsil.com>
  *
  * Description: Linux device driver for LSI Logic MegaRAID controller
  *
@@ -23,8 +26,6 @@
  *
  * This driver is supported by LSI Logic, with assistance from Red Hat, Dell,
  * and others. Please send updates to the public mailing list
- * linux-megaraid-devel@dell.com, and subscribe to and read archives of this
- * list at http://lists.us.dell.com/.
  *
  * For history of changes, see ChangeLog.megaraid.
  *
@@ -44,6 +45,10 @@
 #include "hosts.h"
 
 #include "megaraid2.h"
+
+#ifdef LSI_CONFIG_COMPAT
+#include <asm/ioctl32.h>
+#endif
 
 MODULE_AUTHOR ("LSI Logic Corporation");
 MODULE_DESCRIPTION ("LSI Logic MegaRAID driver");
@@ -206,6 +211,10 @@ megaraid_detect(Scsi_Host_Template *host_template)
 		 */
 		major = register_chrdev(0, "megadev", &megadev_fops);
 
+		if (major < 0) {
+			printk(KERN_WARNING
+				"megaraid: failed to register char device.\n");
+		}
 		/*
 		 * Register the Shutdown Notification hook in kernel
 		 */
@@ -213,6 +222,13 @@ megaraid_detect(Scsi_Host_Template *host_template)
 			printk(KERN_WARNING
 				"MegaRAID Shutdown routine not registered!!\n");
 		}
+
+#ifdef LSI_CONFIG_COMPAT
+		/*
+		 * Register the 32-bit ioctl conversion
+		 */
+		register_ioctl32_conversion(MEGAIOCCMD, megadev_compat_ioctl);
+#endif
 
 	}
 
@@ -311,6 +327,7 @@ mega_find_card(Scsi_Host_Template *host_template, u16 pci_vendor,
 				(subsysvid != DELL_SUBSYS_VID) &&
 				(subsysvid != HP_SUBSYS_VID) &&
 				(subsysvid != INTEL_SUBSYS_VID) &&
+				(subsysvid != FSC_SUBSYS_VID) &&
 				(subsysvid != LSI_SUBSYS_VID) ) continue;
 
 
@@ -403,7 +420,8 @@ mega_find_card(Scsi_Host_Template *host_template, u16 pci_vendor,
 		scsi_set_host_lock(&adapter->lock);
 #  endif
 #else
-		/* And this is the remainder of the 2.4 kernel series */
+		/* And this is the remainder of the 2.4 kernel
+		series */
 		adapter->host_lock = &io_request_lock;
 #endif
 
@@ -620,12 +638,15 @@ mega_find_card(Scsi_Host_Template *host_template, u16 pci_vendor,
 
 		/* Set the Mode of addressing to 64 bit if we can */
 		if((adapter->flag & BOARD_64BIT)&&(sizeof(dma_addr_t) == 8)) {
-			pci_set_dma_mask(pdev, 0xffffffffffffffffULL);
-			adapter->has_64bit_addr = 1;
+			if (pci_set_dma_mask(pdev, 0xffffffffffffffffULL) == 0)
+				adapter->has_64bit_addr = 1;
 		}
-		else  {
-			pci_set_dma_mask(pdev, 0xffffffff);
-			adapter->has_64bit_addr = 0;
+		if (!adapter->has_64bit_addr)  {
+			if (pci_set_dma_mask(pdev, 0xffffffffULL) != 0) {
+				printk("megaraid%d: DMA not available.\n",
+					host->host_no);
+				goto fail_attach;
+			}
 		}
 
 		init_MUTEX(&adapter->int_mtx);
@@ -2249,25 +2270,27 @@ mega_free_scb(adapter_t *adapter, scb_t *scb)
 		break;
 
 	case MEGA_BULK_DATA:
-		pci_unmap_page(adapter->dev, scb->dma_h_bulkdata,
-			scb->cmd->request_bufflen, scb->dma_direction);
-
 		if( scb->dma_direction == PCI_DMA_FROMDEVICE ) {
 			pci_dma_sync_single(adapter->dev, scb->dma_h_bulkdata,
 					scb->cmd->request_bufflen,
 					PCI_DMA_FROMDEVICE);
 		}
 
+		pci_unmap_page(adapter->dev, scb->dma_h_bulkdata,
+			scb->cmd->request_bufflen, scb->dma_direction);
+
 		break;
 
 	case MEGA_SGLIST:
-		pci_unmap_sg(adapter->dev, scb->cmd->request_buffer,
-			scb->cmd->use_sg, scb->dma_direction);
-
 		if( scb->dma_direction == PCI_DMA_FROMDEVICE ) {
-			pci_dma_sync_sg(adapter->dev, scb->cmd->request_buffer,
-					scb->cmd->use_sg, PCI_DMA_FROMDEVICE);
+			pci_dma_sync_sg(adapter->dev,
+				(struct scatterlist *)scb->cmd->request_buffer,
+				scb->cmd->use_sg, PCI_DMA_FROMDEVICE);
 		}
+
+		pci_unmap_sg(adapter->dev,
+			(struct scatterlist *)scb->cmd->request_buffer,
+			scb->cmd->use_sg, scb->dma_direction);
 
 		break;
 
@@ -2402,8 +2425,9 @@ mega_build_sglist(adapter_t *adapter, scb_t *scb, u32 *buf, u32 *len)
 	*len = (u32)cmd->request_bufflen;
 
 	if( scb->dma_direction == PCI_DMA_TODEVICE ) {
-		pci_dma_sync_sg(adapter->dev, cmd->request_buffer,
-				cmd->use_sg, PCI_DMA_TODEVICE);
+		pci_dma_sync_sg(adapter->dev,
+			(struct scatterlist *)cmd->request_buffer,
+			cmd->use_sg, PCI_DMA_TODEVICE);
 	}
 
 	/* Return count of SG requests */
@@ -2474,7 +2498,9 @@ megaraid_release(struct Scsi_Host *host)
 	memset(raw_mbox, 0, sizeof(raw_mbox));
 	raw_mbox[0] = FLUSH_ADAPTER;
 
-	irq_disable(adapter);
+	if (adapter->flag & BOARD_IOMAP)
+		irq_disable(adapter);
+
 	free_irq(adapter->host->irq, adapter);
 
 	/* Issue a blocking (interrupts disabled) command to the card */
@@ -2549,7 +2575,9 @@ megaraid_release(struct Scsi_Host *host)
 		/*
 		 * Unregister the character device interface to the driver.
 		 */
-		unregister_chrdev(major, "megadev");
+		if (major >= 0) {
+			unregister_chrdev(major, "megadev");
+		}
 
 		unregister_reboot_notifier(&mega_notifier);
 
@@ -2568,6 +2596,9 @@ megaraid_release(struct Scsi_Host *host)
 	 */
 	scsi_unregister(host);
 
+#ifdef LSI_CONFIG_COMPAT
+	unregister_ioctl32_conversion(MEGAIOCCMD);
+#endif
 
 	printk("ok.\n");
 
@@ -3392,7 +3423,11 @@ proc_pdrv(adapter_t *adapter, char *page, int channel)
 
 	max_channels = adapter->product_info.nchannels;
 
-	if( channel >= max_channels ) return 0;
+	if (channel >= max_channels) {
+		pci_free_consistent(pdev, 256, scsi_inq, scsi_inq_dma_handle);
+		mega_free_inquiry(inquiry, dma_handle, pdev);
+		return 0;
+	}
 
 	for( tgt = 0; tgt <= MAX_TARGET; tgt++ ) {
 
@@ -3860,153 +3895,6 @@ proc_rdrv(adapter_t *adapter, char *page, int start, int end)
 
 
 /**
- * megaraid_biosparam()
- * @disk
- * @dev
- * @geom
- *
- * Return the disk geometry for a particular disk
- * Input:
- *	Disk *disk - Disk geometry
- *	kdev_t dev - Device node
- *	int *geom  - Returns geometry fields
- *		geom[0] = heads
- *		geom[1] = sectors
- *		geom[2] = cylinders
- */
-static int
-megaraid_biosparam(Disk *disk, kdev_t dev, int *geom)
-{
-	int heads, sectors, cylinders;
-	adapter_t *adapter;
-
-	/* Get pointer to host config structure */
-	adapter = (adapter_t *)disk->device->host->hostdata;
-
-	if (IS_RAID_CH(adapter, disk->device->channel)) {
-			/* Default heads (64) & sectors (32) */
-			heads = 64;
-			sectors = 32;
-			cylinders = disk->capacity / (heads * sectors);
-
-			/*
-			 * Handle extended translation size for logical drives
-			 * > 1Gb
-			 */
-			if (disk->capacity >= 0x200000) {
-				heads = 255;
-				sectors = 63;
-				cylinders = disk->capacity / (heads * sectors);
-			}
-
-			/* return result */
-			geom[0] = heads;
-			geom[1] = sectors;
-			geom[2] = cylinders;
-	}
-	else {
-		if( !mega_partsize(disk, dev, geom) )
-			return 0;
-
-		printk(KERN_WARNING
-		"megaraid: invalid partition on this disk on channel %d\n",
-				disk->device->channel);
-
-		/* Default heads (64) & sectors (32) */
-		heads = 64;
-		sectors = 32;
-		cylinders = disk->capacity / (heads * sectors);
-
-		/* Handle extended translation size for logical drives > 1Gb */
-		if (disk->capacity >= 0x200000) {
-			heads = 255;
-			sectors = 63;
-			cylinders = disk->capacity / (heads * sectors);
-		}
-
-		/* return result */
-		geom[0] = heads;
-		geom[1] = sectors;
-		geom[2] = cylinders;
-	}
-
-	return 0;
-}
-
-/*
- * mega_partsize()
- * @disk
- * @geom
- *
- * Purpose : to determine the BIOS mapping used to create the partition
- *	table, storing the results (cyls, hds, and secs) in geom
- *
- * Note:	Code is picked from scsicam.h
- *
- * Returns : -1 on failure, 0 on success.
- */
-static int
-mega_partsize(Disk *disk, kdev_t dev, int *geom)
-{
-	struct buffer_head *bh;
-	struct partition *p, *largest = NULL;
-	int i, largest_cyl;
-	int heads, cyls, sectors;
-	int capacity = disk->capacity;
-
-	int ma = MAJOR(dev);
-	int mi = (MINOR(dev) & ~0xf);
-
-	int block = 1024; 
-
-	if (blksize_size[ma])
-		block = blksize_size[ma][mi];
-
-	if (!(bh = bread(MKDEV(ma,mi), 0, block)))
-		return -1;
-
-	if (*(unsigned short *)(bh->b_data + 510) == 0xAA55 ) {
-
-		for (largest_cyl = -1,
-			p = (struct partition *)(0x1BE + bh->b_data), i = 0;
-			i < 4; ++i, ++p) {
-
-			if (!p->sys_ind) continue;
-
-			cyls = p->end_cyl + ((p->end_sector & 0xc0) << 2);
-
-			if (cyls >= largest_cyl) {
-				largest_cyl = cyls;
-				largest = p;
-			}
-		}
-	}
-
-	if (largest) {
-		heads = largest->end_head + 1;
-		sectors = largest->end_sector & 0x3f;
-
-		if (!heads || !sectors) {
-			brelse(bh);
-			return -1;
-		}
-
-		cyls = capacity/(heads * sectors);
-
-		geom[0] = heads;
-		geom[1] = sectors;
-		geom[2] = cyls;
-
-		brelse(bh);
-		return 0;
-	}
-
-	brelse(bh);
-	return -1;
-}
-
-
-/**
  * megaraid_reboot_notify()
  * @this - unused
  * @code - shutdown code
@@ -4040,7 +3928,9 @@ megaraid_reboot_notify (struct notifier_block *this, unsigned long code,
 		memset(raw_mbox, 0, sizeof(raw_mbox));
 		raw_mbox[0] = FLUSH_ADAPTER;
 
-		irq_disable(adapter);
+		if (adapter->flag & BOARD_IOMAP)
+			irq_disable(adapter);
+
 		free_irq(adapter->host->irq, adapter);
 
 		/*
@@ -4177,6 +4067,18 @@ megadev_open (struct inode *inode, struct file *filep)
 	MOD_INC_USE_COUNT;
 	return 0;
 }
+
+
+#ifdef LSI_CONFIG_COMPAT
+static int
+megadev_compat_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg,
+		struct file *filep)
+{
+	struct inode *inode = filep->f_dentry->d_inode;
+
+	return megadev_ioctl(inode, filep, cmd, arg);
+}
+#endif
 
 
 /**
@@ -4386,8 +4288,8 @@ megadev_ioctl(struct inode *inode, struct file *filep, unsigned int cmd,
 			/*
 			 * The user passthru structure
 			 */
-			upthru = (mega_passthru *)MBOX(uioc)->xferaddr;
-
+			upthru = (mega_passthru *)
+					((ulong)(MBOX(uioc)->xferaddr));
 			/*
 			 * Copy in the user passthru here.
 			 */
@@ -4434,8 +4336,9 @@ megadev_ioctl(struct inode *inode, struct file *filep, unsigned int cmd,
 				/*
 				 * Get the user data
 				 */
-				if( copy_from_user(data, (char *)uxferaddr,
-							pthru->dataxferlen) ) {
+				if( copy_from_user(data,
+						(char *)((ulong)uxferaddr),
+						pthru->dataxferlen) ) {
 					rval = (-EFAULT);
 					goto freemem_and_return;
 				}
@@ -4460,8 +4363,8 @@ megadev_ioctl(struct inode *inode, struct file *filep, unsigned int cmd,
 			 * Is data going up-stream
 			 */
 			if( pthru->dataxferlen && (uioc.flags & UIOC_RD) ) {
-				if( copy_to_user((char *)uxferaddr, data,
-							pthru->dataxferlen) ) {
+				if( copy_to_user((char *)((ulong)uxferaddr),
+						data, pthru->dataxferlen) ) {
 					rval = (-EFAULT);
 				}
 			}
@@ -4509,12 +4412,13 @@ freemem_and_return:
 				/*
 				 * Get the user data
 				 */
-				if( copy_from_user(data, (char *)uxferaddr,
-							uioc.xferlen) ) {
+				if( copy_from_user(data,
+						(char *)((ulong)uxferaddr),
+						uioc.xferlen) ) {
 
 					pci_free_consistent(pdev,
-							uioc.xferlen,
-							data, data_dma_hndl);
+						uioc.xferlen, data,
+						data_dma_hndl);
 
 					return (-EFAULT);
 				}
@@ -4545,8 +4449,8 @@ freemem_and_return:
 			 * Is data going up-stream
 			 */
 			if( uioc.xferlen && (uioc.flags & UIOC_RD) ) {
-				if( copy_to_user((char *)uxferaddr, data,
-							uioc.xferlen) ) {
+				if( copy_to_user((char *)((ulong)uxferaddr),
+						data, uioc.xferlen) ) {
 
 					rval = (-EFAULT);
 				}
@@ -4731,7 +4635,7 @@ mega_n_to_m(void *arg, megacmd_t *mc)
 
 			umc = MBOX_P(uiocp);
 
-			upthru = (mega_passthru *)umc->xferaddr;
+			upthru = (mega_passthru *)((ulong)(umc->xferaddr));
 
 			if( put_user(mc->status, (u8 *)&upthru->scsistatus) )
 				return (-EFAULT);
@@ -4749,7 +4653,7 @@ mega_n_to_m(void *arg, megacmd_t *mc)
 			if (copy_from_user(&kmc, umc, sizeof(megacmd_t)))
 				return -EFAULT;
 
-			upthru = (mega_passthru *)kmc.xferaddr;
+			upthru = (mega_passthru *)((ulong)kmc.xferaddr);
 
 			if( put_user(mc->status, (u8 *)&upthru->scsistatus) )
 				return (-EFAULT);

@@ -569,6 +569,19 @@ CONFIG_BLK_DEV_UMEM
   The umem driver has been allocated block major number 116.
   See Documentation/devices.txt for recommended device naming.
 
+Promise SATA SX8 support
+CONFIG_BLK_DEV_SX8
+   Saying Y or M here will enable support for the 
+   Promise SATA SX8 controllers.
+
+  If you want to compile this driver as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want),
+  say M here and read Documentation/modules.txt. The module will be
+  called sx8.o.
+
+  The sx8 driver has been allocated block major numbers 160, 161.
+  See Documentation/devices.txt for recommended device naming.
+
 Network block device support
 CONFIG_BLK_DEV_NBD
   Saying Y here will allow your computer to be a client for network
@@ -1296,11 +1309,13 @@ CONFIG_PIIX_TUNING
 
   If unsure, say N.
 
-PROMISE PDC20246/PDC20262/PDC20265/PDC20267/PDC20268 support
+Promise PDC202{46|62|65|67} support
 CONFIG_BLK_DEV_PDC202XX_OLD
-  Promise Ultra33 or PDC20246
-  Promise Ultra66 or PDC20262
-  Promise Ultra100 or PDC20265/PDC20267/PDC20268
+  Promise Ultra 33 [PDC20246]
+  Promise Ultra 66 [PDC20262]
+  Promise FastTrak 66 [PDC20263]
+  Promise MB Ultra 100 [PDC20265]
+  Promise Ultra 100 [PDC20267]
 
   This driver adds up to 4 more EIDE devices sharing a single
   interrupt. This add-on card is a bootable PCI UDMA controller. Since
@@ -1309,7 +1324,7 @@ CONFIG_BLK_DEV_PDC202XX_OLD
   not match, the driver attempts to do dynamic tuning of the chipset
   at boot-time for max-speed.  Ultra33 BIOS 1.25 or newer is required
   for more than one card. This card may require that you say Y to
-  "Special UDMA Feature".
+  "Force (U)DMA burst transfers" (old name: "Special UDMA Feature").
 
   If you say Y here, you need to say Y to "Use DMA by default when
   available" as well.
@@ -1319,7 +1334,7 @@ CONFIG_BLK_DEV_PDC202XX_OLD
 
   If unsure, say N.
 
-PROMISE PDC202{68|69|70|71|75|76|77} support
+Promise PDC202{68|69|70|71|75|76|77} support
 CONFIG_BLK_DEV_PDC202XX_NEW
   Promise Ultra 100 TX2 [PDC20268]
   Promise Ultra 133 PTX2 [PDC20269]
@@ -1334,17 +1349,16 @@ CONFIG_BLK_DEV_PDC202XX_NEW
   multiple cards can be installed and there are BIOS ROM problems that
   happen if the BIOS revisions of all installed cards (max of five) do
   not match, the driver attempts to do dynamic tuning of the chipset
-  at boot-time for max speed.  Ultra33 BIOS 1.25 or newer is required
-  for more than one card.
+  at boot-time for max speed.
 
   If you say Y here, you need to say Y to "Use DMA by default when
   available" as well.
 
   If unsure, say N.
 
-Special UDMA Feature
+Force (U)DMA burst transfers
 CONFIG_PDC202XX_BURST
-  This option causes the pdc202xx driver to enable UDMA modes on the
+  This option causes the pdc202xx_old driver to enable UDMA modes on the
   PDC202xx even when the PDC202xx BIOS has not done so.
 
   It was originally designed for the PDC20246/Ultra33, whose BIOS will
@@ -1357,9 +1371,17 @@ CONFIG_PDC202XX_BURST
 
   If unsure, say N.
 
-Special FastTrak Feature
+Ignore BIOS port disabled setting on FastTrak
 CONFIG_PDC202XX_FORCE
-  For FastTrak enable overriding BIOS.
+  Chipsets affected:
+
+  PDC202{46|62|63|65|67}
+  (pdc202xx_old driver)
+
+  PDC202{70|76}
+  (pdc202xx_new driver)
+
+  Say Y unless you want to use Promise proprietary driver.
 
 SiS5513 chipset support
 CONFIG_BLK_DEV_SIS5513
@@ -4286,6 +4308,46 @@ CONFIG_HOTPLUG_PCI_ACPI
   inserted in and removed from the running kernel whenever you want).
   The module will be called acpiphp.o. If you want to compile it
   as a module, say M here and read <file:Documentation/modules.txt>.
+ 
+CONFIG_HOTPLUG_PCI_SHPC
+  Say Y here if you have a motherboard with a SHPC PCI Hotplug
+  controller.
+
+  This code is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called shpchp.o. If you want to compile it
+  as a module, say M here and read <file:Documentation/modules.txt>.
+
+  When in doubt, say N.
+
+CONFIG_HOTPLUG_PCI_SHPC_POLL_EVENT_MODE
+  Say Y here if you want to use the polling mechanism for hot-plug 
+  events for early platform testing.
+
+  When in doubt, say N.
+
+CONFIG_HOTPLUG_PCI_SHPC_PHPRM_LEGACY
+  Say Y here for AMD SHPC. You have to select this option if you are 
+  using this driver on platform with AMD SHPC.
+
+  When in doubt, say N.
+
+CONFIG_HOTPLUG_PCI_PCIE
+  Say Y here if you have a motherboard that supports PCI Express Native
+  Hotplug
+
+  This code is also available as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want).
+  The module will be called pciehp.o. If you want to compile it
+  as a module, say M here and read <file:Documentation/modules.txt>.
+
+  When in doubt, say N.
+
+CONFIG_HOTPLUG_PCI_PCIE_POLL_EVENT_MODE
+  Say Y here if you want to use the polling mechanism for hot-plug 
+  events for early platform testing.
+
+  When in doubt, say N.
 
 MCA support
 CONFIG_MCA
@@ -5543,14 +5605,15 @@ CONFIG_FB_SIS
 SIS 300 series support
 CONFIG_FB_SIS_300
   This enables support for SiS 300 series chipsets (300/305, 540, 630,
-  730).  Documentation available at the maintainer's website at
-   <http://www.winischhofer.net/linuxsisvga.shtml>.
+  630S, 730S). Documentation available at the maintainer's website at
+  <http://www.winischhofer.net/linuxsisvga.shtml>.
 
 SIS 315/330 series support
 CONFIG_FB_SIS_315
-  This enables support for SiS 315/330 series chipsets (315, 550, 650,
-  M650, 651, 661FX, M661FX, 740, 741, 330). Documentation available at
-  the maintainer's site <http://www.winischhofer.net/linuxsisvga.shtml>.
+  This enables support for SiS 315/330 series chipsets (315, 315PRO, 
+  55x, (M)650, 651, (M)661FX, 661MX, 740, (M)741(GX), (M)760, 330).
+  Documentation available at the maintainer's website at
+  <http://www.winischhofer.net/linuxsisvga.shtml>.
 
 IMS Twin Turbo display support
 CONFIG_FB_IMSTT
@@ -6109,8 +6172,7 @@ CONFIG_NET_IPIP
   can be useful if you want to make your (or some other) machine
   appear on a different network than it physically is, or to use
   mobile-IP facilities (allowing laptops to seamlessly move between
-  networks without changing their IP addresses; check out
-  <http://anchor.cs.binghamton.edu/~mobileip/LJ/index.html>).
+  networks without changing their IP addresses).
 
   Saying Y to this option will produce two modules ( = code which can
   be inserted in and removed from the running kernel whenever you
@@ -7520,6 +7582,11 @@ CONFIG_ATM_FORE200E_SBA_FW
   The driver comes with an adequate firmware image, so normal users do
   not have to supply an alternative one. They just say Y to "Use
   default SBA-200E firmware", above.
+
+CONFIG_ATM_FORE200E_USE_TASKLET
+  This defers work to be done by the interrupt handler to a
+  tasklet instead of handling everything at interrupt time.  This
+  may improve the responsiveness of the host.
 
 Maximum number of tx retries
 CONFIG_ATM_FORE200E_TX_RETRY
@@ -9202,6 +9269,48 @@ CONFIG_SCSI_MEGARAID2
   say M here and read <file:Documentation/modules.txt>.  The module
   will be called megaraid2.o.
 
+CONFIG_SCSI_SATA
+  This driver family supports Serial ATA host controllers
+  and devices.
+
+  If unsure, say N.
+
+CONFIG_SCSI_SATA_SVW
+  This option enables support for Broadcom/Serverworks/Apple K2
+  SATA support.
+
+  If unsure, say N.
+
+CONFIG_SCSI_SATA_PROMISE
+  This option enables support for Promise Serial ATA TX2/TX4.
+
+  If unsure, say N.
+
+CONFIG_SCSI_SATA_SX4
+  This option enables support for Promise Serial ATA SX4.
+
+  If unsure, say N.
+
+CONFIG_SCSI_SATA_SIL
+  This option enables support for Silicon Image Serial ATA.
+
+  If unsure, say N.
+
+CONFIG_SCSI_SATA_SIS
+  This option enables support for SiS Serial ATA 964/180.
+
+  If unsure, say N.
+
+CONFIG_SCSI_SATA_VIA
+  This option enables support for VIA Serial ATA.
+
+  If unsure, say N.
+
+CONFIG_SCSI_SATA_VITESSE
+  This option enables support for Vitesse VSC7174 Serial ATA.
+
+  If unsure, say N.
+
 Intel/ICP (former GDT SCSI Disk Array) RAID Controller support
 CONFIG_SCSI_GDTH
   Formerly called GDT SCSI Disk Array Controller Support.
@@ -10840,13 +10949,15 @@ CONFIG_NET_SCH_TBF
   whenever you want). If you want to compile it as a module, say M
   here and read <file:Documentation/modules.txt>.
 
-Network delay simualtor  
-CONFIG_NET_SCH_DELAY
-  Say Y if you want to delay packets by a fixed amount of
-  time. This is often useful to simulate network delay when
+CONFIG_NET_SCH_NETEM
+  Say Y if you want to emulate network delay, loss, and packet
+  re-ordering. This is often useful to simulate networks when
   testing applications or protocols.
-  
-  This code is also available as a module called sch_delay.o
+
+  To compile this driver as a module, choose M here: the module
+  will be called sch_netem.
+
+  If unsure, say N.
 
 Ingress Qdisc
 CONFIG_NET_SCH_INGRESS
@@ -12100,6 +12211,20 @@ CONFIG_E1000
   The module will be called e1000.o.  If you want to compile it as a
   module, say M here and read <file:Documentation/modules.txt> as well
   as <file:Documentation/networking/net-modules.txt>.
+
+CONFIG_E1000_NAPI
+  NAPI is a new driver API designed to reduce CPU and interrupt load
+  when the driver is receiving lots of packets from the card. It is
+  still somewhat experimental and thus not yet enabled by default.
+
+  If your estimated Rx load is 10kpps or more, or if the card will be
+  deployed on potentially unfriendly networks (e.g. in a firewall),
+  then say Y here.
+
+  See <file:Documentation/networking/NAPI_HOWTO.txt> for more
+  information.
+
+  If in doubt, say N.
 
 AMD LANCE and PCnet (AT1500 and NE2100) support
 CONFIG_LANCE
@@ -13406,6 +13531,16 @@ CONFIG_HIPPI
   and have a HIPPI network card in your computer that you want to use
   under Linux, say Y here (you must also remember to enable the driver
   for your HIPPI card below). Most people will say N here.
+
+IBM PowerPC Virtual Ethernet driver support
+CONFIG_IBMVETH
+  This driver supports virtual ethernet adapters on newer IBM iSeries
+  and pSeries systems.
+
+  If you want to compile the driver as a module ( = code which can be
+  inserted in and removed from the running kernel whenever you want),
+  say M here and read <file:Documentation/modules.txt>.  The module
+  will be called ibmveth.o.
 
 Essential RoadRunner HIPPI PCI adapter support
 CONFIG_ROADRUNNER
@@ -16093,6 +16228,27 @@ CONFIG_USB_ETH
    Say "y" to link the driver statically, or "m" to build a
    dynamically linked module called "g_ether".
 
+CONFIG_USB_ETH_RNDIS
+  Microsoft Windows XP bundles the "Remote NDIS" (RNDIS) protocol,
+  and Microsoft provides redistributable binary RNDIS drivers for
+  older versions of Windows.
+
+  If you say "y" here, the Ethernet gadget driver will try to provide
+  a second device configuration, supporting RNDIS to talk to such
+  Microsoft USB hosts.
+
+CONFIG_USB_FILE_STORAGE
+  The File-backed Storage Gadget acts as a USB Mass Storage
+  disk drive.  As its storage repository it can use a regular
+  file or a block device (in much the same way as the "loop"
+  device driver), specified as a module parameter.
+
+CONFIG_USB_FILE_STORAGE_TEST
+  Say "y" to generate the larger testing version of the
+  File-backed Storage Gadget, useful for probing the
+  behavior of USB Mass Storage hosts.  Not needed for
+  normal operation.
+
 Always do synchronous disk IO for UBD
 CONFIG_BLK_DEV_UBD_SYNC
   The User-Mode Linux port includes a driver called UBD which will let
@@ -17269,7 +17425,7 @@ CONFIG_AUTOFS4_FS
   automounter (amd), which is a pure user space daemon.
 
   To use the automounter you need the user-space tools from
-  <ftp://ftp.kernel.org/pub/linux/daemons/autofs/testing-v4/>; you also
+  <ftp://ftp.kernel.org/pub/linux/daemons/autofs/v4/>; you also
   want to answer Y to "NFS file system support", below.
 
   If you want to compile this as a module ( = code which can be
@@ -17427,12 +17583,9 @@ Tracing support (EXPERIMENTAL)
 CONFIG_XFS_TRACE
   Say Y here to get an XFS build with activity tracing enabled.
   Enabling this option will attach historical information to XFS
-  inodes, pagebufs, certain locks, the log, the IO path, and a
+  inodes, buffers, certain locks, the log, the IO path, and a
   few other key areas within XFS.  These traces can be examined
   using a kernel debugger.
-
-  Note that for the pagebuf traces, you will also have to enable
-  the sysctl in /proc/sys/vm/pagebuf/debug for this to work.
 
   Say N unless you are an XFS developer.
 
@@ -23001,22 +23154,20 @@ CONFIG_BLUEZ
 
   Linux Bluetooth subsystem consist of several layers:
                BlueZ Core (HCI device and connection manager, scheduler)
-               HCI Device drivers (interface to the hardware)
-               L2CAP Module (L2CAP protocol)
-               SCO Module (SCO links)
-               RFCOMM Module (RFCOMM protocol)
-               BNEP Module (BNEP protocol)
-               CMTP Module (CMTP protocol)
+               HCI Device drivers (Interface to the hardware)
+               SCO Module (SCO audio links)
+               L2CAP Module (Logical Link Control and Adaptation Protocol)
+               RFCOMM Module (RFCOMM Protocol)
+               BNEP Module (Bluetooth Network Encapsulation Protocol)
+               CMTP Module (CAPI Message Transport Protocol)
 
-  Say Y here to enable Linux Bluetooth support and to build BlueZ Core
-  layer.
+  Say Y here to compile Bluetooth support into the kernel or say M to
+  compile it as module (bluez.o).
 
   To use Linux Bluetooth subsystem, you will need several user-space
   utilities like hciconfig and hcid.  These utilities and updates to
   Bluetooth kernel modules are provided in the BlueZ package.
-  For more information, see <http://bluez.sourceforge.net/>.
-
-  If you want to compile BlueZ Core as module (bluez.o) say M here.
+  For more information, see <http://www.bluez.org/>.
 
 L2CAP protocol support
 CONFIG_BLUEZ_L2CAP
@@ -23029,7 +23180,7 @@ CONFIG_BLUEZ_L2CAP
 
 SCO links support
 CONFIG_BLUEZ_SCO
-  SCO link provides voice transport over Bluetooth. SCO support is
+  SCO link provides voice transport over Bluetooth.  SCO support is
   required for voice applications like Headset and Audio.
 
   Say Y here to compile SCO support into the kernel or say M to
@@ -23037,7 +23188,7 @@ CONFIG_BLUEZ_SCO
 
 RFCOMM protocol support
 CONFIG_BLUEZ_RFCOMM
-  RFCOMM provides connection oriented stream transport. RFCOMM
+  RFCOMM provides connection oriented stream transport.  RFCOMM
   support is required for Dialup Networking, OBEX and other Bluetooth
   applications.
 
@@ -23051,24 +23202,11 @@ CONFIG_BLUEZ_RFCOMM_TTY
 BNEP protocol support
 CONFIG_BLUEZ_BNEP
   BNEP (Bluetooth Network Encapsulation Protocol) is Ethernet
-  emulation layer on top of Bluetooth. BNEP is required for Bluetooth
-  PAN (Personal Area Network).
-
-  To use BNEP, you will need user-space utilities provided in the 
-  BlueZ-PAN package.
-  For more information, see <http://bluez.sourceforge.net>.
+  emulation layer on top of Bluetooth.  BNEP is required for
+  Bluetooth PAN (Personal Area Network).
 
   Say Y here to compile BNEP support into the kernel or say M to
   compile it as module (bnep.o).
-
-CMTP protocol support
-CONFIG_BLUEZ_CMTP
-  CMTP (CAPI Message Transport Protocol) is a transport layer
-  for CAPI messages. CMTP is required for the Bluetooth Common
-  ISDN Access Profile.
-
-  Say Y here to compile CMTP support into the kernel or say M to
-  compile it as module (cmtp.o).
 
 BNEP multicast filter support
 CONFIG_BLUEZ_BNEP_MC_FILTER
@@ -23077,6 +23215,15 @@ CONFIG_BLUEZ_BNEP_MC_FILTER
 BNEP protocol filter support
 CONFIG_BLUEZ_BNEP_PROTO_FILTER
   This option enables the protocol filter support for BNEP.
+
+CMTP protocol support
+CONFIG_BLUEZ_CMTP
+  CMTP (CAPI Message Transport Protocol) is a transport layer
+  for CAPI messages.  CMTP is required for the Bluetooth Common
+  ISDN Access Profile.
+
+  Say Y here to compile CMTP support into the kernel or say M to
+  compile it as module (cmtp.o).
 
 HCI UART driver
 CONFIG_BLUEZ_HCIUART
@@ -23166,9 +23313,6 @@ CONFIG_BLUEZ_HCIBT3C
   3Com BT3C interface:
      3Com Bluetooth Card (3CRWB6096)
      HP Bluetooth Card
-
-  The HCI BT3C driver uses external firmware loader program provided in
-  the BlueFW package. For more information, see <http://bluez.sf.net>.
 
   Say Y here to compile support for HCI BT3C devices into the
   kernel or say M to compile it as module (bt3c_cs.o).
@@ -28781,18 +28925,36 @@ CONFIG_CRYPTO_CAST6
   The CAST6 encryption algorithm (synonymous with CAST-256) is
   described in RFC2612.
 
+CONFIG_CRYPTO_TEA
+  TEA cipher algorithm.
+
+  Tiny Encryption Algorithm is a simple cipher that uses
+  many rounds for security.  It is very fast and uses
+  little memory.
+
+  Xtendend Tiny Encryption Algorithm is a modifcation to
+  the TEA algorithm to address a potential key weakness
+  in the TEA algorithm.
+
 CONFIG_CRYPTO_ARC4
   ARC4 cipher algorithm.
   
-  This is a stream cipher using keys ranging from 8 bits to 2048
-  bits in length.  ARC4 is commonly used in protocols such as WEP 
-  and SSL.
+  ARC4 is a stream cipher using keys ranging from 8 bits to 2048
+  bits in length.  This algorithm is required for driver-based 
+  WEP, but it should not be for other purposes because of the
+  weakness of the algorithm.
 
 CONFIG_CRYPTO_DEFLATE
   This is the Deflate algorithm (RFC1951), specified for use in
   IPSec with the IPCOMP protocol (RFC3173, RFC2394).
 
   You will most probably want this if using IPSec.
+
+CONFIG_CRYPTO_MICHAEL_MIC
+  Michael MIC is used for message integrity protection in TKIP
+  (IEEE 802.11i). This algorithm is required for TKIP, but it
+  should not be used for other purposes because of the weakness
+  of the algorithm.
 
 CONFIG_CRYPTO_TEST
   Quick & dirty crypto test module.

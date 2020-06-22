@@ -142,3 +142,5 @@ void unregister_8022_client(unsigned char type)
 
 	restore_flags(flags);
 }
+
+MODULE_LICENSE("GPL");

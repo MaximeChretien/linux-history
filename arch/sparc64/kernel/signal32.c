@@ -393,7 +393,7 @@ asmlinkage void do_rt_sigreturn32(struct pt_regs *regs)
 {
 	struct rt_signal_frame32 *sf;
 	unsigned int psr;
-	unsigned pc, npc, fpu_save;
+	unsigned pc, npc, fpu_save, u_ss_sp;
 	mm_segment_t old_fs;
 	sigset_t set;
 	sigset_t32 seta;
@@ -444,7 +444,8 @@ asmlinkage void do_rt_sigreturn32(struct pt_regs *regs)
 	if (fpu_save)
 		err |= restore_fpu_state32(regs, &sf->fpu_state);
 	err |= copy_from_user(&seta, &sf->mask, sizeof(sigset_t32));
-	err |= __get_user((long)st.ss_sp, &sf->stack.ss_sp);
+	err |= __get_user(u_ss_sp, &sf->stack.ss_sp);
+	st.ss_sp = (void *) (long) u_ss_sp;
 	err |= __get_user(st.ss_flags, &sf->stack.ss_flags);
 	err |= __get_user(st.ss_size, &sf->stack.ss_size);
 	if (err)
@@ -1030,7 +1031,7 @@ asmlinkage int svr4_setcontext(svr4_ucontext_t *c, struct pt_regs *regs)
 	struct thread_struct *tp = &current->thread;
 	svr4_gregset_t  *gr;
 	mm_segment_t old_fs;
-	u32 pc, npc, psr;
+	u32 pc, npc, psr, u_ss_sp;
 	sigset_t set;
 	svr4_sigset_t setv;
 	int i, err;
@@ -1075,7 +1076,8 @@ asmlinkage int svr4_setcontext(svr4_ucontext_t *c, struct pt_regs *regs)
 	if (_NSIG_WORDS >= 2)
 		set.sig[1] = setv.sigbits[2] | (((long)setv.sigbits[3]) << 32);
 	
-	err |= __get_user((long)st.ss_sp, &c->stack.sp);
+	err |= __get_user(u_ss_sp, &c->stack.sp);
+	st.ss_sp = (void *) (long) u_ss_sp;
 	err |= __get_user(st.ss_flags, &c->stack.flags);
 	err |= __get_user(st.ss_size, &c->stack.size);
 	if (err)
@@ -1545,9 +1547,9 @@ asmlinkage int do_sys32_sigstack(u32 u_ssptr, u32 u_ossptr, unsigned long sp)
 	
 	/* Now see if we want to update the new state. */
 	if (ssptr) {
-		void *ss_sp;
+		u32 ss_sp;
 
-		if (get_user((long)ss_sp, &ssptr->the_stack))
+		if (get_user(ss_sp, &ssptr->the_stack))
 			goto out;
 		/* If the current stack was set with sigaltstack, don't
 		   swap stacks while we are on it.  */
@@ -1570,13 +1572,15 @@ out:
 asmlinkage int do_sys32_sigaltstack(u32 ussa, u32 uossa, unsigned long sp)
 {
 	stack_t uss, uoss;
+	u32 u_ss_sp = 0;
 	int ret;
 	mm_segment_t old_fs;
 	
-	if (ussa && (get_user((long)uss.ss_sp, &((stack_t32 *)(long)ussa)->ss_sp) ||
+	if (ussa && (get_user(u_ss_sp, &((stack_t32 *)(long)ussa)->ss_sp) ||
 		    __get_user(uss.ss_flags, &((stack_t32 *)(long)ussa)->ss_flags) ||
 		    __get_user(uss.ss_size, &((stack_t32 *)(long)ussa)->ss_size)))
 		return -EFAULT;
+	uss.ss_sp = (void *) (long) u_ss_sp;
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 	ret = do_sigaltstack(ussa ? &uss : NULL, uossa ? &uoss : NULL, sp);

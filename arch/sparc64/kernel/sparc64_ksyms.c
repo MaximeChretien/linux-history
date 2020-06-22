@@ -89,6 +89,7 @@ extern long sparc32_open(const char * filename, int flags, int mode);
 extern int register_ioctl32_conversion(unsigned int cmd, int (*handler)(unsigned int, unsigned int, unsigned long, struct file *));
 extern int unregister_ioctl32_conversion(unsigned int cmd);
 extern int io_remap_page_range(unsigned long from, unsigned long offset, unsigned long size, pgprot_t prot, int space);
+extern void (*prom_palette)(int);
                 
 extern int __ashrdi3(int, int);
 
@@ -371,3 +372,5 @@ EXPORT_SYMBOL(do_BUG);
 #endif
 
 EXPORT_SYMBOL(tick_ops);
+
+EXPORT_SYMBOL(prom_palette);

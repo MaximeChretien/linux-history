@@ -70,6 +70,7 @@
 #include <linux/mii.h>
 #include <linux/ethtool.h>
 #include <linux/if_vlan.h>
+#include <linux/moduleparam.h>
 
 #define BAR_0		0
 #define BAR_1		1
@@ -89,6 +90,12 @@ struct e1000_adapter;
 #endif
 
 #define E1000_ERR(args...) printk(KERN_ERR "e1000: " args)
+
+#define PFX "e1000: "
+#define DPRINTK(nlevel, klevel, fmt, args...) \
+	(void)((NETIF_MSG_##nlevel & adapter->msg_enable) && \
+	printk(KERN_##klevel PFX "%s: %s: " fmt, adapter->netdev->name, \
+		__FUNCTION__ , ## args))
 
 #define E1000_MAX_INTR 10
 
@@ -113,7 +120,7 @@ struct e1000_adapter;
 #define E1000_SMARTSPEED_MAX       15
 
 /* Packet Buffer allocations */
-#define E1000_TX_FIFO_SIZE_SHIFT 0xA
+#define E1000_PBA_BYTES_SHIFT 0xA
 #define E1000_TX_HEAD_ADDR_SHIFT 7
 #define E1000_PBA_TX_MASK 0xFFFF0000
 
@@ -190,6 +197,7 @@ struct e1000_adapter {
 	uint32_t part_num;
 	uint32_t wol;
 	uint32_t smartspeed;
+	uint32_t en_mng_pt;
 	uint16_t link_speed;
 	uint16_t link_duplex;
 	spinlock_t stats_lock;
@@ -246,5 +254,6 @@ struct e1000_adapter {
 
 
 	uint32_t pci_state[16];
+	int msg_enable;
 };
 #endif /* _E1000_H_ */

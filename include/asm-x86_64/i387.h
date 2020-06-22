@@ -34,7 +34,7 @@ extern int save_i387(struct _fpstate *buf);
 
 #define clear_fpu( tsk ) do { \
 	if ( tsk->flags & PF_USEDFPU ) { \
-		asm volatile("fwait"); \
+		asm volatile("fnclex ; fwait"); \
 		tsk->flags &= ~PF_USEDFPU; \
 		stts(); \
 	} \

@@ -2126,7 +2126,8 @@ int ip_mc_procinfo(char *buffer, char **start, off_t offset, int length)
 			continue;
 
 #ifdef CONFIG_IP_MULTICAST
-		querier = IGMP_V1_SEEN(in_dev) ? "V1" : "V2";
+		querier = IGMP_V1_SEEN(in_dev) ? "V1" : IGMP_V2_SEEN(in_dev) ?
+			"V2" : "V3";
 #endif
 
 		len+=sprintf(buffer+len,"%d\t%-10s: %5d %7s\n",
@@ -2137,7 +2138,9 @@ int ip_mc_procinfo(char *buffer, char **start, off_t offset, int length)
 			len+=sprintf(buffer+len,
 				     "\t\t\t\t%08lX %5d %d:%08lX\t\t%d\n",
 				     im->multiaddr, im->users,
-				     im->tm_running, im->timer.expires-jiffies, im->reporter);
+				     im->tm_running, im->tm_running ?
+				     im->timer.expires-jiffies : 0,
+				     im->reporter);
 
 			pos=begin+len;
 			if(pos<offset)

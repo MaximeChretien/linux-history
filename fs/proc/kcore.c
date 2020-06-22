@@ -96,8 +96,9 @@ static ssize_t read_kcore(struct file *file, char *buf, size_t count, loff_t *pp
 		if (copy_to_user(buf, (void *) (PAGE_OFFSET+p-PAGE_SIZE), count))
 			return -EFAULT;
 		read += count;
+		p += count;
 	}
-	*ppos += read;
+	*ppos = p;
 	return read;
 }
 #else /* CONFIG_KCORE_AOUT */

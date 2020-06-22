@@ -49,10 +49,13 @@ void jfs_clear_inode(struct inode *inode)
 
 	jfs_info("jfs_clear_inode called ip = 0x%p", inode);
 
+	spin_lock_irq(&ji->ag_lock);
 	if (ji->active_ag != -1) {
 		struct bmap *bmap = JFS_SBI(inode->i_sb)->bmap;
 		atomic_dec(&bmap->db_active[ji->active_ag]);
+		ji->active_ag = -1;
 	}
+	spin_unlock_irq(&ji->ag_lock);
 
 	ASSERT(list_empty(&ji->anon_inode_list));
 

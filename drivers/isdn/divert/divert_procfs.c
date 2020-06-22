@@ -80,6 +80,7 @@ static ssize_t
 isdn_divert_read(struct file *file, char *buf, size_t count, loff_t * off)
 {
 	struct divert_info *inf;
+	loff_t pos = *off;
 	int len;
 
 	if (!*((struct divert_info **) file->private_data)) {
@@ -95,7 +96,7 @@ isdn_divert_read(struct file *file, char *buf, size_t count, loff_t * off)
 	if ((len = strlen(inf->info_start)) <= count) {
 		if (copy_to_user(buf, inf->info_start, len))
 			return -EFAULT;
-		file->f_pos += len;
+		*off = pos + len;
 		return (len);
 	}
 	return (0);

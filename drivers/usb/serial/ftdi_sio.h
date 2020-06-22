@@ -165,6 +165,11 @@
 #define PROTEGO_SPECIAL_3	0xFC72	/* special/unknown device */
 #define PROTEGO_SPECIAL_4	0xFC73	/* special/unknown device */ 
 
+/* CCS Inc. ICDU/ICDU40 product ID - the FT232BM is used in an in-circuit-debugger */
+/* unit for PIC16's/PIC18's */
+#define FTDI_CCSICDU20_0_PID  0xF9D0     
+#define FTDI_CCSICDU40_1_PID  0xF9D1     
+
 /* Commands */
 #define FTDI_SIO_RESET 		0 /* Reset the port */
 #define FTDI_SIO_MODEM_CTRL 	1 /* Set the modem control register */

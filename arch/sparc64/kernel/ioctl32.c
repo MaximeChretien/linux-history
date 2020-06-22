@@ -1271,6 +1271,7 @@ static int fd_ioctl_trans(unsigned int fd, unsigned int cmd, unsigned long arg)
 		case FDGETPRM32:
 		{
 			struct floppy_struct *f;
+			u32 u_name;
 
 			f = karg = kmalloc(sizeof(struct floppy_struct), GFP_KERNEL);
 			if (!karg)
@@ -1286,7 +1287,8 @@ static int fd_ioctl_trans(unsigned int fd, unsigned int cmd, unsigned long arg)
 			err |= __get_user(f->rate, &((struct floppy_struct32 *)arg)->rate);
 			err |= __get_user(f->spec1, &((struct floppy_struct32 *)arg)->spec1);
 			err |= __get_user(f->fmt_gap, &((struct floppy_struct32 *)arg)->fmt_gap);
-			err |= __get_user((u64)f->name, &((struct floppy_struct32 *)arg)->name);
+			err |= __get_user(u_name, &((struct floppy_struct32 *)arg)->name);
+			f->name = (void *) (long) u_name;
 			if (err) {
 				err = -EFAULT;
 				goto out;
@@ -3810,13 +3812,15 @@ static int blkpg_ioctl_trans(unsigned int fd, unsigned int cmd, struct blkpg_ioc
 {
 	struct blkpg_ioctl_arg a;
 	struct blkpg_partition p;
+	u32 u_data;
 	int err;
 	mm_segment_t old_fs = get_fs();
 	
 	err = get_user(a.op, &arg->op);
 	err |= __get_user(a.flags, &arg->flags);
 	err |= __get_user(a.datalen, &arg->datalen);
-	err |= __get_user((long)a.data, &arg->data);
+	err |= __get_user(u_data, &arg->data);
+	a.data = (void *) (long) u_data;
 	if (err) return err;
 	switch (a.op) {
 	case BLKPG_ADD_PARTITION:
@@ -4416,6 +4420,7 @@ COMPATIBLE_IOCTL(HDIO_SET_NOWERR)
 COMPATIBLE_IOCTL(HDIO_SET_32BIT)
 COMPATIBLE_IOCTL(HDIO_SET_MULTCOUNT)
 COMPATIBLE_IOCTL(HDIO_DRIVE_CMD)
+COMPATIBLE_IOCTL(HDIO_DRIVE_TASK)
 COMPATIBLE_IOCTL(HDIO_SET_PIO_MODE)
 COMPATIBLE_IOCTL(HDIO_SCAN_HWIF)
 COMPATIBLE_IOCTL(HDIO_SET_NICE)

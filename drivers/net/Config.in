@@ -311,6 +311,10 @@ if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
    fi
 fi
 
+if [ "$CONFIG_PPC_PSERIES" = "y" ]; then
+   dep_tristate 'IBM PowerPC Virtual Ethernet driver support' CONFIG_IBMVETH $CONFIG_PPC_PSERIES
+fi 
+
 dep_tristate 'PLIP (parallel port) support' CONFIG_PLIP $CONFIG_PARPORT
 
 tristate 'PPP (point-to-point protocol) support' CONFIG_PPP

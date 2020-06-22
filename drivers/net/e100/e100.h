@@ -434,6 +434,7 @@ struct driver_stats {
 #define D102_REV_ID      12
 #define D102C_REV_ID     13	/* 82550 step C */
 #define D102E_REV_ID     15
+#define D102E_A1_REV_ID  16
 
 /* ############Start of 82555 specific defines################## */
 

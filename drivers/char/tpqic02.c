@@ -1818,6 +1818,7 @@ static ssize_t qic02_tape_read(struct file *filp, char *buf, size_t count,
 	kdev_t dev = filp->f_dentry->d_inode->i_rdev;
 	unsigned short flags = filp->f_flags;
 	unsigned long bytes_todo, bytes_done, total_bytes_done = 0;
+	loff_t pos = *ppos;
 	int stat;
 
 	if (status_zombie == YES) {
@@ -1898,6 +1899,7 @@ static ssize_t qic02_tape_read(struct file *filp, char *buf, size_t count,
 
 	/*****************************/
 		if (bytes_todo == 0) {
+			*ppos = pos;
 			return total_bytes_done;
 		}
 
@@ -1966,7 +1968,7 @@ static ssize_t qic02_tape_read(struct file *filp, char *buf, size_t count,
 		if (bytes_done > 0) {
 			status_bytes_rd = YES;
 			buf += bytes_done;
-			*ppos += bytes_done;
+			pos += bytes_done;
 			total_bytes_done += bytes_done;
 			count -= bytes_done;
 		}

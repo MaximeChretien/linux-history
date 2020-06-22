@@ -719,7 +719,7 @@ static void sctp_inet_event_msgname(struct sctp_ulpevent *event, char *msgname,
 	if (msgname) {
 		struct sctp_association *asoc;
 
-		asoc = event->sndrcvinfo.sinfo_assoc_id;
+		asoc = event->asoc;
 		sctp_inet_msgname(msgname, addr_len);
 		sin = (struct sockaddr_in *)msgname;
 		sinfrom = &asoc->peer.primary_addr.v4;
@@ -981,6 +981,8 @@ __init int sctp_init(void)
 
 	/* Initialize proc fs directory.  */
 	sctp_proc_init();
+	if (status)
+		goto err_init_proc;
 
 	/* Initialize object count debugging.  */
 	sctp_dbg_objcnt_init();
@@ -1099,6 +1101,9 @@ __init int sctp_init(void)
 	/* Disable ADDIP by default. */
 	sctp_addip_enable = 0;
 
+	/* Enable PR-SCTP by default. */
+	sctp_prsctp_enable = 1;
+
 	sctp_sysctl_register();
 
 	INIT_LIST_HEAD(&sctp_address_families);
@@ -1143,6 +1148,7 @@ err_ehash_alloc:
 			     sizeof(struct sctp_hashbucket)));
 err_ahash_alloc:
 	sctp_dbg_objcnt_exit();
+err_init_proc:
 	sctp_proc_exit();
 	cleanup_sctp_mibs();
 err_init_mibs:

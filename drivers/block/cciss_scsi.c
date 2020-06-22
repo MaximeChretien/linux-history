@@ -1569,7 +1569,7 @@ static void
 cciss_proc_tape_report(int ctlr, unsigned char *buffer, off_t *pos, off_t *len)
 {
 	int size;
-	unsigned int flags;
+	unsigned long flags;
 
 	*pos = *pos -1; *len = *len - 1; // cut off the last trailing newline
 

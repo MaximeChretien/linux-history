@@ -2949,7 +2949,7 @@ get_fpreg (int regno, struct _fpreg_ia32 *reg, struct pt_regs *ptp, struct switc
 	return;
 }
 
-static int
+int
 save_ia32_fpstate (struct task_struct *tsk, struct ia32_user_i387_struct *save)
 {
 	struct switch_stack *swp;
@@ -3011,7 +3011,7 @@ restore_ia32_fpstate (struct task_struct *tsk, struct ia32_user_i387_struct *sav
 	return 0;
 }
 
-static int
+int
 save_ia32_fpxstate (struct task_struct *tsk, struct ia32_user_fxsr_struct *save)
 {
 	struct switch_stack *swp;

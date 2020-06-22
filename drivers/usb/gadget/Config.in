@@ -53,6 +53,9 @@ if [ "$CONFIG_USB_GADGET" = "y" -o "$CONFIG_USB_GADGET" = "m" ]; then
 
   dep_tristate '  Gadget Zero (DEVELOPMENT)' CONFIG_USB_ZERO $CONFIG_USB_GADGET_CONTROLLER
   dep_tristate '  Ethernet Gadget (EXPERIMENTAL)' CONFIG_USB_ETH $CONFIG_USB_GADGET_CONTROLLER $CONFIG_NET
+  if [ "$CONFIG_USB_ETH" = "y" -o "$CONFIG_USB_ETH" = "m" ] ; then
+    bool       '    RNDIS support (EXPERIMENTAL)' CONFIG_USB_ETH_RNDIS
+  fi
   dep_tristate '  File-backed Storage Gadget (DEVELOPMENT)' CONFIG_USB_FILE_STORAGE $CONFIG_USB_GADGET_CONTROLLER
   dep_mbool '    File-backed Storage Gadget test mode' CONFIG_USB_FILE_STORAGE_TEST $CONFIG_USB_FILE_STORAGE
   

@@ -961,16 +961,19 @@ static int mtrr_file_del (u64 base, u32 size,
 static ssize_t mtrr_read (struct file *file, char *buf, size_t len,
 		loff_t * ppos)
 {
-	if (*ppos >= ascii_buf_bytes)
+	loff_t n = *ppos;
+	unsigned pos = n;
+
+	if (pos != n || pos >= ascii_buf_bytes)
 		return 0;
 
-	if (*ppos + len > ascii_buf_bytes)
-		len = ascii_buf_bytes - *ppos;
+	if (len > ascii_buf_bytes - pos)
+		len = ascii_buf_bytes - pos;
 
-	if (copy_to_user (buf, ascii_buffer + *ppos, len))
+	if (copy_to_user (buf, ascii_buffer + pos, len))
 		return -EFAULT;
 
-	*ppos += len;
+	*ppos = pos + len;
 	return len;
 }
 

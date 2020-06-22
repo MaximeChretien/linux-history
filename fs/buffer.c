@@ -2836,7 +2836,7 @@ void show_buffers(void)
 				       buf_types[nlist], found, tmp);
 		}
 		printk("%9s: %d buffers, %lu kbyte, %d used (last=%d), "
-		       "%d locked, %d dirty %d delay\n",
+		       "%d locked, %d dirty, %d delay\n",
 		       buf_types[nlist], found, size_buffers_type[nlist]>>10,
 		       used, lastused, locked, dirty, delalloc);
 	}

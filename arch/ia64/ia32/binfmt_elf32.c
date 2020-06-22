@@ -17,6 +17,8 @@
 #include <asm/signal.h>
 #include <asm/ia32.h>
 
+#include "elfcore32.h"
+
 #define CONFIG_BINFMT_ELF32
 
 /* Override some function names */

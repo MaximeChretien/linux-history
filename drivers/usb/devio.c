@@ -80,7 +80,7 @@ static ssize_t usbdev_read(struct file *file, char * buf, size_t nbytes, loff_t 
 	struct dev_state *ps = (struct dev_state *)file->private_data;
 	ssize_t ret = 0;
 	unsigned len;
-	loff_t pos;
+	loff_t pos, last;
 	int i;
 
 	pos = *ppos;
@@ -102,37 +102,38 @@ static ssize_t usbdev_read(struct file *file, char * buf, size_t nbytes, loff_t 
 			goto err;
 		}
 
-		*ppos += len;
+		pos += len;
 		buf += len;
 		nbytes -= len;
 		ret += len;
 	}
 
-	pos = sizeof(struct usb_device_descriptor);
+	last = sizeof(struct usb_device_descriptor);
 	for (i = 0; nbytes && i < ps->dev->descriptor.bNumConfigurations; i++) {
 		struct usb_config_descriptor *config =
 			(struct usb_config_descriptor *)ps->dev->rawdescriptors[i];
 		unsigned int length = le16_to_cpu(config->wTotalLength);
 
-		if (*ppos < pos + length) {
-			len = length - (*ppos - pos);
+		if (pos < last + length) {
+			len = length - (pos - last);
 			if (len > nbytes)
 				len = nbytes;
 
 			if (copy_to_user(buf,
-			    ps->dev->rawdescriptors[i] + (*ppos - pos), len)) {
+			    ps->dev->rawdescriptors[i] + (pos - last), len)) {
 				ret = -EFAULT;
 				goto err;
 			}
 
-			*ppos += len;
+			pos += len;
 			buf += len;
 			nbytes -= len;
 			ret += len;
 		}
 
-		pos += length;
+		last += length;
 	}
+	*ppos = pos;
 
 err:
 	up_read(&ps->devsem);
